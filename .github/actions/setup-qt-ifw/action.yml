@@ -65,6 +65,38 @@ runs:
         AQT_VENV="${HOME}/.vlink-ci/aqt-venv"
         QT_ROOT="${HOME}/.vlink-ci/qt"
         export PIP_CACHE_DIR="${HOME}/.cache/pip"
+        install_python_standalone() {
+          local python_arch python_url
+          case "$(uname -m)" in
+            x86_64) python_arch=x86_64 ;;
+            aarch64|arm64) python_arch=aarch64 ;;
+            *)
+              echo "Unsupported Python standalone architecture: $(uname -m)" >&2
+              exit 1
+              ;;
+          esac
+          if ! command -v curl >/dev/null 2>&1; then
+            if [ "$(id -u)" = "0" ] && command -v apt-get >/dev/null 2>&1; then
+              apt-get update
+              apt-get install -y --no-install-recommends ca-certificates curl tar
+            else
+              echo "curl is required to install Python standalone for aqtinstall." >&2
+              exit 1
+            fi
+          fi
+          PYTHON_STANDALONE_RELEASE=20260610
+          PYTHON_STANDALONE_VERSION=3.10.20
+          PYTHON_STANDALONE_ROOT="${HOME}/.vlink-ci/python/cp310"
+          if [ ! -x "${PYTHON_STANDALONE_ROOT}/bin/python3.10" ]; then
+            rm -rf "${PYTHON_STANDALONE_ROOT}"
+            mkdir -p "${PYTHON_STANDALONE_ROOT}"
+            python_url="https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_STANDALONE_RELEASE}/cpython-${PYTHON_STANDALONE_VERSION}%2B${PYTHON_STANDALONE_RELEASE}-${python_arch}-unknown-linux-gnu-install_only_stripped.tar.gz"
+            curl -fsSL "${python_url}" -o /tmp/vlink-python-standalone.tar.gz
+            tar -xzf /tmp/vlink-python-standalone.tar.gz -C "${PYTHON_STANDALONE_ROOT}" --strip-components=1
+            rm -f /tmp/vlink-python-standalone.tar.gz
+          fi
+          AQT_PYTHON="${PYTHON_STANDALONE_ROOT}/bin/python3.10"
+        }
         AQT_PYTHON="${VLINK_AQT_PYTHON:-}"
         if [ -n "${AQT_PYTHON}" ]; then
           AQT_PYTHON=$(command -v "${AQT_PYTHON}" 2>/dev/null || printf '%s' "${AQT_PYTHON}")
@@ -84,16 +116,8 @@ runs:
             fi
           done
         fi
-        if [ -z "${AQT_PYTHON}" ] && [ "$(id -u)" = "0" ] && command -v apt-get >/dev/null 2>&1; then
-          . /etc/os-release
-          if [ "${ID:-}" = "ubuntu" ]; then
-            apt-get update
-            apt-get install -y --no-install-recommends ca-certificates gnupg software-properties-common
-            add-apt-repository -y ppa:deadsnakes/ppa
-            apt-get update
-            apt-get install -y --no-install-recommends python3.10 python3.10-dev python3.10-venv
-            AQT_PYTHON=$(command -v python3.10)
-          fi
+        if [ -z "${AQT_PYTHON}" ]; then
+          install_python_standalone
         fi
         if [ -z "${AQT_PYTHON}" ]; then
           echo "Python >= 3.10 is required for aqtinstall with Qt ${QT_VERSION}." >&2
@@ -110,20 +134,14 @@ runs:
         PY
         )
         if [ -n "${PY_INCLUDE}" ] && [ ! -f "${PY_INCLUDE}/Python.h" ]; then
-          if [ "$(id -u)" = "0" ] && command -v apt-get >/dev/null 2>&1; then
-            py_base=$(basename "${AQT_PYTHON}")
-            case "${py_base}" in
-              python3.12) py_dev_pkg=python3.12-dev ;;
-              python3.11) py_dev_pkg=python3.11-dev ;;
-              python3.10) py_dev_pkg=python3.10-dev ;;
-              *) py_dev_pkg=python3-dev ;;
-            esac
-            apt-get update
-            apt-get install -y --no-install-recommends "${py_dev_pkg}"
-          else
-            echo "Python.h not found under ${PY_INCLUDE}; install python3-dev in the runner image." >&2
-            exit 1
-          fi
+          echo "Selected Python has no Python.h under ${PY_INCLUDE}; using Python standalone."
+          install_python_standalone
+          PY_INCLUDE=$("${AQT_PYTHON}" - <<'PY'
+        import sysconfig
+        print(sysconfig.get_path("include") or "")
+        PY
+        )
+          test -f "${PY_INCLUDE}/Python.h"
         fi
         rm -rf "${AQT_VENV}"
         "${AQT_PYTHON}" -m venv "${AQT_VENV}"
