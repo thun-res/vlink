@@ -17,6 +17,7 @@ FILTER=\
 -runtime/references,\
 -readability/check,\
 -readability/braces,\
+-readability/nolint,\
 -whitespace/indent_namespace
 
 echo -e "\n=== CPPLINT ===\n"
