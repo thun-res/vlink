@@ -34,11 +34,6 @@ function(vlink_target_system_includes_from target dependency)
 
   get_target_property(include_dirs ${dependency} INTERFACE_INCLUDE_DIRECTORIES)
   if(include_dirs)
-    set_property(
-      TARGET ${dependency}
-      APPEND
-      PROPERTY INTERFACE_SYSTEM_INCLUDE_DIRECTORIES ${include_dirs}
-    )
     target_include_directories(${target} SYSTEM PRIVATE ${include_dirs})
   endif()
 endfunction()
