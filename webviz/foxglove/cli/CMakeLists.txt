@@ -22,6 +22,8 @@ target_link_libraries(
           thirdparty::argparse
           $<BUILD_INTERFACE:foxglove_fbs_gen>
 )
+vlink_target_system_includes_from(${PROJECT_NAME} ${protobuf_libs})
+vlink_target_system_includes_from(${PROJECT_NAME} ${flatbuffers_libs})
 
 if(NOT TARGET vlink-exprtk_api)
   find_package(vlink-exprtk_api QUIET)

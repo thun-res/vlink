@@ -121,6 +121,8 @@ target_link_libraries(
   ${PROJECT_NAME} PRIVATE vlink-webviz-common ${protobuf_libs} ${flatbuffers_libs} thirdparty::json
                           thirdparty::argparse rerun_sdk
 )
+vlink_target_system_includes_from(${PROJECT_NAME} ${protobuf_libs})
+vlink_target_system_includes_from(${PROJECT_NAME} ${flatbuffers_libs})
 
 if(WIN32)
   target_compile_definitions(${PROJECT_NAME} PRIVATE "WIN32_LEAN_AND_MEAN" "NOMINMAX")
