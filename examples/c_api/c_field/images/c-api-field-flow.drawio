@@ -1,0 +1,146 @@
+<mxfile host="app.diagrams.net" modified="2026-05-19T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="c-api-field-flow" name="C API Field Flow">
+    <mxGraphModel dx="1120" dy="640" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1120" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="C API Setter / Getter Field Flow" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1040" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" value="Latest-value field model  -  push (callback) or poll (vlink_get) with late-join semantics" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="40" y="54" width="1040" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Setter side - C API orange -->
+        <mxCell id="setBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ffcc80;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#fff3e0;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="380" height="500" as="geometry" />
+        </mxCell>
+        <mxCell id="setBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="380" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="setT" value="Setter  -  writer (latest value)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#bf360c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="112" width="380" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="se1" value="vlink_schema_info_t schema = {&quot;text&quot;, VLINK_SCHEMA_RAW}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;strokeWidth=1.2;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="150" width="340" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="se2" value="vlink_create_setter(url, &amp;amp;schema, &amp;amp;setter)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcc80;strokeColor=#e65100;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="204" width="340" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="se3" value="vlink_set(setter, data, size)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=#e65100;strokeWidth=1.5;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="258" width="340" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="se4" value="loop: vlink_set(...)&#10;each call OVERWRITES prior value" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="318" width="340" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="se5" value="vlink_destroy_setter(&amp;amp;setter)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcc80;strokeColor=#e65100;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="394" width="340" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="seNote" value="Wraps Setter&amp;lt;Bytes&amp;gt;  -  one-and-only value slot per url" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#bf360c;" vertex="1" parent="1">
+          <mxGeometry x="60" y="454" width="340" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Storage / latest-value bag - purple -->
+        <mxCell id="bagBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ce93d8;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#f3e5f5;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="440" y="200" width="240" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="bagBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8e24aa;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="440" y="200" width="240" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="bagT" value="Field Cache" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="440" y="216" width="240" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="bagCur" value="current value&#10;(Bytes, latest only)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ce93d8;strokeColor=#6a1b9a;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="460" y="252" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="bagTopic" value="url: intra://c_api/field" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="460" y="324" width="200" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="bagSchema" value="schema metadata" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="460" y="368" width="200" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="bagJoin" value="late-join: new getter reads current" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="440" y="412" width="240" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Getter container - blue -->
+        <mxCell id="getBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="700" y="96" width="380" height="500" as="geometry" />
+        </mxCell>
+        <mxCell id="getBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="700" y="96" width="380" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="getT" value="Getter  -  reader (push or poll)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="700" y="112" width="380" height="28" as="geometry" />
+        </mxCell>
+
+        <!-- Push mode -->
+        <mxCell id="pTag" value="Push Mode" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#1565c0;" vertex="1" parent="1">
+          <mxGeometry x="720" y="146" width="340" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="ge1" value="static void on_value_changed(data, size, ud)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;strokeWidth=1.2;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="720" y="170" width="340" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="ge2" value="vlink_create_getter(url, &amp;amp;schema, &amp;amp;g, on_value_changed, ud)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="720" y="210" width="340" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="ge3" value="callback invoked on every change" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#1565c0;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="720" y="254" width="340" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Poll mode -->
+        <mxCell id="pTag2" value="Poll Mode" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#1565c0;" vertex="1" parent="1">
+          <mxGeometry x="720" y="302" width="340" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="ge4" value="vlink_create_getter(url, &amp;amp;schema, &amp;amp;g, NULL, NULL)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="720" y="326" width="340" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="ge5" value="uint8_t buf[256]; size_t sz = sizeof(buf);" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;strokeWidth=1.2;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="720" y="370" width="340" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="ge6" value="vlink_get(g, buf, &amp;amp;sz)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#1565c0;strokeWidth=1.5;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="720" y="406" width="340" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="ge7" value="VLINK_RET_MEMORY_ERROR -&amp;gt; sz set to required size" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;strokeWidth=1.2;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;arcSize=10;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="720" y="454" width="340" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="ge8" value="vlink_destroy_getter(&amp;amp;g)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="720" y="498" width="340" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="geNote" value="msg_callback = NULL -&amp;gt; poll mode  -  no thread invocation" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="720" y="544" width="340" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Setter internal arrows -->
+        <mxCell id="ase1" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#ef6c00;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="se1" target="se2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ase2" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#ef6c00;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="se2" target="se3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ase3" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#ef6c00;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="se3" target="se4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ase4" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#ef6c00;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="se4" target="se5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Cross: setter -> bag -->
+        <mxCell id="aw1" value="write" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#8e24aa;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;edgeStyle=orthogonalEdgeStyle;fontSize=11;fontStyle=1;fontColor=#4a148c;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="se3" target="bagCur">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- Cross: bag -> push getter -->
+        <mxCell id="aw2" value="notify" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#8e24aa;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;edgeStyle=orthogonalEdgeStyle;fontSize=11;fontStyle=1;fontColor=#4a148c;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="bagCur" target="ge3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- Cross: bag -> poll getter -->
+        <mxCell id="aw3" value="read" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#8e24aa;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;edgeStyle=orthogonalEdgeStyle;fontSize=11;fontStyle=1;fontColor=#4a148c;labelBackgroundColor=#ffffff;dashed=1;" edge="1" parent="1" source="bagCur" target="ge6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,12 @@
+/build
+/external
+/install
+
+.cache
+.idea
+.sublime-workspace
+.vscode
+.DS_Store
+CMakeUserPresets.json
+CMakeLists.txt.user*
+build-*

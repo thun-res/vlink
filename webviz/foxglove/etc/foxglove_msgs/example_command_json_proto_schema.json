@@ -1,0 +1,16 @@
+[
+  {
+    "_comment": "Foxglove frontend JSON publish with explicit jsonschema -> VLink protobuf direct route",
+    "encoding": "protobuf",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "throttle": { "type": "number" },
+        "brake": { "type": "number" },
+        "steering": { "type": "number" }
+      }
+    },
+    "url": "dds://vehicle/control/direct_cmd",
+    "ser": "control.proto.VehicleCmd"
+  }
+]

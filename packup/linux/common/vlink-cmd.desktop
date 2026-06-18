@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=VLink CMD
+Terminal=true
+Exec=run_cmd.sh
+Icon=vlink-cmd.png
+Categories=Development

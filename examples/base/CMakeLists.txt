@@ -1,0 +1,40 @@
+#
+# Copyright (C) 2026 by Thun Lu. All rights reserved.
+#
+
+cmake_minimum_required(VERSION 3.15...3.31)
+
+project(examples_base LANGUAGES CXX)
+
+if(NOT TARGET vlink)
+  include(GNUInstallDirs)
+  set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/output/bin)
+  set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/output/lib)
+  set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/output/lib)
+  if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Release")
+  endif()
+endif()
+
+add_subdirectory(bytes_basic)
+add_subdirectory(bytes_advanced)
+add_subdirectory(bytes_zerocopy)
+add_subdirectory(uuid_basic)
+add_subdirectory(logger_basic)
+add_subdirectory(logger_advanced)
+add_subdirectory(message_loop_basic)
+add_subdirectory(message_loop_advanced)
+add_subdirectory(timer)
+add_subdirectory(thread_pool)
+add_subdirectory(graph_task)
+add_subdirectory(cancellation)
+add_subdirectory(task_handle)
+add_subdirectory(elapsed_timer)
+add_subdirectory(spin_lock)
+add_subdirectory(object_pool)
+add_subdirectory(memory_pool)
+add_subdirectory(multi_loop)
+add_subdirectory(schedule)
+add_subdirectory(utils)
+add_subdirectory(process)
+add_subdirectory(deadline_timer)

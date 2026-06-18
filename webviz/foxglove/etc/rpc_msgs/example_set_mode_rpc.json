@@ -1,0 +1,16 @@
+[
+  {
+    "_comment": "Foxglove service call: frontend JSON request -> VLink protobuf request",
+    "name": "vehicle/set_mode",
+    "type": "vehicle.SetMode",
+    "timeout_ms": 1500,
+    "request": {},
+    "url": "dds://vehicle/service/set_mode",
+    "encoding": "protobuf",
+    "ser": "control.proto.SetModeRequest",
+    "response": {
+      "encoding": "protobuf",
+      "ser": "control.proto.SetModeResponse"
+    }
+  }
+]

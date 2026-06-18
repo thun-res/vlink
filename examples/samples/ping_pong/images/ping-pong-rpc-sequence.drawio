@@ -1,0 +1,132 @@
+<mxfile host="app.diagrams.net" modified="2026-05-19T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="ping-pong-rpc-sequence" name="Ping Pong Sequence">
+    <mxGraphModel dx="1120" dy="640" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1120" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Ping  -  Pong  -  Round-Trip Latency Measurement" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="1080" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Two Publisher  /  Subscriber pairs over distinct topics  &#183;  payload reused via Bytes::create(N)  &#183;  delay = (t2 - t1) / 2" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="20" y="56" width="1080" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ping_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="380" height="500" as="geometry" />
+        </mxCell>
+        <mxCell id="ping_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="380" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="ping_t" value="Ping Process  ( sample_ping )" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="116" width="380" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1" value="Bytes data = Bytes::create(test_size)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="156" width="340" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="p2" value="Publisher&lt;Bytes&gt; pub(get_ping_url())&#10;Subscriber&lt;Bytes&gt; sub(get_pong_url())" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="202" width="340" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p3" value="start_stamp = steady_clock::now()&#10;( atomic timestamp )" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="60" y="268" width="340" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p4" value="pub.publish(data)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="334" width="340" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="p5" value="Timer t; t.attach(&amp;message_loop)&#10;t.set_interval(1000)&#10;t.set_loop_count(Timer::kInfinite)&#10;t.start(send_func)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="384" width="340" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="p6" value="sub.listen([&amp;](const Bytes&amp;){&#10;  auto rtt = now() - start_stamp.load();&#10;  delay_ms = rtt.count() / 2000.0;&#10;})" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="60" y="478" width="340" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pong_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="700" y="100" width="380" height="500" as="geometry" />
+        </mxCell>
+        <mxCell id="pong_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="700" y="100" width="380" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="pong_t" value="Pong Process  ( sample_pong )" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="700" y="116" width="380" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="po1" value="Subscriber&lt;Bytes&gt; sub(get_ping_url())&#10;Publisher&lt;Bytes&gt;  pub(get_pong_url())" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="720" y="202" width="340" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="po2" value="sub.listen([&amp;pub](const Bytes&amp; data){&#10;  pub.publish(data);   // echo back&#10;})" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="720" y="284" width="340" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="po3" value="message_loop.run()&#10;// blocks until Ctrl+C" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="720" y="394" width="340" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="po4" value="// shm:// path:  const Bytes&amp; may&#10;//   alias shared memory  -  no copy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=2;fontColor=#0d47a1;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="720" y="466" width="340" height="56" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ar1" value="&lt;b&gt;PING_URL  -  ping topic&lt;/b&gt;&#10;Bytes payload  ( test_size )" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#1976d2;rounded=1;edgeStyle=orthogonalEdgeStyle;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="420" y="354" as="sourcePoint" />
+            <mxPoint x="700" y="312" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ar2" value="&lt;b&gt;PONG_URL  -  pong topic&lt;/b&gt;&#10;echoed Bytes payload" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#1976d2;rounded=1;edgeStyle=orthogonalEdgeStyle;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="700" y="340" as="sourcePoint" />
+            <mxPoint x="420" y="528" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="env_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#eceff1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="440" y="100" width="240" height="500" as="geometry" />
+        </mxCell>
+        <mxCell id="env_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="440" y="100" width="240" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="env_t" value="Transport Selector" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="440" y="116" width="240" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="env_sub" value="get_ping_url()  /  get_pong_url()&#10;PING_URL  &gt;  PING_TRANSPORT  &gt;  dds" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontFamily=Courier New;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="440" y="144" width="240" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="env1" value="dds       dds://ping   dds://pong" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;arcSize=10;strokeWidth=1.2;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="460" y="186" width="200" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="env2" value="ddsc      ddsc://ping  ddsc://pong" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;arcSize=10;strokeWidth=1.2;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="460" y="224" width="200" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="env3" value="shm       shm://ping_pong/*" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bdbdbd;strokeColor=#424242;arcSize=10;strokeWidth=1.2;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="460" y="262" width="200" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="env4" value="someip    0x05/0x06  ev=0x8/0x9" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;arcSize=10;strokeWidth=1.2;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="460" y="300" width="200" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="env5" value="fdbus     fdbus://ping_pong/*" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;arcSize=10;strokeWidth=1.2;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="460" y="338" width="200" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="env6" value="qnx       qnx://ping_pong/*" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;arcSize=10;strokeWidth=1.2;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="460" y="376" width="200" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="env_lat" value="Reference one-way latency&#10;( 1 KB payload )" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="440" y="420" width="240" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="env_lat1" value="shm    &lt; 0.05 ms" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bdbdbd;strokeColor=#424242;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="460" y="454" width="200" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="env_lat2" value="ddsc   0.1 - 0.3 ms" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="460" y="486" width="200" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="env_lat3" value="dds    0.1 - 0.5 ms" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="460" y="518" width="200" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="env_foot" value="run iox-roudi  before shm" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontFamily=Courier New;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="440" y="552" width="240" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="env_foot2" value="raw Bytes  -  no serializer" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontFamily=Courier New;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="440" y="574" width="240" height="22" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

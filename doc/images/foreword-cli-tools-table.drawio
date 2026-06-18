@@ -1,0 +1,134 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="foreword-cli-tools-table" name="CLI Tools Overview">
+    <mxGraphModel dx="900" dy="640" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="VLink CLI Tools" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="20" y="24" width="860" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="9 tools shipped with the CLI component  &#183;  installed under build/output/bin/" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="20" y="58" width="860" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Table container -->
+        <mxCell id="tbg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=8;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="100" width="780" height="490" as="geometry" />
+        </mxCell>
+
+        <!-- Header row -->
+        <mxCell id="h_tool" value="Tool" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#455a64;strokeColor=#263238;strokeWidth=1;fontSize=13;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="60" y="100" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="h_cat" value="Category" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#455a64;strokeColor=#263238;strokeWidth=1;fontSize=13;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="240" y="100" width="160" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="h_desc" value="Description" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#455a64;strokeColor=#263238;strokeWidth=1;fontSize=13;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="400" y="100" width="440" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Row 1: vlink-info (Inspect - gray) -->
+        <mxCell id="r1a" value="vlink-info" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="60" y="140" width="180" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r1b" value="Inspect" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#bdbdbd;strokeWidth=1;fontSize=11;fontStyle=1;fontColor=#424242;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="240" y="140" width="160" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r1c" value="Show VLink version, build options, enabled modules" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1;fontSize=12;fontColor=#455a64;align=left;verticalAlign=middle;spacingLeft=12;" vertex="1" parent="1">
+          <mxGeometry x="400" y="140" width="440" height="48" as="geometry" />
+        </mxCell>
+
+        <!-- Row 2: vlink-list (Discovery - green) -->
+        <mxCell id="r2a" value="vlink-list" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="60" y="188" width="180" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r2b" value="Discovery" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#bdbdbd;strokeWidth=1;fontSize=11;fontStyle=1;fontColor=#1b5e20;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="240" y="188" width="160" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r2c" value="List live nodes and topics discovered on the network" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1;fontSize=12;fontColor=#455a64;align=left;verticalAlign=middle;spacingLeft=12;" vertex="1" parent="1">
+          <mxGeometry x="400" y="188" width="440" height="48" as="geometry" />
+        </mxCell>
+
+        <!-- Row 3: vlink-monitor -->
+        <mxCell id="r3a" value="vlink-monitor" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="60" y="236" width="180" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r3b" value="Discovery" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#bdbdbd;strokeWidth=1;fontSize=11;fontStyle=1;fontColor=#1b5e20;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="240" y="236" width="160" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r3c" value="Watch publish rate and latency for topics in real time" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1;fontSize=12;fontColor=#455a64;align=left;verticalAlign=middle;spacingLeft=12;" vertex="1" parent="1">
+          <mxGeometry x="400" y="236" width="440" height="48" as="geometry" />
+        </mxCell>
+
+        <!-- Row 4: vlink-dump -->
+        <mxCell id="r4a" value="vlink-dump" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="60" y="284" width="180" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r4b" value="Inspect" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#bdbdbd;strokeWidth=1;fontSize=11;fontStyle=1;fontColor=#424242;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="240" y="284" width="160" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r4c" value="Subscribe to a topic and print decoded payloads" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1;fontSize=12;fontColor=#455a64;align=left;verticalAlign=middle;spacingLeft=12;" vertex="1" parent="1">
+          <mxGeometry x="400" y="284" width="440" height="48" as="geometry" />
+        </mxCell>
+
+        <!-- Row 5: vlink-check -->
+        <mxCell id="r5a" value="vlink-check" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="60" y="332" width="180" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r5b" value="Diagnostics" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#bdbdbd;strokeWidth=1;fontSize=11;fontStyle=1;fontColor=#b71c1c;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="240" y="332" width="160" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r5c" value="Probe environment (version, env vars, transports, connectivity)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1;fontSize=12;fontColor=#455a64;align=left;verticalAlign=middle;spacingLeft=12;" vertex="1" parent="1">
+          <mxGeometry x="400" y="332" width="440" height="48" as="geometry" />
+        </mxCell>
+
+        <!-- Row 6: vlink-bag -->
+        <mxCell id="r6a" value="vlink-bag" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="60" y="380" width="180" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r6b" value="Recording" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#bdbdbd;strokeWidth=1;fontSize=11;fontStyle=1;fontColor=#4a148c;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="240" y="380" width="160" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r6c" value="Record and play back messages (SQLite / MCAP bag files)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1;fontSize=12;fontColor=#455a64;align=left;verticalAlign=middle;spacingLeft=12;" vertex="1" parent="1">
+          <mxGeometry x="400" y="380" width="440" height="48" as="geometry" />
+        </mxCell>
+
+        <!-- Row 7: vlink-eproto -->
+        <mxCell id="r7a" value="vlink-eproto" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="60" y="428" width="180" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r7b" value="Schema" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#bdbdbd;strokeWidth=1;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="240" y="428" width="160" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r7c" value="Publish / subscribe Protobuf messages from a .proto file" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1;fontSize=12;fontColor=#455a64;align=left;verticalAlign=middle;spacingLeft=12;" vertex="1" parent="1">
+          <mxGeometry x="400" y="428" width="440" height="48" as="geometry" />
+        </mxCell>
+
+        <!-- Row 8: vlink-efbs -->
+        <mxCell id="r8a" value="vlink-efbs" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="60" y="476" width="180" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r8b" value="Schema" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#bdbdbd;strokeWidth=1;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="240" y="476" width="160" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r8c" value="Publish / subscribe FlatBuffers messages from an .fbs file" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1;fontSize=12;fontColor=#455a64;align=left;verticalAlign=middle;spacingLeft=12;" vertex="1" parent="1">
+          <mxGeometry x="400" y="476" width="440" height="48" as="geometry" />
+        </mxCell>
+
+        <!-- Row 9: vlink-bench -->
+        <mxCell id="r9a" value="vlink-bench" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="60" y="524" width="180" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r9b" value="Benchmark" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#bdbdbd;strokeWidth=1;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="240" y="524" width="160" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r9c" value="Measure pub/sub throughput and end-to-end latency" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1;fontSize=12;fontColor=#455a64;align=left;verticalAlign=middle;spacingLeft=12;" vertex="1" parent="1">
+          <mxGeometry x="400" y="524" width="440" height="48" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

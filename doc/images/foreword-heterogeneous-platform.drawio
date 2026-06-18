@@ -1,0 +1,150 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="foreword-heterogeneous-platform" name="Heterogeneous Platform">
+    <mxGraphModel dx="1000" dy="520" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="520" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="VLink on Heterogeneous Platforms" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="20" y="22" width="960" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Same API, same user code &#8212; change the URL prefix to switch transport" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="20" y="54" width="960" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Platform row: 4 platforms at y=100, width 960, 4 boxes of 200, gap 20 -->
+        <!-- ARM SoC - blue -->
+        <mxCell id="arm" value="&lt;b&gt;ARM SoC&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;Linux / Android&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;arcSize=10;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=1;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="200" height="80" as="geometry" />
+        </mxCell>
+        <!-- x86 Server - green -->
+        <mxCell id="x86" value="&lt;b&gt;x86 Server&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;Linux / Windows&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;arcSize=10;fontSize=13;fontStyle=1;fontColor=#1b5e20;shadow=1;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="260" y="100" width="200" height="80" as="geometry" />
+        </mxCell>
+        <!-- QNX RTOS - orange -->
+        <mxCell id="qnx" value="&lt;b&gt;QNX RTOS&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;safety-critical ECU&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;arcSize=10;fontSize=13;fontStyle=1;fontColor=#bf360c;shadow=1;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="480" y="100" width="200" height="80" as="geometry" />
+        </mxCell>
+        <!-- Edge / IoT - purple -->
+        <mxCell id="iot" value="&lt;b&gt;Edge / IoT device&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;MCU / embedded Linux&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1.5;arcSize=10;fontSize=13;fontStyle=1;fontColor=#4a148c;shadow=1;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="700" y="100" width="200" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Connector lines from each platform down to VLink bar -->
+        <mxCell id="vc1" value="" style="endArrow=none;html=1;strokeWidth=1.5;strokeColor=#90a4ae;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="140" y="180" as="sourcePoint" />
+            <mxPoint x="140" y="220" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vc2" value="" style="endArrow=none;html=1;strokeWidth=1.5;strokeColor=#90a4ae;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="360" y="180" as="sourcePoint" />
+            <mxPoint x="360" y="220" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vc3" value="" style="endArrow=none;html=1;strokeWidth=1.5;strokeColor=#90a4ae;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="580" y="180" as="sourcePoint" />
+            <mxPoint x="580" y="220" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vc4" value="" style="endArrow=none;html=1;strokeWidth=1.5;strokeColor=#90a4ae;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="800" y="180" as="sourcePoint" />
+            <mxPoint x="800" y="220" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- VLink middleware bar -->
+        <mxCell id="bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#455a64;strokeColor=#263238;strokeWidth=1.5;arcSize=10;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="220" width="920" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="barlabel" value="&lt;b&gt;VLink Middleware&lt;/b&gt;  &#8212;  unified URL addressing, pluggable transports, shared API" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="40" y="220" width="920" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Transport scheme row: 8 tiles ~width 920, 8 tiles w=100 gap=(920-800)/7 ~17 -->
+        <mxCell id="trlabel" value="Pluggable transport backends" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="40" y="298" width="920" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- 8 scheme tiles: y=332, each w=100, gap computed: total 920 -> (920 - 8*100)/7 = 17.14 ~17 -->
+        <mxCell id="sch1" value="intra://" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;arcSize=8;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="332" width="104" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="sch2" value="shm://" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;arcSize=8;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="156" y="332" width="104" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="sch3" value="dds://" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;arcSize=8;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;shadow=1;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="272" y="332" width="104" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="sch4" value="zenoh://" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;arcSize=8;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;shadow=1;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="388" y="332" width="104" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="sch5" value="someip://" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;arcSize=8;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;shadow=1;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="504" y="332" width="104" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="sch6" value="qnx://" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;arcSize=8;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;shadow=1;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="620" y="332" width="104" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="sch7" value="mqtt://" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1.2;arcSize=8;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;shadow=1;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="736" y="332" width="104" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="sch8" value="fdbus://" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1.2;arcSize=8;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;shadow=1;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="852" y="332" width="108" height="38" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow bar -> schemes (one center arrow) -->
+        <mxCell id="bs_arr" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#455a64;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="500" y="280" as="sourcePoint" />
+            <mxPoint x="500" y="326" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Legend color map -->
+        <mxCell id="legbg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1.2;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="400" width="920" height="94" as="geometry" />
+        </mxCell>
+        <mxCell id="legtitle" value="&lt;b&gt;Color coding (platform &#8596; typical transport)&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="60" y="408" width="400" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lg_arm_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="440" width="18" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_arm_txt" value="ARM SoC  &#8594;  intra, shm" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="84" y="440" width="200" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lg_x86_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="300" y="440" width="18" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_x86_txt" value="x86 Server  &#8594;  dds, zenoh" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="324" y="440" width="200" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lg_qnx_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="540" y="440" width="18" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_qnx_txt" value="QNX RTOS  &#8594;  someip, qnx" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#bf360c;" vertex="1" parent="1">
+          <mxGeometry x="564" y="440" width="200" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lg_iot_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="780" y="440" width="18" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_iot_txt" value="Edge / IoT  &#8594;  mqtt, fdbus" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="804" y="440" width="186" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lgnote" value="Note: the URL prefix selects the transport; the user code does not change when swapping backends." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="60" y="466" width="880" height="22" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

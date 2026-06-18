@@ -1,0 +1,180 @@
+<mxfile host="app.diagrams.net" modified="2026-05-19T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="qos-basic-config" name="QoS Basics Configuration Flow">
+    <mxGraphModel dx="1120" dy="640" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1120" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="QoS Basics Configuration Flow" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="20" y="24" width="1080" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="build Qos sub-policies -&gt; DdsConf::register_qos(name, qos) -&gt; reference via dds://topic?qos=name" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#1565c0;" vertex="1" parent="1">
+          <mxGeometry x="20" y="58" width="1080" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Section 1: Qos struct (left) -->
+        <mxCell id="qos_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#eceff1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="360" height="460" as="geometry" />
+        </mxCell>
+        <mxCell id="qos_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="360" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="qos_t" value="1. Qos struct" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="40" y="116" width="360" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="qos_st" value="qos.valid = true MUST be set" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="40" y="144" width="360" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="qos_name" value="qos.name[20]   sensor / command / ..." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="180" width="320" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="qos_rel" value="reliability.kind   kBestEffort / kReliable&#10;block_time / heartbeat_time" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="212" width="320" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="qos_hist" value="history.kind   kKeepLast / kKeepAll&#10;history.depth = N" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="258" width="320" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="qos_dur" value="durability.kind&#10;Volatile / TransientLocal / Transient / Persistent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="304" width="320" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="qos_pm" value="publish_mode.kind   kSync / kASync" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="350" width="320" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="qos_dl" value="deadline.period   /   lifespan.duration&#10;latency_budget.duration" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="382" width="320" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="qos_live" value="liveliness   /   destination_order   /   ownership" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="428" width="320" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="qos_res" value="resource_limits   max_samples / max_instances /&#10;                 max_samples_per_instance" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="460" width="320" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="qos_add" value="additions.priority   /   additions.is_express" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="506" width="320" height="26" as="geometry" />
+        </mxCell>
+
+        <!-- Section 2: Register + property (middle) -->
+        <mxCell id="reg_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#eceff1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="440" y="100" width="320" height="460" as="geometry" />
+        </mxCell>
+        <mxCell id="reg_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="440" y="100" width="320" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="reg_t" value="2. Register + Apply" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="440" y="116" width="320" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="reg_st" value="two parallel paths" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#1565c0;" vertex="1" parent="1">
+          <mxGeometry x="440" y="144" width="320" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="reg_a_t" value="Path A: register_qos" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="460" y="180" width="280" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="reg_a" value="DdsConf::register_qos(&quot;sensor&quot;, qos)&#10;DdscConf / DdsrConf / DdstConf / ZenohConf" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="460" y="206" width="280" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="reg_a_url" value="dds://sensor/lidar?qos=sensor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;strokeWidth=1.2;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="460" y="270" width="280" height="34" as="geometry" />
+        </mxCell>
+
+        <mxCell id="reg_b_t" value="Path B: per-endpoint property" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="460" y="324" width="280" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="reg_b" value="pub.set_property(&quot;qos.reliability.kind&quot;, &quot;1&quot;)&#10;pub.set_property(&quot;qos.history.depth&quot;, &quot;50&quot;)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.5;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="460" y="350" width="280" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="reg_b_note" value="must be called before init() / first publish" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#c62828;" vertex="1" parent="1">
+          <mxGeometry x="460" y="408" width="280" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="url_t" value="URL parameter syntax" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="460" y="436" width="280" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="url_box" value="dds://topic [?domain=N] [&amp;depth=N] [&amp;qos=name]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="460" y="462" width="280" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="url_e1" value="dds://vehicle/speed?domain=10&amp;qos=sensor" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="460" y="500" width="280" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="url_e2" value="dds://sensor/lidar?qos=sensor&amp;depth=20" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="460" y="520" width="280" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Section 3: Transports (right) -->
+        <mxCell id="tr_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#eceff1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="800" y="100" width="280" height="460" as="geometry" />
+        </mxCell>
+        <mxCell id="tr_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="800" y="100" width="280" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="tr_t" value="3. Transports" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="800" y="116" width="280" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="tr_st" value="QoS support per backend" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="800" y="144" width="280" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tr_full" value="QoS-capable" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="180" width="240" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="tr_dds" value="dds://    DdsConf" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1;arcSize=8;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="206" width="240" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="tr_ddsc" value="ddsc://   DdscConf" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1;arcSize=8;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="232" width="240" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="tr_ddsr" value="ddsr://   DdsrConf" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1;arcSize=8;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="258" width="240" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="tr_ddst" value="ddst://   DdstConf" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1;arcSize=8;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="284" width="240" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="tr_zenoh" value="zenoh://  ZenohConf" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1;arcSize=8;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="310" width="240" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tr_partial" value="No QoS / partial" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="820" y="346" width="240" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="tr_intra" value="intra://   no transport QoS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=8;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="372" width="240" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="tr_shm" value="shm://     depth / history only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=8;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="398" width="240" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="tr_someip" value="someip://  service-level QoS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=8;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="424" width="240" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="tr_mqtt" value="mqtt://    QoS 0 / 1 / 2 via ?qos" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=8;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="450" width="240" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="tr_fdbus" value="fdbus://   none" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=8;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="476" width="240" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tr_note" value="name length &lt;= 20 bytes (19 + NUL)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="820" y="510" width="240" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="tr_note2" value="unsupported policies are silently ignored" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="820" y="528" width="240" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows -->
+        <mxCell id="a_qos_reg" value="register" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#1565c0;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.2;entryX=0;entryY=0.5;" edge="1" parent="1" source="qos_bg" target="reg_a">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_qos_prop" value="set_property" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#424242;fontSize=11;fontStyle=1;fontColor=#212121;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.7;entryX=0;entryY=0.5;" edge="1" parent="1" source="qos_bg" target="reg_b">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_a_url" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#1565c0;rounded=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="reg_a" target="reg_a_url">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_reg_tr" value="apply" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#1565c0;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.3;" edge="1" parent="1" source="reg_a_url" target="tr_dds">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

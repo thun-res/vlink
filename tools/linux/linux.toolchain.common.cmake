@@ -1,0 +1,47 @@
+set(CMAKE_SYSTEM_NAME Linux)
+
+if(NOT DEFINED ENV{LINUX_INSTALL_PREFIX} AND DEFINED ENV{SYSROOT})
+  set(ENV{LINUX_INSTALL_PREFIX} "$ENV{SYSROOT}/usr")
+endif()
+
+# Root
+if(DEFINED ENV{LINUX_INSTALL_PREFIX})
+  set(LINUX_INSTALL_PREFIX "$ENV{LINUX_INSTALL_PREFIX}")
+  list(PREPEND CMAKE_FIND_ROOT_PATH "${LINUX_INSTALL_PREFIX}")
+  list(PREPEND _pkg_config "${LINUX_INSTALL_PREFIX}/lib/pkgconfig")
+  set(CMAKE_INSTALL_PREFIX
+      "${LINUX_INSTALL_PREFIX}"
+      CACHE PATH "Install path"
+  )
+  set(CMAKE_SKIP_RPATH
+      TRUE
+      CACHE BOOL "Linux skip rpath"
+  )
+  set(CMAKE_EXE_LINKER_FLAGS
+      "-Wl,-rpath-link,${LINUX_INSTALL_PREFIX}/lib"
+      CACHE STRING "Linux exe link rpath"
+  )
+  set(CMAKE_SHARED_LINKER_FLAGS
+      "-Wl,-rpath-link,${LINUX_INSTALL_PREFIX}/lib"
+      CACHE STRING "Linux shared link rpath"
+  )
+  set(CMAKE_C_FLAGS "-I${LINUX_INSTALL_PREFIX}/include -L${LINUX_INSTALL_PREFIX}/lib ${CMAKE_C_FLAGS}")
+  set(CMAKE_CXX_FLAGS "-I${LINUX_INSTALL_PREFIX}/include -L${LINUX_INSTALL_PREFIX}/lib ${CMAKE_CXX_FLAGS}")
+  list(FIND CMAKE_FIND_ROOT_PATH "${CMAKE_INSTALL_PREFIX}" _find_index)
+  if(_find_index EQUAL -1 AND NOT "${CMAKE_INSTALL_PREFIX}" STREQUAL "${LINUX_INSTALL_PREFIX}")
+    list(PREPEND CMAKE_FIND_ROOT_PATH "${CMAKE_INSTALL_PREFIX}")
+    list(PREPEND _pkg_config "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig")
+  endif()
+endif()
+set(ENV{PKG_CONFIG_PATH} "${_pkg_config}")
+unset(_find_index)
+unset(_pkg_config)
+
+# Flags
+if(DEFINED ENV{CFLAGS})
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} $ENV{CFLAGS}")
+endif()
+
+if(DEFINED ENV{CXXFLAGS})
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} $ENV{CXXFLAGS}")
+endif()

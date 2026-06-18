@@ -1,0 +1,153 @@
+<mxfile host="app.diagrams.net" modified="2026-05-19T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="node-loop-binding" name="Node MessageLoop Binding">
+    <mxGraphModel dx="1120" dy="640" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1120" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Node.attach(&amp;loop)  -  Routing Callbacks to a MessageLoop Thread" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="1080" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Without attach  -  callback runs on transport thread  &#183;  With attach  -  callback runs serialised on the loop thread" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="20" y="56" width="1080" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="caseA_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#eceff1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="510" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="caseA_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="510" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="caseA_t" value="Case A  -  No attach  ( callback on transport thread )" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="40" y="116" width="510" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="A_pub" value="Publisher&lt;T&gt;.publish(msg)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="160" width="220" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="A_tr" value="Transport internal thread&#10;( dds / shm / ddsc )" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bdbdbd;strokeColor=#424242;arcSize=10;strokeWidth=1.2;fontSize=11;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="226" width="220" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="A_cb" value="sub.listen(cb)&#10;cb runs on transport thread&#10;parallel  -  needs mutex" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="310" y="160" width="220" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="A_arr1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#616161;endArrow=classic;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" source="A_pub" target="A_tr" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="A_arr2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#616161;endArrow=classic;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" source="A_tr" target="A_cb" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="A_foot" value="Thread is not deterministic  -  concurrent callbacks possible" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="40" y="296" width="510" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="caseB_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="570" y="100" width="510" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="caseB_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="570" y="100" width="510" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="caseB_t" value="Case B  -  attach(&amp;loop)  ( serialised on loop thread )" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="570" y="116" width="510" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="B_pub" value="Publisher&lt;T&gt;.publish(msg)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="590" y="160" width="220" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="B_tr" value="Transport internal thread" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bdbdbd;strokeColor=#424242;arcSize=10;strokeWidth=1.2;fontSize=11;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="590" y="226" width="220" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="B_loop" value="MessageLoop  &quot;my_loop&quot;&#10;loop.async_run()&#10;sub.attach(&amp;loop)&#10;cb runs serialised here" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="840" y="160" width="220" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="B_arr1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#1976d2;endArrow=classic;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" source="B_pub" target="B_tr" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="B_arr2" value="&lt;b&gt;post_task&lt;/b&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#1976d2;endArrow=classic;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;" edge="1" source="B_tr" target="B_loop" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="B_foot" value="Single thread  -  deterministic order  -  no user mutex needed" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="570" y="296" width="510" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pat1_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="360" width="340" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="pat1_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="360" width="340" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="pat1_t" value="Pattern 1  -  Shared Loop" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="376" width="340" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="pat1_s1" value="sub1.attach(&amp;loop)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="408" width="140" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="pat1_s2" value="sub2.attach(&amp;loop)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="220" y="408" width="140" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="pat1_l" value="shared_loop  ( single thread )" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="60" y="464" width="300" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="pat1_a1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#1976d2;endArrow=classic;endFill=1;exitX=0.5;exitY=1;entryX=0.25;entryY=0;" edge="1" source="pat1_s1" target="pat1_l" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="pat1_a2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#1976d2;endArrow=classic;endFill=1;exitX=0.5;exitY=1;entryX=0.75;entryY=0;" edge="1" source="pat1_s2" target="pat1_l" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="pat1_f" value="Callbacks serialised  -  no locks needed" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="522" width="340" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="pat1_f2" value="Use when subscribers share mutable state" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="40" y="548" width="340" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="pat1_f3" value="loop.wait_for_idle(1000)   loop.quit()" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontStyle=2;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="572" width="340" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pat2_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="400" y="360" width="340" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="pat2_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="400" y="360" width="340" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="pat2_t" value="Pattern 2  -  Isolated Loops" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="376" width="340" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="pat2_s1" value="sub_a.attach(&amp;loop_a)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="408" width="140" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="pat2_s2" value="sub_b.attach(&amp;loop_b)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="580" y="408" width="140" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="pat2_la" value="loop_a thread" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="420" y="464" width="140" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="pat2_lb" value="loop_b thread" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="580" y="464" width="140" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="pat2_a1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#1976d2;endArrow=classic;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" source="pat2_s1" target="pat2_la" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="pat2_a2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#1976d2;endArrow=classic;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" source="pat2_s2" target="pat2_lb" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="pat2_f" value="Callbacks parallel  -  synchronise shared state" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="522" width="340" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="pat2_f2" value="Use to isolate latency-critical subscribers" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="400" y="548" width="340" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="pat2_f3" value="loop.is_in_same_thread()  verifies dispatch" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontStyle=2;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="572" width="340" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pat3_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="760" y="360" width="320" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="pat3_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="760" y="360" width="320" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="pat3_t" value="Pattern 3  -  Server  /  Publisher attach" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="376" width="320" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="pat3_n1" value="Server&lt;Req, Resp&gt; server(url)&#10;server.attach(&amp;server_loop)&#10;server.listen(handler)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="780" y="408" width="280" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="pat3_n2" value="Publisher&lt;T&gt; pub(url)&#10;pub.attach(&amp;loop)&#10;// connect / disconnect on loop" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="780" y="486" width="280" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="pat3_f" value="attach must be called before listen" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="558" width="320" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="pat3_f2" value="loop.quit() + loop.wait_for_quit()" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="760" y="582" width="320" height="22" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

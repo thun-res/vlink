@@ -1,0 +1,88 @@
+#
+# Copyright (C) 2026 by Thun Lu. All rights reserved.
+#
+
+set(VLINK_MODULE_NAME fdbus)
+set(VLINK_MODULE_IMPORT_ALL FALSE)
+
+project(vlink-${VLINK_MODULE_NAME} LANGUAGES CXX)
+
+# options
+option(SKIP_FDBUS "Skip fdbus module" OFF)
+
+if(SKIP_FDBUS)
+  message(STATUS "Skip fdbus module")
+  return()
+endif()
+
+# requires
+find_path(
+  FDBUS_INCLUDE_DIR
+  NAMES fdbus/fdbus.h
+  PATHS /usr/local/usr/include
+)
+find_library(
+  FDBUS_LIBRARY
+  NAMES fdbus libfdbus
+  PATHS /usr/local/usr/lib
+)
+find_program(
+  FDBUS_NAME_SERVER
+  NAMES name_server
+  PATHS /usr/local/usr/bin
+)
+find_program(
+  FDBUS_HOST_SERVER
+  NAMES host_server
+  PATHS /usr/local/usr/bin
+)
+
+if(NOT FDBUS_INCLUDE_DIR OR NOT FDBUS_LIBRARY)
+  message(STATUS "Ignore fdbus module")
+  return()
+endif()
+
+# rt-libs
+list(APPEND VLINK_LIBRARIES ${PROJECT_NAMESPACE}${VLINK_MODULE_NAME})
+set(VLINK_LIBRARIES
+    ${VLINK_LIBRARIES}
+    PARENT_SCOPE
+)
+
+# src
+file(GLOB PROJECT_HDRS CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/*.h)
+file(GLOB PROJECT_SRCS CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/*.cc)
+add_library(${PROJECT_NAME} ${PROJECT_HDRS} ${PROJECT_SRCS})
+add_library(${PROJECT_NAMESPACE}${PROJECT_NAME} ALIAS ${PROJECT_NAME})
+add_library(${PROJECT_NAMESPACE}${VLINK_MODULE_NAME} ALIAS ${PROJECT_NAME})
+target_include_directories(${PROJECT_NAME} PRIVATE ${FDBUS_INCLUDE_DIR})
+target_link_libraries(${PROJECT_NAME} PUBLIC vlink::vlink)
+target_link_libraries(${PROJECT_NAME} PRIVATE ${FDBUS_LIBRARY})
+target_compile_definitions(
+  ${PROJECT_NAME}
+  PRIVATE "${VLINK_LIB_DEFINES}"
+  PUBLIC "VLINK_SUPPORT_FDBUS"
+)
+
+# install
+install(
+  TARGETS ${PROJECT_NAME}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT runtime
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT devel
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+          COMPONENT runtime
+          NAMELINK_COMPONENT devel
+)
+
+# export
+vlink_export(${PROJECT_NAME} ${PROJECT_NAME} ${PROJECT_NAMESPACE} ${CMAKE_PROJECT_VERSION})
+
+# name_server/host_server
+if(FDBUS_NAME_SERVER AND FDBUS_HOST_SERVER)
+  add_custom_command(
+    TARGET ${PROJECT_NAME}
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy "${FDBUS_NAME_SERVER}" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+    COMMAND ${CMAKE_COMMAND} -E copy "${FDBUS_HOST_SERVER}" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+  )
+endif()

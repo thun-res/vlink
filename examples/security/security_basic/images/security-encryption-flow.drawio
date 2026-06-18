@@ -1,0 +1,107 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="security-encryption" name="Security Encryption Pipeline">
+    <mxGraphModel dx="1180" dy="620" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1180" pageHeight="620" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Security Encryption Pipeline  -  AES-128-GCM AEAD" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="30" y="22" width="1120" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Plaintext is encrypted before transport; decrypted on delivery using the same shared key" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="30" y="58" width="1120" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pubBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef9a9a;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#ffebee;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="1100" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="pubBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d32f2f;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="1100" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="pubT" value="SecurityPublisher  -  encrypt side" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#b71c1c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="116" width="1100" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pMsg" value="Message&lt;T&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#b71c1c;strokeWidth=1.2;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#b71c1c;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="70" y="180" width="160" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="pSer" value="Serialize&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;to Bytes&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#b71c1c;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#b71c1c;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="270" y="180" width="160" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="pPad" value="Nonce&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;12 B random per msg&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#b71c1c;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#b71c1c;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="470" y="180" width="170" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="pEnc" value="Encrypt + Tag&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;AES-128-GCM&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d32f2f;strokeColor=#b71c1c;strokeWidth=1.5;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="680" y="180" width="170" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="pTx" value="Transport&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;dds / shm / zenoh&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#424242;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="890" y="180" width="180" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pA1" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#d32f2f;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;" edge="1" parent="1" source="pMsg" target="pSer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pA2" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#d32f2f;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;" edge="1" parent="1" source="pSer" target="pPad">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pA3" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#d32f2f;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;" edge="1" parent="1" source="pPad" target="pEnc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pA4" value="ciphertext" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.4;strokeColor=#b71c1c;fontSize=11;fontStyle=1;fontColor=#b71c1c;exitX=1;exitY=0.5;entryX=0;entryY=0.5;labelBackgroundColor=#ffffff;rounded=1;" edge="1" parent="1" source="pEnc" target="pTx">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="xWire" value="ciphertext flows across the wire" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.8;strokeColor=#616161;fontSize=12;fontStyle=1;fontColor=#424242;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="980" y="300" as="sourcePoint" />
+            <mxPoint x="980" y="360" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="subBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="360" width="1100" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="subBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="360" width="1100" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="subT" value="SecuritySubscriber  -  decrypt side" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="40" y="376" width="1100" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sRx" value="Transport&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;receive ciphertext&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#424242;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="890" y="440" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="sDec" value="Verify + Decrypt&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;AES-128-GCM&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=#1b5e20;strokeWidth=1.5;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="680" y="440" width="170" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="sUnpad" value="GCM tag check&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;reject if mismatch&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#1b5e20;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="470" y="440" width="170" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="sDeser" value="Deserialize&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;from Bytes&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#1b5e20;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="270" y="440" width="160" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="sCb" value="callback(msg)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#1b5e20;strokeWidth=1.2;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="70" y="440" width="160" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sA1" value="ciphertext" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.4;strokeColor=#1b5e20;fontSize=11;fontStyle=1;fontColor=#1b5e20;exitX=0;exitY=0.5;entryX=1;entryY=0.5;labelBackgroundColor=#ffffff;rounded=1;" edge="1" parent="1" source="sRx" target="sDec">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sA2" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#388e3c;exitX=0;exitY=0.5;entryX=1;entryY=0.5;rounded=1;" edge="1" parent="1" source="sDec" target="sUnpad">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sA3" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#388e3c;exitX=0;exitY=0.5;entryX=1;entryY=0.5;rounded=1;" edge="1" parent="1" source="sUnpad" target="sDeser">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sA4" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#388e3c;exitX=0;exitY=0.5;entryX=1;entryY=0.5;rounded=1;" edge="1" parent="1" source="sDeser" target="sCb">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note1" value="Pass cfg as the SecurityXxx constructor's second argument   -   Config::key is SHA-256-truncated into a 16-byte AES-128-GCM key" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1.2;fontSize=12;fontStyle=2;fontColor=#546e7a;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="140" y="580" width="900" height="26" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

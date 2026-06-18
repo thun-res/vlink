@@ -1,0 +1,11 @@
+{
+  "ser": "planning.proto.ReferenceLine",
+  "archetype": "LineStrips3D",
+  "encoding": "protobuf",
+  "field_mappings": [
+    { "source": "points", "target": "points" },
+    { "source": "x", "target": "point_x" },
+    { "source": "y", "target": "point_y" },
+    { "source": "z", "target": "point_z" }
+  ]
+}

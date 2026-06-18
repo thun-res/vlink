@@ -1,0 +1,136 @@
+<mxfile host="app.diagrams.net" modified="2026-05-14T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="task-handle-state-machine" name="TaskHandle State Machine">
+    <mxGraphModel dx="1100" dy="640" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="TaskHandle State Machine" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1020" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="3 non-terminal stages &#160;&#183;&#160; 5 terminal stages &#160;&#183;&#160; once terminal, the state is frozen and wait() unblocks all waiters" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="54" width="1020" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="entry" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#424242;strokeColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="50" y="206" width="18" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="entry_arr" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#424242;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="68" y="215" as="sourcePoint" />
+            <mxPoint x="120" y="215" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="kInvalid" value="kInvalid" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cfd8dc;strokeColor=#546e7a;strokeWidth=1.8;fontSize=14;fontStyle=1;fontFamily=Courier New;fontColor=#263238;arcSize=20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="120" y="180" width="170" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="kQueued" value="kQueued" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.8;fontSize=14;fontStyle=1;fontFamily=Courier New;fontColor=#0d47a1;arcSize=20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="370" y="180" width="170" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="kRunning" value="kRunning" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.8;fontSize=14;fontStyle=1;fontFamily=Courier New;fontColor=#1b5e20;arcSize=20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="620" y="180" width="170" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="kCompleted" value="kCompleted" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a5d6a7;strokeColor=#1b5e20;strokeWidth=2;fontSize=14;fontStyle=1;fontFamily=Courier New;fontColor=#1b5e20;arcSize=20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="870" y="100" width="170" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="kFailed" value="kFailed" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef9a9a;strokeColor=#b71c1c;strokeWidth=2;fontSize=14;fontStyle=1;fontFamily=Courier New;fontColor=#b71c1c;arcSize=20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="870" y="180" width="170" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="kCancelled" value="kCancelled" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcc80;strokeColor=#e65100;strokeWidth=2;fontSize=14;fontStyle=1;fontFamily=Courier New;fontColor=#e65100;arcSize=20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="370" y="350" width="170" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="kDropped" value="kDropped" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=2;fontSize=14;fontStyle=1;fontFamily=Courier New;fontColor=#e65100;arcSize=20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="120" y="350" width="170" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="kRejected" value="kRejected" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ce93d8;strokeColor=#6a1b9a;strokeWidth=2;fontSize=14;fontStyle=1;fontFamily=Courier New;fontColor=#4a148c;arcSize=20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="620" y="350" width="170" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr_inv_q" value="mark_task_queued() succeeds" style="endArrow=classic;endFill=1;html=1;strokeColor=#424242;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#424242;labelBackgroundColor=#ffffff;exitX=1;exitY=0.4;entryX=0;entryY=0.4;" edge="1" parent="1" source="kInvalid" target="kQueued">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr_q_r" value="dispatcher dequeue,&#10;cancel not requested" style="endArrow=classic;endFill=1;html=1;strokeColor=#2e7d32;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#2e7d32;labelBackgroundColor=#ffffff;exitX=1;exitY=0.4;entryX=0;entryY=0.4;" edge="1" parent="1" source="kQueued" target="kRunning">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr_r_c" value="callback returns" style="endArrow=classic;endFill=1;html=1;strokeColor=#1b5e20;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;exitX=1;exitY=0.3;entryX=0;entryY=0.5;" edge="1" parent="1" source="kRunning" target="kCompleted">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr_r_f" value="callback throws" style="endArrow=classic;endFill=1;html=1;strokeColor=#b71c1c;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#b71c1c;labelBackgroundColor=#ffffff;exitX=1;exitY=0.7;entryX=0;entryY=0.5;" edge="1" parent="1" source="kRunning" target="kFailed">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr_q_can" value="cancel() / parent token fired" style="endArrow=classic;endFill=1;html=1;strokeColor=#e65100;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#e65100;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="kQueued" target="kCancelled">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr_inv_can" value="parent token already cancelled&#10;at submission time" style="endArrow=classic;endFill=1;html=1;strokeColor=#e65100;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#e65100;labelBackgroundColor=#ffffff;dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.4;exitY=1;entryX=0.2;entryY=0;" edge="1" parent="1" source="kInvalid" target="kCancelled">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="188" y="290" />
+              <mxPoint x="404" y="290" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="arr_q_drop" value="overflow drop-oldest&#10;(droppable only)" style="endArrow=classic;endFill=1;html=1;strokeColor=#ef6c00;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#ef6c00;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0;exitY=0.7;entryX=1;entryY=0.5;" edge="1" parent="1" source="kQueued" target="kDropped">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="332" y="225" />
+              <mxPoint x="332" y="380" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="arr_inv_rej" value="quit_flag / no droppable victim /&#10;wrong loop type for priority post" style="endArrow=classic;endFill=1;html=1;strokeColor=#6a1b9a;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#6a1b9a;labelBackgroundColor=#ffffff;dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="kInvalid" target="kRejected">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="705" y="320" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="note_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1.5;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="445" width="1020" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="note_t" value="Lifecycle Notes" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="54" y="453" width="300" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="note_l1" value="kInvalid     - default-constructed handle, or task slot before mark_task_queued() has run" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="54" y="477" width="990" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="note_l2" value="kQueued      - admitted by the dispatcher, waiting for a worker to pick it up" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="54" y="495" width="990" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="note_l3" value="kRunning     - callback is currently executing on a worker thread" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="54" y="513" width="990" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="note_l4" value="kCompleted   - terminal, callback returned normally" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="54" y="531" width="990" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="note_l5" value="kFailed      - terminal, callback threw an exception" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontColor=#b71c1c;" vertex="1" parent="1">
+          <mxGeometry x="54" y="549" width="990" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="note_l6" value="kCancelled   - terminal, cancel() / parent token fired before execution started" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="54" y="567" width="990" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="note_l7" value="kDropped     - terminal, overflow drop-oldest removed the task before execution (only for droppable tasks)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontColor=#ef6c00;" vertex="1" parent="1">
+          <mxGeometry x="54" y="585" width="990" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="note_l8" value="kRejected    - terminal, dispatcher refused (quit_flag, kReject + full, wrong loop type, no droppable victim)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="54" y="603" width="990" height="18" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

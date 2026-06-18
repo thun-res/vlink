@@ -1,0 +1,74 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="foreword-player-linkage" name="Player Linkage">
+    <mxGraphModel dx="900" dy="560" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="vlink-player &#160;&#183;&#160; Timeline Linkage" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="820" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Record a bag, replay it, and synchronize downstream viewer / analyzer over IPC" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="52" width="820" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Recorder (top, blue) -->
+        <mxCell id="rec" value="&lt;b&gt;vlink-bag record&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#546e7a&quot;&gt;captures live topics&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=12;fontColor=#0d47a1;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="360" y="100" width="180" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- Bag file -->
+        <mxCell id="bag" value="data.vdb" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#eceff1;strokeColor=#546e7a;strokeWidth=1.5;fontColor=#37474f;fontStyle=1;fontSize=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="385" y="190" width="130" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_rb" value="write" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#455a64;fontSize=10;fontStyle=2;fontColor=#455a64;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="rec" target="bag">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Player (center, green - processing hub) -->
+        <mxCell id="plr" value="&lt;b&gt;vlink-player&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;color:#33691e&quot;&gt;drag-and-drop load &#160;&#183;&#160; timeline scrubbing&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.8;fontSize=14;fontColor=#1b5e20;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="320" y="290" width="260" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_bp" value="read" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#455a64;fontSize=10;fontStyle=2;fontColor=#455a64;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="bag" target="plr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Downstream viewer (right top, gray+blue) -->
+        <mxCell id="vwr" value="&lt;b&gt;vlink-viewer&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#546e7a&quot;&gt;image / point cloud render&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#546e7a;strokeWidth=1.5;fontSize=12;fontColor=#37474f;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="680" y="270" width="180" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- Downstream analyzer (right bottom, gray+blue) -->
+        <mxCell id="anz" value="&lt;b&gt;vlink-analyzer&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#546e7a&quot;&gt;time-series alignment&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#546e7a;strokeWidth=1.5;fontSize=12;fontColor=#37474f;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="680" y="346" width="180" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- URL remap note (left, yellow) -->
+        <mxCell id="note" value="URL remap&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#6d4c00&quot;&gt;replay to alt topics&lt;/span&gt;" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=14;fillColor=#fff8e1;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=12;fontColor=#bf360c;align=center;verticalAlign=middle;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="298" width="180" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows player -> viewer / analyzer (IPC) -->
+        <mxCell id="e_pv" value="IpcChannel &#160;&#183;&#160; timestamp" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#1565c0;fontSize=10;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.4;entryX=0;entryY=0.5;" edge="1" parent="1" source="plr" target="vwr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pa" value="IpcChannel &#160;&#183;&#160; timestamp" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#1565c0;fontSize=10;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.6;entryX=0;entryY=0.5;" edge="1" parent="1" source="plr" target="anz">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Dashed: note -> player -->
+        <mxCell id="e_np" value="applies to" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.8;strokeColor=#90a4ae;fontSize=10;fontStyle=2;fontColor=#546e7a;labelBackgroundColor=#ffffff;dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="note" target="plr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Caption at bottom -->
+        <mxCell id="cap" value="Replay keeps downstream tools frame-aligned via a shared monotonic timestamp." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="460" width="820" height="20" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

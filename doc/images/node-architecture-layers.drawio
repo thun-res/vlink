@@ -1,0 +1,124 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="node-architecture-layers" name="Node Architecture Layers">
+    <mxGraphModel dx="1000" dy="640" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Node Architecture &#8212; Layered View" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="920" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="User primitives sit on a shared Node base &#160;&#183;&#160; Impl classes drive the transport backend" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="50" width="920" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Layer 1: User primitives -->
+        <mxCell id="l1bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=4;gradientColor=#e3f2fd;gradientDirection=north;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="920" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="l1bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="920" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="l1t" value="User Application Layer &#160;&#183;&#160; Six Communication Primitives" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="104" width="880" height="26" as="geometry" />
+        </mxCell>
+
+        <mxCell id="u1" value="&lt;b&gt;Publisher&amp;lt;T&amp;gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="140" width="140" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="u2" value="&lt;b&gt;Subscriber&amp;lt;T&amp;gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="210" y="140" width="140" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="u3" value="&lt;b&gt;Client&amp;lt;Req,Resp&amp;gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="360" y="140" width="170" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="u4" value="&lt;b&gt;Server&amp;lt;Req,Resp&amp;gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="540" y="140" width="170" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="u5" value="&lt;b&gt;Setter&amp;lt;T&amp;gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="720" y="140" width="110" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="u6" value="&lt;b&gt;Getter&amp;lt;T&amp;gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="840" y="140" width="110" height="46" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr12" value="derives from" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#90a4ae;fontSize=11;fontStyle=2;fontColor=#546e7a;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="500" y="210" as="sourcePoint" />
+            <mxPoint x="500" y="240" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Layer 2: Node base -->
+        <mxCell id="l2bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=4;gradientColor=#e8f5e9;gradientDirection=north;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="246" width="920" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="l2bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="246" width="920" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="l2t" value="Node Base &#160;&#183;&#160; Node&amp;lt;ImplT, SecT&amp;gt; shared template" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="60" y="260" width="880" height="26" as="geometry" />
+        </mxCell>
+
+        <mxCell id="b1" value="Lifecycle" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontStyle=1;fontColor=#1b5e20;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="296" width="165" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="b2" value="Loans" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontStyle=1;fontColor=#1b5e20;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="235" y="296" width="165" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="b3" value="Security" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontStyle=1;fontColor=#1b5e20;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="410" y="296" width="165" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="b4" value="Properties" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontStyle=1;fontColor=#1b5e20;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="585" y="296" width="165" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="b5" value="Profiler" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontStyle=1;fontColor=#1b5e20;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="760" y="296" width="190" height="46" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr23" value="owns via unique_ptr" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#90a4ae;fontSize=11;fontStyle=2;fontColor=#546e7a;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="500" y="366" as="sourcePoint" />
+            <mxPoint x="500" y="396" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Layer 3: ImplT -->
+        <mxCell id="l3bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=4;gradientColor=#fafafa;gradientDirection=north;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="402" width="920" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="l3bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="402" width="920" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="l3t" value="Implementation Layer &#160;&#183;&#160; PublisherImpl / SubscriberImpl / ClientImpl / ServerImpl / SetterImpl / GetterImpl" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="60" y="418" width="880" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="l3s" value="Dispatches into the selected transport module based on URL scheme" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#616161;" vertex="1" parent="1">
+          <mxGeometry x="60" y="448" width="880" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr34" value="plugin-loaded (.so / .dll)" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#90a4ae;fontSize=11;fontStyle=2;fontColor=#546e7a;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="500" y="492" as="sourcePoint" />
+            <mxPoint x="500" y="522" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Layer 4: transport -->
+        <mxCell id="l4bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=4;gradientColor=#e8f5e9;gradientDirection=north;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="528" width="920" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="l4bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="528" width="920" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="l4t" value="Transport Backend &#160;&#183;&#160; 12 URL schemes" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="60" y="542" width="400" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="l4list" value="intra &#160;&#183;&#160; shm &#160;&#183;&#160; shm2 &#160;&#183;&#160; dds &#160;&#183;&#160; ddsc &#160;&#183;&#160; ddsr &#160;&#183;&#160; ddst &#160;&#183;&#160; zenoh &#160;&#183;&#160; someip &#160;&#183;&#160; mqtt &#160;&#183;&#160; fdbus &#160;&#183;&#160; qnx" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontFamily=Courier New;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="60" y="576" width="880" height="30" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

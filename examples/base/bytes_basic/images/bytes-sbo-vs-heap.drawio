@@ -1,0 +1,116 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="bytes-sbo-vs-heap" name="Bytes SBO vs Heap">
+    <mxGraphModel dx="1000" dy="600" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Bytes &#8212; SBO vs Heap Allocation" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="920" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Threshold: Bytes::stack_size() = 96 bytes" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="54" width="920" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sboBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=6;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="460" height="420" as="geometry" />
+        </mxCell>
+        <mxCell id="sboBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="460" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="sboTitle" value="SBO Path &#160;&#183;&#160; size &amp;le; 96 bytes" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="40" y="118" width="460" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="sboObjLabel" value="Bytes Object (128 bytes total)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#2e7d32;" vertex="1" parent="1">
+          <mxGeometry x="60" y="150" width="420" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="sboStack" value="&lt;b&gt;stack_data_[96]&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;inline data stored here&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontColor=#1b5e20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="180" width="420" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="sboOwner" value="is_owner_ = true" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontSize=11;fontFamily=Courier New;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="252" width="130" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="sboLoaned" value="is_loaned_ = false" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontSize=11;fontFamily=Courier New;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="200" y="252" width="140" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="sboOffset" value="offset_ = 0" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontSize=11;fontFamily=Courier New;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="350" y="252" width="130" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="sboDataPtr" value="data_ = &amp;amp;stack_data_[0]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=11;fontFamily=Courier New;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="60" y="294" width="210" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="sboSize" value="size_ = N" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=11;fontFamily=Courier New;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="280" y="294" width="95" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="sboCap" value="cap_ = 96" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=11;fontFamily=Courier New;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="385" y="294" width="95" height="32" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sboArrow" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;endArrow=classic;endFill=1;strokeColor=#388e3c;strokeWidth=2;rounded=1;" edge="1" parent="1" source="sboDataPtr" target="sboStack">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="50" y="310" />
+              <mxPoint x="50" y="210" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="sboNote" value="No heap allocation &#8212; data_ points back into stack_data_" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.2;fontSize=11;fontStyle=2;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="60" y="350" width="420" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="sboPro" value="Fast: zero malloc / free &#160;&#183;&#160; CPU cache friendly" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#2e7d32;" vertex="1" parent="1">
+          <mxGeometry x="60" y="396" width="420" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="heapBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef9a9a;strokeWidth=1.5;arcSize=6;shadow=1;gradientColor=#ffebee;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="520" y="100" width="440" height="420" as="geometry" />
+        </mxCell>
+        <mxCell id="heapBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d32f2f;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="520" y="100" width="440" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="heapTitle" value="Heap Path &#160;&#183;&#160; size &amp;gt; 96 bytes" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#b71c1c;" vertex="1" parent="1">
+          <mxGeometry x="520" y="118" width="440" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="heapObjLabel" value="Bytes Object (128 bytes total)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#c62828;" vertex="1" parent="1">
+          <mxGeometry x="540" y="150" width="400" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="heapStack" value="&lt;b&gt;stack_data_[96]&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;unused&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#b71c1c;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontColor=#b71c1c;shadow=1;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="540" y="180" width="400" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="heapOwner" value="is_owner_ = true" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontSize=11;fontFamily=Courier New;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="540" y="252" width="125" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="heapLoaned" value="is_loaned_ = false" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontSize=11;fontFamily=Courier New;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="675" y="252" width="135" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="heapOffset" value="offset_ = 0" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontSize=11;fontFamily=Courier New;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="252" width="120" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="heapDataPtr" value="data_ = heap_ptr" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=11;fontFamily=Courier New;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="540" y="294" width="175" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="heapSize" value="size_ = N" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=11;fontFamily=Courier New;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="725" y="294" width="105" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="heapCap" value="cap_ = N" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=11;fontFamily=Courier New;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="840" y="294" width="100" height="32" as="geometry" />
+        </mxCell>
+
+        <mxCell id="heapBlock" value="&lt;b&gt;Heap / Pool Memory&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;bytes_malloc allocated, size = N&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#b71c1c;strokeWidth=1.5;fontSize=12;fontColor=#b71c1c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="540" y="420" width="400" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="heapArrow" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;endArrow=classic;endFill=1;strokeColor=#d32f2f;strokeWidth=2;rounded=1;" edge="1" parent="1" source="heapDataPtr" target="heapBlock">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="heapNote" value="data_ points to external heap &#8212; freed by destructor when is_owner_ = true" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#d32f2f;strokeWidth=1.2;fontSize=11;fontStyle=2;fontColor=#b71c1c;" vertex="1" parent="1">
+          <mxGeometry x="540" y="350" width="400" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="heapPro" value="Required for large payloads &#160;&#183;&#160; one malloc per Bytes" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#c62828;" vertex="1" parent="1">
+          <mxGeometry x="540" y="490" width="400" height="22" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

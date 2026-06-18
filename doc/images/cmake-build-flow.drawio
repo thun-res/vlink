@@ -1,0 +1,111 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="cmake-build-flow" name="CMake Build Flow">
+    <mxGraphModel dx="960" dy="720" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="960" pageHeight="720" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="CMake Build Flow" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="22" width="880" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="find_package &#160;&#183;&#160; imported targets &#160;&#183;&#160; runtime plugin loading" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="56" width="880" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step1" value="find_package(vlink REQUIRED COMPONENTS dds ddsc shm)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=14;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="160" y="100" width="640" height="52" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#90a4ae;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="step1" target="step2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step2" value="CMake searches for installed vlink" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=14;fontStyle=1;fontColor=#1b5e20;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="260" y="184" width="440" height="48" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr2a" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#90a4ae;exitX=0.15;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="step2" target="cfg1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr2b" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#90a4ae;exitX=0.38;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="step2" target="cfg2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr2c" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#90a4ae;exitX=0.62;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="step2" target="cfg3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr2d" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#90a4ae;exitX=0.85;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="step2" target="cfg4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cfg1" value="vlink-config.cmake" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontColor=#263238;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="280" width="180" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="cfg2" value="vlink-dds-config.cmake" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontColor=#263238;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="260" y="280" width="180" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="cfg3" value="vlink-ddsc-config.cmake" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontColor=#263238;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="460" y="280" width="180" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="cfg4" value="vlink-shm-config.cmake" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontColor=#263238;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="660" y="280" width="180" height="44" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr3a" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#90a4ae;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="cfg1" target="tgt1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr3b" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#90a4ae;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="cfg2" target="tgt2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr3c" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#90a4ae;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="cfg3" target="tgt3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr3d" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#90a4ae;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="cfg4" target="tgt4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tgt1" value="Core library&#10;&lt;b&gt;vlink::vlink&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontColor=#1b5e20;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="358" width="180" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="tgt2" value="DDS module&#10;&lt;b&gt;vlink::dds&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontColor=#1b5e20;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="260" y="358" width="180" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="tgt3" value="CycloneDDS module&#10;&lt;b&gt;vlink::ddsc&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontColor=#1b5e20;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="460" y="358" width="180" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="tgt4" value="SHM module&#10;&lt;b&gt;vlink::shm&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontColor=#1b5e20;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="660" y="358" width="180" height="54" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr4a" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#90a4ae;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.15;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="tgt1" target="step3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr4b" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#90a4ae;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.38;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="tgt2" target="step3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr4c" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#90a4ae;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.62;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="tgt3" target="step3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr4d" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#90a4ae;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.85;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="tgt4" target="step3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step3" value="target_link_libraries(my_app vlink::vlink vlink::dds)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=14;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="160" y="460" width="640" height="52" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#90a4ae;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="step3" target="step4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step4" value="Compile and link complete&#10;Transport modules auto-loaded at runtime by URL prefix" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#263238;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="100" y="544" width="760" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="footer" value="Four config files resolve the four imported targets consumed by target_link_libraries" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="620" width="880" height="20" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

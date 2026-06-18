@@ -1,0 +1,8 @@
+[
+  {
+    "_comment": "Foxglove frontend JSON publish with repeated fields -> VLink protobuf direct route",
+    "encoding": "protobuf",
+    "url": "dds://planner/path/update",
+    "ser": "planner.proto.PathCommand"
+  }
+]

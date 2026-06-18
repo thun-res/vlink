@@ -1,0 +1,152 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="timer-types" name="Timer Types">
+    <mxGraphModel dx="820" dy="720" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="820" pageHeight="720" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="vlink::base  &#8212;  Timer Types" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="740" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Four complementary timer abstractions  &#183;  each with a different lifetime model" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="50" width="740" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="L1bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ce93d8;strokeWidth=1.5;arcSize=6;gradientColor=#f3e5f5;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="740" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="L1bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8e24aa;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="740" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="L1title" value="Timer  &#8212;  Event-loop periodic timer" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="60" y="102" width="500" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="L1note" value="Attached to MessageLoop &#183; callback runs on the loop thread" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="300" y="104" width="460" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="L1line" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#8e24aa;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="80" y="180" as="sourcePoint" />
+            <mxPoint x="740" y="180" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="L1start" value="&lt;b&gt;start()&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#8e24aa;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="70" y="160" width="86" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="L1t1" value="tick" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1.2;fontSize=10;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="230" y="163" width="56" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="L1t2" value="tick" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1.2;fontSize=10;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="340" y="163" width="56" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="L1t3" value="tick" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1.2;fontSize=10;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="450" y="163" width="56" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="L1t4" value="tick" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1.2;fontSize=10;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="560" y="163" width="56" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="L1stop" value="&lt;b&gt;stop()&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#8e24aa;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="650" y="160" width="86" height="34" as="geometry" />
+        </mxCell>
+
+        <mxCell id="L2bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ce93d8;strokeWidth=1.5;arcSize=6;gradientColor=#f3e5f5;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="244" width="740" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="L2bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8e24aa;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="244" width="740" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="L2title" value="WheelTimer  &#8212;  Hashed timing wheel" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="60" y="256" width="500" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="L2note" value="O(1) insert and expire &#183; good for large numbers of timeouts" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="300" y="258" width="460" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="L2line" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#8e24aa;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="80" y="334" as="sourcePoint" />
+            <mxPoint x="740" y="334" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="L2add" value="&lt;b&gt;add(deadline)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#8e24aa;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="70" y="314" width="140" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="L2e1" value="O(1) expire" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1.2;fontSize=10;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="290" y="316" width="86" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="L2e2" value="O(1) expire" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1.2;fontSize=10;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="430" y="316" width="86" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="L2rem" value="&lt;b&gt;remove()&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#8e24aa;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="620" y="314" width="116" height="34" as="geometry" />
+        </mxCell>
+
+        <mxCell id="L3bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ffcc80;strokeWidth=1.5;arcSize=6;gradientColor=#fff8e1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="398" width="740" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="L3bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="398" width="740" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="L3title" value="ElapsedTimer  &#8212;  Stopwatch (monotonic)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="60" y="410" width="500" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="L3note" value="High-precision elapsed measurement &#183; no callback, caller queries" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#bf360c;" vertex="1" parent="1">
+          <mxGeometry x="300" y="412" width="460" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="L3line" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#ef6c00;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="80" y="488" as="sourcePoint" />
+            <mxPoint x="740" y="488" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="L3start" value="&lt;b&gt;start()&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="70" y="468" width="86" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="L3span" value="elapsed duration" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#ef6c00;" vertex="1" parent="1">
+          <mxGeometry x="220" y="470" width="200" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="L3stop" value="&lt;b&gt;stop()&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="450" y="468" width="86" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="L3read" value="&lt;b&gt;elapsed_ms()&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#e65100;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="600" y="468" width="136" height="34" as="geometry" />
+        </mxCell>
+
+        <mxCell id="L4bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ffcc80;strokeWidth=1.5;arcSize=6;gradientColor=#fff8e1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="552" width="740" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="L4bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="552" width="740" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="L4title" value="DeadlineTimer  &#8212;  Lock-free deadline check" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="60" y="564" width="500" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="L4note" value="Set once, poll any thread &#183; used by Method timeouts and QoS deadlines" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#bf360c;" vertex="1" parent="1">
+          <mxGeometry x="300" y="566" width="460" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="L4line" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#ef6c00;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="80" y="642" as="sourcePoint" />
+            <mxPoint x="740" y="642" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="L4start" value="&lt;b&gt;start(deadline)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="70" y="622" width="140" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="L4wait" value="wait / work" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#ef6c00;" vertex="1" parent="1">
+          <mxGeometry x="240" y="624" width="160" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="L4check" value="&lt;b&gt;is_expired()?&lt;/b&gt;" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontSize=11;fontStyle=1;fontColor=#e65100;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="450" y="608" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="L4true" value="true / false" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#bf360c;" vertex="1" parent="1">
+          <mxGeometry x="630" y="624" width="106" height="24" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

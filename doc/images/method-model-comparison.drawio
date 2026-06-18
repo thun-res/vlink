@@ -1,0 +1,81 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="method-model-comparison" name="Model Comparison">
+    <mxGraphModel dx="900" dy="520" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="440" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Communication Model Comparison" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="820" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Event is N:N broadcast &#160;&#183;&#160; Method is N:1 RPC &#160;&#183;&#160; Field is N:N state sync" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="50" width="820" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Event row -->
+        <mxCell id="ev_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=4;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="820" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ev_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="820" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="ev_label" value="Event" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=14;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="116" width="120" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="ev_pub" value="&lt;b&gt;Publisher&amp;lt;T&amp;gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="220" y="116" width="200" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="ev_sub" value="&lt;b&gt;Subscriber&amp;lt;T&amp;gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="640" y="116" width="200" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="ev_arr" value="N:N broadcast" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#1976d2;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="ev_pub" target="ev_sub" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Method row -->
+        <mxCell id="me_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=4;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="200" width="820" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="me_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="200" width="820" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="me_label" value="Method" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=14;fontStyle=1;fontColor=#1b5e20;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="228" width="120" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="me_cli" value="&lt;b&gt;Client&amp;lt;Req,Resp&amp;gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="220" y="228" width="200" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="me_srv" value="&lt;b&gt;Server&amp;lt;Req,Resp&amp;gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="640" y="228" width="200" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="me_req" value="N:1 request" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#388e3c;fontSize=11;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" edge="1" source="me_cli" target="me_srv" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="me_resp" value="response" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#2e7d32;dashed=1;dashPattern=8 4;fontSize=11;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;exitX=0;exitY=0.7;exitDx=0;exitDy=0;entryX=1;entryY=0.7;entryDx=0;entryDy=0;" edge="1" source="me_srv" target="me_cli" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Field row -->
+        <mxCell id="fi_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ffcc80;strokeWidth=1.5;arcSize=4;gradientColor=#fff8e1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="320" width="820" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="fi_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="320" width="820" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="fi_label" value="Field" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=14;fontStyle=1;fontColor=#bf360c;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="346" width="120" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="fi_set" value="&lt;b&gt;Setter&amp;lt;T&amp;gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="220" y="346" width="200" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="fi_get" value="&lt;b&gt;Getter&amp;lt;T&amp;gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="640" y="346" width="200" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="fi_arr" value="N:N latest value" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#ef6c00;fontSize=11;fontStyle=1;fontColor=#bf360c;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="fi_set" target="fi_get" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

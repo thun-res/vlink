@@ -1,0 +1,201 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="url-format" name="URL Format">
+    <mxGraphModel dx="1000" dy="560" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="VLink URL Format" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="24" width="920" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="One URL string fully describes transport, topic and configuration" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="58" width="920" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Example URL strip background -->
+        <mxCell id="urlstrip" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#cfd8dc;strokeWidth=1.5;arcSize=6;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="120" y="110" width="760" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- URL segments: rendered as colored boxes to match section colors -->
+        <!-- transport (blue) -->
+        <mxCell id="u_transport" value="dds" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=22;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="140" y="124" width="92" height="42" as="geometry" />
+        </mxCell>
+        <!-- :// separator (grey) -->
+        <mxCell id="u_sep1" value="://" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontFamily=Courier New;fontStyle=1;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="238" y="124" width="46" height="42" as="geometry" />
+        </mxCell>
+        <!-- host/path (green) -->
+        <mxCell id="u_path" value="vehicle/chassis/speed" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=22;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="290" y="124" width="300" height="42" as="geometry" />
+        </mxCell>
+        <!-- ? separator (grey) -->
+        <mxCell id="u_sep2" value="?" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontFamily=Courier New;fontStyle=1;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="596" y="124" width="22" height="42" as="geometry" />
+        </mxCell>
+        <!-- query (orange) -->
+        <mxCell id="u_query" value="domain=1&amp;depth=10" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=22;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="624" y="124" width="236" height="42" as="geometry" />
+        </mxCell>
+
+        <!-- Connector arrows from URL segments down to explanation boxes -->
+        <mxCell id="c1" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#1565c0;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="186" y="180" as="sourcePoint" />
+            <mxPoint x="186" y="240" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c2" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#546e7a;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="261" y="180" as="sourcePoint" />
+            <mxPoint x="360" y="240" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c3" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#2e7d32;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="440" y="180" as="sourcePoint" />
+            <mxPoint x="540" y="240" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c4" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#546e7a;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="607" y="180" as="sourcePoint" />
+            <mxPoint x="720" y="240" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c5" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#ef6c00;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="742" y="180" as="sourcePoint" />
+            <mxPoint x="860" y="240" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Five explanation boxes in a row -->
+        <!-- transport -->
+        <mxCell id="e1bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=6;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="60" y="240" width="250" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="e1bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="60" y="240" width="250" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="e1t" value="transport" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontFamily=Courier New;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="70" y="256" width="230" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="e1d" value="Transport backend&#10;Selects DDS / SHM / Intra / Zenoh / ..." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="70" y="286" width="230" height="64" as="geometry" />
+        </mxCell>
+
+        <!-- :// -->
+        <mxCell id="e2bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=6;shadow=1;gradientColor=#fafafa;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="320" y="240" width="130" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="e2bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="320" y="240" width="130" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="e2t" value="://" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontFamily=Courier New;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="330" y="256" width="110" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="e2d" value="Separator" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="330" y="290" width="110" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- host / path -->
+        <mxCell id="e3bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=6;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="460" y="240" width="160" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="e3bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="460" y="240" width="160" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="e3t" value="host / path" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontFamily=Courier New;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="470" y="256" width="140" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="e3d" value="Topic / service name&#10;Hierarchical path" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="470" y="286" width="140" height="64" as="geometry" />
+        </mxCell>
+
+        <!-- ? -->
+        <mxCell id="e4bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=6;shadow=1;gradientColor=#fafafa;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="630" y="240" width="110" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="e4bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="630" y="240" width="110" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="e4t" value="?" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontFamily=Courier New;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="640" y="256" width="90" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="e4d" value="Separator" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="640" y="290" width="90" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- query -->
+        <mxCell id="e5bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ffcc80;strokeWidth=1.5;arcSize=6;shadow=1;gradientColor=#fff8e1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="750" y="240" width="190" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="e5bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="750" y="240" width="190" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="e5t" value="query" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontFamily=Courier New;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="760" y="256" width="170" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="e5d" value="Configuration parameters&#10;key=value &amp; key=value" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="760" y="286" width="170" height="64" as="geometry" />
+        </mxCell>
+
+        <!-- Example transformations -->
+        <mxCell id="samples_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#cfd8dc;strokeWidth=1.5;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="390" width="880" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="samples_title" value="Switching transport backend = changing URL prefix only, no application code changes" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="60" y="400" width="880" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ex1" value="dds://topic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="100" y="435" width="150" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="ex2" value="shm://topic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="290" y="435" width="150" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="ex3" value="zenoh://topic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="480" y="435" width="150" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="ex4" value="someip://topic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="670" y="435" width="150" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="exarr1" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#90a4ae;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="250" y="454" as="sourcePoint" />
+            <mxPoint x="290" y="454" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="exarr2" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#90a4ae;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="440" y="454" as="sourcePoint" />
+            <mxPoint x="480" y="454" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="exarr3" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#90a4ae;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="630" y="454" as="sourcePoint" />
+            <mxPoint x="670" y="454" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="exarr4" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#90a4ae;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="820" y="454" as="sourcePoint" />
+            <mxPoint x="900" y="454" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="exdots" value="..." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="900" y="435" width="30" height="38" as="geometry" />
+        </mxCell>
+
+        <!-- Footer note -->
+        <mxCell id="footer" value="Example: dds://vehicle/chassis/speed?domain=1&amp;depth=10" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontFamily=Courier New;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="40" y="510" width="920" height="28" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

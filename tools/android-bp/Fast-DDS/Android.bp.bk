@@ -1,0 +1,83 @@
+cc_defaults {
+    name: "libfastrtps-defaults",
+    cppflags: [
+        "-fexceptions",
+        "-Wno-non-virtual-dtor",
+        "-Wno-unknown-pragmas",
+        "-Wno-implicit-fallthrough",
+        "-Wno-unused-parameter",
+        "-Wno-deprecated-declarations",
+    ],
+    cpp_std: "c++17",
+}
+
+filegroup {
+    name: "libfastrtps_security_srcs",
+    srcs: [
+        "src/cpp/rtps/transport/TCPChannelResourceSecure.cpp",
+        "src/cpp/rtps/transport/TCPAcceptorSecure.cpp",
+        "src/cpp/rtps/security/exceptions/SecurityException.cpp",
+        "src/cpp/rtps/security/common/SharedSecretHandle.cpp",
+        "src/cpp/rtps/security/logging/Logging.cpp",
+        "src/cpp/rtps/security/SecurityManager.cpp",
+        "src/cpp/rtps/security/SecurityPluginFactory.cpp",
+        "src/cpp/rtps/builtin/discovery/participant/DS/PDPSecurityInitiatorListener.cpp",
+        "src/cpp/security/authentication/PKIDH.cpp",
+        "src/cpp/security/accesscontrol/Permissions.cpp",
+        "src/cpp/security/cryptography/AESGCMGMAC.cpp",
+        "src/cpp/security/cryptography/AESGCMGMAC_KeyExchange.cpp",
+        "src/cpp/security/cryptography/AESGCMGMAC_KeyFactory.cpp",
+        "src/cpp/security/cryptography/AESGCMGMAC_Transform.cpp",
+        "src/cpp/security/cryptography/AESGCMGMAC_Types.cpp",
+        "src/cpp/security/authentication/PKIIdentityHandle.cpp",
+        "src/cpp/security/authentication/PKIHandshakeHandle.cpp",
+        "src/cpp/security/accesscontrol/AccessPermissionsHandle.cpp",
+        "src/cpp/security/accesscontrol/CommonParser.cpp",
+        "src/cpp/security/accesscontrol/GovernanceParser.cpp",
+        "src/cpp/security/accesscontrol/PermissionsParser.cpp",
+        "src/cpp/security/logging/LogTopic.cpp",
+        "src/cpp/security/artifact_providers/FileProvider.cpp",
+        "src/cpp/security/artifact_providers/Pkcs11Provider.cpp",
+    ],
+}
+
+cc_library_shared {
+    name: "libfastrtps",
+    defaults: [
+        "libfastrtps-defaults",
+    ],
+    rtti: true,
+    vendor_available: true,
+    srcs: [
+        "src/**/*.cpp",
+        "src/**/*.cxx",
+    ],
+    exclude_srcs: [
+        ":libfastrtps_security_srcs",
+    ],
+    local_include_dirs: [
+        "include",
+        "android",
+        "src/cpp",
+        "thirdparty/taocpp-pegtl",
+        "thirdparty/nlohmann-json",
+        "thirdparty/filewatch",
+        "thirdparty/optionparser",
+        "thirdparty/boost/include",
+    ],
+    export_include_dirs: [
+        "include",
+        "android",
+    ],
+    shared_libs: [
+        "libfastcdr",
+        "libtinyxml2",
+        "libsqlite",
+    ],
+    header_libs: [
+        "libasio-headers",
+    ],
+    static_libs: [
+        "libfoonathan_memory",
+    ]
+}

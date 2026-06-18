@@ -1,0 +1,31 @@
+[
+  {
+    "_comment": "Teleop alternative for custom WebSocket: use Foxglove Publish panel with a Twist-like JSON payload",
+    "schema_name": "webviz.TeleopTwist",
+    "schema_encoding": "jsonschema",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "linear": {
+          "type": "object",
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" },
+            "z": { "type": "number" }
+          }
+        },
+        "angular": {
+          "type": "object",
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" },
+            "z": { "type": "number" }
+          }
+        }
+      },
+      "required": ["linear", "angular"]
+    },
+    "url": "dds://vehicle/control/cmd_vel",
+    "ser": "json"
+  }
+]

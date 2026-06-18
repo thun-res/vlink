@@ -1,0 +1,98 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="discovery-lifecycle" name="Discovery Lifecycle">
+    <mxGraphModel dx="640" dy="780" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="640" pageHeight="620" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Discovery Lifecycle" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="560" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="NodeImpl registers and removes nodes; process exit is cleaned up by heartbeat timeout" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="52" width="560" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Phase 1: Construction (Blue) -->
+        <mxCell id="p1bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=4;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="560" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="p1bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="560" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="p1t" value="Phase 1  ·  NodeImpl Construction" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="106" width="400" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="p1badge" value="Auto Register" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1;fontSize=11;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="488" y="108" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="p1call" value="init_ext()" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="60" y="138" width="560" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="p1box" value="DiscoveryReporter::global_get()-&gt;add(this)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="164" width="440" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- down arrow 1 -->
+        <mxCell id="arrow_p1_p2" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#90a4ae;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="320" y="224" as="sourcePoint" />
+            <mxPoint x="320" y="246" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Phase 2: Destruction (Green) -->
+        <mxCell id="p2bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=4;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="252" width="560" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="p2bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="252" width="560" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="p2t" value="Phase 2  ·  NodeImpl Destruction" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="60" y="268" width="400" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="p2badge" value="Auto Deregister" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1;fontSize=11;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="482" y="270" width="106" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="p2call" value="deinit_ext()" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="60" y="300" width="560" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="p2box" value="DiscoveryReporter::global_get()-&gt;remove(this)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="326" width="440" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- down arrow 2 -->
+        <mxCell id="arrow_p2_p3" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#90a4ae;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="320" y="386" as="sourcePoint" />
+            <mxPoint x="320" y="408" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Phase 3: Process Exit (Orange) -->
+        <mxCell id="p3bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ffcc80;strokeWidth=1.5;arcSize=4;shadow=1;gradientColor=#fff8e1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="414" width="560" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="p3bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="414" width="560" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="p3t" value="Phase 3  ·  Process Exit" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="60" y="430" width="400" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="p3badge" value="Timeout Cleanup" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1;fontSize=11;fontStyle=1;fontColor=#bf360c;" vertex="1" parent="1">
+          <mxGeometry x="470" y="432" width="118" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="p3call" value="heartbeats stop" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="60" y="462" width="560" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="p3box" value="DiscoveryViewer::process_timeout()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="488" width="440" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="footer" value="Offline packets require VLINK_DISCOVERY_OFFLINE=1; the default build removes stale processes by timeout." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="562" width="560" height="22" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

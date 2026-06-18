@@ -1,0 +1,8 @@
+if(DEFINED ENV{OE_CMAKE_TOOLCHAIN_FILE})
+  include($ENV{OE_CMAKE_TOOLCHAIN_FILE})
+endif()
+
+set(CMAKE_SYSTEM_VERSION 30)
+set(CMAKE_ANDROID_ARCH_ABI x86_64)
+
+include(${CMAKE_CURRENT_LIST_DIR}/android.toolchain.common.cmake)

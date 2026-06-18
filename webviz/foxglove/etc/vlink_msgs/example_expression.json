@@ -1,0 +1,247 @@
+[
+  {
+    "_comment": "Example 1: DMS to decimal degrees (multi-variable linear)",
+    "ser": "sensor.proto.GnssRaw",
+    "schema": "foxglove.LocationFix",
+    "encoding": "flatbuffers",
+    "schema_encoding": "flatbuffers",
+    "field_mappings": [
+      {
+        "source": "header.time_meas",
+        "target": "timestamp_ns"
+      },
+      {
+        "source": "latitude_deg",
+        "target": "latitude",
+        "expression": "latitude_deg + latitude_min / 60.0 + latitude_sec / 3600.0"
+      },
+      {
+        "source": "longitude_deg",
+        "target": "longitude",
+        "expression": "longitude_deg + longitude_min / 60.0 + longitude_sec / 3600.0"
+      },
+      {
+        "source": "altitude_ft",
+        "target": "altitude",
+        "expression": "altitude_ft * 0.3048"
+      }
+    ]
+  },
+  {
+    "_comment": "Example 2: Nested fields + quaternion to yaw (atan2 + complex math)",
+    "ser": "nav.proto.Odometry",
+    "schema": "foxglove.PoseInFrame",
+    "encoding": "flatbuffers",
+    "schema_encoding": "flatbuffers",
+    "field_mappings": [
+      {
+        "source": "header.time_meas",
+        "target": "timestamp_ns"
+      },
+      {
+        "source": "header.frame_id",
+        "target": "frame_id",
+        "default_value": "odom"
+      },
+      {
+        "source": "pose.position.x",
+        "target": "position_x"
+      },
+      {
+        "source": "pose.position.y",
+        "target": "position_y"
+      },
+      {
+        "source": "pose.orientation.w",
+        "target": "position_z",
+        "_comment": "Quaternion yaw = atan2(2*(w*z + x*y), 1 - 2*(y*y + z*z)), use nested fields with dot notation",
+        "expression": "atan2(2 * (pose.orientation.w * pose.orientation.z + pose.orientation.x * pose.orientation.y), 1 - 2 * (pose.orientation.y * pose.orientation.y + pose.orientation.z * pose.orientation.z))"
+      }
+    ]
+  },
+  {
+    "_comment": "Example 3: Distance calculation + velocity norm (sqrt, pow, multi-variable)",
+    "ser": "nav.proto.VehicleState",
+    "schema": "foxglove.LocationFix",
+    "encoding": "flatbuffers",
+    "schema_encoding": "flatbuffers",
+    "field_mappings": [
+      {
+        "source": "header.time_meas",
+        "target": "timestamp_ns"
+      },
+      {
+        "source": "position.x",
+        "target": "latitude",
+        "_comment": "2D distance from origin = sqrt(x^2 + y^2)",
+        "expression": "sqrt(position.x * position.x + position.y * position.y)"
+      },
+      {
+        "source": "velocity.x",
+        "target": "longitude",
+        "_comment": "3D velocity norm = sqrt(vx^2 + vy^2 + vz^2)",
+        "expression": "sqrt(velocity.x^2 + velocity.y^2 + velocity.z^2)"
+      },
+      {
+        "source": "velocity.x",
+        "target": "altitude",
+        "_comment": "Heading from velocity = atan2(vy, vx) converted to degrees",
+        "expression": "atan2(velocity.y, velocity.x) * 180.0 / pi"
+      }
+    ]
+  },
+  {
+    "_comment": "Example 4: Conditional expression (if/else, clamp, abs)",
+    "ser": "control.proto.SteeringCmd",
+    "schema": "foxglove.LocationFix",
+    "encoding": "flatbuffers",
+    "schema_encoding": "flatbuffers",
+    "field_mappings": [
+      {
+        "source": "header.time_meas",
+        "target": "timestamp_ns"
+      },
+      {
+        "source": "steering_angle_rad",
+        "target": "latitude",
+        "_comment": "Radians to degrees with clamp to [-45, 45]",
+        "expression": "clamp(-45.0, steering_angle_rad * 180.0 / pi, 45.0)"
+      },
+      {
+        "source": "speed_mps",
+        "target": "longitude",
+        "_comment": "m/s to km/h",
+        "expression": "speed_mps * 3.6"
+      },
+      {
+        "source": "speed_mps",
+        "target": "altitude",
+        "_comment": "Conditional: if speed > 0 then kinetic_energy = 0.5 * mass * v^2 (assume mass=1500kg), else 0",
+        "expression": "if(speed_mps > 0, 0.5 * 1500.0 * speed_mps^2, 0)"
+      }
+    ]
+  },
+  {
+    "_comment": "Example 5: Euler angle normalization + trigonometric composition",
+    "ser": "sensor.proto.ImuProcessed",
+    "schema": "foxglove.PoseInFrame",
+    "encoding": "flatbuffers",
+    "schema_encoding": "flatbuffers",
+    "field_mappings": [
+      {
+        "source": "header.time_meas",
+        "target": "timestamp_ns"
+      },
+      {
+        "source": "header.frame_id",
+        "target": "frame_id",
+        "default_value": "imu_link"
+      },
+      {
+        "source": "roll_rad",
+        "target": "position_x",
+        "_comment": "Roll in degrees, normalized to [-180, 180] using atan2(sin, cos)",
+        "expression": "atan2(sin(roll_rad), cos(roll_rad)) * 180.0 / pi"
+      },
+      {
+        "source": "pitch_rad",
+        "target": "position_y",
+        "_comment": "Pitch in degrees, clamped to [-90, 90]",
+        "expression": "clamp(-90.0, pitch_rad * 180.0 / pi, 90.0)"
+      },
+      {
+        "source": "yaw_rad",
+        "target": "position_z",
+        "_comment": "Yaw in degrees [0, 360)",
+        "expression": "((atan2(sin(yaw_rad), cos(yaw_rad)) * 180.0 / pi) + 360) % 360"
+      }
+    ]
+  },
+  {
+    "_comment": "Example 6: Obstacle size transform (nested repeated item fields + complex math)",
+    "ser": "perception.proto.ObstacleStamped",
+    "schema": "foxglove.SceneUpdate",
+    "encoding": "flatbuffers",
+    "schema_encoding": "flatbuffers",
+    "field_mappings": [
+      {
+        "source": "header.time_meas",
+        "target": "timestamp_ns"
+      },
+      {
+        "source": "header.frame_id",
+        "target": "frame_id",
+        "default_value": "base_link"
+      },
+      {
+        "source": "obstacles",
+        "target": "entities"
+      },
+      {
+        "source": "center.x",
+        "target": "entity_x"
+      },
+      {
+        "source": "center.y",
+        "target": "entity_y"
+      },
+      {
+        "source": "center.z",
+        "target": "entity_z",
+        "_comment": "Lift box center to half-height above ground",
+        "expression": "center.z + height / 2.0"
+      },
+      {
+        "source": "width",
+        "target": "entity_width",
+        "_comment": "Ensure minimum bounding box size of 0.5m",
+        "expression": "max(width, 0.5)"
+      },
+      {
+        "source": "length",
+        "target": "entity_length",
+        "expression": "max(length, 0.5)"
+      },
+      {
+        "source": "height",
+        "target": "entity_height",
+        "expression": "max(height, 0.3)"
+      },
+      {
+        "source": "heading",
+        "target": "entity_heading",
+        "_comment": "If heading is in radians, convert to degrees; if near zero use velocity heading",
+        "expression": "if(abs(heading) > 0.001, heading * 180.0 / pi, atan2(velocity.y, velocity.x) * 180.0 / pi)"
+      }
+    ]
+  },
+  {
+    "_comment": "Example 7: GPS coordinate system transform (WGS84 approximate local ENU offset)",
+    "ser": "sensor.proto.GnssFix",
+    "schema": "foxglove.LocationFix",
+    "encoding": "flatbuffers",
+    "schema_encoding": "flatbuffers",
+    "field_mappings": [
+      {
+        "source": "header.time_meas",
+        "target": "timestamp_ns"
+      },
+      {
+        "source": "latitude",
+        "target": "latitude",
+        "_comment": "Apply geoid undulation correction if available: altitude = height_msl + undulation",
+        "expression": "latitude"
+      },
+      {
+        "source": "longitude",
+        "target": "longitude"
+      },
+      {
+        "source": "height_wgs84",
+        "target": "altitude",
+        "_comment": "WGS84 ellipsoidal height to MSL: subtract undulation (geoid height)",
+        "expression": "height_wgs84 - undulation"
+      }
+    ]
+  }
+]

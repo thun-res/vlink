@@ -1,0 +1,172 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="pr-branch-model" name="Branch Model">
+    <mxGraphModel dx="1200" dy="600" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="VLink Branch Model" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1120" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="master is protected - merged via reviewed PR only - feature branches deleted within 30 days" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#616161;" vertex="1" parent="1">
+          <mxGeometry x="40" y="50" width="1120" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="lg_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1.2;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="86" width="1120" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_t" value="Legend:" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="54" y="92" width="66" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_m" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=#424242;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="124" y="96" width="18" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_ml" value="master commit" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="148" y="92" width="110" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_f" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="260" y="96" width="18" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_fl" value="feature commit" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="284" y="92" width="110" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_me" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#bdbdbd;strokeColor=#424242;strokeWidth=1.8;" vertex="1" parent="1">
+          <mxGeometry x="396" y="94" width="22" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_mel" value="squash merge commit" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="424" y="92" width="160" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_arrow" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#757575;strokeWidth=1.8;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="590" y="104" as="sourcePoint" />
+            <mxPoint x="640" y="104" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lg_al" value="branch off / merge back" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="648" y="92" width="180" height="24" as="geometry" />
+        </mxCell>
+
+        <!-- master line -->
+        <mxCell id="masterLabel" value="master" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="40" y="244" width="70" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="masterLine" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#424242;strokeWidth=3.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="120" y="255" as="sourcePoint" />
+            <mxPoint x="1140" y="255" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- master commits -->
+        <mxCell id="c1" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=#424242;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="165" y="246" width="20" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="c2" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=#424242;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="285" y="246" width="20" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="c3" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=#424242;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="425" y="246" width="20" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="c4" value="M" style="ellipse;whiteSpace=wrap;html=1;fillColor=#bdbdbd;strokeColor=#424242;strokeWidth=1.8;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="625" y="244" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="c5" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=#424242;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="760" y="246" width="20" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="c6" value="M" style="ellipse;whiteSpace=wrap;html=1;fillColor=#bdbdbd;strokeColor=#424242;strokeWidth=1.8;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="915" y="244" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="c7" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=#424242;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="246" width="20" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- feature branch A (below) -->
+        <mxCell id="fA_label" value="feat/zenoh-beta-fix" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="340" y="400" width="200" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="fA_line" value="" style="endArrow=none;html=1;strokeColor=#90a4ae;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="365" y="380" as="sourcePoint" />
+            <mxPoint x="580" y="380" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fA_c1" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="355" y="370" width="20" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="fA_c2" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="450" y="370" width="20" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="fA_c3" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="560" y="370" width="20" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="fA_split" value="branch off" style="endArrow=classic;endFill=1;html=1;strokeColor=#757575;strokeWidth=1.8;curved=1;fontSize=10;fontStyle=2;fontColor=#546e7a;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="305" y="266" as="sourcePoint" />
+            <mxPoint x="360" y="376" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fA_merge" value="squash merge" style="endArrow=classic;endFill=1;html=1;strokeColor=#757575;strokeWidth=1.8;curved=1;fontSize=10;fontStyle=2;fontColor=#546e7a;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="585" y="376" as="sourcePoint" />
+            <mxPoint x="630" y="264" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fA_del" value="branch deleted after merge" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#9e9e9e;" vertex="1" parent="1">
+          <mxGeometry x="600" y="398" width="200" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- feature branch B (above) -->
+        <mxCell id="fB_label" value="fix/shm-loan-leak-103" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="670" y="144" width="200" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="fB_line" value="" style="endArrow=none;html=1;strokeColor=#90a4ae;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="785" y="178" as="sourcePoint" />
+            <mxPoint x="890" y="178" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fB_c1" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="775" y="168" width="20" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="fB_c2" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="870" y="168" width="20" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="fB_split" value="branch off" style="endArrow=classic;endFill=1;html=1;strokeColor=#757575;strokeWidth=1.8;curved=1;fontSize=10;fontStyle=2;fontColor=#546e7a;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720" y="244" as="sourcePoint" />
+            <mxPoint x="780" y="174" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fB_merge" value="squash merge" style="endArrow=classic;endFill=1;html=1;strokeColor=#757575;strokeWidth=1.8;curved=1;fontSize=10;fontStyle=2;fontColor=#546e7a;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="895" y="174" as="sourcePoint" />
+            <mxPoint x="925" y="244" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fB_del" value="branch deleted after merge" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#9e9e9e;" vertex="1" parent="1">
+          <mxGeometry x="900" y="122" width="200" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Rules box -->
+        <mxCell id="rules_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="450" width="1120" height="94" as="geometry" />
+        </mxCell>
+        <mxCell id="rules_t" value="Branch Rules" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="54" y="458" width="200" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="rules_l1" value="master forbids direct push and force-push" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="54" y="480" width="540" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="rules_l2" value="Branch naming: [type]/[desc]-[issue]  ·  type ∈ { feat, fix, refactor, perf, docs, test, build, chore }" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="54" y="498" width="1080" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="rules_l3" value="Merge strategy: Squash &amp; merge only - merge commit is disallowed - delete branch within 30 days after merge" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="54" y="516" width="1080" height="18" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

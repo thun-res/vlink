@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=VLink Analyzer
+Terminal=false
+Exec=run_analyzer.sh %f
+Icon=vlink-analyzer.png
+Categories=Development

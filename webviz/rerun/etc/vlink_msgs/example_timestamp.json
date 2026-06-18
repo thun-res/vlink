@@ -1,0 +1,158 @@
+[
+  {
+    "_comment": "Example 1: GNSS with nanosecond sensor timestamp",
+    "ser": "sensor.proto.GnssStamped",
+    "archetype": "GeoPoints",
+    "encoding": "protobuf",
+    "timestamp_field": "header.timestamp_ns",
+    "timestamp_unit": "ns",
+    "field_mappings": [
+      {
+        "source": "latitude",
+        "target": "latitude"
+      },
+      {
+        "source": "longitude",
+        "target": "longitude"
+      }
+    ]
+  },
+  {
+    "_comment": "Example 2: Odometry pose with nanosecond sensor timestamp",
+    "ser": "nav.proto.OdometryStamped",
+    "archetype": "Transform3D",
+    "encoding": "protobuf",
+    "timestamp_field": "header.timestamp_ns",
+    "timestamp_unit": "ns",
+    "field_mappings": [
+      {
+        "source": "pose.position.x",
+        "target": "position_x"
+      },
+      {
+        "source": "pose.position.y",
+        "target": "position_y"
+      },
+      {
+        "source": "pose.position.z",
+        "target": "position_z"
+      },
+      {
+        "source": "pose.orientation",
+        "target": "pose"
+      }
+    ]
+  },
+  {
+    "_comment": "Example 3: FlatBuffers lidar scan with nanosecond sensor timestamp",
+    "ser": "lidar.LidarScanStamped",
+    "archetype": "Points3D",
+    "encoding": "flatbuffers",
+    "timestamp_field": "timestamp_ns",
+    "timestamp_unit": "ns",
+    "field_mappings": [
+      {
+        "source": "ranges",
+        "target": "ranges"
+      },
+      {
+        "source": "angle_min",
+        "target": "angle_min"
+      },
+      {
+        "source": "angle_max",
+        "target": "angle_max"
+      },
+      {
+        "source": "angle_increment",
+        "target": "angle_increment"
+      }
+    ]
+  },
+  {
+    "_comment": "Example 4: Obstacle boxes with nanosecond sensor timestamp (nested field)",
+    "ser": "perception.proto.ObstacleListStamped",
+    "archetype": "Boxes3D",
+    "encoding": "protobuf",
+    "timestamp_field": "header.timestamp_ns",
+    "timestamp_unit": "ns",
+    "field_mappings": [
+      {
+        "source": "obstacles",
+        "target": "entities"
+      },
+      {
+        "source": "center.x",
+        "target": "entity_x"
+      },
+      {
+        "source": "center.y",
+        "target": "entity_y"
+      },
+      {
+        "source": "center.z",
+        "target": "entity_z"
+      },
+      {
+        "source": "width",
+        "target": "entity_width"
+      },
+      {
+        "source": "length",
+        "target": "entity_length"
+      },
+      {
+        "source": "height",
+        "target": "entity_height"
+      },
+      {
+        "source": "heading",
+        "target": "entity_heading"
+      }
+    ]
+  },
+  {
+    "_comment": "Example 5: Multiple archetypes from same message, sharing one timestamp",
+    "ser": "nav.proto.VehiclePoseStamped",
+    "archetype": "GeoPoints",
+    "encoding": "protobuf",
+    "timestamp_field": "header.timestamp_ns",
+    "timestamp_unit": "ns",
+    "field_mappings": [
+      {
+        "source": "latitude",
+        "target": "latitude"
+      },
+      {
+        "source": "longitude",
+        "target": "longitude"
+      }
+    ]
+  },
+  {
+    "_comment": "Example 5 continued: same ser, different archetype, same timestamp config",
+    "ser": "nav.proto.VehiclePoseStamped",
+    "archetype": "Transform3D",
+    "encoding": "protobuf",
+    "timestamp_field": "header.timestamp_ns",
+    "timestamp_unit": "ns",
+    "field_mappings": [
+      {
+        "source": "pose.position.x",
+        "target": "position_x"
+      },
+      {
+        "source": "pose.position.y",
+        "target": "position_y"
+      },
+      {
+        "source": "pose.position.z",
+        "target": "position_z"
+      },
+      {
+        "source": "pose.orientation",
+        "target": "pose"
+      }
+    ]
+  }
+]

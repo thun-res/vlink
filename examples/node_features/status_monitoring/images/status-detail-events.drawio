@@ -1,0 +1,131 @@
+<mxfile host="app.diagrams.net" modified="2026-05-19T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="status-detail-events" name="Status Monitoring Events">
+    <mxGraphModel dx="1120" dy="640" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1120" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="register_status_handler  -  DDS-Style Status Events" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="1080" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Node status changes fire Status::BasePtr callbacks  &#183;  CPU usage via get_cpu_usage()  &#183;  attach handler to a dedicated MessageLoop" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#2e7d32;" vertex="1" parent="1">
+          <mxGeometry x="20" y="56" width="1080" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="node_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="340" height="380" as="geometry" />
+        </mxCell>
+        <mxCell id="node_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="340" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="node_t" value="Publisher  /  Subscriber  /  Server" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="40" y="116" width="340" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n1" value="MessageLoop status_loop&#10;loop.async_run()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="60" y="156" width="300" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="n2" value="sub.attach(&amp;status_loop)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="60" y="214" width="300" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="n3" value="sub.register_status_handler(&#10;  [](Status::BasePtr s){&#10;    s-&gt;get_type();&#10;  })" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=#2e7d32;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="60" y="264" width="300" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="n4" value="sub.listen([](const T&amp; msg){...})" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="60" y="358" width="300" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="n5" value="double cpu = sub.get_cpu_usage();&#10;// 0.0 - 100.0 percent, -1 if disabled" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=2;fontColor=#1b5e20;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="408" width="300" height="56" as="geometry" />
+        </mxCell>
+
+        <mxCell id="evt_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="400" y="100" width="380" height="380" as="geometry" />
+        </mxCell>
+        <mxCell id="evt_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="400" y="100" width="380" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="evt_t" value="Status::Type  -  DDS-Compatible Event Enum" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="400" y="116" width="380" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e1" value="kPublicationMatched&#10;publisher discovered new subscriber" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=#2e7d32;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="420" y="156" width="340" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="kSubscriptionMatched&#10;subscriber discovered new publisher" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=#2e7d32;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="420" y="204" width="340" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="kOfferedDeadlineMissed&#10;writer missed promised deadline" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="420" y="252" width="340" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="kLivelinessLost&#10;writer failed to assert liveliness" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="420" y="300" width="340" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="kSampleRejected&#10;reader rejected sample (limits)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="420" y="348" width="340" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="kSampleLost&#10;sample lost in transit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="420" y="396" width="340" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e_foot" value="Available events depend on the active transport backend" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="400" y="446" width="380" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cb_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="800" y="100" width="280" height="380" as="geometry" />
+        </mxCell>
+        <mxCell id="cb_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="800" y="100" width="280" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="cb_t" value="Status Handler Thread" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="800" y="116" width="280" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cb1" value="loop.is_in_same_thread()&#10;== true on dispatch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="820" y="156" width="240" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="cb2" value="status_loop&#10;( dedicated thread )" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=#2e7d32;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="820" y="220" width="240" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="cb3" value="handler runs serialised&#10;no extra mutex needed" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;arcSize=10;strokeWidth=1.2;fontSize=11;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="820" y="284" width="240" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="cb4" value="set VLINK_PROFILER_ENABLE=1&#10;to receive non-negative cpu" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=2;fontColor=#1b5e20;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="340" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="cb_foot" value="loop.quit() + loop.wait_for_quit()" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="800" y="412" width="280" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr1" value="&lt;b&gt;fires&lt;/b&gt;" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#388e3c;rounded=1;fontSize=11;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="380" y="306" as="sourcePoint" />
+            <mxPoint x="420" y="240" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arr2" value="&lt;b&gt;dispatch&lt;/b&gt;" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#388e3c;rounded=1;fontSize=11;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="780" y="240" as="sourcePoint" />
+            <mxPoint x="820" y="240" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="api_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="500" width="1040" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="api_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="500" width="1040" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="api_t" value="API Summary" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="40" y="516" width="1040" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="api1" value="register_status_handler(cb)&#10;callback on status changes  ( connect / disconnect / discovery / deadline ... )" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="60" y="546" width="500" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="api2" value="get_cpu_usage()  -&gt;  double&#10;process CPU percentage  [0..100]  or  -1 when profiler disabled" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="580" y="546" width="480" height="50" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

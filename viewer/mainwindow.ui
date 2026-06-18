@@ -1,0 +1,1600 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1366</width>
+    <height>768</height>
+   </rect>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>1366</width>
+    <height>768</height>
+   </size>
+  </property>
+  <property name="windowTitle">
+   <string>VLink Viewer</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QHBoxLayout" name="horizontalLayout_13">
+    <item>
+     <widget class="QSplitter" name="splitter_main">
+      <property name="frameShadow">
+       <enum>QFrame::Shadow::Raised</enum>
+      </property>
+      <property name="orientation">
+       <enum>Qt::Orientation::Horizontal</enum>
+      </property>
+      <property name="childrenCollapsible">
+       <bool>false</bool>
+      </property>
+      <widget class="QGroupBox" name="groupBox_url">
+       <property name="title">
+        <string/>
+       </property>
+       <layout class="QGridLayout" name="gridLayout_2">
+        <item row="0" column="0">
+         <widget class="QStackedWidget" name="stackedWidget_main">
+          <property name="currentIndex">
+           <number>0</number>
+          </property>
+          <widget class="QWidget" name="page_url">
+           <layout class="QVBoxLayout" name="verticalLayout_8">
+            <property name="spacing">
+             <number>6</number>
+            </property>
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <item>
+             <layout class="QGridLayout" name="gridLayout">
+              <item row="0" column="1">
+               <layout class="QVBoxLayout" name="verticalLayout_5">
+                <item>
+                 <widget class="QLineEdit" name="lineEdit_filter">
+                  <property name="focusPolicy">
+                   <enum>Qt::FocusPolicy::ClickFocus</enum>
+                  </property>
+                  <property name="readOnly">
+                   <bool>false</bool>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <layout class="QHBoxLayout" name="horizontalLayout">
+                  <item>
+                   <widget class="QCheckBox" name="checkBox_observe">
+                    <property name="text">
+                     <string>Observe All</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QCheckBox" name="checkBox_active">
+                    <property name="text">
+                     <string>Only Active</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QCheckBox" name="checkBox_selectall">
+                    <property name="text">
+                     <string>Select All</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QLabel" name="label_empty">
+                    <property name="sizePolicy">
+                     <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+                      <horstretch>0</horstretch>
+                      <verstretch>0</verstretch>
+                     </sizepolicy>
+                    </property>
+                    <property name="text">
+                     <string/>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </item>
+               </layout>
+              </item>
+              <item row="0" column="0" rowspan="2">
+               <layout class="QVBoxLayout" name="verticalLayout_4">
+                <item>
+                 <widget class="QLabel" name="label_filter">
+                  <property name="text">
+                   <string>Filter: </string>
+                  </property>
+                  <property name="textInteractionFlags">
+                   <set>Qt::TextInteractionFlag::NoTextInteraction</set>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="label">
+                  <property name="text">
+                   <string>Conditions: </string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="label_forms">
+                  <property name="text">
+                   <string>Forms:</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+              <item row="0" column="2">
+               <layout class="QVBoxLayout" name="verticalLayout_2">
+                <item>
+                 <widget class="QComboBox" name="comboBox_filter">
+                  <property name="minimumSize">
+                   <size>
+                    <width>150</width>
+                    <height>0</height>
+                   </size>
+                  </property>
+                  <item>
+                   <property name="text">
+                    <string>By Url Name</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>By Process Name</string>
+                   </property>
+                  </item>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QComboBox" name="comboBox_condi">
+                  <property name="sizePolicy">
+                   <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                    <horstretch>0</horstretch>
+                    <verstretch>0</verstretch>
+                   </sizepolicy>
+                  </property>
+                  <property name="minimumSize">
+                   <size>
+                    <width>150</width>
+                    <height>0</height>
+                   </size>
+                  </property>
+                  <item>
+                   <property name="text">
+                    <string>All Nodes</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Pub &amp;&amp; Sub</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Ser &amp;&amp; Cli</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Set &amp;&amp; Get</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Pub || Sub</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Ser || Cli</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Set || Get</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Pub Only</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Sub Only</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Ser Only</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Cli Only</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Set Only</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Get Only</string>
+                   </property>
+                  </item>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+              <item row="1" column="1" colspan="2">
+               <layout class="QHBoxLayout" name="horizontalLayout_5">
+                <item>
+                 <widget class="QCheckBox" name="checkBox_showfreq">
+                  <property name="text">
+                   <string>Freq Visible</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QCheckBox" name="checkBox_showrate">
+                  <property name="text">
+                   <string>Rate Visible</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QCheckBox" name="checkBox_showloss">
+                  <property name="text">
+                   <string>Loss Visible</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QCheckBox" name="checkBox_showlantency">
+                  <property name="text">
+                   <string>Latency Visible</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <spacer name="horizontalSpacer_5">
+                  <property name="orientation">
+                   <enum>Qt::Orientation::Horizontal</enum>
+                  </property>
+                  <property name="sizeHint" stdset="0">
+                   <size>
+                    <width>40</width>
+                    <height>20</height>
+                   </size>
+                  </property>
+                 </spacer>
+                </item>
+               </layout>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QTreeWidget" name="treeWidget_url">
+              <column>
+               <property name="text">
+                <string notr="true">1</string>
+               </property>
+              </column>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+          <widget class="QWidget" name="page_database">
+           <layout class="QVBoxLayout" name="verticalLayout_16">
+            <property name="spacing">
+             <number>0</number>
+            </property>
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <item>
+             <layout class="QVBoxLayout" name="verticalLayout_15">
+              <item>
+               <layout class="QHBoxLayout" name="horizontalLayout_9">
+                <item>
+                 <layout class="QVBoxLayout" name="verticalLayout_12">
+                  <item>
+                   <widget class="QLabel" name="label_datapath">
+                    <property name="text">
+                     <string>Bag Path: </string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QComboBox" name="comboBox_jump">
+                    <property name="minimumSize">
+                     <size>
+                      <width>130</width>
+                      <height>0</height>
+                     </size>
+                    </property>
+                    <item>
+                     <property name="text">
+                      <string>Jump By Index</string>
+                     </property>
+                    </item>
+                    <item>
+                     <property name="text">
+                      <string>Jump By Seconds</string>
+                     </property>
+                    </item>
+                   </widget>
+                  </item>
+                 </layout>
+                </item>
+                <item>
+                 <layout class="QVBoxLayout" name="verticalLayout_13">
+                  <item>
+                   <widget class="QLineEdit" name="lineEdit_datapath">
+                    <property name="readOnly">
+                     <bool>true</bool>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QLineEdit" name="lineEdit_jump"/>
+                  </item>
+                 </layout>
+                </item>
+                <item>
+                 <layout class="QVBoxLayout" name="verticalLayout_14">
+                  <item>
+                   <layout class="QHBoxLayout" name="horizontalLayout_11">
+                    <item>
+                     <widget class="QPushButton" name="pushButton_dataselect">
+                      <property name="text">
+                       <string>Select</string>
+                      </property>
+                      <property name="icon">
+                       <iconset resource="resource.qrc">
+                        <normaloff>:/resource/select.png</normaloff>:/resource/select.png</iconset>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QPushButton" name="pushButton_datareload">
+                      <property name="text">
+                       <string>Reload</string>
+                      </property>
+                      <property name="icon">
+                       <iconset resource="resource.qrc">
+                        <normaloff>:/resource/reload.png</normaloff>:/resource/reload.png</iconset>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
+                  </item>
+                  <item>
+                   <layout class="QHBoxLayout" name="horizontalLayout_7">
+                    <item>
+                     <widget class="QPushButton" name="pushButton_jump">
+                      <property name="text">
+                       <string>Jump</string>
+                      </property>
+                      <property name="icon">
+                       <iconset resource="resource.qrc">
+                        <normaloff>:/resource/go.png</normaloff>:/resource/go.png</iconset>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QPushButton" name="pushButton_datadetails">
+                      <property name="text">
+                       <string>Details</string>
+                      </property>
+                      <property name="icon">
+                       <iconset resource="resource.qrc">
+                        <normaloff>:/resource/about.png</normaloff>:/resource/about.png</iconset>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
+                  </item>
+                 </layout>
+                </item>
+               </layout>
+              </item>
+              <item>
+               <widget class="QTableView" name="tableView_data"/>
+              </item>
+             </layout>
+            </item>
+           </layout>
+          </widget>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QGroupBox" name="groupBox_status">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="title">
+        <string/>
+       </property>
+       <layout class="QVBoxLayout" name="verticalLayout_23">
+        <item>
+         <widget class="QSplitter" name="splitter_status">
+          <property name="orientation">
+           <enum>Qt::Orientation::Vertical</enum>
+          </property>
+          <property name="opaqueResize">
+           <bool>true</bool>
+          </property>
+          <property name="childrenCollapsible">
+           <bool>false</bool>
+          </property>
+          <widget class="QWidget" name="layoutWidget">
+           <layout class="QVBoxLayout" name="verticalLayout_22">
+            <item>
+             <widget class="QLabel" name="label_status">
+              <property name="font">
+               <font>
+                <bold>true</bold>
+               </font>
+              </property>
+              <property name="styleSheet">
+               <string notr="true">QLabel { background-color: red; color: white; }</string>
+              </property>
+              <property name="text">
+               <string>Proxy is disconnected.</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignmentFlag::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="horizontalLayout_14">
+              <property name="spacing">
+               <number>10</number>
+              </property>
+              <item>
+               <layout class="QVBoxLayout" name="verticalLayout_19">
+                <item>
+                 <widget class="QLabel" name="label_host1">
+                  <property name="text">
+                   <string>Host Name: </string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="label_systime1">
+                  <property name="text">
+                   <string>System Time: </string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="label_boottime1">
+                  <property name="text">
+                   <string>Boot Time: </string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="label_resource1">
+                  <property name="text">
+                   <string>Resource Usage: </string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+              <item>
+               <layout class="QVBoxLayout" name="verticalLayout_21">
+                <item>
+                 <widget class="QLabel" name="label_host2">
+                  <property name="sizePolicy">
+                   <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+                    <horstretch>0</horstretch>
+                    <verstretch>0</verstretch>
+                   </sizepolicy>
+                  </property>
+                  <property name="minimumSize">
+                   <size>
+                    <width>100</width>
+                    <height>0</height>
+                   </size>
+                  </property>
+                  <property name="text">
+                   <string>---</string>
+                  </property>
+                  <property name="alignment">
+                   <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignVCenter</set>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="label_systime2">
+                  <property name="sizePolicy">
+                   <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+                    <horstretch>0</horstretch>
+                    <verstretch>0</verstretch>
+                   </sizepolicy>
+                  </property>
+                  <property name="minimumSize">
+                   <size>
+                    <width>100</width>
+                    <height>0</height>
+                   </size>
+                  </property>
+                  <property name="text">
+                   <string>---</string>
+                  </property>
+                  <property name="alignment">
+                   <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignVCenter</set>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="label_boottime2">
+                  <property name="sizePolicy">
+                   <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+                    <horstretch>0</horstretch>
+                    <verstretch>0</verstretch>
+                   </sizepolicy>
+                  </property>
+                  <property name="text">
+                   <string>---</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="label_resource2">
+                  <property name="sizePolicy">
+                   <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+                    <horstretch>0</horstretch>
+                    <verstretch>0</verstretch>
+                   </sizepolicy>
+                  </property>
+                  <property name="minimumSize">
+                   <size>
+                    <width>100</width>
+                    <height>0</height>
+                   </size>
+                  </property>
+                  <property name="text">
+                   <string>---</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="Line" name="line">
+              <property name="orientation">
+               <enum>Qt::Orientation::Horizontal</enum>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="horizontalLayout_3">
+              <item>
+               <widget class="QLabel" name="label_graph_value1">
+                <property name="text">
+                 <string>Current Freq: </string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="label_graph_value2">
+                <property name="text">
+                 <string>---</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="horizontalSpacer_3">
+                <property name="orientation">
+                 <enum>Qt::Orientation::Horizontal</enum>
+                </property>
+                <property name="sizeHint" stdset="0">
+                 <size>
+                  <width>20</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="label_access">
+                <property name="minimumSize">
+                 <size>
+                  <width>16</width>
+                  <height>16</height>
+                 </size>
+                </property>
+                <property name="maximumSize">
+                 <size>
+                  <width>16</width>
+                  <height>16</height>
+                 </size>
+                </property>
+                <property name="text">
+                 <string/>
+                </property>
+                <property name="pixmap">
+                 <pixmap resource="resource.qrc">:/resource/access.png</pixmap>
+                </property>
+                <property name="scaledContents">
+                 <bool>true</bool>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QStackedWidget" name="stackedWidget_status">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="currentIndex">
+               <number>0</number>
+              </property>
+              <widget class="QWidget" name="page_freq">
+               <layout class="QVBoxLayout" name="verticalLayout_20">
+                <property name="spacing">
+                 <number>6</number>
+                </property>
+                <property name="leftMargin">
+                 <number>0</number>
+                </property>
+                <property name="topMargin">
+                 <number>0</number>
+                </property>
+                <property name="rightMargin">
+                 <number>0</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>0</number>
+                </property>
+                <item>
+                 <widget class="TrafficWidget" name="widget_freq" native="true">
+                  <property name="minimumSize">
+                   <size>
+                    <width>300</width>
+                    <height>100</height>
+                   </size>
+                  </property>
+                  <property name="autoFillBackground">
+                   <bool>false</bool>
+                  </property>
+                  <property name="styleSheet">
+                   <string notr="true">background-color: rgb(0, 0, 0);</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </widget>
+              <widget class="QWidget" name="page_rate">
+               <layout class="QVBoxLayout" name="verticalLayout_11">
+                <property name="spacing">
+                 <number>6</number>
+                </property>
+                <property name="leftMargin">
+                 <number>0</number>
+                </property>
+                <property name="topMargin">
+                 <number>0</number>
+                </property>
+                <property name="rightMargin">
+                 <number>0</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>0</number>
+                </property>
+                <item>
+                 <widget class="TrafficWidget" name="widget_rate" native="true">
+                  <property name="minimumSize">
+                   <size>
+                    <width>300</width>
+                    <height>100</height>
+                   </size>
+                  </property>
+                  <property name="autoFillBackground">
+                   <bool>false</bool>
+                  </property>
+                  <property name="styleSheet">
+                   <string notr="true">background-color: rgb(0, 0, 0);</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </widget>
+              <widget class="QWidget" name="page_loss">
+               <layout class="QVBoxLayout" name="verticalLayout_18">
+                <property name="spacing">
+                 <number>6</number>
+                </property>
+                <property name="leftMargin">
+                 <number>0</number>
+                </property>
+                <property name="topMargin">
+                 <number>0</number>
+                </property>
+                <property name="rightMargin">
+                 <number>0</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>0</number>
+                </property>
+                <item>
+                 <widget class="TrafficWidget" name="widget_loss" native="true">
+                  <property name="minimumSize">
+                   <size>
+                    <width>300</width>
+                    <height>100</height>
+                   </size>
+                  </property>
+                  <property name="autoFillBackground">
+                   <bool>false</bool>
+                  </property>
+                  <property name="styleSheet">
+                   <string notr="true">background-color: rgb(0, 0, 0);</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </widget>
+              <widget class="QWidget" name="page_lat">
+               <layout class="QVBoxLayout" name="verticalLayout">
+                <property name="spacing">
+                 <number>6</number>
+                </property>
+                <property name="leftMargin">
+                 <number>0</number>
+                </property>
+                <property name="topMargin">
+                 <number>0</number>
+                </property>
+                <property name="rightMargin">
+                 <number>0</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>0</number>
+                </property>
+                <item>
+                 <widget class="TrafficWidget" name="widget_lat" native="true">
+                  <property name="minimumSize">
+                   <size>
+                    <width>300</width>
+                    <height>100</height>
+                   </size>
+                  </property>
+                  <property name="autoFillBackground">
+                   <bool>false</bool>
+                  </property>
+                  <property name="styleSheet">
+                   <string notr="true">background-color: rgb(0, 0, 0);</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </widget>
+             </widget>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="horizontalLayout_12">
+              <item>
+               <widget class="QRadioButton" name="radioButton_freq">
+                <property name="text">
+                 <string>Fre&amp;q</string>
+                </property>
+                <property name="checked">
+                 <bool>true</bool>
+                </property>
+                <attribute name="buttonGroup">
+                 <string notr="true">buttonGroup_graph</string>
+                </attribute>
+               </widget>
+              </item>
+              <item>
+               <widget class="QRadioButton" name="radioButton_rate">
+                <property name="text">
+                 <string>Rate </string>
+                </property>
+                <attribute name="buttonGroup">
+                 <string notr="true">buttonGroup_graph</string>
+                </attribute>
+               </widget>
+              </item>
+              <item>
+               <widget class="QRadioButton" name="radioButton_loss">
+                <property name="text">
+                 <string>Loss</string>
+                </property>
+                <attribute name="buttonGroup">
+                 <string notr="true">buttonGroup_graph</string>
+                </attribute>
+               </widget>
+              </item>
+              <item>
+               <widget class="QRadioButton" name="radioButton_lat">
+                <property name="text">
+                 <string>Latency</string>
+                </property>
+                <attribute name="buttonGroup">
+                 <string notr="true">buttonGroup_graph</string>
+                </attribute>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QSlider" name="horizontalSlider">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>20</number>
+              </property>
+              <property name="singleStep">
+               <number>1</number>
+              </property>
+              <property name="pageStep">
+               <number>1</number>
+              </property>
+              <property name="value">
+               <number>2</number>
+              </property>
+              <property name="orientation">
+               <enum>Qt::Orientation::Horizontal</enum>
+              </property>
+              <property name="invertedAppearance">
+               <bool>false</bool>
+              </property>
+              <property name="invertedControls">
+               <bool>false</bool>
+              </property>
+              <property name="tickPosition">
+               <enum>QSlider::TickPosition::TicksAbove</enum>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="label_empty3">
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>5</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>16777215</width>
+                <height>5</height>
+               </size>
+              </property>
+              <property name="text">
+               <string/>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+          <widget class="QWidget" name="layoutWidget_2">
+           <layout class="QVBoxLayout" name="verticalLayout_10">
+            <item>
+             <widget class="QLabel" name="label_empty4">
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>5</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>16777215</width>
+                <height>5</height>
+               </size>
+              </property>
+              <property name="text">
+               <string/>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="label_process1">
+              <property name="text">
+               <string>---</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QTreeWidget" name="treeWidget_process1">
+              <property name="minimumSize">
+               <size>
+                <width>300</width>
+                <height>90</height>
+               </size>
+              </property>
+              <column>
+               <property name="text">
+                <string notr="true">1</string>
+               </property>
+              </column>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="label_process2">
+              <property name="text">
+               <string>---</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QTreeWidget" name="treeWidget_process2">
+              <property name="minimumSize">
+               <size>
+                <width>300</width>
+                <height>90</height>
+               </size>
+              </property>
+              <column>
+               <property name="text">
+                <string notr="true">1</string>
+               </property>
+              </column>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QGroupBox" name="groupBox_proto">
+       <property name="title">
+        <string/>
+       </property>
+       <layout class="QVBoxLayout" name="verticalLayout_9">
+        <item>
+         <layout class="QVBoxLayout" name="verticalLayout_7">
+          <property name="spacing">
+           <number>6</number>
+          </property>
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout_4">
+            <item>
+             <layout class="QVBoxLayout" name="verticalLayout_3">
+              <item>
+               <widget class="QLabel" name="label_protodir">
+                <property name="text">
+                 <string>Proto Dir: </string>
+                </property>
+                <property name="textInteractionFlags">
+                 <set>Qt::TextInteractionFlag::NoTextInteraction</set>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="label_fbsdir">
+                <property name="text">
+                 <string>Fbs Dir: </string>
+                </property>
+                <property name="textInteractionFlags">
+                 <set>Qt::TextInteractionFlag::NoTextInteraction</set>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="label_protoser">
+                <property name="text">
+                 <string>Serialization Type: </string>
+                </property>
+                <property name="textInteractionFlags">
+                 <set>Qt::TextInteractionFlag::NoTextInteraction</set>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <layout class="QVBoxLayout" name="verticalLayout_6">
+              <item>
+               <layout class="QHBoxLayout" name="horizontalLayout_2">
+                <item>
+                 <widget class="QLineEdit" name="lineEdit_protodir">
+                  <property name="readOnly">
+                   <bool>true</bool>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="pushButton_protoselect">
+                  <property name="text">
+                   <string>Select</string>
+                  </property>
+                  <property name="icon">
+                   <iconset resource="resource.qrc">
+                    <normaloff>:/resource/select.png</normaloff>:/resource/select.png</iconset>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="pushButton_protoreload">
+                  <property name="text">
+                   <string>Reload</string>
+                  </property>
+                  <property name="icon">
+                   <iconset resource="resource.qrc">
+                    <normaloff>:/resource/reload.png</normaloff>:/resource/reload.png</iconset>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+              <item>
+               <layout class="QHBoxLayout" name="horizontalLayout_fbs">
+                <item>
+                 <widget class="QLineEdit" name="lineEdit_fbsdir">
+                  <property name="readOnly">
+                   <bool>true</bool>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="pushButton_fbsselect">
+                  <property name="text">
+                   <string>Select</string>
+                  </property>
+                  <property name="icon">
+                   <iconset resource="resource.qrc">
+                    <normaloff>:/resource/select.png</normaloff>:/resource/select.png</iconset>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="pushButton_fbsreload">
+                  <property name="text">
+                   <string>Reload</string>
+                  </property>
+                  <property name="icon">
+                   <iconset resource="resource.qrc">
+                    <normaloff>:/resource/reload.png</normaloff>:/resource/reload.png</iconset>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+              <item>
+               <widget class="QLineEdit" name="lineEdit_protoser">
+                <property name="readOnly">
+                 <bool>true</bool>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout_8">
+            <item>
+             <widget class="QCheckBox" name="checkBox_view">
+              <property name="text">
+               <string>Enable View</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QCheckBox" name="checkBox_perf">
+              <property name="text">
+               <string>Perf Mode</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QCheckBox" name="checkBox_array">
+              <property name="text">
+               <string>Ignore Array</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="horizontalSpacer">
+              <property name="orientation">
+               <enum>Qt::Orientation::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>0</width>
+                <height>0</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QPushButton" name="pushButton_analyze">
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+              <property name="text">
+               <string>Analyze</string>
+              </property>
+              <property name="icon">
+               <iconset resource="resource.qrc">
+                <normaloff>:/resource/analyze.png</normaloff>:/resource/analyze.png</iconset>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout_6">
+            <item>
+             <widget class="QCheckBox" name="checkBox_time">
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+              <property name="text">
+               <string>Time Format</string>
+              </property>
+              <property name="checked">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QCheckBox" name="checkBox_enum">
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+              <property name="text">
+               <string>Enum Format</string>
+              </property>
+              <property name="checked">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QCheckBox" name="checkBox_hex">
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+              <property name="text">
+               <string>Hex Format</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="horizontalSpacer_6">
+              <property name="orientation">
+               <enum>Qt::Orientation::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QTreeWidget" name="treeWidget_property">
+            <property name="minimumSize">
+             <size>
+              <width>400</width>
+              <height>0</height>
+             </size>
+            </property>
+            <property name="selectionMode">
+             <enum>QAbstractItemView::SelectionMode::NoSelection</enum>
+            </property>
+            <column>
+             <property name="text">
+              <string notr="true">1</string>
+             </property>
+            </column>
+           </widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>1366</width>
+     <height>20</height>
+    </rect>
+   </property>
+   <property name="contextMenuPolicy">
+    <enum>Qt::ContextMenuPolicy::PreventContextMenu</enum>
+   </property>
+   <property name="defaultUp">
+    <bool>false</bool>
+   </property>
+   <property name="nativeMenuBar">
+    <bool>false</bool>
+   </property>
+   <widget class="QMenu" name="menuHelp_H">
+    <property name="title">
+     <string>Help(&amp;H)</string>
+    </property>
+    <addaction name="actionAbout_this_S"/>
+    <addaction name="actionAboutQt_A"/>
+    <addaction name="separator"/>
+    <addaction name="actionHow_to_use_U"/>
+    <addaction name="actionBug_Report_B"/>
+    <addaction name="actionDownload_L"/>
+   </widget>
+   <widget class="QMenu" name="menuSetting">
+    <property name="title">
+     <string>Tools(&amp;T)</string>
+    </property>
+    <addaction name="separator"/>
+    <addaction name="actionDB_Browser_W"/>
+    <addaction name="actionProtobuf_Decoder_F"/>
+    <addaction name="actionCommunication_Matrix_M"/>
+   </widget>
+   <widget class="QMenu" name="menuStart_S">
+    <property name="title">
+     <string>Start(&amp;S)</string>
+    </property>
+    <addaction name="actionLocal_D"/>
+    <addaction name="actionAnalyzer_K"/>
+    <addaction name="separator"/>
+    <addaction name="actionRecord_R"/>
+    <addaction name="actionPlay_P"/>
+    <addaction name="actionEdit_E"/>
+    <addaction name="separator"/>
+    <addaction name="actionRaw_J"/>
+    <addaction name="actionCamera_S"/>
+    <addaction name="actionPoint3D_Z"/>
+    <addaction name="actionPerception"/>
+    <addaction name="actionMap_G"/>
+    <addaction name="separator"/>
+    <addaction name="actionTopology_N"/>
+    <addaction name="actionQuit_Q"/>
+   </widget>
+   <widget class="QMenu" name="menuView_V">
+    <property name="title">
+     <string>View(&amp;V)</string>
+    </property>
+    <addaction name="actionStatus_Viewer"/>
+    <addaction name="actionProto_Viewer"/>
+   </widget>
+   <addaction name="menuStart_S"/>
+   <addaction name="menuSetting"/>
+   <addaction name="menuView_V"/>
+   <addaction name="menuHelp_H"/>
+  </widget>
+  <widget class="QStatusBar" name="statusbar">
+   <property name="contextMenuPolicy">
+    <enum>Qt::ContextMenuPolicy::PreventContextMenu</enum>
+   </property>
+  </widget>
+  <widget class="QToolBar" name="toolBar">
+   <property name="contextMenuPolicy">
+    <enum>Qt::ContextMenuPolicy::PreventContextMenu</enum>
+   </property>
+   <property name="windowTitle">
+    <string>ToolBar</string>
+   </property>
+   <property name="movable">
+    <bool>false</bool>
+   </property>
+   <property name="iconSize">
+    <size>
+     <width>32</width>
+     <height>24</height>
+    </size>
+   </property>
+   <property name="toolButtonStyle">
+    <enum>Qt::ToolButtonStyle::ToolButtonIconOnly</enum>
+   </property>
+   <property name="floatable">
+    <bool>false</bool>
+   </property>
+   <attribute name="toolBarArea">
+    <enum>TopToolBarArea</enum>
+   </attribute>
+   <attribute name="toolBarBreak">
+    <bool>false</bool>
+   </attribute>
+   <addaction name="actionLocal_D"/>
+   <addaction name="actionAnalyzer_K"/>
+   <addaction name="separator"/>
+   <addaction name="actionRecord_R"/>
+   <addaction name="actionPlay_P"/>
+   <addaction name="actionEdit_E"/>
+   <addaction name="separator"/>
+   <addaction name="actionRaw_J"/>
+   <addaction name="actionCamera_S"/>
+   <addaction name="actionPoint3D_Z"/>
+   <addaction name="actionPerception"/>
+   <addaction name="actionMap_G"/>
+  </widget>
+  <action name="actionQuit_Q">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/close.png</normaloff>:/resource/close.png</iconset>
+   </property>
+   <property name="text">
+    <string>Quit(&amp;Q)</string>
+   </property>
+  </action>
+  <action name="actionAboutQt_A">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/about.png</normaloff>:/resource/about.png</iconset>
+   </property>
+   <property name="text">
+    <string>About Qt(&amp;T)</string>
+   </property>
+  </action>
+  <action name="actionAbout_this_S">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/about.png</normaloff>:/resource/about.png</iconset>
+   </property>
+   <property name="text">
+    <string>About This(&amp;A)</string>
+   </property>
+  </action>
+  <action name="actionRecord_R">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/record.png</normaloff>:/resource/record.png</iconset>
+   </property>
+   <property name="text">
+    <string>Record(&amp;R)</string>
+   </property>
+  </action>
+  <action name="actionPlay_P">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/play.png</normaloff>:/resource/play.png</iconset>
+   </property>
+   <property name="text">
+    <string>Play(&amp;P)</string>
+   </property>
+  </action>
+  <action name="actionEdit_E">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/edit.png</normaloff>:/resource/edit.png</iconset>
+   </property>
+   <property name="text">
+    <string>Edit(&amp;E)</string>
+   </property>
+  </action>
+  <action name="actionCamera_S">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/camera.png</normaloff>:/resource/camera.png</iconset>
+   </property>
+   <property name="text">
+    <string>Camera(&amp;S)</string>
+   </property>
+   <property name="toolTip">
+    <string>Camera(S)</string>
+   </property>
+  </action>
+  <action name="actionLocal_D">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/local.png</normaloff>:/resource/local.png</iconset>
+   </property>
+   <property name="text">
+    <string>Local(&amp;D)</string>
+   </property>
+   <property name="toolTip">
+    <string>Local(D)</string>
+   </property>
+  </action>
+  <action name="actionStatus_Viewer">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Status Viewer(&amp;X)</string>
+   </property>
+  </action>
+  <action name="actionProto_Viewer">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Proto Viewer(&amp;Y)</string>
+   </property>
+  </action>
+  <action name="actionBug_Report_B">
+   <property name="enabled">
+    <bool>true</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/bug.png</normaloff>:/resource/bug.png</iconset>
+   </property>
+   <property name="text">
+    <string>Bug Report(&amp;B)</string>
+   </property>
+  </action>
+  <action name="actionHow_to_use_U">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/guide.png</normaloff>:/resource/guide.png</iconset>
+   </property>
+   <property name="text">
+    <string>How to Use(&amp;U)</string>
+   </property>
+  </action>
+  <action name="actionDownload_L">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/download.png</normaloff>:/resource/download.png</iconset>
+   </property>
+   <property name="text">
+    <string>Download(&amp;L)</string>
+   </property>
+  </action>
+  <action name="actionDB_Browser_W">
+   <property name="checked">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/database_edit.png</normaloff>:/resource/database_edit.png</iconset>
+   </property>
+   <property name="text">
+    <string>DB Browser(&amp;W)</string>
+   </property>
+   <property name="priority">
+    <enum>QAction::Priority::LowPriority</enum>
+   </property>
+  </action>
+  <action name="actionProtobuf_Decoder_F">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/proto.png</normaloff>:/resource/proto.png</iconset>
+   </property>
+   <property name="text">
+    <string>Protobuf Decoder(&amp;F)</string>
+   </property>
+  </action>
+  <action name="actionRaw_J">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/raw.png</normaloff>:/resource/raw.png</iconset>
+   </property>
+   <property name="text">
+    <string>Raw(&amp;J)</string>
+   </property>
+  </action>
+  <action name="actionCommunication_Matrix_M">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/martix.png</normaloff>:/resource/martix.png</iconset>
+   </property>
+   <property name="text">
+    <string>Communication Matrix(&amp;M)</string>
+   </property>
+  </action>
+  <action name="actionPoint3D_Z">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/3d.png</normaloff>:/resource/3d.png</iconset>
+   </property>
+   <property name="text">
+    <string>Point3D(&amp;Z)</string>
+   </property>
+  </action>
+  <action name="actionPerception">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/perception.png</normaloff>:/resource/perception.png</iconset>
+   </property>
+   <property name="text">
+    <string>Perception(&amp;V)</string>
+   </property>
+  </action>
+  <action name="actionAnalyzer_K">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/analyzer_local.png</normaloff>:/resource/analyzer_local.png</iconset>
+   </property>
+   <property name="text">
+    <string>Analyzer(&amp;K)</string>
+   </property>
+  </action>
+  <action name="actionMap_G">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/map.png</normaloff>:/resource/map.png</iconset>
+   </property>
+   <property name="text">
+    <string>Map(&amp;G)</string>
+   </property>
+  </action>
+  <action name="actionTopology_N">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/topology.png</normaloff>:/resource/topology.png</iconset>
+   </property>
+   <property name="text">
+    <string>Topology(&amp;N)</string>
+   </property>
+   <property name="visible">
+    <bool>false</bool>
+   </property>
+  </action>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>TrafficWidget</class>
+   <extends>QWidget</extends>
+   <header>./trafficwidget.h</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
+ <resources>
+  <include location="resource.qrc"/>
+ </resources>
+ <connections/>
+ <buttongroups>
+  <buttongroup name="buttonGroup_graph"/>
+ </buttongroups>
+</ui>

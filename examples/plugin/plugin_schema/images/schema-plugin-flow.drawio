@@ -1,0 +1,90 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="schema-plugin-flow" name="Schema Plugin Flow">
+    <mxGraphModel dx="1100" dy="650" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="650" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="SchemaPluginInterface &#8212; Schema Registration Flow" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1020" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="SchemaPlugin registers protobuf / flatbuffers schema &#8594; BagWriter embeds &#8594; BagReader decodes" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="54" width="1020" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="plugBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ce93d8;strokeWidth=1.5;arcSize=6;shadow=1;gradientColor=#f3e5f5;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="360" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="plugBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8e24aa;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="360" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="plugT" value="Schema Plugin  .so" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="118" width="360" height="26" as="geometry" />
+        </mxCell>
+
+        <mxCell id="plugRuntime" value="&lt;b&gt;protobuf + flatbuffers runtime&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;DescriptorPool / DynamicMessageFactory&lt;br/&gt;BFBS reflection::Schema / Parser&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1.2;fontSize=11;fontColor=#4a148c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="156" width="320" height="64" as="geometry" />
+        </mxCell>
+
+        <mxCell id="plugMethods" value="&lt;b&gt;Interface methods&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-family:Courier New;font-size:10px&quot;&gt;search_protobuf_descriptor()&lt;br/&gt;search_schema() / get_all_schemas()&lt;br/&gt;create_protobuf_message()&lt;br/&gt;search_flatbuffers_schema()&lt;br/&gt;create_flatbuffers_parser()&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1.2;fontSize=11;fontColor=#4a148c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="232" width="320" height="130" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mgrBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=6;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="450" y="100" width="320" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="mgrBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="450" y="100" width="320" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="mgrT" value="SchemaPluginManager  (Singleton)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="450" y="118" width="320" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="mgrGet" value="&lt;b&gt;get(schema_plugin_path)&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;loads .so on first call&lt;br/&gt;reads VLINK_SCHEMA_PLUGIN env&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;fontSize=11;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="470" y="156" width="280" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mgrPlug" value="Plugin::load" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;endFill=1;html=1;strokeColor=#1976d2;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;rounded=1;" edge="1" parent="1" source="mgrGet" target="plugMethods">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="writerBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ce93d8;strokeWidth=1.5;arcSize=6;shadow=1;gradientColor=#f3e5f5;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="450" y="430" width="320" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="writerBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8e24aa;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="450" y="430" width="320" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="writer" value="&lt;b&gt;BagWriter&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;records topics with schema&lt;br/&gt;embeds FileDescriptorSet / BFBS in bag&lt;/span&gt;" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="450" y="446" width="320" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="readerBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ffcc80;strokeWidth=1.5;arcSize=6;shadow=1;gradientColor=#fff8e1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="820" y="270" width="240" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="readerBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="820" y="270" width="240" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="reader" value="&lt;b&gt;BagReader&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;reads schema from bag&lt;br/&gt;uses protobuf msg or flatbuffers parser&lt;/span&gt;" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#bf360c;" vertex="1" parent="1">
+          <mxGeometry x="820" y="286" width="240" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="bagFile" value="&lt;b&gt;Bag File&lt;/b&gt; &lt;span style=&quot;font-family:Courier New;font-size:10px&quot;&gt;(.vdb / .vcap)&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;serialised messages + embedded SchemaData&lt;/span&gt;" style="shape=document;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1.5;fontSize=12;fontColor=#37474f;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="430" width="240" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="wSchema" value="search_schema() / get_all_schemas()" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;endFill=1;html=1;strokeColor=#8e24aa;strokeWidth=1.5;fontSize=10;fontColor=#4a148c;labelBackgroundColor=#ffffff;dashed=1;rounded=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.7;entryDx=0;entryDy=0;" edge="1" parent="1" source="writerBg" target="plugMethods">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="wBag" value="write" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;endFill=1;html=1;strokeColor=#546e7a;strokeWidth=1.5;fontSize=10;fontColor=#37474f;labelBackgroundColor=#ffffff;rounded=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="writerBg" target="bagFile">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="rBag" value="read" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;endFill=1;html=1;strokeColor=#546e7a;strokeWidth=1.5;fontSize=10;fontColor=#37474f;labelBackgroundColor=#ffffff;rounded=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="readerBg" target="bagFile">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="rSchema" value="create_protobuf_message() / create_flatbuffers_parser()" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;endFill=1;html=1;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=10;fontColor=#bf360c;labelBackgroundColor=#ffffff;dashed=1;rounded=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.4;entryDx=0;entryDy=0;" edge="1" parent="1" source="readerBg" target="plugMethods">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,243 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="serialization-type-detection" name="Type Detection Chain">
+    <mxGraphModel dx="1200" dy="1080" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="1080" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Serializer::Type  &#8212;  Compile-time Deduction Chain" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1120" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="get_type_of&amp;lt;T&amp;gt;() matches top-down by priority  &#183;  first hit wins  &#183;  source: include/vlink/internal/serializer-inl.h" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="54" width="1120" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="hL" value="Condition (checked top-down)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#455a64;strokeColor=none;arcSize=8;fontSize=13;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="80" y="96" width="640" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="hR" value="Result (Serializer::Type, enum value)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=8;fontSize=13;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="740" y="96" width="380" height="34" as="geometry" />
+        </mxCell>
+
+        <mxCell id="priBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=none;arcSize=20;" vertex="1" parent="1">
+          <mxGeometry x="48" y="140" width="16" height="820" as="geometry" />
+        </mxCell>
+        <mxCell id="priHi" value="High" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=1;fontColor=#ef6c00;" vertex="1" parent="1">
+          <mxGeometry x="30" y="122" width="52" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="priLo" value="Low" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=1;fontColor=#ef6c00;" vertex="1" parent="1">
+          <mxGeometry x="30" y="962" width="52" height="16" as="geometry" />
+        </mxCell>
+
+        <mxCell id="c1" value="T == Bytes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.2;arcSize=8;fontSize=12;fontFamily=Courier New;align=left;spacingLeft=14;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="80" y="148" width="640" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="r1" value="&lt;b&gt;kBytesType&lt;/b&gt; = 1  &#183;  raw byte pass-through" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.2;arcSize=8;fontSize=12;fontColor=#1b5e20;align=left;spacingLeft=14;" vertex="1" parent="1">
+          <mxGeometry x="740" y="148" width="380" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#66bb6a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720" y="167" as="sourcePoint" />
+            <mxPoint x="740" y="167" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="c2" value="is_vlink_dynamic_data() member exists" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.2;arcSize=8;fontSize=12;fontFamily=Courier New;align=left;spacingLeft=14;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="80" y="196" width="640" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="r2" value="&lt;b&gt;kDynamicType&lt;/b&gt; = 2  &#183;  dynamic-typed data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.2;arcSize=8;fontSize=12;fontColor=#1b5e20;align=left;spacingLeft=14;" vertex="1" parent="1">
+          <mxGeometry x="740" y="196" width="380" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#66bb6a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720" y="215" as="sourcePoint" />
+            <mxPoint x="740" y="215" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="c3" value="serialize(Cdr&amp;) / deserialize(Cdr&amp;) members" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.2;arcSize=8;fontSize=12;fontFamily=Courier New;align=left;spacingLeft=14;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="80" y="244" width="640" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="r3" value="&lt;b&gt;kCdrType&lt;/b&gt; = 4  &#183;  FastCDR codec (DDS wire format)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.2;arcSize=8;fontSize=12;fontColor=#1b5e20;align=left;spacingLeft=14;" vertex="1" parent="1">
+          <mxGeometry x="740" y="244" width="380" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#66bb6a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720" y="263" as="sourcePoint" />
+            <mxPoint x="740" y="263" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="c4" value="SerializeToArray() / ParseFromArray()  (Protobuf)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.2;arcSize=8;fontSize=12;fontFamily=Courier New;align=left;spacingLeft=14;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="80" y="292" width="640" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="r4" value="&lt;b&gt;kProtoType&lt;/b&gt; = 5  &#183;  Protobuf value" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.2;arcSize=8;fontSize=12;fontColor=#1b5e20;align=left;spacingLeft=14;" vertex="1" parent="1">
+          <mxGeometry x="740" y="292" width="380" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#66bb6a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720" y="311" as="sourcePoint" />
+            <mxPoint x="740" y="311" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="c5" value="T* pointer matching the Proto condition" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.2;arcSize=8;fontSize=12;fontFamily=Courier New;align=left;spacingLeft=14;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="80" y="340" width="640" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="r5" value="&lt;b&gt;kProtoPtrType&lt;/b&gt; = 6  &#183;  Protobuf pointer (Arena-managed)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.2;arcSize=8;fontSize=12;fontColor=#1b5e20;align=left;spacingLeft=14;" vertex="1" parent="1">
+          <mxGeometry x="740" y="340" width="380" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#66bb6a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720" y="359" as="sourcePoint" />
+            <mxPoint x="740" y="359" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="c6" value="inherits flatbuffers::NativeTable" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.2;arcSize=8;fontSize=12;fontFamily=Courier New;align=left;spacingLeft=14;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="80" y="388" width="640" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="r6" value="&lt;b&gt;kFlatTableType&lt;/b&gt; = 7  &#183;  FlatBuffers NativeTable (Object API)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.2;arcSize=8;fontSize=12;fontColor=#1b5e20;align=left;spacingLeft=14;" vertex="1" parent="1">
+          <mxGeometry x="740" y="388" width="380" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#66bb6a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720" y="407" as="sourcePoint" />
+            <mxPoint x="740" y="407" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="c7" value="pointer to flatbuffers::Table" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.2;arcSize=8;fontSize=12;fontFamily=Courier New;align=left;spacingLeft=14;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="80" y="436" width="640" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="r7" value="&lt;b&gt;kFlatPtrType&lt;/b&gt; = 8  &#183;  FlatBuffers zero-copy read" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.2;arcSize=8;fontSize=12;fontColor=#1b5e20;align=left;spacingLeft=14;" vertex="1" parent="1">
+          <mxGeometry x="740" y="436" width="380" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#66bb6a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720" y="455" as="sourcePoint" />
+            <mxPoint x="740" y="455" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="c8" value="fbb_ member + Finish()  (FlatBuffers Builder)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.2;arcSize=8;fontSize=12;fontFamily=Courier New;align=left;spacingLeft=14;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="80" y="484" width="640" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="r8" value="&lt;b&gt;kFlatBuilderType&lt;/b&gt; = 9  &#183;  FlatBuffers Builder pattern" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.2;arcSize=8;fontSize=12;fontColor=#1b5e20;align=left;spacingLeft=14;" vertex="1" parent="1">
+          <mxGeometry x="740" y="484" width="380" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#66bb6a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720" y="503" as="sourcePoint" />
+            <mxPoint x="740" y="503" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="c9" value="operator&lt;&lt;(const Bytes&amp;) / operator&gt;&gt;(Bytes&amp;)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.2;arcSize=8;fontSize=12;fontFamily=Courier New;align=left;spacingLeft=14;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="80" y="532" width="640" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="r9" value="&lt;b&gt;kCustomType&lt;/b&gt; = 3  &#183;  user-defined codec" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.2;arcSize=8;fontSize=12;fontColor=#1b5e20;align=left;spacingLeft=14;" vertex="1" parent="1">
+          <mxGeometry x="740" y="532" width="380" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#66bb6a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720" y="551" as="sourcePoint" />
+            <mxPoint x="740" y="551" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="c10" value="T == std::string" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.2;arcSize=8;fontSize=12;fontFamily=Courier New;align=left;spacingLeft=14;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="80" y="580" width="640" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="r10" value="&lt;b&gt;kStringType&lt;/b&gt; = 10  &#183;  UTF-8 string" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.2;arcSize=8;fontSize=12;fontColor=#1b5e20;align=left;spacingLeft=14;" vertex="1" parent="1">
+          <mxGeometry x="740" y="580" width="380" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#66bb6a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720" y="599" as="sourcePoint" />
+            <mxPoint x="740" y="599" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="c11" value="constructible from std::string (not string itself)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.2;arcSize=8;fontSize=12;fontFamily=Courier New;align=left;spacingLeft=14;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="80" y="628" width="640" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="r11" value="&lt;b&gt;kCharsType&lt;/b&gt; = 11  &#183;  const char* / string literal" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.2;arcSize=8;fontSize=12;fontColor=#1b5e20;align=left;spacingLeft=14;" vertex="1" parent="1">
+          <mxGeometry x="740" y="628" width="380" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#66bb6a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720" y="647" as="sourcePoint" />
+            <mxPoint x="740" y="647" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="c12" value="trivial + standard_layout (non-pointer)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ef6c00;strokeWidth=1.8;arcSize=8;fontSize=12;fontFamily=Courier New;fontStyle=1;align=left;spacingLeft=14;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="80" y="676" width="640" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="r12" value="&lt;b&gt;kStandardType&lt;/b&gt; = 13  &#183;  direct memcpy (int / double / POD struct)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.8;arcSize=8;fontSize=12;fontColor=#e65100;align=left;spacingLeft=14;" vertex="1" parent="1">
+          <mxGeometry x="740" y="676" width="380" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.8;strokeColor=#ef6c00;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720" y="695" as="sourcePoint" />
+            <mxPoint x="740" y="695" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="c13" value="T* pointing to the POD above" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.2;arcSize=8;fontSize=12;fontFamily=Courier New;align=left;spacingLeft=14;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="80" y="724" width="640" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="r13" value="&lt;b&gt;kStandardPtrType&lt;/b&gt; = 14  &#183;  POD pointer (zero-copy)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.2;arcSize=8;fontSize=12;fontColor=#1b5e20;align=left;spacingLeft=14;" vertex="1" parent="1">
+          <mxGeometry x="740" y="724" width="380" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#66bb6a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720" y="743" as="sourcePoint" />
+            <mxPoint x="740" y="743" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="c14" value="supports std::stringstream &lt;&lt; / &gt;&gt; (non-pointer)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ef6c00;strokeWidth=1.8;arcSize=8;fontSize=12;fontFamily=Courier New;fontStyle=1;align=left;spacingLeft=14;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="80" y="772" width="640" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="r14" value="&lt;b&gt;kStreamType&lt;/b&gt; = 12  &#183;  text encoding (non-POD only)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.8;arcSize=8;fontSize=12;fontColor=#e65100;align=left;spacingLeft=14;" vertex="1" parent="1">
+          <mxGeometry x="740" y="772" width="380" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.8;strokeColor=#ef6c00;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720" y="791" as="sourcePoint" />
+            <mxPoint x="740" y="791" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="cF" value="none of the above match" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#ef9a9a;strokeWidth=1.2;arcSize=8;fontSize=12;fontStyle=2;align=left;spacingLeft=14;fontColor=#b71c1c;" vertex="1" parent="1">
+          <mxGeometry x="80" y="820" width="640" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="rF" value="&lt;b&gt;kUnknownType&lt;/b&gt; = 0  &#183;  compile-time static_assert failure" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#d32f2f;strokeWidth=1.2;arcSize=8;fontSize=12;fontStyle=2;fontColor=#b71c1c;align=left;spacingLeft=14;" vertex="1" parent="1">
+          <mxGeometry x="740" y="820" width="380" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="eF" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#d32f2f;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720" y="839" as="sourcePoint" />
+            <mxPoint x="740" y="839" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="notesBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="80" y="880" width="1040" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="notesBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="80" y="880" width="1040" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="notesTitle" value="Key notes" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="100" y="894" width="400" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="notesBody" value="&#8226;&#160;The enum values (1..14) are assigned in a different order than the detection priority. Row order above = detection order; the number after each name = enum value declared in the source.&lt;br/&gt;&#8226;&#160;Orange rows (kStandardType, kStreamType) are near the end: kStandardType wins for trivial POD types; kStreamType is checked last and only matches non-POD types with bidirectional stringstream operators.&lt;br/&gt;&#8226;&#160;Deduction runs entirely at compile time; runtime dispatch is a zero-cost switch typically eliminated by inlining.&lt;br/&gt;&#8226;&#160;If kUnknownType is returned, every Node fails its static_assert(is_supported(kMsgType))." style="text;html=1;align=left;verticalAlign=top;strokeColor=none;fillColor=none;fontSize=11;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="100" y="920" width="1000" height="120" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

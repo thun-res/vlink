@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Installer>
+    <Name>VLink</Name>
+    <Version>@VERSION@</Version>
+    <Title>VLink @VERSION@ Installer</Title>
+    <Publisher>VLink</Publisher>
+    <ProductUrl>https://vlink.work</ProductUrl>
+    <TargetDir>@DEFAULT_TARGET_DIR@</TargetDir>
+    <StartMenuDir>VLink</StartMenuDir>
+    <AllowNonAsciiCharacters>true</AllowNonAsciiCharacters>
+    <AllowSpaceInPath>true</AllowSpaceInPath>
+    <RemoveTargetDir>true</RemoveTargetDir>
+    <InstallerWindowIcon>vlink-icon.png</InstallerWindowIcon>
+    <InstallerApplicationIcon>vlink-icon</InstallerApplicationIcon>
+    <Logo>vlink-logo.png</Logo>
+    <WizardStyle>Modern</WizardStyle>
+    <ControlScript>controllerscript.qs</ControlScript>
+    <MaintenanceToolName>@MAINTENANCE_NAME@</MaintenanceToolName>
+</Installer>

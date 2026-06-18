@@ -1,0 +1,52 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="foreword-field-flow" name="Field Flow">
+    <mxGraphModel dx="800" dy="300" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="800" pageHeight="280" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="Field Model" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=18;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="760" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Setter cache &#8594; transport update &#8594; Getter    &#183;    N : N, late join depends on backend" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="20" y="48" width="760" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Setter -->
+        <mxCell id="setter" value="&lt;b&gt;Setter&amp;lt;T&amp;gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=#bf360c;strokeWidth=1.5;arcSize=10;fontSize=14;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;shadow=1;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="110" width="170" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Cache -->
+        <mxCell id="cache" value="&lt;b&gt;Setter-side latest cache&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;sync replay is backend-specific&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#ef6c00;strokeWidth=2;dashed=1;arcSize=10;fontSize=12;fontStyle=1;fontColor=#bf360c;shadow=1;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="290" y="110" width="230" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Getter stack -->
+        <mxCell id="getter_back2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="616" y="124" width="150" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="getter_back1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="608" y="117" width="150" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="getter" value="&lt;b&gt;Getter&amp;lt;T&amp;gt;&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px;&quot;&gt;get() / listen() / wait_for_value()&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;arcSize=10;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;shadow=1;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="600" y="110" width="150" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows -->
+        <mxCell id="a1" value="&lt;b&gt;set(value)&lt;/b&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#ef6c00;fontSize=11;fontStyle=1;fontColor=#bf360c;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="setter" target="cache">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a2" value="&lt;b&gt;latest&lt;/b&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#ef6c00;fontSize=11;fontStyle=1;fontColor=#bf360c;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="cache" target="getter">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note" value="use case: vehicle state, config parameters, mode switch" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="20" y="228" width="760" height="24" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

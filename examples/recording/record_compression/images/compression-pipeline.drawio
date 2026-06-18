@@ -1,0 +1,160 @@
+<mxfile host="app.diagrams.net" modified="2026-05-19T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="compression-pipeline" name="BagWriter Compression Pipeline">
+    <mxGraphModel dx="1120" dy="640" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1120" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="BagWriter Compression Pipeline" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="20" y="24" width="1080" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="payload size &gt;= compress_start_size -&gt; compress_level -&gt; CompressType maps to backend codec" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="20" y="58" width="1080" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Section 1: Producer -->
+        <mxCell id="prod_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ce93d8;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#f3e5f5;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="240" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="prod_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8e24aa;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="240" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="prod_t" value="1. Producer" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="116" width="240" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="prod_st" value="push payload bytes" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="40" y="144" width="240" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="prod_push" value="writer-&gt;push(frame)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;strokeWidth=1.2;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="60" y="180" width="200" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="prod_size" value="payload size N bytes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6a1b9a;strokeWidth=1;arcSize=8;fontSize=11;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="60" y="260" width="200" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="prod_ig" value="ignore_compress_urls&#10;optional bypass set" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6a1b9a;strokeWidth=1;arcSize=8;fontSize=10;fontFamily=Courier New;fontStyle=2;fontColor=#6a1b9a;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="306" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Section 2: Threshold + codec dispatch -->
+        <mxCell id="disp_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ce93d8;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#f3e5f5;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="320" y="100" width="440" height="460" as="geometry" />
+        </mxCell>
+        <mxCell id="disp_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8e24aa;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="320" y="100" width="440" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="disp_t" value="2. Compression Decision" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="320" y="116" width="440" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="disp_st" value="threshold check &#183; backend selection" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="320" y="144" width="440" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="thr_diam" value="N &gt;= compress_start_size&#10;(default 128, demo 64)" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ce93d8;strokeColor=#6a1b9a;strokeWidth=1.5;fontSize=11;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="420" y="180" width="240" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="bypass" value="store raw bytes&#10;(no codec)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;strokeWidth=1.2;arcSize=10;fontSize=11;fontStyle=1;fontColor=#4a148c;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="340" y="284" width="160" height="44" as="geometry" />
+        </mxCell>
+
+        <mxCell id="enum_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#ce93d8;strokeWidth=1.2;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="340" y="346" width="400" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="enum_t" value="config.compress = CompressType" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="340" y="350" width="400" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="enum_none" value="kCompressNone  (0)   raw bytes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6a1b9a;strokeWidth=1;arcSize=8;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="356" y="378" width="368" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="enum_auto" value="kCompressAuto  (1)   pick by backend" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6a1b9a;strokeWidth=1;arcSize=8;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="356" y="404" width="368" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="enum_zstd" value="kCompressZstd  (2)   Zstandard 0..22" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6a1b9a;strokeWidth=1;arcSize=8;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="356" y="430" width="368" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="enum_lz4" value="kCompressLz4   (3)   LZ4 1..16" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6a1b9a;strokeWidth=1;arcSize=8;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="356" y="456" width="368" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="enum_lzav" value="kCompressLzav  (4)   LZAV 0..9 (built-in)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6a1b9a;strokeWidth=1;arcSize=8;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="356" y="482" width="368" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="enum_level" value="compress_level passed through to codec" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="356" y="510" width="368" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Section 3: Backend matrix + files -->
+        <mxCell id="bk_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ce93d8;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#f3e5f5;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="800" y="100" width="280" height="460" as="geometry" />
+        </mxCell>
+        <mxCell id="bk_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8e24aa;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="800" y="100" width="280" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="bk_t" value="3. Backend Matrix" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="800" y="116" width="280" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="bk_st" value="actual codec per file format" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="800" y="144" width="280" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="bk_db" value=".vdb (SQLite, VDBWriter)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ce93d8;strokeColor=#6a1b9a;strokeWidth=1.5;arcSize=10;fontSize=12;fontStyle=1;fontColor=#4a148c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="180" width="240" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="bk_db_n" value="None  -&gt; raw" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6a1b9a;strokeWidth=1;arcSize=8;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="836" y="222" width="208" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="bk_db_a" value="Auto / Lzav  -&gt; LZAV" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6a1b9a;strokeWidth=1;arcSize=8;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="836" y="248" width="208" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="bk_db_z" value="Zstd / Lz4  -&gt; treated as none" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6a1b9a;strokeWidth=1;arcSize=8;fontSize=10;fontFamily=Courier New;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="836" y="274" width="208" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="bk_mcap" value=".vcap / .vcapx (MCAP, VCAPWriter)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ce93d8;strokeColor=#6a1b9a;strokeWidth=1.5;arcSize=10;fontSize=12;fontStyle=1;fontColor=#4a148c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="316" width="240" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="bk_mcap_n" value="None  -&gt; raw" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6a1b9a;strokeWidth=1;arcSize=8;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="836" y="358" width="208" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="bk_mcap_z" value="Auto / Zstd  -&gt; Zstandard" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6a1b9a;strokeWidth=1;arcSize=8;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="836" y="384" width="208" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="bk_mcap_l" value="Lz4 / Lzav  -&gt; treated as none" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6a1b9a;strokeWidth=1;arcSize=8;fontSize=10;fontFamily=Courier New;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="836" y="410" width="208" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="bk_files" value=".vdb files&#10;record_compress_*.vdb" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#f3e5f5;strokeColor=#6a1b9a;strokeWidth=1.5;fontSize=11;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="836" y="450" width="208" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="bk_note" value="use vlink-bag2mcap CLI for LZ4 in MCAP" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="820" y="520" width="240" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows -->
+        <mxCell id="a_push_size" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#8e24aa;rounded=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="prod_push" target="prod_size">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_size_thr" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#8e24aa;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="prod_size" target="thr_diam">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_thr_bypass" value="no" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#c62828;fontSize=11;fontStyle=1;fontColor=#c62828;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=0;exitY=1;entryX=1;entryY=0.5;" edge="1" parent="1" source="thr_diam" target="bypass">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_thr_enum" value="yes" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#388e3c;fontSize=11;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="thr_diam" target="enum_box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_enum_db" value="ext = .vdb" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#8e24aa;fontSize=10;fontStyle=1;fontColor=#4a148c;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.2;entryX=0;entryY=0.5;" edge="1" parent="1" source="enum_box" target="bk_db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_enum_mcap" value="ext = .vcap" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#8e24aa;fontSize=10;fontStyle=1;fontColor=#4a148c;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.8;entryX=0;entryY=0.5;" edge="1" parent="1" source="enum_box" target="bk_mcap">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_db_files" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#8e24aa;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="bk_db_z" target="bk_files">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

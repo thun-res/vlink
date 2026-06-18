@@ -1,0 +1,149 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="conv-flow" name="Converter Flow">
+    <mxGraphModel dx="1200" dy="700" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="700" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="WebViz Converter Flow" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="22" width="1320" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Decision pipeline inside vlink-foxglove and vlink-rerun bridges" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="56" width="1320" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Input -->
+        <mxCell id="input" value="VLink Raw Message&#10;ProxyAPI::Data&#10;(url, ser, raw, timestamp, seq)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#263238;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="110" width="240" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Decision 1: zerocopy -->
+        <mxCell id="d1" value="is_zerocopy_type?&#10;CameraFrame / PointCloud / RawData" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=11;fontStyle=1;fontColor=#bf360c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="360" y="95" width="240" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Zero-copy converters (GREEN for built-in) -->
+        <mxCell id="zc_conv" value="Built-in Zero-Copy Converters&#10;camera_frame_fbs()&#10;point_cloud_fbs()&#10;log_raw_data()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=11;fontStyle=1;fontColor=#1b5e20;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="680" y="95" width="240" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Decision 2: mapping (priority over plugin per source: find_mapping is tried before convert_plugin) -->
+        <mxCell id="d2" value="find_mapping?&#10;JSON custom message mapping&#10;(vlink_msgs)" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=11;fontStyle=1;fontColor=#bf360c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="360" y="225" width="240" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Mapping converter (blue) -->
+        <mxCell id="mapping_conv" value="Mapping Conversion&#10;Deserialize Proto / FBS&#10;Field mapping + exprtk&#10;Build target schema" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=11;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="680" y="225" width="240" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Decision 3: plugin (fallback after mapping miss) -->
+        <mxCell id="d3" value="convert_plugin&#10;can_convert?&#10;(ConvertPluginInterface)" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=11;fontStyle=1;fontColor=#bf360c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="360" y="355" width="240" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Plugin converter (purple) -->
+        <mxCell id="plugin_conv" value="Plugin Conversion&#10;plugin-&gt;convert()&#10;plugin-&gt;get_schema()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1.5;fontSize=11;fontStyle=1;fontColor=#4a148c;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="680" y="355" width="240" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Mapping sub-converters (blue light) -->
+        <mxCell id="sub_conv" value="Built-in Mapping Converters&#10;Foxglove: convert_location_fix, convert_pose_in_frame, convert_scene_update&#10;Rerun: log_geo_points, log_transform3d, log_boxes3d, log_points3d,&#10;log_encoded_image, log_scalars, log_line_strips3d, ..." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;strokeWidth=1.3;fontSize=10;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="960" y="225" width="400" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- No mapping path -->
+        <mxCell id="no_match" value="Skip / Raw Pass-through" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.3;fontSize=11;fontStyle=1;fontColor=#37474f;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="400" y="495" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Output -->
+        <mxCell id="output" value="Conversion Output&#10;Foxglove: ConvertResult (FlatBuffer payload)&#10;Rerun: RecordingStream::log(archetype)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#263238;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="960" y="380" width="400" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Edges -->
+        <mxCell id="e1" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#616161;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" source="input" target="d1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e2" value="Yes" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#2e7d32;fontSize=11;fontStyle=2;fontColor=#1b5e20;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" source="d1" target="zc_conv" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e3" value="No" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#ef6c00;fontSize=11;fontStyle=2;fontColor=#bf360c;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="d1" target="d2" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e4" value="Yes" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#1565c0;fontSize=11;fontStyle=2;fontColor=#0d47a1;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" source="d2" target="mapping_conv" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e5" value="No" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#ef6c00;fontSize=11;fontStyle=2;fontColor=#bf360c;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="d2" target="d3" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e6" value="Yes" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#8e24aa;fontSize=11;fontStyle=2;fontColor=#4a148c;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" source="d3" target="plugin_conv" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e7" value="No" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#616161;dashed=1;fontSize=11;fontStyle=2;fontColor=#455a64;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="d3" target="no_match" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Converter results to output -->
+        <mxCell id="e8" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#2e7d32;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" edge="1" source="zc_conv" target="output" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#8e24aa;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.7;entryDx=0;entryDy=0;" edge="1" source="plugin_conv" target="output" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#1565c0;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="mapping_conv" target="sub_conv" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#1565c0;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" source="sub_conv" target="output" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legend_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1.2;arcSize=4;" vertex="1" parent="1">
+          <mxGeometry x="40" y="560" width="880" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_title" value="Legend" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="54" y="566" width="120" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="lg1" value="" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ef6c00;" vertex="1" parent="1">
+          <mxGeometry x="54" y="598" width="20" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="lg1t" value="Decision node" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="82" y="594" width="200" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lg2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;" vertex="1" parent="1">
+          <mxGeometry x="54" y="622" width="20" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="lg2t" value="Built-in zero-copy converter" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="82" y="618" width="260" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lg3" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;" vertex="1" parent="1">
+          <mxGeometry x="54" y="646" width="20" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="lg3t" value="Plugin converter" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="82" y="642" width="260" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lg4" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;" vertex="1" parent="1">
+          <mxGeometry x="360" y="598" width="20" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="lg4t" value="Mapping converter (JSON-driven)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="388" y="594" width="300" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lg5" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="360" y="622" width="20" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="lg5t" value="Input / Output / Skip (neutral)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="388" y="618" width="300" height="20" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

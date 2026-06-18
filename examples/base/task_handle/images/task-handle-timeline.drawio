@@ -1,0 +1,112 @@
+<mxfile host="app.diagrams.net" modified="2026-05-14T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="task-handle-timeline" name="TaskHandle Timeline">
+    <mxGraphModel dx="1100" dy="560" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="TaskHandle &#8212; Caller / Dispatcher Timeline" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1020" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Three caller actions &#160;&#183;&#160; six dispatcher transitions &#160;&#183;&#160; cv-driven wake-up at every terminal" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="50" width="1020" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lane_caller" value="Caller&#10;(any thread)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="100" width="160" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_caller_line" value="" style="endArrow=none;html=1;strokeColor=#1565c0;strokeWidth=2;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="140" y="142" as="sourcePoint" />
+            <mxPoint x="140" y="490" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="lane_state" value="TaskHandle::State&#10;(state, cv)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="470" y="100" width="160" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_state_line" value="" style="endArrow=none;html=1;strokeColor=#ef6c00;strokeWidth=2;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="550" y="142" as="sourcePoint" />
+            <mxPoint x="550" y="490" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="lane_disp" value="Dispatcher&#10;(loop / worker)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="880" y="100" width="160" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_disp_line" value="" style="endArrow=none;html=1;strokeColor=#2e7d32;strokeWidth=2;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="960" y="142" as="sourcePoint" />
+            <mxPoint x="960" y="490" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="s1" value="post_task_handle(cb, opts)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1;fontSize=10;fontFamily=Courier New;fontColor=#0d47a1;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="170" width="200" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="ar1" value="state -&gt; kQueued, enqueue" style="endArrow=classic;endFill=1;html=1;strokeColor=#1565c0;strokeWidth=2;fontSize=10;fontStyle=1;fontColor=#1565c0;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="140" y="200" as="sourcePoint" />
+            <mxPoint x="550" y="200" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="s2" value="auto h = ...; h.wait();" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1;fontSize=10;fontFamily=Courier New;fontColor=#0d47a1;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="240" width="200" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="ar2" value="cv.wait(state-&gt;mtx, is_terminal)" style="endArrow=classic;endFill=1;html=1;strokeColor=#1565c0;strokeWidth=2;fontSize=10;fontStyle=1;fontColor=#1565c0;labelBackgroundColor=#ffffff;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="140" y="270" as="sourcePoint" />
+            <mxPoint x="550" y="270" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="d1" value="dequeue, kRunning" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1;fontSize=10;fontFamily=Courier New;fontColor=#1b5e20;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="860" y="310" width="200" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="ar3" value="state-&gt;state = kRunning" style="endArrow=classic;endFill=1;html=1;strokeColor=#2e7d32;strokeWidth=2;fontSize=10;fontStyle=1;fontColor=#2e7d32;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="960" y="340" as="sourcePoint" />
+            <mxPoint x="550" y="340" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="d2" value="run callback" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;strokeWidth=1;fontSize=10;fontFamily=Courier New;fontColor=#1b5e20;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="860" y="350" width="200" height="32" as="geometry" />
+        </mxCell>
+
+        <mxCell id="d3" value="terminal (kCompleted / kFailed)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1;fontSize=10;fontFamily=Courier New;fontColor=#1b5e20;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="860" y="390" width="200" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="ar4" value="state-&gt;state = terminal&#10;cv.notify_all()" style="endArrow=classic;endFill=1;html=1;strokeColor=#2e7d32;strokeWidth=2;fontSize=10;fontStyle=1;fontColor=#2e7d32;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="960" y="420" as="sourcePoint" />
+            <mxPoint x="550" y="420" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="s3" value="h.wait() returns" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1;fontSize=10;fontFamily=Courier New;fontColor=#0d47a1;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="460" width="200" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="ar5" value="cv wakes" style="endArrow=classic;endFill=1;html=1;strokeColor=#1565c0;strokeWidth=2;fontSize=10;fontStyle=1;fontColor=#1565c0;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="550" y="455" as="sourcePoint" />
+            <mxPoint x="240" y="475" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="opt_cancel" value="(optional) h.cancel()&#10;during kQueued -&gt; kCancelled&#10;during kRunning -&gt; flip token only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#c62828;strokeWidth=1;fontSize=10;fontFamily=Courier New;fontColor=#b71c1c;dashed=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="280" y="240" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1.5;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="505" width="1020" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="note_text" value="wait() never throws, even on kCancelled / kRejected / kFailed.  Always inspect state() after wait() to distinguish success from each failure mode." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Verdana;fontStyle=2;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="54" y="513" width="1000" height="26" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

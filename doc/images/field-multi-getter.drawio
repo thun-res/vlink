@@ -1,0 +1,66 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="field-multi-getter" name="Field Multi Getter">
+    <mxGraphModel dx="900" dy="500" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="480" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="Field Model: Setter Fan-out to Multiple Getters" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="20" y="22" width="860" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="one Setter updates its cache &#183; live Getters receive updates &#183; late join depends on backend sync" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="20" y="54" width="860" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Setter -->
+        <mxCell id="setter" value="&lt;b&gt;Setter&amp;lt;T&amp;gt;&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;set(value)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=#bf360c;strokeWidth=1.5;arcSize=10;fontSize=14;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;shadow=1;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="200" width="170" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Setter-side latest-value cache -->
+        <mxCell id="cache" value="&lt;b&gt;latest-value cache&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;held by Setter&lt;br/&gt;overwritten on each set&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#ef6c00;strokeWidth=2;dashed=1;arcSize=10;fontSize=13;fontStyle=1;fontColor=#bf360c;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="340" y="200" width="210" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Getter A -->
+        <mxCell id="ga" value="&lt;b&gt;Getter A&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;listen(cb)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;arcSize=10;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;shadow=1;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="680" y="90" width="180" height="60" as="geometry" />
+        </mxCell>
+        <!-- Getter B -->
+        <mxCell id="gb" value="&lt;b&gt;Getter B&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;get()&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;arcSize=10;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;shadow=1;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="680" y="210" width="180" height="60" as="geometry" />
+        </mxCell>
+        <!-- Getter C -->
+        <mxCell id="gc" value="&lt;b&gt;Getter C&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;wait_for_value()&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;arcSize=10;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;shadow=1;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="680" y="330" width="180" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Setter -> Cache -->
+        <mxCell id="e_sc" value="&lt;b&gt;update&lt;/b&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#ef6c00;fontSize=11;fontStyle=1;fontColor=#bf360c;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="setter" target="cache">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Cache -> Getter A/B/C -->
+        <mxCell id="e_ga" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#ef6c00;exitX=1;exitY=0.3;entryX=0;entryY=0.5;" edge="1" parent="1" source="cache" target="ga">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_gb" value="&lt;b&gt;latest&lt;/b&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#ef6c00;fontSize=11;fontStyle=1;fontColor=#bf360c;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="cache" target="gb">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_gc" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#ef6c00;exitX=1;exitY=0.7;entryX=0;entryY=0.5;" edge="1" parent="1" source="cache" target="gc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Legend / note -->
+        <mxCell id="notebg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ffcc80;strokeWidth=1.2;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="420" width="820" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="notetxt" value="Cardinality: N Setters &#8594; latest-value updates &#8594; N Getters (N : N) &#183; late-join is backend-dependent" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="40" y="420" width="820" height="40" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

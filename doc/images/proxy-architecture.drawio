@@ -1,0 +1,204 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="proxy-architecture" name="Proxy Architecture">
+    <mxGraphModel dx="1000" dy="680" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="680" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="VLink Proxy Architecture" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="920" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="ProxyAPI controller  -  Five channel bus (Handshake / Control / Time / InfoList / Data)  -  ProxyServer daemon  -  Subscribed topics" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#2e7d32;" vertex="1" parent="1">
+          <mxGeometry x="40" y="54" width="920" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Left: ProxyAPI (green) -->
+        <mxCell id="api_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.8;arcSize=6;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="260" height="360" as="geometry" />
+        </mxCell>
+        <mxCell id="api_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="260" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="api_t" value="ProxyAPI" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="54" y="116" width="232" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="api_st" value="Controller / Listener" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#2e7d32;" vertex="1" parent="1">
+          <mxGeometry x="54" y="146" width="232" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="api_role1" value="send_control(mode, urls)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;align=center;" vertex="1" parent="1">
+          <mxGeometry x="60" y="180" width="220" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="api_role2" value="on_time(ProxyTime)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;align=center;" vertex="1" parent="1">
+          <mxGeometry x="60" y="226" width="220" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="api_role3" value="on_info_list(InfoList)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;align=center;" vertex="1" parent="1">
+          <mxGeometry x="60" y="272" width="220" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="api_role4" value="on_data(ProxyData)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;align=center;" vertex="1" parent="1">
+          <mxGeometry x="60" y="318" width="220" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="api_note" value="Used by vlink-viewer, vlink-foxglove, vlink-rerun, custom tools" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="54" y="368" width="232" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Right: ProxyServer (green darker) -->
+        <mxCell id="srv_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#66bb6a;strokeWidth=1.8;arcSize=6;shadow=1;gradientColor=#c8e6c9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="700" y="100" width="260" height="360" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2e7d32;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="700" y="100" width="260" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_t" value="ProxyServer" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="714" y="116" width="232" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_st" value="vlink-proxy daemon / embedded" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#2e7d32;" vertex="1" parent="1">
+          <mxGeometry x="714" y="146" width="232" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_dv" value="DiscoveryViewer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a5d6a7;strokeColor=#1b5e20;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#1b5e20;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="720" y="180" width="220" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_dv2" value="Aggregates all topics, freq, loss" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#2e7d32;" vertex="1" parent="1">
+          <mxGeometry x="720" y="218" width="220" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_ch" value="Internal Subscribers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a5d6a7;strokeColor=#1b5e20;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#1b5e20;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="720" y="246" width="220" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_ch2" value="One per URL from send_control()" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#2e7d32;" vertex="1" parent="1">
+          <mxGeometry x="720" y="284" width="220" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_mp" value="max_packet_size filter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a5d6a7;strokeColor=#1b5e20;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#1b5e20;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="720" y="310" width="220" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_mp2" value="0 = drop all non-empty messages" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#c62828;" vertex="1" parent="1">
+          <mxGeometry x="720" y="348" width="220" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="srv_note" value="Forwards filtered messages on the Data channel" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="714" y="378" width="232" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Middle: Channel bus -->
+        <mxCell id="bus_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f8e9;strokeColor=#7cb342;strokeWidth=1.5;arcSize=6;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="320" y="120" width="360" height="340" as="geometry" />
+        </mxCell>
+        <mxCell id="bus_t" value="DDS / SHM Channels" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#33691e;" vertex="1" parent="1">
+          <mxGeometry x="320" y="126" width="360" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Channel 0: Handshake RPC (API -> Server, response Server -> API) -->
+        <mxCell id="ch0_arr" value="" style="endArrow=classic;startArrow=classic;endFill=1;startFill=1;html=1;strokeColor=#6a1b9a;strokeWidth=2.4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="300" y="170" as="sourcePoint" />
+            <mxPoint x="700" y="170" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ch0_l" value="Handshake (RPC)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontSize=11;fontStyle=1;fontColor=#4a148c;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="420" y="154" width="160" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="ch0_s" value="SecurityClient/Server - issues 128-bit token" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=9;fontStyle=2;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="400" y="176" width="200" height="16" as="geometry" />
+        </mxCell>
+
+        <!-- Channel 1: Control (API -> Server, token-stamped) -->
+        <mxCell id="ch1_arr" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#388e3c;strokeWidth=2.2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="300" y="222" as="sourcePoint" />
+            <mxPoint x="700" y="222" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ch1_l" value="Control (Pub) + token" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontSize=11;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="420" y="206" width="160" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="ch1_s" value="DDS Secure Channel - token validated server-side" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=9;fontStyle=2;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="400" y="228" width="200" height="16" as="geometry" />
+        </mxCell>
+
+        <!-- Channel 2: Time (Server -> API, token echoed) -->
+        <mxCell id="ch2_arr" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#388e3c;strokeWidth=2.2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="700" y="278" as="sourcePoint" />
+            <mxPoint x="300" y="278" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ch2_l" value="Time (Sub) + token" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontSize=11;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="420" y="262" width="160" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="ch2_s" value="1Hz heartbeat - client compares identity + token" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=9;fontStyle=2;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="380" y="284" width="240" height="16" as="geometry" />
+        </mxCell>
+
+        <!-- Channel 3: InfoList (Server -> API) -->
+        <mxCell id="ch3_arr" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#388e3c;strokeWidth=2.2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="700" y="334" as="sourcePoint" />
+            <mxPoint x="300" y="334" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ch3_l" value="InfoList (Sub)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontSize=11;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="420" y="318" width="160" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="ch3_s" value="Per-URL stats - DDS secure" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=9;fontStyle=2;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="420" y="340" width="160" height="16" as="geometry" />
+        </mxCell>
+
+        <!-- Channel 4: Data (bidirectional) -->
+        <mxCell id="ch4_arr" value="" style="endArrow=classic;endFill=1;startArrow=classic;startFill=1;html=1;strokeColor=#ef6c00;strokeWidth=2.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="300" y="412" as="sourcePoint" />
+            <mxPoint x="700" y="412" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ch4_l" value="Data (Pub/Sub)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontSize=11;fontStyle=1;fontColor=#e65100;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="420" y="396" width="160" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="ch4_s" value="DDS or SHM data plane" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=9;fontStyle=2;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="420" y="418" width="160" height="16" as="geometry" />
+        </mxCell>
+
+        <!-- Bottom: Business nodes -->
+        <mxCell id="biz_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="500" width="920" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="biz_t" value="Business Nodes  -  same host or same network segment" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="40" y="508" width="920" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="biz1" value="Publisher A" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontStyle=1;fontColor=#424242;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="230" y="548" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="biz2" value="Publisher B" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontStyle=1;fontColor=#424242;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="430" y="548" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="biz3" value="Setter C" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontStyle=1;fontColor=#424242;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="630" y="548" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="biz_note" value="ProxyServer subscribes to actual topics on behalf of ProxyAPI clients" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="40" y="610" width="920" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows from biz nodes up to ProxyServer -->
+        <mxCell id="biz1_arr" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#757575;strokeWidth=1.8;dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="300" y="548" as="sourcePoint" />
+            <mxPoint x="760" y="420" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="biz2_arr" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#757575;strokeWidth=1.8;dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="500" y="548" as="sourcePoint" />
+            <mxPoint x="810" y="420" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="biz3_arr" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#757575;strokeWidth=1.8;dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="700" y="548" as="sourcePoint" />
+            <mxPoint x="860" y="420" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="biz_arr_l" value="Subscribed by ProxyServer" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontSize=10;fontStyle=2;fontColor=#546e7a;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="780" y="470" width="160" height="18" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

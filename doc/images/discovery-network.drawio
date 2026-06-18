@@ -1,0 +1,120 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="discovery-network" name="Discovery Network">
+    <mxGraphModel dx="720" dy="600" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="720" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Discovery Network Topology" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="640" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="UDP multicast 239.255.0.100:51694  ·  heartbeat every ~500 ms" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="52" width="640" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Three DiscoveryReporter processes on top -->
+        <mxCell id="pA_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=4;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="180" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="pA_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="180" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="pA_t" value="Process A" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="108" width="180" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="pA_box" value="DiscoveryReporter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="58" y="142" width="144" height="42" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pB_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=4;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="270" y="96" width="180" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="pB_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="270" y="96" width="180" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="pB_t" value="Process B" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="270" y="108" width="180" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="pB_box" value="DiscoveryReporter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="288" y="142" width="144" height="42" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pC_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=4;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="500" y="96" width="180" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="pC_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="500" y="96" width="180" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="pC_t" value="Process C" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="500" y="108" width="180" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="pC_box" value="DiscoveryReporter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="518" y="142" width="144" height="42" as="geometry" />
+        </mxCell>
+
+        <!-- UDP multicast bus (Orange) -->
+        <mxCell id="bus_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ffcc80;strokeWidth=1.8;arcSize=4;shadow=1;gradientColor=#fff8e1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="250" width="640" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="bus_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="250" width="640" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="bus_t" value="UDP Multicast Bus  ·  239.255.0.100 : 51694" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="40" y="268" width="640" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="bus_sub" value="online / heartbeat broadcasts; offline packet only with VLINK_DISCOVERY_OFFLINE=1" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#bf360c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="296" width="640" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- A -> bus -->
+        <mxCell id="arrA" value="UDP" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#ef6c00;fontSize=11;fontStyle=2;fontColor=#ef6c00;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="130" y="196" as="sourcePoint" />
+            <mxPoint x="130" y="250" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arrB" value="UDP" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#ef6c00;fontSize=11;fontStyle=2;fontColor=#ef6c00;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="360" y="196" as="sourcePoint" />
+            <mxPoint x="360" y="250" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arrC" value="UDP" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#ef6c00;fontSize=11;fontStyle=2;fontColor=#ef6c00;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="590" y="196" as="sourcePoint" />
+            <mxPoint x="590" y="250" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- bus -> tools (Green subscriber) -->
+        <mxCell id="arrTool" value="subscribe" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#388e3c;fontSize=11;fontStyle=2;fontColor=#388e3c;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="360" y="334" as="sourcePoint" />
+            <mxPoint x="360" y="388" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="tool_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=4;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="200" y="388" width="320" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="200" y="388" width="320" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_t" value="Discovery Viewer" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="200" y="400" width="320" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_list" value="vlink-list" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="218" y="432" width="138" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_mon" value="vlink-monitor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="364" y="432" width="138" height="42" as="geometry" />
+        </mxCell>
+
+        <mxCell id="footer" value="DiscoveryReporters publish heartbeats; DiscoveryViewers subscribe and prune stale entries by timeout." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="510" width="640" height="22" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,20 @@
+{
+  "ser": "tf.proto.FrameTransformStamped",
+  "schema": "foxglove.FrameTransform",
+  "encoding": "protobuf",
+  "schema_encoding": "flatbuffers",
+  "timestamp_field": "header.timestamp_ns",
+  "timestamp_unit": "ns",
+  "field_mappings": [
+    { "source": "header.timestamp_ns", "target": "timestamp_ns" },
+    { "source": "transform.parent_frame_id", "target": "parent_frame_id", "default_value": "map" },
+    { "source": "transform.child_frame_id", "target": "child_frame_id", "default_value": "base_link" },
+    { "source": "transform.translation.x", "target": "translation_x" },
+    { "source": "transform.translation.y", "target": "translation_y" },
+    { "source": "transform.translation.z", "target": "translation_z" },
+    { "source": "transform.rotation.x", "target": "rotation_x" },
+    { "source": "transform.rotation.y", "target": "rotation_y" },
+    { "source": "transform.rotation.z", "target": "rotation_z" },
+    { "source": "transform.rotation.w", "target": "rotation_w" }
+  ]
+}

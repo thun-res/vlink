@@ -1,0 +1,23 @@
+[
+  {
+    "_comment": "Foxglove frontend JSON publish -> VLink JSON direct route",
+    "schema_name": "webviz.DebugCommand",
+    "schema_encoding": "jsonschema",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "mode": { "type": "string" },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "level": { "type": "string" },
+            "value": { "type": "number" },
+            "timeout_ms": { "type": "number" }
+          }
+        }
+      }
+    },
+    "url": "dds://debug/command",
+    "ser": "json"
+  }
+]

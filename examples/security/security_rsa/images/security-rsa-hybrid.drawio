@@ -1,0 +1,158 @@
+<mxfile host="app.diagrams.net" modified="2026-05-19T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="security-rsa-hybrid" name="Security RSA Hybrid">
+    <mxGraphModel dx="1120" dy="640" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1120" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Security RSA-OAEP Hybrid  +  Optional RSA-PSS Signing" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#7f0000;" vertex="1" parent="1">
+          <mxGeometry x="20" y="18" width="1080" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" value="Fresh 16B AES-128 session key per message  -  RSA-OAEP-SHA256 wrap  -  AES-128-GCM payload  -  optional RSA-PSS-SHA256 sender authentication" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#c62828;" vertex="1" parent="1">
+          <mxGeometry x="20" y="50" width="1080" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Sender container (red) -->
+        <mxCell id="sndBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef9a9a;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#ffebee;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="20" y="84" width="500" height="416" as="geometry" />
+        </mxCell>
+        <mxCell id="sndBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c62828;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="20" y="84" width="500" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="sndT" value="Sender  -  encrypt + (optional) sign" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#7f0000;" vertex="1" parent="1">
+          <mxGeometry x="20" y="100" width="500" height="26" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s1" value="plaintext payload (Bytes)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#b71c1c;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#7f0000;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="138" width="460" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" value="generate fresh 16B AES-128 session key (per-message)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c62828;strokeColor=#b71c1c;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="178" width="460" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="derive 12B nonce from sender base + sequence" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef9a9a;strokeColor=#b71c1c;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#7f0000;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="222" width="460" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="s4" value="AES-128-GCM(session_key, nonce, AAD, plain) -&amp;gt; ciphertext + 16B tag" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c62828;strokeColor=#b71c1c;strokeWidth=1.5;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="262" width="460" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="s5" value="RSA-OAEP-SHA256 wrap(peer_pub_pem, session_key)&#10;-&amp;gt; wrapped_key  (length = wrap_len)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c62828;strokeColor=#b71c1c;strokeWidth=1.5;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="306" width="460" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="s6" value="if advanced.signing_key_pem set:&#10;RSA-PSS-SHA256 sign(own_priv, AAD || ciphertext || tag)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef9a9a;strokeColor=#b71c1c;strokeWidth=1.5;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#7f0000;arcSize=10;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="362" width="460" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="sCfg" value="cfg.public_key_pem = peer_recv_pub_pem;&#10;cfg.advanced.signing_key_pem = own_sign_priv_pem;  // optional" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#b71c1c;strokeWidth=1.2;fontSize=10;fontFamily=Courier New;fontStyle=2;fontColor=#7f0000;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="430" width="460" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- arrows sender -->
+        <mxCell id="as1" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#c62828;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="s1" target="s2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="as2" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#c62828;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="s2" target="s3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="as3" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#c62828;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="s3" target="s4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="as4" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#c62828;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="s4" target="s5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="as5" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#c62828;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="s5" target="s6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Receiver container (green) -->
+        <mxCell id="rcvBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="600" y="84" width="500" height="416" as="geometry" />
+        </mxCell>
+        <mxCell id="rcvBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="600" y="84" width="500" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="rcvT" value="Receiver  -  (optional) verify + decrypt" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="600" y="100" width="500" height="26" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r1" value="parse envelope: header || lengths || wrapped_key || sig || cipher || tag" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="620" y="138" width="460" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="r2" value="if advanced.verify_key_pem set:&#10;RSA-PSS-SHA256 verify(peer_sign_pub, AAD || cipher || tag, sig)&#10;mismatch -&amp;gt; reject (drop msg)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;arcSize=10;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="620" y="180" width="460" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="r3" value="RSA-OAEP-SHA256 unwrap(own_priv_pem, wrapped_key)&#10;-&amp;gt; recover 16B AES session key" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="620" y="248" width="460" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r4" value="AES-128-GCM(session_key, header nonce, AAD, cipher, tag)&#10;tag mismatch -&amp;gt; reject; else -&amp;gt; plaintext payload" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="620" y="304" width="460" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r5" value="deliver plaintext to user listen callback" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="620" y="362" width="460" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="rCfg" value="cfg.private_key_pem = own_recv_priv_pem;&#10;cfg.advanced.verify_key_pem  = peer_sign_pub_pem;  // optional, required if set" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=10;fontFamily=Courier New;fontStyle=2;fontColor=#1b5e20;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="620" y="406" width="460" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="rCons" value="RSA keys must be &amp;gt;= 2048 bits  -  EC / Ed25519 rejected by validate_rsa_key" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="620" y="456" width="460" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ar1" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#388e3c;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="r1" target="r2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ar2" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#388e3c;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="r2" target="r3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ar3" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#388e3c;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="r3" target="r4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ar4" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#388e3c;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="r4" target="r5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- middle transport bridge -->
+        <mxCell id="mid" value="dds:// transport" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="528" y="262" width="64" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="midA1" value="wire" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#616161;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;fontSize=11;fontStyle=1;fontColor=#424242;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="s5" target="mid">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="midA2" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#616161;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="mid" target="r1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Bottom: wire envelope -->
+        <mxCell id="envBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#eceff1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="20" y="516" width="1080" height="104" as="geometry" />
+        </mxCell>
+        <mxCell id="envBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="20" y="516" width="1080" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="envT" value="Wire Envelope (asymmetric mode)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="20" y="528" width="1080" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e1" value="header&#10;34B" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#b71c1c;strokeWidth=1.2;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#7f0000;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="562" width="80" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="wrap_len + sig_len&#10;2B LE each" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#b71c1c;strokeWidth=1.2;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#7f0000;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="130" y="562" width="80" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="wrapped_key&#10;RSA-OAEP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c62828;strokeColor=#b71c1c;strokeWidth=1.5;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="220" y="562" width="200" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="signature&#10;RSA-PSS  (sig_len = 0 if unsigned)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef9a9a;strokeColor=#b71c1c;strokeWidth=1.5;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#7f0000;arcSize=10;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="430" y="562" width="240" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="ciphertext&#10;AES-128-GCM" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#b71c1c;strokeWidth=1.2;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#7f0000;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="680" y="562" width="80" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="tag&#10;16B" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c62828;strokeColor=#b71c1c;strokeWidth=1.5;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="770" y="562" width="220" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="sequence/replay&#10;in header AAD" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#b71c1c;strokeWidth=1.2;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#7f0000;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="562" width="80" height="46" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

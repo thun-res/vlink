@@ -1,0 +1,487 @@
+/*
+ * Copyright (C) 2026 by Thun Lu. All rights reserved.
+ */
+
+// libvlink-defaults
+cc_defaults {
+    name: "libvlink-defaults",
+    cppflags: [
+        "-fexceptions",
+        "-Wno-non-virtual-dtor",
+        "-Wno-unknown-pragmas",
+        "-Wno-implicit-fallthrough",
+        "-Wno-unused-parameter",
+        "-fvisibility=hidden",
+    ],
+    cpp_std: "c++17",
+}
+
+// libvlink
+cc_library_shared {
+    name: "libvlink",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    // vendor_available: true,
+    srcs: [
+        "src/base/*.cc",
+        "src/extension/*.cc",
+        "src/impl/*.cc",
+        "src/private/*.cc",
+        "src/zerocopy/*.cc",
+    ],
+    local_include_dirs: [
+        "include",
+        "include/vlink",
+        "thirdparty/lzav/include",
+        "thirdparty/json/include",
+        "thirdparty/mcap/include",
+        "thirdparty/robin-map/include",
+    ],
+    export_include_dirs: [
+        "include",
+    ],
+    shared_libs: [
+        "liblog",
+        "libcrypto",
+        "libsqlite",
+    ],
+    static_libs: [
+        "libc++fs",
+    ],
+    cppflags: [
+        "-DVLINK_LIBRARY",
+        "-DVLINK_ENABLE_LOG_NAT",
+        "-DVLINK_ENABLE_SECURITY",
+        "-DVLINK_ENABLE_SQLITE",
+    ],
+}
+
+// libvlink-intra
+cc_library_shared {
+    name: "libvlink-intra",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    // vendor_available: true,
+    srcs: [
+        "modules/intra/*.cc",
+    ],
+    local_include_dirs: [
+        "modules/intra",
+        "include/vlink",
+    ],
+    cppflags: [
+        "-DVLINK_LIBRARY",
+        "-DVLINK_SUPPORT_INTRA",
+    ],
+    shared_libs: [
+        "libvlink",
+    ],
+}
+
+// libvlink-dds
+cc_library_shared {
+    name: "libvlink-dds",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    // vendor_available: true,
+    srcs: [
+        "modules/dds/*.cc",
+        "modules/dds/builtin/2_x/*.cxx",
+    ],
+    local_include_dirs: [
+        "modules/dds",
+        "modules/dds/builtin",
+        "include/vlink",
+    ],
+    cppflags: [
+        "-DVLINK_LIBRARY",
+        "-DVLINK_SUPPORT_DDS",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libfastrtps",
+        "libfastcdr",
+    ],
+}
+
+// libvlink-ddsc
+cc_library_shared {
+    name: "libvlink-ddsc",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    // vendor_available: true,
+    srcs: [
+        "modules/ddsc/*.cc",
+        "modules/ddsc/builtin/*.c",
+    ],
+    local_include_dirs: [
+        "modules/ddsc",
+        "modules/ddsc/builtin",
+        "include/vlink",
+    ],
+    cppflags: [
+        "-DVLINK_LIBRARY",
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libcyclonedds",
+    ],
+}
+
+// libvlink-c_api
+cc_library_shared {
+    name: "libvlink-c_api",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    // vendor_available: true,
+    srcs: [
+        "c_api/*.cc",
+    ],
+    local_include_dirs: [
+        "include/vlink",
+    ],
+    cppflags: [
+        "-DVLINK_C_API_LIBRARY",
+        "-DVLINK_ENABLE_C_INTERFACE",
+        "-DVLINK_SUPPORT_INTRA",
+        "-DVLINK_SUPPORT_DDS",
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-intra",
+        "libvlink-dds",
+        "libvlink-ddsc",
+    ],
+}
+
+// libvlink-proxy_api
+cc_library_shared {
+    name: "libvlink-proxy_api",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    // vendor_available: true,
+    srcs: [
+        "proxy/proxy_api/*.cc",
+    ],
+    local_include_dirs: [
+        "proxy",
+        "include/vlink",
+        "thirdparty/bitsery/include",
+    ],
+    cppflags: [
+        "-DVLINK_ENABLE_PROXY",
+        "-DVLINK_PROXY_API_LIBRARY",
+        "-DVLINK_SUPPORT_INTRA",
+        "-DVLINK_SUPPORT_DDS",
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-intra",
+        "libvlink-dds",
+        "libvlink-ddsc",
+    ],
+}
+
+// libvlink-proxy_server
+cc_library_shared {
+    name: "libvlink-proxy_server",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    // vendor_available: true,
+    srcs: [
+        "proxy/proxy_server/*.cc",
+    ],
+    local_include_dirs: [
+        "proxy",
+        "include/vlink",
+        "thirdparty/bitsery/include",
+    ],
+    cppflags: [
+        "-DVLINK_ENABLE_PROXY",
+        "-DVLINK_PROXY_SERVER_LIBRARY",
+        "-DVLINK_SUPPORT_INTRA",
+        "-DVLINK_SUPPORT_DDS",
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-intra",
+        "libvlink-dds",
+        "libvlink-ddsc",
+    ],
+}
+
+// vlink-proxy
+cc_binary {
+    name: "vlink-proxy",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    srcs: [
+        "proxy/*.cc",
+    ],
+    local_include_dirs: [
+        "proxy",
+        "include/vlink",
+        "thirdparty/argparse/include",
+    ],
+    cppflags: [
+        "-DVLINK_ENABLE_PROXY",
+        "-DVLINK_SUPPORT_INTRA",
+        "-DVLINK_SUPPORT_DDS",
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-intra",
+        "libvlink-dds",
+        "libvlink-ddsc",
+        "libvlink-proxy_server",
+    ],
+}
+
+// vlink-info
+cc_binary {
+    name: "vlink-info",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    srcs: [
+        "cli/info/*.cc",
+    ],
+    local_include_dirs: [
+        "cli/info",
+        "include/vlink",
+        "thirdparty/argparse/include",
+    ],
+    shared_libs: [
+        "libvlink",
+    ],
+}
+
+// vlink-bag
+cc_binary {
+    name: "vlink-bag",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    srcs: [
+        "cli/bag/*.cc",
+    ],
+    local_include_dirs: [
+        "cli/bag",
+        "include/vlink",
+        "thirdparty/argparse/include",
+    ],
+    cppflags: [
+        "-DVLINK_ENABLE_SQLITE",
+        "-DVLINK_SUPPORT_DDS",
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-dds",
+        "libvlink-ddsc",
+    ],
+}
+
+// vlink-monitor
+cc_binary {
+    name: "vlink-monitor",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    srcs: [
+        "cli/monitor/*.cc",
+    ],
+    local_include_dirs: [
+        "cli/monitor",
+        "include/vlink",
+        "thirdparty/argparse/include",
+    ],
+    cppflags: [
+        "-DVLINK_SUPPORT_DDS",
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-dds",
+        "libvlink-ddsc",
+    ],
+}
+
+// vlink-list
+cc_binary {
+    name: "vlink-list",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    srcs: [
+        "cli/list/*.cc",
+    ],
+    local_include_dirs: [
+        "cli/list",
+        "include/vlink",
+        "thirdparty/argparse/include",
+    ],
+    shared_libs: [
+        "libvlink",
+    ],
+}
+
+// vlink-eproto
+cc_binary {
+    name: "vlink-eproto",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    srcs: [
+        "cli/eproto/*.cc",
+    ],
+    local_include_dirs: [
+        "cli/eproto",
+        "include/vlink",
+        "include/private",
+        "thirdparty/argparse/include",
+        "thirdparty/json/include",
+    ],
+    cppflags: [
+        "-DVLINK_SUPPORT_DDS",
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-dds",
+        "libvlink-ddsc",
+        "libprotobuf-cpp-full",
+    ],
+}
+
+// vlink-dump
+cc_binary {
+    name: "vlink-dump",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    srcs: [
+        "cli/dump/*.cc",
+    ],
+    local_include_dirs: [
+        "cli/dump",
+        "include/vlink",
+        "include/private",
+        "thirdparty/argparse/include",
+        "thirdparty/json/include",
+    ],
+    cppflags: [
+        "-DVLINK_SUPPORT_DDS",
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-dds",
+        "libvlink-ddsc",
+        "libprotobuf-cpp-full",
+    ],
+}
+
+// vlink-check
+cc_binary {
+    name: "vlink-check",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    srcs: [
+        "cli/check/*.cc",
+    ],
+    local_include_dirs: [
+        "cli/check",
+        "include/vlink",
+        "thirdparty/argparse/include",
+    ],
+    cppflags: [
+        "-DVLINK_SUPPORT_INTRA",
+        "-DVLINK_SUPPORT_DDS",
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-intra",
+        "libvlink-dds",
+        "libvlink-ddsc",
+    ],
+}
+
+// vlink-bench
+cc_binary {
+    name: "vlink-bench",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    srcs: [
+        "cli/bench/*.cc",
+    ],
+    local_include_dirs: [
+        "cli/bench",
+        "include/vlink",
+        "thirdparty/argparse/include",
+        "thirdparty/json/include",
+    ],
+    cppflags: [
+        "-DVLINK_SUPPORT_INTRA",
+        "-DVLINK_SUPPORT_DDS",
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-intra",
+        "libvlink-dds",
+        "libvlink-ddsc",
+    ],
+}
+
+// vlink-test
+cc_binary {
+    name: "vlink-test",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    srcs: [
+        "test/*.cc",
+        "test/base/*.cc",
+        "test/idl/*.proto",
+    ],
+    local_include_dirs: [
+        "test",
+        "include/vlink",
+        "thirdparty/doctest/include",
+    ],
+    cppflags: [
+        "-DVLINK_ENABLE_SECURITY",
+        "-DVLINK_ENABLE_SQLITE",
+        "-DVLINK_SUPPORT_INTRA",
+        "-DVLINK_SUPPORT_DDS",
+        "-DVLINK_SUPPORT_DDSC",
+        "-DVLINK_TEST_SUPPORT_SECURITY",
+        "-DVLINK_TEST_SUPPORT_PROTOBUF",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-intra",
+        "libvlink-dds",
+        "libvlink-ddsc",
+        "libcrypto",
+        "libprotobuf-cpp-lite",
+    ],
+    proto: {type: "lite"},
+}

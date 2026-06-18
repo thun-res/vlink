@@ -1,0 +1,74 @@
+<mxfile host="app.diagrams.net" modified="2026-05-14T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="cancellation-usage-modes" name="Cancellation Usage Modes">
+    <mxGraphModel dx="1000" dy="560" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Cancellation &#8212; Three Cooperation Modes" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="920" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Poll &#160;&#183;&#160; Throw at structured points &#160;&#183;&#160; Async callback on fire" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="50" width="920" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m1bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=4;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="290" height="430" as="geometry" />
+        </mxCell>
+        <mxCell id="m1bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="290" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="m1title" value="1. Poll" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="104" width="250" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="m1code" value="while (!token.is_cancellation_requested()) {&#10;  do_unit_of_work();&#10;}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1;fontSize=11;fontFamily=Courier New;fontColor=#0d47a1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="140" width="250" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="m1desc" value="Producer flips request_cancel().&#10;Worker checks the token at every&#10;safe point and exits gracefully.&#10;&#10;Best for tight loops with no&#10;recursion or deep call stack." style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Verdana;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="240" width="250" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="m1pros" value="+ zero overhead per check&#10;+ no exception machinery&#10;- caller must remember to check" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#90caf9;strokeWidth=1;fontSize=10;fontFamily=Verdana;fontColor=#0d47a1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="380" width="250" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m2bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ffcc80;strokeWidth=1.5;arcSize=4;gradientColor=#fff8e1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="355" y="90" width="290" height="430" as="geometry" />
+        </mxCell>
+        <mxCell id="m2bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="355" y="90" width="290" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="m2title" value="2. Throw" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="375" y="104" width="250" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="m2code" value="for (auto&amp; item : items) {&#10;  token.throw_if_cancellation_requested();&#10;  process(item);  // OperationCancelled&#10;                  // propagates upward&#10;}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1;fontSize=11;fontFamily=Courier New;fontColor=#e65100;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="375" y="140" width="250" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="m2desc" value="Structured cancellation point.&#10;Throws OperationCancelled when&#10;is_cancellation_requested() is&#10;true; the stack unwinds, RAII&#10;cleanup runs, the caller catches." style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Verdana;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="375" y="252" width="250" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="m2pros" value="+ no manual return-path&#10;+ composes with std exceptions&#10;- caller must catch correctly" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ffcc80;strokeWidth=1;fontSize=10;fontFamily=Verdana;fontColor=#e65100;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="375" y="380" width="250" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m3bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=4;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="670" y="90" width="290" height="430" as="geometry" />
+        </mxCell>
+        <mxCell id="m3bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="670" y="90" width="290" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="m3title" value="3. Callback" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="690" y="104" width="250" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="m3code" value="auto reg = token.register_callback(&#10;    [&amp;]() { interrupt_io(); });&#10;// reg.reset() unregisters before fire" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1;fontSize=11;fontFamily=Courier New;fontColor=#1b5e20;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="690" y="140" width="250" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="m3desc" value="One-shot notification.  The&#10;callback fires on the canceler's&#10;thread; if cancellation already&#10;happened at register time, it&#10;fires synchronously and the&#10;returned registration is empty." style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Verdana;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="690" y="240" width="250" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="m3pros" value="+ wakes blocking work (epoll, fd...)&#10;+ no polling/exception needed&#10;- callback exceptions are logged&#10;  and swallowed" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#a5d6a7;strokeWidth=1;fontSize=10;fontFamily=Verdana;fontColor=#1b5e20;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="690" y="380" width="250" height="80" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

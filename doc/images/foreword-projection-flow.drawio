@@ -1,0 +1,68 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="foreword-projection-flow" name="Projection Flow">
+    <mxGraphModel dx="800" dy="900" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="800" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="LiDAR-to-Camera Projection Pipeline" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="720" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="From a point in LiDAR frame to a pixel overlaid on the camera image" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="52" width="720" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Step 1: LiDAR frame (blue) -->
+        <mxCell id="s1" value="&lt;b&gt;LiDAR Point Cloud&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-family:Courier New;font-size:11px&quot;&gt;P_lidar (x, y, z)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=13;fontColor=#0d47a1;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="220" y="90" width="360" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow 1->2 -->
+        <mxCell id="a12" value="Extrinsic transform: P_cam = R &#183; P_lidar + t" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#455a64;fontSize=11;fontStyle=2;fontColor=#455a64;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="s1" target="s2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Step 2: Camera frame (green) -->
+        <mxCell id="s2" value="&lt;b&gt;Camera Coordinate&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-family:Courier New;font-size:11px&quot;&gt;P_cam (X, Y, Z)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=13;fontColor=#1b5e20;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="220" y="220" width="360" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow 2->3 -->
+        <mxCell id="a23" value="Distortion correction (k1, k2, p1, p2, k3)" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#455a64;fontSize=11;fontStyle=2;fontColor=#455a64;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="s2" target="s3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Step 3: Normalized plane (orange) -->
+        <mxCell id="s3" value="&lt;b&gt;Normalized Image Plane&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-family:Courier New;font-size:11px&quot;&gt;(x_n, y_n) = (X/Z, Y/Z)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=13;fontColor=#bf360c;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="220" y="350" width="360" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow 3->4 -->
+        <mxCell id="a34" value="Intrinsic projection: u = fx &#183; x_n + cx,  v = fy &#183; y_n + cy" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#455a64;fontSize=11;fontStyle=2;fontColor=#455a64;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="s3" target="s4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Step 4: Pixel coords (gray) -->
+        <mxCell id="s4" value="&lt;b&gt;Image Pixel Coordinates&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-family:Courier New;font-size:11px&quot;&gt;(u, v)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#546e7a;strokeWidth=1.5;fontSize=13;fontColor=#37474f;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="220" y="480" width="360" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow 4->5 -->
+        <mxCell id="a45" value="Keep valid points where Z &gt; 0" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#455a64;fontSize=11;fontStyle=2;fontColor=#455a64;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="s4" target="s5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Step 5: Overlay (red accent) -->
+        <mxCell id="s5" value="&lt;b&gt;Overlay on Camera Image&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px&quot;&gt;colored by depth Z&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#c62828;strokeWidth=1.5;fontSize=13;fontColor=#b71c1c;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="220" y="610" width="360" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Side note (optional) -->
+        <mxCell id="note" value="Every step runs on live topics &#8212; the VLink publisher emits overlay frames downstream." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="700" width="720" height="20" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

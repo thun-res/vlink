@@ -1,0 +1,22 @@
+From 0356ab7716759bb04fda8eca6bd36b472a6a58c8 Mon Sep 17 00:00:00 2001
+From: juntuanlu <juntuanlu@geometricalpal.com>
+Date: Mon, 28 Jul 2025 14:01:23 +0800
+Subject: [PATCH] feat: update cmake required
+
+---
+ CMakeLists.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 00e810a..894c074 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1,4 +1,4 @@
+-cmake_minimum_required(VERSION 3.17)
++cmake_minimum_required(VERSION 3.14)
+ 
+ set(SQLITE3_VERSION "3.45.3")
+ set(SQLITE3_DOWNLOAD_URL "https://sqlite.org/2024/sqlite-amalgamation-3450300.zip")
+-- 
+2.50.1
+

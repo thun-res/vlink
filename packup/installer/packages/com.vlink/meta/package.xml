@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package>
+    <DisplayName>VLink Suite</DisplayName>
+    <Description>VLink visualization and analysis suite, including VLink SDK, Viewer, Player, Analyzer, and CLI tools with all required runtime dependencies.</Description>
+    <Version>@VERSION@</Version>
+    <ReleaseDate>@DATE@</ReleaseDate>
+    <Default>true</Default>
+    <Required>true</Required>
+    <Script>installscript.qs</Script>
+    <Licenses>
+        <License name="VLink License (Apache 2.0)" file="LICENSE" />
+        <License name="VLink Third-Party Notices" file="LICENSE_NOTICES.md" />
+    </Licenses>
+</Package>

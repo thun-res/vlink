@@ -1,0 +1,103 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="recording-flow" name="Recording and Playback Flow">
+    <mxGraphModel dx="1160" dy="640" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1160" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Recording and Playback Flow" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="30" y="24" width="1100" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Capture live traffic to .vdb / .vcap files, then play back via BagReader" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="30" y="60" width="1100" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="recBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#fafafa;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="1080" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="recBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="1080" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="recT" value="Recording  -  BagWriter" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="40" y="116" width="1080" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="rPub" value="Publisher&lt;br&gt;&lt;span style=&quot;font-size:10px;font-family:Courier New&quot;&gt;publish(msg)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=13;fontStyle=1;fontColor=#424242;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="170" width="140" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="rHook" value="set_record_path()&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;or VLINK_BAG_PATH&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#424242;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="230" y="170" width="170" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="rBw" value="BagWriter&lt;br&gt;&lt;span style=&quot;font-size:10px;font-family:Courier New&quot;&gt;push(frame)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=#424242;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#ffffff;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="430" y="160" width="180" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rCompress" value="Compress&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;LZAV (SQLite)&lt;/span&gt;&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;zstd / lz4 (MCAP)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontStyle=2;fontColor=#424242;arcSize=10;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="640" y="160" width="170" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rFile" value=".vdb (SQLite)&lt;br&gt;.vcap / .vcapx (MCAP)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="840" y="160" width="190" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="rA1" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#616161;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;" edge="1" parent="1" source="rPub" target="rHook">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="rA2" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#616161;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;" edge="1" parent="1" source="rHook" target="rBw">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="rA3" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#616161;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;" edge="1" parent="1" source="rBw" target="rCompress">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="rA4" value="write" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#616161;fontSize=11;fontStyle=1;fontColor=#424242;exitX=1;exitY=0.5;entryX=0;entryY=0.5;labelBackgroundColor=#ffffff;rounded=1;" edge="1" parent="1" source="rCompress" target="rFile">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="playBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#fafafa;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="340" width="1080" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="playBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="340" width="1080" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="playT" value="Playback  -  BagReader" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="40" y="356" width="1080" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pFile" value=".vdb / .vcap" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="60" y="410" width="170" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="pBr" value="BagReader&lt;br&gt;&lt;span style=&quot;font-size:10px;font-family:Courier New&quot;&gt;play(config)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=#424242;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#ffffff;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="260" y="420" width="170" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="pCb" value="output_callback&lt;br&gt;&lt;span style=&quot;font-size:10px;font-family:Courier New&quot;&gt;(ts, url, action, data)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#424242;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="460" y="420" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="pApp" value="Application&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;process data&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=13;fontStyle=1;fontColor=#424242;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="670" y="420" width="160" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="pRepub" value="Optional: re-publish&lt;br&gt;&lt;span style=&quot;font-size:10px;font-family:Courier New&quot;&gt;Publisher::publish&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontStyle=2;fontColor=#424242;arcSize=10;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="860" y="420" width="180" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pA1" value="read" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#616161;fontSize=11;fontStyle=1;fontColor=#424242;exitX=1;exitY=0.5;entryX=0;entryY=0.5;labelBackgroundColor=#ffffff;rounded=1;" edge="1" parent="1" source="pFile" target="pBr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pA2" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#616161;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;" edge="1" parent="1" source="pBr" target="pCb">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pA3" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#616161;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;" edge="1" parent="1" source="pCb" target="pApp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pA4" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#616161;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;dashed=1;" edge="1" parent="1" source="pApp" target="pRepub">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note1" value="Formats:  .vdb (SQLite, LZAV)  -  .vcap / .vcapx (MCAP, Foxglove compatible)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1.2;fontSize=11;fontStyle=2;fontColor=#546e7a;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="120" y="570" width="920" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="note2" value="Global control:  VLINK_BAG_PATH env var  -  VLINK_BAG_TAG env var" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1.2;fontSize=11;fontStyle=2;fontColor=#546e7a;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="120" y="602" width="920" height="28" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

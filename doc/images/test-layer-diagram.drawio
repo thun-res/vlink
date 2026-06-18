@@ -1,0 +1,123 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="test-layer-diagram" name="Test Layering">
+    <mxGraphModel dx="900" dy="620" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="620" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="vlink-test  &#8212;  doctest Layering" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="820" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Single binary  &#183;  transport suites plus base / extension / impl utility suites" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="54" width="820" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="L1bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=4;shadow=1;gradientColor=#fafafa;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="820" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="L1bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="820" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="L1title" value="Transport Backend Tests" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="60" y="114" width="400" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="L1badge" value="One suite per URL scheme  &#183;  covers end-to-end over that backend" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#616161;" vertex="1" parent="1">
+          <mxGeometry x="380" y="116" width="464" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t1" value="intra" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="150" width="148" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t2" value="shm" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="218" y="150" width="148" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t3" value="shm2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="376" y="150" width="148" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t4" value="dds" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="534" y="150" width="148" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t5" value="ddsc" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="692" y="150" width="148" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t6" value="ddsr" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="200" width="148" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t7" value="ddst" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="218" y="200" width="148" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t8" value="zenoh" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="376" y="200" width="148" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t9" value="someip" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="534" y="200" width="148" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t10" value="fdbus" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="692" y="200" width="148" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t11" value="mqtt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="218" y="250" width="148" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t12" value="qnx" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="376" y="250" width="148" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr" value="compiles into the same vlink-test binary" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#9e9e9e;fontSize=11;fontStyle=2;fontColor=#546e7a;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="450" y="300" as="sourcePoint" />
+            <mxPoint x="450" y="340" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="L2bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=4;shadow=1;gradientColor=#fafafa;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="350" width="820" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="L2bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#455a64;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="350" width="820" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="L2title" value="Base / Extension / Impl Tests" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="60" y="364" width="400" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="L2badge" value="Representative utility suites under test/base, test/extension and test/impl" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#616161;" vertex="1" parent="1">
+          <mxGeometry x="380" y="366" width="464" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="b1" value="Logger" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="400" width="148" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b2" value="Bytes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="218" y="400" width="148" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b3" value="Timer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="376" y="400" width="148" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b4" value="MessageLoop" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="534" y="400" width="148" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b5" value="ThreadPool" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="692" y="400" width="148" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b6" value="GraphTask" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="450" width="148" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b7" value="MpmcQueue" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="218" y="450" width="148" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b8" value="SpinLock" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="376" y="450" width="148" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b9" value="Serializer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="534" y="450" width="148" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b10" value="Discovery" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="692" y="450" width="148" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="foot" value="Transport suites are gated by VLINK_SUPPORT_*; the diagram shows the superset across enabled features." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="60" y="504" width="780" height="40" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

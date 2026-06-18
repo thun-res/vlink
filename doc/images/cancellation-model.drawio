@@ -1,0 +1,136 @@
+<mxfile host="app.diagrams.net" modified="2026-05-14T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="cancellation-model" name="Cancellation Source / Token / Registration">
+    <mxGraphModel dx="1100" dy="620" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="620" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Cooperative Cancellation Model" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1020" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="One writable source &#160;&#183;&#160; many cheap-to-copy observer tokens &#160;&#183;&#160; RAII registrations for fired-callback subscriptions" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="54" width="1020" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="writerbg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef9a9a;strokeWidth=1.5;arcSize=4;gradientColor=#ffebee;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="280" height="340" as="geometry" />
+        </mxCell>
+        <mxCell id="writerbar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c62828;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="280" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="writertitle" value="Writer side" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#b71c1c;" vertex="1" parent="1">
+          <mxGeometry x="60" y="114" width="200" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="source" value="&lt;b&gt;CancellationSource&lt;/b&gt;&#10;&#10;state_ : shared_ptr&lt;State&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#c62828;strokeWidth=1.5;fontSize=12;fontStyle=0;fontFamily=Courier New;fontColor=#b71c1c;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="150" width="240" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="api_w1" value="request_cancel() : bool" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#ef9a9a;strokeWidth=1;fontSize=11;fontFamily=Courier New;fontColor=#b71c1c;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="250" width="240" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="api_w2" value="token() : CancellationToken" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#ef9a9a;strokeWidth=1;fontSize=11;fontFamily=Courier New;fontColor=#b71c1c;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="290" width="240" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="api_w3" value="is_cancellation_requested()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#ef9a9a;strokeWidth=1;fontSize=11;fontFamily=Courier New;fontColor=#b71c1c;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="330" width="240" height="32" as="geometry" />
+        </mxCell>
+
+        <mxCell id="statebg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.5;arcSize=4;gradientColor=#eceff1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="380" y="100" width="340" height="340" as="geometry" />
+        </mxCell>
+        <mxCell id="statebar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#455a64;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="380" y="100" width="340" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="statetitle" value="Shared internal state" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="400" y="114" width="280" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="state" value="&lt;b&gt;CancellationRegistration::State&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cfd8dc;strokeColor=#455a64;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="400" y="150" width="300" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="state_mtx" value="std::mutex mtx" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1;fontSize=11;fontFamily=Courier New;fontColor=#37474f;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="400" y="200" width="300" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="state_cancel" value="bool cancelled  (one-shot, mutex-protected)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1;fontSize=11;fontFamily=Courier New;fontColor=#37474f;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="400" y="240" width="300" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="state_next" value="size_t next_id  (mutex-protected)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1;fontSize=11;fontFamily=Courier New;fontColor=#37474f;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="400" y="280" width="300" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="state_cbmap" value="unordered_map&lt;id, MoveFunction&lt;void()&gt;&gt; callbacks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1;fontSize=11;fontFamily=Courier New;fontColor=#37474f;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="400" y="320" width="300" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="state_note" value="On request_cancel(): swap callbacks out, release mutex,&#10;then invoke each one on the calling thread." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Verdana;fontStyle=2;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="400" y="365" width="300" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="readerbg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=4;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="780" y="100" width="280" height="340" as="geometry" />
+        </mxCell>
+        <mxCell id="readerbar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="780" y="100" width="280" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="readertitle" value="Reader side &#160;(any thread)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="800" y="114" width="240" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tok1" value="&lt;b&gt;CancellationToken&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="800" y="150" width="240" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tok_api1" value="is_cancellation_requested()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#90caf9;strokeWidth=1;fontSize=11;fontFamily=Courier New;fontColor=#0d47a1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="800" y="200" width="240" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="tok_api2" value="throw_if_cancellation_requested()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#90caf9;strokeWidth=1;fontSize=11;fontFamily=Courier New;fontColor=#0d47a1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="800" y="240" width="240" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="tok_api3" value="register_callback(fn)&#10;-&gt; CancellationRegistration" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#90caf9;strokeWidth=1;fontSize=11;fontFamily=Courier New;fontColor=#0d47a1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="800" y="280" width="240" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="reg_box" value="CancellationRegistration&#10;(move-only RAII slot)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ff8f00;strokeWidth=1.5;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ef6c00;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="800" y="350" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr_src_state" value="owns shared_ptr&lt;State&gt;" style="endArrow=classic;endFill=1;html=1;strokeColor=#c62828;strokeWidth=2;fontSize=10;fontStyle=1;fontColor=#c62828;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.2;" edge="1" parent="1" source="source" target="state">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr_tok_state" value="shares state via shared_ptr" style="endArrow=classic;endFill=1;html=1;strokeColor=#1565c0;strokeWidth=2;fontSize=10;fontStyle=1;fontColor=#1565c0;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=1;entryY=0.2;" edge="1" parent="1" source="tok1" target="state">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr_reg_state" value="weak_ptr&lt;State&gt; + id" style="endArrow=classic;endFill=1;html=1;strokeColor=#ef6c00;strokeWidth=2;fontSize=10;fontStyle=1;fontColor=#ef6c00;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;exitX=0;exitY=0.5;entryX=1;entryY=0.85;" edge="1" parent="1" source="reg_box" target="state">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr_reg_close" value="reset() / dtor -&gt; unregister" style="endArrow=classic;endFill=1;html=1;strokeColor=#ef6c00;strokeWidth=2;fontSize=10;fontStyle=1;fontColor=#ef6c00;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;exitX=0.4;exitY=0;entryX=0.7;entryY=1;" edge="1" parent="1" source="reg_box" target="tok_api3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ffcc80;strokeWidth=1.5;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="460" width="1020" height="135" as="geometry" />
+        </mxCell>
+        <mxCell id="note_t" value="Semantic Notes" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="54" y="468" width="300" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="note_l1" value="* One-shot     : first request_cancel() returns true and fires callbacks; subsequent calls return false and are no-ops" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Verdana;fontColor=#5d4037;" vertex="1" parent="1">
+          <mxGeometry x="54" y="490" width="1000" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="note_l2" value="* Sync vs async fire : if already cancelled at register-time, the callback is invoked synchronously on the registering thread (registration returns empty)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Verdana;fontColor=#5d4037;" vertex="1" parent="1">
+          <mxGeometry x="54" y="508" width="1000" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="note_l3" value="* No-lock-on-fire   : the internal mutex is released before any user callback runs, so callbacks may freely cancel sibling sources or re-register" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Verdana;fontColor=#5d4037;" vertex="1" parent="1">
+          <mxGeometry x="54" y="526" width="1000" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="note_l4" value="* Exception isolation: exceptions thrown by callbacks are caught and logged via CLOG_E, never propagated to request_cancel()" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Verdana;fontColor=#5d4037;" vertex="1" parent="1">
+          <mxGeometry x="54" y="544" width="1000" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="note_l5" value="* OperationCancelled: canonical exception type used by throw_if_cancellation_requested() and structured cancellation points" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Verdana;fontColor=#5d4037;" vertex="1" parent="1">
+          <mxGeometry x="54" y="562" width="1000" height="18" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

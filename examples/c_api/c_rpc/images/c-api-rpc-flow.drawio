@@ -1,0 +1,162 @@
+<mxfile host="app.diagrams.net" modified="2026-05-19T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="c-api-rpc-flow" name="C API RPC Flow">
+    <mxGraphModel dx="1120" dy="640" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1120" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="C API Server / Client RPC Flow" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1040" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" value="Pure C method model  -  vlink_invoke / vlink_reply request-response over Bytes templates" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#2e7d32;" vertex="1" parent="1">
+          <mxGeometry x="40" y="54" width="1040" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Client (caller) container - green -->
+        <mxCell id="clBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="480" height="500" as="geometry" />
+        </mxCell>
+        <mxCell id="clBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="480" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="clT" value="Client  -  request initiator" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="40" y="112" width="480" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="c1" value="vlink_schema_info_t schema = {&quot;text&quot;, VLINK_SCHEMA_RAW}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="150" width="440" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="c2" value="vlink_create_client(url, &amp;amp;schema, &amp;amp;client)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="204" width="440" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="c3" value="vlink_wait_for_server(client, 2000)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="258" width="440" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="c4" value="static void on_response(data, size, ud)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="312" width="440" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="c5" value="vlink_invoke(client, req, len, on_response, ud)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="366" width="440" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="c6" value="response delivered to on_response" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="424" width="440" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="c7" value="vlink_destroy_client(&amp;amp;client)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="478" width="440" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="cNote" value="resp_callback may be NULL for fire-and-forget" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="60" y="538" width="440" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Transport bridge -->
+        <mxCell id="trBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#eceff1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="540" y="240" width="60" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="trBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="540" y="240" width="60" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="trT" value="Transport" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="540" y="252" width="60" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="trUrl" value="intra://&#10;dds://&#10;shm://&#10;zenoh://" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="540" y="282" width="60" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="trRR" value="req / resp" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#616161;" vertex="1" parent="1">
+          <mxGeometry x="540" y="382" width="60" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Server container - server green darker variant; using same green family -->
+        <mxCell id="srvBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#81c784;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="620" y="96" width="460" height="500" as="geometry" />
+        </mxCell>
+        <mxCell id="srvBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2e7d32;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="620" y="96" width="460" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="srvT" value="Server  -  request handler" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="620" y="112" width="460" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r1" value="static void on_request(data, size, ud)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="640" y="150" width="420" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="r2" value="vlink_create_server(url, &amp;amp;schema, &amp;amp;srv, on_request, &amp;amp;srv)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="640" y="204" width="420" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="r3" value="internal worker thread&#10;deliver request bytes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2e7d32;strokeColor=#1b5e20;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="640" y="258" width="420" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="r4" value="user builds response bytes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="640" y="332" width="420" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="r5" value="vlink_reply(srv, resp, len)  -  MUST be inside on_request" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2e7d32;strokeColor=#1b5e20;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="640" y="386" width="420" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="r6" value="vlink_has_server(client)  -  client side check" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;arcSize=10;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="640" y="444" width="420" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="r7" value="vlink_destroy_server(&amp;amp;srv)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="640" y="490" width="420" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="rNote" value="reply after callback returns -&amp;gt; VLINK_RET_RUNTIME_ERROR" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#b71c1c;" vertex="1" parent="1">
+          <mxGeometry x="640" y="538" width="420" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Client arrows -->
+        <mxCell id="ac1" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#388e3c;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="c1" target="c2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ac2" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#388e3c;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="c2" target="c3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ac3" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#388e3c;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="c3" target="c4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ac4" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#388e3c;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="c4" target="c5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ac5" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#388e3c;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="c5" target="c6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ac6" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#388e3c;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="c6" target="c7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Server arrows -->
+        <mxCell id="ar1" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#2e7d32;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="r1" target="r2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ar2" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#2e7d32;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="r2" target="r3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ar3" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#2e7d32;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="r3" target="r4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ar4" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#2e7d32;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="r4" target="r5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ar5" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#2e7d32;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="r5" target="r6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ar6" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#2e7d32;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="r6" target="r7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- cross arrows: invoke -> transport -> server thread -->
+        <mxCell id="aReq" value="request bytes" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#616161;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;edgeStyle=orthogonalEdgeStyle;fontSize=11;fontStyle=1;fontColor=#424242;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="c5" target="trUrl">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="aReq2" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#616161;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="trUrl" target="r3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- reply path -->
+        <mxCell id="aResp" value="response bytes" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#2e7d32;exitX=0;exitY=0.5;entryX=1;entryY=0.5;rounded=1;edgeStyle=orthogonalEdgeStyle;fontSize=11;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;dashed=1;" edge="1" parent="1" source="r5" target="trRR">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="aResp2" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#2e7d32;exitX=0;exitY=0.5;entryX=1;entryY=0.5;rounded=1;edgeStyle=orthogonalEdgeStyle;dashed=1;" edge="1" parent="1" source="trRR" target="c6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

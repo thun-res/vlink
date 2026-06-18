@@ -1,0 +1,91 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="graph-task-dag" name="GraphTask DAG">
+    <mxGraphModel dx="900" dy="620" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="GraphTask &#8212; Directed Acyclic Execution" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="820" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Phase-based parallel scheduling &#160;&#183;&#160; Dependencies resolve in order" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="50" width="820" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="graphbg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=4;gradientColor=#fafafa;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="560" height="440" as="geometry" />
+        </mxCell>
+        <mxCell id="graphbar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="560" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="graphtitle" value="Task Graph" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="60" y="104" width="200" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="A" value="Task A" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="120" y="150" width="140" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="B" value="Task B" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="380" y="150" width="140" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="C" value="Task C" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="120" y="270" width="140" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="D" value="Task D" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="380" y="270" width="140" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="E" value="Task E" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="250" y="400" width="140" height="54" as="geometry" />
+        </mxCell>
+
+        <mxCell id="eAC" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#616161;endArrow=classic;endFill=1;" edge="1" source="A" target="C" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eBC" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#616161;endArrow=classic;endFill=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" edge="1" source="B" target="C" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eAD" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#616161;endArrow=classic;endFill=1;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;" edge="1" source="A" target="D" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eCE" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#616161;endArrow=classic;endFill=1;" edge="1" source="C" target="E" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eDE" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#616161;endArrow=classic;endFill=1;" edge="1" source="D" target="E" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="phasebg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=4;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="620" y="90" width="240" height="440" as="geometry" />
+        </mxCell>
+        <mxCell id="phasebar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="620" y="90" width="240" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="phasetitle" value="Execution Phases" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="640" y="104" width="200" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1" value="Phase 1&#10;Run A and B in parallel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="640" y="150" width="200" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="p2" value="Phase 2&#10;Run C and D in parallel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="640" y="270" width="200" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="p3" value="Phase 3&#10;Run E" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="640" y="400" width="200" height="54" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pA1" style="edgeStyle=none;strokeWidth=2;strokeColor=#90a4ae;dashed=1;endArrow=blockThin;endFill=1;" edge="1" source="p1" target="p2" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pA2" style="edgeStyle=none;strokeWidth=2;strokeColor=#90a4ae;dashed=1;endArrow=blockThin;endFill=1;" edge="1" source="p2" target="p3" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="footnote" value="Dependency edges drive phase ordering" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="40" y="495" width="820" height="22" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,136 @@
+<mxfile host="app.diagrams.net" modified="2026-05-19T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="flatbuffers-pubsub-flow" name="FlatBuffers Pub/Sub Flow">
+    <mxGraphModel dx="1120" dy="640" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1120" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="DDS-C  +  FlatBuffers  -  UserT Publish  /  User* Zero-Copy Subscribe" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="1080" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Object API UserT for construction  &#183;  read-only User* for zero-copy access  &#183;  Timer-driven 500 ms publish on ddsc://samples/pub_sub_fbs/user" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="20" y="56" width="1080" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pub_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="320" height="500" as="geometry" />
+        </mxCell>
+        <mxCell id="pub_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="320" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="pub_t" value="Publisher  ( run_pub )" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="116" width="320" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pu1" value="MessageLoop message_loop&#10;Utils::register_terminate_signal" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="156" width="280" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="pu2" value="Publisher&lt;hw::UserT&gt; pub(kEventUrl)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="60" y="214" width="280" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="pu3" value="Timer timer&#10;timer.attach(&amp;message_loop)&#10;timer.set_interval(500)&#10;timer.set_loop_count(kInfinite)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="264" width="280" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="pu4" value="timer.start([&amp;](){&#10;  auto user = make_user(++seq);&#10;  pub.publish(user);&#10;})" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="358" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="pu5" value="message_loop.run()&#10;// blocks until Ctrl+C" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="448" width="280" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="pu_foot" value="No wait_for_subscribers  -  starts emitting&#10;the moment timer fires" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="40" y="516" width="320" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="pu_foot2" value="set: ./sample_pub_sub_fbs pub" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontStyle=2;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="556" width="320" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ser_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ce93d8;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#f3e5f5;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="400" y="100" width="320" height="500" as="geometry" />
+        </mxCell>
+        <mxCell id="ser_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8e24aa;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="400" y="100" width="320" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="ser_t" value="FlatBuffers Schema  &amp;  Wire" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="400" y="116" width="320" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sc_root" value="root_type User" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8e24aa;strokeColor=#6a1b9a;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="420" y="156" width="280" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="sc_p" value="Profile  +  Address  ( home )&#10;Vec2  ( location )  +  tags" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ce93d8;strokeColor=#6a1b9a;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="420" y="200" width="280" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="sc_o" value="Order  +  Items  +  OrderStatus" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ce93d8;strokeColor=#6a1b9a;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="420" y="264" width="280" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="sc_en" value="hw::UserT  ( Object API )&#10;NativeTable  -  mutable  -  for build" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="420" y="312" width="280" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="sc_wire" value="serialized wire bytes&#10;( FlatBuffers binary table )" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8e24aa;strokeColor=#6a1b9a;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="420" y="378" width="280" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="sc_de" value="hw::User*  ( read-only Table )&#10;zero-copy  -  pointer into wire" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="420" y="444" width="280" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="ser_foot" value="ddsc://samples/pub_sub_fbs/user" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="400" y="510" width="320" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="ser_foot2" value="namespace alias  hw = Helloworld::fbs" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="400" y="534" width="320" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="ser_foot3" value="User* valid only inside callback" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="400" y="558" width="320" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sub_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="760" y="100" width="320" height="500" as="geometry" />
+        </mxCell>
+        <mxCell id="sub_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="760" y="100" width="320" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="sub_t" value="Subscriber  ( run_sub )" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="116" width="320" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="su1" value="Subscriber&lt;hw::User*&gt; sub(kEventUrl)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="780" y="156" width="280" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="su2" value="sub.listen([&amp;](const hw::User* u){&#10;  print_user_summary(u);&#10;})" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="780" y="206" width="280" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="su3" value="u-&gt;user_id()&#10;u-&gt;name()&#10;u-&gt;profile()-&gt;home()-&gt;city()&#10;u-&gt;orders()-&gt;Get(0)-&gt;total_price()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="780" y="276" width="280" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="su4" value="vlink::ConditionVariable cv&#10;register_terminate_signal&#10;cv.wait(lock)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="780" y="370" width="280" height="68" as="geometry" />
+        </mxCell>
+        <mxCell id="su5" value="// alternate type: hw::UserT&#10;//   for unpack-into-object" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=2;fontColor=#0d47a1;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="780" y="448" width="280" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="su_foot" value="./sample_pub_sub_fbs sub" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="516" width="320" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="su_foot2" value="zero unpack overhead per message" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="760" y="540" width="320" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="su_foot3" value="suitable for high-frequency / large messages" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="760" y="562" width="320" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arrPubSer" value="&lt;b&gt;encode&lt;/b&gt;" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#8e24aa;rounded=1;fontSize=11;fontStyle=1;fontColor=#4a148c;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="360" y="406" as="sourcePoint" />
+            <mxPoint x="420" y="406" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arrSerSub" value="&lt;b&gt;deliver&lt;/b&gt;" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#8e24aa;rounded=1;fontSize=11;fontStyle=1;fontColor=#4a148c;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720" y="472" as="sourcePoint" />
+            <mxPoint x="780" y="236" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

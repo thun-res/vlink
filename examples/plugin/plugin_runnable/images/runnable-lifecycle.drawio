@@ -1,0 +1,114 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="runnable-lifecycle" name="Runnable Plugin Lifecycle">
+    <mxGraphModel dx="1000" dy="740" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="740" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="RunablePluginInterface &#8212; Lifecycle" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="920" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Host drives load &#8594; async_run &#8594; on_init &#8594; RUNNING &#8594; on_deinit &#8594; quit &#8594; wait_for_quit" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="54" width="920" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="hostCol" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=6;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="400" height="600" as="geometry" />
+        </mxCell>
+        <mxCell id="hostBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="400" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="hostT" value="Host Application" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="116" width="400" height="26" as="geometry" />
+        </mxCell>
+
+        <mxCell id="plugCol" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ce93d8;strokeWidth=1.5;arcSize=6;shadow=1;gradientColor=#f3e5f5;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="560" y="100" width="400" height="600" as="geometry" />
+        </mxCell>
+        <mxCell id="plugBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8e24aa;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="560" y="100" width="400" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="plugT" value="Plugin (.so)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="560" y="116" width="400" height="26" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s1" value="&lt;b&gt;Plugin::load&amp;lt;RunablePluginInterface&amp;gt;()&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;font-family:Courier New;&quot;&gt;dlopen + vlink_plugin_create&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;fontSize=12;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="158" width="360" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="s1r" value="&lt;b&gt;new MonitorPlugin&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1.2;fontSize=12;fontColor=#4a148c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="580" y="158" width="360" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="x1" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#546e7a;dashed=1;" edge="1" parent="1" source="s1" target="s1r">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s2" value="&lt;b&gt;async_run()&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;start event loop on background thread&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;fontSize=12;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="232" width="360" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="s2r" value="&lt;b&gt;MessageLoop thread running&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1.2;fontSize=12;fontColor=#4a148c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="580" y="232" width="360" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="x2" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#546e7a;dashed=1;" edge="1" parent="1" source="s2" target="s2r">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="as12" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#1976d2;" edge="1" parent="1" source="s1" target="s2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s3" value="&lt;b&gt;on_init()&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;plugin creates timers, subscribers&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;fontSize=12;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="306" width="360" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="s3r" value="&lt;b&gt;Timer(500ms) started&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;resources allocated&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1.2;fontSize=12;fontColor=#4a148c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="580" y="306" width="360" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="x3" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#546e7a;dashed=1;" edge="1" parent="1" source="s3" target="s3r">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="as23" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#1976d2;" edge="1" parent="1" source="s2" target="s3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="running" value="&lt;b&gt;RUNNING&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;plugin processes events on its own thread &#160;&#183;&#160; host continues other work&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ef6c00;strokeWidth=2;arcSize=8;fontSize=13;fontColor=#bf360c;dashed=1;dashPattern=5 5;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="260" y="384" width="480" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="as3R" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#ef6c00;" edge="1" parent="1" source="s3" target="running">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="asR4" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#ef6c00;" edge="1" parent="1" source="running" target="s4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s4" value="&lt;b&gt;on_deinit()&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;plugin releases resources&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#b71c1c;strokeWidth=1.2;fontSize=12;fontColor=#b71c1c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="474" width="360" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="s4r" value="&lt;b&gt;Timer stopped&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;resources freed&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#b71c1c;strokeWidth=1.2;fontSize=12;fontColor=#b71c1c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="580" y="474" width="360" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="x4" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#546e7a;dashed=1;" edge="1" parent="1" source="s4" target="s4r">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s5" value="&lt;b&gt;quit()&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;request event loop stop&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#b71c1c;strokeWidth=1.2;fontSize=12;fontColor=#b71c1c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="548" width="360" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="as45" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#546e7a;" edge="1" parent="1" source="s4" target="s5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s6" value="&lt;b&gt;wait_for_quit()&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;block until loop thread exits&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#b71c1c;strokeWidth=1.2;fontSize=12;fontColor=#b71c1c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="622" width="360" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="s6r" value="&lt;b&gt;Thread joined&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;loop destroyed&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#b71c1c;strokeWidth=1.2;fontSize=12;fontColor=#b71c1c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="580" y="622" width="360" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="x6" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#546e7a;dashed=1;" edge="1" parent="1" source="s6" target="s6r">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="as56" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.5;strokeColor=#546e7a;" edge="1" parent="1" source="s5" target="s6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

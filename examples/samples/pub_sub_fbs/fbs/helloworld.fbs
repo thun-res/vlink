@@ -1,0 +1,56 @@
+namespace Helloworld.fbs;
+
+enum OrderStatus : byte {
+  Unknown = 0,
+  Pending = 1,
+  Paid = 2,
+  Shipped = 3,
+  Done = 4,
+  Cancelled = 5
+}
+
+struct Vec2 {
+  x: float;
+  y: float;
+}
+
+table Address {
+  country: string;
+  city: string;
+  street: string;
+  zip_code: string;
+}
+
+table Item {
+  sku: string;
+  name: string;
+  price: float;
+  quantity: int;
+}
+
+table Order {
+  order_id: string;
+  status: OrderStatus;
+  items: [Item];
+  total_price: float;
+  remark: string;
+}
+
+table Profile {
+  nickname: string;
+  age: ushort;
+  home: Address;
+  location: Vec2;
+  tags: [string];
+}
+
+table User {
+  user_id: ulong;
+  name: string;
+  email: string;
+  profile: Profile;
+  orders: [Order];
+}
+
+root_type User;
+file_identifier "USER";

@@ -1,0 +1,149 @@
+<mxfile host="app.diagrams.net" modified="2026-05-19T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="c-api-pubsub-flow" name="C API PubSub Flow">
+    <mxGraphModel dx="1120" dy="640" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1120" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="C API Publisher / Subscriber Flow" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1040" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" value="Pure C event model  -  handle-based wrappers over Publisher&lt;Bytes&gt; / Subscriber&lt;Bytes&gt;" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#bf360c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="54" width="1040" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Publisher container (C API orange) -->
+        <mxCell id="pubBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ffcc80;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#fff3e0;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="500" height="500" as="geometry" />
+        </mxCell>
+        <mxCell id="pubBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="500" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="pubT" value="Publisher Side  -  C application" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#bf360c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="112" width="500" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1" value="vlink_schema_info_t schema = {&quot;text&quot;, VLINK_SCHEMA_RAW}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="150" width="460" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="p2" value="vlink_create_publisher(url, &amp;amp;schema, &amp;amp;pub)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcc80;strokeColor=#e65100;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="204" width="460" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="p3" value="vlink_wait_for_subscribers(pub, 2000)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcc80;strokeColor=#e65100;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="258" width="460" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="p4" value="vlink_has_subscribers(pub)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;arcSize=10;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="312" width="460" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="p5" value="vlink_publish(pub, data, size)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=#e65100;strokeWidth=1.5;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="366" width="460" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="p6" value="vlink_publish_by_force(pub, data, size)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;arcSize=10;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="424" width="460" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="p7" value="vlink_destroy_publisher(&amp;amp;pub)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcc80;strokeColor=#e65100;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="478" width="460" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="pNote" value="Internal: wraps Publisher&amp;lt;Bytes&amp;gt; via vlink::handle_t" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#bf360c;" vertex="1" parent="1">
+          <mxGeometry x="60" y="538" width="460" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Transport bridge -->
+        <mxCell id="trBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#eceff1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="560" y="240" width="60" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="trBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="560" y="240" width="60" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="trT" value="Transport" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="560" y="252" width="60" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="trUrl" value="intra://&#10;dds://&#10;shm://&#10;zenoh://" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="560" y="280" width="60" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="trBytes" value="Bytes" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#616161;" vertex="1" parent="1">
+          <mxGeometry x="560" y="368" width="60" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Subscriber container (blue) -->
+        <mxCell id="subBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="640" y="96" width="440" height="500" as="geometry" />
+        </mxCell>
+        <mxCell id="subBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="640" y="96" width="440" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="subT" value="Subscriber Side  -  C application" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="640" y="112" width="440" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s1" value="static void on_message(data, size, ud)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="660" y="150" width="400" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" value="vlink_create_subscriber(url, &amp;amp;schema, &amp;amp;sub, on_message, ud)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="660" y="204" width="400" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="internal receive thread&#10;deliver Bytes -&amp;gt; on_message" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#1565c0;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="660" y="258" width="400" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s4" value="printf user payload  -  ud passthrough" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="660" y="332" width="400" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="s5" value="vlink_detect_subscribers(pub, cb, ud)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;arcSize=10;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="660" y="386" width="400" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="s6" value="vlink_destroy_subscriber(&amp;amp;sub)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="660" y="478" width="400" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="sNote" value="data pointer valid only inside callback  -  copy if you need to retain" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="660" y="538" width="400" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Internal arrows: publisher steps -->
+        <mxCell id="ap1" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#ef6c00;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="p1" target="p2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ap2" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#ef6c00;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="p2" target="p3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ap3" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#ef6c00;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="p3" target="p4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ap4" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#ef6c00;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="p4" target="p5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ap5" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#ef6c00;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="p5" target="p6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ap6" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#ef6c00;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="p6" target="p7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Subscriber steps -->
+        <mxCell id="as1" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="s1" target="s2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="as2" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="s2" target="s3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="as3" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="s3" target="s4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="as4" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="s4" target="s5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="as5" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;rounded=1;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="s5" target="s6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Cross-domain: publish -> transport -> receive -->
+        <mxCell id="aTx" value="publish bytes" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#616161;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;edgeStyle=orthogonalEdgeStyle;fontSize=11;fontStyle=1;fontColor=#424242;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="p5" target="trUrl">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="aRx" value="deliver bytes" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#616161;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;edgeStyle=orthogonalEdgeStyle;fontSize=11;fontStyle=1;fontColor=#424242;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="trUrl" target="s3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,90 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="conan-build-flow" name="Conan Build Flow">
+    <mxGraphModel dx="900" dy="700" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="700" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Conan Build Flow" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="820" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="conan install &#160;&#183;&#160; conan build &#160;&#183;&#160; or invoke CMake directly" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="54" width="820" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="src" value="Source directory" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=14;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="280" y="100" width="340" height="52" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#1565c0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="src" target="step1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step1" value="conan install ." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=14;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="280" y="194" width="340" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="note1" value="Install dependencies, generate CMake files" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#a5d6a7;strokeWidth=1.2;fontSize=11;fontStyle=2;fontColor=#1b5e20;align=center;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="640" y="202" width="220" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="conn1" style="edgeStyle=none;html=1;endArrow=none;dashed=1;strokeColor=#a5d6a7;strokeWidth=1.2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="step1" target="note1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#2e7d32;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="step1" target="step2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step2" value="conan build ." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=14;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="280" y="288" width="340" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="note2" value="Invoke CMake configure + build" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#a5d6a7;strokeWidth=1.2;fontSize=11;fontStyle=2;fontColor=#1b5e20;align=center;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="640" y="296" width="220" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="conn2" style="edgeStyle=none;html=1;endArrow=none;dashed=1;strokeColor=#a5d6a7;strokeWidth=1.2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="step2" target="note2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="orLabel" value="Or invoke CMake manually" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontSize=11;fontStyle=2;fontColor=#616161;" vertex="1" parent="1">
+          <mxGeometry x="340" y="360" width="220" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr3a" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#616161;exitX=0.3;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="step2" target="cfgCmd">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr3b" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#616161;exitX=0.7;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="step2" target="buildCmd">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cfgCmd" value="cmake --preset conan-release" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.5;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="80" y="400" width="320" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="cfgNote" value="CMake configure" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#616161;" vertex="1" parent="1">
+          <mxGeometry x="80" y="458" width="320" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="buildCmd" value="cmake --build --preset conan-release" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.5;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#263238;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="500" y="400" width="320" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="buildNote" value="CMake compile" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#616161;" vertex="1" parent="1">
+          <mxGeometry x="500" y="458" width="320" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arr4a" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#616161;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="cfgCmd" target="out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr4b" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#616161;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="buildCmd" target="out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="out" value="Build artifacts ready&#10;Installable via conan create or cmake --install" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#bf360c;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="200" y="516" width="500" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="footer" value="conan install generates toolchain and presets; conan build is a wrapper over cmake configure + build" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="590" width="820" height="22" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

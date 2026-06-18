@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+option optimize_for = LITE_RUNTIME;
+
+package pb;
+
+message Request {
+  uint32 type = 1;
+}
+
+message Response {
+  string value = 1;
+}
+
+message Message {
+  uint32 type = 1;
+  string value = 2;
+}

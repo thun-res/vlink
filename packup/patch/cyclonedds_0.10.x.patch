@@ -1,0 +1,35 @@
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index a0edd71a..db17def8 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -75,7 +75,7 @@ endif()
+ # currently relying on it.
+ set(ENABLE_SSL "AUTO" CACHE STRING "Enable OpenSSL support")
+ set_property(CACHE ENABLE_SSL PROPERTY STRINGS ON OFF AUTO)
+-if(ENABLE_SSL)
++if(ENABLE_SSL AND NOT CYCLONEDDS_DISABLE_SSL)
+   if(NOT ENABLE_SSL STREQUAL "AUTO")
+     find_package(OpenSSL REQUIRED)
+   else()
+@@ -88,6 +88,8 @@ if(ENABLE_SSL)
+       set(ENABLE_SSL "OFF")
+     endif()
+   endif()
++else()
++  set(ENABLE_SSL "OFF")
+ endif()
+ 
+ if(NOT ENABLE_SECURITY)
+diff --git a/src/core/CMakeLists.txt b/src/core/CMakeLists.txt
+index 0f7a713c..1b7d5466 100644
+--- a/src/core/CMakeLists.txt
++++ b/src/core/CMakeLists.txt
+@@ -24,7 +24,7 @@ if("${CMAKE_C_COMPILER_ID}" STREQUAL "MSVC")
+ endif()
+ 
+ if(ENABLE_SSL AND OPENSSL_FOUND)
+-  target_link_libraries(ddsc PRIVATE OpenSSL::SSL)
++  target_link_libraries(ddsc PRIVATE $<BUILD_INTERFACE:OpenSSL::SSL>)
+   if(CMAKE_GENERATOR MATCHES "Visual Studio")
+     set_target_properties(ddsc PROPERTIES LINK_FLAGS "/ignore:4099")
+   endif()

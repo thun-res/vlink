@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+option optimize_for = LITE_RUNTIME;
+
+package Helloworld;
+
+message Request {
+  uint64 left = 1;
+  uint64 right = 2;
+}
+
+message Response {
+  uint64 sum = 1;
+}
+
+message Message {
+  string detail = 1;
+}

@@ -1,0 +1,125 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="foreword-method-flow" name="Method Model Flow">
+    <mxGraphModel dx="900" dy="460" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="460" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Method Model &#160;&#183;&#160; Request / Response (N:1)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="820" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Multiple clients call a single server via a shared transport" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="52" width="820" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Clients container (left, blue) -->
+        <mxCell id="cbg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=6;gradientColor=#e3f2fd;gradientDirection=east;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="230" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="cbar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="230" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="ct" value="Clients (N)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="52" y="114" width="206" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="c1" value="&lt;b&gt;Client&amp;lt;Req,Resp&amp;gt;&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#546e7a&quot;&gt;caller #1&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontColor=#0d47a1;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="148" width="190" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="c2" value="&lt;b&gt;Client&amp;lt;Req,Resp&amp;gt;&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#546e7a&quot;&gt;caller #2&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontColor=#0d47a1;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="216" width="190" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="c3" value="&lt;b&gt;Client&amp;lt;Req,Resp&amp;gt;&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#546e7a&quot;&gt;caller #N&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontColor=#0d47a1;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="316" width="190" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="cdots" value="..." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=18;fontStyle=1;fontColor=#90a4ae;" vertex="1" parent="1">
+          <mxGeometry x="60" y="280" width="190" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Transport (middle, gray) -->
+        <mxCell id="tbg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=6;gradientColor=#fafafa;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="360" y="180" width="180" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="tbar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="360" y="180" width="180" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="tt" value="Transport" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="372" y="194" width="156" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="tinfo" value="any URL scheme&lt;br/&gt;dds / shm / intra / ..." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="372" y="224" width="156" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="tbadge" value="same API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1;fontSize=10;fontStyle=2;fontColor=#455a64;align=center;" vertex="1" parent="1">
+          <mxGeometry x="400" y="276" width="100" height="26" as="geometry" />
+        </mxCell>
+
+        <!-- Server (right, green) -->
+        <mxCell id="sbg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=6;gradientColor=#e8f5e9;gradientDirection=west;" vertex="1" parent="1">
+          <mxGeometry x="630" y="180" width="230" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="sbar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="630" y="180" width="230" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="st" value="Server (1)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="642" y="194" width="206" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sv" value="&lt;b&gt;Server&amp;lt;Req,Resp&amp;gt;&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#33691e&quot;&gt;handles requests&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontColor=#1b5e20;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="650" y="226" width="190" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows: clients -> transport (request) -->
+        <mxCell id="r1" value="invoke(req)" style="endArrow=classic;endFill=1;html=1;strokeColor=#1565c0;strokeWidth=2;fontSize=10;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.3;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="c1" target="tbg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r2" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#1565c0;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="c2" target="tbg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r3" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#1565c0;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.75;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="c3" target="tbg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow: transport -> server (request) -->
+        <mxCell id="r4" value="dispatch" style="endArrow=classic;endFill=1;html=1;strokeColor=#2e7d32;strokeWidth=2.2;fontSize=10;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;exitX=1;exitY=0.4;entryX=0;entryY=0.4;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="tbg" target="sv">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow: server -> transport (response, dashed) -->
+        <mxCell id="p1" value="response" style="endArrow=classic;endFill=1;html=1;strokeColor=#e65100;strokeWidth=2;dashed=1;fontSize=10;fontStyle=3;fontColor=#e65100;labelBackgroundColor=#ffffff;exitX=0;exitY=0.7;entryX=1;entryY=0.7;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="sv" target="tbg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Transport -> clients (response fan-out, dashed) -->
+        <mxCell id="p2" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#e65100;strokeWidth=2;dashed=1;exitX=0;exitY=0.3;entryX=1;entryY=0.7;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="tbg" target="c1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#e65100;strokeWidth=2;dashed=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="tbg" target="c2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#e65100;strokeWidth=2;dashed=1;exitX=0;exitY=0.7;entryX=1;entryY=0.3;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="tbg" target="c3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="leg1" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#1565c0;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="60" y="424" as="sourcePoint" />
+            <mxPoint x="110" y="424" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg1t" value="request" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="118" y="414" width="100" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg2" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#e65100;strokeWidth=2;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="240" y="424" as="sourcePoint" />
+            <mxPoint x="290" y="424" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg2t" value="response" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="298" y="414" width="100" height="20" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

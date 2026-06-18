@@ -1,0 +1,374 @@
+#!/usr/bin/env bash
+
+which readlink realpath rsync wget > /dev/null
+[ $? -ne 0 ] && echo "*** Incomplete command support ***" && exit 1
+
+SHELL_DIR=$(cd $(dirname ${BASH_SOURCE:-$0}) && pwd)
+
+DOCKER_NAME=vlink-docker-20
+DOCKER_VERSION=v2.0.0
+DOCKER_TAG=latest
+DOCKER_PLATFORM=linux/amd64
+DOCKER_USER_NAME=ubuntu
+DOCKER_PASSWORD="123"
+DOCKER_CMD=zsh
+DOCKER_HUB=172.168.4.75:8090
+DOCKER_URL=http://172.168.4.75/docker/$DOCKER_NAME
+DOCKER_ETC_STR="{\n\
+    \"insecure-registries\" : [\"$DOCKER_HUB\"],\n\
+    \"registry-mirrors\": [\n\
+        \"https://hub-mirror.c.163.com\",\n\
+        \"https://mirror.ccs.tencentyun.com\",\n\
+        \"https://docker.mirrors.ustc.edu.cn\",\n\
+        \"https://ueo0uggy.mirror.aliyuncs.com\",\n\
+        \"https://docker.m.daocloud.io\",\n\
+        \"https://cf-workers-docker-io-apl.pages.dev\"\n\
+    ]\n\
+}"
+DOCKER_VERSION_URL=http://172.168.4.75/docker/version/${DOCKER_NAME}-version.txt
+DOCKER_TIMEOUT=1
+DOCKER_USER_UPDATE=0
+DOCKER_GPU_FLAG=""
+
+function do_usage() {
+    echo "Usage:"
+    echo "  $DOCKER_NAME          (Run $DOCKER_NAME)"
+    echo "  $DOCKER_NAME attach   (Attach to an exists $DOCKER_NAME)"
+    echo "  $DOCKER_NAME -v       (Print $DOCKER_NAME version)"
+    echo "  $DOCKER_NAME -g       (Init $DOCKER_NAME group)"
+    echo "  $DOCKER_NAME -u       (Update $DOCKER_NAME)"
+    echo "  $DOCKER_NAME -p       (Push $DOCKER_NAME)"
+    echo "  $DOCKER_NAME -s       (Install $DOCKER_NAME)"
+    echo "  $DOCKER_NAME -c       (Clean none docker images)"
+    echo "  $DOCKER_NAME -i       (Ignore auto detection of update)"
+    echo "  $DOCKER_NAME --gpu    (Enable GPU support for container)"
+    return 0
+}
+
+function do_version() {
+    echo $DOCKER_VERSION
+    return 0
+}
+
+function do_group() {
+    if grep -q "Ubuntu" /etc/issue; then
+        sudo apt-get install -y docker.io docker-compose
+    fi
+    sudo groupadd docker
+    sudo usermod -aG docker $USER
+    sudo gpasswd -a $USER docker
+    sudo chmod 777 /var/run/docker.sock
+    sudo mkdir -p /etc/docker/
+    echo -e $DOCKER_ETC_STR | sudo tee /etc/docker/daemon.json
+    sudo systemctl restart docker
+    sudo systemctl enable docker
+    return 0
+}
+
+function do_update() {
+    if [ ! -z "$DOCKER_URL" ]; then
+        wget $DOCKER_URL -O ~/.$DOCKER_NAME/$DOCKER_NAME
+        [ $? -ne 0 ] && echo -e "\033[1m\033[31mError: Failed to fetch docker script!\033[0m" && return 1
+        chmod +x ~/.$DOCKER_NAME/$DOCKER_NAME
+    fi
+    local old_image_id=$(docker images -q $DOCKER_NAME:$DOCKER_TAG 2>/dev/null)
+    local old_containers=
+    [ -n "$old_image_id" ] && old_containers=$(docker ps -aq --filter ancestor=$old_image_id 2>/dev/null)
+    docker pull $DOCKER_HUB/$DOCKER_NAME/$DOCKER_NAME:$DOCKER_TAG
+    [ $? -ne 0 ] && echo -e "\033[1m\033[31mError: Failed to fetch docker image!\033[0m" && return 1
+    docker tag $DOCKER_HUB/$DOCKER_NAME/$DOCKER_NAME:$DOCKER_TAG $DOCKER_NAME:$DOCKER_TAG
+    [ $? -ne 0 ] && echo -e "\033[1m\033[31mError: Failed to tag docker image!\033[0m" && return 1
+    local new_image_id=$(docker images -q $DOCKER_NAME:$DOCKER_TAG 2>/dev/null)
+    if [ -n "$old_image_id" ] && [ "$old_image_id" != "$new_image_id" ]; then
+        if [ -n "$old_containers" ]; then
+            echo -e "\033[1m\033[33mStopping containers using old image...\033[0m"
+            docker rm -f $old_containers 2>/dev/null
+        fi
+        docker rmi -f $old_image_id 2>/dev/null
+        [ $? -ne 0 ] && echo -e "\033[1m\033[33mWarning: Failed to remove old image $old_image_id\033[0m"
+    fi
+    return 0
+}
+
+function do_push() {
+    docker tag $DOCKER_NAME:$DOCKER_TAG $DOCKER_HUB/$DOCKER_NAME/$DOCKER_NAME:$DOCKER_TAG
+    [ $? -ne 0 ] && echo -e "\033[1m\033[31mError: Failed to tag docker image!\033[0m" && return 1
+    docker push $DOCKER_HUB/$DOCKER_NAME/$DOCKER_NAME:$DOCKER_TAG
+    [ $? -ne 0 ] && echo -e "\033[1m\033[31mError: Failed to push docker image!\033[0m" && return 1
+    return 0
+}
+
+function do_prepare() {
+    mkdir -p ~/.qnx/
+    mkdir -p ~/.ssh/
+    mkdir -p ~/vlink-toolchains/
+    mkdir -p ~/Qt/
+    mkdir -p ~/osg_sdk/
+    mkdir -p ~/.$DOCKER_NAME/home/$DOCKER_USER_NAME/
+    rm -rf ~/.$DOCKER_NAME/home/$DOCKER_USER_NAME/.cache/
+    rm -rf ~/.$DOCKER_NAME/home/$DOCKER_USER_NAME/.cmake/
+    rm -rf ~/.$DOCKER_NAME/home/$DOCKER_USER_NAME/.nv/
+    rm -rf ~/.$DOCKER_NAME/home/$DOCKER_USER_NAME/.tmp/
+    rm -rf ~/.$DOCKER_NAME/home/$DOCKER_USER_NAME/tmp/
+    rm -rf ~/.$DOCKER_NAME/home/$DOCKER_USER_NAME/.bash*
+    rm -rf ~/.$DOCKER_NAME/home/$DOCKER_USER_NAME/.zsh*
+    rm -rf ~/.$DOCKER_NAME/home/$DOCKER_USER_NAME/.zsh
+    rm -f ~/.$DOCKER_NAME/home/$DOCKER_USER_NAME/.zcompdump
+    rm -f ~/.$DOCKER_NAME/home/$DOCKER_USER_NAME/.zhistory
+    rm -f ~/.$DOCKER_NAME/home/$DOCKER_USER_NAME/.viminfo
+    rm -f ~/.$DOCKER_NAME/home/$DOCKER_USER_NAME/.profile
+    rm -f ~/.$DOCKER_NAME/home/$DOCKER_USER_NAME/.wget-hsts
+    touch ~/.$DOCKER_NAME/home/$DOCKER_USER_NAME/.bashrc
+    touch ~/.$DOCKER_NAME/home/$DOCKER_USER_NAME/.zshrc
+    mkdir -p ~/.$DOCKER_NAME/home/$DOCKER_USER_NAME/.zsh
+    return 0
+}
+
+function do_create() {
+    if [ ! -f $SHELL_DIR/Dockerfile ];then
+        return 0
+    fi
+    [ $(id -u) -eq 0 ] && echo "*** Cannot run as root user ***" && exit 1
+    echo "=== Create ==="
+    #--build-arg ALL_PROXY="http://172.17.0.1:10801"
+    docker build --platform=$DOCKER_PLATFORM \
+        -t $DOCKER_NAME:$DOCKER_TAG $SHELL_DIR \
+        --build-arg DOCKER_NAME=$DOCKER_NAME \
+        --build-arg DOCKER_VERSION=$DOCKER_VERSION \
+        --build-arg HOST_USER_UID=$(id -u) \
+        --build-arg HOST_USER_GID=$(id -g) \
+        --build-arg HOST_PASSWORD=$DOCKER_PASSWORD
+    [ $? -ne 0 ] && echo "*** Create error ***" && exit 1
+}
+
+function _set_global_command() {
+    local _file=$1
+    local _start_str="# $DOCKER_NAME == begin =="
+    local _end_str="# $DOCKER_NAME ==  end  =="
+    local _content="\n$_start_str\nalias $DOCKER_NAME=~/.$DOCKER_NAME/$DOCKER_NAME\n$_end_str\n"
+    local _result=$(cat $_file | grep "$_start_str")
+    if [ "$_result" = "" ];then
+        echo -e "$_content" >> $_file
+    fi
+    return 0
+}
+
+function do_install() {
+    echo "=== Install ==="
+    mkdir -p ~/.$DOCKER_NAME/
+    touch ~/.bashrc
+    [ -f ~/.bashrc ] && _set_global_command ~/.bashrc
+    [ -f ~/.zshrc ] && _set_global_command ~/.zshrc
+    [ -f ~/.config/fish/config.fish ] && _set_global_command ~/.config/fish/config.fish
+    alias $DOCKER_NAME=~/.$DOCKER_NAME/$DOCKER_NAME
+    cp ${BASH_SOURCE:-$0} ~/.$DOCKER_NAME/
+    if [ ! -f $SHELL_DIR/Dockerfile ];then
+        return 0
+    fi
+    rsync -a $SHELL_DIR/ ~/.$DOCKER_NAME/
+    return 0
+}
+
+function do_clean() {
+    rm -rf ~/.$DOCKER_NAME/home/*
+    read -p "Clean all docker images? (Y/N):" _para
+    case $_para in
+    [yY])
+        echo "=== Clean All ==="
+        # docker container prune -f
+        docker image prune -f
+        ;;
+    [nN])
+        echo "(Ignore)"
+        ;;
+    *)
+        echo "*** Invalid input ***"
+        ;;
+    esac
+    return 0
+}
+
+function do_run() {
+    [ $(id -u) -eq 0 ] && echo "*** Cannot run as root user ***" && exit 1
+    [ -n "$DOCKER_GPU_FLAG" ] && echo "=== Enable GPU support for container ==="
+    echo "=== Run ==="
+    docker images --format '{{.Repository}}' | grep -q "^${DOCKER_NAME}$"
+    if [ $? -ne 0  ];then
+        echo "*** Run error ***"
+        echo "You should run '$DOCKER_NAME -s' first"
+        exit 1
+    fi
+    local _user_name=$DOCKER_USER_NAME
+    local _user_uid=$(id -u)
+    local _user_gid=$(id -g)
+    mkdir -p ~/.$DOCKER_NAME/home/$_user_name/
+    [ -f ~/.gitconfig ] && cp -f ~/.gitconfig ~/.$DOCKER_NAME/home/$_user_name/
+    [ -f ~/.git-credentials ] && cp -f ~/.git-credentials ~/.$DOCKER_NAME/home/$_user_name/
+    docker run -it --rm \
+        -h $DOCKER_NAME \
+        -u $_user_uid:$_user_gid \
+        -w /work \
+        -v ~/Qt:/home/$_user_name/Qt \
+        -v ~/osg_sdk:/home/$_user_name/osg_sdk \
+        -v $(pwd):/work \
+        -v ~/.$DOCKER_NAME/home/$_user_name/:/home/$_user_name/ \
+        -v ~/.qnx/:/home/$_user_name/.qnx/ \
+        -v ~/.ssh/:/home/$_user_name/.ssh/ \
+        -v ~/vlink-toolchains/:/home/$_user_name/vlink-toolchains/ \
+        --tmpfs /home/$_user_name/tmp \
+        --shm-size="1g" \
+        --ulimit core=-1 --security-opt seccomp=unconfined \
+        $DOCKER_GPU_FLAG \
+        --privileged \
+        $DOCKER_NAME:$DOCKER_TAG $DOCKER_CMD
+    return 0
+}
+
+function do_attach() {
+    if [ -n "$1" ];then
+        docker exec -it $1 $DOCKER_CMD
+        return $?
+    fi
+    local CONTAINER_ID=$(docker ps -q --filter "ancestor=$DOCKER_NAME:$DOCKER_TAG" | head -n 1)
+    if [ -n "$CONTAINER_ID" ]; then
+        echo "Attach to latest container [$CONTAINER_ID] ..."
+        docker exec -it $CONTAINER_ID $DOCKER_CMD
+        return $?
+    else
+        echo "No running container found for image $DOCKER_NAME:$DOCKER_TAG"
+        return 1
+    fi
+    return 0
+}
+
+function do_detect_version() {
+    local _html_version=$(curl -fsSL --connect-timeout "$DOCKER_TIMEOUT" --max-time "$DOCKER_TIMEOUT" "$DOCKER_VERSION_URL" 2>/dev/null)
+    [ $? -ne 0 ] && return 1
+    _html_version="$(echo "$_html_version" | sed -n '1s/[[:space:]]*$//p')"
+    local rver="${_html_version#v}"
+    local lver="${DOCKER_VERSION#v}"
+    if ! [[ "$rver" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
+        return 1
+    fi
+    if ! [[ "$lver" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
+        return 1
+    fi
+    __normalize() {
+        local v="$1"
+        IFS='.' read -r a b c <<<"$v"
+        a="${a:-0}"; b="${b:-0}"; c="${c:-0}"
+        echo "${a}.${b}.${c}"
+    }
+    rver="$(__normalize "$rver")"
+    lver="$(__normalize "$lver")"
+    IFS='.' read -r ra rb rc <<<"$rver"
+    IFS='.' read -r la lb lc <<<"$lver"
+    if (( ra > la )) || { (( ra == la )) && (( rb > lb )); } || { (( ra == la )) && (( rb == lb )) && (( rc > lc )); }; then
+        if [ -t 0 ]; then
+            while true; do
+                echo -e "\033[32mA new version has been detected: $_html_version (Current: $DOCKER_VERSION).\nDo you want to update? [Y/N]: \033[0m"
+                read -r reply
+                case "$reply" in
+                    [Yy])
+                        DOCKER_USER_UPDATE=1
+                        do_prepare
+                        do_update
+                        break
+                        ;;
+                    [Nn])
+                        echo -e "\033[33mSkip update.\033[0m"
+                        break
+                        ;;
+                    *)
+                        echo -e "\033[33mPlease enter Y or N.\033[0m"
+                        ;;
+                esac
+            done
+        else
+            echo "A new version has been detected: ${_html_version} (Current: ${DOCKER_VERSION}). Non-interactive shell, skip auto-update."
+        fi
+    fi
+    return 0
+}
+
+if [ "$0" != "$BASH_SOURCE" ];then
+    echo -e "source script..."
+    return 0
+fi
+
+if [ "$1" = "attach" ];then
+    do_attach $2
+    exit $?
+fi
+
+args=()
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --gpu)
+            DOCKER_GPU_FLAG="--gpus all"
+            shift
+            ;;
+        *)
+            args+=("$1")
+            shift
+            ;;
+    esac
+done
+set -- "${args[@]}"
+
+while getopts "vgupscih" opt
+do
+case $opt in
+v)
+    do_version
+    exit $?
+    ;;
+g)
+    do_group
+    exit $?
+    ;;
+u)
+    do_prepare
+    do_update
+    exit $?
+    ;;
+p)
+    do_push
+    exit $?
+    ;;
+s)
+    do_prepare
+    do_create
+    do_install
+    exit $?
+    ;;
+c)
+    do_clean
+    exit $?
+    ;;
+i)
+    echo "=== Skip detect update ==="
+    do_run
+    exit $?
+    ;;
+h)
+    do_usage
+    exit $?
+    ;;
+*)
+    echo "*** Get params error ***"
+    do_usage
+    exit 1
+    ;;
+esac
+done
+
+do_detect_version
+
+if [ $DOCKER_USER_UPDATE -eq 0 ];then
+    do_run
+else
+    ~/.$DOCKER_NAME/$DOCKER_NAME -i
+fi
+
+exit 0

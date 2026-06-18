@@ -1,0 +1,94 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="timer-lifecycle" name="Timer Lifecycle">
+    <mxGraphModel dx="1100" dy="560" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Timer &#8212; Lifecycle State Machine" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1020" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Detached &#8596; Attached / Stopped &#8596; Running &#8596; Auto-Stopped" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="54" width="1020" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sDetached" value="&lt;b&gt;Detached&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;font-style:italic;&quot;&gt;no MessageLoop bound&lt;/span&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#b71c1c;strokeWidth=1.8;fontSize=13;fontColor=#b71c1c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="170" width="180" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sStopped" value="&lt;b&gt;Attached / Stopped&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;font-style:italic;&quot;&gt;bound to loop, not ticking&lt;/span&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.8;fontSize=13;fontColor=#bf360c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="350" y="170" width="220" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sRunning" value="&lt;b&gt;Running&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;font-style:italic;&quot;&gt;ticking at interval&lt;/span&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.8;fontSize=13;fontColor=#1b5e20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="680" y="170" width="200" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sAuto" value="&lt;b&gt;Auto-Stopped&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;font-style:italic;&quot;&gt;loop_count exhausted&lt;/span&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1.8;fontSize=13;fontColor=#4a148c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="680" y="340" width="200" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tAttach" value="attach(loop)" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.4;exitDx=0;exitDy=0;entryX=0;entryY=0.4;entryDx=0;entryDy=0;endArrow=classic;endFill=1;strokeColor=#546e7a;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#37474f;labelBackgroundColor=#ffffff;rounded=1;" edge="1" parent="1" source="sDetached" target="sStopped">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="tDetach" value="detach()" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0;exitY=0.75;exitDx=0;exitDy=0;entryX=1;entryY=0.75;entryDx=0;entryDy=0;endArrow=classic;endFill=1;strokeColor=#d32f2f;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#b71c1c;labelBackgroundColor=#ffffff;rounded=1;" edge="1" parent="1" source="sStopped" target="sDetached">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tStart" value="start()" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;endArrow=classic;endFill=1;strokeColor=#388e3c;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;rounded=1;" edge="1" parent="1" source="sStopped" target="sRunning">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="tStop" value="stop()" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0;exitY=0.7;exitDx=0;exitDy=0;entryX=1;entryY=0.7;entryDx=0;entryDy=0;endArrow=classic;endFill=1;strokeColor=#ef6c00;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#bf360c;labelBackgroundColor=#ffffff;rounded=1;" edge="1" parent="1" source="sRunning" target="sStopped">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tAutoStop" value="loop_count exhausted" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;endArrow=classic;endFill=1;strokeColor=#8e24aa;strokeWidth=2;fontSize=11;fontStyle=2;fontColor=#4a148c;labelBackgroundColor=#ffffff;rounded=1;" edge="1" parent="1" source="sRunning" target="sAuto">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tRestart" value="restart()" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.85;exitY=0;exitDx=0;exitDy=0;entryX=0.85;entryY=1;entryDx=0;entryDy=0;endArrow=classic;endFill=1;strokeColor=#388e3c;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;rounded=1;" edge="1" parent="1" source="sRunning" target="sRunning">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="920" y="150" />
+              <mxPoint x="920" y="280" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="tAutoRestart" value="restart()" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;endArrow=classic;endFill=1;strokeColor=#388e3c;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;rounded=1;" edge="1" parent="1" source="sAuto" target="sRunning">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="970" y="385" />
+              <mxPoint x="970" y="215" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="ctorBox" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="330" width="430" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="ctorBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="60" y="330" width="430" height="5" as="geometry" />
+        </mxCell>
+        <mxCell id="ctorT" value="&lt;b&gt;Constructor&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="74" y="340" width="200" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="ctorLine1" value="Timer(&amp;amp;loop, interval, count, cb) &#8594; Attached / Stopped" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="74" y="360" width="410" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="ctorLine2" value="Timer(interval, count, cb) &#8594; Detached" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="74" y="380" width="410" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="dtorBox" value="&lt;b&gt;Destructor:&lt;/b&gt; auto-calls stop() then detach()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1.2;arcSize=6;fontSize=11;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="60" y="414" width="430" height="34" as="geometry" />
+        </mxCell>
+
+        <mxCell id="modeNote" value="&lt;b&gt;Strict mode:&lt;/b&gt; catch-up missed ticks &#160;&#183;&#160; &lt;b&gt;Non-strict:&lt;/b&gt; drop missed ticks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ffcc80;strokeWidth=1.2;arcSize=6;fontSize=11;fontColor=#bf360c;" vertex="1" parent="1">
+          <mxGeometry x="510" y="460" width="530" height="34" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

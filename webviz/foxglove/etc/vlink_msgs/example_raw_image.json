@@ -1,0 +1,17 @@
+{
+  "ser": "camera.proto.RawImageFrame",
+  "schema": "foxglove.RawImage",
+  "encoding": "protobuf",
+  "schema_encoding": "flatbuffers",
+  "timestamp_field": "header.timestamp_ns",
+  "timestamp_unit": "ns",
+  "field_mappings": [
+    { "source": "header.timestamp_ns", "target": "timestamp_ns" },
+    { "source": "header.frame_id", "target": "frame_id", "default_value": "camera" },
+    { "source": "width", "target": "width" },
+    { "source": "height", "target": "height" },
+    { "source": "encoding", "target": "encoding", "default_value": "rgb8" },
+    { "source": "step", "target": "step" },
+    { "source": "data", "target": "data" }
+  ]
+}

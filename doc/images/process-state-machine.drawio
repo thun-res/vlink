@@ -1,0 +1,87 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="process-state-machine" name="Process State Machine">
+    <mxGraphModel dx="900" dy="500" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="500" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="Process State Machine" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="820" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Three states - five transitions - lifecycle managed by start() / exec / exit" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#ef6c00;" vertex="1" parent="1">
+          <mxGeometry x="40" y="54" width="820" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Entry indicator -->
+        <mxCell id="entry" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#424242;strokeColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="40" y="186" width="18" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="entry_arr" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#424242;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="58" y="195" as="sourcePoint" />
+            <mxPoint x="110" y="195" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- State 1: kNotRunningState (orange) -->
+        <mxCell id="state1" value="kNotRunningState" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.8;fontSize=14;fontStyle=1;fontFamily=Courier New;fontColor=#e65100;arcSize=20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="110" y="160" width="200" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- State 2: kStartingState -->
+        <mxCell id="state2" value="kStartingState" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.8;fontSize=14;fontStyle=1;fontFamily=Courier New;fontColor=#e65100;arcSize=20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="380" y="160" width="200" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- State 3: kRunningState -->
+        <mxCell id="state3" value="kRunningState" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.8;fontSize=14;fontStyle=1;fontFamily=Courier New;fontColor=#e65100;arcSize=20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="650" y="160" width="200" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Transition 1: NotRunning -> Starting -->
+        <mxCell id="arr1" value="start()" style="endArrow=classic;endFill=1;html=1;strokeColor=#424242;strokeWidth=2;fontSize=12;fontStyle=1;fontColor=#424242;labelBackgroundColor=#ffffff;exitX=1;exitY=0.4;entryX=0;entryY=0.4;" edge="1" parent="1" source="state1" target="state2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Transition 2: Starting -> Running -->
+        <mxCell id="arr2" value="exec succeeds" style="endArrow=classic;endFill=1;html=1;strokeColor=#2e7d32;strokeWidth=2;fontSize=12;fontStyle=1;fontColor=#2e7d32;labelBackgroundColor=#ffffff;exitX=1;exitY=0.4;entryX=0;entryY=0.4;" edge="1" parent="1" source="state2" target="state3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Transition 3: Starting -> NotRunning (start fails) -->
+        <mxCell id="arr3" value="start fails" style="endArrow=classic;endFill=1;html=1;strokeColor=#c62828;strokeWidth=2;fontSize=12;fontStyle=1;fontColor=#c62828;labelBackgroundColor=#ffffff;dashed=1;exitX=0;exitY=0.75;entryX=1;entryY=0.75;" edge="1" parent="1" source="state2" target="state1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Transition 4: Running -> NotRunning (exit / crash) -->
+        <mxCell id="arr4" value="exit / crash" style="endArrow=classic;endFill=1;html=1;strokeColor=#c62828;strokeWidth=2;fontSize=12;fontStyle=1;fontColor=#c62828;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;entryX=0.5;entryY=1;" edge="1" parent="1" source="state3" target="state1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="750" y="320" />
+              <mxPoint x="210" y="320" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Notes -->
+        <mxCell id="note_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ffcc80;strokeWidth=1.5;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="370" width="820" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="note_t" value="State Notes" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="54" y="378" width="200" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="note_l1" value="kNotRunningState - process is not running (initial / terminated)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#5d4037;" vertex="1" parent="1">
+          <mxGeometry x="54" y="400" width="780" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="note_l2" value="kStartingState   - start() invoked, child process being forked / launched, waiting for exec() result" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#5d4037;" vertex="1" parent="1">
+          <mxGeometry x="54" y="418" width="780" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="note_l3" value="kRunningState    - child process alive, monitor watches for normal exit or crash" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#5d4037;" vertex="1" parent="1">
+          <mxGeometry x="54" y="436" width="780" height="18" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

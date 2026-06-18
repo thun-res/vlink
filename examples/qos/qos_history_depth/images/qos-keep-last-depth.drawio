@@ -1,0 +1,146 @@
+<mxfile host="app.diagrams.net" modified="2026-05-19T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="qos-keep-last-depth" name="QoS KeepLast Depth Demo">
+    <mxGraphModel dx="1120" dy="640" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1120" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="QoS History KeepLast(N) vs KeepAll" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="20" y="24" width="1080" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="history.kind + history.depth control how many samples late joiners receive  &#183;  URL ?depth=N overrides profile" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#1565c0;" vertex="1" parent="1">
+          <mxGeometry x="20" y="58" width="1080" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Section 1: KeepLast(1) -->
+        <mxCell id="d1_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#eceff1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="340" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="d1_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="340" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="d1_t" value="KeepLast(depth=1)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="40" y="116" width="340" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="d1_st" value="current-state topics" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="40" y="140" width="340" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="d1_buf" value="buffer: [ msg_10 ]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="172" width="300" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="d1_late" value="Late Subscriber receives:&#10;msg_10 (only latest)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;arcSize=10;fontSize=11;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="214" width="300" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="d1_use" value="Use for: speed, GPS, battery, status" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="60" y="264" width="300" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="d1_mem" value="memory = 1 x msg_size" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#1565c0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="286" width="300" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Section 2: KeepLast(10) -->
+        <mxCell id="d2_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#eceff1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="400" y="100" width="340" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="d2_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="400" y="100" width="340" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="d2_t" value="KeepLast(depth=10)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="400" y="116" width="340" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="d2_st" value="event streams with short history" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="400" y="140" width="340" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="d2_buf" value="buffer: [ msg_11 .. msg_20 ]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="420" y="172" width="300" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="d2_late" value="Late Subscriber receives:&#10;last 10 messages" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;arcSize=10;fontSize=11;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="214" width="300" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="d2_use" value="Use for: commands, sensor frames, logs" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="420" y="264" width="300" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="d2_mem" value="memory = 10 x msg_size" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#1565c0;" vertex="1" parent="1">
+          <mxGeometry x="420" y="286" width="300" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Section 3: KeepAll -->
+        <mxCell id="d3_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#eceff1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="760" y="100" width="320" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="d3_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="760" y="100" width="320" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="d3_t" value="KeepAll" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="760" y="116" width="320" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="d3_st" value="zero-loss + ResourceLimits guard" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="760" y="140" width="320" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="d3_buf" value="buffer: [ all unread samples ]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="780" y="172" width="280" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="d3_rl" value="resource_limits.max_samples = N&#10;cap to prevent OOM" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="780" y="214" width="280" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="d3_use" value="Use for: audit logs, txn records" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="780" y="264" width="280" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="d3_warn" value="WARNING: unbounded without limits!" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#c62828;" vertex="1" parent="1">
+          <mxGeometry x="780" y="286" width="280" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Section 4: Publisher / Subscriber demo -->
+        <mxCell id="dem_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#eceff1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="340" width="1040" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="dem_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="340" width="1040" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="dem_t" value="Endpoint-level depth override  -  publisher.depth != subscriber.depth allowed" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="356" width="1040" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="dem_pub" value="Publisher&#10;dds://qos/depth_demo?depth=5" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;arcSize=10;fontSize=12;fontStyle=1;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="392" width="260" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="dem_wr_buf" value="writer keeps last 5" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="80" y="456" width="260" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="dem_pub_n" value="published 20 messages" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#1565c0;" vertex="1" parent="1">
+          <mxGeometry x="80" y="498" width="260" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="dem_wire" value="DDS transport" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.5;arcSize=10;fontSize=12;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="400" y="410" width="200" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="dem_dur" value="Durability decides cache reuse:&#10;Volatile = new ones only&#10;TransientLocal = serve from writer cache" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=10;fontSize=10;fontStyle=2;fontColor=#424242;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="460" width="200" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="dem_sub" value="Subscriber&#10;dds://qos/depth_demo?depth=50" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;arcSize=10;fontSize=12;fontStyle=1;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="660" y="392" width="260" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="dem_rd_buf" value="reader keeps last 50" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="660" y="456" width="260" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="dem_sub_n" value="ignores extra writer cap" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#1565c0;" vertex="1" parent="1">
+          <mxGeometry x="660" y="498" width="260" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="dem_form" value="memory ~ topics x depth x avg_msg_size&#10;e.g. 1 topic x depth=1000 x 1MB = 1 GB" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=8;fontSize=10;fontStyle=2;fontColor=#c62828;" vertex="1" parent="1">
+          <mxGeometry x="940" y="392" width="120" height="118" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows -->
+        <mxCell id="a_pub_wire" value="publish 20" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#1565c0;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="dem_pub" target="dem_wire">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_wire_sub" value="late-join replay" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#1565c0;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="dem_wire" target="dem_sub">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

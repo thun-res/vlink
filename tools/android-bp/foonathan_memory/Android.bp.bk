@@ -1,0 +1,34 @@
+cc_defaults {
+    name: "libfoonathan_memory-defaults",
+    cppflags: [
+        "-fexceptions",
+        "-Wno-non-virtual-dtor",
+        "-Wno-unknown-pragmas",
+        "-Wno-implicit-fallthrough",
+        "-Wno-unused-parameter",
+    ],
+    cpp_std: "c++17",
+}
+
+cc_library_static {
+    name: "libfoonathan_memory",
+    defaults: [
+        "libfoonathan_memory-defaults",
+    ],
+    rtti: true,
+    vendor_available: true,
+    srcs: [
+        "src/**/*.cpp"
+    ],
+    local_include_dirs: [
+        "include/foonathan/memory",
+        "include/foonathan/memory/detail",
+        "android",
+    ],
+    export_include_dirs: [
+        "include",
+        "android",
+    ],
+    cppflags: [
+    ],
+}

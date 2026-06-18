@@ -1,0 +1,102 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="message-loop-concept" name="MessageLoop Concept">
+    <mxGraphModel dx="1000" dy="520" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="500" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="MessageLoop &#8212; Async Scheduling" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="920" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Any thread can post work &#160;&#183;&#160; Single loop thread executes callbacks" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="50" width="920" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="inbg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=4;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="300" height="340" as="geometry" />
+        </mxCell>
+        <mxCell id="inbar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="300" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="intitle" value="Input &#8212; Any Thread" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="104" width="260" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="in1" value="&lt;b&gt;post_task()&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="150" width="260" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="in2" value="&lt;b&gt;Timer::start()&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="230" width="260" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="in3" value="&lt;b&gt;invoke_task()&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="310" width="260" height="54" as="geometry" />
+        </mxCell>
+
+        <mxCell id="corebg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=4;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="380" y="90" width="240" height="340" as="geometry" />
+        </mxCell>
+        <mxCell id="corebar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="380" y="90" width="240" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="coretitle" value="Core &#8212; Loop Thread" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="400" y="104" width="200" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="queue" value="TaskQueue&#10;+&#10;TimerRegistry" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#1b5e20;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="400" y="150" width="200" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="loop" value="LoopThread&#10;dispatch()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a5d6a7;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#1b5e20;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="400" y="290" width="200" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="q2loop" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#2e7d32;endArrow=classic;endFill=1;" edge="1" source="queue" target="loop" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="outbg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ffcc80;strokeWidth=1.5;arcSize=4;gradientColor=#fff8e1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="660" y="90" width="300" height="340" as="geometry" />
+        </mxCell>
+        <mxCell id="outbar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="660" y="90" width="300" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="outtitle" value="Output &#8212; Loop Thread" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="680" y="104" width="260" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="out1" value="Task callback runs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#bf360c;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="680" y="150" width="260" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="out2" value="Timer callback runs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#bf360c;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="680" y="230" width="260" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="out3" value="future.set_value()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="680" y="310" width="260" height="54" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ei1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.8;strokeColor=#1976d2;endArrow=classic;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" edge="1" source="in1" target="queue" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ei2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.8;strokeColor=#1976d2;endArrow=classic;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="in2" target="queue" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ei3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.8;strokeColor=#1976d2;endArrow=classic;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.75;entryDx=0;entryDy=0;" edge="1" source="in3" target="queue" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="eo1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.8;strokeColor=#ef6c00;endArrow=classic;endFill=1;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="loop" target="out1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eo2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.8;strokeColor=#ef6c00;endArrow=classic;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="loop" target="out2" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eo3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.8;strokeColor=#ef6c00;endArrow=classic;endFill=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="loop" target="out3" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="footnote" value="invoke_task returns a future that completes after the callback finishes" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="40" y="450" width="920" height="20" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

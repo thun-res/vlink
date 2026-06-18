@@ -1,0 +1,8 @@
+[
+  {
+    "_comment": "Foxglove frontend JSON publish -> VLink FlatBuffer direct route",
+    "encoding": "flatbuffers",
+    "url": "dds://planner/path_command",
+    "ser": "planner.PathCommand"
+  }
+]

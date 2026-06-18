@@ -1,0 +1,129 @@
+<mxfile host="app.diagrams.net" modified="2026-05-21T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="object-array-producer-consumer" name="ObjectArray Producer Consumer">
+    <mxGraphModel dx="960" dy="500" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="960" pageHeight="500" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="ObjectArray  -  Producer / Consumer (zero-copy)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="30" y="22" width="900" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="3-D detection / tracking arrays pass through DDS or SHM without serialization copies" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="30" y="58" width="900" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="prodBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef9a9a;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#ffebee;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="320" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="prodBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c62828;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="320" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="prodT" value="Producer" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#b71c1c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="116" width="320" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="prodR" value="Publisher&amp;lt;ObjectArray&amp;gt;" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#c62828;" vertex="1" parent="1">
+          <mxGeometry x="40" y="144" width="320" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="prodDiv" value="" style="endArrow=none;html=1;strokeWidth=1;strokeColor=#ffcdd2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="70" y="174" as="sourcePoint" />
+            <mxPoint x="330" y="174" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="prFn1" value="create_test_array()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#c62828;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#b71c1c;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="70" y="190" width="260" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="prFn2" value="push 4 Objects (car/ped/cyclist)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;strokeWidth=1.2;fontSize=12;fontStyle=2;fontColor=#b71c1c;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="70" y="250" width="260" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="prFn3" value="publish(arr)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c62828;strokeColor=#b71c1c;strokeWidth=1.2;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="70" y="310" width="260" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="prA1" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#c62828;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="prFn1" target="prFn2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="prA2" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#c62828;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="prFn2" target="prFn3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="prNote" value="20 Hz fusion output" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="40" y="366" width="320" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="trBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#fafafa;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="390" y="170" width="180" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="trBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="390" y="170" width="180" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="trT" value="Transport" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="390" y="186" width="180" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="trR" value="dds://  or  shm://" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#616161;" vertex="1" parent="1">
+          <mxGeometry x="390" y="212" width="180" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="trDiv" value="" style="endArrow=none;html=1;strokeWidth=1;strokeColor=#e0e0e0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="410" y="242" as="sourcePoint" />
+            <mxPoint x="550" y="242" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="trNote" value="zero-copy&lt;br&gt;via loaned buffer" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="390" y="256" width="180" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="consBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef9a9a;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#ffebee;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="600" y="100" width="320" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="consBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c62828;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="600" y="100" width="320" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="consT" value="Consumer" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#b71c1c;" vertex="1" parent="1">
+          <mxGeometry x="600" y="116" width="320" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="consR" value="Subscriber&amp;lt;ObjectArray&amp;gt;" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#c62828;" vertex="1" parent="1">
+          <mxGeometry x="600" y="144" width="320" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="consDiv" value="" style="endArrow=none;html=1;strokeWidth=1;strokeColor=#ffcdd2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="630" y="174" as="sourcePoint" />
+            <mxPoint x="890" y="174" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="coFn1" value="validate_array()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#c62828;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#b71c1c;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="630" y="190" width="260" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="coFn2" value="print_array_info()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#c62828;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#b71c1c;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="630" y="250" width="260" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="coFn3" value="print_objects() per slot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#c62828;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#b71c1c;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="630" y="310" width="260" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="coA1" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#c62828;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="coFn1" target="coFn2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="coA2" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#c62828;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rounded=1;" edge="1" parent="1" source="coFn2" target="coFn3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="coNote" value="callback receives array reference" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="600" y="366" width="320" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="xPubTx" value="publish" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.4;strokeColor=#c62828;fontSize=11;fontStyle=1;fontColor=#b71c1c;exitX=1;exitY=0.5;entryX=0;entryY=0.5;labelBackgroundColor=#ffffff;rounded=1;" edge="1" parent="1" source="prFn3" target="trBg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="xTxSub" value="deliver" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.4;strokeColor=#c62828;fontSize=11;fontStyle=1;fontColor=#b71c1c;exitX=1;exitY=0.5;entryX=0;entryY=0.5;labelBackgroundColor=#ffffff;rounded=1;" edge="1" parent="1" source="trBg" target="coFn1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="bottomNote" value="ObjectArray packs 144-byte Object records  -  no copy on SHM, single copy fallback elsewhere" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#b71c1c;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="120" y="430" width="720" height="34" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

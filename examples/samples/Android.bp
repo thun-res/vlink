@@ -1,0 +1,158 @@
+/*
+ * Copyright (C) 2026 by Thun Lu. All rights reserved.
+ */
+
+// vlink-samples-defaults
+cc_defaults {
+    name: "vlink-samples-defaults",
+    cppflags: [
+        "-fexceptions",
+        "-Wno-non-virtual-dtor",
+        "-Wno-unknown-pragmas",
+        "-Wno-implicit-fallthrough",
+        "-Wno-unused-parameter",
+    ],
+    cpp_std: "c++17",
+}
+
+// sample_helloworld_client
+cc_binary {
+    name: "sample_helloworld_client",
+    defaults: [
+        "vlink-samples-defaults",
+    ],
+    srcs: [
+        "helloworld/client/*.cc",
+        "helloworld/proto/*.proto",
+    ],
+    local_include_dirs: [
+        "helloworld",
+    ],
+    cppflags: [
+        "-DVLINK_SUPPORT_DDS",
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-dds",
+        "libvlink-ddsc",
+        "libprotobuf-cpp-lite",
+    ],
+    proto: {type: "lite"},
+}
+
+// sample_helloworld_server
+cc_binary {
+    name: "sample_helloworld_server",
+    defaults: [
+        "vlink-samples-defaults",
+    ],
+    srcs: [
+        "helloworld/server/*.cc",
+        "helloworld/proto/*.proto",
+    ],
+    local_include_dirs: [
+        "helloworld",
+    ],
+    cppflags: [
+        "-DVLINK_SUPPORT_DDS",
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-dds",
+        "libvlink-ddsc",
+        "libprotobuf-cpp-lite",
+    ],
+    proto: {type: "lite"},
+}
+
+// sample_ping
+cc_binary {
+    name: "sample_ping",
+    defaults: [
+        "vlink-samples-defaults",
+    ],
+    srcs: [
+        "ping_pong/ping/*.cc",
+    ],
+    local_include_dirs: [
+        "ping_pong",
+    ],
+    cppflags: [
+        "-DVLINK_SUPPORT_DDS",
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-dds",
+        "libvlink-ddsc",
+        "libprotobuf-cpp-lite",
+    ],
+}
+
+// sample_pong
+cc_binary {
+    name: "sample_pong",
+    defaults: [
+        "vlink-samples-defaults",
+    ],
+    srcs: [
+        "ping_pong/pong/*.cc",
+    ],
+    local_include_dirs: [
+        "ping_pong",
+    ],
+    cppflags: [
+        "-DVLINK_SUPPORT_DDS",
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-dds",
+        "libvlink-ddsc",
+        "libprotobuf-cpp-lite",
+    ],
+}
+
+// sample_dds_dynamic
+cc_binary {
+    name: "sample_dds_dynamic",
+    defaults: [
+        "vlink-samples-defaults",
+    ],
+    srcs: [
+        "dds_dynamic/*.cc",
+        "dds_dynamic/*.proto",
+    ],
+    cppflags: [
+        "-DVLINK_SUPPORT_DDS",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-dds",
+        "libprotobuf-cpp-lite",
+    ],
+    proto: {type: "lite"},
+}
+
+// sample_ddsc_proto
+cc_binary {
+    name: "sample_ddsc_proto",
+    defaults: [
+        "vlink-samples-defaults",
+    ],
+    srcs: [
+        "ddsc_proto/*.cc",
+        "ddsc_proto/*.proto",
+    ],
+    cppflags: [
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-ddsc",
+        "libprotobuf-cpp-lite",
+    ],
+    proto: {type: "lite"},
+}

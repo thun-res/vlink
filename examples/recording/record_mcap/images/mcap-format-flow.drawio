@@ -1,0 +1,119 @@
+<mxfile host="app.diagrams.net" modified="2026-05-19T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="mcap-format-flow" name="MCAP Format Recording and Replay">
+    <mxGraphModel dx="1120" dy="640" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1120" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="MCAP Format Recording and Replay" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="20" y="24" width="1080" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="extension dispatch: .vdb / .vdbx -&gt; VDBWriter / VDBReader  vs  .vcap / .vcapx -&gt; VCAPWriter / VCAPReader" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="20" y="58" width="1080" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Section 1: Factory dispatch (top, centered) -->
+        <mxCell id="fac_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ce93d8;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#f3e5f5;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="1040" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="fac_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8e24aa;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="1040" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="fac_t" value="1. Factory Dispatch by Extension" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="116" width="1040" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="fac_create" value="BagWriter::create(path, config)  /  BagReader::create(path)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8e24aa;strokeColor=#6a1b9a;strokeWidth=1.5;arcSize=10;fontSize=12;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="320" y="148" width="480" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="fac_diam" value="path extension" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ce93d8;strokeColor=#6a1b9a;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="860" y="142" width="180" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Section 2: SQLite path (left) -->
+        <mxCell id="db_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ce93d8;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#f3e5f5;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="240" width="500" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="db_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8e24aa;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="240" width="500" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="db_t" value="2a. SQLite Branch  (.vdb)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="256" width="500" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="db_st" value="VDBWriter / VDBReader" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="40" y="280" width="500" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="db_w" value="VDBWriter&#10;LZAV / SQL queries" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ce93d8;strokeColor=#6a1b9a;strokeWidth=1.5;arcSize=10;fontSize=12;fontStyle=1;fontColor=#4a148c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="64" y="310" width="200" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="db_r" value="VDBReader&#10;OutputCallback" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ce93d8;strokeColor=#6a1b9a;strokeWidth=1.5;arcSize=10;fontSize=12;fontStyle=1;fontColor=#4a148c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="316" y="310" width="200" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="db_file" value=".vdb (SQLite + LZAV)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#f3e5f5;strokeColor=#6a1b9a;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="170" y="384" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="db_feat" value="WAL mode &#183; VACUUM &#183; SQL inspection&#10;Schema embed supported" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#ce93d8;strokeWidth=1;arcSize=8;fontSize=11;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="64" y="466" width="452" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="db_use" value="best for: SQL queries, replay automation, large logs" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="64" y="516" width="452" height="24" as="geometry" />
+        </mxCell>
+
+        <!-- Section 3: MCAP path (right) -->
+        <mxCell id="mc_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ce93d8;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#f3e5f5;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="580" y="240" width="500" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="mc_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8e24aa;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="580" y="240" width="500" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="mc_t" value="2b. MCAP Branch  (.vcap / .vcapx)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="580" y="256" width="500" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="mc_st" value="VCAPWriter / VCAPReader &#183; Foxglove compatible" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="580" y="280" width="500" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mc_w" value="VCAPWriter&#10;Zstd / channels / schemas" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ce93d8;strokeColor=#6a1b9a;strokeWidth=1.5;arcSize=10;fontSize=12;fontStyle=1;fontColor=#4a148c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="604" y="310" width="200" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="mc_r" value="VCAPReader&#10;detect_schema, get_ser_type" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ce93d8;strokeColor=#6a1b9a;strokeWidth=1.5;arcSize=10;fontSize=12;fontStyle=1;fontColor=#4a148c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="856" y="310" width="200" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="mc_file" value=".vcap / .vcapx (MCAP + Zstd)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#f3e5f5;strokeColor=#6a1b9a;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="710" y="384" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="mc_feat" value="register_schema_callback &#183; checksum &#183; channel index&#10;Foxglove Studio compatible" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#ce93d8;strokeWidth=1;arcSize=8;fontSize=11;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="604" y="466" width="452" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="mc_use" value="best for: visualization, cross-tool exchange, indexed access" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="604" y="516" width="452" height="24" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows -->
+        <mxCell id="a_create_diam" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#8e24aa;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="fac_create" target="fac_diam">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_diam_db" value=".vdb / .vdbx" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#8e24aa;fontSize=11;fontStyle=1;fontColor=#4a148c;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=0;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="fac_diam" target="db_w">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_diam_mc" value=".vcap / .vcapx" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.5;strokeColor=#8e24aa;fontSize=11;fontStyle=1;fontColor=#4a148c;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="fac_diam" target="mc_w">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_db_w_f" value="write" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#8e24aa;fontSize=11;fontStyle=1;fontColor=#4a148c;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.25;entryY=0;" edge="1" parent="1" source="db_w" target="db_file">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_db_f_r" value="read" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#8e24aa;fontSize=11;fontStyle=1;fontColor=#4a148c;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=0.75;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="db_file" target="db_r">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_mc_w_f" value="write" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#8e24aa;fontSize=11;fontStyle=1;fontColor=#4a148c;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.25;entryY=0;" edge="1" parent="1" source="mc_w" target="mc_file">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_mc_f_r" value="read" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#8e24aa;fontSize=11;fontStyle=1;fontColor=#4a148c;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=0.75;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="mc_file" target="mc_r">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

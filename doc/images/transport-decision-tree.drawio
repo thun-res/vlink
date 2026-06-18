@@ -1,0 +1,159 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="transport-decision-tree" name="Transport Decision Tree">
+    <mxGraphModel dx="1200" dy="1100" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1300" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Transport Decision Tree" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1120" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Pick a URL scheme by answering four questions  ·  Stable (green)  ·  Beta (orange)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="54" width="1120" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Start node (Grey) -->
+        <mxCell id="start" value="Choose Transport Backend" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;fontSize=14;fontStyle=1;fontColor=#263238;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="490" y="96" width="220" height="48" as="geometry" />
+        </mxCell>
+
+        <!-- D1 diamond (Blue) -->
+        <mxCell id="d1" value="Nodes in the same process?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="470" y="180" width="260" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="e_start_d1" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#90a4ae;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="start" target="d1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- intra result -->
+        <mxCell id="r_intra" value="&lt;b&gt;intra://&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;Stable&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="830" y="206" width="160" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="e_d1_intra" value="Yes" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#388e3c;fontSize=11;fontStyle=1;fontColor=#2e7d32;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="d1" target="r_intra">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- D2 diamond -->
+        <mxCell id="d2" value="Same machine,&#10;different processes?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="470" y="316" width="260" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="e_d1_d2" value="No" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#607d8b;fontSize=11;fontStyle=1;fontColor=#455a64;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="d1" target="d2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- D2a diamond (nested: need zero-copy?) -->
+        <mxCell id="d2a" value="Need zero-copy + real-time?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="800" y="316" width="260" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="e_d2_d2a" value="Yes" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#388e3c;fontSize=11;fontStyle=1;fontColor=#2e7d32;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="d2" target="d2a">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- shm result -->
+        <mxCell id="r_shm" value="&lt;b&gt;shm://&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;Iceoryx  ·  Stable&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1100" y="322" width="180" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="e_d2a_shm" value="Yes" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#388e3c;fontSize=11;fontStyle=1;fontColor=#2e7d32;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="d2a" target="r_shm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- fdbus result -->
+        <mxCell id="r_fdbus" value="&lt;b&gt;fdbus://&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;Beta&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1100" y="392" width="180" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="e_d2a_fdbus" value="No" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#ef6c00;fontSize=11;fontStyle=1;fontColor=#bf360c;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="d2a" target="r_fdbus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- D3 diamond: DDS standard? -->
+        <mxCell id="d3" value="DDS standard?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="470" y="452" width="260" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="e_d2_d3" value="No (cross-machine)" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#607d8b;fontSize=11;fontStyle=1;fontColor=#455a64;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="d2" target="d3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- DDS results (fan out right) -->
+        <mxCell id="r_dds" value="&lt;b&gt;dds://&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;Fast-DDS  ·  Stable&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="800" y="440" width="190" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r_ddsc" value="&lt;b&gt;ddsc://&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;CycloneDDS  ·  Stable&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="440" width="190" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r_ddsr" value="&lt;b&gt;ddsr://&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;RTI DDS  ·  Beta&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="800" y="510" width="190" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r_ddst" value="&lt;b&gt;ddst://&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;TravoDDS  ·  Beta&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="510" width="190" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="e_d3_dds" value="Yes" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#388e3c;fontSize=11;fontStyle=1;fontColor=#2e7d32;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="d3" target="r_dds">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_dds_ddsc" value="" style="endArrow=none;html=1;strokeWidth=1.4;strokeColor=#90a4ae;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="r_dds" target="r_ddsc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_dds_ddsr" value="" style="endArrow=none;html=1;strokeWidth=1.4;strokeColor=#90a4ae;dashed=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="r_dds" target="r_ddsr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_ddsc_ddst" value="" style="endArrow=none;html=1;strokeWidth=1.4;strokeColor=#90a4ae;dashed=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="r_ddsc" target="r_ddst">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- D4: automotive? -->
+        <mxCell id="d4" value="Automotive Ethernet?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="470" y="596" width="260" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="e_d3_d4" value="No" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#607d8b;fontSize=11;fontStyle=1;fontColor=#455a64;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="d3" target="d4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r_someip" value="&lt;b&gt;someip://&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;vsomeip  ·  Beta&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="200" y="622" width="190" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="e_d4_someip" value="Yes" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#ef6c00;fontSize=11;fontStyle=1;fontColor=#bf360c;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="d4" target="r_someip">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- D5: QNX? -->
+        <mxCell id="d5" value="QNX system?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="470" y="740" width="260" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="e_d4_d5" value="No" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#607d8b;fontSize=11;fontStyle=1;fontColor=#455a64;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="d4" target="d5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r_qnx" value="&lt;b&gt;qnx://&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;QNX IPC  ·  Beta&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="200" y="766" width="190" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="e_d5_qnx" value="Yes" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#ef6c00;fontSize=11;fontStyle=1;fontColor=#bf360c;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="d5" target="r_qnx">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- D6: IoT / Cloud? -->
+        <mxCell id="d6" value="IoT / Cloud messaging?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="470" y="884" width="260" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="e_d5_d6" value="No" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#607d8b;fontSize=11;fontStyle=1;fontColor=#455a64;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="d5" target="d6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r_mqtt" value="&lt;b&gt;mqtt://&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;Paho MQTT  ·  Beta&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="200" y="910" width="190" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="e_d6_mqtt" value="Yes (MQTT)" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#ef6c00;fontSize=11;fontStyle=1;fontColor=#bf360c;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="d6" target="r_mqtt">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r_zenoh" value="&lt;b&gt;zenoh://&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;Zenoh  ·  Beta&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=13;fontFamily=Courier New;fontStyle=1;fontColor=#bf360c;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="800" y="910" width="190" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="e_d6_zenoh" value="No (general)" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#ef6c00;fontSize=11;fontStyle=1;fontColor=#bf360c;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="d6" target="r_zenoh">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="footer" value="shm2:// (Iceoryx2) is an alternative to shm://  —  Beta." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1006" width="1120" height="22" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

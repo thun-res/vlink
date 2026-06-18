@@ -1,0 +1,118 @@
+<mxfile host="app.diagrams.net" modified="2026-05-19T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="node-properties-config" name="Node Properties Configuration">
+    <mxGraphModel dx="1120" dy="640" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1120" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Node Properties  -  Deferred Init Configuration Lifecycle" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="1080" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="InitType::kWithoutInit  -  set_property / set_ser_type / set_discovery_enabled  -  init()  -  applied to transport backend" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="20" y="56" width="1080" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="phase_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="1040" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="phase_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="1040" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="phase_t" value="Lifecycle  -  Configure Before init()" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="116" width="1040" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ph1" value="1. construct&#10;Publisher&lt;T&gt; pub(url,&#10;  InitType::kWithoutInit)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="158" width="180" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ph2" value="2. set_property(...)&#10;QoS key/value strings&#10;( reliability, history,&#10;  durability, deadline ... )" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="260" y="158" width="180" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ph3" value="3. set_ser_type(name,&#10;     SchemaType::kProtobuf)&#10;( ser_type + family for&#10;  bag / proxy / discovery )" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="460" y="158" width="200" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ph4" value="4. set_discovery_enabled&#10;     (false)&#10;( hide internal / debug&#10;  topics from ProxyServer )" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="680" y="158" width="200" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ph5" value="5. pub.init()&#10;properties applied&#10;to transport backend&#10;node is live" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="900" y="158" width="160" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="phE1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#1976d2;endArrow=classic;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" source="ph1" target="ph2" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="phE2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#1976d2;endArrow=classic;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" source="ph2" target="ph3" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="phE3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#1976d2;endArrow=classic;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" source="ph3" target="ph4" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="phE4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#1976d2;endArrow=classic;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" source="ph4" target="ph5" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="phFoot" value="get_property(key) is also valid before init  -  properties must be set BEFORE init() to take effect" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="266" width="1040" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="qos_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="320" width="520" height="290" as="geometry" />
+        </mxCell>
+        <mxCell id="qos_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="320" width="520" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="qos_t" value="Common QoS Keys  -  qos.&lt;family&gt;.&lt;param&gt;" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="336" width="520" height="26" as="geometry" />
+        </mxCell>
+
+        <mxCell id="qos1" value="qos.reliability.kind            0=BestEffort  1=Reliable" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="370" width="480" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="qos2" value="qos.reliability.block_time      ms" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="400" width="480" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="qos3" value="qos.history.kind                0=KeepLast    1=KeepAll" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="430" width="480" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="qos4" value="qos.history.depth               integer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="460" width="480" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="qos5" value="qos.durability.kind             0=Volatile .. 3=Persistent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="490" width="480" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="qos6" value="qos.publish_mode.kind           0=Sync        1=ASync" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="520" width="480" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="qos7" value="qos.deadline.period             ms" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="550" width="480" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="qosFoot" value="qos.additions.priority  1=RealTime  2=High  4=Normal  6=Low  7=Background" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="40" y="580" width="520" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ser_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ce93d8;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#f3e5f5;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="580" y="320" width="500" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="ser_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8e24aa;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="580" y="320" width="500" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="ser_t" value="set_ser_type  -  family / type metadata" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="580" y="336" width="500" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="ser1" value="set_ser_type(&quot;demo.proto.Message&quot;, kProtobuf)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ce93d8;strokeColor=#6a1b9a;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="600" y="370" width="460" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="ser2" value="set_ser_type(&quot;demo.proto.MessageV2&quot;)&#10;// keeps current family ( does not overwrite to kUnknown )" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="600" y="404" width="460" height="44" as="geometry" />
+        </mxCell>
+
+        <mxCell id="disc_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="580" y="475" width="500" height="135" as="geometry" />
+        </mxCell>
+        <mxCell id="disc_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="580" y="475" width="500" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="disc_t" value="set_discovery_enabled  -  visibility toggle" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="580" y="490" width="500" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="disc1" value="set_discovery_enabled(true)   -  visible to ProxyServer / discovery" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="600" y="522" width="460" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="disc2" value="set_discovery_enabled(false)  -  hidden from external discovery viewers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;arcSize=10;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="600" y="556" width="460" height="28" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,285 @@
+<mxfile host="app.diagrams.net" modified="2026-06-16T00:00:00.000Z" agent="Codex" version="24.0.0" type="device">
+  <diagram id="proxy-sequence" name="Proxy Communication Sequence">
+    <mxGraphModel dx="1240" dy="980" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1240" pageHeight="980" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="VLink Proxy Communication Sequence" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="18" width="1160" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Seven phases  -  secure DDS control plane  -  DDS / SHM data plane  -  automatic reconnect" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#2e7d32;" vertex="1" parent="1">
+          <mxGeometry x="40" y="52" width="1160" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legend_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#cfd8dc;strokeWidth=1;arcSize=4;" vertex="1" parent="1">
+          <mxGeometry x="220" y="78" width="800" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="leg1" value="Handshake RPC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;strokeWidth=1.2;fontSize=10;fontStyle=1;fontColor=#4a148c;align=center;" vertex="1" parent="1">
+          <mxGeometry x="250" y="84" width="135" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="leg2" value="Secure control / status" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#388e3c;strokeWidth=1.2;fontSize=10;fontStyle=1;fontColor=#1b5e20;align=center;" vertex="1" parent="1">
+          <mxGeometry x="405" y="84" width="160" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="leg3" value="Data / frontend" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#ef6c00;strokeWidth=1.2;fontSize=10;fontStyle=1;fontColor=#e65100;align=center;" vertex="1" parent="1">
+          <mxGeometry x="585" y="84" width="135" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="leg4" value="Reconnect path" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;strokeWidth=1.2;fontSize=10;fontStyle=1;fontColor=#b71c1c;align=center;" vertex="1" parent="1">
+          <mxGeometry x="740" y="84" width="130" height="16" as="geometry" />
+        </mxCell>
+
+        <!-- Participants -->
+        <mxCell id="p_app" value="Application Node&#10;Pub/Sub - Cli/Srv - Get/Set" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;gradientColor=#e8f5e9;gradientDirection=north;strokeColor=#2e7d32;strokeWidth=1.8;fontSize=12;fontStyle=1;fontColor=#1b5e20;align=center;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="50" y="118" width="210" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="p_srv" value="ProxyServer&#10;vlink-proxy / embedded" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;gradientColor=#c8e6c9;gradientDirection=north;strokeColor=#2e7d32;strokeWidth=1.8;fontSize=12;fontStyle=1;fontColor=#1b5e20;align=center;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="365" y="118" width="210" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="p_api" value="ProxyAPI Client&#10;viewer / foxglove / rerun" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;gradientColor=#e3f2fd;gradientDirection=north;strokeColor=#1565c0;strokeWidth=1.8;fontSize=12;fontStyle=1;fontColor=#0d47a1;align=center;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="680" y="118" width="210" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="p_front" value="Frontend Visualization&#10;Viewer GUI / Web viewers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;gradientColor=#fff3e0;gradientDirection=north;strokeColor=#ef6c00;strokeWidth=1.8;fontSize=12;fontStyle=1;fontColor=#e65100;align=center;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="995" y="118" width="195" height="64" as="geometry" />
+        </mxCell>
+
+        <!-- Lifelines -->
+        <mxCell id="l_app" value="" style="endArrow=none;html=1;strokeColor=#2e7d32;strokeWidth=1.8;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="155" y="182" as="sourcePoint" />
+            <mxPoint x="155" y="942" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="l_srv" value="" style="endArrow=none;html=1;strokeColor=#2e7d32;strokeWidth=1.8;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="470" y="182" as="sourcePoint" />
+            <mxPoint x="470" y="942" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="l_api" value="" style="endArrow=none;html=1;strokeColor=#1565c0;strokeWidth=1.8;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="785" y="182" as="sourcePoint" />
+            <mxPoint x="785" y="942" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="l_front" value="" style="endArrow=none;html=1;strokeColor=#ef6c00;strokeWidth=1.8;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1092" y="182" as="sourcePoint" />
+            <mxPoint x="1092" y="942" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Phase 1 -->
+        <mxCell id="ph1_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f8e9;strokeColor=#7cb342;strokeWidth=1;arcSize=4;" vertex="1" parent="1">
+          <mxGeometry x="40" y="200" width="1160" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="ph1_t" value="Phase 1 - Node Discovery" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#33691e;" vertex="1" parent="1">
+          <mxGeometry x="58" y="207" width="240" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="m1" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#388e3c;strokeWidth=2.2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="155" y="244" as="sourcePoint" />
+            <mxPoint x="470" y="244" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m1_l" value="UDP multicast heartbeat&#10;URL, type, PID, host" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#c8e6c9;strokeWidth=1;fontSize=10;fontColor=#1b5e20;align=center;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="223" y="221" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m2" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#2e7d32;strokeWidth=1.8;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="470" y="232" as="sourcePoint" />
+            <mxPoint x="470" y="266" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="535" y="232" />
+              <mxPoint x="535" y="266" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m2_l" value="DiscoveryViewer&#10;builds URL stats" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#c8e6c9;strokeWidth=1;fontSize=10;fontColor=#1b5e20;align=center;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="552" y="224" width="150" height="38" as="geometry" />
+        </mxCell>
+
+        <!-- Phase 2 -->
+        <mxCell id="ph2_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#66bb6a;strokeWidth=1;arcSize=4;" vertex="1" parent="1">
+          <mxGeometry x="40" y="292" width="1160" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="ph2_t" value="Phase 2 - Connection + Token Handshake" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="58" y="299" width="310" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="m3" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#6a1b9a;strokeWidth=2.4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="785" y="332" as="sourcePoint" />
+            <mxPoint x="470" y="332" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m3_l" value="HandshakeReq&#10;control_id, version, role" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ce93d8;strokeWidth=1;fontSize=10;fontColor=#4a148c;align=center;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="552" y="309" width="150" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m4" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#6a1b9a;strokeWidth=2.4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="470" y="366" as="sourcePoint" />
+            <mxPoint x="785" y="366" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m4_l" value="HandshakeResp&#10;result + token + identity" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ce93d8;strokeWidth=1;fontSize=10;fontColor=#4a148c;align=center;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="552" y="344" width="150" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m5" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#388e3c;strokeWidth=2.1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="470" y="400" as="sourcePoint" />
+            <mxPoint x="785" y="400" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m5_l" value="Time 1Hz&#10;identity + token + load" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1;fontSize=10;fontColor=#1b5e20;align=center;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="552" y="378" width="150" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m6" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#388e3c;strokeWidth=2.1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="470" y="434" as="sourcePoint" />
+            <mxPoint x="785" y="434" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m6_l" value="InfoList 1Hz&#10;URL stats and processes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1;fontSize=10;fontColor=#1b5e20;align=center;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="552" y="412" width="150" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m7" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#1565c0;strokeWidth=1.8;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="785" y="384" as="sourcePoint" />
+            <mxPoint x="785" y="444" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="855" y="384" />
+              <mxPoint x="855" y="444" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m7_l" value="ConnectCallback(true)&#10;after identity, token and version checks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1;fontSize=10;fontColor=#0d47a1;align=center;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="872" y="392" width="190" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- Phase 3 -->
+        <mxCell id="ph3_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f8e9;strokeColor=#7cb342;strokeWidth=1;arcSize=4;" vertex="1" parent="1">
+          <mxGeometry x="40" y="472" width="1160" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="ph3_t" value="Phase 3 - Mode Control" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#33691e;" vertex="1" parent="1">
+          <mxGeometry x="58" y="479" width="220" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="m8" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#388e3c;strokeWidth=2.2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="785" y="516" as="sourcePoint" />
+            <mxPoint x="470" y="516" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m8_l" value="Control + token&#10;mode and URL list" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1;fontSize=10;fontColor=#1b5e20;align=center;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="552" y="493" width="150" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m9" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#2e7d32;strokeWidth=2.2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="470" y="546" as="sourcePoint" />
+            <mxPoint x="155" y="546" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m9_l" value="Subscribe / route&#10;selected topics" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#c8e6c9;strokeWidth=1;fontSize=10;fontColor=#1b5e20;align=center;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="238" y="524" width="150" height="38" as="geometry" />
+        </mxCell>
+
+        <!-- Phase 4 -->
+        <mxCell id="ph4_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ffb74d;strokeWidth=1;arcSize=4;" vertex="1" parent="1">
+          <mxGeometry x="40" y="574" width="1160" height="118" as="geometry" />
+        </mxCell>
+        <mxCell id="ph4_t" value="Phase 4 - Data Forwarding" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="58" y="581" width="220" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="m10" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#ef6c00;strokeWidth=2.4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="155" y="622" as="sourcePoint" />
+            <mxPoint x="470" y="622" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m10_l" value="Raw topic data&#10;DDS / SHM / Intra" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ffcc80;strokeWidth=1;fontSize=10;fontColor=#e65100;align=center;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="238" y="600" width="150" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m11" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#ef6c00;strokeWidth=2.4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="470" y="656" as="sourcePoint" />
+            <mxPoint x="785" y="656" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m11_l" value="ProxyData&#10;url, ser, raw, timestamp, seq" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ffcc80;strokeWidth=1;fontSize=10;fontColor=#e65100;align=center;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="544" y="634" width="168" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m12" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#1565c0;strokeWidth=1.8;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="785" y="626" as="sourcePoint" />
+            <mxPoint x="785" y="676" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="855" y="626" />
+              <mxPoint x="855" y="676" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m12_l" value="DataCallback&#10;convert / dispatch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1;fontSize=10;fontColor=#0d47a1;align=center;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="872" y="634" width="150" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Phase 5 -->
+        <mxCell id="ph5_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#ffa726;strokeWidth=1;arcSize=4;" vertex="1" parent="1">
+          <mxGeometry x="40" y="702" width="1160" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="ph5_t" value="Phase 5 - Frontend Push" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="58" y="709" width="220" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="m13" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#ef6c00;strokeWidth=2.4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="785" y="744" as="sourcePoint" />
+            <mxPoint x="1092" y="744" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m13_l" value="Render or bridge&#10;Qt signal, WebSocket, Rerun log" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ffcc80;strokeWidth=1;fontSize=10;fontColor=#e65100;align=center;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="870" y="722" width="160" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Phase 6 -->
+        <mxCell id="ph6_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#9e9e9e;strokeWidth=1;arcSize=4;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="790" width="1160" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="ph6_t" value="Phase 6 - Steady Loop (1 Hz)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="58" y="797" width="240" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="m14" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#388e3c;strokeWidth=1.8;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="470" y="830" as="sourcePoint" />
+            <mxPoint x="785" y="830" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m14_l" value="Time + InfoList refresh" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#cfd8dc;strokeWidth=1;fontSize=10;fontColor=#1b5e20;align=center;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="552" y="817" width="150" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="m15" value="" style="endArrow=classic;endFill=1;html=1;strokeColor=#ef6c00;strokeWidth=1.8;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="785" y="860" as="sourcePoint" />
+            <mxPoint x="1092" y="860" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m15_l" value="stats UI refresh" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#cfd8dc;strokeWidth=1;fontSize=10;fontColor=#e65100;align=center;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="878" y="847" width="145" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="m16_l" value="If the token is empty, ProxyAPI silently retries handshake and resends the last Control after recovery." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="190" y="858" width="460" height="18" as="geometry" />
+        </mxCell>
+
+        <!-- Phase 7 -->
+        <mxCell id="ph7_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#ef9a9a;strokeWidth=1;arcSize=4;" vertex="1" parent="1">
+          <mxGeometry x="40" y="892" width="1160" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="ph7_t" value="Phase 7 - Disconnect Detection" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#b71c1c;" vertex="1" parent="1">
+          <mxGeometry x="58" y="899" width="240" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="m17_l" value="No Time heartbeat for 5 s  ->  ConnectCallback(false)  ->  reset handles  ->  handshake retry  ->  resend last Control" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef9a9a;strokeWidth=1;fontSize=11;fontStyle=1;fontColor=#b71c1c;align=center;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="310" y="912" width="700" height="28" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

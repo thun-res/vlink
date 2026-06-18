@@ -1,0 +1,105 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="discovery-architecture" name="Discovery Architecture">
+    <mxGraphModel dx="960" dy="520" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="960" pageHeight="520" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Discovery Architecture" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="18" width="880" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="DiscoveryReporter broadcasts &#160;&#183;&#160; DiscoveryViewer aggregates" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="52" width="880" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="Abg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=4;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="360" height="380" as="geometry" />
+        </mxCell>
+        <mxCell id="Abar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="360" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="Atitle" value="Process A &#160;&#183;&#160; Publisher side" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="60" y="112" width="320" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="Areporter" value="DiscoveryReporter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=13;fontStyle=1;fontColor=#1b5e20;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="146" width="320" height="46" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ArrA1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#388e3c;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="Areporter" target="Aloop">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="Aloop" value="Background loop broadcast" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontSize=13;fontStyle=1;fontColor=#bf360c;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="216" width="320" height="46" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ArrA2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#90a4ae;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="Aloop" target="Alist">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="Alist" value="NodeImpl list" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontStyle=1;fontColor=#263238;align=center;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="286" width="320" height="36" as="geometry" />
+        </mxCell>
+
+        <mxCell id="Aitem1" value="pub: dds://t1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontColor=#0d47a1;align=left;spacingLeft=10;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="334" width="320" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="Aitem2" value="sub: dds://t2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontColor=#0d47a1;align=left;spacingLeft=10;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="376" width="320" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="Aitem3" value="srv: dds://svc1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontColor=#0d47a1;align=left;spacingLeft=10;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="418" width="320" height="32" as="geometry" />
+        </mxCell>
+
+        <mxCell id="udpArr" value="UDP multicast heartbeat" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=2.5;strokeColor=#ef6c00;fontSize=12;fontStyle=1;fontColor=#bf360c;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="400" y="286" as="sourcePoint" />
+            <mxPoint x="560" y="286" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="Bbg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=4;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="560" y="96" width="360" height="380" as="geometry" />
+        </mxCell>
+        <mxCell id="Bbar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="560" y="96" width="360" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="Btitle" value="Process B &#160;&#183;&#160; Viewer side" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="580" y="112" width="320" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="Bviewer" value="DiscoveryViewer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=13;fontStyle=1;fontColor=#1b5e20;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="580" y="146" width="320" height="46" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ArrB1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#388e3c;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="Bviewer" target="Baggr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="Baggr" value="Subscribe and aggregate" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontSize=13;fontStyle=1;fontColor=#bf360c;align=center;shadow=1;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="580" y="216" width="320" height="46" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ArrB2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#90a4ae;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="Baggr" target="Blist">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="Blist" value="Info list" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.2;fontSize=12;fontStyle=1;fontColor=#263238;align=center;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="580" y="286" width="320" height="36" as="geometry" />
+        </mxCell>
+
+        <mxCell id="Bitem1" value="dds://t1  (Process A)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontColor=#1b5e20;align=left;spacingLeft=10;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="580" y="334" width="320" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="Bitem2" value="dds://t2  (Process A)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontColor=#1b5e20;align=left;spacingLeft=10;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="580" y="376" width="320" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="Bitem3" value="dds://svc1 (Process A)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.2;fontSize=12;fontFamily=Courier New;fontColor=#1b5e20;align=left;spacingLeft=10;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="580" y="418" width="320" height="32" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

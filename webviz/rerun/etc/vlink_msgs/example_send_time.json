@@ -1,0 +1,26 @@
+[
+  {
+    "_comment": "Example 1: Protobuf time sync - extract timestamp_ns and set vlink_time timeline",
+    "ser": "system.proto.TimeSync",
+    "converter": "send_time",
+    "encoding": "protobuf",
+    "timestamp_field": "timestamp_ns",
+    "timestamp_unit": "ns"
+  },
+  {
+    "_comment": "Example 2: Protobuf time sync - extract microsecond timestamp field",
+    "ser": "system.proto.TimeSyncUs",
+    "converter": "send_time",
+    "encoding": "protobuf",
+    "timestamp_field": "system_time_us",
+    "timestamp_unit": "us"
+  },
+  {
+    "_comment": "Example 3: FlatBuffers time sync - extract nested timestamp field",
+    "ser": "system.TimeSyncFbs",
+    "converter": "send_time",
+    "encoding": "flatbuffers",
+    "timestamp_field": "header.timestamp_ns",
+    "timestamp_unit": "ns"
+  }
+]

@@ -1,0 +1,278 @@
+<mxfile host="app.diagrams.net" modified="2026-05-19T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="qos-profile-presets" name="QoS Profile Presets">
+    <mxGraphModel dx="1120" dy="640" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1120" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="QoS Profile Presets" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="20" y="24" width="1080" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="QosProfile::kSensor / kEvent / ... or load custom JSON via VLINK_QOS_CONFIG -&gt; register_qos -&gt; dds://topic?qos=name" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#1565c0;" vertex="1" parent="1">
+          <mxGeometry x="20" y="58" width="1080" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Section 1: Built-in presets table (left) -->
+        <mxCell id="pre_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#eceff1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="440" height="460" as="geometry" />
+        </mxCell>
+        <mxCell id="pre_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="440" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="pre_t" value="1. Built-in Presets" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="40" y="116" width="440" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="pre_st" value="QosProfile::kXxx  &#183;  valid=true" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="40" y="144" width="440" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="hdr_n" value="name" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=11;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="60" y="178" width="100" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="hdr_r" value="reliability" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=11;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="160" y="178" width="100" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="hdr_h" value="history" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=11;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="260" y="178" width="100" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="hdr_u" value="use case" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=11;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="360" y="178" width="100" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r1_n" value="kEvent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="204" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r1_r" value="Reliable" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="160" y="204" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r1_h" value="KeepLast(5)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="260" y="204" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r1_u" value="control evt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="360" y="204" width="100" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r2_n" value="kMethod" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="226" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r2_r" value="Reliable" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="160" y="226" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r2_h" value="KeepAll" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="260" y="226" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r2_u" value="RPC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="360" y="226" width="100" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r3_n" value="kField" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="248" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r3_r" value="Reliable" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="160" y="248" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r3_h" value="KeepLast(1)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="260" y="248" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r3_u" value="state sync" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="360" y="248" width="100" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r4_n" value="kSensor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="270" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r4_r" value="BestEffort" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="160" y="270" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r4_h" value="KeepLast(10)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="260" y="270" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r4_u" value="lidar/cam" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="360" y="270" width="100" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r5_n" value="kParameter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="292" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r5_r" value="Reliable" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="160" y="292" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r5_h" value="KeepLast(500)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="260" y="292" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r5_u" value="config" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="360" y="292" width="100" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r6_n" value="kService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="314" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r6_r" value="Reliable" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="160" y="314" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r6_h" value="KeepLast(10)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="260" y="314" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r6_u" value="service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="360" y="314" width="100" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r7_n" value="kClock" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="336" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r7_r" value="BestEffort" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="160" y="336" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r7_h" value="KeepLast(1)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="260" y="336" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r7_u" value="time sync" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="360" y="336" width="100" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r8_n" value="kLarge" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="358" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r8_r" value="Reliable" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="160" y="358" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r8_h" value="KeepLast(500)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="260" y="358" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r8_u" value="map data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="360" y="358" width="100" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r9_n" value="kPoor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="380" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r9_r" value="BestEffort" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="160" y="380" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r9_h" value="KeepLast(5)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="260" y="380" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="r9_u" value="diagnostics" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="360" y="380" width="100" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r_etc" value="also: kStatic / kLight / kBetter / kBest /&#10;kAlarm / kCommand / kLog  (16 presets total)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="60" y="400" width="400" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pre_api" value="QosProfile::get_available_qos_map()&#10;returns name -&gt; Qos" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="60" y="436" width="400" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="pre_cp" value="vlink::Qos custom = QosProfile::kSensor;&#10;custom.history.depth = 50;   override fields" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="486" width="400" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- Section 2: VLINK_QOS_CONFIG (middle) -->
+        <mxCell id="env_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#eceff1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="500" y="100" width="320" height="460" as="geometry" />
+        </mxCell>
+        <mxCell id="env_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="500" y="100" width="320" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="env_t" value="2. Custom Profiles" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="500" y="116" width="320" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="env_st" value="VLINK_QOS_CONFIG -&gt; merged map" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#1565c0;" vertex="1" parent="1">
+          <mxGeometry x="500" y="144" width="320" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="env_var" value="export VLINK_QOS_CONFIG=&#10;       /path/to/qos_config.json" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="520" y="180" width="280" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="json_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="520" y="244" width="280" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="json_t" value="qos_config.json" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="520" y="248" width="280" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="json_b" value="[&#10;  {&#10;    &quot;name&quot;: &quot;my_sensor&quot;,&#10;    &quot;reliability&quot;: {&quot;kind&quot;: 0},&#10;    &quot;history&quot;: {&quot;kind&quot;: 0, &quot;depth&quot;: 30},&#10;    &quot;durability&quot;: {&quot;kind&quot;: 0},&#10;    &quot;publish_mode&quot;: {&quot;kind&quot;: 1},&#10;    &quot;additions&quot;: {&quot;priority&quot;: 4,&#10;                  &quot;is_express&quot;: true}&#10;  }&#10;]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#424242;strokeWidth=1;arcSize=8;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#212121;align=left;" vertex="1" parent="1">
+          <mxGeometry x="532" y="270" width="256" height="188" as="geometry" />
+        </mxCell>
+
+        <mxCell id="env_note" value="profiles merge into get_available_qos_map()" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#1565c0;" vertex="1" parent="1">
+          <mxGeometry x="500" y="476" width="320" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="env_note2" value="custom names take priority over identical builtins" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="500" y="500" width="320" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="env_note3" value="loaded once at process startup" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="500" y="524" width="320" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Section 3: Apply (right) -->
+        <mxCell id="app_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#eceff1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="840" y="100" width="240" height="460" as="geometry" />
+        </mxCell>
+        <mxCell id="app_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="840" y="100" width="240" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="app_t" value="3. Apply" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="840" y="116" width="240" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="app_st" value="register + URL reference" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="840" y="144" width="240" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="app_reg" value="DdsConf::register_qos(&quot;sensor&quot;, qos)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;arcSize=10;fontSize=10;fontFamily=Courier New;fontStyle=1;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="860" y="180" width="200" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="app_url" value="dds://sensor/lidar?qos=sensor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="860" y="234" width="200" height="34" as="geometry" />
+        </mxCell>
+
+        <mxCell id="app_pub" value="Publisher&lt;T&gt; pub(url)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="860" y="280" width="200" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="app_sub" value="Subscriber&lt;T&gt; sub(url)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1.2;arcSize=10;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="860" y="320" width="200" height="34" as="geometry" />
+        </mxCell>
+
+        <mxCell id="app_guide" value="Selection guide" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="860" y="370" width="200" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="g_cam" value="camera / lidar -&gt; kSensor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="860" y="396" width="200" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="g_cmd" value="control cmd -&gt; kEvent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="860" y="418" width="200" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="g_rpc" value="RPC -&gt; kMethod" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="860" y="440" width="200" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="g_state" value="state sync -&gt; kField" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="860" y="462" width="200" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="g_map" value="map data -&gt; kLarge" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="860" y="484" width="200" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="g_clock" value="time sync -&gt; kClock" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#424242;strokeWidth=1;arcSize=6;fontSize=10;fontStyle=1;fontColor=#212121;" vertex="1" parent="1">
+          <mxGeometry x="860" y="506" width="200" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows -->
+        <mxCell id="a_pre_reg" value="preset" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#424242;fontSize=11;fontStyle=1;fontColor=#212121;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.3;" edge="1" parent="1" source="pre_api" target="app_reg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_env_reg" value="custom" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#1565c0;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.7;" edge="1" parent="1" source="env_var" target="app_reg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_reg_url" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#424242;rounded=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="app_reg" target="app_url">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_url_pub" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#424242;rounded=1;exitX=0.4;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="app_url" target="app_pub">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_url_sub" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2;strokeColor=#424242;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=0.6;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="app_url" target="app_sub">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

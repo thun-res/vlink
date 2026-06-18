@@ -1,0 +1,16 @@
+module dds {
+
+  struct Request {
+    unsigned long type;
+  };
+
+  struct Response {
+    string value;
+  };
+
+  struct Message {
+    unsigned long type;
+    string value;
+  };
+
+};

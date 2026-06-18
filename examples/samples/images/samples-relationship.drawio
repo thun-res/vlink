@@ -1,0 +1,149 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="samples-relationship" name="Samples Relationship Tree">
+    <mxGraphModel dx="1060" dy="580" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1060" pageHeight="580" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Samples  -  Learning Path Tree" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="30" y="24" width="1000" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Start with helloworld  -  branch into latency tests and protocol-specific samples" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="30" y="60" width="1000" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="hwBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.8;arcSize=8;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="340" y="100" width="380" height="88" as="geometry" />
+        </mxCell>
+        <mxCell id="hwBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="340" y="100" width="380" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="hwT" value="helloworld" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=17;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="340" y="114" width="380" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="hwD" value="Multi-protocol  -  Protobuf  -  Event + Method" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#1565c0;" vertex="1" parent="1">
+          <mxGeometry x="340" y="144" width="380" height="36" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ppBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="100" y="230" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ppBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="100" y="230" width="260" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="ppT" value="ping_pong" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="244" width="260" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="ppD" value="Latency measurement with Bytes" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#1565c0;" vertex="1" parent="1">
+          <mxGeometry x="100" y="266" width="260" height="36" as="geometry" />
+        </mxCell>
+
+        <mxCell id="srBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90caf9;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="700" y="230" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="srBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="700" y="230" width="260" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="srT" value="shm_raw" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="700" y="244" width="260" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="srD" value="All 6 primitives + Security" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#1565c0;" vertex="1" parent="1">
+          <mxGeometry x="700" y="266" width="260" height="36" as="geometry" />
+        </mxCell>
+
+        <mxCell id="hwToPp" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#1976d2;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="hwBg" target="ppBg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="hwToSr" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#1976d2;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="hwBg" target="srBg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ddBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="370" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ddBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="370" width="180" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="ddT" value="dds_dynamic" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="40" y="384" width="180" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="ddD" value="DynamicData" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#2e7d32;" vertex="1" parent="1">
+          <mxGeometry x="40" y="406" width="180" height="36" as="geometry" />
+        </mxCell>
+
+        <mxCell id="diBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="235" y="370" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="diBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="235" y="370" width="180" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="diT" value="dds_idl" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="235" y="384" width="180" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="diD" value="IDL / CDR" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#2e7d32;" vertex="1" parent="1">
+          <mxGeometry x="235" y="406" width="180" height="36" as="geometry" />
+        </mxCell>
+
+        <mxCell id="dpBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="430" y="370" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="dpBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="430" y="370" width="180" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="dpT" value="ddsc_proto" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="430" y="384" width="180" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="dpD" value="CycloneDDS + Protobuf" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#2e7d32;" vertex="1" parent="1">
+          <mxGeometry x="430" y="406" width="180" height="36" as="geometry" />
+        </mxCell>
+
+        <mxCell id="fpBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="625" y="370" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="fpBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="625" y="370" width="180" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="fpT" value="fdbus_proto" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="625" y="384" width="180" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="fpD" value="FDBus IPC + Protobuf" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#2e7d32;" vertex="1" parent="1">
+          <mxGeometry x="625" y="406" width="180" height="36" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sfBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a5d6a7;strokeWidth=1.5;arcSize=8;shadow=1;gradientColor=#e8f5e9;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="820" y="370" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="sfBar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="820" y="370" width="200" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="sfT" value="someip_flat" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="820" y="384" width="200" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="sfD" value="SOME/IP + FlatBuffers" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#2e7d32;" vertex="1" parent="1">
+          <mxGeometry x="820" y="406" width="200" height="36" as="geometry" />
+        </mxCell>
+
+        <mxCell id="srDd" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.8;strokeColor=#388e3c;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="srBg" target="ddBg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="srDi" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.8;strokeColor=#388e3c;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="srBg" target="diBg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="srDp" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.8;strokeColor=#388e3c;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="srBg" target="dpBg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="srFp" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.8;strokeColor=#388e3c;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="srBg" target="fpBg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="srSf" value="" style="endArrow=classic;endFill=1;html=1;strokeWidth=1.8;strokeColor=#388e3c;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="srBg" target="sfBg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legend" value="Blue = multi-protocol generic examples         Green = protocol-specific examples" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1.2;fontSize=12;fontStyle=2;fontColor=#546e7a;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="220" y="490" width="620" height="32" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,117 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="uuid-generation-pipeline" name="Uuid Random Pipeline">
+    <mxGraphModel dx="1280" dy="720" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1280" pageHeight="720" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="vlink::Uuid -- v4 Random Generation Pipeline" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1200" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" value="random_device seeding · MT19937 · 4 bytes per draw · endian-deterministic byte extraction" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="50" width="1200" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#bdbdbd;strokeWidth=1.5;arcSize=4;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="1200" height="600" as="geometry" />
+        </mxCell>
+        <mxCell id="bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="1200" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="hdr" value="Stage flow -- left to right" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="60" y="104" width="600" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="hdr2" value="Three-tier exception fallback: random_device → chrono → 0xDEADBEEF literal" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#616161;" vertex="1" parent="1">
+          <mxGeometry x="600" y="106" width="620" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="seed_lane" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#a5d6a7;strokeWidth=1;arcSize=4;" vertex="1" parent="1">
+          <mxGeometry x="60" y="140" width="1160" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="seed_lane_lbl" value="Seeding (cross-platform fallback)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#2e7d32;" vertex="1" parent="1">
+          <mxGeometry x="76" y="150" width="400" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s_rd" value="&lt;b&gt;std::random_device&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;8 × uint32_t&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=13;fontColor=#1b5e20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="190" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s_seedseq" value="&lt;b&gt;std::seed_seq&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;mix 8 words → 624-word state&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=13;fontColor=#1b5e20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="320" y="190" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s_engine" value="&lt;b&gt;std::mt19937&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;thread_local · lazy init · noexcept&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=13;fontColor=#1b5e20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="580" y="190" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s_fallback" value="&lt;b&gt;exception fallback&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;chrono.now().count() xor high/low&lt;br/&gt;→ 0xDEADBEEF literal&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#fbc02d;strokeWidth=1.5;fontSize=12;fontColor=#5d4037;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="860" y="190" width="320" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e1" style="endArrow=classic;html=1;rounded=0;strokeColor=#2e7d32;strokeWidth=2;" edge="1" parent="1" source="s_rd" target="s_seedseq">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="endArrow=classic;html=1;rounded=0;strokeColor=#2e7d32;strokeWidth=2;" edge="1" parent="1" source="s_seedseq" target="s_engine">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeColor=#fbc02d;strokeWidth=2;" edge="1" parent="1" source="s_rd" target="s_fallback">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="180" y="320" />
+              <mxPoint x="1020" y="320" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e3_lbl" value="if random_device throws" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#fbc02d;" vertex="1" parent="1">
+          <mxGeometry x="540" y="305" width="200" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="draw_lane" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#90caf9;strokeWidth=1;arcSize=4;" vertex="1" parent="1">
+          <mxGeometry x="60" y="340" width="1160" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="draw_lane_lbl" value="Drawing (4 bytes per call, endian-deterministic)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#1565c0;" vertex="1" parent="1">
+          <mxGeometry x="76" y="350" width="500" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="d_dist" value="&lt;b&gt;uniform_int_distribution&amp;lt;uint32_t&amp;gt;&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;4 bytes per draw&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=13;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="390" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="d_shift" value="&lt;b&gt;byte extraction&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;explicit shifts -- no reinterpret_cast&lt;br/&gt;LE/BE outputs identical given same seed&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=13;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="390" width="380" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="d_buf" value="&lt;b&gt;buffer&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;data[0..15] -- 128-bit payload&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=13;fontColor=#0d47a1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="390" width="360" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="d_e1" style="endArrow=classic;html=1;rounded=0;strokeColor=#1565c0;strokeWidth=2;" edge="1" parent="1" source="d_dist" target="d_shift">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="d_e2" style="endArrow=classic;html=1;rounded=0;strokeColor=#1565c0;strokeWidth=2;" edge="1" parent="1" source="d_shift" target="d_buf">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="rfc_lane" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#ce93d8;strokeWidth=1;arcSize=4;" vertex="1" parent="1">
+          <mxGeometry x="60" y="520" width="1160" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="rfc_lane_lbl" value="RFC 4122 v4 bit-pinning" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#6a1b9a;" vertex="1" parent="1">
+          <mxGeometry x="76" y="530" width="400" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r_ver" value="&lt;b&gt;version byte (octet 6)&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;font-family:monospace;&quot;&gt;data[6] = (data[6] &amp;amp; 0x0F) | 0x40&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;forces high nibble = 0100 (v4)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1.5;fontSize=13;fontColor=#4a148c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="570" width="420" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="r_var" value="&lt;b&gt;variant byte (octet 8)&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;font-family:monospace;&quot;&gt;data[8] = (data[8] &amp;amp; 0x3F) | 0x80&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;forces top two bits = 10 (RFC)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1.5;fontSize=13;fontColor=#4a148c;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="540" y="570" width="420" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="r_uuid" value="&lt;b&gt;Uuid&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;variant() == kRfc&lt;br/&gt;version() == kRandomBased&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=2;fontSize=14;fontStyle=1;fontColor=#1b5e20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="570" width="180" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="r_e1" style="endArrow=classic;html=1;rounded=0;strokeColor=#8e24aa;strokeWidth=2;" edge="1" parent="1" source="d_buf" target="r_ver">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r_e2" style="endArrow=classic;html=1;rounded=0;strokeColor=#8e24aa;strokeWidth=2;" edge="1" parent="1" source="r_ver" target="r_var">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r_e3" style="endArrow=classic;html=1;rounded=0;strokeColor=#2e7d32;strokeWidth=2;" edge="1" parent="1" source="r_var" target="r_uuid">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,140 @@
+/*
+ * Copyright (C) 2026 by Thun Lu. All rights reserved.
+ * Author: Thun Lu <thun.lu@zohomail.cn>
+ * Repo:   https://github.com/thun-res/vlink
+ *  _    __   __      _           __
+ * | |  / /  / /     (_) ____    / /__
+ * | | / /  / /     / / / __ \  / //_/
+ * | |/ /  / /___  / / / / / / / ,<
+ * |___/  /_____/ /_/ /_/ /_/ /_/|_|
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#pragma once
+
+#define VLINK_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define VLINK_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define VLINK_VERSION_PATCH @PROJECT_VERSION_PATCH@
+#define VLINK_VERSION "@VLINK_VERSION@"
+#define VLINK_VERSION_TIMESTAMP "@VLINK_VERSION_TIMESTAMP@"
+#define VLINK_VERSION_TAG "@VLINK_VERSION_TAG@"
+#define VLINK_VERSION_COMMIT_ID "@VLINK_VERSION_COMMIT_ID@"
+
+#ifndef VLINK_ENABLE_CXX_STD_20
+#cmakedefine VLINK_ENABLE_CXX_STD_20
+#endif
+
+#ifndef VLINK_ENABLE_C_API
+#cmakedefine VLINK_ENABLE_C_API
+#endif
+
+#ifndef VLINK_ENABLE_SECURITY
+#cmakedefine VLINK_ENABLE_SECURITY
+#endif
+
+#ifndef VLINK_ENABLE_ZSTD
+#cmakedefine VLINK_ENABLE_ZSTD
+#endif
+
+#ifndef VLINK_ENABLE_SQLITE
+#cmakedefine VLINK_ENABLE_SQLITE
+#endif
+
+#ifndef VLINK_ENABLE_CLI_INFO
+#cmakedefine VLINK_ENABLE_CLI_INFO
+#endif
+
+#ifndef VLINK_ENABLE_CLI_BAG
+#cmakedefine VLINK_ENABLE_CLI_BAG
+#endif
+
+#ifndef VLINK_ENABLE_CLI_BENCH
+#cmakedefine VLINK_ENABLE_CLI_BENCH
+#endif
+
+#ifndef VLINK_ENABLE_CLI_EPROTO
+#cmakedefine VLINK_ENABLE_CLI_EPROTO
+#endif
+
+#ifndef VLINK_ENABLE_CLI_EFBS
+#cmakedefine VLINK_ENABLE_CLI_EFBS
+#endif
+
+#ifndef VLINK_ENABLE_CLI_LIST
+#cmakedefine VLINK_ENABLE_CLI_LIST
+#endif
+
+#ifndef VLINK_ENABLE_CLI_MONITOR
+#cmakedefine VLINK_ENABLE_CLI_MONITOR
+#endif
+
+#ifndef VLINK_ENABLE_CLI_DUMP
+#cmakedefine VLINK_ENABLE_CLI_DUMP
+#endif
+
+#ifndef VLINK_ENABLE_CLI_CHECK
+#cmakedefine VLINK_ENABLE_CLI_CHECK
+#endif
+
+#ifndef VLINK_ENABLE_LOG_QUI
+#cmakedefine VLINK_ENABLE_LOG_QUI
+#endif
+
+#ifndef VLINK_ENABLE_LOG_SPD
+#cmakedefine VLINK_ENABLE_LOG_SPD
+#endif
+
+#ifndef VLINK_ENABLE_LOG_DLT
+#cmakedefine VLINK_ENABLE_LOG_DLT
+#endif
+
+#ifndef VLINK_ENABLE_LOG_NAT
+#cmakedefine VLINK_ENABLE_LOG_NAT
+#endif
+
+#ifndef VLINK_ENABLE_EXPRTK
+#cmakedefine VLINK_ENABLE_EXPRTK
+#endif
+
+#ifndef VLINK_ENABLE_PROXY
+#cmakedefine VLINK_ENABLE_PROXY
+#endif
+
+#ifndef VLINK_ENABLE_VIEWER
+#cmakedefine VLINK_ENABLE_VIEWER
+#endif
+
+#ifndef VLINK_ENABLE_WEBVIZ
+#cmakedefine VLINK_ENABLE_WEBVIZ
+#endif
+
+#ifndef VLINK_ENABLE_SYMLINKS
+#cmakedefine VLINK_ENABLE_SYMLINKS
+#endif
+
+#ifndef VLINK_ENABLE_COMPLETIONS
+#cmakedefine VLINK_ENABLE_COMPLETIONS
+#endif
+
+#ifndef VLINK_ENABLE_EXAMPLES
+#cmakedefine VLINK_ENABLE_EXAMPLES
+#endif
+
+#ifndef VLINK_ENABLE_EXAMPLES_ALL
+#cmakedefine VLINK_ENABLE_EXAMPLES_ALL
+#endif
+
+#ifndef VLINK_ENABLE_TEST
+#cmakedefine VLINK_ENABLE_TEST
+#endif

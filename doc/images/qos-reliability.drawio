@@ -1,0 +1,97 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="qos-reliability" name="QoS Reliability Modes">
+    <mxGraphModel dx="900" dy="560" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="QoS Reliability Modes" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="820" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="BestEffort (low latency, drops allowed)  vs  Reliable (guaranteed delivery, ACK/NACK)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#1565c0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="54" width="820" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Left: BestEffort (orange) -->
+        <mxCell id="be_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ffb74d;strokeWidth=1.8;arcSize=6;shadow=1;gradientColor=#fff8e1;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="400" height="420" as="geometry" />
+        </mxCell>
+        <mxCell id="be_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="400" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="be_t" value="BestEffort Mode" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="40" y="114" width="400" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="be_sub" value="Fire and forget - no retransmit" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#ef6c00;" vertex="1" parent="1">
+          <mxGeometry x="40" y="142" width="400" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="be_pub" value="Publisher" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#0d47a1;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="130" y="180" width="220" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="be_tr" value="Transport" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#424242;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="130" y="280" width="220" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="be_sub2" value="Subscriber" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#0d47a1;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="130" y="380" width="220" height="54" as="geometry" />
+        </mxCell>
+
+        <mxCell id="be_a1" value="send" style="endArrow=classic;endFill=1;html=1;strokeColor=#ef6c00;strokeWidth=2.2;fontSize=12;fontStyle=1;fontColor=#ef6c00;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="be_pub" target="be_tr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="be_a2" value="may be lost" style="endArrow=classic;endFill=1;html=1;strokeColor=#c62828;strokeWidth=2.2;fontSize=12;fontStyle=1;fontColor=#c62828;labelBackgroundColor=#ffffff;dashed=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="be_tr" target="be_sub2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="be_note" value="Lowest latency - used for high-frequency streams (sensor data, logs)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="60" y="460" width="360" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- Right: Reliable (blue) -->
+        <mxCell id="re_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64b5f6;strokeWidth=1.8;arcSize=6;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="460" y="100" width="400" height="420" as="geometry" />
+        </mxCell>
+        <mxCell id="re_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="460" y="100" width="400" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="re_t" value="Reliable Mode" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="460" y="114" width="400" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="re_sub" value="ACK/NACK - auto retransmit" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#1565c0;" vertex="1" parent="1">
+          <mxGeometry x="460" y="142" width="400" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="re_pub" value="Publisher" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#0d47a1;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="520" y="180" width="200" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="re_tr" value="Transport" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#616161;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#424242;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="520" y="280" width="200" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="re_sub2" value="Subscriber" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=13;fontStyle=1;fontColor=#0d47a1;align=center;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="520" y="380" width="200" height="54" as="geometry" />
+        </mxCell>
+
+        <mxCell id="re_a1" value="send" style="endArrow=classic;endFill=1;html=1;strokeColor=#1976d2;strokeWidth=2.2;fontSize=12;fontStyle=1;fontColor=#1976d2;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="re_pub" target="re_tr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re_a2" value="confirmed delivery" style="endArrow=classic;endFill=1;html=1;strokeColor=#1976d2;strokeWidth=2.2;fontSize=12;fontStyle=1;fontColor=#1976d2;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="re_tr" target="re_sub2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re_ack" value="ACK / NACK" style="endArrow=classic;endFill=1;html=1;strokeColor=#388e3c;strokeWidth=2.2;fontSize=11;fontStyle=2;fontColor=#2e7d32;labelBackgroundColor=#ffffff;dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="re_sub2" target="re_tr">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="790" y="407" />
+              <mxPoint x="790" y="307" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="re_note" value="Guaranteed delivery - used for RPC, commands, configuration" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="460" width="360" height="44" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

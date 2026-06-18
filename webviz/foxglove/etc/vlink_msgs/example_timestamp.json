@@ -1,0 +1,158 @@
+[
+  {
+    "_comment": "Example 1: GNSS with nanosecond sensor timestamp",
+    "ser": "sensor.proto.GnssStamped",
+    "schema": "foxglove.LocationFix",
+    "encoding": "protobuf",
+    "schema_encoding": "flatbuffers",
+    "timestamp_field": "header.timestamp_ns",
+    "timestamp_unit": "ns",
+    "field_mappings": [
+      {
+        "source": "header.timestamp_ns",
+        "target": "timestamp_ns"
+      },
+      {
+        "source": "header.frame_id",
+        "target": "frame_id",
+        "default_value": "gnss"
+      },
+      {
+        "source": "latitude",
+        "target": "latitude"
+      },
+      {
+        "source": "longitude",
+        "target": "longitude"
+      },
+      {
+        "source": "altitude",
+        "target": "altitude"
+      }
+    ]
+  },
+  {
+    "_comment": "Example 2: Odometry pose with nanosecond sensor timestamp",
+    "ser": "nav.proto.OdometryStamped",
+    "schema": "foxglove.PoseInFrame",
+    "encoding": "protobuf",
+    "schema_encoding": "flatbuffers",
+    "timestamp_field": "header.timestamp_ns",
+    "timestamp_unit": "ns",
+    "field_mappings": [
+      {
+        "source": "header.timestamp_ns",
+        "target": "timestamp_ns"
+      },
+      {
+        "source": "header.frame_id",
+        "target": "frame_id",
+        "default_value": "odom"
+      },
+      {
+        "source": "pose.position.x",
+        "target": "position_x"
+      },
+      {
+        "source": "pose.position.y",
+        "target": "position_y"
+      },
+      {
+        "source": "pose.position.z",
+        "target": "position_z"
+      },
+      {
+        "source": "pose.orientation",
+        "target": "pose"
+      }
+    ]
+  },
+  {
+    "_comment": "Example 3: FlatBuffers lidar scan with nanosecond sensor timestamp",
+    "ser": "lidar.LidarScanStamped",
+    "schema": "foxglove.LaserScan",
+    "encoding": "flatbuffers",
+    "schema_encoding": "flatbuffers",
+    "timestamp_field": "timestamp_ns",
+    "timestamp_unit": "ns",
+    "field_mappings": [
+      {
+        "source": "timestamp_ns",
+        "target": "timestamp_ns"
+      },
+      {
+        "source": "frame_id",
+        "target": "frame_id",
+        "default_value": "lidar"
+      },
+      {
+        "source": "angle_min",
+        "target": "start_angle"
+      },
+      {
+        "source": "angle_max",
+        "target": "end_angle"
+      },
+      {
+        "source": "ranges",
+        "target": "ranges"
+      },
+      {
+        "source": "intensities",
+        "target": "intensities"
+      }
+    ]
+  },
+  {
+    "_comment": "Example 4: Obstacle scene with nanosecond sensor timestamp (nested field)",
+    "ser": "perception.proto.ObstacleListStamped",
+    "schema": "foxglove.SceneUpdate",
+    "encoding": "protobuf",
+    "schema_encoding": "flatbuffers",
+    "timestamp_field": "header.timestamp_ns",
+    "timestamp_unit": "ns",
+    "field_mappings": [
+      {
+        "source": "header.timestamp_ns",
+        "target": "timestamp_ns"
+      },
+      {
+        "source": "header.frame_id",
+        "target": "frame_id",
+        "default_value": "base_link"
+      },
+      {
+        "source": "obstacles",
+        "target": "entities"
+      },
+      {
+        "source": "center.x",
+        "target": "entity_x"
+      },
+      {
+        "source": "center.y",
+        "target": "entity_y"
+      },
+      {
+        "source": "center.z",
+        "target": "entity_z"
+      },
+      {
+        "source": "width",
+        "target": "entity_width"
+      },
+      {
+        "source": "length",
+        "target": "entity_length"
+      },
+      {
+        "source": "height",
+        "target": "entity_height"
+      },
+      {
+        "source": "heading",
+        "target": "entity_heading"
+      }
+    ]
+  }
+]

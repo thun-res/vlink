@@ -1,0 +1,103 @@
+<mxfile host="app.diagrams.net" modified="2026-05-28T00:00:00.000Z" agent="Codex" version="24.0.0" type="device">
+  <diagram id="uuid-byte-layout" name="Uuid Byte Layout">
+    <mxGraphModel dx="1400" dy="780" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="780" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="vlink::Uuid -- RFC 4122 128-bit Byte Layout" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=24;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="70" y="24" width="1260" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="16 bytes in network byte order · octet 6 stores version bits · octet 8 stores variant bits" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="70" y="58" width="1260" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="canvas" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#b0bec5;strokeWidth=1.5;arcSize=4;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="102" width="1280" height="620" as="geometry" />
+        </mxCell>
+        <mxCell id="top_rule" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#546e7a;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="60" y="102" width="1280" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="size_note" value="sizeof(Uuid) = 16 B · kStringSize = 36 canonical chars · compact form = 32 hex chars" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="90" y="124" width="660" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="source_note" value="generate_random(): std::mt19937 bytes, then data[6] = (data[6] &amp; 0x0F) | 0x40 and data[8] = (data[8] &amp; 0x3F) | 0x80" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="600" y="124" width="710" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="byte_label" value="byte index" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="90" y="166" width="88" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="b0" value="0" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1;fontSize=11;fontColor=#37474f;" vertex="1" parent="1"><mxGeometry x="180" y="166" width="70" height="22" as="geometry" /></mxCell>
+        <mxCell id="b1" value="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1;fontSize=11;fontColor=#37474f;" vertex="1" parent="1"><mxGeometry x="250" y="166" width="70" height="22" as="geometry" /></mxCell>
+        <mxCell id="b2" value="2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1;fontSize=11;fontColor=#37474f;" vertex="1" parent="1"><mxGeometry x="320" y="166" width="70" height="22" as="geometry" /></mxCell>
+        <mxCell id="b3" value="3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1;fontSize=11;fontColor=#37474f;" vertex="1" parent="1"><mxGeometry x="390" y="166" width="70" height="22" as="geometry" /></mxCell>
+        <mxCell id="b4" value="4" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1;fontSize=11;fontColor=#37474f;" vertex="1" parent="1"><mxGeometry x="460" y="166" width="70" height="22" as="geometry" /></mxCell>
+        <mxCell id="b5" value="5" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1;fontSize=11;fontColor=#37474f;" vertex="1" parent="1"><mxGeometry x="530" y="166" width="70" height="22" as="geometry" /></mxCell>
+        <mxCell id="b6" value="6" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#8e24aa;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1"><mxGeometry x="600" y="166" width="70" height="22" as="geometry" /></mxCell>
+        <mxCell id="b7" value="7" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1;fontSize=11;fontColor=#37474f;" vertex="1" parent="1"><mxGeometry x="670" y="166" width="70" height="22" as="geometry" /></mxCell>
+        <mxCell id="b8" value="8" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe0b2;strokeColor=#ef6c00;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#bf360c;" vertex="1" parent="1"><mxGeometry x="740" y="166" width="70" height="22" as="geometry" /></mxCell>
+        <mxCell id="b9" value="9" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1;fontSize=11;fontColor=#37474f;" vertex="1" parent="1"><mxGeometry x="810" y="166" width="70" height="22" as="geometry" /></mxCell>
+        <mxCell id="b10" value="10" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1;fontSize=11;fontColor=#37474f;" vertex="1" parent="1"><mxGeometry x="880" y="166" width="70" height="22" as="geometry" /></mxCell>
+        <mxCell id="b11" value="11" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1;fontSize=11;fontColor=#37474f;" vertex="1" parent="1"><mxGeometry x="950" y="166" width="70" height="22" as="geometry" /></mxCell>
+        <mxCell id="b12" value="12" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1;fontSize=11;fontColor=#37474f;" vertex="1" parent="1"><mxGeometry x="1020" y="166" width="70" height="22" as="geometry" /></mxCell>
+        <mxCell id="b13" value="13" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1;fontSize=11;fontColor=#37474f;" vertex="1" parent="1"><mxGeometry x="1090" y="166" width="70" height="22" as="geometry" /></mxCell>
+        <mxCell id="b14" value="14" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1;fontSize=11;fontColor=#37474f;" vertex="1" parent="1"><mxGeometry x="1160" y="166" width="70" height="22" as="geometry" /></mxCell>
+        <mxCell id="b15" value="15" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#90a4ae;strokeWidth=1;fontSize=11;fontColor=#37474f;" vertex="1" parent="1"><mxGeometry x="1230" y="166" width="70" height="22" as="geometry" /></mxCell>
+
+        <mxCell id="field_time_low" value="&lt;b&gt;time_low&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;data[0..3]&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=14;fontColor=#0d47a1;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="180" y="220" width="280" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="field_time_mid" value="&lt;b&gt;time_mid&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;data[4..5]&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=14;fontColor=#0d47a1;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="460" y="220" width="140" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="field_version" value="&lt;b&gt;time_hi&lt;/b&gt;&lt;br/&gt;&lt;b&gt;and_version&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;data[6..7]&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;strokeWidth=1.5;fontSize=13;fontColor=#4a148c;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="600" y="220" width="140" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="field_clock" value="&lt;b&gt;clock_seq&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;data[8..9]&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#bf360c;&quot;&gt;data[8] top bits&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe0b2;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=13;fontColor=#bf360c;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="740" y="220" width="140" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="field_node" value="&lt;b&gt;node&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;data[10..15]&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;&quot;&gt;spatially unique identifier&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=14;fontColor=#1b5e20;shadow=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="880" y="220" width="420" height="78" as="geometry" />
+        </mxCell>
+
+        <mxCell id="version_panel" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#8e24aa;strokeWidth=1.6;arcSize=4;" vertex="1" parent="1">
+          <mxGeometry x="90" y="380" width="590" height="292" as="geometry" />
+        </mxCell>
+        <mxCell id="version_title" value="octet 6: UUID version (high 4 bits)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="110" y="396" width="550" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="version_mask" value="mask used by generate_random(): (data[6] &amp; 0x0F) | 0x40" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontFamily=monospace;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="110" y="428" width="550" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="version_rows" value="0001 xxxx = kTimeBased (v1)&lt;br&gt;0010 xxxx = kDceSecurity (v2)&lt;br&gt;0011 xxxx = kNameBasedMd5 (v3)&lt;br&gt;&lt;b&gt;0100 xxxx = kRandomBased (v4)  -- Uuid::generate_random()&lt;/b&gt;&lt;br&gt;0101 xxxx = kNameBasedSha1 (v5)&lt;br&gt;other = kNone (nil UUID or invalid version nibble)" style="text;html=1;align=left;verticalAlign=top;spacingLeft=24;spacingTop=8;strokeColor=none;fillColor=none;fontSize=13;fontFamily=monospace;fontColor=#6a1b9a;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="120" y="464" width="520" height="166" as="geometry" />
+        </mxCell>
+
+        <mxCell id="variant_panel" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#ef6c00;strokeWidth=1.6;arcSize=4;" vertex="1" parent="1">
+          <mxGeometry x="720" y="380" width="590" height="292" as="geometry" />
+        </mxCell>
+        <mxCell id="variant_title" value="octet 8: UUID variant (high bits)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#bf360c;" vertex="1" parent="1">
+          <mxGeometry x="740" y="396" width="550" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="variant_mask" value="mask used by generate_random(): (data[8] &amp; 0x3F) | 0x80" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontFamily=monospace;fontColor=#bf360c;" vertex="1" parent="1">
+          <mxGeometry x="740" y="428" width="550" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="variant_rows" value="0xxx xxxx = kNcs (NCS compatibility)&lt;br&gt;&lt;b&gt;10xx xxxx = kRfc (RFC 4122 / DCE 1.1)  -- v4 output&lt;/b&gt;&lt;br&gt;110x xxxx = kMicrosoft (COM GUID)&lt;br&gt;111x xxxx = kReserved" style="text;html=1;align=left;verticalAlign=top;spacingLeft=24;spacingTop=8;strokeColor=none;fillColor=none;fontSize=13;fontFamily=monospace;fontColor=#bf360c;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="750" y="464" width="520" height="118" as="geometry" />
+        </mxCell>
+        <mxCell id="variant_note" value="variant() checks data[8] with 0x80, 0xC0 and 0xE0 masks; random v4 generation always forces the RFC 4122 10xx pattern." style="text;html=1;align=left;verticalAlign=middle;spacingLeft=24;strokeColor=none;fillColor=none;fontSize=12;fontStyle=2;fontColor=#bf360c;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="750" y="602" width="520" height="44" as="geometry" />
+        </mxCell>
+
+        <mxCell id="version_arrow" style="endArrow=classic;endFill=1;html=1;rounded=0;strokeColor=#8e24aa;strokeWidth=2;" edge="1" parent="1" source="b6" target="version_title">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="variant_arrow" style="endArrow=classic;endFill=1;html=1;rounded=0;strokeColor=#ef6c00;strokeWidth=2;" edge="1" parent="1" source="b8" target="variant_title">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

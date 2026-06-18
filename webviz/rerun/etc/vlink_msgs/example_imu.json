@@ -1,0 +1,11 @@
+{
+  "ser": "sensor.ImuData",
+  "archetype": "Transform3D",
+  "encoding": "flatbuffers",
+  "field_mappings": [
+    {
+      "source": "orientation",
+      "target": "pose"
+    }
+  ]
+}

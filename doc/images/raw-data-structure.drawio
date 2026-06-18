@@ -1,0 +1,92 @@
+<mxfile host="app.diagrams.net" modified="2026-06-16T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="raw-data" name="RawData Structure">
+    <mxGraphModel dx="940" dy="560" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="940" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="RawData Structure" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="860" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" value="Header &#183; owned byte buffer &#183; 16-bit reserved field" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=2;fontColor=#78909c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="54" width="860" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Outer container -->
+        <mxCell id="outer" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1976d2;strokeWidth=2;arcSize=6;shadow=1;gradientColor=#e3f2fd;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="440" height="430" as="geometry" />
+        </mxCell>
+        <mxCell id="outerbar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="440" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="outert" value="RawData (64 Bytes, alignas 8)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=18;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="112" width="440" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Header section (40 B) -->
+        <mxCell id="hdr" value="&lt;b&gt;Header (40 Bytes)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;strokeWidth=1.5;fontSize=14;verticalAlign=top;fontColor=#0d47a1;spacingTop=6;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="156" width="400" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="h1" value="frame_id : char[16]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1565c0;strokeWidth=1;fontSize=12;fontFamily=Courier New;fontColor=#0d47a1;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="188" width="360" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="h2" value="seq : uint32_t" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1565c0;strokeWidth=1;fontSize=12;fontFamily=Courier New;fontColor=#0d47a1;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="214" width="360" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="h3" value="reserved : uint32_t" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1565c0;strokeWidth=1;fontSize=12;fontFamily=Courier New;fontColor=#0d47a1;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="240" width="360" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="h4" value="time_meas : uint64_t" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1565c0;strokeWidth=1;fontSize=12;fontFamily=Courier New;fontColor=#0d47a1;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="266" width="360" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="h5" value="time_pub : uint64_t" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1565c0;strokeWidth=1;fontSize=12;fontFamily=Courier New;fontColor=#0d47a1;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="292" width="360" height="24" as="geometry" />
+        </mxCell>
+
+        <!-- Payload pointer -->
+        <mxCell id="ptr" value="&lt;b&gt;Payload (data_)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;strokeWidth=1.5;fontSize=14;verticalAlign=top;fontColor=#1b5e20;spacingTop=6;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="338" width="400" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="ptrinner" value="uint8_t* &#8594; owned byte buffer" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2e7d32;strokeWidth=1;fontSize=12;fontStyle=2;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="80" y="370" width="360" height="34" as="geometry" />
+        </mxCell>
+
+        <!-- Metadata -->
+        <mxCell id="meta" value="&lt;b&gt;Metadata&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontSize=14;verticalAlign=top;fontColor=#e65100;spacingTop=6;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="424" width="400" height="86" as="geometry" />
+        </mxCell>
+        <mxCell id="d1" value="size_ : size_t" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1;fontSize=12;fontFamily=Courier New;fontColor=#e65100;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="456" width="360" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="d2" value="is_owner_ : bool   |   reserved_buf_ : uint16_t" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1;fontSize=12;fontFamily=Courier New;fontColor=#e65100;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="480" width="360" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Bytes buffer (external) -->
+        <mxCell id="buf" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#bdbdbd;strokeWidth=2;arcSize=6;shadow=1;gradientColor=#fafafa;gradientDirection=north;" vertex="1" parent="1">
+          <mxGeometry x="560" y="300" width="340" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="bufbar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#616161;strokeColor=none;arcSize=30;" vertex="1" parent="1">
+          <mxGeometry x="560" y="300" width="340" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="buft" value="Bytes Buffer" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="560" y="314" width="340" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="bufin" value="&lt;b&gt;Shared memory region&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;payload bytes owned here&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.2;fontSize=13;fontColor=#37474f;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="580" y="360" width="300" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow from data_ to buffer -->
+        <mxCell id="arrow" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;endFill=1;html=1;strokeWidth=2.2;strokeColor=#2e7d32;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="ptrinner" target="bufin">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Note under the arrow -->
+        <mxCell id="note" value="Zero-copy: data_ references the Bytes payload directly" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontStyle=2;fontColor=#2e7d32;" vertex="1" parent="1">
+          <mxGeometry x="490" y="496" width="420" height="22" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

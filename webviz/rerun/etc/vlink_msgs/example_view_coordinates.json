@@ -1,0 +1,8 @@
+{
+  "ser": "map.proto.WorldFrame",
+  "archetype": "ViewCoordinates",
+  "encoding": "protobuf",
+  "field_mappings": [
+    { "source": "coordinate_system", "target": "system", "default_value": "RDF" }
+  ]
+}
