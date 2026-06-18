@@ -1,0 +1,124 @@
+name: CI Clang-Tidy
+
+on:
+  pull_request:
+    branches:
+      - master
+      - main
+      - develop
+  push:
+    branches:
+      - master
+      - main
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-tidy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CMAKE_BUILD_PARALLEL_LEVEL: 4
+  DEBIAN_FRONTEND: noninteractive
+  PIP_DISABLE_PIP_VERSION_CHECK: 1
+  VLINK_CI_CMAKE_ARGS: >-
+    -G Ninja
+    -DCMAKE_BUILD_TYPE=Release
+    -DBUILD_SHARED_LIBS=ON
+    -DENABLE_CPM=ON
+    -DENABLE_CPM_SQLITE3=ON
+    -DENABLE_CPM_ZSTD=ON
+    -DENABLE_CPM_PROTOBUF=ON
+    -DENABLE_CPM_FLATBUFFERS=ON
+    -DENABLE_CXX_STD_20=OFF
+    -DENABLE_VIEWER=OFF
+    -DENABLE_WEBVIZ=OFF
+    -DENABLE_IOX_ROUDI=OFF
+    -DENABLE_EXAMPLES=OFF
+    -DENABLE_TEST=OFF
+    -DENABLE_TEST_WARN=OFF
+
+jobs:
+  clang-tidy:
+    name: clang-tidy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    container:
+      image: ubuntu:24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install checkout and build tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            cmake \
+            git \
+            libacl1-dev \
+            libssl-dev \
+            ninja-build \
+            patch \
+            pkg-config \
+            python3-venv \
+            tar \
+            zstd
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install clang-tidy
+        uses: ./.github/actions/setup-python-tools
+        with:
+          cache-key: pip-tidy-${{ runner.os }}-clang-tidy-21.1.6
+          venv-name: tidy-venv
+          packages: clang-tidy==21.1.6
+
+      - name: Restore CPM cache
+        uses: ./.github/actions/restore-build-cache
+        with:
+          path: ~/.vlink-cpm-cache
+          key: cpm-ci-tidy-${{ runner.os }}-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+
+      - name: Configure compile database
+        uses: ./.github/actions/cmake-build
+        with:
+          build-dir: build-tidy
+          cmake-args: ${{ env.VLINK_CI_CMAKE_ARGS }}
+          configure-extra-args: -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          configure-only: "true"
+
+      - name: Assert configured features
+        uses: ./.github/actions/assert-cmake-config
+        with:
+          build-dir: build-tidy
+          required-defines: |
+            VLINK_ENABLE_SECURITY
+            VLINK_ENABLE_SQLITE
+            VLINK_ENABLE_ZSTD
+          required-source-prefixes: |
+            src/
+            modules/intra/
+            modules/shm/
+            modules/dds/
+            modules/ddsc/
+            proxy/
+            cli/info/
+            cli/bag/
+            cli/eproto/
+            cli/efbs/
+            cli/list/
+            cli/monitor/
+            cli/dump/
+            cli/check/
+            cli/bench/
+
+      - name: Run clang-tidy
+        uses: ./.github/actions/run-clang-tidy
+        with:
+          build-dir: build-tidy

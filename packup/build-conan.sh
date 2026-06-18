@@ -34,7 +34,7 @@
 shopt -s extglob
 
 WORK_DIR=$(cd $(dirname ${BASH_SOURCE:-$0}) && pwd)
-PLATFORM_OS=$(uname -o)
+PLATFORM_OS=$(uname -s)
 PLATFORM_ARCH=$(uname -m)
 
 GITHUB_URL=""
@@ -237,7 +237,7 @@ if [ "$PLATFORM_OS" = "Darwin" ];then
         cmake -E make_directory $PACKUP_DIR/lib/sqldrivers/
 
         if [[ ${QT_VERSION} = 5.* ]] || [[ $QT_VERSION = 6.* ]];then
-            for _fw in QtCore QtGui QtWidgets QtOpenGL QtOpenGLWidgets QtNetwork QtSql;do
+            for _fw in QtCore QtGui QtWidgets QtOpenGL QtOpenGLWidgets QtNetwork QtSql QtSvg;do
                 cmake -E make_directory $PACKUP_DIR/lib/${_fw}.framework/Versions/A
                 [ -f $QT_DIR/lib/${_fw}.framework/Versions/A/${_fw} ] && \
                 cmake -E copy $QT_DIR/lib/${_fw}.framework/Versions/A/${_fw}                        $PACKUP_DIR/lib/${_fw}.framework/Versions/A/
@@ -347,7 +347,7 @@ if [ "$PLATFORM_OS" = "Darwin" ];then
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>LSMinimumSystemVersion</key>
-    <string>10.13</string>
+    <string>12.0</string>
 </dict>
 </plist>
 EOL
@@ -700,8 +700,9 @@ echo ""
     "$OUTPUT_PATH"
 
 if [ $? -ne 0 ];then
-    echo "Warning: binarycreator failed!"
+    echo "Error: binarycreator failed!"
     echo "Packup directory: $PACKUP_DIR"
+    exit 2
 else
     if [ -d "${OUTPUT_PATH}.app" ];then
         ACTUAL_OUTPUT="${OUTPUT_PATH}.app"

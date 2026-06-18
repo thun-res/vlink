@@ -172,7 +172,7 @@
 #endif
 
 #ifndef VLINK_ENABLE_EXPRTK
-#define VLINK_ENABLE_EXPRTK
+// #define VLINK_ENABLE_EXPRTK
 #endif
 
 #ifndef VLINK_ENABLE_PROXY

@@ -1,0 +1,234 @@
+name: Release Linux Packages
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  CMAKE_BUILD_PARALLEL_LEVEL: 4
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  package-deb:
+    name: deb-${{ matrix.distro }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    container:
+      image: ${{ matrix.container }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: ubuntu20.04
+            ubuntu_version: "20.04"
+            arch: x86_64
+            runner: ubuntu-24.04
+            container: ubuntu:20.04
+            deb_depends: "libssl1.1, libsqlite3-0, libzstd1"
+          - distro: ubuntu20.04
+            ubuntu_version: "20.04"
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+            container: arm64v8/ubuntu:20.04
+            deb_depends: "libssl1.1, libsqlite3-0, libzstd1"
+          - distro: ubuntu22.04
+            ubuntu_version: "22.04"
+            arch: x86_64
+            runner: ubuntu-24.04
+            container: ubuntu:22.04
+            deb_depends: "libssl3, libsqlite3-0, libzstd1"
+          - distro: ubuntu22.04
+            ubuntu_version: "22.04"
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+            container: arm64v8/ubuntu:22.04
+            deb_depends: "libssl3, libsqlite3-0, libzstd1"
+    steps:
+      - name: Install checkout and package tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            cmake \
+            dpkg-dev \
+            git \
+            libacl1-dev \
+            libsqlite3-dev \
+            libssl-dev \
+            libzstd-dev \
+            patch \
+            pkg-config \
+            python3 \
+            tar \
+            zstd
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check build host
+        run: |
+          grep -q '${{ matrix.ubuntu_version }}' /etc/os-release
+          test "$(uname -m)" = "${{ matrix.arch }}"
+          patch --version | head -n 1
+
+      - name: Restore CPM cache
+        uses: ./.github/actions/restore-build-cache
+        with:
+          path: ~/.vlink-cpm-cache
+          key: cpm-deb-${{ matrix.distro }}-${{ matrix.arch }}-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+
+      - name: Build deb package
+        env:
+          DEB_DEPENDS: ${{ matrix.deb_depends }}
+        run: bash packup/build-deb.sh .
+
+      - name: Add distro suffix to deb package names
+        run: |
+          set -euo pipefail
+          for file in build-deb/packup/linux/*.deb; do
+            dir=$(dirname "${file}")
+            base=$(basename "${file}" .deb)
+            mv "${file}" "${dir}/${base}-${{ matrix.distro }}.deb"
+          done
+
+      - name: Verify deb package
+        uses: ./.github/actions/verify-artifacts
+        with:
+          globs: build-deb/packup/linux/*.deb
+
+      - name: Upload deb package
+        uses: actions/upload-artifact@v4
+        with:
+          name: vlink-deb-${{ matrix.distro }}-${{ matrix.arch }}
+          if-no-files-found: error
+          path: build-deb/packup/linux/*.deb
+
+  package-rpm:
+    name: rpm-fedora43-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    container:
+      image: fedora:43
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Install checkout and package tools
+        run: |
+          dnf install -y \
+            cmake \
+            gcc-c++ \
+            git \
+            libacl-devel \
+            libzstd-devel \
+            make \
+            openssl-devel \
+            patch \
+            pkgconf-pkg-config \
+            rpm-build \
+            sqlite-devel \
+            tar \
+            zstd
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check build host
+        run: |
+          test "$(uname -m)" = "${{ matrix.arch }}"
+          patch --version | head -n 1
+
+      - name: Restore CPM cache
+        uses: ./.github/actions/restore-build-cache
+        with:
+          path: ~/.vlink-cpm-cache
+          key: cpm-rpm-fedora43-${{ matrix.arch }}-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+
+      - name: Build rpm package
+        run: bash packup/build-rpm.sh .
+
+      - name: Verify rpm package
+        uses: ./.github/actions/verify-artifacts
+        with:
+          globs: build-rpm/packup/linux/*.rpm
+
+      - name: Upload rpm package
+        uses: actions/upload-artifact@v4
+        with:
+          name: vlink-rpm-fedora43-${{ matrix.arch }}
+          if-no-files-found: error
+          path: build-rpm/packup/linux/*.rpm
+
+  package-arch:
+    name: arch-pkg-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    container:
+      image: archlinux:base-devel
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+    steps:
+      - name: Install checkout and package tools
+        run: |
+          pacman -Syu --noconfirm --needed \
+            acl \
+            base-devel \
+            ca-certificates \
+            cmake \
+            git \
+            libarchive \
+            openssl \
+            patch \
+            sqlite \
+            tar \
+            zstd
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check build host
+        run: |
+          test "$(uname -m)" = "${{ matrix.arch }}"
+          patch --version | head -n 1
+
+      - name: Restore CPM cache
+        uses: ./.github/actions/restore-build-cache
+        with:
+          path: ~/.vlink-cpm-cache
+          key: cpm-arch-${{ matrix.arch }}-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+
+      - name: Build Arch package
+        run: bash packup/build-arch.sh .
+
+      - name: Verify Arch package
+        uses: ./.github/actions/verify-artifacts
+        with:
+          globs: build-arch/packup/linux/*.pkg.tar.zst
+
+      - name: Upload Arch package
+        uses: actions/upload-artifact@v4
+        with:
+          name: vlink-arch-${{ matrix.arch }}
+          if-no-files-found: error
+          path: build-arch/packup/linux/*.pkg.tar.zst

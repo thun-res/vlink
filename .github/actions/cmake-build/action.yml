@@ -1,0 +1,54 @@
+name: CMake Configure And Build
+description: Configure and optionally build vlink with a shared CMake invocation.
+
+inputs:
+  source-dir:
+    description: Source directory.
+    required: false
+    default: "."
+  build-dir:
+    description: Build directory.
+    required: true
+  cmake-args:
+    description: CMake configure arguments.
+    required: true
+  configure-extra-args:
+    description: Extra configure arguments.
+    required: false
+    default: ""
+  build-args:
+    description: Arguments passed after cmake --build <dir>.
+    required: false
+    default: "--parallel"
+  configure-only:
+    description: Set to true to skip cmake --build.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Configure
+      shell: bash
+      env:
+        SOURCE_DIR: ${{ inputs.source-dir }}
+        BUILD_DIR: ${{ inputs.build-dir }}
+        CMAKE_ARGS: ${{ inputs.cmake-args }}
+        CONFIGURE_EXTRA_ARGS: ${{ inputs.configure-extra-args }}
+      run: |
+        set -euo pipefail
+        env_extra_args=()
+        if [ -n "${OPENSSL_ROOT_DIR:-}" ]; then
+          env_extra_args+=("-DOPENSSL_ROOT_DIR=${OPENSSL_ROOT_DIR}")
+        fi
+        cmake -S "${SOURCE_DIR}" -B "${BUILD_DIR}" ${CMAKE_ARGS} ${CONFIGURE_EXTRA_ARGS} "${env_extra_args[@]}"
+
+    - name: Build
+      if: inputs.configure-only != 'true'
+      shell: bash
+      env:
+        BUILD_DIR: ${{ inputs.build-dir }}
+        BUILD_ARGS: ${{ inputs.build-args }}
+      run: |
+        set -euo pipefail
+        cmake --build "${BUILD_DIR}" ${BUILD_ARGS}

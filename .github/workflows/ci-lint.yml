@@ -1,0 +1,91 @@
+name: CI Lint
+
+on:
+  pull_request:
+    branches:
+      - master
+      - main
+      - develop
+  push:
+    branches:
+      - master
+      - main
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format-and-check:
+    name: format.sh + check.sh
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    container:
+      image: ubuntu:24.04
+    defaults:
+      run:
+        shell: bash
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      PIP_DISABLE_PIP_VERSION_CHECK: 1
+    steps:
+      - name: Install checkout tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates \
+            git \
+            python3-venv \
+            tar \
+            zstd
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Install QA tools
+        uses: ./.github/actions/setup-python-tools
+        with:
+          cache-key: pip-qa-${{ runner.os }}-clang-format-21.1.8-cmake-format-0.6.13-cpplint-2.0.2
+          venv-name: qa-venv
+          packages: >-
+            clang-format==21.1.8
+            cmake-format==0.6.13
+            cpplint==2.0.2
+
+      - name: Run format gate
+        run: bash tools/format.sh .
+
+      - name: Run changed C source format gate
+        run: |
+          if ! git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+            echo "No parent commit available; no changed C files to check."
+            exit 0
+          fi
+          mapfile -t candidates < <(git diff --name-only --diff-filter=ACMR HEAD^ -- '*.c' | sort)
+          c_sources=()
+          for path in "${candidates[@]}"; do
+            case "${path}" in
+              thirdparty/*|*/thirdparty/*|builtin/*|*/builtin/*|prebuilt/*|*/prebuilt/*|android-bp/*|*/android-bp/*|build/*|*/build/*|build-*/*|*/build-*/*)
+                continue
+                ;;
+            esac
+            c_sources+=("${path}")
+          done
+          if [ "${#c_sources[@]}" -eq 0 ]; then
+            exit 0
+          fi
+          clang-format --dry-run --Werror "${c_sources[@]}"
+
+      - name: Run cpplint gate
+        run: bash tools/check.sh .
+
+      - name: Show formatting diff
+        if: failure()
+        run: git diff -- . ':!CMakeUserPresets.json'

@@ -1,0 +1,60 @@
+name: Bug Report
+description: Report a reproducible vlink defect.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please include enough detail for maintainers to reproduce the problem.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What failed, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction Steps
+      description: List the exact commands, inputs, or files needed to reproduce.
+      placeholder: |
+        1. Build with ...
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: vlink Version
+      description: Tag, commit SHA, or package file name.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Ubuntu 20.04 x86_64
+        - Ubuntu 20.04 aarch64
+        - Ubuntu 22.04 x86_64
+        - Ubuntu 22.04 aarch64
+        - Windows x64
+        - macOS arm64
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Paste the relevant command output or stack trace.
+      render: shell
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any configuration, data format, transport module, or packaging detail that matters.

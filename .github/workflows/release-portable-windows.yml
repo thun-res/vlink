@@ -1,0 +1,143 @@
+name: Release Portable Windows
+
+on:
+  workflow_call:
+    inputs:
+      qt_version:
+        required: true
+        type: string
+      osg_sdk_repository:
+        required: true
+        type: string
+      osg_sdk_ref:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CMAKE_BUILD_PARALLEL_LEVEL: 4
+  PIP_DISABLE_PIP_VERSION_CHECK: 1
+
+jobs:
+  portable-windows-x64:
+    name: portable-windows-x64
+    runs-on: windows-2022
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Check build host
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $GitPatch = Join-Path $env:ProgramFiles "Git\usr\bin\patch.exe"
+          if (-not (Test-Path $GitPatch)) {
+            throw "patch.exe not found: $GitPatch"
+          }
+          $ToolDir = Join-Path $env:RUNNER_TEMP "vlink-tools"
+          New-Item -ItemType Directory -Force -Path $ToolDir | Out-Null
+          Copy-Item -Force $GitPatch (Join-Path $ToolDir "patch.exe")
+          $ToolDir | Out-File -FilePath $env:GITHUB_PATH -Append
+          $env:Path = "$ToolDir;$env:Path"
+          cmake --version
+          patch --version
+          $LinkPath = (cmd /c "where link" | Select-Object -First 1)
+          Write-Host "link.exe: $LinkPath"
+          if ($LinkPath -notmatch "Microsoft Visual Studio") {
+            throw "link.exe is not the MSVC linker"
+          }
+          git lfs version
+          cmd /c cl
+
+      - name: Setup Qt and QtIFW
+        uses: ./.github/actions/setup-qt-ifw
+        with:
+          host: windows
+          qt-version: ${{ inputs.qt_version }}
+          qt-arch: win64_msvc2022_64
+          qt-modules: qtsvg
+          qtifw-package: qt.tools.ifw.47
+          cache-suffix: msvc2022_64-ifw-47
+
+      - name: Setup OSG SDK
+        uses: ./.github/actions/setup-osg-sdk
+        with:
+          repository: ${{ inputs.osg_sdk_repository }}
+          ref: ${{ inputs.osg_sdk_ref }}
+          platform-dir: win32_x86_64
+          validation-paths: |
+            include\osg
+            lib
+            bin
+            bin\ot21-OpenThreads.dll
+            bin\osg161-osg.dll
+            bin\osg161-osgDB.dll
+            bin\osg161-osgGA.dll
+            bin\osg161-osgManipulator.dll
+            bin\osg161-osgUtil.dll
+            bin\osg161-osgText.dll
+            bin\osg161-osgViewer.dll
+            bin\osgPlugins-3.6.5\osgdb_freetype.dll
+            bin\osgPlugins-3.6.5\osgdb_obj.dll
+            bin\osgPlugins-3.6.5\osgdb_osg.dll
+            bin\osgPlugins-3.6.5\osgdb_serializers_osg.dll
+            lib\OpenThreads.lib
+          cache-suffix: v1
+
+      - name: Restore Conan and CPM caches
+        uses: ./.github/actions/restore-build-cache
+        with:
+          path: |
+            ~/.conan2
+            ~/.vlink-cpm-cache
+          key: conan-cpm-windows-x64-${{ hashFiles('conanfile.py', 'packup/conan_profile', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+
+      - name: Build portable archive and QtIFW installer
+        shell: cmd
+        run: packup\build-conan.bat .
+
+      - name: Verify bundled Windows OSG files
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          foreach ($Path in @(
+            "bin\ot21-OpenThreads.dll",
+            "bin\osg161-osg.dll",
+            "bin\osg161-osgDB.dll",
+            "bin\osg161-osgGA.dll",
+            "bin\osg161-osgManipulator.dll",
+            "bin\osg161-osgUtil.dll",
+            "bin\osg161-osgText.dll",
+            "bin\osg161-osgViewer.dll",
+            "bin\osgPlugins-3.6.5\osgdb_freetype.dll",
+            "bin\osgPlugins-3.6.5\osgdb_obj.dll",
+            "bin\osgPlugins-3.6.5\osgdb_osg.dll",
+            "bin\osgPlugins-3.6.5\osgdb_serializers_osg.dll"
+          )) {
+            $FullPath = Join-Path "build-conan\packup\win32\vlink" $Path
+            if (-not (Test-Path $FullPath)) {
+              throw "Missing bundled OSG file: $FullPath"
+            }
+          }
+
+      - name: Verify Windows portable outputs
+        uses: ./.github/actions/verify-artifacts
+        with:
+          globs: |
+            build-conan/packup/win32/*.zip
+            build-conan/packup/win32/*.exe
+
+      - name: Upload Windows portable artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vlink-portable-windows-x64
+          if-no-files-found: error
+          path: |
+            build-conan/packup/win32/*.zip
+            build-conan/packup/win32/*.exe

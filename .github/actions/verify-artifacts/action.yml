@@ -1,0 +1,58 @@
+name: Verify Artifacts
+description: Fail fast if one or more expected artifact globs are empty.
+
+inputs:
+  globs:
+    description: Newline separated artifact globs.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Verify artifact globs
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        ARTIFACT_GLOBS: ${{ inputs.globs }}
+      run: |
+        set -euo pipefail
+        missing=0
+        while IFS= read -r pattern; do
+          [ -n "${pattern}" ] || continue
+          matches=()
+          while IFS= read -r match; do
+            matches+=("${match}")
+          done < <(compgen -G "${pattern}" || true)
+          if [ ${#matches[@]} -eq 0 ]; then
+            echo "No files matched: ${pattern}" >&2
+            missing=1
+            continue
+          fi
+          ls -lh "${matches[@]}"
+        done <<< "${ARTIFACT_GLOBS}"
+        exit "${missing}"
+
+    - name: Verify artifact globs
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        ARTIFACT_GLOBS: ${{ inputs.globs }}
+      run: |
+        $ErrorActionPreference = "Stop"
+        $Missing = $false
+        foreach ($Pattern in ($env:ARTIFACT_GLOBS -split "`n")) {
+          $Pattern = $Pattern.Trim()
+          if (-not $Pattern) {
+            continue
+          }
+          $Matches = @(Get-ChildItem -Path $Pattern -ErrorAction SilentlyContinue)
+          if ($Matches.Count -eq 0) {
+            Write-Error "No files matched: $Pattern"
+            $Missing = $true
+            continue
+          }
+          $Matches | Format-Table FullName, Length
+        }
+        if ($Missing) {
+          exit 1
+        }

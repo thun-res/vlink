@@ -1,0 +1,170 @@
+name: Release Portable Linux
+
+on:
+  workflow_call:
+    inputs:
+      qt_version:
+        required: true
+        type: string
+      osg_sdk_repository:
+        required: true
+        type: string
+      osg_sdk_ref:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CMAKE_BUILD_PARALLEL_LEVEL: 4
+  DEBIAN_FRONTEND: noninteractive
+  PIP_DISABLE_PIP_VERSION_CHECK: 1
+
+jobs:
+  portable-linux-x86_64:
+    name: portable-linux-x86_64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    container:
+      image: ubuntu:20.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install checkout and release tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            build-essential \
+            ca-certificates \
+            cmake \
+            file \
+            git \
+            git-lfs \
+            libacl1-dev \
+            libgl1-mesa-dev \
+            libtool \
+            libva-dev \
+            libvdpau-dev \
+            libxkbcommon-x11-0 \
+            nasm \
+            ninja-build \
+            patch \
+            patchelf \
+            pkg-config \
+            python3-pip \
+            python3-venv \
+            tar \
+            xz-utils \
+            yasm \
+            zstd
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check build host
+        run: |
+          set -euo pipefail
+          grep -q '20.04' /etc/os-release
+          test "$(uname -m)" = "x86_64"
+          cmake --version
+          ninja --version
+          patch --version | head -n 1
+          git lfs version
+
+      - name: Setup Qt and QtIFW
+        uses: ./.github/actions/setup-qt-ifw
+        with:
+          host: linux
+          qt-version: ${{ inputs.qt_version }}
+          qt-arch: linux_gcc_64
+          qt-modules: qtsvg qtwayland
+          qtifw-package: qt.tools.ifw.47
+          cache-suffix: linux_gcc_64-ifw-47
+
+      - name: Setup OSG SDK
+        uses: ./.github/actions/setup-osg-sdk
+        with:
+          repository: ${{ inputs.osg_sdk_repository }}
+          ref: ${{ inputs.osg_sdk_ref }}
+          platform-dir: linux_x86_64
+          validation-paths: |
+            include/osg
+            lib
+            lib/libOpenThreads.so.3.3.1
+            lib/libosg.so.161
+            lib/libosgDB.so.161
+            lib/libosgGA.so.161
+            lib/libosgManipulator.so.161
+            lib/libosgUtil.so.161
+            lib/libosgText.so.161
+            lib/libosgViewer.so.161
+            lib/osgPlugins-3.6.5/osgdb_freetype.so
+            lib/osgPlugins-3.6.5/osgdb_obj.so
+            lib/osgPlugins-3.6.5/osgdb_osg.so
+            lib/osgPlugins-3.6.5/osgdb_serializers_osg.so
+          cache-suffix: v1
+
+      - name: Restore Conan and CPM caches
+        uses: ./.github/actions/restore-build-cache
+        with:
+          path: |
+            ~/.conan2
+            ~/.vlink-cpm-cache
+          key: conan-cpm-linux-x86_64-${{ hashFiles('conanfile.py', 'packup/conan_profile', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+
+      - name: Build portable archive and QtIFW installer
+        run: bash packup/build-conan.sh . x86_64
+
+      - name: Verify bundled Linux OSG files
+        run: |
+          set -euo pipefail
+          for path in \
+            lib/libOpenThreads.so.21 \
+            lib/libosg.so.161 \
+            lib/libosgDB.so.161 \
+            lib/libosgGA.so.161 \
+            lib/libosgManipulator.so.161 \
+            lib/libosgUtil.so.161 \
+            lib/libosgText.so.161 \
+            lib/libosgViewer.so.161 \
+            lib/osgPlugins-3.6.5/osgdb_freetype.so \
+            lib/osgPlugins-3.6.5/osgdb_obj.so \
+            lib/osgPlugins-3.6.5/osgdb_osg.so \
+            lib/osgPlugins-3.6.5/osgdb_serializers_osg.so; do
+            test -f "build-conan/packup/linux/vlink/${path}"
+          done
+
+      - name: Check Linux runtime closure
+        run: |
+          set -euo pipefail
+          export LD_LIBRARY_PATH="$PWD/build-conan/packup/linux/vlink/lib:${LD_LIBRARY_PATH:-}"
+          while IFS= read -r binary; do
+            echo "ldd -r ${binary}"
+            ldd -r "${binary}" >/tmp/ldd.out
+            cat /tmp/ldd.out
+            if grep -q "not found" /tmp/ldd.out; then
+              exit 1
+            fi
+          done < <(find build-conan/packup/linux/vlink/bin build-conan/packup/linux/vlink/lib -type f -print0 \
+            | xargs -0 file \
+            | awk -F: '/ELF/ {print $1}')
+
+      - name: Verify Linux portable outputs
+        uses: ./.github/actions/verify-artifacts
+        with:
+          globs: |
+            build-conan/packup/linux/*.tgz
+            build-conan/packup/linux/*.run
+
+      - name: Upload Linux portable artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vlink-portable-linux-x86_64
+          if-no-files-found: error
+          path: |
+            build-conan/packup/linux/*.tgz
+            build-conan/packup/linux/*.run

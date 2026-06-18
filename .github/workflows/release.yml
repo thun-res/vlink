@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_portable:
+        description: Build Qt/OSG/QtIFW portable packages and offline installers
+        required: true
+        type: boolean
+        default: true
+      build_linux_packages:
+        description: Build deb/rpm/arch Linux distribution packages
+        required: true
+        type: boolean
+        default: true
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  portable-linux:
+    name: portable-linux
+    if: github.event_name == 'push' || inputs.build_portable
+    uses: ./.github/workflows/release-portable-linux.yml
+    with:
+      qt_version: "6.8.3"
+      osg_sdk_repository: https://github.com/thun-res/osg_sdk.git
+      osg_sdk_ref: master
+
+  portable-macos:
+    name: portable-macos
+    if: github.event_name == 'push' || inputs.build_portable
+    uses: ./.github/workflows/release-portable-macos.yml
+    with:
+      qt_version: "6.8.3"
+      osg_sdk_repository: https://github.com/thun-res/osg_sdk.git
+      osg_sdk_ref: master
+
+  portable-windows:
+    name: portable-windows
+    if: github.event_name == 'push' || inputs.build_portable
+    uses: ./.github/workflows/release-portable-windows.yml
+    with:
+      qt_version: "6.8.3"
+      osg_sdk_repository: https://github.com/thun-res/osg_sdk.git
+      osg_sdk_ref: master
+
+  linux-packages:
+    name: linux-packages
+    if: github.event_name == 'push' || inputs.build_linux_packages
+    uses: ./.github/workflows/release-linux-packages.yml
+
+  publish-github-release:
+    name: publish-github-release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    needs:
+      - portable-linux
+      - portable-macos
+      - portable-windows
+      - linux-packages
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Show release files
+        run: find dist -maxdepth 3 -type f -print | sort
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/*
+          generate_release_notes: true

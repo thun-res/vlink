@@ -1,0 +1,41 @@
+name: Setup Python Tools
+description: Restore pip cache, create an isolated venv, and install pinned Python CLI tools.
+
+inputs:
+  cache-key:
+    description: Cache key for pip downloads.
+    required: true
+  packages:
+    description: Space or newline separated pip packages to install.
+    required: true
+  venv-name:
+    description: Virtual environment directory name under RUNNER_TEMP.
+    required: false
+    default: python-tools
+  python:
+    description: Python executable.
+    required: false
+    default: python3
+
+runs:
+  using: composite
+  steps:
+    - name: Restore pip cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ inputs.cache-key }}
+
+    - name: Install Python tools
+      shell: bash
+      env:
+        PYTHON: ${{ inputs.python }}
+        PYTHON_PACKAGES: ${{ inputs.packages }}
+        VENV_NAME: ${{ inputs.venv-name }}
+      run: |
+        set -euo pipefail
+        VENV_DIR="${RUNNER_TEMP}/${VENV_NAME}"
+        "${PYTHON}" -m venv "${VENV_DIR}"
+        "${VENV_DIR}/bin/python" -m pip install --upgrade pip
+        "${VENV_DIR}/bin/python" -m pip install ${PYTHON_PACKAGES}
+        echo "${VENV_DIR}/bin" >> "${GITHUB_PATH}"

@@ -1,0 +1,245 @@
+name: CI Build
+
+on:
+  pull_request:
+    branches:
+      - master
+      - main
+      - develop
+  push:
+    branches:
+      - master
+      - main
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CMAKE_BUILD_PARALLEL_LEVEL: 4
+  CTEST_OUTPUT_ON_FAILURE: 1
+  VLINK_CI_CMAKE_ARGS: >-
+    -G Ninja
+    -DCMAKE_BUILD_TYPE=Release
+    -DBUILD_SHARED_LIBS=ON
+    -DENABLE_CPM=ON
+    -DENABLE_CPM_SQLITE3=ON
+    -DENABLE_CPM_ZSTD=ON
+    -DENABLE_CPM_PROTOBUF=ON
+    -DENABLE_CPM_FLATBUFFERS=ON
+    -DENABLE_CXX_STD_20=OFF
+    -DENABLE_VIEWER=OFF
+    -DENABLE_WEBVIZ=OFF
+    -DENABLE_IOX_ROUDI=OFF
+    -DENABLE_EXAMPLES=OFF
+    -DENABLE_TEST=OFF
+    -DENABLE_TEST_WARN=OFF
+  VLINK_REQUIRED_SOURCES_COMMON: |
+    src/
+    modules/intra/
+    modules/dds/
+    modules/ddsc/
+    proxy/
+    cli/info/
+    cli/bag/
+    cli/eproto/
+    cli/efbs/
+    cli/list/
+    cli/monitor/
+    cli/dump/
+    cli/check/
+    cli/bench/
+  VLINK_REQUIRED_DEFINES: |
+    VLINK_ENABLE_SECURITY
+    VLINK_ENABLE_SQLITE
+    VLINK_ENABLE_ZSTD
+
+jobs:
+  build-linux-ubuntu20:
+    name: ubuntu20.04-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 50
+    container:
+      image: ${{ matrix.container }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            container: ubuntu:20.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            container: arm64v8/ubuntu:20.04
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Install checkout and build tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            cmake \
+            git \
+            libacl1-dev \
+            libssl-dev \
+            ninja-build \
+            patch \
+            pkg-config \
+            python3 \
+            tar \
+            zstd
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check build host
+        run: |
+          test "$(uname -m)" = "${{ matrix.arch }}"
+          cmake --version
+          ninja --version
+          patch --version | head -n 1
+
+      - name: Restore CPM cache
+        uses: ./.github/actions/restore-build-cache
+        with:
+          path: ~/.vlink-cpm-cache
+          key: cpm-ci-ubuntu20-${{ matrix.arch }}-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+
+      - name: Configure and build
+        uses: ./.github/actions/cmake-build
+        with:
+          build-dir: build
+          cmake-args: ${{ env.VLINK_CI_CMAKE_ARGS }}
+          configure-extra-args: -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Assert configured features
+        uses: ./.github/actions/assert-cmake-config
+        with:
+          build-dir: build
+          required-defines: ${{ env.VLINK_REQUIRED_DEFINES }}
+          required-source-prefixes: |
+            ${{ env.VLINK_REQUIRED_SOURCES_COMMON }}
+            modules/shm/
+
+  build-windows:
+    name: windows-msvc
+    runs-on: windows-2022
+    timeout-minutes: 50
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install OpenSSL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $OpenSslRoot = "C:\Program Files\OpenSSL-Win64"
+          if (-not (Test-Path (Join-Path $OpenSslRoot "include\openssl\ssl.h"))) {
+            choco install openssl --no-progress --yes
+          }
+          if (-not (Test-Path (Join-Path $OpenSslRoot "include\openssl\ssl.h"))) {
+            throw "OpenSSL headers not found under $OpenSslRoot"
+          }
+          "OPENSSL_ROOT_DIR=C:/Progra~1/OpenSSL-Win64" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Expose patch.exe without shadowing MSVC tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $GitPatch = Join-Path $env:ProgramFiles "Git\usr\bin\patch.exe"
+          if (-not (Test-Path $GitPatch)) {
+            throw "patch.exe not found: $GitPatch"
+          }
+          $ToolDir = Join-Path $env:RUNNER_TEMP "vlink-tools"
+          New-Item -ItemType Directory -Force -Path $ToolDir | Out-Null
+          Copy-Item -Force $GitPatch (Join-Path $ToolDir "patch.exe")
+          $ToolDir | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Check toolchain
+        run: |
+          set -euo pipefail
+          cmake --version
+          ninja --version
+          patch --version | head -n 1
+          link_path=$(where.exe link | head -n 1)
+          echo "link.exe: ${link_path}"
+          case "${link_path}" in
+            *"Microsoft Visual Studio"*) ;;
+            *) echo "link.exe is not the MSVC linker" >&2; exit 1 ;;
+          esac
+          cl
+
+      - name: Restore CPM cache
+        uses: ./.github/actions/restore-build-cache
+        with:
+          path: ~/.vlink-cpm-cache
+          key: cpm-ci-windows-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+
+      - name: Configure and build
+        uses: ./.github/actions/cmake-build
+        with:
+          build-dir: build
+          cmake-args: ${{ env.VLINK_CI_CMAKE_ARGS }}
+          configure-extra-args: -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Assert configured features
+        uses: ./.github/actions/assert-cmake-config
+        with:
+          build-dir: build
+          required-defines: ${{ env.VLINK_REQUIRED_DEFINES }}
+          required-source-prefixes: ${{ env.VLINK_REQUIRED_SOURCES_COMMON }}
+
+  build-macos:
+    name: macos-arm64
+    runs-on: macos-15
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install ninja openssl@3
+
+      - name: Check toolchain
+        run: |
+          test "$(uname -m)" = "arm64"
+          cmake --version
+          ninja --version
+          patch --version | head -n 1
+          echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl@3)" >> "${GITHUB_ENV}"
+
+      - name: Restore CPM cache
+        uses: ./.github/actions/restore-build-cache
+        with:
+          path: ~/.vlink-cpm-cache
+          key: cpm-ci-macos-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+
+      - name: Configure and build
+        uses: ./.github/actions/cmake-build
+        with:
+          build-dir: build
+          cmake-args: ${{ env.VLINK_CI_CMAKE_ARGS }}
+          configure-extra-args: -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Assert configured features
+        uses: ./.github/actions/assert-cmake-config
+        with:
+          build-dir: build
+          required-defines: ${{ env.VLINK_REQUIRED_DEFINES }}
+          required-source-prefixes: ${{ env.VLINK_REQUIRED_SOURCES_COMMON }}

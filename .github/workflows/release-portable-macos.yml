@@ -1,0 +1,147 @@
+name: Release Portable macOS
+
+on:
+  workflow_call:
+    inputs:
+      qt_version:
+        required: true
+        type: string
+      osg_sdk_repository:
+        required: true
+        type: string
+      osg_sdk_ref:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CMAKE_BUILD_PARALLEL_LEVEL: 4
+  PIP_DISABLE_PIP_VERSION_CHECK: 1
+
+jobs:
+  portable-macos-arm64:
+    name: portable-macos-arm64
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install release tools
+        run: brew install git-lfs nasm yasm
+
+      - name: Check build host
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "arm64"
+          cmake --version
+          patch --version | head -n 1
+          git lfs version
+
+      - name: Setup Qt and QtIFW
+        uses: ./.github/actions/setup-qt-ifw
+        with:
+          host: mac
+          qt-version: ${{ inputs.qt_version }}
+          qt-arch: clang_64
+          qt-modules: qtsvg
+          qtifw-package: qt.tools.ifw.47
+          cache-suffix: clang_64-ifw-47
+
+      - name: Setup OSG SDK
+        uses: ./.github/actions/setup-osg-sdk
+        with:
+          repository: ${{ inputs.osg_sdk_repository }}
+          ref: ${{ inputs.osg_sdk_ref }}
+          platform-dir: darwin_universal
+          validation-paths: |
+            include/osg
+            lib
+            lib/libOpenThreads.3.3.1.dylib
+            lib/libosg.161.dylib
+            lib/libosgDB.161.dylib
+            lib/libosgGA.161.dylib
+            lib/libosgManipulator.161.dylib
+            lib/libosgUtil.161.dylib
+            lib/libosgText.161.dylib
+            lib/libosgViewer.161.dylib
+            lib/osgPlugins-3.6.5/osgdb_obj.so
+            lib/osgPlugins-3.6.5/osgdb_osg.so
+            lib/osgPlugins-3.6.5/osgdb_serializers_osg.so
+          cache-suffix: v1
+
+      - name: Restore Conan and CPM caches
+        uses: ./.github/actions/restore-build-cache
+        with:
+          path: |
+            ~/.conan2
+            ~/.vlink-cpm-cache
+          key: conan-cpm-macos-arm64-${{ hashFiles('conanfile.py', 'packup/conan_profile', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+
+      - name: Build portable archive and QtIFW installer
+        run: bash packup/build-conan.sh . arm64
+
+      - name: Verify bundled macOS OSG files
+        run: |
+          set -euo pipefail
+          for path in \
+            lib/libOpenThreads.21.dylib \
+            lib/libosg.161.dylib \
+            lib/libosgDB.161.dylib \
+            lib/libosgGA.161.dylib \
+            lib/libosgManipulator.161.dylib \
+            lib/libosgUtil.161.dylib \
+            lib/libosgText.161.dylib \
+            lib/libosgViewer.161.dylib \
+            lib/osgPlugins-3.6.5/osgdb_obj.so \
+            lib/osgPlugins-3.6.5/osgdb_osg.so \
+            lib/osgPlugins-3.6.5/osgdb_serializers_osg.so; do
+            test -f "build-conan/packup/darwin/vlink/${path}"
+          done
+
+      - name: Check Qt SVG runtime dependency
+        run: |
+          set -euo pipefail
+          test -f build-conan/packup/darwin/vlink/lib/QtSvg.framework/Versions/A/QtSvg
+          test -f build-conan/packup/darwin/vlink/lib/imageformats/libqsvg.dylib
+          otool -L build-conan/packup/darwin/vlink/lib/imageformats/libqsvg.dylib
+
+      - name: Check macOS bundle metadata
+        run: |
+          set -euo pipefail
+          version=$(/usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "build-conan/packup/darwin/VLink Player.app/Contents/Info.plist")
+          test "${version}" = "12.0"
+
+      - name: Compress macOS app bundles
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for app in build-conan/packup/darwin/vlink-*.app; do
+            zip_path="${app%.app}.zip"
+            ditto -c -k --sequesterRsrc --keepParent "${app}" "${zip_path}"
+            echo "Compressed ${app} -> ${zip_path}"
+          done
+          app="build-conan/packup/darwin/VLink Player.app"
+          test -d "${app}"
+          zip_path="${app%.app}.zip"
+          ditto -c -k --sequesterRsrc --keepParent "${app}" "${zip_path}"
+          echo "Compressed ${app} -> ${zip_path}"
+
+      - name: Verify macOS portable outputs
+        uses: ./.github/actions/verify-artifacts
+        with:
+          globs: |
+            build-conan/packup/darwin/*.tgz
+            build-conan/packup/darwin/vlink-*.zip
+            build-conan/packup/darwin/VLink Player.zip
+
+      - name: Upload macOS portable artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vlink-portable-macos-arm64
+          if-no-files-found: error
+          path: |
+            build-conan/packup/darwin/*.tgz
+            build-conan/packup/darwin/*.zip

@@ -1,0 +1,214 @@
+name: Setup Qt And QtIFW
+description: Install Qt with aqt, install QtIFW, and expose QT_DIR/QTIFW_DIR.
+
+inputs:
+  host:
+    description: "aqt host value: linux, mac, or windows."
+    required: true
+  qt-version:
+    description: Qt version.
+    required: true
+  qt-arch:
+    description: aqt Qt architecture value.
+    required: true
+  qt-modules:
+    description: Space separated Qt modules to install.
+    required: false
+    default: ""
+  qtifw-package:
+    description: QtIFW aqt package name, or latest.
+    required: false
+    default: latest
+  cache-suffix:
+    description: Cache key suffix for this Qt layout.
+    required: true
+  install-conan:
+    description: Install conan into the aqt venv.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Restore pip cache
+      if: runner.os != 'Windows'
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: pip-release-${{ runner.os }}-${{ runner.arch }}-aqt-conan-v2
+
+    - name: Restore pip cache
+      if: runner.os == 'Windows'
+      uses: actions/cache@v4
+      with:
+        path: ~\AppData\Local\pip\Cache
+        key: pip-release-${{ runner.os }}-${{ runner.arch }}-aqt-conan-v2
+
+    - name: Restore Qt cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.vlink-ci/qt
+        key: qt-${{ runner.os }}-${{ runner.arch }}-${{ inputs.qt-version }}-${{ inputs.cache-suffix }}-v2
+
+    - name: Install Qt and QtIFW
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        QT_HOST: ${{ inputs.host }}
+        QT_VERSION: ${{ inputs.qt-version }}
+        QT_ARCH: ${{ inputs.qt-arch }}
+        QT_MODULES: ${{ inputs.qt-modules }}
+        QTIFW_PACKAGE_INPUT: ${{ inputs.qtifw-package }}
+        INSTALL_CONAN: ${{ inputs.install-conan }}
+      run: |
+        set -euo pipefail
+        AQT_VENV="${HOME}/.vlink-ci/aqt-venv"
+        QT_ROOT="${HOME}/.vlink-ci/qt"
+        export PIP_CACHE_DIR="${HOME}/.cache/pip"
+        python3 -m venv "${AQT_VENV}"
+        packages=(aqtinstall)
+        [ "${INSTALL_CONAN}" = "true" ] && packages+=(conan)
+        "${AQT_VENV}/bin/python" -m pip install --upgrade pip "${packages[@]}"
+        AQT="${AQT_VENV}/bin/aqt"
+
+        if ! find "${QT_ROOT}/${QT_VERSION}" -type f -path "*/bin/qmake" -print -quit 2>/dev/null | grep -q .; then
+          read -r -a modules <<< "${QT_MODULES}"
+          if [ ${#modules[@]} -gt 0 ]; then
+            "${AQT}" install-qt "${QT_HOST}" desktop "${QT_VERSION}" "${QT_ARCH}" -O "${QT_ROOT}" -m "${modules[@]}"
+          else
+            "${AQT}" install-qt "${QT_HOST}" desktop "${QT_VERSION}" "${QT_ARCH}" -O "${QT_ROOT}"
+          fi
+        fi
+
+        if [ "${QTIFW_PACKAGE_INPUT}" = "latest" ]; then
+          IFW_LIST=$("${AQT}" list-tool "${QT_HOST}" desktop tools_ifw)
+          IFW_PACKAGE=$(printf '%s\n' "${IFW_LIST}" | "${AQT_VENV}/bin/python" -c '
+          import re
+          import sys
+          packages = re.findall(r"qt\.tools\.ifw\.[0-9.]+", sys.stdin.read())
+          def version_key(package):
+              version = package.removeprefix("qt.tools.ifw.").strip(".")
+              return tuple(int(part) for part in version.split(".") if part)
+          if packages:
+              print(sorted(set(packages), key=version_key)[-1])
+          ')
+        else
+          IFW_PACKAGE="${QTIFW_PACKAGE_INPUT}"
+        fi
+        if [ -z "${IFW_PACKAGE}" ]; then
+          echo "No Qt Installer Framework package found by aqt." >&2
+          exit 1
+        fi
+
+        IFW_ROOT="${QT_ROOT}/Tools/QtInstallerFramework"
+        IFW_MARKER="${IFW_ROOT}/.vlink-ifw-package"
+        QTIFW_BINARYCREATOR=$(find "${IFW_ROOT}" -type f -name binarycreator -print -quit 2>/dev/null || true)
+        if [ ! -f "${IFW_MARKER}" ] || [ "$(cat "${IFW_MARKER}")" != "${IFW_PACKAGE}" ] || [ -z "${QTIFW_BINARYCREATOR}" ]; then
+          rm -rf "${IFW_ROOT}"
+          "${AQT}" install-tool "${QT_HOST}" desktop tools_ifw "${IFW_PACKAGE}" -O "${QT_ROOT}"
+          mkdir -p "${IFW_ROOT}"
+          printf '%s\n' "${IFW_PACKAGE}" > "${IFW_MARKER}"
+        fi
+
+        QT_QMAKE=$(find "${QT_ROOT}/${QT_VERSION}" -type f -path "*/bin/qmake" -print -quit)
+        QTIFW_BINARYCREATOR=$(find "${IFW_ROOT}" -type f -name binarycreator -print -quit)
+        test -n "${QT_QMAKE}"
+        test -n "${QTIFW_BINARYCREATOR}"
+
+        QT_DIR=$(dirname "$(dirname "${QT_QMAKE}")")
+        QTIFW_DIR=$(dirname "$(dirname "${QTIFW_BINARYCREATOR}")")
+        echo "QT_DIR=${QT_DIR}" >> "${GITHUB_ENV}"
+        echo "QTIFW_DIR=${QTIFW_DIR}" >> "${GITHUB_ENV}"
+        echo "${AQT_VENV}/bin" >> "${GITHUB_PATH}"
+        "${QT_DIR}/bin/qmake" -query QT_VERSION
+        "${QTIFW_DIR}/bin/binarycreator" --version
+        if [ "${INSTALL_CONAN}" = "true" ]; then
+          conan --version
+        fi
+
+    - name: Install Qt and QtIFW
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        QT_HOST: ${{ inputs.host }}
+        QT_VERSION: ${{ inputs.qt-version }}
+        QT_ARCH: ${{ inputs.qt-arch }}
+        QT_MODULES: ${{ inputs.qt-modules }}
+        QTIFW_PACKAGE_INPUT: ${{ inputs.qtifw-package }}
+        INSTALL_CONAN: ${{ inputs.install-conan }}
+      run: |
+        $ErrorActionPreference = "Stop"
+        $AqtVenv = Join-Path $env:USERPROFILE ".vlink-ci\aqt-venv"
+        $QtRoot = Join-Path $env:USERPROFILE ".vlink-ci\qt"
+        python -m venv $AqtVenv
+        $Packages = @("aqtinstall")
+        if ($env:INSTALL_CONAN -eq "true") {
+          $Packages += "conan"
+        }
+        & "$AqtVenv\Scripts\python.exe" -m pip install --upgrade pip @Packages
+        $Aqt = "$AqtVenv\Scripts\aqt.exe"
+
+        $ExistingQmake = Get-ChildItem -Path (Join-Path $QtRoot $env:QT_VERSION) -Filter qmake.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $ExistingQmake) {
+          $Args = @("install-qt", $env:QT_HOST, "desktop", $env:QT_VERSION, $env:QT_ARCH, "-O", $QtRoot)
+          $Modules = @()
+          if ($env:QT_MODULES.Trim()) {
+            $Modules = $env:QT_MODULES -split '\s+'
+          }
+          if ($Modules.Count -gt 0) {
+            $Args += "-m"
+            $Args += $Modules
+          }
+          & $Aqt @Args
+        }
+
+        if ($env:QTIFW_PACKAGE_INPUT -eq "latest") {
+          $IfwList = & $Aqt list-tool $env:QT_HOST desktop tools_ifw
+          $IfwPackage = $IfwList |
+            Select-String -Pattern 'qt\.tools\.ifw\.[0-9.]+' -AllMatches |
+            ForEach-Object { $_.Matches.Value } |
+            Sort-Object { [version](($_ -replace '^qt\.tools\.ifw\.', '') -replace '\.$', '') } |
+            Select-Object -Last 1
+        } else {
+          $IfwPackage = $env:QTIFW_PACKAGE_INPUT
+        }
+        if (-not $IfwPackage) {
+          throw "No Qt Installer Framework package found by aqt."
+        }
+
+        $IfwRoot = Join-Path $QtRoot "Tools\QtInstallerFramework"
+        $IfwMarker = Join-Path $IfwRoot ".vlink-ifw-package"
+        $BinaryCreator = Get-ChildItem -Path $IfwRoot -Filter binarycreator.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        $NeedsIfwInstall = $true
+        if ((Test-Path $IfwMarker) -and $BinaryCreator) {
+          $CachedPackage = (Get-Content $IfwMarker -Raw).Trim()
+          $NeedsIfwInstall = ($CachedPackage -ne $IfwPackage)
+        }
+        if ($NeedsIfwInstall -and (Test-Path $IfwRoot)) {
+          Remove-Item -Recurse -Force $IfwRoot
+        }
+        if ($NeedsIfwInstall) {
+          & $Aqt install-tool $env:QT_HOST desktop tools_ifw $IfwPackage -O $QtRoot
+          New-Item -ItemType Directory -Force -Path $IfwRoot | Out-Null
+          $IfwPackage | Out-File -FilePath $IfwMarker -Encoding ascii
+        }
+
+        $Qmake = Get-ChildItem -Path (Join-Path $QtRoot $env:QT_VERSION) -Filter qmake.exe -Recurse | Select-Object -First 1
+        $BinaryCreator = Get-ChildItem -Path (Join-Path $QtRoot "Tools\QtInstallerFramework") -Filter binarycreator.exe -Recurse | Select-Object -First 1
+        if (-not $Qmake) {
+          throw "qmake.exe not found under $QtRoot\$env:QT_VERSION"
+        }
+        if (-not $BinaryCreator) {
+          throw "binarycreator.exe not found under $QtRoot\Tools\QtInstallerFramework"
+        }
+
+        $QtDir = $Qmake.Directory.Parent.FullName
+        $QtIfwDir = $BinaryCreator.Directory.Parent.FullName
+        "QT_DIR=$QtDir" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "QTIFW_DIR=$QtIfwDir" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "$AqtVenv\Scripts" | Out-File -FilePath $env:GITHUB_PATH -Append
+        & "$QtDir\bin\qmake.exe" -query QT_VERSION
+        & "$QtIfwDir\bin\binarycreator.exe" --version
+        if ($env:INSTALL_CONAN -eq "true") {
+          conan --version
+        }

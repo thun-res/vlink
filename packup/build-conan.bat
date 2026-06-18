@@ -456,8 +456,9 @@ echo.
     "%OUTPUT_PATH%"
 
 if %errorlevel% neq 0 (
-    echo Warning: binarycreator failed!
+    echo Error: binarycreator failed!
     echo Packup directory: %PACKUP_DIR%
+    exit /b 2
 ) else (
     echo.
     echo ********************************************

@@ -72,7 +72,7 @@ case "${PACKAGE_SPLIT^^}" in
     *) echo "Error: PACKAGE_SPLIT='$PACKAGE_SPLIT' is not boolean (use ON/OFF/1/0/TRUE/FALSE/YES/NO)" >&2; exit 2 ;;
 esac
 
-DEB_DEPENDS="libssl3 | libssl3t64, libsqlite3-0, libzstd1"
+: "${DEB_DEPENDS:=libssl3 | libssl3t64, libsqlite3-0, libzstd1}"
 
 [ -d "$BUILD_DIR" ] && rm -rf "$BUILD_DIR"
 

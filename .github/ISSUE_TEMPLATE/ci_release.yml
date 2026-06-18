@@ -1,0 +1,50 @@
+name: CI Or Release Failure
+description: Report a GitHub Actions, packaging, or release artifact problem.
+title: "[CI]: "
+labels:
+  - ci
+body:
+  - type: input
+    id: workflow
+    attributes:
+      label: Workflow
+      description: Workflow name and job name.
+      placeholder: Release / portable-linux-x86_64
+    validations:
+      required: true
+  - type: input
+    id: run
+    attributes:
+      label: Workflow Run
+      description: Link to the failed GitHub Actions run.
+    validations:
+      required: true
+  - type: dropdown
+    id: artifact
+    attributes:
+      label: Artifact Type
+      options:
+        - Static checks
+        - Portable archive
+        - QtIFW installer
+        - deb package
+        - rpm package
+        - Arch package
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: failure
+    attributes:
+      label: Failure
+      description: Summarize the failing step and the important log lines.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Result
+      description: Which artifact or check should have passed?
+    validations:
+      required: true
