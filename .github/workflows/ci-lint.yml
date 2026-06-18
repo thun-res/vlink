@@ -52,11 +52,12 @@ jobs:
       - name: Install QA tools
         uses: ./.github/actions/setup-python-tools
         with:
-          cache-key: pip-qa-${{ runner.os }}-clang-format-21.1.8-cmake-format-0.6.13-cpplint-2.0.2
+          cache-key: pip-qa-${{ runner.os }}-clang-format-21.1.8-cmake-format-0.6.13-pyyaml-6.0.2-cpplint-2.0.2
           venv-name: qa-venv
           packages: >-
             clang-format==21.1.8
             cmake-format==0.6.13
+            PyYAML==6.0.2
             cpplint==2.0.2
 
       - name: Run format gate
