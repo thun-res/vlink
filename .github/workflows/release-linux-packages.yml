@@ -14,6 +14,8 @@ permissions:
 
 env:
   CMAKE_BUILD_PARALLEL_LEVEL: 4
+  CCACHE_COMPRESS: "true"
+  CCACHE_MAXSIZE: 2G
 
 jobs:
   package-deb:
@@ -71,11 +73,25 @@ jobs:
         with:
           path: ~/.vlink-cpm-cache
           key: cpm-deb-${{ matrix.distro }}-${{ matrix.arch }}-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          restore-keys: cpm-deb-${{ matrix.distro }}-${{ matrix.arch }}-
+
+      - name: Setup ccache
+        uses: ./.github/actions/setup-compiler-cache
+        with:
+          backend: ccache
+          cache-key: ccache-deb-${{ matrix.distro }}-${{ matrix.arch }}-${{ github.run_id }}
+          restore-keys: ccache-deb-${{ matrix.distro }}-${{ matrix.arch }}-
+          max-size: 2G
+          cmake-wrapper: "true"
 
       - name: Build deb package
         env:
           DEB_DEPENDS: ${{ matrix.deb_depends }}
         run: bash packup/build-deb.sh .
+
+      - name: Show ccache stats
+        if: always()
+        run: command -v ccache >/dev/null 2>&1 && ccache --show-stats || true
 
       - name: Add distro suffix to deb package names
         run: |
@@ -132,9 +148,23 @@ jobs:
         with:
           path: ~/.vlink-cpm-cache
           key: cpm-rpm-fedora43-${{ matrix.arch }}-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          restore-keys: cpm-rpm-fedora43-${{ matrix.arch }}-
+
+      - name: Setup ccache
+        uses: ./.github/actions/setup-compiler-cache
+        with:
+          backend: ccache
+          cache-key: ccache-rpm-fedora43-${{ matrix.arch }}-${{ github.run_id }}
+          restore-keys: ccache-rpm-fedora43-${{ matrix.arch }}-
+          max-size: 2G
+          cmake-wrapper: "true"
 
       - name: Build rpm package
         run: bash packup/build-rpm.sh .
+
+      - name: Show ccache stats
+        if: always()
+        run: command -v ccache >/dev/null 2>&1 && ccache --show-stats || true
 
       - name: Verify rpm package
         uses: ./.github/actions/verify-artifacts
@@ -184,9 +214,23 @@ jobs:
         with:
           path: ~/.vlink-cpm-cache
           key: cpm-arch-${{ matrix.arch }}-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          restore-keys: cpm-arch-${{ matrix.arch }}-
+
+      - name: Setup ccache
+        uses: ./.github/actions/setup-compiler-cache
+        with:
+          backend: ccache
+          cache-key: ccache-arch-${{ matrix.arch }}-${{ github.run_id }}
+          restore-keys: ccache-arch-${{ matrix.arch }}-
+          max-size: 2G
+          cmake-wrapper: "true"
 
       - name: Build Arch package
         run: bash packup/build-arch.sh .
+
+      - name: Show ccache stats
+        if: always()
+        run: command -v ccache >/dev/null 2>&1 && ccache --show-stats || true
 
       - name: Verify Arch package
         uses: ./.github/actions/verify-artifacts

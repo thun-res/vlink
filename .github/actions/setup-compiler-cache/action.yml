@@ -1,0 +1,144 @@
+name: Setup Compiler Cache
+description: Configure ccache or sccache with repository-standard cache keys.
+
+inputs:
+  backend:
+    description: "Compiler cache backend: ccache or sccache."
+    required: true
+  cache-key:
+    description: Primary cache key for ccache, or SCCACHE_GHA_VERSION for sccache.
+    required: true
+  restore-keys:
+    description: Restore key prefixes for ccache.
+    required: false
+    default: ""
+  cache-path:
+    description: Cache path for ccache.
+    required: false
+    default: ~/.ccache
+  max-size:
+    description: Maximum ccache size.
+    required: false
+    default: 1G
+  cmake-wrapper:
+    description: Prepend a cmake wrapper that injects compiler launcher args on configure calls.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Restore ccache
+      if: inputs.backend == 'ccache'
+      uses: actions/cache@v4
+      with:
+        path: ${{ inputs.cache-path }}
+        key: ${{ inputs.cache-key }}
+        restore-keys: ${{ inputs.restore-keys }}
+
+    - name: Configure ccache
+      if: inputs.backend == 'ccache' && runner.os != 'Windows'
+      shell: bash
+      env:
+        CACHE_PATH: ${{ inputs.cache-path }}
+        MAX_SIZE: ${{ inputs.max-size }}
+        CMAKE_WRAPPER: ${{ inputs.cmake-wrapper }}
+      run: |
+        set -euo pipefail
+        cache_dir="${CACHE_PATH/#\~/${HOME}}"
+        mkdir -p "${cache_dir}"
+        {
+          echo "CCACHE_DIR=${cache_dir}"
+          echo "CCACHE_BASEDIR=${GITHUB_WORKSPACE}"
+          echo "CCACHE_COMPRESS=true"
+          echo "CCACHE_MAXSIZE=${MAX_SIZE}"
+        } >> "${GITHUB_ENV}"
+        if command -v ccache >/dev/null 2>&1; then
+          ccache --zero-stats || true
+        elif [ "${CMAKE_WRAPPER}" = "true" ]; then
+          echo "::error::ccache is required when cmake-wrapper is enabled."
+          exit 1
+        fi
+
+        if [ "${CMAKE_WRAPPER}" = "true" ]; then
+          real_cmake="$(command -v cmake)"
+          wrapper_dir="${RUNNER_TEMP}/vlink-cmake-wrapper"
+          mkdir -p "${wrapper_dir}"
+          cat > "${wrapper_dir}/cmake" <<'EOF'
+        #!/usr/bin/env bash
+        set -euo pipefail
+        args=("$@")
+        inject=0
+        have_c=0
+        have_cxx=0
+        for arg in "$@"; do
+          case "${arg}" in
+            -S) inject=1 ;;
+            --build|--install|-E) inject=0; break ;;
+            -DCMAKE_C_COMPILER_LAUNCHER=*) have_c=1 ;;
+            -DCMAKE_CXX_COMPILER_LAUNCHER=*) have_cxx=1 ;;
+          esac
+        done
+        if [ "${inject}" = "1" ]; then
+          [ "${have_c}" = "1" ] || args+=("-DCMAKE_C_COMPILER_LAUNCHER=ccache")
+          [ "${have_cxx}" = "1" ] || args+=("-DCMAKE_CXX_COMPILER_LAUNCHER=ccache")
+        fi
+        exec "${VLINK_REAL_CMAKE}" "${args[@]}"
+        EOF
+          chmod +x "${wrapper_dir}/cmake"
+          echo "VLINK_REAL_CMAKE=${real_cmake}" >> "${GITHUB_ENV}"
+          echo "${wrapper_dir}" >> "${GITHUB_PATH}"
+        fi
+
+    - name: Configure sccache environment
+      if: inputs.backend == 'sccache'
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = "Stop"
+        "SCCACHE_GHA_ENABLED=true" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "SCCACHE_GHA_VERSION=${{ inputs.cache-key }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+    - name: Setup sccache
+      if: inputs.backend == 'sccache'
+      uses: mozilla-actions/sccache-action@v0.0.10
+
+    - name: Start sccache
+      if: inputs.backend == 'sccache'
+      shell: pwsh
+      env:
+        CMAKE_WRAPPER: ${{ inputs.cmake-wrapper }}
+      run: |
+        $ErrorActionPreference = "Stop"
+        sccache --start-server
+        sccache --show-stats
+
+        if ($env:CMAKE_WRAPPER -eq "true") {
+          $RealCMake = (Get-Command cmake.exe).Source
+          $WrapperDir = Join-Path $env:RUNNER_TEMP "vlink-cmake-wrapper"
+          New-Item -ItemType Directory -Force -Path $WrapperDir | Out-Null
+          $Wrapper = Join-Path $WrapperDir "cmake.cmd"
+          @'
+        @echo off
+        setlocal EnableDelayedExpansion
+        set "inject=0"
+        set "have_c=0"
+        set "have_cxx=0"
+        for %%A in (%*) do (
+          if "%%~A"=="-S" set "inject=1"
+          if "%%~A"=="--build" set "inject=0"
+          if "%%~A"=="--install" set "inject=0"
+          if "%%~A"=="-E" set "inject=0"
+          echo %%~A | findstr /B /C:"-DCMAKE_C_COMPILER_LAUNCHER=" >nul && set "have_c=1"
+          echo %%~A | findstr /B /C:"-DCMAKE_CXX_COMPILER_LAUNCHER=" >nul && set "have_cxx=1"
+        )
+        set "extra="
+        if "%inject%"=="1" (
+          if "%have_c%"=="0" set "extra=!extra! -DCMAKE_C_COMPILER_LAUNCHER=sccache"
+          if "%have_cxx%"=="0" set "extra=!extra! -DCMAKE_CXX_COMPILER_LAUNCHER=sccache"
+        )
+        "%VLINK_REAL_CMAKE%" %* !extra!
+        exit /b %ERRORLEVEL%
+        '@ | Set-Content -Path $Wrapper -Encoding ascii
+          "VLINK_REAL_CMAKE=$RealCMake" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $WrapperDir | Out-File -FilePath $env:GITHUB_PATH -Append
+        }

@@ -1,0 +1,56 @@
+name: Setup Windows OpenSSL
+description: Restore or install OpenSSL and export OPENSSL_ROOT_DIR for CMake.
+
+inputs:
+  cache-key:
+    description: Cache key for the Chocolatey OpenSSL install directory.
+    required: false
+    default: openssl-windows-x64-v1
+
+runs:
+  using: composite
+  steps:
+    - name: Restore OpenSSL cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          C:\Program Files\OpenSSL
+          C:\Program Files\OpenSSL-Win64
+        key: ${{ inputs.cache-key }}
+
+    - name: Install OpenSSL
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = "Stop"
+
+        function Find-OpenSslRoot {
+          $Candidates = @(
+            (Join-Path $env:ProgramFiles "OpenSSL"),
+            (Join-Path $env:ProgramFiles "OpenSSL-Win64")
+          )
+          if (${env:ProgramFiles(x86)}) {
+            $Candidates += Join-Path ${env:ProgramFiles(x86)} "OpenSSL-Win32"
+          }
+          $Candidates += Get-ChildItem -Path $env:ProgramFiles -Directory -Filter "OpenSSL*" -ErrorAction SilentlyContinue |
+            ForEach-Object { $_.FullName }
+
+          foreach ($Candidate in ($Candidates | Where-Object { $_ } | Select-Object -Unique)) {
+            if (Test-Path (Join-Path $Candidate "include\openssl\ssl.h")) {
+              return $Candidate
+            }
+          }
+          return $null
+        }
+
+        $OpenSslRoot = Find-OpenSslRoot
+        if (-not $OpenSslRoot) {
+          choco install openssl --no-progress --yes
+          $OpenSslRoot = Find-OpenSslRoot
+        }
+        if (-not $OpenSslRoot) {
+          throw "OpenSSL headers not found under Program Files after Chocolatey install"
+        }
+
+        $OpenSslRootForCMake = $OpenSslRoot.Replace("\", "/")
+        "OPENSSL_ROOT_DIR=$OpenSslRootForCMake" | Out-File -FilePath $env:GITHUB_ENV -Append
+        Write-Host "OPENSSL_ROOT_DIR=$OpenSslRootForCMake"

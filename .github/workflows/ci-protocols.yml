@@ -1,0 +1,167 @@
+name: CI Protocols
+
+on:
+  pull_request:
+    branches:
+      - master
+      - main
+      - develop
+    paths:
+      - CMakeLists.txt
+      - cmake/**
+      - include/vlink/modules/zenoh_conf.h
+      - include/vlink/modules/someip_conf.h
+      - include/vlink/modules/shm2_conf.h
+      - include/vlink/modules/mqtt_conf.h
+      - modules/zenoh/**
+      - modules/someip/**
+      - modules/shm2/**
+      - modules/mqtt/**
+      - .github/actions/**
+      - .github/docker/ci-protocols-ubuntu24/**
+      - .github/scripts/assert-cmake-config.py
+      - .github/workflows/ci-protocols.yml
+      - .github/workflows/docker-images.yml
+  push:
+    branches:
+      - master
+      - main
+      - develop
+    paths:
+      - CMakeLists.txt
+      - cmake/**
+      - include/vlink/modules/zenoh_conf.h
+      - include/vlink/modules/someip_conf.h
+      - include/vlink/modules/shm2_conf.h
+      - include/vlink/modules/mqtt_conf.h
+      - modules/zenoh/**
+      - modules/someip/**
+      - modules/shm2/**
+      - modules/mqtt/**
+      - .github/actions/**
+      - .github/docker/ci-protocols-ubuntu24/**
+      - .github/scripts/assert-cmake-config.py
+      - .github/workflows/ci-protocols.yml
+      - .github/workflows/docker-images.yml
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: GHCR protocol CI image tag.
+        required: true
+        type: string
+        default: latest
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: ci-protocols-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CMAKE_BUILD_PARALLEL_LEVEL: 4
+  CCACHE_COMPRESS: "true"
+  CCACHE_MAXSIZE: 1G
+  CTEST_OUTPUT_ON_FAILURE: 1
+  VLINK_CI_CMAKE_ARGS: >-
+    -G Ninja
+    -DCMAKE_BUILD_TYPE=Release
+    -DCMAKE_PREFIX_PATH=/usr/local
+    -DBUILD_SHARED_LIBS=ON
+    -DENABLE_CPM=ON
+    -DENABLE_CPM_SQLITE3=ON
+    -DENABLE_CPM_ZSTD=ON
+    -DENABLE_CPM_PROTOBUF=ON
+    -DENABLE_CPM_FLATBUFFERS=ON
+    -DENABLE_CXX_STD_20=OFF
+    -DENABLE_ZENOH_PICO=ON
+    -DENABLE_VIEWER=OFF
+    -DENABLE_WEBVIZ=OFF
+    -DENABLE_IOX_ROUDI=OFF
+    -DENABLE_EXAMPLES=OFF
+    -DENABLE_TEST=OFF
+    -DENABLE_TEST_WARN=OFF
+
+jobs:
+  protocol-linux-x86:
+    name: linux-x86_64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull protocol CI image
+        id: protocol-image
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag || 'latest' }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${{ github.repository_owner }}/vlink-ci-protocols-ubuntu24:${IMAGE_TAG}"
+          if ! docker pull "${image}"; then
+            echo "::error::Protocol CI image is missing. Run the Docker Images workflow for vlink-ci-protocols-ubuntu24 first."
+            exit 1
+          fi
+          docker run --rm "${image}" bash -lc 'for tool in ccache cmake ninja python3; do command -v "${tool}" >/dev/null; done'
+          echo "image=${image}" >> "${GITHUB_OUTPUT}"
+
+      - name: Restore CPM cache
+        uses: ./.github/actions/restore-build-cache
+        with:
+          path: ~/.vlink-cpm-cache
+          key: cpm-protocols-linux-x86_64-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          restore-keys: cpm-protocols-linux-x86_64-
+
+      - name: Setup ccache
+        uses: ./.github/actions/setup-compiler-cache
+        with:
+          backend: ccache
+          cache-key: ccache-protocols-linux-x86_64-${{ github.run_id }}
+          restore-keys: ccache-protocols-linux-x86_64-
+          max-size: 1G
+
+      - name: Restore CPM build cache
+        uses: ./.github/actions/restore-build-cache
+        with:
+          path: build-protocols/_deps
+          key: cpm-build-protocols-linux-x86_64-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+
+      - name: Configure and build protocol modules
+        uses: ./.github/actions/docker-run
+        with:
+          image: ${{ steps.protocol-image.outputs.image }}
+          command: |
+            set -euo pipefail
+            git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+            test "$(uname -m)" = "x86_64"
+            export CCACHE_DIR="${HOME}/.ccache"
+            export CCACHE_BASEDIR="${GITHUB_WORKSPACE}"
+            ccache --zero-stats || true
+            cmake -S . -B build-protocols ${VLINK_CI_CMAKE_ARGS} \
+              -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+            cmake --build build-protocols --parallel
+            export BUILD_DIR=build-protocols
+            export REQUIRED_DEFINES="VLINK_SUPPORT_ZENOH
+            VLINK_ENABLE_ZENOH_PICO
+            VLINK_SUPPORT_SOMEIP
+            VLINK_SUPPORT_SHM2
+            VLINK_SUPPORT_MQTT"
+            export REQUIRED_SOURCE_PREFIXES="modules/zenoh/
+            modules/someip/
+            modules/shm2/
+            modules/mqtt/"
+            python3 .github/scripts/assert-cmake-config.py
+            ccache --show-stats || true

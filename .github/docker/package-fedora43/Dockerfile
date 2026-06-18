@@ -2,6 +2,7 @@ FROM fedora:43
 
 RUN dnf install -y \
       cmake \
+      ccache \
       gcc-c++ \
       git \
       libacl-devel \

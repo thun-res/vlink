@@ -33,6 +33,12 @@ jobs:
             context: .github/docker/ci-ubuntu24
             dockerfile: .github/docker/ci-ubuntu24/Dockerfile
             platforms: linux/amd64
+          - image: vlink-ci-protocols-ubuntu24
+            runner: ubuntu-24.04
+            context: .github/docker/ci-protocols-ubuntu24
+            dockerfile: .github/docker/ci-protocols-ubuntu24/Dockerfile
+            platforms: linux/amd64
+            cache_mode: min
           - image: vlink-ci-ubuntu20
             runner: ubuntu-24.04
             context: .github/docker/ci-ubuntu20
@@ -48,6 +54,7 @@ jobs:
             context: .github/docker/release-ubuntu20-qt-aarch64
             dockerfile: .github/docker/release-ubuntu20-qt-aarch64/Dockerfile
             platforms: linux/arm64
+            cache_mode: min
           - image: vlink-package-ubuntu22
             runner: ubuntu-24.04
             context: .github/docker/package-ubuntu22
@@ -103,6 +110,6 @@ jobs:
           platforms: ${{ matrix.platforms }}
           push: true
           cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=${{ matrix.cache_mode || 'max' }},scope=${{ matrix.image }}
           labels: ${{ steps.meta.outputs.labels }}
           tags: ${{ steps.meta.outputs.tags }}

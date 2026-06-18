@@ -5,7 +5,8 @@ FROM ubuntu:20.04
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG QT_VERSION=6.8.3
-ARG QTIFW_VERSION=4.8.1
+ARG QTIFW_VERSION=4.7.0
+ARG QT_BUILD_PARALLEL=2
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -22,6 +23,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       bison \
       build-essential \
       ca-certificates \
+      ccache \
       cmake \
       curl \
       dpkg-dev \
@@ -76,6 +78,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       nasm \
       ninja-build \
       patch \
+      perl \
       patchelf \
       pkg-config \
       python3 \
@@ -89,10 +92,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       zstd
 
 RUN python3 -m pip install --no-cache-dir --upgrade \
+      cmake==3.31.6 \
       conan \
       pip \
       setuptools \
-      wheel
+      wheel \
+    && cmake --version
 
 WORKDIR /tmp/qt-build
 
@@ -106,7 +111,9 @@ RUN set -eux; \
     echo "5215ab60ea5f8fcafb35c7709b4eb386  qtwayland-everywhere-src-${QT_VERSION}.tar.xz" | md5sum -c -; \
     tar -xf "qtbase-everywhere-src-${QT_VERSION}.tar.xz"; \
     tar -xf "qtsvg-everywhere-src-${QT_VERSION}.tar.xz"; \
-    tar -xf "qtwayland-everywhere-src-${QT_VERSION}.tar.xz"; \
+    tar -xf "qtwayland-everywhere-src-${QT_VERSION}.tar.xz"
+
+RUN set -eux; \
     cmake -E make_directory qtbase-build; \
     pushd qtbase-build; \
     "../qtbase-everywhere-src-${QT_VERSION}/configure" \
@@ -119,19 +126,32 @@ RUN set -eux; \
       -no-feature-cups \
       -no-feature-gtk3 \
       -opengl desktop; \
-    cmake --build . --parallel "$(nproc)"; \
+    cmake --build . --parallel "${QT_BUILD_PARALLEL}"; \
     cmake --install .; \
     popd; \
-    for module in qtsvg qtwayland; do \
-      cmake -S "${module}-everywhere-src-${QT_VERSION}" -B "${module}-build" -GNinja \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX="${QT_DIR}" \
-        -DCMAKE_PREFIX_PATH="${QT_DIR}" \
-        -DQT_BUILD_EXAMPLES=OFF \
-        -DQT_BUILD_TESTS=OFF; \
-      cmake --build "${module}-build" --parallel "$(nproc)"; \
-      cmake --install "${module}-build"; \
-    done; \
+    "${QT_DIR}/bin/qmake" -query QT_VERSION
+
+RUN set -eux; \
+    cmake -S "qtsvg-everywhere-src-${QT_VERSION}" -B qtsvg-build -GNinja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX="${QT_DIR}" \
+      -DCMAKE_PREFIX_PATH="${QT_DIR}" \
+      -DQT_BUILD_EXAMPLES=OFF \
+      -DQT_BUILD_TESTS=OFF; \
+    cmake --build qtsvg-build --parallel "${QT_BUILD_PARALLEL}"; \
+    cmake --install qtsvg-build
+
+RUN set -eux; \
+    cmake -S "qtwayland-everywhere-src-${QT_VERSION}" -B qtwayland-build -GNinja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX="${QT_DIR}" \
+      -DCMAKE_PREFIX_PATH="${QT_DIR}" \
+      -DQT_BUILD_EXAMPLES=OFF \
+      -DQT_BUILD_TESTS=OFF; \
+    cmake --build qtwayland-build --parallel "${QT_BUILD_PARALLEL}"; \
+    cmake --install qtwayland-build
+
+RUN set -eux; \
     "${QT_DIR}/bin/qmake" -query QT_VERSION; \
     test -f "${QT_DIR}/lib/libQt6Core.so"; \
     test -f "${QT_DIR}/lib/libQt6Widgets.so"; \

@@ -23,6 +23,8 @@ permissions:
 
 env:
   CMAKE_BUILD_PARALLEL_LEVEL: 4
+  CCACHE_COMPRESS: "true"
+  CCACHE_MAXSIZE: 2G
   PIP_DISABLE_PIP_VERSION_CHECK: 1
 
 jobs:
@@ -120,9 +122,23 @@ jobs:
             ~/.conan2
             ~/.vlink-cpm-cache
           key: conan-cpm-linux-${{ matrix.arch }}-${{ hashFiles('conanfile.py', 'packup/conan_profile', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          restore-keys: conan-cpm-linux-${{ matrix.arch }}-
+
+      - name: Setup ccache
+        uses: ./.github/actions/setup-compiler-cache
+        with:
+          backend: ccache
+          cache-key: ccache-release-linux-${{ matrix.arch }}-${{ github.run_id }}
+          restore-keys: ccache-release-linux-${{ matrix.arch }}-
+          max-size: 2G
+          cmake-wrapper: "true"
 
       - name: Build portable archive and QtIFW installer
         run: bash packup/build-conan.sh . ${{ matrix.arch }}
+
+      - name: Show ccache stats
+        if: always()
+        run: command -v ccache >/dev/null 2>&1 && ccache --show-stats || true
 
       - name: Verify bundled Linux OSG files
         run: |

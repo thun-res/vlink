@@ -1,0 +1,43 @@
+name: CI Android.bp
+
+on:
+  pull_request:
+    branches:
+      - master
+      - main
+      - develop
+    paths:
+      - Android.bp
+      - "**/Android.bp"
+      - .github/scripts/check-android-bp.py
+      - .github/workflows/ci-android-bp.yml
+  push:
+    branches:
+      - master
+      - main
+      - develop
+    paths:
+      - Android.bp
+      - "**/Android.bp"
+      - .github/scripts/check-android-bp.py
+      - .github/workflows/ci-android-bp.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-android-bp-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-bp:
+    name: android-bp
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Android.bp files
+        run: python3 .github/scripts/check-android-bp.py .

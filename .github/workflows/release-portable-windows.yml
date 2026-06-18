@@ -32,28 +32,18 @@ jobs:
       - name: Enable MSVC developer environment
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Check build host
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $GitPatch = Join-Path $env:ProgramFiles "Git\usr\bin\patch.exe"
-          if (-not (Test-Path $GitPatch)) {
-            throw "patch.exe not found: $GitPatch"
-          }
-          $ToolDir = Join-Path $env:RUNNER_TEMP "vlink-tools"
-          New-Item -ItemType Directory -Force -Path $ToolDir | Out-Null
-          Copy-Item -Force $GitPatch (Join-Path $ToolDir "patch.exe")
-          $ToolDir | Out-File -FilePath $env:GITHUB_PATH -Append
-          $env:Path = "$ToolDir;$env:Path"
-          cmake --version
-          patch --version
-          $LinkPath = (cmd /c "where link" | Select-Object -First 1)
-          Write-Host "link.exe: $LinkPath"
-          if ($LinkPath -notmatch "Microsoft Visual Studio") {
-            throw "link.exe is not the MSVC linker"
-          }
-          git lfs version
-          cmd /c cl
+      - name: Setup sccache
+        uses: ./.github/actions/setup-compiler-cache
+        with:
+          backend: sccache
+          cache-key: vlink-release-windows-msvc-v1
+          cmake-wrapper: "true"
+
+      - name: Setup MSVC tools
+        uses: ./.github/actions/setup-windows-msvc-tools
+        with:
+          check-ninja: "false"
+          check-git-lfs: "true"
 
       - name: Setup Qt and QtIFW
         uses: ./.github/actions/setup-qt-ifw
@@ -97,10 +87,16 @@ jobs:
             ~/.conan2
             ~/.vlink-cpm-cache
           key: conan-cpm-windows-x64-${{ hashFiles('conanfile.py', 'packup/conan_profile', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          restore-keys: conan-cpm-windows-x64-
 
       - name: Build portable archive and QtIFW installer
         shell: cmd
         run: packup\build-conan.bat .
+
+      - name: Show sccache stats
+        if: always()
+        shell: pwsh
+        run: sccache --show-stats || true
 
       - name: Verify bundled Windows OSG files
         shell: pwsh

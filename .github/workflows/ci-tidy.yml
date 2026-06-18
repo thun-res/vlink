@@ -69,12 +69,19 @@ jobs:
           context: .github/docker/ci-ubuntu24
           dockerfile: .github/docker/ci-ubuntu24/Dockerfile
           local-tag: vlink-ci-ubuntu24:local
+          required-tools: clang-tidy cmake ninja python3
 
       - name: Restore CPM cache
         uses: ./.github/actions/restore-build-cache
         with:
           path: ~/.vlink-cpm-cache
           key: cpm-ci-tidy-${{ runner.os }}-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+
+      - name: Restore CPM build cache
+        uses: ./.github/actions/restore-build-cache
+        with:
+          path: build-tidy/_deps
+          key: cpm-build-ci-tidy-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
 
       - name: Configure and run clang-tidy
         uses: ./.github/actions/docker-run

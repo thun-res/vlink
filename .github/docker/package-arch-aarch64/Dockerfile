@@ -1,9 +1,17 @@
 FROM menci/archlinuxarm:base-devel
 
-RUN pacman -Syu --noconfirm --needed \
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+RUN set -eux; \
+    pacman-key --init; \
+    pacman-key --populate archlinuxarm; \
+    pacman -Sy --noconfirm --needed archlinuxarm-keyring; \
+    pacman-key --populate archlinuxarm; \
+    pacman -Syu --noconfirm --needed \
       acl \
       base-devel \
       ca-certificates \
+      ccache \
       cmake \
       git \
       libarchive \
@@ -11,5 +19,8 @@ RUN pacman -Syu --noconfirm --needed \
       patch \
       sqlite \
       tar \
-      zstd \
-    && pacman -Scc --noconfirm
+      zstd; \
+    if command -v update-ca-trust >/dev/null 2>&1; then update-ca-trust; fi; \
+    cmake --version; \
+    pacman --version; \
+    pacman -Scc --noconfirm || true

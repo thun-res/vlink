@@ -1,0 +1,52 @@
+name: Setup Windows MSVC Tools
+description: Expose patch.exe without shadowing MSVC link.exe, then verify the Windows build toolchain.
+
+inputs:
+  check-ninja:
+    description: Verify ninja is available.
+    required: false
+    default: "true"
+  check-git-lfs:
+    description: Verify git-lfs is available.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Expose patch.exe
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = "Stop"
+        $GitPatch = Join-Path $env:ProgramFiles "Git\usr\bin\patch.exe"
+        if (-not (Test-Path $GitPatch)) {
+          throw "patch.exe not found: $GitPatch"
+        }
+        $ToolDir = Join-Path $env:RUNNER_TEMP "vlink-tools"
+        New-Item -ItemType Directory -Force -Path $ToolDir | Out-Null
+        Copy-Item -Force $GitPatch (Join-Path $ToolDir "patch.exe")
+        $ToolDir | Out-File -FilePath $env:GITHUB_PATH -Append
+        "VLINK_WINDOWS_TOOL_DIR=$ToolDir" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+    - name: Check toolchain
+      shell: pwsh
+      env:
+        CHECK_NINJA: ${{ inputs.check-ninja }}
+        CHECK_GIT_LFS: ${{ inputs.check-git-lfs }}
+      run: |
+        $ErrorActionPreference = "Stop"
+        $env:Path = "$env:VLINK_WINDOWS_TOOL_DIR;$env:Path"
+        cmake --version
+        if ($env:CHECK_NINJA -eq "true") {
+          ninja --version
+        }
+        patch --version
+        $LinkPath = (Get-Command link.exe).Source
+        Write-Host "link.exe: $LinkPath"
+        if ($LinkPath -notmatch "Microsoft Visual Studio") {
+          throw "link.exe is not the MSVC linker"
+        }
+        if ($env:CHECK_GIT_LFS -eq "true") {
+          git lfs version
+        }
+        cl

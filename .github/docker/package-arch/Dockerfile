@@ -4,6 +4,7 @@ RUN pacman -Syu --noconfirm --needed \
       acl \
       base-devel \
       ca-certificates \
+      ccache \
       cmake \
       git \
       libarchive \

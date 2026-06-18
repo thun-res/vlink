@@ -53,6 +53,7 @@ jobs:
           context: .github/docker/ci-ubuntu24
           dockerfile: .github/docker/ci-ubuntu24/Dockerfile
           local-tag: vlink-ci-ubuntu24:local
+          required-tools: clang-format cmake-format cpplint python3
 
       - name: Run format and check gates
         uses: ./.github/actions/docker-run

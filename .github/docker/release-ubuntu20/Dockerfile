@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       automake \
       build-essential \
       ca-certificates \
+      ccache \
       cmake \
       dpkg-dev \
       file \

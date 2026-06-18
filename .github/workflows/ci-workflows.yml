@@ -1,0 +1,56 @@
+name: CI Workflows
+
+on:
+  pull_request:
+    branches:
+      - master
+      - main
+      - develop
+    paths:
+      - .github/**
+  push:
+    branches:
+      - master
+      - main
+      - develop
+    paths:
+      - .github/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-workflows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: 1
+
+jobs:
+  workflow-syntax:
+    name: workflow-syntax
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Parse YAML files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --user PyYAML==6.0.2
+          python3 - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          files = sorted(Path(".github").rglob("*.yml")) + sorted(Path(".github").rglob("*.yaml"))
+          for path in files:
+              with path.open(encoding="utf-8") as handle:
+                  yaml.safe_load(handle)
+              print(f"parsed {path}")
+          PY
+
+      - name: Run actionlint
+        uses: rhysd/actionlint@v1

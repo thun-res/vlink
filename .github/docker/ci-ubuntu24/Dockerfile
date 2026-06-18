@@ -6,8 +6,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential \
       ca-certificates \
+      ccache \
       cmake \
       git \
+      lcov \
       libacl1-dev \
       libssl-dev \
       ninja-build \
@@ -25,9 +27,11 @@ RUN python3 -m venv /opt/vlink/python-tools \
       clang-format==21.1.8 \
       clang-tidy==21.1.6 \
       cmake-format==0.6.13 \
+      gcovr==8.4 \
       PyYAML==6.0.2 \
       cpplint==2.0.2 \
     && ln -s /opt/vlink/python-tools/bin/clang-format /usr/local/bin/clang-format \
     && ln -s /opt/vlink/python-tools/bin/clang-tidy /usr/local/bin/clang-tidy \
     && ln -s /opt/vlink/python-tools/bin/cmake-format /usr/local/bin/cmake-format \
+    && ln -s /opt/vlink/python-tools/bin/gcovr /usr/local/bin/gcovr \
     && ln -s /opt/vlink/python-tools/bin/cpplint /usr/local/bin/cpplint

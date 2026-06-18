@@ -14,6 +14,10 @@ inputs:
   local-tag:
     description: Local fallback image tag.
     required: true
+  required-tools:
+    description: Space-separated tools that must exist in a pulled image before it can be reused.
+    required: false
+    default: ""
 
 outputs:
   image:
@@ -31,13 +35,18 @@ runs:
         CONTEXT: ${{ inputs.context }}
         DOCKERFILE: ${{ inputs.dockerfile }}
         LOCAL_TAG: ${{ inputs.local-tag }}
+        REQUIRED_TOOLS: ${{ inputs.required-tools }}
       run: |
         set -euo pipefail
         if docker pull "${IMAGE}"; then
-          echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
-          exit 0
+          if [ -z "${REQUIRED_TOOLS}" ] || docker run --rm "${IMAGE}" bash -lc 'for tool in '"${REQUIRED_TOOLS}"'; do command -v "${tool}" >/dev/null || exit 1; done'; then
+            echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          echo "::warning::Image ${IMAGE} is available but missing required tools: ${REQUIRED_TOOLS}. Building local fallback ${LOCAL_TAG}."
+        else
+          echo "::warning::Image ${IMAGE} is not available; building local fallback ${LOCAL_TAG}."
         fi
 
-        echo "::warning::Image ${IMAGE} is not available; building local fallback ${LOCAL_TAG}."
         docker build --pull -t "${LOCAL_TAG}" -f "${DOCKERFILE}" "${CONTEXT}"
         echo "image=${LOCAL_TAG}" >> "${GITHUB_OUTPUT}"

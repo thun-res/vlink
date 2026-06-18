@@ -19,17 +19,20 @@ runs:
         COMMAND: ${{ inputs.command }}
       run: |
         set -euo pipefail
-        mkdir -p "${HOME}/.conan2" "${HOME}/.vlink-cpm-cache" "${HOME}/.vlink-docker-home"
+        mkdir -p "${HOME}/.ccache" "${HOME}/.conan2" "${HOME}/.vlink-cpm-cache" "${HOME}/.vlink-docker-home"
         docker run --rm \
           --user "$(id -u):$(id -g)" \
           --volume "${GITHUB_WORKSPACE}:/work/vlink" \
           --volume "${HOME}/.vlink-docker-home:/github/home" \
+          --volume "${HOME}/.ccache:/github/home/.ccache" \
           --volume "${HOME}/.conan2:/github/home/.conan2" \
           --volume "${HOME}/.vlink-cpm-cache:/github/home/.vlink-cpm-cache" \
           --workdir /work/vlink \
           --env HOME=/github/home \
           --env GITHUB_WORKSPACE=/work/vlink \
           --env CMAKE_BUILD_PARALLEL_LEVEL \
+          --env CCACHE_COMPRESS \
+          --env CCACHE_MAXSIZE \
           --env CTEST_OUTPUT_ON_FAILURE \
           --env PIP_DISABLE_PIP_VERSION_CHECK \
           --env VLINK_CI_CMAKE_ARGS \
