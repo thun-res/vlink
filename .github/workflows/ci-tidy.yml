@@ -27,6 +27,7 @@ env:
   VLINK_CI_CMAKE_ARGS: >-
     -G Ninja
     -DCMAKE_BUILD_TYPE=Release
+    -DENABLE_IPO=OFF
     -DBUILD_SHARED_LIBS=ON
     -DENABLE_CPM=ON
     -DENABLE_CPM_SQLITE3=ON
@@ -92,6 +93,7 @@ jobs:
             git config --global --add safe.directory "${GITHUB_WORKSPACE}"
             cmake -S . -B build-tidy ${VLINK_CI_CMAKE_ARGS} -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
             export BUILD_DIR=build-tidy
+            export REQUIRED_CACHE="ENABLE_IPO=OFF"
             export REQUIRED_DEFINES="VLINK_ENABLE_SECURITY
             VLINK_ENABLE_SQLITE
             VLINK_ENABLE_ZSTD"

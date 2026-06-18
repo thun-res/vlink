@@ -29,6 +29,7 @@ env:
   VLINK_CI_CMAKE_ARGS: >-
     -G Ninja
     -DCMAKE_BUILD_TYPE=Release
+    -DENABLE_IPO=OFF
     -DBUILD_SHARED_LIBS=ON
     -DENABLE_CPM=ON
     -DENABLE_CPM_SQLITE3=ON
@@ -116,6 +117,7 @@ jobs:
             cmake --build build-test --parallel
             export BUILD_DIR=build-test
             export REQUIRED_CACHE="ENABLE_WEBVIZ=ON
+            ENABLE_IPO=OFF
             ENABLE_PYTHON_API=ON
             ENABLE_TEST=ON
             ENABLE_TEST_SANITIZE=ON
@@ -201,6 +203,7 @@ jobs:
           build-dir: build-test
           required-cache: |
             ENABLE_WEBVIZ=ON
+            ENABLE_IPO=OFF
             ENABLE_PYTHON_API=ON
             ENABLE_TEST=ON
             ENABLE_TEST_SANITIZE=ON
@@ -295,6 +298,7 @@ jobs:
           build-dir: build-test
           required-cache: |
             ENABLE_WEBVIZ=ON
+            ENABLE_IPO=OFF
             ENABLE_PYTHON_API=ON
             ENABLE_TEST=ON
             ENABLE_TEST_SANITIZE=ON

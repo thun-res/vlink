@@ -10,7 +10,16 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/output/external/lib)
 if(POLICY CMP0069)
   cmake_policy(SET CMP0069 NEW)
 endif()
-if(NOT MSVC AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+if(NOT DEFINED ENABLE_IPO)
+  set(ENABLE_IPO ON)
+endif()
+if(NOT ENABLE_IPO)
+  set(CMAKE_INTERPROCEDURAL_OPTIMIZATION FALSE)
+endif()
+if(ENABLE_IPO
+   AND NOT MSVC
+   AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug"
+)
   include(CheckIPOSupported)
   check_ipo_supported(RESULT ipo_supported)
   if(ipo_supported)

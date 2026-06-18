@@ -26,6 +26,7 @@ class VLinkConan(ConanFile):
         "enable_cpm": [True, False],
         "enable_cpm_all": [True, False],
         "enable_doc": [True, False],
+        "enable_ipo": [True, False],
         "enable_cxx_std_20": [True, False],
         "enable_c_api": [True, False],
         "enable_python_api": [True, False],
@@ -65,6 +66,7 @@ class VLinkConan(ConanFile):
         "enable_cpm": False,
         "enable_cpm_all": False,
         "enable_doc": False,
+        "enable_ipo": True,
         "enable_cxx_std_20": False,
         "enable_c_api": True,
         "enable_python_api": False,
@@ -211,6 +213,7 @@ class VLinkConan(ConanFile):
         tc.variables["ENABLE_CPM"]             = "ON" if (self.options.enable_cpm or self.options.enable_cpm_all) else "OFF"
         tc.variables["ENABLE_CPM_ALL"]         = "ON" if self.options.enable_cpm_all else "OFF"
         tc.variables["ENABLE_DOC"]             = "ON" if self.options.enable_doc else "OFF"
+        tc.variables["ENABLE_IPO"]             = "ON" if self.options.enable_ipo else "OFF"
         tc.variables["ENABLE_CXX_STD_20"]      = "ON" if self.options.enable_cxx_std_20 else "OFF"
         tc.variables["ENABLE_C_API"]           = "ON" if self.options.enable_c_api else "OFF"
         tc.variables["ENABLE_PYTHON_API"]      = "ON" if self.options.enable_python_api else "OFF"

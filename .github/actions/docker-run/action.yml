@@ -30,6 +30,9 @@ runs:
           --workdir /work/vlink \
           --env HOME=/github/home \
           --env GITHUB_WORKSPACE=/work/vlink \
+          --env CCACHE_DIR=/github/home/.ccache \
+          --env CCACHE_BASEDIR=/work/vlink \
+          --env VLINK_CMAKE_DISABLE_IPO \
           --env CMAKE_BUILD_PARALLEL_LEVEL \
           --env CCACHE_COMPRESS \
           --env CCACHE_MAXSIZE \

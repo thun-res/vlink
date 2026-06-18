@@ -24,6 +24,10 @@ inputs:
     description: Prepend a cmake wrapper that injects compiler launcher args on configure calls.
     required: false
     default: "false"
+  disable-ipo:
+    description: Inject -DENABLE_IPO=OFF into wrapped CMake configure calls.
+    required: false
+    default: "false"
 
 runs:
   using: composite
@@ -43,6 +47,7 @@ runs:
         CACHE_PATH: ${{ inputs.cache-path }}
         MAX_SIZE: ${{ inputs.max-size }}
         CMAKE_WRAPPER: ${{ inputs.cmake-wrapper }}
+        DISABLE_IPO: ${{ inputs.disable-ipo }}
       run: |
         set -euo pipefail
         cache_dir="${CACHE_PATH/#\~/${HOME}}"
@@ -52,6 +57,7 @@ runs:
           echo "CCACHE_BASEDIR=${GITHUB_WORKSPACE}"
           echo "CCACHE_COMPRESS=true"
           echo "CCACHE_MAXSIZE=${MAX_SIZE}"
+          echo "VLINK_CMAKE_DISABLE_IPO=${DISABLE_IPO}"
         } >> "${GITHUB_ENV}"
         if command -v ccache >/dev/null 2>&1; then
           ccache --zero-stats || true
@@ -68,20 +74,27 @@ runs:
         #!/usr/bin/env bash
         set -euo pipefail
         args=("$@")
-        inject=0
+        inject=1
         have_c=0
         have_cxx=0
+        have_ipo=0
         for arg in "$@"; do
           case "${arg}" in
-            -S) inject=1 ;;
-            --build|--install|-E) inject=0; break ;;
+            --build|--install|-E|-P|--version|--help|--help-*|--system-information|--find-package|--workflow)
+              inject=0
+              break
+              ;;
             -DCMAKE_C_COMPILER_LAUNCHER=*) have_c=1 ;;
             -DCMAKE_CXX_COMPILER_LAUNCHER=*) have_cxx=1 ;;
+            -DENABLE_IPO=*) have_ipo=1 ;;
           esac
         done
         if [ "${inject}" = "1" ]; then
           [ "${have_c}" = "1" ] || args+=("-DCMAKE_C_COMPILER_LAUNCHER=ccache")
           [ "${have_cxx}" = "1" ] || args+=("-DCMAKE_CXX_COMPILER_LAUNCHER=ccache")
+          if [ "${VLINK_CMAKE_DISABLE_IPO:-false}" = "true" ] && [ "${have_ipo}" = "0" ]; then
+            args+=("-DENABLE_IPO=OFF")
+          fi
         fi
         exec "${VLINK_REAL_CMAKE}" "${args[@]}"
         EOF
@@ -96,7 +109,10 @@ runs:
       run: |
         $ErrorActionPreference = "Stop"
         "SCCACHE_GHA_ENABLED=true" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "SCCACHE_CACHE_SIZE=10G" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "SCCACHE_IDLE_TIMEOUT=0" | Out-File -FilePath $env:GITHUB_ENV -Append
         "SCCACHE_GHA_VERSION=${{ inputs.cache-key }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "VLINK_CMAKE_DISABLE_IPO=${{ inputs.disable-ipo }}" | Out-File -FilePath $env:GITHUB_ENV -Append
 
     - name: Setup sccache
       if: inputs.backend == 'sccache'
@@ -120,21 +136,26 @@ runs:
           @'
         @echo off
         setlocal EnableDelayedExpansion
-        set "inject=0"
+        set "inject=1"
         set "have_c=0"
         set "have_cxx=0"
+        set "have_ipo=0"
         for %%A in (%*) do (
-          if "%%~A"=="-S" set "inject=1"
           if "%%~A"=="--build" set "inject=0"
           if "%%~A"=="--install" set "inject=0"
           if "%%~A"=="-E" set "inject=0"
+          if "%%~A"=="-P" set "inject=0"
+          if "%%~A"=="--version" set "inject=0"
+          if "%%~A"=="--help" set "inject=0"
           echo %%~A | findstr /B /C:"-DCMAKE_C_COMPILER_LAUNCHER=" >nul && set "have_c=1"
           echo %%~A | findstr /B /C:"-DCMAKE_CXX_COMPILER_LAUNCHER=" >nul && set "have_cxx=1"
+          echo %%~A | findstr /B /C:"-DENABLE_IPO=" >nul && set "have_ipo=1"
         )
         set "extra="
         if "%inject%"=="1" (
           if "%have_c%"=="0" set "extra=!extra! -DCMAKE_C_COMPILER_LAUNCHER=sccache"
           if "%have_cxx%"=="0" set "extra=!extra! -DCMAKE_CXX_COMPILER_LAUNCHER=sccache"
+          if /I "%VLINK_CMAKE_DISABLE_IPO%"=="true" if "%have_ipo%"=="0" set "extra=!extra! -DENABLE_IPO=OFF"
         )
         "%VLINK_REAL_CMAKE%" %* !extra!
         exit /b %ERRORLEVEL%

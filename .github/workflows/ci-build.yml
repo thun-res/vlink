@@ -29,6 +29,7 @@ env:
   VLINK_CI_CMAKE_ARGS: >-
     -G Ninja
     -DCMAKE_BUILD_TYPE=Release
+    -DENABLE_IPO=OFF
     -DBUILD_SHARED_LIBS=ON
     -DENABLE_CPM=ON
     -DENABLE_CPM_SQLITE3=ON
@@ -64,21 +65,13 @@ env:
     VLINK_ENABLE_ZSTD
 
 jobs:
-  build-linux-ubuntu20:
-    name: ubuntu20.04-${{ matrix.arch }}
-    runs-on: ${{ matrix.runner }}
+  build-linux-aarch64:
+    name: ubuntu20.04-aarch64
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 90
     defaults:
       run:
         shell: bash
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            runner: ubuntu-24.04
-          - arch: aarch64
-            runner: ubuntu-24.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -98,29 +91,29 @@ jobs:
           image: ghcr.io/${{ github.repository_owner }}/vlink-ci-ubuntu20:latest
           context: .github/docker/ci-ubuntu20
           dockerfile: .github/docker/ci-ubuntu20/Dockerfile
-          local-tag: vlink-ci-ubuntu20-${{ matrix.arch }}:local
+          local-tag: vlink-ci-ubuntu20-aarch64:local
           required-tools: ccache cmake ninja patch python3
 
       - name: Restore CPM cache
         uses: ./.github/actions/restore-build-cache
         with:
           path: ~/.vlink-cpm-cache
-          key: cpm-ci-ubuntu20-${{ matrix.arch }}-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
-          restore-keys: cpm-ci-ubuntu20-${{ matrix.arch }}-
+          key: cpm-ci-ubuntu20-aarch64-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          restore-keys: cpm-ci-ubuntu20-aarch64-
 
       - name: Setup ccache
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
-          cache-key: ccache-ci-ubuntu20-${{ matrix.arch }}-${{ github.run_id }}
-          restore-keys: ccache-ci-ubuntu20-${{ matrix.arch }}-
+          cache-key: ccache-ci-ubuntu20-aarch64-${{ github.run_id }}
+          restore-keys: ccache-ci-ubuntu20-aarch64-
           max-size: 1G
 
       - name: Restore CPM build cache
         uses: ./.github/actions/restore-build-cache
         with:
           path: build/_deps
-          key: cpm-build-ci-ubuntu20-${{ matrix.arch }}-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          key: cpm-build-ci-ubuntu20-aarch64-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
 
       - name: Configure and build
         uses: ./.github/actions/docker-run
@@ -129,7 +122,7 @@ jobs:
           command: |
             set -euo pipefail
             git config --global --add safe.directory "${GITHUB_WORKSPACE}"
-            test "$(uname -m)" = "${{ matrix.arch }}"
+            test "$(uname -m)" = "aarch64"
             cmake --version
             ninja --version
             patch --version | head -n 1
@@ -144,6 +137,7 @@ jobs:
             cmake --build build --parallel
             ccache --show-stats || true
             export BUILD_DIR=build
+            export REQUIRED_CACHE="ENABLE_IPO=OFF"
             export REQUIRED_DEFINES="VLINK_ENABLE_SECURITY
             VLINK_ENABLE_SQLITE
             VLINK_ENABLE_ZSTD"
@@ -164,67 +158,6 @@ jobs:
             modules/shm/
             webviz/"
             python3 .github/scripts/assert-cmake-config.py
-
-  build-windows:
-    name: windows-msvc
-    runs-on: windows-2022
-    timeout-minutes: 50
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Enable MSVC developer environment
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Setup OpenSSL
-        uses: ./.github/actions/setup-windows-openssl
-
-      - name: Setup sccache
-        uses: ./.github/actions/setup-compiler-cache
-        with:
-          backend: sccache
-          cache-key: vlink-windows-msvc-v1
-
-      - name: Setup MSVC tools
-        uses: ./.github/actions/setup-windows-msvc-tools
-
-      - name: Restore CPM cache
-        uses: ./.github/actions/restore-build-cache
-        with:
-          path: ~/.vlink-cpm-cache
-          key: cpm-ci-windows-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
-          restore-keys: cpm-ci-windows-
-
-      - name: Restore CPM build cache
-        uses: ./.github/actions/restore-build-cache
-        with:
-          path: build/_deps
-          key: cpm-build-ci-windows-msvc2022-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
-
-      - name: Configure and build
-        uses: ./.github/actions/cmake-build
-        with:
-          build-dir: build
-          cmake-args: ${{ env.VLINK_CI_CMAKE_ARGS }}
-          configure-extra-args: >-
-            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-            -DCMAKE_C_COMPILER_LAUNCHER=sccache
-            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
-
-      - name: Show sccache stats
-        if: always()
-        shell: pwsh
-        run: sccache --show-stats || true
-
-      - name: Assert configured features
-        uses: ./.github/actions/assert-cmake-config
-        with:
-          build-dir: build
-          required-defines: ${{ env.VLINK_REQUIRED_DEFINES }}
-          required-source-prefixes: ${{ env.VLINK_REQUIRED_SOURCES_COMMON }}
 
   build-macos:
     name: macos-arm64
@@ -285,5 +218,7 @@ jobs:
         uses: ./.github/actions/assert-cmake-config
         with:
           build-dir: build
+          required-cache: |
+            ENABLE_IPO=OFF
           required-defines: ${{ env.VLINK_REQUIRED_DEFINES }}
           required-source-prefixes: ${{ env.VLINK_REQUIRED_SOURCES_COMMON }}

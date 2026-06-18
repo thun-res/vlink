@@ -186,6 +186,7 @@ cmake -B build -S . -LH
 | `CMAKE_BUILD_TYPE`     | `Release`| STRING | 构建类型：`Release`/`Debug`/`RelWithDebInfo`/`MinSizeRel`      |
 | `ENABLE_CXX_STD_20`    | 自动检测 | BOOL   | 启用 C++20 特性；若编译器支持则自动开启                        |
 | `ENABLE_CCACHE_BUILD`  | `OFF`    | BOOL   | 启用 ccache 编译缓存加速（需要系统安装 ccache）                |
+| `ENABLE_IPO`           | `ON`     | BOOL   | 启用 IPO/LTO；CI 或高频增量构建可设为 `OFF` 提高缓存命中和编译速度 |
 | `ENABLE_CPM`     | `OFF`    | BOOL   | 启用 CPM（CMake Package Manager）下载传输后端依赖（tinyxml2/cpptoml/Fast-DDS/CycloneDDS/Iceoryx 等）|
 | `ENABLE_CPM_ALL` | `OFF`    | BOOL   | 在 `ENABLE_CPM` 基础上把 Protobuf/FlatBuffers/OpenSSL/SQLite3/zstd 也交给 CPM；隐含启用 `ENABLE_CPM` |
 | `ENABLE_CPM_PROTOBUF` | `OFF` | BOOL | `ENABLE_CPM=ON` 时可选：由 CPM 下载构建 Protobuf                             |
@@ -442,12 +443,13 @@ ccache -s  # 查看缓存命中统计
 
 ### 1.3.8 Interprocedural Optimization (IPO)
 
-在非 MSVC、非 Debug 构建模式下，CMake 会自动检测编译器是否支持 Interprocedural Optimization（链接时优化/LTO）。若支持，将自动启用 `CMAKE_INTERPROCEDURAL_OPTIMIZATION`，无需手动配置。
+`ENABLE_IPO` 默认开启。在非 Debug 构建模式下，CMake 会自动检测编译器是否支持 Interprocedural Optimization（链接时优化/LTO）；若支持，MSVC 会启用 `/GL` 与 `/LTCG`，GCC/Clang 会启用 `CMAKE_INTERPROCEDURAL_OPTIMIZATION`。使用 CPM 构建 CycloneDDS 时，`ENABLE_IPO=OFF` 也会同步关闭 CycloneDDS 的 `ENABLE_LTO`。
 
 适用条件：
 
-- 编译器：GCC 或 Clang（MSVC 排除）
+- 编译器：MSVC、GCC 或 Clang
 - 构建类型：`Release`、`RelWithDebInfo`、`MinSizeRel`（`Debug` 排除）
+- CI 或频繁增量构建：建议使用 `-DENABLE_IPO=OFF`，避免 LTO 降低 ccache/sccache 命中收益
 
 ### 1.3.9 CPM 依赖管理
 
@@ -588,6 +590,7 @@ Conan 选项名使用小写下划线命名，与 CMake 选项一一对应：
 | ------------------------------- | ---------------------- | ------------------------ |
 | `shared`                        | `BUILD_SHARED_LIBS`    | `False` / `ON`           |
 | `fPIC`                          | —（Conan 专有）        | `True` / —               |
+| `enable_ipo`                    | `ENABLE_IPO`           | `True` / `ON`            |
 | `enable_cxx_std_20`             | `ENABLE_CXX_STD_20`   | `False` / 自动检测       |
 | `enable_c_api`                  | `ENABLE_C_API`         | `True` / `ON`            |
 | `enable_python_api`             | `ENABLE_PYTHON_API`    | `False` / `OFF`          |

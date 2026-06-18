@@ -19,6 +19,7 @@ env:
   VLINK_CI_CMAKE_ARGS: >-
     -G Ninja
     -DCMAKE_BUILD_TYPE=Release
+    -DENABLE_IPO=OFF
     -DBUILD_SHARED_LIBS=ON
     -DENABLE_CPM=ON
     -DENABLE_CPM_SQLITE3=ON
@@ -112,6 +113,7 @@ jobs:
             export REQUIRED_CACHE="ENABLE_WEBVIZ=ON
             ENABLE_EXAMPLES=ON
             ENABLE_EXAMPLES_ALL=ON
+            ENABLE_IPO=OFF
             ENABLE_TEST_WARN=ON"
             export REQUIRED_SOURCE_PREFIXES="examples/samples/
             examples/quickstart/

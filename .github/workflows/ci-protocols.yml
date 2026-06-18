@@ -67,6 +67,7 @@ env:
   VLINK_CI_CMAKE_ARGS: >-
     -G Ninja
     -DCMAKE_BUILD_TYPE=Release
+    -DENABLE_IPO=OFF
     -DCMAKE_PREFIX_PATH=/usr/local
     -DBUILD_SHARED_LIBS=ON
     -DENABLE_CPM=ON
@@ -175,6 +176,7 @@ jobs:
               -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
             cmake --build build-protocols --parallel
             export BUILD_DIR=build-protocols
+            export REQUIRED_CACHE="ENABLE_IPO=OFF"
             export REQUIRED_DEFINES="VLINK_SUPPORT_ZENOH
             VLINK_ENABLE_ZENOH_PICO
             VLINK_SUPPORT_SOMEIP

@@ -264,6 +264,7 @@ cpmaddpackage(
   "BUILD_SHARED_LIBS OFF"
   "BUILD_IDLC OFF"
   "BUILD_DDSPERF OFF"
+  "ENABLE_LTO ${ENABLE_IPO}"
   "ENABLE_SECURITY OFF"
   "ENABLE_SSL OFF"
   "CYCLONEDDS_DISABLE_SSL ON"
@@ -280,6 +281,8 @@ cpmaddpackage(
   "${CPM_GITHUB_URL}/eclipse-iceoryx/iceoryx/archive/refs/tags/v2.0.8.zip"
   PATCHES
   "${CMAKE_SOURCE_DIR}/packup/patch/iceoryx_2.0.x.patch"
+  SYSTEM
+  ON
   SOURCE_SUBDIR
   "iceoryx_meta"
   OPTIONS

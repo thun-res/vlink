@@ -83,6 +83,7 @@ jobs:
           restore-keys: ccache-deb-${{ matrix.distro }}-${{ matrix.arch }}-
           max-size: 2G
           cmake-wrapper: "true"
+          disable-ipo: "true"
 
       - name: Build deb package
         env:
@@ -161,6 +162,7 @@ jobs:
           restore-keys: ccache-rpm-fedora43-${{ matrix.arch }}-
           max-size: 2G
           cmake-wrapper: "true"
+          disable-ipo: "true"
 
       - name: Build rpm package
         run: bash packup/build-rpm.sh .
@@ -230,6 +232,7 @@ jobs:
           restore-keys: ccache-arch-${{ matrix.arch }}-
           max-size: 2G
           cmake-wrapper: "true"
+          disable-ipo: "true"
 
       - name: Build Arch package
         run: bash packup/build-arch.sh .

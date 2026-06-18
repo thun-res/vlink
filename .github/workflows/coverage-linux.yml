@@ -19,6 +19,7 @@ env:
   VLINK_CI_CMAKE_ARGS: >-
     -G Ninja
     -DCMAKE_BUILD_TYPE=Debug
+    -DENABLE_IPO=OFF
     -DBUILD_SHARED_LIBS=ON
     -DENABLE_CPM=ON
     -DENABLE_CPM_SQLITE3=ON
@@ -102,6 +103,13 @@ jobs:
               -DCMAKE_C_COMPILER_LAUNCHER=ccache \
               -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
             cmake --build build-coverage --parallel
+            export BUILD_DIR=build-coverage
+            export REQUIRED_CACHE="ENABLE_IPO=OFF
+            ENABLE_TEST=ON
+            ENABLE_TEST_WARN=ON
+            ENABLE_TEST_COVERAGE=ON
+            ENABLE_WEBVIZ=ON"
+            python3 .github/scripts/assert-cmake-config.py
             ctest --test-dir build-coverage --output-on-failure --timeout 180 --parallel 1
             cmake --build build-coverage --target coverage
             test -f build-coverage/coverage/index.html

@@ -132,6 +132,7 @@ jobs:
           restore-keys: ccache-release-linux-${{ matrix.arch }}-
           max-size: 2G
           cmake-wrapper: "true"
+          disable-ipo: "true"
 
       - name: Build portable archive and QtIFW installer
         run: bash packup/build-conan.sh . ${{ matrix.arch }}
