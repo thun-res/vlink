@@ -91,8 +91,8 @@ runs:
             apt-get install -y --no-install-recommends ca-certificates gnupg software-properties-common
             add-apt-repository -y ppa:deadsnakes/ppa
             apt-get update
-            apt-get install -y --no-install-recommends python3.12 python3.12-dev python3.12-venv
-            AQT_PYTHON=$(command -v python3.12)
+            apt-get install -y --no-install-recommends python3.10 python3.10-dev python3.10-venv
+            AQT_PYTHON=$(command -v python3.10)
           fi
         fi
         if [ -z "${AQT_PYTHON}" ]; then

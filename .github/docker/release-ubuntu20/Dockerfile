@@ -2,7 +2,7 @@ FROM ubuntu:20.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    VLINK_AQT_PYTHON=/usr/bin/python3.12
+    VLINK_AQT_PYTHON=/usr/bin/python3.10
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
@@ -34,9 +34,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       patchelf \
       pkg-config \
       python3 \
-      python3.12 \
-      python3.12-dev \
-      python3.12-venv \
+      python3.10 \
+      python3.10-dev \
+      python3.10-venv \
       tar \
       xz-utils \
       yasm \
