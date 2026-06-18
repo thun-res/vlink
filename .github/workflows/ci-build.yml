@@ -37,11 +37,11 @@ env:
     -DENABLE_CPM_FLATBUFFERS=ON
     -DENABLE_CXX_STD_20=OFF
     -DENABLE_VIEWER=OFF
-    -DENABLE_WEBVIZ=OFF
+    -DENABLE_WEBVIZ=ON
     -DENABLE_IOX_ROUDI=OFF
     -DENABLE_EXAMPLES=OFF
     -DENABLE_TEST=OFF
-    -DENABLE_TEST_WARN=OFF
+    -DENABLE_TEST_WARN=ON
   VLINK_REQUIRED_SOURCES_COMMON: |
     src/
     modules/intra/
@@ -57,6 +57,7 @@ env:
     cli/dump/
     cli/check/
     cli/bench/
+    webviz/
   VLINK_REQUIRED_DEFINES: |
     VLINK_ENABLE_SECURITY
     VLINK_ENABLE_SQLITE
@@ -160,7 +161,8 @@ jobs:
             cli/dump/
             cli/check/
             cli/bench/
-            modules/shm/"
+            modules/shm/
+            webviz/"
             python3 .github/scripts/assert-cmake-config.py
 
   build-windows:

@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       patch \
       pkg-config \
       python3 \
+      python3-dev \
       python3-venv \
       tar \
       zstd \
@@ -28,6 +29,7 @@ RUN python3 -m venv /opt/vlink/python-tools \
       clang-tidy==21.1.6 \
       cmake-format==0.6.13 \
       gcovr==8.4 \
+      nanobind==2.13.0 \
       PyYAML==6.0.2 \
       cpplint==2.0.2 \
     && ln -s /opt/vlink/python-tools/bin/clang-format /usr/local/bin/clang-format \

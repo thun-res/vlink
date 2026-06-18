@@ -37,11 +37,13 @@ env:
     -DENABLE_CPM_FLATBUFFERS=ON
     -DENABLE_CXX_STD_20=OFF
     -DENABLE_VIEWER=OFF
-    -DENABLE_WEBVIZ=OFF
+    -DENABLE_WEBVIZ=ON
     -DENABLE_IOX_ROUDI=OFF
     -DENABLE_EXAMPLES=OFF
+    -DENABLE_PYTHON_API=ON
     -DENABLE_TEST=ON
-    -DENABLE_TEST_WARN=OFF
+    -DENABLE_TEST_SANITIZE=ON
+    -DENABLE_TEST_WARN=ON
 
 jobs:
   test-linux-x86:
@@ -71,7 +73,8 @@ jobs:
           context: .github/docker/ci-ubuntu24
           dockerfile: .github/docker/ci-ubuntu24/Dockerfile
           local-tag: vlink-ci-ubuntu24:test-local
-          required-tools: ccache cmake ninja python3
+          required-tools: /opt/vlink/python-tools/bin/python ccache cmake ninja python3 python3-config
+          verify-command: /opt/vlink/python-tools/bin/python -c 'import nanobind'
 
       - name: Restore CPM cache
         uses: ./.github/actions/restore-build-cache
@@ -107,10 +110,29 @@ jobs:
             ccache --zero-stats || true
             cmake -S . -B build-test ${VLINK_CI_CMAKE_ARGS} \
               -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+              -DPython_EXECUTABLE=/opt/vlink/python-tools/bin/python \
               -DCMAKE_C_COMPILER_LAUNCHER=ccache \
               -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
             cmake --build build-test --parallel
+            export BUILD_DIR=build-test
+            export REQUIRED_CACHE="ENABLE_WEBVIZ=ON
+            ENABLE_PYTHON_API=ON
+            ENABLE_TEST=ON
+            ENABLE_TEST_SANITIZE=ON
+            ENABLE_TEST_WARN=ON"
+            export REQUIRED_SOURCE_PREFIXES="webviz/
+            python_api/"
+            python3 .github/scripts/assert-cmake-config.py
+            export ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1
+            export LSAN_OPTIONS=print_suppressions=0
             ctest --test-dir build-test --output-on-failure --timeout 180 --parallel 1
+            asan_lib="$(gcc -print-file-name=libasan.so)"
+            if [ -f "${asan_lib}" ]; then
+              export LD_PRELOAD="${asan_lib}${LD_PRELOAD:+:${LD_PRELOAD}}"
+            fi
+            export LD_LIBRARY_PATH="${GITHUB_WORKSPACE}/build-test/output/lib:${LD_LIBRARY_PATH:-}"
+            export PYTHONPATH="${GITHUB_WORKSPACE}/python_api:${GITHUB_WORKSPACE}/build-test/output/lib"
+            /opt/vlink/python-tools/bin/python python_api/test/test_vlink.py
             ccache --show-stats || true
 
   test-windows-x64:
@@ -123,6 +145,20 @@ jobs:
 
       - name: Enable MSVC developer environment
         uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Python dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python -m pip install --upgrade pip
+          python -m pip install nanobind==2.13.0
+          $PythonExecutable = (python -c "import sys; print(sys.executable)").Replace("\", "/")
+          "PYTHON_EXECUTABLE=$PythonExecutable" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Setup OpenSSL
         uses: ./.github/actions/setup-windows-openssl
@@ -159,9 +195,31 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=sccache
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
+      - name: Assert configured features
+        uses: ./.github/actions/assert-cmake-config
+        with:
+          build-dir: build-test
+          required-cache: |
+            ENABLE_WEBVIZ=ON
+            ENABLE_PYTHON_API=ON
+            ENABLE_TEST=ON
+            ENABLE_TEST_SANITIZE=ON
+            ENABLE_TEST_WARN=ON
+          required-source-prefixes: |
+            webviz/
+            python_api/
+
       - name: Run unit tests
         shell: pwsh
         run: ctest --test-dir build-test --output-on-failure --timeout 180 --parallel 1
+
+      - name: Run Python API tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $env:PYTHONPATH = "$PWD\python_api;$PWD\build-test\output\lib"
+          $env:Path = "$PWD\build-test\output\bin;$PWD\build-test\output\lib;$env:Path"
+          python python_api\test\test_vlink.py
 
       - name: Show sccache stats
         if: always()
@@ -178,6 +236,17 @@ jobs:
 
       - name: Install build tools
         run: brew install ccache ninja openssl@3
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install nanobind==2.13.0
+          echo "PYTHON_EXECUTABLE=$(python -c 'import sys; print(sys.executable)')" >> "${GITHUB_ENV}"
 
       - name: Check toolchain
         run: |
@@ -220,8 +289,37 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=ccache
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
+      - name: Assert configured features
+        uses: ./.github/actions/assert-cmake-config
+        with:
+          build-dir: build-test
+          required-cache: |
+            ENABLE_WEBVIZ=ON
+            ENABLE_PYTHON_API=ON
+            ENABLE_TEST=ON
+            ENABLE_TEST_SANITIZE=ON
+            ENABLE_TEST_WARN=ON
+          required-source-prefixes: |
+            webviz/
+            python_api/
+
       - name: Run unit tests
-        run: ctest --test-dir build-test --output-on-failure --timeout 180 --parallel 1
+        run: |
+          export ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1
+          export LSAN_OPTIONS=print_suppressions=0
+          ctest --test-dir build-test --output-on-failure --timeout 180 --parallel 1
+
+      - name: Run Python API tests
+        run: |
+          export ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1
+          export LSAN_OPTIONS=print_suppressions=0
+          asan_lib="$(clang -print-file-name=libclang_rt.asan_osx_dynamic.dylib || true)"
+          if [ -f "${asan_lib}" ]; then
+            export DYLD_INSERT_LIBRARIES="${asan_lib}${DYLD_INSERT_LIBRARIES:+:${DYLD_INSERT_LIBRARIES}}"
+          fi
+          export DYLD_LIBRARY_PATH="${PWD}/build-test/output/lib:${DYLD_LIBRARY_PATH:-}"
+          export PYTHONPATH="${PWD}/python_api:${PWD}/build-test/output/lib"
+          python python_api/test/test_vlink.py
 
       - name: Show ccache stats
         if: always()

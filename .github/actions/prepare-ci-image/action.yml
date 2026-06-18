@@ -18,6 +18,10 @@ inputs:
     description: Space-separated tools that must exist in a pulled image before it can be reused.
     required: false
     default: ""
+  verify-command:
+    description: Optional bash command that must pass inside a pulled image before it can be reused.
+    required: false
+    default: ""
 
 outputs:
   image:
@@ -36,14 +40,22 @@ runs:
         DOCKERFILE: ${{ inputs.dockerfile }}
         LOCAL_TAG: ${{ inputs.local-tag }}
         REQUIRED_TOOLS: ${{ inputs.required-tools }}
+        VERIFY_COMMAND: ${{ inputs.verify-command }}
       run: |
         set -euo pipefail
         if docker pull "${IMAGE}"; then
-          if [ -z "${REQUIRED_TOOLS}" ] || docker run --rm "${IMAGE}" bash -lc 'for tool in '"${REQUIRED_TOOLS}"'; do command -v "${tool}" >/dev/null || exit 1; done'; then
+          image_ok=true
+          if [ -n "${REQUIRED_TOOLS}" ]; then
+            docker run --rm "${IMAGE}" bash -lc 'for tool in '"${REQUIRED_TOOLS}"'; do command -v "${tool}" >/dev/null || exit 1; done' || image_ok=false
+          fi
+          if [ "${image_ok}" = "true" ] && [ -n "${VERIFY_COMMAND}" ]; then
+            docker run --rm "${IMAGE}" bash -lc "${VERIFY_COMMAND}" || image_ok=false
+          fi
+          if [ "${image_ok}" = "true" ]; then
             echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
-          echo "::warning::Image ${IMAGE} is available but missing required tools: ${REQUIRED_TOOLS}. Building local fallback ${LOCAL_TAG}."
+          echo "::warning::Image ${IMAGE} is available but failed validation. Building local fallback ${LOCAL_TAG}."
         else
           echo "::warning::Image ${IMAGE} is not available; building local fallback ${LOCAL_TAG}."
         fi

@@ -42,6 +42,9 @@ runs:
         if [ -n "${OPENSSL_ROOT_DIR:-}" ]; then
           env_extra_args+=("-DOPENSSL_ROOT_DIR=${OPENSSL_ROOT_DIR}")
         fi
+        if [ -n "${PYTHON_EXECUTABLE:-}" ]; then
+          env_extra_args+=("-DPython_EXECUTABLE=${PYTHON_EXECUTABLE}")
+        fi
         cmake -S "${SOURCE_DIR}" -B "${BUILD_DIR}" ${CMAKE_ARGS} ${CONFIGURE_EXTRA_ARGS} "${env_extra_args[@]}"
 
     - name: Configure
@@ -63,6 +66,9 @@ runs:
         }
         if ($env:OPENSSL_ROOT_DIR) {
           $ArgsList += "-DOPENSSL_ROOT_DIR=$env:OPENSSL_ROOT_DIR"
+        }
+        if ($env:PYTHON_EXECUTABLE) {
+          $ArgsList += "-DPython_EXECUTABLE=$env:PYTHON_EXECUTABLE"
         }
         & cmake @ArgsList
 

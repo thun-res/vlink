@@ -3,10 +3,23 @@ FROM menci/archlinuxarm:base-devel
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 RUN set -eux; \
+    test "$(uname -m)" = "aarch64"; \
     pacman-key --init; \
-    pacman-key --populate archlinuxarm; \
-    pacman -Sy --noconfirm --needed archlinuxarm-keyring; \
-    pacman-key --populate archlinuxarm; \
+    pacman-key --populate || true; \
+    if ! pacman -Sy --noconfirm --needed archlinuxarm-keyring; then \
+      tmp_config="$(mktemp)"; \
+      cp /etc/pacman.conf "${tmp_config}"; \
+      if grep -q '^SigLevel[[:space:]]*=' "${tmp_config}"; then \
+        sed -i 's/^SigLevel[[:space:]]*=.*/SigLevel = Never/g' "${tmp_config}"; \
+      else \
+        sed -i '/^\[options\]/a SigLevel = Never' "${tmp_config}"; \
+      fi; \
+      pacman -Sy --noconfirm --needed --config "${tmp_config}" archlinuxarm-keyring; \
+      rm -f "${tmp_config}"; \
+    fi; \
+    pacman-key --populate
+
+RUN set -eux; \
     pacman -Syu --noconfirm --needed \
       acl \
       base-devel \

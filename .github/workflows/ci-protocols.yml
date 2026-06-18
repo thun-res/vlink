@@ -81,13 +81,13 @@ env:
     -DENABLE_IOX_ROUDI=OFF
     -DENABLE_EXAMPLES=OFF
     -DENABLE_TEST=OFF
-    -DENABLE_TEST_WARN=OFF
+    -DENABLE_TEST_WARN=ON
 
 jobs:
   protocol-linux-x86:
     name: linux-x86_64
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 180
     defaults:
       run:
         shell: bash
@@ -96,25 +96,46 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Login to GHCR
+        continue-on-error: true
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull protocol CI image
+      - name: Prepare protocol CI image
         id: protocol-image
-        env:
-          IMAGE_TAG: ${{ inputs.image_tag || 'latest' }}
-        run: |
-          set -euo pipefail
-          image="ghcr.io/${{ github.repository_owner }}/vlink-ci-protocols-ubuntu24:${IMAGE_TAG}"
-          if ! docker pull "${image}"; then
-            echo "::error::Protocol CI image is missing. Run the Docker Images workflow for vlink-ci-protocols-ubuntu24 first."
-            exit 1
-          fi
-          docker run --rm "${image}" bash -lc 'for tool in ccache cmake ninja python3; do command -v "${tool}" >/dev/null; done'
-          echo "image=${image}" >> "${GITHUB_OUTPUT}"
+        uses: ./.github/actions/prepare-ci-image
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/vlink-ci-protocols-ubuntu24:${{ inputs.image_tag || 'latest' }}
+          context: .github/docker/ci-protocols-ubuntu24
+          dockerfile: .github/docker/ci-protocols-ubuntu24/Dockerfile
+          local-tag: vlink-ci-protocols-ubuntu24:local
+          required-tools: ccache cmake ninja python3
+          verify-command: |
+            set -euo pipefail
+            tmp="$(mktemp -d)"
+            cat > "${tmp}/CMakeLists.txt" <<'EOF'
+            cmake_minimum_required(VERSION 3.22)
+            project(vlink-protocol-deps-check LANGUAGES C CXX)
+            find_package(eclipse-paho-mqtt-c CONFIG REQUIRED)
+            find_package(vsomeip3 CONFIG REQUIRED)
+            find_package(zenohpico CONFIG REQUIRED)
+            find_package(iceoryx2-c CONFIG REQUIRED)
+            if(NOT TARGET eclipse-paho-mqtt-c::paho-mqtt3c AND NOT TARGET eclipse-paho-mqtt-c::paho-mqtt3cs)
+              message(FATAL_ERROR "Missing Eclipse Paho MQTT C target")
+            endif()
+            if(NOT TARGET vsomeip3)
+              message(FATAL_ERROR "Missing vsomeip3 target")
+            endif()
+            if(NOT TARGET zenohpico::zenohpico_shared AND NOT TARGET zenohpico::zenohpico_static)
+              message(FATAL_ERROR "Missing zenoh-pico target")
+            endif()
+            if(NOT TARGET iceoryx2-c::shared-lib AND NOT TARGET iceoryx2-c::static-lib)
+              message(FATAL_ERROR "Missing iceoryx2-c target")
+            endif()
+            EOF
+            cmake -S "${tmp}" -B "${tmp}/build" -GNinja -DCMAKE_PREFIX_PATH=/usr/local
 
       - name: Restore CPM cache
         uses: ./.github/actions/restore-build-cache

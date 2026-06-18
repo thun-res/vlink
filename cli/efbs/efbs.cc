@@ -1331,7 +1331,7 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
             print_str += std::string("pack_size: ") + std::to_string(point_cloud.pack_size()) + "\n";
             print_str += std::string("extent: ") + std::to_string(point_cloud.get_extent()) + "\n";
             print_str += std::string("downsample: ") + std::to_string(point_cloud.get_downsample()) + "\n";
-            print_str += std::string("vertical: ") + std::to_string(point_cloud.get_vertical()) + "\n";
+            print_str += std::string("vertical: ") + std::to_string(static_cast<int>(point_cloud.get_vertical())) + "\n";
           }
 
           if (!ignore_array) {
