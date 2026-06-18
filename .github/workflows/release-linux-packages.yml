@@ -299,7 +299,7 @@ jobs:
             ccache --show-stats || true
 
       - name: Show ccache stats
-        if: always()
+        if: ${{ always() && steps.arch-image.outcome == 'success' && steps.arch-image.outputs.image != '' }}
         run: docker run --rm --volume "${HOME}/.ccache:/github/home/.ccache" --env CCACHE_DIR=/github/home/.ccache "${{ steps.arch-image.outputs.image }}" bash -lc 'ccache --show-stats || true'
 
       - name: Verify Arch package

@@ -101,6 +101,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -677,8 +678,14 @@ Schedule::RetStatus MessageLoop::exec_task(const Schedule::Config& config, Callb
 
 template <class FunctionT, class... ArgsT, typename ResultT>
 inline std::future<ResultT> MessageLoop::invoke_task(FunctionT&& function, ArgsT&&... args) {
-  // NOLINTNEXTLINE(modernize-avoid-bind, clang-diagnostic-deprecated-declarations)
-  auto bound = std::bind(std::forward<FunctionT>(function), std::forward<ArgsT>(args)...);
+  auto bound = [function = std::forward<FunctionT>(function),
+                args = std::make_tuple(std::forward<ArgsT>(args)...)]() mutable -> ResultT {
+    return std::apply(
+        [&function](auto&&... unpacked_args) -> ResultT {
+          return std::invoke(function, std::forward<decltype(unpacked_args)>(unpacked_args)...);
+        },
+        args);
+  };
 
   if constexpr (kIsSupportMoveFunction) {
     std::packaged_task<ResultT()> task(std::move(bound));
@@ -703,8 +710,14 @@ inline std::future<ResultT> MessageLoop::invoke_task(FunctionT&& function, ArgsT
 template <class FunctionT, class... ArgsT, typename ResultT>
 inline std::future<ResultT> MessageLoop::invoke_task_with_priority(FunctionT&& function, uint16_t priority,
                                                                    ArgsT&&... args) {
-  // NOLINTNEXTLINE(modernize-avoid-bind, clang-diagnostic-deprecated-declarations)
-  auto bound = std::bind(std::forward<FunctionT>(function), std::forward<ArgsT>(args)...);
+  auto bound = [function = std::forward<FunctionT>(function),
+                args = std::make_tuple(std::forward<ArgsT>(args)...)]() mutable -> ResultT {
+    return std::apply(
+        [&function](auto&&... unpacked_args) -> ResultT {
+          return std::invoke(function, std::forward<decltype(unpacked_args)>(unpacked_args)...);
+        },
+        args);
+  };
 
   if constexpr (kIsSupportMoveFunction) {
     std::packaged_task<ResultT()> task(std::move(bound));

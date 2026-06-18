@@ -65,10 +65,25 @@ runs:
         AQT_VENV="${HOME}/.vlink-ci/aqt-venv"
         QT_ROOT="${HOME}/.vlink-ci/qt"
         export PIP_CACHE_DIR="${HOME}/.cache/pip"
+        PY_INCLUDE=$(python3 - <<'PY'
+        import sysconfig
+        print(sysconfig.get_path("include") or "")
+        PY
+        )
+        if [ -n "${PY_INCLUDE}" ] && [ ! -f "${PY_INCLUDE}/Python.h" ]; then
+          if [ "$(id -u)" = "0" ] && command -v apt-get >/dev/null 2>&1; then
+            apt-get update
+            apt-get install -y --no-install-recommends python3-dev
+          else
+            echo "Python.h not found under ${PY_INCLUDE}; install python3-dev in the runner image." >&2
+            exit 1
+          fi
+        fi
         python3 -m venv "${AQT_VENV}"
         packages=(aqtinstall)
         [ "${INSTALL_CONAN}" = "true" ] && packages+=(conan)
-        "${AQT_VENV}/bin/python" -m pip install --upgrade pip "${packages[@]}"
+        "${AQT_VENV}/bin/python" -m pip install --upgrade pip setuptools wheel
+        "${AQT_VENV}/bin/python" -m pip install --upgrade "${packages[@]}"
         AQT="${AQT_VENV}/bin/aqt"
 
         if ! find "${QT_ROOT}/${QT_VERSION}" -type f -path "*/bin/qmake" -print -quit 2>/dev/null | grep -q .; then

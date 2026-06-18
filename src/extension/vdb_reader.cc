@@ -976,7 +976,7 @@ void VDBReader::tag(const std::string& tag_name) {
 
       if VLIKELY (ret == SQLITE_OK) {
         ret = ::sqlite3_bind_text(update_tag_stmt, 1, tag_name.c_str(), static_cast<int>(tag_name.size()),
-                                  SQLITE_TRANSIENT);
+                                  SQLITE_TRANSIENT);  // NOLINT(performance-no-int-to-ptr)
       }
 
       if VLIKELY (ret == SQLITE_OK) {

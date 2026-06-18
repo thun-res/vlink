@@ -15,13 +15,16 @@ RUN set -eux; \
       pacman "$@"; \
     }; \
     test "$(uname -m)" = "aarch64"; \
+    pacman_config="/tmp/pacman-ci.conf"; \
+    cp /etc/pacman.conf "${pacman_config}"; \
+    sed -i '/^[[:space:]]*CheckSpace[[:space:]]*$/d' "${pacman_config}"; \
     rm -f /var/lib/pacman/db.lck; \
     pacman-key --init; \
     pacman-key --populate archlinuxarm || pacman-key --populate || true; \
-    retry_pacman -Syy --noconfirm; \
-    if ! retry_pacman -S --noconfirm --needed archlinuxarm-keyring; then \
+    retry_pacman --config "${pacman_config}" -Syy --noconfirm; \
+    if ! retry_pacman --config "${pacman_config}" -S --noconfirm --needed archlinuxarm-keyring; then \
       tmp_config="$(mktemp)"; \
-      cp /etc/pacman.conf "${tmp_config}"; \
+      cp "${pacman_config}" "${tmp_config}"; \
       if grep -q '^SigLevel[[:space:]]*=' "${tmp_config}"; then \
         sed -i 's/^SigLevel[[:space:]]*=.*/SigLevel = Never/g' "${tmp_config}"; \
       else \
@@ -31,12 +34,12 @@ RUN set -eux; \
       rm -f "${tmp_config}"; \
     fi; \
     pacman-key --populate archlinuxarm || pacman-key --populate; \
-    retry_pacman -Syu --noconfirm --needed \
+    retry_pacman --config "${pacman_config}" -S --noconfirm --needed \
       acl \
-      base-devel \
       ca-certificates \
       ccache \
       cmake \
+      file \
       git \
       libarchive \
       openssl \
@@ -47,4 +50,4 @@ RUN set -eux; \
     if command -v update-ca-trust >/dev/null 2>&1; then update-ca-trust; fi; \
     cmake --version; \
     pacman --version; \
-    pacman -Scc --noconfirm || true
+    pacman --config "${pacman_config}" -Scc --noconfirm || true

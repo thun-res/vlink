@@ -113,6 +113,8 @@ cmake -E make_directory "%BUILD_DIR%/output/bin"
 
 set "CMAKE_GITHUB_ARG="
 if not "%GITHUB_URL%"=="" set "CMAKE_GITHUB_ARG=-DCPM_GITHUB_URL=%GITHUB_URL%"
+set "CMAKE_CI_ARGS="
+if not "%VLINK_CI_CMAKE_ARGS%"=="" set "CMAKE_CI_ARGS=%VLINK_CI_CMAKE_ARGS%"
 
 cmake -S "%SRC_DIR%" -B "%BUILD_DIR%" -DCMAKE_TOOLCHAIN_FILE="%BUILD_DIR%/conan/conan_toolchain.cmake" ^
     -DCMAKE_BUILD_TYPE=Release ^
@@ -128,7 +130,7 @@ cmake -S "%SRC_DIR%" -B "%BUILD_DIR%" -DCMAKE_TOOLCHAIN_FILE="%BUILD_DIR%/conan/
     -DENABLE_WEBVIZ=ON ^
     -DENABLE_WEBVIZ_FOXGLOVE=ON ^
     -DENABLE_WEBVIZ_RERUN=OFF ^
-    %CMAKE_GITHUB_ARG%
+    %CMAKE_GITHUB_ARG% %CMAKE_CI_ARGS%
 
 if %errorlevel% neq 0 (
     exit /b 2

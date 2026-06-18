@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
       ccache \
       cmake \
+      file \
       git \
       lcov \
       libacl1-dev \

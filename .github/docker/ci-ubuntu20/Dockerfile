@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
       ccache \
       cmake \
+      file \
       git \
       libacl1-dev \
       libssl-dev \

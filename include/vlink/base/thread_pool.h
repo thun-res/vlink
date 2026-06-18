@@ -81,6 +81,7 @@
 #include <future>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -313,8 +314,14 @@ class VLINK_EXPORT ThreadPool {
 
 template <class FunctionT, class... ArgsT, typename ResultT>
 inline std::future<ResultT> ThreadPool::invoke_task(FunctionT&& function, ArgsT&&... args) {
-  // NOLINTNEXTLINE(modernize-avoid-bind, clang-diagnostic-deprecated-declarations)
-  auto bound = std::bind(std::forward<FunctionT>(function), std::forward<ArgsT>(args)...);
+  auto bound = [function = std::forward<FunctionT>(function),
+                args = std::make_tuple(std::forward<ArgsT>(args)...)]() mutable -> ResultT {
+    return std::apply(
+        [&function](auto&&... unpacked_args) -> ResultT {
+          return std::invoke(function, std::forward<decltype(unpacked_args)>(unpacked_args)...);
+        },
+        args);
+  };
 
   if constexpr (kIsSupportMoveFunction) {
     std::packaged_task<ResultT()> task(std::move(bound));

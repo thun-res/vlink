@@ -6,6 +6,7 @@ RUN pacman -Syu --noconfirm --needed \
       ca-certificates \
       ccache \
       cmake \
+      file \
       git \
       libarchive \
       openssl \

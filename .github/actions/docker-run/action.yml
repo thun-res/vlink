@@ -19,6 +19,10 @@ runs:
         COMMAND: ${{ inputs.command }}
       run: |
         set -euo pipefail
+        if [ -z "${IMAGE}" ]; then
+          echo "::error::Docker image input is empty."
+          exit 1
+        fi
         mkdir -p "${HOME}/.ccache" "${HOME}/.conan2" "${HOME}/.vlink-ci" "${HOME}/.vlink-cpm-cache" "${HOME}/.vlink-docker-home"
         docker run --rm \
           --user "$(id -u):$(id -g)" \

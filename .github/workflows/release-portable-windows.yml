@@ -37,7 +37,7 @@ jobs:
         with:
           backend: sccache
           cache-key: vlink-release-windows-msvc-v1
-          cmake-wrapper: "true"
+          cmake-wrapper: "false"
           disable-ipo: "true"
 
       - name: Setup MSVC tools
@@ -91,13 +91,19 @@ jobs:
 
       - name: Build portable archive and QtIFW installer
         shell: cmd
+        env:
+          VLINK_CI_CMAKE_ARGS: -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DENABLE_IPO=OFF
         run: |
           if "%OSG_DIR%"=="" set "OSG_DIR=%USERPROFILE%\.vlink-ci\osg_sdk\win32_x86_64"
           if not exist "%OSG_DIR%\bin\ot21-OpenThreads.dll" exit /b 2
           if not exist "%OSG_DIR%\bin\osg161-osg.dll" exit /b 2
           if not exist "%OSG_DIR%\bin\osgPlugins-3.6.5\osgdb_osg.dll" exit /b 2
           echo OSG_DIR=%OSG_DIR%
-          packup\build-conan.bat .
+          call packup\build-conan.bat .
+          if errorlevel 1 exit /b %ERRORLEVEL%
+          dir /b "build-conan\packup\win32\*.zip" >nul 2>nul || exit /b 3
+          dir /b "build-conan\packup\win32\*.exe" >nul 2>nul || exit /b 3
+          dir build-conan\packup\win32
 
       - name: Show sccache stats
         if: always()
