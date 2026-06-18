@@ -45,12 +45,7 @@ jobs:
   clang-tidy:
     name: clang-tidy
     runs-on: ubuntu-24.04
-    timeout-minutes: 75
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/vlink-ci-ubuntu24:latest
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+    timeout-minutes: 120
     defaults:
       run:
         shell: bash
@@ -58,30 +53,42 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Login to GHCR
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare CI image
+        id: ci-image
+        uses: ./.github/actions/prepare-ci-image
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/vlink-ci-ubuntu24:latest
+          context: .github/docker/ci-ubuntu24
+          dockerfile: .github/docker/ci-ubuntu24/Dockerfile
+          local-tag: vlink-ci-ubuntu24:local
+
       - name: Restore CPM cache
         uses: ./.github/actions/restore-build-cache
         with:
           path: ~/.vlink-cpm-cache
           key: cpm-ci-tidy-${{ runner.os }}-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
 
-      - name: Configure compile database
-        uses: ./.github/actions/cmake-build
+      - name: Configure and run clang-tidy
+        uses: ./.github/actions/docker-run
         with:
-          build-dir: build-tidy
-          cmake-args: ${{ env.VLINK_CI_CMAKE_ARGS }}
-          configure-extra-args: -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-          configure-only: "true"
-
-      - name: Assert configured features
-        uses: ./.github/actions/assert-cmake-config
-        with:
-          build-dir: build-tidy
-          required-defines: |
-            VLINK_ENABLE_SECURITY
+          image: ${{ steps.ci-image.outputs.image }}
+          command: |
+            set -euo pipefail
+            git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+            cmake -S . -B build-tidy ${VLINK_CI_CMAKE_ARGS} -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+            export BUILD_DIR=build-tidy
+            export REQUIRED_DEFINES="VLINK_ENABLE_SECURITY
             VLINK_ENABLE_SQLITE
-            VLINK_ENABLE_ZSTD
-          required-source-prefixes: |
-            src/
+            VLINK_ENABLE_ZSTD"
+            export REQUIRED_SOURCE_PREFIXES="src/
             modules/intra/
             modules/shm/
             modules/dds/
@@ -95,9 +102,6 @@ jobs:
             cli/monitor/
             cli/dump/
             cli/check/
-            cli/bench/
-
-      - name: Run clang-tidy
-        uses: ./.github/actions/run-clang-tidy
-        with:
-          build-dir: build-tidy
+            cli/bench/"
+            python3 .github/scripts/assert-cmake-config.py
+            python3 .github/scripts/run-clang-tidy.py

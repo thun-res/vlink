@@ -2,6 +2,11 @@ name: Release Linux Packages
 
 on:
   workflow_call:
+    inputs:
+      container_image_tag:
+        required: false
+        type: string
+        default: latest
 
 permissions:
   contents: read
@@ -16,7 +21,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     container:
-      image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:latest
+      image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ inputs.container_image_tag }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -98,7 +103,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vlink-package-fedora43:latest
+      image: ghcr.io/${{ github.repository_owner }}/vlink-package-fedora43:${{ inputs.container_image_tag }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -148,7 +153,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vlink-package-arch:latest
+      image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ inputs.container_image_tag }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -161,6 +166,10 @@ jobs:
         include:
           - arch: x86_64
             runner: ubuntu-24.04
+            image: vlink-package-arch
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            image: vlink-package-arch-aarch64
     steps:
       - name: Checkout
         uses: actions/checkout@v4

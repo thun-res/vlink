@@ -12,6 +12,10 @@ on:
       osg_sdk_ref:
         required: true
         type: string
+      container_image_tag:
+        required: false
+        type: string
+        default: latest
 
 permissions:
   contents: read
@@ -22,18 +26,38 @@ env:
   PIP_DISABLE_PIP_VERSION_CHECK: 1
 
 jobs:
-  portable-linux-x86_64:
-    name: portable-linux-x86_64
-    runs-on: ubuntu-24.04
+  portable-linux:
+    name: portable-linux-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vlink-release-ubuntu20:latest
+      image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ inputs.container_image_tag }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     defaults:
       run:
         shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            image: vlink-release-ubuntu20
+            osg_platform: linux_x86_64
+            setup_qt: "true"
+            qt_arch: linux_gcc_64
+            qt_modules: qtsvg qtwayland
+            qt_cache_suffix: linux_gcc_64-ifw-47
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            image: vlink-release-ubuntu20-qt-aarch64
+            osg_platform: linux_aarch64
+            setup_qt: "false"
+            qt_arch: none
+            qt_modules: ""
+            qt_cache_suffix: prebuilt-aarch64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,28 +66,36 @@ jobs:
         run: |
           set -euo pipefail
           grep -q '20.04' /etc/os-release
-          test "$(uname -m)" = "x86_64"
+          test "$(uname -m)" = "${{ matrix.arch }}"
           cmake --version
           ninja --version
           patch --version | head -n 1
           git lfs version
+          if [ "${{ matrix.setup_qt }}" = "false" ]; then
+            test -n "${QT_DIR:-}"
+            test -n "${QTIFW_DIR:-}"
+            "${QT_DIR}/bin/qmake" -query QT_VERSION | grep -q '^${{ inputs.qt_version }}$'
+            "${QTIFW_DIR}/bin/binarycreator" --version
+            conan --version
+          fi
 
       - name: Setup Qt and QtIFW
+        if: matrix.setup_qt == 'true'
         uses: ./.github/actions/setup-qt-ifw
         with:
           host: linux
           qt-version: ${{ inputs.qt_version }}
-          qt-arch: linux_gcc_64
-          qt-modules: qtsvg qtwayland
+          qt-arch: ${{ matrix.qt_arch }}
+          qt-modules: ${{ matrix.qt_modules }}
           qtifw-package: qt.tools.ifw.47
-          cache-suffix: linux_gcc_64-ifw-47
+          cache-suffix: ${{ matrix.qt_cache_suffix }}
 
       - name: Setup OSG SDK
         uses: ./.github/actions/setup-osg-sdk
         with:
           repository: ${{ inputs.osg_sdk_repository }}
           ref: ${{ inputs.osg_sdk_ref }}
-          platform-dir: linux_x86_64
+          platform-dir: ${{ matrix.osg_platform }}
           validation-paths: |
             include/osg
             lib
@@ -87,10 +119,10 @@ jobs:
           path: |
             ~/.conan2
             ~/.vlink-cpm-cache
-          key: conan-cpm-linux-x86_64-${{ hashFiles('conanfile.py', 'packup/conan_profile', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          key: conan-cpm-linux-${{ matrix.arch }}-${{ hashFiles('conanfile.py', 'packup/conan_profile', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
 
       - name: Build portable archive and QtIFW installer
-        run: bash packup/build-conan.sh . x86_64
+        run: bash packup/build-conan.sh . ${{ matrix.arch }}
 
       - name: Verify bundled Linux OSG files
         run: |
@@ -136,7 +168,7 @@ jobs:
       - name: Upload Linux portable artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: vlink-portable-linux-x86_64
+          name: vlink-portable-linux-${{ matrix.arch }}
           if-no-files-found: error
           path: |
             build-conan/packup/linux/*.tgz

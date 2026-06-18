@@ -64,12 +64,7 @@ jobs:
   build-linux-ubuntu20:
     name: ubuntu20.04-${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 50
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/vlink-ci-ubuntu20:latest
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+    timeout-minutes: 90
     defaults:
       run:
         shell: bash
@@ -85,12 +80,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check build host
-        run: |
-          test "$(uname -m)" = "${{ matrix.arch }}"
-          cmake --version
-          ninja --version
-          patch --version | head -n 1
+      - name: Login to GHCR
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare CI image
+        id: ci-image
+        uses: ./.github/actions/prepare-ci-image
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/vlink-ci-ubuntu20:latest
+          context: .github/docker/ci-ubuntu20
+          dockerfile: .github/docker/ci-ubuntu20/Dockerfile
+          local-tag: vlink-ci-ubuntu20-${{ matrix.arch }}:local
 
       - name: Restore CPM cache
         uses: ./.github/actions/restore-build-cache
@@ -99,20 +104,38 @@ jobs:
           key: cpm-ci-ubuntu20-${{ matrix.arch }}-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
 
       - name: Configure and build
-        uses: ./.github/actions/cmake-build
+        uses: ./.github/actions/docker-run
         with:
-          build-dir: build
-          cmake-args: ${{ env.VLINK_CI_CMAKE_ARGS }}
-          configure-extra-args: -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-
-      - name: Assert configured features
-        uses: ./.github/actions/assert-cmake-config
-        with:
-          build-dir: build
-          required-defines: ${{ env.VLINK_REQUIRED_DEFINES }}
-          required-source-prefixes: |
-            ${{ env.VLINK_REQUIRED_SOURCES_COMMON }}
-            modules/shm/
+          image: ${{ steps.ci-image.outputs.image }}
+          command: |
+            set -euo pipefail
+            git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+            test "$(uname -m)" = "${{ matrix.arch }}"
+            cmake --version
+            ninja --version
+            patch --version | head -n 1
+            cmake -S . -B build ${VLINK_CI_CMAKE_ARGS} -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+            cmake --build build --parallel
+            export BUILD_DIR=build
+            export REQUIRED_DEFINES="VLINK_ENABLE_SECURITY
+            VLINK_ENABLE_SQLITE
+            VLINK_ENABLE_ZSTD"
+            export REQUIRED_SOURCE_PREFIXES="src/
+            modules/intra/
+            modules/dds/
+            modules/ddsc/
+            proxy/
+            cli/info/
+            cli/bag/
+            cli/eproto/
+            cli/efbs/
+            cli/list/
+            cli/monitor/
+            cli/dump/
+            cli/check/
+            cli/bench/
+            modules/shm/"
+            python3 .github/scripts/assert-cmake-config.py
 
   build-windows:
     name: windows-msvc

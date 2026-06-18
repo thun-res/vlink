@@ -25,12 +25,7 @@ jobs:
   format-and-check:
     name: format.sh + check.sh
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/vlink-ci-ubuntu24:latest
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash
@@ -42,48 +37,62 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Prepare format diff baseline
-        run: |
-          set -euo pipefail
-          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
-          if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-            git status --short
-            exit 0
-          fi
-          echo "Checkout has no .git metadata; creating a local baseline for tools/format.sh."
-          git init -q
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git add -A
-          git commit -q -m "format baseline"
+      - name: Login to GHCR
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run format gate
-        working-directory: ${{ github.workspace }}
-        run: bash tools/format.sh "${GITHUB_WORKSPACE}"
+      - name: Prepare CI image
+        id: ci-image
+        uses: ./.github/actions/prepare-ci-image
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/vlink-ci-ubuntu24:latest
+          context: .github/docker/ci-ubuntu24
+          dockerfile: .github/docker/ci-ubuntu24/Dockerfile
+          local-tag: vlink-ci-ubuntu24:local
 
-      - name: Run changed C source format gate
-        run: |
-          if ! git rev-parse --verify HEAD^ >/dev/null 2>&1; then
-            echo "No parent commit available; no changed C files to check."
-            exit 0
-          fi
-          mapfile -t candidates < <(git diff --name-only --diff-filter=ACMR HEAD^ -- '*.c' | sort)
-          c_sources=()
-          for path in "${candidates[@]}"; do
-            case "${path}" in
-              thirdparty/*|*/thirdparty/*|builtin/*|*/builtin/*|prebuilt/*|*/prebuilt/*|android-bp/*|*/android-bp/*|build/*|*/build/*|build-*/*|*/build-*/*)
-                continue
-                ;;
-            esac
-            c_sources+=("${path}")
-          done
-          if [ "${#c_sources[@]}" -eq 0 ]; then
-            exit 0
-          fi
-          clang-format --dry-run --Werror "${c_sources[@]}"
+      - name: Run format and check gates
+        uses: ./.github/actions/docker-run
+        with:
+          image: ${{ steps.ci-image.outputs.image }}
+          command: |
+            set -euo pipefail
+            git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+            if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+              git status --short
+            else
+              echo "Checkout has no .git metadata; creating a local baseline for tools/format.sh."
+              git init -q
+              git config user.name "github-actions"
+              git config user.email "github-actions@github.com"
+              git add -A
+              git commit -q -m "format baseline"
+            fi
 
-      - name: Run cpplint gate
-        run: bash tools/check.sh .
+            bash tools/format.sh "${GITHUB_WORKSPACE}"
+
+            if ! git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+              echo "No parent commit available; no changed C files to check."
+              bash tools/check.sh .
+              exit 0
+            fi
+            mapfile -t candidates < <(git diff --name-only --diff-filter=ACMR HEAD^ -- '*.c' | sort)
+            c_sources=()
+            for path in "${candidates[@]}"; do
+              case "${path}" in
+                thirdparty/*|*/thirdparty/*|builtin/*|*/builtin/*|prebuilt/*|*/prebuilt/*|android-bp/*|*/android-bp/*|build/*|*/build/*|build-*/*|*/build-*/*)
+                  continue
+                  ;;
+              esac
+              c_sources+=("${path}")
+            done
+            if [ "${#c_sources[@]}" -gt 0 ]; then
+              clang-format --dry-run --Werror "${c_sources[@]}"
+            fi
+            bash tools/check.sh .
 
       - name: Show formatting diff
         if: failure()

@@ -22,36 +22,52 @@ concurrency:
 jobs:
   build:
     name: ${{ matrix.image }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
         include:
           - image: vlink-ci-ubuntu24
+            runner: ubuntu-24.04
             context: .github/docker/ci-ubuntu24
             dockerfile: .github/docker/ci-ubuntu24/Dockerfile
             platforms: linux/amd64
           - image: vlink-ci-ubuntu20
+            runner: ubuntu-24.04
             context: .github/docker/ci-ubuntu20
             dockerfile: .github/docker/ci-ubuntu20/Dockerfile
             platforms: linux/amd64,linux/arm64
           - image: vlink-release-ubuntu20
+            runner: ubuntu-24.04
             context: .github/docker/release-ubuntu20
             dockerfile: .github/docker/release-ubuntu20/Dockerfile
             platforms: linux/amd64,linux/arm64
+          - image: vlink-release-ubuntu20-qt-aarch64
+            runner: ubuntu-24.04-arm
+            context: .github/docker/release-ubuntu20-qt-aarch64
+            dockerfile: .github/docker/release-ubuntu20-qt-aarch64/Dockerfile
+            platforms: linux/arm64
           - image: vlink-package-ubuntu22
+            runner: ubuntu-24.04
             context: .github/docker/package-ubuntu22
             dockerfile: .github/docker/package-ubuntu22/Dockerfile
             platforms: linux/amd64,linux/arm64
           - image: vlink-package-fedora43
+            runner: ubuntu-24.04
             context: .github/docker/package-fedora43
             dockerfile: .github/docker/package-fedora43/Dockerfile
             platforms: linux/amd64,linux/arm64
           - image: vlink-package-arch
+            runner: ubuntu-24.04
             context: .github/docker/package-arch
             dockerfile: .github/docker/package-arch/Dockerfile
             platforms: linux/amd64
+          - image: vlink-package-arch-aarch64
+            runner: ubuntu-24.04-arm
+            context: .github/docker/package-arch-aarch64
+            dockerfile: .github/docker/package-arch-aarch64/Dockerfile
+            platforms: linux/arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -76,6 +92,7 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           tags: |
             type=raw,value=latest
+            type=raw,value=sha-${{ github.sha }}
             type=sha,prefix=sha-
 
       - name: Build and push

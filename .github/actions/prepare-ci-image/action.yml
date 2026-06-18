@@ -1,0 +1,43 @@
+name: Prepare CI Image
+description: Pull a GHCR CI image, or build a local fallback image when it is not published yet.
+
+inputs:
+  image:
+    description: GHCR image to pull.
+    required: true
+  context:
+    description: Docker build context for the local fallback.
+    required: true
+  dockerfile:
+    description: Dockerfile for the local fallback.
+    required: true
+  local-tag:
+    description: Local fallback image tag.
+    required: true
+
+outputs:
+  image:
+    description: Resolved Docker image tag.
+    value: ${{ steps.prepare.outputs.image }}
+
+runs:
+  using: composite
+  steps:
+    - name: Pull or build image
+      id: prepare
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        CONTEXT: ${{ inputs.context }}
+        DOCKERFILE: ${{ inputs.dockerfile }}
+        LOCAL_TAG: ${{ inputs.local-tag }}
+      run: |
+        set -euo pipefail
+        if docker pull "${IMAGE}"; then
+          echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
+          exit 0
+        fi
+
+        echo "::warning::Image ${IMAGE} is not available; building local fallback ${LOCAL_TAG}."
+        docker build --pull -t "${LOCAL_TAG}" -f "${DOCKERFILE}" "${CONTEXT}"
+        echo "image=${LOCAL_TAG}" >> "${GITHUB_OUTPUT}"
