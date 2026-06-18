@@ -149,14 +149,37 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $OpenSslRoot = "C:\Program Files\OpenSSL-Win64"
-          if (-not (Test-Path (Join-Path $OpenSslRoot "include\openssl\ssl.h"))) {
+
+          function Find-OpenSslRoot {
+            $Candidates = @(
+              (Join-Path $env:ProgramFiles "OpenSSL"),
+              (Join-Path $env:ProgramFiles "OpenSSL-Win64")
+            )
+            if (${env:ProgramFiles(x86)}) {
+              $Candidates += Join-Path ${env:ProgramFiles(x86)} "OpenSSL-Win32"
+            }
+            $Candidates += Get-ChildItem -Path $env:ProgramFiles -Directory -Filter "OpenSSL*" -ErrorAction SilentlyContinue |
+              ForEach-Object { $_.FullName }
+
+            foreach ($Candidate in ($Candidates | Where-Object { $_ } | Select-Object -Unique)) {
+              if (Test-Path (Join-Path $Candidate "include\openssl\ssl.h")) {
+                return $Candidate
+              }
+            }
+            return $null
+          }
+
+          $OpenSslRoot = Find-OpenSslRoot
+          if (-not $OpenSslRoot) {
             choco install openssl --no-progress --yes
+            $OpenSslRoot = Find-OpenSslRoot
           }
-          if (-not (Test-Path (Join-Path $OpenSslRoot "include\openssl\ssl.h"))) {
-            throw "OpenSSL headers not found under $OpenSslRoot"
+          if (-not $OpenSslRoot) {
+            throw "OpenSSL headers not found under Program Files after Chocolatey install"
           }
-          "OPENSSL_ROOT_DIR=C:/Progra~1/OpenSSL-Win64" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $OpenSslRootForCMake = $OpenSslRoot.Replace("\", "/")
+          "OPENSSL_ROOT_DIR=$OpenSslRootForCMake" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "OPENSSL_ROOT_DIR=$OpenSslRootForCMake"
 
       - name: Expose patch.exe without shadowing MSVC tools
         shell: pwsh
