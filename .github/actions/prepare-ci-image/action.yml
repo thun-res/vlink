@@ -60,5 +60,5 @@ runs:
           echo "::warning::Image ${IMAGE} is not available; building local fallback ${LOCAL_TAG}."
         fi
 
-        docker build --pull -t "${LOCAL_TAG}" -f "${DOCKERFILE}" "${CONTEXT}"
+        DOCKER_BUILDKIT=1 docker build --pull -t "${LOCAL_TAG}" -f "${DOCKERFILE}" "${CONTEXT}"
         echo "image=${LOCAL_TAG}" >> "${GITHUB_OUTPUT}"

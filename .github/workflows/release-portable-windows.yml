@@ -91,7 +91,13 @@ jobs:
 
       - name: Build portable archive and QtIFW installer
         shell: cmd
-        run: packup\build-conan.bat .
+        run: |
+          if "%OSG_DIR%"=="" set "OSG_DIR=%USERPROFILE%\.vlink-ci\osg_sdk\win32_x86_64"
+          if not exist "%OSG_DIR%\bin\ot21-OpenThreads.dll" exit /b 2
+          if not exist "%OSG_DIR%\bin\osg161-osg.dll" exit /b 2
+          if not exist "%OSG_DIR%\bin\osgPlugins-3.6.5\osgdb_osg.dll" exit /b 2
+          echo OSG_DIR=%OSG_DIR%
+          packup\build-conan.bat .
 
       - name: Show sccache stats
         if: always()

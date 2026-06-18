@@ -55,7 +55,6 @@ jobs:
           if [ "${BUILD_PORTABLE}" = "true" ]; then
             image_refs+=(
               "vlink-release-ubuntu20|linux/amd64"
-              "vlink-release-ubuntu20-qt-aarch64|linux/arm64"
             )
           fi
           if [ "${BUILD_LINUX_PACKAGES}" = "true" ]; then

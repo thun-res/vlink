@@ -3,11 +3,23 @@ FROM menci/archlinuxarm:base-devel
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 RUN set -eux; \
+    retry_pacman() { \
+      local attempt; \
+      for attempt in 1 2 3; do \
+        if pacman "$@"; then \
+          return 0; \
+        fi; \
+        rm -f /var/lib/pacman/db.lck; \
+        sleep "$((attempt * 10))"; \
+      done; \
+      pacman "$@"; \
+    }; \
     test "$(uname -m)" = "aarch64"; \
+    rm -f /var/lib/pacman/db.lck; \
     pacman-key --init; \
-    pacman-key --populate || true; \
-    pacman -Syy --noconfirm; \
-    if ! pacman -S --noconfirm --needed archlinuxarm-keyring; then \
+    pacman-key --populate archlinuxarm || pacman-key --populate || true; \
+    retry_pacman -Syy --noconfirm; \
+    if ! retry_pacman -S --noconfirm --needed archlinuxarm-keyring; then \
       tmp_config="$(mktemp)"; \
       cp /etc/pacman.conf "${tmp_config}"; \
       if grep -q '^SigLevel[[:space:]]*=' "${tmp_config}"; then \
@@ -15,13 +27,11 @@ RUN set -eux; \
       else \
         sed -i '/^\[options\]/a SigLevel = Never' "${tmp_config}"; \
       fi; \
-      pacman -S --noconfirm --needed --config "${tmp_config}" archlinuxarm-keyring; \
+      retry_pacman -S --noconfirm --needed --config "${tmp_config}" archlinuxarm-keyring; \
       rm -f "${tmp_config}"; \
     fi; \
-    pacman-key --populate archlinuxarm
-
-RUN set -eux; \
-    pacman -S --noconfirm --needed \
+    pacman-key --populate archlinuxarm || pacman-key --populate; \
+    retry_pacman -Syu --noconfirm --needed \
       acl \
       base-devel \
       ca-certificates \

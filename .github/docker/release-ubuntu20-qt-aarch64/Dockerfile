@@ -82,6 +82,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       patchelf \
       pkg-config \
       python3 \
+      python3-dev \
       python3-pip \
       python3-venv \
       tar \
@@ -97,7 +98,8 @@ RUN python3 -m pip install --no-cache-dir --upgrade \
       pip \
       setuptools \
       wheel \
-    && cmake --version
+    && cmake --version \
+    && conan --version
 
 WORKDIR /tmp/qt-build
 
