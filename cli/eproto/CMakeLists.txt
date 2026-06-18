@@ -17,6 +17,7 @@ add_executable(${PROJECT_NAME} eproto.cc)
 target_link_libraries(${PROJECT_NAME} PRIVATE vlink::vlink ${VLINK_NO_INTRA_LIBRARIES})
 target_link_libraries(${PROJECT_NAME} PRIVATE thirdparty::argparse thirdparty::json)
 target_link_libraries(${PROJECT_NAME} PRIVATE protobuf::libprotobuf)
+vlink_target_system_includes_from(${PROJECT_NAME} protobuf::libprotobuf)
 
 if(WIN32)
   if(EXISTS ${CMAKE_SOURCE_DIR}/packup/ico/vlink-cmd.rc)

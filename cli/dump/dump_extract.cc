@@ -309,7 +309,7 @@ std::string format_point_cloud(const vlink::zerocopy::PointCloud& pc) {
   s += "pack_size: " + std::to_string(pc.pack_size()) + "\n";
   s += "extent: " + std::to_string(pc.get_extent()) + "\n";
   s += "downsample: " + std::to_string(pc.get_downsample()) + "\n";
-  s += "vertical: " + std::to_string(static_cast<int>(pc.get_vertical())) + "\n";
+  s += "vertical: " + std::string(pc.get_vertical() ? "true" : "false") + "\n";
   return s;
 }
 

@@ -45,7 +45,13 @@ def main() -> None:
     for path in files:
         print(Path(path).relative_to(root).as_posix())
 
-    cmd = ["clang-tidy", "--quiet", "-p", str(build)]
+    cmd = [
+        "clang-tidy",
+        "--quiet",
+        "-p",
+        str(build),
+        "--extra-arg=-Wno-unknown-warning-option",
+    ]
     for path in files:
         subprocess.run(cmd + [path], check=True)
 

@@ -1324,14 +1324,13 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
                          vlink::Helpers::format_hex_number(static_cast<int64_t>(point_cloud.get_extent())) + "\n";
             print_str += std::string("downsample: ") +
                          vlink::Helpers::format_hex_number(static_cast<int64_t>(point_cloud.get_downsample())) + "\n";
-            print_str += std::string("vertical: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(point_cloud.get_vertical())) + "\n";
+            print_str += std::string("vertical: ") + (point_cloud.get_vertical() ? "true" : "false") + "\n";
           } else {
             print_str += std::string("size: ") + std::to_string(point_cloud.size()) + "\n";
             print_str += std::string("pack_size: ") + std::to_string(point_cloud.pack_size()) + "\n";
             print_str += std::string("extent: ") + std::to_string(point_cloud.get_extent()) + "\n";
             print_str += std::string("downsample: ") + std::to_string(point_cloud.get_downsample()) + "\n";
-            print_str += std::string("vertical: ") + std::to_string(static_cast<int>(point_cloud.get_vertical())) + "\n";
+            print_str += std::string("vertical: ") + (point_cloud.get_vertical() ? "true" : "false") + "\n";
           }
 
           if (!ignore_array) {

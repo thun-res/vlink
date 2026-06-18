@@ -55,6 +55,16 @@ RUN set -eux; \
 RUN set -eux; \
     mkdir -p /tmp/protocol-src; \
     git clone --depth 1 --branch "${VSOMEIP_VERSION}" https://github.com/COVESA/vsomeip.git /tmp/protocol-src/vsomeip; \
+    sed -i \
+      -e 's/ -Wall//g' \
+      -e 's/ -Wextra//g' \
+      -e 's/ -Wformat-security//g' \
+      -e 's/ -Wformat//g' \
+      -e 's/ -Wconversion//g' \
+      -e 's/ -Wpedantic//g' \
+      -e 's/ -Werror//g' \
+      -e 's/ -Wno-inconsistent-missing-override//g' \
+      /tmp/protocol-src/vsomeip/CMakeLists.txt; \
     cmake -S /tmp/protocol-src/vsomeip -B /tmp/protocol-src/vsomeip/build -GNinja \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_INSTALL_PREFIX=/usr/local \

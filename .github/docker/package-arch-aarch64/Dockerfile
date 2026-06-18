@@ -6,7 +6,8 @@ RUN set -eux; \
     test "$(uname -m)" = "aarch64"; \
     pacman-key --init; \
     pacman-key --populate || true; \
-    if ! pacman -Sy --noconfirm --needed archlinuxarm-keyring; then \
+    pacman -Syy --noconfirm; \
+    if ! pacman -S --noconfirm --needed archlinuxarm-keyring; then \
       tmp_config="$(mktemp)"; \
       cp /etc/pacman.conf "${tmp_config}"; \
       if grep -q '^SigLevel[[:space:]]*=' "${tmp_config}"; then \
@@ -14,13 +15,13 @@ RUN set -eux; \
       else \
         sed -i '/^\[options\]/a SigLevel = Never' "${tmp_config}"; \
       fi; \
-      pacman -Sy --noconfirm --needed --config "${tmp_config}" archlinuxarm-keyring; \
+      pacman -S --noconfirm --needed --config "${tmp_config}" archlinuxarm-keyring; \
       rm -f "${tmp_config}"; \
     fi; \
-    pacman-key --populate
+    pacman-key --populate archlinuxarm
 
 RUN set -eux; \
-    pacman -Syu --noconfirm --needed \
+    pacman -S --noconfirm --needed \
       acl \
       base-devel \
       ca-certificates \

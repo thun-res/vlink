@@ -290,7 +290,7 @@ class bucket_entry : public bucket_entry_hash<StoreHash> {
     swap(value, this->value());
     swap(dist_from_ideal_bucket, m_dist_from_ideal_bucket);
 
-    if (StoreHash) {
+    if constexpr (StoreHash) {
       const truncated_hash_type tmp_hash = this->truncated_hash();
       this->set_hash(hash);
       hash = tmp_hash;
@@ -405,10 +405,12 @@ class robin_hash : private Hash, private KeyEqual, private GrowthPolicy {
    * to check that the truncated_hash_type didn't truncated more bytes.
    */
   static bool USE_STORED_HASH_ON_REHASH(size_type bucket_count) {
-    if (STORE_HASH && sizeof(std::size_t) == sizeof(truncated_hash_type)) {
+    if constexpr (STORE_HASH &&
+                  sizeof(std::size_t) == sizeof(truncated_hash_type)) {
       TSL_RH_UNUSED(bucket_count);
       return true;
-    } else if (STORE_HASH && is_power_of_two_policy<GrowthPolicy>::value) {
+    } else if constexpr (STORE_HASH &&
+                         is_power_of_two_policy<GrowthPolicy>::value) {
       return bucket_count == 0 ||
              (bucket_count - 1) <=
                  std::numeric_limits<truncated_hash_type>::max();
@@ -1382,7 +1384,7 @@ class robin_hash : private Hash, private KeyEqual, private GrowthPolicy {
         const std::int16_t dist_from_ideal_bucket =
             bucket.dist_from_ideal_bucket();
         serializer(dist_from_ideal_bucket);
-        if (STORE_HASH) {
+        if constexpr (STORE_HASH) {
           const std::uint32_t truncated_hash = bucket.truncated_hash();
           serializer(truncated_hash);
         }

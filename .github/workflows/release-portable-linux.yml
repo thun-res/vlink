@@ -138,7 +138,10 @@ jobs:
 
       - name: Show ccache stats
         if: always()
-        run: command -v ccache >/dev/null 2>&1 && ccache --show-stats || true
+        run: |
+          if command -v ccache >/dev/null 2>&1; then
+            ccache --show-stats || true
+          fi
 
       - name: Verify bundled Linux OSG files
         run: |

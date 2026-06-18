@@ -91,7 +91,10 @@ jobs:
 
       - name: Show ccache stats
         if: always()
-        run: command -v ccache >/dev/null 2>&1 && ccache --show-stats || true
+        run: |
+          if command -v ccache >/dev/null 2>&1; then
+            ccache --show-stats || true
+          fi
 
       - name: Add distro suffix to deb package names
         run: |
@@ -164,7 +167,10 @@ jobs:
 
       - name: Show ccache stats
         if: always()
-        run: command -v ccache >/dev/null 2>&1 && ccache --show-stats || true
+        run: |
+          if command -v ccache >/dev/null 2>&1; then
+            ccache --show-stats || true
+          fi
 
       - name: Verify rpm package
         uses: ./.github/actions/verify-artifacts
@@ -230,7 +236,10 @@ jobs:
 
       - name: Show ccache stats
         if: always()
-        run: command -v ccache >/dev/null 2>&1 && ccache --show-stats || true
+        run: |
+          if command -v ccache >/dev/null 2>&1; then
+            ccache --show-stats || true
+          fi
 
       - name: Verify Arch package
         uses: ./.github/actions/verify-artifacts

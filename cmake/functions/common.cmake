@@ -27,6 +27,22 @@ function(vlink_test_warn target)
   endif()
 endfunction()
 
+function(vlink_target_system_includes_from target dependency)
+  if(NOT TARGET ${target} OR NOT TARGET ${dependency})
+    return()
+  endif()
+
+  get_target_property(include_dirs ${dependency} INTERFACE_INCLUDE_DIRECTORIES)
+  if(include_dirs)
+    set_property(
+      TARGET ${dependency}
+      APPEND
+      PROPERTY INTERFACE_SYSTEM_INCLUDE_DIRECTORIES ${include_dirs}
+    )
+    target_include_directories(${target} SYSTEM PRIVATE ${include_dirs})
+  endif()
+endfunction()
+
 function(vlink_test_sanitize target)
   if(NOT WIN32
      AND NOT QNX
