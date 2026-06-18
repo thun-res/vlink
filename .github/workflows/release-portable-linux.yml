@@ -50,8 +50,8 @@ jobs:
             osg_platform: linux_x86_64
             setup_qt: "true"
             qt_arch: linux_gcc_64
-            qt_modules: qtsvg qtwayland
-            qt_cache_suffix: linux_gcc_64-ifw-47
+            qt_modules: qtwaylandcompositor
+            qt_cache_suffix: linux_gcc_64-waylandcompositor-ifw-47
           - arch: aarch64
             runner: ubuntu-24.04-arm
             image: vlink-release-ubuntu20-qt-aarch64

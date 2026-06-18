@@ -48,9 +48,8 @@ jobs:
           host: mac
           qt-version: ${{ inputs.qt_version }}
           qt-arch: clang_64
-          qt-modules: qtsvg
           qtifw-package: qt.tools.ifw.47
-          cache-suffix: clang_64-ifw-47
+          cache-suffix: clang_64-base-ifw-47
 
       - name: Setup OSG SDK
         uses: ./.github/actions/setup-osg-sdk

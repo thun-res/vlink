@@ -51,25 +51,34 @@ jobs:
       - name: Verify Linux release images
         run: |
           set -euo pipefail
-          images=()
+          image_refs=()
           if [ "${BUILD_PORTABLE}" = "true" ]; then
-            images+=(
-              "vlink-release-ubuntu20"
-              "vlink-release-ubuntu20-qt-aarch64"
+            image_refs+=(
+              "vlink-release-ubuntu20|linux/amd64"
+              "vlink-release-ubuntu20-qt-aarch64|linux/arm64"
             )
           fi
           if [ "${BUILD_LINUX_PACKAGES}" = "true" ]; then
-            images+=(
-              "vlink-release-ubuntu20"
-              "vlink-package-ubuntu22"
-              "vlink-package-fedora43"
-              "vlink-package-arch"
-              "vlink-package-arch-aarch64"
+            image_refs+=(
+              "vlink-release-ubuntu20|linux/amd64"
+              "vlink-release-ubuntu20|linux/arm64"
+              "vlink-package-ubuntu22|linux/amd64"
+              "vlink-package-ubuntu22|linux/arm64"
+              "vlink-package-fedora43|linux/amd64"
+              "vlink-package-fedora43|linux/arm64"
+              "vlink-package-arch|linux/amd64"
+              "vlink-package-arch-aarch64|linux/arm64"
             )
           fi
-          mapfile -t unique_images < <(printf '%s\n' "${images[@]}" | sort -u)
-          for image in "${unique_images[@]}"; do
-            docker pull "ghcr.io/${{ github.repository_owner }}/${image}:${IMAGE_TAG}"
+          mapfile -t unique_image_refs < <(printf '%s\n' "${image_refs[@]}" | sort -u)
+          for image_ref in "${unique_image_refs[@]}"; do
+            IFS='|' read -r image platform <<< "${image_ref}"
+            full_image="ghcr.io/${{ github.repository_owner }}/${image}:${IMAGE_TAG}"
+            echo "Pulling ${full_image} for ${platform}"
+            if ! docker pull --platform "${platform}" "${full_image}"; then
+              echo "::error::Missing Linux release image ${full_image} for ${platform}. Run the Docker Images workflow for ${image} with tag ${IMAGE_TAG} first."
+              exit 1
+            fi
           done
 
   portable-linux:

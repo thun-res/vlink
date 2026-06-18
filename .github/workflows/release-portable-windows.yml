@@ -52,9 +52,8 @@ jobs:
           host: windows
           qt-version: ${{ inputs.qt_version }}
           qt-arch: win64_msvc2022_64
-          qt-modules: qtsvg
           qtifw-package: qt.tools.ifw.47
-          cache-suffix: msvc2022_64-ifw-47
+          cache-suffix: msvc2022_64-base-ifw-47
 
       - name: Setup OSG SDK
         uses: ./.github/actions/setup-osg-sdk
