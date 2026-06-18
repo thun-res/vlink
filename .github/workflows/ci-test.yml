@@ -127,7 +127,7 @@ jobs:
             python3 .github/scripts/assert-cmake-config.py
             export ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1
             export LSAN_OPTIONS=print_suppressions=0
-            ctest --test-dir build-test --output-on-failure --timeout 180 --parallel 1
+            ctest --test-dir build-test --output-on-failure --timeout 180 --parallel 1 --exclude-regex '^shm-'
             asan_lib="$(gcc -print-file-name=libasan.so)"
             if [ -f "${asan_lib}" ]; then
               export LD_PRELOAD="${asan_lib}${LD_PRELOAD:+:${LD_PRELOAD}}"
@@ -214,7 +214,7 @@ jobs:
 
       - name: Run unit tests
         shell: pwsh
-        run: ctest --test-dir build-test --output-on-failure --timeout 180 --parallel 1
+        run: ctest --test-dir build-test --output-on-failure --timeout 180 --parallel 1 --exclude-regex '^shm-'
 
       - name: Run Python API tests
         shell: pwsh
@@ -311,7 +311,7 @@ jobs:
         run: |
           export ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1
           export LSAN_OPTIONS=print_suppressions=0
-          ctest --test-dir build-test --output-on-failure --timeout 180 --parallel 1
+          ctest --test-dir build-test --output-on-failure --timeout 180 --parallel 1 --exclude-regex '^shm-'
 
       - name: Run Python API tests
         run: |

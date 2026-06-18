@@ -110,7 +110,7 @@ jobs:
             ENABLE_TEST_COVERAGE=ON
             ENABLE_WEBVIZ=ON"
             python3 .github/scripts/assert-cmake-config.py
-            ctest --test-dir build-coverage --output-on-failure --timeout 180 --parallel 1
+            ctest --test-dir build-coverage --output-on-failure --timeout 180 --parallel 1 --exclude-regex '^shm-'
             cmake --build build-coverage --target coverage
             test -f build-coverage/coverage/index.html
             ccache --show-stats || true

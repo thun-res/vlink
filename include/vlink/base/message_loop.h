@@ -677,8 +677,8 @@ Schedule::RetStatus MessageLoop::exec_task(const Schedule::Config& config, Callb
 
 template <class FunctionT, class... ArgsT, typename ResultT>
 inline std::future<ResultT> MessageLoop::invoke_task(FunctionT&& function, ArgsT&&... args) {
-  auto bound =
-      std::bind(std::forward<FunctionT>(function), std::forward<ArgsT>(args)...);  // NOLINT(modernize-avoid-bind)
+  // NOLINTNEXTLINE(modernize-avoid-bind, clang-diagnostic-deprecated-declarations)
+  auto bound = std::bind(std::forward<FunctionT>(function), std::forward<ArgsT>(args)...);
 
   if constexpr (kIsSupportMoveFunction) {
     std::packaged_task<ResultT()> task(std::move(bound));
@@ -703,8 +703,8 @@ inline std::future<ResultT> MessageLoop::invoke_task(FunctionT&& function, ArgsT
 template <class FunctionT, class... ArgsT, typename ResultT>
 inline std::future<ResultT> MessageLoop::invoke_task_with_priority(FunctionT&& function, uint16_t priority,
                                                                    ArgsT&&... args) {
-  auto bound =
-      std::bind(std::forward<FunctionT>(function), std::forward<ArgsT>(args)...);  // NOLINT(modernize-avoid-bind)
+  // NOLINTNEXTLINE(modernize-avoid-bind, clang-diagnostic-deprecated-declarations)
+  auto bound = std::bind(std::forward<FunctionT>(function), std::forward<ArgsT>(args)...);
 
   if constexpr (kIsSupportMoveFunction) {
     std::packaged_task<ResultT()> task(std::move(bound));

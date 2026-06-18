@@ -33,8 +33,8 @@
 #include "./extension/schema_plugin_base.h"
 #include "./extension/schema_plugin_manager.h"
 
-#if __has_include(<google/protobuf/any.pb.h>)
-#include <google/protobuf/any.pb.h>
+#if __has_include(<google/protobuf/descriptor.pb.h>)
+#include <google/protobuf/descriptor.pb.h>
 #endif
 
 #include "../common_test.h"
@@ -65,6 +65,8 @@ class TestSchemaPlugin final : public SchemaPluginBase {
     return {"TestSchemaPlugin", "1.0.0", "2026-01-01", "", ""};
   }
 };
+
+constexpr const char* kLinkedProtobufSchemaName = "google.protobuf.FileDescriptorSet";
 
 #ifdef VLINK_HAS_SCHEMA_PLUGIN_FLATBUFFERS
 VLINK_REGISTER_FLATBUFFERS("invalid.Schema", InvalidBinarySchema)
@@ -145,11 +147,11 @@ TEST_SUITE("extension-SchemaPluginBase") {
   TEST_CASE("protobuf schema lookup finds linked generated descriptor") {
     TestSchemaPlugin plugin;
     const auto* descriptor =
-        google::protobuf::DescriptorPool::generated_pool()->FindMessageTypeByName("google.protobuf.Any");
+        google::protobuf::DescriptorPool::generated_pool()->FindMessageTypeByName(kLinkedProtobufSchemaName);
     REQUIRE(descriptor != nullptr);
 
-    const auto schema = plugin.search_schema("google.protobuf.Any", SchemaType::kProtobuf);
-    CHECK_EQ(schema.name, "google.protobuf.Any");
+    const auto schema = plugin.search_schema(kLinkedProtobufSchemaName, SchemaType::kProtobuf);
+    CHECK_EQ(schema.name, kLinkedProtobufSchemaName);
     CHECK_EQ(schema.encoding, "protobuf");
     CHECK_EQ(schema.schema_type, SchemaType::kProtobuf);
     CHECK_FALSE(schema.data.empty());
@@ -157,24 +159,24 @@ TEST_SUITE("extension-SchemaPluginBase") {
 
   TEST_CASE("protobuf schema lookup with wrong family returns empty schema") {
     TestSchemaPlugin plugin;
-    const auto schema = plugin.search_schema("google.protobuf.Any", SchemaType::kFlatbuffers);
+    const auto schema = plugin.search_schema(kLinkedProtobufSchemaName, SchemaType::kFlatbuffers);
     CHECK(schema.encoding.empty());
     CHECK(schema.data.empty());
   }
 
   TEST_CASE("search_protobuf_descriptor returns non-null for linked type") {
     TestSchemaPlugin plugin;
-    CHECK_NE(plugin.search_protobuf_descriptor("google.protobuf.Any"), nullptr);
+    CHECK_NE(plugin.search_protobuf_descriptor(kLinkedProtobufSchemaName), nullptr);
   }
 
   TEST_CASE("create_protobuf_message returns non-null for linked type") {
     TestSchemaPlugin plugin;
-    CHECK_NE(plugin.create_protobuf_message("google.protobuf.Any"), nullptr);
+    CHECK_NE(plugin.create_protobuf_message(kLinkedProtobufSchemaName), nullptr);
   }
 
   TEST_CASE("get_all_schemas returns non-empty list for protobuf family") {
     TestSchemaPlugin plugin;
-    (void)plugin.search_schema("google.protobuf.Any", SchemaType::kProtobuf);
+    (void)plugin.search_schema(kLinkedProtobufSchemaName, SchemaType::kProtobuf);
     const auto all = plugin.get_all_schemas(SchemaType::kProtobuf);
     CHECK_FALSE(all.empty());
   }

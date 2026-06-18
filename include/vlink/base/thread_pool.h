@@ -313,8 +313,8 @@ class VLINK_EXPORT ThreadPool {
 
 template <class FunctionT, class... ArgsT, typename ResultT>
 inline std::future<ResultT> ThreadPool::invoke_task(FunctionT&& function, ArgsT&&... args) {
-  auto bound =
-      std::bind(std::forward<FunctionT>(function), std::forward<ArgsT>(args)...);  // NOLINT(modernize-avoid-bind)
+  // NOLINTNEXTLINE(modernize-avoid-bind, clang-diagnostic-deprecated-declarations)
+  auto bound = std::bind(std::forward<FunctionT>(function), std::forward<ArgsT>(args)...);
 
   if constexpr (kIsSupportMoveFunction) {
     std::packaged_task<ResultT()> task(std::move(bound));

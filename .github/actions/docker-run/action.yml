@@ -34,6 +34,7 @@ runs:
           --env CCACHE_BASEDIR=/work/vlink \
           --env VLINK_CMAKE_DISABLE_IPO \
           --env CMAKE_BUILD_PARALLEL_LEVEL \
+          --env CLANG_TIDY_JOBS \
           --env CCACHE_COMPRESS \
           --env CCACHE_MAXSIZE \
           --env CTEST_OUTPUT_ON_FAILURE \

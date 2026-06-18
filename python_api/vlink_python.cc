@@ -321,98 +321,102 @@ inline nb::dict status_to_dict(const vlink::Status::BasePtr& status) {
   };
 
 #if defined(NDEBUG) || defined(__ANDROID__)
-  if (auto s = std::static_pointer_cast<vlink::Status::PublicationMatched>(status)) {
-    d["total_count"] = s->total_count;
-    d["total_count_change"] = s->total_count_change;
-    d["current_count"] = s->current_count;
-    d["current_count_change"] = s->current_count_change;
-    put_handle("last_subscription_handle", s->last_subscription_handle);
-  } else if (auto s = std::static_pointer_cast<vlink::Status::OfferedDeadlineMissed>(status)) {
-    d["total_count"] = s->total_count;
-    d["total_count_change"] = s->total_count_change;
-    put_handle("last_instance_handle", s->last_instance_handle);
-  } else if (auto s = std::static_pointer_cast<vlink::Status::OfferedIncompatibleQos>(status)) {
-    d["total_count"] = s->total_count;
-    d["total_count_change"] = s->total_count_change;
-    d["last_policy_id"] = s->last_policy_id;
-  } else if (auto s = std::static_pointer_cast<vlink::Status::LivelinessLost>(status)) {
-    d["total_count"] = s->total_count;
-    d["total_count_change"] = s->total_count_change;
-  } else if (auto s = std::static_pointer_cast<vlink::Status::SubscriptionMatched>(status)) {
-    d["total_count"] = s->total_count;
-    d["total_count_change"] = s->total_count_change;
-    d["current_count"] = s->current_count;
-    d["current_count_change"] = s->current_count_change;
-    put_handle("last_publication_handle", s->last_publication_handle);
-  } else if (auto s = std::static_pointer_cast<vlink::Status::RequestedDeadlineMissed>(status)) {
-    d["total_count"] = s->total_count;
-    d["total_count_change"] = s->total_count_change;
-    put_handle("last_instance_handle", s->last_instance_handle);
-  } else if (auto s = std::static_pointer_cast<vlink::Status::LivelinessChanged>(status)) {
-    d["alive_count"] = s->alive_count;
-    d["not_alive_count"] = s->not_alive_count;
-    d["alive_count_change"] = s->alive_count_change;
-    d["not_alive_count_change"] = s->not_alive_count_change;
-    put_handle("last_publication_handle", s->last_publication_handle);
-  } else if (auto s = std::static_pointer_cast<vlink::Status::SampleRejected>(status)) {
-    d["total_count"] = s->total_count;
-    d["total_count_change"] = s->total_count_change;
-    d["last_reason"] = static_cast<int>(s->last_reason);
-    put_handle("last_instance_handle", s->last_instance_handle);
-  } else if (auto s = std::static_pointer_cast<vlink::Status::RequestedIncompatibleQos>(status)) {
-    d["total_count"] = s->total_count;
-    d["total_count_change"] = s->total_count_change;
-    d["last_policy_id"] = s->last_policy_id;
-  } else if (auto s = std::static_pointer_cast<vlink::Status::SampleLost>(status)) {
-    d["total_count"] = s->total_count;
-    d["total_count_change"] = s->total_count_change;
+  if (auto publication_matched = std::static_pointer_cast<vlink::Status::PublicationMatched>(status)) {
+    d["total_count"] = publication_matched->total_count;
+    d["total_count_change"] = publication_matched->total_count_change;
+    d["current_count"] = publication_matched->current_count;
+    d["current_count_change"] = publication_matched->current_count_change;
+    put_handle("last_subscription_handle", publication_matched->last_subscription_handle);
+  } else if (auto offered_deadline_missed = std::static_pointer_cast<vlink::Status::OfferedDeadlineMissed>(status)) {
+    d["total_count"] = offered_deadline_missed->total_count;
+    d["total_count_change"] = offered_deadline_missed->total_count_change;
+    put_handle("last_instance_handle", offered_deadline_missed->last_instance_handle);
+  } else if (auto offered_incompatible_qos = std::static_pointer_cast<vlink::Status::OfferedIncompatibleQos>(status)) {
+    d["total_count"] = offered_incompatible_qos->total_count;
+    d["total_count_change"] = offered_incompatible_qos->total_count_change;
+    d["last_policy_id"] = offered_incompatible_qos->last_policy_id;
+  } else if (auto liveliness_lost = std::static_pointer_cast<vlink::Status::LivelinessLost>(status)) {
+    d["total_count"] = liveliness_lost->total_count;
+    d["total_count_change"] = liveliness_lost->total_count_change;
+  } else if (auto subscription_matched = std::static_pointer_cast<vlink::Status::SubscriptionMatched>(status)) {
+    d["total_count"] = subscription_matched->total_count;
+    d["total_count_change"] = subscription_matched->total_count_change;
+    d["current_count"] = subscription_matched->current_count;
+    d["current_count_change"] = subscription_matched->current_count_change;
+    put_handle("last_publication_handle", subscription_matched->last_publication_handle);
+  } else if (auto requested_deadline_missed =
+                 std::static_pointer_cast<vlink::Status::RequestedDeadlineMissed>(status)) {
+    d["total_count"] = requested_deadline_missed->total_count;
+    d["total_count_change"] = requested_deadline_missed->total_count_change;
+    put_handle("last_instance_handle", requested_deadline_missed->last_instance_handle);
+  } else if (auto liveliness_changed = std::static_pointer_cast<vlink::Status::LivelinessChanged>(status)) {
+    d["alive_count"] = liveliness_changed->alive_count;
+    d["not_alive_count"] = liveliness_changed->not_alive_count;
+    d["alive_count_change"] = liveliness_changed->alive_count_change;
+    d["not_alive_count_change"] = liveliness_changed->not_alive_count_change;
+    put_handle("last_publication_handle", liveliness_changed->last_publication_handle);
+  } else if (auto sample_rejected = std::static_pointer_cast<vlink::Status::SampleRejected>(status)) {
+    d["total_count"] = sample_rejected->total_count;
+    d["total_count_change"] = sample_rejected->total_count_change;
+    d["last_reason"] = static_cast<int>(sample_rejected->last_reason);
+    put_handle("last_instance_handle", sample_rejected->last_instance_handle);
+  } else if (auto requested_incompatible_qos =
+                 std::static_pointer_cast<vlink::Status::RequestedIncompatibleQos>(status)) {
+    d["total_count"] = requested_incompatible_qos->total_count;
+    d["total_count_change"] = requested_incompatible_qos->total_count_change;
+    d["last_policy_id"] = requested_incompatible_qos->last_policy_id;
+  } else if (auto sample_lost = std::static_pointer_cast<vlink::Status::SampleLost>(status)) {
+    d["total_count"] = sample_lost->total_count;
+    d["total_count_change"] = sample_lost->total_count_change;
   }
 #else
-  if (auto s = std::dynamic_pointer_cast<vlink::Status::PublicationMatched>(status)) {
-    d["total_count"] = s->total_count;
-    d["total_count_change"] = s->total_count_change;
-    d["current_count"] = s->current_count;
-    d["current_count_change"] = s->current_count_change;
-    put_handle("last_subscription_handle", s->last_subscription_handle);
-  } else if (auto s = std::dynamic_pointer_cast<vlink::Status::OfferedDeadlineMissed>(status)) {
-    d["total_count"] = s->total_count;
-    d["total_count_change"] = s->total_count_change;
-    put_handle("last_instance_handle", s->last_instance_handle);
-  } else if (auto s = std::dynamic_pointer_cast<vlink::Status::OfferedIncompatibleQos>(status)) {
-    d["total_count"] = s->total_count;
-    d["total_count_change"] = s->total_count_change;
-    d["last_policy_id"] = s->last_policy_id;
-  } else if (auto s = std::dynamic_pointer_cast<vlink::Status::LivelinessLost>(status)) {
-    d["total_count"] = s->total_count;
-    d["total_count_change"] = s->total_count_change;
-  } else if (auto s = std::dynamic_pointer_cast<vlink::Status::SubscriptionMatched>(status)) {
-    d["total_count"] = s->total_count;
-    d["total_count_change"] = s->total_count_change;
-    d["current_count"] = s->current_count;
-    d["current_count_change"] = s->current_count_change;
-    put_handle("last_publication_handle", s->last_publication_handle);
-  } else if (auto s = std::dynamic_pointer_cast<vlink::Status::RequestedDeadlineMissed>(status)) {
-    d["total_count"] = s->total_count;
-    d["total_count_change"] = s->total_count_change;
-    put_handle("last_instance_handle", s->last_instance_handle);
-  } else if (auto s = std::dynamic_pointer_cast<vlink::Status::LivelinessChanged>(status)) {
-    d["alive_count"] = s->alive_count;
-    d["not_alive_count"] = s->not_alive_count;
-    d["alive_count_change"] = s->alive_count_change;
-    d["not_alive_count_change"] = s->not_alive_count_change;
-    put_handle("last_publication_handle", s->last_publication_handle);
-  } else if (auto s = std::dynamic_pointer_cast<vlink::Status::SampleRejected>(status)) {
-    d["total_count"] = s->total_count;
-    d["total_count_change"] = s->total_count_change;
-    d["last_reason"] = static_cast<int>(s->last_reason);
-    put_handle("last_instance_handle", s->last_instance_handle);
-  } else if (auto s = std::dynamic_pointer_cast<vlink::Status::RequestedIncompatibleQos>(status)) {
-    d["total_count"] = s->total_count;
-    d["total_count_change"] = s->total_count_change;
-    d["last_policy_id"] = s->last_policy_id;
-  } else if (auto s = std::dynamic_pointer_cast<vlink::Status::SampleLost>(status)) {
-    d["total_count"] = s->total_count;
-    d["total_count_change"] = s->total_count_change;
+  if (auto publication_matched = std::dynamic_pointer_cast<vlink::Status::PublicationMatched>(status)) {
+    d["total_count"] = publication_matched->total_count;
+    d["total_count_change"] = publication_matched->total_count_change;
+    d["current_count"] = publication_matched->current_count;
+    d["current_count_change"] = publication_matched->current_count_change;
+    put_handle("last_subscription_handle", publication_matched->last_subscription_handle);
+  } else if (auto offered_deadline_missed = std::dynamic_pointer_cast<vlink::Status::OfferedDeadlineMissed>(status)) {
+    d["total_count"] = offered_deadline_missed->total_count;
+    d["total_count_change"] = offered_deadline_missed->total_count_change;
+    put_handle("last_instance_handle", offered_deadline_missed->last_instance_handle);
+  } else if (auto offered_incompatible_qos = std::dynamic_pointer_cast<vlink::Status::OfferedIncompatibleQos>(status)) {
+    d["total_count"] = offered_incompatible_qos->total_count;
+    d["total_count_change"] = offered_incompatible_qos->total_count_change;
+    d["last_policy_id"] = offered_incompatible_qos->last_policy_id;
+  } else if (auto liveliness_lost = std::dynamic_pointer_cast<vlink::Status::LivelinessLost>(status)) {
+    d["total_count"] = liveliness_lost->total_count;
+    d["total_count_change"] = liveliness_lost->total_count_change;
+  } else if (auto subscription_matched = std::dynamic_pointer_cast<vlink::Status::SubscriptionMatched>(status)) {
+    d["total_count"] = subscription_matched->total_count;
+    d["total_count_change"] = subscription_matched->total_count_change;
+    d["current_count"] = subscription_matched->current_count;
+    d["current_count_change"] = subscription_matched->current_count_change;
+    put_handle("last_publication_handle", subscription_matched->last_publication_handle);
+  } else if (auto requested_deadline_missed =
+                 std::dynamic_pointer_cast<vlink::Status::RequestedDeadlineMissed>(status)) {
+    d["total_count"] = requested_deadline_missed->total_count;
+    d["total_count_change"] = requested_deadline_missed->total_count_change;
+    put_handle("last_instance_handle", requested_deadline_missed->last_instance_handle);
+  } else if (auto liveliness_changed = std::dynamic_pointer_cast<vlink::Status::LivelinessChanged>(status)) {
+    d["alive_count"] = liveliness_changed->alive_count;
+    d["not_alive_count"] = liveliness_changed->not_alive_count;
+    d["alive_count_change"] = liveliness_changed->alive_count_change;
+    d["not_alive_count_change"] = liveliness_changed->not_alive_count_change;
+    put_handle("last_publication_handle", liveliness_changed->last_publication_handle);
+  } else if (auto sample_rejected = std::dynamic_pointer_cast<vlink::Status::SampleRejected>(status)) {
+    d["total_count"] = sample_rejected->total_count;
+    d["total_count_change"] = sample_rejected->total_count_change;
+    d["last_reason"] = static_cast<int>(sample_rejected->last_reason);
+    put_handle("last_instance_handle", sample_rejected->last_instance_handle);
+  } else if (auto requested_incompatible_qos =
+                 std::dynamic_pointer_cast<vlink::Status::RequestedIncompatibleQos>(status)) {
+    d["total_count"] = requested_incompatible_qos->total_count;
+    d["total_count_change"] = requested_incompatible_qos->total_count_change;
+    d["last_policy_id"] = requested_incompatible_qos->last_policy_id;
+  } else if (auto sample_lost = std::dynamic_pointer_cast<vlink::Status::SampleLost>(status)) {
+    d["total_count"] = sample_lost->total_count;
+    d["total_count_change"] = sample_lost->total_count_change;
   }
 #endif
 
