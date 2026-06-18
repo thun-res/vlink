@@ -15,10 +15,10 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 env:
   CMAKE_BUILD_PARALLEL_LEVEL: 4
-  DEBIAN_FRONTEND: noninteractive
   PIP_DISABLE_PIP_VERSION_CHECK: 1
 
 jobs:
@@ -27,41 +27,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     container:
-      image: ubuntu:20.04
+      image: ghcr.io/${{ github.repository_owner }}/vlink-release-ubuntu20:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     defaults:
       run:
         shell: bash
     steps:
-      - name: Install checkout and release tools
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            autoconf \
-            automake \
-            build-essential \
-            ca-certificates \
-            cmake \
-            file \
-            git \
-            git-lfs \
-            libacl1-dev \
-            libgl1-mesa-dev \
-            libtool \
-            libva-dev \
-            libvdpau-dev \
-            libxkbcommon-x11-0 \
-            nasm \
-            ninja-build \
-            patch \
-            patchelf \
-            pkg-config \
-            python3-pip \
-            python3-venv \
-            tar \
-            xz-utils \
-            yasm \
-            zstd
-
       - name: Checkout
         uses: actions/checkout@v4
 

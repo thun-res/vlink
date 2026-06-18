@@ -29,6 +29,7 @@ runs:
   using: composite
   steps:
     - name: Configure
+      if: runner.os != 'Windows'
       shell: bash
       env:
         SOURCE_DIR: ${{ inputs.source-dir }}
@@ -43,8 +44,30 @@ runs:
         fi
         cmake -S "${SOURCE_DIR}" -B "${BUILD_DIR}" ${CMAKE_ARGS} ${CONFIGURE_EXTRA_ARGS} "${env_extra_args[@]}"
 
+    - name: Configure
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        SOURCE_DIR: ${{ inputs.source-dir }}
+        BUILD_DIR: ${{ inputs.build-dir }}
+        CMAKE_ARGS: ${{ inputs.cmake-args }}
+        CONFIGURE_EXTRA_ARGS: ${{ inputs.configure-extra-args }}
+      run: |
+        $ErrorActionPreference = "Stop"
+        $ArgsList = @("-S", $env:SOURCE_DIR, "-B", $env:BUILD_DIR)
+        if ($env:CMAKE_ARGS -and $env:CMAKE_ARGS.Trim()) {
+          $ArgsList += $env:CMAKE_ARGS -split '\s+'
+        }
+        if ($env:CONFIGURE_EXTRA_ARGS -and $env:CONFIGURE_EXTRA_ARGS.Trim()) {
+          $ArgsList += $env:CONFIGURE_EXTRA_ARGS -split '\s+'
+        }
+        if ($env:OPENSSL_ROOT_DIR) {
+          $ArgsList += "-DOPENSSL_ROOT_DIR=$env:OPENSSL_ROOT_DIR"
+        }
+        & cmake @ArgsList
+
     - name: Build
-      if: inputs.configure-only != 'true'
+      if: inputs.configure-only != 'true' && runner.os != 'Windows'
       shell: bash
       env:
         BUILD_DIR: ${{ inputs.build-dir }}
@@ -52,3 +75,17 @@ runs:
       run: |
         set -euo pipefail
         cmake --build "${BUILD_DIR}" ${BUILD_ARGS}
+
+    - name: Build
+      if: inputs.configure-only != 'true' && runner.os == 'Windows'
+      shell: pwsh
+      env:
+        BUILD_DIR: ${{ inputs.build-dir }}
+        BUILD_ARGS: ${{ inputs.build-args }}
+      run: |
+        $ErrorActionPreference = "Stop"
+        $ArgsList = @("--build", $env:BUILD_DIR)
+        if ($env:BUILD_ARGS -and $env:BUILD_ARGS.Trim()) {
+          $ArgsList += $env:BUILD_ARGS -split '\s+'
+        }
+        & cmake @ArgsList

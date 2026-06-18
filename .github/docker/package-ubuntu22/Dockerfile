@@ -1,0 +1,20 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential \
+      ca-certificates \
+      cmake \
+      dpkg-dev \
+      git \
+      libacl1-dev \
+      libsqlite3-dev \
+      libssl-dev \
+      libzstd-dev \
+      patch \
+      pkg-config \
+      python3 \
+      tar \
+      zstd \
+    && rm -rf /var/lib/apt/lists/*

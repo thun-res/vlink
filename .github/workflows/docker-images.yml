@@ -1,0 +1,91 @@
+name: Docker Images
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+      - main
+      - develop
+    paths:
+      - .github/docker/**
+      - .github/workflows/docker-images.yml
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: docker-images-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.image }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: vlink-ci-ubuntu24
+            context: .github/docker/ci-ubuntu24
+            dockerfile: Dockerfile
+            platforms: linux/amd64
+          - image: vlink-ci-ubuntu20
+            context: .github/docker/ci-ubuntu20
+            dockerfile: Dockerfile
+            platforms: linux/amd64,linux/arm64
+          - image: vlink-release-ubuntu20
+            context: .github/docker/release-ubuntu20
+            dockerfile: Dockerfile
+            platforms: linux/amd64,linux/arm64
+          - image: vlink-package-ubuntu22
+            context: .github/docker/package-ubuntu22
+            dockerfile: Dockerfile
+            platforms: linux/amd64,linux/arm64
+          - image: vlink-package-fedora43
+            context: .github/docker/package-fedora43
+            dockerfile: Dockerfile
+            platforms: linux/amd64,linux/arm64
+          - image: vlink-package-arch
+            context: .github/docker/package-arch
+            dockerfile: Dockerfile
+            platforms: linux/amd64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=sha-
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platforms }}
+          push: true
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}

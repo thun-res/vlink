@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: ci-build-${{ github.ref }}
@@ -65,7 +66,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 50
     container:
-      image: ${{ matrix.container }}
+      image: ghcr.io/${{ github.repository_owner }}/vlink-ci-ubuntu20:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     defaults:
       run:
         shell: bash
@@ -75,30 +79,9 @@ jobs:
         include:
           - arch: x86_64
             runner: ubuntu-24.04
-            container: ubuntu:20.04
           - arch: aarch64
             runner: ubuntu-24.04-arm
-            container: arm64v8/ubuntu:20.04
-    env:
-      DEBIAN_FRONTEND: noninteractive
     steps:
-      - name: Install checkout and build tools
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            build-essential \
-            ca-certificates \
-            cmake \
-            git \
-            libacl1-dev \
-            libssl-dev \
-            ninja-build \
-            patch \
-            pkg-config \
-            python3 \
-            tar \
-            zstd
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -195,17 +178,17 @@ jobs:
           $ToolDir | Out-File -FilePath $env:GITHUB_PATH -Append
 
       - name: Check toolchain
+        shell: pwsh
         run: |
-          set -euo pipefail
+          $ErrorActionPreference = "Stop"
           cmake --version
           ninja --version
-          patch --version | head -n 1
-          link_path=$(where.exe link | head -n 1)
-          echo "link.exe: ${link_path}"
-          case "${link_path}" in
-            *"Microsoft Visual Studio"*) ;;
-            *) echo "link.exe is not the MSVC linker" >&2; exit 1 ;;
-          esac
+          patch --version
+          $LinkPath = (Get-Command link.exe).Source
+          Write-Host "link.exe: $LinkPath"
+          if ($LinkPath -notmatch "Microsoft Visual Studio") {
+            throw "link.exe is not the MSVC linker"
+          }
           cl
 
       - name: Restore CPM cache

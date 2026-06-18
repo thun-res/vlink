@@ -5,10 +5,10 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 env:
   CMAKE_BUILD_PARALLEL_LEVEL: 4
-  DEBIAN_FRONTEND: noninteractive
 
 jobs:
   package-deb:
@@ -16,7 +16,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     container:
-      image: ${{ matrix.container }}
+      image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     defaults:
       run:
         shell: bash
@@ -28,46 +31,27 @@ jobs:
             ubuntu_version: "20.04"
             arch: x86_64
             runner: ubuntu-24.04
-            container: ubuntu:20.04
+            image: vlink-release-ubuntu20
             deb_depends: "libssl1.1, libsqlite3-0, libzstd1"
           - distro: ubuntu20.04
             ubuntu_version: "20.04"
             arch: aarch64
             runner: ubuntu-24.04-arm
-            container: arm64v8/ubuntu:20.04
+            image: vlink-release-ubuntu20
             deb_depends: "libssl1.1, libsqlite3-0, libzstd1"
           - distro: ubuntu22.04
             ubuntu_version: "22.04"
             arch: x86_64
             runner: ubuntu-24.04
-            container: ubuntu:22.04
+            image: vlink-package-ubuntu22
             deb_depends: "libssl3, libsqlite3-0, libzstd1"
           - distro: ubuntu22.04
             ubuntu_version: "22.04"
             arch: aarch64
             runner: ubuntu-24.04-arm
-            container: arm64v8/ubuntu:22.04
+            image: vlink-package-ubuntu22
             deb_depends: "libssl3, libsqlite3-0, libzstd1"
     steps:
-      - name: Install checkout and package tools
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            build-essential \
-            ca-certificates \
-            cmake \
-            dpkg-dev \
-            git \
-            libacl1-dev \
-            libsqlite3-dev \
-            libssl-dev \
-            libzstd-dev \
-            patch \
-            pkg-config \
-            python3 \
-            tar \
-            zstd
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -114,7 +98,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     container:
-      image: fedora:43
+      image: ghcr.io/${{ github.repository_owner }}/vlink-package-fedora43:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     defaults:
       run:
         shell: bash
@@ -127,23 +114,6 @@ jobs:
           - arch: aarch64
             runner: ubuntu-24.04-arm
     steps:
-      - name: Install checkout and package tools
-        run: |
-          dnf install -y \
-            cmake \
-            gcc-c++ \
-            git \
-            libacl-devel \
-            libzstd-devel \
-            make \
-            openssl-devel \
-            patch \
-            pkgconf-pkg-config \
-            rpm-build \
-            sqlite-devel \
-            tar \
-            zstd
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -178,7 +148,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     container:
-      image: archlinux:base-devel
+      image: ghcr.io/${{ github.repository_owner }}/vlink-package-arch:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     defaults:
       run:
         shell: bash
@@ -189,21 +162,6 @@ jobs:
           - arch: x86_64
             runner: ubuntu-24.04
     steps:
-      - name: Install checkout and package tools
-        run: |
-          pacman -Syu --noconfirm --needed \
-            acl \
-            base-devel \
-            ca-certificates \
-            cmake \
-            git \
-            libarchive \
-            openssl \
-            patch \
-            sqlite \
-            tar \
-            zstd
-
       - name: Checkout
         uses: actions/checkout@v4
 

@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: ci-tidy-${{ github.ref }}
@@ -22,7 +23,6 @@ concurrency:
 
 env:
   CMAKE_BUILD_PARALLEL_LEVEL: 4
-  DEBIAN_FRONTEND: noninteractive
   PIP_DISABLE_PIP_VERSION_CHECK: 1
   VLINK_CI_CMAKE_ARGS: >-
     -G Ninja
@@ -47,37 +47,16 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     container:
-      image: ubuntu:24.04
+      image: ghcr.io/${{ github.repository_owner }}/vlink-ci-ubuntu24:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     defaults:
       run:
         shell: bash
     steps:
-      - name: Install checkout and build tools
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            build-essential \
-            ca-certificates \
-            cmake \
-            git \
-            libacl1-dev \
-            libssl-dev \
-            ninja-build \
-            patch \
-            pkg-config \
-            python3-venv \
-            tar \
-            zstd
-
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install clang-tidy
-        uses: ./.github/actions/setup-python-tools
-        with:
-          cache-key: pip-tidy-${{ runner.os }}-clang-tidy-21.1.6
-          venv-name: tidy-venv
-          packages: clang-tidy==21.1.6
 
       - name: Restore CPM cache
         uses: ./.github/actions/restore-build-cache

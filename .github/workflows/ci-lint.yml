@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: ci-lint-${{ github.ref }}
@@ -26,24 +27,16 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     container:
-      image: ubuntu:24.04
+      image: ghcr.io/${{ github.repository_owner }}/vlink-ci-ubuntu24:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     defaults:
       run:
         shell: bash
     env:
-      DEBIAN_FRONTEND: noninteractive
       PIP_DISABLE_PIP_VERSION_CHECK: 1
     steps:
-      - name: Install checkout tools
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            ca-certificates \
-            git \
-            python3-venv \
-            tar \
-            zstd
-
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -63,17 +56,6 @@ jobs:
           git config user.email "github-actions@github.com"
           git add -A
           git commit -q -m "format baseline"
-
-      - name: Install QA tools
-        uses: ./.github/actions/setup-python-tools
-        with:
-          cache-key: pip-qa-${{ runner.os }}-clang-format-21.1.8-cmake-format-0.6.13-pyyaml-6.0.2-cpplint-2.0.2
-          venv-name: qa-venv
-          packages: >-
-            clang-format==21.1.8
-            cmake-format==0.6.13
-            PyYAML==6.0.2
-            cpplint==2.0.2
 
       - name: Run format gate
         working-directory: ${{ github.workspace }}
