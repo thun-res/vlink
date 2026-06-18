@@ -49,6 +49,21 @@ jobs:
         with:
           fetch-depth: 2
 
+      - name: Prepare format diff baseline
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+          if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            git status --short
+            exit 0
+          fi
+          echo "Checkout has no .git metadata; creating a local baseline for tools/format.sh."
+          git init -q
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add -A
+          git commit -q -m "format baseline"
+
       - name: Install QA tools
         uses: ./.github/actions/setup-python-tools
         with:
@@ -61,7 +76,8 @@ jobs:
             cpplint==2.0.2
 
       - name: Run format gate
-        run: bash tools/format.sh .
+        working-directory: ${{ github.workspace }}
+        run: bash tools/format.sh "${GITHUB_WORKSPACE}"
 
       - name: Run changed C source format gate
         run: |
