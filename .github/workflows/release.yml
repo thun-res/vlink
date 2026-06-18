@@ -66,8 +66,6 @@ jobs:
               "vlink-package-ubuntu22|linux/arm64"
               "vlink-package-fedora43|linux/amd64"
               "vlink-package-fedora43|linux/arm64"
-              "vlink-package-arch|linux/amd64"
-              "vlink-package-arch-aarch64|linux/arm64"
             )
           fi
           mapfile -t unique_image_refs < <(printf '%s\n' "${image_refs[@]}" | sort -u)

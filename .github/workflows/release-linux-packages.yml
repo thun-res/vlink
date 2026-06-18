@@ -189,12 +189,7 @@ jobs:
   package-arch:
     name: arch-pkg-${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 120
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ inputs.container_image_tag }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+    timeout-minutes: 180
     defaults:
       run:
         shell: bash
@@ -205,17 +200,40 @@ jobs:
           - arch: x86_64
             runner: ubuntu-24.04
             image: vlink-package-arch
+            context: .github/docker/package-arch
+            dockerfile: .github/docker/package-arch/Dockerfile
           - arch: aarch64
             runner: ubuntu-24.04-arm
             image: vlink-package-arch-aarch64
+            context: .github/docker/package-arch-aarch64
+            dockerfile: .github/docker/package-arch-aarch64/Dockerfile
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Login to GHCR
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare Arch package image
+        id: arch-image
+        uses: ./.github/actions/prepare-ci-image
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ inputs.container_image_tag }}
+          context: ${{ matrix.context }}
+          dockerfile: ${{ matrix.dockerfile }}
+          local-tag: ${{ matrix.image }}:package-local
+          required-tools: bash bsdtar ccache cmake git patch
+          verify-command: test "$(uname -m)" = "${{ matrix.arch }}"
+
       - name: Check build host
         run: |
           test "$(uname -m)" = "${{ matrix.arch }}"
-          patch --version | head -n 1
+          docker run --rm "${{ steps.arch-image.outputs.image }}" bash -lc 'test "$(uname -m)" = "${{ matrix.arch }}"; patch --version | head -n 1'
 
       - name: Restore CPM cache
         uses: ./.github/actions/restore-build-cache
@@ -224,25 +242,65 @@ jobs:
           key: cpm-arch-${{ matrix.arch }}-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
           restore-keys: cpm-arch-${{ matrix.arch }}-
 
-      - name: Setup ccache
-        uses: ./.github/actions/setup-compiler-cache
+      - name: Restore ccache
+        uses: ./.github/actions/restore-build-cache
         with:
-          backend: ccache
-          cache-key: ccache-arch-${{ matrix.arch }}-${{ github.run_id }}
+          path: ~/.ccache
+          key: ccache-arch-${{ matrix.arch }}-${{ github.run_id }}
           restore-keys: ccache-arch-${{ matrix.arch }}-
-          max-size: 2G
-          cmake-wrapper: "true"
-          disable-ipo: "true"
 
       - name: Build Arch package
-        run: bash packup/build-arch.sh .
+        uses: ./.github/actions/docker-run
+        with:
+          image: ${{ steps.arch-image.outputs.image }}
+          command: |
+            set -euo pipefail
+            test "$(uname -m)" = "${{ matrix.arch }}"
+            export CCACHE_DIR="${HOME}/.ccache"
+            export CCACHE_BASEDIR="${GITHUB_WORKSPACE}"
+            export CCACHE_COMPRESS=true
+            export CCACHE_MAXSIZE=2G
+            ccache --zero-stats || true
+
+            wrapper_dir="${HOME}/.vlink-cmake-wrapper"
+            mkdir -p "${wrapper_dir}"
+            real_cmake="$(command -v cmake)"
+            cat > "${wrapper_dir}/cmake" <<'EOF'
+            #!/usr/bin/env bash
+            set -euo pipefail
+            args=("$@")
+            inject=1
+            have_c=0
+            have_cxx=0
+            have_ipo=0
+            for arg in "$@"; do
+              case "${arg}" in
+                --build|--install|-E|-P|--version|--help|--help-*|--system-information|--find-package|--workflow)
+                  inject=0
+                  break
+                  ;;
+                -DCMAKE_C_COMPILER_LAUNCHER=*) have_c=1 ;;
+                -DCMAKE_CXX_COMPILER_LAUNCHER=*) have_cxx=1 ;;
+                -DENABLE_IPO=*) have_ipo=1 ;;
+              esac
+            done
+            if [ "${inject}" = "1" ]; then
+              [ "${have_c}" = "1" ] || args+=("-DCMAKE_C_COMPILER_LAUNCHER=ccache")
+              [ "${have_cxx}" = "1" ] || args+=("-DCMAKE_CXX_COMPILER_LAUNCHER=ccache")
+              [ "${have_ipo}" = "1" ] || args+=("-DENABLE_IPO=OFF")
+            fi
+            exec "${VLINK_REAL_CMAKE}" "${args[@]}"
+            EOF
+            chmod +x "${wrapper_dir}/cmake"
+            export VLINK_REAL_CMAKE="${real_cmake}"
+            export PATH="${wrapper_dir}:${PATH}"
+
+            bash packup/build-arch.sh .
+            ccache --show-stats || true
 
       - name: Show ccache stats
         if: always()
-        run: |
-          if command -v ccache >/dev/null 2>&1; then
-            ccache --show-stats || true
-          fi
+        run: docker run --rm --volume "${HOME}/.ccache:/github/home/.ccache" --env CCACHE_DIR=/github/home/.ccache "${{ steps.arch-image.outputs.image }}" bash -lc 'ccache --show-stats || true'
 
       - name: Verify Arch package
         uses: ./.github/actions/verify-artifacts

@@ -172,7 +172,8 @@ RUN set -eux; \
     curl -fsSL "${ifw_url}" -o qtifw.run; \
     chmod +x qtifw.run; \
     ./qtifw.run --root "${QTIFW_DIR}" --accept-licenses --default-answer --confirm-command install; \
-    "${QTIFW_DIR}/bin/binarycreator" --version; \
+    test -x "${QTIFW_DIR}/bin/binarycreator"; \
+    echo "QtIFW binarycreator: ${QTIFW_DIR}/bin/binarycreator"; \
     rm -f qtifw.run
 
 WORKDIR /work

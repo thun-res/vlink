@@ -77,7 +77,8 @@ jobs:
             test -n "${QT_DIR:-}"
             test -n "${QTIFW_DIR:-}"
             "${QT_DIR}/bin/qmake" -query QT_VERSION | grep -q '^${{ inputs.qt_version }}$'
-            "${QTIFW_DIR}/bin/binarycreator" --version
+            test -x "${QTIFW_DIR}/bin/binarycreator"
+            echo "QTIFW binarycreator: ${QTIFW_DIR}/bin/binarycreator"
             conan --version
           fi
 

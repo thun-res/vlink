@@ -121,9 +121,10 @@ runs:
         echo "QTIFW_DIR=${QTIFW_DIR}" >> "${GITHUB_ENV}"
         echo "${AQT_VENV}/bin" >> "${GITHUB_PATH}"
         "${QT_DIR}/bin/qmake" -query QT_VERSION
-        "${QTIFW_DIR}/bin/binarycreator" --version
+        test -x "${QTIFW_BINARYCREATOR}"
+        echo "QTIFW binarycreator: ${QTIFW_BINARYCREATOR}"
         if [ "${INSTALL_CONAN}" = "true" ]; then
-          conan --version
+          "${AQT_VENV}/bin/conan" --version
         fi
 
     - name: Install Qt and QtIFW
@@ -208,7 +209,7 @@ runs:
         "QTIFW_DIR=$QtIfwDir" | Out-File -FilePath $env:GITHUB_ENV -Append
         "$AqtVenv\Scripts" | Out-File -FilePath $env:GITHUB_PATH -Append
         & "$QtDir\bin\qmake.exe" -query QT_VERSION
-        & "$QtIfwDir\bin\binarycreator.exe" --version
+        Write-Host "QtIFW binarycreator: $($BinaryCreator.FullName)"
         if ($env:INSTALL_CONAN -eq "true") {
-          conan --version
+          & "$AqtVenv\Scripts\conan.exe" --version
         }
