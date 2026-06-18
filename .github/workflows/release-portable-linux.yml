@@ -65,6 +65,18 @@ jobs:
           patch --version | head -n 1
           git lfs version
 
+      - name: Check Qt installer Python
+        run: |
+          set -euo pipefail
+          if [ -n "${VLINK_AQT_PYTHON:-}" ]; then
+            test -x "${VLINK_AQT_PYTHON}"
+            "${VLINK_AQT_PYTHON}" -V
+          elif command -v python3.12 >/dev/null 2>&1; then
+            python3.12 -V
+          else
+            echo "Python 3.12 is not present in this image; setup-qt-ifw will bootstrap it before installing aqt."
+          fi
+
       - name: Setup Qt and QtIFW
         uses: ./.github/actions/setup-qt-ifw
         with:

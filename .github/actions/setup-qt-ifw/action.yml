@@ -35,20 +35,20 @@ runs:
       uses: actions/cache@v4
       with:
         path: ~/.cache/pip
-        key: pip-release-${{ runner.os }}-${{ runner.arch }}-aqt-conan-v2
+        key: pip-release-${{ runner.os }}-${{ runner.arch }}-aqt-conan-v3
 
     - name: Restore pip cache
       if: runner.os == 'Windows'
       uses: actions/cache@v4
       with:
         path: ~\AppData\Local\pip\Cache
-        key: pip-release-${{ runner.os }}-${{ runner.arch }}-aqt-conan-v2
+        key: pip-release-${{ runner.os }}-${{ runner.arch }}-aqt-conan-v3
 
     - name: Restore Qt cache
       uses: actions/cache@v4
       with:
         path: ~/.vlink-ci/qt
-        key: qt-${{ runner.os }}-${{ runner.arch }}-${{ inputs.qt-version }}-${{ inputs.cache-suffix }}-v2
+        key: qt-${{ runner.os }}-${{ runner.arch }}-${{ inputs.qt-version }}-${{ inputs.cache-suffix }}-v3
 
     - name: Install Qt and QtIFW
       if: runner.os != 'Windows'
@@ -65,34 +65,98 @@ runs:
         AQT_VENV="${HOME}/.vlink-ci/aqt-venv"
         QT_ROOT="${HOME}/.vlink-ci/qt"
         export PIP_CACHE_DIR="${HOME}/.cache/pip"
-        PY_INCLUDE=$(python3 - <<'PY'
+        AQT_PYTHON="${VLINK_AQT_PYTHON:-}"
+        if [ -n "${AQT_PYTHON}" ]; then
+          AQT_PYTHON=$(command -v "${AQT_PYTHON}" 2>/dev/null || printf '%s' "${AQT_PYTHON}")
+          if [ ! -x "${AQT_PYTHON}" ]; then
+            echo "Configured VLINK_AQT_PYTHON is not executable: ${AQT_PYTHON}" >&2
+            exit 1
+          fi
+        else
+          for candidate in python3.12 python3.11 python3.10 python3; do
+            if command -v "${candidate}" >/dev/null 2>&1 && "${candidate}" - <<'PY'
+        import sys
+        raise SystemExit(0 if sys.version_info >= (3, 10) else 1)
+        PY
+            then
+              AQT_PYTHON=$(command -v "${candidate}")
+              break
+            fi
+          done
+        fi
+        if [ -z "${AQT_PYTHON}" ] && [ "$(id -u)" = "0" ] && command -v apt-get >/dev/null 2>&1; then
+          . /etc/os-release
+          if [ "${ID:-}" = "ubuntu" ]; then
+            apt-get update
+            apt-get install -y --no-install-recommends ca-certificates gnupg software-properties-common
+            add-apt-repository -y ppa:deadsnakes/ppa
+            apt-get update
+            apt-get install -y --no-install-recommends python3.12 python3.12-dev python3.12-venv
+            AQT_PYTHON=$(command -v python3.12)
+          fi
+        fi
+        if [ -z "${AQT_PYTHON}" ]; then
+          echo "Python >= 3.10 is required for aqtinstall with Qt ${QT_VERSION}." >&2
+          exit 1
+        fi
+        "${AQT_PYTHON}" - <<'PY'
+        import sys
+        raise SystemExit(0 if sys.version_info >= (3, 10) else 1)
+        PY
+        echo "Using aqt Python: ${AQT_PYTHON}"
+        PY_INCLUDE=$("${AQT_PYTHON}" - <<'PY'
         import sysconfig
         print(sysconfig.get_path("include") or "")
         PY
         )
         if [ -n "${PY_INCLUDE}" ] && [ ! -f "${PY_INCLUDE}/Python.h" ]; then
           if [ "$(id -u)" = "0" ] && command -v apt-get >/dev/null 2>&1; then
+            py_base=$(basename "${AQT_PYTHON}")
+            case "${py_base}" in
+              python3.12) py_dev_pkg=python3.12-dev ;;
+              python3.11) py_dev_pkg=python3.11-dev ;;
+              python3.10) py_dev_pkg=python3.10-dev ;;
+              *) py_dev_pkg=python3-dev ;;
+            esac
             apt-get update
-            apt-get install -y --no-install-recommends python3-dev
+            apt-get install -y --no-install-recommends "${py_dev_pkg}"
           else
             echo "Python.h not found under ${PY_INCLUDE}; install python3-dev in the runner image." >&2
             exit 1
           fi
         fi
-        python3 -m venv "${AQT_VENV}"
-        packages=(aqtinstall)
+        rm -rf "${AQT_VENV}"
+        "${AQT_PYTHON}" -m venv "${AQT_VENV}"
+        packages=("aqtinstall>=3.3.0,<4")
         [ "${INSTALL_CONAN}" = "true" ] && packages+=(conan)
         "${AQT_VENV}/bin/python" -m pip install --upgrade pip setuptools wheel
         "${AQT_VENV}/bin/python" -m pip install --upgrade "${packages[@]}"
+        "${AQT_VENV}/bin/python" - <<'PY'
+        import re
+        from importlib.metadata import version
+        current = tuple(int(part) for part in re.match(r"^(\d+)\.(\d+)\.(\d+)", version("aqtinstall")).groups())
+        raise SystemExit(0 if current >= (3, 3, 0) else 1)
+        PY
         AQT="${AQT_VENV}/bin/aqt"
 
-        if ! find "${QT_ROOT}/${QT_VERSION}" -type f -path "*/bin/qmake" -print -quit 2>/dev/null | grep -q .; then
+        QT_LAYOUT_ROOT="${QT_ROOT}/${QT_VERSION}"
+        QT_MARKER="${QT_LAYOUT_ROOT}/.vlink-qt-${QT_ARCH}.marker"
+        QT_MARKER_VALUE="${QT_HOST}|${QT_VERSION}|${QT_ARCH}|${QT_MODULES}"
+        QT_QMAKE=$(find "${QT_LAYOUT_ROOT}" -type f -path "*/bin/qmake" -print -quit 2>/dev/null || true)
+        QT_QCONFIG=$(find "${QT_LAYOUT_ROOT}" -type f -path "*/mkspecs/qconfig.pri" -print -quit 2>/dev/null || true)
+        if [ -z "${QT_QMAKE}" ] || [ -z "${QT_QCONFIG}" ] || [ ! -f "${QT_MARKER}" ] || [ "$(cat "${QT_MARKER}" 2>/dev/null || true)" != "${QT_MARKER_VALUE}" ]; then
+          rm -rf "${QT_LAYOUT_ROOT}"
           read -r -a modules <<< "${QT_MODULES}"
           if [ ${#modules[@]} -gt 0 ]; then
             "${AQT}" install-qt "${QT_HOST}" desktop "${QT_VERSION}" "${QT_ARCH}" -O "${QT_ROOT}" -m "${modules[@]}"
           else
             "${AQT}" install-qt "${QT_HOST}" desktop "${QT_VERSION}" "${QT_ARCH}" -O "${QT_ROOT}"
           fi
+          QT_QMAKE=$(find "${QT_LAYOUT_ROOT}" -type f -path "*/bin/qmake" -print -quit)
+          QT_QCONFIG=$(find "${QT_LAYOUT_ROOT}" -type f -path "*/mkspecs/qconfig.pri" -print -quit)
+          test -n "${QT_QMAKE}"
+          test -n "${QT_QCONFIG}"
+          printf '%s\n' "${QT_MARKER_VALUE}" > "${QT_MARKER}"
         fi
 
         if [ "${QTIFW_PACKAGE_INPUT}" = "latest" ]; then
@@ -157,11 +221,12 @@ runs:
         $AqtVenv = Join-Path $env:USERPROFILE ".vlink-ci\aqt-venv"
         $QtRoot = Join-Path $env:USERPROFILE ".vlink-ci\qt"
         python -m venv $AqtVenv
-        $Packages = @("aqtinstall")
+        $Packages = @("aqtinstall>=3.3.0,<4")
         if ($env:INSTALL_CONAN -eq "true") {
           $Packages += "conan"
         }
-        & "$AqtVenv\Scripts\python.exe" -m pip install --upgrade pip @Packages
+        & "$AqtVenv\Scripts\python.exe" -m pip install --upgrade pip setuptools wheel
+        & "$AqtVenv\Scripts\python.exe" -m pip install --upgrade $Packages
         $Aqt = "$AqtVenv\Scripts\aqt.exe"
 
         $ExistingQmake = Get-ChildItem -Path (Join-Path $QtRoot $env:QT_VERSION) -Filter qmake.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1

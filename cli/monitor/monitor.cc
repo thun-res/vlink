@@ -110,6 +110,7 @@ std::atomic<double> total_profiler{-1};
 std::atomic<uint32_t> current_type;
 std::atomic<uint32_t> current_schema_type{0};
 
+// NOLINTNEXTLINE(bugprone-throwing-static-initialization)
 std::pair<int, int> terminal_size{0, 0};
 std::vector<std::string> print_lines;
 std::atomic<size_t> print_lines_count{0};

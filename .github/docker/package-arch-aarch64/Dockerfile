@@ -34,7 +34,10 @@ RUN set -eux; \
       rm -f "${tmp_config}"; \
     fi; \
     pacman-key --populate archlinuxarm || pacman-key --populate; \
-    retry_pacman --config "${pacman_config}" -S --noconfirm --needed \
+    retry_pacman --config "${pacman_config}" -Syu --noconfirm --needed \
+      --overwrite 'usr/lib/libgcc_s.so*' \
+      --overwrite 'usr/lib/libstdc++.so*' \
+      --overwrite 'usr/share/locale/*/LC_MESSAGES/libstdc++.mo' \
       acl \
       ca-certificates \
       ccache \

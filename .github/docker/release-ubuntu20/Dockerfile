@@ -1,13 +1,18 @@
 FROM ubuntu:20.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    VLINK_AQT_PYTHON=/usr/bin/python3.12
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      gnupg \
+      software-properties-common \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
       autoconf \
       automake \
       build-essential \
-      ca-certificates \
       ccache \
       cmake \
       dpkg-dev \
@@ -29,9 +34,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       patchelf \
       pkg-config \
       python3 \
-      python3-dev \
-      python3-pip \
-      python3-venv \
+      python3.12 \
+      python3.12-dev \
+      python3.12-venv \
       tar \
       xz-utils \
       yasm \

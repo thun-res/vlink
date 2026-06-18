@@ -135,6 +135,7 @@ using RawGetter = vlink::Getter<vlink::Bytes>;
 [[maybe_unused]] std::atomic<int> max_columns{0};
 
 [[maybe_unused]] std::vector<std::string> filter_list;
+// NOLINTNEXTLINE(bugprone-throwing-static-initialization)
 [[maybe_unused]] std::pair<int, int> terminal_size{0, 0};
 
 [[maybe_unused]] static std::pair<int, int> get_terminal_size() {

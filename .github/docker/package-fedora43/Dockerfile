@@ -17,5 +17,9 @@ RUN dnf install -y \
       rpm-build \
       sqlite-devel \
       tar \
-      zstd \
-    && dnf clean all
+	      zstd \
+	    && printf '%s\n' 'int main() { return 0; }' > /tmp/static-check.cc \
+	    && g++ -static /tmp/static-check.cc -o /tmp/static-check \
+	    && /tmp/static-check \
+	    && rm -f /tmp/static-check.cc /tmp/static-check \
+	    && dnf clean all

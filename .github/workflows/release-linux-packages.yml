@@ -64,9 +64,12 @@ jobs:
 
       - name: Check build host
         run: |
+          set -euo pipefail
           grep -q '${{ matrix.ubuntu_version }}' /etc/os-release
           test "$(uname -m)" = "${{ matrix.arch }}"
           patch --version | head -n 1
+          command -v file
+          file --version | head -n 1
 
       - name: Restore CPM cache
         uses: ./.github/actions/restore-build-cache
@@ -146,6 +149,14 @@ jobs:
         run: |
           test "$(uname -m)" = "${{ matrix.arch }}"
           patch --version | head -n 1
+
+      - name: Check Fedora static toolchain
+        run: |
+          set -euo pipefail
+          printf '%s\n' 'int main() { return 0; }' > /tmp/vlink-static-check.cc
+          g++ -static /tmp/vlink-static-check.cc -o /tmp/vlink-static-check
+          /tmp/vlink-static-check
+          rm -f /tmp/vlink-static-check.cc /tmp/vlink-static-check
 
       - name: Restore CPM cache
         uses: ./.github/actions/restore-build-cache

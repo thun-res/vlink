@@ -16,7 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libzstd-dev \
       patch \
       pkg-config \
-      python3 \
-      tar \
-      zstd \
-    && rm -rf /var/lib/apt/lists/*
+	      python3 \
+	      tar \
+	      zstd \
+	    && file --version \
+	    && rm -rf /var/lib/apt/lists/*

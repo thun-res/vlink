@@ -76,6 +76,13 @@ jobs:
               echo "::error::Missing Linux release image ${full_image} for ${platform}. Run the Docker Images workflow for ${image} with tag ${IMAGE_TAG} first."
               exit 1
             fi
+            if [ "${IMAGE_TAG}" = "latest" ]; then
+              image_revision=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${full_image}" 2>/dev/null || true)
+              if [ "${image_revision}" != "${GITHUB_SHA}" ]; then
+                echo "::error::Linux release image ${full_image} for ${platform} is stale: revision=${image_revision:-<missing>}, expected=${GITHUB_SHA}. Run the Docker Images workflow from this commit first, or pass a matching docker_image_tag."
+                exit 1
+              fi
+            fi
           done
 
   portable-linux:
