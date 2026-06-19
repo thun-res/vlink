@@ -135,12 +135,13 @@ jobs:
           restore-keys: cpm-test-linux-x86_64-
 
       - name: Setup ccache
+        id: ccache
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
           cache-key: ccache-ci-linux-x86_64-test-${{ github.sha }}
           restore-keys: |
-            ccache-ci-linux-x86_64-
+            ccache-ci-linux-x86_64-test-
           max-size: 1G
 
       - name: Restore CPM build cache
@@ -149,7 +150,7 @@ jobs:
           path: build-test/_deps
           key: cpm-build-test-linux-x86_64-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
 
-      - name: Configure, build and test
+      - name: Configure and build
         uses: ./.github/actions/docker-run
         with:
           image: ${{ steps.ci-image.outputs.image }}
@@ -176,6 +177,23 @@ jobs:
             ENABLE_TEST_WARN=ON"
             export REQUIRED_SOURCE_PREFIXES="python_api/"
             python3 .github/scripts/assert-cmake-config.py
+            ccache --show-stats || true
+
+      - name: Save ccache
+        if: always() && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ccache.outputs.cache-path }}
+          key: ${{ steps.ccache.outputs.cache-key }}
+
+      - name: Run unit tests and Python API tests
+        uses: ./.github/actions/docker-run
+        with:
+          image: ${{ steps.ci-image.outputs.image }}
+          command: |
+            set -euo pipefail
+            git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+            test "$(uname -m)" = "x86_64"
             export ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1
             export LSAN_OPTIONS=print_suppressions=0
             asan_lib="$(gcc -print-file-name=libasan.so)"
@@ -201,7 +219,6 @@ jobs:
             ctest --test-dir build-test --output-on-failure --timeout 180 --parallel 1 --exclude-regex '^(xmltest|ucunit)$|^CUnit_'
             export PYTHONPATH="${GITHUB_WORKSPACE}/python_api:${GITHUB_WORKSPACE}/build-test/output/lib"
             ASAN_OPTIONS=detect_leaks=0:halt_on_error=1:abort_on_error=1 /opt/vlink/python-tools/bin/python python_api/test/test_vlink.py
-            ccache --show-stats || true
 
   test-windows-x64:
     name: windows-x64
@@ -373,12 +390,13 @@ jobs:
           restore-keys: cpm-test-macos-x86_64-
 
       - name: Setup ccache
+        id: ccache
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
           cache-key: ccache-ci-macos-x86_64-test-${{ github.sha }}
           restore-keys: |
-            ccache-ci-macos-x86_64-
+            ccache-ci-macos-x86_64-test-
           max-size: 1G
 
       - name: Restore CPM build cache
@@ -398,6 +416,13 @@ jobs:
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
             -DENABLE_WEBVIZ=OFF
             -DENABLE_TEST_SANITIZE=OFF
+
+      - name: Save ccache
+        if: always() && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ccache.outputs.cache-path }}
+          key: ${{ steps.ccache.outputs.cache-key }}
 
       - name: Assert configured features
         uses: ./.github/actions/assert-cmake-config

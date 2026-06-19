@@ -87,6 +87,7 @@ jobs:
           restore-keys: cpm-deb-${{ matrix.distro }}-${{ matrix.arch }}-
 
       - name: Setup ccache
+        id: ccache
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
@@ -113,6 +114,13 @@ jobs:
             trap 'ccache --show-stats || true' EXIT
 
             bash packup/build-deb.sh .
+
+      - name: Save ccache
+        if: always() && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ccache.outputs.cache-path }}
+          key: ${{ steps.ccache.outputs.cache-key }}
 
       - name: Add distro suffix to deb package names
         run: |
@@ -176,6 +184,7 @@ jobs:
           restore-keys: cpm-rpm-fedora43-${{ matrix.arch }}-
 
       - name: Setup ccache
+        id: ccache
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
@@ -201,6 +210,13 @@ jobs:
             trap 'ccache --show-stats || true' EXIT
 
             bash packup/build-rpm.sh .
+
+      - name: Save ccache
+        if: always() && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ccache.outputs.cache-path }}
+          key: ${{ steps.ccache.outputs.cache-key }}
 
       - name: Verify rpm package
         uses: ./.github/actions/verify-artifacts
@@ -261,6 +277,7 @@ jobs:
           restore-keys: cpm-arch-${{ matrix.arch }}-
 
       - name: Setup ccache
+        id: ccache
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
@@ -287,6 +304,13 @@ jobs:
 
             bash packup/build-arch.sh .
             ccache --show-stats || true
+
+      - name: Save ccache
+        if: always() && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ccache.outputs.cache-path }}
+          key: ${{ steps.ccache.outputs.cache-key }}
 
       - name: Verify Arch package
         uses: ./.github/actions/verify-artifacts

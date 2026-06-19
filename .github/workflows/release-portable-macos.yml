@@ -75,6 +75,7 @@ jobs:
           restore-keys: conan-cpm-macos-arm64-
 
       - name: Setup ccache
+        id: ccache
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
@@ -90,6 +91,13 @@ jobs:
       - name: Show ccache stats
         if: always()
         run: ccache --show-stats || true
+
+      - name: Save ccache
+        if: always() && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ccache.outputs.cache-path }}
+          key: ${{ steps.ccache.outputs.cache-key }}
 
       - name: Verify bundled macOS OSG files
         run: |

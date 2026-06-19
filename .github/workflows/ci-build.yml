@@ -144,6 +144,7 @@ jobs:
           restore-keys: cpm-ci-ubuntu20-aarch64-
 
       - name: Setup ccache
+        id: ccache
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
@@ -201,6 +202,13 @@ jobs:
             webviz/"
             python3 .github/scripts/assert-cmake-config.py
 
+      - name: Save ccache
+        if: always() && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ccache.outputs.cache-path }}
+          key: ${{ steps.ccache.outputs.cache-key }}
+
   build-macos:
     name: macos-arm64
     runs-on: macos-15
@@ -229,6 +237,7 @@ jobs:
           restore-keys: cpm-ci-macos-
 
       - name: Setup ccache
+        id: ccache
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
@@ -255,6 +264,13 @@ jobs:
       - name: Show ccache stats
         if: always()
         run: ccache --show-stats || true
+
+      - name: Save ccache
+        if: always() && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ccache.outputs.cache-path }}
+          key: ${{ steps.ccache.outputs.cache-key }}
 
       - name: Assert configured features
         uses: ./.github/actions/assert-cmake-config

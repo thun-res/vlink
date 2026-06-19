@@ -110,6 +110,7 @@ jobs:
           restore-keys: conan-cpm-linux-${{ matrix.arch }}-
 
       - name: Setup ccache
+        id: ccache
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
@@ -149,6 +150,13 @@ jobs:
 
             bash packup/build-conan.sh . ${{ matrix.arch }}
             .github/scripts/stage-linux-portable-runtime.sh build-conan/packup/linux/vlink
+
+      - name: Save ccache
+        if: always() && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ccache.outputs.cache-path }}
+          key: ${{ steps.ccache.outputs.cache-key }}
 
       - name: Verify bundled Linux OSG files
         uses: ./.github/actions/docker-run
@@ -267,6 +275,7 @@ jobs:
           restore-keys: conan-cpm-linux-aarch64-
 
       - name: Setup ccache
+        id: ccache
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
@@ -319,6 +328,13 @@ jobs:
             trap 'ccache --show-stats || true' EXIT
 
             bash packup/build-conan.sh . aarch64
+
+      - name: Save ccache
+        if: always() && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ccache.outputs.cache-path }}
+          key: ${{ steps.ccache.outputs.cache-key }}
 
       - name: Verify bundled Linux OSG files
         run: |

@@ -29,12 +29,24 @@ inputs:
     required: false
     default: "false"
 
+outputs:
+  cache-hit:
+    description: Whether ccache restored an exact primary-key match.
+    value: ${{ steps.restore-ccache.outputs.cache-hit }}
+  cache-key:
+    description: Primary ccache key to save after compilation.
+    value: ${{ inputs.cache-key }}
+  cache-path:
+    description: ccache path to save after compilation.
+    value: ${{ inputs.cache-path }}
+
 runs:
   using: composite
   steps:
     - name: Restore ccache
+      id: restore-ccache
       if: inputs.backend == 'ccache'
-      uses: actions/cache@v5
+      uses: actions/cache/restore@v5
       with:
         path: ${{ inputs.cache-path }}
         key: ${{ inputs.cache-key }}
@@ -56,6 +68,7 @@ runs:
           echo "CCACHE_DIR=${cache_dir}"
           echo "CCACHE_BASEDIR=${GITHUB_WORKSPACE}"
           echo "CCACHE_COMPRESS=true"
+          echo "CCACHE_COMPILERCHECK=content"
           echo "CCACHE_MAXSIZE=${MAX_SIZE}"
           echo "VLINK_CMAKE_DISABLE_IPO=${DISABLE_IPO}"
         } >> "${GITHUB_ENV}"

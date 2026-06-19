@@ -142,11 +142,12 @@ jobs:
           restore-keys: cpm-protocols-linux-x86_64-
 
       - name: Setup ccache
+        id: ccache
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
           cache-key: ccache-ci-linux-x86_64-protocols-${{ github.sha }}
-          restore-keys: ccache-ci-linux-x86_64-
+          restore-keys: ccache-ci-linux-x86_64-protocols-
           max-size: 1G
 
       - name: Restore CPM build cache
@@ -184,3 +185,10 @@ jobs:
             modules/mqtt/"
             python3 .github/scripts/assert-cmake-config.py
             ccache --show-stats || true
+
+      - name: Save ccache
+        if: always() && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ccache.outputs.cache-path }}
+          key: ${{ steps.ccache.outputs.cache-key }}
