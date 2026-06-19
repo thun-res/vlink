@@ -84,8 +84,8 @@ jobs:
         uses: ./.github/actions/restore-build-cache
         with:
           path: build-coverage/_deps
-          key: cpm-build-coverage-linux-x86_64-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
-          restore-keys: cpm-build-coverage-linux-x86_64-v1-
+          key: cpm-build-coverage-linux-x86_64-v2-${{ hashFiles('.github/workflows/ci-coverage.yml', 'CMakeLists.txt', 'cmake/**/*.cmake', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          restore-keys: cpm-build-coverage-linux-x86_64-v2-
 
       - name: Configure and build
         uses: ./.github/actions/docker-run
