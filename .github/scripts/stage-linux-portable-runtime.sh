@@ -9,7 +9,13 @@ test -d "${libdir}"
 copy_soname() {
   local soname="$1"
   local src
-  src="$(ldconfig -p | awk -v soname="${soname}" '$1 == soname {print $NF; exit}')"
+  src="$(
+    ldconfig -p | awk -v soname="${soname}" '
+      $1 == soname && $NF ~ "^/usr/local/" {print $NF; found=1; exit}
+      $1 == soname && first == "" {first=$NF}
+      END {if (!found && first != "") print first}
+    '
+  )"
   if [ -z "${src}" ] || [ ! -f "${src}" ]; then
     echo "::error::Missing runtime library: ${soname}"
     exit 1
