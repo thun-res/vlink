@@ -166,12 +166,6 @@ jobs:
             set -euo pipefail
             git config --global --add safe.directory "${GITHUB_WORKSPACE}"
             test "$(uname -m)" = "aarch64"
-            cmake --version >/dev/null
-            ninja --version >/dev/null
-            patch --version >/dev/null
-            export CCACHE_DIR="${HOME}/.ccache"
-            export CCACHE_BASEDIR="${GITHUB_WORKSPACE}"
-            ccache --zero-stats >/dev/null 2>&1 || true
             cmake -S . -B build ${VLINK_CI_CMAKE_ARGS} \
               -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
               -DCMAKE_C_COMPILER_LAUNCHER=ccache \
@@ -218,13 +212,10 @@ jobs:
       - name: Install build tools
         run: brew install --quiet ccache ninja openssl@3
 
-      - name: Check toolchain
+      - name: Set OpenSSL root
         run: |
+          set -euo pipefail
           test "$(uname -m)" = "arm64"
-          cmake --version >/dev/null
-          ninja --version >/dev/null
-          ccache --version >/dev/null
-          patch --version >/dev/null
           echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl@3)" >> "${GITHUB_ENV}"
 
       - name: Restore CPM cache

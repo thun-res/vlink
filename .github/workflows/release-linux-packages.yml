@@ -106,11 +106,6 @@ jobs:
           command: |
             set -euo pipefail
             export DEB_DEPENDS="${{ matrix.deb_depends }}"
-            export CCACHE_DIR="${HOME}/.ccache"
-            export CCACHE_BASEDIR="${GITHUB_WORKSPACE}"
-            export CCACHE_COMPRESS=true
-            export CCACHE_MAXSIZE=2G
-            ccache --zero-stats >/dev/null 2>&1 || true
 
             bash packup/build-deb.sh .
 
@@ -201,11 +196,6 @@ jobs:
           disable-ipo: "true"
           command: |
             set -euo pipefail
-            export CCACHE_DIR="${HOME}/.ccache"
-            export CCACHE_BASEDIR="${GITHUB_WORKSPACE}"
-            export CCACHE_COMPRESS=true
-            export CCACHE_MAXSIZE=2G
-            ccache --zero-stats >/dev/null 2>&1 || true
 
             bash packup/build-rpm.sh .
 
@@ -294,11 +284,6 @@ jobs:
           command: |
             set -euo pipefail
             test "$(uname -m)" = "${{ matrix.arch }}"
-            export CCACHE_DIR="${HOME}/.ccache"
-            export CCACHE_BASEDIR="${GITHUB_WORKSPACE}"
-            export CCACHE_COMPRESS=true
-            export CCACHE_MAXSIZE=2G
-            ccache --zero-stats >/dev/null 2>&1 || true
 
             bash packup/build-arch.sh .
 

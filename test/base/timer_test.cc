@@ -352,8 +352,8 @@ TEST_SUITE("base-Timer") {
     CHECK_EQ(t.get_message_loop(), &loop2);
 
     t.start();
-    std::this_thread::sleep_for(120ms);
 
+    CHECK(common_test::wait_until([&count] { return count.load(std::memory_order_relaxed) == 1; }));
     CHECK_EQ(count.load(), 1);
 
     loop1.quit();

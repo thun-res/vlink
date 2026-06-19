@@ -7,48 +7,60 @@ on:
         description: Pull request number to request a Codex review on.
         required: true
         type: number
-  pull_request_target:
+  issue_comment:
     types:
-      - labeled
+      - created
 
 permissions:
   issues: write
 
 concurrency:
-  group: ai-code-review-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
+  group: ai-code-review-${{ github.event.issue.number || inputs.pr_number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
   request-review:
-    name: Request Codex review
+    name: Request or accept Codex review
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      github.event.label.name == 'ai-review'
-    defaults:
-      run:
-        shell: bash
+      (
+        github.event.issue.pull_request &&
+        startsWith(github.event.comment.body, '@codex review')
+      )
     steps:
-      - name: Post review trigger comment
+      - name: Post manual review trigger comment
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/github-script@v7
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
-        run: |
-          set -euo pipefail
+          PR_NUMBER: ${{ inputs.pr_number }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const prNumber = Number(process.env.PR_NUMBER);
+            if (!Number.isInteger(prNumber) || prNumber <= 0) {
+              core.setFailed("A positive PR number is required.");
+              return;
+            }
 
-          if [[ -z "${PR_NUMBER}" || "${PR_NUMBER}" == "0" || "${PR_NUMBER}" =~ [^0-9] ]]; then
-            echo "A positive PR number is required." >&2
-            exit 1
-          fi
+            const issue = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+            if (!issue.data.pull_request) {
+              core.setFailed(`#${prNumber} is not a pull request.`);
+              return;
+            }
 
-          curl -fsS \
-            -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
-            --data '{"body":"@codex review"}' \
-            >/dev/null
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: "@codex review",
+            });
 
-          echo "Requested Codex review for PR #${PR_NUMBER}."
+      - name: Accept PR comment trigger
+        if: github.event_name == 'issue_comment'
+        run: ":"

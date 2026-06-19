@@ -217,16 +217,16 @@ runs:
         QTIFW_BINARYCREATOR=$(find "${IFW_ROOT}" -type f -name binarycreator -print -quit)
         test -n "${QT_QMAKE}"
         test -n "${QTIFW_BINARYCREATOR}"
+        test -x "${QT_QMAKE}"
+        test -x "${QTIFW_BINARYCREATOR}"
 
         QT_DIR=$(dirname "$(dirname "${QT_QMAKE}")")
         QTIFW_DIR=$(dirname "$(dirname "${QTIFW_BINARYCREATOR}")")
         echo "QT_DIR=${QT_DIR}" >> "${GITHUB_ENV}"
         echo "QTIFW_DIR=${QTIFW_DIR}" >> "${GITHUB_ENV}"
         echo "${AQT_VENV}/bin" >> "${GITHUB_PATH}"
-        "${QT_DIR}/bin/qmake" -query QT_VERSION >/dev/null
-        test -x "${QTIFW_BINARYCREATOR}"
         if [ "${INSTALL_CONAN}" = "true" ]; then
-          "${AQT_VENV}/bin/conan" --version >/dev/null
+          test -x "${AQT_VENV}/bin/conan"
         fi
 
     - name: Install Qt and QtIFW
@@ -332,7 +332,9 @@ runs:
         "QT_DIR=$QtDir" | Out-File -FilePath $env:GITHUB_ENV -Append
         "QTIFW_DIR=$QtIfwDir" | Out-File -FilePath $env:GITHUB_ENV -Append
         "$AqtVenv\Scripts" | Out-File -FilePath $env:GITHUB_PATH -Append
-        & "$QtDir\bin\qmake.exe" -query QT_VERSION | Out-Null
         if ($env:INSTALL_CONAN -eq "true") {
-          & "$AqtVenv\Scripts\conan.exe" --version | Out-Null
+          $Conan = Join-Path $AqtVenv "Scripts\conan.exe"
+          if (-not (Test-Path $Conan)) {
+            throw "conan.exe not found: $Conan"
+          }
         }

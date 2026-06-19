@@ -36,16 +36,16 @@ runs:
       run: |
         $ErrorActionPreference = "Stop"
         $env:Path = "$env:VLINK_WINDOWS_TOOL_DIR;$env:Path"
-        cmake --version | Out-Null
+        Get-Command cmake.exe -ErrorAction Stop | Out-Null
         if ($env:CHECK_NINJA -eq "true") {
-          ninja --version | Out-Null
+          Get-Command ninja.exe -ErrorAction Stop | Out-Null
         }
-        patch --version | Out-Null
+        Get-Command patch.exe -ErrorAction Stop | Out-Null
         $LinkPath = (Get-Command link.exe).Source
         if ($LinkPath -notmatch "Microsoft Visual Studio") {
           throw "link.exe is not the MSVC linker"
         }
         if ($env:CHECK_GIT_LFS -eq "true") {
-          git lfs version | Out-Null
+          Get-Command git-lfs.exe -ErrorAction Stop | Out-Null
         }
         Get-Command cl.exe -ErrorAction Stop | Out-Null

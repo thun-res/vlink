@@ -95,9 +95,6 @@ jobs:
             set -euo pipefail
             git config --global --add safe.directory "${GITHUB_WORKSPACE}"
             test "$(uname -m)" = "x86_64"
-            export CCACHE_DIR="${HOME}/.ccache"
-            export CCACHE_BASEDIR="${GITHUB_WORKSPACE}"
-            ccache --zero-stats >/dev/null 2>&1 || true
             cmake -S . -B build-coverage ${VLINK_CI_CMAKE_ARGS} \
               -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
               -DCMAKE_C_COMPILER_LAUNCHER=ccache \

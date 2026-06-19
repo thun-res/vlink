@@ -178,15 +178,11 @@ try {
   if ($SplitShmTests -eq "1") {
     Start-VLinkProxy "vlink-proxy-main"
     Invoke-VLinkCTest @("--exclude-regex", "$BaseExclude|^shm2?-")
-    Stop-VLinkProxy
 
     foreach ($Suite in (Get-ShmCTestSuites)) {
-      Start-VLinkProxy "vlink-proxy-$Suite"
       Invoke-VLinkCTest @("--tests-regex", "^$Suite$")
-      Stop-VLinkProxy
     }
 
-    Start-VLinkProxy "vlink-proxy-python"
     Invoke-VLinkPythonTests
     Stop-VLinkProxy
   } else {

@@ -126,7 +126,7 @@ jobs:
           set -euo pipefail
           test -f build-conan/packup/darwin/vlink/lib/QtSvg.framework/Versions/A/QtSvg
           test -f build-conan/packup/darwin/vlink/lib/imageformats/libqsvg.dylib
-          otool -L build-conan/packup/darwin/vlink/lib/imageformats/libqsvg.dylib >/dev/null
+          bash .github/scripts/check-macho-deps.sh build-conan/packup/darwin/vlink/lib/imageformats/libqsvg.dylib
 
       - name: Check macOS bundle metadata
         run: |

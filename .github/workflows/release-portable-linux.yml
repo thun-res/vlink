@@ -140,12 +140,7 @@ jobs:
             QTIFW_DIR=$(dirname "$(dirname "${QTIFW_BINARYCREATOR}")")
             export OSG_DIR="/github/home/.vlink-ci/osg_sdk/${{ matrix.osg_platform }}"
             test -d "${OSG_DIR}/include/osg"
-            export CCACHE_DIR="${HOME}/.ccache"
-            export CCACHE_BASEDIR="${GITHUB_WORKSPACE}"
-            export CCACHE_COMPRESS=true
-            export CCACHE_MAXSIZE=2G
             export PATH="${QTIFW_DIR}/bin:${QT_DIR}/bin:${PATH}"
-            ccache --zero-stats >/dev/null 2>&1 || true
 
             bash packup/build-conan.sh . ${{ matrix.arch }}
             .github/scripts/stage-linux-portable-runtime.sh build-conan/packup/linux/vlink
@@ -235,11 +230,7 @@ jobs:
           verify-command: >-
             export LC_ALL=C.UTF-8 LANG=C.UTF-8;
             qmake -query QT_VERSION | grep -q '^${{ inputs.qt_version }}$' &&
-            ldd -r "$(command -v binarycreator)" >/tmp/binarycreator-ldd.out &&
-            if grep -Eq "not found|undefined symbol:" /tmp/binarycreator-ldd.out; then
-              grep -E "not found|undefined symbol:" /tmp/binarycreator-ldd.out;
-              exit 1;
-            fi
+            .github/scripts/check-elf-deps.sh "$(command -v binarycreator)"
 
       - name: Setup OSG SDK
         uses: ./.github/actions/setup-osg-sdk
@@ -296,9 +287,6 @@ jobs:
             test "$(uname -m)" = "aarch64"
             "${QT_DIR}/bin/qmake" -query QT_VERSION | grep -q '^${{ inputs.qt_version }}$'
             .github/scripts/check-elf-deps.sh "${QTIFW_DIR}/bin/binarycreator"
-            conan --version >/dev/null
-            git lfs version >/dev/null
-            patch --version >/dev/null
 
             export OSG_DIR="${HOME}/.vlink-ci/osg_sdk/linux_aarch64"
             for path in \
@@ -318,12 +306,6 @@ jobs:
               lib/osgPlugins-3.6.5/osgdb_serializers_osg.so; do
               test -e "${OSG_DIR}/${path}"
             done
-
-            export CCACHE_DIR="${HOME}/.ccache"
-            export CCACHE_BASEDIR="${GITHUB_WORKSPACE}"
-            export CCACHE_COMPRESS=true
-            export CCACHE_MAXSIZE=2G
-            ccache --zero-stats >/dev/null 2>&1 || true
 
             bash packup/build-conan.sh . aarch64
 

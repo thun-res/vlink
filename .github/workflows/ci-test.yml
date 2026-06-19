@@ -162,9 +162,6 @@ jobs:
             set -euo pipefail
             git config --global --add safe.directory "${GITHUB_WORKSPACE}"
             test "$(uname -m)" = "x86_64"
-            export CCACHE_DIR="${HOME}/.ccache"
-            export CCACHE_BASEDIR="${GITHUB_WORKSPACE}"
-            ccache --zero-stats >/dev/null 2>&1 || true
             cmake -S . -B build-test ${VLINK_CI_CMAKE_ARGS} \
               -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
               -DPython_EXECUTABLE=/opt/vlink/python-tools/bin/python \
@@ -312,14 +309,10 @@ jobs:
           python -m pip install -q nanobind==2.13.0
           echo "PYTHON_EXECUTABLE=$(python -c 'import sys; print(sys.executable)')" >> "${GITHUB_ENV}"
 
-      - name: Check toolchain
+      - name: Set OpenSSL root
         run: |
           set -euo pipefail
           test "$(uname -m)" = "x86_64"
-          cmake --version >/dev/null
-          ninja --version >/dev/null
-          ccache --version >/dev/null
-          patch --version >/dev/null
           echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl@3)" >> "${GITHUB_ENV}"
 
       - name: Restore CPM cache

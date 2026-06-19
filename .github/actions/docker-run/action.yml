@@ -108,5 +108,8 @@ runs:
               export VLINK_REAL_CMAKE="${real_cmake}"
               export PATH="${wrapper_dir}:${PATH}"
             fi
+            if [ "${VLINK_DOCKER_COMPILER_LAUNCHER}" = "ccache" ] && command -v ccache >/dev/null 2>&1; then
+              ccache --zero-stats >/dev/null 2>&1 || true
+            fi
             bash -lc "${VLINK_DOCKER_COMMAND}"
           '
