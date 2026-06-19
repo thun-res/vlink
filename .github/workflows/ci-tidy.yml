@@ -26,13 +26,8 @@ on:
       - cli/check/**
       - cli/bench/**
       - packup/patch/**
-      - .github/actions/assert-cmake-config/**
-      - .github/actions/docker-run/**
-      - .github/actions/prepare-ci-image/**
-      - .github/actions/restore-build-cache/**
       - .github/actions/run-clang-tidy/**
       - .github/docker/ci-ubuntu24/**
-      - .github/scripts/assert-cmake-config.py
       - .github/scripts/run-clang-tidy.py
       - .github/workflows/ci-tidy.yml
   push:
@@ -60,13 +55,8 @@ on:
       - cli/check/**
       - cli/bench/**
       - packup/patch/**
-      - .github/actions/assert-cmake-config/**
-      - .github/actions/docker-run/**
-      - .github/actions/prepare-ci-image/**
-      - .github/actions/restore-build-cache/**
       - .github/actions/run-clang-tidy/**
       - .github/docker/ci-ubuntu24/**
-      - .github/scripts/assert-cmake-config.py
       - .github/scripts/run-clang-tidy.py
       - .github/workflows/ci-tidy.yml
   workflow_dispatch:
