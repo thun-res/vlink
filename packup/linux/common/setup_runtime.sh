@@ -41,7 +41,11 @@ export VLINK_DIR="$VLINK_ROOT_DIR"
 export vlink_DIR="$VLINK_ROOT_DIR/lib/cmake/vlink"
 [[ ";$CMAKE_PREFIX_PATH;" != *";$VLINK_ROOT_DIR;"* ]] && export CMAKE_PREFIX_PATH="$VLINK_ROOT_DIR${CMAKE_PREFIX_PATH:+;$CMAKE_PREFIX_PATH}"
 
-export QT_QPA_PLATFORM="xcb"
+if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
+    export QT_QPA_PLATFORM="wayland;xcb"
+else
+    export QT_QPA_PLATFORM="xcb"
+fi
 # export VLINK_PROTOC_PROGRAM="$VLINK_ROOT_DIR/bin/protoc"
 # export VLINK_FLATC_PROGRAM="$VLINK_ROOT_DIR/bin/flatc"
 [ -f "$VLINK_COMPLETIONS" ] && source "$VLINK_COMPLETIONS"
