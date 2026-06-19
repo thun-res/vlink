@@ -85,4 +85,21 @@ using namespace std::chrono_literals;
 // NOLINTNEXTLINE(build/namespaces, google-build-using-namespace, google-global-names-in-headers)
 using namespace vlink;
 
-namespace common_test {}  // namespace common_test
+namespace common_test {
+
+template <typename PredicateT>
+bool wait_until(PredicateT&& predicate, std::chrono::milliseconds timeout = std::chrono::milliseconds(1000)) {
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (predicate()) {
+      return true;
+    }
+
+    std::this_thread::yield();
+  }
+
+  return predicate();
+}
+
+}  // namespace common_test

@@ -113,7 +113,6 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Login to GHCR
-        continue-on-error: true
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -125,9 +124,6 @@ jobs:
         uses: ./.github/actions/prepare-ci-image
         with:
           image: ghcr.io/${{ github.repository_owner }}/vlink-ci-ubuntu24:latest
-          context: .github/docker/ci-ubuntu24
-          dockerfile: .github/docker/ci-ubuntu24/Dockerfile
-          local-tag: vlink-ci-ubuntu24:test-local
           required-tools: /opt/vlink/python-tools/bin/python ccache cmake ninja python3 python3-config
           verify-command: /opt/vlink/python-tools/bin/python -c 'import nanobind'
 

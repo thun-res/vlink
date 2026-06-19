@@ -235,28 +235,31 @@ TEST_SUITE("base-ThreadPool") {
   TEST_CASE("tasks run concurrently across workers") {
     static constexpr int kWorkers = 4;
     ThreadPool pool(kWorkers);
+    std::atomic<int> started{0};
     std::atomic<int> counter{0};
-
-    auto t0 = std::chrono::steady_clock::now();
+    std::atomic<bool> release_workers{false};
 
     std::vector<std::future<void>> futures;
     futures.reserve(kWorkers);
 
     for (int i = 0; i < kWorkers; ++i) {
-      futures.push_back(pool.invoke_task([&counter] {
-        std::this_thread::sleep_for(50ms);
+      futures.push_back(pool.invoke_task([&started, &counter, &release_workers] {
+        started.fetch_add(1, std::memory_order_acq_rel);
+        while (!release_workers.load(std::memory_order_acquire)) {
+          std::this_thread::yield();
+        }
         counter.fetch_add(1, std::memory_order_relaxed);
       }));
     }
+
+    CHECK(wait_until([&started] { return started.load(std::memory_order_acquire) == kWorkers; }));
+    release_workers.store(true, std::memory_order_release);
 
     for (auto& f : futures) {
       f.get();
     }
 
-    auto elapsed = std::chrono::steady_clock::now() - t0;
-
     CHECK_EQ(counter.load(), kWorkers);
-    CHECK(elapsed < std::chrono::milliseconds(kWorkers * 50 - 20));
 
     pool.shutdown();
   }
@@ -584,28 +587,31 @@ TEST_SUITE("base-ThreadPool") {
   TEST_CASE("kLockfreeType concurrent workers process tasks concurrently") {
     static constexpr int kWorkers = 4;
     ThreadPool pool(kWorkers, ThreadPool::kLockfreeType);
+    std::atomic<int> started{0};
     std::atomic<int> counter{0};
-
-    auto t0 = std::chrono::steady_clock::now();
+    std::atomic<bool> release_workers{false};
 
     std::vector<std::future<void>> futures;
     futures.reserve(kWorkers);
 
     for (int i = 0; i < kWorkers; ++i) {
-      futures.push_back(pool.invoke_task([&counter] {
-        std::this_thread::sleep_for(50ms);
+      futures.push_back(pool.invoke_task([&started, &counter, &release_workers] {
+        started.fetch_add(1, std::memory_order_acq_rel);
+        while (!release_workers.load(std::memory_order_acquire)) {
+          std::this_thread::yield();
+        }
         counter.fetch_add(1, std::memory_order_relaxed);
       }));
     }
+
+    CHECK(wait_until([&started] { return started.load(std::memory_order_acquire) == kWorkers; }));
+    release_workers.store(true, std::memory_order_release);
 
     for (auto& f : futures) {
       f.get();
     }
 
-    auto elapsed = std::chrono::steady_clock::now() - t0;
-
     CHECK_EQ(counter.load(), kWorkers);
-    CHECK(elapsed < std::chrono::milliseconds(kWorkers * 50 - 20));
 
     pool.shutdown();
   }

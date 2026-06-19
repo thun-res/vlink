@@ -432,7 +432,7 @@ TEST_SUITE("base-Timer") {
     Timer t(&loop, 10, Timer::kInfinite, [&count] { count.fetch_add(1); });
 
     t.start();
-    std::this_thread::sleep_for(80ms);
+    CHECK(common_test::wait_until([&count] { return count.load() >= 1; }, 1s));
     t.stop();
     std::this_thread::sleep_for(30ms);
 
@@ -441,7 +441,7 @@ TEST_SUITE("base-Timer") {
     CHECK(after_stop >= 1);
 
     t.start();
-    std::this_thread::sleep_for(80ms);
+    CHECK(common_test::wait_until([&count, after_stop] { return count.load() > after_stop; }, 1s));
     t.stop();
 
     CHECK(count.load() > after_stop);

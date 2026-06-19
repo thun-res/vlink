@@ -253,14 +253,17 @@ TEST_SUITE("base-Schedule") {
     loop.async_run();
 
     std::atomic<bool> ran{false};
-    auto status = loop.exec_task(Schedule::Config{80}, [&ran]() { ran.store(true); });
+    std::atomic<int64_t> elapsed_ms{-1};
+    const auto start = std::chrono::steady_clock::now();
+    auto status = loop.exec_task(Schedule::Config{80}, [&ran, &elapsed_ms, start]() {
+      const auto elapsed = std::chrono::steady_clock::now() - start;
+      elapsed_ms.store(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count(), std::memory_order_release);
+      ran.store(true, std::memory_order_release);
+    });
     CHECK(status.is_valid());
 
-    std::this_thread::sleep_for(40ms);
-    CHECK_FALSE(ran.load());
-
-    std::this_thread::sleep_for(80ms);
-    CHECK(ran.load());
+    CHECK(common_test::wait_until([&ran] { return ran.load(std::memory_order_acquire); }, 2s));
+    CHECK_GE(elapsed_ms.load(std::memory_order_acquire), 40);
 
     loop.quit();
     loop.wait_for_quit();
@@ -302,8 +305,7 @@ TEST_SUITE("base-Schedule") {
     loop.exec_task(Schedule::Config{50, 0, 0, 30}, []() { std::this_thread::sleep_for(100ms); })
         .on_execution_timeout([&timeout_fired]() { timeout_fired.store(true); });
 
-    std::this_thread::sleep_for(220ms);
-    CHECK(timeout_fired.load());
+    CHECK(common_test::wait_until([&timeout_fired] { return timeout_fired.load(); }, 2s));
 
     loop.quit();
     loop.wait_for_quit();

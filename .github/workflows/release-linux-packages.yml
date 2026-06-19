@@ -77,10 +77,6 @@ jobs:
         uses: ./.github/actions/prepare-ci-image
         with:
           image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ inputs.container_image_tag || format('df-{0}', hashFiles(matrix.dockerfile)) }}
-          context: ${{ matrix.context }}
-          dockerfile: ${{ matrix.dockerfile }}
-          local-tag: ${{ matrix.image }}-${{ matrix.arch }}:package-local
-          allow-build: "false"
           required-tools: bash ccache cmake file git patch
 
       - name: Restore CPM cache
@@ -170,10 +166,6 @@ jobs:
         uses: ./.github/actions/prepare-ci-image
         with:
           image: ghcr.io/${{ github.repository_owner }}/vlink-package-fedora43:${{ inputs.container_image_tag || format('df-{0}', hashFiles('.github/docker/package-fedora43/Dockerfile')) }}
-          context: .github/docker/package-fedora43
-          dockerfile: .github/docker/package-fedora43/Dockerfile
-          local-tag: vlink-package-fedora43-${{ matrix.arch }}:package-local
-          allow-build: "false"
           required-tools: bash ccache cmake g++ git patch
 
       - name: Restore CPM cache
@@ -259,10 +251,6 @@ jobs:
         uses: ./.github/actions/prepare-ci-image
         with:
           image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ inputs.container_image_tag || format('df-{0}', hashFiles(matrix.dockerfile)) }}
-          context: ${{ matrix.context }}
-          dockerfile: ${{ matrix.dockerfile }}
-          local-tag: ${{ matrix.image }}:package-local
-          allow-build: "false"
           required-tools: bash bsdtar ccache cmake git patch
 
       - name: Restore CPM cache

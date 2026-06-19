@@ -21,6 +21,10 @@ concurrency:
   group: ci-lint-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  ACTIONLINT_VERSION: 1.7.12
+  PIP_DISABLE_PIP_VERSION_CHECK: 1
+
 jobs:
   format-and-check:
     name: format.sh + check.sh
@@ -29,16 +33,38 @@ jobs:
     defaults:
       run:
         shell: bash
-    env:
-      PIP_DISABLE_PIP_VERSION_CHECK: 1
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 2
 
+      - name: Validate workflow files
+        run: |
+          set -euo pipefail
+          python3 -m pip install --user PyYAML==6.0.2
+          python3 - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          files = sorted(Path(".github").rglob("*.yml")) + sorted(Path(".github").rglob("*.yaml"))
+          for path in files:
+              with path.open(encoding="utf-8") as handle:
+                  yaml.safe_load(handle)
+          PY
+          python3 .github/scripts/check-github-actions.py
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "${tmp}"' EXIT
+          curl -fsSL \
+            -o "${tmp}/actionlint.tar.gz" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          tar -xzf "${tmp}/actionlint.tar.gz" -C "${tmp}" actionlint
+          "${tmp}/actionlint" .github/workflows/*.yml
+
+      - name: Validate Android.bp files
+        run: python3 .github/scripts/check-android-bp.py .
+
       - name: Login to GHCR
-        continue-on-error: true
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -50,9 +76,6 @@ jobs:
         uses: ./.github/actions/prepare-ci-image
         with:
           image: ghcr.io/${{ github.repository_owner }}/vlink-ci-ubuntu24:latest
-          context: .github/docker/ci-ubuntu24
-          dockerfile: .github/docker/ci-ubuntu24/Dockerfile
-          local-tag: vlink-ci-ubuntu24:local
           required-tools: clang-format cmake-format cpplint python3
 
       - name: Run format and check gates

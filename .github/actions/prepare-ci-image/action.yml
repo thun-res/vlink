@@ -1,31 +1,18 @@
 name: Prepare CI Image
-description: Pull a GHCR CI image, or build a local fallback image when it is not published yet.
+description: Pull and validate a prebuilt GHCR CI image.
 
 inputs:
   image:
     description: GHCR image to pull.
     required: true
-  context:
-    description: Docker build context for the local fallback.
-    required: true
-  dockerfile:
-    description: Dockerfile for the local fallback.
-    required: true
-  local-tag:
-    description: Local fallback image tag.
-    required: true
   required-tools:
-    description: Space-separated tools that must exist in a pulled image before it can be reused.
+    description: Space-separated tools that must exist in the image before it can be reused.
     required: false
     default: ""
   verify-command:
-    description: Optional bash command that must pass inside a pulled image before it can be reused.
+    description: Optional bash command that must pass inside the image before it can be reused.
     required: false
     default: ""
-  allow-build:
-    description: Build the local fallback image when the remote image is missing or invalid.
-    required: false
-    default: "true"
 
 outputs:
   image:
@@ -35,47 +22,24 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Pull or build image
+    - name: Pull and validate image
       id: prepare
       shell: bash
       env:
         IMAGE: ${{ inputs.image }}
-        CONTEXT: ${{ inputs.context }}
-        DOCKERFILE: ${{ inputs.dockerfile }}
-        LOCAL_TAG: ${{ inputs.local-tag }}
         REQUIRED_TOOLS: ${{ inputs.required-tools }}
         VERIFY_COMMAND: ${{ inputs.verify-command }}
-        ALLOW_BUILD: ${{ inputs.allow-build }}
       run: |
         set -euo pipefail
-        build_allowed=false
-        case "${ALLOW_BUILD}" in
-          true|True|TRUE|1|yes|Yes|YES) build_allowed=true ;;
-        esac
-        if docker pull "${IMAGE}"; then
-          image_ok=true
-          if [ -n "${REQUIRED_TOOLS}" ]; then
-            docker run --rm "${IMAGE}" bash -lc 'for tool in '"${REQUIRED_TOOLS}"'; do command -v "${tool}" >/dev/null || exit 1; done' || image_ok=false
-          fi
-          if [ "${image_ok}" = "true" ] && [ -n "${VERIFY_COMMAND}" ]; then
-            docker run --rm "${IMAGE}" bash -lc "${VERIFY_COMMAND}" || image_ok=false
-          fi
-          if [ "${image_ok}" = "true" ]; then
-            echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-          if [ "${build_allowed}" != "true" ]; then
-            echo "::error::Image ${IMAGE} is available but failed validation, and local fallback builds are disabled for this job."
-            exit 1
-          fi
-          echo "::warning::Image ${IMAGE} is available but failed validation. Building local fallback ${LOCAL_TAG}."
-        else
-          if [ "${build_allowed}" != "true" ]; then
-            echo "::error::Image ${IMAGE} is not available, and local fallback builds are disabled for this job."
-            exit 1
-          fi
-          echo "::warning::Image ${IMAGE} is not available; building local fallback ${LOCAL_TAG}."
+
+        docker pull "${IMAGE}"
+
+        if [ -n "${REQUIRED_TOOLS}" ]; then
+          docker run --rm "${IMAGE}" bash -lc 'for tool in '"${REQUIRED_TOOLS}"'; do command -v "${tool}" >/dev/null || exit 1; done'
         fi
 
-        DOCKER_BUILDKIT=1 docker build --pull -t "${LOCAL_TAG}" -f "${DOCKERFILE}" "${CONTEXT}"
-        echo "image=${LOCAL_TAG}" >> "${GITHUB_OUTPUT}"
+        if [ -n "${VERIFY_COMMAND}" ]; then
+          docker run --rm "${IMAGE}" bash -lc "${VERIFY_COMMAND}"
+        fi
+
+        echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"

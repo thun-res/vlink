@@ -64,10 +64,6 @@ jobs:
         uses: ./.github/actions/prepare-ci-image
         with:
           image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ inputs.container_image_tag || format('df-{0}', hashFiles(matrix.dockerfile)) }}
-          context: ${{ matrix.context }}
-          dockerfile: ${{ matrix.dockerfile }}
-          local-tag: ${{ matrix.image }}-${{ matrix.arch }}:portable-local
-          allow-build: "false"
           required-tools: bash ccache cmake conan git git-lfs ninja patch patchelf pkg-config
 
       - name: Setup Qt and QtIFW
@@ -228,10 +224,6 @@ jobs:
         uses: ./.github/actions/prepare-ci-image
         with:
           image: ghcr.io/${{ github.repository_owner }}/vlink-release-ubuntu20-qt-aarch64:${{ inputs.container_image_tag || format('df-{0}', hashFiles('.github/docker/release-ubuntu20-qt-aarch64/Dockerfile')) }}
-          context: .github/docker/release-ubuntu20-qt-aarch64
-          dockerfile: .github/docker/release-ubuntu20-qt-aarch64/Dockerfile
-          local-tag: vlink-release-ubuntu20-qt-aarch64:release-local
-          allow-build: "false"
           required-tools: bash binarycreator ccache cmake conan git git-lfs ninja patch patchelf qmake
           verify-command: >-
             export LC_ALL=C.UTF-8 LANG=C.UTF-8;
