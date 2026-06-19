@@ -130,6 +130,8 @@ runs:
     - name: Setup sccache
       if: inputs.backend == 'sccache'
       uses: mozilla-actions/sccache-action@v0.0.10
+      with:
+        version: "v0.15.0"
 
     - name: Start sccache
       if: inputs.backend == 'sccache'
