@@ -269,12 +269,15 @@ jobs:
           key: conan-cpm-linux-aarch64-${{ hashFiles('conanfile.py', 'packup/conan_profile', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
           restore-keys: conan-cpm-linux-aarch64-
 
-      - name: Restore ccache
-        uses: ./.github/actions/restore-build-cache
+      - name: Setup ccache
+        uses: ./.github/actions/setup-compiler-cache
         with:
-          path: ~/.ccache
-          key: ccache-release-linux-aarch64-${{ github.sha }}
+          backend: ccache
+          cache-key: ccache-release-linux-aarch64-${{ github.sha }}
           restore-keys: ccache-release-linux-aarch64-
+          max-size: 2G
+          cmake-wrapper: "false"
+          disable-ipo: "true"
 
       - name: Build aarch64 portable archive and QtIFW installer
         uses: ./.github/actions/docker-run
