@@ -27,6 +27,7 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <memory>
@@ -526,7 +527,15 @@ TEST_SUITE("base-GraphTask") {
     release->store(true);
 
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-    while (task->get_status() != GraphTask::kStatusDone && std::chrono::steady_clock::now() < deadline) {
+    auto has_status = [&statuses, &mtx](GraphTask::Status expected) {
+      std::lock_guard lock(*mtx);
+      return std::find(statuses->begin(), statuses->end(), expected) != statuses->end();
+    };
+
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (task->get_status() == GraphTask::kStatusDone && has_status(GraphTask::kStatusDone)) {
+        break;
+      }
       std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
 
