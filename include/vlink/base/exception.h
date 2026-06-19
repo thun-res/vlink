@@ -64,10 +64,16 @@
 
 #pragma once
 
-#include "./macros.h"
-
 #include <exception>
 #include <stdexcept>
+
+#include "./macros.h"
+
+#if defined(_WIN32) || defined(__CYGWIN__)
+#define VLINK_EXCEPTION_EXPORT
+#else
+#define VLINK_EXCEPTION_EXPORT VLINK_EXPORT
+#endif
 
 namespace vlink {
 
@@ -81,7 +87,7 @@ namespace Exception {  // NOLINT(readability-identifier-naming)
  * @class RuntimeError
  * @brief Generic runtime failure; thrown by the logger on @c kFatal messages.
  */
-class VLINK_EXPORT RuntimeError final : public std::runtime_error {
+class VLINK_EXCEPTION_EXPORT RuntimeError final : public std::runtime_error {
  public:
   using std::runtime_error::runtime_error;
 };
@@ -90,7 +96,7 @@ class VLINK_EXPORT RuntimeError final : public std::runtime_error {
  * @class OutOfRange
  * @brief Indicates an index or iterator that is outside the legal range.
  */
-class VLINK_EXPORT OutOfRange final : public std::out_of_range {
+class VLINK_EXCEPTION_EXPORT OutOfRange final : public std::out_of_range {
  public:
   using std::out_of_range::out_of_range;
 };
@@ -99,7 +105,7 @@ class VLINK_EXPORT OutOfRange final : public std::out_of_range {
  * @class InvalidArgument
  * @brief Indicates that a function received an argument with an invalid value.
  */
-class VLINK_EXPORT InvalidArgument final : public std::invalid_argument {
+class VLINK_EXCEPTION_EXPORT InvalidArgument final : public std::invalid_argument {
  public:
   using std::invalid_argument::invalid_argument;
 };
@@ -108,7 +114,7 @@ class VLINK_EXPORT InvalidArgument final : public std::invalid_argument {
  * @class LogicError
  * @brief Indicates a violated program logic precondition.
  */
-class VLINK_EXPORT LogicError final : public std::logic_error {
+class VLINK_EXCEPTION_EXPORT LogicError final : public std::logic_error {
  public:
   using std::logic_error::logic_error;
 };
@@ -117,7 +123,7 @@ class VLINK_EXPORT LogicError final : public std::logic_error {
  * @class DomainError
  * @brief Indicates a value outside the mathematical domain of a function.
  */
-class VLINK_EXPORT DomainError final : public std::domain_error {
+class VLINK_EXCEPTION_EXPORT DomainError final : public std::domain_error {
  public:
   using std::domain_error::domain_error;
 };
@@ -126,7 +132,7 @@ class VLINK_EXPORT DomainError final : public std::domain_error {
  * @class LengthError
  * @brief Indicates an attempt to exceed an implementation size limit.
  */
-class VLINK_EXPORT LengthError final : public std::length_error {
+class VLINK_EXCEPTION_EXPORT LengthError final : public std::length_error {
  public:
   using std::length_error::length_error;
 };
@@ -135,7 +141,7 @@ class VLINK_EXPORT LengthError final : public std::length_error {
  * @class RangeError
  * @brief Indicates an arithmetic range error.
  */
-class VLINK_EXPORT RangeError final : public std::range_error {
+class VLINK_EXCEPTION_EXPORT RangeError final : public std::range_error {
  public:
   using std::range_error::range_error;
 };
@@ -144,7 +150,7 @@ class VLINK_EXPORT RangeError final : public std::range_error {
  * @class OverflowError
  * @brief Indicates an arithmetic overflow.
  */
-class VLINK_EXPORT OverflowError final : public std::overflow_error {
+class VLINK_EXCEPTION_EXPORT OverflowError final : public std::overflow_error {
  public:
   using std::overflow_error::overflow_error;
 };
@@ -153,7 +159,7 @@ class VLINK_EXPORT OverflowError final : public std::overflow_error {
  * @class UnderflowError
  * @brief Indicates an arithmetic underflow.
  */
-class VLINK_EXPORT UnderflowError final : public std::underflow_error {
+class VLINK_EXCEPTION_EXPORT UnderflowError final : public std::underflow_error {
  public:
   using std::underflow_error::underflow_error;
 };
@@ -162,7 +168,7 @@ class VLINK_EXPORT UnderflowError final : public std::underflow_error {
  * @class OperationCancelled
  * @brief Marker exception thrown when a cooperative cancellation request is observed.
  */
-class VLINK_EXPORT OperationCancelled final : public std::exception {
+class VLINK_EXCEPTION_EXPORT OperationCancelled final : public std::exception {
  public:
   using std::exception::exception;
 
@@ -177,3 +183,5 @@ class VLINK_EXPORT OperationCancelled final : public std::exception {
 }  // namespace Exception
 
 }  // namespace vlink
+
+#undef VLINK_EXCEPTION_EXPORT
