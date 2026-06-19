@@ -6,11 +6,65 @@ on:
       - master
       - main
       - develop
+    paths:
+      - CMakeLists.txt
+      - cmake/**
+      - conanfile.py
+      - include/**
+      - src/**
+      - modules/**
+      - proxy/**
+      - c_api/**
+      - cli/**
+      - exprtk/**
+      - python_api/**
+      - test/**
+      - thirdparty/**
+      - packup/patch/**
+      - .github/actions/assert-cmake-config/**
+      - .github/actions/cmake-build/**
+      - .github/actions/docker-run/**
+      - .github/actions/prepare-ci-image/**
+      - .github/actions/restore-build-cache/**
+      - .github/actions/setup-compiler-cache/**
+      - .github/actions/setup-msvc-devcmd/**
+      - .github/actions/setup-windows-msvc-tools/**
+      - .github/actions/setup-windows-openssl/**
+      - .github/docker/ci-ubuntu24/**
+      - .github/scripts/assert-cmake-config.py
+      - .github/workflows/ci-test.yml
   push:
     branches:
       - master
       - main
       - develop
+    paths:
+      - CMakeLists.txt
+      - cmake/**
+      - conanfile.py
+      - include/**
+      - src/**
+      - modules/**
+      - proxy/**
+      - c_api/**
+      - cli/**
+      - exprtk/**
+      - python_api/**
+      - test/**
+      - thirdparty/**
+      - packup/patch/**
+      - .github/actions/assert-cmake-config/**
+      - .github/actions/cmake-build/**
+      - .github/actions/docker-run/**
+      - .github/actions/prepare-ci-image/**
+      - .github/actions/restore-build-cache/**
+      - .github/actions/setup-compiler-cache/**
+      - .github/actions/setup-msvc-devcmd/**
+      - .github/actions/setup-windows-msvc-tools/**
+      - .github/actions/setup-windows-openssl/**
+      - .github/docker/ci-ubuntu24/**
+      - .github/scripts/assert-cmake-config.py
+      - .github/workflows/ci-test.yml
   workflow_dispatch:
 
 permissions:
@@ -88,8 +142,9 @@ jobs:
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
-          cache-key: ccache-test-linux-x86_64-${{ github.sha }}
-          restore-keys: ccache-test-linux-x86_64-
+          cache-key: ccache-ci-linux-x86_64-test-${{ github.sha }}
+          restore-keys: |
+            ccache-ci-linux-x86_64-
           max-size: 1G
 
       - name: Restore CPM build cache
@@ -324,8 +379,9 @@ jobs:
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
-          cache-key: ccache-test-macos-x86_64-${{ github.sha }}
-          restore-keys: ccache-test-macos-x86_64-
+          cache-key: ccache-ci-macos-x86_64-test-${{ github.sha }}
+          restore-keys: |
+            ccache-ci-macos-x86_64-
           max-size: 1G
 
       - name: Restore CPM build cache

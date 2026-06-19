@@ -6,11 +6,57 @@ on:
       - master
       - main
       - develop
+    paths:
+      - CMakeLists.txt
+      - cmake/**
+      - conanfile.py
+      - include/**
+      - src/**
+      - modules/**
+      - proxy/**
+      - c_api/**
+      - cli/**
+      - exprtk/**
+      - webviz/**
+      - thirdparty/**
+      - packup/patch/**
+      - .github/actions/assert-cmake-config/**
+      - .github/actions/cmake-build/**
+      - .github/actions/docker-run/**
+      - .github/actions/prepare-ci-image/**
+      - .github/actions/restore-build-cache/**
+      - .github/actions/setup-compiler-cache/**
+      - .github/docker/ci-ubuntu20/**
+      - .github/scripts/assert-cmake-config.py
+      - .github/workflows/ci-build.yml
   push:
     branches:
       - master
       - main
       - develop
+    paths:
+      - CMakeLists.txt
+      - cmake/**
+      - conanfile.py
+      - include/**
+      - src/**
+      - modules/**
+      - proxy/**
+      - c_api/**
+      - cli/**
+      - exprtk/**
+      - webviz/**
+      - thirdparty/**
+      - packup/patch/**
+      - .github/actions/assert-cmake-config/**
+      - .github/actions/cmake-build/**
+      - .github/actions/docker-run/**
+      - .github/actions/prepare-ci-image/**
+      - .github/actions/restore-build-cache/**
+      - .github/actions/setup-compiler-cache/**
+      - .github/docker/ci-ubuntu20/**
+      - .github/scripts/assert-cmake-config.py
+      - .github/workflows/ci-build.yml
   workflow_dispatch:
 
 permissions:
@@ -105,8 +151,8 @@ jobs:
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
-          cache-key: ccache-ci-ubuntu20-aarch64-${{ github.sha }}
-          restore-keys: ccache-ci-ubuntu20-aarch64-
+          cache-key: ccache-ci-linux-aarch64-build-${{ github.sha }}
+          restore-keys: ccache-ci-linux-aarch64-
           max-size: 1G
 
       - name: Restore CPM build cache
@@ -190,7 +236,7 @@ jobs:
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
-          cache-key: ccache-ci-macos-arm64-${{ github.sha }}
+          cache-key: ccache-ci-macos-arm64-build-${{ github.sha }}
           restore-keys: ccache-ci-macos-arm64-
           max-size: 1G
 

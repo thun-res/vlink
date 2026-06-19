@@ -76,8 +76,8 @@ jobs:
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
-          cache-key: ccache-coverage-linux-x86_64-${{ github.sha }}
-          restore-keys: ccache-coverage-linux-x86_64-
+          cache-key: ccache-ci-linux-x86_64-coverage-${{ github.sha }}
+          restore-keys: ccache-ci-linux-x86_64-
           max-size: 1G
 
       - name: Restore CPM build cache

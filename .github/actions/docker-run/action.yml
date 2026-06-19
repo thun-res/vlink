@@ -8,6 +8,18 @@ inputs:
   command:
     description: Bash command to run inside the container.
     required: true
+  cmake-wrapper:
+    description: Prepend a container-local cmake wrapper that injects compiler launcher args on configure calls.
+    required: false
+    default: "false"
+  compiler-launcher:
+    description: Compiler launcher injected by the cmake wrapper.
+    required: false
+    default: ccache
+  disable-ipo:
+    description: Inject -DENABLE_IPO=OFF into wrapped CMake configure calls.
+    required: false
+    default: "false"
 
 runs:
   using: composite
@@ -17,6 +29,9 @@ runs:
       env:
         IMAGE: ${{ inputs.image }}
         COMMAND: ${{ inputs.command }}
+        CMAKE_WRAPPER: ${{ inputs.cmake-wrapper }}
+        COMPILER_LAUNCHER: ${{ inputs.compiler-launcher }}
+        DISABLE_IPO: ${{ inputs.disable-ipo }}
       run: |
         set -euo pipefail
         if [ -z "${IMAGE}" ]; then
@@ -45,5 +60,48 @@ runs:
           --env CTEST_OUTPUT_ON_FAILURE \
           --env PIP_DISABLE_PIP_VERSION_CHECK \
           --env VLINK_CI_CMAKE_ARGS \
+          --env VLINK_DOCKER_CMAKE_WRAPPER="${CMAKE_WRAPPER}" \
+          --env VLINK_DOCKER_COMPILER_LAUNCHER="${COMPILER_LAUNCHER}" \
+          --env VLINK_DOCKER_DISABLE_IPO="${DISABLE_IPO}" \
+          --env VLINK_DOCKER_COMMAND="${COMMAND}" \
           "${IMAGE}" \
-          bash -lc "${COMMAND}"
+          bash -lc '
+            set -euo pipefail
+            if [ "${VLINK_DOCKER_CMAKE_WRAPPER}" = "true" ]; then
+              wrapper_dir="${HOME}/.vlink-cmake-wrapper"
+              mkdir -p "${wrapper_dir}"
+              real_cmake="$(command -v cmake)"
+              printf "%s\n" \
+                "#!/usr/bin/env bash" \
+                "set -euo pipefail" \
+                "args=(\"\$@\")" \
+                "inject=1" \
+                "have_c=0" \
+                "have_cxx=0" \
+                "have_ipo=0" \
+                "for arg in \"\$@\"; do" \
+                "  case \"\${arg}\" in" \
+                "    --build|--install|-E|-P|--version|--help|--help-*|--system-information|--find-package|--workflow)" \
+                "      inject=0" \
+                "      break" \
+                "      ;;" \
+                "    -DCMAKE_C_COMPILER_LAUNCHER=*) have_c=1 ;;" \
+                "    -DCMAKE_CXX_COMPILER_LAUNCHER=*) have_cxx=1 ;;" \
+                "    -DENABLE_IPO=*) have_ipo=1 ;;" \
+                "  esac" \
+                "done" \
+                "if [ \"\${inject}\" = \"1\" ]; then" \
+                "  [ \"\${have_c}\" = \"1\" ] || args+=(\"-DCMAKE_C_COMPILER_LAUNCHER=\${VLINK_DOCKER_COMPILER_LAUNCHER}\")" \
+                "  [ \"\${have_cxx}\" = \"1\" ] || args+=(\"-DCMAKE_CXX_COMPILER_LAUNCHER=\${VLINK_DOCKER_COMPILER_LAUNCHER}\")" \
+                "  if [ \"\${VLINK_DOCKER_DISABLE_IPO:-false}\" = \"true\" ] && [ \"\${have_ipo}\" = \"0\" ]; then" \
+                "    args+=(\"-DENABLE_IPO=OFF\")" \
+                "  fi" \
+                "fi" \
+                "exec \"\${VLINK_REAL_CMAKE}\" \"\${args[@]}\"" \
+                > "${wrapper_dir}/cmake"
+              chmod +x "${wrapper_dir}/cmake"
+              export VLINK_REAL_CMAKE="${real_cmake}"
+              export PATH="${wrapper_dir}:${PATH}"
+            fi
+            bash -lc "${VLINK_DOCKER_COMMAND}"
+          '

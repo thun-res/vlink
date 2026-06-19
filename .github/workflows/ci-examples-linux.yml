@@ -83,8 +83,8 @@ jobs:
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
-          cache-key: ccache-examples-linux-${{ matrix.arch }}-${{ github.sha }}
-          restore-keys: ccache-examples-linux-${{ matrix.arch }}-
+          cache-key: ccache-ci-linux-${{ matrix.arch }}-examples-${{ github.sha }}
+          restore-keys: ccache-ci-linux-${{ matrix.arch }}-
           max-size: 1G
 
       - name: Restore CPM build cache
