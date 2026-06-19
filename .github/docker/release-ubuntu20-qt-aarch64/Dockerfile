@@ -48,7 +48,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       libtool \
       libva-dev \
       libvdpau-dev \
-      libwebpdemux2 \
       libx11-dev \
       libx11-xcb-dev \
       libxcb-cursor-dev \
@@ -187,5 +186,10 @@ RUN set -eux; \
     test -x "${QTIFW_DIR}/bin/binarycreator"; \
     echo "QtIFW binarycreator: ${QTIFW_DIR}/bin/binarycreator"; \
     rm -f qtifw.run
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+      libwebpdemux2
 
 WORKDIR /work
