@@ -157,6 +157,7 @@ jobs:
               -o build-coverage/coverage/index.html \
               > build-coverage/coverage/summary.txt
             python3 - <<'PY'
+            import os
             import pathlib
             import re
             import sys
@@ -168,6 +169,14 @@ jobs:
             total = int(match.group(2))
             if total <= 0:
                 sys.exit("Coverage report is empty")
+            summary = summary.strip()
+            print(summary)
+            summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+            if summary_path:
+                with open(summary_path, "a", encoding="utf-8") as output:
+                    output.write("### Coverage\n\n```text\n")
+                    output.write(summary)
+                    output.write("\n```\n")
             PY
 
       - name: Upload coverage report
@@ -176,3 +185,35 @@ jobs:
           name: coverage-linux-x86_64
           path: build-coverage/coverage
           if-no-files-found: error
+
+      - name: Email coverage result
+        if: always()
+        continue-on-error: true
+        env:
+          JOB_STATUS: ${{ job.status }}
+          VLINK_NOTIFY_SMTP_HOST: ${{ secrets.VLINK_NOTIFY_SMTP_HOST }}
+          VLINK_NOTIFY_SMTP_PORT: ${{ secrets.VLINK_NOTIFY_SMTP_PORT || vars.VLINK_NOTIFY_SMTP_PORT }}
+          VLINK_NOTIFY_SMTP_USERNAME: ${{ secrets.VLINK_NOTIFY_SMTP_USERNAME }}
+          VLINK_NOTIFY_SMTP_PASSWORD: ${{ secrets.VLINK_NOTIFY_SMTP_PASSWORD }}
+          VLINK_NOTIFY_SMTP_SSL: ${{ secrets.VLINK_NOTIFY_SMTP_SSL || vars.VLINK_NOTIFY_SMTP_SSL }}
+          VLINK_NOTIFY_SMTP_STARTTLS: ${{ secrets.VLINK_NOTIFY_SMTP_STARTTLS || vars.VLINK_NOTIFY_SMTP_STARTTLS }}
+          VLINK_NOTIFY_EMAIL_FROM: ${{ secrets.VLINK_NOTIFY_EMAIL_FROM || vars.VLINK_NOTIFY_EMAIL_FROM }}
+          VLINK_NOTIFY_EMAIL_TO: ${{ secrets.VLINK_NOTIFY_EMAIL_TO || vars.VLINK_NOTIFY_EMAIL_TO }}
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          {
+            echo "CI Coverage ${JOB_STATUS}"
+            echo
+            echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "Commit: ${GITHUB_SHA}"
+            echo
+            if [ -s build-coverage/coverage/summary.txt ]; then
+              cat build-coverage/coverage/summary.txt
+            else
+              echo "Coverage summary is unavailable."
+            fi
+          } > "${body}"
+          python3 .github/scripts/send-email-notification.py \
+            --subject "[vlink] Coverage ${JOB_STATUS}: ${GITHUB_REF_NAME}" \
+            --body-file "${body}"

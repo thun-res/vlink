@@ -153,6 +153,7 @@ jobs:
         with:
           path: build-test/_deps
           key: cpm-build-test-linux-x86_64-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          restore-keys: cpm-build-test-linux-x86_64-v1-
 
       - name: Configure and build
         uses: ./.github/actions/docker-run
@@ -256,6 +257,7 @@ jobs:
         with:
           path: build-test/_deps
           key: cpm-build-test-windows-x64-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          restore-keys: cpm-build-test-windows-x64-v1-
 
       - name: Configure and build
         uses: ./.github/actions/cmake-build
@@ -337,6 +339,7 @@ jobs:
         with:
           path: build-test/_deps
           key: cpm-build-test-macos-x86_64-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          restore-keys: cpm-build-test-macos-x86_64-v1-
 
       - name: Configure and build
         uses: ./.github/actions/cmake-build

@@ -76,6 +76,7 @@ jobs:
       - portable-macos
       - portable-windows
       - linux-packages
+      - publish-github-release
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v8
@@ -87,3 +88,68 @@ jobs:
         with:
           files: dist/**/*
           generate_release_notes: true
+
+  notify-release:
+    name: notify-release
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    needs:
+      - portable-linux
+      - portable-macos
+      - portable-windows
+      - linux-packages
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Email release result
+        continue-on-error: true
+        env:
+          PORTABLE_LINUX_RESULT: ${{ needs.portable-linux.result }}
+          PORTABLE_MACOS_RESULT: ${{ needs.portable-macos.result }}
+          PORTABLE_WINDOWS_RESULT: ${{ needs.portable-windows.result }}
+          LINUX_PACKAGES_RESULT: ${{ needs.linux-packages.result }}
+          PUBLISH_GITHUB_RELEASE_RESULT: ${{ needs.publish-github-release.result }}
+          VLINK_NOTIFY_SMTP_HOST: ${{ secrets.VLINK_NOTIFY_SMTP_HOST }}
+          VLINK_NOTIFY_SMTP_PORT: ${{ secrets.VLINK_NOTIFY_SMTP_PORT || vars.VLINK_NOTIFY_SMTP_PORT }}
+          VLINK_NOTIFY_SMTP_USERNAME: ${{ secrets.VLINK_NOTIFY_SMTP_USERNAME }}
+          VLINK_NOTIFY_SMTP_PASSWORD: ${{ secrets.VLINK_NOTIFY_SMTP_PASSWORD }}
+          VLINK_NOTIFY_SMTP_SSL: ${{ secrets.VLINK_NOTIFY_SMTP_SSL || vars.VLINK_NOTIFY_SMTP_SSL }}
+          VLINK_NOTIFY_SMTP_STARTTLS: ${{ secrets.VLINK_NOTIFY_SMTP_STARTTLS || vars.VLINK_NOTIFY_SMTP_STARTTLS }}
+          VLINK_NOTIFY_EMAIL_FROM: ${{ secrets.VLINK_NOTIFY_EMAIL_FROM || vars.VLINK_NOTIFY_EMAIL_FROM }}
+          VLINK_NOTIFY_EMAIL_TO: ${{ secrets.VLINK_NOTIFY_EMAIL_TO || vars.VLINK_NOTIFY_EMAIL_TO }}
+        run: |
+          set -euo pipefail
+          status=success
+          for result in \
+            "${PORTABLE_LINUX_RESULT}" \
+            "${PORTABLE_MACOS_RESULT}" \
+            "${PORTABLE_WINDOWS_RESULT}" \
+            "${LINUX_PACKAGES_RESULT}" \
+            "${PUBLISH_GITHUB_RELEASE_RESULT}"; do
+            case "${result}" in
+              failure|cancelled)
+                status=failure
+                ;;
+            esac
+          done
+
+          body="$(mktemp)"
+          {
+            echo "Release ${status}"
+            echo
+            echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "Ref: ${GITHUB_REF_NAME}"
+            echo "Commit: ${GITHUB_SHA}"
+            echo
+            echo "portable-linux: ${PORTABLE_LINUX_RESULT}"
+            echo "portable-macos: ${PORTABLE_MACOS_RESULT}"
+            echo "portable-windows: ${PORTABLE_WINDOWS_RESULT}"
+            echo "linux-packages: ${LINUX_PACKAGES_RESULT}"
+            echo "publish-github-release: ${PUBLISH_GITHUB_RELEASE_RESULT}"
+          } > "${body}"
+
+          python3 .github/scripts/send-email-notification.py \
+            --subject "[vlink] Release ${status}: ${GITHUB_REF_NAME}" \
+            --body-file "${body}"
