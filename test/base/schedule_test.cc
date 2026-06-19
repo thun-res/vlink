@@ -257,7 +257,8 @@ TEST_SUITE("base-Schedule") {
     const auto start = std::chrono::steady_clock::now();
     auto status = loop.exec_task(Schedule::Config{80}, [&ran, &elapsed_ms, start]() {
       const auto elapsed = std::chrono::steady_clock::now() - start;
-      elapsed_ms.store(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count(), std::memory_order_release);
+      elapsed_ms.store(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count(),
+                       std::memory_order_release);
       ran.store(true, std::memory_order_release);
     });
     CHECK(status.is_valid());
