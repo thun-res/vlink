@@ -76,7 +76,6 @@ jobs:
       - portable-macos
       - portable-windows
       - linux-packages
-      - publish-github-release
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v8
@@ -99,6 +98,7 @@ jobs:
       - portable-macos
       - portable-windows
       - linux-packages
+      - publish-github-release
     steps:
       - name: Checkout
         uses: actions/checkout@v7
