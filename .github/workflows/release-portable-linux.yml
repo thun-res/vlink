@@ -136,7 +136,7 @@ jobs:
             test -n "${QT_QMAKE}"
             test -n "${QTIFW_BINARYCREATOR}"
             "${QT_QMAKE}" -query QT_VERSION | grep -q '^${{ inputs.qt_version }}$'
-            "${QTIFW_BINARYCREATOR}" --version
+            .github/scripts/check-elf-deps.sh "${QTIFW_BINARYCREATOR}"
             export QT_DIR
             QT_DIR=$(dirname "$(dirname "${QT_QMAKE}")")
             export QTIFW_DIR
@@ -182,16 +182,10 @@ jobs:
           command: |
             set -euo pipefail
             export LD_LIBRARY_PATH="$PWD/build-conan/packup/linux/vlink/lib:${LD_LIBRARY_PATH:-}"
-            while IFS= read -r binary; do
-              echo "ldd -r ${binary}"
-              ldd -r "${binary}" >/tmp/ldd.out
-              cat /tmp/ldd.out
-              if grep -q "not found" /tmp/ldd.out; then
-                exit 1
-              fi
-            done < <(find build-conan/packup/linux/vlink/bin build-conan/packup/linux/vlink/lib -type f -print0 \
+            find build-conan/packup/linux/vlink/bin build-conan/packup/linux/vlink/lib -type f -print0 \
               | xargs -0 file \
-              | awk -F: '/ELF/ {print $1}')
+              | awk -F: '/ELF/ {print $1}' \
+              | xargs -r .github/scripts/check-elf-deps.sh
 
       - name: Verify Linux portable outputs
         uses: ./.github/actions/verify-artifacts
@@ -237,7 +231,11 @@ jobs:
           local-tag: vlink-release-ubuntu20-qt-aarch64:release-local
           allow-build: "false"
           required-tools: bash binarycreator ccache cmake conan git git-lfs ninja patch patchelf qmake
-          verify-command: qmake -query QT_VERSION | grep -q '^${{ inputs.qt_version }}$' && binarycreator --version
+          verify-command: >-
+            export LC_ALL=C.UTF-8 LANG=C.UTF-8;
+            qmake -query QT_VERSION | grep -q '^${{ inputs.qt_version }}$' &&
+            ldd -r "$(command -v binarycreator)" | tee /tmp/binarycreator-ldd.out &&
+            ! grep -Eq "not found|undefined symbol:" /tmp/binarycreator-ldd.out
 
       - name: Setup OSG SDK
         uses: ./.github/actions/setup-osg-sdk
@@ -292,7 +290,7 @@ jobs:
             grep -q '20.04' /etc/os-release
             test "$(uname -m)" = "aarch64"
             "${QT_DIR}/bin/qmake" -query QT_VERSION | grep -q '^${{ inputs.qt_version }}$'
-            "${QTIFW_DIR}/bin/binarycreator" --version
+            .github/scripts/check-elf-deps.sh "${QTIFW_DIR}/bin/binarycreator"
             conan --version
             git lfs version
             patch --version | head -n 1
@@ -351,16 +349,10 @@ jobs:
           command: |
             set -euo pipefail
             export LD_LIBRARY_PATH="$PWD/build-conan/packup/linux/vlink/lib:${LD_LIBRARY_PATH:-}"
-            while IFS= read -r binary; do
-              echo "ldd -r ${binary}"
-              ldd -r "${binary}" >/tmp/ldd.out
-              cat /tmp/ldd.out
-              if grep -q "not found" /tmp/ldd.out; then
-                exit 1
-              fi
-            done < <(find build-conan/packup/linux/vlink/bin build-conan/packup/linux/vlink/lib -type f -print0 \
+            find build-conan/packup/linux/vlink/bin build-conan/packup/linux/vlink/lib -type f -print0 \
               | xargs -0 file \
-              | awk -F: '/ELF/ {print $1}')
+              | awk -F: '/ELF/ {print $1}' \
+              | xargs -r .github/scripts/check-elf-deps.sh
 
       - name: Verify Linux portable outputs
         uses: ./.github/actions/verify-artifacts

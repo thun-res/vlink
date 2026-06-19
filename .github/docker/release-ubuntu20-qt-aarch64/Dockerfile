@@ -48,6 +48,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       libtool \
       libva-dev \
       libvdpau-dev \
+      libwebpdemux2 \
       libx11-dev \
       libx11-xcb-dev \
       libxcb-cursor-dev \
