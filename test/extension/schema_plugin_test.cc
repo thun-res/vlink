@@ -74,7 +74,11 @@ VLINK_REGISTER_FLATBUFFERS("invalid.Schema.second", InvalidBinarySchema)
 #endif
 
 [[maybe_unused]] static std::filesystem::path test_idl_dir() {
+#ifdef VLINK_TEST_IDL_DIR
+  return std::filesystem::path(VLINK_TEST_IDL_DIR);
+#else
   return std::filesystem::path(__FILE__).parent_path().parent_path() / "idl";
+#endif
 }
 
 }  // namespace

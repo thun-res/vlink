@@ -12,6 +12,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/idl)
 target_link_libraries(${PROJECT_NAME} PRIVATE vlink::vlink vlink::all thirdparty::doctest)
 target_compile_definitions(${PROJECT_NAME} PRIVATE ${VLINK_APP_DEFINES})
 target_compile_definitions(${PROJECT_NAME} PRIVATE "DOCTEST_CONFIG_USE_STD_HEADERS")
+target_compile_definitions(${PROJECT_NAME} PRIVATE VLINK_TEST_IDL_DIR="${CMAKE_CURRENT_SOURCE_DIR}/idl")
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_CLANG_TIDY "")
 
 if(WIN32)
