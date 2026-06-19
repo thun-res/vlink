@@ -342,8 +342,23 @@ jobs:
           )
           $env:PYTHONPATH = (@("$PWD\python_api", "$PWD\build-test\output\lib", $Module.DirectoryName) |
             Sort-Object -Unique) -join ";"
-          $env:Path = (($RuntimeDirs + $DllDirs | Where-Object { Test-Path $_ } | Sort-Object -Unique) -join ";") + ";$env:Path"
-          python python_api\test\test_vlink.py
+          $DllSearchDirs = $RuntimeDirs + $DllDirs | Where-Object { Test-Path $_ } | Sort-Object -Unique
+          $env:Path = ($DllSearchDirs -join ";") + ";$env:Path"
+          $env:VLINK_WINDOWS_DLL_DIRS = $DllSearchDirs -join ";"
+          $Bootstrap = Join-Path $env:RUNNER_TEMP "vlink-python-test.py"
+          $BootstrapSource = @'
+          import os
+          import runpy
+
+          for path in os.environ.get("VLINK_WINDOWS_DLL_DIRS", "").split(os.pathsep):
+              if path:
+                  os.add_dll_directory(path)
+
+          runpy.run_path(os.path.join(os.environ["GITHUB_WORKSPACE"], "python_api", "test", "test_vlink.py"),
+                         run_name="__main__")
+          '@
+          $BootstrapSource | Set-Content -Path $Bootstrap -Encoding utf8
+          python $Bootstrap
 
       - name: Show sccache stats
         if: always()
