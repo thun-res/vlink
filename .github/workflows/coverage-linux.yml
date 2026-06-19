@@ -45,11 +45,11 @@ jobs:
         shell: bash
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Login to GHCR
         continue-on-error: true
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -110,13 +110,28 @@ jobs:
             ENABLE_TEST_COVERAGE=ON
             ENABLE_WEBVIZ=ON"
             python3 .github/scripts/assert-cmake-config.py
-            ctest --test-dir build-coverage --output-on-failure --timeout 180 --parallel 1 --exclude-regex '^(shm|shm2)-|^(xmltest|ucunit)$|^CUnit_'
+            export LD_LIBRARY_PATH="${GITHUB_WORKSPACE}/build-coverage/output/bin:${GITHUB_WORKSPACE}/build-coverage/output/lib:${GITHUB_WORKSPACE}/build-coverage/output/external/lib:${LD_LIBRARY_PATH:-}"
+            proxy_pid=""
+            if [ ! -x build-coverage/output/bin/vlink-proxy ]; then
+              echo "Missing vlink-proxy before unit tests" >&2
+              exit 1
+            fi
+            build-coverage/output/bin/vlink-proxy -c -n -m off > build-coverage/vlink-proxy.log 2>&1 &
+            proxy_pid="$!"
+            trap 'if [ -n "${proxy_pid}" ]; then kill "${proxy_pid}" 2>/dev/null || true; wait "${proxy_pid}" 2>/dev/null || true; fi' EXIT
+            sleep 2
+            if ! kill -0 "${proxy_pid}" 2>/dev/null; then
+              cat build-coverage/vlink-proxy.log || true
+              echo "vlink-proxy exited before unit tests" >&2
+              exit 1
+            fi
+            ctest --test-dir build-coverage --output-on-failure --timeout 180 --parallel 1 --exclude-regex '^(xmltest|ucunit)$|^CUnit_'
             cmake --build build-coverage --target coverage
             test -f build-coverage/coverage/index.html
             ccache --show-stats || true
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vlink-coverage-linux-x86_64
           if-no-files-found: error

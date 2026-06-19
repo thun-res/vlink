@@ -32,20 +32,20 @@ runs:
   steps:
     - name: Restore pip cache
       if: runner.os != 'Windows'
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ~/.cache/pip
         key: pip-release-${{ runner.os }}-${{ runner.arch }}-aqt-conan-v3
 
     - name: Restore pip cache
       if: runner.os == 'Windows'
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ~\AppData\Local\pip\Cache
         key: pip-release-${{ runner.os }}-${{ runner.arch }}-aqt-conan-v3
 
     - name: Restore Qt cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ~/.vlink-ci/qt
         key: qt-${{ runner.os }}-${{ runner.arch }}-${{ inputs.qt-version }}-${{ inputs.cache-suffix }}-v3

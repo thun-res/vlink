@@ -1,0 +1,103 @@
+name: Setup MSVC DevCmd
+description: Export the Visual Studio C++ developer command prompt environment.
+inputs:
+  arch:
+    description: Target architecture passed to VsDevCmd.bat.
+    default: x64
+  host_arch:
+    description: Host architecture passed to VsDevCmd.bat.
+    default: x64
+runs:
+  using: composite
+  steps:
+    - name: Export MSVC environment
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = "Stop"
+
+        $VsWhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+        if (!(Test-Path $VsWhere)) {
+          throw "vswhere.exe not found: $VsWhere"
+        }
+
+        $VsPath = & $VsWhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+        if (!$VsPath) {
+          throw "Visual Studio with MSVC x64 tools was not found"
+        }
+
+        $DevCmd = Join-Path $VsPath "Common7\Tools\VsDevCmd.bat"
+        if (!(Test-Path $DevCmd)) {
+          throw "VsDevCmd.bat not found: $DevCmd"
+        }
+
+        $OriginalPath = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($Entry in ($env:Path -split ";")) {
+          if ($Entry) {
+            [void]$OriginalPath.Add($Entry)
+          }
+        }
+
+        $DevEnv = & cmd.exe /s /c "`"$DevCmd`" -arch=${{ inputs.arch }} -host_arch=${{ inputs.host_arch }} && set"
+        if ($LASTEXITCODE -ne 0) {
+          throw "VsDevCmd.bat failed with exit code $LASTEXITCODE"
+        }
+
+        $Parsed = @{}
+        foreach ($Line in $DevEnv) {
+          if ($Line -notmatch "^[^=]+=") {
+            continue
+          }
+          $Name, $Value = $Line -split "=", 2
+          $Parsed[$Name] = $Value
+        }
+
+        if ($Parsed.ContainsKey("Path")) {
+          $env:Path = $Parsed["Path"]
+          foreach ($Entry in ($Parsed["Path"] -split ";")) {
+            if ($Entry -and (Test-Path $Entry) -and !$OriginalPath.Contains($Entry)) {
+              $Entry | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            }
+          }
+        }
+
+        $EnvNames = @(
+          "DevEnvDir",
+          "ExtensionSdkDir",
+          "Framework40Version",
+          "FrameworkDir",
+          "FrameworkDIR64",
+          "FrameworkVersion",
+          "FrameworkVersion64",
+          "INCLUDE",
+          "LIB",
+          "LIBPATH",
+          "NETFXSDKDir",
+          "UCRTVersion",
+          "UniversalCRTSdkDir",
+          "VCIDEInstallDir",
+          "VCINSTALLDIR",
+          "VCToolsInstallDir",
+          "VCToolsRedistDir",
+          "VCToolsVersion",
+          "VisualStudioVersion",
+          "VSINSTALLDIR",
+          "WindowsLibPath",
+          "WindowsSdkBinPath",
+          "WindowsSdkDir",
+          "WindowsSDKLibVersion",
+          "WindowsSDKVersion",
+          "VSCMD_ARG_app_plat",
+          "VSCMD_ARG_HOST_ARCH",
+          "VSCMD_ARG_TGT_ARCH",
+          "VSCMD_VER"
+        )
+
+        foreach ($Name in $EnvNames) {
+          if ($Parsed.ContainsKey($Name)) {
+            $Value = $Parsed[$Name]
+            Set-Item -Path "Env:$Name" -Value $Value
+            "$Name=$Value" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+        }
+
+        cl.exe /Bv

@@ -34,7 +34,7 @@ runs:
   steps:
     - name: Restore ccache
       if: inputs.backend == 'ccache'
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ${{ inputs.cache-path }}
         key: ${{ inputs.cache-key }}

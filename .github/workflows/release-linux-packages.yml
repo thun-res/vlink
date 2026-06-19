@@ -63,11 +63,11 @@ jobs:
             deb_depends: "libssl3, libsqlite3-0, libzstd1"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Login to GHCR
         continue-on-error: true
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -182,7 +182,7 @@ jobs:
           globs: build-deb/packup/linux/*.deb
 
       - name: Upload deb package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vlink-deb-${{ matrix.distro }}-${{ matrix.arch }}
           if-no-files-found: error
@@ -205,11 +205,11 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Login to GHCR
         continue-on-error: true
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -314,7 +314,7 @@ jobs:
           globs: build-rpm/packup/linux/*.rpm
 
       - name: Upload rpm package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vlink-rpm-fedora43-${{ matrix.arch }}
           if-no-files-found: error
@@ -343,11 +343,11 @@ jobs:
             dockerfile: .github/docker/package-arch-aarch64/Dockerfile
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Login to GHCR
         continue-on-error: true
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -442,7 +442,7 @@ jobs:
           globs: build-arch/packup/linux/*.pkg.tar.zst
 
       - name: Upload Arch package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vlink-arch-${{ matrix.arch }}
           if-no-files-found: error

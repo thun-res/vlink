@@ -24,7 +24,7 @@ runs:
   using: composite
   steps:
     - name: Restore OSG SDK cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ~/.vlink-ci/osg_sdk
         key: osg-sdk-${{ runner.os }}-${{ runner.arch }}-${{ inputs.platform-dir }}-${{ inputs.cache-suffix }}
