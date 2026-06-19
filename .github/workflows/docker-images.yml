@@ -10,6 +10,7 @@ on:
         default: all
         options:
           - all
+          - release-linux
           - vlink-ci-ubuntu24
           - vlink-ci-protocols-ubuntu24
           - vlink-ci-ubuntu20
@@ -86,19 +87,19 @@ jobs:
             platforms: linux/arm64
     steps:
       - name: Checkout
-        if: inputs.image == 'all' || inputs.image == matrix.image
+        if: inputs.image == 'all' || inputs.image == matrix.image || (inputs.image == 'release-linux' && (matrix.image == 'vlink-release-ubuntu20' || matrix.image == 'vlink-release-ubuntu20-qt-aarch64'))
         uses: actions/checkout@v7
 
       - name: Set up QEMU
-        if: inputs.image == 'all' || inputs.image == matrix.image
+        if: inputs.image == 'all' || inputs.image == matrix.image || (inputs.image == 'release-linux' && (matrix.image == 'vlink-release-ubuntu20' || matrix.image == 'vlink-release-ubuntu20-qt-aarch64'))
         uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        if: inputs.image == 'all' || inputs.image == matrix.image
+        if: inputs.image == 'all' || inputs.image == matrix.image || (inputs.image == 'release-linux' && (matrix.image == 'vlink-release-ubuntu20' || matrix.image == 'vlink-release-ubuntu20-qt-aarch64'))
         uses: docker/setup-buildx-action@v4
 
       - name: Login to GHCR
-        if: inputs.image == 'all' || inputs.image == matrix.image
+        if: inputs.image == 'all' || inputs.image == matrix.image || (inputs.image == 'release-linux' && (matrix.image == 'vlink-release-ubuntu20' || matrix.image == 'vlink-release-ubuntu20-qt-aarch64'))
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -106,7 +107,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata
-        if: inputs.image == 'all' || inputs.image == matrix.image
+        if: inputs.image == 'all' || inputs.image == matrix.image || (inputs.image == 'release-linux' && (matrix.image == 'vlink-release-ubuntu20' || matrix.image == 'vlink-release-ubuntu20-qt-aarch64'))
         id: meta
         uses: docker/metadata-action@v6
         with:
@@ -118,7 +119,7 @@ jobs:
             type=sha,prefix=sha-
 
       - name: Build and push
-        if: inputs.image == 'all' || inputs.image == matrix.image
+        if: inputs.image == 'all' || inputs.image == matrix.image || (inputs.image == 'release-linux' && (matrix.image == 'vlink-release-ubuntu20' || matrix.image == 'vlink-release-ubuntu20-qt-aarch64'))
         uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
