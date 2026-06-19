@@ -148,20 +148,9 @@ jobs:
               --gcov-ignore-errors
               --gcov-ignore-parse-errors
               --exclude-unreachable-branches
-              --filter "src/.*"
-              --filter "include/vlink/.*"
+              --filter "include/.*"
               --filter "modules/.*"
-              --filter "c_api/.*"
-              --filter "proxy/.*"
-              --filter "exprtk/.*"
-              --exclude "src/private/.*"
-              --exclude "src/extension/.*"
-              --exclude "include/private/.*"
-              --exclude ".*/test/.*"
-              --exclude "thirdparty/.*"
-              --exclude "examples/.*"
-              --exclude "cli/.*"
-              --exclude ".*/builtin/.*"
+              --filter "src/.*"
             )
             gcovr "${gcovr_args[@]}" \
               -s \

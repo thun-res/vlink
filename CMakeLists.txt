@@ -578,13 +578,7 @@ if(ENABLE_TEST)
     vlink_test_coverage(
       ${PROJECT_NAME}
       EXCLUDES
-      */thirdparty/*
-      */test/*
-      */private/*
-      */extension/*
-      */examples/*
-      */cli/*
-      */builtin/*
+      ${VLINK_TEST_COVERAGE_EXCLUDES}
     )
   endif()
 endif()

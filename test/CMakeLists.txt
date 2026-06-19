@@ -15,6 +15,18 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE "DOCTEST_CONFIG_USE_STD_HEADE
 target_compile_definitions(${PROJECT_NAME} PRIVATE VLINK_TEST_IDL_DIR="${CMAKE_CURRENT_SOURCE_DIR}/idl")
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_CLANG_TIDY "")
 
+set(
+  VLINK_TEST_COVERAGE_EXCLUDES
+  */build-*/*
+  */c_api/*
+  */cli/*
+  */exprtk/*
+  */proxy/*
+  */test/*
+  */thirdparty/*
+  PARENT_SCOPE
+)
+
 if(WIN32)
   if(EXISTS ${CMAKE_SOURCE_DIR}/packup/ico/vlink-cmd.rc)
     target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/packup/ico/vlink-cmd.rc)
