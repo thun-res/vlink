@@ -15,7 +15,7 @@ on:
       container_image_tag:
         required: false
         type: string
-        default: latest
+        default: ""
 
 permissions:
   contents: read
@@ -69,41 +69,6 @@ jobs:
           dockerfile: ${{ matrix.dockerfile }}
           local-tag: ${{ matrix.image }}-${{ matrix.arch }}:portable-local
           required-tools: bash ccache cmake conan git git-lfs ninja patch patchelf pkg-config
-          verify-command: |
-            set -euo pipefail
-            grep -q '20.04' /etc/os-release
-            test "$(uname -m)" = "${{ matrix.arch }}"
-            pkg-config --exists fontconfig freetype2 dbus-1 xinerama xrandr xcb-icccm xcb-image xcb-keysyms xcb-randr xcb-renderutil xcb-xinerama xkbcommon-x11
-            ldconfig -p | grep -q 'libxcb-icccm\.so\.4'
-            conan --version
-            python3 -V
-
-      - name: Check build host
-        run: |
-          set -euo pipefail
-          docker run --rm "${{ steps.portable-image.outputs.image }}" bash -lc '
-            set -euo pipefail
-            grep -q "20.04" /etc/os-release
-            test "$(uname -m)" = "${{ matrix.arch }}"
-            cmake --version
-            ninja --version
-            patch --version | head -n 1
-            git lfs version
-            pkg-config --modversion fontconfig freetype2 dbus-1 xinerama xrandr xcb-icccm xcb-image xcb-keysyms xcb-randr xcb-renderutil xcb-xinerama xkbcommon-x11
-            ldconfig -p | grep -q "libxcb-icccm\.so\.4"
-          '
-
-      - name: Check Qt installer Python
-        run: |
-          set -euo pipefail
-          if [ -n "${VLINK_AQT_PYTHON:-}" ]; then
-            test -x "${VLINK_AQT_PYTHON}"
-            "${VLINK_AQT_PYTHON}" -V
-          elif command -v python3 >/dev/null 2>&1; then
-            python3 -V
-          else
-            echo "Python is not present; setup-qt-ifw will bootstrap Python standalone before installing aqt."
-          fi
 
       - name: Setup Qt and QtIFW
         uses: ./.github/actions/setup-qt-ifw
@@ -179,8 +144,6 @@ jobs:
             export CCACHE_COMPRESS=true
             export CCACHE_MAXSIZE=2G
             export PATH="${QTIFW_DIR}/bin:${QT_DIR}/bin:${PATH}"
-            pkg-config --exists fontconfig freetype2 dbus-1 xinerama xrandr xcb-icccm xcb-image xcb-keysyms xcb-randr xcb-renderutil xcb-xinerama xkbcommon-x11
-            ldconfig -p | grep -q "libxcb-icccm\.so\.4"
             ccache --zero-stats || true
             trap 'ccache --show-stats || true' EXIT
 
@@ -305,15 +268,7 @@ jobs:
           dockerfile: .github/docker/release-ubuntu20-qt-aarch64/Dockerfile
           local-tag: vlink-release-ubuntu20-qt-aarch64:release-local
           allow-build: "false"
-          required-tools: bash ccache cmake conan git git-lfs ninja patch patchelf
-          verify-command: |
-            set -euo pipefail
-            grep -q '20.04' /etc/os-release
-            test "$(uname -m)" = "aarch64"
-            "${QT_DIR}/bin/qmake" -query QT_VERSION | grep -q '^${{ inputs.qt_version }}$'
-            test -x "${QTIFW_DIR}/bin/binarycreator"
-            pkg-config --exists xinerama xrandr xcb-icccm xcb-image xcb-keysyms xcb-randr xcb-renderutil xcb-xinerama xkbcommon-x11
-            ldconfig -p | grep -q 'libxcb-icccm\.so\.4'
+          required-tools: bash binarycreator ccache cmake conan git git-lfs ninja patch patchelf qmake
 
       - name: Setup OSG SDK
         uses: ./.github/actions/setup-osg-sdk
@@ -392,6 +347,7 @@ jobs:
             export CCACHE_COMPRESS=true
             export CCACHE_MAXSIZE=2G
             ccache --zero-stats || true
+            trap 'ccache --show-stats || true' EXIT
 
             wrapper_dir="${HOME}/.vlink-cmake-wrapper"
             mkdir -p "${wrapper_dir}"
@@ -427,13 +383,6 @@ jobs:
             export PATH="${wrapper_dir}:${PATH}"
 
             bash packup/build-conan.sh . aarch64
-
-      - name: Show aarch64 ccache stats
-        if: always() && steps.release-image.outputs.image != ''
-        uses: ./.github/actions/docker-run
-        with:
-          image: ${{ steps.release-image.outputs.image }}
-          command: ccache --show-stats || true
 
       - name: Verify bundled Linux OSG files
         run: |

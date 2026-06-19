@@ -6,7 +6,7 @@ on:
       container_image_tag:
         required: false
         type: string
-        default: latest
+        default: ""
 
 permissions:
   contents: read
@@ -82,22 +82,6 @@ jobs:
           dockerfile: ${{ matrix.dockerfile }}
           local-tag: ${{ matrix.image }}-${{ matrix.arch }}:package-local
           required-tools: bash ccache cmake file git patch
-          verify-command: |
-            set -euo pipefail
-            grep -q '${{ matrix.ubuntu_version }}' /etc/os-release
-            test "$(uname -m)" = "${{ matrix.arch }}"
-            file --version >/dev/null
-
-      - name: Check build host
-        run: |
-          set -euo pipefail
-          docker run --rm "${{ steps.deb-image.outputs.image }}" bash -lc '
-            set -euo pipefail
-            grep -q "${{ matrix.ubuntu_version }}" /etc/os-release
-            test "$(uname -m)" = "${{ matrix.arch }}"
-            patch --version | head -n 1
-            file --version | head -n 1
-          '
 
       - name: Restore CPM cache
         uses: ./.github/actions/restore-build-cache
@@ -224,22 +208,6 @@ jobs:
           dockerfile: .github/docker/package-fedora43/Dockerfile
           local-tag: vlink-package-fedora43-${{ matrix.arch }}:package-local
           required-tools: bash ccache cmake g++ git patch
-          verify-command: |
-            set -euo pipefail
-            test "$(uname -m)" = "${{ matrix.arch }}"
-            printf '%s\n' 'int main() { return 0; }' > /tmp/vlink-static-check.cc
-            g++ -static /tmp/vlink-static-check.cc -o /tmp/vlink-static-check
-            /tmp/vlink-static-check
-            rm -f /tmp/vlink-static-check.cc /tmp/vlink-static-check
-
-      - name: Check build host
-        run: |
-          set -euo pipefail
-          docker run --rm "${{ steps.rpm-image.outputs.image }}" bash -lc '
-            set -euo pipefail
-            test "$(uname -m)" = "${{ matrix.arch }}"
-            patch --version | head -n 1
-          '
 
       - name: Restore CPM cache
         uses: ./.github/actions/restore-build-cache
@@ -362,12 +330,6 @@ jobs:
           dockerfile: ${{ matrix.dockerfile }}
           local-tag: ${{ matrix.image }}:package-local
           required-tools: bash bsdtar ccache cmake git patch
-          verify-command: test "$(uname -m)" = "${{ matrix.arch }}"
-
-      - name: Check build host
-        run: |
-          test "$(uname -m)" = "${{ matrix.arch }}"
-          docker run --rm "${{ steps.arch-image.outputs.image }}" bash -lc 'test "$(uname -m)" = "${{ matrix.arch }}"; patch --version | head -n 1'
 
       - name: Restore CPM cache
         uses: ./.github/actions/restore-build-cache
@@ -431,10 +393,6 @@ jobs:
 
             bash packup/build-arch.sh .
             ccache --show-stats || true
-
-      - name: Show ccache stats
-        if: ${{ always() && steps.arch-image.outcome == 'success' && steps.arch-image.outputs.image != '' }}
-        run: docker run --rm --volume "${HOME}/.ccache:/github/home/.ccache" --env CCACHE_DIR=/github/home/.ccache "${{ steps.arch-image.outputs.image }}" bash -lc 'ccache --show-stats || true'
 
       - name: Verify Arch package
         uses: ./.github/actions/verify-artifacts

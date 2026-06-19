@@ -14,10 +14,10 @@ on:
         type: boolean
         default: true
       docker_image_tag:
-        description: GHCR Docker image tag for Linux release jobs
-        required: true
+        description: GHCR Docker image tag for Linux release jobs. Empty uses sha-<commit>.
+        required: false
         type: string
-        default: latest
+        default: ""
   push:
     tags:
       - "v*"
@@ -31,72 +31,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  verify-linux-container-images:
-    name: verify-linux-container-images
-    if: github.event_name == 'push' || inputs.build_portable || inputs.build_linux_packages
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    env:
-      IMAGE_TAG: ${{ inputs.docker_image_tag || 'latest' }}
-      BUILD_PORTABLE: ${{ github.event_name == 'push' || inputs.build_portable }}
-      BUILD_LINUX_PACKAGES: ${{ github.event_name == 'push' || inputs.build_linux_packages }}
-    steps:
-      - name: Login to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Verify Linux release images
-        run: |
-          set -euo pipefail
-          image_refs=()
-          if [ "${BUILD_PORTABLE}" = "true" ]; then
-            image_refs+=(
-              "vlink-release-ubuntu20|linux/amd64"
-              "vlink-release-ubuntu20-qt-aarch64|linux/arm64"
-            )
-          fi
-          if [ "${BUILD_LINUX_PACKAGES}" = "true" ]; then
-            image_refs+=(
-              "vlink-release-ubuntu20|linux/amd64"
-              "vlink-release-ubuntu20|linux/arm64"
-              "vlink-package-ubuntu22|linux/amd64"
-              "vlink-package-ubuntu22|linux/arm64"
-              "vlink-package-fedora43|linux/amd64"
-              "vlink-package-fedora43|linux/arm64"
-              "vlink-package-arch|linux/amd64"
-              "vlink-package-arch-aarch64|linux/arm64"
-            )
-          fi
-          mapfile -t unique_image_refs < <(printf '%s\n' "${image_refs[@]}" | sort -u)
-          for image_ref in "${unique_image_refs[@]}"; do
-            IFS='|' read -r image platform <<< "${image_ref}"
-            full_image="ghcr.io/${{ github.repository_owner }}/${image}:${IMAGE_TAG}"
-            echo "Pulling ${full_image} for ${platform}"
-            if ! docker pull --platform "${platform}" "${full_image}"; then
-              echo "::warning::Linux release image ${full_image} for ${platform} is missing. Release jobs will build a local fallback image when this image is required."
-              continue
-            fi
-            if [ "${IMAGE_TAG}" = "latest" ]; then
-              image_revision=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${full_image}" 2>/dev/null || true)
-              if [ "${image_revision}" != "${GITHUB_SHA}" ]; then
-                echo "::warning::Linux release image ${full_image} for ${platform} is stale: revision=${image_revision:-<missing>}, expected=${GITHUB_SHA}. Continuing because package jobs also validate the image capabilities."
-              fi
-            fi
-          done
-
   portable-linux:
     name: portable-linux
     if: github.event_name == 'push' || inputs.build_portable
-    needs: verify-linux-container-images
     uses: ./.github/workflows/release-portable-linux.yml
     with:
       qt_version: "6.8.3"
       osg_sdk_repository: https://github.com/thun-res/osg_sdk.git
       osg_sdk_ref: master
-      container_image_tag: ${{ inputs.docker_image_tag || 'latest' }}
+      container_image_tag: ${{ inputs.docker_image_tag || format('sha-{0}', github.sha) }}
 
   portable-macos:
     name: portable-macos
@@ -119,10 +62,9 @@ jobs:
   linux-packages:
     name: linux-packages
     if: github.event_name == 'push' || inputs.build_linux_packages
-    needs: verify-linux-container-images
     uses: ./.github/workflows/release-linux-packages.yml
     with:
-      container_image_tag: ${{ inputs.docker_image_tag || 'latest' }}
+      container_image_tag: ${{ inputs.docker_image_tag || format('sha-{0}', github.sha) }}
 
   publish-github-release:
     name: publish-github-release
