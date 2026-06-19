@@ -24,6 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libgl1-mesa-dev \
       libsqlite3-dev \
       libssl-dev \
+      libtiff5 \
       libtool \
       libva-dev \
       libvdpau-dev \

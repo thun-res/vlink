@@ -44,6 +44,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       libpng-dev \
       libsqlite3-dev \
       libssl-dev \
+      libtiff5 \
       libtool \
       libva-dev \
       libvdpau-dev \
