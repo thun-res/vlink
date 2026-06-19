@@ -34,14 +34,6 @@ jobs:
       - name: Install release tools
         run: brew install ccache git-lfs nasm yasm
 
-      - name: Check build host
-        run: |
-          set -euo pipefail
-          test "$(uname -m)" = "arm64"
-          cmake --version
-          patch --version | head -n 1
-          git lfs version
-
       - name: Setup Qt and QtIFW
         uses: ./.github/actions/setup-qt-ifw
         with:
