@@ -149,7 +149,7 @@ jobs:
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
-          cache-key: ccache-protocols-linux-x86_64-${{ github.run_id }}
+          cache-key: ccache-protocols-linux-x86_64-${{ github.sha }}
           restore-keys: ccache-protocols-linux-x86_64-
           max-size: 1G
 

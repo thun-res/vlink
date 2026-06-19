@@ -152,7 +152,7 @@ jobs:
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
-          cache-key: ccache-release-linux-${{ matrix.arch }}-${{ github.run_id }}
+          cache-key: ccache-release-linux-${{ matrix.arch }}-${{ github.sha }}
           restore-keys: ccache-release-linux-${{ matrix.arch }}-
           max-size: 2G
           cmake-wrapper: "false"
@@ -351,7 +351,7 @@ jobs:
         uses: ./.github/actions/restore-build-cache
         with:
           path: ~/.ccache
-          key: ccache-release-linux-aarch64-${{ github.run_id }}
+          key: ccache-release-linux-aarch64-${{ github.sha }}
           restore-keys: ccache-release-linux-aarch64-
 
       - name: Build aarch64 portable archive and QtIFW installer

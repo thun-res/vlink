@@ -83,7 +83,7 @@ jobs:
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
-          cache-key: ccache-examples-linux-${{ matrix.arch }}-${{ github.run_id }}
+          cache-key: ccache-examples-linux-${{ matrix.arch }}-${{ github.sha }}
           restore-keys: ccache-examples-linux-${{ matrix.arch }}-
           max-size: 1G
 

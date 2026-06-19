@@ -105,7 +105,7 @@ jobs:
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
-          cache-key: ccache-ci-ubuntu20-aarch64-${{ github.run_id }}
+          cache-key: ccache-ci-ubuntu20-aarch64-${{ github.sha }}
           restore-keys: ccache-ci-ubuntu20-aarch64-
           max-size: 1G
 
@@ -190,7 +190,7 @@ jobs:
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
-          cache-key: ccache-ci-macos-arm64-${{ github.run_id }}
+          cache-key: ccache-ci-macos-arm64-${{ github.sha }}
           restore-keys: ccache-ci-macos-arm64-
           max-size: 1G
 

@@ -110,7 +110,7 @@ jobs:
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
-          cache-key: ccache-deb-${{ matrix.distro }}-${{ matrix.arch }}-${{ github.run_id }}
+          cache-key: ccache-deb-${{ matrix.distro }}-${{ matrix.arch }}-${{ github.sha }}
           restore-keys: ccache-deb-${{ matrix.distro }}-${{ matrix.arch }}-
           max-size: 2G
           cmake-wrapper: "false"
@@ -252,7 +252,7 @@ jobs:
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
-          cache-key: ccache-rpm-fedora43-${{ matrix.arch }}-${{ github.run_id }}
+          cache-key: ccache-rpm-fedora43-${{ matrix.arch }}-${{ github.sha }}
           restore-keys: ccache-rpm-fedora43-${{ matrix.arch }}-
           max-size: 2G
           cmake-wrapper: "false"
@@ -380,7 +380,7 @@ jobs:
         uses: ./.github/actions/restore-build-cache
         with:
           path: ~/.ccache
-          key: ccache-arch-${{ matrix.arch }}-${{ github.run_id }}
+          key: ccache-arch-${{ matrix.arch }}-${{ github.sha }}
           restore-keys: ccache-arch-${{ matrix.arch }}-
 
       - name: Build Arch package

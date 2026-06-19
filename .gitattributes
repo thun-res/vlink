@@ -6,3 +6,4 @@
 *.bat.in text eol=crlf whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 *.cmd text eol=crlf whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 *.cmd.in text eol=crlf whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+*.ps1 text eol=crlf whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

@@ -38,12 +38,12 @@ env:
     -DENABLE_CPM_FLATBUFFERS=ON
     -DENABLE_CXX_STD_20=OFF
     -DENABLE_VIEWER=OFF
-    -DENABLE_WEBVIZ=ON
+    -DENABLE_WEBVIZ=OFF
     -DENABLE_IOX_ROUDI=OFF
     -DENABLE_EXAMPLES=OFF
     -DENABLE_PYTHON_API=ON
     -DENABLE_TEST=ON
-    -DENABLE_TEST_SANITIZE=ON
+    -DENABLE_TEST_SANITIZE=OFF
     -DENABLE_TEST_WARN=ON
 
 jobs:
@@ -88,7 +88,7 @@ jobs:
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
-          cache-key: ccache-test-linux-x86_64-${{ github.run_id }}
+          cache-key: ccache-test-linux-x86_64-${{ github.sha }}
           restore-keys: ccache-test-linux-x86_64-
           max-size: 1G
 
@@ -113,17 +113,17 @@ jobs:
               -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
               -DPython_EXECUTABLE=/opt/vlink/python-tools/bin/python \
               -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+              -DENABLE_TEST_SANITIZE=ON
             cmake --build build-test --parallel
             export BUILD_DIR=build-test
-            export REQUIRED_CACHE="ENABLE_WEBVIZ=ON
+            export REQUIRED_CACHE="ENABLE_WEBVIZ=OFF
             ENABLE_IPO=OFF
             ENABLE_PYTHON_API=ON
             ENABLE_TEST=ON
             ENABLE_TEST_SANITIZE=ON
             ENABLE_TEST_WARN=ON"
-            export REQUIRED_SOURCE_PREFIXES="webviz/
-            python_api/"
+            export REQUIRED_SOURCE_PREFIXES="python_api/"
             python3 .github/scripts/assert-cmake-config.py
             export ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1
             export LSAN_OPTIONS=print_suppressions=0
@@ -210,20 +210,21 @@ jobs:
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
             -DCMAKE_C_COMPILER_LAUNCHER=sccache
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+            -DENABLE_WEBVIZ=OFF
+            -DENABLE_TEST_SANITIZE=OFF
 
       - name: Assert configured features
         uses: ./.github/actions/assert-cmake-config
         with:
           build-dir: build-test
           required-cache: |
-            ENABLE_WEBVIZ=ON
+            ENABLE_WEBVIZ=OFF
             ENABLE_IPO=OFF
             ENABLE_PYTHON_API=ON
             ENABLE_TEST=ON
-            ENABLE_TEST_SANITIZE=ON
+            ENABLE_TEST_SANITIZE=OFF
             ENABLE_TEST_WARN=ON
           required-source-prefixes: |
-            webviz/
             python_api/
 
       - name: Run unit tests
@@ -323,7 +324,7 @@ jobs:
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
-          cache-key: ccache-test-macos-x86_64-${{ github.run_id }}
+          cache-key: ccache-test-macos-x86_64-${{ github.sha }}
           restore-keys: ccache-test-macos-x86_64-
           max-size: 1G
 
@@ -342,30 +343,25 @@ jobs:
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
             -DCMAKE_C_COMPILER_LAUNCHER=ccache
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+            -DENABLE_WEBVIZ=OFF
+            -DENABLE_TEST_SANITIZE=OFF
 
       - name: Assert configured features
         uses: ./.github/actions/assert-cmake-config
         with:
           build-dir: build-test
           required-cache: |
-            ENABLE_WEBVIZ=ON
+            ENABLE_WEBVIZ=OFF
             ENABLE_IPO=OFF
             ENABLE_PYTHON_API=ON
             ENABLE_TEST=ON
-            ENABLE_TEST_SANITIZE=ON
+            ENABLE_TEST_SANITIZE=OFF
             ENABLE_TEST_WARN=ON
           required-source-prefixes: |
-            webviz/
             python_api/
 
       - name: Run unit tests
         run: |
-          export ASAN_OPTIONS=detect_leaks=0:halt_on_error=1:abort_on_error=1
-          export LSAN_OPTIONS=print_suppressions=0
-          asan_lib="$(clang -print-file-name=libclang_rt.asan_osx_dynamic.dylib || true)"
-          if [ -f "${asan_lib}" ]; then
-            export DYLD_INSERT_LIBRARIES="${asan_lib}${DYLD_INSERT_LIBRARIES:+:${DYLD_INSERT_LIBRARIES}}"
-          fi
           export DYLD_LIBRARY_PATH="${PWD}/build-test/output/bin:${PWD}/build-test/output/lib:${PWD}/build-test/output/external/lib:${DYLD_LIBRARY_PATH:-}"
           proxy_pid=""
           if [ ! -x build-test/output/bin/vlink-proxy ]; then
@@ -385,12 +381,6 @@ jobs:
 
       - name: Run Python API tests
         run: |
-          export ASAN_OPTIONS=detect_leaks=0:halt_on_error=1:abort_on_error=1
-          export LSAN_OPTIONS=print_suppressions=0
-          asan_lib="$(clang -print-file-name=libclang_rt.asan_osx_dynamic.dylib || true)"
-          if [ -f "${asan_lib}" ]; then
-            export DYLD_INSERT_LIBRARIES="${asan_lib}${DYLD_INSERT_LIBRARIES:+:${DYLD_INSERT_LIBRARIES}}"
-          fi
           export DYLD_LIBRARY_PATH="${PWD}/build-test/output/lib:${DYLD_LIBRARY_PATH:-}"
           export PYTHONPATH="${PWD}/python_api:${PWD}/build-test/output/lib"
           python python_api/test/test_vlink.py

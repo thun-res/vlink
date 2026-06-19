@@ -76,7 +76,7 @@ jobs:
         uses: ./.github/actions/setup-compiler-cache
         with:
           backend: ccache
-          cache-key: ccache-coverage-linux-x86_64-${{ github.run_id }}
+          cache-key: ccache-coverage-linux-x86_64-${{ github.sha }}
           restore-keys: ccache-coverage-linux-x86_64-
           max-size: 1G
 
