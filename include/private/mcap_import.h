@@ -52,5 +52,9 @@
 #define MCAP_COMPRESSION_NO_LZ4
 #endif
 
+#ifndef MCAP_PUBLIC
+#define MCAP_PUBLIC
+#endif
+
 #include <mcap/reader.hpp>
 #include <mcap/writer.hpp>

@@ -83,7 +83,6 @@ runs:
         if ((-not $HasCCompiler) -or (-not $HasCxxCompiler)) {
           $Cl = Get-Command cl.exe -ErrorAction Stop
           $ClPath = $Cl.Source.Replace("\", "/")
-          Write-Host "Using MSVC compiler: $ClPath"
           if (-not $HasCCompiler) {
             $ArgsList += "-DCMAKE_C_COMPILER=$ClPath"
           }

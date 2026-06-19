@@ -64,9 +64,20 @@ runs:
         INSTALL_CONAN: ${{ inputs.install-conan }}
       run: |
         set -euo pipefail
+        if [ "$(uname -s)" != "Darwin" ]; then
+          export LANG=C.UTF-8
+          export LC_ALL=C.UTF-8
+        fi
         AQT_VENV="${HOME}/.vlink-ci/aqt-venv"
         QT_ROOT="${HOME}/.vlink-ci/qt"
+        quiet_log="${RUNNER_TEMP:-/tmp}/vlink-setup-qt-ifw.log"
         export PIP_CACHE_DIR="${HOME}/.cache/pip"
+        run_quiet() {
+          "$@" >"${quiet_log}" 2>&1 || {
+            cat "${quiet_log}" >&2
+            return 1
+          }
+        }
         install_python_standalone() {
           local python_arch python_url
           case "$(uname -m)" in
@@ -79,8 +90,8 @@ runs:
           esac
           if ! command -v curl >/dev/null 2>&1; then
             if [ "$(id -u)" = "0" ] && command -v apt-get >/dev/null 2>&1; then
-              apt-get update
-              apt-get install -y --no-install-recommends ca-certificates curl tar
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends ca-certificates curl tar
             else
               echo "curl is required to install Python standalone for aqtinstall." >&2
               exit 1
@@ -94,7 +105,7 @@ runs:
             mkdir -p "${PYTHON_STANDALONE_ROOT}"
             python_url="https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_STANDALONE_RELEASE}/cpython-${PYTHON_STANDALONE_VERSION}%2B${PYTHON_STANDALONE_RELEASE}-${python_arch}-unknown-linux-gnu-install_only_stripped.tar.gz"
             for attempt in 1 2 3 4 5; do
-              if curl -fL --connect-timeout 30 --speed-limit 1024 --speed-time 60 "${python_url}" -o /tmp/vlink-python-standalone.tar.gz; then
+              if curl -fsSL --connect-timeout 30 --speed-limit 1024 --speed-time 60 "${python_url}" -o /tmp/vlink-python-standalone.tar.gz; then
                 break
               fi
               rm -f /tmp/vlink-python-standalone.tar.gz
@@ -138,14 +149,12 @@ runs:
         import sys
         raise SystemExit(0 if sys.version_info >= (3, 10) else 1)
         PY
-        echo "Using aqt Python: ${AQT_PYTHON}"
         PY_INCLUDE=$("${AQT_PYTHON}" - <<'PY'
         import sysconfig
         print(sysconfig.get_path("include") or "")
         PY
         )
         if [ -n "${PY_INCLUDE}" ] && [ ! -f "${PY_INCLUDE}/Python.h" ]; then
-          echo "Selected Python has no Python.h under ${PY_INCLUDE}; using Python standalone."
           install_python_standalone
           PY_INCLUDE=$("${AQT_PYTHON}" - <<'PY'
         import sysconfig
@@ -158,8 +167,8 @@ runs:
         "${AQT_PYTHON}" -m venv "${AQT_VENV}"
         packages=("aqtinstall>=3.3.0,<4")
         [ "${INSTALL_CONAN}" = "true" ] && packages+=(conan)
-        "${AQT_VENV}/bin/python" -m pip install --upgrade pip setuptools wheel
-        "${AQT_VENV}/bin/python" -m pip install --upgrade "${packages[@]}"
+        "${AQT_VENV}/bin/python" -m pip install -q --upgrade pip setuptools wheel
+        "${AQT_VENV}/bin/python" -m pip install -q --upgrade "${packages[@]}"
         "${AQT_VENV}/bin/python" - <<'PY'
         import re
         from importlib.metadata import version
@@ -177,9 +186,9 @@ runs:
           rm -rf "${QT_LAYOUT_ROOT}"
           read -r -a modules <<< "${QT_MODULES}"
           if [ ${#modules[@]} -gt 0 ]; then
-            "${AQT}" install-qt "${QT_HOST}" desktop "${QT_VERSION}" "${QT_ARCH}" -O "${QT_ROOT}" -m "${modules[@]}"
+            run_quiet "${AQT}" install-qt "${QT_HOST}" desktop "${QT_VERSION}" "${QT_ARCH}" -O "${QT_ROOT}" -m "${modules[@]}"
           else
-            "${AQT}" install-qt "${QT_HOST}" desktop "${QT_VERSION}" "${QT_ARCH}" -O "${QT_ROOT}"
+            run_quiet "${AQT}" install-qt "${QT_HOST}" desktop "${QT_VERSION}" "${QT_ARCH}" -O "${QT_ROOT}"
           fi
           QT_QMAKE=$(find "${QT_LAYOUT_ROOT}" -type f -path "*/bin/qmake" -print -quit)
           QT_QCONFIG=$(find "${QT_LAYOUT_ROOT}" -type f -path "*/mkspecs/qconfig.pri" -print -quit)
@@ -199,7 +208,7 @@ runs:
         QTIFW_BINARYCREATOR=$(find "${IFW_ROOT}" -type f -name binarycreator -print -quit 2>/dev/null || true)
         if [ ! -f "${IFW_MARKER}" ] || [ "$(cat "${IFW_MARKER}")" != "${IFW_PACKAGE}" ] || [ -z "${QTIFW_BINARYCREATOR}" ]; then
           rm -rf "${IFW_ROOT}"
-          "${AQT}" install-tool "${QT_HOST}" desktop tools_ifw "${IFW_PACKAGE}" -O "${QT_ROOT}"
+          run_quiet "${AQT}" install-tool "${QT_HOST}" desktop tools_ifw "${IFW_PACKAGE}" -O "${QT_ROOT}"
           mkdir -p "${IFW_ROOT}"
           printf '%s\n' "${IFW_PACKAGE}" > "${IFW_MARKER}"
         fi
@@ -214,11 +223,10 @@ runs:
         echo "QT_DIR=${QT_DIR}" >> "${GITHUB_ENV}"
         echo "QTIFW_DIR=${QTIFW_DIR}" >> "${GITHUB_ENV}"
         echo "${AQT_VENV}/bin" >> "${GITHUB_PATH}"
-        "${QT_DIR}/bin/qmake" -query QT_VERSION
+        "${QT_DIR}/bin/qmake" -query QT_VERSION >/dev/null
         test -x "${QTIFW_BINARYCREATOR}"
-        echo "QTIFW binarycreator: ${QTIFW_BINARYCREATOR}"
         if [ "${INSTALL_CONAN}" = "true" ]; then
-          "${AQT_VENV}/bin/conan" --version
+          "${AQT_VENV}/bin/conan" --version >/dev/null
         fi
 
     - name: Install Qt and QtIFW
@@ -235,13 +243,14 @@ runs:
         $ErrorActionPreference = "Stop"
         $AqtVenv = Join-Path $env:USERPROFILE ".vlink-ci\aqt-venv"
         $QtRoot = Join-Path $env:USERPROFILE ".vlink-ci\qt"
+        $AqtLog = Join-Path $env:RUNNER_TEMP "vlink-setup-qt-ifw.log"
         python -m venv $AqtVenv
         $Packages = @("aqtinstall>=3.3.0,<4")
         if ($env:INSTALL_CONAN -eq "true") {
           $Packages += "conan"
         }
-        & "$AqtVenv\Scripts\python.exe" -m pip install --upgrade pip setuptools wheel
-        & "$AqtVenv\Scripts\python.exe" -m pip install --upgrade $Packages
+        & "$AqtVenv\Scripts\python.exe" -m pip install -q --upgrade pip setuptools wheel
+        & "$AqtVenv\Scripts\python.exe" -m pip install -q --upgrade $Packages
         $Aqt = "$AqtVenv\Scripts\aqt.exe"
 
         $QtLayoutRoot = Join-Path $QtRoot $env:QT_VERSION
@@ -266,7 +275,11 @@ runs:
             $Args += "-m"
             $Args += $Modules
           }
-          & $Aqt @Args
+          & $Aqt @Args *> $AqtLog
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $AqtLog
+            exit $LASTEXITCODE
+          }
           $ExistingQmake = Get-ChildItem -Path $QtLayoutRoot -Filter qmake.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           $ExistingQconfig = Get-ChildItem -Path $QtLayoutRoot -Filter qconfig.pri -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $ExistingQmake) {
@@ -296,7 +309,11 @@ runs:
           Remove-Item -Recurse -Force $IfwRoot
         }
         if ($NeedsIfwInstall) {
-          & $Aqt install-tool $env:QT_HOST desktop tools_ifw $IfwPackage -O $QtRoot
+          & $Aqt install-tool $env:QT_HOST desktop tools_ifw $IfwPackage -O $QtRoot *> $AqtLog
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $AqtLog
+            exit $LASTEXITCODE
+          }
           New-Item -ItemType Directory -Force -Path $IfwRoot | Out-Null
           $IfwPackage | Out-File -FilePath $IfwMarker -Encoding ascii
         }
@@ -315,8 +332,7 @@ runs:
         "QT_DIR=$QtDir" | Out-File -FilePath $env:GITHUB_ENV -Append
         "QTIFW_DIR=$QtIfwDir" | Out-File -FilePath $env:GITHUB_ENV -Append
         "$AqtVenv\Scripts" | Out-File -FilePath $env:GITHUB_PATH -Append
-        & "$QtDir\bin\qmake.exe" -query QT_VERSION
-        Write-Host "QtIFW binarycreator: $($BinaryCreator.FullName)"
+        & "$QtDir\bin\qmake.exe" -query QT_VERSION | Out-Null
         if ($env:INSTALL_CONAN -eq "true") {
-          & "$AqtVenv\Scripts\conan.exe" --version
+          & "$AqtVenv\Scripts\conan.exe" --version | Out-Null
         }

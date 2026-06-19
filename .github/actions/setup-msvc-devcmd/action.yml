@@ -101,11 +101,9 @@ runs:
         }
 
         $Cl = Get-Command cl.exe -ErrorAction Stop
-        $Link = Get-Command link.exe -ErrorAction Stop
+        Get-Command link.exe -ErrorAction Stop | Out-Null
         $ClPath = $Cl.Source.Replace("\", "/")
         Set-Item -Path Env:CC -Value $ClPath
         Set-Item -Path Env:CXX -Value $ClPath
         "CC=$ClPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         "CXX=$ClPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        Write-Host "cl.exe: $($Cl.Source)"
-        Write-Host "link.exe: $($Link.Source)"

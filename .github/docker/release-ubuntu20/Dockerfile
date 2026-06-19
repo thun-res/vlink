@@ -4,9 +4,11 @@ ARG TARGETARCH
 ARG WAYLAND_VERSION=1.22.0
 
 ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
       ca-certificates \
       autoconf \
       automake \
@@ -82,15 +84,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
        esac \
     && test "$(uname -m)" = "${expected_machine}" \
     && python3 -m venv /opt/vlink-python \
-    && /opt/vlink-python/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel conan meson==1.4.2 \
+    && /opt/vlink-python/bin/python -m pip install -q --no-cache-dir --upgrade pip setuptools wheel conan meson==1.4.2 \
     && ln -sf /opt/vlink-python/bin/conan /usr/local/bin/conan \
     && ln -sf /opt/vlink-python/bin/meson /usr/local/bin/meson \
-    && /opt/vlink-python/bin/python -V \
-    && conan --version \
     && rm -rf /var/lib/apt/lists/*
 
-RUN set -eux; \
-    curl -fL "https://gitlab.freedesktop.org/wayland/wayland/-/releases/${WAYLAND_VERSION}/downloads/wayland-${WAYLAND_VERSION}.tar.xz" -o /tmp/wayland.tar.xz; \
+RUN set -eu; \
+    curl -fsSL "https://gitlab.freedesktop.org/wayland/wayland/-/releases/${WAYLAND_VERSION}/downloads/wayland-${WAYLAND_VERSION}.tar.xz" -o /tmp/wayland.tar.xz; \
     tar -xf /tmp/wayland.tar.xz -C /tmp; \
     meson setup /tmp/wayland-build "/tmp/wayland-${WAYLAND_VERSION}" \
       --prefix=/usr/local \

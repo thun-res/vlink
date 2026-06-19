@@ -2,7 +2,7 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
       build-essential \
       ca-certificates \
       ccache \
@@ -18,6 +18,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       pkg-config \
 	      python3 \
 	      tar \
-	      zstd \
-	    && file --version \
+	    zstd \
 	    && rm -rf /var/lib/apt/lists/*

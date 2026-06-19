@@ -44,7 +44,7 @@ runs:
 
         $OpenSslRoot = Find-OpenSslRoot
         if (-not $OpenSslRoot) {
-          choco install openssl --no-progress --yes
+          choco install openssl --no-progress --limit-output --yes
           $OpenSslRoot = Find-OpenSslRoot
         }
         if (-not $OpenSslRoot) {
@@ -53,4 +53,3 @@ runs:
 
         $OpenSslRootForCMake = $OpenSslRoot.Replace("\", "/")
         "OPENSSL_ROOT_DIR=$OpenSslRootForCMake" | Out-File -FilePath $env:GITHUB_ENV -Append
-        Write-Host "OPENSSL_ROOT_DIR=$OpenSslRootForCMake"

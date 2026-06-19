@@ -53,6 +53,8 @@ runs:
           --workdir /work/vlink \
           --env HOME=/github/home \
           --env GITHUB_WORKSPACE=/work/vlink \
+          --env LANG=C.UTF-8 \
+          --env LC_ALL=C.UTF-8 \
           --env CCACHE_DIR=/github/home/.ccache \
           --env CCACHE_BASEDIR=/work/vlink \
           --env VLINK_CMAKE_DISABLE_IPO \

@@ -41,17 +41,24 @@ runs:
         OSG_VALIDATION_PATHS: ${{ inputs.validation-paths }}
       run: |
         set -euo pipefail
+        quiet_log="${RUNNER_TEMP:-/tmp}/vlink-setup-osg-sdk.log"
+        run_quiet() {
+          "$@" >"${quiet_log}" 2>&1 || {
+            cat "${quiet_log}" >&2
+            return 1
+          }
+        }
         OSG_SDK_ROOT="${HOME}/.vlink-ci/osg_sdk"
         if [ -d "${OSG_SDK_ROOT}/.git" ]; then
           git -C "${OSG_SDK_ROOT}" remote set-url origin "${OSG_SDK_REPOSITORY}"
-          git -C "${OSG_SDK_ROOT}" fetch --depth 1 origin "${OSG_SDK_REF}"
-          git -C "${OSG_SDK_ROOT}" reset --hard FETCH_HEAD
+          run_quiet git -C "${OSG_SDK_ROOT}" fetch --quiet --depth 1 origin "${OSG_SDK_REF}"
+          git -C "${OSG_SDK_ROOT}" reset --quiet --hard FETCH_HEAD
         else
           rm -rf "${OSG_SDK_ROOT}"
-          git clone --depth 1 --branch "${OSG_SDK_REF}" "${OSG_SDK_REPOSITORY}" "${OSG_SDK_ROOT}"
+          run_quiet git clone --quiet --depth 1 --branch "${OSG_SDK_REF}" "${OSG_SDK_REPOSITORY}" "${OSG_SDK_ROOT}"
         fi
-        git -C "${OSG_SDK_ROOT}" lfs install --local
-        git -C "${OSG_SDK_ROOT}" lfs pull
+        git -C "${OSG_SDK_ROOT}" lfs install --local >/dev/null
+        run_quiet git -C "${OSG_SDK_ROOT}" lfs pull
 
         OSG_DIR="${OSG_SDK_ROOT}/${OSG_PLATFORM_DIR}"
         while IFS= read -r rel; do
@@ -63,7 +70,6 @@ runs:
         done <<< "${OSG_VALIDATION_PATHS}"
 
         echo "OSG_DIR=${OSG_DIR}" >> "${GITHUB_ENV}"
-        echo "Resolved OSG_DIR=${OSG_DIR}"
 
     - name: Install OSG SDK
       if: runner.os == 'Windows'
@@ -75,19 +81,32 @@ runs:
         OSG_VALIDATION_PATHS: ${{ inputs.validation-paths }}
       run: |
         $ErrorActionPreference = "Stop"
+        $OsgLog = Join-Path $env:RUNNER_TEMP "vlink-setup-osg-sdk.log"
         $OsgSdkRoot = Join-Path $env:USERPROFILE ".vlink-ci\osg_sdk"
         if (Test-Path (Join-Path $OsgSdkRoot ".git")) {
           git -C $OsgSdkRoot remote set-url origin $env:OSG_SDK_REPOSITORY
-          git -C $OsgSdkRoot fetch --depth 1 origin $env:OSG_SDK_REF
-          git -C $OsgSdkRoot reset --hard FETCH_HEAD
+          git -C $OsgSdkRoot fetch --quiet --depth 1 origin $env:OSG_SDK_REF *> $OsgLog
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $OsgLog
+            exit $LASTEXITCODE
+          }
+          git -C $OsgSdkRoot reset --quiet --hard FETCH_HEAD
         } else {
           if (Test-Path $OsgSdkRoot) {
             Remove-Item -Recurse -Force $OsgSdkRoot
           }
-          git clone --depth 1 --branch $env:OSG_SDK_REF $env:OSG_SDK_REPOSITORY $OsgSdkRoot
+          git clone --quiet --depth 1 --branch $env:OSG_SDK_REF $env:OSG_SDK_REPOSITORY $OsgSdkRoot *> $OsgLog
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $OsgLog
+            exit $LASTEXITCODE
+          }
         }
-        git -C $OsgSdkRoot lfs install --local
-        git -C $OsgSdkRoot lfs pull
+        git -C $OsgSdkRoot lfs install --local *> $null
+        git -C $OsgSdkRoot lfs pull *> $OsgLog
+        if ($LASTEXITCODE -ne 0) {
+          Get-Content $OsgLog
+          exit $LASTEXITCODE
+        }
 
         $OsgDir = Join-Path $OsgSdkRoot $env:OSG_PLATFORM_DIR
         $ValidationPaths = $env:OSG_VALIDATION_PATHS -split "`n"
@@ -103,4 +122,3 @@ runs:
         }
 
         "OSG_DIR=$OsgDir" | Out-File -FilePath $env:GITHUB_ENV -Append
-        Write-Host "Resolved OSG_DIR=$OsgDir"

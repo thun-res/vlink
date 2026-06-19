@@ -32,14 +32,14 @@ runs:
       run: |
         set -euo pipefail
 
-        docker pull "${IMAGE}"
+        docker pull --quiet "${IMAGE}" >/dev/null
 
         if [ -n "${REQUIRED_TOOLS}" ]; then
-          docker run --rm "${IMAGE}" bash -lc 'for tool in '"${REQUIRED_TOOLS}"'; do command -v "${tool}" >/dev/null || exit 1; done'
+          docker run --rm --env LANG=C.UTF-8 --env LC_ALL=C.UTF-8 "${IMAGE}" bash -lc 'for tool in '"${REQUIRED_TOOLS}"'; do command -v "${tool}" >/dev/null || exit 1; done'
         fi
 
         if [ -n "${VERIFY_COMMAND}" ]; then
-          docker run --rm "${IMAGE}" bash -lc "${VERIFY_COMMAND}"
+          docker run --rm --env LANG=C.UTF-8 --env LC_ALL=C.UTF-8 "${IMAGE}" bash -lc "${VERIFY_COMMAND}"
         fi
 
         echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"

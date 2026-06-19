@@ -9,6 +9,8 @@ ARG QTIFW_VERSION=4.7.0
 ARG QT_BUILD_PARALLEL=2
 
 ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     QT_DIR=/opt/Qt/${QT_VERSION}/gcc_arm64 \
     QTIFW_DIR=/opt/Qt/Tools/QtInstallerFramework/${QTIFW_VERSION}
@@ -17,7 +19,7 @@ ENV PATH=${QT_DIR}/bin:${QTIFW_DIR}/bin:${PATH}
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+    apt-get update -qq && apt-get install -y -qq --no-install-recommends \
       autoconf \
       automake \
       bison \
@@ -92,24 +94,22 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       zlib1g-dev \
       zstd
 
-RUN python3 -m pip install --no-cache-dir --upgrade \
+RUN python3 -m pip install -q --no-cache-dir --upgrade \
       cmake==3.31.6 \
       conan \
       pip \
       setuptools \
-      wheel \
-    && cmake --version \
-    && conan --version
+      wheel
 
 WORKDIR /tmp/qt-build
 
-RUN set -eux; \
+RUN set -eu; \
     download() { \
       local url="$1"; \
       local output="$2"; \
       local attempt; \
       for attempt in 1 2 3 4 5; do \
-        if curl -fL --connect-timeout 30 --speed-limit 1024 --speed-time 60 "${url}" -o "${output}"; then \
+        if curl -fsSL --connect-timeout 30 --speed-limit 1024 --speed-time 60 "${url}" -o "${output}"; then \
           return 0; \
         fi; \
         rm -f "${output}"; \
@@ -120,12 +120,12 @@ RUN set -eux; \
     qt_base_url="https://download.qt.io/official_releases/qt/6.8/${QT_VERSION}/submodules"; \
     download "${qt_base_url}/qtbase-everywhere-src-${QT_VERSION}.tar.xz" "qtbase-everywhere-src-${QT_VERSION}.tar.xz"; \
     download "${qt_base_url}/qtsvg-everywhere-src-${QT_VERSION}.tar.xz" "qtsvg-everywhere-src-${QT_VERSION}.tar.xz"; \
-    echo "540e9665dbfd9a2cf98e6e4b4aa4bb98  qtbase-everywhere-src-${QT_VERSION}.tar.xz" | md5sum -c -; \
-    echo "4748ec76af552d21f2bf2acce45b39af  qtsvg-everywhere-src-${QT_VERSION}.tar.xz" | md5sum -c -; \
+    echo "540e9665dbfd9a2cf98e6e4b4aa4bb98  qtbase-everywhere-src-${QT_VERSION}.tar.xz" | md5sum --status -c -; \
+    echo "4748ec76af552d21f2bf2acce45b39af  qtsvg-everywhere-src-${QT_VERSION}.tar.xz" | md5sum --status -c -; \
     tar -xf "qtbase-everywhere-src-${QT_VERSION}.tar.xz"; \
     tar -xf "qtsvg-everywhere-src-${QT_VERSION}.tar.xz"
 
-RUN set -eux; \
+RUN set -eu; \
     cmake -E make_directory qtbase-build; \
     pushd qtbase-build; \
     "../qtbase-everywhere-src-${QT_VERSION}/configure" \
@@ -141,9 +141,9 @@ RUN set -eux; \
     cmake --build . --parallel "${QT_BUILD_PARALLEL}"; \
     cmake --install .; \
     popd; \
-    "${QT_DIR}/bin/qmake" -query QT_VERSION
+    "${QT_DIR}/bin/qmake" -query QT_VERSION >/dev/null
 
-RUN set -eux; \
+RUN set -eu; \
     cmake -S "qtsvg-everywhere-src-${QT_VERSION}" -B qtsvg-build -GNinja \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_INSTALL_PREFIX="${QT_DIR}" \
@@ -153,8 +153,8 @@ RUN set -eux; \
     cmake --build qtsvg-build --parallel "${QT_BUILD_PARALLEL}"; \
     cmake --install qtsvg-build
 
-RUN set -eux; \
-    "${QT_DIR}/bin/qmake" -query QT_VERSION; \
+RUN set -eu; \
+    "${QT_DIR}/bin/qmake" -query QT_VERSION >/dev/null; \
     test -f "${QT_DIR}/lib/libQt6Core.so"; \
     test -f "${QT_DIR}/lib/libQt6Widgets.so"; \
     test -f "${QT_DIR}/lib/libQt6OpenGLWidgets.so"; \
@@ -165,13 +165,13 @@ RUN set -eux; \
 
 WORKDIR /tmp
 
-RUN set -eux; \
+RUN set -eu; \
     download() { \
       local url="$1"; \
       local output="$2"; \
       local attempt; \
       for attempt in 1 2 3 4 5; do \
-        if curl -fL --connect-timeout 30 --speed-limit 1024 --speed-time 60 "${url}" -o "${output}"; then \
+        if curl -fsSL --connect-timeout 30 --speed-limit 1024 --speed-time 60 "${url}" -o "${output}"; then \
           return 0; \
         fi; \
         rm -f "${output}"; \
@@ -182,14 +182,13 @@ RUN set -eux; \
     ifw_url="https://download.qt.io/official_releases/qt-installer-framework/${QTIFW_VERSION}/QtInstallerFramework-linux-arm64-${QTIFW_VERSION}.run"; \
     download "${ifw_url}" qtifw.run; \
     chmod +x qtifw.run; \
-    ./qtifw.run --root "${QTIFW_DIR}" --accept-licenses --default-answer --confirm-command install; \
+    ./qtifw.run --root "${QTIFW_DIR}" --accept-licenses --default-answer --confirm-command install >/tmp/qtifw-install.log 2>&1 || { cat /tmp/qtifw-install.log; exit 1; }; \
     test -x "${QTIFW_DIR}/bin/binarycreator"; \
-    echo "QtIFW binarycreator: ${QTIFW_DIR}/bin/binarycreator"; \
-    rm -f qtifw.run
+    rm -f qtifw.run /tmp/qtifw-install.log
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+    apt-get update -qq && apt-get install -y -qq --no-install-recommends \
       libwebpdemux2 \
       libwebpmux3
 

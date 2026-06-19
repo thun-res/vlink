@@ -145,8 +145,7 @@ jobs:
             export CCACHE_COMPRESS=true
             export CCACHE_MAXSIZE=2G
             export PATH="${QTIFW_DIR}/bin:${QT_DIR}/bin:${PATH}"
-            ccache --zero-stats || true
-            trap 'ccache --show-stats || true' EXIT
+            ccache --zero-stats >/dev/null 2>&1 || true
 
             bash packup/build-conan.sh . ${{ matrix.arch }}
             .github/scripts/stage-linux-portable-runtime.sh build-conan/packup/linux/vlink
@@ -297,9 +296,9 @@ jobs:
             test "$(uname -m)" = "aarch64"
             "${QT_DIR}/bin/qmake" -query QT_VERSION | grep -q '^${{ inputs.qt_version }}$'
             .github/scripts/check-elf-deps.sh "${QTIFW_DIR}/bin/binarycreator"
-            conan --version
-            git lfs version
-            patch --version | head -n 1
+            conan --version >/dev/null
+            git lfs version >/dev/null
+            patch --version >/dev/null
 
             export OSG_DIR="${HOME}/.vlink-ci/osg_sdk/linux_aarch64"
             for path in \
@@ -324,8 +323,7 @@ jobs:
             export CCACHE_BASEDIR="${GITHUB_WORKSPACE}"
             export CCACHE_COMPRESS=true
             export CCACHE_MAXSIZE=2G
-            ccache --zero-stats || true
-            trap 'ccache --show-stats || true' EXIT
+            ccache --zero-stats >/dev/null 2>&1 || true
 
             bash packup/build-conan.sh . aarch64
 

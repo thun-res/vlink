@@ -245,7 +245,6 @@ def main() -> int:
             print(failure, file=sys.stderr)
         return 1
 
-    print(f"Android.bp validation passed: {len(bp_files)} file(s), {len(names)} module(s).")
     return 0
 
 

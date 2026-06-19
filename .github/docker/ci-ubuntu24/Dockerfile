@@ -1,9 +1,11 @@
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
       build-essential \
       ca-certificates \
       ccache \
@@ -24,8 +26,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN python3 -m venv /opt/vlink/python-tools \
-    && /opt/vlink/python-tools/bin/python -m pip install --upgrade pip \
-    && /opt/vlink/python-tools/bin/python -m pip install \
+    && /opt/vlink/python-tools/bin/python -m pip install -q --upgrade pip \
+    && /opt/vlink/python-tools/bin/python -m pip install -q \
       clang-format==21.1.8 \
       clang-tidy==21.1.6 \
       cmake-format==0.6.13 \

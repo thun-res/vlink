@@ -7,10 +7,12 @@ ARG PAHO_MQTT_C_VERSION=v1.3.16
 ARG ICEORYX2_VERSION=v0.9.1
 
 ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
     CARGO_HOME=/opt/cargo \
     PATH=/opt/cargo/bin:/usr/local/bin:$PATH
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
       build-essential \
       ca-certificates \
       ccache \
@@ -31,13 +33,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       zstd \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable \
-    && rustc --version \
-    && cargo --version
+RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
 
-RUN set -eux; \
+RUN set -eu; \
     mkdir -p /tmp/protocol-src; \
-    git clone --depth 1 --branch "${PAHO_MQTT_C_VERSION}" https://github.com/eclipse-paho/paho.mqtt.c.git /tmp/protocol-src/paho.mqtt.c; \
+    git clone --quiet --depth 1 --branch "${PAHO_MQTT_C_VERSION}" https://github.com/eclipse-paho/paho.mqtt.c.git /tmp/protocol-src/paho.mqtt.c; \
     cmake -S /tmp/protocol-src/paho.mqtt.c -B /tmp/protocol-src/paho.mqtt.c/build -GNinja \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_INSTALL_PREFIX=/usr/local \
@@ -53,9 +53,9 @@ RUN set -eux; \
     cmake --install /tmp/protocol-src/paho.mqtt.c/build; \
     rm -rf /tmp/protocol-src/paho.mqtt.c
 
-RUN set -eux; \
+RUN set -eu; \
     mkdir -p /tmp/protocol-src; \
-    git clone --depth 1 --branch "${VSOMEIP_VERSION}" https://github.com/COVESA/vsomeip.git /tmp/protocol-src/vsomeip; \
+    git clone --quiet --depth 1 --branch "${VSOMEIP_VERSION}" https://github.com/COVESA/vsomeip.git /tmp/protocol-src/vsomeip; \
     sed -i \
       -e 's/ -Wall//g' \
       -e 's/ -Wextra//g' \
@@ -75,9 +75,9 @@ RUN set -eux; \
     cmake --install /tmp/protocol-src/vsomeip/build; \
     rm -rf /tmp/protocol-src/vsomeip
 
-RUN set -eux; \
+RUN set -eu; \
     mkdir -p /tmp/protocol-src; \
-    git clone --depth 1 --branch "${ZENOH_PICO_VERSION}" https://github.com/eclipse-zenoh/zenoh-pico.git /tmp/protocol-src/zenoh-pico; \
+    git clone --quiet --depth 1 --branch "${ZENOH_PICO_VERSION}" https://github.com/eclipse-zenoh/zenoh-pico.git /tmp/protocol-src/zenoh-pico; \
     cmake -S /tmp/protocol-src/zenoh-pico -B /tmp/protocol-src/zenoh-pico/build -GNinja \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_INSTALL_PREFIX=/usr/local \
@@ -86,9 +86,9 @@ RUN set -eux; \
     cmake --install /tmp/protocol-src/zenoh-pico/build; \
     rm -rf /tmp/protocol-src/zenoh-pico
 
-RUN set -eux; \
+RUN set -eu; \
     mkdir -p /tmp/protocol-src; \
-    git clone --depth 1 --branch "${ICEORYX2_VERSION}" https://github.com/eclipse-iceoryx/iceoryx2.git /tmp/protocol-src/iceoryx2; \
+    git clone --quiet --depth 1 --branch "${ICEORYX2_VERSION}" https://github.com/eclipse-iceoryx/iceoryx2.git /tmp/protocol-src/iceoryx2; \
     cmake -S /tmp/protocol-src/iceoryx2 -B /tmp/protocol-src/iceoryx2/build -GNinja \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_INSTALL_PREFIX=/usr/local \

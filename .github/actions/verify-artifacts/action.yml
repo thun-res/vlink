@@ -26,9 +26,7 @@ runs:
           if [ ${#matches[@]} -eq 0 ]; then
             echo "No files matched: ${pattern}" >&2
             missing=1
-            continue
           fi
-          ls -lh "${matches[@]}"
         done <<< "${ARTIFACT_GLOBS}"
         exit "${missing}"
 
@@ -49,9 +47,7 @@ runs:
           if ($Matches.Count -eq 0) {
             Write-Error "No files matched: $Pattern"
             $Missing = $true
-            continue
           }
-          $Matches | Format-Table FullName, Length
         }
         if ($Missing) {
           exit 1

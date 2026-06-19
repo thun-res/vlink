@@ -2,7 +2,7 @@ FROM menci/archlinuxarm:base-devel
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-RUN set -eux; \
+RUN set -eu; \
     retry_pacman() { \
       local attempt; \
       for attempt in 1 2 3; do \
@@ -51,6 +51,4 @@ RUN set -eux; \
       tar \
       zstd; \
     if command -v update-ca-trust >/dev/null 2>&1; then update-ca-trust; fi; \
-    cmake --version; \
-    pacman --version; \
     pacman --config "${pacman_config}" -Scc --noconfirm || true

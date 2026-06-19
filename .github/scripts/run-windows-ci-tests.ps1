@@ -140,39 +140,6 @@ function Get-PythonRuntimeDirs {
   return $Dirs
 }
 
-function Show-PythonExtensionDependencies {
-  param(
-    [Parameter(Mandatory = $true)]
-    [System.IO.FileInfo] $Module
-  )
-
-  $Dumpbin = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
-  if (-not $Dumpbin) {
-    Write-Host "dumpbin.exe is not available; skipping Python extension dependency dump"
-    return
-  }
-
-  $Dump = & $Dumpbin.Source /DEPENDENTS $Module.FullName
-  $Deps = $Dump |
-    ForEach-Object {
-      if ($_ -match "^\s*([A-Za-z0-9_.+-]+\.dll)\s*$") {
-        $Matches[1]
-      }
-    } |
-    Where-Object { $_ } |
-    Sort-Object -Unique
-
-  Write-Host "VLink Python extension direct DLL dependencies:"
-  foreach ($Dep in $Deps) {
-    $Resolved = & where.exe $Dep 2>$null | Select-Object -First 1
-    if ($Resolved) {
-      Write-Host "  $Dep -> $Resolved"
-    } else {
-      Write-Host "  $Dep -> not found on PATH"
-    }
-  }
-}
-
 function Invoke-VLinkPythonTests {
   if ($RunPythonTests -ne "1") {
     return
@@ -190,8 +157,6 @@ function Invoke-VLinkPythonTests {
   $env:VLINK_WINDOWS_DLL_DIRS = $DllSearchDirs -join ";"
   $env:VLINK_NANOBIND_MODULE = $Module.FullName
 
-  Show-PythonExtensionDependencies -Module $Module
-
   $Bootstrap = Join-Path $env:RUNNER_TEMP "vlink-python-test.py"
   $BootstrapSource = @'
 import os
@@ -201,11 +166,6 @@ _dll_handles = []
 _dll_dirs = [path for path in os.environ.get("VLINK_WINDOWS_DLL_DIRS", "").split(os.pathsep) if path]
 for path in _dll_dirs:
     _dll_handles.append(os.add_dll_directory(path))
-
-print("VLink Python extension:", os.environ.get("VLINK_NANOBIND_MODULE", ""))
-print("VLink DLL search directories:")
-for path in _dll_dirs:
-    print("  " + path)
 
 runpy.run_path(os.path.join(os.environ["GITHUB_WORKSPACE"], "python_api", "test", "test_vlink.py"),
                run_name="__main__")

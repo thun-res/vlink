@@ -59,10 +59,6 @@ def main() -> None:
 
     jobs = read_jobs()
 
-    print(f"Running clang-tidy for {len(files)} project source files with {jobs} jobs")
-    for path in files:
-        print(Path(path).relative_to(root).as_posix())
-
     cmd = [
         "clang-tidy",
         "--quiet",

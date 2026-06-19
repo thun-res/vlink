@@ -82,9 +82,6 @@ jobs:
         with:
           path: dist
 
-      - name: Show release files
-        run: find dist -maxdepth 3 -type f -print | sort
-
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
         with:

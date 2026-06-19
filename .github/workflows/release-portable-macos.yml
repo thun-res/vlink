@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install release tools
-        run: brew install ccache git-lfs nasm yasm
+        run: brew install --quiet ccache git-lfs nasm yasm
 
       - name: Setup Qt and QtIFW
         uses: ./.github/actions/setup-qt-ifw
@@ -86,11 +86,15 @@ jobs:
           disable-ipo: "true"
 
       - name: Build portable archive and QtIFW installer
-        run: bash packup/build-conan.sh . arm64
-
-      - name: Show ccache stats
-        if: always()
-        run: ccache --show-stats || true
+        run: |
+          set -euo pipefail
+          bash packup/build-conan.sh . arm64 2> >(
+            awk '
+              /strip: error: symbols referenced by indirect symbol table entries/ {drop=1; next}
+              drop && /^__/ {next}
+              {drop=0; print > "/dev/stderr"}
+            '
+          )
 
       - name: Save ccache
         if: always() && steps.ccache.outputs.cache-hit != 'true'
@@ -122,7 +126,7 @@ jobs:
           set -euo pipefail
           test -f build-conan/packup/darwin/vlink/lib/QtSvg.framework/Versions/A/QtSvg
           test -f build-conan/packup/darwin/vlink/lib/imageformats/libqsvg.dylib
-          otool -L build-conan/packup/darwin/vlink/lib/imageformats/libqsvg.dylib
+          otool -L build-conan/packup/darwin/vlink/lib/imageformats/libqsvg.dylib >/dev/null
 
       - name: Check macOS bundle metadata
         run: |
@@ -137,13 +141,11 @@ jobs:
           for app in build-conan/packup/darwin/vlink-*.app; do
             zip_path="${app%.app}.zip"
             ditto -c -k --sequesterRsrc --keepParent "${app}" "${zip_path}"
-            echo "Compressed ${app} -> ${zip_path}"
           done
           app="build-conan/packup/darwin/VLink Player.app"
           test -d "${app}"
           zip_path="${app%.app}.zip"
           ditto -c -k --sequesterRsrc --keepParent "${app}" "${zip_path}"
-          echo "Compressed ${app} -> ${zip_path}"
 
       - name: Verify macOS portable outputs
         uses: ./.github/actions/verify-artifacts

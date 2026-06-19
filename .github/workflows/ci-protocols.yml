@@ -166,7 +166,7 @@ jobs:
             test "$(uname -m)" = "x86_64"
             export CCACHE_DIR="${HOME}/.ccache"
             export CCACHE_BASEDIR="${GITHUB_WORKSPACE}"
-            ccache --zero-stats || true
+            ccache --zero-stats >/dev/null 2>&1 || true
             cmake -S . -B build-protocols ${VLINK_CI_CMAKE_ARGS} \
               -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
               -DCMAKE_C_COMPILER_LAUNCHER=ccache \
@@ -184,8 +184,6 @@ jobs:
             modules/shm2/
             modules/mqtt/"
             python3 .github/scripts/assert-cmake-config.py
-            ccache --show-stats || true
-
       - name: Save ccache
         if: always() && steps.ccache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5

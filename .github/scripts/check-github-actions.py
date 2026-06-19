@@ -75,7 +75,6 @@ def main() -> int:
         for failure in failures:
             print(failure, file=sys.stderr)
         return 1
-    print("GitHub Actions uses references are valid.")
     return 0
 
 

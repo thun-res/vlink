@@ -73,7 +73,7 @@ runs:
           echo "VLINK_CMAKE_DISABLE_IPO=${DISABLE_IPO}"
         } >> "${GITHUB_ENV}"
         if command -v ccache >/dev/null 2>&1; then
-          ccache --zero-stats || true
+          ccache --zero-stats >/dev/null 2>&1 || true
         elif [ "${CMAKE_WRAPPER}" = "true" ]; then
           echo "::error::ccache is required when cmake-wrapper is enabled."
           exit 1
@@ -138,5 +138,4 @@ runs:
       shell: pwsh
       run: |
         $ErrorActionPreference = "Stop"
-        sccache --start-server
-        sccache --show-stats
+        sccache --start-server *> $null

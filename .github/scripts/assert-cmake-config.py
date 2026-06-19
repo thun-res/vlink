@@ -60,9 +60,6 @@ def main() -> None:
             print(failure)
         raise SystemExit(1)
 
-    print("CMake CI feature assertions passed.")
-    print(f"compile_commands.json project source entries: {len(source_files)}")
-
 
 if __name__ == "__main__":
     main()
