@@ -1108,13 +1108,13 @@ ShmPublisher::ShmPublisher(const ShmID& id) {
 ShmPublisher::~ShmPublisher() {
   quit_flag_ = true;
 
+  disable_detect_timer();
+
   if (sem_) {
     sem_->detach(true);
   }
 
   pub_->stopOffer();
-
-  disable_detect_timer();
 }
 
 std::any ShmPublisher::get_native_handle() const { return this; }
