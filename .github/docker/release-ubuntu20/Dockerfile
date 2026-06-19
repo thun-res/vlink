@@ -1,6 +1,7 @@
 FROM ubuntu:20.04
 
 ARG TARGETARCH
+ARG WAYLAND_VERSION=1.22.0
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_DISABLE_PIP_VERSION_CHECK=1
@@ -19,6 +20,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       git-lfs \
       libacl1-dev \
       libdbus-1-dev \
+      libexpat1-dev \
+      libffi-dev \
       libfontconfig1-dev \
       libfreetype6-dev \
       libgl1-mesa-dev \
@@ -79,8 +82,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
        esac \
     && test "$(uname -m)" = "${expected_machine}" \
     && python3 -m venv /opt/vlink-python \
-    && /opt/vlink-python/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel conan \
+    && /opt/vlink-python/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel conan meson==1.4.2 \
     && ln -sf /opt/vlink-python/bin/conan /usr/local/bin/conan \
+    && ln -sf /opt/vlink-python/bin/meson /usr/local/bin/meson \
     && /opt/vlink-python/bin/python -V \
     && conan --version \
     && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    curl -fL "https://gitlab.freedesktop.org/wayland/wayland/-/releases/${WAYLAND_VERSION}/downloads/wayland-${WAYLAND_VERSION}.tar.xz" -o /tmp/wayland.tar.xz; \
+    tar -xf /tmp/wayland.tar.xz -C /tmp; \
+    meson setup /tmp/wayland-build "/tmp/wayland-${WAYLAND_VERSION}" \
+      --prefix=/usr/local \
+      --libdir=lib \
+      -Ddocumentation=false \
+      -Dtests=false \
+      -Ddtd_validation=false; \
+    ninja -C /tmp/wayland-build install; \
+    ldconfig; \
+    nm -D /usr/local/lib/libwayland-client.so.0 | grep -q ' wl_proxy_marshal_flags$'; \
+    rm -rf /tmp/wayland.tar.xz "/tmp/wayland-${WAYLAND_VERSION}" /tmp/wayland-build

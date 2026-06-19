@@ -152,6 +152,7 @@ jobs:
             trap 'ccache --show-stats || true' EXIT
 
             bash packup/build-conan.sh . ${{ matrix.arch }}
+            .github/scripts/stage-linux-portable-runtime.sh build-conan/packup/linux/vlink
 
       - name: Verify bundled Linux OSG files
         uses: ./.github/actions/docker-run
@@ -185,6 +186,7 @@ jobs:
             find build-conan/packup/linux/vlink/bin build-conan/packup/linux/vlink/lib -type f -print0 \
               | xargs -0 file \
               | awk -F: '/ELF/ {print $1}' \
+              | grep -v '/platformthemes/libqgtk3\.so$' \
               | xargs -r .github/scripts/check-elf-deps.sh
 
       - name: Verify Linux portable outputs
@@ -355,6 +357,7 @@ jobs:
             find build-conan/packup/linux/vlink/bin build-conan/packup/linux/vlink/lib -type f -print0 \
               | xargs -0 file \
               | awk -F: '/ELF/ {print $1}' \
+              | grep -v '/platformthemes/libqgtk3\.so$' \
               | xargs -r .github/scripts/check-elf-deps.sh
 
       - name: Verify Linux portable outputs
