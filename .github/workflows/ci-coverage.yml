@@ -84,8 +84,8 @@ jobs:
         uses: ./.github/actions/restore-build-cache
         with:
           path: build-coverage/_deps
-          key: cpm-build-coverage-linux-x86_64-v2-${{ hashFiles('.github/workflows/ci-coverage.yml', 'CMakeLists.txt', 'cmake/**/*.cmake', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
-          restore-keys: cpm-build-coverage-linux-x86_64-v2-
+          key: cpm-build-coverage-linux-x86_64-v3-${{ hashFiles('.github/workflows/ci-coverage.yml', 'CMakeLists.txt', 'cmake/**/*.cmake', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          restore-keys: cpm-build-coverage-linux-x86_64-v3-
 
       - name: Configure and build
         uses: ./.github/actions/docker-run
@@ -101,7 +101,11 @@ jobs:
             cmake -S . -B build-coverage ${VLINK_CI_CMAKE_ARGS} \
               -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
               -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+              -DCMAKE_C_FLAGS=--coverage \
+              -DCMAKE_CXX_FLAGS=--coverage \
+              -DCMAKE_EXE_LINKER_FLAGS=--coverage \
+              -DCMAKE_SHARED_LINKER_FLAGS=--coverage
             cmake --build build-coverage --parallel
             export BUILD_DIR=build-coverage
             export REQUIRED_CACHE="ENABLE_WEBVIZ=OFF
@@ -133,6 +137,9 @@ jobs:
             export RUN_PYTHON_TESTS=0
             export SPLIT_SHM_TESTS=1
             bash .github/scripts/run-posix-ci-tests.sh
+            gcda_count="$(find build-coverage -name '*.gcda' | wc -l)"
+            echo "gcda files: ${gcda_count}"
+            test "${gcda_count}" -gt 0
             cmake --build build-coverage --target coverage
 
       - name: Upload coverage report
