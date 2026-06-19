@@ -234,8 +234,11 @@ jobs:
           verify-command: >-
             export LC_ALL=C.UTF-8 LANG=C.UTF-8;
             qmake -query QT_VERSION | grep -q '^${{ inputs.qt_version }}$' &&
-            ldd -r "$(command -v binarycreator)" | tee /tmp/binarycreator-ldd.out &&
-            ! grep -Eq "not found|undefined symbol:" /tmp/binarycreator-ldd.out
+            ldd -r "$(command -v binarycreator)" >/tmp/binarycreator-ldd.out &&
+            if grep -Eq "not found|undefined symbol:" /tmp/binarycreator-ldd.out; then
+              grep -E "not found|undefined symbol:" /tmp/binarycreator-ldd.out;
+              exit 1;
+            fi
 
       - name: Setup OSG SDK
         uses: ./.github/actions/setup-osg-sdk
