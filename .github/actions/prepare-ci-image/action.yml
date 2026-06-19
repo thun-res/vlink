@@ -22,6 +22,10 @@ inputs:
     description: Optional bash command that must pass inside a pulled image before it can be reused.
     required: false
     default: ""
+  allow-build:
+    description: Build the local fallback image when the remote image is missing or invalid.
+    required: false
+    default: "true"
 
 outputs:
   image:
@@ -41,8 +45,13 @@ runs:
         LOCAL_TAG: ${{ inputs.local-tag }}
         REQUIRED_TOOLS: ${{ inputs.required-tools }}
         VERIFY_COMMAND: ${{ inputs.verify-command }}
+        ALLOW_BUILD: ${{ inputs.allow-build }}
       run: |
         set -euo pipefail
+        build_allowed=false
+        case "${ALLOW_BUILD}" in
+          true|True|TRUE|1|yes|Yes|YES) build_allowed=true ;;
+        esac
         if docker pull "${IMAGE}"; then
           image_ok=true
           if [ -n "${REQUIRED_TOOLS}" ]; then
@@ -55,8 +64,16 @@ runs:
             echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
+          if [ "${build_allowed}" != "true" ]; then
+            echo "::error::Image ${IMAGE} is available but failed validation, and local fallback builds are disabled for this job."
+            exit 1
+          fi
           echo "::warning::Image ${IMAGE} is available but failed validation. Building local fallback ${LOCAL_TAG}."
         else
+          if [ "${build_allowed}" != "true" ]; then
+            echo "::error::Image ${IMAGE} is not available, and local fallback builds are disabled for this job."
+            exit 1
+          fi
           echo "::warning::Image ${IMAGE} is not available; building local fallback ${LOCAL_TAG}."
         fi
 

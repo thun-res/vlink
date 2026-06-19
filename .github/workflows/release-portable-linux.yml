@@ -73,7 +73,8 @@ jobs:
             set -euo pipefail
             grep -q '20.04' /etc/os-release
             test "$(uname -m)" = "${{ matrix.arch }}"
-            pkg-config --exists fontconfig freetype2 dbus-1 xinerama xrandr
+            pkg-config --exists fontconfig freetype2 dbus-1 xinerama xrandr xcb-icccm xcb-image xcb-keysyms xcb-randr xcb-renderutil xcb-xinerama xkbcommon-x11
+            ldconfig -p | grep -q 'libxcb-icccm\.so\.4'
             conan --version
             python3 -V
 
@@ -88,7 +89,8 @@ jobs:
             ninja --version
             patch --version | head -n 1
             git lfs version
-            pkg-config --modversion fontconfig freetype2 dbus-1 xinerama xrandr
+            pkg-config --modversion fontconfig freetype2 dbus-1 xinerama xrandr xcb-icccm xcb-image xcb-keysyms xcb-randr xcb-renderutil xcb-xinerama xkbcommon-x11
+            ldconfig -p | grep -q "libxcb-icccm\.so\.4"
           '
 
       - name: Check Qt installer Python
@@ -112,6 +114,7 @@ jobs:
           qt-modules: ${{ matrix.qt_modules }}
           qtifw-package: qt.tools.ifw.47
           cache-suffix: ${{ matrix.qt_cache_suffix }}
+          install-conan: "false"
 
       - name: Setup OSG SDK
         uses: ./.github/actions/setup-osg-sdk
@@ -176,7 +179,8 @@ jobs:
             export CCACHE_COMPRESS=true
             export CCACHE_MAXSIZE=2G
             export PATH="${QTIFW_DIR}/bin:${QT_DIR}/bin:${PATH}"
-            pkg-config --exists fontconfig freetype2 dbus-1 xinerama xrandr
+            pkg-config --exists fontconfig freetype2 dbus-1 xinerama xrandr xcb-icccm xcb-image xcb-keysyms xcb-randr xcb-renderutil xcb-xinerama xkbcommon-x11
+            ldconfig -p | grep -q "libxcb-icccm\.so\.4"
             ccache --zero-stats || true
             trap 'ccache --show-stats || true' EXIT
 
@@ -300,6 +304,7 @@ jobs:
           context: .github/docker/release-ubuntu20-qt-aarch64
           dockerfile: .github/docker/release-ubuntu20-qt-aarch64/Dockerfile
           local-tag: vlink-release-ubuntu20-qt-aarch64:release-local
+          allow-build: "false"
           required-tools: bash ccache cmake conan git git-lfs ninja patch patchelf
           verify-command: |
             set -euo pipefail
@@ -307,7 +312,8 @@ jobs:
             test "$(uname -m)" = "aarch64"
             "${QT_DIR}/bin/qmake" -query QT_VERSION | grep -q '^${{ inputs.qt_version }}$'
             test -x "${QTIFW_DIR}/bin/binarycreator"
-            pkg-config --exists xinerama xrandr
+            pkg-config --exists xinerama xrandr xcb-icccm xcb-image xcb-keysyms xcb-randr xcb-renderutil xcb-xinerama xkbcommon-x11
+            ldconfig -p | grep -q 'libxcb-icccm\.so\.4'
 
       - name: Setup OSG SDK
         uses: ./.github/actions/setup-osg-sdk

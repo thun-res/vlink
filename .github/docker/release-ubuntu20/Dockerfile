@@ -27,9 +27,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libtool \
       libva-dev \
       libvdpau-dev \
+      libx11-dev \
+      libx11-xcb-dev \
+      libxcb-cursor-dev \
+      libxcb-icccm4-dev \
+      libxcb-image0-dev \
+      libxcb-keysyms1-dev \
+      libxcb-randr0-dev \
+      libxcb-render-util0-dev \
+      libxcb-render0-dev \
+      libxcb-shape0-dev \
+      libxcb-shm0-dev \
+      libxcb-sync-dev \
+      libxcb-xfixes0-dev \
+      libxcb-xinerama0-dev \
+      libxcb-xkb-dev \
+      libxcb1-dev \
+      libxext-dev \
       libxinerama-dev \
+      libxkbcommon-dev \
       libxkbcommon-x11-0 \
+      libxkbcommon-x11-dev \
       libxrandr-dev \
+      libxrender-dev \
       libzstd-dev \
       nasm \
       ninja-build \

@@ -70,6 +70,27 @@ runs:
         if ($env:PYTHON_EXECUTABLE) {
           $ArgsList += "-DPython_EXECUTABLE=$env:PYTHON_EXECUTABLE"
         }
+        $HasCCompiler = $false
+        $HasCxxCompiler = $false
+        foreach ($Arg in $ArgsList) {
+          if ($Arg -like "-DCMAKE_C_COMPILER=*") {
+            $HasCCompiler = $true
+          }
+          if ($Arg -like "-DCMAKE_CXX_COMPILER=*") {
+            $HasCxxCompiler = $true
+          }
+        }
+        if ((-not $HasCCompiler) -or (-not $HasCxxCompiler)) {
+          $Cl = Get-Command cl.exe -ErrorAction Stop
+          $ClPath = $Cl.Source.Replace("\", "/")
+          Write-Host "Using MSVC compiler: $ClPath"
+          if (-not $HasCCompiler) {
+            $ArgsList += "-DCMAKE_C_COMPILER=$ClPath"
+          }
+          if (-not $HasCxxCompiler) {
+            $ArgsList += "-DCMAKE_CXX_COMPILER=$ClPath"
+          }
+        }
         & cmake @ArgsList
 
     - name: Build
