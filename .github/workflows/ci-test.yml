@@ -204,7 +204,7 @@ jobs:
             fi
             ctest --test-dir build-test --output-on-failure --timeout 180 --parallel 1 --exclude-regex '^(xmltest|ucunit)$|^CUnit_'
             export PYTHONPATH="${GITHUB_WORKSPACE}/python_api:${GITHUB_WORKSPACE}/build-test/output/lib"
-            /opt/vlink/python-tools/bin/python python_api/test/test_vlink.py
+            ASAN_OPTIONS=detect_leaks=0:halt_on_error=1:abort_on_error=1 /opt/vlink/python-tools/bin/python python_api/test/test_vlink.py
             ccache --show-stats || true
 
   test-windows-x64:
