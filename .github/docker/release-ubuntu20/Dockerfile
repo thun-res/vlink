@@ -1,12 +1,9 @@
 FROM ubuntu:20.04
 
-ARG PYTHON_STANDALONE_RELEASE=20260610
-ARG PYTHON_STANDALONE_VERSION=3.10.20
 ARG TARGETARCH
 
 ENV DEBIAN_FRONTEND=noninteractive \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    VLINK_AQT_PYTHON=/opt/python/cp310/bin/python3.10
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
@@ -21,13 +18,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       git \
       git-lfs \
       libacl1-dev \
+      libdbus-1-dev \
+      libfontconfig1-dev \
+      libfreetype6-dev \
       libgl1-mesa-dev \
       libsqlite3-dev \
       libssl-dev \
       libtool \
       libva-dev \
       libvdpau-dev \
+      libxinerama-dev \
       libxkbcommon-x11-0 \
+      libxrandr-dev \
       libzstd-dev \
       nasm \
       ninja-build \
@@ -41,17 +43,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       xz-utils \
       yasm \
       zstd \
-    && case "${TARGETARCH:-amd64}" in \
-         amd64) python_arch=x86_64 ;; \
-         arm64) python_arch=aarch64 ;; \
-         *) echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    && build_arch="${TARGETARCH:-}" \
+    && if [ -z "${build_arch}" ]; then \
+         case "$(uname -m)" in \
+           x86_64) build_arch=amd64 ;; \
+           aarch64|arm64) build_arch=arm64 ;; \
+           *) echo "Unsupported machine architecture: $(uname -m)" >&2; exit 1 ;; \
+         esac; \
+       fi \
+    && case "${build_arch}" in \
+         amd64) expected_machine=x86_64 ;; \
+         arm64) expected_machine=aarch64 ;; \
+         *) echo "Unsupported TARGETARCH: ${build_arch}" >&2; exit 1 ;; \
        esac \
-    && python_url="https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_STANDALONE_RELEASE}/cpython-${PYTHON_STANDALONE_VERSION}%2B${PYTHON_STANDALONE_RELEASE}-${python_arch}-unknown-linux-gnu-install_only_stripped.tar.gz" \
-    && mkdir -p /opt/python/cp310 \
-    && curl -fsSL "${python_url}" -o /tmp/python-standalone.tar.gz \
-    && tar -xzf /tmp/python-standalone.tar.gz -C /opt/python/cp310 --strip-components=1 \
-    && "${VLINK_AQT_PYTHON}" -V \
-    && "${VLINK_AQT_PYTHON}" -m venv /tmp/vlink-python-check \
-    && /tmp/vlink-python-check/bin/python -m pip --version \
-    && rm -rf /tmp/vlink-python-check /tmp/python-standalone.tar.gz \
+    && test "$(uname -m)" = "${expected_machine}" \
+    && python3 -m venv /opt/vlink-python \
+    && /opt/vlink-python/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel conan \
+    && ln -sf /opt/vlink-python/bin/conan /usr/local/bin/conan \
+    && /opt/vlink-python/bin/python -V \
+    && conan --version \
     && rm -rf /var/lib/apt/lists/*

@@ -71,8 +71,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       libxcb-xkb-dev \
       libxcb1-dev \
       libxext-dev \
+      libxinerama-dev \
       libxkbcommon-dev \
       libxkbcommon-x11-dev \
+      libxrandr-dev \
       libxrender-dev \
       libzstd-dev \
       nasm \
@@ -104,10 +106,23 @@ RUN python3 -m pip install --no-cache-dir --upgrade \
 WORKDIR /tmp/qt-build
 
 RUN set -eux; \
+    download() { \
+      local url="$1"; \
+      local output="$2"; \
+      local attempt; \
+      for attempt in 1 2 3 4 5; do \
+        if curl -fL --connect-timeout 30 --speed-limit 1024 --speed-time 60 "${url}" -o "${output}"; then \
+          return 0; \
+        fi; \
+        rm -f "${output}"; \
+        sleep "$((attempt * 5))"; \
+      done; \
+      return 1; \
+    }; \
     qt_base_url="https://download.qt.io/official_releases/qt/6.8/${QT_VERSION}/submodules"; \
-    curl -fsSLO "${qt_base_url}/qtbase-everywhere-src-${QT_VERSION}.tar.xz"; \
-    curl -fsSLO "${qt_base_url}/qtsvg-everywhere-src-${QT_VERSION}.tar.xz"; \
-    curl -fsSLO "${qt_base_url}/qtwayland-everywhere-src-${QT_VERSION}.tar.xz"; \
+    download "${qt_base_url}/qtbase-everywhere-src-${QT_VERSION}.tar.xz" "qtbase-everywhere-src-${QT_VERSION}.tar.xz"; \
+    download "${qt_base_url}/qtsvg-everywhere-src-${QT_VERSION}.tar.xz" "qtsvg-everywhere-src-${QT_VERSION}.tar.xz"; \
+    download "${qt_base_url}/qtwayland-everywhere-src-${QT_VERSION}.tar.xz" "qtwayland-everywhere-src-${QT_VERSION}.tar.xz"; \
     echo "540e9665dbfd9a2cf98e6e4b4aa4bb98  qtbase-everywhere-src-${QT_VERSION}.tar.xz" | md5sum -c -; \
     echo "4748ec76af552d21f2bf2acce45b39af  qtsvg-everywhere-src-${QT_VERSION}.tar.xz" | md5sum -c -; \
     echo "5215ab60ea5f8fcafb35c7709b4eb386  qtwayland-everywhere-src-${QT_VERSION}.tar.xz" | md5sum -c -; \
@@ -170,8 +185,21 @@ RUN set -eux; \
 WORKDIR /tmp
 
 RUN set -eux; \
+    download() { \
+      local url="$1"; \
+      local output="$2"; \
+      local attempt; \
+      for attempt in 1 2 3 4 5; do \
+        if curl -fL --connect-timeout 30 --speed-limit 1024 --speed-time 60 "${url}" -o "${output}"; then \
+          return 0; \
+        fi; \
+        rm -f "${output}"; \
+        sleep "$((attempt * 5))"; \
+      done; \
+      return 1; \
+    }; \
     ifw_url="https://download.qt.io/official_releases/qt-installer-framework/${QTIFW_VERSION}/QtInstallerFramework-linux-arm64-${QTIFW_VERSION}.run"; \
-    curl -fsSL "${ifw_url}" -o qtifw.run; \
+    download "${ifw_url}" qtifw.run; \
     chmod +x qtifw.run; \
     ./qtifw.run --root "${QTIFW_DIR}" --accept-licenses --default-answer --confirm-command install; \
     test -x "${QTIFW_DIR}/bin/binarycreator"; \

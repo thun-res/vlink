@@ -32,11 +32,6 @@ jobs:
     name: portable-linux-${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ inputs.container_image_tag }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
     defaults:
       run:
         shell: bash
@@ -47,6 +42,8 @@ jobs:
           - arch: x86_64
             runner: ubuntu-24.04
             image: vlink-release-ubuntu20
+            context: .github/docker/release-ubuntu20
+            dockerfile: .github/docker/release-ubuntu20/Dockerfile
             osg_platform: linux_x86_64
             qt_arch: linux_gcc_64
             qt_modules: qtwaylandcompositor
@@ -55,15 +52,44 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Login to GHCR
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare portable image
+        id: portable-image
+        uses: ./.github/actions/prepare-ci-image
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ inputs.container_image_tag }}
+          context: ${{ matrix.context }}
+          dockerfile: ${{ matrix.dockerfile }}
+          local-tag: ${{ matrix.image }}-${{ matrix.arch }}:portable-local
+          required-tools: bash ccache cmake conan git git-lfs ninja patch patchelf pkg-config
+          verify-command: |
+            set -euo pipefail
+            grep -q '20.04' /etc/os-release
+            test "$(uname -m)" = "${{ matrix.arch }}"
+            pkg-config --exists fontconfig freetype2 dbus-1 xinerama xrandr
+            conan --version
+            python3 -V
+
       - name: Check build host
         run: |
           set -euo pipefail
-          grep -q '20.04' /etc/os-release
-          test "$(uname -m)" = "${{ matrix.arch }}"
-          cmake --version
-          ninja --version
-          patch --version | head -n 1
-          git lfs version
+          docker run --rm "${{ steps.portable-image.outputs.image }}" bash -lc '
+            set -euo pipefail
+            grep -q "20.04" /etc/os-release
+            test "$(uname -m)" = "${{ matrix.arch }}"
+            cmake --version
+            ninja --version
+            patch --version | head -n 1
+            git lfs version
+            pkg-config --modversion fontconfig freetype2 dbus-1 xinerama xrandr
+          '
 
       - name: Check Qt installer Python
         run: |
@@ -74,7 +100,7 @@ jobs:
           elif command -v python3 >/dev/null 2>&1; then
             python3 -V
           else
-            echo "Python 3.12 is not present in this image; setup-qt-ifw will bootstrap it before installing aqt."
+            echo "Python is not present; setup-qt-ifw will bootstrap Python standalone before installing aqt."
           fi
 
       - name: Setup Qt and QtIFW
@@ -126,52 +152,110 @@ jobs:
           cache-key: ccache-release-linux-${{ matrix.arch }}-${{ github.run_id }}
           restore-keys: ccache-release-linux-${{ matrix.arch }}-
           max-size: 2G
-          cmake-wrapper: "true"
+          cmake-wrapper: "false"
           disable-ipo: "true"
 
       - name: Build portable archive and QtIFW installer
-        run: bash packup/build-conan.sh . ${{ matrix.arch }}
+        uses: ./.github/actions/docker-run
+        with:
+          image: ${{ steps.portable-image.outputs.image }}
+          command: |
+            set -euo pipefail
+            QT_QMAKE=$(find "/github/home/.vlink-ci/qt/${{ inputs.qt_version }}" -type f -path "*/bin/qmake" -print -quit)
+            QTIFW_BINARYCREATOR=$(find /github/home/.vlink-ci/qt/Tools/QtInstallerFramework -type f -name binarycreator -print -quit)
+            test -n "${QT_QMAKE}"
+            test -n "${QTIFW_BINARYCREATOR}"
+            export QT_DIR
+            QT_DIR=$(dirname "$(dirname "${QT_QMAKE}")")
+            export QTIFW_DIR
+            QTIFW_DIR=$(dirname "$(dirname "${QTIFW_BINARYCREATOR}")")
+            export OSG_DIR="/github/home/.vlink-ci/osg_sdk/${{ matrix.osg_platform }}"
+            test -d "${OSG_DIR}/include/osg"
+            export CCACHE_DIR="${HOME}/.ccache"
+            export CCACHE_BASEDIR="${GITHUB_WORKSPACE}"
+            export CCACHE_COMPRESS=true
+            export CCACHE_MAXSIZE=2G
+            export PATH="${QTIFW_DIR}/bin:${QT_DIR}/bin:${PATH}"
+            pkg-config --exists fontconfig freetype2 dbus-1 xinerama xrandr
+            ccache --zero-stats || true
+            trap 'ccache --show-stats || true' EXIT
 
-      - name: Show ccache stats
-        if: always()
-        run: |
-          if command -v ccache >/dev/null 2>&1; then
-            ccache --show-stats || true
-          fi
+            wrapper_dir="${HOME}/.vlink-cmake-wrapper"
+            mkdir -p "${wrapper_dir}"
+            real_cmake="$(command -v cmake)"
+            cat > "${wrapper_dir}/cmake" <<'EOF'
+            #!/usr/bin/env bash
+            set -euo pipefail
+            args=("$@")
+            inject=1
+            have_c=0
+            have_cxx=0
+            have_ipo=0
+            for arg in "$@"; do
+              case "${arg}" in
+                --build|--install|-E|-P|--version|--help|--help-*|--system-information|--find-package|--workflow)
+                  inject=0
+                  break
+                  ;;
+                -DCMAKE_C_COMPILER_LAUNCHER=*) have_c=1 ;;
+                -DCMAKE_CXX_COMPILER_LAUNCHER=*) have_cxx=1 ;;
+                -DENABLE_IPO=*) have_ipo=1 ;;
+              esac
+            done
+            if [ "${inject}" = "1" ]; then
+              [ "${have_c}" = "1" ] || args+=("-DCMAKE_C_COMPILER_LAUNCHER=ccache")
+              [ "${have_cxx}" = "1" ] || args+=("-DCMAKE_CXX_COMPILER_LAUNCHER=ccache")
+              if [ "${VLINK_CMAKE_DISABLE_IPO:-false}" = "true" ] && [ "${have_ipo}" = "0" ]; then
+                args+=("-DENABLE_IPO=OFF")
+              fi
+            fi
+            exec "${VLINK_REAL_CMAKE}" "${args[@]}"
+            EOF
+            chmod +x "${wrapper_dir}/cmake"
+            export VLINK_REAL_CMAKE="${real_cmake}"
+            export PATH="${wrapper_dir}:${PATH}"
+
+            bash packup/build-conan.sh . ${{ matrix.arch }}
 
       - name: Verify bundled Linux OSG files
-        run: |
-          set -euo pipefail
-          for path in \
-            lib/libOpenThreads.so.21 \
-            lib/libosg.so.161 \
-            lib/libosgDB.so.161 \
-            lib/libosgGA.so.161 \
-            lib/libosgManipulator.so.161 \
-            lib/libosgUtil.so.161 \
-            lib/libosgText.so.161 \
-            lib/libosgViewer.so.161 \
-            lib/osgPlugins-3.6.5/osgdb_freetype.so \
-            lib/osgPlugins-3.6.5/osgdb_obj.so \
-            lib/osgPlugins-3.6.5/osgdb_osg.so \
-            lib/osgPlugins-3.6.5/osgdb_serializers_osg.so; do
-            test -f "build-conan/packup/linux/vlink/${path}"
-          done
+        uses: ./.github/actions/docker-run
+        with:
+          image: ${{ steps.portable-image.outputs.image }}
+          command: |
+            set -euo pipefail
+            for path in \
+              lib/libOpenThreads.so.21 \
+              lib/libosg.so.161 \
+              lib/libosgDB.so.161 \
+              lib/libosgGA.so.161 \
+              lib/libosgManipulator.so.161 \
+              lib/libosgUtil.so.161 \
+              lib/libosgText.so.161 \
+              lib/libosgViewer.so.161 \
+              lib/osgPlugins-3.6.5/osgdb_freetype.so \
+              lib/osgPlugins-3.6.5/osgdb_obj.so \
+              lib/osgPlugins-3.6.5/osgdb_osg.so \
+              lib/osgPlugins-3.6.5/osgdb_serializers_osg.so; do
+              test -f "build-conan/packup/linux/vlink/${path}"
+            done
 
       - name: Check Linux runtime closure
-        run: |
-          set -euo pipefail
-          export LD_LIBRARY_PATH="$PWD/build-conan/packup/linux/vlink/lib:${LD_LIBRARY_PATH:-}"
-          while IFS= read -r binary; do
-            echo "ldd -r ${binary}"
-            ldd -r "${binary}" >/tmp/ldd.out
-            cat /tmp/ldd.out
-            if grep -q "not found" /tmp/ldd.out; then
-              exit 1
-            fi
-          done < <(find build-conan/packup/linux/vlink/bin build-conan/packup/linux/vlink/lib -type f -print0 \
-            | xargs -0 file \
-            | awk -F: '/ELF/ {print $1}')
+        uses: ./.github/actions/docker-run
+        with:
+          image: ${{ steps.portable-image.outputs.image }}
+          command: |
+            set -euo pipefail
+            export LD_LIBRARY_PATH="$PWD/build-conan/packup/linux/vlink/lib:${LD_LIBRARY_PATH:-}"
+            while IFS= read -r binary; do
+              echo "ldd -r ${binary}"
+              ldd -r "${binary}" >/tmp/ldd.out
+              cat /tmp/ldd.out
+              if grep -q "not found" /tmp/ldd.out; then
+                exit 1
+              fi
+            done < <(find build-conan/packup/linux/vlink/bin build-conan/packup/linux/vlink/lib -type f -print0 \
+              | xargs -0 file \
+              | awk -F: '/ELF/ {print $1}')
 
       - name: Verify Linux portable outputs
         uses: ./.github/actions/verify-artifacts
@@ -223,6 +307,7 @@ jobs:
             test "$(uname -m)" = "aarch64"
             "${QT_DIR}/bin/qmake" -query QT_VERSION | grep -q '^${{ inputs.qt_version }}$'
             test -x "${QTIFW_DIR}/bin/binarycreator"
+            pkg-config --exists xinerama xrandr
 
       - name: Setup OSG SDK
         uses: ./.github/actions/setup-osg-sdk

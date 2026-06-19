@@ -22,11 +22,6 @@ jobs:
     name: deb-${{ matrix.distro }}-${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ inputs.container_image_tag }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
     defaults:
       run:
         shell: bash
@@ -39,37 +34,70 @@ jobs:
             arch: x86_64
             runner: ubuntu-24.04
             image: vlink-release-ubuntu20
+            context: .github/docker/release-ubuntu20
+            dockerfile: .github/docker/release-ubuntu20/Dockerfile
             deb_depends: "libssl1.1, libsqlite3-0, libzstd1"
           - distro: ubuntu20.04
             ubuntu_version: "20.04"
             arch: aarch64
             runner: ubuntu-24.04-arm
             image: vlink-release-ubuntu20
+            context: .github/docker/release-ubuntu20
+            dockerfile: .github/docker/release-ubuntu20/Dockerfile
             deb_depends: "libssl1.1, libsqlite3-0, libzstd1"
           - distro: ubuntu22.04
             ubuntu_version: "22.04"
             arch: x86_64
             runner: ubuntu-24.04
             image: vlink-package-ubuntu22
+            context: .github/docker/package-ubuntu22
+            dockerfile: .github/docker/package-ubuntu22/Dockerfile
             deb_depends: "libssl3, libsqlite3-0, libzstd1"
           - distro: ubuntu22.04
             ubuntu_version: "22.04"
             arch: aarch64
             runner: ubuntu-24.04-arm
             image: vlink-package-ubuntu22
+            context: .github/docker/package-ubuntu22
+            dockerfile: .github/docker/package-ubuntu22/Dockerfile
             deb_depends: "libssl3, libsqlite3-0, libzstd1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Login to GHCR
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare deb package image
+        id: deb-image
+        uses: ./.github/actions/prepare-ci-image
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ inputs.container_image_tag }}
+          context: ${{ matrix.context }}
+          dockerfile: ${{ matrix.dockerfile }}
+          local-tag: ${{ matrix.image }}-${{ matrix.arch }}:package-local
+          required-tools: bash ccache cmake file git patch
+          verify-command: |
+            set -euo pipefail
+            grep -q '${{ matrix.ubuntu_version }}' /etc/os-release
+            test "$(uname -m)" = "${{ matrix.arch }}"
+            file --version >/dev/null
+
       - name: Check build host
         run: |
           set -euo pipefail
-          grep -q '${{ matrix.ubuntu_version }}' /etc/os-release
-          test "$(uname -m)" = "${{ matrix.arch }}"
-          patch --version | head -n 1
-          command -v file
-          file --version | head -n 1
+          docker run --rm "${{ steps.deb-image.outputs.image }}" bash -lc '
+            set -euo pipefail
+            grep -q "${{ matrix.ubuntu_version }}" /etc/os-release
+            test "$(uname -m)" = "${{ matrix.arch }}"
+            patch --version | head -n 1
+            file --version | head -n 1
+          '
 
       - name: Restore CPM cache
         uses: ./.github/actions/restore-build-cache
@@ -85,20 +113,59 @@ jobs:
           cache-key: ccache-deb-${{ matrix.distro }}-${{ matrix.arch }}-${{ github.run_id }}
           restore-keys: ccache-deb-${{ matrix.distro }}-${{ matrix.arch }}-
           max-size: 2G
-          cmake-wrapper: "true"
+          cmake-wrapper: "false"
           disable-ipo: "true"
 
       - name: Build deb package
-        env:
-          DEB_DEPENDS: ${{ matrix.deb_depends }}
-        run: bash packup/build-deb.sh .
+        uses: ./.github/actions/docker-run
+        with:
+          image: ${{ steps.deb-image.outputs.image }}
+          command: |
+            set -euo pipefail
+            export DEB_DEPENDS="${{ matrix.deb_depends }}"
+            export CCACHE_DIR="${HOME}/.ccache"
+            export CCACHE_BASEDIR="${GITHUB_WORKSPACE}"
+            export CCACHE_COMPRESS=true
+            export CCACHE_MAXSIZE=2G
+            ccache --zero-stats || true
+            trap 'ccache --show-stats || true' EXIT
 
-      - name: Show ccache stats
-        if: always()
-        run: |
-          if command -v ccache >/dev/null 2>&1; then
-            ccache --show-stats || true
-          fi
+            wrapper_dir="${HOME}/.vlink-cmake-wrapper"
+            mkdir -p "${wrapper_dir}"
+            real_cmake="$(command -v cmake)"
+            cat > "${wrapper_dir}/cmake" <<'EOF'
+            #!/usr/bin/env bash
+            set -euo pipefail
+            args=("$@")
+            inject=1
+            have_c=0
+            have_cxx=0
+            have_ipo=0
+            for arg in "$@"; do
+              case "${arg}" in
+                --build|--install|-E|-P|--version|--help|--help-*|--system-information|--find-package|--workflow)
+                  inject=0
+                  break
+                  ;;
+                -DCMAKE_C_COMPILER_LAUNCHER=*) have_c=1 ;;
+                -DCMAKE_CXX_COMPILER_LAUNCHER=*) have_cxx=1 ;;
+                -DENABLE_IPO=*) have_ipo=1 ;;
+              esac
+            done
+            if [ "${inject}" = "1" ]; then
+              [ "${have_c}" = "1" ] || args+=("-DCMAKE_C_COMPILER_LAUNCHER=ccache")
+              [ "${have_cxx}" = "1" ] || args+=("-DCMAKE_CXX_COMPILER_LAUNCHER=ccache")
+              if [ "${VLINK_CMAKE_DISABLE_IPO:-false}" = "true" ] && [ "${have_ipo}" = "0" ]; then
+                args+=("-DENABLE_IPO=OFF")
+              fi
+            fi
+            exec "${VLINK_REAL_CMAKE}" "${args[@]}"
+            EOF
+            chmod +x "${wrapper_dir}/cmake"
+            export VLINK_REAL_CMAKE="${real_cmake}"
+            export PATH="${wrapper_dir}:${PATH}"
+
+            bash packup/build-deb.sh .
 
       - name: Add distro suffix to deb package names
         run: |
@@ -125,11 +192,6 @@ jobs:
     name: rpm-fedora43-${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/vlink-package-fedora43:${{ inputs.container_image_tag }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
     defaults:
       run:
         shell: bash
@@ -145,18 +207,39 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Login to GHCR
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare rpm package image
+        id: rpm-image
+        uses: ./.github/actions/prepare-ci-image
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/vlink-package-fedora43:${{ inputs.container_image_tag }}
+          context: .github/docker/package-fedora43
+          dockerfile: .github/docker/package-fedora43/Dockerfile
+          local-tag: vlink-package-fedora43-${{ matrix.arch }}:package-local
+          required-tools: bash ccache cmake g++ git patch
+          verify-command: |
+            set -euo pipefail
+            test "$(uname -m)" = "${{ matrix.arch }}"
+            printf '%s\n' 'int main() { return 0; }' > /tmp/vlink-static-check.cc
+            g++ -static /tmp/vlink-static-check.cc -o /tmp/vlink-static-check
+            /tmp/vlink-static-check
+            rm -f /tmp/vlink-static-check.cc /tmp/vlink-static-check
+
       - name: Check build host
         run: |
-          test "$(uname -m)" = "${{ matrix.arch }}"
-          patch --version | head -n 1
-
-      - name: Check Fedora static toolchain
-        run: |
           set -euo pipefail
-          printf '%s\n' 'int main() { return 0; }' > /tmp/vlink-static-check.cc
-          g++ -static /tmp/vlink-static-check.cc -o /tmp/vlink-static-check
-          /tmp/vlink-static-check
-          rm -f /tmp/vlink-static-check.cc /tmp/vlink-static-check
+          docker run --rm "${{ steps.rpm-image.outputs.image }}" bash -lc '
+            set -euo pipefail
+            test "$(uname -m)" = "${{ matrix.arch }}"
+            patch --version | head -n 1
+          '
 
       - name: Restore CPM cache
         uses: ./.github/actions/restore-build-cache
@@ -172,18 +255,58 @@ jobs:
           cache-key: ccache-rpm-fedora43-${{ matrix.arch }}-${{ github.run_id }}
           restore-keys: ccache-rpm-fedora43-${{ matrix.arch }}-
           max-size: 2G
-          cmake-wrapper: "true"
+          cmake-wrapper: "false"
           disable-ipo: "true"
 
       - name: Build rpm package
-        run: bash packup/build-rpm.sh .
+        uses: ./.github/actions/docker-run
+        with:
+          image: ${{ steps.rpm-image.outputs.image }}
+          command: |
+            set -euo pipefail
+            export CCACHE_DIR="${HOME}/.ccache"
+            export CCACHE_BASEDIR="${GITHUB_WORKSPACE}"
+            export CCACHE_COMPRESS=true
+            export CCACHE_MAXSIZE=2G
+            ccache --zero-stats || true
+            trap 'ccache --show-stats || true' EXIT
 
-      - name: Show ccache stats
-        if: always()
-        run: |
-          if command -v ccache >/dev/null 2>&1; then
-            ccache --show-stats || true
-          fi
+            wrapper_dir="${HOME}/.vlink-cmake-wrapper"
+            mkdir -p "${wrapper_dir}"
+            real_cmake="$(command -v cmake)"
+            cat > "${wrapper_dir}/cmake" <<'EOF'
+            #!/usr/bin/env bash
+            set -euo pipefail
+            args=("$@")
+            inject=1
+            have_c=0
+            have_cxx=0
+            have_ipo=0
+            for arg in "$@"; do
+              case "${arg}" in
+                --build|--install|-E|-P|--version|--help|--help-*|--system-information|--find-package|--workflow)
+                  inject=0
+                  break
+                  ;;
+                -DCMAKE_C_COMPILER_LAUNCHER=*) have_c=1 ;;
+                -DCMAKE_CXX_COMPILER_LAUNCHER=*) have_cxx=1 ;;
+                -DENABLE_IPO=*) have_ipo=1 ;;
+              esac
+            done
+            if [ "${inject}" = "1" ]; then
+              [ "${have_c}" = "1" ] || args+=("-DCMAKE_C_COMPILER_LAUNCHER=ccache")
+              [ "${have_cxx}" = "1" ] || args+=("-DCMAKE_CXX_COMPILER_LAUNCHER=ccache")
+              if [ "${VLINK_CMAKE_DISABLE_IPO:-false}" = "true" ] && [ "${have_ipo}" = "0" ]; then
+                args+=("-DENABLE_IPO=OFF")
+              fi
+            fi
+            exec "${VLINK_REAL_CMAKE}" "${args[@]}"
+            EOF
+            chmod +x "${wrapper_dir}/cmake"
+            export VLINK_REAL_CMAKE="${real_cmake}"
+            export PATH="${wrapper_dir}:${PATH}"
+
+            bash packup/build-rpm.sh .
 
       - name: Verify rpm package
         uses: ./.github/actions/verify-artifacts

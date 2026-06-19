@@ -91,7 +91,16 @@ runs:
             rm -rf "${PYTHON_STANDALONE_ROOT}"
             mkdir -p "${PYTHON_STANDALONE_ROOT}"
             python_url="https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_STANDALONE_RELEASE}/cpython-${PYTHON_STANDALONE_VERSION}%2B${PYTHON_STANDALONE_RELEASE}-${python_arch}-unknown-linux-gnu-install_only_stripped.tar.gz"
-            curl -fsSL "${python_url}" -o /tmp/vlink-python-standalone.tar.gz
+            for attempt in 1 2 3 4 5; do
+              if curl -fL --connect-timeout 30 --speed-limit 1024 --speed-time 60 "${python_url}" -o /tmp/vlink-python-standalone.tar.gz; then
+                break
+              fi
+              rm -f /tmp/vlink-python-standalone.tar.gz
+              if [ "${attempt}" = "5" ]; then
+                exit 1
+              fi
+              sleep "$((attempt * 5))"
+            done
             tar -xzf /tmp/vlink-python-standalone.tar.gz -C "${PYTHON_STANDALONE_ROOT}" --strip-components=1
             rm -f /tmp/vlink-python-standalone.tar.gz
           fi
@@ -247,8 +256,19 @@ runs:
         & "$AqtVenv\Scripts\python.exe" -m pip install --upgrade $Packages
         $Aqt = "$AqtVenv\Scripts\aqt.exe"
 
-        $ExistingQmake = Get-ChildItem -Path (Join-Path $QtRoot $env:QT_VERSION) -Filter qmake.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $ExistingQmake) {
+        $QtLayoutRoot = Join-Path $QtRoot $env:QT_VERSION
+        $QtMarker = Join-Path $QtLayoutRoot ".vlink-qt-$($env:QT_ARCH).marker"
+        $QtMarkerValue = "$($env:QT_HOST)|$($env:QT_VERSION)|$($env:QT_ARCH)|$($env:QT_MODULES)"
+        $ExistingQmake = Get-ChildItem -Path $QtLayoutRoot -Filter qmake.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        $ExistingQconfig = Get-ChildItem -Path $QtLayoutRoot -Filter qconfig.pri -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        $CachedQtMarker = ""
+        if (Test-Path $QtMarker) {
+          $CachedQtMarker = (Get-Content $QtMarker -Raw).Trim()
+        }
+        if ((-not $ExistingQmake) -or (-not $ExistingQconfig) -or (-not (Test-Path $QtMarker)) -or ($CachedQtMarker -ne $QtMarkerValue)) {
+          if (Test-Path $QtLayoutRoot) {
+            Remove-Item -Recurse -Force $QtLayoutRoot
+          }
           $Args = @("install-qt", $env:QT_HOST, "desktop", $env:QT_VERSION, $env:QT_ARCH, "-O", $QtRoot)
           $Modules = @()
           if ($env:QT_MODULES.Trim()) {
@@ -259,6 +279,16 @@ runs:
             $Args += $Modules
           }
           & $Aqt @Args
+          $ExistingQmake = Get-ChildItem -Path $QtLayoutRoot -Filter qmake.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          $ExistingQconfig = Get-ChildItem -Path $QtLayoutRoot -Filter qconfig.pri -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $ExistingQmake) {
+            throw "qmake.exe not found under $QtLayoutRoot"
+          }
+          if (-not $ExistingQconfig) {
+            throw "qconfig.pri not found under $QtLayoutRoot"
+          }
+          New-Item -ItemType Directory -Force -Path $QtLayoutRoot | Out-Null
+          $QtMarkerValue | Out-File -FilePath $QtMarker -Encoding ascii
         }
 
         if ($env:QTIFW_PACKAGE_INPUT -eq "latest") {
@@ -292,10 +322,10 @@ runs:
           $IfwPackage | Out-File -FilePath $IfwMarker -Encoding ascii
         }
 
-        $Qmake = Get-ChildItem -Path (Join-Path $QtRoot $env:QT_VERSION) -Filter qmake.exe -Recurse | Select-Object -First 1
+        $Qmake = Get-ChildItem -Path $QtLayoutRoot -Filter qmake.exe -Recurse | Select-Object -First 1
         $BinaryCreator = Get-ChildItem -Path (Join-Path $QtRoot "Tools\QtInstallerFramework") -Filter binarycreator.exe -Recurse | Select-Object -First 1
         if (-not $Qmake) {
-          throw "qmake.exe not found under $QtRoot\$env:QT_VERSION"
+          throw "qmake.exe not found under $QtLayoutRoot"
         }
         if (-not $BinaryCreator) {
           throw "binarycreator.exe not found under $QtRoot\Tools\QtInstallerFramework"

@@ -55,6 +55,7 @@ jobs:
           if [ "${BUILD_PORTABLE}" = "true" ]; then
             image_refs+=(
               "vlink-release-ubuntu20|linux/amd64"
+              "vlink-release-ubuntu20-qt-aarch64|linux/arm64"
             )
           fi
           if [ "${BUILD_LINUX_PACKAGES}" = "true" ]; then
@@ -65,6 +66,8 @@ jobs:
               "vlink-package-ubuntu22|linux/arm64"
               "vlink-package-fedora43|linux/amd64"
               "vlink-package-fedora43|linux/arm64"
+              "vlink-package-arch|linux/amd64"
+              "vlink-package-arch-aarch64|linux/arm64"
             )
           fi
           mapfile -t unique_image_refs < <(printf '%s\n' "${image_refs[@]}" | sort -u)
@@ -73,8 +76,8 @@ jobs:
             full_image="ghcr.io/${{ github.repository_owner }}/${image}:${IMAGE_TAG}"
             echo "Pulling ${full_image} for ${platform}"
             if ! docker pull --platform "${platform}" "${full_image}"; then
-              echo "::error::Missing Linux release image ${full_image} for ${platform}. Run the Docker Images workflow for ${image} with tag ${IMAGE_TAG} first."
-              exit 1
+              echo "::warning::Linux release image ${full_image} for ${platform} is missing. Release jobs will build a local fallback image when this image is required."
+              continue
             fi
             if [ "${IMAGE_TAG}" = "latest" ]; then
               image_revision=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${full_image}" 2>/dev/null || true)
