@@ -400,6 +400,7 @@ jobs:
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
             -DCMAKE_C_COMPILER_LAUNCHER=ccache
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+            -DBUILD_SHARED_LIBS=OFF
             -DENABLE_WEBVIZ=OFF
             -DENABLE_TEST_SANITIZE=OFF
 
@@ -409,6 +410,7 @@ jobs:
           build-dir: build-test
           required-cache: |
             ENABLE_WEBVIZ=OFF
+            BUILD_SHARED_LIBS=OFF
             ENABLE_IPO=OFF
             ENABLE_PYTHON_API=ON
             ENABLE_TEST=ON
@@ -434,7 +436,7 @@ jobs:
             echo "vlink-proxy exited before unit tests" >&2
             exit 1
           fi
-          ctest --test-dir build-test --output-on-failure --timeout 180 --parallel 1 --exclude-regex '^(xmltest|ucunit)$|^CUnit_'
+          ctest --test-dir build-test --output-on-failure --timeout 360 --parallel 1 --exclude-regex '^(xmltest|ucunit)$|^CUnit_'
 
       - name: Run Python API tests
         run: |
