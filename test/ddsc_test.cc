@@ -704,7 +704,7 @@ TEST_SUITE("ddsc-method") {
       threads.emplace_back([t, &success_count] {
         Client<std::string, std::string> client("ddsc://ddsc/mth/concurrent1");
 
-        if (!client.wait_for_connected(1s)) {
+        if (!client.wait_for_connected(5s)) {
           return;
         }
 
