@@ -575,11 +575,7 @@ if(ENABLE_TEST)
     vlink_test_sanitize(${PROJECT_NAME})
   endif()
   if(ENABLE_TEST_COVERAGE)
-    vlink_test_coverage(
-      ${PROJECT_NAME}
-      EXCLUDES
-      ${VLINK_TEST_COVERAGE_EXCLUDES}
-    )
+    vlink_test_coverage(${PROJECT_NAME} EXCLUDES ${VLINK_TEST_COVERAGE_EXCLUDES})
   endif()
 endif()
 if(ENABLE_TEST_WARN)
