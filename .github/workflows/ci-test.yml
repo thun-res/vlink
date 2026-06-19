@@ -32,6 +32,8 @@ on:
       - .github/actions/setup-windows-openssl/**
       - .github/docker/ci-ubuntu24/**
       - .github/scripts/assert-cmake-config.py
+      - .github/scripts/run-posix-ci-tests.sh
+      - .github/scripts/run-windows-ci-tests.ps1
       - .github/workflows/ci-test.yml
   push:
     branches:
@@ -64,6 +66,8 @@ on:
       - .github/actions/setup-windows-openssl/**
       - .github/docker/ci-ubuntu24/**
       - .github/scripts/assert-cmake-config.py
+      - .github/scripts/run-posix-ci-tests.sh
+      - .github/scripts/run-windows-ci-tests.ps1
       - .github/workflows/ci-test.yml
   workflow_dispatch:
 
@@ -202,23 +206,11 @@ jobs:
             test -f "${stdcxx_lib}"
             export LD_PRELOAD="${asan_lib}:${stdcxx_lib}${LD_PRELOAD:+:${LD_PRELOAD}}"
             export LD_LIBRARY_PATH="${GITHUB_WORKSPACE}/build-test/output/bin:${GITHUB_WORKSPACE}/build-test/output/lib:${GITHUB_WORKSPACE}/build-test/output/external/lib:${LD_LIBRARY_PATH:-}"
-            proxy_pid=""
-            if [ ! -x build-test/output/bin/vlink-proxy ]; then
-              echo "Missing vlink-proxy before unit tests" >&2
-              exit 1
-            fi
-            build-test/output/bin/vlink-proxy -c -n -m off > build-test/vlink-proxy.log 2>&1 &
-            proxy_pid="$!"
-            trap 'if [ -n "${proxy_pid}" ]; then kill "${proxy_pid}" 2>/dev/null || true; wait "${proxy_pid}" 2>/dev/null || true; fi' EXIT
-            sleep 2
-            if ! kill -0 "${proxy_pid}" 2>/dev/null; then
-              cat build-test/vlink-proxy.log || true
-              echo "vlink-proxy exited before unit tests" >&2
-              exit 1
-            fi
-            ctest --test-dir build-test --output-on-failure --timeout 180 --parallel 1 --exclude-regex '^(xmltest|ucunit)$|^CUnit_'
-            export PYTHONPATH="${GITHUB_WORKSPACE}/python_api:${GITHUB_WORKSPACE}/build-test/output/lib"
-            ASAN_OPTIONS=detect_leaks=0:halt_on_error=1:abort_on_error=1 /opt/vlink/python-tools/bin/python python_api/test/test_vlink.py
+            export BUILD_DIR=build-test
+            export PYTHON_CMD=/opt/vlink/python-tools/bin/python
+            export PYTHON_ASAN_OPTIONS=detect_leaks=0:halt_on_error=1:abort_on_error=1
+            export SPLIT_SHM_TESTS=1
+            bash .github/scripts/run-posix-ci-tests.sh
 
   test-windows-x64:
     name: windows-x64
@@ -296,69 +288,9 @@ jobs:
           required-source-prefixes: |
             python_api/
 
-      - name: Run unit tests
+      - name: Run unit tests and Python API tests
         shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $env:Path = "$PWD\build-test\output\bin;$PWD\build-test\output\lib;$PWD\build-test\output\external\bin;$PWD\build-test\output\external\lib;$env:Path"
-          $ProxyExe = Join-Path $PWD "build-test\output\bin\vlink-proxy.exe"
-          if (!(Test-Path $ProxyExe)) {
-            throw "Missing vlink-proxy before unit tests: $ProxyExe"
-          }
-          $ProxyOut = Join-Path $PWD "build-test\vlink-proxy.out.log"
-          $ProxyErr = Join-Path $PWD "build-test\vlink-proxy.err.log"
-          $Proxy = Start-Process -FilePath $ProxyExe -ArgumentList @("-c", "-n", "-m", "off") -PassThru -RedirectStandardOutput $ProxyOut -RedirectStandardError $ProxyErr
-          try {
-            Start-Sleep -Seconds 2
-            if ($Proxy.HasExited) {
-              if (Test-Path $ProxyOut) { Get-Content $ProxyOut }
-              if (Test-Path $ProxyErr) { Get-Content $ProxyErr }
-              throw "vlink-proxy exited before unit tests"
-            }
-            ctest --test-dir build-test --output-on-failure --timeout 180 --parallel 1 --exclude-regex '^(xmltest|ucunit)$|^CUnit_'
-          } finally {
-            if ($Proxy -and -not $Proxy.HasExited) {
-              Stop-Process -Id $Proxy.Id -Force -ErrorAction SilentlyContinue
-              Wait-Process -Id $Proxy.Id -ErrorAction SilentlyContinue
-            }
-          }
-
-      - name: Run Python API tests
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $Module = Get-ChildItem -Path "$PWD\build-test" -Recurse -Filter "_vlink_nanobind*.pyd" | Select-Object -First 1
-          if (-not $Module) {
-            throw "Missing _vlink_nanobind*.pyd under build-test"
-          }
-          $DllDirs = Get-ChildItem -Path "$PWD\build-test" -Recurse -Include "*.dll","*.pyd" |
-            ForEach-Object { $_.DirectoryName } |
-            Sort-Object -Unique
-          $RuntimeDirs = @(
-            "$PWD\build-test\output\bin",
-            "$PWD\build-test\output\lib",
-            "$PWD\build-test\output\external\bin",
-            "$PWD\build-test\output\external\lib"
-          )
-          $env:PYTHONPATH = (@("$PWD\python_api", "$PWD\build-test\output\lib", $Module.DirectoryName) |
-            Sort-Object -Unique) -join ";"
-          $DllSearchDirs = $RuntimeDirs + $DllDirs | Where-Object { Test-Path $_ } | Sort-Object -Unique
-          $env:Path = ($DllSearchDirs -join ";") + ";$env:Path"
-          $env:VLINK_WINDOWS_DLL_DIRS = $DllSearchDirs -join ";"
-          $Bootstrap = Join-Path $env:RUNNER_TEMP "vlink-python-test.py"
-          $BootstrapSource = @'
-          import os
-          import runpy
-
-          for path in os.environ.get("VLINK_WINDOWS_DLL_DIRS", "").split(os.pathsep):
-              if path:
-                  os.add_dll_directory(path)
-
-          runpy.run_path(os.path.join(os.environ["GITHUB_WORKSPACE"], "python_api", "test", "test_vlink.py"),
-                         run_name="__main__")
-          '@
-          $BootstrapSource | Set-Content -Path $Bootstrap -Encoding utf8
-          python $Bootstrap
+        run: ./.github/scripts/run-windows-ci-tests.ps1
 
       - name: Show sccache stats
         if: always()
@@ -453,53 +385,12 @@ jobs:
           required-source-prefixes: |
             python_api/
 
-      - name: Run unit tests
+      - name: Run unit tests and Python API tests
         run: |
-          set -euo pipefail
-          export DYLD_LIBRARY_PATH="${PWD}/build-test/output/bin:${PWD}/build-test/output/lib:${PWD}/build-test/output/external/lib:${DYLD_LIBRARY_PATH:-}"
-          test -x build-test/output/bin/vlink-proxy
-
-          proxy_pid=""
-          stop_proxy() {
-            if [ -n "${proxy_pid}" ]; then
-              kill "${proxy_pid}" 2>/dev/null || true
-              wait "${proxy_pid}" 2>/dev/null || true
-              proxy_pid=""
-            fi
-          }
-          start_proxy() {
-            stop_proxy
-            local log_name="$1"
-            build-test/output/bin/vlink-proxy -c -n -m off > "build-test/${log_name}.log" 2>&1 &
-            proxy_pid="$!"
-            sleep 2
-            if ! kill -0 "${proxy_pid}" 2>/dev/null; then
-              cat "build-test/${log_name}.log" || true
-              echo "vlink-proxy exited before unit tests" >&2
-              exit 1
-            fi
-          }
-          trap stop_proxy EXIT
-
-          start_proxy "vlink-proxy-main"
-          ctest --test-dir build-test --output-on-failure --timeout 180 --parallel 1 \
-            --exclude-regex '^(xmltest|ucunit)$|^CUnit_|^shm2?-'
-          stop_proxy
-
-          ctest --test-dir build-test -N \
-            | sed -n 's/^ *Test #[0-9][0-9]*: //p' \
-            | grep -E '^shm2?-' \
-            | while IFS= read -r suite; do
-                start_proxy "vlink-proxy-${suite}"
-                ctest --test-dir build-test --output-on-failure --timeout 180 --parallel 1 --tests-regex "^${suite}$"
-                stop_proxy
-              done
-
-      - name: Run Python API tests
-        run: |
-          export DYLD_LIBRARY_PATH="${PWD}/build-test/output/lib:${DYLD_LIBRARY_PATH:-}"
-          export PYTHONPATH="${PWD}/python_api:${PWD}/build-test/output/lib"
-          python python_api/test/test_vlink.py
+          export BUILD_DIR=build-test
+          export PYTHON_CMD=python
+          export SPLIT_SHM_TESTS=1
+          bash .github/scripts/run-posix-ci-tests.sh
 
       - name: Show ccache stats
         if: always()

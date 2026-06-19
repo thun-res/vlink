@@ -388,7 +388,9 @@ TEST_SUITE("base-Schedule") {
           caught_msg = e.what();
         });
 
-    std::this_thread::sleep_for(150ms);
+    for (int i = 0; i < 100 && !caught.load(); ++i) {
+      std::this_thread::sleep_for(20ms);
+    }
 
     CHECK(caught.load());
     {
