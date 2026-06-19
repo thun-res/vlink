@@ -64,7 +64,7 @@ jobs:
         id: portable-image
         uses: ./.github/actions/prepare-ci-image
         with:
-          image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ inputs.container_image_tag }}
+          image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ inputs.container_image_tag || format('df-{0}', hashFiles(matrix.dockerfile)) }}
           context: ${{ matrix.context }}
           dockerfile: ${{ matrix.dockerfile }}
           local-tag: ${{ matrix.image }}-${{ matrix.arch }}:portable-local
@@ -263,7 +263,7 @@ jobs:
         id: release-image
         uses: ./.github/actions/prepare-ci-image
         with:
-          image: ghcr.io/${{ github.repository_owner }}/vlink-release-ubuntu20-qt-aarch64:${{ inputs.container_image_tag }}
+          image: ghcr.io/${{ github.repository_owner }}/vlink-release-ubuntu20-qt-aarch64:${{ inputs.container_image_tag || format('df-{0}', hashFiles('.github/docker/release-ubuntu20-qt-aarch64/Dockerfile')) }}
           context: .github/docker/release-ubuntu20-qt-aarch64
           dockerfile: .github/docker/release-ubuntu20-qt-aarch64/Dockerfile
           local-tag: vlink-release-ubuntu20-qt-aarch64:release-local

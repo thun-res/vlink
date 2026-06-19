@@ -14,7 +14,7 @@ on:
         type: boolean
         default: true
       docker_image_tag:
-        description: GHCR Docker image tag for Linux release jobs. Empty uses sha-<commit>.
+        description: GHCR Docker image tag for Linux release jobs. Empty uses Dockerfile hash tags.
         required: false
         type: string
         default: ""
@@ -39,7 +39,7 @@ jobs:
       qt_version: "6.8.3"
       osg_sdk_repository: https://github.com/thun-res/osg_sdk.git
       osg_sdk_ref: master
-      container_image_tag: ${{ inputs.docker_image_tag || format('sha-{0}', github.sha) }}
+      container_image_tag: ${{ inputs.docker_image_tag }}
 
   portable-macos:
     name: portable-macos
@@ -64,7 +64,7 @@ jobs:
     if: github.event_name == 'push' || inputs.build_linux_packages
     uses: ./.github/workflows/release-linux-packages.yml
     with:
-      container_image_tag: ${{ inputs.docker_image_tag || format('sha-{0}', github.sha) }}
+      container_image_tag: ${{ inputs.docker_image_tag }}
 
   publish-github-release:
     name: publish-github-release
