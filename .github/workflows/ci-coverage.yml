@@ -140,7 +140,51 @@ jobs:
             gcda_count="$(find build-coverage -name '*.gcda' | wc -l)"
             echo "gcda files: ${gcda_count}"
             test "${gcda_count}" -gt 0
-            cmake --build build-coverage --target coverage
+            mkdir -p build-coverage/coverage
+            gcovr_args=(
+              "${GITHUB_WORKSPACE}/build-coverage"
+              --root "${GITHUB_WORKSPACE}"
+              --object-directory "${GITHUB_WORKSPACE}/build-coverage"
+              --gcov-ignore-errors
+              --gcov-ignore-parse-errors
+              --exclude-unreachable-branches
+              --filter "src/.*"
+              --filter "include/vlink/.*"
+              --filter "modules/.*"
+              --filter "c_api/.*"
+              --filter "proxy/.*"
+              --filter "exprtk/.*"
+              --exclude "src/private/.*"
+              --exclude "src/extension/.*"
+              --exclude "include/private/.*"
+              --exclude ".*/test/.*"
+              --exclude "thirdparty/.*"
+              --exclude "examples/.*"
+              --exclude "cli/.*"
+              --exclude ".*/builtin/.*"
+            )
+            gcovr "${gcovr_args[@]}" \
+              -s \
+              --html \
+              --html-nested \
+              --html-syntax-highlighting \
+              --html-theme github.dark-green \
+              --html-title "Code Coverage Report for Project [vlink]" \
+              -o build-coverage/coverage/index.html \
+              | tee build-coverage/coverage/summary.txt
+            python3 - <<'PY'
+            import pathlib
+            import re
+            import sys
+
+            summary = pathlib.Path("build-coverage/coverage/summary.txt").read_text()
+            match = re.search(r"^lines:\s+[\d.]+%\s+\((\d+) out of (\d+)\)", summary, re.M)
+            if not match:
+                sys.exit("Coverage summary does not contain a line coverage total")
+            total = int(match.group(2))
+            if total <= 0:
+                sys.exit("Coverage report is empty")
+            PY
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v7
