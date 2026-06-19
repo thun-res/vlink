@@ -37,7 +37,6 @@ jobs:
         with:
           backend: sccache
           cache-key: vlink-release-windows-msvc-v1
-          cmake-wrapper: "true"
           disable-ipo: "true"
 
       - name: Setup MSVC tools

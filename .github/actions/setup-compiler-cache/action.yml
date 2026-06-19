@@ -121,45 +121,7 @@ runs:
     - name: Start sccache
       if: inputs.backend == 'sccache'
       shell: pwsh
-      env:
-        CMAKE_WRAPPER: ${{ inputs.cmake-wrapper }}
       run: |
         $ErrorActionPreference = "Stop"
         sccache --start-server
         sccache --show-stats
-
-        if ($env:CMAKE_WRAPPER -eq "true") {
-          $RealCMake = (Get-Command cmake.exe).Source
-          $WrapperDir = Join-Path $env:RUNNER_TEMP "vlink-cmake-wrapper"
-          New-Item -ItemType Directory -Force -Path $WrapperDir | Out-Null
-          $Wrapper = Join-Path $WrapperDir "cmake.cmd"
-          @'
-        @echo off
-        setlocal EnableDelayedExpansion
-        set "inject=1"
-        set "have_c=0"
-        set "have_cxx=0"
-        set "have_ipo=0"
-        for %%A in (%*) do (
-          if "%%~A"=="--build" set "inject=0"
-          if "%%~A"=="--install" set "inject=0"
-          if "%%~A"=="-E" set "inject=0"
-          if "%%~A"=="-P" set "inject=0"
-          if "%%~A"=="--version" set "inject=0"
-          if "%%~A"=="--help" set "inject=0"
-          echo %%~A | findstr /B /C:"-DCMAKE_C_COMPILER_LAUNCHER=" >nul && set "have_c=1"
-          echo %%~A | findstr /B /C:"-DCMAKE_CXX_COMPILER_LAUNCHER=" >nul && set "have_cxx=1"
-          echo %%~A | findstr /B /C:"-DENABLE_IPO=" >nul && set "have_ipo=1"
-        )
-        set "extra="
-        if "%inject%"=="1" (
-          if "%have_c%"=="0" set "extra=!extra! -DCMAKE_C_COMPILER_LAUNCHER=sccache"
-          if "%have_cxx%"=="0" set "extra=!extra! -DCMAKE_CXX_COMPILER_LAUNCHER=sccache"
-          if /I "%VLINK_CMAKE_DISABLE_IPO%"=="true" if "%have_ipo%"=="0" set "extra=!extra! -DENABLE_IPO=OFF"
-        )
-        "%VLINK_REAL_CMAKE%" %* !extra!
-        exit /b %ERRORLEVEL%
-        '@ | Set-Content -Path $Wrapper -Encoding ascii
-          "VLINK_REAL_CMAKE=$RealCMake" | Out-File -FilePath $env:GITHUB_ENV -Append
-          $WrapperDir | Out-File -FilePath $env:GITHUB_PATH -Append
-        }
