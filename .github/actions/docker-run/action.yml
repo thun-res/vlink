@@ -41,6 +41,7 @@ runs:
         mkdir -p "${HOME}/.ccache" "${HOME}/.conan2" "${HOME}/.vlink-ci" "${HOME}/.vlink-cpm-cache" "${HOME}/.vlink-docker-home"
         docker run --rm \
           --user "$(id -u):$(id -g)" \
+          --shm-size=2g \
           --volume /etc/passwd:/etc/passwd:ro \
           --volume /etc/group:/etc/group:ro \
           --volume "${GITHUB_WORKSPACE}:/work/vlink" \
