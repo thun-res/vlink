@@ -27,3 +27,8 @@ copy_soname() {
 copy_soname libwayland-client.so.0
 copy_soname libwayland-cursor.so.0
 copy_soname libwayland-egl.so.1
+
+if [ -n "${QT_DIR:-}" ] && [ -f "${QT_DIR}/lib/libQt6WlShellIntegration.so.6" ]; then
+  cp -L "${QT_DIR}/lib/libQt6WlShellIntegration.so.6" "${libdir}/libQt6WlShellIntegration.so.6"
+  echo "Staged runtime library: libQt6WlShellIntegration.so.6"
+fi
