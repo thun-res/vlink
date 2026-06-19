@@ -1,0 +1,143 @@
+name: CI Coverage
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: ci-coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CMAKE_BUILD_PARALLEL_LEVEL: 4
+  CCACHE_COMPRESS: "true"
+  CCACHE_MAXSIZE: 1G
+  CTEST_OUTPUT_ON_FAILURE: 1
+  VLINK_CI_CMAKE_ARGS: >-
+    -G Ninja
+    -DCMAKE_BUILD_TYPE=Debug
+    -DENABLE_IPO=OFF
+    -DBUILD_SHARED_LIBS=ON
+    -DENABLE_CPM=ON
+    -DENABLE_CPM_SQLITE3=ON
+    -DENABLE_CPM_ZSTD=ON
+    -DENABLE_CPM_PROTOBUF=ON
+    -DENABLE_CPM_FLATBUFFERS=ON
+    -DENABLE_CXX_STD_20=OFF
+    -DENABLE_VIEWER=OFF
+    -DENABLE_WEBVIZ=OFF
+    -DENABLE_IOX_ROUDI=OFF
+    -DENABLE_EXAMPLES=OFF
+    -DENABLE_PYTHON_API=OFF
+    -DENABLE_TEST=ON
+    -DENABLE_TEST_COVERAGE=ON
+    -DENABLE_TEST_SANITIZE=OFF
+    -DENABLE_TEST_WARN=ON
+
+jobs:
+  coverage-linux-x86:
+    name: linux-x86_64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare CI image
+        id: ci-image
+        uses: ./.github/actions/prepare-ci-image
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/vlink-ci-ubuntu24:latest
+          required-tools: ccache cmake gcovr ninja python3
+
+      - name: Restore CPM cache
+        uses: ./.github/actions/restore-build-cache
+        with:
+          path: ~/.vlink-cpm-cache
+          key: cpm-coverage-linux-x86_64-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          restore-keys: cpm-coverage-linux-x86_64-
+
+      - name: Setup ccache
+        id: ccache
+        uses: ./.github/actions/setup-compiler-cache
+        with:
+          backend: ccache
+          cache-key: ccache-ci-linux-x86_64-coverage-${{ github.sha }}
+          restore-keys: |
+            ccache-ci-linux-x86_64-coverage-
+          max-size: 1G
+
+      - name: Restore CPM build cache
+        uses: ./.github/actions/restore-build-cache
+        with:
+          path: build-coverage/_deps
+          key: cpm-build-coverage-linux-x86_64-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          restore-keys: cpm-build-coverage-linux-x86_64-v1-
+
+      - name: Configure and build
+        uses: ./.github/actions/docker-run
+        with:
+          image: ${{ steps.ci-image.outputs.image }}
+          command: |
+            set -euo pipefail
+            git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+            test "$(uname -m)" = "x86_64"
+            export CCACHE_DIR="${HOME}/.ccache"
+            export CCACHE_BASEDIR="${GITHUB_WORKSPACE}"
+            ccache --zero-stats || true
+            cmake -S . -B build-coverage ${VLINK_CI_CMAKE_ARGS} \
+              -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+            cmake --build build-coverage --parallel
+            export BUILD_DIR=build-coverage
+            export REQUIRED_CACHE="ENABLE_WEBVIZ=OFF
+            ENABLE_IPO=OFF
+            ENABLE_PYTHON_API=OFF
+            ENABLE_TEST=ON
+            ENABLE_TEST_COVERAGE=ON
+            ENABLE_TEST_SANITIZE=OFF
+            ENABLE_TEST_WARN=ON"
+            python3 .github/scripts/assert-cmake-config.py
+            ccache --show-stats || true
+
+      - name: Save ccache
+        if: always() && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ccache.outputs.cache-path }}
+          key: ${{ steps.ccache.outputs.cache-key }}
+
+      - name: Run tests and generate coverage
+        uses: ./.github/actions/docker-run
+        with:
+          image: ${{ steps.ci-image.outputs.image }}
+          command: |
+            set -euo pipefail
+            git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+            export LD_LIBRARY_PATH="${GITHUB_WORKSPACE}/build-coverage/output/bin:${GITHUB_WORKSPACE}/build-coverage/output/lib:${GITHUB_WORKSPACE}/build-coverage/output/external/lib:${LD_LIBRARY_PATH:-}"
+            export BUILD_DIR=build-coverage
+            export RUN_PYTHON_TESTS=0
+            export SPLIT_SHM_TESTS=1
+            bash .github/scripts/run-posix-ci-tests.sh
+            cmake --build build-coverage --target coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-linux-x86_64
+          path: build-coverage/coverage
+          if-no-files-found: error
