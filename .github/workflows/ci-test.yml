@@ -183,9 +183,10 @@ jobs:
             export ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1
             export LSAN_OPTIONS=print_suppressions=0
             asan_lib="$(gcc -print-file-name=libasan.so)"
-            if [ -f "${asan_lib}" ]; then
-              export LD_PRELOAD="${asan_lib}${LD_PRELOAD:+:${LD_PRELOAD}}"
-            fi
+            stdcxx_lib="$(g++ -print-file-name=libstdc++.so)"
+            test -f "${asan_lib}"
+            test -f "${stdcxx_lib}"
+            export LD_PRELOAD="${asan_lib}:${stdcxx_lib}${LD_PRELOAD:+:${LD_PRELOAD}}"
             export LD_LIBRARY_PATH="${GITHUB_WORKSPACE}/build-test/output/bin:${GITHUB_WORKSPACE}/build-test/output/lib:${GITHUB_WORKSPACE}/build-test/output/external/lib:${LD_LIBRARY_PATH:-}"
             proxy_pid=""
             if [ ! -x build-test/output/bin/vlink-proxy ]; then

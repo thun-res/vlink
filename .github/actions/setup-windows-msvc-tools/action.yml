@@ -49,4 +49,4 @@ runs:
         if ($env:CHECK_GIT_LFS -eq "true") {
           git lfs version
         }
-        cl
+        cl /? | Select-Object -First 1
