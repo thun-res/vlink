@@ -46,8 +46,8 @@ jobs:
             dockerfile: .github/docker/release-ubuntu20/Dockerfile
             osg_platform: linux_x86_64
             qt_arch: linux_gcc_64
-            qt_modules: qtwaylandcompositor
-            qt_cache_suffix: linux_gcc_64-waylandcompositor-ifw-47
+            qt_modules: ""
+            qt_cache_suffix: linux_gcc_64-ifw-47
     steps:
       - name: Checkout
         uses: actions/checkout@v7

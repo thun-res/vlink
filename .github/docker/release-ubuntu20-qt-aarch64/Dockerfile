@@ -48,8 +48,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       libtool \
       libva-dev \
       libvdpau-dev \
-      libwayland-bin \
-      libwayland-dev \
       libx11-dev \
       libx11-xcb-dev \
       libxcb-cursor-dev \
@@ -89,7 +87,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       python3-pip \
       python3-venv \
       tar \
-      wayland-protocols \
       xz-utils \
       yasm \
       zlib1g-dev \
@@ -123,13 +120,10 @@ RUN set -eux; \
     qt_base_url="https://download.qt.io/official_releases/qt/6.8/${QT_VERSION}/submodules"; \
     download "${qt_base_url}/qtbase-everywhere-src-${QT_VERSION}.tar.xz" "qtbase-everywhere-src-${QT_VERSION}.tar.xz"; \
     download "${qt_base_url}/qtsvg-everywhere-src-${QT_VERSION}.tar.xz" "qtsvg-everywhere-src-${QT_VERSION}.tar.xz"; \
-    download "${qt_base_url}/qtwayland-everywhere-src-${QT_VERSION}.tar.xz" "qtwayland-everywhere-src-${QT_VERSION}.tar.xz"; \
     echo "540e9665dbfd9a2cf98e6e4b4aa4bb98  qtbase-everywhere-src-${QT_VERSION}.tar.xz" | md5sum -c -; \
     echo "4748ec76af552d21f2bf2acce45b39af  qtsvg-everywhere-src-${QT_VERSION}.tar.xz" | md5sum -c -; \
-    echo "5215ab60ea5f8fcafb35c7709b4eb386  qtwayland-everywhere-src-${QT_VERSION}.tar.xz" | md5sum -c -; \
     tar -xf "qtbase-everywhere-src-${QT_VERSION}.tar.xz"; \
-    tar -xf "qtsvg-everywhere-src-${QT_VERSION}.tar.xz"; \
-    tar -xf "qtwayland-everywhere-src-${QT_VERSION}.tar.xz"
+    tar -xf "qtsvg-everywhere-src-${QT_VERSION}.tar.xz"
 
 RUN set -eux; \
     cmake -E make_directory qtbase-build; \
@@ -160,26 +154,12 @@ RUN set -eux; \
     cmake --install qtsvg-build
 
 RUN set -eux; \
-    cmake -S "qtwayland-everywhere-src-${QT_VERSION}" -B qtwayland-build -GNinja \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_INSTALL_PREFIX="${QT_DIR}" \
-      -DCMAKE_PREFIX_PATH="${QT_DIR}" \
-      -DQT_BUILD_EXAMPLES=OFF \
-      -DQT_BUILD_TESTS=OFF; \
-    cmake --build qtwayland-build --parallel "${QT_BUILD_PARALLEL}"; \
-    cmake --install qtwayland-build
-
-RUN set -eux; \
     "${QT_DIR}/bin/qmake" -query QT_VERSION; \
     test -f "${QT_DIR}/lib/libQt6Core.so"; \
     test -f "${QT_DIR}/lib/libQt6Widgets.so"; \
     test -f "${QT_DIR}/lib/libQt6OpenGLWidgets.so"; \
     test -f "${QT_DIR}/lib/libQt6Svg.so"; \
-    test -f "${QT_DIR}/lib/libQt6WaylandClient.so"; \
     test -f "${QT_DIR}/plugins/platforms/libqxcb.so"; \
-    test -f "${QT_DIR}/plugins/platforms/libqwayland.so" || \
-      test -f "${QT_DIR}/plugins/platforms/libqwayland-egl.so" || \
-      test -f "${QT_DIR}/plugins/platforms/libqwayland-generic.so"; \
     test -f "${QT_DIR}/plugins/imageformats/libqsvg.so"; \
     rm -rf /tmp/qt-build
 

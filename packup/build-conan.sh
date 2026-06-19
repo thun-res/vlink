@@ -398,40 +398,30 @@ else
         echo "********************************************"
         echo ""
 
-        for _dir in platforms platformthemes platforminputcontexts imageformats sqldrivers \
-                     xcbglintegrations wayland-decoration-client wayland-graphics-integration-client \
-                     wayland-shell-integration;do
+        for _dir in platforms platformthemes platforminputcontexts imageformats sqldrivers xcbglintegrations;do
             cmake -E make_directory $PACKUP_DIR/lib/$_dir/
         done
 
         if [[ ${QT_VERSION} = 5.* ]];then
-            for _lib in Core Gui Widgets DBus Sql OpenGL XcbQpa WaylandClient WaylandCompositor \
-                        WaylandEglClientHwIntegration WaylandEglCompositorHwIntegration Network Svg;do
+            for _lib in Core Gui Widgets DBus Sql OpenGL XcbQpa Network Svg;do
                 cmake -E copy $QT_DIR/lib/libQt5${_lib}.so.+([0-9])                                 $PACKUP_DIR/lib/ 2>/dev/null || true
             done
             cmake -E copy $QT_DIR/lib/libicudata.so.*+([0-9])                                       $PACKUP_DIR/lib/ 2>/dev/null || true
             cmake -E copy $QT_DIR/lib/libicui18n.so.*+([0-9])                                       $PACKUP_DIR/lib/ 2>/dev/null || true
             cmake -E copy $QT_DIR/lib/libicuuc.so.+([0-9])                                          $PACKUP_DIR/lib/ 2>/dev/null || true
             cmake -E copy $QT_DIR/plugins/platforms/libqxcb.so                                      $PACKUP_DIR/lib/platforms/            2>/dev/null || true
-            cmake -E copy $QT_DIR/plugins/platforms/libqwayland-egl.so                              $PACKUP_DIR/lib/platforms/            2>/dev/null || true
-            cmake -E copy $QT_DIR/plugins/platforms/libqwayland-generic.so                          $PACKUP_DIR/lib/platforms/            2>/dev/null || true
             for _fmt in libqgif libqico libqjpeg libqsvg;do
                 cmake -E copy $QT_DIR/plugins/imageformats/${_fmt}.so                               $PACKUP_DIR/lib/imageformats/         2>/dev/null || true
             done
             cmake -E copy $QT_DIR/plugins/sqldrivers/libqsqlite.so                                  $PACKUP_DIR/lib/sqldrivers/           2>/dev/null || true
         elif [[ $QT_VERSION = 6.* ]];then
-            for _lib in Core Gui Widgets DBus Sql OpenGL OpenGLWidgets XcbQpa WaylandClient \
-                        WaylandCompositor WaylandEglClientHwIntegration WaylandEglCompositorHwIntegration \
-                        Network Svg;do
+            for _lib in Core Gui Widgets DBus Sql OpenGL OpenGLWidgets XcbQpa Network Svg;do
                 cmake -E copy $QT_DIR/lib/libQt6${_lib}.so.+([0-9])                                 $PACKUP_DIR/lib/ 2>/dev/null || true
             done
             cmake -E copy $QT_DIR/lib/libicudata.so.+([0-9])                                        $PACKUP_DIR/lib/ 2>/dev/null || true
             cmake -E copy $QT_DIR/lib/libicui18n.so.+([0-9])                                        $PACKUP_DIR/lib/ 2>/dev/null || true
             cmake -E copy $QT_DIR/lib/libicuuc.so.+([0-9])                                          $PACKUP_DIR/lib/ 2>/dev/null || true
             cmake -E copy $QT_DIR/plugins/platforms/libqxcb.so                                      $PACKUP_DIR/lib/platforms/            2>/dev/null || true
-            cmake -E copy $QT_DIR/plugins/platforms/libqwayland.so                                  $PACKUP_DIR/lib/platforms/            2>/dev/null || true
-            cmake -E copy $QT_DIR/plugins/platforms/libqwayland-egl.so                              $PACKUP_DIR/lib/platforms/            2>/dev/null || true
-            cmake -E copy $QT_DIR/plugins/platforms/libqwayland-generic.so                          $PACKUP_DIR/lib/platforms/            2>/dev/null || true
             for _fmt in libqgif libqico libqjpeg libqsvg;do
                 cmake -E copy $QT_DIR/plugins/imageformats/${_fmt}.so                               $PACKUP_DIR/lib/imageformats/         2>/dev/null || true
             done
@@ -441,9 +431,7 @@ else
             exit 3
         fi
 
-        for _dir in platformthemes platforminputcontexts xcbglintegrations \
-                     wayland-decoration-client wayland-graphics-integration-client \
-                     wayland-shell-integration;do
+        for _dir in platformthemes platforminputcontexts xcbglintegrations;do
             src="$QT_DIR/plugins/$_dir"
             dst="$PACKUP_DIR/lib/$_dir"
             [ -d "$src" ] || continue
