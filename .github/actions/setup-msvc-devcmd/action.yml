@@ -100,4 +100,7 @@ runs:
           }
         }
 
-        cl.exe /Bv
+        $Cl = Get-Command cl.exe -ErrorAction Stop
+        $Link = Get-Command link.exe -ErrorAction Stop
+        Write-Host "cl.exe: $($Cl.Source)"
+        Write-Host "link.exe: $($Link.Source)"
