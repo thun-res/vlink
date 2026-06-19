@@ -8,8 +8,9 @@ project(vlink-bag2mcap LANGUAGES CXX)
 add_executable(${PROJECT_NAME} bag2mcap.cc)
 target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/../src ${PROJECT_SOURCE_DIR}/../..)
 target_sources(
-  ${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/../src/foxglove_converter.cc
-                          ${PROJECT_SOURCE_DIR}/../src/foxglove_converter.h
+  ${PROJECT_NAME}
+  PRIVATE ${PROJECT_SOURCE_DIR}/../src/foxglove_converter.cc ${PROJECT_SOURCE_DIR}/../src/foxglove_converter.h
+          ${CMAKE_SOURCE_DIR}/src/private/mcap_import.cc
 )
 target_link_libraries(
   ${PROJECT_NAME}
@@ -24,6 +25,15 @@ target_link_libraries(
 )
 vlink_target_system_includes_from(${PROJECT_NAME} ${protobuf_libs})
 vlink_target_system_includes_from(${PROJECT_NAME} ${flatbuffers_libs})
+
+if(ENABLE_ZSTD)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE "VLINK_ENABLE_ZSTD")
+  if(TARGET zstd::libzstd_shared)
+    target_link_libraries(${PROJECT_NAME} PRIVATE zstd::libzstd_shared)
+  elseif(TARGET zstd::libzstd_static)
+    target_link_libraries(${PROJECT_NAME} PRIVATE zstd::libzstd_static)
+  endif()
+endif()
 
 if(NOT TARGET vlink-exprtk_api)
   find_package(vlink-exprtk_api QUIET)
