@@ -1,0 +1,14 @@
+{
+  "ser": "vehicle.proto.ChassisState",
+  "archetype": "Scalars",
+  "encoding": "protobuf",
+  "timestamp_field": "header.timestamp_ns",
+  "timestamp_unit": "ns",
+  "field_mappings": [
+    {
+      "source": "speed_mps",
+      "target": "value",
+      "expression": "speed_mps * 3.6"
+    }
+  ]
+}

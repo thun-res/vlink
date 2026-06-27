@@ -1,0 +1,84 @@
+/**
+ * Copyright (c) 2023- ThunderSoft/ThunderX Auto
+ * All Rights Reserved by Thunder Software Technology Co., Ltd and its affiliates.
+ * You may not use, copy, distribute, modify, transmit in any form this file
+ * except in compliance with ThunderSoft in writing by applicable law.
+ */
+
+cc_defaults {
+    name: "libcyclonedds-defaults",
+    cflags: [
+        "-Wno-unused-parameter",
+    ],
+}
+
+cc_library_shared {
+    name: "libcyclonedds",
+    defaults: [
+        "libcyclonedds-defaults",
+    ],
+    vendor_available: true,
+    srcs: [
+        "src/core/ddsc/src/*.c",
+        "src/core/ddsi/*.c",
+        "src/core/ddsi/src/*.c",
+        "src/ddsrt/src/atomics.c",
+        "src/ddsrt/src/avl.c",
+        "src/ddsrt/src/bswap.c",
+        "src/ddsrt/src/io.c",
+        "src/ddsrt/src/log.c",
+        "src/ddsrt/src/retcode.c",
+        "src/ddsrt/src/strtod.c",
+        "src/ddsrt/src/strtol.c",
+        "src/ddsrt/src/mh3.c",
+        "src/ddsrt/src/environ.c",
+        "src/ddsrt/src/expand_vars.c",
+        "src/ddsrt/src/fibheap.c",
+        "src/ddsrt/src/hopscotch.c",
+        "src/ddsrt/src/circlist.c",
+        "src/ddsrt/src/threads.c",
+        "src/ddsrt/src/string.c",
+        "src/ddsrt/src/sockets.c",
+        "src/ddsrt/src/md5.c",
+        "src/ddsrt/src/xmlparser.c",
+        "src/ddsrt/src/ifaddrs.c",
+        "src/ddsrt/src/cdtors.c",
+        "src/ddsrt/src/random.c",
+        "src/ddsrt/src/time.c",
+        "src/ddsrt/src/ifaddrs/posix/ifaddrs.c",
+        "src/ddsrt/src/sockets/posix/socket.c",
+        "src/ddsrt/src/sockets/posix/gethostname.c",
+        "src/ddsrt/src/heap/posix/heap.c",
+        "src/ddsrt/src/dynlib/posix/dynlib.c",
+        "src/ddsrt/src/environ/posix/environ.c",
+        "src/ddsrt/src/filesystem/posix/filesystem.c",
+        "src/ddsrt/src/process/posix/process.c",
+        "src/ddsrt/src/random/posix/random.c",
+        "src/ddsrt/src/sync/posix/sync.c",
+        "src/ddsrt/src/threads/posix/threads.c",
+        "src/ddsrt/src/time/posix/time.c",
+    ],
+    exclude_srcs: [
+        "src/core/ddsc/src/shm_monitor.c",
+        "src/core/ddsi/src/ddsi_shm_transport.c",
+        "src/core/ddsi/src/ddsi_security_msg.c",
+        "src/core/ddsi/src/ddsi_security_exchange.c",
+        "src/core/ddsi/src/ddsi_cdrstream_keys.part.c",
+        "src/core/ddsi/src/ddsi_cdrstream_write.part.c",
+    ],
+    local_include_dirs: [
+        "src/core/ddsc/include",
+        "src/core/ddsc/src",
+        "src/core/ddsi/include",
+        "src/core/ddsi/src",
+        "src/ddsrt/include",
+        "src/ddsrt/src",
+        "android",
+    ],
+    export_include_dirs: [
+        "src/core/ddsc/include",
+        "src/core/ddsi/include",
+        "src/ddsrt/include",
+        "android",
+    ],
+}

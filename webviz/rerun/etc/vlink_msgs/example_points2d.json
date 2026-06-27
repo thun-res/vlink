@@ -1,0 +1,10 @@
+{
+  "ser": "vision.proto.Keypoints2D",
+  "archetype": "Points2D",
+  "encoding": "protobuf",
+  "field_mappings": [
+    { "source": "points", "target": "points" },
+    { "source": "x", "target": "point_x" },
+    { "source": "y", "target": "point_y" }
+  ]
+}

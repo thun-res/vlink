@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" role="img" aria-label="VLink automotive SOA / SOME/IP bus">
+  <defs>
+    <linearGradient id="s-bg" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#0B1228"/><stop offset="1" stop-color="#070B18"/>
+    </linearGradient>
+    <linearGradient id="s-bus" x1="0" x2="1">
+      <stop offset="0"   stop-color="#345af6" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#4faafd" stop-opacity="0.95"/>
+      <stop offset="1"   stop-color="#345af6" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="s-glow"><feGaussianBlur stdDeviation="3.5"/></filter>
+  </defs>
+
+  <rect width="800" height="450" fill="url(#s-bg)"/>
+  <!-- perspective floor -->
+  <g stroke="#1a2650" stroke-width="0.6" opacity="0.5">
+    <path d="M 0 430 L 800 430"/>
+    <path d="M 50 400 L 750 400"/>
+    <path d="M 110 370 L 690 370"/>
+    <path d="M 170 340 L 630 340"/>
+  </g>
+
+  <!-- vehicle silhouette (background) -->
+  <g opacity="0.18" fill="none" stroke="#4faafd" stroke-width="1.5">
+    <path d="M 140 270 Q 160 170 280 155 L 520 155 Q 640 170 660 270 L 640 300 L 160 300 Z"/>
+    <circle cx="230" cy="305" r="28"/>
+    <circle cx="570" cy="305" r="28"/>
+  </g>
+
+  <!-- Ethernet backbone bus -->
+  <g>
+    <line x1="40" y1="225" x2="760" y2="225" stroke="url(#s-bus)" stroke-width="4"/>
+    <line x1="40" y1="225" x2="760" y2="225" stroke="#4faafd" stroke-width="1" opacity="0.5" stroke-dasharray="5 10">
+      <animate attributeName="stroke-dashoffset" from="0" to="-30" dur="1.2s" repeatCount="indefinite"/>
+    </line>
+    <text x="44" y="216" fill="#4faafd" font-size="11" font-family="JetBrains Mono, monospace" letter-spacing="2">SOME/IP · ETHERNET BACKBONE · 1 Gbps</text>
+  </g>
+
+  <!-- 8 ECUs (4 top, 4 bottom) -->
+  <g font-family="JetBrains Mono, monospace" font-size="10" text-anchor="middle">
+    <!-- TOP ECUs -->
+    <g>
+      <rect x="70"  y="80" width="110" height="70" rx="6" fill="#101a3c" stroke="#4faafd" stroke-width="1.3"/>
+      <text x="125" y="100" fill="#C8D1EE" font-weight="700">ECU · ADAS</text>
+      <text x="125" y="116" fill="#5A6687" font-size="9">someip://adas/obs</text>
+      <circle cx="100" cy="135" r="4" fill="#00e5b0"><animate attributeName="opacity" values="1;0.3;1" dur="1.3s" repeatCount="indefinite"/></circle>
+      <circle cx="120" cy="135" r="4" fill="#4faafd"><animate attributeName="opacity" values="0.3;1;0.3" dur="1.3s" repeatCount="indefinite"/></circle>
+      <circle cx="140" cy="135" r="4" fill="#ffd166"><animate attributeName="opacity" values="1;0.3;1" dur="1.3s" begin="0.4s" repeatCount="indefinite"/></circle>
+      <line x1="125" y1="150" x2="125" y2="225" stroke="#4faafd" stroke-opacity="0.35"/>
+    </g>
+
+    <g>
+      <rect x="230" y="80" width="110" height="70" rx="6" fill="#101a3c" stroke="#4faafd" stroke-width="1.3"/>
+      <text x="285" y="100" fill="#C8D1EE" font-weight="700">ECU · Domain</text>
+      <text x="285" y="116" fill="#5A6687" font-size="9">someip://dcu/ctrl</text>
+      <g transform="translate(285 135)">
+        <circle r="6" fill="none" stroke="#4faafd" stroke-width="1.5"/>
+        <circle r="2.5" fill="#4faafd"/>
+      </g>
+      <line x1="285" y1="150" x2="285" y2="225" stroke="#4faafd" stroke-opacity="0.35"/>
+    </g>
+
+    <g>
+      <rect x="460" y="80" width="110" height="70" rx="6" fill="#101a3c" stroke="#00e5b0" stroke-width="1.3"/>
+      <text x="515" y="100" fill="#C8D1EE" font-weight="700">ECU · Cockpit</text>
+      <text x="515" y="116" fill="#5A6687" font-size="9">someip://hmi/screen</text>
+      <!-- mini bar chart -->
+      <g>
+        <rect x="488" y="130" width="5" height="10" fill="#00e5b0"><animate attributeName="height" values="6;16;6" dur="1.8s" repeatCount="indefinite"/><animate attributeName="y" values="134;124;134" dur="1.8s" repeatCount="indefinite"/></rect>
+        <rect x="498" y="128" width="5" height="12" fill="#00e5b0"><animate attributeName="height" values="10;14;10" dur="1.8s" begin="0.3s" repeatCount="indefinite"/></rect>
+        <rect x="508" y="126" width="5" height="14" fill="#00e5b0"><animate attributeName="height" values="14;8;14"  dur="1.8s" begin="0.6s" repeatCount="indefinite"/></rect>
+        <rect x="518" y="130" width="5" height="10" fill="#00e5b0"><animate attributeName="height" values="10;18;10" dur="1.8s" begin="0.9s" repeatCount="indefinite"/></rect>
+        <rect x="528" y="128" width="5" height="12" fill="#00e5b0"><animate attributeName="height" values="12;6;12"  dur="1.8s" begin="1.2s" repeatCount="indefinite"/></rect>
+        <rect x="538" y="132" width="5" height="8"  fill="#00e5b0"><animate attributeName="height" values="8;14;8"   dur="1.8s" begin="1.5s" repeatCount="indefinite"/></rect>
+      </g>
+      <line x1="515" y1="150" x2="515" y2="225" stroke="#4faafd" stroke-opacity="0.35"/>
+    </g>
+
+    <g>
+      <rect x="620" y="80" width="110" height="70" rx="6" fill="#101a3c" stroke="#ffd166" stroke-width="1.3"/>
+      <text x="675" y="100" fill="#C8D1EE" font-weight="700">ECU · Gateway</text>
+      <text x="675" y="116" fill="#5A6687" font-size="9">someip://gw/ota</text>
+      <g transform="translate(675 135)">
+        <circle r="7" fill="none" stroke="#ffd166" stroke-width="1">
+          <animate attributeName="r" values="5;11;5" dur="2s" repeatCount="indefinite"/>
+          <animate attributeName="stroke-opacity" values="0.9;0;0.9" dur="2s" repeatCount="indefinite"/>
+        </circle>
+        <circle r="3" fill="#ffd166"/>
+      </g>
+      <line x1="675" y1="150" x2="675" y2="225" stroke="#4faafd" stroke-opacity="0.35"/>
+    </g>
+
+    <!-- BOTTOM ECUs -->
+    <g>
+      <line x1="125" y1="225" x2="125" y2="300" stroke="#4faafd" stroke-opacity="0.35"/>
+      <rect x="70"  y="300" width="110" height="70" rx="6" fill="#101a3c" stroke="#00e5b0" stroke-width="1.3"/>
+      <text x="125" y="322" fill="#C8D1EE" font-weight="700">ECU · Camera</text>
+      <text x="125" y="338" fill="#5A6687" font-size="9">shm://cam/front</text>
+      <rect x="95" y="348" width="60" height="12" rx="2" fill="#070d22" stroke="#00e5b0" stroke-opacity="0.45"/>
+      <rect x="97" y="350" width="22" height="8" fill="#00e5b0" opacity="0.7">
+        <animate attributeName="width" values="6;56;6" dur="2.6s" repeatCount="indefinite"/>
+      </rect>
+    </g>
+
+    <g>
+      <line x1="285" y1="225" x2="285" y2="300" stroke="#4faafd" stroke-opacity="0.35"/>
+      <rect x="230" y="300" width="110" height="70" rx="6" fill="#101a3c" stroke="#00e5b0" stroke-width="1.3"/>
+      <text x="285" y="322" fill="#C8D1EE" font-weight="700">ECU · LiDAR</text>
+      <text x="285" y="338" fill="#5A6687" font-size="9">shm://lidar/pts</text>
+      <g transform="translate(285 353)">
+        <circle r="6" fill="none" stroke="#00e5b0" stroke-width="1"><animate attributeName="r" values="2;10;2" dur="1.4s" repeatCount="indefinite"/></circle>
+        <circle r="2" fill="#00e5b0"/>
+      </g>
+    </g>
+
+    <g>
+      <line x1="515" y1="225" x2="515" y2="300" stroke="#4faafd" stroke-opacity="0.35"/>
+      <rect x="460" y="300" width="110" height="70" rx="6" fill="#101a3c" stroke="#4faafd" stroke-width="1.3"/>
+      <text x="515" y="322" fill="#C8D1EE" font-weight="700">ECU · Brake</text>
+      <text x="515" y="338" fill="#5A6687" font-size="9">dds://brake/cmd</text>
+      <text x="515" y="358" fill="#ff6b6b" font-size="9">SAFETY · ASIL-D</text>
+    </g>
+
+    <g>
+      <line x1="675" y1="225" x2="675" y2="300" stroke="#4faafd" stroke-opacity="0.35"/>
+      <rect x="620" y="300" width="110" height="70" rx="6" fill="#101a3c" stroke="#4faafd" stroke-width="1.3"/>
+      <text x="675" y="322" fill="#C8D1EE" font-weight="700">ECU · V2X</text>
+      <text x="675" y="338" fill="#5A6687" font-size="9">zenoh://cloud</text>
+      <g transform="translate(675 353)">
+        <path d="M -7 3 Q 0 -4 7 3" stroke="#4faafd" stroke-width="1" fill="none"/>
+        <path d="M -4 4 Q 0 0 4 4"  stroke="#4faafd" stroke-width="1" fill="none"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- packets flying along the bus -->
+  <g>
+    <circle r="5" fill="#4faafd" filter="url(#s-glow)">
+      <animate attributeName="cx" from="40"  to="760" dur="2.2s" repeatCount="indefinite"/>
+      <animate attributeName="cy" values="225;225" dur="2.2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1" dur="2.2s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="5" fill="#00e5b0" filter="url(#s-glow)">
+      <animate attributeName="cx" from="40"  to="760" dur="2.2s" begin="0.7s" repeatCount="indefinite"/>
+      <animate attributeName="cy" values="225;225" dur="2.2s" begin="0.7s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1" dur="2.2s" begin="0.7s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="5" fill="#ffd166" filter="url(#s-glow)">
+      <animate attributeName="cx" from="760" to="40"  dur="2.4s" begin="0.3s" repeatCount="indefinite"/>
+      <animate attributeName="cy" values="225;225" dur="2.4s" begin="0.3s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1" dur="2.4s" begin="0.3s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="5" fill="#4faafd" filter="url(#s-glow)">
+      <animate attributeName="cx" from="760" to="40"  dur="2.4s" begin="1.2s" repeatCount="indefinite"/>
+      <animate attributeName="cy" values="225;225" dur="2.4s" begin="1.2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1" dur="2.4s" begin="1.2s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <!-- Caption -->
+  <g font-family="JetBrains Mono, monospace" font-size="10">
+    <text x="40" y="34" fill="#4faafd" letter-spacing="2">VLINK · AUTOMOTIVE SOA</text>
+    <text x="40" y="50" fill="#5A6687">8 ECUs · SOME/IP backbone · debug→prod one URL</text>
+  </g>
+</svg>

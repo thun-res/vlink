@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily timer: update the vlink git repository at midnight
+Documentation=file:@REPO_DIR@/tools/systemd/README.md
+
+[Timer]
+OnCalendar=*-*-* 00:00:00
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

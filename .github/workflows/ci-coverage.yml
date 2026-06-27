@@ -1,0 +1,167 @@
+name: CI Coverage
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      force_run:
+        required: false
+        type: boolean
+        default: false
+      docker_image:
+        required: false
+        type: string
+        default: ''
+  schedule:
+    - cron: '30 18 * * 0'
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: ci-coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CMAKE_GENERATOR: Ninja
+  VLINK_UBUNTU22_IMAGE: ${{ inputs.docker_image || format('ghcr.io/{0}/vlink-ubuntu22:latest', github.repository_owner) }}
+  VLINK_CI_CMAKE_ARGS: >-
+    -DCMAKE_BUILD_TYPE=Debug
+    -DENABLE_CCACHE_BUILD=ON
+    -DBUILD_SHARED_LIBS=ON
+    -DENABLE_CPM=ON
+    -DENABLE_CPM_SQLITE3=ON
+    -DENABLE_CPM_ZSTD=ON
+    -DENABLE_CPM_PROTOBUF=ON
+    -DENABLE_CPM_FLATBUFFERS=ON
+    -DENABLE_CXX_STD_20=OFF
+    -DENABLE_VIEWER=OFF
+    -DENABLE_WEBVIZ=OFF
+    -DENABLE_IOX_ROUDI=OFF
+    -DENABLE_EXAMPLES=OFF
+    -DENABLE_PYTHON_API=OFF
+    -DENABLE_TEST=ON
+    -DENABLE_TEST_COVERAGE=ON
+    -DENABLE_TEST_SANITIZE=OFF
+    -DENABLE_TEST_WARN=ON
+
+jobs:
+  gate:
+    name: check-recent-commits
+    runs-on: ubuntu-22.04
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check for commits in the last 8 days
+        id: check
+        run: |
+          source .github/scripts/github-progress.sh
+          vlink_progress_init "CI coverage gate" \
+            "Resolve trigger" \
+            "Check recent commits"
+
+          vlink_progress_start "Resolve trigger"
+          if [ "${{ inputs.force_run || (github.event_name == 'workflow_dispatch') || (github.event_name == 'release') }}" = "true" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "Forced, manual dispatch, or release: running coverage."
+            vlink_progress_complete "Resolve trigger"
+            vlink_progress_skip "Check recent commits"
+            exit 0
+          fi
+          vlink_progress_complete "Resolve trigger"
+
+          vlink_progress_start "Check recent commits"
+          if recent_commits="$(git log --since='8 days ago' --oneline)"; then
+            :
+          else
+            status=$?
+            vlink_progress_fail "Check recent commits"
+            exit "${status}"
+          fi
+          if [ -n "${recent_commits}" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "Commits found in the last 8 days: running coverage."
+            vlink_progress_complete "Check recent commits"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "No commits in the last 8 days: skipping coverage."
+            vlink_progress_complete "Check recent commits"
+          fi
+
+  coverage-linux-x86:
+    name: linux-x86_64
+    needs: gate
+    if: needs.gate.outputs.should_run == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore CPM cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.vlink-cpm-cache
+          key: cpm-ci-linux-x86_64-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          restore-keys: cpm-ci-linux-x86_64-
+
+      - name: Restore ccache
+        uses: actions/cache@v5
+        with:
+          path: ~/.ccache
+          key: ccache-ci-linux-x86_64-coverage-v3-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'conanfile.py', 'packup/patch/*.patch') }}
+          restore-keys: |
+            ccache-ci-linux-x86_64-coverage-
+
+      - name: Configure, build, test, and coverage
+        run: bash .github/scripts/docker-run.sh "${VLINK_UBUNTU22_IMAGE}" bash .github/scripts/ci-coverage.sh
+
+      - name: Upload coverage report
+        id: upload_coverage
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-linux-x86_64
+          overwrite: true
+          path: build-coverage/coverage
+          if-no-files-found: error
+
+      - name: Upload coverage report (retry)
+        if: steps.upload_coverage.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-linux-x86_64
+          overwrite: true
+          path: build-coverage/coverage
+          if-no-files-found: error
+
+      - name: Email coverage result
+        if: always()
+        continue-on-error: true
+        env:
+          JOB_STATUS: ${{ job.status }}
+          VLINK_NOTIFY_SMTP_HOST: ${{ secrets.VLINK_NOTIFY_SMTP_HOST }}
+          VLINK_NOTIFY_SMTP_PORT: ${{ secrets.VLINK_NOTIFY_SMTP_PORT || vars.VLINK_NOTIFY_SMTP_PORT }}
+          VLINK_NOTIFY_SMTP_USERNAME: ${{ secrets.VLINK_NOTIFY_SMTP_USERNAME }}
+          VLINK_NOTIFY_SMTP_PASSWORD: ${{ secrets.VLINK_NOTIFY_SMTP_PASSWORD }}
+          VLINK_NOTIFY_SMTP_SSL: ${{ secrets.VLINK_NOTIFY_SMTP_SSL || vars.VLINK_NOTIFY_SMTP_SSL }}
+          VLINK_NOTIFY_SMTP_STARTTLS: ${{ secrets.VLINK_NOTIFY_SMTP_STARTTLS || vars.VLINK_NOTIFY_SMTP_STARTTLS }}
+          VLINK_NOTIFY_EMAIL_FROM: ${{ secrets.VLINK_NOTIFY_EMAIL_FROM || vars.VLINK_NOTIFY_EMAIL_FROM }}
+          VLINK_NOTIFY_EMAIL_TO: ${{ secrets.VLINK_NOTIFY_EMAIL_TO || vars.VLINK_NOTIFY_EMAIL_TO }}
+        run: bash .github/scripts/notify-coverage.sh

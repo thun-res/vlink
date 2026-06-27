@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=VLink Player
+Terminal=false
+Exec=run_player.sh %f
+Icon=vlink-player.png
+MimeType=application/vlink-vdb;application/vlink-vdbx;application/vlink-vcap;application/vlink-vcapx;
+Categories=Development

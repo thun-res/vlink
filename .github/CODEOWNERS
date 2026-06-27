@@ -1,0 +1,18 @@
+# Code owners for vlink — https://docs.github.com/articles/about-code-owners
+#
+# These owners are requested for review automatically when a matching path
+# changes. The last matching pattern wins, so keep more specific rules below
+# the global default.
+
+# Default owner for everything in the repository.
+*       @thun-res
+
+# Add area-specific owners here as the team grows. Examples (commented out
+# until there is a second maintainer to delegate to):
+#   /proxy/        @some-runtime-maintainer
+#   /viewer/       @some-graphics-maintainer
+#   /webviz/       @some-graphics-maintainer
+#   /python_api/   @some-bindings-maintainer
+#   /c_api/        @some-bindings-maintainer
+#   /.github/      @some-ci-maintainer
+#   /packup/       @some-release-maintainer

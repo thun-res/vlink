@@ -1,0 +1,69 @@
+{
+  "name": "vlink-rerun",
+  "mode": "spawn",
+  "address": "rerun+http://127.0.0.1:9876/proxy",
+  "bind_ip": "0.0.0.0",
+  "port": 9876,
+  "save_path": "",
+  "recording_id": "",
+  "filter": {
+    "whitelist": [],
+    "blacklist": []
+  },
+  "proxy": {
+    "interface_mode": "proxy_api",
+    "role": "controller",
+    "domain_id": 0,
+    "dds_impl": "dds",
+    "native": false,
+    "enable_tcp": false,
+    "bind_ip": "",
+    "peer_ip": "",
+    "buf_size": 0,
+    "mtu_size": 0,
+    "api": {
+      "security_key": "",
+      "reliable": false,
+      "direct": false,
+      "match_version": true
+    },
+    "server": {
+      "max_packet_size": 4.0,
+      "use_iox": false,
+      "iox_config": "",
+      "iox_strategy": 2,
+      "iox_monitoring": true
+    }
+  },
+  "proto_dir": "",
+  "fbs_dir": "",
+  "schema_plugin_path": "",
+  "convert_plugin_path": "",
+  "convert_plugin_config": "",
+  "spawn_memory_limit": "75%",
+  "spawn_server_memory_limit": "1GiB",
+  "spawn_hide_welcome_screen": false,
+  "spawn_detach_process": true,
+  "spawn_executable_name": "rerun",
+  "spawn_executable_path": "",
+  "serve_memory_limit": "1GiB",
+  "playback_behavior": "oldest_first",
+  "sequence_timeline": "seq",
+  "timestamp_timeline": "timestamp",
+  "use_sequence_timeline": true,
+  "use_timestamp_timeline": true,
+  "vlink_msgs": [
+    "vlink_msgs/example_gps.json",
+    "vlink_msgs/example_imu.json",
+    "vlink_msgs/example_obstacle.json",
+    "vlink_msgs/example_scalars.json",
+    "vlink_msgs/example_text_log.json",
+    "vlink_msgs/example_line_strips3d.json",
+    "vlink_msgs/example_points2d.json",
+    "vlink_msgs/example_pinhole.json",
+    "vlink_msgs/example_view_coordinates.json",
+    "vlink_msgs/example_asset3d.json",
+    "vlink_msgs/example_tensor.json",
+    "vlink_msgs/example_bar_chart.json"
+  ]
+}

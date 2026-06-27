@@ -1,0 +1,60 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="bytes-ownership" name="Bytes Ownership Modes">
+    <mxGraphModel dx="1000" dy="600" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="600" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Bytes Ownership Modes" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="18" width="920" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" value="Five factory methods, three ownership semantics" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="40" y="54" width="920" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Center -->
+        <mxCell id="center" value="&lt;b style=&quot;font-size:16px;&quot;&gt;Bytes&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;128 B object &#183; 96 B SBO + optional heap&lt;br/&gt;5 factory methods select ownership semantics&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;strokeWidth=2;fontFamily=Helvetica;fontSize=13;fontColor=#ffffff;fontStyle=1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="340" y="240" width="320" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- Top row: 3 cards -->
+        <mxCell id="c1" value="&lt;b style=&quot;font-family:Courier New;&quot;&gt;Bytes::create(n)&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;Owns memory &#183; deep copy on copy&lt;br/&gt;Fresh allocation (SBO &#8804; 96 B, heap otherwise)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="280" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="c2" value="&lt;b style=&quot;font-family:Courier New;&quot;&gt;Bytes::shallow_copy(ptr, size)&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;Non-owning &#183; pointer alias&lt;br/&gt;Zero-copy wrap of external buffer&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="360" y="96" width="280" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="c3" value="&lt;b style=&quot;font-family:Courier New;&quot;&gt;Bytes::deep_copy(ptr, size)&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;Owns memory &#183; deep copy on copy&lt;br/&gt;Owned copy of external buffer&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="680" y="96" width="280" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Bottom row: 2 cards -->
+        <mxCell id="c4" value="&lt;b style=&quot;font-family:Courier New;&quot;&gt;Bytes::loan_internal(ptr, size)&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;Non-owning (loaned) &#183; pointer alias&lt;br/&gt;Transport loan buffer (shm/shm2/zenoh SHM)&lt;br/&gt;Must NOT be freed by VLink&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#e65100;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="140" y="390" width="310" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="c5" value="&lt;b style=&quot;font-family:Courier New;&quot;&gt;Bytes::shallow_copy_ptr(ptr)&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;Non-owning &#183; pointer alias (size == 0)&lt;br/&gt;Wrap opaque pointer&lt;br/&gt;Loan-return &#183; is_ptr() scenarios&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="550" y="390" width="310" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows center -> top -->
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;exitX=0.25;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="center" target="c1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="center" target="c2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;exitX=0.75;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="center" target="c3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- Arrows center -> bottom -->
+        <mxCell id="e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;exitX=0.3;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="center" target="c4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;exitX=0.7;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="center" target="c5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

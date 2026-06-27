@@ -1,0 +1,6 @@
+format:
+  tab_size: 2
+  line_width: 120
+  separate_ctrl_name_with_space: False
+  separate_fn_name_with_space: False
+  dangle_parens: True

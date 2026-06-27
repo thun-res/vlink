@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+    <mime-type type="application/vlink-vdb">
+        <comment>VLINK VDB File</comment>
+        <glob pattern="*.vdb"/>
+        <icon name="vlink-vdb"/>
+    </mime-type>
+    <mime-type type="application/vlink-vdbx">
+        <comment>VLINK VDBX File</comment>
+        <glob pattern="*.vdbx"/>
+        <icon name="vlink-vdbx"/>
+    </mime-type>
+    <mime-type type="application/vlink-vcap">
+        <comment>VLINK VCAP File</comment>
+        <glob pattern="*.vcap"/>
+        <icon name="vlink-vcap"/>
+    </mime-type>
+    <mime-type type="application/vlink-vcapx">
+        <comment>VLINK VCAPX File</comment>
+        <glob pattern="*.vcapx"/>
+        <icon name="vlink-vcapx"/>
+    </mime-type>
+</mime-info>

@@ -1,0 +1,185 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" role="img" aria-label="VLink fleet cloud-edge telemetry">
+  <defs>
+    <linearGradient id="c-bg" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#0B1228"/><stop offset="1" stop-color="#070B18"/>
+    </linearGradient>
+    <radialGradient id="c-halo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#4faafd" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#4faafd" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="c-glow"><feGaussianBlur stdDeviation="3"/></filter>
+  </defs>
+
+  <rect width="800" height="450" fill="url(#c-bg)"/>
+  <ellipse cx="400" cy="225" rx="340" ry="220" fill="url(#c-halo)"/>
+
+  <!-- Wireframe globe -->
+  <g transform="translate(400 225)" fill="none" stroke="#1a2650" stroke-width="1">
+    <circle r="160"/>
+    <ellipse rx="160" ry="50"/>
+    <ellipse rx="160" ry="100"/>
+    <ellipse rx="160" ry="140"/>
+    <ellipse rx="140" ry="160" stroke="#1a2650"/>
+    <ellipse rx="90"  ry="160"/>
+    <ellipse rx="40"  ry="160"/>
+    <circle r="160" stroke="#4faafd" stroke-opacity="0.5"/>
+    <!-- slow orbit hint -->
+    <circle r="160" stroke="#4faafd" stroke-dasharray="2 200" stroke-width="2" opacity="0.8">
+      <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="22s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <!-- Central cloud -->
+  <g transform="translate(400 225)">
+    <circle r="40" fill="#0b1228" stroke="#4faafd" stroke-width="1.5"/>
+    <circle r="40" fill="none" stroke="#4faafd" stroke-opacity="0.6">
+      <animate attributeName="r" values="40;56;40" dur="3.2s" repeatCount="indefinite"/>
+      <animate attributeName="stroke-opacity" values="0.6;0;0.6" dur="3.2s" repeatCount="indefinite"/>
+    </circle>
+    <!-- cloud icon -->
+    <path d="M -16 0 Q -22 -10 -12 -14 Q -6 -22 6 -18 Q 18 -22 20 -10 Q 28 -6 22 6 L -16 6 Z" fill="#4faafd" opacity="0.85"/>
+    <text y="22" text-anchor="middle" fill="#C8D1EE" font-family="JetBrains Mono, monospace" font-size="10" font-weight="700" letter-spacing="2">CLOUD</text>
+  </g>
+
+  <!-- Fleet of vehicles orbiting -->
+  <g>
+    <!-- 8 vehicles on circle, staggered animation -->
+    <g transform="translate(400 225)">
+      <g>
+        <animateTransform attributeName="transform" type="rotate" from="0"   to="360" dur="36s" repeatCount="indefinite"/>
+        <g transform="translate(160 0)">
+          <rect x="-8" y="-5" width="16" height="10" rx="2" fill="#1a2a5e" stroke="#4faafd"/>
+          <circle r="7" fill="none" stroke="#4faafd" stroke-opacity="0.6">
+            <animate attributeName="r" values="3;9;3" dur="1.4s" repeatCount="indefinite"/>
+            <animate attributeName="stroke-opacity" values="0.7;0;0.7" dur="1.4s" repeatCount="indefinite"/>
+          </circle>
+          <text y="22" fill="#C8D1EE" font-size="9" font-family="JetBrains Mono, monospace" text-anchor="middle">car-01</text>
+        </g>
+      </g>
+      <g>
+        <animateTransform attributeName="transform" type="rotate" from="45"  to="405" dur="36s" repeatCount="indefinite"/>
+        <g transform="translate(160 0)">
+          <rect x="-8" y="-5" width="16" height="10" rx="2" fill="#1a2a5e" stroke="#00e5b0"/>
+          <circle r="6" fill="none" stroke="#00e5b0" stroke-opacity="0.6">
+            <animate attributeName="r" values="3;9;3" dur="1.4s" begin="0.2s" repeatCount="indefinite"/>
+          </circle>
+        </g>
+      </g>
+      <g>
+        <animateTransform attributeName="transform" type="rotate" from="90"  to="450" dur="36s" repeatCount="indefinite"/>
+        <g transform="translate(160 0)">
+          <rect x="-8" y="-5" width="16" height="10" rx="2" fill="#1a2a5e" stroke="#ffd166"/>
+          <circle r="6" fill="none" stroke="#ffd166" stroke-opacity="0.6">
+            <animate attributeName="r" values="3;9;3" dur="1.4s" begin="0.4s" repeatCount="indefinite"/>
+          </circle>
+        </g>
+      </g>
+      <g>
+        <animateTransform attributeName="transform" type="rotate" from="135" to="495" dur="36s" repeatCount="indefinite"/>
+        <g transform="translate(160 0)">
+          <rect x="-8" y="-5" width="16" height="10" rx="2" fill="#1a2a5e" stroke="#4faafd"/>
+        </g>
+      </g>
+      <g>
+        <animateTransform attributeName="transform" type="rotate" from="180" to="540" dur="36s" repeatCount="indefinite"/>
+        <g transform="translate(160 0)">
+          <rect x="-8" y="-5" width="16" height="10" rx="2" fill="#1a2a5e" stroke="#4faafd"/>
+          <circle r="6" fill="none" stroke="#4faafd" stroke-opacity="0.5">
+            <animate attributeName="r" values="3;9;3" dur="1.4s" begin="0.8s" repeatCount="indefinite"/>
+          </circle>
+        </g>
+      </g>
+      <g>
+        <animateTransform attributeName="transform" type="rotate" from="225" to="585" dur="36s" repeatCount="indefinite"/>
+        <g transform="translate(160 0)">
+          <rect x="-8" y="-5" width="16" height="10" rx="2" fill="#1a2a5e" stroke="#00e5b0"/>
+        </g>
+      </g>
+      <g>
+        <animateTransform attributeName="transform" type="rotate" from="270" to="630" dur="36s" repeatCount="indefinite"/>
+        <g transform="translate(160 0)">
+          <rect x="-8" y="-5" width="16" height="10" rx="2" fill="#1a2a5e" stroke="#ffd166"/>
+          <circle r="6" fill="none" stroke="#ffd166" stroke-opacity="0.5">
+            <animate attributeName="r" values="3;9;3" dur="1.4s" begin="1.1s" repeatCount="indefinite"/>
+          </circle>
+        </g>
+      </g>
+      <g>
+        <animateTransform attributeName="transform" type="rotate" from="315" to="675" dur="36s" repeatCount="indefinite"/>
+        <g transform="translate(160 0)">
+          <rect x="-8" y="-5" width="16" height="10" rx="2" fill="#1a2a5e" stroke="#4faafd"/>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <!-- Data streaming lines (center to fleet, spawn-driven) -->
+  <g>
+    <line x1="400" y1="225" x2="560" y2="225" stroke="#4faafd" stroke-opacity="0.12"/>
+    <line x1="400" y1="225" x2="513" y2="338" stroke="#4faafd" stroke-opacity="0.12"/>
+    <line x1="400" y1="225" x2="400" y2="385" stroke="#4faafd" stroke-opacity="0.12"/>
+    <line x1="400" y1="225" x2="287" y2="338" stroke="#4faafd" stroke-opacity="0.12"/>
+    <line x1="400" y1="225" x2="240" y2="225" stroke="#4faafd" stroke-opacity="0.12"/>
+    <line x1="400" y1="225" x2="287" y2="112" stroke="#4faafd" stroke-opacity="0.12"/>
+    <line x1="400" y1="225" x2="400" y2="65"  stroke="#4faafd" stroke-opacity="0.12"/>
+    <line x1="400" y1="225" x2="513" y2="112" stroke="#4faafd" stroke-opacity="0.12"/>
+  </g>
+
+  <!-- Packets (upload & download) -->
+  <g>
+    <circle r="4" fill="#00e5b0" filter="url(#c-glow)">
+      <animateMotion dur="2.4s" repeatCount="indefinite" path="M 560 225 L 400 225"/>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="2.4s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="4" fill="#4faafd" filter="url(#c-glow)">
+      <animateMotion dur="2.4s" begin="0.4s" repeatCount="indefinite" path="M 400 225 L 287 338"/>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="2.4s" begin="0.4s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="4" fill="#ffd166" filter="url(#c-glow)">
+      <animateMotion dur="2.4s" begin="0.8s" repeatCount="indefinite" path="M 287 112 L 400 225"/>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="2.4s" begin="0.8s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="4" fill="#4faafd" filter="url(#c-glow)">
+      <animateMotion dur="2.4s" begin="1.2s" repeatCount="indefinite" path="M 400 225 L 513 112"/>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="2.4s" begin="1.2s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="4" fill="#00e5b0" filter="url(#c-glow)">
+      <animateMotion dur="2.4s" begin="1.6s" repeatCount="indefinite" path="M 240 225 L 400 225"/>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="2.4s" begin="1.6s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <!-- Side panels -->
+  <g font-family="JetBrains Mono, monospace" font-size="10">
+    <g transform="translate(30 80)">
+      <rect width="170" height="62" rx="8" fill="#0f193b" stroke="#4faafd" stroke-opacity="0.45"/>
+      <text x="12" y="22" fill="#C8D1EE" font-weight="700">Fleet Telemetry</text>
+      <text x="12" y="38" fill="#5A6687" font-size="9">zenoh://fleet/*</text>
+      <text x="12" y="52" fill="#00e5b0" font-size="9">● 8 cars · 128 kB/s</text>
+    </g>
+    <g transform="translate(600 80)">
+      <rect width="170" height="62" rx="8" fill="#0f193b" stroke="#4faafd" stroke-opacity="0.45"/>
+      <text x="12" y="22" fill="#C8D1EE" font-weight="700">OTA Gateway</text>
+      <text x="12" y="38" fill="#5A6687" font-size="9">vkit build → push</text>
+      <text x="12" y="52" fill="#ffd166" font-size="9">⏲  2 pending</text>
+    </g>
+    <g transform="translate(30 320)">
+      <rect width="170" height="62" rx="8" fill="#0f193b" stroke="#4faafd" stroke-opacity="0.45"/>
+      <text x="12" y="22" fill="#C8D1EE" font-weight="700">Remote Monitor</text>
+      <text x="12" y="38" fill="#5A6687" font-size="9">vlink-proxy</text>
+      <text x="12" y="52" fill="#4faafd" font-size="9">● controller mode</text>
+    </g>
+    <g transform="translate(600 320)">
+      <rect width="170" height="62" rx="8" fill="#0f193b" stroke="#4faafd" stroke-opacity="0.45"/>
+      <text x="12" y="22" fill="#C8D1EE" font-weight="700">Bag Replay</text>
+      <text x="12" y="38" fill="#5A6687" font-size="9">*.vcap (MCAP)</text>
+      <text x="12" y="52" fill="#4faafd" font-size="9">● 128 GB · Zstd</text>
+    </g>
+  </g>
+
+  <!-- Caption -->
+  <g font-family="JetBrains Mono, monospace" font-size="10">
+    <text x="30" y="34" fill="#4faafd" letter-spacing="2">VLINK · CLOUD-EDGE</text>
+    <text x="30" y="50" fill="#5A6687">fleet telemetry · OTA · remote observability · zenoh://</text>
+  </g>
+</svg>

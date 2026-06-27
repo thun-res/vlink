@@ -1,0 +1,16 @@
+{
+  "ser": "robot.proto.JointStateArray",
+  "schema": "foxglove.JointStates",
+  "encoding": "protobuf",
+  "schema_encoding": "flatbuffers",
+  "timestamp_field": "header.timestamp_ns",
+  "timestamp_unit": "ns",
+  "field_mappings": [
+    { "source": "header.timestamp_ns", "target": "timestamp_ns" },
+    { "source": "joints", "target": "joints" },
+    { "source": "name", "target": "joint_name" },
+    { "source": "position", "target": "joint_position" },
+    { "source": "velocity", "target": "joint_velocity" },
+    { "source": "effort", "target": "joint_effort" }
+  ]
+}

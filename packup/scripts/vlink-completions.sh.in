@@ -1,0 +1,232 @@
+#!/usr/bin/env bash
+
+if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+    _vlink_completion_script="${BASH_SOURCE[0]}"
+elif [[ -n "${ZSH_VERSION:-}" ]]; then
+    _vlink_completion_script="${(%):-%N}"
+else
+    _vlink_completion_script="$0"
+fi
+
+_vlink_completion_etc_dir="$(cd "$(dirname "$_vlink_completion_script")" && pwd)"
+_vlink_completion_dir="$_vlink_completion_etc_dir/vlink-completions"
+_vlink_webviz_target="@VLINK_WEBVIZ_COMPLETION_TARGET@"
+
+_vlink_bash_schemes="intra shm shm2 zenoh dds ddsc ddsr ddst someip mqtt fdbus qnx"
+_vlink_bash_bag_ext="vdb|vdbx|vcap|vcapx"
+_vlink_bash_play_ext="vdb|vdbx|vcap|vcapx"
+_vlink_bash_plugin_ext="so|dll|dylib"
+_vlink_bash_webviz_proxy_opts="--proxy_interface --proxy_role --proxy_domain_id --proxy_dds_impl \
+--proxy_bind_ip --proxy_peer_ip --proxy_buf_size --proxy_mtu_size --proxy_native \
+--proxy_tcp --proxy_key --proxy_reliable --proxy_direct --proxy_no_match_version \
+--proxy_data_callback_mode --proxy_max_packet_size --proxy_use_iox --proxy_iox_config \
+--proxy_iox_strategy --proxy_iox_monitoring"
+
+_vlink_qos_names_from_env() {
+    local qos_file="${VLINK_QOS_CONFIG:-}"
+
+    [[ -n "$qos_file" && -r "$qos_file" ]] || return 0
+    awk -F'"' '{ for (i = 2; i < NF; ++i) if ($i == "name" && $(i + 2) != "") print $(i + 2) }' "$qos_file" 2>/dev/null
+}
+
+_vlink_bash_collect_candidates() {
+    local candidate
+
+    COMPREPLY=()
+    while IFS= read -r candidate; do
+        COMPREPLY+=("$candidate")
+    done
+}
+
+_vlink_bash_complete_words() {
+    _vlink_bash_collect_candidates < <(compgen -W "$1" -- "$2")
+}
+
+_vlink_bash_complete_url() {
+    local cur="$1"
+    local urls="" scheme
+
+    [[ "$cur" == *://* ]] && return
+    for scheme in $_vlink_bash_schemes; do
+        urls+="${scheme}:// "
+    done
+    _vlink_bash_complete_words "$urls" "$cur"
+    compopt -o nospace 2>/dev/null || true
+}
+
+_vlink_bash_complete_files_ext() {
+    _vlink_bash_collect_candidates < <(compgen -o plusdirs -f -X "!*.@(${2})" -- "$1")
+}
+
+_vlink_bash_complete_files() {
+    _vlink_bash_collect_candidates < <(compgen -o plusdirs -f -- "$1")
+}
+
+_vlink_bash_complete_dirs() {
+    _vlink_bash_collect_candidates < <(compgen -d -- "$1")
+}
+
+_vlink_bash_find_subcommand() {
+    local subcommands="$1"
+    local index command=""
+
+    for ((index=1; index<COMP_CWORD; index++)); do
+        if [[ " $subcommands " == *" ${COMP_WORDS[index]} "* ]]; then
+            command="${COMP_WORDS[index]}"
+            break
+        fi
+    done
+
+    printf '%s' "$command"
+}
+
+_vlink_bash_find_last_option() {
+    local index
+
+    for ((index=COMP_CWORD-1; index>=1; index--)); do
+        if [[ "${COMP_WORDS[index]}" == -* ]]; then
+            printf '%s' "${COMP_WORDS[index]}"
+            return
+        fi
+    done
+}
+
+_vlink_bash_complete_webviz_proxy_prev() {
+    case "$1" in
+        --proxy_interface) _vlink_bash_complete_words "proxy_api proxy_server" "$2"; return 0 ;;
+        --proxy_role) _vlink_bash_complete_words "controller listener" "$2"; return 0 ;;
+        --proxy_dds_impl) _vlink_bash_complete_words "dds ddsc ddsr ddst" "$2"; return 0 ;;
+        --proxy_data_callback_mode) _vlink_bash_complete_words "direct queued" "$2"; return 0 ;;
+        --proxy_iox_monitoring) _vlink_bash_complete_words "on off" "$2"; return 0 ;;
+        --proxy_iox_strategy) _vlink_bash_complete_words "1 2 3" "$2"; return 0 ;;
+        --proxy_iox_config) _vlink_bash_complete_files_ext "$2" "toml"; return 0 ;;
+        --proxy_domain_id|--proxy_bind_ip|--proxy_peer_ip|--proxy_buf_size|--proxy_mtu_size|\
+        --proxy_key|--proxy_max_packet_size) return 0 ;;
+    esac
+
+    return 1
+}
+
+if [[ -n "${ZSH_VERSION:-}" ]]; then
+    typeset -ga _vlink_zsh_schemes=(intra shm shm2 zenoh dds ddsc ddsr ddst someip mqtt fdbus qnx)
+    typeset -g _vlink_zsh_bag_glob='*.(vdb|vdbx|vcap|vcapx)'
+    typeset -g _vlink_zsh_play_glob='*.(vdb|vdbx|vcap|vcapx)'
+    typeset -g _vlink_zsh_plugin_glob='*.(so|dll|dylib)'
+fi
+
+_vlink_zsh_complete_url() {
+    local -a url_list
+    local scheme
+
+    for scheme in "${_vlink_zsh_schemes[@]}"; do
+        url_list+=("${scheme}://")
+    done
+    _values 'vlink url' "${url_list[@]}"
+}
+
+_vlink_zsh_complete_bag_file() {
+    _files -g "${_vlink_zsh_bag_glob}"
+}
+
+_vlink_zsh_complete_play_file() {
+    _files -g "${_vlink_zsh_play_glob}"
+}
+
+_vlink_zsh_complete_plugin_file() {
+    _files -g "${_vlink_zsh_plugin_glob}"
+}
+
+_vlink_zsh_complete_json_file() {
+    _files -g "*.json"
+}
+
+_vlink_zsh_last_option() {
+    local index
+
+    for ((index=CURRENT-1; index>=1; --index)); do
+        [[ ${words[index]} == -* ]] && print -r -- "${words[index]}" && return
+    done
+}
+
+_vlink_zsh_csv_values() {
+    local cur="${words[CURRENT]}"
+    local prefix="" tail="$cur"
+    local -a matches
+    local value
+
+    if [[ "$cur" == *,* ]]; then
+        prefix="${cur%,*},"
+        tail="${cur##*,}"
+    fi
+
+    for value in "$@"; do
+        [[ "$value" == ${tail}* ]] && matches+=("${prefix}${value}")
+    done
+
+    (( ${#matches[@]} > 0 )) || return 1
+    compadd -Q -S '' -- "${matches[@]}"
+}
+
+function _vlink_load_bash_completions() {
+    if [[ -z "${BASH_VERSION:-}" || $- != *i* || ! -d "$_vlink_completion_dir" ]]; then
+        return
+    fi
+    local completion_file
+    shopt -s progcomp extglob 2>/dev/null || true
+    for completion_file in "$_vlink_completion_dir"/*.bash; do
+        [ -r "$completion_file" ] && source "$completion_file"
+    done
+}
+
+function _vlink_load_zsh_completions() {
+    if [[ -z "${ZSH_VERSION:-}" || $- != *i* || ! -d "$_vlink_completion_dir" ]]; then
+        return
+    fi
+    local completion_file
+    autoload -Uz compinit
+    if ! whence -w compdef >/dev/null 2>&1; then
+        compinit -i >/dev/null 2>&1
+    fi
+    for completion_file in "$_vlink_completion_dir"/*.zsh; do
+        [ -r "$completion_file" ] && source "$completion_file"
+    done
+}
+
+function _vlink_bind_webviz_completion() {
+    if [[ $- != *i* || -z "$_vlink_webviz_target" ]]; then
+        return
+    fi
+    local has_webviz=0
+    alias webviz >/dev/null 2>&1 && has_webviz=1
+    command -v webviz >/dev/null 2>&1 && has_webviz=1
+    (( has_webviz == 1 )) || return
+
+    case "$_vlink_webviz_target" in
+        foxglove)
+            if [[ -n "${BASH_VERSION:-}" ]] && declare -F _vlink_foxglove >/dev/null 2>&1; then
+                complete -F _vlink_foxglove webviz 2>/dev/null || true
+            elif [[ -n "${ZSH_VERSION:-}" ]] && whence -w compdef >/dev/null 2>&1 && whence -w _vlink-foxglove >/dev/null 2>&1; then
+                compdef _vlink-foxglove webviz 2>/dev/null
+            fi
+            ;;
+        rerun)
+            if [[ -n "${BASH_VERSION:-}" ]] && declare -F _vlink_rerun >/dev/null 2>&1; then
+                complete -F _vlink_rerun webviz 2>/dev/null || true
+            elif [[ -n "${ZSH_VERSION:-}" ]] && whence -w compdef >/dev/null 2>&1 && whence -w _vlink-rerun >/dev/null 2>&1; then
+                compdef _vlink-rerun webviz 2>/dev/null
+            fi
+            ;;
+    esac
+}
+
+_vlink_load_bash_completions
+_vlink_load_zsh_completions
+_vlink_bind_webviz_completion
+
+unset -f _vlink_load_bash_completions
+unset -f _vlink_load_zsh_completions
+unset -f _vlink_bind_webviz_completion
+unset _vlink_completion_script
+unset _vlink_completion_etc_dir
+unset _vlink_completion_dir
+unset _vlink_webviz_target

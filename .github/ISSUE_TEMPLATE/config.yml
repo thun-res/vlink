@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Documentation / 文档
+    url: https://vlink.work
+    about: Read the docs first — many questions are answered there. / 先查文档，多数问题已有解答。
+  - name: 💬 Questions & Discussions / 提问与讨论
+    url: https://github.com/thun-res/vlink/discussions
+    about: For usage questions, ideas, and general help. / 用法咨询、想法交流与求助请走讨论区。

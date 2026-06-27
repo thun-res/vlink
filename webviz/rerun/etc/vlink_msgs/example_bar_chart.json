@@ -1,0 +1,8 @@
+{
+  "ser": "stats.proto.Histogram",
+  "archetype": "BarChart",
+  "encoding": "protobuf",
+  "field_mappings": [
+    { "source": "values", "target": "values" }
+  ]
+}

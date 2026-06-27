@@ -1,0 +1,14 @@
+[Unit]
+Description=Update the vlink git repository (hard-reset to origin)
+Documentation=file:@REPO_DIR@/tools/systemd/README.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=VLINK_REPO_DIR=@REPO_DIR@
+Environment=VLINK_REPO_BRANCH=master
+WorkingDirectory=@REPO_DIR@
+ExecStart=@REPO_DIR@/tools/systemd/vlink-repo-update.sh
+StandardOutput=journal
+StandardError=journal

@@ -1,0 +1,106 @@
+<mxfile host="app.diagrams.net" modified="2026-06-25T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="foreword-software-stack" name="Software Stack">
+    <mxGraphModel dx="800" dy="520" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="820" pageHeight="520" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Software Stack" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=22;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="50" y="20" width="720" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="VLink &#8212; a full-scenario replacement for ROS 2, sitting between the application and the transport" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=2;fontColor=#607d8b;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="50" y="52" width="720" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- L1 Application -->
+        <mxCell id="L1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;arcSize=8;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="50" y="92" width="720" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="L1bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=40;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="50" y="92" width="720" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="L1t" value="Application" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=16;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="72" y="108" width="220" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="L1d" value="business logic, perception, planning, control" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1565c0;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="330" y="112" width="416" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="a1" value="publish / listen &#160;&#183;&#160; invoke / send &#160;&#183;&#160; set / get" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#37474f;labelBackgroundColor=#ffffff;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="410" y="160" as="sourcePoint" />
+            <mxPoint x="410" y="184" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- L2 VLink Middleware -->
+        <mxCell id="L2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.5;arcSize=8;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="50" y="190" width="720" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="L2bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0d47a1;strokeColor=none;arcSize=40;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="50" y="190" width="720" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="L2t" value="VLink Middleware" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=16;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="72" y="200" width="300" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="L2d" value="Event &#160;&#183;&#160; Method &#160;&#183;&#160; Field &#160;&#183;&#160; Node core &#160;&#183;&#160; QoS &#160;&#183;&#160; Security" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="320" y="200" width="426" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="L2d2" value="6 primitives: Publisher / Subscriber &#160;&#183;&#160; Client / Server &#160;&#183;&#160; Setter / Getter &#160;&#160;&#8226;&#160;&#160; 14 serialization formats" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=0;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="200" y="226" width="546" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="a2" value="URL scheme prefix selects the backend" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#37474f;labelBackgroundColor=#ffffff;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="410" y="258" as="sourcePoint" />
+            <mxPoint x="410" y="282" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- L3 Transport -->
+        <mxCell id="L3" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.5;arcSize=8;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="50" y="288" width="720" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="L3bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=40;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="50" y="288" width="720" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="L3t" value="Transport &#160;&#160;(12)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=16;fontStyle=1;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="72" y="300" width="220" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="L3d" value="intra &#160;&#183;&#160; shm &#160;&#183;&#160; shm2 &#160;&#183;&#160; dds &#160;&#183;&#160; ddsc &#160;&#183;&#160; ddsr &#160;&#183;&#160; ddst" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="300" y="300" width="446" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="L3d2" value="zenoh &#160;&#183;&#160; someip &#160;&#183;&#160; mqtt &#160;&#183;&#160; fdbus &#160;&#183;&#160; qnx" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="300" y="326" width="446" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="a3" value="syscalls &#160;&#183;&#160; NIC &#160;&#183;&#160; shared memory" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#37474f;labelBackgroundColor=#ffffff;shadow=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="410" y="364" as="sourcePoint" />
+            <mxPoint x="410" y="388" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- L4 OS / Hardware -->
+        <mxCell id="L4" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;arcSize=8;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="50" y="394" width="720" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="L4bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#607d8b;strokeColor=none;arcSize=40;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="50" y="394" width="720" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="L4t" value="OS / Hardware" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=16;fontStyle=1;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="72" y="410" width="220" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="L4d" value="Linux &#160;&#183;&#160; QNX &#160;&#183;&#160; Windows &#160;&#183;&#160; CPU / GPU / NIC" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="330" y="414" width="416" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- CLI tooling footnote -->
+        <mxCell id="cli" value="CLI: vlink-info / check / list / monitor / bag / dump / eproto / efbs / bench" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1;arcSize=20;shadow=0;fontFamily=Helvetica;fontSize=10;fontStyle=0;fontColor=#e65100;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="160" y="474" width="500" height="26" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

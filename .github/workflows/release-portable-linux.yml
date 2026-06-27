@@ -1,0 +1,108 @@
+name: Release Portable Linux
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  VLINK_UBUNTU20_IMAGE: ghcr.io/${{ github.repository_owner }}/vlink-ubuntu20:${{ github.sha }}
+
+jobs:
+  portable-linux-x86_64:
+    name: portable-linux-x86_64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    env:
+      VLINK_PORTABLE_LINUX_ARCH: x86_64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build portable archive and optional QtIFW installer
+        env:
+          CMAKE_GENERATOR: Ninja
+        run: VLINK_DOCKER_RUN_CACHE=0 bash .github/scripts/docker-run.sh "${VLINK_UBUNTU20_IMAGE}" bash .github/scripts/release-portable-linux.sh "${VLINK_PORTABLE_LINUX_ARCH}"
+
+      - name: Upload Linux portable artifacts
+        id: upload_linux
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: vlink-portable-linux-${{ env.VLINK_PORTABLE_LINUX_ARCH }}
+          overwrite: true
+          if-no-files-found: error
+          path: |
+            build-conan/packup/linux/*.tgz
+            build-conan/packup/linux/*.run
+
+      - name: Upload Linux portable artifacts (retry)
+        if: steps.upload_linux.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: vlink-portable-linux-${{ env.VLINK_PORTABLE_LINUX_ARCH }}
+          overwrite: true
+          if-no-files-found: error
+          path: |
+            build-conan/packup/linux/*.tgz
+            build-conan/packup/linux/*.run
+
+  portable-linux-aarch64:
+    name: portable-linux-aarch64
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 360
+    env:
+      VLINK_PORTABLE_LINUX_ARCH: aarch64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build portable archive and optional QtIFW installer
+        env:
+          CMAKE_GENERATOR: Ninja
+        run: VLINK_DOCKER_RUN_CACHE=0 bash .github/scripts/docker-run.sh "${VLINK_UBUNTU20_IMAGE}" bash .github/scripts/release-portable-linux.sh "${VLINK_PORTABLE_LINUX_ARCH}"
+
+      - name: Upload Linux portable artifacts
+        id: upload_linux
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: vlink-portable-linux-${{ env.VLINK_PORTABLE_LINUX_ARCH }}
+          overwrite: true
+          if-no-files-found: error
+          path: |
+            build-conan/packup/linux/*.tgz
+            build-conan/packup/linux/*.run
+
+      - name: Upload Linux portable artifacts (retry)
+        if: steps.upload_linux.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: vlink-portable-linux-${{ env.VLINK_PORTABLE_LINUX_ARCH }}
+          overwrite: true
+          if-no-files-found: error
+          path: |
+            build-conan/packup/linux/*.tgz
+            build-conan/packup/linux/*.run

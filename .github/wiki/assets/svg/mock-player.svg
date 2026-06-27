@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 420" preserveAspectRatio="xMidYMid meet" font-family="'Segoe UI','PingFang SC',sans-serif">
+  <defs>
+    <linearGradient id="pbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#11172c"/>
+      <stop offset="1" stop-color="#090d1b"/>
+    </linearGradient>
+    <linearGradient id="pwin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#171d33"/>
+      <stop offset="1" stop-color="#0c1223"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="720" height="420" fill="url(#pbg)"/>
+
+  <rect x="124" y="72" width="471" height="276" rx="10" fill="url(#pwin)" stroke="#2b365e"/>
+  <rect x="124" y="72" width="471" height="20" rx="10" fill="#20284a"/>
+  <rect x="124" y="84" width="471" height="8" fill="#20284a"/>
+  <text x="360" y="86" text-anchor="middle" fill="#d6def9" font-size="9.7" font-weight="700">VLink Player</text>
+
+  <g font-size="9.6" fill="#9ca8cb">
+    <text x="142" y="125">Path:</text>
+    <text x="142" y="153">Filter:</text>
+  </g>
+  <rect x="178" y="110" width="346" height="22" rx="3" fill="#081020" stroke="#2a3764"/>
+  <text x="186" y="125" fill="#d7dff8" font-size="9.4" font-family="'JetBrains Mono',monospace">/data/drive_20260412_1433.vdb</text>
+  <g transform="translate(533 109)">
+    <rect width="24" height="24" rx="4" fill="#18203e" stroke="#31406e"/>
+    <path d="M5 8 H18 V18 H5 Z" fill="#3796e8"/>
+    <path d="M5 8 V5 H11" fill="none" stroke="#3796e8" stroke-width="1.2"/>
+  </g>
+  <g transform="translate(563 109)">
+    <rect width="24" height="24" rx="4" fill="#18203e" stroke="#31406e"/>
+    <rect x="6" y="6" width="12" height="12" fill="none" stroke="#3796e8" stroke-width="1.3"/>
+    <path d="M9 9 L15 15 M15 9 L9 15" stroke="#3796e8" stroke-width="1.6"/>
+  </g>
+
+  <rect x="178" y="138" width="294" height="22" rx="3" fill="#081020" stroke="#2a3764"/>
+  <text x="186" y="153" fill="#7f8db5" font-size="9.2" font-family="'JetBrains Mono',monospace">dds://* shm://lidar/*</text>
+  <rect x="486" y="143" width="12" height="12" rx="2" fill="none" stroke="#3796e8"/>
+  <text x="504" y="153" fill="#d7dff8" font-size="9.8">Blacklist</text>
+
+  <text x="142" y="187" fill="#d7dff8" font-size="11.8" font-family="'JetBrains Mono',monospace">00:00:37:248/00:05:12:000</text>
+  <text x="523" y="187" text-anchor="end" fill="#7f8db5" font-size="9.8" font-family="'JetBrains Mono',monospace">0B/s</text>
+  <g transform="translate(533 167)">
+    <rect width="24" height="24" rx="4" fill="#18203e" stroke="#31406e"/>
+    <text x="11" y="15.8" text-anchor="middle" fill="#3796e8" font-size="7.4" font-weight="700">REL</text>
+  </g>
+  <g transform="translate(563 167)">
+    <rect width="24" height="24" rx="4" fill="#18203e" stroke="#31406e"/>
+    <path d="M6 5.5 V16.5 M6 5.5 L16 11 L6 15.5" fill="none" stroke="#3796e8" stroke-width="1.4"/>
+    <circle cx="6" cy="16.5" r="1.4" fill="#3796e8"/>
+  </g>
+
+  <rect x="142" y="202" width="384" height="8" rx="4" fill="#09101f" stroke="#293659"/>
+  <rect x="142" y="202" width="158" height="8" rx="4" fill="#3796e8"/>
+  <circle cx="300" cy="206" r="6" fill="#3796e8" stroke="#ffffff" stroke-width="1.2"/>
+  <g transform="translate(533 201)">
+    <rect width="24" height="24" rx="4" fill="#18203e" stroke="#31406e"/>
+    <path d="M4 7.5 Q11 1.4 18 7.5" fill="none" stroke="#3796e8" stroke-width="1.2"/>
+    <rect x="4" y="11" width="4.5" height="5.6" fill="#3796e8"/>
+    <rect x="9.4" y="11" width="4.5" height="5.6" fill="#3796e8"/>
+    <rect x="14.8" y="11" width="3.6" height="5.6" fill="#3796e8"/>
+  </g>
+  <g transform="translate(563 201)">
+    <rect width="24" height="24" rx="4" fill="#2a2436" stroke="#6d5a1d"/>
+    <circle cx="7.5" cy="14.5" r="2" fill="#ffd633"/>
+    <circle cx="15.5" cy="10.5" r="2" fill="#ffd633"/>
+    <circle cx="15.5" cy="17.5" r="2" fill="#ffd633"/>
+    <path d="M9.2 13.8 L13.5 11.4 M9.2 15.2 L13.5 16.6" stroke="#ffd633" stroke-width="1.2"/>
+  </g>
+
+  <g transform="translate(142 232)">
+    <rect width="24" height="24" rx="4" fill="#345af6" stroke="#4faafd"/>
+    <path d="M9 6 L9 18 L18 12 Z" fill="#ffffff"/>
+  </g>
+  <g transform="translate(172 232)" opacity="0.45">
+    <rect width="24" height="24" rx="4" fill="#18203e" stroke="#31406e"/>
+    <rect x="8" y="6" width="3" height="12" fill="#d7dff8"/>
+    <rect x="15" y="6" width="3" height="12" fill="#d7dff8"/>
+  </g>
+  <rect x="206" y="232" width="58" height="24" rx="3" fill="#081020" stroke="#2a3764"/>
+  <text x="214" y="248" fill="#d7dff8" font-size="11.2" font-family="'JetBrains Mono',monospace">1.00 x</text>
+  <rect x="246" y="234" width="14" height="8" fill="#18203e"/>
+  <rect x="246" y="246" width="14" height="8" fill="#18203e"/>
+  <text x="253" y="241" text-anchor="middle" fill="#94a4d1" font-size="10">+</text>
+  <text x="253" y="253" text-anchor="middle" fill="#94a4d1" font-size="10">-</text>
+  <rect x="274" y="238" width="12" height="12" rx="2.5" fill="#3796e8"/>
+  <path d="M277 244 L280 247 L284 241" fill="none" stroke="#07111f" stroke-width="1.6"/>
+  <text x="292" y="248" fill="#d7dff8" font-size="9.8">Loop</text>
+  <rect x="326" y="238" width="12" height="12" rx="2.5" fill="none" stroke="#3796e8"/>
+  <text x="344" y="248" fill="#94a4d1" font-size="9.8">Native</text>
+  <g transform="translate(533 237)">
+    <rect width="24" height="24" rx="4" fill="#18203e" stroke="#31406e"/>
+    <path d="M6 17 H19 M8 15 V10 M12 15 V6 M16 15 V12" fill="none" stroke="#3796e8" stroke-width="1.5"/>
+    <path d="M8 11 L12 8 L17 10" fill="none" stroke="#3796e8" stroke-width="1.3"/>
+    <circle cx="8" cy="11" r="1" fill="#3796e8"/>
+    <circle cx="12" cy="8" r="1" fill="#3796e8"/>
+    <circle cx="17" cy="10" r="1" fill="#3796e8"/>
+  </g>
+  <g transform="translate(563 237)">
+    <rect width="24" height="24" rx="4" fill="#18203e" stroke="#31406e"/>
+    <circle cx="11" cy="11" r="8.2" fill="#3796e8"/>
+    <text x="11" y="14.6" text-anchor="middle" fill="#0b1224" font-size="11" font-weight="700">i</text>
+  </g>
+
+  <g transform="translate(142 272)">
+    <rect width="86" height="24" rx="4" fill="#2a2436" stroke="#6d5a1d"/>
+    <circle cx="18" cy="12" r="2.6" fill="#ffd633"/>
+    <circle cx="26" cy="8" r="2.6" fill="#ffd633"/>
+    <circle cx="26" cy="16" r="2.6" fill="#ffd633"/>
+    <path d="M20.5 11.2 L24 9 M20.5 12.8 L24 15" stroke="#ffd633" stroke-width="1.3"/>
+    <text x="54" y="16" text-anchor="middle" fill="#ffd633" font-size="10.2" font-weight="700">Proxy</text>
+  </g>
+  <rect x="234" y="272" width="292" height="24" rx="4" fill="#10172b" stroke="#2a3764"/>
+  <text x="242" y="288" fill="#8ea0cf" font-size="9.6" font-family="'JetBrains Mono',monospace">-c -d 100 -n</text>
+  <g transform="translate(533 273)">
+    <rect width="24" height="24" rx="4" fill="#18203e" stroke="#31406e"/>
+    <rect x="4" y="5" width="16" height="14" fill="none" stroke="#3796e8" stroke-width="1.2"/>
+    <path d="M7 9 H17 M7 12 H17 M7 15 H11" stroke="#3796e8" stroke-width="1.1"/>
+    <rect x="6" y="8" width="4" height="8" fill="#3796e8" opacity="0.35"/>
+  </g>
+  <g transform="translate(563 273)">
+    <rect width="24" height="24" rx="4" fill="#18203e" stroke="#31406e"/>
+    <rect x="4" y="5" width="16" height="14" fill="none" stroke="#3796e8" stroke-width="1.2"/>
+    <path d="M7 12 L11 15 L7 18" fill="none" stroke="#3796e8" stroke-width="1.4"/>
+    <line x1="13" y1="18" x2="18" y2="18" stroke="#3796e8" stroke-width="1.4"/>
+  </g>
+</svg>

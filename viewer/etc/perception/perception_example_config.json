@@ -1,0 +1,67 @@
+{
+  "//": "Example perception config for the VLink viewer PerceptionDialog.",
+  "//inherit_default": "Keep the built-in render-type detection rules (URL/serializer knowledge).",
+  "inherit_default": true,
+
+  "//skip": "Topics whose URL/serializer contains these tokens are ignored.",
+  "skip": {
+    "url_contains": ["/status", "/diagnostic"],
+    "ser_contains": ["rawimage", "compressed", "video", "audio"]
+  },
+
+  "//mappings": "Each mapping pulls a renderer's semantic fields out of a proto/fbs message. zerocopy ObjectArray/PointCloud/OccupancyGrid need no mapping (fixed wire layout).",
+  "mappings": [
+    {
+      "name": "perception objects (protobuf)",
+      "ser": "perception.ObjectArray",
+      "render_type": "object_detection",
+      "encoding": "protobuf",
+      "collection": "objects",
+      "field_mappings": [
+        { "source": "center.x", "target": "x" },
+        { "source": "center.y", "target": "y" },
+        { "source": "center.z", "target": "z" },
+        { "source": "size.x", "target": "length" },
+        { "source": "size.y", "target": "width" },
+        { "source": "size.z", "target": "height" },
+        { "source": "heading", "target": "yaw" },
+        { "source": "velocity.x", "target": "vx" },
+        { "source": "velocity.y", "target": "vy" },
+        { "target": "score", "expression": "clamp(0, confidence, 1)" },
+        { "source": "class_id", "target": "class_id" },
+        { "source": "track_id", "target": "track_id" },
+        { "source": "label", "target": "label", "default_value": "obj" }
+      ]
+    },
+    {
+      "name": "lane boundaries (protobuf)",
+      "ser": "perception.LaneList",
+      "render_type": "lane_line",
+      "encoding": "protobuf",
+      "collection": "lanes",
+      "inner_collection": "points",
+      "field_mappings": [
+        { "source": "x", "target": "x" },
+        { "source": "y", "target": "y" },
+        { "source": "z", "target": "z" },
+        { "source": "boundary_type", "target": "type" }
+      ]
+    },
+    {
+      "name": "imu pose heading (flatbuffers, expression demo)",
+      "ser": "sensor.ImuData",
+      "render_type": "ego_trajectory",
+      "encoding": "flatbuffers",
+      "collection": "samples",
+      "field_mappings": [
+        { "source": "position.x", "target": "x" },
+        { "source": "position.y", "target": "y" },
+        { "source": "position.z", "target": "z" },
+        {
+          "target": "yaw",
+          "expression": "atan2(2 * (orientation.w * orientation.z + orientation.x * orientation.y), 1 - 2 * (orientation.y * orientation.y + orientation.z * orientation.z))"
+        }
+      ]
+    }
+  ]
+}

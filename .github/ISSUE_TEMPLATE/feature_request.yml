@@ -1,0 +1,58 @@
+name: 💡 Feature request / 功能建议
+description: Suggest a new capability or an improvement. / 提议一项新能力或改进。
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion! Please search existing issues first.
+        感谢建议！提交前请先搜索是否已有相同 issue。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation / 要解决的问题
+      description: What problem does this solve, or what is the use case? / 这个建议解决什么问题，或对应什么使用场景？
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution / 期望方案
+      description: Describe what you would like to happen. / 描述你期望的实现或行为。
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component / 涉及组件
+      options:
+        - proxy (vlink-proxy)
+        - cli (命令行工具)
+        - core library (src / include)
+        - python_api
+        - c_api
+        - viewer (Qt/OSG)
+        - webviz (Foxglove / Rerun)
+        - build · CI · packaging (cmake / packup / .github)
+        - docs / 文档
+        - other / 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered / 已考虑的替代方案
+      description: Other approaches or workarounds you have considered. / 你考虑过的其他做法或临时绕过方案。
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation / 确认
+      options:
+        - label: I searched existing issues and this is not a duplicate. / 我已搜索现有 issue，确认这不是重复。
+          required: true

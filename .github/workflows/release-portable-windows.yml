@@ -1,0 +1,78 @@
+name: Release Portable Windows
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: 1
+
+jobs:
+  portable-windows-x64:
+    name: portable-windows-x64
+    runs-on: windows-2022
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Conan
+        shell: pwsh
+        run: |
+          . ./.github/scripts/github-progress.ps1
+          Initialize-GitHubProgress "Install Conan" @("Install Python package")
+          Invoke-GitHubProgressStep "Install Python package" {
+            Invoke-CheckedCommand python -m pip install -q conan==2.29.1
+          }
+
+      - name: Setup Windows build environment
+        shell: pwsh
+        run: |
+          ./.github/scripts/setup-windows-build-env.ps1
+
+      - name: Setup Qt and QtIFW
+        shell: pwsh
+        run: ./.github/scripts/setup-qt-ifw.ps1 -QtHost windows -QtArch win64_msvc2022_64
+
+      - name: Setup OSG SDK
+        shell: pwsh
+        run: ./.github/scripts/setup-osg-sdk.ps1 -PlatformDir win32_x86_64
+
+      - name: Build portable archive and QtIFW installer
+        env:
+          CMAKE_GENERATOR: Ninja
+        shell: pwsh
+        run: |
+          $env:CONAN_HOME = Join-Path $env:USERPROFILE ".conan2"
+          $env:CPM_SOURCE_CACHE = Join-Path $env:USERPROFILE ".vlink-cpm-cache"
+          ./.github/scripts/release-portable-windows.ps1
+
+      - name: Upload Windows portable artifacts
+        id: upload_windows
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: vlink-portable-windows-x64
+          overwrite: true
+          if-no-files-found: error
+          path: |
+            build-conan/packup/win32/*.zip
+            build-conan/packup/win32/*.exe
+
+      - name: Upload Windows portable artifacts (retry)
+        if: steps.upload_windows.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: vlink-portable-windows-x64
+          overwrite: true
+          if-no-files-found: error
+          path: |
+            build-conan/packup/win32/*.zip
+            build-conan/packup/win32/*.exe

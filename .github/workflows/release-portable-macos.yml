@@ -1,0 +1,76 @@
+name: Release Portable macOS
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: 1
+
+jobs:
+  portable-macos-arm64:
+    name: portable-macos-arm64
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install release tools
+        run: |
+          source .github/scripts/github-progress.sh
+          vlink_progress_init "Install macOS release tools" \
+            "Remove noisy Homebrew taps" \
+            "Install Homebrew packages" \
+            "Install Conan"
+
+          vlink_progress_start "Remove noisy Homebrew taps"
+          brew untap --force aws/tap azure/bicep >/dev/null 2>&1 || true
+          vlink_progress_complete "Remove noisy Homebrew taps"
+
+          vlink_progress_run "Install Homebrew packages" brew install --quiet git-lfs nasm yasm ninja
+          vlink_progress_run "Install Conan" python -m pip install -q conan==2.29.1
+
+      - name: Setup Qt and QtIFW
+        run: bash .github/scripts/setup-qt-ifw.sh mac clang_64
+
+      - name: Setup OSG SDK
+        run: bash .github/scripts/setup-osg-sdk.sh darwin_universal
+
+      - name: Build portable archive and QtIFW installer
+        env:
+          CMAKE_GENERATOR: Ninja
+        run: CONAN_HOME="${HOME}/.conan2" CPM_SOURCE_CACHE="${HOME}/.vlink-cpm-cache" bash .github/scripts/release-portable-macos.sh
+
+      - name: Compress macOS app bundles
+        run: bash .github/scripts/compress-macos-apps.sh
+
+      - name: Upload macOS portable artifacts
+        id: upload_macos
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: vlink-portable-macos-arm64
+          overwrite: true
+          if-no-files-found: error
+          path: |
+            build-conan/packup/darwin/*.tgz
+            build-conan/packup/darwin/*.zip
+
+      - name: Upload macOS portable artifacts (retry)
+        if: steps.upload_macos.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: vlink-portable-macos-arm64
+          overwrite: true
+          if-no-files-found: error
+          path: |
+            build-conan/packup/darwin/*.tgz
+            build-conan/packup/darwin/*.zip

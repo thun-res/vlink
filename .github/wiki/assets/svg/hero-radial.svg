@@ -1,0 +1,160 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-20 0 640 680" role="img" aria-label="VLink 12-transport fabric">
+  <defs>
+    <radialGradient id="h-core" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0"   stop-color="#4faafd" stop-opacity="0.9"/>
+      <stop offset="0.6" stop-color="#345af6" stop-opacity="0.5"/>
+      <stop offset="1"   stop-color="#345af6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="h-sweep" x1="0" x2="1">
+      <stop offset="0" stop-color="#4faafd" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#4faafd" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="h-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="5"/>
+    </filter>
+  </defs>
+
+  <!-- outer orbit rings -->
+  <g fill="none" stroke="#1a2650" stroke-width="1">
+    <circle cx="300" cy="300" r="260"/>
+    <circle cx="300" cy="300" r="205"/>
+    <circle cx="300" cy="300" r="148"/>
+  </g>
+
+  <!-- rotating radar sector -->
+  <g transform="translate(300 300)">
+    <path d="M 0 0 L 260 0 A 260 260 0 0 1 228 125 Z" fill="url(#h-sweep)">
+      <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="16s" repeatCount="indefinite"/>
+    </path>
+  </g>
+
+  <!-- 12 radial lines (center → node); solid stroke so every spoke renders
+       identically regardless of direction. -->
+  <g stroke="#4faafd" stroke-width="1.2" stroke-opacity="0.38" fill="none" stroke-linecap="round">
+    <line x1="300" y1="300" x2="560"    y2="300"/>
+    <line x1="300" y1="300" x2="525.17" y2="430"/>
+    <line x1="300" y1="300" x2="430"    y2="525.17"/>
+    <line x1="300" y1="300" x2="300"    y2="560"/>
+    <line x1="300" y1="300" x2="170"    y2="525.17"/>
+    <line x1="300" y1="300" x2="74.83"  y2="430"/>
+    <line x1="300" y1="300" x2="40"     y2="300"/>
+    <line x1="300" y1="300" x2="74.83"  y2="170"/>
+    <line x1="300" y1="300" x2="170"    y2="74.83"/>
+    <line x1="300" y1="300" x2="300"    y2="40"/>
+    <line x1="300" y1="300" x2="430"    y2="74.83"/>
+    <line x1="300" y1="300" x2="525.17" y2="170"/>
+  </g>
+
+  <!-- flowing packets along select lines -->
+  <g>
+    <circle r="5" fill="#00e5b0" filter="url(#h-glow)">
+      <animateMotion dur="2s" repeatCount="indefinite" path="M 300 300 L 560 300"/>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="2s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="5" fill="#00e5b0" filter="url(#h-glow)">
+      <animateMotion dur="2s" begin="0.5s" repeatCount="indefinite" path="M 300 300 L 525.17 430"/>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="2s" begin="0.5s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="5" fill="#4faafd" filter="url(#h-glow)">
+      <animateMotion dur="2.2s" begin="0.2s" repeatCount="indefinite" path="M 300 300 L 300 560"/>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="2.2s" begin="0.2s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="5" fill="#4faafd" filter="url(#h-glow)">
+      <animateMotion dur="2.2s" begin="1s" repeatCount="indefinite" path="M 300 300 L 74.83 430"/>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="2.2s" begin="1s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="4.5" fill="#ffd166" filter="url(#h-glow)">
+      <animateMotion dur="2.4s" begin="0.7s" repeatCount="indefinite" path="M 300 300 L 300 40"/>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="2.4s" begin="0.7s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="4.5" fill="#ffd166" filter="url(#h-glow)">
+      <animateMotion dur="2.4s" begin="1.4s" repeatCount="indefinite" path="M 300 300 L 430 74.83"/>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="2.4s" begin="1.4s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <!-- 12 transport-prefix badges — rounded rectangles, all identical (108 × 48, rx 14).
+       Single-line label with "://" suffix at font-size 18.
+       Bottom arc (left → right): intra · dds · ddsc · shm.
+       shm2:// sits immediately to the right of shm.
+       Ring radius pushed to 260 so neighbouring pills breathe. -->
+  <g font-family="JetBrains Mono, monospace" font-size="18" font-weight="700" text-anchor="middle">
+    <!-- ── STABLE (production-ready) — bottom arc ── -->
+    <g transform="translate(74.83 430)">
+      <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#4faafd22" stroke="#4faafd" stroke-width="2.2"/>
+      <text y="7" fill="#4faafd">intra://</text>
+    </g>
+    <g transform="translate(170 525.17)">
+      <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#4faafd22" stroke="#4faafd" stroke-width="2.2"/>
+      <text y="7" fill="#4faafd">dds://</text>
+    </g>
+    <g transform="translate(300 560)">
+      <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#4faafd22" stroke="#4faafd" stroke-width="2.2"/>
+      <text y="7" fill="#4faafd">ddsc://</text>
+    </g>
+    <g transform="translate(430 525.17)">
+      <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#4faafd22" stroke="#4faafd" stroke-width="2.2"/>
+      <text y="7" fill="#4faafd">shm://</text>
+    </g>
+
+    <!-- ── BETA (available, maturing) ── -->
+    <g transform="translate(525.17 430)" opacity="0.88">
+      <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#0b1228" stroke="#ffd166" stroke-width="1.5" stroke-dasharray="5 3"/>
+      <text y="7" fill="#ffd166">shm2://</text>
+    </g>
+    <g transform="translate(560 300)" opacity="0.88">
+      <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#0b1228" stroke="#ffd166" stroke-width="1.5" stroke-dasharray="5 3"/>
+      <text y="7" fill="#ffd166">mqtt://</text>
+    </g>
+    <g transform="translate(525.17 170)" opacity="0.88">
+      <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#0b1228" stroke="#ffd166" stroke-width="1.5" stroke-dasharray="5 3"/>
+      <text y="7" fill="#ffd166">qnx://</text>
+    </g>
+    <g transform="translate(430 74.83)" opacity="0.88">
+      <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#0b1228" stroke="#ffd166" stroke-width="1.5" stroke-dasharray="5 3"/>
+      <text y="7" fill="#ffd166">fdbus://</text>
+    </g>
+    <g transform="translate(300 40)" opacity="0.88">
+      <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#0b1228" stroke="#ffd166" stroke-width="1.5" stroke-dasharray="5 3"/>
+      <text y="7" fill="#ffd166">someip://</text>
+    </g>
+    <g transform="translate(170 74.83)" opacity="0.88">
+      <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#0b1228" stroke="#ffd166" stroke-width="1.5" stroke-dasharray="5 3"/>
+      <text y="7" fill="#ffd166">zenoh://</text>
+    </g>
+    <g transform="translate(74.83 170)" opacity="0.88">
+      <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#0b1228" stroke="#ffd166" stroke-width="1.5" stroke-dasharray="5 3"/>
+      <text y="7" fill="#ffd166">ddsr://</text>
+    </g>
+    <g transform="translate(40 300)" opacity="0.88">
+      <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#0b1228" stroke="#ffd166" stroke-width="1.5" stroke-dasharray="5 3"/>
+      <text y="7" fill="#ffd166">ddst://</text>
+    </g>
+  </g>
+
+  <!-- central halo + VLink hub -->
+  <circle cx="300" cy="300" r="128" fill="url(#h-core)"/>
+  <circle cx="300" cy="300" r="100" fill="#0b1228" stroke="#4faafd" stroke-width="2"/>
+  <circle cx="300" cy="300" r="100" fill="none" stroke="#4faafd" stroke-width="1.5">
+    <animate attributeName="r" values="100;120;100" dur="3.2s" repeatCount="indefinite"/>
+    <animate attributeName="stroke-opacity" values="0.85;0;0.85" dur="3.2s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Official VLink icon (the original 256-unit logo scaled to 0.55 so it
+       visibly fills the 100-radius hub; translated to the optical centre). -->
+  <g transform="translate(229.96 240.08) scale(0.55)">
+    <polygon fill="#345af6" points="152.32781982421875,215.1147918701172 252.89552307128906,40.89563751220703 206.3271026611328,40.89563751220703 105.75947570800781,215.1147918701172 152.32781982421875,215.1147918701172 "/>
+    <path fill="#4faafd" d="m3.10448,40.89563l10.29055,17.81538l63.80452,0c1.13238,-3.02663 4.03377,-5.20267 7.45699,-5.20267c4.40427,0 7.98404,3.57977 7.98404,7.98404s-3.57977,7.98404 -7.98404,7.98404c-3.29277,0 -6.1211,-2.00384 -7.34219,-4.85827l-60.50654,0l11.54295,19.99142l66.45543,0l25.24106,-43.71395l-116.93234,0l-0.01044,0z"/>
+    <path fill="#345af6" d="m86.72821,61.49238c0,-1.14281 -0.92886,-2.0769 -2.0769,-2.0769s-2.0769,0.92886 -2.0769,2.0769s0.92886,2.0769 2.0769,2.0769s2.0769,-0.92886 2.0769,-2.0769z"/>
+    <path fill="#467cf9" d="m167.22617,40.89563l-53.10694,91.38339l-21.96395,0c-1.08541,3.11534 -4.02333,5.36966 -7.50918,5.36966c-4.40427,0 -7.98404,-3.57977 -7.98404,-7.98404s3.57977,-7.98404 7.98404,-7.98404c3.22493,0 5.99064,1.93078 7.24826,4.68606l18.82252,0l49.67328,-85.48146l-19.68354,0l-35.26026,61.62848l-66.77897,0l56.4832,97.81759l92.04612,-159.44607l-19.98099,0l0.01044,0.01044z"/>
+    <path fill="#345af6" d="m82.57442,129.66986c0,1.14281 0.92886,2.0769 2.0769,2.0769s2.0769,-0.92886 2.0769,-2.0769s-0.92886,-2.0769 -2.0769,-2.0769s-2.0769,0.92886 -2.0769,2.0769z"/>
+  </g>
+
+  <!-- Legend: Stable · Beta, centered below the ring. -->
+  <g transform="translate(84 642)" font-family="JetBrains Mono, monospace" font-size="14" font-weight="600" fill="#C8D1EE">
+    <rect x="0"   y="0" width="20" height="15" rx="7" fill="#4faafd22" stroke="#4faafd" stroke-width="1.8"/>
+    <text x="28"  y="12">Stable · production-ready</text>
+    <rect x="270" y="0" width="20" height="15" rx="7" fill="#0b1228" stroke="#ffd166" stroke-width="1.5" stroke-dasharray="3 2"/>
+    <text x="298" y="12">Beta · available</text>
+  </g>
+</svg>

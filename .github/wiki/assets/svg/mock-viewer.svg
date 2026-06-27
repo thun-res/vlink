@@ -1,0 +1,307 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 420" preserveAspectRatio="xMidYMid meet" font-family="'Segoe UI','PingFang SC',sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#171d33"/>
+      <stop offset="1" stop-color="#0d1224"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#11182d"/>
+      <stop offset="1" stop-color="#0a1020"/>
+    </linearGradient>
+    <linearGradient id="toolbar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#121a30"/>
+      <stop offset="1" stop-color="#0d1325"/>
+    </linearGradient>
+    <g id="cb-on">
+      <rect width="8" height="8" rx="1.3" fill="#3796e8"/>
+      <path d="M2 3.1 L3.9 5 L6.8 1.9" fill="none" stroke="#07111f" stroke-width="1.05"/>
+    </g>
+    <g id="cb-off">
+      <rect width="8" height="8" rx="1.3" fill="none" stroke="#4a5888"/>
+    </g>
+  </defs>
+
+  <rect width="720" height="420" rx="10" fill="url(#bg)" stroke="#2b365e"/>
+
+  <rect x="0" y="0" width="720" height="18" rx="10" fill="#20284a"/>
+  <rect x="0" y="11" width="720" height="7" fill="#20284a"/>
+  <text x="360" y="12.6" text-anchor="middle" fill="#d6def9" font-size="8.0" font-weight="600">VLink Viewer</text>
+
+  <rect x="0" y="18" width="720" height="16" fill="#10172b"/>
+  <g fill="#d6def9" font-size="8.8">
+    <text x="12" y="29">Start</text>
+    <text x="48" y="29">Tools</text>
+    <text x="84" y="29">View</text>
+    <text x="116" y="29">Help</text>
+  </g>
+
+  <rect x="0" y="34" width="720" height="28" fill="url(#toolbar)"/>
+  <g transform="translate(8 39)">
+    <rect width="24" height="18" rx="3" fill="#18203e" stroke="#31406e"/>
+    <rect x="5" y="5" width="14" height="8" rx="1.5" fill="#ffd633"/>
+    <path d="M8 5.5 V3.5 H16 V5.5" fill="none" stroke="#ffd633" stroke-width="1.2"/>
+  </g>
+  <g transform="translate(38 39)">
+    <rect width="24" height="18" rx="3" fill="#18203e" stroke="#31406e"/>
+    <circle cx="12" cy="9" r="6" fill="#3796e8"/>
+  </g>
+  <g transform="translate(68 39)">
+    <rect width="24" height="18" rx="3" fill="#18203e" stroke="#31406e"/>
+    <path d="M8 4 L17 9 L8 14 Z" fill="#3796e8"/>
+  </g>
+  <g transform="translate(98 39)">
+    <rect width="24" height="18" rx="3" fill="#18203e" stroke="#31406e"/>
+    <rect x="7" y="4" width="10" height="10" fill="none" stroke="#3796e8" stroke-width="1.1" stroke-dasharray="2 2"/>
+    <path d="M15 13 L19 9" stroke="#3796e8" stroke-width="1.5"/>
+  </g>
+  <line x1="129" y1="40" x2="129" y2="56" stroke="#31406e"/>
+  <g transform="translate(136 39)">
+    <rect width="24" height="18" rx="3" fill="#18203e" stroke="#31406e"/>
+    <path d="M6 2.6 H16.8 L20 5.8 V15.4 H6 Z" fill="#3796e8"/>
+    <path d="M16.8 2.6 V5.8 H20" fill="#5fb5ff"/>
+    <rect x="7.8" y="4.2" width="8.2" height="1.4" fill="#0a1324"/>
+    <rect x="15.2" y="5.2" width="2.6" height="1.4" fill="#0a1324"/>
+    <text x="12.9" y="10.9" text-anchor="middle" fill="#0a1324" font-size="4.5" font-weight="700">RAW</text>
+    <rect x="8.2" y="12.4" width="9.8" height="2.2" fill="#0a1324"/>
+  </g>
+  <g transform="translate(166 39)">
+    <rect width="24" height="18" rx="3" fill="#18203e" stroke="#31406e"/>
+    <rect x="5.5" y="5" width="11" height="8" fill="#3796e8"/>
+    <path d="M16 6.6 L20 4.8 V13.2 L16 11.4 Z" fill="#3796e8"/>
+  </g>
+  <g transform="translate(196 39)">
+    <rect width="24" height="18" rx="3" fill="#18203e" stroke="#31406e"/>
+    <path d="M7 3.4 H17.2 L20 6.2 V15.6 H9.6 L7 13 Z" fill="#3796e8"/>
+    <path d="M7 3.4 L9.6 6.2 V15.6 L7 13 Z" fill="#2c8dde"/>
+    <path d="M17.2 3.4 L20 6.2 V15.6 L17.2 12.8 Z" fill="#4eabff" opacity="0.7"/>
+    <path d="M9.6 6.2 H20" stroke="#17335c" stroke-width="1"/>
+    <path d="M9.6 6.2 V15.6" stroke="#17335c" stroke-width="1"/>
+    <path d="M17.2 3.4 V12.8" stroke="#4eabff" stroke-width="0.7" opacity="0.55"/>
+  </g>
+  <g transform="translate(226 39)">
+    <rect width="24" height="18" rx="3" fill="#18203e" stroke="#31406e"/>
+    <path d="M6 12.8 V4.2 L11 6.4 L15 4.2 L20 6.4 V15.2 L15 13 L11 15.2 Z" fill="none" stroke="#3796e8" stroke-width="1.1"/>
+    <path d="M11 6.4 V15.2 M15 4.2 V13" stroke="#3796e8" stroke-width="1"/>
+    <path d="M15.8 5.2 C15.8 3.8 16.9 2.8 18.2 2.8 C19.5 2.8 20.6 3.8 20.6 5.2 C20.6 6.8 18.2 8.6 18.2 8.6 C18.2 8.6 15.8 6.8 15.8 5.2 Z" fill="#3796e8"/>
+    <circle cx="18.2" cy="5.2" r="0.8" fill="#18203e"/>
+  </g>
+
+  <rect x="8" y="70" width="286" height="322" rx="5" fill="url(#panel)" stroke="#25335d"/>
+  <g font-size="9.0" fill="#9ca8cb">
+    <text x="18" y="88">Filter:</text>
+    <text x="18" y="110">Conditions:</text>
+    <text x="18" y="132">Forms:</text>
+  </g>
+  <rect x="64" y="76" width="126" height="18" rx="2" fill="#081020" stroke="#2a3764"/>
+  <text x="72" y="89" fill="#d7dff8" font-size="8.3" font-family="'JetBrains Mono',monospace">camera/front</text>
+  <rect x="212" y="76" width="62" height="18" rx="2" fill="#0c1427" stroke="#2a3764"/>
+  <text x="243" y="88.3" text-anchor="middle" fill="#d7dff8" font-size="4.8">By Url Name</text>
+  <rect x="212" y="99" width="62" height="16" rx="2" fill="#0c1427" stroke="#2a3764"/>
+  <text x="243" y="110.2" text-anchor="middle" fill="#d7dff8" font-size="4.9">All Nodes</text>
+  <g font-size="5.15">
+    <use href="#cb-on" transform="translate(66 102)"/>
+    <text x="77" y="108.5" fill="#d7dff8">Observe All</text>
+    <use href="#cb-off" transform="translate(112 102)"/>
+    <text x="123" y="108.5" fill="#94a4d1">Only Active</text>
+    <use href="#cb-off" transform="translate(158 102)"/>
+    <text x="169" y="108.5" fill="#94a4d1">Select All</text>
+  </g>
+  <g font-size="5.1">
+    <use href="#cb-on" transform="translate(66 126)"/>
+    <text x="77" y="132.6" fill="#d7dff8">Freq Visible</text>
+    <use href="#cb-on" transform="translate(120 126)"/>
+    <text x="131" y="132.6" fill="#d7dff8">Rate Visible</text>
+    <use href="#cb-off" transform="translate(174 126)"/>
+    <text x="185" y="132.6" fill="#94a4d1">Loss Visible</text>
+    <use href="#cb-off" transform="translate(228 126)"/>
+    <text x="239" y="132.6" fill="#94a4d1">Latency Visible</text>
+  </g>
+  <rect x="14" y="163" width="274" height="18" fill="#0a1021" stroke="#243057"/>
+  <g fill="#90a0c8" font-size="7.2" font-family="'JetBrains Mono',monospace">
+    <text x="20" y="175">TYPE</text>
+    <text x="64" y="175">URL</text>
+    <text x="186" y="175">FREQ</text>
+    <text x="228" y="175">RATE</text>
+  </g>
+  <g font-family="'JetBrains Mono',monospace" font-size="6.7">
+    <rect x="14" y="181" width="274" height="18" fill="#233a73" opacity="0.55"/>
+    <circle cx="24" cy="190" r="5" fill="#31c7a2"/>
+    <text x="34" y="193" fill="#d7dff8">Pub|Sub</text>
+    <text x="64" y="193" fill="#ffffff">dds://camera/front</text>
+    <text x="186" y="193" fill="#d7dff8">30.00Hz</text>
+    <text x="228" y="193" fill="#d7dff8">86.34MB/s</text>
+
+    <circle cx="24" cy="209" r="5" fill="#31c7a2"/>
+    <text x="34" y="212" fill="#d7dff8">Pub|---</text>
+    <text x="64" y="212" fill="#d7dff8">dds://camera/rear</text>
+    <text x="186" y="212" fill="#d7dff8">30.00Hz</text>
+    <text x="228" y="212" fill="#d7dff8">86.31MB/s</text>
+
+    <circle cx="24" cy="228" r="5" fill="#ff6a68"/>
+    <text x="22.6" y="231" fill="#2d0d10" font-size="8.5" font-weight="700">!</text>
+    <text x="34" y="231" fill="#d7dff8">Pub|Sub</text>
+    <text x="64" y="231" fill="#d7dff8">dds://perception/obs</text>
+    <text x="186" y="231" fill="#d7dff8">10.00Hz</text>
+    <text x="228" y="231" fill="#d7dff8">0.31MB/s</text>
+
+    <circle cx="24" cy="247" r="5" fill="#ffd04a"/>
+    <circle cx="21" cy="247" r="1" fill="#242014"/>
+    <circle cx="24" cy="247" r="1" fill="#242014"/>
+    <circle cx="27" cy="247" r="1" fill="#242014"/>
+    <text x="34" y="250" fill="#d7dff8">Pub|---</text>
+    <text x="64" y="250" fill="#d7dff8">shm://lidar/points</text>
+    <text x="186" y="250" fill="#d7dff8">10.00Hz</text>
+    <text x="228" y="250" fill="#d7dff8">21.04MB/s</text>
+
+    <circle cx="24" cy="266" r="5" fill="#31c7a2"/>
+    <text x="34" y="269" fill="#d7dff8">Pub|Sub</text>
+    <text x="64" y="269" fill="#d7dff8">intra://vehicle/imu</text>
+    <text x="186" y="269" fill="#d7dff8">200.00Hz</text>
+    <text x="228" y="269" fill="#d7dff8">14.40KB/s</text>
+  </g>
+
+  <rect x="298" y="70" width="190" height="322" rx="5" fill="url(#panel)" stroke="#25335d"/>
+  <rect x="304" y="76" width="178" height="14" fill="#188a2e"/>
+  <text x="393" y="86" text-anchor="middle" fill="#f3fff8" font-size="6.9" font-weight="700">Proxy is connected.</text>
+  <g font-size="7.1">
+    <text x="314" y="108" fill="#8f9fc9">Host Name:</text>
+    <text x="372" y="108" fill="#d7dff8">xavier-01</text>
+    <text x="314" y="122" fill="#8f9fc9">System Time:</text>
+    <text x="372" y="122" fill="#d7dff8">14:33:27</text>
+    <text x="314" y="136" fill="#8f9fc9">Boot Time:</text>
+    <text x="372" y="136" fill="#d7dff8">00:18:42</text>
+    <text x="314" y="150" fill="#8f9fc9">Resource Usage:</text>
+    <text x="372" y="150" fill="#ffd47b" font-size="6.6">CPU: 18.42% | MEM: 42.31%</text>
+  </g>
+  <line x1="304" y1="158" x2="482" y2="158" stroke="#26355f"/>
+  <text x="310" y="172" fill="#90a9ff" font-size="7.8" font-weight="700">Current Freq:</text>
+  <text x="372" y="172" fill="#31c7a2" font-size="8.0" font-weight="700" font-family="'JetBrains Mono',monospace">30.00Hz</text>
+  <circle cx="452" cy="169" r="4.6" fill="#31c7a2"/>
+  <defs>
+    <radialGradient id="trafficbg" cx="0.5" cy="0.35" r="0.9">
+      <stop offset="0" stop-color="#fafafa"/>
+      <stop offset="1" stop-color="#dddddd"/>
+    </radialGradient>
+  </defs>
+  <rect x="304" y="180" width="178" height="66" rx="2" fill="url(#trafficbg)" stroke="#8b8b8b"/>
+  <g stroke="#7a7a7a" stroke-width="0.8" stroke-dasharray="5 5">
+    <line x1="322" y1="196" x2="482" y2="196"/>
+    <line x1="322" y1="212" x2="482" y2="212"/>
+    <line x1="322" y1="228" x2="482" y2="228"/>
+    <line x1="352" y1="180" x2="352" y2="246"/>
+    <line x1="382" y1="180" x2="382" y2="246"/>
+    <line x1="412" y1="180" x2="412" y2="246"/>
+    <line x1="442" y1="180" x2="442" y2="246"/>
+    <line x1="480" y1="180" x2="480" y2="246"/>
+  </g>
+  <line x1="322" y1="180" x2="322" y2="246" stroke="#707070"/>
+  <line x1="322" y1="246" x2="482" y2="246" stroke="#707070"/>
+  <g fill="#575757" font-size="6.8" font-family="'JetBrains Mono',monospace">
+    <text x="318" y="185" text-anchor="end">40</text>
+    <text x="318" y="201" text-anchor="end">30</text>
+    <text x="318" y="217" text-anchor="end">20</text>
+    <text x="318" y="233" text-anchor="end">10</text>
+    <text x="478" y="258" text-anchor="end">2s</text>
+  </g>
+  <path d="M322 241 L334 234 L346 226 L358 218 L370 210 L382 203 L394 196 L406 191 L418 192 L430 194 L442 192 L454 188 L466 186 L474 188 L478 192 L482 195"
+        fill="none" stroke="#2b7ed4" stroke-width="2"/>
+  <g fill="#d7dff8" font-size="7.6">
+    <circle cx="310" cy="259" r="4" fill="#3796e8"/><circle cx="310" cy="259" r="1.5" fill="#081020"/>
+    <text x="318" y="262">Freq</text>
+    <circle cx="348" cy="259" r="4" fill="none" stroke="#5a6996"/>
+    <text x="356" y="262" fill="#94a4d1">Rate</text>
+    <circle cx="386" cy="259" r="4" fill="none" stroke="#5a6996"/>
+    <text x="394" y="262" fill="#94a4d1">Loss</text>
+    <circle cx="424" cy="259" r="4" fill="none" stroke="#5a6996"/>
+    <text x="432" y="262" fill="#94a4d1">Latency</text>
+  </g>
+  <rect x="304" y="269" width="178" height="4" rx="2" fill="#293659"/>
+  <rect x="304" y="269" width="34" height="4" rx="2" fill="#3796e8"/>
+  <circle cx="338" cy="271" r="5" fill="#3796e8" stroke="#ffffff" stroke-width="1"/>
+
+  <text x="310" y="284" fill="#d7dff8" font-size="7.2">Publishers:</text>
+  <rect x="304" y="288" width="178" height="40" rx="2" fill="#09101f" stroke="#223159"/>
+  <rect x="304" y="288" width="178" height="12" fill="#0d1529"/>
+  <text x="316" y="297" fill="#90a0c8" font-size="6.8" font-family="'JetBrains Mono',monospace">PID</text>
+  <text x="356" y="297" fill="#90a0c8" font-size="6.8" font-family="'JetBrains Mono',monospace">NAME</text>
+  <g fill="#d7dff8" font-size="6.9" font-family="'JetBrains Mono',monospace">
+    <text x="316" y="312">3210</text>
+    <text x="356" y="312">camera_front_node</text>
+  </g>
+  <text x="310" y="338" fill="#d7dff8" font-size="7.2">Subscribers:</text>
+  <rect x="304" y="342" width="178" height="40" rx="2" fill="#09101f" stroke="#223159"/>
+  <rect x="304" y="342" width="178" height="12" fill="#0d1529"/>
+  <text x="316" y="351" fill="#90a0c8" font-size="6.8" font-family="'JetBrains Mono',monospace">PID</text>
+  <text x="356" y="351" fill="#90a0c8" font-size="6.8" font-family="'JetBrains Mono',monospace">NAME</text>
+  <g fill="#d7dff8" font-size="6.9" font-family="'JetBrains Mono',monospace">
+    <text x="316" y="366">3228</text>
+    <text x="356" y="366">sync_dispatcher</text>
+  </g>
+
+  <rect x="492" y="70" width="220" height="322" rx="5" fill="url(#panel)" stroke="#25335d"/>
+  <g font-size="8.6" fill="#9ca8cb">
+    <text x="494" y="87">Proto Dir:</text>
+    <text x="494" y="111">Fbs Dir:</text>
+    <text x="494" y="135">Serialization Type:</text>
+  </g>
+  <rect x="540" y="76" width="78" height="18" rx="2" fill="#081020" stroke="#2a3764"/>
+  <text x="548" y="89" fill="#d7dff8" font-size="6.8" font-family="'JetBrains Mono',monospace">/opt/vlink/proto</text>
+  <rect x="622" y="76" width="34" height="18" rx="3" fill="#18203e" stroke="#2a3764"/>
+  <text x="639" y="89" text-anchor="middle" fill="#d7dff8" font-size="5.9" font-weight="700">Select</text>
+  <rect x="660" y="76" width="34" height="18" rx="3" fill="#18203e" stroke="#2a3764"/>
+  <text x="677" y="89" text-anchor="middle" fill="#d7dff8" font-size="5.8" font-weight="700">Reload</text>
+  <rect x="540" y="100" width="78" height="18" rx="2" fill="#081020" stroke="#2a3764"/>
+  <text x="548" y="113" fill="#d7dff8" font-size="6.8" font-family="'JetBrains Mono',monospace">/opt/vlink/fbs</text>
+  <rect x="622" y="100" width="34" height="18" rx="3" fill="#18203e" stroke="#2a3764"/>
+  <text x="639" y="113" text-anchor="middle" fill="#d7dff8" font-size="5.9" font-weight="700">Select</text>
+  <rect x="660" y="100" width="34" height="18" rx="3" fill="#18203e" stroke="#2a3764"/>
+  <text x="677" y="113" text-anchor="middle" fill="#d7dff8" font-size="5.8" font-weight="700">Reload</text>
+  <rect x="584" y="124" width="110" height="18" rx="2" fill="#081020" stroke="#2a3764"/>
+  <text x="602" y="137" fill="#d7dff8" font-size="7.5">FlatBuffers</text>
+
+  <g font-size="6.0">
+    <use href="#cb-on" transform="translate(494 150)"/>
+    <text x="506" y="157.5" fill="#d7dff8">Enable View</text>
+    <use href="#cb-off" transform="translate(552 150)"/>
+    <text x="564" y="157.5" fill="#94a4d1">Perf Mode</text>
+    <use href="#cb-off" transform="translate(602 150)"/>
+    <text x="614" y="157.5" fill="#94a4d1">Ignore Array</text>
+  </g>
+  <rect x="650" y="146" width="52" height="18" rx="3" fill="#18203e" stroke="#2a3764"/>
+  <text x="678" y="159" text-anchor="middle" fill="#d7dff8" font-size="7.0" font-weight="700">Analyze</text>
+
+  <g font-size="6.0">
+    <use href="#cb-on" transform="translate(494 170)"/>
+    <text x="506" y="177.5" fill="#d7dff8">Time Format</text>
+    <use href="#cb-on" transform="translate(552 170)"/>
+    <text x="564" y="177.5" fill="#d7dff8">Enum Format</text>
+    <use href="#cb-off" transform="translate(602 170)"/>
+    <text x="614" y="177.5" fill="#94a4d1">Hex Format</text>
+  </g>
+
+  <rect x="492" y="197" width="212" height="185" fill="#09101f" stroke="#223159"/>
+  <rect x="492" y="197" width="212" height="16" fill="#0d1529"/>
+  <g fill="#90a0c8" font-size="6.9" font-family="'JetBrains Mono',monospace">
+    <text x="498" y="208">FIELD</text>
+    <text x="539" y="208">TYPE</text>
+    <text x="600" y="208">PROPERTY</text>
+    <text x="670" y="208">VALUE</text>
+  </g>
+  <g fill="#d7dff8" font-size="6.4" font-family="'JetBrains Mono',monospace">
+    <text x="498" y="226">---</text><text x="539" y="226">Header</text><text x="600" y="226">header</text>
+    <text x="498" y="240">---</text><text x="539" y="240">string</text><text x="600" y="240">frame_id</text><text x="668" y="240">front_cam</text>
+    <text x="498" y="254">---</text><text x="539" y="254">uint32</text><text x="600" y="254">seq</text><text x="668" y="254">1024</text>
+    <text x="498" y="268">---</text><text x="539" y="268">uint64</text><text x="600" y="268">time_meas</text><text x="668" y="268">1713426178</text>
+    <text x="498" y="282">---</text><text x="539" y="282">uint64</text><text x="600" y="282">time_pub</text><text x="668" y="282">1713426178</text>
+    <text x="498" y="296">---</text><text x="539" y="296">uint32</text><text x="600" y="296">height</text><text x="668" y="296">1080</text>
+    <text x="498" y="310">---</text><text x="539" y="310">uint32</text><text x="600" y="310">width</text><text x="668" y="310">1920</text>
+    <text x="498" y="324">---</text><text x="539" y="324">Format</text><text x="600" y="324">format</text><text x="668" y="324">NV12</text>
+    <text x="498" y="338">---</text><text x="539" y="338">Stream</text><text x="600" y="338">stream</text><text x="668" y="338">MAIN</text>
+    <text x="498" y="352">---</text><text x="539" y="352">bytes</text><text x="600" y="352">data</text><text x="668" y="352">{...}</text>
+  </g>
+  <rect x="697" y="215" width="4" height="158" rx="2" fill="#1a2443"/>
+  <rect x="697" y="244" width="4" height="42" rx="2" fill="#4c5f92"/>
+
+  <rect x="0" y="394" width="720" height="26" rx="0" fill="#0a0e1b"/>
+  <text x="10" y="411" fill="#7c8cb7" font-size="8.4" font-family="'JetBrains Mono',monospace">Total Count: 8 | Active Count: 8 | Select Count: 1 | Total Rate: 264.31MB/s | Proxy Loss: 0.00% | Proxy Latency: 0.83ms</text>
+</svg>

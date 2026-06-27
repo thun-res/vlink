@@ -1,0 +1,104 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="zerocopy-layers" name="ZeroCopy Layers">
+    <mxGraphModel dx="900" dy="560" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="VLink Zero-Copy Layers" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=22;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="22" width="820" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Two independent layers combine to deliver end-to-end zero copy" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="40" y="56" width="820" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Layer 1: Transport Zero-Copy -->
+        <mxCell id="L1bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.5;arcSize=4;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="40" y="98" width="820" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="L1bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=none;arcSize=30;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="40" y="98" width="820" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="L1t" value="Layer 1 &#160;&#183;&#160; Transport Zero-Copy (shm / shm2 / zenoh SHM)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="60" y="114" width="500" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="L1badge" value="Publisher and Subscriber share the same physical memory region" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#ef6c00;" vertex="1" parent="1">
+          <mxGeometry x="400" y="116" width="444" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Publisher node (highlight/amber) -->
+        <mxCell id="pub" value="Publisher" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#e65100;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="80" y="172" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Shared memory buffer (neutral) -->
+        <mxCell id="shmbuf" value="Shared Memory Loan Buffer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="320" y="172" width="260" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Subscriber node (highlight/amber) -->
+        <mxCell id="sub" value="Subscriber" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#e65100;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="670" y="172" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- arrows between -->
+        <mxCell id="a1" style="endArrow=block;endFill=1;html=1;strokeWidth=2.2;strokeColor=#ef6c00;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Helvetica;" edge="1" source="pub" target="shmbuf" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a2" style="endArrow=block;endFill=1;html=1;strokeWidth=2.2;strokeColor=#ef6c00;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Helvetica;" edge="1" source="shmbuf" target="sub" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="L1note" value="Same physical memory, zero copy across processes" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="240" y="250" width="420" height="28" as="geometry" />
+        </mxCell>
+
+        <!-- Layer 2: Serialization Zero-Copy -->
+        <mxCell id="L2bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.5;arcSize=4;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="40" y="318" width="820" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="L2bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="40" y="318" width="820" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="L2t" value="Layer 2 &#160;&#183;&#160; Serialization Zero-Copy (zerocopy containers)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="334" width="520" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="L2badge" value="Container views the buffer via pointer; no data copy on deserialize" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
+          <mxGeometry x="400" y="336" width="444" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Bytes buffer (neutral) -->
+        <mxCell id="bytes" value="Bytes Buffer&#10;(raw payload)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="100" y="394" width="240" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Zerocopy containers (main body blue) -->
+        <mxCell id="zc1" value="CameraFrame" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="560" y="380" width="220" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="zc2" value="PointCloud" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="560" y="432" width="220" height="42" as="geometry" />
+        </mxCell>
+
+        <!-- Pointer arrows from containers to buffer -->
+        <mxCell id="a3" value="pointer references buffer" style="endArrow=block;endFill=1;html=1;strokeWidth=2.2;strokeColor=#1976d2;edgeStyle=orthogonalEdgeStyle;rounded=1;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#0d47a1;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="560" y="401" as="sourcePoint" />
+            <mxPoint x="340" y="434" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a4" style="endArrow=block;endFill=1;html=1;strokeWidth=2.2;strokeColor=#1976d2;edgeStyle=orthogonalEdgeStyle;rounded=1;fontFamily=Helvetica;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="560" y="453" as="sourcePoint" />
+            <mxPoint x="340" y="450" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="L2note" value="Container accesses image pixels or point data directly from shared buffer" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="120" y="486" width="660" height="28" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

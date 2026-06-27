@@ -1,0 +1,9 @@
+{
+  "ser": "visual.proto.MeshAsset",
+  "archetype": "Asset3D",
+  "encoding": "protobuf",
+  "field_mappings": [
+    { "source": "blob", "target": "data" },
+    { "source": "media_type", "target": "media_type", "default_value": "model/gltf-binary" }
+  ]
+}

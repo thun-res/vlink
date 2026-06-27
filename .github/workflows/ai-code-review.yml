@@ -1,0 +1,50 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, reopened]
+    branches:
+      - master
+      - main
+      - develop
+      - dev
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: ai-code-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  request-review:
+    name: Request Codex review
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Request Codex review
+        run: bash .github/scripts/request-ai-review.sh "${{ github.event.pull_request.number }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Email AI review request result
+        if: always()
+        continue-on-error: true
+        env:
+          JOB_STATUS: ${{ job.status }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          VLINK_NOTIFY_SMTP_HOST: ${{ secrets.VLINK_NOTIFY_SMTP_HOST }}
+          VLINK_NOTIFY_SMTP_PORT: ${{ secrets.VLINK_NOTIFY_SMTP_PORT || vars.VLINK_NOTIFY_SMTP_PORT }}
+          VLINK_NOTIFY_SMTP_USERNAME: ${{ secrets.VLINK_NOTIFY_SMTP_USERNAME }}
+          VLINK_NOTIFY_SMTP_PASSWORD: ${{ secrets.VLINK_NOTIFY_SMTP_PASSWORD }}
+          VLINK_NOTIFY_SMTP_SSL: ${{ secrets.VLINK_NOTIFY_SMTP_SSL || vars.VLINK_NOTIFY_SMTP_SSL }}
+          VLINK_NOTIFY_SMTP_STARTTLS: ${{ secrets.VLINK_NOTIFY_SMTP_STARTTLS || vars.VLINK_NOTIFY_SMTP_STARTTLS }}
+          VLINK_NOTIFY_EMAIL_FROM: ${{ secrets.VLINK_NOTIFY_EMAIL_FROM || vars.VLINK_NOTIFY_EMAIL_FROM }}
+          VLINK_NOTIFY_EMAIL_TO: ${{ secrets.VLINK_NOTIFY_EMAIL_TO || vars.VLINK_NOTIFY_EMAIL_TO }}
+        run: bash .github/scripts/notify-ai-review.sh

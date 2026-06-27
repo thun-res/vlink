@@ -1,0 +1,339 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_portable:
+        description: Build Qt/OSG/QtIFW portable packages and offline installers
+        required: true
+        type: boolean
+        default: true
+      build_linux_packages:
+        description: Build deb/rpm Linux packages
+        required: true
+        type: boolean
+        default: true
+  release:
+    types:
+      - published
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  docker-images:
+    name: docker-images
+    if: github.event_name != 'workflow_dispatch' || inputs.build_portable || inputs.build_linux_packages
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker-images.yml
+  portable-linux:
+    name: portable-linux
+    if: github.event_name != 'workflow_dispatch' || inputs.build_portable
+    needs: docker-images
+    uses: ./.github/workflows/release-portable-linux.yml
+  portable-macos:
+    name: portable-macos
+    if: github.event_name != 'workflow_dispatch' || inputs.build_portable
+    uses: ./.github/workflows/release-portable-macos.yml
+  portable-windows:
+    name: portable-windows
+    if: github.event_name != 'workflow_dispatch' || inputs.build_portable
+    uses: ./.github/workflows/release-portable-windows.yml
+  linux-packages:
+    name: linux-packages
+    if: github.event_name != 'workflow_dispatch' || inputs.build_linux_packages
+    needs: docker-images
+    uses: ./.github/workflows/release-linux-packages.yml
+  publish-github-release:
+    name: publish-github-release
+    if: github.event_name == 'release'
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    concurrency:
+      group: release-upload
+      cancel-in-progress: false
+    needs:
+      - portable-linux
+      - portable-macos
+      - portable-windows
+      - linux-packages
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Download artifacts
+        id: download_artifacts
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          path: dist
+          pattern: vlink-*
+
+      - name: Clean partial download before retry
+        if: steps.download_artifacts.outcome == 'failure'
+        run: rm -rf dist
+
+      - name: Download artifacts (retry)
+        if: steps.download_artifacts.outcome == 'failure'
+        uses: actions/download-artifact@v7
+        with:
+          path: dist
+          pattern: vlink-*
+
+      - name: Stage release assets
+        run: |
+          source .github/scripts/github-progress.sh
+          vlink_progress_init "Stage GitHub release assets" \
+            "Collect artifacts" \
+            "Generate SHA256SUMS"
+
+          vlink_progress_start "Collect artifacts"
+          if asset_list="$(mktemp)"; then
+            :
+          else
+            status=$?
+            vlink_progress_fail "Collect artifacts"
+            exit "${status}"
+          fi
+          trap 'rm -f "${asset_list}"' EXIT
+          if mkdir -p release-dist; then
+            :
+          else
+            status=$?
+            vlink_progress_fail "Collect artifacts"
+            exit "${status}"
+          fi
+          if find dist -type f -print0 | sort -z > "${asset_list}"; then
+            :
+          else
+            status=$?
+            vlink_progress_fail "Collect artifacts"
+            exit "${status}"
+          fi
+          while IFS= read -r -d '' file; do
+            name="$(basename "${file}")"
+            if [ -e "release-dist/${name}" ]; then
+              echo "Duplicate release asset name: ${name}" >&2
+              vlink_progress_fail "Collect artifacts"
+              exit 1
+            fi
+            if cp "${file}" "release-dist/${name}"; then
+              :
+            else
+              status=$?
+              vlink_progress_fail "Collect artifacts"
+              exit "${status}"
+            fi
+          done < "${asset_list}"
+          vlink_progress_complete "Collect artifacts"
+
+          vlink_progress_start "Generate SHA256SUMS"
+          if cd release-dist && sha256sum -- * > SHA256SUMS; then
+            vlink_progress_complete "Generate SHA256SUMS"
+          else
+            status=$?
+            vlink_progress_fail "Generate SHA256SUMS"
+            exit "${status}"
+          fi
+
+      - name: Publish GitHub Release
+        id: publish_release
+        continue-on-error: true
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          files: release-dist/*
+
+      - name: Publish GitHub Release (retry)
+        if: steps.publish_release.outcome == 'failure'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          files: release-dist/*
+
+  coverage:
+    name: coverage
+    if: github.event_name == 'release'
+    needs: docker-images
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/ci-coverage.yml
+    with:
+      force_run: true
+      docker_image: ghcr.io/${{ github.repository_owner }}/vlink-ubuntu22:${{ github.sha }}
+    secrets: inherit
+
+  publish-docs:
+    name: publish-docs
+    if: github.event_name == 'release'
+    needs:
+      - docker-images
+      - coverage
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      CMAKE_GENERATOR: Ninja
+      VLINK_UBUNTU22_IMAGE: ghcr.io/${{ github.repository_owner }}/vlink-ubuntu22:${{ github.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore CPM cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.vlink-cpm-cache
+          key: cpm-ci-linux-x86_64-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          restore-keys: cpm-ci-linux-x86_64-
+
+      - name: Restore ccache
+        uses: actions/cache@v5
+        with:
+          path: ~/.ccache
+          key: ccache-release-docs-x86_64-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'conanfile.py', 'packup/patch/*.patch') }}
+          restore-keys: |
+            ccache-release-docs-x86_64-
+            ccache-ci-linux-x86_64-build-test-
+
+      - name: Build Doxygen documentation
+        run: bash .github/scripts/docker-run.sh "${VLINK_UBUNTU22_IMAGE}" bash .github/scripts/release-doc.sh
+
+      - name: Run vlink-bench and render HTML report
+        run: bash .github/scripts/docker-run.sh "${VLINK_UBUNTU22_IMAGE}" bash .github/scripts/release-bench.sh
+
+      - name: Download coverage report
+        id: download_coverage
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-linux-x86_64
+          path: build-doc/output/doc/coverage
+
+      - name: Clean partial coverage download before retry
+        if: steps.download_coverage.outcome == 'failure'
+        run: rm -rf build-doc/output/doc/coverage
+
+      - name: Download coverage report (retry)
+        if: steps.download_coverage.outcome == 'failure'
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-linux-x86_64
+          path: build-doc/output/doc/coverage
+
+      - name: Check coverage docs
+        run: |
+          source .github/scripts/github-progress.sh
+          vlink_progress_init "Check coverage docs" \
+            "Verify HTML report" \
+            "Verify summary file"
+
+          vlink_progress_run "Verify HTML report" test -f build-doc/output/doc/coverage/index.html
+          vlink_progress_run "Verify summary file" test -f build-doc/output/doc/coverage/coverage-summary.txt
+
+      - name: Generate coverage badge
+        run: bash .github/scripts/generate-coverage-badge.sh
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload Doxygen Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: build-doc/output/doc
+
+      - name: Deploy Doxygen to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+        with:
+          timeout: 600000
+          error_count: 10
+
+      - name: Publish Doxygen wiki links
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOXYGEN_PAGES_URL: ${{ steps.deployment.outputs.page_url }}
+        run: bash .github/scripts/publish-doxygen-wiki.sh
+
+      - name: Publish benchmark wiki
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BENCH_PAGES_URL: ${{ steps.deployment.outputs.page_url }}bench/
+        run: bash .github/scripts/publish-benchmark-wiki.sh
+
+      - name: Publish coverage wiki
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COVERAGE_SUMMARY_FILE: build-doc/output/doc/coverage/coverage-summary.txt
+          COVERAGE_PAGES_URL: ${{ steps.deployment.outputs.page_url }}coverage/
+        run: bash .github/scripts/publish-coverage-wiki.sh
+
+  notify-release:
+    name: notify-release
+    if: always()
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    needs:
+      - docker-images
+      - portable-linux
+      - portable-macos
+      - portable-windows
+      - linux-packages
+      - publish-github-release
+      - coverage
+      - publish-docs
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Email release result
+        continue-on-error: true
+        env:
+          DOCKER_IMAGES_RESULT: ${{ needs.docker-images.result }}
+          PORTABLE_LINUX_RESULT: ${{ needs.portable-linux.result }}
+          PORTABLE_MACOS_RESULT: ${{ needs.portable-macos.result }}
+          PORTABLE_WINDOWS_RESULT: ${{ needs.portable-windows.result }}
+          LINUX_PACKAGES_RESULT: ${{ needs.linux-packages.result }}
+          PUBLISH_GITHUB_RELEASE_RESULT: ${{ needs.publish-github-release.result }}
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+          PUBLISH_DOCS_RESULT: ${{ needs.publish-docs.result }}
+          VLINK_NOTIFY_SMTP_HOST: ${{ secrets.VLINK_NOTIFY_SMTP_HOST }}
+          VLINK_NOTIFY_SMTP_PORT: ${{ secrets.VLINK_NOTIFY_SMTP_PORT || vars.VLINK_NOTIFY_SMTP_PORT }}
+          VLINK_NOTIFY_SMTP_USERNAME: ${{ secrets.VLINK_NOTIFY_SMTP_USERNAME }}
+          VLINK_NOTIFY_SMTP_PASSWORD: ${{ secrets.VLINK_NOTIFY_SMTP_PASSWORD }}
+          VLINK_NOTIFY_SMTP_SSL: ${{ secrets.VLINK_NOTIFY_SMTP_SSL || vars.VLINK_NOTIFY_SMTP_SSL }}
+          VLINK_NOTIFY_SMTP_STARTTLS: ${{ secrets.VLINK_NOTIFY_SMTP_STARTTLS || vars.VLINK_NOTIFY_SMTP_STARTTLS }}
+          VLINK_NOTIFY_EMAIL_FROM: ${{ secrets.VLINK_NOTIFY_EMAIL_FROM || vars.VLINK_NOTIFY_EMAIL_FROM }}
+          VLINK_NOTIFY_EMAIL_TO: ${{ secrets.VLINK_NOTIFY_EMAIL_TO || vars.VLINK_NOTIFY_EMAIL_TO }}
+        run: bash .github/scripts/notify-release.sh

@@ -1,0 +1,77 @@
+# VLink License Notices
+
+This distribution of VLink (v@VLINK_VERSION@) statically links and/or bundles
+third-party software. The full license text of every component actually
+shipped in *this* build is provided in subdirectories alongside this file.
+
+VLink itself is licensed under Apache License, Version 2.0; see `vlink/LICENSE`.
+
+The table below is the **superset** of libraries VLink may bundle across all
+build configurations. The set actually shipped in your install is the set of
+subdirectories present under this `licenses/` directory — entries listed here
+without a matching subdirectory have not been bundled (typically because they
+were resolved against a system package manager, which ships its own license
+files).
+
+| Library | License | Homepage | How it ships in this build |
+|---------|---------|----------|----------------------------|
+| `vlink` | Apache-2.0 | <https://vlink.work> | primary project |
+| `lzav` | MIT | <https://github.com/avaneev/lzav> | header-only, linked into libvlink |
+| `mcap` | MIT | <https://github.com/foxglove/mcap> | header-only, linked into libvlink |
+| `json` | MIT | <https://github.com/nlohmann/json> | header-only, linked into libvlink and CLIs |
+| `robin-map` | MIT | <https://github.com/Tessil/robin-map> | header-only, linked into libvlink |
+| `spdlog` | MIT | <https://github.com/gabime/spdlog> | header-only, default log backend |
+| `quill` | MIT | <https://github.com/odygrd/quill> | header-only, optional log backend |
+| `argparse` | MIT | <https://github.com/p-ranav/argparse> | header-only, linked into CLI binaries |
+| `bitsery` | MIT | <https://github.com/fraillt/bitsery> | header-only, linked into proxy binaries |
+| `exprtk` | MIT | <https://www.partow.net/programming/exprtk/> | header-only, linked into dump/viewer/webviz |
+| `websocketpp` | BSD-3-Clause | <https://github.com/zaphoyd/websocketpp> | header-only, linked into vlink-foxglove |
+| `asio` | BSL-1.0 | <https://think-async.com/Asio/> | header-only, linked into vlink-foxglove |
+| `eigen3` | MPL-2.0 | <https://eigen.tuxfamily.org> | header-only, linked into vlink-viewer (MPL-2.0 subset only — see below) |
+| `tinyxml2` | Zlib | <https://github.com/leethomason/tinyxml2> | static, linked into libvlink-* (CPM) |
+| `cpptoml` | MIT | <https://github.com/skystrife/cpptoml> | static, linked into libvlink-* (CPM) |
+| `foonathan_memory` | Zlib | <https://github.com/foonathan/memory> | static, linked via Fast-DDS (CPM) |
+| `fastcdr` | Apache-2.0 | <https://github.com/eProsima/Fast-CDR> | static, linked via Fast-DDS (CPM) |
+| `fastdds` | Apache-2.0 | <https://github.com/eProsima/Fast-DDS> | static, linked into libvlink-dds (CPM, patched) |
+| `cyclonedds` | EPL-2.0 OR EDL-1.0 | <https://github.com/eclipse-cyclonedds/cyclonedds> | static, linked into libvlink-ddsc (CPM, patched) |
+| `iceoryx` | Apache-2.0 | <https://github.com/eclipse-iceoryx/iceoryx> | static, linked into libvlink-shm; iox-roudi binary (CPM, patched) |
+| `protobuf` | BSD-3-Clause | <https://github.com/protocolbuffers/protobuf> | static, linked into CLI/viewer/webviz (CPM) |
+| `flatbuffers` | Apache-2.0 | <https://github.com/google/flatbuffers> | static, linked into CLI/viewer/webviz (CPM) |
+| `sqlite3` | Public Domain | <https://www.sqlite.org> | static, linked into libvlink (CPM) |
+| `openssl` | Apache-2.0 | <https://www.openssl.org> | static, linked into libvlink for security (CPM) |
+| `zstd` | BSD-3-Clause | <https://github.com/facebook/zstd> | static (library only, BSD-3); the upstream `COPYING` file (GPL-2.0, for the CLI we do not ship) is intentionally not bundled |
+| `ffmpeg` | LGPL-2.1-or-later | <https://ffmpeg.org> | dynamic, bundled by build-conan.sh (viewer) |
+| `qt` | LGPL-3.0 | <https://www.qt.io> | dynamic, bundled by build-conan.sh (viewer) |
+| `osg` | OSGPL-0.0 | <https://www.openscenegraph.com> | dynamic, bundled by build-conan.sh (viewer) |
+| `icu` | Unicode-DFS-2016 | <https://icu.unicode.org> | dynamic, bundled by build-conan.sh (Qt dep) |
+
+## Notes on copyleft-licensed components
+
+### Eigen MPL-2.0-only
+
+The Eigen headers ship a small subset of files licensed under LGPL or, very
+rarely, GPL. VLink does not use those modules, so only `COPYING.MPL2` and
+`COPYING.README` are shipped here. To audit, build with
+`-DCMAKE_CXX_FLAGS=-DEIGEN_MPL2_ONLY` and verify there are no compile errors
+in the viewer code path.
+
+### Cyclone DDS EPL-2.0
+
+`libvlink-ddsc` statically links Cyclone DDS (EPL-2.0 OR EDL-1.0). The
+corresponding source for the static-linked binary is available at the upstream
+URL above plus the patch documented in `cyclonedds/MODIFICATIONS.md` (when
+present in this install).
+
+### LGPL re-linkability for Conan-bundled libs
+
+`ffmpeg`, `qt`, `osg`, and `icu` are bundled as separate dynamic libraries
+(`.so` / `.dylib` / `.framework`) in `lib/`. LGPL §6 is satisfied by this
+shape: users may replace each of those library files with their own
+LGPL-compatible build of the same SONAME without modifying the rest of the
+vlink distribution.
+
+## How to verify which libraries are present
+
+```sh
+ls "@VLINK_LICENSES_DISPLAY_PATH@/"
+```

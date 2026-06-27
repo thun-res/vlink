@@ -1,0 +1,145 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="webviz-dataflow" name="WebViz Data Flow">
+    <mxGraphModel dx="1200" dy="780" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="780" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="VLink WebViz Data Flow" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="22" width="1120" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="proxy_api path shown: external ProxyServer + Handshake/token; proxy_server mode embeds DiscoveryViewer + pub/sub" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="40" y="56" width="1120" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Step 1 + 2 + 3 shared row -->
+        <mxCell id="s1" value="1. VLink Application Nodes&#10;Publisher / Subscriber&#10;over DDS / SHM / Intra" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;shadow=0;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="230" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s2" value="2. ProxyBridge backend&#10;proxy_api: external ProxyServer + token&#10;proxy_server: in-process discovery" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#37474f;shadow=0;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="310" y="100" width="250" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s3" value="3. Bridge control path&#10;ProxyAPI handshake/control&#10;or local subscription" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#e65100;shadow=0;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="600" y="100" width="240" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Edges row 1 -->
+        <mxCell id="e_s1_s2" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="s1" target="s2" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s2_s3" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="s2" target="s3" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Zero-copy note on the right -->
+        <mxCell id="zc_note" value="Built-in Zero-Copy Conversion&#10;CameraFrame -&gt; CompressedImage / Image&#10;PointCloud -&gt; foxglove.PointCloud / Points3D" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=14;fillColor=#ffe082;strokeColor=#ef6c00;fontFamily=Helvetica;fontSize=10;fontColor=#e65100;align=left;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="880" y="100" width="280" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Foxglove bridge container -->
+        <mxCell id="fg_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#388e3c;strokeWidth=1.8;arcSize=4;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="220" width="540" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="fg_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="220" width="540" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="fg_title_lbl" value="vlink-foxglove &#160;&#183;&#160; C++ WebSocket Bridge (websocketpp)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="80" y="234" width="500" height="26" as="geometry" />
+        </mxCell>
+
+        <!-- 4a converter -->
+        <mxCell id="s4a" value="4a. FoxgloveConverter&#10;VLink Proto / FBS / ZeroCopy&#10;-&gt; Foxglove FlatBuffer schemas&#10;(CompressedImage, LocationFix,&#10;SceneUpdate, PoseInFrame, ...)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.5;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#1b5e20;shadow=0;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="90" y="280" width="240" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- 5a websocket -->
+        <mxCell id="s5a" value="5a. FoxgloveServer&#10;Foxglove WS Protocol v1&#10;advertise / subscribe / messageData" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.5;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#1b5e20;shadow=0;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="340" y="280" width="240" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_4a_5a" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#388e3c;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="s4a" target="s5a" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 6a foxglove studio -->
+        <mxCell id="s6a" value="Foxglove Studio&#10;Web browser / Desktop app&#10;3D / Image / Map / Plot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=#1b5e20;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#ffffff;shadow=0;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="210" y="420" width="240" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="e_5a_6a" value="WebSocket" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#388e3c;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1b5e20;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="s5a" target="s6a" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Rerun bridge container -->
+        <mxCell id="rr_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1976d2;strokeWidth=1.8;arcSize=4;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="620" y="220" width="540" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="rr_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="620" y="220" width="540" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="rr_title_lbl" value="vlink-rerun &#160;&#183;&#160; C++ Bridge using Rerun C++ SDK" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="640" y="234" width="500" height="26" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s4b" value="4b. RerunConverter&#10;VLink Proto / FBS / ZeroCopy&#10;-&gt; Rerun Archetypes&#10;(Points3D, Boxes3D, Image,&#10;GeoPoints, Transform3D, ...)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;shadow=0;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="650" y="280" width="240" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s5b" value="5b. RerunServer&#10;RecordingStream&#10;spawn / connect / serve / save" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;shadow=0;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="900" y="280" width="240" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="e_4b_5b" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="s4b" target="s5b" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s6b" value="Rerun Viewer&#10;Native desktop app / Web app&#10;3D / Image / Plot / Geo / Text" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#ffffff;shadow=0;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="770" y="420" width="240" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="e_5b_6b" value="gRPC stream" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#0d47a1;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="s5b" target="s6b" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Entry from ProxyAPI to bridges -->
+        <mxCell id="e_s3_fg" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#388e3c;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.3;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="s3" target="s4a" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s3_rr" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.7;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="s3" target="s4b" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Custom Mapping note at bottom -->
+        <mxCell id="cm" value="Custom Message Mapping (JSON)&#10;vlink_ser -&gt; schema / archetype&#10;field_mappings: source, target, expression" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=14;fillColor=#ffe082;strokeColor=#ef6c00;fontFamily=Helvetica;fontSize=11;fontColor=#e65100;align=left;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="560" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cm_fg" style="endArrow=block;endFill=1;html=1;strokeWidth=1.2;strokeColor=#90a4ae;dashed=1;" edge="1" source="cm" target="s4a" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cm_rr" style="endArrow=block;endFill=1;html=1;strokeWidth=1.2;strokeColor=#90a4ae;dashed=1;" edge="1" source="cm" target="s4b" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legend_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;arcSize=8;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="700" y="560" width="460" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_title" value="Legend" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="714" y="566" width="100" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_fg_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.2;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="714" y="596" width="18" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_fg_t" value="vlink-foxglove (C++ WebSocket bridge)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="740" y="592" width="280" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_rr_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="714" y="618" width="18" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_rr_t" value="vlink-rerun (C++ bridge using Rerun SDK)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="740" y="614" width="280" height="20" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

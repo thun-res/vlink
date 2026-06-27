@@ -1,0 +1,9 @@
+pkgname = @PKGNAME@
+pkgbase = vlink
+pkgver = @VERSION@-@PKGREL@
+pkgdesc = @PKGDESC@
+url = https://github.com/thun-res/vlink
+builddate = @BUILDDATE@
+packager = Thun Lu <thun.lu@zohomail.cn>
+size = @PKG_SIZE@
+arch = @PLATFORM_ARCH@

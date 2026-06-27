@@ -1,0 +1,13 @@
+{
+  "ser": "camera.proto.CameraCalibration",
+  "archetype": "Pinhole",
+  "encoding": "protobuf",
+  "field_mappings": [
+    { "source": "intrinsic.fx", "target": "fx" },
+    { "source": "intrinsic.fy", "target": "fy" },
+    { "source": "intrinsic.cx", "target": "cx" },
+    { "source": "intrinsic.cy", "target": "cy" },
+    { "source": "width", "target": "width" },
+    { "source": "height", "target": "height" }
+  ]
+}

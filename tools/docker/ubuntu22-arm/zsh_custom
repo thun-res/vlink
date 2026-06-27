@@ -1,0 +1,65 @@
+# load plugins
+. /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+. /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+
+# set env
+PS1="%F{%(?.green.yellow)}➤%f %F{blue}%~%f "
+# RPROMPT="%F{#777777}→ %D{%H:%M:%S}%f"
+HISTFILE=~/.zhistory
+HISTSIZE=10000
+SAVEHIST=10000
+ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE="fg=#777777"
+LS_COLORS="di=34:fi=0:ln=36:pi=33:so=32:bd=34;46:cd=34;43:or=31;1:mi=31;1:ex=32;1:*.tar=31:*.tar.*=31:*.tgz=31:*.gz=31:*.zip=31:*.jpg=35:*.png=35:*.gif=35:*.mp4=34:*.mkv=34:*.sh=32:*.py=32:*.c=33"
+export LS_COLORS
+
+# set options
+setopt no_flow_control
+setopt extendedglob
+setopt nocaseglob
+setopt rcexpandparam
+setopt nocheckjobs
+setopt numericglobsort
+setopt nobeep
+setopt appendhistory
+setopt histignorealldups
+setopt autocd
+setopt inc_append_history
+setopt histignorespace
+
+# set style
+zstyle ':completion:*' matcher-list 'm:{[:lower:][:upper:]}={[:upper:][:lower:]}'
+zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"
+zstyle ':completion:*' rehash true
+zstyle ':completion:*' menu select
+zstyle ':completion:*' accept-exact '*(N)'
+zstyle ':completion:*' use-cache on
+zstyle ':completion:*' cache-path ~/.zsh/cache
+
+# set key
+bindkey '^[[7~' beginning-of-line
+bindkey '^[[H' beginning-of-line
+bindkey '^[[8~' end-of-line
+bindkey '^[[F' end-of-line
+bindkey '^[[2~' overwrite-mode
+bindkey '^[[3~' delete-char
+bindkey '^[[C'  forward-char
+bindkey '^[[D'  backward-char
+bindkey '^[[5~' history-beginning-search-backward
+bindkey '^[[6~' history-beginning-search-forward
+bindkey '^[Oc' forward-word
+bindkey '^[Od' backward-word
+bindkey '^[[1;5D' backward-word
+bindkey '^[[1;5C' forward-word
+bindkey '^H' backward-kill-word
+
+# set alias
+alias ls='ls --color=auto'
+alias ll='ls -lh'
+alias la='ls -lAh'
+alias df='df -h'
+alias du='du -h'
+
+# set mod
+zmodload zsh/terminfo
+autoload -Uz compinit colors zcalc bashcompinit
+bashcompinit

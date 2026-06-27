@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+
+WORK_DIR="$(cd "$(dirname "${BASH_SOURCE:-$0}")" && pwd)"
+
+export VLINK_ROOT_DIR="$WORK_DIR"
+if [ ! -x "$VLINK_ROOT_DIR/bin/vlink-info" ] && [ -x "$WORK_DIR/../bin/vlink-info" ]; then
+    export VLINK_ROOT_DIR="$(cd "$WORK_DIR/.." && pwd)"
+elif [ ! -x "$VLINK_ROOT_DIR/bin/vlink-info" ] && [ -x "$WORK_DIR/../../bin/vlink-info" ]; then
+    export VLINK_ROOT_DIR="$(cd "$WORK_DIR/../.." && pwd)"
+fi
+export VLINK_ETC_DIR="$VLINK_ROOT_DIR/etc"
+export VLINK_COMPLETIONS="$VLINK_ETC_DIR/vlink/vlink-completions.sh"
+
+echo -e -n "\033[2J\033[H"
+echo -e "Setup vlink runtime..."
+echo -e -n "\033[1;32m"
+echo -e "╔═════════════════════════════════════╗"
+echo -e "║  _    __   __      _           __   ║"
+echo -e "║ | |  / /  / /     (_) ____    / /__ ║"
+echo -e "║ | | / /  / /     / / / __ \\  / //_/ ║"
+echo -e "║ | |/ /  / /___  / / / / / / / ,<    ║"
+echo -e "║ |___/  /_____/ /_/ /_/ /_/ /_/|_|   ║"
+echo -e "║                                     ║"
+echo -e "╚═════════════════════════════════════╝"
+echo -e -n "\033[0m"
+
+VLINK_PROTO_DIR_CONFIG="$HOME/.vlink_proto_dir"
+VLINK_FBS_DIR_CONFIG="$HOME/.vlink_fbs_dir"
+
+echo "Version: @CMAKE_PROJECT_VERSION@"
+
+if [ -f "$VLINK_PROTO_DIR_CONFIG" ]; then
+    export VLINK_PROTO_DIR="$(cat "$VLINK_PROTO_DIR_CONFIG")"
+    echo "VLINK_PROTO_DIR: $VLINK_PROTO_DIR"
+fi
+
+if [ -f "$VLINK_FBS_DIR_CONFIG" ]; then
+    export VLINK_FBS_DIR="$(cat "$VLINK_FBS_DIR_CONFIG")"
+    echo "VLINK_FBS_DIR: $VLINK_FBS_DIR"
+fi
+
+echo -e "Support commands: [proxy] [info] [monitor] [bag] [list] [eproto] [efbs] [dump] [check] [bench]"
+echo -e ""
+
+[[ "$PATH" != *"$VLINK_ROOT_DIR/bin"* ]] && export PATH="$VLINK_ROOT_DIR/bin:$PATH"
+[[ "$LD_LIBRARY_PATH" != *"$VLINK_ROOT_DIR/lib"* ]] && export LD_LIBRARY_PATH="$VLINK_ROOT_DIR/lib:$LD_LIBRARY_PATH"
+[[ "$PYTHONPATH" != *"$VLINK_ROOT_DIR/lib"* ]] && export PYTHONPATH="$VLINK_ROOT_DIR/lib:$PYTHONPATH"
+
+alias proxy="\"$VLINK_ROOT_DIR/bin/vlink-proxy\""
+alias info="\"$VLINK_ROOT_DIR/bin/vlink-info\""
+alias monitor="\"$VLINK_ROOT_DIR/bin/vlink-monitor\""
+alias bag="\"$VLINK_ROOT_DIR/bin/vlink-bag\""
+alias list="\"$VLINK_ROOT_DIR/bin/vlink-list\""
+alias eproto="\"$VLINK_ROOT_DIR/bin/vlink-eproto\""
+alias efbs="\"$VLINK_ROOT_DIR/bin/vlink-efbs\""
+alias dump="\"$VLINK_ROOT_DIR/bin/vlink-dump\""
+alias check="\"$VLINK_ROOT_DIR/bin/vlink-check\""
+alias bench="\"$VLINK_ROOT_DIR/bin/vlink-bench\""
+[ -x "$VLINK_ROOT_DIR/bin/vlink-bag2mcap" ] && alias bag2mcap="\"$VLINK_ROOT_DIR/bin/vlink-bag2mcap\""
+[ -x "$VLINK_ROOT_DIR/bin/vlink-bag2rrd" ] && alias bag2rrd="\"$VLINK_ROOT_DIR/bin/vlink-bag2rrd\""
+[ -x "$VLINK_ROOT_DIR/bin/vlink-foxglove" ] && alias webviz_foxglove="\"$VLINK_ROOT_DIR/bin/vlink-foxglove\""
+[ -x "$VLINK_ROOT_DIR/bin/vlink-rerun" ] && alias webviz_rerun="\"$VLINK_ROOT_DIR/bin/vlink-rerun\""
+if [ -x "$VLINK_ROOT_DIR/bin/vlink-foxglove" ]; then
+    alias webviz="\"$VLINK_ROOT_DIR/bin/vlink-foxglove\""
+elif [ -x "$VLINK_ROOT_DIR/bin/vlink-rerun" ]; then
+    alias webviz="\"$VLINK_ROOT_DIR/bin/vlink-rerun\""
+fi
+if [ -r "$VLINK_COMPLETIONS" ]; then
+    source "$VLINK_COMPLETIONS"
+fi
+
+function kill_proxy() {
+    killall -q -9 proxy
+    killall -q -9 vlink-proxy
+}

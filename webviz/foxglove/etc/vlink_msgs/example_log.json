@@ -1,0 +1,16 @@
+{
+  "ser": "system.proto.LogMessage",
+  "schema": "foxglove.Log",
+  "encoding": "protobuf",
+  "schema_encoding": "flatbuffers",
+  "timestamp_field": "timestamp_ns",
+  "timestamp_unit": "ns",
+  "field_mappings": [
+    { "source": "timestamp_ns", "target": "timestamp_ns" },
+    { "source": "level", "target": "level", "default_value": "info" },
+    { "source": "message", "target": "message" },
+    { "source": "logger", "target": "name", "default_value": "vlink" },
+    { "source": "file", "target": "file" },
+    { "source": "line", "target": "line" }
+  ]
+}

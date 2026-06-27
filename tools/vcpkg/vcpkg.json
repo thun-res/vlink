@@ -1,0 +1,94 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg/master/scripts/vcpkg.schema.json",
+  "name": "vlink",
+  "version": "2.0.0",
+  "description": "High-performance middleware for autonomous driving and embodied AI",
+  "homepage": "https://vlink.work",
+  "license": "Apache-2.0",
+  "supports": "!uwp",
+  "builtin-baseline": "a0400024711b283056538ac19ced80b91a83c24c",
+  "dependencies": [
+    "zlib"
+  ],
+  "default-features": [
+    "security",
+    "zstd",
+    "sqlite",
+    "protobuf",
+    "flatbuffers",
+    "dds",
+    "ddsc",
+    "shm"
+  ],
+  "features": {
+    "security": {
+      "description": "TLS/crypto support (maps to ENABLE_SECURITY)",
+      "dependencies": [
+        "openssl"
+      ]
+    },
+    "zstd": {
+      "description": "Zstandard payload compression (maps to ENABLE_ZSTD)",
+      "dependencies": [
+        "zstd"
+      ]
+    },
+    "sqlite": {
+      "description": "SQLite-backed storage (maps to ENABLE_SQLITE)",
+      "dependencies": [
+        "sqlite3"
+      ]
+    },
+    "protobuf": {
+      "description": "Protobuf schema support for cli-eproto/cli-dump (maps to ENABLE_CLI_EPROTO)",
+      "dependencies": [
+        {
+          "name": "protobuf",
+          "host": true
+        },
+        "protobuf"
+      ]
+    },
+    "flatbuffers": {
+      "description": "FlatBuffers schema support for cli-efbs/cli-dump (maps to ENABLE_CLI_EFBS)",
+      "dependencies": [
+        {
+          "name": "flatbuffers",
+          "host": true
+        },
+        "flatbuffers"
+      ]
+    },
+    "dds": {
+      "description": "eProsima Fast-DDS transport backend (maps to module dds)",
+      "dependencies": [
+        "fastdds"
+      ]
+    },
+    "ddsc": {
+      "description": "Eclipse Cyclone DDS transport backend (maps to module ddsc)",
+      "dependencies": [
+        "cyclonedds"
+      ]
+    },
+    "shm": {
+      "description": "Eclipse iceoryx shared-memory transport backend (maps to module shm)",
+      "dependencies": [
+        "iceoryx"
+      ]
+    },
+    "viewer": {
+      "description": "Qt + OpenSceneGraph desktop viewer (maps to ENABLE_VIEWER)",
+      "dependencies": [
+        "osg",
+        "qtbase"
+      ]
+    },
+    "viewer-ffmpeg": {
+      "description": "FFmpeg video decoding for the viewer (maps to ENABLE_VIEWER_FFMPEG)",
+      "dependencies": [
+        "ffmpeg"
+      ]
+    }
+  }
+}

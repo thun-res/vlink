@@ -1,0 +1,272 @@
+name: Docker Images
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: docker-images-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-vlink-ubuntu20-amd64:
+    name: vlink-ubuntu20-amd64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    env:
+      VLINK_DOCKER_IMAGE: vlink-ubuntu20
+      VLINK_DOCKER_UBUNTU_REF: ubuntu@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214
+      VLINK_DOCKER_CI_EXTRAS: "0"
+      VLINK_DOCKER_PIP_VERSION: "25.0.1"
+      VLINK_DOCKER_SETUPTOOLS_VERSION: "75.3.4"
+      VLINK_DOCKER_WHEEL_VERSION: "0.45.1"
+      VLINK_DOCKER_ARCH: amd64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: "false"
+        with:
+          context: .github/docker
+          file: .github/docker/Dockerfile
+          platforms: linux/${{ env.VLINK_DOCKER_ARCH }}
+          push: true
+          build-args: |
+            UBUNTU_REF=${{ env.VLINK_DOCKER_UBUNTU_REF }}
+            CI_EXTRAS=${{ env.VLINK_DOCKER_CI_EXTRAS }}
+            PIP_VERSION=${{ env.VLINK_DOCKER_PIP_VERSION }}
+            SETUPTOOLS_VERSION=${{ env.VLINK_DOCKER_SETUPTOOLS_VERSION }}
+            WHEEL_VERSION=${{ env.VLINK_DOCKER_WHEEL_VERSION }}
+          cache-from: type=gha,scope=${{ env.VLINK_DOCKER_IMAGE }}-${{ env.VLINK_DOCKER_ARCH }}
+          cache-to: type=gha,mode=min,scope=${{ env.VLINK_DOCKER_IMAGE }}-${{ env.VLINK_DOCKER_ARCH }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ env.VLINK_DOCKER_IMAGE }}:${{ env.VLINK_DOCKER_ARCH }}
+            ghcr.io/${{ github.repository_owner }}/${{ env.VLINK_DOCKER_IMAGE }}:${{ github.sha }}-${{ env.VLINK_DOCKER_ARCH }}
+
+  build-vlink-ubuntu20-arm64:
+    name: vlink-ubuntu20-arm64
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 360
+    env:
+      VLINK_DOCKER_IMAGE: vlink-ubuntu20
+      VLINK_DOCKER_UBUNTU_REF: ubuntu@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214
+      VLINK_DOCKER_CI_EXTRAS: "0"
+      VLINK_DOCKER_PIP_VERSION: "25.0.1"
+      VLINK_DOCKER_SETUPTOOLS_VERSION: "75.3.4"
+      VLINK_DOCKER_WHEEL_VERSION: "0.45.1"
+      VLINK_DOCKER_ARCH: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: "false"
+        with:
+          context: .github/docker
+          file: .github/docker/Dockerfile
+          platforms: linux/${{ env.VLINK_DOCKER_ARCH }}
+          push: true
+          build-args: |
+            UBUNTU_REF=${{ env.VLINK_DOCKER_UBUNTU_REF }}
+            CI_EXTRAS=${{ env.VLINK_DOCKER_CI_EXTRAS }}
+            PIP_VERSION=${{ env.VLINK_DOCKER_PIP_VERSION }}
+            SETUPTOOLS_VERSION=${{ env.VLINK_DOCKER_SETUPTOOLS_VERSION }}
+            WHEEL_VERSION=${{ env.VLINK_DOCKER_WHEEL_VERSION }}
+          cache-from: type=gha,scope=${{ env.VLINK_DOCKER_IMAGE }}-${{ env.VLINK_DOCKER_ARCH }}
+          cache-to: type=gha,mode=min,scope=${{ env.VLINK_DOCKER_IMAGE }}-${{ env.VLINK_DOCKER_ARCH }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ env.VLINK_DOCKER_IMAGE }}:${{ env.VLINK_DOCKER_ARCH }}
+            ghcr.io/${{ github.repository_owner }}/${{ env.VLINK_DOCKER_IMAGE }}:${{ github.sha }}-${{ env.VLINK_DOCKER_ARCH }}
+
+  build-vlink-ubuntu22-amd64:
+    name: vlink-ubuntu22-amd64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    env:
+      VLINK_DOCKER_IMAGE: vlink-ubuntu22
+      VLINK_DOCKER_UBUNTU_REF: ubuntu@sha256:4f838adc7181d9039ac795a7d0aba05a9bd9ecd480d294483169c5def983b64d
+      VLINK_DOCKER_CI_EXTRAS: "1"
+      VLINK_DOCKER_PIP_VERSION: "26.1.2"
+      VLINK_DOCKER_SETUPTOOLS_VERSION: "82.0.1"
+      VLINK_DOCKER_WHEEL_VERSION: "0.47.0"
+      VLINK_DOCKER_ARCH: amd64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: "false"
+        with:
+          context: .github/docker
+          file: .github/docker/Dockerfile
+          platforms: linux/${{ env.VLINK_DOCKER_ARCH }}
+          push: true
+          build-args: |
+            UBUNTU_REF=${{ env.VLINK_DOCKER_UBUNTU_REF }}
+            CI_EXTRAS=${{ env.VLINK_DOCKER_CI_EXTRAS }}
+            PIP_VERSION=${{ env.VLINK_DOCKER_PIP_VERSION }}
+            SETUPTOOLS_VERSION=${{ env.VLINK_DOCKER_SETUPTOOLS_VERSION }}
+            WHEEL_VERSION=${{ env.VLINK_DOCKER_WHEEL_VERSION }}
+          cache-from: type=gha,scope=${{ env.VLINK_DOCKER_IMAGE }}-${{ env.VLINK_DOCKER_ARCH }}
+          cache-to: type=gha,mode=min,scope=${{ env.VLINK_DOCKER_IMAGE }}-${{ env.VLINK_DOCKER_ARCH }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ env.VLINK_DOCKER_IMAGE }}:${{ env.VLINK_DOCKER_ARCH }}
+            ghcr.io/${{ github.repository_owner }}/${{ env.VLINK_DOCKER_IMAGE }}:${{ github.sha }}-${{ env.VLINK_DOCKER_ARCH }}
+
+  build-vlink-ubuntu22-arm64:
+    name: vlink-ubuntu22-arm64
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 360
+    env:
+      VLINK_DOCKER_IMAGE: vlink-ubuntu22
+      VLINK_DOCKER_UBUNTU_REF: ubuntu@sha256:4f838adc7181d9039ac795a7d0aba05a9bd9ecd480d294483169c5def983b64d
+      VLINK_DOCKER_CI_EXTRAS: "1"
+      VLINK_DOCKER_PIP_VERSION: "26.1.2"
+      VLINK_DOCKER_SETUPTOOLS_VERSION: "82.0.1"
+      VLINK_DOCKER_WHEEL_VERSION: "0.47.0"
+      VLINK_DOCKER_ARCH: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: "false"
+        with:
+          context: .github/docker
+          file: .github/docker/Dockerfile
+          platforms: linux/${{ env.VLINK_DOCKER_ARCH }}
+          push: true
+          build-args: |
+            UBUNTU_REF=${{ env.VLINK_DOCKER_UBUNTU_REF }}
+            CI_EXTRAS=${{ env.VLINK_DOCKER_CI_EXTRAS }}
+            PIP_VERSION=${{ env.VLINK_DOCKER_PIP_VERSION }}
+            SETUPTOOLS_VERSION=${{ env.VLINK_DOCKER_SETUPTOOLS_VERSION }}
+            WHEEL_VERSION=${{ env.VLINK_DOCKER_WHEEL_VERSION }}
+          cache-from: type=gha,scope=${{ env.VLINK_DOCKER_IMAGE }}-${{ env.VLINK_DOCKER_ARCH }}
+          cache-to: type=gha,mode=min,scope=${{ env.VLINK_DOCKER_IMAGE }}-${{ env.VLINK_DOCKER_ARCH }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ env.VLINK_DOCKER_IMAGE }}:${{ env.VLINK_DOCKER_ARCH }}
+            ghcr.io/${{ github.repository_owner }}/${{ env.VLINK_DOCKER_IMAGE }}:${{ github.sha }}-${{ env.VLINK_DOCKER_ARCH }}
+
+  publish-vlink-ubuntu20:
+    name: vlink-ubuntu20-latest
+    needs:
+      - build-vlink-ubuntu20-amd64
+      - build-vlink-ubuntu20-arm64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish multi-arch tag
+        run: |
+          source .github/scripts/github-progress.sh
+          vlink_progress_init "Publish vlink-ubuntu20 multi-arch tag" \
+            "Create manifest list"
+
+          vlink_progress_run "Create manifest list" docker buildx imagetools create \
+            -t ghcr.io/${{ github.repository_owner }}/vlink-ubuntu20:latest \
+            -t ghcr.io/${{ github.repository_owner }}/vlink-ubuntu20:${{ github.sha }} \
+            ghcr.io/${{ github.repository_owner }}/vlink-ubuntu20:${{ github.sha }}-amd64 \
+            ghcr.io/${{ github.repository_owner }}/vlink-ubuntu20:${{ github.sha }}-arm64
+
+  publish-vlink-ubuntu22:
+    name: vlink-ubuntu22-latest
+    needs:
+      - build-vlink-ubuntu22-amd64
+      - build-vlink-ubuntu22-arm64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish multi-arch tag
+        run: |
+          source .github/scripts/github-progress.sh
+          vlink_progress_init "Publish vlink-ubuntu22 multi-arch tag" \
+            "Create manifest list"
+
+          vlink_progress_run "Create manifest list" docker buildx imagetools create \
+            -t ghcr.io/${{ github.repository_owner }}/vlink-ubuntu22:latest \
+            -t ghcr.io/${{ github.repository_owner }}/vlink-ubuntu22:${{ github.sha }} \
+            ghcr.io/${{ github.repository_owner }}/vlink-ubuntu22:${{ github.sha }}-amd64 \
+            ghcr.io/${{ github.repository_owner }}/vlink-ubuntu22:${{ github.sha }}-arm64

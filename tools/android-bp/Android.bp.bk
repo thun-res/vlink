@@ -1,0 +1,313 @@
+/*
+ * Copyright (C) 2026 by Thun Lu. All rights reserved.
+ */
+
+// libvlink-defaults
+cc_defaults {
+    name: "libvlink-defaults",
+    cppflags: [
+        "-fexceptions",
+        "-Wno-non-virtual-dtor",
+        "-Wno-unknown-pragmas",
+        "-Wno-implicit-fallthrough",
+        "-Wno-unused-parameter",
+    ],
+    cpp_std: "c++17",
+}
+
+// libvlink
+cc_prebuilt_library_shared {
+    name: "libvlink",
+    owner: "vlink",
+    vendor_available: true,
+    compile_multilib: "both",
+    arch: {
+        arm: {
+            srcs: ["libs/arm/libvlink.so"],
+        },
+        arm64: {
+            srcs: ["libs/arm64/libvlink.so"],
+        },
+    },
+    export_include_dirs: [
+        "include",
+    ],
+    shared_libs: [
+        "liblog",
+        "libcrypto",
+        "libsqlite",
+    ],
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+// libvlink-intra
+cc_prebuilt_library_shared {
+    name: "libvlink-intra",
+    owner: "vlink",
+    vendor_available: true,
+    compile_multilib: "both",
+    arch: {
+        arm: {
+            srcs: ["libs/arm/libvlink-intra.so"],
+        },
+        arm64: {
+            srcs: ["libs/arm64/libvlink-intra.so"],
+        },
+    },
+    shared_libs: [
+        "libvlink",
+    ],
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+// libvlink-dds
+cc_prebuilt_library_shared {
+    name: "libvlink-dds",
+    owner: "vlink",
+    vendor_available: true,
+    compile_multilib: "both",
+    arch: {
+        arm: {
+            srcs: ["libs/arm/libvlink-dds.so"],
+        },
+        arm64: {
+            srcs: ["libs/arm64/libvlink-dds.so"],
+        },
+    },
+    shared_libs: [
+        "libvlink",
+        "libfastrtps",
+        "libfastcdr",
+    ],
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+// libvlink-ddsc
+cc_prebuilt_library_shared {
+    name: "libvlink-ddsc",
+    owner: "vlink",
+    vendor_available: true,
+    compile_multilib: "both",
+    arch: {
+        arm: {
+            srcs: ["libs/arm/libvlink-ddsc.so"],
+        },
+        arm64: {
+            srcs: ["libs/arm64/libvlink-ddsc.so"],
+        },
+    },
+    shared_libs: [
+        "libvlink",
+        "libcyclonedds",
+    ],
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+// libvlink-proxy_api
+cc_prebuilt_library_shared {
+    name: "libvlink-proxy_api",
+    owner: "vlink",
+    vendor_available: true,
+    compile_multilib: "both",
+    arch: {
+        arm: {
+            srcs: ["libs/arm/libvlink-proxy_api.so"],
+        },
+        arm64: {
+            srcs: ["libs/arm64/libvlink-proxy_api.so"],
+        },
+    },
+    export_include_dirs: [
+        "include",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-intra",
+        "libvlink-dds",
+        "libvlink-ddsc",
+        "libprotobuf-cpp-lite",
+    ],
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+// libvlink-proxy_server
+cc_prebuilt_library_shared {
+    name: "libvlink-proxy_server",
+    owner: "vlink",
+    vendor_available: true,
+    compile_multilib: "both",
+    arch: {
+        arm: {
+            srcs: ["libs/arm/libvlink-proxy_server.so"],
+        },
+        arm64: {
+            srcs: ["libs/arm64/libvlink-proxy_server.so"],
+        },
+    },
+    export_include_dirs: [
+        "include",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-intra",
+        "libvlink-dds",
+        "libvlink-ddsc",
+        "libprotobuf-cpp-lite",
+    ],
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+// libvlink-c_api
+cc_prebuilt_library_shared {
+    name: "libvlink-c_api",
+    owner: "vlink",
+    vendor_available: true,
+    compile_multilib: "both",
+    arch: {
+        arm: {
+            srcs: ["libs/arm/libvlink-c_api.so"],
+        },
+        arm64: {
+            srcs: ["libs/arm64/libvlink-c_api.so"],
+        },
+    },
+    export_include_dirs: [
+        "include",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-intra",
+        "libvlink-dds",
+        "libvlink-ddsc",
+    ],
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+// vlink-proxy
+cc_prebuilt_binary {
+    name: "vlink-proxy",
+    owner: "vlink",
+    vendor_available: true,
+    srcs: ["bin/vlink-proxy"],
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+// vlink-info
+cc_prebuilt_binary {
+    name: "vlink-info",
+    owner: "vlink",
+    vendor_available: true,
+    srcs: ["bin/vlink-info"],
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+// vlink-bag
+cc_prebuilt_binary {
+    name: "vlink-bag",
+    owner: "vlink",
+    vendor_available: true,
+    srcs: ["bin/vlink-bag"],
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+// vlink-monitor
+cc_prebuilt_binary {
+    name: "vlink-monitor",
+    owner: "vlink",
+    vendor_available: true,
+    srcs: ["bin/vlink-monitor"],
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+// vlink-list
+cc_prebuilt_binary {
+    name: "vlink-list",
+    owner: "vlink",
+    vendor_available: true,
+    srcs: ["bin/vlink-list"],
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+// vlink-eproto
+cc_prebuilt_binary {
+    name: "vlink-eproto",
+    owner: "vlink",
+    vendor_available: true,
+    srcs: ["bin/vlink-eproto"],
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+// vlink-dump
+cc_prebuilt_binary {
+    name: "vlink-dump",
+    owner: "vlink",
+    vendor_available: true,
+    srcs: ["bin/vlink-dump"],
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+// vlink-check
+cc_prebuilt_binary {
+    name: "vlink-check",
+    owner: "vlink",
+    vendor_available: true,
+    srcs: ["bin/vlink-check"],
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
+// vlink-bench
+cc_prebuilt_binary {
+    name: "vlink-bench",
+    owner: "vlink",
+    vendor_available: true,
+    srcs: ["bin/vlink-bench"],
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}

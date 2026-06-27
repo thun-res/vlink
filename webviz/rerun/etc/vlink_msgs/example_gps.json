@@ -1,0 +1,17 @@
+{
+  "ser": "sensor.GnssData",
+  "archetype": "GeoPoints",
+  "encoding": "flatbuffers",
+  "timestamp_field": "timestamp_us",
+  "timestamp_unit": "us",
+  "field_mappings": [
+    {
+      "source": "latitude",
+      "target": "latitude"
+    },
+    {
+      "source": "longitude",
+      "target": "longitude"
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+<mxfile host="app.diagrams.net" modified="2026-06-25T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="samples-relationship" name="Samples Relationship Tree">
+    <mxGraphModel dx="1060" dy="620" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1060" pageHeight="620" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Samples  -  Learning Path Tree" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=22;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="20" width="1000" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Start with helloworld  -  branch into latency tests and protocol-specific samples" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="30" y="58" width="1000" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="hwBox" value="helloworld&#10;&#10;Multi-protocol  -  Protobuf  -  Event + Method" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;fontColor=#ffffff;fontStyle=1;fontFamily=Helvetica;fontSize=16;arcSize=10;shadow=0;verticalAlign=middle;spacingTop=2;" vertex="1" parent="1">
+          <mxGeometry x="340" y="100" width="380" height="84" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ppBox" value="ping_pong&#10;&#10;Latency measurement with Bytes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontColor=#0d47a1;fontStyle=1;fontFamily=Helvetica;fontSize=14;arcSize=10;shadow=0;verticalAlign=middle;spacingTop=2;" vertex="1" parent="1">
+          <mxGeometry x="100" y="240" width="260" height="78" as="geometry" />
+        </mxCell>
+
+        <mxCell id="srBox" value="shm_raw&#10;&#10;All 6 primitives + Security" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontColor=#0d47a1;fontStyle=1;fontFamily=Helvetica;fontSize=14;arcSize=10;shadow=0;verticalAlign=middle;spacingTop=2;" vertex="1" parent="1">
+          <mxGeometry x="700" y="240" width="260" height="78" as="geometry" />
+        </mxCell>
+
+        <mxCell id="hwToPp" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="hwBox" target="ppBox">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="hwToSr" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="hwBox" target="srBox">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ddBox" value="dds_dynamic&#10;&#10;DynamicData" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;fontColor=#1b5e20;fontStyle=1;fontFamily=Helvetica;fontSize=13;arcSize=12;shadow=0;verticalAlign=middle;spacingTop=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="380" width="180" height="74" as="geometry" />
+        </mxCell>
+
+        <mxCell id="diBox" value="dds_idl&#10;&#10;IDL / CDR" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;fontColor=#1b5e20;fontStyle=1;fontFamily=Helvetica;fontSize=13;arcSize=12;shadow=0;verticalAlign=middle;spacingTop=2;" vertex="1" parent="1">
+          <mxGeometry x="240" y="380" width="180" height="74" as="geometry" />
+        </mxCell>
+
+        <mxCell id="dpBox" value="ddsc_proto&#10;&#10;CycloneDDS + Protobuf" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;fontColor=#1b5e20;fontStyle=1;fontFamily=Helvetica;fontSize=13;arcSize=12;shadow=0;verticalAlign=middle;spacingTop=2;" vertex="1" parent="1">
+          <mxGeometry x="440" y="380" width="180" height="74" as="geometry" />
+        </mxCell>
+
+        <mxCell id="fpBox" value="fdbus_proto&#10;&#10;FDBus IPC + Protobuf" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;fontColor=#1b5e20;fontStyle=1;fontFamily=Helvetica;fontSize=13;arcSize=12;shadow=0;verticalAlign=middle;spacingTop=2;" vertex="1" parent="1">
+          <mxGeometry x="640" y="380" width="180" height="74" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sfBox" value="someip_flat&#10;&#10;SOME/IP + FlatBuffers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;fontColor=#1b5e20;fontStyle=1;fontFamily=Helvetica;fontSize=13;arcSize=12;shadow=0;verticalAlign=middle;spacingTop=2;" vertex="1" parent="1">
+          <mxGeometry x="840" y="380" width="180" height="74" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pfBox" value="pub_sub_fbs&#10;&#10;DDSC + FlatBuffers Event" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;fontColor=#1b5e20;fontStyle=1;fontFamily=Helvetica;fontSize=13;arcSize=12;shadow=0;verticalAlign=middle;spacingTop=2;" vertex="1" parent="1">
+          <mxGeometry x="440" y="500" width="180" height="68" as="geometry" />
+        </mxCell>
+
+        <mxCell id="srDd" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=1.6;strokeColor=#388e3c;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="srBox" target="ddBox">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="srDi" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=1.6;strokeColor=#388e3c;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="srBox" target="diBox">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="srDp" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=1.6;strokeColor=#388e3c;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="srBox" target="dpBox">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="srFp" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=1.6;strokeColor=#388e3c;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="srBox" target="fpBox">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="srSf" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=1.6;strokeColor=#388e3c;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="srBox" target="sfBox">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="srPf" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=1.6;strokeColor=#388e3c;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="dpBox" target="pfBox">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legend" value="Blue = multi-protocol generic examples         Green = protocol-specific examples" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1;fontFamily=Helvetica;fontSize=12;fontStyle=2;fontColor=#37474f;arcSize=14;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="220" y="582" width="620" height="32" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

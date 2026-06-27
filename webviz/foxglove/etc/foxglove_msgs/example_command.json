@@ -1,0 +1,8 @@
+[
+  {
+    "_comment": "Foxglove frontend JSON publish -> VLink protobuf direct route using the target protobuf schema",
+    "encoding": "protobuf",
+    "url": "dds://vehicle/control/cmd",
+    "ser": "control.proto.VehicleCmd"
+  }
+]

@@ -1,0 +1,10 @@
+[
+  {
+    "_comment": "Explicit passthrough for a VLink protobuf payload that is already the exact Foxglove protobuf payload",
+    "ser": "vehicle.proto.Status",
+    "schema": "vehicle.proto.Status",
+    "encoding": "protobuf",
+    "schema_encoding": "protobuf",
+    "converter": "passthrough"
+  }
+]

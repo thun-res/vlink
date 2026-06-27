@@ -1,0 +1,16 @@
+{
+  "ser": "lidar.proto.LaserScan",
+  "schema": "foxglove.LaserScan",
+  "encoding": "protobuf",
+  "schema_encoding": "flatbuffers",
+  "timestamp_field": "header.timestamp_ns",
+  "timestamp_unit": "ns",
+  "field_mappings": [
+    { "source": "header.timestamp_ns", "target": "timestamp_ns" },
+    { "source": "header.frame_id", "target": "frame_id", "default_value": "lidar" },
+    { "source": "angle_min", "target": "start_angle" },
+    { "source": "angle_max", "target": "end_angle" },
+    { "source": "ranges", "target": "ranges" },
+    { "source": "intensities", "target": "intensities" }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "ser": "ml.proto.TensorFrame",
+  "archetype": "Tensor",
+  "encoding": "protobuf",
+  "field_mappings": [
+    { "source": "shape", "target": "shape" },
+    { "source": "dim_names", "target": "dim_names" },
+    { "source": "data", "target": "data" }
+  ]
+}

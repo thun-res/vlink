@@ -1,0 +1,17 @@
+{
+  "ser": "camera.proto.CameraCalibration",
+  "schema": "foxglove.CameraCalibration",
+  "encoding": "protobuf",
+  "schema_encoding": "flatbuffers",
+  "field_mappings": [
+    { "source": "header.timestamp_ns", "target": "timestamp_ns" },
+    { "source": "header.frame_id", "target": "frame_id", "default_value": "camera" },
+    { "source": "width", "target": "width" },
+    { "source": "height", "target": "height" },
+    { "source": "distortion_model", "target": "distortion_model", "default_value": "plumb_bob" },
+    { "source": "d", "target": "d" },
+    { "source": "k", "target": "k" },
+    { "source": "r", "target": "r" },
+    { "source": "p", "target": "p" }
+  ]
+}

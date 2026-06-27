@@ -1,0 +1,76 @@
+{
+  "name": "vlink-foxglove-bridge",
+  "port": 8765,
+  "address": "0.0.0.0",
+  "send_time": false,
+  "filter": {
+    "whitelist": [],
+    "blacklist": []
+  },
+  "capabilities": {
+    "time": false,
+    "connection_graph": true,
+    "publish": true,
+    "rpcs": true,
+    "assets": false
+  },
+  "parameters": {
+    "url": "dds://foxglove/parameters",
+    "values": [
+      { "name": "vehicle.mode", "value": "AUTO" },
+      { "name": "control.max_speed", "value": 12.5, "type": "float64" },
+      { "name": "planner.enable_debug", "value": true }
+    ]
+  },
+  "proxy": {
+    "interface_mode": "proxy_api",
+    "role": "controller",
+    "domain_id": 0,
+    "dds_impl": "dds",
+    "native": false,
+    "enable_tcp": false,
+    "bind_ip": "",
+    "peer_ip": "",
+    "buf_size": 0,
+    "mtu_size": 0,
+    "api": {
+      "security_key": "",
+      "reliable": false,
+      "direct": false,
+      "match_version": true
+    },
+    "server": {
+      "max_packet_size": 4.0,
+      "use_iox": false,
+      "iox_config": "",
+      "iox_strategy": 2,
+      "iox_monitoring": true
+    }
+  },
+  "proto_dir": "",
+  "fbs_dir": "",
+  "schema_plugin_path": "",
+  "convert_plugin_path": "",
+  "convert_plugin_config": "",
+  "vlink_msgs": [
+    "vlink_msgs/example_gps.json",
+    "vlink_msgs/example_imu.json",
+    "vlink_msgs/example_obstacle.json",
+    "vlink_msgs/example_frame_transform.json",
+    "vlink_msgs/example_laserscan.json",
+    "vlink_msgs/example_log.json",
+    "vlink_msgs/example_raw_image.json",
+    "vlink_msgs/example_camera_calibration.json",
+    "vlink_msgs/example_joint_states.json"
+  ],
+  "foxglove_msgs": [
+    "foxglove_msgs/example_command.json",
+    "foxglove_msgs/example_command_flatbuffers.json",
+    "foxglove_msgs/example_command_json_proto_schema.json",
+    "foxglove_msgs/example_json_payload.json"
+  ],
+  "rpc_msgs": [
+    "rpc_msgs/example_set_mode_rpc.json",
+    "rpc_msgs/example_reset_rpc.json"
+  ]
+}

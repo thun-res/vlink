@@ -1,0 +1,39 @@
+{
+    "title":"Sensor Sequence Charts",
+    "type":"value",
+    "units":[
+        {
+            "url_filter":"hal/chassis_info",
+            "label":"chassis_info",
+            "expression":"header.seq",
+            "enable":true,
+            "ext_zero_start":true,
+            "ext_sample_interval":0,
+            "ext_limit_min":null,
+            "ext_limit_max":null,
+            "ext_operation":""
+        },
+        {
+            "url_filter":"hal/gnss",
+            "label":"gnss",
+            "expression":"header.seq",
+            "enable":true,
+            "ext_zero_start":true,
+            "ext_sample_interval":0,
+            "ext_limit_min":null,
+            "ext_limit_max":null,
+            "ext_operation":""
+        },
+        {
+            "url_filter":"hal/imu",
+            "label":"imu",
+            "expression":"header.seq",
+            "enable":true,
+            "ext_zero_start":true,
+            "ext_sample_interval":0,
+            "ext_limit_min":null,
+            "ext_limit_max":null,
+            "ext_operation":""
+        }
+    ]
+}

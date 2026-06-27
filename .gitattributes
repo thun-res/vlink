@@ -1,0 +1,10 @@
+*.sh text eol=lf
+*.sh.in text eol=lf
+*.bash text eol=lf
+*.bash.in text eol=lf
+*.bat text eol=crlf whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+*.bat.in text eol=crlf whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+*.cmd text eol=crlf whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+*.cmd.in text eol=crlf whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+*.ps1 text eol=crlf whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+*.ps1.in text eol=crlf whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

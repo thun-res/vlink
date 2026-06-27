@@ -1,0 +1,21 @@
+{
+  "ser": "perception.ObstacleList",
+  "schema": "foxglove.SceneUpdate",
+  "encoding": "flatbuffers",
+  "schema_encoding": "flatbuffers",
+  "field_mappings": [
+    {
+      "source": "timestamp_us",
+      "target": "timestamp"
+    },
+    {
+      "source": "frame_id",
+      "target": "frame_id",
+      "default_value": "base_link"
+    },
+    {
+      "source": "obstacles",
+      "target": "entities"
+    }
+  ]
+}

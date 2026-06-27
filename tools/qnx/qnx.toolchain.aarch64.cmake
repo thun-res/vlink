@@ -1,0 +1,11 @@
+if(DEFINED ENV{OE_CMAKE_TOOLCHAIN_FILE})
+  include($ENV{OE_CMAKE_TOOLCHAIN_FILE})
+endif()
+
+set(CMAKE_SYSTEM_VERSION 8.0.0)
+set(CMAKE_SYSTEM_PROCESSOR aarch64)
+set(CMAKE_SIZEOF_VOID_P 8)
+set(QNX_CPUVAR aarch64le)
+set(QNX_OSLIST nto)
+
+include(${CMAKE_CURRENT_LIST_DIR}/qnx.toolchain.common.cmake)

@@ -1,0 +1,14 @@
+namespace fbs;
+
+table Request {
+  type:uint32;
+}
+
+table Response {
+  value:string;
+}
+
+table Message {
+  type:uint32;
+  value:string;
+}

@@ -1,0 +1,56 @@
+PROJECT_NAME           = "@DOC_NAME@"
+PROJECT_NUMBER         = "@DOC_VERSION@"
+PROJECT_BRIEF          = "@DOC_BRIEF@"
+PROJECT_LOGO           = @DOC_LOGO@
+HTML_OUTPUT            = @DOC_OUTPUT_DIR@/zh_cn
+OUTPUT_LANGUAGE        = "Chinese"
+OUTPUT_DIRECTORY       = @PROJECT_BINARY_DIR@
+IMAGE_PATH             = ./doc/images/
+ABBREVIATE_BRIEF       = "The $name class" \
+                         "The $name widget" \
+                         "The $name file" \
+                         is \
+                         provides \
+                         specifies \
+                         contains \
+                         represents \
+                         a \
+                         an \
+                         the
+INPUT                  = ./README.md ./CHANGELOG.md ./doc/ ./include/
+EXCLUDE                = ./include/private/ ./include/thirdparty/ ./include/@CMAKE_PROJECT_NAME@/private/ ./include/@CMAKE_PROJECT_NAME@/thirdparty/
+USE_MDFILE_AS_MAINPAGE = ./README.md
+FILE_PATTERNS          = *.h \
+                         *.hpp \
+                         *.md
+
+QUIET                  = YES
+EXTRACT_ALL            = YES
+EXTRACT_LOCAL_CLASSES  = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = NO
+EXTRACT_LOCAL_METHODS  = NO
+EXTRACT_ANON_NSPACES   = NO
+HAVE_DOT               = YES
+INTERACTIVE_SVG        = YES
+DOT_IMAGE_FORMAT       = svg
+HTML_COLORSTYLE        = LIGHT
+RECURSIVE              = YES
+IDL_PROPERTY_SUPPORT   = YES
+BUILTIN_STL_SUPPORT    = YES
+GENERATE_TREEVIEW      = YES
+DIRECTORY_GRAPH        = YES
+GRAPHICAL_HIERARCHY    = YES
+CALL_GRAPH             = YES
+CALLER_GRAPH           = YES
+TEMPLATE_RELATIONS     = YES
+UML_LOOK               = YES
+DISABLE_INDEX          = NO
+FULL_SIDEBAR           = NO
+STRIP_CODE_COMMENTS    = NO
+GENERATE_LATEX         = NO
+WARNINGS               = NO
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = NO
+
+HTML_EXTRA_STYLESHEET  = @PROJECT_SOURCE_DIR@/doxygen-awesome-css/doxygen-awesome.css @PROJECT_SOURCE_DIR@/doxygen-awesome-css/doxygen-awesome-sidebar-only.css

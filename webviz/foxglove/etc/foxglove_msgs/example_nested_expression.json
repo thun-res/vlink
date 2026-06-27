@@ -1,0 +1,8 @@
+[
+  {
+    "_comment": "Foxglove frontend JSON publish with nested structure -> VLink protobuf direct route",
+    "encoding": "protobuf",
+    "url": "dds://planner/control/request",
+    "ser": "planner.proto.ControlRequest"
+  }
+]

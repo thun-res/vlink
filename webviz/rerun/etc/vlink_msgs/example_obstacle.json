@@ -1,0 +1,11 @@
+{
+  "ser": "perception.ObstacleList",
+  "archetype": "Boxes3D",
+  "encoding": "flatbuffers",
+  "field_mappings": [
+    {
+      "source": "obstacles",
+      "target": "entities"
+    }
+  ]
+}

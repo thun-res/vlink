@@ -1,0 +1,141 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="bag-architecture" name="Bag Architecture">
+    <mxGraphModel dx="1000" dy="920" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="920" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="VLink Bag Architecture" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="920" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Writer &#183; Reader &#183; Reader Processor" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="40" y="56" width="920" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Section 1: BagWriter -->
+        <mxCell id="s1bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;arcSize=4;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="920" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="s1bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="920" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="s1t" value="1. BagWriter Hierarchy" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="112" width="500" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="s1h" value="Publisher / Subscriber push event into writer" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
+          <mxGeometry x="560" y="114" width="380" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="w_src" value="&lt;b&gt;Publisher / Subscriber&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="370" y="150" width="260" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="w_abs" value="&lt;b&gt;BagWriter&lt;/b&gt; &lt;i&gt;(abstract)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="370" y="218" width="260" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="w_note" value="MessageLoop&lt;br/&gt;&lt;i&gt;async write thread&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontColor=#37474f;dashed=1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="680" y="213" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="w_db" value="&lt;b&gt;VDBWriter&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;.vdb &#183; SQLite&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=13;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="220" y="276" width="230" height="42" as="geometry" />
+        </mxCell>
+
+        <mxCell id="w_mcap" value="&lt;b&gt;VCAPWriter&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;.vcap &#183; MCAP&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=13;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="550" y="276" width="230" height="42" as="geometry" />
+        </mxCell>
+
+        <mxCell id="w_a1" value="push(frame)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=10;fontColor=#0d47a1;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="w_src" target="w_abs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="w_a2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=none;html=1;strokeWidth=1.5;strokeColor=#607d8b;dashed=1;fontFamily=Helvetica;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="w_note" target="w_abs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="w_a3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;exitX=0.3;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="w_abs" target="w_db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="w_a4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;exitX=0.7;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="w_abs" target="w_mcap">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Section 2: BagReader -->
+        <mxCell id="s2bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ef6c00;strokeWidth=1.5;arcSize=4;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="40" y="346" width="920" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="s2bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=none;arcSize=30;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="40" y="346" width="920" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="s2t" value="2. BagReader Hierarchy" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="60" y="362" width="500" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="s2h" value="Reader deserializes and replays to app" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#ef6c00;" vertex="1" parent="1">
+          <mxGeometry x="560" y="364" width="380" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r_abs" value="&lt;b&gt;BagReader&lt;/b&gt; &lt;i&gt;(abstract)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="370" y="400" width="260" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="r_note" value="MessageLoop&lt;br/&gt;&lt;i&gt;playback thread&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontColor=#37474f;dashed=1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="680" y="395" width="200" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="r_a_note" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=none;html=1;strokeWidth=1.5;strokeColor=#607d8b;dashed=1;fontFamily=Helvetica;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="r_note" target="r_abs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r_db" value="&lt;b&gt;VDBReader&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;.vdb &#183; SQLite&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=13;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="220" y="468" width="230" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="r_mcap" value="&lt;b&gt;VCAPReader&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;.vcap &#183; MCAP&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=13;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="550" y="468" width="230" height="42" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r_app" value="&lt;b&gt;Upper Application&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;OutputCallback handler&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="528" width="240" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r_a1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;exitX=0.5;exitY=0;entryX=0.3;entryY=1;" edge="1" parent="1" source="r_db" target="r_abs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r_a2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;exitX=0.5;exitY=0;entryX=0.7;entryY=1;" edge="1" parent="1" source="r_mcap" target="r_abs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r_a3" value="OutputCallback" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#ef6c00;fontFamily=Helvetica;fontSize=10;fontColor=#e65100;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=0.75;entryY=0;" edge="1" parent="1" source="r_abs" target="r_app">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Section 3: Reader Processor -->
+        <mxCell id="s3bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#388e3c;strokeWidth=1.5;arcSize=4;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="40" y="596" width="920" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="s3bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="40" y="596" width="920" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="s3t" value="3. BagProcessor &#183; Time-Ordered Merge" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="60" y="612" width="500" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="s3h" value="Merge multiple readers into one time-sorted stream" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#388e3c;" vertex="1" parent="1">
+          <mxGeometry x="560" y="614" width="380" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p_src" value="&lt;b&gt;Multiple BagReaders&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;different sources / formats&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="680" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p_proc" value="&lt;b&gt;BagProcessor&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;time-sorted buffer&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="370" y="680" width="260" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p_app" value="&lt;b&gt;Upper Application&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;time-ordered stream&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontColor=#e65100;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="700" y="680" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p_a1" value="push(data_timestamp, frame)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=10;fontColor=#0d47a1;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="p_src" target="p_proc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p_a2" value="OutputCallback" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=10;fontColor=#0d47a1;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="p_proc" target="p_app">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

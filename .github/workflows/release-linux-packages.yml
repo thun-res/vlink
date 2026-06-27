@@ -1,0 +1,209 @@
+name: Release Linux Packages
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  linux-packages-ubuntu20-x86_64:
+    name: ubuntu20.04-x86_64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    env:
+      VLINK_LINUX_PACKAGE_DISTRO: ubuntu20.04
+      VLINK_LINUX_PACKAGE_IMAGE: vlink-ubuntu20
+      VLINK_LINUX_PACKAGE_ARCH: x86_64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Linux packages
+        env:
+          CMAKE_GENERATOR: Ninja
+        run: VLINK_DOCKER_RUN_CACHE=0 bash .github/scripts/docker-run.sh "ghcr.io/${{ github.repository_owner }}/${{ env.VLINK_LINUX_PACKAGE_IMAGE }}:${{ github.sha }}" bash .github/scripts/release-linux-packages.sh
+
+      - name: Upload Linux packages
+        id: upload_packages
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: vlink-linux-packages-${{ env.VLINK_LINUX_PACKAGE_DISTRO }}-${{ env.VLINK_LINUX_PACKAGE_ARCH }}
+          overwrite: true
+          if-no-files-found: error
+          path: |
+            build-deb/packup/linux/*.deb
+            build-rpm/packup/linux/*.rpm
+
+      - name: Upload Linux packages (retry)
+        if: steps.upload_packages.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: vlink-linux-packages-${{ env.VLINK_LINUX_PACKAGE_DISTRO }}-${{ env.VLINK_LINUX_PACKAGE_ARCH }}
+          overwrite: true
+          if-no-files-found: error
+          path: |
+            build-deb/packup/linux/*.deb
+            build-rpm/packup/linux/*.rpm
+
+  linux-packages-ubuntu20-aarch64:
+    name: ubuntu20.04-aarch64
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 240
+    env:
+      VLINK_LINUX_PACKAGE_DISTRO: ubuntu20.04
+      VLINK_LINUX_PACKAGE_IMAGE: vlink-ubuntu20
+      VLINK_LINUX_PACKAGE_ARCH: aarch64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Linux packages
+        env:
+          CMAKE_GENERATOR: Ninja
+        run: VLINK_DOCKER_RUN_CACHE=0 bash .github/scripts/docker-run.sh "ghcr.io/${{ github.repository_owner }}/${{ env.VLINK_LINUX_PACKAGE_IMAGE }}:${{ github.sha }}" bash .github/scripts/release-linux-packages.sh
+
+      - name: Upload Linux packages
+        id: upload_packages
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: vlink-linux-packages-${{ env.VLINK_LINUX_PACKAGE_DISTRO }}-${{ env.VLINK_LINUX_PACKAGE_ARCH }}
+          overwrite: true
+          if-no-files-found: error
+          path: |
+            build-deb/packup/linux/*.deb
+            build-rpm/packup/linux/*.rpm
+
+      - name: Upload Linux packages (retry)
+        if: steps.upload_packages.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: vlink-linux-packages-${{ env.VLINK_LINUX_PACKAGE_DISTRO }}-${{ env.VLINK_LINUX_PACKAGE_ARCH }}
+          overwrite: true
+          if-no-files-found: error
+          path: |
+            build-deb/packup/linux/*.deb
+            build-rpm/packup/linux/*.rpm
+
+  linux-packages-ubuntu22-x86_64:
+    name: ubuntu22.04-x86_64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    env:
+      VLINK_LINUX_PACKAGE_DISTRO: ubuntu22.04
+      VLINK_LINUX_PACKAGE_IMAGE: vlink-ubuntu22
+      VLINK_LINUX_PACKAGE_ARCH: x86_64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Linux packages
+        env:
+          CMAKE_GENERATOR: Ninja
+        run: VLINK_DOCKER_RUN_CACHE=0 bash .github/scripts/docker-run.sh "ghcr.io/${{ github.repository_owner }}/${{ env.VLINK_LINUX_PACKAGE_IMAGE }}:${{ github.sha }}" bash .github/scripts/release-linux-packages.sh
+
+      - name: Upload Linux packages
+        id: upload_packages
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: vlink-linux-packages-${{ env.VLINK_LINUX_PACKAGE_DISTRO }}-${{ env.VLINK_LINUX_PACKAGE_ARCH }}
+          overwrite: true
+          if-no-files-found: error
+          path: |
+            build-deb/packup/linux/*.deb
+            build-rpm/packup/linux/*.rpm
+
+      - name: Upload Linux packages (retry)
+        if: steps.upload_packages.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: vlink-linux-packages-${{ env.VLINK_LINUX_PACKAGE_DISTRO }}-${{ env.VLINK_LINUX_PACKAGE_ARCH }}
+          overwrite: true
+          if-no-files-found: error
+          path: |
+            build-deb/packup/linux/*.deb
+            build-rpm/packup/linux/*.rpm
+
+  linux-packages-ubuntu22-aarch64:
+    name: ubuntu22.04-aarch64
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 240
+    env:
+      VLINK_LINUX_PACKAGE_DISTRO: ubuntu22.04
+      VLINK_LINUX_PACKAGE_IMAGE: vlink-ubuntu22
+      VLINK_LINUX_PACKAGE_ARCH: aarch64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Linux packages
+        env:
+          CMAKE_GENERATOR: Ninja
+        run: VLINK_DOCKER_RUN_CACHE=0 bash .github/scripts/docker-run.sh "ghcr.io/${{ github.repository_owner }}/${{ env.VLINK_LINUX_PACKAGE_IMAGE }}:${{ github.sha }}" bash .github/scripts/release-linux-packages.sh
+
+      - name: Upload Linux packages
+        id: upload_packages
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: vlink-linux-packages-${{ env.VLINK_LINUX_PACKAGE_DISTRO }}-${{ env.VLINK_LINUX_PACKAGE_ARCH }}
+          overwrite: true
+          if-no-files-found: error
+          path: |
+            build-deb/packup/linux/*.deb
+            build-rpm/packup/linux/*.rpm
+
+      - name: Upload Linux packages (retry)
+        if: steps.upload_packages.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: vlink-linux-packages-${{ env.VLINK_LINUX_PACKAGE_DISTRO }}-${{ env.VLINK_LINUX_PACKAGE_ARCH }}
+          overwrite: true
+          if-no-files-found: error
+          path: |
+            build-deb/packup/linux/*.deb
+            build-rpm/packup/linux/*.rpm

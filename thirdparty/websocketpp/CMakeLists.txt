@@ -1,0 +1,21 @@
+project(websocketpp VERSION 0.8.2)
+
+add_library(${PROJECT_NAME} INTERFACE)
+add_library("thirdparty::${PROJECT_NAME}" ALIAS ${PROJECT_NAME})
+target_include_directories(${PROJECT_NAME} SYSTEM INTERFACE ${PROJECT_SOURCE_DIR}/include)
+
+if(MSVC)
+  target_compile_definitions(
+    ${PROJECT_NAME}
+    INTERFACE "_WEBSOCKETPP_CPP11_TYPE_TRAITS_" "_WEBSOCKETPP_CPP11_FUNCTIONAL_" "_WEBSOCKETPP_CPP11_SYSTEM_ERROR_"
+              "_WEBSOCKETPP_CPP11_RANDOM_DEVICE_" "_WEBSOCKETPP_CPP11_MEMORY_"
+  )
+  target_compile_definitions(
+    ${PROJECT_NAME} INTERFACE "UNICODE" "_UNICODE" "_CRT_SECURE_NO_WARNINGS" "_SCL_SECURE_NO_WARNINGS" "NOMINMAX"
+  )
+else()
+  target_compile_definitions(${PROJECT_NAME} INTERFACE "_WEBSOCKETPP_CPP11_STL_")
+  if(QNX)
+    target_link_libraries(${PROJECT_NAME} INTERFACE socket)
+  endif()
+endif()

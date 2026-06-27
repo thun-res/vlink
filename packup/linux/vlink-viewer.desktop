@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=VLink Viewer
+Terminal=false
+Exec=run_viewer.sh %f
+Icon=vlink-viewer.png
+Categories=Development

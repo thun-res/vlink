@@ -1,0 +1,22 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index d16959371..491213962 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -257,14 +257,10 @@ include_directories(thirdparty/filewatch)
+ ###############################################################################
+ option(SECURITY "Activate security" OFF)
+ 
+-if(QNX)
+-    set(OPENSSL_FOUND 1)
++if(SECURITY)
++    find_package(OpenSSL REQUIRED)
+ else()
+-    if(SECURITY)
+-        find_package(OpenSSL REQUIRED)
+-    else()
+-        find_package(OpenSSL)
+-    endif()
++    find_package(OpenSSL)
+ endif()
+ 
+ if(OPENSSL_FOUND)

@@ -1,0 +1,101 @@
+name: 🐞 Bug report / 缺陷报告
+description: Report something that is broken or behaves incorrectly. / 报告功能异常或行为错误。
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please search existing issues first.
+        感谢反馈缺陷。提交前请先搜索是否已有相同 issue。
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description / 问题描述
+      description: A clear and concise description of the bug. / 清晰简洁地描述这个缺陷。
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component / 涉及组件
+      options:
+        - proxy (vlink-proxy)
+        - cli (命令行工具)
+        - core library (src / include)
+        - python_api
+        - c_api
+        - viewer (Qt/OSG)
+        - webviz (Foxglove / Rerun)
+        - build · CI · packaging (cmake / packup / .github)
+        - docs / 文档
+        - other / 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce / 复现步骤
+      description: Minimal steps, commands, or code to reproduce. / 最小可复现的步骤、命令或代码。
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs. actual / 期望与实际
+      description: What did you expect to happen, and what happened instead? / 你期望发生什么，实际发生了什么？
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Platform / 运行平台
+      multiple: true
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - QNX
+        - Android
+        - other / 其他
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: vlink version / 版本
+      description: Release tag or commit SHA. / 发布标签或 commit SHA。
+      placeholder: "v2.0.0 / commit 2c8147f"
+    validations:
+      required: true
+
+  - type: input
+    id: transport
+    attributes:
+      label: Transport / serialization (if relevant) / 传输或序列化（如相关）
+      placeholder: "e.g. shm / udp / protobuf"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / 日志
+      description: Relevant logs or backtrace. Will be rendered as code. / 相关日志或调用栈，会以代码块呈现。
+      render: shell
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation / 确认
+      options:
+        - label: I searched existing issues and this is not a duplicate. / 我已搜索现有 issue，确认这不是重复。
+          required: true

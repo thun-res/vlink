@@ -1,0 +1,204 @@
+name: CI Test
+
+on:
+  pull_request:
+    branches:
+      - master
+      - main
+      - develop
+      - dev
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/wiki/**'
+  push:
+    branches:
+      - master
+      - main
+      - develop
+      - dev
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/wiki/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: ci-test-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CMAKE_GENERATOR: Ninja
+  VLINK_UBUNTU22_IMAGE: ghcr.io/${{ github.repository_owner }}/vlink-ubuntu22:latest
+  VLINK_CI_CMAKE_ARGS: >-
+    -DCMAKE_BUILD_TYPE=Release
+    -DENABLE_CCACHE_BUILD=ON
+    -DBUILD_SHARED_LIBS=ON
+    -DENABLE_CPM=ON
+    -DENABLE_CPM_SQLITE3=ON
+    -DENABLE_CPM_ZSTD=ON
+    -DENABLE_CPM_PROTOBUF=ON
+    -DENABLE_CPM_FLATBUFFERS=ON
+    -DENABLE_CXX_STD_20=OFF
+    -DENABLE_IOX_ROUDI=OFF
+    -DENABLE_EXAMPLES=OFF
+    -DENABLE_PYTHON_API=ON
+    -DENABLE_TEST=ON
+    -DENABLE_TEST_WARN=ON
+
+jobs:
+  linux:
+    name: ubuntu22.04-x86_64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      VLINK_CI_EXTRA_CMAKE_ARGS: >-
+        -DENABLE_VIEWER=ON
+        -DENABLE_WEBVIZ=ON
+        -DENABLE_VIEWER_FFMPEG=ON
+        -DENABLE_TEST_SANITIZE=ON
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore CPM cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.vlink-cpm-cache
+          key: cpm-ci-linux-x86_64-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          restore-keys: cpm-ci-linux-x86_64-
+
+      - name: Restore ccache
+        uses: actions/cache@v5
+        with:
+          path: ~/.ccache
+          key: ccache-ci-linux-x86_64-build-test-v3-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'conanfile.py', 'packup/patch/*.patch') }}
+          restore-keys: ccache-ci-linux-x86_64-build-test-
+
+      - name: Configure, build, and test
+        run: bash .github/scripts/docker-run.sh "${VLINK_UBUNTU22_IMAGE}" bash .github/scripts/ci-linux-build-test.sh
+
+  windows:
+    name: windows-x64
+    runs-on: windows-2022
+    timeout-minutes: 120
+    env:
+      VLINK_CI_EXTRA_CMAKE_ARGS: >-
+        -DENABLE_VIEWER=OFF
+        -DENABLE_WEBVIZ=OFF
+        -DENABLE_TEST_SANITIZE=OFF
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Restore pip cache
+        uses: actions/cache@v5
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: pip-ci-windows-x64-nanobind-v1
+
+      - name: Restore OpenSSL cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            C:\Program Files\OpenSSL
+            C:\Program Files\OpenSSL-Win64
+          key: openssl-windows-x64-v1
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+        with:
+          version: "v0.15.0"
+
+      - name: Setup Windows build environment
+        shell: pwsh
+        env:
+          SCCACHE_GHA_VERSION: sccache-ci-windows-build-test-v1
+        run: ./.github/scripts/setup-windows-build-env.ps1 -UseSccache
+
+      - name: Restore CPM cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.vlink-cpm-cache
+          key: cpm-ci-windows-x64-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          restore-keys: cpm-ci-windows-x64-
+
+      - name: Configure, build, and test
+        shell: pwsh
+        run: ./.github/scripts/ci-windows-build-test.ps1
+
+  macos:
+    name: macos-arm64
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      VLINK_CI_EXTRA_CMAKE_ARGS: >-
+        -DENABLE_VIEWER=OFF
+        -DENABLE_WEBVIZ=OFF
+        -DENABLE_TEST_SANITIZE=OFF
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install build tools
+        run: |
+          source .github/scripts/github-progress.sh
+          vlink_progress_init "Install macOS build tools" \
+            "Remove noisy Homebrew taps" \
+            "Install packages"
+
+          vlink_progress_start "Remove noisy Homebrew taps"
+          brew untap --force aws/tap azure/bicep >/dev/null 2>&1 || true
+          vlink_progress_complete "Remove noisy Homebrew taps"
+
+          vlink_progress_run "Install packages" brew install --quiet ccache ninja openssl@3
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Restore pip cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/pip
+          key: pip-ci-macos-arm64-nanobind-v1
+
+      - name: Restore CPM cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.vlink-cpm-cache
+          key: cpm-ci-macos-arm64-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
+          restore-keys: cpm-ci-macos-arm64-
+
+      - name: Restore ccache
+        uses: actions/cache@v5
+        with:
+          path: ~/.ccache
+          key: ccache-ci-macos-arm64-build-test-v3-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'conanfile.py', 'packup/patch/*.patch') }}
+          restore-keys: ccache-ci-macos-arm64-build-test-
+
+      - name: Configure, build, and test
+        run: bash .github/scripts/ci-macos-build-test.sh

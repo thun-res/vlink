@@ -1,0 +1,18 @@
+namespace fbs;
+
+table Request {
+  type:uint32;
+}
+
+table Response {
+  value:string;
+}
+
+table Message {
+  type:uint32;
+  value:string;
+}
+
+root_type Request;
+root_type Response;
+root_type Message;

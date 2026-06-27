@@ -1,0 +1,113 @@
+<mxfile host="app.diagrams.net" modified="2026-06-25T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="discovery-dataflow-sequence" name="Discovery Dataflow Sequence">
+    <mxGraphModel dx="820" dy="760" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="820" pageHeight="760" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Discovery Dataflow Sequence" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=20;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="740" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Process A publishes heartbeats  ·  Process B consumes and prunes stale entries by timeout" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="40" y="52" width="740" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Lane A (Blue) -->
+        <mxCell id="laneA_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;arcSize=4;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="360" height="640" as="geometry" />
+        </mxCell>
+        <mxCell id="laneA_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;arcSize=30;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="360" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="laneA_t" value="Process A  ·  Publisher" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="102" width="360" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Lane B (Green) -->
+        <mxCell id="laneB_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#388e3c;strokeWidth=1.5;arcSize=4;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="420" y="90" width="360" height="640" as="geometry" />
+        </mxCell>
+        <mxCell id="laneB_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=#1b5e20;arcSize=30;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="420" y="90" width="360" height="6" as="geometry" />
+        </mxCell>
+        <mxCell id="laneB_t" value="Process B  ·  vlink-monitor" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="420" y="102" width="360" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Step 1 A -->
+        <mxCell id="a1" value="NodeImpl::init_ext()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="70" y="140" width="300" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="a2" value="DiscoveryReporter::add()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="70" y="190" width="300" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="a12_e" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2.2;strokeColor=#1976d2;shadow=0;" edge="1" parent="1" source="a1" target="a2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Background thread label -->
+        <mxCell id="a_bg_lbl" value="Background thread  ·  every ~500 ms" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#e65100;dashed=1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="70" y="248" width="300" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="a3" value="rebuild_message()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="70" y="290" width="300" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="a4" value="send_report()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#e65100;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="70" y="340" width="300" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="a34_e" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2.2;strokeColor=#1976d2;shadow=0;" edge="1" parent="1" source="a3" target="a4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Process exit label -->
+        <mxCell id="a_exit_lbl" value="Process exit  ·  NodeImpl::deinit_ext()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1;fontSize=11;fontFamily=Helvetica;fontStyle=2;fontColor=#e65100;dashed=1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="70" y="490" width="300" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="a5" value="DiscoveryReporter::remove()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="70" y="532" width="300" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="a6" value="heartbeats stop&#10;(offline packet optional)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#e65100;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="70" y="582" width="300" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="a56_e" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2.2;strokeColor=#ef6c00;shadow=0;" edge="1" parent="1" source="a5" target="a6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Lane B steps -->
+        <mxCell id="b1" value="recv() on UDP socket" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.2;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="450" y="340" width="300" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="b2" value="parse report  ·  update Info list" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.2;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="450" y="390" width="300" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="b12_e" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2.2;strokeColor=#388e3c;shadow=0;" edge="1" parent="1" source="b1" target="b2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="b3" value="process_timeout()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.2;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="450" y="582" width="300" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="b4" value="remove from Info list" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.2;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="450" y="632" width="300" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="b34_e" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2.2;strokeColor=#388e3c;shadow=0;" edge="1" parent="1" source="b3" target="b4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Cross-lane UDP broadcast -->
+        <mxCell id="cross1" value="UDP 239.255.0.100" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2.4;strokeColor=#ef6c00;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;labelBackgroundColor=#ffffff;shadow=0;" edge="1" parent="1" source="a4" target="b1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cross2" value="heartbeat timeout" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2.4;strokeColor=#ef6c00;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;labelBackgroundColor=#ffffff;shadow=0;" edge="1" parent="1" source="a6" target="b3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="footer" value="Offline broadcast is only available when VLINK_DISCOVERY_OFFLINE=1; default cleanup is timeout-based." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="40" y="694" width="740" height="22" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

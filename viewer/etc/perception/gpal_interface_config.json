@@ -1,0 +1,1990 @@
+{
+  "hud_bindings": [
+    {
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "expression": "vehicle_info.speed * 3.6",
+          "target": "speed"
+        },
+        {
+          "source": "vehicle_info.steering_wheel_angle",
+          "target": "steering_angle"
+        },
+        {
+          "source": "vehicle_info.acc.x",
+          "target": "accel_lon"
+        },
+        {
+          "source": "vehicle_info.acc.y",
+          "target": "accel_lat"
+        },
+        {
+          "source": "vehicle_info.gear",
+          "target": "gear"
+        },
+        {
+          "source": "vehicle_info.light_status.left_direction_light_status",
+          "target": "turn_left"
+        },
+        {
+          "source": "vehicle_info.light_status.right_direction_light_status",
+          "target": "turn_right"
+        }
+      ],
+      "name": "PlanningVisualization (vehicle HUD)",
+      "priority": 20000,
+      "ser": "gpal.proto.PlanningVisualization"
+    },
+    {
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "expression": "motion_info.vehicle_speed * 3.6",
+          "target": "speed"
+        },
+        {
+          "source": "powertrain_info.throttle_percentage",
+          "target": "throttle"
+        },
+        {
+          "source": "brake_system_info.break_pedal_position",
+          "target": "brake"
+        },
+        {
+          "source": "steering_system_info.steering_wheel_angle",
+          "target": "steering_angle"
+        },
+        {
+          "source": "powertrain_info.motor_speed",
+          "target": "rpm"
+        },
+        {
+          "source": "powertrain_info.transmission_current_gear_position",
+          "target": "gear"
+        },
+        {
+          "source": "actuator_info.is_left_direction_light_on",
+          "target": "turn_left"
+        },
+        {
+          "source": "actuator_info.is_right_direction_light_on",
+          "target": "turn_right"
+        }
+      ],
+      "name": "ChassisInfo (vehicle HUD)",
+      "priority": 19999,
+      "ser": "gpal.proto.ChassisInfo"
+    }
+  ],
+  "inherit_default": false,
+  "mappings": [
+    {
+      "collection": "obstacle_infos",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "position.x",
+          "target": "x"
+        },
+        {
+          "source": "position.y",
+          "target": "y"
+        },
+        {
+          "source": "position.z",
+          "target": "z"
+        },
+        {
+          "source": "length",
+          "target": "length"
+        },
+        {
+          "source": "width",
+          "target": "width"
+        },
+        {
+          "source": "height",
+          "target": "height"
+        },
+        {
+          "source": "heading_angle",
+          "target": "yaw"
+        },
+        {
+          "source": "confidence",
+          "target": "score"
+        },
+        {
+          "source": "type",
+          "target": "class_id"
+        },
+        {
+          "source": "absolute_velocity.x",
+          "target": "vx"
+        },
+        {
+          "source": "absolute_velocity.y",
+          "target": "vy"
+        },
+        {
+          "source": "absolute_velocity.z",
+          "target": "vz"
+        }
+      ],
+      "name": "EnvObstacleList (fusion OD)",
+      "priority": 20000,
+      "ser": "gpal.proto.EnvObstacleList",
+      "type": "object_detection"
+    },
+    {
+      "collection": "obstacles",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "box.cx",
+          "target": "x"
+        },
+        {
+          "source": "box.cy",
+          "target": "y"
+        },
+        {
+          "source": "box.cz",
+          "target": "z"
+        },
+        {
+          "source": "box.length",
+          "target": "length"
+        },
+        {
+          "source": "box.width",
+          "target": "width"
+        },
+        {
+          "source": "box.height",
+          "target": "height"
+        },
+        {
+          "source": "box.yaw",
+          "target": "yaw"
+        },
+        {
+          "source": "score",
+          "target": "score"
+        },
+        {
+          "source": "category",
+          "target": "class_id"
+        },
+        {
+          "source": "id",
+          "target": "track_id"
+        },
+        {
+          "source": "box.vx",
+          "target": "vx"
+        },
+        {
+          "source": "box.vy",
+          "target": "vy"
+        }
+      ],
+      "name": "ModelObstacleDetection (perception OD)",
+      "priority": 19999,
+      "ser": "gpal.proto.ModelObstacleDetection",
+      "type": "object_detection"
+    },
+    {
+      "collection": "detection_info.boxes",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "cx",
+          "target": "x"
+        },
+        {
+          "source": "cy",
+          "target": "y"
+        },
+        {
+          "source": "cz",
+          "target": "z"
+        },
+        {
+          "source": "length",
+          "target": "length"
+        },
+        {
+          "source": "width",
+          "target": "width"
+        },
+        {
+          "source": "height",
+          "target": "height"
+        },
+        {
+          "source": "yaw",
+          "target": "yaw"
+        },
+        {
+          "source": "label",
+          "target": "label"
+        }
+      ],
+      "name": "PerceptionVisualization (generic OD boxes)",
+      "priority": 19998,
+      "ser": "gpal.proto.PerceptionVisualization",
+      "type": "object_detection"
+    },
+    {
+      "collection": "objects",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "position_x",
+          "target": "x"
+        },
+        {
+          "source": "position_y",
+          "target": "y"
+        },
+        {
+          "source": "position_z",
+          "target": "z"
+        },
+        {
+          "source": "length",
+          "target": "length"
+        },
+        {
+          "source": "width",
+          "target": "width"
+        },
+        {
+          "source": "height",
+          "target": "height"
+        },
+        {
+          "expression": "orientation * pi / 180",
+          "target": "yaw"
+        },
+        {
+          "source": "existence_confidence",
+          "target": "score"
+        },
+        {
+          "source": "object_type",
+          "target": "class_id"
+        },
+        {
+          "source": "object_id",
+          "target": "track_id"
+        },
+        {
+          "source": "velocity_x",
+          "target": "vx"
+        },
+        {
+          "source": "velocity_y",
+          "target": "vy"
+        },
+        {
+          "source": "velocity_z",
+          "target": "vz"
+        }
+      ],
+      "name": "ObjectDataList (radar OD)",
+      "priority": 19997,
+      "ser": "gpal.proto.ObjectDataList",
+      "type": "object_detection"
+    },
+    {
+      "collection": "fusion_obstacles.obstacle_infos",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "position.x",
+          "target": "x"
+        },
+        {
+          "source": "position.y",
+          "target": "y"
+        },
+        {
+          "source": "position.z",
+          "target": "z"
+        },
+        {
+          "source": "length",
+          "target": "length"
+        },
+        {
+          "source": "width",
+          "target": "width"
+        },
+        {
+          "source": "height",
+          "target": "height"
+        },
+        {
+          "source": "heading_angle",
+          "target": "yaw"
+        },
+        {
+          "source": "confidence",
+          "target": "score"
+        },
+        {
+          "source": "type",
+          "target": "class_id"
+        },
+        {
+          "source": "id",
+          "target": "track_id"
+        },
+        {
+          "source": "absolute_velocity.x",
+          "target": "vx"
+        },
+        {
+          "source": "absolute_velocity.y",
+          "target": "vy"
+        },
+        {
+          "source": "absolute_velocity.z",
+          "target": "vz"
+        }
+      ],
+      "name": "EnvOdFusionFrame.fusion_obstacles",
+      "priority": 19996,
+      "ser": "gpal.proto.EnvOdFusionFrame",
+      "type": "object_detection"
+    },
+    {
+      "collection": "odarray",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "pose.translation.x",
+          "target": "x"
+        },
+        {
+          "source": "pose.translation.y",
+          "target": "y"
+        },
+        {
+          "source": "pose.translation.z",
+          "target": "z"
+        },
+        {
+          "source": "dimensions.x",
+          "target": "length"
+        },
+        {
+          "source": "dimensions.y",
+          "target": "width"
+        },
+        {
+          "source": "dimensions.z",
+          "target": "height"
+        },
+        {
+          "expression": "atan2(2 * (pose.rotation.w * pose.rotation.z + pose.rotation.x * pose.rotation.y), 1 - 2 * (pose.rotation.y * pose.rotation.y + pose.rotation.z * pose.rotation.z))",
+          "target": "yaw"
+        },
+        {
+          "source": "existence_confidence",
+          "target": "score"
+        },
+        {
+          "source": "type",
+          "target": "class_id"
+        },
+        {
+          "source": "object_id",
+          "target": "track_id"
+        },
+        {
+          "source": "velocity.linear.x",
+          "target": "vx"
+        },
+        {
+          "source": "velocity.linear.y",
+          "target": "vy"
+        },
+        {
+          "source": "velocity.linear.z",
+          "target": "vz"
+        }
+      ],
+      "name": "RadarDataOdArray",
+      "priority": 19995,
+      "ser": "gpal.proto.RadarDataOdArray",
+      "type": "object_detection"
+    },
+    {
+      "collection": "objects",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "object_bbox.cx",
+          "target": "x"
+        },
+        {
+          "source": "object_bbox.cy",
+          "target": "y"
+        },
+        {
+          "source": "object_bbox.cz",
+          "target": "z"
+        },
+        {
+          "source": "object_bbox.length",
+          "target": "length"
+        },
+        {
+          "source": "object_bbox.width",
+          "target": "width"
+        },
+        {
+          "source": "object_bbox.height",
+          "target": "height"
+        },
+        {
+          "source": "object_bbox.yaw",
+          "target": "yaw"
+        },
+        {
+          "source": "type_prop",
+          "target": "class_id"
+        },
+        {
+          "source": "obj_id",
+          "target": "track_id"
+        },
+        {
+          "source": "vx",
+          "target": "vx"
+        },
+        {
+          "source": "vy",
+          "target": "vy"
+        }
+      ],
+      "name": "RadarReplayObjectInfo",
+      "priority": 19994,
+      "ser": "gpal.proto.RadarReplayObjectInfo",
+      "type": "object_detection"
+    },
+    {
+      "collection": "clusters",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "cluster_bbox.cx",
+          "target": "x"
+        },
+        {
+          "source": "cluster_bbox.cy",
+          "target": "y"
+        },
+        {
+          "source": "cluster_bbox.cz",
+          "target": "z"
+        },
+        {
+          "source": "cluster_bbox.length",
+          "target": "length"
+        },
+        {
+          "source": "cluster_bbox.width",
+          "target": "width"
+        },
+        {
+          "source": "cluster_bbox.height",
+          "target": "height"
+        },
+        {
+          "source": "cluster_bbox.yaw",
+          "target": "yaw"
+        },
+        {
+          "source": "vx",
+          "target": "vx"
+        },
+        {
+          "source": "vy",
+          "target": "vy"
+        }
+      ],
+      "name": "RadarReplayClusterInfo",
+      "priority": 19993,
+      "ser": "gpal.proto.RadarReplayClusterInfo",
+      "type": "object_detection"
+    },
+    {
+      "collection": "objects",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "obj_position.x",
+          "target": "x"
+        },
+        {
+          "source": "obj_position.y",
+          "target": "y"
+        },
+        {
+          "source": "obj_probability",
+          "target": "score"
+        },
+        {
+          "source": "obj_id",
+          "target": "track_id"
+        }
+      ],
+      "name": "UltrasonicInfo",
+      "priority": 19992,
+      "ser": "gpal.proto.UltrasonicInfo",
+      "type": "object_detection"
+    },
+    {
+      "collection": "obstacles.sub_obstacles",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "position.x",
+          "target": "x"
+        },
+        {
+          "source": "position.y",
+          "target": "y"
+        },
+        {
+          "source": "position.z",
+          "target": "z"
+        },
+        {
+          "source": "length",
+          "target": "length"
+        },
+        {
+          "source": "width",
+          "target": "width"
+        },
+        {
+          "source": "height",
+          "target": "height"
+        },
+        {
+          "source": "heading_angle",
+          "target": "yaw"
+        },
+        {
+          "source": "velocity.x",
+          "target": "vx"
+        },
+        {
+          "source": "velocity.y",
+          "target": "vy"
+        }
+      ],
+      "name": "PerceptionObstaclesStamped",
+      "priority": 19991,
+      "ser": "gpal.proto.PerceptionObstaclesStamped",
+      "type": "object_detection"
+    },
+    {
+      "collection": "obstacles.sub_obstacles",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "position.x",
+          "target": "x"
+        },
+        {
+          "source": "position.y",
+          "target": "y"
+        },
+        {
+          "source": "position.z",
+          "target": "z"
+        },
+        {
+          "source": "length",
+          "target": "length"
+        },
+        {
+          "source": "width",
+          "target": "width"
+        },
+        {
+          "source": "height",
+          "target": "height"
+        },
+        {
+          "source": "heading_angle",
+          "target": "yaw"
+        },
+        {
+          "source": "velocity.x",
+          "target": "vx"
+        },
+        {
+          "source": "velocity.y",
+          "target": "vy"
+        }
+      ],
+      "name": "PerceptionEnvironmentModelStamped",
+      "priority": 19990,
+      "ser": "gpal.proto.PerceptionEnvironmentModelStamped",
+      "type": "object_detection"
+    },
+    {
+      "collection": "fusion_obstacles.obstacles.sub_obstacles",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "position.x",
+          "target": "x"
+        },
+        {
+          "source": "position.y",
+          "target": "y"
+        },
+        {
+          "source": "position.z",
+          "target": "z"
+        },
+        {
+          "source": "length",
+          "target": "length"
+        },
+        {
+          "source": "width",
+          "target": "width"
+        },
+        {
+          "source": "height",
+          "target": "height"
+        },
+        {
+          "source": "heading_angle",
+          "target": "yaw"
+        },
+        {
+          "source": "velocity.x",
+          "target": "vx"
+        },
+        {
+          "source": "velocity.y",
+          "target": "vy"
+        }
+      ],
+      "name": "OdFusionFrame.fusion_obstacles",
+      "priority": 19989,
+      "ser": "gpal.proto.OdFusionFrame",
+      "type": "object_detection"
+    },
+    {
+      "collection": "points",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "x",
+          "target": "x"
+        },
+        {
+          "source": "y",
+          "target": "y"
+        },
+        {
+          "source": "z",
+          "target": "z"
+        },
+        {
+          "source": "intensity",
+          "target": "intensity"
+        }
+      ],
+      "name": "LiDARPacket",
+      "priority": 19988,
+      "ser": "gpal.proto.LiDARPacket",
+      "type": "point_cloud"
+    },
+    {
+      "collection": "data_arr_basic",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "x",
+          "target": "x"
+        },
+        {
+          "source": "y",
+          "target": "y"
+        },
+        {
+          "source": "z",
+          "target": "z"
+        },
+        {
+          "source": "snr",
+          "target": "intensity"
+        }
+      ],
+      "name": "RadarDataPointCloud",
+      "priority": 19987,
+      "ser": "gpal.proto.RadarDataPointCloud",
+      "type": "point_cloud"
+    },
+    {
+      "collection": "radar_point",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "x",
+          "target": "x"
+        },
+        {
+          "source": "y",
+          "target": "y"
+        },
+        {
+          "source": "z",
+          "target": "z"
+        },
+        {
+          "source": "snr",
+          "target": "intensity"
+        }
+      ],
+      "name": "RadarReplayInnerPoint",
+      "priority": 19986,
+      "ser": "gpal.proto.RadarReplayInnerPoint",
+      "type": "point_cloud"
+    },
+    {
+      "collection": "freespace.gridmap",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "position.x",
+          "target": "x"
+        },
+        {
+          "source": "position.y",
+          "target": "y"
+        },
+        {
+          "source": "position.z",
+          "target": "z"
+        },
+        {
+          "source": "label",
+          "target": "intensity"
+        }
+      ],
+      "name": "PerceptionFreespaceStamped (cells)",
+      "priority": 19985,
+      "ser": "gpal.proto.PerceptionFreespaceStamped",
+      "type": "point_cloud"
+    },
+    {
+      "collection": "lanes",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "x",
+          "target": "x"
+        },
+        {
+          "source": "y",
+          "target": "y"
+        },
+        {
+          "source": "current_category",
+          "target": "type"
+        }
+      ],
+      "inner_collection": "points",
+      "name": "VisualLaneMarkingArray (lanes)",
+      "priority": 19984,
+      "ser": "gpal.proto.VisualLaneMarkingArray",
+      "type": "lane_line"
+    },
+    {
+      "collection": "lane_markings",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "x",
+          "target": "x"
+        },
+        {
+          "source": "y",
+          "target": "y"
+        },
+        {
+          "source": "z",
+          "target": "z"
+        },
+        {
+          "expression": "color==1?16777215:(color==2?16776960:(color==3?16711680:8421504))",
+          "target": "color"
+        },
+        {
+          "source": "type",
+          "target": "type"
+        }
+      ],
+      "inner_collection": "points",
+      "name": "ModelStaticDetection (lanes)",
+      "priority": 19983,
+      "ser": "gpal.proto.ModelStaticDetection",
+      "type": "lane_line"
+    },
+    {
+      "collection": "lane_markings",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "x",
+          "target": "x"
+        },
+        {
+          "source": "y",
+          "target": "y"
+        },
+        {
+          "source": "z",
+          "target": "z"
+        },
+        {
+          "expression": "line_color==1?16777215:(line_color==2?16776960:(line_color==3?255:(line_color==4?16753920:(line_color==5?16711680:8421504))))",
+          "target": "color"
+        },
+        {
+          "source": "line_type",
+          "target": "type"
+        }
+      ],
+      "inner_collection": "line_points",
+      "name": "PerceptionRoadMarkingGroup (lanes)",
+      "priority": 19982,
+      "ser": "gpal.proto.PerceptionRoadMarkingGroup",
+      "type": "lane_line"
+    },
+    {
+      "collection": "lane_markings",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "x",
+          "target": "x"
+        },
+        {
+          "source": "y",
+          "target": "y"
+        },
+        {
+          "source": "z",
+          "target": "z"
+        },
+        {
+          "expression": "color==1?16777215:(color==2?16776960:(color==3?255:(color==4?16753920:(color==5?16711680:8421504))))",
+          "target": "color"
+        }
+      ],
+      "inner_collection": "points",
+      "name": "EnvExtendedLaneMarking (lanes)",
+      "priority": 19981,
+      "ser": "gpal.proto.perception.EnvExtendedLaneMarking",
+      "type": "lane_line"
+    },
+    {
+      "collection": "lane_markings",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "x",
+          "target": "x"
+        },
+        {
+          "source": "y",
+          "target": "y"
+        },
+        {
+          "source": "z",
+          "target": "z"
+        },
+        {
+          "source": "type",
+          "target": "type"
+        },
+        {
+          "expression": "color==1?16777215:(color==2?16776960:(color==3?255:(color==4?16753920:(color==5?16711680:8421504))))",
+          "target": "color"
+        }
+      ],
+      "inner_collection": "points",
+      "name": "EnvRoadCognition (lanes)",
+      "priority": 19980,
+      "ser": "gpal.proto.road_cognition.EnvRoadCognition",
+      "type": "lane_line"
+    },
+    {
+      "collection": "boundary.polylines",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "x",
+          "target": "x"
+        },
+        {
+          "source": "y",
+          "target": "y"
+        },
+        {
+          "source": "type",
+          "target": "type"
+        }
+      ],
+      "inner_collection": "points",
+      "name": "PerceptionBoundaryStamped (freespace)",
+      "priority": 19979,
+      "ser": "gpal.proto.PerceptionBoundaryStamped",
+      "type": "freespace"
+    },
+    {
+      "collection": "parking_slots",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "corners[0].x",
+          "target": "corner0_x"
+        },
+        {
+          "source": "corners[0].y",
+          "target": "corner0_y"
+        },
+        {
+          "source": "corners[0].z",
+          "target": "corner0_z"
+        },
+        {
+          "source": "corners[1].x",
+          "target": "corner1_x"
+        },
+        {
+          "source": "corners[1].y",
+          "target": "corner1_y"
+        },
+        {
+          "source": "corners[1].z",
+          "target": "corner1_z"
+        },
+        {
+          "source": "corners[2].x",
+          "target": "corner2_x"
+        },
+        {
+          "source": "corners[2].y",
+          "target": "corner2_y"
+        },
+        {
+          "source": "corners[2].z",
+          "target": "corner2_z"
+        },
+        {
+          "source": "corners[3].x",
+          "target": "corner3_x"
+        },
+        {
+          "source": "corners[3].y",
+          "target": "corner3_y"
+        },
+        {
+          "source": "corners[3].z",
+          "target": "corner3_z"
+        },
+        {
+          "source": "id",
+          "target": "slot_id"
+        },
+        {
+          "source": "slot_type",
+          "target": "slot_type"
+        },
+        {
+          "source": "exist_confidence",
+          "target": "confidence"
+        }
+      ],
+      "name": "PerceptionParkingSlotStamped",
+      "priority": 19978,
+      "ser": "gpal.proto.PerceptionParkingSlotStamped",
+      "type": "parking_slot"
+    },
+    {
+      "collection": "motion_plan_result.trajectory.trajectory_point",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "path_point.x",
+          "target": "x"
+        },
+        {
+          "source": "path_point.y",
+          "target": "y"
+        },
+        {
+          "source": "path_point.z",
+          "target": "z"
+        },
+        {
+          "source": "path_point.theta",
+          "target": "yaw"
+        },
+        {
+          "source": "v",
+          "target": "speed"
+        },
+        {
+          "source": "relative_time",
+          "target": "timestamp"
+        }
+      ],
+      "name": "PlanningResult (ego trajectory)",
+      "priority": 19977,
+      "ser": "gpal.proto.PlanningResult",
+      "type": "ego_trajectory"
+    },
+    {
+      "collection": "motion_planning_info.trajectory.trajectory_point",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "path_point.x",
+          "target": "x"
+        },
+        {
+          "source": "path_point.y",
+          "target": "y"
+        },
+        {
+          "source": "path_point.z",
+          "target": "z"
+        },
+        {
+          "source": "path_point.theta",
+          "target": "yaw"
+        },
+        {
+          "source": "v",
+          "target": "speed"
+        },
+        {
+          "source": "relative_time",
+          "target": "timestamp"
+        }
+      ],
+      "name": "PlanningVisualization (ego trajectory)",
+      "priority": 19976,
+      "ser": "gpal.proto.PlanningVisualization",
+      "type": "ego_trajectory"
+    },
+    {
+      "collection": "scene_traj_sets",
+      "encoding": "protobuf",
+      "field_mappings": [
+        {
+          "source": "path_point.x",
+          "target": "x"
+        },
+        {
+          "source": "path_point.y",
+          "target": "y"
+        },
+        {
+          "source": "path_point.z",
+          "target": "z"
+        },
+        {
+          "source": "path_point.theta",
+          "target": "yaw"
+        },
+        {
+          "source": "v",
+          "target": "speed"
+        },
+        {
+          "source": "relative_time",
+          "target": "timestamp"
+        }
+      ],
+      "inner_collection": "ego_traj.trajectory_points",
+      "name": "DecisionResult (ego trajectory)",
+      "priority": 19975,
+      "ser": "gpal.proto.DecisionResult",
+      "type": "ego_trajectory"
+    }
+  ],
+  "rules": [
+    {
+      "match": {
+        "schemas": [
+          "zerocopy"
+        ],
+        "ser_contains": [
+          "objectarray"
+        ]
+      },
+      "priority": 10000,
+      "type": "object_detection"
+    },
+    {
+      "match": {
+        "schemas": [
+          "zerocopy"
+        ],
+        "ser_contains": [
+          "pointcloud"
+        ]
+      },
+      "priority": 9990,
+      "type": "point_cloud"
+    },
+    {
+      "match": {
+        "schemas": [
+          "zerocopy"
+        ],
+        "ser_contains": [
+          "occupancygrid"
+        ]
+      },
+      "priority": 9980,
+      "type": "occupancy_grid"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "objectarray",
+          "detectedobject",
+          "trackedobject",
+          "radarobject",
+          "obstacle",
+          "perceptionobstacle",
+          "modelobstacle",
+          "bevobstacle",
+          "objectlist",
+          "objlist",
+          "detectionlist",
+          "detectionpoint",
+          "fusionobject",
+          "objectdata",
+          "radartrack",
+          "radarscan",
+          "odfusion",
+          "acctarget",
+          "radardataod",
+          "closestinpathobject",
+          "clusterbbox",
+          "invasionobject",
+          "objectbbox",
+          "radardataobject",
+          "perceptionbox",
+          "ultrasonicstamp"
+        ]
+      },
+      "priority": 9000,
+      "type": "object_detection"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "egotrajectory",
+          "motionplan",
+          "lateralplan",
+          "longitudinalplan",
+          "egoplanning",
+          "adasresult"
+        ]
+      },
+      "priority": 8990,
+      "type": "ego_trajectory"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "predictedobject",
+          "predictedpath",
+          "trajectory",
+          "trajectories",
+          "planningpath",
+          "navigationresult",
+          "planningresult",
+          "pathwithlaneid",
+          "hparoutepoints",
+          "factorarray",
+          "posearray",
+          "velocityfactor",
+          "steeringfactor",
+          "safetyfactor",
+          "navigationvisualization"
+        ]
+      },
+      "priority": 8980,
+      "type": "prediction"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "lanesegment",
+          "laneboundary",
+          "roadmarking",
+          "lanemarking",
+          "lanemark",
+          "laneline",
+          "extendedlane",
+          "perceptionlane",
+          "modellane",
+          "modelstatic",
+          "modeledge",
+          "visuallane",
+          "centerline",
+          "referenceline",
+          "guideline",
+          "linestring",
+          "roadinstance",
+          "roadstructure",
+          "roadcognition",
+          "roadedge",
+          "perceptionroad",
+          "lanelet",
+          "polyline",
+          "debugline",
+          "llrrlane",
+          "lrlane",
+          "trianglelist",
+          "perceptionboundary",
+          "perceptionline",
+          "boundarydet",
+          "localroute",
+          "perceptiongate",
+          "modelarea"
+        ]
+      },
+      "priority": 8970,
+      "type": "lane_line"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "trafficlight",
+          "trafficsignal"
+        ]
+      },
+      "priority": 8960,
+      "type": "traffic_light"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "freespace",
+          "drivablearea",
+          "perceptioncell",
+          "polygonstamped",
+          "fspointsmessage",
+          "perceptionarea"
+        ]
+      },
+      "priority": 8950,
+      "type": "freespace"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "occupancygrid",
+          "costmap",
+          "voxelgrid",
+          "gridmap",
+          "occupiedgrid",
+          "semanticimage",
+          "elevationmap",
+          "localmap",
+          "semanticmap",
+          "hpalocalmap",
+          "submap"
+        ]
+      },
+      "priority": 8940,
+      "type": "occupancy_grid"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "trafficsign",
+          "hdmapprimitive"
+        ]
+      },
+      "priority": 8930,
+      "type": "traffic_sign"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "stopline",
+          "crosswalk",
+          "stopreason",
+          "areamarking",
+          "arrowmarking",
+          "modelarrow"
+        ]
+      },
+      "priority": 8920,
+      "type": "stop_line"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "parkingslot",
+          "slotdetection",
+          "parkingspace",
+          "visualparkingslot",
+          "modelslot",
+          "slotpoint",
+          "slotline"
+        ]
+      },
+      "priority": 8910,
+      "type": "parking_slot"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "planningvisualization",
+          "adasvisualization"
+        ]
+      },
+      "priority": 8900,
+      "type": "ego_trajectory"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "hdmap",
+          "laneletmap",
+          "hdmapsegment",
+          "laneletroute",
+          "mapdata"
+        ]
+      },
+      "priority": 8890,
+      "type": "hdmap"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "camerainfo",
+          "cameracalib",
+          "camerafrustum",
+          "cameraintrinsic",
+          "cameracalibration",
+          "cameracalibparam"
+        ]
+      },
+      "priority": 8880,
+      "type": "camera_frustum"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "covarianceellipse",
+          "posecovariance",
+          "posewithcovariance",
+          "kinematicstate"
+        ]
+      },
+      "priority": 8870,
+      "type": "covariance_ellipse"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "detectedobject3d",
+          "trackedobject3d",
+          "objecttracking",
+          "semanticobject",
+          "instanceobject",
+          "boundingbox3d",
+          "bbox3d",
+          "orientedbox",
+          "graspobject",
+          "detectedperson",
+          "humanobject"
+        ]
+      },
+      "priority": 8860,
+      "type": "object_detection"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "navpath",
+          "robotpath",
+          "plannedpath",
+          "referencepath",
+          "goalpath",
+          "motiontrajectory",
+          "robottrajectory",
+          "endeffectortrajectory",
+          "endeffectortrajectory",
+          "manipulatortrajectory",
+          "armtrajectory"
+        ]
+      },
+      "priority": 8850,
+      "type": "prediction"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "odometry",
+          "robotpose",
+          "basepose",
+          "basefootprint",
+          "localization",
+          "navstate",
+          "robotstate",
+          "posewithtwist",
+          "twistwithcovariance"
+        ]
+      },
+      "priority": 8840,
+      "type": "ego_trajectory"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "markerarray",
+          "linestrip",
+          "linelist",
+          "skeleton",
+          "skeleton3d",
+          "keypoint",
+          "keypoints",
+          "handkeypoint",
+          "bodykeypoint"
+        ]
+      },
+      "priority": 8830,
+      "type": "lane_line"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "workspace",
+          "reachability",
+          "footprint",
+          "keepoutzone",
+          "safetyzone",
+          "costregion",
+          "drivablepolygon"
+        ]
+      },
+      "priority": 8820,
+      "type": "freespace"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "octomap",
+          "voxelmap",
+          "distancefield",
+          "esdf",
+          "tsdf",
+          "semanticgrid",
+          "heightmap",
+          "elevationgrid"
+        ]
+      },
+      "priority": 8810,
+      "type": "occupancy_grid"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "scenegraph",
+          "topologicalmap",
+          "navigationmap",
+          "floorplan",
+          "semanticmap3d",
+          "semanticworld"
+        ]
+      },
+      "priority": 8800,
+      "type": "hdmap"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "pinholecamera",
+          "cameramodel",
+          "depthcamera",
+          "rgbdcamera",
+          "sensorcalibration",
+          "extrinsiccalibration",
+          "intrinsiccalibration"
+        ]
+      },
+      "priority": 8790,
+      "type": "camera_frustum"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "statecovariance",
+          "uncertaintyellipse",
+          "uncertaintyellipsoid",
+          "gaussianpose"
+        ]
+      },
+      "priority": 8780,
+      "type": "covariance_ellipse"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "dynamicobject",
+          "boundingboxarray",
+          "cloudcluster",
+          "pointobjectarray",
+          "srrfullod",
+          "ultrasonicinfo"
+        ]
+      },
+      "priority": 8770,
+      "type": "object_detection"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "decisionresult",
+          "decisiontrajectory",
+          "scenetrajectoryset",
+          "planningfactor"
+        ]
+      },
+      "priority": 8760,
+      "type": "prediction"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "ekfstate",
+          "liteadasresult",
+          "initialpose",
+          "missiongoal",
+          "locomotionstate",
+          "vehiclekinematics",
+          "endeffectorstate"
+        ]
+      },
+      "priority": 8750,
+      "type": "ego_trajectory"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "hadmapbin",
+          "hadmaproute",
+          "routinginfo",
+          "routinginfosd",
+          "sdroute",
+          "hparoutinginfo",
+          "navigationsd"
+        ]
+      },
+      "priority": 8740,
+      "type": "hdmap"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "sensorcalibs",
+          "radarcalib",
+          "radarcalibparam",
+          "lidarcalib",
+          "lidarcalibparam"
+        ]
+      },
+      "priority": 8730,
+      "type": "camera_frustum"
+    },
+    {
+      "match": {
+        "ser_contains": [
+          "pointcluster",
+          "pointclusters",
+          "laserscan",
+          "multiecholaserscan"
+        ]
+      },
+      "priority": 8720,
+      "type": "point_cloud"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/od",
+          "/detected_object",
+          "/tracked_object",
+          "/detection",
+          "/obstacle",
+          "/radar_object",
+          "/fusion_object",
+          "/bev_object",
+          "/object_list",
+          "/perception_result",
+          "/cone"
+        ]
+      },
+      "priority": 8000,
+      "type": "object_detection"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/predicted_object",
+          "/prediction",
+          "/trajectory",
+          "/forecast",
+          "/predicted_path",
+          "/planning_path",
+          "/planned_trajectory"
+        ]
+      },
+      "priority": 7990,
+      "type": "prediction"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/lane",
+          "/boundary",
+          "/road_marking",
+          "/centerline",
+          "/lane_line",
+          "/road_edge",
+          "/reference_line",
+          "/road_structure"
+        ]
+      },
+      "priority": 7980,
+      "type": "lane_line"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/traffic_light",
+          "/traffic_signal"
+        ]
+      },
+      "priority": 7970,
+      "type": "traffic_light"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/stop_line",
+          "/crosswalk"
+        ]
+      },
+      "priority": 7960,
+      "type": "stop_line"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/traffic_sign",
+          "/sign",
+          "/pole",
+          "/signal_pole",
+          "/lamp_post"
+        ]
+      },
+      "priority": 7950,
+      "type": "traffic_sign"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/zebra",
+          "/arrow",
+          "/road_text",
+          "/diamond",
+          "/yield",
+          "/speed_bump"
+        ]
+      },
+      "priority": 7940,
+      "type": "stop_line"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/freespace",
+          "/free_space",
+          "/drivable_area"
+        ]
+      },
+      "priority": 7930,
+      "type": "freespace"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/occupancy",
+          "/costmap",
+          "/grid_map",
+          "/voxel"
+        ]
+      },
+      "priority": 7920,
+      "type": "occupancy_grid"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/virtual_wall",
+          "/geofence",
+          "/no_go_zone",
+          "/restricted",
+          "/gate",
+          "/guardrail"
+        ]
+      },
+      "priority": 7910,
+      "type": "lane_line"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/parking_slot",
+          "/slot",
+          "/parking_space"
+        ]
+      },
+      "priority": 7900,
+      "type": "parking_slot"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/ego_trajectory",
+          "/motion_plan",
+          "/ego_path",
+          "/planned_path"
+        ]
+      },
+      "priority": 7890,
+      "type": "ego_trajectory"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/hd_map",
+          "/lanelet_map",
+          "/map_segment"
+        ]
+      },
+      "priority": 7880,
+      "type": "hdmap"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/camera_info",
+          "/camera_calib"
+        ]
+      },
+      "priority": 7870,
+      "type": "camera_frustum"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/bbox",
+          "/bbox3d",
+          "/bounding_box",
+          "/semantic_object",
+          "/tracked_person",
+          "/grasp"
+        ]
+      },
+      "priority": 7860,
+      "type": "object_detection"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/nav_path",
+          "/robot_path",
+          "/goal_path",
+          "/reference_path",
+          "/arm_trajectory",
+          "/manipulator_trajectory",
+          "/end_effector_trajectory"
+        ]
+      },
+      "priority": 7850,
+      "type": "prediction"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/odom",
+          "/odometry",
+          "/robot_pose",
+          "/base_pose",
+          "/localization",
+          "/nav_state"
+        ]
+      },
+      "priority": 7840,
+      "type": "ego_trajectory"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/marker_array",
+          "/line_strip",
+          "/line_list",
+          "/skeleton",
+          "/keypoints",
+          "/body_keypoints",
+          "/hand_keypoints"
+        ]
+      },
+      "priority": 7830,
+      "type": "lane_line"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/workspace",
+          "/reachability",
+          "/footprint",
+          "/keepout",
+          "/safety_zone"
+        ]
+      },
+      "priority": 7820,
+      "type": "freespace"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/octomap",
+          "/voxel_map",
+          "/distance_field",
+          "/esdf",
+          "/tsdf",
+          "/height_map"
+        ]
+      },
+      "priority": 7810,
+      "type": "occupancy_grid"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/scene_graph",
+          "/topological_map",
+          "/navigation_map",
+          "/floorplan"
+        ]
+      },
+      "priority": 7800,
+      "type": "hdmap"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/decision_result",
+          "/decision_trajectory",
+          "/scene_trajectory"
+        ]
+      },
+      "priority": 7790,
+      "type": "prediction"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/routing_info",
+          "/routing_result",
+          "/sd_route",
+          "/navigation_sd",
+          "/had_map"
+        ]
+      },
+      "priority": 7780,
+      "type": "hdmap"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/sensor_calib",
+          "/radar_calib",
+          "/lidar_calib"
+        ]
+      },
+      "priority": 7770,
+      "type": "camera_frustum"
+    },
+    {
+      "match": {
+        "url_contains": [
+          "/ekf_state",
+          "/vehicle_pose",
+          "/initial_pose",
+          "/mission_goal"
+        ]
+      },
+      "priority": 7760,
+      "type": "ego_trajectory"
+    }
+  ],
+  "skip": {
+    "ser_contains": [
+      "rawimage",
+      "imagemsg",
+      "compressed",
+      "compressedimage",
+      "video",
+      "h264",
+      "h265",
+      "jpg",
+      "png",
+      "jpeg",
+      "audio",
+      "sound",
+      "wav",
+      "log",
+      "diagnostic"
+    ],
+    "ser_equals": [
+      "string"
+    ],
+    "url_contains": [
+      "info/",
+      "/status",
+      "/diagnostic",
+      "/heartbeat"
+    ]
+  }
+}

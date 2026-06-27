@@ -1,0 +1,21 @@
+{
+  "ser": "sensor.ImuData",
+  "schema": "foxglove.PoseInFrame",
+  "encoding": "flatbuffers",
+  "schema_encoding": "flatbuffers",
+  "field_mappings": [
+    {
+      "source": "timestamp_us",
+      "target": "timestamp"
+    },
+    {
+      "source": "frame_id",
+      "target": "frame_id",
+      "default_value": "imu_link"
+    },
+    {
+      "source": "orientation",
+      "target": "pose"
+    }
+  ]
+}

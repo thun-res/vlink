@@ -1,0 +1,18 @@
+<RCC>
+    <qresource prefix="/">
+        <file>resource/wait.gif</file>
+        <file>resource/analyzer.png</file>
+        <file>resource/about.png</file>
+        <file>resource/settings.png</file>
+        <file>resource/file.png</file>
+        <file>resource/play.png</file>
+        <file>resource/stop.png</file>
+        <file>resource/export.png</file>
+        <file>resource/config.png</file>
+        <file>resource/process.gif</file>
+        <file>resource/dir.png</file>
+        <file>resource/ok.png</file>
+        <file>resource/cancel.png</file>
+        <file>resource/notomono.ttf</file>
+    </qresource>
+</RCC>

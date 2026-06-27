@@ -1,0 +1,106 @@
+/*
+ * Copyright (C) 2026 by Thun Lu. All rights reserved.
+ * Author: Thun Lu <thun.lu@zohomail.cn>
+ * Repo:   https://github.com/thun-res/vlink
+ *  _    __   __      _           __
+ * | |  / /  / /     (_) ____    / /__
+ * | | / /  / /     / / / __ \  / //_/
+ * | |/ /  / /___  / / / / / / / ,<
+ * |___/  /_____/ /_/ /_/ /_/ /_/|_|
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#include "./ddsr_publisher_impl.hpp"
+
+#include "./base/message_loop.h"
+
+namespace vlink {
+
+// WriterListener
+DdsrPublisherImpl::WriterListener::WriterListener(NodeImpl* impl) : DdsrWriterListener(impl) {}
+
+void DdsrPublisherImpl::WriterListener::on_publication_matched(NodeImpl* impl,
+                                                               const DDS_PublicationMatchedStatus& status) {
+  auto* instance = static_cast<DdsrPublisherImpl*>(impl);
+  auto* message_loop = instance->get_message_loop();
+
+  instance->session_count_.store(status.current_count, std::memory_order_release);
+
+  if (message_loop) {
+    message_loop->post_task([instance]() {
+      if VUNLIKELY (!instance->get_message_loop()) {
+        return;
+      }
+
+      instance->update_subscribers();
+    });
+  } else {
+    instance->update_subscribers();
+  }
+
+  DdsrWriterListener::on_publication_matched(impl, status);
+}
+
+// DdsrPublisherImpl
+DdsrPublisherImpl::DdsrPublisherImpl(const DdsrConf& conf) : conf_(conf) {}
+
+void DdsrPublisherImpl::init() {
+  participant_ = DdsrFactory::create_participant(kPublisher | kSubscriber, conf_, get_all_properties());
+
+  topic_ = DdsrFactory::create_topic(kPublisher | kSubscriber, conf_, participant_.get());
+
+  publisher_ = DdsrFactory::create_publisher(kPublisher, conf_, participant_.get());
+
+  if VUNLIKELY (!participant_ || !topic_) {
+    VLOG_E("DdsrPublisherImpl::init(): participant/topic creation failed; publisher left uninitialised.");
+
+    return;
+  }
+
+  listener_.emplace(this);
+
+  writer_ = DdsrFactory::create_datawriter(kPublisher, conf_, publisher_.get(), topic_.get(), listener_->get_ptr());
+}
+
+void DdsrPublisherImpl::deinit() {
+  detach();
+
+  writer_.reset();
+  listener_.reset();
+  publisher_.reset();
+  topic_.reset();
+  participant_.reset();
+}
+
+const Conf* DdsrPublisherImpl::get_conf() const { return &conf_; }
+
+const AbstractNode* DdsrPublisherImpl::get_abstract_node() const { return this; }
+
+Status::BasePtr DdsrPublisherImpl::get_status(Status::Type type) const {
+  if VUNLIKELY (!writer_) {
+    return std::make_shared<Status::Unknown>();
+  }
+
+  return WriterListener::get_status(writer_->entity, type);
+}
+
+std::any DdsrPublisherImpl::get_native_handle() const { return publisher_; }
+
+bool DdsrPublisherImpl::has_subscribers() const { return session_count_.load(std::memory_order_acquire) > 0; }
+
+bool DdsrPublisherImpl::write(const Bytes& msg_data) {
+  return DdsrFactory::write_data(writer_->entity, msg_data, seq_.fetch_add(1, std::memory_order_relaxed));
+}
+
+}  // namespace vlink

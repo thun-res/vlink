@@ -1,0 +1,36 @@
+[
+  {
+    "_comment": "Foxglove service call: frontend JSON request -> VLink JSON request -> frontend JSON response",
+    "name": "planner/reset",
+    "type": "planner.Reset",
+    "timeout_ms": 1000,
+    "request": {
+      "schema_name": "webviz.ResetRequest",
+      "schema_encoding": "jsonschema",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "scope": { "type": "string" }
+        },
+        "required": ["scope"]
+      }
+    },
+    "url": "dds://planner/service/reset",
+    "encoding": "json",
+    "ser": "json",
+    "response": {
+      "encoding": "json",
+      "schema_name": "webviz.ResetResponse",
+      "schema_encoding": "jsonschema",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "message": { "type": "string" }
+        },
+        "required": ["ok"]
+      },
+      "ser": "json"
+    }
+  }
+]

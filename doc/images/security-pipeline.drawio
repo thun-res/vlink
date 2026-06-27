@@ -1,0 +1,115 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="security-pipeline" name="Security Pipeline">
+    <mxGraphModel dx="1100" dy="560" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="Security Encryption Pipeline" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="18" width="1020" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="AES-128-GCM AEAD (+ optional RSA-OAEP/PSS hybrid) or custom encrypt/decrypt callback  -  End-to-end payload protection" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="40" y="54" width="1020" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Sender row background -->
+        <mxCell id="snd_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;arcSize=6;fontFamily=Helvetica;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="1020" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="snd_t" value="Sender" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="56" y="108" width="200" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Sender boxes -->
+        <mxCell id="s1" value="Application Data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#1b5e20;align=center;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="70" y="150" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" value="Serialized Byte Stream" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#1b5e20;align=center;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="340" y="150" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="Encrypted Data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="610" y="150" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s4" value="Transport Channel&#10;shm:// / dds:// / zenoh:// / ..." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#37474f;align=center;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="860" y="150" width="180" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Sender arrows -->
+        <mxCell id="sa1" value="serialize(msg)" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#1976d2;strokeWidth=2.2;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#0d47a1;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="s1" target="s2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sa2" value="encrypt(bytes)" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#ef6c00;strokeWidth=2.5;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#e65100;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="s2" target="s3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sa3" value="send" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#607d8b;strokeWidth=2.2;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#37474f;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="s3" target="s4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Middle: transport arrow -->
+        <mxCell id="mid_arr" value="" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#607d8b;strokeWidth=2.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="950" y="240" as="sourcePoint" />
+            <mxPoint x="950" y="320" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="mid_l" value="wire transfer" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=#ffffff;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#37474f;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="892" y="270" width="120" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Crypto note (highlight) -->
+        <mxCell id="note_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;arcSize=6;fontFamily=Helvetica;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="260" width="600" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="note_t" value="Crypto:  AES-128-GCM AEAD  (default)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="58" y="266" width="240" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="note_l" value="or Config::encrypt_callback / decrypt_callback custom hook" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="320" y="266" width="308" height="28" as="geometry" />
+        </mxCell>
+
+        <!-- Receiver row background -->
+        <mxCell id="rcv_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;arcSize=6;fontFamily=Helvetica;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="320" width="1020" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="rcv_t" value="Receiver" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="56" y="328" width="200" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Receiver boxes (right to left flow) -->
+        <mxCell id="r4" value="Transport Channel&#10;shm:// / dds:// / zenoh:// / ..." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#37474f;align=center;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="860" y="370" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="r3" value="Encrypted Data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="610" y="370" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="r2" value="Decrypted Byte Stream" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#1b5e20;align=center;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="340" y="370" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="r1" value="Application Data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#1b5e20;align=center;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="70" y="370" width="180" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Receiver arrows (right to left) -->
+        <mxCell id="ra1" value="receive" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#607d8b;strokeWidth=2.2;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#37474f;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="r4" target="r3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ra2" value="decrypt(bytes)" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#ef6c00;strokeWidth=2.5;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#e65100;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="r3" target="r2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ra3" value="deserialize(bytes)" style="endArrow=block;endFill=1;html=1;rounded=1;strokeColor=#1976d2;strokeWidth=2.2;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#0d47a1;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="r2" target="r1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Footer legend -->
+        <mxCell id="foot_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.2;arcSize=6;fontFamily=Helvetica;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="484" width="1020" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="foot_l" value="Enable with SecurityPublisher&amp;lt;T&amp;gt; / SecuritySubscriber&amp;lt;T&amp;gt; by passing Security::Config as the constructor's second argument" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="50" y="490" width="1000" height="28" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
