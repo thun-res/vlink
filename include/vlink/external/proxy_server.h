@@ -202,16 +202,15 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
    * this field to @c 4.0.
    */
   struct Config final {
-    bool async{false};        ///< Forward data asynchronously on the MessageLoop thread.
-    bool reliable{false};     ///< Use reliable DDS QoS; must match every client.
-    bool enable_tcp{false};   ///< Use TCP transport for DDS data channels.
-    bool direct{false};       ///< Use ProxyAPI-managed local SHM channels for data.
-    bool native_mode{false};  ///< Restrict every DDS endpoint to loopback (127.0.0.1).
-    int domain_id{0};         ///< DDS domain ID.
-    uint32_t buf_size{0};     ///< DDS socket buffer in bytes; 0 = default.
-    uint32_t mtu_size{0};     ///< DDS fragment MTU in bytes; 0 = default.
-    double max_packet_size{
-        0};  ///< Maximum relayed payload in MiB; 0 drops every non-empty message (set > 0 to forward).
+    bool async{false};                       ///< Forward data asynchronously on the MessageLoop thread.
+    bool reliable{false};                    ///< Use reliable DDS QoS; must match every client.
+    bool enable_tcp{false};                  ///< Use TCP transport for DDS data channels.
+    bool direct{false};                      ///< Use ProxyAPI-managed local SHM channels for data.
+    bool native_mode{false};                 ///< Restrict every DDS endpoint to loopback (127.0.0.1).
+    int domain_id{0};                        ///< DDS domain ID.
+    uint32_t buf_size{0};                    ///< DDS socket buffer in bytes; 0 = default.
+    uint32_t mtu_size{0};                    ///< DDS fragment MTU in bytes; 0 = default.
+    double max_packet_size{0};               ///< Maximum relayed payload in MiB; 0 drops every non-empty message.
     std::string security_key;                ///< Security key; empty = default security slot.
     std::string bind_ip;                     ///< Local IP for DDS sockets; empty = any.
     std::string peer_ip;                     ///< Peer unicast IP for DDS; empty = multicast.

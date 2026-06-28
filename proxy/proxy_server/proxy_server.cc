@@ -1169,7 +1169,7 @@ void ProxyServer::update_all() {
           elapsed.restart();
 
           if (!impl_->config.direct) {
-            if VUNLIKELY (bytes.size() > impl_->real_max_packet_size) {  // LIMIT SIZE
+            if VUNLIKELY (impl_->real_max_packet_size > 0 && bytes.size() > impl_->real_max_packet_size) {
               return;
             }
 
