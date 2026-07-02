@@ -792,11 +792,9 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
   size_t real_max_memory_size = max_memory_size * 1024L * 1024L * 1024L;
 
   auto quit_function = [&discovery_viewer, &recorder, wait_time, &status](int) {
-    if VUNLIKELY (has_quit) {
+    if VUNLIKELY (has_quit.exchange(true)) {
       return;
     }
-
-    has_quit = true;
 
     if VLIKELY (discovery_viewer) {
       discovery_viewer->quit(true);
@@ -1169,7 +1167,11 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
 
   stop_print();
 
-  has_quit = true;
+  if (has_quit.exchange(true)) {
+    while (!is_broken) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+  }
 
   discovery_viewer.reset();
   recorder.reset();
