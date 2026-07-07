@@ -783,10 +783,10 @@ bool Shm2Server::reply(uint64_t channel, const Bytes& resp_data) {
       loan_map_.erase(it);
     }
 
-    seq_.fetch_add(1, std::memory_order_relaxed);
+    const uint64_t seq = seq_.fetch_add(1, std::memory_order_relaxed) + 1;
 
     auto* buf_base = const_cast<uint8_t*>(resp_data.data()) - Shm2Factory::get_loaned_offset();
-    Shm2Factory::write_header(buf_base, channel, seq_.load(std::memory_order_relaxed));
+    Shm2Factory::write_header(buf_base, channel, seq);
 
     auto ret = iox2_response_mut_send(entry.handle);
 
@@ -795,8 +795,6 @@ bool Shm2Server::reply(uint64_t channel, const Bytes& resp_data) {
 
     if VUNLIKELY (ret != IOX2_OK) {
       VLOG_E("Shm2Factory: Failed to send loaned server response, error: ", ret, ".");
-
-      iox2_response_mut_drop(entry.handle);
       return false;
     }
 
@@ -819,14 +817,14 @@ bool Shm2Server::reply(uint64_t channel, const Bytes& resp_data) {
     return false;
   }
 
-  seq_.fetch_add(1, std::memory_order_relaxed);
+  const uint64_t seq = seq_.fetch_add(1, std::memory_order_relaxed) + 1;
 
   void* write_ptr = nullptr;
   size_t write_elems = 0;
   iox2_response_mut_payload_mut(&resp_handle, &write_ptr, &write_elems);
 
   auto* write_buf = static_cast<uint8_t*>(write_ptr);
-  Shm2Factory::write_data(write_buf, channel, seq_.load(std::memory_order_relaxed), resp_data);
+  Shm2Factory::write_data(write_buf, channel, seq, resp_data);
 
   auto ret = iox2_response_mut_send(resp_handle);
 
@@ -835,7 +833,6 @@ bool Shm2Server::reply(uint64_t channel, const Bytes& resp_data) {
 
   if VUNLIKELY (ret != IOX2_OK) {
     VLOG_E("Shm2Factory: Failed to send server response, error: ", ret, ".");
-    iox2_response_mut_drop(resp_handle);
     return false;
   }
 
@@ -1231,6 +1228,7 @@ bool Shm2Client::call(uint64_t channel, const Bytes& req_data, NodeImpl::MsgCall
   iox2_request_mut_t stack_storage{};
   iox2_request_mut_h req_handle{nullptr};
   uint8_t* write_buf{nullptr};
+  uint64_t seq{0};
 
   if (req_data.is_loaned()) {
     ClientLoanEntry entry;
@@ -1251,8 +1249,8 @@ bool Shm2Client::call(uint64_t channel, const Bytes& req_data, NodeImpl::MsgCall
     loaned_storage = std::move(entry.storage);
     req_handle = entry.handle;
     write_buf = const_cast<uint8_t*>(req_data.data()) - Shm2Factory::get_loaned_offset();
-    seq_.fetch_add(1, std::memory_order_relaxed);
-    Shm2Factory::write_header(write_buf, channel, seq_.load(std::memory_order_relaxed));
+    seq = seq_.fetch_add(1, std::memory_order_relaxed) + 1;
+    Shm2Factory::write_header(write_buf, channel, seq);
   } else {
     size_t total = req_data.size() + Shm2Factory::get_loaned_offset();
 
@@ -1261,20 +1259,20 @@ bool Shm2Client::call(uint64_t channel, const Bytes& req_data, NodeImpl::MsgCall
       return false;
     }
 
-    seq_.fetch_add(1, std::memory_order_relaxed);
+    seq = seq_.fetch_add(1, std::memory_order_relaxed) + 1;
 
     void* write_ptr = nullptr;
     size_t write_elems = 0;
     iox2_request_mut_payload_mut(&req_handle, &write_ptr, &write_elems);
 
     write_buf = static_cast<uint8_t*>(write_ptr);
-    Shm2Factory::write_data(write_buf, channel, seq_.load(std::memory_order_relaxed), req_data);
+    Shm2Factory::write_data(write_buf, channel, seq, req_data);
   }
 
   int ret = 0;
 
   if (callback) {
-    const auto response_seq = seq_.load(std::memory_order_relaxed);
+    const auto response_seq = seq;
     callbacks_[response_seq] = [cb = std::move(callback), channel](uint64_t target_channel, const Bytes& bytes) {
       if (channel != target_channel) {
         return;
@@ -1294,7 +1292,6 @@ bool Shm2Client::call(uint64_t channel, const Bytes& req_data, NodeImpl::MsgCall
     if VUNLIKELY (ret != IOX2_OK) {
       VLOG_E("Shm2Factory: Failed to send client request, error: ", ret, ".");
 
-      iox2_request_mut_drop(req_handle);
       callbacks_.erase(response_seq);
       pending_storage_map_.erase(response_seq);
       return false;
@@ -1308,7 +1305,6 @@ bool Shm2Client::call(uint64_t channel, const Bytes& req_data, NodeImpl::MsgCall
 
     if VUNLIKELY (ret != IOX2_OK) {
       VLOG_E("Shm2Factory: Failed to send client request, error: ", ret, ".");
-      iox2_request_mut_drop(req_handle);
       return false;
     }
 
@@ -1369,6 +1365,8 @@ Shm2Publisher::Shm2Publisher(const ShmID2& id) {
   depth_ = depth;
 
   const auto notify_every_env = Utils::get_env("VLINK_SHM2_NOTIFY_EVERY", "1");
+  const auto loan_min_env = Utils::get_env("VLINK_SHM2_LOAN_MIN", std::to_string(loan_send_threshold_));
+
   int parsed_notify_every = 1;
 
   if (!notify_every_env.empty()) {
@@ -1376,6 +1374,15 @@ Shm2Publisher::Shm2Publisher(const ShmID2& id) {
   }
 
   notify_every_ = parsed_notify_every > 0 ? static_cast<uint32_t>(parsed_notify_every) : 1U;
+
+  if (!loan_min_env.empty()) {
+    auto [ptr, error] =
+        std::from_chars(loan_min_env.data(), loan_min_env.data() + loan_min_env.size(), loan_send_threshold_);
+
+    if VUNLIKELY (error != std::errc() || ptr != loan_min_env.data() + loan_min_env.size()) {
+      loan_send_threshold_ = 65536;
+    }
+  }
 
   service_name_ = Shm2Factory::make_service_name(address, "event", domain);
 
@@ -1395,6 +1402,7 @@ Shm2Publisher::Shm2Publisher(const ShmID2& id) {
   iox2_service_builder_pub_sub_h ps_builder = iox2_service_builder_pub_sub(sb_handle);
 
   static const char kTypeName[] = "u8";
+
   iox2_service_builder_pub_sub_set_payload_type_details(&ps_builder, iox2_type_variant_e_DYNAMIC, kTypeName,
                                                         sizeof(kTypeName) - 1, sizeof(uint8_t), alignof(uint8_t));
   iox2_service_builder_pub_sub_set_max_publishers(&ps_builder, 512);
@@ -1566,6 +1574,21 @@ bool Shm2Publisher::release(const Bytes& bytes) {
   return true;
 }
 
+void Shm2Publisher::notify_and_wait(size_t recipients) {
+  if (notifier_ && recipients > 0) {
+    auto notify_count = notify_counter_.fetch_add(1, std::memory_order_relaxed) + 1;
+
+    if (notify_count >= notify_every_) {
+      notify_counter_.store(0, std::memory_order_relaxed);
+      iox2_notifier_notify(&notifier_, nullptr);
+    }
+  }
+
+  if VUNLIKELY (wait_ > 0) {
+    sem_->acquire(recipients, wait_);
+  }
+}
+
 bool Shm2Publisher::publish(uint64_t channel, const Bytes& bytes) {
   if VUNLIKELY (!publisher_) {
     return false;
@@ -1597,66 +1620,83 @@ bool Shm2Publisher::publish(uint64_t channel, const Bytes& bytes) {
       loan_map_.erase(it);
     }
 
-    seq_.fetch_add(1, std::memory_order_relaxed);
+    const uint64_t seq = seq_.fetch_add(1, std::memory_order_relaxed) + 1;
 
     auto* buf_base = const_cast<uint8_t*>(bytes.data()) - Shm2Factory::get_loaned_offset();
-    Shm2Factory::write_header(buf_base, channel, seq_.load(std::memory_order_relaxed));
+    Shm2Factory::write_header(buf_base, channel, seq);
 
     size_t recipients = 0;
     auto ret = iox2_sample_mut_send(entry.handle, &recipients);
 
     if VUNLIKELY (ret != IOX2_OK) {
       VLOG_E("Shm2Factory: Failed to publish loaned sample, error: ", ret, ".");
-
-      iox2_sample_mut_drop(entry.handle);
       return false;
     }
 
-    if (notifier_ && recipients > 0) {
-      auto notify_count = notify_counter_.fetch_add(1, std::memory_order_relaxed) + 1;
-      if (notify_count >= notify_every_) {
-        notify_counter_.store(0, std::memory_order_relaxed);
-        iox2_notifier_notify(&notifier_, nullptr);
-      }
-    }
-
-    if VUNLIKELY (wait_ > 0) {
-      sem_->acquire(recipients, wait_);
-    }
+    notify_and_wait(recipients);
 
     return true;
   }
 
   const size_t total = bytes.size() + Shm2Factory::get_loaned_offset();
 
-  thread_local std::vector<uint8_t> scratch;
+  if (bytes.size() < loan_send_threshold_) {
+    thread_local std::vector<uint8_t> scratch;
 
-  if (scratch.size() < total) {
-    scratch.resize(total);
+    if (scratch.size() < total) {
+      scratch.resize(total);
+    }
+
+    const uint64_t seq = seq_.fetch_add(1, std::memory_order_relaxed) + 1;
+    Shm2Factory::write_data(scratch.data(), channel, seq, bytes);
+
+    size_t recipients = 0;
+    auto send_ret = iox2_publisher_send_slice_copy(&publisher_, scratch.data(), sizeof(uint8_t), total, &recipients);
+
+    if VUNLIKELY (send_ret != IOX2_OK) {
+      VLOG_E("Shm2Factory: Failed to send_slice_copy, error: ", send_ret, ".");
+      return false;
+    }
+
+    notify_and_wait(recipients);
+
+    return true;
   }
 
-  seq_.fetch_add(1, std::memory_order_relaxed);
-  Shm2Factory::write_data(scratch.data(), channel, seq_.load(std::memory_order_relaxed), bytes);
+  iox2_sample_mut_t sample_storage{};
+  iox2_sample_mut_h sample_handle{nullptr};
 
-  size_t recipients = 0;
-  auto send_ret = iox2_publisher_send_slice_copy(&publisher_, scratch.data(), sizeof(uint8_t), total, &recipients);
-
-  if VUNLIKELY (send_ret != IOX2_OK) {
-    VLOG_E("Shm2Factory: Failed to send_slice_copy, error: ", send_ret, ".");
+  if VUNLIKELY (iox2_publisher_loan_slice_uninit(&publisher_, &sample_storage, &sample_handle, total) != IOX2_OK) {
+    VLOG_E("Shm2Factory: Failed to loan publisher buffer, size: ", total, ".");
     return false;
   }
 
-  if (notifier_ && recipients > 0) {
-    auto notify_count = notify_counter_.fetch_add(1, std::memory_order_relaxed) + 1;
-    if (notify_count >= notify_every_) {
-      notify_counter_.store(0, std::memory_order_relaxed);
-      iox2_notifier_notify(&notifier_, nullptr);
-    }
+  const uint64_t seq = seq_.fetch_add(1, std::memory_order_relaxed) + 1;
+
+  size_t recipients = 0;
+  void* write_ptr = nullptr;
+  size_t write_elems = 0;
+  iox2_sample_mut_payload_mut(&sample_handle, &write_ptr, &write_elems);
+
+  auto* write_buf = static_cast<uint8_t*>(write_ptr);
+
+  if VUNLIKELY (write_buf == nullptr || write_elems < total) {
+    VLOG_E("Shm2Factory: Invalid loaned publisher payload, size: ", write_elems, ", expected: ", total, ".");
+
+    iox2_sample_mut_drop(sample_handle);
+    return false;
   }
 
-  if VUNLIKELY (wait_ > 0) {
-    sem_->acquire(recipients, wait_);
+  Shm2Factory::write_data(write_buf, channel, seq, bytes);
+
+  auto send_ret = iox2_sample_mut_send(sample_handle, &recipients);
+
+  if VUNLIKELY (send_ret != IOX2_OK) {
+    VLOG_E("Shm2Factory: Failed to publish sample, error: ", send_ret, ".");
+    return false;
   }
+
+  notify_and_wait(recipients);
 
   return true;
 }

@@ -352,6 +352,8 @@ class Shm2Publisher final : public AbstractObject<ShmID2>, public std::enable_sh
 
   void discovery_subscribers(bool has_subscribers);
 
+  void notify_and_wait(size_t recipients);
+
   alignas(64) std::atomic<uint64_t> seq_{0};
   std::atomic_bool has_detect_timer_{false};
   std::atomic_bool last_has_subscribers_{false};
@@ -376,6 +378,7 @@ class Shm2Publisher final : public AbstractObject<ShmID2>, public std::enable_sh
 
   uint32_t notify_every_{1};
   std::atomic<uint32_t> notify_counter_{0};
+  size_t loan_send_threshold_{65536};
 
   std::optional<SysSemaphore> sem_;
 
