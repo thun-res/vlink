@@ -36,7 +36,7 @@ option(ENABLE_VIEWER "Enable viewer" OFF)
 
 | 增强能力 | CMake 选项 | 默认 | 关闭后的影响 |
 | --- | --- | :---: | --- |
-| 视频解码（H.264 / H.265 / YUV 等） | `ENABLE_VIEWER_FFMPEG` | `OFF` | 相机窗口仅支持 JPEG；需视频/裸像素格式时显式 `-DENABLE_VIEWER_FFMPEG=ON` |
+| 视频解码（H.264 / H.265 / YUV 等） | `ENABLE_VIEWER_FFMPEG` | `OFF` | 相机窗口仅保留 Qt 可直接解码的静态图像；需视频/裸像素格式时显式 `-DENABLE_VIEWER_FFMPEG=ON` |
 | 3D 场景渲染（点云 / 目标检测等） | `ENABLE_VIEWER_OSG` | `ON` | 3D 窗口不可用 |
 | 数学表达式求值 | `ENABLE_EXPRTK` | `ON` | 字段映射与曲线表达式停用 |
 
@@ -92,7 +92,7 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 
 ### 🎥 11.1.5 相机与 3D 可视化
 
-**相机帧预览（S）**　按 `S` 打开相机窗口，预览图像话题。经 FFmpeg 解码，支持的编码包括 JPEG、H.264、H.265、MPEG4，以及 YUV420/422/444、NV12、YUYV、YVYU、UYVY、BGR888、RGB888 等像素格式。支持多通道并排显示、暂停、硬件解码，并可联动 3D 投影视图将图像投射至点云。关闭 `ENABLE_VIEWER_FFMPEG` 时仅支持 JPEG。
+**相机帧预览（S）**　按 `S` 打开相机窗口，预览图像话题。零拷贝 `CameraFrame` 会按 `format()` 自动选择直接渲染或解码路径；Protobuf、FlatBuffers 与原始字节入口的格式下拉框默认使用 `Auto`，可识别内嵌的序列化 `CameraFrame` 或 Qt 支持的静态图像。裸 YUV / 裸 RGB 等无头原始像素流需手动指定格式和尺寸；H.264、H.265、H.266、AV1、MPEG4 等编码视频流需手动指定格式，尺寸由解码器从码流解析。JPEG、PNG、WebP 等静态图像优先走 Qt 解码，Qt 失败且启用 FFmpeg 时会尝试解码 fallback；FFmpeg 还支持 MJPEG、YUV420/422/444、NV12、NV21、YUYV、YVYU、UYVY、BGR888、RGB888 等格式。通用 OpenCV/ROS 数值格式按首通道灰度预览；彩色图像应使用 `rgb8`、`bgr8`、`rgba8`、`bgra8` 等明确通道顺序的编码。支持多通道并排显示、暂停、硬件解码，并可联动 3D 投影视图将图像投射至点云。关闭 `ENABLE_VIEWER_FFMPEG` 时，零拷贝 `CameraFrame` 的直接渲染格式与 Qt 可解码的静态图像仍可显示，手动裸流和编码视频解码不可用。
 
 ![相机帧结构](images/camera-frame-structure.png)
 
@@ -496,7 +496,7 @@ VLink 零拷贝类型无需编写 `field_mappings`，转换层自动选择内置
 
 | VLink 零拷贝类型 | Foxglove 目标 | Rerun 目标 | 可选 `converter` |
 | --- | --- | --- | --- |
-| `CameraFrame` | `foxglove.CompressedImage`（H.264/H.265 为 `foxglove.CompressedVideo`） | `EncodedImage` / `Image` / `AssetVideo` | `camera_frame` |
+| `CameraFrame` | `foxglove.RawImage` / `foxglove.CompressedImage` / `foxglove.CompressedVideo` | `EncodedImage` / `Image` / `AssetVideo` | `camera_frame` |
 | `PointCloud` | `foxglove.PointCloud` | `Points3D` | `point_cloud` |
 | `OccupancyGrid` | `foxglove.Grid` | `Image`（灰度） | `occupancy_grid`† |
 | `ObjectArray` | `foxglove.SceneUpdate` | `Boxes3D` | `object_array`† |

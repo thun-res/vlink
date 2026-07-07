@@ -102,6 +102,207 @@ int64_t RerunConverter::clamp_header_timestamp_ns(uint64_t timestamp_ns) {
   return static_cast<int64_t>(timestamp_ns);
 }
 
+static bool mul_size(size_t a, size_t b, size_t& out) {
+  if VUNLIKELY (a != 0 && b > std::numeric_limits<size_t>::max() / a) {
+    return false;
+  }
+
+  out = a * b;
+  return true;
+}
+
+static bool image_size(size_t pixels, size_t bytes_per_pixel, size_t data_size, size_t& out) {
+  if VUNLIKELY (!mul_size(pixels, bytes_per_pixel, out) || out > data_size) {
+    return false;
+  }
+
+  return true;
+}
+
+static bool copy_channel(const uint8_t* data, size_t data_size, size_t pixels, size_t step, size_t offset,
+                         std::vector<uint8_t>& gray) {
+  size_t expected = 0;
+
+  if VUNLIKELY (step == 0 || offset >= step || !image_size(pixels, step, data_size, expected)) {
+    return false;
+  }
+
+  gray.resize(pixels);
+
+  for (size_t i = 0; i < pixels; ++i) {
+    gray[i] = data[i * step + offset];
+  }
+
+  return true;
+}
+
+static bool log_raw_image(::rerun::RecordingStream& rec, const std::string& entity_path, const uint8_t* data,
+                          size_t data_size, uint32_t width, uint32_t height,
+                          ::rerun::datatypes::ColorModel color_model) {
+  auto pixel_data = ::rerun::Collection<uint8_t>::borrow(data, data_size);
+  auto image = ::rerun::archetypes::Image(std::move(pixel_data), {width, height}, color_model);
+  rec.log(entity_path, image);
+
+  return true;
+}
+
+static bool log_raw_image(::rerun::RecordingStream& rec, const std::string& entity_path, std::vector<uint8_t>&& data,
+                          uint32_t width, uint32_t height, ::rerun::datatypes::ColorModel color_model) {
+  auto pixel_data = ::rerun::Collection<uint8_t>::take_ownership(std::move(data));
+  auto image = ::rerun::archetypes::Image(std::move(pixel_data), {width, height}, color_model);
+  rec.log(entity_path, image);
+
+  return true;
+}
+
+static bool log_pixel_image(::rerun::RecordingStream& rec, const std::string& entity_path, const uint8_t* data,
+                            size_t data_size, uint32_t width, uint32_t height,
+                            ::rerun::datatypes::PixelFormat pixel_format) {
+  const auto format = ::rerun::datatypes::ImageFormat({width, height}, pixel_format);
+
+  if VUNLIKELY (format.num_bytes() > data_size) {
+    return false;
+  }
+
+  auto pixel_data = ::rerun::Collection<uint8_t>::borrow(data, format.num_bytes());
+  auto image = ::rerun::archetypes::Image(std::move(pixel_data), {width, height}, pixel_format);
+  rec.log(entity_path, image);
+
+  return true;
+}
+
+static bool log_typed_image(::rerun::RecordingStream& rec, const std::string& entity_path, const uint8_t* data,
+                            size_t data_size, uint32_t width, uint32_t height,
+                            ::rerun::datatypes::ColorModel color_model, ::rerun::datatypes::ChannelDatatype datatype) {
+  const auto format = ::rerun::datatypes::ImageFormat({width, height}, color_model, datatype);
+
+  if VUNLIKELY (format.num_bytes() > data_size) {
+    return false;
+  }
+
+  auto pixel_data = ::rerun::Collection<uint8_t>::borrow(data, format.num_bytes());
+  auto image = ::rerun::archetypes::Image(std::move(pixel_data), {width, height}, color_model, datatype);
+  rec.log(entity_path, image);
+
+  return true;
+}
+
+static bool log_camera_frame_tensor(::rerun::RecordingStream& rec, const std::string& entity_path,
+                                    zerocopy::CameraFrame::Format format, const uint8_t* data, size_t data_size,
+                                    uint32_t width, uint32_t height, size_t pixels) {
+  size_t channels = 0;
+  size_t element_size = 0;
+  ::rerun::datatypes::TensorBuffer buffer;
+
+  switch (format) {
+    case zerocopy::CameraFrame::kFormatUint8C1:
+    case zerocopy::CameraFrame::kFormatUint8C2:
+    case zerocopy::CameraFrame::kFormatUint8C3:
+    case zerocopy::CameraFrame::kFormatUint8C4:
+      channels = static_cast<size_t>(format) - static_cast<size_t>(zerocopy::CameraFrame::kFormatUint8C1) + 1U;
+      element_size = sizeof(uint8_t);
+      break;
+    case zerocopy::CameraFrame::kFormatInt8C1:
+    case zerocopy::CameraFrame::kFormatInt8C2:
+    case zerocopy::CameraFrame::kFormatInt8C3:
+    case zerocopy::CameraFrame::kFormatInt8C4:
+      channels = static_cast<size_t>(format) - static_cast<size_t>(zerocopy::CameraFrame::kFormatInt8C1) + 1U;
+      element_size = sizeof(int8_t);
+      break;
+    case zerocopy::CameraFrame::kFormatUint16C1:
+    case zerocopy::CameraFrame::kFormatUint16C2:
+    case zerocopy::CameraFrame::kFormatUint16C3:
+    case zerocopy::CameraFrame::kFormatUint16C4:
+      channels = static_cast<size_t>(format) - static_cast<size_t>(zerocopy::CameraFrame::kFormatUint16C1) + 1U;
+      element_size = sizeof(uint16_t);
+      break;
+    case zerocopy::CameraFrame::kFormatInt16C1:
+    case zerocopy::CameraFrame::kFormatInt16C2:
+    case zerocopy::CameraFrame::kFormatInt16C3:
+    case zerocopy::CameraFrame::kFormatInt16C4:
+      channels = static_cast<size_t>(format) - static_cast<size_t>(zerocopy::CameraFrame::kFormatInt16C1) + 1U;
+      element_size = sizeof(int16_t);
+      break;
+    case zerocopy::CameraFrame::kFormatInt32C1:
+    case zerocopy::CameraFrame::kFormatInt32C2:
+    case zerocopy::CameraFrame::kFormatInt32C3:
+    case zerocopy::CameraFrame::kFormatInt32C4:
+      channels = static_cast<size_t>(format) - static_cast<size_t>(zerocopy::CameraFrame::kFormatInt32C1) + 1U;
+      element_size = sizeof(int32_t);
+      break;
+    case zerocopy::CameraFrame::kFormatFloat32C1:
+    case zerocopy::CameraFrame::kFormatFloat32C2:
+    case zerocopy::CameraFrame::kFormatFloat32C3:
+    case zerocopy::CameraFrame::kFormatFloat32C4:
+      channels = static_cast<size_t>(format) - static_cast<size_t>(zerocopy::CameraFrame::kFormatFloat32C1) + 1U;
+      element_size = sizeof(float);
+      break;
+    case zerocopy::CameraFrame::kFormatFloat64C1:
+    case zerocopy::CameraFrame::kFormatFloat64C2:
+    case zerocopy::CameraFrame::kFormatFloat64C3:
+    case zerocopy::CameraFrame::kFormatFloat64C4:
+      channels = static_cast<size_t>(format) - static_cast<size_t>(zerocopy::CameraFrame::kFormatFloat64C1) + 1U;
+      element_size = sizeof(double);
+      break;
+    case zerocopy::CameraFrame::kFormatBayerRggb16:
+    case zerocopy::CameraFrame::kFormatBayerBggr16:
+    case zerocopy::CameraFrame::kFormatBayerGbrg16:
+    case zerocopy::CameraFrame::kFormatBayerGrbg16:
+      channels = 1U;
+      element_size = sizeof(uint16_t);
+      break;
+    default:
+      return false;
+  }
+
+  if VUNLIKELY (channels == 0 || pixels > std::numeric_limits<size_t>::max() / channels) {
+    return false;
+  }
+
+  const size_t elements = pixels * channels;
+
+  if VUNLIKELY (elements > std::numeric_limits<size_t>::max() / element_size) {
+    return false;
+  }
+
+  const size_t bytes = elements * element_size;
+
+  if VUNLIKELY (bytes > data_size) {
+    return false;
+  }
+
+  buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<uint8_t>::borrow(data, bytes));
+
+  std::vector<uint64_t> shape;
+  shape.reserve((channels > 1U ? 3U : 2U) + (element_size > 1U ? 1U : 0U));
+  shape.emplace_back(height);
+  shape.emplace_back(width);
+
+  if (channels > 1U) {
+    shape.emplace_back(channels);
+  }
+
+  if (element_size > 1U) {
+    shape.emplace_back(element_size);
+  }
+
+  auto tensor = ::rerun::archetypes::Tensor(std::move(shape), std::move(buffer));
+
+  if (channels > 1U && element_size > 1U) {
+    tensor = std::move(tensor).with_dim_names({"height", "width", "channel", "byte"});
+  } else if (channels > 1U) {
+    tensor = std::move(tensor).with_dim_names({"height", "width", "channel"});
+  } else if (element_size > 1U) {
+    tensor = std::move(tensor).with_dim_names({"height", "width", "byte"});
+  } else {
+    tensor = std::move(tensor).with_dim_names({"height", "width"});
+  }
+
+  rec.log(entity_path, tensor);
+
+  return true;
+}
+
 Bytes RerunConverter::decode_plugin_binary(const Json& j, std::string_view base64_key, std::string_view array_key) {
   if (j.contains(base64_key) && j[base64_key].is_string()) {
     return Bytes::decode_from_base64(j[base64_key].get<std::string>());
@@ -1165,7 +1366,7 @@ void RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::s
 
 bool RerunConverter::log_camera_frame(::rerun::RecordingStream& rec, const std::string& entity_path,
                                       const zerocopy::CameraFrame& frame) {
-  auto fmt = frame.format();
+  const auto fmt = frame.format();
 
   std::string media_type;
 
@@ -1173,96 +1374,283 @@ bool RerunConverter::log_camera_frame(::rerun::RecordingStream& rec, const std::
     case zerocopy::CameraFrame::kFormatJpeg:
       media_type = "image/jpeg";
       break;
+    case zerocopy::CameraFrame::kFormatPng:
+      media_type = "image/png";
+      break;
+    case zerocopy::CameraFrame::kFormatMjpeg:
+      media_type = "image/jpeg";
+      break;
+    case zerocopy::CameraFrame::kFormatWebp:
+      media_type = "image/webp";
+      break;
     case zerocopy::CameraFrame::kFormatH264:
       media_type = "video/h264";
       break;
     case zerocopy::CameraFrame::kFormatH265:
       media_type = "video/h265";
       break;
+    case zerocopy::CameraFrame::kFormatH266:
+      media_type = "video/h266";
+      break;
+    case zerocopy::CameraFrame::kFormatAv1:
+      media_type = "video/av1";
+      break;
     default:
       break;
   }
 
   const auto* data_ptr = frame.data();
-  auto data_size = frame.size();
+  const auto data_size = frame.size();
 
   if VUNLIKELY (!data_ptr || data_size == 0) {
     return false;
   }
 
-  if (fmt == zerocopy::CameraFrame::kFormatH264 || fmt == zerocopy::CameraFrame::kFormatH265) {
+  if (fmt == zerocopy::CameraFrame::kFormatH264 || fmt == zerocopy::CameraFrame::kFormatH265 ||
+      fmt == zerocopy::CameraFrame::kFormatH266 || fmt == zerocopy::CameraFrame::kFormatAv1) {
     auto blob = ::rerun::Collection<uint8_t>::borrow(data_ptr, data_size);
     auto video =
         ::rerun::archetypes::AssetVideo::from_bytes(std::move(blob), ::rerun::components::MediaType(media_type));
     rec.log(entity_path, video);
-  } else if (fmt == zerocopy::CameraFrame::kFormatJpeg) {
+    return true;
+  }
+
+  if (fmt == zerocopy::CameraFrame::kFormatJpeg || fmt == zerocopy::CameraFrame::kFormatPng ||
+      fmt == zerocopy::CameraFrame::kFormatMjpeg || fmt == zerocopy::CameraFrame::kFormatWebp) {
     auto blob = ::rerun::Collection<uint8_t>::borrow(data_ptr, data_size);
 
     rec.log(entity_path,
             ::rerun::archetypes::EncodedImage::from_bytes(blob, ::rerun::components::MediaType(media_type)));
-  } else {
-    if (frame.width() > 0 && frame.height() > 0) {
-      ::rerun::datatypes::ColorModel color_model = ::rerun::datatypes::ColorModel::L;
-
-      if (fmt == zerocopy::CameraFrame::kFormatRgb888Planar) {
-        auto w = static_cast<size_t>(frame.width());
-        auto h = static_cast<size_t>(frame.height());
-        auto pixel_count = w * h;
-
-        if (pixel_count * 3 <= data_size) {
-          std::vector<uint8_t> interleaved(pixel_count * 3);
-          const auto* r_plane = data_ptr;
-          const auto* g_plane = data_ptr + pixel_count;
-          const auto* b_plane = data_ptr + pixel_count * 2;
-
-          for (size_t i = 0; i < pixel_count; ++i) {
-            interleaved[i * 3 + 0] = r_plane[i];
-            interleaved[i * 3 + 1] = g_plane[i];
-            interleaved[i * 3 + 2] = b_plane[i];
-          }
-
-          auto pixel_data = ::rerun::Collection<uint8_t>::take_ownership(std::move(interleaved));
-          rec.log(entity_path, ::rerun::archetypes::Image(pixel_data, {frame.width(), frame.height()},
-                                                          ::rerun::datatypes::ColorModel::RGB));
-        }
-
-        return true;
-      }
-
-      switch (fmt) {
-        case zerocopy::CameraFrame::kFormatRgb888Packed:
-          color_model = ::rerun::datatypes::ColorModel::RGB;
-          break;
-        case zerocopy::CameraFrame::kFormatBgr888Packed:
-          color_model = ::rerun::datatypes::ColorModel::BGR;
-          break;
-        default: {
-          auto pixel_count = static_cast<size_t>(frame.width()) * frame.height();
-
-          if (pixel_count > 0) {
-            auto bytes_per_pixel = data_size / pixel_count;
-
-            if (bytes_per_pixel >= 4) {
-              color_model = ::rerun::datatypes::ColorModel::RGBA;
-            } else if (bytes_per_pixel >= 3) {
-              color_model = ::rerun::datatypes::ColorModel::RGB;
-            }
-          }
-
-          break;
-        }
-      }
-
-      auto pixel_data = ::rerun::Collection<uint8_t>::borrow(data_ptr, data_size);
-      auto image = ::rerun::archetypes::Image(pixel_data, {frame.width(), frame.height()}, color_model);
-      rec.log(entity_path, image);
-    } else {
-      MLOG_W("CameraFrame raw pixel format but width={} height={}, skipping", frame.width(), frame.height());
-      return false;
-    }
+    return true;
   }
 
-  return true;
+  const auto width = frame.width();
+  const auto height = frame.height();
+
+  if VUNLIKELY (width == 0 || height == 0) {
+    MLOG_W("CameraFrame raw pixel format but width={} height={}, skipping", width, height);
+    return false;
+  }
+
+  size_t pixels = 0;
+
+  if VUNLIKELY (!mul_size(static_cast<size_t>(width), static_cast<size_t>(height), pixels)) {
+    return false;
+  }
+
+  size_t bytes = 0;
+
+  switch (fmt) {
+    case zerocopy::CameraFrame::kFormatRgb888Packed:
+      if VUNLIKELY (!image_size(pixels, 3U, data_size, bytes)) {
+        return false;
+      }
+
+      return log_raw_image(rec, entity_path, data_ptr, bytes, width, height, ::rerun::datatypes::ColorModel::RGB);
+
+    case zerocopy::CameraFrame::kFormatBgr888Packed:
+      if VUNLIKELY (!image_size(pixels, 3U, data_size, bytes)) {
+        return false;
+      }
+
+      return log_raw_image(rec, entity_path, data_ptr, bytes, width, height, ::rerun::datatypes::ColorModel::BGR);
+
+    case zerocopy::CameraFrame::kFormatRgba8888Packed:
+      if VUNLIKELY (!image_size(pixels, 4U, data_size, bytes)) {
+        return false;
+      }
+
+      return log_raw_image(rec, entity_path, data_ptr, bytes, width, height, ::rerun::datatypes::ColorModel::RGBA);
+
+    case zerocopy::CameraFrame::kFormatBgra8888Packed: {
+      if VUNLIKELY (!image_size(pixels, 4U, data_size, bytes)) {
+        return false;
+      }
+
+      std::vector<uint8_t> rgba(bytes);
+
+      for (size_t i = 0; i < pixels; ++i) {
+        rgba[i * 4U + 0U] = data_ptr[i * 4U + 2U];
+        rgba[i * 4U + 1U] = data_ptr[i * 4U + 1U];
+        rgba[i * 4U + 2U] = data_ptr[i * 4U + 0U];
+        rgba[i * 4U + 3U] = data_ptr[i * 4U + 3U];
+      }
+
+      return log_raw_image(rec, entity_path, std::move(rgba), width, height, ::rerun::datatypes::ColorModel::RGBA);
+    }
+
+    case zerocopy::CameraFrame::kFormatRgb888Planar: {
+      if VUNLIKELY (!image_size(pixels, 3U, data_size, bytes)) {
+        return false;
+      }
+
+      std::vector<uint8_t> interleaved(bytes);
+      const auto* r_plane = data_ptr;
+      const auto* g_plane = data_ptr + pixels;
+      const auto* b_plane = data_ptr + pixels * 2U;
+
+      for (size_t i = 0; i < pixels; ++i) {
+        interleaved[i * 3U + 0U] = r_plane[i];
+        interleaved[i * 3U + 1U] = g_plane[i];
+        interleaved[i * 3U + 2U] = b_plane[i];
+      }
+
+      return log_raw_image(rec, entity_path, std::move(interleaved), width, height,
+                           ::rerun::datatypes::ColorModel::RGB);
+    }
+
+    case zerocopy::CameraFrame::kFormatYuv420:
+      if VUNLIKELY ((width % 2U) != 0 || (height % 2U) != 0) {
+        return false;
+      }
+
+      return log_pixel_image(rec, entity_path, data_ptr, data_size, width, height,
+                             ::rerun::datatypes::PixelFormat::Y_U_V12_FullRange);
+
+    case zerocopy::CameraFrame::kFormatNv12:
+      if VUNLIKELY ((width % 2U) != 0 || (height % 2U) != 0) {
+        return false;
+      }
+
+      return log_pixel_image(rec, entity_path, data_ptr, data_size, width, height,
+                             ::rerun::datatypes::PixelFormat::NV12);
+
+    case zerocopy::CameraFrame::kFormatNv21:
+      if VUNLIKELY ((width % 2U) != 0 || (height % 2U) != 0 ||
+                    pixels > std::numeric_limits<size_t>::max() - pixels / 2U || pixels + pixels / 2U > data_size) {
+        return false;
+      }
+
+      return log_raw_image(rec, entity_path, data_ptr, pixels, width, height, ::rerun::datatypes::ColorModel::L);
+
+    case zerocopy::CameraFrame::kFormatYuv422:
+      if VUNLIKELY ((width % 2U) != 0) {
+        return false;
+      }
+
+      return log_pixel_image(rec, entity_path, data_ptr, data_size, width, height,
+                             ::rerun::datatypes::PixelFormat::Y_U_V16_FullRange);
+
+    case zerocopy::CameraFrame::kFormatYuv444:
+      if VUNLIKELY (!image_size(pixels, 3U, data_size, bytes)) {
+        return false;
+      }
+
+      return log_raw_image(rec, entity_path, data_ptr, pixels, width, height, ::rerun::datatypes::ColorModel::L);
+
+    case zerocopy::CameraFrame::kFormatYuyv:
+      if VUNLIKELY ((width % 2U) != 0) {
+        return false;
+      }
+
+      return log_pixel_image(rec, entity_path, data_ptr, data_size, width, height,
+                             ::rerun::datatypes::PixelFormat::YUY2);
+
+    case zerocopy::CameraFrame::kFormatYvyu: {
+      if VUNLIKELY ((width % 2U) != 0) {
+        return false;
+      }
+
+      std::vector<uint8_t> gray;
+
+      if VUNLIKELY (!copy_channel(data_ptr, data_size, pixels, 2U, 0U, gray)) {
+        return false;
+      }
+
+      return log_raw_image(rec, entity_path, std::move(gray), width, height, ::rerun::datatypes::ColorModel::L);
+    }
+
+    case zerocopy::CameraFrame::kFormatUyvy:
+    case zerocopy::CameraFrame::kFormatVyuy: {
+      if VUNLIKELY ((width % 2U) != 0) {
+        return false;
+      }
+
+      std::vector<uint8_t> gray;
+
+      if VUNLIKELY (!copy_channel(data_ptr, data_size, pixels, 2U, 1U, gray)) {
+        return false;
+      }
+
+      return log_raw_image(rec, entity_path, std::move(gray), width, height, ::rerun::datatypes::ColorModel::L);
+    }
+
+    case zerocopy::CameraFrame::kFormatMono8:
+    case zerocopy::CameraFrame::kFormatBayerRggb8:
+    case zerocopy::CameraFrame::kFormatBayerBggr8:
+    case zerocopy::CameraFrame::kFormatBayerGbrg8:
+    case zerocopy::CameraFrame::kFormatBayerGrbg8:
+      if VUNLIKELY (pixels > data_size) {
+        return false;
+      }
+
+      return log_raw_image(rec, entity_path, data_ptr, pixels, width, height, ::rerun::datatypes::ColorModel::L);
+
+    case zerocopy::CameraFrame::kFormatUint8C1:
+      return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
+                             ::rerun::datatypes::ChannelDatatype::U8);
+
+    case zerocopy::CameraFrame::kFormatInt8C1:
+      return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
+                             ::rerun::datatypes::ChannelDatatype::I8);
+
+    case zerocopy::CameraFrame::kFormatUint8C2:
+    case zerocopy::CameraFrame::kFormatUint8C3:
+    case zerocopy::CameraFrame::kFormatUint8C4:
+    case zerocopy::CameraFrame::kFormatInt8C2:
+    case zerocopy::CameraFrame::kFormatInt8C3:
+    case zerocopy::CameraFrame::kFormatInt8C4:
+      return log_camera_frame_tensor(rec, entity_path, fmt, data_ptr, data_size, width, height, pixels);
+
+    case zerocopy::CameraFrame::kFormatMono16:
+      return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
+                             ::rerun::datatypes::ChannelDatatype::U16);
+
+    case zerocopy::CameraFrame::kFormatUint16C1:
+      return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
+                             ::rerun::datatypes::ChannelDatatype::U16);
+
+    case zerocopy::CameraFrame::kFormatInt16C1:
+      return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
+                             ::rerun::datatypes::ChannelDatatype::I16);
+
+    case zerocopy::CameraFrame::kFormatUint16C2:
+    case zerocopy::CameraFrame::kFormatUint16C3:
+    case zerocopy::CameraFrame::kFormatUint16C4:
+    case zerocopy::CameraFrame::kFormatInt16C2:
+    case zerocopy::CameraFrame::kFormatInt16C3:
+    case zerocopy::CameraFrame::kFormatInt16C4:
+    case zerocopy::CameraFrame::kFormatInt32C1:
+      return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
+                             ::rerun::datatypes::ChannelDatatype::I32);
+
+    case zerocopy::CameraFrame::kFormatInt32C2:
+    case zerocopy::CameraFrame::kFormatInt32C3:
+    case zerocopy::CameraFrame::kFormatInt32C4:
+    case zerocopy::CameraFrame::kFormatFloat32C1:
+      return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
+                             ::rerun::datatypes::ChannelDatatype::F32);
+
+    case zerocopy::CameraFrame::kFormatFloat32C2:
+    case zerocopy::CameraFrame::kFormatFloat32C3:
+    case zerocopy::CameraFrame::kFormatFloat32C4:
+    case zerocopy::CameraFrame::kFormatFloat64C1:
+      return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
+                             ::rerun::datatypes::ChannelDatatype::F64);
+
+    case zerocopy::CameraFrame::kFormatFloat64C2:
+    case zerocopy::CameraFrame::kFormatFloat64C3:
+    case zerocopy::CameraFrame::kFormatFloat64C4:
+    case zerocopy::CameraFrame::kFormatBayerRggb16:
+    case zerocopy::CameraFrame::kFormatBayerBggr16:
+    case zerocopy::CameraFrame::kFormatBayerGbrg16:
+    case zerocopy::CameraFrame::kFormatBayerGrbg16:
+      return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
+                             ::rerun::datatypes::ChannelDatatype::U16);
+
+    default:
+      return false;
+  }
 }
 
 bool RerunConverter::log_camera_frame(::rerun::RecordingStream& rec, const std::string& entity_path, const Bytes& raw) {

@@ -27,6 +27,7 @@
 
 #include <vlink/base/bytes.h>
 #include <vlink/external/proxy_api.h>
+#include <vlink/zerocopy/camera_frame.h>
 
 #include "./flatbuffers_runtime_compat.h"
 
@@ -42,6 +43,7 @@
 #include <QCloseEvent>
 #include <QDialog>
 #include <QElapsedTimer>
+#include <QImage>
 #include <QResizeEvent>
 #include <QVector3D>
 #include <optional>
@@ -112,12 +114,22 @@ class CameraDialog : public QDialog {
 
   void on_pushButton_pause_clicked();
 
-  void process_image(const QString& url, int width, int height, const QByteArray& img_data, bool use_codec);
+  void process_image(const QString& url, int width, int height, int bytes_per_line, const QByteArray& img_data,
+                     bool use_codec, int decoder_seq);
 
-  void process_error(void* label);
+  void process_error(const QString& url, int decoder_seq);
 
  private:
-  void create_decoder(const std::string& url, FFmpegDecoder::InType type);
+  struct Detail;
+
+  void process_qimage(const QString& url, const QImage& image, bool scaled_by_decoder);
+
+  void process_frame(const std::string& url, Detail& detail, const vlink::zerocopy::CameraFrame& frame);
+
+  void process_raw(const std::string& url, Detail& detail, const vlink::Bytes& raw_data,
+                   FFmpegDecoder::InType decoder_type);
+
+  void create_decoder(const std::string& url, FFmpegDecoder::InType type, int width = 0, int height = 0);
 
   FFmpegDecoder::InType get_decoder_type() const;
 
@@ -145,6 +157,10 @@ class CameraDialog : public QDialog {
     int64_t total_rate{0};
     State state{kNoImage};
     std::optional<FFmpegDecoder> decoder;
+    FFmpegDecoder::InType decoder_type{FFmpegDecoder::InType::kUnknown};
+    int decoder_width{0};
+    int decoder_height{0};
+    int decoder_seq{0};
     QImage img;
 
     Detail() = default;
@@ -157,6 +173,10 @@ class CameraDialog : public QDialog {
       last_frame_count = detail.last_frame_count;
       total_rate = detail.total_rate;
       state = detail.state;
+      decoder_type = detail.decoder_type;
+      decoder_width = detail.decoder_width;
+      decoder_height = detail.decoder_height;
+      decoder_seq = detail.decoder_seq;
     }
 
     Detail& operator=(const Detail& detail) noexcept {
@@ -166,6 +186,10 @@ class CameraDialog : public QDialog {
       last_frame_count = detail.last_frame_count;
       total_rate = detail.total_rate;
       state = detail.state;
+      decoder_type = detail.decoder_type;
+      decoder_width = detail.decoder_width;
+      decoder_height = detail.decoder_height;
+      decoder_seq = detail.decoder_seq;
 
       return *this;
     }

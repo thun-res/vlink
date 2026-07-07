@@ -417,6 +417,10 @@ def test_zerocopy_camera_frame():
     assert cf2.height() == 480
     assert cf2.format() == _vlink.CameraFrame.Format.Nv12
     assert cf2.stream() == _vlink.CameraFrame.Stream.I
+    assert _vlink.CameraFrame.Format.Float32C1 is not None
+    assert _vlink.CameraFrame.format_from_encoding("32FC1") == _vlink.CameraFrame.Format.Float32C1
+    assert _vlink.CameraFrame.format_from_encoding("bayer_rggb8") == _vlink.CameraFrame.Format.BayerRggb8
+    assert _vlink.CameraFrame.encoding_from_format(_vlink.CameraFrame.Format.Webp) == "webp"
 
     print("[PASS] CameraFrame")
 

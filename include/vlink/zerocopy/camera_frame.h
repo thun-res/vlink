@@ -47,13 +47,16 @@
  * | @c kFormatBgr888Packed  | Packed RGB        | 24-bit BGR, 3 bytes per pixel          |
  * | @c kFormatRgb888Packed  | Packed RGB        | 24-bit RGB, 3 bytes per pixel          |
  * | @c kFormatRgb888Planar  | Planar RGB        | Separate R, G, B planes                |
- * | @c kFormatJpeg          | Compressed image  | JPEG bitstream                         |
- * | @c kFormatH264          | Compressed video  | H.264 / AVC frame                      |
- * | @c kFormatH265          | Compressed video  | H.265 / HEVC frame                     |
+ * | @c kFormatMono8, @c kFormatMono16 | Grayscale | 8/16-bit mono image                    |
+ * | @c kFormatRgba8888Packed, @c kFormatBgra8888Packed | Packed RGB | 32-bit RGBA/BGRA |
+ * | @c kFormatUint8C1 .. @c kFormatFloat64C4 | OpenCV/ROS style | Generic numeric images |
+ * | @c kFormatBayerRggb8 .. @c kFormatBayerGrbg16 | Bayer | RGGB/BGGR/GBRG/GRBG, 8/16-bit |
+ * | @c kFormatJpeg, @c kFormatPng, @c kFormatMjpeg, @c kFormatWebp | Compressed image | Still images |
+ * | @c kFormatH264, @c kFormatH265, @c kFormatH266, @c kFormatAv1 | Compressed video | Video frames |
  *
  * @par Image buffer layout
  * @code
- * Planar YUV 4:2:0 (e.g. I420, NV12 family):
+ * Planar YUV 4:2:0 (I420):
  *     +---------------------------+
  *     | Y plane  (width * height) |
  *     +---------------------------+
@@ -62,10 +65,17 @@
  *     | V plane  (width/2 * h/2)  |
  *     +---------------------------+
  *
+ * Semi-planar NV12/NV21:
+ *     +---------------------------+
+ *     | Y plane   (width * height)|
+ *     +---------------------------+
+ *     | UV or VU  (width * h / 2) |
+ *     +---------------------------+
+ *
  * Packed RGB888:
  *     [ R G B | R G B | R G B | ... ]   stride = width * 3
  *
- * Compressed JPEG/H264/H265:
+ * Compressed JPEG/PNG/WebP/MJPEG/H.26x/AV1:
  *     opaque codec bitstream of size_ bytes
  * @endcode
  *
@@ -125,6 +135,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string_view>
 
 #include "../base/bytes.h"
 #include "./header.h"
@@ -163,9 +174,57 @@ struct VLINK_EXPORT_AND_ALIGNED(8) CameraFrame final {
     kFormatRgb888Packed = 11,  ///< Packed 24-bit RGB (3 bytes per pixel).
     kFormatRgb888Planar = 12,  ///< Planar 24-bit RGB (separate R, G, B planes).
 
-    kFormatJpeg = 101,  ///< JPEG bitstream.
-    kFormatH264 = 102,  ///< H.264 / AVC frame.
-    kFormatH265 = 103,  ///< H.265 / HEVC frame.
+    kFormatMono8 = 13,           ///< 8-bit grayscale / luminance.
+    kFormatMono16 = 14,          ///< 16-bit grayscale / luminance.
+    kFormatRgba8888Packed = 15,  ///< Packed 32-bit RGBA (4 bytes per pixel).
+    kFormatBgra8888Packed = 16,  ///< Packed 32-bit BGRA (4 bytes per pixel).
+
+    kFormatUint8C1 = 20,    ///< Generic unsigned 8-bit, 1 channel.
+    kFormatUint8C2 = 21,    ///< Generic unsigned 8-bit, 2 channels.
+    kFormatUint8C3 = 22,    ///< Generic unsigned 8-bit, 3 channels.
+    kFormatUint8C4 = 23,    ///< Generic unsigned 8-bit, 4 channels.
+    kFormatInt8C1 = 24,     ///< Generic signed 8-bit, 1 channel.
+    kFormatInt8C2 = 25,     ///< Generic signed 8-bit, 2 channels.
+    kFormatInt8C3 = 26,     ///< Generic signed 8-bit, 3 channels.
+    kFormatInt8C4 = 27,     ///< Generic signed 8-bit, 4 channels.
+    kFormatUint16C1 = 28,   ///< Generic unsigned 16-bit, 1 channel.
+    kFormatUint16C2 = 29,   ///< Generic unsigned 16-bit, 2 channels.
+    kFormatUint16C3 = 30,   ///< Generic unsigned 16-bit, 3 channels.
+    kFormatUint16C4 = 31,   ///< Generic unsigned 16-bit, 4 channels.
+    kFormatInt16C1 = 32,    ///< Generic signed 16-bit, 1 channel.
+    kFormatInt16C2 = 33,    ///< Generic signed 16-bit, 2 channels.
+    kFormatInt16C3 = 34,    ///< Generic signed 16-bit, 3 channels.
+    kFormatInt16C4 = 35,    ///< Generic signed 16-bit, 4 channels.
+    kFormatInt32C1 = 36,    ///< Generic signed 32-bit, 1 channel.
+    kFormatInt32C2 = 37,    ///< Generic signed 32-bit, 2 channels.
+    kFormatInt32C3 = 38,    ///< Generic signed 32-bit, 3 channels.
+    kFormatInt32C4 = 39,    ///< Generic signed 32-bit, 4 channels.
+    kFormatFloat32C1 = 40,  ///< Generic 32-bit float, 1 channel.
+    kFormatFloat32C2 = 41,  ///< Generic 32-bit float, 2 channels.
+    kFormatFloat32C3 = 42,  ///< Generic 32-bit float, 3 channels.
+    kFormatFloat32C4 = 43,  ///< Generic 32-bit float, 4 channels.
+    kFormatFloat64C1 = 44,  ///< Generic 64-bit float, 1 channel.
+    kFormatFloat64C2 = 45,  ///< Generic 64-bit float, 2 channels.
+    kFormatFloat64C3 = 46,  ///< Generic 64-bit float, 3 channels.
+    kFormatFloat64C4 = 47,  ///< Generic 64-bit float, 4 channels.
+
+    kFormatBayerRggb8 = 60,   ///< Bayer RGGB, 8-bit samples.
+    kFormatBayerBggr8 = 61,   ///< Bayer BGGR, 8-bit samples.
+    kFormatBayerGbrg8 = 62,   ///< Bayer GBRG, 8-bit samples.
+    kFormatBayerGrbg8 = 63,   ///< Bayer GRBG, 8-bit samples.
+    kFormatBayerRggb16 = 64,  ///< Bayer RGGB, 16-bit samples.
+    kFormatBayerBggr16 = 65,  ///< Bayer BGGR, 16-bit samples.
+    kFormatBayerGbrg16 = 66,  ///< Bayer GBRG, 16-bit samples.
+    kFormatBayerGrbg16 = 67,  ///< Bayer GRBG, 16-bit samples.
+
+    kFormatJpeg = 101,   ///< JPEG bitstream.
+    kFormatH264 = 102,   ///< H.264 / AVC frame.
+    kFormatH265 = 103,   ///< H.265 / HEVC frame.
+    kFormatPng = 104,    ///< PNG bitstream.
+    kFormatMjpeg = 105,  ///< Motion-JPEG frame.
+    kFormatH266 = 106,   ///< H.266 / VVC frame.
+    kFormatAv1 = 107,    ///< AV1 frame.
+    kFormatWebp = 108,   ///< WebP bitstream.
   };
 
   /**
@@ -246,6 +305,19 @@ struct VLINK_EXPORT_AND_ALIGNED(8) CameraFrame final {
    * @return @c true when both magic sentinels match and the minimum size holds.
    */
   [[nodiscard]] static bool check_valid(const Bytes& bytes) noexcept;
+
+  /**
+   * @brief Maps common ROS/OpenCV/codec encoding names to @c Format.
+   *
+   * @details Matching is case-insensitive.  Examples include @c rgb8, @c bgr8,
+   * @c mono16, @c 32FC1, @c bayer_rggb8, @c jpeg and @c h264.
+   */
+  [[nodiscard]] static Format format_from_encoding(std::string_view encoding) noexcept;
+
+  /**
+   * @brief Returns the canonical ROS/OpenCV/codec encoding name for @p format.
+   */
+  [[nodiscard]] static std::string_view encoding_from_format(Format format) noexcept;
 
   /**
    * @brief Total bytes that @c operator>> would write for this frame.

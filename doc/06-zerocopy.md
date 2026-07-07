@@ -29,7 +29,7 @@
 
 | 容器 | 适用数据 | 典型后端 | 结构图 |
 | --- | --- | --- | --- |
-| `CameraFrame` | 图像帧 / 编码视频（H.264/H.265） | `shm://`、`dds://` | camera-frame-structure |
+| `CameraFrame` | 图像帧 / 编码图像 / 编码视频 | `shm://`、`dds://` | camera-frame-structure |
 | `PointCloud` | 激光雷达 / 深度点云 | `shm://`、`dds://` | point-cloud-structure |
 | `OccupancyGrid` | 2D 占据 / 代价 / SDF 地图 | `shm://`、`dds://` | occupancy-grid-structure |
 | `Tensor` | 神经网络张量输入/输出 | `shm://`、`dds://` | tensor-structure |
@@ -118,12 +118,13 @@ frame.header.time_pub  = now_ns();
 
 ![CameraFrame 数据结构](images/camera-frame-structure.png)
 
-头文件 `include/vlink/zerocopy/camera_frame.h`。携带分辨率、像素格式、通道、采集频率等元数据与像素缓冲区，同时支持原始像素（YUV/RGB）与编码帧（JPEG/H.264/H.265）。
+头文件 `include/vlink/zerocopy/camera_frame.h`。携带分辨率、像素格式、通道、采集频率等元数据与像素缓冲区，同时支持原始像素（YUV/RGB/Mono/Bayer/OpenCV 数值格式）与编码帧（JPEG/PNG/WebP/MJPEG/H.26x/AV1）。
 
 常用元数据 setter：`set_width(w)`、`set_height(h)`、`set_format(fmt)`、`set_channel(ch)`、`set_freq(hz)`、`set_stream(s)`（仅编码视频）。对应 getter 为去掉 `set_` 前缀的同名方法。
 
-- 像素格式 `Format`：原始格式 `kFormatYuv420`、`kFormatNv12`、`kFormatNv21`、`kFormatYuyv`、`kFormatBgr888Packed`、`kFormatRgb888Packed`、`kFormatRgb888Planar` 等；编码格式 `kFormatJpeg`、`kFormatH264`、`kFormatH265`。
-- 视频流帧类型 `Stream`（仅 H.264/H.265）：`kStreamI`（关键帧）、`kStreamP`（前向预测帧）、`kStreamB`（双向预测帧）。
+- 像素格式 `Format`：原始格式 `kFormatYuv420`、`kFormatNv12`、`kFormatNv21`、`kFormatYuyv`、`kFormatBgr888Packed`、`kFormatRgb888Packed`、`kFormatRgb888Planar`、`kFormatMono8`、`kFormatMono16`、`kFormatRgba8888Packed`、`kFormatBgra8888Packed`，通用 OpenCV/ROS 数值格式 `kFormatUint8C1` 到 `kFormatFloat64C4`，Bayer 格式 `kFormatBayerRggb8` 到 `kFormatBayerGrbg16`；编码格式 `kFormatJpeg`、`kFormatPng`、`kFormatMjpeg`、`kFormatH264`、`kFormatH265`、`kFormatH266`、`kFormatAv1`、`kFormatWebp`。
+- 编码名转换：`CameraFrame::format_from_encoding("32FC1")` 可从 ROS/OpenCV/codec 名称得到 `Format`；`encoding_from_format(fmt)` 返回规范编码名。
+- 视频流帧类型 `Stream`（编码视频）：`kStreamI`（关键帧）、`kStreamP`（前向预测帧）、`kStreamB`（双向预测帧）。
 
 ```cpp
 static constexpr uint32_t kW = 1920;
@@ -154,7 +155,7 @@ sub.listen([](const vlink::zerocopy::CameraFrame& frame) {
 });
 ```
 
-编码视频流：发布端经 `shallow_copy(nal_data, nal_size)` 借用编码器输出的 NAL 缓冲区，并以 `set_format(kFormatH264)` 与 `set_stream(...)` 标注；订阅端按 `format()` / `stream()` 路由至解码器。
+编码视频流：发布端经 `shallow_copy(data, size)` 借用编码器输出缓冲区，并以 `set_format(kFormatH264)`、`set_format(kFormatH265)`、`set_format(kFormatH266)` 或 `set_format(kFormatAv1)` 与 `set_stream(...)` 标注；订阅端按 `format()` / `stream()` 路由至解码器。
 
 ---
 

@@ -5223,7 +5223,7 @@ bool FoxgloveConverter::get_schema_info(std::string_view url, SchemaType schema_
 
   if (schema_type == SchemaType::kZeroCopy) {
     if (Helpers::has_startwith(ser, "vlink::zerocopy::CameraFrame")) {
-      schema_name = "foxglove.CompressedImage";
+      schema_name = "foxglove.RawImage";
       encoding = std::string(kFoxgloveFlatbufferEncoding);
       schema_encoding = std::string(kFoxgloveFlatbufferEncoding);
       return resolve_fbs_schema(schema_name, schema_data);
@@ -5474,6 +5474,102 @@ FoxgloveMessage FoxgloveConverter::string_to_log(const Bytes& raw) {
   return result;
 }
 
+static bool mul_size(size_t a, size_t b, size_t& out) {
+  if VUNLIKELY (a != 0 && b > std::numeric_limits<size_t>::max() / a) {
+    return false;
+  }
+
+  out = a * b;
+  return true;
+}
+
+static bool set_raw_info(std::string_view encoding, size_t row_bytes, size_t data_size, std::string& out_encoding,
+                         uint32_t& step, size_t& expected) {
+  if VUNLIKELY (row_bytes > static_cast<size_t>(std::numeric_limits<uint32_t>::max())) {
+    return false;
+  }
+
+  out_encoding = std::string(encoding);
+  step = static_cast<uint32_t>(row_bytes);
+  expected = data_size;
+
+  return true;
+}
+
+static bool camera_frame_raw_info(const zerocopy::CameraFrame& frame, std::string& encoding, uint32_t& step,
+                                  size_t& expected, bool& rgb_planar) {
+  const uint32_t width = frame.width();
+  const uint32_t height = frame.height();
+
+  if VUNLIKELY (width == 0 || height == 0) {
+    return false;
+  }
+
+  size_t pixels = 0;
+
+  if VUNLIKELY (!mul_size(static_cast<size_t>(width), static_cast<size_t>(height), pixels)) {
+    return false;
+  }
+
+  auto set_bpp = [&](std::string_view name, size_t bytes_per_pixel) {
+    size_t row_bytes = 0;
+    size_t data_size = 0;
+    return mul_size(static_cast<size_t>(width), bytes_per_pixel, row_bytes) &&
+           mul_size(pixels, bytes_per_pixel, data_size) &&
+           set_raw_info(name, row_bytes, data_size, encoding, step, expected);
+  };
+
+  auto set_yuv420 = [&](std::string_view name) {
+    if VUNLIKELY ((width % 2U) != 0 || (height % 2U) != 0 ||
+                  pixels > std::numeric_limits<size_t>::max() - pixels / 2U) {
+      return false;
+    }
+
+    return set_raw_info(name, width, pixels + pixels / 2U, encoding, step, expected);
+  };
+
+  rgb_planar = false;
+
+  switch (frame.format()) {
+    case zerocopy::CameraFrame::kFormatNv12:
+      return set_yuv420("nv12");
+    case zerocopy::CameraFrame::kFormatYuyv:
+      return (width % 2U) == 0 && set_bpp("yuv422_yuy2", 2U);
+    case zerocopy::CameraFrame::kFormatUyvy:
+      return (width % 2U) == 0 && set_bpp("yuv422", 2U);
+    case zerocopy::CameraFrame::kFormatBgr888Packed:
+      return set_bpp("bgr8", 3U);
+    case zerocopy::CameraFrame::kFormatRgb888Packed:
+      return set_bpp("rgb8", 3U);
+    case zerocopy::CameraFrame::kFormatRgb888Planar:
+      rgb_planar = true;
+      return set_bpp("rgb8", 3U);
+    case zerocopy::CameraFrame::kFormatMono8:
+      return set_bpp("mono8", 1U);
+    case zerocopy::CameraFrame::kFormatMono16:
+      return set_bpp("mono16", 2U);
+    case zerocopy::CameraFrame::kFormatRgba8888Packed:
+      return set_bpp("rgba8", 4U);
+    case zerocopy::CameraFrame::kFormatBgra8888Packed:
+      return set_bpp("bgra8", 4U);
+    case zerocopy::CameraFrame::kFormatUint8C1:
+      return set_bpp("8UC1", 1U);
+    case zerocopy::CameraFrame::kFormatUint8C3:
+      return set_bpp("8UC3", 3U);
+    case zerocopy::CameraFrame::kFormatUint16C1:
+      return set_bpp("16UC1", 2U);
+    case zerocopy::CameraFrame::kFormatFloat32C1:
+      return set_bpp("32FC1", 4U);
+    case zerocopy::CameraFrame::kFormatBayerRggb8:
+    case zerocopy::CameraFrame::kFormatBayerBggr8:
+    case zerocopy::CameraFrame::kFormatBayerGbrg8:
+    case zerocopy::CameraFrame::kFormatBayerGrbg8:
+      return set_bpp(zerocopy::CameraFrame::encoding_from_format(frame.format()), 1U);
+    default:
+      return false;
+  }
+}
+
 FoxgloveMessage FoxgloveConverter::camera_frame_fbs(const Bytes& raw) {
   FoxgloveMessage result;
 
@@ -5486,41 +5582,11 @@ FoxgloveMessage FoxgloveConverter::camera_frame_fbs(const Bytes& raw) {
 
   auto fmt = frame.format();
 
-  std::string fmt_str;
-
-  switch (fmt) {
-    case zerocopy::CameraFrame::kFormatJpeg:
-      fmt_str = "jpeg";
-      break;
-    case zerocopy::CameraFrame::kFormatH264:
-      fmt_str = "h264";
-      break;
-    case zerocopy::CameraFrame::kFormatH265:
-      fmt_str = "h265";
-      break;
-    case zerocopy::CameraFrame::kFormatRgb888Packed:
-      fmt_str = "rgb8";
-      break;
-    case zerocopy::CameraFrame::kFormatBgr888Packed:
-      fmt_str = "bgr8";
-      break;
-    case zerocopy::CameraFrame::kFormatYuv420:
-    case zerocopy::CameraFrame::kFormatNv12:
-      fmt_str = "nv12";
-      break;
-    case zerocopy::CameraFrame::kFormatYuv422:
-    case zerocopy::CameraFrame::kFormatYuyv:
-      fmt_str = "yuv422";
-      break;
-    case zerocopy::CameraFrame::kFormatRgb888Planar:
-      fmt_str = "rgb8_planar";
-      break;
-    default:
-      fmt_str = "mono8";
-      break;
+  std::string fmt_str(zerocopy::CameraFrame::encoding_from_format(fmt));
+  if VUNLIKELY (fmt == zerocopy::CameraFrame::kFormatUnknown || fmt_str == "unknown") {
+    MLOG_W("CameraFrame format is unknown, skipping");
+    return result;
   }
-
-  bool is_video_codec = (fmt == zerocopy::CameraFrame::kFormatH264 || fmt == zerocopy::CameraFrame::kFormatH265);
 
   thread_local flatbuffers::FlatBufferBuilder builder(256 * 1024);
   builder.Clear();
@@ -5528,17 +5594,73 @@ FoxgloveMessage FoxgloveConverter::camera_frame_fbs(const Bytes& raw) {
   auto ts = make_timestamp_from_ns(frame.header.time_meas);
   auto frame_id =
       builder.CreateString(frame.header.frame_id, ::strnlen(frame.header.frame_id, sizeof(frame.header.frame_id)));
-  auto data_vec = builder.CreateVector(frame.data(), frame.size());
-  auto format = builder.CreateString(fmt_str);
 
-  if (is_video_codec) {
+  if (fmt == zerocopy::CameraFrame::kFormatH266) {
+    MLOG_W("Foxglove CompressedVideo does not support H.266");
+    return result;
+  }
+
+  if (fmt == zerocopy::CameraFrame::kFormatH264 || fmt == zerocopy::CameraFrame::kFormatH265 ||
+      fmt == zerocopy::CameraFrame::kFormatAv1) {
+    auto data_vec = builder.CreateVector(frame.data(), frame.size());
+    auto format = builder.CreateString(fmt_str);
     auto msg = ::foxglove::CreateCompressedVideo(builder, &ts, frame_id, data_vec, format);
     builder.Finish(msg);
     result.schema_name = "foxglove.CompressedVideo";
-  } else {
+  } else if (fmt == zerocopy::CameraFrame::kFormatJpeg || fmt == zerocopy::CameraFrame::kFormatPng ||
+             fmt == zerocopy::CameraFrame::kFormatMjpeg || fmt == zerocopy::CameraFrame::kFormatWebp) {
+    if (fmt == zerocopy::CameraFrame::kFormatMjpeg) {
+      fmt_str = "jpeg";
+    }
+
+    auto data_vec = builder.CreateVector(frame.data(), frame.size());
+    auto format = builder.CreateString(fmt_str);
     auto msg = ::foxglove::CreateCompressedImage(builder, &ts, frame_id, data_vec, format);
     builder.Finish(msg);
     result.schema_name = "foxglove.CompressedImage";
+  } else {
+    uint32_t step = 0;
+    size_t expected = 0;
+    bool rgb_planar = false;
+
+    if VUNLIKELY (!camera_frame_raw_info(frame, fmt_str, step, expected, rgb_planar) || frame.size() < expected) {
+      MLOG_W("CameraFrame raw format is invalid or unsupported, format={} width={} height={} size={}", fmt_str,
+             frame.width(), frame.height(), frame.size());
+      return result;
+    }
+
+    std::vector<uint8_t> rgb_data;
+    flatbuffers::Offset<flatbuffers::Vector<uint8_t>> data_vec;
+
+    if (rgb_planar) {
+      size_t pixels = 0;
+
+      if VUNLIKELY (!mul_size(static_cast<size_t>(frame.width()), static_cast<size_t>(frame.height()), pixels)) {
+        return result;
+      }
+
+      rgb_data.resize(expected);
+
+      const auto* r = frame.data();
+      const auto* g = r + pixels;
+      const auto* b = g + pixels;
+
+      for (size_t i = 0; i < pixels; ++i) {
+        rgb_data[i * 3U + 0U] = r[i];
+        rgb_data[i * 3U + 1U] = g[i];
+        rgb_data[i * 3U + 2U] = b[i];
+      }
+
+      data_vec = builder.CreateVector(rgb_data);
+    } else {
+      data_vec = builder.CreateVector(frame.data(), expected);
+    }
+
+    auto encoding = builder.CreateString(fmt_str);
+    auto msg =
+        ::foxglove::CreateRawImage(builder, &ts, frame_id, frame.width(), frame.height(), encoding, step, data_vec);
+    builder.Finish(msg);
+    result.schema_name = "foxglove.RawImage";
   }
 
   result.payload = Bytes::shallow_copy(builder.GetBufferPointer(), builder.GetSize());

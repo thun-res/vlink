@@ -287,6 +287,11 @@
                  <widget class="QComboBox" name="comboBox_type">
                   <item>
                    <property name="text">
+                    <string>Auto</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
                     <string>JPG</string>
                    </property>
                   </item>
@@ -348,6 +353,31 @@
                   <item>
                    <property name="text">
                     <string>RGB888</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>AV1</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>H266</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>PNG</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>WEBP</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>NV21</string>
                    </property>
                   </item>
                  </widget>
