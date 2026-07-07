@@ -1344,7 +1344,7 @@ int check_env(bool available_case, const std::string& prefix) {
       {"VLINK_ZENOH_MULTICAST", "", "Zenoh multicast scout address (default 239.255.0.100).", false},
       {"VLINK_ZENOH_MULTICAST_IF", "", "Network interface used for Zenoh multicast scouting.", false},
       {"VLINK_ZENOH_MULTICAST_TTL", "", "TTL for Zenoh multicast scouting packets.", false},
-      {"VLINK_ZENOH_GOSSIP", "", "When set to 1 enables Zenoh gossip discovery (default 1).", false},
+      {"VLINK_ZENOH_GOSSIP", "", "When set to 1 enables Zenoh gossip discovery (default 0).", false},
       {"VLINK_ZENOH_RX_BUF", "", "Zenoh receive buffer size hint in bytes.", false},
       {"VLINK_ZENOH_MAX_MSG", "", "Maximum Zenoh message size in bytes before fragmentation.", false},
       {"VLINK_ZENOH_TX_QUEUE_DATA", "", "Zenoh data send queue depth.", false},

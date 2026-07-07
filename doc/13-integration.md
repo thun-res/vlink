@@ -1009,7 +1009,7 @@ export VLINK_DDS_IP="192.168.1.100,192.168.1.101"
 | `VLINK_ZENOH_MODE` | 字符串 | 运行模式（默认 `peer`） |
 | `VLINK_ZENOH_IP` / `_PEER` / `_LISTEN` | 列表或字符串 | 连接 / 对等 / 监听端点 |
 | `VLINK_ZENOH_MULTICAST` / `_MULTICAST_IF` / `_MULTICAST_TTL` | 地址 / 字符串 / 数字 | 组播地址 / 网卡 / TTL |
-| `VLINK_ZENOH_GOSSIP` | `1`/`0` | Gossip 发现（默认 `1`） |
+| `VLINK_ZENOH_GOSSIP` | `1`/`0` | Gossip 发现（默认 `0`） |
 | `VLINK_ZENOH_ALLOWED_LOCALITY` | 字符串 | 允许通信来源：`local`（仅会话内）/ `remote`（仅远端）/ 其它视作 `any`（默认 `any`），需 `Z_FEATURE_UNSTABLE_API` |
 | `VLINK_ZENOH_RX_BUF` / `_MAX_MSG` | 数字 | 接收缓冲 / 最大消息大小 |
 | `VLINK_ZENOH_TX_QUEUE_DATA` / `_TX_QUEUE_RT` | 数字 | 数据 / 实时发送队列深度 |

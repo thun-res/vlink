@@ -758,7 +758,7 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
   static std::string env_listen = Utils::get_env("VLINK_ZENOH_LISTEN", "");
   static std::string env_multicast = Utils::get_env("VLINK_ZENOH_MULTICAST", "239.255.0.100");
   static std::string env_mcast_if = Utils::get_env("VLINK_ZENOH_MULTICAST_IF", "");
-  static bool env_gossip = parse_bool_value(Utils::get_env("VLINK_ZENOH_GOSSIP", "1"), true);
+  static bool env_gossip = parse_bool_value(Utils::get_env("VLINK_ZENOH_GOSSIP", "0"), false);
   static std::string env_rx_buf_str = Utils::get_env("VLINK_ZENOH_RX_BUF", "");
   static std::string env_max_msg_str = Utils::get_env("VLINK_ZENOH_MAX_MSG", "");
   static std::string env_mcast_ttl_str = Utils::get_env("VLINK_ZENOH_MULTICAST_TTL", "");
