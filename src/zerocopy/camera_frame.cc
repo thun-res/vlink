@@ -39,6 +39,7 @@ struct CameraFrameFormatEncoding {
 
 static std::string_view normalize_camera_encoding(std::string_view encoding, char (&buffer)[64]) noexcept {
   size_t n = 0;
+
   for (char c : encoding) {
     if (std::isspace(static_cast<unsigned char>(c)) != 0) {
       continue;
@@ -52,6 +53,7 @@ static std::string_view normalize_camera_encoding(std::string_view encoding, cha
   }
 
   buffer[n] = '\0';
+
   return std::string_view(buffer, n);
 }
 

@@ -146,13 +146,13 @@ TEST_SUITE("zerocopy-CameraFrame") {
         {zerocopy::CameraFrame::kFormatBayerGbrg16, 66U},
         {zerocopy::CameraFrame::kFormatBayerGrbg16, 67U},
         {zerocopy::CameraFrame::kFormatJpeg, 101U},
-        {zerocopy::CameraFrame::kFormatH264, 102U},
-        {zerocopy::CameraFrame::kFormatH265, 103U},
-        {zerocopy::CameraFrame::kFormatPng, 104U},
-        {zerocopy::CameraFrame::kFormatMjpeg, 105U},
-        {zerocopy::CameraFrame::kFormatH266, 106U},
-        {zerocopy::CameraFrame::kFormatAv1, 107U},
-        {zerocopy::CameraFrame::kFormatWebp, 108U},
+        {zerocopy::CameraFrame::kFormatMjpeg, 102U},
+        {zerocopy::CameraFrame::kFormatPng, 103U},
+        {zerocopy::CameraFrame::kFormatWebp, 104U},
+        {zerocopy::CameraFrame::kFormatH264, 105U},
+        {zerocopy::CameraFrame::kFormatH265, 106U},
+        {zerocopy::CameraFrame::kFormatH266, 107U},
+        {zerocopy::CameraFrame::kFormatAv1, 108U},
     };
 
     for (const auto& item : formats) {

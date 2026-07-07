@@ -1614,39 +1614,41 @@ bool RerunConverter::log_camera_frame(::rerun::RecordingStream& rec, const std::
       return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
                              ::rerun::datatypes::ChannelDatatype::I16);
 
-    case zerocopy::CameraFrame::kFormatUint16C2:
-    case zerocopy::CameraFrame::kFormatUint16C3:
-    case zerocopy::CameraFrame::kFormatUint16C4:
-    case zerocopy::CameraFrame::kFormatInt16C2:
-    case zerocopy::CameraFrame::kFormatInt16C3:
-    case zerocopy::CameraFrame::kFormatInt16C4:
     case zerocopy::CameraFrame::kFormatInt32C1:
       return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
                              ::rerun::datatypes::ChannelDatatype::I32);
 
-    case zerocopy::CameraFrame::kFormatInt32C2:
-    case zerocopy::CameraFrame::kFormatInt32C3:
-    case zerocopy::CameraFrame::kFormatInt32C4:
     case zerocopy::CameraFrame::kFormatFloat32C1:
       return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
                              ::rerun::datatypes::ChannelDatatype::F32);
 
-    case zerocopy::CameraFrame::kFormatFloat32C2:
-    case zerocopy::CameraFrame::kFormatFloat32C3:
-    case zerocopy::CameraFrame::kFormatFloat32C4:
     case zerocopy::CameraFrame::kFormatFloat64C1:
       return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
                              ::rerun::datatypes::ChannelDatatype::F64);
 
-    case zerocopy::CameraFrame::kFormatFloat64C2:
-    case zerocopy::CameraFrame::kFormatFloat64C3:
-    case zerocopy::CameraFrame::kFormatFloat64C4:
     case zerocopy::CameraFrame::kFormatBayerRggb16:
     case zerocopy::CameraFrame::kFormatBayerBggr16:
     case zerocopy::CameraFrame::kFormatBayerGbrg16:
     case zerocopy::CameraFrame::kFormatBayerGrbg16:
       return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
                              ::rerun::datatypes::ChannelDatatype::U16);
+
+    case zerocopy::CameraFrame::kFormatUint16C2:
+    case zerocopy::CameraFrame::kFormatUint16C3:
+    case zerocopy::CameraFrame::kFormatUint16C4:
+    case zerocopy::CameraFrame::kFormatInt16C2:
+    case zerocopy::CameraFrame::kFormatInt16C3:
+    case zerocopy::CameraFrame::kFormatInt16C4:
+    case zerocopy::CameraFrame::kFormatInt32C2:
+    case zerocopy::CameraFrame::kFormatInt32C3:
+    case zerocopy::CameraFrame::kFormatInt32C4:
+    case zerocopy::CameraFrame::kFormatFloat32C2:
+    case zerocopy::CameraFrame::kFormatFloat32C3:
+    case zerocopy::CameraFrame::kFormatFloat32C4:
+    case zerocopy::CameraFrame::kFormatFloat64C2:
+    case zerocopy::CameraFrame::kFormatFloat64C3:
+    case zerocopy::CameraFrame::kFormatFloat64C4:
+      return log_camera_frame_tensor(rec, entity_path, fmt, data_ptr, data_size, width, height, pixels);
 
     default:
       return false;

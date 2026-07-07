@@ -115,7 +115,7 @@ class CameraDialog : public QDialog {
   void on_pushButton_pause_clicked();
 
   void process_image(const QString& url, int width, int height, int bytes_per_line, const QByteArray& img_data,
-                     bool use_codec, int decoder_seq);
+                     int decoder_seq);
 
   void process_error(const QString& url, int decoder_seq);
 

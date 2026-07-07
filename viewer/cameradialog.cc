@@ -158,11 +158,6 @@ static bool has_label_pixmap(const QLabel* label) {
 #endif
 }
 
-static bool is_qimage_still(FFmpegDecoder::InType type) {
-  return type == FFmpegDecoder::InType::kJPG || type == FFmpegDecoder::InType::kPNG ||
-         type == FFmpegDecoder::InType::kWEBP;
-}
-
 static bool needs_raw_size(FFmpegDecoder::InType type) {
   switch (type) {
     case FFmpegDecoder::InType::kYUV420:
@@ -1166,8 +1161,8 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
 
   ui->checkBox_cache->setEnabled(FFmpegDecoder::is_valid());
   ui->checkBox_hard->setEnabled(FFmpegDecoder::is_valid());
-  ui->label_quality->setEnabled(FFmpegDecoder::is_valid());
-  ui->comboBox_quality->setEnabled(FFmpegDecoder::is_valid());
+  ui->label_quality->setEnabled(true);
+  ui->comboBox_quality->setEnabled(true);
 
   fbs_field_list_.emplace_back();
 
@@ -1982,7 +1977,43 @@ void CameraDialog::update_ui_for_zero_copy_types(const QVariant& variant, const 
   vlink::zerocopy::CameraFrame camera_frame;
   camera_frame << proxy_data.raw;
 
-  process_frame(proxy_data.url, detail, camera_frame);
+  const auto decoder_type = get_decoder_type();
+
+  if (decoder_type == FFmpegDecoder::InType::kUnknown || !camera_frame.data() || camera_frame.size() == 0) {
+    process_frame(proxy_data.url, detail, camera_frame);
+    return;
+  }
+
+  int camera_width = 0;
+  int camera_height = 0;
+  const bool has_valid_camera_size = get_camera_frame_image_size(camera_frame, camera_width, camera_height);
+
+  if (camera_detail_map_.size() == 1 && has_valid_camera_size) {
+    ui->spinBox_yuv_width->setValue(camera_width);
+    ui->spinBox_yuv_height->setValue(camera_height);
+  }
+
+  ui->spinBox_offset->setEnabled(false);
+  ui->label_offset->setEnabled(false);
+
+  detail.label->set_timestamp(camera_frame.header.time_meas / 1000);
+
+  int width = has_valid_camera_size ? camera_width : 0;
+  int height = has_valid_camera_size ? camera_height : 0;
+
+  if ((width <= 0 || height <= 0) && ui->groupBox_yuv->isEnabled()) {
+    width = ui->spinBox_yuv_width->value();
+    height = ui->spinBox_yuv_height->value();
+  }
+
+  if (!detail.decoder || detail.decoder_type != decoder_type || detail.decoder_width != width ||
+      detail.decoder_height != height) {
+    create_decoder(proxy_data.url, decoder_type, width, height);
+  }
+
+  vlink::Bytes raw_data = vlink::Bytes::shallow_copy(camera_frame.data(), camera_frame.size());
+
+  process_raw(proxy_data.url, detail, raw_data, decoder_type);
 }
 
 void CameraDialog::update_ui_for_unknown_types(const QVariant& variant, const QElapsedTimer& timer) {
@@ -2135,38 +2166,29 @@ void CameraDialog::on_pushButton_pause_clicked() {
 }
 
 void CameraDialog::process_image(const QString& url, int width, int height, int bytes_per_line,
-                                 const QByteArray& img_data, bool use_codec, int decoder_seq) {
-  if (use_codec) {
-    auto it = camera_detail_map_.find(url.toStdString());
-    if (it == camera_detail_map_.end() || it->second.decoder_seq != decoder_seq) {
-      return;
-    }
+                                 const QByteArray& img_data, int decoder_seq) {
+  auto it = camera_detail_map_.find(url.toStdString());
+  if (it == camera_detail_map_.end() || it->second.decoder_seq != decoder_seq) {
+    return;
   }
 
   if (img_data.isEmpty()) {
-    process_qimage(url, QImage(), use_codec);
+    process_qimage(url, QImage(), true);
     return;
   }
 
   QImage image;
 
-  if (use_codec) {
-    const size_t expected = width > 0 && height > 0 && bytes_per_line > 0
-                                ? static_cast<size_t>(bytes_per_line) * static_cast<size_t>(height)
-                                : 0U;
-    if (expected > 0U && expected <= static_cast<size_t>(img_data.size())) {
-      image = QImage(reinterpret_cast<const uint8_t*>(img_data.data()), width, height, bytes_per_line,
-                     QImage::Format_RGB888)
-                  .copy();
-    }
-  } else {
-    (void)width;
-    (void)height;
-    (void)bytes_per_line;
-    image = QImage::fromData(img_data);
+  const size_t expected = width > 0 && height > 0 && bytes_per_line > 0
+                              ? static_cast<size_t>(bytes_per_line) * static_cast<size_t>(height)
+                              : 0U;
+  if (expected > 0U && expected <= static_cast<size_t>(img_data.size())) {
+    image =
+        QImage(reinterpret_cast<const uint8_t*>(img_data.data()), width, height, bytes_per_line, QImage::Format_RGB888)
+            .copy();
   }
 
-  process_qimage(url, image, use_codec);
+  process_qimage(url, image, true);
 }
 
 void CameraDialog::process_qimage(const QString& url, const QImage& image, bool scaled_by_decoder) {
@@ -2312,16 +2334,21 @@ void CameraDialog::process_frame(const std::string& url, Detail& detail, const v
 
   vlink::Bytes raw_data = vlink::Bytes::shallow_copy(frame.data(), frame.size());
 
-  QImage image;
-  if (make_camera_frame_qimage(frame, image) || make_encoded_camera_frame_qimage(frame, image)) {
-    clear_decoder();
+  const auto decoder_type = camera_frame_decoder_type(frame.format());
+  const bool ffmpeg_can_decode = FFmpegDecoder::is_valid() && decoder_type != FFmpegDecoder::InType::kUnknown;
 
-    process_qimage(QString::fromStdString(url), image, false);
-    detail.total_rate += raw_data.size();
-    return;
+  if (!ffmpeg_can_decode) {
+    QImage image;
+
+    if (make_camera_frame_qimage(frame, image) || make_encoded_camera_frame_qimage(frame, image)) {
+      clear_decoder();
+
+      process_qimage(QString::fromStdString(url), image, false);
+      detail.total_rate += raw_data.size();
+      return;
+    }
   }
 
-  const auto decoder_type = camera_frame_decoder_type(frame.format());
   if (decoder_type == FFmpegDecoder::InType::kUnknown) {
     clear_decoder();
 
@@ -2421,48 +2448,21 @@ void CameraDialog::process_raw(const std::string& url, Detail& detail, const vli
       process_frame(url, detail, frame);
       return;
     }
-  }
 
-  if (decoder_type == FFmpegDecoder::InType::kUnknown || is_qimage_still(decoder_type)) {
     QImage image;
 
     if (raw_data.data() && raw_data.size() <= static_cast<size_t>(std::numeric_limits<int>::max())) {
-      const auto* data = static_cast<const uchar*>(raw_data.data());
-      const int size = static_cast<int>(raw_data.size());
-
-      switch (decoder_type) {
-        case FFmpegDecoder::InType::kJPG:
-          image = QImage::fromData(data, size, "JPG");
-          break;
-        case FFmpegDecoder::InType::kPNG:
-          image = QImage::fromData(data, size, "PNG");
-          break;
-        case FFmpegDecoder::InType::kWEBP:
-          image = QImage::fromData(data, size, "WEBP");
-          break;
-        default:
-          image = QImage::fromData(data, size);
-          break;
-      }
+      image = QImage::fromData(static_cast<const uchar*>(raw_data.data()), static_cast<int>(raw_data.size()));
     }
 
-    if (!image.isNull()) {
-      process_qimage(QString::fromStdString(url), image, false);
-      detail.total_rate += raw_data.size();
-      return;
-    }
+    process_qimage(QString::fromStdString(url), image, false);
+    detail.total_rate += raw_data.size();
+    return;
+  }
 
-    if (decoder_type != FFmpegDecoder::InType::kUnknown && FFmpegDecoder::is_valid() && detail.decoder &&
-        has_ffmpeg_payload(raw_data, decoder_type, 0, 0)) {
-      detail.decoder->post_data(detail.channel, 0, raw_data);
-      detail.total_rate += raw_data.size();
-      return;
-    }
-
-    process_qimage(QString::fromStdString(url), QImage(), false);
-  } else if (FFmpegDecoder::is_valid() && detail.decoder) {
-    const int width = ui->spinBox_yuv_width->value();
-    const int height = ui->spinBox_yuv_height->value();
+  if (FFmpegDecoder::is_valid() && detail.decoder) {
+    const int width = detail.decoder_width > 0 ? detail.decoder_width : ui->spinBox_yuv_width->value();
+    const int height = detail.decoder_height > 0 ? detail.decoder_height : ui->spinBox_yuv_height->value();
 
     if (!has_ffmpeg_payload(raw_data, decoder_type, width, height)) {
       set_parse_failed();
@@ -2471,8 +2471,38 @@ void CameraDialog::process_raw(const std::string& url, Detail& detail, const vli
     }
 
     detail.decoder->post_data(detail.channel, 0, raw_data);
+    detail.total_rate += raw_data.size();
+    return;
   }
 
+  QImage image;
+
+  if (raw_data.data() && raw_data.size() <= static_cast<size_t>(std::numeric_limits<int>::max())) {
+    const auto* data = static_cast<const uchar*>(raw_data.data());
+    const int size = static_cast<int>(raw_data.size());
+
+    switch (decoder_type) {
+      case FFmpegDecoder::InType::kJPG:
+        image = QImage::fromData(data, size, "JPG");
+        break;
+      case FFmpegDecoder::InType::kPNG:
+        image = QImage::fromData(data, size, "PNG");
+        break;
+      case FFmpegDecoder::InType::kWEBP:
+        image = QImage::fromData(data, size, "WEBP");
+        break;
+      default:
+        break;
+    }
+  }
+
+  if (!image.isNull()) {
+    process_qimage(QString::fromStdString(url), image, false);
+    detail.total_rate += raw_data.size();
+    return;
+  }
+
+  set_parse_failed();
   detail.total_rate += raw_data.size();
 }
 
@@ -2520,18 +2550,6 @@ void CameraDialog::create_decoder(const std::string& url, FFmpegDecoder::InType 
     detail.decoder_type = FFmpegDecoder::InType::kUnknown;
     detail.decoder_width = 0;
     detail.decoder_height = 0;
-    if (detail.label && detail.state != kNoSupport) {
-      if (!multi_mode_) {
-        ui->label_transfer2->setText("---");
-        ui->label_frame2->setText("---");
-        ui->label_size2->setText("---");
-      }
-
-      detail.label->set_error(true);
-      detail.label->setPixmap(QPixmap());
-      detail.label->setText(tr("Not support"));
-      detail.state = kNoSupport;
-    }
     return;
   }
 
@@ -2590,7 +2608,7 @@ void CameraDialog::create_decoder(const std::string& url, FFmpegDecoder::InType 
 
     QMetaObject::invokeMethod(this, "process_image", Qt::QueuedConnection, Q_ARG(QString, decoder_url),
                               Q_ARG(int, width), Q_ARG(int, height), Q_ARG(int, bytes_per_line),
-                              Q_ARG(QByteArray, bytes), Q_ARG(bool, true), Q_ARG(int, decoder_seq));
+                              Q_ARG(QByteArray, bytes), Q_ARG(int, decoder_seq));
   });
 
   detail.decoder->register_error_handler([this, decoder_url, decoder_seq](int channel, int seq) {
@@ -2608,39 +2626,39 @@ FFmpegDecoder::InType CameraDialog::get_decoder_type() const {
     case 1:
       return FFmpegDecoder::InType::kJPG;
     case 2:
-      return FFmpegDecoder::InType::kH264;
-    case 3:
-      return FFmpegDecoder::InType::kH265;
-    case 4:
-      return FFmpegDecoder::InType::kMPEG4;
-    case 5:
-      return FFmpegDecoder::InType::kYUV420;
-    case 6:
-      return FFmpegDecoder::InType::kYUV422;
-    case 7:
-      return FFmpegDecoder::InType::kYUV444;
-    case 8:
-      return FFmpegDecoder::InType::kNV12;
-    case 9:
-      return FFmpegDecoder::InType::kYUYV;
-    case 10:
-      return FFmpegDecoder::InType::kYVYU;
-    case 11:
-      return FFmpegDecoder::InType::kUYVY;
-    case 12:
-      return FFmpegDecoder::InType::kBGR888;
-    case 13:
-      return FFmpegDecoder::InType::kRGB888;
-    case 14:
-      return FFmpegDecoder::InType::kAV1;
-    case 15:
-      return FFmpegDecoder::InType::kH266;
-    case 16:
       return FFmpegDecoder::InType::kPNG;
-    case 17:
+    case 3:
       return FFmpegDecoder::InType::kWEBP;
-    case 18:
+    case 4:
+      return FFmpegDecoder::InType::kH264;
+    case 5:
+      return FFmpegDecoder::InType::kH265;
+    case 6:
+      return FFmpegDecoder::InType::kH266;
+    case 7:
+      return FFmpegDecoder::InType::kMPEG4;
+    case 8:
+      return FFmpegDecoder::InType::kAV1;
+    case 9:
+      return FFmpegDecoder::InType::kYUV420;
+    case 10:
+      return FFmpegDecoder::InType::kYUV422;
+    case 11:
+      return FFmpegDecoder::InType::kYUV444;
+    case 12:
+      return FFmpegDecoder::InType::kNV12;
+    case 13:
       return FFmpegDecoder::InType::kNV21;
+    case 14:
+      return FFmpegDecoder::InType::kYUYV;
+    case 15:
+      return FFmpegDecoder::InType::kYVYU;
+    case 16:
+      return FFmpegDecoder::InType::kUYVY;
+    case 17:
+      return FFmpegDecoder::InType::kBGR888;
+    case 18:
+      return FFmpegDecoder::InType::kRGB888;
     default:
       return FFmpegDecoder::InType::kUnknown;
   }

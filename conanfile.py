@@ -133,7 +133,7 @@ class VLinkConan(ConanFile):
             self.requires("flatbuffers/25.12.19")
         if self.options.enable_viewer:
             if self.options.enable_viewer_ffmpeg:
-                self.requires("ffmpeg/8.1.1")
+                self.requires("ffmpeg/8.1.2")
             if self.options.enable_viewer_osg and not os.environ.get("OSG_DIR"):
                 self.requires("openscenegraph/3.6.5")
 

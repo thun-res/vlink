@@ -90,6 +90,11 @@
 #endif
 #endif
 
+#define VIEWER_UPDATE_FROM_GITHUB 1
+#define VIEWER_GITHUB_OWNER_REPO "thun-res/vlink"
+#define VIEWER_GITHUB_LATEST_RELEASE_API "https://api.github.com/repos/" VIEWER_GITHUB_OWNER_REPO "/releases/latest"
+#define VIEWER_GITHUB_RELEASES_URL "https://github.com/" VIEWER_GITHUB_OWNER_REPO "/releases"
+
 QString global_proto_dir_config = QStandardPaths::writableLocation(QStandardPaths::HomeLocation) + "/.vlink_proto_dir";
 QString global_fbs_dir_config = QStandardPaths::writableLocation(QStandardPaths::HomeLocation) + "/.vlink_fbs_dir";
 
@@ -1393,23 +1398,17 @@ void MainWindow::on_actionAbout_this_S_triggered() {
   // is_in_model_ = false;
 }
 
-void MainWindow::on_actionHow_to_use_U_triggered() {
-  open_url("http://172.16.2.225:8090/pages/viewpage.action?pageId=162179006");
-}
+void MainWindow::on_actionHow_to_use_U_triggered() { open_url("https://thun-res.github.io/vlink/zh_cn"); }
 
-void MainWindow::on_actionBug_Report_B_triggered() {
-  open_url("http://172.16.2.225:8090/pages/viewpage.action?pageId=162179008");
-}
+void MainWindow::on_actionBug_Report_B_triggered() { open_url("https://github.com/thun-res/vlink/issues"); }
 
-void MainWindow::on_actionDownload_L_triggered() { open_url("https://vlink.work/official_releases/"); }
+void MainWindow::on_actionDownload_L_triggered() { open_url("https://github.com/thun-res/vlink/releases"); }
 
 void MainWindow::on_actionDB_Browser_W_triggered() { open_url("https://sqlitebrowser.org"); }
 
 void MainWindow::on_actionProtobuf_Decoder_F_triggered() { open_url("https://protobuf-decoder.netlify.app"); }
 
-void MainWindow::on_actionCommunication_Matrix_M_triggered() {
-  open_url("http://172.16.2.225:8090/pages/viewpage.action?pageId=162179012");
-}
+void MainWindow::on_actionCommunication_Matrix_M_triggered() { open_url("https://github.com/thun-res/vmsgs"); }
 
 void MainWindow::on_actionStatus_Viewer_triggered(bool checked) {
   ui->groupBox_status->setVisible(checked);
@@ -4715,7 +4714,17 @@ void MainWindow::check_new_version() {
     }
 
     QJsonObject json_obj = json_doc.object();
+
+#if VIEWER_UPDATE_FROM_GITHUB
+    QString latest_version_str = json_obj.value("tag_name").toString();
+    if (latest_version_str.startsWith('v') || latest_version_str.startsWith('V')) {
+      latest_version_str.remove(0, 1);
+    }
+    const QString download_url = VIEWER_GITHUB_RELEASES_URL;
+#else
     QString latest_version_str = json_obj.value("current_version").toString();
+    const QString download_url = "https://vlink.work/official_releases/" + latest_version_str + "/";
+#endif
 
     vlink::Version latest_version = vlink::Version::from_string(latest_version_str.toStdString());
 
@@ -4728,7 +4737,7 @@ void MainWindow::check_new_version() {
       int result = message_box.exec();
 
       if (result == QMessageBox::Yes) {
-        open_url("https://vlink.work/official_releases/" + latest_version_str + "/");
+        open_url(download_url);
       }
     }
 
@@ -4737,7 +4746,13 @@ void MainWindow::check_new_version() {
     network_manager_ = nullptr;
   });
 
+#if VIEWER_UPDATE_FROM_GITHUB
+  QNetworkRequest request{QUrl(VIEWER_GITHUB_LATEST_RELEASE_API)};
+  request.setRawHeader("Accept", "application/vnd.github+json");
+  request.setRawHeader("User-Agent", "vlink-viewer");
+#else
   QNetworkRequest request(QUrl("https://vlink.work/official_releases/current_version.json"));
+#endif
 
   QSslConfiguration config = QSslConfiguration::defaultConfiguration();
   config.setProtocol(QSsl::AnyProtocol);

@@ -33,26 +33,28 @@
  * 40-byte @c Header for sequencing and dual-timestamp latency measurement.
  *
  * @par Pixel formats
- * | Enum                    | Family            | Description                            |
- * | ----------------------- | ----------------- | -------------------------------------- |
- * | @c kFormatYuv420        | Planar YUV        | 4:2:0 (I420)                           |
- * | @c kFormatYuv422        | Planar YUV        | 4:2:2                                  |
- * | @c kFormatYuv444        | Planar YUV        | 4:4:4                                  |
- * | @c kFormatNv12          | Semi-planar YUV   | Y plane + interleaved UV (4:2:0)       |
- * | @c kFormatNv21          | Semi-planar YUV   | Y plane + interleaved VU (4:2:0)       |
- * | @c kFormatYuyv          | Packed YUV        | YUYV 4:2:2                             |
- * | @c kFormatYvyu          | Packed YUV        | YVYU 4:2:2                             |
- * | @c kFormatUyvy          | Packed YUV        | UYVY 4:2:2                             |
- * | @c kFormatVyuy          | Packed YUV        | VYUY 4:2:2                             |
- * | @c kFormatBgr888Packed  | Packed RGB        | 24-bit BGR, 3 bytes per pixel          |
- * | @c kFormatRgb888Packed  | Packed RGB        | 24-bit RGB, 3 bytes per pixel          |
- * | @c kFormatRgb888Planar  | Planar RGB        | Separate R, G, B planes                |
- * | @c kFormatMono8, @c kFormatMono16 | Grayscale | 8/16-bit mono image                    |
- * | @c kFormatRgba8888Packed, @c kFormatBgra8888Packed | Packed RGB | 32-bit RGBA/BGRA |
- * | @c kFormatUint8C1 .. @c kFormatFloat64C4 | OpenCV/ROS style | Generic numeric images |
- * | @c kFormatBayerRggb8 .. @c kFormatBayerGrbg16 | Bayer | RGGB/BGGR/GBRG/GRBG, 8/16-bit |
- * | @c kFormatJpeg, @c kFormatPng, @c kFormatMjpeg, @c kFormatWebp | Compressed image | Still images |
- * | @c kFormatH264, @c kFormatH265, @c kFormatH266, @c kFormatAv1 | Compressed video | Video frames |
+ * | Enum                                               | Family           | Description                      |
+ * | -------------------------------------------------- | ---------------- | -------------------------------- |
+ * | @c kFormatYuv420                                   | Planar YUV       | 4:2:0 (I420)                     |
+ * | @c kFormatYuv422                                   | Planar YUV       | 4:2:2                            |
+ * | @c kFormatYuv444                                   | Planar YUV       | 4:4:4                            |
+ * | @c kFormatNv12                                     | Semi-planar YUV  | Y plane + interleaved UV (4:2:0) |
+ * | @c kFormatNv21                                     | Semi-planar YUV  | Y plane + interleaved VU (4:2:0) |
+ * | @c kFormatYuyv                                     | Packed YUV       | YUYV 4:2:2                       |
+ * | @c kFormatYvyu                                     | Packed YUV       | YVYU 4:2:2                       |
+ * | @c kFormatUyvy                                     | Packed YUV       | UYVY 4:2:2                       |
+ * | @c kFormatVyuy                                     | Packed YUV       | VYUY 4:2:2                       |
+ * | @c kFormatBgr888Packed                             | Packed RGB       | 24-bit BGR, 3 bytes per pixel    |
+ * | @c kFormatRgb888Packed                             | Packed RGB       | 24-bit RGB, 3 bytes per pixel    |
+ * | @c kFormatRgb888Planar                             | Planar RGB       | Separate R, G, B planes          |
+ * | @c kFormatMono8, @c kFormatMono16                  | Grayscale        | 8/16-bit mono image              |
+ * | @c kFormatRgba8888Packed, @c kFormatBgra8888Packed | Packed RGB       | 32-bit RGBA / BGRA               |
+ * | @c kFormatUint8C1 .. @c kFormatFloat64C4           | OpenCV/ROS       | Generic numeric images           |
+ * | @c kFormatBayerRggb8 .. @c kFormatBayerGrbg16      | Bayer            | RGGB/BGGR/GBRG/GRBG, 8/16-bit    |
+ * | @c kFormatJpeg, @c kFormatMjpeg                    | Compressed image | JPEG / Motion-JPEG               |
+ * | @c kFormatPng, @c kFormatWebp                      | Compressed image | PNG / WebP                       |
+ * | @c kFormatH264, @c kFormatH265                     | Compressed video | H.264 / H.265                    |
+ * | @c kFormatH266, @c kFormatAv1                      | Compressed video | H.266 / AV1                      |
  *
  * @par Image buffer layout
  * @code
@@ -218,13 +220,13 @@ struct VLINK_EXPORT_AND_ALIGNED(8) CameraFrame final {
     kFormatBayerGrbg16 = 67,  ///< Bayer GRBG, 16-bit samples.
 
     kFormatJpeg = 101,   ///< JPEG bitstream.
-    kFormatH264 = 102,   ///< H.264 / AVC frame.
-    kFormatH265 = 103,   ///< H.265 / HEVC frame.
-    kFormatPng = 104,    ///< PNG bitstream.
-    kFormatMjpeg = 105,  ///< Motion-JPEG frame.
-    kFormatH266 = 106,   ///< H.266 / VVC frame.
-    kFormatAv1 = 107,    ///< AV1 frame.
-    kFormatWebp = 108,   ///< WebP bitstream.
+    kFormatMjpeg = 102,  ///< Motion-JPEG frame.
+    kFormatPng = 103,    ///< PNG bitstream.
+    kFormatWebp = 104,   ///< WebP bitstream.
+    kFormatH264 = 105,   ///< H.264 / AVC frame.
+    kFormatH265 = 106,   ///< H.265 / HEVC frame.
+    kFormatH266 = 107,   ///< H.266 / VVC frame.
+    kFormatAv1 = 108,    ///< AV1 frame.
   };
 
   /**

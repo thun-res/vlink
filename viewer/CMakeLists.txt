@@ -10,7 +10,7 @@ project(vlink-viewer)
 find_package(QT NAMES Qt6 Qt5 QUIET)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Sql Network)
 
-option(ENABLE_VIEWER_FFMPEG "Enable FFmpeg for viewer" OFF)
+option(ENABLE_VIEWER_FFMPEG "Enable FFmpeg for viewer" ON)
 option(ENABLE_VIEWER_OSG "Enable OSG for viewer" ON)
 
 if(NOT TARGET vlink)
