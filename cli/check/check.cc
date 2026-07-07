@@ -1326,10 +1326,15 @@ int check_env(bool available_case, const std::string& prefix) {
       {"VLINK_SHM2_CONFIG", "", "Path to the iceoryx2 TOML configuration file.", false},
       {"VLINK_SHM2_NOTIFY_EVERY", "",
        "Notify-every-N coalescing for shm2:// publishers (default 1; raise to amortize wakeups).", false},
+      {"VLINK_SHM2_LOAN_MIN", "",
+       "Minimum non-loaned Bytes payload size that uses loan/write/send instead of send_slice_copy (default 65536).",
+       false},
 #endif
 
 #ifdef VLINK_SUPPORT_ZENOH
       {"VLINK_ZENOH_CONFIG", "", "Path to the Zenoh JSON5 session configuration file.", false},
+      {"VLINK_ZENOH_DEBUG", "", "When set to 1 enables Zenoh runtime debug logging in zenoh-c builds (default 0).",
+       false},
       {"VLINK_ZENOH_DOMAIN", "", "Zenoh domain id (numeric, used to scope key expressions).", false},
       {"VLINK_ZENOH_MODE", "", "Zenoh session mode: peer / client / router (default peer).", false},
       {"VLINK_ZENOH_IP", "", "Zenoh peer IP list expanded to connect endpoints (comma or space separated).", false},

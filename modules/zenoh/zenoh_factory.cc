@@ -577,7 +577,9 @@ void ZenohFactory::init() {
 #ifdef VLINK_ENABLE_ZENOH_PICO
   ret = z_config_default(&global_config_);
 #else
-  ret = zc_init_log_from_env_or("error");
+  std::string zenoh_debug_str = Utils::get_env("VLINK_ZENOH_DEBUG");
+
+  ret = zc_init_log_from_env_or(zenoh_debug_str == "1" ? "debug" : "error");
 
   if VUNLIKELY (ret != Z_OK) {
     VLOG_F("ZenohFactory: Failed to invoke [zc_init_log_from_env_or].");
