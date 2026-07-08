@@ -187,11 +187,11 @@ static constexpr CameraFrameFormatEncoding kCameraFrameCanonicalEncodings[] = {
     {"jpeg", CameraFrame::kFormatJpeg},
     {"h264", CameraFrame::kFormatH264},
     {"h265", CameraFrame::kFormatH265},
-    {"png", CameraFrame::kFormatPng},
     {"mjpeg", CameraFrame::kFormatMjpeg},
+    {"png", CameraFrame::kFormatPng},
+    {"webp", CameraFrame::kFormatWebp},
     {"h266", CameraFrame::kFormatH266},
     {"av1", CameraFrame::kFormatAv1},
-    {"webp", CameraFrame::kFormatWebp},
 };
 
 // CameraFrame

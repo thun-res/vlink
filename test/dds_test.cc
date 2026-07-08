@@ -404,16 +404,18 @@ TEST_SUITE("dds-init") {
   }
 
   TEST_CASE("factory helpers support explicit init and deinit for every dds role") {
-    auto pub = Publisher<int>::create_unique("dds://dds/init/factory_pub", InitType::kWithoutInit);
-    auto sub = Subscriber<int>::create_shared("dds://dds/init/factory_sub", InitType::kWithoutInit);
-    auto setter = Setter<int>::create_unique("dds://dds/init/factory_field", InitType::kWithoutInit);
-    auto getter = Getter<int>::create_shared("dds://dds/init/factory_field", InitType::kWithoutInit);
-    auto fire_server = Server<std::string>::create_unique("dds://dds/init/factory_fire", InitType::kWithoutInit);
-    auto fire_client = Client<std::string>::create_shared("dds://dds/init/factory_fire", InitType::kWithoutInit);
-    auto sync_server =
-        Server<std::string, std::string>::create_unique("dds://dds/init/factory_rpc", InitType::kWithoutInit);
-    auto sync_client =
-        Client<std::string, std::string>::create_shared("dds://dds/init/factory_rpc", InitType::kWithoutInit);
+    auto pub = Publisher<int>::create_unique("dds://dds/init/factory_pub?domain=73", InitType::kWithoutInit);
+    auto sub = Subscriber<int>::create_shared("dds://dds/init/factory_sub?domain=74", InitType::kWithoutInit);
+    auto setter = Setter<int>::create_unique("dds://dds/init/factory_setter?domain=75", InitType::kWithoutInit);
+    auto getter = Getter<int>::create_shared("dds://dds/init/factory_getter?domain=76", InitType::kWithoutInit);
+    auto fire_server =
+        Server<std::string>::create_unique("dds://dds/init/factory_fire_server?domain=77", InitType::kWithoutInit);
+    auto fire_client =
+        Client<std::string>::create_shared("dds://dds/init/factory_fire_client?domain=78", InitType::kWithoutInit);
+    auto sync_server = Server<std::string, std::string>::create_unique("dds://dds/init/factory_rpc_server?domain=79",
+                                                                       InitType::kWithoutInit);
+    auto sync_client = Client<std::string, std::string>::create_shared("dds://dds/init/factory_rpc_client?domain=80",
+                                                                       InitType::kWithoutInit);
 
     REQUIRE(pub != nullptr);
     REQUIRE(sub != nullptr);
@@ -451,14 +453,14 @@ TEST_SUITE("dds-init") {
     CHECK_FALSE(sync_server->init());
     CHECK_FALSE(sync_client->init());
 
-    CHECK(pub->deinit());
-    CHECK(sub->deinit());
-    CHECK(setter->deinit());
-    CHECK(getter->deinit());
-    CHECK(fire_server->deinit());
-    CHECK(fire_client->deinit());
-    CHECK(sync_server->deinit());
     CHECK(sync_client->deinit());
+    CHECK(sync_server->deinit());
+    CHECK(fire_client->deinit());
+    CHECK(fire_server->deinit());
+    CHECK(getter->deinit());
+    CHECK(setter->deinit());
+    CHECK(sub->deinit());
+    CHECK(pub->deinit());
 
     CHECK_FALSE(pub->deinit());
     CHECK_FALSE(sub->deinit());

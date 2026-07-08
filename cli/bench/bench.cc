@@ -2875,7 +2875,11 @@ bool run_process_pubsub_case(const Bench::RunOptions& options, const Bench::Scen
                                        static_cast<uint64_t>(kProcessReadyTimeoutMs) * 1000000ULL;
 
     if VUNLIKELY (!wait_process_ready(*process, ready_deadline_ns, error)) {
-      error = "sub worker " + std::to_string(index) + " " + error;
+      std::string worker_error = "sub worker ";
+      worker_error += std::to_string(index);
+      worker_error.push_back(' ');
+      worker_error += error;
+      error = std::move(worker_error);
       append_worker_result_error(sub_result_paths[index], error);
       stop_processes(sub_processes);
       cleanup();
@@ -2914,7 +2918,11 @@ bool run_process_pubsub_case(const Bench::RunOptions& options, const Bench::Scen
                                        static_cast<uint64_t>(kProcessReadyTimeoutMs) * 1000000ULL;
 
     if VUNLIKELY (!wait_process_ready(*process, ready_deadline_ns, error)) {
-      error = "pub worker " + std::to_string(index) + " " + error;
+      std::string worker_error = "pub worker ";
+      worker_error += std::to_string(index);
+      worker_error.push_back(' ');
+      worker_error += error;
+      error = std::move(worker_error);
       append_worker_result_error(pub_result_paths[index], error);
       stop_processes(pub_processes);
       stop_processes(sub_processes);

@@ -220,11 +220,11 @@ struct VLINK_EXPORT_AND_ALIGNED(8) CameraFrame final {
     kFormatBayerGrbg16 = 67,  ///< Bayer GRBG, 16-bit samples.
 
     kFormatJpeg = 101,   ///< JPEG bitstream.
-    kFormatMjpeg = 102,  ///< Motion-JPEG frame.
-    kFormatPng = 103,    ///< PNG bitstream.
-    kFormatWebp = 104,   ///< WebP bitstream.
-    kFormatH264 = 105,   ///< H.264 / AVC frame.
-    kFormatH265 = 106,   ///< H.265 / HEVC frame.
+    kFormatH264 = 102,   ///< H.264 / AVC frame.
+    kFormatH265 = 103,   ///< H.265 / HEVC frame.
+    kFormatMjpeg = 104,  ///< Motion-JPEG frame.
+    kFormatPng = 105,    ///< PNG bitstream.
+    kFormatWebp = 106,   ///< WebP bitstream.
     kFormatH266 = 107,   ///< H.266 / VVC frame.
     kFormatAv1 = 108,    ///< AV1 frame.
   };
