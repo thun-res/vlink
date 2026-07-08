@@ -1026,7 +1026,13 @@ std::string get_transport_from_url(const std::string& url) {
   return url.substr(0, pos);
 }
 
-const std::string& make_runtime_url(const Bench::Scenario& scenario) { return scenario.url; }
+std::string make_runtime_url(const Bench::Scenario& scenario, size_t wire_size) {
+  if (get_transport_from_url(scenario.url) != "shm2" || wire_size == 0 || scenario.url.find('#') != std::string::npos) {
+    return scenario.url;
+  }
+
+  return scenario.url + "#" + std::to_string(wire_size);
+}
 
 bool parse_property_entry(const std::string& entry, std::string& key, std::string& value) {
   auto pos = entry.find('=');
@@ -1321,6 +1327,19 @@ struct BenchCodec<zerocopy::RawData> final {
     return Serializer::get_serialized_size(message);
   }
 };
+
+size_t scenario_wire_size(const Bench::Scenario& scenario) {
+  switch (scenario.payload) {
+    case Bench::kBytesPayload:
+      return BenchCodec<Bytes>::wire_size(scenario.payload_size);
+    case Bench::kStringPayload:
+      return BenchCodec<std::string>::wire_size(scenario.payload_size);
+    case Bench::kRawDataPayload:
+      return BenchCodec<zerocopy::RawData>::wire_size(scenario.payload_size);
+    default:
+      return 0;
+  }
+}
 
 struct Collector final {
   uint64_t start_ns{0};
@@ -1752,13 +1771,13 @@ bool run_serialization_case(const Bench::Scenario& scenario, Bench::ScenarioResu
 
 template <typename MsgT>
 bool run_local_pubsub_case(const Bench::Scenario& scenario, Bench::ScenarioResult& result, std::string& error) {
-  const auto runtime_url = make_runtime_url(scenario);
   Collector collector;
   collector.start_ns = steady_time_ns();
   collector.measure_begin_ns.store(std::numeric_limits<uint64_t>::max(), std::memory_order_relaxed);
   collector.measure_end_ns.store(std::numeric_limits<uint64_t>::max(), std::memory_order_relaxed);
   collector.wire_size = BenchCodec<MsgT>::wire_size(scenario.payload_size);
   collector.enable_latency = scenario.suite == Bench::kLatencySuite;
+  const auto runtime_url = make_runtime_url(scenario, collector.wire_size);
 
   std::vector<std::unique_ptr<MessageLoop>> subscriber_loops;
 
@@ -2644,8 +2663,8 @@ int split_publisher_workload(int total, int publishers, int publisher_index) noe
   return base + (publisher_index < remain ? 1 : 0);
 }
 
-void append_worker_args(std::vector<std::string>& args, const Bench::Scenario& scenario, bool is_pub,
-                        const std::string& result_path, int publisher_index) {
+void append_worker_args(std::vector<std::string>& args, const Bench::Scenario& scenario, const std::string& runtime_url,
+                        bool is_pub, const std::string& result_path, int publisher_index) {
   int worker_rate_hz = scenario.rate_hz;
   int worker_burst_messages = std::max(scenario.burst_messages, 1);
 
@@ -2661,7 +2680,7 @@ void append_worker_args(std::vector<std::string>& args, const Bench::Scenario& s
   }
 
   args.emplace_back(is_pub ? "pub" : "sub");
-  args.emplace_back(scenario.url);
+  args.emplace_back(runtime_url);
   args.emplace_back("-k");
   args.emplace_back(Bench::payload_to_string(scenario.payload));
 
@@ -2745,7 +2764,7 @@ bool run_process_pubsub_case(const Bench::RunOptions& options, const Bench::Scen
     return false;
   }
 
-  const auto runtime_url = make_runtime_url(scenario);
+  const auto runtime_url = make_runtime_url(scenario, scenario_wire_size(scenario));
 
   if (get_transport_from_url(runtime_url) == "intra") {
     error = "intra transport only supports local mode";
@@ -2814,7 +2833,7 @@ bool run_process_pubsub_case(const Bench::RunOptions& options, const Bench::Scen
 
     std::vector<std::string> args;
     sub_result_paths.emplace_back((temp_dir / ("sub-" + std::to_string(index) + ".json")).string());
-    append_worker_args(args, scenario, false, sub_result_paths.back(), index);
+    append_worker_args(args, scenario, runtime_url, false, sub_result_paths.back(), index);
 
     std::unique_ptr<Process> process;
 
@@ -2851,7 +2870,7 @@ bool run_process_pubsub_case(const Bench::RunOptions& options, const Bench::Scen
 
     std::vector<std::string> args;
     pub_result_paths.emplace_back((temp_dir / ("pub-" + std::to_string(index) + ".json")).string());
-    append_worker_args(args, scenario, true, pub_result_paths.back(), index);
+    append_worker_args(args, scenario, runtime_url, true, pub_result_paths.back(), index);
 
     std::unique_ptr<Process> process;
 

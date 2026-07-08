@@ -268,6 +268,9 @@ std::vector<std::string> build_terminal_detail_lines(const AggregatedCase& item,
                             " % | rss " + format_memory_cell(item.memory_usage) + " MB",
                         width);
   append_wrapped_detail(lines, " url : ", item.scenario.url, width);
+  if (item.transport == "shm2" && item.wire_size != 0) {
+    append_wrapped_detail(lines, " slice: ", format_size_label(item.wire_size), width);
+  }
   append_wrapped_detail(
       lines,
       " node: ", item.scenario.properties.empty() ? std::string("-") : format_property_list(item.scenario.properties),

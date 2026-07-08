@@ -85,14 +85,14 @@
  * @code
  *   shm2://my_topic#1M     // 1 MiB per message
  *   shm2://my_topic#512K   // 512 KiB per message
- *   shm2://my_topic        // default: 128 bytes per message
+ *   shm2://my_topic        // default: 4 KiB per message
  * @endcode
  *
  * @par Backend-Specific Options
  *
  * | Option              | Purpose                                            | Default         |
  * | ------------------- | -------------------------------------------------- | --------------- |
- * | @c size             | Per-message chunk size                             | @c 128 B        |
+ * | @c size             | Per-message chunk size                             | @c 4 KiB        |
  * | @c kMaxMemSize      | Hard upper bound on @c size                        | @c 32 MiB       |
  * | @c depth            | Slot pool capacity                                 | backend default |
  * | @c history          | Late-joining replay count                          | @c 0 / @c 1     |
@@ -142,7 +142,7 @@ struct VLINK_EXPORT Shm2Conf final : public Conf {
    * @param _depth    Queue / loan capacity override; defaults to @c 0.
    * @param _history  History count; defaults to @c 0.
    * @param _wait     Blocking-wait timeout in ms; defaults to @c 0 (disabled).
-   * @param _size     Per-message chunk size in bytes; defaults to @c kDefaultMemSize (128 B).
+   * @param _size     Per-message chunk size in bytes; defaults to @c kDefaultMemSize (4 KiB).
    */
   explicit Shm2Conf(const std::string& _address, const std::string& _event = "", int32_t _domain = 0,
                     int32_t _depth = 0, int32_t _history = 0, int32_t _wait = 0, uint64_t _size = kDefaultMemSize);
@@ -170,7 +170,7 @@ struct VLINK_EXPORT Shm2Conf final : public Conf {
    */
   [[nodiscard]] TransportType get_transport_type() const override;
 
-  static constexpr size_t kDefaultMemSize = 128U;              ///< Default per-message chunk size: 128 bytes.
+  static constexpr size_t kDefaultMemSize = 4096U;             ///< Default per-message chunk size: 4 KiB.
   static constexpr size_t kMaxMemSize = 1024UL * 1024UL * 32;  ///< Upper bound on per-message chunk size: 32 MiB.
 
 #ifndef VLINK_ENABLE_C_INTERFACE

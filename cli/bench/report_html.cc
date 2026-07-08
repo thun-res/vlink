@@ -76,6 +76,10 @@ std::string summarize_config_html(const AggregatedCase& item) {
   std::ostringstream stream;
   stream << "<div><strong data-i18n=\"insight_url_label\">url</strong>: <code>" << escape_html(item.scenario.url)
          << "</code></div>";
+  if (item.transport == "shm2" && item.wire_size != 0) {
+    stream << "<div><strong>slice</strong>: <code>" << escape_html(format_size_label(item.wire_size))
+           << "</code></div>";
+  }
   stream << "<div><strong data-i18n=\"insight_topology_label\">topology</strong>: <code>"
          << escape_html(make_topology_label(item.scenario)) << "</code></div>";
   stream << "<div><strong data-i18n=\"insight_pattern_label\">pattern</strong>: <code>"
