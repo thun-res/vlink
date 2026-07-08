@@ -52,7 +52,7 @@ TEST_SUITE("shm2-init") {
     CHECK(conf.get_transport_type() == TransportType::kShm2);
   }
 
-  TEST_CASE("default memory size constant is 128") { CHECK(Shm2Conf::kDefaultMemSize == 128U); }
+  TEST_CASE("default memory size constant is 4 KiB") { CHECK(Shm2Conf::kDefaultMemSize == 4096U); }
 
   TEST_CASE("max memory size constant is 32 mib") { CHECK(Shm2Conf::kMaxMemSize == 1024UL * 1024UL * 32); }
 

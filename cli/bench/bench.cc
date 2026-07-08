@@ -2129,6 +2129,10 @@ bool run_pub_worker_impl(const Bench::WorkerOptions& options, Bench::ScenarioRes
   result.discovery_ms =
       static_cast<double>(ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kNano) - discovery_begin_ns) / 1000000.0;
 
+  if (options.wait_start) {
+    std::cout << "READY" << std::endl;
+  }
+
   uint64_t shared_start_ns = 0;
 
   if (options.wait_start && !wait_for_worker_start(shared_start_ns, error)) {
@@ -2281,8 +2285,6 @@ bool run_sub_worker_impl(const Bench::WorkerOptions& options, Bench::ScenarioRes
 
   SampleLostInfo baseline_lost{};
   std::cout << "READY" << std::endl;
-  std::cout.flush();
-  std::fflush(stdout);
 
   uint64_t shared_start_ns = 0;
 
@@ -2587,7 +2589,8 @@ void graceful_shutdown_process(Process& process) {
   }
 }
 
-bool wait_process_finished(Process& process, uint64_t deadline_ns, std::string& error) {
+bool wait_process_finished(Process& process, uint64_t deadline_ns, const std::string& worker_label, int wait_budget_ms,
+                           std::string& error) {
   while (ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kNano) < deadline_ns) {
     if VUNLIKELY (check_stop_requested(error)) {
       graceful_shutdown_process(process);
@@ -2610,10 +2613,29 @@ bool wait_process_finished(Process& process, uint64_t deadline_ns, std::string& 
     return verify_process_exit(process, error);
   }
 
+  const auto timeout_state = process.get_state();
+  const auto timeout_error = process.get_error();
+  const int64_t timeout_pid = process.get_process_id();
+
   graceful_shutdown_process(process);
   std::string stderr_text;
   process.read_all_error(stderr_text);
-  error = stderr_text.empty() ? "process wait_for_finished timeout" : stderr_text;
+
+  std::ostringstream stream;
+
+  if (!worker_label.empty()) {
+    stream << worker_label << ' ';
+  }
+
+  stream << "process wait_for_finished timeout after " << wait_budget_ms << " ms"
+         << " (pid " << timeout_pid << ", state " << process_state_to_string(timeout_state) << ", last error "
+         << process_error_to_string(timeout_error) << ")";
+
+  if (!stderr_text.empty()) {
+    stream << ": " << stderr_text;
+  }
+
+  error = stream.str();
   return false;
 }
 
@@ -2853,6 +2875,7 @@ bool run_process_pubsub_case(const Bench::RunOptions& options, const Bench::Scen
                                        static_cast<uint64_t>(kProcessReadyTimeoutMs) * 1000000ULL;
 
     if VUNLIKELY (!wait_process_ready(*process, ready_deadline_ns, error)) {
+      error = "sub worker " + std::to_string(index) + " " + error;
       append_worker_result_error(sub_result_paths[index], error);
       stop_processes(sub_processes);
       cleanup();
@@ -2885,6 +2908,21 @@ bool run_process_pubsub_case(const Bench::RunOptions& options, const Bench::Scen
     pub_processes.emplace_back(std::move(process));
   }
 
+  for (size_t index = 0; index < pub_processes.size(); ++index) {
+    auto& process = pub_processes[index];
+    const uint64_t ready_deadline_ns = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kNano) +
+                                       static_cast<uint64_t>(kProcessReadyTimeoutMs) * 1000000ULL;
+
+    if VUNLIKELY (!wait_process_ready(*process, ready_deadline_ns, error)) {
+      error = "pub worker " + std::to_string(index) + " " + error;
+      append_worker_result_error(pub_result_paths[index], error);
+      stop_processes(pub_processes);
+      stop_processes(sub_processes);
+      cleanup();
+      return false;
+    }
+  }
+
   const uint64_t shared_start_ns = steady_time_ns() + 300000000ULL;
   const std::string start_signal = "GO " + std::to_string(shared_start_ns) + "\n";
 
@@ -2914,15 +2952,16 @@ bool run_process_pubsub_case(const Bench::RunOptions& options, const Bench::Scen
     }
   }
 
+  const int finish_wait_budget_ms =
+      scenario.warmup_ms + scenario.duration_ms + scenario.drain_ms + kProcessMeasureBufferMs;
   const uint64_t finish_deadline_ns =
-      ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kNano) +
-      static_cast<uint64_t>(scenario.warmup_ms + scenario.duration_ms + scenario.drain_ms + kProcessMeasureBufferMs) *
-          1000000ULL;
+      ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kNano) + static_cast<uint64_t>(finish_wait_budget_ms) * 1000000ULL;
 
   for (size_t index = 0; index < pub_processes.size(); ++index) {
     auto& process = pub_processes[index];
 
-    if (!wait_process_finished(*process, finish_deadline_ns, error)) {
+    if (!wait_process_finished(*process, finish_deadline_ns, "pub worker " + std::to_string(index),
+                               finish_wait_budget_ms, error)) {
       append_worker_result_error(pub_result_paths[index], error);
       stop_processes(pub_processes);
       stop_processes(sub_processes);
@@ -2934,7 +2973,8 @@ bool run_process_pubsub_case(const Bench::RunOptions& options, const Bench::Scen
   for (size_t index = 0; index < sub_processes.size(); ++index) {
     auto& process = sub_processes[index];
 
-    if (!wait_process_finished(*process, finish_deadline_ns, error)) {
+    if (!wait_process_finished(*process, finish_deadline_ns, "sub worker " + std::to_string(index),
+                               finish_wait_budget_ms, error)) {
       append_worker_result_error(sub_result_paths[index], error);
       stop_processes(sub_processes);
       cleanup();

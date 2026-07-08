@@ -153,7 +153,9 @@ class Shm2Factory final : public AbstractFactory<ShmID2> {
 
   int get_default_depth() const;
 
-  void register_poll(void* handle, PollCallback&& callback, iox2_waitset_guard_h guard = nullptr);
+  void register_poll(void* handle, PollCallback&& callback, iox2_waitset_guard_h guard = nullptr,
+                     iox2_listener_h_ref listener = nullptr, bool poll_without_event = false,
+                     iox2_port_factory_event_h_ref event_pf = nullptr);
 
   void unregister_poll(void* handle);
 
@@ -161,6 +163,20 @@ class Shm2Factory final : public AbstractFactory<ShmID2> {
 
  private:
   static iox2_callback_progression_e on_process(iox2_waitset_attachment_id_h attachment_id, void* context);
+
+  struct BlockingWaiter {
+    PollCallback callback;
+    iox2_listener_h_ref listener{nullptr};
+    bool poll_without_event{false};
+    std::atomic_bool quit{false};
+    iox2_notifier_t wake_notifier_storage{};
+    iox2_notifier_h wake_notifier{nullptr};
+    std::thread thread;
+  };
+
+  static void blocking_wait_func(BlockingWaiter* waiter);
+
+  static void stop_blocking_waiter(BlockingWaiter* waiter);
 
   std::atomic_bool poll_quit_{false};
 
@@ -176,7 +192,7 @@ class Shm2Factory final : public AbstractFactory<ShmID2> {
   iox2_notifier_h wakeup_notifier_{nullptr};
   iox2_listener_t wakeup_listener_storage_{};
   iox2_listener_h wakeup_listener_{nullptr};
-  iox2_waitset_guard_t wakeup_guard_storage_{};
+  [[maybe_unused]] iox2_waitset_guard_t wakeup_guard_storage_{};
   iox2_waitset_guard_h wakeup_guard_{nullptr};
 
   MessageLoop message_loop_{MessageLoop::kNormalType};
@@ -190,6 +206,9 @@ class Shm2Factory final : public AbstractFactory<ShmID2> {
 
   std::unordered_map<void*, PollEntry> poll_map_;
   std::shared_mutex sub_list_mtx_;
+
+  std::unordered_map<void*, std::shared_ptr<BlockingWaiter>> blocking_waiters_;
+  std::mutex blocking_mtx_;
 
   VLINK_SINGLETON_DECLARE(Shm2Factory)
 };
@@ -245,7 +264,7 @@ class Shm2Server final : public AbstractObject<ShmID2>, public std::enable_share
   iox2_port_factory_event_h event_pf_handle_{nullptr};
   iox2_notifier_t notifier_storage_{};
   iox2_notifier_h notifier_{nullptr};
-  iox2_waitset_guard_t guard_storage_{};
+  [[maybe_unused]] iox2_waitset_guard_t guard_storage_{};
   iox2_waitset_guard_h guard_{nullptr};
 
   std::mutex mtx_;
@@ -307,7 +326,7 @@ class Shm2Client final : public AbstractObject<ShmID2>, public std::enable_share
   iox2_port_factory_event_h event_pf_handle_{nullptr};
   iox2_listener_t listener_storage_{};
   iox2_listener_h listener_{nullptr};
-  iox2_waitset_guard_t guard_storage_{};
+  [[maybe_unused]] iox2_waitset_guard_t guard_storage_{};
   iox2_waitset_guard_h guard_{nullptr};
 
   std::mutex mtx_;
@@ -342,6 +361,8 @@ class Shm2Publisher final : public AbstractObject<ShmID2>, public std::enable_sh
   bool release(const Bytes& bytes);
 
   bool publish(uint64_t channel, const Bytes& bytes);
+
+  void update_connections();
 
   void enable_detect_timer();
 
@@ -379,6 +400,7 @@ class Shm2Publisher final : public AbstractObject<ShmID2>, public std::enable_sh
   uint32_t notify_every_{1};
   std::atomic<uint32_t> notify_counter_{0};
   size_t loan_send_threshold_{65536};
+  std::mutex connection_mtx_;
 
   std::optional<SysSemaphore> sem_;
 
@@ -437,7 +459,7 @@ class Shm2Subscriber final : public AbstractObject<ShmID2>, public std::enable_s
 
   iox2_subscriber_t subscriber_storage_{};
   iox2_subscriber_h subscriber_{nullptr};
-  iox2_waitset_guard_t guard_storage_{};
+  [[maybe_unused]] iox2_waitset_guard_t guard_storage_{};
   iox2_waitset_guard_h guard_{nullptr};
 
   iox2_port_factory_event_t event_pf_storage_{};

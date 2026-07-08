@@ -35,7 +35,7 @@
 #include "../common_test.h"
 
 TEST_SUITE("modules-Shm2Conf") {
-  TEST_CASE("kDefaultMemSize is 128 bytes") { CHECK_EQ(Shm2Conf::kDefaultMemSize, 128u); }
+  TEST_CASE("kDefaultMemSize is 4 KiB") { CHECK_EQ(Shm2Conf::kDefaultMemSize, 4096u); }
 
   TEST_CASE("kMaxMemSize is 32 mib") { CHECK_EQ(Shm2Conf::kMaxMemSize, 1024UL * 1024UL * 32UL); }
 
