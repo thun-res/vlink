@@ -32,12 +32,12 @@ namespace vlink {
 
 namespace zerocopy {
 
-struct CameraFrameFormatEncoding {
+struct CameraFrameFormatEncoding final {
   std::string_view name;
   CameraFrame::Format format;
 };
 
-static std::string_view normalize_camera_encoding(std::string_view encoding, char (&buffer)[64]) noexcept {
+static std::string_view normalize_camera_encoding(std::string_view encoding, char (&BufferT)[64]) noexcept {
   size_t n = 0;
 
   for (char c : encoding) {
@@ -45,16 +45,16 @@ static std::string_view normalize_camera_encoding(std::string_view encoding, cha
       continue;
     }
 
-    if VUNLIKELY (n + 1 >= sizeof(buffer)) {
+    if VUNLIKELY (n + 1 >= sizeof(BufferT)) {
       return {};
     }
 
-    buffer[n++] = static_cast<char>(std::tolower(static_cast<unsigned char>(c == '-' ? '_' : c)));
+    BufferT[n++] = static_cast<char>(std::tolower(static_cast<unsigned char>(c == '-' ? '_' : c)));
   }
 
-  buffer[n] = '\0';
+  BufferT[n] = '\0';
 
-  return std::string_view(buffer, n);
+  return std::string_view(BufferT, n);
 }
 
 static constexpr CameraFrameFormatEncoding kCameraFrameEncodingAliases[] = {

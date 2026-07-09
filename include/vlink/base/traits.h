@@ -224,14 +224,14 @@ struct RemoveSharedPtr<T, true> {
  * forwarding reference and reference the candidate member with @c decltype-style sfinae.
  *
  * @tparam T  Probed type.
- * @tparam F  Lambda type.
+ * @tparam FnT Lambda type.
  * @param  f  Probe lambda.
  * @return @c true when the lambda is well-formed for @p T, @c false otherwise.
  *
  * @note Prefer the @c VLINK_HAS_MEMBER macro for member-name checks.
  */
-template <typename T, typename F>
-[[nodiscard]] static constexpr auto has_member(F&& f) noexcept -> decltype(f(std::declval<T>()), true) {
+template <typename T, typename FnT>
+[[nodiscard]] static constexpr auto has_member(FnT&& f) noexcept -> decltype(f(std::declval<T>()), true) {
   return true;
 }
 

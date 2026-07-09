@@ -104,22 +104,22 @@ inline uint64_t hash_cache_string(std::string_view value) {
 
 inline uint64_t pointer_cache_identity(const void* ptr) noexcept { return reinterpret_cast<uintptr_t>(ptr); }
 
-template <typename UInt>
-inline UInt checked_unsigned_cast(double value, UInt fallback = 0) {
-  static_assert(std::is_integral_v<UInt> && std::is_unsigned_v<UInt>,
+template <typename UIntT>
+inline UIntT checked_unsigned_cast(double value, UIntT fallback = 0) {
+  static_assert(std::is_integral_v<UIntT> && std::is_unsigned_v<UIntT>,
                 "checked_unsigned_cast requires an unsigned integer target");
 
   if VUNLIKELY (!std::isfinite(value) || value < 0.0) {
     return fallback;
   }
 
-  const auto upper_bound = std::ldexp(1.0, std::numeric_limits<UInt>::digits);
+  const auto upper_bound = std::ldexp(1.0, std::numeric_limits<UIntT>::digits);
 
   if VUNLIKELY (value >= upper_bound) {
     return fallback;
   }
 
-  return static_cast<UInt>(value);
+  return static_cast<UIntT>(value);
 }
 
 #ifdef VLINK_HAS_FBS_COMPILER

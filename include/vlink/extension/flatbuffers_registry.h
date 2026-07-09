@@ -106,11 +106,11 @@ class FlatbuffersRegistry final {
   /**
    * @brief Registers the BFBS data exposed by a generated @c *BinarySchema helper type.
    *
-   * @tparam BinarySchema Generated helper exposing @c data() and @c size() static accessors.
+   * @tparam BinarySchemaT Generated helper exposing @c data() and @c size() static accessors.
    * @param name          Fully-qualified FlatBuffers root type name (table or struct).
    * @return @c true when the blob is valid FlatBuffers reflection data and is now stored.
    */
-  template <typename BinarySchema>
+  template <typename BinarySchemaT>
   static bool register_schema(const std::string& name);
 
   /**
@@ -155,9 +155,9 @@ class FlatbuffersRegistry final {
 // Details
 ////////////////////////////////////////////////////////////////
 
-template <typename BinarySchema>
+template <typename BinarySchemaT>
 inline bool FlatbuffersRegistry::register_schema(const std::string& name) {
-  return register_schema(name, BinarySchema::data(), BinarySchema::size());
+  return register_schema(name, BinarySchemaT::data(), BinarySchemaT::size());
 }
 
 inline bool FlatbuffersRegistry::register_schema(const std::string& name, const uint8_t* bfbs_data, size_t bfbs_size) {

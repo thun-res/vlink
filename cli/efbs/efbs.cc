@@ -1057,6 +1057,7 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
 
         parser->opts.output_enum_identifiers = print_enum_string;
         parser->opts.force_defaults = !ignore_default;
+        parser->opts.output_default_scalars_in_json = !ignore_default;
 
         // NOLINTNEXTLINE(readability-redundant-smartptr-get)
         const auto* error_chars = flatbuffers::custom::GenText(*parser.get(), current_bytes.data(), &print_str);

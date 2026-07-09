@@ -199,9 +199,9 @@ inline bool parse_url_selector(const Json& obj, std::string_view path, std::stri
   return true;
 }
 
-template <typename ParseOne>
+template <typename ParseOneT>
 bool load_json_entries(const std::string& path, std::string_view not_found_prefix, std::string_view parse_error_prefix,
-                       ParseOne&& parse_one) {
+                       ParseOneT&& parse_one) {
   std::error_code ec;
 
   if VUNLIKELY (!std::filesystem::exists(path, ec) || ec) {

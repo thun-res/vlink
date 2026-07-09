@@ -187,12 +187,12 @@ class VLINK_EXPORT MemoryResource : public std::pmr::memory_resource {
    * @brief @c std::allocate_shared backed by @c global_instance.
    *
    * @tparam T     Object type.
-   * @tparam Args  Constructor argument types.
+   * @tparam ArgsT Constructor argument types.
    * @param args   Constructor arguments forwarded into the new object.
    * @return Shared pointer whose control block and object share one pool allocation.
    */
-  template <typename T, typename... Args>
-  [[maybe_unused]] static std::shared_ptr<T> make_shared(Args&&... args);
+  template <typename T, typename... ArgsT>
+  [[maybe_unused]] static std::shared_ptr<T> make_shared(ArgsT&&... args);
 
   /**
    * @brief Pool-backed analogue of @c std::make_unique.
@@ -202,12 +202,12 @@ class VLINK_EXPORT MemoryResource : public std::pmr::memory_resource {
    * constructor throws.
    *
    * @tparam T     Object type.
-   * @tparam Args  Constructor argument types.
+   * @tparam ArgsT Constructor argument types.
    * @param args   Constructor arguments forwarded into the new object.
    * @return Owning pointer that returns memory to the pool on destruction.
    */
-  template <typename T, typename... Args>
-  [[maybe_unused]] static std::unique_ptr<T, MemoryResource::Deleter<T>> make_unique(Args&&... args);
+  template <typename T, typename... ArgsT>
+  [[maybe_unused]] static std::unique_ptr<T, MemoryResource::Deleter<T>> make_unique(ArgsT&&... args);
 
  protected:
   void* do_allocate(size_t bytes, size_t alignment) override;
@@ -229,21 +229,21 @@ class VLINK_EXPORT MemoryResource : public std::pmr::memory_resource {
 /// Details
 ////////////////////////////////////////////////////////////////
 
-template <typename T, typename... Args>
-std::shared_ptr<T> MemoryResource::make_shared(Args&&... args) {
+template <typename T, typename... ArgsT>
+std::shared_ptr<T> MemoryResource::make_shared(ArgsT&&... args) {
   std::pmr::polymorphic_allocator<T> alloc(&MemoryResource::global_instance());
 
-  return std::allocate_shared<T>(alloc, std::forward<Args>(args)...);
+  return std::allocate_shared<T>(alloc, std::forward<ArgsT>(args)...);
 }
 
-template <typename T, typename... Args>
-std::unique_ptr<T, MemoryResource::Deleter<T>> MemoryResource::make_unique(Args&&... args) {
+template <typename T, typename... ArgsT>
+std::unique_ptr<T, MemoryResource::Deleter<T>> MemoryResource::make_unique(ArgsT&&... args) {
   std::pmr::polymorphic_allocator<T> alloc(&MemoryResource::global_instance());
 
   T* p = alloc.allocate(1);
 
   try {
-    std::allocator_traits<decltype(alloc)>::construct(alloc, p, std::forward<Args>(args)...);
+    std::allocator_traits<decltype(alloc)>::construct(alloc, p, std::forward<ArgsT>(args)...);
   } catch (...) {
     alloc.deallocate(p, 1);
     throw;
@@ -272,17 +272,17 @@ namespace MemoryResource {  // NOLINT(readability-identifier-naming)
 /**
  * @brief Fallback @c make_shared forwarding to @c std::make_shared.
  */
-template <typename T, typename... Args>
-[[maybe_unused]] std::shared_ptr<T> make_shared(Args&&... args) {
-  return std::make_shared<T>(std::forward<Args>(args)...);
+template <typename T, typename... ArgsT>
+[[maybe_unused]] std::shared_ptr<T> make_shared(ArgsT&&... args) {
+  return std::make_shared<T>(std::forward<ArgsT>(args)...);
 }
 
 /**
  * @brief Fallback @c make_unique forwarding to @c std::make_unique.
  */
-template <typename T, typename... Args>
-[[maybe_unused]] std::unique_ptr<T> make_unique(Args&&... args) {
-  return std::make_unique<T>(std::forward<Args>(args)...);
+template <typename T, typename... ArgsT>
+[[maybe_unused]] std::unique_ptr<T> make_unique(ArgsT&&... args) {
+  return std::make_unique<T>(std::forward<ArgsT>(args)...);
 }
 
 }  // namespace MemoryResource

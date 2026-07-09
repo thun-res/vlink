@@ -35,6 +35,36 @@ VLink 提供完整的录制与回放基础设施，可将通信原语上流经�
 
 压缩管线与 MCAP 文件结构示意图随专文一并维护，见顶层 `doc/09-recording.md`。
 
+## 📦 示例数据集
+
+无需自行采集即可体验回放：官方提供一份预录 bag，可从 GitHub Release 下载。
+
+| 文件 | 大小 | 时长 | 内容 |
+|------|------|------|------|
+| `sample_r2b.vdb` | ~18 MB | ~10 s / 707 帧 | IMU + LiDAR 点云 + 相机压缩帧 |
+
+Topic 明细：
+
+| URL | 类型 | 帧数 |
+|-----|------|------|
+| `dds://sensor/imu/d455?qos=sensor` | `vmsgs.proto.sensor.Imu` | 303 |
+| `shm://sensor/lidar/pandar_xt_32_0` | `vlink::zerocopy::PointCloud` | 100 |
+| `shm://sensor/camera/compressed/d455_1` | `vlink::zerocopy::CameraFrame` | 304 |
+
+采集自 NVIDIA r2b（Robotics-2-Benchmark）公开数据集 `r2b_storage`，转录为 VLink bag 格式；使用前请遵循原数据集许可证。
+
+```bash
+# 下载
+curl -L -o sample_r2b.vdb \
+  https://github.com/thun-res/vmsgs/releases/download/sample-data/sample_r2b.vdb
+
+# 查看录制信息
+vlink-bag info sample_r2b.vdb
+
+# 播放录制信息
+vlink-player sample_r2b.vdb
+```
+
 ## 📚 参考
 
 - 顶层 `doc/09-recording.md` —— 录制系统完整章节

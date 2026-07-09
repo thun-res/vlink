@@ -447,6 +447,309 @@ class CustomFieldValuePrinter final : public google::protobuf::TextFormat::FastF
   mutable google::protobuf::FieldDescriptor* current_field_{nullptr};
 };
 
+#if GOOGLE_PROTOBUF_VERSION >= 3006000
+
+[[maybe_unused]] static bool is_no_presence_default_scalar(const google::protobuf::Message& message,
+                                                           const google::protobuf::FieldDescriptor* field) {
+  if VUNLIKELY (field == nullptr || field->is_repeated() ||
+                field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
+    return false;
+  }
+
+#if GOOGLE_PROTOBUF_VERSION >= 3012000
+  if (field->has_presence()) {
+    return false;
+  }
+#else
+  if (field->is_extension() || field->containing_oneof() != nullptr ||
+      field->file()->syntax() != google::protobuf::FileDescriptor::SYNTAX_PROTO3) {
+    return false;
+  }
+#endif
+
+  if (field->type() == google::protobuf::FieldDescriptor::TYPE_BYTES ||
+      (ignore_string && field->type() == google::protobuf::FieldDescriptor::TYPE_STRING)) {
+    return false;
+  }
+
+  const auto* reflection = message.GetReflection();
+
+  if (reflection->HasField(message, field)) {
+    return false;
+  }
+
+  switch (field->cpp_type()) {
+    case google::protobuf::FieldDescriptor::CPPTYPE_INT32:
+      return reflection->GetInt32(message, field) == field->default_value_int32();
+    case google::protobuf::FieldDescriptor::CPPTYPE_INT64:
+      return reflection->GetInt64(message, field) == field->default_value_int64();
+    case google::protobuf::FieldDescriptor::CPPTYPE_UINT32:
+      return reflection->GetUInt32(message, field) == field->default_value_uint32();
+    case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
+      return reflection->GetUInt64(message, field) == field->default_value_uint64();
+    case google::protobuf::FieldDescriptor::CPPTYPE_DOUBLE:
+      return reflection->GetDouble(message, field) == field->default_value_double();
+    case google::protobuf::FieldDescriptor::CPPTYPE_FLOAT:
+      return reflection->GetFloat(message, field) == field->default_value_float();
+    case google::protobuf::FieldDescriptor::CPPTYPE_BOOL:
+      return reflection->GetBool(message, field) == field->default_value_bool();
+    case google::protobuf::FieldDescriptor::CPPTYPE_STRING:
+#if GOOGLE_PROTOBUF_VERSION >= 6030000
+      return reflection->GetString(message, field) == std::string(field->default_value_string());
+#else
+      return reflection->GetString(message, field) == field->default_value_string();
+#endif
+    case google::protobuf::FieldDescriptor::CPPTYPE_ENUM:
+      return reflection->GetEnum(message, field) == field->default_value_enum();
+    case google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE:
+      return false;
+  }
+
+  return false;
+}
+
+[[maybe_unused]] static bool field_name_passes_filter(const google::protobuf::FieldDescriptor* field) {
+  if (filter_list.empty()) {
+    return true;
+  }
+
+  bool skip = black_mode ? false : true;
+
+#if GOOGLE_PROTOBUF_VERSION >= 6030000
+  std::string left_str = std::string(field->name());
+#else
+  std::string left_str = field->name();
+#endif
+
+  std::transform(left_str.begin(), left_str.end(), left_str.begin(), [](char& c) { return std::tolower(c); });
+
+  for (const auto& f : filter_list) {
+    if (f.empty()) {
+      continue;
+    }
+
+    std::string right_str = f;
+    std::transform(right_str.begin(), right_str.end(), right_str.begin(), [](char& c) { return std::tolower(c); });
+
+    if (left_str.find(right_str) != std::string::npos) {
+      skip = black_mode ? true : false;
+      break;
+    }
+  }
+
+  return !skip;
+}
+
+static void print_message_with_defaults(const google::protobuf::TextFormat::Printer* printer,
+                                        const google::protobuf::TextFormat::FastFieldValuePrinter* name_printer,
+                                        const google::protobuf::Message& message, bool single_line_mode,
+                                        bool root_level, google::protobuf::TextFormat::BaseTextGenerator* generator);
+
+[[maybe_unused]] static bool map_entry_key_less(const google::protobuf::FieldDescriptor* key_field,
+                                                const google::protobuf::Message* lhs,
+                                                const google::protobuf::Message* rhs) {
+  const auto* lhs_reflection = lhs->GetReflection();
+  const auto* rhs_reflection = rhs->GetReflection();
+
+  switch (key_field->cpp_type()) {
+    case google::protobuf::FieldDescriptor::CPPTYPE_BOOL:
+      return !lhs_reflection->GetBool(*lhs, key_field) && rhs_reflection->GetBool(*rhs, key_field);
+    case google::protobuf::FieldDescriptor::CPPTYPE_INT32:
+      return lhs_reflection->GetInt32(*lhs, key_field) < rhs_reflection->GetInt32(*rhs, key_field);
+    case google::protobuf::FieldDescriptor::CPPTYPE_INT64:
+      return lhs_reflection->GetInt64(*lhs, key_field) < rhs_reflection->GetInt64(*rhs, key_field);
+    case google::protobuf::FieldDescriptor::CPPTYPE_UINT32:
+      return lhs_reflection->GetUInt32(*lhs, key_field) < rhs_reflection->GetUInt32(*rhs, key_field);
+    case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
+      return lhs_reflection->GetUInt64(*lhs, key_field) < rhs_reflection->GetUInt64(*rhs, key_field);
+    case google::protobuf::FieldDescriptor::CPPTYPE_STRING:
+      return lhs_reflection->GetString(*lhs, key_field) < rhs_reflection->GetString(*rhs, key_field);
+    default:
+      return false;
+  }
+}
+
+[[maybe_unused]] static void collect_sorted_map_entries(const google::protobuf::Reflection* reflection,
+                                                        const google::protobuf::Message& message,
+                                                        const google::protobuf::FieldDescriptor* field,
+                                                        std::vector<const google::protobuf::Message*>* entries) {
+  const int size = reflection->FieldSize(message, field);
+
+  entries->reserve(static_cast<size_t>(size));
+
+  for (int j = 0; j < size; ++j) {
+    entries->push_back(&reflection->GetRepeatedMessage(message, field, j));
+  }
+
+  const google::protobuf::FieldDescriptor* key_field = field->message_type()->field(0);
+
+  std::stable_sort(entries->begin(), entries->end(),
+                   [key_field](const google::protobuf::Message* lhs, const google::protobuf::Message* rhs) {
+                     return map_entry_key_less(key_field, lhs, rhs);
+                   });
+}
+
+[[maybe_unused]] static void print_one_field(const google::protobuf::TextFormat::Printer* printer,
+                                             const google::protobuf::TextFormat::FastFieldValuePrinter* name_printer,
+                                             const google::protobuf::Message& message,
+                                             const google::protobuf::Reflection* reflection,
+                                             const google::protobuf::FieldDescriptor* field, bool single_line_mode,
+                                             google::protobuf::TextFormat::BaseTextGenerator* generator) {
+  if (!use_long_repeated && field->is_repeated() &&
+      field->cpp_type() != google::protobuf::FieldDescriptor::CPPTYPE_STRING &&
+      field->cpp_type() != google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
+    const int size = reflection->FieldSize(message, field);
+
+    name_printer->PrintFieldName(message, -1, size, reflection, field, generator);
+    generator->PrintLiteral(": [");
+
+    for (int i = 0; i < size; ++i) {
+      if (i > 0) {
+        generator->PrintLiteral(", ");
+      }
+
+      std::string value;
+      printer->PrintFieldValueToString(message, field, i, &value);
+      generator->PrintString(value);
+    }
+
+    if (single_line_mode) {
+      generator->PrintLiteral("] ");
+    } else {
+      generator->PrintLiteral("]\n");
+    }
+
+    return;
+  }
+
+  int count = 0;
+
+  if (field->is_repeated()) {
+    count = reflection->FieldSize(message, field);
+  } else if (reflection->HasField(message, field) || field->containing_type()->options().map_entry()) {
+    count = 1;
+  }
+
+  const bool is_map = field->is_map();
+  std::vector<const google::protobuf::Message*> sorted_map_entries;
+
+  if (is_map) {
+    collect_sorted_map_entries(reflection, message, field, &sorted_map_entries);
+  }
+
+  for (int j = 0; j < count; ++j) {
+    const int field_index = field->is_repeated() ? j : -1;
+
+    name_printer->PrintFieldName(message, field_index, count, reflection, field, generator);
+
+    if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
+      const google::protobuf::Message* sub_message = nullptr;
+
+      if (!field->is_repeated()) {
+        sub_message = &reflection->GetMessage(message, field);
+      } else if (is_map) {
+        sub_message = sorted_map_entries[j];
+      } else {
+        sub_message = &reflection->GetRepeatedMessage(message, field, j);
+      }
+
+      name_printer->PrintMessageStart(*sub_message, field_index, count, single_line_mode, generator);
+      generator->Indent();
+      print_message_with_defaults(printer, name_printer, *sub_message, single_line_mode, false, generator);
+      generator->Outdent();
+      name_printer->PrintMessageEnd(*sub_message, field_index, count, single_line_mode, generator);
+    } else {
+      std::string value;
+      printer->PrintFieldValueToString(message, field, field_index, &value);
+
+      generator->PrintLiteral(": ");
+      generator->PrintString(value);
+
+      if (single_line_mode) {
+        generator->PrintLiteral(" ");
+      } else {
+        generator->PrintLiteral("\n");
+      }
+    }
+  }
+}
+
+[[maybe_unused]] static void print_message_with_defaults(
+    const google::protobuf::TextFormat::Printer* printer,
+    const google::protobuf::TextFormat::FastFieldValuePrinter* name_printer, const google::protobuf::Message& message,
+    bool single_line_mode, bool root_level, google::protobuf::TextFormat::BaseTextGenerator* generator) {
+  const auto* descriptor = message.GetDescriptor();
+  const auto* reflection = message.GetReflection();
+
+  if VUNLIKELY (descriptor == nullptr || reflection == nullptr) {
+    return;
+  }
+
+  if (descriptor->options().map_entry()) {
+    print_one_field(printer, name_printer, message, reflection, descriptor->field(0), single_line_mode, generator);
+    print_one_field(printer, name_printer, message, reflection, descriptor->field(1), single_line_mode, generator);
+
+    return;
+  }
+
+  std::vector<const google::protobuf::FieldDescriptor*> fields;
+
+  reflection->ListFields(message, &fields);
+
+  if (!ignore_default && !single_line_mode) {
+    for (int i = 0; i < descriptor->field_count(); ++i) {
+      const auto* field = descriptor->field(i);
+
+      if (!is_no_presence_default_scalar(message, field)) {
+        continue;
+      }
+
+      if (root_level && !field_name_passes_filter(field)) {
+        continue;
+      }
+
+      fields.push_back(field);
+    }
+
+    std::stable_sort(fields.begin(), fields.end(),
+                     [](const google::protobuf::FieldDescriptor* lhs, const google::protobuf::FieldDescriptor* rhs) {
+                       return lhs->number() < rhs->number();
+                     });
+  }
+
+  for (const auto* field : fields) {
+    if (is_no_presence_default_scalar(message, field)) {
+      name_printer->PrintFieldName(message, -1, 1, reflection, field, generator);
+      generator->PrintLiteral(": ");
+
+      std::string value;
+      printer->PrintFieldValueToString(message, field, -1, &value);
+      generator->PrintString(value);
+      generator->PrintLiteral("\n");
+    } else {
+      print_one_field(printer, name_printer, message, reflection, field, single_line_mode, generator);
+    }
+  }
+}
+
+class DefaultScalarMessagePrinter final : public google::protobuf::TextFormat::MessagePrinter {
+ public:
+  DefaultScalarMessagePrinter(const google::protobuf::TextFormat::Printer* printer,
+                              const google::protobuf::TextFormat::FastFieldValuePrinter* name_printer)
+      : printer_(printer), name_printer_(name_printer) {}
+
+  void Print(const google::protobuf::Message& message, bool single_line_mode,
+             google::protobuf::TextFormat::BaseTextGenerator* generator) const override {
+    print_message_with_defaults(printer_, name_printer_, message, single_line_mode, true, generator);
+  }
+
+ private:
+  const google::protobuf::TextFormat::Printer* printer_{nullptr};
+  const google::protobuf::TextFormat::FastFieldValuePrinter* name_printer_{nullptr};
+};
+
+#endif  // GOOGLE_PROTOBUF_VERSION >= 3006000
+
 [[maybe_unused]] static bool load_proto_for_file(const std::string& filename, ::google::protobuf::Message* message) {
   if (message == nullptr) {
     return false;
@@ -475,11 +778,16 @@ class CustomFieldValuePrinter final : public google::protobuf::TextFormat::FastF
     return false;
   }
 
-  static google::protobuf::TextFormat::Printer printer;
+  google::protobuf::TextFormat::Printer printer;
+  auto* value_printer = new CustomFieldValuePrinter;
 
-  printer.SetDefaultFieldValuePrinter(new CustomFieldValuePrinter);
+  printer.SetDefaultFieldValuePrinter(value_printer);
   printer.SetHideUnknownFields(true);
   printer.SetUseShortRepeatedPrimitives(!use_long_repeated);
+
+#if GOOGLE_PROTOBUF_VERSION >= 3006000
+  printer.RegisterMessagePrinter(message->GetDescriptor(), new DefaultScalarMessagePrinter(&printer, value_printer));
+#endif
 
   return printer.PrintToString(*message, &content);
 }

@@ -842,57 +842,57 @@ const perception::FieldMapping* find_slot(const SlotMap& slot_map, const char* n
   return it == slot_map.end() ? nullptr : it->second;
 }
 
-template <typename Reader, typename Elem>
-void read_double(const Reader& reader, Elem elem, const SlotMap& slot_map, const char* name, double& dst) {
+template <typename ReaderT, typename ElemT>
+void read_double(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, double& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
     dst = reader.value(elem, *mapping);
   }
 }
 
-template <typename Reader, typename Elem>
-void read_uint32(const Reader& reader, Elem elem, const SlotMap& slot_map, const char* name, uint32_t& dst) {
+template <typename ReaderT, typename ElemT>
+void read_uint32(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, uint32_t& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
     dst = to_uint32(reader.value(elem, *mapping));
   }
 }
 
-template <typename Reader, typename Elem>
-void read_uint8(const Reader& reader, Elem elem, const SlotMap& slot_map, const char* name, uint8_t& dst) {
+template <typename ReaderT, typename ElemT>
+void read_uint8(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, uint8_t& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
     dst = to_uint8(reader.value(elem, *mapping));
   }
 }
 
-template <typename Reader, typename Elem>
-void read_int32(const Reader& reader, Elem elem, const SlotMap& slot_map, const char* name, int32_t& dst) {
+template <typename ReaderT, typename ElemT>
+void read_int32(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, int32_t& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
     dst = static_cast<int32_t>(std::llround(reader.value(elem, *mapping)));
   }
 }
 
-template <typename Reader, typename Elem>
-void read_int(const Reader& reader, Elem elem, const SlotMap& slot_map, const char* name, int& dst) {
+template <typename ReaderT, typename ElemT>
+void read_int(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, int& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
     dst = static_cast<int>(std::llround(reader.value(elem, *mapping)));
   }
 }
 
-template <typename Reader, typename Elem>
-void read_float(const Reader& reader, Elem elem, const SlotMap& slot_map, const char* name, float& dst) {
+template <typename ReaderT, typename ElemT>
+void read_float(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, float& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
     dst = static_cast<float>(reader.value(elem, *mapping));
   }
 }
 
-template <typename Reader, typename Elem>
-void read_string(const Reader& reader, Elem elem, const SlotMap& slot_map, const char* name, std::string& dst) {
+template <typename ReaderT, typename ElemT>
+void read_string(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, std::string& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
     dst = reader.text(elem, *mapping);
   }
 }
 
-template <typename Reader, typename Elem>
-BoxObject read_box(const Reader& reader, Elem elem, const SlotMap& slot_map) {
+template <typename ReaderT, typename ElemT>
+BoxObject read_box(const ReaderT& reader, ElemT elem, const SlotMap& slot_map) {
   BoxObject box;
 
   read_double(reader, elem, slot_map, "x", box.position[0]);
@@ -943,8 +943,8 @@ BoxObject read_box(const Reader& reader, Elem elem, const SlotMap& slot_map) {
   return box;
 }
 
-template <typename Reader, typename Elem>
-ParkingSlot read_slot(const Reader& reader, Elem elem, const SlotMap& slot_map) {
+template <typename ReaderT, typename ElemT>
+ParkingSlot read_slot(const ReaderT& reader, ElemT elem, const SlotMap& slot_map) {
   ParkingSlot slot;
 
   static const char* const kCornerNames[4][3] = {
@@ -968,8 +968,8 @@ ParkingSlot read_slot(const Reader& reader, Elem elem, const SlotMap& slot_map) 
   return slot;
 }
 
-template <typename Reader, typename Elem>
-PolyPoint read_point(const Reader& reader, Elem elem, const SlotMap& slot_map) {
+template <typename ReaderT, typename ElemT>
+PolyPoint read_point(const ReaderT& reader, ElemT elem, const SlotMap& slot_map) {
   PolyPoint point;
 
   read_double(reader, elem, slot_map, "x", point.x);
@@ -982,8 +982,8 @@ PolyPoint read_point(const Reader& reader, Elem elem, const SlotMap& slot_map) {
   return point;
 }
 
-template <typename Reader, typename Elem>
-void read_polyline_attributes(const Reader& reader, Elem elem, const SlotMap& slot_map, Polyline& line) {
+template <typename ReaderT, typename ElemT>
+void read_polyline_attributes(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, Polyline& line) {
   read_uint32(reader, elem, slot_map, "color", line.color);
   read_int(reader, elem, slot_map, "type", line.type);
   read_string(reader, elem, slot_map, "label", line.label);
@@ -999,10 +999,10 @@ bool point_is_finite(const PolyPoint& point) {
   return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
 }
 
-template <typename Reader>
-void fill_boxes(const Reader& reader, const std::string& collection, const SlotMap& slot_map,
+template <typename ReaderT>
+void fill_boxes(const ReaderT& reader, const std::string& collection, const SlotMap& slot_map,
                 std::vector<BoxObject>& out) {
-  std::vector<typename Reader::Elem> elems;
+  std::vector<typename ReaderT::Elem> elems;
   reader.collect(reader.root(), collection, elems);
   out.reserve(out.size() + elems.size());
 
@@ -1015,10 +1015,10 @@ void fill_boxes(const Reader& reader, const std::string& collection, const SlotM
   }
 }
 
-template <typename Reader>
-void fill_slots(const Reader& reader, const std::string& collection, const SlotMap& slot_map,
+template <typename ReaderT>
+void fill_slots(const ReaderT& reader, const std::string& collection, const SlotMap& slot_map,
                 std::vector<ParkingSlot>& out) {
-  std::vector<typename Reader::Elem> elems;
+  std::vector<typename ReaderT::Elem> elems;
   reader.collect(reader.root(), collection, elems);
   out.reserve(out.size() + elems.size());
 
@@ -1031,10 +1031,10 @@ void fill_slots(const Reader& reader, const std::string& collection, const SlotM
   }
 }
 
-template <typename Reader>
-void fill_polylines(const Reader& reader, const std::string& outer_path, const std::string& inner_path,
+template <typename ReaderT>
+void fill_polylines(const ReaderT& reader, const std::string& outer_path, const std::string& inner_path,
                     const SlotMap& slot_map, std::vector<Polyline>& out) {
-  std::vector<typename Reader::Elem> outer;
+  std::vector<typename ReaderT::Elem> outer;
   reader.collect(reader.root(), outer_path, outer);
 
   if (inner_path.empty()) {
@@ -1063,7 +1063,7 @@ void fill_polylines(const Reader& reader, const std::string& outer_path, const s
     Polyline line;
     read_polyline_attributes(reader, line_elem, slot_map, line);
 
-    std::vector<typename Reader::Elem> inner;
+    std::vector<typename ReaderT::Elem> inner;
     reader.collect(line_elem, inner_path, inner);
     line.points.reserve(inner.size());
 
@@ -1081,9 +1081,9 @@ void fill_polylines(const Reader& reader, const std::string& outer_path, const s
   }
 }
 
-template <typename Reader>
-void fill_cloud(const Reader& reader, const std::string& collection, const SlotMap& slot_map, Layer& out) {
-  std::vector<typename Reader::Elem> elems;
+template <typename ReaderT>
+void fill_cloud(const ReaderT& reader, const std::string& collection, const SlotMap& slot_map, Layer& out) {
+  std::vector<typename ReaderT::Elem> elems;
   reader.collect(reader.root(), collection, elems);
   out.cloud.reserve(out.cloud.size() + elems.size());
 
@@ -1106,9 +1106,9 @@ void fill_cloud(const Reader& reader, const std::string& collection, const SlotM
   }
 }
 
-template <typename Reader>
-void fill_grid(const Reader& reader, const std::string& collection, const SlotMap& slot_map, Layer& out) {
-  std::vector<typename Reader::Elem> elems;
+template <typename ReaderT>
+void fill_grid(const ReaderT& reader, const std::string& collection, const SlotMap& slot_map, Layer& out) {
+  std::vector<typename ReaderT::Elem> elems;
   reader.collect(reader.root(), collection, elems);
 
   if (elems.empty()) {
@@ -1144,8 +1144,8 @@ void fill_grid(const Reader& reader, const std::string& collection, const SlotMa
   out.grid_valid = grid.width > 0 && grid.height > 0 && !grid.cells.empty();
 }
 
-template <typename Reader>
-void decode_with_reader(const Reader& reader, const PerceptionConfig::MappingRule& rule, Layer& out) {
+template <typename ReaderT>
+void decode_with_reader(const ReaderT& reader, const PerceptionConfig::MappingRule& rule, Layer& out) {
   out.type = rule.type;
 
   const std::vector<std::string> collections = split_paths(rule.collection.toStdString());
@@ -1570,8 +1570,8 @@ bool is_hud_text_slot(const std::string& slot) {
   return slot == "gear" || slot == "turn_signal" || slot == "drive_mode";
 }
 
-template <typename Reader>
-void fill_hud(const Reader& reader, const PerceptionConfig::MappingRule& rule, std::vector<HudField>& out) {
+template <typename ReaderT>
+void fill_hud(const ReaderT& reader, const PerceptionConfig::MappingRule& rule, std::vector<HudField>& out) {
   out.reserve(rule.field_mappings.size());
 
   for (const auto& mapping : rule.field_mappings) {

@@ -256,14 +256,14 @@ inline bool is_allowed_by_filters(std::string_view value, const std::vector<std:
   return !matches_any_filter(value, blacklist_exact, blacklist_patterns);
 }
 
-template <typename Owner>
-inline bool is_allowed_by_filters_cached(const Owner* owner, std::string_view value,
+template <typename OwnerT>
+inline bool is_allowed_by_filters_cached(const OwnerT* owner, std::string_view value,
                                          const std::vector<std::string>& whitelist_exact,
                                          const std::vector<std::string>& whitelist_patterns,
                                          const std::vector<std::string>& blacklist_exact,
                                          const std::vector<std::string>& blacklist_patterns) {
   struct FilterCacheEntry final {
-    const Owner* owner{nullptr};
+    const OwnerT* owner{nullptr};
     size_t hash{0};
     std::string value;
     bool allowed{false};

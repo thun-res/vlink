@@ -46,8 +46,8 @@ namespace vlink {
 namespace webviz {
 
 #ifdef VLINK_HAS_FBS_COMPILER
-template <typename Resolver>
-bool resolve_thread_local_fbs_schema(const std::string& ser, const void* owner, Resolver&& resolver,
+template <typename ResolverT>
+bool resolve_thread_local_fbs_schema(const std::string& ser, const void* owner, ResolverT&& resolver,
                                      const reflection::Schema*& out_schema) {
   struct ThreadLocalFbsSchemaCache final {
     const void* owner{nullptr};

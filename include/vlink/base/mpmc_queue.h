@@ -272,11 +272,11 @@ class MpmcQueue : public MpmcQueueBase {
    * silently when @c notify_to_quit is observed.
    *
    * @tparam BehaviorT  Notification behaviour.  Default: @c kNoBehavior.
-   * @tparam Args       Constructor argument types forwarded to @c T.
+   * @tparam ArgsT      Constructor argument types forwarded to @c T.
    * @param args        Arguments forwarded to @c T 's constructor.
    */
-  template <Behavior BehaviorT = kNoBehavior, typename... Args>
-  void emplace(Args&&... args) noexcept VLINK_NO_INSTRUMENT;
+  template <Behavior BehaviorT = kNoBehavior, typename... ArgsT>
+  void emplace(ArgsT&&... args) noexcept VLINK_NO_INSTRUMENT;
 
   /**
    * @brief Non-blocking in-place construction.
@@ -287,36 +287,36 @@ class MpmcQueue : public MpmcQueueBase {
    * publishes the slot and, when @c BehaviorT is @c kConditionBehavior, notifies a waiter.
    *
    * @tparam BehaviorT  Notification behaviour.  Default: @c kNoBehavior.
-   * @tparam Args       Constructor argument types forwarded to @c T.
+   * @tparam ArgsT      Constructor argument types forwarded to @c T.
    * @param args        Arguments forwarded to @c T 's constructor.
    * @return @c true on successful enqueue; @c false on full queue or quit.
    */
-  template <Behavior BehaviorT = kNoBehavior, typename... Args>
-  [[nodiscard]] bool try_emplace(Args&&... args) noexcept VLINK_NO_INSTRUMENT;
+  template <Behavior BehaviorT = kNoBehavior, typename... ArgsT>
+  [[nodiscard]] bool try_emplace(ArgsT&&... args) noexcept VLINK_NO_INSTRUMENT;
 
   /**
    * @brief Pushes a perfect-forwarded value, blocking until a slot is available.
    *
    * @details
-   * Wrapper around @c emplace<BehaviorT>(std::forward<P>(v)).
+   * Wrapper around @c emplace<BehaviorT>(std::forward<ValueT>(v)).
    *
    * @tparam BehaviorT  Notification behaviour.  Default: @c kNoBehavior.
-   * @tparam P          Value type accepted by @c T 's constructor.
+   * @tparam ValueT     Value type accepted by @c T 's constructor.
    * @param v  Value to push.
    */
-  template <Behavior BehaviorT = kNoBehavior, typename P>
-  void push(P&& v) noexcept VLINK_NO_INSTRUMENT;
+  template <Behavior BehaviorT = kNoBehavior, typename ValueT>
+  void push(ValueT&& v) noexcept VLINK_NO_INSTRUMENT;
 
   /**
    * @brief Non-blocking push wrapper around @c try_emplace.
    *
    * @tparam BehaviorT  Notification behaviour.  Default: @c kNoBehavior.
-   * @tparam P          Value type accepted by @c T 's constructor.
+   * @tparam ValueT     Value type accepted by @c T 's constructor.
    * @param v  Value to push.
    * @return @c true on successful enqueue; @c false on full queue or quit.
    */
-  template <Behavior BehaviorT = kNoBehavior, typename P>
-  [[nodiscard]] bool try_push(P&& v) noexcept VLINK_NO_INSTRUMENT;
+  template <Behavior BehaviorT = kNoBehavior, typename ValueT>
+  [[nodiscard]] bool try_push(ValueT&& v) noexcept VLINK_NO_INSTRUMENT;
 
   /**
    * @brief Pops a value by move; blocks until an element is available.
@@ -394,9 +394,9 @@ class MpmcQueue : public MpmcQueueBase {
       }
     }
 
-    template <typename... Args>
-    void construct(Args&&... args) noexcept {
-      new (storage.data()) T(std::forward<Args>(args)...);
+    template <typename... ArgsT>
+    void construct(ArgsT&&... args) noexcept {
+      new (storage.data()) T(std::forward<ArgsT>(args)...);
     }
 
     void destroy() noexcept { std::launder(reinterpret_cast<T*>(storage.data()))->~T(); }
@@ -457,8 +457,8 @@ inline MpmcQueue<T>::~MpmcQueue() noexcept {
 }
 
 template <typename T>
-template <typename MpmcQueue<T>::Behavior BehaviorT, typename... Args>
-inline void MpmcQueue<T>::emplace(Args&&... args) noexcept {
+template <typename MpmcQueue<T>::Behavior BehaviorT, typename... ArgsT>
+inline void MpmcQueue<T>::emplace(ArgsT&&... args) noexcept {
   if VUNLIKELY (quit_flag_.value.load(kMemoryOrderAcquire)) {
     return;
   }
@@ -487,7 +487,7 @@ inline void MpmcQueue<T>::emplace(Args&&... args) noexcept {
     }
   }
 
-  chunk.construct(std::forward<Args>(args)...);
+  chunk.construct(std::forward<ArgsT>(args)...);
   chunk.turn.store((turn(head) * 2U) + 1U, kMemoryOrderRelease);
 
   if constexpr (BehaviorT == kConditionBehavior) {
@@ -497,8 +497,8 @@ inline void MpmcQueue<T>::emplace(Args&&... args) noexcept {
 }
 
 template <typename T>
-template <typename MpmcQueue<T>::Behavior BehaviorT, typename... Args>
-inline bool MpmcQueue<T>::try_emplace(Args&&... args) noexcept {
+template <typename MpmcQueue<T>::Behavior BehaviorT, typename... ArgsT>
+inline bool MpmcQueue<T>::try_emplace(ArgsT&&... args) noexcept {
   if VUNLIKELY (quit_flag_.value.load(kMemoryOrderAcquire)) {
     return false;
   }
@@ -510,7 +510,7 @@ inline bool MpmcQueue<T>::try_emplace(Args&&... args) noexcept {
 
     if VLIKELY (turn(head) * 2U == chunk.turn.load(kMemoryOrderAcquire)) {
       if (head_.compare_exchange_strong(head, head + 1U, std::memory_order_seq_cst, std::memory_order_seq_cst)) {
-        chunk.construct(std::forward<Args>(args)...);
+        chunk.construct(std::forward<ArgsT>(args)...);
         chunk.turn.store((turn(head) * 2U) + 1U, kMemoryOrderRelease);
 
         if constexpr (BehaviorT == kConditionBehavior) {
@@ -532,15 +532,15 @@ inline bool MpmcQueue<T>::try_emplace(Args&&... args) noexcept {
 }
 
 template <typename T>
-template <typename MpmcQueue<T>::Behavior BehaviorT, typename P>
-inline void MpmcQueue<T>::push(P&& v) noexcept {
-  emplace<BehaviorT>(std::forward<P>(v));
+template <typename MpmcQueue<T>::Behavior BehaviorT, typename ValueT>
+inline void MpmcQueue<T>::push(ValueT&& v) noexcept {
+  emplace<BehaviorT>(std::forward<ValueT>(v));
 }
 
 template <typename T>
-template <typename MpmcQueue<T>::Behavior BehaviorT, typename P>
-inline bool MpmcQueue<T>::try_push(P&& v) noexcept {
-  return try_emplace<BehaviorT>(std::forward<P>(v));
+template <typename MpmcQueue<T>::Behavior BehaviorT, typename ValueT>
+inline bool MpmcQueue<T>::try_push(ValueT&& v) noexcept {
+  return try_emplace<BehaviorT>(std::forward<ValueT>(v));
 }
 
 template <typename T>
