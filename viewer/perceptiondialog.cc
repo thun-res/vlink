@@ -969,9 +969,10 @@ void PerceptionDialog::init_osg() {
         car_node_ = result.getNode();
 
         if (car_node_.valid()) {
+          car_node_->setNodeMask(0U);
           root_group_->addChild(car_node_);
           ui->checkBox_car->setEnabled(true);
-          ui->checkBox_car->setChecked(true);
+          ui->checkBox_car->setChecked(false);
         }
       }
     }
