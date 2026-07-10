@@ -58,13 +58,15 @@
  *
  * | Hook                | Dir   | Purpose                                                       |
  * | ------------------- | ----- | ------------------------------------------------------------- |
- * | get_version_info()  | both  | After load: return a populated VersionInfo                    |
  * | bind_direction()    | both  | At bind time: stored, observable via get_direction()          |
  * | register_callback() | both  | At bind time: store the forwarding sink                       |
  * | convert_url_meta()  | read  | Once per URL at open: true = keep, false = drop               |
  * | on_read()           | read  | Every replayed frame: re-emit via do_callback()               |
  * | on_write()          | write | Every frame before persist: re-emit via do_callback()         |
  * | do_callback()       | both  | Forward one frame to the sink (drop = not call)               |
+ *
+ * @c on_read() and @c on_write() are both pure: an implementation defines both even when it serves a single
+ * direction, leaving the unused one as a trivial pass-through (@c do_callback(frame)) or an empty body.
  *
  * Lifecycle:
  *
@@ -79,8 +81,6 @@
  * @code
  * class MyReadPlugin : public vlink::BagPluginInterface {
  *  public:
- *   VersionInfo get_version_info() const override { return {"my-read", "1.0.0", __DATE__, "", ""}; }
- *
  *   bool convert_url_meta(std::string& url, std::string& ser_type,
  *                         vlink::SchemaType& schema_type) override {
  *     if (url.rfind("dds://legacy/", 0) == 0) { url.replace(0, 13, "dds://v2/"); }
@@ -92,8 +92,10 @@
  *   void on_read(const vlink::Frame& frame) override {
  *     do_callback(frame);  // forward downstream (drop by not calling)
  *   }
+ *
+ *   void on_write(const vlink::Frame& frame) override { do_callback(frame); }  // unused on the read side
  * };
- * VLINK_PLUGIN_DECLARE(MyReadPlugin, 1, 0)
+ * VLINK_PLUGIN_DECLARE(MyReadPlugin, 2, 0)
  * @endcode
  *
  * @par Write-side example (sliding-window reorder by true data-plane time before persist)
@@ -104,7 +106,7 @@
  *     processor_.register_output_callback([this](const vlink::Frame& frame) { do_callback(frame); });
  *   }
  *
- *   VersionInfo get_version_info() const override { return {"my-write", "1.0.0", __DATE__, "", ""}; }
+ *   void on_read(const vlink::Frame& frame) override { do_callback(frame); }  // unused on the write side
  *
  *   void on_write(const vlink::Frame& frame) override {
  *     const int64_t data_timestamp = parse_header_time(frame.data);  // plugin extracts the data-plane time
@@ -117,7 +119,7 @@
  *  private:
  *   vlink::BagProcessor processor_;
  * };
- * VLINK_PLUGIN_DECLARE(MyWritePlugin, 1, 0)
+ * VLINK_PLUGIN_DECLARE(MyWritePlugin, 2, 0)
  * @endcode
  */
 
@@ -140,10 +142,9 @@ namespace vlink {
  * @details
  * The host binds an instance through @c BagReader::bind_plugin_interface() or
  * @c BagWriter::bind_plugin_interface().  At bind time the host calls @c bind_direction() to
- * record which side the plugin serves and @c register_callback() to supply the forwarding sink.
- * Every hook carries a default implementation, so an implementation overrides only the hooks
- * relevant to its direction (plus the mandatory @c get_version_info()).  Implementations are
- * expected to be thread-compatible with the host's loop thread.
+ * record which side the plugin serves and @c register_callback() to supply the forwarding sink.  The frame
+ * hooks @c on_read() and @c on_write() are pure and must both be defined; @c convert_url_meta() and @c flush()
+ * carry defaults.  Implementations are expected to be thread-compatible with the host's loop thread.
  */
 class BagPluginInterface {
   VLINK_PLUGIN_REGISTER(BagPluginInterface)
@@ -163,18 +164,6 @@ class BagPluginInterface {
   };
 
   /**
-   * @struct VersionInfo
-   * @brief Build identity returned by @c get_version_info().
-   */
-  struct VersionInfo final {
-    std::string name;       ///< Human-readable plugin display name.
-    std::string version;    ///< Semantic version (e.g. @c "1.2.3").
-    std::string timestamp;  ///< Build timestamp string.
-    std::string tag;        ///< Source-control tag or label.
-    std::string commit_id;  ///< Source-control commit hash.
-  };
-
-  /**
    * @brief Forwarding sink used by @c do_callback() to re-emit a frame downstream.
    *
    * @details
@@ -183,13 +172,6 @@ class BagPluginInterface {
    * toward persistence.
    */
   using Callback = FrameCallback;
-
-  /**
-   * @brief Returns the build identity used by the host for logging and diagnostics.
-   *
-   * @return Populated @c VersionInfo describing this plugin.
-   */
-  [[nodiscard]] virtual VersionInfo get_version_info() const = 0;
 
   /**
    * @brief Records the binding direction so the plugin can branch on read vs write.
@@ -245,16 +227,16 @@ class BagPluginInterface {
    * Called for every replayed frame after timing pacing.  Forward it downstream by calling
    * @c do_callback(); transforming the payload, dropping the frame (by not emitting), fanning it out
    * (emitting several), or buffering and re-emitting frames @e reordered by data-plane time (e.g. via
-   * @c BagProcessor) is permitted.  The default implementation forwards the frame unchanged.
+   * @c BagProcessor) is permitted.
    *
-   * @note @p frame::ser_type / @c schema_type are empty on the read side; query
+   * @note @c Frame::ser_type / @c schema_type are empty on the read side; query
    *       @c BagReader::get_ser_type() / @c get_schema_type() (or stash them from @c convert_url_meta())
    *       if needed.  The payload is a shallow view valid for the duration of the call; copy it before
    *       buffering for asynchronous emit.
    *
    * @param frame Replayed frame.
    */
-  virtual void on_read(const Frame& frame);
+  virtual void on_read(const Frame& frame) = 0;
 
   /**
    * @brief Intercepts a frame before it is persisted (write side).
@@ -264,7 +246,7 @@ class BagPluginInterface {
    * @c do_callback().  Transcoding (rewrite @c frame.data plus @c frame.ser_type / @c schema_type, e.g.
    * raw image to JPEG), dropping the frame (by not emitting), fanning it out, or buffering and
    * re-emitting frames @e reordered by data-plane time (a sliding-window reorder, e.g. via
-   * @c BagProcessor) is permitted.  The default implementation forwards the frame unchanged.
+   * @c BagProcessor) is permitted.
    *
    * @note The payload is a view valid for the duration of the call; a plugin that emits
    *       asynchronously must copy it before buffering.
@@ -281,7 +263,7 @@ class BagPluginInterface {
    *
    * @param frame Frame to persist.
    */
-  virtual void on_write(const Frame& frame);
+  virtual void on_write(const Frame& frame) = 0;
 
   /**
    * @brief Drains any internally-buffered frames downstream before the host unbinds and tears down.
@@ -336,10 +318,6 @@ inline bool BagPluginInterface::convert_url_meta(std::string& url, std::string& 
 
   return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 }
-
-inline void BagPluginInterface::on_read(const Frame& frame) { do_callback(frame); }
-
-inline void BagPluginInterface::on_write(const Frame& frame) { do_callback(frame); }
 
 inline void BagPluginInterface::flush() {}
 

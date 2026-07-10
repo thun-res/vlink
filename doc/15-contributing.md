@@ -526,7 +526,7 @@ PR 门槛为两条硬规则；测试框架细节（doctest、断言宏、`TEST_C
 
 | 事实 | 必须同步的位置 |
 |---|---|
-| CLI 工具数量 | 根 README（中文 + `README.en.md`）/ [概述](00-overview.md) / [CLI 工具](10-cli-tools.md) / [速查参考](14-reference.md) / `cli-tools-overview.drawio` + PNG / `CHANGELOG.md` |
+| CLI 工具数量 | 根 README（中文 + `README.en.md`）/ [白皮书](00-whitepaper.md) / [概述](00-overview.md) / [快速开始](01-started.md) `ENABLE_CLI_*` 列表 / [CLI 工具](10-cli-tools.md) / [速查参考](14-reference.md) / `cli-tools-overview.drawio`、`overview-architecture.drawio`、`foreword-*.drawio` + PNG / `.github/wiki/`（`index.html` + `i18n.js` 三语）/ `CHANGELOG.md` |
 | transport 模块数量 | 同上 + [传输后端与 URL](04-transport.md) |
 | 序列化类型数量 | [消息序列化](03-serialization.md) / 根 README / [速查参考](14-reference.md) |
 | QoS 预设数量 | [QoS 配置](05-qos.md) / [速查参考](14-reference.md) / `CHANGELOG.md` |
@@ -609,7 +609,7 @@ VLink 遵循 [Semantic Versioning 2.0](https://semver.org)：**MAJOR** 可含破
 
 **新增 Plugin 接口**
 
-- [ ] `include/vlink/extension/NAME_plugin_interface.h` 定义抽象基类：业务纯虚函数 + 虚析构 + 必含的版本探针 `virtual VersionInfo get_version_info() const = 0`（仿 `bag_plugin_interface.h` / `schema_plugin_interface.h`），经 `vlink::Plugin` 框架按 ABI 契约加载
+- [ ] `include/vlink/extension/NAME_plugin_interface.h` 定义抽象基类：业务纯虚函数 + 虚析构（仿 `bag_plugin_interface.h` / `trigger_plugin_interface.h`；版本由 `VLINK_PLUGIN_DECLARE` 的 major/minor 版本门承担，虚表 ABI 变更时必须提升 major），经 `vlink::Plugin` 框架按 ABI 契约加载
 - [ ] 提供参考实现 `examples/plugin/plugin_NAME/`；更新 [集成](13-integration.md) 的插件类型说明
 
 ---

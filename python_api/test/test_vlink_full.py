@@ -1176,7 +1176,7 @@ def test_api_surface():
         "Publisher", "Subscriber", "Server", "Client", "FireForgetServer", "FireForgetClient", "Setter", "Getter",
         "SecurityPublisher", "SecuritySubscriber", "SecurityServer", "SecurityClient", "SecuritySetter",
         "SecurityGetter", "SecurityFireForgetServer", "SecurityFireForgetClient",
-        "DiscoveryViewer", "BagWriter", "BagReader",
+        "DiscoveryViewer", "BagWriter", "BagReader", "TriggerRecorder",
         "utils", "helpers", "quantize", "QosProfile", "Status",
         "log_trace", "log_debug", "log_info", "log_warn", "log_error", "log_fatal",
         "TIMER_INFINITE", "VERSION", "VERSION_MAJOR", "VERSION_MINOR", "VERSION_PATCH",

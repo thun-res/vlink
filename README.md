@@ -10,7 +10,7 @@
 
 VLink 是面向自动驾驶与具身智能的高性能 C++17 通信中间件，定位为 ROS 2 的全场景替代方案。它以一套类型安全的统一 API 覆盖进程内、共享内存、车载以太网与跨机网络的全部通信需求，使通信后端的更换退化为一次 URL 前缀的修改，而业务代码不随之改动。
 
-当前版本支持 12 种传输后端、14 种序列化格式、3 种通信模型与 6 个核心原语，并提供安全加密、录制回放、服务发现、9 个 CLI 工具及 Foxglove / Rerun 可视化桥接。
+当前版本支持 12 种传输后端、14 种序列化格式、3 种通信模型与 6 个核心原语，并提供安全加密、录制回放、服务发现、10 个 CLI 工具及 Foxglove / Rerun 可视化桥接。
 
 ![VLink 架构](doc/images/readme-architecture.png)
 
@@ -171,7 +171,7 @@ VLink 由三个协同的仓库构成：
 
 | 文档 | 内容 |
 | --- | --- |
-| [10. CLI 工具](doc/10-cli-tools.md) | 9 个命令行工具 |
+| [10. CLI 工具](doc/10-cli-tools.md) | 10 个命令行工具 |
 | [11. 可视化（Viewer / WebViz）](doc/11-visualization.md) | 桌面 Viewer 与 Foxglove / Rerun 桥接 |
 | [12. 服务发现与代理监控](doc/12-observability.md) | 拓扑发现与跨网段观测 |
 
@@ -215,7 +215,7 @@ vlink/
 ├── include/vlink/   公共头文件（6 原语 + 基础库 + 扩展 + 零拷贝）
 ├── src/             核心库实现
 ├── modules/         12 种传输后端实现
-├── cli/             9 个命令行工具
+├── cli/             10 个命令行工具
 ├── proxy/           ProxyServer / ProxyAPI
 ├── viewer/          Qt 桌面可视化工具
 ├── webviz/          Foxglove / Rerun 桥接

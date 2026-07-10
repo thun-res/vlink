@@ -355,6 +355,7 @@ EOL
     ln -sf bin/vlink-info      "$MACOS_PACKUP_DIR/MacOS/info"
     ln -sf bin/vlink-monitor   "$MACOS_PACKUP_DIR/MacOS/monitor"
     ln -sf bin/vlink-bag       "$MACOS_PACKUP_DIR/MacOS/bag"
+    ln -sf bin/vlink-trigger   "$MACOS_PACKUP_DIR/MacOS/trigger"
     ln -sf bin/vlink-list      "$MACOS_PACKUP_DIR/MacOS/list"
     ln -sf bin/vlink-eproto    "$MACOS_PACKUP_DIR/MacOS/eproto"
     ln -sf bin/vlink-efbs      "$MACOS_PACKUP_DIR/MacOS/efbs"

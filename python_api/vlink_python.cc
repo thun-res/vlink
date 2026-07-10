@@ -64,6 +64,7 @@
 #include <vlink/extension/discovery_viewer.h>
 #include <vlink/extension/qos_profile.h>
 #include <vlink/extension/status_detail.h>
+#include <vlink/extension/trigger_recorder.h>
 #include <vlink/extension/url_remap.h>
 #include <vlink/vlink.h>
 #include <vlink/zerocopy/audio_frame.h>
@@ -3539,6 +3540,81 @@ NB_MODULE(_vlink_nanobind, m) {
       .def("is_running", &vlink::BagWriter::is_running)
       .def("__repr__", [](const vlink::BagWriter& self) {
         return std::string("BagWriter(running=") + (self.is_running() ? "True" : "False") + ")";
+      });
+
+  nb::class_<vlink::TriggerRecorder> tr(m, "TriggerRecorder", "Trigger-based event-data recorder");
+  nb::enum_<vlink::TriggerRecorder::OverflowPolicy>(tr, "OverflowPolicy")
+      .value("CoverOldest", vlink::TriggerRecorder::kCoverOldest)
+      .value("DropNewest", vlink::TriggerRecorder::kDropNewest);
+  nb::enum_<vlink::TriggerRecorder::FileType>(tr, "FileType")
+      .value("Vdb", vlink::TriggerRecorder::kVdb)
+      .value("Vcap", vlink::TriggerRecorder::kVcap);
+  nb::class_<vlink::TriggerRecorder::UrlConfig>(tr, "UrlConfig")
+      .def(nb::init<>())
+      .def_rw("pre_ms", &vlink::TriggerRecorder::UrlConfig::pre_ms)
+      .def_rw("post_ms", &vlink::TriggerRecorder::UrlConfig::post_ms)
+      .def_rw("max_packet_size", &vlink::TriggerRecorder::UrlConfig::max_packet_size)
+      .def_rw("max_size", &vlink::TriggerRecorder::UrlConfig::max_size)
+      .def_rw("only_front", &vlink::TriggerRecorder::UrlConfig::only_front)
+      .def_rw("only_back", &vlink::TriggerRecorder::UrlConfig::only_back);
+  nb::class_<vlink::TriggerRecorder::Config>(tr, "Config")
+      .def(nb::init<>())
+      .def_rw("dump_dir", &vlink::TriggerRecorder::Config::dump_dir)
+      .def_rw("file_type", &vlink::TriggerRecorder::Config::file_type)
+      .def_rw("default_pre_ms", &vlink::TriggerRecorder::Config::default_pre_ms)
+      .def_rw("default_post_ms", &vlink::TriggerRecorder::Config::default_post_ms)
+      .def_rw("default_max_packet_size", &vlink::TriggerRecorder::Config::default_max_packet_size)
+      .def_rw("default_max_size", &vlink::TriggerRecorder::Config::default_max_size)
+      .def_rw("max_cache_size", &vlink::TriggerRecorder::Config::max_cache_size)
+      .def_rw("retention_guard_ms", &vlink::TriggerRecorder::Config::retention_guard_ms)
+      .def_rw("max_dump_file_count", &vlink::TriggerRecorder::Config::max_dump_file_count)
+      .def_rw("enable_compress", &vlink::TriggerRecorder::Config::enable_compress)
+      .def_rw("busy_skip_data", &vlink::TriggerRecorder::Config::busy_skip_data)
+      .def_rw("destroy_on_offline", &vlink::TriggerRecorder::Config::destroy_on_offline)
+      .def_rw("overflow", &vlink::TriggerRecorder::Config::overflow)
+      .def_rw("sleep_interval", &vlink::TriggerRecorder::Config::sleep_interval)
+      .def_rw("sleep_time_ms", &vlink::TriggerRecorder::Config::sleep_time_ms)
+      .def_rw("dds_ip", &vlink::TriggerRecorder::Config::dds_ip)
+      .def_rw("discovery_filter", &vlink::TriggerRecorder::Config::discovery_filter)
+      .def_rw("whitelist", &vlink::TriggerRecorder::Config::whitelist)
+      .def_rw("blacklist", &vlink::TriggerRecorder::Config::blacklist)
+      .def_rw("bag_plugin_lib", &vlink::TriggerRecorder::Config::bag_plugin_lib)
+      .def_rw("bag_plugin_dir", &vlink::TriggerRecorder::Config::bag_plugin_dir)
+      .def_rw("bag_plugin_major", &vlink::TriggerRecorder::Config::bag_plugin_major)
+      .def_rw("bag_plugin_minor", &vlink::TriggerRecorder::Config::bag_plugin_minor)
+      .def_rw("url_overrides", &vlink::TriggerRecorder::Config::url_overrides);
+  nb::class_<vlink::TriggerRecorder::TriggerParams>(tr, "TriggerParams")
+      .def(nb::init<>())
+      .def_rw("reason", &vlink::TriggerRecorder::TriggerParams::reason)
+      .def_rw("name_hint", &vlink::TriggerRecorder::TriggerParams::name_hint)
+      .def_rw("out_file", &vlink::TriggerRecorder::TriggerParams::out_file)
+      .def_rw("pre_ms", &vlink::TriggerRecorder::TriggerParams::pre_ms)
+      .def_rw("post_ms", &vlink::TriggerRecorder::TriggerParams::post_ms)
+      .def_rw("filter_urls", &vlink::TriggerRecorder::TriggerParams::filter_urls)
+      .def_rw("filter_str", &vlink::TriggerRecorder::TriggerParams::filter_str)
+      .def_rw("black_mode", &vlink::TriggerRecorder::TriggerParams::black_mode);
+  tr.def(nb::init<const vlink::TriggerRecorder::Config&>(), "config"_a)
+      .def("start",
+           [](vlink::TriggerRecorder& self) {
+             nb::gil_scoped_release release;
+             return self.start();
+           })
+      .def(
+          "trigger",
+          [](vlink::TriggerRecorder& self, const vlink::TriggerRecorder::TriggerParams& params) {
+            nb::gil_scoped_release release;
+            return self.trigger(params);
+          },
+          "params"_a = vlink::TriggerRecorder::TriggerParams())
+      .def("stop",
+           [](vlink::TriggerRecorder& self) {
+             nb::gil_scoped_release release;
+             self.stop();
+           })
+      .def("is_dumping", &vlink::TriggerRecorder::is_dumping)
+      .def("is_running", &vlink::TriggerRecorder::is_running)
+      .def("__repr__", [](const vlink::TriggerRecorder& self) {
+        return std::string("TriggerRecorder(running=") + (self.is_running() ? "True" : "False") + ")";
       });
 
   nb::class_<vlink::BagReader> br(m, "BagReader", "Message playback");

@@ -706,24 +706,12 @@ static int load_and_bind_bag_plugin(vlink::Plugin& plugin, const std::string& pl
     return 0;
   }
 
-  auto plugin_interface = plugin.load<vlink::BagPluginInterface>(plugin_name, 1, 0);
+  auto plugin_interface = plugin.load<vlink::BagPluginInterface>(plugin_name, 2, 0);
 
   if (!plugin_interface) {
     std::cerr << "Failed to load plugin (" << plugin_name << ")." << std::endl;
     return -1;
   }
-
-  auto version_info = plugin_interface->get_version_info();
-
-  VLOG_D("");
-  VLOG_D("##########################################################");
-  VLOG_D("#  Plugin Name: ", version_info.name);
-  VLOG_D("#  Version:     ", version_info.version);
-  VLOG_D("#  Timestamp:   ", version_info.timestamp);
-  VLOG_D("#  Tag:         ", version_info.tag);
-  VLOG_D("#  Commit:      ", version_info.commit_id);
-  VLOG_D("##########################################################");
-  VLOG_D("");
 
   bag->bind_plugin_interface(plugin_interface);
 

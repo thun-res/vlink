@@ -87,6 +87,10 @@
 #cmakedefine VLINK_ENABLE_CLI_CHECK
 #endif
 
+#ifndef VLINK_ENABLE_CLI_TRIGGER
+#cmakedefine VLINK_ENABLE_CLI_TRIGGER
+#endif
+
 #ifndef VLINK_ENABLE_LOG_QUI
 #cmakedefine VLINK_ENABLE_LOG_QUI
 #endif

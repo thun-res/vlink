@@ -1032,6 +1032,7 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
   const std::vector<ProcessCheck> process_checks = {
       {"* Check proxy running...", "proxy", "vlink-proxy", "vlink-proxy.exe", true, "Proxy"},
       {"* Check bag running...", "bag", "vlink-bag", "vlink-bag.exe", false, "Bag"},
+      {"* Check trigger running...", "trigger", "vlink-trigger", "vlink-trigger.exe", false, "Trigger"},
       {"* Check dump running...", "dump", "vlink-dump", "vlink-dump.exe", false, "Dump"},
       {"* Check eproto running...", "eproto", "vlink-eproto", "vlink-eproto.exe", false, "Eproto"},
       {"* Check efbs running...", "efbs", "vlink-efbs", "vlink-efbs.exe", false, "Efbs"},
@@ -1094,6 +1095,12 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
     check_flag(ctx, "- Check cli-bag enabled...", "VLINK_ENABLE_CLI_BAG", false);
 #endif
 
+#ifdef VLINK_ENABLE_CLI_TRIGGER
+    check_flag(ctx, "- Check cli-trigger enabled...", "VLINK_ENABLE_CLI_TRIGGER", true);
+#else
+    check_flag(ctx, "- Check cli-trigger enabled...", "VLINK_ENABLE_CLI_TRIGGER", false);
+#endif
+
 #ifdef VLINK_ENABLE_CLI_EPROTO
     check_flag(ctx, "- Check cli-eproto enabled...", "VLINK_ENABLE_CLI_EPROTO", true);
 #else
@@ -1128,6 +1135,12 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
     check_flag(ctx, "- Check cli-check enabled...", "VLINK_ENABLE_CLI_CHECK", true);
 #else
     check_flag(ctx, "- Check cli-check enabled...", "VLINK_ENABLE_CLI_CHECK", false);
+#endif
+
+#ifdef VLINK_ENABLE_CLI_BENCH
+    check_flag(ctx, "- Check cli-bench enabled...", "VLINK_ENABLE_CLI_BENCH", true);
+#else
+    check_flag(ctx, "- Check cli-bench enabled...", "VLINK_ENABLE_CLI_BENCH", false);
 #endif
 
 #ifdef VLINK_ENABLE_LOG_QUI
@@ -1253,8 +1266,8 @@ int check_env(bool available_case, const std::string& prefix) {
 
       {"VLINK_BAG_PATH", "",
        "Activates the process-global BagWriter (BagWriter::global_get()) at the given .vdb/.vcap path. All "
-       "Publisher/Setter messages are auto-recorded transparently. CLI tools (vlink-bag/dump/eproto/efbs/list/"
-       "monitor/bench) explicitly unset this on startup to avoid recursive recording.",
+       "Publisher/Setter messages are auto-recorded transparently. CLI tools (vlink-bag/trigger/dump/eproto/efbs/"
+       "list/monitor/bench) explicitly unset this on startup to avoid recursive recording.",
        false},
       {"VLINK_BAG_TAG", "", "User tag stored in bag metadata to label the recording session (default 'Empty').", false},
 

@@ -155,6 +155,10 @@
 #define VLINK_ENABLE_CLI_CHECK
 #endif
 
+#ifndef VLINK_ENABLE_CLI_TRIGGER
+#define VLINK_ENABLE_CLI_TRIGGER
+#endif
+
 #ifndef VLINK_ENABLE_LOG_QUI
 // #define VLINK_ENABLE_LOG_QUI
 #endif

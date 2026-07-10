@@ -8,7 +8,7 @@
         <mxCell id="title" value="VLink CLI Tools Overview" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="40" y="18" width="880" height="34" as="geometry" />
         </mxCell>
-        <mxCell id="sub" value="Nine command-line tools attached to the VLink Runtime" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+        <mxCell id="sub" value="Ten command-line tools attached to the VLink Runtime" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
           <mxGeometry x="40" y="54" width="880" height="22" as="geometry" />
         </mxCell>
 
@@ -52,6 +52,11 @@
           <mxGeometry x="380" y="528" width="200" height="60" as="geometry" />
         </mxCell>
 
+        <!-- Bottom left: trigger — trigger-based recorder / EDR (green, grouped with bag) -->
+        <mxCell id="trigger" value="&lt;b&gt;vlink-trigger&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;trigger record (EDR)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontColor=#1b5e20;shadow=0;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="528" width="200" height="60" as="geometry" />
+        </mxCell>
+
         <!-- Arrows: unified blue, block arrowhead -->
         <mxCell id="a_info" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=1.5;strokeColor=#1976d2;exitX=0.5;exitY=1;entryX=0.25;entryY=0;" edge="1" parent="1" source="info" target="center">
           <mxGeometry relative="1" as="geometry" />
@@ -78,6 +83,9 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="a_bench" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=1.5;strokeColor=#1976d2;exitX=0.5;exitY=0;entryX=0.6;entryY=1;" edge="1" parent="1" source="bench" target="center">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_trigger" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=1.5;strokeColor=#1976d2;exitX=0.5;exitY=0;entryX=0.3;entryY=1;" edge="1" parent="1" source="trigger" target="center">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 

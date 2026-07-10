@@ -34,6 +34,7 @@ class VLinkConan(ConanFile):
         "enable_sqlite": [True, False],
         "enable_cli_info": [True, False],
         "enable_cli_bag": [True, False],
+        "enable_cli_trigger": [True, False],
         "enable_cli_eproto": [True, False],
         "enable_cli_efbs": [True, False],
         "enable_cli_list": [True, False],
@@ -73,6 +74,7 @@ class VLinkConan(ConanFile):
         "enable_sqlite": True,
         "enable_cli_info": True,
         "enable_cli_bag": True,
+        "enable_cli_trigger": True,
         "enable_cli_eproto": True,
         "enable_cli_efbs": True,
         "enable_cli_list": True,
@@ -219,6 +221,7 @@ class VLinkConan(ConanFile):
         tc.variables["ENABLE_SQLITE"]          = "ON" if self.options.enable_sqlite else "OFF"
         tc.variables["ENABLE_CLI_INFO"]        = "ON" if self.options.enable_cli_info else "OFF"
         tc.variables["ENABLE_CLI_BAG"]         = "ON" if self.options.enable_cli_bag else "OFF"
+        tc.variables["ENABLE_CLI_TRIGGER"]     = "ON" if self.options.enable_cli_trigger else "OFF"
         tc.variables["ENABLE_CLI_EPROTO"]      = "ON" if self.options.enable_cli_eproto else "OFF"
         tc.variables["ENABLE_CLI_EFBS"]        = "ON" if self.options.enable_cli_efbs else "OFF"
         tc.variables["ENABLE_CLI_LIST"]        = "ON" if self.options.enable_cli_list else "OFF"

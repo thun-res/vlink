@@ -9,7 +9,7 @@ elif [ ! -x "$VLINK_ROOT_DIR/bin/vlink-info" ] && [ -x "$WORK_DIR/../../bin/vlin
     export VLINK_ROOT_DIR="$(cd "$WORK_DIR/../.." && pwd)"
 fi
 export VLINK_ETC_DIR="$VLINK_ROOT_DIR/etc"
-export VLINK_COMPLETIONS="$VLINK_ETC_DIR/vlink/vlink-completions.sh"
+export VLINK_COMPLETIONS="$VLINK_ROOT_DIR/@BUILD_CONFIG_DIR@/vlink-completions.sh"
 
 echo -e -n "\033[2J\033[H"
 echo -e "Setup vlink runtime..."
@@ -39,7 +39,7 @@ if [ -f "$VLINK_FBS_DIR_CONFIG" ]; then
     echo "VLINK_FBS_DIR: $VLINK_FBS_DIR"
 fi
 
-echo -e "Support commands: [proxy] [info] [monitor] [bag] [list] [eproto] [efbs] [dump] [check] [bench]"
+echo -e "Support commands: [proxy] [info] [monitor] [bag] [trigger] [list] [eproto] [efbs] [dump] [check] [bench]"
 echo -e ""
 
 [[ "$PATH" != *"$VLINK_ROOT_DIR/bin"* ]] && export PATH="$VLINK_ROOT_DIR/bin:$PATH"
@@ -50,6 +50,7 @@ alias proxy="\"$VLINK_ROOT_DIR/bin/vlink-proxy\""
 alias info="\"$VLINK_ROOT_DIR/bin/vlink-info\""
 alias monitor="\"$VLINK_ROOT_DIR/bin/vlink-monitor\""
 alias bag="\"$VLINK_ROOT_DIR/bin/vlink-bag\""
+alias trigger="\"$VLINK_ROOT_DIR/bin/vlink-trigger\""
 alias list="\"$VLINK_ROOT_DIR/bin/vlink-list\""
 alias eproto="\"$VLINK_ROOT_DIR/bin/vlink-eproto\""
 alias efbs="\"$VLINK_ROOT_DIR/bin/vlink-efbs\""

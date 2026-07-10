@@ -113,7 +113,7 @@
         <div><strong>12</strong> <span data-i18n="hero.meta.tr">传输后端</span></div>
         <div><strong>14</strong> <span data-i18n="hero.meta.ser">序列化格式</span></div>
         <div><strong>6</strong> <span data-i18n="hero.meta.nt">节点类型</span></div>
-        <div><strong>9</strong> <span data-i18n="hero.meta.cli">CLI 工具</span></div>
+        <div><strong>10</strong> <span data-i18n="hero.meta.cli">CLI 工具</span></div>
         <div><strong>5</strong> <span data-i18n="hero.meta.os">支持平台</span></div>
       </div>
 
@@ -170,7 +170,7 @@
       <div class="why-card reveal d1">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M4 6h16M4 12h10M4 18h16"/><circle cx="18" cy="12" r="2"/></svg></div>
         <h3 data-i18n="pos.c1.h">全栈工具链</h3>
-        <p data-i18n="pos.c1.p">Viewer · Player · Analyzer 桌面 GUI · CLI 九件套 · Foxglove / Rerun Web 桥 · Bag 录制回放 —— 开发、调试、回归一站式。</p>
+        <p data-i18n="pos.c1.p">Viewer · Player · Analyzer 桌面 GUI · CLI 十件套 · Foxglove / Rerun Web 桥 · Bag 录制回放 —— 开发、调试、回归一站式。</p>
         <div class="vs"><span class="strike" data-i18n="pos.c1.vs1">ROS2: rqt + 外装 bridge</span><span data-i18n="pos.c1.vs2"><strong>VLink: 原生集成</strong></span></div>
       </div>
       <div class="why-card reveal d2">
@@ -196,7 +196,7 @@
     <div class="numbers reveal">
       <div class="num-item"><div class="big count-plus" data-count-target="12">0</div><div class="label" data-i18n="num.tr">传输后端</div></div>
       <div class="num-item"><div class="big" data-count-target="14">0</div><div class="label" data-i18n="num.ser">序列化格式</div></div>
-      <div class="num-item"><div class="big" data-count-target="9">0</div><div class="label" data-i18n="num.cli">CLI 工具</div></div>
+      <div class="num-item"><div class="big" data-count-target="10">0</div><div class="label" data-i18n="num.cli">CLI 工具</div></div>
       <div class="num-item"><div class="big" data-count-target="4">0</div><div class="label" data-i18n="num.viz">GUI / Web 可视化</div></div>
     </div>
   </div>
@@ -457,9 +457,9 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
     <div class="section-head reveal">
       <div class="section-eyebrow" data-i18n="cli.eyebrow">命令行工具</div>
       <h2 class="section-title" data-i18n="cli.title">多个 <span class="grad">CLI 工具窗口</span></h2>
-      <p class="section-sub" data-i18n="cli.sub">完整工具链覆盖 info、list、monitor、eproto、efbs、dump、check、bag、bench；以下窗口按 cli/*.cc 的真实接口排布，重点平铺 monitor、list、check、bag，便于同时对照实时观测、拓扑发现、环境诊断与录制回放。</p>
+      <p class="section-sub" data-i18n="cli.sub">完整工具链覆盖 info、list、monitor、eproto、efbs、dump、check、bag、bench、trigger；以下窗口按 cli/*.cc 的真实接口排布，重点平铺 monitor、list、check、bag，便于同时对照实时观测、拓扑发现、环境诊断与录制回放。</p>
     </div>
-    <p class="cli-note reveal" data-i18n="cli.note">完整 CLI 工具体系包含 vlink-info、vlink-list、vlink-monitor、vlink-eproto、vlink-efbs、vlink-dump、vlink-check、vlink-bag、vlink-bench；当前网页重点演示 vlink-monitor -loc、vlink-list、vlink-check diag / env，以及 vlink-bag info / record / play / clone。monitor 在 TUI 内按 Enter 会直接切入对应解析界面。</p>
+    <p class="cli-note reveal" data-i18n="cli.note">完整 CLI 工具体系包含 vlink-info、vlink-list、vlink-monitor、vlink-eproto、vlink-efbs、vlink-dump、vlink-check、vlink-bag、vlink-bench、vlink-trigger；当前网页重点演示 vlink-monitor -loc、vlink-list、vlink-check diag / env，以及 vlink-bag info / record / play / clone。monitor 在 TUI 内按 Enter 会直接切入对应解析界面。</p>
     <div class="cli-chip-row reveal" aria-label="CLI command index" data-i18n-attr="aria-label:cli.index.aria">
       <span class="cli-chip">vlink-info</span>
       <span class="cli-chip">vlink-list</span>
@@ -470,6 +470,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
       <span class="cli-chip">vlink-check</span>
       <span class="cli-chip">vlink-bag</span>
       <span class="cli-chip">vlink-bench</span>
+      <span class="cli-chip">vlink-trigger</span>
     </div>
 
     <div class="cli-grid reveal">
@@ -725,7 +726,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2"><path d="M3 3v18h18M7 15l4-4 4 4 5-7"/></svg>
         </div>
         <h4 data-i18n="pl.c.cli.h">命令行工具</h4>
-        <p data-i18n="pl.c.cli.p">monitor · bag · list · check · info · dump · eproto · efbs · bench —— 9 件套开箱即用。</p>
+        <p data-i18n="pl.c.cli.p">monitor · bag · list · check · info · dump · eproto · efbs · bench · trigger —— 10 件套开箱即用。</p>
       </div>
       <div class="plat reveal d3">
         <div class="plat-ico" style="background:linear-gradient(135deg,#4faafd,#345af6)">
@@ -818,7 +819,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
       <div class="vs-row"><div data-i18n="vs.r.api.k">API 心智</div><div class="vs-col-ros2" data-i18n="vs.r.api.a">Node · Executor · Context · CallbackGroup 多层栈，小样例也要几十行 boilerplate</div><div class="vs-col-vlink" data-i18n="vs.r.api.b"><strong>一个模板类就是一个节点</strong>，3 行代码完成端到端 Pub/Sub</div></div>
       <div class="vs-row"><div data-i18n="vs.r.size.k">代码体量</div><div class="vs-col-ros2" data-i18n="vs.r.size.a">主仓 + 生态包累计数百万行代码，依赖链庞杂，裁剪 / 移植成本高</div><div class="vs-col-vlink" data-i18n="vs.r.size.b"><strong>全量约 25 万行</strong>，<strong>核心代码不到 10 万行</strong>；无运行时绑定，依赖清晰，易于移植到 QNX / Android 等平台</div></div>
       <div class="vs-row"><div data-i18n="vs.r.lang.k">多语言支持</div><div class="vs-col-ros2" data-i18n="vs.r.lang.a">rclcpp / rclpy 为官方主线；rclnodejs / rcljava 等语言客户端由社区维护，版本滞后</div><div class="vs-col-vlink" data-i18n="vs.r.lang.b">C++17 主线 + 官方 <strong>Python</strong> 绑定；稳定的 <strong>C API</strong> 供 Go / Rust / Java / Lua 等语言包装</div></div>
-      <div class="vs-row"><div data-i18n="vs.r.arch.k">架构与扩展</div><div class="vs-col-ros2" data-i18n="vs.r.arch.a">rclcpp + rmw 分层，但扩展依赖 pluginlib 与 ament 包管理</div><div class="vs-col-vlink" data-i18n="vs.r.arch.b">传输 / 序列化 / CLI / 可视化均为独立 CMake 组件，按需裁剪；<br><strong>五类插件接口</strong> (Logger · Runable · Convert · Schema · Bag) 运行期 dlopen 加载</div></div>
+      <div class="vs-row"><div data-i18n="vs.r.arch.k">架构与扩展</div><div class="vs-col-ros2" data-i18n="vs.r.arch.a">rclcpp + rmw 分层，但扩展依赖 pluginlib 与 ament 包管理</div><div class="vs-col-vlink" data-i18n="vs.r.arch.b">传输 / 序列化 / CLI / 可视化均为独立 CMake 组件，按需裁剪；<br><strong>六类插件接口</strong> (Logger · Runable · Convert · Schema · Bag · Trigger) 运行期 dlopen 加载</div></div>
       <div class="vs-row"><div data-i18n="vs.r.perf.k">性能</div><div class="vs-col-ros2" data-i18n="vs.r.perf.a">DDS 跨进程延迟随 RMW / QoS 波动；进程内零拷贝需 <code>NodeOptions::use_intra_process_comms(true)</code> 且消息 POD 化</div><div class="vs-col-vlink" data-i18n="vs.r.perf.b"><code>intra://</code> 无锁队列 <strong>亚微秒级</strong>；<code>shm://</code> 基于 Iceoryx 的 <strong>10 μs 级</strong> 零拷贝；<strong>浅拷贝 · 栈内存优先分配 · 无锁队列 · 分支预测友好</strong>，编译期模板派发，无虚函数开销</div></div>
       <div class="vs-row"><div data-i18n="vs.r.trans.k">传输与零拷贝</div><div class="vs-col-ros2" data-i18n="vs.r.trans.a">默认 DDS 生态 (Fast-DDS · Cyclone · Connext)；rmw_zenoh 等为实验性；LoanedMessage 零拷贝仅部分 RMW + POD 消息</div><div class="vs-col-vlink" data-i18n="vs.r.trans.b"><strong>12 种 URL 切换</strong>：intra · shm · shm2 · dds · ddsc · zenoh · someip · qnx · mqtt · fdbus …… 业务代码零改动</div></div>
       <div class="vs-row"><div data-i18n="vs.r.ser.k">序列化</div><div class="vs-col-ros2" data-i18n="vs.r.ser.a">rosidl (ROS Msg IDL) 为主；Type Adaptation 允许回调用 Eigen 等自定义类型</div><div class="vs-col-vlink" data-i18n="vs.r.ser.b"><strong>14 种编译期派发</strong>：Protobuf · FlatBuffers · CDR · POD · String · Stream · Bytes · Dynamic · 自定义</div></div>

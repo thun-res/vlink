@@ -19,6 +19,7 @@ VLink 在通信原语之外随库交付一套完整的命令行工具链（`vlin
 | 命令行 | `vlink-list` | 列出当前活跃的节点与话题 |
 | 命令行 | `vlink-monitor` | 实时监控话题的频率、速率、丢包率与时延 |
 | 命令行 | `vlink-bag` | 录制、回放与运维消息数据包 |
+| 命令行 | `vlink-trigger` | 内存触发录制（EDR）：后台滚动缓冲，事件触发落盘触发点前后窗口 |
 | 命令行 | `vlink-dump` | 从话题或 bag 提取字段，导出 CSV/JSON/图像/点云 |
 | 命令行 | `vlink-eproto` / `vlink-efbs` | 订阅/发布 Protobuf / FlatBuffers 消息并在终端解析显示 |
 | 命令行 | `vlink-bench` | 发布/订阅性能基准测试与报告 |
@@ -74,6 +75,7 @@ export PATH=/usr/local/bin:$PATH
 | 量化话题频率与丢包 | `vlink-monitor` |
 | 检视话题消息内容 | `vlink-eproto sub` / `vlink-efbs sub` |
 | 录制与回放数据 | `vlink-bag record` / `vlink-bag play` |
+| 长期运行仅保留关键事件前后片段 | `vlink-trigger daemon` / `vlink-trigger trigger` |
 | 导出字段供离线分析 | `vlink-dump` |
 | 评估链路吞吐与时延 | `vlink-bench run` |
 
@@ -312,7 +314,142 @@ vlink-bag fix /tmp/broken.vdb
 vlink-bag tag /tmp/test.vdb "highway_test_20260317"
 ```
 
-### 📤 10.2.8 vlink-dump：字段提取与转储
+### 🚨 10.2.8 vlink-trigger：内存触发录制
+
+`vlink-trigger` 是"内存打点 / 触发录制"工具，实现行车记录仪式的事件数据记录（EDR）：守护进程常驻后台，经服务发现订阅总线上全部话题的原始字节，为每个 URL 维护一个滚动的内存环形缓冲，仅保留最近一段历史；收到触发时，把触发点前后窗口内的数据在内存中按采集时刻排序后落盘为 bag 文件，并对历史文件做轮转。其能力由 extension 库的 `vlink::TriggerRecorder` 引擎提供。若配置 `bag_plugin` 加载一个 `BagPluginInterface` 重排插件，落盘写入路径会改为按 payload 内的真实**数据面时间**（data-plane time）滑窗重排——与在线 `BagWriter` 的重排机制一致（见 [录制与回放](09-recording.md)）。
+
+![触发录制（EDR）数据流](images/trigger-recording-flow.png)
+
+与 `vlink-bag record` 的区别在于落盘时机：`vlink-bag` 持续把消息写入磁盘，磁盘占用随时长线性增长；`vlink-trigger` 只在内存中滚动缓冲，仅在触发时落盘触发点前后的窗口，磁盘占用与触发次数相关而与运行时长无关。因此 `vlink-trigger` 适合需长期运行、只保留关键事件片段的场景（如量产车队的异常事件采集），`vlink-bag` 适合需完整留存全时段数据的调试与数据集采集。
+
+工具含两个子命令：`daemon` 启动守护进程并持续缓冲，`trigger` 向运行中的守护进程发起一次触发。二者经 JSON-over-RPC 通信——`daemon` 内部起一个 `Server<std::string, std::string>`，`trigger` 作为客户端发送 JSON 触发请求（`std::string` 走 raw string 序列化，无需 protobuf 依赖）。控制面 URL 默认 `dds://trigger/method`，daemon 侧经配置 `method_url` 覆盖，客户端侧经 `-m` / `--method_url` 对应指定。
+
+**内存与保留模型**　守护进程采用恒定保留策略：每个 URL 缓冲 `pre + max_post_all + 2 * retention_guard` 时长的历史（`max_post_all` 为所有 URL 中最大的 post 窗口，落盘发生在触发后 `max_post_all + retention_guard`，没有任何 URL 拥有生效的 post 窗口时立即落盘，窗口两侧各留一个裕量），使采集热路径无需判断"当前是否有触发在进行"。由此，单个 URL 配置过大的 post 会抬高所有 URL 的保留时长与内存占用，内存紧张时应约束 post；启用 `bag_plugin` 重排插件时，其滑窗会在落盘期间额外持有部分窗口副本，峰值内存可接近窗口大小的两倍。
+
+**两类插件**　`vlink-trigger` 可同时使用两类互不混淆的插件：`bag_plugin` 指定的 `BagPluginInterface` 位于落盘写入路径内部，负责按数据面时间重排；而 `TriggerPluginInterface`（由引擎 API `bind_trigger_plugin_interface()` 绑定）只观察打点生命周期，用于 dump 完成后的上传 / 归档等后续行为，不改写帧。
+
+#### daemon 子命令
+
+`vlink-trigger daemon` 读取 JSON 配置并启动守护进程，随后常驻缓冲直至收到终止信号：
+
+```bash
+vlink-trigger daemon -c /etc/vlink/trigger/trigger.json
+
+vlink-trigger daemon -c /etc/vlink/trigger/trigger.json -n
+```
+
+| 参数 | 说明 |
+| --- | --- |
+| `-c` / `--config <path>` | 配置文件路径（JSON，必填） |
+| `-n` / `--native` | 本地模式：本机发现，并在未配置 `dds_ip` 时将其置为 `127.0.0.1`（仅作用于数据面订阅，不影响 `method_url` 控制面） |
+
+配置文件字段如下（时间单位毫秒，容量单位 MB）：
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| `method_url` | `dds://trigger/method` | 控制面 RPC 的服务 URL（scheme 决定后端，可换 `shm://` 等），客户端 `-m` 须与之一致 |
+| `dump_dir` | `{tmp}/vlink-trigger` | 落盘目录，空则取系统临时目录下的 `vlink-trigger` |
+| `file_type` | `vdb` | 落盘格式：`vdb`（SQLite 容器）/ `vcap`（MCAP 容器） |
+| `default_pre_ms` | `60000` | 默认触发前窗口（毫秒） |
+| `default_post_ms` | `5000` | 默认触发后窗口（毫秒） |
+| `default_max_packet_size` | `4` | 默认单包上限（MB），`0` 表示不限制，超限的包丢弃 |
+| `default_max_size` | `0` | 默认每 URL 缓冲字节上限（MB），`0` 不限制 |
+| `max_cache_size` | `1024` | 全局缓冲字节上限（MB），跨所有 URL 汇总；超限腾挪仅发生在正接收数据的 URL 自身环内，不会跨 URL 淘汰他人历史 |
+| `retention_guard_ms` | `300` | 额外保留裕量（毫秒），吸收落盘定时抖动 |
+| `max_dump_file_count` | `16` | 落盘文件保留上限；仅自动命名的落盘触发轮转，按后缀统计并清理 `dump_dir` 下最旧文件（显式 `out_file` 的落盘不触发轮转） |
+| `enable_compress` | `true` | 落盘 bag 是否压缩 |
+| `busy_skip_data` | `false` | 落盘进行中丢弃新到数据（会在环形缓冲留下时间空洞） |
+| `destroy_on_offline` | `false` | URL 从发现中消失时销毁其订阅者；已缓冲数据仍供在飞落盘读取 |
+| `overflow` | `cover` | 字节上限溢出策略：`cover`（淘汰最旧帧）/ `drop`（丢弃新帧） |
+| `sleep_interval_mb` | `4` | 落盘流控：每推送该字节数（MB）后休眠一次，摊薄 dump 瞬时的 IO 与写入队列压力 |
+| `sleep_time_ms` | `0` | 落盘流控：单次休眠时长（毫秒），`0` 关闭流控 |
+| `dds_ip` | 空 | 非空时将订阅者绑定到该 DDS IP（本地模式） |
+| `discovery_filter` | `available` | 发现过滤：`available` / `native` / `none` |
+| `whitelist` | `[]` | 非空时仅录制其中精确匹配的 URL |
+| `blacklist` | `[]` | 其中精确匹配的 URL 永不录制 |
+| `bag_plugin` | 空 | `BagPluginInterface` 重排插件库名（不含前缀/后缀），空则按采集时刻顺序落盘 |
+| `bag_plugin_dir` | 空 | 插件子目录名；设置后仅在各插件搜索路径的该子目录下查找 |
+| `bag_plugin_major` | `2` | 重排插件要求的主版本号 |
+| `bag_plugin_minor` | `0` | 重排插件要求的最低次版本号 |
+| `url_overrides` | `{}` | 按 URL 覆盖窗口与限额，见下 |
+
+`url_overrides` 为每个 URL 独立配置窗口与限额，缺省字段回退到对应的全局默认：`pre_ms` / `post_ms`（触发前/后窗口）、`max_packet_size`（单包上限 MB）、`max_size`（该 URL 缓冲上限 MB）、`only_front`（仅录触发前）、`only_back`（仅录触发后）。
+
+```json
+{
+    "dump_dir": "/data/edr",
+    "file_type": "vdb",
+    "default_pre_ms": 60000,
+    "default_post_ms": 5000,
+    "default_max_packet_size": 4,
+    "max_cache_size": 2048,
+    "max_dump_file_count": 16,
+    "enable_compress": true,
+    "overflow": "cover",
+    "sleep_interval_mb": 4,
+    "sleep_time_ms": 2,
+    "discovery_filter": "available",
+    "whitelist": [],
+    "blacklist": [],
+    "url_overrides": {
+        "dds://camera/front": { "pre_ms": 60000, "post_ms": 5000, "max_packet_size": 8 },
+        "dds://radar/points": { "pre_ms": 15000, "post_ms": 0 },
+        "dds://control/brake": { "pre_ms": 30000, "post_ms": 10000, "only_back": true }
+    }
+}
+```
+
+上例中相机保留触发前 60 s、触发后 5 s，雷达仅保留触发前 15 s（`post_ms=0`），制动信号仅录触发后 10 s（`only_back`），三者窗口互不相同。默认按采集时刻落盘；若配置 `bag_plugin`，则由该插件按 payload 内数据面时间重排。
+
+#### trigger 子命令
+
+`vlink-trigger trigger` 向运行中的守护进程发起一次触发，可临时覆盖输出路径、原因、文件名与窗口，并按 URL 缩小本次落盘范围：
+
+```bash
+vlink-trigger trigger
+
+vlink-trigger trigger -r hard-brake -o /data/edr/case_001.vdb
+
+vlink-trigger trigger -r collision --pre 10000 --post 3000
+
+vlink-trigger trigger -u dds://camera/front dds://control/brake
+
+vlink-trigger trigger -i "camera radar" -k
+```
+
+| 参数 | 说明 |
+| --- | --- |
+| `-m` / `--method_url <url>` | 守护进程控制面 URL（默认 `dds://trigger/method`，须与 daemon 的 `method_url` 一致） |
+| `-o` / `--out_file <path>` | 输出文件路径，空则在 `dump_dir` 下自动命名 |
+| `-r` / `--reason <str>` | 触发原因，写入 bag 标签供检索 |
+| `-n` / `--name <str>` | 输出文件名提示，空则生成时间戳文件名 |
+| `--pre <ms>` | 本次触发前窗口（毫秒），仅可缩小，`-1` 保持各 URL 配置值 |
+| `--post <ms>` | 本次触发后窗口（毫秒），仅可缩小，`-1` 保持各 URL 配置值 |
+| `-u` / `--url <url...>` | 仅落盘这些精确匹配的 URL |
+| `-i` / `--filter <str>` | 以子串过滤 URL（`-u` 为空时生效）；用引号包一个字符串，内部以空格分隔多个子串 |
+| `-k` / `--black` | 配合 `--filter` 的黑名单模式，剔除命中的 URL |
+
+本次触发的窗口只能相对配置缩小、不能放大：`--pre` / `--post` 大于某 URL 配置值时以配置值为准，因为环形缓冲仅按配置时长保留历史。触发请求为非阻塞——守护进程接受后异步完成"等待 post 窗口 → 重排 → 写盘"，其间若再次触发则被拒绝（触发串行化）。参与本次落盘的 URL 集合在触发受理瞬间冻结：此后新发现的话题不进入本次落盘，已在集合中的话题即使离线，其缓冲数据也保留到本次落盘完成。
+
+#### 典型场景
+
+**车队 EDR 常驻采集**　守护进程随系统启动常驻，业务侧在检测到碰撞、急刹、接管等异常时调用 `trigger` 落盘事件前后窗口，长期运行仅积累关键片段：
+
+```bash
+vlink-trigger daemon -c /etc/vlink/trigger/trigger.json &
+
+vlink-trigger trigger -r takeover --post 8000
+```
+
+**与离线分析衔接**　落盘产物即标准 bag 文件，可直接交由 `vlink-bag`、`vlink-dump` 或图形化 `vlink-player` 处理：
+
+```bash
+vlink-trigger trigger -r anomaly -o /data/edr/anomaly.vdb
+vlink-bag info /data/edr/anomaly.vdb
+vlink-dump dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /tmp/
+```
+
+### 📤 10.2.9 vlink-dump：字段提取与转储
 
 `vlink-dump` 从实时话题或 bag 文件中提取指定字段，输出为 CSV、JSON、原始二进制、图像/视频或点云，并支持对离线 bag 做切片（`slice`）与扫描（`scan`）。它面向"将通信数据转为可离线分析的结构化产物"这一任务。
 
@@ -356,7 +493,7 @@ vlink-dump -t slice -f /tmp/test.vdb -w 30 -o /tmp/slices
 vlink-dump -t scan -f /tmp/test.vdb -c "brake" --event "brake>80" -d /home/protos/ -o /tmp/scan
 ```
 
-### 🔍 10.2.9 vlink-eproto / vlink-efbs：消息调试
+### 🔍 10.2.10 vlink-eproto / vlink-efbs：消息调试
 
 `vlink-eproto`（Protobuf）与 `vlink-efbs`（FlatBuffers）用于在终端检视与发布消息，解决"某话题实际承载的内容是什么"的问题。两者结构一致，均含 `sub`（订阅显示）、`pub`（发布）、`import`（持久化 schema 目录）三个子命令。下文以 `vlink-eproto` 为基准，`vlink-efbs` 的差异在末尾说明。
 
@@ -420,7 +557,7 @@ vlink-efbs pub shm://control/cmd --fbs_dir /home/fbs_schemas/ -s CtrlCmd \
   -c '{ speed: 10.0, mode: 1 }'
 ```
 
-### ⚡ 10.2.10 vlink-bench：性能基准
+### ⚡ 10.2.11 vlink-bench：性能基准
 
 `vlink-bench` 围绕不同 URL、通信模式、拓扑、QoS、payload 与报文大小执行矩阵化的发布/订阅性能测试，输出吞吐与时延报告。核心子命令为 `run`（执行测试）与 `plot`（从已有结果重建报告）。
 
@@ -464,7 +601,7 @@ vlink-bench plot /tmp/bench-full.json --report html,terminal
 
 报告结构：HTML 报告以"结论—定位—细节"为序组织，顶部为推荐传输配置与综合评分，往下依次为测试概览、传输健康、按消息大小的延迟/吞吐对比、分项结果与完整明细表，并提供可缩放/拖拽/悬浮的趋势折线图；评分以延迟与吞吐为主、辅以资源占用与丢包等维度。终端视图（`--report terminal`）为可翻页/搜索/排序/导出的聚合表格，`q` / `Esc` 退出。
 
-### 🔗 10.2.11 命令行工具组合工作流
+### 🔗 10.2.12 命令行工具组合工作流
 
 各工具的观测目标互补，串联即可覆盖多数现场场景。组合时需注意：经服务发现的工具要求后端链路可达，跨机时其覆盖范围受传输后端选型约束，详见 [传输后端与 URL](04-transport.md)。
 

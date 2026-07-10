@@ -60,7 +60,7 @@ bool DumpContext::prepare_bag_plugin() {
     return true;
   }
 
-  bag_plugin_interface = bag_plugin.load<vlink::BagPluginInterface>(bag_plugin_name, 1, 0);
+  bag_plugin_interface = bag_plugin.load<vlink::BagPluginInterface>(bag_plugin_name, 2, 0);
 
   if (!bag_plugin_interface) {
     std::cerr << "Failed to load plugin (" << bag_plugin_name << ")." << std::endl;

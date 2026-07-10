@@ -95,35 +95,38 @@
         </mxCell>
 
         <mxCell id="tool_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;fontFamily=Helvetica;arcSize=6;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="160" y="400" width="440" height="138" as="geometry" />
+          <mxGeometry x="83" y="400" width="594" height="138" as="geometry" />
         </mxCell>
         <mxCell id="tool_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=40;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="160" y="400" width="440" height="6" as="geometry" />
+          <mxGeometry x="83" y="400" width="594" height="6" as="geometry" />
         </mxCell>
         <mxCell id="tool_t" value="Discovery Viewers" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="1">
-          <mxGeometry x="160" y="414" width="440" height="22" as="geometry" />
+          <mxGeometry x="83" y="414" width="594" height="22" as="geometry" />
         </mxCell>
 
         <!-- Row 1 of subscriber CLI tools -->
         <mxCell id="tool_list" value="vlink-list" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#388e3c;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#1b5e20;shadow=0;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="176" y="446" width="130" height="38" as="geometry" />
+          <mxGeometry x="99" y="446" width="130" height="38" as="geometry" />
         </mxCell>
         <mxCell id="tool_mon" value="vlink-monitor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#388e3c;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#1b5e20;shadow=0;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="315" y="446" width="130" height="38" as="geometry" />
+          <mxGeometry x="243" y="446" width="130" height="38" as="geometry" />
         </mxCell>
         <mxCell id="tool_dump" value="vlink-dump" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#388e3c;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#1b5e20;shadow=0;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="454" y="446" width="130" height="38" as="geometry" />
+          <mxGeometry x="387" y="446" width="130" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_trigger" value="vlink-trigger" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#388e3c;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#1b5e20;shadow=0;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="531" y="446" width="130" height="38" as="geometry" />
         </mxCell>
 
         <!-- Row 2 of subscriber CLI tools -->
         <mxCell id="tool_bag" value="vlink-bag" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#388e3c;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#1b5e20;shadow=0;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="176" y="492" width="130" height="38" as="geometry" />
+          <mxGeometry x="171" y="492" width="130" height="38" as="geometry" />
         </mxCell>
         <mxCell id="tool_eproto" value="vlink-eproto" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#388e3c;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#1b5e20;shadow=0;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="315" y="492" width="130" height="38" as="geometry" />
         </mxCell>
         <mxCell id="tool_efbs" value="vlink-efbs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#388e3c;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#1b5e20;shadow=0;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="454" y="492" width="130" height="38" as="geometry" />
+          <mxGeometry x="459" y="492" width="130" height="38" as="geometry" />
         </mxCell>
 
         <mxCell id="footer" value="DiscoveryReporters publish heartbeats; DiscoveryViewers subscribe and prune stale entries by timeout." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">

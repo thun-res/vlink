@@ -148,35 +148,38 @@
         <mxCell id="clibg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;arcSize=6;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="52" y="568" width="896" height="64" as="geometry" />
         </mxCell>
-        <mxCell id="clit" value="9 CLI Tools" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+        <mxCell id="clit" value="10 CLI Tools" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
           <mxGeometry x="64" y="574" width="120" height="20" as="geometry" />
         </mxCell>
         <mxCell id="cli1" value="info" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="64" y="598" width="90" height="26" as="geometry" />
+          <mxGeometry x="64" y="598" width="80" height="26" as="geometry" />
         </mxCell>
         <mxCell id="cli2" value="check" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="160" y="598" width="90" height="26" as="geometry" />
+          <mxGeometry x="152" y="598" width="80" height="26" as="geometry" />
         </mxCell>
         <mxCell id="cli3" value="list" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="256" y="598" width="90" height="26" as="geometry" />
+          <mxGeometry x="240" y="598" width="80" height="26" as="geometry" />
         </mxCell>
         <mxCell id="cli4" value="monitor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="352" y="598" width="90" height="26" as="geometry" />
+          <mxGeometry x="328" y="598" width="80" height="26" as="geometry" />
         </mxCell>
         <mxCell id="cli5" value="bag" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="448" y="598" width="90" height="26" as="geometry" />
+          <mxGeometry x="416" y="598" width="80" height="26" as="geometry" />
         </mxCell>
         <mxCell id="cli6" value="dump" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="544" y="598" width="90" height="26" as="geometry" />
+          <mxGeometry x="504" y="598" width="80" height="26" as="geometry" />
         </mxCell>
         <mxCell id="cli7" value="eproto" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="640" y="598" width="90" height="26" as="geometry" />
+          <mxGeometry x="592" y="598" width="80" height="26" as="geometry" />
         </mxCell>
         <mxCell id="cli8" value="efbs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="736" y="598" width="90" height="26" as="geometry" />
+          <mxGeometry x="680" y="598" width="80" height="26" as="geometry" />
         </mxCell>
         <mxCell id="cli9" value="bench" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="832" y="598" width="90" height="26" as="geometry" />
+          <mxGeometry x="768" y="598" width="80" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="cli10" value="trigger" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="856" y="598" width="80" height="26" as="geometry" />
         </mxCell>
 
         <!-- ===================== Base library ===================== -->

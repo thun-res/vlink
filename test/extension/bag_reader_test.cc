@@ -141,8 +141,6 @@ class MetaStubBagReader final : public StubBagReader {
 
 class RemapPlugin final : public BagPluginInterface {
  public:
-  VersionInfo get_version_info() const override { return {"Remap", "1.0.0", "", "", ""}; }
-
   bool convert_url_meta(std::string& url, std::string& ser_type, SchemaType& schema_type) override {
     (void)ser_type;
     (void)schema_type;
@@ -159,6 +157,8 @@ class RemapPlugin final : public BagPluginInterface {
   }
 
   void on_read(const Frame& frame) override { do_callback(frame); }
+
+  void on_write(const Frame& frame) override { do_callback(frame); }
 };
 
 class ReorderReadPlugin final : public BagPluginInterface {
@@ -169,8 +169,6 @@ class ReorderReadPlugin final : public BagPluginInterface {
 
   ~ReorderReadPlugin() override = default;
 
-  VersionInfo get_version_info() const override { return {"ReorderRead", "1.0.0", "", "", ""}; }
-
   void on_read(const Frame& frame) override {
     int64_t data_timestamp = 0;
     std::memcpy(&data_timestamp, frame.data.data(), sizeof(int64_t));
@@ -179,6 +177,8 @@ class ReorderReadPlugin final : public BagPluginInterface {
     out.timestamp = data_timestamp;
     processor_.push(data_timestamp, out);
   }
+
+  void on_write(const Frame& frame) override { do_callback(frame); }
 
   void flush() override { processor_.flush(); }
 
@@ -194,8 +194,6 @@ class ReorderReadPlugin final : public BagPluginInterface {
 
 class CoverageReaderPlugin final : public BagPluginInterface {
  public:
-  VersionInfo get_version_info() const override { return {"CoverageRead", "1.0.0", "", "", ""}; }
-
   bool convert_url_meta(std::string& url, std::string& ser_type, SchemaType& schema_type) override {
     (void)ser_type;
     (void)schema_type;
@@ -208,12 +206,12 @@ class CoverageReaderPlugin final : public BagPluginInterface {
   }
 
   void on_read(const Frame& frame) override { do_callback(frame); }
+
+  void on_write(const Frame& frame) override { do_callback(frame); }
 };
 
 class DropCursorUrlPlugin final : public BagPluginInterface {
  public:
-  VersionInfo get_version_info() const override { return {"DropCursorUrl", "1.0.0", "", "", ""}; }
-
   bool convert_url_meta(std::string& url, std::string& ser_type, SchemaType& schema_type) override {
     (void)ser_type;
     (void)schema_type;
@@ -230,6 +228,8 @@ class DropCursorUrlPlugin final : public BagPluginInterface {
   }
 
   void on_read(const Frame& frame) override { do_callback(frame); }
+
+  void on_write(const Frame& frame) override { do_callback(frame); }
 };
 
 Frame read_frame(int64_t timestamp, const std::string& url, ActionType action_type, const Bytes& data) {

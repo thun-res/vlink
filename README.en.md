@@ -10,7 +10,7 @@ English | [中文](README.md) · [Website](https://vlink.work) · [Documentation
 
 VLink is a high-performance C++17 communication middleware for autonomous driving and embodied intelligence, positioned as a full-scenario alternative to ROS 2. A single type-safe API covers intra-process, shared-memory, automotive-Ethernet, and cross-machine communication, reducing a backend change to editing a URL prefix while application code stays untouched.
 
-The current release supports 12 transport backends, 14 serialization formats, 3 communication models with 6 core primitives, plus security, recording/playback, service discovery, 9 CLI tools, and Foxglove / Rerun visualization bridges.
+The current release supports 12 transport backends, 14 serialization formats, 3 communication models with 6 core primitives, plus security, recording/playback, service discovery, 10 CLI tools, and Foxglove / Rerun visualization bridges.
 
 ![VLink architecture](doc/images/readme-architecture.png)
 
@@ -171,7 +171,7 @@ The following is a 16-part learning path, best read in order.
 
 | Document | Content |
 | --- | --- |
-| [10. CLI Tools](doc/10-cli-tools.md) | 9 command-line tools |
+| [10. CLI Tools](doc/10-cli-tools.md) | 10 command-line tools |
 | [11. Visualization (Viewer / WebViz)](doc/11-visualization.md) | desktop Viewer and Foxglove / Rerun bridges |
 | [12. Discovery and Proxy Monitoring](doc/12-observability.md) | topology discovery and cross-segment observation |
 
@@ -215,7 +215,7 @@ vlink/
 ├── include/vlink/   public headers (6 primitives + base library + extensions + zero-copy)
 ├── src/             core library implementation
 ├── modules/         12 transport backend implementations
-├── cli/             9 command-line tools
+├── cli/             10 command-line tools
 ├── proxy/           ProxyServer / ProxyAPI
 ├── viewer/          Qt desktop visualization tools
 ├── webviz/          Foxglove / Rerun bridges

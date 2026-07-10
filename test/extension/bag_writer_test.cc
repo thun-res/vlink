@@ -121,7 +121,7 @@ class StubBagWriter : public BagWriter {
 
 class RewriteWritePlugin final : public BagPluginInterface {
  public:
-  VersionInfo get_version_info() const override { return {"RewriteWrite", "1.0.0", "", "", ""}; }
+  void on_read(const Frame& frame) override { do_callback(frame); }
 
   void on_write(const Frame& frame) override {
     Frame out;
@@ -138,14 +138,14 @@ class RewriteWritePlugin final : public BagPluginInterface {
 
 class DropWritePlugin final : public BagPluginInterface {
  public:
-  VersionInfo get_version_info() const override { return {"DropWrite", "1.0.0", "", "", ""}; }
+  void on_read(const Frame& frame) override { do_callback(frame); }
 
   void on_write(const Frame&) override {}
 };
 
 class EmptyUrlWritePlugin final : public BagPluginInterface {
  public:
-  VersionInfo get_version_info() const override { return {"EmptyUrlWrite", "1.0.0", "", "", ""}; }
+  void on_read(const Frame& frame) override { do_callback(frame); }
 
   void on_write(const Frame& frame) override {
     Frame out = frame;
@@ -156,7 +156,7 @@ class EmptyUrlWritePlugin final : public BagPluginInterface {
 
 class TranscodeWritePlugin final : public BagPluginInterface {
  public:
-  VersionInfo get_version_info() const override { return {"Transcode", "1.0.0", "", "", ""}; }
+  void on_read(const Frame& frame) override { do_callback(frame); }
 
   void on_write(const Frame& frame) override {
     Frame out;
@@ -173,7 +173,7 @@ class TranscodeWritePlugin final : public BagPluginInterface {
 
 class FanOutWritePlugin final : public BagPluginInterface {
  public:
-  VersionInfo get_version_info() const override { return {"FanOutWrite", "1.0.0", "", "", ""}; }
+  void on_read(const Frame& frame) override { do_callback(frame); }
 
   void on_write(const Frame& frame) override {
     Frame first = frame;
@@ -194,7 +194,7 @@ class ReorderWritePlugin final : public BagPluginInterface {
 
   ~ReorderWritePlugin() override = default;
 
-  VersionInfo get_version_info() const override { return {"Reorder", "1.0.0", "", "", ""}; }
+  void on_read(const Frame& frame) override { do_callback(frame); }
 
   void on_write(const Frame& frame) override {
     int64_t data_timestamp = 0;
