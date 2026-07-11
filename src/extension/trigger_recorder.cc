@@ -105,8 +105,9 @@ static bool accept_trigger(const std::string& url, const TriggerRecorder::Trigge
 }
 
 static bool validate_config(const TriggerRecorder::Config& config) {
-  if VUNLIKELY (config.default_pre_ms > kMaxWindowMs || config.default_post_ms > kMaxWindowMs ||
-                config.retention_guard_ms > kMaxWindowMs) {
+  if VUNLIKELY (config.default_pre_ms > TriggerRecorder::kMaxWindowMs ||
+                config.default_post_ms > TriggerRecorder::kMaxWindowMs ||
+                config.retention_guard_ms > TriggerRecorder::kMaxWindowMs) {
     VLOG_E("TriggerRecorder: pre/post/retention_guard exceeds the supported range");
     return false;
   }
@@ -136,7 +137,7 @@ static bool validate_config(const TriggerRecorder::Config& config) {
     const int64_t pre_ms = value.pre_ms >= 0 ? value.pre_ms : config.default_pre_ms;
     const int64_t post_ms = value.post_ms >= 0 ? value.post_ms : config.default_post_ms;
 
-    if VUNLIKELY (pre_ms > kMaxWindowMs || post_ms > kMaxWindowMs ||
+    if VUNLIKELY (pre_ms > TriggerRecorder::kMaxWindowMs || post_ms > TriggerRecorder::kMaxWindowMs ||
                   post_ms + config.retention_guard_ms > std::numeric_limits<uint32_t>::max()) {
       VLOG_E("TriggerRecorder: URL window exceeds the supported range: ", url);
       return false;
