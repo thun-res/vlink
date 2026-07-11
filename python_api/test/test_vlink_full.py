@@ -1158,6 +1158,18 @@ def test_discovery_viewer_fields():
     print("[PASS] DiscoveryViewer fields")
 
 
+def test_plugin_host_binding_contract():
+    config = _vlink.TriggerRecorder.Config()
+    assert not hasattr(config, "bag_plugin_lib")
+    assert not hasattr(config, "bag_plugin_dir")
+
+    loader = _vlink.Plugin()
+    missing_name = "__vlink_python_missing_plugin__"
+    assert loader.load_bag_plugin(missing_name) is None
+    assert loader.load_trigger_plugin(missing_name) is None
+    print("[PASS] host-loaded plugin interface contract")
+
+
 def test_trigger_recorder_lifecycle():
     config = _vlink.TriggerRecorder.Config()
     config.whitelist = ["intra://__python_trigger_test_absent__"]
@@ -1179,6 +1191,10 @@ def test_trigger_recorder_lifecycle():
 
         assert not recorder.is_running()
         assert not recorder.is_dumping()
+        assert hasattr(recorder, "bind_bag_plugin_interface")
+        assert hasattr(recorder, "bind_trigger_plugin_interface")
+        recorder.clear_bag_plugin_interface()
+        recorder.clear_trigger_plugin_interface()
         assert recorder.async_run()
         assert recorder.is_running()
 
@@ -1222,7 +1238,7 @@ def test_api_surface():
         "Publisher", "Subscriber", "Server", "Client", "FireForgetServer", "FireForgetClient", "Setter", "Getter",
         "SecurityPublisher", "SecuritySubscriber", "SecurityServer", "SecurityClient", "SecuritySetter",
         "SecurityGetter", "SecurityFireForgetServer", "SecurityFireForgetClient",
-        "DiscoveryViewer", "BagWriter", "BagReader", "TriggerRecorder",
+        "DiscoveryViewer", "BagPluginInterface", "TriggerPluginInterface", "Plugin", "BagWriter", "BagReader", "TriggerRecorder",
         "utils", "helpers", "quantize", "QosProfile", "Status",
         "log_trace", "log_debug", "log_info", "log_warn", "log_error", "log_fatal",
         "TIMER_INFINITE", "VERSION", "VERSION_MAJOR", "VERSION_MINOR", "VERSION_PATCH",
@@ -1512,6 +1528,7 @@ if __name__ == "__main__":
     test_exec_task()
     test_timer_constructors()
     test_discovery_viewer_fields()
+    test_plugin_host_binding_contract()
     test_trigger_recorder_lifecycle()
     test_utils_terminal()
     test_api_surface()

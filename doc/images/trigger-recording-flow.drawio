@@ -83,7 +83,7 @@
         <mxCell id="dmp_t" value="Trigger &#8594; Dump" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
           <mxGeometry x="60" y="318" width="360" height="26" as="geometry" />
         </mxCell>
-        <mxCell id="dmp_h" value="Snapshot the window &#183; stable-sort by capture time &#183; optional bag_plugin reorders inside BagWriter" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#ef6c00;" vertex="1" parent="1">
+        <mxCell id="dmp_h" value="Snapshot the window &#183; stable-sort by capture time &#183; optional host-bound BagPluginInterface reorders inside BagWriter" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#ef6c00;" vertex="1" parent="1">
           <mxGeometry x="360" y="320" width="480" height="22" as="geometry" />
         </mxCell>
 
@@ -143,7 +143,7 @@
         <mxCell id="leg_t" value="Two plugin roles (never conflated)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
           <mxGeometry x="60" y="576" width="400" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="leg_bag" value="&lt;b&gt;bag_plugin&lt;/b&gt; &#8212; BagPluginInterface: reorder by real data-plane time inside the write path (optional)." style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontColor=#1b5e20;" vertex="1" parent="1">
+        <mxCell id="leg_bag" value="&lt;b&gt;bag_plugin&lt;/b&gt; &#8212; CLI host loads BagPluginInterface and binds it to TriggerRecorder (optional)." style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontColor=#1b5e20;" vertex="1" parent="1">
           <mxGeometry x="60" y="604" width="780" height="20" as="geometry" />
         </mxCell>
         <mxCell id="leg_trig" value="&lt;b&gt;TriggerPluginInterface&lt;/b&gt; &#8212; observes the dump life cycle: on_dump_finished &#8594; upload / archive. Never rewrites frames." style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontColor=#e65100;" vertex="1" parent="1">

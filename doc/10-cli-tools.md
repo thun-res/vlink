@@ -316,7 +316,7 @@ vlink-bag tag /tmp/test.vdb "highway_test_20260317"
 
 ### 🚨 10.2.8 vlink-trigger：内存触发录制
 
-`vlink-trigger` 是"内存打点 / 触发录制"工具，实现行车记录仪式的事件数据记录（EDR）：守护进程常驻后台，经服务发现订阅总线上全部话题的原始字节，为每个 URL 维护一个滚动的内存环形缓冲，仅保留最近一段历史；收到触发时，把触发点前后窗口内的数据在内存中按采集时刻排序后落盘为 bag 文件，并对历史文件做轮转。其能力由 extension 库的 `vlink::TriggerRecorder` 引擎提供。若配置 `bag_plugin` 加载一个 `BagPluginInterface` 重排插件，落盘写入路径会改为按 payload 内的真实**数据面时间**（data-plane time）滑窗重排——与在线 `BagWriter` 的重排机制一致（见 [录制与回放](09-recording.md)）。
+`vlink-trigger` 是"内存打点 / 触发录制"工具，实现行车记录仪式的事件数据记录（EDR）：守护进程常驻后台，经服务发现订阅总线上全部话题的原始字节，为每个 URL 维护一个滚动的内存环形缓冲，仅保留最近一段历史；收到触发时，把触发点前后窗口内的数据在内存中按采集时刻排序后落盘为 bag 文件，并对历史文件做轮转。其能力由 extension 库的 `vlink::TriggerRecorder` 引擎提供。若配置 `bag_plugin`，`vlink-trigger` CLI 宿主会加载对应的 `BagPluginInterface` 重排插件并经 `bind_bag_plugin_interface()` 注入引擎，落盘写入路径随之改为按 payload 内的真实**数据面时间**（data-plane time）滑窗重排——与在线 `BagWriter` 的重排机制一致（见 [录制与回放](09-recording.md)）。`TriggerRecorder` 本身不读取这个 CLI 配置，也不动态加载插件。
 
 守护进程在 `vlink-trigger` 自身的编译单元中创建原始订阅器，因此正常情况下直接使用构建时链接的非 intra transport，不要求设置插件环境变量。只有需要使用未链接的已知共享模块时，才在进程首次初始化 URL 前（通常即启动前）把 `VLINK_URL_PLUGINS` 设为 `auto` 按需加载，或设为模块列表进行显式预加载；为空或设为 `none` 时关闭插件加载。模式值大小写不敏感且不能与列表混写。加载方式、搜索路径和限制见 [传输后端与 URL](04-transport.md) 与 [集成](13-integration.md)。`intra://` 仅限同一进程，独立守护进程无法录制其他进程的 intra 数据。
 
@@ -328,7 +328,7 @@ vlink-bag tag /tmp/test.vdb "highway_test_20260317"
 
 **内存与保留模型**　守护进程采用恒定保留策略：每个 URL 缓冲 `effective_pre + max_post_all + 2 * retention_guard` 时长的历史（`only_back` 的 `effective_pre` 为 0，其他 URL 为各自的 pre；`max_post_all` 为所有 URL 中最大的生效 post 窗口，落盘发生在触发后 `max_post_all + retention_guard`，没有任何 URL 拥有生效的 post 窗口时立即落盘，窗口两侧各留一个裕量），使采集热路径无需判断"当前是否有触发在进行"。由此，单个 URL 配置过大的 post 会抬高所有 URL 的保留时长与内存占用，内存紧张时应约束 post；启用 `bag_plugin` 重排插件时，其滑窗会在落盘期间额外持有部分窗口副本，峰值内存可接近窗口大小的两倍。
 
-**两类插件**　`vlink-trigger` 可同时使用两类互不混淆的插件：`bag_plugin` 指定的 `BagPluginInterface` 位于落盘写入路径内部，负责按数据面时间重排；而 `TriggerPluginInterface`（由引擎 API `bind_trigger_plugin_interface()` 绑定）只观察打点生命周期，用于 dump 完成后的上传 / 归档等后续行为，不改写帧。当前 trigger 插件 ABI 版本为 `2.0`，实现应使用 `VLINK_PLUGIN_DECLARE(Impl, 2, 0)`。
+**两类插件**　`vlink-trigger` 可同时使用两类互不混淆的插件：CLI 宿主按 `bag_plugin` 加载 `BagPluginInterface`，再经引擎 API `bind_bag_plugin_interface()` 绑定；该接口位于落盘写入路径内部，负责按数据面时间重排。而 `TriggerPluginInterface` 经 `bind_trigger_plugin_interface()` 绑定，只观察打点生命周期，用于 dump 完成后的上传 / 归档等后续行为，不改写帧。两类库的解析、搜索、ABI 校验和加载均属于 CLI 宿主职责，`TriggerRecorder` 只持有并调用已绑定的接口。当前两类插件 ABI 版本均为 `2.0`，实现应使用 `VLINK_PLUGIN_DECLARE(Impl, 2, 0)`。
 
 #### daemon 子命令
 
@@ -348,7 +348,7 @@ vlink-trigger daemon -c /etc/vlink/trigger/trigger.json \
 | --- | --- |
 | `-c` / `--config <path>` | 配置文件路径（JSON，必填） |
 | `-n` / `--native` | 本地模式：本机发现，并在未配置 `dds_ip` 时将其置为 `127.0.0.1`（仅作用于数据面订阅，不影响 `method_url` 控制面） |
-| `--bag_plugin <name>` | 覆盖配置文件中的 `bag_plugin` |
+| `--bag_plugin <name>` | 覆盖配置文件中的 `bag_plugin`；由 CLI 宿主加载并绑定，不传入 `TriggerRecorder::Config` |
 | `--trigger_plugin <name>` | 覆盖配置文件中的 `trigger_plugin` |
 | `--trigger_plugin_config <str>` | 覆盖配置文件中的 `trigger_plugin_config`；字符串内容由插件解释 |
 
@@ -379,8 +379,8 @@ daemon 先读取 JSON，再按字段应用命令行中**显式出现**的三个�
 | `discovery_filter` | `available` | 发现过滤：`available` / `native` / `none` |
 | `whitelist` | `[]` | 非空时仅录制其中精确匹配的 URL |
 | `blacklist` | `[]` | 其中精确匹配的 URL 永不录制 |
-| `bag_plugin` | 空 | `BagPluginInterface` 重排插件库名（不含前缀/后缀），空则按采集时刻顺序落盘 |
-| `bag_plugin_dir` | 空 | 重排插件子目录名；设置后仅在各插件搜索路径的该子目录下查找 |
+| `bag_plugin` | 空 | CLI 宿主加载并绑定的 `BagPluginInterface` 重排插件库名（不含前缀/后缀）；空则不绑定，按采集时刻顺序落盘 |
+| `bag_plugin_dir` | 空 | CLI 宿主查找重排插件时使用的子目录名；设置后仅在各插件搜索路径的该子目录下查找，不属于 `TriggerRecorder::Config` |
 | `trigger_plugin` | 空 | `TriggerPluginInterface` 生命周期插件库名（不含前缀/后缀，当前 ABI `2.0`），加载后经 `bind_trigger_plugin_interface` 绑定，`on_dump_finished` 为上传/归档钩子；空则不加载，加载失败 daemon 拒绝启动 |
 | `trigger_plugin_dir` | 空 | 生命周期插件子目录名；设置后仅在各插件搜索路径的该子目录下查找 |
 | `trigger_plugin_config` | 空 | 原样传给 trigger 插件 `init()` 的不透明字符串，可由插件解释为 JSON、文件路径或其他格式；`init()` 返回 `false` 时 daemon 拒绝启动 |
@@ -420,7 +420,7 @@ daemon 先读取 JSON，再按字段应用命令行中**显式出现**的三个�
 }
 ```
 
-上例中相机保留触发前 60 s、触发后 5 s，雷达仅保留触发前 15 s（`post_ms=0`），制动信号仅录触发后 10 s（`only_back`），三者窗口互不相同。默认按采集时刻落盘；若配置 `bag_plugin`，则由该插件按 payload 内数据面时间重排。
+上例中相机保留触发前 60 s、触发后 5 s，雷达仅保留触发前 15 s（`post_ms=0`），制动信号仅录触发后 10 s（`only_back`），三者窗口互不相同。默认按采集时刻落盘；若配置 `bag_plugin`，CLI 宿主会加载该插件并绑定给 recorder，由插件按 payload 内数据面时间重排。JSON 中的 `bag_plugin` / `bag_plugin_dir` 是 `vlink-trigger` 的宿主配置，不是引擎配置字段。
 
 #### dump 子命令
 

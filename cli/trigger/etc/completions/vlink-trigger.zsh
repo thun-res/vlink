@@ -6,7 +6,7 @@ _vlink-trigger_daemon() {
     _arguments -s \
         '(-c --config)'{-c,--config}'=[Config json path]:config:_files -g "*.json"' \
         '(-n --native)'{-n,--native}'[Native mode: local-host discovery + dds.ip=127.0.0.1 unless configured]' \
-        '--bag_plugin=[Bag reorder plugin library name]:plugin:' \
+        '--bag_plugin=[Bag reorder plugin library loaded and bound by the CLI host]:plugin:' \
         '--trigger_plugin=[Trigger lifecycle plugin library name]:plugin:' \
         '--trigger_plugin_config=[Opaque trigger plugin configuration]:cfg:' \
         '(-h --help)'{-h,--help}'[Show help]'

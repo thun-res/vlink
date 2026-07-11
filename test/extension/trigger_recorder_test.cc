@@ -193,19 +193,6 @@ class PublishingTriggerPlugin final : public RecordingTriggerPlugin {
   int interval_ms_;
 };
 
-class DelayedTriggerPlugin final : public RecordingTriggerPlugin {
- public:
-  explicit DelayedTriggerPlugin(int delay_ms) : delay_ms_(delay_ms) {}
-
-  void on_trigger(const TriggerContext& context) override {
-    RecordingTriggerPlugin::on_trigger(context);
-    std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms_));
-  }
-
- private:
-  int delay_ms_;
-};
-
 class CountingBagPlugin final : public vlink::BagPluginInterface {
  public:
   void on_read(const Frame& frame) override {
@@ -260,7 +247,6 @@ TEST_SUITE("extension-TriggerRecorder") {
     CHECK(config.whitelist.empty());
     CHECK(config.blacklist.empty());
     CHECK(config.url_overrides.empty());
-    CHECK(config.bag_plugin_lib.empty());
   }
 
   TEST_CASE("url config and trigger params default to sentinel-negative windows") {
@@ -609,7 +595,6 @@ TEST_SUITE("extension-TriggerRecorder") {
 
     vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
     auto plugin = std::make_shared<RecordingTriggerPlugin>();
-    auto replacement_plugin = std::make_shared<RecordingTriggerPlugin>();
     recorder.bind_trigger_plugin_interface(plugin);
     REQUIRE(recorder.async_run());
     REQUIRE(wait_until_ready(recorder));
@@ -625,7 +610,6 @@ TEST_SUITE("extension-TriggerRecorder") {
     params.reason = "quit-post";
     params.out_file = out;
     REQUIRE(recorder.dump(params));
-    recorder.bind_trigger_plugin_interface(replacement_plugin);
 
     CHECK(recorder.quit());
     REQUIRE(recorder.wait_for_quit(5000));
@@ -635,12 +619,11 @@ TEST_SUITE("extension-TriggerRecorder") {
     CHECK_EQ(plugin->last_result.path, out);
     CHECK_EQ(plugin->last_result.error, "dump abandoned at shutdown");
     CHECK_EQ(plugin->stopped.load(), 1);
-    CHECK_EQ(replacement_plugin->started.load(), 0);
 
     std::this_thread::sleep_for(std::chrono::milliseconds(350));
     REQUIRE(recorder.async_run());
     REQUIRE(wait_until_ready(recorder));
-    CHECK_EQ(replacement_plugin->started.load(), 1);
+    CHECK_EQ(plugin->started.load(), 2);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     CHECK_FALSE(std::filesystem::exists(out));
     recorder.quit();
@@ -649,7 +632,7 @@ TEST_SUITE("extension-TriggerRecorder") {
     CHECK_FALSE(std::filesystem::exists(out));
     CHECK_EQ(plugin->finished.load(), 0);
     CHECK_EQ(plugin->failed.load(), 1);
-    CHECK_EQ(replacement_plugin->stopped.load(), 1);
+    CHECK_EQ(plugin->stopped.load(), 2);
   }
 
   TEST_CASE("a slow on_trigger hook cannot evict the already captured pre window") {
@@ -874,99 +857,7 @@ TEST_SUITE("extension-TriggerRecorder") {
     CHECK_FALSE(plugin->rotated.empty());
   }
 
-  TEST_CASE("rebinding a trigger plugin flushes the plugin it replaces") {
-    vlink::TriggerRecorder::Config config;
-    vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
-
-    auto first = std::make_shared<RecordingTriggerPlugin>();
-    auto second = std::make_shared<RecordingTriggerPlugin>();
-
-    recorder.bind_trigger_plugin_interface(first);
-    CHECK_EQ(first->flushed.load(), 0);
-
-    recorder.bind_trigger_plugin_interface(second);
-    CHECK_EQ(first->flushed.load(), 1);
-
-    recorder.clear_trigger_plugin_interface();
-    CHECK_EQ(second->flushed.load(), 1);
-  }
-
-  TEST_CASE("rebinding a running trigger plugin pairs lifecycle hooks") {
-    ScratchDir scratch("plugin-rebind");
-
-    vlink::TriggerRecorder::Config config;
-    config.dump_dir = scratch.path;
-    config.whitelist = {"intra://__trigger_test_absent__"};
-    vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
-
-    auto first = std::make_shared<RecordingTriggerPlugin>();
-    auto second = std::make_shared<RecordingTriggerPlugin>();
-
-    recorder.bind_trigger_plugin_interface(first);
-    REQUIRE(recorder.async_run());
-    REQUIRE(wait_until_ready(recorder));
-    REQUIRE_EQ(first->started.load(), 1);
-
-    recorder.bind_trigger_plugin_interface(second);
-    CHECK_EQ(first->flushed.load(), 1);
-    CHECK_EQ(first->stopped.load(), 1);
-    CHECK_EQ(second->started.load(), 1);
-
-    recorder.clear_trigger_plugin_interface();
-    CHECK_EQ(second->flushed.load(), 1);
-    CHECK_EQ(second->stopped.load(), 1);
-
-    recorder.quit();
-    recorder.wait_for_quit();
-  }
-
-  TEST_CASE("rebinding during a dump retires the old plugin before the next dump") {
-    ScratchDir scratch("plugin-rebind-dump");
-
-    vlink::TriggerRecorder::Config config;
-    config.dump_dir = scratch.path;
-    config.default_pre_ms = 0;
-    config.default_post_ms = 0;
-    config.whitelist = {"intra://__trigger_test_absent__"};
-    vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
-
-    auto first = std::make_shared<DelayedTriggerPlugin>(300);
-    auto second = std::make_shared<RecordingTriggerPlugin>();
-    recorder.bind_trigger_plugin_interface(first);
-    REQUIRE(recorder.async_run());
-    REQUIRE(wait_until_ready(recorder));
-
-    vlink::TriggerRecorder::TriggerParams first_params;
-    first_params.out_file = scratch.path + "/first.vdb";
-    REQUIRE(recorder.dump(first_params));
-
-    for (int elapsed = 0; elapsed < 1000 && first->triggered.load() == 0; elapsed += 5) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
-
-    REQUIRE_EQ(first->triggered.load(), 1);
-    recorder.bind_trigger_plugin_interface(second);
-    REQUIRE(wait_until_idle(recorder, 5000));
-
-    CHECK_EQ(first->finished.load(), 1);
-    CHECK_EQ(first->flushed.load(), 1);
-    CHECK_EQ(first->stopped.load(), 1);
-    CHECK_EQ(second->started.load(), 1);
-
-    vlink::TriggerRecorder::TriggerParams second_params;
-    second_params.out_file = scratch.path + "/second.vdb";
-    REQUIRE(recorder.dump(second_params));
-    REQUIRE(wait_until_idle(recorder, 5000));
-
-    CHECK_EQ(first->finished.load(), 1);
-    CHECK_EQ(second->finished.load(), 1);
-
-    recorder.quit();
-    recorder.wait_for_quit();
-    CHECK_EQ(second->stopped.load(), 1);
-  }
-
-  TEST_CASE("binding and clearing a bag reorder plugin is safe without a running recorder") {
+  TEST_CASE("host binding and clearing a bag plugin is safe without a running recorder") {
     vlink::TriggerRecorder::Config config;
     vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
 
@@ -977,7 +868,7 @@ TEST_SUITE("extension-TriggerRecorder") {
     CHECK_NOTHROW(recorder.bind_bag_plugin_interface(nullptr));
   }
 
-  TEST_CASE("published frames flow through the ring into the dump and the bag-plugin write path") {
+  TEST_CASE("published frames flow through a host-bound bag-plugin interface") {
     ScratchDir scratch("data-path");
 
     const std::string url = "intra://__trigger_test_data__";

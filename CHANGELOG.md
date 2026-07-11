@@ -10,8 +10,8 @@
 
 - **CameraFrame**：扩展图像格式支持，新增更多 Raw、Bayer、YUV 与压缩格式；增加编码辅助函数、Python 绑定和“自动”解码模式，同时保持线上格式的枚举值兼容。
 - **zenoh**：新增调试环境变量开关，默认关闭 gossip scouting。
-- **trigger**：新增内存触发式事件数据记录工具 `vlink-trigger`（EDR）。它为服务发现到的每个 URL 维护滚动环形缓冲，并在调用 `dump()`（或 `vlink-trigger dump`）时将触发点前后的窗口写入 bag，同时支持历史文件轮转；新增 `vlink::TriggerRecorder` 扩展引擎及其 Python 绑定。引擎继承 `MessageLoop`，构造阶段完成配置校验和可能失败的资源获取，通过 `async_run()`、`quit()` 与 `wait_for_quit()` 管理生命周期，并在自身循环中执行 dump。原始订阅器由调用方工厂创建，使 URL 分派能够看到宿主 target 已链接的 transport；CLI 在自身编译单元中提供该工厂。默认按采集时刻写盘；配置 `bag_plugin` 后可由 `BagPluginInterface` 按真实数据面时间重排。该插件与 dump 后处理用的 `TriggerPluginInterface` 相互独立，daemon 可通过 `trigger_plugin` 加载后者；ABI 2 新增由 daemon JSON 与 `--trigger_plugin_config` 暴露的 `init(config)` 不透明配置字符串通道。
-- **bag-plugin**：将 `BagPluginInterface::on_read` 与 `on_write` 改为纯虚函数，并从 `BagPluginInterface` 移除 `VersionInfo` 与 `get_version_info`（仅 `SchemaPluginInterface` 保留；新增的 `TriggerPluginInterface` 从未包含它们）。**破坏性变更**：虚表布局已改变，`BagPluginInterface` 插件主版本提升至 2。插件必须基于新头文件重新构建并声明 `VLINK_PLUGIN_DECLARE(..., 2, 0)`；宿主 `vlink-bag`、`vlink-dump` 与 `TriggerRecorder` 现请求主版本 2，并拒绝旧插件二进制。
+- **trigger**：新增内存触发式事件数据记录工具 `vlink-trigger`（EDR）及 `vlink::TriggerRecorder` 引擎，并提供 Python 绑定。为服务发现到的每个 URL 维护滚动环形缓冲，触发时（`dump()` 或 `vlink-trigger dump`）将触发点前后的窗口落盘为 bag 并轮转历史文件，窗口大小可按 URL 覆盖。默认按采集时刻写盘，可选绑定 `BagPluginInterface` 按真实数据面时间重排。另提供独立的 `TriggerPluginInterface` 生命周期插件，`on_dump_finished` 为 dump 后的上传 / 归档钩子。两类插件均由宿主（CLI 或 Python）加载并绑定。
+- **bag-plugin**：将 `BagPluginInterface::on_read` 与 `on_write` 改为纯虚函数，并从 `BagPluginInterface` 移除 `VersionInfo` 与 `get_version_info`（仅 `SchemaPluginInterface` 保留；新增的 `TriggerPluginInterface` 从未包含它们）。**破坏性变更**：虚表布局已改变，`BagPluginInterface` 插件主版本提升至 2。插件必须基于新头文件重新构建并声明 `VLINK_PLUGIN_DECLARE(..., 2, 0)`；宿主 `vlink-bag`、`vlink-dump` 与 `vlink-trigger` 现请求主版本 2，并拒绝旧插件二进制。
 
 ### 改进
 
@@ -31,7 +31,7 @@
 - 修复 `proxy_server` 的 `max_packet_size` 处理。
 - 修复 `vlink-bag record` 退出时崩溃。
 - 任务队列已满时不再丢弃已接受的异步 bag 写入；在任务的所有结束路径释放队列内存，并通过 `BagWriter::fail()` 暴露延迟帧/Schema 写入失败与关闭阶段失败。
-- 防止已放弃的延迟 trigger dump 持有缓冲数据或在 recorder 重启后重新出现，并在关闭期间保留延后的 trigger 插件重绑定。
+- 防止已放弃的延迟 trigger dump 持有缓冲数据或在 recorder 重启后重新出现。
 - 仅在 writer 循环启动后为限时 `vlink-bag record` 计时，并使 `--deft` 模式保持 DiscoveryViewer 后台运行；Python `TriggerRecorder.async_run()` 等待 recorder 启动完成；viewer 会报告录制文件关闭失败。
 - 加强图像 payload 校验与不安全尺寸处理。
 - 降低 DDS/DDSC 与 shm2 生命周期测试受 teardown 竞态影响的概率。

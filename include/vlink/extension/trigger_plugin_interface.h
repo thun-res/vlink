@@ -54,10 +54,9 @@
  * | on_file_rotated()   | file removed (recorder loop)      | A rotated-out file was deleted              |
  * | flush()             | before unbind / teardown          | Drain plugin-internal async work            |
  *
- * @note Dump hooks and normal recorder start/stop hooks run on the recorder loop.  Rebinding outside a dump may
- *       call @c flush(), @c on_stop() and @c on_start() on the caller's thread; rebinding during a dump is applied
- *       on the loop after that dump.  A slow hook blocks later recorder work, so offload it to a plugin-owned
- *       worker and drain it in @c flush().  @c on_frame() can be hot -- keep it cheap.
+ * @note Dump hooks and normal recorder start/stop hooks run on the recorder loop.  Bind the plugin while the
+ *       recorder is stopped.  A slow hook blocks later recorder work, so offload it to a plugin-owned worker and
+ *       drain it in @c flush().  @c on_frame() can be hot -- keep it cheap.
  * @note Hooks must not re-enter the owning recorder.
  *
  * @par Example (upload every dumped bag to a backend)

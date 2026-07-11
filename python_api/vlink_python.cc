@@ -52,6 +52,7 @@
 #include <vlink/base/memory_pool.h>
 #include <vlink/base/memory_resource.h>
 #include <vlink/base/multi_loop.h>
+#include <vlink/base/plugin.h>
 #include <vlink/base/process.h>
 #include <vlink/base/quantize.h>
 #include <vlink/base/spin_lock.h>
@@ -59,11 +60,13 @@
 #include <vlink/base/timer.h>
 #include <vlink/base/uuid.h>
 #include <vlink/base/wheel_timer.h>
+#include <vlink/extension/bag_plugin_interface.h>
 #include <vlink/extension/bag_reader.h>
 #include <vlink/extension/bag_writer.h>
 #include <vlink/extension/discovery_viewer.h>
 #include <vlink/extension/qos_profile.h>
 #include <vlink/extension/status_detail.h>
+#include <vlink/extension/trigger_plugin_interface.h>
 #include <vlink/extension/trigger_recorder.h>
 #include <vlink/extension/url_remap.h>
 #include <vlink/vlink.h>
@@ -3547,6 +3550,37 @@ NB_MODULE(_vlink_nanobind, m) {
         return std::string("BagWriter(running=") + (self.is_running() ? "True" : "False") + ")";
       });
 
+  nb::class_<vlink::BagPluginInterface>(m, "BagPluginInterface",
+                                        "Opaque bag-plugin interface returned by Plugin.load_bag_plugin()");
+
+  nb::class_<vlink::TriggerPluginInterface>(m, "TriggerPluginInterface",
+                                            "Opaque trigger-plugin interface returned by Plugin.load_trigger_plugin()");
+
+  nb::class_<vlink::Plugin>(m, "Plugin", "Host-side shared-library plugin loader")
+      .def(nb::init<>())
+      .def(
+          "load_bag_plugin",
+          [](vlink::Plugin& self, const std::string& lib_name, const std::string& dir_name) {
+            return self.load<vlink::BagPluginInterface>(lib_name, 2, 0, dir_name);
+          },
+          "lib_name"_a, "dir_name"_a = "",
+          "Load a BagPluginInterface ABI 2.0 implementation; return None when loading fails.")
+      .def(
+          "load_trigger_plugin",
+          [](vlink::Plugin& self, const std::string& lib_name, const std::string& config,
+             const std::string& dir_name) -> std::shared_ptr<vlink::TriggerPluginInterface> {
+            auto plugin = self.load<vlink::TriggerPluginInterface>(lib_name, 2, 0, dir_name);
+
+            if (!plugin || !plugin->init(config)) {
+              return nullptr;
+            }
+
+            return plugin;
+          },
+          "lib_name"_a, "config"_a = "", "dir_name"_a = "",
+          "Load a TriggerPluginInterface ABI 2.0 implementation and call init(config); return None when loading or "
+          "init fails.");
+
   nb::class_<vlink::TriggerRecorder> tr(m, "TriggerRecorder", "Trigger-based event-data recorder");
   nb::enum_<vlink::TriggerRecorder::OverflowPolicy>(tr, "OverflowPolicy")
       .value("CoverOldest", vlink::TriggerRecorder::kCoverOldest)
@@ -3583,8 +3617,6 @@ NB_MODULE(_vlink_nanobind, m) {
       .def_rw("discovery_filter", &vlink::TriggerRecorder::Config::discovery_filter)
       .def_rw("whitelist", &vlink::TriggerRecorder::Config::whitelist)
       .def_rw("blacklist", &vlink::TriggerRecorder::Config::blacklist)
-      .def_rw("bag_plugin_lib", &vlink::TriggerRecorder::Config::bag_plugin_lib)
-      .def_rw("bag_plugin_dir", &vlink::TriggerRecorder::Config::bag_plugin_dir)
       .def_rw("url_overrides", &vlink::TriggerRecorder::Config::url_overrides);
   nb::class_<vlink::TriggerRecorder::TriggerParams>(tr, "TriggerParams")
       .def(nb::init<>())
@@ -3634,6 +3666,12 @@ NB_MODULE(_vlink_nanobind, m) {
             return self.dump(params);
           },
           "params"_a = vlink::TriggerRecorder::TriggerParams())
+      .def("bind_bag_plugin_interface", &vlink::TriggerRecorder::bind_bag_plugin_interface, "plugin"_a,
+           "Bind a BagPluginInterface previously loaded by the host Plugin instance.")
+      .def("clear_bag_plugin_interface", &vlink::TriggerRecorder::clear_bag_plugin_interface)
+      .def("bind_trigger_plugin_interface", &vlink::TriggerRecorder::bind_trigger_plugin_interface, "plugin"_a,
+           "Bind a TriggerPluginInterface previously loaded by the host Plugin instance.")
+      .def("clear_trigger_plugin_interface", &vlink::TriggerRecorder::clear_trigger_plugin_interface)
       .def("is_dumping", &vlink::TriggerRecorder::is_dumping)
       .def("is_running", &vlink::TriggerRecorder::is_running)
       .def("__repr__", [](const vlink::TriggerRecorder& self) {

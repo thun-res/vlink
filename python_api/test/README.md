@@ -76,7 +76,7 @@ python3 test_vlink_coverage.py
 - `BagWriter.create` / `BagWriter.filter_get` / `push_schema` / split callback / 显式 `close()`
 - `BagReader.detect_schema` / `check` / `reindex` / `play` / status callback
 - `DiscoveryViewer` 显式实例与过滤
-- `TriggerRecorder` 启停、触发落盘与超时等待
+- `TriggerRecorder` 启停、触发落盘与超时等待，以及宿主加载并绑定 `BagPluginInterface` / `TriggerPluginInterface`
 - `UrlRemap`
 - Security 模型
 - `Setter.set` 变化通知与 `Getter.listen` 去重

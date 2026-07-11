@@ -24,6 +24,7 @@
 #include <vlink/base/logger.h>
 #include <vlink/base/plugin.h>
 #include <vlink/base/utils.h>
+#include <vlink/extension/bag_plugin_interface.h>
 #include <vlink/extension/trigger_plugin_interface.h>
 #include <vlink/extension/trigger_recorder.h>
 #include <vlink/version.h>
@@ -53,6 +54,8 @@ static constexpr char kDefaultMethodUrl[] = "dds://trigger/method";
 struct DaemonOptions final {
   std::string method_url{kDefaultMethodUrl};
   bool allow_out_file_outside_dump_dir{false};
+  std::string bag_plugin_lib;
+  std::string bag_plugin_dir;
   std::string trigger_plugin_lib;
   std::string trigger_plugin_dir;
   std::string trigger_plugin_config;
@@ -88,6 +91,7 @@ static bool mb_to_bytes(double megabytes, const std::string& field_name, int64_t
   }
 
   result = static_cast<int64_t>(megabytes * static_cast<double>(kBytesPerMegabyte));
+
   return true;
 }
 
@@ -129,6 +133,7 @@ static bool parse_trigger_window(const nlohmann::json& request, const char* fiel
   }
 
   result = signed_value;
+
   return true;
 }
 
@@ -189,6 +194,7 @@ static bool validate_out_file(const std::string& requested, const std::string& d
   }
 
   normalized = candidate.string();
+
   return true;
 }
 
@@ -330,11 +336,11 @@ static bool parse_config(const std::string& path, vlink::TriggerRecorder::Config
     }
 
     if (data.contains("bag_plugin")) {
-      config.bag_plugin_lib = data.at("bag_plugin").get<std::string>();
+      options.bag_plugin_lib = data.at("bag_plugin").get<std::string>();
     }
 
     if (data.contains("bag_plugin_dir")) {
-      config.bag_plugin_dir = data.at("bag_plugin_dir").get<std::string>();
+      options.bag_plugin_dir = data.at("bag_plugin_dir").get<std::string>();
     }
 
     if (data.contains("trigger_plugin")) {
@@ -403,7 +409,7 @@ static int run_daemon(const DaemonArguments& arguments) {
   }
 
   if (arguments.bag_plugin_lib) {
-    config.bag_plugin_lib = *arguments.bag_plugin_lib;
+    options.bag_plugin_lib = *arguments.bag_plugin_lib;
   }
 
   if (arguments.trigger_plugin_lib) {
@@ -432,7 +438,17 @@ static int run_daemon(const DaemonArguments& arguments) {
   }
 
   vlink::Plugin plugin_loader;
+  std::shared_ptr<vlink::BagPluginInterface> bag_plugin;
   std::shared_ptr<vlink::TriggerPluginInterface> trigger_plugin;
+
+  if (!options.bag_plugin_lib.empty()) {
+    bag_plugin = plugin_loader.load<vlink::BagPluginInterface>(options.bag_plugin_lib, 2, 0, options.bag_plugin_dir);
+
+    if VUNLIKELY (!bag_plugin) {
+      std::cerr << "Failed to load bag plugin '" << options.bag_plugin_lib << "'." << std::endl;
+      return 1;
+    }
+  }
 
   if (!options.trigger_plugin_lib.empty()) {
     trigger_plugin =
@@ -462,6 +478,10 @@ static int run_daemon(const DaemonArguments& arguments) {
 
   if (trigger_plugin) {
     recorder->bind_trigger_plugin_interface(trigger_plugin);
+  }
+
+  if (bag_plugin) {
+    recorder->bind_bag_plugin_interface(bag_plugin);
   }
 
   if VUNLIKELY (!recorder->async_run()) {
@@ -560,7 +580,7 @@ static int run_daemon(const DaemonArguments& arguments) {
   bool quit_flag = false;
 
   vlink::Utils::register_terminate_signal(
-      [&](int) {
+      [&quit_mtx, &quit_cv, &quit_flag](int) {
         {
           std::lock_guard lock(quit_mtx);
           quit_flag = true;
@@ -574,7 +594,7 @@ static int run_daemon(const DaemonArguments& arguments) {
 
   {
     std::unique_lock lock(quit_mtx);
-    quit_cv.wait(lock, [&] { return quit_flag; });
+    quit_cv.wait(lock, [&quit_flag] { return quit_flag; });
   }
 
   server.reset();

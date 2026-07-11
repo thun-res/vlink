@@ -43,15 +43,15 @@
  *
  * @par Life cycle
  * The recorder is a @c MessageLoop: the constructor validates the @c Config and acquires every fallible
- * resource (creates @c Config::dump_dir, loads @c Config::bag_plugin_lib, constructs the discovery viewer),
- * throwing on failure.  @c async_run() starts discovery + buffering; wait for @c on_begin() to complete (e.g.
+ * resource (creates @c Config::dump_dir and constructs the discovery viewer), throwing on failure.
+ * @c async_run() starts discovery + buffering; wait for @c on_begin() to complete (e.g.
  * @c invoke_task([](){}).wait()) before calling @c dump().  @c quit() stops the loop and abandons a dump still
  * waiting for its post window; wait for @c is_dumping() to become false first when a dump must be preserved.
  *
  * @par Two distinct plugin roles (never conflate them)
- * - A @b bag plugin (@c BagPluginInterface, via @c bind_bag_plugin_interface() or @c Config::bag_plugin_lib)
- *   sits @e inside the write path: its @c on_write() re-emits frames reordered by the true @b data-plane time
- *   parsed from each payload.  Without it frames are written in @b capture-time (arrival) order.
+ * - A @b bag plugin (@c BagPluginInterface, supplied via @c bind_bag_plugin_interface()) sits @e inside the
+ *   write path: its @c on_write() re-emits frames reordered by the true @b data-plane time parsed from each
+ *   payload.  Without it frames are written in @b capture-time (arrival) order.
  * - A @b trigger plugin (@c TriggerPluginInterface, via @c bind_trigger_plugin_interface()) observes the
  *   recorder @e life cycle -- @c on_dump_finished() is the upload / archive hook.  It never rewrites frames.
  *
@@ -61,8 +61,8 @@
  * whitelist / blacklist selects which topics participate.
  *
  * @par Retention model (constant retention)
- * Every URL retains @c pre_u + @c max_post_all + @c 2*retention_guard of history (@c max_post_all = the
- * largest @b post across all URLs), so the ingest hot path stays branch-free (no "is a trigger active" check):
+ * Every enabled URL retains @c pre_u + @c max_post_all + @c 2*retention_guard of history (@c max_post_all =
+ * the largest @b post across all enabled URLs), so the ingest hot path needs no "is a trigger active" branch:
  *
  * @verbatim
  *                     pre_u              post_u
@@ -74,11 +74,12 @@
  * @endverbatim
  *
  * @note The subscriber callback (data into the ring) is the hot path: it runs on the transport dispatch
- *       thread(s), takes only a per-URL lock, copies the payload once with @c Bytes::deep_copy and is O(1).
+ *       thread(s), takes only a per-URL lock, copies the payload once with @c Bytes::deep_copy and is amortized
+ *       O(1); one callback may evict multiple expired or over-limit entries.
  * @warning A single URL with a large @b post raises the retention -- and memory -- of @e every URL.
  * @warning A reordering bag plugin buffers part of the window until @c flush(): peak dump memory can approach
  *          twice the window size.
- * @warning @c busy_skip_data drops data while a dump is in flight, leaving time holes for later triggers.
+ * @warning @c busy_skip_data drops data while the bag writer is active, leaving time holes for later triggers.
  * @warning With @c destroy_on_offline, offline buffers kept for an in-flight dump can push peak memory above
  *          @c max_cache_size.
  *
@@ -112,6 +113,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -233,8 +235,6 @@ class VLINK_EXPORT TriggerRecorder : public MessageLoop {
     std::vector<std::string> whitelist;                        ///< If non-empty, only these exact URLs are recorded.
     std::vector<std::string> blacklist;                        ///< These exact URLs are never recorded.
     std::unordered_map<std::string, UrlConfig> url_overrides;  ///< Per-URL window / limit overrides.
-    std::string bag_plugin_lib;  ///< Bag reorder plugin library name (no prefix/suffix); empty = capture-time order.
-    std::string bag_plugin_dir;  ///< Optional subdirectory tried under each plugin search path.
 
     Config() {}  // NOLINT(modernize-use-equals-default)
   };
@@ -260,14 +260,13 @@ class VLINK_EXPORT TriggerRecorder : public MessageLoop {
    * @brief Builds the recorder and acquires every fallible resource; the loop is not running yet.
    *
    * @details
-   * Validates the configuration and factory, creates @c Config::dump_dir, loads the optional
-   * @c Config::bag_plugin_lib reorder plugin and constructs the discovery viewer.  Buffering begins only after
-   * @c async_run().
+   * Validates the configuration and factory, creates @c Config::dump_dir and constructs the discovery viewer.
+   * Buffering begins only after @c async_run().
    *
    * @param config  Recorder-wide configuration, copied and validated internally.
    * @param factory Factory that constructs a fresh, uninitialized subscriber for each discovered URL.
    * @throw Exception::RuntimeError When the configuration or factory is invalid, @c dump_dir cannot be created,
-   *        the bag reorder plugin cannot be loaded, or discovery setup fails.
+   *        or discovery setup fails.
    */
   TriggerRecorder(const Config& config, RawSubFactory&& factory);
 
@@ -308,8 +307,8 @@ class VLINK_EXPORT TriggerRecorder : public MessageLoop {
    * @c bind_bag_plugin_interface().  Its hooks (see @c TriggerPluginInterface) fire as the recorder starts /
    * stops, on each trigger, and around each dump -- most importantly @c on_dump_finished() once a bag is
    * written, the place to upload or archive it.  It never rewrites frames.  Passing @c nullptr detaches the
-   * current plugin.  A running recorder pairs @c on_stop() for the old plugin with @c on_start() for the new
-   * plugin.  Binding while a dump is in flight takes effect after that dump and before the next.
+   * current plugin.  Bind before @c async_run() or after the recorder has stopped; binding while it is running
+   * is rejected so one recorder run always has one stable lifecycle observer.
    *
    * @param plugin Trigger plugin instance to bind, or @c nullptr to detach.
    */
@@ -327,10 +326,9 @@ class VLINK_EXPORT TriggerRecorder : public MessageLoop {
    * This is the @b data-plane reorder plugin, distinct from the trigger plugin bound by
    * @c bind_trigger_plugin_interface().  The recorder attaches it to the internal @c BagWriter of each dump via
    * @c BagWriter::bind_plugin_interface(); its @c on_write() hook parses the true data-plane time out of each
-   * payload and re-emits frames reordered by that time before they are persisted.  A recorder configured with
-   * @c Config::bag_plugin_lib loads such a plugin from a shared library automatically at construction; this
-   * method is the programmatic equivalent for an already-constructed instance.  Passing @c nullptr detaches it, so
-   * dumps fall back to capture-time order.  Binding while a dump is in flight takes effect from the next dump.
+   * payload and re-emits frames reordered by that time before they are persisted.  The host owns plugin loading
+   * and lifetime, then supplies the resulting interface here.  Passing @c nullptr detaches it, so dumps fall back
+   * to capture-time order.  Bind before @c async_run() or after the recorder has stopped.
    *
    * @param plugin Bag reorder plugin instance to bind, or @c nullptr to detach.
    */
@@ -351,27 +349,25 @@ class VLINK_EXPORT TriggerRecorder : public MessageLoop {
   struct DumpJob;
   struct Impl;
 
-  void create_discovery_viewer();
-
-  void apply_trigger_plugin_transition(const std::shared_ptr<TriggerPluginInterface>& plugin);
-
-  void handle_data(UrlBuffer* url_buffer, const Bytes& data);
+  void handle_data(UrlBuffer& url_buffer, const Bytes& data);
 
   std::shared_ptr<UrlBuffer> build_url_buffer(const DiscoveryViewer::Info& info);
 
-  static std::shared_ptr<RawSub> deactivate_url_buffer(UrlBuffer* url_buffer);
+  std::shared_ptr<RawSub> deactivate_url_buffer(UrlBuffer& url_buffer);
 
-  void recompute_retention(bool dump_in_flight);
+  void recompute_retention();
 
   void handle_discovery(const std::vector<DiscoveryViewer::Info>& list);
 
   void sweep_evict();
 
-  void finish_dump(const std::shared_ptr<DumpJob>& job);
+  void finish_dump(DumpJob& job);
 
-  void finish_dump_locked(const std::shared_ptr<DumpJob>& job);
+  void finish_dump_locked(DumpJob& job);
 
-  void do_dump(const std::shared_ptr<DumpJob>& job);
+  void notify_dump_failed(const DumpJob& job, std::string_view error);
+
+  void do_dump(DumpJob& job);
 
   std::unique_ptr<Impl> impl_;
 
