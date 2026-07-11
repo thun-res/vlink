@@ -109,6 +109,7 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -156,6 +157,17 @@ class VLINK_EXPORT TriggerRecorder : public MessageLoop {
    * those linked backends.
    */
   using RawSubFactory = Function<std::shared_ptr<RawSub>(const std::string& url, InitType type)>;
+
+  /**
+   * @brief Maximum accepted pre / post / retention-guard window length in milliseconds.
+   *
+   * @details
+   * Chosen so that the largest retention sum, @c pre + @c max_post_all + @c 2*retention_guard (four terms,
+   * each at most this bound), still converts to microseconds without overflowing @c int64_t.  @c Config
+   * values and per-trigger @c TriggerParams windows beyond this bound are rejected; control-plane frontends
+   * (e.g. @c vlink-trigger) validate user input against the same constant.
+   */
+  static constexpr int64_t kMaxWindowMs = std::numeric_limits<int64_t>::max() / 4000;
 
   /**
    * @enum OverflowPolicy

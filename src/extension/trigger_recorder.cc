@@ -58,8 +58,6 @@
 
 namespace vlink {
 
-static constexpr int64_t kMaxWindowMs = std::numeric_limits<int64_t>::max() / 4000;
-
 // LCOV_EXCL_START GCOVR_EXCL_START
 static bool contains_exact(const std::vector<std::string>& list, const std::string& url) {
   return std::find(list.begin(), list.end(), url) != list.end();
