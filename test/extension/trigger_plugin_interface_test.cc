@@ -34,6 +34,11 @@
 
 class RecordingPlugin final : public TriggerPluginInterface {
  public:
+  bool init(const std::string& config) override {
+    init_config = config;
+    return init_result;
+  }
+
   void on_start() override { started = true; }
 
   void on_stop() override { stopped = true; }
@@ -73,11 +78,15 @@ class RecordingPlugin final : public TriggerPluginInterface {
   std::string failed_error;
   std::vector<std::string> rotated;
   int flush_count{0};
+  std::string init_config;
+  bool init_result{true};
 };
 
 TEST_SUITE("extension-TriggerPluginInterface") {
   TEST_CASE("default hook implementations are no-ops and never throw") {
     struct MinimalPlugin final : public TriggerPluginInterface {
+      bool init(const std::string&) override { return true; }
+
       void on_dump_finished(const DumpResult& result) override { (void)result; }
     };
 
@@ -87,6 +96,7 @@ TEST_SUITE("extension-TriggerPluginInterface") {
     TriggerPluginInterface::DumpResult dump_result;
     Frame frame;
 
+    CHECK(plugin.init(""));
     CHECK_NOTHROW(plugin.on_start());
     CHECK_NOTHROW(plugin.on_trigger(trigger_context));
     CHECK_NOTHROW(plugin.on_dump_started(dump_context));
@@ -121,6 +131,7 @@ TEST_SUITE("extension-TriggerPluginInterface") {
     Frame frame;
     frame.url = "dds://camera/front";
 
+    CHECK(plugin.init("{\"upload\":true}"));
     plugin.on_start();
     plugin.on_trigger(trigger_context);
     plugin.on_dump_started(dump_context);
@@ -132,6 +143,7 @@ TEST_SUITE("extension-TriggerPluginInterface") {
     plugin.on_stop();
 
     CHECK(plugin.started);
+    CHECK_EQ(plugin.init_config, "{\"upload\":true}");
     CHECK(plugin.stopped);
     CHECK_EQ(plugin.trigger_reason, "hard-brake");
     CHECK_EQ(plugin.started_path, "/tmp/edr.vdb");
@@ -145,6 +157,15 @@ TEST_SUITE("extension-TriggerPluginInterface") {
     REQUIRE_EQ(plugin.rotated.size(), 1u);
     CHECK_EQ(plugin.rotated[0], "/tmp/old.vdb");
     CHECK_EQ(plugin.flush_count, 1);
+  }
+
+  TEST_CASE("init propagates plugin configuration failures") {
+    RecordingPlugin plugin;
+    plugin.init_result = false;
+
+    CHECK_FALSE(plugin.init("invalid"));
+    CHECK_EQ(plugin.init_config, "invalid");
+    CHECK_FALSE(plugin.started);
   }
 
   TEST_CASE("on_dump_failed carries the failure reason") {

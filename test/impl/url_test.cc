@@ -27,9 +27,12 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -58,6 +61,7 @@ class ExposedConf final : public Conf {
 
 void run_url_child_case(const std::string& name, Process::EnvironmentMap environment) {
   environment["VLINK_URL_CHILD_CASE"] = name;
+  environment.try_emplace("VLINK_URL_PLUGINS", "");
 
   Process child;
   child.set_process_mode(Process::kForwardedMode);
@@ -241,6 +245,161 @@ TEST_SUITE("impl-Url") {
   TEST_CASE("child process covers url environment branches") {
     const auto child_case = Utils::get_env("VLINK_URL_CHILD_CASE");
 
+    if (child_case == "plugin-autoload-disabled") {
+      Url::init_plugins(Url::kEnableEmpty);
+      CHECK_EQ(Url::load_for_plugin(TransportType::kIntra), nullptr);
+      return;
+    }
+
+    if (child_case == "plugin-autoload-enabled") {
+#if !defined(VLINK_LIBRARY_STATIC)
+      Url::init_plugins(Url::kEnableEmpty);
+
+      std::vector<TransportType> types;
+
+#ifdef VLINK_SUPPORT_INTRA
+      types.push_back(TransportType::kIntra);
+#endif
+#ifdef VLINK_SUPPORT_SHM
+      types.push_back(TransportType::kShm);
+#endif
+#ifdef VLINK_SUPPORT_SHM2
+      types.push_back(TransportType::kShm2);
+#endif
+#ifdef VLINK_SUPPORT_ZENOH
+      types.push_back(TransportType::kZenoh);
+#endif
+#ifdef VLINK_SUPPORT_DDS
+      types.push_back(TransportType::kDds);
+#endif
+#ifdef VLINK_SUPPORT_DDSC
+      types.push_back(TransportType::kDdsc);
+#endif
+#ifdef VLINK_SUPPORT_DDSR
+      types.push_back(TransportType::kDdsr);
+#endif
+#ifdef VLINK_SUPPORT_DDST
+      types.push_back(TransportType::kDdst);
+#endif
+#ifdef VLINK_SUPPORT_SOMEIP
+      types.push_back(TransportType::kSomeip);
+#endif
+#ifdef VLINK_SUPPORT_MQTT
+      types.push_back(TransportType::kMqtt);
+#endif
+#ifdef VLINK_SUPPORT_FDBUS
+      types.push_back(TransportType::kFdbus);
+#endif
+#ifdef VLINK_SUPPORT_QNX
+      types.push_back(TransportType::kQnx);
+#endif
+
+      const std::vector<TransportType> all_types{
+          TransportType::kIntra,
+#if !defined(__ANDROID__)
+          TransportType::kShm,   TransportType::kShm2,
+#endif
+          TransportType::kZenoh, TransportType::kDds,    TransportType::kDdsc, TransportType::kDdsr,
+          TransportType::kDdst,  TransportType::kSomeip, TransportType::kMqtt, TransportType::kFdbus,
+#if defined(__QNX__)
+          TransportType::kQnx,
+#endif
+      };
+
+      for (const auto type : all_types) {
+        auto conf = Url::load_for_plugin(type);
+
+        if (std::find(types.begin(), types.end(), type) == types.end()) {
+          if (conf) {
+            CHECK_EQ(conf->get_transport_type(), type);
+          }
+
+          continue;
+        }
+
+        REQUIRE(conf != nullptr);
+        CHECK_EQ(conf->get_transport_type(), type);
+      }
+
+      if (types.empty()) {
+        CHECK_EQ(Url::load_for_plugin(TransportType::kUnknown), nullptr);
+      } else {
+        auto cached = Url::load_for_plugin(types.front());
+        REQUIRE(cached != nullptr);
+        CHECK_EQ(cached->get_transport_type(), types.front());
+      }
+#else
+      CHECK_EQ(Url::load_for_plugin(TransportType::kUnknown), nullptr);
+#endif
+      return;
+    }
+
+    if (child_case == "plugin-autoload-sampled-once") {
+      CHECK_EQ(Url::load_for_plugin(TransportType::kIntra), nullptr);
+      REQUIRE(Utils::set_env("VLINK_URL_PLUGINS", "auto"));
+      CHECK_EQ(Url::load_for_plugin(TransportType::kIntra), nullptr);
+      return;
+    }
+
+    if (child_case == "plugin-list-sampled-once") {
+      CHECK_EQ(Url::load_for_plugin(TransportType::kIntra), nullptr);
+      REQUIRE(Utils::set_env("VLINK_URL_PLUGINS", "vlink-intra"));
+      Url::init_plugins(Url::kEnableEmpty);
+      CHECK_EQ(Url::load_for_plugin(TransportType::kIntra), nullptr);
+      return;
+    }
+
+    if (child_case == "plugin-autoload-concurrent") {
+#if defined(VLINK_SUPPORT_INTRA) && !defined(VLINK_LIBRARY_STATIC)
+      constexpr std::size_t kThreadCount = 8;
+      std::vector<std::unique_ptr<Conf>> results(kThreadCount);
+      std::vector<std::thread> threads;
+      threads.reserve(kThreadCount);
+
+      for (std::size_t index = 0; index < kThreadCount; ++index) {
+        threads.emplace_back([&results, index]() { results[index] = Url::load_for_plugin(TransportType::kIntra); });
+      }
+
+      for (auto& thread : threads) {
+        thread.join();
+      }
+
+      for (const auto& conf : results) {
+        REQUIRE(conf != nullptr);
+        CHECK_EQ(conf->get_transport_type(), TransportType::kIntra);
+      }
+#else
+      CHECK_EQ(Url::load_for_plugin(TransportType::kUnknown), nullptr);
+#endif
+      return;
+    }
+
+    if (child_case == "plugin-explicit-preload") {
+      Url::init_plugins(Url::kEnableEmpty);
+
+#if defined(VLINK_SUPPORT_INTRA) && !defined(VLINK_LIBRARY_STATIC)
+      auto conf = Url::load_for_plugin(TransportType::kIntra);
+      REQUIRE(conf != nullptr);
+      CHECK_EQ(conf->get_transport_type(), TransportType::kIntra);
+#else
+      CHECK_EQ(Url::load_for_plugin(TransportType::kUnknown), nullptr);
+#endif
+      return;
+    }
+
+    if (child_case == "plugin-explicit-preload-with-linked-flag") {
+      Url::init_plugins(Url::kEnableIntra);
+
+#if defined(VLINK_SUPPORT_INTRA) && !defined(VLINK_LIBRARY_STATIC)
+      auto conf = Url::load_for_plugin(TransportType::kIntra);
+      REQUIRE(conf != nullptr);
+      CHECK_EQ(conf->get_transport_type(), TransportType::kIntra);
+#else
+      CHECK_EQ(Url::load_for_plugin(TransportType::kUnknown), nullptr);
+#endif
+      return;
+    }
+
     if (child_case == "url-plugins") {
       Url::init_plugins(Url::kEnableIntra);
       CHECK_EQ(Url::load_for_plugin(TransportType::kUnknown), nullptr);
@@ -265,6 +424,16 @@ TEST_SUITE("impl-Url") {
       return;
     }
 
+    run_url_child_case("plugin-autoload-disabled", {});
+    run_url_child_case("plugin-autoload-disabled", {{"VLINK_URL_PLUGINS", "NoNe"}});
+    run_url_child_case("plugin-autoload-disabled", {{"VLINK_URL_PLUGINS", "auto "}});
+    run_url_child_case("plugin-autoload-enabled", {{"VLINK_URL_PLUGINS", "auto"}});
+    run_url_child_case("plugin-autoload-enabled", {{"VLINK_URL_PLUGINS", "AuTo"}});
+    run_url_child_case("plugin-autoload-sampled-once", {});
+    run_url_child_case("plugin-list-sampled-once", {});
+    run_url_child_case("plugin-autoload-concurrent", {{"VLINK_URL_PLUGINS", "AUTO"}});
+    run_url_child_case("plugin-explicit-preload", {{"VLINK_URL_PLUGINS", "vlink-intra"}});
+    run_url_child_case("plugin-explicit-preload-with-linked-flag", {{"VLINK_URL_PLUGINS", "vlink-intra"}});
     run_url_child_case("url-plugins", {{"VLINK_URL_PLUGINS", "vlink-unknown vlink-intra vlink-ddsc"}});
 
 #ifdef VLINK_SUPPORT_DDSC

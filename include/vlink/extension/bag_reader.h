@@ -96,9 +96,10 @@
 #include "../base/macros.h"
 #include "../base/message_loop.h"
 #include "../impl/types.h"
-#include "./bag_plugin_interface.h"
 
 namespace vlink {
+
+class BagPluginInterface;
 
 /**
  * @class BagReader

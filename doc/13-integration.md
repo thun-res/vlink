@@ -462,6 +462,8 @@ VLink 的扩展点按调用主体分为两类，决定其在文档中的展开�
 
 实现插件接口涉及三个宏：`VLINK_PLUGIN_REGISTER(Iface)` 在接口与实现类内注入由类型名派生的插件 ID，`VLINK_PLUGIN_DECLARE(ImplType, major, minor)` 在实现 `.cc` 中导出构造 / 析构入口并声明版本，`VLINK_PLUGIN_EXPORT` 为共享库符号可见性修饰符。
 
+`TriggerPluginInterface` 实现声明 ABI `2.0`，并通过 `init(config)` 接收宿主原样传入的配置字符串；字符串可由插件自行解释为 JSON、文件路径或其他格式。`vlink-trigger daemon` 在绑定插件和启动 recorder 前调用一次 `init()`，返回 `false` 时拒绝启动。
+
 > QoS 与安全相关扩展见 [QoS 配置](05-qos.md)、[安全加密](07-security.md)；录制 / 回放扩展见 [录制与回放](09-recording.md)。
 
 ### 🔀 13.10 UrlRemap：URL 运行时重映射
@@ -881,7 +883,7 @@ VLink 专有环境变量统一以 `VLINK_` 前缀命名，作为运行时配置�
 
 | 变量 | 作用 |
 | --- | --- |
-| `VLINK_URL_PLUGINS` | 加载额外传输后端插件（如 `zenoh,ddsc`），无需改代码即可启用新后端 |
+| `VLINK_URL_PLUGINS` | `auto` 按需加载未链接的已知共享后端，`none` / 空值关闭插件加载，其他非空值为显式预加载列表（模式值大小写不敏感） |
 | `VLINK_DDS_BIND` | 将所有 `dds://` 整体绑定到指定 DDS 实现（`ddsc`/`ddsr`/`ddst`） |
 | `VLINK_INTRA_BIND` | 将所有 `intra://` 重定向到其他 scheme（`shm`/`dds` 等） |
 | `VLINK_LOG_LEVEL` | 全局日志级别（`0`=TRACE … `6`=OFF） |
@@ -895,11 +897,11 @@ export VLINK_LOG_LEVEL=3
 
 ### 🧰 13.20 核心运行时
 
-控制插件加载、资源路径与内存池行为，与具体传输后端无关。这些变量是扩展机制的运行期注入面：`VLINK_PLUGIN_DIR` 影响 13.12 的搜索路径，`VLINK_CONVERT_PLUGIN` 注入 13.16 的转换插件、`VLINK_SCHEMA_PLUGIN` 注入 13.17 的 schema 插件，`VLINK_URL_REMAP` 等价于 13.10 的 `UrlRemap` 全局形式。
+控制插件加载、资源路径与内存池行为，与具体传输后端无关。这些变量是扩展机制的运行期注入面：`VLINK_URL_PLUGINS` 以 `auto` / `none` / 显式模块列表三种互斥模式控制已知传输插件；`VLINK_PLUGIN_DIR` 影响 13.12 的搜索路径，`VLINK_CONVERT_PLUGIN` 注入 13.16 的转换插件、`VLINK_SCHEMA_PLUGIN` 注入 13.17 的 schema 插件，`VLINK_URL_REMAP` 等价于 13.10 的 `UrlRemap` 全局形式。
 
 | 变量 | 类型 | 说明 |
 | --- | --- | --- |
-| `VLINK_URL_PLUGINS` | 名称列表 | 待加载的传输后端插件基础名（不含路径、`lib` 前缀与 `.so` 后缀），逗号或空格分隔；名称需对应已知后端（如 `zenoh`、`ddsc`），`vlink-` 前缀可省略 |
+| `VLINK_URL_PLUGINS` | 模式或名称列表 | 完整值为 `auto`（大小写不敏感）时，未链接的已知 transport 在 URL 首次使用时尝试加载固定的 `vlink-<module>`；为空或完整值为 `none`（大小写不敏感）时关闭插件加载；其他非空值是逗号或空格分隔的显式预加载基础名列表（可省略 `vlink-`，不含路径、平台库前缀与 `.so` / `.dylib` / `.dll` 后缀）。三种模式互斥，设置在进程级插件管理器首次初始化时读取一次；仅适用于共享模块，不加载静态归档（Unix `.a` / Windows 静态 `.lib`）；分包的运行时组件即包含所需加载名称；已链接后端优先，未知 scheme 不支持 |
 | `VLINK_SCHEMA_PLUGIN` | 路径或插件名 | Schema 插件共享库路径或基础名 |
 | `VLINK_CONVERT_PLUGIN` | 路径或插件名 | 转换插件路径或基础名；WebViz 桥接及 `vlink-bag2mcap`/`vlink-bag2rrd` 在未传 `--convert_plugin` 时读取 |
 | `VLINK_PROTO_DIR` | 目录路径 | `.proto` 搜索目录，亦可经 `vlink-eproto import <dir>` 持久化 |
@@ -914,7 +916,14 @@ export VLINK_LOG_LEVEL=3
 | `VLINK_MEMORY_PREALLOC` | `1`/`0` | `1` 时构建全局内存池时按各档 `blocks_per_chunk` 配额预分配满（尽力而为），消除热路径首次分配延迟；否则按需懒加载 |
 
 ```bash
+# 显式预加载
 export VLINK_URL_PLUGINS="zenoh,ddsc"
+
+# 或改用按需加载模式（与显式列表互斥）
+# export VLINK_URL_PLUGINS=auto
+
+# 或显式关闭插件加载
+# export VLINK_URL_PLUGINS=none
 export VLINK_PROTO_DIR=/opt/vlink/proto
 export VLINK_FBS_DIR=/opt/vlink/fbs
 ```

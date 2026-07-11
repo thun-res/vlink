@@ -75,7 +75,7 @@ export PATH=/usr/local/bin:$PATH
 | 量化话题频率与丢包 | `vlink-monitor` |
 | 检视话题消息内容 | `vlink-eproto sub` / `vlink-efbs sub` |
 | 录制与回放数据 | `vlink-bag record` / `vlink-bag play` |
-| 长期运行仅保留关键事件前后片段 | `vlink-trigger daemon` / `vlink-trigger trigger` |
+| 长期运行仅保留关键事件前后片段 | `vlink-trigger daemon` / `vlink-trigger dump` |
 | 导出字段供离线分析 | `vlink-dump` |
 | 评估链路吞吐与时延 | `vlink-bench run` |
 
@@ -318,15 +318,17 @@ vlink-bag tag /tmp/test.vdb "highway_test_20260317"
 
 `vlink-trigger` 是"内存打点 / 触发录制"工具，实现行车记录仪式的事件数据记录（EDR）：守护进程常驻后台，经服务发现订阅总线上全部话题的原始字节，为每个 URL 维护一个滚动的内存环形缓冲，仅保留最近一段历史；收到触发时，把触发点前后窗口内的数据在内存中按采集时刻排序后落盘为 bag 文件，并对历史文件做轮转。其能力由 extension 库的 `vlink::TriggerRecorder` 引擎提供。若配置 `bag_plugin` 加载一个 `BagPluginInterface` 重排插件，落盘写入路径会改为按 payload 内的真实**数据面时间**（data-plane time）滑窗重排——与在线 `BagWriter` 的重排机制一致（见 [录制与回放](09-recording.md)）。
 
+守护进程在 `vlink-trigger` 自身的编译单元中创建原始订阅器，因此正常情况下直接使用构建时链接的非 intra transport，不要求设置插件环境变量。只有需要使用未链接的已知共享模块时，才在进程首次初始化 URL 前（通常即启动前）把 `VLINK_URL_PLUGINS` 设为 `auto` 按需加载，或设为模块列表进行显式预加载；为空或设为 `none` 时关闭插件加载。模式值大小写不敏感且不能与列表混写。加载方式、搜索路径和限制见 [传输后端与 URL](04-transport.md) 与 [集成](13-integration.md)。`intra://` 仅限同一进程，独立守护进程无法录制其他进程的 intra 数据。
+
 ![触发录制（EDR）数据流](images/trigger-recording-flow.png)
 
 与 `vlink-bag record` 的区别在于落盘时机：`vlink-bag` 持续把消息写入磁盘，磁盘占用随时长线性增长；`vlink-trigger` 只在内存中滚动缓冲，仅在触发时落盘触发点前后的窗口，磁盘占用与触发次数相关而与运行时长无关。因此 `vlink-trigger` 适合需长期运行、只保留关键事件片段的场景（如量产车队的异常事件采集），`vlink-bag` 适合需完整留存全时段数据的调试与数据集采集。
 
-工具含两个子命令：`daemon` 启动守护进程并持续缓冲，`trigger` 向运行中的守护进程发起一次触发。二者经 JSON-over-RPC 通信——`daemon` 内部起一个 `Server<std::string, std::string>`，`trigger` 作为客户端发送 JSON 触发请求（`std::string` 走 raw string 序列化，无需 protobuf 依赖）。控制面 URL 默认 `dds://trigger/method`，daemon 侧经配置 `method_url` 覆盖，客户端侧经 `-m` / `--method_url` 对应指定。
+工具含两个子命令：`daemon` 启动守护进程并持续缓冲，`dump` 向运行中的守护进程发起一次触发。二者经 JSON-over-RPC 通信——`daemon` 内部起一个 `Server<std::string, std::string>`，`dump` 作为客户端发送 JSON 触发请求（`std::string` 走 raw string 序列化，无需 protobuf 依赖）。控制面 URL 默认 `dds://trigger/method`，daemon 侧经配置 `method_url` 覆盖，客户端侧经 `-m` / `--method_url` 对应指定。
 
-**内存与保留模型**　守护进程采用恒定保留策略：每个 URL 缓冲 `pre + max_post_all + 2 * retention_guard` 时长的历史（`max_post_all` 为所有 URL 中最大的 post 窗口，落盘发生在触发后 `max_post_all + retention_guard`，没有任何 URL 拥有生效的 post 窗口时立即落盘，窗口两侧各留一个裕量），使采集热路径无需判断"当前是否有触发在进行"。由此，单个 URL 配置过大的 post 会抬高所有 URL 的保留时长与内存占用，内存紧张时应约束 post；启用 `bag_plugin` 重排插件时，其滑窗会在落盘期间额外持有部分窗口副本，峰值内存可接近窗口大小的两倍。
+**内存与保留模型**　守护进程采用恒定保留策略：每个 URL 缓冲 `effective_pre + max_post_all + 2 * retention_guard` 时长的历史（`only_back` 的 `effective_pre` 为 0，其他 URL 为各自的 pre；`max_post_all` 为所有 URL 中最大的生效 post 窗口，落盘发生在触发后 `max_post_all + retention_guard`，没有任何 URL 拥有生效的 post 窗口时立即落盘，窗口两侧各留一个裕量），使采集热路径无需判断"当前是否有触发在进行"。由此，单个 URL 配置过大的 post 会抬高所有 URL 的保留时长与内存占用，内存紧张时应约束 post；启用 `bag_plugin` 重排插件时，其滑窗会在落盘期间额外持有部分窗口副本，峰值内存可接近窗口大小的两倍。
 
-**两类插件**　`vlink-trigger` 可同时使用两类互不混淆的插件：`bag_plugin` 指定的 `BagPluginInterface` 位于落盘写入路径内部，负责按数据面时间重排；而 `TriggerPluginInterface`（由引擎 API `bind_trigger_plugin_interface()` 绑定）只观察打点生命周期，用于 dump 完成后的上传 / 归档等后续行为，不改写帧。
+**两类插件**　`vlink-trigger` 可同时使用两类互不混淆的插件：`bag_plugin` 指定的 `BagPluginInterface` 位于落盘写入路径内部，负责按数据面时间重排；而 `TriggerPluginInterface`（由引擎 API `bind_trigger_plugin_interface()` 绑定）只观察打点生命周期，用于 dump 完成后的上传 / 归档等后续行为，不改写帧。当前 trigger 插件 ABI 版本为 `2.0`，实现应使用 `VLINK_PLUGIN_DECLARE(Impl, 2, 0)`。
 
 #### daemon 子命令
 
@@ -336,12 +338,21 @@ vlink-bag tag /tmp/test.vdb "highway_test_20260317"
 vlink-trigger daemon -c /etc/vlink/trigger/trigger.json
 
 vlink-trigger daemon -c /etc/vlink/trigger/trigger.json -n
+
+vlink-trigger daemon -c /etc/vlink/trigger/trigger.json \
+    --trigger_plugin edr-upload \
+    --trigger_plugin_config '{"endpoint":"https://example.test/upload"}'
 ```
 
 | 参数 | 说明 |
 | --- | --- |
 | `-c` / `--config <path>` | 配置文件路径（JSON，必填） |
 | `-n` / `--native` | 本地模式：本机发现，并在未配置 `dds_ip` 时将其置为 `127.0.0.1`（仅作用于数据面订阅，不影响 `method_url` 控制面） |
+| `--bag_plugin <name>` | 覆盖配置文件中的 `bag_plugin` |
+| `--trigger_plugin <name>` | 覆盖配置文件中的 `trigger_plugin` |
+| `--trigger_plugin_config <str>` | 覆盖配置文件中的 `trigger_plugin_config`；字符串内容由插件解释 |
+
+daemon 先读取 JSON，再按字段应用命令行中**显式出现**的三个插件参数，最后应用 `--native`。三个字段相互独立：未指定的参数保留 JSON 值，显式传入空字符串则清空相应值。因此可以只从命令行替换插件配置而沿用 JSON 中的插件名，也可以用 `--trigger_plugin ''` 禁用 JSON 中配置的 trigger 插件。
 
 配置文件字段如下（时间单位毫秒，容量单位 MB）：
 
@@ -349,6 +360,7 @@ vlink-trigger daemon -c /etc/vlink/trigger/trigger.json -n
 | --- | --- | --- |
 | `method_url` | `dds://trigger/method` | 控制面 RPC 的服务 URL（scheme 决定后端，可换 `shm://` 等），客户端 `-m` 须与之一致 |
 | `dump_dir` | `{tmp}/vlink-trigger` | 落盘目录，空则取系统临时目录下的 `vlink-trigger` |
+| `allow_out_file_outside_dump_dir` | `false` | 是否允许 RPC 的显式 `out_file` 位于 `dump_dir` 外；默认关闭，开启前应确保控制面调用方可信。该开关不改变相对路径基准和后缀校验 |
 | `file_type` | `vdb` | 落盘格式：`vdb`（SQLite 容器）/ `vcap`（MCAP 容器） |
 | `default_pre_ms` | `60000` | 默认触发前窗口（毫秒） |
 | `default_post_ms` | `5000` | 默认触发后窗口（毫秒） |
@@ -368,16 +380,20 @@ vlink-trigger daemon -c /etc/vlink/trigger/trigger.json -n
 | `whitelist` | `[]` | 非空时仅录制其中精确匹配的 URL |
 | `blacklist` | `[]` | 其中精确匹配的 URL 永不录制 |
 | `bag_plugin` | 空 | `BagPluginInterface` 重排插件库名（不含前缀/后缀），空则按采集时刻顺序落盘 |
-| `bag_plugin_dir` | 空 | 插件子目录名；设置后仅在各插件搜索路径的该子目录下查找 |
-| `bag_plugin_major` | `2` | 重排插件要求的主版本号 |
-| `bag_plugin_minor` | `0` | 重排插件要求的最低次版本号 |
+| `bag_plugin_dir` | 空 | 重排插件子目录名；设置后仅在各插件搜索路径的该子目录下查找 |
+| `trigger_plugin` | 空 | `TriggerPluginInterface` 生命周期插件库名（不含前缀/后缀，当前 ABI `2.0`），加载后经 `bind_trigger_plugin_interface` 绑定，`on_dump_finished` 为上传/归档钩子；空则不加载，加载失败 daemon 拒绝启动 |
+| `trigger_plugin_dir` | 空 | 生命周期插件子目录名；设置后仅在各插件搜索路径的该子目录下查找 |
+| `trigger_plugin_config` | 空 | 原样传给 trigger 插件 `init()` 的不透明字符串，可由插件解释为 JSON、文件路径或其他格式；`init()` 返回 `false` 时 daemon 拒绝启动 |
 | `url_overrides` | `{}` | 按 URL 覆盖窗口与限额，见下 |
+
+所有 MB 容量字段必须是有限、非负且换算后不超过 `int64` 字节范围的数值；非法值会使 daemon 在启动时拒绝配置。
 
 `url_overrides` 为每个 URL 独立配置窗口与限额，缺省字段回退到对应的全局默认：`pre_ms` / `post_ms`（触发前/后窗口）、`max_packet_size`（单包上限 MB）、`max_size`（该 URL 缓冲上限 MB）、`only_front`（仅录触发前）、`only_back`（仅录触发后）。
 
 ```json
 {
     "dump_dir": "/data/edr",
+    "allow_out_file_outside_dump_dir": false,
     "file_type": "vdb",
     "default_pre_ms": 60000,
     "default_post_ms": 5000,
@@ -391,6 +407,11 @@ vlink-trigger daemon -c /etc/vlink/trigger/trigger.json -n
     "discovery_filter": "available",
     "whitelist": [],
     "blacklist": [],
+    "bag_plugin": "",
+    "bag_plugin_dir": "",
+    "trigger_plugin": "",
+    "trigger_plugin_dir": "",
+    "trigger_plugin_config": "",
     "url_overrides": {
         "dds://camera/front": { "pre_ms": 60000, "post_ms": 5000, "max_packet_size": 8 },
         "dds://radar/points": { "pre_ms": 15000, "post_ms": 0 },
@@ -401,50 +422,50 @@ vlink-trigger daemon -c /etc/vlink/trigger/trigger.json -n
 
 上例中相机保留触发前 60 s、触发后 5 s，雷达仅保留触发前 15 s（`post_ms=0`），制动信号仅录触发后 10 s（`only_back`），三者窗口互不相同。默认按采集时刻落盘；若配置 `bag_plugin`，则由该插件按 payload 内数据面时间重排。
 
-#### trigger 子命令
+#### dump 子命令
 
-`vlink-trigger trigger` 向运行中的守护进程发起一次触发，可临时覆盖输出路径、原因、文件名与窗口，并按 URL 缩小本次落盘范围：
+`vlink-trigger dump` 向运行中的守护进程发起一次触发，可临时覆盖输出路径、原因、文件名与窗口，并按 URL 缩小本次落盘范围。显式输出路径默认必须位于 daemon 的 `dump_dir` 内；相对路径始终按 `dump_dir` 解析，且后缀必须与 daemon 的 `file_type` 匹配。默认情况下 `..` 与符号链接不能逃逸该目录；只有 daemon 配置 `allow_out_file_outside_dump_dir: true` 时才跳过这一包含性校验：
 
 ```bash
-vlink-trigger trigger
+vlink-trigger dump
 
-vlink-trigger trigger -r hard-brake -o /data/edr/case_001.vdb
+vlink-trigger dump -r hard-brake -o /data/edr/case_001.vdb
 
-vlink-trigger trigger -r collision --pre 10000 --post 3000
+vlink-trigger dump -r collision --pre 10000 --post 3000
 
-vlink-trigger trigger -u dds://camera/front dds://control/brake
+vlink-trigger dump -u dds://camera/front dds://control/brake
 
-vlink-trigger trigger -i "camera radar" -k
+vlink-trigger dump -i "camera radar" -k
 ```
 
 | 参数 | 说明 |
 | --- | --- |
 | `-m` / `--method_url <url>` | 守护进程控制面 URL（默认 `dds://trigger/method`，须与 daemon 的 `method_url` 一致） |
-| `-o` / `--out_file <path>` | 输出文件路径，空则在 `dump_dir` 下自动命名 |
+| `-o` / `--out_file <path>` | 输出文件路径，空则在 `dump_dir` 下自动命名；非空时受 daemon 的目录与后缀策略校验 |
 | `-r` / `--reason <str>` | 触发原因，写入 bag 标签供检索 |
 | `-n` / `--name <str>` | 输出文件名提示，空则生成时间戳文件名 |
-| `--pre <ms>` | 本次触发前窗口（毫秒），仅可缩小，`-1` 保持各 URL 配置值 |
-| `--post <ms>` | 本次触发后窗口（毫秒），仅可缩小，`-1` 保持各 URL 配置值 |
-| `-u` / `--url <url...>` | 仅落盘这些精确匹配的 URL |
-| `-i` / `--filter <str>` | 以子串过滤 URL（`-u` 为空时生效）；用引号包一个字符串，内部以空格分隔多个子串 |
+| `--pre <ms>` | 本次触发前窗口（毫秒），仅可缩小；`-1` 保持各 URL 配置值，其他负数或超出录制器安全范围的过大值会被拒绝 |
+| `--post <ms>` | 本次触发后窗口（毫秒），仅可缩小；`-1` 保持各 URL 配置值，其他负数或超出录制器安全范围的过大值会被拒绝 |
+| `-u` / `--urls <url...>` | 仅落盘这些精确匹配的 URL |
+| `-i` / `--filter <str>` | 以子串过滤 URL（`--urls` 为空时生效）；用逗号分隔，或用引号包住以空格分隔的多个子串 |
 | `-k` / `--black` | 配合 `--filter` 的黑名单模式，剔除命中的 URL |
 
 本次触发的窗口只能相对配置缩小、不能放大：`--pre` / `--post` 大于某 URL 配置值时以配置值为准，因为环形缓冲仅按配置时长保留历史。触发请求为非阻塞——守护进程接受后异步完成"等待 post 窗口 → 重排 → 写盘"，其间若再次触发则被拒绝（触发串行化）。参与本次落盘的 URL 集合在触发受理瞬间冻结：此后新发现的话题不进入本次落盘，已在集合中的话题即使离线，其缓冲数据也保留到本次落盘完成。
 
 #### 典型场景
 
-**车队 EDR 常驻采集**　守护进程随系统启动常驻，业务侧在检测到碰撞、急刹、接管等异常时调用 `trigger` 落盘事件前后窗口，长期运行仅积累关键片段：
+**车队 EDR 常驻采集**　守护进程随系统启动常驻，业务侧在检测到碰撞、急刹、接管等异常时调用 `dump` 落盘事件前后窗口，长期运行仅积累关键片段：
 
 ```bash
 vlink-trigger daemon -c /etc/vlink/trigger/trigger.json &
 
-vlink-trigger trigger -r takeover --post 8000
+vlink-trigger dump -r takeover --post 8000
 ```
 
 **与离线分析衔接**　落盘产物即标准 bag 文件，可直接交由 `vlink-bag`、`vlink-dump` 或图形化 `vlink-player` 处理：
 
 ```bash
-vlink-trigger trigger -r anomaly -o /data/edr/anomaly.vdb
+vlink-trigger dump -r anomaly -o /data/edr/anomaly.vdb
 vlink-bag info /data/edr/anomaly.vdb
 vlink-dump dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /tmp/
 ```

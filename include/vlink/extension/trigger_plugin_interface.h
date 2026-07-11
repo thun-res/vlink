@@ -32,36 +32,40 @@
  * @c BagPluginInterface -- a frame-forwarding pipeline that rewrites traffic in flight -- this
  * interface is an @b observer over the recorder's life cycle: the recorder owns the ring buffer and
  * the disk write, and the plugin is notified at each stage so it can drive the @e next step.  The
- * headline -- and only mandatory -- hook is @c on_dump_finished(), invoked once the bag file is fully
+ * primary lifecycle hook is @c on_dump_finished(), invoked once the bag file is fully
  * written and closed -- the natural place to upload the file to a backend, move it to long-term
  * storage, enqueue it for transfer, or fire an alert.
  *
- * A broad set of hooks is provided so an implementation can instrument the whole flow and override
- * only the stages it cares about; every hook other than @c on_dump_finished() carries a default no-op.
+ * A broad set of hooks is provided so an implementation can instrument the whole flow.  Implementations supply
+ * @c init() and @c on_dump_finished(); the remaining hooks have default no-op implementations.
  *
  * Plugin contract:
  *
  * | Hook                | Stage / thread                    | Purpose                                     |
  * | ------------------- | --------------------------------- | ------------------------------------------- |
- * | on_start()          | engine start (caller thread)      | Acquire resources (open an upload session)  |
- * | on_stop()           | engine stop (caller thread)       | Release resources                           |
- * | on_trigger()        | trigger accepted (dump thread)    | A dump is about to run for this request     |
- * | on_dump_started()   | after the writer opens (dump)     | The output file is being written            |
- * | on_frame()          | per written frame (dump)          | Inspect / count each persisted frame        |
- * | on_dump_finished()  | after the file is closed (dump)   | Upload / archive / notify -- the next step  |
- * | on_dump_failed()    | dump aborted (dump)               | React to a failed dump                      |
- * | on_file_rotated()   | old dump removed (dump)           | A rotated-out file was deleted              |
+ * | init()              | plugin load (daemon thread)       | Parse the host-supplied configuration       |
+ * | on_start()          | engine start (recorder loop)      | Acquire resources (open an upload session)  |
+ * | on_stop()           | engine stop (recorder loop)       | Release resources                           |
+ * | on_trigger()        | window captured (recorder loop)   | A dump is about to run for this request     |
+ * | on_dump_started()   | writer opened (recorder loop)     | The output file is being written            |
+ * | on_frame()          | frame submitted (recorder loop)   | Inspect / count each writer-accepted frame  |
+ * | on_dump_finished()  | file closed (recorder loop)       | Upload / archive / notify -- the next step  |
+ * | on_dump_failed()    | dump aborted (recorder loop)      | React to a failed dump                      |
+ * | on_file_rotated()   | file removed (recorder loop)      | A rotated-out file was deleted              |
  * | flush()             | before unbind / teardown          | Drain plugin-internal async work            |
  *
- * @note All hooks except @c on_start() / @c on_stop() run on the recorder's dump loop thread, one at a time
- *       (dumps are serialised).  A hook that performs slow work (a synchronous upload) blocks the next dump;
- *       offload to a plugin-owned worker and drain it in @c flush().  @c on_frame() fires once per frame and
- *       can be hot -- keep it cheap.
+ * @note Dump hooks and normal recorder start/stop hooks run on the recorder loop.  Rebinding outside a dump may
+ *       call @c flush(), @c on_stop() and @c on_start() on the caller's thread; rebinding during a dump is applied
+ *       on the loop after that dump.  A slow hook blocks later recorder work, so offload it to a plugin-owned
+ *       worker and drain it in @c flush().  @c on_frame() can be hot -- keep it cheap.
+ * @note Hooks must not re-enter the owning recorder.
  *
  * @par Example (upload every dumped bag to a backend)
  * @code
  * class UploadPlugin : public vlink::TriggerPluginInterface {
  *  public:
+ *   bool init(const std::string& config) override { return queue_.configure(config); }
+ *
  *   void on_dump_finished(const DumpResult& result) override {
  *     if (result.success) {
  *       queue_.push(result.path);  // hand off to a background uploader; drain it in flush()
@@ -73,7 +77,7 @@
  *  private:
  *   UploadQueue queue_;
  * };
- * VLINK_PLUGIN_DECLARE(UploadPlugin, 1, 0)
+ * VLINK_PLUGIN_DECLARE(UploadPlugin, 2, 0)
  * @endcode
  */
 
@@ -93,9 +97,9 @@ namespace vlink {
  *
  * @details
  * The host binds an instance through @c TriggerRecorder::bind_trigger_plugin_interface() and calls each
- * hook at the corresponding stage.  Every hook other than the mandatory @c on_dump_finished() has a
- * default no-op implementation, so an implementation overrides only what it needs.  Implementations
- * must be thread-compatible with the host's dump loop thread.
+ * hook at the corresponding stage.  Implementations provide @c init() and @c on_dump_finished(); the remaining
+ * hooks have default no-op implementations.  Implementations must follow the threading contract documented
+ * above.
  */
 class TriggerPluginInterface {
   VLINK_PLUGIN_REGISTER(TriggerPluginInterface)
@@ -148,11 +152,24 @@ class TriggerPluginInterface {
   };
 
   /**
+   * @brief Initialises the plugin with an opaque configuration string.
+   *
+   * @details
+   * Called once by a plugin-loading host before the plugin is bound to a recorder.  The string may be a file
+   * path, JSON document or any other format defined by the plugin.  Programmatically constructed plugins call
+   * this method themselves when configuration is required.
+   *
+   * @param config Plugin-defined configuration; may be empty.
+   * @return @c true on success; @c false makes the host reject the plugin.
+   */
+  virtual bool init(const std::string& config) = 0;
+
+  /**
    * @brief Notifies the plugin that the recorder has started.
    *
    * @details
-   * Invoked on the caller's thread from @c TriggerRecorder::start(), after discovery and the dump loop
-   * are running.  A place to acquire long-lived resources such as an upload session.  Default: no-op.
+   * Invoked on the recorder's loop thread during @c TriggerRecorder::async_run(), after discovery is running.
+   * A place to acquire long-lived resources such as an upload session.  Default: no-op.
    */
   virtual void on_start();
 
@@ -160,8 +177,8 @@ class TriggerPluginInterface {
    * @brief Notifies the plugin that the recorder is stopping.
    *
    * @details
-   * Invoked on the caller's thread from @c TriggerRecorder::stop(), after any in-flight dump has
-   * finished.  A place to release resources acquired in @c on_start().  Default: no-op.
+   * Invoked on the recorder's loop thread during shutdown.  A place to release resources acquired in
+   * @c on_start().  Default: no-op.
    */
   virtual void on_stop();
 
@@ -169,8 +186,8 @@ class TriggerPluginInterface {
    * @brief Notifies the plugin that a trigger was accepted and a dump is about to run.
    *
    * @details
-   * Invoked on the dump loop thread at the start of the dump, before the window is snapshotted.
-   * Default: no-op.
+   * Invoked on the recorder's loop thread after the requested window has been snapshotted and before the bag
+   * writer is opened.  Slow work delays persistence but does not change the captured window.  Default: no-op.
    *
    * @param context Accepted trigger request details.
    */
@@ -180,7 +197,7 @@ class TriggerPluginInterface {
    * @brief Notifies the plugin that the output file has been opened and writing is beginning.
    *
    * @details
-   * Invoked on the dump loop thread after the bag writer is created, before frames are written.
+   * Invoked on the recorder's loop thread after the bag writer is created, before frames are written.
    * Default: no-op.
    *
    * @param context Dump-in-progress details.
@@ -191,7 +208,7 @@ class TriggerPluginInterface {
    * @brief Inspects each frame as it is submitted to the writer (hot path).
    *
    * @details
-   * Invoked on the dump loop thread once per frame successfully handed to the writer, in ascending
+   * Invoked on the recorder's loop thread once per frame successfully handed to the writer, in ascending
    * capture-time order.  Frames the writer rejects outright are @b not reported here (see
    * @c DumpResult::dropped_count).  This observes @e submission, not final persistence: a bound bag reorder
    * plugin may still reorder or drop the frame downstream before it reaches disk.  Runs for potentially many
@@ -206,7 +223,7 @@ class TriggerPluginInterface {
    * @brief Notifies the plugin that the dump file has been fully written and closed.
    *
    * @details
-   * The headline -- and only mandatory -- hook: invoked on the dump loop thread once the bag is finalised.
+   * The primary lifecycle hook: invoked on the recorder's loop thread once the bag is finalised.
    * The place to upload, archive, or notify.  Slow work here blocks the next dump -- offload to a worker and
    * drain it in @c flush().
    *
@@ -218,8 +235,8 @@ class TriggerPluginInterface {
    * @brief Notifies the plugin that a dump was aborted before completion.
    *
    * @details
-   * Invoked on the dump loop thread when the writer could not be created or the write failed.  Default:
-   * no-op.
+   * Invoked on the recorder's loop thread when the writer could not be created, the write failed, or an accepted
+   * delayed dump was abandoned during shutdown.  Default: no-op.
    *
    * @param result Dump outcome, with @c success set to @c false and @c error describing the failure.
    */
@@ -229,7 +246,7 @@ class TriggerPluginInterface {
    * @brief Notifies the plugin that an old dump file was removed by rotation.
    *
    * @details
-   * Invoked on the dump loop thread each time file rotation deletes an aged-out dump, so a plugin
+   * Invoked on the recorder's loop thread each time file rotation deletes an aged-out dump, so a plugin
    * mirroring files to a backend can mirror the deletion.  Default: no-op.
    *
    * @param path Path of the file that was deleted.
@@ -240,10 +257,9 @@ class TriggerPluginInterface {
    * @brief Drains any plugin-internal asynchronous work before the host unbinds or tears down.
    *
    * @details
-   * Invoked by the host on its own thread, while it is still valid, right before it detaches this
-   * plugin (at recorder stop / teardown).  A plugin that offloads work to a background worker (e.g. an
-   * upload queue) must override this to finish or checkpoint that work synchronously, so pending
-   * uploads are not lost.  Default: no-op.
+   * Invoked by the host while the plugin is still valid, right before it detaches this plugin (at recorder stop /
+   * teardown).  A plugin that offloads work to a background worker (e.g. an upload queue) must override this to
+   * finish or checkpoint that work synchronously, so pending uploads are not lost.  Default: no-op.
    */
   virtual void flush();
 

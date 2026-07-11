@@ -761,6 +761,7 @@ TEST_SUITE("someip-custom") {
       });
 
       CHECK(pub.wait_for_subscribers(1s));
+      std::this_thread::sleep_for(10ms);
 
       SomeipCustomMsg msg;
       msg.id = 41;
@@ -802,6 +803,7 @@ TEST_SUITE("someip-dynamicdata") {
       });
 
       CHECK(pub.wait_for_subscribers(1s));
+      std::this_thread::sleep_for(10ms);
 
       DynamicData d;
       d.load("someip_int", 123);
@@ -831,6 +833,7 @@ TEST_SUITE("someip-dynamicdata") {
       });
 
       CHECK(pub.wait_for_subscribers(1s));
+      std::this_thread::sleep_for(10ms);
 
       DynamicData d;
       d.load("tag_check", std::string("payload_here"));
@@ -863,6 +866,7 @@ TEST_SUITE("someip-zerocopy") {
       });
 
       CHECK(pub.wait_for_subscribers(1s));
+      std::this_thread::sleep_for(10ms);
 
       zerocopy::RawData rd;
       rd.header.seq = 3;
@@ -916,6 +920,7 @@ TEST_SUITE("someip-security") {
       });
 
       if (pub.wait_for_subscribers(1s)) {
+        std::this_thread::sleep_for(10ms);
         pub.publish(Bytes{0xAA, 0xBB, 0xCC});
 
         for (int i = 0; i < 100 && !received.load(std::memory_order_acquire); ++i) {
@@ -958,6 +963,7 @@ TEST_SUITE("someip-security") {
       sub.listen([&](const Bytes& /*data*/) { received.store(true, std::memory_order_release); });
 
       if (pub.wait_for_subscribers(1s)) {
+        std::this_thread::sleep_for(10ms);
         pub.publish(Bytes{0x01, 0x02, 0x03});
 
         for (int i = 0; i < 100 && !received.load(std::memory_order_acquire); ++i) {

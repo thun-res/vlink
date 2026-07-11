@@ -35,6 +35,7 @@
 #include "./base/helpers.h"
 #include "./base/logger.h"
 #include "./base/utils.h"
+#include "./extension/bag_plugin_interface.h"
 #include "./extension/schema_plugin_manager.h"
 #include "./extension/vcap_writer.h"
 #include "./extension/vdb_writer.h"
@@ -250,13 +251,13 @@ void BagWriter::get_url_meta(int url_index, int ser_index, std::string& url, std
 
   auto url_iter = impl_->index_to_url_map.find(url_index);
 
-  if (url_iter != impl_->index_to_url_map.end()) {
+  if VLIKELY (url_iter != impl_->index_to_url_map.end()) {
     url = url_iter->second;
   }
 
   auto ser_iter = impl_->index_to_ser_map.find(ser_index);
 
-  if (ser_iter != impl_->index_to_ser_map.end()) {
+  if VLIKELY (ser_iter != impl_->index_to_ser_map.end()) {
     ser = ser_iter->second;
   }
 }
@@ -336,7 +337,7 @@ void BagWriter::bind_plugin_interface(const std::shared_ptr<BagPluginInterface>&
 
       const int64_t record_result = record(frame, immediate);
 
-      if (active && record_result < 0) {
+      if VUNLIKELY (active && record_result < 0) {
         impl_->active_record_result = record_result;
       }
     });
@@ -399,7 +400,7 @@ int64_t BagWriter::push(const Frame& frame, bool immediate) {
 
 BagWriter& BagWriter::operator<<(const Frame& frame) {
   if VUNLIKELY (push(frame, false) < 0) {
-    impl_->stream_fail.store(true, std::memory_order_relaxed);
+    set_fail();
   }
 
   return *this;
@@ -407,17 +408,44 @@ BagWriter& BagWriter::operator<<(const Frame& frame) {
 
 BagWriter& BagWriter::operator<<(const SchemaData& schema_data) {
   if VUNLIKELY (!push_schema(schema_data, false)) {
-    impl_->stream_fail.store(true, std::memory_order_relaxed);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
   return *this;
 }
 
-bool BagWriter::fail() const noexcept { return impl_->stream_fail.load(std::memory_order_relaxed); }
+bool BagWriter::fail() const noexcept { return impl_->stream_fail.load(std::memory_order_acquire); }
 
-BagWriter::operator bool() const noexcept { return !impl_->stream_fail.load(std::memory_order_relaxed); }
+BagWriter::operator bool() const noexcept { return !impl_->stream_fail.load(std::memory_order_acquire); }
 
-void BagWriter::clear() noexcept { impl_->stream_fail.store(false, std::memory_order_relaxed); }
+void BagWriter::clear() noexcept { impl_->stream_fail.store(false, std::memory_order_release); }
+
+void BagWriter::close() {}
+
+bool BagWriter::post_persistent_task(Callback&& callback) {
+  PostTaskOptions options;
+  options.overflow_policy = TaskOverflowPolicy::kReject;
+  options.drop_policy = TaskDropPolicy::kProtected;
+
+  const auto handle = post_task_handle(std::move(callback), options);
+
+  switch (handle.state()) {
+    case TaskExecutionState::kInvalid:
+    case TaskExecutionState::kCancelled:
+    case TaskExecutionState::kDropped:
+    case TaskExecutionState::kRejected:
+      return false;
+    case TaskExecutionState::kQueued:
+    case TaskExecutionState::kRunning:
+    case TaskExecutionState::kCompleted:
+    case TaskExecutionState::kFailed:
+      return true;
+  }
+
+  return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+}
+
+void BagWriter::set_fail() noexcept { impl_->stream_fail.store(true, std::memory_order_release); }
 
 void BagWriter::learn_recorded_url(const std::string& origin_url, const std::string& recorded_url) {
   {

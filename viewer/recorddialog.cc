@@ -139,7 +139,7 @@ RecordDialog::RecordDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Record
         frame.schema_type = proxy_data.schema;
         frame.action_type = vlink::ActionType::kSubscribe;
         frame.data = vlink::Bytes::shallow_copy(proxy_data.raw.data(), proxy_data.raw.size());
-        recorder->push(frame);
+        *recorder << frame;
       }
     };
   }
@@ -218,6 +218,28 @@ RecordDialog::RecordDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Record
   setFocus();
 }
 
+RecordDialog::FinalizeResult RecordDialog::finalize_recorder(const std::shared_ptr<vlink::BagWriter>& recorder) {
+  bool stopped = !recorder->is_running();
+
+  if (recorder->is_running()) {
+    recorder->quit(!recorder->wait_for_idle(5000));
+    stopped = recorder->wait_for_quit(5000);
+  }
+
+  if VUNLIKELY (!stopped) {
+    return kStopTimeout;
+  }
+
+  set_record_loss();
+  recorder->close();
+
+  if VUNLIKELY (recorder->fail()) {
+    return kFinalizeFailed;
+  }
+
+  return kFinalized;
+}
+
 RecordDialog::~RecordDialog() {
   {
     std::lock_guard lock(window_->data_mutex_);
@@ -246,14 +268,13 @@ RecordDialog::~RecordDialog() {
   }
 
   if (recorder) {
-    if (recorder->is_running()) {
-      recorder->quit();
-      recorder->wait_for_quit(5000);
+    const FinalizeResult result = finalize_recorder(recorder);
+
+    if VUNLIKELY (result == kFinalizeFailed) {
+      CLOG_E("recorddialog: failed to finalize recording");
+    } else if VUNLIKELY (result == kStopTimeout) {
+      CLOG_E("recorddialog: timed out while stopping recording");
     }
-
-    set_record_loss();
-
-    recorder->quit(true);
   }
 
   {
@@ -510,14 +531,9 @@ void RecordDialog::on_pushButton_stop_clicked() {
   }
 
   if (recorder) {
-    if (recorder->is_running()) {
-      recorder->quit();
-      recorder->wait_for_quit(5000);
+    if VUNLIKELY (finalize_recorder(recorder) != kFinalized) {
+      QMessageBox::warning(this, tr("Warning"), tr("The recording file could not be finalized completely."));
     }
-
-    set_record_loss();
-
-    recorder->quit(true);
   }
 
   {

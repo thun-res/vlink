@@ -52,16 +52,13 @@
 
 namespace vlink {
 
-namespace {
+static const std::string& make_channel_key(std::string& buffer, const std::string& url, std::string_view action_name) {
+  buffer.assign(url);
+  buffer.push_back('\x1F');
+  buffer.append(action_name);
 
-std::string make_channel_key(const std::string& url, std::string_view action_name) {
-  std::string key = url;
-  key.push_back('\x1F');
-  key.append(action_name);
-  return key;
+  return buffer;
 }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-
-}  // namespace
 
 // VCAPWriter::Impl
 struct VCAPWriter::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding)
@@ -83,6 +80,15 @@ struct VCAPWriter::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
     bool operator<(const UrlMsgInfo& target) const noexcept { return index < target.index; }
   };
 
+  struct MemoryCharge final {
+    MemoryCharge(std::atomic<int64_t>& counter, int64_t bytes) : value(counter), size(bytes) {}
+
+    ~MemoryCharge() { value.fetch_sub(size, std::memory_order_relaxed); }
+
+    std::atomic<int64_t>& value;
+    int64_t size;
+  };
+
   std::atomic_bool is_dumping{false};
   std::atomic_bool is_split_mode{false};
   std::atomic<int> split_index{0};
@@ -92,6 +98,8 @@ struct VCAPWriter::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
   std::atomic_bool quit_flag{false};
 
   std::string path;
+  std::filesystem::path active_path;
+  std::filesystem::path split_output_dir;
   std::string base_dir;
   std::string base_name;
   BagWriter::Config config;
@@ -134,6 +142,7 @@ struct VCAPWriter::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
   std::mutex write_mtx;
 
   std::string write_url_type;
+  std::string write_channel_key;
 
   // mcap
   std::optional<mcap::McapWriter> writer;
@@ -289,6 +298,16 @@ VCAPWriter::VCAPWriter(const std::string& path, const Config& config)
 
 #ifdef _WIN32
 
+      std::error_code absolute_ec;
+      auto absolute_path = std::filesystem::absolute(file_path, absolute_ec);
+
+      if VUNLIKELY (absolute_ec) {
+        absolute_path = file_path;
+      }
+
+      impl_->path = Helpers::path_to_string(absolute_path);
+      impl_->split_output_dir = absolute_path.parent_path();
+
       if (parent_path.empty()) {
         impl_->base_dir.clear();
         impl_->base_name = Helpers::path_to_string(file_path.stem());
@@ -297,6 +316,16 @@ VCAPWriter::VCAPWriter(const std::string& path, const Config& config)
         impl_->base_name = Helpers::path_to_string(std::filesystem::path(parent_path / file_path.stem()));
       }
 #else
+
+      std::error_code absolute_ec;
+      auto absolute_path = std::filesystem::absolute(file_path, absolute_ec);
+
+      if VUNLIKELY (absolute_ec) {
+        absolute_path = file_path;
+      }
+
+      impl_->path = absolute_path.string();
+      impl_->split_output_dir = absolute_path.parent_path();
 
       if (parent_path.empty()) {
         impl_->base_dir.clear();
@@ -329,7 +358,7 @@ VCAPWriter::VCAPWriter(const std::string& path, const Config& config)
             impl_->base_name + "." + std::to_string(impl_->split_index.load(std::memory_order_relaxed) + 1) + ".vcap";
       }
 
-      open(impl_->split_filename);
+      open_split(impl_->split_filename);
     } else {
       impl_->time_start = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now());
       impl_->time_current = impl_->time_start;
@@ -366,9 +395,13 @@ VCAPWriter::~VCAPWriter() {
   wait_for_quit();
 
   close();
+}
 
-  if (impl_->is_split_mode.load(std::memory_order_relaxed)) {
-    write_filex(true);
+void VCAPWriter::close() {
+  close_segment();
+
+  if VUNLIKELY (impl_->is_split_mode.load(std::memory_order_relaxed) && !write_filex(true)) {
+    set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 }
 
@@ -540,12 +573,13 @@ bool VCAPWriter::push_schema(const SchemaData& schema_data, bool immediate) {
     return merge_schema(stored_schema);
   }
 
-  bool posted = post_task([this, stored_schema = std::move(stored_schema)]() mutable {
+  bool posted = post_persistent_task([this, stored_schema = std::move(stored_schema)]() mutable {
     std::lock_guard lock(impl_->write_mtx);
 
     if VUNLIKELY (!merge_schema(stored_schema)) {
       CLOG_E("VCAPWriter: Deferred merge_schema failed for [%s] in async push_schema path.",
              stored_schema.name.c_str());
+      set_fail();
     }
   });
 
@@ -580,26 +614,29 @@ int64_t VCAPWriter::record(const Frame& frame, bool immediate) {
 
     get_url_meta(url, ser_type, url_index, ser_index);
 
-    const auto queued_size = data.size();
+    const auto queued_size = static_cast<int64_t>(data.size());
 
     impl_->memory_size.fetch_add(queued_size, std::memory_order_relaxed);
+    auto memory_charge = std::make_unique<Impl::MemoryCharge>(impl_->memory_size, queued_size);
 
-    bool posted = post_task([this, url_index, ser_index, schema_type, action_type, data, queued_size,
-                             microseconds_timestamp]() {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    bool posted = post_persistent_task([this, url_index, ser_index, schema_type, action_type, data,
+                                        memory_charge = std::move(memory_charge),
+                                        microseconds_timestamp]() {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      (void)memory_charge;
+
       std::lock_guard lock(impl_->write_mtx);
       std::string url;
       std::string ser_type;
 
       get_url_meta(url_index, ser_index, url, ser_type);
 
-      write(url, ser_type, schema_type, action_type, data, microseconds_timestamp);
-
-      impl_->memory_size.fetch_sub(queued_size, std::memory_order_relaxed);
+      if VUNLIKELY (!write(url, ser_type, schema_type, action_type, data, microseconds_timestamp)) {
+        set_fail();
+      }
     });
 
     if VUNLIKELY (!posted) {
-      impl_->memory_size.fetch_sub(queued_size, std::memory_order_relaxed);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      return -1;                                                             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      return -1;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
   }
 
@@ -633,6 +670,13 @@ void VCAPWriter::open(const std::string& path) {
     impl_->split_file_list.emplace_back(std::filesystem::path(path).filename().string());
     std::filesystem::path file_path(path);
 #endif
+
+    std::error_code absolute_ec;
+    impl_->active_path = std::filesystem::absolute(file_path, absolute_ec);
+
+    if VUNLIKELY (absolute_ec) {
+      impl_->active_path = file_path;
+    }
 
     if (std::filesystem::exists(file_path)) {
       std::filesystem::remove(file_path);
@@ -680,10 +724,18 @@ void VCAPWriter::open(const std::string& path) {
   impl_->last_timestamp = 0;
 }
 
-void VCAPWriter::close() {
-  if VUNLIKELY (!impl_->writer) {
-    VLOG_E("VCAPWriter: Writer is not open.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return;                                     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+void VCAPWriter::open_split(const std::string& path) {
+#ifdef _WIN32
+  const auto file_name = std::filesystem::path(Helpers::string_to_wstring(path)).filename();
+  open(Helpers::path_to_string(impl_->split_output_dir / file_name));
+#else
+  open((impl_->split_output_dir / std::filesystem::path(path).filename()).string());
+#endif
+}
+
+void VCAPWriter::close_segment() {
+  if (!impl_->writer) {
+    return;
   }
 
   mcap::Status status;
@@ -722,15 +774,34 @@ void VCAPWriter::close() {
     status = impl_->writer->write(channel_meta_data);
 
     if VUNLIKELY (!status.ok()) {
-      CLOG_F("VCAPWriter: Failed to write channel meta data, error = %s.",  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      CLOG_E("VCAPWriter: Failed to write channel meta data, error = %s.",  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
              status.message.c_str());                                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      return;                                                               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      set_fail();                                                           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      break;                                                                // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
   }
 
   impl_->writer->close();
   impl_->writer->terminate();
   impl_->writer.reset();
+
+  constexpr std::string_view kMcapMagic{"\x89MCAP0\r\n", 8};
+  std::error_code footer_ec;
+  const auto file_size = std::filesystem::file_size(impl_->active_path, footer_ec);
+
+  if VUNLIKELY (footer_ec || file_size < kMcapMagic.size()) {
+    set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  } else {
+    std::ifstream tail_check(impl_->active_path, std::ios::binary);
+    char magic[8] = {};
+
+    tail_check.seekg(-static_cast<std::streamoff>(kMcapMagic.size()), std::ios::end);
+    tail_check.read(magic, static_cast<std::streamsize>(kMcapMagic.size()));
+
+    if VUNLIKELY (!tail_check || std::string_view(magic, kMcapMagic.size()) != kMcapMagic) {
+      set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+  }
 
   impl_->url_map.clear();
   impl_->ser_map.clear();
@@ -800,11 +871,13 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
         impl_->split_callback(impl_->split_index.load(std::memory_order_relaxed), impl_->split_filename);
       }
 
-      close();
+      close_segment();
 
-      write_filex(false);
+      if VUNLIKELY (!write_filex(false)) {
+        set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
 
-      open(impl_->split_filename);
+      open_split(impl_->split_filename);
 
       if (!impl_->split_before && impl_->split_callback) {
         impl_->split_callback(impl_->split_index.load(std::memory_order_relaxed), impl_->split_filename);
@@ -813,9 +886,19 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
   }
 
   // insert url
-  const std::string channel_key = make_channel_key(url, convert_action(action_type));
+  const std::string& channel_key = make_channel_key(impl_->write_channel_key, url, convert_action(action_type));
   auto total_url_iter_ret = impl_->total_url_map.try_emplace(channel_key, Impl::UrlMsgInfo());
   auto url_iter_ret = impl_->url_map.try_emplace(channel_key, Impl::UrlMsgInfo());
+
+  auto discard_new_url_entries = [&]() {
+    if (url_iter_ret.second) {
+      impl_->url_map.erase(url_iter_ret.first);
+    }
+
+    if (total_url_iter_ret.second) {
+      impl_->total_url_map.erase(total_url_iter_ret.first);
+    }
+  };
 
   Impl::UrlMsgInfo& total_url_msg_info = total_url_iter_ret.first->second;
 
@@ -834,6 +917,7 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
       } else if VUNLIKELY (next_ser_type != ser_type) {
         CLOG_E("VCAPWriter: URL [%s] ser changed from [%s] to [%s].", url.c_str(), next_ser_type.c_str(),
                ser_type.c_str());
+        discard_new_url_entries();
         return false;
       }
     }
@@ -869,6 +953,7 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
 
   if (!next_ser_type.empty()) {
     if VUNLIKELY (!load_schema(schema_ser_type, schema_storage_type, schema_data)) {
+      discard_new_url_entries();
       return false;
     }
 
@@ -899,7 +984,8 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
           CLOG_E("VCAPWriter: URL [%s] schema changed from [%d] to [%d].",  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
                  url.c_str(),                                               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
                  static_cast<int>(next_schema_type), static_cast<int>(resolved_schema_type));
-          return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          discard_new_url_entries();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          return false;               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
       }
     }
@@ -1111,8 +1197,8 @@ bool VCAPWriter::write_filex(bool complete) {
     {
       std::lock_guard lock(sample_mutex());
 
-      for (const auto& url : impl_->total_url_list) {
-        const auto& ext_info = impl_->total_url_map[url];
+      for (const auto& channel_key : impl_->total_url_list) {
+        const auto& ext_info = impl_->total_url_map[channel_key];
         auto loss = total_url_loss_map_ref()[recover_recorded_url(ext_info.url)];
 
         url_json.push_back({
@@ -1142,9 +1228,15 @@ bool VCAPWriter::write_filex(bool complete) {
 
     std::ofstream filex(file_path);
 
-    if VLIKELY (filex.is_open()) {
-      filex << json.dump(4);
-      filex.close();
+    if VUNLIKELY (!filex.is_open()) {
+      return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    filex << json.dump(4);
+    filex.close();
+
+    if VUNLIKELY (!filex) {
+      return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
   } catch (nlohmann::json::exception& e) {
     VLOG_F("VCAPWriter: Filesystem error, ", e.what(), ".");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE

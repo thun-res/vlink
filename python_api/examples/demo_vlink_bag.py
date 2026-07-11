@@ -33,7 +33,9 @@ Both classes follow the same lifecycle:
     2.  Configure callbacks (``register_*_callback``) BEFORE running.
     3.  ``async_run()`` -- kick off the background thread.
     4.  ``push(frame)`` / ``play(...)`` -- drive the work.
-    5.  ``quit()`` then ``wait_for_quit(timeout_ms)`` -- graceful shutdown.
+    5.  For a writer, ``wait_for_idle(timeout_ms)`` -- drain accepted writes.
+    6.  ``quit()`` then ``wait_for_quit(timeout_ms)`` -- stop the background loop.
+    7.  ``BagWriter.close()`` -- finalize metadata/footer before checking ``fail()``.
 
 Run
 ---
@@ -130,7 +132,11 @@ def demo_bag_simple_record_replay():
         # for time-correlated diagnostics.
         assert isinstance(timestamp_us, int)
 
-    writer.wait_for_idle()
+    assert writer.wait_for_idle(5000)
+    writer.quit()
+    assert writer.wait_for_quit(5000)
+    writer.close()
+    assert not writer.fail()
     del writer
 
     # ---- Replay --------------------------------------------------------
@@ -221,7 +227,11 @@ def demo_bag_with_compression():
             payload,
         ))
 
-    writer.wait_for_idle()
+    assert writer.wait_for_idle(5000)
+    writer.quit()
+    assert writer.wait_for_quit(5000)
+    writer.close()
+    assert not writer.fail()
     del writer
 
     # Read back to confirm the file is intact and compression metadata is
@@ -308,7 +318,11 @@ def demo_bag_zerocopy_record_replay():
             og.to_bytes(),
         ))
 
-    writer.wait_for_idle()
+    assert writer.wait_for_idle(5000)
+    writer.quit()
+    assert writer.wait_for_quit(5000)
+    writer.close()
+    assert not writer.fail()
     del writer
 
     # ---- Replay --------------------------------------------------------
@@ -392,7 +406,11 @@ def demo_bag_playback_control():
             timestamp=base_us + i * 50_000,  # 50 ms apart -> 1 s span
         ))
 
-    writer.wait_for_idle()
+    assert writer.wait_for_idle(5000)
+    writer.quit()
+    assert writer.wait_for_quit(5000)
+    writer.close()
+    assert not writer.fail()
     del writer
 
     reader = _vlink.BagReader.create(bag_path, read_only=True)
@@ -468,7 +486,11 @@ def demo_bag_filter_urls():
                 f"{topic}-{i}".encode(),
             ))
 
-    writer.wait_for_idle()
+    assert writer.wait_for_idle(5000)
+    writer.quit()
+    assert writer.wait_for_quit(5000)
+    writer.close()
+    assert not writer.fail()
     del writer
 
     # ---- Replay only `camera` and `imu` --------------------------------
@@ -533,7 +555,11 @@ def demo_bag_inspect_only():
             _vlink.ActionType.Publish,
             f"b-{i}".encode(),
         ))
-    writer.wait_for_idle()
+    assert writer.wait_for_idle(5000)
+    writer.quit()
+    assert writer.wait_for_quit(5000)
+    writer.close()
+    assert not writer.fail()
     del writer
 
     # ---- Inspect without playback --------------------------------------
@@ -594,7 +620,11 @@ def demo_bag_cursor_read():
         )
 
     assert not writer.fail(), "streaming write latched a failure"
-    writer.wait_for_idle()
+    assert writer.wait_for_idle(5000)
+    writer.quit()
+    assert writer.wait_for_quit(5000)
+    writer.close()
+    assert not writer.fail(), "writer finalization latched a failure"
     del writer
 
     # ---- Pull every frame via iteration --------------------------------

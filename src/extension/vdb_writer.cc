@@ -126,6 +126,15 @@ struct VDBWriter::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddi
     }
   };
 
+  struct MemoryCharge final {
+    MemoryCharge(std::atomic<int64_t>& counter, int64_t bytes) : value(counter), size(bytes) {}
+
+    ~MemoryCharge() { value.fetch_sub(size, std::memory_order_relaxed); }
+
+    std::atomic<int64_t>& value;
+    int64_t size;
+  };
+
   std::atomic_bool is_dumping{false};
   std::atomic_bool is_split_mode{false};
   std::atomic<int> split_index{0};
@@ -135,6 +144,7 @@ struct VDBWriter::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddi
   std::atomic_bool quit_flag{false};
 
   std::string path;
+  std::filesystem::path split_output_dir;
   std::string base_dir;
   std::string base_name;
   BagWriter::Config config;
@@ -304,6 +314,16 @@ VDBWriter::VDBWriter(const std::string& path, const Config& config)
 
 #ifdef _WIN32
 
+      std::error_code absolute_ec;
+      auto absolute_path = std::filesystem::absolute(file_path, absolute_ec);
+
+      if VUNLIKELY (absolute_ec) {
+        absolute_path = file_path;
+      }
+
+      impl_->path = Helpers::path_to_string(absolute_path);
+      impl_->split_output_dir = absolute_path.parent_path();
+
       if (parent_path.empty()) {
         impl_->base_dir.clear();
         impl_->base_name = Helpers::path_to_string(file_path.stem());
@@ -312,6 +332,16 @@ VDBWriter::VDBWriter(const std::string& path, const Config& config)
         impl_->base_name = Helpers::path_to_string(std::filesystem::path(parent_path / file_path.stem()));
       }
 #else
+
+      std::error_code absolute_ec;
+      auto absolute_path = std::filesystem::absolute(file_path, absolute_ec);
+
+      if VUNLIKELY (absolute_ec) {
+        absolute_path = file_path;
+      }
+
+      impl_->path = absolute_path.string();
+      impl_->split_output_dir = absolute_path.parent_path();
 
       if (parent_path.empty()) {
         impl_->base_dir.clear();
@@ -344,7 +374,7 @@ VDBWriter::VDBWriter(const std::string& path, const Config& config)
             impl_->base_name + "." + std::to_string(impl_->split_index.load(std::memory_order_relaxed) + 1) + ".vdb";
       }
 
-      open(impl_->split_filename);
+      open_split(impl_->split_filename);
     } else {
       impl_->time_start = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now());
       impl_->time_current = impl_->time_start;
@@ -396,9 +426,13 @@ VDBWriter::~VDBWriter() {
   wait_for_quit();
 
   close();
+}
 
-  if (impl_->is_split_mode.load(std::memory_order_acquire)) {
-    write_filex(true);
+void VDBWriter::close() {
+  close_segment();
+
+  if VUNLIKELY (impl_->is_split_mode.load(std::memory_order_acquire) && !write_filex(true)) {
+    set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 }
 
@@ -601,11 +635,12 @@ bool VDBWriter::push_schema(const SchemaData& schema_data, bool immediate) {
     return merge_schema(stored_schema);
   }
 
-  bool posted = post_task([this, stored_schema = std::move(stored_schema)]() mutable {
+  bool posted = post_persistent_task([this, stored_schema = std::move(stored_schema)]() mutable {
     std::lock_guard lock(impl_->write_mtx);
 
     if VUNLIKELY (!merge_schema(stored_schema)) {
       CLOG_E("VDBWriter: Deferred merge_schema failed for [%s] in async push_schema path.", stored_schema.name.c_str());
+      set_fail();
     }
   });
 
@@ -642,26 +677,29 @@ int64_t VDBWriter::record(const Frame& frame, bool immediate) {
 
     get_url_meta(url, ser_type, url_index, ser_index);
 
-    const auto queued_size = data.size();
+    const auto queued_size = static_cast<int64_t>(data.size());
 
     impl_->memory_size.fetch_add(queued_size, std::memory_order_relaxed);
+    auto memory_charge = std::make_unique<Impl::MemoryCharge>(impl_->memory_size, queued_size);
 
-    bool posted = post_task([this, url_index, ser_index, schema_type, action_type, data, queued_size,
-                             microseconds_timestamp]() {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    bool posted = post_persistent_task([this, url_index, ser_index, schema_type, action_type, data,
+                                        memory_charge = std::move(memory_charge),
+                                        microseconds_timestamp]() {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      (void)memory_charge;
+
       std::string url;
       std::string ser_type;
 
       std::lock_guard lock(impl_->write_mtx);
       get_url_meta(url_index, ser_index, url, ser_type);
 
-      write(url, ser_type, schema_type, action_type, data, microseconds_timestamp);
-
-      impl_->memory_size.fetch_sub(queued_size, std::memory_order_relaxed);
+      if VUNLIKELY (!write(url, ser_type, schema_type, action_type, data, microseconds_timestamp)) {
+        set_fail();
+      }
     });
 
     if VUNLIKELY (!posted) {
-      impl_->memory_size.fetch_sub(queued_size, std::memory_order_relaxed);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      return -1;                                                             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      return -1;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
   }
 
@@ -1163,12 +1201,20 @@ void VDBWriter::open(const std::string& path) {
   impl_->last_timestamp = 0;
 }
 
-void VDBWriter::close() {
+void VDBWriter::open_split(const std::string& path) {
+#ifdef _WIN32
+  const auto file_name = std::filesystem::path(Helpers::string_to_wstring(path)).filename();
+  open(Helpers::path_to_string(impl_->split_output_dir / file_name));
+#else
+  open((impl_->split_output_dir / std::filesystem::path(path).filename()).string());
+#endif
+}
+
+void VDBWriter::close_segment() {
 #ifdef VLINK_ENABLE_SQLITE
 
-  if VUNLIKELY (!impl_->db) {
-    VLOG_W("VDBWriter: Sqlite not open.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return;                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  if (!impl_->db) {
+    return;
   }
 
   bool close_success = sync_cache();
@@ -1283,8 +1329,12 @@ void VDBWriter::close() {
     }
   }
 
-  if VUNLIKELY (!close_success && impl_->in_cached.load(std::memory_order_relaxed)) {
-    rollback_cache();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  if VUNLIKELY (!close_success) {
+    set_fail();
+
+    if (impl_->in_cached.load(std::memory_order_relaxed)) {
+      rollback_cache();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
   }
 
   if VLIKELY (impl_->datas_stmt) {
@@ -1342,6 +1392,7 @@ void VDBWriter::close() {
 
     if VUNLIKELY (ret != SQLITE_OK) {
       CLOG_W("Failed to close database (rc=%d): %s.", ret, close_err.c_str());  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      set_fail();                                                               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
     impl_->db = nullptr;
@@ -1504,11 +1555,13 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
         return false;                                                // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
 
-      close();
+      close_segment();
 
-      write_filex(false);
+      if VUNLIKELY (!write_filex(false)) {
+        set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
 
-      open(impl_->split_filename);
+      open_split(impl_->split_filename);
 
       if VUNLIKELY (!begin_cache()) {
         impl_->split_index.fetch_sub(1, std::memory_order_relaxed);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -1523,6 +1576,17 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
 
   auto total_url_iter_ret = impl_->total_url_map.try_emplace(url, Impl::UrlMsgInfo());
   auto url_iter_ret = impl_->url_map.try_emplace(url, Impl::UrlMsgInfo());
+
+  auto discard_new_url_entries = [&]() {
+    if (url_iter_ret.second) {
+      impl_->url_map.erase(url_iter_ret.first);
+    }
+
+    if (total_url_iter_ret.second) {
+      impl_->total_url_map.erase(total_url_iter_ret.first);
+    }
+  };
+
   Impl::UrlMsgInfo& total_url_msg_info = total_url_iter_ret.first->second;
   Impl::UrlMsgInfo& url_msg_info = url_iter_ret.first->second;
   auto resolved_schema_type = SchemaData::resolve_type(schema_type, ser_type);
@@ -1540,7 +1604,7 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
       } else if VUNLIKELY (next_ser_type != ser_type) {
         CLOG_E("VDBWriter: URL [%s] ser changed from [%s] to [%s].", url.c_str(), next_ser_type.c_str(),
                ser_type.c_str());
-        rollback_cache();
+        discard_new_url_entries();
         return false;
       }
     }
@@ -1576,7 +1640,7 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
     SchemaData schema_data;
 
     if VUNLIKELY (!load_schema(schema_ser_type, schema_storage_type, schema_data)) {
-      rollback_cache();
+      discard_new_url_entries();
       return false;
     }
 
@@ -1607,7 +1671,7 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
           // LCOV_EXCL_START GCOVR_EXCL_START
           CLOG_E("VDBWriter: URL [%s] schema changed from [%d] to [%d].", url.c_str(),
                  static_cast<int>(next_schema_type), static_cast<int>(resolved_schema_type));
-          rollback_cache();
+          discard_new_url_entries();
           return false;
           // LCOV_EXCL_STOP GCOVR_EXCL_STOP
         }
@@ -1965,9 +2029,15 @@ bool VDBWriter::write_filex(bool complete) {
 
     std::ofstream filex(file_path);
 
-    if VLIKELY (filex.is_open()) {
-      filex << json.dump(4);
-      filex.close();
+    if VUNLIKELY (!filex.is_open()) {
+      return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    filex << json.dump(4);
+    filex.close();
+
+    if VUNLIKELY (!filex) {
+      return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
   } catch (nlohmann::json::exception& e) {
     VLOG_F("VDBWriter: JSON error during config export, ", e.what(), ".");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE

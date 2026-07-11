@@ -1,6 +1,7 @@
 {
     "method_url": "dds://trigger/method",
     "dump_dir": "/tmp/vlink-trigger",
+    "allow_out_file_outside_dump_dir": false,
     "file_type": "vdb",
     "default_pre_ms": 60000,
     "default_post_ms": 5000,
@@ -21,8 +22,9 @@
     "blacklist": [],
     "bag_plugin": "",
     "bag_plugin_dir": "",
-    "bag_plugin_major": 2,
-    "bag_plugin_minor": 0,
+    "trigger_plugin": "",
+    "trigger_plugin_dir": "",
+    "trigger_plugin_config": "",
     "url_overrides": {
         "dds://camera/front": { "pre_ms": 60000, "post_ms": 5000, "max_packet_size": 8 },
         "dds://radar/points": { "pre_ms": 15000, "post_ms": 0 },

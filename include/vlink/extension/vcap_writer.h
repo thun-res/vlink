@@ -36,7 +36,7 @@
  *  push_schema()  -->  schema record
  *  push(frame)    -->  channel record (once per URL)
  *                 -->  message chunk (Zstd optional)
- *  on_end()       -->  attachments + summary section + footer (index of summary)
+ *  close()        -->  attachments + summary section + footer (index of summary)
  * @endcode
  *
  * @par Writer states
@@ -51,7 +51,7 @@
  *        |                                                          | (new .vcap) |
  *        |                                                          +-------------+
  *        |                                                                 |
- *        +-------------------- on_end() / dtor --------------------- finalising
+ *        +-------------------- close() / dtor ---------------------- finalising
  *                                                                          |
  *                                                                          v
  *                                                                       sealed
@@ -72,6 +72,11 @@
  *   frame.action_type = vlink::ActionType::kPublish;
  *   frame.data        = serialized_bytes;
  *   writer->push(frame);
+ *
+ *   writer->wait_for_idle();
+ *   writer->quit();
+ *   writer->wait_for_quit();
+ *   writer->close();
  * @endcode
  *
  * @see BagWriter, VDBWriter
@@ -110,6 +115,11 @@ class VLINK_EXPORT VCAPWriter final : public BagWriter {
   ~VCAPWriter() override;
 
   /**
+   * @brief Writes the channel metadata and MCAP footer, then closes the file; idempotent.
+   */
+  void close() override;
+
+  /**
    * @brief Registers a callback invoked at each file-split boundary.
    *
    * @param callback  Receives (split_index, filename) before or after the split.
@@ -129,7 +139,7 @@ class VLINK_EXPORT VCAPWriter final : public BagWriter {
    *
    * @param schema_data  Schema descriptor to embed.
    * @param immediate    @c true merges synchronously; @c false enqueues the write.
-   * @return @c false only when an immediate merge failed.
+   * @return @c false when an immediate merge fails or an asynchronous merge cannot be queued.
    */
   bool push_schema(const SchemaData& schema_data, bool immediate = false) override;
 
@@ -168,7 +178,9 @@ class VLINK_EXPORT VCAPWriter final : public BagWriter {
  private:
   void open(const std::string& path);
 
-  void close();
+  void open_split(const std::string& path);
+
+  void close_segment();
 
   bool merge_schema(SchemaData& schema_data);
 

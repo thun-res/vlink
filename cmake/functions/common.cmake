@@ -157,7 +157,7 @@ function(vlink_test_coverage_by_lcov target excludes options)
     endif()
     set(LCOV_OMIT_ARGS "")
     if(LCOV_HELP_OUTPUT MATCHES "--omit-lines")
-      set(LCOV_OMIT_ARGS "--omit-lines LCOV_EXCL_LINE --omit-lines LCOV_EXCL_START --omit-lines LCOV_EXCL_STOP")
+      set(LCOV_OMIT_ARGS "--omit-lines LCOV_EXCL_LINE")
     endif()
     set(LCOV_BRANCH_EXCL_REGEX "LCOV_EXCL_BR_LINE|VUNLIKELY|VLIKELY|&&|[|][|]")
     set(LCOV_EXT_ARGS
@@ -245,6 +245,15 @@ function(vlink_export project_name)
   set(target ${project_name})
   set(namespace "")
   set(version ${CMAKE_PROJECT_VERSION})
+  set(_vlink_namelink_component devel)
+
+  if(DEFINED VLINK_MODULE_NAME)
+    list(FIND VLINK_LIBRARIES "${PROJECT_NAMESPACE}${VLINK_MODULE_NAME}" _vlink_runtime_module_index)
+
+    if(NOT _vlink_runtime_module_index EQUAL -1)
+      set(_vlink_namelink_component runtime)
+    endif()
+  endif()
   if(ARGC GREATER 1)
     set(target "${ARGV1}")
   endif()
@@ -294,7 +303,7 @@ function(vlink_export project_name)
       ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT devel
       LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
               COMPONENT runtime
-              NAMELINK_COMPONENT devel
+              NAMELINK_COMPONENT ${_vlink_namelink_component}
     )
     install(
       EXPORT ${project_name}-targets
@@ -310,7 +319,7 @@ function(vlink_export project_name)
       ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT devel
       LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
               COMPONENT runtime
-              NAMELINK_COMPONENT devel
+              NAMELINK_COMPONENT ${_vlink_namelink_component}
     )
     install(
       EXPORT ${project_name}-config

@@ -92,18 +92,25 @@
  * application code.
  *
  * @par Plugin loading
- * When @c VLINK_URL_USE_PLUGIN is enabled, @c Url::init_plugins() loads shared
- * libraries listed in the @c VLINK_URL_PLUGINS environment variable.  Each
- * library name must map to an existing @c TransportType; loaded
- * @c ConfPluginInterface entries are consulted only for recognized transports
- * whose backend is not linked in.  @c TransportType::kUnknown is not passed to
- * plugins, so arbitrary URL schemes cannot be added through this mechanism.
+ * When @c VLINK_URL_USE_PLUGIN is enabled, the complete @c VLINK_URL_PLUGINS
+ * value selects one mutually exclusive mode.  A case-insensitive value of
+ * @c auto lets @c Url::load_for_plugin() load the fixed @c vlink-<module>
+ * library for a recognized, unlinked transport on first use.  An empty value or
+ * case-insensitive @c none disables plugin loading.  Any other non-empty value is
+ * parsed as the explicit preload list used by @c Url::init_plugins().  Explicitly
+ * listed modules are loaded process-wide even when the first caller has that
+ * backend linked, because linked availability is a property of each caller's
+ * compilation target.  The value
+ * is sampled when the process-wide plugin manager is first initialized; later
+ * environment changes have no effect.  Linked backends keep precedence, and
+ * @c TransportType::kUnknown is never passed to plugins, so arbitrary URL
+ * schemes cannot be added through this mechanism.
  *
  * @par Transport enable flags
- * @c TransportEnableFlag is a bitmask that selects which built-in transports
- * participate in @c global_init() and @c init_plugins().  Embedding
- * environments (Android, QNX, etc.) use it to skip transports they cannot
- * support at runtime.
+ * @c TransportEnableFlag is a bitmask that selects which built-in transports participate in @c global_init().
+ * Embedding environments (Android, QNX, etc.) use it to skip transports they cannot support at runtime.  The
+ * legacy parameter on @c init_plugins() is retained for source compatibility but does not filter the explicit
+ * preload list selected by @c VLINK_URL_PLUGINS.
  *
  * @par Example
  * @code
@@ -213,7 +220,7 @@ struct VLINK_EXPORT Protocol final {
 struct Url final : public Conf {
   /**
    * @enum TransportEnableFlag
-   * @brief Bitmask that selects which transports participate in @c global_init() / @c init_plugins().
+   * @brief Bitmask that selects which transports participate in @c global_init().
    *
    * @details
    * Embedding environments (e.g. Android, QNX) pass a subset of these flags to
@@ -367,34 +374,46 @@ struct Url final : public Conf {
   [[nodiscard]] TransportType get_transport_type() const override;
 
   /**
-   * @brief Loads recognized transport plugins from @c VLINK_URL_PLUGINS.
+   * @brief Explicitly preloads recognized transport plugins from @c VLINK_URL_PLUGINS.
    *
    * @details
-   * Entries in @c VLINK_URL_PLUGINS must map to existing VLink transport module
+   * Unless its complete value is the case-insensitive mode @c auto or @c none,
+   * entries in @c VLINK_URL_PLUGINS must map to existing VLink transport module
    * names such as @c zenoh or @c ddsc; unknown names are rejected before the
    * shared library loader is called.  This API loads alternate implementations
    * for known transports, not arbitrary new URL schemes.
    *
-   * Discovered plugins whose @c TransportType already appears in
-   * @p transport_enable_flags are skipped so that linked transports continue
-   * to take precedence.  The first @c Url construction triggers this call
-   * automatically; explicit invocations are only needed for unusual
-   * initialisation sequences.
+   * Explicitly listed plugins are loaded process-wide even when the first caller
+   * has the same backend linked; the inline URL dispatcher still gives a caller's
+   * linked backend precedence.  The first @c Url construction triggers this call
+   * automatically; explicit invocations are only needed for unusual initialisation
+   * sequences.
    *
-   * @param transport_enable_flags  Bitmask of built-in transports already
-   *                                available; matching plugins are ignored.
+   * Explicit preload, @c auto, and @c none are mutually exclusive modes of the
+   * complete setting.  Mode names are case-insensitive and cannot be combined
+   * with a module list.
+   *
+   * @param transport_enable_flags  Retained for source compatibility; explicit
+   *                                preload selection comes from @c VLINK_URL_PLUGINS.
    */
   VLINK_EXPORT static void init_plugins(uint16_t transport_enable_flags = 0);
 
   /**
-   * @brief Asks loaded plugins for a @c Conf factory matching @p type.
+   * @brief Resolves a transport plugin and asks it for a @c Conf matching @p type.
    *
    * @details
-   * Looks up a previously registered @c ConfPluginInterface whose
-   * @c get_transport_type() returns @p type and invokes @c create() on it.
+   * Looks up a preloaded or previously auto-loaded @c ConfPluginInterface whose
+   * @c get_transport_type() returns @p type.  If none is registered and the
+   * complete @c VLINK_URL_PLUGINS value equals @c auto, ignoring case, the
+   * runtime tries the fixed @c vlink-<module> library for the recognized
+   * transport, validates the plugin-reported type, and invokes @c create().
+   * Empty and case-insensitive @c none values disable plugin loading; other
+   * non-empty values select explicit preload mode.  The complete setting is
+   * sampled once when the process-wide plugin manager is first initialized.
    *
    * @param type  Transport backend to look up.
-   * @return Newly created @c Conf, or @c nullptr when no plugin matches.
+   * @return Newly created @c Conf, or @c nullptr for an unknown transport, a
+   *         disabled or failed on-demand load, or when no plugin matches.
    */
   [[nodiscard]] VLINK_EXPORT static std::unique_ptr<Conf> load_for_plugin(TransportType type);
 
@@ -471,6 +490,7 @@ struct Url final : public Conf {
    * @details
    * Switches on @c Protocol::transport, allocates the matching @c *Conf class,
    * and falls back to @c load_for_plugin() when no built-in backend matches.
+   * That fallback may perform opt-in on-demand loading as documented above.
    * Logs a fatal entry when neither path succeeds.
    *
    * @param protocol  Parsed URL information used to select the transport.

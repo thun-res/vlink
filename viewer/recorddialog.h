@@ -78,6 +78,14 @@ class RecordDialog : public QDialog {
   void update_time_label();
 
  private:
+  enum FinalizeResult : uint8_t {
+    kFinalized = 0,
+    kFinalizeFailed,
+    kStopTimeout,
+  };
+
+  FinalizeResult finalize_recorder(const std::shared_ptr<vlink::BagWriter>& recorder);
+
   void update_status();
 
   void set_record_loss();

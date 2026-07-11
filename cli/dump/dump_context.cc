@@ -23,6 +23,8 @@
 
 #include "dump_context.h"
 
+#include <vlink/extension/bag_plugin_interface.h>
+
 #include <iostream>
 
 namespace vlink::dump {
@@ -62,7 +64,7 @@ bool DumpContext::prepare_bag_plugin() {
 
   bag_plugin_interface = bag_plugin.load<vlink::BagPluginInterface>(bag_plugin_name, 2, 0);
 
-  if (!bag_plugin_interface) {
+  if VUNLIKELY (!bag_plugin_interface) {
     std::cerr << "Failed to load plugin (" << bag_plugin_name << ")." << std::endl;
     return false;
   }

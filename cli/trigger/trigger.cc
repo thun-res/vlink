@@ -22,27 +22,49 @@
  */
 
 #include <vlink/base/logger.h>
+#include <vlink/base/plugin.h>
 #include <vlink/base/utils.h>
+#include <vlink/extension/trigger_plugin_interface.h>
 #include <vlink/extension/trigger_recorder.h>
 #include <vlink/version.h>
 #include <vlink/vlink.h>
 
-#include <argparse/argparse.hpp>
-#include <nlohmann/json.hpp>
-//
 #include <algorithm>
+#include <argparse/argparse.hpp>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <mutex>
+#include <nlohmann/json.hpp>
+#include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
-static constexpr char kMethodUrl[] = "dds://trigger/method";
+static constexpr char kDefaultMethodUrl[] = "dds://trigger/method";
+
+struct DaemonOptions final {
+  std::string method_url{kDefaultMethodUrl};
+  bool allow_out_file_outside_dump_dir{false};
+  std::string trigger_plugin_lib;
+  std::string trigger_plugin_dir;
+  std::string trigger_plugin_config;
+};
+
+struct DaemonArguments final {
+  std::string config_path;
+  bool native_mode{false};
+  std::optional<std::string> bag_plugin_lib;
+  std::optional<std::string> trigger_plugin_lib;
+  std::optional<std::string> trigger_plugin_config;
+};
 
 static std::string to_lower(std::string text) {
   std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return std::tolower(c); });
@@ -50,10 +72,130 @@ static std::string to_lower(std::string text) {
   return text;
 }
 
-static bool parse_config(const std::string& path, vlink::TriggerRecorder::Config& config, std::string& method_url) {
+static bool mb_to_bytes(double megabytes, const std::string& field_name, int64_t& result) {
+  constexpr int64_t kBytesPerMegabyte = 1024LL * 1024LL;
+  constexpr int64_t kMaxMegabytes = std::numeric_limits<int64_t>::max() / kBytesPerMegabyte;
+
+  if VUNLIKELY (!std::isfinite(megabytes)) {
+    std::cerr << field_name << " must be finite." << std::endl;
+    return false;
+  } else if VUNLIKELY (megabytes < 0.0) {
+    std::cerr << field_name << " must be non-negative." << std::endl;
+    return false;
+  } else if VUNLIKELY (megabytes > static_cast<double>(kMaxMegabytes)) {
+    std::cerr << field_name << " exceeds the int64 byte range." << std::endl;
+    return false;
+  }
+
+  result = static_cast<int64_t>(megabytes * static_cast<double>(kBytesPerMegabyte));
+  return true;
+}
+
+static bool is_valid_trigger_window(int64_t value) {
+  return value == -1 || (value >= 0 && value <= vlink::TriggerRecorder::kMaxWindowMs);
+}
+
+static bool parse_trigger_window(const nlohmann::json& request, const char* field_name, int64_t& result,
+                                 std::string& error) {
+  if (!request.contains(field_name)) {
+    result = -1;
+    return true;
+  }
+
+  const auto& value = request.at(field_name);
+
+  if (value.is_number_unsigned()) {
+    const auto unsigned_value = value.get<uint64_t>();
+
+    if VUNLIKELY (unsigned_value > static_cast<uint64_t>(vlink::TriggerRecorder::kMaxWindowMs)) {
+      error = std::string(field_name) + " exceeds the supported millisecond range";
+      return false;
+    }
+
+    result = static_cast<int64_t>(unsigned_value);
+    return true;
+  }
+
+  if VUNLIKELY (!value.is_number_integer()) {
+    error = std::string(field_name) + " must be an integer";
+    return false;
+  }
+
+  const auto signed_value = value.get<int64_t>();
+
+  if VUNLIKELY (!is_valid_trigger_window(signed_value)) {
+    error = std::string(field_name) + " must be -1 or a non-negative millisecond value";
+    return false;
+  }
+
+  result = signed_value;
+  return true;
+}
+
+static bool path_is_within(const std::filesystem::path& root, const std::filesystem::path& candidate) {
+  auto root_iter = root.begin();
+  auto candidate_iter = candidate.begin();
+
+  for (; root_iter != root.end(); ++root_iter, ++candidate_iter) {
+    if VUNLIKELY (candidate_iter == candidate.end() || *candidate_iter != *root_iter) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+static bool validate_out_file(const std::string& requested, const std::string& dump_dir,
+                              const std::string& expected_suffix, bool allow_out_file_outside_dump_dir,
+                              std::string& normalized, std::string& error) {
+  if (requested.empty()) {
+    normalized.clear();
+    return true;
+  }
+
+  const std::filesystem::path requested_path(requested);
+
+  if VUNLIKELY (to_lower(requested_path.extension().string()) != expected_suffix) {
+    error = "out_file suffix must be " + expected_suffix;
+    return false;
+  }
+
+  std::error_code ec;
+  auto root = std::filesystem::absolute(std::filesystem::path(dump_dir), ec);
+
+  if VUNLIKELY (ec) {
+    error = "cannot resolve dump_dir: " + ec.message();
+    return false;
+  }
+
+  root = std::filesystem::weakly_canonical(root, ec);
+
+  if VUNLIKELY (ec) {
+    error = "cannot canonicalize dump_dir: " + ec.message();
+    return false;
+  }
+
+  auto candidate = requested_path.is_absolute() ? requested_path : root / requested_path;
+  candidate = std::filesystem::weakly_canonical(candidate, ec);
+
+  if VUNLIKELY (ec) {
+    error = "cannot canonicalize out_file: " + ec.message();
+    return false;
+  }
+
+  if VUNLIKELY (!allow_out_file_outside_dump_dir && !path_is_within(root, candidate)) {
+    error = "out_file must be inside dump_dir unless allow_out_file_outside_dump_dir is true";
+    return false;
+  }
+
+  normalized = candidate.string();
+  return true;
+}
+
+static bool parse_config(const std::string& path, vlink::TriggerRecorder::Config& config, DaemonOptions& options) {
   std::ifstream file(path);
 
-  if (!file.is_open()) {
+  if VUNLIKELY (!file.is_open()) {
     std::cerr << "Cannot open config: " << path << std::endl;
     return false;
   }
@@ -63,14 +205,16 @@ static bool parse_config(const std::string& path, vlink::TriggerRecorder::Config
   try {
     file >> data;
 
-    auto mb_to_bytes = [](double megabytes) -> int64_t { return static_cast<int64_t>(megabytes * 1024.0 * 1024.0); };
-
     if (data.contains("method_url")) {
-      method_url = data.at("method_url").get<std::string>();
+      options.method_url = data.at("method_url").get<std::string>();
     }
 
     if (data.contains("dump_dir")) {
       config.dump_dir = data.at("dump_dir").get<std::string>();
+    }
+
+    if (data.contains("allow_out_file_outside_dump_dir")) {
+      options.allow_out_file_outside_dump_dir = data.at("allow_out_file_outside_dump_dir").get<bool>();
     }
 
     if (data.contains("file_type")) {
@@ -95,15 +239,23 @@ static bool parse_config(const std::string& path, vlink::TriggerRecorder::Config
     }
 
     if (data.contains("default_max_packet_size")) {
-      config.default_max_packet_size = mb_to_bytes(data.at("default_max_packet_size").get<double>());
+      if VUNLIKELY (!mb_to_bytes(data.at("default_max_packet_size").get<double>(), "default_max_packet_size",
+                                 config.default_max_packet_size)) {
+        return false;
+      }
     }
 
     if (data.contains("default_max_size")) {
-      config.default_max_size = mb_to_bytes(data.at("default_max_size").get<double>());
+      if VUNLIKELY (!mb_to_bytes(data.at("default_max_size").get<double>(), "default_max_size",
+                                 config.default_max_size)) {
+        return false;
+      }
     }
 
     if (data.contains("max_cache_size")) {
-      config.max_cache_size = mb_to_bytes(data.at("max_cache_size").get<double>());
+      if VUNLIKELY (!mb_to_bytes(data.at("max_cache_size").get<double>(), "max_cache_size", config.max_cache_size)) {
+        return false;
+      }
     }
 
     if (data.contains("retention_guard_ms")) {
@@ -140,7 +292,10 @@ static bool parse_config(const std::string& path, vlink::TriggerRecorder::Config
     }
 
     if (data.contains("sleep_interval_mb")) {
-      config.sleep_interval = mb_to_bytes(data.at("sleep_interval_mb").get<double>());
+      if VUNLIKELY (!mb_to_bytes(data.at("sleep_interval_mb").get<double>(), "sleep_interval_mb",
+                                 config.sleep_interval)) {
+        return false;
+      }
     }
 
     if (data.contains("sleep_time_ms")) {
@@ -182,12 +337,16 @@ static bool parse_config(const std::string& path, vlink::TriggerRecorder::Config
       config.bag_plugin_dir = data.at("bag_plugin_dir").get<std::string>();
     }
 
-    if (data.contains("bag_plugin_major")) {
-      config.bag_plugin_major = data.at("bag_plugin_major").get<uint16_t>();
+    if (data.contains("trigger_plugin")) {
+      options.trigger_plugin_lib = data.at("trigger_plugin").get<std::string>();
     }
 
-    if (data.contains("bag_plugin_minor")) {
-      config.bag_plugin_minor = data.at("bag_plugin_minor").get<uint16_t>();
+    if (data.contains("trigger_plugin_dir")) {
+      options.trigger_plugin_dir = data.at("trigger_plugin_dir").get<std::string>();
+    }
+
+    if (data.contains("trigger_plugin_config")) {
+      options.trigger_plugin_config = data.at("trigger_plugin_config").get<std::string>();
     }
 
     if (data.contains("url_overrides")) {
@@ -203,11 +362,17 @@ static bool parse_config(const std::string& path, vlink::TriggerRecorder::Config
         }
 
         if (item.contains("max_packet_size")) {
-          uc.max_packet_size = mb_to_bytes(item.at("max_packet_size").get<double>());
+          if VUNLIKELY (!mb_to_bytes(item.at("max_packet_size").get<double>(),
+                                     "url_overrides." + url + ".max_packet_size", uc.max_packet_size)) {
+            return false;
+          }
         }
 
         if (item.contains("max_size")) {
-          uc.max_size = mb_to_bytes(item.at("max_size").get<double>());
+          if VUNLIKELY (!mb_to_bytes(item.at("max_size").get<double>(), "url_overrides." + url + ".max_size",
+                                     uc.max_size)) {
+            return false;
+          }
         }
 
         if (item.contains("only_front")) {
@@ -229,15 +394,31 @@ static bool parse_config(const std::string& path, vlink::TriggerRecorder::Config
   return true;
 }
 
-static int run_daemon(const std::string& config_path, bool native_mode) {
+static int run_daemon(const DaemonArguments& arguments) {
   vlink::TriggerRecorder::Config config;
-  std::string method_url = kMethodUrl;
+  DaemonOptions options;
 
-  if (!parse_config(config_path, config, method_url)) {
+  if VUNLIKELY (!parse_config(arguments.config_path, config, options)) {
     return 1;
   }
 
-  if (native_mode) {
+  if (arguments.bag_plugin_lib) {
+    config.bag_plugin_lib = *arguments.bag_plugin_lib;
+  }
+
+  if (arguments.trigger_plugin_lib) {
+    options.trigger_plugin_lib = *arguments.trigger_plugin_lib;
+  }
+
+  if (arguments.trigger_plugin_config) {
+    options.trigger_plugin_config = *arguments.trigger_plugin_config;
+  }
+
+  if (config.dump_dir.empty()) {
+    config.dump_dir = vlink::Utils::get_tmp_dir() + "/vlink-trigger";
+  }
+
+  if (arguments.native_mode) {
     config.discovery_filter = vlink::DiscoveryViewer::kFilterNative;
 
     if (config.dds_ip.empty()) {
@@ -250,24 +431,65 @@ static int run_daemon(const std::string& config_path, bool native_mode) {
     return 1;
   }
 
-  vlink::TriggerRecorder recorder(config);
+  vlink::Plugin plugin_loader;
+  std::shared_ptr<vlink::TriggerPluginInterface> trigger_plugin;
 
-  if VUNLIKELY (!recorder.start()) {
+  if (!options.trigger_plugin_lib.empty()) {
+    trigger_plugin =
+        plugin_loader.load<vlink::TriggerPluginInterface>(options.trigger_plugin_lib, 2, 0, options.trigger_plugin_dir);
+
+    if VUNLIKELY (!trigger_plugin) {
+      std::cerr << "Failed to load trigger plugin '" << options.trigger_plugin_lib << "'." << std::endl;
+      return 1;
+    }
+
+    if VUNLIKELY (!trigger_plugin->init(options.trigger_plugin_config)) {
+      std::cerr << "Failed to initialize trigger plugin '" << options.trigger_plugin_lib << "'." << std::endl;
+      return 1;
+    }
+  }
+
+  std::unique_ptr<vlink::TriggerRecorder> recorder;
+
+  try {
+    recorder = std::make_unique<vlink::TriggerRecorder>(config, [](const std::string& url, vlink::InitType type) {
+      return vlink::TriggerRecorder::RawSub::create_shared(url, type);
+    });
+  } catch (const std::exception& e) {
+    std::cerr << "Failed to initialize trigger recorder: " << e.what() << std::endl;
+    return 1;
+  }
+
+  if (trigger_plugin) {
+    recorder->bind_trigger_plugin_interface(trigger_plugin);
+  }
+
+  if VUNLIKELY (!recorder->async_run()) {
     std::cerr << "Failed to start trigger recorder." << std::endl;
     return 1;
   }
 
+  recorder->invoke_task([]() {}).wait();
+
   std::shared_ptr<vlink::Server<std::string, std::string>> server;
 
   try {
-    server = vlink::Server<std::string, std::string>::create_shared(method_url);
+    server = vlink::Server<std::string, std::string>::create_shared(options.method_url);
   } catch (const std::exception& e) {
-    std::cerr << "Invalid method_url (" << method_url << "): " << e.what() << std::endl;
-    recorder.stop();
+    std::cerr << "Invalid method_url (" << options.method_url << "): " << e.what() << std::endl;
+    recorder->quit();
+    recorder->wait_for_quit();
     return 1;
   }
 
-  const bool listening = server->listen([&recorder](const std::string& request, std::string& response) {
+  server->set_safety_quit(true);
+
+  const bool allow_out_file_outside_dump_dir = options.allow_out_file_outside_dump_dir;
+  const std::string expected_suffix = config.file_type == vlink::TriggerRecorder::kVcap ? ".vcap" : ".vdb";
+  const std::string dump_dir = config.dump_dir;
+
+  const bool listening = server->listen([&recorder, allow_out_file_outside_dump_dir, dump_dir, expected_suffix](
+                                            const std::string& request, std::string& response) {
     nlohmann::json resp;
     resp["ok"] = false;
     resp["error_code"] = 0;
@@ -276,7 +498,7 @@ static int run_daemon(const std::string& config_path, bool native_mode) {
     try {
       const nlohmann::json req = nlohmann::json::parse(request);
 
-      if (req.value("type", std::string()) != "dump") {
+      if VUNLIKELY (req.value("type", std::string()) != "dump") {
         resp["error_code"] = 3;
         resp["error_string"] = "Unknown request type";
         response = resp.dump();
@@ -285,11 +507,21 @@ static int run_daemon(const std::string& config_path, bool native_mode) {
       }
 
       vlink::TriggerRecorder::TriggerParams params;
-      params.out_file = req.value("out_file", std::string());
+      const std::string requested_out_file = req.value("out_file", std::string());
+      std::string request_error;
+
+      if VUNLIKELY (!validate_out_file(requested_out_file, dump_dir, expected_suffix, allow_out_file_outside_dump_dir,
+                                       params.out_file, request_error) ||
+                    !parse_trigger_window(req, "pre_ms", params.pre_ms, request_error) ||
+                    !parse_trigger_window(req, "post_ms", params.post_ms, request_error)) {
+        resp["error_code"] = 4;
+        resp["error_string"] = "Invalid request: " + request_error;
+        response = resp.dump();
+        return;
+      }
+
       params.reason = req.value("reason", std::string());
       params.name_hint = req.value("name_hint", std::string());
-      params.pre_ms = req.value("pre_ms", static_cast<int64_t>(-1));
-      params.post_ms = req.value("post_ms", static_cast<int64_t>(-1));
       params.filter_str = req.value("filter_str", std::string());
       params.black_mode = req.value("black_mode", false);
 
@@ -299,13 +531,13 @@ static int run_daemon(const std::string& config_path, bool native_mode) {
         }
       }
 
-      const bool ok = recorder.trigger(params);
+      const bool ok = recorder->dump(params);
 
       resp["ok"] = ok;
 
       if VUNLIKELY (!ok) {
         resp["error_code"] = 1;
-        resp["error_string"] = "Trigger rejected (busy or not running)";
+        resp["error_string"] = "Recorder is busy or not running";
       }
     } catch (const std::exception& e) {
       resp["ok"] = false;
@@ -317,8 +549,9 @@ static int run_daemon(const std::string& config_path, bool native_mode) {
   });
 
   if VUNLIKELY (!listening) {
-    std::cerr << "Failed to listen on " << method_url << "." << std::endl;
-    recorder.stop();
+    std::cerr << "Failed to listen on " << options.method_url << "." << std::endl;
+    recorder->quit();
+    recorder->wait_for_quit();
     return 1;
   }
 
@@ -337,7 +570,7 @@ static int run_daemon(const std::string& config_path, bool native_mode) {
       },
       true);
 
-  VLOG_I("vlink-trigger daemon started, method_url=", method_url);
+  VLOG_I("vlink-trigger daemon started, method_url=", options.method_url);
 
   {
     std::unique_lock lock(quit_mtx);
@@ -345,15 +578,27 @@ static int run_daemon(const std::string& config_path, bool native_mode) {
   }
 
   server.reset();
-  recorder.stop();
+
+  while (recorder->is_dumping()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+  recorder->quit();
+  recorder->wait_for_quit();
 
   return 0;
 }
 
-static int run_trigger(const std::string& method_url, const std::string& out_file, const std::string& reason,
-                       const std::string& name_hint, int64_t pre_ms, int64_t post_ms,
-                       const std::vector<std::string>& filter_url_list, const std::string& filter_str,
-                       bool black_mode) {
+static int run_dump(const std::string& method_url, const std::string& out_file, const std::string& reason,
+                    const std::string& name_hint, int64_t pre_ms, int64_t post_ms,
+                    const std::vector<std::string>& filter_url_list, const std::string& filter_str, bool black_mode) {
+  if VUNLIKELY (!is_valid_trigger_window(pre_ms) || !is_valid_trigger_window(post_ms)) {
+    std::cerr << "--pre and --post must each be -1 or a non-negative millisecond value within the recorder's "
+                 "supported range."
+              << std::endl;
+    return 1;
+  }
+
   std::unique_ptr<vlink::Client<std::string, std::string>> client;
 
   try {
@@ -363,7 +608,7 @@ static int run_trigger(const std::string& method_url, const std::string& out_fil
     return 1;
   }
 
-  if (!client->wait_for_connected(std::chrono::milliseconds(3000))) {
+  if VUNLIKELY (!client->wait_for_connected(std::chrono::milliseconds(3000))) {
     std::cerr << "Trigger daemon is not ready." << std::endl;
     return 1;
   }
@@ -381,16 +626,16 @@ static int run_trigger(const std::string& method_url, const std::string& out_fil
 
   std::string response;
 
-  if (!client->invoke(req.dump(), response, std::chrono::seconds(10))) {
-    std::cerr << "Trigger invoke failed." << std::endl;
+  if VUNLIKELY (!client->invoke(req.dump(), response, std::chrono::seconds(10))) {
+    std::cerr << "Dump invoke failed." << std::endl;
     return 1;
   }
 
   try {
     const nlohmann::json resp = nlohmann::json::parse(response);
 
-    if (!resp.value("ok", false)) {
-      std::cerr << "Trigger failed: " << resp.value("error_string", std::string()) << " (code "
+    if VUNLIKELY (!resp.value("ok", false)) {
+      std::cerr << "Dump rejected: " << resp.value("error_string", std::string()) << " (code "
                 << resp.value("error_code", 0) << ")" << std::endl;
       return 1;
     }
@@ -399,7 +644,7 @@ static int run_trigger(const std::string& method_url, const std::string& out_fil
     return 1;
   }
 
-  std::cout << "Trigger accepted." << std::endl;
+  std::cout << "Dump accepted." << std::endl;
 
   return 0;
 }
@@ -422,43 +667,51 @@ int main(int argc, char* argv[]) {
       .help("Native mode: local-host discovery + dds.ip=127.0.0.1 (unless configured)")
       .default_value(false)
       .implicit_value(true);
+  daemon_command.add_argument("--bag_plugin")
+      .help("Bag reorder plugin library name (overrides config)")
+      .default_value(std::string());
+  daemon_command.add_argument("--trigger_plugin")
+      .help("Trigger lifecycle plugin library name (overrides config)")
+      .default_value(std::string());
+  daemon_command.add_argument("--trigger_plugin_config")
+      .help("Opaque configuration string for the trigger plugin (overrides config)")
+      .default_value(std::string());
   daemon_command.add_description("Run the trigger recorder daemon");
   daemon_command.add_epilog("Example:\n  vlink-trigger daemon -c /etc/vlink/trigger/trigger.json");
 
-  argparse::ArgumentParser trigger_command("trigger", VLINK_VERSION, argparse::default_arguments::help);
-  trigger_command.add_argument("-m", "--method_url")
+  argparse::ArgumentParser dump_command("dump", VLINK_VERSION, argparse::default_arguments::help);
+  dump_command.add_argument("-m", "--method_url")
       .help("Daemon control-plane URL (matches the daemon's method_url)")
-      .default_value(std::string(kMethodUrl));
-  trigger_command.add_argument("-o", "--out_file")
-      .help("Output file path (empty: auto under dump_dir)")
+      .default_value(std::string(kDefaultMethodUrl));
+  dump_command.add_argument("-o", "--out_file")
+      .help("Output file path (empty: auto under dump_dir; daemon restricts explicit paths by default)")
       .default_value(std::string());
-  trigger_command.add_argument("-r", "--reason")
-      .help("Trigger reason (stored as bag tag)")
-      .default_value(std::string());
-  trigger_command.add_argument("-n", "--name").help("Output file name hint").default_value(std::string());
-  trigger_command.add_argument("--pre")
+  dump_command.add_argument("-r", "--reason").help("Trigger reason (stored as bag tag)").default_value(std::string());
+  dump_command.add_argument("-n", "--name").help("Output file name hint").default_value(std::string());
+  dump_command.add_argument("--pre")
       .help("Pre window ms (shrink only; -1 keeps configured)")
       .scan<'d', int64_t>()
       .default_value(static_cast<int64_t>(-1));
-  trigger_command.add_argument("--post")
+  dump_command.add_argument("--post")
       .help("Post window ms (shrink only; -1 keeps configured)")
       .scan<'d', int64_t>()
       .default_value(static_cast<int64_t>(-1));
-  trigger_command.add_argument("-u", "--url")
-      .help("Filter: dump only these exact urls")
+  dump_command.add_argument("-u", "--urls")
+      .help("Filter urls, empty is all")
+      .default_value(std::vector<std::string>())
       .nargs(argparse::nargs_pattern::any);
-  trigger_command.add_argument("-i", "--filter")
-      .help("Filter urls by space-separated substrings")
+  dump_command.add_argument("-i", "--filter")
+      .help("URL keyword filter, comma-separated or quoted space-separated")
       .default_value(std::string());
-  trigger_command.add_argument("-k", "--black")
+  dump_command.add_argument("-k", "--black")
       .help("Blacklist mode for --filter")
       .default_value(false)
       .implicit_value(true);
-  trigger_command.add_description("Send a trigger to a running daemon");
-  trigger_command.add_epilog("Example:\n  vlink-trigger trigger -r hard-brake -o /tmp/edr.vdb");
+  dump_command.add_description("Trigger a dump on a running daemon");
+  dump_command.add_epilog("Example:\n  vlink-trigger dump -r hard-brake -o /tmp/vlink-trigger/edr.vdb");
 
   program.add_subparser(daemon_command);
-  program.add_subparser(trigger_command);
+  program.add_subparser(dump_command);
 
   try {
     program.parse_args(argc, argv);
@@ -467,8 +720,8 @@ int main(int argc, char* argv[]) {
 
     if (program.is_subcommand_used("daemon")) {
       std::cerr << daemon_command << std::endl;
-    } else if (program.is_subcommand_used("trigger")) {
-      std::cerr << trigger_command << std::endl;
+    } else if (program.is_subcommand_used("dump")) {
+      std::cerr << dump_command << std::endl;
     } else {
       std::cerr << program << std::endl;
     }
@@ -477,20 +730,31 @@ int main(int argc, char* argv[]) {
   }
 
   if (program.is_subcommand_used("daemon")) {
-    return run_daemon(daemon_command.get<std::string>("-c"), daemon_command.is_used("-n"));
-  }
+    DaemonArguments arguments;
+    arguments.config_path = daemon_command.get<std::string>("-c");
+    arguments.native_mode = daemon_command.is_used("-n");
 
-  if (program.is_subcommand_used("trigger")) {
-    std::vector<std::string> filter_url_list;
-
-    if (trigger_command.is_used("-u")) {
-      filter_url_list = trigger_command.get<std::vector<std::string>>("-u");
+    if (daemon_command.is_used("--bag_plugin")) {
+      arguments.bag_plugin_lib = daemon_command.get<std::string>("--bag_plugin");
     }
 
-    return run_trigger(trigger_command.get<std::string>("-m"), trigger_command.get<std::string>("-o"),
-                       trigger_command.get<std::string>("-r"), trigger_command.get<std::string>("-n"),
-                       trigger_command.get<int64_t>("--pre"), trigger_command.get<int64_t>("--post"), filter_url_list,
-                       trigger_command.get<std::string>("-i"), trigger_command.is_used("-k"));
+    if (daemon_command.is_used("--trigger_plugin")) {
+      arguments.trigger_plugin_lib = daemon_command.get<std::string>("--trigger_plugin");
+    }
+
+    if (daemon_command.is_used("--trigger_plugin_config")) {
+      arguments.trigger_plugin_config = daemon_command.get<std::string>("--trigger_plugin_config");
+    }
+
+    return run_daemon(arguments);
+  }
+
+  if (program.is_subcommand_used("dump")) {
+    return run_dump(dump_command.get<std::string>("-m"), dump_command.get<std::string>("-o"),
+                    dump_command.get<std::string>("-r"), dump_command.get<std::string>("-n"),
+                    dump_command.get<int64_t>("--pre"), dump_command.get<int64_t>("--post"),
+                    dump_command.get<std::vector<std::string>>("-u"), dump_command.get<std::string>("-i"),
+                    dump_command.is_used("-k"));
   }
 
   std::cerr << program << std::endl;

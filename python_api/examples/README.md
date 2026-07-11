@@ -71,7 +71,9 @@
 2. 注册回调（register_*_callback）
 3. async_run()                      # 启动后台线程
 4. push(...) / play(...)            # 业务调用
-5. quit() + wait_for_quit(timeout)  # 干净关闭
+5. BagWriter: wait_for_idle(timeout_ms) # 等待已接受写任务完成
+6. quit() + wait_for_quit(timeout_ms)   # 停止后台循环
+7. BagWriter: close() + 检查 fail()     # 完成 metadata/footer/manifest
 ```
 
 ---

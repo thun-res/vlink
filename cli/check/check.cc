@@ -1225,7 +1225,9 @@ int check_env(bool available_case, const std::string& prefix) {
        false},
       {"VLINK_PLUGIN_DIR", "", "Directory searched by vlink::Plugin when loading dynamic modules.", false},
       {"VLINK_URL_PLUGINS", "",
-       "Recognized transport plugin library name list to dlopen on start (comma or space separated, e.g. vlink-zenoh).",
+       "Set before the first URL initialization: auto enables first-use loading of recognized unlinked shared "
+       "transports; empty or none disables plugin loading; any other non-empty value is a comma- or "
+       "space-separated explicit preload list (case-insensitive auto/none).",
        false},
       {"VLINK_URL_REMAP", "", "Path to a JSON file describing URL rewrite rules applied at node creation.", false},
 

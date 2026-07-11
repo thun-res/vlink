@@ -1,48 +1,62 @@
 # VLink bash completion for vlink-trigger.
 
 _vlink_trigger() {
-    local cur prev
-    cur="${COMP_WORDS[COMP_CWORD]}"
-    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    local prev="${COMP_WORDS[COMP_CWORD-1]}"
+    local subcommands="daemon dump"
+    local subcommand
+    local last_option=""
 
-    local subcommand="" index
-    for ((index=1; index<COMP_CWORD; index++)); do
-        case "${COMP_WORDS[index]}" in
-            daemon|trigger)
-                subcommand="${COMP_WORDS[index]}"
-                break
-                ;;
-        esac
-    done
+    COMPREPLY=()
+    subcommand=$(_vlink_bash_find_subcommand "$subcommands")
 
     if [[ -z "$subcommand" ]]; then
-        COMPREPLY=($(compgen -W "daemon trigger -h --help -v --version" -- "$cur"))
-        return 0
+        _vlink_bash_complete_words "$subcommands -h --help -v --version" "$cur"
+        return
     fi
 
     case "$subcommand" in
         daemon)
             case "$prev" in
                 -c|--config)
-                    COMPREPLY=($(compgen -f -X '!*.json' -- "$cur"))
-                    return 0
+                    _vlink_bash_complete_files_ext "$cur" "json"
+                    return
+                    ;;
+                --bag_plugin|--trigger_plugin|--trigger_plugin_config)
+                    return
                     ;;
             esac
-            COMPREPLY=($(compgen -W "-c --config -n --native -h --help" -- "$cur"))
+
+            _vlink_bash_complete_words "-c --config -n --native --bag_plugin --trigger_plugin \
+--trigger_plugin_config -h --help" "$cur"
             ;;
-        trigger)
+        dump)
             case "$prev" in
+                -m|--method_url|-u|--urls)
+                    _vlink_bash_complete_url "$cur"
+                    return
+                    ;;
                 -o|--out_file)
-                    COMPREPLY=($(compgen -f -- "$cur"))
-                    return 0
+                    _vlink_bash_complete_files "$cur"
+                    return
+                    ;;
+                -r|--reason|-n|--name|--pre|--post|-i|--filter)
+                    return
                     ;;
             esac
-            COMPREPLY=($(compgen -W "-m --method_url -o --out_file -r --reason -n --name --pre --post -u --url -i --filter -k --black -h --help" -- "$cur"))
+
+            if [[ "$cur" != -* ]]; then
+                last_option=$(_vlink_bash_find_last_option)
+                if [[ "$last_option" == "-u" || "$last_option" == "--urls" ]]; then
+                    _vlink_bash_complete_url "$cur"
+                    return
+                fi
+            fi
+
+            _vlink_bash_complete_words "-m --method_url -o --out_file -r --reason -n --name --pre --post \
+-u --urls -i --filter -k --black -h --help" "$cur"
             ;;
     esac
-
-    return 0
 }
 
-complete -F _vlink_trigger vlink-trigger
-complete -F _vlink_trigger trigger
+complete -F _vlink_trigger vlink-trigger trigger

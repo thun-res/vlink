@@ -1,4 +1,4 @@
-<mxfile host="app.diagrams.net" modified="2026-07-10T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+<mxfile host="app.diagrams.net" modified="2026-07-11T00:00:00.000Z" agent="draw.io" version="24.0.0" type="device">
   <diagram id="trigger-recording-flow" name="Trigger Recording EDR Flow">
     <mxGraphModel dx="900" dy="580" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="690" math="0" shadow="0">
       <root>
@@ -8,7 +8,7 @@
         <mxCell id="title" value="Trigger Recording (EDR) Flow" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=20;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="40" y="18" width="820" height="30" as="geometry" />
         </mxCell>
-        <mxCell id="sub" value="Always-on rolling ring buffer per URL &#183; on trigger, dump the pre/post window to a bag" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+        <mxCell id="sub" value="Always-on rolling ring buffer per URL &#183; on trigger, dump selected per-URL windows to a bag" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
           <mxGeometry x="40" y="50" width="820" height="20" as="geometry" />
         </mxCell>
 
@@ -103,7 +103,7 @@
         <mxCell id="tl_T" value="&#9660; trigger T" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
           <mxGeometry x="320" y="340" width="100" height="18" as="geometry" />
         </mxCell>
-        <mxCell id="tl_win" value="dumped window  [ T &#8722; pre ,  T + post ]" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1b5e20;" vertex="1" parent="1">
+        <mxCell id="tl_win" value="per-URL window  [ T &#8722; effective pre ,  T + effective post ]" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1b5e20;" vertex="1" parent="1">
           <mxGeometry x="200" y="432" width="290" height="18" as="geometry" />
         </mxCell>
 
@@ -114,7 +114,7 @@
         <mxCell id="bw" value="&lt;b&gt;BagWriter&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.5;fontSize=13;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="628" y="381" width="100" height="48" as="geometry" />
         </mxCell>
-        <mxCell id="disk" value="&lt;b&gt;*.vdb / *.vcap&lt;/b&gt;&lt;br/&gt;rotated" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fontFamily=Helvetica;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;fontSize=11;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
+        <mxCell id="disk" value="&lt;b&gt;*.vdb / *.vcap&lt;/b&gt;&lt;br/&gt;auto-named: rotate" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fontFamily=Helvetica;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;fontSize=11;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="790" y="370" width="66" height="70" as="geometry" />
         </mxCell>
 
@@ -132,7 +132,7 @@
           </mxGeometry>
         </mxCell>
 
-        <mxCell id="dmp_note" value="On a trigger at T: the daemon snapshots [ T &#8722; pre , T + post ] from every URL ring, stable-sorts the frames, and writes one bag &#183; older dumps rotate out." style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#8d6e63;" vertex="1" parent="1">
+        <mxCell id="dmp_note" value="At T: select/filter URL rings, apply per-URL and trigger windows (including only_front/back), stable-sort, then write one bag &#183; only auto-named dumps rotate." style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#8d6e63;" vertex="1" parent="1">
           <mxGeometry x="60" y="506" width="780" height="34" as="geometry" />
         </mxCell>
 

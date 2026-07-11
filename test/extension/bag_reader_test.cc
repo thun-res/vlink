@@ -47,6 +47,7 @@
 #include "../common_test.h"
 #include "./base/process.h"
 #include "./base/utils.h"
+#include "./extension/bag_plugin_interface.h"
 #include "./extension/bag_processor.h"
 #include "./extension/bag_writer.h"
 

@@ -618,7 +618,7 @@ VLink 遵循 [Semantic Versioning 2.0](https://semver.org)：**MAJOR** 可含破
 
 ### 🖼️ 15.19.1 示意图（drawio）贡献规则
 
-- **成对提交**：源 `doc/images/TOPIC.drawio` 与导出 `doc/images/TOPIC.png` 必须同名成对；仅改 PNG 不改 drawio 的 PR 将被拒。导出命令 `drawio -x -t -f png -o TOPIC.png TOPIC.drawio`（headless 遇沙箱报错时加 `--no-sandbox`）。
+- **成对提交**：源 `doc/images/TOPIC.drawio` 与导出 `doc/images/TOPIC.png` 必须同名成对；仅改 PNG 不改 drawio 的 PR 将被拒。PNG 统一使用白色不透明背景，导出命令 `drawio --export --format png --scale 2 --output TOPIC.png TOPIC.drawio`（不要加透明选项 `-t`；headless 遇沙箱报错时加 `--no-sandbox`）。
 - **配色按文档 Part 统一**（drawio 默认字体 Helvetica/Arial，字号 ≥ 11pt）：
 
   | Part | 主题 | 配色（填充 / 描边） |

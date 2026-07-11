@@ -1,26 +1,37 @@
-# 🗒️ Change log
+# 🗒️ 更新日志
 
 ## v2.0.0 (2025/07/01)
 
-- Init src
+- 初始化源码。
 
 ## v2.1.0 (2026/07/12)
 
-### Features
-- **CameraFrame**: extend image format support (more raw/Bayer/YUV/compressed formats), add encoding helpers and Python bindings, and an "Auto" decode mode; preserve wire-compatible format values.
-- **zenoh**: add a debug env toggle; disable gossip scouting by default.
-- **trigger**: add `vlink-trigger`, an in-memory trigger-based event-data recorder (EDR) — rolling per-URL ring buffers over all discovered topics, dumping a pre/post window to a bag on trigger with file rotation; adds the `vlink::TriggerRecorder` extension engine and a Python binding. Dumps write in capture-time order by default, or reorder by true data-plane time when a `BagPluginInterface` reorder plugin is loaded (via `bag_plugin`), kept distinct from the post-dump `TriggerPluginInterface`.
-- **bag-plugin**: make `BagPluginInterface::on_read` / `on_write` pure virtual and drop `VersionInfo` / `get_version_info` from `BagPluginInterface` (retained only on `SchemaPluginInterface`; the new `TriggerPluginInterface` never carried it). **Breaking**: the vtable layout changed, so the `BagPluginInterface` plugin major version is bumped to 2 — rebuild plugins against the new header and declare `VLINK_PLUGIN_DECLARE(..., 2, 0)`; hosts (`vlink-bag` / `vlink-dump` / `TriggerRecorder`) now request major 2 and reject old binaries.
+### 新增功能
 
-### Improvements
-- **viewer**: decode via FFmpeg threads (QImage only as fallback), fixing severe multi-camera JPEG lag; FFmpeg enabled by default; honor the image-type combo for zero-copy streams; fix help links and check for updates via the GitHub latest release.
-- **webviz**: route supported CameraFrame formats through Foxglove and Rerun; fix Rerun 16/32/64-bit multi-channel image routing.
-- **shm2**: loan large `Bytes` publishes to avoid copies; support no-fd iceoryx2 listeners with a non-busy wait path; raise default slice/memory size to 4 KiB.
-- **eproto/efbs**: portable proto3 default-scalar printing (protobuf 3.21.12+), field-number-ordered output, sorted map entries, and valid JSON dumps.
-- **bench**: auto-size shm2 runtime URLs from payload size and improve report grouping and consistency.
+- **CameraFrame**：扩展图像格式支持，新增更多 Raw、Bayer、YUV 与压缩格式；增加编码辅助函数、Python 绑定和“自动”解码模式，同时保持线上格式的枚举值兼容。
+- **zenoh**：新增调试环境变量开关，默认关闭 gossip scouting。
+- **trigger**：新增内存触发式事件数据记录工具 `vlink-trigger`（EDR）。它为服务发现到的每个 URL 维护滚动环形缓冲，并在调用 `dump()`（或 `vlink-trigger dump`）时将触发点前后的窗口写入 bag，同时支持历史文件轮转；新增 `vlink::TriggerRecorder` 扩展引擎及其 Python 绑定。引擎继承 `MessageLoop`，构造阶段完成配置校验和可能失败的资源获取，通过 `async_run()`、`quit()` 与 `wait_for_quit()` 管理生命周期，并在自身循环中执行 dump。原始订阅器由调用方工厂创建，使 URL 分派能够看到宿主 target 已链接的 transport；CLI 在自身编译单元中提供该工厂。默认按采集时刻写盘；配置 `bag_plugin` 后可由 `BagPluginInterface` 按真实数据面时间重排。该插件与 dump 后处理用的 `TriggerPluginInterface` 相互独立，daemon 可通过 `trigger_plugin` 加载后者；ABI 2 新增由 daemon JSON 与 `--trigger_plugin_config` 暴露的 `init(config)` 不透明配置字符串通道。
+- **bag-plugin**：将 `BagPluginInterface::on_read` 与 `on_write` 改为纯虚函数，并从 `BagPluginInterface` 移除 `VersionInfo` 与 `get_version_info`（仅 `SchemaPluginInterface` 保留；新增的 `TriggerPluginInterface` 从未包含它们）。**破坏性变更**：虚表布局已改变，`BagPluginInterface` 插件主版本提升至 2。插件必须基于新头文件重新构建并声明 `VLINK_PLUGIN_DECLARE(..., 2, 0)`；宿主 `vlink-bag`、`vlink-dump` 与 `TriggerRecorder` 现请求主版本 2，并拒绝旧插件二进制。
 
-### Fixes
-- Fix `proxy_server` `max_packet_size` handling.
-- Fix bag-record crash on exit.
-- Tighten image payload validation and unsafe-size handling.
-- Stabilize DDS/DDSC and shm2 lifecycle tests against teardown races.
+### 改进
+
+- **CMake**：使构建树中的 `VLINK_NO_INTRA_LIBRARIES` 正确移除 `vlink::intra`，与安装包配置保持一致。
+- **覆盖率**：使用 lcov 2.x 生成报告时保留 `LCOV_EXCL_START` / `LCOV_EXCL_STOP` 区域。
+- **URL 插件**：扩展 `VLINK_URL_PLUGINS` 的模式值，且大小写不敏感：`auto` 在首次使用已知但未链接的共享 transport 时自动加载；空值或 `none` 关闭插件加载；其他非空值仍作为显式预加载列表。拆分后的 runtime 包包含可动态加载 transport 的无版本 NAMELINK；c_api、proxy 与 exprtk 等开发 API 的 NAMELINK 仍归入 devel 包，因此 `auto` 模式不依赖开发包。
+- **bag**：在 C++ 与 Python 中公开幂等的 `BagWriter::close()`，调用方可在析构前完成 metadata、footer 和 split manifest 写入，再通过 `fail()` 检查结果。
+- **trigger**：无论是否允许输出到 `dump_dir` 之外，相对显式输出路径都统一从 `dump_dir` 解析。
+- **viewer**：使用 FFmpeg 线程解码，QImage 仅作为回退，修复多相机 JPEG 的严重卡顿；默认启用 FFmpeg；零拷贝流遵循图像类型下拉框；修复帮助链接，并通过 GitHub 最新发布版本检查更新。
+- **webviz**：将 CameraFrame 支持的格式接入 Foxglove 与 Rerun，并修复 Rerun 对 16/32/64 位多通道图像的路由。
+- **shm2**：大尺寸 `Bytes` 发布改用借贷内存以避免拷贝；无 fd 的 iceoryx2 listener 使用非忙等等待路径；默认 slice 与内存大小提升至 4 KiB。
+- **eproto/efbs**：兼容 protobuf 3.21.12 及以上版本的 proto3 默认标量输出，按字段编号输出，排序 map 条目，并生成合法 JSON。
+- **bench**：根据 payload 大小自动调整 shm2 运行时 URL，并改进报告分组与一致性。
+
+### 修复
+
+- 修复 `proxy_server` 的 `max_packet_size` 处理。
+- 修复 `vlink-bag record` 退出时崩溃。
+- 任务队列已满时不再丢弃已接受的异步 bag 写入；在任务的所有结束路径释放队列内存，并通过 `BagWriter::fail()` 暴露延迟帧/Schema 写入失败与关闭阶段失败。
+- 防止已放弃的延迟 trigger dump 持有缓冲数据或在 recorder 重启后重新出现，并在关闭期间保留延后的 trigger 插件重绑定。
+- 仅在 writer 循环启动后为限时 `vlink-bag record` 计时，并使 `--deft` 模式保持 DiscoveryViewer 后台运行；Python `TriggerRecorder.async_run()` 等待 recorder 启动完成；viewer 会报告录制文件关闭失败。
+- 加强图像 payload 校验与不安全尺寸处理。
+- 降低 DDS/DDSC 与 shm2 生命周期测试受 teardown 竞态影响的概率。

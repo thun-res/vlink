@@ -26,6 +26,7 @@
 #include <vlink/base/helpers.h>
 #include <vlink/base/plugin.h>
 #include <vlink/base/utils.h>
+#include <vlink/extension/bag_plugin_interface.h>
 #include <vlink/extension/bag_reader.h>
 #include <vlink/extension/bag_writer.h>
 #include <vlink/extension/discovery_viewer.h>
@@ -708,7 +709,7 @@ static int load_and_bind_bag_plugin(vlink::Plugin& plugin, const std::string& pl
 
   auto plugin_interface = plugin.load<vlink::BagPluginInterface>(plugin_name, 2, 0);
 
-  if (!plugin_interface) {
+  if VUNLIKELY (!plugin_interface) {
     std::cerr << "Failed to load plugin (" << plugin_name << ")." << std::endl;
     return -1;
   }
@@ -790,7 +791,6 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
 
     if VLIKELY (recorder) {
       recorder->clear_plugin_interface();
-      recorder->quit();
 
       if (!quiet_flag && !detail_flag) {
         stop_print();
@@ -806,6 +806,8 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
         std::cerr << "BagWriter force to quit." << std::endl;
         recorder->quit(true);
         status = 1;
+      } else {
+        recorder->quit();
       }
 
       std::cout << "\033[2K\r";
@@ -830,9 +832,9 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
     return -1;
   }
 
-  if (!deft) {
-    discovery_viewer->async_run();
+  discovery_viewer->async_run();
 
+  if (!deft) {
     if (!quiet_flag) {
       std::cout << "Information Collecting, Please Wait...";
       std::cout.flush();
@@ -909,8 +911,8 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
       },
       true);
 
-  auto update_urls_function = [&target_urls_set, &filter_list, &recorder, &sub_map, &subs_mtx, black_mode, native_mode,
-                               real_max_packet_size,
+  auto update_urls_function = [&target_urls_set, &filter_list, &recorder, &sub_map, &subs_mtx, &status, black_mode,
+                               native_mode, real_max_packet_size,
                                sync_mode](const std::vector<vlink::DiscoveryViewer::Info>& info_list) {
     {
       std::unordered_set<std::string> current_urls;
@@ -1014,47 +1016,54 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
       }
 
       std::weak_ptr<RawSub> weak_sub = sub;
-      sub->listen([real_max_packet_size, weak_sub, url = info.url, &recorder, sync_mode](const vlink::Bytes& data) {
-        if VUNLIKELY (has_quit || recorder->is_ready_to_quit()) {
-          return;
-        }
+      sub->listen(
+          [real_max_packet_size, weak_sub, url = info.url, &recorder, &status, sync_mode](const vlink::Bytes& data) {
+            if VUNLIKELY (has_quit || recorder->is_ready_to_quit()) {
+              return;
+            }
 
-        if VUNLIKELY (is_paused) {
-          return;
-        }
+            if VUNLIKELY (is_paused) {
+              return;
+            }
 
-        if VUNLIKELY (data.size() > real_max_packet_size) {  // LIMIT SIZE
-          return;
-        }
+            if VUNLIKELY (data.size() > real_max_packet_size) {  // LIMIT SIZE
+              return;
+            }
 
-        int64_t timestamp = main_elapsed_timer.get() - pause_total_time;
+            int64_t timestamp = main_elapsed_timer.get() - pause_total_time;
 
-        total_size += data.size();
+            total_size += data.size();
 
-        auto sub = weak_sub.lock();
+            auto sub = weak_sub.lock();
 
-        if VUNLIKELY (!sub) {
-          return;
-        }
+            if VUNLIKELY (!sub) {
+              return;
+            }
 
-        vlink::Frame frame;
-        frame.timestamp = timestamp;
-        frame.url = url;
-        frame.ser_type = sub->get_ser_type();
-        frame.schema_type = sub->get_schema_type();
-        frame.action_type = vlink::ActionType::kSubscribe;
-        frame.data = vlink::Bytes::shallow_copy(data.data(), data.size());
-        recorder->push(frame, sync_mode);
+            vlink::Frame frame;
+            frame.timestamp = timestamp;
+            frame.url = url;
+            frame.ser_type = sub->get_ser_type();
+            frame.schema_type = sub->get_schema_type();
+            frame.action_type = vlink::ActionType::kSubscribe;
+            frame.data = vlink::Bytes::shallow_copy(data.data(), data.size());
+            if VUNLIKELY (recorder->push(frame, sync_mode) < 0) {
+              status = 1;
+              has_quit = true;
+              is_broken = true;
+              recorder->quit(true);
+              return;
+            }
 
-        if (!quiet_flag) {
-          if (detail_flag) {
-            std::cout << "\033[2K\r";
-            std::cout << std::fixed << std::setprecision(6) << timestamp / 1000'000.0F << "s " << url << std::endl;
-          } else {
-            data_has_changed = true;
-          }
-        }
-      });
+            if (!quiet_flag) {
+              if (detail_flag) {
+                std::cout << "\033[2K\r";
+                std::cout << std::fixed << std::setprecision(6) << timestamp / 1000'000.0F << "s " << url << std::endl;
+              } else {
+                data_has_changed = true;
+              }
+            }
+          });
 
       std::lock_guard lock(subs_mtx);
       sub_map.emplace(info.url, std::move(sub));
@@ -1066,11 +1075,19 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
   if (duration > 0) {
     duration_timer.set_interval(duration * 1000);
     duration_timer.set_loop_count(1);
-    duration_timer.attach(recorder.get());
-    duration_timer.start([&recorder] { recorder->quit(); });
+    duration_timer.attach(discovery_viewer.get());
   }
 
-  recorder->register_begin_handler([]() {
+  recorder->register_begin_handler([recorder_ptr = recorder.get(), &duration_timer, &quit_function, duration]() {
+    if VUNLIKELY (has_quit) {
+      recorder_ptr->quit(true);
+      return;
+    }
+
+    if (duration > 0) {
+      duration_timer.start([&quit_function] { quit_function(0); });
+    }
+
     if (!quiet_flag && !detail_flag) {
       start_print(0, 0, 0, true);
     }
@@ -1161,7 +1178,16 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
     }
   }
 
+  duration_timer.stop();
+  duration_timer.detach();
   discovery_viewer.reset();
+
+  recorder->close();
+
+  if VUNLIKELY (recorder->fail()) {
+    status = 1;
+  }
+
   recorder.reset();
 
   return status.load();
@@ -1668,6 +1694,8 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
 
   std::shared_ptr<vlink::BagWriter> recorder;
 
+  std::atomic_bool clone_write_failed{false};
+
   std::vector<std::string> filter_list = vlink::Helpers::split_any(filter);
 
   std::unordered_set<std::string> filter_urls;
@@ -1867,15 +1895,16 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
 
   vlink::Utils::register_terminate_signal(quit_function);
 
-  player->register_begin_handler([player_ptr = player.get(), recorder_ptr = recorder.get()]() {
+  player->register_begin_handler([player_ptr = player.get(), recorder_ptr = recorder.get(), &clone_write_failed]() {
     auto schema_list = player_ptr->detect_schema();
 
     for (const auto& schema_data : schema_list) {
-      if (!recorder_ptr->push_schema(schema_data, true)) {
+      if VUNLIKELY (!recorder_ptr->push_schema(schema_data, true)) {
         std::cerr << "cli/bag: push_schema failed for ser=[" << schema_data.name << "] schema_type=["
                   << static_cast<int>(schema_data.schema_type) << "]; abort clone." << std::endl;
         has_quit = true;
         is_broken = true;
+        clone_write_failed = true;
         recorder_ptr->quit(true);
         player_ptr->quit(true);
         break;
@@ -1884,7 +1913,7 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
   });
 
   player->register_output_callback([player_ptr = player.get(), recorder_ptr = recorder.get(), actions, clone_all,
-                                    &final_urls_set](const vlink::Frame& frame) {
+                                    &final_urls_set, &clone_write_failed](const vlink::Frame& frame) {
     const int64_t timestamp = frame.timestamp;
     const std::string& url = frame.url;
     const vlink::ActionType action_type = frame.action_type;
@@ -1895,30 +1924,33 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
     }
 
     if (clone_all || final_urls_set.count(url) != 0) {
+      vlink::ActionType output_action = action_type;
+
       if (action_type != vlink::ActionType::kUnknownAction) {
         auto piter = std::find(actions.begin(), actions.end(), static_cast<int>(action_type));
 
         if (piter == actions.end()) {
           return;
         }
-
-        vlink::Frame push_frame;
-        push_frame.timestamp = timestamp;
-        push_frame.url = url;
-        push_frame.ser_type = frame.ser_type;
-        push_frame.schema_type = frame.schema_type;
-        push_frame.action_type = action_type;
-        push_frame.data = vlink::Bytes::shallow_copy(data.data(), data.size());
-        recorder_ptr->push(push_frame, true);
       } else {
-        vlink::Frame push_frame;
-        push_frame.timestamp = timestamp;
-        push_frame.url = url;
-        push_frame.ser_type = frame.ser_type;
-        push_frame.schema_type = frame.schema_type;
-        push_frame.action_type = vlink::ActionType::kSubscribe;
-        push_frame.data = vlink::Bytes::shallow_copy(data.data(), data.size());
-        recorder_ptr->push(push_frame, true);
+        output_action = vlink::ActionType::kSubscribe;
+      }
+
+      vlink::Frame push_frame;
+      push_frame.timestamp = timestamp;
+      push_frame.url = url;
+      push_frame.ser_type = frame.ser_type;
+      push_frame.schema_type = frame.schema_type;
+      push_frame.action_type = output_action;
+      push_frame.data = vlink::Bytes::shallow_copy(data.data(), data.size());
+
+      if VUNLIKELY (recorder_ptr->push(push_frame, true) < 0) {
+        clone_write_failed = true;
+        has_quit = true;
+        is_broken = true;
+        recorder_ptr->quit(true);
+        player_ptr->quit(true);
+        return;
       }
 
       if (!quiet_flag) {
@@ -1982,9 +2014,22 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
 
   recorder->clear_plugin_interface();
 
-  recorder->wait_for_idle(10000U);
+  progress_timer.stop();
+  progress_timer.detach();
 
-  recorder->quit();
+  if VUNLIKELY (!recorder->wait_for_idle(10000U)) {
+    clone_write_failed = true;
+    recorder->quit(true);
+  } else {
+    recorder->quit();
+  }
+
+  recorder->wait_for_quit();
+  recorder->close();
+
+  if VUNLIKELY (recorder->fail()) {
+    clone_write_failed = true;
+  }
 
   has_quit = true;
 
@@ -2002,7 +2047,7 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
     }
   }
 
-  return 0;
+  return clone_write_failed ? -1 : 0;
 }
 
 int bag_check(const std::string& path) {

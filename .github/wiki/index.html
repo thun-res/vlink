@@ -740,7 +740,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2"><path d="M4 4l8 4 8-4M4 4v16l8 4 8-4V4M12 8v16"/></svg>
         </div>
         <h4 data-i18n="pl.c.plug.h">插件系统</h4>
-        <p data-i18n="pl.c.plug.p">dlopen / LoadLibrary <strong>动态加载</strong>，模板化 <code>Plugin::load&lt;T&gt;()</code> 实现<strong>运行时多态</strong>，major.minor <strong>版本强校验</strong>，默认搜索路径<strong>自动发现</strong>；12 种内置传输本身就是插件。</p>
+        <p data-i18n="pl.c.plug.p">dlopen / LoadLibrary <strong>动态加载</strong>，模板化 <code>Plugin::load&lt;T&gt;()</code> 实现<strong>运行时多态</strong>，并执行 major.minor <strong>版本强校验</strong>。<code>VLINK_URL_PLUGINS</code> 的完整值为 <code>auto</code> 时按需加载，为 <code>none</code> 或空值时关闭，其他非空值为显式预加载列表；模式值大小写不敏感。</p>
       </div>
       <div class="plat reveal d4">
         <a class="plat-link" href="https://github.com/thun-res/vkit" target="_blank" rel="noopener">

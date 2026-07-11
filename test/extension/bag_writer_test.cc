@@ -41,6 +41,7 @@
 #include "../common_test.h"
 #include "./base/process.h"
 #include "./base/utils.h"
+#include "./extension/bag_plugin_interface.h"
 #include "./extension/bag_processor.h"
 #include "./extension/bag_reader.h"
 
@@ -330,6 +331,38 @@ class FailingBagWriter final : public StubBagWriter {
   }
 };
 
+std::vector<Frame> read_writer_frames(const std::filesystem::path& path);
+
+void verify_async_write_failure_latches(const char* suffix) {
+  ScopedWriterPath bag(suffix);
+
+  BagWriter::Config config;
+  config.sync_mode = true;
+  config.compress = BagWriter::kCompressNone;
+  config.cache_size = 1;
+
+  auto writer = BagWriter::create(bag.path.string(), config);
+  REQUIRE(writer != nullptr);
+  REQUIRE(writer->async_run());
+
+  REQUIRE_GE(writer->push(write_frame("dds://failure", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("first"), 1'000)),
+             0);
+  REQUIRE_GE(writer->push(write_frame("dds://failure", "other_raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("second"), 2'000)),
+             0);
+  REQUIRE(writer->wait_for_idle(3000));
+  CHECK(writer->fail());
+
+  writer->quit();
+  REQUIRE(writer->wait_for_quit(3000));
+  writer.reset();
+
+  const auto frames = read_writer_frames(bag.path);
+  REQUIRE_EQ(frames.size(), 1u);
+  CHECK_EQ(frames.front().data.to_string(), "first");
+}
+
 std::vector<Frame> read_writer_frames(const std::filesystem::path& path) {
   auto reader = BagReader::create(path.string(), false);
   REQUIRE(reader != nullptr);
@@ -346,6 +379,181 @@ std::vector<Frame> read_writer_frames(const std::filesystem::path& path) {
   REQUIRE(reader->wait_for_quit(3000));
 
   return frames;
+}
+
+void verify_persistent_queue_rejects_without_dropping(const char* suffix) {
+  ScopedWriterPath bag(suffix);
+
+  BagWriter::Config config;
+  config.sync_mode = true;
+  config.compress = BagWriter::kCompressNone;
+  config.cache_size = 1;
+  config.max_task_depth = 1;
+  config.max_memory_size = 4;
+
+  auto writer = BagWriter::create(bag.path.string(), config);
+  REQUIRE(writer != nullptr);
+
+  REQUIRE_EQ(writer->push(write_frame("dds://queue", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("aa"), 1'000)),
+             1'000);
+  CHECK_LT(writer->push(write_frame("dds://queue", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                    Bytes::from_string("bb"), 2'000)),
+           0);
+
+  REQUIRE(writer->async_run());
+  REQUIRE(writer->wait_for_idle(3000));
+
+  REQUIRE_EQ(writer->push(write_frame("dds://queue", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("cccc"), 3'000)),
+             3'000);
+  REQUIRE(writer->wait_for_idle(3000));
+  CHECK_FALSE(writer->fail());
+
+  writer->quit();
+  REQUIRE(writer->wait_for_quit(3000));
+  writer.reset();
+
+  const auto frames = read_writer_frames(bag.path);
+  REQUIRE_EQ(frames.size(), 2u);
+  CHECK_EQ(frames[0].data.to_string(), "aa");
+  CHECK_EQ(frames[1].data.to_string(), "cccc");
+}
+
+void verify_split_close_finalizes_manifest(const char* suffix) {
+  ScopedWriterPath bag(suffix);
+
+  BagWriter::Config config;
+  config.sync_mode = true;
+  config.compress = BagWriter::kCompressNone;
+
+  auto writer = BagWriter::create(bag.path.string(), config);
+  REQUIRE(writer != nullptr);
+  REQUIRE(writer->is_split_mode());
+  REQUIRE_EQ(writer->push(write_frame("dds://close", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("closed"), 1'000),
+                          true),
+             1'000);
+
+  writer->close();
+  CHECK_FALSE(writer->fail());
+
+  std::ifstream manifest_file(bag.path, std::ios::binary);
+  REQUIRE(manifest_file.is_open());
+  const std::string manifest_text((std::istreambuf_iterator<char>(manifest_file)), std::istreambuf_iterator<char>());
+  CHECK_NE(manifest_text.find("\"complete\": true"), std::string::npos);
+  manifest_file.close();
+
+  writer->close();
+  CHECK_FALSE(writer->fail());
+}
+
+void verify_vcap_schema_failure_can_retry() {
+  ScopedWriterPath bag(".vcap");
+
+  BagWriter::Config config;
+  config.sync_mode = true;
+  config.compress = BagWriter::kCompressNone;
+
+  auto writer = BagWriter::create(bag.path.string(), config);
+  REQUIRE(writer != nullptr);
+
+  bool valid_schema = false;
+  writer->register_schema_callback([&valid_schema](const std::string& ser_type, SchemaType) {
+    return writer_schema_data(ser_type, valid_schema ? SchemaType::kProtobuf : SchemaType::kFlatbuffers,
+                              valid_schema ? "protobuf schema" : "flatbuffers schema");
+  });
+
+  CHECK_LT(writer->push(write_frame("dds://schema_retry", "demo.Retry", SchemaType::kProtobuf, ActionType::kPublish,
+                                    Bytes::from_string("rejected"), 1'000),
+                        true),
+           0);
+
+  valid_schema = true;
+  REQUIRE_EQ(writer->push(write_frame("dds://schema_retry", "demo.Retry", SchemaType::kProtobuf, ActionType::kPublish,
+                                      Bytes::from_string("accepted"), 2'000),
+                          true),
+             2'000);
+  writer.reset();
+
+  const auto frames = read_writer_frames(bag.path);
+  REQUIRE_EQ(frames.size(), 1u);
+  CHECK_EQ(frames.front().data.to_string(), "accepted");
+}
+
+void verify_relative_vcap_close_survives_chdir() {
+  ScopedWriterCurrentPath cwd("relative_vcap_close");
+  const auto other_dir = cwd.path / "other";
+  std::filesystem::create_directories(other_dir);
+
+  auto writer = BagWriter::create("relative.vcap");
+  REQUIRE(writer != nullptr);
+  REQUIRE_EQ(writer->push(write_frame("dds://relative_close", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("relative"), 1'000),
+                          true),
+             1'000);
+
+  std::filesystem::current_path(other_dir);
+  writer->close();
+  CHECK_FALSE(writer->fail());
+  std::filesystem::current_path(cwd.path);
+  writer.reset();
+
+  const auto frames = read_writer_frames(cwd.path / "relative.vcap");
+  REQUIRE_EQ(frames.size(), 1u);
+  CHECK_EQ(frames.front().data.to_string(), "relative");
+}
+
+void verify_relative_split_close_survives_chdir(const char* suffix) {
+  ScopedWriterCurrentPath cwd("relative_split_close");
+  const auto other_dir = cwd.path / "other";
+  const std::string manifest = std::string("relative") + suffix;
+  std::filesystem::create_directories(other_dir);
+
+  BagWriter::Config config;
+  config.sync_mode = true;
+  config.compress = BagWriter::kCompressNone;
+  config.split_by_size = 1;
+
+  auto writer = BagWriter::create(manifest, config);
+  REQUIRE(writer != nullptr);
+  REQUIRE(writer->is_split_mode());
+  REQUIRE_EQ(writer->push(write_frame("dds://relative_split_close", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("relative"), 1'000),
+                          true),
+             1'000);
+
+  std::filesystem::current_path(other_dir);
+  REQUIRE_EQ(writer->push(write_frame("dds://relative_split_close", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("rotated"), 2'000),
+                          true),
+             2'000);
+  writer->close();
+  CHECK_FALSE(writer->fail());
+  CHECK_FALSE(std::filesystem::exists(other_dir / manifest));
+
+  const std::string suffix_str = suffix;
+  const std::string split_suffix = suffix_str == ".vdbx" ? ".vdb" : ".vcap";
+  CHECK(std::filesystem::exists(cwd.path / ("relative.1" + split_suffix)));
+  CHECK(std::filesystem::exists(cwd.path / ("relative.2" + split_suffix)));
+  CHECK_FALSE(std::filesystem::exists(other_dir / ("relative.2" + split_suffix)));
+
+  {
+    std::ifstream manifest_file(cwd.path / manifest, std::ios::binary);
+    REQUIRE(manifest_file.is_open());
+    const std::string manifest_text((std::istreambuf_iterator<char>(manifest_file)), std::istreambuf_iterator<char>());
+    CHECK_NE(manifest_text.find("\"complete\": true"), std::string::npos);
+    CHECK_NE(manifest_text.find("relative.1" + split_suffix), std::string::npos);
+    CHECK_NE(manifest_text.find("relative.2" + split_suffix), std::string::npos);
+    CHECK_EQ(manifest_text.find(cwd.path.string()), std::string::npos);
+  }
+
+  writer.reset();
+  CHECK_FALSE(std::filesystem::exists(other_dir / manifest));
+  std::filesystem::current_path(cwd.path);
+
+  const auto frames = read_writer_frames(manifest);
+  REQUIRE_EQ(frames.size(), 2u);
 }
 
 Bytes make_unhelpful_compression_payload(size_t size, bool high_ratio) {
@@ -645,6 +853,8 @@ void verify_vdb_schema_merge_and_failure_variants() {
   REQUIRE(writer->async_run());
   CHECK(writer->push_schema(conflict));
   REQUIRE(writer->wait_for_idle(3000));
+  CHECK(writer->fail());
+  writer->clear();
 
   writer->register_schema_callback([](const std::string& ser_type, SchemaType) {
     return writer_schema_data(ser_type, SchemaType::kFlatbuffers, "flatbuffer schema");
@@ -702,7 +912,11 @@ void verify_vcap_schema_merge_and_failure_variants() {
 
   SchemaData conflict = full;
   conflict.data = Bytes::from_string("different");
-  CHECK_FALSE(writer->push_schema(conflict, true));
+  REQUIRE(writer->async_run());
+  CHECK(writer->push_schema(conflict));
+  REQUIRE(writer->wait_for_idle(3000));
+  CHECK(writer->fail());
+  writer->clear();
 
   writer->register_schema_callback([](const std::string& ser_type, SchemaType) {
     return writer_schema_data(ser_type, SchemaType::kFlatbuffers, "flatbuffer schema");
@@ -993,6 +1207,7 @@ void verify_vdb_limit_mode_variants() {
                                       Bytes::from_string("second"), 2'000),
                           true),
              0);
+    CHECK_FALSE(writer->fail());
     writer.reset();
 
     auto frames = read_writer_frames(bag.path);
@@ -1231,6 +1446,11 @@ TEST_SUITE("extension-BagWriter") {
     writer << write_frame("dds://ok", "raw", SchemaType::kUnknown, ActionType::kPublish, data, 200);
     CHECK_FALSE(writer.fail());
     CHECK_EQ(writer.record_count, 1);
+  }
+
+  TEST_CASE("deferred writer failures latch fail state") {
+    verify_async_write_failure_latches(".vdb");
+    verify_async_write_failure_latches(".vcap");
   }
 
   TEST_CASE("on_write that does not emit drops the frame") {
@@ -1621,6 +1841,11 @@ TEST_SUITE("extension-BagWriter") {
     verify_async_memory_limit_rejects_before_enqueue(".vcap");
   }
 
+  TEST_CASE("persistent writer queues reject overflow without dropping accepted frames") {
+    verify_persistent_queue_rejects_without_dropping(".vdb");
+    verify_persistent_queue_rejects_without_dropping(".vcap");
+  }
+
   TEST_CASE("real writer config variants remain readable") {
     verify_real_writer_config_variants(".vdb");
     verify_real_writer_config_variants(".vcap");
@@ -1652,6 +1877,8 @@ TEST_SUITE("extension-BagWriter") {
   TEST_CASE("vcap schema merge and failure variants remain deterministic") {
     verify_vcap_schema_merge_and_failure_variants();
   }
+
+  TEST_CASE("vcap can retry a new url after schema resolution fails") { verify_vcap_schema_failure_can_retry(); }
 
   TEST_CASE("real writers reject url ser and schema changes for an existing stream") {
     verify_real_writer_rejects_url_metadata_conflicts(".vdb");
@@ -1685,6 +1912,11 @@ TEST_SUITE("extension-BagWriter") {
     verify_split_by_size_writer_paths(".vcapx");
   }
 
+  TEST_CASE("explicit close finalizes split manifests before destruction") {
+    verify_split_close_finalizes_manifest(".vdbx");
+    verify_split_close_finalizes_manifest(".vcapx");
+  }
+
   TEST_CASE("real writers persist method schema split and field metadata") {
     verify_method_schema_split_and_field_metadata(".vdb");
     verify_method_schema_split_and_field_metadata(".vcap");
@@ -1700,6 +1932,15 @@ TEST_SUITE("extension-BagWriter") {
     verify_relative_split_writer_paths(".vdbx", true);
     verify_relative_split_writer_paths(".vcapx", false);
     verify_relative_split_writer_paths(".vcapx", true);
+  }
+
+  TEST_CASE("relative vcap close remains stable after the process changes directory") {
+    verify_relative_vcap_close_survives_chdir();
+  }
+
+  TEST_CASE("relative split close keeps the manifest in its original directory") {
+    verify_relative_split_close_survives_chdir(".vdbx");
+    verify_relative_split_close_survives_chdir(".vcapx");
   }
 
   TEST_CASE("get_url_meta assigns distinct positive indices for new url and ser") {

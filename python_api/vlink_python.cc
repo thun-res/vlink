@@ -3488,6 +3488,11 @@ NB_MODULE(_vlink_nanobind, m) {
       .def("is_split_mode", &vlink::BagWriter::is_split_mode)
       .def("get_split_index", &vlink::BagWriter::get_split_index)
       .def("set_url_loss", &vlink::BagWriter::set_url_loss, "url"_a, "loss"_a)
+      .def("close",
+           [](vlink::BagWriter& self) {
+             nb::gil_scoped_release release;
+             self.close();
+           })
       .def("fail", &vlink::BagWriter::fail)
       .def("clear", &vlink::BagWriter::clear)
       .def(
@@ -3580,8 +3585,6 @@ NB_MODULE(_vlink_nanobind, m) {
       .def_rw("blacklist", &vlink::TriggerRecorder::Config::blacklist)
       .def_rw("bag_plugin_lib", &vlink::TriggerRecorder::Config::bag_plugin_lib)
       .def_rw("bag_plugin_dir", &vlink::TriggerRecorder::Config::bag_plugin_dir)
-      .def_rw("bag_plugin_major", &vlink::TriggerRecorder::Config::bag_plugin_major)
-      .def_rw("bag_plugin_minor", &vlink::TriggerRecorder::Config::bag_plugin_minor)
       .def_rw("url_overrides", &vlink::TriggerRecorder::Config::url_overrides);
   nb::class_<vlink::TriggerRecorder::TriggerParams>(tr, "TriggerParams")
       .def(nb::init<>())
@@ -3593,24 +3596,44 @@ NB_MODULE(_vlink_nanobind, m) {
       .def_rw("filter_urls", &vlink::TriggerRecorder::TriggerParams::filter_urls)
       .def_rw("filter_str", &vlink::TriggerRecorder::TriggerParams::filter_str)
       .def_rw("black_mode", &vlink::TriggerRecorder::TriggerParams::black_mode);
-  tr.def(nb::init<const vlink::TriggerRecorder::Config&>(), "config"_a)
-      .def("start",
+  tr.def(nb::new_([](const vlink::TriggerRecorder::Config& config) {
+           return new vlink::TriggerRecorder(config, [](const std::string& url, vlink::InitType type) {
+             return vlink::TriggerRecorder::RawSub::create_shared(url, type);
+           });
+         }),
+         "config"_a)
+      .def("async_run",
            [](vlink::TriggerRecorder& self) {
              nb::gil_scoped_release release;
-             return self.start();
+             const bool started = self.async_run();
+
+             if (started) {
+               self.invoke_task([]() {}).wait();
+             }
+
+             return started;
            })
       .def(
-          "trigger",
+          "quit",
+          [](vlink::TriggerRecorder& self, bool force) {
+            nb::gil_scoped_release release;
+            return self.quit(force);
+          },
+          "force"_a = false)
+      .def(
+          "wait_for_quit",
+          [](vlink::TriggerRecorder& self, int timeout_ms) {
+            nb::gil_scoped_release release;
+            return self.wait_for_quit(timeout_ms);
+          },
+          "timeout_ms"_a = vlink::Timer::kInfinite)
+      .def(
+          "dump",
           [](vlink::TriggerRecorder& self, const vlink::TriggerRecorder::TriggerParams& params) {
             nb::gil_scoped_release release;
-            return self.trigger(params);
+            return self.dump(params);
           },
           "params"_a = vlink::TriggerRecorder::TriggerParams())
-      .def("stop",
-           [](vlink::TriggerRecorder& self) {
-             nb::gil_scoped_release release;
-             self.stop();
-           })
       .def("is_dumping", &vlink::TriggerRecorder::is_dumping)
       .def("is_running", &vlink::TriggerRecorder::is_running)
       .def("__repr__", [](const vlink::TriggerRecorder& self) {

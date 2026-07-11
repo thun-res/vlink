@@ -1157,6 +1157,19 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     }
   };
 
+  auto close_current_writer = [&]() {
+    if (!current_writer) {
+      return true;
+    }
+
+    current_writer->quit();
+    current_writer->wait_for_quit();
+    current_writer->close();
+    const bool success = !current_writer->fail();
+    current_writer.reset();
+    return success;
+  };
+
   auto create_writer_for_slice = [&](int idx) -> bool {
     auto& stats = slice_stats_list[static_cast<size_t>(idx)];
     auto slice_path = (std::filesystem::path(opt.out_dir) / stats.file_name).string();
@@ -1198,16 +1211,15 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       return false;
     }
 
-    if (!current_writer) {
+    if VUNLIKELY (!current_writer) {
       std::cerr << "Unsupported output suffix for slice file: " << slice_path << std::endl;
       return false;
     }
 
     for (const auto& schema_data : schema_list) {
-      if (!current_writer->push_schema(schema_data, true)) {
+      if VUNLIKELY (!current_writer->push_schema(schema_data, true)) {
         std::cerr << "Failed to write schema: " << schema_data.name << " into " << slice_path << std::endl;
-        current_writer->quit();
-        current_writer.reset();
+        close_current_writer();
         return false;
       }
     }
@@ -1218,15 +1230,18 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       }
     }
 
-    current_writer->async_run();
+    if VUNLIKELY (!current_writer->async_run()) {
+      close_current_writer();
+      std::cerr << "Failed to start output writer: " << slice_path << std::endl;
+      return false;
+    }
 
     if (opt.export_csv && has_fields) {
       current_csv_path = std::filesystem::path(opt.out_dir) / vlink::dump::csv_name_for_slice_file(stats.file_name);
       current_csv_file.open(current_csv_path);
 
-      if (!current_csv_file.is_open()) {
-        current_writer->quit();
-        current_writer.reset();
+      if VUNLIKELY (!current_csv_file.is_open()) {
+        close_current_writer();
         std::cerr << "Failed to write CSV: " << current_csv_path.string() << std::endl;
         return false;
       }
@@ -1363,8 +1378,13 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     while (current_slice_index < static_cast<int>(slice_stats_list.size()) - 1 &&
            timestamp_ms >= slice_stats_list[static_cast<size_t>(current_slice_index)].end_time_ms) {
       close_current_csv();
-      current_writer->quit();
-      current_writer.reset();
+
+      if VUNLIKELY (!close_current_writer()) {
+        slice_error = true;
+        player->stop();
+        return;
+      }
+
       ++current_slice_index;
 
       if (!create_writer_for_slice(current_slice_index)) {
@@ -1390,7 +1410,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     push_frame.action_type = action_type;
     push_frame.data = vlink::Bytes::shallow_copy(data.data(), data.size());
 
-    if (current_writer->push(push_frame, true) < 0) {
+    if VUNLIKELY (current_writer->push(push_frame, true) < 0) {
       std::cerr << "Failed to write message into " << stats.file_name << ": " << url << std::endl;
       slice_error = true;
       player->stop();
@@ -1464,9 +1484,8 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
 
   close_current_csv();
 
-  if (current_writer) {
-    current_writer->quit();
-    current_writer.reset();
+  if VUNLIKELY (!close_current_writer()) {
+    slice_error = true;
   }
 
   ctx.has_quit = true;
