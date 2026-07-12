@@ -63,29 +63,86 @@ static T read_point_value(const uint8_t* data) noexcept {
   return value;
 }
 
+static size_t point_field_read_size(const PointCloudFieldView& field_view, uint64_t extent) noexcept {
+  using PC = zerocopy::PointCloud;
+
+  if (extent != 0 && field_view.index < 3) {
+    return field_view.field.storage_size == sizeof(int16_t) ? sizeof(int16_t) : 0;
+  }
+
+  size_t expected = 0;
+
+  switch (field_view.field.native_type) {
+    case PC::kBoolType:
+    case PC::kInt8Type:
+    case PC::kUint8Type:
+      expected = sizeof(uint8_t);
+      break;
+    case PC::kInt16Type:
+    case PC::kUint16Type:
+      expected = sizeof(uint16_t);
+      break;
+    case PC::kInt32Type:
+    case PC::kUint32Type:
+    case PC::kFloatType:
+      expected = sizeof(uint32_t);
+      break;
+    case PC::kInt64Type:
+    case PC::kUint64Type:
+    case PC::kDoubleType:
+      expected = sizeof(uint64_t);
+      break;
+    case PC::kUnknownType:
+      switch (field_view.field.storage_size) {
+        case sizeof(uint8_t):
+        case sizeof(uint16_t):
+        case sizeof(uint32_t):
+        case sizeof(uint64_t):
+          expected = field_view.field.storage_size;
+          break;
+        default:
+          return 0;
+      }
+      break;
+    default:
+      return 0;
+  }
+
+  return expected == field_view.field.storage_size ? expected : 0;
+}
+
 PointCloudView::PointCloudView(const zerocopy::MessageParser& parser) {
-  if (parser.type() != zerocopy::MessageParser::Type::kPointCloud) return;
+  if VUNLIKELY (parser.type() != zerocopy::MessageParser::Type::kPointCloud) {
+    return;
+  }
 
   zerocopy::MessageParser::Value data_value;
   zerocopy::MessageParser::Value size_value;
   zerocopy::MessageParser::Value pack_size_value;
   double extent = 0.0;
-  if (!parser.value("size", size_value) || !parser.value("pack_size", pack_size_value) ||
-      !parser.numeric("extent", extent) || !parser.value("data", data_value))
+
+  if VUNLIKELY (!parser.value("size", size_value) || !parser.value("pack_size", pack_size_value) ||
+                !parser.numeric("extent", extent) || !parser.value("data", data_value)) {
     return;
+  }
 
   const auto* bytes = std::get_if<Bytes>(&data_value);
   const auto* size_ptr = std::get_if<uint64_t>(&size_value);
   const auto* pack_size_ptr = std::get_if<uint64_t>(&pack_size_value);
-  if (size_ptr == nullptr || pack_size_ptr == nullptr || extent < 0.0 ||
-      extent > static_cast<double>(std::numeric_limits<uint16_t>::max()))
+
+  if VUNLIKELY (size_ptr == nullptr || pack_size_ptr == nullptr || extent < 0.0 ||
+                extent > static_cast<double>(std::numeric_limits<uint16_t>::max())) {
     return;
+  }
+
   const uint64_t size = *size_ptr;
   const uint64_t pack_size = *pack_size_ptr;
   extent_ = static_cast<uint16_t>(extent);
-  if (bytes == nullptr || pack_size == 0 || size > std::numeric_limits<size_t>::max() / pack_size ||
-      size * pack_size > bytes->size())
+
+  if VUNLIKELY (bytes == nullptr || pack_size == 0 || pack_size > std::numeric_limits<uint16_t>::max() ||
+                size > std::numeric_limits<size_t>::max() / pack_size || size * pack_size > bytes->size()) {
     return;
+  }
 
   size_ = static_cast<size_t>(size);
   pack_size_ = static_cast<size_t>(pack_size);
@@ -93,15 +150,20 @@ PointCloudView::PointCloudView(const zerocopy::MessageParser& parser) {
   uint16_t offset = 0;
   const auto source_fields = parser.element_fields("points");
   fields_.reserve(source_fields.size());
+
   for (size_t index = 0; index < source_fields.size(); ++index) {
     const auto& field = source_fields[index];
-    if (field.storage_size == 0 || static_cast<size_t>(offset) + field.storage_size > pack_size_) {
+    const PointCloudFieldView field_view{field, offset, index};
+
+    if VUNLIKELY (point_field_read_size(field_view, extent_) == 0 ||
+                  static_cast<size_t>(offset) + field.storage_size > pack_size_) {
       fields_.clear();
       return;
     }
-    fields_.push_back({field, offset, index});
+    fields_.push_back(field_view);
     offset = static_cast<uint16_t>(offset + field.storage_size);
   }
+
   valid_ = !fields_.empty();
 }
 
@@ -109,7 +171,11 @@ PointCloudView::PointCloudView(const zerocopy::PointCloud& point_cloud) {
   size_ = point_cloud.size();
   pack_size_ = point_cloud.pack_size();
   extent_ = point_cloud.get_extent();
-  if (pack_size_ == 0 || size_ > std::numeric_limits<size_t>::max() / pack_size_) return;
+
+  if VUNLIKELY (pack_size_ == 0 || pack_size_ > std::numeric_limits<uint16_t>::max() ||
+                size_ > std::numeric_limits<size_t>::max() / pack_size_) {
+    return;
+  }
   data_ = Bytes::shallow_copy(point_cloud.get_internal_data(), size_ * pack_size_);
 
   zerocopy::PointCloud::KeyList keys;
@@ -118,24 +184,37 @@ PointCloudView::PointCloudView(const zerocopy::PointCloud& point_cloud) {
   fields_.reserve(keys.size());
   uint16_t offset = 0;
   using PC = zerocopy::PointCloud;
+
   for (size_t index = 0; index < keys.size(); ++index) {
     const auto& key = keys[index];
-    if (key.size == 0 || static_cast<size_t>(offset) + key.size > pack_size_) {
+
+    if VUNLIKELY (key.size == 0 || static_cast<size_t>(offset) + key.size > pack_size_) {
       fields_.clear();
       return;
     }
     auto value_type = ValueType::kDouble;
+
     if (key.type == PC::kInt8Type || key.type == PC::kInt16Type || key.type == PC::kInt32Type ||
-        key.type == PC::kInt64Type)
+        key.type == PC::kInt64Type) {
       value_type = ValueType::kInt64;
-    else if (key.type == PC::kBoolType || key.type == PC::kUint8Type || key.type == PC::kUint16Type ||
-             key.type == PC::kUint32Type || key.type == PC::kUint64Type)
+    } else if (key.type == PC::kBoolType || key.type == PC::kUint8Type || key.type == PC::kUint16Type ||
+               key.type == PC::kUint32Type || key.type == PC::kUint64Type) {
       value_type = ValueType::kUInt64;
+    }
+
     zerocopy::MessageParser::Field field{key.name, value_type, key.type, key.size};
     field.is_bool = key.type == PC::kBoolType;
-    fields_.push_back({std::move(field), offset, index});
+    PointCloudFieldView field_view{std::move(field), offset, index};
+
+    if VUNLIKELY (point_field_read_size(field_view, extent_) == 0) {
+      fields_.clear();
+      return;
+    }
+
+    fields_.push_back(std::move(field_view));
     offset = static_cast<uint16_t>(offset + key.size);
   }
+
   valid_ = !fields_.empty() && (size_ == 0 || data_.data() != nullptr);
 }
 
@@ -151,18 +230,23 @@ const PointCloudFieldView* PointCloudView::find(std::string_view name) const noe
   return iter == fields_.end() ? nullptr : &*iter;
 }
 
-bool PointCloudView::value(size_t point, const PointCloudFieldView& item,
+bool PointCloudView::value(size_t point, const PointCloudFieldView& field_view,
                            zerocopy::MessageParser::Value& out) const noexcept {
-  if (!valid_ || point >= size_ || static_cast<size_t>(item.offset) + item.field.storage_size > pack_size_)
+  if VUNLIKELY (!valid_ || point >= size_ || field_view.index >= fields_.size()) {
     return false;
-  const uint8_t* source = data_.data() + point * pack_size_ + item.offset;
-  if (extent_ != 0 && item.index < 3) {
+  }
+
+  const auto& cached = fields_[field_view.index];
+  const uint8_t* source = data_.data() + point * pack_size_ + cached.offset;
+
+  if (extent_ != 0 && cached.index < 3) {
     out = Quantize::decode<double>(extent_, read_point_value<int16_t>(source));
     return true;
   }
 
   using PC = zerocopy::PointCloud;
-  switch (item.field.native_type) {
+
+  switch (cached.field.native_type) {
     case PC::kBoolType:
       out = static_cast<uint64_t>(read_point_value<uint8_t>(source) != 0);
       return true;
@@ -201,7 +285,7 @@ bool PointCloudView::value(size_t point, const PointCloudFieldView& item,
     default:
       return false;
   }
-  switch (item.field.storage_size) {
+  switch (cached.field.storage_size) {
     case sizeof(uint8_t):
       out = static_cast<uint64_t>(read_point_value<uint8_t>(source));
       return true;
@@ -219,17 +303,23 @@ bool PointCloudView::value(size_t point, const PointCloudFieldView& item,
   }
 }
 
-bool PointCloudView::numeric(size_t point, const PointCloudFieldView& field, double& out) const noexcept {
+bool PointCloudView::numeric(size_t point, const PointCloudFieldView& field_view, double& out) const noexcept {
   zerocopy::MessageParser::Value value;
-  if (!this->value(point, field, value)) return false;
-  if (const auto* number = std::get_if<double>(&value))
-    out = *number;
-  else if (const auto* integer = std::get_if<int64_t>(&value))
-    out = static_cast<double>(*integer);
-  else if (const auto* integer = std::get_if<uint64_t>(&value))
-    out = static_cast<double>(*integer);
-  else
+
+  if VUNLIKELY (!this->value(point, field_view, value)) {
     return false;
+  }
+
+  if (const auto* number = std::get_if<double>(&value)) {
+    out = *number;
+  } else if (const auto* integer = std::get_if<int64_t>(&value)) {
+    out = static_cast<double>(*integer);
+  } else if (const auto* integer = std::get_if<uint64_t>(&value)) {
+    out = static_cast<double>(*integer);
+  } else {
+    return false;
+  }
+
   return true;
 }
 
@@ -712,12 +802,22 @@ static size_t referenced_collection_limit(const std::vector<std::string>& source
           bool parsed = false;
 
           while (cursor < source.size() && std::isdigit(static_cast<unsigned char>(source[cursor])) != 0) {
-            index = index * 10 + static_cast<size_t>(source[cursor] - '0');
+            const size_t digit = static_cast<size_t>(source[cursor] - '0');
+
+            if VUNLIKELY (index > (std::numeric_limits<size_t>::max() - digit) / 10) {
+              return kFullCollection;
+            }
+
+            index = index * 10 + digit;
             parsed = true;
             ++cursor;
           }
 
           if (parsed && cursor < source.size() && source[cursor] == ']') {
+            if VUNLIKELY (index == std::numeric_limits<size_t>::max()) {
+              return kFullCollection;
+            }
+
             limit = std::max(limit, index + 1);
           }
         } else if (after >= source.size() ||
@@ -736,15 +836,22 @@ static size_t referenced_collection_limit(const std::vector<std::string>& source
 static void fill_point_data(Message& message, const zerocopy::MessageParser& parser,
                             const std::vector<zerocopy::MessageParser::Field>& fields, size_t limit) {
   const PointCloudView view(parser);
-  if (!view.valid()) return;
+
+  if VUNLIKELY (!view.valid()) {
+    return;
+  }
   const auto* data = field(message, "data");
   const size_t count = std::min(view.size(), limit);
   std::vector<std::pair<std::string, const PointCloudFieldView*>> copies;
   copies.reserve(fields.size());
   std::unordered_set<std::string> used_names;
+
   for (const auto& source : fields) {
     const auto* source_field = view.find(source.name);
-    if (source_field != nullptr) copies.emplace_back(unique_field_name(source.name, used_names), source_field);
+
+    if VLIKELY (source_field != nullptr) {
+      copies.emplace_back(unique_field_name(source.name, used_names), source_field);
+    }
   }
 
   for (size_t index = 0; index < count; ++index) {
@@ -760,11 +867,12 @@ static void fill_point_data(Message& message, const zerocopy::MessageParser& par
   }
 }
 
-static void fill_object_data(Message& message, const zerocopy::MessageParser& parser) {
+static void fill_object_data(Message& message, const zerocopy::MessageParser& parser, size_t limit) {
   const auto* data = field(message, "data");
   const auto fields = parser.element_fields("data");
+  const size_t count = std::min(parser.collection_size("data"), limit);
 
-  for (size_t index = 0; index < parser.collection_size("data"); ++index) {
+  for (size_t index = 0; index < count; ++index) {
     auto* object = message.GetReflection()->AddMessage(&message, data);
 
     for (const auto& source : fields) {
@@ -776,8 +884,6 @@ static void fill_object_data(Message& message, const zerocopy::MessageParser& pa
 
       if (source.name.find('[') != std::string::npos) {
         add_repeated_value(*object, vector_field_name(source.name), value);
-      } else if (source.name == "reserved_buf") {
-        set_value(*object, "reserved", value);
       } else {
         set_value(*object, source.name, value);
       }
@@ -848,7 +954,7 @@ std::unique_ptr<google::protobuf::Message> make_zerocopy_message(const zerocopy:
 
   switch (parser.type()) {
     case zerocopy::MessageParser::Type::kObjectArray:
-      fill_object_data(*message, parser);
+      fill_object_data(*message, parser, data_limit);
       break;
     case zerocopy::MessageParser::Type::kPointCloud:
       fill_point_data(*message, parser, element_fields, data_limit);

@@ -69,9 +69,9 @@ class PointCloudView final {
 
   [[nodiscard]] const PointCloudFieldView* find(std::string_view name) const noexcept;
 
-  bool value(size_t point, const PointCloudFieldView& field, zerocopy::MessageParser::Value& out) const noexcept;
+  bool value(size_t point, const PointCloudFieldView& field_view, zerocopy::MessageParser::Value& out) const noexcept;
 
-  bool numeric(size_t point, const PointCloudFieldView& field, double& out) const noexcept;
+  bool numeric(size_t point, const PointCloudFieldView& field_view, double& out) const noexcept;
 
  private:
   std::vector<PointCloudFieldView> fields_;
