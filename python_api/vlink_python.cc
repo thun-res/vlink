@@ -73,6 +73,7 @@
 #include <vlink/zerocopy/audio_frame.h>
 #include <vlink/zerocopy/camera_frame.h>
 #include <vlink/zerocopy/header.h>
+#include <vlink/zerocopy/message_parser.h>
 #include <vlink/zerocopy/object_array.h>
 #include <vlink/zerocopy/occupancy_grid.h>
 #include <vlink/zerocopy/point_cloud.h>
@@ -259,6 +260,59 @@ inline auto make_connect_callback(nb::callable py_cb, const char* context) {
     }
   };
 }
+
+struct PythonZerocopyMessageParser final {
+  using Parser = vlink::zerocopy::MessageParser;
+
+  bool parse(std::string_view serialized_type, nb::object input) {
+    return this->parse_input(input, [&serialized_type](Parser& parser, const vlink::Bytes& bytes) {
+      return parser.parse(serialized_type, bytes);
+    });
+  }
+
+  bool parse_type(Parser::Type type, nb::object input) {
+    return this->parse_input(input,
+                             [type](Parser& parser, const vlink::Bytes& bytes) { return parser.parse(type, bytes); });
+  }
+
+  void clear() {
+    parser.clear();
+    input_owner = nb::object();
+    input_data = nullptr;
+    input_size = 0;
+  }
+
+  [[nodiscard]] bool backing_valid() const {
+    if (!parser.valid() || !input_owner.is_valid()) {
+      return false;
+    }
+
+    const auto& bytes = nb::cast<const vlink::Bytes&>(input_owner);
+    return bytes.data() == input_data && bytes.size() == input_size;
+  }
+
+  template <typename ParseFunction>
+  bool parse_input(const nb::object& input, ParseFunction&& parse_function) {
+    const vlink::Bytes& bytes = nb::cast<const vlink::Bytes&>(input);
+
+    if VUNLIKELY (!parse_function(parser, bytes)) {
+      input_owner = nb::object();
+      input_data = nullptr;
+      input_size = 0;
+      return false;
+    }
+
+    input_owner = input;
+    input_data = bytes.data();
+    input_size = bytes.size();
+    return true;
+  }
+
+  Parser parser;
+  nb::object input_owner;
+  const uint8_t* input_data{nullptr};
+  size_t input_size{0};
+};
 
 inline auto make_void_callback(nb::callable py_cb, const char* context) {
   auto cb = std::make_shared<GilSafePyFunction>(std::move(py_cb));
@@ -1218,6 +1272,119 @@ NB_MODULE(_vlink_nanobind, m) {
         return std::string("ZeroCopyHeader(frame_id='") + std::string(self.frame_id_view()) +
                "', seq=" + std::to_string(self.seq) + ")";
       });
+
+  using ZerocopyMessageParser = vlink::zerocopy::MessageParser;
+  using PythonMessageParser = PythonZerocopyMessageParser;
+  nb::class_<PythonMessageParser> message_parser_cls(m, "ZeroCopyMessageParser",
+                                                     "Unified read-only parser for VLink zero-copy messages");
+  nb::enum_<ZerocopyMessageParser::Type>(message_parser_cls, "Type")
+      .value("Unknown", ZerocopyMessageParser::Type::kUnknown)
+      .value("RawData", ZerocopyMessageParser::Type::kRawData)
+      .value("CameraFrame", ZerocopyMessageParser::Type::kCameraFrame)
+      .value("PointCloud", ZerocopyMessageParser::Type::kPointCloud)
+      .value("ProxyData", ZerocopyMessageParser::Type::kProxyData)
+      .value("OccupancyGrid", ZerocopyMessageParser::Type::kOccupancyGrid)
+      .value("Tensor", ZerocopyMessageParser::Type::kTensor)
+      .value("ObjectArray", ZerocopyMessageParser::Type::kObjectArray)
+      .value("AudioFrame", ZerocopyMessageParser::Type::kAudioFrame);
+  nb::enum_<ZerocopyMessageParser::ValueType>(message_parser_cls, "ValueType")
+      .value("Unknown", ZerocopyMessageParser::ValueType::kValueUnknown)
+      .value("Int64", ZerocopyMessageParser::ValueType::kInt64)
+      .value("Uint64", ZerocopyMessageParser::ValueType::kUInt64)
+      .value("Double", ZerocopyMessageParser::ValueType::kDouble)
+      .value("String", ZerocopyMessageParser::ValueType::kString)
+      .value("Bytes", ZerocopyMessageParser::ValueType::kBytes);
+  nb::enum_<ZerocopyMessageParser::EnumKind>(message_parser_cls, "EnumKind")
+      .value("NoEnum", ZerocopyMessageParser::EnumKind::kEnumNone)
+      .value("CameraFormat", ZerocopyMessageParser::EnumKind::kEnumCameraFormat)
+      .value("CameraStream", ZerocopyMessageParser::EnumKind::kEnumCameraStream)
+      .value("GridCellType", ZerocopyMessageParser::EnumKind::kEnumGridCellType)
+      .value("TensorDataType", ZerocopyMessageParser::EnumKind::kEnumTensorDataType)
+      .value("TensorDevice", ZerocopyMessageParser::EnumKind::kEnumTensorDevice)
+      .value("AudioFormat", ZerocopyMessageParser::EnumKind::kEnumAudioFormat)
+      .value("AudioLayout", ZerocopyMessageParser::EnumKind::kEnumAudioLayout);
+  nb::class_<ZerocopyMessageParser::Field>(message_parser_cls, "Field")
+      .def_ro("name", &ZerocopyMessageParser::Field::name)
+      .def_ro("type", &ZerocopyMessageParser::Field::type)
+      .def_ro("native_type", &ZerocopyMessageParser::Field::native_type)
+      .def_ro("storage_size", &ZerocopyMessageParser::Field::storage_size)
+      .def_ro("enum_kind", &ZerocopyMessageParser::Field::enum_kind)
+      .def_ro("is_time", &ZerocopyMessageParser::Field::is_time)
+      .def_ro("is_bool", &ZerocopyMessageParser::Field::is_bool)
+      .def_ro("is_reserved", &ZerocopyMessageParser::Field::is_reserved)
+      .def_ro("byte_offset", &ZerocopyMessageParser::Field::byte_offset)
+      .def_ro("element_index", &ZerocopyMessageParser::Field::element_index);
+
+  const auto parser_value_to_python = [](const ZerocopyMessageParser::Value& value) -> nb::object {
+    return std::visit(
+        [](const auto& item) -> nb::object {
+          using Item = std::decay_t<decltype(item)>;
+
+          if constexpr (std::is_same_v<Item, vlink::Bytes>) {
+            return nb::bytes(item.data(), item.size());
+          } else {
+            return nb::cast(item);
+          }
+        },
+        value);
+  };
+
+  message_parser_cls.def(nb::init<>())
+      .def("parse", &PythonMessageParser::parse, "serialized_type"_a, "bytes"_a)
+      .def("parse_type", &PythonMessageParser::parse_type, "type"_a, "bytes"_a)
+      .def("clear", &PythonMessageParser::clear)
+      .def_prop_ro("type",
+                   [](const PythonMessageParser& self) {
+                     return self.backing_valid() ? self.parser.type() : ZerocopyMessageParser::Type::kUnknown;
+                   })
+      .def_prop_ro("valid", &PythonMessageParser::backing_valid)
+      .def(
+          "value",
+          [parser_value_to_python](const PythonMessageParser& self, std::string_view path) -> nb::object {
+            ZerocopyMessageParser::Value value;
+
+            if VUNLIKELY (!self.backing_valid() || !self.parser.value(path, value)) {
+              return nb::none();
+            }
+
+            return parser_value_to_python(value);
+          },
+          "path"_a)
+      .def(
+          "value_at",
+          [parser_value_to_python](const PythonMessageParser& self, std::string_view collection, size_t index,
+                                   std::string_view field) -> nb::object {
+            ZerocopyMessageParser::Value value;
+
+            if VUNLIKELY (!self.backing_valid() || !self.parser.value(collection, index, field, value)) {
+              return nb::none();
+            }
+
+            return parser_value_to_python(value);
+          },
+          "collection"_a, "index"_a, "field"_a)
+      .def(
+          "collection_size",
+          [](const PythonMessageParser& self, std::string_view collection) {
+            return self.backing_valid() ? self.parser.collection_size(collection) : 0;
+          },
+          "collection"_a)
+      .def("fields",
+           [](const PythonMessageParser& self) {
+             return self.backing_valid() ? self.parser.fields() : std::vector<ZerocopyMessageParser::Field>{};
+           })
+      .def(
+          "element_fields",
+          [](const PythonMessageParser& self, std::string_view collection) {
+            return self.backing_valid() ? self.parser.element_fields(collection)
+                                        : std::vector<ZerocopyMessageParser::Field>{};
+          },
+          "collection"_a)
+      .def_static("detect_type", &ZerocopyMessageParser::detect_type, "serialized_type"_a)
+      .def_static(
+          "type_name",
+          [](ZerocopyMessageParser::Type type) { return std::string(ZerocopyMessageParser::type_name(type)); },
+          "type"_a);
 
   nb::class_<vlink::zerocopy::RawData>(m, "RawData", "Generic zero-copy raw-byte data container (64 bytes)")
       .def(nb::init<>())

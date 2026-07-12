@@ -53,7 +53,7 @@ struct PredPoint {
 struct PredictionData {
   std::vector<PredPoint> points;
   uint32_t color{0};
-  uint32_t track_id{0};
+  uint64_t track_id{0};
   float confidence{1.0f};
 };
 
@@ -61,7 +61,7 @@ extern osg::ref_ptr<osg::Geode> create();
 
 extern void update(osg::Geode* geode, const std::vector<PredictionData>& predictions, float line_width);
 
-extern uint32_t get_prediction_color(uint32_t track_id);
+extern uint32_t get_prediction_color(uint64_t track_id);
 
 }  // namespace OsgPrediction
 

@@ -429,6 +429,21 @@ fn main() {
 - 独立加解密的输出缓冲区由 `vlink_security_free_buffer` 释放，不可用其它释放器。
 - 载荷生命周期规则（发送类函数浅拷贝、回调入参仅回调期有效）见 13.5.1。
 
+#### 13.8.3 Python 零拷贝动态解析
+
+nanobind 模块提供 `ZeroCopyMessageParser`，用于按运行期序列化类型读取八种内置零拷贝消息。`parse(serialized_type, bytes)` 自动识别类型，`parse_type(type, bytes)` 可在类型已知时避免重复识别；解析成功后通过 `value(path)`、`value_at(collection, index, field)`、`collection_size()`、`fields()` 与 `element_fields()` 访问消息。字段不存在或下标越界时读取方法返回 `None`，不会越界访问。
+
+```python
+parser = vlink.ZeroCopyMessageParser()
+
+if parser.parse("vlink::zerocopy::ObjectArray", wire):
+    count = parser.collection_size("data")
+    label = parser.value_at("data", 0, "label") if count else None
+    track_id = parser.value_at("data", 0, "track_id") if count else None
+```
+
+Python 返回值保持字符串、字节与 64 位有符号/无符号整数类型，因此 `track_id` 等大整数不会先经过 `double` 而丢失精度。绑定会让输入 `Bytes` 至少与解析器同寿命，并在检测到输入指针或大小变化后拒绝继续读取；但解析器有效期间仍不得修改该 `Bytes` 的内容、大小、容量或底层存储。C++ 调用方也应遵守 [零拷贝生命周期约束](06-zerocopy.md#-611-生命周期约束)。
+
 ---
 
 ## 🧩 扩展开发：插件与自定义传输

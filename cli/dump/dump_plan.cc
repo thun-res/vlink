@@ -21,7 +21,7 @@
  * limitations under the License.
  */
 
-#include "dump_plan.h"
+#include "./dump_plan.h"
 
 #include <vlink/base/helpers.h>
 
@@ -295,8 +295,9 @@ bool build_url_selection(const vlink::BagReader::Info& info, const std::vector<s
   auto url_matches = [](const std::string& url, const std::vector<std::string>& keywords) {
     auto lower_url = to_lower_copy(url);
 
-    return std::any_of(keywords.begin(), keywords.end(),
-                       [&](const std::string& keyword) { return lower_url.find(keyword) != std::string::npos; });
+    return std::any_of(keywords.begin(), keywords.end(), [&lower_url](const std::string& keyword) {
+      return lower_url.find(keyword) != std::string::npos;
+    });
   };
 
   auto trimmed_filter = trim_copy(url_filter);

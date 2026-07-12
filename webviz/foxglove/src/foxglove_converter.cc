@@ -21,10 +21,11 @@
  * limitations under the License.
  */
 
-#include "foxglove_converter.h"
+#include "./foxglove_converter.h"
 
 #include <vlink/base/functional.h>
 #include <vlink/base/helpers.h>
+#include <vlink/zerocopy/message_parser.h>
 
 #include <CameraCalibration.fbs.hpp>
 #include <CameraCalibration_bfbs.fbs.hpp>
@@ -98,6 +99,7 @@
 
 #include "../../webviz_common.h"
 #include "../../webviz_loader_utils.h"
+#include "../../zerocopy_message.h"
 
 #ifdef _WIN32
 #undef min
@@ -2701,6 +2703,12 @@ bool FoxgloveConverter::load_mapping_file(const std::string& path) {
             return false;
           }
 
+          if VUNLIKELY (mapping.encoding != "protobuf" && mapping.encoding != "zerocopy" &&
+                        !is_flatbuffers_schema_encoding(mapping.encoding)) {
+            MLOG_W("Invalid mapping in {}: unsupported source encoding {}", path, mapping.encoding);
+            return false;
+          }
+
           if (mapping.converter == "passthrough") {
             if (mapping.schema.empty()) {
               mapping.schema = mapping.ser;
@@ -2978,6 +2986,14 @@ FoxgloveMessage FoxgloveConverter::convert_proto_mapping(const FoxgloveMapping& 
     FoxgloveMessage result;
     return result;
   }
+
+  return convert_proto_mapping(mapping, *msg);
+}
+
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+FoxgloveMessage FoxgloveConverter::convert_proto_mapping(const FoxgloveMapping& mapping,
+                                                         const google::protobuf::Message& message) {
+  const auto* msg = &message;
 
   auto extract_ts = [&mapping, &msg](FoxgloveMessage& result) {
     if VLIKELY (!mapping.timestamp_field.empty() && result.success) {
@@ -4981,42 +4997,63 @@ FoxgloveMessage FoxgloveConverter::convert_voxel_grid(const FoxgloveMapping& map
 FoxgloveMessage FoxgloveConverter::convert(std::string_view url, SchemaType schema_type, const std::string& ser,
                                            const Bytes& raw) {
   FoxgloveMessage result;
-
-  if (schema_type == SchemaType::kZeroCopy) {
-    if (Helpers::has_startwith(ser, "vlink::zerocopy::CameraFrame")) {
-      return camera_frame_fbs(raw);
-    }
-
-    if (Helpers::has_startwith(ser, "vlink::zerocopy::PointCloud")) {
-      return point_cloud_fbs(raw);
-    }
-
-    if (Helpers::has_startwith(ser, "vlink::zerocopy::RawData")) {
-      return raw_data_to_log(raw);
-    }
-
-    if (Helpers::has_startwith(ser, "vlink::zerocopy::OccupancyGrid")) {
-      return occupancy_grid_fbs(raw);
-    }
-
-    if (Helpers::has_startwith(ser, "vlink::zerocopy::Tensor")) {
-      return tensor_fbs(raw);
-    }
-
-    if (Helpers::has_startwith(ser, "vlink::zerocopy::ObjectArray")) {
-      return object_array_fbs(raw);
-    }
-
-    if (Helpers::has_startwith(ser, "vlink::zerocopy::AudioFrame")) {
-      return audio_frame_fbs(raw);
-    }
-  }
-
   bool ambiguous = false;
   const auto* mapping = find_mapping(url, ser, &ambiguous);
+  const auto zerocopy_type = zerocopy::MessageParser::detect_type(ser);
 
   if VUNLIKELY (ambiguous) {
     return result;
+  }
+
+  if (schema_type == SchemaType::kZeroCopy && mapping != nullptr && mapping->encoding == "zerocopy" &&
+      mapping->converter.empty() && !mapping->field_mappings.empty()) {
+    std::vector<std::string> mapping_sources;
+    mapping_sources.reserve(mapping->field_mappings.size() * 2 + 1);
+    mapping_sources.push_back(mapping->timestamp_field);
+
+    for (const auto& field_mapping : mapping->field_mappings) {
+      mapping_sources.push_back(field_mapping.source);
+      mapping_sources.push_back(field_mapping.expression);
+    }
+
+    auto message = make_zerocopy_message(ser, raw, mapping_sources);
+
+    if VUNLIKELY (!message) {
+      MLOG_W("Failed to adapt zerocopy message for Foxglove mapping: {}", ser);
+      return result;
+    }
+
+    return convert_proto_mapping(*mapping, *message);
+  }
+
+  if (schema_type == SchemaType::kZeroCopy) {
+    if (zerocopy_type == zerocopy::MessageParser::Type::kCameraFrame) {
+      return camera_frame_fbs(raw);
+    }
+
+    if (zerocopy_type == zerocopy::MessageParser::Type::kPointCloud) {
+      return point_cloud_fbs(raw);
+    }
+
+    if (zerocopy_type == zerocopy::MessageParser::Type::kRawData) {
+      return raw_data_to_log(raw);
+    }
+
+    if (zerocopy_type == zerocopy::MessageParser::Type::kOccupancyGrid) {
+      return occupancy_grid_fbs(raw);
+    }
+
+    if (zerocopy_type == zerocopy::MessageParser::Type::kTensor) {
+      return tensor_fbs(raw);
+    }
+
+    if (zerocopy_type == zerocopy::MessageParser::Type::kObjectArray) {
+      return object_array_fbs(raw);
+    }
+
+    if (zerocopy_type == zerocopy::MessageParser::Type::kAudioFrame) {
+      return audio_frame_fbs(raw);
+    }
   }
 
   if VLIKELY (mapping) {
@@ -5221,62 +5258,72 @@ bool FoxgloveConverter::get_schema_info(std::string_view url, SchemaType schema_
     *is_send_time = false;
   }
 
+  bool ambiguous = false;
+  const auto* mapping = find_mapping(url, ser, &ambiguous);
+  const auto zerocopy_type = zerocopy::MessageParser::detect_type(ser);
+
+  if VUNLIKELY (ambiguous) {
+    return false;
+  }
+
+  if (schema_type == SchemaType::kZeroCopy && mapping != nullptr && mapping->encoding == "zerocopy" &&
+      mapping->converter.empty() && !mapping->field_mappings.empty()) {
+    schema_name = mapping->schema;
+    schema_encoding =
+        mapping->schema_encoding.empty() ? std::string(kFoxgloveFlatbufferEncoding) : mapping->schema_encoding;
+    encoding = schema_encoding;
+    return resolve_schema_by_name(schema_name, schema_encoding, schema_data);
+  }
+
   if (schema_type == SchemaType::kZeroCopy) {
-    if (Helpers::has_startwith(ser, "vlink::zerocopy::CameraFrame")) {
+    if (zerocopy_type == zerocopy::MessageParser::Type::kCameraFrame) {
       schema_name = "foxglove.RawImage";
       encoding = std::string(kFoxgloveFlatbufferEncoding);
       schema_encoding = std::string(kFoxgloveFlatbufferEncoding);
       return resolve_fbs_schema(schema_name, schema_data);
     }
 
-    if (Helpers::has_startwith(ser, "vlink::zerocopy::PointCloud")) {
+    if (zerocopy_type == zerocopy::MessageParser::Type::kPointCloud) {
       schema_name = "foxglove.PointCloud";
       encoding = std::string(kFoxgloveFlatbufferEncoding);
       schema_encoding = std::string(kFoxgloveFlatbufferEncoding);
       return resolve_fbs_schema(schema_name, schema_data);
     }
 
-    if (Helpers::has_startwith(ser, "vlink::zerocopy::RawData")) {
+    if (zerocopy_type == zerocopy::MessageParser::Type::kRawData) {
       schema_name = "foxglove.Log";
       encoding = std::string(kFoxgloveFlatbufferEncoding);
       schema_encoding = std::string(kFoxgloveFlatbufferEncoding);
       return resolve_fbs_schema(schema_name, schema_data);
     }
 
-    if (Helpers::has_startwith(ser, "vlink::zerocopy::OccupancyGrid")) {
+    if (zerocopy_type == zerocopy::MessageParser::Type::kOccupancyGrid) {
       schema_name = "foxglove.Grid";
       encoding = std::string(kFoxgloveFlatbufferEncoding);
       schema_encoding = std::string(kFoxgloveFlatbufferEncoding);
       return resolve_fbs_schema(schema_name, schema_data);
     }
 
-    if (Helpers::has_startwith(ser, "vlink::zerocopy::Tensor")) {
+    if (zerocopy_type == zerocopy::MessageParser::Type::kTensor) {
       schema_name = "foxglove.Log";
       encoding = std::string(kFoxgloveFlatbufferEncoding);
       schema_encoding = std::string(kFoxgloveFlatbufferEncoding);
       return resolve_fbs_schema(schema_name, schema_data);
     }
 
-    if (Helpers::has_startwith(ser, "vlink::zerocopy::ObjectArray")) {
+    if (zerocopy_type == zerocopy::MessageParser::Type::kObjectArray) {
       schema_name = "foxglove.SceneUpdate";
       encoding = std::string(kFoxgloveFlatbufferEncoding);
       schema_encoding = std::string(kFoxgloveFlatbufferEncoding);
       return resolve_fbs_schema(schema_name, schema_data);
     }
 
-    if (Helpers::has_startwith(ser, "vlink::zerocopy::AudioFrame")) {
+    if (zerocopy_type == zerocopy::MessageParser::Type::kAudioFrame) {
       schema_name = "foxglove.RawAudio";
       encoding = std::string(kFoxgloveFlatbufferEncoding);
       schema_encoding = std::string(kFoxgloveFlatbufferEncoding);
       return resolve_fbs_schema(schema_name, schema_data);
     }
-  }
-
-  bool ambiguous = false;
-  const auto* mapping = find_mapping(url, ser, &ambiguous);
-
-  if VUNLIKELY (ambiguous) {
-    return false;
   }
 
   if (mapping && mapping->converter == "send_time") {
@@ -5327,9 +5374,11 @@ bool FoxgloveConverter::get_schema_info(std::string_view url, SchemaType schema_
     if (is_flatbuffers_schema_encoding(encoding)) {
       encoding = std::string(kFoxgloveFlatbufferEncoding);
     }
+
     if (is_flatbuffers_schema_encoding(schema_encoding)) {
       schema_encoding = std::string(kFoxgloveFlatbufferEncoding);
     }
+
     return resolve_schema_by_name(schema_name, schema_encoding, schema_data);
   }
 
@@ -5415,20 +5464,28 @@ bool FoxgloveConverter::has_send_time_mapping() const {
 FoxgloveMessage FoxgloveConverter::raw_data_to_log(const Bytes& raw) {
   FoxgloveMessage result;
 
-  zerocopy::RawData rd;
+  zerocopy::MessageParser parser;
 
-  if VUNLIKELY (!(rd << raw)) {
+  if VUNLIKELY (!parser.parse(zerocopy::MessageParser::Type::kRawData, raw)) {
     MLOG_W("Failed to deserialize RawData");
     return result;
   }
 
-  auto data_size = rd.size();
+  zerocopy::MessageParser::Value size_value;
+  zerocopy::MessageParser::Value time_value;
+
+  if VUNLIKELY (!parser.value("size", size_value) || !parser.value("header.time_meas", time_value)) {
+    MLOG_W("RawData metadata is incomplete");
+    return result;
+  }
+
+  const auto data_size = std::get<uint64_t>(size_value);
   std::string message = "RawData (" + std::to_string(data_size) + " bytes)";
 
   thread_local flatbuffers::FlatBufferBuilder builder(4096);
   builder.Clear();
 
-  auto ts = make_timestamp_from_ns(rd.header.time_meas);
+  auto ts = make_timestamp_from_ns(std::get<uint64_t>(time_value));
   auto msg_str = builder.CreateString(message);
   auto name_str = builder.CreateString("RawData");
   auto file_str = builder.CreateString("");
@@ -5496,11 +5553,8 @@ static bool set_raw_info(std::string_view encoding, size_t row_bytes, size_t dat
   return true;
 }
 
-static bool camera_frame_raw_info(const zerocopy::CameraFrame& frame, std::string& encoding, uint32_t& step,
-                                  size_t& expected, bool& rgb_planar) {
-  const uint32_t width = frame.width();
-  const uint32_t height = frame.height();
-
+static bool camera_frame_raw_info(zerocopy::CameraFrame::Format format, uint32_t width, uint32_t height,
+                                  std::string& encoding, uint32_t& step, size_t& expected, bool& rgb_planar) {
   if VUNLIKELY (width == 0 || height == 0) {
     return false;
   }
@@ -5511,15 +5565,16 @@ static bool camera_frame_raw_info(const zerocopy::CameraFrame& frame, std::strin
     return false;
   }
 
-  auto set_bpp = [&](std::string_view name, size_t bytes_per_pixel) {
+  auto set_bpp = [&width, &pixels, &encoding, &step, &expected](std::string_view name, size_t bytes_per_pixel) {
     size_t row_bytes = 0;
     size_t data_size = 0;
+
     return mul_size(static_cast<size_t>(width), bytes_per_pixel, row_bytes) &&
            mul_size(pixels, bytes_per_pixel, data_size) &&
            set_raw_info(name, row_bytes, data_size, encoding, step, expected);
   };
 
-  auto set_yuv420 = [&](std::string_view name) {
+  auto set_yuv420 = [&width, &height, &pixels, &encoding, &step, &expected](std::string_view name) {
     if VUNLIKELY ((width % 2U) != 0 || (height % 2U) != 0 ||
                   pixels > std::numeric_limits<size_t>::max() - pixels / 2U) {
       return false;
@@ -5530,7 +5585,7 @@ static bool camera_frame_raw_info(const zerocopy::CameraFrame& frame, std::strin
 
   rgb_planar = false;
 
-  switch (frame.format()) {
+  switch (format) {
     case zerocopy::CameraFrame::kFormatNv12:
       return set_yuv420("nv12");
     case zerocopy::CameraFrame::kFormatYuyv:
@@ -5564,7 +5619,7 @@ static bool camera_frame_raw_info(const zerocopy::CameraFrame& frame, std::strin
     case zerocopy::CameraFrame::kFormatBayerBggr8:
     case zerocopy::CameraFrame::kFormatBayerGbrg8:
     case zerocopy::CameraFrame::kFormatBayerGrbg8:
-      return set_bpp(zerocopy::CameraFrame::encoding_from_format(frame.format()), 1U);
+      return set_bpp(zerocopy::CameraFrame::encoding_from_format(format), 1U);
     default:
       return false;
   }
@@ -5580,9 +5635,17 @@ FoxgloveMessage FoxgloveConverter::camera_frame_fbs(const Bytes& raw) {
     return result;
   }
 
-  auto fmt = frame.format();
+  const auto fmt = frame.format();
+  const auto width = frame.width();
+  const auto height = frame.height();
+  const auto time_meas = frame.header.time_meas;
+  const std::string_view frame_id_value(frame.header.frame_id,
+                                        strnlen(frame.header.frame_id, sizeof(frame.header.frame_id)));
+  const auto* data = frame.data();
+  const size_t data_size = frame.size();
 
   std::string fmt_str(zerocopy::CameraFrame::encoding_from_format(fmt));
+
   if VUNLIKELY (fmt == zerocopy::CameraFrame::kFormatUnknown || fmt_str == "unknown") {
     MLOG_W("CameraFrame format is unknown, skipping");
     return result;
@@ -5591,9 +5654,8 @@ FoxgloveMessage FoxgloveConverter::camera_frame_fbs(const Bytes& raw) {
   thread_local flatbuffers::FlatBufferBuilder builder(256 * 1024);
   builder.Clear();
 
-  auto ts = make_timestamp_from_ns(frame.header.time_meas);
-  auto frame_id =
-      builder.CreateString(frame.header.frame_id, ::strnlen(frame.header.frame_id, sizeof(frame.header.frame_id)));
+  auto ts = make_timestamp_from_ns(time_meas);
+  auto frame_id = builder.CreateString(frame_id_value.data(), frame_id_value.size());
 
   if (fmt == zerocopy::CameraFrame::kFormatH266) {
     MLOG_W("Foxglove CompressedVideo does not support H.266");
@@ -5602,7 +5664,7 @@ FoxgloveMessage FoxgloveConverter::camera_frame_fbs(const Bytes& raw) {
 
   if (fmt == zerocopy::CameraFrame::kFormatH264 || fmt == zerocopy::CameraFrame::kFormatH265 ||
       fmt == zerocopy::CameraFrame::kFormatAv1) {
-    auto data_vec = builder.CreateVector(frame.data(), frame.size());
+    auto data_vec = builder.CreateVector(data, data_size);
     auto format = builder.CreateString(fmt_str);
     auto msg = ::foxglove::CreateCompressedVideo(builder, &ts, frame_id, data_vec, format);
     builder.Finish(msg);
@@ -5613,7 +5675,7 @@ FoxgloveMessage FoxgloveConverter::camera_frame_fbs(const Bytes& raw) {
       fmt_str = "jpeg";
     }
 
-    auto data_vec = builder.CreateVector(frame.data(), frame.size());
+    auto data_vec = builder.CreateVector(data, data_size);
     auto format = builder.CreateString(fmt_str);
     auto msg = ::foxglove::CreateCompressedImage(builder, &ts, frame_id, data_vec, format);
     builder.Finish(msg);
@@ -5623,9 +5685,10 @@ FoxgloveMessage FoxgloveConverter::camera_frame_fbs(const Bytes& raw) {
     size_t expected = 0;
     bool rgb_planar = false;
 
-    if VUNLIKELY (!camera_frame_raw_info(frame, fmt_str, step, expected, rgb_planar) || frame.size() < expected) {
-      MLOG_W("CameraFrame raw format is invalid or unsupported, format={} width={} height={} size={}", fmt_str,
-             frame.width(), frame.height(), frame.size());
+    if VUNLIKELY (!camera_frame_raw_info(fmt, width, height, fmt_str, step, expected, rgb_planar) ||
+                  data_size < expected) {
+      MLOG_W("CameraFrame raw format is invalid or unsupported, format={} width={} height={} size={}", fmt_str, width,
+             height, data_size);
       return result;
     }
 
@@ -5635,13 +5698,13 @@ FoxgloveMessage FoxgloveConverter::camera_frame_fbs(const Bytes& raw) {
     if (rgb_planar) {
       size_t pixels = 0;
 
-      if VUNLIKELY (!mul_size(static_cast<size_t>(frame.width()), static_cast<size_t>(frame.height()), pixels)) {
+      if VUNLIKELY (!mul_size(static_cast<size_t>(width), static_cast<size_t>(height), pixels)) {
         return result;
       }
 
       rgb_data.resize(expected);
 
-      const auto* r = frame.data();
+      const auto* r = data;
       const auto* g = r + pixels;
       const auto* b = g + pixels;
 
@@ -5653,12 +5716,11 @@ FoxgloveMessage FoxgloveConverter::camera_frame_fbs(const Bytes& raw) {
 
       data_vec = builder.CreateVector(rgb_data);
     } else {
-      data_vec = builder.CreateVector(frame.data(), expected);
+      data_vec = builder.CreateVector(data, expected);
     }
 
     auto encoding = builder.CreateString(fmt_str);
-    auto msg =
-        ::foxglove::CreateRawImage(builder, &ts, frame_id, frame.width(), frame.height(), encoding, step, data_vec);
+    auto msg = ::foxglove::CreateRawImage(builder, &ts, frame_id, width, height, encoding, step, data_vec);
     builder.Finish(msg);
     result.schema_name = "foxglove.RawImage";
   }
@@ -5671,63 +5733,181 @@ FoxgloveMessage FoxgloveConverter::camera_frame_fbs(const Bytes& raw) {
   return result;
 }
 
+static bool read_parser_uint64(const zerocopy::MessageParser& parser, std::string_view path, uint64_t& out) {
+  zerocopy::MessageParser::Value value;
+
+  if VUNLIKELY (!parser.value(path, value)) {
+    return false;
+  }
+
+  const auto* integer = std::get_if<uint64_t>(&value);
+
+  if VUNLIKELY (integer == nullptr) {
+    return false;
+  }
+
+  out = *integer;
+  return true;
+}
+
+static bool read_parser_string(const zerocopy::MessageParser& parser, std::string_view path, std::string& out) {
+  return parser.text(path, out);
+}
+
+static bool read_parser_bytes(const zerocopy::MessageParser& parser, std::string_view path, Bytes& out) {
+  zerocopy::MessageParser::Value value;
+
+  if VUNLIKELY (!parser.value(path, value)) {
+    return false;
+  }
+
+  const auto* bytes = std::get_if<Bytes>(&value);
+
+  if VUNLIKELY (bytes == nullptr) {
+    return false;
+  }
+
+  out = Bytes::shallow_copy(bytes->data(), bytes->size());
+  return true;
+}
+
+template <typename T>
+static void write_unaligned(uint8_t* target, T value) {
+  std::memcpy(target, &value, sizeof(value));
+}
+
+static bool write_point_field(const PointCloudView& view, size_t index, const PointCloudFieldView& field,
+                              ::foxglove::NumericType type, uint8_t* target) {
+  zerocopy::MessageParser::Value value;
+
+  if VUNLIKELY (!view.value(index, field, value)) {
+    return false;
+  }
+
+  if (const auto* integer = std::get_if<int64_t>(&value)) {
+    switch (type) {
+      case ::foxglove::NumericType::INT8:
+        write_unaligned(target, static_cast<int8_t>(*integer));
+        return true;
+      case ::foxglove::NumericType::INT16:
+        write_unaligned(target, static_cast<int16_t>(*integer));
+        return true;
+      case ::foxglove::NumericType::INT32:
+        write_unaligned(target, static_cast<int32_t>(*integer));
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  if (const auto* integer = std::get_if<uint64_t>(&value)) {
+    switch (type) {
+      case ::foxglove::NumericType::UINT8:
+        write_unaligned(target, static_cast<uint8_t>(*integer));
+        return true;
+      case ::foxglove::NumericType::UINT16:
+        write_unaligned(target, static_cast<uint16_t>(*integer));
+        return true;
+      case ::foxglove::NumericType::UINT32:
+        write_unaligned(target, static_cast<uint32_t>(*integer));
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  const auto* number = std::get_if<double>(&value);
+
+  if VUNLIKELY (number == nullptr) {
+    return false;
+  }
+
+  if (type == ::foxglove::NumericType::FLOAT32) {
+    write_unaligned(target, static_cast<float>(*number));
+    return true;
+  }
+
+  if (type == ::foxglove::NumericType::FLOAT64) {
+    write_unaligned(target, *number);
+    return true;
+  }
+
+  return false;
+}
+
 FoxgloveMessage FoxgloveConverter::point_cloud_fbs(const Bytes& raw) {
   FoxgloveMessage result;
 
-  zerocopy::PointCloud pc;
+  zerocopy::PointCloud point_cloud;
 
-  if VUNLIKELY (!(pc << raw)) {
+  if VUNLIKELY (!(point_cloud << raw)) {
     MLOG_W("Failed to deserialize PointCloud (raw={})", raw.size());
     return result;
   }
-
-  if VUNLIKELY (pc.size() == 0 || pc.pack_size() == 0) {
-    MLOG_W("PointCloud is empty: size={} pack_size={}", pc.size(), pc.pack_size());
+  const PointCloudView view(point_cloud);
+  if VUNLIKELY (!view.valid()) {
+    MLOG_W("PointCloud layout is invalid");
     return result;
   }
 
-  auto data_size = pc.size() * pc.pack_size();
-  bool has_compressed_xyz = (pc.get_extent() != 0);
+  const size_t point_count = point_cloud.size();
+  const size_t pack_size = point_cloud.pack_size();
+  const uint64_t extent = point_cloud.get_extent();
+  const uint64_t time_meas = point_cloud.header.time_meas;
+  const std::string_view frame_id_value(point_cloud.header.frame_id,
+                                        strnlen(point_cloud.header.frame_id, sizeof(point_cloud.header.frame_id)));
+
+  if VUNLIKELY (point_count == 0 || pack_size == 0) {
+    MLOG_W("PointCloud is empty: size={} pack_size={}", point_count, pack_size);
+    return result;
+  }
+
+  if VUNLIKELY (point_count > std::numeric_limits<size_t>::max() / pack_size) {
+    MLOG_W("PointCloud payload size overflow: size={} pack_size={}", point_count, pack_size);
+    return result;
+  }
+
+  const auto data_size = static_cast<size_t>(point_count * pack_size);
+  const bool has_compressed_xyz = extent != 0;
 
   thread_local flatbuffers::FlatBufferBuilder builder(1024 * 1024);
   builder.Clear();
 
-  auto frame_id = builder.CreateString(pc.header.frame_id, ::strnlen(pc.header.frame_id, sizeof(pc.header.frame_id)));
+  auto frame_id = builder.CreateString(frame_id_value.data(), frame_id_value.size());
+  const auto& fields = view.fields();
 
-  zerocopy::PointCloud::KeyList key_list;
-  auto key_map = pc.get_key_map(&key_list);
-
-  if VUNLIKELY (key_map.empty()) {
+  if VUNLIKELY (fields.empty()) {
     MLOG_W("PointCloud key map is empty");
     return result;
   }
 
-  if VUNLIKELY (has_compressed_xyz && key_list.size() < 3) {
+  if VUNLIKELY (has_compressed_xyz && fields.size() < 3) {
     MLOG_W("Compressed PointCloud has fewer than 3 fields");
     return result;
   }
 
   std::vector<flatbuffers::Offset<::foxglove::PackedElementField>> field_offsets;
   struct PointCloudFieldCopy {
-    uint16_t src_offset{0};
+    const PointCloudFieldView* source{nullptr};
     uint32_t dst_offset{0};
-    uint8_t src_size{0};
+    ::foxglove::NumericType type{::foxglove::NumericType::UNKNOWN};
   };
   std::vector<PointCloudFieldCopy> field_copies;
-  if (has_compressed_xyz) {
-    field_copies.reserve(key_list.size());
-  }
-  uint32_t field_offset = 0;
-  uint16_t src_field_offset = 0;
 
-  for (size_t key_index = 0; key_index < key_list.size(); ++key_index) {
-    const auto& key = key_list[key_index];
-    auto name = builder.CreateString(key.name);
+  if (has_compressed_xyz) {
+    field_copies.reserve(fields.size());
+  }
+
+  uint32_t field_offset = 0;
+
+  for (size_t field_index = 0; field_index < fields.size(); ++field_index) {
+    const auto& field = fields[field_index];
+    auto name = builder.CreateString(field.field.name);
 
     auto num_type = ::foxglove::NumericType::UNKNOWN;
-    uint8_t dst_size = key.size;
+    uint16_t dst_size = field.field.storage_size;
 
-    switch (key.type) {
+    switch (field.field.native_type) {
       case zerocopy::PointCloud::kBoolType:
       case zerocopy::PointCloud::kUint8Type:
         num_type = ::foxglove::NumericType::UINT8;
@@ -5747,6 +5927,10 @@ FoxgloveMessage FoxgloveConverter::point_cloud_fbs(const Bytes& raw) {
       case zerocopy::PointCloud::kInt32Type:
         num_type = ::foxglove::NumericType::INT32;
         break;
+      case zerocopy::PointCloud::kInt64Type:
+      case zerocopy::PointCloud::kUint64Type:
+        MLOG_W("Foxglove PointCloud does not support 64-bit integer field '{}'", field.field.name);
+        return result;
       case zerocopy::PointCloud::kFloatType:
         num_type = ::foxglove::NumericType::FLOAT32;
         break;
@@ -5754,12 +5938,12 @@ FoxgloveMessage FoxgloveConverter::point_cloud_fbs(const Bytes& raw) {
         num_type = ::foxglove::NumericType::FLOAT64;
         break;
       default:
-        switch (key.size) {
+        switch (field.field.storage_size) {
           case 1:
             num_type = ::foxglove::NumericType::UINT8;
             break;
           case 2:
-            num_type = ::foxglove::NumericType::UINT16;
+            num_type = ::foxglove::NumericType::INT16;
             break;
           case 4:
             num_type = ::foxglove::NumericType::FLOAT32;
@@ -5768,67 +5952,60 @@ FoxgloveMessage FoxgloveConverter::point_cloud_fbs(const Bytes& raw) {
             num_type = ::foxglove::NumericType::FLOAT64;
             break;
           default:
-            MLOG_W("PointCloud field '{}': type_num not set, inferred type={} from size={}", key.name,
-                   static_cast<uint8_t>(num_type), key.size);
+            MLOG_W("PointCloud field '{}': type_num not set, inferred type={} from size={}", field.field.name,
+                   static_cast<uint8_t>(num_type), field.field.storage_size);
             break;
         }
         break;
     }
 
-    if (has_compressed_xyz && key_index < 3) {
+    if (has_compressed_xyz && field_index < 3) {
       num_type = ::foxglove::NumericType::FLOAT32;
       dst_size = sizeof(float);
     }
 
     field_offsets.emplace_back(::foxglove::CreatePackedElementField(builder, name, field_offset, num_type));
+
     if (has_compressed_xyz) {
-      field_copies.push_back({src_field_offset, field_offset, key.size});
-      src_field_offset += key.size;
+      field_copies.push_back({&field, field_offset, num_type});
     }
+
     field_offset += dst_size;
   }
 
-  uint32_t point_stride = has_compressed_xyz ? field_offset : static_cast<uint32_t>(pc.pack_size());
+  uint32_t point_stride = has_compressed_xyz ? field_offset : static_cast<uint32_t>(pack_size);
   auto fields_vec = builder.CreateVector(field_offsets);
 
   flatbuffers::Offset<flatbuffers::Vector<uint8_t>> data_vec;
 
-  if VLIKELY (pc.get_internal_data() && data_size > 0) {
+  if VLIKELY (!view.data().empty()) {
     if (has_compressed_xyz) {
-      if VUNLIKELY (point_stride != 0 && pc.size() > std::numeric_limits<size_t>::max() / point_stride) {
-        MLOG_W("Compressed PointCloud output size overflow: size={} stride={}", pc.size(), point_stride);
+      if VUNLIKELY (point_stride != 0 && point_count > std::numeric_limits<size_t>::max() / point_stride) {
+        MLOG_W("Compressed PointCloud output size overflow: size={} stride={}", point_count, point_stride);
         return result;
       }
 
       uint8_t* out_data = nullptr;
-      data_vec = builder.CreateUninitializedVector<uint8_t>(pc.size() * point_stride, &out_data);
+      data_vec = builder.CreateUninitializedVector<uint8_t>(point_count * point_stride, &out_data);
 
-      for (size_t i = 0; i < pc.size(); ++i) {
-        const auto* src = pc.get_internal_data() + (i * pc.pack_size());
+      for (size_t i = 0; i < point_count; ++i) {
         auto* dst = out_data + (i * point_stride);
 
-        float x = 0.0F;
-        float y = 0.0F;
-        float z = 0.0F;
-        pc.get_value_v3f(x, y, z, i);
-
-        std::memcpy(dst + field_copies[0].dst_offset, &x, sizeof(float));
-        std::memcpy(dst + field_copies[1].dst_offset, &y, sizeof(float));
-        std::memcpy(dst + field_copies[2].dst_offset, &z, sizeof(float));
-
-        for (size_t j = 3; j < field_copies.size(); ++j) {
-          const auto& field = field_copies[j];
-          std::memcpy(dst + field.dst_offset, src + field.src_offset, field.src_size);
+        for (const auto& field : field_copies) {
+          if VUNLIKELY (!write_point_field(view, i, *field.source, field.type, dst + field.dst_offset)) {
+            MLOG_W("PointCloud field '{}' cannot be converted for Foxglove", field.source->field.name);
+            return result;
+          }
         }
       }
     } else {
-      data_vec = builder.CreateVector(pc.get_internal_data(), data_size);
+      data_vec = builder.CreateVector(view.data().data(), data_size);
     }
   } else {
     data_vec = builder.CreateVector(static_cast<const uint8_t*>(nullptr), 0);
   }
 
-  auto ts = make_timestamp_from_ns(pc.header.time_meas);
+  auto ts = make_timestamp_from_ns(time_meas);
 
   auto msg = ::foxglove::CreatePointCloud(builder, &ts, frame_id, 0, point_stride, fields_vec, data_vec);
   builder.Finish(msg);
@@ -5845,16 +6022,42 @@ FoxgloveMessage FoxgloveConverter::point_cloud_fbs(const Bytes& raw) {
 FoxgloveMessage FoxgloveConverter::occupancy_grid_fbs(const Bytes& raw) {
   FoxgloveMessage result;
 
-  zerocopy::OccupancyGrid og;
+  zerocopy::MessageParser parser;
 
-  if VUNLIKELY (!(og << raw)) {
+  if VUNLIKELY (!parser.parse(zerocopy::MessageParser::Type::kOccupancyGrid, raw)) {
     MLOG_W("Failed to deserialize OccupancyGrid (raw={})", raw.size());
     return result;
   }
 
-  auto cell_sz = og.cell_size();
-  auto width = og.width();
-  auto height = og.height();
+  uint64_t cell_size = 0;
+  uint64_t width_value = 0;
+  uint64_t height_value = 0;
+  uint64_t cell_type = 0;
+  uint64_t time_meas = 0;
+  double origin_x = 0.0;
+  double origin_y = 0.0;
+  double origin_z = 0.0;
+  double origin_yaw = 0.0;
+  double resolution = 0.0;
+  std::string frame_id_value;
+  Bytes data;
+
+  if VUNLIKELY (!read_parser_uint64(parser, "cell_size", cell_size) ||
+                !read_parser_uint64(parser, "width", width_value) ||
+                !read_parser_uint64(parser, "height", height_value) ||
+                !read_parser_uint64(parser, "cell_type", cell_type) ||
+                !read_parser_uint64(parser, "header.time_meas", time_meas) || !parser.numeric("origin_x", origin_x) ||
+                !parser.numeric("origin_y", origin_y) || !parser.numeric("origin_z", origin_z) ||
+                !parser.numeric("origin_yaw", origin_yaw) || !parser.numeric("resolution", resolution) ||
+                !read_parser_string(parser, "header.frame_id", frame_id_value) ||
+                !read_parser_bytes(parser, "data", data)) {
+    MLOG_W("OccupancyGrid metadata is incomplete");
+    return result;
+  }
+
+  const auto cell_sz = static_cast<uint8_t>(cell_size);
+  const auto width = static_cast<uint32_t>(width_value);
+  const auto height = static_cast<uint32_t>(height_value);
 
   if VUNLIKELY (cell_sz == 0 || width == 0 || height == 0) {
     MLOG_W("OccupancyGrid invalid: width={} height={} cell_size={}", width, height, cell_sz);
@@ -5876,21 +6079,21 @@ FoxgloveMessage FoxgloveConverter::occupancy_grid_fbs(const Bytes& raw) {
 
   const size_t data_size = cell_count * static_cast<size_t>(cell_sz);
 
-  if VUNLIKELY (data_size > og.size()) {
-    MLOG_W("OccupancyGrid payload too small: need={} have={}", data_size, og.size());
+  if VUNLIKELY (data_size > data.size()) {
+    MLOG_W("OccupancyGrid payload too small: need={} have={}", data_size, data.size());
     return result;
   }
 
   thread_local flatbuffers::FlatBufferBuilder builder(256 * 1024);
   builder.Clear();
 
-  auto ts = make_timestamp_from_ns(og.header.time_meas);
-  auto frame_id = builder.CreateString(og.header.frame_id, ::strnlen(og.header.frame_id, sizeof(og.header.frame_id)));
+  auto ts = make_timestamp_from_ns(time_meas);
+  auto frame_id = builder.CreateString(frame_id_value);
 
   auto num_type = ::foxglove::NumericType::UNKNOWN;
   std::string field_name = "value";
 
-  switch (og.cell_type()) {
+  switch (static_cast<zerocopy::OccupancyGrid::CellType>(cell_type)) {
     case zerocopy::OccupancyGrid::kCellInt8:
       num_type = ::foxglove::NumericType::INT8;
       break;
@@ -5929,22 +6132,20 @@ FoxgloveMessage FoxgloveConverter::occupancy_grid_fbs(const Bytes& raw) {
 
   flatbuffers::Offset<flatbuffers::Vector<uint8_t>> data_vec;
 
-  if VLIKELY (og.data() && data_size > 0) {
-    data_vec = builder.CreateVector(og.data(), data_size);
+  if VLIKELY (!data.empty()) {
+    data_vec = builder.CreateVector(data.data(), data_size);
   } else {
     data_vec = builder.CreateVector(static_cast<const uint8_t*>(nullptr), 0);
   }
 
-  double half_yaw = static_cast<double>(og.origin_yaw()) * 0.5;
+  double half_yaw = origin_yaw * 0.5;
   double qz = std::sin(half_yaw);
   double qw = std::cos(half_yaw);
 
-  auto position = ::foxglove::CreateVector3(builder, static_cast<double>(og.origin_x()),
-                                            static_cast<double>(og.origin_y()), static_cast<double>(og.origin_z()));
+  auto position = ::foxglove::CreateVector3(builder, origin_x, origin_y, origin_z);
   auto orientation = ::foxglove::CreateQuaternion(builder, 0.0, 0.0, qz, qw);
   auto pose = ::foxglove::CreatePose(builder, position, orientation);
-  auto cell_size_vec =
-      ::foxglove::CreateVector2(builder, static_cast<double>(og.resolution()), static_cast<double>(og.resolution()));
+  auto cell_size_vec = ::foxglove::CreateVector2(builder, resolution, resolution);
 
   uint32_t cell_stride = cell_sz;
   uint32_t row_stride = width * static_cast<uint32_t>(cell_sz);
@@ -5965,52 +6166,93 @@ FoxgloveMessage FoxgloveConverter::occupancy_grid_fbs(const Bytes& raw) {
 FoxgloveMessage FoxgloveConverter::tensor_fbs(const Bytes& raw) {
   FoxgloveMessage result;
 
-  zerocopy::Tensor tensor;
+  zerocopy::MessageParser parser;
 
-  if VUNLIKELY (!(tensor << raw)) {
+  if VUNLIKELY (!parser.parse(zerocopy::MessageParser::Type::kTensor, raw)) {
     MLOG_W("Failed to deserialize Tensor (raw={})", raw.size());
     return result;
   }
 
-  std::string dtype_str(::vlink::NameDetector::get_enum(tensor.dtype()));
-  std::string device_str(::vlink::NameDetector::get_enum(tensor.device()));
+  uint64_t dtype = 0;
+  uint64_t device = 0;
+  uint64_t num_elements = 0;
+  uint64_t element_size = 0;
+  uint64_t batch_size = 0;
+  uint64_t time_meas = 0;
+  double quant_scale = 0.0;
+  double quant_zero_point = 0.0;
+  std::string name;
+  std::string model_id;
+  std::string layout;
+  Bytes data;
+
+  if VUNLIKELY (!read_parser_uint64(parser, "dtype", dtype) || !read_parser_uint64(parser, "device", device) ||
+                !read_parser_uint64(parser, "num_elements", num_elements) ||
+                !read_parser_uint64(parser, "element_size", element_size) ||
+                !read_parser_uint64(parser, "batch_size", batch_size) ||
+                !read_parser_uint64(parser, "header.time_meas", time_meas) ||
+                !parser.numeric("quant_scale", quant_scale) || !parser.numeric("quant_zero_point", quant_zero_point) ||
+                !read_parser_string(parser, "name", name) || !read_parser_string(parser, "model_id", model_id) ||
+                !read_parser_string(parser, "layout", layout) || !read_parser_bytes(parser, "data", data)) {
+    MLOG_W("Tensor metadata is incomplete");
+    return result;
+  }
+
+  std::string dtype_str(
+      ::vlink::NameDetector::get_enum(static_cast<zerocopy::Tensor::DataType>(static_cast<uint8_t>(dtype))));
+  std::string device_str(
+      ::vlink::NameDetector::get_enum(static_cast<zerocopy::Tensor::Device>(static_cast<uint8_t>(device))));
 
   Json shape_arr = Json::array();
-  for (uint8_t i = 0; i < tensor.rank(); ++i) {
-    shape_arr.push_back(tensor.shape_at(i));
+  const size_t rank = parser.collection_size("shape");
+
+  for (size_t i = 0; i < rank; ++i) {
+    double dimension = 0.0;
+
+    if VUNLIKELY (!parser.numeric("shape", i, "value", dimension)) {
+      return result;
+    }
+
+    shape_arr.push_back(static_cast<uint64_t>(dimension));
   }
 
   Json strides_arr = Json::array();
-  for (uint8_t i = 0; i < tensor.rank(); ++i) {
-    strides_arr.push_back(tensor.stride_at(i));
+
+  for (size_t i = 0; i < rank; ++i) {
+    double stride = 0.0;
+
+    if VUNLIKELY (!parser.numeric("strides", i, "value", stride)) {
+      return result;
+    }
+
+    strides_arr.push_back(static_cast<uint64_t>(stride));
   }
 
   Json info;
-  info["name"] = std::string(tensor.name());
-  info["model_id"] = std::string(tensor.model_id());
-  info["layout"] = std::string(tensor.layout());
+  info["name"] = name;
+  info["model_id"] = model_id;
+  info["layout"] = layout;
   info["dtype"] = dtype_str;
   info["device"] = device_str;
-  info["rank"] = tensor.rank();
+  info["rank"] = rank;
   info["shape"] = std::move(shape_arr);
   info["strides"] = std::move(strides_arr);
-  info["num_elements"] = tensor.num_elements();
-  info["element_size"] = tensor.element_size();
-  info["data_bytes"] = tensor.size();
-  info["batch_size"] = tensor.batch_size();
-  info["quant_scale"] = tensor.quant_scale();
-  info["quant_zero_point"] = tensor.quant_zero_point();
+  info["num_elements"] = num_elements;
+  info["element_size"] = element_size;
+  info["data_bytes"] = data.size();
+  info["batch_size"] = batch_size;
+  info["quant_scale"] = quant_scale;
+  info["quant_zero_point"] = static_cast<int64_t>(quant_zero_point);
 
   std::string message = info.dump();
 
   thread_local flatbuffers::FlatBufferBuilder builder(8192);
   builder.Clear();
 
-  auto ts = make_timestamp_from_ns(tensor.header.time_meas);
+  auto ts = make_timestamp_from_ns(time_meas);
   auto msg_str = builder.CreateString(message);
 
-  auto tensor_name = tensor.name();
-  std::string name_label = tensor_name.empty() ? std::string("Tensor") : std::string(tensor_name);
+  std::string name_label = name.empty() ? std::string("Tensor") : name;
   auto name_str = builder.CreateString(name_label);
   auto file_str = builder.CreateString("");
 
@@ -6029,28 +6271,31 @@ FoxgloveMessage FoxgloveConverter::tensor_fbs(const Bytes& raw) {
 FoxgloveMessage FoxgloveConverter::object_array_fbs(const Bytes& raw) {
   FoxgloveMessage result;
 
-  zerocopy::ObjectArray arr;
+  zerocopy::MessageParser parser;
 
-  if VUNLIKELY (!(arr << raw)) {
+  if VUNLIKELY (!parser.parse(zerocopy::MessageParser::Type::kObjectArray, raw)) {
     MLOG_W("Failed to deserialize ObjectArray (raw={})", raw.size());
     return result;
   }
 
-  auto count = arr.count();
-
-  if VUNLIKELY (count != 0 && (!arr.data() || arr.pack_size() != sizeof(zerocopy::ObjectArray::Object))) {
-    MLOG_W("ObjectArray invalid: count={} pack_size={}", count, arr.pack_size());
-    return result;
-  }
+  const size_t count = parser.collection_size("objects");
 
   thread_local flatbuffers::FlatBufferBuilder builder(64 * 1024);
   builder.Clear();
 
-  auto ts = make_timestamp_from_ns(arr.header.time_meas);
-  auto entity_fid =
-      builder.CreateString(arr.header.frame_id, ::strnlen(arr.header.frame_id, sizeof(arr.header.frame_id)));
+  uint64_t time_meas = 0;
+  std::string frame_id;
+  std::string source_id_str;
 
-  std::string source_id_str(arr.source_id());
+  if VUNLIKELY (!read_parser_uint64(parser, "header.time_meas", time_meas) ||
+                !read_parser_string(parser, "header.frame_id", frame_id) ||
+                !read_parser_string(parser, "source_id", source_id_str)) {
+    MLOG_W("ObjectArray metadata is incomplete");
+    return result;
+  }
+
+  auto ts = make_timestamp_from_ns(time_meas);
+  auto entity_fid = builder.CreateString(frame_id);
 
   if (source_id_str.empty()) {
     source_id_str = "object_array";
@@ -6065,26 +6310,40 @@ FoxgloveMessage FoxgloveConverter::object_array_fbs(const Bytes& raw) {
       {0.5, 0.5, 0.5, 0.8}, {0.2, 0.6, 1.0, 0.8}, {0.2, 0.9, 0.2, 0.8}, {1.0, 0.8, 0.0, 0.8}, {0.8, 0.2, 0.8, 0.8},
   };
 
-  for (uint32_t i = 0; i < count; ++i) {
-    const auto* obj = arr.objects(i);
+  for (size_t i = 0; i < count; ++i) {
+    double yaw = 0.0;
+    double position_x = 0.0;
+    double position_y = 0.0;
+    double position_z = 0.0;
+    double size_x = 0.0;
+    double size_y = 0.0;
+    double size_z = 0.0;
+    double motion_state = 0.0;
+    double class_id = 0.0;
 
-    if VUNLIKELY (!obj) {
+    if VUNLIKELY (!parser.numeric("objects", i, "yaw", yaw) ||
+                  !parser.numeric("objects", i, "position[0]", position_x) ||
+                  !parser.numeric("objects", i, "position[1]", position_y) ||
+                  !parser.numeric("objects", i, "position[2]", position_z) ||
+                  !parser.numeric("objects", i, "size[0]", size_x) ||
+                  !parser.numeric("objects", i, "size[1]", size_y) ||
+                  !parser.numeric("objects", i, "size[2]", size_z) ||
+                  !parser.numeric("objects", i, "motion_state", motion_state) ||
+                  !parser.numeric("objects", i, "class_id", class_id)) {
       continue;
     }
 
-    double half_yaw = static_cast<double>(obj->yaw) * 0.5;
+    double half_yaw = yaw * 0.5;
     double qz = std::sin(half_yaw);
     double qw = std::cos(half_yaw);
 
-    auto position =
-        ::foxglove::CreateVector3(builder, static_cast<double>(obj->position[0]), static_cast<double>(obj->position[1]),
-                                  static_cast<double>(obj->position[2]));
+    auto position = ::foxglove::CreateVector3(builder, position_x, position_y, position_z);
     auto orientation = ::foxglove::CreateQuaternion(builder, 0.0, 0.0, qz, qw);
     auto pose = ::foxglove::CreatePose(builder, position, orientation);
 
-    auto sx = static_cast<double>(obj->size[0]);
-    auto sy = static_cast<double>(obj->size[1]);
-    auto sz = static_cast<double>(obj->size[2]);
+    auto sx = size_x;
+    auto sy = size_y;
+    auto sz = size_z;
 
     if (sx <= 0.0) {
       sx = 1.0;
@@ -6100,10 +6359,10 @@ FoxgloveMessage FoxgloveConverter::object_array_fbs(const Bytes& raw) {
 
     auto size = ::foxglove::CreateVector3(builder, sx, sy, sz);
 
-    auto palette_idx = static_cast<size_t>(obj->motion_state);
+    auto palette_idx = static_cast<size_t>(motion_state);
 
     if (palette_idx >= (sizeof(kPalette) / sizeof(kPalette[0]))) {
-      auto hue = static_cast<double>(obj->class_id % 6U);
+      auto hue = std::fmod(class_id, 6.0);
       auto color = ::foxglove::CreateColor(builder, std::fmod(hue * 0.17, 1.0), std::fmod(hue * 0.29 + 0.3, 1.0),
                                            std::fmod(hue * 0.41 + 0.6, 1.0), 0.8);
       cubes_vec_data.emplace_back(::foxglove::CreateCubePrimitive(builder, pose, size, color));
@@ -6137,25 +6396,42 @@ FoxgloveMessage FoxgloveConverter::object_array_fbs(const Bytes& raw) {
 FoxgloveMessage FoxgloveConverter::audio_frame_fbs(const Bytes& raw) {
   FoxgloveMessage result;
 
-  zerocopy::AudioFrame frame;
+  zerocopy::MessageParser parser;
 
-  if VUNLIKELY (!(frame << raw)) {
+  if VUNLIKELY (!parser.parse(zerocopy::MessageParser::Type::kAudioFrame, raw)) {
     MLOG_W("Failed to deserialize AudioFrame (raw={})", raw.size());
     return result;
   }
 
-  if VUNLIKELY (frame.format() != zerocopy::AudioFrame::kFormatPcmS16 ||
-                frame.layout() != zerocopy::AudioFrame::kLayoutInterleaved) {
+  uint64_t format = 0;
+  uint64_t layout = 0;
+  uint64_t sample_rate_value = 0;
+  uint64_t num_samples_value = 0;
+  uint64_t num_channels_value = 0;
+  uint64_t time_meas = 0;
+  Bytes data;
+
+  if VUNLIKELY (!read_parser_uint64(parser, "format", format) || !read_parser_uint64(parser, "layout", layout) ||
+                !read_parser_uint64(parser, "sample_rate", sample_rate_value) ||
+                !read_parser_uint64(parser, "num_samples", num_samples_value) ||
+                !read_parser_uint64(parser, "num_channels", num_channels_value) ||
+                !read_parser_uint64(parser, "header.time_meas", time_meas) ||
+                !read_parser_bytes(parser, "data", data)) {
+    MLOG_W("AudioFrame metadata is incomplete");
+    return result;
+  }
+
+  if VUNLIKELY (format != zerocopy::AudioFrame::kFormatPcmS16 || layout != zerocopy::AudioFrame::kLayoutInterleaved) {
     MLOG_W("Foxglove RawAudio supports only interleaved pcm-s16 AudioFrame messages");
     return result;
   }
 
-  const uint32_t sample_rate = frame.sample_rate();
-  const uint32_t num_samples = frame.num_samples();
-  const uint16_t num_channels = frame.num_channels();
+  const auto sample_rate = static_cast<uint32_t>(sample_rate_value);
+  const auto num_samples = static_cast<uint32_t>(num_samples_value);
+  const auto num_channels = static_cast<uint16_t>(num_channels_value);
 
-  if VUNLIKELY (!frame.data() || frame.size() == 0 || sample_rate == 0 || num_samples == 0 || num_channels == 0) {
-    MLOG_W("AudioFrame invalid for RawAudio: size={} sample_rate={} samples={} channels={}", frame.size(), sample_rate,
+  if VUNLIKELY (data.empty() || sample_rate == 0 || num_samples == 0 || num_channels == 0) {
+    MLOG_W("AudioFrame invalid for RawAudio: size={} sample_rate={} samples={} channels={}", data.size(), sample_rate,
            num_samples, num_channels);
     return result;
   }
@@ -6169,21 +6445,21 @@ FoxgloveMessage FoxgloveConverter::audio_frame_fbs(const Bytes& raw) {
 
   const size_t expected_size = static_cast<size_t>(num_samples) * channel_sample_size;
 
-  if VUNLIKELY (frame.size() != expected_size) {
-    MLOG_W("AudioFrame RawAudio size mismatch: actual={} expected={}", frame.size(), expected_size);
+  if VUNLIKELY (data.size() != expected_size) {
+    MLOG_W("AudioFrame RawAudio size mismatch: actual={} expected={}", data.size(), expected_size);
     return result;
   }
 
   thread_local flatbuffers::FlatBufferBuilder builder(64 * 1024);
   builder.Clear();
 
-  auto ts = make_timestamp_from_ns(frame.header.time_meas);
+  auto ts = make_timestamp_from_ns(time_meas);
   auto fmt = builder.CreateString("pcm-s16");
 
   flatbuffers::Offset<flatbuffers::Vector<uint8_t>> data_vec;
 
-  if VLIKELY (frame.data() && frame.size() > 0) {
-    data_vec = builder.CreateVector(frame.data(), frame.size());
+  if VLIKELY (!data.empty()) {
+    data_vec = builder.CreateVector(data.data(), data.size());
   } else {
     data_vec = builder.CreateVector(static_cast<const uint8_t*>(nullptr), 0);
   }

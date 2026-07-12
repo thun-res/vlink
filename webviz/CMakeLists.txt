@@ -29,6 +29,8 @@ add_library(
   ${CMAKE_CURRENT_SOURCE_DIR}/webviz_bridge_utils.h
   ${CMAKE_CURRENT_SOURCE_DIR}/webviz_loader_utils.h
   ${CMAKE_CURRENT_SOURCE_DIR}/webviz_time_utils.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/zerocopy_message.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/zerocopy_message.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/proxy_bridge.h
   ${CMAKE_CURRENT_SOURCE_DIR}/proxy_bridge.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/proxy_config.h

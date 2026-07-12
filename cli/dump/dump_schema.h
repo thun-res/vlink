@@ -26,7 +26,7 @@
 #include <vlink/extension/schema_plugin_manager.h>
 #include <vlink/impl/types.h>
 
-#include "dump_features.h"
+#include "./dump_features.h"
 
 #ifdef VLINK_HAS_PROTOBUF_COMPILER
 

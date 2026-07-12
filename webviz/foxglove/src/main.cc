@@ -34,9 +34,9 @@
 #include <nlohmann/json.hpp>
 #include <vector>
 
-#include "foxglove_server.h"
-#include "proxy_config.h"
-#include "webviz_app_utils.h"
+#include "./foxglove_server.h"
+#include "./proxy_config.h"
+#include "./webviz_app_utils.h"
 
 using Json = nlohmann::json;
 

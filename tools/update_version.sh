@@ -97,8 +97,21 @@ if grep -qE "^## v${NEW_VER//./\\.}( |\$)" "$CHANGELOG"; then
     echo "  skip  $CHANGELOG (v$NEW_VER already present)"
 else
     if [ -s "$CHANGELOG" ]; then
-        [ -n "$(tail -c 1 "$CHANGELOG")" ] && printf '\n' >> "$CHANGELOG"
-        printf '\n## v%s (%s)\n' "$NEW_VER" "$TODAY" >> "$CHANGELOG"
+        CHANGELOG_TMP=$(mktemp "${CHANGELOG}.tmp.XXXXXX") || exit 1
+        awk -v version="$NEW_VER" -v today="$TODAY" '
+            NR == 1 {
+                print
+                printf "\n## v%s (%s)\n", version, today
+                next
+            }
+            { print }
+        ' "$CHANGELOG" > "$CHANGELOG_TMP"
+        if [ $? -ne 0 ] || ! cp "$CHANGELOG_TMP" "$CHANGELOG"; then
+            rm -f "$CHANGELOG_TMP"
+            echo -e "\nError: failed to update $CHANGELOG\n"
+            exit 1
+        fi
+        rm -f "$CHANGELOG_TMP"
     else
         printf '## v%s (%s)\n' "$NEW_VER" "$TODAY" >> "$CHANGELOG"
     fi

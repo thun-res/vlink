@@ -21,14 +21,14 @@
  * limitations under the License.
  */
 
-#include "dump_validate.h"
+#include "./dump_validate.h"
 
 #include <array>
 #include <iostream>
 #include <string_view>
 #include <vector>
 
-#include "dump_plan.h"
+#include "./dump_plan.h"
 
 namespace vlink::dump {
 

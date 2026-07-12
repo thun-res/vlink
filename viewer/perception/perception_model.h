@@ -80,7 +80,7 @@ struct BoxObject final {
   double velocity[3]{0, 0, 0};
   double score{0};
   uint32_t class_id{0};
-  uint32_t track_id{0};
+  uint64_t track_id{0};
   uint32_t color{0};
   std::string label;
 
@@ -106,7 +106,7 @@ struct Polyline final {
   uint32_t color{0};
   int type{0};
   std::string label;
-  uint32_t track_id{0};
+  uint64_t track_id{0};
   float confidence{1.0F};
 };
 
@@ -129,7 +129,7 @@ struct Grid final {
 
 struct ParkingSlot final {
   double corners[4][3]{{0}};
-  uint32_t slot_id{0};
+  uint64_t slot_id{0};
   uint32_t slot_type{0};
   uint32_t color{0};
   float confidence{1.0F};

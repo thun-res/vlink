@@ -12,9 +12,9 @@
 
 | 文件 | 角色 | 大小 |
 |---|---|---|
-| `test_vlink.py`           | 基础烟雾测试，每条 API 一个 happy-path 用例 | ~600 行 / 18 函数 |
-| `test_vlink_full.py`      | 完整覆盖测试，含错误路径 / 复杂场景       | ~1400 行 |
-| `test_vlink_coverage.py`  | 绑定覆盖率回归，确保关键 attr / method 仍可见 | ~630 行 |
+| `test_vlink.py`           | 基础烟雾测试，每条 API 一个 happy-path 用例 | ~750 行 / 21 个测试 |
+| `test_vlink_full.py`      | 完整覆盖测试，含错误路径 / 复杂场景       | ~1550 行 / 43 个测试 |
+| `test_vlink_coverage.py`  | 绑定覆盖率回归，确保关键 attr / method 仍可见 | ~670 行 / 27 个测试 |
 
 三个文件相互独立，可以单独运行。三层覆盖的设计意图：
 
@@ -64,6 +64,7 @@ python3 test_vlink_coverage.py
 | `test_zerocopy_occupancy_grid` | `OccupancyGrid` |
 | `test_zerocopy_tensor` | `Tensor`（含 set_dtype/set_shape 顺序） |
 | `test_zerocopy_object_array` | `ObjectArray` + nested `Object` POD |
+| `test_zerocopy_message_parser` | 以 `ObjectArray` 覆盖统一解析入口、字段反射、集合边界、输入生命周期与 64 位整数精度 |
 | `test_zerocopy_audio_frame` | `AudioFrame` |
 
 ---

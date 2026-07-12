@@ -1475,7 +1475,7 @@ bool print_terminal(const Bench::Result& result, const TerminalOptions& options,
   terminal_timer.set_interval(kTerminalInterval);
   terminal_timer.set_loop_count(Timer::kInfinite);
   terminal_timer.attach(&terminal_loop);
-  terminal_timer.set_callback([&]() {
+  terminal_timer.set_callback([&quit_function, &print_function, &redraw, &terminal_size]() {
     if VUNLIKELY (Bench::stop_requested()) {
       quit_function();
       return;

@@ -1,0 +1,572 @@
+{
+  "inherit_default": true,
+  "mappings": [
+    {
+      "name": "vmsgs DetectedObjects (protobuf)",
+      "render_type": "object_detection",
+      "encoding": "protobuf",
+      "ser": "vmsgs.proto.perception.DetectedObjects",
+      "priority": 12000,
+      "match": { "schemas": ["protobuf"], "ser_equals": ["vmsgs.proto.perception.DetectedObjects"] },
+      "collection": "objects",
+      "field_mappings": [
+        { "source": "kinematics.pose_with_covariance.pose.position.x", "target": "x" },
+        { "source": "kinematics.pose_with_covariance.pose.position.y", "target": "y" },
+        { "source": "kinematics.pose_with_covariance.pose.position.z", "target": "z" },
+        { "source": "shape.dimensions.x", "target": "length" },
+        { "source": "shape.dimensions.y", "target": "width" },
+        { "source": "shape.dimensions.z", "target": "height" },
+        { "target": "yaw", "expression": "atan2(2*(kinematics.pose_with_covariance.pose.orientation.w*kinematics.pose_with_covariance.pose.orientation.z + kinematics.pose_with_covariance.pose.orientation.x*kinematics.pose_with_covariance.pose.orientation.y), 1 - 2*(kinematics.pose_with_covariance.pose.orientation.y*kinematics.pose_with_covariance.pose.orientation.y + kinematics.pose_with_covariance.pose.orientation.z*kinematics.pose_with_covariance.pose.orientation.z))" },
+        { "source": "kinematics.twist_with_covariance.twist.linear.x", "target": "vx" },
+        { "source": "kinematics.twist_with_covariance.twist.linear.y", "target": "vy" },
+        { "target": "score", "expression": "clamp(0, existence_probability, 1)" },
+        { "source": "classification[0].label", "target": "class_id" },
+        { "source": "classification[0].label", "target": "label", "default_value": "object" }
+      ]
+    },
+    {
+      "name": "vmsgs DetectedObjectsWithFeature (protobuf)",
+      "render_type": "object_detection",
+      "encoding": "protobuf",
+      "ser": "vmsgs.proto.perception.DetectedObjectsWithFeature",
+      "priority": 12010,
+      "match": { "schemas": ["protobuf"], "ser_equals": ["vmsgs.proto.perception.DetectedObjectsWithFeature"] },
+      "collection": "feature_objects",
+      "field_mappings": [
+        { "source": "object.kinematics.pose_with_covariance.pose.position.x", "target": "x" },
+        { "source": "object.kinematics.pose_with_covariance.pose.position.y", "target": "y" },
+        { "source": "object.kinematics.pose_with_covariance.pose.position.z", "target": "z" },
+        { "source": "object.shape.dimensions.x", "target": "length" },
+        { "source": "object.shape.dimensions.y", "target": "width" },
+        { "source": "object.shape.dimensions.z", "target": "height" },
+        { "target": "yaw", "expression": "atan2(2*(object.kinematics.pose_with_covariance.pose.orientation.w*object.kinematics.pose_with_covariance.pose.orientation.z + object.kinematics.pose_with_covariance.pose.orientation.x*object.kinematics.pose_with_covariance.pose.orientation.y), 1 - 2*(object.kinematics.pose_with_covariance.pose.orientation.y*object.kinematics.pose_with_covariance.pose.orientation.y + object.kinematics.pose_with_covariance.pose.orientation.z*object.kinematics.pose_with_covariance.pose.orientation.z))" },
+        { "source": "object.kinematics.twist_with_covariance.twist.linear.x", "target": "vx" },
+        { "source": "object.kinematics.twist_with_covariance.twist.linear.y", "target": "vy" },
+        { "target": "score", "expression": "clamp(0, object.existence_probability, 1)" },
+        { "source": "object.classification[0].label", "target": "class_id" },
+        { "source": "object.classification[0].label", "target": "label", "default_value": "object" }
+      ]
+    },
+    {
+      "name": "vmsgs RadarObjects (protobuf)",
+      "render_type": "object_detection",
+      "encoding": "protobuf",
+      "ser": "vmsgs.proto.sensor.RadarObjects",
+      "priority": 12000,
+      "match": { "schemas": ["protobuf"], "ser_equals": ["vmsgs.proto.sensor.RadarObjects"] },
+      "collection": "objects",
+      "field_mappings": [
+        { "source": "kinematics_pose.pose.position.x", "target": "x" },
+        { "source": "kinematics_pose.pose.position.y", "target": "y" },
+        { "source": "kinematics_pose.pose.position.z", "target": "z" },
+        { "source": "size.x", "target": "length" },
+        { "source": "size.y", "target": "width" },
+        { "source": "size.z", "target": "height" },
+        { "target": "yaw", "expression": "atan2(2*(kinematics_pose.pose.orientation.w*kinematics_pose.pose.orientation.z + kinematics_pose.pose.orientation.x*kinematics_pose.pose.orientation.y), 1 - 2*(kinematics_pose.pose.orientation.y*kinematics_pose.pose.orientation.y + kinematics_pose.pose.orientation.z*kinematics_pose.pose.orientation.z))" },
+        { "source": "kinematics_twist.twist.linear.x", "target": "vx" },
+        { "source": "kinematics_twist.twist.linear.y", "target": "vy" },
+        { "target": "score", "expression": "clamp(0, existence_probability, 1)" },
+        { "source": "classification.motion_status", "target": "class_id" },
+        { "source": "classification.motion_status", "target": "label", "default_value": "radar" },
+        { "source": "object_id.low", "target": "track_id" }
+      ]
+    },
+    {
+      "name": "vmsgs TrackedObjects (protobuf)",
+      "render_type": "object_detection",
+      "encoding": "protobuf",
+      "ser": "vmsgs.proto.perception.TrackedObjects",
+      "priority": 12000,
+      "match": { "schemas": ["protobuf"], "ser_equals": ["vmsgs.proto.perception.TrackedObjects"] },
+      "collection": "objects",
+      "field_mappings": [
+        { "source": "kinematics.pose_with_covariance.pose.position.x", "target": "x" },
+        { "source": "kinematics.pose_with_covariance.pose.position.y", "target": "y" },
+        { "source": "kinematics.pose_with_covariance.pose.position.z", "target": "z" },
+        { "source": "shape.dimensions.x", "target": "length" },
+        { "source": "shape.dimensions.y", "target": "width" },
+        { "source": "shape.dimensions.z", "target": "height" },
+        { "target": "yaw", "expression": "atan2(2*(kinematics.pose_with_covariance.pose.orientation.w*kinematics.pose_with_covariance.pose.orientation.z + kinematics.pose_with_covariance.pose.orientation.x*kinematics.pose_with_covariance.pose.orientation.y), 1 - 2*(kinematics.pose_with_covariance.pose.orientation.y*kinematics.pose_with_covariance.pose.orientation.y + kinematics.pose_with_covariance.pose.orientation.z*kinematics.pose_with_covariance.pose.orientation.z))" },
+        { "source": "kinematics.twist_with_covariance.twist.linear.x", "target": "vx" },
+        { "source": "kinematics.twist_with_covariance.twist.linear.y", "target": "vy" },
+        { "target": "score", "expression": "clamp(0, existence_probability, 1)" },
+        { "source": "classification[0].label", "target": "class_id" },
+        { "source": "classification[0].label", "target": "label", "default_value": "object" },
+        { "source": "object_id.low", "target": "track_id" }
+      ]
+    },
+    {
+      "name": "vmsgs RadarTracks (protobuf)",
+      "render_type": "object_detection",
+      "encoding": "protobuf",
+      "ser": "vmsgs.proto.sensor.RadarTracks",
+      "priority": 12000,
+      "match": { "schemas": ["protobuf"], "ser_equals": ["vmsgs.proto.sensor.RadarTracks"] },
+      "collection": "tracks",
+      "field_mappings": [
+        { "source": "position.x", "target": "x" },
+        { "source": "position.y", "target": "y" },
+        { "source": "position.z", "target": "z" },
+        { "source": "size.x", "target": "length" },
+        { "source": "size.y", "target": "width" },
+        { "source": "size.z", "target": "height" },
+        { "source": "velocity.x", "target": "vx" },
+        { "source": "velocity.y", "target": "vy" },
+        { "target": "score", "expression": "clamp(0, existence_probability, 1)" },
+        { "source": "classification", "target": "class_id" },
+        { "source": "uuid.low", "target": "track_id" }
+      ]
+    },
+    {
+      "name": "vmsgs TrackedObjectsWithFeature (protobuf)",
+      "render_type": "object_detection",
+      "encoding": "protobuf",
+      "ser": "vmsgs.proto.perception.TrackedObjectsWithFeature",
+      "priority": 12010,
+      "match": { "schemas": ["protobuf"], "ser_equals": ["vmsgs.proto.perception.TrackedObjectsWithFeature"] },
+      "collection": "feature_objects",
+      "field_mappings": [
+        { "source": "object.kinematics.pose_with_covariance.pose.position.x", "target": "x" },
+        { "source": "object.kinematics.pose_with_covariance.pose.position.y", "target": "y" },
+        { "source": "object.kinematics.pose_with_covariance.pose.position.z", "target": "z" },
+        { "source": "object.shape.dimensions.x", "target": "length" },
+        { "source": "object.shape.dimensions.y", "target": "width" },
+        { "source": "object.shape.dimensions.z", "target": "height" },
+        { "target": "yaw", "expression": "atan2(2*(object.kinematics.pose_with_covariance.pose.orientation.w*object.kinematics.pose_with_covariance.pose.orientation.z + object.kinematics.pose_with_covariance.pose.orientation.x*object.kinematics.pose_with_covariance.pose.orientation.y), 1 - 2*(object.kinematics.pose_with_covariance.pose.orientation.y*object.kinematics.pose_with_covariance.pose.orientation.y + object.kinematics.pose_with_covariance.pose.orientation.z*object.kinematics.pose_with_covariance.pose.orientation.z))" },
+        { "source": "object.kinematics.twist_with_covariance.twist.linear.x", "target": "vx" },
+        { "source": "object.kinematics.twist_with_covariance.twist.linear.y", "target": "vy" },
+        { "target": "score", "expression": "clamp(0, object.existence_probability, 1)" },
+        { "source": "object.classification[0].label", "target": "class_id" },
+        { "source": "object.classification[0].label", "target": "label", "default_value": "object" },
+        { "source": "object.object_id.low", "target": "track_id" }
+      ]
+    },
+    {
+      "name": "vmsgs PredictedObjects initial state (protobuf)",
+      "render_type": "object_detection",
+      "encoding": "protobuf",
+      "ser": "vmsgs.proto.perception.PredictedObjects",
+      "priority": 12000,
+      "match": { "schemas": ["protobuf"], "ser_equals": ["vmsgs.proto.perception.PredictedObjects"] },
+      "collection": "objects",
+      "field_mappings": [
+        { "source": "kinematics.initial_pose_with_covariance.pose.position.x", "target": "x" },
+        { "source": "kinematics.initial_pose_with_covariance.pose.position.y", "target": "y" },
+        { "source": "kinematics.initial_pose_with_covariance.pose.position.z", "target": "z" },
+        { "source": "shape.dimensions.x", "target": "length" },
+        { "source": "shape.dimensions.y", "target": "width" },
+        { "source": "shape.dimensions.z", "target": "height" },
+        { "target": "yaw", "expression": "atan2(2*(kinematics.initial_pose_with_covariance.pose.orientation.w*kinematics.initial_pose_with_covariance.pose.orientation.z + kinematics.initial_pose_with_covariance.pose.orientation.x*kinematics.initial_pose_with_covariance.pose.orientation.y), 1 - 2*(kinematics.initial_pose_with_covariance.pose.orientation.y*kinematics.initial_pose_with_covariance.pose.orientation.y + kinematics.initial_pose_with_covariance.pose.orientation.z*kinematics.initial_pose_with_covariance.pose.orientation.z))" },
+        { "source": "kinematics.initial_twist_with_covariance.twist.linear.x", "target": "vx" },
+        { "source": "kinematics.initial_twist_with_covariance.twist.linear.y", "target": "vy" },
+        { "target": "score", "expression": "clamp(0, existence_probability, 1)" },
+        { "source": "classification[0].label", "target": "class_id" },
+        { "source": "classification[0].label", "target": "label", "default_value": "object" },
+        { "source": "object_id.low", "target": "track_id" }
+      ]
+    },
+    {
+      "name": "vmsgs ParkingSlots (protobuf)",
+      "render_type": "parking_slot",
+      "encoding": "protobuf",
+      "ser": "vmsgs.proto.perception.ParkingSlots",
+      "priority": 12000,
+      "match": { "schemas": ["protobuf"], "ser_equals": ["vmsgs.proto.perception.ParkingSlots"] },
+      "collection": "slots",
+      "field_mappings": [
+        { "source": "corners[0].x", "target": "corner0_x" },
+        { "source": "corners[0].y", "target": "corner0_y" },
+        { "source": "corners[0].z", "target": "corner0_z" },
+        { "source": "corners[1].x", "target": "corner1_x" },
+        { "source": "corners[1].y", "target": "corner1_y" },
+        { "source": "corners[1].z", "target": "corner1_z" },
+        { "source": "corners[2].x", "target": "corner2_x" },
+        { "source": "corners[2].y", "target": "corner2_y" },
+        { "source": "corners[2].z", "target": "corner2_z" },
+        { "source": "corners[3].x", "target": "corner3_x" },
+        { "source": "corners[3].y", "target": "corner3_y" },
+        { "source": "corners[3].z", "target": "corner3_z" },
+        { "source": "id", "target": "slot_id" },
+        { "source": "type", "target": "slot_type" },
+        { "source": "confidence", "target": "confidence" }
+      ]
+    },
+    {
+      "name": "vmsgs LaneSegments (protobuf)",
+      "render_type": "lane_line",
+      "encoding": "protobuf",
+      "ser": "vmsgs.proto.perception.LaneSegments",
+      "priority": 12000,
+      "match": { "schemas": ["protobuf"], "ser_equals": ["vmsgs.proto.perception.LaneSegments"] },
+      "collection": "lanes, lanes",
+      "inner_collection": "left_boundary.points, right_boundary.points",
+      "field_mappings": [
+        { "source": "x", "target": "x" },
+        { "source": "y", "target": "y" },
+        { "source": "z", "target": "z" },
+        { "target": "$1.type", "expression": "(left_boundary.type == 2) + 2*(left_boundary.type == 3) + 2*(left_boundary.type == 4) + 3*(left_boundary.type == 6) + (left_boundary.type == 7)" },
+        { "target": "$2.type", "expression": "(right_boundary.type == 2) + 2*(right_boundary.type == 3) + 2*(right_boundary.type == 4) + 3*(right_boundary.type == 6) + (right_boundary.type == 7)" }
+      ]
+    },
+    {
+      "name": "vmsgs SemanticOccupancyGrid (freespace, protobuf)",
+      "render_type": "occupancy_grid",
+      "encoding": "protobuf",
+      "ser": "vmsgs.proto.perception.SemanticOccupancyGrid",
+      "priority": 12000,
+      "match": { "schemas": ["protobuf"], "ser_equals": ["vmsgs.proto.perception.SemanticOccupancyGrid"] },
+      "field_mappings": [
+        { "source": "origin.position.x", "target": "origin_x" },
+        { "source": "origin.position.y", "target": "origin_y" },
+        { "source": "origin.position.z", "target": "origin_z" },
+        { "source": "resolution", "target": "resolution" },
+        { "source": "width", "target": "width" },
+        { "source": "height", "target": "height" },
+        { "source": "cells", "target": "cells" }
+      ]
+    },
+    {
+      "name": "vmsgs RoadMarkingArray lane markings (protobuf)",
+      "render_type": "lane_line",
+      "encoding": "protobuf",
+      "ser": "vmsgs.proto.perception.RoadMarkingArray",
+      "priority": 12000,
+      "match": { "schemas": ["protobuf"], "ser_equals": ["vmsgs.proto.perception.RoadMarkingArray"] },
+      "collection": "markings",
+      "inner_collection": "points",
+      "field_mappings": [
+        { "target": "__filter", "expression": "(type <= 3) + (type == 11)" },
+        { "source": "x", "target": "x" },
+        { "source": "y", "target": "y" },
+        { "source": "z", "target": "z" },
+        { "target": "type", "expression": "(type == 2) + 2*(type == 3)" }
+      ]
+    },
+    {
+      "name": "vmsgs RoadMarkingArray stop lines and crosswalks (protobuf)",
+      "render_type": "stop_line",
+      "encoding": "protobuf",
+      "ser": "vmsgs.proto.perception.RoadMarkingArray",
+      "priority": 12000,
+      "match": { "schemas": ["protobuf"], "ser_equals": ["vmsgs.proto.perception.RoadMarkingArray"] },
+      "collection": "markings",
+      "inner_collection": "points",
+      "field_mappings": [
+        { "target": "__filter", "expression": "(type == 4) + (type == 5)" },
+        { "source": "x", "target": "x" },
+        { "source": "y", "target": "y" },
+        { "source": "z", "target": "z" },
+        { "target": "type", "expression": "type == 5" }
+      ]
+    },
+    {
+      "name": "vmsgs FreeSpace outer polygon (protobuf)",
+      "render_type": "freespace",
+      "encoding": "protobuf",
+      "ser": "vmsgs.proto.perception.FreeSpace",
+      "priority": 12000,
+      "match": { "schemas": ["protobuf"], "ser_equals": ["vmsgs.proto.perception.FreeSpace"] },
+      "collection": "outer.points",
+      "field_mappings": [
+        { "source": "x", "target": "x" },
+        { "source": "y", "target": "y" },
+        { "source": "z", "target": "z" }
+      ]
+    },
+    {
+      "name": "vmsgs planning Trajectory (protobuf, ego path)",
+      "render_type": "ego_trajectory",
+      "encoding": "protobuf",
+      "ser": "vmsgs.proto.planning.Trajectory",
+      "priority": 12000,
+      "match": { "schemas": ["protobuf"], "ser_equals": ["vmsgs.proto.planning.Trajectory"] },
+      "collection": "points",
+      "field_mappings": [
+        { "source": "pose.position.x", "target": "x" },
+        { "source": "pose.position.y", "target": "y" },
+        { "source": "pose.position.z", "target": "z" },
+        { "target": "yaw", "expression": "atan2(2*(pose.orientation.w*pose.orientation.z + pose.orientation.x*pose.orientation.y), 1 - 2*(pose.orientation.y*pose.orientation.y + pose.orientation.z*pose.orientation.z))" },
+        { "source": "longitudinal_velocity", "target": "speed" }
+      ]
+    },
+    {
+      "name": "vmsgs planning Path (protobuf, ego path)",
+      "render_type": "ego_trajectory",
+      "encoding": "protobuf",
+      "ser": "vmsgs.proto.planning.Path",
+      "priority": 12000,
+      "match": { "schemas": ["protobuf"], "ser_equals": ["vmsgs.proto.planning.Path"] },
+      "collection": "points",
+      "field_mappings": [
+        { "source": "pose.position.x", "target": "x" },
+        { "source": "pose.position.y", "target": "y" },
+        { "source": "pose.position.z", "target": "z" },
+        { "target": "yaw", "expression": "atan2(2*(pose.orientation.w*pose.orientation.z + pose.orientation.x*pose.orientation.y), 1 - 2*(pose.orientation.y*pose.orientation.y + pose.orientation.z*pose.orientation.z))" },
+        { "source": "longitudinal_velocity", "target": "speed" }
+      ]
+    },
+    {
+      "name": "vmsgs planning PathWithLaneId (protobuf, ego path)",
+      "render_type": "ego_trajectory",
+      "encoding": "protobuf",
+      "ser": "vmsgs.proto.planning.PathWithLaneId",
+      "priority": 12000,
+      "match": { "schemas": ["protobuf"], "ser_equals": ["vmsgs.proto.planning.PathWithLaneId"] },
+      "collection": "points",
+      "field_mappings": [
+        { "source": "point.pose.position.x", "target": "x" },
+        { "source": "point.pose.position.y", "target": "y" },
+        { "source": "point.pose.position.z", "target": "z" },
+        { "target": "yaw", "expression": "atan2(2*(point.pose.orientation.w*point.pose.orientation.z + point.pose.orientation.x*point.pose.orientation.y), 1 - 2*(point.pose.orientation.y*point.pose.orientation.y + point.pose.orientation.z*point.pose.orientation.z))" },
+        { "source": "point.longitudinal_velocity", "target": "speed" }
+      ]
+    },
+    {
+      "name": "vmsgs map OccupancyGrid (protobuf)",
+      "render_type": "occupancy_grid",
+      "encoding": "protobuf",
+      "ser": "vmsgs.proto.map.OccupancyGrid",
+      "priority": 12000,
+      "match": { "schemas": ["protobuf"], "ser_equals": ["vmsgs.proto.map.OccupancyGrid"] },
+      "field_mappings": [
+        { "source": "info.origin.position.x", "target": "origin_x" },
+        { "source": "info.origin.position.y", "target": "origin_y" },
+        { "source": "info.origin.position.z", "target": "origin_z" },
+        { "source": "info.resolution", "target": "resolution" },
+        { "source": "info.width", "target": "width" },
+        { "source": "info.height", "target": "height" },
+        { "source": "data", "target": "cells" }
+      ]
+    },
+
+    {
+      "name": "vmsgs CompactDetectedObjects (flatbuffers zerocopy)",
+      "render_type": "object_detection",
+      "encoding": "flatbuffers",
+      "ser": "vmsgs.fbs.perception.CompactDetectedObjects",
+      "priority": 12000,
+      "match": { "schemas": ["flatbuffers"], "ser_equals": ["vmsgs.fbs.perception.CompactDetectedObjects"] },
+      "collection": "objects",
+      "field_mappings": [
+        { "source": "pose.position.x", "target": "x" },
+        { "source": "pose.position.y", "target": "y" },
+        { "source": "pose.position.z", "target": "z" },
+        { "source": "dimensions.x", "target": "length" },
+        { "source": "dimensions.y", "target": "width" },
+        { "source": "dimensions.z", "target": "height" },
+        { "target": "yaw", "expression": "atan2(2*(pose.orientation.w*pose.orientation.z + pose.orientation.x*pose.orientation.y), 1 - 2*(pose.orientation.y*pose.orientation.y + pose.orientation.z*pose.orientation.z))" },
+        { "source": "velocity.x", "target": "vx" },
+        { "source": "velocity.y", "target": "vy" },
+        { "target": "score", "expression": "clamp(0, existence_probability, 1)" },
+        { "source": "label", "target": "class_id" },
+        { "source": "id", "target": "track_id" }
+      ]
+    },
+    {
+      "name": "vmsgs CompactRadarObjects (flatbuffers zerocopy)",
+      "render_type": "object_detection",
+      "encoding": "flatbuffers",
+      "ser": "vmsgs.fbs.sensor.CompactRadarObjects",
+      "priority": 12000,
+      "match": { "schemas": ["flatbuffers"], "ser_equals": ["vmsgs.fbs.sensor.CompactRadarObjects"] },
+      "collection": "objects",
+      "field_mappings": [
+        { "source": "pose.position.x", "target": "x" },
+        { "source": "pose.position.y", "target": "y" },
+        { "source": "pose.position.z", "target": "z" },
+        { "source": "dimensions.x", "target": "length" },
+        { "source": "dimensions.y", "target": "width" },
+        { "source": "dimensions.z", "target": "height" },
+        { "target": "yaw", "expression": "atan2(2*(pose.orientation.w*pose.orientation.z + pose.orientation.x*pose.orientation.y), 1 - 2*(pose.orientation.y*pose.orientation.y + pose.orientation.z*pose.orientation.z))" },
+        { "source": "velocity.x", "target": "vx" },
+        { "source": "velocity.y", "target": "vy" },
+        { "target": "score", "expression": "clamp(0, existence_probability, 1)" },
+        { "source": "motion_status", "target": "class_id" },
+        { "source": "object_id_low", "target": "track_id" }
+      ]
+    },
+    {
+      "name": "vmsgs RadarTracks (flatbuffers zerocopy)",
+      "render_type": "object_detection",
+      "encoding": "flatbuffers",
+      "ser": "vmsgs.fbs.sensor.RadarTracks",
+      "priority": 12000,
+      "match": { "schemas": ["flatbuffers"], "ser_equals": ["vmsgs.fbs.sensor.RadarTracks"] },
+      "collection": "tracks",
+      "field_mappings": [
+        { "source": "position.x", "target": "x" },
+        { "source": "position.y", "target": "y" },
+        { "source": "position.z", "target": "z" },
+        { "source": "size.x", "target": "length" },
+        { "source": "size.y", "target": "width" },
+        { "source": "size.z", "target": "height" },
+        { "source": "velocity.x", "target": "vx" },
+        { "source": "velocity.y", "target": "vy" },
+        { "target": "score", "expression": "clamp(0, existence_probability, 1)" },
+        { "source": "classification", "target": "class_id" },
+        { "source": "uuid_low", "target": "track_id" }
+      ]
+    },
+    {
+      "name": "vmsgs TrackedObjects (flatbuffers zerocopy)",
+      "render_type": "object_detection",
+      "encoding": "flatbuffers",
+      "ser": "vmsgs.fbs.perception.TrackedObjects",
+      "priority": 12000,
+      "match": { "schemas": ["flatbuffers"], "ser_equals": ["vmsgs.fbs.perception.TrackedObjects"] },
+      "collection": "objects",
+      "field_mappings": [
+        { "source": "kinematics.pose.position.x", "target": "x" },
+        { "source": "kinematics.pose.position.y", "target": "y" },
+        { "source": "kinematics.pose.position.z", "target": "z" },
+        { "source": "shape.dimensions.x", "target": "length" },
+        { "source": "shape.dimensions.y", "target": "width" },
+        { "source": "shape.dimensions.z", "target": "height" },
+        { "target": "yaw", "expression": "atan2(2*(kinematics.pose.orientation.w*kinematics.pose.orientation.z + kinematics.pose.orientation.x*kinematics.pose.orientation.y), 1 - 2*(kinematics.pose.orientation.y*kinematics.pose.orientation.y + kinematics.pose.orientation.z*kinematics.pose.orientation.z))" },
+        { "source": "kinematics.linear_velocity.x", "target": "vx" },
+        { "source": "kinematics.linear_velocity.y", "target": "vy" },
+        { "target": "score", "expression": "clamp(0, existence_probability, 1)" },
+        { "source": "classification[0].label", "target": "class_id" },
+        { "source": "object_id_low", "target": "track_id" }
+      ]
+    },
+    {
+      "name": "vmsgs PredictedObjects initial state (flatbuffers zerocopy)",
+      "render_type": "object_detection",
+      "encoding": "flatbuffers",
+      "ser": "vmsgs.fbs.perception.PredictedObjects",
+      "priority": 12000,
+      "match": { "schemas": ["flatbuffers"], "ser_equals": ["vmsgs.fbs.perception.PredictedObjects"] },
+      "collection": "objects",
+      "field_mappings": [
+        { "source": "kinematics.initial_state.pose.position.x", "target": "x" },
+        { "source": "kinematics.initial_state.pose.position.y", "target": "y" },
+        { "source": "kinematics.initial_state.pose.position.z", "target": "z" },
+        { "source": "shape.dimensions.x", "target": "length" },
+        { "source": "shape.dimensions.y", "target": "width" },
+        { "source": "shape.dimensions.z", "target": "height" },
+        { "target": "yaw", "expression": "atan2(2*(kinematics.initial_state.pose.orientation.w*kinematics.initial_state.pose.orientation.z + kinematics.initial_state.pose.orientation.x*kinematics.initial_state.pose.orientation.y), 1 - 2*(kinematics.initial_state.pose.orientation.y*kinematics.initial_state.pose.orientation.y + kinematics.initial_state.pose.orientation.z*kinematics.initial_state.pose.orientation.z))" },
+        { "source": "kinematics.initial_state.linear_velocity.x", "target": "vx" },
+        { "source": "kinematics.initial_state.linear_velocity.y", "target": "vy" },
+        { "target": "score", "expression": "clamp(0, existence_probability, 1)" },
+        { "source": "classification[0].label", "target": "class_id" },
+        { "source": "object_id_low", "target": "track_id" }
+      ]
+    },
+    {
+      "name": "vmsgs ParkingSlots (flatbuffers zerocopy)",
+      "render_type": "parking_slot",
+      "encoding": "flatbuffers",
+      "ser": "vmsgs.fbs.perception.ParkingSlots",
+      "priority": 12000,
+      "match": { "schemas": ["flatbuffers"], "ser_equals": ["vmsgs.fbs.perception.ParkingSlots"] },
+      "collection": "slots",
+      "field_mappings": [
+        { "source": "corners[0].x", "target": "corner0_x" },
+        { "source": "corners[0].y", "target": "corner0_y" },
+        { "source": "corners[0].z", "target": "corner0_z" },
+        { "source": "corners[1].x", "target": "corner1_x" },
+        { "source": "corners[1].y", "target": "corner1_y" },
+        { "source": "corners[1].z", "target": "corner1_z" },
+        { "source": "corners[2].x", "target": "corner2_x" },
+        { "source": "corners[2].y", "target": "corner2_y" },
+        { "source": "corners[2].z", "target": "corner2_z" },
+        { "source": "corners[3].x", "target": "corner3_x" },
+        { "source": "corners[3].y", "target": "corner3_y" },
+        { "source": "corners[3].z", "target": "corner3_z" },
+        { "source": "id", "target": "slot_id" },
+        { "source": "type", "target": "slot_type" },
+        { "source": "confidence", "target": "confidence" }
+      ]
+    },
+    {
+      "name": "vmsgs planning Trajectory (flatbuffers zerocopy, ego path)",
+      "render_type": "ego_trajectory",
+      "encoding": "flatbuffers",
+      "ser": "vmsgs.fbs.planning.Trajectory",
+      "priority": 12000,
+      "match": { "schemas": ["flatbuffers"], "ser_equals": ["vmsgs.fbs.planning.Trajectory"] },
+      "collection": "points",
+      "field_mappings": [
+        { "source": "pose.position.x", "target": "x" },
+        { "source": "pose.position.y", "target": "y" },
+        { "source": "pose.position.z", "target": "z" },
+        { "target": "yaw", "expression": "atan2(2*(pose.orientation.w*pose.orientation.z + pose.orientation.x*pose.orientation.y), 1 - 2*(pose.orientation.y*pose.orientation.y + pose.orientation.z*pose.orientation.z))" },
+        { "source": "longitudinal_velocity", "target": "speed" }
+      ]
+    },
+    {
+      "name": "vmsgs OccupancyGrid (flatbuffers zerocopy)",
+      "render_type": "occupancy_grid",
+      "encoding": "flatbuffers",
+      "ser": "vmsgs.fbs.perception.OccupancyGrid",
+      "priority": 12000,
+      "match": { "schemas": ["flatbuffers"], "ser_equals": ["vmsgs.fbs.perception.OccupancyGrid"] },
+      "field_mappings": [
+        { "source": "origin.position.x", "target": "origin_x" },
+        { "source": "origin.position.y", "target": "origin_y" },
+        { "source": "origin.position.z", "target": "origin_z" },
+        { "source": "resolution", "target": "resolution" },
+        { "source": "width", "target": "width" },
+        { "source": "height", "target": "height" },
+        { "source": "data", "target": "cells" }
+      ]
+    },
+    {
+      "name": "vmsgs OccupancyGridMap (flatbuffers zerocopy)",
+      "render_type": "occupancy_grid",
+      "encoding": "flatbuffers",
+      "ser": "vmsgs.fbs.map.OccupancyGridMap",
+      "priority": 12000,
+      "match": { "schemas": ["flatbuffers"], "ser_equals": ["vmsgs.fbs.map.OccupancyGridMap"] },
+      "field_mappings": [
+        { "source": "origin.position.x", "target": "origin_x" },
+        { "source": "origin.position.y", "target": "origin_y" },
+        { "source": "origin.position.z", "target": "origin_z" },
+        { "source": "resolution", "target": "resolution" },
+        { "source": "width", "target": "width" },
+        { "source": "height", "target": "height" },
+        { "source": "data", "target": "cells" }
+      ]
+    }
+  ],
+
+  "hud_bindings": [
+    {
+      "name": "vmsgs ChassisInfo (vehicle HUD)",
+      "encoding": "protobuf",
+      "ser": "vmsgs.proto.vehicle.ChassisInfo",
+      "priority": 20000,
+      "match": { "schemas": ["protobuf"], "ser_equals": ["vmsgs.proto.vehicle.ChassisInfo"] },
+      "field_mappings": [
+        { "target": "speed", "expression": "longitudinal_velocity * 3.6" },
+        { "source": "throttle_percentage", "target": "throttle" },
+        { "source": "brake_percentage", "target": "brake" },
+        { "source": "steering_wheel_angle", "target": "steering_angle" },
+        { "source": "engine_rpm", "target": "rpm" },
+        { "source": "longitudinal_acceleration", "target": "accel_lon" },
+        { "source": "lateral_acceleration", "target": "accel_lat" },
+        { "source": "yaw_rate", "target": "yaw_rate" },
+        { "source": "gear", "target": "gear" }
+      ]
+    },
+    {
+      "name": "vmsgs ChassisInfo (flatbuffers vehicle HUD)",
+      "encoding": "flatbuffers",
+      "ser": "vmsgs.fbs.vehicle.ChassisInfo",
+      "priority": 20000,
+      "match": { "schemas": ["flatbuffers"], "ser_equals": ["vmsgs.fbs.vehicle.ChassisInfo"] },
+      "field_mappings": [
+        { "target": "speed", "expression": "longitudinal_velocity * 3.6" },
+        { "source": "throttle_percentage", "target": "throttle" },
+        { "source": "brake_percentage", "target": "brake" },
+        { "source": "steering_wheel_angle", "target": "steering_angle" },
+        { "source": "engine_rpm", "target": "rpm" },
+        { "source": "longitudinal_acceleration", "target": "accel_lon" },
+        { "source": "lateral_acceleration", "target": "accel_lat" },
+        { "source": "yaw_rate", "target": "yaw_rate" },
+        { "target": "gear", "expression": "gear" }
+      ]
+    }
+  ]
+}

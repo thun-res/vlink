@@ -10,6 +10,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/../src 
 target_sources(
   ${PROJECT_NAME}
   PRIVATE ${PROJECT_SOURCE_DIR}/../src/foxglove_converter.cc ${PROJECT_SOURCE_DIR}/../src/foxglove_converter.h
+          ${PROJECT_SOURCE_DIR}/../../zerocopy_message.cc ${PROJECT_SOURCE_DIR}/../../zerocopy_message.h
           ${CMAKE_SOURCE_DIR}/src/private/mcap_import.cc
 )
 target_link_libraries(

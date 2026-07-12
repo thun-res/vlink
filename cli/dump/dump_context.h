@@ -38,8 +38,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "dump_expr.h"
-#include "dump_types.h"
+#include "./dump_expr.h"
+#include "./dump_types.h"
 
 namespace vlink::dump {
 

@@ -653,7 +653,8 @@ std::string GraphTask::export_to_dot() const {
 
   std::unordered_set<const GraphTask*> visited;
 
-  Function<void(const GraphTask*)> traverse = [&](const GraphTask* task) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  Function<void(const GraphTask*)> traverse = [&visited, &groups, &dot_stream,
+                                               &traverse](const GraphTask* task) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     if (visited.count(task)) {
       return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }

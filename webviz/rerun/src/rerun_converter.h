@@ -53,6 +53,7 @@
 #include <vlink/extension/schema_plugin_manager.h>
 #include <vlink/zerocopy/audio_frame.h>
 #include <vlink/zerocopy/camera_frame.h>
+#include <vlink/zerocopy/message_parser.h>
 #include <vlink/zerocopy/object_array.h>
 #include <vlink/zerocopy/occupancy_grid.h>
 #include <vlink/zerocopy/point_cloud.h>
@@ -130,30 +131,32 @@ class RerunConverter final {
   static bool log_camera_frame(::rerun::RecordingStream& rec, const std::string& entity_path, const Bytes& raw);
 
   static bool log_point_cloud(::rerun::RecordingStream& rec, const std::string& entity_path,
-                              const zerocopy::PointCloud& pc);
+                              const zerocopy::PointCloud& point_cloud);
 
   static bool log_point_cloud(::rerun::RecordingStream& rec, const std::string& entity_path, const Bytes& raw);
 
-  static bool log_raw_data(::rerun::RecordingStream& rec, const std::string& entity_path, const zerocopy::RawData& rd);
+  static bool log_raw_data(::rerun::RecordingStream& rec, const std::string& entity_path,
+                           const zerocopy::MessageParser& parser);
 
   static bool log_raw_data(::rerun::RecordingStream& rec, const std::string& entity_path, const Bytes& raw);
 
   static bool log_occupancy_grid(::rerun::RecordingStream& rec, const std::string& entity_path,
-                                 const zerocopy::OccupancyGrid& grid);
+                                 const zerocopy::MessageParser& parser);
 
   static bool log_occupancy_grid(::rerun::RecordingStream& rec, const std::string& entity_path, const Bytes& raw);
 
-  static bool log_tensor(::rerun::RecordingStream& rec, const std::string& entity_path, const zerocopy::Tensor& tensor);
+  static bool log_tensor(::rerun::RecordingStream& rec, const std::string& entity_path,
+                         const zerocopy::MessageParser& parser);
 
   static bool log_tensor(::rerun::RecordingStream& rec, const std::string& entity_path, const Bytes& raw);
 
   static bool log_object_array(::rerun::RecordingStream& rec, const std::string& entity_path,
-                               const zerocopy::ObjectArray& arr);
+                               const zerocopy::MessageParser& parser);
 
   static bool log_object_array(::rerun::RecordingStream& rec, const std::string& entity_path, const Bytes& raw);
 
   static bool log_audio_frame(::rerun::RecordingStream& rec, const std::string& entity_path,
-                              const zerocopy::AudioFrame& frame);
+                              const zerocopy::MessageParser& parser);
 
   static bool log_audio_frame(::rerun::RecordingStream& rec, const std::string& entity_path, const Bytes& raw);
 

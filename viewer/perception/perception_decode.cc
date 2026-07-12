@@ -25,13 +25,12 @@
 
 #include "./perception_decode.h"
 
-#include <vlink/zerocopy/object_array.h>
-#include <vlink/zerocopy/occupancy_grid.h>
+#include <vlink/zerocopy/message_parser.h>
 #include <vlink/zerocopy/point_cloud.h>
 
 #include <algorithm>
 #include <cmath>
-#include <cstring>
+#include <string_view>
 
 #include "./perception_mapping.h"
 
@@ -39,37 +38,40 @@ namespace perception {
 namespace decode {
 
 bool decode_zerocopy_object_array(const vlink::Bytes& raw, Layer& out) {
-  vlink::zerocopy::ObjectArray arr;
+  vlink::zerocopy::MessageParser parser;
 
-  if (!(arr << raw)) {
+  if VUNLIKELY (!parser.parse(vlink::zerocopy::MessageParser::Type::kObjectArray, raw)) {
     return false;
   }
 
   out.type = RenderType::kObjectDetection;
   out.boxes.clear();
-  out.boxes.reserve(arr.count());
+  const size_t count = parser.collection_size("objects");
+  out.boxes.reserve(count);
 
-  for (uint32_t i = 0; i < arr.count(); ++i) {
-    const auto obj = arr.get_value(i);
+  for (size_t i = 0; i < count; ++i) {
+    auto read = [&parser, i](std::string_view field) {
+      double value = 0.0;
+      parser.numeric("objects", i, field, value);
+      return value;
+    };
 
     BoxObject box;
-    box.position[0] = obj.position[0];
-    box.position[1] = obj.position[1];
-    box.position[2] = obj.position[2];
-    box.size[0] = obj.size[0];
-    box.size[1] = obj.size[1];
-    box.size[2] = obj.size[2];
-    box.yaw = obj.yaw;
-    box.velocity[0] = obj.velocity[0];
-    box.velocity[1] = obj.velocity[1];
-    box.velocity[2] = obj.velocity[2];
-    box.score = obj.score;
-    box.class_id = obj.class_id;
-    box.track_id = obj.track_id;
+    box.position[0] = read("position[0]");
+    box.position[1] = read("position[1]");
+    box.position[2] = read("position[2]");
+    box.size[0] = read("size[0]");
+    box.size[1] = read("size[1]");
+    box.size[2] = read("size[2]");
+    box.yaw = read("yaw");
+    box.velocity[0] = read("velocity[0]");
+    box.velocity[1] = read("velocity[1]");
+    box.velocity[2] = read("velocity[2]");
+    box.score = read("score");
+    box.class_id = static_cast<uint32_t>(read("class_id"));
+    box.track_id = static_cast<uint32_t>(read("track_id"));
 
-    if (obj.label[0] != '\0') {
-      box.label.assign(obj.label, ::strnlen(obj.label, sizeof(obj.label)));
-    }
+    parser.text("objects", i, "label", box.label);
 
     out.boxes.emplace_back(std::move(box));
   }
@@ -77,46 +79,61 @@ bool decode_zerocopy_object_array(const vlink::Bytes& raw, Layer& out) {
   return true;
 }
 
-bool decode_zerocopy_occupancy_grid(const vlink::Bytes& raw, Layer& out) {
-  vlink::zerocopy::OccupancyGrid occupancy_grid;
+static int8_t occupancy_cell_to_int8(uint8_t cell_type, double value) {
+  switch (cell_type) {
+    case vlink::zerocopy::OccupancyGrid::kCellUint8:
+      if (value >= 255.0) {
+        return -1;
+      }
 
-  if (!(occupancy_grid << raw) || !occupancy_grid.is_valid()) {
+      return static_cast<int8_t>(std::clamp<int64_t>(std::llround(value * 100.0 / 254.0), 0, 100));
+    case vlink::zerocopy::OccupancyGrid::kCellUint16:
+      if (value >= 65535.0) {
+        return -1;
+      }
+
+      return static_cast<int8_t>(std::clamp<int64_t>(std::llround(value * 100.0 / 65534.0), 0, 100));
+    case vlink::zerocopy::OccupancyGrid::kCellFloat32:
+      return std::isfinite(value) ? static_cast<int8_t>(std::clamp(value * 100.0, -128.0, 127.0))
+                                  : static_cast<int8_t>(-1);
+    default:
+      return std::isfinite(value) ? static_cast<int8_t>(std::clamp(value, -128.0, 127.0)) : static_cast<int8_t>(-1);
+  }
+}
+
+bool decode_zerocopy_occupancy_grid(const vlink::Bytes& raw, Layer& out) {
+  vlink::zerocopy::MessageParser parser;
+
+  if VUNLIKELY (!parser.parse(vlink::zerocopy::MessageParser::Type::kOccupancyGrid, raw)) {
     return false;
   }
 
   out.type = RenderType::kOccupancyGrid;
 
   Grid& grid = out.grid;
-  grid.width = occupancy_grid.width();
-  grid.height = occupancy_grid.height();
-  grid.resolution = occupancy_grid.resolution();
-  grid.origin_x = occupancy_grid.origin_x();
-  grid.origin_y = occupancy_grid.origin_y();
-  grid.origin_z = occupancy_grid.origin_z();
+  double value = 0.0;
+  parser.numeric("width", value);
+  grid.width = static_cast<uint32_t>(value);
+  parser.numeric("height", value);
+  grid.height = static_cast<uint32_t>(value);
+  parser.numeric("resolution", grid.resolution);
+  parser.numeric("origin_x", grid.origin_x);
+  parser.numeric("origin_y", grid.origin_y);
+  parser.numeric("origin_z", grid.origin_z);
 
-  const auto cell_size = std::max<uint8_t>(occupancy_grid.cell_size(), 1);
-  const auto expected_cells = static_cast<size_t>(grid.width) * static_cast<size_t>(grid.height);
-  const auto available_cells = occupancy_grid.size() / cell_size;
-  const auto cell_count = expected_cells > 0 ? std::min(expected_cells, available_cells) : 0;
-  const auto* data = occupancy_grid.data();
+  const size_t cell_count = parser.collection_size("cells");
+  parser.numeric("cell_type", value);
+  const auto cell_type = static_cast<uint8_t>(value);
 
   grid.cells.clear();
   grid.cells.reserve(cell_count);
 
   for (size_t i = 0; i < cell_count; ++i) {
-    if (occupancy_grid.cell_type() == vlink::zerocopy::OccupancyGrid::kCellFloat32 && cell_size >= sizeof(float)) {
-      float value = 0;
-      std::memcpy(&value, data + i * cell_size, sizeof(float));
-      grid.cells.push_back(std::isfinite(value) ? static_cast<int8_t>(std::clamp(value * 100.0f, -128.0f, 127.0f))
-                                                : static_cast<int8_t>(-1));
-    } else if (occupancy_grid.cell_type() == vlink::zerocopy::OccupancyGrid::kCellUint16 &&
-               cell_size >= sizeof(uint16_t)) {
-      uint16_t value = 0;
-      std::memcpy(&value, data + i * cell_size, sizeof(uint16_t));
-      grid.cells.push_back(static_cast<int8_t>(std::min<uint16_t>(value, 127)));
-    } else {
-      grid.cells.push_back(static_cast<int8_t>(data[i * cell_size]));
+    if VUNLIKELY (!parser.numeric("cells", i, "value", value)) {
+      continue;
     }
+
+    grid.cells.push_back(occupancy_cell_to_int8(cell_type, value));
   }
 
   out.grid_valid = !grid.cells.empty();
@@ -176,6 +193,23 @@ bool decode_zerocopy_point_cloud(const vlink::Bytes& raw, Layer& out) {
   }
 
   return !out.cloud.empty();
+}
+
+bool decode_zerocopy_mapping(const vlink::Bytes& raw, const std::string& ser, const PerceptionConfig::MappingRule& rule,
+                             Layer& out) {
+  return mapping::decode_zerocopy(raw, ser, rule, out);
+}
+
+bool decode_hud_zerocopy(const vlink::Bytes& raw, const std::string& ser, const PerceptionConfig::MappingRule& rule,
+                         std::vector<HudField>& out) {
+  return mapping::decode_hud_zerocopy(raw, ser, rule, out);
+}
+
+bool decode_zerocopy_batch(const vlink::Bytes& raw, const std::string& ser,
+                           const std::vector<PerceptionConfig::MappingRule>& mappings,
+                           const std::vector<PerceptionConfig::MappingRule>& hud_bindings, std::vector<Layer>& layers,
+                           std::vector<std::vector<HudField>>& hud_fields) {
+  return mapping::decode_zerocopy_batch(raw, ser, mappings, hud_bindings, layers, hud_fields);
 }
 
 void decode_proto(const google::protobuf::Message& root, const PerceptionConfig::MappingRule& rule, Layer& out) {

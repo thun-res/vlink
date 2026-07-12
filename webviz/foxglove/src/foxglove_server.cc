@@ -21,7 +21,7 @@
  * limitations under the License.
  */
 
-#include "foxglove_server.h"
+#include "./foxglove_server.h"
 
 //
 #include <vlink/base/elapsed_timer.h>
@@ -45,10 +45,10 @@
 
 //
 #include "../../webviz_loader_utils.h"
-#include "foxglove_protocol.h"
-#include "webviz_app_utils.h"
-#include "webviz_bridge_utils.h"
-#include "webviz_time_utils.h"
+#include "./foxglove_protocol.h"
+#include "./webviz_app_utils.h"
+#include "./webviz_bridge_utils.h"
+#include "./webviz_time_utils.h"
 
 namespace vlink {
 namespace webviz {

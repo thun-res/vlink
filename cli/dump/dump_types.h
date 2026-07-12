@@ -25,8 +25,10 @@
 
 #include <vlink/vlink.h>
 
+#include <atomic>
 #include <cstdint>
 #include <iomanip>
+#include <iostream>
 #include <ostream>
 #include <sstream>
 #include <string>
@@ -87,6 +89,18 @@ inline std::string variant_to_string(const VariantType& v) {
 }
 
 inline bool variant_to_double(const VariantType& v, double& out) {
+  static std::atomic_bool warned_integer_precision{false};
+  const bool signed_precision_loss = std::holds_alternative<int64_t>(v) && (std::get<int64_t>(v) > 9007199254740992LL ||
+                                                                            std::get<int64_t>(v) < -9007199254740992LL);
+  const bool unsigned_precision_loss =
+      std::holds_alternative<uint64_t>(v) && std::get<uint64_t>(v) > 9007199254740992ULL;
+
+  if VUNLIKELY ((signed_precision_loss || unsigned_precision_loss) &&
+                !warned_integer_precision.exchange(true, std::memory_order_relaxed)) {
+    std::cerr << "Warning: expression input exceeds the exact integer range of ExprTk double values (2^53)."
+              << std::endl;
+  }
+
   if (std::holds_alternative<int64_t>(v)) {
     out = static_cast<double>(std::get<int64_t>(v));
     return true;

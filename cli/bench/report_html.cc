@@ -2953,23 +2953,24 @@ inline std::string build_metric_heatmap_block(const std::vector<AggregatedCase>&
     return endpoint_score_sum[endpoint] / static_cast<double>(count_iter->second);
   };
 
-  std::sort(endpoints.begin(), endpoints.end(), [&](const std::string& a, const std::string& b) {
-    const double sa = endpoint_avg_score(a);
-    const double sb = endpoint_avg_score(b);
+  std::sort(endpoints.begin(), endpoints.end(),
+            [&endpoint_avg_score, &endpoint_layer, &endpoint_label](const std::string& a, const std::string& b) {
+              const double sa = endpoint_avg_score(a);
+              const double sb = endpoint_avg_score(b);
 
-    if (std::fabs(sa - sb) > 0.001) {
-      return sa > sb;
-    }
+              if (std::fabs(sa - sb) > 0.001) {
+                return sa > sb;
+              }
 
-    const int la = static_cast<int>(endpoint_layer[a]);
-    const int lb = static_cast<int>(endpoint_layer[b]);
+              const int la = static_cast<int>(endpoint_layer[a]);
+              const int lb = static_cast<int>(endpoint_layer[b]);
 
-    if (la != lb) {
-      return la < lb;
-    }
+              if (la != lb) {
+                return la < lb;
+              }
 
-    return endpoint_label[a] < endpoint_label[b];
-  });
+              return endpoint_label[a] < endpoint_label[b];
+            });
 
   std::string out;
   out.reserve(2048);

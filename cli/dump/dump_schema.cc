@@ -21,7 +21,7 @@
  * limitations under the License.
  */
 
-#include "dump_schema.h"
+#include "./dump_schema.h"
 
 #ifdef VLINK_HAS_PROTOBUF_COMPILER
 

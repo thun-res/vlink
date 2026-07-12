@@ -492,7 +492,7 @@ vlink-dump dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /tm
 
 输出类型语义：`console` 在终端打印消息内容；`csv` / `json` 输出选定字段；`bin` 将每条消息的原始字节存为独立文件；`jpg` / `h264` / `h265` / `raw` 适用于 CameraFrame 或含 bytes 字段的消息；`pcd` 将零拷贝 PointCloud 每帧存为 PCD 文件。`slice` / `scan` 为离线 bag 的高级用法（按窗口/事件切片、按事件或质量扫描），参数较多，详见 `vlink-dump --help`。
 
-字段路径写法：Protobuf 使用点路径（`header.seq`、`status.velocity.x`）；零拷贝类型使用其内置字段名（如 CameraFrame 的 `width` / `height` / `data`，PointCloud 的 `size` / `data[N].field`），完整清单见 [零拷贝](06-zerocopy.md)。
+字段路径写法：Protobuf 使用点路径（`header.seq`、`status.velocity.x`）；八种零拷贝类型统一经 `MessageParser` 读取，根字段使用 `header.seq`、`width` 等点路径，集合使用 `data[N].field`、`shape[N].value` 或 `strides[N].value`。完整清单与边界规则见 [零拷贝](06-zerocopy.md)。整数在字段导出时保持原始 64 位值；只有送入 ExprTk 表达式、必须转换为 `double` 时，工具才会对超出精确表示范围的整数给出精度提示。
 
 ```bash
 vlink-dump dds://sensor/imu -t csv -c "header.seq" -o /tmp/ -d /home/protos/

@@ -7,8 +7,10 @@ Usage:
     LD_LIBRARY_PATH=. python3 ../../../python_api/test_vlink.py
 """
 
+import gc
 import os
 import struct
+import sys
 import threading
 import time
 
@@ -626,6 +628,73 @@ def test_zerocopy_object_array():
     print("[PASS] ObjectArray")
 
 
+def test_zerocopy_message_parser():
+    """Test unified zero-copy metadata and indexed-field parsing."""
+    arr = _vlink.ObjectArray()
+    arr.header.frame_id = "fusion_map"
+    arr.header.time_meas = (1 << 53) + 17
+    assert arr.create(1)
+
+    obj = _vlink.ObjectArray.Object()
+    obj.label = "pedestrian"
+    obj.position = [1.25, -2.5, 0.75]
+    obj.track_id = 42
+    assert arr.push_value(obj)
+
+    wire = arr.to_bytes()
+    replacement_wire = arr.to_bytes()
+    parser = _vlink.ZeroCopyMessageParser()
+    parser_type = _vlink.ZeroCopyMessageParser.Type.ObjectArray
+
+    wire_refcount = sys.getrefcount(wire)
+    replacement_refcount = sys.getrefcount(replacement_wire)
+
+    assert parser.parse_type(parser_type, wire)
+    assert sys.getrefcount(wire) == wire_refcount + 1
+    assert parser.valid
+    assert parser.type == parser_type
+    assert parser.value("header.frame_id") == "fusion_map"
+    assert parser.value("header.time_meas") == (1 << 53) + 17
+    assert parser.collection_size("data") == 1
+    assert parser.value_at("data", 0, "label") == "pedestrian"
+    assert abs(parser.value_at("data", 0, "position_x") - 1.25) < 1e-9
+    assert parser.value_at("data", 0, "track_id") == 42
+    assert parser.value_at("data", 1, "label") is None
+    assert parser.value("missing") is None
+
+    fields = {field.name: field for field in parser.fields()}
+    element_fields = {field.name: field for field in parser.element_fields("data")}
+    assert "header.frame_id" in fields
+    assert fields["header.time_meas"].is_time
+    assert not fields["header.time_meas"].is_bool
+    assert fields["header.time_meas"].enum_kind == _vlink.ZeroCopyMessageParser.EnumKind.NoEnum
+    assert "track_id" in element_fields
+    assert hasattr(element_fields["track_id"], "storage_size")
+    assert hasattr(element_fields["track_id"], "byte_offset")
+    assert hasattr(element_fields["track_id"], "element_index")
+
+    wire.clear()
+    assert not parser.valid
+    assert parser.type == _vlink.ZeroCopyMessageParser.Type.Unknown
+    assert parser.value("header.frame_id") is None
+
+    assert parser.parse_type(parser_type, replacement_wire)
+    gc.collect()
+    assert sys.getrefcount(wire) == wire_refcount
+    assert sys.getrefcount(replacement_wire) == replacement_refcount + 1
+
+    detected = _vlink.ZeroCopyMessageParser.detect_type("vlink::zerocopy::ObjectArray")
+    assert detected == parser_type
+    assert _vlink.ZeroCopyMessageParser.type_name(detected) == "ObjectArray"
+
+    parser.clear()
+    gc.collect()
+    assert not parser.valid
+    assert sys.getrefcount(replacement_wire) == replacement_refcount
+
+    print("[PASS] ZeroCopyMessageParser")
+
+
 def test_zerocopy_audio_frame():
     """Test AudioFrame create + serialise round-trip."""
     af = _vlink.AudioFrame()
@@ -680,6 +749,7 @@ if __name__ == "__main__":
     test_zerocopy_occupancy_grid()
     test_zerocopy_tensor()
     test_zerocopy_object_array()
+    test_zerocopy_message_parser()
     test_zerocopy_audio_frame()
 
     print("=" * 50)

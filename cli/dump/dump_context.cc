@@ -21,7 +21,7 @@
  * limitations under the License.
  */
 
-#include "dump_context.h"
+#include "./dump_context.h"
 
 #include <vlink/extension/bag_plugin_interface.h>
 

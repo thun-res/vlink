@@ -53,7 +53,7 @@ struct ObjectData {
   double velocity[3]{0};
   double score{0};
   uint32_t class_id{0};
-  uint32_t track_id{0};
+  uint64_t track_id{0};
   uint32_t color{0};
   std::string label;
 };

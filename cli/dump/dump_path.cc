@@ -21,7 +21,7 @@
  * limitations under the License.
  */
 
-#include "dump_path.h"
+#include "./dump_path.h"
 
 #include <vlink/base/helpers.h>
 #include <vlink/base/utils.h>

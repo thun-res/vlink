@@ -40,9 +40,9 @@
 #include <string>
 #include <unordered_map>
 
-#include "rerun_converter.h"
-#include "webviz_app_utils.h"
-#include "webviz_time_utils.h"
+#include "./rerun_converter.h"
+#include "./webviz_app_utils.h"
+#include "./webviz_time_utils.h"
 
 int main(int argc, char* argv[]) {
   vlink::Utils::set_console_utf8_output();

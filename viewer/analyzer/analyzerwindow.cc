@@ -26,13 +26,8 @@
 #include "./analyzerwindow.h"
 
 #include <vlink/base/helpers.h>
-#include <vlink/zerocopy/audio_frame.h>
-#include <vlink/zerocopy/camera_frame.h>
-#include <vlink/zerocopy/object_array.h>
-#include <vlink/zerocopy/occupancy_grid.h>
-#include <vlink/zerocopy/point_cloud.h>
-#include <vlink/zerocopy/raw_data.h>
-#include <vlink/zerocopy/tensor.h>
+#include <vlink/base/logger.h>
+#include <vlink/zerocopy/message_parser.h>
 
 #include <QCloseEvent>
 #include <QDragEnterEvent>
@@ -50,8 +45,11 @@
 #include <QStandardPaths>
 #include <QTimer>
 #include <algorithm>
+#include <atomic>
+#include <bit>
 #include <cctype>
 #include <charconv>
+#include <cstring>
 #include <fstream>
 #include <nlohmann/json.hpp>
 
@@ -67,41 +65,6 @@
 
 QString global_proto_dir_config = QStandardPaths::writableLocation(QStandardPaths::HomeLocation) + "/.vlink_proto_dir";
 QString global_fbs_dir_config = QStandardPaths::writableLocation(QStandardPaths::HomeLocation) + "/.vlink_fbs_dir";
-
-[[maybe_unused]] static int parse_array_index(const std::string& expression, std::string& field_out) {
-  field_out.clear();
-
-  size_t pos_left = expression.find('[');
-  size_t pos_right = expression.find(']');
-
-  if (pos_left == std::string::npos || pos_right == std::string::npos) {
-    return -1;
-  }
-
-  if (pos_right <= pos_left + 1) {
-    return -1;
-  }
-
-  std::string num_str = expression.substr(pos_left + 1, pos_right - pos_left - 1);
-  int index = -1;
-  auto result = std::from_chars(num_str.data(), num_str.data() + num_str.size(), index);
-
-  if (result.ec != std::errc{} || result.ptr != num_str.data() + num_str.size()) {
-    return -1;
-  }
-
-  if (pos_right + 1 == expression.size()) {
-    return index;
-  }
-
-  if (expression[pos_right + 1] != '.') {
-    return -1;
-  }
-
-  field_out = expression.substr(pos_right + 2);
-
-  return index;
-}
 
 [[maybe_unused]] static int parse_sub_index(const std::string& field, std::string& base_out) {
   base_out.clear();
@@ -1715,6 +1678,9 @@ bool AnalyzerWindow::load_bag(const QString& path) {
         }
 
         std::unordered_map<std::string, std::optional<double>> pvalue_map;
+        vlink::zerocopy::MessageParser zerocopy_parser;
+        bool zerocopy_parse_attempted = false;
+        bool zerocopy_parse_succeeded = false;
 
         for (size_t i = 0; i < unit.expressions.size(); ++i) {
           const auto& expression = unit.expressions[i];
@@ -1729,385 +1695,26 @@ bool AnalyzerWindow::load_bag(const QString& path) {
               ser);
 
           if (schema_type == vlink::SchemaType::kZeroCopy) {
-            if (ser.find("RawData") != std::string::npos) {
-              vlink::zerocopy::RawData raw_frame;
+            if (!zerocopy_parse_attempted) {
+              zerocopy_parse_attempted = true;
+              zerocopy_parse_succeeded = zerocopy_parser.parse(ser, raw_data);
+            }
 
-              if VUNLIKELY (!vlink::Serializer::convert(raw_data, raw_frame)) {
-                continue;
+            if VUNLIKELY (!zerocopy_parse_succeeded) {
+              continue;
+            }
+
+            double value = 0.0;
+            bool precision_loss = false;
+
+            if (zerocopy_parser.numeric(expression, value, &precision_loss)) {
+              static std::atomic_bool warned_integer_precision{false};
+
+              if VUNLIKELY (precision_loss && !warned_integer_precision.exchange(true, std::memory_order_relaxed)) {
+                MLOG_W("Analyzer expression input exceeds the exact integer range of ExprTk double values (2^53)");
               }
 
-              if (expression == "header.seq") {
-                pvalue.emplace(raw_frame.header.seq);
-              } else if (expression == "header.time_meas") {
-                pvalue.emplace(raw_frame.header.time_meas);
-              } else if (expression == "header.time_pub") {
-                pvalue.emplace(raw_frame.header.time_pub);
-              } else if (expression == "header.reserved") {
-                pvalue.emplace(raw_frame.header.reserved);
-              } else if (expression == "size") {
-                pvalue.emplace(raw_frame.size());
-              } else if (expression == "reserved") {
-                pvalue.emplace(raw_frame.get_reserved());
-              }
-            } else if (ser.find("CameraFrame") != std::string::npos) {
-              vlink::zerocopy::CameraFrame camera_frame;
-
-              if VUNLIKELY (!vlink::Serializer::convert(raw_data, camera_frame)) {
-                continue;
-              }
-
-              if (expression == "header.seq") {
-                pvalue.emplace(camera_frame.header.seq);
-              } else if (expression == "header.time_meas") {
-                pvalue.emplace(camera_frame.header.time_meas);
-              } else if (expression == "header.time_pub") {
-                pvalue.emplace(camera_frame.header.time_pub);
-              } else if (expression == "header.reserved") {
-                pvalue.emplace(camera_frame.header.reserved);
-              } else if (expression == "channel") {
-                pvalue.emplace(camera_frame.channel());
-              } else if (expression == "width") {
-                pvalue.emplace(camera_frame.width());
-              } else if (expression == "height") {
-                pvalue.emplace(camera_frame.height());
-              } else if (expression == "freq") {
-                pvalue.emplace(camera_frame.freq());
-              } else if (expression == "format") {
-                pvalue.emplace(static_cast<int>(camera_frame.format()));
-              } else if (expression == "stream") {
-                pvalue.emplace(static_cast<int>(camera_frame.stream()));
-              } else if (expression == "size") {
-                pvalue.emplace(camera_frame.size());
-              }
-            } else if (ser.find("PointCloud") != std::string::npos) {
-              vlink::zerocopy::PointCloud point_cloud;
-
-              if VUNLIKELY (!vlink::Serializer::convert(raw_data, point_cloud)) {
-                continue;
-              }
-
-              if (expression == "header.seq") {
-                pvalue.emplace(point_cloud.header.seq);
-              } else if (expression == "header.time_meas") {
-                pvalue.emplace(point_cloud.header.time_meas);
-              } else if (expression == "header.time_pub") {
-                pvalue.emplace(point_cloud.header.time_pub);
-              } else if (expression == "header.reserved") {
-                pvalue.emplace(point_cloud.header.reserved);
-              } else if (expression == "size") {
-                pvalue.emplace(point_cloud.size());
-              } else if (expression == "pack_size") {
-                pvalue.emplace(point_cloud.pack_size());
-              } else if (expression == "extent") {
-                pvalue.emplace(point_cloud.get_extent());
-              } else if (expression == "downsample") {
-                pvalue.emplace(point_cloud.get_downsample());
-              } else if (expression == "vertical") {
-                pvalue.emplace(point_cloud.get_vertical());
-              } else if (expression == "get_reserved_size") {
-                pvalue.emplace(point_cloud.get_reserved_size());
-              } else if (vlink::Helpers::has_startwith(expression, "data")) {
-                std::string value_str;
-                int array_pos = parse_array_index(expression, value_str);
-
-                if (array_pos < 0 || static_cast<size_t>(array_pos) >= point_cloud.size()) {
-                  continue;
-                }
-
-                vlink::zerocopy::PointCloud::KeyList key_list;
-                auto key_map = point_cloud.get_key_map(&key_list);
-
-                bool has_compressed_xyz = (point_cloud.get_extent() != 0);
-
-                for (size_t key_index = 0; key_index < key_list.size(); ++key_index) {
-                  const auto& key = key_list[key_index];
-
-                  if (key.name == value_str) {
-                    if (has_compressed_xyz && key_index < 3) {
-                      vlink::zerocopy::PointCloud::Vector3f v3f;
-                      point_cloud.get_value_v3f(v3f, array_pos);
-
-                      if (key_index == 0) {
-                        pvalue.emplace(v3f.x);
-                      } else if (key_index == 1) {
-                        pvalue.emplace(v3f.y);
-                      } else {
-                        pvalue.emplace(v3f.z);
-                      }
-                    } else if (key.type == vlink::zerocopy::PointCloud::kUnknownType) {
-                      if (key.size == 1) {
-                        pvalue.emplace(point_cloud.get_value<uint8_t>(array_pos, key_map, key.name));
-                      } else if (key.size == 2) {
-                        pvalue.emplace(point_cloud.get_value<int32_t>(array_pos, key_map, key.name));
-                      } else if (key.size == 4) {
-                        pvalue.emplace(point_cloud.get_value<float>(array_pos, key_map, key.name));
-                      } else {
-                        pvalue.emplace(point_cloud.get_value<double>(array_pos, key_map, key.name));
-                      }
-                    } else {
-                      pvalue.emplace(point_cloud.get_value_for_double_float(array_pos, key_map, key.name, key.type));
-                    }
-
-                    break;
-                  }
-                }
-              }
-            } else if (ser.find("OccupancyGrid") != std::string::npos) {
-              vlink::zerocopy::OccupancyGrid occupancy_grid;
-
-              if VUNLIKELY (!vlink::Serializer::convert(raw_data, occupancy_grid)) {
-                continue;
-              }
-
-              if (expression == "header.seq") {
-                pvalue.emplace(occupancy_grid.header.seq);
-              } else if (expression == "header.time_meas") {
-                pvalue.emplace(occupancy_grid.header.time_meas);
-              } else if (expression == "header.time_pub") {
-                pvalue.emplace(occupancy_grid.header.time_pub);
-              } else if (expression == "header.reserved") {
-                pvalue.emplace(occupancy_grid.header.reserved);
-              } else if (expression == "width") {
-                pvalue.emplace(occupancy_grid.width());
-              } else if (expression == "height") {
-                pvalue.emplace(occupancy_grid.height());
-              } else if (expression == "resolution") {
-                pvalue.emplace(occupancy_grid.resolution());
-              } else if (expression == "channel") {
-                pvalue.emplace(occupancy_grid.channel());
-              } else if (expression == "freq") {
-                pvalue.emplace(occupancy_grid.freq());
-              } else if (expression == "size") {
-                pvalue.emplace(occupancy_grid.size());
-              } else if (expression == "update_time_ns") {
-                pvalue.emplace(occupancy_grid.update_time_ns());
-              } else if (expression == "valid_cell_count") {
-                pvalue.emplace(occupancy_grid.valid_cell_count());
-              } else if (expression == "origin_x") {
-                pvalue.emplace(occupancy_grid.origin_x());
-              } else if (expression == "origin_y") {
-                pvalue.emplace(occupancy_grid.origin_y());
-              } else if (expression == "origin_z") {
-                pvalue.emplace(occupancy_grid.origin_z());
-              } else if (expression == "origin_yaw") {
-                pvalue.emplace(occupancy_grid.origin_yaw());
-              } else if (expression == "default_value") {
-                pvalue.emplace(occupancy_grid.default_value());
-              } else if (expression == "value_min") {
-                pvalue.emplace(occupancy_grid.value_min());
-              } else if (expression == "value_max") {
-                pvalue.emplace(occupancy_grid.value_max());
-              } else if (expression == "occupied_threshold") {
-                pvalue.emplace(occupancy_grid.occupied_threshold());
-              } else if (expression == "free_threshold") {
-                pvalue.emplace(occupancy_grid.free_threshold());
-              } else if (expression == "cell_type") {
-                pvalue.emplace(static_cast<int>(occupancy_grid.cell_type()));
-              } else if (expression == "cell_size") {
-                pvalue.emplace(occupancy_grid.cell_size());
-              }
-            } else if (ser.find("Tensor") != std::string::npos) {
-              vlink::zerocopy::Tensor tensor;
-
-              if VUNLIKELY (!vlink::Serializer::convert(raw_data, tensor)) {
-                continue;
-              }
-
-              if (expression == "header.seq") {
-                pvalue.emplace(tensor.header.seq);
-              } else if (expression == "header.time_meas") {
-                pvalue.emplace(tensor.header.time_meas);
-              } else if (expression == "header.time_pub") {
-                pvalue.emplace(tensor.header.time_pub);
-              } else if (expression == "header.reserved") {
-                pvalue.emplace(tensor.header.reserved);
-              } else if (expression == "rank") {
-                pvalue.emplace(tensor.rank());
-              } else if (expression == "num_elements") {
-                pvalue.emplace(tensor.num_elements());
-              } else if (expression == "element_size") {
-                pvalue.emplace(tensor.element_size());
-              } else if (expression == "batch_size") {
-                pvalue.emplace(tensor.batch_size());
-              } else if (expression == "channel") {
-                pvalue.emplace(tensor.channel());
-              } else if (expression == "freq") {
-                pvalue.emplace(tensor.freq());
-              } else if (expression == "size") {
-                pvalue.emplace(tensor.size());
-              } else if (expression == "update_time_ns") {
-                pvalue.emplace(tensor.update_time_ns());
-              } else if (expression == "dtype") {
-                pvalue.emplace(static_cast<int>(tensor.dtype()));
-              } else if (expression == "device") {
-                pvalue.emplace(static_cast<int>(tensor.device()));
-              } else if (expression == "quant_scale") {
-                pvalue.emplace(tensor.quant_scale());
-              } else if (expression == "quant_zero_point") {
-                pvalue.emplace(tensor.quant_zero_point());
-              } else if (vlink::Helpers::has_startwith(expression, "shape")) {
-                std::string tail;
-                int dim_pos = parse_array_index(expression, tail);
-
-                if (dim_pos < 0 || dim_pos >= static_cast<int>(tensor.rank())) {
-                  continue;
-                }
-
-                pvalue.emplace(tensor.shape_at(static_cast<uint8_t>(dim_pos)));
-              } else if (vlink::Helpers::has_startwith(expression, "strides")) {
-                std::string tail;
-                int dim_pos = parse_array_index(expression, tail);
-
-                if (dim_pos < 0 || dim_pos >= static_cast<int>(tensor.rank())) {
-                  continue;
-                }
-
-                pvalue.emplace(tensor.stride_at(static_cast<uint8_t>(dim_pos)));
-              }
-            } else if (ser.find("ObjectArray") != std::string::npos) {
-              vlink::zerocopy::ObjectArray object_array;
-
-              if VUNLIKELY (!vlink::Serializer::convert(raw_data, object_array)) {
-                continue;
-              }
-
-              if (expression == "header.seq") {
-                pvalue.emplace(object_array.header.seq);
-              } else if (expression == "header.time_meas") {
-                pvalue.emplace(object_array.header.time_meas);
-              } else if (expression == "header.time_pub") {
-                pvalue.emplace(object_array.header.time_pub);
-              } else if (expression == "header.reserved") {
-                pvalue.emplace(object_array.header.reserved);
-              } else if (expression == "count") {
-                pvalue.emplace(object_array.count());
-              } else if (expression == "pack_size") {
-                pvalue.emplace(object_array.pack_size());
-              } else if (expression == "channel") {
-                pvalue.emplace(object_array.channel());
-              } else if (expression == "freq") {
-                pvalue.emplace(object_array.freq());
-              } else if (expression == "update_time_ns") {
-                pvalue.emplace(object_array.update_time_ns());
-              } else if (vlink::Helpers::has_startwith(expression, "data")) {
-                std::string field_str;
-                int array_pos = parse_array_index(expression, field_str);
-
-                if (array_pos < 0 || static_cast<uint32_t>(array_pos) >= object_array.count()) {
-                  continue;
-                }
-
-                const auto* object_ptr = object_array.objects(static_cast<uint32_t>(array_pos));
-
-                if (object_ptr == nullptr) {
-                  continue;
-                }
-
-                std::string base_field;
-                int sub_index = parse_sub_index(field_str, base_field);
-
-                if (sub_index >= 0) {
-                  if (base_field == "position" && sub_index >= 0 && sub_index < 3) {
-                    pvalue.emplace(object_ptr->position[sub_index]);
-                  } else if (base_field == "size" && sub_index >= 0 && sub_index < 3) {
-                    pvalue.emplace(object_ptr->size[sub_index]);
-                  } else if (base_field == "velocity" && sub_index >= 0 && sub_index < 3) {
-                    pvalue.emplace(object_ptr->velocity[sub_index]);
-                  } else if (base_field == "acceleration" && sub_index >= 0 && sub_index < 3) {
-                    pvalue.emplace(object_ptr->acceleration[sub_index]);
-                  } else if (base_field == "position_covariance" && sub_index >= 0 && sub_index < 6) {
-                    pvalue.emplace(object_ptr->position_covariance[sub_index]);
-                  }
-                } else {
-                  if (field_str == "yaw") {
-                    pvalue.emplace(object_ptr->yaw);
-                  } else if (field_str == "yaw_rate") {
-                    pvalue.emplace(object_ptr->yaw_rate);
-                  } else if (field_str == "score") {
-                    pvalue.emplace(object_ptr->score);
-                  } else if (field_str == "existence_probability") {
-                    pvalue.emplace(object_ptr->existence_probability);
-                  } else if (field_str == "class_id") {
-                    pvalue.emplace(object_ptr->class_id);
-                  } else if (field_str == "track_id") {
-                    pvalue.emplace(object_ptr->track_id);
-                  } else if (field_str == "age") {
-                    pvalue.emplace(object_ptr->age);
-                  } else if (field_str == "num_observations") {
-                    pvalue.emplace(object_ptr->num_observations);
-                  } else if (field_str == "motion_state") {
-                    pvalue.emplace(static_cast<int>(object_ptr->motion_state));
-                  } else if (field_str == "source_type") {
-                    pvalue.emplace(static_cast<int>(object_ptr->source_type));
-                  } else if (field_str == "subtype_id") {
-                    pvalue.emplace(object_ptr->subtype_id);
-                  } else if (field_str == "position_x") {
-                    pvalue.emplace(object_ptr->position[0]);
-                  } else if (field_str == "position_y") {
-                    pvalue.emplace(object_ptr->position[1]);
-                  } else if (field_str == "position_z") {
-                    pvalue.emplace(object_ptr->position[2]);
-                  } else if (field_str == "size_x") {
-                    pvalue.emplace(object_ptr->size[0]);
-                  } else if (field_str == "size_y") {
-                    pvalue.emplace(object_ptr->size[1]);
-                  } else if (field_str == "size_z") {
-                    pvalue.emplace(object_ptr->size[2]);
-                  } else if (field_str == "velocity_x") {
-                    pvalue.emplace(object_ptr->velocity[0]);
-                  } else if (field_str == "velocity_y") {
-                    pvalue.emplace(object_ptr->velocity[1]);
-                  } else if (field_str == "velocity_z") {
-                    pvalue.emplace(object_ptr->velocity[2]);
-                  } else if (field_str == "acceleration_x") {
-                    pvalue.emplace(object_ptr->acceleration[0]);
-                  } else if (field_str == "acceleration_y") {
-                    pvalue.emplace(object_ptr->acceleration[1]);
-                  } else if (field_str == "acceleration_z") {
-                    pvalue.emplace(object_ptr->acceleration[2]);
-                  }
-                }
-              }
-            } else if (ser.find("AudioFrame") != std::string::npos) {
-              vlink::zerocopy::AudioFrame audio_frame;
-
-              if VUNLIKELY (!vlink::Serializer::convert(raw_data, audio_frame)) {
-                continue;
-              }
-
-              if (expression == "header.seq") {
-                pvalue.emplace(audio_frame.header.seq);
-              } else if (expression == "header.time_meas") {
-                pvalue.emplace(audio_frame.header.time_meas);
-              } else if (expression == "header.time_pub") {
-                pvalue.emplace(audio_frame.header.time_pub);
-              } else if (expression == "header.reserved") {
-                pvalue.emplace(audio_frame.header.reserved);
-              } else if (expression == "sample_rate") {
-                pvalue.emplace(audio_frame.sample_rate());
-              } else if (expression == "num_samples") {
-                pvalue.emplace(audio_frame.num_samples());
-              } else if (expression == "num_channels") {
-                pvalue.emplace(audio_frame.num_channels());
-              } else if (expression == "bit_depth") {
-                pvalue.emplace(audio_frame.bit_depth());
-              } else if (expression == "bitrate") {
-                pvalue.emplace(audio_frame.bitrate());
-              } else if (expression == "channel") {
-                pvalue.emplace(audio_frame.channel());
-              } else if (expression == "freq") {
-                pvalue.emplace(audio_frame.freq());
-              } else if (expression == "size") {
-                pvalue.emplace(audio_frame.size());
-              } else if (expression == "duration_ns") {
-                pvalue.emplace(audio_frame.duration_ns());
-              } else if (expression == "update_time_ns") {
-                pvalue.emplace(audio_frame.update_time_ns());
-              } else if (expression == "format") {
-                pvalue.emplace(static_cast<int>(audio_frame.format()));
-              } else if (expression == "layout") {
-                pvalue.emplace(static_cast<int>(audio_frame.layout()));
-              }
+              pvalue.emplace(value);
             }
           } else if (schema_type == vlink::SchemaType::kProtobuf) {
             if (des_pool_ == nullptr || factory_ == nullptr) {

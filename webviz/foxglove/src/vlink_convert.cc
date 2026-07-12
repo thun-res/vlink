@@ -21,7 +21,7 @@
  * limitations under the License.
  */
 
-#include "vlink_convert.h"
+#include "./vlink_convert.h"
 
 #if defined(__has_include)
 #if __has_include(<google/protobuf/util/json_util.h>)

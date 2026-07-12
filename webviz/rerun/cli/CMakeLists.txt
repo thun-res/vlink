@@ -8,8 +8,9 @@ project(vlink-bag2rrd LANGUAGES CXX)
 add_executable(${PROJECT_NAME} bag2rrd.cc)
 target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/../src ${PROJECT_SOURCE_DIR}/../..)
 target_sources(
-  ${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/../src/rerun_converter.cc
-                          ${PROJECT_SOURCE_DIR}/../src/rerun_converter.h
+  ${PROJECT_NAME}
+  PRIVATE ${PROJECT_SOURCE_DIR}/../src/rerun_converter.cc ${PROJECT_SOURCE_DIR}/../src/rerun_converter.h
+          ${PROJECT_SOURCE_DIR}/../../zerocopy_message.cc ${PROJECT_SOURCE_DIR}/../../zerocopy_message.h
 )
 target_link_libraries(
   ${PROJECT_NAME}

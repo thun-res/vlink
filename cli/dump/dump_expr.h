@@ -23,7 +23,7 @@
 
 #pragma once
 
-#include "dump_features.h"
+#include "./dump_features.h"
 
 #ifdef VLINK_ENABLE_EXPRTK
 
@@ -31,7 +31,7 @@
 #include <string>
 #include <vector>
 
-#include "dump_types.h"
+#include "./dump_types.h"
 
 #ifdef _WIN32
 #undef min

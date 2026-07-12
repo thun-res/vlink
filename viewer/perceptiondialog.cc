@@ -123,11 +123,6 @@ class CustomCheckBox : public QCheckBox {
   void keyReleaseEvent(QKeyEvent* event) override { event->ignore(); }
 };
 
-static bool perception_dispatch_expired(uint64_t dispatch_start_ms) {
-  const auto now_ms = vlink::ElapsedTimer::get_cpu_timestamp(vlink::ElapsedTimer::kMilli);
-  return now_ms > dispatch_start_ms && now_ms - dispatch_start_ms > 1000;
-}
-
 #ifdef VLINK_ENABLE_VIEWER_OSG
 
 static osg::Vec4d perception_value_color(double value, double min_value, double max_value) {
@@ -557,15 +552,34 @@ void PerceptionDialog::render_url(const QString& url) {
     context = &ctx_iter->second;
   }
 
-  const auto dispatch_start_ms =
-      static_cast<uint64_t>(vlink::ElapsedTimer::get_cpu_timestamp(vlink::ElapsedTimer::kMilli));
-
-  if (perception_dispatch_expired(dispatch_start_ms)) {
-    return;
-  }
-
 #ifdef VLINK_ENABLE_VIEWER_OSG
   if (context->schema == vlink::SchemaType::kZeroCopy) {
+    if (!context->mappings.empty() || !context->hud_bindings.empty()) {
+      std::vector<perception::Layer> layers;
+      std::vector<std::vector<perception::HudField>> hud_fields;
+
+      if (!perception::decode::decode_zerocopy_batch(proxy_data.raw, proxy_data.ser, context->mappings,
+                                                     context->hud_bindings, layers, hud_fields)) {
+        return;
+      }
+
+      for (size_t i = 0; i < layers.size(); ++i) {
+        render_layer(url_str + "#" + std::to_string(i), url_str, layers[i]);
+      }
+
+      for (auto& fields : hud_fields) {
+        for (auto& field : fields) {
+          hud_values_[field.slot] = std::move(field);
+        }
+      }
+
+      if (!context->hud_bindings.empty()) {
+        update_hud_overlay();
+      }
+
+      return;
+    }
+
     perception::Layer layer;
     layer.type = context->type;
 
@@ -1201,7 +1215,7 @@ void PerceptionDialog::update_hud_overlay() {
   static const QFontMetricsF title_metrics(title_font);
 
   qreal label_w = 0;
-  qreal value_w = 0;
+  qreal value_w = value_metrics.horizontalAdvance(QStringLiteral("-0000.00"));
   qreal unit_w = 0;
 
   for (const auto& row : rows) {

@@ -37,7 +37,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "webviz_types.h"
+#include "./webviz_types.h"
 
 namespace vlink {
 namespace webviz {

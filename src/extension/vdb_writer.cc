@@ -1577,7 +1577,7 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
   auto total_url_iter_ret = impl_->total_url_map.try_emplace(url, Impl::UrlMsgInfo());
   auto url_iter_ret = impl_->url_map.try_emplace(url, Impl::UrlMsgInfo());
 
-  auto discard_new_url_entries = [&]() {
+  auto discard_new_url_entries = [this, &url_iter_ret, &total_url_iter_ret]() {
     if (url_iter_ret.second) {
       impl_->url_map.erase(url_iter_ret.first);
     }

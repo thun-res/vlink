@@ -1,15 +1,9 @@
 {
-  "//": "Example perception config for the VLink viewer PerceptionDialog.",
-  "//inherit_default": "Keep the built-in render-type detection rules (URL/serializer knowledge).",
   "inherit_default": true,
-
-  "//skip": "Topics whose URL/serializer contains these tokens are ignored.",
   "skip": {
     "url_contains": ["/status", "/diagnostic"],
     "ser_contains": ["rawimage", "compressed", "video", "audio"]
   },
-
-  "//mappings": "Each mapping pulls a renderer's semantic fields out of a proto/fbs message. zerocopy ObjectArray/PointCloud/OccupancyGrid need no mapping (fixed wire layout).",
   "mappings": [
     {
       "name": "perception objects (protobuf)",

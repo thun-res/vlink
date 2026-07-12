@@ -39,8 +39,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "proxy_bridge.h"
-#include "vlink_convert.h"
+#include "./proxy_bridge.h"
+#include "./vlink_convert.h"
 
 namespace vlink {
 namespace webviz {

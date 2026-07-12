@@ -38,10 +38,9 @@
 #include <vlink/vlink.h>
 #include <vlink/zerocopy/audio_frame.h>
 #include <vlink/zerocopy/camera_frame.h>
-#include <vlink/zerocopy/object_array.h>
+#include <vlink/zerocopy/message_parser.h>
 #include <vlink/zerocopy/occupancy_grid.h>
 #include <vlink/zerocopy/point_cloud.h>
-#include <vlink/zerocopy/raw_data.h>
 #include <vlink/zerocopy/tensor.h>
 
 #include <algorithm>
@@ -977,370 +976,92 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
            rendered_rate_color != current_rate_color || rendered_frame_rate != current_frame_rate;
   };
 
-  auto update_terminal_function = [&url, &target_ser, &current_bytes, &bytes_mtx, &print_str, &print_list, &line_list,
-                                   &current_str, &current_line, &has_new_data, &is_url_title_with_dot,
-                                   &redraw_url_title, &mark_url_title_rendered, &should_redraw_url_title,
-                                   &discovery_viewer, &parser_loop, &quit_function, &parse_ret, is_text_type,
-                                   is_blob_type, parser]() {
-    auto target_terminal_size = get_terminal_size();
-    bool show_data_dot = has_new_data.exchange(false);
+  auto update_terminal_function =
+      [&url, &target_ser, &current_bytes, &bytes_mtx, &print_str, &print_list, &line_list, &current_str, &current_line,
+       &has_new_data, &is_url_title_with_dot, &redraw_url_title, &mark_url_title_rendered, &should_redraw_url_title,
+       &discovery_viewer, &parser_loop, &quit_function, &parse_ret, is_text_type, is_blob_type, parser]() {
+        auto target_terminal_size = get_terminal_size();
+        bool show_data_dot = has_new_data.exchange(false);
 
-    if VUNLIKELY (terminal_size != target_terminal_size) {
-      terminal_size = target_terminal_size;
-      is_changed = true;
-    }
+        if VUNLIKELY (terminal_size != target_terminal_size) {
+          terminal_size = target_terminal_size;
+          is_changed = true;
+        }
 
-    if VUNLIKELY (terminal_size.first <= 0 || terminal_size.second <= 0) {
-      return;
-    }
-
-    if VUNLIKELY (!has_printed) {
-      if VLIKELY (!force_update) {
-        is_changed = false;
-        return;
-      }
-
-      VLINK_TERM_OUT << "\033[H\033[J";
-
-      if (is_paused) {
-        VLINK_TERM_OUT << "\033[33m"
-                       << "Message Parsed by vlink-efbs (Wait For Message, Paused):"
-                       << "\033[0m" << std::endl;
-      } else {
-        VLINK_TERM_OUT << "Message Parsed by vlink-efbs (Wait For Message)... " << std::endl;
-      }
-
-      VLINK_TERM_OUT << "\033[34;1;4m" << url << "\033[0m" << std::endl;
-      VLINK_TERM_OUT.flush();
-
-      is_changed = false;
-      force_update = false;
-      return;
-    }
-
-    if VLIKELY (!is_changed) {
-      if (!is_paused && should_redraw_url_title(show_data_dot)) {
-        redraw_url_title(show_data_dot, true);
-        mark_url_title_rendered(show_data_dot);
-        VLINK_TERM_OUT.flush();
-      }
-
-      is_url_title_with_dot = false;
-      force_update = false;
-      return;
-    }
-
-    if (is_fbs_type) {
-      {
-        if VUNLIKELY (!parser) {
+        if VUNLIKELY (terminal_size.first <= 0 || terminal_size.second <= 0) {
           return;
         }
 
-        std::lock_guard lock(bytes_mtx);
+        if VUNLIKELY (!has_printed) {
+          if VLIKELY (!force_update) {
+            is_changed = false;
+            return;
+          }
 
-        // if (current_bytes.empty()) {
-        //   force_update = false;
-        //   return;
-        // }
+          VLINK_TERM_OUT << "\033[H\033[J";
 
-        print_str.clear();
+          if (is_paused) {
+            VLINK_TERM_OUT << "\033[33m"
+                           << "Message Parsed by vlink-efbs (Wait For Message, Paused):"
+                           << "\033[0m" << std::endl;
+          } else {
+            VLINK_TERM_OUT << "Message Parsed by vlink-efbs (Wait For Message)... " << std::endl;
+          }
 
-        flatbuffers::custom::JsonPrinter::ignore_array = ignore_array;
-        flatbuffers::custom::JsonPrinter::ignore_string = ignore_string;
-        flatbuffers::custom::JsonPrinter::ignore_default = ignore_default;
-        flatbuffers::custom::JsonPrinter::use_long_repeated = use_long_repeated;
-        flatbuffers::custom::JsonPrinter::print_time_string = print_time_string;
-        flatbuffers::custom::JsonPrinter::print_hex_string = print_hex_string;
-        flatbuffers::custom::JsonPrinter::print_enum_string = print_enum_string;
-        flatbuffers::custom::JsonPrinter::black_mode = black_mode;
-        flatbuffers::custom::JsonPrinter::filter_list = &filter_list;
+          VLINK_TERM_OUT << "\033[34;1;4m" << url << "\033[0m" << std::endl;
+          VLINK_TERM_OUT.flush();
 
-        parser->opts.output_enum_identifiers = print_enum_string;
-        parser->opts.force_defaults = !ignore_default;
-        parser->opts.output_default_scalars_in_json = !ignore_default;
-
-        // NOLINTNEXTLINE(readability-redundant-smartptr-get)
-        const auto* error_chars = flatbuffers::custom::GenText(*parser.get(), current_bytes.data(), &print_str);
-
-        if VUNLIKELY (error_chars) {
-          std::cerr << "Failed to gen fbs text(" << error_chars << ")." << std::endl;
-          quit_function(0);
-
-          parse_ret = 1;
-
+          is_changed = false;
           force_update = false;
           return;
         }
-      }
 
-      if VUNLIKELY ((discovery_viewer && discovery_viewer->is_ready_to_quit()) || parser_loop->is_ready_to_quit()) {
-        force_update = false;
-        return;
-      }
-    } else {
-      {
-        std::unique_lock lock(bytes_mtx);
-
-        if (is_blob_type) {
-          print_str.clear();
-
-          int max_line_chars = target_terminal_size.first - 2;
-
-          if (max_line_chars < 2) {
-            max_line_chars = 2;
+        if VLIKELY (!is_changed) {
+          if (!is_paused && should_redraw_url_title(show_data_dot)) {
+            redraw_url_title(show_data_dot, true);
+            mark_url_title_rendered(show_data_dot);
+            VLINK_TERM_OUT.flush();
           }
 
-          int per_line = (max_line_chars + 1) / 3;
-
-          if (per_line > 50) {
-            per_line = 50;
-          }
-
-          if (per_line >= 10) {
-            per_line = (per_line / 10) * 10;
-          }
-
-          if (per_line <= 0) {
-            per_line = 10;
-          }
-
-          const size_t per_rows = current_bytes.empty() ? 0
-                                                        : (current_bytes.size() + static_cast<size_t>(per_line) - 1) /
-                                                              static_cast<size_t>(per_line);
-
-          print_str += std::string("per_line: ") + std::to_string(per_line) + "\n";
-          print_str += std::string("per_rows: ") + std::to_string(per_rows) + "\n";
-          print_str += std::string("data_size: ") + std::to_string(current_bytes.size()) + "\n";
-          print_str += std::string("data_blob:\n");
-
-          const auto hex_str = vlink::Bytes::convert_to_hex_str(current_bytes.data(), current_bytes.size());
-          size_t pos = 0;
-
-          for (size_t i = 0; i < per_rows; ++i) {
-            const size_t remain_bytes = current_bytes.size() - i * static_cast<size_t>(per_line);
-            const size_t line_bytes = std::min<size_t>(static_cast<size_t>(per_line), remain_bytes);
-            const size_t line_chars = line_bytes == 0 ? 0 : line_bytes * 3 - 1;
-
-            print_str.append(hex_str, pos, line_chars);
-            print_str += "\n";
-
-            pos += line_chars;
-
-            if (pos < hex_str.size() && hex_str[pos] == ' ') {
-              ++pos;
-            }
-          }
-        } else if (is_text_type) {
-          std::string text_payload = current_bytes.to_string();
-
-          if (!format_json_text(text_payload, print_str)) {
-            print_str = std::move(text_payload);
-          }
-        } else if VUNLIKELY (current_bytes.empty()) {
+          is_url_title_with_dot = false;
           force_update = false;
           return;
-        } else if (target_ser.find("RawData") != std::string::npos) {
-          vlink::zerocopy::RawData raw_data;
+        }
 
-          if VUNLIKELY (!vlink::Serializer::convert(current_bytes, raw_data)) {
-            std::cerr << "Failed to parse RawData message." << std::endl;
-            quit_function(0);
-
-            parse_ret = 1;
-
-            force_update = false;
-            return;
-          }
-
-          print_str.clear();
-          print_str += std::string("header {\n");
-
-          print_str += std::string("  frame_id: ") + std::string(raw_data.header.frame_id_view()) + "\n";
-
-          if (print_hex_string) {
-            print_str += std::string("  seq: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(raw_data.header.seq)) + "\n";
-          } else {
-            print_str += std::string("  seq: ") + std::to_string(raw_data.header.seq) + "\n";
-          }
-
-          if (print_time_string) {
-            print_str += std::string("  time_meas: ") + vlink::Helpers::format_date(raw_data.header.time_meas) + "\n";
-            print_str += std::string("  time_pub: ") + vlink::Helpers::format_date(raw_data.header.time_pub) + "\n";
-          } else {
-            if (print_hex_string) {
-              print_str +=
-                  std::string("  time_meas: ") + vlink::Helpers::format_hex_number(raw_data.header.time_meas) + "\n";
-              print_str +=
-                  std::string("  time_pub: ") + vlink::Helpers::format_hex_number(raw_data.header.time_pub) + "\n";
-            } else {
-              print_str += std::string("  time_meas: ") + std::to_string(raw_data.header.time_meas) + "\n";
-              print_str += std::string("  time_pub: ") + std::to_string(raw_data.header.time_pub) + "\n";
+        if (is_fbs_type) {
+          {
+            if VUNLIKELY (!parser) {
+              return;
             }
-          }
 
-          print_str += std::string("}\n");
+            std::lock_guard lock(bytes_mtx);
 
-          if (print_hex_string) {
-            print_str +=
-                std::string("size: ") + vlink::Helpers::format_hex_number(static_cast<int64_t>(raw_data.size())) + "\n";
-          } else {
-            print_str += std::string("size: ") + std::to_string(raw_data.size()) + "\n";
-          }
+            // if (current_bytes.empty()) {
+            //   force_update = false;
+            //   return;
+            // }
 
-          print_str += std::string("data: ") + std::string("{...}") + "\n";
+            print_str.clear();
 
-        } else if (target_ser.find("CameraFrame") != std::string::npos) {
-          vlink::zerocopy::CameraFrame camera_frame;
+            flatbuffers::custom::JsonPrinter::ignore_array = ignore_array;
+            flatbuffers::custom::JsonPrinter::ignore_string = ignore_string;
+            flatbuffers::custom::JsonPrinter::ignore_default = ignore_default;
+            flatbuffers::custom::JsonPrinter::use_long_repeated = use_long_repeated;
+            flatbuffers::custom::JsonPrinter::print_time_string = print_time_string;
+            flatbuffers::custom::JsonPrinter::print_hex_string = print_hex_string;
+            flatbuffers::custom::JsonPrinter::print_enum_string = print_enum_string;
+            flatbuffers::custom::JsonPrinter::black_mode = black_mode;
+            flatbuffers::custom::JsonPrinter::filter_list = &filter_list;
 
-          if VUNLIKELY (!vlink::Serializer::convert(current_bytes, camera_frame)) {
-            std::cerr << "Failed to parse CameraFrame message." << std::endl;
-            quit_function(0);
+            parser->opts.output_enum_identifiers = print_enum_string;
+            parser->opts.force_defaults = !ignore_default;
+            parser->opts.output_default_scalars_in_json = !ignore_default;
 
-            parse_ret = 1;
+            // NOLINTNEXTLINE(readability-redundant-smartptr-get)
+            const auto* error_chars = flatbuffers::custom::GenText(*parser.get(), current_bytes.data(), &print_str);
 
-            force_update = false;
-            return;
-          }
-
-          print_str.clear();
-          print_str += std::string("header {\n");
-
-          print_str += std::string("  frame_id: ") + std::string(camera_frame.header.frame_id_view()) + "\n";
-
-          if (print_hex_string) {
-            print_str += std::string("  seq: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(camera_frame.header.seq)) + "\n";
-          } else {
-            print_str += std::string("  seq: ") + std::to_string(camera_frame.header.seq) + "\n";
-          }
-
-          if (print_time_string) {
-            print_str +=
-                std::string("  time_meas: ") + vlink::Helpers::format_date(camera_frame.header.time_meas) + "\n";
-            print_str += std::string("  time_pub: ") + vlink::Helpers::format_date(camera_frame.header.time_pub) + "\n";
-          } else {
-            if (print_hex_string) {
-              print_str += std::string("  time_meas: ") +
-                           vlink::Helpers::format_hex_number(camera_frame.header.time_meas) + "\n";
-              print_str +=
-                  std::string("  time_pub: ") + vlink::Helpers::format_hex_number(camera_frame.header.time_pub) + "\n";
-            } else {
-              print_str += std::string("  time_meas: ") + std::to_string(camera_frame.header.time_meas) + "\n";
-              print_str += std::string("  time_pub: ") + std::to_string(camera_frame.header.time_pub) + "\n";
-            }
-          }
-
-          print_str += std::string("}\n");
-
-          if (print_hex_string) {
-            print_str += std::string("channel: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(camera_frame.channel())) + "\n";
-            print_str += std::string("height: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(camera_frame.height())) + "\n";
-            print_str += std::string("width: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(camera_frame.width())) + "\n";
-            print_str += std::string("freq: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(camera_frame.freq())) + "\n";
-          } else {
-            print_str += std::string("channel: ") + std::to_string(camera_frame.channel()) + "\n";
-            print_str += std::string("height: ") + std::to_string(camera_frame.height()) + "\n";
-            print_str += std::string("width: ") + std::to_string(camera_frame.width()) + "\n";
-            print_str += std::string("freq: ") + std::to_string(camera_frame.freq()) + "\n";
-          }
-
-          if (print_enum_string) {
-            print_str +=
-                std::string("format: ") + std::string(vlink::NameDetector::get_enum(camera_frame.format())) + "\n";
-            print_str +=
-                std::string("stream: ") + std::string(vlink::NameDetector::get_enum(camera_frame.stream())) + "\n";
-          } else {
-            print_str += std::string("format: ") + std::to_string(camera_frame.format()) + "\n";
-            print_str += std::string("stream: ") + std::to_string(camera_frame.stream()) + "\n";
-          }
-
-          if (print_hex_string) {
-            print_str += std::string("size: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(camera_frame.size())) + "\n";
-          } else {
-            print_str += std::string("size: ") + std::to_string(camera_frame.size()) + "\n";
-          }
-
-          print_str += std::string("data: ") + std::string("{...}") + "\n";
-
-        } else if (target_ser.find("PointCloud") != std::string::npos) {
-          vlink::zerocopy::PointCloud point_cloud;
-
-          if VUNLIKELY (!vlink::Serializer::convert(current_bytes, point_cloud)) {
-            std::cerr << "Failed to parse PointCloud message." << std::endl;
-            quit_function(0);
-
-            parse_ret = 1;
-
-            force_update = false;
-            return;
-          }
-
-          print_str.clear();
-          print_str += std::string("header {\n");
-
-          print_str += std::string("  frame_id: ") + std::string(point_cloud.header.frame_id_view()) + "\n";
-
-          if (print_hex_string) {
-            print_str += std::string("  seq: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(point_cloud.header.seq)) + "\n";
-          } else {
-            print_str += std::string("  seq: ") + std::to_string(point_cloud.header.seq) + "\n";
-          }
-
-          if (print_time_string) {
-            print_str +=
-                std::string("  time_meas: ") + vlink::Helpers::format_date(point_cloud.header.time_meas) + "\n";
-            print_str += std::string("  time_pub: ") + vlink::Helpers::format_date(point_cloud.header.time_pub) + "\n";
-          } else {
-            if (print_hex_string) {
-              print_str +=
-                  std::string("  time_meas: ") + vlink::Helpers::format_hex_number(point_cloud.header.time_meas) + "\n";
-              print_str +=
-                  std::string("  time_pub: ") + vlink::Helpers::format_hex_number(point_cloud.header.time_pub) + "\n";
-            } else {
-              print_str += std::string("  time_meas: ") + std::to_string(point_cloud.header.time_meas) + "\n";
-              print_str += std::string("  time_pub: ") + std::to_string(point_cloud.header.time_pub) + "\n";
-            }
-          }
-
-          print_str += std::string("}\n");
-
-          print_str += std::string("protocol {\n");
-          print_str += std::string("  size_list: ") + point_cloud.get_protocol_size_str() + "\n";
-          print_str += std::string("  name_list: ") + point_cloud.get_protocol_name_str() + "\n";
-          print_str += std::string("  type_list: ") + point_cloud.get_protocol_type_str() + "\n";
-          print_str += std::string("}\n");
-
-          if (print_hex_string) {
-            print_str += std::string("size: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(point_cloud.size())) + "\n";
-            print_str += std::string("pack_size: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(point_cloud.pack_size())) + "\n";
-            print_str += std::string("extent: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(point_cloud.get_extent())) + "\n";
-            print_str += std::string("downsample: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(point_cloud.get_downsample())) + "\n";
-            print_str += std::string("vertical: ") + (point_cloud.get_vertical() ? "true" : "false") + "\n";
-          } else {
-            print_str += std::string("size: ") + std::to_string(point_cloud.size()) + "\n";
-            print_str += std::string("pack_size: ") + std::to_string(point_cloud.pack_size()) + "\n";
-            print_str += std::string("extent: ") + std::to_string(point_cloud.get_extent()) + "\n";
-            print_str += std::string("downsample: ") + std::to_string(point_cloud.get_downsample()) + "\n";
-            print_str += std::string("vertical: ") + (point_cloud.get_vertical() ? "true" : "false") + "\n";
-          }
-
-          if (!ignore_array) {
-            vlink::zerocopy::PointCloud::KeyList key_list;
-            auto key_map = point_cloud.get_key_map(&key_list);
-
-            if VUNLIKELY (key_map.empty()) {
-              std::cerr << "PointCloud format error." << std::endl;
+            if VUNLIKELY (error_chars) {
+              std::cerr << "Failed to gen fbs text(" << error_chars << ")." << std::endl;
               quit_function(0);
 
               parse_ret = 1;
@@ -1348,832 +1069,374 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
               force_update = false;
               return;
             }
-
-            vlink::zerocopy::PointCloud::Vector3f v3f;
-            vlink::zerocopy::PointCloud::Vector3d v3d;
-
-            bool has_compressed_xyz = (point_cloud.get_extent() != 0);
-
-            size_t max_pcl_size = std::min(point_cloud.size(), static_cast<size_t>(10000));
-
-            if (max_pcl_size >= 10000) {
-              is_out_of_range = true;
-            }
-
-            for (size_t i = 0; i < max_pcl_size; ++i) {
-              print_str += std::string("data[") + std::to_string(i) + "] {\n";
-
-              if (has_compressed_xyz) {
-                point_cloud.get_value_v3f(v3f, i);
-              }
-
-              for (size_t key_index = 0; key_index < key_list.size(); ++key_index) {
-                const auto& key = key_list[key_index];
-
-                if (has_compressed_xyz && key_index < 3) {
-                  float xyz_value = v3f.x;
-
-                  if (key_index == 1) {
-                    xyz_value = v3f.y;
-                  } else if (key_index == 2) {
-                    xyz_value = v3f.z;
-                  }
-
-                  print_str += std::string("  ") + key.name + std::string(": ") + std::to_string(xyz_value) + "\n";
-                  continue;
-                }
-
-                if (key.type == vlink::zerocopy::PointCloud::kUnknownType) {
-                  if (key.name == "x") {
-                    if (key.size == 4) {
-                      point_cloud.get_value_v3f(v3f, i);
-                      print_str += std::string("  x: ") + std::to_string(v3f.x) + "\n";
-                    } else if (key.size == 8) {
-                      point_cloud.get_value_v3d(v3d, i);
-                      print_str += std::string("  x: ") + std::to_string(v3d.x) + "\n";
-                    }
-                  } else if (key.name == "y") {
-                    if (key.size == 4) {
-                      print_str += std::string("  y: ") + std::to_string(v3f.y) + "\n";
-                    } else if (key.size == 8) {
-                      print_str += std::string("  y: ") + std::to_string(v3d.y) + "\n";
-                    }
-                    continue;
-                  } else if (key.name == "z") {
-                    if (key.size == 4) {
-                      print_str += std::string("  z: ") + std::to_string(v3f.z) + "\n";
-                    } else if (key.size == 8) {
-                      print_str += std::string("  z: ") + std::to_string(v3d.z) + "\n";
-                    }
-                    continue;
-                  } else {
-                    if (key.size == 1) {
-                      print_str += std::string("  ") + key.name + std::string(": ") +
-                                   std::to_string(point_cloud.get_value<uint8_t>(i, key_map, key.name)) + "\n";
-                    } else if (key.size == 2) {
-                      print_str += std::string("  ") + key.name + std::string(": ") +
-                                   std::to_string(point_cloud.get_value<int16_t>(i, key_map, key.name)) + "\n";
-                    } else if (key.size == 4) {
-                      print_str += std::string("  ") + key.name + std::string(": ") +
-                                   std::to_string(point_cloud.get_value<float>(i, key_map, key.name)) + "\n";
-                    } else if (key.size == 8) {
-                      print_str += std::string("  ") + key.name + std::string(": ") +
-                                   std::to_string(point_cloud.get_value<double>(i, key_map, key.name)) + "\n";
-                    }
-                  }
-                } else {
-                  if (print_hex_string) {
-                    switch (key.type) {
-                      case vlink::zerocopy::PointCloud::kBoolType:
-                        print_str += std::string("  ") + key.name + std::string(": ") +
-                                     point_cloud.get_value_for_print(i, key_map, key.name, key.type) + "\n";
-                        break;
-                      case vlink::zerocopy::PointCloud::kInt8Type:
-                        print_str += std::string("  ") + key.name + std::string(": ") +
-                                     vlink::Helpers::format_hex_number(
-                                         static_cast<int64_t>(point_cloud.get_value<int8_t>(i, key_map, key.name))) +
-                                     "\n";
-                        break;
-                      case vlink::zerocopy::PointCloud::kUint8Type:
-                        print_str += std::string("  ") + key.name + std::string(": ") +
-                                     vlink::Helpers::format_hex_number(
-                                         static_cast<int64_t>(point_cloud.get_value<uint8_t>(i, key_map, key.name))) +
-                                     "\n";
-                        break;
-                      case vlink::zerocopy::PointCloud::kInt16Type:
-                        print_str += std::string("  ") + key.name + std::string(": ") +
-                                     vlink::Helpers::format_hex_number(
-                                         static_cast<int64_t>(point_cloud.get_value<int16_t>(i, key_map, key.name))) +
-                                     "\n";
-                        break;
-                      case vlink::zerocopy::PointCloud::kUint16Type:
-                        print_str += std::string("  ") + key.name + std::string(": ") +
-                                     vlink::Helpers::format_hex_number(
-                                         static_cast<int64_t>(point_cloud.get_value<uint16_t>(i, key_map, key.name))) +
-                                     "\n";
-                        break;
-                      case vlink::zerocopy::PointCloud::kInt32Type:
-                        print_str += std::string("  ") + key.name + std::string(": ") +
-                                     vlink::Helpers::format_hex_number(
-                                         static_cast<int64_t>(point_cloud.get_value<int32_t>(i, key_map, key.name))) +
-                                     "\n";
-                        break;
-                      case vlink::zerocopy::PointCloud::kUint32Type:
-                        print_str += std::string("  ") + key.name + std::string(": ") +
-                                     vlink::Helpers::format_hex_number(
-                                         static_cast<int64_t>(point_cloud.get_value<uint32_t>(i, key_map, key.name))) +
-                                     "\n";
-                        break;
-                      case vlink::zerocopy::PointCloud::kInt64Type:
-                        print_str +=
-                            std::string("  ") + key.name + std::string(": ") +
-                            vlink::Helpers::format_hex_number(point_cloud.get_value<int64_t>(i, key_map, key.name)) +
-                            "\n";
-                        break;
-                      case vlink::zerocopy::PointCloud::kUint64Type:
-                        print_str +=
-                            std::string("  ") + key.name + std::string(": ") +
-                            vlink::Helpers::format_hex_number(point_cloud.get_value<uint64_t>(i, key_map, key.name)) +
-                            "\n";
-                        break;
-                      case vlink::zerocopy::PointCloud::kFloatType:
-                        print_str += std::string("  ") + key.name + std::string(": ") +
-                                     point_cloud.get_value_for_print(i, key_map, key.name, key.type) + "\n";
-                        break;
-                      case vlink::zerocopy::PointCloud::kDoubleType:
-                        print_str += std::string("  ") + key.name + std::string(": ") +
-                                     point_cloud.get_value_for_print(i, key_map, key.name, key.type) + "\n";
-                        break;
-                      default:
-                        break;
-                    }
-                  } else {
-                    print_str += std::string("  ") + key.name + std::string(": ") +
-                                 point_cloud.get_value_for_print(i, key_map, key.name, key.type) + "\n";
-                  }
-                }
-              }
-              print_str += std::string("}\n");
-            }
           }
-        } else if (target_ser.find("OccupancyGrid") != std::string::npos) {
-          vlink::zerocopy::OccupancyGrid occupancy_grid;
 
-          if VUNLIKELY (!vlink::Serializer::convert(current_bytes, occupancy_grid)) {
-            std::cerr << "Failed to parse OccupancyGrid message." << std::endl;
-            quit_function(0);
-
-            parse_ret = 1;
-
+          if VUNLIKELY ((discovery_viewer && discovery_viewer->is_ready_to_quit()) || parser_loop->is_ready_to_quit()) {
             force_update = false;
             return;
           }
-
-          print_str.clear();
-          print_str += std::string("header {\n");
-
-          print_str += std::string("  frame_id: ") + std::string(occupancy_grid.header.frame_id_view()) + "\n";
-
-          if (print_hex_string) {
-            print_str += std::string("  seq: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(occupancy_grid.header.seq)) + "\n";
-          } else {
-            print_str += std::string("  seq: ") + std::to_string(occupancy_grid.header.seq) + "\n";
-          }
-
-          if (print_time_string) {
-            print_str +=
-                std::string("  time_meas: ") + vlink::Helpers::format_date(occupancy_grid.header.time_meas) + "\n";
-            print_str +=
-                std::string("  time_pub: ") + vlink::Helpers::format_date(occupancy_grid.header.time_pub) + "\n";
-          } else {
-            if (print_hex_string) {
-              print_str += std::string("  time_meas: ") +
-                           vlink::Helpers::format_hex_number(occupancy_grid.header.time_meas) + "\n";
-              print_str += std::string("  time_pub: ") +
-                           vlink::Helpers::format_hex_number(occupancy_grid.header.time_pub) + "\n";
-            } else {
-              print_str += std::string("  time_meas: ") + std::to_string(occupancy_grid.header.time_meas) + "\n";
-              print_str += std::string("  time_pub: ") + std::to_string(occupancy_grid.header.time_pub) + "\n";
-            }
-          }
-
-          print_str += std::string("}\n");
-
-          print_str += std::string("map_id: ") + std::string(occupancy_grid.map_id()) + "\n";
-
-          if (print_hex_string) {
-            print_str += std::string("width: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(occupancy_grid.width())) + "\n";
-            print_str += std::string("height: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(occupancy_grid.height())) + "\n";
-            print_str += std::string("channel: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(occupancy_grid.channel())) + "\n";
-            print_str += std::string("freq: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(occupancy_grid.freq())) + "\n";
-            print_str += std::string("valid_cell_count: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(occupancy_grid.valid_cell_count())) +
-                         "\n";
-            print_str += std::string("default_value: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(occupancy_grid.default_value())) + "\n";
-          } else {
-            print_str += std::string("width: ") + std::to_string(occupancy_grid.width()) + "\n";
-            print_str += std::string("height: ") + std::to_string(occupancy_grid.height()) + "\n";
-            print_str += std::string("channel: ") + std::to_string(occupancy_grid.channel()) + "\n";
-            print_str += std::string("freq: ") + std::to_string(occupancy_grid.freq()) + "\n";
-            print_str += std::string("valid_cell_count: ") + std::to_string(occupancy_grid.valid_cell_count()) + "\n";
-            print_str += std::string("default_value: ") + std::to_string(occupancy_grid.default_value()) + "\n";
-          }
-
-          print_str += std::string("resolution: ") + std::to_string(occupancy_grid.resolution()) + "\n";
-          print_str += std::string("origin_x: ") + std::to_string(occupancy_grid.origin_x()) + "\n";
-          print_str += std::string("origin_y: ") + std::to_string(occupancy_grid.origin_y()) + "\n";
-          print_str += std::string("origin_z: ") + std::to_string(occupancy_grid.origin_z()) + "\n";
-          print_str += std::string("origin_yaw: ") + std::to_string(occupancy_grid.origin_yaw()) + "\n";
-          print_str += std::string("value_min: ") + std::to_string(occupancy_grid.value_min()) + "\n";
-          print_str += std::string("value_max: ") + std::to_string(occupancy_grid.value_max()) + "\n";
-          print_str += std::string("occupied_threshold: ") + std::to_string(occupancy_grid.occupied_threshold()) + "\n";
-          print_str += std::string("free_threshold: ") + std::to_string(occupancy_grid.free_threshold()) + "\n";
-
-          if (print_enum_string) {
-            print_str += std::string("cell_type: ") +
-                         std::string(vlink::NameDetector::get_enum(occupancy_grid.cell_type())) + "\n";
-          } else {
-            print_str += std::string("cell_type: ") + std::to_string(occupancy_grid.cell_type()) + "\n";
-          }
-
-          if (print_time_string) {
-            print_str +=
-                std::string("update_time_ns: ") + vlink::Helpers::format_date(occupancy_grid.update_time_ns()) + "\n";
-          } else {
-            if (print_hex_string) {
-              print_str += std::string("update_time_ns: ") +
-                           vlink::Helpers::format_hex_number(occupancy_grid.update_time_ns()) + "\n";
-            } else {
-              print_str += std::string("update_time_ns: ") + std::to_string(occupancy_grid.update_time_ns()) + "\n";
-            }
-          }
-
-          if (print_hex_string) {
-            print_str += std::string("size: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(occupancy_grid.size())) + "\n";
-          } else {
-            print_str += std::string("size: ") + std::to_string(occupancy_grid.size()) + "\n";
-          }
-
-          print_str += std::string("data: ") + std::string("{...}") + "\n";
-
-        } else if (target_ser.find("Tensor") != std::string::npos) {
-          vlink::zerocopy::Tensor tensor;
-
-          if VUNLIKELY (!vlink::Serializer::convert(current_bytes, tensor)) {
-            std::cerr << "Failed to parse Tensor message." << std::endl;
-            quit_function(0);
-
-            parse_ret = 1;
-
-            force_update = false;
-            return;
-          }
-
-          print_str.clear();
-          print_str += std::string("header {\n");
-
-          print_str += std::string("  frame_id: ") + std::string(tensor.header.frame_id_view()) + "\n";
-
-          if (print_hex_string) {
-            print_str += std::string("  seq: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(tensor.header.seq)) + "\n";
-          } else {
-            print_str += std::string("  seq: ") + std::to_string(tensor.header.seq) + "\n";
-          }
-
-          if (print_time_string) {
-            print_str += std::string("  time_meas: ") + vlink::Helpers::format_date(tensor.header.time_meas) + "\n";
-            print_str += std::string("  time_pub: ") + vlink::Helpers::format_date(tensor.header.time_pub) + "\n";
-          } else {
-            if (print_hex_string) {
-              print_str +=
-                  std::string("  time_meas: ") + vlink::Helpers::format_hex_number(tensor.header.time_meas) + "\n";
-              print_str +=
-                  std::string("  time_pub: ") + vlink::Helpers::format_hex_number(tensor.header.time_pub) + "\n";
-            } else {
-              print_str += std::string("  time_meas: ") + std::to_string(tensor.header.time_meas) + "\n";
-              print_str += std::string("  time_pub: ") + std::to_string(tensor.header.time_pub) + "\n";
-            }
-          }
-
-          print_str += std::string("}\n");
-
-          print_str += std::string("name: ") + std::string(tensor.name()) + "\n";
-          print_str += std::string("model_id: ") + std::string(tensor.model_id()) + "\n";
-          print_str += std::string("layout: ") + std::string(tensor.layout()) + "\n";
-
-          if (print_enum_string) {
-            print_str += std::string("dtype: ") + std::string(vlink::NameDetector::get_enum(tensor.dtype())) + "\n";
-            print_str += std::string("device: ") + std::string(vlink::NameDetector::get_enum(tensor.device())) + "\n";
-          } else {
-            print_str += std::string("dtype: ") + std::to_string(tensor.dtype()) + "\n";
-            print_str += std::string("device: ") + std::to_string(tensor.device()) + "\n";
-          }
-
-          if (print_hex_string) {
-            print_str +=
-                std::string("rank: ") + vlink::Helpers::format_hex_number(static_cast<int64_t>(tensor.rank())) + "\n";
-            print_str += std::string("num_elements: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(tensor.num_elements())) + "\n";
-            print_str += std::string("element_size: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(tensor.element_size())) + "\n";
-            print_str += std::string("batch_size: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(tensor.batch_size())) + "\n";
-            print_str += std::string("channel: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(tensor.channel())) + "\n";
-            print_str +=
-                std::string("freq: ") + vlink::Helpers::format_hex_number(static_cast<int64_t>(tensor.freq())) + "\n";
-            print_str += std::string("quant_zero_point: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(tensor.quant_zero_point())) + "\n";
-          } else {
-            print_str += std::string("rank: ") + std::to_string(tensor.rank()) + "\n";
-            print_str += std::string("num_elements: ") + std::to_string(tensor.num_elements()) + "\n";
-            print_str += std::string("element_size: ") + std::to_string(tensor.element_size()) + "\n";
-            print_str += std::string("batch_size: ") + std::to_string(tensor.batch_size()) + "\n";
-            print_str += std::string("channel: ") + std::to_string(tensor.channel()) + "\n";
-            print_str += std::string("freq: ") + std::to_string(tensor.freq()) + "\n";
-            print_str += std::string("quant_zero_point: ") + std::to_string(tensor.quant_zero_point()) + "\n";
-          }
-
-          print_str += std::string("quant_scale: ") + std::to_string(tensor.quant_scale()) + "\n";
-
-          std::string shape_str = std::string("[");
-
-          for (uint8_t d = 0; d < tensor.rank(); ++d) {
-            if (d > 0) {
-              shape_str += std::string(", ");
-            }
-
-            shape_str += std::to_string(tensor.shape_at(d));
-          }
-
-          shape_str += std::string("]");
-
-          print_str += std::string("shape: ") + shape_str + "\n";
-
-          if (print_time_string) {
-            print_str += std::string("update_time_ns: ") + vlink::Helpers::format_date(tensor.update_time_ns()) + "\n";
-          } else {
-            if (print_hex_string) {
-              print_str +=
-                  std::string("update_time_ns: ") + vlink::Helpers::format_hex_number(tensor.update_time_ns()) + "\n";
-            } else {
-              print_str += std::string("update_time_ns: ") + std::to_string(tensor.update_time_ns()) + "\n";
-            }
-          }
-
-          if (print_hex_string) {
-            print_str +=
-                std::string("size: ") + vlink::Helpers::format_hex_number(static_cast<int64_t>(tensor.size())) + "\n";
-          } else {
-            print_str += std::string("size: ") + std::to_string(tensor.size()) + "\n";
-          }
-
-          print_str += std::string("data: ") + std::string("{...}") + "\n";
-
-        } else if (target_ser.find("ObjectArray") != std::string::npos) {
-          vlink::zerocopy::ObjectArray object_array;
-
-          if VUNLIKELY (!vlink::Serializer::convert(current_bytes, object_array)) {
-            std::cerr << "Failed to parse ObjectArray message." << std::endl;
-            quit_function(0);
-
-            parse_ret = 1;
-
-            force_update = false;
-            return;
-          }
-
-          print_str.clear();
-          print_str += std::string("header {\n");
-
-          print_str += std::string("  frame_id: ") + std::string(object_array.header.frame_id_view()) + "\n";
-
-          if (print_hex_string) {
-            print_str += std::string("  seq: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(object_array.header.seq)) + "\n";
-          } else {
-            print_str += std::string("  seq: ") + std::to_string(object_array.header.seq) + "\n";
-          }
-
-          if (print_time_string) {
-            print_str +=
-                std::string("  time_meas: ") + vlink::Helpers::format_date(object_array.header.time_meas) + "\n";
-            print_str += std::string("  time_pub: ") + vlink::Helpers::format_date(object_array.header.time_pub) + "\n";
-          } else {
-            if (print_hex_string) {
-              print_str += std::string("  time_meas: ") +
-                           vlink::Helpers::format_hex_number(object_array.header.time_meas) + "\n";
-              print_str +=
-                  std::string("  time_pub: ") + vlink::Helpers::format_hex_number(object_array.header.time_pub) + "\n";
-            } else {
-              print_str += std::string("  time_meas: ") + std::to_string(object_array.header.time_meas) + "\n";
-              print_str += std::string("  time_pub: ") + std::to_string(object_array.header.time_pub) + "\n";
-            }
-          }
-
-          print_str += std::string("}\n");
-
-          print_str += std::string("source_id: ") + std::string(object_array.source_id()) + "\n";
-
-          if (print_hex_string) {
-            print_str += std::string("channel: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(object_array.channel())) + "\n";
-            print_str += std::string("freq: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(object_array.freq())) + "\n";
-            print_str += std::string("count: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(object_array.count())) + "\n";
-            print_str += std::string("pack_size: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(object_array.pack_size())) + "\n";
-          } else {
-            print_str += std::string("channel: ") + std::to_string(object_array.channel()) + "\n";
-            print_str += std::string("freq: ") + std::to_string(object_array.freq()) + "\n";
-            print_str += std::string("count: ") + std::to_string(object_array.count()) + "\n";
-            print_str += std::string("pack_size: ") + std::to_string(object_array.pack_size()) + "\n";
-          }
-
-          if (print_time_string) {
-            print_str +=
-                std::string("update_time_ns: ") + vlink::Helpers::format_date(object_array.update_time_ns()) + "\n";
-          } else {
-            if (print_hex_string) {
-              print_str += std::string("update_time_ns: ") +
-                           vlink::Helpers::format_hex_number(object_array.update_time_ns()) + "\n";
-            } else {
-              print_str += std::string("update_time_ns: ") + std::to_string(object_array.update_time_ns()) + "\n";
-            }
-          }
-
-          size_t object_array_size =
-              static_cast<size_t>(object_array.count()) * static_cast<size_t>(object_array.pack_size());
-
-          if (print_hex_string) {
-            print_str += std::string("size: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(object_array_size)) + "\n";
-          } else {
-            print_str += std::string("size: ") + std::to_string(object_array_size) + "\n";
-          }
-
-          print_str += std::string("data: ") + std::string("{...}") + "\n";
-
-        } else if (target_ser.find("AudioFrame") != std::string::npos) {
-          vlink::zerocopy::AudioFrame audio_frame;
-
-          if VUNLIKELY (!vlink::Serializer::convert(current_bytes, audio_frame)) {
-            std::cerr << "Failed to parse AudioFrame message." << std::endl;
-            quit_function(0);
-
-            parse_ret = 1;
-
-            force_update = false;
-            return;
-          }
-
-          print_str.clear();
-          print_str += std::string("header {\n");
-
-          print_str += std::string("  frame_id: ") + std::string(audio_frame.header.frame_id_view()) + "\n";
-
-          if (print_hex_string) {
-            print_str += std::string("  seq: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(audio_frame.header.seq)) + "\n";
-          } else {
-            print_str += std::string("  seq: ") + std::to_string(audio_frame.header.seq) + "\n";
-          }
-
-          if (print_time_string) {
-            print_str +=
-                std::string("  time_meas: ") + vlink::Helpers::format_date(audio_frame.header.time_meas) + "\n";
-            print_str += std::string("  time_pub: ") + vlink::Helpers::format_date(audio_frame.header.time_pub) + "\n";
-          } else {
-            if (print_hex_string) {
-              print_str +=
-                  std::string("  time_meas: ") + vlink::Helpers::format_hex_number(audio_frame.header.time_meas) + "\n";
-              print_str +=
-                  std::string("  time_pub: ") + vlink::Helpers::format_hex_number(audio_frame.header.time_pub) + "\n";
-            } else {
-              print_str += std::string("  time_meas: ") + std::to_string(audio_frame.header.time_meas) + "\n";
-              print_str += std::string("  time_pub: ") + std::to_string(audio_frame.header.time_pub) + "\n";
-            }
-          }
-
-          print_str += std::string("}\n");
-
-          print_str += std::string("codec: ") + std::string(audio_frame.codec()) + "\n";
-          print_str += std::string("language: ") + std::string(audio_frame.language()) + "\n";
-
-          if (print_hex_string) {
-            print_str += std::string("channel: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(audio_frame.channel())) + "\n";
-            print_str += std::string("freq: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(audio_frame.freq())) + "\n";
-            print_str += std::string("sample_rate: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(audio_frame.sample_rate())) + "\n";
-            print_str += std::string("num_samples: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(audio_frame.num_samples())) + "\n";
-            print_str += std::string("num_channels: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(audio_frame.num_channels())) + "\n";
-            print_str += std::string("bit_depth: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(audio_frame.bit_depth())) + "\n";
-            print_str += std::string("bitrate: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(audio_frame.bitrate())) + "\n";
-          } else {
-            print_str += std::string("channel: ") + std::to_string(audio_frame.channel()) + "\n";
-            print_str += std::string("freq: ") + std::to_string(audio_frame.freq()) + "\n";
-            print_str += std::string("sample_rate: ") + std::to_string(audio_frame.sample_rate()) + "\n";
-            print_str += std::string("num_samples: ") + std::to_string(audio_frame.num_samples()) + "\n";
-            print_str += std::string("num_channels: ") + std::to_string(audio_frame.num_channels()) + "\n";
-            print_str += std::string("bit_depth: ") + std::to_string(audio_frame.bit_depth()) + "\n";
-            print_str += std::string("bitrate: ") + std::to_string(audio_frame.bitrate()) + "\n";
-          }
-
-          if (print_enum_string) {
-            print_str +=
-                std::string("format: ") + std::string(vlink::NameDetector::get_enum(audio_frame.format())) + "\n";
-            print_str +=
-                std::string("layout: ") + std::string(vlink::NameDetector::get_enum(audio_frame.layout())) + "\n";
-          } else {
-            print_str += std::string("format: ") + std::to_string(audio_frame.format()) + "\n";
-            print_str += std::string("layout: ") + std::to_string(audio_frame.layout()) + "\n";
-          }
-
-          if (print_time_string) {
-            print_str += std::string("duration_ns: ") + vlink::Helpers::format_date(audio_frame.duration_ns()) + "\n";
-            print_str +=
-                std::string("update_time_ns: ") + vlink::Helpers::format_date(audio_frame.update_time_ns()) + "\n";
-          } else {
-            if (print_hex_string) {
-              print_str +=
-                  std::string("duration_ns: ") + vlink::Helpers::format_hex_number(audio_frame.duration_ns()) + "\n";
-              print_str += std::string("update_time_ns: ") +
-                           vlink::Helpers::format_hex_number(audio_frame.update_time_ns()) + "\n";
-            } else {
-              print_str += std::string("duration_ns: ") + std::to_string(audio_frame.duration_ns()) + "\n";
-              print_str += std::string("update_time_ns: ") + std::to_string(audio_frame.update_time_ns()) + "\n";
-            }
-          }
-
-          if (print_hex_string) {
-            print_str += std::string("size: ") +
-                         vlink::Helpers::format_hex_number(static_cast<int64_t>(audio_frame.size())) + "\n";
-          } else {
-            print_str += std::string("size: ") + std::to_string(audio_frame.size()) + "\n";
-          }
-
-          print_str += std::string("data: ") + std::string("{...}") + "\n";
-
         } else {
-          std::cerr << "Unsupported type." << std::endl;
-          quit_function(0);
+          {
+            std::unique_lock lock(bytes_mtx);
 
-          parse_ret = 1;
+            const auto target_zerocopy_type = vlink::zerocopy::MessageParser::detect_type(target_ser);
+            vlink::zerocopy::MessageParser message_parser;
+            bool zerocopy_parse_succeeded = false;
 
+            if (!is_blob_type && !is_text_type && !current_bytes.empty() &&
+                target_zerocopy_type != vlink::zerocopy::MessageParser::Type::kUnknown) {
+              zerocopy_parse_succeeded = message_parser.parse(target_zerocopy_type, current_bytes);
+            }
+
+            if (is_blob_type) {
+              print_str.clear();
+
+              int max_line_chars = target_terminal_size.first - 2;
+
+              if (max_line_chars < 2) {
+                max_line_chars = 2;
+              }
+
+              int per_line = (max_line_chars + 1) / 3;
+
+              if (per_line > 50) {
+                per_line = 50;
+              }
+
+              if (per_line >= 10) {
+                per_line = (per_line / 10) * 10;
+              }
+
+              if (per_line <= 0) {
+                per_line = 10;
+              }
+
+              const size_t per_rows =
+                  current_bytes.empty()
+                      ? 0
+                      : (current_bytes.size() + static_cast<size_t>(per_line) - 1) / static_cast<size_t>(per_line);
+
+              print_str += std::string("per_line: ") + std::to_string(per_line) + "\n";
+              print_str += std::string("per_rows: ") + std::to_string(per_rows) + "\n";
+              print_str += std::string("data_size: ") + std::to_string(current_bytes.size()) + "\n";
+              print_str += std::string("data_blob:\n");
+
+              const auto hex_str = vlink::Bytes::convert_to_hex_str(current_bytes.data(), current_bytes.size());
+              size_t pos = 0;
+
+              for (size_t i = 0; i < per_rows; ++i) {
+                const size_t remain_bytes = current_bytes.size() - i * static_cast<size_t>(per_line);
+                const size_t line_bytes = std::min<size_t>(static_cast<size_t>(per_line), remain_bytes);
+                const size_t line_chars = line_bytes == 0 ? 0 : line_bytes * 3 - 1;
+
+                print_str.append(hex_str, pos, line_chars);
+                print_str += "\n";
+
+                pos += line_chars;
+
+                if (pos < hex_str.size() && hex_str[pos] == ' ') {
+                  ++pos;
+                }
+              }
+            } else if (is_text_type) {
+              std::string text_payload = current_bytes.to_string();
+
+              if (!format_json_text(text_payload, print_str)) {
+                print_str = std::move(text_payload);
+              }
+            } else if VUNLIKELY (current_bytes.empty()) {
+              force_update = false;
+              return;
+            } else if (target_zerocopy_type != vlink::zerocopy::MessageParser::Type::kUnknown) {
+              if VUNLIKELY (!zerocopy_parse_succeeded) {
+                std::cerr << "Failed to parse " << vlink::zerocopy::MessageParser::type_name(target_zerocopy_type)
+                          << " message." << std::endl;
+                quit_function(0);
+
+                parse_ret = 1;
+
+                force_update = false;
+                return;
+              }
+
+              vlink::zerocopy::MessageFormatOptions format_options;
+              format_options.hex = print_hex_string;
+              format_options.date = print_time_string;
+              format_options.enum_name = print_enum_string;
+              format_options.expand_arrays = !ignore_array;
+
+              bool format_truncated = false;
+              print_str = vlink::zerocopy::format_message(message_parser, format_options, &format_truncated);
+
+              if (format_truncated) {
+                is_out_of_range = true;
+              }
+
+            } else {
+              std::cerr << "Unsupported type." << std::endl;
+              quit_function(0);
+
+              parse_ret = 1;
+
+              force_update = false;
+              return;
+            }
+          }
+        }
+
+        if VUNLIKELY ((discovery_viewer && discovery_viewer->is_ready_to_quit()) || parser_loop->is_ready_to_quit()) {
           force_update = false;
           return;
         }
-      }
-    }
 
-    if VUNLIKELY ((discovery_viewer && discovery_viewer->is_ready_to_quit()) || parser_loop->is_ready_to_quit()) {
-      force_update = false;
-      return;
-    }
+        if (is_paused && !force_update) {
+          VLINK_TERM_OUT << "\033[H";
+          VLINK_TERM_OUT.flush();
 
-    if (is_paused && !force_update) {
-      VLINK_TERM_OUT << "\033[H";
-      VLINK_TERM_OUT.flush();
+          total_page = print_list.size();
 
-      total_page = print_list.size();
+          if (current_page > total_page - 1) {
+            current_page = total_page - 1;
+          }
 
-      if (current_page > total_page - 1) {
-        current_page = total_page - 1;
-      }
+          if (current_page < 0) {
+            current_page = 0;
+          }
 
-      if (current_page < 0) {
-        current_page = 0;
-      }
+          if (!print_list.empty() && !line_list.empty()) {
+            current_str = print_list.at(current_page);
+            current_line = line_list.at(current_page);
+          }
 
-      if (!print_list.empty() && !line_list.empty()) {
-        current_str = print_list.at(current_page);
-        current_line = line_list.at(current_page);
-      }
-
-      VLINK_TERM_OUT << "\033[K";
-
-      VLINK_TERM_OUT << "\033[33m"
-                     << "Message Parsed by vlink-efbs (Paused):"
-                     << "\033[0m" << std::endl;
-
-      redraw_url_title(show_data_dot, false);
-      is_url_title_with_dot = show_data_dot;
-      mark_url_title_rendered(show_data_dot);
-
-      if (!current_str.empty()) {
-        VLINK_TERM_OUT << "\033[32m";
-
-        auto print_split_view_list = vlink::Helpers::split_view(current_str, '\n');
-
-        for (size_t i = 0; i < print_split_view_list.size(); ++i) {
           VLINK_TERM_OUT << "\033[K";
-          VLINK_TERM_OUT << print_split_view_list[i];
 
-          if (i < print_split_view_list.size() - 1) {
-            VLINK_TERM_OUT << "\n";
+          VLINK_TERM_OUT << "\033[33m"
+                         << "Message Parsed by vlink-efbs (Paused):"
+                         << "\033[0m" << std::endl;
 
-            if (i > 0 && i % kFlushMinLine == 0) {
-              VLINK_TERM_OUT.flush();
-              if constexpr (kFlushMinSleep > 0) {
-                std::this_thread::sleep_for(std::chrono::microseconds(kFlushMinSleep));
-              }
-            }
-          }
-        }
+          redraw_url_title(show_data_dot, false);
+          is_url_title_with_dot = show_data_dot;
+          mark_url_title_rendered(show_data_dot);
 
-        VLINK_TERM_OUT << "\033[0m";
-        VLINK_TERM_OUT << "\033[K";
-        VLINK_TERM_OUT << std::endl;
-      }
+          if (!current_str.empty()) {
+            VLINK_TERM_OUT << "\033[32m";
 
-      VLINK_TERM_OUT.flush();
+            auto print_split_view_list = vlink::Helpers::split_view(current_str, '\n');
 
-    } else {
-      if VUNLIKELY ((discovery_viewer && discovery_viewer->is_ready_to_quit()) || parser_loop->is_ready_to_quit()) {
-        force_update = false;
-        return;
-      }
+            for (size_t i = 0; i < print_split_view_list.size(); ++i) {
+              VLINK_TERM_OUT << "\033[K";
+              VLINK_TERM_OUT << print_split_view_list[i];
 
-      if VUNLIKELY (print_str.size() > max_str_count) {
-        VLINK_TERM_OUT << "\033[H\033[J";
-        VLINK_TERM_OUT.flush();
-        std::cerr << "The Message is too large to display." << std::endl;
-        std::cerr.flush();
+              if (i < print_split_view_list.size() - 1) {
+                VLINK_TERM_OUT << "\n";
 
-        force_update = false;
-        return;
-      }
-
-      auto split_str_list = vlink::Helpers::split(print_str, '\n');
-
-      if VUNLIKELY ((discovery_viewer && discovery_viewer->is_ready_to_quit()) || parser_loop->is_ready_to_quit()) {
-        force_update = false;
-        return;
-      }
-
-      std::string page_str;
-      int line_count = 0;
-
-      print_list.clear();
-      line_list.clear();
-
-      print_list.reserve(split_str_list.size() + 5);
-      line_list.reserve(split_str_list.size() + 5);
-
-      for (auto& str : split_str_list) {
-        if (static_cast<int64_t>(str.size()) > terminal_size.first) {
-          str = str.substr(0, terminal_size.first);
-        }
-
-        page_str += (str + "\n");
-        ++line_count;
-
-        if (line_count >= terminal_size.second - 3) {
-          if (!page_str.empty()) {
-            page_str.pop_back();
-          }
-          print_list.emplace_back(page_str);
-          line_list.emplace_back(line_count);
-          page_str.clear();
-          line_count = 0;
-        }
-      }
-
-      if (!page_str.empty()) {
-        page_str.pop_back();
-      }
-
-      if (!page_str.empty()) {
-        print_list.emplace_back(page_str);
-        line_list.emplace_back(line_count);
-      }
-
-      total_page = std::min(print_list.size(), static_cast<size_t>(5000));
-
-      if (current_page > total_page - 1) {
-        current_page = total_page - 1;
-      }
-
-      if (current_page < 0) {
-        current_page = 0;
-      }
-
-      if (!print_list.empty() && !line_list.empty()) {
-        current_str = print_list.at(current_page);
-        current_line = line_list.at(current_page);
-      }
-
-      VLINK_TERM_OUT << "\033[H\033[K";
-
-      if (is_paused) {
-        VLINK_TERM_OUT << "\033[33m"
-                       << "Message Parsed by vlink-efbs (Paused):"
-                       << "\033[0m" << std::endl;
-      } else {
-        VLINK_TERM_OUT << "Message Parsed by vlink-efbs:" << std::endl;
-      }
-
-      redraw_url_title(show_data_dot, false);
-      is_url_title_with_dot = show_data_dot;
-      mark_url_title_rendered(show_data_dot);
-      VLINK_TERM_OUT.flush();
-
-      if (!current_str.empty()) {
-        if (!current_str.empty()) {
-          VLINK_TERM_OUT << "\033[32m";
-
-          auto print_split_view_list = vlink::Helpers::split_view(current_str, '\n');
-
-          for (size_t i = 0; i < print_split_view_list.size(); ++i) {
-            VLINK_TERM_OUT << "\033[K";
-            VLINK_TERM_OUT << print_split_view_list[i];
-
-            if (i < print_split_view_list.size() - 1) {
-              VLINK_TERM_OUT << "\n";
-
-              if (i > 0 && i % kFlushMinLine == 0) {
-                VLINK_TERM_OUT.flush();
-                if constexpr (kFlushMinSleep > 0) {
-                  std::this_thread::sleep_for(std::chrono::microseconds(kFlushMinSleep));
+                if (i > 0 && i % kFlushMinLine == 0) {
+                  VLINK_TERM_OUT.flush();
+                  if constexpr (kFlushMinSleep > 0) {
+                    std::this_thread::sleep_for(std::chrono::microseconds(kFlushMinSleep));
+                  }
                 }
               }
             }
+
+            VLINK_TERM_OUT << "\033[0m";
+            VLINK_TERM_OUT << "\033[K";
+            VLINK_TERM_OUT << std::endl;
           }
 
-          VLINK_TERM_OUT << "\033[0m";
-          VLINK_TERM_OUT << "\033[K";
-          VLINK_TERM_OUT << std::endl;
+          VLINK_TERM_OUT.flush();
+
+        } else {
+          if VUNLIKELY ((discovery_viewer && discovery_viewer->is_ready_to_quit()) || parser_loop->is_ready_to_quit()) {
+            force_update = false;
+            return;
+          }
+
+          if VUNLIKELY (print_str.size() > max_str_count) {
+            VLINK_TERM_OUT << "\033[H\033[J";
+            VLINK_TERM_OUT.flush();
+            std::cerr << "The Message is too large to display." << std::endl;
+            std::cerr.flush();
+
+            force_update = false;
+            return;
+          }
+
+          auto split_str_list = vlink::Helpers::split(print_str, '\n');
+
+          if VUNLIKELY ((discovery_viewer && discovery_viewer->is_ready_to_quit()) || parser_loop->is_ready_to_quit()) {
+            force_update = false;
+            return;
+          }
+
+          std::string page_str;
+          int line_count = 0;
+
+          print_list.clear();
+          line_list.clear();
+
+          print_list.reserve(split_str_list.size() + 5);
+          line_list.reserve(split_str_list.size() + 5);
+
+          for (auto& str : split_str_list) {
+            if (static_cast<int64_t>(str.size()) > terminal_size.first) {
+              str = str.substr(0, terminal_size.first);
+            }
+
+            page_str += (str + "\n");
+            ++line_count;
+
+            if (line_count >= terminal_size.second - 3) {
+              if (!page_str.empty()) {
+                page_str.pop_back();
+              }
+              print_list.emplace_back(page_str);
+              line_list.emplace_back(line_count);
+              page_str.clear();
+              line_count = 0;
+            }
+          }
+
+          if (!page_str.empty()) {
+            page_str.pop_back();
+          }
+
+          if (!page_str.empty()) {
+            print_list.emplace_back(page_str);
+            line_list.emplace_back(line_count);
+          }
+
+          total_page = std::min(print_list.size(), static_cast<size_t>(5000));
+
+          if (current_page > total_page - 1) {
+            current_page = total_page - 1;
+          }
+
+          if (current_page < 0) {
+            current_page = 0;
+          }
+
+          if (!print_list.empty() && !line_list.empty()) {
+            current_str = print_list.at(current_page);
+            current_line = line_list.at(current_page);
+          }
+
+          VLINK_TERM_OUT << "\033[H\033[K";
+
+          if (is_paused) {
+            VLINK_TERM_OUT << "\033[33m"
+                           << "Message Parsed by vlink-efbs (Paused):"
+                           << "\033[0m" << std::endl;
+          } else {
+            VLINK_TERM_OUT << "Message Parsed by vlink-efbs:" << std::endl;
+          }
+
+          redraw_url_title(show_data_dot, false);
+          is_url_title_with_dot = show_data_dot;
+          mark_url_title_rendered(show_data_dot);
+          VLINK_TERM_OUT.flush();
+
+          if (!current_str.empty()) {
+            if (!current_str.empty()) {
+              VLINK_TERM_OUT << "\033[32m";
+
+              auto print_split_view_list = vlink::Helpers::split_view(current_str, '\n');
+
+              for (size_t i = 0; i < print_split_view_list.size(); ++i) {
+                VLINK_TERM_OUT << "\033[K";
+                VLINK_TERM_OUT << print_split_view_list[i];
+
+                if (i < print_split_view_list.size() - 1) {
+                  VLINK_TERM_OUT << "\n";
+
+                  if (i > 0 && i % kFlushMinLine == 0) {
+                    VLINK_TERM_OUT.flush();
+                    if constexpr (kFlushMinSleep > 0) {
+                      std::this_thread::sleep_for(std::chrono::microseconds(kFlushMinSleep));
+                    }
+                  }
+                }
+              }
+
+              VLINK_TERM_OUT << "\033[0m";
+              VLINK_TERM_OUT << "\033[K";
+              VLINK_TERM_OUT << std::endl;
+            }
+          }
         }
-      }
-    }
 
-    if (current_line < terminal_size.second - 3) {
-      for (int i = 0; i < terminal_size.second - 3 - current_line; ++i) {
+        if (current_line < terminal_size.second - 3) {
+          for (int i = 0; i < terminal_size.second - 3 - current_line; ++i) {
+            VLINK_TERM_OUT << "\033[K";
+            VLINK_TERM_OUT << std::endl;
+          }
+        }
+
+        std::string last_line_str;
+
+        last_line_str = std::string("\033[44;37;1m") + std::string("<") +
+                        (total_page == 0 ? std::string("0") : std::to_string(current_page + 1)) + std::string("/") +
+                        ((total_page >= 5000 || is_out_of_range) ? std::string("5000+") : std::to_string(total_page)) +
+                        std::string(">") + std::string("\033[0m [ ");
+
+        if (print_enum_string) {
+          last_line_str += "\033[4mE\033[0m ";
+        } else {
+          last_line_str += "\033[0mE\033[0m ";
+        }
+
+        if (ignore_array) {
+          last_line_str += "\033[4mR\033[0m ";
+        } else {
+          last_line_str += "\033[0mR\033[0m ";
+        }
+
+        if (ignore_string) {
+          last_line_str += "\033[4mT\033[0m ";
+        } else {
+          last_line_str += "\033[0mT\033[0m ";
+        }
+
+        if (print_time_string) {
+          last_line_str += "\033[4mY\033[0m ";
+        } else {
+          last_line_str += "\033[0mY\033[0m ";
+        }
+
+        if (print_hex_string) {
+          last_line_str += "\033[4mU\033[0m ";
+        } else {
+          last_line_str += "\033[0mU\033[0m ";
+        }
+
+        if (ignore_default) {
+          last_line_str += "\033[4mO\033[0m ";
+        } else {
+          last_line_str += "\033[0mO\033[0m ";
+        }
+
+        if (use_long_repeated) {
+          last_line_str += "\033[4mP\033[0m ";
+        } else {
+          last_line_str += "\033[0mP\033[0m ";
+        }
+
+        last_line_str += std::string("] ");
+
         VLINK_TERM_OUT << "\033[K";
-        VLINK_TERM_OUT << std::endl;
-      }
-    }
 
-    std::string last_line_str;
+        if VLIKELY (last_line_str.size() <= static_cast<size_t>(terminal_size.first + 69)) {
+          VLINK_TERM_OUT << last_line_str;
+        } else {
+          VLINK_TERM_OUT << last_line_str.substr(0, terminal_size.first + 69);
+        }
 
-    last_line_str = std::string("\033[44;37;1m") + std::string("<") +
-                    (total_page == 0 ? std::string("0") : std::to_string(current_page + 1)) + std::string("/") +
-                    ((total_page >= 5000 || is_out_of_range) ? std::string("5000+") : std::to_string(total_page)) +
-                    std::string(">") + std::string("\033[0m [ ");
+        VLINK_TERM_OUT.flush();
 
-    if (print_enum_string) {
-      last_line_str += "\033[4mE\033[0m ";
-    } else {
-      last_line_str += "\033[0mE\033[0m ";
-    }
-
-    if (ignore_array) {
-      last_line_str += "\033[4mR\033[0m ";
-    } else {
-      last_line_str += "\033[0mR\033[0m ";
-    }
-
-    if (ignore_string) {
-      last_line_str += "\033[4mT\033[0m ";
-    } else {
-      last_line_str += "\033[0mT\033[0m ";
-    }
-
-    if (print_time_string) {
-      last_line_str += "\033[4mY\033[0m ";
-    } else {
-      last_line_str += "\033[0mY\033[0m ";
-    }
-
-    if (print_hex_string) {
-      last_line_str += "\033[4mU\033[0m ";
-    } else {
-      last_line_str += "\033[0mU\033[0m ";
-    }
-
-    if (ignore_default) {
-      last_line_str += "\033[4mO\033[0m ";
-    } else {
-      last_line_str += "\033[0mO\033[0m ";
-    }
-
-    if (use_long_repeated) {
-      last_line_str += "\033[4mP\033[0m ";
-    } else {
-      last_line_str += "\033[0mP\033[0m ";
-    }
-
-    last_line_str += std::string("] ");
-
-    VLINK_TERM_OUT << "\033[K";
-
-    if VLIKELY (last_line_str.size() <= static_cast<size_t>(terminal_size.first + 69)) {
-      VLINK_TERM_OUT << last_line_str;
-    } else {
-      VLINK_TERM_OUT << last_line_str.substr(0, terminal_size.first + 69);
-    }
-
-    VLINK_TERM_OUT.flush();
-
-    is_changed = false;
-    is_out_of_range = false;
-    force_update = false;
-  };
+        is_changed = false;
+        is_out_of_range = false;
+        force_update = false;
+      };
 
   auto listen_bytes_function = [&parser_loop, &update_terminal_function, &current_bytes, &bytes_mtx, &has_new_data,
                                 &frame_seq, &last_frame_timestamp_ms](const vlink::Bytes& bytes) {

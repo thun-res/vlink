@@ -36,8 +36,8 @@
 #include <string_view>
 #include <vector>
 
-#include "webviz_app_utils.h"
-#include "webviz_types.h"
+#include "./webviz_app_utils.h"
+#include "./webviz_types.h"
 
 namespace vlink {
 namespace webviz {

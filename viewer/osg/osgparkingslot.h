@@ -46,7 +46,7 @@ namespace OsgParkingSlot {
 
 struct SlotData {
   double corners[4][3]{{0}};
-  uint32_t slot_id{0};
+  uint64_t slot_id{0};
   uint32_t slot_type{0};
   uint32_t color{0};
   float confidence{1.0f};

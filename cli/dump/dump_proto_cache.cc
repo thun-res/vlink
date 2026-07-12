@@ -21,7 +21,7 @@
  * limitations under the License.
  */
 
-#include "dump_proto_cache.h"
+#include "./dump_proto_cache.h"
 
 #ifdef VLINK_HAS_PROTOBUF_COMPILER
 
