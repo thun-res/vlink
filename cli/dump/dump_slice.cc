@@ -1282,11 +1282,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
 
   std::unordered_map<std::string, int> sample_counters;
 
-  player->register_output_callback([&ctx, &player, &current_writer, &slice_error, &slice_selection, &sample_counters,
-                                    &opt, &url_ser_override, &has_fields, &has_filter, &slice_proto_cache,
-                                    &slice_field_paths, &filter_ctx, &current_slice_index, &slice_stats_list,
-                                    &close_current_csv, &close_current_writer, &create_writer_for_slice,
-                                    &current_csv_file](const vlink::Frame& frame) {
+  player->register_output_callback([&](const vlink::Frame& frame) {
     const int64_t timestamp = frame.timestamp;
     const std::string& url = frame.url;
     const vlink::ActionType action_type = frame.action_type;
