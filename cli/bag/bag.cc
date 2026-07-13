@@ -2935,7 +2935,8 @@ int main(int argc, char* argv[]) {
     auto sync_mode = record_command.is_used("-s");
 
     max_task_depth = record_command.get<int64_t>("--max_task_depth");
-    max_memory_size = record_command.get<double>("--max_memory_size");
+    const auto max_memory_size_gb = record_command.get<double>("--max_memory_size");
+    max_memory_size = max_memory_size_gb;
 
     quiet_flag = record_command.is_used("-q");
     detail_flag = record_command.is_used("-l");
@@ -2964,25 +2965,24 @@ int main(int argc, char* argv[]) {
       return -1;
     }
 
-    static constexpr double kMaxPacketSizeMb =
-        static_cast<double>(std::numeric_limits<size_t>::max() / (1024ULL * 1024ULL));
+    static constexpr auto kMaxPacketSizeMb = std::numeric_limits<size_t>::max() / (1024ULL * 1024ULL);
 
     static constexpr uint64_t kMaxMemoryBytes = static_cast<uint64_t>(std::numeric_limits<size_t>::max()) <
                                                         static_cast<uint64_t>(std::numeric_limits<int64_t>::max())
                                                     ? static_cast<uint64_t>(std::numeric_limits<size_t>::max())
                                                     : static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
 
-    static constexpr double kMaxMemorySizeGb = static_cast<double>(kMaxMemoryBytes / (1024ULL * 1024ULL * 1024ULL));
+    static constexpr auto kMaxMemorySizeGb = kMaxMemoryBytes / (1024ULL * 1024ULL * 1024ULL);
 
-    static constexpr double kMaxCacheSizeMb =
-        static_cast<double>(std::numeric_limits<int64_t>::max() / (1024LL * 1024LL));
+    static constexpr auto kMaxCacheSizeMb = std::numeric_limits<int64_t>::max() / (1024LL * 1024LL);
 
     if VUNLIKELY (!std::isfinite(max_packet_size) || max_packet_size <= 0 || max_packet_size > kMaxPacketSizeMb) {
       std::cerr << "Invalid max_packet_size [-x]" << std::endl;
       return -1;
     }
 
-    if VUNLIKELY (!std::isfinite(max_memory_size) || max_memory_size <= 0 || max_memory_size > kMaxMemorySizeGb) {
+    if VUNLIKELY (!std::isfinite(max_memory_size_gb) || max_memory_size_gb <= 0 ||
+                  max_memory_size_gb > kMaxMemorySizeGb) {
       std::cerr << "Invalid max_memory_size [--max_memory_size]" << std::endl;
       return -1;
     }
@@ -3276,8 +3276,7 @@ int main(int argc, char* argv[]) {
       }
     }
 
-    static constexpr double kMaxCacheSizeMb =
-        static_cast<double>(std::numeric_limits<int64_t>::max() / (1024LL * 1024LL));
+    static constexpr auto kMaxCacheSizeMb = std::numeric_limits<int64_t>::max() / (1024LL * 1024LL);
 
     if VUNLIKELY (!std::isfinite(cache_size) || cache_size < 0 || cache_size > kMaxCacheSizeMb) {
       std::cerr << "Invalid cache_size [-c]" << std::endl;
