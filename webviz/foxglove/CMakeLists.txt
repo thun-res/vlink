@@ -6,43 +6,6 @@ cmake_minimum_required(VERSION 3.15...3.31)
 
 project(vlink-foxglove LANGUAGES CXX)
 
-# requires
-if(NOT TARGET vlink)
-  find_package(
-    vlink
-    COMPONENTS ALL
-    REQUIRED
-  )
-endif()
-
-if(NOT TARGET protobuf::libprotobuf)
-  find_package(Protobuf CONFIG QUIET)
-  if(NOT TARGET protobuf::libprotobuf)
-    find_package(Protobuf REQUIRED)
-  endif()
-endif()
-
-if(TARGET protobuf::libprotobuf)
-  set(protobuf_libs protobuf::libprotobuf)
-elseif(TARGET protobuf::libprotobuf-lite)
-  set(protobuf_libs protobuf::libprotobuf-lite)
-endif()
-
-if(NOT TARGET flatbuffers::flatbuffers_shared AND NOT TARGET flatbuffers::flatbuffers)
-  find_package(flatbuffers CONFIG QUIET)
-endif()
-
-if(TARGET flatbuffers::flatbuffers_shared)
-  set(flatbuffers_libs flatbuffers::flatbuffers_shared)
-elseif(TARGET flatbuffers::flatbuffers)
-  set(flatbuffers_libs flatbuffers::flatbuffers)
-endif()
-
-if(NOT protobuf_libs OR NOT flatbuffers_libs)
-  message(WARNING "Can not find proto or flatbuffers, skipped.")
-  return()
-endif()
-
 file(GLOB FOXGLOVE_FBS_FILES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/fbs/*.fbs)
 vlink_generate_cpp(
   TARGET

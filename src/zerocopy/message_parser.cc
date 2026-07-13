@@ -179,16 +179,16 @@ static bool header_value(const Header& header, std::string_view path, MessagePar
 static bool convert_numeric(const MessageParser::Value& value, double& out, bool* precision_loss) noexcept {
   bool loss = false;
 
-  if (const auto* number = std::get_if<int64_t>(&value)) {
+  if (const auto* signed_number = std::get_if<int64_t>(&value)) {
     constexpr int64_t kMaxExactInteger = INT64_C(1) << std::numeric_limits<double>::digits;
-    loss = *number > kMaxExactInteger || *number < -kMaxExactInteger;
-    out = static_cast<double>(*number);
-  } else if (const auto* number = std::get_if<uint64_t>(&value)) {
+    loss = *signed_number > kMaxExactInteger || *signed_number < -kMaxExactInteger;
+    out = static_cast<double>(*signed_number);
+  } else if (const auto* unsigned_number = std::get_if<uint64_t>(&value)) {
     constexpr uint64_t kMaxExactInteger = UINT64_C(1) << std::numeric_limits<double>::digits;
-    loss = *number > kMaxExactInteger;
-    out = static_cast<double>(*number);
-  } else if (const auto* number = std::get_if<double>(&value)) {
-    out = *number;
+    loss = *unsigned_number > kMaxExactInteger;
+    out = static_cast<double>(*unsigned_number);
+  } else if (const auto* double_number = std::get_if<double>(&value)) {
+    out = *double_number;
   } else {
     return false;
   }
