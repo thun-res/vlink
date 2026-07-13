@@ -52,6 +52,8 @@
 
 namespace vlink {
 
+static constexpr std::string_view kMcapMagic{"\x89MCAP0\r\n", 8};
+
 static const std::string& make_channel_key(std::string& buffer, const std::string& url, std::string_view action_name) {
   buffer.assign(url);
   buffer.push_back('\x1F');
@@ -785,7 +787,6 @@ void VCAPWriter::close_segment() {
   impl_->writer->terminate();
   impl_->writer.reset();
 
-  constexpr std::string_view kMcapMagic{"\x89MCAP0\r\n", 8};
   std::error_code footer_ec;
   const auto file_size = std::filesystem::file_size(impl_->active_path, footer_ec);
 

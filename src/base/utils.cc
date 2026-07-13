@@ -1379,14 +1379,14 @@ void register_terminate_signal(MoveFunction<void(int)>&& callback, bool is_async
   instance.pass_through = pass_through;
 
 #ifdef _WIN32
-  constexpr size_t kTerminateSignals[] = {SIGINT, SIGTERM};
+  static constexpr size_t kTerminateSignals[] = {SIGINT, SIGTERM};
 
   for (auto signal : kTerminateSignals) {
     ::signal(signal, SignalHelper::on_terminate);
   }
 #else
 
-  constexpr size_t kTerminateSignals[] = {SIGINT, SIGTERM, SIGHUP};
+  static constexpr size_t kTerminateSignals[] = {SIGINT, SIGTERM, SIGHUP};
 
   struct sigaction act{};
 
@@ -1417,14 +1417,14 @@ void register_crash_signal(MoveFunction<void(int)>&& callback) noexcept {
   instance.crash_callback = std::move(callback);
 
 #ifdef _WIN32
-  constexpr size_t kCrashSignals[] = {SIGABRT, SIGSEGV, SIGFPE, SIGILL};
+  static constexpr size_t kCrashSignals[] = {SIGABRT, SIGSEGV, SIGFPE, SIGILL};
 
   for (auto signal : kCrashSignals) {
     ::signal(signal, SignalHelper::on_crash);
   }
 #else
 
-  constexpr size_t kCrashSignals[] = {SIGABRT, SIGSEGV, SIGFPE, SIGILL, SIGBUS, SIGSYS};
+  static constexpr size_t kCrashSignals[] = {SIGABRT, SIGSEGV, SIGFPE, SIGILL, SIGBUS, SIGSYS};
 
   struct sigaction act{};
 

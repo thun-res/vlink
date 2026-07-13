@@ -48,6 +48,10 @@ namespace vlink {
 
 namespace webviz {
 
+static constexpr size_t kFullCollection = static_cast<size_t>(-1);
+static constexpr size_t kDescriptorCacheWarnLimit = 256;
+static constexpr std::string_view kCollection = "data";
+
 using Descriptor = google::protobuf::Descriptor;
 using FieldDescriptor = google::protobuf::FieldDescriptor;
 using FieldProto = google::protobuf::FieldDescriptorProto;
@@ -627,8 +631,6 @@ static const Descriptor* build_descriptor(const std::string& key, const std::str
   const auto* descriptor = file->FindMessageTypeByName("Root");
   store.descriptors.emplace(key, descriptor);
 
-  static constexpr size_t kDescriptorCacheWarnLimit = 256;
-
   if VUNLIKELY (store.descriptors.size() == kDescriptorCacheWarnLimit) {
     MLOG_W("zerocopy dynamic descriptor cache reached {} entries; unstable per-message schemas grow it without bound",
            kDescriptorCacheWarnLimit);
@@ -781,10 +783,7 @@ static void fill_root_fields(Message& message, const zerocopy::MessageParser& pa
   }
 }
 
-static constexpr size_t kFullCollection = static_cast<size_t>(-1);
-
 static size_t referenced_collection_limit(const std::vector<std::string>& sources) {
-  static constexpr std::string_view kCollection = "data";
   size_t limit = 0;
 
   for (const auto& source : sources) {
@@ -802,7 +801,7 @@ static size_t referenced_collection_limit(const std::vector<std::string>& source
           bool parsed = false;
 
           while (cursor < source.size() && std::isdigit(static_cast<unsigned char>(source[cursor])) != 0) {
-            const size_t digit = static_cast<size_t>(source[cursor] - '0');
+            const auto digit = static_cast<size_t>(source[cursor] - '0');
 
             if VUNLIKELY (index > (std::numeric_limits<size_t>::max() - digit) / 10) {
               return kFullCollection;

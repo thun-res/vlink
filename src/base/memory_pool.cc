@@ -777,7 +777,7 @@ void MemoryPool::reset_stats() noexcept {
 }
 
 void MemoryPool::clear() noexcept {
-  constexpr size_t kStackSlots = 64U;
+  static constexpr size_t kStackSlots = 64U;
 
   for (auto& state : impl_->owned_states) {
     size_t stack_free_counts[kStackSlots] = {};

@@ -361,7 +361,7 @@ void WheelTimer::Impl::run() {
       now = std::chrono::steady_clock::now();
     }
 
-    constexpr int64_t kStaleTickResetIntervals = 10;
+    static constexpr int64_t kStaleTickResetIntervals = 10;
 
     if VUNLIKELY (next_tick + interval * kStaleTickResetIntervals < now) {
       next_tick = now + interval;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE

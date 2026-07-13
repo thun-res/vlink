@@ -660,7 +660,7 @@ Bytes Bytes::compress_data(const uint8_t* data, size_t size, bool high_ratio) no
 Bytes Bytes::uncompress_data(const uint8_t* data, size_t size, bool check_valid) noexcept {
   Bytes target_bytes;
 
-  constexpr size_t kMinCompressedSize = sizeof(kCompressHeaderMagic) + 4 + sizeof(kCompressFooterMagic);
+  static constexpr size_t kMinCompressedSize = sizeof(kCompressHeaderMagic) + 4 + sizeof(kCompressFooterMagic);
 
   if VUNLIKELY (!data || size < kMinCompressedSize) {
     return target_bytes;
@@ -675,7 +675,7 @@ Bytes Bytes::uncompress_data(const uint8_t* data, size_t size, bool check_valid)
   uint32_t target_size = (static_cast<uint32_t>(data[4]) << 24) | (static_cast<uint32_t>(data[5]) << 16) |
                          (static_cast<uint32_t>(data[6]) << 8) | (static_cast<uint32_t>(data[7]));
 
-  constexpr uint32_t kMaxUncompressedSize = 256 * 1024 * 1024;  // 256MB
+  static constexpr uint32_t kMaxUncompressedSize = 256 * 1024 * 1024;  // 256MB
 
   if VUNLIKELY (target_size == 0 || target_size > kMaxUncompressedSize) {
     CLOG_E("Bytes: Invalid uncompressed size: %u.", target_size);

@@ -109,7 +109,7 @@ void FastStream::StringBuf::grow_buffer(size_t required_size) {
 }
 
 void FastStream::StringBuf::advance_pptr(size_t count) noexcept {
-  constexpr auto kMaxBump = static_cast<size_t>(std::numeric_limits<int>::max());
+  static constexpr auto kMaxBump = static_cast<size_t>(std::numeric_limits<int>::max());
 
   while (count > kMaxBump) {
     pbump(std::numeric_limits<int>::max());  // LCOV_EXCL_LINE GCOVR_EXCL_LINE

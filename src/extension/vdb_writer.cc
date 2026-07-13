@@ -57,6 +57,8 @@ namespace vlink {
 [[maybe_unused]] static constexpr int get_column(int column) noexcept { return column + 1; }
 
 static constexpr int kSyncWriteInterval = 1000;  // ms
+static constexpr int kCompressMaxIgnoreCnt = 5;
+static constexpr double kCompressMaxRatio = 0.95;
 
 // VDBWriter::Impl
 struct VDBWriter::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding)
@@ -1863,9 +1865,6 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
 
   if (impl_->enable_compressed && static_cast<int64_t>(data.size()) >= impl_->config.compress_start_size &&
       impl_->config.ignore_compress_urls.count(url) == 0) {
-    static constexpr int kCompressMaxIgnoreCnt = 5;
-    static constexpr double kCompressMaxRatio = 0.95;
-
     auto& compress_ignore_cnt = impl_->compress_ignore_map[url];
 
     if (compress_ignore_cnt < kCompressMaxIgnoreCnt) {
