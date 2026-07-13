@@ -792,6 +792,7 @@ void TriggerRecorder::do_dump(DumpJob& job) {
 
   std::vector<SnapFrame> snapshot;
   std::vector<LossInfo> losses;
+  losses.reserve(job.frozen_buffers.size());
 
   // LCOV_EXCL_START GCOVR_EXCL_START
   std::vector<std::string> lower_patterns;
@@ -836,10 +837,12 @@ void TriggerRecorder::do_dump(DumpJob& job) {
     const int64_t window_begin = trigger_ts - pre;
     const int64_t window_end = trigger_ts + post;
 
-    for (const auto& entry : url_buffer->ring) {
-      if (entry.capture_ts_us >= window_begin && entry.capture_ts_us <= window_end) {
-        snapshot.push_back(SnapFrame{entry.capture_ts_us, entry.payload, url_buffer.get()});
-      }
+    auto first = std::lower_bound(
+        url_buffer->ring.begin(), url_buffer->ring.end(), window_begin,
+        [](const UrlBuffer::Entry& entry, int64_t timestamp) { return entry.capture_ts_us < timestamp; });
+
+    for (; first != url_buffer->ring.end() && first->capture_ts_us <= window_end; ++first) {
+      snapshot.push_back(SnapFrame{first->capture_ts_us, first->payload, url_buffer.get()});
     }
 
     losses.push_back(LossInfo{url_buffer.get(), loss});
@@ -934,11 +937,6 @@ void TriggerRecorder::do_dump(DumpJob& job) {
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
-  if VUNLIKELY (!writer->async_run()) {
-    notify_dump_failed(job, "writer loop failed to start");
-    return;
-  }
-
   if (impl_->bag_plugin) {
     writer->bind_plugin_interface(impl_->bag_plugin);
   }
@@ -960,23 +958,26 @@ void TriggerRecorder::do_dump(DumpJob& job) {
   }
 
   int64_t throttle_bytes = 0;
-  int64_t dropped = 0;
   int64_t byte_count = 0;
+  bool persistence_failed = false;
+  const size_t snapshot_frame_count = snapshot.size();
+  Frame frame;
+  frame.action_type = ActionType::kSubscribe;
 
-  for (const auto& item : snapshot) {
+  for (auto& item : snapshot) {
     // LCOV_EXCL_START GCOVR_EXCL_START
     const auto item_size = static_cast<int64_t>(item.payload->size());
-    Frame frame;
     frame.timestamp = item.capture_ts_us - min_capture;
     frame.url = item.source->url;
     frame.ser_type = item.source->ser_type;
     frame.schema_type = item.source->schema_type;
-    frame.action_type = ActionType::kSubscribe;
     frame.data = Bytes::shallow_copy(item.payload->data(), item.payload->size());
 
     if VUNLIKELY (writer->push(frame) < 0) {
-      ++dropped;
-      continue;
+      frame.data.clear();
+      item.payload.reset();
+      persistence_failed = true;
+      break;
     }
 
     byte_count += item_size;
@@ -984,6 +985,9 @@ void TriggerRecorder::do_dump(DumpJob& job) {
     if (trigger_plugin) {
       trigger_plugin->on_frame(frame, dump_context);
     }
+
+    frame.data.clear();
+    item.payload.reset();
 
     if (impl_->config.sleep_time_ms > 0 && impl_->config.sleep_interval > 0) {
       throttle_bytes += item_size;
@@ -996,14 +1000,13 @@ void TriggerRecorder::do_dump(DumpJob& job) {
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
+  frame.data.clear();
+  std::vector<SnapFrame>().swap(snapshot);
+
   if (impl_->bag_plugin) {
     writer->clear_plugin_interface();
   }
 
-  const bool drained = writer->wait_for_idle(60'000);
-
-  writer->quit(!drained);
-  writer->wait_for_quit();
   writer->close();
   impl_->writing.store(false, std::memory_order_release);
 
@@ -1011,21 +1014,7 @@ void TriggerRecorder::do_dump(DumpJob& job) {
 
   writer.reset();
 
-  if VUNLIKELY (dropped > 0) {
-    // LCOV_EXCL_START GCOVR_EXCL_START
-    VLOG_W("TriggerRecorder: writer dropped ", dropped, " frame(s) due to queue overflow");
-    // LCOV_EXCL_STOP GCOVR_EXCL_STOP
-  }
-
-  if VUNLIKELY (!drained) {
-    // LCOV_EXCL_START GCOVR_EXCL_START
-    VLOG_E("TriggerRecorder: writer drain timeout, dump may be incomplete: ", path);
-    notify_dump_failed(job, "writer drain timeout");
-    return;
-    // LCOV_EXCL_STOP GCOVR_EXCL_STOP
-  }
-
-  if VUNLIKELY (writer_failed) {
+  if VUNLIKELY (persistence_failed || writer_failed) {
     VLOG_E("TriggerRecorder: writer reported a persistence failure: ", path);
     notify_dump_failed(job, "writer persistence failure");
     return;
@@ -1035,8 +1024,7 @@ void TriggerRecorder::do_dump(DumpJob& job) {
     TriggerPluginInterface::DumpResult result;
     result.reason = params.reason;
     result.path = path;
-    result.frame_count = static_cast<int64_t>(snapshot.size()) - dropped;
-    result.dropped_count = dropped;
+    result.frame_count = static_cast<int64_t>(snapshot_frame_count);
     result.byte_count = byte_count;
     result.url_count = static_cast<int64_t>(losses.size());
     result.start_timestamp = writer_config.start_timestamp;
@@ -1046,7 +1034,7 @@ void TriggerRecorder::do_dump(DumpJob& job) {
     trigger_plugin->on_dump_finished(result);
   }
 
-  VLOG_I("TriggerRecorder: dump finished -> ", path, " frames=", snapshot.size());
+  VLOG_I("TriggerRecorder: dump finished -> ", path, " frames=", snapshot_frame_count);
 }
 
 }  // namespace vlink

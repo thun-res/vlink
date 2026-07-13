@@ -1084,11 +1084,15 @@ class ProxyServerBridge final : public ProxyBridge {
 
         if VLIKELY (sub) {
           const auto sample_info = sub->get_lost();
-          auto total_delta = sample_info.total - state.last_sample_info.total;
-          auto lost_delta = sample_info.lost - state.last_sample_info.lost;
 
-          if VUNLIKELY (total_delta > 0 && lost_delta > 0) {
-            current_loss = static_cast<double>(lost_delta) / static_cast<double>(total_delta);
+          if VLIKELY (sample_info.total >= state.last_sample_info.total &&
+                      sample_info.lost >= state.last_sample_info.lost) {
+            auto total_delta = sample_info.total - state.last_sample_info.total;
+            auto lost_delta = sample_info.lost - state.last_sample_info.lost;
+
+            if VUNLIKELY (total_delta > 0 && lost_delta > 0) {
+              current_loss = static_cast<double>(lost_delta) / static_cast<double>(total_delta);
+            }
           }
 
           state.last_sample_info = sample_info;

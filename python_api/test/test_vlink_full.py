@@ -722,13 +722,14 @@ def test_bag_extended():
     cfg.compress = _vlink.BagWriter.CompressType.LZAV
     cfg.ignore_compress_urls = {"intra://schema_cb"}
     w = _vlink.BagWriter.create(bag_path, cfg)
+    w.async_run()
 
     explicit_schema = _vlink.SchemaData()
     explicit_schema.name = "demo.Explicit"
     explicit_schema.encoding = "protobuf"
     explicit_schema.schema_type = _vlink.SchemaType.Protobuf
     explicit_schema.data = _vlink.Bytes.from_bytes(b"explicit-schema")
-    assert w.push_schema(explicit_schema, immediate=True)
+    assert w.push_schema(explicit_schema)
 
     callback_calls = []
 
@@ -742,7 +743,6 @@ def test_bag_extended():
         return schema
 
     w.register_schema_callback(schema_callback)
-    w.async_run()
     for i in range(5):
         frame = _bag_frame("intra://t", "raw", _vlink.SchemaType.Raw, _vlink.ActionType.Publish, f"m{i}".encode())
         timestamp = w.push(frame)
@@ -753,14 +753,11 @@ def test_bag_extended():
         _vlink.SchemaType.Protobuf,
         _vlink.ActionType.Publish,
         b"schema-msg",
-    ), immediate=True)
+    ))
     assert isinstance(schema_timestamp, int)
     time.sleep(0.05)
-    timestamp_immediate = w.push(
-        _bag_frame("intra://t", "raw", _vlink.SchemaType.Raw, _vlink.ActionType.Publish, b"sync"),
-        immediate=True,
-    )
-    assert isinstance(timestamp_immediate, int)
+    timestamp = w.push(_bag_frame("intra://t", "raw", _vlink.SchemaType.Raw, _vlink.ActionType.Publish, b"queued"))
+    assert isinstance(timestamp, int)
     time.sleep(0.2)
     assert w.wait_for_idle(5000)
     w.quit()
@@ -836,7 +833,9 @@ def test_bag_extended():
 
 def test_bag_writer_explicit_zero_timestamp():
     bag_path = os.path.join(tempfile.mkdtemp(), "zero_ts.vdb")
-    w = _vlink.BagWriter.create(bag_path)
+    cfg = _vlink.BagWriter.Config()
+    cfg.sync_mode = True
+    w = _vlink.BagWriter.create(bag_path, cfg)
     timestamp = w.push(_bag_frame(
         "intra://zero_ts",
         "raw",
@@ -844,7 +843,7 @@ def test_bag_writer_explicit_zero_timestamp():
         _vlink.ActionType.Publish,
         b"zero-ts",
         timestamp=0,
-    ), immediate=True)
+    ))
     assert timestamp == 0
     del w
 
@@ -1318,6 +1317,7 @@ def test_api_surface():
         assert hasattr(_vlink.utils, name), f"utils missing function: {name}"
 
     assert hasattr(_vlink.BagWriter.Config, "ignore_compress_urls")
+    assert hasattr(_vlink.BagWriter.Config, "sync_mode")
     for method in (
         "register_schema_callback", "push_schema", "close", "fail", "clear", "__lshift__", "wait_for_idle",
     ):

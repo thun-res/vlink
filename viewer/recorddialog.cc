@@ -439,7 +439,7 @@ void RecordDialog::on_pushButton_start_clicked() {
           auto schema = window_->search_schema(ser_iter->second, schema_type);
 
           if (!schema.encoding.empty()) {
-            if (!recorder_->push_schema(schema, true)) {
+            if (!recorder_->push_schema(schema)) {
               CLOG_W("recorddialog: push_schema failed for ser=[%s] schema_type=[%d]", schema.name.c_str(),
                      static_cast<int>(schema.schema_type));
               failed_schema_set.emplace(schema_key);

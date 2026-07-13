@@ -114,7 +114,13 @@ class CustomCheckBox : public QCheckBox {
 };
 
 [[maybe_unused]] static uint32_t get_point3d_color(double value, double min_value, double max_value, bool inversion) {
-  double normalized = (value - min_value) / (max_value - min_value);
+  const double range = max_value - min_value;
+  double normalized = 0.0;
+
+  if (range > 0 && std::isfinite(range) && std::isfinite(value) && std::isfinite(min_value) &&
+      std::isfinite(max_value)) {
+    normalized = (value - min_value) / range;
+  }
 
   normalized = std::clamp(normalized, 0.0, 1.0);
 

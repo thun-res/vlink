@@ -634,6 +634,11 @@ void PerceptionDialog::render_url(const QString& url) {
 
   if (context->schema == vlink::SchemaType::kFlatbuffers && context->fbs_context && context->fbs_context->schema &&
       context->fbs_context->root_object) {
+    if (!flatbuffers::Verify(*context->fbs_context->schema, *context->fbs_context->root_object,
+                             reinterpret_cast<const uint8_t*>(proxy_data.raw.data()), proxy_data.raw.size())) {
+      return;
+    }
+
     const auto* root_table = flatbuffers::GetAnyRoot(reinterpret_cast<const uint8_t*>(proxy_data.raw.data()));
 
     if (!root_table) {

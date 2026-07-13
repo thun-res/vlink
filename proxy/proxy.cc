@@ -30,8 +30,10 @@
 
 #include <argparse/argparse.hpp>
 //
+#include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -136,6 +138,16 @@ int main(int argc, char* argv[]) {
 
   if VUNLIKELY (proxy_config.domain_id < 0 || proxy_config.domain_id > 255) {
     std::cerr << "Invalid domain id." << std::endl;
+    std::cerr << program << std::endl;
+    return 1;
+  }
+
+  static constexpr double kMaxPacketSizeMb =
+      static_cast<double>(std::numeric_limits<size_t>::max() / (1024ULL * 1024ULL));
+
+  if VUNLIKELY (!std::isfinite(proxy_config.max_packet_size) || proxy_config.max_packet_size < 0.0 ||
+                proxy_config.max_packet_size > kMaxPacketSizeMb) {
+    std::cerr << "Invalid max packet size." << std::endl;
     std::cerr << program << std::endl;
     return 1;
   }

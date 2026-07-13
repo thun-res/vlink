@@ -23,6 +23,7 @@
 
 #include <flatbuffers/flatbuffers.h>
 #include <flatbuffers/idl.h>
+#include <flatbuffers/reflection.h>
 
 #include <nlohmann/json.hpp>
 
@@ -635,9 +636,25 @@ int start_efbs_pub(const std::string& url, const std::string& fbs_dir, const std
 
   if (!is_text_type && !is_blob_type) {
     if (!fbs_json.empty()) {
-      parser->ParseJson(fbs_json.c_str());
+      if VUNLIKELY (!parser->ParseJson(fbs_json.c_str())) {
+        std::cerr << "Parse flatbuffers json failed: " << parser->error_ << std::endl;
+        has_quit = true;
+        return -1;
+      }
     } else {
-      parser->ParseJson(nullptr, fbstxt_file.c_str());
+      std::string json_text;
+
+      if VUNLIKELY (!load_text_for_file(fbstxt_file, json_text)) {
+        std::cerr << "load_text_for_file failed." << std::endl;
+        has_quit = true;
+        return -1;
+      }
+
+      if VUNLIKELY (!parser->ParseJson(json_text.c_str(), fbstxt_file.c_str())) {
+        std::cerr << "Parse flatbuffers json failed: " << parser->error_ << std::endl;
+        has_quit = true;
+        return -1;
+      }
     }
 
     raw_data = vlink::Bytes::shallow_copy(parser->builder_.GetBufferPointer(), parser->builder_.GetSize());
@@ -740,6 +757,8 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
   std::shared_ptr<vlink::DiscoveryViewer> discovery_viewer;
   std::shared_ptr<ParserLoop> parser_loop;
   std::shared_ptr<flatbuffers::Parser> parser;
+  const reflection::Schema* fbs_schema = nullptr;
+  const reflection::Object* fbs_root_object = nullptr;
   std::optional<std::shared_ptr<RawSub>> raw_sub;
   std::optional<std::shared_ptr<RawGetter>> raw_getter;
 
@@ -898,6 +917,25 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
       has_quit = true;
       return -1;
     }
+
+    parser->Serialize();
+
+    flatbuffers::Verifier schema_verifier(parser->builder_.GetBufferPointer(), parser->builder_.GetSize());
+
+    if VUNLIKELY (!reflection::VerifySchemaBuffer(schema_verifier)) {
+      std::cerr << "Verify flatbuffers schema failed." << std::endl;
+      has_quit = true;
+      return -1;
+    }
+
+    fbs_schema = reflection::GetSchema(parser->builder_.GetBufferPointer());
+    fbs_root_object = fbs_schema != nullptr ? fbs_schema->root_table() : nullptr;
+
+    if VUNLIKELY (fbs_schema == nullptr || fbs_root_object == nullptr) {
+      std::cerr << "Load flatbuffers schema failed." << std::endl;
+      has_quit = true;
+      return -1;
+    }
   } else {
     std::cerr << "Unsupported schema_type for efbs sub: " << static_cast<int>(target_schema_type) << std::endl;
     has_quit = true;
@@ -976,467 +1014,478 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
            rendered_rate_color != current_rate_color || rendered_frame_rate != current_frame_rate;
   };
 
-  auto update_terminal_function =
-      [&url, &target_ser, &current_bytes, &bytes_mtx, &print_str, &print_list, &line_list, &current_str, &current_line,
-       &has_new_data, &is_url_title_with_dot, &redraw_url_title, &mark_url_title_rendered, &should_redraw_url_title,
-       &discovery_viewer, &parser_loop, &quit_function, &parse_ret, is_text_type, is_blob_type, parser]() {
-        auto target_terminal_size = get_terminal_size();
-        bool show_data_dot = has_new_data.exchange(false);
+  auto update_terminal_function = [&url, &target_ser, &current_bytes, &bytes_mtx, &print_str, &print_list, &line_list,
+                                   &current_str, &current_line, &has_new_data, &is_url_title_with_dot,
+                                   &redraw_url_title, &mark_url_title_rendered, &should_redraw_url_title,
+                                   &discovery_viewer, &parser_loop, &quit_function, &parse_ret, is_text_type,
+                                   is_blob_type, parser, fbs_schema, fbs_root_object]() {
+    auto target_terminal_size = get_terminal_size();
+    bool show_data_dot = has_new_data.exchange(false);
 
-        if VUNLIKELY (terminal_size != target_terminal_size) {
-          terminal_size = target_terminal_size;
-          is_changed = true;
-        }
+    if VUNLIKELY (terminal_size != target_terminal_size) {
+      terminal_size = target_terminal_size;
+      is_changed = true;
+    }
 
-        if VUNLIKELY (terminal_size.first <= 0 || terminal_size.second <= 0) {
+    if VUNLIKELY (terminal_size.first <= 0 || terminal_size.second <= 0) {
+      return;
+    }
+
+    if VUNLIKELY (!has_printed) {
+      if VLIKELY (!force_update) {
+        is_changed = false;
+        return;
+      }
+
+      VLINK_TERM_OUT << "\033[H\033[J";
+
+      if (is_paused) {
+        VLINK_TERM_OUT << "\033[33m"
+                       << "Message Parsed by vlink-efbs (Wait For Message, Paused):"
+                       << "\033[0m" << std::endl;
+      } else {
+        VLINK_TERM_OUT << "Message Parsed by vlink-efbs (Wait For Message)... " << std::endl;
+      }
+
+      VLINK_TERM_OUT << "\033[34;1;4m" << url << "\033[0m" << std::endl;
+      VLINK_TERM_OUT.flush();
+
+      is_changed = false;
+      force_update = false;
+      return;
+    }
+
+    if VLIKELY (!is_changed) {
+      if (!is_paused && should_redraw_url_title(show_data_dot)) {
+        redraw_url_title(show_data_dot, true);
+        mark_url_title_rendered(show_data_dot);
+        VLINK_TERM_OUT.flush();
+      }
+
+      is_url_title_with_dot = false;
+      force_update = false;
+      return;
+    }
+
+    if (is_fbs_type) {
+      {
+        if VUNLIKELY (!parser) {
           return;
         }
 
-        if VUNLIKELY (!has_printed) {
-          if VLIKELY (!force_update) {
-            is_changed = false;
-            return;
-          }
+        std::lock_guard lock(bytes_mtx);
 
-          VLINK_TERM_OUT << "\033[H\033[J";
-
-          if (is_paused) {
-            VLINK_TERM_OUT << "\033[33m"
-                           << "Message Parsed by vlink-efbs (Wait For Message, Paused):"
-                           << "\033[0m" << std::endl;
-          } else {
-            VLINK_TERM_OUT << "Message Parsed by vlink-efbs (Wait For Message)... " << std::endl;
-          }
-
-          VLINK_TERM_OUT << "\033[34;1;4m" << url << "\033[0m" << std::endl;
-          VLINK_TERM_OUT.flush();
-
-          is_changed = false;
+        if VUNLIKELY (current_bytes.empty()) {
           force_update = false;
           return;
         }
 
-        if VLIKELY (!is_changed) {
-          if (!is_paused && should_redraw_url_title(show_data_dot)) {
-            redraw_url_title(show_data_dot, true);
-            mark_url_title_rendered(show_data_dot);
-            VLINK_TERM_OUT.flush();
-          }
+        const bool fbs_verified =
+            parser->opts.size_prefixed
+                ? flatbuffers::VerifySizePrefixed(*fbs_schema, *fbs_root_object, current_bytes.data(),
+                                                  current_bytes.size())
+                : flatbuffers::Verify(*fbs_schema, *fbs_root_object, current_bytes.data(), current_bytes.size());
 
-          is_url_title_with_dot = false;
+        if VUNLIKELY (!fbs_verified) {
           force_update = false;
           return;
         }
 
-        if (is_fbs_type) {
-          {
-            if VUNLIKELY (!parser) {
-              return;
-            }
+        print_str.clear();
 
-            std::lock_guard lock(bytes_mtx);
+        flatbuffers::custom::JsonPrinter::ignore_array = ignore_array;
+        flatbuffers::custom::JsonPrinter::ignore_string = ignore_string;
+        flatbuffers::custom::JsonPrinter::ignore_default = ignore_default;
+        flatbuffers::custom::JsonPrinter::use_long_repeated = use_long_repeated;
+        flatbuffers::custom::JsonPrinter::print_time_string = print_time_string;
+        flatbuffers::custom::JsonPrinter::print_hex_string = print_hex_string;
+        flatbuffers::custom::JsonPrinter::print_enum_string = print_enum_string;
+        flatbuffers::custom::JsonPrinter::black_mode = black_mode;
+        flatbuffers::custom::JsonPrinter::filter_list = &filter_list;
 
-            // if (current_bytes.empty()) {
-            //   force_update = false;
-            //   return;
-            // }
+        parser->opts.output_enum_identifiers = print_enum_string;
+        parser->opts.force_defaults = !ignore_default;
+        parser->opts.output_default_scalars_in_json = !ignore_default;
 
-            print_str.clear();
+        // NOLINTNEXTLINE(readability-redundant-smartptr-get)
+        const auto* error_chars = flatbuffers::custom::GenText(*parser.get(), current_bytes.data(), &print_str);
 
-            flatbuffers::custom::JsonPrinter::ignore_array = ignore_array;
-            flatbuffers::custom::JsonPrinter::ignore_string = ignore_string;
-            flatbuffers::custom::JsonPrinter::ignore_default = ignore_default;
-            flatbuffers::custom::JsonPrinter::use_long_repeated = use_long_repeated;
-            flatbuffers::custom::JsonPrinter::print_time_string = print_time_string;
-            flatbuffers::custom::JsonPrinter::print_hex_string = print_hex_string;
-            flatbuffers::custom::JsonPrinter::print_enum_string = print_enum_string;
-            flatbuffers::custom::JsonPrinter::black_mode = black_mode;
-            flatbuffers::custom::JsonPrinter::filter_list = &filter_list;
+        if VUNLIKELY (error_chars) {
+          std::cerr << "Failed to gen fbs text(" << error_chars << ")." << std::endl;
+          quit_function(0);
 
-            parser->opts.output_enum_identifiers = print_enum_string;
-            parser->opts.force_defaults = !ignore_default;
-            parser->opts.output_default_scalars_in_json = !ignore_default;
+          parse_ret = 1;
 
-            // NOLINTNEXTLINE(readability-redundant-smartptr-get)
-            const auto* error_chars = flatbuffers::custom::GenText(*parser.get(), current_bytes.data(), &print_str);
+          force_update = false;
+          return;
+        }
+      }
 
-            if VUNLIKELY (error_chars) {
-              std::cerr << "Failed to gen fbs text(" << error_chars << ")." << std::endl;
-              quit_function(0);
+      if VUNLIKELY ((discovery_viewer && discovery_viewer->is_ready_to_quit()) || parser_loop->is_ready_to_quit()) {
+        force_update = false;
+        return;
+      }
+    } else {
+      {
+        std::unique_lock lock(bytes_mtx);
 
-              parse_ret = 1;
+        const auto target_zerocopy_type = vlink::zerocopy::MessageParser::detect_type(target_ser);
+        vlink::zerocopy::MessageParser message_parser;
+        bool zerocopy_parse_succeeded = false;
 
-              force_update = false;
-              return;
-            }
+        if (!is_blob_type && !is_text_type && !current_bytes.empty() &&
+            target_zerocopy_type != vlink::zerocopy::MessageParser::Type::kUnknown) {
+          zerocopy_parse_succeeded = message_parser.parse(target_zerocopy_type, current_bytes);
+        }
+
+        if (is_blob_type) {
+          print_str.clear();
+
+          int max_line_chars = target_terminal_size.first - 2;
+
+          if (max_line_chars < 2) {
+            max_line_chars = 2;
           }
 
-          if VUNLIKELY ((discovery_viewer && discovery_viewer->is_ready_to_quit()) || parser_loop->is_ready_to_quit()) {
+          int per_line = (max_line_chars + 1) / 3;
+
+          if (per_line > 50) {
+            per_line = 50;
+          }
+
+          if (per_line >= 10) {
+            per_line = (per_line / 10) * 10;
+          }
+
+          if (per_line <= 0) {
+            per_line = 10;
+          }
+
+          const size_t per_rows = current_bytes.empty() ? 0
+                                                        : (current_bytes.size() + static_cast<size_t>(per_line) - 1) /
+                                                              static_cast<size_t>(per_line);
+
+          print_str += std::string("per_line: ") + std::to_string(per_line) + "\n";
+          print_str += std::string("per_rows: ") + std::to_string(per_rows) + "\n";
+          print_str += std::string("data_size: ") + std::to_string(current_bytes.size()) + "\n";
+          print_str += std::string("data_blob:\n");
+
+          const auto hex_str = vlink::Bytes::convert_to_hex_str(current_bytes.data(), current_bytes.size());
+          size_t pos = 0;
+
+          for (size_t i = 0; i < per_rows; ++i) {
+            const size_t remain_bytes = current_bytes.size() - i * static_cast<size_t>(per_line);
+            const size_t line_bytes = std::min<size_t>(static_cast<size_t>(per_line), remain_bytes);
+            const size_t line_chars = line_bytes == 0 ? 0 : line_bytes * 3 - 1;
+
+            print_str.append(hex_str, pos, line_chars);
+            print_str += "\n";
+
+            pos += line_chars;
+
+            if (pos < hex_str.size() && hex_str[pos] == ' ') {
+              ++pos;
+            }
+          }
+        } else if (is_text_type) {
+          std::string text_payload = current_bytes.to_string();
+
+          if (!format_json_text(text_payload, print_str)) {
+            print_str = std::move(text_payload);
+          }
+        } else if VUNLIKELY (current_bytes.empty()) {
+          force_update = false;
+          return;
+        } else if (target_zerocopy_type != vlink::zerocopy::MessageParser::Type::kUnknown) {
+          if VUNLIKELY (!zerocopy_parse_succeeded) {
+            std::cerr << "Failed to parse " << vlink::zerocopy::MessageParser::type_name(target_zerocopy_type)
+                      << " message." << std::endl;
+            quit_function(0);
+
+            parse_ret = 1;
+
             force_update = false;
             return;
           }
-        } else {
-          {
-            std::unique_lock lock(bytes_mtx);
 
-            const auto target_zerocopy_type = vlink::zerocopy::MessageParser::detect_type(target_ser);
-            vlink::zerocopy::MessageParser message_parser;
-            bool zerocopy_parse_succeeded = false;
+          vlink::zerocopy::MessageFormatOptions format_options;
+          format_options.hex = print_hex_string;
+          format_options.date = print_time_string;
+          format_options.enum_name = print_enum_string;
+          format_options.expand_arrays = !ignore_array;
 
-            if (!is_blob_type && !is_text_type && !current_bytes.empty() &&
-                target_zerocopy_type != vlink::zerocopy::MessageParser::Type::kUnknown) {
-              zerocopy_parse_succeeded = message_parser.parse(target_zerocopy_type, current_bytes);
-            }
+          bool format_truncated = false;
+          print_str = vlink::zerocopy::format_message(message_parser, format_options, &format_truncated);
 
-            if (is_blob_type) {
-              print_str.clear();
-
-              int max_line_chars = target_terminal_size.first - 2;
-
-              if (max_line_chars < 2) {
-                max_line_chars = 2;
-              }
-
-              int per_line = (max_line_chars + 1) / 3;
-
-              if (per_line > 50) {
-                per_line = 50;
-              }
-
-              if (per_line >= 10) {
-                per_line = (per_line / 10) * 10;
-              }
-
-              if (per_line <= 0) {
-                per_line = 10;
-              }
-
-              const size_t per_rows =
-                  current_bytes.empty()
-                      ? 0
-                      : (current_bytes.size() + static_cast<size_t>(per_line) - 1) / static_cast<size_t>(per_line);
-
-              print_str += std::string("per_line: ") + std::to_string(per_line) + "\n";
-              print_str += std::string("per_rows: ") + std::to_string(per_rows) + "\n";
-              print_str += std::string("data_size: ") + std::to_string(current_bytes.size()) + "\n";
-              print_str += std::string("data_blob:\n");
-
-              const auto hex_str = vlink::Bytes::convert_to_hex_str(current_bytes.data(), current_bytes.size());
-              size_t pos = 0;
-
-              for (size_t i = 0; i < per_rows; ++i) {
-                const size_t remain_bytes = current_bytes.size() - i * static_cast<size_t>(per_line);
-                const size_t line_bytes = std::min<size_t>(static_cast<size_t>(per_line), remain_bytes);
-                const size_t line_chars = line_bytes == 0 ? 0 : line_bytes * 3 - 1;
-
-                print_str.append(hex_str, pos, line_chars);
-                print_str += "\n";
-
-                pos += line_chars;
-
-                if (pos < hex_str.size() && hex_str[pos] == ' ') {
-                  ++pos;
-                }
-              }
-            } else if (is_text_type) {
-              std::string text_payload = current_bytes.to_string();
-
-              if (!format_json_text(text_payload, print_str)) {
-                print_str = std::move(text_payload);
-              }
-            } else if VUNLIKELY (current_bytes.empty()) {
-              force_update = false;
-              return;
-            } else if (target_zerocopy_type != vlink::zerocopy::MessageParser::Type::kUnknown) {
-              if VUNLIKELY (!zerocopy_parse_succeeded) {
-                std::cerr << "Failed to parse " << vlink::zerocopy::MessageParser::type_name(target_zerocopy_type)
-                          << " message." << std::endl;
-                quit_function(0);
-
-                parse_ret = 1;
-
-                force_update = false;
-                return;
-              }
-
-              vlink::zerocopy::MessageFormatOptions format_options;
-              format_options.hex = print_hex_string;
-              format_options.date = print_time_string;
-              format_options.enum_name = print_enum_string;
-              format_options.expand_arrays = !ignore_array;
-
-              bool format_truncated = false;
-              print_str = vlink::zerocopy::format_message(message_parser, format_options, &format_truncated);
-
-              if (format_truncated) {
-                is_out_of_range = true;
-              }
-
-            } else {
-              std::cerr << "Unsupported type." << std::endl;
-              quit_function(0);
-
-              parse_ret = 1;
-
-              force_update = false;
-              return;
-            }
+          if (format_truncated) {
+            is_out_of_range = true;
           }
-        }
 
-        if VUNLIKELY ((discovery_viewer && discovery_viewer->is_ready_to_quit()) || parser_loop->is_ready_to_quit()) {
+        } else {
+          std::cerr << "Unsupported type." << std::endl;
+          quit_function(0);
+
+          parse_ret = 1;
+
           force_update = false;
           return;
         }
+      }
+    }
 
-        if (is_paused && !force_update) {
-          VLINK_TERM_OUT << "\033[H";
-          VLINK_TERM_OUT.flush();
+    if VUNLIKELY ((discovery_viewer && discovery_viewer->is_ready_to_quit()) || parser_loop->is_ready_to_quit()) {
+      force_update = false;
+      return;
+    }
 
-          total_page = print_list.size();
+    if (is_paused && !force_update) {
+      VLINK_TERM_OUT << "\033[H";
+      VLINK_TERM_OUT.flush();
 
-          if (current_page > total_page - 1) {
-            current_page = total_page - 1;
-          }
+      total_page = print_list.size();
 
-          if (current_page < 0) {
-            current_page = 0;
-          }
+      if (current_page > total_page - 1) {
+        current_page = total_page - 1;
+      }
 
-          if (!print_list.empty() && !line_list.empty()) {
-            current_str = print_list.at(current_page);
-            current_line = line_list.at(current_page);
-          }
+      if (current_page < 0) {
+        current_page = 0;
+      }
 
+      if (!print_list.empty() && !line_list.empty()) {
+        current_str = print_list.at(current_page);
+        current_line = line_list.at(current_page);
+      }
+
+      VLINK_TERM_OUT << "\033[K";
+
+      VLINK_TERM_OUT << "\033[33m"
+                     << "Message Parsed by vlink-efbs (Paused):"
+                     << "\033[0m" << std::endl;
+
+      redraw_url_title(show_data_dot, false);
+      is_url_title_with_dot = show_data_dot;
+      mark_url_title_rendered(show_data_dot);
+
+      if (!current_str.empty()) {
+        VLINK_TERM_OUT << "\033[32m";
+
+        auto print_split_view_list = vlink::Helpers::split_view(current_str, '\n');
+
+        for (size_t i = 0; i < print_split_view_list.size(); ++i) {
           VLINK_TERM_OUT << "\033[K";
+          VLINK_TERM_OUT << print_split_view_list[i];
 
-          VLINK_TERM_OUT << "\033[33m"
-                         << "Message Parsed by vlink-efbs (Paused):"
-                         << "\033[0m" << std::endl;
+          if (i < print_split_view_list.size() - 1) {
+            VLINK_TERM_OUT << "\n";
 
-          redraw_url_title(show_data_dot, false);
-          is_url_title_with_dot = show_data_dot;
-          mark_url_title_rendered(show_data_dot);
-
-          if (!current_str.empty()) {
-            VLINK_TERM_OUT << "\033[32m";
-
-            auto print_split_view_list = vlink::Helpers::split_view(current_str, '\n');
-
-            for (size_t i = 0; i < print_split_view_list.size(); ++i) {
-              VLINK_TERM_OUT << "\033[K";
-              VLINK_TERM_OUT << print_split_view_list[i];
-
-              if (i < print_split_view_list.size() - 1) {
-                VLINK_TERM_OUT << "\n";
-
-                if (i > 0 && i % kFlushMinLine == 0) {
-                  VLINK_TERM_OUT.flush();
-                  if constexpr (kFlushMinSleep > 0) {
-                    std::this_thread::sleep_for(std::chrono::microseconds(kFlushMinSleep));
-                  }
-                }
+            if (i > 0 && i % kFlushMinLine == 0) {
+              VLINK_TERM_OUT.flush();
+              if constexpr (kFlushMinSleep > 0) {
+                std::this_thread::sleep_for(std::chrono::microseconds(kFlushMinSleep));
               }
             }
-
-            VLINK_TERM_OUT << "\033[0m";
-            VLINK_TERM_OUT << "\033[K";
-            VLINK_TERM_OUT << std::endl;
           }
+        }
 
-          VLINK_TERM_OUT.flush();
+        VLINK_TERM_OUT << "\033[0m";
+        VLINK_TERM_OUT << "\033[K";
+        VLINK_TERM_OUT << std::endl;
+      }
 
-        } else {
-          if VUNLIKELY ((discovery_viewer && discovery_viewer->is_ready_to_quit()) || parser_loop->is_ready_to_quit()) {
-            force_update = false;
-            return;
-          }
+      VLINK_TERM_OUT.flush();
 
-          if VUNLIKELY (print_str.size() > max_str_count) {
-            VLINK_TERM_OUT << "\033[H\033[J";
-            VLINK_TERM_OUT.flush();
-            std::cerr << "The Message is too large to display." << std::endl;
-            std::cerr.flush();
+    } else {
+      if VUNLIKELY ((discovery_viewer && discovery_viewer->is_ready_to_quit()) || parser_loop->is_ready_to_quit()) {
+        force_update = false;
+        return;
+      }
 
-            force_update = false;
-            return;
-          }
+      if VUNLIKELY (print_str.size() > max_str_count) {
+        VLINK_TERM_OUT << "\033[H\033[J";
+        VLINK_TERM_OUT.flush();
+        std::cerr << "The Message is too large to display." << std::endl;
+        std::cerr.flush();
 
-          auto split_str_list = vlink::Helpers::split(print_str, '\n');
+        force_update = false;
+        return;
+      }
 
-          if VUNLIKELY ((discovery_viewer && discovery_viewer->is_ready_to_quit()) || parser_loop->is_ready_to_quit()) {
-            force_update = false;
-            return;
-          }
+      auto split_str_list = vlink::Helpers::split(print_str, '\n');
 
-          std::string page_str;
-          int line_count = 0;
+      if VUNLIKELY ((discovery_viewer && discovery_viewer->is_ready_to_quit()) || parser_loop->is_ready_to_quit()) {
+        force_update = false;
+        return;
+      }
 
-          print_list.clear();
-          line_list.clear();
+      std::string page_str;
+      int line_count = 0;
 
-          print_list.reserve(split_str_list.size() + 5);
-          line_list.reserve(split_str_list.size() + 5);
+      print_list.clear();
+      line_list.clear();
 
-          for (auto& str : split_str_list) {
-            if (static_cast<int64_t>(str.size()) > terminal_size.first) {
-              str = str.substr(0, terminal_size.first);
-            }
+      print_list.reserve(split_str_list.size() + 5);
+      line_list.reserve(split_str_list.size() + 5);
 
-            page_str += (str + "\n");
-            ++line_count;
+      for (auto& str : split_str_list) {
+        if (static_cast<int64_t>(str.size()) > terminal_size.first) {
+          str = str.substr(0, terminal_size.first);
+        }
 
-            if (line_count >= terminal_size.second - 3) {
-              if (!page_str.empty()) {
-                page_str.pop_back();
-              }
-              print_list.emplace_back(page_str);
-              line_list.emplace_back(line_count);
-              page_str.clear();
-              line_count = 0;
-            }
-          }
+        page_str += (str + "\n");
+        ++line_count;
 
+        if (line_count >= terminal_size.second - 3) {
           if (!page_str.empty()) {
             page_str.pop_back();
           }
+          print_list.emplace_back(page_str);
+          line_list.emplace_back(line_count);
+          page_str.clear();
+          line_count = 0;
+        }
+      }
 
-          if (!page_str.empty()) {
-            print_list.emplace_back(page_str);
-            line_list.emplace_back(line_count);
-          }
+      if (!page_str.empty()) {
+        page_str.pop_back();
+      }
 
-          total_page = std::min(print_list.size(), static_cast<size_t>(5000));
+      if (!page_str.empty()) {
+        print_list.emplace_back(page_str);
+        line_list.emplace_back(line_count);
+      }
 
-          if (current_page > total_page - 1) {
-            current_page = total_page - 1;
-          }
+      total_page = std::min(print_list.size(), static_cast<size_t>(5000));
 
-          if (current_page < 0) {
-            current_page = 0;
-          }
+      if (current_page > total_page - 1) {
+        current_page = total_page - 1;
+      }
 
-          if (!print_list.empty() && !line_list.empty()) {
-            current_str = print_list.at(current_page);
-            current_line = line_list.at(current_page);
-          }
+      if (current_page < 0) {
+        current_page = 0;
+      }
 
-          VLINK_TERM_OUT << "\033[H\033[K";
+      if (!print_list.empty() && !line_list.empty()) {
+        current_str = print_list.at(current_page);
+        current_line = line_list.at(current_page);
+      }
 
-          if (is_paused) {
-            VLINK_TERM_OUT << "\033[33m"
-                           << "Message Parsed by vlink-efbs (Paused):"
-                           << "\033[0m" << std::endl;
-          } else {
-            VLINK_TERM_OUT << "Message Parsed by vlink-efbs:" << std::endl;
-          }
+      VLINK_TERM_OUT << "\033[H\033[K";
 
-          redraw_url_title(show_data_dot, false);
-          is_url_title_with_dot = show_data_dot;
-          mark_url_title_rendered(show_data_dot);
-          VLINK_TERM_OUT.flush();
+      if (is_paused) {
+        VLINK_TERM_OUT << "\033[33m"
+                       << "Message Parsed by vlink-efbs (Paused):"
+                       << "\033[0m" << std::endl;
+      } else {
+        VLINK_TERM_OUT << "Message Parsed by vlink-efbs:" << std::endl;
+      }
 
-          if (!current_str.empty()) {
-            if (!current_str.empty()) {
-              VLINK_TERM_OUT << "\033[32m";
+      redraw_url_title(show_data_dot, false);
+      is_url_title_with_dot = show_data_dot;
+      mark_url_title_rendered(show_data_dot);
+      VLINK_TERM_OUT.flush();
 
-              auto print_split_view_list = vlink::Helpers::split_view(current_str, '\n');
+      if (!current_str.empty()) {
+        if (!current_str.empty()) {
+          VLINK_TERM_OUT << "\033[32m";
 
-              for (size_t i = 0; i < print_split_view_list.size(); ++i) {
-                VLINK_TERM_OUT << "\033[K";
-                VLINK_TERM_OUT << print_split_view_list[i];
+          auto print_split_view_list = vlink::Helpers::split_view(current_str, '\n');
 
-                if (i < print_split_view_list.size() - 1) {
-                  VLINK_TERM_OUT << "\n";
+          for (size_t i = 0; i < print_split_view_list.size(); ++i) {
+            VLINK_TERM_OUT << "\033[K";
+            VLINK_TERM_OUT << print_split_view_list[i];
 
-                  if (i > 0 && i % kFlushMinLine == 0) {
-                    VLINK_TERM_OUT.flush();
-                    if constexpr (kFlushMinSleep > 0) {
-                      std::this_thread::sleep_for(std::chrono::microseconds(kFlushMinSleep));
-                    }
-                  }
+            if (i < print_split_view_list.size() - 1) {
+              VLINK_TERM_OUT << "\n";
+
+              if (i > 0 && i % kFlushMinLine == 0) {
+                VLINK_TERM_OUT.flush();
+                if constexpr (kFlushMinSleep > 0) {
+                  std::this_thread::sleep_for(std::chrono::microseconds(kFlushMinSleep));
                 }
               }
-
-              VLINK_TERM_OUT << "\033[0m";
-              VLINK_TERM_OUT << "\033[K";
-              VLINK_TERM_OUT << std::endl;
             }
           }
+
+          VLINK_TERM_OUT << "\033[0m";
+          VLINK_TERM_OUT << "\033[K";
+          VLINK_TERM_OUT << std::endl;
         }
+      }
+    }
 
-        if (current_line < terminal_size.second - 3) {
-          for (int i = 0; i < terminal_size.second - 3 - current_line; ++i) {
-            VLINK_TERM_OUT << "\033[K";
-            VLINK_TERM_OUT << std::endl;
-          }
-        }
-
-        std::string last_line_str;
-
-        last_line_str = std::string("\033[44;37;1m") + std::string("<") +
-                        (total_page == 0 ? std::string("0") : std::to_string(current_page + 1)) + std::string("/") +
-                        ((total_page >= 5000 || is_out_of_range) ? std::string("5000+") : std::to_string(total_page)) +
-                        std::string(">") + std::string("\033[0m [ ");
-
-        if (print_enum_string) {
-          last_line_str += "\033[4mE\033[0m ";
-        } else {
-          last_line_str += "\033[0mE\033[0m ";
-        }
-
-        if (ignore_array) {
-          last_line_str += "\033[4mR\033[0m ";
-        } else {
-          last_line_str += "\033[0mR\033[0m ";
-        }
-
-        if (ignore_string) {
-          last_line_str += "\033[4mT\033[0m ";
-        } else {
-          last_line_str += "\033[0mT\033[0m ";
-        }
-
-        if (print_time_string) {
-          last_line_str += "\033[4mY\033[0m ";
-        } else {
-          last_line_str += "\033[0mY\033[0m ";
-        }
-
-        if (print_hex_string) {
-          last_line_str += "\033[4mU\033[0m ";
-        } else {
-          last_line_str += "\033[0mU\033[0m ";
-        }
-
-        if (ignore_default) {
-          last_line_str += "\033[4mO\033[0m ";
-        } else {
-          last_line_str += "\033[0mO\033[0m ";
-        }
-
-        if (use_long_repeated) {
-          last_line_str += "\033[4mP\033[0m ";
-        } else {
-          last_line_str += "\033[0mP\033[0m ";
-        }
-
-        last_line_str += std::string("] ");
-
+    if (current_line < terminal_size.second - 3) {
+      for (int i = 0; i < terminal_size.second - 3 - current_line; ++i) {
         VLINK_TERM_OUT << "\033[K";
+        VLINK_TERM_OUT << std::endl;
+      }
+    }
 
-        if VLIKELY (last_line_str.size() <= static_cast<size_t>(terminal_size.first + 69)) {
-          VLINK_TERM_OUT << last_line_str;
-        } else {
-          VLINK_TERM_OUT << last_line_str.substr(0, terminal_size.first + 69);
-        }
+    std::string last_line_str;
 
-        VLINK_TERM_OUT.flush();
+    last_line_str = std::string("\033[44;37;1m") + std::string("<") +
+                    (total_page == 0 ? std::string("0") : std::to_string(current_page + 1)) + std::string("/") +
+                    ((total_page >= 5000 || is_out_of_range) ? std::string("5000+") : std::to_string(total_page)) +
+                    std::string(">") + std::string("\033[0m [ ");
 
-        is_changed = false;
-        is_out_of_range = false;
-        force_update = false;
-      };
+    if (print_enum_string) {
+      last_line_str += "\033[4mE\033[0m ";
+    } else {
+      last_line_str += "\033[0mE\033[0m ";
+    }
+
+    if (ignore_array) {
+      last_line_str += "\033[4mR\033[0m ";
+    } else {
+      last_line_str += "\033[0mR\033[0m ";
+    }
+
+    if (ignore_string) {
+      last_line_str += "\033[4mT\033[0m ";
+    } else {
+      last_line_str += "\033[0mT\033[0m ";
+    }
+
+    if (print_time_string) {
+      last_line_str += "\033[4mY\033[0m ";
+    } else {
+      last_line_str += "\033[0mY\033[0m ";
+    }
+
+    if (print_hex_string) {
+      last_line_str += "\033[4mU\033[0m ";
+    } else {
+      last_line_str += "\033[0mU\033[0m ";
+    }
+
+    if (ignore_default) {
+      last_line_str += "\033[4mO\033[0m ";
+    } else {
+      last_line_str += "\033[0mO\033[0m ";
+    }
+
+    if (use_long_repeated) {
+      last_line_str += "\033[4mP\033[0m ";
+    } else {
+      last_line_str += "\033[0mP\033[0m ";
+    }
+
+    last_line_str += std::string("] ");
+
+    VLINK_TERM_OUT << "\033[K";
+
+    if VLIKELY (last_line_str.size() <= static_cast<size_t>(terminal_size.first + 69)) {
+      VLINK_TERM_OUT << last_line_str;
+    } else {
+      VLINK_TERM_OUT << last_line_str.substr(0, terminal_size.first + 69);
+    }
+
+    VLINK_TERM_OUT.flush();
+
+    is_changed = false;
+    is_out_of_range = false;
+    force_update = false;
+  };
 
   auto listen_bytes_function = [&parser_loop, &update_terminal_function, &current_bytes, &bytes_mtx, &has_new_data,
                                 &frame_seq, &last_frame_timestamp_ms](const vlink::Bytes& bytes) {

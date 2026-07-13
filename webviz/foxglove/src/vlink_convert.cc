@@ -1178,6 +1178,18 @@ bool VlinkConvert::decode_backend_message_to_json(const std::string& ser, Schema
 #ifdef VLINK_HAS_FBS_COMPILER
 
   if VLIKELY (schema_type == SchemaType::kFlatbuffers) {
+    std::string schema_storage;
+    const auto* schema = resolve_fbs_schema(ser, schema_storage);
+
+    if VUNLIKELY (schema == nullptr) {
+      MLOG_W("No FlatBuffers schema available for backend payload: {}", ser);
+      return false;
+    }
+
+    if VUNLIKELY (!verify_fbs_payload(*schema, raw, ser, "RPC response decode")) {
+      return false;
+    }
+
     std::lock_guard lock(mtx_);
 
     if VUNLIKELY (!find_fbs_parser_locked(ser)) {

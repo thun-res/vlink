@@ -64,6 +64,8 @@
 #include <flatbuffers/idl.h>
 
 #if FLATBUFFERS_VERSION_MAJOR >= 22
+#include <flatbuffers/reflection.h>
+
 #include "private/flat_gen_text.h"
 #endif
 
@@ -155,11 +157,11 @@ static bool check_rate_limit() {
 static void start_print() {
   auto& ctx = vlink::dump::DumpContext::get();
 
+  ctx.main_elapsed_timer.start();
+
   if (ctx.quiet_flag) {
     return;
   }
-
-  ctx.main_elapsed_timer.start();
 
   if VUNLIKELY (ctx.print_thread.joinable()) {
     return;
@@ -531,6 +533,8 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
 
 #ifdef VLINK_HAS_FBS_COMPILER
   std::shared_ptr<flatbuffers::Parser> fbs_parser;
+  const reflection::Schema* fbs_schema = nullptr;
+  const reflection::Object* fbs_root_object = nullptr;
 #endif
   bool warned_flatbuffers_fields = false;
 
@@ -549,7 +553,11 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
   std::string cached_ser;
 
 #ifdef VLINK_HAS_FBS_COMPILER
-  auto reset_cached_decoder = [&fbs_parser]() { fbs_parser.reset(); };
+  auto reset_cached_decoder = [&fbs_parser, &fbs_schema, &fbs_root_object]() {
+    fbs_parser.reset();
+    fbs_schema = nullptr;
+    fbs_root_object = nullptr;
+  };
 #else
   auto reset_cached_decoder = []() {};
 #endif
@@ -566,7 +574,7 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
 #ifdef VLINK_HAS_FBS_COMPILER
   auto schema_interface = vlink::SchemaPluginManager::get().get_interface();
 
-  auto ensure_fbs_parser = [&fbs_dir, &fbs_parser, &sync_cached_ser,
+  auto ensure_fbs_parser = [&fbs_dir, &fbs_parser, &fbs_schema, &fbs_root_object, &sync_cached_ser,
                             &schema_interface](const std::string& ser) -> flatbuffers::Parser* {
     sync_cached_ser(ser);
 
@@ -586,6 +594,17 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
 
         if (std::filesystem::exists(fbs_path, fbs_ec) && !fbs_ec) {
           import_fbs(fbs_parser, ser, fbs_path, fbs_path, has_import);
+        }
+      }
+
+      if (fbs_parser) {
+        fbs_parser->Serialize();
+
+        flatbuffers::Verifier verifier(fbs_parser->builder_.GetBufferPointer(), fbs_parser->builder_.GetSize());
+
+        if (reflection::VerifySchemaBuffer(verifier)) {
+          fbs_schema = reflection::GetSchema(fbs_parser->builder_.GetBufferPointer());
+          fbs_root_object = fbs_schema != nullptr ? fbs_schema->root_table() : nullptr;
         }
       }
     }
@@ -610,7 +629,7 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
     std::lock_guard lock(ctx.dump_callback_mtx);
     ctx.dump_callback = [target_url, &dump_seq, &out_file_name, &proto_cache,
 #ifdef VLINK_HAS_FBS_COMPILER
-                         &ensure_fbs_parser,
+                         &ensure_fbs_parser, &fbs_schema, &fbs_root_object,
 #endif
                          &warn_flatbuffers_fields,
                          &dump_type_suffix](int64_t timestamp, const std::string& url, const std::string& ser,
@@ -671,7 +690,13 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
 #ifdef VLINK_HAS_FBS_COMPILER
             auto* parser = ensure_fbs_parser(ser);
 
-            if (parser != nullptr) {
+            const bool fbs_verified =
+                parser != nullptr && fbs_schema != nullptr && fbs_root_object != nullptr && !bytes.empty() &&
+                (parser->opts.size_prefixed
+                     ? flatbuffers::VerifySizePrefixed(*fbs_schema, *fbs_root_object, bytes.data(), bytes.size())
+                     : flatbuffers::Verify(*fbs_schema, *fbs_root_object, bytes.data(), bytes.size()));
+
+            if (fbs_verified) {
               std::string text;
               const auto* error_chars = flatbuffers::custom::GenText(*parser, bytes.data(), &text);
 

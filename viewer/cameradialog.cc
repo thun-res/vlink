@@ -1135,7 +1135,7 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
 
   camera_layout_ = new QGridLayout(ui->widget);
 
-  msg_list_.emplace_back(std::pair{nullptr, nullptr});
+  msg_list_.emplace_back(nullptr, nullptr);
 
   const auto& selected_items = window_->ui->treeWidget_url->selectedItems();
 
@@ -1372,11 +1372,11 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
 #else
           ui->comboBox_proto->addItem(field->name().c_str());
 #endif
-          msg_list_.emplace_back(target_msg_, field);
+          msg_list_.emplace_back(nullptr, field);
         } else if (!field->is_repeated() && field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
-          auto* sub_msg = &target_msg_->GetReflection()->GetMessage(*target_msg_, field);
-          for (int j = 0; j < sub_msg->GetDescriptor()->field_count(); ++j) {
-            const auto* sub_field = sub_msg->GetDescriptor()->field(j);
+          const auto* sub_desc = field->message_type();
+          for (int j = 0; j < sub_desc->field_count(); ++j) {
+            const auto* sub_field = sub_desc->field(j);
 
             if (!sub_field->is_repeated() && sub_field->type() == google::protobuf::FieldDescriptor::TYPE_BYTES) {
 #if GOOGLE_PROTOBUF_VERSION >= 6030000
@@ -1384,7 +1384,7 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
 #else
               ui->comboBox_proto->addItem(sub_field->name().c_str());
 #endif
-              msg_list_.emplace_back(sub_msg, sub_field);
+              msg_list_.emplace_back(field, sub_field);
             }
           }
         }
@@ -1802,9 +1802,9 @@ void CameraDialog::update_ui_for_proto(const QVariant& variant, const QElapsedTi
     return;
   }
 
-  auto& [msg, field] = msg_list_.at(ui->comboBox_proto->currentIndex());
+  auto& [outer_field, field] = msg_list_.at(ui->comboBox_proto->currentIndex());
 
-  if (!msg || !field) {
+  if (!field) {
     if (detail.state != kNoImage) {
       if (!multi_mode_) {
         ui->label_transfer2->setText("---");
@@ -1838,6 +1838,12 @@ void CameraDialog::update_ui_for_proto(const QVariant& variant, const QElapsedTi
 
   ui->spinBox_offset->setEnabled(false);
   ui->label_offset->setEnabled(false);
+
+  const google::protobuf::Message* msg = target_msg_;
+
+  if (outer_field) {
+    msg = &target_msg_->GetReflection()->GetMessage(*target_msg_, outer_field);
+  }
 
   const std::string& raw_str = msg->GetReflection()->GetString(*msg, field);
 

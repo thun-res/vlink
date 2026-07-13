@@ -675,11 +675,13 @@ void ProxyServer::send_control(const void* control_data) {
     {
       std::lock_guard pubs_lock(impl_->pubs_mtx);
       impl_->pub_ptr_map.clear();
+      impl_->pub_error_url_set.clear();
     }
 
     {
       std::lock_guard subs_lock(impl_->subs_mtx);
       impl_->sub_ptr_map.clear();
+      impl_->sub_error_url_set.clear();
     }
 
     return;
@@ -868,7 +870,8 @@ void ProxyServer::update_all() {
         if (impl_->filter_by_process) {
           for (const auto& process : info.process_list) {
             std::string left_str = process.name;
-            std::transform(left_str.begin(), left_str.end(), left_str.begin(), [](char& c) { return std::tolower(c); });
+            std::transform(left_str.begin(), left_str.end(), left_str.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
             for (const auto& filter : impl_->filter_list) {
               if (filter.empty()) {
                 continue;
@@ -876,7 +879,7 @@ void ProxyServer::update_all() {
 
               std::string right_str = filter;
               std::transform(right_str.begin(), right_str.end(), right_str.begin(),
-                             [](char& c) { return std::tolower(c); });
+                             [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
               if (left_str.find(right_str) != std::string::npos) {
                 contains = true;
@@ -891,7 +894,8 @@ void ProxyServer::update_all() {
 
         } else {
           std::string left_str = info.url;
-          std::transform(left_str.begin(), left_str.end(), left_str.begin(), [](char& c) { return std::tolower(c); });
+          std::transform(left_str.begin(), left_str.end(), left_str.begin(),
+                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
           for (const auto& filter : impl_->filter_list) {
             if (filter.empty()) {
@@ -900,7 +904,7 @@ void ProxyServer::update_all() {
 
             std::string right_str = filter;
             std::transform(right_str.begin(), right_str.end(), right_str.begin(),
-                           [](char& c) { return std::tolower(c); });
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
             if (left_str.find(right_str) != std::string::npos) {
               contains = true;

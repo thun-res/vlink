@@ -123,15 +123,18 @@ void InfoDialog::show_information(const vlink::BagReader::Info& info) {
   if (info.timezone == 0) {
     ss << " (UTC)";
   } else {
+    const int64_t timezone = info.timezone;
+    const int64_t timezone_magnitude = timezone < 0 ? -timezone : timezone;
+
     if (info.timezone > 0) {
       ss << " (Timezone: +";
     } else {
       ss << " (Timezone: -";
     }
 
-    ss << std::setw(2) << std::setfill('0') << info.timezone / 60;
+    ss << std::setw(2) << std::setfill('0') << timezone_magnitude / 60;
     ss << ":";
-    ss << std::setw(2) << std::setfill('0') << info.timezone % 60;
+    ss << std::setw(2) << std::setfill('0') << timezone_magnitude % 60;
     ss << std::setfill(' ');
     ss << ":00)";
   }

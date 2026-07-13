@@ -623,14 +623,14 @@ bool VDBWriter::load_schema(const std::string& ser_type, SchemaType& schema_type
 #endif
 }
 
-bool VDBWriter::push_schema(const SchemaData& schema_data, bool immediate) {
+bool VDBWriter::push_schema(const SchemaData& schema_data) {
   SchemaData stored_schema = schema_data;
 
   if VUNLIKELY (!stored_schema.data.is_owner()) {
     stored_schema.data.deep_copy(schema_data.data);
   }
 
-  if (immediate) {
+  if (impl_->config.sync_mode) {
     std::lock_guard lock(impl_->write_mtx);
     return merge_schema(stored_schema);
   }
@@ -647,7 +647,7 @@ bool VDBWriter::push_schema(const SchemaData& schema_data, bool immediate) {
   return posted;
 }
 
-int64_t VDBWriter::record(const Frame& frame, bool immediate) {
+int64_t VDBWriter::record(const Frame& frame) {
 #ifdef VLINK_ENABLE_SQLITE
 
   const std::string& url = frame.url;
@@ -657,7 +657,7 @@ int64_t VDBWriter::record(const Frame& frame, bool immediate) {
   const Bytes& data = frame.data;
   const int64_t microseconds_timestamp = frame.timestamp;
 
-  if (immediate) {
+  if (impl_->config.sync_mode) {
     std::lock_guard lock(impl_->write_mtx);
 
     if VUNLIKELY (!write(url, ser_type, schema_type, action_type, data, microseconds_timestamp)) {
@@ -706,7 +706,6 @@ int64_t VDBWriter::record(const Frame& frame, bool immediate) {
   return microseconds_timestamp;
 #else
   (void)frame;
-  (void)immediate;
   return -1;
 #endif
 }

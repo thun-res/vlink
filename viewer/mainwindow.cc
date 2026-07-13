@@ -743,7 +743,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     ++total_data_seq_;
     total_data_latency_ += proxy_ptr->get_latency();
 
-    if (current_proxy_mode_ == vlink::ProxyAPI::kObserveAll || current_proxy_mode_ == vlink::ProxyAPI::kObserveOne) {
+    const auto proxy_mode = current_proxy_mode_.load();
+
+    if (proxy_mode == vlink::ProxyAPI::kObserveAll || proxy_mode == vlink::ProxyAPI::kObserveOne) {
       QElapsedTimer timer;
       timer.start();
 
@@ -2625,7 +2627,9 @@ void MainWindow::update_property_widget(const QVariant& variant, const QElapsedT
     return;
   }
 
-  if (current_proxy_mode_ != vlink::ProxyAPI::kObserveAll && current_proxy_mode_ != vlink::ProxyAPI::kObserveOne) {
+  const auto proxy_mode = current_proxy_mode_.load();
+
+  if (proxy_mode != vlink::ProxyAPI::kObserveAll && proxy_mode != vlink::ProxyAPI::kObserveOne) {
     return;
   }
 
@@ -3251,7 +3255,8 @@ void MainWindow::update_local_proto() {
 QString MainWindow::get_str_for_number(int64_t num) {
   if (ui->checkBox_hex->isChecked()) {
     if (num < 0) {
-      return "-0x" + QString::number(qAbs(num), 16).toUpper();
+      const auto magnitude = static_cast<qulonglong>(-static_cast<uint64_t>(num));
+      return "-0x" + QString::number(magnitude, 16).toUpper();
     } else {
       return "0x" + QString::number(num, 16).toUpper();
     }
@@ -3368,8 +3373,8 @@ std::vector<QString> MainWindow::scanned_message_types() const {
 }
 
 void MainWindow::send_control(vlink::ProxyAPI::Mode mode, bool has_url) {
-  const auto previous_proxy_mode = current_proxy_mode_;
-  current_proxy_mode_ = mode;
+  const auto previous_proxy_mode = current_proxy_mode_.load();
+  current_proxy_mode_.store(mode);
 
   if (proxy_->get_current_config().role != vlink::ProxyAPI::kController) {
     return;
@@ -3411,7 +3416,7 @@ void MainWindow::send_control(vlink::ProxyAPI::Mode mode, bool has_url) {
     }
 
     if (skipped_missing_meta && control.url_meta_list.empty()) {
-      current_proxy_mode_ = previous_proxy_mode;
+      current_proxy_mode_.store(previous_proxy_mode);
       status_label2_->setText(tr("   Missing schema metadata for one or more selected topics.   "));
       return;
     }
@@ -3421,14 +3426,14 @@ void MainWindow::send_control(vlink::ProxyAPI::Mode mode, bool has_url) {
     }
 
     if (control.url_meta_list.empty() && skipped_unsupported_type) {
-      current_proxy_mode_ = previous_proxy_mode;
+      current_proxy_mode_.store(previous_proxy_mode);
       status_label2_->setText(tr("   Selected topics do not support live observation.   "));
       return;
     }
   }
 
   if VUNLIKELY (!proxy_->send_control(control)) {
-    current_proxy_mode_ = previous_proxy_mode;
+    current_proxy_mode_.store(previous_proxy_mode);
   }
 }
 

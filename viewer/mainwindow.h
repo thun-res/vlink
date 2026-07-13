@@ -312,7 +312,7 @@ class MainWindow : public QMainWindow {
 
   std::vector<std::string> can_record_urls_;
 
-  vlink::ProxyAPI::Mode current_proxy_mode_{vlink::ProxyAPI::kOffline};
+  std::atomic<vlink::ProxyAPI::Mode> current_proxy_mode_{vlink::ProxyAPI::kOffline};
 
   vlink::SampleLostInfo last_sample_info_;
   std::atomic<int64_t> total_data_seq_{0};

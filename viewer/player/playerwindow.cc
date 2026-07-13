@@ -1059,7 +1059,8 @@ void PlayerWindow::on_toolButton_play_clicked() {
           bool skip = is_black_mode ? false : true;
 
           std::string left_str = url_meta.url;
-          std::transform(left_str.begin(), left_str.end(), left_str.begin(), [](char& c) { return std::tolower(c); });
+          std::transform(left_str.begin(), left_str.end(), left_str.begin(),
+                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
           for (const auto& f : filter_list) {
             if (f.empty()) {
               continue;
@@ -1067,7 +1068,7 @@ void PlayerWindow::on_toolButton_play_clicked() {
 
             std::string right_str = f;
             std::transform(right_str.begin(), right_str.end(), right_str.begin(),
-                           [](char& c) { return std::tolower(c); });
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
             if (left_str.find(right_str) != std::string::npos) {
               skip = is_black_mode ? true : false;
               break;

@@ -350,7 +350,7 @@ void check_multicast_address(DiagContext& ctx, const int (&octets)[4], bool warn
   while ((scan_pos = result.find(needle, scan_pos)) != std::string::npos) {
     scan_pos += needle.size();
 
-    if (scan_pos >= result.size() || !std::isdigit(result[scan_pos])) {
+    if (scan_pos >= result.size() || !std::isdigit(static_cast<unsigned char>(result[scan_pos]))) {
       end_diag(ctx, DiagType::kPass, "Found " + needle);
       return;
     }

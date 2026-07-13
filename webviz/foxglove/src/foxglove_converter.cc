@@ -1029,7 +1029,8 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
         if (!entity_sub_items.empty()) {
           const auto* sub_field = find_fbs_field(*sub_obj, entity_sub_items);
 
-          if (sub_field && sub_field->type()->base_type() == reflection::Vector) {
+          if (sub_field && sub_field->type()->base_type() == reflection::Vector &&
+              sub_field->type()->element() == reflection::Obj && sub_field->type()->index() >= 0) {
             const auto* sub_vec = flatbuffers::GetFieldV<flatbuffers::Offset<flatbuffers::Table>>(*item, *sub_field);
 
             if (sub_vec && schema->objects()) {

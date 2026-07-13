@@ -1931,6 +1931,10 @@ class FbsReader final {
     const flatbuffers::Table* table = base.table;
     const reflection::Object* obj = base.obj;
 
+    if (!table || !obj) {
+      return;
+    }
+
     for (size_t i = 0; i + 1 < tokens.size(); ++i) {
       if (tokens[i].is_index) {
         return;

@@ -1143,9 +1143,11 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
 
     VLINK_TERM_OUT.flush();
 
+    const int selected_line_snapshot = selected_line;
+
     if (show_process_panel) {
-      if (selected_line >= 0 && static_cast<size_t>(selected_line) < current_info_list.size()) {
-        const auto& selected_info = current_info_list[selected_line];
+      if (selected_line_snapshot >= 0 && static_cast<size_t>(selected_line_snapshot) < current_info_list.size()) {
+        const auto& selected_info = current_info_list[selected_line_snapshot];
         process_panel_lines = SparklineRenderer::render_process_panel(selected_info.process_list, target_row);
       } else {
         process_panel_lines = SparklineRenderer::render_process_panel({}, target_row);
@@ -1153,8 +1155,8 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
     }
 
     if (show_chart_panel) {
-      if (selected_line >= 0 && static_cast<size_t>(selected_line) < current_info_list.size()) {
-        const auto& selected_url = current_info_list[selected_line].url;
+      if (selected_line_snapshot >= 0 && static_cast<size_t>(selected_line_snapshot) < current_info_list.size()) {
+        const auto& selected_url = current_info_list[selected_line_snapshot].url;
         const auto& history = sparkline_history_map[selected_url];
         chart_panel_lines = SparklineRenderer::render_right_panel(history, target_row);
       } else {
@@ -1573,8 +1575,10 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         }
       }
 
-      if (static_cast<size_t>(selected_line) < current_info_list.size()) {
-        const auto& current_info = current_info_list.at(selected_line);
+      const int selected_line_snapshot = selected_line;
+
+      if (selected_line_snapshot >= 0 && static_cast<size_t>(selected_line_snapshot) < current_info_list.size()) {
+        const auto& current_info = current_info_list.at(selected_line_snapshot);
         std::lock_guard lock(current_mtx);
         current_type = current_info.type;
         current_schema_type = static_cast<uint32_t>(current_info.schema_type);

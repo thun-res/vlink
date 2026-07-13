@@ -204,7 +204,7 @@ class CameraDialog : public QDialog {
 
   google::protobuf::Message* target_msg_{nullptr};
 
-  std::vector<std::pair<const google::protobuf::Message*, const google::protobuf::FieldDescriptor*>> msg_list_;
+  std::vector<std::pair<const google::protobuf::FieldDescriptor*, const google::protobuf::FieldDescriptor*>> msg_list_;
   std::shared_ptr<FlatbuffersSchemaContext> target_fbs_context_;
   std::vector<std::string> fbs_field_list_;
 

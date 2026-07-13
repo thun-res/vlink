@@ -77,8 +77,8 @@
  *       thread(s), takes only a per-URL lock, copies the payload once with @c Bytes::deep_copy and is amortized
  *       O(1); one callback may evict multiple expired or over-limit entries.
  * @warning A single URL with a large @b post raises the retention -- and memory -- of @e every URL.
- * @warning A reordering bag plugin buffers part of the window until @c flush(): peak dump memory can approach
- *          twice the window size.
+ * @warning A reordering bag plugin still copies and buffers part of the window until @c flush(); frames emitted
+ *          downstream are synchronous and do not accumulate in an additional bag-writer queue.
  * @warning @c busy_skip_data drops data while the bag writer is active, leaving time holes for later triggers.
  * @warning With @c destroy_on_offline, offline buffers kept for an in-flight dump can push peak memory above
  *          @c max_cache_size.
@@ -228,8 +228,8 @@ class VLINK_EXPORT TriggerRecorder : public MessageLoop {
     bool busy_skip_data{false};                 ///< Drop incoming data while a bag is being written.
     bool destroy_on_offline{false};             ///< Destroy offline subscribers; an in-flight dump keeps their data.
     OverflowPolicy overflow{kCoverOldest};      ///< Byte-cap overflow policy.
-    int64_t sleep_interval{4LL * 1024 * 1024};  ///< Dump I/O throttle: sleep after this many bytes written.
-    int64_t sleep_time_ms{0};                   ///< Dump I/O throttle: sleep duration in ms (0 disables).
+    int64_t sleep_interval{4LL * 1024 * 1024};  ///< Dump input throttle: sleep after this many bytes submitted.
+    int64_t sleep_time_ms{0};                   ///< Dump input-throttle sleep duration in ms (0 disables).
     std::string dds_ip;                         ///< When non-empty, bind subscribers to this DDS IP (native mode).
     DiscoveryViewer::FilterType discovery_filter{DiscoveryViewer::kFilterAvailable};  ///< Discovery filter.
     std::vector<std::string> whitelist;                        ///< If non-empty, only these exact URLs are recorded.

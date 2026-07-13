@@ -51,6 +51,9 @@ class StubBagWriter : public BagWriter {
                          const BagWriter::Config& config = {})
       : BagWriter(path, config) {}
 
+  explicit StubBagWriter(const BagWriter::Config& config)
+      : BagWriter((std::filesystem::path(Utils::get_tmp_dir()) / "stub.vdb").string(), config) {}
+
   ~StubBagWriter() override = default;
 
   using BagWriter::detach_plugin;
@@ -60,12 +63,12 @@ class StubBagWriter : public BagWriter {
 
   void register_schema_callback(SchemaCallback&&) override {}
 
-  bool push_schema(const SchemaData&, bool) override {
+  bool push_schema(const SchemaData&) override {
     ++schema_push_count;
     return true;
   }
 
-  int64_t record(const Frame& frame, bool) override {
+  int64_t record(const Frame& frame) override {
     std::lock_guard lock(record_mtx);
 
     ++record_count;
@@ -76,7 +79,6 @@ class StubBagWriter : public BagWriter {
     last_size = frame.data.size();
     last_timestamp = frame.timestamp;
     recorded_timestamps.push_back(frame.timestamp);
-
     record_cv.notify_all();
 
     return frame.timestamp;
@@ -232,6 +234,12 @@ Frame write_frame(const std::string& url, const std::string& ser_type, SchemaTyp
   return frame;
 }
 
+Bytes timestamp_payload(int64_t timestamp) {
+  Bytes payload = Bytes::create(sizeof(timestamp));
+  std::memcpy(payload.data(), &timestamp, sizeof(timestamp));
+  return payload;
+}
+
 SchemaData writer_schema_data(const std::string& name, SchemaType schema_type, const std::string& data) {
   SchemaData schema;
   schema.name = name;
@@ -325,8 +333,10 @@ void write_stale_split_manifest(const std::filesystem::path& manifest, const std
 
 class FailingBagWriter final : public StubBagWriter {
  public:
-  int64_t record(const Frame& frame, bool immediate) override {
-    (void)StubBagWriter::record(frame, immediate);
+  using StubBagWriter::StubBagWriter;
+
+  int64_t record(const Frame& frame) override {
+    (void)StubBagWriter::record(frame);
     return -1;
   }
 };
@@ -337,7 +347,6 @@ void verify_async_write_failure_latches(const char* suffix) {
   ScopedWriterPath bag(suffix);
 
   BagWriter::Config config;
-  config.sync_mode = true;
   config.compress = BagWriter::kCompressNone;
   config.cache_size = 1;
 
@@ -381,11 +390,40 @@ std::vector<Frame> read_writer_frames(const std::filesystem::path& path) {
   return frames;
 }
 
-void verify_persistent_queue_rejects_without_dropping(const char* suffix) {
+void verify_sync_mode_plugin_output_without_writer_loop(const char* suffix) {
   ScopedWriterPath bag(suffix);
 
   BagWriter::Config config;
   config.sync_mode = true;
+  config.compress = BagWriter::kCompressNone;
+  config.cache_size = 1;
+
+  auto writer = BagWriter::create(bag.path.string(), config);
+  REQUIRE(writer != nullptr);
+  writer->bind_plugin_interface(std::make_shared<ReorderWritePlugin>(60'000));
+
+  REQUIRE_GE(writer->push(write_frame("dds://late", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      timestamp_payload(100'000'000), 1)),
+             0);
+  REQUIRE_GE(writer->push(write_frame("dds://early", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      timestamp_payload(1'000'000), 2)),
+             0);
+
+  writer->clear_plugin_interface();
+  writer->close();
+  CHECK_FALSE(writer->fail());
+  writer.reset();
+
+  const auto frames = read_writer_frames(bag.path);
+  REQUIRE_EQ(frames.size(), 2u);
+  CHECK_EQ(frames[0].timestamp, 1'000'000);
+  CHECK_EQ(frames[1].timestamp, 100'000'000);
+}
+
+void verify_persistent_queue_rejects_without_dropping(const char* suffix) {
+  ScopedWriterPath bag(suffix);
+
+  BagWriter::Config config;
   config.compress = BagWriter::kCompressNone;
   config.cache_size = 1;
   config.max_task_depth = 1;
@@ -431,8 +469,7 @@ void verify_split_close_finalizes_manifest(const char* suffix) {
   REQUIRE(writer != nullptr);
   REQUIRE(writer->is_split_mode());
   REQUIRE_EQ(writer->push(write_frame("dds://close", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                      Bytes::from_string("closed"), 1'000),
-                          true),
+                                      Bytes::from_string("closed"), 1'000)),
              1'000);
 
   writer->close();
@@ -465,14 +502,12 @@ void verify_vcap_schema_failure_can_retry() {
   });
 
   CHECK_LT(writer->push(write_frame("dds://schema_retry", "demo.Retry", SchemaType::kProtobuf, ActionType::kPublish,
-                                    Bytes::from_string("rejected"), 1'000),
-                        true),
+                                    Bytes::from_string("rejected"), 1'000)),
            0);
 
   valid_schema = true;
   REQUIRE_EQ(writer->push(write_frame("dds://schema_retry", "demo.Retry", SchemaType::kProtobuf, ActionType::kPublish,
-                                      Bytes::from_string("accepted"), 2'000),
-                          true),
+                                      Bytes::from_string("accepted"), 2'000)),
              2'000);
   writer.reset();
 
@@ -486,11 +521,12 @@ void verify_relative_vcap_close_survives_chdir() {
   const auto other_dir = cwd.path / "other";
   std::filesystem::create_directories(other_dir);
 
-  auto writer = BagWriter::create("relative.vcap");
+  BagWriter::Config config;
+  config.sync_mode = true;
+  auto writer = BagWriter::create("relative.vcap", config);
   REQUIRE(writer != nullptr);
   REQUIRE_EQ(writer->push(write_frame("dds://relative_close", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                      Bytes::from_string("relative"), 1'000),
-                          true),
+                                      Bytes::from_string("relative"), 1'000)),
              1'000);
 
   std::filesystem::current_path(other_dir);
@@ -519,14 +555,12 @@ void verify_relative_split_close_survives_chdir(const char* suffix) {
   REQUIRE(writer != nullptr);
   REQUIRE(writer->is_split_mode());
   REQUIRE_EQ(writer->push(write_frame("dds://relative_split_close", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                      Bytes::from_string("relative"), 1'000),
-                          true),
+                                      Bytes::from_string("relative"), 1'000)),
              1'000);
 
   std::filesystem::current_path(other_dir);
   REQUIRE_EQ(writer->push(write_frame("dds://relative_split_close", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                      Bytes::from_string("rotated"), 2'000),
-                          true),
+                                      Bytes::from_string("rotated"), 2'000)),
              2'000);
   writer->close();
   CHECK_FALSE(writer->fail());
@@ -624,8 +658,7 @@ void verify_real_writer_config_variants(const char* suffix) {
   CHECK_EQ(writer->get_max_task_count(), static_cast<size_t>(BagWriter::Config().max_task_depth));
 
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/config", "raw", SchemaType::kRaw, ActionType::kSubscribe,
-                                      Bytes::from_string("config"), 1'000),
-                          true),
+                                      Bytes::from_string("config"), 1'000)),
              1'000);
   writer->set_url_loss("dds://coverage/config", 0.0);
   writer.reset();
@@ -654,7 +687,6 @@ void verify_split_manifest_constructor_removes_stale_file(const char* suffix, co
   write_stale_split_manifest(bag.path, stale_name);
 
   BagWriter::Config config;
-  config.sync_mode = true;
   config.compress = BagWriter::kCompressNone;
   config.tag_name = "stale-cleanup";
 
@@ -680,8 +712,7 @@ void verify_vcap_compression_level_variants() {
     auto writer = BagWriter::create(bag.path.string(), config);
     REQUIRE(writer != nullptr);
     REQUIRE_EQ(writer->push(write_frame("dds://coverage/compress_level", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                        Bytes::from_string("level-" + std::to_string(level))),
-                            true),
+                                        Bytes::from_string("level-" + std::to_string(level)))),
                0);
     writer.reset();
 
@@ -714,8 +745,7 @@ void verify_vdb_compression_skip_after_repeated_unhelpful_frames() {
 
   for (int index = 0; index < 6; ++index) {
     REQUIRE_EQ(writer->push(write_frame("dds://coverage/vdb_compress_skip", "raw", SchemaType::kRaw,
-                                        ActionType::kPublish, payload, 1'000 + index),
-                            true),
+                                        ActionType::kPublish, payload, 1'000 + index)),
                1'000 + index);
   }
   writer.reset();
@@ -742,13 +772,11 @@ void verify_vdb_periodic_metadata_update_branch() {
   REQUIRE(writer != nullptr);
 
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/vdb_periodic_update", "raw", SchemaType::kRaw,
-                                      ActionType::kPublish, Bytes::from_string("first"), 1'000),
-                          true),
+                                      ActionType::kPublish, Bytes::from_string("first"), 1'000)),
              1'000);
   std::this_thread::sleep_for(1200ms);
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/vdb_periodic_update", "raw", SchemaType::kRaw,
-                                      ActionType::kPublish, Bytes::from_string("second"), 2'000),
-                          true),
+                                      ActionType::kPublish, Bytes::from_string("second"), 2'000)),
              2'000);
   writer.reset();
 
@@ -762,7 +790,6 @@ void verify_vdb_wal_optimize_and_async_schema_paths() {
   ScopedWriterPath bag(".vdb");
 
   BagWriter::Config config;
-  config.sync_mode = false;
   config.cache_size = 1;
   config.compress = BagWriter::kCompressLzav;
   config.compress_start_size = 1;
@@ -826,43 +853,37 @@ void verify_vdb_schema_merge_and_failure_variants() {
   REQUIRE(writer != nullptr);
 
   SchemaData empty;
-  CHECK(writer->push_schema(empty, true));
+  CHECK(writer->push_schema(empty));
 
   SchemaData placeholder;
   placeholder.name = "demo.Merge";
   placeholder.schema_type = SchemaType::kUnknown;
-  CHECK(writer->push_schema(placeholder, true));
+  CHECK(writer->push_schema(placeholder));
 
   const uint8_t schema_bytes[] = {'s', 'c', 'h', 'e', 'm', 'a'};
   SchemaData full;
   full.name = "demo.Merge";
   full.schema_type = SchemaType::kProtobuf;
   full.data = Bytes::shallow_copy(schema_bytes, sizeof(schema_bytes));
-  CHECK(writer->push_schema(full, true));
+  CHECK(writer->push_schema(full));
 
   SchemaData duplicate = full;
-  CHECK(writer->push_schema(duplicate, true));
+  CHECK(writer->push_schema(duplicate));
 
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/schema_merge", "demo.Merge", SchemaType::kUnknown,
-                                      ActionType::kPublish, Bytes::from_string("schema-merge"), 1'000),
-                          true),
+                                      ActionType::kPublish, Bytes::from_string("schema-merge"), 1'000)),
              1'000);
 
   SchemaData conflict = full;
   conflict.data = Bytes::from_string("different");
-  REQUIRE(writer->async_run());
-  CHECK(writer->push_schema(conflict));
-  REQUIRE(writer->wait_for_idle(3000));
-  CHECK(writer->fail());
-  writer->clear();
+  CHECK_FALSE(writer->push_schema(conflict));
 
   writer->register_schema_callback([](const std::string& ser_type, SchemaType) {
     return writer_schema_data(ser_type, SchemaType::kFlatbuffers, "flatbuffer schema");
   });
 
   CHECK_LT(writer->push(write_frame("dds://coverage/schema_mismatch", "demo.Mismatch", SchemaType::kProtobuf,
-                                    ActionType::kPublish, Bytes::from_string("mismatch"), 2'000),
-                        true),
+                                    ActionType::kPublish, Bytes::from_string("mismatch"), 2'000)),
            0);
 
   writer.reset();
@@ -888,43 +909,37 @@ void verify_vcap_schema_merge_and_failure_variants() {
   REQUIRE(writer != nullptr);
 
   SchemaData empty;
-  CHECK(writer->push_schema(empty, true));
+  CHECK(writer->push_schema(empty));
 
   SchemaData placeholder;
   placeholder.name = "demo.VcapMerge";
   placeholder.schema_type = SchemaType::kUnknown;
-  CHECK(writer->push_schema(placeholder, true));
+  CHECK(writer->push_schema(placeholder));
 
   const uint8_t schema_bytes[] = {'v', 'c', 'a', 'p'};
   SchemaData full;
   full.name = "demo.VcapMerge";
   full.schema_type = SchemaType::kProtobuf;
   full.data = Bytes::shallow_copy(schema_bytes, sizeof(schema_bytes));
-  CHECK(writer->push_schema(full, true));
+  CHECK(writer->push_schema(full));
 
   SchemaData duplicate = full;
-  CHECK(writer->push_schema(duplicate, true));
+  CHECK(writer->push_schema(duplicate));
 
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/vcap_schema_merge", "demo.VcapMerge", SchemaType::kUnknown,
-                                      ActionType::kPublish, Bytes::from_string("schema-merge"), 1'000),
-                          true),
+                                      ActionType::kPublish, Bytes::from_string("schema-merge"), 1'000)),
              1'000);
 
   SchemaData conflict = full;
   conflict.data = Bytes::from_string("different");
-  REQUIRE(writer->async_run());
-  CHECK(writer->push_schema(conflict));
-  REQUIRE(writer->wait_for_idle(3000));
-  CHECK(writer->fail());
-  writer->clear();
+  CHECK_FALSE(writer->push_schema(conflict));
 
   writer->register_schema_callback([](const std::string& ser_type, SchemaType) {
     return writer_schema_data(ser_type, SchemaType::kFlatbuffers, "flatbuffer schema");
   });
 
   CHECK_LT(writer->push(write_frame("dds://coverage/vcap_schema_mismatch", "demo.VcapMismatch", SchemaType::kProtobuf,
-                                    ActionType::kPublish, Bytes::from_string("mismatch"), 2'000),
-                        true),
+                                    ActionType::kPublish, Bytes::from_string("mismatch"), 2'000)),
            0);
 
   writer.reset();
@@ -949,18 +964,15 @@ void verify_real_writer_rejects_url_metadata_conflicts(const char* suffix) {
   REQUIRE(writer != nullptr);
 
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/meta_conflict", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                      Bytes::from_string("first"), 1'000),
-                          true),
+                                      Bytes::from_string("first"), 1'000)),
              1'000);
 
   CHECK_LT(writer->push(write_frame("dds://coverage/meta_conflict", "other_raw", SchemaType::kRaw, ActionType::kPublish,
-                                    Bytes::from_string("changed-ser"), 2'000),
-                        true),
+                                    Bytes::from_string("changed-ser"), 2'000)),
            0);
 
   CHECK_LT(writer->push(write_frame("dds://coverage/meta_conflict", "raw", SchemaType::kProtobuf, ActionType::kPublish,
-                                    Bytes::from_string("changed-schema"), 3'000),
-                        true),
+                                    Bytes::from_string("changed-schema"), 3'000)),
            0);
 
   writer.reset();
@@ -994,12 +1006,10 @@ void verify_relative_split_writer_paths(const char* suffix, bool split_before) {
       split_before);
 
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/relative_split", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                      Bytes::from_string("first"), 0),
-                          true),
+                                      Bytes::from_string("first"), 0)),
              0);
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/relative_split", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                      Bytes::from_string("second"), 5'000),
-                          true),
+                                      Bytes::from_string("second"), 5'000)),
              5'000);
   writer.reset();
 
@@ -1038,21 +1048,17 @@ void verify_real_writer_timestamp_and_unknown_action_variants(const char* suffix
   REQUIRE(writer != nullptr);
 
   const int64_t auto_timestamp = writer->push(write_frame("dds://coverage/auto_timestamp", "raw", SchemaType::kRaw,
-                                                          ActionType::kPublish, Bytes::from_string("auto"), -1),
-                                              true);
+                                                          ActionType::kPublish, Bytes::from_string("auto"), -1));
   CHECK_GE(auto_timestamp, 0);
 
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/out_of_order", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                      Bytes::from_string("first"), 5'000'000),
-                          true),
+                                      Bytes::from_string("first"), 5'000'000)),
              5'000'000);
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/out_of_order", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                      Bytes::from_string("second"), 4'999'950),
-                          true),
+                                      Bytes::from_string("second"), 4'999'950)),
              4'999'950);
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/unknown_action", "raw", SchemaType::kRaw,
-                                      ActionType::kUnknownAction, Bytes::from_string("unknown"), 6'000'000),
-                          true),
+                                      ActionType::kUnknownAction, Bytes::from_string("unknown"), 6'000'000)),
              6'000'000);
   writer.reset();
 
@@ -1115,8 +1121,7 @@ void verify_writer_creates_missing_parent_directory(const char* suffix) {
   auto writer = BagWriter::create(path.string(), config);
   REQUIRE(writer != nullptr);
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/missing_parent", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                      Bytes::from_string("created"), 1'000),
-                          true),
+                                      Bytes::from_string("created"), 1'000)),
              1'000);
   writer.reset();
 
@@ -1147,8 +1152,7 @@ void verify_auto_compression_writer_remains_readable(const char* suffix) {
   auto writer = BagWriter::create(bag.path.string(), config);
   REQUIRE(writer != nullptr);
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/auto_compress", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                      payload, 1'000),
-                          true),
+                                      payload, 1'000)),
              1'000);
   writer.reset();
 
@@ -1200,12 +1204,10 @@ void verify_vdb_limit_mode_variants() {
     auto writer = BagWriter::create(bag.path.string(), config);
     REQUIRE(writer != nullptr);
     REQUIRE_EQ(writer->push(write_frame("dds://coverage/limit_reject", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                        Bytes::from_string("first"), 1'000),
-                            true),
+                                        Bytes::from_string("first"), 1'000)),
                1'000);
     CHECK_LT(writer->push(write_frame("dds://coverage/limit_reject", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                      Bytes::from_string("second"), 2'000),
-                          true),
+                                      Bytes::from_string("second"), 2'000)),
              0);
     CHECK_FALSE(writer->fail());
     writer.reset();
@@ -1230,12 +1232,10 @@ void verify_vdb_limit_mode_variants() {
     auto writer = BagWriter::create(bag.path.string(), config);
     REQUIRE(writer != nullptr);
     REQUIRE_EQ(writer->push(write_frame("dds://coverage/limit_evict", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                        Bytes::from_string("first"), 1'000),
-                            true),
+                                        Bytes::from_string("first"), 1'000)),
                1'000);
     REQUIRE_EQ(writer->push(write_frame("dds://coverage/limit_evict", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                        Bytes::from_string("second"), 2'000),
-                            true),
+                                        Bytes::from_string("second"), 2'000)),
                2'000);
     writer.reset();
 
@@ -1270,12 +1270,10 @@ void verify_split_by_size_writer_paths(const char* suffix) {
       false);
 
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/split_size", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                      Bytes::from_string("first"), 1'000),
-                          true),
+                                      Bytes::from_string("first"), 1'000)),
              1'000);
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/split_size", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                      Bytes::from_string("second"), 2'000),
-                          true),
+                                      Bytes::from_string("second"), 2'000)),
              2'000);
   writer.reset();
 
@@ -1305,20 +1303,16 @@ void verify_method_schema_split_and_field_metadata(const char* suffix) {
 
   const std::string method_ser = "demo.Request|demo.Response";
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/method_schema", method_ser, SchemaType::kProtobuf,
-                                      ActionType::kClientRequest, Bytes::from_string("request"), 1'000),
-                          true),
+                                      ActionType::kClientRequest, Bytes::from_string("request"), 1'000)),
              1'000);
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/method_schema", method_ser, SchemaType::kProtobuf,
-                                      ActionType::kClientResponse, Bytes::from_string("response"), 2'000),
-                          true),
+                                      ActionType::kClientResponse, Bytes::from_string("response"), 2'000)),
              2'000);
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/field_set", "raw", SchemaType::kRaw, ActionType::kSet,
-                                      Bytes::from_string("set"), 3'000),
-                          true),
+                                      Bytes::from_string("set"), 3'000)),
              3'000);
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/field_get", "raw", SchemaType::kRaw, ActionType::kGet,
-                                      Bytes::from_string("get"), 4'000),
-                          true),
+                                      Bytes::from_string("get"), 4'000)),
              4'000);
   writer.reset();
 
@@ -1366,8 +1360,7 @@ void verify_ignore_compress_url_remains_readable(const char* suffix) {
   auto writer = BagWriter::create(bag.path.string(), config);
   REQUIRE(writer != nullptr);
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/ignore_compress", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                      payload, 1'000),
-                          true),
+                                      payload, 1'000)),
              1'000);
   writer.reset();
 
@@ -1563,6 +1556,53 @@ TEST_SUITE("extension-BagWriter") {
     }
 
     writer.bind_plugin_interface(nullptr);
+  }
+
+  TEST_CASE("sync-mode plugin output bypasses the writer queue for worker and flush emissions") {
+    BagWriter::Config config;
+    config.sync_mode = true;
+    StubBagWriter writer(config);
+    writer.bind_plugin_interface(std::make_shared<ReorderWritePlugin>(60'000));
+
+    writer.push(
+        write_frame("dds://a", "raw", SchemaType::kUnknown, ActionType::kPublish, timestamp_payload(100'000'000), 1));
+    writer.push(
+        write_frame("dds://b", "raw", SchemaType::kUnknown, ActionType::kPublish, timestamp_payload(1'000'000), 2));
+
+    {
+      std::unique_lock lock(writer.record_mtx);
+      REQUIRE(
+          writer.record_cv.wait_for(lock, std::chrono::seconds(1), [&writer]() { return writer.record_count > 0; }));
+    }
+
+    writer.clear_plugin_interface();
+
+    std::lock_guard lock(writer.record_mtx);
+    REQUIRE_EQ(writer.recorded_timestamps.size(), 2u);
+    CHECK_EQ(writer.recorded_timestamps[0], 1'000'000);
+    CHECK_EQ(writer.recorded_timestamps[1], 100'000'000);
+  }
+
+  TEST_CASE("real sync-mode writers persist plugin output without a recording loop") {
+    verify_sync_mode_plugin_output_without_writer_loop(".vdb");
+    verify_sync_mode_plugin_output_without_writer_loop(".vcap");
+  }
+
+  TEST_CASE("sync-mode plugin-worker output latches record failures") {
+    BagWriter::Config config;
+    config.sync_mode = true;
+    FailingBagWriter writer(config);
+    writer.bind_plugin_interface(std::make_shared<ReorderWritePlugin>(60'000));
+
+    REQUIRE_GE(writer.push(write_frame("dds://late", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                       timestamp_payload(100'000'000), 1)),
+               0);
+    REQUIRE_GE(writer.push(write_frame("dds://early", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                       timestamp_payload(1'000'000), 2)),
+               0);
+
+    REQUIRE(common_test::wait_until([&writer]() { return writer.fail(); }));
+    writer.clear_plugin_interface();
   }
 
   TEST_CASE("teardown flushes an async plugin's buffered tail frames instead of dropping them") {
@@ -1772,10 +1812,9 @@ TEST_SUITE("extension-BagWriter") {
 
       REQUIRE_NE(writer, nullptr);
       Bytes data = Bytes::from_string("global payload");
-      CHECK_GE(
-          writer->push(write_frame("dds://coverage/global_writer", "raw", SchemaType::kRaw, ActionType::kPublish, data),
-                       true),
-          0);
+      CHECK_GE(writer->push(
+                   write_frame("dds://coverage/global_writer", "raw", SchemaType::kRaw, ActionType::kPublish, data)),
+               0);
       writer->quit();
       CHECK(writer->wait_for_quit(3000));
       return;
@@ -1816,8 +1855,7 @@ TEST_SUITE("extension-BagWriter") {
 
     Bytes data = Bytes::from_string("no chunk payload");
     REQUIRE_EQ(
-        writer->push(write_frame("dds://coverage/no_chunk", "raw", SchemaType::kRaw, ActionType::kPublish, data), true),
-        0);
+        writer->push(write_frame("dds://coverage/no_chunk", "raw", SchemaType::kRaw, ActionType::kPublish, data)), 0);
     writer.reset();
 
     auto reader = BagReader::create(bag.path.string(), false);

@@ -247,7 +247,8 @@ void PlayDialog::on_pushButton_select_clicked() {
 
     data_has_changed.store(true, std::memory_order_relaxed);
 
-    double process = 100.0 * timestamp / 1000 / player_->get_info().total_duration;
+    const auto total_duration = player_->get_info().total_duration;
+    double process = total_duration > 0 ? 100.0 * timestamp / 1000.0 / total_duration : 0.0;
     QMetaObject::invokeMethod(this, "update_progress_for_player", Qt::QueuedConnection, Q_ARG(double, process));
   });
 

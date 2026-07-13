@@ -143,11 +143,10 @@ class VLINK_EXPORT VDBWriter final : public BagWriter {
   /**
    * @brief Embeds @p schema_data in the @c schemas table for offline introspection.
    *
-   * @param schema_data  Schema descriptor to embed.
-   * @param immediate    @c true merges synchronously; @c false enqueues the write.
-   * @return @c false when an immediate merge fails or an asynchronous merge cannot be queued.
+   * @param schema_data Schema descriptor to embed.
+   * @return @c false when a synchronous merge fails or an asynchronous merge cannot be queued.
    */
-  bool push_schema(const SchemaData& schema_data, bool immediate = false) override;
+  bool push_schema(const SchemaData& schema_data) override;
 
   /**
    * @brief Returns the current value of the internal dumping flag.
@@ -171,7 +170,7 @@ class VLINK_EXPORT VDBWriter final : public BagWriter {
   [[nodiscard]] int get_split_index() const override;
 
  protected:
-  int64_t record(const Frame& frame, bool immediate) override;
+  int64_t record(const Frame& frame) override;
 
   int64_t get_record_timestamp() const override;
 

@@ -1,6 +1,6 @@
 # 🗒️ 更新日志
 
-## v2.1.0 (2026/07/13)
+## v2.1.0 (2026/07/15)
 
 ### 新增功能
 
@@ -16,6 +16,7 @@
 - **覆盖率**：使用 lcov 2.x 生成报告时保留 `LCOV_EXCL_START` / `LCOV_EXCL_STOP` 区域。
 - **URL 插件**：扩展 `VLINK_URL_PLUGINS` 的模式值，且大小写不敏感：`auto` 在首次使用已知但未链接的共享 transport 时自动加载；空值或 `none` 关闭插件加载；其他非空值仍作为显式预加载列表。拆分后的 runtime 包包含可动态加载 transport 的无版本 NAMELINK；c_api、proxy 与 exprtk 等开发 API 的 NAMELINK 仍归入 devel 包，因此 `auto` 模式不依赖开发包。
 - **bag**：在 C++ 与 Python 中公开幂等的 `BagWriter::close()`，调用方可在析构前完成 metadata、footer 和 split manifest 写入，再通过 `fail()` 检查结果。
+- **bag**：将帧、Schema 与插件输出的写入策略统一由 `BagWriter::Config::sync_mode` 在 writer 创建时确定：`false` 经后台队列写入并启用 VDB 周期 cache flush，`true` 在产生数据的线程执行 backend 写入并禁用该周期 flush。**破坏性变更**：移除 C++ / Python `push()`、`push_schema()` 的逐调用 `immediate` 参数及派生 writer 的对应虚函数参数；原 `immediate=true` 调用须改为创建 writer 前设置 `config.sync_mode=true`，同一 writer 不再支持同步与异步调用混用，外部派生类与既有二进制须基于新接口重新构建。同步执行不等同于逐帧事务提交或 `fsync`。
 - **trigger**：无论是否允许输出到 `dump_dir` 之外，相对显式输出路径都统一从 `dump_dir` 解析。
 - **viewer**：使用 FFmpeg 线程解码，QImage 仅作为回退，修复多相机 JPEG 的严重卡顿；默认启用 FFmpeg；零拷贝流遵循图像类型下拉框；修复帮助链接，并通过 GitHub 最新发布版本检查更新。
 - **viewer/perception**：新增面向 vmsgs Protobuf / FlatBuffers 感知消息的可配置映射，覆盖目标、雷达、车道边界、道路标线、轨迹、停车位、占据栅格与车辆 HUD；动态 FlatBuffers 反射支持 table、内联 struct、`vector<table>` 与 `vector<struct>`。车道边界类型会转换为 Viewer 线型语义，道路标线按元素过滤到车道线、停止线或人行横道图层；跟踪对象与停车位 ID 在映射及 OSG 数据链路中保持 64 位。
@@ -32,6 +33,8 @@
 - 防止已放弃的延迟 trigger dump 持有缓冲数据或在 recorder 重启后重新出现。
 - 仅在 writer 循环启动后为限时 `vlink-bag record` 计时，并使 `--deft` 模式保持 DiscoveryViewer 后台运行；Python `TriggerRecorder.async_run()` 等待 recorder 启动完成；viewer 会报告录制文件关闭失败。
 - 加强图像 payload 校验与不安全尺寸处理。
+- 在 `vlink-efbs`、`vlink-dump`、viewer 感知显示和 webviz RPC 解码前验证 FlatBuffers schema 与 payload，拒绝损坏或类型不匹配的数据。
+- 修复 Release 构建的 Python 状态字典将非 `PublicationMatched` 状态按错误派生类型读取，导致字段错误或未定义行为的问题。
 - 修复 Python `ZeroCopyMessageParser` 在 `parse()` / `parse_type()` 后借用已释放临时缓冲的悬垂访问（use-after-free）：解析器现直接借用输入 `Bytes` 的存储，并由绑定持有该输入以维持其生存期；输入指针或大小改变后，绑定会拒绝继续读取。解析器有效期间仍禁止原地修改输入内容。
 - 降低 DDS/DDSC 与 shm2 生命周期测试受 teardown 竞态影响的概率。
 

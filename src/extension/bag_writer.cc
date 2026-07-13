@@ -103,7 +103,6 @@ struct BagWriter::Impl final {
   std::mutex active_write_mtx;
   std::atomic<uint64_t> active_thread_id{0};
   std::string active_origin_url;
-  bool active_immediate{false};
   int64_t active_record_result{0};
 
   std::atomic_bool stream_fail{false};
@@ -200,7 +199,6 @@ BagWriter* BagWriter::global_get() { return GlobalWriter::get().instance.get(); 
 
 BagWriter::BagWriter(const std::string& path, const Config& config) : impl_(std::make_unique<Impl>()) {
   (void)path;
-  (void)config;
 
   if (!config.sync_mode) {
     impl_->index_to_url_map.reserve(128);
@@ -324,6 +322,8 @@ void BagWriter::bind_plugin_interface(const std::shared_ptr<BagPluginInterface>&
       if VUNLIKELY (frame.url.empty()) {
         if (active) {
           impl_->active_record_result = -1;
+        } else {
+          set_fail();
         }
 
         return;
@@ -333,12 +333,12 @@ void BagWriter::bind_plugin_interface(const std::shared_ptr<BagPluginInterface>&
         learn_recorded_url(impl_->active_origin_url, frame.url);
       }
 
-      const bool immediate = active && impl_->active_immediate;
-
-      const int64_t record_result = record(frame, immediate);
+      const int64_t record_result = record(frame);
 
       if VUNLIKELY (active && record_result < 0) {
         impl_->active_record_result = record_result;
+      } else if VUNLIKELY (record_result < 0) {
+        set_fail();
       }
     });
   }
@@ -350,7 +350,7 @@ void BagWriter::bind_plugin_interface(const std::shared_ptr<BagPluginInterface>&
 
 void BagWriter::clear_plugin_interface() { bind_plugin_interface(nullptr); }
 
-int64_t BagWriter::push(const Frame& frame, bool immediate) {
+int64_t BagWriter::push(const Frame& frame) {
   if VUNLIKELY (frame.url.empty()) {
     return -1;
   }
@@ -378,13 +378,12 @@ int64_t BagWriter::push(const Frame& frame, bool immediate) {
   }
 
   if VLIKELY (!plugin_interface) {
-    return record(*effective, immediate);
+    return record(*effective);
   }
 
   std::lock_guard active_lock(impl_->active_write_mtx);
 
   impl_->active_origin_url = effective->url;
-  impl_->active_immediate = immediate;
   impl_->active_record_result = target_timestamp;
   impl_->active_thread_id.store(Utils::get_native_thread_id(), std::memory_order_release);
   plugin_interface->on_write(*effective);
@@ -392,14 +391,13 @@ int64_t BagWriter::push(const Frame& frame, bool immediate) {
   impl_->active_thread_id.store(0, std::memory_order_release);
   const int64_t result = impl_->active_record_result < 0 ? impl_->active_record_result : target_timestamp;
   impl_->active_origin_url.clear();
-  impl_->active_immediate = false;
   impl_->active_record_result = 0;
 
   return result;
 }
 
 BagWriter& BagWriter::operator<<(const Frame& frame) {
-  if VUNLIKELY (push(frame, false) < 0) {
+  if VUNLIKELY (push(frame) < 0) {
     set_fail();
   }
 
@@ -407,7 +405,7 @@ BagWriter& BagWriter::operator<<(const Frame& frame) {
 }
 
 BagWriter& BagWriter::operator<<(const SchemaData& schema_data) {
-  if VUNLIKELY (!push_schema(schema_data, false)) {
+  if VUNLIKELY (!push_schema(schema_data)) {
     set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 

@@ -82,15 +82,15 @@ if (writer->fail()) {
 }
 ```
 
-`push()` 将写任务入队，实际落盘发生在后台循环线程。其语义如下：
+`push()` 的写入策略由创建 writer 时的 `Config::sync_mode` 固定，writer 生命周期内不能逐帧切换：
 
-| 方法 | 语义 |
+| 配置 / 方法 | 语义 |
 | --- | --- |
-| `push(frame)` | 异步入队；返回分配的微秒时间戳，负值表示失败（如 `url` 为空） |
-| `push(frame, /*immediate=*/true)` | 绕过队列，在调用线程同步写入并阻塞至落盘 |
-| `*writer << frame` | 等价于 `push(frame, false)`，可链式；写失败时置位 `fail()` |
+| `sync_mode=false`（默认） | `push()` / `push_schema()` 异步入队，须先启动 writer 后台循环 |
+| `sync_mode=true` | 所有帧、schema 及插件输出都在产生它们的线程同步写入，无需后台循环 |
+| `*writer << frame` | 与 `push(frame)` 使用相同的 writer 级策略；写失败时置位 `fail()` |
 
-`push()` 线程安全，可直接在通信回调内调用。`immediate=true` 会阻塞到落盘，可能违反实时截止期，仅用于收尾或测试代码。
+`push()` 线程安全，可直接在通信回调内调用。同步模式会阻塞到落盘，可能违反实时截止期，应在创建 writer 时明确选择，不能与异步写入混用。
 
 ### 9.3.1 Schema 嵌入
 
@@ -129,6 +129,9 @@ auto writer = vlink::BagWriter::create("/data/recording.vdb", config);
 | `split_by_size` | 1 GiB | 按文件大小分割阈值（字节），`0` 关闭 |
 | `split_by_time` | `0` | 按时间分割间隔（毫秒），`0` 关闭 |
 | `tag_name` | 空 | 录制标签，写入文件头供检索 |
+| `sync_mode` | `false` | `true` 全程同步直写且不启动 VDB 周期 cache flush；`false` 全程经后台队列并启用周期 flush |
+
+`cache_size` 始终只表示 VDB 的事务提交字节阈值或 VCAP 的 chunk 大小，不承担模式开关语义。
 
 分割产生新文件时可注册回调获知文件名。第二参数 `before` 决定回调在新文件打开前还是后触发：
 
@@ -433,12 +436,12 @@ int main() {
 
 **两类插件（不可混淆）**　引擎通过两个不同接口、两个不同方法接受两类插件：
 
-- **bag 重排插件**（`BagPluginInterface`，仅经 `bind_bag_plugin_interface()` 绑定）位于落盘写入路径内部：其 `on_write()` 从每帧 payload 解析真实的**数据面时间**（data-plane time），并据此做滑窗重排后再持久化——与在线 `BagWriter` 的机制完全一致（见 [§9.12](#-912-多文件合并回放)）。`TriggerRecorder` 不接收插件库名或搜索目录，也不自行动态加载；宿主须先直接创建接口实例，或用 `Plugin` 加载共享库，再把所得 `shared_ptr<BagPluginInterface>` 绑定给 recorder，并保证其所需生命周期。**未绑定该接口时，引擎按采集时刻顺序落盘**，无需解析 payload。
+- **bag 重排插件**（`BagPluginInterface`，仅经 `bind_bag_plugin_interface()` 绑定）位于落盘写入路径内部：其 `on_write()` 从每帧 payload 解析真实的**数据面时间**（data-plane time），并据此做滑窗重排后再持久化——与在线 `BagWriter` 的机制完全一致（见 [§9.12](#-912-多文件合并回放)）。`TriggerRecorder` 不接收插件库名或搜索目录，也不自行动态加载；宿主须先直接创建接口实例，或用 `Plugin` 加载共享库，再把所得 `shared_ptr<BagPluginInterface>` 绑定给 recorder，并保证其所需生命周期。**未绑定该接口时，引擎按采集时刻顺序落盘**，无需解析 payload。TriggerRecorder 自身的后台循环直接同步写入 bag；插件工作线程及 `flush()` 尾帧也绕过 `BagWriter` 任务队列，以免一次 dump 瞬间生成第二份排队窗口。
 - **触发插件**（`TriggerPluginInterface`，经 `bind_trigger_plugin_interface()` 绑定）只观察引擎生命周期——最重要的是 `on_dump_finished()`，即一份 bag 写完后上传或归档的入口；它从不改写帧。动态加载宿主在绑定前调用 `init(config)`；程序化绑定方如需参数，应自行先调用 `init()`。
 
 **恒定保留**　每个 URL 恒定保留 `effective_pre + max_post_all + 2 * retention_guard` 时长的历史（`only_back` 的 `effective_pre` 为 0，其他 URL 为各自的 `pre`），其中 `max_post_all` 为所有 URL 中最大的生效 `post` 窗口；落盘发生在 `T + max_post_all + retention_guard`（没有任何 URL 拥有生效的 `post` 窗口时立即落盘），使 `pre` 与 `post` 两侧各保留一个 `retention_guard` 余量以吸收落盘定时抖动。这样采集热路径无需判断"当前是否有触发在进行"，代价是内存全局耦合：单个 URL 配置过大的 `post` 会抬高每个 URL 的保留时长与内存占用，内存紧张时应约束 `post`。启用 bag 重排插件时，其滑窗会在落盘期间额外持有部分窗口副本，峰值内存可接近窗口大小的两倍。
 
-**per-URL 窗口**　每个 URL 可独立覆盖默认的 `pre` / `post` 窗口、单包上限与该 URL 的缓冲字节上限，并可设 `only_front`（仅录触发前）或 `only_back`（仅录触发后）。据此可为不同话题裁剪保留策略，例如相机保留触发前 60 s、触发后 5 s，雷达仅保留触发前 15 s，制动信号仅录触发后一段；各 URL 窗口互不相同。全局另支持 URL 白 / 黑名单（精确匹配）、压缩、字节上限溢出策略（淘汰最旧帧 / 丢弃新帧），以及落盘 IO 流控——`sleep_interval` / `sleep_time_ms` 每写出一定字节即休眠一次，把落盘阶段的 IO 与写入队列压力摊薄，减缓 dump 瞬时负载。
+**per-URL 窗口**　每个 URL 可独立覆盖默认的 `pre` / `post` 窗口、单包上限与该 URL 的缓冲字节上限，并可设 `only_front`（仅录触发前）或 `only_back`（仅录触发后）。据此可为不同话题裁剪保留策略，例如相机保留触发前 60 s、触发后 5 s，雷达仅保留触发前 15 s，制动信号仅录触发后一段；各 URL 窗口互不相同。全局另支持 URL 白 / 黑名单（精确匹配）、压缩、字节上限溢出策略（淘汰最旧帧 / 丢弃新帧），以及 dump 输入流控——`sleep_interval` / `sleep_time_ms` 每向写入链路提交一定字节即休眠一次；无异步 bag 插件时这直接约束同步写盘节奏，带 worker/重排插件时仅约束投喂速度，`flush()` 尾帧不保证同样的 IO 节流。
 
 ```cpp
 #include <chrono>

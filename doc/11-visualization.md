@@ -36,7 +36,7 @@ option(ENABLE_VIEWER "Enable viewer" OFF)
 
 | 增强能力 | CMake 选项 | 默认 | 关闭后的影响 |
 | --- | --- | :---: | --- |
-| 视频解码（H.264 / H.265 / YUV 等） | `ENABLE_VIEWER_FFMPEG` | `OFF` | 相机窗口仅保留 Qt 可直接解码的静态图像；需视频/裸像素格式时显式 `-DENABLE_VIEWER_FFMPEG=ON` |
+| 视频解码（H.264 / H.265 / YUV 等） | `ENABLE_VIEWER_FFMPEG` | `ON` | 相机窗口仅保留 Qt 可直接解码的静态图像；不需要视频解码/FFmpeg 依赖时可显式 `-DENABLE_VIEWER_FFMPEG=OFF` |
 | 3D 场景渲染（点云 / 目标检测等） | `ENABLE_VIEWER_OSG` | `ON` | 3D 窗口不可用 |
 | 数学表达式求值 | `ENABLE_EXPRTK` | `ON` | 字段映射与曲线表达式停用 |
 

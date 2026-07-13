@@ -3046,7 +3046,17 @@ ClientInfo* FoxgloveServer::find_client_unlocked(ConnectionHdl hdl, void** out_r
     return nullptr;
   }
 
-  auto conn = ws_server_->get_con_from_hdl(hdl);
+  websocketpp::lib::error_code ec;
+  auto conn = ws_server_->get_con_from_hdl(hdl, ec);
+
+  if VUNLIKELY (ec) {
+    if VLIKELY (out_raw_ptr) {
+      *out_raw_ptr = nullptr;
+    }
+
+    return nullptr;
+  }
+
   auto* raw_ptr = conn.get();
 
   if VLIKELY (out_raw_ptr) {

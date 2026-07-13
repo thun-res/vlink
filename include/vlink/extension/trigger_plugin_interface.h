@@ -140,8 +140,8 @@ class TriggerPluginInterface {
   struct DumpResult final {
     std::string reason;          ///< Trigger reason for this dump.
     std::string path;            ///< Output bag file path.
-    int64_t frame_count{0};      ///< Number of frames accepted by the writer (submitted minus rejected).
-    int64_t dropped_count{0};    ///< Frames the writer rejected on submission (e.g. queue overflow).
+    int64_t frame_count{0};      ///< Snapshot frames accepted by the writer; a bag plugin may alter final output count.
+    int64_t dropped_count{0};    ///< Retained for compatibility; a synchronous dump aborts on failure, so this stays 0.
     int64_t byte_count{0};       ///< Total payload bytes accepted by the writer.
     int64_t url_count{0};        ///< Number of URLs snapshotted into this dump.
     int64_t start_timestamp{0};  ///< Wall-clock time of the window's first frame, in milliseconds.
@@ -208,8 +208,8 @@ class TriggerPluginInterface {
    *
    * @details
    * Invoked on the recorder's loop thread once per frame successfully handed to the writer, in ascending
-   * capture-time order.  Frames the writer rejects outright are @b not reported here (see
-   * @c DumpResult::dropped_count).  This observes @e submission, not final persistence: a bound bag reorder
+   * capture-time order.  A frame the writer fails to persist aborts the dump and is @b not reported here.
+   * This observes @e submission, not final persistence: a bound bag reorder
    * plugin may still reorder or drop the frame downstream before it reaches disk.  Runs for potentially many
    * frames, so keep the implementation cheap; it cannot alter or drop the frame.  Default: no-op.
    *

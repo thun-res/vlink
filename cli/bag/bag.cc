@@ -40,6 +40,7 @@
 #include <cmath>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -408,7 +409,7 @@ int bag_info(const std::string& path) {
       const std::string& url = frame.url;
 
       std::cout << "\033[2K\r";
-      std::cout << std::fixed << std::setprecision(6) << timestamp / 1000'000.0F << "s " << url << std::endl;
+      std::cout << std::fixed << std::setprecision(6) << timestamp / 1000000.0 << "s " << url << std::endl;
     });
 
     auto quit_function = [&player](int) {
@@ -532,15 +533,18 @@ int bag_info(const std::string& path) {
     if (player->get_info().timezone == 0) {
       std::cout << " (UTC)";
     } else {
+      const int64_t timezone = player->get_info().timezone;
+      const int64_t timezone_magnitude = timezone < 0 ? -timezone : timezone;
+
       if (player->get_info().timezone > 0) {
         std::cout << " (Timezone: +";
       } else {
         std::cout << " (Timezone: -";
       }
 
-      std::cout << std::setw(2) << std::setfill('0') << std::abs(player->get_info().timezone) / 60;
+      std::cout << std::setw(2) << std::setfill('0') << timezone_magnitude / 60;
       std::cout << ":";
-      std::cout << std::setw(2) << std::setfill('0') << std::abs(player->get_info().timezone) % 60;
+      std::cout << std::setw(2) << std::setfill('0') << timezone_magnitude % 60;
       std::cout << std::setfill(' ');
       std::cout << ":00)";
     }
@@ -912,8 +916,8 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
       true);
 
   auto update_urls_function = [&target_urls_set, &filter_list, &recorder, &sub_map, &subs_mtx, &status, black_mode,
-                               native_mode, real_max_packet_size,
-                               sync_mode](const std::vector<vlink::DiscoveryViewer::Info>& info_list) {
+                               native_mode,
+                               real_max_packet_size](const std::vector<vlink::DiscoveryViewer::Info>& info_list) {
     {
       std::unordered_set<std::string> current_urls;
 
@@ -973,7 +977,8 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
         bool skip = black_mode ? false : true;
 
         std::string left_str = info.url;
-        std::transform(left_str.begin(), left_str.end(), left_str.begin(), [](char& c) { return std::tolower(c); });
+        std::transform(left_str.begin(), left_str.end(), left_str.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         for (const auto& f : filter_list) {
           if (f.empty()) {
             continue;
@@ -981,7 +986,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
 
           std::string right_str = f;
           std::transform(right_str.begin(), right_str.end(), right_str.begin(),
-                         [](char& c) { return std::tolower(c); });
+                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
           if (left_str.find(right_str) != std::string::npos) {
             skip = black_mode ? true : false;
@@ -1016,54 +1021,53 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
       }
 
       std::weak_ptr<RawSub> weak_sub = sub;
-      sub->listen(
-          [real_max_packet_size, weak_sub, url = info.url, &recorder, &status, sync_mode](const vlink::Bytes& data) {
-            if VUNLIKELY (has_quit || recorder->is_ready_to_quit()) {
-              return;
-            }
+      sub->listen([real_max_packet_size, weak_sub, url = info.url, &recorder, &status](const vlink::Bytes& data) {
+        if VUNLIKELY (has_quit || recorder->is_ready_to_quit()) {
+          return;
+        }
 
-            if VUNLIKELY (is_paused) {
-              return;
-            }
+        if VUNLIKELY (is_paused) {
+          return;
+        }
 
-            if VUNLIKELY (data.size() > real_max_packet_size) {  // LIMIT SIZE
-              return;
-            }
+        if VUNLIKELY (data.size() > real_max_packet_size) {  // LIMIT SIZE
+          return;
+        }
 
-            int64_t timestamp = main_elapsed_timer.get() - pause_total_time;
+        int64_t timestamp = main_elapsed_timer.get() - pause_total_time;
 
-            total_size += data.size();
+        total_size += data.size();
 
-            auto sub = weak_sub.lock();
+        auto sub = weak_sub.lock();
 
-            if VUNLIKELY (!sub) {
-              return;
-            }
+        if VUNLIKELY (!sub) {
+          return;
+        }
 
-            vlink::Frame frame;
-            frame.timestamp = timestamp;
-            frame.url = url;
-            frame.ser_type = sub->get_ser_type();
-            frame.schema_type = sub->get_schema_type();
-            frame.action_type = vlink::ActionType::kSubscribe;
-            frame.data = vlink::Bytes::shallow_copy(data.data(), data.size());
-            if VUNLIKELY (recorder->push(frame, sync_mode) < 0) {
-              status = 1;
-              has_quit = true;
-              is_broken = true;
-              recorder->quit(true);
-              return;
-            }
+        vlink::Frame frame;
+        frame.timestamp = timestamp;
+        frame.url = url;
+        frame.ser_type = sub->get_ser_type();
+        frame.schema_type = sub->get_schema_type();
+        frame.action_type = vlink::ActionType::kSubscribe;
+        frame.data = vlink::Bytes::shallow_copy(data.data(), data.size());
+        if VUNLIKELY (recorder->push(frame) < 0) {
+          status = 1;
+          has_quit = true;
+          is_broken = true;
+          recorder->quit(true);
+          return;
+        }
 
-            if (!quiet_flag) {
-              if (detail_flag) {
-                std::cout << "\033[2K\r";
-                std::cout << std::fixed << std::setprecision(6) << timestamp / 1000'000.0F << "s " << url << std::endl;
-              } else {
-                data_has_changed = true;
-              }
-            }
-          });
+        if (!quiet_flag) {
+          if (detail_flag) {
+            std::cout << "\033[2K\r";
+            std::cout << std::fixed << std::setprecision(6) << timestamp / 1000000.0 << "s " << url << std::endl;
+          } else {
+            data_has_changed = true;
+          }
+        }
+      });
 
       std::lock_guard lock(subs_mtx);
       sub_map.emplace(info.url, std::move(sub));
@@ -1148,6 +1152,9 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
     }
   }
 
+  discovery_viewer->quit(true);
+  discovery_viewer->wait_for_quit();
+
   {
     std::lock_guard lock(subs_mtx);
 
@@ -1166,9 +1173,6 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
 
     sub_map.clear();
   }
-
-  discovery_viewer->quit(true);
-  discovery_viewer->wait_for_quit();
 
   stop_print();
 
@@ -1333,14 +1337,16 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
       bool skip = black_mode ? false : true;
 
       std::string left_str = url;
-      std::transform(left_str.begin(), left_str.end(), left_str.begin(), [](char& c) { return std::tolower(c); });
+      std::transform(left_str.begin(), left_str.end(), left_str.begin(),
+                     [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
       for (const auto& f : filter_list) {
         if (f.empty()) {
           continue;
         }
 
         std::string right_str = f;
-        std::transform(right_str.begin(), right_str.end(), right_str.begin(), [](char& c) { return std::tolower(c); });
+        std::transform(right_str.begin(), right_str.end(), right_str.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
         if (left_str.find(right_str) != std::string::npos) {
           skip = black_mode ? true : false;
@@ -1465,7 +1471,7 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
     if (!quiet_flag) {
       if (detail_flag) {
         std::cout << "\033[2K\r";
-        std::cout << std::fixed << std::setprecision(6) << timestamp / 1000'000.0F << "s " << url << std::endl;
+        std::cout << std::fixed << std::setprecision(6) << timestamp / 1000000.0 << "s " << url << std::endl;
       } else {
         data_has_changed = true;
       }
@@ -1830,14 +1836,16 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
       bool skip = black_mode ? false : true;
 
       std::string left_str = url;
-      std::transform(left_str.begin(), left_str.end(), left_str.begin(), [](char& c) { return std::tolower(c); });
+      std::transform(left_str.begin(), left_str.end(), left_str.begin(),
+                     [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
       for (const auto& f : filter_list) {
         if (f.empty()) {
           continue;
         }
 
         std::string right_str = f;
-        std::transform(right_str.begin(), right_str.end(), right_str.begin(), [](char& c) { return std::tolower(c); });
+        std::transform(right_str.begin(), right_str.end(), right_str.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
         if (left_str.find(right_str) != std::string::npos) {
           skip = black_mode ? true : false;
@@ -1899,7 +1907,7 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
     auto schema_list = player_ptr->detect_schema();
 
     for (const auto& schema_data : schema_list) {
-      if VUNLIKELY (!recorder_ptr->push_schema(schema_data, true)) {
+      if VUNLIKELY (!recorder_ptr->push_schema(schema_data)) {
         std::cerr << "cli/bag: push_schema failed for ser=[" << schema_data.name << "] schema_type=["
                   << static_cast<int>(schema_data.schema_type) << "]; abort clone." << std::endl;
         has_quit = true;
@@ -1944,7 +1952,7 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
       push_frame.action_type = output_action;
       push_frame.data = vlink::Bytes::shallow_copy(data.data(), data.size());
 
-      if VUNLIKELY (recorder_ptr->push(push_frame, true) < 0) {
+      if VUNLIKELY (recorder_ptr->push(push_frame) < 0) {
         clone_write_failed = true;
         has_quit = true;
         is_broken = true;
@@ -1956,7 +1964,7 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
       if (!quiet_flag) {
         if (detail_flag) {
           std::cout << "\033[2K\r";
-          std::cout << std::fixed << std::setprecision(6) << timestamp / 1000'000.0F << "s " << url << std::endl;
+          std::cout << std::fixed << std::setprecision(6) << timestamp / 1000000.0 << "s " << url << std::endl;
         }
       }
     }
@@ -2531,7 +2539,10 @@ int main(int argc, char* argv[]) {
       .scan<'g', double>()
       // NOLINTNEXTLINE(readability-redundant-casting)
       .default_value(static_cast<double>(vlink::BagWriter::Config().cache_size / 1024.0 / 1024.0));
-  record_command.add_argument("-s", "--sync_mode").help("Sync mode").default_value(false).implicit_value(true);
+  record_command.add_argument("-s", "--sync_mode")
+      .help("Synchronous write mode")
+      .default_value(false)
+      .implicit_value(true);
   record_command.add_argument("--max_task_depth")
       .help("Max pending tasks in the queue")
       .scan<'d', int64_t>()
@@ -2953,6 +2964,34 @@ int main(int argc, char* argv[]) {
       return -1;
     }
 
+    static constexpr double kMaxPacketSizeMb =
+        static_cast<double>(std::numeric_limits<size_t>::max() / (1024ULL * 1024ULL));
+
+    static constexpr uint64_t kMaxMemoryBytes = static_cast<uint64_t>(std::numeric_limits<size_t>::max()) <
+                                                        static_cast<uint64_t>(std::numeric_limits<int64_t>::max())
+                                                    ? static_cast<uint64_t>(std::numeric_limits<size_t>::max())
+                                                    : static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
+
+    static constexpr double kMaxMemorySizeGb = static_cast<double>(kMaxMemoryBytes / (1024ULL * 1024ULL * 1024ULL));
+
+    static constexpr double kMaxCacheSizeMb =
+        static_cast<double>(std::numeric_limits<int64_t>::max() / (1024LL * 1024LL));
+
+    if VUNLIKELY (!std::isfinite(max_packet_size) || max_packet_size <= 0 || max_packet_size > kMaxPacketSizeMb) {
+      std::cerr << "Invalid max_packet_size [-x]" << std::endl;
+      return -1;
+    }
+
+    if VUNLIKELY (!std::isfinite(max_memory_size) || max_memory_size <= 0 || max_memory_size > kMaxMemorySizeGb) {
+      std::cerr << "Invalid max_memory_size [--max_memory_size]" << std::endl;
+      return -1;
+    }
+
+    if VUNLIKELY (!std::isfinite(cache_size) || cache_size < 0 || cache_size > kMaxCacheSizeMb) {
+      std::cerr << "Invalid cache_size [-c]" << std::endl;
+      return -1;
+    }
+
     compress_level = record_command.get<int>("--compress_level");
 
     auto ignore_compress = record_command.get<std::vector<std::string>>("--ignore_compress");
@@ -3235,6 +3274,14 @@ int main(int argc, char* argv[]) {
         std::cerr << "Invalid actions [-s]" << std::endl;
         return -1;
       }
+    }
+
+    static constexpr double kMaxCacheSizeMb =
+        static_cast<double>(std::numeric_limits<int64_t>::max() / (1024LL * 1024LL));
+
+    if VUNLIKELY (!std::isfinite(cache_size) || cache_size < 0 || cache_size > kMaxCacheSizeMb) {
+      std::cerr << "Invalid cache_size [-c]" << std::endl;
+      return -1;
     }
 
     compress_level = clone_command.get<int>("--compress_level");

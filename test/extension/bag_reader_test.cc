@@ -439,21 +439,18 @@ void write_roundtrip_bag(const std::filesystem::path& path) {
   schema.schema_type = SchemaType::kProtobuf;
   schema.encoding = std::string(SchemaData::convert_type(SchemaType::kProtobuf));
   schema.data = Bytes::from_string("syntax = \"proto3\"; message Message {}");
-  REQUIRE(writer->push_schema(schema, true));
+  REQUIRE(writer->push_schema(schema));
 
   writer->set_url_loss("dds://coverage/event", 0.25);
 
   REQUIRE_EQ(writer->push(bag_frame(1'000, "dds://coverage/event", "demo.Message", SchemaType::kProtobuf,
-                                    ActionType::kPublish, "event-payload"),
-                          true),
+                                    ActionType::kPublish, "event-payload")),
              1'000);
-  REQUIRE_EQ(
-      writer->push(bag_frame(2'000, "dds://coverage/field", "raw", SchemaType::kRaw, ActionType::kSet, "field-payload"),
-                   true),
-      2'000);
+  REQUIRE_EQ(writer->push(
+                 bag_frame(2'000, "dds://coverage/field", "raw", SchemaType::kRaw, ActionType::kSet, "field-payload")),
+             2'000);
   REQUIRE_EQ(writer->push(bag_frame(3'000, "dds://coverage/method", "demo.Request|demo.Response", SchemaType::kUnknown,
-                                    ActionType::kClientRequest, "request-payload"),
-                          true),
+                                    ActionType::kClientRequest, "request-payload")),
              3'000);
 
   writer.reset();
@@ -464,7 +461,6 @@ void write_roundtrip_bag(const std::filesystem::path& path) {
 
 void write_empty_bag(const std::filesystem::path& path) {
   BagWriter::Config config;
-  config.sync_mode = true;
   config.compress = BagWriter::kCompressNone;
   config.tag_name = "empty";
   config.start_timestamp = 1'700'000'450'000LL;
@@ -525,8 +521,7 @@ void write_busy_bag(const std::filesystem::path& path) {
 
   for (int index = 0; index < 8; ++index) {
     REQUIRE_EQ(writer->push(bag_frame(index * 1'000, "dds://coverage/busy", "raw", SchemaType::kRaw,
-                                      ActionType::kPublish, "busy-" + std::to_string(index)),
-                            true),
+                                      ActionType::kPublish, "busy-" + std::to_string(index))),
                index * 1'000);
   }
 
@@ -559,12 +554,10 @@ void write_split_bag(const std::filesystem::path& path, bool split_before) {
       split_before);
 
   REQUIRE_EQ(writer->push(bag_frame(1'000, "dds://coverage/split", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                    repeated_payload(512, 'S')),
-                          true),
+                                    repeated_payload(512, 'S'))),
              1'000);
   REQUIRE_EQ(writer->push(bag_frame(2'000, "dds://coverage/split", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                    repeated_payload(512, 'T')),
-                          true),
+                                    repeated_payload(512, 'T'))),
              2'000);
 
   CHECK_GE(writer->get_split_index(), 1);
@@ -1035,14 +1028,12 @@ void verify_vcap_cursor_plugin_excludes_and_remaps_urls() {
   auto writer = BagWriter::create(bag.path.string(), config);
   REQUIRE(writer != nullptr);
 
-  REQUIRE_EQ(
-      writer->push(
-          bag_frame(1'000, "dds://coverage/drop_cursor", "raw", SchemaType::kRaw, ActionType::kPublish, "drop"), true),
-      1'000);
-  REQUIRE_EQ(
-      writer->push(
-          bag_frame(2'000, "dds://coverage/keep_cursor", "raw", SchemaType::kRaw, ActionType::kPublish, "keep"), true),
-      2'000);
+  REQUIRE_EQ(writer->push(
+                 bag_frame(1'000, "dds://coverage/drop_cursor", "raw", SchemaType::kRaw, ActionType::kPublish, "drop")),
+             1'000);
+  REQUIRE_EQ(writer->push(
+                 bag_frame(2'000, "dds://coverage/keep_cursor", "raw", SchemaType::kRaw, ActionType::kPublish, "keep")),
+             2'000);
 
   writer.reset();
 
@@ -1073,14 +1064,12 @@ void verify_vdb_cursor_plugin_excludes_and_remaps_urls() {
   auto writer = BagWriter::create(bag.path.string(), config);
   REQUIRE(writer != nullptr);
 
-  REQUIRE_EQ(
-      writer->push(
-          bag_frame(1'000, "dds://coverage/drop_cursor", "raw", SchemaType::kRaw, ActionType::kPublish, "drop"), true),
-      1'000);
-  REQUIRE_EQ(
-      writer->push(
-          bag_frame(2'000, "dds://coverage/keep_cursor", "raw", SchemaType::kRaw, ActionType::kPublish, "keep"), true),
-      2'000);
+  REQUIRE_EQ(writer->push(
+                 bag_frame(1'000, "dds://coverage/drop_cursor", "raw", SchemaType::kRaw, ActionType::kPublish, "drop")),
+             1'000);
+  REQUIRE_EQ(writer->push(
+                 bag_frame(2'000, "dds://coverage/keep_cursor", "raw", SchemaType::kRaw, ActionType::kPublish, "keep")),
+             2'000);
 
   writer.reset();
 
@@ -1120,16 +1109,13 @@ void verify_split_cursor_filters_each_file(const char* suffix, bool split_before
       split_before);
 
   REQUIRE_EQ(writer->push(bag_frame(1'000, "dds://coverage/split_keep", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                    repeated_payload(512, 'A')),
-                          true),
+                                    repeated_payload(512, 'A'))),
              1'000);
   REQUIRE_EQ(writer->push(bag_frame(2'000, "dds://coverage/split_other", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                    repeated_payload(512, 'B')),
-                          true),
+                                    repeated_payload(512, 'B'))),
              2'000);
   REQUIRE_EQ(writer->push(bag_frame(3'000, "dds://coverage/split_keep", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                    repeated_payload(512, 'C')),
-                          true),
+                                    repeated_payload(512, 'C'))),
              3'000);
   CHECK_GE(writer->get_split_index(), 1);
   writer.reset();
@@ -1239,20 +1225,16 @@ void verify_method_schema_split_bag(const char* suffix) {
 
   const std::string method_ser = "demo.Request|demo.Response";
   REQUIRE_EQ(writer->push(bag_frame(2'000, "dds://coverage/method_schema", method_ser, SchemaType::kProtobuf,
-                                    ActionType::kClientRequest, "request"),
-                          true),
+                                    ActionType::kClientRequest, "request")),
              2'000);
   REQUIRE_GE(writer->push(bag_frame(1'500, "dds://coverage/method_schema", method_ser, SchemaType::kProtobuf,
-                                    ActionType::kClientResponse, "response"),
-                          true),
+                                    ActionType::kClientResponse, "response")),
              1'500);
   REQUIRE_GE(writer->push(bag_frame(2'500, "dds://coverage/method_schema", method_ser, SchemaType::kProtobuf,
-                                    ActionType::kServerRequest, "server-request"),
-                          true),
+                                    ActionType::kServerRequest, "server-request")),
              2'500);
   REQUIRE_GE(writer->push(bag_frame(3'000, "dds://coverage/method_schema", method_ser, SchemaType::kProtobuf,
-                                    ActionType::kServerResponse, "server-response"),
-                          true),
+                                    ActionType::kServerResponse, "server-response")),
              3'000);
 
   writer.reset();
@@ -1288,18 +1270,15 @@ void verify_schema_conflict_bag(const char* suffix) {
   REQUIRE(writer != nullptr);
 
   REQUIRE(writer->push_schema(
-      make_schema_data("demo.Conflict", SchemaType::kProtobuf, "syntax = \"proto3\"; message Conflict {}"), true));
+      make_schema_data("demo.Conflict", SchemaType::kProtobuf, "syntax = \"proto3\"; message Conflict {}")));
   CHECK_FALSE(writer->push_schema(make_schema_data("demo.Conflict", SchemaType::kProtobuf,
-                                                   "syntax = \"proto3\"; message Conflict { int32 x = 1; }"),
-                                  true));
+                                                   "syntax = \"proto3\"; message Conflict { int32 x = 1; }")));
 
   REQUIRE_EQ(writer->push(bag_frame(1'000, "dds://coverage/conflict", "demo.Conflict", SchemaType::kProtobuf,
-                                    ActionType::kPublish, "first"),
-                          true),
+                                    ActionType::kPublish, "first")),
              1'000);
   CHECK_EQ(writer->push(bag_frame(2'000, "dds://coverage/conflict", "demo.Other", SchemaType::kProtobuf,
-                                  ActionType::kPublish, "second"),
-                        true),
+                                  ActionType::kPublish, "second")),
            -1);
 
   writer.reset();
@@ -1342,16 +1321,13 @@ void verify_time_split_bag(const char* suffix, bool split_before) {
       },
       split_before);
 
-  REQUIRE_EQ(writer->push(
-                 bag_frame(0, "dds://coverage/time_split", "raw", SchemaType::kRaw, ActionType::kPublish, "t0"), true),
-             0);
   REQUIRE_EQ(
-      writer->push(bag_frame(2'000, "dds://coverage/time_split", "raw", SchemaType::kRaw, ActionType::kPublish, "t1"),
-                   true),
+      writer->push(bag_frame(0, "dds://coverage/time_split", "raw", SchemaType::kRaw, ActionType::kPublish, "t0")), 0);
+  REQUIRE_EQ(
+      writer->push(bag_frame(2'000, "dds://coverage/time_split", "raw", SchemaType::kRaw, ActionType::kPublish, "t1")),
       2'000);
   REQUIRE_EQ(
-      writer->push(bag_frame(4'000, "dds://coverage/time_split", "raw", SchemaType::kRaw, ActionType::kPublish, "t2"),
-                   true),
+      writer->push(bag_frame(4'000, "dds://coverage/time_split", "raw", SchemaType::kRaw, ActionType::kPublish, "t2")),
       4'000);
 
   CHECK_GE(writer->get_split_index(), 1);
@@ -1397,12 +1373,11 @@ void verify_vdb_limit_policy(bool enable_limit) {
   REQUIRE(writer != nullptr);
 
   REQUIRE_EQ(
-      writer->push(bag_frame(1'000, "dds://coverage/limit", "raw", SchemaType::kRaw, ActionType::kPublish, "first"),
-                   true),
+      writer->push(bag_frame(1'000, "dds://coverage/limit", "raw", SchemaType::kRaw, ActionType::kPublish, "first")),
       1'000);
 
-  const auto second_result = writer->push(
-      bag_frame(2'000, "dds://coverage/limit", "raw", SchemaType::kRaw, ActionType::kPublish, "second"), true);
+  const auto second_result =
+      writer->push(bag_frame(2'000, "dds://coverage/limit", "raw", SchemaType::kRaw, ActionType::kPublish, "second"));
   if (enable_limit) {
     CHECK_EQ(second_result, 2'000);
   } else {
@@ -1871,8 +1846,7 @@ void verify_vdb_check_rejects_empty_ser_metadata() {
   auto writer = BagWriter::create(bag.path.string(), config);
   REQUIRE(writer != nullptr);
   REQUIRE_EQ(writer->push(bag_frame(1'000, "dds://coverage/empty_ser", "", SchemaType::kUnknown, ActionType::kPublish,
-                                    "payload"),
-                          true),
+                                    "payload")),
              1'000);
   writer.reset();
 
@@ -1902,8 +1876,8 @@ void verify_vdb_writer_updates_empty_url_metadata_later() {
   REQUIRE(writer != nullptr);
 
   const std::string url = "dds://coverage/late_ser";
-  REQUIRE_EQ(writer->push(bag_frame(1'000, url, "", SchemaType::kUnknown, ActionType::kPublish, "first"), true), 1'000);
-  REQUIRE_EQ(writer->push(bag_frame(2'000, url, "raw", SchemaType::kRaw, ActionType::kPublish, "second"), true), 2'000);
+  REQUIRE_EQ(writer->push(bag_frame(1'000, url, "", SchemaType::kUnknown, ActionType::kPublish, "first")), 1'000);
+  REQUIRE_EQ(writer->push(bag_frame(2'000, url, "raw", SchemaType::kRaw, ActionType::kPublish, "second")), 2'000);
   writer.reset();
 
   auto reader = BagReader::create(bag.path.string(), false);
@@ -1956,17 +1930,19 @@ void verify_vdb_writer_defaults_and_async_setup() {
   ScopedBagPath bag(".vdb");
 
   BagWriter::Config config;
-  config.sync_mode = false;
   config.compress = BagWriter::kCompressNone;
   config.max_task_depth = 0;
   config.start_timestamp = 1'700'000'720'000LL;
 
   auto writer = BagWriter::create(bag.path.string(), config);
   REQUIRE(writer != nullptr);
+  REQUIRE(writer->async_run());
   REQUIRE_EQ(writer->push(bag_frame(1'000, "dds://coverage/default_writer", "raw", SchemaType::kRaw,
-                                    ActionType::kPublish, "payload"),
-                          true),
+                                    ActionType::kPublish, "payload")),
              1'000);
+  REQUIRE(writer->wait_for_idle(3000));
+  writer->quit();
+  REQUIRE(writer->wait_for_quit(3000));
   writer.reset();
 
   auto reader = BagReader::create(bag.path.string(), false);
@@ -1994,13 +1970,11 @@ void verify_vdbx_writer_replaces_existing_manifest_family() {
   auto writer = BagWriter::create(bag.path.string(), config);
   REQUIRE(writer != nullptr);
   CHECK(writer->is_split_mode());
-  REQUIRE_EQ(
-      writer->push(bag_frame(0, "dds://coverage/replaced_vdbx", "raw", SchemaType::kRaw, ActionType::kPublish, "first"),
-                   true),
-      0);
+  REQUIRE_EQ(writer->push(
+                 bag_frame(0, "dds://coverage/replaced_vdbx", "raw", SchemaType::kRaw, ActionType::kPublish, "first")),
+             0);
   REQUIRE_EQ(writer->push(bag_frame(1'000, "dds://coverage/replaced_vdbx", "raw", SchemaType::kRaw,
-                                    ActionType::kPublish, repeated_payload(128, 'r')),
-                          true),
+                                    ActionType::kPublish, repeated_payload(128, 'r'))),
              1'000);
   writer.reset();
 
@@ -2034,8 +2008,7 @@ void verify_vdbx_writer_overwrites_malformed_existing_manifest() {
   REQUIRE(writer != nullptr);
   CHECK(writer->is_split_mode());
   REQUIRE_EQ(writer->push(bag_frame(0, "dds://coverage/malformed_vdbx", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                    "payload"),
-                          true),
+                                    "payload")),
              0);
   writer.reset();
 
@@ -2088,8 +2061,7 @@ void verify_vdb_check_rejects_writer_invalid_loss() {
   REQUIRE(writer != nullptr);
   writer->set_url_loss("dds://coverage/vdb_bad_loss", 2.0);
   REQUIRE_EQ(writer->push(bag_frame(1'000, "dds://coverage/vdb_bad_loss", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                    "payload"),
-                          true),
+                                    "payload")),
              1'000);
   writer.reset();
 
@@ -2303,8 +2275,7 @@ void verify_vcap_check_rejects_empty_ser_metadata() {
   auto writer = BagWriter::create(bag.path.string(), config);
   REQUIRE(writer != nullptr);
   REQUIRE_EQ(writer->push(bag_frame(1'000, "dds://coverage/vcap_empty_ser", "", SchemaType::kUnknown,
-                                    ActionType::kPublish, "payload"),
-                          true),
+                                    ActionType::kPublish, "payload")),
              1'000);
   writer.reset();
 
@@ -2350,8 +2321,7 @@ void verify_vcap_check_rejects_invalid_loss_and_frequency() {
   REQUIRE(writer != nullptr);
   writer->set_url_loss("dds://coverage/vcap_bad_rates", 0.25);
   REQUIRE_EQ(writer->push(bag_frame(1'000, "dds://coverage/vcap_bad_rates", "raw", SchemaType::kRaw,
-                                    ActionType::kPublish, "first"),
-                          true),
+                                    ActionType::kPublish, "first")),
              1'000);
   writer.reset();
 
@@ -2405,8 +2375,7 @@ void verify_vcap_check_normalizes_negative_start_timestamp() {
   auto writer = BagWriter::create(bag.path.string(), config);
   REQUIRE(writer != nullptr);
   REQUIRE_EQ(writer->push(bag_frame(1'000, "dds://coverage/vcap_bad_start", "raw", SchemaType::kRaw,
-                                    ActionType::kPublish, "payload"),
-                          true),
+                                    ActionType::kPublish, "payload")),
              1'000);
   writer.reset();
 
@@ -2465,8 +2434,7 @@ void verify_vcap_check_uses_date_when_start_timestamp_is_not_numeric() {
   auto writer = BagWriter::create(bag.path.string(), config);
   REQUIRE(writer != nullptr);
   REQUIRE_EQ(writer->push(bag_frame(1'000, "dds://coverage/vcap_bad_start_text", "raw", SchemaType::kRaw,
-                                    ActionType::kPublish, "payload"),
-                          true),
+                                    ActionType::kPublish, "payload")),
              1'000);
   writer.reset();
 
@@ -2495,17 +2463,14 @@ void verify_vdb_split_schema_detection_merges_duplicate_schemas() {
 
   auto writer = BagWriter::create(bag.path.string(), config);
   REQUIRE(writer != nullptr);
-  REQUIRE(writer->push_schema(
-      make_schema_data("demo.VdbSplitSchema", SchemaType::kProtobuf, "syntax = \"proto3\"; message VdbSplitSchema {}"),
-      true));
+  REQUIRE(writer->push_schema(make_schema_data("demo.VdbSplitSchema", SchemaType::kProtobuf,
+                                               "syntax = \"proto3\"; message VdbSplitSchema {}")));
 
   REQUIRE_EQ(writer->push(bag_frame(1'000, "dds://coverage/vdb_dup_schema", "demo.VdbSplitSchema",
-                                    SchemaType::kProtobuf, ActionType::kPublish, repeated_payload(512, 'v')),
-                          true),
+                                    SchemaType::kProtobuf, ActionType::kPublish, repeated_payload(512, 'v'))),
              1'000);
   REQUIRE_EQ(writer->push(bag_frame(2'000, "dds://coverage/vdb_dup_schema", "demo.VdbSplitSchema",
-                                    SchemaType::kProtobuf, ActionType::kPublish, repeated_payload(512, 'w')),
-                          true),
+                                    SchemaType::kProtobuf, ActionType::kPublish, repeated_payload(512, 'w'))),
              2'000);
   writer.reset();
 
@@ -2540,16 +2505,13 @@ void verify_vcap_split_schema_detection_merges_duplicate_schemas() {
   auto writer = BagWriter::create(bag.path.string(), config);
   REQUIRE(writer != nullptr);
   REQUIRE(writer->push_schema(
-      make_schema_data("demo.SplitSchema", SchemaType::kProtobuf, "syntax = \"proto3\"; message SplitSchema {}"),
-      true));
+      make_schema_data("demo.SplitSchema", SchemaType::kProtobuf, "syntax = \"proto3\"; message SplitSchema {}")));
 
   REQUIRE_EQ(writer->push(bag_frame(1'000, "dds://coverage/vcap_dup_schema", "demo.SplitSchema", SchemaType::kProtobuf,
-                                    ActionType::kPublish, repeated_payload(512, 'a')),
-                          true),
+                                    ActionType::kPublish, repeated_payload(512, 'a'))),
              1'000);
   REQUIRE_EQ(writer->push(bag_frame(2'000, "dds://coverage/vcap_dup_schema", "demo.SplitSchema", SchemaType::kProtobuf,
-                                    ActionType::kPublish, repeated_payload(512, 'b')),
-                          true),
+                                    ActionType::kPublish, repeated_payload(512, 'b'))),
              2'000);
   writer.reset();
 

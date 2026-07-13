@@ -31,7 +31,8 @@ Both classes follow the same lifecycle:
     1.  ``cls.create(path, ...)`` -- factory that opens the file.
                                      Returns ``None`` on bad path / format.
     2.  Configure callbacks (``register_*_callback``) BEFORE running.
-    3.  ``async_run()`` -- kick off the background thread.
+    3.  ``async_run()`` -- kick off the background thread (not needed when a
+                           writer is created with ``sync_mode=True``).
     4.  ``push(frame)`` / ``play(...)`` -- drive the work.
     5.  For a writer, ``wait_for_idle(timeout_ms)`` -- drain accepted writes.
     6.  ``quit()`` then ``wait_for_quit(timeout_ms)`` -- stop the background loop.
@@ -109,8 +110,7 @@ def demo_bag_simple_record_replay():
     bag_path = _make_temp_bag_path("simple.vdb")
 
     # ---- Record --------------------------------------------------------
-    # Default config: no compression, no splitting, sync mode off.  These
-    # defaults are fine for short-lived demo bags.
+    # Default config: no compression, no splitting and sync_mode=False.
     writer = _vlink.BagWriter.create(bag_path)
     assert writer is not None, f"failed to create writer at {bag_path}"
 

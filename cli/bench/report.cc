@@ -173,7 +173,15 @@ size_t find_wrap_pos(std::string_view text, size_t max_length) {
     return text.size();
   }
 
-  return soft_end != 0 ? soft_end : hard_end;
+  if (hard_end != 0) {
+    return soft_end != 0 ? soft_end : hard_end;
+  }
+
+  uint32_t first_cp = 0;
+  size_t first_bytes = 0;
+  decode_utf8(text, 0, first_cp, first_bytes);
+
+  return first_bytes != 0 ? first_bytes : text.size();
 }
 
 void append_wrapped_detail(std::vector<std::string>& lines, std::string_view label, const std::string& value,

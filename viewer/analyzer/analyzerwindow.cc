@@ -883,7 +883,7 @@ AnalyzerWindow::AnalyzerWindow(const QString& bag_path, bool enable_timeline, QW
               }
 
               if (type_ == kFrequencyType) {
-                auto ticker = qSharedPointerCast<QCPAxisTickerText>(axis->ticker());
+                auto ticker = qSharedPointerDynamicCast<QCPAxisTickerText>(axis->ticker());
 
                 if (!ticker) {
                   return;
@@ -1986,7 +1986,8 @@ bool AnalyzerWindow::load_config(const QString& path) {
 
     std::string type = root_json["type"];
 
-    std::transform(type.begin(), type.end(), type.begin(), [](char& c) { return std::tolower(c); });
+    std::transform(type.begin(), type.end(), type.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
     if (type == "freq" || type == "frequency") {
       type_ = kFrequencyType;

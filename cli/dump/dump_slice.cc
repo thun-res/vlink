@@ -1230,7 +1230,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     }
 
     for (const auto& schema_data : schema_list) {
-      if VUNLIKELY (!current_writer->push_schema(schema_data, true)) {
+      if VUNLIKELY (!current_writer->push_schema(schema_data)) {
         std::cerr << "Failed to write schema: " << schema_data.name << " into " << slice_path << std::endl;
         close_current_writer();
         return false;
@@ -1425,7 +1425,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     push_frame.action_type = action_type;
     push_frame.data = vlink::Bytes::shallow_copy(data.data(), data.size());
 
-    if VUNLIKELY (current_writer->push(push_frame, true) < 0) {
+    if VUNLIKELY (current_writer->push(push_frame) < 0) {
       std::cerr << "Failed to write message into " << stats.file_name << ": " << url << std::endl;
       slice_error = true;
       player->stop();
