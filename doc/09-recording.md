@@ -439,7 +439,7 @@ int main() {
 - **bag 重排插件**（`BagPluginInterface`，仅经 `bind_bag_interface()` 绑定）位于落盘写入路径内部：其 `on_write()` 从每帧 payload 解析真实的**数据面时间**（data-plane time），并据此做滑窗重排后再持久化——与在线 `BagWriter` 的机制完全一致（见 [§9.12](#-912-多文件合并回放)）。`TriggerRecorder` 不接收插件库名或搜索目录，也不自行动态加载；宿主须先直接创建接口实例，或用 `Plugin` 加载共享库，再把所得 `shared_ptr<BagPluginInterface>` 绑定给 recorder，并保证其所需生命周期。**未绑定该接口时，引擎按采集时刻顺序落盘**，无需解析 payload。TriggerRecorder 自身的后台循环直接同步写入 bag；插件工作线程及 `flush()` 尾帧也绕过 `BagWriter` 任务队列，以免一次 dump 瞬间生成第二份排队窗口。
 - **触发插件**（`TriggerPluginInterface`，经 `bind_trigger_interface()` 绑定）只观察引擎生命周期——最重要的是 `on_dump_finished()`，即一份 bag 写完后上传或归档的入口；它从不改写帧。动态加载宿主在绑定前调用 `init(config)`；程序化绑定方如需参数，应自行先调用 `init()`。
 
-**恒定保留**　每个 URL 恒定保留 `effective_pre + max_post_all + 2 * retention_guard` 时长的历史（`only_back` 的 `effective_pre` 为 0，其他 URL 为各自的 `pre`），其中 `max_post_all` 为所有 URL 中最大的生效 `post` 窗口；落盘发生在 `T + max_post_all + retention_guard`（没有任何 URL 拥有生效的 `post` 窗口时立即落盘），使 `pre` 与 `post` 两侧各保留一个 `retention_guard` 余量以吸收落盘定时抖动。这样采集热路径无需判断"当前是否有触发在进行"，代价是内存全局耦合：单个 URL 配置过大的 `post` 会抬高每个 URL 的保留时长与内存占用，内存紧张时应约束 `post`。启用 bag 重排插件时，其滑窗会在落盘期间额外持有部分窗口副本，峰值内存可接近窗口大小的两倍。
+**恒定保留**　每个 URL 恒定保留 `effective_pre + max_post_all + 2 * retention_guard` 时长的历史（`only_back` 的 `effective_pre` 为 0，其他 URL 为各自的 `pre`），其中 `max_post_all` 为所有 URL 中最大的生效 `post` 窗口。该全局最大值只决定环形缓冲的保留时长；单次 dump 在受理时筛选参与 URL，并按这些 URL 的最大有效 `post` 调度落盘，其中有效值为触发请求 `post` 与 URL 配置 `post` 的较小值。该值大于 0 时等待它加 `retention_guard`，为 0 或没有 URL 命中时立即调度。这样采集热路径无需判断"当前是否有触发在进行"，代价是内存全局耦合：单个 URL 配置过大的 `post` 会抬高每个 URL 的保留时长与内存占用，内存紧张时应约束 `post`。启用 bag 重排插件时，其滑窗会在落盘期间额外持有部分窗口副本，峰值内存可接近窗口大小的两倍。
 
 **per-URL 窗口**　每个 URL 可独立覆盖默认的 `pre` / `post` 窗口、单包上限与该 URL 的缓冲字节上限，并可设 `only_front`（仅录触发前）或 `only_back`（仅录触发后）。据此可为不同话题裁剪保留策略，例如相机保留触发前 60 s、触发后 5 s，雷达仅保留触发前 15 s，制动信号仅录触发后一段；各 URL 窗口互不相同。全局另支持 URL 白 / 黑名单（精确匹配）、压缩、字节上限溢出策略（淘汰最旧帧 / 丢弃新帧），以及 dump 输入流控——`sleep_interval` / `sleep_time_ms` 每向写入链路提交一定字节即休眠一次；无异步 bag 插件时这直接约束同步写盘节奏，带 worker/重排插件时仅约束投喂速度，`flush()` 尾帧不保证同样的 IO 节流。
 
@@ -492,7 +492,7 @@ recorder.wait_for_quit();
 
 `RawSubFactory` 只负责按引擎传入的 URL 和 `InitType` 创建订阅器，不应提前配置、初始化或监听；getter 语义、丢帧统计、schema、发现开关、`dds.ip`、`init()` 与 `listen()` 仍由引擎统一处理。factory 写在宿主编译单元中，使 URL 的头文件内联分派能看到宿主所链接 transport target 传播的 `VLINK_SUPPORT_*`。若宿主没有直接链接对应共享后端，可在进程首次初始化 URL 前设置 `VLINK_URL_PLUGINS=auto` 允许已知 transport 按需加载，或把该变量设为模块列表进行显式预加载；为空或设为 `none` 时关闭插件加载，详见 [传输后端与 URL](04-transport.md)。
 
-`TriggerRecorder` 继承 `MessageLoop`，与其他 VLink 循环类一样直接使用基类的 `async_run()`、`quit()` 和 `wait_for_quit()`；等待 post 窗口与写盘都在它自身的循环线程上执行。`dump()` 为非阻塞：它记下触发时刻后异步完成"等待 `post` 窗口 → 重排 → 写盘"，其间若再次触发则被拒绝（落盘串行化）。若已接受的 dump 尚在等待 post 窗口，`quit()` 遵循 `MessageLoop` 语义终止该延时任务；需要保留该文件时，应先等待 `is_dumping()` 变为 `false` 再退出。`TriggerParams` 可临时缩小本次的 `pre` / `post`（只能相对配置缩小，因环形缓冲仅按配置时长保留历史）、指定输出路径 / 文件名，并按 URL 精确列表或子串过滤缩小本次落盘范围。落盘产物即标准 bag 文件，可由 `BagReader`、游标读取或图形化 `vlink-player` 进一步处理。
+`TriggerRecorder` 继承 `MessageLoop`，与其他 VLink 循环类一样直接使用基类的 `async_run()`、`quit()` 和 `wait_for_quit()`；等待 post 窗口与写盘都在它自身的循环线程上执行。`dump()` 为非阻塞：它记下触发时刻后异步完成"等待本次参与 URL 的最大有效 `post` 窗口 → 重排 → 写盘"，其间若再次触发则被拒绝（落盘串行化）。若已接受的 dump 尚在等待 post 窗口，`quit()` 遵循 `MessageLoop` 语义终止该延时任务；需要保留该文件时，应先等待 `is_dumping()` 变为 `false` 再退出。`TriggerParams` 可临时缩小本次的 `pre` / `post`（只能相对配置缩小，因环形缓冲仅按配置时长保留历史）、指定输出路径 / 文件名，并按 URL 精确列表或子串过滤缩小本次落盘范围。落盘产物即标准 bag 文件，可由 `BagReader`、游标读取或图形化 `vlink-player` 进一步处理。
 
 命令行等价工具 `vlink-trigger`（`daemon` 常驻缓冲 / `dump` 发起触发落盘）及其完整 JSON 配置项见 [10-cli-tools.md](10-cli-tools.md)。
 

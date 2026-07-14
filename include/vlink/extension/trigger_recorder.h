@@ -66,10 +66,10 @@
  *
  * @verbatim
  *                     pre_u              post_u
- *             |<---------------->|<---------------->|         dump(T) accepted at T, written at
- *   ring   [==:==================T==================:==]      T + max_post_all + retention_guard
- *          T-pre_u-guard                     T+post_u+guard    (immediately when no URL has a post
- *             target [T-pre_u, T+post_u], filtered at write     window); the guard cushions both
+ *             |<---------------->|<---------------->|         dump(T) accepted at T, written after the
+ *   ring   [==:==================T==================:==]      largest effective post of the selected URLs
+ *          T-pre_u-guard                     T+post_u+guard    plus retention_guard (immediately when that
+ *             selected at acceptance; frames sliced at write    post is zero); the guard cushions both
  *             time from the guard-padded ring coverage          window boundaries
  * @endverbatim
  *
@@ -280,8 +280,9 @@ class VLINK_EXPORT TriggerRecorder : public MessageLoop {
    *
    * @details
    * Non-blocking: it timestamps the trigger, rejects the call if a dump is already in flight, and enqueues the
-   * actual capture / reorder / write onto the recorder loop (delayed by @c max_post_all + @c retention_guard_ms
-   * when any URL has a post window).  The dump completes asynchronously.  The set of participating URLs is
+   * actual capture / reorder / write onto the recorder loop.  When the selected URLs have a positive effective
+   * post window, execution is delayed by their largest effective post plus @c retention_guard_ms; otherwise it is
+   * enqueued immediately.  The dump completes asynchronously.  The set of participating URLs is selected and
    * frozen when the call is accepted: topics discovered afterwards do not contribute to this dump, and a topic
    * going offline (@c Config::destroy_on_offline) still contributes its already-buffered window.  Calling @c quit()
    * does not drain a dump that is still waiting for its post-trigger window.

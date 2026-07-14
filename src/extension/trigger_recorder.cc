@@ -173,8 +173,8 @@ TriggerRecorder::TriggerRecorder(const Config& config, RawSubFactory&& factory) 
   std::error_code query_ec;
 
   if VUNLIKELY (ec && !std::filesystem::is_directory(impl_->config.dump_dir, query_ec)) {
-    VLOG_F("TriggerRecorder: cannot create dump_dir '", impl_->config.dump_dir,
-           "': ", ec.message());  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    VLOG_F("TriggerRecorder: cannot create dump_dir '",   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+           impl_->config.dump_dir, "': ", ec.message());  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
   impl_->viewer = std::make_unique<DiscoveryViewer>(impl_->config.discovery_filter);
@@ -217,21 +217,49 @@ bool TriggerRecorder::dump(const TriggerParams& params) {
     }
   }
 
-  int64_t max_post;
+  int64_t max_post = 0;
+  std::vector<std::string> lower_patterns;
+
+  if (params.filter_urls.empty() && !params.filter_str.empty()) {
+    lower_patterns = Helpers::split_any(params.filter_str);
+
+    for (auto& pattern : lower_patterns) {
+      std::transform(pattern.begin(), pattern.end(), pattern.begin(), [](unsigned char c) { return std::tolower(c); });
+    }
+  }
 
   {
     std::shared_lock map_lock(impl_->url_buffer_mtx);
     job->frozen_buffers.reserve(impl_->url_buffer_map.size());
     job->trigger_ts = impl_->capture_timer.get();
-    max_post = impl_->max_post_all_us.load(std::memory_order_relaxed);
-
     for (const auto& entry : impl_->url_buffer_map) {
       if (entry.second->disabled) {
         continue;
       }
 
+      bool selected = params.filter_urls.empty() || params.filter_urls.count(entry.second->url) != 0;
+
+      if (selected && params.filter_urls.empty() && !params.filter_str.empty()) {
+        std::string lower_url = entry.second->url;
+        std::transform(lower_url.begin(), lower_url.end(), lower_url.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+
+        const bool hit = std::any_of(lower_patterns.begin(), lower_patterns.end(), [&lower_url](const auto& pattern) {
+          return lower_url.find(pattern) != std::string::npos;
+        });
+        selected = params.black_mode != hit;
+      }
+
+      if (!selected) {
+        continue;
+      }
+
       entry.second->frozen = true;
       job->frozen_buffers.push_back(entry.second);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+
+      const int64_t post =
+          params.post_ms >= 0 ? std::min(params.post_ms * 1000, entry.second->post_us) : entry.second->post_us;
+      max_post = std::max(max_post, post);
     }
 
     impl_->active_dump_job = job;
@@ -795,35 +823,7 @@ void TriggerRecorder::do_dump(DumpJob& job) {
   losses.reserve(job.frozen_buffers.size());
 
   // LCOV_EXCL_START GCOVR_EXCL_START
-  std::vector<std::string> lower_patterns;
-
-  if (params.filter_urls.empty() && !params.filter_str.empty()) {
-    lower_patterns = Helpers::split_any(params.filter_str);
-
-    for (auto& pattern : lower_patterns) {
-      std::transform(pattern.begin(), pattern.end(), pattern.begin(), [](unsigned char c) { return std::tolower(c); });
-    }
-  }
-
   for (const auto& url_buffer : job.frozen_buffers) {
-    if (!params.filter_urls.empty()) {
-      if (params.filter_urls.count(url_buffer->url) == 0) {
-        continue;
-      }
-    } else if (!params.filter_str.empty()) {
-      std::string lower_url = url_buffer->url;
-      std::transform(lower_url.begin(), lower_url.end(), lower_url.begin(),
-                     [](unsigned char c) { return std::tolower(c); });
-
-      const bool hit = std::any_of(lower_patterns.begin(), lower_patterns.end(), [&lower_url](const auto& pattern) {
-        return lower_url.find(pattern) != std::string::npos;
-      });
-
-      if (params.black_mode == hit) {
-        continue;
-      }
-    }
-
     std::lock_guard ring_lock(url_buffer->mtx);
     SampleLostInfo current_lost = url_buffer->sub ? url_buffer->sub->get_lost() : url_buffer->final_lost;
     const uint64_t delta_total = current_lost.total - url_buffer->last_lost.total;

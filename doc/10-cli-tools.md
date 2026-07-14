@@ -326,7 +326,7 @@ vlink-bag tag /tmp/test.vdb "highway_test_20260317"
 
 工具含两个子命令：`daemon` 启动守护进程并持续缓冲，`dump` 向运行中的守护进程发起一次触发。二者经 JSON-over-RPC 通信——`daemon` 内部起一个 `Server<std::string, std::string>`，`dump` 作为客户端发送 JSON 触发请求（`std::string` 走 raw string 序列化，无需 protobuf 依赖）。控制面 URL 默认 `dds://trigger/method`，daemon 侧经配置 `method_url` 覆盖，客户端侧经 `-m` / `--method_url` 对应指定。
 
-**内存与保留模型**　守护进程采用恒定保留策略：每个 URL 缓冲 `effective_pre + max_post_all + 2 * retention_guard` 时长的历史（`only_back` 的 `effective_pre` 为 0，其他 URL 为各自的 pre；`max_post_all` 为所有 URL 中最大的生效 post 窗口，落盘发生在触发后 `max_post_all + retention_guard`，没有任何 URL 拥有生效的 post 窗口时立即落盘，窗口两侧各留一个裕量），使采集热路径无需判断"当前是否有触发在进行"。由此，单个 URL 配置过大的 post 会抬高所有 URL 的保留时长与内存占用，内存紧张时应约束 post；启用 `bag_plugin` 重排插件时，其滑窗会在落盘期间额外持有部分窗口副本，峰值内存可接近窗口大小的两倍。
+**内存与保留模型**　守护进程采用恒定保留策略：每个 URL 缓冲 `effective_pre + max_post_all + 2 * retention_guard` 时长的历史（`only_back` 的 `effective_pre` 为 0，其他 URL 为各自的 pre；`max_post_all` 为所有 URL 中最大的生效 post 窗口），使采集热路径无需判断"当前是否有触发在进行"。该全局最大值只决定环形缓冲的保留时长；单次 dump 在受理时筛选参与 URL，并按这些 URL 的最大有效 post 调度落盘，其中有效值为请求 post 与 URL 配置 post 的较小值。该值大于 0 时等待它加 `retention_guard`，为 0 或没有 URL 命中时立即调度。由此，单个 URL 配置过大的 post 会抬高所有 URL 的保留时长与内存占用，内存紧张时应约束 post；启用 `bag_plugin` 重排插件时，其滑窗会在落盘期间额外持有部分窗口副本，峰值内存可接近窗口大小的两倍。
 
 **两类插件**　`vlink-trigger` 可同时使用两类互不混淆的插件：CLI 宿主按 `bag_plugin` 加载 `BagPluginInterface`，再经引擎 API `bind_bag_interface()` 绑定；该接口位于落盘写入路径内部，负责按数据面时间重排。而 `TriggerPluginInterface` 经 `bind_trigger_interface()` 绑定，只观察打点生命周期，用于 dump 完成后的上传 / 归档等后续行为，不改写帧。两类库的解析、搜索、ABI 校验和加载均属于 CLI 宿主职责，`TriggerRecorder` 只持有并调用已绑定的接口。当前两类插件 ABI 版本均为 `2.0`，实现应使用 `VLINK_PLUGIN_DECLARE(Impl, 2, 0)`。
 
@@ -450,7 +450,7 @@ vlink-trigger dump -i "camera radar" -k
 | `-i` / `--filter <str>` | 以子串过滤 URL（`--urls` 为空时生效）；用逗号分隔，或用引号包住以空格分隔的多个子串 |
 | `-k` / `--black` | 配合 `--filter` 的黑名单模式，剔除命中的 URL |
 
-本次触发的窗口只能相对配置缩小、不能放大：`--pre` / `--post` 大于某 URL 配置值时以配置值为准，因为环形缓冲仅按配置时长保留历史。触发请求为非阻塞——守护进程接受后异步完成"等待 post 窗口 → 重排 → 写盘"，其间若再次触发则被拒绝（触发串行化）。参与本次落盘的 URL 集合在触发受理瞬间冻结：此后新发现的话题不进入本次落盘，已在集合中的话题即使离线，其缓冲数据也保留到本次落盘完成。
+本次触发的窗口只能相对配置缩小、不能放大：`--pre` / `--post` 大于某 URL 配置值时以配置值为准，因为环形缓冲仅按配置时长保留历史。触发请求为非阻塞——守护进程接受后异步完成"等待本次参与 URL 的最大有效 post 窗口 → 重排 → 写盘"，其间若再次触发则被拒绝（触发串行化）。参与本次落盘的 URL 集合在触发受理瞬间筛选并冻结：此后新发现的话题不进入本次落盘，已在集合中的话题即使离线，其缓冲数据也保留到本次落盘完成。
 
 #### 典型场景
 
