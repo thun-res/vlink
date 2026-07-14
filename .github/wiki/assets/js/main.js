@@ -709,7 +709,7 @@ int main() {
     ['VLINK_DISCOVER_NATIVE', '', 'Restricts discovery to localhost only.', false],
     ['VLINK_PROFILER_ENABLE', '', 'Enables the system profiler feature when set to true.', false],
     ['VLINK_QOS_CONFIG', '', 'Path to the configuration file for Quality of Service (QoS) settings.', false],
-    ['VLINK_URL_PLUGINS', '', 'URL or path to load additional plugins from network or local resources.', false],
+    ['VLINK_URL_PLUGINS', '', 'Before first URL initialization: auto enables on-demand recognized shared transports; none or empty disables plugins; other non-empty values are explicit preload lists (auto/none are case-insensitive).', false],
     ['VLINK_URL_REMAP', '', 'Configuration for remapping URLs or endpoints.', false],
     ['VLINK_INTRA_BIND', '', 'Specifies the binding address for Intra communication.', false],
     ['VLINK_DDS_BIND', '', 'Specifies the binding address for DDS communication.', false],

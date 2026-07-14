@@ -25,6 +25,11 @@
 
 #pragma once
 
+#include <vlink/base/bytes.h>
+
+#include <string>
+#include <vector>
+
 #include "./perception_config.h"
 #include "./perception_model.h"
 
@@ -45,6 +50,17 @@ struct Object;
 
 namespace perception {
 namespace mapping {
+
+bool decode_zerocopy(const vlink::Bytes& raw, const std::string& ser, const PerceptionConfig::MappingRule& rule,
+                     Layer& out);
+
+bool decode_hud_zerocopy(const vlink::Bytes& raw, const std::string& ser, const PerceptionConfig::MappingRule& rule,
+                         std::vector<HudField>& out);
+
+bool decode_zerocopy_batch(const vlink::Bytes& raw, const std::string& ser,
+                           const std::vector<PerceptionConfig::MappingRule>& mappings,
+                           const std::vector<PerceptionConfig::MappingRule>& hud_bindings, std::vector<Layer>& layers,
+                           std::vector<std::vector<HudField>>& hud_fields);
 
 void decode_proto(const google::protobuf::Message& root, const PerceptionConfig::MappingRule& rule, Layer& out);
 

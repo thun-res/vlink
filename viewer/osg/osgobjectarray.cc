@@ -546,7 +546,7 @@ void update(osg::Geode* geode, const std::vector<ObjectData>& objects, float lin
     double arrow_wid = std::max(obj.size[1] * 0.4, 0.3);
     double pz = obj.position[2];
 
-    auto rotate_pt = [&](double lx, double ly, double lz) -> osg::Vec3d {
+    auto rotate_pt = [&cos_yaw, &sin_yaw, &obj](double lx, double ly, double lz) -> osg::Vec3d {
       return osg::Vec3d(lx * cos_yaw - ly * sin_yaw + obj.position[0], lx * sin_yaw + ly * cos_yaw + obj.position[1],
                         lz);
     };

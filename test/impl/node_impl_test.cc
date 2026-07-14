@@ -365,6 +365,7 @@ TEST_SUITE("impl-NodeImpl") {
     TestNodeImpl node;
     node.url = "intra://test_topic";
     node.transport_type = TransportType::kIntra;
+    node.set_discovery_enabled(false);
     node.init_ext();
     node.deinit_ext();
   }

@@ -47,8 +47,8 @@ struct vlink_security final {  // NOLINT(readability-identifier-naming)
   explicit vlink_security(vlink::Security::Config&& cfg) : inner(std::move(cfg)) {}
 };
 
-template <typename T, typename... Args>
-static T* pool_new(Args&&... args) {
+template <typename T, typename... ArgsT>
+static T* pool_new(ArgsT&&... args) {
   void* mem = vlink::MemoryPool::global_instance().allocate(sizeof(T), alignof(T));
 
   if VUNLIKELY (!mem) {
@@ -56,7 +56,7 @@ static T* pool_new(Args&&... args) {
   }
 
   try {
-    return ::new (mem) T{std::forward<Args>(args)...};
+    return ::new (mem) T{std::forward<ArgsT>(args)...};
   } catch (...) {
     vlink::MemoryPool::global_instance().deallocate(mem, sizeof(T), alignof(T));
     throw;
@@ -105,10 +105,10 @@ static void pool_free_buffer(uint8_t* ptr) noexcept {
   vlink::MemoryPool::global_instance().deallocate(raw, kPoolBufferHeaderSize + size);
 }
 
-template <typename T, typename... Args>
-static std::shared_ptr<T>* shared_state_new(Args&&... args) {
+template <typename T, typename... ArgsT>
+static std::shared_ptr<T>* shared_state_new(ArgsT&&... args) {
   try {
-    auto state = std::make_shared<T>(std::forward<Args>(args)...);
+    auto state = std::make_shared<T>(std::forward<ArgsT>(args)...);
     return pool_new<std::shared_ptr<T>>(std::move(state));
   } catch (const std::bad_alloc&) {
     return nullptr;

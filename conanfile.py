@@ -9,7 +9,7 @@ import shutil
 
 class VLinkConan(ConanFile):
     name = "vlink"
-    version = "2.0.0"
+    version = "2.1.0"
     author = "Thun Lu <thun.lu@zohomail.cn>"
     license = "Apache-2.0"
     url = "https://github.com/thun-res/vlink"
@@ -34,6 +34,7 @@ class VLinkConan(ConanFile):
         "enable_sqlite": [True, False],
         "enable_cli_info": [True, False],
         "enable_cli_bag": [True, False],
+        "enable_cli_trigger": [True, False],
         "enable_cli_eproto": [True, False],
         "enable_cli_efbs": [True, False],
         "enable_cli_list": [True, False],
@@ -73,6 +74,7 @@ class VLinkConan(ConanFile):
         "enable_sqlite": True,
         "enable_cli_info": True,
         "enable_cli_bag": True,
+        "enable_cli_trigger": True,
         "enable_cli_eproto": True,
         "enable_cli_efbs": True,
         "enable_cli_list": True,
@@ -117,23 +119,23 @@ class VLinkConan(ConanFile):
         if not self.options.enable_cpm and not self.options.enable_cpm_all:
             self.requires("zlib/1.3.2")
             self.requires("zstd/1.5.7")
-            self.requires("sqlite3/3.51.3")
+            self.requires("sqlite3/3.53.3")
             self.requires("openssl/3.0.21")
             self.requires("protobuf/3.21.12")
             self.requires("flatbuffers/25.12.19")
             self.requires("fast-dds/2.11.2")
             self.requires("cyclonedds/0.10.5")
-            self.requires("iceoryx/2.0.6")
+            self.requires("iceoryx/2.0.8")
         elif not self.options.enable_cpm_all:
             self.requires("zlib/1.3.2")
             self.requires("zstd/1.5.7")
-            self.requires("sqlite3/3.51.3")
+            self.requires("sqlite3/3.53.3")
             self.requires("openssl/3.0.21")
             self.requires("protobuf/3.21.12")
             self.requires("flatbuffers/25.12.19")
         if self.options.enable_viewer:
             if self.options.enable_viewer_ffmpeg:
-                self.requires("ffmpeg/8.1.1")
+                self.requires("ffmpeg/8.1.2")
             if self.options.enable_viewer_osg and not os.environ.get("OSG_DIR"):
                 self.requires("openscenegraph/3.6.5")
 
@@ -219,6 +221,7 @@ class VLinkConan(ConanFile):
         tc.variables["ENABLE_SQLITE"]          = "ON" if self.options.enable_sqlite else "OFF"
         tc.variables["ENABLE_CLI_INFO"]        = "ON" if self.options.enable_cli_info else "OFF"
         tc.variables["ENABLE_CLI_BAG"]         = "ON" if self.options.enable_cli_bag else "OFF"
+        tc.variables["ENABLE_CLI_TRIGGER"]     = "ON" if self.options.enable_cli_trigger else "OFF"
         tc.variables["ENABLE_CLI_EPROTO"]      = "ON" if self.options.enable_cli_eproto else "OFF"
         tc.variables["ENABLE_CLI_EFBS"]        = "ON" if self.options.enable_cli_efbs else "OFF"
         tc.variables["ENABLE_CLI_LIST"]        = "ON" if self.options.enable_cli_list else "OFF"

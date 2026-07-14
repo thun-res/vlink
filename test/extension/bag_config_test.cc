@@ -76,6 +76,7 @@ TEST_SUITE("extension-BagWriter") {
     cfg.tag_name = "run_42";
     cfg.compress = BagWriter::kCompressZstd;
     cfg.wal_mode = true;
+    cfg.sync_mode = true;
     cfg.split_by_size = 512LL * 1024 * 1024;
     cfg.split_by_time = 60'000;
     cfg.ignore_compress_urls.insert("dds://sensor/lidar");
@@ -84,6 +85,7 @@ TEST_SUITE("extension-BagWriter") {
     CHECK_EQ(cfg.tag_name, "run_42");
     CHECK_EQ(cfg.compress, BagWriter::kCompressZstd);
     CHECK(cfg.wal_mode);
+    CHECK(cfg.sync_mode);
     CHECK_EQ(cfg.split_by_size, 512LL * 1024 * 1024);
     CHECK_EQ(cfg.split_by_time, 60'000);
     CHECK_EQ(cfg.ignore_compress_urls.size(), 2u);

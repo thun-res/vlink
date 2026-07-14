@@ -465,7 +465,7 @@ api.register_time_callback([](uint64_t sys_time, uint64_t boot_time) {
 | `-t, --tcp` | TCP 传输（须与客户端一致） |
 | `-g, --direct` | SHM 直连数据通道（须与客户端一致） |
 | `-a, --async` | 在 MessageLoop 线程异步转发数据（默认内联转发） |
-| `-x, --max_packet_size FLOAT` | 单条消息最大转发大小（MiB，默认 4.0；设 0 会丢弃全部非空消息） |
+| `-x, --max_packet_size FLOAT` | 单条消息最大转发大小（MiB，默认 4.0） |
 | `-b, --bind_ip` / `-p, --peer_ip` | 本地绑定 IP / 单播对端 IP（跨子网用） |
 | `-s, --buf_size INT` / `-e, --mtu_size INT` | DDS 收发缓冲区 / MTU 字节数（默认 0 = 内置默认） |
 | `-n, --native` | 限制 DDS 流量到 127.0.0.1（本机测试） |
@@ -505,7 +505,7 @@ int main() {
     vlink::ProxyServer::Config cfg;
     cfg.domain_id       = 0;
     cfg.security_key    = "my_secret_key";
-    cfg.max_packet_size = 4.0;  // MiB；默认 0 会丢弃全部非空消息
+    cfg.max_packet_size = 4.0;  // MiB
 
     vlink::ProxyServer server(cfg);
 
@@ -652,7 +652,6 @@ target_link_libraries(my_server PRIVATE vlink::proxy_server)
 | 报 `kMultiProxyError` | 同一 DDS 域内运行了多个 ProxyServer，须每域一个实例或为各实例分配独立 `domain_id` |
 | `Data::raw` 外带后失效 | `raw` 仅在回调内有效，外带前须先复制（`Bytes::shallow_copy` 保留视图） |
 | `direct` 模式无数据 | SHM 直连需 Iceoryx RouDi 在运行，须先启动 `iox-roudi` 或由代理内嵌拉起 |
-| 大包被丢弃 | `max_packet_size = 0` 表示丢弃全部非空消息，须显式设为足够大的 MiB 值 |
 | 进程退出残留句柄 | `ProxyServer` 析构同步阻塞清理 DDS 句柄，须在进程退出前显式调用 |
 
 ---

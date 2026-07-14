@@ -23,7 +23,7 @@
 
 #pragma once
 
-#include "dump_features.h"
+#include "./dump_features.h"
 
 #ifdef VLINK_HAS_PROTOBUF_COMPILER
 
@@ -33,7 +33,7 @@
 #include <string>
 #include <unordered_map>
 
-#include "dump_schema.h"
+#include "./dump_schema.h"
 
 namespace vlink::dump {
 

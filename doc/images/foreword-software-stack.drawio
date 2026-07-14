@@ -96,7 +96,7 @@
         </mxCell>
 
         <!-- CLI tooling footnote -->
-        <mxCell id="cli" value="CLI: vlink-info / check / list / monitor / bag / dump / eproto / efbs / bench" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1;arcSize=20;shadow=0;fontFamily=Helvetica;fontSize=10;fontStyle=0;fontColor=#e65100;align=center;verticalAlign=middle;" vertex="1" parent="1">
+        <mxCell id="cli" value="CLI: vlink-info / check / list / monitor / bag / dump / eproto / efbs / bench / trigger" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1;arcSize=20;shadow=0;fontFamily=Helvetica;fontSize=10;fontStyle=0;fontColor=#e65100;align=center;verticalAlign=middle;" vertex="1" parent="1">
           <mxGeometry x="160" y="474" width="500" height="26" as="geometry" />
         </mxCell>
 

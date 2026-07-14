@@ -1,4 +1,4 @@
-project(doctest VERSION 2.5.2)
+project(doctest VERSION 2.5.3)
 
 add_library(${PROJECT_NAME} INTERFACE)
 add_library("thirdparty::${PROJECT_NAME}" ALIAS ${PROJECT_NAME})

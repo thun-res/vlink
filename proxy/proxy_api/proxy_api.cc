@@ -1409,9 +1409,9 @@ void ProxyAPI::process_time(uint64_t sys_time, uint64_t boot_time) {
 }
 
 void ProxyAPI::process_error(Error error) {
-  if (impl_->error.load(std::memory_order_relaxed) != error) {
-    impl_->error.store(error, std::memory_order_relaxed);
+  const Error prev_error = impl_->error.exchange(error, std::memory_order_acq_rel);
 
+  if (prev_error != error) {
     if (error == kNoError) {
       impl_->control_error_count.store(0, std::memory_order_relaxed);
       impl_->error_elapsed_timer.stop();

@@ -422,6 +422,33 @@ cc_binary {
     ],
 }
 
+// vlink-trigger
+cc_binary {
+    name: "vlink-trigger",
+    defaults: [
+        "libvlink-defaults",
+    ],
+    srcs: [
+        "cli/trigger/*.cc",
+    ],
+    local_include_dirs: [
+        "cli/trigger",
+        "include/vlink",
+        "thirdparty/argparse/include",
+        "thirdparty/json/include",
+    ],
+    cppflags: [
+        "-DVLINK_ENABLE_SQLITE",
+        "-DVLINK_SUPPORT_DDS",
+        "-DVLINK_SUPPORT_DDSC",
+    ],
+    shared_libs: [
+        "libvlink",
+        "libvlink-dds",
+        "libvlink-ddsc",
+    ],
+}
+
 // vlink-bench
 cc_binary {
     name: "vlink-bench",

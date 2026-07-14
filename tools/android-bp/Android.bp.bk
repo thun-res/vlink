@@ -240,6 +240,18 @@ cc_prebuilt_binary {
     },
 }
 
+// vlink-trigger
+cc_prebuilt_binary {
+    name: "vlink-trigger",
+    owner: "vlink",
+    vendor_available: true,
+    srcs: ["bin/vlink-trigger"],
+    check_elf_files: false,
+    strip: {
+        none: true,
+    },
+}
+
 // vlink-monitor
 cc_prebuilt_binary {
     name: "vlink-monitor",

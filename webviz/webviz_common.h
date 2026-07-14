@@ -39,6 +39,7 @@
 #include <vlink/base/helpers.h>
 #include <vlink/base/logger.h>
 
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -52,7 +53,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "webviz_types.h"
+#include "./webviz_types.h"
 //
 #ifdef VLINK_ENABLE_EXPRTK
 #include <vlink/external/exprtk_api.h>
@@ -69,7 +70,7 @@ namespace vlink {
 namespace webviz {
 
 inline std::string make_expression_variable_name(std::string_view prefix, size_t index) {
-  return "__vlink_" + std::string(prefix) + "_expr_" + std::to_string(index);
+  return "vlink_" + std::string(prefix) + "_expr_" + std::to_string(index);
 }
 
 inline std::string format_expression_string(double value) {
@@ -96,6 +97,26 @@ inline std::string format_expression_string(double value) {
   return text;
 }
 
+template <typename Integer>
+inline double expression_integer_to_double(Integer value) {
+  constexpr uint64_t kMaxExactInteger = 9007199254740992ULL;
+  bool loses_precision = false;
+
+  if constexpr (std::is_signed_v<Integer>) {
+    loses_precision = value > static_cast<Integer>(kMaxExactInteger) || value < -static_cast<Integer>(kMaxExactInteger);
+  } else {
+    loses_precision = value > static_cast<Integer>(kMaxExactInteger);
+  }
+
+  static std::atomic_bool warned{false};
+
+  if VUNLIKELY (loses_precision && !warned.exchange(true, std::memory_order_relaxed)) {
+    MLOG_W("Expression input exceeds the exact integer range of ExprTk double values (2^53)");
+  }
+
+  return static_cast<double>(value);
+}
+
 inline uint64_t mix_cache_hash(uint64_t hash, uint64_t value) noexcept { return Helpers::hash_combine(hash, value); }
 
 inline uint64_t hash_cache_string(std::string_view value) {
@@ -104,22 +125,22 @@ inline uint64_t hash_cache_string(std::string_view value) {
 
 inline uint64_t pointer_cache_identity(const void* ptr) noexcept { return reinterpret_cast<uintptr_t>(ptr); }
 
-template <typename UInt>
-inline UInt checked_unsigned_cast(double value, UInt fallback = 0) {
-  static_assert(std::is_integral_v<UInt> && std::is_unsigned_v<UInt>,
+template <typename UIntT>
+inline UIntT checked_unsigned_cast(double value, UIntT fallback = 0) {
+  static_assert(std::is_integral_v<UIntT> && std::is_unsigned_v<UIntT>,
                 "checked_unsigned_cast requires an unsigned integer target");
 
   if VUNLIKELY (!std::isfinite(value) || value < 0.0) {
     return fallback;
   }
 
-  const auto upper_bound = std::ldexp(1.0, std::numeric_limits<UInt>::digits);
+  const auto upper_bound = std::ldexp(1.0, std::numeric_limits<UIntT>::digits);
 
   if VUNLIKELY (value >= upper_bound) {
     return fallback;
   }
 
-  return static_cast<UInt>(value);
+  return static_cast<UIntT>(value);
 }
 
 #ifdef VLINK_HAS_FBS_COMPILER
@@ -715,11 +736,11 @@ inline double resolve_nested_double(const google::protobuf::Message& msg, std::s
         case google::protobuf::FieldDescriptor::CPPTYPE_INT32:
           return static_cast<double>(ref->GetRepeatedInt32(*current_msg, field, index));
         case google::protobuf::FieldDescriptor::CPPTYPE_INT64:
-          return static_cast<double>(ref->GetRepeatedInt64(*current_msg, field, index));
+          return expression_integer_to_double(ref->GetRepeatedInt64(*current_msg, field, index));
         case google::protobuf::FieldDescriptor::CPPTYPE_UINT32:
           return static_cast<double>(ref->GetRepeatedUInt32(*current_msg, field, index));
         case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
-          return static_cast<double>(ref->GetRepeatedUInt64(*current_msg, field, index));
+          return expression_integer_to_double(ref->GetRepeatedUInt64(*current_msg, field, index));
         case google::protobuf::FieldDescriptor::CPPTYPE_BOOL:
           return ref->GetRepeatedBool(*current_msg, field, index) ? 1.0 : 0.0;
         case google::protobuf::FieldDescriptor::CPPTYPE_ENUM:
@@ -746,11 +767,11 @@ inline double resolve_nested_double(const google::protobuf::Message& msg, std::s
       case google::protobuf::FieldDescriptor::CPPTYPE_INT32:
         return static_cast<double>(ref->GetInt32(*current_msg, field));
       case google::protobuf::FieldDescriptor::CPPTYPE_INT64:
-        return static_cast<double>(ref->GetInt64(*current_msg, field));
+        return expression_integer_to_double(ref->GetInt64(*current_msg, field));
       case google::protobuf::FieldDescriptor::CPPTYPE_UINT32:
         return static_cast<double>(ref->GetUInt32(*current_msg, field));
       case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
-        return static_cast<double>(ref->GetUInt64(*current_msg, field));
+        return expression_integer_to_double(ref->GetUInt64(*current_msg, field));
       case google::protobuf::FieldDescriptor::CPPTYPE_BOOL:
         return ref->GetBool(*current_msg, field) ? 1.0 : 0.0;
       case google::protobuf::FieldDescriptor::CPPTYPE_ENUM:
@@ -1036,11 +1057,11 @@ inline double get_proto_numeric_value(const google::protobuf::Message& msg,
     case google::protobuf::FieldDescriptor::CPPTYPE_INT32:
       return static_cast<double>(ref->GetInt32(msg, field));
     case google::protobuf::FieldDescriptor::CPPTYPE_INT64:
-      return static_cast<double>(ref->GetInt64(msg, field));
+      return expression_integer_to_double(ref->GetInt64(msg, field));
     case google::protobuf::FieldDescriptor::CPPTYPE_UINT32:
       return static_cast<double>(ref->GetUInt32(msg, field));
     case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
-      return static_cast<double>(ref->GetUInt64(msg, field));
+      return expression_integer_to_double(ref->GetUInt64(msg, field));
     case google::protobuf::FieldDescriptor::CPPTYPE_BOOL:
       return ref->GetBool(msg, field) ? 1.0 : 0.0;
     case google::protobuf::FieldDescriptor::CPPTYPE_ENUM:
@@ -1083,11 +1104,11 @@ inline double resolve_proto_numeric_path_fast(const google::protobuf::Message& r
         case google::protobuf::FieldDescriptor::CPPTYPE_INT32:
           return static_cast<double>(ref->GetRepeatedInt32(*current_msg, field, index));
         case google::protobuf::FieldDescriptor::CPPTYPE_INT64:
-          return static_cast<double>(ref->GetRepeatedInt64(*current_msg, field, index));
+          return expression_integer_to_double(ref->GetRepeatedInt64(*current_msg, field, index));
         case google::protobuf::FieldDescriptor::CPPTYPE_UINT32:
           return static_cast<double>(ref->GetRepeatedUInt32(*current_msg, field, index));
         case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
-          return static_cast<double>(ref->GetRepeatedUInt64(*current_msg, field, index));
+          return expression_integer_to_double(ref->GetRepeatedUInt64(*current_msg, field, index));
         case google::protobuf::FieldDescriptor::CPPTYPE_BOOL:
           return ref->GetRepeatedBool(*current_msg, field, index) ? 1.0 : 0.0;
         case google::protobuf::FieldDescriptor::CPPTYPE_ENUM:
@@ -2378,13 +2399,13 @@ inline double get_proto_double(const google::protobuf::Message& msg, std::string
         value = static_cast<double>(ref->GetInt32(msg, field));
         break;
       case google::protobuf::FieldDescriptor::CPPTYPE_INT64:
-        value = static_cast<double>(ref->GetInt64(msg, field));
+        value = expression_integer_to_double(ref->GetInt64(msg, field));
         break;
       case google::protobuf::FieldDescriptor::CPPTYPE_UINT32:
         value = static_cast<double>(ref->GetUInt32(msg, field));
         break;
       case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
-        value = static_cast<double>(ref->GetUInt64(msg, field));
+        value = expression_integer_to_double(ref->GetUInt64(msg, field));
         break;
       case google::protobuf::FieldDescriptor::CPPTYPE_BOOL:
         value = ref->GetBool(msg, field) ? 1.0 : 0.0;

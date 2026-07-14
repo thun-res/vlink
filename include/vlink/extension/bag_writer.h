@@ -27,19 +27,19 @@
  *
  * @details
  * @c BagWriter is the polymorphic base for VLink offline recording.  It exposes a
- * non-blocking @c push() entry point that enqueues serialised messages onto a private
- * @c MessageLoop, which then persists them through the concrete backend.  Two backends
- * ship with VLink:
+ * @c push() entry point, which either enqueues serialised messages onto a private
+ * @c MessageLoop or persists them synchronously according to @c Config::sync_mode.
+ * Two backends ship with VLink:
  *
  * - @c VDBWriter for SQLite-backed @c .vdb / @c .vdbx containers; default codec is LZAV
  *   for @c kCompressAuto and @c kCompressLzav selectors.
  * - @c VCAPWriter for MCAP-format @c .vcap / @c .vcapx containers; @c kCompressAuto and
  *   @c kCompressZstd select Zstandard when Zstd support is compiled in.
  *
- * Writer state machine:
+ * Default asynchronous writer state machine:
  *
  * @verbatim
- *                async_run()                push()              flush()/dtor
+ *                async_run()                push()               close()/dtor
  *   +---------+ ----------> +-----------+ ---------> +---------+ ----------> +---------+
  *   |  Open   |             |  Running  | <--------- | Pending |             |  Closed |
  *   +---------+             +-----------+   ack      +---------+             +---------+
@@ -60,7 +60,7 @@
  * @endverbatim
  *
  * Feature highlights:
- * - Asynchronous record path with optional synchronous @c immediate writes.
+ * - Writer-wide asynchronous or synchronous record policy selected by @c Config::sync_mode.
  * - File splitting by byte size and/or by wall-clock interval.
  * - Optional WAL mode for SQLite crash resilience.
  * - URL-level loss reporting via @c set_url_loss().
@@ -84,6 +84,11 @@
  * frame.action_type = vlink::ActionType::kPublish;
  * frame.data        = bytes;
  * writer->push(frame);
+ * writer->wait_for_idle();
+ * writer->quit();
+ * writer->wait_for_quit();
+ * writer->close();
+ * if (writer->fail()) { handle_recording_error(); }
  * @endcode
  *
  * @par Global writer
@@ -101,9 +106,8 @@
  * }
  * @endcode
  *
- * @note @c push() is thread-safe.  @c immediate=true bypasses the queue and writes on the
- * caller's thread; this should be reserved for finalisation or test code because it
- * can block long enough to violate real-time deadlines.
+ * @note @c push() is thread-safe.  @c Config::sync_mode selects synchronous writes for the
+ * writer's entire lifetime; otherwise writes are queued on the recording loop.
  */
 
 #pragma once
@@ -122,10 +126,10 @@
 #include "../base/macros.h"
 #include "../base/message_loop.h"
 #include "../impl/types.h"
-#include "./bag_plugin_interface.h"
 
 namespace vlink {
 
+class BagPluginInterface;
 class SchemaPluginInterface;
 
 /**
@@ -166,14 +170,14 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
    * Sizes are expressed in bytes and durations in milliseconds unless explicitly stated.
    */
   struct Config final {
-    std::string tag_name;                                      ///< Optional tag stored in the bag header.
-    CompressType compress{CompressType::kCompressNone};        ///< Compression codec selector.
-    bool wal_mode{false};                                      ///< Enable SQLite WAL for crash resilience.
-    bool enable_limit{false};                                  ///< When true, evict oldest rows at the row/byte limit.
-    bool split_name_by_time{false};                            ///< Append a timestamp suffix to split filenames.
-    bool sync_mode{false};                                     ///< Disable periodic cache-flush timer for VDB writes.
-    bool optimize_on_exit{false};                              ///< Run VACUUM/OPTIMIZE while closing the file.
-    int64_t max_row_count{5'000'000'000LL};                    ///< SQLite row cap; either evicts or fails new writes.
+    std::string tag_name;                                ///< Optional tag stored in the bag header.
+    CompressType compress{CompressType::kCompressNone};  ///< Compression codec selector.
+    bool wal_mode{false};                                ///< Enable SQLite WAL for crash resilience.
+    bool enable_limit{false};                            ///< When true, evict oldest rows at the row/byte limit.
+    bool split_name_by_time{false};                      ///< Append a timestamp suffix to split filenames.
+    bool sync_mode{false};                   ///< Write synchronously and disable the VDB periodic cache-flush timer.
+    bool optimize_on_exit{false};            ///< Run VACUUM/OPTIMIZE while closing the file.
+    int64_t max_row_count{5'000'000'000LL};  ///< SQLite row cap; either evicts or fails new writes.
     int64_t max_bytes_size{1024LL * 1024LL * 1024LL * 512LL};  ///< SQLite byte cap; either evicts or fails new writes.
     int64_t split_by_size{1024LL * 1024LL * 1024LL * 1LL};     ///< Split threshold in bytes (0 disables).
     int64_t split_by_time{0};                                  ///< Split interval in milliseconds (0 disables).
@@ -219,8 +223,8 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
    *
    * @details
    * Suffix dispatch: @c .vdb / @c .vdbx select @c VDBWriter, @c .vcap / @c .vcapx select
-   * @c VCAPWriter; other suffixes return @c nullptr.  The returned writer is open but
-   * idle until @c async_run() starts its loop.
+   * @c VCAPWriter; other suffixes return @c nullptr.  The returned writer is open immediately;
+   * asynchronous writers need @c async_run(), while synchronous writers do not.
    *
    * @param path   Output file path.
    * @param config Recording configuration.
@@ -257,7 +261,9 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
    * @brief Constructs the base writer and opens the output file.
    *
    * @details
-   * The recording loop is not yet running; call @c async_run() before any @c push().
+   * The recording loop is not yet running; call @c async_run() when @c Config::sync_mode is false.
+   * A synchronous writer performs frame, schema and plugin-output writes on the calling thread and
+   * does not require a recording-loop thread.
    *
    * @param path   Output file path.
    * @param config Recording configuration.
@@ -280,21 +286,21 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
    * @c BagPluginInterface::Direction::kWrite.  Passing @c nullptr detaches and clears the previous
    * plugin's sink.
    *
-   * @param plugin_interface Plugin instance, or @c nullptr to detach the current binding.
+   * @param bag_interface Plugin interface instance, or @c nullptr to detach the current binding.
    *
-   * @see clear_plugin_interface() for the named equivalent of passing @c nullptr.
+   * @see clear_bag_interface() for the named equivalent of passing @c nullptr.
    */
-  virtual void bind_plugin_interface(const std::shared_ptr<BagPluginInterface>& plugin_interface);
+  virtual void bind_bag_interface(const std::shared_ptr<BagPluginInterface>& bag_interface);
 
   /**
    * @brief Detaches the currently bound plugin, if any.
    *
    * @details
-   * Convenience wrapper equivalent to @c bind_plugin_interface(nullptr): flushes the bound plugin's
+   * Convenience wrapper equivalent to @c bind_bag_interface(nullptr): flushes the bound plugin's
    * pending frames, clears its record sink and drops the binding.  Safe to call when no plugin is
    * bound (in which case it is a no-op).
    */
-  virtual void clear_plugin_interface();
+  virtual void clear_bag_interface();
 
   /**
    * @brief Installs a hook fired around split rotation.
@@ -314,45 +320,46 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
   /**
    * @brief Embeds a schema descriptor into the bag for downstream introspection.
    *
+   * The operation follows @c Config::sync_mode: synchronous writers merge on the caller's thread;
+   * asynchronous writers enqueue the merge on the recording loop.
+   *
    * @param schema_data Schema descriptor to persist.
-   * @param immediate   When true, performs a synchronous merge on the caller's thread.
-   * @return @c true on success; @c false when an immediate merge fails or a queued merge task
-   *         cannot be enqueued.
+   * @return @c true on success; @c false when a synchronous merge fails or an asynchronous merge
+   *         task cannot be enqueued.
    */
-  virtual bool push_schema(const SchemaData& schema_data, bool immediate = false) = 0;
+  virtual bool push_schema(const SchemaData& schema_data) = 0;
 
   /**
    * @brief Records a single frame to the bag.
    *
    * @details
-   * Enqueues a write task onto the recording loop; the actual disk write happens on the loop thread.
+   * The write follows the mode fixed at construction: @c Config::sync_mode writes on the caller's
+   * thread; otherwise a task is enqueued on the recording loop.
+   * Once accepted, an asynchronous frame is not evicted to admit a later frame.
    * When @c frame.timestamp is negative the writer assigns a recording-relative timestamp from its
    * elapsed clock; a non-negative @c frame.timestamp (including @c 0) is recorded verbatim.
    *
-   * When a plugin is bound via @c bind_plugin_interface(), the frame is handed to the plugin's
+   * When a plugin is bound via @c bind_bag_interface(), the frame is handed to the plugin's
    * @c on_write() hook, which re-emits it (possibly transcoded, dropped, fanned out or reordered)
    * through the writer's record sink into the concrete @c record() implementation.  Because the
    * plugin may emit asynchronously, the return value is then the assigned timestamp rather than a
    * per-frame record result; a frame the plugin drops simply never reaches @c record().
    *
-   * @param frame     Frame to record.  @c url must not be empty; @c timestamp < 0 requests auto-assign.
-   * @param immediate When true, bypasses the queue and writes synchronously (honoured for frames a
-   *                  plugin emits synchronously from @c on_write()).
-   * @return Assigned timestamp in microseconds, or a negative value on immediate validation/write failure.
+   * @param frame Frame to record.  @c url must not be empty; @c timestamp < 0 requests auto-assign.
+   * @return Assigned timestamp in microseconds, or a negative value on validation/write failure or when an
+   *         asynchronous write cannot be queued (for example, because a task or memory limit was reached).
    */
-  int64_t push(const Frame& frame, bool immediate = false);
+  int64_t push(const Frame& frame);
 
   /**
    * @brief Streaming shorthand for @c push(frame).
    *
    * @details
-   * Enqueues @p frame on the recording loop exactly like @c push(frame, false) and returns the
-   * writer so calls can be chained, e.g. @c *writer << frame_a << frame_b.  The asynchronous
-   * (non-immediate) record path is always used; reach for @c push(frame, true) when a synchronous
-   * write is required.  The per-frame timestamp that @c push() returns is not surfaced here; instead,
-   * a negative @c push() result (e.g. empty URL, or a synchronous record failure forwarded by a
-   * bound plugin) latches the @c fail() state so failures are observable without inspecting every
-   * return value.
+   * Records @p frame according to @c Config::sync_mode and returns the writer so calls can be chained,
+   * e.g. @c *writer << frame_a << frame_b.  The per-frame timestamp that @c push() returns is not surfaced; instead,
+   * a negative @c push() result (e.g. an empty URL, a queue or memory-limit rejection, or a synchronous
+   * record failure forwarded by a bound plugin) latches the @c fail() state so failures are observable
+   * without inspecting every return value.
    *
    * @param frame Frame to record; @c url must not be empty, @c timestamp < 0 requests auto-assign.
    * @return Reference to @c *this for chaining.
@@ -363,8 +370,8 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
    * @brief Streaming shorthand for @c push_schema(schema_data).
    *
    * @details
-   * Embeds @p schema_data through the asynchronous @c push_schema(schema_data, false) path and
-   * returns the writer for chaining, e.g. @c *writer << schema << frame.  A @c false result -- the
+   * Embeds @p schema_data according to @c Config::sync_mode and returns the writer for chaining,
+   * e.g. @c *writer << schema << frame.  A @c false result -- the
    * merge task could not be enqueued, or a bound backend rejected it -- latches the @c fail() state.
    *
    * @param schema_data Schema descriptor to persist.
@@ -373,12 +380,13 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
   BagWriter& operator<<(const SchemaData& schema_data);
 
   /**
-   * @brief Returns whether a previous @c operator<< observed a write failure.
+   * @brief Returns whether a stream operation, deferred backend write or finalisation has failed.
    *
    * @details
-   * Latches when @c operator<<(const Frame&) sees a negative @c push() result or
-   * @c operator<<(const SchemaData&) sees a @c false @c push_schema() result.  Plain @c push() /
-   * @c push_schema() never alter this flag -- callers of those keep using their return values.
+   * Latches when a stream insertion is rejected, a concrete backend cannot persist an accepted asynchronous
+   * frame or schema, or @c close() cannot finalise the bag.  Callers may wait for the queue to become idle and
+   * then query this method; call @c close() first when close-time metadata, footer or manifest failures must
+   * also be observed.  Synchronous callers continue to use the return value from @c push() or @c push_schema().
    * Cleared by @c clear().
    */
   [[nodiscard]] bool fail() const noexcept;
@@ -432,10 +440,36 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
   virtual void set_url_loss(const std::string& url, double loss);
 
  protected:
-  virtual int64_t record(const Frame& frame, bool immediate) = 0;
+  virtual int64_t record(const Frame& frame, int64_t timestamp) = 0;
 
   virtual int64_t get_record_timestamp() const = 0;
 
+ public:
+  /**
+   * @brief Finalizes the backend file (final commit, metadata, footer) and latches any failure.
+   *
+   * @details
+   * Idempotent; invoked automatically at destruction.  Callers that must verify the close-time
+   * writes call it explicitly and then query @c fail() while the writer is still alive.  It is not
+   * synchronised against the recording loop.  After producers have stopped, detach any bound write plugin with
+   * @c clear_bag_interface() so its buffered tail is emitted while the loop still accepts tasks; then call
+   * @c wait_for_idle(), @c quit() and @c wait_for_quit() before calling @c close() from another thread.
+   *
+   * @note Declared after the original virtual interface to preserve its vtable slot ordering.
+   */
+  virtual void close();
+
+  /**
+   * @brief Formats a wall-clock timestamp with millisecond precision.
+   *
+   * @param current     Time point to format; @c nullptr formats the current system time.
+   * @param file_format When true, produces the file-name-safe form @c YYYY-MM-DD_hh-mm-ss-mmm shared by
+   *                    generated bag names; otherwise the log form @c YYYY/MM/DD hh:mm:ss:mmm.
+   * @return Formatted timestamp string.
+   */
+  static std::string get_format_date(SystemClock* current = nullptr, bool file_format = false);
+
+ protected:
   std::string convert_recorded_url(const std::string& url) const;
 
   std::vector<std::string> recorded_urls_for_origin(const std::string& url) const;
@@ -462,11 +496,16 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
 
   static std::string_view convert_action(ActionType type);
 
-  static std::string get_format_date(SystemClock* current = nullptr, bool file_format = false);
-
   void flush_plugin();
 
   void detach_plugin();
+
+  bool post_persistent_task(Callback&& callback);
+
+  /**
+   * @brief Latches the writer failure state from a concrete backend.
+   */
+  void set_fail() noexcept;
 
  private:
   void learn_recorded_url(const std::string& origin_url, const std::string& recorded_url);

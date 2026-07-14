@@ -181,6 +181,19 @@ void BagProcessor::flush() {
   impl_->cv.wait(lock, [this]() -> bool {
     return !impl_->flush_request || impl_->quit_flag.load(std::memory_order_acquire);
   });  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+
+  if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
+    return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  impl_->last_data_timestamp = 0;
+  impl_->last_timestamp = 0;
+  impl_->data_timestamp_anchor = 0;
+  impl_->timestamp_anchor = 0;
+  impl_->last_output_timestamp = 0;
+  impl_->last_resolved_data_timestamp_valid = false;
+  impl_->timestamp_anchor_valid = false;
+  impl_->output_timestamp_valid = false;
 }
 
 bool BagProcessor::on_check() {

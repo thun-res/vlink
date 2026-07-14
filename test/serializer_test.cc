@@ -25,6 +25,7 @@
 
 #include <vlink/zerocopy/raw_data.h>
 
+#include <array>
 #include <cstring>
 #include <string>
 
@@ -735,6 +736,16 @@ TEST_SUITE("ser-proto") {
 
 #ifdef VLINK_TEST_SUPPORT_FLATBUFFERS
 
+namespace {
+
+Bytes finish_flat_message(const char* value) {
+  common_test::FlatMessageBuilder builder(value);
+  builder.fbb_.Finish(builder.Finish());
+  return Bytes::deep_copy(builder.fbb_.GetBufferPointer(), builder.fbb_.GetSize());
+}
+
+}  // namespace
+
 TEST_SUITE("ser-flatbuffers") {
   TEST_CASE("flatbuffers message maps to kFlatTableType") {
     static constexpr auto t = Serializer::get_type_of<fbs::MessageT>();
@@ -757,6 +768,91 @@ TEST_SUITE("ser-flatbuffers") {
     CHECK(dok);
     CHECK(result.value == "test_fbs");
     CHECK(result.type == 99u);
+  }
+
+  TEST_CASE("flatbuffers builder has no pre finish loan size hint") {
+    common_test::FlatMessageBuilder builder("flat_builder");
+
+    CHECK(Serializer::get_type_of<common_test::FlatMessageBuilder>() == Serializer::kFlatBuilderType);
+    CHECK_EQ(Serializer::get_serialized_size(builder), 0u);
+  }
+
+  TEST_CASE("flatbuffers builder serializes to an owning copy") {
+    const auto expected = finish_flat_message("flat_builder_loan");
+    common_test::FlatMessageBuilder builder("flat_builder_loan");
+    Bytes serialized;
+
+    REQUIRE(Serializer::serialize<Serializer::kFlatBuilderType>(builder, serialized));
+    CHECK(serialized.is_owner());
+    CHECK_FALSE(serialized.is_loaned());
+    CHECK_EQ(serialized.size(), expected.size());
+    CHECK_EQ(serialized.size(), builder.fbb_.GetSize());
+    CHECK_NE(serialized.data(), builder.fbb_.GetBufferPointer());
+    CHECK(std::memcmp(serialized.data(), expected.data(), expected.size()) == 0);
+  }
+
+  TEST_CASE("flatbuffers builder rejects a loan without changing it or finishing") {
+    std::array<uint8_t, 64> storage{};
+    auto loan = Bytes::loan_internal(storage.data(), storage.size());
+    auto* loan_data = loan.data();
+    common_test::FlatMessageBuilder builder("flat_builder_mismatch");
+    const auto size_before = builder.fbb_.GetSize();
+
+    CHECK_FALSE(Serializer::serialize<Serializer::kFlatBuilderType>(builder, loan));
+    CHECK(loan.is_loaned());
+    CHECK_EQ(loan.data(), loan_data);
+    CHECK_EQ(loan.size(), storage.size());
+    CHECK_EQ(builder.fbb_.GetSize(), size_before);
+
+    Bytes serialized;
+    CHECK(Serializer::serialize<Serializer::kFlatBuilderType>(builder, serialized));
+    CHECK_FALSE(serialized.empty());
+  }
+
+  TEST_CASE("flatbuffers builder transport path finishes before taking an exact loan") {
+    common_test::FlatMessageBuilder builder("flat_builder_transport");
+    std::vector<uint8_t> storage;
+    Bytes serialized;
+    size_t loan_calls = 0;
+
+    REQUIRE(Serializer::serialize_to_transport<Serializer::kFlatBuilderType>(
+        builder, serialized, TransportType::kShm2, true, [&storage, &loan_calls](size_t size) {
+          ++loan_calls;
+          storage.resize(size);
+          return Bytes::loan_internal(storage.data(), storage.size());
+        }));
+    CHECK_EQ(loan_calls, 1u);
+    CHECK(serialized.is_loaned());
+    CHECK_EQ(serialized.size(), builder.fbb_.GetSize());
+    CHECK_EQ(serialized.data(), storage.data());
+    CHECK(std::memcmp(serialized.data(), builder.fbb_.GetBufferPointer(), serialized.size()) == 0);
+  }
+
+  TEST_CASE("flatbuffers builder transport path accepts exact owning fallback storage") {
+    common_test::FlatMessageBuilder builder("flat_builder_fallback");
+    Bytes serialized;
+
+    REQUIRE(Serializer::serialize_to_transport<Serializer::kFlatBuilderType>(
+        builder, serialized, TransportType::kZenoh, true, [](size_t size) { return Bytes::create(size); }));
+    CHECK(serialized.is_owner());
+    CHECK_FALSE(serialized.is_loaned());
+    CHECK_EQ(serialized.size(), builder.fbb_.GetSize());
+    CHECK(std::memcmp(serialized.data(), builder.fbb_.GetBufferPointer(), serialized.size()) == 0);
+  }
+
+  TEST_CASE("flatbuffers builder transport allocation failure keeps its final size") {
+    common_test::FlatMessageBuilder builder("flat_builder_failed_loan");
+    Bytes serialized;
+    size_t requested_size = 0U;
+
+    CHECK_FALSE(Serializer::serialize_to_transport<Serializer::kFlatBuilderType>(
+        builder, serialized, TransportType::kShm2, true, [&requested_size](size_t size) {
+          requested_size = size;
+          return Bytes{};
+        }));
+    CHECK(requested_size > 0U);
+    CHECK_EQ(builder.fbb_.GetSize(), requested_size);
+    CHECK(serialized.empty());
   }
 }
 

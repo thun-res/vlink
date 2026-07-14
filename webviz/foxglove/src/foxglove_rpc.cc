@@ -21,7 +21,7 @@
  * limitations under the License.
  */
 
-#include "foxglove_rpc.h"
+#include "./foxglove_rpc.h"
 
 //
 #include <vlink/base/helpers.h>

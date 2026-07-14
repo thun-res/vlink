@@ -28,11 +28,16 @@
  * @details
  * This is an internal implementation header used by the URL routing layer and by
  * out-of-tree plugins for recognized transport backends; it is not part of the
- * public application API.  External plugins are shared libraries discovered by
- * the URL layer when @c Url::init_plugins() reads @c VLINK_URL_PLUGINS.  Each
+ * public application API.  External plugins are shared libraries made available
+ * according to the process-wide @c VLINK_URL_PLUGINS value: an explicit module
+ * list is preloaded, while a complete value of @c auto (case-insensitive) enables
+ * first-use loading of the fixed library for a recognized transport.  An empty
+ * value or the case-insensitive value @c none disables plugin loading.  Each
  * plugin exports exactly one concrete subclass of @c ConfPluginInterface; the
  * runtime asks it for its existing @c TransportType and uses @c create() to
  * obtain a fresh @c Conf instance when a URL with that transport is constructed.
+ * The complete setting is sampled once when the process-wide plugin manager is
+ * initialized.
  *
  * @par Plugin contract
  * | Member                          | Required          | Description                                       |
@@ -44,34 +49,30 @@
  *
  * @par Lifecycle
  * @code
- *     +-----------+          +--------------+          +-----------------+
- *     | Url::ctor | -------> | init_plugins | -------> | dlopen library  |
- *     +-----------+          +------+-------+          +--------+--------+
- *                                   |                           |
- *                                   |                           v
- *                                   |               +-----------------------+
- *                                   |               | Plugin::create_object |
- *                                   |               +-----------+-----------+
- *                                   |                           |
- *                                   v                           v
- *                          +----------------+          +------------------+
- *                          | load_for_plugin| -------> | plugin->create() |
- *                          +----------------+          +--------+---------+
- *                                                               |
- *                                                               v
- *                                                        +-------------+
- *                                                        | unique<Conf>|
- *                                                        +-------------+
+ *   first Url/plugin use -> sample VLINK_URL_PLUGINS
+ *       |              |                 |
+ *       | list         | auto            | empty / none
+ *       v              v                 v
+ *   explicit       first-use load      disabled
+ *   preload        vlink-<module>
+ *       |              |
+ *       +-----> validate type -> registry -> plugin->create()
+ *                                              |
+ *                                              v
+ *                                       unique_ptr<Conf>
  * @endcode
  *
  * @par Loading constraints
- * @c VLINK_URL_PLUGINS accepts recognized transport module names, not arbitrary
- * plugin names.  For example, @c zenoh maps to the fixed library base name
- * @c vlink-zenoh and to the existing @c TransportType::kZenoh.  Unknown module
- * names are rejected before @c Plugin::load() is called, linked transports take
- * precedence over plugins, and @c TransportType::kUnknown is never dispatched to
- * this interface.  New URL schemes therefore require core enum, URL mapping,
- * and backend creation support before this plugin interface can be used.
+ * In list mode, @c VLINK_URL_PLUGINS accepts recognized transport module names,
+ * not arbitrary plugin names.  For example, @c zenoh maps to the fixed library
+ * base name @c vlink-zenoh and to the existing @c TransportType::kZenoh.  The
+ * on-demand path derives the same fixed name and is enabled only when the entire
+ * sampled value equals @c auto, ignoring case.  Mode values cannot be combined
+ * with an explicit list.  Unknown module names are rejected before
+ * @c Plugin::load() is called, linked transports take precedence over plugins,
+ * and @c TransportType::kUnknown is never dispatched to this interface.  New URL
+ * schemes therefore require core enum, URL mapping, and backend creation support
+ * before this interface can be used.
  *
  * @note Implementations must remain stateless because @c create() may be invoked
  *       repeatedly to serve several independent @c Url instances.
@@ -91,8 +92,9 @@ namespace vlink {
  * @brief Stateless factory contract that external recognized-transport plugins must implement.
  *
  * @details
- * Subclasses are loaded from shared libraries by the VLink runtime when a URL
- * uses a recognized transport that is not built in.  The interface cannot
+ * Subclasses may be explicitly preloaded from a module list in
+ * @c VLINK_URL_PLUGINS or loaded on first use of a recognized, unlinked transport
+ * when its complete value is @c auto (case-insensitive).  The interface cannot
  * register a new @c TransportType or URL scheme; it only supplies @c Conf
  * instances for existing transport identifiers.  It intentionally exposes only
  * the two queries needed by @c Url::load_for_plugin(); plugin-specific state

@@ -176,7 +176,7 @@ class VLINK_EXPORT Plugin final {
    * @param lib_name       Library file name without prefix/suffix.
    * @param version_major  Required interface major version.
    * @param version_minor  Required interface minor version.
-   * @param dir_name       Optional directory searched before @p search_paths.
+   * @param dir_name       Optional subdirectory tried under each entry of @p search_paths.
    * @param search_paths   Ordered fallback search list.  Default: @c default_search_path().
    * @param function_name  Symbol name of the construction entry point.
    * @return @c shared_ptr<T> owning the plugin instance, or @c nullptr on failure.

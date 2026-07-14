@@ -30,6 +30,8 @@
 
 namespace vlink {
 
+static constexpr int kTimeoutInterval = 1000 * 600;
+
 // LicenseCheck::Impl
 struct LicenseCheck::Impl final {
   Timer check_timer;
@@ -59,8 +61,6 @@ LicenseCheck::~LicenseCheck() {
 }
 
 void LicenseCheck::do_check() {
-  static constexpr int kTimeoutInterval = 1000 * 600;
-
   auto pass_time = impl_->elapsed_timer.get();
 
   if VUNLIKELY (pass_time >= kTimeoutInterval) {

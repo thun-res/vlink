@@ -189,18 +189,29 @@ struct JsonPrinter {
     const auto elem_indent = indent + Indent();
     text += '[';
     AddNewLine();
+    int elemout = 0;
     for (SizeT i = 0; i < size; i++) {
-      if (i) {
+      const auto elem_rollback_pos = text.length();
+
+      if (elemout) {
         AddComma();
         AddNewLine();
       }
 
       AddIndent(elem_indent);
+
+      const auto elem_value_pos = text.length();
       auto ptr = is_struct ? reinterpret_cast<const void*>(c.Data() + type.struct_def->bytesize * i) : c[i];
       auto err = PrintOffset(ptr, type, elem_indent, prev_val, static_cast<soffset_t>(i));
 
       if (err) {
         return err;
+      }
+
+      if (text.length() == elem_value_pos) {
+        text.resize(elem_rollback_pos);
+      } else {
+        elemout++;
       }
     }
     AddNewLine();
@@ -393,6 +404,21 @@ struct JsonPrinter {
           continue;
         }
 
+        if (ignore_string &&
+            (fd.value.type.base_type == BASE_TYPE_STRING ||
+             ((fd.value.type.base_type == BASE_TYPE_VECTOR || fd.value.type.base_type == BASE_TYPE_ARRAY) &&
+              fd.value.type.VectorType().base_type == BASE_TYPE_STRING))) {
+          continue;
+        }
+
+        if (ignore_array &&
+            (fd.value.type.base_type == BASE_TYPE_VECTOR || fd.value.type.base_type == BASE_TYPE_ARRAY)) {
+          continue;
+        }
+
+        const auto field_rollback_pos = text.length();
+        const auto field_rollback_fieldout = fieldout;
+
         if (fieldout++) {
           AddComma();
         }
@@ -405,6 +431,9 @@ struct JsonPrinter {
             (fd.value.type.base_type != BASE_TYPE_STRUCT && fd.value.type.base_type != BASE_TYPE_VECTOR))
           text += ':';
         text += ' ';
+
+        const auto field_value_pos = text.length();
+
         switch (fd.value.type.base_type) {
 #define FLATBUFFERS_TD(ENUM, IDLTYPE, CTYPE, ...)              \
   case BASE_TYPE_##ENUM: {                                     \
@@ -426,6 +455,11 @@ struct JsonPrinter {
 
             break;
           }
+        }
+
+        if (text.length() == field_value_pos) {
+          text.resize(field_rollback_pos);
+          fieldout = field_rollback_fieldout;
         }
 
         if (struct_def.fixed) {

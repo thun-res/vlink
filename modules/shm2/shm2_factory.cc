@@ -24,12 +24,20 @@
 #include "./shm2_factory.h"
 
 #include <charconv>
+#include <chrono>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include "./impl/server_impl.h"
 
+#ifndef VLINK_SHM2_NO_FD_LISTENER
+#define VLINK_SHM2_NO_FD_LISTENER 0
+#endif
+
 namespace vlink {
+
+static constexpr uint32_t kShm2IdleWaitTimeoutNs = 1U * 1000U * 1000U;
 
 static bool make_iox2_service_name(const std::string& name, iox2_service_name_t& storage,
                                    iox2_service_name_h& out_handle) {
@@ -170,8 +178,13 @@ Shm2Factory::Shm2Factory() {
     auto* lb = iox2_port_factory_event_listener_builder(&wakeup_event_pf_handle_, nullptr);
     iox2_port_factory_listener_builder_create(lb, &wakeup_listener_storage_, &wakeup_listener_);
 
+#if !VLINK_SHM2_NO_FD_LISTENER
     iox2_file_descriptor_ptr fd = iox2_listener_get_file_descriptor(&wakeup_listener_);
-    iox2_waitset_attach_notification(&waitset_, fd, &wakeup_guard_storage_, &wakeup_guard_);
+
+    if (fd != nullptr) {
+      iox2_waitset_attach_notification(&waitset_, fd, &wakeup_guard_storage_, &wakeup_guard_);
+    }
+#endif
 
     auto* nb = iox2_port_factory_event_notifier_builder(&wakeup_event_pf_handle_, nullptr);
     iox2_port_factory_notifier_builder_create(nb, &wakeup_notifier_storage_, &wakeup_notifier_);
@@ -194,6 +207,22 @@ Shm2Factory::~Shm2Factory() {
     poll_thread_.join();
   }
 
+  std::vector<std::shared_ptr<BlockingWaiter>> blocking_waiters;
+
+  {
+    std::lock_guard lock(blocking_mtx_);
+
+    for (auto& [_, waiter] : blocking_waiters_) {
+      blocking_waiters.emplace_back(std::move(waiter));
+    }
+
+    blocking_waiters_.clear();
+  }
+
+  for (auto& waiter : blocking_waiters) {
+    stop_blocking_waiter(waiter.get());
+  }
+
   if (wakeup_guard_) {
     iox2_waitset_guard_drop(wakeup_guard_);
     wakeup_guard_ = nullptr;
@@ -207,6 +236,7 @@ Shm2Factory::~Shm2Factory() {
         entry.guard = nullptr;
       }
     }
+
     poll_map_.clear();
   }
 
@@ -292,12 +322,61 @@ void Shm2Factory::remove_detect_method_callback(iox2_port_factory_request_respon
 
 int Shm2Factory::get_default_depth() const { return default_depth_; }
 
-void Shm2Factory::register_poll(void* handle, PollCallback&& callback, iox2_waitset_guard_h guard) {
+void Shm2Factory::register_poll(void* handle, PollCallback&& callback, iox2_waitset_guard_h guard,
+                                iox2_listener_h_ref listener, bool poll_without_event,
+                                iox2_port_factory_event_h_ref event_pf) {
+  if (listener != nullptr) {
+    auto waiter = std::make_shared<BlockingWaiter>();
+
+    waiter->callback = std::move(callback);
+    waiter->listener = listener;
+    waiter->poll_without_event = poll_without_event;
+
+    if (event_pf != nullptr) {
+      auto* nb = iox2_port_factory_event_notifier_builder(event_pf, nullptr);
+
+      if VUNLIKELY (iox2_port_factory_notifier_builder_create(nb, &waiter->wake_notifier_storage,
+                                                              &waiter->wake_notifier) != IOX2_OK) {
+        waiter->wake_notifier = nullptr;
+        VLOG_E("Shm2Factory: Failed to create wake notifier for non-fd listener; using bounded wait fallback.");
+      }
+    }
+
+    {
+      std::lock_guard lock(blocking_mtx_);
+      blocking_waiters_[handle] = waiter;
+
+      waiter->thread = std::thread([waiter]() { Shm2Factory::blocking_wait_func(waiter.get()); });
+      Utils::set_thread_name("VShm2Wait", &waiter->thread);
+    }
+
+    return;
+  }
+
   std::unique_lock lock(sub_list_mtx_);
-  poll_map_[handle] = PollEntry{std::move(callback), guard};
+  auto& entry = poll_map_[handle];
+
+  entry.callback = std::move(callback);
+  entry.guard = guard;
 }
 
 void Shm2Factory::unregister_poll(void* handle) {
+  std::shared_ptr<BlockingWaiter> waiter;
+
+  {
+    std::lock_guard lock(blocking_mtx_);
+    auto it = blocking_waiters_.find(handle);
+
+    if (it != blocking_waiters_.end()) {
+      waiter = std::move(it->second);
+      blocking_waiters_.erase(it);
+    }
+  }
+
+  if (waiter) {
+    stop_blocking_waiter(waiter.get());
+  }
+
   iox2_waitset_guard_h guard_to_drop = nullptr;
 
   {
@@ -318,12 +397,84 @@ void Shm2Factory::unregister_poll(void* handle) {
 }
 
 void Shm2Factory::poll_thread_func() {
-  iox2_waitset_run_result_e result = iox2_waitset_run_result_e_STOP_REQUEST;
+  while (!poll_quit_.load(std::memory_order_acquire)) {
+    iox2_waitset_run_result_e result = iox2_waitset_run_result_e_STOP_REQUEST;
+    int ret = IOX2_OK;
 
-  int ret = iox2_waitset_wait_and_process(&waitset_, Shm2Factory::on_process, this, &result);
+    if (wakeup_guard_ != nullptr) {
+      ret = iox2_waitset_wait_and_process(&waitset_, Shm2Factory::on_process, this, &result);
+    } else {
+      ret = iox2_waitset_wait_and_process_once_with_timeout(&waitset_, Shm2Factory::on_process, this, 0,
+                                                            kShm2IdleWaitTimeoutNs, &result);
+    }
 
-  if VUNLIKELY (ret != IOX2_OK && !poll_quit_.load(std::memory_order_acquire)) {
-    VLOG_E("Shm2Factory: Failure in WaitSet::wait_and_process, ret=", ret, " result=", static_cast<int>(result), ".");
+    if VUNLIKELY (ret != IOX2_OK && ret != iox2_waitset_run_error_e_NO_ATTACHMENTS &&
+                  !poll_quit_.load(std::memory_order_acquire)) {
+      VLOG_E("Shm2Factory: Failure in WaitSet::wait_and_process, ret=", ret, " result=", static_cast<int>(result), ".");
+    }
+
+    if (poll_quit_.load(std::memory_order_acquire)) {
+      break;
+    }
+
+    if (ret == iox2_waitset_run_error_e_NO_ATTACHMENTS) {
+      std::this_thread::sleep_for(std::chrono::nanoseconds(kShm2IdleWaitTimeoutNs));
+    }
+  }
+}
+
+void Shm2Factory::blocking_wait_func(BlockingWaiter* waiter) {
+  const bool can_block = waiter->wake_notifier != nullptr;
+
+  static constexpr uint64_t kWaitSeconds = kShm2IdleWaitTimeoutNs / (1000U * 1000U * 1000U);
+  static constexpr uint32_t kWaitNanoseconds = kShm2IdleWaitTimeoutNs % (1000U * 1000U * 1000U);
+
+  while (!waiter->quit.load(std::memory_order_acquire)) {
+    bool has_received_event = false;
+    iox2_event_id_t event_id;
+    int ret = IOX2_OK;
+
+    if (can_block) {
+      ret = iox2_listener_blocking_wait_one(waiter->listener, &event_id, &has_received_event);
+    } else {
+      ret = iox2_listener_timed_wait_one(waiter->listener, &event_id, &has_received_event, kWaitSeconds,
+                                         kWaitNanoseconds);
+    }
+
+    if (waiter->quit.load(std::memory_order_acquire)) {
+      break;
+    }
+
+    if VUNLIKELY (ret != IOX2_OK) {
+      VLOG_E("Shm2Factory: Failed to wait on non-fd listener, error: ", ret, ".");
+      std::this_thread::sleep_for(std::chrono::nanoseconds(kShm2IdleWaitTimeoutNs));
+      continue;
+    }
+
+    if (has_received_event || waiter->poll_without_event) {
+      waiter->callback();
+    }
+  }
+}
+
+void Shm2Factory::stop_blocking_waiter(BlockingWaiter* waiter) {
+  waiter->quit.store(true, std::memory_order_release);
+
+  if (waiter->wake_notifier) {
+    iox2_notifier_notify(&waiter->wake_notifier, nullptr);
+  }
+
+  if (waiter->thread.joinable()) {
+    if (waiter->thread.get_id() == std::this_thread::get_id()) {
+      waiter->thread.detach();
+    } else {
+      waiter->thread.join();
+    }
+  }
+
+  if (waiter->wake_notifier) {
+    iox2_notifier_drop(waiter->wake_notifier);
+    waiter->wake_notifier = nullptr;
   }
 }
 
@@ -336,6 +487,18 @@ iox2_callback_progression_e Shm2Factory::on_process(iox2_waitset_attachment_id_h
   }
 
   if (factory.wakeup_guard_ && iox2_waitset_attachment_id_has_event_from(&attachment_id, &factory.wakeup_guard_)) {
+    bool has_received_event = false;
+    iox2_event_id_t event_id;
+
+    do {
+      int drain_ret = iox2_listener_try_wait_one(&factory.wakeup_listener_, &event_id, &has_received_event);
+
+      if VUNLIKELY (drain_ret != IOX2_OK) {
+        VLOG_E("Shm2Factory: Failed to drain wakeup listener, error: ", drain_ret, ".");
+        break;
+      }
+    } while (has_received_event);
+
     iox2_waitset_attachment_id_drop(attachment_id);
     return iox2_callback_progression_e_STOP;
   }
@@ -474,14 +637,24 @@ Shm2Server::Shm2Server(const ShmID2& id) {
     return;
   }
 
+  iox2_listener_h_ref listener_poll = nullptr;
+
+#if VLINK_SHM2_NO_FD_LISTENER
+  listener_poll = &ctx->listener;
+#else
   iox2_file_descriptor_ptr fd = iox2_listener_get_file_descriptor(&ctx->listener);
 
-  int ret = iox2_waitset_attach_notification(factory.get_waitset(), fd, &guard_storage_, &guard_);
+  if (fd != nullptr) {
+    int ret = iox2_waitset_attach_notification(factory.get_waitset(), fd, &guard_storage_, &guard_);
 
-  if VUNLIKELY (ret != IOX2_OK) {
-    VLOG_F("Shm2Factory: Failed to attach server req-listener fd to waitset, error: ", ret, ".");
-    return;
+    if VUNLIKELY (ret != IOX2_OK) {
+      VLOG_F("Shm2Factory: Failed to attach server req-listener fd to waitset, error: ", ret, ".");
+      return;
+    }
+  } else {
+    listener_poll = &ctx->listener;
   }
+#endif
 
   factory.register_poll(
       this,
@@ -533,7 +706,7 @@ Shm2Server::Shm2Server(const ShmID2& id) {
           process_message();
         }
       },
-      guard_);
+      guard_, listener_poll, false, &ctx->pf_handle);
 }
 
 Shm2Server::~Shm2Server() {
@@ -783,10 +956,10 @@ bool Shm2Server::reply(uint64_t channel, const Bytes& resp_data) {
       loan_map_.erase(it);
     }
 
-    seq_.fetch_add(1, std::memory_order_relaxed);
+    const uint64_t seq = seq_.fetch_add(1, std::memory_order_relaxed) + 1;
 
     auto* buf_base = const_cast<uint8_t*>(resp_data.data()) - Shm2Factory::get_loaned_offset();
-    Shm2Factory::write_header(buf_base, channel, seq_.load(std::memory_order_relaxed));
+    Shm2Factory::write_header(buf_base, channel, seq);
 
     auto ret = iox2_response_mut_send(entry.handle);
 
@@ -795,8 +968,6 @@ bool Shm2Server::reply(uint64_t channel, const Bytes& resp_data) {
 
     if VUNLIKELY (ret != IOX2_OK) {
       VLOG_E("Shm2Factory: Failed to send loaned server response, error: ", ret, ".");
-
-      iox2_response_mut_drop(entry.handle);
       return false;
     }
 
@@ -819,14 +990,14 @@ bool Shm2Server::reply(uint64_t channel, const Bytes& resp_data) {
     return false;
   }
 
-  seq_.fetch_add(1, std::memory_order_relaxed);
+  const uint64_t seq = seq_.fetch_add(1, std::memory_order_relaxed) + 1;
 
   void* write_ptr = nullptr;
   size_t write_elems = 0;
   iox2_response_mut_payload_mut(&resp_handle, &write_ptr, &write_elems);
 
   auto* write_buf = static_cast<uint8_t*>(write_ptr);
-  Shm2Factory::write_data(write_buf, channel, seq_.load(std::memory_order_relaxed), resp_data);
+  Shm2Factory::write_data(write_buf, channel, seq, resp_data);
 
   auto ret = iox2_response_mut_send(resp_handle);
 
@@ -835,7 +1006,6 @@ bool Shm2Server::reply(uint64_t channel, const Bytes& resp_data) {
 
   if VUNLIKELY (ret != IOX2_OK) {
     VLOG_E("Shm2Factory: Failed to send server response, error: ", ret, ".");
-    iox2_response_mut_drop(resp_handle);
     return false;
   }
 
@@ -963,14 +1133,24 @@ Shm2Client::Shm2Client(const ShmID2& id) {
     return;
   }
 
+  iox2_listener_h_ref listener_poll = nullptr;
+
+#if VLINK_SHM2_NO_FD_LISTENER
+  listener_poll = &listener_;
+#else
   iox2_file_descriptor_ptr fd = iox2_listener_get_file_descriptor(&listener_);
 
-  int ret = iox2_waitset_attach_notification(factory.get_waitset(), fd, &guard_storage_, &guard_);
+  if (fd != nullptr) {
+    int ret = iox2_waitset_attach_notification(factory.get_waitset(), fd, &guard_storage_, &guard_);
 
-  if VUNLIKELY (ret != IOX2_OK) {
-    VLOG_F("Shm2Factory: Failed to attach client resp-listener fd to waitset, error: ", ret, ".");
-    return;
+    if VUNLIKELY (ret != IOX2_OK) {
+      VLOG_F("Shm2Factory: Failed to attach client resp-listener fd to waitset, error: ", ret, ".");
+      return;
+    }
+  } else {
+    listener_poll = &listener_;
   }
+#endif
 
   factory.register_poll(
       this,
@@ -1016,7 +1196,7 @@ Shm2Client::Shm2Client(const ShmID2& id) {
           process_message();
         }
       },
-      guard_);
+      guard_, listener_poll, false, &event_pf_handle_);
 
   req_notifier_fn_ = [req_ctx]() {
     if (req_ctx->notifier) {
@@ -1231,6 +1411,7 @@ bool Shm2Client::call(uint64_t channel, const Bytes& req_data, NodeImpl::MsgCall
   iox2_request_mut_t stack_storage{};
   iox2_request_mut_h req_handle{nullptr};
   uint8_t* write_buf{nullptr};
+  uint64_t seq{0};
 
   if (req_data.is_loaned()) {
     ClientLoanEntry entry;
@@ -1251,8 +1432,8 @@ bool Shm2Client::call(uint64_t channel, const Bytes& req_data, NodeImpl::MsgCall
     loaned_storage = std::move(entry.storage);
     req_handle = entry.handle;
     write_buf = const_cast<uint8_t*>(req_data.data()) - Shm2Factory::get_loaned_offset();
-    seq_.fetch_add(1, std::memory_order_relaxed);
-    Shm2Factory::write_header(write_buf, channel, seq_.load(std::memory_order_relaxed));
+    seq = seq_.fetch_add(1, std::memory_order_relaxed) + 1;
+    Shm2Factory::write_header(write_buf, channel, seq);
   } else {
     size_t total = req_data.size() + Shm2Factory::get_loaned_offset();
 
@@ -1261,20 +1442,20 @@ bool Shm2Client::call(uint64_t channel, const Bytes& req_data, NodeImpl::MsgCall
       return false;
     }
 
-    seq_.fetch_add(1, std::memory_order_relaxed);
+    seq = seq_.fetch_add(1, std::memory_order_relaxed) + 1;
 
     void* write_ptr = nullptr;
     size_t write_elems = 0;
     iox2_request_mut_payload_mut(&req_handle, &write_ptr, &write_elems);
 
     write_buf = static_cast<uint8_t*>(write_ptr);
-    Shm2Factory::write_data(write_buf, channel, seq_.load(std::memory_order_relaxed), req_data);
+    Shm2Factory::write_data(write_buf, channel, seq, req_data);
   }
 
   int ret = 0;
 
   if (callback) {
-    const auto response_seq = seq_.load(std::memory_order_relaxed);
+    const auto response_seq = seq;
     callbacks_[response_seq] = [cb = std::move(callback), channel](uint64_t target_channel, const Bytes& bytes) {
       if (channel != target_channel) {
         return;
@@ -1294,7 +1475,6 @@ bool Shm2Client::call(uint64_t channel, const Bytes& req_data, NodeImpl::MsgCall
     if VUNLIKELY (ret != IOX2_OK) {
       VLOG_E("Shm2Factory: Failed to send client request, error: ", ret, ".");
 
-      iox2_request_mut_drop(req_handle);
       callbacks_.erase(response_seq);
       pending_storage_map_.erase(response_seq);
       return false;
@@ -1308,7 +1488,6 @@ bool Shm2Client::call(uint64_t channel, const Bytes& req_data, NodeImpl::MsgCall
 
     if VUNLIKELY (ret != IOX2_OK) {
       VLOG_E("Shm2Factory: Failed to send client request, error: ", ret, ".");
-      iox2_request_mut_drop(req_handle);
       return false;
     }
 
@@ -1369,6 +1548,8 @@ Shm2Publisher::Shm2Publisher(const ShmID2& id) {
   depth_ = depth;
 
   const auto notify_every_env = Utils::get_env("VLINK_SHM2_NOTIFY_EVERY", "1");
+  const auto loan_min_env = Utils::get_env("VLINK_SHM2_LOAN_MIN", std::to_string(loan_send_threshold_));
+
   int parsed_notify_every = 1;
 
   if (!notify_every_env.empty()) {
@@ -1376,6 +1557,15 @@ Shm2Publisher::Shm2Publisher(const ShmID2& id) {
   }
 
   notify_every_ = parsed_notify_every > 0 ? static_cast<uint32_t>(parsed_notify_every) : 1U;
+
+  if (!loan_min_env.empty()) {
+    auto [ptr, error] =
+        std::from_chars(loan_min_env.data(), loan_min_env.data() + loan_min_env.size(), loan_send_threshold_);
+
+    if VUNLIKELY (error != std::errc() || ptr != loan_min_env.data() + loan_min_env.size()) {
+      loan_send_threshold_ = 65536;
+    }
+  }
 
   service_name_ = Shm2Factory::make_service_name(address, "event", domain);
 
@@ -1395,6 +1585,7 @@ Shm2Publisher::Shm2Publisher(const ShmID2& id) {
   iox2_service_builder_pub_sub_h ps_builder = iox2_service_builder_pub_sub(sb_handle);
 
   static const char kTypeName[] = "u8";
+
   iox2_service_builder_pub_sub_set_payload_type_details(&ps_builder, iox2_type_variant_e_DYNAMIC, kTypeName,
                                                         sizeof(kTypeName) - 1, sizeof(uint8_t), alignof(uint8_t));
   iox2_service_builder_pub_sub_set_max_publishers(&ps_builder, 512);
@@ -1514,7 +1705,7 @@ bool Shm2Publisher::has_subscribers() const {
 Bytes Shm2Publisher::loan(uint64_t channel, int64_t size) {
   (void)channel;
 
-  if VUNLIKELY (size <= 0 || !publisher_) {
+  if VUNLIKELY (size <= 0) {
     return Bytes();
   }
 
@@ -1523,16 +1714,34 @@ Bytes Shm2Publisher::loan(uint64_t channel, int64_t size) {
   auto storage = std::make_unique<iox2_sample_mut_t>();
   iox2_sample_mut_h sample_handle{nullptr};
 
-  if VUNLIKELY (iox2_publisher_loan_slice_uninit(&publisher_, storage.get(), &sample_handle, total) != IOX2_OK) {
-    VLOG_E("Shm2Factory: Failed to loan publisher buffer, size: ", total, ".");
+  void* write_ptr = nullptr;
+  size_t write_elems = 0;
+
+  {
+    std::unique_lock connection_lock(connection_mtx_, std::defer_lock);
+
+    if VUNLIKELY (history_ > 0) {
+      connection_lock.lock();
+    }
+
+    if VUNLIKELY (!publisher_ ||
+                  iox2_publisher_loan_slice_uninit(&publisher_, storage.get(), &sample_handle, total) != IOX2_OK) {
+      VLOG_E("Shm2Factory: Failed to loan publisher buffer, size: ", total, ".");
+      return Bytes();
+    }
+
+    iox2_sample_mut_payload_mut(&sample_handle, &write_ptr, &write_elems);
+  }
+
+  auto* write_buf = static_cast<uint8_t*>(write_ptr);
+
+  if VUNLIKELY (write_buf == nullptr || write_elems < total) {
+    VLOG_E("Shm2Factory: Invalid loaned publisher payload, size: ", write_elems, ", expected: ", total, ".");
+
+    iox2_sample_mut_drop(sample_handle);
     return Bytes();
   }
 
-  void* write_ptr = nullptr;
-  size_t write_elems = 0;
-  iox2_sample_mut_payload_mut(&sample_handle, &write_ptr, &write_elems);
-
-  auto* write_buf = static_cast<uint8_t*>(write_ptr);
   const uint8_t* user_ptr = write_buf + Shm2Factory::get_loaned_offset();
 
   {
@@ -1566,6 +1775,21 @@ bool Shm2Publisher::release(const Bytes& bytes) {
   return true;
 }
 
+void Shm2Publisher::notify_and_wait(size_t recipients) {
+  if (notifier_ && recipients > 0) {
+    auto notify_count = notify_counter_.fetch_add(1, std::memory_order_relaxed) + 1;
+
+    if (notify_count >= notify_every_) {
+      notify_counter_.store(0, std::memory_order_relaxed);
+      iox2_notifier_notify(&notifier_, nullptr);
+    }
+  }
+
+  if VUNLIKELY (wait_ > 0) {
+    sem_->acquire(recipients, wait_);
+  }
+}
+
 bool Shm2Publisher::publish(uint64_t channel, const Bytes& bytes) {
   if VUNLIKELY (!publisher_) {
     return false;
@@ -1573,8 +1797,6 @@ bool Shm2Publisher::publish(uint64_t channel, const Bytes& bytes) {
 
   if VUNLIKELY (wait_ > 0) {
     uint64_t sem_count = sem_->get_count();
-
-    VLOG_I("Shm2Factory: Wait sem_count: ", sem_count, ".");
 
     if (sem_count > 0) {
       sem_->acquire(sem_count, wait_);
@@ -1597,68 +1819,135 @@ bool Shm2Publisher::publish(uint64_t channel, const Bytes& bytes) {
       loan_map_.erase(it);
     }
 
-    seq_.fetch_add(1, std::memory_order_relaxed);
+    const uint64_t seq = seq_.fetch_add(1, std::memory_order_relaxed) + 1;
 
     auto* buf_base = const_cast<uint8_t*>(bytes.data()) - Shm2Factory::get_loaned_offset();
-    Shm2Factory::write_header(buf_base, channel, seq_.load(std::memory_order_relaxed));
+    Shm2Factory::write_header(buf_base, channel, seq);
 
     size_t recipients = 0;
-    auto ret = iox2_sample_mut_send(entry.handle, &recipients);
+    int ret = IOX2_OK;
+
+    {
+      std::unique_lock connection_lock(connection_mtx_, std::defer_lock);
+
+      if VUNLIKELY (history_ > 0) {
+        connection_lock.lock();
+      }
+
+      ret = iox2_sample_mut_send(entry.handle, &recipients);
+    }
 
     if VUNLIKELY (ret != IOX2_OK) {
       VLOG_E("Shm2Factory: Failed to publish loaned sample, error: ", ret, ".");
-
-      iox2_sample_mut_drop(entry.handle);
       return false;
     }
 
-    if (notifier_ && recipients > 0) {
-      auto notify_count = notify_counter_.fetch_add(1, std::memory_order_relaxed) + 1;
-      if (notify_count >= notify_every_) {
-        notify_counter_.store(0, std::memory_order_relaxed);
-        iox2_notifier_notify(&notifier_, nullptr);
-      }
-    }
-
-    if VUNLIKELY (wait_ > 0) {
-      sem_->acquire(recipients, wait_);
-    }
+    notify_and_wait(recipients);
 
     return true;
   }
 
   const size_t total = bytes.size() + Shm2Factory::get_loaned_offset();
 
-  thread_local std::vector<uint8_t> scratch;
+  if (bytes.size() < loan_send_threshold_) {
+    thread_local std::vector<uint8_t> scratch;
 
-  if (scratch.size() < total) {
-    scratch.resize(total);
+    if (scratch.size() < total) {
+      scratch.resize(total);
+    }
+
+    const uint64_t seq = seq_.fetch_add(1, std::memory_order_relaxed) + 1;
+    Shm2Factory::write_data(scratch.data(), channel, seq, bytes);
+
+    size_t recipients = 0;
+    int send_ret = IOX2_OK;
+
+    {
+      std::unique_lock connection_lock(connection_mtx_, std::defer_lock);
+
+      if VUNLIKELY (history_ > 0) {
+        connection_lock.lock();
+      }
+
+      send_ret = iox2_publisher_send_slice_copy(&publisher_, scratch.data(), sizeof(uint8_t), total, &recipients);
+    }
+
+    if VUNLIKELY (send_ret != IOX2_OK) {
+      VLOG_E("Shm2Factory: Failed to send_slice_copy, error: ", send_ret, ".");
+      return false;
+    }
+
+    notify_and_wait(recipients);
+
+    return true;
   }
 
-  seq_.fetch_add(1, std::memory_order_relaxed);
-  Shm2Factory::write_data(scratch.data(), channel, seq_.load(std::memory_order_relaxed), bytes);
+  iox2_sample_mut_t sample_storage{};
+  iox2_sample_mut_h sample_handle{nullptr};
 
-  size_t recipients = 0;
-  auto send_ret = iox2_publisher_send_slice_copy(&publisher_, scratch.data(), sizeof(uint8_t), total, &recipients);
+  {
+    std::unique_lock connection_lock(connection_mtx_, std::defer_lock);
 
-  if VUNLIKELY (send_ret != IOX2_OK) {
-    VLOG_E("Shm2Factory: Failed to send_slice_copy, error: ", send_ret, ".");
-    return false;
-  }
+    if VUNLIKELY (history_ > 0) {
+      connection_lock.lock();
+    }
 
-  if (notifier_ && recipients > 0) {
-    auto notify_count = notify_counter_.fetch_add(1, std::memory_order_relaxed) + 1;
-    if (notify_count >= notify_every_) {
-      notify_counter_.store(0, std::memory_order_relaxed);
-      iox2_notifier_notify(&notifier_, nullptr);
+    if VUNLIKELY (iox2_publisher_loan_slice_uninit(&publisher_, &sample_storage, &sample_handle, total) != IOX2_OK) {
+      VLOG_E("Shm2Factory: Failed to loan publisher buffer, size: ", total, ".");
+      return false;
     }
   }
 
-  if VUNLIKELY (wait_ > 0) {
-    sem_->acquire(recipients, wait_);
+  const uint64_t seq = seq_.fetch_add(1, std::memory_order_relaxed) + 1;
+
+  size_t recipients = 0;
+  void* write_ptr = nullptr;
+  size_t write_elems = 0;
+  iox2_sample_mut_payload_mut(&sample_handle, &write_ptr, &write_elems);
+
+  auto* write_buf = static_cast<uint8_t*>(write_ptr);
+
+  if VUNLIKELY (write_buf == nullptr || write_elems < total) {
+    VLOG_E("Shm2Factory: Invalid loaned publisher payload, size: ", write_elems, ", expected: ", total, ".");
+
+    iox2_sample_mut_drop(sample_handle);
+    return false;
   }
 
+  Shm2Factory::write_data(write_buf, channel, seq, bytes);
+
+  int send_ret = IOX2_OK;
+
+  {
+    std::unique_lock connection_lock(connection_mtx_, std::defer_lock);
+
+    if VUNLIKELY (history_ > 0) {
+      connection_lock.lock();
+    }
+
+    send_ret = iox2_sample_mut_send(sample_handle, &recipients);
+  }
+
+  if VUNLIKELY (send_ret != IOX2_OK) {
+    VLOG_E("Shm2Factory: Failed to publish sample, error: ", send_ret, ".");
+    return false;
+  }
+
+  notify_and_wait(recipients);
+
   return true;
+}
+
+void Shm2Publisher::update_connections() {
+  if (history_ <= 0) {
+    return;
+  }
+
+  std::lock_guard lock(connection_mtx_);
+
+  if VLIKELY (publisher_) {
+    iox2_publisher_update_connections(&publisher_);
+  }
 }
 
 void Shm2Publisher::enable_detect_timer() {
@@ -1699,7 +1988,7 @@ void Shm2Publisher::discovery_subscribers(bool has_subs) {
   last_has_subscribers_.store(has_subs, std::memory_order_relaxed);
 
   if (has_subs && history_ > 0) {
-    iox2_publisher_update_connections(&publisher_);
+    update_connections();
 
     if (notifier_) {
       iox2_notifier_notify(&notifier_, nullptr);
@@ -1971,27 +2260,41 @@ void Shm2Subscriber::subscribe() {
     return;
   }
 
+  iox2_listener_h_ref listener_poll = nullptr;
+
+#if VLINK_SHM2_NO_FD_LISTENER
+  listener_poll = &listener_;
+#else
   iox2_file_descriptor_ptr fd = iox2_listener_get_file_descriptor(&listener_);
 
-  int ret = iox2_waitset_attach_notification(factory.get_waitset(), fd, &guard_storage_, &guard_);
+  if (fd != nullptr) {
+    int ret = iox2_waitset_attach_notification(factory.get_waitset(), fd, &guard_storage_, &guard_);
 
-  if VUNLIKELY (ret != IOX2_OK) {
-    VLOG_F("Shm2Factory: Failed to attach subscriber listener fd to waitset, error: ", ret, ".");
-    if (listener_) {
-      iox2_listener_drop(listener_);
-      listener_ = nullptr;
+    if VUNLIKELY (ret != IOX2_OK) {
+      VLOG_F("Shm2Factory: Failed to attach subscriber listener fd to waitset, error: ", ret, ".");
+
+      if (listener_) {
+        iox2_listener_drop(listener_);
+        listener_ = nullptr;
+      }
+
+      if (event_pf_handle_) {
+        iox2_port_factory_event_drop(event_pf_handle_);
+        event_pf_handle_ = nullptr;
+      }
+
+      if (subscriber_) {
+        iox2_subscriber_drop(subscriber_);
+        subscriber_ = nullptr;
+      }
+
+      is_subscribed_.store(false, std::memory_order_relaxed);
+      return;
     }
-    if (event_pf_handle_) {
-      iox2_port_factory_event_drop(event_pf_handle_);
-      event_pf_handle_ = nullptr;
-    }
-    if (subscriber_) {
-      iox2_subscriber_drop(subscriber_);
-      subscriber_ = nullptr;
-    }
-    is_subscribed_.store(false, std::memory_order_relaxed);
-    return;
+  } else {
+    listener_poll = &listener_;
   }
+#endif
 
   factory.register_poll(
       this,
@@ -2007,6 +2310,12 @@ void Shm2Subscriber::subscribe() {
             break;
           }
         } while (has_received_event);
+
+        bool has_samples = false;
+
+        if (iox2_subscriber_has_samples(&subscriber_, &has_samples) != IOX2_OK || !has_samples) {
+          return;
+        }
 
         auto* impl = get_first_impl();
 
@@ -2037,7 +2346,7 @@ void Shm2Subscriber::subscribe() {
           process_message();
         }
       },
-      guard_);
+      guard_, listener_poll, listener_poll != nullptr, &event_pf_handle_);
 }
 
 void Shm2Subscriber::unsubscribe() {

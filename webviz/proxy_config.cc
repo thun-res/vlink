@@ -21,7 +21,7 @@
  * limitations under the License.
  */
 
-#include "proxy_config.h"
+#include "./proxy_config.h"
 
 #include <vlink/base/helpers.h>
 #include <vlink/base/utils.h>

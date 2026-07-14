@@ -27,6 +27,7 @@
 
 #ifdef VLINK_SUPPORT_SHM2
 
+#include <algorithm>
 #include <atomic>
 #include <future>
 #include <memory>
@@ -35,6 +36,45 @@
 #include <vector>
 
 #include "./modules/shm2_conf.h"
+
+#if defined(VLINK_TEST_SUPPORT_FLATBUFFERS)
+
+TEST_SUITE("shm2-flatbuilder") {
+  TEST_CASE("flatbuffers builder publishing does not exhaust publisher loans") {
+    static constexpr int32_t kDepth = 4;
+    Publisher<common_test::FlatMessageBuilder> pub(Shm2Conf("shm2/fbs/builder_loan1", "data", 0, kDepth, 0, 0, 1024));
+
+    for (int32_t i = 0; i < kDepth * 3; ++i) {
+      common_test::FlatMessageBuilder builder("shm2_flat_builder");
+      CHECK(pub.publish(builder, true));
+    }
+
+    auto check_loan_capacity = [&pub] {
+      std::vector<const uint8_t*> pointers;
+      std::vector<Bytes> loans;
+      pointers.reserve(kDepth);
+      loans.reserve(kDepth);
+
+      for (int32_t i = 0; i < kDepth; ++i) {
+        auto loan = pub.loan(32);
+        REQUIRE(loan.is_loaned());
+        REQUIRE_FALSE(loan.empty());
+        CHECK(std::find(pointers.begin(), pointers.end(), loan.data()) == pointers.end());
+        pointers.emplace_back(loan.data());
+        loans.emplace_back(std::move(loan));
+      }
+
+      for (const auto& loan : loans) {
+        CHECK(pub.return_loan(loan));
+      }
+    };
+
+    check_loan_capacity();
+    check_loan_capacity();
+  }
+}
+
+#endif
 
 TEST_SUITE("shm2-init") {
   TEST_CASE("conf defaults are set correctly") {
@@ -52,7 +92,7 @@ TEST_SUITE("shm2-init") {
     CHECK(conf.get_transport_type() == TransportType::kShm2);
   }
 
-  TEST_CASE("default memory size constant is 128") { CHECK(Shm2Conf::kDefaultMemSize == 128U); }
+  TEST_CASE("default memory size constant is 4 KiB") { CHECK(Shm2Conf::kDefaultMemSize == 4096U); }
 
   TEST_CASE("max memory size constant is 32 mib") { CHECK(Shm2Conf::kMaxMemSize == 1024UL * 1024UL * 32); }
 

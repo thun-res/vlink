@@ -89,7 +89,7 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
-        <mxCell id="step3" value="target_link_libraries(my_app vlink::vlink vlink::dds)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#e65100;shadow=0;arcSize=10;" vertex="1" parent="1">
+        <mxCell id="step3" value="target_link_libraries(my_app vlink::vlink vlink::dds vlink::ddsc vlink::shm)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#e65100;shadow=0;arcSize=10;" vertex="1" parent="1">
           <mxGeometry x="160" y="460" width="640" height="52" as="geometry" />
         </mxCell>
 
@@ -97,7 +97,7 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
-        <mxCell id="step4" value="Compile and link complete&#10;Transport modules auto-loaded at runtime by URL prefix" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=0;arcSize=10;" vertex="1" parent="1">
+        <mxCell id="step4" value="Compile and link complete&#10;Linked transports are direct; unlinked shared modules use a VLINK_URL_PLUGINS list or auto mode" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=0;arcSize=10;" vertex="1" parent="1">
           <mxGeometry x="100" y="544" width="760" height="60" as="geometry" />
         </mxCell>
 

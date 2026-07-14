@@ -383,10 +383,9 @@ TEST_SUITE("base-Utils") {
   TEST_CASE("get_interface_name_by_ipv4 resolves at least one discovered address") {
     const auto addrs = Utils::get_all_ipv4_address(false);
 
-    for (const auto& addr : addrs) {
-      const auto iface = Utils::get_interface_name_by_ipv4(addr);
+    if (!addrs.empty()) {
+      const auto iface = Utils::get_interface_name_by_ipv4(addrs.front());
       CHECK_FALSE(iface.empty());
-      return;
     }
   }
 
@@ -403,10 +402,9 @@ TEST_SUITE("base-Utils") {
   TEST_CASE("get_interface_name_by_ipv6 resolves discovered addresses when present") {
     const auto addrs = Utils::get_all_ipv6_address(false);
 
-    for (const auto& addr : addrs) {
-      const auto iface = Utils::get_interface_name_by_ipv6(addr);
+    if (!addrs.empty()) {
+      const auto iface = Utils::get_interface_name_by_ipv6(addrs.front());
       CHECK_FALSE(iface.empty());
-      return;
     }
   }
 

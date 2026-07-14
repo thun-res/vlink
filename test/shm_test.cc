@@ -1710,6 +1710,29 @@ TEST_SUITE("shm-custom") {
 #if defined(VLINK_TEST_SUPPORT_FLATBUFFERS)
 
 TEST_SUITE("shm-flatbuffers") {
+  TEST_CASE("flatbuffers builder publishing does not exhaust publisher loans") {
+    MESSAGE("[shm-flatbuffers] flatbuffers builder publishing does not exhaust publisher loans");
+
+    try {
+      if (!ensure_shm_ready()) {
+        return;
+      }
+
+      Publisher<common_test::FlatMessageBuilder> pub(ShmConf("shm/fbs/builder_loan1", "data"));
+
+      for (size_t i = 0; i < 64u; ++i) {
+        common_test::FlatMessageBuilder builder("shm_flat_builder");
+        CHECK(pub.publish(builder, true));
+      }
+
+      auto loan = pub.loan(32);
+      REQUIRE(loan.is_loaned());
+      CHECK(pub.return_loan(loan));
+    } catch (const std::exception&) {
+      return;
+    }
+  }
+
   TEST_CASE("flatbuffers message round trips through shm transport") {
     MESSAGE("[shm-flatbuffers] flatbuffers message round trips through shm transport");
 

@@ -40,7 +40,10 @@
 #include <QShowEvent>
 #include <QStandardPaths>
 #include <QTimeZone>
+#include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <limits>
 
 #include "./mainwindow.h"
 #include "./perceptiondialog.h"
@@ -153,6 +156,661 @@ static bool has_label_pixmap(const QLabel* label) {
 #else
   return label->pixmap() != nullptr;
 #endif
+}
+
+static bool needs_raw_size(FFmpegDecoder::InType type) {
+  switch (type) {
+    case FFmpegDecoder::InType::kYUV420:
+    case FFmpegDecoder::InType::kYUV422:
+    case FFmpegDecoder::InType::kYUV444:
+    case FFmpegDecoder::InType::kNV12:
+    case FFmpegDecoder::InType::kYUYV:
+    case FFmpegDecoder::InType::kYVYU:
+    case FFmpegDecoder::InType::kUYVY:
+    case FFmpegDecoder::InType::kNV21:
+    case FFmpegDecoder::InType::kBGR888:
+    case FFmpegDecoder::InType::kRGB888:
+      return true;
+    default:
+      return false;
+  }
+}
+
+static bool to_qbytes(const vlink::Bytes& bytes, QByteArray& output) {
+  if (!bytes.data() || bytes.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    return false;
+  }
+
+  output = QByteArray(reinterpret_cast<const char*>(bytes.data()), static_cast<int>(bytes.size()));
+  return true;
+}
+
+static bool get_camera_frame_image_size(const vlink::zerocopy::CameraFrame& frame, int& width, int& height) {
+  if (frame.width() == 0 || frame.height() == 0 ||
+      frame.width() > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
+      frame.height() > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
+    return false;
+  }
+
+  width = static_cast<int>(frame.width());
+  height = static_cast<int>(frame.height());
+
+  return true;
+}
+
+static bool get_ffmpeg_raw_payload_size(FFmpegDecoder::InType type, int width, int height, size_t& expected) {
+  expected = 0;
+
+  if (!needs_raw_size(type)) {
+    return true;
+  }
+
+  if VUNLIKELY (width <= 0 || height <= 0) {
+    return false;
+  }
+
+  const size_t width_size = static_cast<size_t>(width);
+  const size_t height_size = static_cast<size_t>(height);
+
+  if VUNLIKELY (width_size > std::numeric_limits<size_t>::max() / height_size) {
+    return false;
+  }
+
+  const size_t pixels = width_size * height_size;
+
+  size_t bytes_per_pixel = 0;
+
+  switch (type) {
+    case FFmpegDecoder::InType::kYUV420:
+    case FFmpegDecoder::InType::kNV12:
+    case FFmpegDecoder::InType::kNV21:
+      if VUNLIKELY ((width % 2) != 0 || (height % 2) != 0) {
+        return false;
+      }
+
+      if VUNLIKELY (pixels > std::numeric_limits<size_t>::max() - pixels / 2U) {
+        return false;
+      }
+
+      expected = pixels + pixels / 2U;
+      break;
+    case FFmpegDecoder::InType::kYUV422:
+    case FFmpegDecoder::InType::kYUYV:
+    case FFmpegDecoder::InType::kYVYU:
+    case FFmpegDecoder::InType::kUYVY:
+      if VUNLIKELY ((width % 2) != 0) {
+        return false;
+      }
+
+      bytes_per_pixel = 2U;
+      break;
+    case FFmpegDecoder::InType::kYUV444:
+    case FFmpegDecoder::InType::kBGR888:
+    case FFmpegDecoder::InType::kRGB888:
+      bytes_per_pixel = 3U;
+      break;
+    default:
+      return true;
+  }
+
+  if (bytes_per_pixel != 0U) {
+    if VUNLIKELY (pixels > std::numeric_limits<size_t>::max() / bytes_per_pixel) {
+      return false;
+    }
+
+    expected = pixels * bytes_per_pixel;
+  }
+
+  return true;
+}
+
+static bool has_camera_frame_payload(const vlink::zerocopy::CameraFrame& frame, size_t bytes_per_pixel) {
+  int width = 0;
+  int height = 0;
+
+  if VUNLIKELY (!get_camera_frame_image_size(frame, width, height) || bytes_per_pixel == 0) {
+    return false;
+  }
+
+  const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
+
+  if VUNLIKELY (pixels / static_cast<size_t>(width) != static_cast<size_t>(height)) {
+    return false;
+  }
+
+  if VUNLIKELY (pixels > std::numeric_limits<size_t>::max() / bytes_per_pixel) {
+    return false;
+  }
+
+  const size_t expected = pixels * bytes_per_pixel;
+
+  return frame.data() && frame.size() >= expected;
+}
+
+static bool has_ffmpeg_payload(const vlink::Bytes& bytes, FFmpegDecoder::InType type, int width, int height) {
+  if VUNLIKELY (!bytes.data() || bytes.size() == 0) {
+    return false;
+  }
+
+  size_t expected = 0;
+
+  if VUNLIKELY (!get_ffmpeg_raw_payload_size(type, width, height, expected)) {
+    return false;
+  }
+
+  return bytes.size() >= expected;
+}
+
+static bool has_ffmpeg_payload(const vlink::zerocopy::CameraFrame& frame, FFmpegDecoder::InType type) {
+  int width = 0;
+  int height = 0;
+
+  if (needs_raw_size(type) && !get_camera_frame_image_size(frame, width, height)) {
+    return false;
+  }
+
+  const vlink::Bytes bytes = vlink::Bytes::shallow_copy(frame.data(), frame.size());
+
+  return has_ffmpeg_payload(bytes, type, width, height);
+}
+
+static bool make_qimage_copy(const uint8_t* data, int width, int height, size_t bytes_per_line, QImage::Format format,
+                             QImage& image) {
+  if VUNLIKELY (!data || width <= 0 || height <= 0 || bytes_per_line == 0 ||
+                bytes_per_line > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    return false;
+  }
+
+  QImage view(data, width, height, static_cast<int>(bytes_per_line), format);
+
+  if VUNLIKELY (view.isNull()) {
+    return false;
+  }
+
+  image = view.copy();
+  return !image.isNull();
+}
+
+static uint8_t clamp_u8(int value) { return static_cast<uint8_t>(std::clamp(value, 0, 255)); }
+
+static void yuv_to_rgb(uint8_t y, uint8_t u, uint8_t v, uint8_t* rgb) {
+  const int c = static_cast<int>(y) - 16;
+  const int d = static_cast<int>(u) - 128;
+  const int e = static_cast<int>(v) - 128;
+
+  rgb[0] = clamp_u8((298 * c + 409 * e + 128) >> 8);
+  rgb[1] = clamp_u8((298 * c - 100 * d - 208 * e + 128) >> 8);
+  rgb[2] = clamp_u8((298 * c + 516 * d + 128) >> 8);
+}
+
+static bool make_packed_yuv422_qimage(const vlink::zerocopy::CameraFrame& frame, QImage& image) {
+  int width = 0;
+  int height = 0;
+
+  if VUNLIKELY (!get_camera_frame_image_size(frame, width, height) || (width % 2) != 0 ||
+                !has_camera_frame_payload(frame, 2)) {
+    return false;
+  }
+
+  image = QImage(width, height, QImage::Format_RGB888);
+
+  if VUNLIKELY (image.isNull()) {
+    return false;
+  }
+
+  const auto fmt = frame.format();
+  const uint8_t* src = frame.data();
+
+  for (int y = 0; y < height; ++y) {
+    auto* dst = image.scanLine(y);
+    const uint8_t* row = src + static_cast<size_t>(y) * static_cast<size_t>(width) * 2U;
+
+    for (int x = 0; x < width; x += 2) {
+      const uint8_t* p = row + static_cast<size_t>(x) * 2U;
+      uint8_t y0 = 0;
+      uint8_t y1 = 0;
+      uint8_t u = 0;
+      uint8_t v = 0;
+
+      if (fmt == vlink::zerocopy::CameraFrame::kFormatYuyv) {
+        y0 = p[0];
+        u = p[1];
+        y1 = p[2];
+        v = p[3];
+      } else if (fmt == vlink::zerocopy::CameraFrame::kFormatYvyu) {
+        y0 = p[0];
+        v = p[1];
+        y1 = p[2];
+        u = p[3];
+      } else if (fmt == vlink::zerocopy::CameraFrame::kFormatUyvy) {
+        u = p[0];
+        y0 = p[1];
+        v = p[2];
+        y1 = p[3];
+      } else {
+        v = p[0];
+        y0 = p[1];
+        u = p[2];
+        y1 = p[3];
+      }
+
+      yuv_to_rgb(y0, u, v, dst + static_cast<size_t>(x) * 3U);
+      if (x + 1 < width) {
+        yuv_to_rgb(y1, u, v, dst + static_cast<size_t>(x + 1) * 3U);
+      }
+    }
+  }
+
+  return true;
+}
+
+template <typename T>
+static bool make_normalized_gray_qimage(const vlink::zerocopy::CameraFrame& frame, QImage& image, int channels = 1) {
+  if VUNLIKELY (channels <= 0 || !has_camera_frame_payload(frame, sizeof(T) * static_cast<size_t>(channels))) {
+    return false;
+  }
+
+  int width = 0;
+  int height = 0;
+  get_camera_frame_image_size(frame, width, height);
+
+  const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
+  const size_t pixel_stride = static_cast<size_t>(channels) * sizeof(T);
+  const auto* data = frame.data();
+
+  double min_value = std::numeric_limits<double>::infinity();
+  double max_value = -std::numeric_limits<double>::infinity();
+
+  for (size_t i = 0; i < pixels; ++i) {
+    T sample{};
+
+    std::memcpy(&sample, data + i * pixel_stride, sizeof(T));
+
+    const double value = static_cast<double>(sample);
+
+    if VUNLIKELY (!std::isfinite(value)) {
+      continue;
+    }
+
+    min_value = std::min(min_value, value);
+    max_value = std::max(max_value, value);
+  }
+
+  if VUNLIKELY (!std::isfinite(min_value) || !std::isfinite(max_value)) {
+    return false;
+  }
+
+  image = QImage(width, height, QImage::Format_Grayscale8);
+
+  if VUNLIKELY (image.isNull()) {
+    return false;
+  }
+
+  const double range = max_value - min_value;
+
+  for (int y = 0; y < height; ++y) {
+    auto* dst = image.scanLine(y);
+
+    for (int x = 0; x < width; ++x) {
+      T sample{};
+      const size_t index = static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x);
+
+      std::memcpy(&sample, data + index * pixel_stride, sizeof(T));
+
+      const double value = static_cast<double>(sample);
+
+      if VUNLIKELY (!std::isfinite(value)) {
+        dst[x] = 0;
+      } else if (range <= 0.0) {
+        dst[x] = 128;
+      } else {
+        dst[x] = clamp_u8(static_cast<int>((value - min_value) * 255.0 / range));
+      }
+    }
+  }
+
+  return true;
+}
+
+static bool make_rgb_planar_qimage(const vlink::zerocopy::CameraFrame& frame, QImage& image) {
+  if VUNLIKELY (!has_camera_frame_payload(frame, 3)) {
+    return false;
+  }
+
+  int width = 0;
+  int height = 0;
+  get_camera_frame_image_size(frame, width, height);
+
+  const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
+  const auto* r = frame.data();
+  const auto* g = r + pixels;
+  const auto* b = g + pixels;
+
+  image = QImage(width, height, QImage::Format_RGB888);
+
+  if VUNLIKELY (image.isNull()) {
+    return false;
+  }
+
+  for (int y = 0; y < height; ++y) {
+    auto* dst = image.scanLine(y);
+    for (int x = 0; x < width; ++x) {
+      const size_t index = static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x);
+      dst[static_cast<size_t>(x) * 3U + 0U] = r[index];
+      dst[static_cast<size_t>(x) * 3U + 1U] = g[index];
+      dst[static_cast<size_t>(x) * 3U + 2U] = b[index];
+    }
+  }
+
+  return true;
+}
+
+static bool make_bgr888_qimage(const vlink::zerocopy::CameraFrame& frame, QImage& image) {
+  if VUNLIKELY (!has_camera_frame_payload(frame, 3)) {
+    return false;
+  }
+
+  int width = 0;
+  int height = 0;
+  get_camera_frame_image_size(frame, width, height);
+
+  image = QImage(width, height, QImage::Format_RGB888);
+
+  if VUNLIKELY (image.isNull()) {
+    return false;
+  }
+
+  const auto* src = frame.data();
+  for (int y = 0; y < height; ++y) {
+    auto* dst = image.scanLine(y);
+    for (int x = 0; x < width; ++x) {
+      const size_t index = (static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)) * 3U;
+      dst[static_cast<size_t>(x) * 3U + 0U] = src[index + 2U];
+      dst[static_cast<size_t>(x) * 3U + 1U] = src[index + 1U];
+      dst[static_cast<size_t>(x) * 3U + 2U] = src[index + 0U];
+    }
+  }
+
+  return true;
+}
+
+static bool make_bgra8888_qimage(const vlink::zerocopy::CameraFrame& frame, QImage& image) {
+  if VUNLIKELY (!has_camera_frame_payload(frame, 4)) {
+    return false;
+  }
+
+  int width = 0;
+  int height = 0;
+  get_camera_frame_image_size(frame, width, height);
+
+  image = QImage(width, height, QImage::Format_RGBA8888);
+
+  if VUNLIKELY (image.isNull()) {
+    return false;
+  }
+
+  const auto* src = frame.data();
+  for (int y = 0; y < height; ++y) {
+    auto* dst = image.scanLine(y);
+    for (int x = 0; x < width; ++x) {
+      const size_t index = (static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)) * 4U;
+      dst[static_cast<size_t>(x) * 4U + 0U] = src[index + 2U];
+      dst[static_cast<size_t>(x) * 4U + 1U] = src[index + 1U];
+      dst[static_cast<size_t>(x) * 4U + 2U] = src[index + 0U];
+      dst[static_cast<size_t>(x) * 4U + 3U] = src[index + 3U];
+    }
+  }
+
+  return true;
+}
+
+static int bayer_color(const vlink::zerocopy::CameraFrame::Format format, int x, int y) {
+  const bool odd_x = (x & 1) != 0;
+  const bool odd_y = (y & 1) != 0;
+
+  switch (format) {
+    case vlink::zerocopy::CameraFrame::kFormatBayerRggb8:
+    case vlink::zerocopy::CameraFrame::kFormatBayerRggb16:
+      return !odd_y ? (!odd_x ? 0 : 1) : (!odd_x ? 1 : 2);
+    case vlink::zerocopy::CameraFrame::kFormatBayerBggr8:
+    case vlink::zerocopy::CameraFrame::kFormatBayerBggr16:
+      return !odd_y ? (!odd_x ? 2 : 1) : (!odd_x ? 1 : 0);
+    case vlink::zerocopy::CameraFrame::kFormatBayerGbrg8:
+    case vlink::zerocopy::CameraFrame::kFormatBayerGbrg16:
+      return !odd_y ? (!odd_x ? 1 : 2) : (!odd_x ? 0 : 1);
+    default:
+      return !odd_y ? (!odd_x ? 1 : 0) : (!odd_x ? 2 : 1);
+  }
+}
+
+static uint8_t bayer_sample(const uint8_t* data, size_t index, bool is_16bit) {
+  if (!is_16bit) {
+    return data[index];
+  }
+
+  uint16_t value = 0;
+  std::memcpy(&value, data + index * sizeof(uint16_t), sizeof(uint16_t));
+  return static_cast<uint8_t>(value >> 8U);
+}
+
+static bool make_bayer_qimage(const vlink::zerocopy::CameraFrame& frame, QImage& image) {
+  const bool is_16bit = frame.format() == vlink::zerocopy::CameraFrame::kFormatBayerRggb16 ||
+                        frame.format() == vlink::zerocopy::CameraFrame::kFormatBayerBggr16 ||
+                        frame.format() == vlink::zerocopy::CameraFrame::kFormatBayerGbrg16 ||
+                        frame.format() == vlink::zerocopy::CameraFrame::kFormatBayerGrbg16;
+
+  if VUNLIKELY (!has_camera_frame_payload(frame, is_16bit ? sizeof(uint16_t) : sizeof(uint8_t))) {
+    return false;
+  }
+
+  int width = 0;
+  int height = 0;
+  get_camera_frame_image_size(frame, width, height);
+
+  image = QImage(width, height, QImage::Format_RGB888);
+
+  if VUNLIKELY (image.isNull()) {
+    return false;
+  }
+
+  const auto* data = frame.data();
+  for (int y = 0; y < height; ++y) {
+    auto* dst = image.scanLine(y);
+    for (int x = 0; x < width; ++x) {
+      int sum[3] = {0, 0, 0};
+      int count[3] = {0, 0, 0};
+
+      for (int dy = -1; dy <= 1; ++dy) {
+        const int yy = y + dy;
+        if (yy < 0 || yy >= height) {
+          continue;
+        }
+
+        for (int dx = -1; dx <= 1; ++dx) {
+          const int xx = x + dx;
+          if (xx < 0 || xx >= width) {
+            continue;
+          }
+
+          const int color = bayer_color(frame.format(), xx, yy);
+          const size_t index = static_cast<size_t>(yy) * static_cast<size_t>(width) + static_cast<size_t>(xx);
+          sum[color] += bayer_sample(data, index, is_16bit);
+          ++count[color];
+        }
+      }
+
+      const size_t out = static_cast<size_t>(x) * 3U;
+      dst[out + 0U] = count[0] > 0 ? static_cast<uint8_t>(sum[0] / count[0]) : 0;
+      dst[out + 1U] = count[1] > 0 ? static_cast<uint8_t>(sum[1] / count[1]) : 0;
+      dst[out + 2U] = count[2] > 0 ? static_cast<uint8_t>(sum[2] / count[2]) : 0;
+    }
+  }
+
+  return true;
+}
+
+static bool make_camera_frame_qimage(const vlink::zerocopy::CameraFrame& frame, QImage& image) {
+  int width = 0;
+  int height = 0;
+
+  if VUNLIKELY (!get_camera_frame_image_size(frame, width, height)) {
+    return false;
+  }
+
+  switch (frame.format()) {
+    case vlink::zerocopy::CameraFrame::kFormatRgb888Packed:
+      return has_camera_frame_payload(frame, 3) &&
+             make_qimage_copy(frame.data(), width, height, static_cast<size_t>(width) * 3U, QImage::Format_RGB888,
+                              image);
+    case vlink::zerocopy::CameraFrame::kFormatBgr888Packed:
+      return make_bgr888_qimage(frame, image);
+    case vlink::zerocopy::CameraFrame::kFormatRgb888Planar:
+      return make_rgb_planar_qimage(frame, image);
+    case vlink::zerocopy::CameraFrame::kFormatRgba8888Packed:
+      return has_camera_frame_payload(frame, 4) &&
+             make_qimage_copy(frame.data(), width, height, static_cast<size_t>(width) * 4U, QImage::Format_RGBA8888,
+                              image);
+    case vlink::zerocopy::CameraFrame::kFormatBgra8888Packed:
+      return make_bgra8888_qimage(frame, image);
+    case vlink::zerocopy::CameraFrame::kFormatMono8:
+    case vlink::zerocopy::CameraFrame::kFormatUint8C1:
+      return has_camera_frame_payload(frame, 1) &&
+             make_qimage_copy(frame.data(), width, height, static_cast<size_t>(width), QImage::Format_Grayscale8,
+                              image);
+    case vlink::zerocopy::CameraFrame::kFormatUint8C2:
+      return make_normalized_gray_qimage<uint8_t>(frame, image, 2);
+    case vlink::zerocopy::CameraFrame::kFormatUint8C3:
+      return make_normalized_gray_qimage<uint8_t>(frame, image, 3);
+    case vlink::zerocopy::CameraFrame::kFormatUint8C4:
+      return make_normalized_gray_qimage<uint8_t>(frame, image, 4);
+    case vlink::zerocopy::CameraFrame::kFormatMono16:
+    case vlink::zerocopy::CameraFrame::kFormatUint16C1:
+      return make_normalized_gray_qimage<uint16_t>(frame, image);
+    case vlink::zerocopy::CameraFrame::kFormatUint16C2:
+      return make_normalized_gray_qimage<uint16_t>(frame, image, 2);
+    case vlink::zerocopy::CameraFrame::kFormatUint16C3:
+      return make_normalized_gray_qimage<uint16_t>(frame, image, 3);
+    case vlink::zerocopy::CameraFrame::kFormatUint16C4:
+      return make_normalized_gray_qimage<uint16_t>(frame, image, 4);
+    case vlink::zerocopy::CameraFrame::kFormatInt8C1:
+      return make_normalized_gray_qimage<int8_t>(frame, image);
+    case vlink::zerocopy::CameraFrame::kFormatInt8C2:
+      return make_normalized_gray_qimage<int8_t>(frame, image, 2);
+    case vlink::zerocopy::CameraFrame::kFormatInt8C3:
+      return make_normalized_gray_qimage<int8_t>(frame, image, 3);
+    case vlink::zerocopy::CameraFrame::kFormatInt8C4:
+      return make_normalized_gray_qimage<int8_t>(frame, image, 4);
+    case vlink::zerocopy::CameraFrame::kFormatInt16C1:
+      return make_normalized_gray_qimage<int16_t>(frame, image);
+    case vlink::zerocopy::CameraFrame::kFormatInt16C2:
+      return make_normalized_gray_qimage<int16_t>(frame, image, 2);
+    case vlink::zerocopy::CameraFrame::kFormatInt16C3:
+      return make_normalized_gray_qimage<int16_t>(frame, image, 3);
+    case vlink::zerocopy::CameraFrame::kFormatInt16C4:
+      return make_normalized_gray_qimage<int16_t>(frame, image, 4);
+    case vlink::zerocopy::CameraFrame::kFormatInt32C1:
+      return make_normalized_gray_qimage<int32_t>(frame, image);
+    case vlink::zerocopy::CameraFrame::kFormatInt32C2:
+      return make_normalized_gray_qimage<int32_t>(frame, image, 2);
+    case vlink::zerocopy::CameraFrame::kFormatInt32C3:
+      return make_normalized_gray_qimage<int32_t>(frame, image, 3);
+    case vlink::zerocopy::CameraFrame::kFormatInt32C4:
+      return make_normalized_gray_qimage<int32_t>(frame, image, 4);
+    case vlink::zerocopy::CameraFrame::kFormatFloat32C1:
+      return make_normalized_gray_qimage<float>(frame, image);
+    case vlink::zerocopy::CameraFrame::kFormatFloat32C2:
+      return make_normalized_gray_qimage<float>(frame, image, 2);
+    case vlink::zerocopy::CameraFrame::kFormatFloat32C3:
+      return make_normalized_gray_qimage<float>(frame, image, 3);
+    case vlink::zerocopy::CameraFrame::kFormatFloat32C4:
+      return make_normalized_gray_qimage<float>(frame, image, 4);
+    case vlink::zerocopy::CameraFrame::kFormatFloat64C1:
+      return make_normalized_gray_qimage<double>(frame, image);
+    case vlink::zerocopy::CameraFrame::kFormatFloat64C2:
+      return make_normalized_gray_qimage<double>(frame, image, 2);
+    case vlink::zerocopy::CameraFrame::kFormatFloat64C3:
+      return make_normalized_gray_qimage<double>(frame, image, 3);
+    case vlink::zerocopy::CameraFrame::kFormatFloat64C4:
+      return make_normalized_gray_qimage<double>(frame, image, 4);
+    case vlink::zerocopy::CameraFrame::kFormatYuyv:
+    case vlink::zerocopy::CameraFrame::kFormatYvyu:
+    case vlink::zerocopy::CameraFrame::kFormatUyvy:
+    case vlink::zerocopy::CameraFrame::kFormatVyuy:
+      return make_packed_yuv422_qimage(frame, image);
+    case vlink::zerocopy::CameraFrame::kFormatBayerRggb8:
+    case vlink::zerocopy::CameraFrame::kFormatBayerBggr8:
+    case vlink::zerocopy::CameraFrame::kFormatBayerGbrg8:
+    case vlink::zerocopy::CameraFrame::kFormatBayerGrbg8:
+    case vlink::zerocopy::CameraFrame::kFormatBayerRggb16:
+    case vlink::zerocopy::CameraFrame::kFormatBayerBggr16:
+    case vlink::zerocopy::CameraFrame::kFormatBayerGbrg16:
+    case vlink::zerocopy::CameraFrame::kFormatBayerGrbg16:
+      return make_bayer_qimage(frame, image);
+    default:
+      return false;
+  }
+}
+
+static bool make_encoded_camera_frame_qimage(const vlink::zerocopy::CameraFrame& frame, QImage& image) {
+  if VUNLIKELY (!frame.data() || frame.size() == 0 ||
+                frame.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    return false;
+  }
+
+  const char* format = nullptr;
+  switch (frame.format()) {
+    case vlink::zerocopy::CameraFrame::kFormatJpeg:
+    case vlink::zerocopy::CameraFrame::kFormatMjpeg:
+      format = "JPG";
+      break;
+    case vlink::zerocopy::CameraFrame::kFormatPng:
+      format = "PNG";
+      break;
+    case vlink::zerocopy::CameraFrame::kFormatWebp:
+      format = "WEBP";
+      break;
+    default:
+      return false;
+  }
+
+  image = QImage::fromData(frame.data(), static_cast<int>(frame.size()), format);
+  if (image.isNull()) {
+    image = QImage::fromData(frame.data(), static_cast<int>(frame.size()));
+  }
+
+  return !image.isNull();
+}
+
+static FFmpegDecoder::InType camera_frame_decoder_type(vlink::zerocopy::CameraFrame::Format format) {
+  switch (format) {
+    case vlink::zerocopy::CameraFrame::kFormatJpeg:
+    case vlink::zerocopy::CameraFrame::kFormatMjpeg:
+      return FFmpegDecoder::InType::kJPG;
+    case vlink::zerocopy::CameraFrame::kFormatH264:
+      return FFmpegDecoder::InType::kH264;
+    case vlink::zerocopy::CameraFrame::kFormatH265:
+      return FFmpegDecoder::InType::kH265;
+    case vlink::zerocopy::CameraFrame::kFormatAv1:
+      return FFmpegDecoder::InType::kAV1;
+    case vlink::zerocopy::CameraFrame::kFormatH266:
+      return FFmpegDecoder::InType::kH266;
+    case vlink::zerocopy::CameraFrame::kFormatPng:
+      return FFmpegDecoder::InType::kPNG;
+    case vlink::zerocopy::CameraFrame::kFormatWebp:
+      return FFmpegDecoder::InType::kWEBP;
+    case vlink::zerocopy::CameraFrame::kFormatYuv420:
+      return FFmpegDecoder::InType::kYUV420;
+    case vlink::zerocopy::CameraFrame::kFormatYuv422:
+      return FFmpegDecoder::InType::kYUV422;
+    case vlink::zerocopy::CameraFrame::kFormatYuv444:
+      return FFmpegDecoder::InType::kYUV444;
+    case vlink::zerocopy::CameraFrame::kFormatNv12:
+      return FFmpegDecoder::InType::kNV12;
+    case vlink::zerocopy::CameraFrame::kFormatNv21:
+      return FFmpegDecoder::InType::kNV21;
+    default:
+      return FFmpegDecoder::InType::kUnknown;
+  }
 }
 
 static bool resolve_flatbuffers_field_path(const FlatbuffersObjectView& root_view, const reflection::Schema& schema,
@@ -477,7 +1135,7 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
 
   camera_layout_ = new QGridLayout(ui->widget);
 
-  msg_list_.emplace_back(std::pair{nullptr, nullptr});
+  msg_list_.emplace_back(nullptr, nullptr);
 
   const auto& selected_items = window_->ui->treeWidget_url->selectedItems();
 
@@ -503,8 +1161,8 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
 
   ui->checkBox_cache->setEnabled(FFmpegDecoder::is_valid());
   ui->checkBox_hard->setEnabled(FFmpegDecoder::is_valid());
-  ui->label_quality->setEnabled(FFmpegDecoder::is_valid());
-  ui->comboBox_quality->setEnabled(FFmpegDecoder::is_valid());
+  ui->label_quality->setEnabled(true);
+  ui->comboBox_quality->setEnabled(true);
 
   fbs_field_list_.emplace_back();
 
@@ -671,7 +1329,7 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
     });
 
     label->register_size_callback([label, &t_detail](int w, int h) {
-      if (!t_detail.img.isNull()) {
+      if (t_detail.state == kLoadSucceed && !t_detail.img.isNull()) {
         QPixmap pixmap;
 
         if (!pixmap.convertFromImage(t_detail.img)) {
@@ -714,11 +1372,11 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
 #else
           ui->comboBox_proto->addItem(field->name().c_str());
 #endif
-          msg_list_.emplace_back(target_msg_, field);
+          msg_list_.emplace_back(nullptr, field);
         } else if (!field->is_repeated() && field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
-          auto* sub_msg = &target_msg_->GetReflection()->GetMessage(*target_msg_, field);
-          for (int j = 0; j < sub_msg->GetDescriptor()->field_count(); ++j) {
-            const auto* sub_field = sub_msg->GetDescriptor()->field(j);
+          const auto* sub_desc = field->message_type();
+          for (int j = 0; j < sub_desc->field_count(); ++j) {
+            const auto* sub_field = sub_desc->field(j);
 
             if (!sub_field->is_repeated() && sub_field->type() == google::protobuf::FieldDescriptor::TYPE_BYTES) {
 #if GOOGLE_PROTOBUF_VERSION >= 6030000
@@ -726,7 +1384,7 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
 #else
               ui->comboBox_proto->addItem(sub_field->name().c_str());
 #endif
-              msg_list_.emplace_back(sub_msg, sub_field);
+              msg_list_.emplace_back(field, sub_field);
             }
           }
         }
@@ -812,22 +1470,61 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
 
     const bool use_ext_settings = this->parent() != nullptr;
     QVariant camera_type_value;
+    QVariant camera_type_name_value;
+    QVariant yuv_width_value;
+    QVariant yuv_height_value;
     QByteArray geometry;
 
     settings.beginGroup(use_ext_settings ? "CameraDialog_ext" : "CameraDialog");
     camera_type_value = settings.value("camera_type");
+    camera_type_name_value = settings.value("camera_type_name");
+    yuv_width_value = settings.value("yuv_width");
+    yuv_height_value = settings.value("yuv_height");
     geometry = settings.value("geometry").toByteArray();
     settings.endGroup();
 
-    if (!camera_type_value.isValid() && use_ext_settings) {
+    if (use_ext_settings) {
       settings.beginGroup("CameraDialog");
-      camera_type_value = settings.value("camera_type");
+      if (!camera_type_value.isValid()) {
+        camera_type_value = settings.value("camera_type");
+      }
+      if (!camera_type_name_value.isValid()) {
+        camera_type_name_value = settings.value("camera_type_name");
+      }
+      if (!yuv_width_value.isValid()) {
+        yuv_width_value = settings.value("yuv_width");
+      }
+      if (!yuv_height_value.isValid()) {
+        yuv_height_value = settings.value("yuv_height");
+      }
       settings.endGroup();
     }
 
-    const int camera_type = camera_type_value.isValid() ? camera_type_value.toInt() : 0;
-    if (camera_type >= 0 && camera_type < ui->comboBox_type->count()) {
-      ui->comboBox_type->setCurrentIndex(camera_type);
+    bool camera_type_applied = false;
+
+    if (camera_type_name_value.isValid()) {
+      const int camera_type = ui->comboBox_type->findText(camera_type_name_value.toString());
+
+      if (camera_type >= 0) {
+        ui->comboBox_type->setCurrentIndex(camera_type);
+        camera_type_applied = true;
+      }
+    }
+
+    if (!camera_type_applied && camera_type_value.isValid()) {
+      const int camera_type = camera_type_value.toInt() + 1;
+
+      if (camera_type >= 0 && camera_type < ui->comboBox_type->count()) {
+        ui->comboBox_type->setCurrentIndex(camera_type);
+      }
+    }
+
+    if (yuv_width_value.isValid() && yuv_width_value.toInt() > 0) {
+      ui->spinBox_yuv_width->setValue(yuv_width_value.toInt());
+    }
+
+    if (yuv_height_value.isValid() && yuv_height_value.toInt() > 0) {
+      ui->spinBox_yuv_height->setValue(yuv_height_value.toInt());
     }
 
     if (!geometry.isEmpty()) {
@@ -853,7 +1550,7 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
             ui->label_frame2->setText(QString::number(real_frame_count, 'f', 2));
           }
 
-          if (FFmpegDecoder::is_valid()) {
+          if (FFmpegDecoder::is_valid() && detail.decoder) {
             detail.label->update_info(real_frame_count, detail.decoder->get_average_decode_cost());
           } else {
             detail.label->update_info(real_frame_count, -1);
@@ -884,7 +1581,7 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
             detail.state = kNoImage;
           }
 
-          if (FFmpegDecoder::is_valid()) {
+          if (FFmpegDecoder::is_valid() && detail.decoder) {
             detail.label->update_info(0, detail.decoder->get_average_decode_cost());
           } else {
             detail.label->update_info(0, -1);
@@ -906,6 +1603,10 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
 
               for (auto& [url, detail] : camera_detail_map_) {
                 detail.decoder.reset();
+                ++detail.decoder_seq;
+                detail.decoder_type = FFmpegDecoder::InType::kUnknown;
+                detail.decoder_width = 0;
+                detail.decoder_height = 0;
               }
             } else {
               ui->groupBox_config->setEnabled(true);
@@ -929,7 +1630,8 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
               settings.beginGroup("CameraDialog");
             }
 
-            settings.setValue("camera_type", index);
+            settings.setValue("camera_type", index - 1);
+            settings.setValue("camera_type_name", ui->comboBox_type->itemText(index));
             settings.endGroup();
             settings.sync();
 
@@ -978,6 +1680,8 @@ CameraDialog::CameraDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Camera
 
   timer_->start();
 
+  ui->groupBox_yuv->setEnabled(has_yuv_format());
+
   for (auto& [url, detail] : camera_detail_map_) {
     create_decoder(url, get_decoder_type());
   }
@@ -1004,6 +1708,8 @@ CameraDialog::~CameraDialog() {
     }
 
     settings.setValue("geometry", saveGeometry());
+    settings.setValue("yuv_width", ui->spinBox_yuv_width->value());
+    settings.setValue("yuv_height", ui->spinBox_yuv_height->value());
 
     settings.endGroup();
 
@@ -1029,6 +1735,7 @@ CameraDialog::~CameraDialog() {
 
   for (auto& [url, detail] : camera_detail_map_) {
     detail.decoder.reset();
+    ++detail.decoder_seq;
   }
 
   if (point3d_dialog_) {
@@ -1095,9 +1802,9 @@ void CameraDialog::update_ui_for_proto(const QVariant& variant, const QElapsedTi
     return;
   }
 
-  auto& [msg, field] = msg_list_.at(ui->comboBox_proto->currentIndex());
+  auto& [outer_field, field] = msg_list_.at(ui->comboBox_proto->currentIndex());
 
-  if (!msg || !field) {
+  if (!field) {
     if (detail.state != kNoImage) {
       if (!multi_mode_) {
         ui->label_transfer2->setText("---");
@@ -1132,6 +1839,12 @@ void CameraDialog::update_ui_for_proto(const QVariant& variant, const QElapsedTi
   ui->spinBox_offset->setEnabled(false);
   ui->label_offset->setEnabled(false);
 
+  const google::protobuf::Message* msg = target_msg_;
+
+  if (outer_field) {
+    msg = &target_msg_->GetReflection()->GetMessage(*target_msg_, outer_field);
+  }
+
   const std::string& raw_str = msg->GetReflection()->GetString(*msg, field);
 
   const auto& raw_data = vlink::Bytes::shallow_copy(reinterpret_cast<const uint8_t*>(raw_str.c_str()), raw_str.size());
@@ -1152,14 +1865,7 @@ void CameraDialog::update_ui_for_proto(const QVariant& variant, const QElapsedTi
     return;
   }
 
-  if (FFmpegDecoder::is_valid()) {
-    detail.decoder->post_data(detail.channel, 0, raw_data);
-  } else if (decoder_type == FFmpegDecoder::InType::kJPG) {
-    process_image(QString::fromStdString(proxy_data.url), 0, 0,
-                  QByteArray(reinterpret_cast<const char*>(raw_data.data()), raw_data.size()), false);
-  }
-
-  detail.total_rate += raw_data.size();
+  process_raw(proxy_data.url, detail, raw_data, decoder_type);
 }
 
 void CameraDialog::update_ui_for_flatbuffers(const QVariant& variant, const QElapsedTimer& timer) {
@@ -1254,14 +1960,7 @@ void CameraDialog::update_ui_for_flatbuffers(const QVariant& variant, const QEla
   ui->spinBox_offset->setEnabled(false);
   ui->label_offset->setEnabled(false);
 
-  if (FFmpegDecoder::is_valid()) {
-    detail.decoder->post_data(detail.channel, 0, raw_data);
-  } else if (decoder_type == FFmpegDecoder::InType::kJPG) {
-    process_image(QString::fromStdString(proxy_data.url), 0, 0,
-                  QByteArray(reinterpret_cast<const char*>(raw_data.data()), raw_data.size()), false);
-  }
-
-  detail.total_rate += raw_data.size();
+  process_raw(proxy_data.url, detail, raw_data, decoder_type);
 }
 
 void CameraDialog::update_ui_for_zero_copy_types(const QVariant& variant, const QElapsedTimer& timer) {
@@ -1274,7 +1973,6 @@ void CameraDialog::update_ui_for_zero_copy_types(const QVariant& variant, const 
   }
 
   const auto& proxy_data = variant.value<vlink::ProxyAPI::Data>();
-  auto decoder_type = get_decoder_type();
 
   auto& detail = camera_detail_map_[proxy_data.url];
 
@@ -1285,60 +1983,43 @@ void CameraDialog::update_ui_for_zero_copy_types(const QVariant& variant, const 
   vlink::zerocopy::CameraFrame camera_frame;
   camera_frame << proxy_data.raw;
 
-  if (!camera_frame.data() || camera_frame.size() == 0) {
-    if (detail.state != kParseFailed) {
-      if (!multi_mode_) {
-        ui->label_transfer2->setText("---");
-        ui->label_frame2->setText("---");
-        ui->label_size2->setText("---");
-      }
+  const auto decoder_type = get_decoder_type();
 
-      detail.label->set_error(true);
-      detail.label->setPixmap(QPixmap());
-      detail.label->setText(tr("Parse failed"));
-      detail.label->set_timestamp(0);
-      detail.state = kParseFailed;
-    }
+  if (decoder_type == FFmpegDecoder::InType::kUnknown || !camera_frame.data() || camera_frame.size() == 0) {
+    process_frame(proxy_data.url, detail, camera_frame);
     return;
   }
 
-  if (camera_frame.size() > proxy_data.raw.size() - sizeof(camera_frame.header)) {
-    if (detail.state != kParseFailed) {
-      if (!multi_mode_) {
-        ui->label_transfer2->setText("---");
-        ui->label_frame2->setText("---");
-        ui->label_size2->setText("---");
-      }
+  int camera_width = 0;
+  int camera_height = 0;
+  const bool has_valid_camera_size = get_camera_frame_image_size(camera_frame, camera_width, camera_height);
 
-      detail.label->set_error(true);
-      detail.label->setPixmap(QPixmap());
-      detail.label->setText(tr("Parse failed"));
-      detail.label->set_timestamp(0);
-      detail.state = kParseFailed;
-    }
-    return;
-  }
-
-  detail.label->set_timestamp(camera_frame.header.time_meas / 1000);
-
-  if (camera_detail_map_.size() == 1) {
-    ui->spinBox_yuv_width->setValue(camera_frame.width());
-    ui->spinBox_yuv_height->setValue(camera_frame.height());
+  if (camera_detail_map_.size() == 1 && has_valid_camera_size) {
+    ui->spinBox_yuv_width->setValue(camera_width);
+    ui->spinBox_yuv_height->setValue(camera_height);
   }
 
   ui->spinBox_offset->setEnabled(false);
   ui->label_offset->setEnabled(false);
 
-  vlink::Bytes raw_data = vlink::Bytes::shallow_copy(camera_frame.data(), camera_frame.size());
+  detail.label->set_timestamp(camera_frame.header.time_meas / 1000);
 
-  if (FFmpegDecoder::is_valid()) {
-    detail.decoder->post_data(detail.channel, 0, raw_data);
-  } else if (decoder_type == FFmpegDecoder::InType::kJPG) {
-    process_image(QString::fromStdString(proxy_data.url), 0, 0,
-                  QByteArray(reinterpret_cast<const char*>(raw_data.data()), raw_data.size()), false);
+  int width = has_valid_camera_size ? camera_width : 0;
+  int height = has_valid_camera_size ? camera_height : 0;
+
+  if ((width <= 0 || height <= 0) && ui->groupBox_yuv->isEnabled()) {
+    width = ui->spinBox_yuv_width->value();
+    height = ui->spinBox_yuv_height->value();
   }
 
-  detail.total_rate += raw_data.size();
+  if (!detail.decoder || detail.decoder_type != decoder_type || detail.decoder_width != width ||
+      detail.decoder_height != height) {
+    create_decoder(proxy_data.url, decoder_type, width, height);
+  }
+
+  vlink::Bytes raw_data = vlink::Bytes::shallow_copy(camera_frame.data(), camera_frame.size());
+
+  process_raw(proxy_data.url, detail, raw_data, decoder_type);
 }
 
 void CameraDialog::update_ui_for_unknown_types(const QVariant& variant, const QElapsedTimer& timer) {
@@ -1385,14 +2066,7 @@ void CameraDialog::update_ui_for_unknown_types(const QVariant& variant, const QE
     return;
   }
 
-  if (FFmpegDecoder::is_valid()) {
-    detail.decoder->post_data(detail.channel, 0, raw_data);
-  } else if (decoder_type == FFmpegDecoder::InType::kJPG) {
-    process_image(QString::fromStdString(proxy_data.url), 0, 0,
-                  QByteArray(reinterpret_cast<const char*>(raw_data.data()), raw_data.size()), false);
-  }
-
-  detail.total_rate += raw_data.size();
+  process_raw(proxy_data.url, detail, raw_data, decoder_type);
 }
 
 void CameraDialog::on_checkBox_display_clicked(bool checked) {
@@ -1412,6 +2086,10 @@ void CameraDialog::on_pushButton_yuv_clicked() {
   if ((target_msg_ || target_fbs_context_) && ui->comboBox_proto->currentIndex() == 0) {
     for (auto& [url, detail] : camera_detail_map_) {
       detail.decoder.reset();
+      ++detail.decoder_seq;
+      detail.decoder_type = FFmpegDecoder::InType::kUnknown;
+      detail.decoder_width = 0;
+      detail.decoder_height = 0;
     }
   } else {
     for (auto& [url, detail] : camera_detail_map_) {
@@ -1493,8 +2171,33 @@ void CameraDialog::on_pushButton_pause_clicked() {
   }
 }
 
-void CameraDialog::process_image(const QString& url, int width, int height, const QByteArray& img_data,
-                                 bool use_codec) {
+void CameraDialog::process_image(const QString& url, int width, int height, int bytes_per_line,
+                                 const QByteArray& img_data, int decoder_seq) {
+  auto it = camera_detail_map_.find(url.toStdString());
+  if (it == camera_detail_map_.end() || it->second.decoder_seq != decoder_seq) {
+    return;
+  }
+
+  if (img_data.isEmpty()) {
+    process_qimage(url, QImage(), true);
+    return;
+  }
+
+  QImage image;
+
+  const size_t expected = width > 0 && height > 0 && bytes_per_line > 0
+                              ? static_cast<size_t>(bytes_per_line) * static_cast<size_t>(height)
+                              : 0U;
+  if (expected > 0U && expected <= static_cast<size_t>(img_data.size())) {
+    image =
+        QImage(reinterpret_cast<const uint8_t*>(img_data.data()), width, height, bytes_per_line, QImage::Format_RGB888)
+            .copy();
+  }
+
+  process_qimage(url, image, true);
+}
+
+void CameraDialog::process_qimage(const QString& url, const QImage& image, bool scaled_by_decoder) {
   if (quit_flag_) {
     return;
   }
@@ -1505,36 +2208,16 @@ void CameraDialog::process_image(const QString& url, int width, int height, cons
     return;
   }
 
-  if (img_data.isEmpty()) {
-    if (detail.state != kLoadFailed) {
-      if (!multi_mode_) {
-        ui->label_transfer2->setText("---");
-        ui->label_frame2->setText("---");
-        ui->label_size2->setText("---");
-      }
-
-      detail.label->set_error(true);
-      detail.label->setPixmap(QPixmap());
-      detail.label->setText(tr("Load failed"));
-      detail.state = kLoadFailed;
-    }
-    return;
+  QImage display_image = image;
+  if (!scaled_by_decoder && display_quality_ > 0.0 && display_quality_ < 1.0 && !image.isNull()) {
+    const int width = std::max(1, static_cast<int>(std::lround(image.width() * display_quality_)));
+    const int height = std::max(1, static_cast<int>(std::lround(image.height() * display_quality_)));
+    display_image =
+        image.scaled(width, height, Qt::AspectRatioMode::IgnoreAspectRatio, Qt::TransformationMode::FastTransformation);
   }
 
-  bool ok = false;
   QPixmap pixmap;
-
-  if (use_codec) {
-    QImage image(reinterpret_cast<const uint8_t*>(img_data.data()), width, height, QImage::Format_RGB888);
-    ok = pixmap.convertFromImage(image);
-    detail.img = image.copy();
-  } else {
-    (void)width;
-    (void)height;
-    QImage image = QImage::fromData(img_data, "JPG");
-    ok = pixmap.convertFromImage(image);
-    detail.img = image.copy();
-  }
+  bool ok = !display_image.isNull() && pixmap.convertFromImage(display_image);
 
   if (!ok) {
     if (detail.state != kLoadFailed) {
@@ -1547,12 +2230,15 @@ void CameraDialog::process_image(const QString& url, int width, int height, cons
       detail.label->set_error(true);
       detail.label->setPixmap(QPixmap());
       detail.label->setText(tr("Load failed"));
+      detail.img = QImage();
       detail.state = kLoadFailed;
     }
     return;
   }
 
-  if (FFmpegDecoder::is_valid()) {
+  detail.img = image;
+
+  if (scaled_by_decoder) {
     if (!multi_mode_) {
       ui->label_size2->setText(QString::number(pixmap.width() / display_quality_) + "x" +
                                QString::number(pixmap.height() / display_quality_));
@@ -1561,10 +2247,10 @@ void CameraDialog::process_image(const QString& url, int width, int height, cons
     detail.label->set_camera_size(QSize(pixmap.width() / display_quality_, pixmap.height() / display_quality_));
   } else {
     if (!multi_mode_) {
-      ui->label_size2->setText(QString::number(pixmap.width()) + "x" + QString::number(pixmap.height()));
+      ui->label_size2->setText(QString::number(image.width()) + "x" + QString::number(image.height()));
     }
 
-    detail.label->set_camera_size(pixmap.size());
+    detail.label->set_camera_size(image.size());
   }
 
   if (detail.state != kLoadSucceed) {
@@ -1589,32 +2275,289 @@ void CameraDialog::process_image(const QString& url, int width, int height, cons
   detail.frame_count += 1;
 }
 
-void CameraDialog::process_error(void* label) {
-  auto* target_label = static_cast<CameraLabel*>(label);
-
-  if (!target_label) {
+void CameraDialog::process_error(const QString& url, int decoder_seq) {
+  auto it = camera_detail_map_.find(url.toStdString());
+  if (it == camera_detail_map_.end() || it->second.decoder_seq != decoder_seq || !it->second.label) {
     return;
   }
 
-  target_label->set_error(true);
-  target_label->setPixmap(QPixmap());
-  target_label->setText(tr("Load failed"));
+  auto& detail = it->second;
+  detail.label->set_error(true);
+  detail.label->setPixmap(QPixmap());
+  detail.label->setText(tr("Load failed"));
+  detail.img = QImage();
+  detail.state = kLoadFailed;
 }
 
-void CameraDialog::create_decoder(const std::string& url, FFmpegDecoder::InType type) {
-  if (type == FFmpegDecoder::InType::kUnknown) {
+void CameraDialog::process_frame(const std::string& url, Detail& detail, const vlink::zerocopy::CameraFrame& frame) {
+  auto clear_decoder = [&detail]() {
+    const bool had_decoder = detail.decoder || detail.decoder_type != FFmpegDecoder::InType::kUnknown ||
+                             detail.decoder_width != 0 || detail.decoder_height != 0;
+
+    detail.decoder.reset();
+    detail.decoder_type = FFmpegDecoder::InType::kUnknown;
+    detail.decoder_width = 0;
+    detail.decoder_height = 0;
+    detail.img = QImage();
+
+    if (had_decoder) {
+      ++detail.decoder_seq;
+    }
+  };
+
+  if VUNLIKELY (!frame.data() || frame.size() == 0) {
+    clear_decoder();
+
+    if (detail.state != kParseFailed) {
+      if (!multi_mode_) {
+        ui->label_transfer2->setText("---");
+        ui->label_frame2->setText("---");
+        ui->label_size2->setText("---");
+      }
+
+      detail.label->set_error(true);
+      detail.label->setPixmap(QPixmap());
+      detail.label->setText(tr("Parse failed"));
+      detail.label->set_timestamp(0);
+      detail.state = kParseFailed;
+    }
     return;
   }
 
-  int width = 0;
-  int height = 0;
+  detail.label->set_timestamp(frame.header.time_meas / 1000);
 
-  if (ui->groupBox_yuv->isEnabled()) {
+  int camera_width = 0;
+  int camera_height = 0;
+  const bool has_valid_camera_size = get_camera_frame_image_size(frame, camera_width, camera_height);
+
+  if (camera_detail_map_.size() == 1 && has_valid_camera_size) {
+    ui->spinBox_yuv_width->setValue(camera_width);
+    ui->spinBox_yuv_height->setValue(camera_height);
+  }
+
+  ui->spinBox_offset->setEnabled(false);
+  ui->label_offset->setEnabled(false);
+
+  vlink::Bytes raw_data = vlink::Bytes::shallow_copy(frame.data(), frame.size());
+
+  const auto decoder_type = camera_frame_decoder_type(frame.format());
+  const bool ffmpeg_can_decode = FFmpegDecoder::is_valid() && decoder_type != FFmpegDecoder::InType::kUnknown;
+
+  if (!ffmpeg_can_decode) {
+    QImage image;
+
+    if (make_camera_frame_qimage(frame, image) || make_encoded_camera_frame_qimage(frame, image)) {
+      clear_decoder();
+
+      process_qimage(QString::fromStdString(url), image, false);
+      detail.total_rate += raw_data.size();
+      return;
+    }
+  }
+
+  if (decoder_type == FFmpegDecoder::InType::kUnknown) {
+    clear_decoder();
+
+    if (detail.state != kNoSupport) {
+      if (!multi_mode_) {
+        ui->label_transfer2->setText("---");
+        ui->label_frame2->setText("---");
+        ui->label_size2->setText("---");
+      }
+
+      detail.label->set_error(true);
+      detail.label->setPixmap(QPixmap());
+      detail.label->setText(tr("Not support"));
+      detail.label->set_timestamp(0);
+      detail.state = kNoSupport;
+    }
+    detail.total_rate += raw_data.size();
+    return;
+  }
+
+  if (FFmpegDecoder::is_valid()) {
+    const int width = has_valid_camera_size ? camera_width : 0;
+    const int height = has_valid_camera_size ? camera_height : 0;
+
+    if ((needs_raw_size(decoder_type) && !has_valid_camera_size) || !has_ffmpeg_payload(frame, decoder_type)) {
+      clear_decoder();
+
+      if (detail.state != kParseFailed) {
+        if (!multi_mode_) {
+          ui->label_transfer2->setText("---");
+          ui->label_frame2->setText("---");
+          ui->label_size2->setText("---");
+        }
+
+        detail.label->set_error(true);
+        detail.label->setPixmap(QPixmap());
+        detail.label->setText(tr("Parse failed"));
+        detail.label->set_timestamp(0);
+        detail.state = kParseFailed;
+      }
+      detail.total_rate += raw_data.size();
+      return;
+    }
+
+    if (!detail.decoder || detail.decoder_type != decoder_type || detail.decoder_width != width ||
+        detail.decoder_height != height) {
+      create_decoder(url, decoder_type, width, height);
+    }
+
+    if (detail.decoder) {
+      detail.decoder->post_data(detail.channel, 0, raw_data);
+    }
+  } else {
+    clear_decoder();
+
+    if (detail.state != kNoSupport) {
+      if (!multi_mode_) {
+        ui->label_transfer2->setText("---");
+        ui->label_frame2->setText("---");
+        ui->label_size2->setText("---");
+      }
+
+      detail.label->set_error(true);
+      detail.label->setPixmap(QPixmap());
+      detail.label->setText(tr("Not support"));
+      detail.label->set_timestamp(0);
+      detail.state = kNoSupport;
+    }
+  }
+
+  detail.total_rate += raw_data.size();
+}
+
+void CameraDialog::process_raw(const std::string& url, Detail& detail, const vlink::Bytes& raw_data,
+                               FFmpegDecoder::InType decoder_type) {
+  auto set_parse_failed = [&detail, this]() {
+    if (detail.state == kParseFailed) {
+      return;
+    }
+
+    if (!multi_mode_) {
+      ui->label_transfer2->setText("---");
+      ui->label_frame2->setText("---");
+      ui->label_size2->setText("---");
+    }
+
+    detail.label->set_error(true);
+    detail.label->setPixmap(QPixmap());
+    detail.label->setText(tr("Parse failed"));
+    detail.state = kParseFailed;
+  };
+
+  if (decoder_type == FFmpegDecoder::InType::kUnknown) {
+    vlink::zerocopy::CameraFrame frame;
+
+    if (frame << raw_data) {
+      process_frame(url, detail, frame);
+      return;
+    }
+
+    QImage image;
+
+    if (raw_data.data() && raw_data.size() <= static_cast<size_t>(std::numeric_limits<int>::max())) {
+      image = QImage::fromData(static_cast<const uchar*>(raw_data.data()), static_cast<int>(raw_data.size()));
+    }
+
+    process_qimage(QString::fromStdString(url), image, false);
+    detail.total_rate += raw_data.size();
+    return;
+  }
+
+  if (FFmpegDecoder::is_valid() && detail.decoder) {
+    const int width = detail.decoder_width > 0 ? detail.decoder_width : ui->spinBox_yuv_width->value();
+    const int height = detail.decoder_height > 0 ? detail.decoder_height : ui->spinBox_yuv_height->value();
+
+    if (!has_ffmpeg_payload(raw_data, decoder_type, width, height)) {
+      set_parse_failed();
+      detail.total_rate += raw_data.size();
+      return;
+    }
+
+    detail.decoder->post_data(detail.channel, 0, raw_data);
+    detail.total_rate += raw_data.size();
+    return;
+  }
+
+  QImage image;
+
+  if (raw_data.data() && raw_data.size() <= static_cast<size_t>(std::numeric_limits<int>::max())) {
+    const auto* data = static_cast<const uchar*>(raw_data.data());
+    const int size = static_cast<int>(raw_data.size());
+
+    switch (decoder_type) {
+      case FFmpegDecoder::InType::kJPG:
+        image = QImage::fromData(data, size, "JPG");
+        break;
+      case FFmpegDecoder::InType::kPNG:
+        image = QImage::fromData(data, size, "PNG");
+        break;
+      case FFmpegDecoder::InType::kWEBP:
+        image = QImage::fromData(data, size, "WEBP");
+        break;
+      default:
+        break;
+    }
+  }
+
+  if (!image.isNull()) {
+    process_qimage(QString::fromStdString(url), image, false);
+    detail.total_rate += raw_data.size();
+    return;
+  }
+
+  set_parse_failed();
+  detail.total_rate += raw_data.size();
+}
+
+void CameraDialog::create_decoder(const std::string& url, FFmpegDecoder::InType type, int width, int height) {
+  auto& detail = camera_detail_map_[url];
+
+  if (type == FFmpegDecoder::InType::kUnknown) {
+    detail.decoder.reset();
+    ++detail.decoder_seq;
+    detail.decoder_type = FFmpegDecoder::InType::kUnknown;
+    detail.decoder_width = 0;
+    detail.decoder_height = 0;
+    return;
+  }
+
+  if ((width <= 0 || height <= 0) && ui->groupBox_yuv->isEnabled()) {
     width = ui->spinBox_yuv_width->value();
     height = ui->spinBox_yuv_height->value();
   }
 
-  auto& detail = camera_detail_map_[url];
+  if (needs_raw_size(type) && (width <= 0 || height <= 0)) {
+    detail.decoder.reset();
+    ++detail.decoder_seq;
+    detail.decoder_type = FFmpegDecoder::InType::kUnknown;
+    detail.decoder_width = 0;
+    detail.decoder_height = 0;
+    if (detail.label && detail.state != kParseFailed) {
+      if (!multi_mode_) {
+        ui->label_transfer2->setText("---");
+        ui->label_frame2->setText("---");
+        ui->label_size2->setText("---");
+      }
+
+      detail.label->set_error(true);
+      detail.label->setPixmap(QPixmap());
+      detail.label->setText(tr("Parse failed"));
+      detail.state = kParseFailed;
+    }
+    return;
+  }
+
+  if (!FFmpegDecoder::is_valid()) {
+    detail.decoder.reset();
+    ++detail.decoder_seq;
+    detail.decoder_type = FFmpegDecoder::InType::kUnknown;
+    detail.decoder_width = 0;
+    detail.decoder_height = 0;
+    return;
+  }
 
   int max_elapsed_time = 0;
   switch (ui->comboBox_elapsed->currentIndex()) {
@@ -1649,67 +2592,78 @@ void CameraDialog::create_decoder(const std::string& url, FFmpegDecoder::InType 
   config.max_elapsed_time = max_elapsed_time;
   config.max_codec_time = 0;
 
+  ++detail.decoder_seq;
+  const int decoder_seq = detail.decoder_seq;
+  const QString decoder_url = QString::fromStdString(url);
+
   detail.decoder.emplace(config);
+  detail.decoder_type = type;
+  detail.decoder_width = width;
+  detail.decoder_height = height;
 
-  if (!FFmpegDecoder::is_valid()) {
-    if (detail.state != kNoSupport) {
-      if (!multi_mode_) {
-        ui->label_transfer2->setText("---");
-        ui->label_frame2->setText("---");
-        ui->label_size2->setText("---");
-      }
-
-      detail.label->set_error(true);
-      detail.label->setPixmap(QPixmap());
-      detail.label->setText(tr("Not support"));
-      detail.state = kNoSupport;
-    }
-    return;
-  }
-
-  detail.decoder->register_handler([this](int channel, int seq, int width, int height, const vlink::Bytes& img_data) {
+  detail.decoder->register_handler([this, decoder_url, decoder_seq](int channel, int seq, int width, int height,
+                                                                    int bytes_per_line, const vlink::Bytes& img_data) {
+    (void)channel;
     (void)seq;
-    QString url = QString::fromStdString(channel_map_[channel]);
-    QMetaObject::invokeMethod(
-        this, "process_image", Qt::QueuedConnection, Q_ARG(QString, url), Q_ARG(int, width), Q_ARG(int, height),
-        Q_ARG(QByteArray, QByteArray(reinterpret_cast<const char*>(img_data.data()), img_data.size())),
-        Q_ARG(bool, true));
+    QByteArray bytes;
+    if (!to_qbytes(img_data, bytes)) {
+      QMetaObject::invokeMethod(this, "process_error", Qt::QueuedConnection, Q_ARG(QString, decoder_url),
+                                Q_ARG(int, decoder_seq));
+      return;
+    }
+
+    QMetaObject::invokeMethod(this, "process_image", Qt::QueuedConnection, Q_ARG(QString, decoder_url),
+                              Q_ARG(int, width), Q_ARG(int, height), Q_ARG(int, bytes_per_line),
+                              Q_ARG(QByteArray, bytes), Q_ARG(int, decoder_seq));
   });
 
-  detail.decoder->register_error_handler([this, &detail](int channel, int seq) {
+  detail.decoder->register_error_handler([this, decoder_url, decoder_seq](int channel, int seq) {
     (void)seq;
     (void)channel;
-    QMetaObject::invokeMethod(this, "process_error", Qt::QueuedConnection, Q_ARG(void*, detail.label));
+    QMetaObject::invokeMethod(this, "process_error", Qt::QueuedConnection, Q_ARG(QString, decoder_url),
+                              Q_ARG(int, decoder_seq));
   });
 }
 
 FFmpegDecoder::InType CameraDialog::get_decoder_type() const {
   switch (ui->comboBox_type->currentIndex()) {
     case 0:
-      return FFmpegDecoder::InType::kJPG;
+      return FFmpegDecoder::InType::kUnknown;
     case 1:
-      return FFmpegDecoder::InType::kH264;
+      return FFmpegDecoder::InType::kJPG;
     case 2:
-      return FFmpegDecoder::InType::kH265;
+      return FFmpegDecoder::InType::kPNG;
     case 3:
-      return FFmpegDecoder::InType::kMPEG4;
+      return FFmpegDecoder::InType::kWEBP;
     case 4:
-      return FFmpegDecoder::InType::kYUV420;
+      return FFmpegDecoder::InType::kH264;
     case 5:
-      return FFmpegDecoder::InType::kYUV422;
+      return FFmpegDecoder::InType::kH265;
     case 6:
-      return FFmpegDecoder::InType::kYUV444;
+      return FFmpegDecoder::InType::kH266;
     case 7:
-      return FFmpegDecoder::InType::kNV12;
+      return FFmpegDecoder::InType::kMPEG4;
     case 8:
-      return FFmpegDecoder::InType::kYUYV;
+      return FFmpegDecoder::InType::kAV1;
     case 9:
-      return FFmpegDecoder::InType::kYVYU;
+      return FFmpegDecoder::InType::kYUV420;
     case 10:
-      return FFmpegDecoder::InType::kUYVY;
+      return FFmpegDecoder::InType::kYUV422;
     case 11:
-      return FFmpegDecoder::InType::kBGR888;
+      return FFmpegDecoder::InType::kYUV444;
     case 12:
+      return FFmpegDecoder::InType::kNV12;
+    case 13:
+      return FFmpegDecoder::InType::kNV21;
+    case 14:
+      return FFmpegDecoder::InType::kYUYV;
+    case 15:
+      return FFmpegDecoder::InType::kYVYU;
+    case 16:
+      return FFmpegDecoder::InType::kUYVY;
+    case 17:
+      return FFmpegDecoder::InType::kBGR888;
+    case 18:
       return FFmpegDecoder::InType::kRGB888;
     default:
       return FFmpegDecoder::InType::kUnknown;

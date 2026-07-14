@@ -408,6 +408,7 @@ def demo_pubsub_raw_data():
         rd = _vlink.RawData()
         # from_bytes validates the magic envelope and zero-copies the
         # payload view from the wire buffer.  Returns False on corruption.
+        payload = _vlink.Bytes.from_bytes(payload)
         assert rd.from_bytes(payload)
 
         received.append((rd.header.seq, rd.size()))
@@ -448,6 +449,7 @@ def demo_pubsub_camera_frame():
 
     def on_message(payload):
         frame = _vlink.CameraFrame()
+        payload = _vlink.Bytes.from_bytes(payload)
         assert frame.from_bytes(payload)
         received.append({
             "seq": frame.header.seq,
@@ -512,6 +514,7 @@ def demo_pubsub_point_cloud():
 
     def on_message(payload):
         pc = _vlink.PointCloud()
+        payload = _vlink.Bytes.from_bytes(payload)
         assert pc.from_bytes(payload)
         # get_value_v3f returns a Vector3f copy of the i-th point.
         v0 = pc.get_value_v3f(0)
@@ -565,6 +568,7 @@ def demo_pubsub_proxy_data():
 
     def on_message(payload):
         pd = _vlink.ProxyData()
+        payload = _vlink.Bytes.from_bytes(payload)
         assert pd.from_bytes(payload)
         received.append((pd.url(), pd.ser(), pd.hostname()))
 
@@ -609,6 +613,7 @@ def demo_pubsub_occupancy_grid():
 
     def on_message(payload):
         og = _vlink.OccupancyGrid()
+        payload = _vlink.Bytes.from_bytes(payload)
         assert og.from_bytes(payload)
         received.append((og.header.seq, og.width(), og.height(), og.map_id()))
 
@@ -666,6 +671,7 @@ def demo_pubsub_tensor():
 
     def on_message(payload):
         t = _vlink.Tensor()
+        payload = _vlink.Bytes.from_bytes(payload)
         assert t.from_bytes(payload)
         # rank / num_elements are cached during set_shape().  They are also
         # re-validated by operator<< on deserialisation (rank is clamped
@@ -734,6 +740,7 @@ def demo_pubsub_object_array():
 
     def on_message(payload):
         arr = _vlink.ObjectArray()
+        payload = _vlink.Bytes.from_bytes(payload)
         assert arr.from_bytes(payload)
         # objects(i) returns a copy of the i-th Object (Python value
         # semantics).  Iterate up to arr.count().
@@ -809,6 +816,7 @@ def demo_pubsub_audio_frame():
 
     def on_message(payload):
         af = _vlink.AudioFrame()
+        payload = _vlink.Bytes.from_bytes(payload)
         assert af.from_bytes(payload)
         received.append({
             "seq": af.header.seq,
@@ -989,6 +997,7 @@ def demo_rpc_with_zerocopy():
     def handle_request(request):
         # Decode the request as a Tensor.
         in_tensor = _vlink.Tensor()
+        request = _vlink.Bytes.from_bytes(request)
         ok = in_tensor.from_bytes(request)
         assert ok, "server: request did not parse as a Tensor"
 

@@ -25,7 +25,7 @@
 
 #ifdef VLINK_ENABLE_BASE_MEMORY_RESOURCE
 
-#define MEMORY_RESOURCE_NERVER_DELETE 0
+#define MEMORY_RESOURCE_NEVER_DELETE 0
 
 #include <new>
 
@@ -50,7 +50,7 @@ MemoryPool& MemoryResource::get_memory_pool() noexcept { return *pool_; }
 void MemoryResource::trim() noexcept { pool_->trim(); }
 
 MemoryResource& MemoryResource::global_instance(bool use_env_level) {
-#if MEMORY_RESOURCE_NERVER_DELETE
+#if MEMORY_RESOURCE_NEVER_DELETE
   alignas(MemoryResource) static char buf[sizeof(MemoryResource)];
 
   static auto* instance = new (buf) MemoryResource(MemoryPool::global_instance(use_env_level));
@@ -75,19 +75,7 @@ void* MemoryResource::do_allocate(size_t bytes, size_t alignment) {
 
 void MemoryResource::do_deallocate(void* p, size_t bytes, size_t alignment) { pool_->deallocate(p, bytes, alignment); }
 
-bool MemoryResource::do_is_equal(const std::pmr::memory_resource& other) const noexcept {
-  if (this == &other) {
-    return true;
-  }
-
-#if defined(NDEBUG) || defined(__ANDROID__)
-  const auto* rhs = static_cast<const MemoryResource*>(&other);
-#else
-  const auto* rhs = dynamic_cast<const MemoryResource*>(&other);
-#endif
-
-  return rhs != nullptr && pool_ == rhs->pool_;
-}
+bool MemoryResource::do_is_equal(const std::pmr::memory_resource& other) const noexcept { return this == &other; }
 
 // NOLINTNEXTLINE(modernize-use-default-member-init)
 MemoryResource::MemoryResource(MemoryPool& global_pool) noexcept : pool_(&global_pool), owns_pool_(false) {}

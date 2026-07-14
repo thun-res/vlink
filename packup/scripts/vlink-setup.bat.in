@@ -44,7 +44,7 @@ if exist "%VLINK_FBS_DIR_CONFIG%" (
     )
 )
 
-echo Support commands: [proxy] [info] [monitor] [bag] [list] [eproto] [efbs] [dump] [check] [bench]
+echo Support commands: [proxy] [info] [monitor] [bag] [trigger] [list] [eproto] [efbs] [dump] [check] [bench]
 echo.
 
 echo ;%PATH%; | findstr /C:";%VLINK_BIN_DIR%;" >nul 2>&1 || set "PATH=%VLINK_BIN_DIR%;%PATH%"
@@ -54,6 +54,7 @@ doskey proxy="%VLINK_BIN_DIR%vlink-proxy" $*
 doskey info="%VLINK_BIN_DIR%vlink-info" $*
 doskey monitor="%VLINK_BIN_DIR%vlink-monitor" $*
 doskey bag="%VLINK_BIN_DIR%vlink-bag" $*
+doskey trigger="%VLINK_BIN_DIR%vlink-trigger" $*
 doskey list="%VLINK_BIN_DIR%vlink-list" $*
 doskey eproto="%VLINK_BIN_DIR%vlink-eproto" $*
 doskey efbs="%VLINK_BIN_DIR%vlink-efbs" $*

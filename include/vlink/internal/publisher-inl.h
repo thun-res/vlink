@@ -132,20 +132,11 @@ inline bool Publisher<MsgT, SecT>::publish(const MsgT& msg, bool force) {
     return write_bytes(msg);
   } else {
     Bytes msg_data;
+    const bool use_loan = SecT != SecurityType::kWithSecurity && this->is_support_loan_;
 
-    if constexpr (SecT != SecurityType::kWithSecurity) {
-      if (this->is_support_loan_) {
-        size_t ser_size = Serializer::get_serialized_size<kMsgType>(msg);
-
-        msg_data = this->impl_->loan(ser_size);
-
-        if VUNLIKELY (ser_size != 0 && msg_data.empty()) {
-          return false;
-        }
-      }
-    }
-
-    if VUNLIKELY (!Serializer::serialize<kMsgType>(msg, msg_data, this->impl_->transport_type)) {
+    if VUNLIKELY (!Serializer::serialize_to_transport<kMsgType>(
+                      msg, msg_data, this->impl_->transport_type, use_loan,
+                      [this](size_t size) { return this->impl_->loan(size); })) {
       VLOG_T("Publisher serialize failed, url: ", this->impl_->url, ".");
 
       if constexpr (SecT != SecurityType::kWithSecurity) {

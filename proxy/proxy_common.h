@@ -206,26 +206,26 @@ static_assert(sizeof(SchemaType) == 1, "wire format: SchemaType must remain 1 by
 static_assert(sizeof(ImplType) == 1, "wire format: ImplType must remain 1 byte");
 static_assert(sizeof(proxy::HandshakeResult) == 1, "wire format: HandshakeResult must remain 1 byte");
 
-template <typename S>
-inline void serialize(S& s, ProxyAPI::Process& msg) {
+template <typename SerializerT>
+inline void serialize(SerializerT& s, ProxyAPI::Process& msg) {
   s(msg.type, bitsery::maxSize(msg.host, proxy::kMaxStringSize), msg.pid,
     bitsery::maxSize(msg.name, proxy::kMaxStringSize), bitsery::maxSize(msg.ip, proxy::kMaxStringSize));
 }
 
-template <typename S>
-inline void serialize(S& s, ProxyAPI::UrlMeta& msg) {
+template <typename SerializerT>
+inline void serialize(SerializerT& s, ProxyAPI::UrlMeta& msg) {
   s(bitsery::maxSize(msg.url, proxy::kMaxUrlSize), bitsery::maxSize(msg.ser, proxy::kMaxUrlSize), msg.schema, msg.type);
 }
 
-template <typename S>
-inline void serialize(S& s, ProxyAPI::Info& msg) {
+template <typename SerializerT>
+inline void serialize(SerializerT& s, ProxyAPI::Info& msg) {
   s(msg.type, bitsery::maxSize(msg.url, proxy::kMaxUrlSize), bitsery::maxSize(msg.ser, proxy::kMaxUrlSize), msg.schema,
     msg.status, msg.freq, msg.rate, msg.loss, msg.latency,
     bitsery::maxSize(msg.process_list, proxy::kMaxProcessListSize));
 }
 
-template <typename S>
-inline void serialize(S& s, ProxyAPI::Control& msg) {
+template <typename SerializerT>
+inline void serialize(SerializerT& s, ProxyAPI::Control& msg) {
   s(msg.mode, bitsery::maxSize(msg.url_meta_list, proxy::kMaxTopicListSize), msg.filter_by_process,
     bitsery::maxSize(msg.filter_str, proxy::kMaxFilterSize), msg.filter_type);
 }
@@ -237,9 +237,9 @@ struct ControlPacket final {
   std::string token;
   ProxyAPI::Control body;
 
-  template <typename S>
-  void serialize(S& s) {
-    s.ext(*this, bitsery::ext::Growable{}, [](S& sub, ControlPacket& obj) {
+  template <typename SerializerT>
+  void serialize(SerializerT& s) {
+    s.ext(*this, bitsery::ext::Growable{}, [](SerializerT& sub, ControlPacket& obj) {
       sub(obj.control_id, bitsery::maxSize(obj.token, kMaxTokenSize), obj.body);
     });
   }
@@ -253,9 +253,9 @@ struct InfoListPacket final {
   std::string hostname;
   std::vector<ProxyAPI::Info> info_list;
 
-  template <typename S>
-  void serialize(S& s) {
-    s.ext(*this, bitsery::ext::Growable{}, [](S& sub, InfoListPacket& obj) {
+  template <typename SerializerT>
+  void serialize(SerializerT& s) {
+    s.ext(*this, bitsery::ext::Growable{}, [](SerializerT& sub, InfoListPacket& obj) {
       sub(obj.control_id, bitsery::maxSize(obj.hostname, kMaxStringSize),
           bitsery::maxSize(obj.info_list, kMaxTopicListSize));
     });
@@ -280,9 +280,9 @@ struct TimePacket final {
   double memory_usage{0.0};
   std::string token;
 
-  template <typename S>
-  void serialize(S& s) {
-    s.ext(*this, bitsery::ext::Growable{}, [](S& sub, TimePacket& obj) {
+  template <typename SerializerT>
+  void serialize(SerializerT& s) {
+    s.ext(*this, bitsery::ext::Growable{}, [](SerializerT& sub, TimePacket& obj) {
       sub(obj.control_id, obj.mode, obj.sys_time, obj.boot_time, obj.reliable_mode, obj.tcp_mode, obj.direct_mode,
           bitsery::maxSize(obj.version, kMaxStringSize), bitsery::maxSize(obj.hostname, kMaxStringSize),
           bitsery::maxSize(obj.machine_id, kMaxStringSize), obj.cpu_usage, obj.memory_usage,
@@ -300,9 +300,9 @@ struct HandshakeReqPacket final {
   std::string hostname;
   std::string role;
 
-  template <typename S>
-  void serialize(S& s) {
-    s.ext(*this, bitsery::ext::Growable{}, [](S& sub, HandshakeReqPacket& obj) {
+  template <typename SerializerT>
+  void serialize(SerializerT& s) {
+    s.ext(*this, bitsery::ext::Growable{}, [](SerializerT& sub, HandshakeReqPacket& obj) {
       sub(obj.control_id, bitsery::maxSize(obj.version, kMaxStringSize), bitsery::maxSize(obj.hostname, kMaxStringSize),
           bitsery::maxSize(obj.role, kMaxStringSize));
     });
@@ -319,9 +319,9 @@ struct HandshakeRespPacket final {
   std::string hostname;
   std::string machine_id;
 
-  template <typename S>
-  void serialize(S& s) {
-    s.ext(*this, bitsery::ext::Growable{}, [](S& sub, HandshakeRespPacket& obj) {
+  template <typename SerializerT>
+  void serialize(SerializerT& s) {
+    s.ext(*this, bitsery::ext::Growable{}, [](SerializerT& sub, HandshakeRespPacket& obj) {
       sub(obj.result, bitsery::maxSize(obj.token, kMaxTokenSize), bitsery::maxSize(obj.version, kMaxStringSize),
           bitsery::maxSize(obj.hostname, kMaxStringSize), bitsery::maxSize(obj.machine_id, kMaxStringSize));
     });

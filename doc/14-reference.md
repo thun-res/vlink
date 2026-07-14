@@ -266,6 +266,7 @@ sub.listen([&sub](const vlink::Bytes& b) {
 | `vlink-list` | 列出活跃节点 | — |
 | `vlink-monitor` | 实时 TUI 监控 | — |
 | `vlink-bag` | 录制 / 回放 / bag 管理 | `record` / `play` / `info` / `clone` / `check` / `reindex` / `fix` / `tag` |
+| `vlink-trigger` | 内存触发录制（EDR）：滚动缓冲 + 触发落盘 | `daemon` / `dump` |
 | `vlink-dump` | 从 URL / bag 抽取数据 | — |
 | `vlink-eproto` | Protobuf 动态 pub/sub | `pub` / `sub` / `import` |
 | `vlink-efbs` | FlatBuffers 动态 pub/sub | `pub` / `sub` / `import` |
@@ -290,6 +291,7 @@ sub.listen([&sub](const vlink::Bytes& b) {
 | `VLINK_DISCOVER_DISABLE` | 置 `1` 关闭运行时发现上报 |
 | `VLINK_DISCOVER_NATIVE` | 置 `1` 仅限本机发现 |
 | `VLINK_PROTO_DIR` / `VLINK_FBS_DIR` | 动态 schema 目录（`vlink-eproto`/`-efbs`） |
+| `VLINK_URL_PLUGINS` | 首次 URL 初始化前设置：完整值 `auto` 按需加载未链接的已知共享 transport，`none` / 空值关闭插件加载，其他非空值为显式预加载列表；模式值大小写不敏感 |
 | `VLINK_BAG_PATH` | 进程级全局录制的 bag 文件路径（后缀须为 `.vdb`/`.vdbx`/`.vcap`/`.vcapx`），自动录制全部 Publisher/Setter 消息 |
 
 如需逐节点而非进程级录制，可调用 API 层唯一录制钩子 `node.set_record_path(path)`：按相同后缀规则（`.vdb`/`.vdbx`/`.vcap`/`.vcapx`，不支持的后缀静默禁用）单独开启该节点的收发录制；`intra://` 与 `dds://` CDR 节点不支持（触发 fatal 日志）。

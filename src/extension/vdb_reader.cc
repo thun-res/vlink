@@ -199,8 +199,8 @@ VDBReader::~VDBReader() {
   close();
 }
 
-void VDBReader::bind_plugin_interface(const std::shared_ptr<BagPluginInterface>& plugin_interface) {
-  BagReader::bind_plugin_interface(plugin_interface);
+void VDBReader::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& bag_interface) {
+  BagReader::bind_bag_interface(bag_interface);
   impl_->info.url_metas = impl_->raw_url_metas;
   process_url_metas(impl_->info.url_metas);
   rebuild_url_meta_lookup(impl_->info.url_metas);
@@ -2718,14 +2718,14 @@ bool VDBReader::do_read_next(Frame& out, bool& is_error) {
 
       const auto& url = iter->second;
 
-      if VUNLIKELY (!match_playback_url_filter(url, impl_->cursor_config.filter_urls)) {
-        continue;
-      }
-
       std::string output_url;
 
       if VUNLIKELY (!convert_playback_url(url, output_url)) {
         continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
+
+      if (!impl_->cursor_config.filter_urls.empty() && impl_->cursor_config.filter_urls.count(output_url) == 0U) {
+        continue;
       }
 
       std::string_view action_str;

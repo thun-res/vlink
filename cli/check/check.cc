@@ -350,7 +350,7 @@ void check_multicast_address(DiagContext& ctx, const int (&octets)[4], bool warn
   while ((scan_pos = result.find(needle, scan_pos)) != std::string::npos) {
     scan_pos += needle.size();
 
-    if (scan_pos >= result.size() || !std::isdigit(result[scan_pos])) {
+    if (scan_pos >= result.size() || !std::isdigit(static_cast<unsigned char>(result[scan_pos]))) {
       end_diag(ctx, DiagType::kPass, "Found " + needle);
       return;
     }
@@ -1032,6 +1032,7 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
   const std::vector<ProcessCheck> process_checks = {
       {"* Check proxy running...", "proxy", "vlink-proxy", "vlink-proxy.exe", true, "Proxy"},
       {"* Check bag running...", "bag", "vlink-bag", "vlink-bag.exe", false, "Bag"},
+      {"* Check trigger running...", "trigger", "vlink-trigger", "vlink-trigger.exe", false, "Trigger"},
       {"* Check dump running...", "dump", "vlink-dump", "vlink-dump.exe", false, "Dump"},
       {"* Check eproto running...", "eproto", "vlink-eproto", "vlink-eproto.exe", false, "Eproto"},
       {"* Check efbs running...", "efbs", "vlink-efbs", "vlink-efbs.exe", false, "Efbs"},
@@ -1094,6 +1095,12 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
     check_flag(ctx, "- Check cli-bag enabled...", "VLINK_ENABLE_CLI_BAG", false);
 #endif
 
+#ifdef VLINK_ENABLE_CLI_TRIGGER
+    check_flag(ctx, "- Check cli-trigger enabled...", "VLINK_ENABLE_CLI_TRIGGER", true);
+#else
+    check_flag(ctx, "- Check cli-trigger enabled...", "VLINK_ENABLE_CLI_TRIGGER", false);
+#endif
+
 #ifdef VLINK_ENABLE_CLI_EPROTO
     check_flag(ctx, "- Check cli-eproto enabled...", "VLINK_ENABLE_CLI_EPROTO", true);
 #else
@@ -1128,6 +1135,12 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
     check_flag(ctx, "- Check cli-check enabled...", "VLINK_ENABLE_CLI_CHECK", true);
 #else
     check_flag(ctx, "- Check cli-check enabled...", "VLINK_ENABLE_CLI_CHECK", false);
+#endif
+
+#ifdef VLINK_ENABLE_CLI_BENCH
+    check_flag(ctx, "- Check cli-bench enabled...", "VLINK_ENABLE_CLI_BENCH", true);
+#else
+    check_flag(ctx, "- Check cli-bench enabled...", "VLINK_ENABLE_CLI_BENCH", false);
 #endif
 
 #ifdef VLINK_ENABLE_LOG_QUI
@@ -1210,9 +1223,14 @@ int check_env(bool available_case, const std::string& prefix) {
        "Set to 1 to fill every tier to its full blocks_per_chunk quota when the global MemoryPool is built "
        "(best-effort).",
        false},
+      {"VLINK_MEMORY_BATCH_SIZE", "",
+       "Positive free-list shard transfer batch size used by the default MemoryPool configuration (default 16).",
+       false},
       {"VLINK_PLUGIN_DIR", "", "Directory searched by vlink::Plugin when loading dynamic modules.", false},
       {"VLINK_URL_PLUGINS", "",
-       "Recognized transport plugin library name list to dlopen on start (comma or space separated, e.g. vlink-zenoh).",
+       "Set before the first URL initialization: auto enables first-use loading of recognized unlinked shared "
+       "transports; empty or none disables plugin loading; any other non-empty value is a comma- or "
+       "space-separated explicit preload list (case-insensitive auto/none).",
        false},
       {"VLINK_URL_REMAP", "", "Path to a JSON file describing URL rewrite rules applied at node creation.", false},
 
@@ -1253,8 +1271,8 @@ int check_env(bool available_case, const std::string& prefix) {
 
       {"VLINK_BAG_PATH", "",
        "Activates the process-global BagWriter (BagWriter::global_get()) at the given .vdb/.vcap path. All "
-       "Publisher/Setter messages are auto-recorded transparently. CLI tools (vlink-bag/dump/eproto/efbs/list/"
-       "monitor/bench) explicitly unset this on startup to avoid recursive recording.",
+       "Publisher/Setter messages are auto-recorded transparently. CLI tools (vlink-bag/trigger/dump/eproto/efbs/"
+       "list/monitor/bench) explicitly unset this on startup to avoid recursive recording.",
        false},
       {"VLINK_BAG_TAG", "", "User tag stored in bag metadata to label the recording session (default 'Empty').", false},
 
@@ -1326,10 +1344,15 @@ int check_env(bool available_case, const std::string& prefix) {
       {"VLINK_SHM2_CONFIG", "", "Path to the iceoryx2 TOML configuration file.", false},
       {"VLINK_SHM2_NOTIFY_EVERY", "",
        "Notify-every-N coalescing for shm2:// publishers (default 1; raise to amortize wakeups).", false},
+      {"VLINK_SHM2_LOAN_MIN", "",
+       "Minimum non-loaned Bytes payload size that uses loan/write/send instead of send_slice_copy (default 65536).",
+       false},
 #endif
 
 #ifdef VLINK_SUPPORT_ZENOH
       {"VLINK_ZENOH_CONFIG", "", "Path to the Zenoh JSON5 session configuration file.", false},
+      {"VLINK_ZENOH_DEBUG", "", "When set to 1 enables Zenoh runtime debug logging in zenoh-c builds (default 0).",
+       false},
       {"VLINK_ZENOH_DOMAIN", "", "Zenoh domain id (numeric, used to scope key expressions).", false},
       {"VLINK_ZENOH_MODE", "", "Zenoh session mode: peer / client / router (default peer).", false},
       {"VLINK_ZENOH_IP", "", "Zenoh peer IP list expanded to connect endpoints (comma or space separated).", false},
@@ -1339,7 +1362,7 @@ int check_env(bool available_case, const std::string& prefix) {
       {"VLINK_ZENOH_MULTICAST", "", "Zenoh multicast scout address (default 239.255.0.100).", false},
       {"VLINK_ZENOH_MULTICAST_IF", "", "Network interface used for Zenoh multicast scouting.", false},
       {"VLINK_ZENOH_MULTICAST_TTL", "", "TTL for Zenoh multicast scouting packets.", false},
-      {"VLINK_ZENOH_GOSSIP", "", "When set to 1 enables Zenoh gossip discovery (default 1).", false},
+      {"VLINK_ZENOH_GOSSIP", "", "When set to 1 enables Zenoh gossip discovery (default 0).", false},
       {"VLINK_ZENOH_RX_BUF", "", "Zenoh receive buffer size hint in bytes.", false},
       {"VLINK_ZENOH_MAX_MSG", "", "Maximum Zenoh message size in bytes before fragmentation.", false},
       {"VLINK_ZENOH_TX_QUEUE_DATA", "", "Zenoh data send queue depth.", false},

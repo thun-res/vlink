@@ -76,6 +76,10 @@ std::string summarize_config_html(const AggregatedCase& item) {
   std::ostringstream stream;
   stream << "<div><strong data-i18n=\"insight_url_label\">url</strong>: <code>" << escape_html(item.scenario.url)
          << "</code></div>";
+  if (item.transport == "shm2" && item.wire_size != 0) {
+    stream << "<div><strong>slice</strong>: <code>" << escape_html(format_size_label(item.wire_size))
+           << "</code></div>";
+  }
   stream << "<div><strong data-i18n=\"insight_topology_label\">topology</strong>: <code>"
          << escape_html(make_topology_label(item.scenario)) << "</code></div>";
   stream << "<div><strong data-i18n=\"insight_pattern_label\">pattern</strong>: <code>"
@@ -1070,6 +1074,7 @@ struct TransportScoreRow final {
   uint64_t latency_drop_count{0};
   MetricSummary recv_mb_per_sec;
   MetricSummary send_mb_per_sec;
+  MetricSummary recv_score;
   MetricSummary first_message_ms;
   MetricSummary discovery_ms;
   MetricSummary p95_latency_us;
@@ -1078,8 +1083,10 @@ struct TransportScoreRow final {
   MetricSummary p9999_latency_us;
   MetricSummary max_latency_us;
   MetricSummary latency_stddev_us;
+  MetricSummary latency_quality_score;
   MetricSummary p99_send_block_us;
-  MetricSummary payload_size_bytes;
+  MetricSummary max_latency_score;
+  MetricSummary p99_send_block_score;
   MetricSummary cpu_usage;
   MetricSummary memory_usage;
   MetricSummary scale_efficiency_mb_per_sec;
@@ -1158,7 +1165,9 @@ std::vector<TransportScoreRow> build_transport_score_rows(const std::vector<Aggr
 
     if (runtime_success) {
       if (item.recv_mb_per_sec.count != 0) {
-        row.recv_mb_per_sec.add(item.recv_mb_per_sec.average());
+        const double recv = item.recv_mb_per_sec.average();
+        row.recv_mb_per_sec.add(recv);
+        row.recv_score.add(compute_absolute_throughput_score(recv));
       }
 
       if (item.send_mb_per_sec.count != 0) {
@@ -1174,35 +1183,43 @@ std::vector<TransportScoreRow> build_transport_score_rows(const std::vector<Aggr
       }
 
       if (item.p95_latency_us.count != 0) {
-        row.p95_latency_us.add(item.p95_latency_us.average());
+        const double p95 = item.p95_latency_us.average();
+        row.p95_latency_us.add(p95);
       }
 
       if (item.p99_latency_us.count != 0) {
-        row.p99_latency_us.add(item.p99_latency_us.average());
+        const double p99 = item.p99_latency_us.average();
+        row.p99_latency_us.add(p99);
       }
 
       if (item.p999_latency_us.count != 0) {
-        row.p999_latency_us.add(item.p999_latency_us.average());
+        const double p999 = item.p999_latency_us.average();
+        row.p999_latency_us.add(p999);
       }
 
       if (item.p9999_latency_us.count != 0) {
-        row.p9999_latency_us.add(item.p9999_latency_us.average());
+        const double p9999 = item.p9999_latency_us.average();
+        row.p9999_latency_us.add(p9999);
       }
 
       if (item.max_latency_us.count != 0) {
-        row.max_latency_us.add(item.max_latency_us.average());
+        const double max_latency = item.max_latency_us.average();
+        row.max_latency_us.add(max_latency);
+        row.max_latency_score.add(compute_absolute_latency_score(max_latency, item.scenario.payload_size));
       }
 
       if (item.latency_stddev_us.count != 0) {
         row.latency_stddev_us.add(item.latency_stddev_us.average());
       }
 
-      if (item.p99_send_block_us.count != 0) {
-        row.p99_send_block_us.add(item.p99_send_block_us.average());
+      if (item.scenario.suite == Bench::kLatencySuite && score_latency_us(item) > 0.0) {
+        row.latency_quality_score.add(score_latency_quality(item));
       }
 
-      if (item.scenario.payload_size != 0) {
-        row.payload_size_bytes.add(static_cast<double>(item.scenario.payload_size));
+      if (item.p99_send_block_us.count != 0) {
+        const double p99_send_block = item.p99_send_block_us.average();
+        row.p99_send_block_us.add(p99_send_block);
+        row.p99_send_block_score.add(compute_absolute_send_block_score(p99_send_block, item.scenario.payload_size));
       }
 
       if (item.cpu_usage.count != 0) {
@@ -1241,23 +1258,14 @@ std::vector<TransportScoreRow> build_transport_score_rows(const std::vector<Aggr
           return std::pair{
               valid, compute_transfer_efficiency_score(row.recv_mb_per_sec.average(), row.send_mb_per_sec.average())};
         });
-    const auto p95_peers = collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
-      return std::pair{row.p95_latency_us.count != 0, row.p95_latency_us.average()};
-    });
-    const auto p99_peers = collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
-      return std::pair{row.p99_latency_us.count != 0, row.p99_latency_us.average()};
-    });
-    const auto p999_peers = collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
-      return std::pair{row.p999_latency_us.count != 0, row.p999_latency_us.average()};
-    });
-    const auto p9999_peers = collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
-      return std::pair{row.p9999_latency_us.count != 0, row.p9999_latency_us.average()};
-    });
     const auto max_latency_peers = collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
       return std::pair{row.max_latency_us.count != 0, row.max_latency_us.average()};
     });
     const auto jitter_peers = collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
       return std::pair{row.latency_stddev_us.count != 0, row.latency_stddev_us.average()};
+    });
+    const auto latency_quality_peers = collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
+      return std::pair{row.latency_quality_score.count != 0, row.latency_quality_score.average()};
     });
     const auto send_block_peers = collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
       return std::pair{row.p99_send_block_us.count != 0, row.p99_send_block_us.average()};
@@ -1288,43 +1296,29 @@ std::vector<TransportScoreRow> build_transport_score_rows(const std::vector<Aggr
       const double loss_percent = std::max(aggregate_loss_percent, row->worst_loss_pct);
       const double recv_value = row->recv_mb_per_sec.average();
       const double recv_score = blend_absolute_relative_score(
-          compute_absolute_throughput_score(recv_value),
+          row->recv_score.count != 0 ? row->recv_score.average() : compute_absolute_throughput_score(recv_value),
           normalize_optional_higher_score(row->recv_mb_per_sec.count != 0, recv_value, recv_peers));
       const double transfer_efficiency_score = normalize_optional_higher_score(
           row->recv_mb_per_sec.count != 0 && row->send_mb_per_sec.count != 0 && row->send_mb_per_sec.average() > 0.0,
           compute_transfer_efficiency_score(row->recv_mb_per_sec.average(), row->send_mb_per_sec.average()),
           transfer_efficiency_peers);
-      const double p95_value = row->p95_latency_us.average();
-      const double p99_value = row->p99_latency_us.average();
-      const double p999_value = row->p999_latency_us.average();
-      const double p9999_value = row->p9999_latency_us.average();
       const double max_latency_value = row->max_latency_us.average();
-      const size_t latency_payload_size =
-          row->payload_size_bytes.count == 0
-              ? 0
-              : static_cast<size_t>(std::llround(std::max(0.0, row->payload_size_bytes.average())));
-      const double p95_score = blend_absolute_relative_score(
-          compute_absolute_latency_score(p95_value, latency_payload_size),
-          normalize_optional_lower_score(row->p95_latency_us.count != 0, p95_value, p95_peers));
-      const double p99_score = blend_absolute_relative_score(
-          compute_absolute_latency_score(p99_value, latency_payload_size),
-          normalize_optional_lower_score(row->p99_latency_us.count != 0, p99_value, p99_peers));
-      const double p999_score = blend_absolute_relative_score(
-          compute_absolute_latency_score(p999_value, latency_payload_size),
-          normalize_optional_lower_score(row->p999_latency_us.count != 0, p999_value, p999_peers));
-      const double p9999_score = blend_absolute_relative_score(
-          compute_absolute_latency_score(p9999_value, latency_payload_size),
-          normalize_optional_lower_score(row->p9999_latency_us.count != 0, p9999_value, p9999_peers));
       const double max_latency_score = blend_absolute_relative_score(
-          compute_absolute_latency_score(max_latency_value, latency_payload_size),
+          row->max_latency_score.count != 0 ? row->max_latency_score.average() : 0.0,
           normalize_optional_lower_score(row->max_latency_us.count != 0, max_latency_value, max_latency_peers));
       const double jitter_score = normalize_optional_lower_score(row->latency_stddev_us.count != 0,
                                                                  row->latency_stddev_us.average(), jitter_peers);
+      const double latency_quality_value = row->latency_quality_score.average();
+      const double latency_quality_score =
+          blend_absolute_relative_score(row->latency_quality_score.count != 0 ? latency_quality_value : 0.0,
+                                        normalize_optional_higher_score(row->latency_quality_score.count != 0,
+                                                                        latency_quality_value, latency_quality_peers));
       const double send_block_value = row->p99_send_block_us.average();
       const double send_block_score =
           row->p99_send_block_us.count != 0
-              ? blend_absolute_relative_score(compute_absolute_send_block_score(send_block_value, latency_payload_size),
-                                              normalize_optional_lower_score(true, send_block_value, send_block_peers))
+              ? blend_absolute_relative_score(
+                    row->p99_send_block_score.count != 0 ? row->p99_send_block_score.average() : 0.0,
+                    normalize_optional_lower_score(true, send_block_value, send_block_peers))
               : 0.0;
       const double scale_efficiency_score =
           normalize_optional_higher_score(row->scale_efficiency_mb_per_sec.count != 0,
@@ -1343,8 +1337,8 @@ std::vector<TransportScoreRow> build_transport_score_rows(const std::vector<Aggr
         const double primary_score = recv_score * 0.95 + transfer_efficiency_score * 0.02;
         row->score = clamp_score(primary_score * main_coverage + health_score * 0.03);
       } else if (row->suite == "latency") {
-        const double primary_score = p95_score * 0.28 + p99_score * 0.44 + p999_score * 0.18 + p9999_score * 0.04 +
-                                     max_latency_score * 0.01 + jitter_score * 0.01 + recv_score * 0.01;
+        const double primary_score =
+            latency_quality_score * 0.94 + max_latency_score * 0.01 + jitter_score * 0.01 + recv_score * 0.01;
         row->score = clamp_score(primary_score * main_coverage + health_score * 0.03);
       } else if (row->suite == "backpressure") {
         const double primary_score = send_block_score * 0.80 + recv_score * 0.12 + transfer_efficiency_score * 0.05;
@@ -1568,14 +1562,16 @@ std::string build_suite_score_methodology_panel() {
       "<tr><td data-i18n-label=\"th_suite\" data-label=\"Category\"><code>latency</code></td>"
       "<td data-i18n-label=\"th_input_factors\" data-label=\"What is scored\" "
       "data-i18n=\"suite_score_factors_latency\">"
-      "Mainly tail latency such as P99, with small checks for max latency, jitter, throughput, and health.</td>"
+      "Mainly P95/P99 latency quality, with light tail-stability checks for P99.9/P99.99, max latency, jitter, "
+      "throughput, and health.</td>"
       "<td data-i18n-label=\"th_gates\" data-label=\"How to read it\" data-i18n=\"suite_score_gates_latency\">"
       "Latency tests mainly use percentiles. The heatmap visualises P50 (typical) / P90 (slower common case) / P99 "
-      "(tail), and scoring also weights P99.9 / P99.99 to penalize rare stalls. Lower numbers are better.</td>"
+      "(tail). P99.9 / P99.99 stay visible as tail-stability signals, but they do not dominate the score. Lower "
+      "numbers are better.</td>"
       "<td data-i18n-label=\"th_interpretation\" data-label=\"Best used for\" "
       "data-i18n=\"suite_score_interp_latency\">"
       "Useful for checking whether messages respond quickly and whether slow-message latency stays controlled. "
-      "Averages can look good while P99/P99.9 still reveals user-visible stalls.</td></tr>";
+      "P95/P99 drive the score, while P99.9/P99.99 help explain rare stalls.</td></tr>";
   html +=
       "<tr><td data-i18n-label=\"th_suite\" data-label=\"Category\"><code>backpressure</code></td>"
       "<td data-i18n-label=\"th_input_factors\" data-label=\"What is scored\" "
@@ -2402,16 +2398,12 @@ struct TransportSummary final {
   double avg_topology{0.0};
   double avg_sort{0.0};
   double latency_score_sum{0.0};
-  double latency_score_weight_sum{0.0};
-  double min_speed_weight{0.0};
   double latency_fallback_sum{0.0};
-  double latency_fallback_weight_sum{0.0};
   double throughput_score_sum{0.0};
   double throughput_fallback_sum{0.0};
   double cpu_efficiency_score_sum{0.0};
   double other_score_sum{0.0};
   double send_block_score_sum{0.0};
-  double send_block_weight_sum{0.0};
   double min_speed_score{101.0};
   double min_capacity_score{101.0};
   double expected_sum{0.0};
@@ -2479,20 +2471,15 @@ inline std::vector<TransportSummary> summarize_by_endpoint(const std::vector<Agg
     }
 
     if (item.scenario.suite == Bench::kLatencySuite && item.speed_score >= 0.0) {
-      const double w = latency_payload_weight(item.scenario.payload_size);
-      s.latency_score_sum += std::log1p(item.speed_score) * w;
-      s.latency_score_weight_sum += w;
+      s.latency_score_sum += std::log1p(item.speed_score);
       ++s.latency_score_count;
       if (item.speed_score < s.min_speed_score) {
         s.min_speed_score = item.speed_score;
-        s.min_speed_weight = w;
       }
     } else if ((item.scenario.suite == Bench::kThroughputSuite || item.scenario.suite == Bench::kTopologySuite ||
                 item.scenario.suite == Bench::kBackpressureSuite) &&
                item.speed_score >= 0.0) {
-      const double w = latency_payload_weight(item.scenario.payload_size);
-      s.latency_fallback_sum += std::log1p(item.speed_score) * w;
-      s.latency_fallback_weight_sum += w;
+      s.latency_fallback_sum += std::log1p(item.speed_score);
       ++s.latency_fallback_count;
     }
 
@@ -2522,9 +2509,7 @@ inline std::vector<TransportSummary> summarize_by_endpoint(const std::vector<Agg
         item.send_block_samples.count != 0) {
       const double sb_us = item.p99_send_block_us.average();
       const double sb_score = compute_absolute_send_block_score(sb_us, item.scenario.payload_size);
-      const double w = latency_payload_weight(item.scenario.payload_size);
-      s.send_block_score_sum += std::log1p(sb_score) * w;
-      s.send_block_weight_sum += w;
+      s.send_block_score_sum += std::log1p(sb_score);
       ++s.send_block_score_count;
     }
 
@@ -2566,18 +2551,10 @@ inline std::vector<TransportSummary> summarize_by_endpoint(const std::vector<Agg
 
       return std::clamp(std::expm1(log_sum / static_cast<double>(count)), 0.0, 100.0);
     };
-    auto weighted_geometric_score = [](double log_sum, double weight) {
-      if (weight <= 0.0) {
-        return 0.0;
-      }
-
-      return std::clamp(std::expm1(log_sum / weight), 0.0, 100.0);
-    };
-
     if (s.latency_score_count > 0) {
-      s.avg_speed = weighted_geometric_score(s.latency_score_sum, s.latency_score_weight_sum);
+      s.avg_speed = geometric_score(s.latency_score_sum, s.latency_score_count);
     } else if (s.latency_fallback_count > 0) {
-      s.avg_speed = weighted_geometric_score(s.latency_fallback_sum, s.latency_fallback_weight_sum);
+      s.avg_speed = geometric_score(s.latency_fallback_sum, s.latency_fallback_count);
     } else {
       s.avg_speed = 0.0;
     }
@@ -2633,9 +2610,8 @@ inline std::vector<TransportSummary> summarize_by_endpoint(const std::vector<Agg
       }
     }
 
-    if (s.send_block_score_count > 0 && s.send_block_weight_sum > 0.0) {
-      const double raw_send_block =
-          std::clamp(std::expm1(s.send_block_score_sum / s.send_block_weight_sum), 0.0, 100.0);
+    if (s.send_block_score_count > 0) {
+      const double raw_send_block = geometric_score(s.send_block_score_sum, s.send_block_score_count);
       s.avg_send_block = s.latency_score_count > 0 ? std::min(raw_send_block, s.avg_speed) : raw_send_block;
     } else {
       s.avg_send_block = s.success_case_count == 0 ? 0.0 : std::clamp(s.avg_coverage, 60.0, 95.0);
@@ -2977,23 +2953,24 @@ inline std::string build_metric_heatmap_block(const std::vector<AggregatedCase>&
     return endpoint_score_sum[endpoint] / static_cast<double>(count_iter->second);
   };
 
-  std::sort(endpoints.begin(), endpoints.end(), [&](const std::string& a, const std::string& b) {
-    const double sa = endpoint_avg_score(a);
-    const double sb = endpoint_avg_score(b);
+  std::sort(endpoints.begin(), endpoints.end(),
+            [&endpoint_avg_score, &endpoint_layer, &endpoint_label](const std::string& a, const std::string& b) {
+              const double sa = endpoint_avg_score(a);
+              const double sb = endpoint_avg_score(b);
 
-    if (std::fabs(sa - sb) > 0.001) {
-      return sa > sb;
-    }
+              if (std::fabs(sa - sb) > 0.001) {
+                return sa > sb;
+              }
 
-    const int la = static_cast<int>(endpoint_layer[a]);
-    const int lb = static_cast<int>(endpoint_layer[b]);
+              const int la = static_cast<int>(endpoint_layer[a]);
+              const int lb = static_cast<int>(endpoint_layer[b]);
 
-    if (la != lb) {
-      return la < lb;
-    }
+              if (la != lb) {
+                return la < lb;
+              }
 
-    return endpoint_label[a] < endpoint_label[b];
-  });
+              return endpoint_label[a] < endpoint_label[b];
+            });
 
   std::string out;
   out.reserve(2048);
@@ -3248,6 +3225,11 @@ inline std::string build_transport_profile_cards(const std::vector<AggregatedCas
     double best_p95_us{-1.0};
     size_t best_p95_size{0};
     int best_p95_rate{0};
+    double weakest_latency_score{101.0};
+    double weakest_latency_p95_us{-1.0};
+    double weakest_latency_p999_us{-1.0};
+    size_t weakest_latency_size{0};
+    int weakest_latency_rate{0};
     double peak_mb_s{-1.0};
     size_t peak_size{0};
     double avg_cpu_pct{-1.0};
@@ -3264,12 +3246,21 @@ inline std::string build_transport_profile_cards(const std::vector<AggregatedCas
 
     auto& t = typicals[item.endpoint_key];
 
-    if (item.scenario.suite == Bench::kLatencySuite && !has_delivery_loss(item) && item.latency_samples_dropped == 0) {
+    if (item.scenario.suite == Bench::kLatencySuite) {
       const double p95 = item.p95_latency_us.average();
-      if (p95 > 0.0 && (t.best_p95_us < 0.0 || p95 < t.best_p95_us)) {
+      if (!has_delivery_loss(item) && item.latency_samples_dropped == 0 && p95 > 0.0 &&
+          (t.best_p95_us < 0.0 || p95 < t.best_p95_us)) {
         t.best_p95_us = p95;
         t.best_p95_size = item.scenario.payload_size;
         t.best_p95_rate = item.scenario.rate_hz;
+      }
+
+      if (p95 > 0.0 && item.speed_score >= 0.0 && item.speed_score < t.weakest_latency_score) {
+        t.weakest_latency_score = item.speed_score;
+        t.weakest_latency_p95_us = p95;
+        t.weakest_latency_p999_us = item.p999_latency_us.average();
+        t.weakest_latency_size = item.scenario.payload_size;
+        t.weakest_latency_rate = item.scenario.rate_hz;
       }
     }
 
@@ -3305,7 +3296,7 @@ inline std::string build_transport_profile_cards(const std::vector<AggregatedCas
   out +=
       R"(<section id="decision" class="panel profile-panel decision-panel"><h2 data-i18n="profile_title">Recommended Targets</h2>)";
   out +=
-      R"(<p class="note" data-i18n="profile_note">The cards are sorted by total score for this run. Each card is one tested URL or transport configuration; open it to see the URL, run mode, latency, throughput, CPU, and counted cases.</p>)";
+      R"(<p class="note" data-i18n="profile_note">The cards are sorted by total score for this run. Each card is one tested URL or transport configuration; open it to see the URL, run mode, best and weakest latency cases, throughput, CPU, and counted cases.</p>)";
   out +=
       R"HTML(<p class="note" data-i18n="profile_scoring_legend">Total score is out of 120. Higher is better for the current test mix. Sub-pills show: latency / throughput / resource / coverage / delivery / send-block. The "Recommended Targets" headline shows the strongest URL for this run.</p>)HTML";
 
@@ -3313,7 +3304,7 @@ inline std::string build_transport_profile_cards(const std::vector<AggregatedCas
   out += R"HTML(<summary data-i18n="profile_formula_title">Total score formula (max 120)</summary>)HTML";
   out += R"HTML(<ul class="formula-list">)HTML";
   out +=
-      R"HTML(<li><strong data-i18n="profile_formula_latency">Latency 30%</strong> <span data-i18n="profile_formula_latency_desc">— P95/P99 tail latency, payload-weighted geometric mean across cases. Lower latency → higher score.</span></li>)HTML";
+      R"HTML(<li><strong data-i18n="profile_formula_latency">Latency 30%</strong> <span data-i18n="profile_formula_latency_desc">— Subscriber-side end-to-end latency. Per case we weight P95×0.70 + P99×0.25 + P99.9×0.04 + P99.99×0.01 through a payload-aware curve, then use an equal-weight geometric mean across cases.</span></li>)HTML";
   out +=
       R"HTML(<li><strong data-i18n="profile_formula_throughput">Throughput 20%</strong> <span data-i18n="profile_formula_throughput_desc">— recv MB/s on the subscriber side, log-scaled vs 1024 MB/s reference. Higher throughput → higher score.</span></li>)HTML";
   out +=
@@ -3321,7 +3312,7 @@ inline std::string build_transport_profile_cards(const std::vector<AggregatedCas
   out +=
       R"HTML(<li><strong data-i18n="profile_formula_delivery">Delivery 10%</strong> <span data-i18n="profile_formula_delivery_desc">— Aggregated loss across all cases: avg_delivery = 100 - loss%. Loss > 5% also lightly cuts per-case latency via a logistic curve (gentle ≤20%, accelerates >20%, capped at ×0.40) to defeat survivor-bias.</span></li>)HTML";
   out +=
-      R"HTML(<li><strong data-i18n="profile_formula_send_block">Send-block 10%</strong> <span data-i18n="profile_formula_send_block_desc">— wall-clock time spent inside publish() per message (P99), payload-weighted from latency/backpressure cases. Penalizes APIs that block the publisher thread.</span></li>)HTML";
+      R"HTML(<li><strong data-i18n="profile_formula_send_block">Send-block 10%</strong> <span data-i18n="profile_formula_send_block_desc">— wall-clock time spent inside publish() per message (P99), equal-weight across latency/backpressure cases. Penalizes APIs that block the publisher thread.</span></li>)HTML";
   out +=
       R"HTML(<li><strong data-i18n="profile_formula_coverage">Coverage 10%</strong> <span data-i18n="profile_formula_coverage_desc">— Passing cases / total cases for this URL. Standalone dimension; also serves as fallback for the topology slot when topology suite is absent.</span></li>)HTML";
   out +=
@@ -3428,6 +3419,16 @@ inline std::string build_transport_profile_cards(const std::vector<AggregatedCas
           R"(<span class="num-val">{:.1f} us</span>)"
           R"(<span class="num-ctx">@ {} / {} Hz</span></div>)",
           typ.best_p95_us, format_payload_size(typ.best_p95_size), typ.best_p95_rate);
+    }
+
+    if (typ.weakest_latency_p95_us > 0.0 && typ.weakest_latency_score <= 100.0) {
+      format::format_to(
+          std::back_inserter(out),
+          R"(<div class="num-row"><span class="num-label" data-i18n="profile_num_weakest_latency">weakest latency case</span>)"
+          R"(<span class="num-val">{:.0f}/100</span>)"
+          R"(<span class="num-ctx">@ {} / {} Hz, P95 {:.1f} us, P99.9 {:.1f} us</span></div>)",
+          typ.weakest_latency_score, format_payload_size(typ.weakest_latency_size), typ.weakest_latency_rate,
+          typ.weakest_latency_p95_us, typ.weakest_latency_p999_us);
     }
 
     if (typ.peak_mb_s > 0.0) {
@@ -3688,8 +3689,8 @@ bool save_html(const Bench::Result& result, const std::string& file_path, std::s
       "latency (and P99.9 / P99.99 in detail tables)</td><td data-i18n-label=\"th_meaning\" data-label=\"Meaning\" "
       "data-i18n=\"metric_p95_meaning\">Latency percentiles. The heatmap shows P50 (typical), P90 (slower common "
       "case), "
-      "and P99 (tail) side by side; detail tables and scoring also include P99.9 and P99.99 to surface rare slow "
-      "messages. Lower numbers are better across the board.</td></tr>";
+      "and P99 (tail) side by side; detail tables also include P99.9 and P99.99 to surface rare slow messages. "
+      "Lower numbers are better across the board.</td></tr>";
   html +=
       "<tr><td data-i18n-label=\"th_metric\" data-label=\"Metric\" data-i18n=\"metric_mbps_label\">Received "
       "MB/s</td><td data-i18n-label=\"th_meaning\" data-label=\"Meaning\" data-i18n=\"metric_mbps_meaning\">"

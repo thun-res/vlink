@@ -452,6 +452,7 @@ std::string strip_ansi_escape_codes(const std::string& input) {
 
 double score_latency_us(const AggregatedCase& item) {
   if (item.scenario.suite == Bench::kLatencySuite) {
+    const auto& cfg = score_config();
     double weighted_sum = 0.0;
     double weight_sum = 0.0;
 
@@ -464,12 +465,10 @@ double score_latency_us(const AggregatedCase& item) {
       weight_sum += weight;
     };
 
-    add_latency(item.p95_latency_us, 0.55);
-    add_latency(item.p99_latency_us, 0.30);
-    add_latency(item.p999_latency_us, 0.10);
-    add_latency(item.p9999_latency_us, 0.02);
-    add_latency(item.max_latency_us, 0.02);
-    add_latency(item.latency_stddev_us, 0.01);
+    add_latency(item.p95_latency_us, cfg.latency_p95_weight);
+    add_latency(item.p99_latency_us, cfg.latency_p99_weight);
+    add_latency(item.p999_latency_us, cfg.latency_p999_weight);
+    add_latency(item.p9999_latency_us, cfg.latency_p9999_weight);
 
     if (weight_sum > 0.0) {
       return weighted_sum / weight_sum;
@@ -480,6 +479,7 @@ double score_latency_us(const AggregatedCase& item) {
 }
 
 double score_latency_quality(const AggregatedCase& item) {
+  const auto& cfg = score_config();
   double weighted_sum = 0.0;
   double weight_sum = 0.0;
 
@@ -492,10 +492,10 @@ double score_latency_quality(const AggregatedCase& item) {
     weight_sum += weight;
   };
 
-  add_latency_score(item.p95_latency_us, 0.50);
-  add_latency_score(item.p99_latency_us, 0.35);
-  add_latency_score(item.p999_latency_us, 0.12);
-  add_latency_score(item.p9999_latency_us, 0.03);
+  add_latency_score(item.p95_latency_us, cfg.latency_p95_weight);
+  add_latency_score(item.p99_latency_us, cfg.latency_p99_weight);
+  add_latency_score(item.p999_latency_us, cfg.latency_p999_weight);
+  add_latency_score(item.p9999_latency_us, cfg.latency_p9999_weight);
 
   if (weight_sum <= 0.0) {
     return compute_absolute_latency_score(score_latency_us(item), item.scenario.payload_size);

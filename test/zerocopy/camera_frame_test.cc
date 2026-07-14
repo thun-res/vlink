@@ -86,22 +86,94 @@ TEST_SUITE("zerocopy-CameraFrame") {
   }
 
   TEST_CASE("all Format enum values can be set and retrieved") {
-    const zerocopy::CameraFrame::Format formats[] = {
-        zerocopy::CameraFrame::kFormatYuv420,       zerocopy::CameraFrame::kFormatYuv422,
-        zerocopy::CameraFrame::kFormatYuv444,       zerocopy::CameraFrame::kFormatNv12,
-        zerocopy::CameraFrame::kFormatNv21,         zerocopy::CameraFrame::kFormatYuyv,
-        zerocopy::CameraFrame::kFormatYvyu,         zerocopy::CameraFrame::kFormatUyvy,
-        zerocopy::CameraFrame::kFormatVyuy,         zerocopy::CameraFrame::kFormatBgr888Packed,
-        zerocopy::CameraFrame::kFormatRgb888Packed, zerocopy::CameraFrame::kFormatRgb888Planar,
-        zerocopy::CameraFrame::kFormatJpeg,         zerocopy::CameraFrame::kFormatH264,
-        zerocopy::CameraFrame::kFormatH265,
+    struct FormatCase {
+      zerocopy::CameraFrame::Format format;
+      uint8_t value;
     };
 
-    for (auto fmt : formats) {
+    const FormatCase formats[] = {
+        {zerocopy::CameraFrame::kFormatUnknown, 0U},
+        {zerocopy::CameraFrame::kFormatYuv420, 1U},
+        {zerocopy::CameraFrame::kFormatYuv422, 2U},
+        {zerocopy::CameraFrame::kFormatYuv444, 3U},
+        {zerocopy::CameraFrame::kFormatNv12, 4U},
+        {zerocopy::CameraFrame::kFormatNv21, 5U},
+        {zerocopy::CameraFrame::kFormatYuyv, 6U},
+        {zerocopy::CameraFrame::kFormatYvyu, 7U},
+        {zerocopy::CameraFrame::kFormatUyvy, 8U},
+        {zerocopy::CameraFrame::kFormatVyuy, 9U},
+        {zerocopy::CameraFrame::kFormatBgr888Packed, 10U},
+        {zerocopy::CameraFrame::kFormatRgb888Packed, 11U},
+        {zerocopy::CameraFrame::kFormatRgb888Planar, 12U},
+        {zerocopy::CameraFrame::kFormatMono8, 13U},
+        {zerocopy::CameraFrame::kFormatMono16, 14U},
+        {zerocopy::CameraFrame::kFormatRgba8888Packed, 15U},
+        {zerocopy::CameraFrame::kFormatBgra8888Packed, 16U},
+        {zerocopy::CameraFrame::kFormatUint8C1, 20U},
+        {zerocopy::CameraFrame::kFormatUint8C2, 21U},
+        {zerocopy::CameraFrame::kFormatUint8C3, 22U},
+        {zerocopy::CameraFrame::kFormatUint8C4, 23U},
+        {zerocopy::CameraFrame::kFormatInt8C1, 24U},
+        {zerocopy::CameraFrame::kFormatInt8C2, 25U},
+        {zerocopy::CameraFrame::kFormatInt8C3, 26U},
+        {zerocopy::CameraFrame::kFormatInt8C4, 27U},
+        {zerocopy::CameraFrame::kFormatUint16C1, 28U},
+        {zerocopy::CameraFrame::kFormatUint16C2, 29U},
+        {zerocopy::CameraFrame::kFormatUint16C3, 30U},
+        {zerocopy::CameraFrame::kFormatUint16C4, 31U},
+        {zerocopy::CameraFrame::kFormatInt16C1, 32U},
+        {zerocopy::CameraFrame::kFormatInt16C2, 33U},
+        {zerocopy::CameraFrame::kFormatInt16C3, 34U},
+        {zerocopy::CameraFrame::kFormatInt16C4, 35U},
+        {zerocopy::CameraFrame::kFormatInt32C1, 36U},
+        {zerocopy::CameraFrame::kFormatInt32C2, 37U},
+        {zerocopy::CameraFrame::kFormatInt32C3, 38U},
+        {zerocopy::CameraFrame::kFormatInt32C4, 39U},
+        {zerocopy::CameraFrame::kFormatFloat32C1, 40U},
+        {zerocopy::CameraFrame::kFormatFloat32C2, 41U},
+        {zerocopy::CameraFrame::kFormatFloat32C3, 42U},
+        {zerocopy::CameraFrame::kFormatFloat32C4, 43U},
+        {zerocopy::CameraFrame::kFormatFloat64C1, 44U},
+        {zerocopy::CameraFrame::kFormatFloat64C2, 45U},
+        {zerocopy::CameraFrame::kFormatFloat64C3, 46U},
+        {zerocopy::CameraFrame::kFormatFloat64C4, 47U},
+        {zerocopy::CameraFrame::kFormatBayerRggb8, 60U},
+        {zerocopy::CameraFrame::kFormatBayerBggr8, 61U},
+        {zerocopy::CameraFrame::kFormatBayerGbrg8, 62U},
+        {zerocopy::CameraFrame::kFormatBayerGrbg8, 63U},
+        {zerocopy::CameraFrame::kFormatBayerRggb16, 64U},
+        {zerocopy::CameraFrame::kFormatBayerBggr16, 65U},
+        {zerocopy::CameraFrame::kFormatBayerGbrg16, 66U},
+        {zerocopy::CameraFrame::kFormatBayerGrbg16, 67U},
+        {zerocopy::CameraFrame::kFormatJpeg, 101U},
+        {zerocopy::CameraFrame::kFormatH264, 102U},
+        {zerocopy::CameraFrame::kFormatH265, 103U},
+        {zerocopy::CameraFrame::kFormatMjpeg, 104U},
+        {zerocopy::CameraFrame::kFormatPng, 105U},
+        {zerocopy::CameraFrame::kFormatWebp, 106U},
+        {zerocopy::CameraFrame::kFormatH266, 107U},
+        {zerocopy::CameraFrame::kFormatAv1, 108U},
+    };
+
+    for (const auto& item : formats) {
+      CHECK_EQ(static_cast<uint8_t>(item.format), item.value);
       zerocopy::CameraFrame f;
-      f.set_format(fmt);
-      CHECK_EQ(f.format(), fmt);
+      f.set_format(item.format);
+      CHECK_EQ(f.format(), item.format);
     }
+  }
+
+  TEST_CASE("encoding helpers cover common ROS OpenCV and codec names") {
+    CHECK_EQ(zerocopy::CameraFrame::format_from_encoding("rgb8"), zerocopy::CameraFrame::kFormatRgb888Packed);
+    CHECK_EQ(zerocopy::CameraFrame::format_from_encoding("BGR8"), zerocopy::CameraFrame::kFormatBgr888Packed);
+    CHECK_EQ(zerocopy::CameraFrame::format_from_encoding("mono16"), zerocopy::CameraFrame::kFormatMono16);
+    CHECK_EQ(zerocopy::CameraFrame::format_from_encoding("32FC1"), zerocopy::CameraFrame::kFormatFloat32C1);
+    CHECK_EQ(zerocopy::CameraFrame::format_from_encoding("bayer-rggb8"), zerocopy::CameraFrame::kFormatBayerRggb8);
+    CHECK_EQ(zerocopy::CameraFrame::format_from_encoding("hevc"), zerocopy::CameraFrame::kFormatH265);
+    CHECK_EQ(zerocopy::CameraFrame::format_from_encoding("jpg"), zerocopy::CameraFrame::kFormatJpeg);
+    CHECK_EQ(zerocopy::CameraFrame::format_from_encoding("webp"), zerocopy::CameraFrame::kFormatWebp);
+    CHECK_EQ(zerocopy::CameraFrame::encoding_from_format(zerocopy::CameraFrame::kFormatFloat32C1), "32FC1");
+    CHECK_EQ(zerocopy::CameraFrame::encoding_from_format(zerocopy::CameraFrame::kFormatUnknown), "unknown");
   }
 
   TEST_CASE("all Stream enum values can be set and retrieved") {

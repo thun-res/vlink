@@ -125,7 +125,8 @@ class VLINK_EXPORT Bytes final {  // size == 128 bytes
    * @details
    * @c Bytes::bytes_malloc routes through @c MemoryPool::global_instance().  Calling this once
    * at program start front-loads the singleton construction cost and respects
-   * @c VLINK_MEMORY_LEVEL / @c VLINK_MEMORY_PREALLOC.  Subsequent calls are idempotent no-ops.
+   * @c VLINK_MEMORY_LEVEL / @c VLINK_MEMORY_PREALLOC / @c VLINK_MEMORY_BATCH_SIZE.  Subsequent
+   * calls are idempotent no-ops.
    */
   static void init_memory_pool() noexcept;
 

@@ -21,7 +21,7 @@
  * limitations under the License.
  */
 
-#include "./extension/terminal_stream.h"
+#include "./base/terminal_stream.h"
 
 #include <cerrno>
 #include <cstdio>

@@ -30,10 +30,14 @@
 
 #include <argparse/argparse.hpp>
 //
+#include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <vector>
+
+static constexpr auto kMaxPacketSizeMb = static_cast<double>(std::numeric_limits<size_t>::max()) / (1024.0 * 1024.0);
 
 int main(int argc, char* argv[]) {
   vlink::Utils::set_console_utf8_output();
@@ -140,6 +144,13 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
+  if VUNLIKELY (!std::isfinite(proxy_config.max_packet_size) || proxy_config.max_packet_size < 0.0 ||
+                proxy_config.max_packet_size > kMaxPacketSizeMb) {
+    std::cerr << "Invalid max packet size." << std::endl;
+    std::cerr << program << std::endl;
+    return 1;
+  }
+
 #ifdef _WIN32
   try {
     proxy_config.iox_config = vlink::Helpers::path_to_string(std::filesystem::path(proxy_config.iox_config));
@@ -150,7 +161,6 @@ int main(int argc, char* argv[]) {
 #endif
 
 #ifdef VLINK_SUPPORT_SHM
-
   if VLIKELY (iox_monitoring == "on" || iox_monitoring == "ON" || iox_monitoring == "On") {
     proxy_config.iox_monitoring = true;
   } else if (iox_monitoring == "off" || iox_monitoring == "OFF" || iox_monitoring == "Off") {

@@ -31,8 +31,8 @@
 
 class FFmpegDecoder : protected vlink::MessageLoop {
  public:
-  using DataCallback =
-      vlink::MoveFunction<void(int channel, int seq, int width, int height, const vlink::Bytes& img_data)>;
+  using DataCallback = vlink::MoveFunction<void(int channel, int seq, int width, int height, int bytes_per_line,
+                                                const vlink::Bytes& img_data)>;
 
   using ErrorCallback = vlink::MoveFunction<void(int channel, int seq)>;
 
@@ -42,6 +42,10 @@ class FFmpegDecoder : protected vlink::MessageLoop {
     kH264 = 2,
     kH265 = 3,
     kMPEG4 = 4,
+    kAV1 = 5,
+    kH266 = 6,
+    kPNG = 7,
+    kWEBP = 8,
     kYUV420 = 11,
     kYUV422 = 12,
     kYUV444 = 13,
@@ -49,6 +53,7 @@ class FFmpegDecoder : protected vlink::MessageLoop {
     kYUYV = 15,
     kYVYU = 16,
     kUYVY = 17,
+    kNV21 = 18,
     kBGR888 = 21,
     kRGB888 = 22,
   };

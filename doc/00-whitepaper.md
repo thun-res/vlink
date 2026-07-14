@@ -612,7 +612,7 @@ VLink 的 `Logger` 是全局单例日志系统，支持四种日志书写风格�
 | `SpinLock`              | 自旋锁，适用于极短临界区（预期等待时间 < 1μs）                         |
 | `MpmcQueue<T>`          | MPMC 无锁多生产者多消费者队列，内部用于 `kLockfreeType` MessageLoop    |
 | `ObjectPool<T>`         | 对象池，减少频繁构造/析构开销，用于内部消息缓冲区管理                  |
-| `MemoryPool`            | 分级（金字塔）free-list 内存池，Bytes 默认分配器；通过 `VLINK_MEMORY_LEVEL`（0..9）选档，L0 = bypass |
+| `MemoryPool`            | 分级（金字塔）free-list 内存池，Bytes 默认分配器；重复争用后启用 free-list 分片，可通过 Config/环境变量调整跨分片批量；`VLINK_MEMORY_LEVEL`（0..9）选档，L0 = bypass |
 | `MemoryResource`        | `std::pmr::memory_resource` 适配器，桥接 `MemoryPool`；提供 `make_shared` / `make_unique` 工厂供热路径替换 `std::` 版本 |
 | `Plugin`                | 动态库（.so）插件加载器，用于传输后端的动态加载                        |
 | `NameDetector`          | 头文件级的编译期类型名/枚举名内省工具（基于 `__PRETTY_FUNCTION__` 解析），用于日志与诊断中输出可读的类型与枚举标签 |
@@ -1187,13 +1187,13 @@ target_link_libraries(my_target PRIVATE vlink::vlink vlink::shm vlink::dds)
 
 VLink 遵循 Unix 哲学，将每个调试功能封装为独立的可执行程序，彼此职责清晰、部署灵活，与 ROS2 单一 `ros2` 命令的子命令树形成鲜明对比。独立可执行程序的设计带来三方面工程收益：单个工具可独立裁剪与升级、便于按部署环境差异化分发、避免单一巨型命令带来的依赖耦合。
 
-VLink CLI 工具链由 9 个独立可执行程序构成，覆盖从系统诊断、运行时发现、实时监控，到数据管理与序列化调试、性能基准测试的全链路需求：
+VLink CLI 工具链由 10 个独立可执行程序构成，覆盖从系统诊断、运行时发现、实时监控，到数据管理与序列化调试、性能基准测试的全链路需求：
 
 ![CLI 工具链概览](images/foreword-cli-tools-table.png)
 
 > **图 13-1**：VLink CLI 工具链全景
 
-所有工具均采用 `argparse` 库统一解析命令行参数，支持 `-h/--help` 自动生成帮助文档，并通过编译宏自动植入版本号。需要节点发现的工具（`vlink-list`、`vlink-monitor`、`vlink-dump` 等）内部依赖基于 UDP 组播的运行时发现机制进行拓扑感知，跨机器场景下需确保相关组播路由已正确配置。下文按职责对九个工具的定位与代表性能力做提纲式说明。
+所有工具均采用 `argparse` 库统一解析命令行参数，支持 `-h/--help` 自动生成帮助文档，并通过编译宏自动植入版本号。需要节点发现的工具（`vlink-list`、`vlink-monitor`、`vlink-dump` 等）内部依赖基于 UDP 组播的运行时发现机制进行拓扑感知，跨机器场景下需确保相关组播路由已正确配置。下文按职责对十个工具的定位与代表性能力做提纲式说明。
 
 | 工具          | 定位                                                         |
 | ------------- | ------------------------------------------------------------ |
@@ -1202,6 +1202,7 @@ VLink CLI 工具链由 9 个独立可执行程序构成，覆盖从系统诊断�
 | `vlink-list`  | 运行时通信拓扑发现，列出在线进程的全部通信节点               |
 | `vlink-monitor` | 全屏 TUI 实时监控面板，绘制频率/速率/延迟/丢包曲线         |
 | `vlink-bag`   | Bag 文件全生命周期管理（录制/回放/克隆/校验/修复/标注）       |
+| `vlink-trigger` | 内存触发录制（EDR），内存环形缓冲滚动、事件触发落盘触发点前后窗口 |
 | `vlink-dump`  | 实时流或 Bag 数据提取导出（多格式）与离线切片/扫描           |
 | `vlink-eproto`| Protobuf 动态发布/订阅调试（免预编译）                       |
 | `vlink-efbs`  | FlatBuffers 动态发布/订阅调试（免预编译）                    |
@@ -1670,7 +1671,7 @@ VLink 的长期价值需要依托健康的开源生态来实现。生态建设�
 
 **第三，将零拷贝、安全加密、多序列化等高级特性封装到统一 API 中**。零拷贝 SHM 传输通过框架 API 封装借贷细节，安全加密可通过模板参数 `SecurityType::kWithSecurity` 开启，多格式序列化（Protobuf/FlatBuffers/CDR/POD/自定义）通过统一的序列化 traits 自动推导。这些特性在现有方案中往往需要额外配置，VLink 将其收敛为编译期选项或 URL 参数，降低了工程实现难度。
 
-**第四，构建了完整的工程工具链**。9 个 CLI 工具（vlink-info、vlink-check、vlink-list、vlink-monitor、vlink-bag、vlink-dump、vlink-eproto、vlink-efbs、vlink-bench）覆盖了从环境诊断、拓扑发现、实时监控、数据管理到性能基准测试的全链路调试需求；BagWriter、DiscoveryViewer、CpuProfiler、Logger 等基础组件内建于框架，使系统可观测性成为默认能力。这使 VLink 从单纯的通信库升级为具备完整运维支撑的通信基础设施平台。
+**第四，构建了完整的工程工具链**。10 个 CLI 工具（vlink-info、vlink-check、vlink-list、vlink-monitor、vlink-bag、vlink-trigger、vlink-dump、vlink-eproto、vlink-efbs、vlink-bench）覆盖了从环境诊断、拓扑发现、实时监控、数据管理到性能基准测试的全链路调试需求；BagWriter、DiscoveryViewer、CpuProfiler、Logger 等基础组件内建于框架，使系统可观测性成为默认能力。这使 VLink 从单纯的通信库升级为具备完整运维支撑的通信基础设施平台。
 
 **第五，提供了自动驾驶领域专项设计的多层次可视化工具链**。桌面端，vlink-viewer 的多通道相机显示、FFmpeg 视频解码、OpenSceneGraph 三维点云渲染、相机-点云 2D/3D 联动投影，vlink-player 的三窗口时间轴联动与 URL 重映射，vlink-analyzer 的 JSON 驱动时序分析——这三个工具组成的可视化套件在功能深度与自动驾驶场景适配性上，提供了较为完整的国产中间件可视化能力。此外，WebViz 工具集（`vlink-foxglove` 和 `vlink-rerun` 两个独立 C++ 桥接可执行文件）通过标准 WebSocket / gRPC 协议将 VLink 实时数据桥接到 Foxglove Studio 与 Rerun Viewer 前端，结合 `vlink-bag2mcap` 与 `vlink-bag2rrd` 离线转换工具，构成了"桌面 Qt GUI + Foxglove 浏览器前端 + Rerun 客户端 + 离线文件"的组合式可视化覆盖。
 

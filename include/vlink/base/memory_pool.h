@@ -27,11 +27,15 @@
  *
  * @details
  * @c MemoryPool dispatches each allocation request to one of a fixed pyramid of size classes.
- * Every tier owns a singly-linked free list of fixed-size blocks plus a vector of upstream
- * chunks; the chunk capacity starts small and doubles geometrically until it reaches the
- * configured @c blocks_per_chunk.  Requests larger than the biggest tier (or with an alignment
- * stricter than @c alignof(std::max_align_t)) bypass the pool and route directly to
- * @c ::operator @c new / @c ::operator @c delete.
+ * Every tier owns a small fixed set of singly-linked free-list shards plus one shared vector of
+ * upstream chunks.  A tier starts on its primary shard and enables sharded dispatch only after
+ * repeated real lock contention is observed.  Empty local shards steal at most
+ * @c Config::batch_size nodes at a time.  Chunk capacity starts small and doubles
+ * geometrically until it reaches the configured @c blocks_per_chunk; sharding does not multiply
+ * chunk quotas.
+ * Requests larger than the biggest tier (or with an alignment stricter than
+ * @c alignof(std::max_align_t)) bypass the pool and route directly to @c ::operator @c new /
+ * @c ::operator @c delete.
  *
  * @par Tier / bucket source
  *
@@ -59,7 +63,7 @@
  *           | tier hit
  *           v
  *  +-----------------+   free list non-empty -> pop block
- *  |  per-tier lock  |
+ *  | per-tier shard  |
  *  +--------+--------+
  *           | free list empty
  *           v
@@ -84,10 +88,10 @@
  *   pool.trim();                                   // periodic memory reclaim
  * @endcode
  *
- * @note Public methods are @c noexcept and safe for concurrent use.  Per-tier locking means
- *       traffic across different size classes does not contend.  @c deallocate requires the
- *       same @p bytes value passed to @c allocate.  @c allocate returns @c nullptr on upstream
- *       OOM and never throws.
+ * @note Public methods are @c noexcept and safe for concurrent use.  Different size classes do
+ *       not contend, while same-tier traffic is distributed after repeated contention is observed.
+ *       @c deallocate requires the same @p bytes value passed to @c allocate.  @c allocate
+ *       returns @c nullptr on upstream OOM and never throws.
  */
 
 #pragma once
@@ -106,9 +110,10 @@ namespace vlink {
  * @brief Per-tier free-list pool with runtime statistics and oversized passthrough.
  *
  * @details
- * Thread-safe.  Each tier owns its own spin lock so @c allocate, @c deallocate and @c clear on
- * different size classes never contend.  Bypass mode -- selected by an empty tier list -- routes
- * every request through the global allocator without any pooling.
+ * Thread-safe.  Each tier owns a fixed set of short-held free-list spin locks and a blocking
+ * growth lock.  The primary free list preserves the single-thread fast path; same-tier traffic
+ * switches to sharded dispatch after repeated contention.  Bypass mode -- selected by an empty
+ * tier list -- routes every request through the global allocator without any pooling.
  */
 class VLINK_EXPORT MemoryPool final {
  public:
@@ -130,17 +135,19 @@ class VLINK_EXPORT MemoryPool final {
   };
 
   /**
-   * @brief Constructor configuration grouping the tier list and the preallocation toggle.
+   * @brief Constructor configuration for tiers, preallocation and cross-shard batch size.
    *
    * @details
    * @c prealloc controls whether the constructor immediately fills every tier to its full
    * @c blocks_per_chunk quota.  Default @c false keeps the lazy growth path.  Preallocation is
    * best effort; any tier whose @c ::operator @c new fails stays in lazy state and the
-   * constructor continues.
+   * constructor continues.  @c batch_size limits how many nodes an empty shard transfers
+   * from another shard while holding its short free-list lock; @c 0 falls back to the default 16.
    */
   struct Config final {
     std::vector<Tier> tiers;  ///< Tier descriptors; empty or all-sentinel selects bypass mode.
     bool prealloc{false};     ///< When @c true, eagerly fill every managed tier to its quota.
+    size_t batch_size{16U};   ///< Maximum nodes transferred per cross-shard steal; @c 0 uses 16.
   };
 
   /**
@@ -208,7 +215,7 @@ class VLINK_EXPORT MemoryPool final {
    * and silently falls back to the level-3 default pyramid.  @c std::bad_alloc may propagate
    * from internal vector growth.
    *
-   * @param config  Tier descriptors and preallocation flag.
+   * @param config  Tier descriptors, preallocation flag and cross-shard steal batch size.
    */
   explicit MemoryPool(const Config& config);
 
@@ -290,8 +297,8 @@ class VLINK_EXPORT MemoryPool final {
    * For each tier the free list is grouped by owning chunk; chunks whose free-node count equals
    * their block capacity are released, others stay intact.  @c chunk_count is decremented by
    * the number of released chunks.  Safe to call concurrently with @c allocate and
-   * @c deallocate.  Per-tier work is @c O(C @c log @c C @c + @c F @c log @c C) under the spin
-   * lock.
+   * @c deallocate.  Per-tier work is @c O(C @c log @c C @c + @c F @c log @c C) while growth and
+   * all free-list shards are paused.
    */
   void clear() noexcept;
 
@@ -304,7 +311,7 @@ class VLINK_EXPORT MemoryPool final {
   void trim() noexcept;
 
   /**
-   * @brief Returns the default tier pyramid using @c VLINK_MEMORY_LEVEL / @c VLINK_MEMORY_PREALLOC.
+   * @brief Returns the default configuration using the @c VLINK_MEMORY_* environment variables.
    *
    * @details
    * Each level @c 0..9 maps to a hand-coded row of @c {max_size, @c blocks_per_chunk} pairs.
@@ -314,7 +321,9 @@ class VLINK_EXPORT MemoryPool final {
    * @c blocks_per_chunk of the 64 B tier to absorb high-density tiny allocations.
    *
    * @c VLINK_MEMORY_PREALLOC controls the @c prealloc flag; only the literal value @c "1"
-   * enables preallocation.
+   * enables preallocation.  @c VLINK_MEMORY_BATCH_SIZE overrides @c batch_size;
+   * it must be a positive integer and defaults to @c 16.  Environment values are captured on
+   * the first call to @c get_default_config().
    *
    * @return @c Config ready to pass to the constructor.
    */

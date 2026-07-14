@@ -65,7 +65,7 @@ _vlink-bag_record() {
         '(-x --max_packet_size)'{-x,--max_packet_size}'=[Max packet size (MB)]:size:' \
         '(-j --wal_mode)'{-j,--wal_mode}'[Enable WAL mode]' \
         '(-c --cache_size)'{-c,--cache_size}'=[Cache size (MB)]:size:' \
-        '(-s --sync_mode)'{-s,--sync_mode}'[Sync mode]' \
+        '(-s --sync_mode)'{-s,--sync_mode}'[Synchronous write mode]' \
         '--max_task_depth=[Max pending tasks in the queue]:depth:' \
         '--max_memory_size=[Max memory size in the queue (GB)]:size:' \
         '--max_row_count=[Max row count]:count:' \

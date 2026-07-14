@@ -27,9 +27,9 @@
 #include <vlink/base/format.h>
 #include <vlink/base/helpers.h>
 #include <vlink/base/message_loop.h>
+#include <vlink/base/terminal_stream.h>
 #include <vlink/base/timer.h>
 #include <vlink/base/utils.h>
-#include <vlink/extension/terminal_stream.h>
 
 #include <algorithm>
 #include <array>
@@ -173,7 +173,15 @@ size_t find_wrap_pos(std::string_view text, size_t max_length) {
     return text.size();
   }
 
-  return soft_end != 0 ? soft_end : hard_end;
+  if (hard_end != 0) {
+    return soft_end != 0 ? soft_end : hard_end;
+  }
+
+  uint32_t first_cp = 0;
+  size_t first_bytes = 0;
+  decode_utf8(text, 0, first_cp, first_bytes);
+
+  return first_bytes != 0 ? first_bytes : text.size();
 }
 
 void append_wrapped_detail(std::vector<std::string>& lines, std::string_view label, const std::string& value,
@@ -268,6 +276,9 @@ std::vector<std::string> build_terminal_detail_lines(const AggregatedCase& item,
                             " % | rss " + format_memory_cell(item.memory_usage) + " MB",
                         width);
   append_wrapped_detail(lines, " url : ", item.scenario.url, width);
+  if (item.transport == "shm2" && item.wire_size != 0) {
+    append_wrapped_detail(lines, " slice: ", format_size_label(item.wire_size), width);
+  }
   append_wrapped_detail(
       lines,
       " node: ", item.scenario.properties.empty() ? std::string("-") : format_property_list(item.scenario.properties),
@@ -1472,7 +1483,7 @@ bool print_terminal(const Bench::Result& result, const TerminalOptions& options,
   terminal_timer.set_interval(kTerminalInterval);
   terminal_timer.set_loop_count(Timer::kInfinite);
   terminal_timer.attach(&terminal_loop);
-  terminal_timer.set_callback([&]() {
+  terminal_timer.set_callback([&quit_function, &print_function, &redraw, &terminal_size]() {
     if VUNLIKELY (Bench::stop_requested()) {
       quit_function();
       return;

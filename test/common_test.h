@@ -87,6 +87,24 @@ using namespace vlink;
 
 namespace common_test {
 
+#ifdef VLINK_TEST_SUPPORT_FLATBUFFERS
+
+struct FlatMessageBuilder {
+  using Table = fbs::Message;
+
+  explicit FlatMessageBuilder(const char* value) {
+    auto str = fbb_.CreateString(value);
+    root_ = fbs::CreateMessage(fbb_, 7, str);
+  }
+
+  flatbuffers::Offset<Table> Finish() { return root_; }
+
+  flatbuffers::FlatBufferBuilder fbb_;
+  flatbuffers::Offset<Table> root_;
+};
+
+#endif
+
 template <typename PredicateT>
 bool wait_until(PredicateT&& predicate, std::chrono::milliseconds timeout = std::chrono::milliseconds(1000)) {
   const auto deadline = std::chrono::steady_clock::now() + timeout;

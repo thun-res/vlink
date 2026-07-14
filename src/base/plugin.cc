@@ -189,7 +189,7 @@ class DynamicLibrary final {
 
   static std::string get_error_description() noexcept {
 #if defined(_WIN32) || defined(_WIN64)
-    constexpr size_t kBufferSize = 512;
+    static constexpr size_t kBufferSize = 512;
     const auto error_code = ::GetLastError();
 
     if (!error_code) {

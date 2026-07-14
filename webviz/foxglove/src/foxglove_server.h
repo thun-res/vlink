@@ -43,11 +43,11 @@
 #include <vector>
 
 //
-#include "foxglove_converter.h"
-#include "foxglove_parameters.h"
-#include "foxglove_rpc.h"
-#include "proxy_bridge.h"
-#include "vlink_convert.h"
+#include "./foxglove_converter.h"
+#include "./foxglove_parameters.h"
+#include "./foxglove_rpc.h"
+#include "./proxy_bridge.h"
+#include "./vlink_convert.h"
 
 //
 #include <websocketpp/config/asio_no_tls.hpp>

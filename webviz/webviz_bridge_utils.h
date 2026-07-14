@@ -31,7 +31,7 @@
 #include <string>
 #include <vector>
 
-#include "proxy_bridge.h"
+#include "./proxy_bridge.h"
 
 namespace vlink {
 namespace webviz {

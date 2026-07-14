@@ -26,7 +26,7 @@
 #include <argparse/argparse.hpp>
 #include <string>
 
-#include "dump_types.h"
+#include "./dump_types.h"
 
 namespace vlink::dump {
 

@@ -35,6 +35,7 @@
 #include "./base/helpers.h"
 #include "./base/logger.h"
 #include "./base/utils.h"
+#include "./extension/bag_plugin_interface.h"
 #include "./extension/schema_plugin_manager.h"
 #include "./extension/vcap_writer.h"
 #include "./extension/vdb_writer.h"
@@ -102,7 +103,6 @@ struct BagWriter::Impl final {
   std::mutex active_write_mtx;
   std::atomic<uint64_t> active_thread_id{0};
   std::string active_origin_url;
-  bool active_immediate{false};
   int64_t active_record_result{0};
 
   std::atomic_bool stream_fail{false};
@@ -199,7 +199,6 @@ BagWriter* BagWriter::global_get() { return GlobalWriter::get().instance.get(); 
 
 BagWriter::BagWriter(const std::string& path, const Config& config) : impl_(std::make_unique<Impl>()) {
   (void)path;
-  (void)config;
 
   if (!config.sync_mode) {
     impl_->index_to_url_map.reserve(128);
@@ -250,13 +249,13 @@ void BagWriter::get_url_meta(int url_index, int ser_index, std::string& url, std
 
   auto url_iter = impl_->index_to_url_map.find(url_index);
 
-  if (url_iter != impl_->index_to_url_map.end()) {
+  if VLIKELY (url_iter != impl_->index_to_url_map.end()) {
     url = url_iter->second;
   }
 
   auto ser_iter = impl_->index_to_ser_map.find(ser_index);
 
-  if (ser_iter != impl_->index_to_ser_map.end()) {
+  if VLIKELY (ser_iter != impl_->index_to_ser_map.end()) {
     ser = ser_iter->second;
   }
 }
@@ -301,7 +300,7 @@ void BagWriter::detach_plugin() {
   }
 }
 
-void BagWriter::bind_plugin_interface(const std::shared_ptr<BagPluginInterface>& plugin_interface) {
+void BagWriter::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& bag_interface) {
   std::shared_ptr<BagPluginInterface> old_plugin_interface;
 
   {
@@ -309,20 +308,22 @@ void BagWriter::bind_plugin_interface(const std::shared_ptr<BagPluginInterface>&
     old_plugin_interface = impl_->plugin_interface;
   }
 
-  if (old_plugin_interface && old_plugin_interface != plugin_interface) {
+  if (old_plugin_interface && old_plugin_interface != bag_interface) {
     old_plugin_interface->flush();
     old_plugin_interface->register_callback({});
   }
 
-  if VLIKELY (plugin_interface) {
-    plugin_interface->bind_direction(BagPluginInterface::Direction::kWrite);
+  if VLIKELY (bag_interface) {
+    bag_interface->bind_direction(BagPluginInterface::Direction::kWrite);
 
-    plugin_interface->register_callback([this](const Frame& frame) {
+    bag_interface->register_callback([this](const Frame& frame) {
       const bool active = impl_->active_thread_id.load(std::memory_order_acquire) == Utils::get_native_thread_id();
 
       if VUNLIKELY (frame.url.empty()) {
         if (active) {
           impl_->active_record_result = -1;
+        } else {
+          set_fail();
         }
 
         return;
@@ -332,24 +333,24 @@ void BagWriter::bind_plugin_interface(const std::shared_ptr<BagPluginInterface>&
         learn_recorded_url(impl_->active_origin_url, frame.url);
       }
 
-      const bool immediate = active && impl_->active_immediate;
+      const int64_t record_result = record(frame, frame.timestamp);
 
-      const int64_t record_result = record(frame, immediate);
-
-      if (active && record_result < 0) {
+      if VUNLIKELY (active && record_result < 0) {
         impl_->active_record_result = record_result;
+      } else if VUNLIKELY (record_result < 0) {
+        set_fail();
       }
     });
   }
 
   std::unique_lock state_lock(impl_->record_state_mtx);
 
-  impl_->plugin_interface = plugin_interface;
+  impl_->plugin_interface = bag_interface;
 }
 
-void BagWriter::clear_plugin_interface() { bind_plugin_interface(nullptr); }
+void BagWriter::clear_bag_interface() { bind_bag_interface(nullptr); }
 
-int64_t BagWriter::push(const Frame& frame, bool immediate) {
+int64_t BagWriter::push(const Frame& frame) {
   if VUNLIKELY (frame.url.empty()) {
     return -1;
   }
@@ -361,6 +362,10 @@ int64_t BagWriter::push(const Frame& frame, bool immediate) {
   {
     std::shared_lock state_lock(impl_->record_state_mtx);
     plugin_interface = impl_->plugin_interface;
+  }
+
+  if VLIKELY (!plugin_interface) {
+    return record(frame, target_timestamp);
   }
 
   Frame stamped;
@@ -376,14 +381,9 @@ int64_t BagWriter::push(const Frame& frame, bool immediate) {
     effective = &stamped;
   }
 
-  if VLIKELY (!plugin_interface) {
-    return record(*effective, immediate);
-  }
-
   std::lock_guard active_lock(impl_->active_write_mtx);
 
   impl_->active_origin_url = effective->url;
-  impl_->active_immediate = immediate;
   impl_->active_record_result = target_timestamp;
   impl_->active_thread_id.store(Utils::get_native_thread_id(), std::memory_order_release);
   plugin_interface->on_write(*effective);
@@ -391,33 +391,40 @@ int64_t BagWriter::push(const Frame& frame, bool immediate) {
   impl_->active_thread_id.store(0, std::memory_order_release);
   const int64_t result = impl_->active_record_result < 0 ? impl_->active_record_result : target_timestamp;
   impl_->active_origin_url.clear();
-  impl_->active_immediate = false;
   impl_->active_record_result = 0;
 
   return result;
 }
 
 BagWriter& BagWriter::operator<<(const Frame& frame) {
-  if VUNLIKELY (push(frame, false) < 0) {
-    impl_->stream_fail.store(true, std::memory_order_relaxed);
+  if VUNLIKELY (push(frame) < 0) {
+    set_fail();
   }
 
   return *this;
 }
 
 BagWriter& BagWriter::operator<<(const SchemaData& schema_data) {
-  if VUNLIKELY (!push_schema(schema_data, false)) {
-    impl_->stream_fail.store(true, std::memory_order_relaxed);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  if VUNLIKELY (!push_schema(schema_data)) {
+    set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
   return *this;
 }
 
-bool BagWriter::fail() const noexcept { return impl_->stream_fail.load(std::memory_order_relaxed); }
+bool BagWriter::fail() const noexcept { return impl_->stream_fail.load(std::memory_order_acquire); }
 
-BagWriter::operator bool() const noexcept { return !impl_->stream_fail.load(std::memory_order_relaxed); }
+BagWriter::operator bool() const noexcept { return !impl_->stream_fail.load(std::memory_order_acquire); }
 
-void BagWriter::clear() noexcept { impl_->stream_fail.store(false, std::memory_order_relaxed); }
+void BagWriter::clear() noexcept { impl_->stream_fail.store(false, std::memory_order_release); }
+
+void BagWriter::close() {}
+
+bool BagWriter::post_persistent_task(Callback&& callback) {
+  return post_untracked_task(std::move(callback), TaskOverflowPolicy::kReject, TaskDropPolicy::kProtected);
+}
+
+void BagWriter::set_fail() noexcept { impl_->stream_fail.store(true, std::memory_order_release); }
 
 void BagWriter::learn_recorded_url(const std::string& origin_url, const std::string& recorded_url) {
   {

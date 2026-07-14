@@ -123,11 +123,6 @@ class CustomCheckBox : public QCheckBox {
   void keyReleaseEvent(QKeyEvent* event) override { event->ignore(); }
 };
 
-static bool perception_dispatch_expired(uint64_t dispatch_start_ms) {
-  const auto now_ms = vlink::ElapsedTimer::get_cpu_timestamp(vlink::ElapsedTimer::kMilli);
-  return now_ms > dispatch_start_ms && now_ms - dispatch_start_ms > 1000;
-}
-
 #ifdef VLINK_ENABLE_VIEWER_OSG
 
 static osg::Vec4d perception_value_color(double value, double min_value, double max_value) {
@@ -432,21 +427,22 @@ PerceptionDialog::PerceptionDialog(QWidget* parent) : QDialog(parent), ui(new Ui
       }
     }
 
-    bool owned = false;
+#ifdef VLINK_ENABLE_VIEWER_OSG
+    bool should_render = false;
 
     {
       std::lock_guard lock(cache_mtx_);
 
       if (url_ctx_.find(proxy_data.url) != url_ctx_.end()) {
         proxy_data_cache_[proxy_data.url] = proxy_data;
-        owned = true;
+        should_render = pending_render_urls_.insert(proxy_data.url).second;
       }
     }
 
-    if (owned) {
-      QMetaObject::invokeMethod(this, "render_url", Qt::QueuedConnection,
-                                Q_ARG(QString, QString::fromStdString(proxy_data.url)));
+    if (should_render) {
+      enqueue_render_url(QString::fromStdString(proxy_data.url));
     }
+#endif
   };
 
   if (window_) {
@@ -537,6 +533,13 @@ std::unordered_map<std::string, PerceptionDialog::UrlContext> PerceptionDialog::
   return contexts;
 }
 
+void PerceptionDialog::enqueue_render_url(const QString& url) {
+  if VUNLIKELY (!QMetaObject::invokeMethod(this, "render_url", Qt::QueuedConnection, Q_ARG(QString, url))) {
+    std::lock_guard lock(cache_mtx_);
+    pending_render_urls_.erase(url.toStdString());
+  }
+}
+
 void PerceptionDialog::render_url(const QString& url) {
   const auto url_str = url.toStdString();
 
@@ -545,6 +548,7 @@ void PerceptionDialog::render_url(const QString& url) {
 
   {
     std::lock_guard lock(cache_mtx_);
+    pending_render_urls_.erase(url_str);
 
     const auto cache_iter = proxy_data_cache_.find(url_str);
     const auto ctx_iter = url_ctx_.find(url_str);
@@ -557,15 +561,34 @@ void PerceptionDialog::render_url(const QString& url) {
     context = &ctx_iter->second;
   }
 
-  const auto dispatch_start_ms =
-      static_cast<uint64_t>(vlink::ElapsedTimer::get_cpu_timestamp(vlink::ElapsedTimer::kMilli));
-
-  if (perception_dispatch_expired(dispatch_start_ms)) {
-    return;
-  }
-
 #ifdef VLINK_ENABLE_VIEWER_OSG
   if (context->schema == vlink::SchemaType::kZeroCopy) {
+    if (!context->mappings.empty() || !context->hud_bindings.empty()) {
+      std::vector<perception::Layer> layers;
+      std::vector<std::vector<perception::HudField>> hud_fields;
+
+      if (!perception::decode::decode_zerocopy_batch(proxy_data.raw, proxy_data.ser, context->mappings,
+                                                     context->hud_bindings, layers, hud_fields)) {
+        return;
+      }
+
+      for (size_t i = 0; i < layers.size(); ++i) {
+        render_layer(url_str + "#" + std::to_string(i), url_str, layers[i]);
+      }
+
+      for (auto& fields : hud_fields) {
+        for (auto& field : fields) {
+          hud_values_[field.slot] = std::move(field);
+        }
+      }
+
+      if (!context->hud_bindings.empty()) {
+        update_hud_overlay();
+      }
+
+      return;
+    }
+
     perception::Layer layer;
     layer.type = context->type;
 
@@ -620,6 +643,11 @@ void PerceptionDialog::render_url(const QString& url) {
 
   if (context->schema == vlink::SchemaType::kFlatbuffers && context->fbs_context && context->fbs_context->schema &&
       context->fbs_context->root_object) {
+    if (!flatbuffers::Verify(*context->fbs_context->schema, *context->fbs_context->root_object,
+                             reinterpret_cast<const uint8_t*>(proxy_data.raw.data()), proxy_data.raw.size())) {
+      return;
+    }
+
     const auto* root_table = flatbuffers::GetAnyRoot(reinterpret_cast<const uint8_t*>(proxy_data.raw.data()));
 
     if (!root_table) {
@@ -659,7 +687,7 @@ void PerceptionDialog::apply_config(const PerceptionConfig& config, const QStrin
   auto fresh = build_contexts();
 
   std::vector<google::protobuf::Message*> stale_prototypes;
-  std::vector<QString> cached_urls;
+  std::vector<QString> render_urls;
 
   {
     std::lock_guard lock(cache_mtx_);
@@ -671,8 +699,8 @@ void PerceptionDialog::apply_config(const PerceptionConfig& config, const QStrin
     url_ctx_ = std::move(fresh);
 
     for (const auto& [url, data] : proxy_data_cache_) {
-      if (url_ctx_.find(url) != url_ctx_.end()) {
-        cached_urls.push_back(QString::fromStdString(url));
+      if (url_ctx_.find(url) != url_ctx_.end() && pending_render_urls_.insert(url).second) {
+        render_urls.push_back(QString::fromStdString(url));
       }
     }
   }
@@ -701,8 +729,8 @@ void PerceptionDialog::apply_config(const PerceptionConfig& config, const QStrin
 
   ui->lineEdit_config_path->setText(path);
 
-  for (const auto& url : cached_urls) {
-    render_url(url);
+  for (const auto& url : render_urls) {
+    enqueue_render_url(url);
   }
 
   if (persist) {
@@ -969,9 +997,10 @@ void PerceptionDialog::init_osg() {
         car_node_ = result.getNode();
 
         if (car_node_.valid()) {
+          car_node_->setNodeMask(0U);
           root_group_->addChild(car_node_);
           ui->checkBox_car->setEnabled(true);
-          ui->checkBox_car->setChecked(true);
+          ui->checkBox_car->setChecked(false);
         }
       }
     }
@@ -1200,7 +1229,7 @@ void PerceptionDialog::update_hud_overlay() {
   static const QFontMetricsF title_metrics(title_font);
 
   qreal label_w = 0;
-  qreal value_w = 0;
+  qreal value_w = value_metrics.horizontalAdvance(QStringLiteral("-0000.00"));
   qreal unit_w = 0;
 
   for (const auto& row : rows) {

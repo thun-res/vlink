@@ -29,13 +29,14 @@
 
 | 容器 | 适用数据 | 典型后端 | 结构图 |
 | --- | --- | --- | --- |
-| `CameraFrame` | 图像帧 / 编码视频（H.264/H.265） | `shm://`、`dds://` | camera-frame-structure |
+| `CameraFrame` | 图像帧 / 编码图像 / 编码视频 | `shm://`、`dds://` | camera-frame-structure |
 | `PointCloud` | 激光雷达 / 深度点云 | `shm://`、`dds://` | point-cloud-structure |
 | `OccupancyGrid` | 2D 占据 / 代价 / SDF 地图 | `shm://`、`dds://` | occupancy-grid-structure |
 | `Tensor` | 神经网络张量输入/输出 | `shm://`、`dds://` | tensor-structure |
 | `ObjectArray` | 3D 检测 / 跟踪目标列表 | 任意 | — |
 | `AudioFrame` | PCM / 编码音频帧 | 任意 | — |
 | `RawData` | 自定义二进制负载 | 任意 | — |
+| `ProxyData` | 代理层消息信封及原始载荷 | 任意 | — |
 
 ```cpp
 vlink::Publisher<vlink::zerocopy::CameraFrame> pub("shm://camera/front");
@@ -118,12 +119,13 @@ frame.header.time_pub  = now_ns();
 
 ![CameraFrame 数据结构](images/camera-frame-structure.png)
 
-头文件 `include/vlink/zerocopy/camera_frame.h`。携带分辨率、像素格式、通道、采集频率等元数据与像素缓冲区，同时支持原始像素（YUV/RGB）与编码帧（JPEG/H.264/H.265）。
+头文件 `include/vlink/zerocopy/camera_frame.h`。携带分辨率、像素格式、通道、采集频率等元数据与像素缓冲区，同时支持原始像素（YUV/RGB/Mono/Bayer/OpenCV 数值格式）与编码帧（JPEG/PNG/WebP/MJPEG/H.26x/AV1）。
 
 常用元数据 setter：`set_width(w)`、`set_height(h)`、`set_format(fmt)`、`set_channel(ch)`、`set_freq(hz)`、`set_stream(s)`（仅编码视频）。对应 getter 为去掉 `set_` 前缀的同名方法。
 
-- 像素格式 `Format`：原始格式 `kFormatYuv420`、`kFormatNv12`、`kFormatNv21`、`kFormatYuyv`、`kFormatBgr888Packed`、`kFormatRgb888Packed`、`kFormatRgb888Planar` 等；编码格式 `kFormatJpeg`、`kFormatH264`、`kFormatH265`。
-- 视频流帧类型 `Stream`（仅 H.264/H.265）：`kStreamI`（关键帧）、`kStreamP`（前向预测帧）、`kStreamB`（双向预测帧）。
+- 像素格式 `Format`：原始格式 `kFormatYuv420`、`kFormatNv12`、`kFormatNv21`、`kFormatYuyv`、`kFormatBgr888Packed`、`kFormatRgb888Packed`、`kFormatRgb888Planar`、`kFormatMono8`、`kFormatMono16`、`kFormatRgba8888Packed`、`kFormatBgra8888Packed`，通用 OpenCV/ROS 数值格式 `kFormatUint8C1` 到 `kFormatFloat64C4`，Bayer 格式 `kFormatBayerRggb8` 到 `kFormatBayerGrbg16`；编码格式 `kFormatJpeg`、`kFormatPng`、`kFormatMjpeg`、`kFormatH264`、`kFormatH265`、`kFormatH266`、`kFormatAv1`、`kFormatWebp`。
+- 编码名转换：`CameraFrame::format_from_encoding("32FC1")` 可从 ROS/OpenCV/codec 名称得到 `Format`；`encoding_from_format(fmt)` 返回规范编码名。
+- 视频流帧类型 `Stream`（编码视频）：`kStreamI`（关键帧）、`kStreamP`（前向预测帧）、`kStreamB`（双向预测帧）。
 
 ```cpp
 static constexpr uint32_t kW = 1920;
@@ -154,7 +156,7 @@ sub.listen([](const vlink::zerocopy::CameraFrame& frame) {
 });
 ```
 
-编码视频流：发布端经 `shallow_copy(nal_data, nal_size)` 借用编码器输出的 NAL 缓冲区，并以 `set_format(kFormatH264)` 与 `set_stream(...)` 标注；订阅端按 `format()` / `stream()` 路由至解码器。
+编码视频流：发布端经 `shallow_copy(data, size)` 借用编码器输出缓冲区，并以 `set_format(kFormatH264)`、`set_format(kFormatH265)`、`set_format(kFormatH266)` 或 `set_format(kFormatAv1)` 与 `set_stream(...)` 标注；订阅端按 `format()` / `stream()` 路由至解码器。
 
 ---
 
@@ -367,6 +369,34 @@ sub.listen([](const vlink::zerocopy::RawData& rd) {
 代理层另有内部容器 `ProxyData`（`include/vlink/zerocopy/proxy_data.h`），供 VLink 代理路由使用，普通应用一般不直接操作。
 
 ![ProxyData 数据结构](images/proxy-data-structure.png)
+
+### 6.9.1 统一只读解析 `MessageParser`
+
+需要在运行期按序列化类型读取消息的工具和扩展，应包含 `<vlink/zerocopy/message_parser.h>` 并使用 `vlink::zerocopy::MessageParser`。解析器统一识别 `RawData`、`CameraFrame`、`PointCloud`、`ProxyData`、`OccupancyGrid`、`Tensor`、`ObjectArray` 与 `AudioFrame` 八种类型；CLI、viewer、analyzer、Web 桥接和 Python 绑定的通用字段读取使用这一入口，避免各层重复维护类型识别、边界检查与字段类型转换。为避免热路径回退，viewer 和 Web 可视化中 CameraFrame / PointCloud 的专用实时渲染可以直接调用对应容器 codec，绕过通用字段解析器。各容器 codec 仍是底层序列化实现。
+
+```cpp
+vlink::zerocopy::MessageParser parser;
+
+if (!parser.parse(serialized_type, bytes)) {
+  return;
+}
+
+vlink::zerocopy::MessageParser::Value value;
+
+if (parser.value("header.time_meas", value)) {
+  consume(value);
+}
+
+if (parser.value("data", 3, "track_id", value)) {
+  consume(value);
+}
+```
+
+根字段使用点路径，例如 `header.frame_id`、`width`、`dtype`。变长集合通过 `value(collection, index, field, out)` 读取：`PointCloud.data[N].field` 与 `ObjectArray.data[N].field` 读取记录字段，`OccupancyGrid.data[N].value` 和 `Tensor.data[N].value` 读取标量，`Tensor.shape[N].value` / `strides[N].value` 读取维度信息。`collection_size()` 提供统一的边界；`fields()` 与 `element_fields()` 可用于动态 UI 或 schema 构建。
+
+`Field` 描述符除字段名与 `Value` 类型外，还带有呈现语义：`enum_kind` 标明字段编码的内置枚举（供解析出符号名）、`is_time` 标明纳秒时间戳、`is_bool` 标明布尔、`is_reserved` 标明可隐藏的保留槽。基于这些元数据，同一头文件提供一个纯反射驱动的可读渲染器 `format_message(parser, options)`：它遍历 `fields()` / `element_fields()` 生成规范文本，包括 `header {}`、PointCloud 的 `protocol {}` 与逐点展开、Tensor shape、枚举符号名、日期、十六进制和布尔；其他二进制集合保持摘要形式。`vlink-dump`、`vlink-efbs`、`vlink-eproto` 共用这一渲染器，输出保持一致。
+
+`Value` 保留 `int64_t` / `uint64_t` 的整数精度。只有调用 `numeric(..., double&, &precision_loss)` 为 ExprTk 等浮点计算显式转换时，超过 IEEE-754 精确整数范围的值才会通过 `precision_loss` 报告精度损失。解析得到的容器可能借用输入 `Bytes` 的存储，因而输入缓冲区必须至少与解析器同寿命，并且在解析器有效期间不得修改其内容、大小、容量或底层存储。Python 的 `parse()` / `parse_type()` 会自动保活输入对象；如果检测到输入指针或大小发生变化，后续读取会令该解析结果表现为无效。原地内容修改无法由解析器可靠检测，仍属于调用方禁止操作。
 
 ---
 

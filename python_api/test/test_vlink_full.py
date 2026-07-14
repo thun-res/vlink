@@ -722,13 +722,14 @@ def test_bag_extended():
     cfg.compress = _vlink.BagWriter.CompressType.LZAV
     cfg.ignore_compress_urls = {"intra://schema_cb"}
     w = _vlink.BagWriter.create(bag_path, cfg)
+    w.async_run()
 
     explicit_schema = _vlink.SchemaData()
     explicit_schema.name = "demo.Explicit"
     explicit_schema.encoding = "protobuf"
     explicit_schema.schema_type = _vlink.SchemaType.Protobuf
     explicit_schema.data = _vlink.Bytes.from_bytes(b"explicit-schema")
-    assert w.push_schema(explicit_schema, immediate=True)
+    assert w.push_schema(explicit_schema)
 
     callback_calls = []
 
@@ -742,7 +743,6 @@ def test_bag_extended():
         return schema
 
     w.register_schema_callback(schema_callback)
-    w.async_run()
     for i in range(5):
         frame = _bag_frame("intra://t", "raw", _vlink.SchemaType.Raw, _vlink.ActionType.Publish, f"m{i}".encode())
         timestamp = w.push(frame)
@@ -753,17 +753,17 @@ def test_bag_extended():
         _vlink.SchemaType.Protobuf,
         _vlink.ActionType.Publish,
         b"schema-msg",
-    ), immediate=True)
+    ))
     assert isinstance(schema_timestamp, int)
     time.sleep(0.05)
-    timestamp_immediate = w.push(
-        _bag_frame("intra://t", "raw", _vlink.SchemaType.Raw, _vlink.ActionType.Publish, b"sync"),
-        immediate=True,
-    )
-    assert isinstance(timestamp_immediate, int)
+    timestamp = w.push(_bag_frame("intra://t", "raw", _vlink.SchemaType.Raw, _vlink.ActionType.Publish, b"queued"))
+    assert isinstance(timestamp, int)
     time.sleep(0.2)
+    assert w.wait_for_idle(5000)
     w.quit()
-    w.wait_for_quit(5000)
+    assert w.wait_for_quit(5000)
+    w.close()
+    assert not w.fail()
     del w  # release writer before opening reader
 
     # filter_get (shared instance management) - uses separate file
@@ -833,7 +833,9 @@ def test_bag_extended():
 
 def test_bag_writer_explicit_zero_timestamp():
     bag_path = os.path.join(tempfile.mkdtemp(), "zero_ts.vdb")
-    w = _vlink.BagWriter.create(bag_path)
+    cfg = _vlink.BagWriter.Config()
+    cfg.sync_mode = True
+    w = _vlink.BagWriter.create(bag_path, cfg)
     timestamp = w.push(_bag_frame(
         "intra://zero_ts",
         "raw",
@@ -841,7 +843,7 @@ def test_bag_writer_explicit_zero_timestamp():
         _vlink.ActionType.Publish,
         b"zero-ts",
         timestamp=0,
-    ), immediate=True)
+    ))
     assert timestamp == 0
     del w
 
@@ -1155,6 +1157,65 @@ def test_discovery_viewer_fields():
     print("[PASS] DiscoveryViewer fields")
 
 
+def test_plugin_host_binding_contract():
+    config = _vlink.TriggerRecorder.Config()
+    assert not hasattr(config, "bag_plugin_lib")
+    assert not hasattr(config, "bag_plugin_dir")
+
+    loader = _vlink.Plugin()
+    missing_name = "__vlink_python_missing_plugin__"
+    assert loader.load_bag_plugin(missing_name) is None
+    assert loader.load_trigger_plugin(missing_name) is None
+    print("[PASS] host-loaded plugin interface contract")
+
+
+def test_trigger_recorder_lifecycle():
+    config = _vlink.TriggerRecorder.Config()
+    config.whitelist = ["intra://__python_trigger_test_absent__"]
+    config.default_pre_ms = 0
+    config.default_post_ms = 0
+    config.retention_guard_ms = 0
+
+    with tempfile.TemporaryDirectory() as dump_dir:
+        config.dump_dir = dump_dir
+        output_path = os.path.join(dump_dir, "python-trigger.vdb")
+
+        try:
+            recorder = _vlink.TriggerRecorder(config)
+        except RuntimeError as exc:
+            if "DiscoveryViewer: Failed to create socket" in str(exc):
+                print("[SKIP] TriggerRecorder lifecycle (socket unavailable)")
+                return
+            raise
+
+        assert not recorder.is_running()
+        assert not recorder.is_dumping()
+        assert hasattr(recorder, "bind_bag_interface")
+        assert hasattr(recorder, "bind_trigger_interface")
+        recorder.clear_bag_interface()
+        recorder.clear_trigger_interface()
+        assert recorder.async_run()
+        assert recorder.is_running()
+
+        params = _vlink.TriggerRecorder.TriggerParams()
+        params.reason = "python-test"
+        params.out_file = output_path
+        assert recorder.dump(params)
+
+        deadline = time.monotonic() + 5.0
+        while recorder.is_dumping() and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+        assert not recorder.is_dumping()
+        assert os.path.isfile(output_path)
+
+        recorder.quit()
+        assert recorder.wait_for_quit(timeout_ms=5000)
+        assert not recorder.is_running()
+
+    print("[PASS] TriggerRecorder lifecycle and dump")
+
+
 def test_utils_terminal():
     w, h = _vlink.utils.get_terminal_size()
     assert isinstance(w, int)
@@ -1176,7 +1237,7 @@ def test_api_surface():
         "Publisher", "Subscriber", "Server", "Client", "FireForgetServer", "FireForgetClient", "Setter", "Getter",
         "SecurityPublisher", "SecuritySubscriber", "SecurityServer", "SecurityClient", "SecuritySetter",
         "SecurityGetter", "SecurityFireForgetServer", "SecurityFireForgetClient",
-        "DiscoveryViewer", "BagWriter", "BagReader",
+        "DiscoveryViewer", "BagPluginInterface", "TriggerPluginInterface", "Plugin", "BagWriter", "BagReader", "TriggerRecorder",
         "utils", "helpers", "quantize", "QosProfile", "Status",
         "log_trace", "log_debug", "log_info", "log_warn", "log_error", "log_fatal",
         "TIMER_INFINITE", "VERSION", "VERSION_MAJOR", "VERSION_MINOR", "VERSION_PATCH",
@@ -1256,7 +1317,10 @@ def test_api_surface():
         assert hasattr(_vlink.utils, name), f"utils missing function: {name}"
 
     assert hasattr(_vlink.BagWriter.Config, "ignore_compress_urls")
-    for method in ("register_schema_callback", "push_schema", "fail", "clear", "__lshift__", "wait_for_idle"):
+    assert hasattr(_vlink.BagWriter.Config, "sync_mode")
+    for method in (
+        "register_schema_callback", "push_schema", "close", "fail", "clear", "__lshift__", "wait_for_idle",
+    ):
         assert hasattr(_vlink.BagWriter, method), f"BagWriter missing method: {method}"
     for method in ("detect_schema", "open_cursor", "read_next", "eof", "fail", "__iter__", "__next__"):
         assert hasattr(_vlink.BagReader, method), f"BagReader missing method: {method}"
@@ -1464,6 +1528,8 @@ if __name__ == "__main__":
     test_exec_task()
     test_timer_constructors()
     test_discovery_viewer_fields()
+    test_plugin_host_binding_contract()
+    test_trigger_recorder_lifecycle()
     test_utils_terminal()
     test_api_surface()
     test_node_wire_meta_validation()

@@ -66,16 +66,16 @@ class OsgNameNodeVisitor : public osg::NodeVisitor {
   osg::ref_ptr<osg::Node> m_node = nullptr;
 };
 
-template <typename TARGET, typename BASE>
+template <typename TargetT, typename BaseT>
 class OsgAnimationNodeVisitor : public osg::NodeVisitor {
  public:
   OsgAnimationNodeVisitor() : osg::NodeVisitor(TRAVERSE_NONE) {}
-  osg::ref_ptr<TARGET> getNode(const osg::ref_ptr<osg::Node>& node) {
-    osg::ref_ptr<TARGET> manager;
+  osg::ref_ptr<TargetT> getNode(const osg::ref_ptr<osg::Node>& node) {
+    osg::ref_ptr<TargetT> manager;
     this->apply(*node);
 
     if (m_node.valid()) {
-      manager = new TARGET(*m_node);
+      manager = new TargetT(*m_node);
       node->setUpdateCallback(manager);
     }
 
@@ -85,7 +85,7 @@ class OsgAnimationNodeVisitor : public osg::NodeVisitor {
  protected:
   void apply(osg::Node& node) override {
     if (node.getUpdateCallback()) {
-      m_node = dynamic_cast<BASE*>(node.getUpdateCallback());
+      m_node = dynamic_cast<BaseT*>(node.getUpdateCallback());
       return;
     }
 
@@ -93,7 +93,7 @@ class OsgAnimationNodeVisitor : public osg::NodeVisitor {
   }
 
  private:
-  osg::ref_ptr<BASE> m_node{nullptr};
+  osg::ref_ptr<BaseT> m_node{nullptr};
 };
 
 #endif

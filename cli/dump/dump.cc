@@ -26,17 +26,17 @@
 #include <vlink/extension/schema_plugin_manager.h>
 #include <vlink/version.h>
 
-#include "dump_context.h"
-#include "dump_expr.h"
-#include "dump_extract.h"
-#include "dump_features.h"
-#include "dump_path.h"
-#include "dump_plan.h"
-#include "dump_proto_cache.h"
-#include "dump_schema.h"
-#include "dump_slice.h"
-#include "dump_types.h"
-#include "dump_validate.h"
+#include "./dump_context.h"
+#include "./dump_expr.h"
+#include "./dump_extract.h"
+#include "./dump_features.h"
+#include "./dump_path.h"
+#include "./dump_plan.h"
+#include "./dump_proto_cache.h"
+#include "./dump_schema.h"
+#include "./dump_slice.h"
+#include "./dump_types.h"
+#include "./dump_validate.h"
 
 #if __has_include(<google/protobuf/compiler/importer.h>) && __has_include(<google/protobuf/text_format.h>)
 
@@ -64,6 +64,8 @@
 #include <flatbuffers/idl.h>
 
 #if FLATBUFFERS_VERSION_MAJOR >= 22
+#include <flatbuffers/reflection.h>
+
 #include "private/flat_gen_text.h"
 #endif
 
@@ -155,11 +157,11 @@ static bool check_rate_limit() {
 static void start_print() {
   auto& ctx = vlink::dump::DumpContext::get();
 
+  ctx.main_elapsed_timer.start();
+
   if (ctx.quiet_flag) {
     return;
   }
-
-  ctx.main_elapsed_timer.start();
 
   if VUNLIKELY (ctx.print_thread.joinable()) {
     return;
@@ -531,6 +533,8 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
 
 #ifdef VLINK_HAS_FBS_COMPILER
   std::shared_ptr<flatbuffers::Parser> fbs_parser;
+  const reflection::Schema* fbs_schema = nullptr;
+  const reflection::Object* fbs_root_object = nullptr;
 #endif
   bool warned_flatbuffers_fields = false;
 
@@ -549,7 +553,11 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
   std::string cached_ser;
 
 #ifdef VLINK_HAS_FBS_COMPILER
-  auto reset_cached_decoder = [&fbs_parser]() { fbs_parser.reset(); };
+  auto reset_cached_decoder = [&fbs_parser, &fbs_schema, &fbs_root_object]() {
+    fbs_parser.reset();
+    fbs_schema = nullptr;
+    fbs_root_object = nullptr;
+  };
 #else
   auto reset_cached_decoder = []() {};
 #endif
@@ -566,7 +574,7 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
 #ifdef VLINK_HAS_FBS_COMPILER
   auto schema_interface = vlink::SchemaPluginManager::get().get_interface();
 
-  auto ensure_fbs_parser = [&fbs_dir, &fbs_parser, &sync_cached_ser,
+  auto ensure_fbs_parser = [&fbs_dir, &fbs_parser, &fbs_schema, &fbs_root_object, &sync_cached_ser,
                             &schema_interface](const std::string& ser) -> flatbuffers::Parser* {
     sync_cached_ser(ser);
 
@@ -586,6 +594,17 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
 
         if (std::filesystem::exists(fbs_path, fbs_ec) && !fbs_ec) {
           import_fbs(fbs_parser, ser, fbs_path, fbs_path, has_import);
+        }
+      }
+
+      if (fbs_parser) {
+        fbs_parser->Serialize();
+
+        flatbuffers::Verifier verifier(fbs_parser->builder_.GetBufferPointer(), fbs_parser->builder_.GetSize());
+
+        if (reflection::VerifySchemaBuffer(verifier)) {
+          fbs_schema = reflection::GetSchema(fbs_parser->builder_.GetBufferPointer());
+          fbs_root_object = fbs_schema != nullptr ? fbs_schema->root_table() : nullptr;
         }
       }
     }
@@ -610,7 +629,7 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
     std::lock_guard lock(ctx.dump_callback_mtx);
     ctx.dump_callback = [target_url, &dump_seq, &out_file_name, &proto_cache,
 #ifdef VLINK_HAS_FBS_COMPILER
-                         &ensure_fbs_parser,
+                         &ensure_fbs_parser, &fbs_schema, &fbs_root_object,
 #endif
                          &warn_flatbuffers_fields,
                          &dump_type_suffix](int64_t timestamp, const std::string& url, const std::string& ser,
@@ -671,7 +690,13 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
 #ifdef VLINK_HAS_FBS_COMPILER
             auto* parser = ensure_fbs_parser(ser);
 
-            if (parser != nullptr) {
+            const bool fbs_verified =
+                parser != nullptr && fbs_schema != nullptr && fbs_root_object != nullptr && !bytes.empty() &&
+                (parser->opts.size_prefixed
+                     ? flatbuffers::VerifySizePrefixed(*fbs_schema, *fbs_root_object, bytes.data(), bytes.size())
+                     : flatbuffers::Verify(*fbs_schema, *fbs_root_object, bytes.data(), bytes.size()));
+
+            if (fbs_verified) {
               std::string text;
               const auto* error_chars = flatbuffers::custom::GenText(*parser, bytes.data(), &text);
 
@@ -699,13 +724,15 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
 
           std::vector<VariantType> values;
           values.reserve(cb_ctx.field_specs.size());
+          vlink::zerocopy::MessageParser zerocopy_parser;
+          const bool zerocopy_parsed = is_zerocopy && zerocopy_parser.parse(ser, bytes);
 
           for (size_t i = 0; i < cb_ctx.field_specs.size(); ++i) {
             VariantType val;
             bool found = false;
 
             if (is_zerocopy) {
-              found = extract_zerocopy_value(ser, bytes, cb_ctx.field_specs[i], val);
+              found = zerocopy_parsed && extract_zerocopy_value(zerocopy_parser, cb_ctx.field_specs[i], val);
             } else if (proto_message != nullptr) {
               found = extract_proto_value(*proto_message, cb_ctx.field_paths[i], 0, val);
             }
@@ -733,26 +760,27 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
       }
 
       if (cb_ctx.dump_type == DumpType::kPcd) {
-        if (!is_zerocopy || !match_zerocopy_type(ser, "PointCloud")) {
+        if (!is_zerocopy ||
+            vlink::zerocopy::MessageParser::detect_type(ser) != vlink::zerocopy::MessageParser::Type::kPointCloud) {
           return;
         }
 
-        vlink::zerocopy::PointCloud pc;
+        vlink::zerocopy::PointCloud point_cloud;
 
-        if VUNLIKELY (!vlink::Serializer::convert(bytes, pc)) {
+        if VUNLIKELY (!vlink::Serializer::convert(bytes, point_cloud)) {
           return;
         }
 
         ++dump_seq;
         std::string pcd_path = out_file_name + "." + std::to_string(dump_seq) + ".pcd";
 
-        if (!write_pcd_file(pcd_path, pc)) {
+        if (!write_pcd_file(pcd_path, point_cloud)) {
           fail_output_write(pcd_path);
           return;
         }
 
         if (!cb_ctx.quiet_flag && cb_ctx.detail_flag) {
-          std::cout << "PCD: " << pcd_path << " (" << pc.size() << " points)" << std::endl;
+          std::cout << "PCD: " << pcd_path << " (" << point_cloud.size() << " points)" << std::endl;
         }
 
         return;
@@ -800,13 +828,15 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
         DumpRecord record;
         record.timestamp = timestamp;
         record.values.reserve(cb_ctx.field_specs.size());
+        vlink::zerocopy::MessageParser zerocopy_parser;
+        const bool zerocopy_parsed = is_zerocopy && zerocopy_parser.parse(ser, bytes);
 
         for (size_t i = 0; i < cb_ctx.field_specs.size(); ++i) {
           VariantType val;
           bool found = false;
 
           if (is_zerocopy) {
-            found = extract_zerocopy_value(ser, bytes, cb_ctx.field_specs[i], val);
+            found = zerocopy_parsed && extract_zerocopy_value(zerocopy_parser, cb_ctx.field_specs[i], val);
           } else if (proto_message != nullptr) {
             found = extract_proto_value(*proto_message, cb_ctx.field_paths[i], 0, val);
           }

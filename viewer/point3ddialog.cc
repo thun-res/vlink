@@ -114,7 +114,13 @@ class CustomCheckBox : public QCheckBox {
 };
 
 [[maybe_unused]] static uint32_t get_point3d_color(double value, double min_value, double max_value, bool inversion) {
-  double normalized = (value - min_value) / (max_value - min_value);
+  const double range = max_value - min_value;
+  double normalized = 0.0;
+
+  if (range > 0 && std::isfinite(range) && std::isfinite(value) && std::isfinite(min_value) &&
+      std::isfinite(max_value)) {
+    normalized = (value - min_value) / range;
+  }
 
   normalized = std::clamp(normalized, 0.0, 1.0);
 
@@ -1675,45 +1681,7 @@ void Point3DDialog::init_osg() {
             } else {
               context += "# NUM_" + QString::number(point_index) + QString(" IDX_") + QString::number(index) + "\n";
               for (const auto& [name, type, value] : value_list) {
-                switch (type) {
-                  case vlink::zerocopy::PointCloud::kBoolType:
-                    context += QString::fromStdString(name) + ": " + QString::number(value) + "\n";
-                    break;
-                  case vlink::zerocopy::PointCloud::kInt8Type:
-                    context += QString::fromStdString(name) + ": " + QString::number(value) + "\n";
-                    break;
-                  case vlink::zerocopy::PointCloud::kUint8Type:
-                    context += QString::fromStdString(name) + ": " + QString::number(value) + "\n";
-                    break;
-                  case vlink::zerocopy::PointCloud::kInt16Type:
-                    context += QString::fromStdString(name) + ": " + QString::number(value) + "\n";
-                    break;
-                  case vlink::zerocopy::PointCloud::kUint16Type:
-                    context += QString::fromStdString(name) + ": " + QString::number(value) + "\n";
-                    break;
-                  case vlink::zerocopy::PointCloud::kInt32Type:
-                    context += QString::fromStdString(name) + ": " + QString::number(value) + "\n";
-                    break;
-                  case vlink::zerocopy::PointCloud::kUint32Type:
-                    context += QString::fromStdString(name) + ": " + QString::number(value) + "\n";
-                    break;
-                  case vlink::zerocopy::PointCloud::kInt64Type:
-                    context += QString::fromStdString(name) + ": " + QString::number(value) + "\n";
-                    break;
-                  case vlink::zerocopy::PointCloud::kUint64Type:
-                    context += QString::fromStdString(name) + ": " + QString::number(value) + "\n";
-                    break;
-                  case vlink::zerocopy::PointCloud::kFloatType:
-                    context += QString::fromStdString(name) + ": " + QString::number(value) + "\n";
-                    break;
-                  case vlink::zerocopy::PointCloud::kDoubleType:
-                    context += QString::fromStdString(name) + ": " + QString::number(value) + "\n";
-                    break;
-                  default: {
-                    context += QString::fromStdString(name) + ": " + QString::number(value) + "\n";
-                    break;
-                  }
-                }
+                context += QString::fromStdString(name) + ": " + QString::number(value) + "\n";
               }
 
               context += "\n";
@@ -3004,7 +2972,7 @@ std::shared_ptr<Point3DDialog::ASTNode> Point3DDialog::parse_expression_to_ast(c
   QStack<std::shared_ptr<ASTNode>> node_stack;
   QStack<QChar> operator_stack;
 
-  auto apply_operator = [&]() {
+  auto apply_operator = [&node_stack, &operator_stack]() {
     if (node_stack.size() < 2 || operator_stack.isEmpty()) {
       operator_stack.clear();
       return;

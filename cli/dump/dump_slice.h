@@ -23,6 +23,6 @@
 
 #pragma once
 
-#include "dump_plan.h"
+#include "./dump_plan.h"
 
 int start_slice(const vlink::dump::SliceOptions& opt);

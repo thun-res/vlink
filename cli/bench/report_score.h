@@ -69,6 +69,11 @@ struct ScoreConfig final {
   double capacity_gate_threshold = 18.0;
   double capacity_gate_headroom_factor = 0.80;
 
+  double latency_p95_weight = 0.70;
+  double latency_p99_weight = 0.25;
+  double latency_p999_weight = 0.04;
+  double latency_p9999_weight = 0.01;
+
   double confidence_high = 1.00;
   double confidence_medium = 0.99;
   double confidence_noisy = 0.95;
@@ -76,10 +81,6 @@ struct ScoreConfig final {
   double confidence_unknown = 0.95;
   double confidence_endpoint_medium_loss_pct = 5.0;
   double confidence_endpoint_noisy_loss_pct = 15.0;
-
-  double latency_payload_weight_slope = 0.27;
-  double latency_payload_weight_min = 1.00;
-  double latency_payload_weight_max = 3.00;
 };
 
 inline const ScoreConfig& score_config() {
@@ -110,13 +111,6 @@ inline double compute_absolute_latency_score(double latency_us, size_t payload_s
 
   const double ratio = std::log(latency_us / excellent_us) / std::log(poor_us / excellent_us);
   return clamp_score((1.0 - ratio) * 100.0);
-}
-
-inline double latency_payload_weight(size_t payload_size) {
-  const auto& c = score_config();
-  const double payload_kib = static_cast<double>(payload_size) / 1024.0;
-  return std::clamp(1.0 + c.latency_payload_weight_slope * std::log1p(std::max(payload_kib, 0.0)),
-                    c.latency_payload_weight_min, c.latency_payload_weight_max);
 }
 
 inline double compute_absolute_send_block_score(double send_block_us, size_t payload_size) {

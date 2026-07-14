@@ -1000,8 +1000,6 @@ TEST_SUITE("base-MessageLoop") {
     std::atomic<bool> first_started{false};
     std::atomic<int> exec_count{0};
 
-    loop.async_run();
-
     loop.post_task([&first_started, &gate] {
       first_started.store(true, std::memory_order_release);
       while (!gate.load(std::memory_order_acquire)) {
@@ -1009,18 +1007,31 @@ TEST_SUITE("base-MessageLoop") {
       }
     });
 
-    while (!first_started.load(std::memory_order_acquire)) {
-      std::this_thread::yield();
-    }
+    std::vector<TaskHandle> handles;
 
     for (int i = 0; i < 5; ++i) {
-      loop.post_task([&exec_count] { exec_count.fetch_add(1); });
+      handles.emplace_back(loop.post_task_handle([&exec_count] { exec_count.fetch_add(1); }));
     }
+
+    REQUIRE(loop.async_run());
+    REQUIRE(common_test::wait_until([&first_started] { return first_started.load(std::memory_order_acquire); }, 2s));
 
     loop.quit(true);
     gate.store(true, std::memory_order_release);
     loop.wait_for_quit();
-    CHECK(exec_count.load() <= 5);
+
+    CHECK_EQ(exec_count.load(), 0);
+
+    for (const auto& handle : handles) {
+      CHECK_EQ(handle.state(), TaskExecutionState::kDropped);
+    }
+
+    REQUIRE(loop.async_run());
+    REQUIRE(loop.post_task([&exec_count] { exec_count.fetch_add(1); }));
+    REQUIRE(loop.wait_for_idle(2000));
+    CHECK_EQ(exec_count.load(), 1);
+    loop.quit();
+    loop.wait_for_quit();
   }
 
   TEST_CASE("exec_task void callback is valid and runs") {

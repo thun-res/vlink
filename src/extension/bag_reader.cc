@@ -66,6 +66,7 @@ struct BagReader::Impl final {
   std::unordered_set<std::string> excluded_playback_urls;
   std::unordered_map<std::string, std::string> url_to_ser_map;
   std::unordered_map<std::string, SchemaType> url_to_schema_type_map;
+  std::atomic_bool playback_url_rules_enabled{false};
   mutable std::shared_mutex playback_state_mtx;
   mutable std::shared_mutex output_callback_mtx;
 
@@ -139,7 +140,7 @@ void BagReader::flush_plugin() {
   }
 }
 
-void BagReader::bind_plugin_interface(const std::shared_ptr<BagPluginInterface>& plugin_interface) {
+void BagReader::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& bag_interface) {
   std::shared_ptr<BagPluginInterface> old_plugin_interface;
 
   {
@@ -147,15 +148,15 @@ void BagReader::bind_plugin_interface(const std::shared_ptr<BagPluginInterface>&
     old_plugin_interface = impl_->plugin_interface;
   }
 
-  if (old_plugin_interface && old_plugin_interface != plugin_interface) {
+  if (old_plugin_interface && old_plugin_interface != bag_interface) {
     old_plugin_interface->flush();
     old_plugin_interface->register_callback({});
   }
 
-  if VLIKELY (plugin_interface) {
-    plugin_interface->bind_direction(BagPluginInterface::Direction::kRead);
+  if VLIKELY (bag_interface) {
+    bag_interface->bind_direction(BagPluginInterface::Direction::kRead);
 
-    plugin_interface->register_callback([this](const Frame& frame) {
+    bag_interface->register_callback([this](const Frame& frame) {
       std::string output_url;
 
       if VUNLIKELY (!convert_playback_url(frame.url, output_url)) {
@@ -180,12 +181,13 @@ void BagReader::bind_plugin_interface(const std::shared_ptr<BagPluginInterface>&
 
   std::unique_lock state_lock(impl_->playback_state_mtx);
 
-  impl_->plugin_interface = plugin_interface;
+  impl_->plugin_interface = bag_interface;
   impl_->playback_url_remap.clear();
   impl_->excluded_playback_urls.clear();
+  impl_->playback_url_rules_enabled.store(false, std::memory_order_release);
 }
 
-void BagReader::clear_plugin_interface() { bind_plugin_interface(nullptr); }
+void BagReader::clear_bag_interface() { bind_bag_interface(nullptr); }
 
 void BagReader::register_status_callback(StatusCallback&& status_callback) { (void)status_callback; }
 
@@ -280,37 +282,54 @@ void BagReader::process_output(Frame& frame) {
     if VUNLIKELY (plugin_interface && impl_->excluded_playback_urls.count(frame.url) != 0U) {
       return;
     }
+
+    if (!plugin_interface) {
+      if (frame.ser_type.empty()) {
+        auto ser_iter = impl_->url_to_ser_map.find(frame.url);
+
+        if VLIKELY (ser_iter != impl_->url_to_ser_map.end()) {
+          frame.ser_type = ser_iter->second;
+        }
+      }
+
+      if (frame.schema_type == SchemaType::kUnknown) {
+        auto schema_iter = impl_->url_to_schema_type_map.find(frame.url);
+
+        if VLIKELY (schema_iter != impl_->url_to_schema_type_map.end()) {
+          frame.schema_type = schema_iter->second;
+        }
+      }
+    }
   }
 
   if (plugin_interface) {
     plugin_interface->on_read(frame);
   } else {
-    std::string output_url;
-
-    if VUNLIKELY (!convert_playback_url(frame.url, output_url)) {
-      return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
     std::shared_lock callback_lock(impl_->output_callback_mtx);
 
     if VLIKELY (impl_->output_callback) {
-      if (output_url != frame.url) {
-        frame.url = std::move(output_url);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
-
-      fill_frame_meta(frame);
       impl_->output_callback(frame);
     }
   }
 }
 
 void BagReader::fill_frame_meta(Frame& frame) const {
+  std::shared_lock state_lock(impl_->playback_state_mtx);
+
   if (frame.ser_type.empty()) {
-    frame.ser_type = get_ser_type(frame.url);
+    auto iter = impl_->url_to_ser_map.find(frame.url);
+
+    if VLIKELY (iter != impl_->url_to_ser_map.end()) {
+      frame.ser_type = iter->second;
+    }
   }
 
   if (frame.schema_type == SchemaType::kUnknown) {
-    frame.schema_type = get_schema_type(frame.url);
+    auto iter = impl_->url_to_schema_type_map.find(frame.url);
+
+    if VLIKELY (iter != impl_->url_to_schema_type_map.end()) {
+      frame.schema_type = iter->second;
+    }
   }
 }
 
@@ -379,6 +398,8 @@ void BagReader::process_url_metas(std::vector<Info::UrlMeta>& url_metas) {
     if (impl_->plugin_interface == plugin_interface) {
       impl_->playback_url_remap = std::move(playback_url_remap);
       impl_->excluded_playback_urls = std::move(excluded_playback_urls);
+      impl_->playback_url_rules_enabled.store(
+          !impl_->playback_url_remap.empty() || !impl_->excluded_playback_urls.empty(), std::memory_order_release);
     }
   }
 }
@@ -407,6 +428,10 @@ bool BagReader::match_playback_url_filter(std::string_view input_url,
     return false;
   }
 
+  if (filter_urls.empty() && !has_playback_url_rules()) {
+    return true;
+  }
+
   std::string output_url;
 
   if VUNLIKELY (!convert_playback_url(std::string(input_url), output_url)) {
@@ -414,6 +439,10 @@ bool BagReader::match_playback_url_filter(std::string_view input_url,
   }
 
   return filter_urls.empty() || filter_urls.count(output_url) != 0U;
+}
+
+bool BagReader::has_playback_url_rules() const noexcept {
+  return impl_->playback_url_rules_enabled.load(std::memory_order_acquire);
 }
 
 void BagReader::rebuild_url_meta_lookup(const std::vector<Info::UrlMeta>& url_metas) {

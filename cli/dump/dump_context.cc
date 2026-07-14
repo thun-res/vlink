@@ -21,7 +21,9 @@
  * limitations under the License.
  */
 
-#include "dump_context.h"
+#include "./dump_context.h"
+
+#include <vlink/extension/bag_plugin_interface.h>
 
 #include <iostream>
 
@@ -47,7 +49,7 @@ bool DumpContext::invoke_callback(int64_t timestamp, const std::string& url, con
 void DumpContext::request_stop() {
   if (dump_for_bag) {
     if (bag_player) {
-      bag_player->clear_plugin_interface();
+      bag_player->clear_bag_interface();
       bag_player->stop();
     }
   } else if (discovery_viewer) {
@@ -60,9 +62,9 @@ bool DumpContext::prepare_bag_plugin() {
     return true;
   }
 
-  bag_plugin_interface = bag_plugin.load<vlink::BagPluginInterface>(bag_plugin_name, 1, 0);
+  bag_plugin_interface = bag_plugin.load<vlink::BagPluginInterface>(bag_plugin_name, 2, 0);
 
-  if (!bag_plugin_interface) {
+  if VUNLIKELY (!bag_plugin_interface) {
     std::cerr << "Failed to load plugin (" << bag_plugin_name << ")." << std::endl;
     return false;
   }
@@ -72,7 +74,7 @@ bool DumpContext::prepare_bag_plugin() {
 
 void DumpContext::bind_bag_plugin(const std::shared_ptr<vlink::BagReader>& reader) {
   if (reader && bag_plugin_interface) {
-    reader->bind_plugin_interface(bag_plugin_interface);
+    reader->bind_bag_interface(bag_plugin_interface);
   }
 }
 

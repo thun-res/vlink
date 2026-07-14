@@ -66,7 +66,7 @@ export ANDROID_NDK=/opt/android-ndk-r27                        # Android
 
 `VKIT_PLATFORM=auto`（默认）自动识别主机平台；多平台经 `DEVICE_PLATFORM` 子目录隔离，同一工作区可并行编译。常用入口：`make`（install+deploy）、`make install`、`make deploy`、`make deploy_sdk`、`make clean|rclean|dclean|aclean`、`make import_full|import_dev|pull`。
 
-> 仅需将 VLink 接入既有 CMake 工程而不构建整套生态时，转 [§1.2 standalone CMake 构建](#12-standalone-cmake-构建) 与 [§1.5 集成](#15-在既有工程中集成-vlink)。
+> 仅需将 VLink 接入既有 CMake 工程而不构建整套生态时，转 [§1.2 standalone CMake 构建](#-12-standalone-cmake-构建) 与 [§1.5 集成](#-15-在既有工程中集成-vlink)。
 
 ---
 
@@ -96,7 +96,7 @@ add_executable(my_app main.cc)
 target_link_libraries(my_app PRIVATE vlink::all)
 ```
 
-完整的端到端最小程序见 [§1.11 第一个程序](#111-第一个程序三种通信模型)；三种通信模型的接口分别见 [通信模型](02-communication.md)。
+完整的端到端最小程序见 [§1.11 第一个程序](#-111-第一个程序三种通信模型)；三种通信模型的接口分别见 [通信模型](02-communication.md)。
 
 ### 🧬 1.2.1 常用构建变体
 
@@ -160,7 +160,7 @@ output/
 | Paho MQTT C | MQTT（`mqtt://`） | 模块依赖 | 见 [Eclipse Paho](https://github.com/eclipse/paho.mqtt.c) |
 | quill / DLT | 可选日志后端 | `SELECT_LOG_BACKEND=` | quill 已内嵌；DLT 用 `sudo apt install libdlt-dev` |
 
-> 其余传输后端（someip / fdbus / shm2 / ddsr / ddst 等）依赖见 [传输后端与 URL](04-transport.md)。无系统库时可让 CMake 自动下载，见 [§1.4.5 CPM 选项](#145-用-cpm-自动下载依赖)。
+> 其余传输后端（someip / fdbus / shm2 / ddsr / ddst 等）依赖见 [传输后端与 URL](04-transport.md)。无系统库时可让 CMake 自动下载，见 [§1.4.5 CPM 选项](#-145-用-cpm-自动下载依赖)。
 
 ### 🖥️ 1.3.3 各平台编译器要求
 
@@ -213,7 +213,7 @@ Viewer / WebViz 子开关：`ENABLE_VIEWER_FFMPEG`、`ENABLE_VIEWER_OSG`、`ENAB
 
 ### 🧪 1.4.3 CLI / 测试 / 日志后端
 
-- **CLI 工具**：`ENABLE_CLI_INFO` / `BAG` / `LIST` / `MONITOR` / `CHECK` / `BENCH` / `EPROTO` / `EFBS` / `DUMP`，默认全 `ON`。其中 `EPROTO` 依赖 Protobuf、`EFBS` 依赖 FlatBuffers、`DUMP` 两者皆需，对应依赖缺失时自动关闭。`ENABLE_EXPRTK`（默认 `ON`）提供 `DUMP` / Viewer / WebViz 的表达式引擎。
+- **CLI 工具**：`ENABLE_CLI_INFO` / `BAG` / `TRIGGER` / `LIST` / `MONITOR` / `CHECK` / `BENCH` / `EPROTO` / `EFBS` / `DUMP`，默认全 `ON`。其中 `EPROTO` 依赖 Protobuf、`EFBS` 依赖 FlatBuffers、`DUMP` 两者皆需，对应依赖缺失时自动关闭。`ENABLE_EXPRTK`（默认 `ON`）提供 `DUMP` / Viewer / WebViz 的表达式引擎。
 - **测试**：`ENABLE_TEST`（doctest）、`ENABLE_TEST_SANITIZE`（ASan）、`ENABLE_TEST_COVERAGE`（gcov/lcov）、`ENABLE_TEST_WARN`。
 - **日志后端**：`SELECT_LOG_BACKEND=spdlog|quill|dlt|native`，Android/QNX 平台默认 `native`，其余平台默认 `spdlog`；`quill` 提供更低延迟，`dlt` 面向车载 GENIVI，`native` 用于 Android/QNX 平台原生日志。
 
@@ -251,7 +251,7 @@ cmake --build build-cpm -j$(nproc)
 
 ## 🔗 1.5 在既有工程中集成 VLink
 
-VLink 经标准 `find_package` 集成。安装后配置包位于 `<prefix>/lib/cmake/vlink/vlink-config.cmake`，`find_package` 成功后代码生成函数 `vlink_generate_cpp()` 一并可用。集成的核心规则是：**使用哪种 URL，就链接对应的 `vlink::<module>`**——URL 前缀即后端选择，业务代码与传输后端解耦，详见 [§1.5.2 模块目标与 URL 前缀对应关系](#152-模块目标与-url-前缀对应关系)。
+VLink 经标准 `find_package` 集成。安装后配置包位于 `<prefix>/lib/cmake/vlink/vlink-config.cmake`，`find_package` 成功后代码生成函数 `vlink_generate_cpp()` 一并可用。集成的核心规则是：**使用哪种 URL，就链接对应的 `vlink::<module>`**——URL 前缀即后端选择，业务代码与传输后端解耦，详见 [§1.5.2 模块目标与 URL 前缀对应关系](#-152-模块目标与-url-前缀对应关系)。
 
 ### 📑 1.5.1 find_package 三种写法
 
@@ -478,7 +478,7 @@ conan install . --build=missing -s build_type=Release \
 
 ```ini
 [requires]
-vlink/2.0.0
+vlink/2.1.0
 [generators]
 CMakeDeps
 CMakeToolchain
@@ -518,10 +518,10 @@ VLink 支持 Linux（x86_64 / aarch64）、Android、QNX 7.1 / 8.0、macOS（App
 
 ### 🪜 1.8.2 通用三步法
 
-`tools/` 下提供各平台预置工具链文件（`tools/<linux|android|qnx|darwin>/*.toolchain.*.cmake`）。VKit 用户由 VKit 自动选择工具链（见 [§1.1.3](#113-跨平台)）；standalone 构建按以下三步：
+`tools/` 下提供各平台预置工具链文件（`tools/<linux|android|qnx|darwin>/*.toolchain.*.cmake`）。VKit 用户由 VKit 自动选择工具链（见 [§1.1.3](#-113-跨平台)）；standalone 构建按以下三步：
 
 1. 准备工具链 / SDK：装好交叉编译器或 source 平台 SDK 环境脚本。
-2. 设必要环境变量（见 [§1.8.3](#183-各平台差异)）。
+2. 设必要环境变量（见 [§1.8.3](#-183-各平台差异)）。
 3. 指定工具链文件配置构建：
 
 ```bash
@@ -576,7 +576,7 @@ cmake --build build_cross -j$(nproc)
 
 ## 📤 1.10 打包与发布
 
-VLink 在 `packup/` 下提供发行包脚本，面向打包者；终端用户用 [§1.2](#12-standalone-cmake-构建) 的 `cmake --install` 或 VKit runtime 包即可。
+VLink 在 `packup/` 下提供发行包脚本，面向打包者；终端用户用 [§1.2](#-12-standalone-cmake-构建) 的 `cmake --install` 或 VKit runtime 包即可。
 
 | 脚本 | 产物 | 适用 |
 | --- | --- | --- |
@@ -693,7 +693,7 @@ ls build/output/bin/
 
 ### 🔌 1.12.4 序列化、传输与 QoS 示例
 
-序列化策略由消息类型在编译期推导，调用方无需手工选择或注册编解码器。后端选择收敛为 URL 前缀（见 [§1.5.2](#152-模块目标与-url-前缀对应关系)）。QoS 控制可靠性、历史深度与持久化等投递行为，最常用方式是在 URL 中引用预定义 profile，例如 `dds://sensor?qos=sensor`。
+序列化策略由消息类型在编译期推导，调用方无需手工选择或注册编解码器。后端选择收敛为 URL 前缀（见 [§1.5.2](#-152-模块目标与-url-前缀对应关系)）。QoS 控制可靠性、历史深度与持久化等投递行为，最常用方式是在 URL 中引用预定义 profile，例如 `dds://sensor?qos=sensor`。
 
 | 分类 | 示例 | 主题 | 详解 |
 | --- | --- | --- | --- |
@@ -769,12 +769,12 @@ ls build/output/bin/
 无任何传输模块被构建（依赖缺失）。检查 `<build>/output/etc/vlink/vlink-options.txt` 的 `Modules` 字段；至少安装一个传输后端，或用 `-DENABLE_CPM=ON` 自动下载。
 
 **5. 运行时 `error while loading shared libraries: libvlink.so.*`。**
-按 [§1.5.4](#154-非标准安装路径与运行时库路径) 配置动态库路径（`source vlink-setup.sh` / `LD_LIBRARY_PATH` / `ldconfig`）。
+按 [§1.5.4](#-154-非标准安装路径与运行时库路径) 配置动态库路径（`source vlink-setup.sh` / `LD_LIBRARY_PATH` / `ldconfig`）。
 
 **6. Conan 找不到 preset `conan-release`。**
 先执行 `conan install . --build=missing -s build_type=Release` 生成 `CMakePresets.json`，再 `cmake --preset conan-release`。
 
-> 交叉编译找不到目标库、QNX `QNX_HOST not set`、Android STL 链接错误等平台专项问题，见 [参考](14-reference.md) 与 [§1.8.3](#183-各平台差异)。
+> 交叉编译找不到目标库、QNX `QNX_HOST not set`、Android STL 链接错误等平台专项问题，见 [参考](14-reference.md) 与 [§1.8.3](#-183-各平台差异)。
 
 ---
 

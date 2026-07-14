@@ -169,8 +169,8 @@ VCAPReader::~VCAPReader() {
   close();
 }
 
-void VCAPReader::bind_plugin_interface(const std::shared_ptr<BagPluginInterface>& plugin_interface) {
-  BagReader::bind_plugin_interface(plugin_interface);
+void VCAPReader::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& bag_interface) {
+  BagReader::bind_bag_interface(bag_interface);
   impl_->info.url_metas = impl_->raw_url_metas;
   process_url_metas(impl_->info.url_metas);
   rebuild_url_meta_lookup(impl_->info.url_metas);
@@ -1645,12 +1645,16 @@ int VCAPReader::get_reset_index(const Config& config) {
         read_options.startTime =
             impl_->begin_time.load(std::memory_order_relaxed) * 1000'000 + impl_->total_start_timestamp_ns;
         read_options.endTime = mcap::MaxTime;
-        read_options.topicFilter = filter_function;
+        if (!config.filter_urls.empty() || has_playback_url_rules()) {
+          read_options.topicFilter = filter_function;
+        }
         read_options.readOrder = mcap::ReadMessageOptions::ReadOrder::FileOrder;
       } else {
         read_options.startTime = 0;
         read_options.endTime = mcap::MaxTime;
-        read_options.topicFilter = filter_function;
+        if (!config.filter_urls.empty() || has_playback_url_rules()) {
+          read_options.topicFilter = filter_function;
+        }
         read_options.readOrder = mcap::ReadMessageOptions::ReadOrder::FileOrder;
       }
 
@@ -1659,7 +1663,9 @@ int VCAPReader::get_reset_index(const Config& config) {
       // LCOV_EXCL_START GCOVR_EXCL_START
       read_options.startTime = 0;
       read_options.endTime = mcap::MaxTime;
-      read_options.topicFilter = filter_function;
+      if (!config.filter_urls.empty() || has_playback_url_rules()) {
+        read_options.topicFilter = filter_function;
+      }
       read_options.readOrder = mcap::ReadMessageOptions::ReadOrder::FileOrder;
       // LCOV_EXCL_STOP GCOVR_EXCL_STOP
     }
@@ -1721,7 +1727,9 @@ bool VCAPReader::prepare_cursor_view(int file_index) {
   read_options.startTime =
       impl_->cursor_begin_us > 0 ? impl_->cursor_begin_us * 1000 + impl_->total_start_timestamp_ns : 0;
   read_options.endTime = mcap::MaxTime;
-  read_options.topicFilter = filter_function;
+  if (!impl_->cursor_config.filter_urls.empty() || has_playback_url_rules()) {
+    read_options.topicFilter = filter_function;
+  }
   read_options.readOrder = mcap::ReadMessageOptions::ReadOrder::FileOrder;
 
   const auto [start_offset, end_offset] = wrapper_file.reader->byteRange(read_options.startTime, read_options.endTime);

@@ -23,7 +23,6 @@
 
 #include "./base/thread_pool.h"
 
-#include <algorithm>
 #include <atomic>
 #include <deque>
 #include <mutex>
@@ -62,6 +61,8 @@ struct ThreadPoolGlobal final {
 
 // ThreadPool::Impl
 struct ThreadPool::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding)
+  static thread_local const Impl* current_thread_pool_impl_;
+
 #ifdef VLINK_ENABLE_BASE_MEMORY_RESOURCE
   using NormalTaskTuple = std::tuple<bool, ThreadPool::Callback>;
   using LockfreeTaskTuple = std::tuple<ThreadPool::Callback>;
@@ -90,6 +91,8 @@ struct ThreadPool::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
   ConditionVariable cv;
   std::mutex mtx;
 };
+
+thread_local const ThreadPool::Impl* ThreadPool::Impl::current_thread_pool_impl_ = nullptr;
 
 // ThreadPool
 ThreadPool::ThreadPool(size_t thread_count) : impl_(MemoryResource::make_shared<Impl>()) {
@@ -131,7 +134,6 @@ bool ThreadPool::post_task(Callback&& callback) {
 
 TaskHandle ThreadPool::post_task_handle(Callback&& callback, const PostTaskOptions& options) {
   auto handle = TaskHandle::make_task_handle(options.cancellation_token);
-  TaskHandle::mark_task_queued(handle);
 
   if (handle.state() == TaskExecutionState::kCancelled) {
     return handle;
@@ -443,10 +445,7 @@ size_t ThreadPool::get_task_count() const {
   }
 }
 
-bool ThreadPool::is_in_work_thread() const {
-  return std::any_of(impl_->threads.begin(), impl_->threads.end(),
-                     [](const std::thread& thread) -> bool { return thread.get_id() == std::this_thread::get_id(); });
-}
+bool ThreadPool::is_in_work_thread() const { return Impl::current_thread_pool_impl_ == impl_.get(); }
 
 size_t ThreadPool::get_max_task_count() const { return kMaxTaskSize; }
 
@@ -504,6 +503,8 @@ void ThreadPool::init() {
     if (impl_->type == kNormalType) {
       auto impl = impl_;
       std::thread thread([impl] {
+        Impl::current_thread_pool_impl_ = impl.get();
+
         for (;;) {
           Callback task;
 
@@ -526,12 +527,16 @@ void ThreadPool::init() {
             task();
           }
         }
+
+        Impl::current_thread_pool_impl_ = nullptr;
       });
 
       impl_->threads.emplace_back(std::move(thread));
     } else if (impl_->type == kLockfreeType) {
       auto impl = impl_;
       std::thread thread([impl] {
+        Impl::current_thread_pool_impl_ = impl.get();
+
         for (;;) {
           Impl::LockfreeTaskTuple task_tuple;
 
@@ -571,6 +576,8 @@ void ThreadPool::init() {
             task();
           }
         }
+
+        Impl::current_thread_pool_impl_ = nullptr;
       });
 
       impl_->threads.emplace_back(std::move(thread));

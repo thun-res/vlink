@@ -416,7 +416,18 @@ shm_sub.listen([&dds_pub](const vlink::Bytes& frame) {
 | `fdbus://` | 无需（依赖系统级名称服务） | 节点析构自动 |
 | `qnx://` | 无需 | 节点析构自动 |
 
-进程启动时可调用 `vlink::Url::global_init(...)` 仅加载所需传输插件以降低启动开销；不调用则按需自动加载。
+进程启动时可调用 `vlink::Url::global_init(...)` 预初始化指定的已链接后端；它不控制传输插件发现。`VLINK_URL_PLUGINS` 的完整值选择一种互斥模式：等于 `auto`（大小写不敏感）时，允许未链接的已知后端在对应 URL 首次使用时按固定名称 `vlink-<module>` 加载；为空或等于 `none`（大小写不敏感）时关闭插件加载；其他非空值仍按逗号或空格分隔的显式预加载列表解析，并在首次 URL 初始化时加载其中列出的已知模块。`auto` / `none` 必须是完整值，不能与模块列表混写。该设置在进程级插件管理器首次初始化时读取一次，此后修改无效。已链接后端始终优先，未知 transport / 自定义 URL scheme 不会通过该机制加载；插件机制只适用于共享模块，不会加载静态归档（Unix `.a` / Windows 静态 `.lib`），共享库搜索路径可用 `VLINK_PLUGIN_DIR` 配置。分包安装时，运行时组件已包含这些可加载名称，无需开发组件。
+
+```bash
+# 显式预加载固定列表
+export VLINK_URL_PLUGINS="zenoh,ddsc"
+
+# 或改用按需加载模式（不能与上面的列表同时生效）
+# export VLINK_URL_PLUGINS=auto
+
+# 或显式关闭插件加载
+# export VLINK_URL_PLUGINS=none
+```
 
 ### 🔁 4.7.3 URL 重映射
 

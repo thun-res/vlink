@@ -111,9 +111,9 @@ class VLINK_EXPORT VDBReader final : public BagReader {
   /**
    * @brief Attaches a @c BagPluginInterface for custom URL or type rewriting.
    *
-   * @param plugin_interface  Plugin instance; pass @c nullptr to detach.
+   * @param bag_interface  Plugin interface instance; pass @c nullptr to detach.
    */
-  void bind_plugin_interface(const std::shared_ptr<BagPluginInterface>& plugin_interface) override;
+  void bind_bag_interface(const std::shared_ptr<BagPluginInterface>& bag_interface) override;
 
   /**
    * @brief Registers a callback invoked on every playback state transition.

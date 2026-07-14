@@ -65,6 +65,7 @@ namespace vlink {
 [[maybe_unused]] static constexpr uint32_t kMaxElapsedTime = 1000;
 [[maybe_unused]] static constexpr int kBroadcastSendPort = 51694;
 [[maybe_unused]] static constexpr int kSendTTL = 3;
+[[maybe_unused]] static constexpr int kMaxMtuSize = 1450;
 
 #if VLINK_DISCOVERY_MULTICAST
 [[maybe_unused]] static constexpr const char* kBroadcastAddress = "239.255.0.100";
@@ -238,8 +239,6 @@ void DiscoveryReporter::on_begin() { MessageLoop::on_begin(); }
 void DiscoveryReporter::on_end() { MessageLoop::on_end(); }
 
 void DiscoveryReporter::rebuild_message() {
-  static constexpr int kMaxMtuSize = 1450;
-
   impl_->message_list.clear();
 
   std::string message_pack;

@@ -12,9 +12,9 @@
 
 | 文件 | 角色 | 大小 |
 |---|---|---|
-| `test_vlink.py`           | 基础烟雾测试，每条 API 一个 happy-path 用例 | ~600 行 / 18 函数 |
-| `test_vlink_full.py`      | 完整覆盖测试，含错误路径 / 复杂场景       | ~1400 行 |
-| `test_vlink_coverage.py`  | 绑定覆盖率回归，确保关键 attr / method 仍可见 | ~630 行 |
+| `test_vlink.py`           | 基础烟雾测试，每条 API 一个 happy-path 用例 | ~750 行 / 21 个测试 |
+| `test_vlink_full.py`      | 完整覆盖测试，含错误路径 / 复杂场景       | ~1550 行 / 43 个测试 |
+| `test_vlink_coverage.py`  | 绑定覆盖率回归，确保关键 attr / method 仍可见 | ~670 行 / 27 个测试 |
 
 三个文件相互独立，可以单独运行。三层覆盖的设计意图：
 
@@ -64,6 +64,7 @@ python3 test_vlink_coverage.py
 | `test_zerocopy_occupancy_grid` | `OccupancyGrid` |
 | `test_zerocopy_tensor` | `Tensor`（含 set_dtype/set_shape 顺序） |
 | `test_zerocopy_object_array` | `ObjectArray` + nested `Object` POD |
+| `test_zerocopy_message_parser` | 以 `ObjectArray` 覆盖统一解析入口、字段反射、集合边界、输入生命周期与 64 位整数精度 |
 | `test_zerocopy_audio_frame` | `AudioFrame` |
 
 ---
@@ -73,9 +74,10 @@ python3 test_vlink_coverage.py
 - CRC / hash 工具函数 buffer-protocol 等价性
 - `Node.set_ser_type` 与 `SchemaType` 枚举往返
 - `SchemaData` 显式注册与 `register_schema_callback` 动态分发
-- `BagWriter.create` / `BagWriter.filter_get` / `push_schema` / split callback
+- `BagWriter.create` / `BagWriter.filter_get` / `push_schema` / split callback / 显式 `close()`
 - `BagReader.detect_schema` / `check` / `reindex` / `play` / status callback
 - `DiscoveryViewer` 显式实例与过滤
+- `TriggerRecorder` 启停、触发落盘与超时等待，以及宿主加载并绑定 `BagPluginInterface` / `TriggerPluginInterface`
 - `UrlRemap`
 - Security 模型
 - `Setter.set` 变化通知与 `Getter.listen` 去重
@@ -88,11 +90,12 @@ python3 test_vlink_coverage.py
 回归用 attribute / method 列表，确保下列 API surface 不被删除：
 
 - `Node` 类方法集合（init / deinit / set_ser_type / set_property / ...）
-- `BagWriter.Config` 的 18 个可写字段
+- `BagWriter.Config` 的 19 个可写字段（含 writer 生命周期级 `sync_mode` 同步写入开关）
 - `BagWriter` 的方法集合
 - `BagReader.detect_schema` 与 status / info 字段
 - `SchemaData.is_valid_type` / `is_real_type` / `convert_type`
 - `quantize` 子模块的 int16 线性量化辅助函数
+- `MemoryPool.Config.batch_size` 的默认值、可写绑定及构造传递
 - 各零拷贝类型的 enum 值齐全
 
 ---

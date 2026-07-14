@@ -49,7 +49,7 @@ template <typename StateT>
 struct TaskHandle::State final {
   mutable std::mutex mtx;
   ConditionVariable cv;
-  TaskExecutionState state{TaskExecutionState::kInvalid};
+  TaskExecutionState state{TaskExecutionState::kQueued};
   CancellationSource cancellation_source;
   CancellationRegistration parent_registration;
 };
@@ -204,32 +204,6 @@ MoveFunction<void()> TaskHandle::make_tracked_task(TaskHandle handle, MoveFuncti
   return TrackedTask{std::move(handle), std::move(callback)};
 }
 
-void TaskHandle::mark_task_queued(const TaskHandle& handle) {
-  if VUNLIKELY (!handle.state_) {
-    return;
-  }
-
-  CancellationRegistration parent_registration;
-
-  {
-    std::lock_guard lock(handle.state_->mtx);
-
-    if VUNLIKELY (handle.state_->state != TaskExecutionState::kInvalid) {
-      return;
-    }
-
-    if VUNLIKELY (handle.state_->cancellation_source.is_cancellation_requested()) {
-      handle.state_->state = TaskExecutionState::kCancelled;
-
-      release_parent_registration(*handle.state_, parent_registration);
-    } else {
-      handle.state_->state = TaskExecutionState::kQueued;
-    }
-  }
-
-  handle.state_->cv.notify_all();
-}
-
 void TaskHandle::mark_task_rejected(const TaskHandle& handle) {
   if VUNLIKELY (!handle.state_) {
     return;
@@ -352,7 +326,7 @@ bool TaskHandle::request_cancel(std::shared_ptr<State> state) {
       return false;
     }
 
-    if VLIKELY (state->state == TaskExecutionState::kInvalid || state->state == TaskExecutionState::kQueued) {
+    if VLIKELY (state->state == TaskExecutionState::kQueued) {
       state->state = TaskExecutionState::kCancelled;
 
       release_parent_registration(*state, parent_registration);

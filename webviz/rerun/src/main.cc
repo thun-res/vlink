@@ -34,9 +34,9 @@
 #include <nlohmann/json.hpp>
 #include <vector>
 
-#include "proxy_config.h"
-#include "rerun_server.h"
-#include "webviz_app_utils.h"
+#include "./proxy_config.h"
+#include "./rerun_server.h"
+#include "./webviz_app_utils.h"
 
 using Json = nlohmann::json;
 

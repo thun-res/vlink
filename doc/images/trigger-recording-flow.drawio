@@ -1,0 +1,156 @@
+<mxfile host="app.diagrams.net" modified="2026-07-11T00:00:00.000Z" agent="draw.io" version="24.0.0" type="device">
+  <diagram id="trigger-recording-flow" name="Trigger Recording EDR Flow">
+    <mxGraphModel dx="900" dy="580" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="690" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Trigger Recording (EDR) Flow" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=20;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="18" width="820" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" value="Always-on rolling ring buffer per URL &#183; on trigger, dump selected per-URL windows to a bag" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+          <mxGeometry x="40" y="50" width="820" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Panel 1: Rolling Capture -->
+        <mxCell id="cap_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;arcSize=6;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="86" width="820" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="cap_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fillColor=#1976d2;strokeColor=none;arcSize=50;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="43" y="88" width="814" height="5" as="geometry" />
+        </mxCell>
+        <mxCell id="cap_t" value="Rolling Capture" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="100" width="360" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="cap_h" value="Discovery + subscribe &#183; per-URL ring keeps only the recent window" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
+          <mxGeometry x="380" y="102" width="460" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pub1" value="&lt;b&gt;topic A&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.5;fontSize=12;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="70" y="150" width="120" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="pub2" value="&lt;b&gt;topic B&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.5;fontSize=12;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="70" y="196" width="120" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="pub3" value="&lt;b&gt;topic C&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.5;fontSize=12;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="70" y="242" width="120" height="34" as="geometry" />
+        </mxCell>
+
+        <mxCell id="eng" value="&lt;b&gt;TriggerRecorder&lt;/b&gt;&lt;br/&gt;daemon" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.5;fontSize=14;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="300" y="150" width="170" height="126" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ring_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;dashPattern=6 4;fontFamily=Helvetica;fillColor=#ffffff;strokeColor=#1976d2;strokeWidth=1.5;arcSize=8;shadow=0;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="560" y="140" width="272" height="132" as="geometry" />
+        </mxCell>
+        <mxCell id="ring_t" value="per-URL ring buffers" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="560" y="146" width="272" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="ring1" value="ring &#183; topic A" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.2;fontSize=11;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="574" y="170" width="244" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="ring2" value="ring &#183; topic B" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.2;fontSize=11;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="574" y="202" width="244" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="ring3" value="ring &#183; topic C" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.2;fontSize=11;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="574" y="234" width="244" height="26" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ce1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;exitX=1;exitY=0.5;entryX=0;entryY=0.135;" edge="1" parent="1" source="pub1" target="eng">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ce2" value="subscribe" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=10;fontColor=#0d47a1;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="pub2" target="eng">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" x="0" y="-13" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ce3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;exitX=1;exitY=0.5;entryX=0;entryY=0.865;" edge="1" parent="1" source="pub3" target="eng">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ce4" value="append &#183; evict old" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2.2;strokeColor=#388e3c;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.553;" edge="1" parent="1" source="eng" target="ring_bg">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" x="0" y="-13" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Panel 2: Trigger -> Dump -->
+        <mxCell id="dmp_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fillColor=#fff8e1;strokeColor=#ef6c00;strokeWidth=1.5;arcSize=6;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="304" width="820" height="248" as="geometry" />
+        </mxCell>
+        <mxCell id="dmp_bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fillColor=#ef6c00;strokeColor=none;arcSize=50;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="43" y="306" width="814" height="5" as="geometry" />
+        </mxCell>
+        <mxCell id="dmp_t" value="Trigger &#8594; Dump" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="60" y="318" width="360" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="dmp_h" value="Snapshot the window &#183; stable-sort by capture time &#183; optional host-bound BagPluginInterface reorders inside BagWriter" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#ef6c00;" vertex="1" parent="1">
+          <mxGeometry x="360" y="320" width="480" height="22" as="geometry" />
+        </mxCell>
+
+        <!-- Timeline -->
+        <mxCell id="tl_evict" value="evicted (retention margin)" style="whiteSpace=wrap;html=1;fontFamily=Helvetica;fillColor=#eceff1;strokeColor=#b0bec5;strokeWidth=1.2;fontSize=10;fontColor=#607d8b;shadow=0;dashed=1;dashPattern=4 4;" vertex="1" parent="1">
+          <mxGeometry x="70" y="382" width="130" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="tl_pre" value="pre window" style="whiteSpace=wrap;html=1;fontFamily=Helvetica;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="200" y="382" width="170" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="tl_post" value="post window" style="whiteSpace=wrap;html=1;fontFamily=Helvetica;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="370" y="382" width="120" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="tl_mark" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=none;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="368" y="358" width="4" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="tl_T" value="&#9660; trigger T" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="320" y="340" width="100" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="tl_win" value="per-URL window  [ T &#8722; effective pre ,  T + effective post ]" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="200" y="432" width="290" height="18" as="geometry" />
+        </mxCell>
+
+        <!-- Dump chain -->
+        <mxCell id="sortc" value="stable&#10;sort" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontSize=11;fontStyle=1;fontColor=#e65100;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="540" y="385" width="70" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="bw" value="&lt;b&gt;BagWriter&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.5;fontSize=13;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="628" y="381" width="100" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="disk" value="&lt;b&gt;*.vdb / *.vcap&lt;/b&gt;&lt;br/&gt;auto-named: rotate" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fontFamily=Helvetica;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;fontSize=11;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="790" y="370" width="66" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="de1" value="window" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2.2;strokeColor=#ef6c00;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#e65100;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="tl_post" target="sortc">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" x="0" y="-13" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="de2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2.2;strokeColor=#388e3c;fontFamily=Helvetica;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="sortc" target="bw">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="de3" value="write" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;endFill=1;html=1;strokeWidth=2.2;strokeColor=#388e3c;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="bw" target="disk">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" x="0" y="-13" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="dmp_note" value="At T: select/filter URL rings, apply per-URL and trigger windows (including only_front/back), stable-sort, then write one bag &#183; only auto-named dumps rotate." style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#8d6e63;" vertex="1" parent="1">
+          <mxGeometry x="60" y="506" width="780" height="34" as="geometry" />
+        </mxCell>
+
+        <!-- Legend: two plugin roles -->
+        <mxCell id="leg_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.2;arcSize=8;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="568" width="820" height="88" as="geometry" />
+        </mxCell>
+        <mxCell id="leg_t" value="Two plugin roles (never conflated)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="60" y="576" width="400" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="leg_bag" value="&lt;b&gt;bag_plugin&lt;/b&gt; &#8212; CLI host loads BagPluginInterface and binds it to TriggerRecorder (optional)." style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="60" y="604" width="780" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg_trig" value="&lt;b&gt;TriggerPluginInterface&lt;/b&gt; &#8212; observes the dump life cycle: on_dump_finished &#8594; upload / archive. Never rewrites frames." style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="60" y="626" width="780" height="20" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

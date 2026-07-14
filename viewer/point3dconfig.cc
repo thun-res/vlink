@@ -363,8 +363,8 @@ bool schema_matches(const QStringList& schemas, const QString& schema) {
   return false;
 }
 
-template <typename Rule>
-bool rule_matches(const Rule& rule, const QString& url_text, const QString& ser_text, const QString& combined_text,
+template <typename RuleT>
+bool rule_matches(const RuleT& rule, const QString& url_text, const QString& ser_text, const QString& combined_text,
                   const QString& schema_text) {
   if (!schema_matches(rule.schema_types, schema_text)) {
     return false;

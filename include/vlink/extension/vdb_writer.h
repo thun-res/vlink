@@ -53,7 +53,7 @@
  *        |                                                              | WAL flush  |
  *        |                                                              +------------+
  *        |                                                                     |
- *        +-------------------- on_end() / dtor ----------------------- finalising
+ *        +-------------------- close() / dtor ------------------------ finalising
  *                                                                              |
  *                                                                              v
  *                                                                          (optional)
@@ -78,6 +78,11 @@
  *   frame.action_type = vlink::ActionType::kPublish;
  *   frame.data        = serialized_bytes;
  *   writer->push(frame);
+ *
+ *   writer->wait_for_idle();
+ *   writer->quit();
+ *   writer->wait_for_quit();
+ *   writer->close();
  * @endcode
  *
  * @see BagWriter, VCAPWriter
@@ -116,6 +121,11 @@ class VLINK_EXPORT VDBWriter final : public BagWriter {
   ~VDBWriter() override;
 
   /**
+   * @brief Commits the trailing batch, writes the final metadata and closes the database; idempotent.
+   */
+  void close() override;
+
+  /**
    * @brief Registers a callback invoked at each file-split boundary.
    *
    * @param callback  Receives (split_index, filename) before or after the split.
@@ -133,11 +143,10 @@ class VLINK_EXPORT VDBWriter final : public BagWriter {
   /**
    * @brief Embeds @p schema_data in the @c schemas table for offline introspection.
    *
-   * @param schema_data  Schema descriptor to embed.
-   * @param immediate    @c true merges synchronously; @c false enqueues the write.
-   * @return @c false only when an immediate merge failed.
+   * @param schema_data Schema descriptor to embed.
+   * @return @c false when a synchronous merge fails or an asynchronous merge cannot be queued.
    */
-  bool push_schema(const SchemaData& schema_data, bool immediate = false) override;
+  bool push_schema(const SchemaData& schema_data) override;
 
   /**
    * @brief Returns the current value of the internal dumping flag.
@@ -161,7 +170,7 @@ class VLINK_EXPORT VDBWriter final : public BagWriter {
   [[nodiscard]] int get_split_index() const override;
 
  protected:
-  int64_t record(const Frame& frame, bool immediate) override;
+  int64_t record(const Frame& frame, int64_t timestamp) override;
 
   int64_t get_record_timestamp() const override;
 
@@ -174,7 +183,9 @@ class VLINK_EXPORT VDBWriter final : public BagWriter {
  private:
   void open(const std::string& path);
 
-  void close();
+  void open_split(const std::string& path);
+
+  void close_segment();
 
   bool write(const std::string& url, const std::string& ser_type, SchemaType schema_type, ActionType action_type,
              const Bytes& data, int64_t microseconds_timestamp);

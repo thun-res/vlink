@@ -397,13 +397,16 @@ void EditDialog::on_pushButton_del_clicked() {
     }
 
     auto* last_child = item->takeChild(item->childCount() - 1);
+
     vlink::MoveFunction<void(QTreeWidgetItem*)> cleanup = [&](QTreeWidgetItem* it) {
       item_to_fbs_field_map_.erase(it);
       item_to_fbs_object_map_.erase(it);
+
       for (int i = 0; i < it->childCount(); ++i) {
         cleanup(it->child(i));
       }
     };
+
     cleanup(last_child);
     delete last_child;
 

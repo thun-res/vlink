@@ -66,6 +66,7 @@ foreach(
   DUMP
   CHECK
   BENCH
+  TRIGGER
 )
   if(ENABLE_CLI_${_cli})
     set(_VLINK_USE_ARGPARSE ON)

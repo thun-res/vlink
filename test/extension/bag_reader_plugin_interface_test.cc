@@ -38,8 +38,6 @@ class FakePlugin final : public BagPluginInterface {
  public:
   FakePlugin() = default;
 
-  VersionInfo get_version_info() const override { return {"FakePlugin", "2.0.0", "2026-01-01", "v2.0.0", "cafebabe"}; }
-
   bool convert_url_meta(std::string& url, std::string& ser_type, SchemaType& schema_type) override {
     called_convert = true;
     captured_url = url;
@@ -91,7 +89,9 @@ class FakePlugin final : public BagPluginInterface {
 
 class DefaultPlugin final : public BagPluginInterface {
  public:
-  VersionInfo get_version_info() const override { return {"DefaultPlugin", "1.0.0", "", "", ""}; }
+  void on_read(const Frame& frame) override { do_callback(frame); }
+
+  void on_write(const Frame& frame) override { do_callback(frame); }
 };
 
 Frame frame_of(int64_t timestamp, const std::string& url, ActionType action_type, const Bytes& data,
@@ -116,45 +116,15 @@ TEST_SUITE("extension-BagPluginInterface") {
     CHECK_FALSE(std::is_copy_assignable_v<BagPluginInterface>);
   }
 
-  TEST_CASE("version info default constructs with empty fields") {
-    BagPluginInterface::VersionInfo vi;
-    CHECK(vi.name.empty());
-    CHECK(vi.version.empty());
-    CHECK(vi.timestamp.empty());
-    CHECK(vi.tag.empty());
-    CHECK(vi.commit_id.empty());
-  }
-
-  TEST_CASE("version info fields are independently mutable") {
-    BagPluginInterface::VersionInfo vi;
-    vi.name = "MyPlugin";
-    vi.version = "1.2.3";
-    vi.timestamp = "2026-01-01";
-    vi.tag = "v1.2.3";
-    vi.commit_id = "abc123";
-
-    CHECK_EQ(vi.name, "MyPlugin");
-    CHECK_EQ(vi.version, "1.2.3");
-    CHECK_EQ(vi.timestamp, "2026-01-01");
-    CHECK_EQ(vi.tag, "v1.2.3");
-    CHECK_EQ(vi.commit_id, "abc123");
-  }
-
-  TEST_CASE("get_version_info returns subclass values") {
-    FakePlugin plugin;
-    auto info = plugin.get_version_info();
-    CHECK_EQ(info.name, "FakePlugin");
-    CHECK_EQ(info.version, "2.0.0");
-    CHECK_EQ(info.timestamp, "2026-01-01");
-    CHECK_EQ(info.tag, "v2.0.0");
-    CHECK_EQ(info.commit_id, "cafebabe");
-  }
-
   TEST_CASE("virtual dispatch via base pointer works") {
     FakePlugin concrete;
     BagPluginInterface* base = &concrete;
-    auto info = base->get_version_info();
-    CHECK_EQ(info.name, "FakePlugin");
+
+    Bytes data = Bytes::create(4u);
+    base->on_read(frame_of(4242, "dds://x", ActionType::kPublish, data));
+
+    CHECK(concrete.called_push);
+    CHECK_EQ(concrete.captured_ts, 4242);
   }
 
   TEST_CASE("convert_url_meta receives arguments by reference") {

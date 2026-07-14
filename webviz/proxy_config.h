@@ -29,7 +29,7 @@
 #include <string>
 #include <string_view>
 
-#include "proxy_bridge.h"
+#include "./proxy_bridge.h"
 
 namespace vlink {
 namespace webviz {

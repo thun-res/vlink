@@ -9,13 +9,13 @@
         <mxCell id="title" value="VLink CLI Tools" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="20" y="22" width="860" height="34" as="geometry" />
         </mxCell>
-        <mxCell id="subtitle" value="9 tools shipped with the CLI component  &#183;  installed under build/output/bin/" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#607d8b;shadow=0;" vertex="1" parent="1">
+        <mxCell id="subtitle" value="10 tools shipped with the CLI component  &#183;  installed under build/output/bin/" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#607d8b;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="20" y="58" width="860" height="22" as="geometry" />
         </mxCell>
 
         <!-- Table container -->
         <mxCell id="tbg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1976d2;strokeWidth=1.5;arcSize=4;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">
-          <mxGeometry x="60" y="100" width="780" height="490" as="geometry" />
+          <mxGeometry x="60" y="100" width="780" height="538" as="geometry" />
         </mxCell>
 
         <!-- Header row -->
@@ -126,6 +126,17 @@
         </mxCell>
         <mxCell id="r9c" value="Measure pub/sub throughput and end-to-end latency" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;align=left;verticalAlign=middle;spacingLeft=12;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="400" y="524" width="440" height="48" as="geometry" />
+        </mxCell>
+
+        <!-- Row 10: vlink-trigger (Recording - main body/blue) -->
+        <mxCell id="r10a" value="vlink-trigger" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#90a4ae;strokeWidth=1;fontFamily=Courier New;fontSize=12;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="572" width="180" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r10b" value="Recording" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="240" y="572" width="160" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="r10c" value="Trigger-based in-memory recording (EDR): dump a pre/post window on demand" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;align=left;verticalAlign=middle;spacingLeft=12;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="400" y="572" width="440" height="48" as="geometry" />
         </mxCell>
 
       </root>

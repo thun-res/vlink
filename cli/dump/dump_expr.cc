@@ -21,7 +21,7 @@
  * limitations under the License.
  */
 
-#include "dump_expr.h"
+#include "./dump_expr.h"
 
 #ifdef VLINK_ENABLE_EXPRTK
 #include <vlink/external/exprtk_api.h>

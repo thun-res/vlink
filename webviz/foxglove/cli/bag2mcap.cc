@@ -40,10 +40,10 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "foxglove_converter.h"
-#include "private/mcap_import.h"
-#include "webviz_app_utils.h"
-#include "webviz_time_utils.h"
+#include "./foxglove_converter.h"
+#include "./private/mcap_import.h"
+#include "./webviz_app_utils.h"
+#include "./webviz_time_utils.h"
 
 int main(int argc, char* argv[]) {
   vlink::Utils::set_console_utf8_output();

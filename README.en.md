@@ -2,7 +2,7 @@
 
 ![](doc/images/vlink.svg)
 
-![](https://img.shields.io/badge/version-v2.0.0-informational.svg) ![](https://img.shields.io/badge/language-C++17-informational.svg) ![](https://img.shields.io/badge/license-Apache%202.0-informational.svg) ![](https://img.shields.io/badge/platform-Linux%20|%20QNX%20|%20Android%20|%20macOS%20|%20Windows-informational.svg)
+![](https://img.shields.io/badge/version-v2.1.0-informational.svg) ![](https://img.shields.io/badge/language-C++17-informational.svg) ![](https://img.shields.io/badge/license-Apache%202.0-informational.svg) ![](https://img.shields.io/badge/platform-Linux%20|%20QNX%20|%20Android%20|%20macOS%20|%20Windows-informational.svg)
 
 [![CI Lint](https://img.shields.io/github/actions/workflow/status/thun-res/vlink/ci-lint.yml?branch=master&label=CI%20Lint)](https://github.com/thun-res/vlink/actions/workflows/ci-lint.yml) [![CI Test](https://img.shields.io/github/actions/workflow/status/thun-res/vlink/ci-test.yml?branch=master&label=CI%20Test)](https://github.com/thun-res/vlink/actions/workflows/ci-test.yml) [![coverage](https://img.shields.io/endpoint?url=https://thun-res.github.io/vlink/coverage/badge.json)](https://thun-res.github.io/vlink/coverage/) [![benchmark](https://img.shields.io/endpoint?url=https://thun-res.github.io/vlink/bench/badge.json)](https://thun-res.github.io/vlink/bench/)
 
@@ -10,7 +10,7 @@ English | [中文](README.md) · [Website](https://vlink.work) · [Documentation
 
 VLink is a high-performance C++17 communication middleware for autonomous driving and embodied intelligence, positioned as a full-scenario alternative to ROS 2. A single type-safe API covers intra-process, shared-memory, automotive-Ethernet, and cross-machine communication, reducing a backend change to editing a URL prefix while application code stays untouched.
 
-The current release supports 12 transport backends, 14 serialization formats, 3 communication models with 6 core primitives, plus security, recording/playback, service discovery, 9 CLI tools, and Foxglove / Rerun visualization bridges.
+The current release supports 12 transport backends, 14 serialization formats, 3 communication models with 6 core primitives, plus security, recording/playback, service discovery, 10 CLI tools, and Foxglove / Rerun visualization bridges.
 
 ![VLink architecture](doc/images/readme-architecture.png)
 
@@ -91,7 +91,7 @@ getter.listen([](const Status& s) { use(s); });
 | `shm2://` | Iceoryx2 | same-host | yes | beta |
 | `ddsr://` | RTI Connext | cross-machine | no | beta |
 | `ddst://` | domestic DDS | cross-machine | no | beta |
-| `zenoh://` | Zenoh | cross-machine / edge | no | beta |
+| `zenoh://` | Zenoh | cross-machine / edge | conditional | beta |
 | `someip://` | vsomeip | automotive Ethernet | no | beta |
 | `mqtt://` | Paho MQTT | cloud | no | beta |
 | `fdbus://` | FDBus | same-host | no | beta |
@@ -171,7 +171,7 @@ The following is a 16-part learning path, best read in order.
 
 | Document | Content |
 | --- | --- |
-| [10. CLI Tools](doc/10-cli-tools.md) | 9 command-line tools |
+| [10. CLI Tools](doc/10-cli-tools.md) | 10 command-line tools |
 | [11. Visualization (Viewer / WebViz)](doc/11-visualization.md) | desktop Viewer and Foxglove / Rerun bridges |
 | [12. Discovery and Proxy Monitoring](doc/12-observability.md) | topology discovery and cross-segment observation |
 
@@ -215,7 +215,7 @@ vlink/
 ├── include/vlink/   public headers (6 primitives + base library + extensions + zero-copy)
 ├── src/             core library implementation
 ├── modules/         12 transport backend implementations
-├── cli/             9 command-line tools
+├── cli/             10 command-line tools
 ├── proxy/           ProxyServer / ProxyAPI
 ├── viewer/          Qt desktop visualization tools
 ├── webviz/          Foxglove / Rerun bridges

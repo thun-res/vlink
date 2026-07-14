@@ -28,17 +28,23 @@
 #include <flatbuffers/flatbuffers.h>
 #include <flatbuffers/reflection.h>
 #include <vlink/base/helpers.h>
+#include <vlink/base/logger.h>
+#include <vlink/zerocopy/message_parser.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <numeric>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -301,11 +307,56 @@ bool resolve_proto_string(const google::protobuf::Message& root, const std::stri
     const auto* ref = current->GetReflection();
     const auto* field = desc->FindFieldByName(tokens[i].name);
 
-    if (!field || field->is_repeated()) {
+    if (!field) {
       return false;
     }
 
     const bool last = i + 1 == tokens.size();
+
+    if (field->is_repeated()) {
+      if (i + 1 >= tokens.size() || !tokens[i + 1].is_index) {
+        return false;
+      }
+
+      const auto index = static_cast<int>(tokens[i + 1].index);
+
+      if (index < 0 || index >= ref->FieldSize(*current, field)) {
+        return false;
+      }
+
+      if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
+        current = &ref->GetRepeatedMessage(*current, field, index);
+        ++i;
+        continue;
+      }
+
+      if (i + 2 != tokens.size()) {
+        return false;
+      }
+
+      if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_STRING) {
+        out = ref->GetRepeatedString(*current, field, index);
+        return true;
+      }
+
+      if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_ENUM) {
+        const auto* enum_value = ref->GetRepeatedEnum(*current, field, index);
+
+        if (!enum_value) {
+          out = std::to_string(ref->GetRepeatedEnumValue(*current, field, index));
+          return true;
+        }
+
+        const std::string name = std::string(enum_value->name());
+        const size_t last_underscore = name.find_last_of('_');
+        out = (last_underscore != std::string::npos && last_underscore + 1 < name.size())
+                  ? name.substr(last_underscore + 1)
+                  : name;
+        return true;
+      }
+
+      return false;
+    }
 
     if (last) {
       if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_STRING) {
@@ -337,6 +388,68 @@ bool resolve_proto_string(const google::protobuf::Message& root, const std::stri
     }
 
     current = &ref->GetMessage(*current, field);
+  }
+
+  return false;
+}
+
+bool resolve_proto_uint64(const google::protobuf::Message& root, const std::string& path, uint64_t& out) {
+  const std::vector<PathToken>& tokens = tokenize_path_cached(path);
+
+  if (tokens.empty()) {
+    return false;
+  }
+
+  const google::protobuf::Message* current = &root;
+
+  for (size_t i = 0; i < tokens.size(); ++i) {
+    if (tokens[i].is_index) {
+      return false;
+    }
+
+    const auto* field = current->GetDescriptor()->FindFieldByName(tokens[i].name);
+
+    if (!field || field->is_repeated()) {
+      return false;
+    }
+
+    const auto* ref = current->GetReflection();
+    const bool last = i + 1 == tokens.size();
+
+    if (!last) {
+      if (field->cpp_type() != google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
+        return false;
+      }
+
+      current = &ref->GetMessage(*current, field);
+      continue;
+    }
+
+    switch (field->cpp_type()) {
+      case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
+        out = ref->GetUInt64(*current, field);
+        return true;
+      case google::protobuf::FieldDescriptor::CPPTYPE_UINT32:
+        out = ref->GetUInt32(*current, field);
+        return true;
+      case google::protobuf::FieldDescriptor::CPPTYPE_INT64: {
+        const int64_t value = ref->GetInt64(*current, field);
+        out = value > 0 ? static_cast<uint64_t>(value) : 0;
+        return true;
+      }
+      case google::protobuf::FieldDescriptor::CPPTYPE_INT32: {
+        const int32_t value = ref->GetInt32(*current, field);
+        out = value > 0 ? static_cast<uint64_t>(value) : 0;
+        return true;
+      }
+      case google::protobuf::FieldDescriptor::CPPTYPE_ENUM: {
+        const int value = ref->GetEnumValue(*current, field);
+        out = value > 0 ? static_cast<uint64_t>(value) : 0;
+        return true;
+      }
+      default:
+        return false;
+    }
   }
 
   return false;
@@ -395,8 +508,8 @@ double fbs_field_numeric(const flatbuffers::Table& table, const reflection::Fiel
   }
 }
 
-bool resolve_fbs_numeric(const flatbuffers::Table& root_table, const reflection::Object& root_obj,
-                         const reflection::Schema& schema, const std::string& path, double& out) {
+[[maybe_unused]] bool resolve_fbs_numeric(const flatbuffers::Table& root_table, const reflection::Object& root_obj,
+                                          const reflection::Schema& schema, const std::string& path, double& out) {
   const std::vector<PathToken>& tokens = tokenize_path_cached(path);
 
   if (tokens.empty()) {
@@ -549,6 +662,233 @@ bool resolve_fbs_string(const flatbuffers::Table& root_table, const reflection::
   return false;
 }
 
+[[maybe_unused]] bool resolve_fbs_uint64(const flatbuffers::Table& root_table, const reflection::Object& root_obj,
+                                         const reflection::Schema& schema, const std::string& path, uint64_t& out) {
+  const std::vector<PathToken>& tokens = tokenize_path_cached(path);
+
+  if (tokens.empty()) {
+    return false;
+  }
+
+  const flatbuffers::Table* table = &root_table;
+  const reflection::Object* obj = &root_obj;
+
+  for (size_t i = 0; i < tokens.size(); ++i) {
+    if (tokens[i].is_index) {
+      return false;
+    }
+
+    const auto* field = find_fbs_field(*obj, tokens[i].name);
+
+    if (!field) {
+      return false;
+    }
+
+    const bool last = i + 1 == tokens.size();
+    const auto type = field->type()->base_type();
+
+    if (!last) {
+      if (type != reflection::Obj || !schema.objects()) {
+        return false;
+      }
+
+      const auto* sub_table = flatbuffers::GetFieldT(*table, *field);
+      const auto* sub_obj = schema.objects()->Get(static_cast<uint32_t>(field->type()->index()));
+
+      if (!sub_table || !sub_obj) {
+        return false;
+      }
+
+      table = sub_table;
+      obj = sub_obj;
+      continue;
+    }
+
+    switch (type) {
+      case reflection::ULong:
+      case reflection::UInt:
+      case reflection::UShort:
+      case reflection::UByte:
+      case reflection::Bool:
+        out = static_cast<uint64_t>(flatbuffers::GetAnyFieldI(*table, *field));
+        return true;
+      case reflection::Long:
+      case reflection::Int:
+      case reflection::Short:
+      case reflection::Byte: {
+        const int64_t value = flatbuffers::GetAnyFieldI(*table, *field);
+        out = value > 0 ? static_cast<uint64_t>(value) : 0;
+        return true;
+      }
+      default:
+        return false;
+    }
+  }
+
+  return false;
+}
+
+struct FbsRef final {
+  const flatbuffers::Table* table{nullptr};
+  const flatbuffers::Struct* structure{nullptr};
+  const reflection::Object* obj{nullptr};
+};
+
+FbsRef fbs_child(FbsRef parent, const reflection::Field& field, const reflection::Schema& schema) {
+  if (!schema.objects() || field.type()->base_type() != reflection::Obj) {
+    return {};
+  }
+
+  const auto* child_obj = schema.objects()->Get(static_cast<uint32_t>(field.type()->index()));
+
+  if (!child_obj) {
+    return {};
+  }
+
+  if (child_obj->is_struct()) {
+    const auto* child = parent.structure ? flatbuffers::GetFieldStruct(*parent.structure, field)
+                                         : flatbuffers::GetFieldStruct(*parent.table, field);
+    return {nullptr, child, child_obj};
+  }
+
+  if (parent.structure) {
+    return {};
+  }
+
+  return {flatbuffers::GetFieldT(*parent.table, field), nullptr, child_obj};
+}
+
+FbsRef fbs_vector_child(FbsRef parent, const reflection::Field& field, const reflection::Schema& schema, size_t index) {
+  if (parent.structure || !parent.table || !schema.objects() || field.type()->base_type() != reflection::Vector ||
+      field.type()->element() != reflection::Obj) {
+    return {};
+  }
+
+  const auto* child_obj = schema.objects()->Get(static_cast<uint32_t>(field.type()->index()));
+  const auto* vec = flatbuffers::GetFieldAnyV(*parent.table, field);
+
+  if (!child_obj || !vec || index >= vec->size()) {
+    return {};
+  }
+
+  if (child_obj->is_struct()) {
+    const auto* child = flatbuffers::GetAnyVectorElemAddressOf<const flatbuffers::Struct>(
+        vec, index, static_cast<size_t>(child_obj->bytesize()));
+    return {nullptr, child, child_obj};
+  }
+
+  return {flatbuffers::GetAnyVectorElemPointer<const flatbuffers::Table>(vec, index), nullptr, child_obj};
+}
+
+int64_t fbs_ref_integer(FbsRef ref, const reflection::Field& field) {
+  return ref.structure ? flatbuffers::GetAnyFieldI(*ref.structure, field)
+                       : flatbuffers::GetAnyFieldI(*ref.table, field);
+}
+
+double fbs_ref_floating(FbsRef ref, const reflection::Field& field) {
+  return ref.structure ? flatbuffers::GetAnyFieldF(*ref.structure, field)
+                       : flatbuffers::GetAnyFieldF(*ref.table, field);
+}
+
+bool resolve_fbs_ref_numeric(FbsRef ref, const reflection::Schema& schema, const std::string& path, double& out) {
+  const auto& tokens = tokenize_path_cached(path);
+
+  if (tokens.empty() || !ref.obj) {
+    return false;
+  }
+
+  for (size_t i = 0; i < tokens.size(); ++i) {
+    if (tokens[i].is_index) {
+      return false;
+    }
+
+    const auto* field = find_fbs_field(*ref.obj, tokens[i].name);
+
+    if (!field) {
+      return false;
+    }
+
+    if (i + 1 == tokens.size()) {
+      if (!fbs_type_is_numeric(field->type()->base_type())) {
+        return false;
+      }
+
+      out = field->type()->base_type() == reflection::Float || field->type()->base_type() == reflection::Double
+                ? fbs_ref_floating(ref, *field)
+                : static_cast<double>(fbs_ref_integer(ref, *field));
+      return true;
+    }
+
+    if (field->type()->base_type() == reflection::Vector) {
+      if (i + 1 >= tokens.size() || !tokens[i + 1].is_index) {
+        return false;
+      }
+
+      ref = fbs_vector_child(ref, *field, schema, tokens[i + 1].index);
+      ++i;
+    } else {
+      ref = fbs_child(ref, *field, schema);
+    }
+
+    if (!ref.obj || (!ref.table && !ref.structure)) {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+bool resolve_fbs_ref_uint64(FbsRef ref, const reflection::Schema& schema, const std::string& path, uint64_t& out) {
+  const auto& tokens = tokenize_path_cached(path);
+
+  if (tokens.empty() || !ref.obj) {
+    return false;
+  }
+
+  for (size_t i = 0; i < tokens.size(); ++i) {
+    if (tokens[i].is_index) {
+      return false;
+    }
+
+    const auto* field = find_fbs_field(*ref.obj, tokens[i].name);
+
+    if (!field) {
+      return false;
+    }
+
+    if (i + 1 == tokens.size()) {
+      const auto type = field->type()->base_type();
+
+      if (!fbs_type_is_numeric(type) || type == reflection::Float || type == reflection::Double) {
+        return false;
+      }
+
+      const int64_t value = fbs_ref_integer(ref, *field);
+      const bool is_unsigned = type == reflection::ULong || type == reflection::UInt || type == reflection::UShort ||
+                               type == reflection::UByte || type == reflection::Bool;
+      out = is_unsigned ? static_cast<uint64_t>(value) : (value > 0 ? static_cast<uint64_t>(value) : 0);
+      return true;
+    }
+
+    if (field->type()->base_type() == reflection::Vector) {
+      if (i + 1 >= tokens.size() || !tokens[i + 1].is_index) {
+        return false;
+      }
+
+      ref = fbs_vector_child(ref, *field, schema, tokens[i + 1].index);
+      ++i;
+    } else {
+      ref = fbs_child(ref, *field, schema);
+    }
+
+    if (!ref.obj || (!ref.table && !ref.structure)) {
+      return false;
+    }
+  }
+
+  return false;
+}
+
 #ifdef VLINK_ENABLE_EXPRTK
 
 bool is_reserved_identifier(const std::string& token) {
@@ -572,7 +912,7 @@ std::vector<std::string> extract_identifiers(const std::string& expression) {
       while (j < expression.size()) {
         const auto next = static_cast<unsigned char>(expression[j]);
 
-        if (std::isalnum(next) || next == '_' || next == '.') {
+        if (std::isalnum(next) || next == '_' || next == '.' || next == '[' || next == ']') {
           ++j;
         } else {
           break;
@@ -633,6 +973,7 @@ struct CompiledExpression final {
   std::vector<double> values;
   vlink::ExprtkSymbolTable symbols;
   vlink::ExprtkExpression expression;
+  bool warned_missing_value{false};
 };
 
 void build_compiled_expression(CompiledExpression& compiled, const std::string& expression) {
@@ -658,6 +999,10 @@ void build_compiled_expression(CompiledExpression& compiled, const std::string& 
   compiled.expression.register_symbol_table(compiled.symbols);
 
   compiled.ok = compiled.expression.compile(rewritten);
+
+  if VUNLIKELY (!compiled.ok) {
+    MLOG_W("Failed to compile perception expression: {} (processed: {})", expression, rewritten);
+  }
 }
 
 double evaluate_expression(const std::string& expression, const std::function<double(const std::string&)>& resolve) {
@@ -670,11 +1015,20 @@ double evaluate_expression(const std::string& expression, const std::function<do
   }
 
   if (!compiled.ok) {
-    return 0.0;
+    return std::numeric_limits<double>::quiet_NaN();
   }
 
   for (size_t i = 0; i < compiled.identifiers.size(); ++i) {
     compiled.values[i] = resolve(compiled.identifiers[i]);
+
+    if VUNLIKELY (!std::isfinite(compiled.values[i])) {
+      if (!compiled.warned_missing_value) {
+        MLOG_W("Perception expression '{}' cannot resolve numeric field '{}'", expression, compiled.identifiers[i]);
+        compiled.warned_missing_value = true;
+      }
+
+      return std::numeric_limits<double>::quiet_NaN();
+    }
   }
 
   return compiled.expression.value();
@@ -701,6 +1055,20 @@ uint32_t to_uint32(double value) {
   }
 
   return static_cast<uint32_t>(std::llround(value));
+}
+
+uint64_t to_uint64(double value) {
+  if (!(value > 0.0)) {
+    return 0;
+  }
+
+  constexpr double kUint64Max = static_cast<double>(std::numeric_limits<uint64_t>::max());
+
+  if (value >= kUint64Max) {
+    return std::numeric_limits<uint64_t>::max();
+  }
+
+  return static_cast<uint64_t>(value + 0.5);
 }
 
 uint8_t to_uint8(double value) {
@@ -775,6 +1143,7 @@ std::vector<std::string> split_paths(const std::string& spec) {
   if VUNLIKELY (out.empty()) {
     out.emplace_back();
   }
+
   return out;
 }
 
@@ -842,57 +1211,80 @@ const perception::FieldMapping* find_slot(const SlotMap& slot_map, const char* n
   return it == slot_map.end() ? nullptr : it->second;
 }
 
-template <typename Reader, typename Elem>
-void read_double(const Reader& reader, Elem elem, const SlotMap& slot_map, const char* name, double& dst) {
+template <typename ReaderT, typename ElemT>
+void read_double(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, double& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
-    dst = reader.value(elem, *mapping);
+    const double value = reader.value(elem, *mapping);
+
+    if (std::isfinite(value)) {
+      dst = value;
+    }
   }
 }
 
-template <typename Reader, typename Elem>
-void read_uint32(const Reader& reader, Elem elem, const SlotMap& slot_map, const char* name, uint32_t& dst) {
+template <typename ReaderT, typename ElemT>
+void read_uint32(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, uint32_t& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
     dst = to_uint32(reader.value(elem, *mapping));
   }
 }
 
-template <typename Reader, typename Elem>
-void read_uint8(const Reader& reader, Elem elem, const SlotMap& slot_map, const char* name, uint8_t& dst) {
+template <typename ReaderT, typename ElemT>
+void read_uint64(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, uint64_t& dst) {
+  if (const auto* mapping = find_slot(slot_map, name)) {
+    dst = reader.uint64_value(elem, *mapping);
+  }
+}
+
+template <typename ReaderT, typename ElemT>
+void read_uint8(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, uint8_t& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
     dst = to_uint8(reader.value(elem, *mapping));
   }
 }
 
-template <typename Reader, typename Elem>
-void read_int32(const Reader& reader, Elem elem, const SlotMap& slot_map, const char* name, int32_t& dst) {
+template <typename ReaderT, typename ElemT>
+void read_int32(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, int32_t& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
-    dst = static_cast<int32_t>(std::llround(reader.value(elem, *mapping)));
+    const double value = reader.value(elem, *mapping);
+
+    if (std::isfinite(value)) {
+      dst = static_cast<int32_t>(std::llround(value));
+    }
   }
 }
 
-template <typename Reader, typename Elem>
-void read_int(const Reader& reader, Elem elem, const SlotMap& slot_map, const char* name, int& dst) {
+template <typename ReaderT, typename ElemT>
+void read_int(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, int& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
-    dst = static_cast<int>(std::llround(reader.value(elem, *mapping)));
+    const double value = reader.value(elem, *mapping);
+
+    if (std::isfinite(value)) {
+      dst = static_cast<int>(std::llround(value));
+    }
   }
 }
 
-template <typename Reader, typename Elem>
-void read_float(const Reader& reader, Elem elem, const SlotMap& slot_map, const char* name, float& dst) {
+template <typename ReaderT, typename ElemT>
+void read_float(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, float& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
-    dst = static_cast<float>(reader.value(elem, *mapping));
+    const double value = reader.value(elem, *mapping);
+
+    if (std::isfinite(value)) {
+      dst = static_cast<float>(value);
+    }
   }
 }
 
-template <typename Reader, typename Elem>
-void read_string(const Reader& reader, Elem elem, const SlotMap& slot_map, const char* name, std::string& dst) {
+template <typename ReaderT, typename ElemT>
+void read_string(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, const char* name, std::string& dst) {
   if (const auto* mapping = find_slot(slot_map, name)) {
     dst = reader.text(elem, *mapping);
   }
 }
 
-template <typename Reader, typename Elem>
-BoxObject read_box(const Reader& reader, Elem elem, const SlotMap& slot_map) {
+template <typename ReaderT, typename ElemT>
+BoxObject read_box(const ReaderT& reader, ElemT elem, const SlotMap& slot_map) {
   BoxObject box;
 
   read_double(reader, elem, slot_map, "x", box.position[0]);
@@ -907,7 +1299,7 @@ BoxObject read_box(const Reader& reader, Elem elem, const SlotMap& slot_map) {
   read_double(reader, elem, slot_map, "vz", box.velocity[2]);
   read_double(reader, elem, slot_map, "score", box.score);
   read_uint32(reader, elem, slot_map, "class_id", box.class_id);
-  read_uint32(reader, elem, slot_map, "track_id", box.track_id);
+  read_uint64(reader, elem, slot_map, "track_id", box.track_id);
   read_uint32(reader, elem, slot_map, "color", box.color);
   read_string(reader, elem, slot_map, "label", box.label);
 
@@ -927,24 +1319,16 @@ BoxObject read_box(const Reader& reader, Elem elem, const SlotMap& slot_map) {
   read_double(reader, elem, slot_map, "near", box.near_dist);
   read_double(reader, elem, slot_map, "far", box.far_dist);
 
-  if (const auto* mapping = find_slot(slot_map, "cov_xx")) {
-    box.covariance[0] = reader.value(elem, *mapping);
-  }
-
-  if (const auto* mapping = find_slot(slot_map, "cov_xy")) {
-    box.covariance[1] = reader.value(elem, *mapping);
-    box.covariance[2] = box.covariance[1];
-  }
-
-  if (const auto* mapping = find_slot(slot_map, "cov_yy")) {
-    box.covariance[3] = reader.value(elem, *mapping);
-  }
+  read_double(reader, elem, slot_map, "cov_xx", box.covariance[0]);
+  read_double(reader, elem, slot_map, "cov_xy", box.covariance[1]);
+  box.covariance[2] = box.covariance[1];
+  read_double(reader, elem, slot_map, "cov_yy", box.covariance[3]);
 
   return box;
 }
 
-template <typename Reader, typename Elem>
-ParkingSlot read_slot(const Reader& reader, Elem elem, const SlotMap& slot_map) {
+template <typename ReaderT, typename ElemT>
+ParkingSlot read_slot(const ReaderT& reader, ElemT elem, const SlotMap& slot_map) {
   ParkingSlot slot;
 
   static const char* const kCornerNames[4][3] = {
@@ -960,7 +1344,7 @@ ParkingSlot read_slot(const Reader& reader, Elem elem, const SlotMap& slot_map) 
     }
   }
 
-  read_uint32(reader, elem, slot_map, "slot_id", slot.slot_id);
+  read_uint64(reader, elem, slot_map, "slot_id", slot.slot_id);
   read_uint32(reader, elem, slot_map, "slot_type", slot.slot_type);
   read_uint32(reader, elem, slot_map, "color", slot.color);
   read_float(reader, elem, slot_map, "confidence", slot.confidence);
@@ -968,8 +1352,8 @@ ParkingSlot read_slot(const Reader& reader, Elem elem, const SlotMap& slot_map) 
   return slot;
 }
 
-template <typename Reader, typename Elem>
-PolyPoint read_point(const Reader& reader, Elem elem, const SlotMap& slot_map) {
+template <typename ReaderT, typename ElemT>
+PolyPoint read_point(const ReaderT& reader, ElemT elem, const SlotMap& slot_map) {
   PolyPoint point;
 
   read_double(reader, elem, slot_map, "x", point.x);
@@ -982,12 +1366,12 @@ PolyPoint read_point(const Reader& reader, Elem elem, const SlotMap& slot_map) {
   return point;
 }
 
-template <typename Reader, typename Elem>
-void read_polyline_attributes(const Reader& reader, Elem elem, const SlotMap& slot_map, Polyline& line) {
+template <typename ReaderT, typename ElemT>
+void read_polyline_attributes(const ReaderT& reader, ElemT elem, const SlotMap& slot_map, Polyline& line) {
   read_uint32(reader, elem, slot_map, "color", line.color);
   read_int(reader, elem, slot_map, "type", line.type);
   read_string(reader, elem, slot_map, "label", line.label);
-  read_uint32(reader, elem, slot_map, "track_id", line.track_id);
+  read_uint64(reader, elem, slot_map, "track_id", line.track_id);
   read_float(reader, elem, slot_map, "confidence", line.confidence);
 }
 
@@ -999,10 +1383,10 @@ bool point_is_finite(const PolyPoint& point) {
   return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
 }
 
-template <typename Reader>
-void fill_boxes(const Reader& reader, const std::string& collection, const SlotMap& slot_map,
+template <typename ReaderT>
+void fill_boxes(const ReaderT& reader, const std::string& collection, const SlotMap& slot_map,
                 std::vector<BoxObject>& out) {
-  std::vector<typename Reader::Elem> elems;
+  std::vector<typename ReaderT::Elem> elems;
   reader.collect(reader.root(), collection, elems);
   out.reserve(out.size() + elems.size());
 
@@ -1015,10 +1399,10 @@ void fill_boxes(const Reader& reader, const std::string& collection, const SlotM
   }
 }
 
-template <typename Reader>
-void fill_slots(const Reader& reader, const std::string& collection, const SlotMap& slot_map,
+template <typename ReaderT>
+void fill_slots(const ReaderT& reader, const std::string& collection, const SlotMap& slot_map,
                 std::vector<ParkingSlot>& out) {
-  std::vector<typename Reader::Elem> elems;
+  std::vector<typename ReaderT::Elem> elems;
   reader.collect(reader.root(), collection, elems);
   out.reserve(out.size() + elems.size());
 
@@ -1031,10 +1415,10 @@ void fill_slots(const Reader& reader, const std::string& collection, const SlotM
   }
 }
 
-template <typename Reader>
-void fill_polylines(const Reader& reader, const std::string& outer_path, const std::string& inner_path,
+template <typename ReaderT>
+void fill_polylines(const ReaderT& reader, const std::string& outer_path, const std::string& inner_path,
                     const SlotMap& slot_map, std::vector<Polyline>& out) {
-  std::vector<typename Reader::Elem> outer;
+  std::vector<typename ReaderT::Elem> outer;
   reader.collect(reader.root(), outer_path, outer);
 
   if (inner_path.empty()) {
@@ -1060,10 +1444,18 @@ void fill_polylines(const Reader& reader, const std::string& outer_path, const s
   out.reserve(out.size() + outer.size());
 
   for (auto line_elem : outer) {
+    if (const auto* filter = find_slot(slot_map, "__filter")) {
+      const double selected = reader.value(line_elem, *filter);
+
+      if (!std::isfinite(selected) || selected == 0.0) {
+        continue;
+      }
+    }
+
     Polyline line;
     read_polyline_attributes(reader, line_elem, slot_map, line);
 
-    std::vector<typename Reader::Elem> inner;
+    std::vector<typename ReaderT::Elem> inner;
     reader.collect(line_elem, inner_path, inner);
     line.points.reserve(inner.size());
 
@@ -1081,9 +1473,9 @@ void fill_polylines(const Reader& reader, const std::string& outer_path, const s
   }
 }
 
-template <typename Reader>
-void fill_cloud(const Reader& reader, const std::string& collection, const SlotMap& slot_map, Layer& out) {
-  std::vector<typename Reader::Elem> elems;
+template <typename ReaderT>
+void fill_cloud(const ReaderT& reader, const std::string& collection, const SlotMap& slot_map, Layer& out) {
+  std::vector<typename ReaderT::Elem> elems;
   reader.collect(reader.root(), collection, elems);
   out.cloud.reserve(out.cloud.size() + elems.size());
 
@@ -1106,9 +1498,9 @@ void fill_cloud(const Reader& reader, const std::string& collection, const SlotM
   }
 }
 
-template <typename Reader>
-void fill_grid(const Reader& reader, const std::string& collection, const SlotMap& slot_map, Layer& out) {
-  std::vector<typename Reader::Elem> elems;
+template <typename ReaderT>
+void fill_grid(const ReaderT& reader, const std::string& collection, const SlotMap& slot_map, Layer& out) {
+  std::vector<typename ReaderT::Elem> elems;
   reader.collect(reader.root(), collection, elems);
 
   if (elems.empty()) {
@@ -1144,8 +1536,8 @@ void fill_grid(const Reader& reader, const std::string& collection, const SlotMa
   out.grid_valid = grid.width > 0 && grid.height > 0 && !grid.cells.empty();
 }
 
-template <typename Reader>
-void decode_with_reader(const Reader& reader, const PerceptionConfig::MappingRule& rule, Layer& out) {
+template <typename ReaderT>
+void decode_with_reader(const ReaderT& reader, const PerceptionConfig::MappingRule& rule, Layer& out) {
   out.type = rule.type;
 
   const std::vector<std::string> collections = split_paths(rule.collection.toStdString());
@@ -1291,7 +1683,7 @@ class ProtoReader final {
     if (!mapping.expression.empty()) {
       return evaluate_expression(mapping.expression, [elem](const std::string& identifier) {
         double resolved = 0.0;
-        return resolve_proto_numeric(*elem, identifier, resolved) ? resolved : 0.0;
+        return resolve_proto_numeric(*elem, identifier, resolved) ? resolved : std::numeric_limits<double>::quiet_NaN();
       });
     }
 
@@ -1306,11 +1698,22 @@ class ProtoReader final {
     return fallback;
   }
 
+  [[nodiscard]] uint64_t uint64_value(Elem elem, const perception::FieldMapping& mapping) const {
+    uint64_t resolved = 0;
+
+    if (mapping.expression.empty() && !mapping.source.empty() &&
+        resolve_proto_uint64(*elem, mapping.source, resolved)) {
+      return resolved;
+    }
+
+    return to_uint64(value(elem, mapping));
+  }
+
   [[nodiscard]] std::string text(Elem elem, const perception::FieldMapping& mapping) const {
     if (!mapping.expression.empty()) {
       return format_double_string(evaluate_expression(mapping.expression, [elem](const std::string& identifier) {
         double resolved = 0.0;
-        return resolve_proto_numeric(*elem, identifier, resolved) ? resolved : 0.0;
+        return resolve_proto_numeric(*elem, identifier, resolved) ? resolved : std::numeric_limits<double>::quiet_NaN();
       }));
     }
 
@@ -1371,13 +1774,10 @@ class ProtoReader final {
 
 class FbsReader final {
  public:
-  struct Elem final {
-    const flatbuffers::Table* table{nullptr};
-    const reflection::Object* obj{nullptr};
-  };
+  using Elem = FbsRef;
 
   FbsReader(const flatbuffers::Table& root, const reflection::Schema& schema, const reflection::Object& root_obj)
-      : root_{&root, &root_obj}, schema_(&schema) {}
+      : root_{&root, nullptr, &root_obj}, schema_(&schema) {}
 
   [[nodiscard]] Elem root() const { return root_; }
 
@@ -1393,47 +1793,41 @@ class FbsReader final {
       return;
     }
 
-    const flatbuffers::Table* table = base.table;
-    const reflection::Object* obj = base.obj;
+    FbsRef current = base;
 
     for (size_t i = 0; i + 1 < tokens.size(); ++i) {
       if (tokens[i].is_index) {
         return;
       }
 
-      const auto* field = find_fbs_field(*obj, tokens[i].name);
+      const auto* field = find_fbs_field(*current.obj, tokens[i].name);
 
-      if (!field || field->type()->base_type() != reflection::Obj) {
+      if (!field) {
         return;
       }
 
-      const auto* sub_table = flatbuffers::GetFieldT(*table, *field);
-      const auto* sub_obj = schema_->objects()->Get(static_cast<uint32_t>(field->type()->index()));
+      current = fbs_child(current, *field, *schema_);
 
-      if (!sub_table || !sub_obj) {
+      if (!current.obj || (!current.table && !current.structure)) {
         return;
       }
-
-      table = sub_table;
-      obj = sub_obj;
     }
 
     if (tokens.back().is_index) {
       return;
     }
 
-    const auto* field = find_fbs_field(*obj, tokens.back().name);
+    const auto* field = find_fbs_field(*current.obj, tokens.back().name);
 
     if (!field) {
       return;
     }
 
     if (field->type()->base_type() == reflection::Obj) {
-      const auto* sub_table = flatbuffers::GetFieldT(*table, *field);
-      const auto* sub_obj = schema_->objects()->Get(static_cast<uint32_t>(field->type()->index()));
+      const FbsRef child = fbs_child(current, *field, *schema_);
 
-      if (sub_table && sub_obj) {
-        out.emplace_back(Elem{sub_table, sub_obj});
+      if (child.obj && (child.table || child.structure)) {
+        out.emplace_back(child);
       }
 
       return;
@@ -1443,7 +1837,11 @@ class FbsReader final {
       return;
     }
 
-    const auto* vec = flatbuffers::GetFieldAnyV(*table, *field);
+    if (current.structure) {
+      return;
+    }
+
+    const auto* vec = flatbuffers::GetFieldAnyV(*current.table, *field);
     const auto* elem_obj = schema_->objects()->Get(static_cast<uint32_t>(field->type()->index()));
 
     if (!vec || !elem_obj) {
@@ -1453,29 +1851,35 @@ class FbsReader final {
     out.reserve(out.size() + vec->size());
 
     for (flatbuffers::uoffset_t i = 0; i < vec->size(); ++i) {
-      const auto* elem_table = flatbuffers::GetAnyVectorElemPointer<const flatbuffers::Table>(vec, i);
+      if (elem_obj->is_struct()) {
+        const auto* elem_struct = flatbuffers::GetAnyVectorElemAddressOf<const flatbuffers::Struct>(
+            vec, i, static_cast<size_t>(elem_obj->bytesize()));
+        out.emplace_back(Elem{nullptr, elem_struct, elem_obj});
+      } else {
+        const auto* elem_table = flatbuffers::GetAnyVectorElemPointer<const flatbuffers::Table>(vec, i);
 
-      if (elem_table) {
-        out.emplace_back(Elem{elem_table, elem_obj});
+        if (elem_table) {
+          out.emplace_back(Elem{elem_table, nullptr, elem_obj});
+        }
       }
     }
   }
 
   [[nodiscard]] double value(Elem elem, const perception::FieldMapping& mapping) const {
     if (!mapping.expression.empty()) {
-      const auto* table = elem.table;
-      const auto* obj = elem.obj;
+      const FbsRef ref = elem;
       const auto* schema = schema_;
 
-      return evaluate_expression(mapping.expression, [table, obj, schema](const std::string& identifier) {
+      return evaluate_expression(mapping.expression, [ref, schema](const std::string& identifier) {
         double resolved = 0.0;
-        return resolve_fbs_numeric(*table, *obj, *schema, identifier, resolved) ? resolved : 0.0;
+        return resolve_fbs_ref_numeric(ref, *schema, identifier, resolved) ? resolved
+                                                                           : std::numeric_limits<double>::quiet_NaN();
       });
     }
 
     double resolved = 0.0;
 
-    if (!mapping.source.empty() && resolve_fbs_numeric(*elem.table, *elem.obj, *schema_, mapping.source, resolved)) {
+    if (!mapping.source.empty() && resolve_fbs_ref_numeric(elem, *schema_, mapping.source, resolved)) {
       return resolved;
     }
 
@@ -1484,22 +1888,33 @@ class FbsReader final {
     return fallback;
   }
 
+  [[nodiscard]] uint64_t uint64_value(Elem elem, const perception::FieldMapping& mapping) const {
+    uint64_t resolved = 0;
+
+    if (mapping.expression.empty() && !mapping.source.empty() &&
+        resolve_fbs_ref_uint64(elem, *schema_, mapping.source, resolved)) {
+      return resolved;
+    }
+
+    return to_uint64(value(elem, mapping));
+  }
+
   [[nodiscard]] std::string text(Elem elem, const perception::FieldMapping& mapping) const {
     if (!mapping.expression.empty()) {
-      const auto* table = elem.table;
-      const auto* obj = elem.obj;
+      const FbsRef ref = elem;
       const auto* schema = schema_;
 
-      return format_double_string(
-          evaluate_expression(mapping.expression, [table, obj, schema](const std::string& identifier) {
-            double resolved = 0.0;
-            return resolve_fbs_numeric(*table, *obj, *schema, identifier, resolved) ? resolved : 0.0;
-          }));
+      return format_double_string(evaluate_expression(mapping.expression, [ref, schema](const std::string& identifier) {
+        double resolved = 0.0;
+        return resolve_fbs_ref_numeric(ref, *schema, identifier, resolved) ? resolved
+                                                                           : std::numeric_limits<double>::quiet_NaN();
+      }));
     }
 
     std::string resolved;
 
-    if (!mapping.source.empty() && resolve_fbs_string(*elem.table, *elem.obj, *schema_, mapping.source, resolved)) {
+    if (!elem.structure && !mapping.source.empty() &&
+        resolve_fbs_string(*elem.table, *elem.obj, *schema_, mapping.source, resolved)) {
       return resolved;
     }
 
@@ -1515,6 +1930,10 @@ class FbsReader final {
 
     const flatbuffers::Table* table = base.table;
     const reflection::Object* obj = base.obj;
+
+    if (!table || !obj) {
+      return;
+    }
 
     for (size_t i = 0; i + 1 < tokens.size(); ++i) {
       if (tokens[i].is_index) {
@@ -1566,12 +1985,182 @@ class FbsReader final {
   const reflection::Schema* schema_;
 };
 
+class ZerocopyReader final {
+ public:
+  struct Elem final {
+    std::string collection;
+    size_t index{0};
+    bool indexed{false};
+  };
+
+  bool reset(const vlink::Bytes& raw, const std::string& ser) {
+    point_fields_.clear();
+    point_field_indices_.clear();
+
+    if (!parser_.parse(ser, raw)) {
+      return false;
+    }
+
+    if (parser_.type() == vlink::zerocopy::MessageParser::Type::kPointCloud) {
+      point_fields_ = parser_.element_fields("data");
+      point_field_indices_.reserve(point_fields_.size());
+
+      for (size_t i = 0; i < point_fields_.size(); ++i) {
+        point_field_indices_.emplace(point_fields_[i].name, i);
+      }
+    }
+
+    return true;
+  }
+
+  [[nodiscard]] Elem root() const { return {}; }
+
+  void collect(Elem base, const std::string& path, std::vector<Elem>& out) const {
+    if (path.empty()) {
+      out.emplace_back(std::move(base));
+      return;
+    }
+
+    const size_t count = parser_.collection_size(path);
+
+    if (count == 0) {
+      return;
+    }
+
+    out.reserve(out.size() + count);
+
+    for (size_t i = 0; i < count; ++i) {
+      out.emplace_back(Elem{path, i, true});
+    }
+  }
+
+  [[nodiscard]] double value(Elem elem, const perception::FieldMapping& mapping) const {
+    auto resolve = [this, &elem](const std::string& identifier) {
+      double value = 0.0;
+      return numeric(elem, identifier, value) ? value : std::numeric_limits<double>::quiet_NaN();
+    };
+
+    if (!mapping.expression.empty()) {
+      return evaluate_expression(mapping.expression, resolve);
+    }
+
+    double value = 0.0;
+
+    if (!mapping.source.empty() && numeric(elem, mapping.source, value)) {
+      return value;
+    }
+
+    parse_numeric_default(mapping, value);
+    return value;
+  }
+
+  [[nodiscard]] uint64_t uint64_value(Elem elem, const perception::FieldMapping& mapping) const {
+    if (mapping.expression.empty() && !mapping.source.empty()) {
+      vlink::zerocopy::MessageParser::Value value;
+      bool parsed = false;
+
+      if (elem.indexed) {
+        parsed = parser_.value(elem.collection, elem.index, mapping.source, value);
+      } else {
+        parsed = parser_.value(mapping.source, value);
+      }
+
+      if (parsed) {
+        if (const auto* unsigned_value = std::get_if<uint64_t>(&value)) {
+          return *unsigned_value;
+        }
+
+        if (const auto* signed_value = std::get_if<int64_t>(&value)) {
+          return *signed_value > 0 ? static_cast<uint64_t>(*signed_value) : 0;
+        }
+      }
+    }
+
+    return to_uint64(value(std::move(elem), mapping));
+  }
+
+  [[nodiscard]] std::string text(Elem elem, const perception::FieldMapping& mapping) const {
+    if (!mapping.expression.empty()) {
+      return format_double_string(value(std::move(elem), mapping));
+    }
+
+    std::string value;
+
+    if (!mapping.source.empty() && text_value(elem, mapping.source, value)) {
+      return value;
+    }
+
+    return mapping.has_default_value ? mapping.default_value : std::string();
+  }
+
+  void collect_scalars(Elem, const std::string& path, std::vector<double>& out) const {
+    const size_t count = parser_.collection_size(path);
+    out.reserve(out.size() + count);
+
+    for (size_t i = 0; i < count; ++i) {
+      double value = 0.0;
+      bool precision_loss = false;
+
+      if (parser_.numeric(path, i, "value", value, &precision_loss)) {
+        warn_precision_loss(precision_loss);
+        out.emplace_back(value);
+      }
+    }
+  }
+
+ private:
+  bool numeric(const Elem& elem, const std::string& field, double& out) const {
+    bool precision_loss = false;
+    bool parsed = false;
+
+    if (elem.indexed) {
+      if (parser_.type() == vlink::zerocopy::MessageParser::Type::kPointCloud) {
+        const auto iter = point_field_indices_.find(field);
+
+        if (iter != point_field_indices_.end()) {
+          parsed = parser_.numeric(elem.collection, elem.index, point_fields_[iter->second], out, &precision_loss);
+        }
+      } else {
+        parsed = parser_.numeric(elem.collection, elem.index, field, out, &precision_loss);
+      }
+    } else {
+      parsed = parser_.numeric(field, out, &precision_loss);
+    }
+
+    if VLIKELY (parsed) {
+      warn_precision_loss(precision_loss);
+    }
+
+    return parsed;
+  }
+
+  static void warn_precision_loss(bool precision_loss) {
+    static std::atomic_bool warned{false};
+
+    if VUNLIKELY (precision_loss && !warned.exchange(true, std::memory_order_relaxed)) {
+      MLOG_W("Perception expression input exceeds the exact integer range of ExprTk double values (2^53)");
+    }
+  }
+
+  bool text_value(const Elem& elem, const std::string& field, std::string& out) const {
+    if (elem.indexed) {
+      return parser_.text(elem.collection, elem.index, field, out);
+    }
+
+    return parser_.text(field, out);
+  }
+
+  vlink::zerocopy::MessageParser parser_;
+  std::vector<vlink::zerocopy::MessageParser::Field> point_fields_;
+  std::unordered_map<std::string, size_t> point_field_indices_;
+};
+
 bool is_hud_text_slot(const std::string& slot) {
   return slot == "gear" || slot == "turn_signal" || slot == "drive_mode";
 }
 
-template <typename Reader>
-void fill_hud(const Reader& reader, const PerceptionConfig::MappingRule& rule, std::vector<HudField>& out) {
+template <typename ReaderT>
+void fill_hud(const ReaderT& reader, const PerceptionConfig::MappingRule& rule, std::vector<HudField>& out) {
   out.reserve(rule.field_mappings.size());
 
   for (const auto& mapping : rule.field_mappings) {
@@ -1615,6 +2204,57 @@ void decode_fbs(const flatbuffers::Table& root, const reflection::Schema& schema
                 const PerceptionConfig::MappingRule& rule, Layer& out) {
   const FbsReader reader(root, schema, root_obj);
   decode_with_reader(reader, rule, out);
+}
+
+bool decode_zerocopy(const vlink::Bytes& raw, const std::string& ser, const PerceptionConfig::MappingRule& rule,
+                     Layer& out) {
+  ZerocopyReader reader;
+
+  if (!reader.reset(raw, ser)) {
+    return false;
+  }
+
+  decode_with_reader(reader, rule, out);
+  return true;
+}
+
+bool decode_hud_zerocopy(const vlink::Bytes& raw, const std::string& ser, const PerceptionConfig::MappingRule& rule,
+                         std::vector<HudField>& out) {
+  ZerocopyReader reader;
+
+  if (!reader.reset(raw, ser)) {
+    return false;
+  }
+
+  fill_hud(reader, rule, out);
+  return true;
+}
+
+bool decode_zerocopy_batch(const vlink::Bytes& raw, const std::string& ser,
+                           const std::vector<PerceptionConfig::MappingRule>& mappings,
+                           const std::vector<PerceptionConfig::MappingRule>& hud_bindings, std::vector<Layer>& layers,
+                           std::vector<std::vector<HudField>>& hud_fields) {
+  ZerocopyReader reader;
+
+  if (!reader.reset(raw, ser)) {
+    return false;
+  }
+
+  layers.clear();
+  layers.resize(mappings.size());
+
+  for (size_t i = 0; i < mappings.size(); ++i) {
+    decode_with_reader(reader, mappings[i], layers[i]);
+  }
+
+  hud_fields.clear();
+  hud_fields.resize(hud_bindings.size());
+
+  for (size_t i = 0; i < hud_bindings.size(); ++i) {
+    fill_hud(reader, hud_bindings[i], hud_fields[i]);
+  }
+
+  return true;
 }
 
 }  // namespace mapping

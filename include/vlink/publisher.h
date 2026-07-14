@@ -224,10 +224,10 @@ class Publisher : public Node<PublisherImpl, SecT> {
    *
    * @details
    * Serialisation is dispatched to the codec selected by @c kMsgType.  On
-   * loan-capable transports the output buffer is a loaned segment in
-   * transport-managed memory; the loan is returned automatically once the
-   * publish completes.  Loans are skipped when @c SecT == @c kWithSecurity
-   * because the ciphertext size is unknown ahead of encryption.
+   * loan-capable transports, the backend may provide transport-managed memory
+   * when the final size is available; otherwise serialisation uses owning
+   * storage.  Loans are skipped when @c SecT == @c kWithSecurity because the
+   * ciphertext size is unknown ahead of encryption.
    *
    * When @c force is @c false (the default) the call is skipped and returns
    * @c false if no subscribers are present.  Pass @c force=true to write

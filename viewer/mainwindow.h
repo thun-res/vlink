@@ -312,7 +312,7 @@ class MainWindow : public QMainWindow {
 
   std::vector<std::string> can_record_urls_;
 
-  vlink::ProxyAPI::Mode current_proxy_mode_{vlink::ProxyAPI::kOffline};
+  std::atomic<vlink::ProxyAPI::Mode> current_proxy_mode_{vlink::ProxyAPI::kOffline};
 
   vlink::SampleLostInfo last_sample_info_;
   std::atomic<int64_t> total_data_seq_{0};
@@ -325,13 +325,7 @@ class MainWindow : public QMainWindow {
   vlink::ProxyAPI::InfoCallback info_callback_;
   std::shared_mutex data_mutex_;
 
-  std::unordered_map<std::string, QTreeWidgetItem*> raw_item_map_;
-  std::unordered_map<std::string, QTreeWidgetItem*> camera_item_map_;
-  std::unordered_map<std::string, QTreeWidgetItem*> pcl_item_map_;
-  std::unordered_map<std::string, QTreeWidgetItem*> occupancy_item_map_;
-  std::unordered_map<std::string, QTreeWidgetItem*> tensor_item_map_;
-  std::unordered_map<std::string, QTreeWidgetItem*> object_array_item_map_;
-  std::unordered_map<std::string, QTreeWidgetItem*> audio_item_map_;
+  std::unordered_map<std::string, QTreeWidgetItem*> zerocopy_item_map_;
 
   QProcess analyzer_process_;
 

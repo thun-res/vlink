@@ -21,9 +21,10 @@
  * limitations under the License.
  */
 
-#include "rerun_converter.h"
+#include "./rerun_converter.h"
 
 #include <vlink/base/helpers.h>
+#include <vlink/zerocopy/message_parser.h>
 
 #include <algorithm>
 #include <cctype>
@@ -34,6 +35,7 @@
 
 #include "../../webviz_common.h"
 #include "../../webviz_loader_utils.h"
+#include "../../zerocopy_message.h"
 
 #ifdef _WIN32
 #undef min
@@ -46,8 +48,8 @@ namespace vlink {
 namespace webviz {
 
 #ifdef VLINK_HAS_FBS_COMPILER
-template <typename Resolver>
-bool resolve_thread_local_fbs_schema(const std::string& ser, const void* owner, Resolver&& resolver,
+template <typename ResolverT>
+bool resolve_thread_local_fbs_schema(const std::string& ser, const void* owner, ResolverT&& resolver,
                                      const reflection::Schema*& out_schema) {
   struct ThreadLocalFbsSchemaCache final {
     const void* owner{nullptr};
@@ -100,6 +102,218 @@ int64_t RerunConverter::clamp_header_timestamp_ns(uint64_t timestamp_ns) {
   }
 
   return static_cast<int64_t>(timestamp_ns);
+}
+
+static bool mul_size(size_t a, size_t b, size_t& out) {
+  if VUNLIKELY (a != 0 && b > std::numeric_limits<size_t>::max() / a) {
+    return false;
+  }
+
+  out = a * b;
+  return true;
+}
+
+static uint64_t zerocopy_timestamp(const zerocopy::MessageParser& parser) {
+  zerocopy::MessageParser::Value value;
+
+  if VUNLIKELY (!parser.value("header.time_meas", value)) {
+    return 0;
+  }
+
+  const auto* timestamp = std::get_if<uint64_t>(&value);
+  return timestamp == nullptr ? 0 : *timestamp;
+}
+
+static bool image_size(size_t pixels, size_t bytes_per_pixel, size_t data_size, size_t& out) {
+  if VUNLIKELY (!mul_size(pixels, bytes_per_pixel, out) || out > data_size) {
+    return false;
+  }
+
+  return true;
+}
+
+static bool copy_channel(const uint8_t* data, size_t data_size, size_t pixels, size_t step, size_t offset,
+                         std::vector<uint8_t>& gray) {
+  size_t expected = 0;
+
+  if VUNLIKELY (step == 0 || offset >= step || !image_size(pixels, step, data_size, expected)) {
+    return false;
+  }
+
+  gray.resize(pixels);
+
+  for (size_t i = 0; i < pixels; ++i) {
+    gray[i] = data[i * step + offset];
+  }
+
+  return true;
+}
+
+static bool log_raw_image(::rerun::RecordingStream& rec, const std::string& entity_path, const uint8_t* data,
+                          size_t data_size, uint32_t width, uint32_t height,
+                          ::rerun::datatypes::ColorModel color_model) {
+  auto pixel_data = ::rerun::Collection<uint8_t>::borrow(data, data_size);
+  auto image = ::rerun::archetypes::Image(std::move(pixel_data), {width, height}, color_model);
+  rec.log(entity_path, image);
+
+  return true;
+}
+
+static bool log_raw_image(::rerun::RecordingStream& rec, const std::string& entity_path, std::vector<uint8_t>&& data,
+                          uint32_t width, uint32_t height, ::rerun::datatypes::ColorModel color_model) {
+  auto pixel_data = ::rerun::Collection<uint8_t>::take_ownership(std::move(data));
+  auto image = ::rerun::archetypes::Image(std::move(pixel_data), {width, height}, color_model);
+  rec.log(entity_path, image);
+
+  return true;
+}
+
+static bool log_pixel_image(::rerun::RecordingStream& rec, const std::string& entity_path, const uint8_t* data,
+                            size_t data_size, uint32_t width, uint32_t height,
+                            ::rerun::datatypes::PixelFormat pixel_format) {
+  const auto format = ::rerun::datatypes::ImageFormat({width, height}, pixel_format);
+
+  if VUNLIKELY (format.num_bytes() > data_size) {
+    return false;
+  }
+
+  auto pixel_data = ::rerun::Collection<uint8_t>::borrow(data, format.num_bytes());
+  auto image = ::rerun::archetypes::Image(std::move(pixel_data), {width, height}, pixel_format);
+  rec.log(entity_path, image);
+
+  return true;
+}
+
+static bool log_typed_image(::rerun::RecordingStream& rec, const std::string& entity_path, const uint8_t* data,
+                            size_t data_size, uint32_t width, uint32_t height,
+                            ::rerun::datatypes::ColorModel color_model, ::rerun::datatypes::ChannelDatatype datatype) {
+  const auto format = ::rerun::datatypes::ImageFormat({width, height}, color_model, datatype);
+
+  if VUNLIKELY (format.num_bytes() > data_size) {
+    return false;
+  }
+
+  auto pixel_data = ::rerun::Collection<uint8_t>::borrow(data, format.num_bytes());
+  auto image = ::rerun::archetypes::Image(std::move(pixel_data), {width, height}, color_model, datatype);
+  rec.log(entity_path, image);
+
+  return true;
+}
+
+static bool log_camera_frame_tensor(::rerun::RecordingStream& rec, const std::string& entity_path,
+                                    zerocopy::CameraFrame::Format format, const uint8_t* data, size_t data_size,
+                                    uint32_t width, uint32_t height, size_t pixels) {
+  size_t channels = 0;
+  size_t element_size = 0;
+  ::rerun::datatypes::TensorBuffer buffer;
+
+  switch (format) {
+    case zerocopy::CameraFrame::kFormatUint8C1:
+    case zerocopy::CameraFrame::kFormatUint8C2:
+    case zerocopy::CameraFrame::kFormatUint8C3:
+    case zerocopy::CameraFrame::kFormatUint8C4:
+      channels = static_cast<size_t>(format) - static_cast<size_t>(zerocopy::CameraFrame::kFormatUint8C1) + 1U;
+      element_size = sizeof(uint8_t);
+      break;
+    case zerocopy::CameraFrame::kFormatInt8C1:
+    case zerocopy::CameraFrame::kFormatInt8C2:
+    case zerocopy::CameraFrame::kFormatInt8C3:
+    case zerocopy::CameraFrame::kFormatInt8C4:
+      channels = static_cast<size_t>(format) - static_cast<size_t>(zerocopy::CameraFrame::kFormatInt8C1) + 1U;
+      element_size = sizeof(int8_t);
+      break;
+    case zerocopy::CameraFrame::kFormatUint16C1:
+    case zerocopy::CameraFrame::kFormatUint16C2:
+    case zerocopy::CameraFrame::kFormatUint16C3:
+    case zerocopy::CameraFrame::kFormatUint16C4:
+      channels = static_cast<size_t>(format) - static_cast<size_t>(zerocopy::CameraFrame::kFormatUint16C1) + 1U;
+      element_size = sizeof(uint16_t);
+      break;
+    case zerocopy::CameraFrame::kFormatInt16C1:
+    case zerocopy::CameraFrame::kFormatInt16C2:
+    case zerocopy::CameraFrame::kFormatInt16C3:
+    case zerocopy::CameraFrame::kFormatInt16C4:
+      channels = static_cast<size_t>(format) - static_cast<size_t>(zerocopy::CameraFrame::kFormatInt16C1) + 1U;
+      element_size = sizeof(int16_t);
+      break;
+    case zerocopy::CameraFrame::kFormatInt32C1:
+    case zerocopy::CameraFrame::kFormatInt32C2:
+    case zerocopy::CameraFrame::kFormatInt32C3:
+    case zerocopy::CameraFrame::kFormatInt32C4:
+      channels = static_cast<size_t>(format) - static_cast<size_t>(zerocopy::CameraFrame::kFormatInt32C1) + 1U;
+      element_size = sizeof(int32_t);
+      break;
+    case zerocopy::CameraFrame::kFormatFloat32C1:
+    case zerocopy::CameraFrame::kFormatFloat32C2:
+    case zerocopy::CameraFrame::kFormatFloat32C3:
+    case zerocopy::CameraFrame::kFormatFloat32C4:
+      channels = static_cast<size_t>(format) - static_cast<size_t>(zerocopy::CameraFrame::kFormatFloat32C1) + 1U;
+      element_size = sizeof(float);
+      break;
+    case zerocopy::CameraFrame::kFormatFloat64C1:
+    case zerocopy::CameraFrame::kFormatFloat64C2:
+    case zerocopy::CameraFrame::kFormatFloat64C3:
+    case zerocopy::CameraFrame::kFormatFloat64C4:
+      channels = static_cast<size_t>(format) - static_cast<size_t>(zerocopy::CameraFrame::kFormatFloat64C1) + 1U;
+      element_size = sizeof(double);
+      break;
+    case zerocopy::CameraFrame::kFormatBayerRggb16:
+    case zerocopy::CameraFrame::kFormatBayerBggr16:
+    case zerocopy::CameraFrame::kFormatBayerGbrg16:
+    case zerocopy::CameraFrame::kFormatBayerGrbg16:
+      channels = 1U;
+      element_size = sizeof(uint16_t);
+      break;
+    default:
+      return false;
+  }
+
+  if VUNLIKELY (channels == 0 || pixels > std::numeric_limits<size_t>::max() / channels) {
+    return false;
+  }
+
+  const size_t elements = pixels * channels;
+
+  if VUNLIKELY (elements > std::numeric_limits<size_t>::max() / element_size) {
+    return false;
+  }
+
+  const size_t bytes = elements * element_size;
+
+  if VUNLIKELY (bytes > data_size) {
+    return false;
+  }
+
+  buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<uint8_t>::borrow(data, bytes));
+
+  std::vector<uint64_t> shape;
+  shape.reserve((channels > 1U ? 3U : 2U) + (element_size > 1U ? 1U : 0U));
+  shape.emplace_back(height);
+  shape.emplace_back(width);
+
+  if (channels > 1U) {
+    shape.emplace_back(channels);
+  }
+
+  if (element_size > 1U) {
+    shape.emplace_back(element_size);
+  }
+
+  auto tensor = ::rerun::archetypes::Tensor(std::move(shape), std::move(buffer));
+
+  if (channels > 1U && element_size > 1U) {
+    tensor = std::move(tensor).with_dim_names({"height", "width", "channel", "byte"});
+  } else if (channels > 1U) {
+    tensor = std::move(tensor).with_dim_names({"height", "width", "channel"});
+  } else if (element_size > 1U) {
+    tensor = std::move(tensor).with_dim_names({"height", "width", "byte"});
+  } else {
+    tensor = std::move(tensor).with_dim_names({"height", "width"});
+  }
+
+  rec.log(entity_path, tensor);
+
+  return true;
 }
 
 Bytes RerunConverter::decode_plugin_binary(const Json& j, std::string_view base64_key, std::string_view array_key) {
@@ -643,6 +857,12 @@ bool RerunConverter::load_mapping_file(const std::string& path) {
             return false;
           }
 
+          if VUNLIKELY (mapping.encoding != "protobuf" && mapping.encoding != "flatbuffers" &&
+                        mapping.encoding != "zerocopy") {
+            MLOG_W("Invalid mapping in {}: unsupported source encoding {}", path, mapping.encoding);
+            return false;
+          }
+
           if VUNLIKELY (mapping.archetype.empty() && mapping.converter.empty()) {
             MLOG_W("Invalid mapping in {}: missing archetype or converter", path);
             return false;
@@ -751,6 +971,9 @@ const std::vector<const RerunMap*>& RerunConverter::find_all_mappings(std::strin
 void RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::string& entity_path,
                                      std::string_view url, SchemaType schema_type, const std::string& ser,
                                      const Bytes& raw, int64_t fallback_timestamp_ns) {
+  const auto zerocopy_type = zerocopy::MessageParser::detect_type(ser);
+  zerocopy::MessageParser zerocopy_parser;
+
   auto apply_primary_timestamp = [this, &rec, fallback_timestamp_ns](int64_t message_timestamp_ns) {
     if VLIKELY (message_timestamp_ns >= 0) {
       apply_message_timestamp(rec, message_timestamp_ns);
@@ -762,7 +985,20 @@ void RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::s
     }
   };
 
-  if (schema_type == SchemaType::kZeroCopy && Helpers::has_startwith(ser, "vlink::zerocopy::CameraFrame")) {
+  const std::vector<const RerunMap*>* zerocopy_mappings = nullptr;
+  bool needs_zerocopy_mapping = false;
+
+  if (schema_type == SchemaType::kZeroCopy) {
+    zerocopy_mappings = &find_all_mappings(url, ser);
+    needs_zerocopy_mapping =
+        std::any_of(zerocopy_mappings->begin(), zerocopy_mappings->end(), [](const RerunMap* mapping) {
+          return mapping != nullptr && mapping->encoding == "zerocopy" && mapping->converter.empty() &&
+                 !mapping->field_mappings.empty();
+        });
+  }
+
+  if (!needs_zerocopy_mapping && schema_type == SchemaType::kZeroCopy &&
+      zerocopy_type == zerocopy::MessageParser::Type::kCameraFrame) {
     zerocopy::CameraFrame frame;
 
     if VUNLIKELY (!(frame << raw)) {
@@ -770,123 +1006,152 @@ void RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::s
       return;
     }
 
-    auto frame_timestamp_ns = clamp_header_timestamp_ns(frame.header.time_meas);
-
-    apply_primary_timestamp(frame_timestamp_ns);
-
+    apply_primary_timestamp(clamp_header_timestamp_ns(frame.header.time_meas));
     if VUNLIKELY (!log_camera_frame(rec, entity_path, frame)) {
       MLOG_W("log_camera_frame failed: path={} raw={}", entity_path, raw.size());
     }
-
     return;
   }
 
-  if (schema_type == SchemaType::kZeroCopy && Helpers::has_startwith(ser, "vlink::zerocopy::PointCloud")) {
-    zerocopy::PointCloud pc;
+  if (!needs_zerocopy_mapping && schema_type == SchemaType::kZeroCopy &&
+      zerocopy_type == zerocopy::MessageParser::Type::kPointCloud) {
+    zerocopy::PointCloud point_cloud;
 
-    if VUNLIKELY (!(pc << raw)) {
-      MLOG_W("Failed to deserialize PointCloud");
+    if VUNLIKELY (!(point_cloud << raw)) {
+      MLOG_W("Failed to deserialize PointCloud (raw={})", raw.size());
       return;
     }
 
-    auto point_cloud_timestamp_ns = clamp_header_timestamp_ns(pc.header.time_meas);
-
-    apply_primary_timestamp(point_cloud_timestamp_ns);
-
-    if VUNLIKELY (!log_point_cloud(rec, entity_path, pc)) {
+    apply_primary_timestamp(clamp_header_timestamp_ns(point_cloud.header.time_meas));
+    if VUNLIKELY (!log_point_cloud(rec, entity_path, point_cloud)) {
       MLOG_W("log_point_cloud failed: path={} raw={}", entity_path, raw.size());
     }
-
     return;
   }
 
-  if (schema_type == SchemaType::kZeroCopy && Helpers::has_startwith(ser, "vlink::zerocopy::RawData")) {
-    zerocopy::RawData rd;
-
-    if VUNLIKELY (!(rd << raw)) {
-      MLOG_W("Failed to deserialize RawData");
+  if (schema_type == SchemaType::kZeroCopy && zerocopy_type != zerocopy::MessageParser::Type::kUnknown) {
+    if VUNLIKELY (!zerocopy_parser.parse(zerocopy_type, raw)) {
+      MLOG_W("Failed to deserialize {}", zerocopy::MessageParser::type_name(zerocopy_type));
       return;
     }
-
-    auto raw_data_timestamp_ns = clamp_header_timestamp_ns(rd.header.time_meas);
-
-    apply_primary_timestamp(raw_data_timestamp_ns);
-
-    log_raw_data(rec, entity_path, rd);
-    return;
   }
 
-  if (schema_type == SchemaType::kZeroCopy && Helpers::has_startwith(ser, "vlink::zerocopy::OccupancyGrid")) {
-    zerocopy::OccupancyGrid grid;
+  if (schema_type == SchemaType::kZeroCopy) {
+    const auto& mappings = *zerocopy_mappings;
 
-    if VUNLIKELY (!(grid << raw)) {
-      MLOG_W("Failed to deserialize OccupancyGrid");
-      return;
+    if (needs_zerocopy_mapping) {
+      std::vector<std::string> mapping_sources;
+
+      for (const auto* mapping : mappings) {
+        if (mapping == nullptr) {
+          continue;
+        }
+
+        mapping_sources.push_back(mapping->timestamp_field);
+
+        for (const auto& field_mapping : mapping->field_mappings) {
+          mapping_sources.push_back(field_mapping.source);
+          mapping_sources.push_back(field_mapping.expression);
+        }
+      }
+
+      auto message = make_zerocopy_message(zerocopy_parser, mapping_sources);
+
+      if VUNLIKELY (!message) {
+        MLOG_W("Failed to adapt zerocopy message for Rerun mapping: {}", ser);
+        return;
+      }
+
+      int64_t mapped_timestamp_ns = -1;
+
+      for (const auto* mapping : mappings) {
+        if (mapping == nullptr || mapping->timestamp_field.empty()) {
+          continue;
+        }
+
+        mapped_timestamp_ns = extract_proto_timestamp_ns(*message, mapping->timestamp_field, mapping->timestamp_unit);
+
+        if (mapped_timestamp_ns >= 0) {
+          break;
+        }
+      }
+
+      apply_primary_timestamp(mapped_timestamp_ns);
+      bool logged = false;
+
+      for (const auto* mapping : mappings) {
+        if (mapping == nullptr || mapping->encoding != "zerocopy" || !mapping->converter.empty() ||
+            mapping->field_mappings.empty()) {
+          continue;
+        }
+
+        const auto path = mappings.size() > 1 ? entity_path + "/" + mapping->archetype : entity_path;
+
+        if (log_proto_with_mapping(rec, path, *mapping, *message)) {
+          logged = true;
+        }
+      }
+
+      if VLIKELY (logged) {
+        return;
+      }
     }
-
-    auto occupancy_grid_timestamp_ns = clamp_header_timestamp_ns(grid.header.time_meas);
-
-    apply_primary_timestamp(occupancy_grid_timestamp_ns);
-
-    if VUNLIKELY (!log_occupancy_grid(rec, entity_path, grid)) {
-      MLOG_W("log_occupancy_grid failed: path={} raw={}", entity_path, raw.size());
-    }
-
-    return;
   }
 
-  if (schema_type == SchemaType::kZeroCopy && Helpers::has_startwith(ser, "vlink::zerocopy::Tensor")) {
-    zerocopy::Tensor tensor;
+  if (schema_type == SchemaType::kZeroCopy && zerocopy_type != zerocopy::MessageParser::Type::kUnknown &&
+      zerocopy_type != zerocopy::MessageParser::Type::kProxyData) {
+    const auto message_timestamp_ns = clamp_header_timestamp_ns(zerocopy_timestamp(zerocopy_parser));
 
-    if VUNLIKELY (!(tensor << raw)) {
-      MLOG_W("Failed to deserialize Tensor");
-      return;
-    }
+    apply_primary_timestamp(message_timestamp_ns);
 
-    auto tensor_timestamp_ns = clamp_header_timestamp_ns(tensor.header.time_meas);
+    switch (zerocopy_type) {
+      case zerocopy::MessageParser::Type::kCameraFrame:
+        if VUNLIKELY (!log_camera_frame(rec, entity_path, raw)) {
+          MLOG_W("log_camera_frame failed: path={} raw={}", entity_path, raw.size());
+        }
 
-    apply_primary_timestamp(tensor_timestamp_ns);
+        break;
 
-    if VUNLIKELY (!log_tensor(rec, entity_path, tensor)) {
-      MLOG_W("log_tensor failed: path={} raw={}", entity_path, raw.size());
-    }
+      case zerocopy::MessageParser::Type::kPointCloud:
+        if VUNLIKELY (!log_point_cloud(rec, entity_path, raw)) {
+          MLOG_W("log_point_cloud failed: path={} raw={}", entity_path, raw.size());
+        }
 
-    return;
-  }
+        break;
 
-  if (schema_type == SchemaType::kZeroCopy && Helpers::has_startwith(ser, "vlink::zerocopy::ObjectArray")) {
-    zerocopy::ObjectArray arr;
+      case zerocopy::MessageParser::Type::kRawData:
+        log_raw_data(rec, entity_path, zerocopy_parser);
+        break;
 
-    if VUNLIKELY (!(arr << raw)) {
-      MLOG_W("Failed to deserialize ObjectArray");
-      return;
-    }
+      case zerocopy::MessageParser::Type::kOccupancyGrid:
+        if VUNLIKELY (!log_occupancy_grid(rec, entity_path, zerocopy_parser)) {
+          MLOG_W("log_occupancy_grid failed: path={} raw={}", entity_path, raw.size());
+        }
 
-    auto object_array_timestamp_ns = clamp_header_timestamp_ns(arr.header.time_meas);
+        break;
 
-    apply_primary_timestamp(object_array_timestamp_ns);
+      case zerocopy::MessageParser::Type::kTensor:
+        if VUNLIKELY (!log_tensor(rec, entity_path, zerocopy_parser)) {
+          MLOG_W("log_tensor failed: path={} raw={}", entity_path, raw.size());
+        }
 
-    if VUNLIKELY (!log_object_array(rec, entity_path, arr)) {
-      MLOG_W("log_object_array failed: path={} raw={}", entity_path, raw.size());
-    }
+        break;
 
-    return;
-  }
+      case zerocopy::MessageParser::Type::kObjectArray:
+        if VUNLIKELY (!log_object_array(rec, entity_path, zerocopy_parser)) {
+          MLOG_W("log_object_array failed: path={} raw={}", entity_path, raw.size());
+        }
 
-  if (schema_type == SchemaType::kZeroCopy && Helpers::has_startwith(ser, "vlink::zerocopy::AudioFrame")) {
-    zerocopy::AudioFrame frame;
+        break;
 
-    if VUNLIKELY (!(frame << raw)) {
-      MLOG_W("Failed to deserialize AudioFrame");
-      return;
-    }
+      case zerocopy::MessageParser::Type::kAudioFrame:
+        if VUNLIKELY (!log_audio_frame(rec, entity_path, zerocopy_parser)) {
+          MLOG_W("log_audio_frame failed: path={} raw={}", entity_path, raw.size());
+        }
 
-    auto audio_frame_timestamp_ns = clamp_header_timestamp_ns(frame.header.time_meas);
-
-    apply_primary_timestamp(audio_frame_timestamp_ns);
-
-    if VUNLIKELY (!log_audio_frame(rec, entity_path, frame)) {
-      MLOG_W("log_audio_frame failed: path={} raw={}", entity_path, raw.size());
+        break;
+      default:
+        break;
     }
 
     return;
@@ -1165,7 +1430,10 @@ void RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::s
 
 bool RerunConverter::log_camera_frame(::rerun::RecordingStream& rec, const std::string& entity_path,
                                       const zerocopy::CameraFrame& frame) {
-  auto fmt = frame.format();
+  if VUNLIKELY (frame.data() == nullptr || frame.size() == 0) {
+    return false;
+  }
+  const auto fmt = frame.format();
 
   std::string media_type;
 
@@ -1173,96 +1441,281 @@ bool RerunConverter::log_camera_frame(::rerun::RecordingStream& rec, const std::
     case zerocopy::CameraFrame::kFormatJpeg:
       media_type = "image/jpeg";
       break;
+    case zerocopy::CameraFrame::kFormatPng:
+      media_type = "image/png";
+      break;
+    case zerocopy::CameraFrame::kFormatMjpeg:
+      media_type = "image/jpeg";
+      break;
+    case zerocopy::CameraFrame::kFormatWebp:
+      media_type = "image/webp";
+      break;
     case zerocopy::CameraFrame::kFormatH264:
       media_type = "video/h264";
       break;
     case zerocopy::CameraFrame::kFormatH265:
       media_type = "video/h265";
       break;
+    case zerocopy::CameraFrame::kFormatH266:
+      media_type = "video/h266";
+      break;
+    case zerocopy::CameraFrame::kFormatAv1:
+      media_type = "video/av1";
+      break;
     default:
       break;
   }
 
   const auto* data_ptr = frame.data();
-  auto data_size = frame.size();
+  const size_t data_size = frame.size();
 
-  if VUNLIKELY (!data_ptr || data_size == 0) {
-    return false;
-  }
-
-  if (fmt == zerocopy::CameraFrame::kFormatH264 || fmt == zerocopy::CameraFrame::kFormatH265) {
+  if (fmt == zerocopy::CameraFrame::kFormatH264 || fmt == zerocopy::CameraFrame::kFormatH265 ||
+      fmt == zerocopy::CameraFrame::kFormatH266 || fmt == zerocopy::CameraFrame::kFormatAv1) {
     auto blob = ::rerun::Collection<uint8_t>::borrow(data_ptr, data_size);
     auto video =
         ::rerun::archetypes::AssetVideo::from_bytes(std::move(blob), ::rerun::components::MediaType(media_type));
     rec.log(entity_path, video);
-  } else if (fmt == zerocopy::CameraFrame::kFormatJpeg) {
+    return true;
+  }
+
+  if (fmt == zerocopy::CameraFrame::kFormatJpeg || fmt == zerocopy::CameraFrame::kFormatPng ||
+      fmt == zerocopy::CameraFrame::kFormatMjpeg || fmt == zerocopy::CameraFrame::kFormatWebp) {
     auto blob = ::rerun::Collection<uint8_t>::borrow(data_ptr, data_size);
 
     rec.log(entity_path,
             ::rerun::archetypes::EncodedImage::from_bytes(blob, ::rerun::components::MediaType(media_type)));
-  } else {
-    if (frame.width() > 0 && frame.height() > 0) {
-      ::rerun::datatypes::ColorModel color_model = ::rerun::datatypes::ColorModel::L;
-
-      if (fmt == zerocopy::CameraFrame::kFormatRgb888Planar) {
-        auto w = static_cast<size_t>(frame.width());
-        auto h = static_cast<size_t>(frame.height());
-        auto pixel_count = w * h;
-
-        if (pixel_count * 3 <= data_size) {
-          std::vector<uint8_t> interleaved(pixel_count * 3);
-          const auto* r_plane = data_ptr;
-          const auto* g_plane = data_ptr + pixel_count;
-          const auto* b_plane = data_ptr + pixel_count * 2;
-
-          for (size_t i = 0; i < pixel_count; ++i) {
-            interleaved[i * 3 + 0] = r_plane[i];
-            interleaved[i * 3 + 1] = g_plane[i];
-            interleaved[i * 3 + 2] = b_plane[i];
-          }
-
-          auto pixel_data = ::rerun::Collection<uint8_t>::take_ownership(std::move(interleaved));
-          rec.log(entity_path, ::rerun::archetypes::Image(pixel_data, {frame.width(), frame.height()},
-                                                          ::rerun::datatypes::ColorModel::RGB));
-        }
-
-        return true;
-      }
-
-      switch (fmt) {
-        case zerocopy::CameraFrame::kFormatRgb888Packed:
-          color_model = ::rerun::datatypes::ColorModel::RGB;
-          break;
-        case zerocopy::CameraFrame::kFormatBgr888Packed:
-          color_model = ::rerun::datatypes::ColorModel::BGR;
-          break;
-        default: {
-          auto pixel_count = static_cast<size_t>(frame.width()) * frame.height();
-
-          if (pixel_count > 0) {
-            auto bytes_per_pixel = data_size / pixel_count;
-
-            if (bytes_per_pixel >= 4) {
-              color_model = ::rerun::datatypes::ColorModel::RGBA;
-            } else if (bytes_per_pixel >= 3) {
-              color_model = ::rerun::datatypes::ColorModel::RGB;
-            }
-          }
-
-          break;
-        }
-      }
-
-      auto pixel_data = ::rerun::Collection<uint8_t>::borrow(data_ptr, data_size);
-      auto image = ::rerun::archetypes::Image(pixel_data, {frame.width(), frame.height()}, color_model);
-      rec.log(entity_path, image);
-    } else {
-      MLOG_W("CameraFrame raw pixel format but width={} height={}, skipping", frame.width(), frame.height());
-      return false;
-    }
+    return true;
   }
 
-  return true;
+  const auto width = frame.width();
+  const auto height = frame.height();
+
+  if VUNLIKELY (width == 0 || height == 0) {
+    MLOG_W("CameraFrame raw pixel format but width={} height={}, skipping", width, height);
+    return false;
+  }
+
+  size_t pixels = 0;
+
+  if VUNLIKELY (!mul_size(static_cast<size_t>(width), static_cast<size_t>(height), pixels)) {
+    return false;
+  }
+
+  size_t bytes = 0;
+
+  switch (fmt) {
+    case zerocopy::CameraFrame::kFormatRgb888Packed:
+      if VUNLIKELY (!image_size(pixels, 3U, data_size, bytes)) {
+        return false;
+      }
+
+      return log_raw_image(rec, entity_path, data_ptr, bytes, width, height, ::rerun::datatypes::ColorModel::RGB);
+
+    case zerocopy::CameraFrame::kFormatBgr888Packed:
+      if VUNLIKELY (!image_size(pixels, 3U, data_size, bytes)) {
+        return false;
+      }
+
+      return log_raw_image(rec, entity_path, data_ptr, bytes, width, height, ::rerun::datatypes::ColorModel::BGR);
+
+    case zerocopy::CameraFrame::kFormatRgba8888Packed:
+      if VUNLIKELY (!image_size(pixels, 4U, data_size, bytes)) {
+        return false;
+      }
+
+      return log_raw_image(rec, entity_path, data_ptr, bytes, width, height, ::rerun::datatypes::ColorModel::RGBA);
+
+    case zerocopy::CameraFrame::kFormatBgra8888Packed: {
+      if VUNLIKELY (!image_size(pixels, 4U, data_size, bytes)) {
+        return false;
+      }
+
+      std::vector<uint8_t> rgba(bytes);
+
+      for (size_t i = 0; i < pixels; ++i) {
+        rgba[i * 4U + 0U] = data_ptr[i * 4U + 2U];
+        rgba[i * 4U + 1U] = data_ptr[i * 4U + 1U];
+        rgba[i * 4U + 2U] = data_ptr[i * 4U + 0U];
+        rgba[i * 4U + 3U] = data_ptr[i * 4U + 3U];
+      }
+
+      return log_raw_image(rec, entity_path, std::move(rgba), width, height, ::rerun::datatypes::ColorModel::RGBA);
+    }
+
+    case zerocopy::CameraFrame::kFormatRgb888Planar: {
+      if VUNLIKELY (!image_size(pixels, 3U, data_size, bytes)) {
+        return false;
+      }
+
+      std::vector<uint8_t> interleaved(bytes);
+      const auto* r_plane = data_ptr;
+      const auto* g_plane = data_ptr + pixels;
+      const auto* b_plane = data_ptr + pixels * 2U;
+
+      for (size_t i = 0; i < pixels; ++i) {
+        interleaved[i * 3U + 0U] = r_plane[i];
+        interleaved[i * 3U + 1U] = g_plane[i];
+        interleaved[i * 3U + 2U] = b_plane[i];
+      }
+
+      return log_raw_image(rec, entity_path, std::move(interleaved), width, height,
+                           ::rerun::datatypes::ColorModel::RGB);
+    }
+
+    case zerocopy::CameraFrame::kFormatYuv420:
+      if VUNLIKELY ((width % 2U) != 0 || (height % 2U) != 0) {
+        return false;
+      }
+
+      return log_pixel_image(rec, entity_path, data_ptr, data_size, width, height,
+                             ::rerun::datatypes::PixelFormat::Y_U_V12_FullRange);
+
+    case zerocopy::CameraFrame::kFormatNv12:
+      if VUNLIKELY ((width % 2U) != 0 || (height % 2U) != 0) {
+        return false;
+      }
+
+      return log_pixel_image(rec, entity_path, data_ptr, data_size, width, height,
+                             ::rerun::datatypes::PixelFormat::NV12);
+
+    case zerocopy::CameraFrame::kFormatNv21:
+      if VUNLIKELY ((width % 2U) != 0 || (height % 2U) != 0 ||
+                    pixels > std::numeric_limits<size_t>::max() - pixels / 2U || pixels + pixels / 2U > data_size) {
+        return false;
+      }
+
+      return log_raw_image(rec, entity_path, data_ptr, pixels, width, height, ::rerun::datatypes::ColorModel::L);
+
+    case zerocopy::CameraFrame::kFormatYuv422:
+      if VUNLIKELY ((width % 2U) != 0) {
+        return false;
+      }
+
+      return log_pixel_image(rec, entity_path, data_ptr, data_size, width, height,
+                             ::rerun::datatypes::PixelFormat::Y_U_V16_FullRange);
+
+    case zerocopy::CameraFrame::kFormatYuv444:
+      if VUNLIKELY (!image_size(pixels, 3U, data_size, bytes)) {
+        return false;
+      }
+
+      return log_raw_image(rec, entity_path, data_ptr, pixels, width, height, ::rerun::datatypes::ColorModel::L);
+
+    case zerocopy::CameraFrame::kFormatYuyv:
+      if VUNLIKELY ((width % 2U) != 0) {
+        return false;
+      }
+
+      return log_pixel_image(rec, entity_path, data_ptr, data_size, width, height,
+                             ::rerun::datatypes::PixelFormat::YUY2);
+
+    case zerocopy::CameraFrame::kFormatYvyu: {
+      if VUNLIKELY ((width % 2U) != 0) {
+        return false;
+      }
+
+      std::vector<uint8_t> gray;
+
+      if VUNLIKELY (!copy_channel(data_ptr, data_size, pixels, 2U, 0U, gray)) {
+        return false;
+      }
+
+      return log_raw_image(rec, entity_path, std::move(gray), width, height, ::rerun::datatypes::ColorModel::L);
+    }
+
+    case zerocopy::CameraFrame::kFormatUyvy:
+    case zerocopy::CameraFrame::kFormatVyuy: {
+      if VUNLIKELY ((width % 2U) != 0) {
+        return false;
+      }
+
+      std::vector<uint8_t> gray;
+
+      if VUNLIKELY (!copy_channel(data_ptr, data_size, pixels, 2U, 1U, gray)) {
+        return false;
+      }
+
+      return log_raw_image(rec, entity_path, std::move(gray), width, height, ::rerun::datatypes::ColorModel::L);
+    }
+
+    case zerocopy::CameraFrame::kFormatMono8:
+    case zerocopy::CameraFrame::kFormatBayerRggb8:
+    case zerocopy::CameraFrame::kFormatBayerBggr8:
+    case zerocopy::CameraFrame::kFormatBayerGbrg8:
+    case zerocopy::CameraFrame::kFormatBayerGrbg8:
+      if VUNLIKELY (pixels > data_size) {
+        return false;
+      }
+
+      return log_raw_image(rec, entity_path, data_ptr, pixels, width, height, ::rerun::datatypes::ColorModel::L);
+
+    case zerocopy::CameraFrame::kFormatUint8C1:
+      return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
+                             ::rerun::datatypes::ChannelDatatype::U8);
+
+    case zerocopy::CameraFrame::kFormatInt8C1:
+      return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
+                             ::rerun::datatypes::ChannelDatatype::I8);
+
+    case zerocopy::CameraFrame::kFormatUint8C2:
+    case zerocopy::CameraFrame::kFormatUint8C3:
+    case zerocopy::CameraFrame::kFormatUint8C4:
+    case zerocopy::CameraFrame::kFormatInt8C2:
+    case zerocopy::CameraFrame::kFormatInt8C3:
+    case zerocopy::CameraFrame::kFormatInt8C4:
+      return log_camera_frame_tensor(rec, entity_path, fmt, data_ptr, data_size, width, height, pixels);
+
+    case zerocopy::CameraFrame::kFormatMono16:
+      return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
+                             ::rerun::datatypes::ChannelDatatype::U16);
+
+    case zerocopy::CameraFrame::kFormatUint16C1:
+      return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
+                             ::rerun::datatypes::ChannelDatatype::U16);
+
+    case zerocopy::CameraFrame::kFormatInt16C1:
+      return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
+                             ::rerun::datatypes::ChannelDatatype::I16);
+
+    case zerocopy::CameraFrame::kFormatInt32C1:
+      return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
+                             ::rerun::datatypes::ChannelDatatype::I32);
+
+    case zerocopy::CameraFrame::kFormatFloat32C1:
+      return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
+                             ::rerun::datatypes::ChannelDatatype::F32);
+
+    case zerocopy::CameraFrame::kFormatFloat64C1:
+      return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
+                             ::rerun::datatypes::ChannelDatatype::F64);
+
+    case zerocopy::CameraFrame::kFormatBayerRggb16:
+    case zerocopy::CameraFrame::kFormatBayerBggr16:
+    case zerocopy::CameraFrame::kFormatBayerGbrg16:
+    case zerocopy::CameraFrame::kFormatBayerGrbg16:
+      return log_typed_image(rec, entity_path, data_ptr, data_size, width, height, ::rerun::datatypes::ColorModel::L,
+                             ::rerun::datatypes::ChannelDatatype::U16);
+
+    case zerocopy::CameraFrame::kFormatUint16C2:
+    case zerocopy::CameraFrame::kFormatUint16C3:
+    case zerocopy::CameraFrame::kFormatUint16C4:
+    case zerocopy::CameraFrame::kFormatInt16C2:
+    case zerocopy::CameraFrame::kFormatInt16C3:
+    case zerocopy::CameraFrame::kFormatInt16C4:
+    case zerocopy::CameraFrame::kFormatInt32C2:
+    case zerocopy::CameraFrame::kFormatInt32C3:
+    case zerocopy::CameraFrame::kFormatInt32C4:
+    case zerocopy::CameraFrame::kFormatFloat32C2:
+    case zerocopy::CameraFrame::kFormatFloat32C3:
+    case zerocopy::CameraFrame::kFormatFloat32C4:
+    case zerocopy::CameraFrame::kFormatFloat64C2:
+    case zerocopy::CameraFrame::kFormatFloat64C3:
+    case zerocopy::CameraFrame::kFormatFloat64C4:
+      return log_camera_frame_tensor(rec, entity_path, fmt, data_ptr, data_size, width, height, pixels);
+
+    default:
+      return false;
+  }
 }
 
 bool RerunConverter::log_camera_frame(::rerun::RecordingStream& rec, const std::string& entity_path, const Bytes& raw) {
@@ -1277,99 +1730,78 @@ bool RerunConverter::log_camera_frame(::rerun::RecordingStream& rec, const std::
 }
 
 bool RerunConverter::log_point_cloud(::rerun::RecordingStream& rec, const std::string& entity_path,
-                                     const zerocopy::PointCloud& pc) {
-  auto point_count = pc.size();
+                                     const zerocopy::PointCloud& point_cloud) {
+  const PointCloudView view(point_cloud);
+  if VUNLIKELY (!view.valid()) return false;
+  const size_t point_count = view.size();
 
   if VUNLIKELY (point_count == 0) {
     return false;
   }
 
-  zerocopy::PointCloud::KeyList key_list;
-  auto key_map = pc.get_key_map(&key_list);
+  const auto& fields = view.fields();
 
-  if VUNLIKELY (key_map.empty()) {
+  if VUNLIKELY (fields.empty()) {
     return false;
   }
 
-  bool has_xyz = (key_map.count("x") != 0 && key_map.count("y") != 0 && key_map.count("z") != 0);
+  const auto find_field = [&view](std::string_view name) -> const PointCloudFieldView* { return view.find(name); };
+  const auto valid_field = [&find_field](std::string_view name) -> const PointCloudFieldView* {
+    const auto* iterator = find_field(name);
+    if (iterator == nullptr) {
+      return nullptr;
+    }
+
+    if VUNLIKELY (iterator->field.storage_size == 0) {
+      return nullptr;
+    }
+
+    if (iterator->field.native_type == zerocopy::PointCloud::kUnknownType &&
+        iterator->field.storage_size != sizeof(uint8_t) && iterator->field.storage_size != sizeof(int16_t) &&
+        iterator->field.storage_size != sizeof(float) && iterator->field.storage_size != sizeof(double)) {
+      return nullptr;
+    }
+
+    return iterator;
+  };
+
+  const auto* x_field = valid_field("x");
+  const auto* y_field = valid_field("y");
+  const auto* z_field = valid_field("z");
+  const bool has_xyz = x_field != nullptr && y_field != nullptr && z_field != nullptr;
 
   if VUNLIKELY (!has_xyz) {
     MLOG_W("PointCloud missing x/y/z fields");
     return false;
   }
 
-  bool has_rgb = (key_map.count("r") != 0 && key_map.count("g") != 0 && key_map.count("b") != 0);
-  bool has_alpha = (has_rgb && key_map.count("a") != 0);
-  bool has_intensity = (!has_rgb && key_map.count("intensity") != 0);
-  bool has_radius = (key_map.count("radius") != 0);
-  bool has_class_id = (key_map.count("class_id") != 0);
-  bool has_label = (key_map.count("label") != 0);
-
-  auto x_off = key_map["x"];
-  auto y_off = key_map["y"];
-  auto z_off = key_map["z"];
-  uint16_t r_off = 0;
-  uint16_t g_off = 0;
-  uint16_t b_off = 0;
-  uint16_t a_off = 0;
-  uint16_t intensity_off = 0;
-  uint16_t radius_off = 0;
-
-  if (has_rgb) {
-    r_off = key_map["r"];
-    g_off = key_map["g"];
-    b_off = key_map["b"];
-
-    if (has_alpha) {
-      a_off = key_map["a"];
-    }
-  }
-
-  if (has_intensity) {
-    intensity_off = key_map["intensity"];
-  }
-
-  if (has_radius) {
-    radius_off = key_map["radius"];
-  }
-
-  uint8_t class_id_type = 0;
-  uint16_t class_id_offset = 0;
-  uint8_t label_type = 0;
-  uint16_t label_offset = 0;
-
-  if (has_class_id) {
-    class_id_offset = key_map["class_id"];
-
-    for (const auto& key : key_list) {
-      if (key.name == "class_id") {
-        class_id_type = key.type;
-        break;
-      }
-    }
-  }
-
-  if (has_label) {
-    label_offset = key_map["label"];
-
-    for (const auto& key : key_list) {
-      if (key.name == "label") {
-        label_type = key.type;
-        break;
-      }
-    }
-  }
-
-  const auto* raw_data = pc.get_internal_data();
-  auto pack_size = pc.pack_size();
+  const auto* r_field = valid_field("r");
+  const auto* g_field = valid_field("g");
+  const auto* b_field = valid_field("b");
+  const bool has_rgb = r_field != nullptr && g_field != nullptr && b_field != nullptr;
+  const auto* a_field = has_rgb ? valid_field("a") : nullptr;
+  const auto* intensity_field = !has_rgb ? valid_field("intensity") : nullptr;
+  const auto* radius_field = valid_field("radius");
+  const auto* class_id_field = valid_field("class_id");
+  const auto* label_field = valid_field("label");
+  const bool has_alpha = a_field != nullptr;
+  const bool has_intensity = intensity_field != nullptr;
+  const bool has_radius = radius_field != nullptr;
+  const bool has_class_id = class_id_field != nullptr;
+  const bool has_label = label_field != nullptr;
 
   float intensity_min = std::numeric_limits<float>::max();
   float intensity_max = std::numeric_limits<float>::lowest();
 
-  if (has_intensity && raw_data) {
+  if (has_intensity) {
     for (size_t i = 0; i < point_count; ++i) {
-      float intensity = 0;
-      std::memcpy(&intensity, raw_data + i * pack_size + intensity_off, sizeof(float));
+      double value = 0.0;
+
+      if VUNLIKELY (!view.numeric(i, *intensity_field, value)) {
+        return false;
+      }
+
+      const auto intensity = static_cast<float>(value);
       intensity_min = std::min(intensity_min, intensity);
       intensity_max = std::max(intensity_max, intensity);
     }
@@ -1402,39 +1834,51 @@ bool RerunConverter::log_point_cloud(::rerun::RecordingStream& rec, const std::s
   float inv_range = (has_intensity) ? 1.0F / (intensity_max - intensity_min) : 0.0F;
 
   for (size_t i = 0; i < point_count; ++i) {
-    const auto* pt = raw_data + i * pack_size;
+    double x = 0.0;
+    double y = 0.0;
+    double z = 0.0;
 
-    float x = 0.0F;
-    float y = 0.0F;
-    float z = 0.0F;
-    if (pc.get_extent() != 0) {
-      pc.get_value_v3f(x, y, z, i);
-    } else {
-      std::memcpy(&x, pt + x_off, sizeof(float));
-      std::memcpy(&y, pt + y_off, sizeof(float));
-      std::memcpy(&z, pt + z_off, sizeof(float));
+    if VUNLIKELY (!view.numeric(i, *x_field, x) || !view.numeric(i, *y_field, y) || !view.numeric(i, *z_field, z)) {
+      return false;
     }
-    positions[i] = ::rerun::Position3D(x, y, z);
+
+    positions[i] = ::rerun::Position3D(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
 
     if (has_rgb) {
-      uint8_t r = 0;
-      uint8_t g = 0;
-      uint8_t b = 0;
-      std::memcpy(&r, pt + r_off, 1);
-      std::memcpy(&g, pt + g_off, 1);
-      std::memcpy(&b, pt + b_off, 1);
+      double red = 0.0;
+      double green = 0.0;
+      double blue = 0.0;
+
+      if VUNLIKELY (!view.numeric(i, *r_field, red) || !view.numeric(i, *g_field, green) ||
+                    !view.numeric(i, *b_field, blue)) {
+        return false;
+      }
+
+      const auto r = checked_unsigned_cast<uint8_t>(red);
+      const auto g = checked_unsigned_cast<uint8_t>(green);
+      const auto b = checked_unsigned_cast<uint8_t>(blue);
 
       if (has_alpha) {
-        uint8_t a;
-        std::memcpy(&a, pt + a_off, 1);
+        double alpha = 0.0;
+
+        if VUNLIKELY (!view.numeric(i, *a_field, alpha)) {
+          return false;
+        }
+
+        const auto a = checked_unsigned_cast<uint8_t>(alpha);
         colors[i] = ::rerun::Color(r, g, b, a);
       } else {
         colors[i] = ::rerun::Color(r, g, b);
       }
     } else if (has_intensity) {
-      float raw_intensity;
-      std::memcpy(&raw_intensity, pt + intensity_off, sizeof(float));
-      auto val = std::min(std::max((raw_intensity - intensity_min) * inv_range, 0.0F), 1.0F);
+      double value = 0.0;
+
+      if VUNLIKELY (!view.numeric(i, *intensity_field, value)) {
+        return false;
+      }
+
+      const auto intensity = static_cast<float>(value);
+      auto val = std::min(std::max((intensity - intensity_min) * inv_range, 0.0F), 1.0F);
 
       uint8_t r = 0;
       uint8_t g = 0;
@@ -1462,13 +1906,23 @@ bool RerunConverter::log_point_cloud(::rerun::RecordingStream& rec, const std::s
     }
 
     if (has_radius) {
-      float radius;
-      std::memcpy(&radius, pt + radius_off, sizeof(float));
-      radii[i] = ::rerun::Radius(radius);
+      double radius = 0.0;
+
+      if VUNLIKELY (!view.numeric(i, *radius_field, radius)) {
+        return false;
+      }
+
+      radii[i] = ::rerun::Radius(static_cast<float>(radius));
     }
 
     if (has_class_id) {
-      auto cid = checked_unsigned_cast<uint16_t>(pc.get_value_for_double_float(i, class_id_offset, class_id_type));
+      double class_id = 0.0;
+
+      if VUNLIKELY (!view.numeric(i, *class_id_field, class_id)) {
+        return false;
+      }
+
+      auto cid = checked_unsigned_cast<uint16_t>(class_id);
       class_ids[i] = ::rerun::components::ClassId(cid);
     }
   }
@@ -1477,7 +1931,13 @@ bool RerunConverter::log_point_cloud(::rerun::RecordingStream& rec, const std::s
     labels.reserve(point_count);
 
     for (size_t i = 0; i < point_count; ++i) {
-      auto lbl = static_cast<int64_t>(pc.get_value_for_double_float(i, label_offset, label_type));
+      double label = 0.0;
+
+      if VUNLIKELY (!view.numeric(i, *label_field, label)) {
+        return false;
+      }
+
+      auto lbl = static_cast<int64_t>(label);
       labels.emplace_back(std::to_string(lbl));
     }
   }
@@ -1507,115 +1967,147 @@ bool RerunConverter::log_point_cloud(::rerun::RecordingStream& rec, const std::s
 }
 
 bool RerunConverter::log_point_cloud(::rerun::RecordingStream& rec, const std::string& entity_path, const Bytes& raw) {
-  zerocopy::PointCloud pc;
+  zerocopy::PointCloud point_cloud;
 
-  if VUNLIKELY (!(pc << raw)) {
+  if VUNLIKELY (!(point_cloud << raw)) {
     MLOG_W("Failed to deserialize PointCloud (raw={})", raw.size());
     return false;
   }
 
-  return log_point_cloud(rec, entity_path, pc);
+  return log_point_cloud(rec, entity_path, point_cloud);
 }
 
 bool RerunConverter::log_raw_data(::rerun::RecordingStream& rec, const std::string& entity_path,
-                                  const zerocopy::RawData& rd) {
-  const auto* data_ptr = rd.data();
-  auto data_size = rd.size();
+                                  const zerocopy::MessageParser& parser) {
+  zerocopy::MessageParser::Value value;
 
-  if VUNLIKELY (!data_ptr || data_size == 0) {
+  if VUNLIKELY (!parser.value("data", value)) {
     return false;
   }
 
-  rec.log(entity_path, ::rerun::archetypes::Asset3D(
-                           ::rerun::components::Blob(::rerun::Collection<uint8_t>::borrow(data_ptr, data_size))));
+  const auto* data = std::get_if<Bytes>(&value);
+
+  if VUNLIKELY (data == nullptr || data->empty()) {
+    return false;
+  }
+
+  rec.log(entity_path, ::rerun::archetypes::Asset3D(::rerun::components::Blob(
+                           ::rerun::Collection<uint8_t>::borrow(data->data(), data->size()))));
 
   return true;
 }
 
 bool RerunConverter::log_raw_data(::rerun::RecordingStream& rec, const std::string& entity_path, const Bytes& raw) {
-  zerocopy::RawData rd;
+  zerocopy::MessageParser parser;
 
-  if VUNLIKELY (!(rd << raw)) {
+  if VUNLIKELY (!parser.parse(zerocopy::MessageParser::Type::kRawData, raw)) {
     MLOG_W("Failed to deserialize RawData");
     return false;
   }
 
-  return log_raw_data(rec, entity_path, rd);
+  return log_raw_data(rec, entity_path, parser);
 }
 
 bool RerunConverter::log_occupancy_grid(::rerun::RecordingStream& rec, const std::string& entity_path,
-                                        const zerocopy::OccupancyGrid& grid) {
-  const auto* data_ptr = grid.data();
-  auto data_size = grid.size();
-  auto w = grid.width();
-  auto h = grid.height();
+                                        const zerocopy::MessageParser& parser) {
+  double width = 0;
+  double height = 0;
+  double cell_type_value = 0;
 
-  if VUNLIKELY (!data_ptr || data_size == 0 || w == 0 || h == 0) {
-    MLOG_W("OccupancyGrid invalid: size={} width={} height={}", data_size, w, h);
+  if VUNLIKELY (!parser.numeric("width", width) || !parser.numeric("height", height) ||
+                !parser.numeric("cell_type", cell_type_value)) {
+    MLOG_W("OccupancyGrid metadata is incomplete");
     return false;
   }
 
-  auto cell_count = static_cast<size_t>(w) * static_cast<size_t>(h);
-  auto cell_type = grid.cell_type();
-  auto cell_size = grid.cell_size();
+  const auto w = static_cast<uint32_t>(width);
+  const auto h = static_cast<uint32_t>(height);
 
-  if VUNLIKELY (cell_size == 0 || cell_count > std::numeric_limits<size_t>::max() / cell_size) {
-    MLOG_W("OccupancyGrid byte size overflow: cells={} cell_size={}", cell_count, cell_size);
+  if VUNLIKELY (w == 0 || h == 0) {
+    MLOG_W("OccupancyGrid invalid: width={} height={}", w, h);
     return false;
   }
 
-  if VUNLIKELY (cell_count * cell_size > data_size) {
-    MLOG_W("OccupancyGrid size mismatch: cells={} cell_size={} bytes={}", cell_count, cell_size, data_size);
+  const size_t cell_count = static_cast<size_t>(w) * h;
+
+  if VUNLIKELY (parser.collection_size("data") != cell_count) {
+    MLOG_W("OccupancyGrid size mismatch: cells={} readable={}", cell_count, parser.collection_size("data"));
     return false;
   }
 
+  const auto cell_type = static_cast<zerocopy::OccupancyGrid::CellType>(cell_type_value);
   std::vector<uint8_t> gray(cell_count, 0);
 
   switch (cell_type) {
     case zerocopy::OccupancyGrid::kCellInt8: {
-      const auto* cells = reinterpret_cast<const int8_t*>(data_ptr);
-
       for (size_t i = 0; i < cell_count; ++i) {
-        auto v = cells[i];
+        double value = 0;
 
-        if (v < 0) {
+        if VUNLIKELY (!parser.numeric("data", i, "value", value)) {
+          return false;
+        }
+
+        if (value < 0) {
           gray[i] = 127;
         } else {
-          auto clamped = std::min<int>(v, 100);
+          const auto clamped = std::min<int>(static_cast<int>(value), 100);
           gray[i] = static_cast<uint8_t>(255 - clamped * 255 / 100);
         }
       }
 
       break;
     }
-    case zerocopy::OccupancyGrid::kCellUint8: {
-      std::memcpy(gray.data(), data_ptr, cell_count);
-      break;
-    }
-    case zerocopy::OccupancyGrid::kCellUint16: {
-      const auto* cells = reinterpret_cast<const uint16_t*>(data_ptr);
 
+    case zerocopy::OccupancyGrid::kCellUint8: {
       for (size_t i = 0; i < cell_count; ++i) {
-        gray[i] = static_cast<uint8_t>(cells[i] >> 8U);
+        double value = 0;
+
+        if VUNLIKELY (!parser.numeric("data", i, "value", value)) {
+          return false;
+        }
+
+        gray[i] = static_cast<uint8_t>(value);
       }
 
       break;
     }
+
+    case zerocopy::OccupancyGrid::kCellUint16: {
+      for (size_t i = 0; i < cell_count; ++i) {
+        double value = 0;
+
+        if VUNLIKELY (!parser.numeric("data", i, "value", value)) {
+          return false;
+        }
+
+        gray[i] = static_cast<uint8_t>(static_cast<uint16_t>(value) >> 8U);
+      }
+
+      break;
+    }
+
     case zerocopy::OccupancyGrid::kCellFloat32: {
-      const auto* cells = reinterpret_cast<const float*>(data_ptr);
-      auto v_min = grid.value_min();
-      auto v_max = grid.value_max();
+      double v_min = 0;
+      double v_max = 0;
+      parser.numeric("value_min", v_min);
+      parser.numeric("value_max", v_max);
 
       if (!(v_max > v_min)) {
-        v_min = 0.0F;
-        v_max = 1.0F;
+        v_min = 0.0;
+        v_max = 1.0;
       }
 
-      auto inv_range = 1.0F / (v_max - v_min);
+      const double inv_range = 1.0 / (v_max - v_min);
 
       for (size_t i = 0; i < cell_count; ++i) {
-        auto t = std::min(std::max((cells[i] - v_min) * inv_range, 0.0F), 1.0F);
-        gray[i] = static_cast<uint8_t>(t * 255.0F);
+        double value = 0;
+
+        if VUNLIKELY (!parser.numeric("data", i, "value", value)) {
+          return false;
+        }
+
+        const double normalized = std::clamp((value - v_min) * inv_range, 0.0, 1.0);
+        gray[i] = static_cast<uint8_t>(normalized * 255.0);
       }
 
       break;
@@ -1635,24 +2127,61 @@ bool RerunConverter::log_occupancy_grid(::rerun::RecordingStream& rec, const std
 
 bool RerunConverter::log_occupancy_grid(::rerun::RecordingStream& rec, const std::string& entity_path,
                                         const Bytes& raw) {
-  zerocopy::OccupancyGrid grid;
+  zerocopy::MessageParser parser;
 
-  if VUNLIKELY (!(grid << raw)) {
+  if VUNLIKELY (!parser.parse(zerocopy::MessageParser::Type::kOccupancyGrid, raw)) {
     MLOG_W("Failed to deserialize OccupancyGrid");
     return false;
   }
 
-  return log_occupancy_grid(rec, entity_path, grid);
+  return log_occupancy_grid(rec, entity_path, parser);
+}
+
+template <typename T>
+static bool read_parser_collection(const zerocopy::MessageParser& parser, size_t count, std::vector<T>& output) {
+  output.resize(count);
+
+  for (size_t index = 0; index < count; ++index) {
+    zerocopy::MessageParser::Value value;
+
+    if VUNLIKELY (!parser.value("data", index, "value", value)) {
+      return false;
+    }
+
+    if (const auto* integer = std::get_if<int64_t>(&value)) {
+      output[index] = static_cast<T>(*integer);
+      continue;
+    }
+
+    if (const auto* integer = std::get_if<uint64_t>(&value)) {
+      output[index] = static_cast<T>(*integer);
+      continue;
+    }
+
+    if (const auto* number = std::get_if<double>(&value)) {
+      output[index] = static_cast<T>(*number);
+      continue;
+    }
+
+    return false;
+  }
+
+  return true;
 }
 
 bool RerunConverter::log_tensor(::rerun::RecordingStream& rec, const std::string& entity_path,
-                                const zerocopy::Tensor& tensor) {
-  const auto* data_ptr = tensor.data();
-  auto data_size = tensor.size();
-  auto rank = tensor.rank();
+                                const zerocopy::MessageParser& parser) {
+  double rank_value = 0;
 
-  if VUNLIKELY (!data_ptr || data_size == 0 || rank == 0) {
-    MLOG_W("Tensor invalid: size={} rank={}", data_size, static_cast<int>(rank));
+  if VUNLIKELY (!parser.numeric("rank", rank_value)) {
+    MLOG_W("Tensor metadata is incomplete");
+    return false;
+  }
+
+  const auto rank = static_cast<uint8_t>(rank_value);
+
+  if VUNLIKELY (rank == 0) {
+    MLOG_W("Tensor invalid: rank={}", static_cast<int>(rank));
     return false;
   }
 
@@ -1661,7 +2190,14 @@ bool RerunConverter::log_tensor(::rerun::RecordingStream& rec, const std::string
   size_t expected_elements = 1;
 
   for (uint8_t i = 0; i < rank; ++i) {
-    const uint32_t dim = tensor.shape_at(i);
+    double dimension = 0;
+
+    if VUNLIKELY (!parser.numeric("shape", i, "value", dimension)) {
+      MLOG_W("Tensor shape is incomplete: dim={} rank={}", i, static_cast<int>(rank));
+      return false;
+    }
+
+    const auto dim = static_cast<uint32_t>(dimension);
 
     if VUNLIKELY (dim == 0 || expected_elements > std::numeric_limits<size_t>::max() / dim) {
       MLOG_W("Tensor shape invalid: dim={} rank={}", dim, static_cast<int>(rank));
@@ -1673,10 +2209,16 @@ bool RerunConverter::log_tensor(::rerun::RecordingStream& rec, const std::string
   }
 
   ::rerun::datatypes::TensorBuffer buffer;
-  auto dtype = tensor.dtype();
+  double dtype_value = 0;
+
+  if VUNLIKELY (!parser.numeric("dtype", dtype_value)) {
+    return false;
+  }
+
+  const auto dtype = static_cast<zerocopy::Tensor::DataType>(dtype_value);
   const size_t element_size = zerocopy::Tensor::element_size_of(dtype);
 
-  if VUNLIKELY (element_size == 0 || dtype == zerocopy::Tensor::kFloat16 || dtype == zerocopy::Tensor::kBfloat16) {
+  if VUNLIKELY (element_size == 0) {
     MLOG_W("Tensor dtype unsupported for rerun: {}", static_cast<int>(dtype));
     return false;
   }
@@ -1686,65 +2228,122 @@ bool RerunConverter::log_tensor(::rerun::RecordingStream& rec, const std::string
     return false;
   }
 
-  const size_t expected_size = expected_elements * element_size;
-
-  if VUNLIKELY (data_size != expected_size) {
-    MLOG_W("Tensor data size mismatch: actual={} expected={}", data_size, expected_size);
+  if VUNLIKELY (parser.collection_size("data") != expected_elements) {
+    MLOG_W("Tensor element count mismatch: actual={} expected={}", parser.collection_size("data"), expected_elements);
     return false;
   }
 
   switch (dtype) {
     case zerocopy::Tensor::kBool:
     case zerocopy::Tensor::kUint8: {
-      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<uint8_t>::borrow(data_ptr, data_size));
+      std::vector<uint8_t> values;
+
+      if VUNLIKELY (!read_parser_collection(parser, expected_elements, values)) {
+        return false;
+      }
+
+      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<uint8_t>::take_ownership(std::move(values)));
       break;
     }
+
     case zerocopy::Tensor::kInt8: {
-      buffer = ::rerun::datatypes::TensorBuffer(
-          ::rerun::Collection<int8_t>::borrow(reinterpret_cast<const int8_t*>(data_ptr), data_size));
+      std::vector<int8_t> values;
+
+      if VUNLIKELY (!read_parser_collection(parser, expected_elements, values)) {
+        return false;
+      }
+
+      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<int8_t>::take_ownership(std::move(values)));
       break;
     }
+
     case zerocopy::Tensor::kInt16: {
-      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<int16_t>::borrow(
-          reinterpret_cast<const int16_t*>(data_ptr), data_size / sizeof(int16_t)));
+      std::vector<int16_t> values;
+
+      if VUNLIKELY (!read_parser_collection(parser, expected_elements, values)) {
+        return false;
+      }
+
+      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<int16_t>::take_ownership(std::move(values)));
       break;
     }
+
     case zerocopy::Tensor::kUint16: {
-      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<uint16_t>::borrow(
-          reinterpret_cast<const uint16_t*>(data_ptr), data_size / sizeof(uint16_t)));
+      std::vector<uint16_t> values;
+
+      if VUNLIKELY (!read_parser_collection(parser, expected_elements, values)) {
+        return false;
+      }
+
+      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<uint16_t>::take_ownership(std::move(values)));
       break;
     }
+
     case zerocopy::Tensor::kInt32: {
-      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<int32_t>::borrow(
-          reinterpret_cast<const int32_t*>(data_ptr), data_size / sizeof(int32_t)));
+      std::vector<int32_t> values;
+
+      if VUNLIKELY (!read_parser_collection(parser, expected_elements, values)) {
+        return false;
+      }
+
+      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<int32_t>::take_ownership(std::move(values)));
       break;
     }
+
     case zerocopy::Tensor::kUint32: {
-      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<uint32_t>::borrow(
-          reinterpret_cast<const uint32_t*>(data_ptr), data_size / sizeof(uint32_t)));
+      std::vector<uint32_t> values;
+
+      if VUNLIKELY (!read_parser_collection(parser, expected_elements, values)) {
+        return false;
+      }
+
+      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<uint32_t>::take_ownership(std::move(values)));
       break;
     }
+
+    case zerocopy::Tensor::kFloat16:
+    case zerocopy::Tensor::kBfloat16:
     case zerocopy::Tensor::kFloat32: {
-      buffer = ::rerun::datatypes::TensorBuffer(
-          ::rerun::Collection<float>::borrow(reinterpret_cast<const float*>(data_ptr), data_size / sizeof(float)));
+      std::vector<float> values;
+
+      if VUNLIKELY (!read_parser_collection(parser, expected_elements, values)) {
+        return false;
+      }
+
+      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<float>::take_ownership(std::move(values)));
       break;
     }
+
     case zerocopy::Tensor::kInt64: {
-      std::vector<int64_t> aligned(data_size / sizeof(int64_t));
-      std::memcpy(aligned.data(), data_ptr, aligned.size() * sizeof(int64_t));
-      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<int64_t>::take_ownership(std::move(aligned)));
+      std::vector<int64_t> values;
+
+      if VUNLIKELY (!read_parser_collection(parser, expected_elements, values)) {
+        return false;
+      }
+
+      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<int64_t>::take_ownership(std::move(values)));
       break;
     }
+
     case zerocopy::Tensor::kUint64: {
-      std::vector<uint64_t> aligned(data_size / sizeof(uint64_t));
-      std::memcpy(aligned.data(), data_ptr, aligned.size() * sizeof(uint64_t));
-      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<uint64_t>::take_ownership(std::move(aligned)));
+      std::vector<uint64_t> values;
+
+      if VUNLIKELY (!read_parser_collection(parser, expected_elements, values)) {
+        return false;
+      }
+
+      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<uint64_t>::take_ownership(std::move(values)));
       break;
     }
+
     case zerocopy::Tensor::kFloat64: {
-      std::vector<double> aligned(data_size / sizeof(double));
-      std::memcpy(aligned.data(), data_ptr, aligned.size() * sizeof(double));
-      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<double>::take_ownership(std::move(aligned)));
+      std::vector<double> values;
+
+      if VUNLIKELY (!read_parser_collection(parser, expected_elements, values)) {
+        return false;
+      }
+
+      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<double>::take_ownership(std::move(values)));
       break;
     }
     default: {
@@ -1754,7 +2353,8 @@ bool RerunConverter::log_tensor(::rerun::RecordingStream& rec, const std::string
 
   auto archetype = ::rerun::archetypes::Tensor(std::move(shape), std::move(buffer));
 
-  auto layout = tensor.layout();
+  std::string layout;
+  parser.text("layout", layout);
 
   if (!layout.empty()) {
     std::vector<std::string> dim_names;
@@ -1777,26 +2377,21 @@ bool RerunConverter::log_tensor(::rerun::RecordingStream& rec, const std::string
 }
 
 bool RerunConverter::log_tensor(::rerun::RecordingStream& rec, const std::string& entity_path, const Bytes& raw) {
-  zerocopy::Tensor tensor;
+  zerocopy::MessageParser parser;
 
-  if VUNLIKELY (!(tensor << raw)) {
+  if VUNLIKELY (!parser.parse(zerocopy::MessageParser::Type::kTensor, raw)) {
     MLOG_W("Failed to deserialize Tensor");
     return false;
   }
 
-  return log_tensor(rec, entity_path, tensor);
+  return log_tensor(rec, entity_path, parser);
 }
 
 bool RerunConverter::log_object_array(::rerun::RecordingStream& rec, const std::string& entity_path,
-                                      const zerocopy::ObjectArray& arr) {
-  auto count = arr.count();
+                                      const zerocopy::MessageParser& parser) {
+  const size_t count = parser.collection_size("objects");
 
   if VUNLIKELY (count == 0) {
-    return false;
-  }
-
-  if VUNLIKELY (!arr.data() || arr.pack_size() != sizeof(zerocopy::ObjectArray::Object)) {
-    MLOG_W("ObjectArray invalid: count={} pack_size={}", count, arr.pack_size());
     return false;
   }
 
@@ -1821,22 +2416,50 @@ bool RerunConverter::log_object_array(::rerun::RecordingStream& rec, const std::
 
   static constexpr size_t kMotionColorCount = sizeof(kMotionColors) / sizeof(kMotionColors[0]);
 
-  for (uint32_t i = 0; i < count; ++i) {
-    const auto* obj = arr.objects(i);
+  for (size_t i = 0; i < count; ++i) {
+    double position_x = 0;
+    double position_y = 0;
+    double position_z = 0;
+    double size_x = 0;
+    double size_y = 0;
+    double size_z = 0;
+    double yaw = 0;
+    zerocopy::MessageParser::Value motion_state_value;
+    zerocopy::MessageParser::Value class_id_value;
+    zerocopy::MessageParser::Value track_id_value;
+    std::string label;
 
-    if VUNLIKELY (!obj) {
+    if VUNLIKELY (!parser.numeric("objects", i, "position_x", position_x) ||
+                  !parser.numeric("objects", i, "position_y", position_y) ||
+                  !parser.numeric("objects", i, "position_z", position_z) ||
+                  !parser.numeric("objects", i, "size_x", size_x) || !parser.numeric("objects", i, "size_y", size_y) ||
+                  !parser.numeric("objects", i, "size_z", size_z) || !parser.numeric("objects", i, "yaw", yaw) ||
+                  !parser.value("objects", i, "motion_state", motion_state_value) ||
+                  !parser.value("objects", i, "class_id", class_id_value) ||
+                  !parser.value("objects", i, "track_id", track_id_value) ||
+                  !parser.text("objects", i, "label", label)) {
       continue;
     }
 
-    centers.emplace_back(obj->position[0], obj->position[1], obj->position[2]);
-    half_sizes.emplace_back(obj->size[0] * 0.5F, obj->size[1] * 0.5F, obj->size[2] * 0.5F);
+    const auto* motion_state = std::get_if<uint64_t>(&motion_state_value);
+    const auto* class_id = std::get_if<uint64_t>(&class_id_value);
+    const auto* track_id = std::get_if<uint64_t>(&track_id_value);
 
-    auto half_yaw = obj->yaw * 0.5F;
+    if VUNLIKELY (motion_state == nullptr || class_id == nullptr || track_id == nullptr) {
+      continue;
+    }
+
+    centers.emplace_back(static_cast<float>(position_x), static_cast<float>(position_y),
+                         static_cast<float>(position_z));
+    half_sizes.emplace_back(static_cast<float>(size_x * 0.5), static_cast<float>(size_y * 0.5),
+                            static_cast<float>(size_z * 0.5));
+
+    const auto half_yaw = static_cast<float>(yaw * 0.5);
     auto sin_half = std::sin(half_yaw);
     auto cos_half = std::cos(half_yaw);
     rotations.emplace_back(::rerun::datatypes::Quaternion::from_xyzw(0.0F, 0.0F, sin_half, cos_half));
 
-    auto motion_idx = static_cast<size_t>(obj->motion_state);
+    const auto motion_idx = static_cast<size_t>(*motion_state);
 
     if (motion_idx < kMotionColorCount) {
       colors.emplace_back(kMotionColors[motion_idx]);
@@ -1844,21 +2467,13 @@ bool RerunConverter::log_object_array(::rerun::RecordingStream& rec, const std::
       colors.emplace_back(kMotionColors[0]);
     }
 
-    class_ids.emplace_back(static_cast<uint16_t>(obj->class_id > 0xFFFFU ? 0xFFFFU : obj->class_id));
+    class_ids.emplace_back(static_cast<uint16_t>(std::min<uint64_t>(*class_id, 0xFFFFU)));
 
-    size_t label_len = 0;
-
-    while (label_len < sizeof(obj->label) && obj->label[label_len] != '\0') {
-      ++label_len;
+    if (*track_id != 0) {
+      label.append("#").append(std::to_string(*track_id));
     }
 
-    std::string label_text(obj->label, label_len);
-
-    if (obj->track_id != 0) {
-      label_text.append("#").append(std::to_string(obj->track_id));
-    }
-
-    labels.emplace_back(label_text);
+    labels.emplace_back(label);
   }
 
   if VUNLIKELY (centers.empty()) {
@@ -1890,25 +2505,34 @@ bool RerunConverter::log_object_array(::rerun::RecordingStream& rec, const std::
 }
 
 bool RerunConverter::log_object_array(::rerun::RecordingStream& rec, const std::string& entity_path, const Bytes& raw) {
-  zerocopy::ObjectArray arr;
+  zerocopy::MessageParser parser;
 
-  if VUNLIKELY (!(arr << raw)) {
+  if VUNLIKELY (!parser.parse(zerocopy::MessageParser::Type::kObjectArray, raw)) {
     MLOG_W("Failed to deserialize ObjectArray");
     return false;
   }
 
-  return log_object_array(rec, entity_path, arr);
+  return log_object_array(rec, entity_path, parser);
 }
 
 bool RerunConverter::log_audio_frame(::rerun::RecordingStream& rec, const std::string& entity_path,
-                                     const zerocopy::AudioFrame& frame) {
-  const auto* data_ptr = frame.data();
-  auto data_size = frame.size();
-  auto num_channels = frame.num_channels();
-  auto num_samples = frame.num_samples();
-  auto layout = frame.layout();
+                                     const zerocopy::MessageParser& parser) {
+  double num_channels_value = 0;
+  double num_samples_value = 0;
+  double layout_value = 0;
+  double format_value = 0;
 
-  if VUNLIKELY (!data_ptr || data_size == 0 || num_channels == 0 || num_samples == 0) {
+  if VUNLIKELY (!parser.numeric("num_channels", num_channels_value) ||
+                !parser.numeric("num_samples", num_samples_value) || !parser.numeric("layout", layout_value) ||
+                !parser.numeric("format", format_value)) {
+    return false;
+  }
+
+  const auto num_channels = static_cast<uint16_t>(num_channels_value);
+  const auto num_samples = static_cast<uint32_t>(num_samples_value);
+  const auto layout = static_cast<zerocopy::AudioFrame::Layout>(layout_value);
+
+  if VUNLIKELY (num_channels == 0 || num_samples == 0) {
     return false;
   }
 
@@ -1918,7 +2542,7 @@ bool RerunConverter::log_audio_frame(::rerun::RecordingStream& rec, const std::s
   }
 
   ::rerun::datatypes::TensorBuffer buffer;
-  auto format = frame.format();
+  const auto format = static_cast<zerocopy::AudioFrame::Format>(format_value);
   size_t element_size = 0;
 
   switch (format) {
@@ -1946,34 +2570,56 @@ bool RerunConverter::log_audio_frame(::rerun::RecordingStream& rec, const std::s
     return false;
   }
 
-  const size_t expected_size = static_cast<size_t>(num_samples) * channel_sample_size;
+  const size_t expected_elements = static_cast<size_t>(num_samples) * num_channels;
 
-  if VUNLIKELY (data_size != expected_size) {
-    MLOG_W("AudioFrame data size mismatch: actual={} expected={}", data_size, expected_size);
+  if VUNLIKELY (parser.collection_size("data") != expected_elements) {
+    MLOG_W("AudioFrame sample count mismatch: actual={} expected={}", parser.collection_size("data"),
+           expected_elements);
     return false;
   }
 
   switch (format) {
     case zerocopy::AudioFrame::kFormatPcmU8: {
-      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<uint8_t>::borrow(data_ptr, data_size));
+      std::vector<uint8_t> values;
+
+      if VUNLIKELY (!read_parser_collection(parser, expected_elements, values)) {
+        return false;
+      }
+
+      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<uint8_t>::take_ownership(std::move(values)));
       break;
     }
+
     case zerocopy::AudioFrame::kFormatPcmS16: {
-      auto element_count = data_size / sizeof(int16_t);
-      buffer = ::rerun::datatypes::TensorBuffer(
-          ::rerun::Collection<int16_t>::borrow(reinterpret_cast<const int16_t*>(data_ptr), element_count));
+      std::vector<int16_t> values;
+
+      if VUNLIKELY (!read_parser_collection(parser, expected_elements, values)) {
+        return false;
+      }
+
+      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<int16_t>::take_ownership(std::move(values)));
       break;
     }
+
     case zerocopy::AudioFrame::kFormatPcmS32: {
-      auto element_count = data_size / sizeof(int32_t);
-      buffer = ::rerun::datatypes::TensorBuffer(
-          ::rerun::Collection<int32_t>::borrow(reinterpret_cast<const int32_t*>(data_ptr), element_count));
+      std::vector<int32_t> values;
+
+      if VUNLIKELY (!read_parser_collection(parser, expected_elements, values)) {
+        return false;
+      }
+
+      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<int32_t>::take_ownership(std::move(values)));
       break;
     }
+
     case zerocopy::AudioFrame::kFormatPcmF32: {
-      auto element_count = data_size / sizeof(float);
-      buffer = ::rerun::datatypes::TensorBuffer(
-          ::rerun::Collection<float>::borrow(reinterpret_cast<const float*>(data_ptr), element_count));
+      std::vector<float> values;
+
+      if VUNLIKELY (!read_parser_collection(parser, expected_elements, values)) {
+        return false;
+      }
+
+      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<float>::take_ownership(std::move(values)));
       break;
     }
     default:
@@ -2012,14 +2658,14 @@ bool RerunConverter::log_audio_frame(::rerun::RecordingStream& rec, const std::s
 }
 
 bool RerunConverter::log_audio_frame(::rerun::RecordingStream& rec, const std::string& entity_path, const Bytes& raw) {
-  zerocopy::AudioFrame frame;
+  zerocopy::MessageParser parser;
 
-  if VUNLIKELY (!(frame << raw)) {
+  if VUNLIKELY (!parser.parse(zerocopy::MessageParser::Type::kAudioFrame, raw)) {
     MLOG_W("Failed to deserialize AudioFrame");
     return false;
   }
 
-  return log_audio_frame(rec, entity_path, frame);
+  return log_audio_frame(rec, entity_path, parser);
 }
 
 bool RerunConverter::log_proto_with_mapping(::rerun::RecordingStream& rec, const std::string& entity_path,

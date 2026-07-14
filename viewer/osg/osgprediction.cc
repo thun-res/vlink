@@ -58,7 +58,7 @@ static constexpr size_t kPredColorCount = sizeof(kPredColors) / sizeof(kPredColo
   return osg::Vec4d(((rgb >> 16) & 0xFF) / 255.0, ((rgb >> 8) & 0xFF) / 255.0, (rgb & 0xFF) / 255.0, alpha);
 }
 
-uint32_t get_prediction_color(uint32_t track_id) { return kPredColors[track_id % kPredColorCount]; }
+uint32_t get_prediction_color(uint64_t track_id) { return kPredColors[track_id % kPredColorCount]; }
 
 osg::ref_ptr<osg::Geode> create() {
   osg::ref_ptr<osg::Geode> geode = new osg::Geode();

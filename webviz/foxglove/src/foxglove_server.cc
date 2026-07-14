@@ -21,7 +21,7 @@
  * limitations under the License.
  */
 
-#include "foxglove_server.h"
+#include "./foxglove_server.h"
 
 //
 #include <vlink/base/elapsed_timer.h>
@@ -45,10 +45,10 @@
 
 //
 #include "../../webviz_loader_utils.h"
-#include "foxglove_protocol.h"
-#include "webviz_app_utils.h"
-#include "webviz_bridge_utils.h"
-#include "webviz_time_utils.h"
+#include "./foxglove_protocol.h"
+#include "./webviz_app_utils.h"
+#include "./webviz_bridge_utils.h"
+#include "./webviz_time_utils.h"
 
 namespace vlink {
 namespace webviz {
@@ -2454,7 +2454,7 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
   targets.clear();
 
   {
-    std::unique_lock lock(channels_mtx_);
+    std::shared_lock lock(channels_mtx_);
     auto url_iter = url_to_channel_id_.find(data.url);
 
     if VUNLIKELY (url_iter == url_to_channel_id_.end()) {
@@ -2488,7 +2488,7 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
   }
 
   {
-    std::unique_lock sc_lock(sub_counts_mtx_);
+    std::shared_lock sc_lock(sub_counts_mtx_);
     auto subscriber_iter = channel_subscribers_.find(channel_id);
 
     if VUNLIKELY (subscriber_iter == channel_subscribers_.end() || subscriber_iter->second.empty()) {
@@ -3046,7 +3046,17 @@ ClientInfo* FoxgloveServer::find_client_unlocked(ConnectionHdl hdl, void** out_r
     return nullptr;
   }
 
-  auto conn = ws_server_->get_con_from_hdl(hdl);
+  websocketpp::lib::error_code ec;
+  auto conn = ws_server_->get_con_from_hdl(hdl, ec);
+
+  if VUNLIKELY (ec) {
+    if VLIKELY (out_raw_ptr) {
+      *out_raw_ptr = nullptr;
+    }
+
+    return nullptr;
+  }
+
   auto* raw_ptr = conn.get();
 
   if VLIKELY (out_raw_ptr) {

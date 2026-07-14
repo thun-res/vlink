@@ -23,21 +23,15 @@
 
 #pragma once
 
-#include <vlink/zerocopy/audio_frame.h>
-#include <vlink/zerocopy/camera_frame.h>
-#include <vlink/zerocopy/object_array.h>
-#include <vlink/zerocopy/occupancy_grid.h>
-#include <vlink/zerocopy/point_cloud.h>
-#include <vlink/zerocopy/raw_data.h>
-#include <vlink/zerocopy/tensor.h>
+#include <vlink/zerocopy/message_parser.h>
 
 #include <filesystem>
 #include <string>
 #include <string_view>
 #include <vector>
 
-#include "dump_features.h"
-#include "dump_types.h"
+#include "./dump_features.h"
+#include "./dump_types.h"
 
 #ifdef VLINK_HAS_PROTOBUF_COMPILER
 
@@ -52,32 +46,14 @@ bool extract_proto_value(const google::protobuf::Message& message, const std::ve
 
 #endif
 
-bool match_zerocopy_type(const std::string& ser, std::string_view type_name);
-
-std::string format_zerocopy_header(const vlink::zerocopy::Header& header);
-
-std::string format_raw_data(const vlink::zerocopy::RawData& raw_data);
-
-std::string format_camera_frame(const vlink::zerocopy::CameraFrame& frame);
-
-std::string format_point_cloud(const vlink::zerocopy::PointCloud& pc);
-
-std::string format_occupancy_grid(const vlink::zerocopy::OccupancyGrid& og);
-
-std::string format_tensor(const vlink::zerocopy::Tensor& tensor);
-
-std::string format_object_array(const vlink::zerocopy::ObjectArray& arr);
-
-std::string format_audio_frame(const vlink::zerocopy::AudioFrame& frame);
-
-bool extract_zerocopy_header_value(const vlink::zerocopy::Header& header, const std::string& field,
-                                   VariantType& result);
-
 bool extract_zerocopy_value(const std::string& ser, const vlink::Bytes& bytes, const std::string& field,
+                            VariantType& result);
+
+bool extract_zerocopy_value(const vlink::zerocopy::MessageParser& parser, const std::string& field,
                             VariantType& result);
 
 std::string format_zerocopy_message(const std::string& ser, const vlink::Bytes& bytes);
 
 vlink::Bytes extract_zerocopy_binary(const std::string& ser, const vlink::Bytes& bytes, const std::string& field);
 
-bool write_pcd_file(const std::string& file_path, const vlink::zerocopy::PointCloud& pc);
+bool write_pcd_file(const std::string& file_path, const vlink::zerocopy::PointCloud& point_cloud);

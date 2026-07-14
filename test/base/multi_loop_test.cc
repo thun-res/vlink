@@ -88,6 +88,18 @@ TEST_SUITE("base-MultiLoop") {
     loop.wait_for_quit(2000);
   }
 
+  TEST_CASE("zero worker pool falls back to the dispatcher") {
+    MultiLoop loop(0);
+    std::atomic<int> count{0};
+
+    REQUIRE(loop.async_run());
+    REQUIRE(loop.post_task([&count] { count.fetch_add(1, std::memory_order_relaxed); }));
+    REQUIRE(loop.wait_for_idle(2000));
+    CHECK_EQ(count.load(std::memory_order_relaxed), 1);
+    loop.quit();
+    loop.wait_for_quit(2000);
+  }
+
   TEST_CASE("multiple post_task calls all execute") {
     static constexpr int kCount = 100;
     MultiLoop loop(4);
@@ -189,6 +201,80 @@ TEST_SUITE("base-MultiLoop") {
 
     loop.quit();
     loop.wait_for_quit(2000);
+  }
+
+  TEST_CASE("worker thread query does not block shutdown") {
+    class CoordinatedMultiLoop final : public MultiLoop {
+     public:
+      explicit CoordinatedMultiLoop(size_t thread_num) : MultiLoop(thread_num) {}
+
+      std::atomic<bool> on_end_entered{false};
+      std::atomic<bool> continue_on_end{false};
+
+     protected:
+      void on_end() override {
+        on_end_entered.store(true, std::memory_order_release);
+
+        while (!continue_on_end.load(std::memory_order_acquire)) {
+          std::this_thread::yield();
+        }
+
+        MultiLoop::on_end();
+      }
+    } loop(1);
+
+    std::atomic<bool> worker_started{false};
+    std::atomic<bool> query_worker{false};
+    std::promise<bool> result;
+    auto future = result.get_future();
+
+    REQUIRE(loop.async_run());
+    REQUIRE(loop.post_task([&]() {
+      worker_started.store(true, std::memory_order_release);
+
+      while (!query_worker.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+      }
+
+      result.set_value(loop.is_in_same_thread());
+    }));
+    const bool worker_ready =
+        common_test::wait_until([&worker_started]() { return worker_started.load(std::memory_order_acquire); }, 2s);
+
+    if (!worker_ready) {
+      query_worker.store(true, std::memory_order_release);
+      loop.continue_on_end.store(true, std::memory_order_release);
+      loop.quit(true);
+      loop.wait_for_quit(2000);
+      CHECK(worker_ready);
+      return;
+    }
+
+    loop.quit();
+    const bool on_end_ready =
+        common_test::wait_until([&loop]() { return loop.on_end_entered.load(std::memory_order_acquire); }, 2s);
+
+    if (!on_end_ready) {
+      loop.continue_on_end.store(true, std::memory_order_release);
+      query_worker.store(true, std::memory_order_release);
+      loop.quit(true);
+      loop.wait_for_quit(2000);
+      CHECK(on_end_ready);
+      return;
+    }
+
+    loop.continue_on_end.store(true, std::memory_order_release);
+    std::this_thread::sleep_for(50ms);
+    query_worker.store(true, std::memory_order_release);
+
+    const auto status = future.wait_for(2s);
+    CHECK_EQ(status, std::future_status::ready);
+
+    if (status == std::future_status::ready) {
+      CHECK(future.get());
+    }
+
+    CHECK(loop.wait_for_quit(2000));
   }
 
   TEST_CASE("is_in_same_thread returns false from test thread") {

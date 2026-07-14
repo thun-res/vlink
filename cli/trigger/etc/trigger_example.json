@@ -1,0 +1,33 @@
+{
+    "method_url": "dds://trigger/method",
+    "dump_dir": "/tmp/vlink-trigger",
+    "allow_out_file_outside_dump_dir": false,
+    "file_type": "vdb",
+    "default_pre_ms": 60000,
+    "default_post_ms": 5000,
+    "default_max_packet_size": 4,
+    "default_max_size": 0,
+    "max_cache_size": 2048,
+    "retention_guard_ms": 300,
+    "max_dump_file_count": 16,
+    "enable_compress": true,
+    "busy_skip_data": false,
+    "destroy_on_offline": false,
+    "overflow": "cover",
+    "sleep_interval_mb": 4,
+    "sleep_time_ms": 2,
+    "dds_ip": "",
+    "discovery_filter": "available",
+    "whitelist": [],
+    "blacklist": [],
+    "bag_plugin": "",
+    "bag_plugin_dir": "",
+    "trigger_plugin": "",
+    "trigger_plugin_dir": "",
+    "trigger_plugin_config": "",
+    "url_overrides": {
+        "dds://camera/front": { "pre_ms": 60000, "post_ms": 5000, "max_packet_size": 8 },
+        "dds://radar/points": { "pre_ms": 15000, "post_ms": 0 },
+        "dds://control/brake": { "pre_ms": 30000, "post_ms": 10000, "only_back": true }
+    }
+}

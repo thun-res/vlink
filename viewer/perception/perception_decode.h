@@ -54,6 +54,17 @@ bool decode_zerocopy_occupancy_grid(const vlink::Bytes& raw, Layer& out);
 
 bool decode_zerocopy_point_cloud(const vlink::Bytes& raw, Layer& out);
 
+bool decode_zerocopy_mapping(const vlink::Bytes& raw, const std::string& ser, const PerceptionConfig::MappingRule& rule,
+                             Layer& out);
+
+bool decode_hud_zerocopy(const vlink::Bytes& raw, const std::string& ser, const PerceptionConfig::MappingRule& rule,
+                         std::vector<HudField>& out);
+
+bool decode_zerocopy_batch(const vlink::Bytes& raw, const std::string& ser,
+                           const std::vector<PerceptionConfig::MappingRule>& mappings,
+                           const std::vector<PerceptionConfig::MappingRule>& hud_bindings, std::vector<Layer>& layers,
+                           std::vector<std::vector<HudField>>& hud_fields);
+
 void decode_proto(const google::protobuf::Message& root, const PerceptionConfig::MappingRule& rule, Layer& out);
 
 void decode_fbs(const flatbuffers::Table& root, const reflection::Schema& schema, const reflection::Object& root_obj,

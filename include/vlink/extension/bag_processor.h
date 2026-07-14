@@ -59,9 +59,7 @@
  *     processor_.register_output_callback([this](const vlink::Frame& f) { do_callback(f); });
  *   }
  *
- *   vlink::BagPluginInterface::VersionInfo get_version_info() const override {
- *     return {"my-write", "1.0.0", __DATE__, "", ""};
- *   }
+ *   void on_read(const vlink::Frame& frame) override { do_callback(frame); }  // unused on the write side
  *
  *   void on_write(const vlink::Frame& frame) override {
  *     const int64_t data_timestamp = parse_header_time(frame.data);  // plugin extracts the data-plane time
@@ -148,8 +146,8 @@ class VLINK_EXPORT BagProcessor {
    * Safe to call from any thread after @c register_output_callback().  Frames are ordered by
    * @p data_timestamp.  Negative @p data_timestamp is filled from the previous data timestamp and the
    * @c Frame::timestamp delta; without a previous anchor it stays -1 and sorts first.  Output frame
-   * timestamps are remapped on the data-time axis and kept strictly increasing.  The frame is copied
-   * into the owning cache.
+   * timestamps are remapped on the data-time axis and kept strictly increasing within a flush segment
+   * (@c flush() resets the axis).  The frame is copied into the owning cache.
    *
    * @param data_timestamp Reorder key in microseconds (the data-plane time), or negative when missing.
    * @param frame          Frame to cache; @c Frame::timestamp is the canonical time before remapping.
@@ -162,7 +160,10 @@ class VLINK_EXPORT BagProcessor {
    * @details
    * Blocks until the cache is empty: the worker thread emits each queued frame through the registered
    * output callback, then wakes the caller.  A plugin forwards this from @c BagPluginInterface::flush()
-   * so buffered tail frames are emitted before teardown.  A no-op before callback registration or shutdown.
+   * so buffered tail frames are emitted before teardown.  Draining also resets the timestamp-resolution
+   * anchors, so the next @c push() starts a fresh timeline -- @c flush() marks a file boundary, letting one
+   * processor instance serve consecutive bag files.  Do not @c push() concurrently with @c flush(): frames
+   * racing the boundary belong to no defined timeline.  A no-op before callback registration or shutdown.
    */
   void flush();
 

@@ -244,11 +244,12 @@ VLink 自带命令行工具与可视化套件，覆盖发现、监控、录制�
 | `vlink-list`    | 列出活跃节点与话题             |
 | `vlink-monitor` | 终端内实时监控话题频率与延迟   |
 | `vlink-bag`     | 录制、回放与运维消息数据包      |
+| `vlink-trigger` | 内存触发录制（EDR），事件触发时落盘前后窗口 |
 | `vlink-dump`    | 以多种格式打印消息             |
 | `vlink-eproto` / `vlink-efbs` | 终端内解析显示 Protobuf / FlatBuffers 消息 |
 | `vlink-bench`   | 延迟与吞吐基准测试             |
 
-上表共九个命令行工具，详见 [CLI 工具](10-cli-tools.md)。
+上表共十个命令行工具，详见 [CLI 工具](10-cli-tools.md)。
 
 桌面可视化套件包含 `vlink-viewer`（实时监控）、`vlink-player`（回放）、`vlink-analyzer`（数据分析），支持相机图像与三维点云。桌面 Viewer 与 Web 可视化（`vlink-foxglove`/`vlink-rerun`，将实时数据桥接至 Foxglove Studio 与 Rerun）均见 [可视化](11-visualization.md)。
 

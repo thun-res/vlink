@@ -105,6 +105,8 @@ bool OsgSelectHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIAction
           m_spOldNode = nullptr;
         }
 
+        m_bPush = false;
+
         return true;
       }
 

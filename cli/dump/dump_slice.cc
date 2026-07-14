@@ -21,15 +21,15 @@
  * limitations under the License.
  */
 
-#include "dump_slice.h"
+#include "./dump_slice.h"
 
-#include "dump_context.h"
-#include "dump_expr.h"
-#include "dump_extract.h"
-#include "dump_plan.h"
-#include "dump_proto_cache.h"
-#include "dump_schema.h"
-#include "dump_types.h"
+#include "./dump_context.h"
+#include "./dump_expr.h"
+#include "./dump_extract.h"
+#include "./dump_plan.h"
+#include "./dump_proto_cache.h"
+#include "./dump_schema.h"
+#include "./dump_types.h"
 
 #ifdef VLINK_HAS_PROTOBUF_COMPILER
 
@@ -383,7 +383,8 @@ static bool extract_event_values(
   auto& ctx = vlink::dump::DumpContext::get();
   bool any_numeric_found = false;
 
-  auto assign = [&](size_t fi, const VariantType& val) {
+  auto assign = [&event_ctx, &vars_ready, &any_numeric_found, &cross_topic_state, &url, &timestamp_ms](
+                    size_t fi, const VariantType& val) {
     double dv = 0.0;
 
     if (!variant_to_double(val, dv)) {
@@ -397,10 +398,16 @@ static bool extract_event_values(
   };
 
   if (resolved_schema_type == vlink::SchemaType::kZeroCopy) {
+    vlink::zerocopy::MessageParser parser;
+
+    if (!parser.parse(ser, data)) {
+      return false;
+    }
+
     for (size_t fi = 0; fi < ctx.field_specs.size(); ++fi) {
       VariantType val;
 
-      if (extract_zerocopy_value(ser, data, ctx.field_specs[fi], val)) {
+      if (extract_zerocopy_value(parser, ctx.field_specs[fi], val)) {
         assign(fi, val);
       }
     }
@@ -521,25 +528,26 @@ static int run_quality_only_scan(const vlink::dump::SliceOptions& opt, const std
       },
       true);
 
-  player->register_output_callback([&](const vlink::Frame& frame) {
-    const int64_t timestamp = frame.timestamp;
-    const std::string& url = frame.url;
-    const vlink::ActionType action_type = frame.action_type;
+  player->register_output_callback(
+      [&ctx, &selection, &opt, &quality_map, &dropout_threshold_us](const vlink::Frame& frame) {
+        const int64_t timestamp = frame.timestamp;
+        const std::string& url = frame.url;
+        const vlink::ActionType action_type = frame.action_type;
 
-    if VUNLIKELY (ctx.has_quit) {
-      return;
-    }
+        if VUNLIKELY (ctx.has_quit) {
+          return;
+        }
 
-    if (!selection.all && selection.urls.count(url) == 0) {
-      return;
-    }
+        if (!selection.all && selection.urls.count(url) == 0) {
+          return;
+        }
 
-    if (!vlink::dump::action_selected(opt.actions, action_type)) {
-      return;
-    }
+        if (!vlink::dump::action_selected(opt.actions, action_type)) {
+          return;
+        }
 
-    update_quality_stats(quality_map[url], timestamp, dropout_threshold_us);
-  });
+        update_quality_stats(quality_map[url], timestamp, dropout_threshold_us);
+      });
 
   vlink::BagReader::Config play_config;
   play_config.begin_time = effective_begin;
@@ -761,59 +769,62 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       return -1;
     }
 
-    scan_player->register_output_callback([&](const vlink::Frame& frame) {
-      const int64_t timestamp = frame.timestamp;
-      const std::string& url = frame.url;
-      const vlink::ActionType action_type = frame.action_type;
-      const vlink::Bytes& data = frame.data;
+    scan_player->register_output_callback(
+        [&ctx, &scan_selection, &opt, &quality_check, &quality_map, &dropout_threshold_us, &url_ser_override,
+         &cross_topic_state, &scan_proto_cache, &event_field_paths, &event_ctx, &event_state_max_age_ms, &event_active,
+         &last_event_timestamp_ms, &event_min_interval_ms, &event_timestamps_ms](const vlink::Frame& frame) {
+          const int64_t timestamp = frame.timestamp;
+          const std::string& url = frame.url;
+          const vlink::ActionType action_type = frame.action_type;
+          const vlink::Bytes& data = frame.data;
 
-      if VUNLIKELY (ctx.has_quit) {
-        return;
-      }
+          if VUNLIKELY (ctx.has_quit) {
+            return;
+          }
 
-      if (!scan_selection.all && scan_selection.urls.count(url) == 0) {
-        return;
-      }
+          if (!scan_selection.all && scan_selection.urls.count(url) == 0) {
+            return;
+          }
 
-      if (!vlink::dump::action_selected(opt.actions, action_type)) {
-        return;
-      }
+          if (!vlink::dump::action_selected(opt.actions, action_type)) {
+            return;
+          }
 
-      if (quality_check) {
-        update_quality_stats(quality_map[url], timestamp, dropout_threshold_us);
-      }
+          if (quality_check) {
+            update_quality_stats(quality_map[url], timestamp, dropout_threshold_us);
+          }
 
-      auto types = resolve_url_types(url, frame.ser_type, frame.schema_type, url_ser_override);
-      int64_t timestamp_ms = timestamp / 1000;
-      std::vector<bool> vars_ready(ctx.field_specs.size(), false);
+          auto types = resolve_url_types(url, frame.ser_type, frame.schema_type, url_ser_override);
+          int64_t timestamp_ms = timestamp / 1000;
+          std::vector<bool> vars_ready(ctx.field_specs.size(), false);
 
-      bool any_numeric_found =
-          extract_event_values(url, types.ser, types.resolved, data, timestamp_ms, scan_proto_cache, event_field_paths,
-                               cross_topic_state, event_ctx, vars_ready);
+          bool any_numeric_found =
+              extract_event_values(url, types.ser, types.resolved, data, timestamp_ms, scan_proto_cache,
+                                   event_field_paths, cross_topic_state, event_ctx, vars_ready);
 
-      if (!any_numeric_found) {
-        return;
-      }
+          if (!any_numeric_found) {
+            return;
+          }
 
-      fill_event_cross_topic_state(timestamp_ms, event_state_max_age_ms, cross_topic_state, event_ctx.var_names(),
-                                   event_ctx, vars_ready);
+          fill_event_cross_topic_state(timestamp_ms, event_state_max_age_ms, cross_topic_state, event_ctx.var_names(),
+                                       event_ctx, vars_ready);
 
-      auto condition_function = [](bool ready) { return !ready; };
+          auto condition_function = [](bool ready) { return !ready; };
 
-      if (std::any_of(vars_ready.begin(), vars_ready.end(), condition_function)) {
-        return;
-      }
+          if (std::any_of(vars_ready.begin(), vars_ready.end(), condition_function)) {
+            return;
+          }
 
-      double result = event_ctx.evaluate_single();
-      bool active = (result != 0.0);
+          double result = event_ctx.evaluate_single();
+          bool active = (result != 0.0);
 
-      if (active && !event_active && timestamp_ms - last_event_timestamp_ms >= event_min_interval_ms) {
-        event_timestamps_ms.emplace_back(timestamp_ms);
-        last_event_timestamp_ms = timestamp_ms;
-      }
+          if (active && !event_active && timestamp_ms - last_event_timestamp_ms >= event_min_interval_ms) {
+            event_timestamps_ms.emplace_back(timestamp_ms);
+            last_event_timestamp_ms = timestamp_ms;
+          }
 
-      event_active = active;
-    });
+          event_active = active;
+        });
 
     vlink::BagReader::Config scan_config;
     scan_config.begin_time = effective_begin;
@@ -1142,7 +1153,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
   std::filesystem::path current_csv_path;
   bool slice_error = false;
 
-  auto close_current_csv = [&]() {
+  auto close_current_csv = [&ctx, &current_csv_file, &slice_error, &current_csv_path]() {
     if (!current_csv_file.is_open()) {
       return;
     }
@@ -1157,7 +1168,22 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     }
   };
 
-  auto create_writer_for_slice = [&](int idx) -> bool {
+  auto close_current_writer = [&current_writer]() {
+    if (!current_writer) {
+      return true;
+    }
+
+    current_writer->quit();
+    current_writer->wait_for_quit();
+    current_writer->close();
+    const bool success = !current_writer->fail();
+    current_writer.reset();
+    return success;
+  };
+
+  auto create_writer_for_slice = [&ctx, &slice_stats_list, &opt, &player, &current_writer, &schema_list,
+                                  &close_current_writer, &has_fields, &current_csv_path,
+                                  &current_csv_file](int idx) -> bool {
     auto& stats = slice_stats_list[static_cast<size_t>(idx)];
     auto slice_path = (std::filesystem::path(opt.out_dir) / stats.file_name).string();
 
@@ -1198,16 +1224,15 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       return false;
     }
 
-    if (!current_writer) {
+    if VUNLIKELY (!current_writer) {
       std::cerr << "Unsupported output suffix for slice file: " << slice_path << std::endl;
       return false;
     }
 
     for (const auto& schema_data : schema_list) {
-      if (!current_writer->push_schema(schema_data, true)) {
+      if VUNLIKELY (!current_writer->push_schema(schema_data)) {
         std::cerr << "Failed to write schema: " << schema_data.name << " into " << slice_path << std::endl;
-        current_writer->quit();
-        current_writer.reset();
+        close_current_writer();
         return false;
       }
     }
@@ -1218,15 +1243,18 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       }
     }
 
-    current_writer->async_run();
+    if VUNLIKELY (!current_writer->async_run()) {
+      close_current_writer();
+      std::cerr << "Failed to start output writer: " << slice_path << std::endl;
+      return false;
+    }
 
     if (opt.export_csv && has_fields) {
       current_csv_path = std::filesystem::path(opt.out_dir) / vlink::dump::csv_name_for_slice_file(stats.file_name);
       current_csv_file.open(current_csv_path);
 
-      if (!current_csv_file.is_open()) {
-        current_writer->quit();
-        current_writer.reset();
+      if VUNLIKELY (!current_csv_file.is_open()) {
+        close_current_writer();
         std::cerr << "Failed to write CSV: " << current_csv_path.string() << std::endl;
         return false;
       }
@@ -1301,13 +1329,15 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
         extracted_values.reserve(ctx.field_specs.size());
         bool any_found = false;
         bool all_found = true;
+        vlink::zerocopy::MessageParser zerocopy_parser;
+        const bool zerocopy_parsed = is_zerocopy && zerocopy_parser.parse(types.ser, data);
 
         for (size_t fi = 0; fi < ctx.field_specs.size(); ++fi) {
           VariantType val;
           bool found = false;
 
           if (is_zerocopy) {
-            found = extract_zerocopy_value(types.ser, data, ctx.field_specs[fi], val);
+            found = zerocopy_parsed && extract_zerocopy_value(zerocopy_parser, ctx.field_specs[fi], val);
           } else if (proto_message != nullptr) {
             found = extract_proto_value(*proto_message, slice_field_paths[fi], 0, val);
           }
@@ -1363,8 +1393,13 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     while (current_slice_index < static_cast<int>(slice_stats_list.size()) - 1 &&
            timestamp_ms >= slice_stats_list[static_cast<size_t>(current_slice_index)].end_time_ms) {
       close_current_csv();
-      current_writer->quit();
-      current_writer.reset();
+
+      if VUNLIKELY (!close_current_writer()) {
+        slice_error = true;
+        player->stop();
+        return;
+      }
+
       ++current_slice_index;
 
       if (!create_writer_for_slice(current_slice_index)) {
@@ -1390,7 +1425,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     push_frame.action_type = action_type;
     push_frame.data = vlink::Bytes::shallow_copy(data.data(), data.size());
 
-    if (current_writer->push(push_frame, true) < 0) {
+    if VUNLIKELY (current_writer->push(push_frame) < 0) {
       std::cerr << "Failed to write message into " << stats.file_name << ": " << url << std::endl;
       slice_error = true;
       player->stop();
@@ -1464,9 +1499,8 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
 
   close_current_csv();
 
-  if (current_writer) {
-    current_writer->quit();
-    current_writer.reset();
+  if VUNLIKELY (!close_current_writer()) {
+    slice_error = true;
   }
 
   ctx.has_quit = true;

@@ -158,7 +158,7 @@ vlink::Bytes::init_memory_pool();       // 启动时调用一次
 vlink::Bytes::release_memory_pool();    // 运行期可选回收完全空闲的块
 ```
 
-- 池的容量分级由环境变量 `VLINK_MEMORY_LEVEL`（`0..9`，默认 `3`）选择；`VLINK_MEMORY_PREALLOC=1` 在启动时预分配。两者含义见 [环境变量](13-integration.md)。
+- 池的容量分级由环境变量 `VLINK_MEMORY_LEVEL`（`0..9`，默认 `3`）选择；`VLINK_MEMORY_PREALLOC=1` 在启动时预分配。检测到重复并发争用后 free list 会自动分片，偶发单次锁冲突仍保留 primary 快路径。空分片每次跨分片转移的节点数由 `MemoryPool::Config::batch_size` 控制（默认 `16`）；全局默认配置可用 `VLINK_MEMORY_BATCH_SIZE` 覆盖。三者含义见 [环境变量](13-integration.md)。
 - 经 `vlink::MemoryResource` 让 `std::pmr` 容器复用同一池：
 
 ```cpp
@@ -171,7 +171,7 @@ v.reserve(1024);
 auto sp = vlink::MemoryResource::make_shared<State>(/*x=*/42);
 ```
 
-`MemoryResource::make_shared` 将对象与控制块在池内一次性分配，`make_unique` 仅在池内分配对象本体；两者均回退到全局池。需要隔离的私有池时，向构造函数传入 `MemoryPool::Config` 或 level（`MemoryResource(int level, bool prealloc=false)`）创建独立实例。
+`MemoryResource::make_shared` 将对象与控制块在池内一次性分配，`make_unique` 仅在池内分配对象本体；两者均回退到全局池。需要隔离的私有池时，向构造函数传入 `MemoryPool::Config` 或 level（`MemoryResource(int level, bool prealloc=false)`）创建独立实例。显式 `Config` 的 `batch_size` 以字段值为准，不受环境变量覆盖。
 
 ---
 
@@ -1087,6 +1087,7 @@ vlink::Co::Task<void> orchestrate(vlink::MessageLoop& loop) {
 | --- | --- | --- |
 | `Format` | `base/format.h` | 轻量 `{}` 占位符格式化器（`MLOG_*` 内部使用） |
 | `FastStream` | `base/fast_stream.h` | 高性能输出流（Logger 内部引擎） |
+| `TerminalStream` | `base/terminal_stream.h` | CLI 使用的线程安全、TTY 感知带缓冲 stdout 单例 |
 | `Utils` | `base/utils.h` | 进程/线程/网络/信号等跨平台工具函数 |
 | `Helpers` | `base/helpers.h` | 字符串/数字/哈希/转义等无状态工具 |
 | `Quantize` | `base/quantize.h` | 线性量化/反量化（紧凑容器复用） |
@@ -1118,5 +1119,5 @@ auto ipv4_list = vlink::Utils::get_all_ipv4_address(/*filter_available=*/true);
 - [02-communication](02-communication.md) —— 通信回调中如何使用 MessageLoop、节点与 CpuProfiler 的集成
 - [04-transport](04-transport.md) —— `shm://` 等传输后端（建立在 IPC 原语之上）
 - [05-qos](05-qos.md) —— QoS 优先级与 MessageLoop 优先级的关系
-- [13-integration](13-integration.md) —— `VLINK_MEMORY_LEVEL` / `VLINK_PROFILER_ENABLE` 等环境变量
+- [13-integration](13-integration.md) —— `VLINK_MEMORY_*` / `VLINK_PROFILER_ENABLE` 等环境变量
 - [01-started](01-started.md) —— 配套示例（含 `examples/base/`）

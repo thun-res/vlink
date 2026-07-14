@@ -24,15 +24,16 @@
 #include "./base/memory_pool.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <mutex>
 #include <new>
 #include <string>
 #include <system_error>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -40,7 +41,7 @@
 #include "./base/spin_lock.h"
 #include "./base/utils.h"
 
-#define MEMORY_POOL_NERVER_DELETE 0
+#define MEMORY_POOL_NEVER_DELETE 0
 
 namespace vlink {
 
@@ -52,6 +53,9 @@ static constexpr size_t kMaxLevelCount = 10U;
 static constexpr size_t kInitialBlocksPerChunk = 1U;
 static constexpr size_t kInitialChunksReserve = 16U;
 static constexpr size_t kInitialChunkBytesTarget = 64U * 1024U;
+static constexpr size_t kTierShardCount = 8U;
+static constexpr size_t kDefaultBatchSize = 16U;
+static constexpr uint32_t kShardingContentionThreshold = 8U;
 
 // clang-format off
 static constexpr MemoryPool::Tier kDefaultTierTable[kMaxLevelCount][kMaxTierCount] = {
@@ -287,6 +291,13 @@ struct MemoryChunk final {
   size_t bytes{0};
 };
 
+struct alignas(64) MemoryTierShard final {
+  SpinLock mtx;
+  MemoryFreeNode* free_list_head{nullptr};
+  std::atomic<uint64_t> hit_count{0};
+  std::atomic<uint64_t> deallocate_count{0};
+};
+
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 struct alignas(64) MemoryTierState final {
   size_t max_size{0};
@@ -294,18 +305,37 @@ struct alignas(64) MemoryTierState final {
   size_t blocks_per_chunk{0};
   size_t next_chunk_blocks{0};
   size_t initial_chunk_blocks{0};
+  size_t batch_size{kDefaultBatchSize};
 
-  MemoryFreeNode* free_list_head{nullptr};
+  std::array<MemoryTierShard, kTierShardCount> shards;
   std::vector<MemoryChunk> chunks;
-
-  alignas(64) std::atomic<bool> growing{false};
-  alignas(64) SpinLock mtx;
-  alignas(64) std::atomic<uint64_t> hit_count{0};
-  alignas(64) std::atomic<uint64_t> deallocate_count{0};
+  std::mutex grow_mtx;
+  std::atomic<bool> sharded{false};
+  std::atomic<uint32_t> contention_count{0U};
 
   alignas(64) std::atomic<uint64_t> chunk_count{0};
   alignas(64) std::atomic<uint64_t> upstream_alloc_count{0};
   std::atomic<uint64_t> upstream_alloc_bytes{0};
+};
+
+class MemoryTierShardLockGuard final {
+ public:
+  explicit MemoryTierShardLockGuard(MemoryTierState& state) noexcept : state_(state) {
+    for (auto& shard : state_.shards) {
+      shard.mtx.lock();
+    }
+  }
+
+  ~MemoryTierShardLockGuard() noexcept {
+    for (size_t index = state_.shards.size(); index > 0U; --index) {
+      state_.shards[index - 1U].mtx.unlock();
+    }
+  }
+
+ private:
+  MemoryTierState& state_;
+
+  VLINK_DISALLOW_COPY_AND_ASSIGN(MemoryTierShardLockGuard)
 };
 
 struct alignas(64) MemoryAllocCounters final {
@@ -350,7 +380,86 @@ static_assert(default_tier_table_well_formed(),
               "MemoryPool: kDefaultTierTable contains a malformed row "
               "(undersized tier or non-monotonic max_size)");
 
-static bool grow_tier_chunk(MemoryTierState& state) noexcept {
+static std::atomic<size_t> next_tier_shard{0U};
+static thread_local size_t current_tier_shard_plus_one = 0U;
+
+static size_t current_tier_shard() noexcept {
+  if VUNLIKELY (current_tier_shard_plus_one == 0U) {
+    current_tier_shard_plus_one = next_tier_shard.fetch_add(1U, std::memory_order_relaxed) % kTierShardCount + 1U;
+  }
+
+  return current_tier_shard_plus_one - 1U;
+}
+
+static MemoryFreeNode* pop_free_node(MemoryTierShard& shard) noexcept {
+  SpinLockGuard lock(shard.mtx);
+
+  if (shard.free_list_head == nullptr) {
+    return nullptr;
+  }
+
+  MemoryFreeNode* node = shard.free_list_head;
+  shard.free_list_head = node->next;
+
+  return node;
+}
+
+static MemoryFreeNode* steal_free_nodes(MemoryTierState& state, size_t target_index) noexcept {
+  MemoryTierShard& target = state.shards[target_index];
+
+  for (size_t offset = 1U; offset < kTierShardCount; ++offset) {
+    MemoryTierShard& source = state.shards[(target_index + offset) % kTierShardCount];
+    MemoryFreeNode* first = nullptr;
+    MemoryFreeNode* last = nullptr;
+
+    {
+      SpinLockGuard source_lock(source.mtx);
+
+      if (source.free_list_head == nullptr) {
+        continue;
+      }
+
+      first = source.free_list_head;
+      last = first;
+
+      size_t count = 1U;
+
+      while (count < state.batch_size && last->next != nullptr) {
+        last = last->next;
+        ++count;
+      }
+
+      source.free_list_head = last->next;
+      last->next = nullptr;
+    }
+
+    MemoryFreeNode* cached = first->next;
+    first->next = nullptr;
+
+    if (cached != nullptr) {
+      SpinLockGuard target_lock(target.mtx);
+      last->next = target.free_list_head;
+      target.free_list_head = cached;
+    }
+
+    return first;
+  }
+
+  return nullptr;
+}
+
+static MemoryFreeNode* try_allocate_from_shards(MemoryTierState& state, size_t shard_index) noexcept {
+  MemoryFreeNode* node = pop_free_node(state.shards[shard_index]);
+
+  if VLIKELY (node != nullptr) {
+    return node;
+  }
+
+  return steal_free_nodes(state, shard_index);
+}
+
+// state.grow_mtx must be held.  When allocated is non-null, one node is removed from the new chunk.
+static bool grow_tier_chunk(MemoryTierState& state, size_t shard_index, MemoryFreeNode** allocated) noexcept {
   size_t blocks = state.next_chunk_blocks;
 
   if VUNLIKELY (blocks > state.blocks_per_chunk) {
@@ -364,13 +473,10 @@ static bool grow_tier_chunk(MemoryTierState& state) noexcept {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  state.mtx.unlock();
-
   void* ptr = ::operator new(chunk_bytes, std::align_val_t{MemoryPool::kBlockAlignment}, std::nothrow);
 
   if VUNLIKELY (ptr == nullptr) {
-    state.mtx.lock();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return false;      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
   auto* base = static_cast<std::byte*>(ptr);
@@ -381,16 +487,11 @@ static bool grow_tier_chunk(MemoryTierState& state) noexcept {
     local_head = ::new (base + (i - 1U) * block_size) MemoryFreeNode{local_head};
   }
 
-  state.mtx.lock();
-
   try {
     state.chunks.push_back(MemoryChunk{ptr, chunk_bytes});
   } catch (std::exception&) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    state.mtx.unlock();
     ::operator delete(ptr, chunk_bytes, std::align_val_t{MemoryPool::kBlockAlignment});
-    state.mtx.lock();
-
     return false;
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
@@ -399,8 +500,19 @@ static bool grow_tier_chunk(MemoryTierState& state) noexcept {
   state.upstream_alloc_bytes.fetch_add(chunk_bytes, std::memory_order_relaxed);
   state.chunk_count.fetch_add(1, std::memory_order_relaxed);
 
-  local_tail->next = state.free_list_head;
-  state.free_list_head = local_head;
+  {
+    MemoryTierShard& shard = state.shards[shard_index];
+    SpinLockGuard lock(shard.mtx);
+
+    local_tail->next = shard.free_list_head;
+    shard.free_list_head = local_head;
+
+    if (allocated != nullptr) {
+      *allocated = shard.free_list_head;
+      shard.free_list_head = (*allocated)->next;
+      (*allocated)->next = nullptr;
+    }
+  }
 
   const size_t doubled = blocks * 2U;
   const size_t target = (doubled < blocks || doubled > state.blocks_per_chunk)
@@ -414,85 +526,101 @@ static bool grow_tier_chunk(MemoryTierState& state) noexcept {
   return true;
 }
 
-static void* tier_allocate(MemoryTierState& state) noexcept {
-  for (;;) {
-    {
-      uint16_t grow_spins = 0;
+static void* tier_allocate(MemoryTierState& state, size_t& shard_index) noexcept {
+  shard_index = 0U;
+  bool sharded = state.sharded.load(std::memory_order_relaxed);
 
-      while (state.growing.load(std::memory_order_acquire)) {
-        if (grow_spins < 128) {
-          Utils::yield_cpu();
-          ++grow_spins;
-        } else {
-          std::this_thread::yield();
-        }
+  if (!sharded) {
+    MemoryTierShard& primary = state.shards.front();
+
+    if (primary.mtx.try_lock()) {
+      MemoryFreeNode* node = primary.free_list_head;
+
+      if VLIKELY (node != nullptr) {
+        primary.free_list_head = node->next;
       }
-    }
 
-    state.mtx.lock();
+      primary.mtx.unlock();
 
-    if VLIKELY (state.free_list_head != nullptr) {
-      MemoryFreeNode* node = state.free_list_head;
-      state.free_list_head = node->next;
-      state.mtx.unlock();
-
-      return node;
-    }
-
-    if (state.growing.load(std::memory_order_relaxed)) {
-      state.mtx.unlock();
-      continue;
-    }
-
-    state.growing.store(true, std::memory_order_release);
-    const bool ok = grow_tier_chunk(state);
-    state.growing.store(false, std::memory_order_release);
-
-    if VUNLIKELY (!ok) {
-      // LCOV_EXCL_START GCOVR_EXCL_START
-      if (state.free_list_head != nullptr) {
-        MemoryFreeNode* node = state.free_list_head;
-        state.free_list_head = node->next;
-        state.mtx.unlock();
-
+      if VLIKELY (node != nullptr) {
         return node;
       }
+    } else {
+      const uint32_t contentions = state.contention_count.fetch_add(1U, std::memory_order_relaxed) + 1U;
 
-      state.mtx.unlock();
-      return nullptr;
-      // LCOV_EXCL_STOP GCOVR_EXCL_STOP
+      if (contentions >= kShardingContentionThreshold) {
+        state.sharded.store(true, std::memory_order_relaxed);
+        sharded = true;
+      }
     }
+  }
 
-    MemoryFreeNode* node = state.free_list_head;
-    state.free_list_head = node->next;
-    state.mtx.unlock();
+  if (sharded) {
+    shard_index = current_tier_shard();
+  }
 
+  if (MemoryFreeNode* node = try_allocate_from_shards(state, shard_index)) {
     return node;
   }
+
+  std::lock_guard grow_lock(state.grow_mtx);
+
+  if (MemoryFreeNode* node = try_allocate_from_shards(state, shard_index)) {
+    return node;
+  }
+
+  MemoryFreeNode* node = nullptr;
+
+  if VUNLIKELY (!grow_tier_chunk(state, shard_index, &node)) {
+    return nullptr;
+  }
+
+  return node;
 }
 
-static void tier_deallocate(MemoryTierState& state, void* p) noexcept {
-  SpinLockGuard lock(state.mtx);
+static size_t tier_deallocate(MemoryTierState& state, void* p) noexcept {
+  if (!state.sharded.load(std::memory_order_relaxed)) {
+    MemoryTierShard& primary = state.shards.front();
 
-  auto* node = ::new (p) MemoryFreeNode{state.free_list_head};
+    if (primary.mtx.try_lock()) {
+      primary.free_list_head = ::new (p) MemoryFreeNode{primary.free_list_head};
+      primary.mtx.unlock();
 
-  state.free_list_head = node;
+      return 0U;
+    }
+
+    const uint32_t contentions = state.contention_count.fetch_add(1U, std::memory_order_relaxed) + 1U;
+
+    if (contentions < kShardingContentionThreshold) {
+      SpinLockGuard lock(primary.mtx);
+      primary.free_list_head = ::new (p) MemoryFreeNode{primary.free_list_head};
+
+      return 0U;
+    }
+
+    state.sharded.store(true, std::memory_order_relaxed);
+  }
+
+  const size_t shard_index = current_tier_shard();
+  MemoryTierShard& shard = state.shards[shard_index];
+  SpinLockGuard lock(shard.mtx);
+
+  auto* node = ::new (p) MemoryFreeNode{shard.free_list_head};
+
+  shard.free_list_head = node;
+
+  return shard_index;
 }
 
 static void prealloc_full_quota(MemoryTierState& state) noexcept {
-  state.mtx.lock();
+  std::lock_guard grow_lock(state.grow_mtx);
 
-  state.growing.store(true, std::memory_order_release);
   state.next_chunk_blocks = state.blocks_per_chunk;
-  const bool ok = grow_tier_chunk(state);
+  const bool ok = grow_tier_chunk(state, 0U, nullptr);
 
   if VUNLIKELY (!ok) {
     state.next_chunk_blocks = state.initial_chunk_blocks;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
-
-  state.growing.store(false, std::memory_order_release);
-
-  state.mtx.unlock();
 
   if VUNLIKELY (!ok) {
     CLOG_W("MemoryPool: prealloc failed for tier (max_size=%zu, blocks_per_chunk=%zu); tier reverts to lazy growth.",
@@ -561,8 +689,6 @@ struct MemoryPool::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
   MemoryTierState* dispatch_states[kMaxTierCount]{};
   size_t dispatch_count{0};
 
-  alignas(64) size_t tier_max_sizes[kMaxTierCount]{};
-
   MemoryTierState* tier_states[kMaxTierCount]{};
   size_t tier_count{0};
   std::vector<std::unique_ptr<MemoryTierState>> owned_states;
@@ -590,6 +716,11 @@ MemoryPool::MemoryPool(const Config& config) : impl_(std::make_unique<Impl>()) {
   }
 
   const std::vector<Tier>& source = use_caller ? config.tiers : fallback;
+  const size_t batch_size = config.batch_size == 0U ? kDefaultBatchSize : config.batch_size;
+
+  if VUNLIKELY (config.batch_size == 0U) {
+    CLOG_W("MemoryPool: batch_size is 0; fallback to %zu.", kDefaultBatchSize);
+  }
 
   impl_->owned_states.reserve(source.size());
 
@@ -612,6 +743,7 @@ MemoryPool::MemoryPool(const Config& config) : impl_(std::make_unique<Impl>()) {
     auto state = std::make_unique<MemoryTierState>();
     state->max_size = cfg.max_size;
     state->blocks_per_chunk = cfg.blocks_per_chunk;
+    state->batch_size = batch_size;
     state->chunks.reserve(kInitialChunksReserve);
     state->block_size = round_up(cfg.max_size, kBlockAlignment);
 
@@ -628,7 +760,6 @@ MemoryPool::MemoryPool(const Config& config) : impl_(std::make_unique<Impl>()) {
     state->initial_chunk_blocks = initial;
     state->next_chunk_blocks = initial;
 
-    impl_->tier_max_sizes[live] = cfg.max_size;
     impl_->tier_states[live] = state.get();
     impl_->dispatch_states[dispatch] = state.get();
     impl_->owned_states.emplace_back(std::move(state));
@@ -649,14 +780,15 @@ MemoryPool::MemoryPool(const Config& config) : impl_(std::make_unique<Impl>()) {
 
 MemoryPool::~MemoryPool() {
   for (auto& state : impl_->owned_states) {
-    // SpinLockGuard lock(state->mtx);
-
     for (const MemoryChunk& chunk : state->chunks) {
       ::operator delete(chunk.ptr, chunk.bytes, std::align_val_t{kBlockAlignment});
     }
 
     state->chunks.clear();
-    state->free_list_head = nullptr;
+
+    for (auto& shard : state->shards) {
+      shard.free_list_head = nullptr;
+    }
   }
 }
 
@@ -682,13 +814,14 @@ void* MemoryPool::allocate(size_t bytes, size_t alignment) noexcept {
   }
 
   MemoryTierState& state = *impl_->dispatch_states[idx];
-  void* block = tier_allocate(state);
+  size_t shard_index = 0U;
+  void* block = tier_allocate(state, shard_index);
 
   if VUNLIKELY (block == nullptr) {
     return nullptr;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  state.hit_count.fetch_add(1, std::memory_order_relaxed);
+  state.shards[shard_index].hit_count.fetch_add(1, std::memory_order_relaxed);
 
   return block;
 }
@@ -713,8 +846,8 @@ void MemoryPool::deallocate(void* p, size_t bytes, size_t alignment) noexcept {
   }
 
   MemoryTierState& state = *impl_->dispatch_states[idx];
-  tier_deallocate(state, p);
-  state.deallocate_count.fetch_add(1, std::memory_order_relaxed);
+  const size_t shard_index = tier_deallocate(state, p);
+  state.shards[shard_index].deallocate_count.fetch_add(1, std::memory_order_relaxed);
 }
 
 size_t MemoryPool::get_tier_count() const noexcept { return impl_->tier_count; }
@@ -732,8 +865,13 @@ std::vector<MemoryPool::TierStats> MemoryPool::get_stats() const noexcept {
 
   for (size_t i = 0; i < count; ++i) {
     const MemoryTierState& state = *impl_->tier_states[i];
-    const uint64_t hits = state.hit_count.load(std::memory_order_relaxed);
-    const uint64_t deallocs = state.deallocate_count.load(std::memory_order_relaxed);
+    uint64_t hits = 0U;
+    uint64_t deallocs = 0U;
+
+    for (const auto& shard : state.shards) {
+      hits += shard.hit_count.load(std::memory_order_relaxed);
+      deallocs += shard.deallocate_count.load(std::memory_order_relaxed);
+    }
 
     TierStats item;
     item.max_size = state.max_size;
@@ -767,8 +905,11 @@ void MemoryPool::reset_stats() noexcept {
 
   for (size_t i = 0; i < count; ++i) {
     MemoryTierState& state = *impl_->tier_states[i];
-    state.hit_count.store(0, std::memory_order_relaxed);
-    state.deallocate_count.store(0, std::memory_order_relaxed);
+
+    for (auto& shard : state.shards) {
+      shard.hit_count.store(0, std::memory_order_relaxed);
+      shard.deallocate_count.store(0, std::memory_order_relaxed);
+    }
   }
 
   impl_->oversized_alloc.count.store(0, std::memory_order_relaxed);
@@ -777,9 +918,11 @@ void MemoryPool::reset_stats() noexcept {
 }
 
 void MemoryPool::clear() noexcept {
-  constexpr size_t kStackSlots = 64U;
+  static constexpr size_t kStackSlots = 64U;
 
   for (auto& state : impl_->owned_states) {
+    std::unique_lock grow_lock(state->grow_mtx);
+
     size_t stack_free_counts[kStackSlots] = {};
     MemoryChunk stack_to_delete[kStackSlots];
 
@@ -802,7 +945,7 @@ void MemoryPool::clear() noexcept {
     size_t to_delete_count = 0U;
 
     {
-      SpinLockGuard lock(state->mtx);
+      MemoryTierShardLockGuard shard_locks(*state);
 
       const size_t chunk_count = state->chunks.size();
 
@@ -853,37 +996,41 @@ void MemoryPool::clear() noexcept {
         return SIZE_MAX;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       };
 
-      for (MemoryFreeNode* node = state->free_list_head; node != nullptr; node = node->next) {
-        const size_t idx = find_chunk_idx(reinterpret_cast<std::uintptr_t>(node));
+      for (const auto& shard : state->shards) {
+        for (MemoryFreeNode* node = shard.free_list_head; node != nullptr; node = node->next) {
+          const size_t idx = find_chunk_idx(reinterpret_cast<std::uintptr_t>(node));
 
-        if VLIKELY (idx != SIZE_MAX) {
-          ++free_counts[idx];
+          if VLIKELY (idx != SIZE_MAX) {
+            ++free_counts[idx];
+          }
         }
       }
 
-      MemoryFreeNode* new_head = nullptr;
-      MemoryFreeNode* current = state->free_list_head;
+      for (auto& shard : state->shards) {
+        MemoryFreeNode* new_head = nullptr;
+        MemoryFreeNode* current = shard.free_list_head;
 
-      while (current != nullptr) {
-        MemoryFreeNode* next = current->next;
-        const size_t idx = find_chunk_idx(reinterpret_cast<std::uintptr_t>(current));
+        while (current != nullptr) {
+          MemoryFreeNode* next = current->next;
+          const size_t idx = find_chunk_idx(reinterpret_cast<std::uintptr_t>(current));
 
-        bool keep = false;
+          bool keep = false;
 
-        if VLIKELY (idx != SIZE_MAX) {
-          const size_t total_blocks = state->chunks[idx].bytes / block_size;
-          keep = (free_counts[idx] != total_blocks);
+          if VLIKELY (idx != SIZE_MAX) {
+            const size_t total_blocks = state->chunks[idx].bytes / block_size;
+            keep = (free_counts[idx] != total_blocks);
+          }
+
+          if (keep) {
+            current->next = new_head;
+            new_head = current;
+          }
+
+          current = next;
         }
 
-        if (keep) {
-          current->next = new_head;
-          new_head = current;
-        }
-
-        current = next;
+        shard.free_list_head = new_head;
       }
-
-      state->free_list_head = new_head;
 
       size_t released = 0U;
       size_t write = 0U;
@@ -928,6 +1075,8 @@ void MemoryPool::clear() noexcept {
       }
     }
 
+    grow_lock.unlock();
+
     for (size_t i = 0; i < to_delete_count; ++i) {
       ::operator delete(to_delete[i].ptr, to_delete[i].bytes, std::align_val_t{kBlockAlignment});
     }
@@ -970,13 +1119,33 @@ MemoryPool::Config MemoryPool::get_default_config() {
 
   static bool prealloc_env = (Utils::get_env("VLINK_MEMORY_PREALLOC") == "1");
 
+  static size_t batch_size = []() noexcept {
+    const std::string env_value = Utils::get_env("VLINK_MEMORY_BATCH_SIZE", "16");
+    size_t parsed = kDefaultBatchSize;
+
+    const char* first = env_value.data();
+    const char* last = first + env_value.size();
+    auto [ptr, ec] = std::from_chars(first, last, parsed);
+
+    if VUNLIKELY (ec != std::errc() || ptr != last || parsed == 0U) {
+      // LCOV_EXCL_START GCOVR_EXCL_START
+      CLOG_W("MemoryPool: VLINK_MEMORY_BATCH_SIZE=\"%s\" is not a positive integer, fallback to %zu.",
+             env_value.c_str(), kDefaultBatchSize);
+      return kDefaultBatchSize;
+      // LCOV_EXCL_STOP GCOVR_EXCL_STOP
+    }
+
+    return parsed;
+  }();
+
   Config config = create_memory_config(level, prealloc_env);
+  config.batch_size = batch_size;
 
   return config;
 }
 
 MemoryPool& MemoryPool::global_instance(bool use_env_level) {
-#if MEMORY_POOL_NERVER_DELETE
+#if MEMORY_POOL_NEVER_DELETE
   alignas(MemoryPool) static char buf[sizeof(MemoryPool)];
 
   static auto* instance =

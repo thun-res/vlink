@@ -27,6 +27,9 @@
 #include <vlink/base/elapsed_timer.h>
 #include <vlink/base/logger.h>
 
+#include <cmath>
+#include <cstring>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -41,7 +44,7 @@ extern "C" {
 }
 #endif
 
-[[maybe_unused]] static constexpr size_t kMaxTaskSize = 100000U;
+[[maybe_unused]] static constexpr size_t kMaxTaskSize = 3U;
 
 #ifdef VLINK_ENABLE_VIEWER_FFMPEG
 static void free_frame_image_buffer(AVFrame* frame) {
@@ -58,6 +61,25 @@ static void free_frame_image_buffer(AVFrame* frame) {
   for (auto& linesize : frame->linesize) {
     linesize = 0;
   }
+}
+
+static bool scale_size(int src, double scale, int& dst) {
+  if VUNLIKELY (src <= 0 || scale <= 0.0 || !std::isfinite(scale)) {
+    return false;
+  }
+
+  const double value = static_cast<double>(src) * scale;
+
+  if VUNLIKELY (value > static_cast<double>(std::numeric_limits<int>::max())) {
+    return false;
+  }
+
+  dst = static_cast<int>(value);
+  if (dst < 1) {
+    dst = 1;
+  }
+
+  return true;
 }
 #endif
 
@@ -103,8 +125,10 @@ FFmpegDecoder::FFmpegDecoder(const Config& config) : impl_(std::make_unique<Impl
     VLOG_W("FfmpegDecoder: Output type is unknown.");
   }
 
-  impl_->out_width = impl_->config.width * impl_->config.scale;
-  impl_->out_height = impl_->config.height * impl_->config.scale;
+  if (impl_->config.width > 0 && impl_->config.height > 0) {
+    impl_->out_width = impl_->config.width * impl_->config.scale;
+    impl_->out_height = impl_->config.height * impl_->config.scale;
+  }
 
   set_name("FFmpegDecoder");
 
@@ -134,17 +158,31 @@ void FFmpegDecoder::register_error_handler(ErrorCallback&& error_callback) {
 }
 
 void FFmpegDecoder::post_data(int channel, int seq, const vlink::Bytes& raw_data) {
-  if VUNLIKELY (raw_data.empty() || !impl_->image_callback) {
+  if VUNLIKELY (raw_data.empty() || !raw_data.data() || !impl_->image_callback) {
     return;
   }
 
 #ifdef VLINK_ENABLE_VIEWER_FFMPEG
 
-  if VUNLIKELY (!impl_->codec_ctx) {
+  if VUNLIKELY (raw_data.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    if (impl_->error_callback) {
+      impl_->error_callback(channel, seq);
+    }
     return;
   }
 
-  post_task([this, channel, seq, raw_data]() {
+  std::vector<uint8_t> input(raw_data.size() + AV_INPUT_BUFFER_PADDING_SIZE, 0U);
+  std::memcpy(input.data(), raw_data.data(), raw_data.size());
+  const size_t input_size = raw_data.size();
+
+  post_task([this, channel, seq, input = std::move(input), input_size]() mutable {
+    if VUNLIKELY (!impl_->codec_ctx || !impl_->packet || !impl_->in_frame || !impl_->out_frame || !impl_->hw_frame) {
+      if (impl_->error_callback) {
+        impl_->error_callback(channel, seq);
+      }
+      return;
+    }
+
     impl_->elapsed_timer.restart();
 
     size_t pos = 0;
@@ -152,11 +190,11 @@ void FFmpegDecoder::post_data(int channel, int seq, const vlink::Bytes& raw_data
     int freq = 0;
     int ret = 0;
 
-    while (pos < raw_data.size()) {
+    while (pos < input_size) {
+      const int chunk_size = static_cast<int>(input_size - pos);
       if (impl_->config.cache_frame && impl_->parser_ctx) {
         ret = av_parser_parse2(impl_->parser_ctx, impl_->codec_ctx, &impl_->packet->data, &impl_->packet->size,
-                               raw_data.data() + pos, raw_data.size() - pos, AV_NOPTS_VALUE, AV_NOPTS_VALUE,
-                               AV_NOPTS_VALUE);
+                               input.data() + pos, chunk_size, AV_NOPTS_VALUE, AV_NOPTS_VALUE, AV_NOPTS_VALUE);
 
         if VUNLIKELY (ret < 0) {
           if (impl_->error_callback) {
@@ -181,8 +219,15 @@ void FFmpegDecoder::post_data(int channel, int seq, const vlink::Bytes& raw_data
         }
 
         impl_->packet = av_packet_alloc();
-        impl_->packet->data = const_cast<uint8_t*>(raw_data.data() + pos);
-        impl_->packet->size = raw_data.size() - pos;
+        if VUNLIKELY (!impl_->packet) {
+          if (impl_->error_callback) {
+            impl_->error_callback(channel, seq);
+          }
+          break;
+        }
+
+        impl_->packet->data = input.data() + pos;
+        impl_->packet->size = chunk_size;
 
         pos += impl_->packet->size;
       }
@@ -220,8 +265,18 @@ void FFmpegDecoder::post_data(int channel, int seq, const vlink::Bytes& raw_data
             !impl_->sws_ctx || !impl_->out_frame->data[0] || impl_->buffer_size == 0) {
           const int src_width = impl_->in_frame->width;
           const int src_height = impl_->in_frame->height;
-          const int out_width = src_width * impl_->config.scale;
-          const int out_height = src_height * impl_->config.scale;
+
+          int out_width = 0;
+          int out_height = 0;
+
+          if VUNLIKELY (!scale_size(src_width, impl_->config.scale, out_width) ||
+                        !scale_size(src_height, impl_->config.scale, out_height)) {
+            if (impl_->error_callback) {
+              impl_->error_callback(channel, seq);
+            }
+
+            continue;
+          }
 
           const int buffer_size = av_image_get_buffer_size(impl_->out_format, out_width, out_height, 1);
           if VUNLIKELY (buffer_size <= 0) {
@@ -305,13 +360,13 @@ void FFmpegDecoder::post_data(int channel, int seq, const vlink::Bytes& raw_data
         impl_->cost_total += cost;
         ++impl_->cost_cnt;
 
-        impl_->image_callback(channel, seq, impl_->out_width, impl_->out_height,
+        impl_->image_callback(channel, seq, impl_->out_width, impl_->out_height, impl_->out_frame->linesize[0],
                               vlink::Bytes::shallow_copy(impl_->out_frame->data[0], impl_->buffer_size));
       }
     }
   });
 #else
-  impl_->image_callback(channel, seq, 0, 0, vlink::Bytes());
+  impl_->image_callback(channel, seq, 0, 0, 0, vlink::Bytes());
 #endif
 }
 
@@ -360,6 +415,22 @@ void FFmpegDecoder::on_begin() {
       impl_->in_format = AV_PIX_FMT_NONE;
       impl_->codec = avcodec_find_decoder(AV_CODEC_ID_MPEG4);
       break;
+    case InType::kAV1:
+      impl_->in_format = AV_PIX_FMT_NONE;
+      impl_->codec = avcodec_find_decoder(AV_CODEC_ID_AV1);
+      break;
+    case InType::kH266:
+      impl_->in_format = AV_PIX_FMT_NONE;
+      impl_->codec = avcodec_find_decoder(AV_CODEC_ID_VVC);
+      break;
+    case InType::kPNG:
+      impl_->in_format = AV_PIX_FMT_NONE;
+      impl_->codec = avcodec_find_decoder(AV_CODEC_ID_PNG);
+      break;
+    case InType::kWEBP:
+      impl_->in_format = AV_PIX_FMT_NONE;
+      impl_->codec = avcodec_find_decoder(AV_CODEC_ID_WEBP);
+      break;
     case InType::kYUV420:
       impl_->in_format = AV_PIX_FMT_YUV420P;
       impl_->codec = avcodec_find_decoder(AV_CODEC_ID_RAWVIDEO);
@@ -374,6 +445,10 @@ void FFmpegDecoder::on_begin() {
       break;
     case InType::kNV12:
       impl_->in_format = AV_PIX_FMT_NV12;
+      impl_->codec = avcodec_find_decoder(AV_CODEC_ID_RAWVIDEO);
+      break;
+    case InType::kNV21:
+      impl_->in_format = AV_PIX_FMT_NV21;
       impl_->codec = avcodec_find_decoder(AV_CODEC_ID_RAWVIDEO);
       break;
     case InType::kYUYV:
@@ -413,14 +488,17 @@ void FFmpegDecoder::on_begin() {
   }
 
   if (impl_->codec->id == AV_CODEC_ID_RAWVIDEO) {
-    if (impl_->config.width == 0 || impl_->config.height == 0) {
+    if VUNLIKELY (impl_->config.width <= 0 || impl_->config.height <= 0) {
       VLOG_W("FfmpegDecoder: Raw video must set width and height.");
       return;
     }
   } else {
     impl_->parser_ctx = av_parser_init(impl_->codec->id);
 
-    if VUNLIKELY (!impl_->parser_ctx) {
+    const bool parser_required =
+        impl_->config.cache_frame && impl_->config.in_type != InType::kPNG && impl_->config.in_type != InType::kWEBP;
+
+    if VUNLIKELY (!impl_->parser_ctx && parser_required) {
       VLOG_W("FfmpegDecoder: av_parser_init error.");
       return;
     }
@@ -478,6 +556,11 @@ void FFmpegDecoder::on_begin() {
   impl_->hw_frame = av_frame_alloc();
 
   impl_->packet = av_packet_alloc();
+
+  if VUNLIKELY (!impl_->in_frame || !impl_->out_frame || !impl_->hw_frame || !impl_->packet) {
+    VLOG_W("FfmpegDecoder: av_frame_alloc or av_packet_alloc error.");
+    return;
+  }
 #endif
 
   vlink::MessageLoop::on_begin();

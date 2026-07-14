@@ -64,15 +64,53 @@
 | `demo_bag_filter_urls` | `Config.filter_urls` 只回放指定主题子集 |
 | `demo_bag_inspect_only` | `get_info()` 元数据只读检视（不回放） |
 
-`BagWriter` / `BagReader` 通用生命周期：
+`BagReader` 与默认异步 `BagWriter` 生命周期：
 
 ```text
 1. cls.create(path, ...)            # 工厂；失败返回 None
 2. 注册回调（register_*_callback）
 3. async_run()                      # 启动后台线程
 4. push(...) / play(...)            # 业务调用
-5. quit() + wait_for_quit(timeout)  # 干净关闭
+5. BagWriter: wait_for_idle(timeout_ms) # 等待已接受写任务完成
+6. quit() + wait_for_quit(timeout_ms)   # 停止后台循环
+7. BagWriter: close() + 检查 fail()     # 完成 metadata/footer/manifest
 ```
+
+默认未绑定 bag 插件的异步模式下，`BagWriter.push()` 返回非负时间戳表示队列已接受该帧；返回负值表示因队列或内存限制被拒绝，已接受的写入不会被新帧顶替。绑定插件时返回值遵循插件转发语义。
+
+`BagWriter.Config.sync_mode=True` 时无需 `async_run()`、`wait_for_idle()` 或 `quit()`；创建后直接 `push()`，最后 `close()` 并检查 `fail()`。
+
+`TriggerRecorder` 的 bag 插件由宿主显式加载并绑定，插件库名不再放进
+`TriggerRecorder.Config`：
+
+```python
+plugin_host = vlink.Plugin()
+bag_plugin = plugin_host.load_bag_plugin("my_bag_plugin", dir_name="plugins")
+if bag_plugin is None:
+    raise RuntimeError("failed to load bag plugin")
+
+config = vlink.TriggerRecorder.Config()
+recorder = vlink.TriggerRecorder(config)
+recorder.bind_bag_interface(bag_plugin)
+```
+
+`load_bag_plugin()` 按 `BagPluginInterface` ABI 2.0 加载；返回对象可直接交给
+`bind_bag_interface()`，`clear_bag_interface()` 用于恢复默认的采集时间顺序。
+
+触发生命周期插件（`TriggerPluginInterface`）同样由宿主加载并绑定，`load_trigger_plugin()`
+会在加载后调用一次插件的 `init(config)`：
+
+```python
+trigger_plugin = plugin_host.load_trigger_plugin("my_trigger_plugin", config="{}")
+if trigger_plugin is None:
+    raise RuntimeError("failed to load or init trigger plugin")
+
+recorder.bind_trigger_interface(trigger_plugin)
+```
+
+`load_trigger_plugin()` 按 `TriggerPluginInterface` ABI 2.0 加载并调用 `init(config)`，加载或
+`init()` 任一失败都返回 `None`；`clear_trigger_interface()` 用于解绑。两类插件都必须在
+`async_run()` 之前或 recorder 停止后绑定。
 
 ---
 

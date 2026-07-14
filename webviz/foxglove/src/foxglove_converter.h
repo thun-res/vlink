@@ -167,6 +167,8 @@ class FoxgloveConverter final {
 
   FoxgloveMessage convert_proto_mapping(const FoxgloveMapping& mapping, const std::string& ser, const Bytes& raw);
 
+  FoxgloveMessage convert_proto_mapping(const FoxgloveMapping& mapping, const google::protobuf::Message& message);
+
   static FoxgloveMessage convert_location_fix(const FoxgloveMapping& mapping, const google::protobuf::Message& msg);
 
   static FoxgloveMessage convert_pose_in_frame(const FoxgloveMapping& mapping, const google::protobuf::Message& msg);

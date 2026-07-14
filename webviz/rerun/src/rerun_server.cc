@@ -21,7 +21,7 @@
  * limitations under the License.
  */
 
-#include "rerun_server.h"
+#include "./rerun_server.h"
 
 //
 #include <vlink/version.h>
@@ -36,8 +36,8 @@
 #include <vector>
 
 //
-#include "webviz_app_utils.h"
-#include "webviz_bridge_utils.h"
+#include "./webviz_app_utils.h"
+#include "./webviz_bridge_utils.h"
 
 namespace vlink {
 namespace webviz {

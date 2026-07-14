@@ -36,7 +36,7 @@ option(ENABLE_VIEWER "Enable viewer" OFF)
 
 | 增强能力 | CMake 选项 | 默认 | 关闭后的影响 |
 | --- | --- | :---: | --- |
-| 视频解码（H.264 / H.265 / YUV 等） | `ENABLE_VIEWER_FFMPEG` | `OFF` | 相机窗口仅支持 JPEG；需视频/裸像素格式时显式 `-DENABLE_VIEWER_FFMPEG=ON` |
+| 视频解码（H.264 / H.265 / YUV 等） | `ENABLE_VIEWER_FFMPEG` | `ON` | 相机窗口仅保留 Qt 可直接解码的静态图像；不需要视频解码/FFmpeg 依赖时可显式 `-DENABLE_VIEWER_FFMPEG=OFF` |
 | 3D 场景渲染（点云 / 目标检测等） | `ENABLE_VIEWER_OSG` | `ON` | 3D 窗口不可用 |
 | 数学表达式求值 | `ENABLE_EXPRTK` | `ON` | 字段映射与曲线表达式停用 |
 
@@ -92,7 +92,7 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 
 ### 🎥 11.1.5 相机与 3D 可视化
 
-**相机帧预览（S）**　按 `S` 打开相机窗口，预览图像话题。经 FFmpeg 解码，支持的编码包括 JPEG、H.264、H.265、MPEG4，以及 YUV420/422/444、NV12、YUYV、YVYU、UYVY、BGR888、RGB888 等像素格式。支持多通道并排显示、暂停、硬件解码，并可联动 3D 投影视图将图像投射至点云。关闭 `ENABLE_VIEWER_FFMPEG` 时仅支持 JPEG。
+**相机帧预览（S）**　按 `S` 打开相机窗口，预览图像话题。零拷贝 `CameraFrame` 会按 `format()` 自动选择直接渲染或解码路径；Protobuf、FlatBuffers 与原始字节入口的格式下拉框默认使用 `Auto`，可识别内嵌的序列化 `CameraFrame` 或 Qt 支持的静态图像。裸 YUV / 裸 RGB 等无头原始像素流需手动指定格式和尺寸；H.264、H.265、H.266、AV1、MPEG4 等编码视频流需手动指定格式，尺寸由解码器从码流解析。JPEG、PNG、WebP 等静态图像优先走 Qt 解码，Qt 失败且启用 FFmpeg 时会尝试解码 fallback；FFmpeg 还支持 MJPEG、YUV420/422/444、NV12、NV21、YUYV、YVYU、UYVY、BGR888、RGB888 等格式。通用 OpenCV/ROS 数值格式按首通道灰度预览；彩色图像应使用 `rgb8`、`bgr8`、`rgba8`、`bgra8` 等明确通道顺序的编码。支持多通道并排显示、暂停、硬件解码，并可联动 3D 投影视图将图像投射至点云。关闭 `ENABLE_VIEWER_FFMPEG` 时，零拷贝 `CameraFrame` 的直接渲染格式与 Qt 可解码的静态图像仍可显示，手动裸流和编码视频解码不可用。
 
 ![相机帧结构](images/camera-frame-structure.png)
 
@@ -118,6 +118,8 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 ![点云结构](images/point-cloud-structure.png)
 
 数据来源有两类：VLink 零拷贝类型（`CameraFrame`、`PointCloud`、`ObjectArray` 等）可直接渲染；Protobuf / FlatBuffers 消息需在界面中配置字段映射后渲染。3D 渲染需开启 `ENABLE_VIEWER_OSG`。零拷贝数据类型详见 [零拷贝](06-zerocopy.md)。
+
+**vmsgs 感知预设**　Viewer 随包提供 `perception/vmsgs_config.json`，覆盖常用 vmsgs 目标、雷达、车道边界、道路标线、轨迹、停车位、栅格与车辆 HUD。可通过 Perception 窗口中的配置选择按钮手动加载；成功选择后会保存该路径供后续使用。VDB 不一定内嵌动态 schema，因此回放 Protobuf vmsgs 前仍需在 Viewer 中选择 vmsgs 的 `schemas` 目录（或沿用已保存的 Proto 目录）；FlatBuffers topic 同理需要对应 FBS 目录。配置预设只定义渲染映射，不替代 schema 文件。
 
 ### ▶️ 11.1.6 vlink-player 回放
 
@@ -400,7 +402,7 @@ vlink-foxglove --vlink_msgs ./my_gps.json
 | `ser` | 是 | VLink 序列化类型名（Protobuf 全限定名或 FlatBuffers 类型名） |
 | `schema` | 是* | 目标 Foxglove Schema 名（Foxglove 后端使用） |
 | `archetype` | 是* | 目标 Rerun Archetype 名（Rerun 后端使用） |
-| `encoding` | 否 | 源消息编码，决定反序列化路径：`protobuf` 或 `flatbuffers`；缺省时 Foxglove 默认 `flatbuffer`、Rerun 默认 `protobuf`，故建议显式写明 |
+| `encoding` | 否 | 源消息编码，决定反序列化路径：`protobuf`、`flatbuffers` 或 `zerocopy`；缺省时 Foxglove 默认 `flatbuffer`、Rerun 默认 `protobuf`，故建议显式写明 |
 | `timestamp_field` | 否 | 源消息中的时间戳字段路径（如 `header.timestamp_us`），用于提取消息级时间戳 |
 | `timestamp_unit` | 否 | 时间戳单位：`s` / `ms` / `us` / `ns`，默认 `us` |
 | `converter` | 否 | 内置转换器名，零拷贝类型用，见 §11.2.8 |
@@ -496,7 +498,7 @@ VLink 零拷贝类型无需编写 `field_mappings`，转换层自动选择内置
 
 | VLink 零拷贝类型 | Foxglove 目标 | Rerun 目标 | 可选 `converter` |
 | --- | --- | --- | --- |
-| `CameraFrame` | `foxglove.CompressedImage`（H.264/H.265 为 `foxglove.CompressedVideo`） | `EncodedImage` / `Image` / `AssetVideo` | `camera_frame` |
+| `CameraFrame` | `foxglove.RawImage` / `foxglove.CompressedImage` / `foxglove.CompressedVideo` | `EncodedImage` / `Image` / `AssetVideo` | `camera_frame` |
 | `PointCloud` | `foxglove.PointCloud` | `Points3D` | `point_cloud` |
 | `OccupancyGrid` | `foxglove.Grid` | `Image`（灰度） | `occupancy_grid`† |
 | `ObjectArray` | `foxglove.SceneUpdate` | `Boxes3D` | `object_array`† |
@@ -505,6 +507,10 @@ VLink 零拷贝类型无需编写 `field_mappings`，转换层自动选择内置
 | `RawData` | `foxglove.Log` | `Asset3D` | `raw_data`† |
 
 > 表中类型只要 `ser` 命中即自动转换，无需写 `converter`。`converter` 列用于将自定义消息显式接到内置路径：Foxglove 仅接受 `camera_frame` / `point_cloud` 作为显式 `converter`；Rerun 接受全部 7 个（标 † 者仅 Rerun 支持显式指定）。
+
+若需要对零拷贝字段进行单位换算、坐标变换或派生计算，可显式配置 `field_mappings` 并将 `encoding` 设为 `zerocopy`。此时转换器会优先执行映射和 ExprTk 表达式；未配置映射时仍走上表中的内置快速路径。`ObjectArray.data`、`PointCloud.data`、`OccupancyGrid.data`、`Tensor.shape` / `strides` / `data` 均支持数组下标访问。
+
+通用字段映射使用 `vlink::zerocopy::MessageParser` 完成类型识别、边界检查和标量读取；性能敏感的 CameraFrame / PointCloud 专用快速路径直接调用对应容器 codec，不经过通用字段映射。字段映射中的 `int64` / `uint64` 值在进入表达式前保持整数类型，ExprTk 计算需要转成 `double` 且整数超出精确范围时会记录精度警告。
 
 零拷贝类型的定义见 [零拷贝](06-zerocopy.md)。
 

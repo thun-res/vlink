@@ -82,7 +82,13 @@ void Shm2PublisherImpl::detect_subscribers(ConnectCallback&& callback) {
 bool Shm2PublisherImpl::wait_for_subscribers(std::chrono::milliseconds timeout) {
   object_->enable_detect_timer();
 
-  return PublisherImpl::wait_for_subscribers(timeout);
+  bool ret = PublisherImpl::wait_for_subscribers(timeout);
+
+  if VLIKELY (ret) {
+    object_->update_connections();
+  }
+
+  return ret;
 }
 
 bool Shm2PublisherImpl::write(const Bytes& msg_data) {

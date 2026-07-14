@@ -1195,8 +1195,6 @@ bool ShmPublisher::publish(uint64_t channel, const Bytes& bytes) {
   if VUNLIKELY (wait_ > 0) {
     uint64_t sem_count = sem_->get_count();
 
-    VLOG_I("ShmFactory: Wait sem_count: ", sem_count, ".");
-
     if (sem_count > 0) {
       sem_->acquire(sem_count, wait_);
     }
@@ -1225,7 +1223,6 @@ bool ShmPublisher::publish(uint64_t channel, const Bytes& bytes) {
 
   if VUNLIKELY (wait_ > 0) {
     uint64_t sub_count = ShmFactory::get().get_subscriber_count(pub_->getServiceDescription());
-    VLOG_I("ShmFactory: Wait sub_count: ", sub_count, ".");
     sem_->acquire(sub_count, wait_);
   }
 

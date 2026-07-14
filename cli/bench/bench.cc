@@ -26,9 +26,9 @@
 #include <vlink/base/elapsed_timer.h>
 #include <vlink/base/format.h>
 #include <vlink/base/process.h>
+#include <vlink/base/terminal_stream.h>
 #include <vlink/base/utils.h>
 #include <vlink/extension/qos_profile.h>
-#include <vlink/extension/terminal_stream.h>
 #include <vlink/serializer.h>
 #include <vlink/version.h>
 #include <vlink/vlink.h>
@@ -1026,7 +1026,13 @@ std::string get_transport_from_url(const std::string& url) {
   return url.substr(0, pos);
 }
 
-const std::string& make_runtime_url(const Bench::Scenario& scenario) { return scenario.url; }
+std::string make_runtime_url(const Bench::Scenario& scenario, size_t wire_size) {
+  if (get_transport_from_url(scenario.url) != "shm2" || wire_size == 0 || scenario.url.find('#') != std::string::npos) {
+    return scenario.url;
+  }
+
+  return scenario.url + "#" + std::to_string(wire_size);
+}
 
 bool parse_property_entry(const std::string& entry, std::string& key, std::string& value) {
   auto pos = entry.find('=');
@@ -1321,6 +1327,19 @@ struct BenchCodec<zerocopy::RawData> final {
     return Serializer::get_serialized_size(message);
   }
 };
+
+size_t scenario_wire_size(const Bench::Scenario& scenario) {
+  switch (scenario.payload) {
+    case Bench::kBytesPayload:
+      return BenchCodec<Bytes>::wire_size(scenario.payload_size);
+    case Bench::kStringPayload:
+      return BenchCodec<std::string>::wire_size(scenario.payload_size);
+    case Bench::kRawDataPayload:
+      return BenchCodec<zerocopy::RawData>::wire_size(scenario.payload_size);
+    default:
+      return 0;
+  }
+}
 
 struct Collector final {
   uint64_t start_ns{0};
@@ -1752,13 +1771,13 @@ bool run_serialization_case(const Bench::Scenario& scenario, Bench::ScenarioResu
 
 template <typename MsgT>
 bool run_local_pubsub_case(const Bench::Scenario& scenario, Bench::ScenarioResult& result, std::string& error) {
-  const auto runtime_url = make_runtime_url(scenario);
   Collector collector;
   collector.start_ns = steady_time_ns();
   collector.measure_begin_ns.store(std::numeric_limits<uint64_t>::max(), std::memory_order_relaxed);
   collector.measure_end_ns.store(std::numeric_limits<uint64_t>::max(), std::memory_order_relaxed);
   collector.wire_size = BenchCodec<MsgT>::wire_size(scenario.payload_size);
   collector.enable_latency = scenario.suite == Bench::kLatencySuite;
+  const auto runtime_url = make_runtime_url(scenario, collector.wire_size);
 
   std::vector<std::unique_ptr<MessageLoop>> subscriber_loops;
 
@@ -2110,6 +2129,10 @@ bool run_pub_worker_impl(const Bench::WorkerOptions& options, Bench::ScenarioRes
   result.discovery_ms =
       static_cast<double>(ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kNano) - discovery_begin_ns) / 1000000.0;
 
+  if (options.wait_start) {
+    std::cout << "READY" << std::endl;
+  }
+
   uint64_t shared_start_ns = 0;
 
   if (options.wait_start && !wait_for_worker_start(shared_start_ns, error)) {
@@ -2262,8 +2285,6 @@ bool run_sub_worker_impl(const Bench::WorkerOptions& options, Bench::ScenarioRes
 
   SampleLostInfo baseline_lost{};
   std::cout << "READY" << std::endl;
-  std::cout.flush();
-  std::fflush(stdout);
 
   uint64_t shared_start_ns = 0;
 
@@ -2568,7 +2589,8 @@ void graceful_shutdown_process(Process& process) {
   }
 }
 
-bool wait_process_finished(Process& process, uint64_t deadline_ns, std::string& error) {
+bool wait_process_finished(Process& process, uint64_t deadline_ns, const std::string& worker_label, int wait_budget_ms,
+                           std::string& error) {
   while (ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kNano) < deadline_ns) {
     if VUNLIKELY (check_stop_requested(error)) {
       graceful_shutdown_process(process);
@@ -2591,10 +2613,29 @@ bool wait_process_finished(Process& process, uint64_t deadline_ns, std::string& 
     return verify_process_exit(process, error);
   }
 
+  const auto timeout_state = process.get_state();
+  const auto timeout_error = process.get_error();
+  const int64_t timeout_pid = process.get_process_id();
+
   graceful_shutdown_process(process);
   std::string stderr_text;
   process.read_all_error(stderr_text);
-  error = stderr_text.empty() ? "process wait_for_finished timeout" : stderr_text;
+
+  std::ostringstream stream;
+
+  if (!worker_label.empty()) {
+    stream << worker_label << ' ';
+  }
+
+  stream << "process wait_for_finished timeout after " << wait_budget_ms << " ms"
+         << " (pid " << timeout_pid << ", state " << process_state_to_string(timeout_state) << ", last error "
+         << process_error_to_string(timeout_error) << ")";
+
+  if (!stderr_text.empty()) {
+    stream << ": " << stderr_text;
+  }
+
+  error = stream.str();
   return false;
 }
 
@@ -2644,8 +2685,8 @@ int split_publisher_workload(int total, int publishers, int publisher_index) noe
   return base + (publisher_index < remain ? 1 : 0);
 }
 
-void append_worker_args(std::vector<std::string>& args, const Bench::Scenario& scenario, bool is_pub,
-                        const std::string& result_path, int publisher_index) {
+void append_worker_args(std::vector<std::string>& args, const Bench::Scenario& scenario, const std::string& runtime_url,
+                        bool is_pub, const std::string& result_path, int publisher_index) {
   int worker_rate_hz = scenario.rate_hz;
   int worker_burst_messages = std::max(scenario.burst_messages, 1);
 
@@ -2661,7 +2702,7 @@ void append_worker_args(std::vector<std::string>& args, const Bench::Scenario& s
   }
 
   args.emplace_back(is_pub ? "pub" : "sub");
-  args.emplace_back(scenario.url);
+  args.emplace_back(runtime_url);
   args.emplace_back("-k");
   args.emplace_back(Bench::payload_to_string(scenario.payload));
 
@@ -2745,7 +2786,7 @@ bool run_process_pubsub_case(const Bench::RunOptions& options, const Bench::Scen
     return false;
   }
 
-  const auto runtime_url = make_runtime_url(scenario);
+  const auto runtime_url = make_runtime_url(scenario, scenario_wire_size(scenario));
 
   if (get_transport_from_url(runtime_url) == "intra") {
     error = "intra transport only supports local mode";
@@ -2814,7 +2855,7 @@ bool run_process_pubsub_case(const Bench::RunOptions& options, const Bench::Scen
 
     std::vector<std::string> args;
     sub_result_paths.emplace_back((temp_dir / ("sub-" + std::to_string(index) + ".json")).string());
-    append_worker_args(args, scenario, false, sub_result_paths.back(), index);
+    append_worker_args(args, scenario, runtime_url, false, sub_result_paths.back(), index);
 
     std::unique_ptr<Process> process;
 
@@ -2834,6 +2875,11 @@ bool run_process_pubsub_case(const Bench::RunOptions& options, const Bench::Scen
                                        static_cast<uint64_t>(kProcessReadyTimeoutMs) * 1000000ULL;
 
     if VUNLIKELY (!wait_process_ready(*process, ready_deadline_ns, error)) {
+      std::string worker_error = "sub worker ";
+      worker_error += std::to_string(index);
+      worker_error.push_back(' ');
+      worker_error += error;
+      error = std::move(worker_error);
       append_worker_result_error(sub_result_paths[index], error);
       stop_processes(sub_processes);
       cleanup();
@@ -2851,7 +2897,7 @@ bool run_process_pubsub_case(const Bench::RunOptions& options, const Bench::Scen
 
     std::vector<std::string> args;
     pub_result_paths.emplace_back((temp_dir / ("pub-" + std::to_string(index) + ".json")).string());
-    append_worker_args(args, scenario, true, pub_result_paths.back(), index);
+    append_worker_args(args, scenario, runtime_url, true, pub_result_paths.back(), index);
 
     std::unique_ptr<Process> process;
 
@@ -2864,6 +2910,25 @@ bool run_process_pubsub_case(const Bench::RunOptions& options, const Bench::Scen
     }
 
     pub_processes.emplace_back(std::move(process));
+  }
+
+  for (size_t index = 0; index < pub_processes.size(); ++index) {
+    auto& process = pub_processes[index];
+    const uint64_t ready_deadline_ns = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kNano) +
+                                       static_cast<uint64_t>(kProcessReadyTimeoutMs) * 1000000ULL;
+
+    if VUNLIKELY (!wait_process_ready(*process, ready_deadline_ns, error)) {
+      std::string worker_error = "pub worker ";
+      worker_error += std::to_string(index);
+      worker_error.push_back(' ');
+      worker_error += error;
+      error = std::move(worker_error);
+      append_worker_result_error(pub_result_paths[index], error);
+      stop_processes(pub_processes);
+      stop_processes(sub_processes);
+      cleanup();
+      return false;
+    }
   }
 
   const uint64_t shared_start_ns = steady_time_ns() + 300000000ULL;
@@ -2895,15 +2960,16 @@ bool run_process_pubsub_case(const Bench::RunOptions& options, const Bench::Scen
     }
   }
 
+  const int finish_wait_budget_ms =
+      scenario.warmup_ms + scenario.duration_ms + scenario.drain_ms + kProcessMeasureBufferMs;
   const uint64_t finish_deadline_ns =
-      ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kNano) +
-      static_cast<uint64_t>(scenario.warmup_ms + scenario.duration_ms + scenario.drain_ms + kProcessMeasureBufferMs) *
-          1000000ULL;
+      ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kNano) + static_cast<uint64_t>(finish_wait_budget_ms) * 1000000ULL;
 
   for (size_t index = 0; index < pub_processes.size(); ++index) {
     auto& process = pub_processes[index];
 
-    if (!wait_process_finished(*process, finish_deadline_ns, error)) {
+    if (!wait_process_finished(*process, finish_deadline_ns, "pub worker " + std::to_string(index),
+                               finish_wait_budget_ms, error)) {
       append_worker_result_error(pub_result_paths[index], error);
       stop_processes(pub_processes);
       stop_processes(sub_processes);
@@ -2915,7 +2981,8 @@ bool run_process_pubsub_case(const Bench::RunOptions& options, const Bench::Scen
   for (size_t index = 0; index < sub_processes.size(); ++index) {
     auto& process = sub_processes[index];
 
-    if (!wait_process_finished(*process, finish_deadline_ns, error)) {
+    if (!wait_process_finished(*process, finish_deadline_ns, "sub worker " + std::to_string(index),
+                               finish_wait_budget_ms, error)) {
       append_worker_result_error(sub_result_paths[index], error);
       stop_processes(sub_processes);
       cleanup();

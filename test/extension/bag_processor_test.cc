@@ -211,6 +211,30 @@ TEST_SUITE("extension-BagProcessor") {
     CHECK_EQ(received[2].timestamp, 102010);
   }
 
+  TEST_CASE("flush starts the next segment on a fresh timestamp axis") {
+    std::vector<int64_t> received;
+
+    BagProcessor::Config cfg;
+    cfg.min_cache_time = 60'000;
+    BagProcessor processor(cfg);
+
+    processor.register_output_callback([&](const Frame& frame) { received.push_back(frame.timestamp); });
+
+    processor.push(1000, make_frame(5000));
+    processor.push(2000, make_frame(5010));
+    processor.flush();
+
+    processor.push(100'000, make_frame(100));
+    processor.push(100'001, make_frame(101));
+    processor.flush();
+
+    REQUIRE_EQ(received.size(), 4u);
+    CHECK_EQ(received[0], 5000);
+    CHECK_EQ(received[1], 6000);
+    CHECK_EQ(received[2], 100);
+    CHECK_EQ(received[3], 101);
+  }
+
   TEST_CASE("flush is a no-op on an empty cache and after a prior drain") {
     std::vector<int64_t> received;
     std::mutex mtx;

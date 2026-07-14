@@ -52,6 +52,7 @@
 #include <vlink/base/memory_pool.h>
 #include <vlink/base/memory_resource.h>
 #include <vlink/base/multi_loop.h>
+#include <vlink/base/plugin.h>
 #include <vlink/base/process.h>
 #include <vlink/base/quantize.h>
 #include <vlink/base/spin_lock.h>
@@ -59,16 +60,20 @@
 #include <vlink/base/timer.h>
 #include <vlink/base/uuid.h>
 #include <vlink/base/wheel_timer.h>
+#include <vlink/extension/bag_plugin_interface.h>
 #include <vlink/extension/bag_reader.h>
 #include <vlink/extension/bag_writer.h>
 #include <vlink/extension/discovery_viewer.h>
 #include <vlink/extension/qos_profile.h>
 #include <vlink/extension/status_detail.h>
+#include <vlink/extension/trigger_plugin_interface.h>
+#include <vlink/extension/trigger_recorder.h>
 #include <vlink/extension/url_remap.h>
 #include <vlink/vlink.h>
 #include <vlink/zerocopy/audio_frame.h>
 #include <vlink/zerocopy/camera_frame.h>
 #include <vlink/zerocopy/header.h>
+#include <vlink/zerocopy/message_parser.h>
 #include <vlink/zerocopy/object_array.h>
 #include <vlink/zerocopy/occupancy_grid.h>
 #include <vlink/zerocopy/point_cloud.h>
@@ -256,6 +261,59 @@ inline auto make_connect_callback(nb::callable py_cb, const char* context) {
   };
 }
 
+struct PythonZerocopyMessageParser final {
+  using Parser = vlink::zerocopy::MessageParser;
+
+  bool parse(std::string_view serialized_type, nb::object input) {
+    return this->parse_input(input, [&serialized_type](Parser& parser, const vlink::Bytes& bytes) {
+      return parser.parse(serialized_type, bytes);
+    });
+  }
+
+  bool parse_type(Parser::Type type, nb::object input) {
+    return this->parse_input(input,
+                             [type](Parser& parser, const vlink::Bytes& bytes) { return parser.parse(type, bytes); });
+  }
+
+  void clear() {
+    parser.clear();
+    input_owner = nb::object();
+    input_data = nullptr;
+    input_size = 0;
+  }
+
+  [[nodiscard]] bool backing_valid() const {
+    if (!parser.valid() || !input_owner.is_valid()) {
+      return false;
+    }
+
+    const auto& bytes = nb::cast<const vlink::Bytes&>(input_owner);
+    return bytes.data() == input_data && bytes.size() == input_size;
+  }
+
+  template <typename ParseFunction>
+  bool parse_input(const nb::object& input, ParseFunction&& parse_function) {
+    const vlink::Bytes& bytes = nb::cast<const vlink::Bytes&>(input);
+
+    if VUNLIKELY (!parse_function(parser, bytes)) {
+      input_owner = nb::object();
+      input_data = nullptr;
+      input_size = 0;
+      return false;
+    }
+
+    input_owner = input;
+    input_data = bytes.data();
+    input_size = bytes.size();
+    return true;
+  }
+
+  Parser parser;
+  nb::object input_owner;
+  const uint8_t* input_data{nullptr};
+  size_t input_size{0};
+};
+
 inline auto make_void_callback(nb::callable py_cb, const char* context) {
   auto cb = std::make_shared<GilSafePyFunction>(std::move(py_cb));
 
@@ -320,105 +378,86 @@ inline nb::dict status_to_dict(const vlink::Status::BasePtr& status) {
     }
   };
 
-#if defined(NDEBUG) || defined(__ANDROID__)
-  if (auto publication_matched = std::static_pointer_cast<vlink::Status::PublicationMatched>(status)) {
-    d["total_count"] = publication_matched->total_count;
-    d["total_count_change"] = publication_matched->total_count_change;
-    d["current_count"] = publication_matched->current_count;
-    d["current_count_change"] = publication_matched->current_count_change;
-    put_handle("last_subscription_handle", publication_matched->last_subscription_handle);
-  } else if (auto offered_deadline_missed = std::static_pointer_cast<vlink::Status::OfferedDeadlineMissed>(status)) {
-    d["total_count"] = offered_deadline_missed->total_count;
-    d["total_count_change"] = offered_deadline_missed->total_count_change;
-    put_handle("last_instance_handle", offered_deadline_missed->last_instance_handle);
-  } else if (auto offered_incompatible_qos = std::static_pointer_cast<vlink::Status::OfferedIncompatibleQos>(status)) {
-    d["total_count"] = offered_incompatible_qos->total_count;
-    d["total_count_change"] = offered_incompatible_qos->total_count_change;
-    d["last_policy_id"] = offered_incompatible_qos->last_policy_id;
-  } else if (auto liveliness_lost = std::static_pointer_cast<vlink::Status::LivelinessLost>(status)) {
-    d["total_count"] = liveliness_lost->total_count;
-    d["total_count_change"] = liveliness_lost->total_count_change;
-  } else if (auto subscription_matched = std::static_pointer_cast<vlink::Status::SubscriptionMatched>(status)) {
-    d["total_count"] = subscription_matched->total_count;
-    d["total_count_change"] = subscription_matched->total_count_change;
-    d["current_count"] = subscription_matched->current_count;
-    d["current_count_change"] = subscription_matched->current_count_change;
-    put_handle("last_publication_handle", subscription_matched->last_publication_handle);
-  } else if (auto requested_deadline_missed =
-                 std::static_pointer_cast<vlink::Status::RequestedDeadlineMissed>(status)) {
-    d["total_count"] = requested_deadline_missed->total_count;
-    d["total_count_change"] = requested_deadline_missed->total_count_change;
-    put_handle("last_instance_handle", requested_deadline_missed->last_instance_handle);
-  } else if (auto liveliness_changed = std::static_pointer_cast<vlink::Status::LivelinessChanged>(status)) {
-    d["alive_count"] = liveliness_changed->alive_count;
-    d["not_alive_count"] = liveliness_changed->not_alive_count;
-    d["alive_count_change"] = liveliness_changed->alive_count_change;
-    d["not_alive_count_change"] = liveliness_changed->not_alive_count_change;
-    put_handle("last_publication_handle", liveliness_changed->last_publication_handle);
-  } else if (auto sample_rejected = std::static_pointer_cast<vlink::Status::SampleRejected>(status)) {
-    d["total_count"] = sample_rejected->total_count;
-    d["total_count_change"] = sample_rejected->total_count_change;
-    d["last_reason"] = static_cast<int>(sample_rejected->last_reason);
-    put_handle("last_instance_handle", sample_rejected->last_instance_handle);
-  } else if (auto requested_incompatible_qos =
-                 std::static_pointer_cast<vlink::Status::RequestedIncompatibleQos>(status)) {
-    d["total_count"] = requested_incompatible_qos->total_count;
-    d["total_count_change"] = requested_incompatible_qos->total_count_change;
-    d["last_policy_id"] = requested_incompatible_qos->last_policy_id;
-  } else if (auto sample_lost = std::static_pointer_cast<vlink::Status::SampleLost>(status)) {
-    d["total_count"] = sample_lost->total_count;
-    d["total_count_change"] = sample_lost->total_count_change;
+  switch (type) {
+    case vlink::Status::kPublicationMatched: {
+      const auto publication_matched = std::static_pointer_cast<vlink::Status::PublicationMatched>(status);
+      d["total_count"] = publication_matched->total_count;
+      d["total_count_change"] = publication_matched->total_count_change;
+      d["current_count"] = publication_matched->current_count;
+      d["current_count_change"] = publication_matched->current_count_change;
+      put_handle("last_subscription_handle", publication_matched->last_subscription_handle);
+      break;
+    }
+    case vlink::Status::kOfferedDeadlineMissed: {
+      const auto offered_deadline_missed = std::static_pointer_cast<vlink::Status::OfferedDeadlineMissed>(status);
+      d["total_count"] = offered_deadline_missed->total_count;
+      d["total_count_change"] = offered_deadline_missed->total_count_change;
+      put_handle("last_instance_handle", offered_deadline_missed->last_instance_handle);
+      break;
+    }
+    case vlink::Status::kOfferedIncompatibleQos: {
+      const auto offered_incompatible_qos = std::static_pointer_cast<vlink::Status::OfferedIncompatibleQos>(status);
+      d["total_count"] = offered_incompatible_qos->total_count;
+      d["total_count_change"] = offered_incompatible_qos->total_count_change;
+      d["last_policy_id"] = offered_incompatible_qos->last_policy_id;
+      break;
+    }
+    case vlink::Status::kLivelinessLost: {
+      const auto liveliness_lost = std::static_pointer_cast<vlink::Status::LivelinessLost>(status);
+      d["total_count"] = liveliness_lost->total_count;
+      d["total_count_change"] = liveliness_lost->total_count_change;
+      break;
+    }
+    case vlink::Status::kSubscriptionMatched: {
+      const auto subscription_matched = std::static_pointer_cast<vlink::Status::SubscriptionMatched>(status);
+      d["total_count"] = subscription_matched->total_count;
+      d["total_count_change"] = subscription_matched->total_count_change;
+      d["current_count"] = subscription_matched->current_count;
+      d["current_count_change"] = subscription_matched->current_count_change;
+      put_handle("last_publication_handle", subscription_matched->last_publication_handle);
+      break;
+    }
+    case vlink::Status::kRequestedDeadlineMissed: {
+      const auto requested_deadline_missed = std::static_pointer_cast<vlink::Status::RequestedDeadlineMissed>(status);
+      d["total_count"] = requested_deadline_missed->total_count;
+      d["total_count_change"] = requested_deadline_missed->total_count_change;
+      put_handle("last_instance_handle", requested_deadline_missed->last_instance_handle);
+      break;
+    }
+    case vlink::Status::kLivelinessChanged: {
+      const auto liveliness_changed = std::static_pointer_cast<vlink::Status::LivelinessChanged>(status);
+      d["alive_count"] = liveliness_changed->alive_count;
+      d["not_alive_count"] = liveliness_changed->not_alive_count;
+      d["alive_count_change"] = liveliness_changed->alive_count_change;
+      d["not_alive_count_change"] = liveliness_changed->not_alive_count_change;
+      put_handle("last_publication_handle", liveliness_changed->last_publication_handle);
+      break;
+    }
+    case vlink::Status::kSampleRejected: {
+      const auto sample_rejected = std::static_pointer_cast<vlink::Status::SampleRejected>(status);
+      d["total_count"] = sample_rejected->total_count;
+      d["total_count_change"] = sample_rejected->total_count_change;
+      d["last_reason"] = static_cast<int>(sample_rejected->last_reason);
+      put_handle("last_instance_handle", sample_rejected->last_instance_handle);
+      break;
+    }
+    case vlink::Status::kRequestedIncompatibleQos: {
+      const auto requested_incompatible_qos = std::static_pointer_cast<vlink::Status::RequestedIncompatibleQos>(status);
+      d["total_count"] = requested_incompatible_qos->total_count;
+      d["total_count_change"] = requested_incompatible_qos->total_count_change;
+      d["last_policy_id"] = requested_incompatible_qos->last_policy_id;
+      break;
+    }
+    case vlink::Status::kSampleLost: {
+      const auto sample_lost = std::static_pointer_cast<vlink::Status::SampleLost>(status);
+      d["total_count"] = sample_lost->total_count;
+      d["total_count_change"] = sample_lost->total_count_change;
+      break;
+    }
+    default: {
+      break;
+    }
   }
-#else
-  if (auto publication_matched = std::dynamic_pointer_cast<vlink::Status::PublicationMatched>(status)) {
-    d["total_count"] = publication_matched->total_count;
-    d["total_count_change"] = publication_matched->total_count_change;
-    d["current_count"] = publication_matched->current_count;
-    d["current_count_change"] = publication_matched->current_count_change;
-    put_handle("last_subscription_handle", publication_matched->last_subscription_handle);
-  } else if (auto offered_deadline_missed = std::dynamic_pointer_cast<vlink::Status::OfferedDeadlineMissed>(status)) {
-    d["total_count"] = offered_deadline_missed->total_count;
-    d["total_count_change"] = offered_deadline_missed->total_count_change;
-    put_handle("last_instance_handle", offered_deadline_missed->last_instance_handle);
-  } else if (auto offered_incompatible_qos = std::dynamic_pointer_cast<vlink::Status::OfferedIncompatibleQos>(status)) {
-    d["total_count"] = offered_incompatible_qos->total_count;
-    d["total_count_change"] = offered_incompatible_qos->total_count_change;
-    d["last_policy_id"] = offered_incompatible_qos->last_policy_id;
-  } else if (auto liveliness_lost = std::dynamic_pointer_cast<vlink::Status::LivelinessLost>(status)) {
-    d["total_count"] = liveliness_lost->total_count;
-    d["total_count_change"] = liveliness_lost->total_count_change;
-  } else if (auto subscription_matched = std::dynamic_pointer_cast<vlink::Status::SubscriptionMatched>(status)) {
-    d["total_count"] = subscription_matched->total_count;
-    d["total_count_change"] = subscription_matched->total_count_change;
-    d["current_count"] = subscription_matched->current_count;
-    d["current_count_change"] = subscription_matched->current_count_change;
-    put_handle("last_publication_handle", subscription_matched->last_publication_handle);
-  } else if (auto requested_deadline_missed =
-                 std::dynamic_pointer_cast<vlink::Status::RequestedDeadlineMissed>(status)) {
-    d["total_count"] = requested_deadline_missed->total_count;
-    d["total_count_change"] = requested_deadline_missed->total_count_change;
-    put_handle("last_instance_handle", requested_deadline_missed->last_instance_handle);
-  } else if (auto liveliness_changed = std::dynamic_pointer_cast<vlink::Status::LivelinessChanged>(status)) {
-    d["alive_count"] = liveliness_changed->alive_count;
-    d["not_alive_count"] = liveliness_changed->not_alive_count;
-    d["alive_count_change"] = liveliness_changed->alive_count_change;
-    d["not_alive_count_change"] = liveliness_changed->not_alive_count_change;
-    put_handle("last_publication_handle", liveliness_changed->last_publication_handle);
-  } else if (auto sample_rejected = std::dynamic_pointer_cast<vlink::Status::SampleRejected>(status)) {
-    d["total_count"] = sample_rejected->total_count;
-    d["total_count_change"] = sample_rejected->total_count_change;
-    d["last_reason"] = static_cast<int>(sample_rejected->last_reason);
-    put_handle("last_instance_handle", sample_rejected->last_instance_handle);
-  } else if (auto requested_incompatible_qos =
-                 std::dynamic_pointer_cast<vlink::Status::RequestedIncompatibleQos>(status)) {
-    d["total_count"] = requested_incompatible_qos->total_count;
-    d["total_count_change"] = requested_incompatible_qos->total_count_change;
-    d["last_policy_id"] = requested_incompatible_qos->last_policy_id;
-  } else if (auto sample_lost = std::dynamic_pointer_cast<vlink::Status::SampleLost>(status)) {
-    d["total_count"] = sample_lost->total_count;
-    d["total_count_change"] = sample_lost->total_count_change;
-  }
-#endif
 
   return d;
 }
@@ -1215,6 +1254,119 @@ NB_MODULE(_vlink_nanobind, m) {
                "', seq=" + std::to_string(self.seq) + ")";
       });
 
+  using ZerocopyMessageParser = vlink::zerocopy::MessageParser;
+  using PythonMessageParser = PythonZerocopyMessageParser;
+  nb::class_<PythonMessageParser> message_parser_cls(m, "ZeroCopyMessageParser",
+                                                     "Unified read-only parser for VLink zero-copy messages");
+  nb::enum_<ZerocopyMessageParser::Type>(message_parser_cls, "Type")
+      .value("Unknown", ZerocopyMessageParser::Type::kUnknown)
+      .value("RawData", ZerocopyMessageParser::Type::kRawData)
+      .value("CameraFrame", ZerocopyMessageParser::Type::kCameraFrame)
+      .value("PointCloud", ZerocopyMessageParser::Type::kPointCloud)
+      .value("ProxyData", ZerocopyMessageParser::Type::kProxyData)
+      .value("OccupancyGrid", ZerocopyMessageParser::Type::kOccupancyGrid)
+      .value("Tensor", ZerocopyMessageParser::Type::kTensor)
+      .value("ObjectArray", ZerocopyMessageParser::Type::kObjectArray)
+      .value("AudioFrame", ZerocopyMessageParser::Type::kAudioFrame);
+  nb::enum_<ZerocopyMessageParser::ValueType>(message_parser_cls, "ValueType")
+      .value("Unknown", ZerocopyMessageParser::ValueType::kValueUnknown)
+      .value("Int64", ZerocopyMessageParser::ValueType::kInt64)
+      .value("Uint64", ZerocopyMessageParser::ValueType::kUInt64)
+      .value("Double", ZerocopyMessageParser::ValueType::kDouble)
+      .value("String", ZerocopyMessageParser::ValueType::kString)
+      .value("Bytes", ZerocopyMessageParser::ValueType::kBytes);
+  nb::enum_<ZerocopyMessageParser::EnumKind>(message_parser_cls, "EnumKind")
+      .value("NoEnum", ZerocopyMessageParser::EnumKind::kEnumNone)
+      .value("CameraFormat", ZerocopyMessageParser::EnumKind::kEnumCameraFormat)
+      .value("CameraStream", ZerocopyMessageParser::EnumKind::kEnumCameraStream)
+      .value("GridCellType", ZerocopyMessageParser::EnumKind::kEnumGridCellType)
+      .value("TensorDataType", ZerocopyMessageParser::EnumKind::kEnumTensorDataType)
+      .value("TensorDevice", ZerocopyMessageParser::EnumKind::kEnumTensorDevice)
+      .value("AudioFormat", ZerocopyMessageParser::EnumKind::kEnumAudioFormat)
+      .value("AudioLayout", ZerocopyMessageParser::EnumKind::kEnumAudioLayout);
+  nb::class_<ZerocopyMessageParser::Field>(message_parser_cls, "Field")
+      .def_ro("name", &ZerocopyMessageParser::Field::name)
+      .def_ro("type", &ZerocopyMessageParser::Field::type)
+      .def_ro("native_type", &ZerocopyMessageParser::Field::native_type)
+      .def_ro("storage_size", &ZerocopyMessageParser::Field::storage_size)
+      .def_ro("enum_kind", &ZerocopyMessageParser::Field::enum_kind)
+      .def_ro("is_time", &ZerocopyMessageParser::Field::is_time)
+      .def_ro("is_bool", &ZerocopyMessageParser::Field::is_bool)
+      .def_ro("is_reserved", &ZerocopyMessageParser::Field::is_reserved)
+      .def_ro("byte_offset", &ZerocopyMessageParser::Field::byte_offset)
+      .def_ro("element_index", &ZerocopyMessageParser::Field::element_index);
+
+  const auto parser_value_to_python = [](const ZerocopyMessageParser::Value& value) -> nb::object {
+    return std::visit(
+        [](const auto& item) -> nb::object {
+          using Item = std::decay_t<decltype(item)>;
+
+          if constexpr (std::is_same_v<Item, vlink::Bytes>) {
+            return nb::bytes(item.data(), item.size());
+          } else {
+            return nb::cast(item);
+          }
+        },
+        value);
+  };
+
+  message_parser_cls.def(nb::init<>())
+      .def("parse", &PythonMessageParser::parse, "serialized_type"_a, "bytes"_a)
+      .def("parse_type", &PythonMessageParser::parse_type, "type"_a, "bytes"_a)
+      .def("clear", &PythonMessageParser::clear)
+      .def_prop_ro("type",
+                   [](const PythonMessageParser& self) {
+                     return self.backing_valid() ? self.parser.type() : ZerocopyMessageParser::Type::kUnknown;
+                   })
+      .def_prop_ro("valid", &PythonMessageParser::backing_valid)
+      .def(
+          "value",
+          [parser_value_to_python](const PythonMessageParser& self, std::string_view path) -> nb::object {
+            ZerocopyMessageParser::Value value;
+
+            if VUNLIKELY (!self.backing_valid() || !self.parser.value(path, value)) {
+              return nb::none();
+            }
+
+            return parser_value_to_python(value);
+          },
+          "path"_a)
+      .def(
+          "value_at",
+          [parser_value_to_python](const PythonMessageParser& self, std::string_view collection, size_t index,
+                                   std::string_view field) -> nb::object {
+            ZerocopyMessageParser::Value value;
+
+            if VUNLIKELY (!self.backing_valid() || !self.parser.value(collection, index, field, value)) {
+              return nb::none();
+            }
+
+            return parser_value_to_python(value);
+          },
+          "collection"_a, "index"_a, "field"_a)
+      .def(
+          "collection_size",
+          [](const PythonMessageParser& self, std::string_view collection) {
+            return self.backing_valid() ? self.parser.collection_size(collection) : 0;
+          },
+          "collection"_a)
+      .def("fields",
+           [](const PythonMessageParser& self) {
+             return self.backing_valid() ? self.parser.fields() : std::vector<ZerocopyMessageParser::Field>{};
+           })
+      .def(
+          "element_fields",
+          [](const PythonMessageParser& self, std::string_view collection) {
+            return self.backing_valid() ? self.parser.element_fields(collection)
+                                        : std::vector<ZerocopyMessageParser::Field>{};
+          },
+          "collection"_a)
+      .def_static("detect_type", &ZerocopyMessageParser::detect_type, "serialized_type"_a)
+      .def_static(
+          "type_name",
+          [](ZerocopyMessageParser::Type type) { return std::string(ZerocopyMessageParser::type_name(type)); },
+          "type"_a);
+
   nb::class_<vlink::zerocopy::RawData>(m, "RawData", "Generic zero-copy raw-byte data container (64 bytes)")
       .def(nb::init<>())
       .def_rw("header", &vlink::zerocopy::RawData::header)
@@ -1265,9 +1417,54 @@ NB_MODULE(_vlink_nanobind, m) {
       .value("Bgr888Packed", vlink::zerocopy::CameraFrame::kFormatBgr888Packed)
       .value("Rgb888Packed", vlink::zerocopy::CameraFrame::kFormatRgb888Packed)
       .value("Rgb888Planar", vlink::zerocopy::CameraFrame::kFormatRgb888Planar)
+      .value("Mono8", vlink::zerocopy::CameraFrame::kFormatMono8)
+      .value("Mono16", vlink::zerocopy::CameraFrame::kFormatMono16)
+      .value("Rgba8888Packed", vlink::zerocopy::CameraFrame::kFormatRgba8888Packed)
+      .value("Bgra8888Packed", vlink::zerocopy::CameraFrame::kFormatBgra8888Packed)
+      .value("Uint8C1", vlink::zerocopy::CameraFrame::kFormatUint8C1)
+      .value("Uint8C2", vlink::zerocopy::CameraFrame::kFormatUint8C2)
+      .value("Uint8C3", vlink::zerocopy::CameraFrame::kFormatUint8C3)
+      .value("Uint8C4", vlink::zerocopy::CameraFrame::kFormatUint8C4)
+      .value("Int8C1", vlink::zerocopy::CameraFrame::kFormatInt8C1)
+      .value("Int8C2", vlink::zerocopy::CameraFrame::kFormatInt8C2)
+      .value("Int8C3", vlink::zerocopy::CameraFrame::kFormatInt8C3)
+      .value("Int8C4", vlink::zerocopy::CameraFrame::kFormatInt8C4)
+      .value("Uint16C1", vlink::zerocopy::CameraFrame::kFormatUint16C1)
+      .value("Uint16C2", vlink::zerocopy::CameraFrame::kFormatUint16C2)
+      .value("Uint16C3", vlink::zerocopy::CameraFrame::kFormatUint16C3)
+      .value("Uint16C4", vlink::zerocopy::CameraFrame::kFormatUint16C4)
+      .value("Int16C1", vlink::zerocopy::CameraFrame::kFormatInt16C1)
+      .value("Int16C2", vlink::zerocopy::CameraFrame::kFormatInt16C2)
+      .value("Int16C3", vlink::zerocopy::CameraFrame::kFormatInt16C3)
+      .value("Int16C4", vlink::zerocopy::CameraFrame::kFormatInt16C4)
+      .value("Int32C1", vlink::zerocopy::CameraFrame::kFormatInt32C1)
+      .value("Int32C2", vlink::zerocopy::CameraFrame::kFormatInt32C2)
+      .value("Int32C3", vlink::zerocopy::CameraFrame::kFormatInt32C3)
+      .value("Int32C4", vlink::zerocopy::CameraFrame::kFormatInt32C4)
+      .value("Float32C1", vlink::zerocopy::CameraFrame::kFormatFloat32C1)
+      .value("Float32C2", vlink::zerocopy::CameraFrame::kFormatFloat32C2)
+      .value("Float32C3", vlink::zerocopy::CameraFrame::kFormatFloat32C3)
+      .value("Float32C4", vlink::zerocopy::CameraFrame::kFormatFloat32C4)
+      .value("Float64C1", vlink::zerocopy::CameraFrame::kFormatFloat64C1)
+      .value("Float64C2", vlink::zerocopy::CameraFrame::kFormatFloat64C2)
+      .value("Float64C3", vlink::zerocopy::CameraFrame::kFormatFloat64C3)
+      .value("Float64C4", vlink::zerocopy::CameraFrame::kFormatFloat64C4)
+      .value("BayerRggb8", vlink::zerocopy::CameraFrame::kFormatBayerRggb8)
+      .value("BayerBggr8", vlink::zerocopy::CameraFrame::kFormatBayerBggr8)
+      .value("BayerGbrg8", vlink::zerocopy::CameraFrame::kFormatBayerGbrg8)
+      .value("BayerGrbg8", vlink::zerocopy::CameraFrame::kFormatBayerGrbg8)
+      .value("BayerRggb16", vlink::zerocopy::CameraFrame::kFormatBayerRggb16)
+      .value("BayerBggr16", vlink::zerocopy::CameraFrame::kFormatBayerBggr16)
+      .value("BayerGbrg16", vlink::zerocopy::CameraFrame::kFormatBayerGbrg16)
+      .value("BayerGrbg16", vlink::zerocopy::CameraFrame::kFormatBayerGrbg16)
       .value("Jpeg", vlink::zerocopy::CameraFrame::kFormatJpeg)
       .value("H264", vlink::zerocopy::CameraFrame::kFormatH264)
-      .value("H265", vlink::zerocopy::CameraFrame::kFormatH265);
+      .value("H265", vlink::zerocopy::CameraFrame::kFormatH265)
+      .value("Png", vlink::zerocopy::CameraFrame::kFormatPng)
+      .value("Mjpeg", vlink::zerocopy::CameraFrame::kFormatMjpeg)
+      .value("H266", vlink::zerocopy::CameraFrame::kFormatH266)
+      .value("Av1", vlink::zerocopy::CameraFrame::kFormatAv1)
+      .value("Webp", vlink::zerocopy::CameraFrame::kFormatWebp);
   nb::enum_<vlink::zerocopy::CameraFrame::Stream>(camera_frame_cls, "Stream")
       .value("Unknown", vlink::zerocopy::CameraFrame::kStreamUnknown)
       .value("I", vlink::zerocopy::CameraFrame::kStreamI)
@@ -1288,6 +1485,13 @@ NB_MODULE(_vlink_nanobind, m) {
       .def("freq", &vlink::zerocopy::CameraFrame::freq)
       .def("format", &vlink::zerocopy::CameraFrame::format)
       .def("stream", &vlink::zerocopy::CameraFrame::stream)
+      .def_static("format_from_encoding", &vlink::zerocopy::CameraFrame::format_from_encoding, "encoding"_a)
+      .def_static(
+          "encoding_from_format",
+          [](vlink::zerocopy::CameraFrame::Format format) {
+            return std::string(vlink::zerocopy::CameraFrame::encoding_from_format(format));
+          },
+          "format"_a)
       .def("set_channel", &vlink::zerocopy::CameraFrame::set_channel, "channel"_a)
       .def("set_width", &vlink::zerocopy::CameraFrame::set_width, "width"_a)
       .def("set_height", &vlink::zerocopy::CameraFrame::set_height, "height"_a)
@@ -2448,10 +2652,13 @@ NB_MODULE(_vlink_nanobind, m) {
       .def_rw("max_size", &vlink::MemoryPool::Tier::max_size)
       .def_rw("blocks_per_chunk", &vlink::MemoryPool::Tier::blocks_per_chunk);
 
-  nb::class_<vlink::MemoryPool::Config>(mp_cls, "Config")
+  nb::class_<vlink::MemoryPool::Config>(mp_cls, "Config",
+                                        "Memory-pool tiers, preallocation, and cross-shard transfer batch size")
       .def(nb::init<>())
       .def_rw("tiers", &vlink::MemoryPool::Config::tiers)
-      .def_rw("prealloc", &vlink::MemoryPool::Config::prealloc);
+      .def_rw("prealloc", &vlink::MemoryPool::Config::prealloc)
+      .def_rw("batch_size", &vlink::MemoryPool::Config::batch_size,
+              "Maximum free-list nodes moved by one cross-shard steal; 0 falls back to 16");
 
   nb::class_<vlink::MemoryPool::TierStats>(mp_cls, "TierStats")
       .def_ro("max_size", &vlink::MemoryPool::TierStats::max_size)
@@ -3370,12 +3577,14 @@ NB_MODULE(_vlink_nanobind, m) {
       .def_static("global_get", &vlink::BagWriter::global_get, nb::rv_policy::reference)
       .def(
           "push",
-          [](vlink::BagWriter& self, const vlink::Frame& frame, bool immediate) {
+          [](vlink::BagWriter& self, const vlink::Frame& frame) {
             vlink::Frame owned = frame_from_python(frame);
             nb::gil_scoped_release release;
-            return self.push(owned, immediate);
+            return self.push(owned);
           },
-          "frame"_a, "immediate"_a = false)
+          "frame"_a,
+          "Record a frame. For direct asynchronous writes without a bag plugin, a non-negative result means "
+          "the queue accepted the frame; a negative result means it was rejected without evicting an accepted write.")
       .def(
           "register_schema_callback",
           [](vlink::BagWriter& self, nb::callable callback) {
@@ -3403,14 +3612,14 @@ NB_MODULE(_vlink_nanobind, m) {
           "callback"_a)
       .def(
           "push_schema",
-          [](vlink::BagWriter& self, const vlink::SchemaData& schema_data, bool immediate) {
+          [](vlink::BagWriter& self, const vlink::SchemaData& schema_data) {
             // Keep a stable copy while the GIL is released.
             // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
             auto schema_copy = schema_data;
             nb::gil_scoped_release release;
-            return self.push_schema(schema_copy, immediate);
+            return self.push_schema(schema_copy);
           },
-          "schema_data"_a, "immediate"_a = false)
+          "schema_data"_a)
       .def(
           "register_split_callback",
           [](vlink::BagWriter& self, nb::callable callback, bool before) {
@@ -3435,6 +3644,11 @@ NB_MODULE(_vlink_nanobind, m) {
       .def("is_split_mode", &vlink::BagWriter::is_split_mode)
       .def("get_split_index", &vlink::BagWriter::get_split_index)
       .def("set_url_loss", &vlink::BagWriter::set_url_loss, "url"_a, "loss"_a)
+      .def("close",
+           [](vlink::BagWriter& self) {
+             nb::gil_scoped_release release;
+             self.close();
+           })
       .def("fail", &vlink::BagWriter::fail)
       .def("clear", &vlink::BagWriter::clear)
       .def(
@@ -3487,6 +3701,134 @@ NB_MODULE(_vlink_nanobind, m) {
       .def("is_running", &vlink::BagWriter::is_running)
       .def("__repr__", [](const vlink::BagWriter& self) {
         return std::string("BagWriter(running=") + (self.is_running() ? "True" : "False") + ")";
+      });
+
+  nb::class_<vlink::BagPluginInterface>(m, "BagPluginInterface",
+                                        "Opaque bag-plugin interface returned by Plugin.load_bag_plugin()");
+
+  nb::class_<vlink::TriggerPluginInterface>(m, "TriggerPluginInterface",
+                                            "Opaque trigger-plugin interface returned by Plugin.load_trigger_plugin()");
+
+  nb::class_<vlink::Plugin>(m, "Plugin", "Host-side shared-library plugin loader")
+      .def(nb::init<>())
+      .def(
+          "load_bag_plugin",
+          [](vlink::Plugin& self, const std::string& lib_name, const std::string& dir_name) {
+            return self.load<vlink::BagPluginInterface>(lib_name, 2, 0, dir_name);
+          },
+          "lib_name"_a, "dir_name"_a = "",
+          "Load a BagPluginInterface ABI 2.0 implementation; return None when loading fails.")
+      .def(
+          "load_trigger_plugin",
+          [](vlink::Plugin& self, const std::string& lib_name, const std::string& config,
+             const std::string& dir_name) -> std::shared_ptr<vlink::TriggerPluginInterface> {
+            auto plugin = self.load<vlink::TriggerPluginInterface>(lib_name, 2, 0, dir_name);
+
+            if (!plugin || !plugin->init(config)) {
+              return nullptr;
+            }
+
+            return plugin;
+          },
+          "lib_name"_a, "config"_a = "", "dir_name"_a = "",
+          "Load a TriggerPluginInterface ABI 2.0 implementation and call init(config); return None when loading or "
+          "init fails.");
+
+  nb::class_<vlink::TriggerRecorder> tr(m, "TriggerRecorder", "Trigger-based event-data recorder");
+  nb::enum_<vlink::TriggerRecorder::OverflowPolicy>(tr, "OverflowPolicy")
+      .value("CoverOldest", vlink::TriggerRecorder::kCoverOldest)
+      .value("DropNewest", vlink::TriggerRecorder::kDropNewest);
+  nb::enum_<vlink::TriggerRecorder::FileType>(tr, "FileType")
+      .value("Vdb", vlink::TriggerRecorder::kVdb)
+      .value("Vcap", vlink::TriggerRecorder::kVcap);
+  nb::class_<vlink::TriggerRecorder::UrlConfig>(tr, "UrlConfig")
+      .def(nb::init<>())
+      .def_rw("pre_ms", &vlink::TriggerRecorder::UrlConfig::pre_ms)
+      .def_rw("post_ms", &vlink::TriggerRecorder::UrlConfig::post_ms)
+      .def_rw("max_packet_size", &vlink::TriggerRecorder::UrlConfig::max_packet_size)
+      .def_rw("max_size", &vlink::TriggerRecorder::UrlConfig::max_size)
+      .def_rw("only_front", &vlink::TriggerRecorder::UrlConfig::only_front)
+      .def_rw("only_back", &vlink::TriggerRecorder::UrlConfig::only_back);
+  nb::class_<vlink::TriggerRecorder::Config>(tr, "Config")
+      .def(nb::init<>())
+      .def_rw("dump_dir", &vlink::TriggerRecorder::Config::dump_dir)
+      .def_rw("file_type", &vlink::TriggerRecorder::Config::file_type)
+      .def_rw("default_pre_ms", &vlink::TriggerRecorder::Config::default_pre_ms)
+      .def_rw("default_post_ms", &vlink::TriggerRecorder::Config::default_post_ms)
+      .def_rw("default_max_packet_size", &vlink::TriggerRecorder::Config::default_max_packet_size)
+      .def_rw("default_max_size", &vlink::TriggerRecorder::Config::default_max_size)
+      .def_rw("max_cache_size", &vlink::TriggerRecorder::Config::max_cache_size)
+      .def_rw("retention_guard_ms", &vlink::TriggerRecorder::Config::retention_guard_ms)
+      .def_rw("max_dump_file_count", &vlink::TriggerRecorder::Config::max_dump_file_count)
+      .def_rw("enable_compress", &vlink::TriggerRecorder::Config::enable_compress)
+      .def_rw("busy_skip_data", &vlink::TriggerRecorder::Config::busy_skip_data)
+      .def_rw("destroy_on_offline", &vlink::TriggerRecorder::Config::destroy_on_offline)
+      .def_rw("overflow", &vlink::TriggerRecorder::Config::overflow)
+      .def_rw("sleep_interval", &vlink::TriggerRecorder::Config::sleep_interval)
+      .def_rw("sleep_time_ms", &vlink::TriggerRecorder::Config::sleep_time_ms)
+      .def_rw("dds_ip", &vlink::TriggerRecorder::Config::dds_ip)
+      .def_rw("discovery_filter", &vlink::TriggerRecorder::Config::discovery_filter)
+      .def_rw("whitelist", &vlink::TriggerRecorder::Config::whitelist)
+      .def_rw("blacklist", &vlink::TriggerRecorder::Config::blacklist)
+      .def_rw("url_overrides", &vlink::TriggerRecorder::Config::url_overrides);
+  nb::class_<vlink::TriggerRecorder::TriggerParams>(tr, "TriggerParams")
+      .def(nb::init<>())
+      .def_rw("reason", &vlink::TriggerRecorder::TriggerParams::reason)
+      .def_rw("name_hint", &vlink::TriggerRecorder::TriggerParams::name_hint)
+      .def_rw("out_file", &vlink::TriggerRecorder::TriggerParams::out_file)
+      .def_rw("pre_ms", &vlink::TriggerRecorder::TriggerParams::pre_ms)
+      .def_rw("post_ms", &vlink::TriggerRecorder::TriggerParams::post_ms)
+      .def_rw("filter_urls", &vlink::TriggerRecorder::TriggerParams::filter_urls)
+      .def_rw("filter_str", &vlink::TriggerRecorder::TriggerParams::filter_str)
+      .def_rw("black_mode", &vlink::TriggerRecorder::TriggerParams::black_mode);
+  tr.def(nb::new_([](const vlink::TriggerRecorder::Config& config) {
+           return new vlink::TriggerRecorder(config, [](const std::string& url, vlink::InitType type) {
+             return vlink::TriggerRecorder::RawSub::create_shared(url, type);
+           });
+         }),
+         "config"_a)
+      .def("async_run",
+           [](vlink::TriggerRecorder& self) {
+             nb::gil_scoped_release release;
+             const bool started = self.async_run();
+
+             if (started) {
+               self.invoke_task([]() {}).wait();
+             }
+
+             return started;
+           })
+      .def(
+          "quit",
+          [](vlink::TriggerRecorder& self, bool force) {
+            nb::gil_scoped_release release;
+            return self.quit(force);
+          },
+          "force"_a = false)
+      .def(
+          "wait_for_quit",
+          [](vlink::TriggerRecorder& self, int timeout_ms) {
+            nb::gil_scoped_release release;
+            return self.wait_for_quit(timeout_ms);
+          },
+          "timeout_ms"_a = vlink::Timer::kInfinite)
+      .def(
+          "dump",
+          [](vlink::TriggerRecorder& self, const vlink::TriggerRecorder::TriggerParams& params) {
+            nb::gil_scoped_release release;
+            return self.dump(params);
+          },
+          "params"_a = vlink::TriggerRecorder::TriggerParams())
+      .def("bind_bag_interface", &vlink::TriggerRecorder::bind_bag_interface, "bag_interface"_a,
+           "Bind a BagPluginInterface previously loaded by the host Plugin instance.")
+      .def("clear_bag_interface", &vlink::TriggerRecorder::clear_bag_interface)
+      .def("bind_trigger_interface", &vlink::TriggerRecorder::bind_trigger_interface, "trigger_interface"_a,
+           "Bind a TriggerPluginInterface previously loaded by the host Plugin instance.")
+      .def("clear_trigger_interface", &vlink::TriggerRecorder::clear_trigger_interface)
+      .def("is_dumping", &vlink::TriggerRecorder::is_dumping)
+      .def("is_running", &vlink::TriggerRecorder::is_running)
+      .def("__repr__", [](const vlink::TriggerRecorder& self) {
+        return std::string("TriggerRecorder(running=") + (self.is_running() ? "True" : "False") + ")";
       });
 
   nb::class_<vlink::BagReader> br(m, "BagReader", "Message playback");

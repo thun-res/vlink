@@ -38,9 +38,9 @@
 #include <unordered_set>
 #include <vector>
 
-#include "proxy_bridge.h"
-#include "rerun_converter.h"
-#include "webviz_time_utils.h"
+#include "./proxy_bridge.h"
+#include "./rerun_converter.h"
+#include "./webviz_time_utils.h"
 
 namespace vlink {
 namespace webviz {

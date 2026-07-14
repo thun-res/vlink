@@ -23,10 +23,8 @@
 
 #include "./impl/ack_manager.h"
 
+#include <memory>
 #include <mutex>
-#include <set>
-
-#include "./base/memory_resource.h"
 
 namespace vlink {
 
@@ -38,7 +36,7 @@ AckManager::~AckManager() noexcept = default;
 AckManager::RequestPtr AckManager::create_request() noexcept {
   std::unique_lock manager_lock(mtx_);
 
-  auto request = MemoryResource::make_shared<Request>();
+  auto request = std::make_shared<Request>();
 
   request->seq = request_seq_++;
   request->generation = generation_;
@@ -67,36 +65,32 @@ bool AckManager::process(RequestPtr request, int ms, ProcessCallback&& process_c
     return false;
   }
 
-  bool ret = true;
+  std::unique_lock lock(request->mtx);
 
-  {
-    std::unique_lock lock(request->mtx);
+  auto predicate = [&request]() -> bool { return request->status != Request::Status::kPending; };
 
-    auto predicate = [this, &request]() -> bool {
-      std::lock_guard manager_lock(mtx_);
-      return is_interrupted_ || request->generation != generation_ || request_set_.count(request) == 0;
-    };
-
-    if VUNLIKELY (ms < 0) {
-      request->cv.wait(lock, predicate);
-    } else {
-      ret = request->cv.wait_for(lock, std::chrono::milliseconds(ms), predicate);
-    }
+  if VUNLIKELY (ms < 0) {
+    request->cv.wait(lock, predicate);
+  } else {
+    request->cv.wait_for(lock, std::chrono::milliseconds(ms), predicate);
   }
 
-  {
+  if (request->status == Request::Status::kPending) {
     std::lock_guard manager_lock(mtx_);
     request_set_.erase(request);
-
-    if VUNLIKELY (is_interrupted_ || request->generation != generation_) {
-      return false;
-    }
+    request->status = Request::Status::kCancelled;
   }
 
-  return ret;
+  return request->status == Request::Status::kAcknowledged;
 }
 
 bool AckManager::notify(RequestPtr request, NotifyCallback&& notify_callback) noexcept {
+  if VUNLIKELY (!request) {
+    return false;
+  }
+
+  std::lock_guard lock(request->mtx);
+
   {
     std::lock_guard manager_lock(mtx_);
 
@@ -105,21 +99,35 @@ bool AckManager::notify(RequestPtr request, NotifyCallback&& notify_callback) no
     }
   }
 
-  std::lock_guard lock(request->mtx);
-
   if VLIKELY (notify_callback) {
     notify_callback();
   }
 
+  request->status = Request::Status::kAcknowledged;
   request->cv.notify_one();
 
   return true;
 }
 
 bool AckManager::remove(RequestPtr request) noexcept {
-  std::lock_guard manager_lock(mtx_);
+  if VUNLIKELY (!request) {
+    return false;
+  }
 
-  return request_set_.erase(request) != 0;
+  std::lock_guard lock(request->mtx);
+
+  {
+    std::lock_guard manager_lock(mtx_);
+
+    if (request_set_.erase(request) == 0) {
+      return false;
+    }
+  }
+
+  request->status = Request::Status::kCancelled;
+  request->cv.notify_one();
+
+  return true;
 }
 
 void AckManager::clear() noexcept {
@@ -136,6 +144,7 @@ void AckManager::clear() noexcept {
 
   for (const auto& request : temp_set) {
     std::lock_guard lock(request->mtx);
+    request->status = Request::Status::kCancelled;
     request->cv.notify_all();
   }
 }
