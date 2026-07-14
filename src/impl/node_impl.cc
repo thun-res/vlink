@@ -126,6 +126,7 @@ struct NodeImplHelper final {
   std::atomic<MessageLoop*> message_loop{nullptr};
 
   std::shared_ptr<BagWriter> data_recorder;
+  std::atomic_bool data_recorder_enabled{false};
 };
 
 bool NodeImpl::is_support_loan() const { return false; }
@@ -317,6 +318,7 @@ void NodeImpl::set_record_path(const std::string& path) {
     std::lock_guard lock(helper_->mtx);
     old_recorder = std::move(helper_->data_recorder);
     helper_->data_recorder = std::move(new_recorder);
+    helper_->data_recorder_enabled.store(helper_->data_recorder != nullptr, std::memory_order_release);
   }
 
   old_recorder.reset();
@@ -396,9 +398,15 @@ void NodeImpl::set_ssl_options(const SslOptions& options) {
 
 void NodeImpl::try_record(ActionType action_type, const Bytes& data) {
   auto* global_recorder = BagWriter::global_get();
+  const bool data_recorder_enabled = helper_->data_recorder_enabled.load(std::memory_order_acquire);
+
+  if VLIKELY (!global_recorder && !data_recorder_enabled) {
+    return;
+  }
 
   std::shared_ptr<BagWriter> data_recorder;
-  {
+
+  if (data_recorder_enabled) {
     std::shared_lock lock(helper_->mtx);
     data_recorder = helper_->data_recorder;
   }

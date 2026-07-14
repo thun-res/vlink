@@ -168,13 +168,23 @@ void MultiLoop::on_begin() {
 }
 
 void MultiLoop::on_end() {
+  ThreadPool* thread_pool = nullptr;
+
   {
     std::lock_guard lock(impl_->pool_mtx);
 
     if (impl_->thread_pool) {
-      impl_->thread_pool->shutdown();
-      impl_->thread_pool.reset();
+      thread_pool = &*impl_->thread_pool;
     }
+  }
+
+  if (thread_pool != nullptr) {
+    thread_pool->shutdown();
+  }
+
+  {
+    std::lock_guard lock(impl_->pool_mtx);
+    impl_->thread_pool.reset();
   }
 
   MessageLoop::on_end();
@@ -191,7 +201,7 @@ void MultiLoop::on_task_changed(Callback&& callback, uint32_t start_time) {
     if VLIKELY (impl_->thread_pool) {
       impl_->pending_tasks.fetch_add(1U, std::memory_order_acq_rel);
 
-      std::shared_ptr<Impl> pending_token(impl_.get(), [](Impl* impl) noexcept {
+      auto release_pending = [](Impl* impl) noexcept {
         bool should_notify = false;
 
         {
@@ -202,7 +212,9 @@ void MultiLoop::on_task_changed(Callback&& callback, uint32_t start_time) {
         if (should_notify) {
           impl->idle_cv.notify_all();
         }
-      });
+      };
+
+      std::unique_ptr<Impl, decltype(release_pending)> pending_token(impl_.get(), release_pending);
 
       posted = impl_->thread_pool->post_task([this, task, pending_token = std::move(pending_token),
                                               start_time]() mutable {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE

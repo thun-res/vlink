@@ -36,7 +36,7 @@
 | POD 指针（`LargeFrame*`） | 零拷贝 | 大块 POD（相机帧、点云）经 `shm://` 跨进程零拷贝 | 大消息同机传递 |
 | FlatBuffers 对象（`MyMsgT`） | FlatBuffers | NativeTable Object API，读写均便利 | 高性能结构化消息、需向前兼容 |
 | FlatBuffers 表指针（`const MyMsg*`） | FlatBuffers（零拷贝只读） | 指针指向接收缓冲区，仅在回调内有效 | 高性能只读路径 |
-| FlatBuffers builder（含 `fbb_` + `Finish()`） | FlatBuffers | 直接发布手工构建的 builder，发布时调用其 `Finish()` | 自管缓冲区的高性能写入路径 |
+| FlatBuffers builder（含 `fbb_` + `Finish()`） | FlatBuffers | 直接发布手工构建的 builder，序列化时完成构建并按最终大小申请目标缓冲 | 自管缓冲区的高性能写入路径 |
 | Protobuf 消息（`MyMsg`） | Protobuf 二进制 | 需由 `.proto` 生成代码 | 跨语言、字段随版本演进 |
 | Protobuf 指针（`MyMsg*`） | Protobuf 二进制 | 配合 Arena 分配，降低高频发布的内存管理开销 | 高频发布大量消息 |
 | `vlink::Bytes` | 原始字节直传 | 框架不解释其结构 | 透明代理、私有二进制协议、原始帧 |
@@ -46,6 +46,8 @@
 | `vlink::DynamicData` | 类型名标签 + 已序列化负载 | 运行期按类型名标签选择编解码，无需编译期固定消息类型，见 [3.6](#-36-dds-cdr-与-dynamicdata) | 监控、协议桥接 |
 
 判据的取舍要点：POD 提供最低开销，但不携带版本信息且不跨字节序；FlatBuffers 与 Protobuf 以编码开销换取结构演进能力；`Bytes` 不解释内容，适合协议透传。后端选择与 URL 写法见 [传输后端](04-transport.md)；面向感知的零拷贝容器见 [零拷贝](06-zerocopy.md)。
+
+传输后端集成可调用公开的 `Serializer::serialize_to_transport<TypeT>()`：`use_loan=true` 时，回调至多按序列化大小请求一次目标 `Bytes`，返回值既可以是真实 loan，也可以是 owning storage。普通应用仍应使用 Publisher、Client、Server 或 Setter，由框架自动选择该路径。builder 类型在进入该路径后会完成构建，即使目标分配失败也应使用新 builder 重试。
 
 ---
 

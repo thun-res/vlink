@@ -66,7 +66,7 @@
  * @endcode
  *
  * @note @c do_allocate throws @c std::bad_alloc when the underlying pool returns @c nullptr,
- *       satisfying the pmr contract.  Equality is identity over the bound @c MemoryPool object.
+ *       satisfying the pmr contract.  Equality is identity over the resource object.
  */
 
 #pragma once

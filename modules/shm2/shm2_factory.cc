@@ -1798,8 +1798,6 @@ bool Shm2Publisher::publish(uint64_t channel, const Bytes& bytes) {
   if VUNLIKELY (wait_ > 0) {
     uint64_t sem_count = sem_->get_count();
 
-    VLOG_I("Shm2Factory: Wait sem_count: ", sem_count, ".");
-
     if (sem_count > 0) {
       sem_->acquire(sem_count, wait_);
     }

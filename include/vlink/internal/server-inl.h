@@ -166,20 +166,11 @@ inline bool Server<ReqT, RespT, SecT>::listen(ReqRespCallback&& callback) {
       }
 
       callback(req, resp);
+      const bool use_loan = SecT != SecurityType::kWithSecurity && this->is_support_loan_;
 
-      if constexpr (SecT != SecurityType::kWithSecurity) {
-        if (this->is_support_loan_) {
-          size_t ser_size = Serializer::get_serialized_size<kRespType>(resp);
-
-          *resp_data = this->impl_->loan(ser_size);
-
-          if VUNLIKELY (ser_size != 0 && resp_data->empty()) {
-            return;
-          }
-        }
-      }
-
-      if VUNLIKELY (!Serializer::serialize<kRespType>(resp, *resp_data, this->impl_->transport_type)) {
+      if VUNLIKELY (!Serializer::serialize_to_transport<kRespType>(
+                        resp, *resp_data, this->impl_->transport_type, use_loan,
+                        [this](size_t size) { return this->impl_->loan(size); })) {
         VLOG_T("Server serialize failed, url: ", this->impl_->url, ".");
 
         if constexpr (SecT != SecurityType::kWithSecurity) {
@@ -242,20 +233,11 @@ inline bool Server<ReqT, RespT, SecT>::reply(uint64_t req_id, const RespT& resp)
     return reply_bytes<false>(req_id, resp, false);
   } else {
     Bytes resp_data;
+    const bool use_loan = SecT != SecurityType::kWithSecurity && this->is_support_loan_;
 
-    if constexpr (SecT != SecurityType::kWithSecurity) {
-      if (this->is_support_loan_) {
-        size_t ser_size = Serializer::get_serialized_size<kRespType>(resp);
-
-        resp_data = this->impl_->loan(ser_size);
-
-        if VUNLIKELY (ser_size != 0 && resp_data.empty()) {
-          return false;
-        }
-      }
-    }
-
-    if VUNLIKELY (!Serializer::serialize<kRespType>(resp, resp_data, this->impl_->transport_type)) {
+    if VUNLIKELY (!Serializer::serialize_to_transport<kRespType>(
+                      resp, resp_data, this->impl_->transport_type, use_loan,
+                      [this](size_t size) { return this->impl_->loan(size); })) {
       VLOG_T("Server serialize failed, url: ", this->impl_->url, ".");
 
       if constexpr (SecT != SecurityType::kWithSecurity) {

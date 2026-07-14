@@ -323,7 +323,7 @@ inline size_t get_serialized_size(const T& src) noexcept {
   } else if constexpr (TypeT == kFlatTableType) {
     return 0;
   } else if constexpr (TypeT == kFlatBuilderType) {
-    return src.fbb_.GetSize();
+    return 0;
   } else if constexpr (TypeT == kFlatPtrType) {
     return 0;
   } else if constexpr (TypeT == kCustomType) {
@@ -450,13 +450,13 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
       des = Bytes::deep_copy(fbb.GetBufferPointer(), fbb.GetSize(), offset);
     }
   } else if constexpr (TypeT == kFlatBuilderType) {
-    src.fbb_.Finish(const_cast<T&>(src).Finish());
-
-    if (des.is_loaned()) {
-      des = Bytes::shallow_copy(src.fbb_.GetBufferPointer(), src.fbb_.GetSize());
-    } else {
-      des = Bytes::deep_copy(src.fbb_.GetBufferPointer(), src.fbb_.GetSize(), offset);
+    if VUNLIKELY (des.is_loaned()) {
+      return false;
     }
+
+    auto& mutable_src = const_cast<T&>(src);
+    mutable_src.fbb_.Finish(mutable_src.Finish());
+    des = Bytes::deep_copy(mutable_src.fbb_.GetBufferPointer(), mutable_src.fbb_.GetSize(), offset);
   } else if constexpr (TypeT == kFlatPtrType) {
     static_assert(Traits::ExpectFalse<T>(), "Not support flat ptr type.");
   } else if constexpr (TypeT == kCustomType) {
@@ -516,6 +516,42 @@ inline bool serialize(const T& src, Bytes& des) {
   constexpr auto kType = get_type_of<T>();
 
   return serialize<kType>(src, des, TransportType::kUnknown);
+}
+
+template <Type TypeT, typename T, typename LoanCallbackT>
+inline bool serialize_to_transport(const T& src, Bytes& des, TransportType transport, bool use_loan,
+                                   LoanCallbackT&& loan) {
+  if constexpr (TypeT == kFlatBuilderType) {
+    auto& mutable_src = const_cast<T&>(src);
+    mutable_src.fbb_.Finish(mutable_src.Finish());
+
+    const size_t size = mutable_src.fbb_.GetSize();
+
+    if (use_loan) {
+      des = std::forward<LoanCallbackT>(loan)(size);
+
+      if VUNLIKELY (des.empty() || des.size() != size) {
+        return false;
+      }
+
+      std::memcpy(des.data(), mutable_src.fbb_.GetBufferPointer(), size);
+    } else {
+      des = Bytes::deep_copy(mutable_src.fbb_.GetBufferPointer(), size);
+    }
+
+    return true;
+  } else {
+    if (use_loan) {
+      const size_t size = get_serialized_size<TypeT>(src);
+      des = std::forward<LoanCallbackT>(loan)(size);
+
+      if VUNLIKELY (size != 0 && des.empty()) {
+        return false;
+      }
+    }
+
+    return serialize<TypeT>(src, des, transport);
+  }
 }
 
 template <Type TypeT, typename T>

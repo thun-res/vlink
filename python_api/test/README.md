@@ -95,6 +95,7 @@ python3 test_vlink_coverage.py
 - `BagReader.detect_schema` 与 status / info 字段
 - `SchemaData.is_valid_type` / `is_real_type` / `convert_type`
 - `quantize` 子模块的 int16 线性量化辅助函数
+- `MemoryPool.Config.batch_size` 的默认值、可写绑定及构造传递
 - 各零拷贝类型的 enum 值齐全
 
 ---

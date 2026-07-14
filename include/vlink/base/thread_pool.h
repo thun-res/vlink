@@ -98,7 +98,8 @@ namespace vlink {
  *
  * @details
  * Worker threads are created during construction and joined during @c shutdown() or
- * destruction.  The pool object itself is non-copyable.
+ * destruction.  A shutdown initiated by a worker detaches that worker instead of
+ * joining itself.  The pool object itself is non-copyable.
  */
 class VLINK_EXPORT ThreadPool {
  public:
@@ -150,7 +151,7 @@ class VLINK_EXPORT ThreadPool {
   explicit ThreadPool(size_t thread_count, Type type);
 
   /**
-   * @brief Destructor.  Calls @c shutdown() and joins worker threads.
+   * @brief Destructor.  Calls @c shutdown(); a current worker is detached instead of self-joined.
    */
   virtual ~ThreadPool();
 

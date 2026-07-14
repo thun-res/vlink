@@ -612,7 +612,7 @@ VLink 的 `Logger` 是全局单例日志系统，支持四种日志书写风格�
 | `SpinLock`              | 自旋锁，适用于极短临界区（预期等待时间 < 1μs）                         |
 | `MpmcQueue<T>`          | MPMC 无锁多生产者多消费者队列，内部用于 `kLockfreeType` MessageLoop    |
 | `ObjectPool<T>`         | 对象池，减少频繁构造/析构开销，用于内部消息缓冲区管理                  |
-| `MemoryPool`            | 分级（金字塔）free-list 内存池，Bytes 默认分配器；通过 `VLINK_MEMORY_LEVEL`（0..9）选档，L0 = bypass |
+| `MemoryPool`            | 分级（金字塔）free-list 内存池，Bytes 默认分配器；重复争用后启用 free-list 分片，可通过 Config/环境变量调整跨分片批量；`VLINK_MEMORY_LEVEL`（0..9）选档，L0 = bypass |
 | `MemoryResource`        | `std::pmr::memory_resource` 适配器，桥接 `MemoryPool`；提供 `make_shared` / `make_unique` 工厂供热路径替换 `std::` 版本 |
 | `Plugin`                | 动态库（.so）插件加载器，用于传输后端的动态加载                        |
 | `NameDetector`          | 头文件级的编译期类型名/枚举名内省工具（基于 `__PRETTY_FUNCTION__` 解析），用于日志与诊断中输出可读的类型与枚举标签 |

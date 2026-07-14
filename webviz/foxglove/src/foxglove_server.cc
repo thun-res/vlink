@@ -2454,7 +2454,7 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
   targets.clear();
 
   {
-    std::unique_lock lock(channels_mtx_);
+    std::shared_lock lock(channels_mtx_);
     auto url_iter = url_to_channel_id_.find(data.url);
 
     if VUNLIKELY (url_iter == url_to_channel_id_.end()) {
@@ -2488,7 +2488,7 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
   }
 
   {
-    std::unique_lock sc_lock(sub_counts_mtx_);
+    std::shared_lock sc_lock(sub_counts_mtx_);
     auto subscriber_iter = channel_subscribers_.find(channel_id);
 
     if VUNLIKELY (subscriber_iter == channel_subscribers_.end() || subscriber_iter->second.empty()) {

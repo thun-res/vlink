@@ -2718,14 +2718,14 @@ bool VDBReader::do_read_next(Frame& out, bool& is_error) {
 
       const auto& url = iter->second;
 
-      if VUNLIKELY (!match_playback_url_filter(url, impl_->cursor_config.filter_urls)) {
-        continue;
-      }
-
       std::string output_url;
 
       if VUNLIKELY (!convert_playback_url(url, output_url)) {
         continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
+
+      if (!impl_->cursor_config.filter_urls.empty() && impl_->cursor_config.filter_urls.count(output_url) == 0U) {
+        continue;
       }
 
       std::string_view action_str;

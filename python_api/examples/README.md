@@ -64,7 +64,7 @@
 | `demo_bag_filter_urls` | `Config.filter_urls` 只回放指定主题子集 |
 | `demo_bag_inspect_only` | `get_info()` 元数据只读检视（不回放） |
 
-`BagWriter` / `BagReader` 通用生命周期：
+`BagReader` 与默认异步 `BagWriter` 生命周期：
 
 ```text
 1. cls.create(path, ...)            # 工厂；失败返回 None
@@ -75,6 +75,10 @@
 6. quit() + wait_for_quit(timeout_ms)   # 停止后台循环
 7. BagWriter: close() + 检查 fail()     # 完成 metadata/footer/manifest
 ```
+
+默认未绑定 bag 插件的异步模式下，`BagWriter.push()` 返回非负时间戳表示队列已接受该帧；返回负值表示因队列或内存限制被拒绝，已接受的写入不会被新帧顶替。绑定插件时返回值遵循插件转发语义。
+
+`BagWriter.Config.sync_mode=True` 时无需 `async_run()`、`wait_for_idle()` 或 `quit()`；创建后直接 `push()`，最后 `close()` 并检查 `fail()`。
 
 `TriggerRecorder` 的 bag 插件由宿主显式加载并绑定，插件库名不再放进
 `TriggerRecorder.Config`：

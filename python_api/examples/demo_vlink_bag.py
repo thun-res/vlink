@@ -114,8 +114,9 @@ def demo_bag_simple_record_replay():
     writer = _vlink.BagWriter.create(bag_path)
     assert writer is not None, f"failed to create writer at {bag_path}"
 
-    # Start the writer's background thread.  push(...) returns immediately
-    # after enqueueing; the thread does the actual disk write.
+    # Start the writer's background thread.  push(...) returns a non-negative
+    # timestamp after enqueueing, or a negative value if admission is rejected;
+    # the thread does the actual disk write.
     writer.async_run()
 
     # Push five messages on a single topic.  Each Frame carries the topic,

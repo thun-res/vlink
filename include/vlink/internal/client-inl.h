@@ -157,20 +157,11 @@ inline bool Client<ReqT, RespT, SecT>::invoke(const ReqT& req, RespT& resp, std:
     ret = call_bytes(req, [&resp](const Bytes& resp_data) { resp = resp_data; }, timeout);
   } else {
     Bytes req_data;
+    const bool use_loan = SecT != SecurityType::kWithSecurity && this->is_support_loan_;
 
-    if constexpr (SecT != SecurityType::kWithSecurity) {
-      if (this->is_support_loan_) {
-        size_t ser_size = Serializer::get_serialized_size<kReqType>(req);
-
-        req_data = this->impl_->loan(ser_size);
-
-        if VUNLIKELY (ser_size != 0 && req_data.empty()) {
-          return false;
-        }
-      }
-    }
-
-    if VUNLIKELY (!Serializer::serialize<kReqType>(req, req_data, this->impl_->transport_type)) {
+    if VUNLIKELY (!Serializer::serialize_to_transport<kReqType>(
+                      req, req_data, this->impl_->transport_type, use_loan,
+                      [this](size_t size) { return this->impl_->loan(size); })) {
       VLOG_T("Client serialize failed, url: ", this->impl_->url, ".");
 
       if constexpr (SecT != SecurityType::kWithSecurity) {
@@ -235,20 +226,11 @@ inline bool Client<ReqT, RespT, SecT>::invoke(const ReqT& req, RespCallback&& ca
     ret = call_bytes(req, [callback = std::move(callback)](const Bytes& resp_data) { callback(resp_data); });
   } else {
     Bytes req_data;
+    const bool use_loan = SecT != SecurityType::kWithSecurity && this->is_support_loan_;
 
-    if constexpr (SecT != SecurityType::kWithSecurity) {
-      if (this->is_support_loan_) {
-        size_t ser_size = Serializer::get_serialized_size<kReqType>(req);
-
-        req_data = this->impl_->loan(ser_size);
-
-        if VUNLIKELY (ser_size != 0 && req_data.empty()) {
-          return false;
-        }
-      }
-    }
-
-    if VUNLIKELY (!Serializer::serialize<kReqType>(req, req_data, this->impl_->transport_type)) {
+    if VUNLIKELY (!Serializer::serialize_to_transport<kReqType>(
+                      req, req_data, this->impl_->transport_type, use_loan,
+                      [this](size_t size) { return this->impl_->loan(size); })) {
       VLOG_T("Client serialize failed, url: ", this->impl_->url, ".");
 
       if constexpr (SecT != SecurityType::kWithSecurity) {
@@ -318,20 +300,11 @@ inline std::future<RespT> Client<ReqT, RespT, SecT>::async_invoke(const ReqT& re
     });
   } else {
     Bytes req_data;
+    const bool use_loan = SecT != SecurityType::kWithSecurity && this->is_support_loan_;
 
-    if constexpr (SecT != SecurityType::kWithSecurity) {
-      if (this->is_support_loan_) {
-        size_t ser_size = Serializer::get_serialized_size<kReqType>(req);
-        req_data = this->impl_->loan(ser_size);
-
-        if VUNLIKELY (ser_size != 0 && req_data.empty()) {
-          cleanup_on_error("Client async_invoke error (Failed to Loan)");
-          return future;
-        }
-      }
-    }
-
-    if VUNLIKELY (!Serializer::serialize<kReqType>(req, req_data, this->impl_->transport_type)) {
+    if VUNLIKELY (!Serializer::serialize_to_transport<kReqType>(
+                      req, req_data, this->impl_->transport_type, use_loan,
+                      [this](size_t size) { return this->impl_->loan(size); })) {
       VLOG_T("Client serialize failed, url: ", this->impl_->url, ".");
 
       if constexpr (SecT != SecurityType::kWithSecurity) {
@@ -396,20 +369,11 @@ inline bool Client<ReqT, RespT, SecT>::send(const ReqT& req) {
     ret = call_bytes(req);
   } else {
     Bytes req_data;
+    const bool use_loan = SecT != SecurityType::kWithSecurity && this->is_support_loan_;
 
-    if constexpr (SecT != SecurityType::kWithSecurity) {
-      if (this->is_support_loan_) {
-        size_t ser_size = Serializer::get_serialized_size<kReqType>(req);
-
-        req_data = this->impl_->loan(ser_size);
-
-        if VUNLIKELY (ser_size != 0 && req_data.empty()) {
-          return false;
-        }
-      }
-    }
-
-    if VUNLIKELY (!Serializer::serialize<kReqType>(req, req_data, this->impl_->transport_type)) {
+    if VUNLIKELY (!Serializer::serialize_to_transport<kReqType>(
+                      req, req_data, this->impl_->transport_type, use_loan,
+                      [this](size_t size) { return this->impl_->loan(size); })) {
       VLOG_T("Client serialize failed, url: ", this->impl_->url, ".");
 
       if constexpr (SecT != SecurityType::kWithSecurity) {

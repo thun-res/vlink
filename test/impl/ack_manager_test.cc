@@ -104,18 +104,64 @@ TEST_SUITE("impl-AckManager") {
   TEST_CASE("notify invokes optional callback before waking process") {
     AckManager mgr;
     auto req = mgr.create_request();
-    bool callback_called = false;
+    std::atomic<bool> process_started{false};
+    std::atomic<bool> callback_started{false};
+    std::atomic<bool> callback_finished{false};
+    std::atomic<bool> process_returned{false};
+    std::atomic<bool> release_callback{false};
+    bool result = false;
 
-    std::thread notifier([&]() {
-      std::this_thread::sleep_for(20ms);
-      mgr.notify(req, [&callback_called]() { callback_called = true; });
+    std::thread processor([&]() {
+      result = mgr.process(req, 2000, [&process_started]() {
+        process_started.store(true, std::memory_order_release);
+        return true;
+      });
+      process_returned.store(true, std::memory_order_release);
     });
 
-    bool result = mgr.process(req, 2000, []() { return true; });
-    notifier.join();
+    const bool process_ready =
+        common_test::wait_until([&process_started]() { return process_started.load(std::memory_order_acquire); }, 2s);
 
-    CHECK(result == true);
-    CHECK(callback_called == true);
+    if (!process_ready) {
+      mgr.clear();
+      processor.join();
+      CHECK(process_ready);
+      return;
+    }
+
+    std::thread notifier([&]() {
+      mgr.notify(req, [&]() {
+        callback_started.store(true, std::memory_order_release);
+
+        while (!release_callback.load(std::memory_order_acquire)) {
+          std::this_thread::yield();
+        }
+
+        callback_finished.store(true, std::memory_order_release);
+      });
+    });
+
+    const bool callback_ready =
+        common_test::wait_until([&callback_started]() { return callback_started.load(std::memory_order_acquire); }, 2s);
+
+    if (!callback_ready) {
+      release_callback.store(true, std::memory_order_release);
+      mgr.clear();
+      notifier.join();
+      processor.join();
+      CHECK(callback_ready);
+      return;
+    }
+
+    CHECK_FALSE(process_returned.load(std::memory_order_acquire));
+
+    release_callback.store(true, std::memory_order_release);
+    notifier.join();
+    processor.join();
+
+    CHECK(result);
+    CHECK(callback_finished.load(std::memory_order_acquire));
+    CHECK(process_returned.load(std::memory_order_acquire));
   }
 
   TEST_CASE("notify with nullptr callback still wakes process") {
@@ -138,6 +184,7 @@ TEST_SUITE("impl-AckManager") {
     auto req = mgr.create_request();
     bool notified = mgr.notify(req);
     CHECK(notified == false);
+    CHECK_FALSE(mgr.notify(nullptr));
   }
 
   TEST_CASE("second notify on same request returns false") {
@@ -163,6 +210,94 @@ TEST_SUITE("impl-AckManager") {
     AckManager mgr;
     auto req = mgr.create_request();
     CHECK(mgr.remove(req) == false);
+    CHECK_FALSE(mgr.remove(nullptr));
+  }
+
+  TEST_CASE("remove wakes a blocked process call with false") {
+    AckManager mgr;
+    auto req = mgr.create_request();
+    std::atomic<bool> process_started{false};
+    bool result = true;
+
+    std::thread processor([&]() {
+      result = mgr.process(req, -1, [&]() {
+        process_started.store(true, std::memory_order_release);
+        return true;
+      });
+    });
+
+    const bool process_ready =
+        common_test::wait_until([&]() { return process_started.load(std::memory_order_acquire); }, 2s);
+    if (!process_ready) {
+      mgr.clear();
+      processor.join();
+      CHECK(process_ready);
+      return;
+    }
+    CHECK(mgr.remove(req));
+    processor.join();
+
+    CHECK_FALSE(result);
+  }
+
+  TEST_CASE("failed send waits for a concurrent notify callback to finish") {
+    AckManager mgr;
+    auto req = mgr.create_request();
+    std::atomic<bool> send_started{false};
+    std::atomic<bool> release_send{false};
+    std::atomic<bool> fill_started{false};
+    std::atomic<bool> release_fill{false};
+    std::atomic<bool> process_returned{false};
+    bool result = true;
+
+    std::thread processor([&]() {
+      result = mgr.process(req, -1, [&]() {
+        send_started.store(true, std::memory_order_release);
+        while (!release_send.load(std::memory_order_acquire)) {
+          std::this_thread::yield();
+        }
+        return false;
+      });
+      process_returned.store(true, std::memory_order_release);
+    });
+
+    const bool send_ready = common_test::wait_until([&]() { return send_started.load(std::memory_order_acquire); }, 2s);
+    if (!send_ready) {
+      release_send.store(true, std::memory_order_release);
+      mgr.clear();
+      processor.join();
+      CHECK(send_ready);
+      return;
+    }
+
+    std::thread notifier([&]() {
+      mgr.notify(req, [&]() {
+        fill_started.store(true, std::memory_order_release);
+        while (!release_fill.load(std::memory_order_acquire)) {
+          std::this_thread::yield();
+        }
+      });
+    });
+
+    const bool fill_ready = common_test::wait_until([&]() { return fill_started.load(std::memory_order_acquire); }, 2s);
+    if (!fill_ready) {
+      release_send.store(true, std::memory_order_release);
+      release_fill.store(true, std::memory_order_release);
+      mgr.clear();
+      notifier.join();
+      processor.join();
+      CHECK(fill_ready);
+      return;
+    }
+    release_send.store(true, std::memory_order_release);
+    CHECK_FALSE(common_test::wait_until([&]() { return process_returned.load(std::memory_order_acquire); }, 20ms));
+
+    release_fill.store(true, std::memory_order_release);
+    notifier.join();
+    processor.join();
+
+    CHECK_FALSE(result);
+    CHECK(process_returned.load(std::memory_order_acquire));
   }
 
   TEST_CASE("clear wakes all blocked process calls with false") {

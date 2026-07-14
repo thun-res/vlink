@@ -2817,6 +2817,9 @@ TEST_SUITE("extension-BagReader") {
     BagReader::Info::UrlMeta m;
     m.url = "intra://old";
     metas.push_back(m);
+    BagReader::Info::UrlMeta dropped;
+    dropped.url = "intra://drop";
+    metas.push_back(dropped);
     reader.process_url_metas(metas);
 
     std::unordered_set<std::string> filter_urls;
@@ -2828,6 +2831,7 @@ TEST_SUITE("extension-BagReader") {
 
     filter_urls.clear();
     CHECK(reader.match_playback_url_filter("intra://unmapped", filter_urls));
+    CHECK_FALSE(reader.match_playback_url_filter("intra://drop", filter_urls));
 
     std::string_view null_url;
     CHECK_FALSE(reader.match_playback_url_filter(null_url, filter_urls));

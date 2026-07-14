@@ -25,9 +25,11 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <shared_mutex>
 #include <sstream>
 #include <stack>
@@ -40,7 +42,6 @@
 #include "./base/condition_variable.h"
 #include "./base/helpers.h"
 #include "./base/logger.h"
-#include "./base/memory_pool.h"
 #include "./base/memory_resource.h"
 
 namespace vlink {
@@ -86,130 +87,64 @@ struct GraphTask::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddi
   bool is_condition_task{false};
 };
 
+template <typename TypeT>
+struct GraphTask::SharedAllocator {
+  using value_type = TypeT;
+  using is_always_equal = std::true_type;
+
+  SharedAllocator() noexcept = default;
+
+  template <typename OtherT>
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  SharedAllocator(const SharedAllocator<OtherT>&) noexcept {}
+
+  [[nodiscard]] TypeT* allocate(std::size_t count) { return std::allocator<TypeT>{}.allocate(count); }
+
+  void deallocate(TypeT* ptr, std::size_t count) noexcept { std::allocator<TypeT>{}.deallocate(ptr, count); }
+
+  template <typename OtherT, typename... ArgsT>
+  void construct(OtherT* ptr, ArgsT&&... args) {
+    ::new (static_cast<void*>(ptr)) OtherT(std::forward<ArgsT>(args)...);
+  }
+
+  template <typename OtherT>
+  void destroy(OtherT* ptr) noexcept {
+    ptr->~OtherT();
+  }
+
+  template <typename OtherT>
+  // NOLINTNEXTLINE(readability-identifier-naming)
+  struct rebind {
+    using other = SharedAllocator<OtherT>;
+  };
+
+  template <typename OtherT>
+  constexpr bool operator==(const SharedAllocator<OtherT>&) const noexcept {
+    return true;
+  }
+
+  template <typename OtherT>
+  constexpr bool operator!=(const SharedAllocator<OtherT>&) const noexcept {
+    return false;
+  }
+};
+
 // GraphTask
 std::shared_ptr<GraphTask> GraphTask::create(Callback&& callback, int condition_number) {
-  auto& pool = MemoryPool::global_instance();
-
-  void* mem = pool.allocate(sizeof(GraphTask), alignof(GraphTask));
-
-  if VUNLIKELY (mem == nullptr) {
-    throw std::bad_alloc{};  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  GraphTask* raw = nullptr;
-
-  try {
-    raw = new (mem) GraphTask(std::move(callback), condition_number);
-    // LCOV_EXCL_START GCOVR_EXCL_START
-  } catch (...) {
-    pool.deallocate(mem, sizeof(GraphTask), alignof(GraphTask));
-    throw;
-  }
-  // LCOV_EXCL_STOP GCOVR_EXCL_STOP
-
-  return std::shared_ptr<GraphTask>(raw, [](GraphTask* task) {
-    if VUNLIKELY (task == nullptr) {
-      return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    task->~GraphTask();
-
-    MemoryPool::global_instance().deallocate(task, sizeof(GraphTask), alignof(GraphTask));
-  });
+  return std::allocate_shared<GraphTask>(SharedAllocator<GraphTask>{}, std::move(callback), condition_number);
 }
 
 std::shared_ptr<GraphTask> GraphTask::create(const std::string& name, Callback&& callback, int condition_number) {
-  auto& pool = MemoryPool::global_instance();
-
-  void* mem = pool.allocate(sizeof(GraphTask), alignof(GraphTask));
-
-  if VUNLIKELY (mem == nullptr) {
-    throw std::bad_alloc{};  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  GraphTask* raw = nullptr;
-
-  try {
-    raw = new (mem) GraphTask(name, std::move(callback), condition_number);
-    // LCOV_EXCL_START GCOVR_EXCL_START
-  } catch (...) {
-    pool.deallocate(mem, sizeof(GraphTask), alignof(GraphTask));
-    throw;
-  }
-  // LCOV_EXCL_STOP GCOVR_EXCL_STOP
-
-  return std::shared_ptr<GraphTask>(raw, [](GraphTask* task) {
-    if VUNLIKELY (task == nullptr) {
-      return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    task->~GraphTask();
-
-    MemoryPool::global_instance().deallocate(task, sizeof(GraphTask), alignof(GraphTask));
-  });
+  return std::allocate_shared<GraphTask>(SharedAllocator<GraphTask>{}, name, std::move(callback), condition_number);
 }
 
 std::shared_ptr<GraphTask> GraphTask::create_condition(ConditionCallback&& callback, int condition_number) {
-  auto& pool = MemoryPool::global_instance();
-
-  void* mem = pool.allocate(sizeof(GraphTask), alignof(GraphTask));
-
-  if VUNLIKELY (mem == nullptr) {
-    throw std::bad_alloc{};  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  GraphTask* raw = nullptr;
-
-  try {
-    raw = new (mem) GraphTask(std::move(callback), condition_number);
-    // LCOV_EXCL_START GCOVR_EXCL_START
-  } catch (...) {
-    pool.deallocate(mem, sizeof(GraphTask), alignof(GraphTask));
-    throw;
-  }
-  // LCOV_EXCL_STOP GCOVR_EXCL_STOP
-
-  return std::shared_ptr<GraphTask>(raw, [](GraphTask* task) {
-    if VUNLIKELY (task == nullptr) {
-      return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    task->~GraphTask();
-
-    MemoryPool::global_instance().deallocate(task, sizeof(GraphTask), alignof(GraphTask));
-  });
+  return std::allocate_shared<GraphTask>(SharedAllocator<GraphTask>{}, std::move(callback), condition_number);
 }
 
 std::shared_ptr<GraphTask> GraphTask::create_condition(const std::string& name, ConditionCallback&& callback,
                                                        int condition_number) {
-  auto& pool = MemoryPool::global_instance();
-
-  void* mem = pool.allocate(sizeof(GraphTask), alignof(GraphTask));
-
-  if VUNLIKELY (mem == nullptr) {
-    throw std::bad_alloc{};  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  GraphTask* raw = nullptr;
-
-  try {
-    raw = new (mem) GraphTask(name, std::move(callback), condition_number);
-    // LCOV_EXCL_START GCOVR_EXCL_START
-  } catch (...) {
-    pool.deallocate(mem, sizeof(GraphTask), alignof(GraphTask));
-    throw;
-  }
-  // LCOV_EXCL_STOP GCOVR_EXCL_STOP
-
-  return std::shared_ptr<GraphTask>(raw, [](GraphTask* task) {
-    if VUNLIKELY (task == nullptr) {
-      return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    task->~GraphTask();
-
-    MemoryPool::global_instance().deallocate(task, sizeof(GraphTask), alignof(GraphTask));
-  });
+  return std::allocate_shared<GraphTask>(SharedAllocator<GraphTask>{}, name, std::move(callback), condition_number);
 }
 
 void GraphTask::cancel() {

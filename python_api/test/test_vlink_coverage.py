@@ -206,8 +206,10 @@ def test_memory_pool_tier_config():
     assert tier.blocks_per_chunk == 16
 
     cfg = _vlink.MemoryPool.Config()
+    assert cfg.batch_size == 16
     cfg.tiers = [tier]
     cfg.prealloc = False
+    cfg.batch_size = 1
     pool = _vlink.MemoryPool(cfg)
     assert pool.get_tier_count() == 1
     s = pool.get_stats()

@@ -2652,10 +2652,13 @@ NB_MODULE(_vlink_nanobind, m) {
       .def_rw("max_size", &vlink::MemoryPool::Tier::max_size)
       .def_rw("blocks_per_chunk", &vlink::MemoryPool::Tier::blocks_per_chunk);
 
-  nb::class_<vlink::MemoryPool::Config>(mp_cls, "Config")
+  nb::class_<vlink::MemoryPool::Config>(mp_cls, "Config",
+                                        "Memory-pool tiers, preallocation, and cross-shard transfer batch size")
       .def(nb::init<>())
       .def_rw("tiers", &vlink::MemoryPool::Config::tiers)
-      .def_rw("prealloc", &vlink::MemoryPool::Config::prealloc);
+      .def_rw("prealloc", &vlink::MemoryPool::Config::prealloc)
+      .def_rw("batch_size", &vlink::MemoryPool::Config::batch_size,
+              "Maximum free-list nodes moved by one cross-shard steal; 0 falls back to 16");
 
   nb::class_<vlink::MemoryPool::TierStats>(mp_cls, "TierStats")
       .def_ro("max_size", &vlink::MemoryPool::TierStats::max_size)
@@ -3579,7 +3582,9 @@ NB_MODULE(_vlink_nanobind, m) {
             nb::gil_scoped_release release;
             return self.push(owned);
           },
-          "frame"_a)
+          "frame"_a,
+          "Record a frame. For direct asynchronous writes without a bag plugin, a non-negative result means "
+          "the queue accepted the frame; a negative result means it was rejected without evicting an accepted write.")
       .def(
           "register_schema_callback",
           [](vlink::BagWriter& self, nb::callable callback) {

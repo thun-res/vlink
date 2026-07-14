@@ -433,6 +433,9 @@ class VLINK_EXPORT GraphTask final : public std::enable_shared_from_this<GraphTa
   void process_and_traverse(FindTaskCallback&& callback);
 
  private:
+  template <typename TypeT>
+  struct SharedAllocator;
+
   int invoke(bool once);
 
   void wait();

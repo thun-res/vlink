@@ -68,7 +68,7 @@ class StubBagWriter : public BagWriter {
     return true;
   }
 
-  int64_t record(const Frame& frame) override {
+  int64_t record(const Frame& frame, int64_t timestamp) override {
     std::lock_guard lock(record_mtx);
 
     ++record_count;
@@ -77,11 +77,11 @@ class StubBagWriter : public BagWriter {
     last_schema_type = frame.schema_type;
     last_action_type = frame.action_type;
     last_size = frame.data.size();
-    last_timestamp = frame.timestamp;
-    recorded_timestamps.push_back(frame.timestamp);
+    last_timestamp = timestamp;
+    recorded_timestamps.push_back(timestamp);
     record_cv.notify_all();
 
-    return frame.timestamp;
+    return timestamp;
   }
 
   int64_t get_record_timestamp() const override { return 4242; }
@@ -335,8 +335,8 @@ class FailingBagWriter final : public StubBagWriter {
  public:
   using StubBagWriter::StubBagWriter;
 
-  int64_t record(const Frame& frame) override {
-    (void)StubBagWriter::record(frame);
+  int64_t record(const Frame& frame, int64_t timestamp) override {
+    (void)StubBagWriter::record(frame, timestamp);
     return -1;
   }
 };

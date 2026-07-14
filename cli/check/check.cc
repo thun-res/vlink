@@ -1223,6 +1223,9 @@ int check_env(bool available_case, const std::string& prefix) {
        "Set to 1 to fill every tier to its full blocks_per_chunk quota when the global MemoryPool is built "
        "(best-effort).",
        false},
+      {"VLINK_MEMORY_BATCH_SIZE", "",
+       "Positive free-list shard transfer batch size used by the default MemoryPool configuration (default 16).",
+       false},
       {"VLINK_PLUGIN_DIR", "", "Directory searched by vlink::Plugin when loading dynamic modules.", false},
       {"VLINK_URL_PLUGINS", "",
        "Set before the first URL initialization: auto enables first-use loading of recognized unlinked shared "

@@ -27,16 +27,16 @@
  *
  * @details
  * @c BagWriter is the polymorphic base for VLink offline recording.  It exposes a
- * non-blocking @c push() entry point that enqueues serialised messages onto a private
- * @c MessageLoop, which then persists them through the concrete backend.  Two backends
- * ship with VLink:
+ * @c push() entry point, which either enqueues serialised messages onto a private
+ * @c MessageLoop or persists them synchronously according to @c Config::sync_mode.
+ * Two backends ship with VLink:
  *
  * - @c VDBWriter for SQLite-backed @c .vdb / @c .vdbx containers; default codec is LZAV
  *   for @c kCompressAuto and @c kCompressLzav selectors.
  * - @c VCAPWriter for MCAP-format @c .vcap / @c .vcapx containers; @c kCompressAuto and
  *   @c kCompressZstd select Zstandard when Zstd support is compiled in.
  *
- * Writer state machine:
+ * Default asynchronous writer state machine:
  *
  * @verbatim
  *                async_run()                push()               close()/dtor
@@ -335,6 +335,7 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
    * @details
    * The write follows the mode fixed at construction: @c Config::sync_mode writes on the caller's
    * thread; otherwise a task is enqueued on the recording loop.
+   * Once accepted, an asynchronous frame is not evicted to admit a later frame.
    * When @c frame.timestamp is negative the writer assigns a recording-relative timestamp from its
    * elapsed clock; a non-negative @c frame.timestamp (including @c 0) is recorded verbatim.
    *
@@ -439,7 +440,7 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
   virtual void set_url_loss(const std::string& url, double loss);
 
  protected:
-  virtual int64_t record(const Frame& frame) = 0;
+  virtual int64_t record(const Frame& frame, int64_t timestamp) = 0;
 
   virtual int64_t get_record_timestamp() const = 0;
 

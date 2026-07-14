@@ -536,6 +536,15 @@ class VLINK_EXPORT MessageLoop {
 
  protected:
   /**
+   * @brief Posts an untracked task with explicit overflow and drop policies.
+   *
+   * @details
+   * Intended for internal data-plane users that need admission control but never observe a
+   * @c TaskHandle after submission.  Avoids allocating and synchronising tracked-task state.
+   */
+  bool post_untracked_task(Callback&& callback, TaskOverflowPolicy overflow_policy, TaskDropPolicy drop_policy);
+
+  /**
    * @brief Hook invoked once on the loop thread before the first task runs.
    *
    * @details
@@ -613,7 +622,7 @@ class VLINK_EXPORT MessageLoop {
 
   void do_consume();
 
-  bool process_normal_task(bool block);
+  bool process_normal_task(bool block, bool reuse_queue);
 
   bool process_lockfree_task(bool block);
 

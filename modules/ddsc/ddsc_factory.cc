@@ -593,9 +593,11 @@ void DdscFactory::set_participant_qos(int32_t domain_id, dds_qos_t* dds_qos, con
 
   bool ssl_cfg_valid = ssl_cfg.is_valid();
 
+#ifdef DDS_HAS_SSL
   if (ssl_cfg_valid && !prop_enable_tcp) {
     prop_enable_tcp = true;
   }
+#endif
 
   if (prop_enable_tcp) {
     config.transport_selector = DDSI_TRANS_TCP;
@@ -605,7 +607,6 @@ void DdscFactory::set_participant_qos(int32_t domain_id, dds_qos_t* dds_qos, con
   }
 
 #ifdef DDS_HAS_SSL
-
   if (ssl_cfg_valid && prop_enable_tcp) {
     config.ssl_enable = 1;
 

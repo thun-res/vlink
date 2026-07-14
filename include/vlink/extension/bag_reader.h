@@ -576,6 +576,8 @@ class VLINK_EXPORT BagReader : public MessageLoop {
 
   bool match_playback_url_filter(std::string_view input_url, const std::unordered_set<std::string>& filter_urls) const;
 
+  bool has_playback_url_rules() const noexcept;
+
   static ActionType convert_action(std::string_view str);
 
   void detach_plugin();

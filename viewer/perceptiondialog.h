@@ -121,6 +121,8 @@ class PerceptionDialog : public QDialog {
 
   void apply_config(const PerceptionConfig& config, const QString& path, bool persist);
 
+  void enqueue_render_url(const QString& url);
+
 #ifdef VLINK_ENABLE_VIEWER_OSG
   void render_layer(const std::string& geode_key, const std::string& base_url, const perception::Layer& layer);
 
@@ -151,6 +153,7 @@ class PerceptionDialog : public QDialog {
 
   std::mutex cache_mtx_;
   std::unordered_map<std::string, vlink::ProxyAPI::Data> proxy_data_cache_;
+  std::unordered_set<std::string> pending_render_urls_;
 
 #ifdef VLINK_ENABLE_VIEWER_OSG
   class QVBoxLayout* osg_layout_{nullptr};

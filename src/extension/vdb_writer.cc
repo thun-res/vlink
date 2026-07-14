@@ -129,12 +129,20 @@ struct VDBWriter::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddi
   };
 
   struct MemoryCharge final {
-    MemoryCharge(std::atomic<int64_t>& counter, int64_t bytes) : value(counter), size(bytes) {}
+    MemoryCharge(std::atomic<int64_t>& counter, int64_t bytes) : value(&counter), size(bytes) {}
 
-    ~MemoryCharge() { value.fetch_sub(size, std::memory_order_relaxed); }
+    MemoryCharge(MemoryCharge&& other) noexcept : value(std::exchange(other.value, nullptr)), size(other.size) {}
 
-    std::atomic<int64_t>& value;
+    ~MemoryCharge() {
+      if (value) {
+        value->fetch_sub(size, std::memory_order_relaxed);
+      }
+    }
+
+    std::atomic<int64_t>* value;
     int64_t size;
+
+    VLINK_DISALLOW_COPY_AND_ASSIGN(MemoryCharge)
   };
 
   std::atomic_bool is_dumping{false};
@@ -649,7 +657,7 @@ bool VDBWriter::push_schema(const SchemaData& schema_data) {
   return posted;
 }
 
-int64_t VDBWriter::record(const Frame& frame) {
+int64_t VDBWriter::record(const Frame& frame, int64_t timestamp) {
 #ifdef VLINK_ENABLE_SQLITE
 
   const std::string& url = frame.url;
@@ -657,7 +665,7 @@ int64_t VDBWriter::record(const Frame& frame) {
   const SchemaType schema_type = frame.schema_type;
   const ActionType action_type = frame.action_type;
   const Bytes& data = frame.data;
-  const int64_t microseconds_timestamp = frame.timestamp;
+  const int64_t microseconds_timestamp = timestamp;
 
   if (impl_->config.sync_mode) {
     std::lock_guard lock(impl_->write_mtx);
@@ -682,7 +690,7 @@ int64_t VDBWriter::record(const Frame& frame) {
     const auto queued_size = static_cast<int64_t>(data.size());
 
     impl_->memory_size.fetch_add(queued_size, std::memory_order_relaxed);
-    auto memory_charge = std::make_unique<Impl::MemoryCharge>(impl_->memory_size, queued_size);
+    Impl::MemoryCharge memory_charge(impl_->memory_size, queued_size);
 
     bool posted = post_persistent_task([this, url_index, ser_index, schema_type, action_type, data,
                                         memory_charge = std::move(memory_charge),
@@ -708,6 +716,7 @@ int64_t VDBWriter::record(const Frame& frame) {
   return microseconds_timestamp;
 #else
   (void)frame;
+  (void)timestamp;
   return -1;
 #endif
 }

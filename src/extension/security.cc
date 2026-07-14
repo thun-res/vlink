@@ -512,45 +512,65 @@ static bool aes_gcm_encrypt(const uint8_t* key, const uint8_t* nonce, const uint
   return true;
 }
 
-static bool aes_gcm_encrypt_parts(const uint8_t* key, const uint8_t* nonce, const uint8_t* in, size_t in_len,
-                                  const AadParts& aad, uint8_t* cipher_out, uint8_t* tag_out) noexcept {
-  if VUNLIKELY (!size_fits_int(in_len)) {
-    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+static EVP_CIPHER_CTX* ensure_gcm_ctx(EvpCipherCtxPtr& slot, const uint8_t* key, bool for_encrypt) noexcept {
+  if VLIKELY (slot) {
+    return slot.get();
   }
 
   EvpCipherCtxPtr ctx{EVP_CIPHER_CTX_new()};
 
   if VUNLIKELY (!ctx) {
-    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return nullptr;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  if VUNLIKELY (EVP_EncryptInit_ex(ctx.get(), EVP_aes_128_gcm(), nullptr, nullptr, nullptr) != 1) {
-    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  const int cipher_ok = for_encrypt ? EVP_EncryptInit_ex(ctx.get(), EVP_aes_128_gcm(), nullptr, nullptr, nullptr)
+                                    : EVP_DecryptInit_ex(ctx.get(), EVP_aes_128_gcm(), nullptr, nullptr, nullptr);
+
+  if VUNLIKELY (cipher_ok != 1) {
+    return nullptr;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
   if VUNLIKELY (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_IVLEN, static_cast<int>(kAesNonceSize), nullptr) != 1) {
+    return nullptr;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  const int key_ok = for_encrypt ? EVP_EncryptInit_ex(ctx.get(), nullptr, nullptr, key, nullptr)
+                                 : EVP_DecryptInit_ex(ctx.get(), nullptr, nullptr, key, nullptr);
+
+  if VUNLIKELY (key_ok != 1) {
+    return nullptr;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  slot = std::move(ctx);
+
+  return slot.get();
+}
+
+static bool aes_gcm_encrypt_parts(EVP_CIPHER_CTX* ctx, const uint8_t* nonce, const uint8_t* in, size_t in_len,
+                                  const AadParts& aad, uint8_t* cipher_out, uint8_t* tag_out) noexcept {
+  if VUNLIKELY (!size_fits_int(in_len)) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  if VUNLIKELY (EVP_EncryptInit_ex(ctx.get(), nullptr, nullptr, key, nonce) != 1) {
+  if VUNLIKELY (EVP_EncryptInit_ex(ctx, nullptr, nullptr, nullptr, nonce) != 1) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  if VUNLIKELY (!encrypt_aad_parts(ctx.get(), aad)) {
+  if VUNLIKELY (!encrypt_aad_parts(ctx, aad)) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
   int len_update = 0;
 
   if VLIKELY (in_len > 0U) {
-    if VUNLIKELY (EVP_EncryptUpdate(ctx.get(), cipher_out, &len_update, in, static_cast<int>(in_len)) != 1) {
+    if VUNLIKELY (EVP_EncryptUpdate(ctx, cipher_out, &len_update, in, static_cast<int>(in_len)) != 1) {
       return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
   }
 
   int len_final = 0;
 
-  if VUNLIKELY (EVP_EncryptFinal_ex(ctx.get(), cipher_out + len_update, &len_final) != 1) {
+  if VUNLIKELY (EVP_EncryptFinal_ex(ctx, cipher_out + len_update, &len_final) != 1) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
@@ -558,7 +578,7 @@ static bool aes_gcm_encrypt_parts(const uint8_t* key, const uint8_t* nonce, cons
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  if VUNLIKELY (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_GET_TAG, static_cast<int>(kAesTagSize), tag_out) != 1) {
+  if VUNLIKELY (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, static_cast<int>(kAesTagSize), tag_out) != 1) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
@@ -621,50 +641,36 @@ static bool aes_gcm_decrypt(const uint8_t* key, const uint8_t* nonce, const uint
   return true;
 }
 
-static bool aes_gcm_decrypt_parts(const uint8_t* key, const uint8_t* nonce, const uint8_t* cipher, size_t cipher_len,
+static bool aes_gcm_decrypt_parts(EVP_CIPHER_CTX* ctx, const uint8_t* nonce, const uint8_t* cipher, size_t cipher_len,
                                   const AadParts& aad, const uint8_t* tag, uint8_t* plain_out) noexcept {
   if VUNLIKELY (!size_fits_int(cipher_len)) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  EvpCipherCtxPtr ctx{EVP_CIPHER_CTX_new()};
-
-  if VUNLIKELY (!ctx) {
+  if VUNLIKELY (EVP_DecryptInit_ex(ctx, nullptr, nullptr, nullptr, nonce) != 1) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  if VUNLIKELY (EVP_DecryptInit_ex(ctx.get(), EVP_aes_128_gcm(), nullptr, nullptr, nullptr) != 1) {
-    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  if VUNLIKELY (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_IVLEN, static_cast<int>(kAesNonceSize), nullptr) != 1) {
-    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  if VUNLIKELY (EVP_DecryptInit_ex(ctx.get(), nullptr, nullptr, key, nonce) != 1) {
-    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  if VUNLIKELY (!decrypt_aad_parts(ctx.get(), aad)) {
+  if VUNLIKELY (!decrypt_aad_parts(ctx, aad)) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
   int len_update = 0;
 
   if VLIKELY (cipher_len > 0U) {
-    if VUNLIKELY (EVP_DecryptUpdate(ctx.get(), plain_out, &len_update, cipher, static_cast<int>(cipher_len)) != 1) {
+    if VUNLIKELY (EVP_DecryptUpdate(ctx, plain_out, &len_update, cipher, static_cast<int>(cipher_len)) != 1) {
       return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
   }
 
-  if VUNLIKELY (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_TAG, static_cast<int>(kAesTagSize),
+  if VUNLIKELY (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, static_cast<int>(kAesTagSize),
                                     const_cast<uint8_t*>(tag)) != 1) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
   int len_final = 0;
 
-  if VUNLIKELY (EVP_DecryptFinal_ex(ctx.get(), plain_out + len_update, &len_final) <= 0) {
+  if VUNLIKELY (EVP_DecryptFinal_ex(ctx, plain_out + len_update, &len_final) <= 0) {
     return false;
   }
 
@@ -1108,6 +1114,8 @@ struct Security::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddin
 
 #ifdef VLINK_ENABLE_SECURITY
   SymmetricKeySlot symmetric_key;
+  EvpCipherCtxPtr sym_encrypt_ctx;
+  EvpCipherCtxPtr sym_decrypt_ctx;
   uint64_t send_seq{0};
   uint64_t sender_id{0};
   std::array<uint8_t, kAesNonceSize> nonce_base{};
@@ -1572,7 +1580,15 @@ bool Security::encrypt(const Bytes& in, Bytes& out) {
   uint8_t* tag_dst = cipher_dst + in.size();
   const AadParts aad{&impl_->config.advanced.aad_context, out.data(), kEnvelopeFixedHeaderSize};
 
-  if VUNLIKELY (!aes_gcm_encrypt_parts(key_slot->key.data(), nonce, in.data(), in.size(), aad, cipher_dst, tag_dst)) {
+  EVP_CIPHER_CTX* enc_ctx = ensure_gcm_ctx(impl_->sym_encrypt_ctx, key_slot->key.data(), true);
+
+  if VUNLIKELY (enc_ctx == nullptr) {
+    out = Bytes{};  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return false;   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  if VUNLIKELY (!aes_gcm_encrypt_parts(enc_ctx, nonce, in.data(), in.size(), aad, cipher_dst, tag_dst)) {
+    impl_->sym_encrypt_ctx.reset();
     out = Bytes{};  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     return false;   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
@@ -1753,8 +1769,15 @@ bool Security::decrypt(const Bytes& in, Bytes& out) {
       return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
-    if VUNLIKELY (!aes_gcm_decrypt_parts(key_slot->key.data(), header.nonce, cipher, cipher_len, aad, tag,
-                                         plain.data())) {
+    EVP_CIPHER_CTX* dec_ctx = ensure_gcm_ctx(impl_->sym_decrypt_ctx, key_slot->key.data(), false);
+
+    if VUNLIKELY (dec_ctx == nullptr) {
+      OPENSSL_cleanse(plain.data(), plain.size());  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      return false;                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    if VUNLIKELY (!aes_gcm_decrypt_parts(dec_ctx, header.nonce, cipher, cipher_len, aad, tag, plain.data())) {
+      impl_->sym_decrypt_ctx.reset();
       OPENSSL_cleanse(plain.data(), plain.size());
       return false;
     }

@@ -1681,18 +1681,14 @@ bool AnalyzerWindow::load_bag(const QString& path) {
         vlink::zerocopy::MessageParser zerocopy_parser;
         bool zerocopy_parse_attempted = false;
         bool zerocopy_parse_succeeded = false;
+        const auto schema_type = vlink::SchemaData::resolve_type(
+            unit.schema_type_override.has_value() ? *unit.schema_type_override : frame.schema_type, ser);
 
         for (size_t i = 0; i < unit.expressions.size(); ++i) {
           const auto& expression = unit.expressions[i];
           const auto& condition_list = unit.condition_lists[i];
 
           auto& pvalue = pvalue_map[expression];
-
-          const auto schema_type = vlink::SchemaData::resolve_type(
-              unit.schema_type_override.has_value()
-                  ? *unit.schema_type_override
-                  : (player_ != nullptr ? player_->get_schema_type(unit.url) : vlink::SchemaType::kUnknown),
-              ser);
 
           if (schema_type == vlink::SchemaType::kZeroCopy) {
             if (!zerocopy_parse_attempted) {

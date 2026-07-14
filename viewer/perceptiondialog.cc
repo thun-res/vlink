@@ -427,21 +427,22 @@ PerceptionDialog::PerceptionDialog(QWidget* parent) : QDialog(parent), ui(new Ui
       }
     }
 
-    bool owned = false;
+#ifdef VLINK_ENABLE_VIEWER_OSG
+    bool should_render = false;
 
     {
       std::lock_guard lock(cache_mtx_);
 
       if (url_ctx_.find(proxy_data.url) != url_ctx_.end()) {
         proxy_data_cache_[proxy_data.url] = proxy_data;
-        owned = true;
+        should_render = pending_render_urls_.insert(proxy_data.url).second;
       }
     }
 
-    if (owned) {
-      QMetaObject::invokeMethod(this, "render_url", Qt::QueuedConnection,
-                                Q_ARG(QString, QString::fromStdString(proxy_data.url)));
+    if (should_render) {
+      enqueue_render_url(QString::fromStdString(proxy_data.url));
     }
+#endif
   };
 
   if (window_) {
@@ -532,6 +533,13 @@ std::unordered_map<std::string, PerceptionDialog::UrlContext> PerceptionDialog::
   return contexts;
 }
 
+void PerceptionDialog::enqueue_render_url(const QString& url) {
+  if VUNLIKELY (!QMetaObject::invokeMethod(this, "render_url", Qt::QueuedConnection, Q_ARG(QString, url))) {
+    std::lock_guard lock(cache_mtx_);
+    pending_render_urls_.erase(url.toStdString());
+  }
+}
+
 void PerceptionDialog::render_url(const QString& url) {
   const auto url_str = url.toStdString();
 
@@ -540,6 +548,7 @@ void PerceptionDialog::render_url(const QString& url) {
 
   {
     std::lock_guard lock(cache_mtx_);
+    pending_render_urls_.erase(url_str);
 
     const auto cache_iter = proxy_data_cache_.find(url_str);
     const auto ctx_iter = url_ctx_.find(url_str);
@@ -678,7 +687,7 @@ void PerceptionDialog::apply_config(const PerceptionConfig& config, const QStrin
   auto fresh = build_contexts();
 
   std::vector<google::protobuf::Message*> stale_prototypes;
-  std::vector<QString> cached_urls;
+  std::vector<QString> render_urls;
 
   {
     std::lock_guard lock(cache_mtx_);
@@ -690,8 +699,8 @@ void PerceptionDialog::apply_config(const PerceptionConfig& config, const QStrin
     url_ctx_ = std::move(fresh);
 
     for (const auto& [url, data] : proxy_data_cache_) {
-      if (url_ctx_.find(url) != url_ctx_.end()) {
-        cached_urls.push_back(QString::fromStdString(url));
+      if (url_ctx_.find(url) != url_ctx_.end() && pending_render_urls_.insert(url).second) {
+        render_urls.push_back(QString::fromStdString(url));
       }
     }
   }
@@ -720,8 +729,8 @@ void PerceptionDialog::apply_config(const PerceptionConfig& config, const QStrin
 
   ui->lineEdit_config_path->setText(path);
 
-  for (const auto& url : cached_urls) {
-    render_url(url);
+  for (const auto& url : render_urls) {
+    enqueue_render_url(url);
   }
 
   if (persist) {

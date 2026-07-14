@@ -32,11 +32,15 @@
 #include <cstring>
 #include <memory>
 #include <random>
+#include <string>
 #include <thread>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "../common_test.h"
+#include "./base/process.h"
+#include "./base/utils.h"
 
 namespace {
 
@@ -90,7 +94,10 @@ TEST_SUITE("base-MemoryPool") {
   }
 
   TEST_CASE("config construction with simple tiers") {
-    MemoryPool pool(simple_tiers());
+    auto config = simple_tiers();
+    CHECK_EQ(config.batch_size, 16u);
+    config.batch_size = 1u;
+    MemoryPool pool(config);
 
     CHECK_EQ(pool.get_tier_count(), 3u);
     CHECK_EQ(pool.get_stats().size(), 3u);
@@ -103,10 +110,54 @@ TEST_SUITE("base-MemoryPool") {
 
     REQUIRE(tiers.size() >= 4u);
     CHECK_EQ(tiers.front().max_size, 32u);
+    CHECK(config.batch_size > 0u);
 
     for (size_t i = 1; i < tiers.size(); ++i) {
       CHECK(tiers[i].max_size > tiers[i - 1].max_size);
     }
+  }
+
+  TEST_CASE("default batch size environment is parsed once per process") {
+    const auto expected_value = Utils::get_env("VLINK_MEMORY_BATCH_TEST_EXPECTED");
+
+    if (!expected_value.empty()) {
+      const auto expected = static_cast<size_t>(std::stoull(expected_value));
+      CHECK_EQ(MemoryPool::get_default_config().batch_size, expected);
+      Utils::set_env("VLINK_MEMORY_BATCH_SIZE", std::to_string(expected + 1U));
+      CHECK_EQ(MemoryPool::get_default_config().batch_size, expected);
+      return;
+    }
+
+    const std::vector<std::pair<std::string, std::string>> cases{
+        {"7", "7"},
+        {"invalid", "16"},
+        {"0", "16"},
+    };
+
+    for (const auto& [value, expected] : cases) {
+      Process child;
+      child.set_process_mode(Process::kForwardedMode);
+      child.set_inherit_environment(true);
+      child.set_environment({
+          {"VLINK_MEMORY_BATCH_SIZE", value},
+          {"VLINK_MEMORY_BATCH_TEST_EXPECTED", expected},
+      });
+      child.start(Utils::get_app_path(),
+                  {"--test-suite=base-MemoryPool",
+                   "--test-case=default batch size environment is parsed once per process", "--no-version"});
+      REQUIRE(child.wait_for_finished(Process::kDefaultExecuteTimeoutMs));
+      CHECK_EQ(child.get_exit_code(), 0);
+    }
+  }
+
+  TEST_CASE("zero explicit batch size remains usable") {
+    auto config = simple_tiers();
+    config.batch_size = 0U;
+    MemoryPool pool(config);
+
+    void* memory = pool.allocate(64U);
+    REQUIRE(memory != nullptr);
+    pool.deallocate(memory, 64U);
   }
 
   TEST_CASE("empty tier list selects bypass mode") {
@@ -561,6 +612,14 @@ TEST_SUITE("base-MemoryPool") {
       REQUIRE(p != nullptr);
       pool.deallocate(p, 64);
     }
+
+    auto stats = pool.get_stats();
+    REQUIRE(stats.size() == 1u);
+    CHECK_EQ(stats[0].hit_count, static_cast<uint64_t>(kThreads));
+    CHECK_EQ(stats[0].deallocate_count, static_cast<uint64_t>(kThreads));
+
+    pool.clear();
+    CHECK_EQ(pool.get_stats()[0].chunk_count, 0u);
   }
 
   TEST_CASE("many threads alloc and dealloc without races or corruption") {
@@ -625,6 +684,65 @@ TEST_SUITE("base-MemoryPool") {
     auto over = pool.get_oversized_stats();
     CHECK_EQ(hits, deallocs);
     CHECK_EQ(over.alloc_count, over.dealloc_count);
+  }
+
+  TEST_CASE("clear is safe while sharded allocations are active") {
+    MemoryPool pool(make_config({{128, 128}}));
+
+    static constexpr int kThreads = 4;
+    static constexpr int kIterations = 5000;
+    std::atomic<int> ready{0};
+    std::atomic<int> done{0};
+    std::atomic<bool> start{false};
+    std::atomic<bool> error{false};
+    std::vector<std::thread> workers;
+
+    for (int index = 0; index < kThreads; ++index) {
+      workers.emplace_back([&, index] {
+        ready.fetch_add(1, std::memory_order_release);
+
+        while (!start.load(std::memory_order_acquire)) {
+          std::this_thread::yield();
+        }
+
+        for (int i = 0; i < kIterations; ++i) {
+          void* p = pool.allocate(128);
+
+          if (p == nullptr) {
+            error.store(true, std::memory_order_relaxed);
+            break;
+          }
+
+          std::memset(p, index, 128);
+          pool.deallocate(p, 128);
+        }
+
+        done.fetch_add(1, std::memory_order_release);
+      });
+    }
+
+    while (ready.load(std::memory_order_acquire) != kThreads) {
+      std::this_thread::yield();
+    }
+
+    start.store(true, std::memory_order_release);
+
+    while (done.load(std::memory_order_acquire) != kThreads) {
+      pool.clear();
+    }
+
+    for (auto& worker : workers) {
+      worker.join();
+    }
+
+    pool.clear();
+
+    const auto stats = pool.get_stats();
+    REQUIRE(stats.size() == 1u);
+    CHECK_FALSE(error.load(std::memory_order_relaxed));
+    CHECK_EQ(stats[0].hit_count, static_cast<uint64_t>(kThreads * kIterations));
+    CHECK_EQ(stats[0].deallocate_count, stats[0].hit_count);
+    CHECK_EQ(stats[0].chunk_count, 0u);
   }
 
   TEST_CASE("allocate rejects a non-power-of-two alignment") {

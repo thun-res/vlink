@@ -1,6 +1,6 @@
 # 📹 9. 录制与回放
 
-录制与回放将 VLink 的通信消息持久化到磁盘文件，并在离线时按原始时序或指定速率重放，面向调试复现、数据集采集、仿真回灌与离线分析等场景。它提供两套对称接口：写入端 `BagWriter` 与读取端 `BagReader`，二者均在独立后台线程运行，业务线程的写入与读取调用不被磁盘 I/O 阻塞。
+录制与回放将 VLink 的通信消息持久化到磁盘文件，并在离线时按原始时序或指定速率重放，面向调试复现、数据集采集、仿真回灌与离线分析等场景。它提供两套对称接口：写入端 `BagWriter` 与读取端 `BagReader`。读取端及默认异步写入模式在独立后台线程运行；写入端也可显式选择同步落盘。
 
 ![Bag 录制与回放架构](images/bag-architecture.png)
 
@@ -23,7 +23,7 @@
 
 `ser_type` 标识 payload 的精确序列化类型，应用层据此选择解码器；`schema_type` 是供工具快速分派的粗粒度家族标签。两者关系与完整取值见 [03-serialization.md](03-serialization.md)。
 
-写入与回放的生命周期均为"创建 → 启动后台线程 → 驱动数据 → 等待退出"：
+默认异步写入与回放的生命周期均为"创建 → 启动后台线程 → 驱动数据 → 等待退出"：
 
 ![录制与回放流程](images/bag-record-playback-flow.png)
 
@@ -35,7 +35,7 @@
 | 驱动 | `push(frame)` | `play(cfg)` |
 | 退出 | `wait_for_idle()` + `quit()` + `wait_for_quit()` + `close()` | `auto_quit` 自停 或 `stop()` / `quit()`，再 `wait_for_quit()` |
 
-> **约束**：`async_run()` 必须在任何 `push()` 或 `play()` 之前调用——后台循环线程未启动时数据无处分派。
+> **约束**：默认异步 writer 必须在任何 `push()` 前调用 `async_run()`；`sync_mode=true` 的 writer 不启动循环，直接 `push()` 后 `close()`。reader 必须在 `play()` 前调用 `async_run()`。
 > `BagWriter::close()` 在队列退出后写入最终 metadata、footer 或 split manifest；如需在对象析构前确认这些写入成功，应显式调用并检查 `fail()`。
 > 若 writer 绑定了写侧 `BagPluginInterface`，停止生产后须先调用 `clear_bag_interface()`，让插件在循环仍可接收任务时 `flush()` 尾部帧；随后再按表中顺序等待队列、退出并 `close()`。未绑定插件时无需此步。
 
@@ -90,7 +90,7 @@ if (writer->fail()) {
 | `sync_mode=true` | 所有帧、schema 及插件输出都在产生它们的线程同步写入，无需后台循环 |
 | `*writer << frame` | 与 `push(frame)` 使用相同的 writer 级策略；写失败时置位 `fail()` |
 
-`push()` 线程安全，可直接在通信回调内调用。同步模式会阻塞到落盘，可能违反实时截止期，应在创建 writer 时明确选择，不能与异步写入混用。
+`push()` 线程安全，可直接在通信回调内调用。未绑定 bag 插件的异步模式下，返回非负值表示该帧已被队列接受；队列或内存上限触发拒绝时返回负值，已接受的写入不会为新帧让位。绑定插件时，返回值遵循插件转发语义，见 [§9.12](#-912-多文件合并回放)。同步模式会阻塞到落盘，可能违反实时截止期，应在创建 writer 时明确选择，不能与异步写入混用。
 
 ### 9.3.1 Schema 嵌入
 

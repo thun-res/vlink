@@ -271,7 +271,7 @@ class VLINK_EXPORT TaskHandle final {
    *
    * @details
    * No-op when the handle is invalid or already terminal.  When the task has not started
-   * running (@c kInvalid or @c kQueued) this call transitions the state to @c kCancelled;
+   * running (@c kQueued) this call transitions the state to @c kCancelled;
    * in any non-terminal case it also flips the cancellation source so running callbacks
    * polling the token observe the request.
    *
@@ -300,8 +300,6 @@ class VLINK_EXPORT TaskHandle final {
   static TaskHandle make_task_handle(const CancellationToken& parent_token = {});
 
   static MoveFunction<void()> make_tracked_task(TaskHandle handle, MoveFunction<void()>&& callback);
-
-  static void mark_task_queued(const TaskHandle& handle);
 
   static void mark_task_rejected(const TaskHandle& handle);
 

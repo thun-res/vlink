@@ -31,28 +31,26 @@
  * @c AckManager links the thread that initiates a request with the transport
  * thread that delivers its acknowledgement: callers obtain a @c RequestPtr, hand
  * it to @c process() (which both publishes the wire frame through a supplied send
- * callback and blocks on a per-request condition variable), and the matching
- * @c notify() / @c remove() call resolves the wait once the response is in flight.
+ * callback and blocks on a per-request condition variable).  The matching
+ * @c notify() acknowledges the wait after filling the response; @c remove() cancels it.
  *
  * @par Request state diagram
  * @code
- *                create_request()                process()
- *      [none]  --------------------> [pending] -----------> [waiting]
- *                                       ^                       |
- *                                       | notify() / remove()   |
- *                                       +-----------------------+
- *                                                | timeout                | clear()
- *                                                v                        v
- *                                            [resolved]              [interrupted]
+ *                create_request()                 process()
+ *      [none]  --------------------> [token] ----------------> [pending]
+ *                                                               |
+ *                                      notify() / remove() / timeout / clear()
+ *                                                               v
+ *                                                           [resolved]
  * @endcode
  *
  * @par API summary
  * | Method                  | Caller                | Effect                                                  |
  * | ----------------------- | --------------------- | ------------------------------------------------------- |
- * | @c create_request()     | RPC caller            | Allocates a unique sequence number and pending entry.   |
+ * | @c create_request()     | RPC caller            | Allocates a unique request token.                       |
  * | @c process()            | RPC caller            | Sends, blocks, returns @c true on @c notify().          |
  * | @c notify()             | Transport callback    | Removes pending entry and wakes the waiting caller.     |
- * | @c remove()             | RPC caller / cleanup  | Cancels an entry without waking a waiter.               |
+ * | @c remove()             | RPC caller / cleanup  | Cancels an entry and wakes its waiter.                  |
  * | @c clear()              | Node shutdown         | Aborts all waits and refuses new @c process() calls.    |
  * | @c reset_interrupted()  | Node resume           | Re-enables new @c process() calls after @c clear().     |
  *
@@ -79,6 +77,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -158,8 +157,8 @@ class VLINK_EXPORT AckManager final {
    *    if @c clear() has been called and not yet reset.
    * -# Invokes @p process_callback to dispatch the request.  When the callback
    *    returns @c false the entry is removed and @c process() also returns @c false.
-   * -# Sleeps on a per-request condition variable until @c notify() / @c remove()
-   *    fires or @p ms expires.  A negative @p ms blocks forever.
+   * -# Sleeps on a per-request condition variable until @c notify() or cancellation
+   *    resolves the request, or @p ms expires.  A negative @p ms blocks forever.
    * -# Returns @c true on a successful @c notify(); @c false on timeout, abort or
    *    @c clear() interruption.
    *
@@ -185,7 +184,7 @@ class VLINK_EXPORT AckManager final {
   bool notify(RequestPtr request, NotifyCallback&& notify_callback = nullptr) noexcept;
 
   /**
-   * @brief Cancels @p request without waking any waiter.
+   * @brief Cancels @p request and wakes its waiter.
    *
    * @param request  Token to drop from the pending set.
    * @return @c true if the entry existed and was removed; @c false otherwise.
@@ -213,8 +212,15 @@ class VLINK_EXPORT AckManager final {
 
  private:
   struct Request final {
+    enum class Status : uint8_t {
+      kPending,
+      kAcknowledged,
+      kCancelled,
+    };
+
     int64_t seq{0};
     int64_t generation{0};
+    Status status{Status::kPending};
     std::mutex mtx;
     ConditionVariable cv;
 

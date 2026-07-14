@@ -333,7 +333,7 @@ void BagWriter::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& ba
         learn_recorded_url(impl_->active_origin_url, frame.url);
       }
 
-      const int64_t record_result = record(frame);
+      const int64_t record_result = record(frame, frame.timestamp);
 
       if VUNLIKELY (active && record_result < 0) {
         impl_->active_record_result = record_result;
@@ -364,6 +364,10 @@ int64_t BagWriter::push(const Frame& frame) {
     plugin_interface = impl_->plugin_interface;
   }
 
+  if VLIKELY (!plugin_interface) {
+    return record(frame, target_timestamp);
+  }
+
   Frame stamped;
   const Frame* effective = &frame;
 
@@ -375,10 +379,6 @@ int64_t BagWriter::push(const Frame& frame) {
     stamped.action_type = frame.action_type;
     stamped.data = Bytes::shallow_copy(frame.data.data(), frame.data.size());
     effective = &stamped;
-  }
-
-  if VLIKELY (!plugin_interface) {
-    return record(*effective);
   }
 
   std::lock_guard active_lock(impl_->active_write_mtx);
@@ -421,26 +421,7 @@ void BagWriter::clear() noexcept { impl_->stream_fail.store(false, std::memory_o
 void BagWriter::close() {}
 
 bool BagWriter::post_persistent_task(Callback&& callback) {
-  PostTaskOptions options;
-  options.overflow_policy = TaskOverflowPolicy::kReject;
-  options.drop_policy = TaskDropPolicy::kProtected;
-
-  const auto handle = post_task_handle(std::move(callback), options);
-
-  switch (handle.state()) {
-    case TaskExecutionState::kInvalid:
-    case TaskExecutionState::kCancelled:
-    case TaskExecutionState::kDropped:
-    case TaskExecutionState::kRejected:
-      return false;
-    case TaskExecutionState::kQueued:
-    case TaskExecutionState::kRunning:
-    case TaskExecutionState::kCompleted:
-    case TaskExecutionState::kFailed:
-      return true;
-  }
-
-  return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  return post_untracked_task(std::move(callback), TaskOverflowPolicy::kReject, TaskDropPolicy::kProtected);
 }
 
 void BagWriter::set_fail() noexcept { impl_->stream_fail.store(true, std::memory_order_release); }

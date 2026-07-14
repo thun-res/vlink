@@ -164,7 +164,7 @@ class VLINK_EXPORT VCAPWriter final : public BagWriter {
   [[nodiscard]] int get_split_index() const override;
 
  protected:
-  int64_t record(const Frame& frame) override;
+  int64_t record(const Frame& frame, int64_t timestamp) override;
 
   int64_t get_record_timestamp() const override;
 

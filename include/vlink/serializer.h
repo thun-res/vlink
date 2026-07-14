@@ -275,9 +275,10 @@ template <typename T>
  * payload (used internally by some transports for framing).
  *
  * For @c kFlatBuilderType, serialisation calls the builder's @c Finish()
- * path so @p src may be mutated.  Loaned output buffers shallow-borrow the
- * builder's internal storage; keep the builder alive while the borrowed
- * @c Bytes is in use.
+ * path so @p src may be mutated.  Because the final size is unavailable
+ * before @c Finish(), its size hint is @c 0 and a loaned destination is
+ * rejected without changing either the loan or the builder.  Successful
+ * serialisation returns an owning copy.
  *
  * @tparam TypeT       Codec kind.
  * @tparam T           C++ message type.
@@ -300,6 +301,30 @@ static bool serialize(const T& src, Bytes& des, TransportType transport = Transp
  */
 template <typename T>
 static bool serialize(const T& src, Bytes& des);
+
+/**
+ * @brief Serialises into transport-provided storage when available.
+ *
+ * @details
+ * When @p use_loan is true, @p loan is called with the available size hint and
+ * may return either loaned or owning storage.  FlatBuilder sources are finished
+ * before requesting their exact-size destination, including when that request
+ * subsequently fails.  Other codecs use @c get_serialized_size() followed by
+ * the normal @c serialize() path.
+ *
+ * @tparam TypeT  Codec kind.
+ * @tparam T       C++ message type.
+ * @tparam LoanCallbackT  Callable compatible with @c Bytes(size_t).
+ * @param src      Source value to serialise.
+ * @param des      Destination populated on success; it may be modified on failure.
+ * @param transport Active transport back-end.
+ * @param use_loan Whether to request transport-provided storage.
+ * @param loan     Destination provider called at most once.
+ * @return @c true on success; @c false on allocation, size, or codec failure.
+ */
+template <Type TypeT, typename T, typename LoanCallbackT>
+static bool serialize_to_transport(const T& src, Bytes& des, TransportType transport, bool use_loan,
+                                   LoanCallbackT&& loan);
 
 /**
  * @brief Deserialises @p src into @p des with explicit codec and transport tags.
