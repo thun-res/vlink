@@ -107,6 +107,22 @@ namespace vlink {
  * submits ready tasks to a user-supplied engine.
  */
 class VLINK_EXPORT GraphTask final : public std::enable_shared_from_this<GraphTask> {
+ private:
+  /**
+   * @brief Passkey used to restrict construction to the static factory functions.
+   *
+   * @details
+   * The token type and its default constructor are private.  A factory creates the token and
+   * forwards it through @c std::allocate_shared; callers cannot name or create a token and
+   * therefore cannot invoke the token-gated constructors directly.
+   */
+  class PrivateToken final {
+   private:
+    PrivateToken() = default;
+
+    friend class GraphTask;
+  };
+
  public:
   /**
    * @brief Run-time execution state of a node within an @c execute pass.
@@ -186,6 +202,50 @@ class VLINK_EXPORT GraphTask final : public std::enable_shared_from_this<GraphTa
   [[nodiscard]] static std::shared_ptr<GraphTask> create_condition(const std::string& name,
                                                                    ConditionCallback&& callback,
                                                                    int condition_number = 0);
+
+  /// @cond INTERNAL
+  /**
+   * @brief Factory-only private constructor for a regular task.
+   *
+   * @details This constructor is private at the API level but declared in the public section so
+   * Android libc++ can perform in-place construction inside the @c std::allocate_shared control
+   * block.  Callers cannot invoke it because they cannot create the private @p token.
+   */
+  explicit GraphTask(PrivateToken token, Callback&& callback, int condition_number);
+
+  /**
+   * @brief Factory-only private constructor for a named regular task.
+   *
+   * @details Declared in the public section only for @c std::allocate_shared.  Callers cannot
+   * invoke it because they cannot create the private @p token.
+   */
+  explicit GraphTask(PrivateToken token, const std::string& name, Callback&& callback, int condition_number);
+
+  /**
+   * @brief Factory-only private constructor for a condition task.
+   *
+   * @details Declared in the public section only for @c std::allocate_shared.  Callers cannot
+   * invoke it because they cannot create the private @p token.
+   */
+  explicit GraphTask(PrivateToken token, ConditionCallback&& callback, int condition_number);
+
+  /**
+   * @brief Factory-only private constructor for a named condition task.
+   *
+   * @details Declared in the public section only for @c std::allocate_shared.  Callers cannot
+   * invoke it because they cannot create the private @p token.
+   */
+  explicit GraphTask(PrivateToken token, const std::string& name, ConditionCallback&& callback, int condition_number);
+
+  /**
+   * @brief Destroys the task.
+   *
+   * @details Public because the @c std::allocate_shared control block performs destruction.
+   * Instances must still be created by @c create or @c create_condition and owned by
+   * @c std::shared_ptr; callers must not destroy the managed pointer directly.
+   */
+  ~GraphTask();
+  /// @endcond
 
   /**
    * @brief Submits the reachable sub-graph to @p graph_engine.
@@ -419,16 +479,6 @@ class VLINK_EXPORT GraphTask final : public std::enable_shared_from_this<GraphTa
 
  protected:
   using FindTaskCallback = MoveFunction<void(const std::shared_ptr<GraphTask>&)>;
-
-  explicit GraphTask(Callback&& callback, int condition_number);
-
-  explicit GraphTask(const std::string& name, Callback&& callback, int condition_number);
-
-  explicit GraphTask(ConditionCallback&& callback, int condition_number);
-
-  explicit GraphTask(const std::string& name, ConditionCallback&& callback, int condition_number);
-
-  ~GraphTask();
 
   void process_and_traverse(FindTaskCallback&& callback);
 

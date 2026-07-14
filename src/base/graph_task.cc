@@ -131,20 +131,24 @@ struct GraphTask::SharedAllocator {
 
 // GraphTask
 std::shared_ptr<GraphTask> GraphTask::create(Callback&& callback, int condition_number) {
-  return std::allocate_shared<GraphTask>(SharedAllocator<GraphTask>{}, std::move(callback), condition_number);
+  return std::allocate_shared<GraphTask>(SharedAllocator<GraphTask>{}, PrivateToken{}, std::move(callback),
+                                         condition_number);
 }
 
 std::shared_ptr<GraphTask> GraphTask::create(const std::string& name, Callback&& callback, int condition_number) {
-  return std::allocate_shared<GraphTask>(SharedAllocator<GraphTask>{}, name, std::move(callback), condition_number);
+  return std::allocate_shared<GraphTask>(SharedAllocator<GraphTask>{}, PrivateToken{}, name, std::move(callback),
+                                         condition_number);
 }
 
 std::shared_ptr<GraphTask> GraphTask::create_condition(ConditionCallback&& callback, int condition_number) {
-  return std::allocate_shared<GraphTask>(SharedAllocator<GraphTask>{}, std::move(callback), condition_number);
+  return std::allocate_shared<GraphTask>(SharedAllocator<GraphTask>{}, PrivateToken{}, std::move(callback),
+                                         condition_number);
 }
 
 std::shared_ptr<GraphTask> GraphTask::create_condition(const std::string& name, ConditionCallback&& callback,
                                                        int condition_number) {
-  return std::allocate_shared<GraphTask>(SharedAllocator<GraphTask>{}, name, std::move(callback), condition_number);
+  return std::allocate_shared<GraphTask>(SharedAllocator<GraphTask>{}, PrivateToken{}, name, std::move(callback),
+                                         condition_number);
 }
 
 void GraphTask::cancel() {
@@ -398,14 +402,14 @@ std::vector<std::weak_ptr<GraphTask>> GraphTask::get_succeed_task_list() const {
 
 bool GraphTask::is_condition_task() const { return impl_->is_condition_task; }
 
-GraphTask::GraphTask(Callback&& callback, int condition_number) : impl_(std::make_unique<Impl>()) {
+GraphTask::GraphTask(PrivateToken, Callback&& callback, int condition_number) : impl_(std::make_unique<Impl>()) {
   impl_->name = "Task_" + std::to_string(global_graph_task_count.fetch_add(1, std::memory_order_relaxed));
   impl_->condition_number.store(condition_number, std::memory_order_relaxed);
   impl_->is_condition_task = false;
   impl_->callback = std::move(callback);
 }
 
-GraphTask::GraphTask(const std::string& name, Callback&& callback, int condition_number)
+GraphTask::GraphTask(PrivateToken, const std::string& name, Callback&& callback, int condition_number)
     : impl_(std::make_unique<Impl>()) {
   impl_->name = name;
   impl_->condition_number.store(condition_number, std::memory_order_relaxed);
@@ -413,14 +417,15 @@ GraphTask::GraphTask(const std::string& name, Callback&& callback, int condition
   impl_->callback = std::move(callback);
 }
 
-GraphTask::GraphTask(ConditionCallback&& callback, int condition_number) : impl_(std::make_unique<Impl>()) {
+GraphTask::GraphTask(PrivateToken, ConditionCallback&& callback, int condition_number)
+    : impl_(std::make_unique<Impl>()) {
   impl_->name = "Task_" + std::to_string(global_graph_task_count.fetch_add(1, std::memory_order_relaxed));
   impl_->condition_number.store(condition_number, std::memory_order_relaxed);
   impl_->is_condition_task = true;
   impl_->condition_callback = std::move(callback);
 }
 
-GraphTask::GraphTask(const std::string& name, ConditionCallback&& callback, int condition_number)
+GraphTask::GraphTask(PrivateToken, const std::string& name, ConditionCallback&& callback, int condition_number)
     : impl_(std::make_unique<Impl>()) {
   impl_->name = name;
   impl_->condition_number.store(condition_number, std::memory_order_relaxed);
