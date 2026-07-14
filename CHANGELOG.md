@@ -12,6 +12,7 @@
 
 ### 改进
 
+- **公共 API 调整**：`TerminalStream` 移至 `base`，并统一 Bag/Trigger 接口命名；旧接口不再保留。
 - **CMake**：使构建树中的 `VLINK_NO_INTRA_LIBRARIES` 正确移除 `vlink::intra`，与安装包配置保持一致。
 - **覆盖率**：使用 lcov 2.x 生成报告时保留 `LCOV_EXCL_START` / `LCOV_EXCL_STOP` 区域。
 - **URL 插件**：扩展 `VLINK_URL_PLUGINS` 的模式值，且大小写不敏感：`auto` 在首次使用已知但未链接的共享 transport 时自动加载；空值或 `none` 关闭插件加载；其他非空值仍作为显式预加载列表。拆分后的 runtime 包包含可动态加载 transport 的无版本 NAMELINK；c_api、proxy 与 exprtk 等开发 API 的 NAMELINK 仍归入 devel 包，因此 `auto` 模式不依赖开发包。

@@ -86,13 +86,13 @@
 #include <string_view>
 #include <vector>
 
-#include "../base/macros.h"
+#include "./macros.h"
 
 namespace vlink {
 
 /**
  * @class TerminalStream
- * @brief Process-wide buffered stdout writer with TTY detection, ANSI support, and a 1 MiB ring.
+ * @brief Process-wide buffered stdout writer with TTY detection, ANSI support, and a 1 MiB buffer.
  *
  * @details
  * Construction is hidden behind @c get(); copy and move are disabled.  Internally the class

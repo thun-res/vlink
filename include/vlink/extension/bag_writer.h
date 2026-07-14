@@ -286,21 +286,21 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
    * @c BagPluginInterface::Direction::kWrite.  Passing @c nullptr detaches and clears the previous
    * plugin's sink.
    *
-   * @param plugin_interface Plugin instance, or @c nullptr to detach the current binding.
+   * @param bag_interface Plugin interface instance, or @c nullptr to detach the current binding.
    *
-   * @see clear_plugin_interface() for the named equivalent of passing @c nullptr.
+   * @see clear_bag_interface() for the named equivalent of passing @c nullptr.
    */
-  virtual void bind_plugin_interface(const std::shared_ptr<BagPluginInterface>& plugin_interface);
+  virtual void bind_bag_interface(const std::shared_ptr<BagPluginInterface>& bag_interface);
 
   /**
    * @brief Detaches the currently bound plugin, if any.
    *
    * @details
-   * Convenience wrapper equivalent to @c bind_plugin_interface(nullptr): flushes the bound plugin's
+   * Convenience wrapper equivalent to @c bind_bag_interface(nullptr): flushes the bound plugin's
    * pending frames, clears its record sink and drops the binding.  Safe to call when no plugin is
    * bound (in which case it is a no-op).
    */
-  virtual void clear_plugin_interface();
+  virtual void clear_bag_interface();
 
   /**
    * @brief Installs a hook fired around split rotation.
@@ -338,7 +338,7 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
    * When @c frame.timestamp is negative the writer assigns a recording-relative timestamp from its
    * elapsed clock; a non-negative @c frame.timestamp (including @c 0) is recorded verbatim.
    *
-   * When a plugin is bound via @c bind_plugin_interface(), the frame is handed to the plugin's
+   * When a plugin is bound via @c bind_bag_interface(), the frame is handed to the plugin's
    * @c on_write() hook, which re-emits it (possibly transcoded, dropped, fanned out or reordered)
    * through the writer's record sink into the concrete @c record() implementation.  Because the
    * plugin may emit asynchronously, the return value is then the assigned timestamp rather than a
@@ -451,7 +451,7 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
    * Idempotent; invoked automatically at destruction.  Callers that must verify the close-time
    * writes call it explicitly and then query @c fail() while the writer is still alive.  It is not
    * synchronised against the recording loop.  After producers have stopped, detach any bound write plugin with
-   * @c clear_plugin_interface() so its buffered tail is emitted while the loop still accepts tasks; then call
+   * @c clear_bag_interface() so its buffered tail is emitted while the loop still accepts tasks; then call
    * @c wait_for_idle(), @c quit() and @c wait_for_quit() before calling @c close() from another thread.
    *
    * @note Declared after the original virtual interface to preserve its vtable slot ordering.

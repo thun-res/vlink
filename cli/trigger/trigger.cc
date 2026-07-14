@@ -477,11 +477,11 @@ static int run_daemon(const DaemonArguments& arguments) {
   }
 
   if (trigger_plugin) {
-    recorder->bind_trigger_plugin_interface(trigger_plugin);
+    recorder->bind_trigger_interface(trigger_plugin);
   }
 
   if (bag_plugin) {
-    recorder->bind_bag_plugin_interface(bag_plugin);
+    recorder->bind_bag_interface(bag_plugin);
   }
 
   if VUNLIKELY (!recorder->async_run()) {

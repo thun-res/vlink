@@ -434,7 +434,7 @@ TEST_SUITE("extension-TriggerRecorder") {
     vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
 
     auto plugin = std::make_shared<RecordingTriggerPlugin>();
-    recorder.bind_trigger_plugin_interface(plugin);
+    recorder.bind_trigger_interface(plugin);
 
     REQUIRE(recorder.async_run());
     REQUIRE(wait_until_ready(recorder));
@@ -459,10 +459,10 @@ TEST_SUITE("extension-TriggerRecorder") {
     vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
 
     auto plugin = std::make_shared<RecordingTriggerPlugin>();
-    recorder.bind_trigger_plugin_interface(plugin);
+    recorder.bind_trigger_interface(plugin);
 
     auto bag_plugin = std::make_shared<CountingBagPlugin>();
-    recorder.bind_bag_plugin_interface(bag_plugin);
+    recorder.bind_bag_interface(bag_plugin);
 
     REQUIRE(recorder.async_run());
     REQUIRE(wait_until_ready(recorder));
@@ -595,7 +595,7 @@ TEST_SUITE("extension-TriggerRecorder") {
 
     vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
     auto plugin = std::make_shared<RecordingTriggerPlugin>();
-    recorder.bind_trigger_plugin_interface(plugin);
+    recorder.bind_trigger_interface(plugin);
     REQUIRE(recorder.async_run());
     REQUIRE(wait_until_ready(recorder));
 
@@ -651,7 +651,7 @@ TEST_SUITE("extension-TriggerRecorder") {
 
     vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
     auto plugin = std::make_shared<PublishingTriggerPlugin>(&pub, PublishingTriggerPlugin::kOnTrigger, 80, 10);
-    recorder.bind_trigger_plugin_interface(plugin);
+    recorder.bind_trigger_interface(plugin);
     REQUIRE(recorder.async_run());
     REQUIRE(wait_until_ready(recorder));
 
@@ -699,7 +699,7 @@ TEST_SUITE("extension-TriggerRecorder") {
 
     vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
     auto plugin = std::make_shared<PublishingTriggerPlugin>(&pub, PublishingTriggerPlugin::kOnFirstFinished, 20, 1);
-    recorder.bind_trigger_plugin_interface(plugin);
+    recorder.bind_trigger_interface(plugin);
     REQUIRE(recorder.async_run());
     REQUIRE(wait_until_ready(recorder));
 
@@ -743,7 +743,7 @@ TEST_SUITE("extension-TriggerRecorder") {
     vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
 
     auto plugin = std::make_shared<RecordingTriggerPlugin>();
-    recorder.bind_trigger_plugin_interface(plugin);
+    recorder.bind_trigger_interface(plugin);
 
     REQUIRE(recorder.async_run());
     REQUIRE(wait_until_ready(recorder));
@@ -768,7 +768,7 @@ TEST_SUITE("extension-TriggerRecorder") {
     vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
 
     auto plugin = std::make_shared<RecordingTriggerPlugin>();
-    recorder.bind_trigger_plugin_interface(plugin);
+    recorder.bind_trigger_interface(plugin);
 
     REQUIRE(recorder.async_run());
     REQUIRE(wait_until_ready(recorder));
@@ -796,7 +796,7 @@ TEST_SUITE("extension-TriggerRecorder") {
 
     vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
     auto plugin = std::make_shared<RecordingTriggerPlugin>();
-    recorder.bind_trigger_plugin_interface(plugin);
+    recorder.bind_trigger_interface(plugin);
     REQUIRE(recorder.async_run());
     REQUIRE(wait_until_ready(recorder));
 
@@ -832,7 +832,7 @@ TEST_SUITE("extension-TriggerRecorder") {
     vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
 
     auto plugin = std::make_shared<RecordingTriggerPlugin>();
-    recorder.bind_trigger_plugin_interface(plugin);
+    recorder.bind_trigger_interface(plugin);
 
     REQUIRE(recorder.async_run());
     REQUIRE(wait_until_ready(recorder));
@@ -863,9 +863,9 @@ TEST_SUITE("extension-TriggerRecorder") {
 
     auto bag_plugin = std::make_shared<CountingBagPlugin>();
 
-    CHECK_NOTHROW(recorder.bind_bag_plugin_interface(bag_plugin));
-    CHECK_NOTHROW(recorder.clear_bag_plugin_interface());
-    CHECK_NOTHROW(recorder.bind_bag_plugin_interface(nullptr));
+    CHECK_NOTHROW(recorder.bind_bag_interface(bag_plugin));
+    CHECK_NOTHROW(recorder.clear_bag_interface());
+    CHECK_NOTHROW(recorder.bind_bag_interface(nullptr));
   }
 
   TEST_CASE("published frames flow through a host-bound bag-plugin interface") {
@@ -885,10 +885,10 @@ TEST_SUITE("extension-TriggerRecorder") {
     vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
 
     auto plugin = std::make_shared<RecordingTriggerPlugin>();
-    recorder.bind_trigger_plugin_interface(plugin);
+    recorder.bind_trigger_interface(plugin);
 
     auto bag_plugin = std::make_shared<CountingBagPlugin>();
-    recorder.bind_bag_plugin_interface(bag_plugin);
+    recorder.bind_bag_interface(bag_plugin);
 
     REQUIRE(recorder.async_run());
     REQUIRE(wait_until_ready(recorder));

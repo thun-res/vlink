@@ -473,13 +473,12 @@ VLink 的扩展点按调用主体分为两类，决定其在文档中的展开�
 | `BagPluginInterface` | `extension/bag_plugin_interface.h` | 录制 / 回放时改写 URL 与帧 | 框架内·插件 |
 | `TriggerPluginInterface` | `extension/trigger_plugin_interface.h` | 观察触发录制生命周期，dump 完成后上传 / 归档 | 框架内·插件 |
 | `DiscoveryReporter` | `extension/discovery_reporter.h` | 节点上线 / 下线上报 | 框架内 |
-| `TerminalStream` | `extension/terminal_stream.h` | CLI 工具的带缓冲 stdout | 框架内 |
 
 实现插件接口涉及三个宏：`VLINK_PLUGIN_REGISTER(Iface)` 在接口与实现类内注入由类型名派生的插件 ID，`VLINK_PLUGIN_DECLARE(ImplType, major, minor)` 在实现 `.cc` 中导出构造 / 析构入口并声明版本，`VLINK_PLUGIN_EXPORT` 为共享库符号可见性修饰符。
 
 `TriggerPluginInterface` 实现声明 ABI `2.0`，并通过 `init(config)` 接收宿主原样传入的配置字符串；字符串可由插件自行解释为 JSON、文件路径或其他格式。`vlink-trigger daemon` 在绑定插件和启动 recorder 前调用一次 `init()`，返回 `false` 时拒绝启动。
 
-`TriggerRecorder` 对 bag 插件采用纯接口注入：它只接受宿主通过 `bind_bag_plugin_interface()` 绑定的 `shared_ptr<BagPluginInterface>`，不接收库名、搜索目录，也不调用 `Plugin::load()`。应用宿主可直接构造实现，或自行用 `Plugin` 完成库搜索、ABI 校验与实例创建后再绑定；`vlink-trigger daemon` 的 `bag_plugin` / `bag_plugin_dir` 正是 CLI 宿主层配置，不属于 `TriggerRecorder::Config`。
+`TriggerRecorder` 对 bag 插件采用纯接口注入：它只接受宿主通过 `bind_bag_interface()` 绑定的 `shared_ptr<BagPluginInterface>`，不接收库名、搜索目录，也不调用 `Plugin::load()`。应用宿主可直接构造实现，或自行用 `Plugin` 完成库搜索、ABI 校验与实例创建后再绑定；`vlink-trigger daemon` 的 `bag_plugin` / `bag_plugin_dir` 正是 CLI 宿主层配置，不属于 `TriggerRecorder::Config`。
 
 > QoS 与安全相关扩展见 [QoS 配置](05-qos.md)、[安全加密](07-security.md)；录制 / 回放扩展见 [录制与回放](09-recording.md)。
 
@@ -871,7 +870,7 @@ if (mgr.is_valid()) {
 }
 ```
 
-框架内扩展接口主要由 VLink 运行时或特定工具链宿主装配，应用代码一般不直接构造：`BagPluginInterface` 由宿主加载或创建后绑定到录制 / 回放组件，组件自身只依赖接口（详见 [录制与回放](09-recording.md)）；`DiscoveryReporter` 用于节点上线 / 下线上报，可经 `VLINK_DISCOVER_DISABLE`、`VLINK_DISCOVER_NATIVE` 控制（详见 [可观测性](12-observability.md)）；`ConfPluginInterface` 为已识别的传输后端提供外部 `Conf` 工厂，不能注册新的 URL scheme（详见 [传输后端与 URL](04-transport.md)）；`TerminalStream` 是 CLI 工具专用的带缓冲 stdout 单例（详见 [CLI 工具](10-cli-tools.md)）。
+框架内扩展接口主要由 VLink 运行时或特定工具链宿主装配，应用代码一般不直接构造：`BagPluginInterface` 由宿主加载或创建后绑定到录制 / 回放组件，组件自身只依赖接口（详见 [录制与回放](09-recording.md)）；`DiscoveryReporter` 用于节点上线 / 下线上报，可经 `VLINK_DISCOVER_DISABLE`、`VLINK_DISCOVER_NATIVE` 控制（详见 [可观测性](12-observability.md)）；`ConfPluginInterface` 为已识别的传输后端提供外部 `Conf` 工厂，不能注册新的 URL scheme（详见 [传输后端与 URL](04-transport.md)）。
 
 ---
 

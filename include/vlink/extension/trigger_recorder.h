@@ -49,10 +49,10 @@
  * waiting for its post window; wait for @c is_dumping() to become false first when a dump must be preserved.
  *
  * @par Two distinct plugin roles (never conflate them)
- * - A @b bag plugin (@c BagPluginInterface, supplied via @c bind_bag_plugin_interface()) sits @e inside the
+ * - A @b bag plugin (@c BagPluginInterface, supplied via @c bind_bag_interface()) sits @e inside the
  *   write path: its @c on_write() re-emits frames reordered by the true @b data-plane time parsed from each
  *   payload.  Without it frames are written in @b capture-time (arrival) order.
- * - A @b trigger plugin (@c TriggerPluginInterface, via @c bind_trigger_plugin_interface()) observes the
+ * - A @b trigger plugin (@c TriggerPluginInterface, via @c bind_trigger_interface()) observes the
  *   recorder @e life cycle -- @c on_dump_finished() is the upload / archive hook.  It never rewrites frames.
  *
  * @par Per-URL windows
@@ -304,40 +304,40 @@ class VLINK_EXPORT TriggerRecorder : public MessageLoop {
    *
    * @details
    * This is the @b post-dump behaviour plugin, distinct from the bag reorder plugin bound by
-   * @c bind_bag_plugin_interface().  Its hooks (see @c TriggerPluginInterface) fire as the recorder starts /
+   * @c bind_bag_interface().  Its hooks (see @c TriggerPluginInterface) fire as the recorder starts /
    * stops, on each trigger, and around each dump -- most importantly @c on_dump_finished() once a bag is
    * written, the place to upload or archive it.  It never rewrites frames.  Passing @c nullptr detaches the
    * current plugin.  Bind before @c async_run() or after the recorder has stopped; binding while it is running
    * is rejected so one recorder run always has one stable lifecycle observer.
    *
-   * @param plugin Trigger plugin instance to bind, or @c nullptr to detach.
+   * @param trigger_interface Trigger plugin interface instance to bind, or @c nullptr to detach.
    */
-  void bind_trigger_plugin_interface(const std::shared_ptr<TriggerPluginInterface>& plugin);
+  void bind_trigger_interface(const std::shared_ptr<TriggerPluginInterface>& trigger_interface);
 
   /**
-   * @brief Detaches the trigger plugin (equivalent to @c bind_trigger_plugin_interface(nullptr)).
+   * @brief Detaches the trigger plugin (equivalent to @c bind_trigger_interface(nullptr)).
    */
-  void clear_trigger_plugin_interface();
+  void clear_trigger_interface();
 
   /**
    * @brief Binds the @b bag reorder plugin applied inside the write path of every dump.
    *
    * @details
    * This is the @b data-plane reorder plugin, distinct from the trigger plugin bound by
-   * @c bind_trigger_plugin_interface().  The recorder attaches it to the internal @c BagWriter of each dump via
-   * @c BagWriter::bind_plugin_interface(); its @c on_write() hook parses the true data-plane time out of each
+   * @c bind_trigger_interface().  The recorder attaches it to the internal @c BagWriter of each dump via
+   * @c BagWriter::bind_bag_interface(); its @c on_write() hook parses the true data-plane time out of each
    * payload and re-emits frames reordered by that time before they are persisted.  The host owns plugin loading
    * and lifetime, then supplies the resulting interface here.  Passing @c nullptr detaches it, so dumps fall back
    * to capture-time order.  Bind before @c async_run() or after the recorder has stopped.
    *
-   * @param plugin Bag reorder plugin instance to bind, or @c nullptr to detach.
+   * @param bag_interface Bag reorder plugin interface instance to bind, or @c nullptr to detach.
    */
-  void bind_bag_plugin_interface(const std::shared_ptr<BagPluginInterface>& plugin);
+  void bind_bag_interface(const std::shared_ptr<BagPluginInterface>& bag_interface);
 
   /**
-   * @brief Detaches the bag reorder plugin (equivalent to @c bind_bag_plugin_interface(nullptr)).
+   * @brief Detaches the bag reorder plugin (equivalent to @c bind_bag_interface(nullptr)).
    */
-  void clear_bag_plugin_interface();
+  void clear_bag_interface();
 
  protected:
   void on_begin() override;

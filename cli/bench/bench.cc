@@ -26,9 +26,9 @@
 #include <vlink/base/elapsed_timer.h>
 #include <vlink/base/format.h>
 #include <vlink/base/process.h>
+#include <vlink/base/terminal_stream.h>
 #include <vlink/base/utils.h>
 #include <vlink/extension/qos_profile.h>
-#include <vlink/extension/terminal_stream.h>
 #include <vlink/serializer.h>
 #include <vlink/version.h>
 #include <vlink/vlink.h>

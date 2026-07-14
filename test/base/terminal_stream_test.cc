@@ -23,7 +23,7 @@
 
 // NOLINTBEGIN
 
-#include "./extension/terminal_stream.h"
+#include "./base/terminal_stream.h"
 
 #if defined(__unix__) && !defined(__CYGWIN__)
 
@@ -36,7 +36,7 @@
 
 #include "../common_test.h"
 
-TEST_SUITE("extension-TerminalStream") {
+TEST_SUITE("base-TerminalStream") {
   TEST_CASE("get returns the same singleton reference on every call") {
     TerminalStream& a = TerminalStream::get();
     TerminalStream& b = TerminalStream::get();

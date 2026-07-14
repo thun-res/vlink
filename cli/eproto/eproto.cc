@@ -23,10 +23,10 @@
 
 #include <vlink/base/elapsed_timer.h>
 #include <vlink/base/helpers.h>
+#include <vlink/base/terminal_stream.h>
 #include <vlink/base/utils.h>
 #include <vlink/extension/discovery_viewer.h>
 #include <vlink/extension/schema_plugin_manager.h>
-#include <vlink/extension/terminal_stream.h>
 #include <vlink/version.h>
 #include <vlink/vlink.h>
 #include <vlink/zerocopy/audio_frame.h>

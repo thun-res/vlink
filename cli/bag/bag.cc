@@ -718,7 +718,7 @@ static int load_and_bind_bag_plugin(vlink::Plugin& plugin, const std::string& pl
     return -1;
   }
 
-  bag->bind_plugin_interface(plugin_interface);
+  bag->bind_bag_interface(plugin_interface);
 
   return 0;
 }
@@ -794,7 +794,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
     }
 
     if VLIKELY (recorder) {
-      recorder->clear_plugin_interface();
+      recorder->clear_bag_interface();
 
       if (!quiet_flag && !detail_flag) {
         stop_print();
@@ -1143,7 +1143,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    recorder->clear_plugin_interface();
+    recorder->clear_bag_interface();
 
     if (!quiet_flag) {
       vlink::Utils::stop_detect_keyboard();
@@ -1532,7 +1532,7 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
     has_quit = true;
 
     if VLIKELY (player) {
-      player->clear_plugin_interface();
+      player->clear_bag_interface();
       player->stop();
       player->quit(true);
     }
@@ -1604,7 +1604,7 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
 
   player->run();
 
-  player->clear_plugin_interface();
+  player->clear_bag_interface();
 
   has_quit = true;
 
@@ -1893,7 +1893,7 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
     has_quit = true;
 
     if VLIKELY (player) {
-      player->clear_plugin_interface();
+      player->clear_bag_interface();
       player->stop();
       player->quit(true);
     }
@@ -2018,9 +2018,9 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
 
   player->run();
 
-  player->clear_plugin_interface();
+  player->clear_bag_interface();
 
-  recorder->clear_plugin_interface();
+  recorder->clear_bag_interface();
 
   progress_timer.stop();
   progress_timer.detach();

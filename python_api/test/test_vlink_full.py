@@ -1190,10 +1190,10 @@ def test_trigger_recorder_lifecycle():
 
         assert not recorder.is_running()
         assert not recorder.is_dumping()
-        assert hasattr(recorder, "bind_bag_plugin_interface")
-        assert hasattr(recorder, "bind_trigger_plugin_interface")
-        recorder.clear_bag_plugin_interface()
-        recorder.clear_trigger_plugin_interface()
+        assert hasattr(recorder, "bind_bag_interface")
+        assert hasattr(recorder, "bind_trigger_interface")
+        recorder.clear_bag_interface()
+        recorder.clear_trigger_interface()
         assert recorder.async_run()
         assert recorder.is_running()
 

@@ -37,7 +37,7 @@
 
 > **约束**：`async_run()` 必须在任何 `push()` 或 `play()` 之前调用——后台循环线程未启动时数据无处分派。
 > `BagWriter::close()` 在队列退出后写入最终 metadata、footer 或 split manifest；如需在对象析构前确认这些写入成功，应显式调用并检查 `fail()`。
-> 若 writer 绑定了写侧 `BagPluginInterface`，停止生产后须先调用 `clear_plugin_interface()`，让插件在循环仍可接收任务时 `flush()` 尾部帧；随后再按表中顺序等待队列、退出并 `close()`。未绑定插件时无需此步。
+> 若 writer 绑定了写侧 `BagPluginInterface`，停止生产后须先调用 `clear_bag_interface()`，让插件在循环仍可接收任务时 `flush()` 尾部帧；随后再按表中顺序等待队列、退出并 `close()`。未绑定插件时无需此步。
 
 ---
 
@@ -417,7 +417,7 @@ int main() {
 }
 ```
 
-`BagProcessor` 同时是 `BagPluginInterface` 派生插件的基本构件，用于录制前 / 回放前的重排与转码：写侧由 `BagWriter::bind_plugin_interface()` 在落盘前调用插件的 `on_write()`，读侧由 `BagReader::bind_plugin_interface()` 在回放前调用 `on_read()`，二者均经插件内部的 `do_callback()` 重新发出。`BagPluginInterface` 的加载与生命周期见 [13-integration.md](13-integration.md)。
+`BagProcessor` 同时是 `BagPluginInterface` 派生插件的基本构件，用于录制前 / 回放前的重排与转码：写侧由 `BagWriter::bind_bag_interface()` 在落盘前调用插件的 `on_write()`，读侧由 `BagReader::bind_bag_interface()` 在回放前调用 `on_read()`，二者均经插件内部的 `do_callback()` 重新发出。`BagPluginInterface` 的加载与生命周期见 [13-integration.md](13-integration.md)。
 
 ---
 
@@ -436,8 +436,8 @@ int main() {
 
 **两类插件（不可混淆）**　引擎通过两个不同接口、两个不同方法接受两类插件：
 
-- **bag 重排插件**（`BagPluginInterface`，仅经 `bind_bag_plugin_interface()` 绑定）位于落盘写入路径内部：其 `on_write()` 从每帧 payload 解析真实的**数据面时间**（data-plane time），并据此做滑窗重排后再持久化——与在线 `BagWriter` 的机制完全一致（见 [§9.12](#-912-多文件合并回放)）。`TriggerRecorder` 不接收插件库名或搜索目录，也不自行动态加载；宿主须先直接创建接口实例，或用 `Plugin` 加载共享库，再把所得 `shared_ptr<BagPluginInterface>` 绑定给 recorder，并保证其所需生命周期。**未绑定该接口时，引擎按采集时刻顺序落盘**，无需解析 payload。TriggerRecorder 自身的后台循环直接同步写入 bag；插件工作线程及 `flush()` 尾帧也绕过 `BagWriter` 任务队列，以免一次 dump 瞬间生成第二份排队窗口。
-- **触发插件**（`TriggerPluginInterface`，经 `bind_trigger_plugin_interface()` 绑定）只观察引擎生命周期——最重要的是 `on_dump_finished()`，即一份 bag 写完后上传或归档的入口；它从不改写帧。动态加载宿主在绑定前调用 `init(config)`；程序化绑定方如需参数，应自行先调用 `init()`。
+- **bag 重排插件**（`BagPluginInterface`，仅经 `bind_bag_interface()` 绑定）位于落盘写入路径内部：其 `on_write()` 从每帧 payload 解析真实的**数据面时间**（data-plane time），并据此做滑窗重排后再持久化——与在线 `BagWriter` 的机制完全一致（见 [§9.12](#-912-多文件合并回放)）。`TriggerRecorder` 不接收插件库名或搜索目录，也不自行动态加载；宿主须先直接创建接口实例，或用 `Plugin` 加载共享库，再把所得 `shared_ptr<BagPluginInterface>` 绑定给 recorder，并保证其所需生命周期。**未绑定该接口时，引擎按采集时刻顺序落盘**，无需解析 payload。TriggerRecorder 自身的后台循环直接同步写入 bag；插件工作线程及 `flush()` 尾帧也绕过 `BagWriter` 任务队列，以免一次 dump 瞬间生成第二份排队窗口。
+- **触发插件**（`TriggerPluginInterface`，经 `bind_trigger_interface()` 绑定）只观察引擎生命周期——最重要的是 `on_dump_finished()`，即一份 bag 写完后上传或归档的入口；它从不改写帧。动态加载宿主在绑定前调用 `init(config)`；程序化绑定方如需参数，应自行先调用 `init()`。
 
 **恒定保留**　每个 URL 恒定保留 `effective_pre + max_post_all + 2 * retention_guard` 时长的历史（`only_back` 的 `effective_pre` 为 0，其他 URL 为各自的 `pre`），其中 `max_post_all` 为所有 URL 中最大的生效 `post` 窗口；落盘发生在 `T + max_post_all + retention_guard`（没有任何 URL 拥有生效的 `post` 窗口时立即落盘），使 `pre` 与 `post` 两侧各保留一个 `retention_guard` 余量以吸收落盘定时抖动。这样采集热路径无需判断"当前是否有触发在进行"，代价是内存全局耦合：单个 URL 配置过大的 `post` 会抬高每个 URL 的保留时长与内存占用，内存紧张时应约束 `post`。启用 bag 重排插件时，其滑窗会在落盘期间额外持有部分窗口副本，峰值内存可接近窗口大小的两倍。
 
@@ -470,7 +470,7 @@ vlink::TriggerRecorder recorder(   // 构造即校验配置并获取全部资源
 // 可选：插件库名与搜索路径属于宿主配置；由宿主加载后显式绑定
 vlink::Plugin bag_plugin_loader;
 if (auto bag_plugin = bag_plugin_loader.load<vlink::BagPluginInterface>("edr_reorder", 2, 0)) {
-  recorder.bind_bag_plugin_interface(bag_plugin);
+  recorder.bind_bag_interface(bag_plugin);
 }
 
 recorder.async_run();

@@ -23,9 +23,9 @@
 
 #include <vlink/base/helpers.h>
 #include <vlink/base/logger.h>
+#include <vlink/base/terminal_stream.h>
 #include <vlink/base/utils.h>
 #include <vlink/extension/qos_profile.h>
-#include <vlink/extension/terminal_stream.h>
 #include <vlink/version.h>
 #ifdef VLINK_SUPPORT_SHM
 #include <vlink/modules/fdbus_conf.h>

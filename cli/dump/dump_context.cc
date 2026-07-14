@@ -49,7 +49,7 @@ bool DumpContext::invoke_callback(int64_t timestamp, const std::string& url, con
 void DumpContext::request_stop() {
   if (dump_for_bag) {
     if (bag_player) {
-      bag_player->clear_plugin_interface();
+      bag_player->clear_bag_interface();
       bag_player->stop();
     }
   } else if (discovery_viewer) {
@@ -74,7 +74,7 @@ bool DumpContext::prepare_bag_plugin() {
 
 void DumpContext::bind_bag_plugin(const std::shared_ptr<vlink::BagReader>& reader) {
   if (reader && bag_plugin_interface) {
-    reader->bind_plugin_interface(bag_plugin_interface);
+    reader->bind_bag_interface(bag_plugin_interface);
   }
 }
 

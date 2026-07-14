@@ -28,8 +28,8 @@
  *
  * @details
  * @c BagPluginInterface is a dynamic plugin loaded through the VLink @c Plugin framework and
- * attached either to a @c BagReader (via @c BagReader::bind_plugin_interface()) or to a
- * @c BagWriter (via @c BagWriter::bind_plugin_interface()).  A single class serves both
+ * attached either to a @c BagReader (via @c BagReader::bind_bag_interface()) or to a
+ * @c BagWriter (via @c BagWriter::bind_bag_interface()).  A single class serves both
  * directions; an implementation discovers which side it is bound to through
  * @c get_direction() and overrides only the hooks for that side.
  *
@@ -129,7 +129,6 @@
 #include <string>
 #include <utility>
 
-#include "../base/functional.h"
 #include "../base/plugin.h"
 #include "../impl/types.h"
 
@@ -140,8 +139,8 @@ namespace vlink {
  * @brief Abstract plugin base shared by bag playback and bag recording.
  *
  * @details
- * The host binds an instance through @c BagReader::bind_plugin_interface() or
- * @c BagWriter::bind_plugin_interface().  At bind time the host calls @c bind_direction() to
+ * The host binds an instance through @c BagReader::bind_bag_interface() or
+ * @c BagWriter::bind_bag_interface().  At bind time the host calls @c bind_direction() to
  * record which side the plugin serves and @c register_callback() to supply the forwarding sink.  The frame
  * hooks @c on_read() and @c on_write() are pure and must both be defined; @c convert_url_meta() and @c flush()
  * carry defaults.  Implementations are expected to be thread-compatible with the host's loop thread.
@@ -195,7 +194,7 @@ class BagPluginInterface {
    * @brief Stores the forwarding sink used by @c do_callback().
    *
    * @details
-   * Invoked by the host's @c bind_plugin_interface() at attach time.  The plugin keeps @p callback in
+   * Invoked by the host's @c bind_bag_interface() at attach time.  The plugin keeps @p callback in
    * @c callback_ and calls it from @c do_callback() to deliver a frame downstream -- toward the user's
    * playback callback on the read side, or toward persistence on the write side.  Cleared (with an
    * empty callable) on rebind and at host teardown, so a plugin-owned worker thread cannot reach a

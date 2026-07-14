@@ -400,7 +400,7 @@ void verify_sync_mode_plugin_output_without_writer_loop(const char* suffix) {
 
   auto writer = BagWriter::create(bag.path.string(), config);
   REQUIRE(writer != nullptr);
-  writer->bind_plugin_interface(std::make_shared<ReorderWritePlugin>(60'000));
+  writer->bind_bag_interface(std::make_shared<ReorderWritePlugin>(60'000));
 
   REQUIRE_GE(writer->push(write_frame("dds://late", "raw", SchemaType::kRaw, ActionType::kPublish,
                                       timestamp_payload(100'000'000), 1)),
@@ -409,7 +409,7 @@ void verify_sync_mode_plugin_output_without_writer_loop(const char* suffix) {
                                       timestamp_payload(1'000'000), 2)),
              0);
 
-  writer->clear_plugin_interface();
+  writer->clear_bag_interface();
   writer->close();
   CHECK_FALSE(writer->fail());
   writer.reset();
@@ -1371,16 +1371,16 @@ void verify_ignore_compress_url_remains_readable(const char* suffix) {
 }
 
 TEST_SUITE("extension-BagWriter") {
-  TEST_CASE("bind_plugin_interface marks the plugin as write direction") {
+  TEST_CASE("bind_bag_interface marks the plugin as write direction") {
     StubBagWriter writer;
     auto plugin = std::make_shared<RewriteWritePlugin>();
-    writer.bind_plugin_interface(plugin);
+    writer.bind_bag_interface(plugin);
     CHECK_EQ(plugin->get_direction(), BagPluginInterface::Direction::kWrite);
   }
 
   TEST_CASE("on_write re-emits rewritten url/ser/schema via do_callback before record") {
     StubBagWriter writer;
-    writer.bind_plugin_interface(std::make_shared<RewriteWritePlugin>());
+    writer.bind_bag_interface(std::make_shared<RewriteWritePlugin>());
 
     Bytes data = Bytes::create(8u);
     writer.push(write_frame("dds://raw", "raw", SchemaType::kUnknown, ActionType::kPublish, data, 100));
@@ -1448,7 +1448,7 @@ TEST_SUITE("extension-BagWriter") {
 
   TEST_CASE("on_write that does not emit drops the frame") {
     StubBagWriter writer;
-    writer.bind_plugin_interface(std::make_shared<DropWritePlugin>());
+    writer.bind_bag_interface(std::make_shared<DropWritePlugin>());
 
     Bytes data = Bytes::create(4u);
     int64_t result = writer.push(write_frame("dds://x", "raw", SchemaType::kUnknown, ActionType::kPublish, data, -1));
@@ -1459,7 +1459,7 @@ TEST_SUITE("extension-BagWriter") {
 
   TEST_CASE("plugin path propagates synchronous record failure") {
     FailingBagWriter writer;
-    writer.bind_plugin_interface(std::make_shared<RewriteWritePlugin>());
+    writer.bind_bag_interface(std::make_shared<RewriteWritePlugin>());
 
     Bytes data = Bytes::create(4u);
     int64_t result = writer.push(write_frame("dds://x", "raw", SchemaType::kUnknown, ActionType::kPublish, data, 100));
@@ -1470,7 +1470,7 @@ TEST_SUITE("extension-BagWriter") {
 
   TEST_CASE("plugin path treats synchronously emitted empty url as failure") {
     StubBagWriter writer;
-    writer.bind_plugin_interface(std::make_shared<EmptyUrlWritePlugin>());
+    writer.bind_bag_interface(std::make_shared<EmptyUrlWritePlugin>());
 
     Bytes data = Bytes::create(4u);
     int64_t result = writer.push(write_frame("dds://x", "raw", SchemaType::kUnknown, ActionType::kPublish, data, 100));
@@ -1481,7 +1481,7 @@ TEST_SUITE("extension-BagWriter") {
 
   TEST_CASE("on_write re-emits a replacement payload via do_callback") {
     StubBagWriter writer;
-    writer.bind_plugin_interface(std::make_shared<TranscodeWritePlugin>());
+    writer.bind_bag_interface(std::make_shared<TranscodeWritePlugin>());
 
     Bytes data = Bytes::create(8u);
     writer.push(write_frame("dds://raw", "raw", SchemaType::kUnknown, ActionType::kPublish, data, 100));
@@ -1493,7 +1493,7 @@ TEST_SUITE("extension-BagWriter") {
 
   TEST_CASE("synchronous write plugin url rewrite is tracked for loss-metadata alignment") {
     StubBagWriter writer;
-    writer.bind_plugin_interface(std::make_shared<RewriteWritePlugin>());
+    writer.bind_bag_interface(std::make_shared<RewriteWritePlugin>());
 
     Bytes data = Bytes::create(8u);
     writer.push(write_frame("dds://raw", "raw", SchemaType::kUnknown, ActionType::kPublish, data, 100));
@@ -1505,11 +1505,11 @@ TEST_SUITE("extension-BagWriter") {
 
   TEST_CASE("plugin url remap survives unbind for close-time metadata") {
     StubBagWriter writer;
-    writer.bind_plugin_interface(std::make_shared<RewriteWritePlugin>());
+    writer.bind_bag_interface(std::make_shared<RewriteWritePlugin>());
 
     Bytes data = Bytes::create(8u);
     writer.push(write_frame("dds://raw", "raw", SchemaType::kUnknown, ActionType::kPublish, data, 100));
-    writer.bind_plugin_interface(nullptr);
+    writer.bind_bag_interface(nullptr);
 
     CHECK_EQ(writer.convert_recorded_url("dds://raw"), "dds://jpeg");
     CHECK_EQ(writer.recover_recorded_url("dds://jpeg"), "dds://raw");
@@ -1517,7 +1517,7 @@ TEST_SUITE("extension-BagWriter") {
 
   TEST_CASE("fan-out plugin tracks every recorded url for one origin") {
     StubBagWriter writer;
-    writer.bind_plugin_interface(std::make_shared<FanOutWritePlugin>());
+    writer.bind_bag_interface(std::make_shared<FanOutWritePlugin>());
 
     Bytes data = Bytes::create(8u);
     writer.push(write_frame("dds://raw", "raw", SchemaType::kUnknown, ActionType::kPublish, data, 100));
@@ -1533,7 +1533,7 @@ TEST_SUITE("extension-BagWriter") {
 
   TEST_CASE("write plugin reorders by data-plane time (not arrival order) before record") {
     StubBagWriter writer;
-    writer.bind_plugin_interface(std::make_shared<ReorderWritePlugin>(60'000));
+    writer.bind_bag_interface(std::make_shared<ReorderWritePlugin>(60'000));
 
     auto make_payload = [](int64_t data_timestamp) {
       Bytes payload = Bytes::create(sizeof(int64_t));
@@ -1555,14 +1555,14 @@ TEST_SUITE("extension-BagWriter") {
       CHECK_EQ(writer.recorded_timestamps[2], 50'000'001);
     }
 
-    writer.bind_plugin_interface(nullptr);
+    writer.bind_bag_interface(nullptr);
   }
 
   TEST_CASE("sync-mode plugin output bypasses the writer queue for worker and flush emissions") {
     BagWriter::Config config;
     config.sync_mode = true;
     StubBagWriter writer(config);
-    writer.bind_plugin_interface(std::make_shared<ReorderWritePlugin>(60'000));
+    writer.bind_bag_interface(std::make_shared<ReorderWritePlugin>(60'000));
 
     writer.push(
         write_frame("dds://a", "raw", SchemaType::kUnknown, ActionType::kPublish, timestamp_payload(100'000'000), 1));
@@ -1575,7 +1575,7 @@ TEST_SUITE("extension-BagWriter") {
           writer.record_cv.wait_for(lock, std::chrono::seconds(1), [&writer]() { return writer.record_count > 0; }));
     }
 
-    writer.clear_plugin_interface();
+    writer.clear_bag_interface();
 
     std::lock_guard lock(writer.record_mtx);
     REQUIRE_EQ(writer.recorded_timestamps.size(), 2u);
@@ -1592,7 +1592,7 @@ TEST_SUITE("extension-BagWriter") {
     BagWriter::Config config;
     config.sync_mode = true;
     FailingBagWriter writer(config);
-    writer.bind_plugin_interface(std::make_shared<ReorderWritePlugin>(60'000));
+    writer.bind_bag_interface(std::make_shared<ReorderWritePlugin>(60'000));
 
     REQUIRE_GE(writer.push(write_frame("dds://late", "raw", SchemaType::kRaw, ActionType::kPublish,
                                        timestamp_payload(100'000'000), 1)),
@@ -1602,13 +1602,13 @@ TEST_SUITE("extension-BagWriter") {
                0);
 
     REQUIRE(common_test::wait_until([&writer]() { return writer.fail(); }));
-    writer.clear_plugin_interface();
+    writer.clear_bag_interface();
   }
 
   TEST_CASE("teardown flushes an async plugin's buffered tail frames instead of dropping them") {
     StubBagWriter writer;
     // 60s reorder window: pushed frames stay buffered in the plugin, never auto-drained during the test.
-    writer.bind_plugin_interface(std::make_shared<ReorderWritePlugin>(60'000));
+    writer.bind_bag_interface(std::make_shared<ReorderWritePlugin>(60'000));
 
     auto make_payload = [](int64_t data_timestamp) {
       Bytes payload = Bytes::create(sizeof(int64_t));
@@ -1638,7 +1638,7 @@ TEST_SUITE("extension-BagWriter") {
 
   TEST_CASE("unbinding an async plugin flushes its buffered tail frames instead of dropping them") {
     StubBagWriter writer;
-    writer.bind_plugin_interface(std::make_shared<ReorderWritePlugin>(60'000));
+    writer.bind_bag_interface(std::make_shared<ReorderWritePlugin>(60'000));
 
     auto make_payload = [](int64_t data_timestamp) {
       Bytes payload = Bytes::create(sizeof(int64_t));
@@ -1654,7 +1654,7 @@ TEST_SUITE("extension-BagWriter") {
       CHECK_EQ(writer.recorded_timestamps.size(), 0u);  // still buffered
     }
 
-    writer.bind_plugin_interface(nullptr);  // unbind must flush the buffered tail before detaching
+    writer.bind_bag_interface(nullptr);  // unbind must flush the buffered tail before detaching
 
     {
       std::lock_guard lock(writer.record_mtx);
@@ -1666,7 +1666,7 @@ TEST_SUITE("extension-BagWriter") {
 
   TEST_CASE("flush_plugin drains an async write plugin's buffer while keeping it bound") {
     StubBagWriter writer;
-    writer.bind_plugin_interface(std::make_shared<ReorderWritePlugin>(60'000));
+    writer.bind_bag_interface(std::make_shared<ReorderWritePlugin>(60'000));
 
     auto make_payload = [](int64_t data_timestamp) {
       Bytes payload = Bytes::create(sizeof(int64_t));

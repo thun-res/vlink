@@ -139,7 +139,7 @@ void BagReader::flush_plugin() {
   }
 }
 
-void BagReader::bind_plugin_interface(const std::shared_ptr<BagPluginInterface>& plugin_interface) {
+void BagReader::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& bag_interface) {
   std::shared_ptr<BagPluginInterface> old_plugin_interface;
 
   {
@@ -147,15 +147,15 @@ void BagReader::bind_plugin_interface(const std::shared_ptr<BagPluginInterface>&
     old_plugin_interface = impl_->plugin_interface;
   }
 
-  if (old_plugin_interface && old_plugin_interface != plugin_interface) {
+  if (old_plugin_interface && old_plugin_interface != bag_interface) {
     old_plugin_interface->flush();
     old_plugin_interface->register_callback({});
   }
 
-  if VLIKELY (plugin_interface) {
-    plugin_interface->bind_direction(BagPluginInterface::Direction::kRead);
+  if VLIKELY (bag_interface) {
+    bag_interface->bind_direction(BagPluginInterface::Direction::kRead);
 
-    plugin_interface->register_callback([this](const Frame& frame) {
+    bag_interface->register_callback([this](const Frame& frame) {
       std::string output_url;
 
       if VUNLIKELY (!convert_playback_url(frame.url, output_url)) {
@@ -180,12 +180,12 @@ void BagReader::bind_plugin_interface(const std::shared_ptr<BagPluginInterface>&
 
   std::unique_lock state_lock(impl_->playback_state_mtx);
 
-  impl_->plugin_interface = plugin_interface;
+  impl_->plugin_interface = bag_interface;
   impl_->playback_url_remap.clear();
   impl_->excluded_playback_urls.clear();
 }
 
-void BagReader::clear_plugin_interface() { bind_plugin_interface(nullptr); }
+void BagReader::clear_bag_interface() { bind_bag_interface(nullptr); }
 
 void BagReader::register_status_callback(StatusCallback&& status_callback) { (void)status_callback; }
 

@@ -300,7 +300,7 @@ void BagWriter::detach_plugin() {
   }
 }
 
-void BagWriter::bind_plugin_interface(const std::shared_ptr<BagPluginInterface>& plugin_interface) {
+void BagWriter::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& bag_interface) {
   std::shared_ptr<BagPluginInterface> old_plugin_interface;
 
   {
@@ -308,15 +308,15 @@ void BagWriter::bind_plugin_interface(const std::shared_ptr<BagPluginInterface>&
     old_plugin_interface = impl_->plugin_interface;
   }
 
-  if (old_plugin_interface && old_plugin_interface != plugin_interface) {
+  if (old_plugin_interface && old_plugin_interface != bag_interface) {
     old_plugin_interface->flush();
     old_plugin_interface->register_callback({});
   }
 
-  if VLIKELY (plugin_interface) {
-    plugin_interface->bind_direction(BagPluginInterface::Direction::kWrite);
+  if VLIKELY (bag_interface) {
+    bag_interface->bind_direction(BagPluginInterface::Direction::kWrite);
 
-    plugin_interface->register_callback([this](const Frame& frame) {
+    bag_interface->register_callback([this](const Frame& frame) {
       const bool active = impl_->active_thread_id.load(std::memory_order_acquire) == Utils::get_native_thread_id();
 
       if VUNLIKELY (frame.url.empty()) {
@@ -345,10 +345,10 @@ void BagWriter::bind_plugin_interface(const std::shared_ptr<BagPluginInterface>&
 
   std::unique_lock state_lock(impl_->record_state_mtx);
 
-  impl_->plugin_interface = plugin_interface;
+  impl_->plugin_interface = bag_interface;
 }
 
-void BagWriter::clear_plugin_interface() { bind_plugin_interface(nullptr); }
+void BagWriter::clear_bag_interface() { bind_bag_interface(nullptr); }
 
 int64_t BagWriter::push(const Frame& frame) {
   if VUNLIKELY (frame.url.empty()) {

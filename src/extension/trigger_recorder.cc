@@ -262,7 +262,7 @@ bool TriggerRecorder::dump(const TriggerParams& params) {
 
 bool TriggerRecorder::is_dumping() const noexcept { return impl_->dumping.load(std::memory_order_acquire); }
 
-void TriggerRecorder::bind_trigger_plugin_interface(const std::shared_ptr<TriggerPluginInterface>& plugin) {
+void TriggerRecorder::bind_trigger_interface(const std::shared_ptr<TriggerPluginInterface>& trigger_interface) {
   std::lock_guard lifecycle_lock(impl_->lifecycle_mtx);
 
   if VUNLIKELY (impl_->running.load(std::memory_order_acquire)) {
@@ -270,12 +270,12 @@ void TriggerRecorder::bind_trigger_plugin_interface(const std::shared_ptr<Trigge
     return;
   }
 
-  impl_->trigger_plugin = plugin;
+  impl_->trigger_plugin = trigger_interface;
 }
 
-void TriggerRecorder::clear_trigger_plugin_interface() { bind_trigger_plugin_interface(nullptr); }
+void TriggerRecorder::clear_trigger_interface() { bind_trigger_interface(nullptr); }
 
-void TriggerRecorder::bind_bag_plugin_interface(const std::shared_ptr<BagPluginInterface>& plugin) {
+void TriggerRecorder::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& bag_interface) {
   std::lock_guard lock(impl_->lifecycle_mtx);
 
   if VUNLIKELY (impl_->running.load(std::memory_order_acquire)) {
@@ -283,10 +283,10 @@ void TriggerRecorder::bind_bag_plugin_interface(const std::shared_ptr<BagPluginI
     return;
   }
 
-  impl_->bag_plugin = plugin;
+  impl_->bag_plugin = bag_interface;
 }
 
-void TriggerRecorder::clear_bag_plugin_interface() { bind_bag_plugin_interface(nullptr); }
+void TriggerRecorder::clear_bag_interface() { bind_bag_interface(nullptr); }
 
 void TriggerRecorder::on_begin() {
   MessageLoop::on_begin();
@@ -938,7 +938,7 @@ void TriggerRecorder::do_dump(DumpJob& job) {
   }
 
   if (impl_->bag_plugin) {
-    writer->bind_plugin_interface(impl_->bag_plugin);
+    writer->bind_bag_interface(impl_->bag_plugin);
   }
 
   for (const auto& info : losses) {
@@ -1004,7 +1004,7 @@ void TriggerRecorder::do_dump(DumpJob& job) {
   std::vector<SnapFrame>().swap(snapshot);
 
   if (impl_->bag_plugin) {
-    writer->clear_plugin_interface();
+    writer->clear_bag_interface();
   }
 
   writer->close();

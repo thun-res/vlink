@@ -997,7 +997,7 @@ void verify_real_reader_plugin_rebind_updates_metadata(const char* suffix) {
   CHECK_EQ(reader->get_ser_type("dds://coverage/event"), "demo.Message");
 
   auto plugin = std::make_shared<CoverageReaderPlugin>();
-  reader->bind_plugin_interface(plugin);
+  reader->bind_bag_interface(plugin);
   CHECK_EQ(plugin->get_direction(), BagPluginInterface::Direction::kRead);
   CHECK_EQ(reader->get_ser_type("dds://coverage/event_remapped"), "demo.Message");
   CHECK_EQ(reader->get_schema_type("dds://coverage/event_remapped"), SchemaType::kProtobuf);
@@ -1011,7 +1011,7 @@ void verify_real_reader_plugin_rebind_updates_metadata(const char* suffix) {
   CHECK_EQ(frames.front().url, "dds://coverage/event_remapped");
   CHECK_EQ(frames.front().payload, "event-payload");
 
-  reader->bind_plugin_interface(nullptr);
+  reader->bind_bag_interface(nullptr);
   CHECK_EQ(reader->get_ser_type("dds://coverage/event"), "demo.Message");
   CHECK_EQ(reader->get_ser_type("dds://coverage/event_remapped"), "");
 }
@@ -1040,7 +1040,7 @@ void verify_vcap_cursor_plugin_excludes_and_remaps_urls() {
   auto reader = BagReader::create(bag.path.string(), false);
   REQUIRE(reader != nullptr);
 
-  reader->bind_plugin_interface(std::make_shared<DropCursorUrlPlugin>());
+  reader->bind_bag_interface(std::make_shared<DropCursorUrlPlugin>());
   CHECK_EQ(reader->get_ser_type("dds://coverage/drop_cursor"), "");
   CHECK_EQ(reader->get_ser_type("dds://coverage/keep_cursor_remapped"), "raw");
 
@@ -1076,7 +1076,7 @@ void verify_vdb_cursor_plugin_excludes_and_remaps_urls() {
   auto reader = BagReader::create(bag.path.string(), false);
   REQUIRE(reader != nullptr);
 
-  reader->bind_plugin_interface(std::make_shared<DropCursorUrlPlugin>());
+  reader->bind_bag_interface(std::make_shared<DropCursorUrlPlugin>());
   CHECK_EQ(reader->get_ser_type("dds://coverage/drop_cursor"), "");
   CHECK_EQ(reader->get_ser_type("dds://coverage/keep_cursor_remapped"), "raw");
 
@@ -2717,7 +2717,7 @@ TEST_SUITE("extension-BagReader") {
 
   TEST_CASE("flush_plugin drains an async read plugin's buffered tail frames") {
     StubBagReader reader;
-    reader.bind_plugin_interface(std::make_shared<ReorderReadPlugin>(60'000));
+    reader.bind_bag_interface(std::make_shared<ReorderReadPlugin>(60'000));
 
     std::vector<int64_t> observed_timestamps;
     reader.register_output_callback([&](const Frame& frame) { observed_timestamps.push_back(frame.timestamp); });
@@ -2764,7 +2764,7 @@ TEST_SUITE("extension-BagReader") {
   TEST_CASE("plugin remaps and excludes urls during process_url_metas") {
     StubBagReader reader;
     auto plugin = std::make_shared<RemapPlugin>();
-    reader.bind_plugin_interface(plugin);
+    reader.bind_bag_interface(plugin);
 
     std::vector<BagReader::Info::UrlMeta> metas;
     BagReader::Info::UrlMeta a;
@@ -2784,7 +2784,7 @@ TEST_SUITE("extension-BagReader") {
   TEST_CASE("process_output forwards remapped url derived from process_url_metas") {
     StubBagReader reader;
     auto plugin = std::make_shared<RemapPlugin>();
-    reader.bind_plugin_interface(plugin);
+    reader.bind_bag_interface(plugin);
 
     std::vector<BagReader::Info::UrlMeta> metas;
     BagReader::Info::UrlMeta m;
@@ -2811,7 +2811,7 @@ TEST_SUITE("extension-BagReader") {
   TEST_CASE("match_playback_url_filter uses remapped url for filter matching") {
     StubBagReader reader;
     auto plugin = std::make_shared<RemapPlugin>();
-    reader.bind_plugin_interface(plugin);
+    reader.bind_bag_interface(plugin);
 
     std::vector<BagReader::Info::UrlMeta> metas;
     BagReader::Info::UrlMeta m;
@@ -2836,7 +2836,7 @@ TEST_SUITE("extension-BagReader") {
   TEST_CASE("process_output drops urls excluded by a bound plugin") {
     StubBagReader reader;
     auto plugin = std::make_shared<RemapPlugin>();
-    reader.bind_plugin_interface(plugin);
+    reader.bind_bag_interface(plugin);
 
     std::vector<BagReader::Info::UrlMeta> metas;
     BagReader::Info::UrlMeta dropped;
@@ -2889,8 +2889,8 @@ TEST_SUITE("extension-BagReader") {
     int call_count = 0;
     reader.register_output_callback([&](const Frame&) { ++call_count; });
 
-    reader.bind_plugin_interface(old_plugin);
-    reader.bind_plugin_interface(new_plugin);
+    reader.bind_bag_interface(old_plugin);
+    reader.bind_bag_interface(new_plugin);
 
     Bytes data = Bytes::create(1u);
     old_plugin->on_read(read_frame(1, "intra://old", ActionType::kPublish, data));

@@ -285,21 +285,21 @@ class VLINK_EXPORT BagReader : public MessageLoop {
    * rename topics, override serialisation types or filter URLs out.  Its @c on_read() hook
    * sees every replayed frame before it reaches the user @c OutputCallback.
    *
-   * @param plugin_interface Plugin instance, or @c nullptr to detach the current binding.
+   * @param bag_interface Plugin interface instance, or @c nullptr to detach the current binding.
    *
-   * @see clear_plugin_interface() for the named equivalent of passing @c nullptr.
+   * @see clear_bag_interface() for the named equivalent of passing @c nullptr.
    */
-  virtual void bind_plugin_interface(const std::shared_ptr<BagPluginInterface>& plugin_interface);
+  virtual void bind_bag_interface(const std::shared_ptr<BagPluginInterface>& bag_interface);
 
   /**
    * @brief Detaches the currently bound plugin, if any.
    *
    * @details
-   * Convenience wrapper equivalent to @c bind_plugin_interface(nullptr): flushes the bound plugin,
+   * Convenience wrapper equivalent to @c bind_bag_interface(nullptr): flushes the bound plugin,
    * clears its callback together with the plugin-derived URL remap / exclusion state, and drops the
    * binding.  Safe to call when no plugin is bound (in which case it is a no-op).
    */
-  virtual void clear_plugin_interface();
+  virtual void clear_bag_interface();
 
   /**
    * @brief Installs a state-change observer.

@@ -1087,6 +1087,7 @@ vlink::Co::Task<void> orchestrate(vlink::MessageLoop& loop) {
 | --- | --- | --- |
 | `Format` | `base/format.h` | 轻量 `{}` 占位符格式化器（`MLOG_*` 内部使用） |
 | `FastStream` | `base/fast_stream.h` | 高性能输出流（Logger 内部引擎） |
+| `TerminalStream` | `base/terminal_stream.h` | CLI 使用的线程安全、TTY 感知带缓冲 stdout 单例 |
 | `Utils` | `base/utils.h` | 进程/线程/网络/信号等跨平台工具函数 |
 | `Helpers` | `base/helpers.h` | 字符串/数字/哈希/转义等无状态工具 |
 | `Quantize` | `base/quantize.h` | 线性量化/反量化（紧凑容器复用） |

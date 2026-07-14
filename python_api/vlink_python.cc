@@ -3814,12 +3814,12 @@ NB_MODULE(_vlink_nanobind, m) {
             return self.dump(params);
           },
           "params"_a = vlink::TriggerRecorder::TriggerParams())
-      .def("bind_bag_plugin_interface", &vlink::TriggerRecorder::bind_bag_plugin_interface, "plugin"_a,
+      .def("bind_bag_interface", &vlink::TriggerRecorder::bind_bag_interface, "bag_interface"_a,
            "Bind a BagPluginInterface previously loaded by the host Plugin instance.")
-      .def("clear_bag_plugin_interface", &vlink::TriggerRecorder::clear_bag_plugin_interface)
-      .def("bind_trigger_plugin_interface", &vlink::TriggerRecorder::bind_trigger_plugin_interface, "plugin"_a,
+      .def("clear_bag_interface", &vlink::TriggerRecorder::clear_bag_interface)
+      .def("bind_trigger_interface", &vlink::TriggerRecorder::bind_trigger_interface, "trigger_interface"_a,
            "Bind a TriggerPluginInterface previously loaded by the host Plugin instance.")
-      .def("clear_trigger_plugin_interface", &vlink::TriggerRecorder::clear_trigger_plugin_interface)
+      .def("clear_trigger_interface", &vlink::TriggerRecorder::clear_trigger_interface)
       .def("is_dumping", &vlink::TriggerRecorder::is_dumping)
       .def("is_running", &vlink::TriggerRecorder::is_running)
       .def("__repr__", [](const vlink::TriggerRecorder& self) {

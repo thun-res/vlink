@@ -87,11 +87,11 @@ if bag_plugin is None:
 
 config = vlink.TriggerRecorder.Config()
 recorder = vlink.TriggerRecorder(config)
-recorder.bind_bag_plugin_interface(bag_plugin)
+recorder.bind_bag_interface(bag_plugin)
 ```
 
 `load_bag_plugin()` 按 `BagPluginInterface` ABI 2.0 加载；返回对象可直接交给
-`bind_bag_plugin_interface()`，`clear_bag_plugin_interface()` 用于恢复默认的采集时间顺序。
+`bind_bag_interface()`，`clear_bag_interface()` 用于恢复默认的采集时间顺序。
 
 触发生命周期插件（`TriggerPluginInterface`）同样由宿主加载并绑定，`load_trigger_plugin()`
 会在加载后调用一次插件的 `init(config)`：
@@ -101,11 +101,11 @@ trigger_plugin = plugin_host.load_trigger_plugin("my_trigger_plugin", config="{}
 if trigger_plugin is None:
     raise RuntimeError("failed to load or init trigger plugin")
 
-recorder.bind_trigger_plugin_interface(trigger_plugin)
+recorder.bind_trigger_interface(trigger_plugin)
 ```
 
 `load_trigger_plugin()` 按 `TriggerPluginInterface` ABI 2.0 加载并调用 `init(config)`，加载或
-`init()` 任一失败都返回 `None`；`clear_trigger_plugin_interface()` 用于解绑。两类插件都必须在
+`init()` 任一失败都返回 `None`；`clear_trigger_interface()` 用于解绑。两类插件都必须在
 `async_run()` 之前或 recorder 停止后绑定。
 
 ---

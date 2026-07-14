@@ -28,7 +28,7 @@
  *
  * @details
  * @c TriggerPluginInterface is a dynamic plugin loaded through the VLink @c Plugin framework and
- * attached to a @c TriggerRecorder via @c TriggerRecorder::bind_trigger_plugin_interface().  Unlike
+ * attached to a @c TriggerRecorder via @c TriggerRecorder::bind_trigger_interface().  Unlike
  * @c BagPluginInterface -- a frame-forwarding pipeline that rewrites traffic in flight -- this
  * interface is an @b observer over the recorder's life cycle: the recorder owns the ring buffer and
  * the disk write, and the plugin is notified at each stage so it can drive the @e next step.  The
@@ -95,7 +95,7 @@ namespace vlink {
  * @brief Abstract plugin base notified across a @c TriggerRecorder's life cycle and dump pipeline.
  *
  * @details
- * The host binds an instance through @c TriggerRecorder::bind_trigger_plugin_interface() and calls each
+ * The host binds an instance through @c TriggerRecorder::bind_trigger_interface() and calls each
  * hook at the corresponding stage.  Implementations provide @c init() and @c on_dump_finished(); the remaining
  * hooks have default no-op implementations.  Implementations must follow the threading contract documented
  * above.

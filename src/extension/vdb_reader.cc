@@ -199,8 +199,8 @@ VDBReader::~VDBReader() {
   close();
 }
 
-void VDBReader::bind_plugin_interface(const std::shared_ptr<BagPluginInterface>& plugin_interface) {
-  BagReader::bind_plugin_interface(plugin_interface);
+void VDBReader::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& bag_interface) {
+  BagReader::bind_bag_interface(bag_interface);
   impl_->info.url_metas = impl_->raw_url_metas;
   process_url_metas(impl_->info.url_metas);
   rebuild_url_meta_lookup(impl_->info.url_metas);
