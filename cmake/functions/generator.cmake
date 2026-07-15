@@ -277,7 +277,7 @@ function(
     separate_arguments(
       command
       NATIVE_COMMAND
-      "${_TARGET_GEN_EXE} -c ${flags} -I ${filedir} -o ${out_dir}${dir_suffix} ${it} --filename-suffix .fbs --filename-ext hpp --cpp-std=c++17 --gen-object-api --gen-name-strings --bfbs-gen-embed"
+      "${_TARGET_GEN_EXE} -c ${flags} -I ${filedir} -o ${out_dir}${dir_suffix} ${it} --keep-prefix --filename-suffix .fbs --filename-ext hpp --cpp-std=c++17 --gen-object-api --gen-name-strings --bfbs-gen-embed"
     )
     set(gen_hdr ${out_dir}${dir_suffix}/${outfilename}.fbs.hpp)
     set(gen_bfbs_hdr ${out_dir}${dir_suffix}/${outfilename}_bfbs.fbs.hpp)
