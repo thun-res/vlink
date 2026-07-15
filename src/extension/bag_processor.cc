@@ -25,7 +25,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -33,7 +32,6 @@
 #include <utility>
 
 #include "./base/condition_variable.h"
-#include "./base/elapsed_timer.h"
 #include "./base/logger.h"
 
 namespace vlink {
@@ -42,7 +40,6 @@ namespace vlink {
 struct BagProcessor::Impl final {
   struct CacheEntry final {
     int64_t data_timestamp{0};
-    int64_t enqueue_time{0};
     Frame frame;
     bool data_timestamp_valid{false};
   };
@@ -124,8 +121,6 @@ void BagProcessor::push(int64_t data_timestamp, const Frame& frame) {
     return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  const int64_t enqueue_time = ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMicro);
-
   bool data_timestamp_valid = true;
 
   if (data_timestamp < 0) {
@@ -152,7 +147,7 @@ void BagProcessor::push(int64_t data_timestamp, const Frame& frame) {
 
   impl_->current_size += frame.data.size();
 
-  Impl::CacheEntry entry{data_timestamp, enqueue_time, frame, data_timestamp_valid};
+  Impl::CacheEntry entry{data_timestamp, frame, data_timestamp_valid};
 
   auto iter = std::upper_bound(impl_->data_queue.begin(), impl_->data_queue.end(), entry,
                                [](const Impl::CacheEntry& candidate, const Impl::CacheEntry& queued) {
@@ -207,14 +202,7 @@ bool BagProcessor::on_check() {
 
   const int64_t min_cache_time = impl_->config.min_cache_time * 1000;
 
-  if (impl_->data_queue.back().data_timestamp - impl_->data_queue.front().data_timestamp >= min_cache_time) {
-    return true;
-  }
-
-  const int64_t cache_elapsed = static_cast<int64_t>(ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMicro)) -
-                                impl_->data_queue.front().enqueue_time;
-
-  return cache_elapsed >= min_cache_time;
+  return impl_->data_queue.back().data_timestamp - impl_->data_queue.front().data_timestamp >= min_cache_time;
 }
 
 void BagProcessor::on_output(std::unique_lock<std::mutex>& lock, bool at_end) {
@@ -230,15 +218,8 @@ void BagProcessor::on_output(std::unique_lock<std::mutex>& lock, bool at_end) {
     if (!should_output) {
       const int64_t timestamp_span = impl_->data_queue.back().data_timestamp - impl_->data_queue.front().data_timestamp;
 
-      if (timestamp_span >= min_cache_time) {
-        should_output =
-            impl_->data_queue.front().data_timestamp <= impl_->data_queue.back().data_timestamp - min_cache_time;
-      } else {
-        const int64_t cache_elapsed = static_cast<int64_t>(ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMicro)) -
-                                      impl_->data_queue.front().enqueue_time;
-
-        should_output = cache_elapsed >= min_cache_time;
-      }
+      should_output = timestamp_span >= min_cache_time && impl_->data_queue.front().data_timestamp <=
+                                                              impl_->data_queue.back().data_timestamp - min_cache_time;
 
       if (!should_output) {
         return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -295,7 +276,7 @@ void BagProcessor::on_exec(bool at_end) {
 
   if VLIKELY (!at_end) {
     impl_->cv.wait(lock, [this]() -> bool {
-      return !impl_->data_queue.empty() || impl_->quit_flag.load(std::memory_order_acquire) || impl_->flush_request;
+      return impl_->quit_flag.load(std::memory_order_acquire) || impl_->flush_request || on_check();
     });
 
     if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
@@ -310,39 +291,6 @@ void BagProcessor::on_exec(bool at_end) {
       impl_->cv.notify_all();
 
       return;
-    }
-  }
-
-  if VLIKELY (!at_end) {
-    if (!on_check()) {
-      const int64_t min_cache_time = impl_->config.min_cache_time * 1000;
-      const int64_t cache_elapsed = static_cast<int64_t>(ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMicro)) -
-                                    impl_->data_queue.front().enqueue_time;
-      const int64_t wait_time = min_cache_time - cache_elapsed;
-
-      if (wait_time > 0) {
-        impl_->cv.wait_for(lock, std::chrono::microseconds(wait_time), [this]() -> bool {
-          return impl_->quit_flag.load(std::memory_order_acquire) || impl_->flush_request || on_check();
-        });
-      }
-
-      if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
-        return;
-      }
-
-      if VUNLIKELY (impl_->flush_request) {
-        on_output(lock, true);
-
-        impl_->flush_request = false;
-
-        impl_->cv.notify_all();
-
-        return;
-      }
-
-      if (!on_check()) {
-        return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
     }
   }
 

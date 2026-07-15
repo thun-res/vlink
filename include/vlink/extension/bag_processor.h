@@ -47,9 +47,9 @@
  *
  * The oldest cached frame is released only once the data-plane-time span between the oldest and
  * newest cached frames reaches @c Config::min_cache_time, giving a late-but-earlier frame a chance to
- * slot ahead of already-cached later frames.  A wall-clock fallback drains the cache when a producer
- * goes silent, so the stream can always make progress.  Data-plane timestamps passed to @c push() are
- * in microseconds; @c Config time tunables are expressed in milliseconds and converted internally.
+ * slot ahead of already-cached later frames.  Producer wall time never advances this window; a silent
+ * producer's tail is released by @c flush().  Data-plane timestamps passed to @c push() are in
+ * microseconds; @c Config time tunables are expressed in milliseconds and converted internally.
  *
  * @par Write-side example (reorder by header time, then persist)
  * @code
@@ -99,7 +99,8 @@ class VLINK_EXPORT BagProcessor {
    *
    * @details
    * Invoked once @c Config::min_cache_time of data-plane time has accumulated ahead of the candidate
-   * frame (or a wall-clock drain has fired).  The frame is moved out of the cache into the callback.
+   * frame, the size limit forces progress, or @c flush() drains the tail.  The frame is moved out of
+   * the cache into the callback.
    * The callback frame timestamp is remapped onto the sorted data-plane-time axis so it stays strictly
    * increasing after the reorder.
    */

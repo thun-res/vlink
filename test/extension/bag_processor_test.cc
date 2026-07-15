@@ -454,6 +454,36 @@ TEST_SUITE("extension-BagProcessor") {
     processor.reset();
   }
 
+  TEST_CASE("wall time does not advance the data-plane reorder window") {
+    std::vector<BagProcessorOutput> received;
+    std::mutex mtx;
+
+    BagProcessor::Config cfg;
+    cfg.min_cache_time = 10;
+    BagProcessor processor(cfg);
+
+    processor.register_output_callback([&](const Frame& frame) {
+      std::lock_guard lock(mtx);
+      received.push_back({frame.timestamp, frame.url});
+    });
+
+    processor.push(1'618'807'486, make_frame(1000, "pointcloud"));
+    std::this_thread::sleep_for(30ms);
+
+    {
+      std::lock_guard lock(mtx);
+      CHECK(received.empty());
+    }
+
+    processor.push(1'618'800'059, make_frame(2000, "objects"));
+    processor.flush();
+
+    std::lock_guard lock(mtx);
+    REQUIRE_EQ(received.size(), 2u);
+    CHECK_EQ(received[0].url, "objects");
+    CHECK_EQ(received[1].url, "pointcloud");
+  }
+
   TEST_CASE("max cache size forces output in data-plane order") {
     std::vector<int64_t> received;
     std::mutex mtx;
@@ -515,6 +545,7 @@ TEST_SUITE("extension-BagProcessor") {
     in.data = Bytes::create(7u);
 
     processor->push(222, in);
+    processor->flush();
 
     {
       std::unique_lock lock(mtx);
@@ -595,7 +626,7 @@ TEST_SUITE("extension-BagProcessor") {
     }
   }
 
-  TEST_CASE("processor flushes all cached frames on destruction after timeout") {
+  TEST_CASE("data-plane window retains its tail until flush") {
     std::vector<int64_t> received;
     std::mutex mtx;
     ConditionVariable cv;
@@ -616,9 +647,16 @@ TEST_SUITE("extension-BagProcessor") {
 
     {
       std::unique_lock lock(mtx);
-      REQUIRE(cv.wait_for(lock, 2s, [&] { return received.size() >= 3u; }));
+      REQUIRE(cv.wait_for(lock, 2s, [&] { return received.size() >= 2u; }));
       CHECK_EQ(received[0], 1);
       CHECK_EQ(received[1], 2000);
+    }
+
+    processor->flush();
+
+    {
+      std::lock_guard lock(mtx);
+      REQUIRE_EQ(received.size(), 3u);
       CHECK_EQ(received[2], 5001);
     }
 
