@@ -3,6 +3,11 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
+      publish_pages:
+        description: Build and deploy documentation, benchmarks, and coverage to GitHub Pages
+        required: true
+        type: boolean
+        default: true
       build_portable:
         description: Build Qt/OSG/QtIFW portable packages and offline installers
         required: true
@@ -28,7 +33,7 @@ concurrency:
 jobs:
   docker-images:
     name: docker-images
-    if: github.event_name != 'workflow_dispatch' || inputs.build_portable || inputs.build_linux_packages
+    if: github.event_name != 'workflow_dispatch' || inputs.publish_pages || inputs.build_portable || inputs.build_linux_packages
     permissions:
       contents: read
       packages: write
@@ -164,7 +169,7 @@ jobs:
 
   coverage:
     name: coverage
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' || inputs.publish_pages
     needs: docker-images
     permissions:
       contents: read
@@ -177,7 +182,7 @@ jobs:
 
   publish-docs:
     name: publish-docs
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' || inputs.publish_pages
     needs:
       - docker-images
       - coverage
@@ -263,10 +268,37 @@ jobs:
       - name: Generate coverage badge
         run: bash .github/scripts/generate-coverage-badge.sh
 
+      - name: Verify Pages artifact
+        run: |
+          test -f build-doc/output/doc/index.html
+          test -f build-doc/output/doc/bench/index.html
+          test -f build-doc/output/doc/coverage/index.html
+          for badge in \
+            build-doc/output/doc/bench/badge.json \
+            build-doc/output/doc/coverage/badge.json; do
+            jq -e '
+              .schemaVersion == 1 and
+              (.label | type == "string" and length > 0) and
+              (.message | type == "string" and length > 0) and
+              (.color | type == "string" and length > 0)
+            ' "${badge}" >/dev/null
+          done
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
         with:
           enablement: true
+
+      - name: Verify Pages publishing source
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl --fail --silent --show-error \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${GITHUB_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/pages" |
+            jq -e '.build_type == "workflow"' >/dev/null
 
       - name: Upload Doxygen Pages artifact
         uses: actions/upload-pages-artifact@v5
@@ -279,6 +311,17 @@ jobs:
         with:
           timeout: 600000
           error_count: 10
+
+      - name: Verify deployed badges
+        env:
+          PAGES_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          for badge in coverage/badge.json bench/badge.json; do
+            curl --fail --silent --show-error \
+              --retry 10 --retry-all-errors --retry-delay 3 \
+              "${PAGES_URL}${badge}?run=${GITHUB_RUN_ID}" |
+              jq -e '.schemaVersion == 1' >/dev/null
+          done
 
       - name: Publish Doxygen wiki links
         env:
