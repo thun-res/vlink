@@ -24,6 +24,7 @@
 #include "./zerocopy/tensor.h"
 
 #include <cstdint>
+#include <limits>
 
 namespace vlink {
 
@@ -134,6 +135,10 @@ bool Tensor::operator>>(Bytes& bytes) const noexcept {
 
   if (bytes.empty() || bytes.size() != get_serialized_size()) {
     bytes = Bytes::create(get_serialized_size());
+
+    if VUNLIKELY (bytes.empty()) {
+      return false;
+    }
   }
 
   std::memcpy(bytes.data(), &kMagicNumberBegin, kMagicNumberBeginSize);
@@ -142,6 +147,9 @@ bool Tensor::operator>>(Bytes& bytes) const noexcept {
 
   // NOLINTNEXTLINE(bugprone-undefined-memory-manipulation)
   std::memcpy(bytes.data() + kMagicNumberBeginSize + kVersionSize, this, sizeof(Tensor));
+
+  const auto data_offset = reinterpret_cast<const uint8_t*>(&data_) - reinterpret_cast<const uint8_t*>(this);
+  std::memset(bytes.data() + kMagicNumberBeginSize + kVersionSize + data_offset, 0, sizeof(data_));
 
   if VLIKELY (data_ != nullptr && size_ != 0) {
     std::memcpy(bytes.data() + kMagicNumberBeginSize + kVersionSize + sizeof(Tensor), data_, size_);
@@ -202,6 +210,13 @@ bool Tensor::shallow_copy(const Tensor& target) noexcept {
   }
 
   if (is_owner_ && data_ && size_ != 0) {
+    const auto current = reinterpret_cast<uintptr_t>(data_);
+    const auto source = reinterpret_cast<uintptr_t>(target.data_);
+
+    if VUNLIKELY (source >= current && source - current < size_) {
+      return false;
+    }
+
     Bytes::bytes_free(data_, size_);
   }
 
@@ -235,7 +250,10 @@ bool Tensor::shallow_copy(const Tensor& target) noexcept {
 
 bool Tensor::deep_copy(const Tensor& target) noexcept {
   if VLIKELY (data_ && is_owner_ && target.data_ && size_ != 0 && size_ == target.size_) {
-    if VUNLIKELY (this == &target) {
+    const auto current = reinterpret_cast<uintptr_t>(data_);
+    const auto source = reinterpret_cast<uintptr_t>(target.data_);
+
+    if VUNLIKELY (source >= current && source - current < size_) {
       return false;
     }
 
@@ -271,10 +289,15 @@ bool Tensor::deep_copy(const Tensor& target) noexcept {
   }
 
   if (data_ && size_ != 0) {
+    auto* target_data = data_;
     data_ = Bytes::bytes_malloc(size_);
 
-    std::memcpy(data_, target.data_, size_);
+    if VUNLIKELY (!data_) {
+      size_ = 0;
+      return false;
+    }
 
+    std::memcpy(data_, target_data, size_);
     is_owner_ = true;
   }
 
@@ -337,10 +360,15 @@ bool Tensor::create(size_t _size) noexcept {
     Bytes::bytes_free(data_, size_);
   }
 
+  data_ = Bytes::bytes_malloc(_size);
+
+  if VUNLIKELY (!data_) {
+    size_ = 0;
+    is_owner_ = false;
+    return false;
+  }
+
   size_ = _size;
-
-  data_ = Bytes::bytes_malloc(size_);
-
   is_owner_ = true;
 
   return true;
@@ -396,6 +424,13 @@ bool Tensor::shallow_copy(uint8_t* data, size_t size) noexcept {
   }
 
   if (is_owner_ && data_ && size_ != 0) {
+    const auto current = reinterpret_cast<uintptr_t>(data_);
+    const auto source = reinterpret_cast<uintptr_t>(data);
+
+    if VUNLIKELY (source >= current && source - current < size_) {
+      return false;
+    }
+
     Bytes::bytes_free(data_, size_);
   }
 
@@ -417,15 +452,18 @@ bool Tensor::deep_copy(uint8_t* data, size_t size) noexcept {
       return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
-    if VUNLIKELY (data_ == data) {
+    const auto current = reinterpret_cast<uintptr_t>(data_);
+    const auto source = reinterpret_cast<uintptr_t>(data);
+
+    if VUNLIKELY (source >= current && source - current < size_) {
       return false;
     }
 
-    if VUNLIKELY (size_ != size) {
-      create(size);
+    if VUNLIKELY (size_ != size && !create(size)) {
+      return false;
     }
-  } else {
-    create(size);
+  } else if VUNLIKELY (!create(size)) {
+    return false;
   }
 
   std::memcpy(data_, data, size);
@@ -548,24 +586,58 @@ void Tensor::set_shape(const uint32_t* shape, uint8_t rank) noexcept {
     rank = kMaxRank;
   }
 
-  rank_ = rank;
-
   uint64_t total = 1;
+  bool has_zero = false;
+  bool total_overflow = false;
 
   for (uint8_t i = 0; i < rank; ++i) {
     shape_[i] = shape[i];
-    total *= shape[i];
+
+    if (shape[i] == 0) {
+      has_zero = true;
+      total = 0;
+    } else if (!has_zero && !total_overflow) {
+      if VUNLIKELY (total > std::numeric_limits<uint64_t>::max() / shape[i]) {
+        total_overflow = true;
+      } else {
+        total *= shape[i];
+      }
+    }
   }
 
-  num_elements_ = total;
-  batch_size_ = shape_[0];
+  if VUNLIKELY (total_overflow && !has_zero) {
+    std::memset(shape_, 0, sizeof(shape_));
+    std::memset(strides_, 0, sizeof(strides_));
+    rank_ = 0;
+    num_elements_ = 0;
+    batch_size_ = 0;
+    return;
+  }
 
-  uint32_t running = 1;
+  uint64_t running = 1;
 
   for (uint8_t i = rank; i > 0; --i) {
-    strides_[i - 1] = running;
-    running *= shape_[i - 1];
+    if VUNLIKELY (running > std::numeric_limits<uint32_t>::max()) {
+      std::memset(shape_, 0, sizeof(shape_));
+      std::memset(strides_, 0, sizeof(strides_));
+      rank_ = 0;
+      num_elements_ = 0;
+      batch_size_ = 0;
+      return;
+    }
+
+    strides_[i - 1] = static_cast<uint32_t>(running);
+
+    if (shape_[i - 1] == 0) {
+      running = 0;
+    } else if (i > 1) {
+      running *= shape_[i - 1];
+    }
   }
+
+  rank_ = rank;
+  num_elements_ = total;
+  batch_size_ = shape_[0];
 }
 
 void Tensor::set_shape_at(uint8_t dim, uint32_t value) noexcept {

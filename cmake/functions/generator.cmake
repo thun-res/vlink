@@ -287,7 +287,7 @@ function(
       COMMAND ${command}
       COMMAND ${CMAKE_COMMAND} -E touch ${gen_hdr}
       COMMAND ${CMAKE_COMMAND} -E touch ${gen_bfbs_hdr}
-      DEPENDS ${inputs}
+      DEPENDS ${it}
       VERBATIM
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
@@ -420,7 +420,7 @@ function(vlink_generate_flatbuffers_registry_cpp)
   set(options)
   set(one_value_args TARGET IN_DIR OUT_DIR OUTPUT)
   set(multi_value_args)
-  set(VLINK_GEN_HEADER_ONLY TRUE)
+  set(VLINK_GEN_HEADER_ONLY FALSE)
   cmake_parse_arguments(VLINK_GEN "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN})
   if(NOT VLINK_GEN_UNPARSED_ARGUMENTS)
     message(FATAL_ERROR "Error: vlink_generate_flatbuffers_registry_cpp called without any input files")
@@ -499,6 +499,7 @@ function(vlink_generate_flatbuffers_registry_cpp)
   )
   file(APPEND "${VLINK_GEN_OUTPUT}" "${inc_lines}\n")
   file(APPEND "${VLINK_GEN_OUTPUT}" "${reg_lines}\n")
+  set(out_srcs ${VLINK_GEN_OUTPUT})
   set(VLINK_GEN_REGISTRY_SRCS
       ${VLINK_GEN_OUTPUT}
       PARENT_SCOPE

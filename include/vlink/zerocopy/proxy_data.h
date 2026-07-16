@@ -179,7 +179,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) ProxyData final {
    * @brief Serialises the struct snapshot plus tail buffer into @p bytes.
    *
    * @param bytes Output buffer; reallocated automatically when undersized.
-   * @return Always @c true.
+   * @return @c true on success; @c false when output allocation fails.
    */
   bool operator>>(Bytes& bytes) const noexcept;
 
@@ -312,7 +312,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) ProxyData final {
    * @brief Borrows @p target's tail buffer without copying.
    *
    * @param target Source envelope; its backing buffer must outlive @c *this.
-   * @return @c false on self-borrow, otherwise @c true.
+   * @return @c false on self-borrow or owned-buffer aliasing, otherwise @c true.
    */
   bool shallow_copy(const ProxyData& target) noexcept;
 
@@ -320,7 +320,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) ProxyData final {
    * @brief Allocates (or reuses) an owned buffer and clones @p target's payload.
    *
    * @param target Source envelope to clone.
-   * @return @c false on self-copy, otherwise @c true.
+   * @return @c false on self-copy, owned-buffer aliasing, or allocation failure.
    */
   bool deep_copy(const ProxyData& target) noexcept;
 
@@ -338,7 +338,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) ProxyData final {
    * @details
    * Allocates @c raw.size() + @c url.size() + @c ser.size() + @c hostname.size()
    * bytes and copies each region in order.  If any region (or the total) would
-   * exceed @c UINT32_MAX the envelope is cleared.  Callers passing dynamic
+   * exceed @c UINT32_MAX, or allocation fails, the envelope is cleared.  Callers passing dynamic
    * input must verify success via @c is_valid() or @c size().
    *
    * @param raw Raw payload bytes.

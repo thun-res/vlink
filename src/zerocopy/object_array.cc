@@ -153,6 +153,10 @@ bool ObjectArray::operator>>(Bytes& bytes) const noexcept {
 
   if (bytes.empty() || bytes.size() != get_serialized_size()) {
     bytes = Bytes::create(get_serialized_size());
+
+    if VUNLIKELY (bytes.empty()) {
+      return false;
+    }
   }
 
   std::memcpy(bytes.data(), &kMagicNumberBegin, kMagicNumberBeginSize);
@@ -161,6 +165,9 @@ bool ObjectArray::operator>>(Bytes& bytes) const noexcept {
 
   // NOLINTNEXTLINE(bugprone-undefined-memory-manipulation)
   std::memcpy(bytes.data() + kMagicNumberBeginSize + kVersionSize, this, sizeof(ObjectArray));
+
+  const auto data_offset = reinterpret_cast<const uint8_t*>(&data_) - reinterpret_cast<const uint8_t*>(this);
+  std::memset(bytes.data() + kMagicNumberBeginSize + kVersionSize + data_offset, 0, sizeof(data_));
 
   if VLIKELY (data_ != nullptr && count_ != 0 && pack_size_ != 0) {
     std::memcpy(bytes.data() + kMagicNumberBeginSize + kVersionSize + sizeof(ObjectArray), data_,
@@ -224,6 +231,13 @@ bool ObjectArray::shallow_copy(const ObjectArray& target) noexcept {
   }
 
   if (is_owner_ && data_ && capacity_ != 0) {
+    const auto current = reinterpret_cast<uintptr_t>(data_);
+    const auto source = reinterpret_cast<uintptr_t>(target.data_);
+
+    if VUNLIKELY (source >= current && source - current < capacity_) {
+      return false;
+    }
+
     Bytes::bytes_free(data_, capacity_);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
@@ -248,11 +262,14 @@ bool ObjectArray::shallow_copy(const ObjectArray& target) noexcept {
 }
 
 bool ObjectArray::deep_copy(const ObjectArray& target) noexcept {
-  size_t target_size = static_cast<size_t>(target.count_) * target.pack_size_;
+  const size_t target_size = static_cast<size_t>(target.count_) * target.pack_size_;
 
   if VLIKELY (data_ && is_owner_ && target.data_ && capacity_ != 0 && capacity_ == target_size) {
-    if VUNLIKELY (this == &target) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      return false;                   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    const auto current = reinterpret_cast<uintptr_t>(data_);
+    const auto source = reinterpret_cast<uintptr_t>(target.data_);
+
+    if VUNLIKELY (source >= current && source - current < capacity_) {
+      return false;
     }
 
     header = target.header;
@@ -279,11 +296,17 @@ bool ObjectArray::deep_copy(const ObjectArray& target) noexcept {
   }
 
   if (data_ && target_size != 0) {
+    auto* target_data = data_;
     capacity_ = target_size;
     data_ = Bytes::bytes_malloc(capacity_);
 
-    std::memcpy(data_, target.data_, target_size);
+    if VUNLIKELY (!data_) {
+      count_ = 0;
+      capacity_ = 0;
+      return false;
+    }
 
+    std::memcpy(data_, target_data, target_size);
     is_owner_ = true;
   }
 
@@ -346,8 +369,13 @@ bool ObjectArray::create(size_t count) noexcept {
   pack_size_ = sizeof(Object);
   capacity_ = count * pack_size_;
   count_ = 0;
-
   data_ = Bytes::bytes_malloc(capacity_);
+
+  if VUNLIKELY (!data_) {
+    capacity_ = 0;
+    is_owner_ = false;
+    return false;
+  }
 
   is_owner_ = true;
 

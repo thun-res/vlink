@@ -28,6 +28,7 @@
 #include <doctest/doctest.h>
 
 #include <cstring>
+#include <limits>
 #include <string>
 
 #include "../common_test.h"
@@ -151,6 +152,48 @@ TEST_SUITE("zerocopy-ProxyData") {
     CHECK_EQ(pd.hostname(), "myhost");
   }
 
+  TEST_CASE("create validates oversized input before releasing its owned buffer") {
+    Bytes raw = Bytes::create(1024u);
+    zerocopy::ProxyData pd;
+    pd.create(raw, {}, {});
+    REQUIRE(pd.is_owner());
+
+    uint8_t marker = 0;
+    Bytes oversized = Bytes::shallow_copy(&marker, static_cast<size_t>(std::numeric_limits<uint32_t>::max()) + 1u);
+    pd.create(oversized, {}, {});
+
+    CHECK_FALSE(pd.is_valid());
+    CHECK_FALSE(pd.is_owner());
+
+    Bytes first = Bytes::create(1024u);
+    Bytes second = Bytes::create(1024u);
+    REQUIRE_FALSE(first.empty());
+    REQUIRE_FALSE(second.empty());
+    CHECK_NE(first.data(), second.data());
+  }
+
+  TEST_CASE("create copies views that alias its current owned buffer before releasing it") {
+    Bytes raw = Bytes::create(8u);
+    std::memset(raw.data(), 0x5A, raw.size());
+
+    zerocopy::ProxyData pd;
+    pd.create(raw, "topic", "ser", static_cast<uint32_t>(SchemaType::kRaw), "host");
+    REQUIRE(pd.is_valid());
+
+    const Bytes raw_view = pd.raw();
+    const std::string_view url = pd.url();
+    const std::string_view ser = pd.ser();
+    const std::string_view hostname = pd.hostname();
+    pd.create(raw_view, url, ser, pd.schema(), hostname);
+
+    CHECK(pd.is_owner());
+    CHECK_EQ(pd.raw().size(), raw.size());
+    CHECK_EQ(std::memcmp(pd.raw().data(), raw.data(), raw.size()), 0);
+    CHECK_EQ(pd.url(), "topic");
+    CHECK_EQ(pd.ser(), "ser");
+    CHECK_EQ(pd.hostname(), "host");
+  }
+
   TEST_CASE("clear resets all fields to zero") {
     Bytes raw = Bytes::create(64);
 
@@ -190,6 +233,21 @@ TEST_SUITE("zerocopy-ProxyData") {
     pd.create(raw, "dds://a", "raw");
 
     CHECK_FALSE(pd.shallow_copy(pd));
+  }
+
+  TEST_CASE("copy helpers reject a source that borrows the destination owned buffer") {
+    Bytes raw = Bytes::create(8u);
+    zerocopy::ProxyData owner;
+    owner.create(raw, "topic", "ser");
+    REQUIRE(owner.is_owner());
+
+    zerocopy::ProxyData borrowed;
+    REQUIRE(borrowed.shallow_copy(owner));
+
+    CHECK_FALSE(owner.shallow_copy(borrowed));
+    CHECK_FALSE(owner.deep_copy(borrowed));
+    CHECK(owner.is_owner());
+    CHECK_EQ(owner.url(), "topic");
   }
 
   TEST_CASE("deep_copy creates owned independent copy") {
@@ -312,6 +370,9 @@ TEST_SUITE("zerocopy-ProxyData") {
     CHECK((src >> wire));
     CHECK_FALSE(wire.empty());
     CHECK(zerocopy::ProxyData::check_valid(wire));
+    uintptr_t serialized_pointer = 1;
+    std::memcpy(&serialized_pointer, wire.data() + 8u, sizeof(serialized_pointer));
+    CHECK_EQ(serialized_pointer, 0u);
     CHECK_EQ(wire.size(), src.get_serialized_size());
 
     zerocopy::ProxyData dst;

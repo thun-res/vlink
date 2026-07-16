@@ -426,6 +426,19 @@ TEST_SUITE("zerocopy-ObjectArray") {
     CHECK_FALSE(arr.shallow_copy(arr));
   }
 
+  TEST_CASE("copy helpers reject a source that borrows the destination owned buffer") {
+    zerocopy::ObjectArray owner;
+    REQUIRE(owner.create(2));
+
+    zerocopy::ObjectArray borrowed;
+    REQUIRE(borrowed.shallow_copy(owner));
+
+    CHECK_FALSE(owner.shallow_copy(borrowed));
+    CHECK_FALSE(owner.deep_copy(borrowed));
+    CHECK(owner.is_owner());
+    CHECK_EQ(owner.capacity(), 2u * sizeof(zerocopy::ObjectArray::Object));
+  }
+
   TEST_CASE("deep_copy creates owned independent copy") {
     zerocopy::ObjectArray src;
     REQUIRE(src.create(4));
@@ -605,6 +618,9 @@ TEST_SUITE("zerocopy-ObjectArray") {
     CHECK((src >> wire));
     CHECK(zerocopy::ObjectArray::check_valid(wire));
     CHECK_EQ(wire.size(), src.get_serialized_size());
+    uintptr_t serialized_pointer = 1;
+    std::memcpy(&serialized_pointer, wire.data() + 8u + 40u, sizeof(serialized_pointer));
+    CHECK_EQ(serialized_pointer, 0u);
 
     zerocopy::ObjectArray dst;
     CHECK((dst << wire));

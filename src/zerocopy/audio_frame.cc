@@ -128,6 +128,10 @@ bool AudioFrame::operator>>(Bytes& bytes) const noexcept {
 
   if (bytes.empty() || bytes.size() != get_serialized_size()) {
     bytes = Bytes::create(get_serialized_size());
+
+    if VUNLIKELY (bytes.empty()) {
+      return false;
+    }
   }
 
   std::memcpy(bytes.data(), &kMagicNumberBegin, kMagicNumberBeginSize);
@@ -136,6 +140,9 @@ bool AudioFrame::operator>>(Bytes& bytes) const noexcept {
 
   // NOLINTNEXTLINE(bugprone-undefined-memory-manipulation)
   std::memcpy(bytes.data() + kMagicNumberBeginSize + kVersionSize, this, sizeof(AudioFrame));
+
+  const auto data_offset = reinterpret_cast<const uint8_t*>(&data_) - reinterpret_cast<const uint8_t*>(this);
+  std::memset(bytes.data() + kMagicNumberBeginSize + kVersionSize + data_offset, 0, sizeof(data_));
 
   if VLIKELY (data_ != nullptr && size_ != 0) {
     std::memcpy(bytes.data() + kMagicNumberBeginSize + kVersionSize + sizeof(AudioFrame), data_, size_);
@@ -196,6 +203,13 @@ bool AudioFrame::shallow_copy(const AudioFrame& target) noexcept {
   }
 
   if (is_owner_ && data_ && size_ != 0) {
+    const auto current = reinterpret_cast<uintptr_t>(data_);
+    const auto source = reinterpret_cast<uintptr_t>(target.data_);
+
+    if VUNLIKELY (source >= current && source - current < size_) {
+      return false;
+    }
+
     Bytes::bytes_free(data_, size_);
   }
 
@@ -225,7 +239,10 @@ bool AudioFrame::shallow_copy(const AudioFrame& target) noexcept {
 
 bool AudioFrame::deep_copy(const AudioFrame& target) noexcept {
   if VLIKELY (data_ && is_owner_ && target.data_ && size_ != 0 && size_ == target.size_) {
-    if VUNLIKELY (this == &target) {
+    const auto current = reinterpret_cast<uintptr_t>(data_);
+    const auto source = reinterpret_cast<uintptr_t>(target.data_);
+
+    if VUNLIKELY (source >= current && source - current < size_) {
       return false;
     }
 
@@ -257,10 +274,15 @@ bool AudioFrame::deep_copy(const AudioFrame& target) noexcept {
   }
 
   if (data_ && size_ != 0) {
+    auto* target_data = data_;
     data_ = Bytes::bytes_malloc(size_);
 
-    std::memcpy(data_, target.data_, size_);
+    if VUNLIKELY (!data_) {
+      size_ = 0;
+      return false;
+    }
 
+    std::memcpy(data_, target_data, size_);
     is_owner_ = true;
   }
 
@@ -319,10 +341,15 @@ bool AudioFrame::create(size_t _size) noexcept {
     Bytes::bytes_free(data_, size_);
   }
 
+  data_ = Bytes::bytes_malloc(_size);
+
+  if VUNLIKELY (!data_) {
+    size_ = 0;
+    is_owner_ = false;
+    return false;
+  }
+
   size_ = _size;
-
-  data_ = Bytes::bytes_malloc(size_);
-
   is_owner_ = true;
 
   return true;
@@ -375,6 +402,13 @@ bool AudioFrame::shallow_copy(uint8_t* data, size_t size) noexcept {
   }
 
   if (is_owner_ && data_ && size_ != 0) {
+    const auto current = reinterpret_cast<uintptr_t>(data_);
+    const auto source = reinterpret_cast<uintptr_t>(data);
+
+    if VUNLIKELY (source >= current && source - current < size_) {
+      return false;
+    }
+
     Bytes::bytes_free(data_, size_);
   }
 
@@ -396,15 +430,18 @@ bool AudioFrame::deep_copy(uint8_t* data, size_t size) noexcept {
       return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
-    if VUNLIKELY (data_ == data) {
+    const auto current = reinterpret_cast<uintptr_t>(data_);
+    const auto source = reinterpret_cast<uintptr_t>(data);
+
+    if VUNLIKELY (source >= current && source - current < size_) {
       return false;
     }
 
-    if VUNLIKELY (size_ != size) {
-      create(size);
+    if VUNLIKELY (size_ != size && !create(size)) {
+      return false;
     }
-  } else {
-    create(size);
+  } else if VUNLIKELY (!create(size)) {
+    return false;
   }
 
   std::memcpy(data_, data, size);

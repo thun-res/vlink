@@ -327,6 +327,10 @@ bool PointCloud::operator>>(Bytes& bytes) const noexcept {
 
   if (bytes.empty() || bytes.size() != get_serialized_size()) {
     bytes = Bytes::create(get_serialized_size());
+
+    if VUNLIKELY (bytes.empty()) {
+      return false;
+    }
   }
 
   std::memcpy(bytes.data(), &kMagicNumberBegin, kMagicNumberBeginSize);
@@ -335,6 +339,9 @@ bool PointCloud::operator>>(Bytes& bytes) const noexcept {
 
   // NOLINTNEXTLINE(bugprone-undefined-memory-manipulation)
   std::memcpy(bytes.data() + kMagicNumberBeginSize + kVersionSize, this, sizeof(PointCloud));
+
+  const auto data_offset = reinterpret_cast<const uint8_t*>(&data_) - reinterpret_cast<const uint8_t*>(this);
+  std::memset(bytes.data() + kMagicNumberBeginSize + kVersionSize + data_offset, 0, sizeof(data_));
 
   if VLIKELY (data_ != nullptr && size_ != 0 && pack_size_ != 0) {
     uint8_t* payload = bytes.data() + kMagicNumberBeginSize + kVersionSize + sizeof(PointCloud);
@@ -409,6 +416,13 @@ bool PointCloud::shallow_copy(const PointCloud& target) noexcept {
   }
 
   if (is_owner_ && data_ && capacity_ != 0) {
+    const auto current = reinterpret_cast<uintptr_t>(data_);
+    const auto source = reinterpret_cast<uintptr_t>(target.data_);
+
+    if VUNLIKELY (source >= current && source - current < capacity_) {
+      return false;
+    }
+
     Bytes::bytes_free(data_, capacity_);
   }
 
@@ -434,9 +448,18 @@ bool PointCloud::shallow_copy(const PointCloud& target) noexcept {
 }
 
 bool PointCloud::deep_copy(const PointCloud& target) noexcept {
-  if VLIKELY (data_ && is_owner_ && target.data_ && capacity_ != 0 && capacity_ == target.size_ * target.pack_size_) {
-    if VUNLIKELY (this == &target) {
-      return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  if VUNLIKELY (target.pack_size_ != 0 && target.size_ > std::numeric_limits<size_t>::max() / target.pack_size_) {
+    return false;
+  }
+
+  const size_t target_size = target.size_ * target.pack_size_;
+
+  if VLIKELY (data_ && is_owner_ && target.data_ && capacity_ != 0 && capacity_ == target_size) {
+    const auto current = reinterpret_cast<uintptr_t>(data_);
+    const auto source = reinterpret_cast<uintptr_t>(target.data_);
+
+    if VUNLIKELY (source >= current && source - current < capacity_) {
+      return false;
     }
 
     header = target.header;
@@ -463,13 +486,19 @@ bool PointCloud::deep_copy(const PointCloud& target) noexcept {
     return false;
   }
 
-  if VLIKELY (data_ != nullptr && size_ != 0 && pack_size_ != 0) {
-    capacity_ = size_ * pack_size_;
-
+  if VLIKELY (data_ != nullptr && target_size != 0) {
+    auto* target_data = data_;
+    capacity_ = target_size;
     data_ = Bytes::bytes_malloc(capacity_);
 
-    std::memcpy(data_, target.data_, capacity_);
+    if VUNLIKELY (!data_) {
+      capacity_ = 0;
+      size_ = 0;
+      index_ = 0;
+      return false;
+    }
 
+    std::memcpy(data_, target_data, capacity_);
     is_owner_ = true;
   }
 
@@ -482,6 +511,7 @@ bool PointCloud::move_copy(PointCloud& target) noexcept {
   }
 
   is_owner_ = target.is_owner_;
+  capacity_ = target.capacity_;
 
   target.capacity_ = 0;
   target.size_ = 0;
@@ -744,7 +774,7 @@ size_t PointCloud::get_reserved_size() const noexcept {
 
 bool PointCloud::get_value_v3f(float& x, float& y, float& z, size_t loop_index) const noexcept {
   if (extent_ != 0) {
-    if VUNLIKELY ((loop_index * pack_size_) + (sizeof(int16_t) * 3) > size_ * pack_size_) {
+    if VUNLIKELY (!data_ || loop_index >= size_ || pack_size_ < sizeof(int16_t) * 3) {
       return false;
     }
 
@@ -765,7 +795,7 @@ bool PointCloud::get_value_v3f(float& x, float& y, float& z, size_t loop_index) 
     return true;
   }
 
-  if VUNLIKELY (loop_index * pack_size_ + sizeof(float) * 3 > size_ * pack_size_) {
+  if VUNLIKELY (!data_ || loop_index >= size_ || pack_size_ < sizeof(float) * 3) {
     return false;
   }
 
@@ -781,7 +811,7 @@ bool PointCloud::get_value_v3f(Vector3f& v3f, size_t loop_index) const noexcept 
     return get_value_v3f(v3f.x, v3f.y, v3f.z, loop_index);
   }
 
-  if VUNLIKELY ((loop_index * pack_size_) + (sizeof(float) * 3) > size_ * pack_size_) {
+  if VUNLIKELY (!data_ || loop_index >= size_ || pack_size_ < sizeof(float) * 3) {
     return false;
   }
 
@@ -800,7 +830,7 @@ PointCloud::Vector3f PointCloud::get_value_v3f(size_t loop_index) const noexcept
 
 bool PointCloud::get_value_v3d(double& x, double& y, double& z, size_t loop_index) const noexcept {
   if (extent_ != 0) {
-    if VUNLIKELY ((loop_index * pack_size_) + (sizeof(int16_t) * 3) > size_ * pack_size_) {
+    if VUNLIKELY (!data_ || loop_index >= size_ || pack_size_ < sizeof(int16_t) * 3) {
       return false;
     }
 
@@ -821,7 +851,7 @@ bool PointCloud::get_value_v3d(double& x, double& y, double& z, size_t loop_inde
     return true;
   }
 
-  if VUNLIKELY ((loop_index * pack_size_) + (sizeof(double) * 3) > size_ * pack_size_) {
+  if VUNLIKELY (!data_ || loop_index >= size_ || pack_size_ < sizeof(double) * 3) {
     return false;
   }
 
@@ -837,7 +867,7 @@ bool PointCloud::get_value_v3d(Vector3d& v3d, size_t loop_index) const noexcept 
     return get_value_v3d(v3d.x, v3d.y, v3d.z, loop_index);
   }
 
-  if VUNLIKELY ((loop_index * pack_size_) + (sizeof(double) * 3) > size_ * pack_size_) {
+  if VUNLIKELY (!data_ || loop_index >= size_ || pack_size_ < sizeof(double) * 3) {
     return false;
   }
 
@@ -1029,6 +1059,12 @@ bool PointCloud::create(size_t size, uint64_t size_num, uint64_t type_num, std::
     new_protocol = protocol_probe.protocol_;
   }
 
+  const size_t new_pack_size = new_protocol.get_pack_size();
+
+  if VUNLIKELY (new_pack_size != 0 && size > std::numeric_limits<size_t>::max() / new_pack_size) {
+    return false;
+  }
+
   if (is_owner_ && data_ && capacity_ != 0) {
     Bytes::bytes_free(data_, capacity_);
   }
@@ -1044,11 +1080,17 @@ bool PointCloud::create(size_t size, uint64_t size_num, uint64_t type_num, std::
   vertical_ = vertical;
   downsample_ = 0;
 
-  pack_size_ = protocol_.get_pack_size();
+  pack_size_ = new_pack_size;
   capacity_ = size * pack_size_;
 
   if VLIKELY (capacity_ != 0) {
     data_ = Bytes::bytes_malloc(capacity_);
+
+    if VUNLIKELY (!data_) {
+      capacity_ = 0;
+      return false;
+    }
+
     is_owner_ = true;
   }
 

@@ -442,7 +442,7 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
     }
   } else if constexpr (TypeT == kFlatTableType) {
     flatbuffers::FlatBufferBuilder fbb;
-    fbb.Finish(T::TableType::Pack(fbb, &deref(src)));
+    fbb.Finish(RealType::TableType::Pack(fbb, &deref(src)));
 
     if (des.is_loaned() && des.size() >= fbb.GetSize() + offset) {
       std::memcpy(des.data() + offset, fbb.GetBufferPointer(), fbb.GetSize());
@@ -477,7 +477,28 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
   } else if constexpr (TypeT == kStringType) {
     des = Bytes::deep_copy(reinterpret_cast<const uint8_t*>(deref(src).data()), deref(src).size(), offset);
   } else if constexpr (TypeT == kCharsType) {
-    des = Bytes::deep_copy(reinterpret_cast<const uint8_t*>(src), std::strlen(src), offset);
+    size_t size = 0;
+
+    if constexpr (std::is_array_v<T>) {
+      constexpr size_t kExtent = std::extent_v<T>;
+      const auto* terminator = static_cast<const char*>(std::memchr(src, '\0', kExtent));
+
+      if VUNLIKELY (!terminator) {
+        VLOG_T("Serializer: Chars array is not null-terminated.");
+        return false;
+      }
+
+      size = static_cast<size_t>(terminator - src);
+    } else {
+      if VUNLIKELY (!src) {
+        VLOG_T("Serializer: Chars source is null.");
+        return false;
+      }
+
+      size = std::strlen(src);
+    }
+
+    des = Bytes::deep_copy(reinterpret_cast<const uint8_t*>(src), size, offset);
   } else if constexpr (TypeT == kStreamType) {
     thread_local std::stringstream ss;
     ss.clear();
@@ -543,14 +564,29 @@ inline bool serialize_to_transport(const T& src, Bytes& des, TransportType trans
   } else {
     if (use_loan) {
       const size_t size = get_serialized_size<TypeT>(src);
-      des = std::forward<LoanCallbackT>(loan)(size);
 
-      if VUNLIKELY (size != 0 && des.empty()) {
-        return false;
+      if (size == 0) {
+        des = Bytes{};
+      } else {
+        des = std::forward<LoanCallbackT>(loan)(size);
+
+        if VUNLIKELY (des.empty() || des.size() != size) {
+          return false;
+        }
       }
     }
 
-    return serialize<TypeT>(src, des, transport);
+    const bool had_loan = des.is_loaned();
+    auto* loan_data = des.data();
+    const size_t loan_size = des.size();
+    const bool ret = serialize<TypeT>(src, des, transport);
+
+    if VUNLIKELY (had_loan && (!des.is_loaned() || des.data() != loan_data || des.size() != loan_size)) {
+      des = Bytes::loan_internal(loan_data, loan_size);
+      return false;
+    }
+
+    return ret;
   }
 }
 
@@ -624,7 +660,7 @@ inline bool deserialize(const Bytes& src, T& des, [[maybe_unused]] TransportType
     if VLIKELY (!src.empty()) {
       flatbuffers::Verifier verifier(src.data(), src.size());
 
-      if VUNLIKELY (!verifier.VerifyBuffer<typename T::TableType>(nullptr)) {
+      if VUNLIKELY (!verifier.VerifyBuffer<typename RealType::TableType>(nullptr)) {
         VLOG_T("Serializer: Flatbuffers table deserialize failed.");
         return false;
       }
@@ -669,10 +705,20 @@ inline bool deserialize(const Bytes& src, T& des, [[maybe_unused]] TransportType
       deref(des) = std::string();
     }
   } else if constexpr (TypeT == kCharsType) {
-    if VLIKELY (!src.empty()) {
-      des = reinterpret_cast<const char*>(src.data());
+    static_assert(std::is_pointer_v<T>, "Chars deserialization requires a char pointer destination.");
+
+    thread_local std::string chars;
+
+    if (src.empty()) {
+      chars.clear();
     } else {
-      des = "";
+      chars.assign(reinterpret_cast<const char*>(src.data()), src.size());
+    }
+
+    if constexpr (std::is_const_v<std::remove_pointer_t<T>>) {
+      des = chars.c_str();
+    } else {
+      des = chars.data();
     }
   } else if constexpr (TypeT == kStreamType) {
     thread_local std::stringstream ss;
@@ -801,7 +847,11 @@ inline constexpr bool is_string_type() noexcept {
 
 template <typename T>
 inline constexpr bool is_chars_type() noexcept {
-  return !std::is_same_v<T, std::string> && std::is_constructible_v<std::string, T>;
+  using DecayedType = std::decay_t<T>;
+  using CharType = std::remove_pointer_t<DecayedType>;
+
+  return std::is_pointer_v<DecayedType> && std::is_same_v<std::remove_cv_t<CharType>, char> &&
+         !std::is_volatile_v<CharType>;
 }
 
 template <typename T>

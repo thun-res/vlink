@@ -28,6 +28,7 @@
 #include <array>
 #include <cstring>
 #include <string>
+#include <string_view>
 
 #include "./common_test.h"
 #include "./impl/intra_data.h"
@@ -79,6 +80,40 @@ struct AnotherCustom {
     if (!in.empty()) {
       byte = in.data()[0];
     }
+  }
+};
+
+struct SizedCustom {
+  int32_t value{0};
+  bool replace_output{false};
+  bool fail{false};
+
+  [[nodiscard]] size_t get_serialized_size() const noexcept { return sizeof(value); }
+
+  bool operator>>(vlink::Bytes& out) const {
+    if (fail) {
+      return false;
+    }
+
+    if (replace_output) {
+      out = vlink::Bytes::create(sizeof(value));
+    }
+
+    if (out.size() != sizeof(value)) {
+      return false;
+    }
+
+    std::memcpy(out.data(), &value, sizeof(value));
+    return true;
+  }
+
+  bool operator<<(const vlink::Bytes& in) {
+    if (in.size() != sizeof(value)) {
+      return false;
+    }
+
+    std::memcpy(&value, in.data(), sizeof(value));
+    return true;
   }
 };
 
@@ -227,7 +262,10 @@ TEST_SUITE("ser-predicates") {
   TEST_CASE("is_chars_type detects char pointer types") {
     CHECK(Serializer::is_chars_type<const char*>());
     CHECK(Serializer::is_chars_type<char*>());
+    CHECK(Serializer::is_chars_type<decltype("literal")>());
     CHECK_FALSE(Serializer::is_chars_type<std::string>());
+    CHECK_FALSE(Serializer::is_chars_type<std::string_view>());
+    CHECK_FALSE(Serializer::is_chars_type<volatile char*>());
   }
 
   TEST_CASE("is_dynamic_type is false for all common types") {
@@ -439,6 +477,64 @@ TEST_SUITE("ser-string") {
   }
 }
 
+TEST_SUITE("ser-chars") {
+  TEST_CASE("chars keep the existing wire format and deserialize as a terminated string") {
+    const char* original = "abc";
+    Bytes serialized;
+
+    REQUIRE(Serializer::serialize(original, serialized));
+    REQUIRE_EQ(serialized.size(), 3u);
+    CHECK(std::memcmp(serialized.data(), original, serialized.size()) == 0);
+
+    const std::array<uint8_t, 4> storage{'a', 'b', 'c', 'X'};
+    const auto payload = Bytes::shallow_copy(storage.data(), 3u);
+    const char* result = nullptr;
+
+    REQUIRE(Serializer::deserialize(payload, result));
+    CHECK(std::strcmp(result, "abc") == 0);
+    CHECK_EQ(std::strlen(result), 3u);
+  }
+
+  TEST_CASE("mutable chars support empty payloads") {
+    Bytes empty;
+    char* mutable_result = nullptr;
+    const char* const_result = nullptr;
+
+    REQUIRE(Serializer::deserialize(empty, mutable_result));
+    REQUIRE(mutable_result != nullptr);
+    CHECK_EQ(mutable_result[0], '\0');
+
+    REQUIRE(Serializer::deserialize(empty, const_result));
+    REQUIRE(const_result != nullptr);
+    CHECK_EQ(const_result[0], '\0');
+  }
+
+  TEST_CASE("null chars source is rejected") {
+    const char* source = nullptr;
+    Bytes serialized;
+
+    CHECK_FALSE(Serializer::serialize(source, serialized));
+    CHECK(serialized.empty());
+  }
+
+  TEST_CASE("chars arrays stop at the first terminator") {
+    const char source[]{'a', 'b', '\0', 'c'};
+    Bytes serialized;
+
+    REQUIRE(Serializer::serialize(source, serialized));
+    REQUIRE_EQ(serialized.size(), 2u);
+    CHECK(std::memcmp(serialized.data(), source, serialized.size()) == 0);
+  }
+
+  TEST_CASE("unterminated chars arrays are rejected within their extent") {
+    const char source[]{'a', 'b', 'c'};
+    Bytes serialized;
+
+    CHECK_FALSE(Serializer::serialize(source, serialized));
+    CHECK(serialized.empty());
+  }
+}
+
 TEST_SUITE("ser-pod") {
   TEST_CASE("pod struct round trips through serialize and deserialize") {
     PodMsg original{42, 3.14f, 2.718281828};
@@ -626,6 +722,86 @@ TEST_SUITE("ser-custom") {
     m.value = 42;
     CHECK(Serializer::get_serialized_size(m) == 0u);
   }
+
+  TEST_CASE("unknown-size custom codec skips the transport loan") {
+    CustomMsg original{42};
+    Bytes serialized;
+    bool loan_called = false;
+
+    REQUIRE(Serializer::serialize_to_transport<Serializer::kCustomType>(original, serialized, TransportType::kShm2,
+                                                                        true, [&loan_called](size_t) {
+                                                                          loan_called = true;
+                                                                          return Bytes::create(16u);
+                                                                        }));
+    CHECK_FALSE(loan_called);
+    CHECK(serialized.is_owner());
+    CHECK_EQ(serialized.size(), sizeof(original.value));
+  }
+
+  TEST_CASE("sized custom codec writes into an exact transport loan") {
+    SizedCustom original{0x12345678, false};
+    std::array<uint8_t, sizeof(int32_t)> storage{};
+    Bytes serialized;
+
+    REQUIRE(Serializer::serialize_to_transport<Serializer::kCustomType>(
+        original, serialized, TransportType::kShm2, true,
+        [&storage](size_t size) { return Bytes::loan_internal(storage.data(), size); }));
+    CHECK(serialized.is_loaned());
+    CHECK_EQ(serialized.data(), storage.data());
+    CHECK_EQ(serialized.size(), storage.size());
+    CHECK(std::memcmp(serialized.data(), &original.value, sizeof(original.value)) == 0);
+  }
+
+  TEST_CASE("sized custom codec writes into exact owning transport storage") {
+    SizedCustom original{0x12345678, false};
+    Bytes serialized;
+
+    REQUIRE(Serializer::serialize_to_transport<Serializer::kCustomType>(
+        original, serialized, TransportType::kShm2, true, [](size_t size) { return Bytes::create(size); }));
+    CHECK(serialized.is_owner());
+    CHECK_FALSE(serialized.is_loaned());
+    CHECK_EQ(serialized.size(), sizeof(original.value));
+    CHECK(std::memcmp(serialized.data(), &original.value, sizeof(original.value)) == 0);
+  }
+
+  TEST_CASE("sized custom codec rejects an oversized transport loan") {
+    SizedCustom original{42, false};
+    std::array<uint8_t, sizeof(int32_t) + 1u> storage{};
+    Bytes serialized;
+
+    CHECK_FALSE(Serializer::serialize_to_transport<Serializer::kCustomType>(
+        original, serialized, TransportType::kShm2, true,
+        [&storage](size_t) { return Bytes::loan_internal(storage.data(), storage.size()); }));
+    CHECK(serialized.is_loaned());
+    CHECK_EQ(serialized.data(), storage.data());
+    CHECK_EQ(serialized.size(), storage.size());
+  }
+
+  TEST_CASE("sized custom codec cannot replace a transport loan") {
+    SizedCustom original{42, true};
+    std::array<uint8_t, sizeof(int32_t)> storage{};
+    Bytes serialized;
+
+    CHECK_FALSE(Serializer::serialize_to_transport<Serializer::kCustomType>(
+        original, serialized, TransportType::kShm2, true,
+        [&storage](size_t size) { return Bytes::loan_internal(storage.data(), size); }));
+    CHECK(serialized.is_loaned());
+    CHECK_EQ(serialized.data(), storage.data());
+    CHECK_EQ(serialized.size(), storage.size());
+  }
+
+  TEST_CASE("sized custom codec failure preserves the transport loan") {
+    SizedCustom original{42, false, true};
+    std::array<uint8_t, sizeof(int32_t)> storage{};
+    Bytes serialized;
+
+    CHECK_FALSE(Serializer::serialize_to_transport<Serializer::kCustomType>(
+        original, serialized, TransportType::kShm2, true,
+        [&storage](size_t size) { return Bytes::loan_internal(storage.data(), size); }));
+    CHECK(serialized.is_loaned());
+    CHECK_EQ(serialized.data(), storage.data());
+    CHECK_EQ(serialized.size(), storage.size());
+  }
 }
 
 TEST_SUITE("ser-convert") {
@@ -768,6 +944,20 @@ TEST_SUITE("ser-flatbuffers") {
     CHECK(dok);
     CHECK(result.value == "test_fbs");
     CHECK(result.type == 99u);
+  }
+
+  TEST_CASE("shared flatbuffers message round trips through serialize and deserialize") {
+    auto original = std::make_shared<fbs::MessageT>();
+    original->value = "shared_fbs";
+    original->type = 100;
+
+    Bytes serialized;
+    REQUIRE(Serializer::serialize(original, serialized));
+
+    auto result = std::make_shared<fbs::MessageT>();
+    REQUIRE(Serializer::deserialize(serialized, result));
+    CHECK(result->value == "shared_fbs");
+    CHECK(result->type == 100u);
   }
 
   TEST_CASE("flatbuffers builder has no pre finish loan size hint") {

@@ -390,7 +390,19 @@ TEST_SUITE("zerocopy-CameraFrame") {
   TEST_CASE("deep_copy from raw pointer rejects self buffer and resizes owned storage") {
     zerocopy::CameraFrame frame;
     REQUIRE(frame.create(16));
-    CHECK_FALSE(frame.deep_copy(const_cast<uint8_t*>(frame.data()), frame.size()));
+    auto* original = const_cast<uint8_t*>(frame.data());
+    original[0] = 0xA5u;
+    CHECK_FALSE(frame.shallow_copy(original + 1, frame.size() - 1));
+    CHECK_FALSE(frame.deep_copy(original + 1, frame.size() - 1));
+    CHECK_FALSE(frame.deep_copy(original, frame.size()));
+    CHECK(frame.is_owner());
+    CHECK_EQ(frame.data(), original);
+    CHECK_EQ(frame.data()[0], 0xA5u);
+
+    zerocopy::CameraFrame borrowed;
+    REQUIRE(borrowed.shallow_copy(original, frame.size()));
+    CHECK_FALSE(frame.shallow_copy(borrowed));
+    CHECK_FALSE(frame.deep_copy(borrowed));
 
     std::vector<uint8_t> larger(64);
     fill_pattern(larger.data(), larger.size(), 0x31u);
@@ -537,6 +549,9 @@ TEST_SUITE("zerocopy-CameraFrame") {
     CHECK((src >> wire));
     CHECK(zerocopy::CameraFrame::check_valid(wire));
     CHECK_EQ(wire.size(), src.get_serialized_size());
+    uintptr_t serialized_pointer = 1;
+    std::memcpy(&serialized_pointer, wire.data() + 8u + 40u, sizeof(serialized_pointer));
+    CHECK_EQ(serialized_pointer, 0u);
 
     zerocopy::CameraFrame dst;
     CHECK((dst << wire));
