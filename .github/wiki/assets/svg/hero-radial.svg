@@ -79,7 +79,7 @@
        shm2:// sits immediately to the right of shm.
        Ring radius pushed to 260 so neighbouring pills breathe. -->
   <g font-family="JetBrains Mono, monospace" font-size="18" font-weight="700" text-anchor="middle">
-    <!-- ── STABLE (production-ready) — bottom arc ── -->
+    <!-- ── STABLE backends — bottom arc ── -->
     <g transform="translate(74.83 430)">
       <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#4faafd22" stroke="#4faafd" stroke-width="2.2"/>
       <text y="7" fill="#4faafd">intra://</text>
@@ -153,7 +153,7 @@
   <!-- Legend: Stable · Beta, centered below the ring. -->
   <g transform="translate(84 642)" font-family="JetBrains Mono, monospace" font-size="14" font-weight="600" fill="#C8D1EE">
     <rect x="0"   y="0" width="20" height="15" rx="7" fill="#4faafd22" stroke="#4faafd" stroke-width="1.8"/>
-    <text x="28"  y="12">Stable · production-ready</text>
+    <text x="28"  y="12">Stable · supported</text>
     <rect x="270" y="0" width="20" height="15" rx="7" fill="#0b1228" stroke="#ffd166" stroke-width="1.5" stroke-dasharray="3 2"/>
     <text x="298" y="12">Beta · available</text>
   </g>

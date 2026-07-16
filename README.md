@@ -8,7 +8,7 @@
 
 [English](README.en.md) | 中文 · [官方网站](https://vlink.work) · [文档](doc/00-overview.md)
 
-VLink 是面向自动驾驶与具身智能的高性能通信中间件，定位为 ROS 2 的全场景替代方案。它以一套类型安全的统一 API 覆盖进程内、共享内存、车载以太网与跨机网络的全部通信需求，使通信后端的更换退化为一次 URL 前缀的修改，而业务代码不随之改动。
+VLink 是面向自动驾驶与具身智能的高性能通信中间件，定位为 ROS 2 的全场景替代方案。它以一套类型安全的统一 API 覆盖进程内、共享内存、车载以太网与跨机网络的全部通信需求；通信后端由 URL 选择，切换时按目标后端调整 URL 及必要参数，而通信原语和主要业务逻辑保持不变。
 
 当前版本支持 12 种传输后端、14 种序列化格式、3 种通信模型与 6 个核心原语，并提供安全加密、录制回放、服务发现、10 个 CLI 工具及 Foxglove / Rerun 可视化桥接。
 
@@ -18,17 +18,17 @@ VLink 是面向自动驾驶与具身智能的高性能通信中间件，定位�
 
 ## 🧩 核心抽象：URL 即通信契约
 
-VLink 的全部设计围绕一个中心抽象：一次通信由"通信模型 + URL + 核心方法"三要素确定，后端是 URL 前缀的实现细节，对业务逻辑不可见。
+VLink 的全部设计围绕一个中心抽象：一次通信由“通信模型 + URL + 核心方法”三要素确定，URL 的 scheme 选择后端，完整 URL 同时承载该后端的地址与参数。
 
 ```
 <scheme>://<topic_name>[?参数]
 ```
 
-`scheme` 决定后端，更换后端只需更换前缀，业务代码不变：
+`scheme` 决定后端。地址模型兼容的 topic 后端通常只需更换 scheme，通信原语和业务处理逻辑不变；SOME/IP、MQTT、FDBUS 等专用后端还须提供其合法地址和查询参数：
 
 ```cpp
 vlink::Publisher<Imu> pub("intra://sensor/imu");  // 进程内
-vlink::Publisher<Imu> pub("shm://sensor/imu");    // 同机零拷贝
+vlink::Publisher<Imu> pub("shm://sensor/imu");    // 同机共享内存（支持 loan）
 vlink::Publisher<Imu> pub("dds://sensor/imu");    // 跨机网络
 ```
 
@@ -84,8 +84,8 @@ getter.listen([](const Status& s) { use(s); });
 
 | 前缀 | 底层 | 通信范围 | 零拷贝 | 状态 |
 | --- | --- | --- | :---: | :---: |
-| `intra://` | 内置队列 | 进程内 | 是 | 稳定 |
-| `shm://` | Iceoryx | 同机跨进程 | 是 | 稳定 |
+| `intra://` | 内置队列 | 进程内 | 条件支持（共享指针直达路径） | 稳定 |
+| `shm://` | Iceoryx | 同机跨进程 | 条件支持（transport loan） | 稳定 |
 | `dds://` | Fast-DDS | 跨机网络 | 否 | 稳定 |
 | `ddsc://` | CycloneDDS | 跨机网络 | 否 | 稳定 |
 | `shm2://` | Iceoryx2 | 同机跨进程 | 是 | Beta |

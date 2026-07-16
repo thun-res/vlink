@@ -23,10 +23,15 @@
 
 #pragma once
 
+#include <cstdint>
+
 // Cached "field" value for field_advanced. POD, "Standard" serializer.
 // Used to demonstrate set_change_reporting(true) -- duplicate consecutive
 // values are suppressed by the Getter and never reach listen() callbacks.
 struct BrightnessConfig {
   int level;
   bool auto_mode;
+  // Standard serialization compares the complete object representation for
+  // change reporting. Keep trailing bytes deterministic for aggregate values.
+  uint8_t reserved[3];
 };

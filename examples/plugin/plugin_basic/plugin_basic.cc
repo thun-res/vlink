@@ -31,13 +31,14 @@
 //   1. Print the loader's default search paths (so user knows where to drop
 //      libgreeter_plugin.so).
 //   2. Construct a vlink::Plugin (one Plugin instance owns a registry of
-//      loaded handles; destructing it unloads everything).
+//      loaded handles; destruction releases its registry entries, while
+//      live interface shared_ptr instances can defer final unmapping).
 //   3. load<GreeterInterface>("greeter_plugin", 1, 0) -> resolves to
 //      lib<name>.so, dlsym's the version info, validates major/minor, calls
 //      vlink_plugin_create, and wraps the raw pointer in a shared_ptr<T>
-//      whose custom deleter invokes vlink_plugin_destroy then dlclose().
-//      Order matters: destroy first (still inside the .so) then dlclose
-//      (unmaps the code that destroy lives in).
+//      whose custom deleter invokes vlink_plugin_destroy. Plugin::unload()
+//      separately releases the registry entry; final unmapping happens only
+//      after both the registry and every interface reference are gone.
 //   4. Demonstrate introspection (has_loaded, complex_id, plugin_id).
 //   5. Demonstrate version-mismatch handling and reload.
 // =============================================================================
@@ -51,8 +52,8 @@
 
 int main() {
   // Section: print loader search paths so the user can verify lib placement.
-  // default_search_path() pulls from compiled-in defaults, LD_LIBRARY_PATH
-  // and VLINK_PLUGIN_PATH env vars, in priority order.
+  // default_search_path() prepends VLINK_PLUGIN_DIR entries to the current,
+  // executable-relative, and system library directories.
   for (const auto& p : vlink::Plugin::default_search_path()) {
     VLOG_I("search path: ", p);
   }
@@ -63,8 +64,9 @@ int main() {
   plugin.set_log_level(vlink::Logger::kInfo);
 
   // Section: load the plugin. (1, 0) must match VLINK_PLUGIN_DECLARE in
-  // greeter_plugin.cc. The returned shared_ptr owns the dlopen handle via
-  // its deleter, so simply letting it go out of scope unloads cleanly.
+  // greeter_plugin.cc. The returned shared_ptr keeps the library entry alive
+  // and destroys the plugin instance through its custom deleter; explicit
+  // unload below removes the loader's registry entry.
   auto greeter = plugin.load<GreeterInterface>("greeter_plugin", 1, 0);
 
   if (!greeter) {
@@ -79,26 +81,25 @@ int main() {
   VLOG_I("greet(\"VLink\"): ", greeter->greet("VLink"));
   VLOG_I("greet(\"World\"): ", greeter->greet("World"));
 
-  // Section: introspection helpers. complex_id encodes name+version+stable_id
-  // so two .so files with the same logical name but different builds can be
-  // distinguished. plugin_id is the cross-compiler stable identifier produced
-  // by VLINK_PLUGIN_REGISTER for the interface type.
+  // Section: introspection helpers. complex_id combines the library name with
+  // the interface's stable plugin_id; it does not encode version/build data.
+  // plugin_id is the cross-compiler stable identifier produced by
+  // VLINK_PLUGIN_REGISTER for the interface type.
   VLOG_I("has_loaded: ", plugin.has_loaded<GreeterInterface>("greeter_plugin"));
   VLOG_I("complex_id: ", plugin.get_plugin_complex_id<GreeterInterface>("greeter_plugin"));
   VLOG_I("plugin_id:  ", std::string(GreeterInterface::get_plugin_id()));
 
-  // Section: explicit unload. Releasing the shared_ptr drops the last
-  // reference and the deleter runs; unload() then removes the bookkeeping
-  // entry from the Plugin registry. Order: shared_ptr.reset() FIRST so the
-  // destructor fires while the .so is still mapped; unload() merely tidies
-  // up the registry.
+  // Section: explicit unload. Releasing this interface shared_ptr invokes the
+  // plugin-instance deleter. unload() then releases the registry's PluginEntry
+  // reference; because no interface references remain, that can also trigger
+  // final dlclose. Reset first so the instance destructor runs while mapped.
   greeter.reset();
   VLOG_I("unload result: ", plugin.unload<GreeterInterface>("greeter_plugin"));
 
-  // Section: version-mismatch path. The loader walks every candidate .so,
-  // reads its version info, and rejects (returns nullptr) if (major, minor)
-  // does not satisfy the request. This is the safety net that prevents the
-  // host from calling into an ABI-incompatible plugin build.
+  // Section: version-mismatch path. The loader checks the first matching
+  // library found in the ordered search paths and returns nullptr if its
+  // (major, minor) does not satisfy the request. This prevents the host from
+  // calling into an ABI-incompatible plugin build.
   auto bad = plugin.load<GreeterInterface>("greeter_plugin", 2, 0);
 
   if (!bad) {

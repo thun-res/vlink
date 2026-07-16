@@ -24,7 +24,6 @@
 #include <vlink/base/logger.h>
 #include <vlink/vlink.h>
 
-#include <atomic>
 #include <chrono>
 #include <thread>
 
@@ -41,37 +40,24 @@ struct SensorReading {
 //
 // Demonstrates:
 //   - vlink::Publisher<T> / vlink::Subscriber<T> on the "intra://" backend
-//     (intra-process, lockless single-binary delivery -- the cheapest scheme).
-//   - vlink::MessageLoop driven asynchronously (async_run) so that subscriber
-//     callbacks run on a worker thread while main() continues publishing.
-//   - The "attach before listen" rule and wait_for_subscribers handshake.
+//     in direct mode, where callbacks run inline on the publishing thread.
+//   - The wait_for_subscribers handshake before the first publish.
 //
 // Typical scenarios: in-process telemetry fan-out, sensor stub for unit tests,
 // fastest possible smoke test of the Event API.
 int main() {
-  static constexpr char kUrl[] = "intra://hello/pubsub";
+  static constexpr char kUrl[] = "intra://hello/pubsub#direct";
   static constexpr int kMessageCount = 5;
 
-  // A MessageLoop is the thread context that delivers subscriber callbacks.
-  // async_run() spawns a dedicated worker thread and returns immediately, so
-  // main() can keep publishing while the loop drains its queue in parallel.
-  // (Use run() instead if you want main() itself to *be* the loop thread.)
-  vlink::MessageLoop loop;
-  loop.async_run();
-
-  // Construct the subscriber, then attach to a loop BEFORE listen().
-  // attach() binds delivery context; calling listen() before attach() would
-  // either fall back to an implicit thread or fail to activate.
+  // intra:// owns its queue pipeline and does not support Node::attach(). The
+  // #direct fragment selects inline dispatch, so each publish completes its
+  // subscriber callbacks before returning.
   vlink::Subscriber<SensorReading> sub(kUrl);
-  sub.attach(&loop);
 
-  // Shared counter between the loop thread (writer) and main (reader at end).
-  // Atomic is required because the callback runs on the loop worker thread.
-  std::atomic<int> received{0};
-  // Lambda invoked on the loop thread once per delivered sample.
+  int received = 0;
   sub.listen([&received](const SensorReading& msg) {
     VLOG_I("[sub] seq=", msg.sequence, " temp=", msg.temperature);
-    received.fetch_add(1);
+    received++;
   });
 
   vlink::Publisher<SensorReading> pub(kUrl);
@@ -87,16 +73,7 @@ int main() {
     std::this_thread::sleep_for(50ms);
   }
 
-  // Drain in-flight callbacks: wait until the loop queue has been idle for the
-  // given budget (ms). Required because publish() returns immediately while
-  // listen() callbacks are still queued on the loop thread.
-  loop.wait_for_idle(500);
-  VLOG_I("published=", kMessageCount, " received=", received.load());
-
-  // Orderly shutdown: quit() signals the loop to stop accepting work, then
-  // wait_for_quit() joins the worker thread before destructors run.
-  loop.quit();
-  loop.wait_for_quit();
+  VLOG_I("published=", kMessageCount, " received=", received);
 
   return 0;
 }

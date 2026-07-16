@@ -5,7 +5,7 @@ vlink 的六种通信原语（Publisher / Subscriber / Server / Client / Setter 
 掌握内容：
 
 - 节点生命周期管理：延迟初始化、`init` / `deinit`、`interrupt`、`has_inited`。
-- `kWithoutInit` 模式——在创建底层 transport 之前完成 QoS / property 配置。
+- `kWithoutInit` 模式——在创建底层 transport 之前完成后端 property、序列化类型和发现上报等初始化配置；endpoint QoS 由 URL / Conf 提供。
 - 阻塞接口（`wait_for_*`）的中断语义与可重入初始化。
 
 ## 📁 子示例索引
@@ -14,15 +14,16 @@ vlink 的六种通信原语（Publisher / Subscriber / Server / Client / Setter 
 |------|------|----------|
 | [`lifecycle/`](./lifecycle/) | `kWithoutInit` 延迟初始化、`init`/`deinit`、`interrupt`、`has_inited` | `Node::init`、`Node::deinit`、`Node::interrupt`、`Node::has_inited` |
 
-## 🔑 在 init 之前可配置、之后冻结的字段
+## 🔑 配置入口与初始化时机
 
-下列字段在 `init()` 期间被底层 transport 读取，须在 init 之前通过 property 系统设置；init 之后修改多数不再生效。
+下列配置应在 transport 初始化前确定，但入口并不都是 property 系统：
 
-| 字段 | 影响 |
-|------|------|
-| QoS 子策略（reliability / history / durability / publish_mode 等） | transport 行为 |
-| `ser_type` / `schema_type` | discovery 元数据，供 bag / proxy 使用 |
-| `discovery_enabled` | 是否对 ProxyServer / DiscoveryViewer 可见 |
+| 配置 | 正确入口 | 影响 |
+|------|----------|------|
+| Endpoint QoS | URL `?qos=&depth=`、后端 `Conf` / `register_qos()` | transport 投递行为 |
+| 后端支持的节点属性 | `set_property()`，例如 DDS participant 的 `dds.*` | 后端初始化参数 |
+| `ser_type` / `schema_type` | `set_ser_type()` | discovery 元数据，供 bag / proxy 使用 |
+| `discovery_enabled` | `set_discovery_enabled()` | 是否对 DiscoveryReporter / Viewer 可见 |
 
 ## 🖼️ 配图
 

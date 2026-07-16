@@ -36,8 +36,8 @@
  *
  * Schema info: vlink_schema_info_t carries the registered "type name" plus
  * the schema family enum (VLINK_SCHEMA_RAW, VLINK_SCHEMA_PROTOBUF, etc.). For
- * raw bytes the type name is informational; for typed transports it lets
- * peers reject mismatched ser_type.
+ * raw bytes the type name is metadata for discovery, proxy, and recording;
+ * callers must still ensure that peers use a compatible wire encoding.
  * =============================================================================
  */
 
@@ -54,10 +54,6 @@
 #define sleep_ms(ms) usleep((ms) * 1000)  // NOLINT(readability-identifier-naming)
 #endif
 
-/* File-scope counter so the on_message callback can communicate with main().
- * No mutex needed: the intra:// transport delivers serially per subscriber. */
-static int g_received_count = 0;
-
 /*
  * Subscriber data callback.
  * Trigger:  every successful publish on "intra://c_api/pubsub" once the
@@ -68,7 +64,6 @@ static int g_received_count = 0;
 static void on_message(const uint8_t* data, const size_t size, void* user_data) {
   (void)user_data;
   printf("[Subscriber] Received %zu bytes: %.*s\n", size, (int)size, (const char*)data);
-  g_received_count++;
 }
 
 int main(void) {
@@ -119,9 +114,10 @@ int main(void) {
     sleep_ms(50);
   }
 
-  /* Section: publish_by_force sidesteps the "no subscribers? drop" optimisation
-   * and writes the payload onto the wire regardless. Useful for late-joining
-   * subscribers when combined with a durable history QoS. */
+  /* Section: publish_by_force sidesteps the current "no subscribers? drop"
+   * check and asks the backend to publish regardless. intra:// does not retain
+   * this value for a future subscriber; late delivery requires a backend and
+   * endpoint configuration that provide durable history. */
   const char* force_msg = "forced message";
   ret = vlink_publish_by_force(pub, (const uint8_t*)force_msg, strlen(force_msg));
   printf("publish_by_force ret=%d\n", ret);
@@ -129,8 +125,6 @@ int main(void) {
   /* Final drain so the subscriber's delivery thread can flush before we
    * destroy the handles. */
   sleep_ms(200);
-  printf("Total received: %d\n", g_received_count);
-
   /* Pair every create with a destroy; destroy drops the inner shared_ptr,
    * triggering teardown of the C++ Publisher/Subscriber. */
   vlink_destroy_publisher(&pub);

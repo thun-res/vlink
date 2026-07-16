@@ -16,7 +16,7 @@ VLink 的通信原语 `Publisher<T>` / `Subscriber<T>` / `Client<Req,Resp>` / `S
 |------|---------|--------|---------|------|
 | `Bytes` | 零 | 不直接（自定义协议） | 自定义二进制协议、性能极致路径 | [`basic_types/`](basic_types/) |
 | `std::string` | 直接复制 payload | 强（UTF-8 文本） | JSON、命令、日志 | [`basic_types/`](basic_types/) |
-| POD struct | 零（含 padding） | 弱（ABI 依赖） | 同机同 ABI、高性能 | [`basic_types/`](basic_types/) |
+| POD struct | 一次 `memcpy`（含 padding），无格式转换 | 弱（ABI 依赖） | 同机同 ABI、高性能 | [`basic_types/`](basic_types/) |
 | Protobuf | 中等 | 强 | 跨语言、向后兼容 | [`../samples/helloworld/`](../samples/helloworld/) |
 | FlatBuffers | 低 | 强 | 大对象、零拷贝读取 | [`../samples/someip_flat/`](../samples/someip_flat/) |
 | CDR | 中等 | 强（DDS 标配） | DDS 互通 | 见 `doc/03-serialization.md` |

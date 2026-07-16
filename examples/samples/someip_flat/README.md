@@ -40,7 +40,7 @@ vlink::Getter<fbs::MessageT> getter("someip://0x1/0x4?groups=0x1|0x2&event=0x4&f
 
 ## 🔗 SOME/IP URL 格式
 
-服务 / 实例 / 方法均用十六进制 ID，多个事件组用 `|` 分隔：
+服务 / 实例 / 方法使用数值 ID，可写十进制、`0x` 十六进制（也接受前导 `0` 的八进制）；多个事件组用 `|` 分隔：
 
 ```
 someip://服务ID/实例ID?method=方法ID                     —— Method（RPC）
@@ -56,7 +56,7 @@ someip://服务ID/实例ID?groups=组ID&event=事件ID&field=1  —— Field
 | 一对多广播、订阅者随到随收 | Event |
 | 仅关心最新状态值、晚加入者也立即获取 | Field（`&field=1`） |
 
-换后端只改 URL 前缀；换 Protobuf / CDR 等只改消息类型，框架自动识别。
+换后端时通信原语和消息处理逻辑可保持不变，但须把 SOME/IP 的 service/instance/event/method URL 改为目标后端合法地址；换 Protobuf / CDR 等消息类型时，框架按类型自动识别序列化策略。
 
 ## 🚀 运行
 

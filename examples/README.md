@@ -28,9 +28,9 @@ cmake --build build -j
 | [communication](communication) | `event_advanced` · `field_advanced` · `method_sync` | 三模型的进阶用法：多订阅扇出、change 回调、同步 RPC |
 | [url_guide](url_guide) | `url_basics` | URL 结构与运行时重映射 |
 | [qos](qos) | `qos_basics` | QoS 基本配置与预定义 profile |
-| [security](security) | `security_basic` | 消息级加密：对称密钥、RSA、自定义回调 |
+| [security](security) | `security_basic` | 消息级加密：对称 key seed、PBKDF2 与密钥不匹配演示 |
 | [zerocopy](zerocopy) | `zerocopy_basic` | `loan` / `return_loan` 借贷接口与 `RawData` |
-| [recording](recording) | `record_basic` | 节点级消息录制与回放 |
+| [recording](recording) | `record_basic` | 节点级与全局消息录制 |
 | [plugin](plugin) | `plugin_basic` | 插件加载与调用 |
 | [proxy](proxy) | `proxy_api_basic` | ProxyAPI 客户端 |
 | [c_api](c_api) | `c_pubsub` | C 语言绑定：发布订阅 |

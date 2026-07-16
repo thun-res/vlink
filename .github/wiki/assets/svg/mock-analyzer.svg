@@ -98,7 +98,7 @@
     <path d="M4 8 V5 H9" fill="none" stroke="#3796e8" stroke-width="1.1"/>
   </g>
   <rect x="560" y="100" width="112" height="18" rx="2" fill="#081020" stroke="#2a3764"/>
-  <text x="566" y="113" fill="#d7dff8" font-size="6.6" font-family="'JetBrains Mono',monospace">/etc/analyzer/imu.yaml</text>
+  <text x="566" y="113" fill="#d7dff8" font-size="6.6" font-family="'JetBrains Mono',monospace">/etc/analyzer/imu.json</text>
   <g transform="translate(680 98)">
     <rect width="18" height="18" rx="3" fill="#18203e" stroke="#31406e"/>
     <path d="M5 4 H12.5 L15 6.5 V14.5 H5 Z" fill="none" stroke="#3796e8" stroke-width="1.2"/>

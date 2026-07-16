@@ -32,7 +32,7 @@
 | `Reliable + KeepLast(5) + Volatile + Sync` | 离散控制事件 |
 | `Reliable + KeepLast(1) + TransientLocal + Sync` | 字段状态同步 |
 | `Reliable + KeepAll + Volatile + Sync` | RPC 调用 |
-| `Reliable + KeepAll + TransientLocal + Sync` | 安全报警（绝不丢失，补送晚加入者） |
+| `Reliable + KeepAll + TransientLocal + Sync` | 启用重传的报警，并补送晚加入者 |
 
 ## 🖼️ 配图
 

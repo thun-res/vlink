@@ -17,10 +17,10 @@
 
 1. `bytes_basic/` —— 字节载体的两种典型用法（拥有 / 处理），是消息载荷与序列化的底座。
 2. `logger_basic/` —— 四种日志宏与控制台 / 文件级别分控；后续示例普遍使用 `VLOG_I` / `MLOG_I`。
-3. `message_loop_basic/` —— 应用层中央事件循环，是 vlink 回调调度的核心。
+3. `message_loop_basic/` —— 可选的应用层串行调度器；仅在后端支持节点 attach 时接管通信回调。
 4. `timer/` —— 周期 / 单次 / 动态定时器，须绑定到 `MessageLoop` 才能触发回调。
 
-事件循环是 vlink 调度的核心，`Timer` 必须挂在 `MessageLoop` 上才会触发，因此第 3、4 项建议连续阅读。
+`MessageLoop` 也是 `Timer` 的必需调度器，Timer 必须挂在 loop 上才会触发，因此第 3、4 项建议连续阅读。
 
 ## 🖼️ 配图
 

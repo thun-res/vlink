@@ -6,7 +6,7 @@
 | --- | --- | --- | --- |
 | **C API** | 13.1–13.8 | 语言 | 以稳定 C ABI 投影六原语数据面，使 C / Python / Go / Rust 等无法实例化 C++ 模板的语言接入 VLink |
 | **扩展开发** | 13.9–13.17 | 框架 | 以稳定接口与插件机制开放扩展点：URL 重映射、动态类型、功能组件、子系统后端替换 |
-| **环境变量** | 13.18–13.27 | 部署 | 运行时配置的最低优先级来源，使后端绑定、日志、诊断在不重编不改源码下按部署环境注入 |
+| **环境变量** | 13.18–13.27 | 部署 | 通常提供全局缺省兜底；remap/bind 等部署变量可显式覆盖源码 URL |
 
 ![C API 封装架构](images/c-api-wrapper.png)
 
@@ -113,7 +113,7 @@ int main(void) {
 
 #### 13.3.3 回调类型
 
-回调均在 VLink 内部线程触发，`data` 指针仅在回调期内有效。回调体应短小、非阻塞，并避免在其中调用其它 VLink API（见 13.8.1）。
+回调执行上下文随后端与模式而异：intra `#direct` 可在发起 publish/invoke/set 的调用线程同步触发，其他模式通常由后端 delivery context 触发；注册检测回调时若状态已满足也可能同步触发。`data` 指针仅在回调期内有效。回调体应短小、非阻塞，并避免在其中调用可能形成重入或等待环的 VLink API（见 13.8.1）。
 
 | 回调类型 | 签名 | 触发时机 |
 | --- | --- | --- |
@@ -160,7 +160,7 @@ typedef struct {
 | `vlink_create_publisher(url, schema, handle)` | 创建并初始化 Publisher |
 | `vlink_destroy_publisher(handle)` | 销毁并释放资源 |
 | `vlink_publish(handle, data, size)` | 发布消息；无订阅者返回 `TRANSFER_ERROR` |
-| `vlink_publish_by_force(handle, data, size)` | 强制发布，跳过订阅者在线检查；适合 late-join |
+| `vlink_publish_by_force(handle, data, size)` | 跳过订阅者在线检查并提交传输；迟到可见性仍取决于后端 durability/QoS |
 | `vlink_wait_for_subscribers(handle, timeout_ms)` | 阻塞至有订阅者或超时 |
 | `vlink_has_subscribers(handle)` | 非阻塞查询是否有订阅者 |
 | `vlink_detect_subscribers(handle, cb, user_data)` | 注册连接状态变化回调 |
@@ -478,7 +478,7 @@ VLink 的扩展点按调用主体分为两类，决定其在文档中的展开�
 
 `TriggerPluginInterface` 实现声明 ABI `2.0`，并通过 `init(config)` 接收宿主原样传入的配置字符串；字符串可由插件自行解释为 JSON、文件路径或其他格式。`vlink-trigger daemon` 在绑定插件和启动 recorder 前调用一次 `init()`，返回 `false` 时拒绝启动。
 
-`BagPluginInterface` 接口版本为 `2.0`。读侧 `on_read()` 接收已填充有效序列化元数据的 `Frame`；每个顶层回放会话开始前调用 `reset()` 丢弃前一中断会话的缓存状态，只有自然完成的回放轮次及解绑时调用 `flush()` 排空尾帧。若 reader 在轮次边界排空前观察到 `stop()` / `jump()`，则跳过 `flush()`，由下一会话的 `reset()` 丢弃缓存。实现重排缓冲的插件通常分别转发到 `BagProcessor::reset()` / `flush()`，并使用当前头文件重新构建、声明 `VLINK_PLUGIN_DECLARE(Impl, 2, 0)`。
+`BagPluginInterface` 接口版本为 `2.0`。读侧 `on_read()` 接收已填充有效序列化元数据的 `Frame`；每个顶层回放会话开始前调用 `on_reset()` 丢弃前一中断会话的缓存状态，只有自然完成的回放轮次及解绑时调用 `flush()` 排空尾帧。若 reader 在轮次边界排空前观察到 `stop()` / `jump()`，则跳过 `flush()`，由下一会话的 `on_reset()` 丢弃缓存。实现重排缓冲的插件通常分别转发到 `BagProcessor::reset()` / `flush()`，并使用当前头文件重新构建、声明 `VLINK_PLUGIN_DECLARE(Impl, 2, 0)`。
 
 `TriggerRecorder` 对 bag 插件采用纯接口注入：它只接受宿主通过 `bind_bag_interface()` 绑定的 `shared_ptr<BagPluginInterface>`，不接收库名、搜索目录，也不调用 `Plugin::load()`。应用宿主可直接构造实现，或自行用 `Plugin` 完成库搜索、ABI 校验与实例创建后再绑定；`vlink-trigger daemon` 的 `bag_plugin` / `bag_plugin_dir` 正是 CLI 宿主层配置，不属于 `TriggerRecorder::Config`。
 
@@ -530,7 +530,7 @@ if (!remap.load("/etc/vlink/remap.json")) {
 vlink::Publisher<vlink::Bytes> pub(remap.convert("intra://sensor/lidar"));
 ```
 
-**边界条件**：`UrlRemap` 非线程安全，`load` / `unload` / `reload` / `convert` 须在同一线程调用，或由调用方加锁。`is_valid()` 为 `false` 时 `convert()` 返回原 URL，不抛异常。除显式构造 `UrlRemap` 外，同一映射表亦可经环境变量 `VLINK_URL_REMAP` 全局注入（见 13.20），无需改动任何代码。
+**边界条件**：`UrlRemap` 非线程安全，`load` / `unload` / `reload` / `convert` 须在同一线程调用，或由调用方加锁。`is_valid()` 为 `false` 时 `convert()` 返回原 URL，不抛异常。除显式构造 `UrlRemap` 外，同一映射表亦可经环境变量 `VLINK_URL_REMAP` 全局注入（见 13.20），无需改动任何代码。全局实例在进程首次使用 URL 时加载一次，不监听文件变化；修改映射文件后须重启进程。只有应用显式持有的 `UrlRemap` 才能由调用方同步后执行 `reload()`。
 
 ### 🎭 13.11 DynamicData：动态类型消息
 
@@ -594,7 +594,7 @@ decoded << wire;
 | `unload<Iface>(lib_name)` | 卸载指定插件 |
 | `clear()` | 卸载全部插件 |
 
-版本校验规则：`major` 须与插件声明一致，插件声明的 `minor` 须不低于调用方要求，否则加载失败。返回的 `shared_ptr` 在最后一个引用释放时自动卸载共享库，无需手动管理。
+版本校验规则：`major` 须与插件声明一致，插件声明的 `minor` 须不低于调用方要求，否则加载失败。返回的 `shared_ptr` 在最后一个引用释放时销毁插件实例；`Plugin` 注册表仍持有共享库跟踪项。需要卸载时先释放全部接口引用，再调用 `unload()`（或 `clear()`）；注册表项移除且所有引用释放后，共享库才最终解除映射。
 
 #### 13.12.2 库名与搜索路径
 
@@ -613,7 +613,7 @@ decoded << wire;
 - 可执行文件所在目录及其 `../lib64`、`../lib`、`./lib64`、`./lib`
 - 系统目录 `/lib64`、`/lib`
 
-`load()` 的 `dir_name` / `search_paths` 参数可覆盖默认搜索路径。`VLINK_PLUGIN_DIR` 的运行期定义见 13.20。
+`load()` 的 `search_paths` 参数可替换默认搜索路径；`dir_name` 是追加在每个 search path 下的可选子目录，并不是独立或优先搜索的绝对目录。例如 `dir_name="plugins"` 会依次检查 `<search_path>/plugins/<library>`。`VLINK_PLUGIN_DIR` 的运行期定义见 13.20。
 
 #### 13.12.3 用法
 
@@ -625,6 +625,7 @@ if (backend) {
     backend->init("my_app");
 }
 
+backend.reset();
 plugin.unload<vlink::LoggerPluginInterface>("my_logger");
 ```
 
@@ -878,11 +879,11 @@ if (mgr.is_valid()) {
 
 ## 🌱 环境变量：运行时配置
 
-VLink 专有环境变量统一以 `VLINK_` 前缀命名，作为运行时配置的最低优先级来源，仅在更高优先级配置缺省时生效。本节界定其优先级模型，按职责分类列出全部变量，并给出查看当前生效值的方法——C API 创建的节点、扩展加载的插件最终均受此约束。
+VLink 专有环境变量统一以 `VLINK_` 前缀命名。对 domain/QoS/depth 等同一后端参数，它们通常作为 URL/Conf 缺省时的全局兜底；`VLINK_URL_REMAP`、`VLINK_DDS_BIND`、`VLINK_INTRA_BIND` 则是有意覆盖显式 URL 的部署级例外。本节界定这些优先级与作用域，并给出查看当前生效值的方法。
 
 ### 🪜 13.18 配置来源与优先级
 
-同一项运行时配置可由三处声明，遵循就近覆盖原则。优先级由高到低如下，高优先级来源存在时覆盖低优先级来源。
+domain/QoS/depth 等后端参数可由三处声明，遵循就近覆盖原则。优先级由高到低如下，高优先级来源存在时覆盖低优先级来源。
 
 | 优先级 | 来源 | 作用域 | 示例 |
 | --- | --- | --- | --- |
@@ -894,6 +895,7 @@ VLink 专有环境变量统一以 `VLINK_` 前缀命名，作为运行时配置�
 
 - 切换后端的首选方式仍是修改 URL 前缀（`dds://` → `ddsc://`），其语义最显式、作用域最精确。
 - 环境变量适用于不改动代码的全局重映射或参数兜底，例如将进程内所有 `dds://` 节点整体绑定到 CycloneDDS 实现。
+- URL remap 与 DDS/intra bind 变量会在 URL 解析阶段主动覆盖源码中的 scheme/完整 URL，不遵循上表的“环境变量最低”规则；应只在部署层需要全局改写时启用。
 
 ### ⭐ 13.19 高频变量概览
 
@@ -1028,24 +1030,27 @@ export VLINK_DDS_IP="192.168.1.100,192.168.1.101"
 
 #### 13.25.1 zenoh://
 
-多值列表以逗号或空格分隔；`zenoh-pico` 下 `VLINK_ZENOH_LISTEN` 仅取首个端点。
+多值列表以逗号或空格分隔；`zenoh-pico` 下 `VLINK_ZENOH_LISTEN` 仅取首个端点。zenoh-c 的解析优先级为 JSON5 配置文件 < `VLINK_ZENOH_*` 环境变量 < `ZenohConf::set_global_property()` < URL/显式 `ZenohConf` < 节点 `set_property()`；未设置的环境变量不会覆盖配置文件已有值。
 
 | 变量 | 类型 | 说明 |
 | --- | --- | --- |
-| `VLINK_ZENOH_CONFIG` | 文件路径 | Zenoh JSON5 配置文件 |
+| `VLINK_ZENOH_CONFIG` | 文件路径 | Zenoh JSON5 配置文件（仅 zenoh-c） |
 | `VLINK_ZENOH_DEBUG` | `1`/`0` | 启用 Zenoh runtime 调试日志（默认 `0`，仅 zenoh-c 构建生效） |
 | `VLINK_ZENOH_DOMAIN` | 数字 | Zenoh Domain ID |
-| `VLINK_ZENOH_MODE` | 字符串 | 运行模式（默认 `peer`） |
+| `VLINK_ZENOH_MODE` | 字符串 | 运行模式；未设置时沿用后端配置（zenoh-c 默认 `peer`，pico 默认 `client`）；pico 仅支持 `peer`/`client` |
 | `VLINK_ZENOH_IP` / `_PEER` / `_LISTEN` | 列表或字符串 | 连接 / 对等 / 监听端点 |
-| `VLINK_ZENOH_MULTICAST` / `_MULTICAST_IF` / `_MULTICAST_TTL` | 地址 / 字符串 / 数字 | 组播地址 / 网卡 / TTL |
-| `VLINK_ZENOH_GOSSIP` | `1`/`0` | Gossip 发现（默认 `0`） |
-| `VLINK_ZENOH_ALLOWED_LOCALITY` | 字符串 | 允许通信来源：`local`（仅会话内）/ `remote`（仅远端）/ 其它视作 `any`（默认 `any`），需 `Z_FEATURE_UNSTABLE_API` |
-| `VLINK_ZENOH_RX_BUF` / `_MAX_MSG` | 数字 | 接收缓冲 / 最大消息大小 |
-| `VLINK_ZENOH_TX_QUEUE_DATA` / `_TX_QUEUE_RT` | 数字 | 数据 / 实时发送队列深度 |
-| `VLINK_ZENOH_LOWLATENCY` / `_QOS` / `_COMPRESSION` / `_TIMESTAMPS` | `1`/`0` | 低延迟 / QoS / 压缩 / 时间戳开关 |
+| `VLINK_ZENOH_MULTICAST` / `_MULTICAST_IF` / `_MULTICAST_TTL` | 地址 / 字符串 / 数字 | 组播地址 / 网卡 / TTL；pico 的 peer 组播需要网卡且不支持 TTL |
+| `VLINK_ZENOH_GOSSIP` | `1`/`0` | Gossip 发现；未设置时沿用配置（仅 zenoh-c） |
+| `VLINK_ZENOH_ALLOWED_LOCALITY` | 字符串 | 允许通信来源：`local`（仅会话内）/ `remote`（仅远端）/ 其它视作 `any`（默认 `any`），仅带 `Z_FEATURE_UNSTABLE_API` 的 zenoh-c |
+| `VLINK_ZENOH_RX_BUF` / `_MAX_MSG` | 数字 | 接收缓冲 / 最大消息大小（仅 zenoh-c） |
+| `VLINK_ZENOH_TX_QUEUE_DATA` / `_TX_QUEUE_RT` | 数字 | 数据 / 实时发送队列深度（仅 zenoh-c，1–16） |
+| `VLINK_ZENOH_LOWLATENCY` / `_QOS` / `_COMPRESSION` | `1`/`0` | 低延迟 / QoS / 压缩开关（仅 zenoh-c） |
+| `VLINK_ZENOH_TIMESTAMPS` | `1`/`0` | Zenoh 原生时间戳开关（zenoh-c / pico） |
 | `VLINK_ZENOH_EVENT_QOS` / `_METHOD_QOS` / `_FIELD_QOS` | 字符串 | 三种模型默认 QoS 配置 |
-| `VLINK_ZENOH_BATCH_ENABLED` / `_BATCH_TIME_LIMIT_MS` | 布尔 / 数字 | 批量发送开关与聚合时窗 |
-| `VLINK_ZENOH_SHM` / `_SHM_MODE` / `_SHM_SIZE` / `_SHM_THRESHOLD` / `_SHM_LOAN_THRESHOLD` / `_SHM_BLOCKING` | 见说明 | Zenoh 共享内存：开关、初始化模式、池大小、自动提升阈值、loan 阈值、满池是否阻塞 |
+| `VLINK_ZENOH_BATCH_ENABLED` / `_BATCH_TIME_LIMIT_MS` | 布尔 / 数字 | 批量发送开关与聚合时窗（仅 zenoh-c） |
+| `VLINK_ZENOH_SHM` / `_SHM_MODE` / `_SHM_SIZE` / `_SHM_THRESHOLD` / `_SHM_LOAN_THRESHOLD` / `_SHM_BLOCKING` | 见说明 | Zenoh 共享内存：开关、初始化模式、池大小、自动提升阈值、loan 阈值、满池是否阻塞；需带 unstable SHM 的 zenoh-c |
+
+同名节点属性使用 `zenoh.*` 键（如 `zenoh.mode`、`zenoh.peer`、`zenoh.listen`、`zenoh.qos`、`zenoh.batch_enabled`）；通用 `qos`、`depth` 属性会更新 endpoint 配置。节点属性须配合 `InitType::kWithoutInit` 在显式 `init()` 前设置。异步 Server reply 的已克隆 query 保留期限由 `zenoh.deferred_timeout_ms` 控制，默认 60000 毫秒；客户端有限调用超时更短时采用更短值，无限调用不设置回收期限。zenoh-pico 仅消费 mode、IP/peer/listen、multicast 及其编译特性可表达的子集；TLS 需 `Z_FEATURE_LINK_TLS=1`，SHM 不支持，其他不支持项会被忽略或给出警告。
 
 ```bash
 export VLINK_ZENOH_CONFIG=/etc/vlink/zenoh.json5

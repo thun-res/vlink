@@ -2,7 +2,7 @@
 
 当文本与统计不足以表达数据语义——需要观看相机图像、三维点云、目标检测或字段波形——时，VLink 在命令行工具之外提供两层图形化可视化能力：基于 Qt 的桌面 GUI 套件（图像、点云、目标检测等结构化数据的本地图形化呈现与时序分析），以及把实时数据桥接至 Foxglove Studio 与 Rerun 的 Web 可视化工具集（浏览器访问、远程协作、高性能三维渲染）。
 
-两层与命令行工具共享同一套底层观测设施：服务发现枚举活跃话题，代理层（ProxyAPI / `vlink-proxy`）聚合话题、序列化类型与统计信息。因此可视化工具对传输后端（`intra://` / `shm://` / `dds://` 等）一律透明——业务侧更换后端只改 URL 前缀，工具侧无需任何改动。仅需查看话题列表、频率、原始字节，或需脚本/CI 对接时，命令行工具更轻量，见 [命令行工具](10-cli-tools.md)。
+两层与命令行工具共享同一套观测设施：启用了 `DiscoveryReporter` 的进程向观测面上报节点，代理层（ProxyAPI / `vlink-proxy`）再聚合 URL、序列化类型与统计信息；这与各后端自身的数据面发现不是同一机制。可视化工具侧通常无需随 topic 后端改代码，但业务 URL 必须满足目标后端契约，专用寻址后端不能只换 scheme。仅需查看话题列表、频率、原始字节，或需脚本/CI 对接时，命令行工具更轻量，见 [命令行工具](10-cli-tools.md)。
 
 ![viewer 工作流](images/foreword-viewer-workflow.png)
 
@@ -92,9 +92,13 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 
 ### 🎥 11.1.5 相机与 3D 可视化
 
-**相机帧预览（S）**　按 `S` 打开相机窗口，预览图像话题。零拷贝 `CameraFrame` 会按 `format()` 自动选择直接渲染或解码路径；Protobuf、FlatBuffers 与原始字节入口的格式下拉框默认使用 `Auto`，可识别内嵌的序列化 `CameraFrame` 或 Qt 支持的静态图像。裸 YUV / 裸 RGB 等无头原始像素流需手动指定格式和尺寸；H.264、H.265、H.266、AV1、MPEG4 等编码视频流需手动指定格式，尺寸由解码器从码流解析。JPEG、PNG、WebP 等静态图像优先走 Qt 解码，Qt 失败且启用 FFmpeg 时会尝试解码 fallback；FFmpeg 还支持 MJPEG、YUV420/422/444、NV12、NV21、YUYV、YVYU、UYVY、BGR888、RGB888 等格式。通用 OpenCV/ROS 数值格式按首通道灰度预览；彩色图像应使用 `rgb8`、`bgr8`、`rgba8`、`bgra8` 等明确通道顺序的编码。支持多通道并排显示、暂停、硬件解码，并可联动 3D 投影视图将图像投射至点云。关闭 `ENABLE_VIEWER_FFMPEG` 时，零拷贝 `CameraFrame` 的直接渲染格式与 Qt 可解码的静态图像仍可显示，手动裸流和编码视频解码不可用。
+**相机帧预览（S）**　按 `S` 打开相机窗口，预览图像话题。零拷贝 `CameraFrame` 会按 `format()` 自动选择直接渲染或解码路径；Protobuf、FlatBuffers 与原始字节入口的格式下拉框默认使用 `Auto`，可识别内嵌的序列化 `CameraFrame` 或 Qt 支持的静态图像。裸 YUV / 裸 RGB 等无头原始像素流需手动指定格式和尺寸；H.264、H.265、H.266、AV1、MPEG4 等编码视频流需手动指定格式，尺寸由解码器从码流解析。JPEG、PNG、WebP 等静态图像优先走 Qt 解码，Qt 失败且启用 FFmpeg 时会尝试解码 fallback；FFmpeg 还支持 MJPEG、YUV420/422/444、NV12、NV21、YUYV、YVYU、UYVY、BGR888、RGB888 等格式。通用 OpenCV/ROS 数值格式按首通道灰度预览；彩色图像应使用 `rgb8`、`bgr8`、`rgba8`、`bgra8` 等明确通道顺序的编码。支持多通道并排显示、暂停、硬件解码，并可联动 3D 投影视图将点云投影并叠加到图像。关闭 `ENABLE_VIEWER_FFMPEG` 时，零拷贝 `CameraFrame` 的直接渲染格式与 Qt 可解码的静态图像仍可显示，手动裸流和编码视频解码不可用。
 
 ![相机帧结构](images/camera-frame-structure.png)
+
+相机窗口启用点云联动后，Viewer 使用外参、内参与可选畸变参数把当前 `Point3DDialog` 点集投影到图像坐标，并在本地相机视图上叠加有效点；该路径不产生或重新发布新的话题。
+
+![Viewer 点云到相机视图的本地投影流程](images/foreword-projection-flow.png)
 
 **3D 场景可视化（Z）**　按 `Z` 打开 3D 场景窗口，是自动驾驶场景可视化的核心。`Point3DRenderType` 共定义十四类渲染：
 
@@ -195,7 +199,7 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 
 ## 🌐 11.2 Web 可视化（WebViz）
 
-WebViz 是 VLink 的可视化桥接工具集，解决"实时数据如何接入主流可视化平台"的问题。它自动发现系统中全部在线 URL，将 VLink 消息转换为目标平台可直接消费的 Schema，并推送至浏览器或桌面可视化器。其设计遵循桥接而非重写：业务侧照常发布消息，WebViz 仅消费发现结果（后端透明性见本章导言）。
+WebViz 是 VLink 的可视化桥接工具集，解决"实时数据如何接入主流可视化平台"的问题。它发现代理桥可见的在线 URL，将 VLink 消息转换为目标平台可直接消费的 Schema，并推送至浏览器或桌面可视化器。其设计遵循桥接而非重写：业务侧照常发布消息，WebViz 仅消费发现结果（后端透明性见本章导言）。
 
 ![WebViz 架构](images/webviz-architecture.png)
 
@@ -215,9 +219,13 @@ WebViz 支持两个可视化后端，并各自配套一个离线转换工具。�
 ![WebViz 数据流](images/webviz-dataflow.png)
 
 1. VLink 应用经任意后端（`dds://`、`shm://`、`intra://`、`zenoh://` 等）发布消息。
-2. WebViz 接入 VLink 网络，自动发现全部在线 URL 并按需订阅。
-3. 转换层依据消息类型选择转换路径，优先级为零拷贝转换 > JSON 字段映射 > 转换插件。
+2. WebViz 通过代理桥接收可见 URL 的发现信息；Foxglove 以 `kAuto` 随前端通道订阅按需控制数据转发，Rerun 则以 `kAutoAndObserveAll` 订阅每个发现的 URL，再由白名单与黑名单决定是否处理。
+3. 转换层依次尝试显式 zerocopy 字段映射、内置 zerocopy 转换、其余 JSON / 专用映射与转换插件；仍未命中时，Foxglove 可按消息类型走通用透传，Rerun 则降级为文本日志。ExprTk 表达式属于字段映射内部处理。
 4. 经 WebSocket（Foxglove）或 gRPC（Rerun）推送至前端可视化器。
+
+下图展开 `proxy_api` 部署下的发现、订阅、转换与前端数据链路；底部同时标出复用相同转换器的离线 MCAP / RRD 路径。若选择 `proxy_server` 模式，发现与订阅逻辑改为嵌入桥接进程。
+
+![WebViz 的 ProxyAPI 数据链路与离线转换路径](images/webviz-datalink.png)
 
 ### 🚀 11.2.2 快速开始
 

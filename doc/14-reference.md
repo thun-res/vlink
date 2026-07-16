@@ -2,7 +2,7 @@
 
 本章是 VLink 的工程参考与排障手册，面向需在编码现场核对签名、或在运行现场定位异常的工程师。前半章（速查）给出 API、URL、QoS、CLI 与环境变量的单页索引；后半章（故障排查）按症状索引根因与处置。
 
-二者共享同一组判据。VLink 的行为可归约为一条不变量：一次通信由"通信模型 + URL + 核心方法"确定，后端是 URL 前缀的实现细节，对业务代码不可见。绝大多数运行期故障，本质是该不变量的某一维度在两端不一致（URL 字符串、Domain、安全模式、序列化策略），或其依赖的运行环境（传输后端、多播通道、共享内存守护）未就绪。因此速查表的每一列参数，都对应排障表的一项比对维度。
+二者共享同一组判据。VLink 的行为可归约为一条不变量：一次通信由“通信模型 + 后端可解析的 URL + 核心方法”确定，scheme 选择后端，地址和参数由该后端解释。绝大多数运行期故障来自两端解析后的 endpoint、Domain、安全/序列化配置不兼容，或目标后端依赖的网络、broker/router、共享内存运行时未就绪；DiscoveryReporter 多播则单独影响拓扑工具可见性。
 
 完整语义与边界条件见各专题文档，本章只保留索引与判据。
 
@@ -38,15 +38,15 @@ getter.listen([](const Status& s) { use(s); });
 
 ## 📡 14.2 通信模型选型
 
-模型由通信语义决定，与后端无关。
+模型首先由通信语义决定；迟到可见性等交付能力仍随后端与 QoS 而异。
 
 | 模型 | 原语 | 语义 | 状态保留 | 适用 |
 | --- | --- | --- | :-: | --- |
 | 事件 Event | `Publisher` / `Subscriber` | 发布/订阅，单向多对多 | 无 | 传感器流、事件通知 |
 | 方法 Method | `Client` / `Server` | 请求/响应，N 对 1 | 无 | RPC、命令下发取结果 |
-| 字段 Field | `Setter` / `Getter` | 最新值同步，晚加入者亦可读 | 缓存最新值 | 状态/配置同步 |
+| 字段 Field | `Setter` / `Getter` | 最新值同步；迟到获取随后端/QoS | Getter 缓存最近收到的值 | 状态/配置同步 |
 
-判据：需要一对多广播且消费者不要求历史一致，用事件；需要返回值的请求/响应，用方法；只关心当前状态且后加入者须立即获得最新值，用字段。三种模型的完整语义见 [通信模型](02-communication.md)。
+判据：需要一对多广播且消费者不要求历史一致，用事件；需要返回值的请求/响应，用方法；只关心当前状态，用字段。若后加入者必须立即获得最新值，还须选择支持的后端/durability，并用 `wait_for_value()` 确认。完整语义见 [通信模型](02-communication.md)。
 
 ---
 
@@ -94,7 +94,7 @@ auto sp = vlink::Publisher<T>::create_shared(url_str);             // shared_ptr
 
 | 端 | 方法 | 语义 |
 | --- | --- | --- |
-| Setter | `void set(const V&)` | 写入最新值并广播，缓存供晚加入的 Getter |
+| Setter | `void set(const V&)` | 写入最新值并广播；是否为晚加入 Getter 补送随后端/QoS |
 | Getter | `std::optional<V> get() const` | 读取最新缓存值，首次写入前返回 `nullopt` |
 | Getter | `bool wait_for_value(timeout)` | 阻塞至收到值，随后用 `get()` 读取 |
 | Getter | `bool listen(MsgCallback&&)` | 每次更新触发 `void(const V&)` |
@@ -112,13 +112,13 @@ auto sp = vlink::Publisher<T>::create_shared(url_str);             // shared_ptr
 | --- | --- |
 | `bool init()` / `bool deinit()` | 显式生命周期；构造默认 `kWithInit` 即自动 `init()` |
 | `void interrupt()` | 中断阻塞中的 `wait_for_*` 调用 |
-| `bool attach(MessageLoop*)` / `bool detach()` | 将回调投递到指定 MessageLoop 线程 |
+| `bool attach(MessageLoop*)` / `bool detach()` | 后端支持时将回调投递到指定 MessageLoop；intra/fdbus/qnx/someip 当前不支持 |
 | `bool suspend()` / `bool resume()` / `bool is_suspend() const` | 暂停 / 恢复 / 查询收发 |
 | `bool is_support_loan() const` | 当前后端是否支持零拷贝借贷 |
 | `Bytes loan(int64_t size)` / `bool return_loan(const Bytes&)` | 借用 / 归还共享内存（见 [§14.10](#-1410-零拷贝)） |
-| `const std::string& get_url() const` | 返回构造时传入的完整 URL |
+| `const std::string& get_url() const` | URL 构造时返回原串；typed `Conf` 构造时为空 |
 | `void set_safety_quit(bool)` | 销毁短于回调生命周期时启用，在回调与 `deinit()` 周围加锁防 use-after-free |
-| `void set_ssl_options(const SslOptions&)` | TLS 配置，须在 `init()` 前设置，适用 mqtt/dds/ddsc/zenoh |
+| `void set_ssl_options(const SslOptions&)` | TLS 配置，须在 `init()` 前设置；后端编译能力满足时适用 mqtt/dds/ddsc/ddsr/zenoh |
 
 生命周期状态机与各方法的并发语义见 [通信模型](02-communication.md)。
 
@@ -155,7 +155,7 @@ URL 语法：`<scheme>://[<host>[:<port>]]/<path>[?<query>][#<frag>]`。`scheme`
 
 ## 🎚️ 14.6 QoS 配置
 
-QoS 仅通过 URL 参数 `?qos=<profile>` 引用，无运行时 `set_qos()`。预置 profile 按用途命名。
+节点没有运行时 `set_qos()`；QoS 可通过 URL 的 `?qos=<profile>` 引用命名 profile，也可在构造 typed `Conf` 时提供后端配置。预置 profile 按用途命名。
 
 | Profile | 适用 |
 | --- | --- |
@@ -185,7 +185,7 @@ vlink::Publisher<Imu> pub2("dds://sensor/imu?qos=my_sensor");
 
 ![序列化类型自动推导](images/serialization-type-detection.png)
 
-开箱即用的类型族：POD 结构体（二进制直存，零序列化开销）、Protobuf、FlatBuffers、DDS CDR（实现 `serialize/deserialize(Cdr&)`，DDS 快路径）、`std::string` / `const char*`、`vlink::Bytes`，以及实现一对编解码运算符的自定义类型。机制与自定义序列化见 [消息序列化](03-serialization.md)。
+开箱即用的类型族：POD 结构体（二进制直存，无编码转换但会内存复制）、Protobuf、FlatBuffers、DDS CDR（实现 `serialize/deserialize(Cdr&)`，DDS 快路径）、`std::string` / `const char*`、`vlink::Bytes`，以及实现一对编解码运算符的自定义类型。机制与自定义序列化见 [消息序列化](03-serialization.md)。
 
 ---
 
@@ -206,7 +206,7 @@ vlink::Publisher<Imu> pub2("dds://sensor/imu?qos=my_sensor");
 
 ## 🔒 14.9 安全加密
 
-使用 `SecurityXxx<T>` 别名，构造时传入 `Security::Config`。安全配置在运行期不可变，更换密钥须销毁并重建节点。
+使用 `SecurityXxx<T>` 别名，通常在构造时传入 `Security::Config`；延迟初始化节点也可在 `init()` 前调用 `enable_security()`。初始化后安全配置不可替换，更换运行中端点的密钥须销毁并重建节点。
 
 ```cpp
 vlink::Security::Config cfg;
@@ -234,22 +234,19 @@ vlink::Publisher<vlink::Bytes> pub("shm://image/raw");
 
 if (pub.is_support_loan()) {
   vlink::Bytes buf = pub.loan(sizeof(vlink::zerocopy::CameraFrame));
-  auto* frame = new (buf.data()) vlink::zerocopy::CameraFrame();   // 就地构造,无额外拷贝
-  fill_frame(frame);
-  pub.publish(buf);                                               // 发布后借出缓冲自动归还
+  if (!buf.empty()) {
+    auto* frame = new (buf.data()) vlink::zerocopy::CameraFrame(); // 就地构造,无额外拷贝
+    fill_frame(frame);
+    if (!pub.publish(buf)) {
+      pub.return_loan(buf);                                       // 发布失败时显式归还
+    }
+  }
 }
 ```
 
-订阅端默认在回调返回后自动归还；需要在回调外继续持有时切换为手动归还，消费完毕显式 `return_loan()`：
+订阅端在回调返回后自动归还接收缓冲；需要在回调外继续持有数据时，应在回调内完成拷贝。
 
-```cpp
-sub.set_manual_unloan(true);
-sub.listen([&sub](const vlink::Bytes& b) {
-  sub.return_loan(b);
-});
-```
-
-每次 `loan()` 须由一次 `publish()` 或一次 `return_loan()` 平衡，否则内存池在持续负载下耗尽（见 [§14.19](#-1419-共享内存初始化失败或-loan-失败)）。预置零拷贝容器（命名空间 `vlink::zerocopy::`）：`RawData`、`CameraFrame`、`PointCloud`、`OccupancyGrid`、`Tensor`、`ObjectArray`、`AudioFrame`。容器结构与字段含义见 [零拷贝](06-zerocopy.md)。
+每次 `loan()` 须由一次 `publish()` 或一次 `return_loan()` 平衡；若 `publish()` 返回 `false`，调用方应显式归还——对已被后端消费的缓冲区 `return_loan()` 是无害空操作——否则内存池在持续负载下耗尽（见 [§14.19](#-1419-共享内存初始化失败或-loan-失败)）。预置零拷贝容器（命名空间 `vlink::zerocopy::`）：`RawData`、`CameraFrame`、`PointCloud`、`OccupancyGrid`、`Tensor`、`ObjectArray`、`AudioFrame`。容器结构与字段含义见 [零拷贝](06-zerocopy.md)。
 
 ---
 
@@ -292,7 +289,7 @@ sub.listen([&sub](const vlink::Bytes& b) {
 | `VLINK_DISCOVER_NATIVE` | 置 `1` 仅限本机发现 |
 | `VLINK_PROTO_DIR` / `VLINK_FBS_DIR` | 动态 schema 目录（`vlink-eproto`/`-efbs`） |
 | `VLINK_URL_PLUGINS` | 首次 URL 初始化前设置：完整值 `auto` 按需加载未链接的已知共享 transport，`none` / 空值关闭插件加载，其他非空值为显式预加载列表；模式值大小写不敏感 |
-| `VLINK_BAG_PATH` | 进程级全局录制的 bag 文件路径（后缀须为 `.vdb`/`.vdbx`/`.vcap`/`.vcapx`），自动录制全部 Publisher/Setter 消息 |
+| `VLINK_BAG_PATH` | 进程级全局录制的 bag 文件路径（后缀须为 `.vdb`/`.vdbx`/`.vcap`/`.vcapx`），录制经过 Bytes 路径的普通六原语收发 action；限制见 [消息录制与回放](09-recording.md) |
 
 如需逐节点而非进程级录制，可调用 API 层唯一录制钩子 `node.set_record_path(path)`：按相同后缀规则（`.vdb`/`.vdbx`/`.vcap`/`.vcapx`，不支持的后缀静默禁用）单独开启该节点的收发录制；`intra://` 与 `dds://` CDR 节点不支持（触发 fatal 日志）。
 
@@ -416,23 +413,24 @@ vlink-info -l
 
 ## 📭 14.17 收不到数据
 
-现象为 `has_subscribers()` 恒为 `false`、订阅回调从不触发，或 `vlink-list` 两端互不可见。其机制根因集中于两类：端点契约不一致，或服务发现的多播通道不可达。
+现象为 `has_subscribers()` 恒为 `false`、订阅回调从不触发，或 `vlink-list` 两端互不可见。前两项属于数据面连接问题，最后一项属于 DiscoveryReporter 可观测性问题，二者应分开排查。
 
-VLink 的端点由 URL 完整字符串确定。两端只有在 URL 逐字相同、Domain 相同、安全模式相同、消息序列化策略相同的前提下才构成同一通信端点；任一维度不一致即视为不同端点，互不连通。按下表自上而下比对，高命中项在前。
+数据端点由后端解析 URL 后得到的地址及该后端相关参数确定，并非比较完整 URL 字符串。例如 SHM 会使用 address、event、domain 等字段，但忽略 `qos` 查询项。DDS、SHM、MQTT、Zenoh 等后端各自完成发现或连接；VLink 的拓扑上报多播不参与这些后端的数据匹配。
 
 | 检查维度 | 判据与处置 |
 | --- | --- |
-| URL 字符串 | `shm://a/b` 与 `shm://a/b?qos=sensor` 是不同端点；两端必须逐字相同 |
+| 后端与地址 | 两端须使用可互通的传输后端，并解析为相同 topic/service 地址；仅与该后端相关的查询参数才影响匹配 |
 | Domain | 两端 `?domain=X` 或环境变量 `VLINK_DDS_DOMAIN` 须相同 |
-| 安全模式 | 一端 `kWithSecurity`、另一端 `kWithoutSecurity` 不连通；密钥与配置亦须一致（见 [安全加密](07-security.md)） |
+| 安全模式 | 传输层可能已经匹配，但安全封装或密钥不一致会导致解密/校验失败，回调收不到有效消息（见 [安全加密](07-security.md)） |
 | 序列化类型 | 两端消息类型须解析到同一序列化策略，Protobuf 与 FlatBuffers 不互通（见 [消息序列化](03-serialization.md)） |
-| 多播可达性 | `vlink-check diag` 中 "VLink multicast address"（`239.255.0.100`）须 `PASSED` |
+| 后端发现 | DDS 检查其原生 discovery/peer 配置；SHM 检查 RouDi；MQTT 检查 broker；其他后端依其机制排查 |
+| 拓扑可见性 | 仅当 `vlink-list` / Viewer 看不到节点时检查 VLink multicast（`239.255.0.100`）和 DiscoveryReporter 配置 |
 
-服务发现基于 `239.255.0.100` 的 UDP 多播：节点经此通道宣告自身端点并感知对端，无中心注册。下图给出发现网络，据此可判断宣告与匹配在哪一环中断。
+DiscoveryReporter 基于 `239.255.0.100` 的 UDP 多播上报节点与端点元数据，供 `vlink-list`、Viewer 等工具观察拓扑。下图描述的是这条可观测性通道，不是各传输后端的数据面发现协议。
 
 ![服务发现网络](images/discovery-network.png)
 
-`vlink-list` 列不出任何节点，根因几乎都是多播路由缺失。Linux 上可临时补一条出口路由验证：
+`vlink-list` 列不出任何节点时，可检查多播路由、`set_discovery_enabled(false)` 以及 DiscoveryReporter 是否被禁用。Linux 上可临时补一条出口路由验证：
 
 ```bash
 sudo ip route add 239.255.0.100/32 dev eth0
@@ -457,20 +455,20 @@ sub.listen([](const MyMsg& msg) { VLOG_I("received"); });
 
 ## 🌍 14.18 跨机或容器不连通
 
-现象为同机连通、跨机或容器内不连通。其机制根因是承载服务发现的 UDP 多播未能抵达对端：多播默认不跨子网路由，且常被防火墙、容器网络模式与虚拟网络阻断。
+现象为同机连通、跨机或容器内不连通。应先按实际传输后端检查数据面：DDS 的原生 discovery/静态 peer、Zenoh 路由、MQTT broker、SOME/IP 网络等。`239.255.0.100` 只影响 VLink 拓扑工具的跨机可见性，不会替代这些后端的发现或连接机制。
 
 | 环节 | 确认方法与处置 |
 | --- | --- |
-| 防火墙 | `sudo ufw status` 查看；临时 `sudo ufw disable` 或放行 `239.255.0.0/24` |
+| 防火墙 | 按后端放行实际数据与发现端口；若仅拓扑工具不可见，再检查 `239.255.0.100:51694` |
 | 网卡多播标记 | `ip link show eth0 \| grep MULTICAST` 应含 `MULTICAST` |
-| 容器网络 | `--net=host` 可通；`bridge` 默认不转发多播 |
+| 容器网络 | `--net=host` 可用于区分 bridge/NAT 问题；需要的端口与多播取决于所用后端 |
 | 容器共享内存 | `/dev/shm` 默认 64 MB，`shm://` 易失败，启动加 `--shm-size=2g` |
-| 跨子网 / VPN / K8s | 多播一般不跨子网，需切换后端或配置静态单播对端 |
+| 跨子网 / VPN / K8s | 按后端配置路由、broker/router 或静态单播 peer；不要用 VLink Reporter 多播代替数据面配置 |
 
-多播不可达时有两条出路：切换为自带 NAT 穿透的后端，或为 DDS 配置静态单播对端以绕开多播发现。
+DDS 原生发现受限时可配置静态单播 peer；跨 NAT 或复杂网络时也可根据部署条件选择具备路由能力的后端。若数据已通但 `vlink-list` 不可见，则只需修复 Reporter 多播或改为本机观察。
 
 ```bash
-# 方案 A:切换后端,Zenoh 自带 NAT 穿透,仅改 URL 前缀
+# 方案 A:使用可达 zenohd/router，并为节点配置对应的完整 Zenoh URL
 zenoh://vehicle/speed
 ```
 
@@ -479,14 +477,14 @@ zenoh://vehicle/speed
 export VLINK_DDS_PEER=10.0.0.1,10.0.0.2
 ```
 
-URL 契约使后端切换退化为前缀替换，这同时是有效的故障隔离手段：逐级切换可将故障范围收敛到某一具体后端。
+统一 API 允许在不改业务处理逻辑的情况下更换节点 URL，这也是有效的故障隔离手段。地址模型兼容的 topic 后端通常只需替换 scheme；SOME/IP、MQTT、FDBUS 等后端仍须提供各自合法的完整地址和查询参数。
 
 | 验证场景 | 切换至 | 隔离意义 |
 | --- | --- | --- |
 | 同进程内收发 | `intra://` | 纯内存通路，排除全部网络因素 |
 | 同机跨进程 | `shm://` | 共享内存通路，绕开 UDP 与多播 |
 | 跨机局域网 | `dds://` / `ddsc://` | 标准 RTPS，多播自动发现 |
-| 跨子网 / NAT / VPN | `zenoh://` | 内置 NAT 穿透，多播不可达时的首选 |
+| 跨子网 / NAT / VPN | `zenoh://` | 通过可达 zenohd/router 或显式 connect/listen endpoint 建立路由 |
 
 后端选型与差异见 [传输后端与 URL](04-transport.md)，环境变量全集见 [集成](13-integration.md)。
 
@@ -508,9 +506,9 @@ ls /dev/shm | grep iox           # 验证共享内存段是否存在
 
 `vlink-proxy` 同时承担远程拓扑监控，单进程即提供共享内存守护与监控两项能力。跨机排障时据此判断故障位于控制面还是数据面，详见 [可观测性](12-observability.md)。
 
-`loan()` 失败的第二类根因是借出未归还：每次 `loan()` 须由一次 `publish()` 或一次显式 `return_loan()` 平衡，否则内存池在持续负载下迅速耗尽；订阅端在手动归还模式下消费完毕必须显式归还，模式见 [§14.10](#-1410-零拷贝)。
+`loan()` 失败的第二类根因是借出未归还：每次 `loan()` 须由一次成功进入后端的 `publish()` 或一次显式 `return_loan()` 平衡。若 `publish()` 因无订阅者等条件在提交前返回 `false`，调用方仍须显式归还，否则内存池在持续负载下会耗尽；订阅端在手动归还模式下消费完毕也必须显式归还，模式见 [§14.10](#-1410-零拷贝)。
 
-边界条件：`shm://` / `shm2://` 的 address 或 `event` 超过 80 字符上限会构造失败，须缩短或以哈希替代；`shm://` 与 `shm2://` 是相互独立的共享内存域，两端须使用同一前缀；`shm://` 在 macOS 与 Android 上不可用，应改用 `dds://` 或 `intra://`。
+边界条件：`shm://` / `shm2://` 的 address 或 `event` 超过 80 字符上限会构造失败，须缩短或以哈希替代；`shm://` 与 `shm2://` 是相互独立的共享内存域，两端须使用同一前缀；Android 构建会跳过 `shm://`，应改用 `dds://` 或 `intra://`。macOS/QNX 可构建 Iceoryx SHM，但仍须提供 RouDi 运行时。
 
 ---
 
@@ -572,7 +570,6 @@ VLOG_I("latency=", sub.get_latency(), " ns, lost=", stats.lost, "/", stats.total
 | `sub.set_latency_and_lost_enabled(true)` | 开启订阅端延迟与丢样本统计，仅调试期使用 |
 | `sub.get_latency()` | 读取端到端延迟（纳秒） |
 | `sub.get_lost()` | 读取 `SampleLostInfo`，含 `.lost` 与 `.total` |
-| `sub.set_manual_unloan(true)` / `sub.return_loan(b)` | 零拷贝手动归还模式与显式归还 |
 | `InitType::kWithoutInit` + `init()` | 延迟初始化，将异常从构造期移至可控的 `init()` |
 | `interrupt()` | 中断 `wait_for_*` 等阻塞等待，配合优雅退出 |
 

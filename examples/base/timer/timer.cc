@@ -159,10 +159,9 @@ int main() {
     loop_b.wait_for_quit();
   }
 
-  // Dynamic interval change: set_interval and set_loop_count take effect
-  // on the NEXT start/restart -- the running phase is unaffected. The two
-  // phases below cleanly demonstrate the rate change (100ms -> 50ms) and
-  // count cap (kInfinite -> 6).
+  // Dynamic interval change: set_interval and set_loop_count also take effect
+  // while active. This example stops between phases only to make the measured
+  // 100ms -> 50ms rate change and kInfinite -> 6 count cap deterministic.
   {
     VLOG_I("=== Dynamic interval change ===");
     vlink::MessageLoop loop;

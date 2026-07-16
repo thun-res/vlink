@@ -1,6 +1,6 @@
 # 🌐 url_basics — URL 解剖与跨传输切换
 
-VLink 用一串 URL 将"业务话题"与"传输后端"解耦：同一份业务代码只需改写 URL 前缀，即可在 `intra://`、`shm://`、`dds://`、`someip://` 等十余种传输上运行，调用代码不变。本示例演示 URL 的字段构成、各传输的实例写法，以及传输无关的 pub/sub 调用。
+VLink 用 URL 将“业务话题”与“传输后端”解耦：同一通信 API 可用于多种传输，但 URL 的地址和参数必须满足目标后端契约。`intra://`、`shm://`、`dds://` 等 topic 后端常可保留地址只改 scheme；SOME/IP 等专用协议需重写完整 URL。本示例演示 URL 的字段构成、各传输的实例写法，以及传输无关的 pub/sub 调用。
 
 ## 🧩 URL 通用形状
 
@@ -21,11 +21,11 @@ VLink 用一串 URL 将"业务话题"与"传输后端"解耦：同一份业务�
 |-----|------|
 | `intra://sensor/lidar` | 进程内传输，话题 `sensor/lidar` |
 | `dds://vehicle/speed?domain=42&depth=10&qos=sensor` | FastDDS，Domain 42，KeepLast(10)，`kSensor` QoS 预设 |
-| `someip://4660/22136?event=16` | SOME/IP，service 4660 / instance 22136（十进制，等价 hex `0x1234` / `0x5678`） |
+| `someip://4660/22136?groups=1&event=16` | SOME/IP 事件端点，service 4660 / instance 22136（十进制，等价 hex `0x1234` / `0x5678`），event group 1，event 16 |
 
 ## 🚀 同代码跨传输
 
-URL 直接传入 `Publisher` / `Subscriber` 构造函数，换后端仅改前缀：
+URL 直接传入 `Publisher` / `Subscriber` 构造函数；以下地址模型兼容的后端可只改 scheme：
 
 ```cpp
 vlink::Subscriber<std::string> sub("intra://demo/url_basics");
@@ -36,11 +36,11 @@ pub.wait_for_subscribers();
 pub.publish("Hello from url_basics example!");
 ```
 
-将 `intra://demo/url_basics` 改为 `dds://demo/url_basics` 或 `shm://demo/url_basics`，代码与行为不变，仅传输路径不同。
+将 `intra://demo/url_basics` 改为 `dds://demo/url_basics` 或 `shm://demo/url_basics` 时，调用代码与 topic path 可保持不变；进程范围、发现、QoS、依赖以及复制 / 借贷行为以后端实现为准。
 
 ## 🔁 运行时换后端
 
-设置环境变量 `VLINK_URL_REMAP` 指向一份 JSON 映射文件，框架启动时整体替换 URL 前缀，无需改动业务代码，用于灰度切换、调试、开发与生产环境互换。详见 `doc/13-integration.md`。
+设置环境变量 `VLINK_URL_REMAP` 指向一份 JSON 映射文件，框架首次使用 URL 时加载规则。规则的 key 用于子串匹配，命中后返回完整 value，并非通用的前缀替换；需要切换多个 topic 时应逐条写出完整目标 URL。全局映射文件变更需重启进程，详见 `doc/13-integration.md`。
 
 ## ⚠️ 边界条件
 

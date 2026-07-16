@@ -139,7 +139,7 @@
         <mxCell id="c3i4" value="mqtt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontColor=#e65100;align=center;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="436" y="310" width="128" height="26" as="geometry" />
         </mxCell>
-        <mxCell id="c3foot" value="4 transports" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#ffffff;align=center;arcSize=12;" vertex="1" parent="1">
+        <mxCell id="c3foot" value="6 transports" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#ffffff;align=center;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="436" y="450" width="128" height="28" as="geometry" />
         </mxCell>
 
@@ -152,7 +152,7 @@
         <mxCell id="c4title" value="QNX" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
           <mxGeometry x="600" y="182" width="160" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="c4i1" value="intra / qnx" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontColor=#e65100;align=center;arcSize=12;" vertex="1" parent="1">
+        <mxCell id="c4i1" value="intra / shm / qnx" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontColor=#e65100;align=center;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="616" y="214" width="128" height="26" as="geometry" />
         </mxCell>
         <mxCell id="c4i2" value="dds / ddsc" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontColor=#e65100;align=center;arcSize=12;" vertex="1" parent="1">
@@ -164,7 +164,7 @@
         <mxCell id="c4i4" value="mqtt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontColor=#e65100;align=center;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="616" y="310" width="128" height="26" as="geometry" />
         </mxCell>
-        <mxCell id="c4foot" value="6 transports" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#ffffff;align=center;arcSize=12;" vertex="1" parent="1">
+        <mxCell id="c4foot" value="8 transports" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ef6c00;strokeColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#ffffff;align=center;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="616" y="450" width="128" height="28" as="geometry" />
         </mxCell>
 

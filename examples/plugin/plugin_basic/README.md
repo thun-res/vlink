@@ -39,7 +39,7 @@ class GreeterImpl : public GreeterInterface {
 VLINK_PLUGIN_DECLARE(GreeterImpl, 1, 0)   // 1, 0 = major, minor
 ```
 
-Host——加载后**务必判空**，再通过基类指针调用；`shared_ptr` 析构时自动卸载：
+Host——加载后**务必判空**，再通过基类指针调用。`shared_ptr` 析构时销毁插件实例；共享库仍由 `Plugin` 注册表跟踪，需要显式 `unload()`：
 
 ```cpp
 // plugin_basic.cc
@@ -52,15 +52,17 @@ if (!greeter) {
 }
 
 VLOG_I(greeter->greet("VLink"));   // 输出: Hello, VLink!
+greeter.reset();
+plugin.unload<GreeterInterface>("greeter_plugin");
 ```
 
 ## 📂 搜索路径
 
-`load` 的签名为 `load<T>(name, major, minor, dir_name = "", search_paths = default_search_path())`——第 4 参 `dir_name` 是**单个目录**（优先于 `search_paths` 先查），第 5 参 `search_paths` 才是目录列表：
+`load` 的签名为 `load<T>(name, major, minor, dir_name = "", search_paths = default_search_path())`。第 4 参 `dir_name` 是追加在每个 search path 下的**相对子目录**，第 5 参 `search_paths` 是有序根目录列表：
 
 ```cpp
 plugin.load<T>("name", 1, 0);                            // 默认搜索路径
-plugin.load<T>("name", 1, 0, "/custom/dir");             // 在默认路径前先查单个目录
+plugin.load<T>("name", 1, 0, "plugins");                 // 依次查 <默认路径>/plugins/
 plugin.load<T>("name", 1, 0, "", {"/dir1", "/dir2"});    // 用自定义目录列表替换默认搜索路径
 ```
 

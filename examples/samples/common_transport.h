@@ -35,14 +35,14 @@ namespace Common {  // NOLINT(readability-identifier-naming)
 //
 // The whole point of this helper is that VLink's URL scheme (intra:// / shm://
 // / dds:// / ddsc:// / fdbus:// / qnx:// / someip:// ...) decouples application
-// code from the underlying transport: switching backends is purely a URL prefix
-// change. The samples therefore never hard-code a scheme -- they ask this helper
-// to compose one from env vars so the same binary can be retargeted at runtime.
+// code from the underlying transport. Most topic-style backends can reuse the
+// same path with another scheme; protocol-specific backends may require a full
+// address. The samples ask this helper to compose or select that URL at runtime.
 //
 //   env_var       : full-URL override (highest priority). If set, used verbatim.
 //   transport_env : selects scheme: "dds" / "ddsc" / "someip" / "shm" / "fdbus" / "qnx".
 //   topic         : topic/path used by URL-style schemes (dds/ddsc/shm/fdbus/qnx).
-//   someip_url    : SOME/IP requires hex service/instance/event IDs rather than
+//   someip_url    : SOME/IP requires numeric service/instance/event IDs rather than
 //                   a free-form path, so the caller must pre-format it; this
 //                   helper only forwards it when transport == "someip".
 inline std::string get_transport_url(const std::string& env_var, const std::string& transport_env,

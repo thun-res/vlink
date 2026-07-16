@@ -49,7 +49,7 @@ if (auto resp = client.invoke(req); resp.has_value()) {
 | 1 对多发布 / 订阅 | `../../quickstart/hello_pubsub/` |
 | 同步最新状态而非一次性应答 | `../../quickstart/hello_field/` |
 
-换后端仅替换 URL 前缀：`dds://` → `shm://` / `intra://` / `zenoh://` 等。
+在 `dds://`、`shm://`、`intra://`、`zenoh://` 这些地址兼容的后端间切换时可只替换 scheme；专用寻址后端须改完整 URL。
 
 ## 🔗 参考
 

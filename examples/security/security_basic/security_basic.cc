@@ -38,31 +38,37 @@ using namespace std::chrono_literals;  // NOLINT(build/namespaces, google-build-
 // Publisher/Subscriber). VLink ships AES-128-GCM as the AEAD primitive and
 // PBKDF2-HMAC-SHA256 as the KDF. Wire envelope per sample:
 //
-//   [u8 version][u8 mode][u16 reserved][u64 seq][u96 nonce][ciphertext][u128 tag]
+//   ['V']['S'][u8 version][u8 mode][u16 flags][u64 sender_id][u64 seq]
+//   [u96 nonce][ciphertext][u128 tag]
 //
 //   version -- envelope schema version (lets future upgrades coexist).
-//   mode    -- 0=raw-key, 1=passphrase, 2=RSA-wrap, 3=callback.
+//   mode    -- 1=symmetric (key or passphrase), 2=RSA-wrapped AES key.
+//   sender  -- random sender identifier used by replay protection.
 //   seq     -- monotonically increasing sequence number; subscriber drops
 //              any sample older than (latest - replay_window).
-//   nonce   -- 96-bit AES-GCM nonce, derived from seq + a per-session salt.
+//   nonce   -- 96-bit AES-GCM nonce: random base XOR sequence number.
 //   tag     -- 128-bit GCM authentication tag covering AAD + ciphertext.
 //
-// AAD ("associated data") covers the topic URL + sequence so a sample
-// can't be replayed across topics. Any tampering (or wrong key) makes
+// AAD ("associated data") covers a domain separator, the configured
+// advanced.aad_context, and the authenticated envelope header. If aad_context
+// is empty, Node derives it from URL, serialization type, and schema type;
+// explicit overrides should remain distinct across security domains. Any
+// tampering (or wrong key) makes
 // GCM tag verification fail and the sample is silently dropped --
 // subscribers receive *nothing*, which is the correct fail-closed mode.
 //
-// Four configuration modes (Security::Config field-driven):
-//   1. key        -- raw 16-byte AES key (caller manages key material).
+// Configuration paths (Security::Config field-driven):
+//   1. key        -- non-empty seed, SHA-256-derived to a 16-byte AES key.
 //   2. passphrase -- human string + PBKDF2 -> 16-byte AES key.
-//   3. RSA        -- per-session AES key wrapped with peer's RSA public.
-//   4. callbacks  -- caller-supplied encrypt/decrypt functions (HSM/SE).
-// Modes 1+2 are demoed here; 3 and 4 live in security_rsa / security_custom.
+//   3. RSA        -- fresh per-message AES key wrapped with peer's RSA public.
+//   4. callbacks  -- caller-supplied encrypt/decrypt functions (HSM/SE),
+//                   bypassing the built-in envelope.
+// Paths 1+2 are demoed here; the others are documented in doc/07-security.md.
 // ---------------------------------------------------------------------------
 
 int main() {
   // ---- Section 1: symmetric raw key (AES-128-GCM) ----
-  // Simplest mode -- both endpoints carry the same 16-byte secret string.
+  // Simplest mode -- both endpoints carry the same non-empty secret seed.
   // Suitable when key distribution is solved out-of-band (provisioning).
   {
     VLOG_I("[1] Symmetric Raw Key (AES-128-GCM)");

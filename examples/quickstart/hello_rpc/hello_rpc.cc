@@ -49,17 +49,11 @@ struct CalcResponse {
 // Typical scenarios: command/control RPC, on-demand queries, request-driven
 // configuration. Use this style when the caller needs the result inline.
 int main() {
-  static constexpr char kUrl[] = "intra://hello/rpc";
-
-  // Loop drives server-side request callbacks on a dedicated thread.
-  vlink::MessageLoop loop;
-  loop.async_run();
+  static constexpr char kUrl[] = "intra://hello/rpc#direct";
 
   vlink::Server<CalcRequest, CalcResponse> server(kUrl);
-  // attach() MUST run before listen(): listen() activates dispatch, and the
-  // server needs a loop bound first to know which thread fires callbacks.
-  server.attach(&loop);
-  // Lambda invoked on the loop thread once per incoming request. Filling
+  // intra:// does not support Node::attach(); #direct invokes the handler
+  // inline on the client calling thread. Filling
   // `resp` in-place auto-sends the response when the callback returns --
   // this is the synchronous "listen" mode (vs. listen_for_reply / async).
   server.listen([](const CalcRequest& req, CalcResponse& resp) {
@@ -95,9 +89,6 @@ int main() {
   } else {
     VLOG_W("[client] invoke failed");
   }
-
-  loop.quit();
-  loop.wait_for_quit();
 
   return 0;
 }

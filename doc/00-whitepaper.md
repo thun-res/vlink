@@ -96,7 +96,7 @@
 - [14 性能基准测试与竞品横向对比](#14-性能基准测试与竞品横向对比)
   - [14.1 测试方法论与环境配置](#141-测试方法论与环境配置)
   - [14.2 进程内传输性能（intra）](#142-进程内传输性能intra)
-  - [14.3 零拷贝共享内存传输（shm / shm2）](#143-零拷贝共享内存传输shm-shm2)
+  - [14.3 零拷贝共享内存传输（shm / shm2）](#143-零拷贝共享内存传输shm--shm2)
   - [14.4 DDS 网络传输延迟对比](#144-dds-网络传输延迟对比)
   - [14.5 综合性能对比矩阵](#145-综合性能对比矩阵)
 - [15 带来的变化与影响](#15-带来的变化与影响)
@@ -333,11 +333,11 @@ VLink 将自身定位为"自动驾驶与具身智能场景下，ROS2 的全场�
 
 VLink 的设计遵循以下核心原则：
 
-**原则一：一套 API，多种传输**。用户使用统一的 `Publisher<T>`、`Subscriber<T>`、`Client<Req, Resp>`、`Server<Req, Resp>`、`Getter<T>`、`Setter<T>` 接口，通过改变 URL 前缀（`intra://`、`shm://`、`dds://` 等）即可切换传输后端，业务代码零修改。
+**原则一：一套 API，多种传输**。用户使用统一的 `Publisher<T>`、`Subscriber<T>`、`Client<Req, Resp>`、`Server<Req, Resp>`、`Getter<T>`、`Setter<T>` 接口，通过修改 URL 选择传输后端。地址模型兼容的 topic 后端通常只需改变前缀；专用协议还须填写其地址和查询参数，但通信原语与主要业务逻辑无需重写。
 
 **原则二：类型安全优先**。借助模板元编程，所有通信原语在编译期确定消息类型、序列化方式，错误在编译期暴露，而非运行时崩溃。
 
-**原则三：低开销抽象**。设计上避免虚函数分派和动态分配的关键路径开销。对于编译期可确定的特性（如是否有响应、序列化类型），使用 `if constexpr` 和 `static_assert` 而非运行时分支。
+**原则三：低开销抽象**。对于编译期可确定的特性（如是否有响应、序列化类型），使用 `if constexpr` 和 `static_assert` 消除不必要的运行时分支；传输后端仍通过一次多态接口分派进入具体实现。
 
 **原则四：工具链完整性**。从开发到调试再到生产部署，提供完整的工具链支持，而非仅提供通信原语本身。
 
@@ -419,7 +419,7 @@ VLink 提供三种通信模型，覆盖智能系统中绝大多数的通信场�
 ![字段模型数据流](images/foreword-field-flow.png)
 
 字段模型与事件模型的关键区别在于：
-- `Setter` 会缓存最近一次写入的值，当新的 `Getter` 连接时，自动重放该值（晚连接同步）
+- `Getter` 缓存最近一次收到的值；后加入 Getter 的补送能力取决于后端与 durability/QoS
 - `Getter` 可以通过 `get()` 随时轮询当前值（返回 `std::optional<T>`）
 - `Getter` 支持 `set_change_reporting(true)` 过滤重复值，减少 CPU 占用
 
@@ -433,8 +433,8 @@ VLink 通过 URL 前缀选择传输后端，同一套业务代码可以在不同
 
 | Transport      | 底层技术          | 通信范围       | 零拷贝 | 实时性 | 典型场景                      |
 | ----------- | ----------------- | -------------- | ------ | ------ | ----------------------------- |
-| `intra://`  | 内置消息队列      | 进程内         | 是     | 极高   | 同进程模块间高频数据传递      |
-| `shm://`    | Iceoryx RouDi     | 同机跨进程     | 是     | 极高   | 相机/LiDAR 数据零拷贝传输     |
+| `intra://`  | 内置消息队列      | 进程内         | 条件支持（共享指针直达路径） | 极高 | 同进程模块间高频数据传递 |
+| `shm://`    | Iceoryx RouDi     | 同机跨进程     | 条件支持（transport loan） | 极高 | 相机/LiDAR 大负载传输 |
 | `dds://`    | Fast-DDS RTPS     | 跨机器/局域网  | 否     | 高     | 多 ECU 协同、跨域通信         |
 | `ddsc://`   | CycloneDDS        | 跨机器/局域网  | 否     | 高     | 轻量级跨机通信               |
 
@@ -442,7 +442,7 @@ VLink 通过 URL 前缀选择传输后端，同一套业务代码可以在不同
 
 | Transport      | 底层技术          | 通信范围       | 零拷贝 | 实时性 | 典型场景                      |
 | ----------- | ----------------- | -------------- | ------ | ------ | ----------------------------- |
-| `shm2://`   | Iceoryx2          | 同机跨进程     | 是     | 极高   | 次代共享内存方案              |
+| `shm2://`   | Iceoryx2          | 同机跨进程     | 条件支持（transport loan） | 极高 | 次代共享内存方案 |
 | `ddsr://`   | RTI Connext DDS   | 跨机器         | 否     | 高     | 高可靠性工业级场景            |
 | `ddst://`   | TravoDDS（国产 DDS） | 跨机器       | 否     | 中     | 国产自主可控 DDS 替代方案     |
 | `zenoh://`  | Zenoh 协议        | 跨机/云边      | 条件   | 高     | IoT 边缘节点通信              |
@@ -474,7 +474,7 @@ VLink 通过 URL 前缀选择传输后端，同一套业务代码可以在不同
 | `kCharsType`         | `char[]` / `const char*`                        | C 字符串                            |
 | `kStreamType`        | 支持 `std::stringstream` 输入/输出运算符的类型  | 兜底序列化路径（无更优编解码时回退）|
 | `kStandardType`      | POD 类型（`int`、`float`、结构体等）            | 简单数据类型，直接内存拷贝          |
-| `kStandardPtrType`   | `T*`（指向 POD 类型的原始指针）                 | 零拷贝 POD 指针传递                 |
+| `kStandardPtrType`   | `T*`（指向 POD 类型的原始指针）                 | 发送侧指针浅视图；transport 仍可能复制，接收侧借用 wire 缓冲 |
 
 类型检测通过编译期模板推导完成。编译期确定序列化类型（无运行时开销），发布时自动选择正确的序列化路径，`publish()` 会自动序列化为正确格式：
 
@@ -516,8 +516,8 @@ vlink::Publisher<MyCustomType> pub("shm://my/topic");
 - **懒初始化**：通过 `InitType::kWithoutInit` 参数，可以推迟 `init()` 调用，用于在构造器中注册回调后再初始化
 - **QoS 配置**：通过传输配置对象（如 `DdsConf`）或 URL 参数（如 `?qos=name&depth=10`）配置 QoS 策略
 - **安全密钥**：通过 `SecurityXxx` 派生类构造函数（第二参数）一次性传入 `Security::Config` 配置加密/解密参数；省略时使用内置默认安全槽位
-- **消息录制**：`set_record_path()` 启用自动消息录制，所有通过该节点的消息均被记录到 bag 文件
-- **服务发现**：`set_discovery_enabled()` 控制该节点是否参与发现广播
+- **消息录制**：`set_record_path()` 为受支持的传输与序列化路径启用节点级 bag 录制；`intra://` 与 DDS CDR 不支持该接口
+- **拓扑上报**：`set_discovery_enabled()` 控制节点是否由 DiscoveryReporter 上报给 Viewer/CLI，不控制传输后端的数据面发现
 - **属性 KV 存储**：`set_property()` / `get_property()` 用于存储节点元数据
 - **性能监控**：`get_cpu_usage()` 查询节点的 CPU 占用（通过 CpuProfiler 实现）
 - **安全退出**：`set_safety_quit(true)` 通过互斥锁保护回调与销毁之间的竞态条件
@@ -563,7 +563,7 @@ VLink 提供三种不同用途的定时器：
 
 **GraphTask（有向无环图任务调度器）**
 
-`GraphTask` 是面向感知融合、多模态预处理等复杂数据处理 pipeline 的专用调度器。它接受一组任务节点和节点间的依赖关系声明，自动构建 DAG（有向无环图），并在运行时最大化并行度——所有没有未完成前驱节点的任务可以同时在底层执行器（`ThreadPool`、`MessageLoop` 或 `MultiLoop`）中并行执行。
+`GraphTask` 是面向感知融合、多模态预处理等复杂数据处理 pipeline 的专用调度器。它接受一组任务节点和节点间的依赖关系声明，自动构建 DAG（有向无环图）；所有没有未完成前驱节点的任务会同时就绪并提交，实际并行度由底层执行器决定：`MessageLoop` 单线程串行执行，`ThreadPool` / `MultiLoop` 才可并行执行多个 ready 节点。
 
 通过静态工厂 `GraphTask::create()` 创建任务节点，使用 `precede()` / `succeed()` 声明依赖关系（Taskflow 约定，`precede` 即"先于"），再提交到执行器运行：例如 `lidar_proc` 与 `camera_proc` 并行执行，`fusion` 等待两者完成，`planning` 又等待 `fusion`。这一模型将并行化决策从业务代码中剥离，开发者只需声明数据依赖关系，框架自动管理并发。
 
@@ -631,12 +631,12 @@ VLink 的 `Logger` 是全局单例日志系统，支持四种日志书写风格�
 
 **问题**：开发阶段使用进程内通信（性能好，方便调试），测试阶段使用共享内存（接近生产环境），生产阶段根据部署拓扑使用 DDS 或 SOME/IP。每次切换都需要修改大量代码。
 
-**VLink 的解决方案**：URL 前缀即传输协议，业务代码零修改。
+**VLink 的解决方案**：URL 选择传输协议；按后端提供合法地址和必要参数，统一通信 API 与主要业务处理保持不变。
 
 | URL 前缀 | 阶段 / 场景 | 说明 |
 | --- | --- | --- |
 | `intra://` | 开发阶段 | 进程内通信，低延迟 |
-| `shm://` | 测试阶段 | 共享内存，零拷贝 |
+| `shm://` | 测试阶段 | 共享内存；显式 loan 路径可避免额外 payload 复制 |
 | `dds://` | 生产阶段（局域网） | DDS RTPS |
 | `someip://` | 车载部署（Beta） | SOME/IP |
 | `zenoh://` | 云边协同（Beta） | Zenoh |
@@ -695,15 +695,7 @@ if (pub.is_support_loan()) {
 }
 ```
 
-零拷贝订阅（设置 `manual_unloan` 手动控制生命周期）。`return_loan` 接受 `const Bytes&`，因此手动 unloan 路径需要订阅 `Bytes` 视图（`Subscriber<Bytes>`）而非已反序列化的 `T`。异步处理完成后手动调用 `sub.return_loan(raw)` 归还借出的共享内存帧：
-
-```cpp
-vlink::Subscriber<vlink::Bytes> sub("shm://sensor/lidar");
-sub.set_manual_unloan(true);
-sub.listen([&sub](const vlink::Bytes& raw) {
-    process_async(raw);
-});
-```
+零拷贝订阅。订阅端在回调返回后自动归还借出的共享内存帧；若需异步留用数据，应在回调内完成拷贝后再交由其他线程处理。
 
 对于 `intra://` 传输，当消息类型为共享指针包装类型时，VLink 内部通过共享指针直接转发数据，利用引用计数实现进程内零拷贝——订阅端获得的是共享所有权视图，既无数据拷贝，也无需手动管理生命周期：
 
@@ -802,22 +794,16 @@ VLink 在关键路径上进行了多项性能优化：
 
 VLink 提供了与 DDS 标准兼容的完整 QoS 策略体系，并对非 DDS 传输的可用子集进行了合理映射：
 
-方式一：通过 URL 参数配置 QoS，或通过 `set_property()` 逐项配置；方式二：通过 `Conf` 对象直接配置：
+方式一：通过 URL 参数引用命名 QoS；方式二：通过 `Conf` 对象直接配置：
 
 ```cpp
-vlink::Publisher<MySensor> pub("dds://sensor/data?qos=sensor&depth=10",
-                                vlink::InitType::kWithoutInit);
-
-pub.set_property("reliability", "reliable");
-pub.set_property("history_depth", "10");
-pub.set_property("durability", "transient_local");
-pub.init();
+vlink::Publisher<MySensor> pub("dds://sensor/data?qos=sensor&depth=10");
 
 vlink::DdsConf conf("sensor/data", /*domain=*/0, /*depth=*/10, /*qos=*/"sensor");
 vlink::Publisher<MySensor> pub2(conf);
 ```
 
-DDS 传输会将 QoS 属性完整映射到底层 DDS 实体；SHM 传输则使用 URL 中的 depth 参数配置环形缓冲区深度；intra 传输使用属性中的 priority 参数配置任务派发优先级。
+DDS 传输将 `Conf::qos` / `Conf::qos_ext` 映射到底层 DDS 实体；SHM 传输使用 URL 中的 `depth` 参数配置缓冲区深度；Zenoh 映射其支持的 QoS 子集。不支持某项策略的后端会忽略该项，`intra` 不会把 `Qos::Additions::priority` 映射为 MessageLoop 任务优先级。
 
 ### 9.4 完整的生态工具链
 
@@ -843,7 +829,7 @@ ROS2 是目前机器人与自动驾驶领域使用最广的中间件框架，VLi
 
 **通信延迟**
 
-ROS2 的 intra-process 优化可以降低同进程内的拷贝与调度开销；跨进程或跨机器通信仍需要经过 rmw/DDS 等抽象层。VLink 的 `intra://` 面向同进程线程间通信，`shm://` 面向同机跨进程零拷贝，两者把不同部署拓扑显式映射到不同 URL。具体延迟与抖动差异需要在相同硬件、QoS 和调度参数下用 `vlink-bench` 或对照 harness 实测。
+ROS2 的 intra-process 优化可以降低同进程内的拷贝与调度开销；跨进程或跨机器通信仍需要经过 rmw/DDS 等抽象层。VLink 的 `intra://` 面向同进程线程间通信，`shm://` 面向同机跨进程共享内存，并在显式 transport loan 路径上避免传递阶段的额外 payload 复制；两者把不同部署拓扑显式映射到不同 URL。具体延迟与抖动差异需要在相同硬件、QoS 和调度参数下用 `vlink-bench` 或对照 harness 实测。
 
 **API 复杂度**
 
@@ -877,7 +863,7 @@ ROS2 生态中有 foxglove_bridge 等项目可将 ROS2 数据桥接到 Foxglove 
 
 **同机性能**
 
-独立 DDS 在同机进程间通信时通常经过网络栈，或依赖特定 SHM 扩展与配置。VLink 可以在同机场景选择 `shm://` 传输以获得共享内存零拷贝路径，同时对外保持与 `dds://` 近似的用户 API。
+独立 DDS 在同机进程间通信时通常经过网络栈，或依赖特定 SHM 扩展与配置。VLink 可以在同机场景选择 `shm://`，并通过 `loan()` 取得共享内存直接写入路径，同时对外保持与 `dds://` 近似的用户 API。
 
 ### 10.3 VLink 与 SOME/IP 的对比
 
@@ -893,7 +879,7 @@ SOME/IP 是车载以太网的核心通信协议，VLink 在 someip:// 传输后�
 Zenoh 是新兴的云边一体通信协议，VLink 在 zenoh:// 后端下兼容 Zenoh 协议。
 
 对比维度：
-- **协议灵活性**：Zenoh 支持 NAT 穿透、P2P、路由等多种拓扑；VLink 通过 zenoh:// 提供此类能力，`ddst://` 则以国产 DDS 运行时作为 Fast-DDS/CycloneDDS 的替代选项。
+- **协议灵活性**：Zenoh 支持 P2P 与路由拓扑；跨 NAT 部署须连接可达的 Zenoh router/显式 endpoint 或另配网络穿透，VLink 不自动穿透 NAT。`ddst://` 则以国产 DDS 运行时作为 Fast-DDS/CycloneDDS 的替代选项。
 - **API 一致性**：Zenoh 有独立的 API 设计哲学（key expression、subscriber、publisher），与 ROS2/DDS 生态差异较大；VLink 在 zenoh:// 后端上仍使用同一套 `Publisher<T>`/`Subscriber<T>` API。
 - **序列化支持**：Zenoh 本身不约定序列化格式（传递 raw bytes）；VLink 在 zenoh 后端上自动应用配置的序列化策略。
 
@@ -905,7 +891,7 @@ Zenoh 是新兴的云边一体通信协议，VLink 在 zenoh:// 后端下兼容 
 | ------------------ | ---------------------- | ------------------------ | ----------------- | ------------------- | -------------------- |
 | 多传输后端支持     | 支持（12 种 scheme）   | 部分（以 DDS 为主）      | 不支持（仅 DDS）  | 不支持（仅 SOME/IP）| 部分                 |
 | 极简 API           | 支持                   | 部分（需继承 Node）      | 不支持（API 复杂）| 不支持（协议复杂）  | 支持                 |
-| 零拷贝支持         | 支持（shm / intra）    | 部分（intra-process）    | 部分              | 不支持              | 部分（实验性）       |
+| 零拷贝支持         | 条件支持（SHM loan / Intra 共享指针直达路径） | 部分（intra-process） | 部分 | 不支持 | 部分（实验性） |
 | 多序列化格式支持   | 支持（14 种）          | 部分（CDR 为主）         | 部分（CDR）       | 不支持              | 不支持（raw bytes）  |
 | 实时性保障         | 支持                   | 部分                     | 支持              | 支持                | 支持                 |
 | 调试工具链         | 支持                   | 支持（生态丰富）         | 部分              | 部分                | 部分                 |
@@ -967,7 +953,7 @@ VLink 的延迟特性取决于所选传输后端：
 **吞吐量特性：**
 
 对于大数据量传输（如 4K 相机帧，约 12 MB/帧，30 fps = 360 MB/s）：
-- `intra://` 和 `shm://`：受益于零拷贝，吞吐量接近内存带宽上限
+- `intra://` 的共享 `IntraDataType` 专用路径与直接写 `shm://` transport loan 的路径可减少大块额外复制；实际吞吐受消息构造、调度与硬件影响，须实测
 - `dds://`：受目标网络有效吞吐、QoS、序列化和 CPU 开销共同限制
 - `someip://`：受限于车载以太网带宽（通常 100 Mbps - 1 Gbps）
 
@@ -977,7 +963,7 @@ VLink 的延迟特性取决于所选传输后端：
 
 ![跨传输后端延迟对比](images/foreword-latency-comparison.png)
 
-在实际的自动驾驶系统中，将感知与规划从同机部署切换到异机部署，只需修改 URL 前缀，VLink 自动适配传输语义，业务代码保持不变。
+在实际的自动驾驶系统中，将感知与规划从同机部署切换到异机部署时，可把兼容的 topic URL 从 SHM 改为 DDS/Zenoh，并完成相应后端部署配置；通信原语与业务处理逻辑可保持不变。
 
 ---
 
@@ -1394,7 +1380,7 @@ WebViz 的扩展点主要是 JSON 消息映射：用户可以把 VLink 原生消
 | IMU 数据             | 256 B    | 200-1000 Hz | P99 延迟 < 2 ms   | intra / shm            |
 | 结构化感知结果        | 1-64 KB  | 20-100 Hz  | P99 延迟 < 10 ms  | shm / dds              |
 | 压缩相机图像          | 100-500 KB | 10-30 Hz | 吞吐量稳定性        | shm / shm2             |
-| LiDAR 原始点云        | 1-10 MB  | 10-20 Hz   | 零拷贝 / CPU 占用  | shm / shm2（零拷贝必选）|
+| LiDAR 原始点云        | 1-10 MB  | 10-20 Hz   | 复制次数 / CPU 占用 | shm / shm2（应使用 loan 路径） |
 | 跨机器分布式数据      | 任意     | 任意       | 网络延迟 + 抖动     | dds / ddsc / zenoh     |
 
 因此，VLink 的测试不能仅关注某一特定场景，而需要覆盖从"低延迟小包"到"高吞吐大包"的全谱段，并区分进程内、同机跨进程与跨机器三种部署拓扑。
@@ -1429,7 +1415,7 @@ WebViz 的扩展点主要是 JSON 消息映射：用户可以把 VLink 原生消
 
 **原理分析**
 
-进程内传输（`intra://`）是 VLink 链路最短的传输模式。其实现原理是：在同一进程的线程间，直接传递消息对象的共享指针（`std::shared_ptr`）或引用，绕过跨进程通信、网络协议栈和共享内存映射等路径。同步开销来自内部消息队列中的锁或原子操作，尾延迟主要受线程调度器唤醒延迟影响。
+进程内传输（`intra://`）是 VLink 链路最短的传输模式。对于 `shared_ptr<IntraDataType>` 消息，框架在线程间直接转交共享对象；普通消息仍会序列化为 `Bytes`，订阅端再反序列化到回调对象。两类路径都绕过跨进程通信、网络协议栈和共享内存映射；同步开销来自内部消息队列中的锁或原子操作，尾延迟主要受线程调度器唤醒延迟影响。
 
 在 Linux 默认调度器（CFS）或 PREEMPT_RT 实时内核下，进程内线程唤醒延迟仍会受 CPU 负载、优先级、亲和性和锁竞争影响。因此，`intra://` 适合需要低延迟的控制回路（如 1000 Hz 闭环控制），但尾延迟必须以目标平台实测为准。
 
@@ -1457,7 +1443,7 @@ VLink 的 `shm://` 传输后端基于 Eclipse Iceoryx 实现进程间零拷贝�
 
 这一差异在大消息（如 10 MB LiDAR 点云、5 MB 图像）下产生决定性的性能优势。以 100 Hz 频率传递 10 MB 消息为例：
 - 传统方案：每秒至少 2 × 10 MB × 100 = 2 GB 的内存带宽开销（不含序列化）
-- 零拷贝方案：内存带宽消耗近乎为零（仅有指针传递的 cache line 失效）
+- 零拷贝方案：消除传递阶段额外的 payload 复制带宽；Producer 写入与 Consumer 读取 payload 本身仍消耗必要的内存带宽
 
 **与非零拷贝方案的 CPU/吞吐对比入口：** 对 VLink 后端使用 `vlink-bench throughput` 生成目标机器上的实测报告；与 ROS2 或原生 POSIX shm 对比时，应使用同一 payload、频率、CPU 亲和性和系统调优参数单独跑对照 harness，避免把跨工具默认配置差异写成性能结论。
 
@@ -1523,12 +1509,12 @@ vlink-bench run \
 | 部署场景                         | 推荐后端               | 理由                                              | 状态     |
 | -------------------------------- | ---------------------- | ------------------------------------------------- | -------- |
 | 同一进程内的模块互联              | `intra://`             | 链路最短，开发测试阶段首选                       | **稳定** |
-| 同机多进程，大消息（图像/点云）   | `shm://`               | 零拷贝，消除内存带宽瓶颈                          | **稳定** |
+| 同机多进程，大消息（图像/点云）   | `shm://`               | loan 路径避免传递阶段的额外 payload 复制           | **稳定** |
 | 同机多进程，高实时性控制          | `shm://`               | 共享内存池与借贷式发布降低拷贝和分配开销          | **稳定** |
 | 同网段多机器分布式通信            | `dds://` / `ddsc://`   | 标准 RTPS 协议，互联互通性强                      | **稳定** |
 | 同机多进程，无 RouDi 依赖         | `shm2://`              | Iceoryx2 无需中心守护进程，部署更简单              | Beta     |
-| 跨 NAT / 云边协同                 | `zenoh://`             | Zenoh 原生支持 NAT 穿透，适合云端模型下发/边端数据上报 | Beta     |
-| 国产自主可控 DDS 替代             | `ddst://`              | TravoDDS（国产开源 DDS），与 Fast-DDS API 兼容     | Beta     |
+| 跨 NAT / 云边协同                 | `zenoh://`             | 可经可达的 Zenoh router / 显式 endpoint 连接；VLink 不自动穿透 NAT | Beta     |
+| 国产自主可控 DDS 替代             | `ddst://`              | TravoDDS（国产开源 DDS）；VLink 配置接口与 `DdsConf` 近似 | Beta     |
 | 车载以太网，AUTOSAR 兼容          | `someip://`            | 符合 AUTOSAR AP 规范，与车载 ECU 互联              | Beta     |
 | QNX RTOS 环境                     | `qnx://`               | 基于 QNX 原生 IPC，面向实时系统内部通信           | Beta     |
 
@@ -1539,7 +1525,7 @@ vlink-bench run \
 | 维度                            | VLink              | ROS2                  | Fast-DDS | Cyclone DDS | Zenoh             |
 | ------------------------------- | ------------------ | --------------------- | -------- | ----------- | ----------------- |
 | 进程内低延迟传输                | 支持               | 部分（intra-process） | 不支持   | 不支持      | 不支持            |
-| 共享内存零拷贝                  | 支持（Iceoryx）    | 部分（rmw_iceoryx）   | 部分     | 部分        | 部分（实验）      |
+| 共享内存零拷贝                  | 条件支持（Iceoryx loan） | 部分（rmw_iceoryx） | 部分 | 部分 | 部分（实验） |
 | DDS / RTPS 网络传输             | 支持（底层复用）   | 支持                  | 支持     | 支持        | 支持（独立协议）  |
 | 简洁 API                        | 支持               | 部分（Node 体系）     | 不支持   | 不支持      | 支持              |
 | 传输后端可切换                  | 支持（URL 前缀）   | 部分（rmw 切换）      | 不支持   | 不支持      | 不支持            |
@@ -1561,7 +1547,7 @@ ROS2 自 Humble 版本起引入了 rmw_iceoryx 零拷贝支持，但其在应用
 
 **关于 Zenoh 的特别说明**
 
-Zenoh-C 在嵌入式和资源受限环境下的部署开销通常低于 DDS，其协议栈更轻、二进制体积更紧凑。VLink 的 `zenoh://` 后端默认利用 zenoh-c 库提供类 DDS 的功能，也可在 `ENABLE_ZENOH_PICO=ON` 时切换到 zenoh-pico 轻量实现，用于嵌入式 / RTOS 方向验证。需要注意的是，zenoh-pico 路径会裁剪部分能力，例如 TLS 与 Zenoh SHM API 不可用。
+Zenoh-C 在嵌入式和资源受限环境下的部署开销通常低于 DDS，其协议栈更轻、二进制体积更紧凑。VLink 的 `zenoh://` 后端默认利用 zenoh-c 库提供类 DDS 的功能，也可在 `ENABLE_ZENOH_PICO=ON` 时切换到 zenoh-pico 轻量实现，用于嵌入式 / RTOS 方向验证。需要注意的是，zenoh-pico 路径不提供 Zenoh SHM API，TLS 也只有在 `Z_FEATURE_LINK_TLS=1` 的构建中可用。
 
 ---
 

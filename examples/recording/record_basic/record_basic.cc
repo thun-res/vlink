@@ -33,21 +33,21 @@ using namespace std::chrono_literals;  // NOLINT(build/namespaces, google-build-
 // ---------------------------------------------------------------------------
 // record_basic.cc
 //
-// VLink's "drop-in recording" surface: any Publisher/Subscriber/Server/
-// Client/Setter/Getter exposes set_record_path(path). Once set, every
-// message that flows through the node is appended to the named bag file,
-// completely transparently to the application logic.
+// VLink's "drop-in recording" surface: Publisher/Subscriber/Server/Client/
+// Setter/Getter expose set_record_path(path). The per-node API rejects
+// intra:// and DDS CDR; supported serialized messages are appended to the
+// named bag file transparently to the application logic.
 //
 // Two activation paths:
 //   * per-node    -- node.set_record_path("/tmp/foo.vdb") (this file).
 //   * global      -- export VLINK_BAG_PATH=/tmp/all.vdb at startup;
 //                    BagWriter::global_get() returns the shared instance
-//                    and every endpoint records into it automatically.
+//                    and supported serialized traffic records into it.
 //
 // File extension picks the format:
 //   * .vdb   -- VLink-native (SQLite-backed if VLINK_ENABLE_SQLITE, else
 //               raw fwrite) bag, optimised for VLink's serializer types.
-//   * .mcap  -- Foxglove MCAP (cross-tool, lower density, broader support).
+//   * .vcap  -- Foxglove-compatible MCAP output.
 // Compression and other tunables go through the BagWriter::Config struct
 // (see record_compression).
 // ---------------------------------------------------------------------------
@@ -61,8 +61,8 @@ int main() {
 
   vlink::Subscriber<vlink::Bytes> sub("dds://record_basic/event");
   sub.set_record_path("/tmp/record_basic_sub.vdb");
-  // Listener runs on the DDS dispatch thread. Recording happens *after*
-  // delivery, so the user callback sees data even when disk is slow.
+  // Listener runs on the DDS dispatch thread. The frame is queued for
+  // recording before the user callback; writer I/O may proceed asynchronously.
   sub.listen([](const vlink::Bytes& msg) { VLOG_I("Subscriber received: ", msg.size(), " bytes"); });
 
   pub.wait_for_subscribers();
@@ -75,13 +75,13 @@ int main() {
   }
 
   // ---- Section 2: global recording via VLINK_BAG_PATH ----
-  // global_get() returns non-null iff VLINK_BAG_PATH was set at startup.
-  // Tools/agents use this pattern to silently capture an entire process's
-  // traffic without modifying application code.
+  // global_get() returns non-null when VLINK_BAG_PATH names a supported format
+  // and writer creation succeeds. Tools/agents use this pattern to capture
+  // supported serialized traffic without modifying application code.
   auto* global_writer = vlink::BagWriter::global_get();
 
   if (global_writer) {
-    VLOG_I("Global BagWriter active -- all traffic is being recorded.");
+    VLOG_I("Global BagWriter active for supported serialized traffic.");
   } else {
     VLOG_I("No global BagWriter. Set VLINK_BAG_PATH to enable.");
   }

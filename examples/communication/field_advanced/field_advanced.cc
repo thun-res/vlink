@@ -35,13 +35,13 @@ using namespace std::chrono_literals;  // NOLINT(build/namespaces, google-build-
 // field_advanced: advanced Field-model features over the "ddsc://" backend.
 //
 // Demonstrates:
-//   - set_change_reporting(true): de-duplicate identical consecutive values
-//     so listen() fires only on *real* transitions.
+//   - set_change_reporting(true): de-duplicate consecutive values whose
+//     serialized bytes are identical.
 //   - Late-joiner one-shot sync via wait_for_value().
 //   - Multi-Getter fan-out on the same URL with optional latency/loss stats.
 //
 // Typical scenarios: configuration distribution where duplicate writes are
-// common and listeners should only react to genuine change events.
+// common and listeners should ignore byte-identical updates.
 int main() {
   vlink::MessageLoop loop;
   loop.set_name("main_loop");
@@ -49,11 +49,10 @@ int main() {
 
   // ---------- Change-reporting (de-duplication) ----------
   // set_change_reporting(true) makes the Getter compare each incoming value
-  // against the last delivered one and suppress callback invocation when they
-  // compare equal. The semantic is "callback on TRANSITION only", not on
-  // every set(). Must be configured before listen() to take effect uniformly.
+  // against the last delivered one and suppress callback invocation when the
+  // serialized bytes are identical. Must be configured before listen().
   vlink::Setter<BrightnessConfig> setter("ddsc://display/brightness");
-  setter.set({50, false});
+  setter.set({50, false, {}});
 
   std::this_thread::sleep_for(50ms);
 
@@ -71,15 +70,15 @@ int main() {
 
   // 5 set() calls but only 2 *transitions* (50->75, 75->100). With change
   // reporting on, expect ~2 callback invocations (initial value may add 1).
-  setter.set({50, false});
+  setter.set({50, false, {}});
   std::this_thread::sleep_for(50ms);
-  setter.set({50, false});
+  setter.set({50, false, {}});
   std::this_thread::sleep_for(50ms);
-  setter.set({75, false});
+  setter.set({75, false, {}});
   std::this_thread::sleep_for(50ms);
-  setter.set({75, false});
+  setter.set({75, false, {}});
   std::this_thread::sleep_for(50ms);
-  setter.set({100, true});
+  setter.set({100, true, {}});
   std::this_thread::sleep_for(50ms);
 
   loop.wait_for_idle(1000);
@@ -121,8 +120,8 @@ int main() {
   g2.attach(&loop);
   g2.listen([&c2](const int&) { c2.fetch_add(1); });
 
-  // set_latency_and_lost_enabled(true) MUST be called BEFORE listen() so
-  // the per-sample timing infrastructure is configured before delivery starts.
+  // Tracking may be toggled before or after listen(); enabling it first makes
+  // every delivered sample participate in this demonstration.
   vlink::Getter<int> g3("ddsc://config/volume");
   g3.attach(&loop);
   g3.set_latency_and_lost_enabled(true);

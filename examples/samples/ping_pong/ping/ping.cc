@@ -84,12 +84,12 @@ int main(int argc, char* argv[]) {
   std::atomic<std::chrono::steady_clock::time_point> start_stamp = std::chrono::steady_clock::now();
 
   // Subscriber callback: fires on the transport worker thread when pong echoes
-  // back. The half-RTT (one-way delay) approximation requires the network and
-  // host to be roughly symmetric.
+  // back. Half the RTT is only a one-way estimate and assumes symmetric
+  // network and host-processing paths.
   sub.listen([&start_stamp](const vlink::Bytes&) {
     auto duration =
         std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start_stamp.load());
-    // Round-trip / 2 = one-way (ms).
+    // Round-trip / 2 = estimated one-way delay (ms), assuming symmetry.
     double delay = duration.count() / 2000.0;
     CLOG_D("Delay(ms) = %.3lf.", delay);
   });

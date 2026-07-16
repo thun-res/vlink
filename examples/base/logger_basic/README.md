@@ -6,11 +6,11 @@ vlink Logger 是线程安全、双 sink（控制台 + 文件）的日志库，�
 
 | API | 用途 |
 |-----|------|
-| `Logger::init(app_name, log_path = "")` | 初始化；`log_path` 为空则只输出到控制台 |
+| `Logger::init(app_name, log_path = "")` | 初始化；空路径会从 `VLINK_LOG_DIR` 或临时目录选择默认日志目录，是否写文件由 file level 控制 |
 | `Logger::set_console_level(Level)` | 设置控制台输出级别 |
 | `Logger::set_file_level(Level)` | 设置文件输出级别（与控制台独立） |
 | `Logger::flush()` | 强制刷盘；退出/abort 前调用避免丢日志 |
-| `VLOG_T/D/I/W/E/F` | 流式：`<<` 拼接，任意可输出类型 |
+| `VLOG_T/D/I/W/E/F` | variadic 参数拼接：`VLOG_I("x=", x)` |
 | `MLOG_T/D/I/W/E/F` | format：`{}` 占位符 |
 | `CLOG_T/D/I/W/E/F` | printf：`%d %s` 风格 |
 | `SLOG_T/D/I/W/E/F` | RAII iostream：链式 `<<` 到分号为止 |

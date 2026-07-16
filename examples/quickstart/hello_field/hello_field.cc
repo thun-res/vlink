@@ -39,23 +39,22 @@ struct SensorConfig {
 //
 // Demonstrates:
 //   - vlink::Setter<T> / vlink::Getter<T> on "intra://".
-//   - Late-joiner semantics: a Getter created AFTER set() still receives the
-//     cached value via wait_for_value() -- the framework retains "current".
+//   - The Getter caches the most recently received value.
 //   - Pull-style get() returning std::optional<T>.
 //
-// Typical scenarios: configuration, mode/state mirroring, anything where only
-// the latest value matters and consumers should never miss a transition.
+// Typical scenarios: configuration and mode/state mirroring where only the
+// latest value matters. Intermediate transitions may be coalesced.
 int main() {
   static constexpr char kUrl[] = "intra://hello/field";
 
-  // Publish the initial value before any getter exists.
+  // Intra does not replay a value written before this Getter exists. Create the
+  // reader first; late-join replay on durable transports depends on backend QoS.
+  vlink::Getter<SensorConfig> getter(kUrl);
+
   vlink::Setter<SensorConfig> setter(kUrl);
   setter.set({100, 25.0F});
   VLOG_I("[setter] rate=100 threshold=25.0");
 
-  // Late-joining Getter: constructed AFTER set(). It must still observe the
-  // cached value through wait_for_value(), which is the field-model guarantee.
-  vlink::Getter<SensorConfig> getter(kUrl);
   getter.wait_for_value(1000ms);
 
   // Pull semantics: get() returns std::optional, empty if no value yet.

@@ -23,7 +23,7 @@
           <mxGeometry x="40" y="138" width="360" height="18" as="geometry" />
         </mxCell>
 
-        <mxCell id="qos_name" value="qos.name[20]   sensor / command / ..." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;arcSize=12;shadow=0;" vertex="1" parent="1">
+        <mxCell id="qos_name" value="qos.name[20]   display label only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;arcSize=12;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="60" y="164" width="320" height="26" as="geometry" />
         </mxCell>
         <mxCell id="qos_rel" value="reliability.kind   kBestEffort / kReliable&#10;block_time / heartbeat_time" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#0d47a1;arcSize=12;shadow=0;" vertex="1" parent="1">
@@ -61,27 +61,27 @@
         <mxCell id="reg_t" value="2. Register + Apply" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;fontFamily=Helvetica;fontSize=16;fontStyle=1;fontColor=#ffffff;arcSize=8;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="440" y="100" width="320" height="34" as="geometry" />
         </mxCell>
-        <mxCell id="reg_st" value="two parallel paths" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
+        <mxCell id="reg_st" value="two endpoint construction forms" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
           <mxGeometry x="440" y="138" width="320" height="18" as="geometry" />
         </mxCell>
 
-        <mxCell id="reg_a_t" value="Path A: register_qos" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+        <mxCell id="reg_a_t" value="Path A: register + URL construction" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="460" y="164" width="280" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="reg_a" value="DdsConf::register_qos(&quot;sensor&quot;, qos)&#10;DdscConf / DdsrConf / DdstConf / ZenohConf" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#0d47a1;arcSize=10;shadow=0;" vertex="1" parent="1">
+        <mxCell id="reg_a" value="DdsConf::register_qos(&quot;custom_sensor&quot;, qos)&#10;DdscConf / DdsrConf / DdstConf / ZenohConf" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#0d47a1;arcSize=10;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="460" y="190" width="280" height="52" as="geometry" />
         </mxCell>
-        <mxCell id="reg_a_url" value="dds://sensor/lidar?qos=sensor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#0d47a1;arcSize=10;shadow=0;" vertex="1" parent="1">
+        <mxCell id="reg_a_url" value="dds://sensor/lidar?qos=custom_sensor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#0d47a1;arcSize=10;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="460" y="248" width="280" height="30" as="geometry" />
         </mxCell>
 
-        <mxCell id="reg_b_t" value="Path B: per-endpoint property" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
+        <mxCell id="reg_b_t" value="Path B: same registered profile via Conf" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
           <mxGeometry x="460" y="290" width="280" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="reg_b" value="pub.set_property(&quot;qos.reliability.kind&quot;, &quot;1&quot;)&#10;pub.set_property(&quot;qos.history.depth&quot;, &quot;50&quot;)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;arcSize=10;shadow=0;" vertex="1" parent="1">
+        <mxCell id="reg_b" value="DdsConf conf(&quot;sensor/lidar&quot;, 0, 50, &quot;custom_sensor&quot;)&#10;Publisher&amp;lt;T&amp;gt; pub(conf)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;arcSize=10;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="460" y="316" width="280" height="52" as="geometry" />
         </mxCell>
-        <mxCell id="reg_b_note" value="must be called before init() / first publish" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#e65100;arcSize=14;shadow=0;" vertex="1" parent="1">
+        <mxCell id="reg_b_note" value="set_property is not generic DDS endpoint QoS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#e65100;arcSize=14;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="460" y="372" width="280" height="22" as="geometry" />
         </mxCell>
 
@@ -97,7 +97,7 @@
         <mxCell id="url_e2" value="dds://sensor/lidar?qos=sensor&amp;depth=20" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
           <mxGeometry x="460" y="482" width="280" height="20" as="geometry" />
         </mxCell>
-        <mxCell id="reg_b_apply" value="Path B applies the same QoS without a named profile" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+        <mxCell id="reg_b_apply" value="Path B references the same registered profile through DdsConf" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
           <mxGeometry x="460" y="540" width="280" height="22" as="geometry" />
         </mxCell>
 
@@ -167,7 +167,7 @@
         <mxCell id="a_qos_reg" value="register" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.18;entryX=0;entryY=0.5;" edge="1" parent="1" source="qos_bg" target="reg_a">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="a_qos_prop" value="set_property" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#37474f;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.6;entryX=0;entryY=0.5;" edge="1" parent="1" source="qos_bg" target="reg_b">
+        <mxCell id="a_qos_prop" value="configure Conf" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#37474f;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.6;entryX=0;entryY=0.5;" edge="1" parent="1" source="qos_bg" target="reg_b">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="a_a_url" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;rounded=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="reg_a" target="reg_a_url">

@@ -11,15 +11,15 @@ VLink 的全部通信能力由三种模型、六个原语承载：事件模型�
 六个原语共享两条不变量，理解一次即贯通全部：
 
 - **消息类型即契约**——收发两端的模板参数类型决定编解码策略，由编译期推导，不进入业务代码。完整类型族见 [消息序列化](03-serialization.md)。
-- **URL 即后端**——`<scheme>://<topic>` 的前缀决定传输后端，更换后端退化为更换前缀，业务代码不变。完整后端列表见 [传输后端与 URL](04-transport.md)。
+- **URL 即后端**——URL 的 scheme 决定传输后端；地址模型兼容的 topic 后端通常只需更换前缀，专用协议还须调整完整地址和查询参数。通信原语与主要业务逻辑不变，完整后端列表见 [传输后端与 URL](04-transport.md)。
 
-由此，节点的生命周期、配置时机与线程模型在六个原语上完全一致；三种模型的差异仅在语义层。选型由通信语义决定，与后端无关：
+由此，六个原语共享生命周期与配置接口；默认回调线程和 attach 支持仍随后端而异。三种模型的主要差异位于语义层，选型首先由通信语义决定：
 
 | 模型 | 语义 | 原语 | 方向 / 拓扑 | 状态保留 | 适用判据 |
 | --- | --- | --- | --- | --- | --- |
 | 事件 Event | 发布 / 订阅数据流 | `Publisher<T>` / `Subscriber<T>` | 单向，多对多 | 无（历史由 QoS Durability 控制） | 持续产生、一对多广播、无需逐条确认：传感器采样、感知结果、状态广播 |
 | 方法 Method | 请求 / 响应 RPC | `Client<Req,Resp>` / `Server<Req,Resp>` | 双向，N 对 1 | 每请求配对一响应；`Resp` 为空时退化为单向 fire-and-forget | 需返回值或执行确认：地图查询、参数读写、服务调用 |
-| 字段 Field | 最新值状态同步 | `Setter<T>` / `Getter<T>` | 双向，多对多 | 单一最新值，覆盖式；迟到读端可获得当前值 | 只关心当前状态、后加入者须立即获得当前值：车辆状态、配置参数、标定值 |
+| 字段 Field | 最新值状态同步 | `Setter<T>` / `Getter<T>` | 双向，多对多 | 单一最新值，覆盖式；迟到获取能力随后端/QoS | 只关心当前状态；必要时配置 durability 并等待值：车辆状态、配置参数、标定值 |
 
 三种模型的数据流如下，分别对应单向扇出、双向闭环与覆盖式状态同步：
 
@@ -39,7 +39,7 @@ VLink 的全部通信能力由三种模型、六个原语承载：事件模型�
 
 ### 2.2.1 🗺️ 概念与模型
 
-`Node` 统一承载下列跨原语服务，调用方在任一原语上都以相同方式使用：初始化与反初始化（建立、释放底层传输通道）；属性配置与查询（URL、传输类型、后端调优键值对）；绑定 `MessageLoop`，将回调串行化到单一线程；零拷贝借贷；阻塞等待的中断、消息传递的暂停与恢复。
+`Node` 统一暴露下列跨原语服务：初始化与反初始化（建立、释放底层传输通道）；属性配置与查询（URL、传输类型、后端调优键值对）；在后端支持时绑定 `MessageLoop`；零拷贝借贷；阻塞等待的中断、消息传递的暂停与恢复。具体能力仍可能受后端约束。
 
 理解节点的关键是一条不变量：**节点先经历"构造 → 初始化"建立通道，使用期间收发消息，最后经历"反初始化 → 析构"释放资源；初始化前后允许施加的配置集合不同。**
 
@@ -49,7 +49,7 @@ VLink 的全部通信能力由三种模型、六个原语承载：事件模型�
 
 ![URL 格式](images/url-format.png)
 
-**URL 字符串构造**　最常用入口。前缀决定传输后端，更换后端只需更换前缀，业务代码不变。
+**URL 字符串构造**　最常用入口。scheme 决定传输后端，地址和查询参数由该后端解释；迁移后端时修改 URL，不需要更换通信原语。
 
 ```cpp
 vlink::Publisher<MyMsg> pub("dds://vehicle/speed");
@@ -86,7 +86,7 @@ pub.init();
 | `bool deinit()` | 中断所有阻塞等待并释放传输资源 | 可安全重复调用 |
 | `bool has_inited()` | 查询当前是否已初始化 | — |
 
-两条默认行为消除了绝大部分手动管理：**构造默认执行 `init()`**（`InitType::kWithInit`），通常无需显式调用；**析构自动执行 `deinit()`**，节点离开作用域即释放资源并唤醒等待者，仅在需要提前释放时才显式调用 `deinit()`。二者均幂等，重复或并发调用安全。借助 RAII，典型用法无需任何显式生命周期调用：
+两条默认行为消除了绝大部分手动管理：**构造默认执行 `init()`**（`InitType::kWithInit`），通常无需显式调用；**析构自动执行 `deinit()`**，节点离开作用域即释放资源并唤醒等待者，仅在需要提前释放时才显式调用 `deinit()`。重复调用会由状态检查挡住，但调用方不得让 `init()` 与 `deinit()` 彼此并发。借助 RAII，典型用法无需任何显式生命周期调用：
 
 ```cpp
 {
@@ -118,13 +118,13 @@ pub.init();
 | `set_discovery_enabled()` | 推荐 | 自动重启扩展后生效 |
 | `bind_proto_arena()` | 在 `listen()` 前即可 | — |
 | `set_record_path()` | 允许 | 允许 |
-| 安全配置（构造时传入） | 必须 | 无运行时入口 |
+| 安全配置（构造参数或 `enable_security()`） | 必须在 `init()` 前 | 拒绝修改 |
 
 工厂方法同样接受 `InitType`，延迟初始化模式一致：
 
 ```cpp
 auto pub = vlink::Publisher<MyMsg>::create_unique("dds://topic", vlink::InitType::kWithoutInit);
-pub->set_property("qos", "sensor");
+pub->set_property("dds.ip", "192.168.1.100");
 pub->init();
 ```
 
@@ -142,7 +142,7 @@ pub->init();
 | `SchemaType get_schema_type() const` | 返回当前 schema 家族（`SchemaType`） |
 | `bool get_discovery_enabled() const` | 查询发现是否启用 |
 
-**序列化类型 `set_ser_type()`**　序列化策略通常由消息类型 `MsgT` 在编译期自动推导，绝大多数情况无需手动设置。仅在使用动态类型或需自定义类型名时调用以覆盖默认，须在 `init()` 之前生效。
+**序列化类型 `set_ser_type()`**　序列化策略通常由消息类型 `MsgT` 在编译期自动推导，绝大多数情况无需手动设置。仅在使用动态类型或需自定义类型名时调用以覆盖默认；建议在 `init()` 前配置，初始化后调用会重启扩展元数据路径。
 
 ```cpp
 void set_ser_type(const std::string& ser_type, SchemaType schema_type = SchemaType::kUnknown);
@@ -161,14 +161,14 @@ sub.listen([](MyProto* msg) { /* ... */ });
 
 ### 2.2.6 🧵 绑定 MessageLoop
 
-默认情况下，节点回调直接在传输线程上执行。当应用以单线程模型组织业务逻辑时，需要将分散在各传输线程的回调归并到同一线程串行执行，以消除共享状态的并发访问。`attach()` 将节点绑定到一个 `MessageLoop`，此后回调改投递到该 loop 所在线程；`detach()` 解除绑定。
+默认情况下，节点回调由后端自身的 delivery context 执行。后端实现支持时，`attach()` 可将节点绑定到一个 `MessageLoop`，此后回调改投递到该 loop 所在线程；`detach()` 解除绑定。当前 `intra://`、`fdbus://`、`qnx://`、`someip://` 的六种原语均不支持 attach/detach，会告警并返回 `false`；其中 intra 默认由自身 queue pipeline 派发，`#direct` 则在发布 / 调用线程内同步回调。
 
 ![MessageLoop 概念](images/message-loop-concept.png)
 
 | 方法 | 语义 |
 | --- | --- |
-| `bool attach(MessageLoop* loop)` | 绑定到 loop；已绑定其他 loop 时返回 `false` |
-| `bool detach()` | 解除绑定，回调恢复到传输线程；未绑定时返回 `false` |
+| `bool attach(MessageLoop* loop)` | 后端支持时绑定到 loop；不支持或已绑定其他 loop 时返回 `false` |
+| `bool detach()` | 后端支持时解除绑定；不支持或未绑定时返回 `false` |
 | `MessageLoop* get_message_loop() const` | 返回当前绑定的 loop，未绑定时返回 `nullptr` |
 
 ```cpp
@@ -187,11 +187,11 @@ loop.run();
 
 | 回调路径 | 默认线程 | attach 后 |
 | --- | --- | --- |
-| `Subscriber` / `Getter` / `Server::listen()` | 传输线程 | MessageLoop 线程 |
-| `register_status_handler` | 传输线程 | MessageLoop 线程 |
+| `Subscriber` / `Getter` / `Server::listen()` | 后端 delivery context | MessageLoop 线程 |
+| `register_status_handler` | 后端 delivery context | MessageLoop 线程 |
 | `Publisher::publish()` / `Client::invoke()` | 调用者线程 | 调用者线程 |
 
-边界条件：`attach()` 须在 `listen()` 之前调用——`listen()` 一旦激活回调分发，节点需先绑定 loop 才能确定回调投递到哪个线程。从与 loop 不同的线程调用 `detach()` 时，会等待 loop 处理完当前任务后再解绑，确保解绑过程不与回调执行竞争。`MessageLoop` 完整接口见 [基础库](08-base-library.md)。
+边界条件：仅在后端支持 attach 时，`attach()` 须在 `listen()` 之前调用——`listen()` 一旦激活回调分发，节点需先绑定 loop 才能确定回调投递到哪个线程。从与 loop 不同的线程调用 `detach()` 时，会等待 loop 处理完当前任务后再解绑，确保解绑过程不与回调执行竞争。调用方必须检查 attach 的布尔返回值；`MessageLoop` 完整接口见 [基础库](08-base-library.md)。
 
 ### 2.2.7 🎛️ 控制方法
 
@@ -235,12 +235,14 @@ if (pub.is_support_loan()) {
 
     if (!buf.empty()) {
         new (buf.data()) MyStruct{42, 3.14};
-        pub.publish(buf);   // 发送后自动归还
+        if (!pub.publish(buf)) {
+            pub.return_loan(buf);  // 未被后端接受时仍由调用方归还
+        }
     }
 }
 ```
 
-边界条件：借贷路径要求使用 `Publisher<vlink::Bytes>`，`loan()` 返回的 `Bytes` 作为消息直接发送；`is_support_loan()` 为 `false` 时 `loan()` 返回空 `Bytes`。订阅端手动归还等完整用法见 [零拷贝](06-zerocopy.md)。
+边界条件：借贷路径要求使用 `Publisher<vlink::Bytes>`，`loan()` 返回的 `Bytes` 作为消息直接发送；`is_support_loan()` 为 `false` 时 `loan()` 返回空 `Bytes`。只有成功被后端接受的发布才消费 loan，发布返回 `false` 时仍须显式归还。订阅端手动归还等完整用法见 [零拷贝](06-zerocopy.md)。
 
 ### 2.2.9 🏭 工厂方法
 
@@ -266,8 +268,8 @@ auto sub = vlink::Subscriber<MyMsg>::create_shared("dds://topic");
 
 下列能力面向特定场景，本节仅给定位，详见对应专章。
 
-- **消息级加密**　使用 `SecurityPublisher` / `SecuritySubscriber` 等节点变体，在构造时传入安全配置，无运行时 setter，换密钥需重建节点。详见 [安全加密](07-security.md)。
-- **传输层 TLS**　`set_ssl_options(const SslOptions&)`，须在 `init()` 之前调用，具备原生 TLS 机制的后端为 `mqtt://` / `dds://` / `ddsc://` / `zenoh://`；其他后端不消费 `ssl.*` 配置。详见 [安全加密](07-security.md)。
+- **消息级加密**　使用 `SecurityPublisher` / `SecuritySubscriber` 等节点变体；可在构造时传入配置，或对延迟初始化节点在 `init()` 前调用 `enable_security()`，初始化后不可替换。详见 [安全加密](07-security.md)。
+- **传输层 TLS**　`set_ssl_options(const SslOptions&)`，须在 `init()` 之前调用；后端编译能力满足时适用于 `mqtt://` / `dds://` / `ddsc://` / `ddsr://` / `zenoh://`。详见 [安全加密](07-security.md)。
 - **状态查询**　`get_status()` / `register_status_handler()` 查询连接状态变化，仅 DDS 系列后端有效。详见 [可观测性](12-observability.md)。
 - **消息录制**　`set_record_path(path)` 为单个节点开启录包。详见 [录制与回放](09-recording.md)。
 - **安全退出**　`set_safety_quit(true)` 以互斥保护回调与析构，避免回调执行期间节点被销毁的竞态；引入锁开销，热路径慎用。
@@ -280,14 +282,14 @@ auto sub = vlink::Subscriber<MyMsg>::create_shared("dds://topic");
 
 ### 2.3.1 🗺️ 概念与数据流
 
-发布与订阅经主题 URL 解耦：双方不直接引用，仅通过相同的 `<scheme>://<topic>` 建立关联。发布方写入消息后，传输层将其投递给当时已连接的全部订阅方，扇出为多份独立副本。
+发布与订阅经主题 URL 解耦：双方不直接引用，仅通过相同的 `<scheme>://<topic>` 建立关联。发布方写入消息后，传输层将其投递给当时已连接的匹配订阅方；底层存储是复制还是共享，取决于消息类型与后端。
 
 该模型的四项不变量决定其使用边界：
 
 | 性质 | 含义 |
 | --- | --- |
-| 多对多扇出 | 同一主题可有多个 Publisher 与多个 Subscriber；每个 Subscriber 各得一份副本 |
-| 异步非阻塞 | 投递由传输层在收到消息时触发订阅回调，不阻塞发布方 |
+| 多对多扇出 | 同一主题可有多个 Publisher 与多个 Subscriber；每个匹配 Subscriber 获得一次投递 |
+| 投递时序 | 回调触发方式与阻塞性随后端/模式；如 intra `#direct` 会在 `publish()` 内同步执行回调 |
 | 无状态 | 不保留历史；订阅方仅接收订阅建立之后产生的消息（历史可见性由 QoS 的 Durability 控制） |
 | 类型安全 | 消息类型由模板参数 `T` 固定，编解码策略按类型在编译期确定，无需手写序列化 |
 
@@ -314,7 +316,7 @@ pub.wait_for_subscribers(std::chrono::milliseconds(500));
 pub.publish("hello vlink");
 ```
 
-将 `intra://` 替换为 `shm://` 或 `dds://`，上述代码无需其它修改即可跨进程或跨机器运行。完整可运行示例见 [快速开始](01-started.md)（`hello_pubsub`）。
+对这类 topic 地址，将 `intra://` 换为 `shm://` 或 `dds://` 时通信 API 与业务处理可保持不变；跨进程或跨机运行还须链接并部署对应后端，配置其运行时、发现与 QoS。完整可运行示例见 [快速开始](01-started.md)（`hello_pubsub`）。
 
 ### 2.3.3 📤 Publisher
 
@@ -363,10 +365,10 @@ sub.listen([](const MyMsg& msg) { handle(msg); });
 
 两项约束必须遵守：
 
-- 回调入参 `const MsgT& msg` 指向框架的临时存储，仅在回调体内有效；回调返回后即失效。需将数据带出回调（存入容器、跨线程传递）时必须先复制一份。
+- 普通反序列化类型的 `const MsgT& msg` 指向框架临时存储，仅在回调体内有效，带出回调前须复制。`Bytes` 遵循 transport loan / manual-unloan 所有权契约；`shared_ptr<IntraDataType>` 可复制 shared_ptr 延长对象生命周期，二者不适用这一普通临时对象规则。
 - `listen()` 仅可调用一次，重复调用为致命错误。
 
-回调默认在传输线程执行。若要并入自有线程串行处理，先 `attach(MessageLoop*)`，见 2.2.6。性能分析时可开启统计：
+回调默认由后端 delivery context 执行。后端支持时可先 `attach(MessageLoop*)` 并入自有线程串行处理，限制见 2.2.6。性能分析时可开启统计：
 
 ```cpp
 sub.set_latency_and_lost_enabled(true);
@@ -385,7 +387,7 @@ sub.listen([&sub](const MyMsg& msg) {
 | --- | --- |
 | `vlink::Bytes` | 原始字节、自定义二进制协议、图像帧 |
 | Protobuf 消息 | 跨语言、字段可扩展的通用消息 |
-| POD 结构体（trivial + standard layout） | IMU、控制指令等数值型小消息，零序列化开销 |
+| POD 结构体（trivial + standard layout） | IMU、控制指令等数值型小消息，无编码转换、直接内存复制 |
 | `std::string` | 文本消息 |
 
 ### 2.3.6 🎚️ QoS 概览
@@ -450,7 +452,7 @@ vlink::SecuritySubscriber<MyMsg> sub("dds://secure/data", cfg);
 sub.listen([](const MyMsg& msg) { handle(msg); });
 ```
 
-边界条件：消息级加密不支持两类组合——`intra://`（进程内直接传对象，基于 `IntraDataType` 的零拷贝类型还会触发编译期 `static_assert`）与 `dds://` 配合 CDR 类型（CDR 直接交由 DDS 处理）。在这两类组合上构造 `Security*` 节点时 `enable_security()` 打印警告并返回 `false`，节点按明文路径照常工作。完整用法见 [安全加密](07-security.md)。
+边界条件：消息级加密不支持两类组合——当前实现显式排除整个 `intra://` 路径（其中 `shared_ptr<IntraDataType>` 专用路径还会触发编译期 `static_assert`），也排除 `dds://` 配合 CDR 类型（CDR 直接交由 DDS 处理）。在这些组合上 `enable_security()` 会打印警告并返回 `false`；`Security*` 构造随后因没有可用安全上下文而拒绝初始化，不会静默降级成明文。完整用法见 [安全加密](07-security.md)。
 
 ---
 
@@ -517,7 +519,7 @@ int main() {
 }
 ```
 
-将 `dds://` 替换为 `shm://`、`someip://` 等前缀即可更换传输后端，业务代码不变。完整可运行示例见 [快速开始](01-started.md)（`hello_rpc`、`helloworld`）。
+迁移到地址模型兼容的 `shm://`、`intra://`、`zenoh://` 等后端时可保留同一方法地址；迁移到 SOME/IP 时须使用数值 service/instance，并为方法提供 `method` 参数。Client/Server 调用逻辑不变，完整可运行示例见 [快速开始](01-started.md)（`hello_rpc`、`helloworld`）。
 
 ### 2.4.3 🧮 核心 API
 
@@ -699,7 +701,7 @@ try {
 
 ### 2.4.8 🧵 并发与线程模型
 
-同一个 `Client` 对象可从多个线程并发调用，无需额外加锁。高并发批量请求推荐 `async_invoke`：先全部发出，再统一收集 future，避免逐次阻塞。`Server` 回调默认在传输线程执行；若回调访问共享状态，需自行加锁，或通过 `attach(&loop)` 将回调串行化到同一 MessageLoop 线程从而免去加锁（绑定语义见 2.2.6）。
+同一个 `Client` 对象可从多个线程并发调用，无需额外加锁。高并发批量请求推荐 `async_invoke`：先全部发出，再统一收集 future，避免逐次阻塞。`Server` 回调默认由后端 delivery context 执行；若回调访问共享状态，需自行同步，或在后端支持时通过 `attach(&loop)` 将这些回调串行化到同一 MessageLoop 线程（绑定语义与限制见 2.2.6）。
 
 ```cpp
 vlink::Server<Req, Resp> server("dds://my_service");
@@ -716,7 +718,7 @@ server.listen([&](const Req& req, Resp& resp) {
 ### 2.4.9 🧭 方法模型进阶能力
 
 - **加密 RPC**：`vlink::SecurityClient<Req, Resp>` / `vlink::SecurityServer<Req, Resp>` 构造时传入 `Security::Config`，调用方式与普通 Client/Server 一致。详见 [安全加密](07-security.md)。
-- **车载服务化**：将 URL 前缀换为 `someip://` 即接入车载以太网 SOME/IP，业务代码不变；FlatBuffers 上的 SOME/IP 示例见 `someip_flat`。详见 [传输后端与 URL](04-transport.md)。
+- **车载服务化**：使用合法的 SOME/IP service/instance/method URL 接入车载以太网，Client/Server 业务处理逻辑可保持不变；FlatBuffers 示例见 `someip_flat`。详见 [传输后端与 URL](04-transport.md)。
 - **QoS 服务质量**：经 URL 参数 `?qos=<profile>` 调节可靠性与历史深度。方法模型推荐使用 `kMethod` profile（Reliable + KeepAll），经 `?qos=method` 启用。详见 [QoS 配置](05-qos.md)。
 - **延迟异步服务完整示例**：将耗时处理交给工作线程，`listen_for_reply` 入队、`reply()` 回复（机制见 2.4.5），完整可运行版本见 [快速开始](01-started.md)（`method_sync`）。
 
@@ -730,7 +732,7 @@ server.listen([&](const Req& req, Resp& resp) {
 
 字段模型在话题上维护一个逻辑变量。`Setter` 持有该变量的写入权：每次 `set()` 覆盖当前值并向所有已连接的 `Getter` 推送更新。`Getter` 在本地缓存最近一次接收到的值，对外提供轮询、阻塞等待与回调三种读取路径。
 
-它与事件模型的根本差异在于状态保留与投递语义——字段模型只暴露当前值、迟到读端可获得该值，事件模型逐条投递、默认错过订阅前的消息（对照见 2.3.1 与 [模型总览](#-21-模型总览与选型)）。典型场景包括配置参数下发（最大车速、重试次数）、高频标量读数（车速、温度）、布尔/枚举状态（就绪标志、运行模式）、HMI 刷新（仪表盘只需最新帧）。
+它与事件模型的根本差异在于只暴露当前值而非历史序列。支持缓存/持久化或 Setter 匹配后重发的后端可为迟到读端补送当前值；其他后端需等待下一次写入（对照见 2.3.1、2.5.6 与 [模型总览](#-21-模型总览与选型)）。典型场景包括配置参数下发（最大车速、重试次数）、高频标量读数（车速、温度）、布尔/枚举状态（就绪标志、运行模式）、HMI 刷新（仪表盘只需最新帧）。
 
 ### 2.5.2 🚀 快速开始
 
@@ -833,7 +835,7 @@ getter.listen([](const int& v) {
 });
 ```
 
-边界条件：`listen` 回调在传输线程执行，回调内不应进行耗时阻塞操作；需切换至固定线程时用 `attach(MessageLoop*)`，见 2.2.6。
+边界条件：`listen` 回调由后端 delivery context 执行，回调内不应进行耗时阻塞操作；后端支持时可用 `attach(MessageLoop*)` 切换至固定线程，限制见 2.2.6。
 
 ### 2.5.5 ❓ std::optional 返回值的语义
 

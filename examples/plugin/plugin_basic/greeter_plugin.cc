@@ -34,12 +34,11 @@
 //      interface (the interface name, not the implementation name). That
 //      installs the plugin_id matching the host's expectation.
 //   3. VLINK_PLUGIN_DECLARE exports the C ABI entry points the loader needs:
-//        - vlink_plugin_create  -> new GreeterImpl
-//        - vlink_plugin_destroy -> delete the base pointer
-//        - vlink_plugin_get_version_info -> returns major/minor/commit
-//      Version numbers (1, 0) are compared against the (major, minor) passed
-//      to Plugin::load<T>(name, major, minor). A mismatch causes load() to
-//      return nullptr rather than dispatch into ABI-incompatible code.
+//        - vlink_plugin_create  -> validates plugin_id/version, then creates
+//                                  GreeterImpl
+//        - vlink_plugin_destroy -> deletes the implementation pointer
+//      The create call compares declared (1, 0) with the plugin_id and version
+//      requested by Plugin::load<T>(); mismatch returns nullptr.
 // =============================================================================
 
 #include "greeter_interface.h"
@@ -57,7 +56,8 @@ class GreeterImpl : public GreeterInterface {
   std::string plugin_name() const override { return "GreeterImpl"; }
 };
 
-// Emits extern "C" factory + destroyer + version metadata. Arguments:
+// Emits the extern "C" factory and destroyer. The factory embeds these
+// version constants in its compatibility check. Arguments:
 //   GreeterImpl -> concrete type to instantiate on create
 //   1           -> major version (semantic-version-style break gate)
 //   0           -> minor version (compatible additions)

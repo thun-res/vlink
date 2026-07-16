@@ -205,7 +205,7 @@
         <mxCell id="ex9" value="&lt;b&gt;Custom&lt;/b&gt;  -  Vec3, NamedValue (user-defined Bytes operators)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="750" y="664" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="ex10" value="&lt;b&gt;String&lt;/b&gt;  -  std::string (length-prefixed content copy)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="ex10" value="&lt;b&gt;String&lt;/b&gt;  -  std::string (content bytes copied without a length prefix)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="750" y="686" width="600" height="22" as="geometry" />
         </mxCell>
         <mxCell id="ex11" value="&lt;b&gt;Chars&lt;/b&gt;  -  const char* literals and char[] arrays" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">

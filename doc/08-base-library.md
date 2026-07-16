@@ -268,7 +268,7 @@ vlink::Timer::call_once(&loop, 500, [] { VLOG_I("delayed init"); });
 
 ### 8.6.3 串行化通信回调
 
-VLink 通信回调（Subscriber、Server 等）在传输层内部线程上触发。将消息投递回自有 `MessageLoop` 是串行化处理的标准模式；回调入参仅在回调内有效，外带前须先复制：
+通信回调的执行线程随后端与模式而异；例如下列 `dds://` 回调通常来自后端 delivery thread，而 intra `#direct` 会在调用线程同步执行。需要固定业务线程时，可把普通临时消息复制后投递到自有 `MessageLoop` 串行处理：
 
 ```cpp
 vlink::MessageLoop my_loop;
@@ -323,7 +323,7 @@ loop.exec_task(vlink::Schedule::Config{/*delay_ms=*/100, 0, /*sched_to=*/0, /*ex
 | --- | --- | --- |
 | `post_task` / `quit` | 是 | 可从任意线程并发调用 |
 | `invoke_task` | 是 | 不可在同一 loop 线程上对返回 future 调 `.get()` |
-| `run` / `async_run` | 否 | 仅由构造 loop 的线程调用一次 |
+| `run` / `async_run` | 启动互斥 | `run()` 在调用线程执行，`async_run()` 新建后台线程；已运行时再次启动返回 `false` |
 | 多 loop 线程访问同一状态 | 否 | 需额外同步（mutex / 原子量） |
 
 常见陷阱：
@@ -478,7 +478,7 @@ loop.wait_for_quit(2000);
 | 特性 | MessageLoop | ThreadPool | MultiLoop |
 | --- | --- | --- | --- |
 | 执行模型 | 单线程串行 | 固定线程池并行 | 事件循环 + 线程池并行 |
-| 任务顺序 | 严格 FIFO | 无保证 | 无保证 |
+| 任务顺序 | `kNormalType` 为 FIFO；`kPriorityType` 按优先级、同优先级按序 | 无保证 | 无保证 |
 | 定时器 | 支持 | 不支持 | 支持（继承） |
 | 适用场景 | 有序任务派发 | 纯计算并行 | 兼需定时器与并行 |
 
@@ -1035,7 +1035,7 @@ std::string token = vlink::Uuid::random_hex();
 
 ## 🧬 8.16 Coroutine 协程
 
-`vlink::Coroutine`（别名 `vlink::Co`）基于 C++20 stackless 协程，将所有挂起与恢复绕回 `MessageLoop`，因此协程体语句（除 `await_future` 等待瞬间外）均在 loop 线程上运行，共享状态无需加锁。头文件 `<vlink/base/coroutine.h>`；构建需 `ENABLE_CXX_STD_20=ON` 且工具链同时声明 `__cpp_impl_coroutine` 与 `__cpp_lib_coroutine`（GCC 10+ / Clang 14+ / MSVC 19.x+），满足后框架自动启用协程支持。
+`vlink::Coroutine`（别名 `vlink::Co`）基于 C++20 stackless 协程。成功路径上的 `schedule` / `yield` / `delay_ms` / `await_future` / `await_graph` 会把恢复投递回目标 `MessageLoop`；若 loop 已关闭或恢复投递重试耗尽，失败恢复会在进程级 `FutureWaitLoop` helper thread 上执行，并由 `await_resume()` 抛出异常。因此正常业务段可依赖目标 loop 的串行性，但异常处理、析构清理若访问跨线程共享状态仍须同步。头文件 `<vlink/base/coroutine.h>`；构建需 `ENABLE_CXX_STD_20=ON` 且工具链同时声明 `__cpp_impl_coroutine` 与 `__cpp_lib_coroutine`（GCC 10+ / Clang 14+ / MSVC 19.x+），满足后框架自动启用协程支持。
 
 ### 8.16.1 任务定义与启动
 

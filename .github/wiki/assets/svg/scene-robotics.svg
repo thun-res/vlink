@@ -150,6 +150,6 @@
   <!-- Caption -->
   <g font-family="JetBrains Mono, monospace" font-size="10">
     <text x="24" y="34" fill="#4faafd" letter-spacing="2">VLINK · EMBODIED AI</text>
-    <text x="24" y="50" fill="#5A6687">humanoid · 40+ joints · sub-millisecond loop</text>
+    <text x="24" y="50" fill="#5A6687">humanoid · 40+ joints · mixed data paths</text>
   </g>
 </svg>

@@ -287,7 +287,7 @@ vlink::Subscriber<LidarPoint> sub("dds://sensors/lidar");
 sub.set_record_path("/data/lidar.vdb");   // 后缀须为 .vdb/.vdbx/.vcap/.vcapx
 ```
 
-> **约束**：`intra://` 节点与使用原生 CDR 序列化的 `dds://` 节点**不支持**该接口——在这类节点上调用 `set_record_path()` 会触发致命日志（`VLOG_F`，抛出 `RuntimeError`），其余传输正常录制。对支持的传输，路径会交给 `BagWriter::filter_get()`，文件后缀不在 `.vdb`/`.vdbx`/`.vcap`/`.vcapx` 之内时 `filter_get()` 返回空指针，录制静默关闭。需要录制 `intra://` / CDR 节点、或在录制前序列化转码、过滤、重排时，改用下面的手动 `BagWriter` 接管。
+> **约束**：`intra://` 节点与使用原生 CDR 序列化的 `dds://` 节点**不支持节点级 `set_record_path()`**——调用会触发致命日志（`VLOG_F`，抛出 `RuntimeError`）。对支持的传输，路径会交给 `BagWriter::filter_get()`；后缀不在 `.vdb`/`.vdbx`/`.vcap`/`.vcapx` 之内时返回空指针，节点录制静默关闭。`VLINK_BAG_PATH` 全局 writer 可捕获经过 Bytes 序列化路径的普通 intra 消息，但不捕获 `IntraData` 直通消息或 DDS CDR；需要覆盖这些类型、或在录制前转码、过滤、重排时，应使用下面的手动 `BagWriter` 接管。
 
 需要完全掌控帧内容时，把 `BagWriter` 注入订阅回调，回放时将 reader 输出转回 `Publisher`，是与业务通信结合的标准用法。
 
@@ -417,7 +417,7 @@ int main() {
 }
 ```
 
-`BagProcessor` 同时是 `BagPluginInterface` 派生插件的基本构件，用于录制前 / 回放前的重排与转码：写侧由 `BagWriter::bind_bag_interface()` 在落盘前调用插件的 `on_write()`，读侧由 `BagReader::bind_bag_interface()` 在回放前调用 `on_read()`，二者均经插件内部的 `do_callback()` 重新发出。reader 在每个顶层 `play()` / `jump()` 读会话开始、ready 回调之前调用插件 `reset()`；重排插件应在此调用 `BagProcessor::reset()`，确保 `stop()` / `jump()` 留下的缓存和时间锚点不会污染新会话。只有自然完成的回放轮次才调用 `flush()`，保留尾帧并隔离下一轮；若在边界排空前观察到 `stop()` / `jump()`，则跳过 `flush()`，由下一会话的 `reset()` 丢弃尾帧。`on_read()` 收到的帧已填充经 `convert_url_meta()` 处理后的有效 `ser_type` / `schema_type`；若 `on_read()` 另行更改输出 URL，保留类型表示 payload 类型不变，若要按新 URL 的已知元数据重新解析则须先清空 `ser_type` 并把 `schema_type` 设为 `kUnknown`，转码时则应显式填写新类型。`BagPluginInterface` 接口版本为 2.0，加载与完整生命周期见 [13-integration.md](13-integration.md)。
+`BagProcessor` 同时是 `BagPluginInterface` 派生插件的基本构件，用于录制前 / 回放前的重排与转码：写侧由 `BagWriter::bind_bag_interface()` 在落盘前调用插件的 `on_write()`，读侧由 `BagReader::bind_bag_interface()` 在回放前调用 `on_read()`，二者均经插件内部的 `do_callback()` 重新发出。reader 在每个顶层 `play()` / `jump()` 读会话开始、ready 回调之前调用插件 `on_reset()`；重排插件应在此调用 `BagProcessor::reset()`，确保 `stop()` / `jump()` 留下的缓存和时间锚点不会污染新会话。只有自然完成的回放轮次才调用 `flush()`，保留尾帧并隔离下一轮；若在边界排空前观察到 `stop()` / `jump()`，则跳过 `flush()`，由下一会话的 `on_reset()` 丢弃尾帧。`on_read()` 收到的帧已填充经 `convert_url_meta()` 处理后的有效 `ser_type` / `schema_type`；若 `on_read()` 另行更改输出 URL，保留类型表示 payload 类型不变，若要按新 URL 的已知元数据重新解析则须先清空 `ser_type` 并把 `schema_type` 设为 `kUnknown`，转码时则应显式填写新类型。`BagPluginInterface` 接口版本为 2.0，加载与完整生命周期见 [13-integration.md](13-integration.md)。
 
 ---
 

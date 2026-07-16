@@ -1,6 +1,6 @@
 # 🌐 url_guide — VLink URL 书写指南
 
-VLink 通过 URL 将"业务话题"与"传输后端"两层概念解耦：业务代码仅依赖 URL 字符串，切换后端只需改写 URL 前缀。本目录聚焦 URL 本身的构成与书写规则，包含一个示例 —— `url_basics/`，演示 URL 解剖、字段语义、各传输的实例 URL 与运行时重映射。
+VLink 通过 URL 将“业务话题”与“传输后端”两层概念解耦：通信 API 仅依赖 URL 字符串。地址模型兼容的 topic 后端通常只需改写 scheme；SOME/IP、MQTT、FDBUS 等须按后端提供完整地址和参数。本目录聚焦 URL 本身的构成与书写规则，包含一个示例 —— `url_basics/`，演示 URL 解剖、字段语义、各传输的实例 URL 与运行时重映射。
 
 各传输后端的端到端运行样例（共享内存、SOME/IP、Ping-Pong RPC、最小 Hello World）置于 `../samples/` 下，每个样例展示对应后端 URL 的真实写法、所需守护进程与可调参数。
 
@@ -28,7 +28,7 @@ VLink 通过 URL 将"业务话题"与"传输后端"两层概念解耦：业务�
 
 | 后端 | 常用 query / fragment |
 |------|----------------------|
-| `dds://` / `ddsc://` | `domain`、`depth`、`history`、`qos`、`reliability` |
+| `dds://` / `ddsc://` | `domain`、`depth`、`qos`；FastDDS `dds://` 另支持 `part` / `topic` / `pub` / `sub` / `writer` / `reader` XML profile key |
 | `shm://` | `domain`、`depth`、`history`、`wait` |
 | `someip://` | `groups`、`event`、`field`、`method`、`major`、`minor` |
 | `mqtt://` | `qos`（MQTT QoS 0/1/2）；fragment 携带 broker 地址（`#tcp://broker:1883`） |
@@ -38,7 +38,7 @@ VLink 通过 URL 将"业务话题"与"传输后端"两层概念解耦：业务�
 
 ## 🔁 运行时重映射（VLINK_URL_REMAP）
 
-无需改动业务代码，通过环境变量 `VLINK_URL_REMAP` 指向一份 JSON 映射文件，框架在创建节点时将 URL 前缀整体替换：
+无需改动业务代码，通过环境变量 `VLINK_URL_REMAP` 指向一份 JSON 映射文件，框架在创建节点时将命中的 URL 映射为规则中给出的完整目标 URL：
 
 ```bash
 export VLINK_URL_REMAP=/etc/vlink/remap.json
@@ -47,7 +47,7 @@ export VLINK_URL_REMAP=/etc/vlink/remap.json
 ```json
 {
   "dds://vehicle/speed": "shm://vehicle/speed",
-  "ddsc://": "dds://"
+  "ddsc://vehicle/pose": "dds://vehicle/pose"
 }
 ```
 
@@ -55,9 +55,11 @@ export VLINK_URL_REMAP=/etc/vlink/remap.json
 
 | 场景 | 用途 |
 |------|------|
-| 灰度切换 | 将生产环境某 topic 从 DDS 切到 shm，业务不重启 |
-| 测试环境 | 将所有 `dds://` 重映射到 `intra://`，免除 DDS 部署 |
+| 部署切换 | 在进程启动前把指定 topic 从 DDS 映射到 shm |
+| 测试环境 | 为需要替换的 DDS topic 逐条配置完整 `intra://` 目标 URL |
 | 调试 | 将 topic 重定向到本地 fallback |
+
+映射 key 只负责子串匹配，命中后不会保留输入 URL 中未匹配的部分，因此 `{"dds://": "shm://"}` 不能完成通用前缀替换。全局映射表在进程首次使用时加载一次；修改文件后需重启进程。需要在应用内动态更新时，应显式持有 `UrlRemap` 并在调用方完成同步后调用 `reload()`。
 
 ## 🗺️ 阅读顺序
 

@@ -2,7 +2,7 @@
 
 演示零拷贝的两个基础设施：**Loan API**（Publisher 从传输层 SHM 池借出内存，业务直接在借出的内存上写数据，发布时不再拷贝）与 **`vlink::zerocopy::RawData`**（带 header 的可序列化字节容器，提供 shallow / deep / move 三种拷贝语义）。
 
-在 `shm://` / `shm2://` 等具备缓冲池的后端上零拷贝生效；`dds://`、`intra://` 等无池后端退化为普通分配 + 序列化，loan API 仍可调用。
+在 `shm://` / `shm2://` 等具备缓冲池的后端上零拷贝生效；`dds://`、`intra://` 等无池后端的 `is_support_loan()` 返回 `false`，业务须改用普通分配并正常发布。
 
 ## 🧭 核心 API 索引
 
@@ -10,8 +10,7 @@
 |-----|------|
 | `pub.is_support_loan()` | 当前传输是否支持 loan（dds 返回 false，需走 `Bytes::create` 回退） |
 | `pub.loan(size)` | 从池中借出一段内存，返回 loaned `Bytes` |
-| `pub.return_loan(bytes)` | 归还未使用的 loan（`publish` 会自动归还） |
-| `sub.set_manual_unloan(bool)` | 由订阅端控制缓冲生命周期，回调内须显式 `return_loan` |
+| `pub.return_loan(bytes)` | 归还未使用或发布失败的 loan（对已被后端消费的缓冲区为无害空操作） |
 | `RawData::create(size)` | 分配内部缓冲 + header |
 | `RawData::shallow_copy / deep_copy / move_copy` | 别名 / 深拷贝 / 移动所有权 |
 | `RawData::header` | 公开字段：`seq` / `time_meas` / `time_pub` / `frame_id` |
@@ -19,6 +18,13 @@
 | `RawData::is_owner()` | 是否拥有底层内存（接收端为 false） |
 
 ## 🚀 最小示例
+
+运行完整示例前须启动对应的共享内存运行时；`shm://` 默认使用 Iceoryx RouDi：
+
+```bash
+iox-roudi &
+./build/output/bin/example_zerocopy_basic
+```
 
 loan 检测 + 借出 + 发布（无池后端回退）：
 
@@ -29,19 +35,12 @@ if (pub.is_support_loan()) {
   vlink::Bytes buf = pub.loan(sizeof(SensorSample));
   auto* s = reinterpret_cast<SensorSample*>(buf.data());
   s->id = 1;
-  pub.publish(buf);                       // publish 后框架自动归还 loan
+  if (!pub.publish(buf, true)) {          // force=true：示例未创建匹配订阅者
+    pub.return_loan(buf);                 // 未进入后端发布路径时显式归还
+  }
 } else {
-  pub.publish(vlink::Bytes::create(sizeof(SensorSample)));
+  pub.publish(vlink::Bytes::create(sizeof(SensorSample)), true);
 }
-```
-
-订阅端手动归还（拿到消息后要异步留用时）：
-
-```cpp
-sub.set_manual_unloan(true);
-sub.listen([&sub](const vlink::Bytes& msg) {
-  sub.return_loan(msg);                   // 不归还会耗尽池并阻塞发布端
-});
 ```
 
 `RawData` 三种拷贝语义（性能 shallow > move > deep）：
@@ -61,7 +60,7 @@ moved.move_copy(src);                    // 接管所有权，src 失效
 
 | 场景 | 方案 |
 |------|------|
-| 大消息（图像、点云、地图）+ 高频 publish + `shm://` 后端 | 用 loan 或 `RawData` 直接零拷贝 |
+| 大消息（图像、点云、地图）+ 高频 publish + `shm://` 后端 | 发布端直接写池内存用 `Publisher<Bytes>::loan()`；`RawData` 提供接收侧借用视图 |
 | 跨进程传感器帧 | 用专用容器 `CameraFrame` / `PointCloud`（均以 `RawData` 为基），见 `doc/06-zerocopy.md` |
 | 小消息或非共享内存后端 | 直接用普通 `Publisher<T>`，无需 loan |
 

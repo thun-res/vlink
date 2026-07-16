@@ -100,7 +100,7 @@
         <mxCell id="L3t" value="Transport Modules  -  12 Backends  /  URL Prefix Routing" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;fillColor=#1976d2;strokeColor=#0d47a1;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#ffffff;spacingLeft=14;arcSize=14;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="52" y="416" width="500" height="28" as="geometry" />
         </mxCell>
-        <mxCell id="L3badge" value="Switch backend by URL prefix  -  Zero app-code change" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+        <mxCell id="L3badge" value="URL scheme selects backend &#183; addressing is backend-specific" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
           <mxGeometry x="528" y="418" width="420" height="24" as="geometry" />
         </mxCell>
 

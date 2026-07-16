@@ -1,6 +1,6 @@
 # 📡 c_pubsub — 纯 C 实现的事件发布/订阅
 
-用纯 C 完成一对 `Publisher` / `Subscriber` 的创建、匹配、发布与销毁，是 `vlink/external/c_api.h` 最简单的入口。无需 C++ 编译器即可接入 VLink，适用于嵌入式 C 工程与 Rust/Go/Zig FFI。URL 使用 `intra://` 进程内传输免守护进程；切换 `dds://` / `shm://` / `someip://` 只改前缀，代码不变。
+用纯 C 完成一对 `Publisher` / `Subscriber` 的创建、匹配、发布与销毁，是 `vlink/external/c_api.h` 最简单的入口。无需 C++ 编译器即可接入 VLink，适用于嵌入式 C 工程与 Rust/Go/Zig FFI。URL 使用 `intra://` 进程内传输免守护进程；迁移到 `dds://` / `shm://` 等 topic 后端可保留地址，SOME/IP 则须提供 service/instance/groups/event。C API 调用流程不变。
 
 ![C API PubSub 流程](./images/c-api-pubsub-flow.png)
 

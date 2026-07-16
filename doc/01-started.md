@@ -278,7 +278,7 @@ target_link_libraries(my_app PRIVATE vlink::vlink vlink::dds vlink::shm vlink::i
 | URL 前缀 | 链接目标 | 说明 |
 | --- | --- | --- |
 | `intra://` | `vlink::intra` | 进程内，无需序列化 |
-| `shm://` | `vlink::shm` | Iceoryx 共享内存，同机零拷贝 |
+| `shm://` | `vlink::shm` | Iceoryx 共享内存；支持 transport loan |
 | `shm2://` | `vlink::shm2` | Iceoryx2 共享内存（Beta） |
 | `dds://` | `vlink::dds` | Fast-DDS，跨机首选 |
 | `ddsc://` | `vlink::ddsc` | CycloneDDS，跨机 |
@@ -539,8 +539,8 @@ cmake --build build_cross -j$(nproc)
 | --- | --- | --- | --- |
 | ARM Linux | `linux/linux.toolchain.aarch64.cmake` | `CROSS_COMPILE_PREFIX`（如 `aarch64-linux-gnu-`），sysroot 设 `LINUX_INSTALL_PREFIX` | 先装 `gcc-aarch64-linux-gnu g++-aarch64-linux-gnu` |
 | Android | `android/android.toolchain.aarch64.cmake` | `ANDROID_NDK`（NDK 根目录） | 必须 `c++_shared`；`shm://` 不可用，改用 `dds://`/`intra://`；日志走 native；API 21+ |
-| QNX | `qnx/qnx.toolchain.aarch64.cmake` | `QNX_HOST` / `QNX_TARGET`（source `qnxsdp-env.sh` 后自动设） | `qnx://` 仅在 QNX 目标可用；`shm://` 不可用 |
-| macOS | 本机直接编；交叉用 `darwin/darwin.toolchain.aarch64.cmake` | 交叉时 `VLINK_HOST_PLATFORM=darwin-x86_64` | Universal 包用 `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`；`shm://` 不可用 |
+| QNX | `qnx/qnx.toolchain.aarch64.cmake` | `QNX_HOST` / `QNX_TARGET`（source `qnxsdp-env.sh` 后自动设） | `qnx://` 仅在 QNX 目标可用；`shm://` 需构建 Iceoryx 模块并运行 RouDi |
+| macOS | 本机直接编；交叉用 `darwin/darwin.toolchain.aarch64.cmake` | 交叉时 `VLINK_HOST_PLATFORM=darwin-x86_64` | Universal 包用 `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`；`shm://` 需构建 Iceoryx 模块并运行 RouDi |
 | Yocto | `linux/linux.toolchain.aarch64.cmake` | source SDK 后自动有 `SYSROOT` / `OE_CMAKE_TOOLCHAIN_FILE` | 工具链文件自动 include OE 配置 |
 | Buildroot | `linux/linux.toolchain.aarch64.cmake` | `CROSS_COMPILE_PREFIX` + `LINUX_INSTALL_PREFIX` 指向 Buildroot host/staging | 建议 `MinSizeRel` + 关闭 Proxy/SQLite |
 
@@ -683,7 +683,7 @@ ls build/output/bin/
 
 ### 📡 1.12.3 通信模型示例
 
-`communication/` 覆盖三种模型的完整用法。模型选型遵循语义判据：数据持续流动且消费者不要求历史一致，选 Event；需要返回值的请求 / 响应，选 Method；只关心当前状态且后加入者须立即获得最新值，选 Field。
+`communication/` 覆盖三种模型的完整用法。模型选型遵循语义判据：数据持续流动且消费者不要求历史一致，选 Event；需要返回值的请求 / 响应，选 Method；只关心当前状态，选 Field。后加入 Getter 是否能立即获得最新值仍取决于后端与 durability/QoS。
 
 | 示例 | 模型 | 演示的 API |
 | --- | --- | --- |
@@ -699,7 +699,7 @@ ls build/output/bin/
 
 | 分类 | 示例 | 主题 | 详解 |
 | --- | --- | --- | --- |
-| serialization | `basic_types` | POD 结构体与基本类型，零序列化开销 | [消息序列化](03-serialization.md) |
+| serialization | `basic_types` | POD 结构体与基本类型，无编码转换、直接内存复制 | [消息序列化](03-serialization.md) |
 | url_guide | `url_basics` | URL 结构、参数与话题重映射 | [传输后端与 URL](04-transport.md) |
 | qos | `qos_basics` | QoS 基础参数与预设 profile（事件 / 方法 / 字段 / 传感器） | [QoS 配置](05-qos.md) |
 
@@ -736,7 +736,7 @@ ls build/output/bin/
 | --- | --- | --- | --- | --- |
 | `helloworld` | 多后端可切换 | Protobuf | Method + Event | 覆盖面最广的入门样例 |
 | `ping_pong` | 多后端可切换 | Bytes（POD） | Event（双向） | 端到端延迟测量 |
-| `shm_raw` | `shm://` | Bytes | Method + Event + Field | 零拷贝与加密的全模型演示 |
+| `shm_raw` | `shm://` | Bytes | Method + Event + Field | 共享内存后端上的加密全模型演示（安全路径会复制密文） |
 | `someip_flat` | `someip://` | FlatBuffers | Method + Event + Field | SOME/IP 车载以太网场景（Beta） |
 
 ### 🚦 1.12.8 后端运行前置

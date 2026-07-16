@@ -1,12 +1,12 @@
 # ♻️ lifecycle — 节点生命周期：延迟初始化、init/deinit、interrupt
 
-vlink 六种原语（Publisher / Subscriber / Server / Client / Setter / Getter）默认在构造时即创建底层 transport。当需要在创建 transport 前配置 QoS / property 时，使用 `kWithoutInit` 延迟初始化，配置完成后再调用 `init()`。
+vlink 六种原语（Publisher / Subscriber / Server / Client / Setter / Getter）默认在构造时即创建底层 transport。当需要在创建 transport 前设置后端属性，或调用 `set_ser_type()`、`set_discovery_enabled()` 等初始化前接口时，使用 `kWithoutInit` 延迟初始化，配置完成后再调用 `init()`。Endpoint QoS 应通过 URL 或对应后端的 `Conf` 配置。
 
 ![Node lifecycle](./images/node-lifecycle.png)
 
 ## 🎯 适用场景
 
-- 在创建 transport 前调用 `set_property` 配置 QoS / SchemaType。
+- 在创建 transport 前设置后端支持的 property，或配置序列化类型、发现上报等初始化参数。
 - 先将节点交由某模块持有，稍后再启动；或在测试 / 仿真中动态启停节点。
 - 简单场景使用默认构造即可，无需关注延迟初始化。
 
@@ -30,10 +30,9 @@ vlink 六种原语（Publisher / Subscriber / Server / Client / Setter / Getter�
 ## 🚀 最小示例
 
 ```cpp
-// 延迟初始化：先配置 QoS，再 init
+// 延迟初始化：先配置 DDS participant 使用的网卡，再 init
 vlink::Publisher<std::string> pub("dds://topic", vlink::InitType::kWithoutInit);
-pub.set_property("qos.reliability.kind", "1");
-pub.set_property("qos.history.depth", "10");
+pub.set_property("dds.ip", "127.0.0.1");
 pub.init();                              // 按上述配置创建 transport
 pub.publish("hello");
 
@@ -46,7 +45,7 @@ pub.wait_for_subscribers(1000ms);        // 因 interrupt 提前返回 false
 waker.join();
 ```
 
-推荐流程（六种原语通用）：`construct(kWithoutInit) -> set_property -> init -> 使用 -> deinit`。
+推荐流程（六种原语通用）：`construct(kWithoutInit) -> 按需配置受支持的初始化参数 -> init -> 使用 -> deinit`。
 
 ## ⚠️ 注意事项
 

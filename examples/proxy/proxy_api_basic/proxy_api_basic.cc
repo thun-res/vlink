@@ -107,14 +107,16 @@ int main() {
   // Section: ask the server to enter "stream me all topic info" mode. The
   // token handshake happens transparently inside send_control: ProxyAPI
   // presents its session token, the server validates it is still the active
-  // controller, and only then changes mode. Returns false if the server
-  // rejected (e.g., another controller is already active).
+  // controller, and only then changes mode. With the default async=true, the
+  // return value only reports whether the task was accepted by the local
+  // event loop; use async=false when the server's synchronous result is needed.
   vlink::ProxyAPI::Control ctrl;
   ctrl.mode = vlink::ProxyAPI::kObserveAll;
   VLOG_I("send_control(kObserveAll) returned: ", api.send_control(ctrl));
 
-  // Section: introspection getters. current_mode reflects the last value
-  // acknowledged by the server (NOT the value we requested). is_connected
+  // Section: introspection getters. current_mode reflects the most recent mode
+  // passed to send_control(), even before an asynchronous server reply.
+  // is_connected
   // is driven by the 1Hz heartbeat exchange. is_support_shm / is_enable_filter
   // surface server-side capability flags published in the info stream.
   VLOG_I("current_mode=", static_cast<int>(api.get_current_mode()), " connected=", api.is_connected(),

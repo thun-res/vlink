@@ -20,22 +20,15 @@
 ## 🚀 最小可运行片段
 
 ```cpp
-vlink::MessageLoop loop;
-
 // std::string：直接收发，框架自动序列化
-vlink::Subscriber<std::string> sub("intra://example/basic/string");
-sub.attach(&loop);
+vlink::Subscriber<std::string> sub("intra://example/basic/string#direct");
 sub.listen([](const std::string& msg) { VLOG_I("recv: ", msg); });
 
-vlink::Publisher<std::string> pub("intra://example/basic/string");
-pub.attach(&loop);
+vlink::Publisher<std::string> pub("intra://example/basic/string#direct");
 pub.publish(std::string("Hello, VLink!"));
-
-loop.async_run();
-loop.wait_for_idle(1000);
-loop.quit();
-loop.wait_for_quit();
 ```
+
+`intra://` 六种原语不支持 `Node::attach()`；本示例用 `#direct` 让回调在发布线程内同步完成。默认 `#queue` 则由 intra 自身的 pipeline 派发。
 
 POD 结构体（平凡 + 标准布局）可直接作为 `T`：`vlink::Publisher<SensorReading>`，发布前用 `SensorReading r{}` 零初始化以避免填充字节不确定。`vlink::Bytes` 用法相同，并附带 Base64 / CRC32 等工具方法。
 
