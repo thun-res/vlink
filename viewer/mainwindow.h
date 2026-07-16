@@ -270,6 +270,7 @@ class MainWindow : public QMainWindow {
   QTimer* filter_timer_{nullptr};
   QSqlDatabase local_database_;
   vlink::BagReader::Info local_info_;
+  std::unordered_map<std::string, vlink::SchemaType> local_schema_type_map_;
   bool local_use_compress_{false};
   vlink::ElapsedTimer info_elapsed_timer_;
 

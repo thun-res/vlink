@@ -267,12 +267,12 @@ TEST_SUITE("extension-TriggerRecorder") {
     CHECK(config.dump_dir.empty());
     CHECK_EQ(config.file_type, vlink::TriggerRecorder::kVdb);
     CHECK_EQ(config.default_pre_ms, 15000);
-    CHECK_EQ(config.default_post_ms, 5000);
+    CHECK_EQ(config.default_post_ms, 0);
     CHECK_EQ(config.default_max_packet_size, 4LL * 1024 * 1024);
     CHECK_EQ(config.default_max_size, 0);
-    CHECK_EQ(config.max_cache_size, 1024LL * 1024 * 1024);
+    CHECK_EQ(config.max_cache_size, 2LL * 1024 * 1024 * 1024);
     CHECK_EQ(config.retention_guard_ms, 500);
-    CHECK_EQ(config.max_dump_file_count, 16);
+    CHECK_EQ(config.max_dump_file_count, 10);
     CHECK_FALSE(config.enable_compress);
     CHECK_FALSE(config.busy_skip_data);
     CHECK_FALSE(config.destroy_on_offline);

@@ -455,7 +455,7 @@ int main() {
 vlink::TriggerRecorder::Config config;
 config.dump_dir        = "/data/edr";
 config.default_pre_ms  = 15'000;   // 默认触发前 15 s
-config.default_post_ms = 5'000;    // 默认触发后 5 s
+config.default_post_ms = 0;        // 默认不录触发后数据
 
 vlink::TriggerRecorder::UrlConfig radar;
 radar.pre_ms  = 15'000;            // 该 URL 触发前 15 s

@@ -88,7 +88,7 @@
  * vlink::TriggerRecorder::Config config;
  * config.dump_dir        = "/data/edr";
  * config.default_pre_ms  = 15'000;
- * config.default_post_ms = 5'000;
+ * config.default_post_ms = 0;
  *
  * vlink::TriggerRecorder::UrlConfig camera;
  * camera.pre_ms  = 15'000;  // pre=15s
@@ -218,12 +218,12 @@ class VLINK_EXPORT TriggerRecorder : public MessageLoop {
     std::string dump_dir;                                ///< Output directory; empty => {tmp}/vlink-trigger.
     FileType file_type{kVdb};                            ///< Bag container format.
     int64_t default_pre_ms{15'000};                      ///< Default pre-trigger window in ms.
-    int64_t default_post_ms{5'000};                      ///< Default post-trigger window in ms.
+    int64_t default_post_ms{0};                          ///< Default post-trigger window in ms.
     int64_t default_max_packet_size{4LL * 1024 * 1024};  ///< Default per-packet byte limit in bytes (0 = unlimited).
     int64_t default_max_size{0};                         ///< Default per-URL ring byte cap (0 = unlimited).
-    int64_t max_cache_size{1024LL * 1024 * 1024};        ///< Global ring byte cap across all URLs.
+    int64_t max_cache_size{2LL * 1024 * 1024 * 1024};    ///< Global ring byte cap across all URLs.
     int64_t retention_guard_ms{500};                     ///< Extra retention margin to absorb dump-timer jitter.
-    int max_dump_file_count{16};                ///< Rotation cap; only auto-named dumps trigger dump_dir rotation.
+    int max_dump_file_count{10};                ///< Rotation cap; only auto-named dumps trigger dump_dir rotation.
     bool enable_compress{false};                ///< Compress the dumped bag.
     bool busy_skip_data{false};                 ///< Drop incoming data while a bag is being written.
     bool destroy_on_offline{false};             ///< Destroy offline subscribers; an in-flight dump keeps their data.

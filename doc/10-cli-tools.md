@@ -365,12 +365,12 @@ daemon 在指定 `-c` 时先读取 JSON，再按字段应用命令行中**显式
 | `allow_outside_dir` | `true` | 是否允许 RPC 的显式 `out_file` 位于 `dump_dir` 外；设为 `false` 时限制在 `dump_dir` 内。该开关不改变相对路径基准和后缀校验 |
 | `file_type` | `vdb` | 落盘格式：`vdb`（SQLite 容器）/ `vcap`（MCAP 容器） |
 | `default_pre_ms` | `15000` | 默认触发前窗口（毫秒） |
-| `default_post_ms` | `5000` | 默认触发后窗口（毫秒） |
+| `default_post_ms` | `0` | 默认触发后窗口（毫秒） |
 | `default_max_packet_size` | `4` | 默认单包上限（MB），`0` 表示不限制，超限的包丢弃 |
 | `default_max_size` | `0` | 默认每 URL 缓冲字节上限（MB），`0` 不限制 |
-| `max_cache_size` | `1024` | 全局缓冲字节上限（MB），跨所有 URL 汇总；超限腾挪仅发生在正接收数据的 URL 自身环内，不会跨 URL 淘汰他人历史 |
+| `max_cache_size` | `2048` | 全局缓冲字节上限（MB），跨所有 URL 汇总；首次超限时输出警告，超限腾挪仅发生在正接收数据的 URL 自身环内，不会跨 URL 淘汰他人历史 |
 | `retention_guard_ms` | `500` | 额外保留裕量（毫秒），吸收落盘定时抖动 |
-| `max_dump_file_count` | `16` | 落盘文件保留上限；仅自动命名的落盘触发轮转，按后缀统计并清理 `dump_dir` 下最旧文件（显式 `out_file` 的落盘不触发轮转） |
+| `max_dump_file_count` | `10` | 落盘文件保留上限；仅自动命名的落盘触发轮转，按后缀统计并清理 `dump_dir` 下最旧文件（显式 `out_file` 的落盘不触发轮转） |
 | `enable_compress` | `false` | 落盘 bag 是否压缩 |
 | `busy_skip_data` | `false` | 落盘进行中丢弃新到数据（会在环形缓冲留下时间空洞） |
 | `destroy_on_offline` | `false` | URL 从发现中消失时销毁其订阅者；已缓冲数据仍供在飞落盘读取 |
@@ -397,10 +397,10 @@ daemon 在指定 `-c` 时先读取 JSON，再按字段应用命令行中**显式
     "allow_outside_dir": true,
     "file_type": "vdb",
     "default_pre_ms": 15000,
-    "default_post_ms": 5000,
+    "default_post_ms": 0,
     "default_max_packet_size": 4,
     "max_cache_size": 2048,
-    "max_dump_file_count": 16,
+    "max_dump_file_count": 10,
     "enable_compress": false,
     "overflow": "drop",
     "sleep_interval_mb": 4,

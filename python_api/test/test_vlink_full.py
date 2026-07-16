@@ -1802,6 +1802,9 @@ def test_discovery_viewer_fields():
 def test_plugin_host_binding_contract():
     config = _vlink.TriggerRecorder.Config()
     assert config.default_pre_ms == 15000
+    assert config.default_post_ms == 0
+    assert config.max_cache_size == 2 * 1024 * 1024 * 1024
+    assert config.max_dump_file_count == 10
     assert config.retention_guard_ms == 500
     assert config.enable_compress is False
     assert config.overflow == _vlink.TriggerRecorder.OverflowPolicy.DropNewest

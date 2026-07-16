@@ -99,6 +99,7 @@ struct TriggerRecorder::Impl final {  // NOLINT(clang-analyzer-optin.performance
 
   std::atomic<int64_t> max_post_all_us{0};
   std::atomic<int64_t> global_bytes{0};
+  std::atomic_bool cache_overflow_warned{false};
   std::atomic_bool dumping{false};
   std::atomic_bool writing{false};
   std::atomic_bool running{false};
@@ -354,6 +355,7 @@ void TriggerRecorder::on_begin() {
   }
 
   impl_->capture_timer.start();
+  impl_->cache_overflow_warned.store(false, std::memory_order_relaxed);
   impl_->anchor_wall_us =
       static_cast<int64_t>(ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMicro)) - impl_->capture_timer.get();
 
@@ -450,6 +452,11 @@ void TriggerRecorder::handle_data(UrlBuffer& url_buffer, const Bytes& data) {
   }
 
   if VUNLIKELY (impl_->config.max_cache_size > 0 && incoming > impl_->config.max_cache_size) {
+    if (!impl_->cache_overflow_warned.exchange(true, std::memory_order_relaxed)) {
+      VLOG_W("TriggerRecorder: max_cache_size exceeded, current=", impl_->global_bytes.load(std::memory_order_relaxed),
+             " incoming=", incoming, " limit=", impl_->config.max_cache_size, " action=drop");
+    }
+
     return;
   }
 
@@ -497,6 +504,12 @@ void TriggerRecorder::handle_data(UrlBuffer& url_buffer, const Bytes& data) {
 
     if (impl_->config.max_cache_size > 0 && global > impl_->config.max_cache_size - incoming) {
       global_need = global - (impl_->config.max_cache_size - incoming);
+
+      if (!impl_->cache_overflow_warned.exchange(true, std::memory_order_relaxed)) {
+        VLOG_W("TriggerRecorder: max_cache_size exceeded, current=", global, " incoming=", incoming,
+               " limit=", impl_->config.max_cache_size,
+               " policy=", impl_->config.overflow == kDropNewest ? "drop" : "cover");
+      }
 
       if (impl_->config.overflow == kDropNewest) {
         url_buffer.ring.pop_back();

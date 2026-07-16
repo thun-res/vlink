@@ -1626,14 +1626,11 @@ void MainWindow::on_pushButton_datareload_clicked() {
     auto player = vlink::BagReader::create(ui->lineEdit_datapath->text().toStdString(), true);
     local_info_ = player->get_info();
     local_use_compress_ = (local_info_.compression_type != "None");
-    ser_map_.clear();
-    schema_type_map_.clear();
-    ser_map_.reserve(local_info_.url_metas.size());
-    schema_type_map_.reserve(local_info_.url_metas.size());
+    local_schema_type_map_.clear();
+    local_schema_type_map_.reserve(local_info_.url_metas.size());
 
     for (const auto& meta : local_info_.url_metas) {
-      ser_map_[meta.url] = meta.ser_type;
-      schema_type_map_[meta.url] = vlink::SchemaData::resolve_type(meta.schema_type, meta.ser_type);
+      local_schema_type_map_[meta.url] = vlink::SchemaData::resolve_type(meta.schema_type, meta.ser_type);
     }
   } catch (std::exception&) {
     QMessageBox::warning(this, tr("Warning"), tr("Cannot open database."));
@@ -3124,9 +3121,10 @@ bool MainWindow::update_proto_root_msg(const std::string& url, const std::string
 
   ui->lineEdit_protoser->setText(QString::fromStdString(ser));
 
-  const auto schema_iter = schema_type_map_.find(url);
+  const auto& schema_type_map = ui->stackedWidget_main->currentIndex() == 0 ? schema_type_map_ : local_schema_type_map_;
+  const auto schema_iter = schema_type_map.find(url);
   const auto schema_type = vlink::SchemaData::resolve_type(
-      schema_iter != schema_type_map_.end() ? schema_iter->second : vlink::SchemaType::kUnknown, ser);
+      schema_iter != schema_type_map.end() ? schema_iter->second : vlink::SchemaType::kUnknown, ser);
 
   if (ser.find('|') != std::string::npos) {
     desc_ = nullptr;
@@ -3228,10 +3226,8 @@ void MainWindow::update_local_proto() {
   proxy_data.timestamp = time_variant.toLongLong();
   proxy_data.url = url_variant.toString().toStdString();
   proxy_data.ser = ser_variant.toString().toStdString();
-  {
-    const auto schema_iter = schema_type_map_.find(proxy_data.url);
-    proxy_data.schema = schema_iter != schema_type_map_.end() ? schema_iter->second : vlink::SchemaType::kUnknown;
-  }
+  const auto schema_iter = local_schema_type_map_.find(proxy_data.url);
+  proxy_data.schema = schema_iter != local_schema_type_map_.end() ? schema_iter->second : vlink::SchemaType::kUnknown;
 
   const auto& byte_array = data_variant.toByteArray();
 
