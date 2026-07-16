@@ -405,6 +405,39 @@ TEST_SUITE("extension-BagProcessor") {
     CHECK_EQ(received[2].timestamp, 1030);
   }
 
+  TEST_CASE("initial missing data-plane times advance the cache window on canonical time") {
+    std::vector<BagProcessorOutput> received;
+    std::mutex mtx;
+    ConditionVariable cv;
+
+    BagProcessor::Config cfg;
+    cfg.min_cache_time = 1;
+    BagProcessor processor(cfg);
+
+    processor.register_output_callback([&](const Frame& frame) {
+      std::lock_guard lock(mtx);
+      received.push_back({frame.timestamp, frame.url});
+      cv.notify_all();
+    });
+
+    processor.push(-1, make_frame(3000, "missing-middle"));
+    processor.push(-1, make_frame(1000, "missing-earlier"));
+    processor.push(-1, make_frame(4001, "missing-later"));
+
+    {
+      std::unique_lock lock(mtx);
+      REQUIRE(cv.wait_for(lock, 2s, [&] { return received.size() >= 2u; }));
+      CHECK_EQ(received[0].url, "missing-earlier");
+      CHECK_EQ(received[1].url, "missing-middle");
+    }
+
+    processor.flush();
+
+    std::lock_guard lock(mtx);
+    REQUIRE_EQ(received.size(), 3u);
+    CHECK_EQ(received[2].url, "missing-later");
+  }
+
   TEST_CASE("initial missing data-plane time stays before marked data-plane time") {
     std::vector<BagProcessorOutput> received;
 

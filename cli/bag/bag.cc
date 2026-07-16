@@ -75,7 +75,6 @@ std::atomic<double> max_memory_size{0};
 std::atomic<size_t> total_size{0};
 std::atomic<double> total_real_size{0};
 std::atomic_bool skip_blank{false};
-std::atomic<uint64_t> skip_time{0};
 std::atomic<uint8_t> time_method{kUseUnknown};
 
 [[maybe_unused]] std::atomic<int> play_loop_index{-1};
@@ -134,7 +133,8 @@ vlink::ElapsedTimer total_size_timer;
   return -1;
 }
 
-[[maybe_unused]] static void start_print(int64_t start_time, int64_t total_time, int64_t date_time, bool restart) {
+[[maybe_unused]] static void start_print(int64_t start_time, int64_t total_time, int64_t date_time, bool restart,
+                                         int64_t progress_start_time = 0) {
   quit_flag = false;
 
   static bool has_start = false;
@@ -158,7 +158,7 @@ vlink::ElapsedTimer total_size_timer;
     return;
   }
 
-  print_thread = std::thread([start_time, total_time, date_time]() {
+  print_thread = std::thread([start_time, total_time, date_time, progress_start_time]() {
     int64_t print_time = 0;
     int split_index = 0;
 
@@ -252,11 +252,8 @@ vlink::ElapsedTimer total_size_timer;
         }
       }
 
-      if (skip_blank) {
-        percent = (static_cast<double>(print_time - skip_time) / std::max(total_time, static_cast<int64_t>(1))) * 100.0;
-      } else {
-        percent = (static_cast<double>(print_time) / std::max(total_time, static_cast<int64_t>(1))) * 100.0;
-      }
+      const int64_t play_duration = std::max(total_time - progress_start_time, static_cast<int64_t>(1));
+      percent = (static_cast<double>(print_time - progress_start_time) / static_cast<double>(play_duration)) * 100.0;
 
       if VUNLIKELY (percent < 0) {
         percent = 0;
@@ -1316,8 +1313,6 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
     return -1;
   }
 
-  skip_time = player->get_info().blank_duration;
-
   is_split_mode = player->is_split_mode();
 
   if VUNLIKELY (load_and_bind_bag_plugin(plugin, plugin_name, player) != 0) {
@@ -1416,7 +1411,8 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
 
   vlink::BagReader::Status last_status = vlink::BagReader::kStopped;
 
-  auto total_time = player->get_info().total_duration;
+  const int64_t total_time = player->get_info().total_duration;
+  const int64_t progress_start_time = skip_blank ? player->get_info().blank_duration : 0;
 
   time_callback = [player_ptr = player.get()]() -> int64_t {
     if VUNLIKELY (has_quit) {
@@ -1478,51 +1474,52 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
     }
   });
 
-  player->register_status_callback(
-      [player_ptr = player.get(), begin_time, total_time, date_time, &last_status](vlink::BagReader::Status status) {
-        split_count = player_ptr->get_info().split_count;
+  player->register_status_callback([player_ptr = player.get(), begin_time, total_time, progress_start_time, date_time,
+                                    &last_status](vlink::BagReader::Status status) {
+    split_count = player_ptr->get_info().split_count;
 
-        if (last_status == vlink::BagReader::kStopped) {
-          ++play_loop_index;
+    if (last_status == vlink::BagReader::kStopped) {
+      ++play_loop_index;
+    }
+
+    if (status == vlink::BagReader::kStopped) {
+      pause_to_next_flag = false;
+      is_paused = false;
+
+      if (!quiet_flag && !detail_flag) {
+        stop_print();
+      }
+    } else {
+      is_paused = (status == vlink::BagReader::kPaused);
+
+      int64_t target_date_time = 0;
+
+      if (time_method == kUseLocalTime) {
+        target_date_time = date_time + player_ptr->get_info().timezone * 60 * 1000;
+      } else if (time_method == kUseUtcTime) {
+        target_date_time = date_time;
+
+        if (target_date_time > 24 * 60 * 60 * 1000) {
+          target_date_time -= 24 * 60 * 60 * 1000;
         }
+      }
 
-        if (status == vlink::BagReader::kStopped) {
-          pause_to_next_flag = false;
-          is_paused = false;
+      if (!quiet_flag && !detail_flag) {
+        const bool restart = last_status == vlink::BagReader::kStopped && !player_ptr->is_ready_to_quit();
 
-          if (!quiet_flag && !detail_flag) {
-            stop_print();
-          }
+        if (skip_blank && begin_time == 0) {
+          start_print(player_ptr->get_info().blank_duration, total_time, target_date_time, restart,
+                      progress_start_time);
         } else {
-          is_paused = (status == vlink::BagReader::kPaused);
-
-          int64_t target_date_time = 0;
-
-          if (time_method == kUseLocalTime) {
-            target_date_time = date_time + player_ptr->get_info().timezone * 60 * 1000;
-          } else if (time_method == kUseUtcTime) {
-            target_date_time = date_time;
-
-            if (target_date_time > 24 * 60 * 60 * 1000) {
-              target_date_time -= 24 * 60 * 60 * 1000;
-            }
-          }
-
-          if (!quiet_flag && !detail_flag) {
-            if (skip_blank && begin_time == 0) {
-              start_print(player_ptr->get_info().blank_duration, total_time, target_date_time,
-                          (last_status == vlink::BagReader::kStopped && !player_ptr->is_ready_to_quit()));
-            } else {
-              start_print(begin_time, total_time, target_date_time,
-                          (last_status == vlink::BagReader::kStopped && !player_ptr->is_ready_to_quit()));
-            }
-          }
+          start_print(begin_time, total_time, target_date_time, restart, progress_start_time);
         }
+      }
+    }
 
-        last_status = status;
+    last_status = status;
 
-        update_print();
-      });
+    update_print();
+  });
 
   auto quit_function = [&player](int) {
     if VUNLIKELY (has_quit) {
@@ -1641,8 +1638,10 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
   try {
 #ifdef _WIN32
     auto filesys_source_path = std::filesystem::path(vlink::Helpers::string_to_wstring(source_path));
+    auto filesys_target_path = std::filesystem::path(vlink::Helpers::string_to_wstring(target_path));
 #else
     auto filesys_source_path = std::filesystem::path(source_path);
+    auto filesys_target_path = std::filesystem::path(target_path);
 #endif
 
     if VUNLIKELY (!std::filesystem::exists(filesys_source_path)) {
@@ -1651,7 +1650,9 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
       return -1;
     }
 
-    if VUNLIKELY (std::filesystem::path(source_path) == std::filesystem::path(target_path)) {
+    if VUNLIKELY (filesys_source_path.lexically_normal() == filesys_target_path.lexically_normal() ||
+                  (std::filesystem::exists(filesys_target_path) &&
+                   std::filesystem::equivalent(filesys_source_path, filesys_target_path))) {
       std::cerr << "The source file is same as target file." << std::endl;
       has_quit = true;
       return -1;
@@ -2960,7 +2961,15 @@ int main(int argc, char* argv[]) {
       return -1;
     }
 
-    if VUNLIKELY (wait_time < 0) {
+    static constexpr auto kMaxDurationSeconds = std::numeric_limits<uint32_t>::max() / 1000ULL;
+    static constexpr auto kMaxWaitSeconds = std::numeric_limits<int>::max() / 1000ULL;
+
+    if VUNLIKELY (!std::isfinite(duration) || duration > kMaxDurationSeconds) {
+      std::cerr << "Invalid duration [-d]" << std::endl;
+      return -1;
+    }
+
+    if VUNLIKELY (!std::isfinite(wait_time) || wait_time < 0 || wait_time > kMaxWaitSeconds) {
       std::cerr << "Invalid wait_time [-w]" << std::endl;
       return -1;
     }
@@ -2975,6 +2984,10 @@ int main(int argc, char* argv[]) {
     static constexpr auto kMaxMemorySizeGb = kMaxMemoryBytes / (1024ULL * 1024ULL * 1024ULL);
 
     static constexpr auto kMaxCacheSizeMb = std::numeric_limits<int64_t>::max() / (1024LL * 1024LL);
+
+    static constexpr auto kMaxSizeGb = std::numeric_limits<int64_t>::max() / (1024ULL * 1024ULL * 1024ULL);
+
+    static constexpr auto kMaxTimeSeconds = std::numeric_limits<int64_t>::max() / 1000000ULL;
 
     if VUNLIKELY (!std::isfinite(max_packet_size) || max_packet_size <= 0 || max_packet_size > kMaxPacketSizeMb) {
       std::cerr << "Invalid max_packet_size [-x]" << std::endl;
@@ -2992,7 +3005,32 @@ int main(int argc, char* argv[]) {
       return -1;
     }
 
+    if VUNLIKELY (!std::isfinite(max_bytes_size) || max_bytes_size <= 0 || max_bytes_size > kMaxSizeGb) {
+      std::cerr << "Invalid max_bytes_size [--max_bytes_size]" << std::endl;
+      return -1;
+    }
+
+    if VUNLIKELY (max_row_count <= 0) {
+      std::cerr << "Invalid max_row_count [--max_row_count]" << std::endl;
+      return -1;
+    }
+
+    if VUNLIKELY (!std::isfinite(split_by_size) || split_by_size < 0 || split_by_size > kMaxSizeGb) {
+      std::cerr << "Invalid split_by_size [-z]" << std::endl;
+      return -1;
+    }
+
+    if VUNLIKELY (!std::isfinite(split_by_time) || split_by_time < 0 || split_by_time >= kMaxTimeSeconds) {
+      std::cerr << "Invalid split_by_time [-y]" << std::endl;
+      return -1;
+    }
+
     compress_level = record_command.get<int>("--compress_level");
+
+    if VUNLIKELY (compress_level < 0 || compress_level > 5) {
+      std::cerr << "Invalid compress_level [--compress_level]" << std::endl;
+      return -1;
+    }
 
     auto ignore_compress = record_command.get<std::vector<std::string>>("--ignore_compress");
 
@@ -3145,7 +3183,15 @@ int main(int argc, char* argv[]) {
       }
     }
 
-    if VUNLIKELY (rate < 0.009999 || rate > 100.000001) {
+    static constexpr auto kMaxTimeSeconds = static_cast<double>(std::numeric_limits<int64_t>::max()) / 1000.0;
+
+    if VUNLIKELY (!std::isfinite(begin_time) || !std::isfinite(end_time) || begin_time < 0 || end_time < 0 ||
+                  begin_time >= kMaxTimeSeconds || end_time >= kMaxTimeSeconds) {
+      std::cerr << "Invalid begin_time or end_time [-b] [-e]" << std::endl;
+      return -1;
+    }
+
+    if VUNLIKELY (!std::isfinite(rate) || rate < 0.009999 || rate > 100.000001) {
       std::cerr << "Invalid rate [-r]" << std::endl;
       return -1;
     }
@@ -3278,12 +3324,39 @@ int main(int argc, char* argv[]) {
 
     static constexpr auto kMaxCacheSizeMb = std::numeric_limits<int64_t>::max() / (1024LL * 1024LL);
 
+    static constexpr auto kMaxSizeGb = std::numeric_limits<int64_t>::max() / (1024ULL * 1024ULL * 1024ULL);
+
+    static constexpr auto kMaxTimeSeconds = static_cast<double>(std::numeric_limits<int64_t>::max()) / 1000.0;
+
+    static constexpr auto kMaxSplitTimeSeconds = std::numeric_limits<int64_t>::max() / 1000000ULL;
+
     if VUNLIKELY (!std::isfinite(cache_size) || cache_size < 0 || cache_size > kMaxCacheSizeMb) {
       std::cerr << "Invalid cache_size [-c]" << std::endl;
       return -1;
     }
 
+    if VUNLIKELY (!std::isfinite(begin_time) || !std::isfinite(end_time) || begin_time < 0 || end_time < 0 ||
+                  begin_time >= kMaxTimeSeconds || end_time >= kMaxTimeSeconds) {
+      std::cerr << "Invalid begin_time or end_time [-b] [-e]" << std::endl;
+      return -1;
+    }
+
+    if VUNLIKELY (!std::isfinite(split_by_size) || split_by_size < 0 || split_by_size > kMaxSizeGb) {
+      std::cerr << "Invalid split_by_size [-z]" << std::endl;
+      return -1;
+    }
+
+    if VUNLIKELY (!std::isfinite(split_by_time) || split_by_time < 0 || split_by_time >= kMaxSplitTimeSeconds) {
+      std::cerr << "Invalid split_by_time [-y]" << std::endl;
+      return -1;
+    }
+
     compress_level = clone_command.get<int>("--compress_level");
+
+    if VUNLIKELY (compress_level < 0 || compress_level > 5) {
+      std::cerr << "Invalid compress_level [--compress_level]" << std::endl;
+      return -1;
+    }
 
     auto ignore_compress = clone_command.get<std::vector<std::string>>("--ignore_compress");
 

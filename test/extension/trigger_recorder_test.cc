@@ -225,7 +225,7 @@ class ReorderBagPlugin final : public vlink::BagPluginInterface {
     processor_.push(data_timestamp, frame);
   }
 
-  void reset() override { processor_.reset(); }
+  void on_reset() override { processor_.reset(); }
 
   void flush() override { processor_.flush(); }
 

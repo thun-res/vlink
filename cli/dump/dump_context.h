@@ -82,9 +82,6 @@ struct DumpContext final {
   std::mutex dump_callback_mtx;
 
   vlink::ElapsedTimer main_elapsed_timer{vlink::ElapsedTimer::kMicro};
-  std::vector<DumpRecord> cache_buffer;
-  std::mutex cache_mtx;
-
   std::vector<std::string> field_specs;
   std::vector<std::vector<std::string>> field_paths;
   std::atomic<int64_t> output_count{0};

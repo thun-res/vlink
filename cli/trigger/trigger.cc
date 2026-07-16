@@ -21,6 +21,7 @@
  * limitations under the License.
  */
 
+#include <vlink/base/condition_variable.h>
 #include <vlink/base/logger.h>
 #include <vlink/base/plugin.h>
 #include <vlink/base/utils.h>
@@ -35,7 +36,6 @@
 #include <cctype>
 #include <chrono>
 #include <cmath>
-#include <condition_variable>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -576,7 +576,7 @@ static int run_daemon(const DaemonArguments& arguments) {
   }
 
   std::mutex quit_mtx;
-  std::condition_variable quit_cv;
+  vlink::ConditionVariable quit_cv;
   bool quit_flag = false;
 
   vlink::Utils::register_terminate_signal(

@@ -21,7 +21,6 @@
  * limitations under the License.
  */
 
-#include <vlink/base/condition_variable.h>
 #include <vlink/base/helpers.h>
 #include <vlink/base/message_loop.h>
 #include <vlink/base/utils.h>
@@ -45,7 +44,6 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
-#include <mutex>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -139,18 +137,18 @@ enum class DiagType : uint8_t {
 
 struct DiagContext final {
   vlink::MessageLoop* loop{nullptr};
-  std::atomic_bool stop_flag{false};
   std::atomic<int> passed_count{0};
   std::atomic<int> warning_count{0};
   std::atomic<int> failed_count{0};
-  std::atomic<DiagType> last_type{DiagType::kFailed};
-  std::mutex mtx;
-  vlink::ConditionVariable cv;
-  std::string detail;
+  std::string title;
   std::string filter;
 };
 
 static bool diag_accepted(const DiagContext& ctx, const std::string& title) {
+  if (ctx.loop != nullptr && ctx.loop->is_ready_to_quit()) {
+    return false;
+  }
+
   if VLIKELY (ctx.filter.empty()) {
     return true;
   }
@@ -164,59 +162,43 @@ static bool diag_accepted(const DiagContext& ctx, const std::string& title) {
 }
 
 static void begin_diag(DiagContext& ctx, const std::string& title, int delay_ms) {
-  ctx.loop->post_task([&ctx, title]() {
-    std::unique_lock lock(ctx.mtx);
-
-    ctx.cv.wait(lock, [&ctx]() -> bool { return !ctx.stop_flag || ctx.loop->is_ready_to_quit(); });
-
-    std::cout << title << std::string(kTitleWidth - title.size(), ' ');
-    std::cout << "......";
-    std::cout.flush();
-
-    ctx.cv.wait(lock, [&ctx]() -> bool { return ctx.stop_flag || ctx.loop->is_ready_to_quit(); });
-
-    ctx.stop_flag = false;
-
-    std::cout << "\033[2K\r";
-
-    const int detail_len = static_cast<int>(ctx.detail.size());
-
-    switch (ctx.last_type) {
-      case DiagType::kPass:
-        std::cout << kColorPass;
-        std::cout << title << std::string(kTitleWidth - title.size(), ' ') << "PASSED";
-        std::cout << std::string(std::max(kStatusPassPad - detail_len, 2), ' ');
-        std::cout << ctx.detail << kColorReset << std::endl;
-        break;
-
-      case DiagType::kWarning:
-        std::cout << kColorWarn;
-        std::cout << title << std::string(kTitleWidth - title.size(), ' ') << "WARNING";
-        std::cout << std::string(std::max(kStatusWarnPad - detail_len, 2), ' ');
-        std::cout << ctx.detail << kColorReset << std::endl;
-        break;
-
-      case DiagType::kFailed:
-        std::cout << kColorFail;
-        std::cout << title << std::string(kTitleWidth - title.size(), ' ') << "FAILED";
-        std::cout << std::string(std::max(kStatusFailPad - detail_len, 2), ' ');
-        std::cout << ctx.detail << kColorReset << std::endl;
-        break;
-
-      default:
-        break;
-    }
-  });
+  ctx.title = title;
+  std::cout << title << std::string(kTitleWidth - title.size(), ' ');
+  std::cout << "......";
+  std::cout.flush();
 
   ctx.loop->wait_for_quit(delay_ms);
 }
 
 static void end_diag(DiagContext& ctx, DiagType type, const std::string& detail) {
-  {
-    std::lock_guard lock(ctx.mtx);
-    ctx.stop_flag = true;
-    ctx.last_type = type;
-    ctx.detail = detail;
+  std::cout << "\033[2K\r";
+
+  const int detail_len = static_cast<int>(detail.size());
+
+  switch (type) {
+    case DiagType::kPass:
+      std::cout << kColorPass;
+      std::cout << ctx.title << std::string(kTitleWidth - ctx.title.size(), ' ') << "PASSED";
+      std::cout << std::string(std::max(kStatusPassPad - detail_len, 2), ' ');
+      std::cout << detail << kColorReset << std::endl;
+      break;
+
+    case DiagType::kWarning:
+      std::cout << kColorWarn;
+      std::cout << ctx.title << std::string(kTitleWidth - ctx.title.size(), ' ') << "WARNING";
+      std::cout << std::string(std::max(kStatusWarnPad - detail_len, 2), ' ');
+      std::cout << detail << kColorReset << std::endl;
+      break;
+
+    case DiagType::kFailed:
+      std::cout << kColorFail;
+      std::cout << ctx.title << std::string(kTitleWidth - ctx.title.size(), ' ') << "FAILED";
+      std::cout << std::string(std::max(kStatusFailPad - detail_len, 2), ' ');
+      std::cout << detail << kColorReset << std::endl;
+      break;
+
+    default:
+      break;
   }
 
   switch (type) {
@@ -232,8 +214,6 @@ static void end_diag(DiagContext& ctx, DiagType type, const std::string& detail)
     default:
       break;
   }
-
-  ctx.cv.notify_one();
 }
 
 static void run_check(DiagContext& ctx, const std::string& title, int delay_ms,
@@ -345,15 +325,21 @@ void check_multicast_address(DiagContext& ctx, const int (&octets)[4], bool warn
     return;
   }
 
+  auto is_address_character = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '.'; };
+
   size_t scan_pos = 0;
 
   while ((scan_pos = result.find(needle, scan_pos)) != std::string::npos) {
-    scan_pos += needle.size();
+    const size_t match_end = scan_pos + needle.size();
+    const bool valid_left = scan_pos == 0 || !is_address_character(result[scan_pos - 1]);
+    const bool valid_right = match_end >= result.size() || !is_address_character(result[match_end]);
 
-    if (scan_pos >= result.size() || !std::isdigit(static_cast<unsigned char>(result[scan_pos]))) {
+    if (valid_left && valid_right) {
       end_diag(ctx, DiagType::kPass, "Found " + needle);
       return;
     }
+
+    scan_pos = match_end;
   }
 
   if (warn_on_missing) {
@@ -940,10 +926,7 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
   ctx.loop = &message_loop;
   ctx.filter = filter;
 
-  vlink::Utils::register_terminate_signal([&message_loop, &ctx](int) {
-    message_loop.quit();
-    ctx.cv.notify_one();
-  });
+  vlink::Utils::register_terminate_signal([&message_loop](int) { message_loop.quit(); });
 
   message_loop.async_run();
 
@@ -1051,7 +1034,7 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
   run_check(ctx, "* Check others running...", 100, [&ctx]() { check_others_running(ctx); });
 
   if (all_case) {
-    message_loop.post_task([]() { std::cout << std::endl; });
+    std::cout << std::endl;
 
 #ifdef VLINK_ENABLE_CXX_STD_20
     check_flag(ctx, "- Check cxx_20 enabled...", "VLINK_ENABLE_CXX_STD_20", true);

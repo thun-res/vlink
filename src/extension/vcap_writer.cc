@@ -293,8 +293,30 @@ VCAPWriter::VCAPWriter(const std::string& path, const Config& config)
           nlohmann::json files_json = root_json["VLinkFiles"];
 
           for (const auto& file_info : files_json) {
-            if (!parent_path.empty() && std::filesystem::exists(parent_path / file_info)) {
-              std::filesystem::remove(parent_path / file_info);
+            if (!file_info.is_string()) {
+              continue;
+            }
+
+            const auto stale_file_name = file_info.get<std::string>();
+#ifdef _WIN32
+            const std::filesystem::path stale_file_path(Helpers::string_to_wstring(stale_file_name));
+#else
+            const std::filesystem::path stale_file_path(stale_file_name);
+#endif
+
+            if (stale_file_path.empty() || stale_file_path == "." || stale_file_path == ".." ||
+                stale_file_path != stale_file_path.filename()) {
+              CLOG_W("VCAPWriter: Ignore unsafe split file path [%s].", stale_file_name.c_str());
+              continue;
+            }
+
+            const auto stale_output_path = parent_path / stale_file_path;
+            std::error_code remove_ec;
+            std::filesystem::remove(stale_output_path, remove_ec);
+
+            if VUNLIKELY (remove_ec) {
+              CLOG_W("VCAPWriter: Failed to remove stale split path [%s]: %s.", stale_file_name.c_str(),
+                     remove_ec.message().c_str());
             }
           }
 

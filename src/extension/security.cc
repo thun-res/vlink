@@ -29,6 +29,7 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <map>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -64,6 +65,7 @@ namespace vlink {
 [[maybe_unused]] static constexpr uint8_t kEnvelopeModeAsymmetric = 2U;
 [[maybe_unused]] static constexpr size_t kEnvelopeFixedHeaderSize = 34U;
 [[maybe_unused]] static constexpr uint32_t kReplayWindowMax = 65536U;
+[[maybe_unused]] static constexpr size_t kReplayPeerMax = 1024U;
 [[maybe_unused]] static constexpr char kAadDomain[] = "vlink-security-v2";
 [[maybe_unused]] static constexpr size_t kAadDomainSize = sizeof(kAadDomain) - 1U;
 
@@ -78,14 +80,12 @@ struct ReplayWindow final {
   std::vector<uint64_t> words;
 };
 
-struct PeerReplay final {
-  uint64_t sender_id{0};
-  ReplayWindow window;
-};
+using PeerReplayMap = std::map<uint64_t, ReplayWindow>;
 
 struct SymmetricKeySlot final {
   Bytes key;
-  std::vector<PeerReplay> peers;
+  PeerReplayMap peers;
+  bool peer_limit_reported{false};
 };
 
 struct EnvelopeHeader final {
@@ -180,32 +180,8 @@ static uint32_t normalize_replay_window(uint32_t window) noexcept {
   return (window > kReplayWindowMax) ? kReplayWindowMax : window;
 }
 
-static ReplayWindow& get_peer_window(std::vector<PeerReplay>& peers, uint64_t sender_id) {
-  for (auto& peer : peers) {
-    if (peer.sender_id == sender_id) {
-      return peer.window;
-    }
-  }
-
-  peers.push_back(PeerReplay{sender_id, {}});
-
-  return peers.back().window;
-}
-
 static bool accept_replay(ReplayWindow& replay, uint64_t seq, uint32_t window_bits) {
-  if (window_bits == 0U) {
-    return true;
-  }
-
-  if VUNLIKELY (seq == 0U) {
-    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
   const auto word_count = static_cast<size_t>((window_bits + 63U) / 64U);
-
-  if VUNLIKELY (word_count == 0U) {
-    return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
 
   if VUNLIKELY (replay.words.size() != word_count) {
     replay.words.assign(word_count, 0U);
@@ -254,6 +230,34 @@ static bool accept_replay(ReplayWindow& replay, uint64_t seq, uint32_t window_bi
   set_seq(seq);
 
   return true;
+}
+
+static bool accept_peer_replay(PeerReplayMap& peers, bool& peer_limit_reported, uint64_t sender_id, uint64_t seq,
+                               uint32_t window_bits) {
+  if (window_bits == 0U) {
+    return true;
+  }
+
+  if VUNLIKELY (seq == 0U) {
+    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  auto peer_iter = peers.find(sender_id);
+
+  if (peer_iter == peers.end()) {
+    if VUNLIKELY (peers.size() >= kReplayPeerMax) {
+      if VUNLIKELY (!peer_limit_reported) {
+        VLOG_W("Security: replay peer limit reached; rejecting new sender identities.");
+        peer_limit_reported = true;
+      }
+
+      return false;
+    }
+
+    peer_iter = peers.try_emplace(sender_id).first;
+  }
+
+  return accept_replay(peer_iter->second, seq, window_bits);
 }
 
 static bool write_envelope_header(uint8_t mode, uint64_t sender_id, uint64_t seq, const uint8_t* nonce, uint8_t* dst,
@@ -1120,7 +1124,8 @@ struct Security::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddin
   uint64_t sender_id{0};
   std::array<uint8_t, kAesNonceSize> nonce_base{};
   bool nonce_ready{false};
-  std::vector<PeerReplay> asym_peers;
+  PeerReplayMap asym_peers;
+  bool asym_peer_limit_reported{false};
   EvpPkeyPtr public_key;
   EvpPkeyPtr private_key;
   EvpPkeyPtr signing_key;
@@ -1735,8 +1740,8 @@ bool Security::decrypt(const Bytes& in, Bytes& out) {
       return false;
     }
 
-    if VUNLIKELY (!accept_replay(get_peer_window(impl_->asym_peers, header.sender_id), header.seq,
-                                 impl_->config.advanced.replay_window)) {
+    if VUNLIKELY (!accept_peer_replay(impl_->asym_peers, impl_->asym_peer_limit_reported, header.sender_id, header.seq,
+                                      impl_->config.advanced.replay_window)) {
       OPENSSL_cleanse(plain.data(), plain.size());
       return false;
     }
@@ -1782,8 +1787,8 @@ bool Security::decrypt(const Bytes& in, Bytes& out) {
       return false;
     }
 
-    if VUNLIKELY (!accept_replay(get_peer_window(key_slot->peers, header.sender_id), header.seq,
-                                 impl_->config.advanced.replay_window)) {
+    if VUNLIKELY (!accept_peer_replay(key_slot->peers, key_slot->peer_limit_reported, header.sender_id, header.seq,
+                                      impl_->config.advanced.replay_window)) {
       OPENSSL_cleanse(plain.data(), plain.size());
       return false;
     }

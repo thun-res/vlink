@@ -936,12 +936,19 @@ bool build_worker_options(const argparse::ArgumentParser& command, bool allow_la
     return false;
   }
 
-  if (options.rate_pattern != vlink::bench::Bench::kMaxRatePattern && options.rate_hz == 0) {
+  const bool internal_idle_fixed = options.wait_start &&
+                                   options.rate_pattern == vlink::bench::Bench::kFixedRatePattern &&
+                                   options.rate_hz == 0 && options.burst_messages > 0;
+  const bool internal_idle_burst = options.wait_start &&
+                                   options.rate_pattern == vlink::bench::Bench::kBurstRatePattern &&
+                                   options.rate_hz > 0 && options.burst_messages == 0;
+
+  if (options.rate_pattern != vlink::bench::Bench::kMaxRatePattern && options.rate_hz == 0 && !internal_idle_fixed) {
     error = "rate must be > 0 for fixed/burst pattern";
     return false;
   }
 
-  if (options.burst_messages <= 0) {
+  if (options.burst_messages <= 0 && !internal_idle_burst) {
     error = "burst must be > 0";
     return false;
   }

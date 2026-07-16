@@ -24,6 +24,7 @@
 #include "./extension/vdb_writer.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -69,6 +70,7 @@ struct VDBWriter::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddi
     size_t size{0};
     int64_t first_timestamp{-1};
     int64_t last_timestamp{-1};
+    int64_t previous_segment_last_timestamp{-1};
     double freq{0};
     double loss{0};
     std::string url_type;
@@ -309,8 +311,30 @@ VDBWriter::VDBWriter(const std::string& path, const Config& config)
           nlohmann::json files_json = root_json["VLinkFiles"];
 
           for (const auto& file_info : files_json) {
-            if (!parent_path.empty() && std::filesystem::exists(parent_path / file_info)) {
-              std::filesystem::remove(parent_path / file_info);
+            if (!file_info.is_string()) {
+              continue;
+            }
+
+            const auto stale_file_name = file_info.get<std::string>();
+#ifdef _WIN32
+            const std::filesystem::path stale_file_path(Helpers::string_to_wstring(stale_file_name));
+#else
+            const std::filesystem::path stale_file_path(stale_file_name);
+#endif
+
+            if (stale_file_path.empty() || stale_file_path == "." || stale_file_path == ".." ||
+                stale_file_path != stale_file_path.filename()) {
+              CLOG_W("VDBWriter: Ignore unsafe split file path [%s].", stale_file_name.c_str());
+              continue;
+            }
+
+            const auto stale_output_path = parent_path / stale_file_path;
+            std::error_code remove_ec;
+            std::filesystem::remove(stale_output_path, remove_ec);
+
+            if VUNLIKELY (remove_ec) {
+              CLOG_W("VDBWriter: Failed to remove stale split path [%s]: %s.", stale_file_name.c_str(),
+                     remove_ec.message().c_str());
             }
           }
 
@@ -1470,17 +1494,78 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
       return false;
     }
 
-    ::sqlite3_stmt* delete_stmt = nullptr;
+    ::sqlite3_stmt* select_stmt = nullptr;
     ::sqlite3_stmt* delete_row_stmt = nullptr;
-    ret = ::sqlite3_prepare_v2(impl_->db, "SELECT rowid, length(data) FROM VLinkDatas ORDER BY rowid LIMIT 1;", -1,
-                               &delete_stmt, nullptr);
+    ret = ::sqlite3_prepare_v2(impl_->db, "SELECT rowid, url, length(data) FROM VLinkDatas ORDER BY rowid LIMIT 1;", -1,
+                               &select_stmt, nullptr);
 
     if VLIKELY (ret == SQLITE_OK) {
-      ret = ::sqlite3_step(delete_stmt);
+      ret = ::sqlite3_step(select_stmt);
 
       if VLIKELY (ret == SQLITE_ROW) {
-        const auto erase_row_id = ::sqlite3_column_int64(delete_stmt, 0);
-        const auto erase_size = ::sqlite3_column_int64(delete_stmt, 1);
+        const auto erase_row_id = ::sqlite3_column_int64(select_stmt, 0);
+        const auto erase_url_id = ::sqlite3_column_int(select_stmt, 1);
+        const auto erase_blob_size = ::sqlite3_column_int64(select_stmt, 2);
+        auto erase_size = static_cast<size_t>(erase_blob_size);
+
+        if (impl_->enable_compressed && erase_blob_size >= 13) {
+          std::array<uint8_t, 13> erase_data{};
+          ::sqlite3_blob* erase_blob = nullptr;
+          ret = ::sqlite3_blob_open(impl_->db, "main", "VLinkDatas", "data", erase_row_id, 0, &erase_blob);
+
+          if VLIKELY (ret == SQLITE_OK) {
+            ret = ::sqlite3_blob_read(erase_blob, erase_data.data(), 9, 0);
+          }
+
+          if VLIKELY (ret == SQLITE_OK) {
+            ret = ::sqlite3_blob_read(erase_blob, erase_data.data() + 9, 4, static_cast<int>(erase_blob_size) - 4);
+          }
+
+          if (erase_blob) {
+            const auto close_ret = ::sqlite3_blob_close(erase_blob);
+            if (ret == SQLITE_OK) {
+              ret = close_ret;
+            }
+          }
+
+          if VUNLIKELY (ret != SQLITE_OK) {
+            CLOG_W("VDBWriter: Failed to read compressed data metadata while evicting: %s.",
+                   ::sqlite3_errmsg(impl_->db));
+            ::sqlite3_finalize(select_stmt);
+            rollback_cache();
+            return false;
+          }
+
+          if (Bytes::is_compress_data(erase_data.data(), erase_data.size())) {
+            erase_size = (static_cast<size_t>(erase_data[4]) << 24U) | (static_cast<size_t>(erase_data[5]) << 16U) |
+                         (static_cast<size_t>(erase_data[6]) << 8U) | static_cast<size_t>(erase_data[7]);
+          }
+        }
+
+        auto total_url_iter = impl_->total_url_map.end();
+
+        if VLIKELY (erase_url_id >= 0 && static_cast<size_t>(erase_url_id) < impl_->total_url_list.size()) {
+          total_url_iter = impl_->total_url_map.find(impl_->total_url_list[static_cast<size_t>(erase_url_id)]);
+        }
+
+        if VUNLIKELY (total_url_iter == impl_->total_url_map.end()) {
+          CLOG_W("VDBWriter: URL metadata not found while evicting the oldest data.");
+          ::sqlite3_finalize(select_stmt);
+          rollback_cache();
+          return false;
+        }
+
+        auto url_iter = impl_->url_map.find(total_url_iter->first);
+
+        if VUNLIKELY (url_iter == impl_->url_map.end()) {
+          CLOG_W("VDBWriter: Segment URL metadata not found while evicting the oldest data.");
+          ::sqlite3_finalize(select_stmt);
+          rollback_cache();
+          return false;
+        }
+
+        ::sqlite3_finalize(select_stmt);
+        select_stmt = nullptr;
 
         ret = ::sqlite3_prepare_v2(impl_->db, "DELETE FROM VLinkDatas WHERE rowid = ?;", -1, &delete_row_stmt, nullptr);
 
@@ -1491,7 +1576,73 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
 
         if VLIKELY (ret == SQLITE_DONE) {
           --impl_->current_row;
-          impl_->current_size -= erase_size;
+          impl_->current_size -= static_cast<int64_t>(erase_size);
+          --impl_->total_current_row;
+          impl_->total_current_size -= static_cast<int64_t>(erase_size);
+
+          auto& url_info = url_iter->second;
+          auto& total_url_info = total_url_iter->second;
+          --url_info.count;
+          url_info.size -= erase_size;
+          --total_url_info.count;
+          total_url_info.size -= erase_size;
+
+          if (url_info.count == 0) {
+            url_info.first_timestamp = -1;
+            url_info.last_timestamp = -1;
+            url_info.freq = 0;
+          } else if (url_info.first_timestamp >= 0) {
+            if (url_info.count == 1) {
+              url_info.first_timestamp = url_info.last_timestamp;
+              url_info.freq = 0;
+            } else {
+              ::sqlite3_stmt* timestamp_stmt = nullptr;
+              ret = ::sqlite3_prepare_v2(
+                  impl_->db, "SELECT elapsed FROM VLinkDatas WHERE rowid > ? AND url = ? ORDER BY rowid LIMIT 1;", -1,
+                  &timestamp_stmt, nullptr);
+
+              if VLIKELY (ret == SQLITE_OK) {
+                ::sqlite3_bind_int64(timestamp_stmt, get_column(0), erase_row_id);
+                ::sqlite3_bind_int(timestamp_stmt, get_column(1), erase_url_id);
+                ret = ::sqlite3_step(timestamp_stmt);
+              }
+
+              if VUNLIKELY (ret != SQLITE_ROW) {
+                CLOG_W("VDBWriter: Failed to refresh URL metadata after eviction: %s.", ::sqlite3_errmsg(impl_->db));
+                if (timestamp_stmt) {
+                  ::sqlite3_finalize(timestamp_stmt);
+                }
+                ::sqlite3_finalize(delete_row_stmt);
+                rollback_cache();
+                return false;
+              }
+
+              url_info.first_timestamp = ::sqlite3_column_int64(timestamp_stmt, 0);
+              ::sqlite3_finalize(timestamp_stmt);
+
+              const auto duration = (url_info.last_timestamp - url_info.first_timestamp) / 1000'000.0;
+              url_info.freq = duration > 0 ? url_info.count / duration : 0;
+            }
+          }
+
+          if (total_url_info.count == 0) {
+            total_url_info.first_timestamp = -1;
+            total_url_info.last_timestamp = -1;
+            total_url_info.freq = 0;
+          } else if (total_url_info.count == url_info.count) {
+            total_url_info.first_timestamp = url_info.first_timestamp;
+            total_url_info.last_timestamp = url_info.last_timestamp;
+            total_url_info.freq = url_info.freq;
+          } else if (total_url_info.first_timestamp >= 0) {
+            if (url_info.count > 0) {
+              total_url_info.last_timestamp = url_info.last_timestamp;
+            } else {
+              total_url_info.last_timestamp = total_url_info.previous_segment_last_timestamp;
+            }
+
+            const auto duration = (total_url_info.last_timestamp - total_url_info.first_timestamp) / 1000'000.0;
+            total_url_info.freq = duration > 0 ? total_url_info.count / duration : 0;
+          }
         } else {
           // LCOV_EXCL_START GCOVR_EXCL_START
           CLOG_W("Failed to erase datas table: %s.", ::sqlite3_errmsg(impl_->db));
@@ -1499,14 +1650,24 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
             ::sqlite3_finalize(delete_row_stmt);
             delete_row_stmt = nullptr;
           }
-          if VLIKELY (delete_stmt) {
-            ::sqlite3_finalize(delete_stmt);
-            delete_stmt = nullptr;
+          if VLIKELY (select_stmt) {
+            ::sqlite3_finalize(select_stmt);
+            select_stmt = nullptr;
           }
           rollback_cache();
           return false;
           // LCOV_EXCL_STOP GCOVR_EXCL_STOP
         }
+      } else {
+        if (ret == SQLITE_DONE) {
+          CLOG_W("VDBWriter: No data available while enforcing the configured limit.");
+        } else {
+          CLOG_W("VDBWriter: Failed to select data while enforcing the configured limit: %s.",
+                 ::sqlite3_errmsg(impl_->db));
+        }
+        ::sqlite3_finalize(select_stmt);
+        rollback_cache();
+        return false;
       }
 
       if VLIKELY (delete_row_stmt) {
@@ -1514,9 +1675,9 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
         delete_row_stmt = nullptr;
       }
 
-      if VLIKELY (delete_stmt) {
-        ::sqlite3_finalize(delete_stmt);
-        delete_stmt = nullptr;
+      if VLIKELY (select_stmt) {
+        ::sqlite3_finalize(select_stmt);
+        select_stmt = nullptr;
       }
     } else {
       CLOG_W("Failed to erase datas table: %s.", ::sqlite3_errmsg(impl_->db));  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -1716,6 +1877,10 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
     // insert url
     url_msg_info.index = impl_->url_map.size() - 1;
 
+    if (!total_url_iter_ret.second) {
+      total_url_msg_info.previous_segment_last_timestamp = total_url_msg_info.last_timestamp;
+    }
+
     if (action_type == ActionType::kClientRequest || action_type == ActionType::kClientResponse ||
         action_type == ActionType::kServerRequest ||
         action_type == ActionType::kServerResponse) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -1809,17 +1974,10 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
   ++url_msg_info.count;
   ++total_url_msg_info.count;
 
-  url_msg_info.size += data.size();
-  total_url_msg_info.size += data.size();
-
   impl_->cached_size.fetch_add(data.size(), std::memory_order_relaxed);
 
   ++impl_->current_row;
   ++impl_->total_current_row;
-
-  impl_->current_size += data.size();
-
-  impl_->total_current_size += data.size();
   impl_->total_timestamp = microseconds_timestamp;
 
   if (action_type == ActionType::kPublish || action_type == ActionType::kSubscribe || action_type == ActionType::kSet ||
@@ -1894,6 +2052,18 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
   } else {
     ::sqlite3_bind_blob(impl_->datas_stmt, get_column(3), data.data(), data.size(), SQLITE_STATIC);
   }
+
+  auto accounted_size = data.size();
+
+  if VUNLIKELY (!do_compress && impl_->enable_compressed && Bytes::is_compress_data(data.data(), data.size())) {
+    accounted_size = (static_cast<size_t>(data[4]) << 24U) | (static_cast<size_t>(data[5]) << 16U) |
+                     (static_cast<size_t>(data[6]) << 8U) | static_cast<size_t>(data[7]);
+  }
+
+  url_msg_info.size += accounted_size;
+  total_url_msg_info.size += accounted_size;
+  impl_->current_size += static_cast<int64_t>(accounted_size);
+  impl_->total_current_size += static_cast<int64_t>(accounted_size);
 
   ret = ::sqlite3_step(impl_->datas_stmt);
 

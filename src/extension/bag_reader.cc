@@ -136,7 +136,7 @@ void BagReader::reset_plugin() {
   }
 
   if (plugin_interface) {
-    plugin_interface->reset();
+    plugin_interface->on_reset();
   }
 }
 

@@ -47,9 +47,11 @@
  *
  * The oldest cached frame is released only once the data-plane-time span between the oldest and
  * newest cached frames reaches @c Config::min_cache_time, giving a late-but-earlier frame a chance to
- * slot ahead of already-cached later frames.  Producer wall time never advances this window; a silent
- * producer's tail is released by @c flush().  Data-plane timestamps passed to @c push() are in
- * microseconds; @c Config time tunables are expressed in milliseconds and converted internally.
+ * slot ahead of already-cached later frames.  Before the first valid data-plane timestamp, the canonical
+ * @c Frame::timestamp advances the window and orders missing-time frames so streams without embedded
+ * timestamps remain bounded.  Producer wall time never advances this window; a silent producer's tail is
+ * released by @c flush().  Data-plane timestamps passed to @c push() are in microseconds; @c Config time
+ * tunables are expressed in milliseconds and converted internally.
  *
  * @par Write-side example (reorder by header time, then persist)
  * @code
@@ -146,9 +148,10 @@ class VLINK_EXPORT BagProcessor {
    * @details
    * Safe to call from any thread after @c register_output_callback().  Frames are ordered by
    * @p data_timestamp.  Negative @p data_timestamp is filled from the previous data timestamp and the
-   * @c Frame::timestamp delta; without a previous anchor it stays -1 and sorts first.  Output frame
-   * timestamps are remapped on the data-time axis and kept strictly increasing within a flush segment
-   * (@c flush() resets the axis).  The frame is copied into the owning cache.
+   * @c Frame::timestamp delta; without a previous anchor it stays -1, sorts before valid data timestamps,
+   * and is ordered against other missing-time frames by @c Frame::timestamp.  Output frame timestamps are
+   * remapped on the data-time axis and kept strictly increasing within a flush segment (@c flush() resets
+   * the axis).  The frame is copied into the owning cache.
    *
    * @param data_timestamp Reorder key in microseconds (the data-plane time), or negative when missing.
    * @param frame          Frame to cache; @c Frame::timestamp is the canonical time before remapping.

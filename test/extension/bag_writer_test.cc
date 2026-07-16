@@ -34,6 +34,7 @@
 #include <fstream>
 #include <iterator>
 #include <mutex>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <thread>
 #include <vector>
@@ -697,6 +698,60 @@ void verify_split_manifest_constructor_removes_stale_file(const char* suffix, co
   writer.reset();
 }
 
+void verify_split_manifest_rejects_unsafe_paths(const char* suffix) {
+  ScopedWriterPath scoped(suffix);
+  const auto root = scoped.path.parent_path();
+  const auto output_dir = root / "output";
+  const auto manifest = output_dir / (std::string("bag") + suffix);
+  const auto traversal_target = root / "traversal-target";
+  const auto absolute_target = root / "absolute-target";
+  const auto blocked_directory = output_dir / "blocked-directory";
+  const auto blocked_sentinel = blocked_directory / "keep";
+  const auto stale_after_blocked = output_dir / "stale-after-blocked";
+
+  std::filesystem::create_directories(output_dir);
+  std::filesystem::create_directories(blocked_directory);
+  {
+    std::ofstream traversal(traversal_target, std::ios::binary | std::ios::trunc);
+    std::ofstream absolute(absolute_target, std::ios::binary | std::ios::trunc);
+    std::ofstream sentinel(blocked_sentinel, std::ios::binary | std::ios::trunc);
+    std::ofstream stale(stale_after_blocked, std::ios::binary | std::ios::trunc);
+    REQUIRE(traversal.is_open());
+    REQUIRE(absolute.is_open());
+    REQUIRE(sentinel.is_open());
+    REQUIRE(stale.is_open());
+    traversal << "keep";
+    absolute << "keep";
+    sentinel << "keep";
+    stale << "stale";
+  }
+
+  nlohmann::json root_json;
+  root_json["VLinkFiles"] =
+      nlohmann::json::array({"../traversal-target", absolute_target.string(), "nested/file", 7,
+                             blocked_directory.filename().string(), stale_after_blocked.filename().string()});
+  {
+    std::ofstream out(manifest, std::ios::binary | std::ios::trunc);
+    REQUIRE(out.is_open());
+    out << root_json;
+  }
+
+  BagWriter::Config config;
+  config.sync_mode = true;
+  config.compress = BagWriter::kCompressNone;
+  auto writer = BagWriter::create(manifest.string(), config);
+  REQUIRE(writer != nullptr);
+  CHECK(writer->is_split_mode());
+  CHECK(std::filesystem::exists(traversal_target));
+  CHECK(std::filesystem::exists(absolute_target));
+  CHECK(std::filesystem::exists(blocked_sentinel));
+  CHECK_FALSE(std::filesystem::exists(stale_after_blocked));
+  REQUIRE_EQ(writer->push(write_frame("dds://coverage/manifest_cleanup", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("usable"), 1'000)),
+             1'000);
+  writer.reset();
+}
+
 void verify_vcap_compression_level_variants() {
   for (int level : {0, 1, 2, 3, 4, 5, 99}) {
     ScopedWriterPath bag(".vcap");
@@ -1242,7 +1297,117 @@ void verify_vdb_limit_mode_variants() {
     auto frames = read_writer_frames(bag.path);
     REQUIRE_EQ(frames.size(), 1u);
     CHECK_EQ(frames.front().data.to_string(), "second");
+
+    auto reader = BagReader::create(bag.path.string(), false);
+    REQUIRE(reader != nullptr);
+    REQUIRE(reader->async_run());
+    CHECK(reader->check().get());
+    reader->quit();
+    REQUIRE(reader->wait_for_quit(3000));
   }
+}
+
+void verify_vdb_compressed_byte_limit_eviction(const char* suffix) {
+  ScopedWriterPath bag(suffix);
+
+  BagWriter::Config config;
+  config.sync_mode = true;
+  config.compress = BagWriter::kCompressLzav;
+  config.compress_start_size = 1;
+  config.cache_size = 1;
+  config.max_bytes_size = 8192;
+  config.enable_limit = true;
+  config.tag_name = "compressed-limit-evict";
+
+  const std::string first_payload(4096, 'A');
+  const std::string second_payload(4096, 'B');
+  const std::string third_payload(4096, 'C');
+  const std::string fourth_payload(4096, 'D');
+  auto writer = BagWriter::create(bag.path.string(), config);
+  REQUIRE(writer != nullptr);
+  REQUIRE_EQ(writer->push(write_frame("dds://coverage/compressed_limit", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string(first_payload), 1'000'000)),
+             1'000'000);
+  REQUIRE_EQ(writer->push(write_frame("dds://coverage/compressed_limit", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string(second_payload), 2'000'000)),
+             2'000'000);
+  REQUIRE_EQ(writer->push(write_frame("dds://coverage/compressed_limit", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string(third_payload), 10'000'000)),
+             10'000'000);
+  REQUIRE_EQ(writer->push(write_frame("dds://coverage/compressed_limit", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string(fourth_payload), 20'000'000)),
+             20'000'000);
+  writer.reset();
+
+  auto reader = BagReader::create(bag.path.string(), false);
+  REQUIRE(reader != nullptr);
+  REQUIRE(reader->async_run());
+  CHECK(reader->check().get());
+  REQUIRE_EQ(reader->get_info().message_count, 3);
+  REQUIRE_EQ(reader->get_info().url_metas.size(), 1u);
+  CHECK_EQ(reader->get_info().url_metas.front().count, 3u);
+  CHECK_EQ(reader->get_info().url_metas.front().size,
+           second_payload.size() + third_payload.size() + fourth_payload.size());
+  CHECK_EQ(reader->get_info().url_metas.front().freq, doctest::Approx(1.0 / 6.0));
+
+  REQUIRE(reader->open_cursor());
+  Frame frame;
+  REQUIRE(reader->read_next(frame));
+  CHECK_EQ(frame.data.to_string(), second_payload);
+  REQUIRE(reader->read_next(frame));
+  CHECK_EQ(frame.data.to_string(), third_payload);
+  REQUIRE(reader->read_next(frame));
+  CHECK_EQ(frame.data.to_string(), fourth_payload);
+  CHECK_FALSE(reader->read_next(frame));
+  reader->quit();
+  REQUIRE(reader->wait_for_quit(3000));
+}
+
+void verify_vdb_precompressed_byte_limit_eviction(const char* suffix) {
+  ScopedWriterPath bag(suffix);
+  const std::string url = "dds://coverage/precompressed_limit";
+  const std::string payload(4096, 'P');
+  const Bytes packed = Bytes::compress_data(reinterpret_cast<const uint8_t*>(payload.data()), payload.size());
+  REQUIRE(Bytes::is_compress_data(packed.data(), packed.size()));
+  REQUIRE_LT(packed.size(), payload.size());
+
+  BagWriter::Config config;
+  config.sync_mode = true;
+  config.compress = BagWriter::kCompressLzav;
+  config.compress_start_size = 1;
+  config.cache_size = 1;
+  config.max_bytes_size = static_cast<int64_t>(packed.size());
+  config.enable_limit = true;
+  config.ignore_compress_urls.insert(url);
+  config.tag_name = "precompressed-limit-evict";
+
+  auto writer = BagWriter::create(bag.path.string(), config);
+  REQUIRE(writer != nullptr);
+  REQUIRE_EQ(writer->push(write_frame(url, "raw", SchemaType::kRaw, ActionType::kPublish, packed, 1'000'000)),
+             1'000'000);
+  REQUIRE_EQ(writer->push(write_frame(url, "raw", SchemaType::kRaw, ActionType::kPublish, packed, 2'000'000)),
+             2'000'000);
+  REQUIRE_EQ(writer->push(write_frame(url, "raw", SchemaType::kRaw, ActionType::kPublish, packed, 3'000'000)),
+             3'000'000);
+  writer.reset();
+
+  auto reader = BagReader::create(bag.path.string(), false);
+  REQUIRE(reader != nullptr);
+  REQUIRE(reader->async_run());
+  CHECK(reader->check().get());
+  REQUIRE_EQ(reader->get_info().message_count, 1);
+  REQUIRE_EQ(reader->get_info().url_metas.size(), 1u);
+  CHECK_EQ(reader->get_info().url_metas.front().count, 1u);
+  CHECK_EQ(reader->get_info().url_metas.front().size, payload.size());
+
+  REQUIRE(reader->open_cursor());
+  Frame frame;
+  REQUIRE(reader->read_next(frame));
+  CHECK_EQ(frame.timestamp, 3'000'000);
+  CHECK_EQ(frame.data.to_string(), payload);
+  CHECK_FALSE(reader->read_next(frame));
+  reader->quit();
+  REQUIRE(reader->wait_for_quit(3000));
 }
 
 void verify_split_by_size_writer_paths(const char* suffix) {
@@ -1894,6 +2059,11 @@ TEST_SUITE("extension-BagWriter") {
     verify_split_manifest_constructor_removes_stale_file(".vcapx", ".vcap");
   }
 
+  TEST_CASE("split writer constructors reject unsafe paths from an old manifest") {
+    verify_split_manifest_rejects_unsafe_paths(".vdbx");
+    verify_split_manifest_rejects_unsafe_paths(".vcapx");
+  }
+
   TEST_CASE("vcap compression level variants remain readable") { verify_vcap_compression_level_variants(); }
 
   TEST_CASE("vdb skips compression after repeated unhelpful frames") {
@@ -1944,6 +2114,16 @@ TEST_SUITE("extension-BagWriter") {
   }
 
   TEST_CASE("vdb limit modes reject or evict deterministically") { verify_vdb_limit_mode_variants(); }
+
+  TEST_CASE("vdb compressed byte limits evict using raw payload sizes") {
+    verify_vdb_compressed_byte_limit_eviction(".vdb");
+    verify_vdb_compressed_byte_limit_eviction(".vdbx");
+  }
+
+  TEST_CASE("vdb precompressed byte limits keep eviction accounting reversible") {
+    verify_vdb_precompressed_byte_limit_eviction(".vdb");
+    verify_vdb_precompressed_byte_limit_eviction(".vdbx");
+  }
 
   TEST_CASE("split writers rotate by size and keep manifests readable") {
     verify_split_by_size_writer_paths(".vdbx");

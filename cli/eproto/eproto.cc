@@ -1348,15 +1348,36 @@ int start_eproto_pub(const std::string& url, const std::string& proto_dir, const
   elapsed.start();
 
   int dx = 0;
+  int64_t paused_elapsed = 0;
 
   for (int i = 0; i < times || times <= 0; ++i) {
     if (!raw_pub->has_inited()) {
       break;
     }
 
+    if (is_paused) {
+      const int64_t pause_begin = elapsed.get();
+
+      while (is_paused && raw_pub->has_inited() && !has_quit) {
+        if (discovery_viewer) {
+          if (discovery_viewer->wait_for_quit(10)) {
+            break;
+          }
+        } else {
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+      }
+
+      paused_elapsed += std::max<int64_t>(elapsed.get() - pause_begin, 0);
+
+      if (!raw_pub->has_inited() || has_quit || (discovery_viewer && discovery_viewer->is_ready_to_quit())) {
+        break;
+      }
+    }
+
     raw_pub->publish(raw_data);
 
-    dx = static_cast<int>((static_cast<int64_t>(i) + 1) * interval - elapsed.get());
+    dx = static_cast<int>((static_cast<int64_t>(i) + 1) * interval - (elapsed.get() - paused_elapsed));
 
     if (dx < 0) {
       dx = 0;

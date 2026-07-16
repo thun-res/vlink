@@ -26,11 +26,11 @@
 #include "./extension/bag_reader.h"
 
 #include <doctest/doctest.h>
+#include <vlink/base/condition_variable.h>
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -241,7 +241,7 @@ class ReorderReadPlugin final : public BagPluginInterface {
 
   void on_write(const Frame& frame) override { do_callback(frame); }
 
-  void reset() override { processor_.reset(); }
+  void on_reset() override { processor_.reset(); }
 
   void flush() override {
     flush_count_.fetch_add(1, std::memory_order_relaxed);
@@ -278,7 +278,7 @@ class ReorderReadPlugin final : public BagPluginInterface {
   std::atomic<int> flush_count_{0};
   std::atomic<int> input_count_{0};
   std::mutex block_mtx_;
-  std::condition_variable block_cv_;
+  vlink::ConditionVariable block_cv_;
   bool input_blocked_{false};
   bool block_released_{false};
 };

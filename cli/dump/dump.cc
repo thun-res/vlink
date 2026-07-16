@@ -514,6 +514,60 @@ static bool write_binary_output(const std::string& path, const vlink::Bytes& dat
   return true;
 }
 
+static void write_csv_record(std::ostream& file, const DumpRecord& record) {
+  write_seconds_from_us(file, record.timestamp);
+
+  for (const auto& value : record.values) {
+    file << ",";
+
+    if (std::holds_alternative<int64_t>(value)) {
+      file << std::get<int64_t>(value);
+    } else if (std::holds_alternative<uint64_t>(value)) {
+      file << std::get<uint64_t>(value);
+    } else if (std::holds_alternative<double>(value)) {
+      file << std::setprecision(12) << std::get<double>(value);
+    } else if (std::holds_alternative<std::string>(value)) {
+      write_csv_cell(file, std::get<std::string>(value));
+    } else if (std::holds_alternative<vlink::Bytes>(value)) {
+      file << "<bytes:" << std::get<vlink::Bytes>(value).size() << ">";
+    }
+  }
+
+  for (const auto result : record.expr_results) {
+    file << "," << std::setprecision(12) << result;
+  }
+
+  file << "\n";
+}
+
+static nlohmann::ordered_json make_json_record(const DumpRecord& record, const std::vector<std::string>& field_specs,
+                                               const std::vector<std::string>& expr_strings) {
+  nlohmann::ordered_json json;
+  json["timestamp"] = record.timestamp / 1000000.0;
+
+  for (size_t i = 0; i < field_specs.size() && i < record.values.size(); ++i) {
+    const auto& value = record.values[i];
+
+    if (std::holds_alternative<int64_t>(value)) {
+      json[field_specs[i]] = std::get<int64_t>(value);
+    } else if (std::holds_alternative<uint64_t>(value)) {
+      json[field_specs[i]] = std::get<uint64_t>(value);
+    } else if (std::holds_alternative<double>(value)) {
+      json[field_specs[i]] = std::get<double>(value);
+    } else if (std::holds_alternative<std::string>(value)) {
+      json[field_specs[i]] = std::get<std::string>(value);
+    } else if (std::holds_alternative<vlink::Bytes>(value)) {
+      json[field_specs[i]] = "<bytes:" + std::to_string(std::get<vlink::Bytes>(value).size()) + ">";
+    }
+  }
+
+  for (size_t i = 0; i < record.expr_results.size() && i < expr_strings.size(); ++i) {
+    json["expr(" + expr_strings[i] + ")"] = record.expr_results[i];
+  }
+
+  return json;
+}
+
 // NOLINTNEXTLINE(google-readability-function-size)
 static int start_dump(const std::string& target_url, const std::string& out_dir, const std::string& base_name,
                       const std::string& proto_dir, [[maybe_unused]] const std::string& fbs_dir,
@@ -582,6 +636,46 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
     std::cerr << e.what() << std::endl;
     ctx.has_quit = true;
     return -1;
+  }
+
+  std::ofstream table_output;
+  std::string table_output_path;
+  int64_t table_record_count = 0;
+  bool first_json_record = true;
+
+  if (ctx.dump_type == DumpType::kCsv || ctx.dump_type == DumpType::kJson) {
+    table_output_path = out_file_name + "." + dump_type_suffix;
+    table_output.open(vlink::dump::utf8_to_path(table_output_path));
+
+    if (!table_output.is_open()) {
+      std::cerr << "Failed to write output file: " << table_output_path << std::endl;
+      ctx.has_quit = true;
+      return -1;
+    }
+
+    if (ctx.dump_type == DumpType::kCsv) {
+      write_csv_cell(table_output, "timestamp");
+
+      for (const auto& spec : ctx.field_specs) {
+        table_output << ",";
+        write_csv_cell(table_output, spec);
+      }
+
+      for (const auto& expression : ctx.expr_strings) {
+        table_output << ",";
+        write_csv_cell(table_output, "expr(" + expression + ")");
+      }
+
+      table_output << "\n";
+    } else {
+      table_output << "[";
+    }
+
+    if (!table_output.good()) {
+      std::cerr << "Failed to write output file: " << table_output_path << std::endl;
+      ctx.has_quit = true;
+      return -1;
+    }
   }
 
   int64_t dump_seq = 0;
@@ -663,7 +757,8 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
 
   {
     std::lock_guard lock(ctx.dump_callback_mtx);
-    ctx.dump_callback = [target_url, &dump_seq, &out_file_name, &proto_cache, &default_binary_field_path,
+    ctx.dump_callback = [target_url, &dump_seq, &out_file_name, &proto_cache, &default_binary_field_path, &table_output,
+                         &table_output_path, &table_record_count, &first_json_record,
 #ifdef VLINK_HAS_FBS_COMPILER
                          &ensure_fbs_parser, &fbs_schema, &fbs_root_object,
 #endif
@@ -899,23 +994,20 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
           std::cout << std::endl;
         }
 
-        {
-          std::lock_guard lock(cb_ctx.cache_mtx);
-          static constexpr size_t kMaxCacheRecords = 50'000'000;
-
-          if VUNLIKELY (cb_ctx.cache_buffer.size() >= kMaxCacheRecords) {
-            static std::atomic_bool warned{false};
-
-            if (!warned.exchange(true)) {
-              std::cerr << "Warning: record limit reached (" << kMaxCacheRecords
-                        << "), further samples will be dropped." << std::endl;
-            }
-
-            return;
-          }
-
-          cb_ctx.cache_buffer.emplace_back(std::move(record));
+        if (cb_ctx.dump_type == DumpType::kCsv) {
+          write_csv_record(table_output, record);
+        } else {
+          const auto json = make_json_record(record, cb_ctx.field_specs, cb_ctx.expr_strings);
+          table_output << (first_json_record ? "\n" : ",\n") << json.dump(2);
+          first_json_record = false;
         }
+
+        if VUNLIKELY (!table_output.good()) {
+          fail_output_write(table_output_path);
+          return;
+        }
+
+        ++table_record_count;
 
         return;
       }
@@ -982,109 +1074,16 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
     vlink::Utils::stop_detect_keyboard();
   }
 
-  if (ctx.dump_type == DumpType::kCsv) {
-    auto csv_path = out_file_name + "." + dump_type_suffix;
-    std::ofstream file(vlink::dump::utf8_to_path(csv_path));
-
-    if (!file.is_open()) {
-      std::cerr << "Failed to write output file: " << csv_path << std::endl;
-      ctx.is_broken = true;
-    } else {
-      write_csv_cell(file, "timestamp");
-
-      for (const auto& spec : ctx.field_specs) {
-        file << ",";
-        write_csv_cell(file, spec);
-      }
-
-      for (const auto& ex : ctx.expr_strings) {
-        file << ",";
-        write_csv_cell(file, "expr(" + ex + ")");
-      }
-
-      file << "\n";
-
-      std::lock_guard lock(ctx.cache_mtx);
-
-      for (const auto& rec : ctx.cache_buffer) {
-        write_seconds_from_us(file, rec.timestamp);
-
-        for (const auto& val : rec.values) {
-          file << ",";
-
-          if (std::holds_alternative<int64_t>(val)) {
-            file << std::get<int64_t>(val);
-          } else if (std::holds_alternative<uint64_t>(val)) {
-            file << std::get<uint64_t>(val);
-          } else if (std::holds_alternative<double>(val)) {
-            file << std::setprecision(12) << std::get<double>(val);
-          } else if (std::holds_alternative<std::string>(val)) {
-            write_csv_cell(file, std::get<std::string>(val));
-          } else if (std::holds_alternative<vlink::Bytes>(val)) {
-            file << "<bytes:" << std::get<vlink::Bytes>(val).size() << ">";
-          }
-        }
-
-        for (const auto& er : rec.expr_results) {
-          file << "," << std::setprecision(12) << er;
-        }
-
-        file << "\n";
-      }
-
-      file.close();
-
-      if (!file.good()) {
-        std::cerr << "Failed to write output file: " << csv_path << std::endl;
-        ctx.is_broken = true;
-      }
+  if (table_output.is_open()) {
+    if (ctx.dump_type == DumpType::kJson) {
+      table_output << (first_json_record ? "" : "\n") << "]\n";
     }
-  } else if (ctx.dump_type == DumpType::kJson) {
-    auto json_path = out_file_name + "." + dump_type_suffix;
-    std::ofstream file(vlink::dump::utf8_to_path(json_path));
 
-    if (!file.is_open()) {
-      std::cerr << "Failed to write output file: " << json_path << std::endl;
+    table_output.close();
+
+    if (!table_output.good()) {
+      std::cerr << "Failed to write output file: " << table_output_path << std::endl;
       ctx.is_broken = true;
-    } else {
-      nlohmann::ordered_json root_json = nlohmann::ordered_json::array();
-
-      std::lock_guard lock(ctx.cache_mtx);
-
-      for (const auto& rec : ctx.cache_buffer) {
-        nlohmann::ordered_json json;
-        json["timestamp"] = rec.timestamp / 1000000.0;
-
-        for (size_t i = 0; i < ctx.field_specs.size() && i < rec.values.size(); ++i) {
-          const auto& val = rec.values[i];
-
-          if (std::holds_alternative<int64_t>(val)) {
-            json[ctx.field_specs[i]] = std::get<int64_t>(val);
-          } else if (std::holds_alternative<uint64_t>(val)) {
-            json[ctx.field_specs[i]] = std::get<uint64_t>(val);
-          } else if (std::holds_alternative<double>(val)) {
-            json[ctx.field_specs[i]] = std::get<double>(val);
-          } else if (std::holds_alternative<std::string>(val)) {
-            json[ctx.field_specs[i]] = std::get<std::string>(val);
-          } else if (std::holds_alternative<vlink::Bytes>(val)) {
-            json[ctx.field_specs[i]] = "<bytes:" + std::to_string(std::get<vlink::Bytes>(val).size()) + ">";
-          }
-        }
-
-        for (size_t i = 0; i < rec.expr_results.size() && i < ctx.expr_strings.size(); ++i) {
-          json["expr(" + ctx.expr_strings[i] + ")"] = rec.expr_results[i];
-        }
-
-        root_json.emplace_back(json);
-      }
-
-      file << root_json.dump(2);
-      file.close();
-
-      if (!file.good()) {
-        std::cerr << "Failed to write output file: " << json_path << std::endl;
-        ctx.is_broken = true;
-      }
     }
   }
 
@@ -1092,7 +1091,7 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
     std::cout << "\033[2K\r" << (ctx.is_broken ? "Break." : "Done.") << std::endl;
 
     if (!ctx.is_broken && (ctx.dump_type == DumpType::kCsv || ctx.dump_type == DumpType::kJson)) {
-      std::cout << "Saved " << ctx.cache_buffer.size() << " records to " << out_file_name << "." << dump_type_suffix
+      std::cout << "Saved " << table_record_count << " records to " << out_file_name << "." << dump_type_suffix
                 << std::endl;
     } else if (!ctx.is_broken && (ctx.dump_type == DumpType::kBin || ctx.dump_type == DumpType::kJpg ||
                                   ctx.dump_type == DumpType::kH264 || ctx.dump_type == DumpType::kH265 ||
@@ -1106,11 +1105,6 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
   {
     std::lock_guard lock(ctx.sub_urls_mtx);
     ctx.sub_urls.clear();
-  }
-
-  {
-    std::lock_guard lock(ctx.cache_mtx);
-    ctx.cache_buffer.clear();
   }
 
   return ctx.is_broken ? -1 : 0;
@@ -1568,6 +1562,12 @@ int main(int argc, char* argv[]) {
   if (!ctx.prepare_bag_plugin()) {
     return -1;
   }
+
+  struct BagPluginInterfaceGuard final {
+    vlink::dump::DumpContext& context;
+
+    ~BagPluginInterfaceGuard() { context.bag_plugin_interface.reset(); }
+  } bag_plugin_interface_guard{ctx};
 
   if VUNLIKELY (vlink::dump::option_used(program, "-c", "--condition") &&
                 vlink::Helpers::trim_string_view(condition).empty()) {

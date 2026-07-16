@@ -42,6 +42,7 @@
 #endif
 
 #include <vlink/base/helpers.h>
+#include <vlink/extension/bag_plugin_interface.h>
 #include <vlink/extension/bag_reader.h>
 #include <vlink/extension/bag_writer.h>
 
@@ -67,6 +68,7 @@
 static constexpr int64_t kMaxSliceCount = 100000;
 static constexpr int64_t kWriterTimestampMarginUs = 100000;
 static constexpr int64_t kMaxPlaybackTimeMs = (std::numeric_limits<int64_t>::max() - kWriterTimestampMarginUs) / 1000;
+static constexpr int64_t kMaxPluginTimestampUs = kMaxPlaybackTimeMs * 1000;
 static constexpr int64_t kMaxVcapStartTimestampMs = std::numeric_limits<int64_t>::max() / 1000000;
 static constexpr int64_t kMaxVcapOutputTimestampMs =
     (std::numeric_limits<int64_t>::max() - kWriterTimestampMarginUs * 1000) / 1000000;
@@ -98,6 +100,51 @@ struct ResolvedTypes {
   vlink::SchemaType resolved{vlink::SchemaType::kUnknown};
 };
 
+class BoundedReadBagPlugin final : public vlink::BagPluginInterface {
+ public:
+  BoundedReadBagPlugin(std::shared_ptr<vlink::BagPluginInterface> plugin, int64_t begin_us, int64_t end_us)
+      : plugin_(std::move(plugin)), begin_us_(begin_us), end_us_(end_us) {
+    plugin_->bind_direction(vlink::BagPluginInterface::kRead);
+    plugin_->register_callback([this](const vlink::Frame& frame) { do_callback(frame); });
+  }
+
+  ~BoundedReadBagPlugin() override { plugin_->register_callback({}); }
+
+  bool convert_url_meta(std::string& url, std::string& ser_type, vlink::SchemaType& schema_type) override {
+    return plugin_->convert_url_meta(url, ser_type, schema_type);
+  }
+
+  void on_read(const vlink::Frame& frame) override {
+    if (frame.timestamp >= begin_us_ && frame.timestamp < end_us_) {
+      plugin_->on_read(frame);
+    }
+  }
+
+  void on_write(const vlink::Frame& frame) override { plugin_->on_write(frame); }
+
+  void on_reset() override { plugin_->on_reset(); }
+
+  void flush() override { plugin_->flush(); }
+
+ private:
+  std::shared_ptr<vlink::BagPluginInterface> plugin_;
+  int64_t begin_us_{0};
+  int64_t end_us_{0};
+};
+
+static std::shared_ptr<vlink::BagPluginInterface> bind_bounded_read_plugin(
+    const std::shared_ptr<vlink::BagReader>& player, int64_t begin_ms, int64_t end_ms) {
+  auto plugin = vlink::dump::DumpContext::get().bag_plugin_interface;
+
+  if (!player || !plugin) {
+    return nullptr;
+  }
+
+  auto bounded = std::make_shared<BoundedReadBagPlugin>(std::move(plugin), begin_ms * 1000, end_ms * 1000);
+  player->bind_bag_interface(bounded);
+  return bounded;
+}
+
 static bool checked_subtract(int64_t lhs, int64_t rhs, int64_t& result) {
   if ((rhs > 0 && lhs < std::numeric_limits<int64_t>::min() + rhs) ||
       (rhs < 0 && lhs > std::numeric_limits<int64_t>::max() + rhs)) {
@@ -106,6 +153,10 @@ static bool checked_subtract(int64_t lhs, int64_t rhs, int64_t& result) {
 
   result = lhs - rhs;
   return true;
+}
+
+static bool plugin_timestamp_supported(int64_t timestamp_us) {
+  return timestamp_us >= 0 && timestamp_us < kMaxPluginTimestampUs;
 }
 
 static bool read_json_int64(const nlohmann::json& object, const char* key, int64_t& result) {
@@ -745,14 +796,14 @@ static int run_quality_only_scan(const vlink::dump::SliceOptions& opt, const std
     return -1;
   }
 
-  ctx.bind_bag_plugin(player);
-
   int64_t effective_begin = 0;
   int64_t effective_end = 0;
 
   if VUNLIKELY (!resolve_time_range(opt, player->get_info(), effective_begin, effective_end)) {
     return -1;
   }
+
+  auto bounded_plugin = bind_bounded_read_plugin(player, effective_begin, effective_end);
 
   vlink::dump::UrlSelection selection;
 
@@ -763,8 +814,14 @@ static int run_quality_only_scan(const vlink::dump::SliceOptions& opt, const std
 
   std::unordered_map<std::string, QualityStats> quality_map;
   const int64_t dropout_threshold_us = dropout_threshold_to_us(opt.dropout_threshold);
+  bool has_last_plugin_timestamp = false;
+  int64_t last_plugin_timestamp = 0;
+  bool plugin_order_error = false;
+  bool plugin_timestamp_error = false;
 
-  auto record_quality = [&ctx, &selection, &opt, &quality_map, &dropout_threshold_us](const vlink::Frame& frame) {
+  auto record_quality = [&ctx, &selection, &opt, &quality_map, &dropout_threshold_us, &has_last_plugin_timestamp,
+                         &last_plugin_timestamp, &plugin_order_error,
+                         &plugin_timestamp_error](const vlink::Frame& frame) {
     const int64_t timestamp = frame.timestamp;
     const std::string& url = frame.url;
     const vlink::ActionType action_type = frame.action_type;
@@ -781,20 +838,25 @@ static int run_quality_only_scan(const vlink::dump::SliceOptions& opt, const std
       return;
     }
 
-    update_quality_stats(quality_map[url], timestamp, dropout_threshold_us);
-  };
-
-  if (ctx.bag_plugin_interface) {
-    const int64_t inclusive_begin_us = effective_begin * 1000;
-    const int64_t exclusive_end_us = effective_end * 1000;
-    player->register_output_callback([record_quality, inclusive_begin_us, exclusive_end_us](const vlink::Frame& frame) {
-      if VUNLIKELY (frame.timestamp < inclusive_begin_us || frame.timestamp >= exclusive_end_us) {
+    if (ctx.bag_plugin_interface) {
+      if (!plugin_timestamp_supported(timestamp)) {
+        plugin_timestamp_error = true;
         return;
       }
 
-      record_quality(frame);
-    });
-  } else if (opt.end_time_set) {
+      if (has_last_plugin_timestamp && timestamp < last_plugin_timestamp) {
+        plugin_order_error = true;
+        return;
+      }
+
+      has_last_plugin_timestamp = true;
+      last_plugin_timestamp = timestamp;
+    }
+
+    update_quality_stats(quality_map[url], timestamp, dropout_threshold_us);
+  };
+
+  if (!ctx.bag_plugin_interface && opt.end_time_set) {
     const int64_t exclusive_end_us = effective_end * 1000;
     player->register_output_callback([record_quality, exclusive_end_us](const vlink::Frame& frame) {
       if VUNLIKELY (frame.timestamp >= exclusive_end_us) {
@@ -834,6 +896,17 @@ static int run_quality_only_scan(const vlink::dump::SliceOptions& opt, const std
   }
 
   player.reset();
+
+  if (plugin_timestamp_error) {
+    std::cerr << "Plugin output timestamp is outside the supported range." << std::endl;
+    return -1;
+  }
+
+  if (plugin_order_error) {
+    std::cerr << "Bag plugin emitted non-monotonic timestamps; scan requires non-decreasing plugin output."
+              << std::endl;
+    return -1;
+  }
 
   auto scan_json = build_scan_header(opt, 0);
   scan_json["events"] = nlohmann::ordered_json::array();
@@ -905,12 +978,21 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     return -1;
   }
 
-  ctx.bind_bag_plugin(player);
-
   int64_t effective_begin = 0;
   int64_t effective_end = 0;
 
   if VUNLIKELY (!resolve_time_range(opt, player->get_info(), effective_begin, effective_end)) {
+    return -1;
+  }
+
+  const int64_t playback_begin = effective_begin;
+  const int64_t playback_end = effective_end;
+  auto bounded_plugin = bind_bounded_read_plugin(player, playback_begin, playback_end);
+
+  vlink::dump::UrlSelection slice_selection;
+
+  if VUNLIKELY (!vlink::dump::build_url_selection(player->get_info(), opt.urls, opt.url_filter, opt.black_mode,
+                                                  opt.target_url, slice_selection)) {
     return -1;
   }
 
@@ -963,8 +1045,6 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
 
     std::unordered_map<std::string, std::unordered_map<std::string, vlink::dump::EventVarState>> cross_topic_state;
     const int64_t dropout_threshold_us = dropout_threshold_to_us(opt.dropout_threshold);
-    const int64_t scan_inclusive_begin_us = effective_begin * 1000;
-    const int64_t scan_exclusive_end_us = effective_end * 1000;
     auto event_state_max_age_ms = vlink::dump::seconds_to_milliseconds(opt.event_state_max_age);
     auto event_min_interval_ms = vlink::dump::seconds_to_milliseconds(opt.event_min_interval);
 
@@ -972,26 +1052,29 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     bool event_active = false;
     int64_t last_event_timestamp_ms = 0;
     bool has_last_event_timestamp = false;
+    bool has_plugin_output_timestamp = false;
+    int64_t plugin_output_begin_us = 0;
+    int64_t plugin_output_end_us = 0;
+    int64_t last_plugin_output_us = 0;
+    bool plugin_order_error = false;
+    bool plugin_timestamp_error = false;
 
     auto scan_player = std::move(player);
 
-    vlink::dump::UrlSelection scan_selection;
-
-    if VUNLIKELY (!vlink::dump::build_url_selection(scan_player->get_info(), opt.urls, opt.url_filter, opt.black_mode,
-                                                    opt.target_url, scan_selection)) {
-      return -1;
-    }
-
-    if VUNLIKELY (!validate_field_extraction_topics(scan_player->get_info(), scan_selection, opt.actions,
+    if VUNLIKELY (!validate_field_extraction_topics(scan_player->get_info(), slice_selection, opt.actions,
                                                     url_ser_override, scan_proto_cache, "Scan/event")) {
       return -1;
     }
 
-    auto process_event_frame = [&ctx, &scan_selection, &opt, &quality_check, &quality_map, &dropout_threshold_us,
+    const bool scan_with_plugin = ctx.bag_plugin_interface != nullptr;
+
+    auto process_event_frame = [&ctx, &slice_selection, &opt, &quality_check, &quality_map, &dropout_threshold_us,
                                 &url_ser_override, &cross_topic_state, &scan_proto_cache, &event_ctx,
                                 &event_state_max_age_ms, &event_active, &last_event_timestamp_ms,
                                 &has_last_event_timestamp, &event_min_interval_ms, &event_timestamps_ms,
-                                &effective_begin, &effective_end](const vlink::Frame& frame) {
+                                &effective_begin, &effective_end, &scan_with_plugin, &has_plugin_output_timestamp,
+                                &plugin_output_begin_us, &plugin_output_end_us, &last_plugin_output_us,
+                                &plugin_order_error, &plugin_timestamp_error](const vlink::Frame& frame) {
       const int64_t timestamp = frame.timestamp;
       const std::string& url = frame.url;
       const vlink::ActionType action_type = frame.action_type;
@@ -1001,12 +1084,35 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
         return;
       }
 
-      if (!scan_selection.all && scan_selection.urls.count(url) == 0) {
+      if (!slice_selection.all && slice_selection.urls.count(url) == 0) {
         return;
       }
 
       if (!vlink::dump::action_selected(opt.actions, action_type)) {
         return;
+      }
+
+      if (scan_with_plugin) {
+        if (!plugin_timestamp_supported(timestamp)) {
+          plugin_timestamp_error = true;
+          return;
+        }
+
+        if (has_plugin_output_timestamp && timestamp < last_plugin_output_us) {
+          plugin_order_error = true;
+          return;
+        }
+
+        if (!has_plugin_output_timestamp) {
+          plugin_output_begin_us = timestamp;
+          plugin_output_end_us = timestamp;
+          has_plugin_output_timestamp = true;
+        } else {
+          plugin_output_begin_us = std::min(plugin_output_begin_us, timestamp);
+          plugin_output_end_us = std::max(plugin_output_end_us, timestamp);
+        }
+
+        last_plugin_output_us = timestamp;
       }
 
       if (quality_check) {
@@ -1037,7 +1143,8 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       double result = event_ctx.evaluate_single();
       bool active = (result != 0.0);
 
-      if (active && !event_active && timestamp_ms >= effective_begin && timestamp_ms < effective_end &&
+      if (active && !event_active &&
+          (scan_with_plugin || (timestamp_ms >= effective_begin && timestamp_ms < effective_end)) &&
           (!has_last_event_timestamp || timestamp_ms - last_event_timestamp_ms >= event_min_interval_ms)) {
         event_timestamps_ms.emplace_back(timestamp_ms);
         last_event_timestamp_ms = timestamp_ms;
@@ -1047,18 +1154,10 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       event_active = active;
     };
 
-    if (ctx.bag_plugin_interface) {
-      scan_player->register_output_callback(
-          [process_event_frame, scan_inclusive_begin_us, scan_exclusive_end_us](const vlink::Frame& frame) {
-            if VUNLIKELY (frame.timestamp < scan_inclusive_begin_us || frame.timestamp >= scan_exclusive_end_us) {
-              return;
-            }
-
-            process_event_frame(frame);
-          });
-    } else if (opt.end_time_set) {
-      scan_player->register_output_callback([process_event_frame, scan_exclusive_end_us](const vlink::Frame& frame) {
-        if VUNLIKELY (frame.timestamp >= scan_exclusive_end_us) {
+    if (!ctx.bag_plugin_interface && opt.end_time_set) {
+      const int64_t playback_end_us = playback_end * 1000;
+      scan_player->register_output_callback([process_event_frame, playback_end_us](const vlink::Frame& frame) {
+        if VUNLIKELY (frame.timestamp >= playback_end_us) {
           return;
         }
 
@@ -1069,15 +1168,15 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     }
 
     vlink::BagReader::Config scan_config;
-    scan_config.begin_time = effective_begin;
-    scan_config.end_time = effective_end;
+    scan_config.begin_time = playback_begin;
+    scan_config.end_time = playback_end;
     scan_config.times = 1;
     scan_config.rate = 1.0;
     scan_config.force_delay = 0;
     scan_config.auto_quit = true;
 
-    if (!scan_selection.all) {
-      scan_config.filter_urls = scan_selection.urls;
+    if (!slice_selection.all) {
+      scan_config.filter_urls = slice_selection.urls;
     }
 
     scan_player->play(scan_config);
@@ -1091,6 +1190,27 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     }
 
     scan_player.reset();
+
+    if (plugin_timestamp_error) {
+      std::cerr << "Plugin output timestamp is outside the supported range." << std::endl;
+      return -1;
+    }
+
+    if (plugin_order_error) {
+      std::cerr << "Bag plugin emitted non-monotonic timestamps; scan requires non-decreasing plugin output."
+                << std::endl;
+      return -1;
+    }
+
+    if (scan_with_plugin && has_plugin_output_timestamp) {
+      if VUNLIKELY (plugin_output_begin_us < 0 || plugin_output_end_us < 0) {
+        std::cerr << "Plugin output timestamp is outside the supported range." << std::endl;
+        return -1;
+      }
+
+      effective_begin = plugin_output_begin_us / 1000;
+      effective_end = plugin_output_end_us / 1000 + 1;
+    }
 
     if (event_timestamps_ms.empty()) {
       if (!ctx.quiet_flag) {
@@ -1186,7 +1306,9 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       return -1;
     }
 
-    vlink::dump::DumpContext::get().bind_bag_plugin(player);
+    if (bounded_plugin) {
+      player->bind_bag_interface(bounded_plugin);
+    }
 
 #else
     (void)event_pre_ms;
@@ -1195,6 +1317,104 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     return -1;
 #endif
   } else if (window_ms > 0) {
+    if (ctx.bag_plugin_interface) {
+      bool has_plugin_output_timestamp = false;
+      int64_t plugin_output_begin_us = 0;
+      int64_t plugin_output_end_us = 0;
+      int64_t last_plugin_output_us = 0;
+      bool plugin_order_error = false;
+      bool plugin_timestamp_error = false;
+
+      player->register_output_callback([&](const vlink::Frame& frame) {
+        if ((!slice_selection.all && slice_selection.urls.count(frame.url) == 0) ||
+            !vlink::dump::action_selected(opt.actions, frame.action_type)) {
+          return;
+        }
+
+        if (!plugin_timestamp_supported(frame.timestamp)) {
+          plugin_timestamp_error = true;
+          return;
+        }
+
+        if (has_plugin_output_timestamp && frame.timestamp < last_plugin_output_us) {
+          plugin_order_error = true;
+          return;
+        }
+
+        if (!has_plugin_output_timestamp) {
+          plugin_output_begin_us = frame.timestamp;
+          plugin_output_end_us = frame.timestamp;
+          has_plugin_output_timestamp = true;
+        } else {
+          plugin_output_begin_us = std::min(plugin_output_begin_us, frame.timestamp);
+          plugin_output_end_us = std::max(plugin_output_end_us, frame.timestamp);
+        }
+
+        last_plugin_output_us = frame.timestamp;
+      });
+
+      vlink::BagReader::Config scan_config;
+      scan_config.begin_time = playback_begin;
+      scan_config.end_time = playback_end;
+      scan_config.times = 1;
+      scan_config.rate = 1.0;
+      scan_config.force_delay = 0;
+      scan_config.auto_quit = true;
+
+      if (!slice_selection.all) {
+        scan_config.filter_urls = slice_selection.urls;
+      }
+
+      player->play(scan_config);
+
+      try {
+        player->run();
+      } catch (const std::exception& e) {
+        std::cerr << "Plugin range scan error: " << e.what() << std::endl;
+        player.reset();
+        return -1;
+      }
+
+      player.reset();
+
+      if (plugin_timestamp_error) {
+        std::cerr << "Plugin output timestamp is outside the supported range." << std::endl;
+        return -1;
+      }
+
+      if (plugin_order_error) {
+        std::cerr << "Bag plugin emitted non-monotonic timestamps; slice requires non-decreasing plugin output."
+                  << std::endl;
+        return -1;
+      }
+
+      if (has_plugin_output_timestamp) {
+        if VUNLIKELY (plugin_output_begin_us < 0 || plugin_output_end_us < 0) {
+          std::cerr << "Plugin output timestamp is outside the supported range." << std::endl;
+          return -1;
+        }
+
+        effective_begin = plugin_output_begin_us / 1000;
+        effective_end = plugin_output_end_us / 1000 + 1;
+      }
+
+      try {
+        player = vlink::BagReader::create(opt.bag_file, true);
+      } catch (vlink::Exception::RuntimeError& e) {
+        std::cerr << e.what() << std::endl;
+        return -1;
+      }
+
+      if VUNLIKELY (!player) {
+        std::cerr << "Unsupported bag file suffix: " << opt.bag_file << std::endl;
+        return -1;
+      }
+
+      if (bounded_plugin) {
+        player->bind_bag_interface(bounded_plugin);
+      }
+    }
+
     const int64_t span = effective_end - effective_begin;
     const int64_t count = span / window_ms + (span % window_ms != 0 ? 1 : 0);
 
@@ -1351,13 +1571,6 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
 
   if (!opt.no_manifest) {
     planned_output_files.emplace_back(manifest_name);
-  }
-
-  vlink::dump::UrlSelection slice_selection;
-
-  if VUNLIKELY (!vlink::dump::build_url_selection(player->get_info(), opt.urls, opt.url_filter, opt.black_mode,
-                                                  opt.target_url, slice_selection)) {
-    return -1;
   }
 
   if VUNLIKELY (needs_slice_field_extraction &&
@@ -1554,6 +1767,8 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
   }
 
   std::unordered_map<std::string, int> sample_counters;
+  bool has_last_plugin_timestamp = false;
+  int64_t last_plugin_timestamp = 0;
 
   player->register_output_callback([&](const vlink::Frame& frame) {
     const int64_t timestamp = frame.timestamp;
@@ -1571,6 +1786,26 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
 
     if (!vlink::dump::action_selected(opt.actions, action_type)) {
       return;
+    }
+
+    if (ctx.bag_plugin_interface) {
+      if (!plugin_timestamp_supported(timestamp)) {
+        std::cerr << "Plugin output timestamp is outside the supported range." << std::endl;
+        slice_error = true;
+        player->stop();
+        return;
+      }
+
+      if (has_last_plugin_timestamp && timestamp < last_plugin_timestamp) {
+        std::cerr << "Bag plugin emitted non-monotonic timestamps; slice requires non-decreasing plugin output."
+                  << std::endl;
+        slice_error = true;
+        player->stop();
+        return;
+      }
+
+      has_last_plugin_timestamp = true;
+      last_plugin_timestamp = timestamp;
     }
 
     if (opt.sample_step > 1) {
@@ -1740,8 +1975,8 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
   });
 
   vlink::BagReader::Config play_config;
-  play_config.begin_time = effective_begin;
-  play_config.end_time = effective_end;
+  play_config.begin_time = playback_begin;
+  play_config.end_time = playback_end;
   play_config.times = 1;
   play_config.rate = 1.0;
   play_config.skip_blank = false;

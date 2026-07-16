@@ -61,7 +61,7 @@
  * | bind_direction()    | both  | At bind time: stored, observable via get_direction()          |
  * | register_callback() | both  | At bind time: store the forwarding sink                       |
  * | convert_url_meta()  | read  | Once per URL at open: true = keep, false = drop               |
- * | reset()             | read  | Before a playback session: discard retained session state     |
+ * | on_reset()          | read  | Before a playback session: discard retained session state     |
  * | on_read()           | read  | Every replayed frame: re-emit via do_callback()               |
  * | on_write()          | write | Every frame before persist: re-emit via do_callback()         |
  * | flush()             | both  | At a completed boundary or detach: drain buffered tail        |
@@ -74,14 +74,14 @@
  *
  * @verbatim
  *   read  : load .so -> bind_direction(kRead) -> register_callback -> convert_url_meta (per URL)
- *                    -> reset -> [on_read -> do_callback -> callback_ -> user] (per frame) -> flush
+ *                    -> on_reset -> [on_read -> do_callback -> callback_ -> user] (per frame) -> flush
  *   write : load .so -> bind_direction(kWrite) -> register_callback
  *                    -> on_write (per frame) -> do_callback -> callback_ -> writer persists
  * @endverbatim
  *
  * A read pass calls @c flush() only after natural completion.  If the reader observes @c stop() or
  * @c jump() before the boundary drain begins, it skips @c flush(); the next top-level session calls
- * @c reset() to discard that retained tail.
+ * @c on_reset() to discard that retained tail.
  *
  * @par Read-side example (rename a topic on replay)
  * @code
@@ -148,7 +148,7 @@ namespace vlink {
  * The host binds an instance through @c BagReader::bind_bag_interface() or
  * @c BagWriter::bind_bag_interface().  At bind time the host calls @c bind_direction() to
  * record which side the plugin serves and @c register_callback() to supply the forwarding sink.  The frame
- * hooks @c on_read() and @c on_write() are pure and must both be defined; @c convert_url_meta(), @c reset(),
+ * hooks @c on_read() and @c on_write() are pure and must both be defined; @c convert_url_meta(), @c on_reset(),
  * and @c flush() carry defaults.  Implementations are expected to be thread-compatible with the host's loop thread.
  */
 class BagPluginInterface {
@@ -285,7 +285,7 @@ class BagPluginInterface {
    * jump from frames retained when the preceding session was interrupted.  The default implementation is
    * a no-op for synchronous plugins.  The writer does not call this hook.
    */
-  virtual void reset();
+  virtual void on_reset();
 
   /**
    * @brief Drains any internally-buffered frames downstream before the host unbinds and tears down.
@@ -342,7 +342,7 @@ inline bool BagPluginInterface::convert_url_meta(std::string& url, std::string& 
   return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 }
 
-inline void BagPluginInterface::reset() {}
+inline void BagPluginInterface::on_reset() {}
 
 inline void BagPluginInterface::flush() {}
 

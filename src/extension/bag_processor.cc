@@ -161,6 +161,10 @@ void BagProcessor::push(int64_t data_timestamp, const Frame& frame) {
                                    return !candidate.data_timestamp_valid;
                                  }
 
+                                 if (!candidate.data_timestamp_valid) {
+                                   return candidate.frame.timestamp < queued.frame.timestamp;
+                                 }
+
                                  return candidate.data_timestamp < queued.data_timestamp;
                                });
   impl_->data_queue.emplace(iter, std::move(entry));
@@ -237,8 +241,17 @@ bool BagProcessor::on_check() {
   }
 
   const int64_t min_cache_time = impl_->config.min_cache_time * 1000;
+  const auto& oldest = impl_->data_queue.front();
+  const auto& newest = impl_->data_queue.back();
 
-  return impl_->data_queue.back().data_timestamp - impl_->data_queue.front().data_timestamp >= min_cache_time;
+  if (oldest.data_timestamp_valid != newest.data_timestamp_valid) {
+    return true;
+  }
+
+  const int64_t oldest_timestamp = oldest.data_timestamp_valid ? oldest.data_timestamp : oldest.frame.timestamp;
+  const int64_t newest_timestamp = newest.data_timestamp_valid ? newest.data_timestamp : newest.frame.timestamp;
+
+  return newest_timestamp - oldest_timestamp >= min_cache_time;
 }
 
 void BagProcessor::on_output(std::unique_lock<std::mutex>& lock, bool at_end) {
@@ -252,10 +265,18 @@ void BagProcessor::on_output(std::unique_lock<std::mutex>& lock, bool at_end) {
     bool should_output = flush_all;
 
     if (!should_output) {
-      const int64_t timestamp_span = impl_->data_queue.back().data_timestamp - impl_->data_queue.front().data_timestamp;
+      const auto& oldest = impl_->data_queue.front();
+      const auto& newest = impl_->data_queue.back();
 
-      should_output = timestamp_span >= min_cache_time && impl_->data_queue.front().data_timestamp <=
-                                                              impl_->data_queue.back().data_timestamp - min_cache_time;
+      if (oldest.data_timestamp_valid != newest.data_timestamp_valid) {
+        should_output = true;
+      } else {
+        const int64_t oldest_timestamp = oldest.data_timestamp_valid ? oldest.data_timestamp : oldest.frame.timestamp;
+        const int64_t newest_timestamp = newest.data_timestamp_valid ? newest.data_timestamp : newest.frame.timestamp;
+        const int64_t timestamp_span = newest_timestamp - oldest_timestamp;
+
+        should_output = timestamp_span >= min_cache_time && oldest_timestamp <= newest_timestamp - min_cache_time;
+      }
 
       if (!should_output) {
         return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
