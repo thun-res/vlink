@@ -39,11 +39,12 @@ namespace vlink {
 
 // Timer::Impl
 struct Timer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding)
-  alignas(64) std::atomic_bool is_busy{false};
-  alignas(64) std::atomic<uint32_t> in_flight_count{0};
-  alignas(64) std::atomic<uint64_t> start_time{0};
-  alignas(64) std::atomic<int32_t> remain_loop_count{Timer::kInfinite};
-  alignas(64) std::atomic<uint64_t> invoke_count{0};
+  std::atomic_bool is_busy{false};
+  std::atomic<uint32_t> in_flight_count{0};
+  std::atomic<uint64_t> start_time{0};
+  std::atomic<uint64_t> generation{0};
+  std::atomic<int32_t> remain_loop_count{Timer::kInfinite};
+  std::atomic<uint64_t> invoke_count{0};
 
   std::atomic<int32_t> loop_count{Timer::kInfinite};
   std::atomic<uint32_t> interval{1000U};
@@ -217,9 +218,15 @@ void Timer::restart() {
   force_to_start();
 }
 
-void Timer::stop() {
+void Timer::stop() { stop(true); }
+
+void Timer::stop(bool invalidate_pending) {
   impl_->start_time.store(0, std::memory_order_release);
   impl_->invoke_count.store(0, std::memory_order_relaxed);
+
+  if (invalidate_pending) {
+    impl_->generation.fetch_add(1, std::memory_order_acq_rel);
+  }
 }
 
 void Timer::set_strict(bool strict) { impl_->is_strict.store(strict, std::memory_order_relaxed); }
@@ -317,6 +324,7 @@ void Timer::force_to_start() {
 
   impl_->start_time.store(MessageLoop::get_current_nano_time(), std::memory_order_release);
   impl_->invoke_count.store(0, std::memory_order_relaxed);
+  impl_->generation.fetch_add(1, std::memory_order_acq_rel);
 
   MessageLoop* message_loop = impl_->message_loop.load(std::memory_order_acquire);
 
@@ -346,6 +354,8 @@ void Timer::set_invoke_count(uint64_t invoke_count) const {
 void Timer::set_priority(uint16_t priority) { impl_->priority.store(priority, std::memory_order_relaxed); }
 
 uint64_t Timer::get_start_time() const { return impl_->start_time.load(std::memory_order_acquire); }
+
+uint64_t Timer::get_generation() const { return impl_->generation.load(std::memory_order_acquire); }
 
 bool Timer::is_once_type() const { return impl_->is_once_type; }
 

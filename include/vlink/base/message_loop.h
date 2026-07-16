@@ -658,6 +658,11 @@ inline Schedule::Callback MessageLoop::make_launcher(const Schedule::Config& con
 
     bool post_ret = false;
 
+    {
+      std::lock_guard lock(impl->mtx);
+      impl->submit_time = std::chrono::steady_clock::now();
+    }
+
     if (config.delay_ms > 0) {
       post_ret = Timer::call_once(this, config.delay_ms, std::move(wrapper), config.priority);
     } else if (get_type() == kPriorityType && config.priority != kNoPriority) {

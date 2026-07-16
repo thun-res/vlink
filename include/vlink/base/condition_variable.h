@@ -156,9 +156,10 @@ class VLINK_EXPORT ConditionVariable final {
    * @tparam PredicateT  Nullary callable returning @c bool.
    * @param lock  Held lock to release across the wait.
    * @param p     Predicate evaluated on each wakeup.
+   * @throws Any exception thrown by @p p.
    */
   template <typename PredicateT>
-  void wait(std::unique_lock<std::mutex>& lock, PredicateT p) noexcept;
+  void wait(std::unique_lock<std::mutex>& lock, PredicateT p);
 
   /**
    * @brief Steady-clock wait_until overload; the deadline is honoured directly.
@@ -207,10 +208,11 @@ class VLINK_EXPORT ConditionVariable final {
    * @param atime  Absolute deadline.
    * @param p      Predicate evaluated on each wakeup.
    * @return Final value of @p p when the call returns.
+   * @throws Any exception thrown by @p p.
    */
   template <typename ClockT, typename DurationT, typename PredicateT>
   bool wait_until(std::unique_lock<std::mutex>& lock, const std::chrono::time_point<ClockT, DurationT>& atime,
-                  PredicateT p) noexcept;
+                  PredicateT p);
 
   /**
    * @brief Relative wait_for overload anchored on the steady-clock.
@@ -235,10 +237,10 @@ class VLINK_EXPORT ConditionVariable final {
    * @param rtime  Maximum wait duration.
    * @param p      Predicate evaluated on each wakeup.
    * @return Final value of @p p when the call returns.
+   * @throws Any exception thrown by @p p.
    */
   template <typename RepT, typename PeriodT, typename PredicateT>
-  bool wait_for(std::unique_lock<std::mutex>& lock, const std::chrono::duration<RepT, PeriodT>& rtime,
-                PredicateT p) noexcept;
+  bool wait_for(std::unique_lock<std::mutex>& lock, const std::chrono::duration<RepT, PeriodT>& rtime, PredicateT p);
 
   /**
    * @brief Returns the underlying @c pthread_cond_t pointer.
@@ -315,9 +317,10 @@ class VLINK_EXPORT ConditionVariableAny final {
    * @tparam PredicateT  Nullary callable returning @c bool.
    * @param lock  Held lock to release across the wait.
    * @param p     Predicate evaluated on each wakeup.
+   * @throws Any exception thrown by @p p.
    */
   template <typename LockT, typename PredicateT>
-  void wait(LockT& lock, PredicateT p) noexcept;
+  void wait(LockT& lock, PredicateT p);
 
   /**
    * @brief Generic clock wait_until variant.
@@ -343,9 +346,10 @@ class VLINK_EXPORT ConditionVariableAny final {
    * @param atime  Absolute deadline.
    * @param p      Predicate evaluated on each wakeup.
    * @return Final value of @p p when the call returns.
+   * @throws Any exception thrown by @p p.
    */
   template <typename LockT, typename ClockT, typename DurationT, typename PredicateT>
-  bool wait_until(LockT& lock, const std::chrono::time_point<ClockT, DurationT>& atime, PredicateT p) noexcept;
+  bool wait_until(LockT& lock, const std::chrono::time_point<ClockT, DurationT>& atime, PredicateT p);
 
   /**
    * @brief Relative wait_for variant.
@@ -371,9 +375,10 @@ class VLINK_EXPORT ConditionVariableAny final {
    * @param rtime  Maximum wait duration.
    * @param p      Predicate evaluated on each wakeup.
    * @return Final value of @p p when the call returns.
+   * @throws Any exception thrown by @p p.
    */
   template <typename LockT, typename RepT, typename PeriodT, typename PredicateT>
-  bool wait_for(LockT& lock, const std::chrono::duration<RepT, PeriodT>& rtime, PredicateT p) noexcept;
+  bool wait_for(LockT& lock, const std::chrono::duration<RepT, PeriodT>& rtime, PredicateT p);
 
  private:
   template <typename ToDurT, typename RepT, typename PeriodT>
@@ -399,7 +404,7 @@ class VLINK_EXPORT ConditionVariableAny final {
 ////////////////////////////////////////////////////////////////
 
 template <typename PredicateT>
-inline void ConditionVariable::wait(std::unique_lock<std::mutex>& lock, PredicateT p) noexcept {
+inline void ConditionVariable::wait(std::unique_lock<std::mutex>& lock, PredicateT p) {
   while (!p()) {
     wait(lock);
   }
@@ -440,8 +445,7 @@ inline std::cv_status ConditionVariable::wait_until(std::unique_lock<std::mutex>
 
 template <typename ClockT, typename DurationT, typename PredicateT>
 inline bool ConditionVariable::wait_until(std::unique_lock<std::mutex>& lock,
-                                          const std::chrono::time_point<ClockT, DurationT>& atime,
-                                          PredicateT p) noexcept {
+                                          const std::chrono::time_point<ClockT, DurationT>& atime, PredicateT p) {
   while (!p()) {
     if (wait_until(lock, atime) == std::cv_status::timeout) {
       return p();
@@ -459,7 +463,7 @@ inline std::cv_status ConditionVariable::wait_for(std::unique_lock<std::mutex>& 
 
 template <typename RepT, typename PeriodT, typename PredicateT>
 inline bool ConditionVariable::wait_for(std::unique_lock<std::mutex>& lock,
-                                        const std::chrono::duration<RepT, PeriodT>& rtime, PredicateT p) noexcept {
+                                        const std::chrono::duration<RepT, PeriodT>& rtime, PredicateT p) {
   return wait_until(lock, std::chrono::steady_clock::now() + ceil<std::chrono::steady_clock::duration>(rtime),
                     std::move(p));
 }
@@ -495,7 +499,7 @@ inline void ConditionVariableAny::wait(LockT& lock) noexcept {
 }
 
 template <typename LockT, typename PredicateT>
-inline void ConditionVariableAny::wait(LockT& lock, PredicateT p) noexcept {
+inline void ConditionVariableAny::wait(LockT& lock, PredicateT p) {
   while (!p()) {
     wait(lock);
   }
@@ -526,7 +530,7 @@ inline std::cv_status ConditionVariableAny::wait_until(
 
 template <typename LockT, typename ClockT, typename DurationT, typename PredicateT>
 inline bool ConditionVariableAny::wait_until(LockT& lock, const std::chrono::time_point<ClockT, DurationT>& atime,
-                                             PredicateT p) noexcept {
+                                             PredicateT p) {
   while (!p()) {
     if (wait_until(lock, atime) == std::cv_status::timeout) {
       return p();
@@ -544,7 +548,7 @@ inline std::cv_status ConditionVariableAny::wait_for(LockT& lock,
 
 template <typename LockT, typename RepT, typename PeriodT, typename PredicateT>
 inline bool ConditionVariableAny::wait_for(LockT& lock, const std::chrono::duration<RepT, PeriodT>& rtime,
-                                           PredicateT p) noexcept {
+                                           PredicateT p) {
   return wait_until(lock, std::chrono::steady_clock::now() + ceil<std::chrono::steady_clock::duration>(rtime),
                     std::move(p));
 }

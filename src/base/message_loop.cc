@@ -106,17 +106,18 @@ struct MessageLoop::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
     return priority_key(lhs) < priority_key(rhs);
   }
 
-  alignas(64) std::atomic_bool is_running{false};
-  alignas(64) std::atomic_bool quit_flag{false};
-  alignas(64) std::atomic_bool force_quit_flag{false};
+  std::atomic_bool is_running{false};
+  std::atomic_bool quit_flag{false};
+  std::atomic_bool force_quit_flag{false};
   alignas(64) std::atomic_bool is_busy{false};
-  alignas(64) std::atomic_bool wakeup_pending{false};
-  alignas(64) std::atomic_bool lockfree_needs_reset{false};
-  std::shared_ptr<MessageLoop::AliveState> alive_state{MemoryResource::make_shared<MessageLoop::AliveState>()};
-
-  std::atomic<std::thread::id> thread_id;
+  std::atomic_bool wakeup_pending{false};
+  std::atomic_bool manual_spin_waiting{false};
+  std::atomic_bool lockfree_needs_reset{false};
   alignas(64) std::atomic_size_t lockfree_task_count{0U};
   alignas(64) std::atomic_size_t lockfree_producer_count{0U};
+
+  std::shared_ptr<MessageLoop::AliveState> alive_state{MemoryResource::make_shared<MessageLoop::AliveState>()};
+  std::atomic<std::thread::id> thread_id;
 
 #ifdef _WIN32
   std::atomic<HANDLE> thread_handle{nullptr};
@@ -512,7 +513,8 @@ TaskHandle MessageLoop::post_task_with_priority_handle(Callback&& callback, uint
 }
 
 bool MessageLoop::wakeup() {
-  if VUNLIKELY (!impl_->is_running.load(std::memory_order_acquire)) {
+  if VUNLIKELY (!impl_->is_running.load(std::memory_order_acquire) &&
+                !impl_->manual_spin_waiting.load(std::memory_order_acquire)) {
     return false;
   }
 
@@ -593,19 +595,13 @@ bool MessageLoop::wait_for_idle(int ms, bool check) {
 
   auto predicate = [this]() -> bool {
     if (impl_->type == kNormalType) {
-      return !impl_->is_running.load(std::memory_order_acquire)
-                 ? impl_->normal_queue->empty()
-                 : !impl_->is_busy.load(std::memory_order_acquire) && impl_->normal_queue->empty();
+      return !impl_->is_busy.load(std::memory_order_acquire) && impl_->normal_queue->empty();
     } else if (impl_->type == kLockfreeType) {
       const bool empty = impl_->lockfree_task_count.load(std::memory_order_acquire) == 0U;
-      return !impl_->is_running.load(std::memory_order_acquire)
-                 ? empty
-                 : !impl_->is_busy.load(std::memory_order_acquire) && empty;
+      return !impl_->is_busy.load(std::memory_order_acquire) && empty;
     } else if (impl_->type == kPriorityType) {
       const bool empty = impl_->priority_droppable_queue->empty() && impl_->priority_protected_queue->empty();
-      return !impl_->is_running.load(std::memory_order_acquire)
-                 ? empty
-                 : !impl_->is_busy.load(std::memory_order_acquire) && empty;
+      return !impl_->is_busy.load(std::memory_order_acquire) && empty;
     }
 
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -800,7 +796,9 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
           is_full = false;
         }
 
-        if (!is_full && impl_->is_running.load(std::memory_order_acquire) &&
+        if (!is_full &&
+            (impl_->is_running.load(std::memory_order_acquire) ||
+             impl_->manual_spin_waiting.load(std::memory_order_acquire)) &&
             !impl_->wakeup_pending.load(std::memory_order_acquire)) {
           impl_->wakeup_pending.store(true, std::memory_order_release);
           should_notify = true;
@@ -830,7 +828,8 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
 
               is_full = false;
 
-              if (impl_->is_running.load(std::memory_order_acquire) &&
+              if ((impl_->is_running.load(std::memory_order_acquire) ||
+                   impl_->manual_spin_waiting.load(std::memory_order_acquire)) &&
                   !impl_->wakeup_pending.load(std::memory_order_acquire)) {
                 impl_->wakeup_pending.store(true, std::memory_order_release);
                 should_notify = true;
@@ -997,7 +996,9 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
           is_full = false;
         }
 
-        if (!is_full && impl_->is_running.load(std::memory_order_acquire) &&
+        if (!is_full &&
+            (impl_->is_running.load(std::memory_order_acquire) ||
+             impl_->manual_spin_waiting.load(std::memory_order_acquire)) &&
             !impl_->wakeup_pending.load(std::memory_order_acquire)) {
           impl_->wakeup_pending.store(true, std::memory_order_release);
           should_notify = true;
@@ -1026,7 +1027,8 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
               push_priority_task(std::move(callback), priority, droppable);
               is_full = false;
 
-              if (impl_->is_running.load(std::memory_order_acquire) &&
+              if ((impl_->is_running.load(std::memory_order_acquire) ||
+                   impl_->manual_spin_waiting.load(std::memory_order_acquire)) &&
                   !impl_->wakeup_pending.load(std::memory_order_acquire)) {
                 impl_->wakeup_pending.store(true, std::memory_order_release);
                 should_notify = true;
@@ -1205,6 +1207,9 @@ bool MessageLoop::process_normal_task(bool block, bool reuse_queue) {
   impl_->cv.notify_all();
 
   if (block) {
+    const bool manual_spin = !impl_->is_running.load(std::memory_order_acquire);
+    impl_->manual_spin_waiting.store(manual_spin, std::memory_order_release);
+
     auto predicate = [this]() -> bool {
       return impl_->quit_flag.load(std::memory_order_acquire) || impl_->is_busy.load(std::memory_order_acquire) ||
              !impl_->normal_queue->empty() || impl_->wakeup_pending.load(std::memory_order_acquire);
@@ -1218,6 +1223,7 @@ bool MessageLoop::process_normal_task(bool block, bool reuse_queue) {
     }
 
     impl_->wakeup_pending.store(false, std::memory_order_release);
+    impl_->manual_spin_waiting.store(false, std::memory_order_release);
   }
 
   return true;
@@ -1262,6 +1268,9 @@ bool MessageLoop::process_lockfree_task(bool block) {
   impl_->cv.notify_all();
 
   if (block) {
+    const bool manual_spin = !impl_->is_running.load(std::memory_order_acquire);
+    impl_->manual_spin_waiting.store(manual_spin, std::memory_order_release);
+
     auto predicate = [this]() -> bool {
       return impl_->quit_flag.load(std::memory_order_acquire) || impl_->is_busy.load(std::memory_order_acquire) ||
              impl_->lockfree_task_count.load(std::memory_order_acquire) != 0U ||
@@ -1277,6 +1286,7 @@ bool MessageLoop::process_lockfree_task(bool block) {
     }
 
     impl_->wakeup_pending.store(false, std::memory_order_release);
+    impl_->manual_spin_waiting.store(false, std::memory_order_release);
   }
 
   return true;
@@ -1337,6 +1347,9 @@ bool MessageLoop::process_priority_task(bool block) {
   impl_->cv.notify_all();
 
   if (block) {
+    const bool manual_spin = !impl_->is_running.load(std::memory_order_acquire);
+    impl_->manual_spin_waiting.store(manual_spin, std::memory_order_release);
+
     auto predicate = [this]() -> bool {
       return impl_->quit_flag.load(std::memory_order_acquire) || impl_->is_busy.load(std::memory_order_acquire) ||
              !impl_->priority_droppable_queue->empty() || !impl_->priority_protected_queue->empty() ||
@@ -1351,6 +1364,7 @@ bool MessageLoop::process_priority_task(bool block) {
     }
 
     impl_->wakeup_pending.store(false, std::memory_order_release);
+    impl_->manual_spin_waiting.store(false, std::memory_order_release);
   }
 
   return true;
@@ -1380,6 +1394,8 @@ bool MessageLoop::process_timer_task(int64_t& next_sleep_time) {
       ++iter;         // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       continue;       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
+
+    const uint64_t timer_generation = timer->get_generation();
 
     interval_time =
         timer->get_interval() == 0 ? Timer::kMinInterval : static_cast<uint64_t>(timer->get_interval()) * 1000'000U;
@@ -1415,7 +1431,7 @@ bool MessageLoop::process_timer_task(int64_t& next_sleep_time) {
       bool capacity_blocked = false;
 
       auto alive_flag = timer->get_alive_flag();
-      auto run_timer_callback = [this, timer, alive_flag]() {
+      auto run_timer_callback = [this, timer, alive_flag, timer_generation]() {
         if VUNLIKELY (!alive_flag->load(std::memory_order_acquire)) {
           return;
         }
@@ -1423,7 +1439,8 @@ bool MessageLoop::process_timer_task(int64_t& next_sleep_time) {
         {
           std::lock_guard timer_lock(impl_->mtx);
 
-          if VUNLIKELY (!alive_flag->load(std::memory_order_acquire) || impl_->timer_set.count(timer) == 0) {
+          if VUNLIKELY (!alive_flag->load(std::memory_order_acquire) || impl_->timer_set.count(timer) == 0 ||
+                        timer->get_generation() != timer_generation) {
             return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
           }
 
@@ -1533,7 +1550,7 @@ bool MessageLoop::process_timer_task(int64_t& next_sleep_time) {
       }
 
       if (timer->get_remain_loop_count() == 0) {
-        timer->stop();
+        timer->stop(false);
       } else {
         timer->set_invoke_count(capacity_blocked
                                     ? processed_invoke_count

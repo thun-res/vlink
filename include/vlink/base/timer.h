@@ -302,6 +302,8 @@ class VLINK_EXPORT Timer final {
 
   void wait_for_idle();
 
+  void stop(bool invalidate_pending);
+
   void clear();
 
   void force_to_start();
@@ -313,6 +315,8 @@ class VLINK_EXPORT Timer final {
   void set_invoke_count(uint64_t invoke_count) const;
 
   uint64_t get_start_time() const;
+
+  uint64_t get_generation() const;
 
   bool is_once_type() const;
 

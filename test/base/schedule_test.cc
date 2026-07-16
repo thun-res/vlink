@@ -248,6 +248,26 @@ TEST_SUITE("base-Schedule") {
     loop.wait_for_quit();
   }
 
+  TEST_CASE("schedule timeout starts when a stored status is dispatched") {
+    MessageLoop loop;
+    loop.async_run();
+
+    std::atomic<bool> ran{false};
+    std::atomic<bool> timed_out{false};
+    auto status = loop.exec_task(Schedule::Config{0, 0, 20, 0}, [&ran]() { ran.store(true); });
+    status.on_schedule_timeout([&timed_out]() { timed_out.store(true); });
+
+    std::this_thread::sleep_for(60ms);
+    REQUIRE(status.dispatch());
+    loop.wait_for_idle();
+
+    CHECK(ran.load());
+    CHECK_FALSE(timed_out.load());
+
+    loop.quit();
+    loop.wait_for_quit();
+  }
+
   TEST_CASE("delay_ms defers execution") {
     MessageLoop loop;
     loop.async_run();

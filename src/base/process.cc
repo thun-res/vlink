@@ -406,10 +406,10 @@ static void run_windows_write(WindowsWriteContext* context) {
 
 // Process::Impl
 struct Process::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding)
-  alignas(64) std::atomic<Process::State> state{Process::kNotRunningState};
-  alignas(64) std::atomic<Process::ExitStatus> exit_status{Process::kNormalExitStatus};
-  alignas(64) std::atomic<Process::Error> error{Process::kNoError};
-  alignas(64) std::atomic<Process::Mode> mode{Process::kSeparateMode};
+  std::atomic<Process::State> state{Process::kNotRunningState};
+  std::atomic<Process::ExitStatus> exit_status{Process::kNormalExitStatus};
+  std::atomic<Process::Error> error{Process::kNoError};
+  std::atomic<Process::Mode> mode{Process::kSeparateMode};
 
   std::atomic<int> exit_code{-1};
   std::atomic<bool> exit_processed{false};

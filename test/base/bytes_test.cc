@@ -217,6 +217,18 @@ TEST_SUITE("base-Bytes") {
     CHECK_EQ(b.real_size(), 8u);
   }
 
+  TEST_CASE("pointer factories reject null data with non-zero size") {
+    uint8_t* mutable_null = nullptr;
+    const uint8_t* const_null = nullptr;
+
+    CHECK(Bytes::shallow_copy(mutable_null, 1u).empty());
+    CHECK(Bytes::shallow_copy(const_null, 1u).empty());
+    CHECK(Bytes::deep_copy(mutable_null, 1u).empty());
+    CHECK(Bytes::deep_copy(const_null, 1u).empty());
+    CHECK(Bytes::loan_internal(mutable_null, 1u).empty());
+    CHECK(Bytes::loan_internal(const_null, 1u).empty());
+  }
+
   TEST_CASE("loan_internal marks object as loaned and non-owning") {
     uint8_t buf[] = {0x01u, 0x02u, 0x03u};
     Bytes loaned = Bytes::loan_internal(buf, 3u);

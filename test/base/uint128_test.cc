@@ -464,6 +464,13 @@ TEST_SUITE("base-Uint128") {
       oss << std::dec << v << ' ' << 10;
       CHECK_EQ(oss.str(), "0xA 10");
     }
+
+    SUBCASE("stream fill character is restored after output") {
+      Uint128 v(0u, 10u);
+      std::ostringstream oss;
+      oss << std::setfill('*') << v << ' ' << std::setw(3) << 1;
+      CHECK_EQ(oss.str(), "0xA **1");
+    }
   }
 
   TEST_CASE("std::hash specialisation enables use as unordered_map key") {

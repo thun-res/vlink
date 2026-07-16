@@ -28,6 +28,7 @@
 #include <doctest/doctest.h>
 
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -362,6 +363,9 @@ TEST_SUITE("base-Helpers") {
     }
     SUBCASE("empty string returns 0") { CHECK_EQ(Helpers::get_hash_code(""), 0u); }
     SUBCASE("numeric string returns parsed number") { CHECK_EQ(Helpers::get_hash_code("42"), 42u); }
+    SUBCASE("numeric prefix is hashed as a complete string") {
+      CHECK_EQ(Helpers::get_hash_code("1a"), static_cast<uint32_t>(std::hash<std::string>{}("1a")));
+    }
     SUBCASE("non-numeric string returns non-zero hash") { CHECK_NE(Helpers::get_hash_code("hello"), 0u); }
   }
 
@@ -395,6 +399,11 @@ TEST_SUITE("base-Helpers") {
       int64_t ts = 1577836800LL * 1000000000LL + 123000000LL;
       std::string s = Helpers::format_date(ts);
       CHECK(s.find(".123") != std::string::npos);
+    }
+    SUBCASE("negative subsecond epoch uses floor semantics") {
+      CHECK_EQ(Helpers::format_date(-1LL), "1969-12-31 23:59:59.999");
+      CHECK_EQ(Helpers::format_date(-1'000'001LL), "1969-12-31 23:59:59.998");
+      CHECK_EQ(Helpers::format_date(-1'000'000'000LL), "1969-12-31 23:59:59.000");
     }
   }
 
@@ -477,6 +486,14 @@ TEST_SUITE("base-Helpers") {
     }
     SUBCASE("out-of-range milliseconds returns -1") {
       CHECK_EQ(Helpers::convert_date_to_timestamp("2026/01/01 00:00:00:1500"), -1);
+    }
+    SUBCASE("trailing non-whitespace data returns -1") {
+      CHECK_EQ(Helpers::convert_date_to_timestamp("2026/01/01 00:00:00x"), -1);
+      CHECK_EQ(Helpers::convert_date_to_timestamp("2026/01/01 00:00:00:500x"), -1);
+    }
+    SUBCASE("trailing whitespace is accepted") {
+      CHECK(Helpers::convert_date_to_timestamp("2026/01/01 00:00:00   ") > 0);
+      CHECK(Helpers::convert_date_to_timestamp("2026/01/01 00:00:00:500   ") > 0);
     }
   }
 

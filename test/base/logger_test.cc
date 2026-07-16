@@ -123,6 +123,19 @@ void run_logger_child_case(const std::string& child_case) {
     return;
   }
 
+#ifndef _WIN32
+  if (child_case == "invalid-file-path") {
+    bool console_called = false;
+    Logger::register_console_handler([&console_called](Logger::Level, std::string_view) { console_called = true; });
+    Logger::init("vlink_logger_invalid_path", "/proc/vlink-logger-invalid-path");
+    VLOG_I("logger remains available after file sink initialization fails");
+    CHECK(console_called);
+    Logger::register_console_handler(nullptr);
+    Logger::flush();
+    return;
+  }
+#endif
+
   FAIL("unknown logger child case");
 }
 
@@ -564,6 +577,12 @@ TEST_SUITE("base-Logger") {
     run_logger_child("missing-plugin", {{"VLINK_LOG_FILE_LEVEL", "Info"},
                                         {"VLINK_LOG_CONSOLE_LEVEL", "Off"},
                                         {"VLINK_LOG_PLUGIN", "__missing_vlink_logger_plugin__"}});
+
+#ifndef _WIN32
+    run_logger_child(
+        "invalid-file-path",
+        {{"VLINK_LOG_FILE_LEVEL", "Info"}, {"VLINK_LOG_CONSOLE_LEVEL", "Info"}, {"VLINK_LOG_STORE_STRATEGY", "1"}});
+#endif
   }
 
   TEST_CASE("init with a non-empty log path does not crash") {

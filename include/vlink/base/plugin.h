@@ -116,8 +116,9 @@ struct PluginEntry;
  *
  * @details
  * A single @c Plugin instance can host multiple distinct interface types simultaneously
- * and tracks each loaded library so repeated @c load() calls share the underlying
- * @c dlopen handle.  All operations are thread safe through the internal implementation.
+ * and tracks each loaded library by its library/interface pair.  Loading the same pair
+ * more than once returns @c nullptr.  All operations are thread safe through the internal
+ * implementation.
  */
 class VLINK_EXPORT Plugin final {
  public:

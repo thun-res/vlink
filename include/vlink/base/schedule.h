@@ -83,6 +83,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -269,6 +270,7 @@ struct VLINK_EXPORT Schedule final {
       std::atomic_bool is_valid{false};
       std::atomic_bool dispatched{false};
       std::recursive_mutex mtx;
+      std::chrono::steady_clock::time_point submit_time{std::chrono::steady_clock::now()};
       Callback schedule_timeout_callback;
       Callback execution_timeout_callback;
       CatchCallback catch_callback;

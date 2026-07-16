@@ -221,13 +221,12 @@ Schedule::RetStatus Schedule::internal_process_with_ret(const Config& config, Re
                                                         Callback& wrapper_callback) {
   Schedule::RetStatus status;
 
-  auto submit_time = std::chrono::steady_clock::now();
-
-  wrapper_callback = [callback = std::move(callback), config, submit_time, impl = status.impl_]() mutable {
+  wrapper_callback = [callback = std::move(callback), config, impl = status.impl_]() mutable {
     Schedule::Callback schedule_timeout_cb;
     Schedule::Callback execution_timeout_cb;
     Schedule::CatchCallback catch_cb;
     Schedule::Callback else_cb;
+    std::chrono::steady_clock::time_point submit_time;
     std::vector<Schedule::RetCallback> then_callbacks;
 
     {
@@ -241,6 +240,7 @@ Schedule::RetStatus Schedule::internal_process_with_ret(const Config& config, Re
       execution_timeout_cb = std::move(impl->execution_timeout_callback);
       catch_cb = std::move(impl->catch_callback);
       else_cb = std::move(impl->else_callback);
+      submit_time = impl->submit_time;
       then_callbacks = std::move(impl->then_callback_list);
 
       impl->dispatched.store(true, std::memory_order_release);
@@ -250,8 +250,9 @@ Schedule::RetStatus Schedule::internal_process_with_ret(const Config& config, Re
 
     if (config.schedule_timeout_ms > 0) {
       auto wait_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - submit_time).count();
+      auto timeout_ms = static_cast<uint64_t>(config.schedule_timeout_ms) + config.delay_ms;
 
-      if (static_cast<uint32_t>(wait_ms) > config.schedule_timeout_ms + config.delay_ms) {
+      if (static_cast<uint64_t>(wait_ms) > timeout_ms) {
         if (schedule_timeout_cb) {
           schedule_timeout_cb();
         }

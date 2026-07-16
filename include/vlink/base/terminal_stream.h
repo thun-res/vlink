@@ -302,12 +302,13 @@ class VLINK_EXPORT TerminalStream final {
    * @brief Accepts @c std::endl and similar standard manipulators.
    *
    * @details
-   * Standard manipulators expect a @c std::ostream; this overload ignores the function
-   * pointer and emits a newline followed by a flush, matching @c TerminalStream::endl.
+   * Standard manipulators expect a @c std::ostream.  @c std::flush only flushes the buffered
+   * output; the remaining manipulators retain the historical newline-and-flush behaviour.
    *
+   * @param manip  Standard ostream manipulator.
    * @return Reference to @c *this for chaining.
    */
-  TerminalStream& operator<<(std::ostream& (*)(std::ostream&)) noexcept;
+  TerminalStream& operator<<(std::ostream& (*manip)(std::ostream&)) noexcept;
 
  private:
   static int default_stdout_fd() noexcept;

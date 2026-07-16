@@ -70,8 +70,8 @@
  * @endcode
  *
  * @note The timer is @b not started by the constructor; call @c start explicitly.  The internal
- *       start time is held in a 64-byte aligned @c std::atomic<int64_t>; concurrent reads are
- *       safe, but interleaved @c start / @c stop from different threads race on the active flag.
+ *       start time is held in a @c std::atomic<int64_t>; concurrent reads and writes are safe,
+ *       while concurrent state-changing operations follow last-operation-wins semantics.
  */
 
 #pragma once
@@ -272,7 +272,7 @@ class VLINK_EXPORT ElapsedTimer final {
   [[nodiscard]] int64_t get() const noexcept;
 
  private:
-  alignas(64) std::atomic<int64_t> start_time_{-1};
+  std::atomic<int64_t> start_time_{-1};
   Method method_{kCpuTimestamp};
   Accuracy accuracy_{kMilli};
 };

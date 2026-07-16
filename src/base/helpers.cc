@@ -503,7 +503,7 @@ uint32_t get_hash_code(const std::string& str) noexcept {
 
   auto [p, error] = std::from_chars(str.data(), str.data() + str.size(), value);
 
-  if (error == std::errc()) {
+  if (error == std::errc() && p == str.data() + str.size()) {
     return value;
   }
 
@@ -545,12 +545,11 @@ std::string format_date(int64_t nanoseconds_since_epoch) noexcept {
   auto time_point = std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds>(
       std::chrono::nanoseconds(nanoseconds_since_epoch));
 
-  auto system_time = std::chrono::time_point_cast<std::chrono::milliseconds>(time_point);
-  auto duration_since_epoch = system_time.time_since_epoch();
-  auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration_since_epoch);
-  auto milliseconds = (duration_since_epoch - seconds).count();
+  auto system_time = std::chrono::floor<std::chrono::milliseconds>(time_point);
+  auto seconds = std::chrono::floor<std::chrono::seconds>(system_time);
+  auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(system_time - seconds).count();
 
-  std::time_t time_t_seconds = seconds.count();
+  std::time_t time_t_seconds = seconds.time_since_epoch().count();
   std::tm tm_result{};
   std::tm* tm_ptr = nullptr;
 
@@ -673,8 +672,16 @@ int64_t convert_date_to_timestamp(const std::string& date) noexcept {
     return -1;
   }
 
-  if (ss >> delimiter_ms >> milliseconds) {
-    if (delimiter_ms != ':' || milliseconds < 0 || milliseconds >= 1000) {
+  ss >> std::ws;
+
+  if (!ss.eof()) {
+    if (!(ss >> delimiter_ms >> milliseconds) || delimiter_ms != ':' || milliseconds < 0 || milliseconds >= 1000) {
+      return -1;
+    }
+
+    ss >> std::ws;
+
+    if (!ss.eof()) {
       return -1;
     }
   }

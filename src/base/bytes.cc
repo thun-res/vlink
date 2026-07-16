@@ -123,10 +123,20 @@ Bytes Bytes::create(size_t size, uint8_t offset) noexcept {
 }
 
 Bytes Bytes::shallow_copy(uint8_t* data, size_t size) noexcept {
+  if VUNLIKELY (!data && size > 0) {
+    VLOG_E("Bytes: Cannot shallow copy null data with a non-zero size.");
+    return {};
+  }
+
   return Bytes(kShallowCopy, size == 0 ? nullptr : data, size, 0, false);
 }
 
 Bytes Bytes::shallow_copy(const uint8_t* data, size_t size) noexcept {
+  if VUNLIKELY (!data && size > 0) {
+    VLOG_E("Bytes: Cannot shallow copy null data with a non-zero size.");
+    return {};
+  }
+
   return Bytes(kShallowCopy, size == 0 ? nullptr : const_cast<uint8_t*>(data), size, 0, false);
 }
 
@@ -135,18 +145,38 @@ Bytes Bytes::shallow_copy_ptr(void* data) noexcept {
 }
 
 Bytes Bytes::deep_copy(uint8_t* data, size_t size, uint8_t offset) noexcept {
+  if VUNLIKELY (!data && size > 0) {
+    VLOG_E("Bytes: Cannot deep copy null data with a non-zero size.");
+    return {};
+  }
+
   return Bytes(kDeepCopy, size == 0 ? nullptr : data, size, offset, false);
 }
 
 Bytes Bytes::deep_copy(const uint8_t* data, size_t size, uint8_t offset) noexcept {
+  if VUNLIKELY (!data && size > 0) {
+    VLOG_E("Bytes: Cannot deep copy null data with a non-zero size.");
+    return {};
+  }
+
   return Bytes(kDeepCopy, size == 0 ? nullptr : const_cast<uint8_t*>(data), size, offset, false);
 }
 
 Bytes Bytes::loan_internal(uint8_t* data, size_t size) noexcept {
+  if VUNLIKELY (!data && size > 0) {
+    VLOG_E("Bytes: Cannot loan null data with a non-zero size.");
+    return {};
+  }
+
   return Bytes(kShallowCopy, size == 0 ? nullptr : data, size, 0, true);
 }
 
 Bytes Bytes::loan_internal(const uint8_t* data, size_t size) noexcept {
+  if VUNLIKELY (!data && size > 0) {
+    VLOG_E("Bytes: Cannot loan null data with a non-zero size.");
+    return {};
+  }
+
   return Bytes(kShallowCopy, size == 0 ? nullptr : const_cast<uint8_t*>(data), size, 0, true);
 }
 

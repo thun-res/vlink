@@ -64,6 +64,8 @@ TEST_SUITE("base-Quantize") {
     CHECK_EQ(Quantize::encode<int16_t>(kExtent, 1.25F), Quantize::encode<int16_t>(-kExtent, kExtent, 1.25F));
     CHECK_EQ(Quantize::encode<int16_t>(kExtent, 100.0F), Quantize::encode<int16_t>(-kExtent, kExtent, 100.0F));
     CHECK_EQ(Quantize::encode<int16_t>(kExtent, 150.0F), Quantize::encode<int16_t>(-kExtent, kExtent, 150.0F));
+    CHECK_EQ(Quantize::encode<int16_t>(kExtent, -100.0001F), Quantize::encode<int16_t>(-kExtent, kExtent, -100.0001F));
+    CHECK_EQ(Quantize::encode<int16_t>(kExtent, 100.0001F), Quantize::encode<int16_t>(-kExtent, kExtent, 100.0001F));
     CHECK_EQ(Quantize::encode<int16_t>(kExtent, nan), 0);
     CHECK_EQ(Quantize::encode<int16_t>(0, 1.0F), 0);
   }
@@ -113,6 +115,31 @@ TEST_SUITE("base-Quantize") {
     auto nan = std::numeric_limits<float>::quiet_NaN();
     CHECK_EQ(Quantize::encode<int16_t>(-10, 10, nan), 0);
     CHECK_EQ(Quantize::decode<float>(nan, 10, static_cast<int16_t>(1)), doctest::Approx(0.0F));
+  }
+
+  TEST_CASE("non-finite ranges are rejected without changing infinite value saturation") {
+    const auto inf = std::numeric_limits<double>::infinity();
+
+    CHECK_EQ(Quantize::encode<int16_t>(-inf, 10.0, 0.0), 0);
+    CHECK_EQ(Quantize::encode<int16_t>(-10.0, inf, 0.0), 0);
+    CHECK_EQ(Quantize::encode<int16_t>(inf, 0.0), 0);
+    CHECK_EQ(Quantize::decode<double>(-inf, 10.0, static_cast<int16_t>(1)), doctest::Approx(0.0));
+    CHECK_EQ(Quantize::decode<double>(inf, static_cast<int16_t>(1)), doctest::Approx(0.0));
+
+    CHECK_EQ(Quantize::encode<int16_t>(-10.0, 10.0, inf), std::numeric_limits<int16_t>::max());
+    CHECK_EQ(Quantize::encode<int16_t>(-10.0, 10.0, -inf), std::numeric_limits<int16_t>::lowest());
+  }
+
+  TEST_CASE("extreme finite arithmetic preserves finite mappings") {
+    const auto max = std::numeric_limits<double>::max();
+
+    CHECK_EQ(Quantize::encode<int16_t>(-max, max, 0.0), 0);
+    CHECK_EQ(Quantize::encode<uint8_t>(-max, max, 0.0), 128);
+    CHECK_EQ(Quantize::decode<double>(-max, max, static_cast<int16_t>(0)), doctest::Approx(0.0));
+    CHECK_EQ(Quantize::encode<int16_t>(max, max / 2.0), 16384);
+    CHECK_EQ(Quantize::decode<double>(max, static_cast<int16_t>(16384)), doctest::Approx(max / 2.0).epsilon(0.0001));
+    CHECK_EQ(Quantize::decode<int>(-max, max, std::numeric_limits<int16_t>::max()), std::numeric_limits<int>::max());
+    CHECK_EQ(Quantize::decode<int>(max, std::numeric_limits<int16_t>::max()), std::numeric_limits<int>::max());
   }
 }
 
