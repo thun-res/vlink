@@ -12,9 +12,9 @@
 
 | 文件 | 角色 | 大小 |
 |---|---|---|
-| `test_vlink.py`           | 基础烟雾测试，每条 API 一个 happy-path 用例 | ~750 行 / 21 个测试 |
-| `test_vlink_full.py`      | 完整覆盖测试，含错误路径 / 复杂场景       | ~1550 行 / 43 个测试 |
-| `test_vlink_coverage.py`  | 绑定覆盖率回归，确保关键 attr / method 仍可见 | ~670 行 / 27 个测试 |
+| `test_vlink.py`           | 基础烟雾测试，每条 API 一个 happy-path 用例 | ~930 行 / 22 个测试 |
+| `test_vlink_full.py`      | 完整覆盖测试，含错误路径 / 复杂场景       | ~2190 行 / 45 个测试 |
+| `test_vlink_coverage.py`  | 绑定覆盖率回归，确保关键 attr / method 仍可见 | ~750 行 / 27 个测试 |
 
 三个文件相互独立，可以单独运行。三层覆盖的设计意图：
 
@@ -59,7 +59,9 @@ python3 test_vlink_coverage.py
 | `test_zerocopy_header`   | `Header` POD |
 | `test_zerocopy_raw_data` | `RawData` 序列化往返 |
 | `test_zerocopy_camera_frame` | `CameraFrame` |
-| `test_zerocopy_point_cloud` | `PointCloud`（含 schema 协议、`set_vertical` 与压缩） |
+| `test_zerocopy_point_cloud` | `PointCloud` schema 协议与 `set_vertical` |
+| `test_zerocopy_python_ownership_guards` | Python buffer/NumPy 视图的所有权与生命周期保护 |
+| `test_zerocopy_point_cloud_compress` | `PointCloud` 压缩与解压往返 |
 | `test_zerocopy_proxy_data` | `ProxyData` |
 | `test_zerocopy_occupancy_grid` | `OccupancyGrid` |
 | `test_zerocopy_tensor` | `Tensor`（含 set_dtype/set_shape 顺序） |

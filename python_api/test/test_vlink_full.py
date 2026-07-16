@@ -2,10 +2,13 @@
 """Comprehensive test for ALL VLink Python bindings including newly added APIs."""
 
 import os
+import signal
+import subprocess
 import sys
 import threading
 import time
 import tempfile
+import weakref
 
 os.environ["VLINK_DISCOVER_DISABLE"] = "1"
 
@@ -188,6 +191,51 @@ def test_logger_extended():
     # Restore default by registering None-like handler
     _vlink.Logger.register_console_handler(lambda lv, msg: None)
 
+    replacement_check = r'''
+import ctypes
+import os
+import threading
+import vlink
+
+entered = threading.Event()
+
+def slow_handler(level, message):
+    entered.set()
+    if os.name == "nt":
+        ctypes.CDLL("kernel32").Sleep(400)
+    else:
+        ctypes.CDLL(None).usleep(400_000)
+
+vlink.Logger.set_console_level(vlink.LogLevel.Info)
+vlink.Logger.register_console_handler(slow_handler)
+worker = threading.Thread(target=lambda: vlink.log_info("handler replacement"))
+worker.start()
+assert entered.wait(2.0)
+vlink.Logger.register_console_handler(lambda level, message: None)
+worker.join(2.0)
+assert not worker.is_alive()
+
+self_error = []
+
+def self_replacing_handler(level, message):
+    try:
+        vlink.Logger.register_console_handler(lambda inner_level, inner_message: None)
+    except RuntimeError as exc:
+        self_error.append(str(exc))
+
+vlink.Logger.register_console_handler(self_replacing_handler)
+vlink.log_info("self replacement")
+assert self_error and "active logger callback" in self_error[0]
+vlink.Logger.register_console_handler(lambda level, message: None)
+'''
+    subprocess.run(
+        [sys.executable, "-c", replacement_check],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=4.0,
+    )
+
     print("[PASS] Logger extended")
 
 
@@ -200,7 +248,9 @@ def test_memory_resource_export():
     assert hasattr(_vlink, "MemoryResource")
     assert "MemoryResource" in _vlink.__all__
     mr = _vlink.MemoryResource()
+    mr_refcount = sys.getrefcount(mr)
     pool = mr.get_memory_pool()
+    assert sys.getrefcount(mr) == mr_refcount + 1
     assert pool.get_tier_count() >= 0
     mr.trim()
 
@@ -329,6 +379,140 @@ def test_timer_extended():
     once_done.wait(2.0)
     assert once_done.is_set()
 
+    lifetime_check = r'''
+import ctypes
+import gc
+import os
+import sys
+import threading
+import vlink
+
+def native_sleep(milliseconds):
+    if os.name == "nt":
+        ctypes.CDLL("kernel32").Sleep(milliseconds)
+    else:
+        ctypes.CDLL(None).usleep(milliseconds * 1000)
+
+# Deleting a timer from another thread while its callback is running must not
+# hold the GIL while the native destructor waits for that callback.
+loop = vlink.MessageLoop()
+assert loop.async_run()
+entered = threading.Event()
+
+def slow_callback():
+    entered.set()
+    native_sleep(500)
+
+timer = vlink.Timer(loop, 1, -1, slow_callback)
+timer.start()
+assert entered.wait(2.0)
+timer = None
+gc.collect()
+assert loop.quit()
+assert loop.wait_for_quit(2000)
+
+# Replacing a callback must release the GIL while Timer waits for the active
+# callback's recursive mutex.
+for operation in ("set", "start"):
+    loop = vlink.MessageLoop()
+    assert loop.async_run()
+    entered = threading.Event()
+    timer = vlink.Timer(loop, 1, -1, slow_callback)
+    timer.start()
+    assert entered.wait(2.0)
+    if operation == "set":
+        timer.set_callback(lambda: None)
+    else:
+        timer.start(lambda: None)
+    timer.stop()
+    assert loop.quit()
+    assert loop.wait_for_quit(2000)
+
+# Deleting the last Python reference inside the callback must defer native
+# destruction until the callback has unwound from the loop thread.
+loop = vlink.MessageLoop()
+assert loop.async_run()
+done = threading.Event()
+timer = None
+
+def self_delete():
+    global timer
+    timer = None
+    gc.collect()
+    done.set()
+
+timer = vlink.Timer(loop, 1, 1, self_delete)
+timer.start()
+assert done.wait(2.0)
+assert loop.quit()
+assert loop.wait_for_quit(2000)
+
+# Keep the sole loop owner alive until the deferred timer cleanup has detached
+# from it. Releasing the loop on its own callback thread is not a valid teardown.
+loop = vlink.MessageLoop()
+assert loop.async_run()
+done = threading.Event()
+timer = None
+
+def delete_timer_and_sole_loop_owner():
+    global timer
+    timer = None
+    gc.collect()
+    done.set()
+
+timer = vlink.Timer(loop, 1, 1, delete_timer_and_sole_loop_owner)
+loop = None
+gc.collect()
+timer.start()
+assert done.wait(2.0)
+
+loop = vlink.MessageLoop()
+assert loop.async_run()
+entered = threading.Event()
+
+def detach_while_running():
+    entered.set()
+    native_sleep(500)
+
+timer = vlink.Timer(loop, 1, -1, detach_while_running)
+loop = None
+gc.collect()
+timer.start()
+assert entered.wait(2.0)
+assert timer.detach()
+
+loop = vlink.MessageLoop()
+assert loop.async_run()
+done = threading.Event()
+timer = None
+process = vlink.Process()
+
+def nested_state_callback(state):
+    global timer
+    if state == vlink.Process.State.Starting:
+        timer = None
+        gc.collect()
+
+def outer_timer_callback():
+    process.start(sys.executable, ["-c", "pass"])
+    done.set()
+
+process.register_state_changed_callback(nested_state_callback)
+timer = vlink.Timer(loop, 1, 1, outer_timer_callback)
+loop = None
+gc.collect()
+timer.start()
+assert done.wait(2.0)
+assert process.wait_for_finished(3000)
+'''
+    subprocess.run(
+        [sys.executable, "-c", lifetime_check],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10.0,
+    )
+
     # TIMER_INFINITE constant
     assert _vlink.TIMER_INFINITE == -1
 
@@ -347,6 +531,46 @@ def test_wheel_timer_extended():
     assert isinstance(wheel.get_remaining_time(pending_key), int)
     assert wheel.remove(pending_key)
     assert wheel.get_remaining_time(pending_key) == 0
+
+    fired = threading.Event()
+    wheel.add(10, lambda key: fired.set())
+    wheel.start()
+    assert fired.wait(1.0)
+    wheel.stop()
+    assert not wheel.is_running()
+
+    deadlock_check = """
+import ctypes
+import gc
+import os
+import vlink
+
+def hold_gil(milliseconds):
+    if os.name == "nt":
+        ctypes.PyDLL("kernel32").Sleep(milliseconds)
+    else:
+        ctypes.PyDLL(None).usleep(milliseconds * 1000)
+
+wheel = vlink.WheelTimer(32, 1)
+wheel.add(1, lambda key: None)
+wheel.start()
+hold_gil(50)
+wheel.stop()
+
+wheel = vlink.WheelTimer(32, 1)
+wheel.add(1, lambda key: None)
+wheel.start()
+hold_gil(50)
+del wheel
+gc.collect()
+"""
+    subprocess.run(
+        [sys.executable, "-c", deadlock_check],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=3.0,
+    )
     print("[PASS] WheelTimer extended")
 
 
@@ -377,6 +601,133 @@ def test_thread_pool_extended():
     assert pool2.get_type() == _vlink.ThreadPoolType.Normal
     assert pool2.shutdown() is True
     print("[PASS] ThreadPool extended")
+
+
+def test_callback_owner_lifetimes():
+    lifetime_check = r'''
+import ctypes
+import gc
+import os
+import threading
+import time
+import weakref
+import vlink
+
+def native_sleep(milliseconds):
+    if os.name == "nt":
+        ctypes.CDLL("kernel32").Sleep(milliseconds)
+    else:
+        ctypes.CDLL(None).usleep(milliseconds * 1000)
+
+for owner_type in (vlink.MessageLoop, lambda: vlink.MultiLoop(1), lambda: vlink.ThreadPool(1)):
+    entered = threading.Event()
+    owner = owner_type()
+    owner.post_task(lambda: (entered.set(), native_sleep(300)))
+    if not isinstance(owner, vlink.ThreadPool):
+        assert owner.async_run()
+    assert entered.wait(2.0)
+    owner = None
+    gc.collect()
+
+for owner_type in (vlink.MessageLoop, lambda: vlink.MultiLoop(1), lambda: vlink.ThreadPool(1)):
+    done = threading.Event()
+    owner = owner_type()
+    ref = weakref.ref(owner)
+
+    def self_delete():
+        global owner
+        owner = None
+        gc.collect()
+        done.set()
+
+    owner.post_task(self_delete)
+    if not isinstance(owner, vlink.ThreadPool):
+        assert owner.async_run()
+    assert done.wait(2.0)
+    for _ in range(100):
+        if ref() is None:
+            break
+        gc.collect()
+        time.sleep(0.01)
+    assert ref() is None
+
+url = "intra://python/callback-owner-lifetime"
+subscriber = vlink.Subscriber(url)
+publisher = vlink.Publisher(url)
+entered = threading.Event()
+
+def node_callback(data):
+    entered.set()
+    native_sleep(300)
+
+assert subscriber.listen(node_callback)
+subscriber_ref = weakref.ref(subscriber)
+thread = threading.Thread(target=lambda: publisher.publish(b"payload"))
+thread.start()
+assert entered.wait(2.0)
+subscriber = None
+gc.collect()
+thread.join(2.0)
+assert not thread.is_alive()
+for _ in range(100):
+    if subscriber_ref() is None:
+        break
+    gc.collect()
+    time.sleep(0.01)
+assert subscriber_ref() is None
+time.sleep(0.2)
+publisher.deinit()
+
+url = "intra://python/explicit-deinit-lifetime"
+subscriber = vlink.Subscriber(url)
+publisher = vlink.Publisher(url)
+entered = threading.Event()
+assert subscriber.listen(lambda data: (entered.set(), native_sleep(300)))
+thread = threading.Thread(target=lambda: publisher.publish(b"payload"))
+thread.start()
+assert entered.wait(2.0)
+assert subscriber.deinit()
+thread.join(2.0)
+assert not thread.is_alive()
+publisher.deinit()
+'''
+    subprocess.run(
+        [sys.executable, "-c", lifetime_check],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=8.0,
+    )
+    print("[PASS] callback-owner lifetimes")
+
+
+def test_fixed_utf8_fields():
+    def check(obj, setter, getter, fitting, truncated):
+        getattr(obj, setter)(fitting)
+        assert getattr(obj, getter)() == fitting
+        getattr(obj, setter)(truncated)
+        assert getattr(obj, getter)() == truncated[:-1]
+
+    check(_vlink.OccupancyGrid(), "set_map_id", "map_id", "a" * 12 + "中", "a" * 13 + "中")
+    check(_vlink.Tensor(), "set_name", "name", "a" * 28 + "中", "a" * 29 + "中")
+    check(_vlink.Tensor(), "set_model_id", "model_id", "a" * 28 + "中", "a" * 29 + "中")
+    check(_vlink.Tensor(), "set_layout", "layout", "a" * 12 + "中", "a" * 13 + "中")
+    check(_vlink.ObjectArray(), "set_source_id", "source_id", "a" * 12 + "中", "a" * 13 + "中")
+    check(_vlink.AudioFrame(), "set_codec", "codec", "a" * 12 + "中", "a" * 13 + "中")
+    check(_vlink.AudioFrame(), "set_language", "language", "a" * 4 + "中", "a" * 5 + "中")
+
+    header = _vlink.ZeroCopyHeader()
+    header.frame_id = "a" * 13 + "中"
+    assert header.frame_id == "a" * 13
+
+    obj = _vlink.ObjectArray.Object()
+    obj.label = "a" * 29 + "中"
+    assert obj.label == "a" * 29
+
+    qos = _vlink.Qos()
+    qos.name = "a" * 17 + "中"
+    assert qos.name == "a" * 17
+    print("[PASS] fixed UTF-8 fields")
 
 
 def test_process():
@@ -428,6 +779,24 @@ def test_process():
     assert finished_info[0] is not None
     assert finished_info[0][0] == 0
 
+    restart_error = []
+    restart_checked = threading.Event()
+    p4_restart = _vlink.Process()
+
+    def reject_restart_from_callback(code, status):
+        try:
+            p4_restart.start("/bin/true")
+        except RuntimeError as exc:
+            restart_error.append(str(exc))
+        restart_checked.set()
+
+    p4_restart.register_finished_callback(reject_restart_from_callback)
+    p4_restart.start("/bin/true")
+    assert restart_checked.wait(2.0)
+    assert restart_error and "active callback" in restart_error[0]
+    p4_restart.close()
+    p4_restart.register_finished_callback(lambda code, status: None)
+
     p5 = _vlink.Process()
     p5.set_process_mode(_vlink.Process.Mode.Merged)
     p5.start("/bin/echo", ["line_one"])
@@ -454,6 +823,72 @@ def test_process():
 
     assert _vlink.Process.INFINITE == -1
     assert _vlink.Process.DEFAULT_WAIT_TIMEOUT_MS == 3000
+
+    # Process destruction joins its monitor thread. A ready-read callback can
+    # be waiting for the GIL at that point, so exercise the race repeatedly in
+    # an isolated subprocess and fail by timeout instead of hanging this suite.
+    deadlock_check = r'''
+import ctypes
+import gc
+import os
+import sys
+import threading
+import vlink
+
+entered = threading.Event()
+
+def callback():
+    entered.set()
+    if os.name == "nt":
+        ctypes.CDLL("kernel32").Sleep(500)
+    else:
+        ctypes.CDLL(None).usleep(500_000)
+
+child_code = "import time\nprint('ready', flush=True)\ntime.sleep(60)"
+process = vlink.Process()
+process.register_ready_read_stdout_callback(callback)
+process.start(sys.executable, ["-u", "-c", child_code])
+assert process.wait_for_started(3000)
+assert entered.wait(2.0)
+del process
+gc.collect()
+'''
+    subprocess.run(
+        [sys.executable, "-c", deadlock_check],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=4.0,
+    )
+
+    self_delete_check = r'''
+import gc
+import sys
+import threading
+import vlink
+
+done = threading.Event()
+process = None
+
+def callback():
+    global process
+    process = None
+    gc.collect()
+    done.set()
+
+child_code = "import time\nprint('ready', flush=True)\ntime.sleep(60)"
+process = vlink.Process()
+process.register_ready_read_stdout_callback(callback)
+process.start(sys.executable, ["-u", "-c", child_code])
+assert done.wait(2.0)
+'''
+    subprocess.run(
+        [sys.executable, "-c", self_delete_check],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=4.0,
+    )
 
     print("[PASS] Process")
 
@@ -658,6 +1093,120 @@ def test_node_common_apis():
 
     pub.init()
 
+    # Unsupported attach must not retain a MessageLoop merely because it was
+    # passed to the binding.
+    unsupported_loop = _vlink.MessageLoop()
+    unsupported_refs = sys.getrefcount(unsupported_loop)
+    assert not pub.attach(unsupported_loop)
+    assert sys.getrefcount(unsupported_loop) == unsupported_refs
+
+    # DDS nodes support MessageLoop attachment. Releasing the node's retained
+    # loop from the loop thread must be deferred until the current task exits;
+    # otherwise MessageLoop::~MessageLoop attempts to join its own thread.
+    node_loop_lifetime_check = r'''
+import gc
+import sys
+import threading
+import time
+import vlink
+
+loop = vlink.MessageLoop()
+refs = sys.getrefcount(loop)
+node = vlink.Publisher("dds://python/node-loop-main", auto_init=False)
+assert node.attach(loop)
+assert sys.getrefcount(loop) == refs + 1
+assert node.detach()
+assert sys.getrefcount(loop) == refs
+
+# Destruction of an initialized attached node waits for the loop to become
+# idle. The binding must release the GIL even when the node has no callbacks of
+# its own, so an active Python loop task can finish.
+loop = vlink.MessageLoop()
+assert loop.async_run()
+entered = threading.Event()
+
+def slow_loop_task():
+    entered.set()
+    time.sleep(0.2)
+
+assert loop.post_task(slow_loop_task)
+assert entered.wait(2.0)
+node = vlink.Publisher("dds://python/node-loop-external-delete", auto_init=False)
+assert node.attach(loop)
+assert node.init()
+node = None
+gc.collect()
+assert loop.quit()
+assert loop.wait_for_quit(2000)
+
+loop = vlink.MessageLoop()
+done = threading.Event()
+ended = threading.Event()
+loop.register_end_handler(ended.set)
+assert loop.async_run()
+node = vlink.Publisher("dds://python/node-loop-detach", auto_init=False)
+assert node.attach(loop)
+
+def detach_on_loop():
+    assert node.detach()
+    done.set()
+
+assert loop.post_task(detach_on_loop)
+loop = None
+gc.collect()
+assert done.wait(2.0)
+assert ended.wait(2.0)
+
+# Releasing the node's reference must not stop a loop that still has another
+# Python owner.
+loop = vlink.MessageLoop()
+refs = sys.getrefcount(loop)
+assert loop.async_run()
+node = vlink.Publisher("dds://python/node-loop-shared", auto_init=False)
+assert node.attach(loop)
+done = threading.Event()
+
+def detach_from_shared_loop():
+    assert node.detach()
+    done.set()
+
+assert loop.post_task(detach_from_shared_loop)
+assert done.wait(2.0)
+deadline = time.monotonic() + 2.0
+while sys.getrefcount(loop) != refs and time.monotonic() < deadline:
+    time.sleep(0.01)
+assert sys.getrefcount(loop) == refs
+assert loop.is_running()
+assert loop.quit()
+assert loop.wait_for_quit(2000)
+
+loop = vlink.MessageLoop()
+ended = threading.Event()
+loop.register_end_handler(ended.set)
+assert loop.async_run()
+holder = [vlink.Publisher("dds://python/node-loop-delete", auto_init=False)]
+assert holder[0].attach(loop)
+done = threading.Event()
+
+def delete_on_loop():
+    holder.clear()
+    gc.collect()
+    done.set()
+
+assert loop.post_task(delete_on_loop)
+loop = None
+gc.collect()
+assert done.wait(2.0)
+assert ended.wait(2.0)
+'''
+    subprocess.run(
+        [sys.executable, "-c", node_loop_lifetime_check],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=5.0,
+    )
+
     # Transport type
     assert pub.get_transport_type() == _vlink.TransportType.Intra
 
@@ -732,9 +1281,15 @@ def test_bag_extended():
     assert w.push_schema(explicit_schema)
 
     callback_calls = []
+    writer_callback_replace_error = []
+    writer_ref = weakref.ref(w)
 
     def schema_callback(ser_type, schema_type):
         callback_calls.append((ser_type, schema_type))
+        try:
+            writer_ref().register_schema_callback(lambda *_: None)
+        except RuntimeError as exc:
+            writer_callback_replace_error.append(str(exc))
         schema = _vlink.SchemaData()
         schema.name = ser_type
         schema.encoding = "protobuf"
@@ -760,6 +1315,7 @@ def test_bag_extended():
     assert isinstance(timestamp, int)
     time.sleep(0.2)
     assert w.wait_for_idle(5000)
+    assert writer_callback_replace_error and "active Python callback" in writer_callback_replace_error[0]
     w.quit()
     assert w.wait_for_quit(5000)
     w.close()
@@ -776,7 +1332,9 @@ def test_bag_extended():
 
     # Reader with check/reindex
     r = _vlink.BagReader.create(bag_path)
+    reader_refcount = sys.getrefcount(r)
     info = r.get_info()
+    assert sys.getrefcount(r) == reader_refcount + 1
     assert info.message_count >= 5
     assert info.storage_type == "SQLite3"
     metas = {meta.url: meta for meta in info.url_metas}
@@ -804,9 +1362,16 @@ def test_bag_extended():
     # Playback
     msgs = []
     outputs = []
+    reader_callback_replace_error = []
+    reader_ref = weakref.ref(r)
     done = threading.Event()
 
     def on_output(frame):
+        if not reader_callback_replace_error:
+            try:
+                reader_ref().register_output_callback(lambda _: None)
+            except RuntimeError as exc:
+                reader_callback_replace_error.append(str(exc))
         outputs.append((frame.timestamp, frame.url, frame.action_type, frame.data))
         msgs.append(frame.data)
 
@@ -821,6 +1386,7 @@ def test_bag_extended():
     done.wait(10.0)
 
     assert len(msgs) >= 5
+    assert reader_callback_replace_error and "active Python callback" in reader_callback_replace_error[0]
     assert b"m0" in msgs
     assert all(type(action) is type(_vlink.ActionType.Publish) for _, _, action, _ in outputs)
 
@@ -941,9 +1507,56 @@ def test_bag_writer_stream_fail_state():
 
 
 def test_register_terminate_signal():
-    # Just test it doesn't crash - can't easily test actual signal
-    signal_received = [False]
-    _vlink.utils.register_terminate_signal(lambda sig: signal_received.__setitem__(0, True))
+    signal_received = []
+    signals = [signal.SIGINT, signal.SIGTERM]
+    if hasattr(signal, "SIGHUP"):
+        signals.append(signal.SIGHUP)
+    previous = {sig: signal.getsignal(sig) for sig in signals}
+
+    passthrough_check = """
+import os
+import signal
+import vlink
+
+def fail_callback(sig):
+    raise RuntimeError("expected callback failure")
+
+vlink.utils.register_terminate_signal(fail_callback, False, True)
+os.kill(os.getpid(), signal.SIGTERM)
+print("still alive")
+"""
+    passthrough_result = subprocess.run(
+        [sys.executable, "-c", passthrough_check],
+        capture_output=True,
+        text=True,
+        timeout=3.0,
+    )
+    if os.name == "nt":
+        assert passthrough_result.returncode != 0
+    else:
+        assert passthrough_result.returncode == -signal.SIGTERM
+    assert "still alive" not in passthrough_result.stdout
+
+    try:
+        try:
+            _vlink.utils.register_terminate_signal(lambda sig: None, True, True)
+            assert False, "async pass-through must be rejected during registration"
+        except ValueError:
+            pass
+
+        _vlink.utils.register_terminate_signal(signal_received.append)
+        os.kill(os.getpid(), signal.SIGTERM)
+        assert signal_received == [signal.SIGTERM]
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+    try:
+        _vlink.utils.register_crash_signal(lambda sig: None)
+        assert False, "fatal signal callbacks must be rejected for Python"
+    except RuntimeError:
+        pass
+
     print("[PASS] register_terminate_signal")
 
 
@@ -1126,6 +1739,35 @@ def test_timer_constructors():
     shorthand_done.wait(2.0)
     assert shorthand_done.is_set()
     shorthand.stop()
+
+    # Python must retain exactly the currently attached loop, without keeping
+    # every former loop alive after reattach/detach or a failed reattach.
+    first_loop = _vlink.MessageLoop()
+    second_loop = _vlink.MessageLoop()
+    first_refs = sys.getrefcount(first_loop)
+    second_refs = sys.getrefcount(second_loop)
+    owned_timer = _vlink.Timer(first_loop)
+    assert sys.getrefcount(first_loop) == first_refs + 1
+    assert owned_timer.attach(second_loop)
+    assert sys.getrefcount(first_loop) == first_refs
+    assert sys.getrefcount(second_loop) == second_refs + 1
+    assert owned_timer.detach()
+    assert sys.getrefcount(second_loop) == second_refs
+
+    assert owned_timer.attach(first_loop)
+    failed_loop = _vlink.MessageLoop()
+    assert failed_loop.async_run()
+    assert failed_loop.quit()
+    assert failed_loop.wait_for_quit(2000)
+    assert not owned_timer.attach(failed_loop)
+    assert sys.getrefcount(first_loop) == first_refs
+
+    retained_loop = _vlink.MessageLoop()
+    retained_refs = sys.getrefcount(retained_loop)
+    temporary_timer = _vlink.Timer(retained_loop)
+    assert sys.getrefcount(retained_loop) == retained_refs + 1
+    del temporary_timer
+    assert sys.getrefcount(retained_loop) == retained_refs
 
     loop.quit()
     loop.wait_for_quit(2000)
@@ -1506,6 +2148,8 @@ if __name__ == "__main__":
     test_timer_extended()
     test_wheel_timer_extended()
     test_thread_pool_extended()
+    test_callback_owner_lifetimes()
+    test_fixed_utf8_fields()
     test_process()
     test_utils_extended()
     test_helpers_extended()
