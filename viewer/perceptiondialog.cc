@@ -50,6 +50,7 @@
 #include <QSettings>
 #include <QShowEvent>
 #include <QStandardPaths>
+#include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -330,45 +331,7 @@ PerceptionDialog::PerceptionDialog(QWidget* parent) : QDialog(parent), ui(new Ui
     osg_view_->scene()->addItem(hud_item_);
   }
 
-  int index = 0;
-  for (const auto& [url, context] : url_ctx_) {
-    auto* check_box = new CustomCheckBox;
-    check_box->setText(QString::fromStdString(url));
-    check_box->setChecked(true);
-    check_box->setFocusPolicy(Qt::NoFocus);
-    connect(check_box, &CustomCheckBox::clicked, this, [this, check_box](bool checked) {
-      const std::string url = check_box->text().toStdString();
-
-      if (checked) {
-        hidden_urls_.erase(url);
-      } else {
-        hidden_urls_.emplace(url);
-      }
-
-      for (const auto& [geode_key, geode] : geo_node_map_) {
-        if (!geode) {
-          continue;
-        }
-
-        if (geode_key.compare(0, url.size(), url) == 0 &&
-            (geode_key.size() == url.size() || geode_key[url.size()] == '#')) {
-          geode->setNodeMask(checked ? 0xFFFFFFFF : 0);
-        }
-      }
-    });
-
-    auto* proxy = new QGraphicsProxyWidget;
-
-    proxy->setCacheMode(QGraphicsTextItem::ItemCoordinateCache);
-    proxy->setWidget(check_box);
-    proxy->setOpacity(0.8);
-
-    osg_view_->scene()->addItem(proxy);
-
-    proxy->setPos(5, (check_box->height() + 5) * index + 5);
-
-    ++index;
-  }
+  rebuild_url_controls();
 
   connect(osg_view_, &OsgGraphicsView::fpsRateChanged, this,
           [fps_item](int fps_rate) { fps_item->setPlainText("FPS: " + QString::number(fps_rate)); });
@@ -434,7 +397,7 @@ PerceptionDialog::PerceptionDialog(QWidget* parent) : QDialog(parent), ui(new Ui
       std::lock_guard lock(cache_mtx_);
 
       if (url_ctx_.find(proxy_data.url) != url_ctx_.end()) {
-        proxy_data_cache_[proxy_data.url] = proxy_data;
+        proxy_data_cache_[proxy_data.url] = std::make_shared<const vlink::ProxyAPI::Data>(proxy_data);
         should_render = pending_render_urls_.insert(proxy_data.url).second;
       }
     }
@@ -543,7 +506,7 @@ void PerceptionDialog::enqueue_render_url(const QString& url) {
 void PerceptionDialog::render_url(const QString& url) {
   const auto url_str = url.toStdString();
 
-  vlink::ProxyAPI::Data proxy_data;
+  std::shared_ptr<const vlink::ProxyAPI::Data> proxy_data;
   const UrlContext* context = nullptr;
 
   {
@@ -567,7 +530,7 @@ void PerceptionDialog::render_url(const QString& url) {
       std::vector<perception::Layer> layers;
       std::vector<std::vector<perception::HudField>> hud_fields;
 
-      if (!perception::decode::decode_zerocopy_batch(proxy_data.raw, proxy_data.ser, context->mappings,
+      if (!perception::decode::decode_zerocopy_batch(proxy_data->raw, proxy_data->ser, context->mappings,
                                                      context->hud_bindings, layers, hud_fields)) {
         return;
       }
@@ -594,13 +557,13 @@ void PerceptionDialog::render_url(const QString& url) {
 
     switch (context->type) {
       case perception::RenderType::kObjectDetection:
-        perception::decode::decode_zerocopy_object_array(proxy_data.raw, layer);
+        perception::decode::decode_zerocopy_object_array(proxy_data->raw, layer);
         break;
       case perception::RenderType::kOccupancyGrid:
-        perception::decode::decode_zerocopy_occupancy_grid(proxy_data.raw, layer);
+        perception::decode::decode_zerocopy_occupancy_grid(proxy_data->raw, layer);
         break;
       case perception::RenderType::kPointCloud:
-        perception::decode::decode_zerocopy_point_cloud(proxy_data.raw, layer);
+        perception::decode::decode_zerocopy_point_cloud(proxy_data->raw, layer);
         break;
       default:
         break;
@@ -615,7 +578,7 @@ void PerceptionDialog::render_url(const QString& url) {
   }
 
   if (context->schema == vlink::SchemaType::kProtobuf && context->proto_prototype) {
-    if (!context->proto_prototype->ParseFromArray(proxy_data.raw.data(), static_cast<int>(proxy_data.raw.size()))) {
+    if (!context->proto_prototype->ParseFromArray(proxy_data->raw.data(), static_cast<int>(proxy_data->raw.size()))) {
       return;
     }
 
@@ -644,11 +607,11 @@ void PerceptionDialog::render_url(const QString& url) {
   if (context->schema == vlink::SchemaType::kFlatbuffers && context->fbs_context && context->fbs_context->schema &&
       context->fbs_context->root_object) {
     if (!flatbuffers::Verify(*context->fbs_context->schema, *context->fbs_context->root_object,
-                             reinterpret_cast<const uint8_t*>(proxy_data.raw.data()), proxy_data.raw.size())) {
+                             reinterpret_cast<const uint8_t*>(proxy_data->raw.data()), proxy_data->raw.size())) {
       return;
     }
 
-    const auto* root_table = flatbuffers::GetAnyRoot(reinterpret_cast<const uint8_t*>(proxy_data.raw.data()));
+    const auto* root_table = flatbuffers::GetAnyRoot(reinterpret_cast<const uint8_t*>(proxy_data->raw.data()));
 
     if (!root_table) {
       return;
@@ -725,6 +688,8 @@ void PerceptionDialog::apply_config(const PerceptionConfig& config, const QStrin
   if (hud_item_) {
     hud_item_->setVisible(false);
   }
+
+  rebuild_url_controls();
 #endif
 
   ui->lineEdit_config_path->setText(path);
@@ -899,6 +864,58 @@ void PerceptionDialog::init_osg() {}
 #endif
 
 #ifdef VLINK_ENABLE_VIEWER_OSG
+
+void PerceptionDialog::rebuild_url_controls() {
+  for (auto* item : url_filter_items_) {
+    delete item;
+  }
+
+  url_filter_items_.clear();
+
+  if (!osg_view_ || !osg_view_->scene()) {
+    return;
+  }
+
+  int index = 0;
+
+  for (const auto& [url, context] : url_ctx_) {
+    (void)context;
+
+    auto* check_box = new CustomCheckBox;
+    check_box->setText(QString::fromStdString(url));
+    check_box->setChecked(hidden_urls_.find(url) == hidden_urls_.end());
+    check_box->setFocusPolicy(Qt::NoFocus);
+    connect(check_box, &CustomCheckBox::clicked, this, [this, check_box](bool checked) {
+      const std::string url = check_box->text().toStdString();
+
+      if (checked) {
+        hidden_urls_.erase(url);
+      } else {
+        hidden_urls_.emplace(url);
+      }
+
+      for (const auto& [geode_key, geode] : geo_node_map_) {
+        if (!geode) {
+          continue;
+        }
+
+        if (geode_key.compare(0, url.size(), url) == 0 &&
+            (geode_key.size() == url.size() || geode_key[url.size()] == '#')) {
+          geode->setNodeMask(checked ? 0xFFFFFFFF : 0);
+        }
+      }
+    });
+
+    auto* proxy = new QGraphicsProxyWidget;
+    proxy->setCacheMode(QGraphicsTextItem::ItemCoordinateCache);
+    proxy->setWidget(check_box);
+    proxy->setOpacity(0.8);
+    proxy->setPos(5, (check_box->height() + 5) * index + 5);
+    osg_view_->scene()->addItem(proxy);
+    url_filter_items_.push_back(proxy);
+    ++index;
+  }
+}
 
 void PerceptionDialog::init_osg() {
   if (osg_inited_) {
@@ -1121,8 +1138,21 @@ void PerceptionDialog::update_hud_overlay() {
 
   const auto now_ms = static_cast<uint64_t>(vlink::ElapsedTimer::get_cpu_timestamp(vlink::ElapsedTimer::kMilli));
 
-  if (hud_item_->isVisible() && now_ms - hud_last_render_ms_ < 100) {
-    return;
+  if (hud_item_->isVisible()) {
+    if (hud_render_pending_) {
+      return;
+    }
+
+    const auto elapsed_ms = now_ms - hud_last_render_ms_;
+
+    if (elapsed_ms < 100) {
+      hud_render_pending_ = true;
+      QTimer::singleShot(static_cast<int>(100 - elapsed_ms), this, [this]() {
+        hud_render_pending_ = false;
+        update_hud_overlay();
+      });
+      return;
+    }
   }
 
   hud_last_render_ms_ = now_ms;

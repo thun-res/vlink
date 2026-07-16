@@ -2064,7 +2064,7 @@ bool RerunConverter::log_point_cloud(::rerun::RecordingStream& rec, const std::s
       return false;
     }
 
-    constexpr double kFloatMax = static_cast<double>(std::numeric_limits<float>::max());
+    constexpr auto kFloatMax = static_cast<double>(std::numeric_limits<float>::max());
 
     if VUNLIKELY (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) || std::abs(x) > kFloatMax ||
                   std::abs(y) > kFloatMax || std::abs(z) > kFloatMax) {
@@ -3174,8 +3174,9 @@ bool RerunConverter::log_boxes3d(::rerun::RecordingStream& rec, const std::strin
     }
   }
 
-  bool has_entity_fields = entity_x_mapping || entity_y_mapping || entity_z_mapping || entity_w_mapping ||
-                           entity_l_mapping || entity_h_mapping || entity_heading_mapping;
+  bool has_entity_fields = entity_x_mapping != nullptr || entity_y_mapping != nullptr || entity_z_mapping != nullptr ||
+                           entity_w_mapping != nullptr || entity_l_mapping != nullptr || entity_h_mapping != nullptr ||
+                           entity_heading_mapping != nullptr;
 
   std::vector<::rerun::Position3D> centers;
   std::vector<::rerun::HalfSize3D> half_sizes;
@@ -3570,12 +3571,12 @@ bool RerunConverter::log_image(::rerun::RecordingStream& rec, const std::string&
 
   if (mul_size(pixel_total, 3U, expected_size) && data.size() == expected_size) {
     return log_typed_image(rec, entity_path, data.data(), data.size(), width, height,
-                           ::rerun::datatypes::ColorModel::BGR, ::rerun::datatypes::ChannelDatatype::U8);
+                           ::rerun::datatypes::ColorModel::RGB, ::rerun::datatypes::ChannelDatatype::U8);
   }
 
   if (mul_size(pixel_total, 4U, expected_size) && data.size() == expected_size) {
     return log_typed_image(rec, entity_path, data.data(), data.size(), width, height,
-                           ::rerun::datatypes::ColorModel::BGRA, ::rerun::datatypes::ChannelDatatype::U8);
+                           ::rerun::datatypes::ColorModel::RGBA, ::rerun::datatypes::ChannelDatatype::U8);
   }
 
   return false;
@@ -6995,8 +6996,10 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
       }
     }
 
-    bool has_entity_fields = entity_x_mapping || entity_y_mapping || entity_z_mapping || entity_w_mapping ||
-                             entity_l_mapping || entity_h_mapping || entity_heading_mapping;
+    bool has_entity_fields = entity_x_mapping != nullptr || entity_y_mapping != nullptr ||
+                             entity_z_mapping != nullptr || entity_w_mapping != nullptr ||
+                             entity_l_mapping != nullptr || entity_h_mapping != nullptr ||
+                             entity_heading_mapping != nullptr;
 
     std::vector<::rerun::Position3D> centers;
     std::vector<::rerun::HalfSize3D> half_sizes;
@@ -7331,12 +7334,12 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
     if (mul_size(pixel_total, 3U, expected_size) && vec->size() == expected_size) {
       return log_typed_image(rec, entity_path, vec->data(), vec->size(), width, height,
-                             ::rerun::datatypes::ColorModel::BGR, ::rerun::datatypes::ChannelDatatype::U8);
+                             ::rerun::datatypes::ColorModel::RGB, ::rerun::datatypes::ChannelDatatype::U8);
     }
 
     if (mul_size(pixel_total, 4U, expected_size) && vec->size() == expected_size) {
       return log_typed_image(rec, entity_path, vec->data(), vec->size(), width, height,
-                             ::rerun::datatypes::ColorModel::BGRA, ::rerun::datatypes::ChannelDatatype::U8);
+                             ::rerun::datatypes::ColorModel::RGBA, ::rerun::datatypes::ChannelDatatype::U8);
     }
 
     return false;

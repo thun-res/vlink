@@ -34,6 +34,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include "./flatbuffers_runtime_compat.h"
 #include "./perception/perception_config.h"
@@ -124,6 +125,8 @@ class PerceptionDialog : public QDialog {
   void enqueue_render_url(const QString& url);
 
 #ifdef VLINK_ENABLE_VIEWER_OSG
+  void rebuild_url_controls();
+
   void render_layer(const std::string& geode_key, const std::string& base_url, const perception::Layer& layer);
 
   osg::Geode* ensure_geode(const std::string& geode_key, perception::RenderType type);
@@ -152,7 +155,7 @@ class PerceptionDialog : public QDialog {
   float render_size_{2.0f};
 
   std::mutex cache_mtx_;
-  std::unordered_map<std::string, vlink::ProxyAPI::Data> proxy_data_cache_;
+  std::unordered_map<std::string, std::shared_ptr<const vlink::ProxyAPI::Data>> proxy_data_cache_;
   std::unordered_set<std::string> pending_render_urls_;
 
 #ifdef VLINK_ENABLE_VIEWER_OSG
@@ -166,9 +169,11 @@ class PerceptionDialog : public QDialog {
   osg::ref_ptr<class OsgManipulator> manipulator_;
   osg::ref_ptr<osgText::Font> osg_font_;
   std::unordered_map<std::string, osg::ref_ptr<osg::Geode>> geo_node_map_;
+  std::vector<class QGraphicsProxyWidget*> url_filter_items_;
   class QGraphicsPixmapItem* hud_item_{nullptr};
   std::map<std::string, perception::HudField> hud_values_;
   uint64_t hud_last_render_ms_{0};
+  bool hud_render_pending_{false};
   std::atomic_bool osg_inited_{false};
 #endif
 };

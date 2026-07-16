@@ -653,7 +653,7 @@ void RerunServer::on_bridge_time(uint64_t sys_time, uint64_t boot_time) {
 }
 
 bool RerunServer::is_url_allowed(std::string_view url) const {
-  return is_allowed_by_filters_cached(this, url, config_.whitelist_exact, config_.whitelist_patterns,
+  return is_allowed_by_filters_cached(cache_owner_id_, url, config_.whitelist_exact, config_.whitelist_patterns,
                                       config_.blacklist_exact, config_.blacklist_patterns);
 }
 

@@ -232,8 +232,8 @@ int main(int argc, char* argv[]) {
 
   std::atomic<uint64_t> msg_processed{0};
 
-  reader->register_output_callback([&converter, &msg_processed, &reader, &rec, &sequence_timeline, &time_timeline,
-                                    &url_seq_map, &url_schema_map, &url_ser_map, use_sequence_timeline, &info,
+  reader->register_output_callback([&converter, &msg_processed, &rec, &sequence_timeline, &time_timeline, &url_seq_map,
+                                    &url_schema_map, &url_ser_map, use_sequence_timeline, &info,
                                     use_time_timeline](const vlink::Frame& frame) {
     const int64_t timestamp_us = frame.timestamp;
     const std::string& url = frame.url;

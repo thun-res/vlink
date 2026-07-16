@@ -256,14 +256,13 @@ inline bool is_allowed_by_filters(std::string_view value, const std::vector<std:
   return !matches_any_filter(value, blacklist_exact, blacklist_patterns);
 }
 
-template <typename OwnerT>
-inline bool is_allowed_by_filters_cached(const OwnerT* owner, std::string_view value,
+inline bool is_allowed_by_filters_cached(uint64_t owner_id, std::string_view value,
                                          const std::vector<std::string>& whitelist_exact,
                                          const std::vector<std::string>& whitelist_patterns,
                                          const std::vector<std::string>& blacklist_exact,
                                          const std::vector<std::string>& blacklist_patterns) {
   struct FilterCacheEntry final {
-    const OwnerT* owner{nullptr};
+    uint64_t owner_id{0};
     size_t hash{0};
     std::string value;
     bool allowed{false};
@@ -273,11 +272,11 @@ inline bool is_allowed_by_filters_cached(const OwnerT* owner, std::string_view v
   const auto hash = std::hash<std::string_view>{}(value);
   auto& cache_entry = cache_entries[hash % cache_entries.size()];
 
-  if VLIKELY (cache_entry.owner == owner && cache_entry.hash == hash && cache_entry.value == value) {
+  if VLIKELY (cache_entry.owner_id == owner_id && cache_entry.hash == hash && cache_entry.value == value) {
     return cache_entry.allowed;
   }
 
-  cache_entry.owner = owner;
+  cache_entry.owner_id = owner_id;
   cache_entry.hash = hash;
   cache_entry.value.assign(value.data(), value.size());
   cache_entry.allowed = is_allowed_by_filters(cache_entry.value, whitelist_exact, whitelist_patterns, blacklist_exact,

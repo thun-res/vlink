@@ -192,12 +192,18 @@ int main(int argc, char* argv[]) {
   struct UrlChannelState final {
     mcap::ChannelId id{0};
     bool allow_raw_fallback{false};
+    bool has_schema_data{false};
+    std::string encoding;
+    std::string schema_name;
+    std::string schema_encoding;
+    const std::string* pending_schema_data{nullptr};
     std::string signature;
   };
 
   std::unordered_map<std::string, UrlChannelState> channel_map;
   std::unordered_map<std::string, mcap::ChannelId> channel_signature_map;
   std::unordered_map<std::string, mcap::SchemaId> schema_map;
+  std::unordered_set<std::string> pending_schema_data_cache;
   std::unordered_map<std::string, std::string> url_ser_map;
   std::unordered_map<std::string, vlink::SchemaType> url_schema_map;
   std::unordered_set<std::string> internal_time_urls;
@@ -232,8 +238,10 @@ int main(int argc, char* argv[]) {
   };
 
   auto ensure_url_channel = [&channel_map, &channel_signature_map, &mcap_writer](
-                                const std::string& url, const std::string& channel_encoding, mcap::SchemaId schema_id,
-                                bool allow_raw_fallback) -> mcap::ChannelId {
+                                const std::string& url, const std::string& channel_encoding,
+                                const std::string& schema_name, const std::string& schema_encoding,
+                                mcap::SchemaId schema_id, bool allow_raw_fallback,
+                                bool has_schema_data) -> mcap::ChannelId {
     auto channel_signature = url + "|" + channel_encoding + "|" + std::to_string(schema_id);
     auto channel_iter = channel_signature_map.find(channel_signature);
     mcap::ChannelId channel_id = 0;
@@ -247,8 +255,34 @@ int main(int argc, char* argv[]) {
       channel_signature_map[channel_signature] = channel_id;
     }
 
-    channel_map[url] = UrlChannelState{channel_id, allow_raw_fallback, std::move(channel_signature)};
+    UrlChannelState state;
+    state.id = channel_id;
+    state.allow_raw_fallback = allow_raw_fallback;
+    state.has_schema_data = has_schema_data;
+    state.encoding = channel_encoding;
+    state.schema_name = schema_name;
+    state.schema_encoding = schema_encoding;
+    state.signature = std::move(channel_signature);
+    channel_map[url] = std::move(state);
     return channel_id;
+  };
+
+  auto defer_url_channel = [&channel_map, &pending_schema_data_cache](
+                               const std::string& url, const std::string& channel_encoding,
+                               const std::string& schema_name, const std::string& schema_encoding,
+                               std::string schema_data, bool allow_raw_fallback) {
+    UrlChannelState state;
+    state.allow_raw_fallback = allow_raw_fallback;
+    state.has_schema_data = !schema_data.empty();
+    state.encoding = channel_encoding;
+    state.schema_name = schema_name;
+    state.schema_encoding = schema_encoding;
+
+    if VLIKELY (!schema_data.empty()) {
+      state.pending_schema_data = &*pending_schema_data_cache.emplace(std::move(schema_data)).first;
+    }
+
+    channel_map[url] = std::move(state);
   };
 
   for (const auto& meta : info.url_metas) {
@@ -271,10 +305,9 @@ int main(int argc, char* argv[]) {
         continue;
       }
 
-      auto schema_id = ensure_schema_id(schema_name, schema_encoding, schema_data);
-      ensure_url_channel(meta.url, encoding, schema_id, false);
+      defer_url_channel(meta.url, encoding, schema_name, schema_encoding, std::move(schema_data), false);
 
-      std::cerr << "  Registered: " << meta.url << " -> " << schema_name << std::endl;
+      std::cerr << "  Discovered: " << meta.url << " -> " << schema_name << std::endl;
     }
   }
 
@@ -283,10 +316,10 @@ int main(int argc, char* argv[]) {
   std::atomic<uint64_t> msg_skipped{0};
   std::atomic<uint32_t> seq_counter{0};
 
-  reader->register_output_callback([&channel_map, &converter, &ensure_schema_id, &ensure_url_channel, &info,
-                                    &internal_time_urls, &invalid_payload_urls, &mcap_writer, &msg_converted,
-                                    &msg_failed, &msg_skipped, reader, &seq_counter, &recording_start_ns,
-                                    &url_schema_map, &url_ser_map](const vlink::Frame& frame) {
+  reader->register_output_callback([&channel_map, &converter, &defer_url_channel, &ensure_schema_id,
+                                    &ensure_url_channel, &info, &internal_time_urls, &invalid_payload_urls,
+                                    &mcap_writer, &msg_converted, &msg_failed, &msg_skipped, &seq_counter,
+                                    &recording_start_ns, &url_schema_map, &url_ser_map](const vlink::Frame& frame) {
     const int64_t timestamp_us = frame.timestamp;
     const std::string& url = frame.url;
     const vlink::Bytes& data = frame.data;
@@ -326,10 +359,9 @@ int main(int argc, char* argv[]) {
           return;
         }
 
-        auto schema_id = ensure_schema_id(schema_name, schema_encoding, schema_data);
-        ensure_url_channel(url, encoding, schema_id, false);
+        defer_url_channel(url, encoding, schema_name, schema_encoding, std::move(schema_data), false);
       } else {
-        ensure_url_channel(url, "raw", 0, true);
+        defer_url_channel(url, "raw", {}, {}, {}, true);
       }
 
       channel_iter = channel_map.find(url);
@@ -354,25 +386,35 @@ int main(int argc, char* argv[]) {
     }
 
     if VLIKELY (result.success && !result.schema_name.empty()) {
-      std::string schema_data = result.schema_data;
+      const bool schema_identity_changed = channel_iter->second.encoding != result.encoding ||
+                                           channel_iter->second.schema_name != result.schema_name ||
+                                           channel_iter->second.schema_encoding != result.schema_encoding;
 
-      if VUNLIKELY (schema_data.empty() &&
-                    !converter.resolve_schema_by_name(result.schema_name, result.schema_encoding, schema_data)) {
-        if VLIKELY (invalid_payload_urls.emplace(url).second) {
-          MLOG_W("Skip message for {}: failed to resolve schema {} ({})", url, result.schema_name,
-                 result.schema_encoding);
+      if VUNLIKELY (channel_iter->second.id == 0 || schema_identity_changed || !result.schema_data.empty() ||
+                    !channel_iter->second.has_schema_data) {
+        std::string schema_data = result.schema_data;
+
+        if VLIKELY (schema_data.empty() && !schema_identity_changed && channel_iter->second.pending_schema_data) {
+          schema_data = *channel_iter->second.pending_schema_data;
+        } else if VUNLIKELY (schema_data.empty() && !converter.resolve_schema_by_name(
+                                                        result.schema_name, result.schema_encoding, schema_data)) {
+          if VLIKELY (invalid_payload_urls.emplace(url).second) {
+            MLOG_W("Skip message for {}: failed to resolve schema {} ({})", url, result.schema_name,
+                   result.schema_encoding);
+          }
+
+          ++msg_failed;
+          return;
         }
 
-        ++msg_failed;
-        return;
-      }
+        auto schema_id = ensure_schema_id(result.schema_name, result.schema_encoding, schema_data);
+        auto current_signature = url + "|" + result.encoding + "|" + std::to_string(schema_id);
 
-      auto schema_id = ensure_schema_id(result.schema_name, result.schema_encoding, schema_data);
-      auto current_signature = url + "|" + result.encoding + "|" + std::to_string(schema_id);
-
-      if VUNLIKELY (channel_iter->second.signature != current_signature) {
-        ensure_url_channel(url, result.encoding, schema_id, false);
-        channel_iter = channel_map.find(url);
+        if VUNLIKELY (schema_identity_changed || channel_iter->second.signature != current_signature) {
+          ensure_url_channel(url, result.encoding, result.schema_name, result.schema_encoding, schema_id, false,
+                             !schema_data.empty());
+          channel_iter = channel_map.find(url);
+        }
       }
     }
 
@@ -388,12 +430,16 @@ int main(int argc, char* argv[]) {
     if VUNLIKELY (!result.success) {
       if VUNLIKELY (!channel_iter->second.allow_raw_fallback) {
         if VLIKELY (invalid_payload_urls.emplace(url).second) {
-          MLOG_W("Skip message for {}: channel is registered with converted schema, but payload conversion failed",
-                 url);
+          MLOG_W("Skip message for {}: channel requires converted payload, but payload conversion failed", url);
         }
 
         ++msg_failed;
         return;
+      }
+
+      if VUNLIKELY (channel_iter->second.id == 0) {
+        ensure_url_channel(url, "raw", {}, {}, 0, true, false);
+        channel_iter = channel_map.find(url);
       }
 
       mcap::Message msg;

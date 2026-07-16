@@ -852,6 +852,7 @@ void FoxgloveServer::handle_subscribe(ConnectionHdl hdl, const Json& msg) {
   }
 
   bool need_update = false;
+  std::vector<std::pair<int, std::string>> pending_statuses;
 
   {
     std::scoped_lock state_lock(clients_mtx_, channels_mtx_, sub_counts_mtx_);
@@ -889,11 +890,15 @@ void FoxgloveServer::handle_subscribe(ConnectionHdl hdl, const Json& msg) {
 
       if VUNLIKELY (old_sub_iter != client->subscription_map.end()) {
         MLOG_W("Ignoring reuse of active subscription id: {}", sub_id);
+        pending_statuses.emplace_back(
+            2, "Subscription ID was already used: " + std::to_string(sub_id) + "; ignoring subscription");
         continue;
       }
 
       if VUNLIKELY (subscribed_channels.count(channel_id) != 0U) {
         MLOG_W("Ignoring duplicate subscription to channel id: {}", channel_id);
+        pending_statuses.emplace_back(
+            1, "Client is already subscribed to channel: " + std::to_string(channel_id) + "; ignoring subscription");
         continue;
       }
 
@@ -926,6 +931,10 @@ void FoxgloveServer::handle_subscribe(ConnectionHdl hdl, const Json& msg) {
   if VLIKELY (need_update) {
     rebuild_active_bridge_urls();
     update_bridge_control();
+  }
+
+  for (const auto& status : pending_statuses) {
+    send_status(hdl, status.first, status.second);
   }
 }
 
@@ -2304,6 +2313,10 @@ void FoxgloveServer::on_parameters_changed(const std::vector<FoxgloveParameters:
       matched_delta.clear();
 
       for (const auto& entry : delta) {
+        if VUNLIKELY (!entry.has_value) {
+          continue;
+        }
+
         if VLIKELY (client.subscribed_all_parameters) {
           if VLIKELY (client.parameter_exclusions.count(entry.name) == 0U) {
             matched_delta.emplace_back(&entry);
@@ -3255,7 +3268,7 @@ bool FoxgloveServer::update_bridge_control() {
 }
 
 bool FoxgloveServer::is_url_allowed(std::string_view url) const {
-  return is_allowed_by_filters_cached(this, url, config_.whitelist_exact, config_.whitelist_patterns,
+  return is_allowed_by_filters_cached(cache_owner_id_, url, config_.whitelist_exact, config_.whitelist_patterns,
                                       config_.blacklist_exact, config_.blacklist_patterns);
 }
 

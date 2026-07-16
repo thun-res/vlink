@@ -475,7 +475,7 @@ inline bool tokenize_field_path(std::string_view path, std::vector<FieldPathToke
     }
 
     if VUNLIKELY (path[pos] == '[') {
-      if VUNLIKELY (tokens.empty() && !expect_segment) {
+      if VUNLIKELY (tokens.empty() || expect_segment) {
         tokens.clear();
         return false;
       }
@@ -486,7 +486,14 @@ inline bool tokenize_field_path(std::string_view path, std::vector<FieldPathToke
 
       while (pos < path.size() && std::isdigit(static_cast<unsigned char>(path[pos])) != 0) {
         has_digit = true;
-        value = value * 10 + static_cast<size_t>(path[pos] - '0');
+        const auto digit = static_cast<size_t>(path[pos] - '0');
+
+        if VUNLIKELY (value > (std::numeric_limits<size_t>::max() - digit) / 10U) {
+          tokens.clear();
+          return false;
+        }
+
+        value = value * 10U + digit;
         ++pos;
       }
 
@@ -806,6 +813,10 @@ inline double resolve_nested_double(const google::protobuf::Message& msg, std::s
         return kNotFound;
       }
 
+      if VUNLIKELY ((*tokens)[i + 1].index > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        return kNotFound;
+      }
+
       auto index = static_cast<int>((*tokens)[i + 1].index);
 
       if VUNLIKELY (index < 0 || index >= ref->FieldSize(*current_msg, field)) {
@@ -914,6 +925,10 @@ inline std::string resolve_nested_string(const google::protobuf::Message& msg, s
         return {};
       }
 
+      if VUNLIKELY ((*tokens)[i + 1].index > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        return {};
+      }
+
       auto index = static_cast<int>((*tokens)[i + 1].index);
 
       if VUNLIKELY (index < 0 || index >= ref->FieldSize(*current_msg, field)) {
@@ -989,6 +1004,10 @@ inline bool resolve_proto_message_path(const google::protobuf::Message& root, co
       }
 
       if VUNLIKELY (field->cpp_type() != google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
+        return false;
+      }
+
+      if VUNLIKELY (tokens[i + 1].index > static_cast<size_t>(std::numeric_limits<int>::max())) {
         return false;
       }
 
@@ -1179,6 +1198,10 @@ inline double resolve_proto_numeric_path_fast(const google::protobuf::Message& r
     const auto* field = step.field;
 
     if VUNLIKELY (field->is_repeated()) {
+      if VUNLIKELY (step.index > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        return kNotFound;
+      }
+
       auto index = static_cast<int>(step.index);
 
       if VUNLIKELY (index < 0 || index >= ref->FieldSize(*current_msg, field)) {
@@ -1711,6 +1734,10 @@ inline bool resolve_fbs_object_field(const FbsObjectView& parent, const reflecti
 
   if (child_obj.is_struct()) {
     child.structure = parent.table ? flatbuffers::GetFieldStruct(*parent.table, field)
+                                   // FlatBuffers models variable-sized serialized structs with a one-byte trailing
+                                   // array. The object points into a verified buffer, but the analyzer cannot infer
+                                   // that the storage extends beyond the C++ wrapper object.
+                                   // NOLINTNEXTLINE(clang-analyzer-security.ArrayBound)
                                    : flatbuffers::GetFieldStruct(*parent.structure, field);
     return child.structure != nullptr;
   }
@@ -1776,9 +1803,12 @@ inline double get_fbs_field_as_double(const FbsObjectView& view, const reflectio
     case reflection::Float:
     case reflection::Double:
       return view.table ? flatbuffers::GetAnyFieldF(*view.table, field)
+                        // See the FlatBuffers variable-sized Struct note in resolve_fbs_object_field().
+                        // NOLINTNEXTLINE(clang-analyzer-security.ArrayBound)
                         : flatbuffers::GetAnyFieldF(*view.structure, field);
     case reflection::ULong:
       return static_cast<double>(view.table ? flatbuffers::GetFieldI<uint64_t>(*view.table, field)
+                                            // NOLINTNEXTLINE(clang-analyzer-security.ArrayBound)
                                             : view.structure->GetField<uint64_t>(field.offset()));
     case reflection::Byte:
     case reflection::Short:
@@ -1789,6 +1819,7 @@ inline double get_fbs_field_as_double(const FbsObjectView& view, const reflectio
     case reflection::UInt:
     case reflection::Bool:
       return static_cast<double>(view.table ? flatbuffers::GetAnyFieldI(*view.table, field)
+                                            // NOLINTNEXTLINE(clang-analyzer-security.ArrayBound)
                                             : flatbuffers::GetAnyFieldI(*view.structure, field));
     default:
       return 0.0;
@@ -2837,6 +2868,10 @@ inline int64_t extract_proto_timestamp_ns(const google::protobuf::Message& msg, 
 
     if VUNLIKELY (field->is_repeated()) {
       if VUNLIKELY (i + 1 >= tokens->size() || !(*tokens)[i + 1].is_index) {
+        return -1;
+      }
+
+      if VUNLIKELY ((*tokens)[i + 1].index > static_cast<size_t>(std::numeric_limits<int>::max())) {
         return -1;
       }
 

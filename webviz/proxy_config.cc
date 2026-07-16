@@ -28,6 +28,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <limits>
 
 namespace vlink {
 namespace webviz {
@@ -482,6 +484,14 @@ bool ProxyConfigHelper::validate(const ProxyBridge::Config& config, std::string&
 
   if VUNLIKELY (config.server.max_packet_size < 0.0) {
     error = "proxy_max_packet_size must be >= 0";
+    return false;
+  }
+
+  constexpr double kBytesPerMiB = 1024.0 * 1024.0;
+  const auto max_packet_size_mib = std::ldexp(1.0, std::numeric_limits<size_t>::digits) / kBytesPerMiB;
+
+  if VUNLIKELY (!std::isfinite(config.server.max_packet_size) || config.server.max_packet_size >= max_packet_size_mib) {
+    error = "proxy_max_packet_size must be finite and representable in bytes";
     return false;
   }
 
