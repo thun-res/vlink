@@ -593,10 +593,6 @@ std::shared_ptr<TriggerRecorder::UrlBuffer> TriggerRecorder::build_url_buffer(co
     sub->set_discovery_enabled(false);
     sub->set_safety_quit(true);
 
-    if (!impl_->config.dds_ip.empty()) {
-      sub->set_property("dds.ip", impl_->config.dds_ip);
-    }
-
     if VUNLIKELY (!sub->init()) {
       VLOG_W("TriggerRecorder: subscriber init failed, URL skipped: ", info.url);
       return nullptr;

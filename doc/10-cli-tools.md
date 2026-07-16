@@ -349,7 +349,7 @@ vlink-trigger daemon -c /etc/vlink/trigger/trigger.json \
 | 参数 | 说明 |
 | --- | --- |
 | `-c` / `--config <path>` | 可选配置文件路径（JSON）；省略时全部使用内置默认值 |
-| `-n` / `--native` | 本地模式：本机发现，并在未配置 `dds_ip` 时将其置为 `127.0.0.1`（仅作用于数据面订阅，不影响 `method_url` 控制面） |
+| `-n` / `--native` | 本地模式：本机发现，并将数据面订阅绑定到 `127.0.0.1`（不影响 `method_url` 控制面） |
 | `--bag_plugin <name>` | 覆盖配置文件中的 `bag_plugin`；由 CLI 宿主加载并绑定，不传入 `TriggerRecorder::Config` |
 | `--trigger_plugin <name>` | 覆盖配置文件中的 `trigger_plugin` |
 | `--trigger_plugin_config <str>` | 覆盖配置文件中的 `trigger_plugin_config`；字符串内容由插件解释 |
@@ -364,20 +364,19 @@ daemon 在指定 `-c` 时先读取 JSON，再按字段应用命令行中**显式
 | `dump_dir` | `{tmp}/vlink-trigger` | 落盘目录，空则取系统临时目录下的 `vlink-trigger` |
 | `allow_outside_dir` | `true` | 是否允许 RPC 的显式 `out_file` 位于 `dump_dir` 外；设为 `false` 时限制在 `dump_dir` 内。该开关不改变相对路径基准和后缀校验 |
 | `file_type` | `vdb` | 落盘格式：`vdb`（SQLite 容器）/ `vcap`（MCAP 容器） |
-| `default_pre_ms` | `60000` | 默认触发前窗口（毫秒） |
+| `default_pre_ms` | `15000` | 默认触发前窗口（毫秒） |
 | `default_post_ms` | `5000` | 默认触发后窗口（毫秒） |
 | `default_max_packet_size` | `4` | 默认单包上限（MB），`0` 表示不限制，超限的包丢弃 |
 | `default_max_size` | `0` | 默认每 URL 缓冲字节上限（MB），`0` 不限制 |
 | `max_cache_size` | `1024` | 全局缓冲字节上限（MB），跨所有 URL 汇总；超限腾挪仅发生在正接收数据的 URL 自身环内，不会跨 URL 淘汰他人历史 |
-| `retention_guard_ms` | `300` | 额外保留裕量（毫秒），吸收落盘定时抖动 |
+| `retention_guard_ms` | `500` | 额外保留裕量（毫秒），吸收落盘定时抖动 |
 | `max_dump_file_count` | `16` | 落盘文件保留上限；仅自动命名的落盘触发轮转，按后缀统计并清理 `dump_dir` 下最旧文件（显式 `out_file` 的落盘不触发轮转） |
-| `enable_compress` | `true` | 落盘 bag 是否压缩 |
+| `enable_compress` | `false` | 落盘 bag 是否压缩 |
 | `busy_skip_data` | `false` | 落盘进行中丢弃新到数据（会在环形缓冲留下时间空洞） |
 | `destroy_on_offline` | `false` | URL 从发现中消失时销毁其订阅者；已缓冲数据仍供在飞落盘读取 |
-| `overflow` | `cover` | 字节上限溢出策略：`cover`（淘汰最旧帧）/ `drop`（丢弃新帧） |
+| `overflow` | `drop` | 字节上限溢出策略：`cover`（淘汰最旧帧）/ `drop`（丢弃新帧） |
 | `sleep_interval_mb` | `4` | 落盘流控：每推送该字节数（MB）后休眠一次，摊薄 dump 瞬时的 IO 与写入队列压力 |
 | `sleep_time_ms` | `0` | 落盘流控：单次休眠时长（毫秒），`0` 关闭流控 |
-| `dds_ip` | 空 | 非空时将订阅者绑定到该 DDS IP（本地模式） |
 | `discovery_filter` | `available` | 发现过滤：`available` / `native` / `none` |
 | `whitelist` | `[]` | 非空时仅录制其中精确匹配的 URL |
 | `blacklist` | `[]` | 其中精确匹配的 URL 永不录制 |
@@ -397,13 +396,13 @@ daemon 在指定 `-c` 时先读取 JSON，再按字段应用命令行中**显式
     "dump_dir": "/data/edr",
     "allow_outside_dir": true,
     "file_type": "vdb",
-    "default_pre_ms": 60000,
+    "default_pre_ms": 15000,
     "default_post_ms": 5000,
     "default_max_packet_size": 4,
     "max_cache_size": 2048,
     "max_dump_file_count": 16,
-    "enable_compress": true,
-    "overflow": "cover",
+    "enable_compress": false,
+    "overflow": "drop",
     "sleep_interval_mb": 4,
     "sleep_time_ms": 2,
     "discovery_filter": "available",

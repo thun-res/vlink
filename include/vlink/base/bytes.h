@@ -699,8 +699,8 @@ class VLINK_EXPORT Bytes final {  // size == 128 bytes
    * @brief Compresses a payload using LZAV and wraps it in the VLink compression frame.
    *
    * @details
-   * Emits the layout shown in the file-level diagram.  Inputs larger than @c 1 @c MiB
-   * (@c kMaxCompressCacheSize) are rejected and produce an empty result.
+   * Emits the layout shown in the file-level diagram.  Inputs above the codec's @c 256 @c MiB decoded-size
+   * boundary are rejected and produce an empty result.
    *
    * @param data       Source pointer.
    * @param size       Source length in bytes.

@@ -454,7 +454,7 @@ int main() {
 
 vlink::TriggerRecorder::Config config;
 config.dump_dir        = "/data/edr";
-config.default_pre_ms  = 60'000;   // 默认触发前 60 s
+config.default_pre_ms  = 15'000;   // 默认触发前 15 s
 config.default_post_ms = 5'000;    // 默认触发后 5 s
 
 vlink::TriggerRecorder::UrlConfig radar;
@@ -493,7 +493,7 @@ recorder.quit();
 recorder.wait_for_quit();
 ```
 
-`RawSubFactory` 只负责按引擎传入的 URL 和 `InitType` 创建订阅器，不应提前配置、初始化或监听；getter 语义、丢帧统计、schema、发现开关、`dds.ip`、`init()` 与 `listen()` 仍由引擎统一处理。factory 写在宿主编译单元中，使 URL 的头文件内联分派能看到宿主所链接 transport target 传播的 `VLINK_SUPPORT_*`。若宿主没有直接链接对应共享后端，可在进程首次初始化 URL 前设置 `VLINK_URL_PLUGINS=auto` 允许已知 transport 按需加载，或把该变量设为模块列表进行显式预加载；为空或设为 `none` 时关闭插件加载，详见 [传输后端与 URL](04-transport.md)。
+`RawSubFactory` 按引擎传入的 URL 和 `InitType` 创建订阅器，并可在返回前设置 `dds.ip` 等必须早于 `init()` 生效的宿主侧 transport 属性，但不应自行初始化或监听；getter 语义、丢帧统计、schema、发现开关、`init()` 与 `listen()` 仍由引擎统一处理。factory 写在宿主编译单元中，使 URL 的头文件内联分派能看到宿主所链接 transport target 传播的 `VLINK_SUPPORT_*`。若宿主没有直接链接对应共享后端，可在进程首次初始化 URL 前设置 `VLINK_URL_PLUGINS=auto` 允许已知 transport 按需加载，或把该变量设为模块列表进行显式预加载；为空或设为 `none` 时关闭插件加载，详见 [传输后端与 URL](04-transport.md)。
 
 `TriggerRecorder` 继承 `MessageLoop`，与其他 VLink 循环类一样直接使用基类的 `async_run()`、`quit()` 和 `wait_for_quit()`；等待 post 窗口与写盘都在它自身的循环线程上执行。`dump()` 为非阻塞：它记下触发时刻后异步完成"等待本次参与 URL 的最大有效 `post` 窗口 → 重排 → 写盘"，其间若再次触发则被拒绝（落盘串行化）。两参数重载在任务成功入队时同步返回已经确定的输出路径，包括自动命名的防覆盖后缀。若已接受的 dump 尚在等待 post 窗口，`quit()` 遵循 `MessageLoop` 语义终止该延时任务；需要保留该文件时，应先等待 `is_dumping()` 变为 `false` 再退出。`TriggerParams` 可临时缩小本次的 `pre` / `post`（只能相对配置缩小，因环形缓冲仅按配置时长保留历史）、指定输出路径 / 文件名，并用可同时设置的 URL 精确 `whitelist` / `blacklist` 及不区分大小写的子串做两层过滤；精确名单先保留白名单再剔除黑名单，`black_mode` 仅切换子串过滤的白名单 / 黑名单模式。落盘产物即标准 bag 文件，可由 `BagReader`、游标读取或图形化 `vlink-player` 进一步处理。
 

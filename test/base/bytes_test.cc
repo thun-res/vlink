@@ -528,6 +528,11 @@ TEST_SUITE("base-Bytes") {
     Bytes oversize = make_compressed_frame(256u * 1024u * 1024u + 1u, 0x00u);
     CHECK(Bytes::uncompress_data(oversize.data(), oversize.size(), true).empty());
 
+    Bytes oversized_payload = make_compressed_frame(16u, 0x00u);
+    CHECK(Bytes::uncompress_data(oversized_payload.data(), static_cast<size_t>(std::numeric_limits<int>::max()) + 13u,
+                                 false)
+              .empty());
+
     Bytes bad_payload = make_compressed_frame(16u, 0x00u);
     CHECK(Bytes::uncompress_data(bad_payload.data(), bad_payload.size(), true).empty());
   }
@@ -809,6 +814,19 @@ TEST_SUITE("base-Bytes") {
     CHECK_EQ(alias.size(), owner.size());
   }
 
+  TEST_CASE("instance shallow_copy rejects an alias into owned storage") {
+    Bytes owner = Bytes::create(Bytes::stack_size() + 32u);
+    fill_pattern(owner);
+    uint8_t* original = owner.real_data();
+    Bytes alias = Bytes::shallow_copy(owner.data() + 1, owner.size() - 1);
+
+    owner.shallow_copy(alias);
+
+    CHECK(owner.is_owner());
+    CHECK_EQ(owner.real_data(), original);
+    CHECK_EQ(owner.data()[31], 31u);
+  }
+
   TEST_CASE("instance deep_copy produces independent owner") {
     Bytes original = Bytes::create(8u);
     fill_pattern(original);
@@ -852,6 +870,19 @@ TEST_SUITE("base-Bytes") {
     CHECK_EQ(dst.size(), Bytes::stack_size() + 31u);
     CHECK_EQ(dst.data()[0], 1u);
     CHECK_EQ(dst.data()[31], 32u);
+  }
+
+  TEST_CASE("instance deep_copy handles overlapping stack storage") {
+    Bytes dst = Bytes::create(32u);
+    fill_pattern(dst);
+    Bytes overlapping_source = Bytes::shallow_copy(dst.data() + 1, dst.size() - 1);
+
+    dst.deep_copy(overlapping_source);
+
+    CHECK(dst.is_owner());
+    CHECK_EQ(dst.size(), 31u);
+    CHECK_EQ(dst.data()[0], 1u);
+    CHECK_EQ(dst.data()[30], 31u);
   }
 
   TEST_CASE("deep_copy_self converts non-owning alias to owner") {
@@ -1018,19 +1049,18 @@ TEST_SUITE("base-Bytes") {
     CHECK_NE(offset_oss.str().find("offset"), std::string::npos);
   }
 
-  TEST_CASE("compress_data rejects null zero and oversize input") {
+  TEST_CASE("compress_data rejects null zero and unsupported input sizes") {
     CHECK(Bytes::compress_data(nullptr, 0).empty());
 
     Bytes small = Bytes::create(16u);
     CHECK(Bytes::compress_data(small.data(), 0).empty());
 
-    static constexpr size_t kOverMax = 1024u * 1024u + 1u;
-    Bytes big = Bytes::create(kOverMax);
-    CHECK(Bytes::compress_data(big.data(), big.size()).empty());
+    uint8_t marker = 0;
+    CHECK(Bytes::compress_data(&marker, 256u * 1024u * 1024u + 1u).empty());
   }
 
   TEST_CASE("compress_data round-trips a large buffer through the multi-reference path") {
-    static constexpr size_t kLarge = 700u * 1024u;
+    static constexpr size_t kLarge = 2u * 1024u * 1024u;
     Bytes original = Bytes::create(kLarge);
     fill_pattern(original);
 
@@ -1147,6 +1177,20 @@ TEST_SUITE("base-Bytes") {
     CHECK(deep_self.is_owner());
     CHECK_EQ(deep_self.real_data(), deep_ptr);
     CHECK_EQ(deep_self.data()[47], 47u);
+  }
+
+  TEST_CASE("move assignment rejects an alias into owned storage") {
+    Bytes owner = Bytes::create(Bytes::stack_size() + 32u);
+    fill_pattern(owner);
+    uint8_t* original = owner.real_data();
+    Bytes alias = Bytes::shallow_copy(owner.data() + 1, owner.size() - 1);
+
+    owner = std::move(alias);
+
+    CHECK(owner.is_owner());
+    CHECK_EQ(owner.real_data(), original);
+    CHECK_EQ(owner.data()[31], 31u);
+    CHECK_FALSE(alias.empty());
   }
 
   TEST_CASE("deep_copy_self on an empty non-owner alias stays empty") {

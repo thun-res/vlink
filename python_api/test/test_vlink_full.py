@@ -1801,6 +1801,11 @@ def test_discovery_viewer_fields():
 
 def test_plugin_host_binding_contract():
     config = _vlink.TriggerRecorder.Config()
+    assert config.default_pre_ms == 15000
+    assert config.retention_guard_ms == 500
+    assert config.enable_compress is False
+    assert config.overflow == _vlink.TriggerRecorder.OverflowPolicy.DropNewest
+    assert not hasattr(config, "dds_ip")
     assert not hasattr(config, "bag_plugin_lib")
     assert not hasattr(config, "bag_plugin_dir")
 

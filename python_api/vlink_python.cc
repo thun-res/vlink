@@ -4927,7 +4927,6 @@ NB_MODULE(_vlink_nanobind, m) {
       .def_rw("overflow", &vlink::TriggerRecorder::Config::overflow)
       .def_rw("sleep_interval", &vlink::TriggerRecorder::Config::sleep_interval)
       .def_rw("sleep_time_ms", &vlink::TriggerRecorder::Config::sleep_time_ms)
-      .def_rw("dds_ip", &vlink::TriggerRecorder::Config::dds_ip)
       .def_rw("discovery_filter", &vlink::TriggerRecorder::Config::discovery_filter)
       .def_rw("whitelist", &vlink::TriggerRecorder::Config::whitelist)
       .def_rw("blacklist", &vlink::TriggerRecorder::Config::blacklist)

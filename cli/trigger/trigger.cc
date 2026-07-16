@@ -297,8 +297,8 @@ static bool parse_config(const std::string& path, vlink::TriggerRecorder::Config
       } else if (overflow == "cover" || overflow == "cover_oldest") {
         config.overflow = vlink::TriggerRecorder::kCoverOldest;
       } else {
-        std::cerr << "Warning: unknown overflow '" << overflow << "', using cover." << std::endl;
-        config.overflow = vlink::TriggerRecorder::kCoverOldest;
+        std::cerr << "Warning: unknown overflow '" << overflow << "', using drop." << std::endl;
+        config.overflow = vlink::TriggerRecorder::kDropNewest;
       }
     }
 
@@ -311,10 +311,6 @@ static bool parse_config(const std::string& path, vlink::TriggerRecorder::Config
 
     if (data.contains("sleep_time_ms")) {
       config.sleep_time_ms = data.at("sleep_time_ms").get<int64_t>();
-    }
-
-    if (data.contains("dds_ip")) {
-      config.dds_ip = data.at("dds_ip").get<std::string>();
     }
 
     if (data.contains("discovery_filter")) {
@@ -441,10 +437,6 @@ static int run_daemon(const DaemonArguments& arguments) {
 
   if (arguments.native_mode) {
     config.discovery_filter = vlink::DiscoveryViewer::kFilterNative;
-
-    if (config.dds_ip.empty()) {
-      config.dds_ip = "127.0.0.1";
-    }
   }
 
   if VUNLIKELY (!vlink::Utils::check_singleton("vlink-trigger")) {
@@ -483,9 +475,16 @@ static int run_daemon(const DaemonArguments& arguments) {
   std::unique_ptr<vlink::TriggerRecorder> recorder;
 
   try {
-    recorder = std::make_unique<vlink::TriggerRecorder>(config, [](const std::string& url, vlink::InitType type) {
-      return vlink::TriggerRecorder::RawSub::create_shared(url, type);
-    });
+    recorder = std::make_unique<vlink::TriggerRecorder>(
+        config, [native_mode = arguments.native_mode](const std::string& url, vlink::InitType type) {
+          auto sub = vlink::TriggerRecorder::RawSub::create_shared(url, type);
+
+          if (native_mode && sub) {
+            sub->set_property("dds.ip", "127.0.0.1");
+          }
+
+          return sub;
+        });
   } catch (const std::exception& e) {
     std::cerr << "Failed to initialize trigger recorder: " << e.what() << std::endl;
     return 1;
@@ -727,7 +726,7 @@ int main(int argc, char* argv[]) {
   argparse::ArgumentParser daemon_command("daemon", VLINK_VERSION, argparse::default_arguments::help);
   daemon_command.add_argument("-c", "--config").help("Optional config json path").default_value(std::string());
   daemon_command.add_argument("-n", "--native")
-      .help("Native mode: local-host discovery + dds.ip=127.0.0.1 (unless configured)")
+      .help("Native mode: local-host discovery + dds.ip=127.0.0.1")
       .default_value(false)
       .implicit_value(true);
   daemon_command.add_argument("--bag_plugin")

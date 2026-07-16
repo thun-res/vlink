@@ -87,7 +87,7 @@
  * @code
  * vlink::TriggerRecorder::Config config;
  * config.dump_dir        = "/data/edr";
- * config.default_pre_ms  = 60'000;
+ * config.default_pre_ms  = 15'000;
  * config.default_post_ms = 5'000;
  *
  * vlink::TriggerRecorder::UrlConfig camera;
@@ -148,11 +148,11 @@ class VLINK_EXPORT TriggerRecorder : public MessageLoop {
    * @brief Caller-side constructor for raw subscribers.
    *
    * @details
-   * The factory must return a fresh subscriber for @p url using the supplied @p type.  It must not initialize,
-   * configure or start listening on the subscriber; the recorder applies getter semantics, loss tracking,
-   * schema metadata, discovery and transport properties before it calls @c init() and @c listen().  The callable
-   * runs synchronously on the discovery-viewer thread and therefore must be short, non-blocking and must not
-   * re-enter this recorder.
+   * The factory must return a fresh subscriber for @p url using the supplied @p type.  It may apply caller-side
+   * transport properties that must precede @c init(), but must not initialize or start listening; the recorder
+   * applies getter semantics, loss tracking, schema metadata and discovery settings before it calls @c init() and
+   * @c listen().  The callable runs synchronously on the discovery-viewer thread and therefore must be short,
+   * non-blocking and must not re-enter this recorder.
    *
    * Keeping construction in the caller's translation unit is significant: the transport modules linked by the
    * caller propagate their @c VLINK_SUPPORT_* definitions there, allowing the header-only URL dispatcher to select
@@ -217,20 +217,19 @@ class VLINK_EXPORT TriggerRecorder : public MessageLoop {
   struct Config final {
     std::string dump_dir;                                ///< Output directory; empty => {tmp}/vlink-trigger.
     FileType file_type{kVdb};                            ///< Bag container format.
-    int64_t default_pre_ms{60'000};                      ///< Default pre-trigger window in ms.
+    int64_t default_pre_ms{15'000};                      ///< Default pre-trigger window in ms.
     int64_t default_post_ms{5'000};                      ///< Default post-trigger window in ms.
     int64_t default_max_packet_size{4LL * 1024 * 1024};  ///< Default per-packet byte limit in bytes (0 = unlimited).
     int64_t default_max_size{0};                         ///< Default per-URL ring byte cap (0 = unlimited).
     int64_t max_cache_size{1024LL * 1024 * 1024};        ///< Global ring byte cap across all URLs.
-    int64_t retention_guard_ms{300};                     ///< Extra retention margin to absorb dump-timer jitter.
+    int64_t retention_guard_ms{500};                     ///< Extra retention margin to absorb dump-timer jitter.
     int max_dump_file_count{16};                ///< Rotation cap; only auto-named dumps trigger dump_dir rotation.
-    bool enable_compress{true};                 ///< Compress the dumped bag.
+    bool enable_compress{false};                ///< Compress the dumped bag.
     bool busy_skip_data{false};                 ///< Drop incoming data while a bag is being written.
     bool destroy_on_offline{false};             ///< Destroy offline subscribers; an in-flight dump keeps their data.
-    OverflowPolicy overflow{kCoverOldest};      ///< Byte-cap overflow policy.
+    OverflowPolicy overflow{kDropNewest};       ///< Byte-cap overflow policy.
     int64_t sleep_interval{4LL * 1024 * 1024};  ///< Dump input throttle: sleep after this many bytes submitted.
     int64_t sleep_time_ms{0};                   ///< Dump input-throttle sleep duration in ms (0 disables).
-    std::string dds_ip;                         ///< When non-empty, bind subscribers to this DDS IP (native mode).
     DiscoveryViewer::FilterType discovery_filter{DiscoveryViewer::kFilterAvailable};  ///< Discovery filter.
     std::vector<std::string> whitelist;                        ///< If non-empty, only these exact URLs are recorded.
     std::vector<std::string> blacklist;                        ///< These exact URLs are never recorded.

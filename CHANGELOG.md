@@ -26,8 +26,9 @@
 
 ### 修复
 
+- **Bytes 压缩**：修复错误地将 1 MiB LZAV 哈希缓存大小当作压缩输入上限的问题。
 - **DDS**：节点释放时清理回调、请求状态和匹配计数，支持同进程重新初始化；同时修正 DDSR liveliness 配置及无 SSL DDSC 的 TCP 误启用。
-- **SHM / SHM2**：回复路径现在返回真实发送结果；SHM2 正确应用 iceoryx 配置，校验无效或越界参数，并优化大消息 loan、listener 等待和节点生命周期处理。
+- **SHM / SHM2**：回复路径现在返回真实发送结果；SHM2 正确应用 iceoryx 配置，优化大消息 loan、listener 等待和节点生命周期处理。
 - **VDB / VCAP**：修复多次回放、停止或跳转后的重排缓存污染；新会话通过 `on_reset()` 清理旧状态，并正确处理自然完成与中断边界。
 - **Bag / Trigger**：修复退出崩溃、队列满时丢写、延迟写入错误未上报，以及已放弃的 Trigger dump 残留或重现。
 - **Dump**：修复插件解绑死锁、live 资源生命周期、slice / scan 边界遗漏、输入输出碰撞、Schema 插件路径加载和 proxy 包大小处理。
