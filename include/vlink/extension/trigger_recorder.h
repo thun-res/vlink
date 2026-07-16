@@ -249,9 +249,10 @@ class VLINK_EXPORT TriggerRecorder : public MessageLoop {
     std::string out_file;   ///< Explicit output path; when empty a name under @c dump_dir is generated.
     int64_t pre_ms{-1};     ///< Per-trigger pre window; <0 uses each URL's configured pre (may only shrink it).
     int64_t post_ms{-1};    ///< Per-trigger post window; <0 uses each URL's configured post (may only shrink it).
-    std::unordered_set<std::string> filter_urls;  ///< If non-empty, only these exact URLs are dumped this trigger.
-    std::string filter_str;  ///< With empty @c filter_urls, comma/space-separated substrings select by @c black_mode.
-    bool black_mode{false};  ///< With @c filter_str: false keeps matches (whitelist), true drops matches (blacklist).
+    std::unordered_set<std::string> whitelist;  ///< Exact URL whitelist; empty means all URLs pass this stage.
+    std::unordered_set<std::string> blacklist;  ///< Exact URL blacklist applied after @c whitelist.
+    std::string filter_str;                     ///< Secondary comma/space-separated substring filter.
+    bool black_mode{false};                     ///< False keeps substring matches; true drops them.
 
     TriggerParams() {}  // NOLINT(modernize-use-equals-default)
   };
@@ -292,6 +293,15 @@ class VLINK_EXPORT TriggerRecorder : public MessageLoop {
    *         completes, when stopped or already dumping, or when the dump task cannot be enqueued.
    */
   bool dump(const TriggerParams& params = {});
+
+  /**
+   * @brief Requests a dump and returns its selected output path when accepted.
+   *
+   * @param params   Per-trigger overrides.
+   * @param out_file Selected path on success; cleared when the request is rejected.
+   * @return @c true when the dump was accepted and @p out_file was set.
+   */
+  bool dump(const TriggerParams& params, std::string& out_file);
 
   /**
    * @brief Reports whether a dump is currently in flight.

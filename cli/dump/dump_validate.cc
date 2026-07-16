@@ -174,16 +174,6 @@ static bool check_url_arguments(const argparse::ArgumentParser& program, DumpTyp
     return false;
   }
 
-  if (program.is_used("--black") && !program.is_used("--urls") && !program.is_used("--url_filter")) {
-    std::cerr << "Option --black requires --urls or --url_filter." << std::endl;
-    return false;
-  }
-
-  if (program.is_used("--urls") && program.is_used("--url_filter")) {
-    std::cerr << "Use either --urls for exact URL matches or --url_filter for keyword matches, not both." << std::endl;
-    return false;
-  }
-
   if (program.is_used("--urls") && program.get<std::vector<std::string>>("--urls").empty()) {
     std::cerr << "Option --urls requires at least one URL." << std::endl;
     return false;

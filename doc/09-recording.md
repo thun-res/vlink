@@ -368,7 +368,7 @@ MCAP 格式的文件头内嵌 schema 与 channel 元数据并支持随机访问�
 
 ## 🧩 9.12 多文件合并回放
 
-录制按大小或时间分割会产生多个文件；多源或乱序数据需按真实数据时间重新排序时，用 `vlink::BagProcessor` 做时间滑窗重排。它维护一个缓冲窗口，将多个 reader 汇入的帧按 `push(data_timestamp, frame)` 传入的 data-plane time 升序输出，给"迟到但更早"的帧一个排到已缓存帧之前的机会。仅当窗口内最旧帧与最新帧的 data-plane time 跨度达到 `Config::min_cache_time`（默认 `500` ms）才释放最旧帧；墙钟时间绝不推进该窗口，生产者静默后的尾帧仅由显式 `flush()` 排空。`BagProcessor::Config` 另有两个可调字段：`max_cache_size`（默认 256 MiB，缓冲帧总载荷字节上限）与 `max_jump_time`（默认 1 h，data-plane time 单次跳变的绝对上限）；超过该阈值时，该帧按上一有效数据时间加录制时间 `Frame::timestamp` 的增量回退，避免异常数据时间跨越污染排序轴。输出时 `Frame::timestamp` 会映射到排序后的 data-plane-time 轴，并在单个 flush 段内保持严格单调递增；`flush()` 同步排空并重置时间锚点，`reset()` 则等待正在执行的输出回调结束、丢弃缓存而不输出并重置全部锚点。如果某帧无法提取 data-plane time，可传入负值，processor 会按上一帧的数据时间叠加 `Frame::timestamp` 差值补齐（无前序锚点时保持 `-1` 并排在最前）。`BagProcessor` 的输出回调在其独立 worker 线程触发，不得在该回调内调用 `flush()` / `reset()`，也不得让 `push()` 与边界操作并发。
+录制按大小或时间分割会产生多个文件；多源或乱序数据需按真实数据时间重新排序时，用 `vlink::BagProcessor` 做时间滑窗重排。它维护一个缓冲窗口，将多个 reader 汇入的帧按 `push(data_timestamp, frame)` 传入的 data-plane time 升序输出，给"迟到但更早"的帧一个排到已缓存帧之前的机会。仅当窗口内最旧帧与最新帧的 data-plane time 跨度达到 `Config::min_cache_time`（默认 `500` ms）才释放最旧帧；墙钟时间绝不推进该窗口，生产者静默后的尾帧仅由显式 `flush()` 排空。`BagProcessor::Config` 另有两个可调字段：`max_cache_size`（默认 256 MiB，缓冲帧总载荷字节上限）与 `max_jump_time`（默认 1 h，data-plane time 单次跳变的绝对上限）；超过该阈值时，该帧按上一有效数据时间加录制时间 `Frame::timestamp` 的增量回退，避免异常数据时间跨越污染排序轴。输出时 `Frame::timestamp` 会映射到排序后的 data-plane-time 轴，并在单个 flush 段内保持严格单调递增；`flush()` 同步排空并重置时间锚点，`reset()` 则等待正在执行的输出回调结束、丢弃缓存而不输出并重置全部锚点。如果某帧无法提取 data-plane time，可传入负值，processor 会按上一帧的数据时间叠加 `Frame::timestamp` 差值补齐（无前序锚点时保持 `-1` 并排在最前）。`BagProcessor` 的输出回调在其独立 worker 线程触发，不得在该回调内调用 `flush()` / `reset()`，也不得让 `push()` 与边界操作并发。processor 只重排帧并映射 `Frame::timestamp`，不会改写 payload 内的时间字段；来自不同时间基准的 `time_meas` 即使各自单调，也不能据此判断全 topic 的 payload 字段全局单调。
 
 ```cpp
 #include <vlink/extension/bag_reader.h>
@@ -445,6 +445,7 @@ int main() {
 
 ```cpp
 #include <chrono>
+#include <iostream>
 #include <thread>
 
 #include <vlink/base/plugin.h>
@@ -479,7 +480,9 @@ recorder.invoke_task([]() {}).wait();  // 等待 on_begin() 完成
 // 外部事件发生时,落盘触发点前后窗口
 vlink::TriggerRecorder::TriggerParams params;
 params.reason = "hard-brake";      // 写入 bag 标签
-if (recorder.dump(params)) {
+std::string dump_path;
+if (recorder.dump(params, dump_path)) {
+  std::cout << dump_path << std::endl;
   while (recorder.is_dumping()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
@@ -492,7 +495,7 @@ recorder.wait_for_quit();
 
 `RawSubFactory` 只负责按引擎传入的 URL 和 `InitType` 创建订阅器，不应提前配置、初始化或监听；getter 语义、丢帧统计、schema、发现开关、`dds.ip`、`init()` 与 `listen()` 仍由引擎统一处理。factory 写在宿主编译单元中，使 URL 的头文件内联分派能看到宿主所链接 transport target 传播的 `VLINK_SUPPORT_*`。若宿主没有直接链接对应共享后端，可在进程首次初始化 URL 前设置 `VLINK_URL_PLUGINS=auto` 允许已知 transport 按需加载，或把该变量设为模块列表进行显式预加载；为空或设为 `none` 时关闭插件加载，详见 [传输后端与 URL](04-transport.md)。
 
-`TriggerRecorder` 继承 `MessageLoop`，与其他 VLink 循环类一样直接使用基类的 `async_run()`、`quit()` 和 `wait_for_quit()`；等待 post 窗口与写盘都在它自身的循环线程上执行。`dump()` 为非阻塞：它记下触发时刻后异步完成"等待本次参与 URL 的最大有效 `post` 窗口 → 重排 → 写盘"，其间若再次触发则被拒绝（落盘串行化）。若已接受的 dump 尚在等待 post 窗口，`quit()` 遵循 `MessageLoop` 语义终止该延时任务；需要保留该文件时，应先等待 `is_dumping()` 变为 `false` 再退出。`TriggerParams` 可临时缩小本次的 `pre` / `post`（只能相对配置缩小，因环形缓冲仅按配置时长保留历史）、指定输出路径 / 文件名，并按 URL 精确列表或子串过滤缩小本次落盘范围。落盘产物即标准 bag 文件，可由 `BagReader`、游标读取或图形化 `vlink-player` 进一步处理。
+`TriggerRecorder` 继承 `MessageLoop`，与其他 VLink 循环类一样直接使用基类的 `async_run()`、`quit()` 和 `wait_for_quit()`；等待 post 窗口与写盘都在它自身的循环线程上执行。`dump()` 为非阻塞：它记下触发时刻后异步完成"等待本次参与 URL 的最大有效 `post` 窗口 → 重排 → 写盘"，其间若再次触发则被拒绝（落盘串行化）。两参数重载在任务成功入队时同步返回已经确定的输出路径，包括自动命名的防覆盖后缀。若已接受的 dump 尚在等待 post 窗口，`quit()` 遵循 `MessageLoop` 语义终止该延时任务；需要保留该文件时，应先等待 `is_dumping()` 变为 `false` 再退出。`TriggerParams` 可临时缩小本次的 `pre` / `post`（只能相对配置缩小，因环形缓冲仅按配置时长保留历史）、指定输出路径 / 文件名，并用可同时设置的 URL 精确 `whitelist` / `blacklist` 及不区分大小写的子串做两层过滤；精确名单先保留白名单再剔除黑名单，`black_mode` 仅切换子串过滤的白名单 / 黑名单模式。落盘产物即标准 bag 文件，可由 `BagReader`、游标读取或图形化 `vlink-player` 进一步处理。
 
 命令行等价工具 `vlink-trigger`（`daemon` 常驻缓冲 / `dump` 发起触发落盘）及其完整 JSON 配置项见 [10-cli-tools.md](10-cli-tools.md)。
 

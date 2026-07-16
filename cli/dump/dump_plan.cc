@@ -281,47 +281,42 @@ bool build_url_selection(const vlink::BagReader::Info& info, const std::vector<s
     });
   };
 
-  auto trimmed_filter = vlink::Helpers::trim_string(url_filter);
   auto trimmed_target = vlink::Helpers::trim_string(target_url);
+  auto keywords = split_keywords(url_filter);
+  std::vector<std::string> clean_urls;
+  clean_urls.reserve(urls.size());
 
-  if (!trimmed_filter.empty()) {
-    auto keywords = split_keywords(trimmed_filter);
+  for (const auto& raw_url : urls) {
+    auto clean_url = vlink::Helpers::trim_string(raw_url);
 
-    for (const auto& meta : info.url_metas) {
-      bool match = url_matches(meta.url, keywords);
-      bool keep = black_mode ? !match : match;
-
-      if (keep) {
-        selection.urls.emplace(meta.url);
-      }
+    if (!clean_url.empty()) {
+      clean_urls.emplace_back(std::move(clean_url));
     }
-  } else if (!urls.empty()) {
-    std::vector<std::string> clean_urls;
-    clean_urls.reserve(urls.size());
+  }
+
+  if (!urls.empty() && clean_urls.empty() && fail_on_empty) {
+    std::cerr << "Option --urls requires at least one non-empty URL.\n";
+    return false;
+  }
+
+  if (!clean_urls.empty() || !keywords.empty()) {
     std::unordered_set<std::string> matched_urls;
-
-    for (const auto& raw_url : urls) {
-      auto clean_url = vlink::Helpers::trim_string(raw_url);
-
-      if (!clean_url.empty()) {
-        clean_urls.emplace_back(std::move(clean_url));
-      }
-    }
-
-    if (clean_urls.empty()) {
-      if (fail_on_empty) {
-        std::cerr << "Option --urls requires at least one non-empty URL.\n";
-        return false;
-      }
-
-      return true;
-    }
 
     for (const auto& meta : info.url_metas) {
       auto iter = std::find(clean_urls.begin(), clean_urls.end(), meta.url);
-      bool keep = black_mode ? iter == clean_urls.end() : iter != clean_urls.end();
+      bool exact_match = iter != clean_urls.end();
+      bool keyword_match = !keywords.empty() && url_matches(meta.url, keywords);
+      bool keep = true;
 
-      if (iter != clean_urls.end()) {
+      if (!clean_urls.empty()) {
+        keep = black_mode ? !exact_match : exact_match;
+      }
+
+      if (!keywords.empty()) {
+        keep = keep && (black_mode ? !keyword_match : keyword_match);
+      }
+
+      if (exact_match) {
         matched_urls.emplace(meta.url);
       }
 
@@ -330,7 +325,7 @@ bool build_url_selection(const vlink::BagReader::Info& info, const std::vector<s
       }
     }
 
-    if (fail_on_empty) {
+    if (fail_on_empty && !black_mode) {
       for (const auto& clean_url : clean_urls) {
         if (matched_urls.count(clean_url) == 0) {
           std::cerr << "Selected URL not found in bag metadata: " << clean_url << '\n';

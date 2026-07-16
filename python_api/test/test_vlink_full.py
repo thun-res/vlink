@@ -1840,6 +1840,14 @@ def test_trigger_recorder_lifecycle():
         assert recorder.is_running()
 
         params = _vlink.TriggerRecorder.TriggerParams()
+        assert params.whitelist == set()
+        assert params.blacklist == set()
+        params.whitelist = {"intra://keep", "intra://drop"}
+        params.blacklist = {"intra://drop"}
+        assert params.whitelist == {"intra://keep", "intra://drop"}
+        assert params.blacklist == {"intra://drop"}
+        params.whitelist = set()
+        params.blacklist = set()
         params.reason = "python-test"
         params.out_file = output_path
         assert recorder.dump(params)

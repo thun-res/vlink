@@ -10,7 +10,7 @@ _vlink_dash_dump() {
 
     for ((i = 1; i < COMP_CWORD; ++i)); do
         case "${COMP_WORDS[i]}" in
-            --urls|--ignore_compress|--actions)
+            -u|--urls|--ignore_compress|--actions)
                 active_variadic="${COMP_WORDS[i]}"
                 ;;
             -*)
@@ -36,7 +36,7 @@ _vlink_dash_dump() {
             _vlink_bash_complete_files "$cur"
             return
             ;;
-        --urls|--ignore_compress)
+        -u|--urls|--ignore_compress)
             _vlink_bash_complete_url "$cur"
             return
             ;;
@@ -44,14 +44,14 @@ _vlink_dash_dump() {
             _vlink_bash_complete_words "0 1 2 3 4 5 6 7 8" "$cur"
             return
             ;;
-        -c|--condition|-m|--base_name|-b|--begin_time|-e|--end_time|-n|--count|--hz|-x|--expression|-w|--window|--event|--pre|--post|--event_state_max_age|--event_min_interval|--suffix|--manifest|--scan_output|--filter|--url_filter|--tag|--cache_size|--compress_level|--sample_step|--dropout_threshold|--plugin)
+        -c|--condition|-m|--base_name|-b|--begin_time|-e|--end_time|-n|--count|--hz|-x|--expression|-w|--window|--event|--pre|--post|--event_state_max_age|--event_min_interval|--suffix|--manifest|--scan_output|--filter|-i|--url_filter|--tag|--cache_size|--compress_level|--sample_step|--dropout_threshold|--plugin)
             return
             ;;
     esac
 
     if [[ "$cur" != -* ]]; then
         case "$active_variadic" in
-            --urls|--ignore_compress)
+            -u|--urls|--ignore_compress)
                 _vlink_bash_complete_url "$cur"
                 return
                 ;;
@@ -68,7 +68,7 @@ _vlink_dash_dump() {
 -d --proto_dir --fbs_dir -q --quiet -l --detail -x --expression \
 -w --window --segments --event --pre --post --event_state_max_age --event_min_interval \
 --suffix --compress --force --no_manifest --manifest --schema_config --schema_plugin --plugin \
---scan_output --filter --export_csv --urls --url_filter --black --actions --tag --wal_mode --cache_size \
+--scan_output --filter --export_csv -u --urls -i --url_filter -k --black --actions --tag --wal_mode --cache_size \
 --compress_level --ignore_compress --sample_step --dry_run --quality_check \
 --dropout_threshold -h --help -v --version" "$cur"
         return

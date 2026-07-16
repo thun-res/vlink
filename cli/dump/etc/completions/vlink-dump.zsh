@@ -4,7 +4,7 @@
 
 _vlink-dump_complete_multi() {
     case "$1" in
-        --urls|--ignore_compress)
+        -u|--urls|--ignore_compress)
             _vlink_zsh_complete_url
             return 0
             ;;
@@ -62,9 +62,9 @@ _vlink-dump() {
         '--plugin=[Bag plugin name (rewrites frames on read)]:plugin:' \
         '--filter=[Slice content filter expression]:expr:' \
         '--export_csv[Export slice field CSV sidecars]' \
-        '*--urls=[Exact URL whitelist]:url:_vlink_zsh_complete_url' \
-        '--url_filter=[Quoted URL keywords]:keywords:' \
-        '--black[Invert --urls/--url_filter selection]' \
+        '*'{-u,--urls}'=[Exact URL filter]:url:_vlink_zsh_complete_url' \
+        '(-i --url_filter)'{-i,--url_filter}'=[Quoted URL keywords]:keywords:' \
+        '(-k --black)'{-k,--black}'[Blacklist mode for URL filters]' \
         '*--actions=[Action type filter]:action:(0 1 2 3 4 5 6 7 8)' \
         '--tag=[Output bag tag]:tag:' \
         '--wal_mode[Enable WAL mode for slice outputs]' \

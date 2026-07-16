@@ -4939,7 +4939,8 @@ NB_MODULE(_vlink_nanobind, m) {
       .def_rw("out_file", &vlink::TriggerRecorder::TriggerParams::out_file)
       .def_rw("pre_ms", &vlink::TriggerRecorder::TriggerParams::pre_ms)
       .def_rw("post_ms", &vlink::TriggerRecorder::TriggerParams::post_ms)
-      .def_rw("filter_urls", &vlink::TriggerRecorder::TriggerParams::filter_urls)
+      .def_rw("whitelist", &vlink::TriggerRecorder::TriggerParams::whitelist)
+      .def_rw("blacklist", &vlink::TriggerRecorder::TriggerParams::blacklist)
       .def_rw("filter_str", &vlink::TriggerRecorder::TriggerParams::filter_str)
       .def_rw("black_mode", &vlink::TriggerRecorder::TriggerParams::black_mode);
   tr.def(nb::new_([](const vlink::TriggerRecorder::Config& config) {
@@ -4975,7 +4976,7 @@ NB_MODULE(_vlink_nanobind, m) {
           "timeout_ms"_a = vlink::Timer::kInfinite)
       .def(
           "dump",
-          [](vlink::TriggerRecorder& self, const vlink::TriggerRecorder::TriggerParams& params) {
+          [](vlink::TriggerRecorder& self, vlink::TriggerRecorder::TriggerParams params) {
             nb::gil_scoped_release release;
             return self.dump(params);
           },

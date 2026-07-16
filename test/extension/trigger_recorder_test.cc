@@ -302,7 +302,8 @@ TEST_SUITE("extension-TriggerRecorder") {
     CHECK(params.out_file.empty());
     CHECK_EQ(params.pre_ms, -1);
     CHECK_EQ(params.post_ms, -1);
-    CHECK(params.filter_urls.empty());
+    CHECK(params.whitelist.empty());
+    CHECK(params.blacklist.empty());
     CHECK(params.filter_str.empty());
     CHECK_FALSE(params.black_mode);
   }
@@ -510,7 +511,8 @@ TEST_SUITE("extension-TriggerRecorder") {
     params.reason = "manual";
     params.out_file = out;
 
-    REQUIRE(recorder.dump(params));
+    REQUIRE(recorder.dump(params, params.out_file));
+    CHECK_EQ(params.out_file, out);
     REQUIRE(wait_until_idle(recorder));
 
     recorder.quit();
@@ -812,7 +814,9 @@ TEST_SUITE("extension-TriggerRecorder") {
     vlink::TriggerRecorder::TriggerParams params;
     params.name_hint = "front/camera\\event";
 
-    REQUIRE(recorder.dump(params));
+    std::string accepted_out_file;
+    REQUIRE(recorder.dump(params, accepted_out_file));
+    CHECK(vlink::Helpers::has_endwith(accepted_out_file, "front_camera_event.vdb"));
     REQUIRE(wait_until_idle(recorder));
     recorder.quit();
     recorder.wait_for_quit();
@@ -839,15 +843,19 @@ TEST_SUITE("extension-TriggerRecorder") {
     vlink::TriggerRecorder::TriggerParams params;
     params.name_hint = "same-event";
 
-    REQUIRE(recorder.dump(params));
+    std::string first_path;
+    std::string second_path;
+    REQUIRE(recorder.dump(params, first_path));
     REQUIRE(wait_until_idle(recorder));
-    REQUIRE(recorder.dump(params));
+    REQUIRE(recorder.dump(params, second_path));
     REQUIRE(wait_until_idle(recorder));
 
     recorder.quit();
     recorder.wait_for_quit();
 
     REQUIRE_EQ(plugin->finished_paths.size(), 2u);
+    CHECK_EQ(plugin->finished_paths[0], first_path);
+    CHECK_EQ(plugin->finished_paths[1], second_path);
     CHECK_NE(plugin->finished_paths[0], plugin->finished_paths[1]);
     CHECK(std::filesystem::exists(plugin->finished_paths[0]));
     CHECK(std::filesystem::exists(plugin->finished_paths[1]));
@@ -966,6 +974,63 @@ TEST_SUITE("extension-TriggerRecorder") {
 
     auto reader = vlink::BagReader::create(out);
     REQUIRE(reader != nullptr);
+    CHECK_GT(reader->get_info().message_count, 0);
+  }
+
+  TEST_CASE("per-trigger whitelist and blacklist can be applied together") {
+    ScratchDir scratch("dump-url-lists");
+
+    const std::string keep_url = "intra://__trigger_test_list_keep__";
+    const std::string drop_url = "intra://__trigger_test_list_drop__";
+    const std::string outside_url = "intra://__trigger_test_list_outside__";
+    vlink::Publisher<vlink::Bytes> keep_pub(keep_url);
+    vlink::Publisher<vlink::Bytes> drop_pub(drop_url);
+    vlink::Publisher<vlink::Bytes> outside_pub(outside_url);
+
+    vlink::TriggerRecorder::Config config;
+    config.dump_dir = scratch.path;
+    config.default_pre_ms = 4000;
+    config.default_post_ms = 0;
+    config.enable_compress = false;
+    config.whitelist = {keep_url, drop_url, outside_url};
+
+    vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
+    REQUIRE(recorder.async_run());
+    REQUIRE(wait_until_ready(recorder));
+
+    if (!keep_pub.wait_for_subscribers(std::chrono::milliseconds(3000)) ||
+        !drop_pub.wait_for_subscribers(std::chrono::milliseconds(3000)) ||
+        !outside_pub.wait_for_subscribers(std::chrono::milliseconds(3000))) {
+      recorder.quit();
+      recorder.wait_for_quit();
+      MESSAGE("multicast discovery unavailable; skipping the dump-list assertions");
+      return;
+    }
+
+    const vlink::Bytes payload{0x31, 0x32, 0x33, 0x34};
+    for (int index = 0; index < 5; ++index) {
+      REQUIRE(keep_pub.publish(payload));
+      REQUIRE(drop_pub.publish(payload));
+      REQUIRE(outside_pub.publish(payload));
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    const std::string out = scratch.path + "/lists.vdb";
+    vlink::TriggerRecorder::TriggerParams params;
+    params.out_file = out;
+    params.whitelist = {keep_url, drop_url};
+    params.blacklist = {drop_url};
+
+    REQUIRE(recorder.dump(params));
+    REQUIRE(wait_until_idle(recorder, 8000));
+    recorder.quit();
+    recorder.wait_for_quit();
+
+    auto reader = vlink::BagReader::create(out);
+    REQUIRE(reader != nullptr);
+    REQUIRE_EQ(reader->get_info().url_metas.size(), 1u);
+    CHECK_EQ(reader->get_info().url_metas.front().url, keep_url);
     CHECK_GT(reader->get_info().message_count, 0);
   }
 

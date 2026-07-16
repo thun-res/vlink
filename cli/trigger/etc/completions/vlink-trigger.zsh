@@ -4,7 +4,7 @@
 
 _vlink-trigger_daemon() {
     _arguments -s \
-        '(-c --config)'{-c,--config}'=[Config json path]:config:_files -g "*.json"' \
+        '(-c --config)'{-c,--config}'=[Optional config json path]:config:_files -g "*.json"' \
         '(-n --native)'{-n,--native}'[Native mode: local-host discovery + dds.ip=127.0.0.1 unless configured]' \
         '--bag_plugin=[Bag reorder plugin library loaded and bound by the CLI host]:plugin:' \
         '--trigger_plugin=[Trigger lifecycle plugin library name]:plugin:' \
@@ -41,9 +41,9 @@ _vlink-trigger_dump() {
         '(-n --name)'{-n,--name}'=[Output file name hint]:name:' \
         '--pre=[Pre window ms (shrink only)]:pre:' \
         '--post=[Post window ms (shrink only)]:post:' \
-        '*'{-u,--urls}'=[Filter urls, empty is all]:url:_vlink_zsh_complete_url' \
-        '(-i --filter)'{-i,--filter}'=[URL keyword filter, comma-separated or quoted space-separated]:filter:' \
-        '(-k --black)'{-k,--black}'[Blacklist mode for --filter]' \
+        '*'{-u,--urls}'=[Exact URL prefilter, empty is all]:url:_vlink_zsh_complete_url' \
+        '(-i --filter)'{-i,--filter}'=[Filter]:filter:' \
+        '(-k --black)'{-k,--black}'[Blacklist mode]' \
         '(-h --help)'{-h,--help}'[Show help]'
 }
 

@@ -332,9 +332,11 @@ vlink-bag tag /tmp/test.vdb "highway_test_20260317"
 
 #### daemon 子命令
 
-`vlink-trigger daemon` 读取 JSON 配置并启动守护进程，随后常驻缓冲直至收到终止信号：
+`vlink-trigger daemon` 使用内置默认配置启动守护进程，随后常驻缓冲直至收到终止信号；需要覆盖默认值时再通过 `-c` 读取 JSON 配置：
 
 ```bash
+vlink-trigger daemon
+
 vlink-trigger daemon -c /etc/vlink/trigger/trigger.json
 
 vlink-trigger daemon -c /etc/vlink/trigger/trigger.json -n
@@ -346,13 +348,13 @@ vlink-trigger daemon -c /etc/vlink/trigger/trigger.json \
 
 | 参数 | 说明 |
 | --- | --- |
-| `-c` / `--config <path>` | 配置文件路径（JSON，必填） |
+| `-c` / `--config <path>` | 可选配置文件路径（JSON）；省略时全部使用内置默认值 |
 | `-n` / `--native` | 本地模式：本机发现，并在未配置 `dds_ip` 时将其置为 `127.0.0.1`（仅作用于数据面订阅，不影响 `method_url` 控制面） |
 | `--bag_plugin <name>` | 覆盖配置文件中的 `bag_plugin`；由 CLI 宿主加载并绑定，不传入 `TriggerRecorder::Config` |
 | `--trigger_plugin <name>` | 覆盖配置文件中的 `trigger_plugin` |
 | `--trigger_plugin_config <str>` | 覆盖配置文件中的 `trigger_plugin_config`；字符串内容由插件解释 |
 
-daemon 先读取 JSON，再按字段应用命令行中**显式出现**的三个插件参数，最后应用 `--native`。三个字段相互独立：未指定的参数保留 JSON 值，显式传入空字符串则清空相应值。因此可以只从命令行替换插件配置而沿用 JSON 中的插件名，也可以用 `--trigger_plugin ''` 禁用 JSON 中配置的 trigger 插件。
+daemon 在指定 `-c` 时先读取 JSON，再按字段应用命令行中**显式出现**的三个插件参数，最后应用 `--native`。未指定 `-c` 时从内置默认值开始应用命令行参数。三个插件字段相互独立：未指定的参数保留 JSON 值，显式传入空字符串则清空相应值。因此可以只从命令行替换插件配置而沿用 JSON 中的插件名，也可以用 `--trigger_plugin ''` 禁用 JSON 中配置的 trigger 插件。
 
 配置文件字段如下（时间单位毫秒，容量单位 MB）：
 
@@ -360,7 +362,7 @@ daemon 先读取 JSON，再按字段应用命令行中**显式出现**的三个�
 | --- | --- | --- |
 | `method_url` | `dds://trigger/method` | 控制面 RPC 的服务 URL（scheme 决定后端，可换 `shm://` 等），客户端 `-m` 须与之一致 |
 | `dump_dir` | `{tmp}/vlink-trigger` | 落盘目录，空则取系统临时目录下的 `vlink-trigger` |
-| `allow_out_file_outside_dump_dir` | `false` | 是否允许 RPC 的显式 `out_file` 位于 `dump_dir` 外；默认关闭，开启前应确保控制面调用方可信。该开关不改变相对路径基准和后缀校验 |
+| `allow_outside_dir` | `true` | 是否允许 RPC 的显式 `out_file` 位于 `dump_dir` 外；设为 `false` 时限制在 `dump_dir` 内。该开关不改变相对路径基准和后缀校验 |
 | `file_type` | `vdb` | 落盘格式：`vdb`（SQLite 容器）/ `vcap`（MCAP 容器） |
 | `default_pre_ms` | `60000` | 默认触发前窗口（毫秒） |
 | `default_post_ms` | `5000` | 默认触发后窗口（毫秒） |
@@ -393,7 +395,7 @@ daemon 先读取 JSON，再按字段应用命令行中**显式出现**的三个�
 ```json
 {
     "dump_dir": "/data/edr",
-    "allow_out_file_outside_dump_dir": false,
+    "allow_outside_dir": true,
     "file_type": "vdb",
     "default_pre_ms": 60000,
     "default_post_ms": 5000,
@@ -420,11 +422,11 @@ daemon 先读取 JSON，再按字段应用命令行中**显式出现**的三个�
 }
 ```
 
-上例中相机保留触发前 60 s、触发后 5 s，雷达仅保留触发前 15 s（`post_ms=0`），制动信号仅录触发后 10 s（`only_back`），三者窗口互不相同。默认按采集时刻落盘；若配置 `bag_plugin`，CLI 宿主会加载该插件并绑定给 recorder，由插件按 payload 内数据面时间重排。JSON 中的 `bag_plugin` / `bag_plugin_dir` 是 `vlink-trigger` 的宿主配置，不是引擎配置字段。
+上例中相机保留触发前 60 s、触发后 5 s，雷达仅保留触发前 15 s（`post_ms=0`），制动信号仅录触发后 10 s（`only_back`），三者窗口互不相同。默认按采集时刻落盘；若配置 `bag_plugin`，CLI 宿主会加载该插件并绑定给 recorder，由插件按 payload 内数据面时间重排。重排只改变帧的落盘顺序和 bag 时间轴，不改写 payload 内的 `time_meas`；具体排序与异常时间处理策略由插件实现决定。JSON 中的 `bag_plugin` / `bag_plugin_dir` 是 `vlink-trigger` 的宿主配置，不是引擎配置字段。
 
 #### dump 子命令
 
-`vlink-trigger dump` 向运行中的守护进程发起一次触发，可临时覆盖输出路径、原因、文件名与窗口，并按 URL 缩小本次落盘范围。显式输出路径默认必须位于 daemon 的 `dump_dir` 内；相对路径始终按 `dump_dir` 解析，且后缀必须与 daemon 的 `file_type` 匹配。默认情况下 `..` 与符号链接不能逃逸该目录；只有 daemon 配置 `allow_out_file_outside_dump_dir: true` 时才跳过这一包含性校验：
+`vlink-trigger dump` 向运行中的守护进程发起一次触发，可临时覆盖输出路径、原因、文件名与窗口，并按 URL 缩小本次落盘范围。显式输出路径默认可位于 daemon 的 `dump_dir` 外；将 `allow_outside_dir` 配置为 `false` 后，`..` 与符号链接均不能逃逸该目录。相对路径始终按 `dump_dir` 解析，且后缀必须与 daemon 的 `file_type` 匹配。请求接受后，dump 客户端和 daemon 都显示包含自动命名或防覆盖后缀的最终绝对路径：
 
 ```bash
 vlink-trigger dump
@@ -434,6 +436,8 @@ vlink-trigger dump -r hard-brake -o /data/edr/case_001.vdb
 vlink-trigger dump -r collision --pre 10000 --post 3000
 
 vlink-trigger dump -u dds://camera/front dds://control/brake
+
+vlink-trigger dump -u dds://camera/front dds://camera/rear -i front
 
 vlink-trigger dump -i "camera radar" -k
 ```
@@ -446,11 +450,15 @@ vlink-trigger dump -i "camera radar" -k
 | `-n` / `--name <str>` | 输出文件名提示，空则生成时间戳文件名 |
 | `--pre <ms>` | 本次触发前窗口（毫秒），仅可缩小；`-1` 保持各 URL 配置值，其他负数或超出录制器安全范围的过大值会被拒绝 |
 | `--post <ms>` | 本次触发后窗口（毫秒），仅可缩小；`-1` 保持各 URL 配置值，其他负数或超出录制器安全范围的过大值会被拒绝 |
-| `-u` / `--urls <url...>` | 仅落盘这些精确匹配的 URL |
-| `-i` / `--filter <str>` | 以子串过滤 URL（`--urls` 为空时生效）；用逗号分隔，或用引号包住以空格分隔的多个子串 |
-| `-k` / `--black` | 配合 `--filter` 的黑名单模式，剔除命中的 URL |
+| `-u` / `--urls <url...>` | 精确 URL 过滤；默认仅保留命中项，`-k` 时剔除命中项 |
+| `-i` / `--filter <str>` | 在精确 URL 判断后执行不区分大小写的子串过滤；用逗号分隔，或用引号包住以空格分隔的多个子串 |
+| `-k` / `--black` | 与 `vlink-monitor -k` 一致，同时把 `--urls` 和 `--filter` 切换为黑名单模式 |
 
-本次触发的窗口只能相对配置缩小、不能放大：`--pre` / `--post` 大于某 URL 配置值时以配置值为准，因为环形缓冲仅按配置时长保留历史。触发请求为非阻塞——守护进程接受后异步完成"等待本次参与 URL 的最大有效 post 窗口 → 重排 → 写盘"，其间若再次触发则被拒绝（触发串行化）。参与本次落盘的 URL 集合在触发受理瞬间筛选并冻结：此后新发现的话题不进入本次落盘，已在集合中的话题即使离线，其缓冲数据也保留到本次落盘完成。
+未使用 `-k` 时，`--urls` 与 `--filter` 同时出现等价于先做精确白名单、再做关键字白名单，最终保留两者交集；使用 `-k` 时两层都按黑名单执行，最终剔除两者命中的并集。这一处理顺序、分词方式、大小写规则和反转语义与 `vlink-monitor` 一致。
+
+控制面 `dump` 请求用独立的 `whitelist` 和 `blacklist` 数组传输精确 URL；字段省略或数组为空表示不启用对应名单，两者可单独设置，也可在同一次请求中同时设置，daemon 先应用白名单再应用黑名单。当前 CLI 参数保持不变：未使用 `-k` 时将 `-u` 写入 `whitelist`，使用 `-k` 时写入 `blacklist`；`filter_str` 的模式仍由 `black_mode` 表示。
+
+本次触发的窗口只能相对配置缩小、不能放大：`--pre` / `--post` 大于某 URL 配置值时以配置值为准，因为环形缓冲仅按配置时长保留历史。触发请求为非阻塞——守护进程接受后异步完成"等待本次参与 URL 的最大有效 post 窗口 → 重排 → 写盘"，其间若再次触发则被拒绝（触发串行化）。daemon 日志覆盖收到请求、调度等待、开始写盘及成功或失败阶段；成功日志包含帧数、字节数和最终绝对路径。参与本次落盘的 URL 集合在触发受理瞬间筛选并冻结：此后新发现的话题不进入本次落盘，已在集合中的话题即使离线，其缓冲数据也保留到本次落盘完成。
 
 #### 典型场景
 
@@ -489,12 +497,15 @@ vlink-dump dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /tm
 | `-o` / `--out_dir` / `-m` / `--base_name` | 输出目录 / 文件基础名 |
 | `-d` / `--proto_dir` / `--fbs_dir` | schema 目录 |
 | `-x` / `--expression <expr>` | 表达式，可重复（配合 `-c`，需 exprtk） |
+| `-u` / `--urls <url...>` | `slice` / `scan` 精确 URL 过滤 |
+| `-i` / `--url_filter <str>` | `slice` / `scan` URL 关键字过滤，空格或逗号分隔且不区分大小写 |
+| `-k` / `--black` | 与 `vlink-monitor -k` 一致，将两种 URL 过滤切换为黑名单模式 |
 
 输出类型语义：`console` 在终端打印消息内容；`csv` / `json` 输出选定字段；`bin` 将每条消息的原始字节存为独立文件；`jpg` / `h264` / `h265` / `raw` 适用于 CameraFrame 或含 bytes 字段的消息；`pcd` 将零拷贝 PointCloud 每帧存为 PCD 文件。`slice` / `scan` 为离线 bag 的高级用法（按窗口/事件切片、按事件或质量扫描），参数较多，详见 `vlink-dump --help`。
 
 所有带值的标量参数都必须显式提供值；空 URL、空字段列表以及空白的 `--event` / `--filter` / `--url_filter` 会直接报错。URL 的首尾空白在解析后统一移除；dump/导出模式必须指定具体 URL，`*` 只用于 `slice` / `scan`。`-n` 精确限制通过 URL 与限频门控的样本数，`--hz` 是严格的最大输出频率；限频间隔只在参数解析时换算，数据热路径使用整数微秒比较。
 
-`slice` / `scan` 只接受已完整结束且包含消息的 bag，时间区间按毫秒解释为半开区间 `[begin, end)`；未指定结束时间时会覆盖最后一个不足整毫秒的消息。切片输出只支持 `.vdb` 或 `.vcap`，分片输入的 `.vdbx` / `.vcapx` 会映射到对应的单文件格式。URL 筛选包含 Event、Method 与 Field，实际帧再由 `--actions` 过滤（默认 `6=Subscribe`）；显式 URL 与 `--urls` / `--url_filter` 不可混用。
+`slice` / `scan` 只接受已完整结束且包含消息的 bag，时间区间按毫秒解释为半开区间 `[begin, end)`；未指定结束时间时会覆盖最后一个不足整毫秒的消息。切片输出只支持 `.vdb` 或 `.vcap`，分片输入的 `.vdbx` / `.vcapx` 会映射到对应的单文件格式。URL 筛选包含 Event、Method 与 Field，实际帧再由 `--actions` 过滤（默认 `6=Subscribe`）；显式 URL 与 `-u` / `--urls`、`-i` / `--url_filter` 不可混用。未使用 `-k` 时，两种过滤同时出现取交集；使用 `-k` 时剔除任一过滤命中的 URL，与 `vlink-monitor` 的处理一致。单独使用 `-k` 不改变选集；黑名单中不存在于 bag 的 URL 会被忽略，白名单中的 URL 不存在时仍会报错。
 
 内容过滤、事件表达式和切片 CSV 导出只支持零拷贝类型与 Protobuf；Protobuf 必须能从 `-d`、`--schema_config` 或 `VLINK_SCHEMA_PLUGIN` 找到目标消息的真实 descriptor。`--schema_plugin` 与 `VLINK_SCHEMA_PLUGIN` 均可使用插件 stem 或共享库直接路径，显式配置但加载失败会终止命令。Method、FlatBuffers、Raw 或未知 schema 参与这些字段操作时会在写文件前拒绝；这项预检验证解码能力，但不会假定每个 selector 都存在于异构 topic 的每一种消息中。不做 `--filter` / `--event` / `--export_csv` 时，单独的 `-c` 不会触发无用解码。`--force` 仍拒绝覆盖符号链接、输入 bag 及其分片成员，也不会覆盖本次命令读取的 `--segments` / `--schema_config` 文件。
 

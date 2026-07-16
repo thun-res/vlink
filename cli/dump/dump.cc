@@ -1311,17 +1311,20 @@ int main(int argc, char* argv[]) {
       .default_value(false)
       .implicit_value(true);
 
-  program.add_argument("--urls")
-      .help("Exact URL whitelist for slice/scan")
+  program.add_argument("-u", "--urls")
+      .help("Exact URL filter for slice/scan")
       .default_value(std::vector<std::string>())
       .nargs(argparse::nargs_pattern::at_least_one);
 
-  program.add_argument("--url_filter")
+  program.add_argument("-i", "--url_filter")
       .help("Quoted keyword filter for URLs (space- or comma-separated), e.g. --url_filter 'camera lidar'")
       .default_value(std::string())
       .nargs(1);
 
-  program.add_argument("--black").help("Invert URL filter to blacklist mode").default_value(false).implicit_value(true);
+  program.add_argument("-k", "--black")
+      .help("Blacklist mode for --urls and --url_filter")
+      .default_value(false)
+      .implicit_value(true);
 
   program.add_argument("--actions")
       .help(
@@ -1700,9 +1703,9 @@ int main(int argc, char* argv[]) {
     opt.filter_expr = program.get<std::string>("--filter");
     opt.export_csv = program.is_used("--export_csv");
     opt.tag_name = program.get<std::string>("--tag");
-    opt.urls = program.get<std::vector<std::string>>("--urls");
-    opt.url_filter = program.get<std::string>("--url_filter");
-    opt.black_mode = program.is_used("--black");
+    opt.urls = program.get<std::vector<std::string>>("-u");
+    opt.url_filter = program.get<std::string>("-i");
+    opt.black_mode = program.is_used("-k");
     opt.actions = program.get<std::vector<int>>("--actions");
     opt.begin_time = ctx.begin_time;
     opt.end_time = ctx.end_time;

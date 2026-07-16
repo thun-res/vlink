@@ -1,7 +1,7 @@
 {
     "method_url": "dds://trigger/method",
     "dump_dir": "/tmp/vlink-trigger",
-    "allow_out_file_outside_dump_dir": false,
+    "allow_outside_dir": true,
     "file_type": "vdb",
     "default_pre_ms": 60000,
     "default_post_ms": 5000,

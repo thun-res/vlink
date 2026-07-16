@@ -187,7 +187,14 @@ TriggerRecorder::~TriggerRecorder() {
 }
 
 bool TriggerRecorder::dump(const TriggerParams& params) {
+  std::string out_file;
+
+  return dump(params, out_file);
+}
+
+bool TriggerRecorder::dump(const TriggerParams& params, std::string& out_file) {
   if VUNLIKELY (params.pre_ms > kMaxWindowMs || params.post_ms > kMaxWindowMs) {
+    out_file.clear();
     VLOG_E("TriggerRecorder: trigger window exceeds the supported range");
     return false;
   }
@@ -195,17 +202,20 @@ bool TriggerRecorder::dump(const TriggerParams& params) {
   std::lock_guard lifecycle_lock(impl_->lifecycle_mtx);
 
   if VUNLIKELY (!impl_->running.load(std::memory_order_acquire) || impl_->dumping.load(std::memory_order_acquire)) {
+    out_file.clear();
     return false;
   }
 
   auto job = std::make_shared<DumpJob>();
   job->params = params;
+  const auto& request = job->params;
+  out_file.clear();
 
-  if (!params.out_file.empty()) {
-    job->path = params.out_file;
+  if (!request.out_file.empty()) {
+    job->path = request.out_file;
   } else {
     const char* file_suffix = impl_->config.file_type == kVcap ? ".vcap" : ".vdb";
-    std::string base = params.name_hint.empty() ? BagWriter::get_format_date(nullptr, true) : params.name_hint;
+    std::string base = request.name_hint.empty() ? BagWriter::get_format_date(nullptr, true) : request.name_hint;
     std::replace(base.begin(), base.end(), '/', '_');
     std::replace(base.begin(), base.end(), '\\', '_');
     job->path = impl_->config.dump_dir + "/" + base + file_suffix;
@@ -218,15 +228,7 @@ bool TriggerRecorder::dump(const TriggerParams& params) {
   }
 
   int64_t max_post = 0;
-  std::vector<std::string> lower_patterns;
-
-  if (params.filter_urls.empty() && !params.filter_str.empty()) {
-    lower_patterns = Helpers::split_any(params.filter_str);
-
-    for (auto& pattern : lower_patterns) {
-      std::transform(pattern.begin(), pattern.end(), pattern.begin(), [](unsigned char c) { return std::tolower(c); });
-    }
-  }
+  std::vector<std::string> filter_list = Helpers::split_any(request.filter_str);
 
   {
     std::shared_lock map_lock(impl_->url_buffer_mtx);
@@ -237,28 +239,42 @@ bool TriggerRecorder::dump(const TriggerParams& params) {
         continue;
       }
 
-      bool selected = params.filter_urls.empty() || params.filter_urls.count(entry.second->url) != 0;
-
-      if (selected && params.filter_urls.empty() && !params.filter_str.empty()) {
-        std::string lower_url = entry.second->url;
-        std::transform(lower_url.begin(), lower_url.end(), lower_url.begin(),
-                       [](unsigned char c) { return std::tolower(c); });
-
-        const bool hit = std::any_of(lower_patterns.begin(), lower_patterns.end(), [&lower_url](const auto& pattern) {
-          return lower_url.find(pattern) != std::string::npos;
-        });
-        selected = params.black_mode != hit;
+      if ((!request.whitelist.empty() && request.whitelist.count(entry.second->url) == 0) ||
+          request.blacklist.count(entry.second->url) != 0) {
+        continue;
       }
 
-      if (!selected) {
-        continue;
+      if (!filter_list.empty()) {
+        bool skip = request.black_mode ? false : true;
+
+        std::string left_str = entry.second->url;
+        std::transform(left_str.begin(), left_str.end(), left_str.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        for (const auto& filter : filter_list) {
+          if (filter.empty()) {
+            continue;
+          }
+
+          std::string right_str = filter;
+          std::transform(right_str.begin(), right_str.end(), right_str.begin(),
+                         [](unsigned char c) { return std::tolower(c); });
+
+          if (left_str.find(right_str) != std::string::npos) {
+            skip = request.black_mode ? true : false;
+            break;
+          }
+        }
+
+        if (skip) {
+          continue;
+        }
       }
 
       entry.second->frozen = true;
       job->frozen_buffers.push_back(entry.second);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
       const int64_t post =
-          params.post_ms >= 0 ? std::min(params.post_ms * 1000, entry.second->post_us) : entry.second->post_us;
+          request.post_ms >= 0 ? std::min(request.post_ms * 1000, entry.second->post_us) : entry.second->post_us;
       max_post = std::max(max_post, post);
     }
 
@@ -274,6 +290,9 @@ bool TriggerRecorder::dump(const TriggerParams& params) {
     }
   };
 
+  VLOG_I("TriggerRecorder: dump scheduling -> ", job->path, " wait_ms=", delay_ms,
+         " urls=", job->frozen_buffers.size());
+
   const bool ok = delay_ms > 0 ? Timer::call_once(this, static_cast<uint32_t>(delay_ms), std::move(task))
                                : post_task(std::move(task));
 
@@ -284,6 +303,8 @@ bool TriggerRecorder::dump(const TriggerParams& params) {
     return false;
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
+
+  out_file = job->path;
 
   return true;
 }
@@ -776,6 +797,8 @@ void TriggerRecorder::finish_dump_locked(DumpJob& job) {
 
 // LCOV_EXCL_START GCOVR_EXCL_START
 void TriggerRecorder::notify_dump_failed(const DumpJob& job, std::string_view error) {
+  VLOG_E("TriggerRecorder: dump failed -> ", job.path, " error=", error);
+
   if (!impl_->trigger_plugin) {
     return;
   }
@@ -923,7 +946,6 @@ void TriggerRecorder::do_dump(DumpJob& job) {
     writer = BagWriter::create(path, writer_config);
   } catch (const std::exception& e) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    VLOG_E("TriggerRecorder: failed to create bag writer at ", path, ": ", e.what());
     notify_dump_failed(job, e.what());
     return;
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
@@ -931,7 +953,6 @@ void TriggerRecorder::do_dump(DumpJob& job) {
 
   if VUNLIKELY (!writer) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    VLOG_E("TriggerRecorder: unsupported bag suffix, dump aborted: ", path);
     notify_dump_failed(job, "unsupported bag suffix");
     return;
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
@@ -948,6 +969,7 @@ void TriggerRecorder::do_dump(DumpJob& job) {
   TriggerPluginInterface::DumpContext dump_context;
 
   impl_->writing.store(true, std::memory_order_release);
+  VLOG_I("TriggerRecorder: dump writing -> ", path, " frames=", snapshot.size(), " urls=", losses.size());
 
   if (trigger_plugin) {
     dump_context.reason = params.reason;
@@ -1001,6 +1023,7 @@ void TriggerRecorder::do_dump(DumpJob& job) {
   }
 
   frame.data.clear();
+
   std::vector<SnapFrame>().swap(snapshot);
 
   if (impl_->bag_plugin) {
@@ -1015,7 +1038,6 @@ void TriggerRecorder::do_dump(DumpJob& job) {
   writer.reset();
 
   if VUNLIKELY (persistence_failed || writer_failed) {
-    VLOG_E("TriggerRecorder: writer reported a persistence failure: ", path);
     notify_dump_failed(job, "writer persistence failure");
     return;
   }
@@ -1034,7 +1056,7 @@ void TriggerRecorder::do_dump(DumpJob& job) {
     trigger_plugin->on_dump_finished(result);
   }
 
-  VLOG_I("TriggerRecorder: dump finished -> ", path, " frames=", snapshot_frame_count);
+  VLOG_I("TriggerRecorder: dump finished -> ", path, " frames=", snapshot_frame_count, " bytes=", byte_count);
 }
 
 }  // namespace vlink
