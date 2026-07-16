@@ -10,65 +10,57 @@ if(NOT TARGET rerun_sdk)
   if(DEFINED ENV{RERUN_SDK_DIR})
     set(RERUN_SDK_DIR "$ENV{RERUN_SDK_DIR}")
     message(STATUS "Using RERUN_SDK_DIR from environment: ${RERUN_SDK_DIR}")
-    if(WIN32)
-      if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-        set(RERUN_SDK_LIB "${RERUN_SDK_DIR}/lib/rerun_c__win_x64.lib")
-      else()
-        message(FATAL_ERROR "Unsupported Windows architecture: 32-bit")
+    if(EXISTS "${RERUN_SDK_DIR}/src/rerun.hpp" AND EXISTS "${RERUN_SDK_DIR}/CMakeLists.txt")
+      if(CMAKE_VERSION VERSION_LESS 3.16)
+        message(FATAL_ERROR "Rerun C++ SDK source bundles require CMake 3.16 or newer; use an installed SDK package")
       endif()
-    elseif(APPLE)
-      if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
-        set(RERUN_SDK_LIB "${RERUN_SDK_DIR}/lib/librerun_c__macos_arm64.a")
+
+      if(DEFINED BUILD_SHARED_LIBS)
+        set(VLINK_RERUN_SAVED_BUILD_SHARED_LIBS "${BUILD_SHARED_LIBS}")
+        set(VLINK_RERUN_RESTORE_BUILD_SHARED_LIBS ON)
       else()
-        message(FATAL_ERROR "Unsupported macOS architecture: ${CMAKE_SYSTEM_PROCESSOR}")
+        set(VLINK_RERUN_RESTORE_BUILD_SHARED_LIBS OFF)
       endif()
-    elseif(UNIX)
-      if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
-        set(RERUN_SDK_LIB "${RERUN_SDK_DIR}/lib/librerun_c__linux_arm64.a")
-      elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
-        set(RERUN_SDK_LIB "${RERUN_SDK_DIR}/lib/librerun_c__linux_x64.a")
+
+      set(BUILD_SHARED_LIBS OFF)
+      add_subdirectory("${RERUN_SDK_DIR}" "${CMAKE_BINARY_DIR}/rerun-sdk-build" EXCLUDE_FROM_ALL)
+
+      if(VLINK_RERUN_RESTORE_BUILD_SHARED_LIBS)
+        set(BUILD_SHARED_LIBS "${VLINK_RERUN_SAVED_BUILD_SHARED_LIBS}")
       else()
-        message(FATAL_ERROR "Unsupported Linux architecture: ${CMAKE_SYSTEM_PROCESSOR}")
+        unset(BUILD_SHARED_LIBS)
       endif()
+
+      unset(VLINK_RERUN_RESTORE_BUILD_SHARED_LIBS)
+      unset(VLINK_RERUN_SAVED_BUILD_SHARED_LIBS)
+    endif()
+  endif()
+
+  if(NOT TARGET rerun_sdk)
+    if(CMAKE_VERSION VERSION_LESS 3.18)
+      find_package(Arrow QUIET)
+
+      foreach(VLINK_RERUN_ARROW_TARGET IN ITEMS Arrow::arrow_shared Arrow::arrow_static)
+        if(TARGET ${VLINK_RERUN_ARROW_TARGET})
+          get_target_property(VLINK_RERUN_ARROW_IMPORTED ${VLINK_RERUN_ARROW_TARGET} IMPORTED)
+          get_target_property(VLINK_RERUN_ARROW_GLOBAL ${VLINK_RERUN_ARROW_TARGET} IMPORTED_GLOBAL)
+
+          if(VLINK_RERUN_ARROW_IMPORTED AND NOT VLINK_RERUN_ARROW_GLOBAL)
+            set_property(TARGET ${VLINK_RERUN_ARROW_TARGET} PROPERTY IMPORTED_GLOBAL TRUE)
+          endif()
+        endif()
+      endforeach()
+
+      unset(VLINK_RERUN_ARROW_GLOBAL)
+      unset(VLINK_RERUN_ARROW_IMPORTED)
+      unset(VLINK_RERUN_ARROW_TARGET)
+    endif()
+
+    if(DEFINED ENV{RERUN_SDK_DIR})
+      find_package(rerun_sdk CONFIG REQUIRED PATHS "${RERUN_SDK_DIR}" NO_DEFAULT_PATH)
     else()
-      message(FATAL_ERROR "Unsupported platform")
+      find_package(rerun_sdk CONFIG REQUIRED)
     endif()
-    if(NOT EXISTS "${RERUN_SDK_LIB}")
-      message(FATAL_ERROR "rerun sdk library not found: ${RERUN_SDK_LIB}")
-    endif()
-    if(EXISTS "${RERUN_SDK_DIR}/include")
-      set(RERUN_SDK_INCLUDE "${RERUN_SDK_DIR}/include")
-    elseif(EXISTS "${RERUN_SDK_DIR}/src")
-      set(RERUN_SDK_INCLUDE "${RERUN_SDK_DIR}/src")
-    else()
-      message(FATAL_ERROR "Cannot find rerun sdk headers under: ${RERUN_SDK_DIR}")
-    endif()
-    add_library(rerun_sdk STATIC IMPORTED GLOBAL)
-    set_target_properties(
-      rerun_sdk PROPERTIES IMPORTED_LOCATION "${RERUN_SDK_LIB}" INTERFACE_INCLUDE_DIRECTORIES "${RERUN_SDK_INCLUDE}"
-    )
-    if(APPLE)
-      target_link_libraries(rerun_sdk INTERFACE "-framework CoreFoundation" "-framework IOKit" "-framework Security")
-    elseif(UNIX)
-      target_link_libraries(rerun_sdk INTERFACE m dl pthread)
-    elseif(WIN32)
-      target_link_libraries(
-        rerun_sdk
-        INTERFACE Crypt32
-                  Iphlpapi
-                  Ncrypt
-                  Netapi32
-                  ntdll
-                  Pdh
-                  PowrProf
-                  Psapi
-                  Secur32
-                  Userenv
-                  ws2_32
-      )
-    endif()
-  else()
-    find_package(rerun_sdk CONFIG REQUIRED)
   endif()
 endif()
 

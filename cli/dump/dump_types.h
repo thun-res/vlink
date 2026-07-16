@@ -147,8 +147,22 @@ inline void write_csv_cell(std::ostream& out, std::string_view cell) {
   out << '"';
 }
 
+inline void write_seconds_from_us(std::ostream& out, int64_t timestamp_us) {
+  const int64_t seconds = timestamp_us / 1000000;
+  const int64_t remainder = timestamp_us % 1000000;
+
+  if (timestamp_us < 0 && seconds == 0) {
+    out << '-';
+  }
+
+  out << seconds << '.';
+  const auto previous_fill = out.fill('0');
+  out << std::setw(6) << (remainder < 0 ? -remainder : remainder);
+  out.fill(previous_fill);
+}
+
 inline std::string seconds_string_from_us(int64_t timestamp_us) {
   std::ostringstream oss;
-  oss << std::fixed << std::setprecision(6) << timestamp_us / 1000000.0;
+  write_seconds_from_us(oss, timestamp_us);
   return oss.str();
 }

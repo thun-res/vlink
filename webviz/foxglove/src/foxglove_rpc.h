@@ -26,6 +26,7 @@
 #include <vlink/base/elapsed_timer.h>
 #include <vlink/base/functional.h>
 #include <vlink/base/message_loop.h>
+#include <vlink/base/thread_pool.h>
 #include <vlink/base/timer.h>
 #include <vlink/client.h>
 
@@ -134,8 +135,6 @@ class FoxgloveRpc final {
     }
   };
 
-  struct LifetimeHandle final {};
-
   void load_rpc_msgs();
 
   bool load_rpc_file(const std::string& path);
@@ -165,7 +164,7 @@ class FoxgloveRpc final {
   uint32_t next_rpc_id_{1};
 
   std::atomic_bool stopping_{false};
-  std::shared_ptr<LifetimeHandle> lifetime_handle_;
+  std::unique_ptr<ThreadPool> rpc_workers_;
   Timer rpc_timeout_timer_;
   mutable std::mutex pending_rpc_mtx_;
   std::unordered_map<PendingRpcKey, PendingRpcCall, PendingRpcKeyHash> pending_rpc_calls_;

@@ -26,6 +26,7 @@
 #include "./dump_context.h"
 #include "./dump_expr.h"
 #include "./dump_extract.h"
+#include "./dump_path.h"
 #include "./dump_plan.h"
 #include "./dump_proto_cache.h"
 #include "./dump_schema.h"
@@ -41,11 +42,11 @@
 #endif
 
 #include <vlink/base/helpers.h>
-#include <vlink/base/utils.h>
 #include <vlink/extension/bag_reader.h>
 #include <vlink/extension/bag_writer.h>
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -64,6 +65,11 @@
 #ifdef VLINK_HAS_PROTOBUF_COMPILER
 
 static constexpr int64_t kMaxSliceCount = 100000;
+static constexpr int64_t kWriterTimestampMarginUs = 100000;
+static constexpr int64_t kMaxPlaybackTimeMs = (std::numeric_limits<int64_t>::max() - kWriterTimestampMarginUs) / 1000;
+static constexpr int64_t kMaxVcapStartTimestampMs = std::numeric_limits<int64_t>::max() / 1000000;
+static constexpr int64_t kMaxVcapOutputTimestampMs =
+    (std::numeric_limits<int64_t>::max() - kWriterTimestampMarginUs * 1000) / 1000000;
 
 struct QualityStats final {
   int64_t last_timestamp_us{-1};
@@ -80,6 +86,8 @@ struct SliceStats final {
   std::string file_name;
   int64_t begin_time_ms{0};
   int64_t end_time_ms{0};
+  int64_t begin_time_us{0};
+  int64_t end_time_us{0};
   int64_t message_count{0};
   std::unordered_set<std::string> urls;
 };
@@ -89,6 +97,101 @@ struct ResolvedTypes {
   vlink::SchemaType schema_type{vlink::SchemaType::kUnknown};
   vlink::SchemaType resolved{vlink::SchemaType::kUnknown};
 };
+
+static bool checked_subtract(int64_t lhs, int64_t rhs, int64_t& result) {
+  if ((rhs > 0 && lhs < std::numeric_limits<int64_t>::min() + rhs) ||
+      (rhs < 0 && lhs > std::numeric_limits<int64_t>::max() + rhs)) {
+    return false;
+  }
+
+  result = lhs - rhs;
+  return true;
+}
+
+static bool read_json_int64(const nlohmann::json& object, const char* key, int64_t& result) {
+  if (!object.contains(key)) {
+    return false;
+  }
+
+  const auto& value = object[key];
+
+  if (!value.is_number_integer()) {
+    return false;
+  }
+
+  if (value.is_number_unsigned()) {
+    const auto unsigned_value = value.get<uint64_t>();
+
+    if (unsigned_value > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+      return false;
+    }
+
+    result = static_cast<int64_t>(unsigned_value);
+  } else {
+    result = value.get<int64_t>();
+  }
+
+  return true;
+}
+
+static bool resolve_time_range(const vlink::dump::SliceOptions& opt, const vlink::BagReader::Info& info,
+                               int64_t& effective_begin, int64_t& effective_end) {
+  if VUNLIKELY (!info.has_completed) {
+    std::cerr << "Slice/scan requires a completed bag; repair or finalize the input first." << std::endl;
+    return false;
+  }
+
+  if VUNLIKELY (info.message_count < 0 || info.start_timestamp < 0 || info.total_duration < 0 ||
+                info.blank_duration < 0 || info.total_duration < info.blank_duration) {
+    std::cerr << "Invalid bag time metadata." << std::endl;
+    return false;
+  }
+
+  if VUNLIKELY (info.message_count == 0) {
+    std::cerr << "Bag contains no messages." << std::endl;
+    return false;
+  }
+
+  int64_t bag_end = info.total_duration;
+
+  if (bag_end < std::numeric_limits<int64_t>::max()) {
+    ++bag_end;
+  }
+
+  effective_begin = opt.begin_time_set ? opt.begin_time : info.blank_duration;
+  effective_end = opt.end_time_set ? std::min(opt.end_time, bag_end) : bag_end;
+
+  if VUNLIKELY (bag_end > kMaxPlaybackTimeMs || effective_begin < 0 || effective_end < 0 ||
+                effective_begin > kMaxPlaybackTimeMs || effective_end > kMaxPlaybackTimeMs) {
+    std::cerr << "Playback time range is too large." << std::endl;
+    return false;
+  }
+
+  if VUNLIKELY (effective_begin >= effective_end) {
+    std::cerr << "Invalid time range." << std::endl;
+    return false;
+  }
+
+  if (info.storage_type == "vcap") {
+    if VUNLIKELY (info.start_timestamp > kMaxVcapStartTimestampMs ||
+                  effective_begin > kMaxVcapStartTimestampMs - info.start_timestamp) {
+      std::cerr << "VCAP playback start time is too large." << std::endl;
+      return false;
+    }
+  }
+
+  return true;
+}
+
+static int64_t dropout_threshold_to_us(double seconds) {
+  const double threshold_us = seconds * 1000000.0;
+
+  if (threshold_us >= 0x1p63) {
+    return std::numeric_limits<int64_t>::max();
+  }
+
+  return static_cast<int64_t>(threshold_us);
+}
 
 static ResolvedTypes resolve_url_types(const std::string& url, const std::string& meta_ser,
                                        vlink::SchemaType meta_schema_type,
@@ -107,9 +210,31 @@ static ResolvedTypes resolve_url_types(const std::string& url, const std::string
   return types;
 }
 
-static bool reject_flatbuffers_topics(const vlink::BagReader::Info& info, const vlink::dump::UrlSelection& selection,
-                                      const std::unordered_map<std::string, UrlSchemaOverride>& overrides,
-                                      std::string_view mode) {
+static bool meta_action_selected(const vlink::BagReader::Info::UrlMeta& meta, const std::vector<int>& actions) {
+  if (meta.action_type != vlink::ActionType::kUnknownAction) {
+    return vlink::dump::action_selected(actions, meta.action_type);
+  }
+
+  for (auto action : actions) {
+    if (action == static_cast<int>(vlink::ActionType::kUnknownAction) ||
+        (meta.url_type == "Method" && action >= static_cast<int>(vlink::ActionType::kClientRequest) &&
+         action <= static_cast<int>(vlink::ActionType::kServerResponse)) ||
+        (meta.url_type == "Event" && action >= static_cast<int>(vlink::ActionType::kPublish) &&
+         action <= static_cast<int>(vlink::ActionType::kSubscribe)) ||
+        (meta.url_type == "Field" && action >= static_cast<int>(vlink::ActionType::kSet) &&
+         action <= static_cast<int>(vlink::ActionType::kGet))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+static bool validate_field_extraction_topics(const vlink::BagReader::Info& info,
+                                             const vlink::dump::UrlSelection& selection,
+                                             const std::vector<int>& actions,
+                                             const std::unordered_map<std::string, UrlSchemaOverride>& overrides,
+                                             vlink::dump::ProtoMessageCache& proto_cache, std::string_view mode) {
   auto& ctx = vlink::dump::DumpContext::get();
 
   if (ctx.field_specs.empty()) {
@@ -117,12 +242,13 @@ static bool reject_flatbuffers_topics(const vlink::BagReader::Info& info, const 
   }
 
   for (const auto& meta : info.url_metas) {
-    if (meta.url_type == "Method") {
+    if ((!selection.all && selection.urls.count(meta.url) == 0) || !meta_action_selected(meta, actions)) {
       continue;
     }
 
-    if (!selection.all && selection.urls.count(meta.url) == 0) {
-      continue;
+    if (meta.url_type == "Method") {
+      std::cerr << mode << " field extraction does not support Method URL: " << meta.url << std::endl;
+      return false;
     }
 
     auto types = resolve_url_types(meta.url, meta.ser_type, meta.schema_type, overrides);
@@ -130,6 +256,25 @@ static bool reject_flatbuffers_topics(const vlink::BagReader::Info& info, const 
     if (types.resolved == vlink::SchemaType::kFlatbuffers) {
       std::cerr << mode << " field extraction does not support FlatBuffers topic: " << meta.url
                 << ". Narrow --urls/--url_filter to supported topics or export this topic without -c/--filter/--event."
+                << std::endl;
+      return false;
+    }
+
+    if (types.resolved == vlink::SchemaType::kProtobuf && proto_cache.get(types.ser) == nullptr) {
+      std::cerr << mode << " protobuf field extraction requires a schema for '" << types.ser << "' (URL: " << meta.url
+                << "). Use -d/--proto_dir, --schema_config, or VLINK_SCHEMA_PLUGIN." << std::endl;
+      return false;
+    }
+
+    if VUNLIKELY (types.resolved == vlink::SchemaType::kZeroCopy &&
+                  vlink::zerocopy::MessageParser::detect_type(types.ser) == vlink::zerocopy::MessageParser::kUnknown) {
+      std::cerr << mode << " field extraction does not support ZeroCopy type '" << types.ser << "' (URL: " << meta.url
+                << ")." << std::endl;
+      return false;
+    }
+
+    if (types.resolved != vlink::SchemaType::kZeroCopy && types.resolved != vlink::SchemaType::kProtobuf) {
+      std::cerr << mode << " field extraction supports only ZeroCopy and Protobuf topics; unsupported URL: " << meta.url
                 << std::endl;
       return false;
     }
@@ -165,7 +310,8 @@ static std::string infer_output_suffix(const vlink::dump::SliceOptions& opt) {
     return suffix;
   }
 
-  auto src_ext = vlink::dump::to_lower_copy(std::filesystem::path(opt.bag_file).extension().string());
+  auto src_ext =
+      vlink::dump::to_lower_copy(vlink::dump::path_to_utf8(vlink::dump::utf8_to_path(opt.bag_file).extension()));
 
   if (src_ext == ".vdbx") {
     suffix = ".vdb";
@@ -178,9 +324,90 @@ static std::string infer_output_suffix(const vlink::dump::SliceOptions& opt) {
   return vlink::dump::sanitize_suffix(suffix);
 }
 
+static bool collect_protected_input_paths(const vlink::dump::SliceOptions& opt,
+                                          std::vector<std::filesystem::path>& protected_paths) {
+  const auto index_path = vlink::dump::utf8_to_path(opt.bag_file);
+
+  if VUNLIKELY (index_path.empty()) {
+    std::cerr << "Invalid input bag path: " << opt.bag_file << std::endl;
+    return false;
+  }
+
+  protected_paths = {index_path};
+
+  for (const auto* input_path : {&opt.schema_config_path, &opt.segments_file}) {
+    if (input_path->empty()) {
+      continue;
+    }
+
+    auto filesys_input_path = vlink::dump::utf8_to_path(*input_path);
+
+    if VUNLIKELY (filesys_input_path.empty()) {
+      std::cerr << "Invalid input path: " << *input_path << std::endl;
+      return false;
+    }
+
+    protected_paths.emplace_back(std::move(filesys_input_path));
+  }
+
+  auto suffix = vlink::dump::to_lower_copy(vlink::Helpers::path_to_string(index_path.extension()));
+
+  if (suffix != ".vdbx" && suffix != ".vcapx") {
+    return true;
+  }
+
+  try {
+    std::ifstream index_file(index_path);
+
+    if VUNLIKELY (!index_file.is_open()) {
+      std::cerr << "Failed to open bag index: " << opt.bag_file << std::endl;
+      return false;
+    }
+
+    nlohmann::json root;
+    index_file >> root;
+
+    const auto& files = root.at("VLinkFiles");
+
+    if VUNLIKELY (!files.is_array() || files.empty()) {
+      std::cerr << "Bag index contains no source files: " << opt.bag_file << std::endl;
+      return false;
+    }
+
+    protected_paths.reserve(protected_paths.size() + files.size());
+
+    for (const auto& file : files) {
+      if VUNLIKELY (!file.is_string()) {
+        std::cerr << "Bag index contains an invalid source path: " << opt.bag_file << std::endl;
+        return false;
+      }
+
+      const auto source_string = file.get<std::string>();
+
+      auto source_path = vlink::dump::utf8_to_path(source_string);
+
+      if VUNLIKELY (source_path.empty()) {
+        std::cerr << "Bag index contains an invalid source path: " << opt.bag_file << std::endl;
+        return false;
+      }
+
+      if (source_path.is_relative()) {
+        source_path = index_path.parent_path() / source_path;
+      }
+
+      protected_paths.emplace_back(std::move(source_path));
+    }
+  } catch (const nlohmann::json::exception& e) {
+    std::cerr << "Failed to parse bag index " << opt.bag_file << ": " << e.what() << std::endl;
+    return false;
+  }
+
+  return true;
+}
+
 static bool load_segments_from_file(const std::string& path, int64_t bag_start_ts,
                                     std::vector<vlink::dump::SegmentDef>& segments) {
-  std::ifstream seg_file(path);
+  std::ifstream seg_file(vlink::dump::utf8_to_path(path));
 
   if VUNLIKELY (!seg_file.is_open()) {
     std::cerr << "Failed to open segments file: " << path << std::endl;
@@ -196,6 +423,11 @@ static bool load_segments_from_file(const std::string& path, int64_t bag_start_t
       return false;
     }
 
+    if VUNLIKELY (seg_arr.size() > static_cast<size_t>(kMaxSliceCount)) {
+      std::cerr << "Too many segments (" << seg_arr.size() << "), maximum is " << kMaxSliceCount << std::endl;
+      return false;
+    }
+
     for (const auto& entry : seg_arr) {
       if VUNLIKELY (!entry.is_object()) {
         std::cerr << "Invalid segment entry: every segment must be an object in " << path << std::endl;
@@ -206,24 +438,27 @@ static bool load_segments_from_file(const std::string& path, int64_t bag_start_t
       seg.name = entry.value("name", "");
 
       if (entry.contains("epoch_begin_ms")) {
-        if VUNLIKELY (!entry.contains("epoch_end_ms") || !entry["epoch_begin_ms"].is_number_integer() ||
-                      !entry["epoch_end_ms"].is_number_integer()) {
+        int64_t epoch_begin_ms = 0;
+        int64_t epoch_end_ms = 0;
+
+        if VUNLIKELY (!read_json_int64(entry, "epoch_begin_ms", epoch_begin_ms) ||
+                      !read_json_int64(entry, "epoch_end_ms", epoch_end_ms)) {
           std::cerr << "Invalid segment entry: epoch_begin_ms and epoch_end_ms must both be integer milliseconds."
                     << std::endl;
           return false;
         }
 
-        seg.begin_ms = entry.value("epoch_begin_ms", static_cast<int64_t>(0)) - bag_start_ts;
-        seg.end_ms = entry.value("epoch_end_ms", static_cast<int64_t>(0)) - bag_start_ts;
+        if VUNLIKELY (!checked_subtract(epoch_begin_ms, bag_start_ts, seg.begin_ms) ||
+                      !checked_subtract(epoch_end_ms, bag_start_ts, seg.end_ms)) {
+          std::cerr << "Segment epoch time is outside the supported range." << std::endl;
+          return false;
+        }
       } else {
-        if VUNLIKELY (!entry.contains("begin_ms") || !entry.contains("end_ms") ||
-                      !entry["begin_ms"].is_number_integer() || !entry["end_ms"].is_number_integer()) {
+        if VUNLIKELY (!read_json_int64(entry, "begin_ms", seg.begin_ms) ||
+                      !read_json_int64(entry, "end_ms", seg.end_ms)) {
           std::cerr << "Invalid segment entry: begin_ms and end_ms must both be integer milliseconds." << std::endl;
           return false;
         }
-
-        seg.begin_ms = entry.value("begin_ms", static_cast<int64_t>(0));
-        seg.end_ms = entry.value("end_ms", static_cast<int64_t>(0));
       }
 
       if (seg.name.empty()) {
@@ -247,7 +482,8 @@ static bool load_segments_from_file(const std::string& path, int64_t bag_start_t
 
 static void build_window_segments(int64_t effective_begin, int64_t effective_end, int64_t window_ms,
                                   std::vector<vlink::dump::SegmentDef>& segments) {
-  int64_t count = (effective_end - effective_begin + window_ms - 1) / window_ms;
+  const int64_t span = effective_end - effective_begin;
+  const int64_t count = span / window_ms + (span % window_ms != 0 ? 1 : 0);
   int pad_width = 1;
 
   for (int64_t n = count - 1; n >= 10; n /= 10) {
@@ -266,7 +502,7 @@ static void build_window_segments(int64_t effective_begin, int64_t effective_end
     oss << "slice_" << std::setfill('0') << std::setw(pad_width) << i;
     seg.name = oss.str();
     seg.begin_ms = effective_begin + i * window_ms;
-    seg.end_ms = std::min(effective_begin + (i + 1) * window_ms, effective_end);
+    seg.end_ms = i + 1 == count ? effective_end : seg.begin_ms + window_ms;
     segments.emplace_back(std::move(seg));
   }
 }
@@ -296,7 +532,7 @@ static void merge_overlapping_event_segments(std::vector<vlink::dump::SegmentDef
 
 #endif
 
-static void update_quality_stats(QualityStats& qs, int64_t timestamp_us, double dropout_threshold_us) {
+static void update_quality_stats(QualityStats& qs, int64_t timestamp_us, int64_t dropout_threshold_us) {
   ++qs.message_count;
 
   if (qs.last_timestamp_us >= 0) {
@@ -306,7 +542,7 @@ static void update_quality_stats(QualityStats& qs, int64_t timestamp_us, double 
     qs.min_gap_us = std::min(qs.min_gap_us, gap);
     qs.max_gap_us = std::max(qs.max_gap_us, gap);
 
-    if (gap > static_cast<int64_t>(dropout_threshold_us)) {
+    if (gap > dropout_threshold_us) {
       ++qs.gap_count;
     }
   }
@@ -329,8 +565,18 @@ static nlohmann::ordered_json build_scan_header(const vlink::dump::SliceOptions&
 static nlohmann::ordered_json build_quality_object(const std::unordered_map<std::string, QualityStats>& quality_map,
                                                    double dropout_threshold_ms) {
   nlohmann::ordered_json quality_json = nlohmann::ordered_json::object();
+  std::vector<std::string> sorted_urls;
+  sorted_urls.reserve(quality_map.size());
 
   for (const auto& [url, qs] : quality_map) {
+    (void)qs;
+    sorted_urls.emplace_back(url);
+  }
+
+  std::sort(sorted_urls.begin(), sorted_urls.end());
+
+  for (const auto& url : sorted_urls) {
+    const auto& qs = quality_map.at(url);
     nlohmann::ordered_json qj;
     qj["message_count"] = qs.message_count;
     qj["gap_count"] = qs.gap_count;
@@ -350,10 +596,11 @@ static bool write_scan_json(const std::filesystem::path& out_dir, const std::str
                             const nlohmann::ordered_json& scan_json) {
   auto& ctx = vlink::dump::DumpContext::get();
   auto scan_path = out_dir / scan_output_name;
+  auto scan_path_display = vlink::dump::path_to_utf8(scan_path);
   std::ofstream scan_file(scan_path);
 
   if (!scan_file.is_open()) {
-    std::cerr << "Failed to write scan result: " << scan_path.string() << std::endl;
+    std::cerr << "Failed to write scan result: " << scan_path_display << std::endl;
     return false;
   }
 
@@ -361,12 +608,12 @@ static bool write_scan_json(const std::filesystem::path& out_dir, const std::str
   scan_file.close();
 
   if (!scan_file.good()) {
-    std::cerr << "Failed to write scan result: " << scan_path.string() << std::endl;
+    std::cerr << "Failed to write scan result: " << scan_path_display << std::endl;
     return false;
   }
 
   if (!ctx.quiet_flag) {
-    std::cout << "Saved " << scan_path.string() << std::endl;
+    std::cout << "Saved " << scan_path_display << std::endl;
   }
 
   return true;
@@ -414,7 +661,8 @@ static bool extract_event_values(
   } else if (resolved_schema_type == vlink::SchemaType::kProtobuf && proto_cache.ready()) {
     auto* msg = proto_cache.get(ser);
 
-    if (msg == nullptr || !msg->ParseFromArray(data.data(), static_cast<int>(data.size()))) {
+    if (msg == nullptr || data.size() > static_cast<size_t>(std::numeric_limits<int>::max()) ||
+        !msg->ParseFromArray(data.data(), static_cast<int>(data.size()))) {
       return false;
     }
 
@@ -443,9 +691,9 @@ static void fill_event_cross_topic_state(
     bool filled = false;
     int64_t newest_timestamp_ms = std::numeric_limits<int64_t>::min();
     double newest_value = 0.0;
+    std::string_view newest_topic_url;
 
     for (const auto& [topic_url, topic_state] : cross_topic_state) {
-      (void)topic_url;
       auto iter = topic_state.find(var_names[fi]);
 
       if (iter == topic_state.end()) {
@@ -462,9 +710,11 @@ static void fill_event_cross_topic_state(
         continue;
       }
 
-      if (iter->second.timestamp_ms >= newest_timestamp_ms) {
+      if (!filled || iter->second.timestamp_ms > newest_timestamp_ms ||
+          (iter->second.timestamp_ms == newest_timestamp_ms && topic_url < newest_topic_url)) {
         newest_timestamp_ms = iter->second.timestamp_ms;
         newest_value = iter->second.value;
+        newest_topic_url = topic_url;
         filled = true;
       }
     }
@@ -490,14 +740,17 @@ static int run_quality_only_scan(const vlink::dump::SliceOptions& opt, const std
     return -1;
   }
 
+  if VUNLIKELY (!player) {
+    std::cerr << "Unsupported bag file suffix: " << opt.bag_file << std::endl;
+    return -1;
+  }
+
   ctx.bind_bag_plugin(player);
 
-  int64_t effective_begin = opt.begin_time_set ? opt.begin_time : player->get_info().blank_duration;
-  int64_t effective_end =
-      opt.end_time_set ? std::min(opt.end_time, player->get_info().total_duration) : player->get_info().total_duration;
+  int64_t effective_begin = 0;
+  int64_t effective_end = 0;
 
-  if VUNLIKELY (effective_begin >= effective_end) {
-    std::cerr << "Invalid time range." << std::endl;
+  if VUNLIKELY (!resolve_time_range(opt, player->get_info(), effective_begin, effective_end)) {
     return -1;
   }
 
@@ -509,45 +762,50 @@ static int run_quality_only_scan(const vlink::dump::SliceOptions& opt, const std
   }
 
   std::unordered_map<std::string, QualityStats> quality_map;
-  double dropout_threshold_us = opt.dropout_threshold * 1000000.0;
+  const int64_t dropout_threshold_us = dropout_threshold_to_us(opt.dropout_threshold);
 
-  vlink::Utils::register_terminate_signal(
-      [&player](int) {
-        auto& sig_ctx = vlink::dump::DumpContext::get();
+  auto record_quality = [&ctx, &selection, &opt, &quality_map, &dropout_threshold_us](const vlink::Frame& frame) {
+    const int64_t timestamp = frame.timestamp;
+    const std::string& url = frame.url;
+    const vlink::ActionType action_type = frame.action_type;
 
-        if VUNLIKELY (sig_ctx.has_quit) {
-          return;
-        }
+    if VUNLIKELY (ctx.has_quit) {
+      return;
+    }
 
-        sig_ctx.has_quit = true;
+    if (!selection.all && selection.urls.count(url) == 0) {
+      return;
+    }
 
-        if (player) {
-          player->stop();
-          player->quit(true);
-        }
-      },
-      true);
+    if (!vlink::dump::action_selected(opt.actions, action_type)) {
+      return;
+    }
 
-  player->register_output_callback(
-      [&ctx, &selection, &opt, &quality_map, &dropout_threshold_us](const vlink::Frame& frame) {
-        const int64_t timestamp = frame.timestamp;
-        const std::string& url = frame.url;
-        const vlink::ActionType action_type = frame.action_type;
+    update_quality_stats(quality_map[url], timestamp, dropout_threshold_us);
+  };
 
-        if VUNLIKELY (ctx.has_quit) {
-          return;
-        }
+  if (ctx.bag_plugin_interface) {
+    const int64_t inclusive_begin_us = effective_begin * 1000;
+    const int64_t exclusive_end_us = effective_end * 1000;
+    player->register_output_callback([record_quality, inclusive_begin_us, exclusive_end_us](const vlink::Frame& frame) {
+      if VUNLIKELY (frame.timestamp < inclusive_begin_us || frame.timestamp >= exclusive_end_us) {
+        return;
+      }
 
-        if (!selection.all && selection.urls.count(url) == 0) {
-          return;
-        }
+      record_quality(frame);
+    });
+  } else if (opt.end_time_set) {
+    const int64_t exclusive_end_us = effective_end * 1000;
+    player->register_output_callback([record_quality, exclusive_end_us](const vlink::Frame& frame) {
+      if VUNLIKELY (frame.timestamp >= exclusive_end_us) {
+        return;
+      }
 
-        if (!vlink::dump::action_selected(opt.actions, action_type)) {
-          return;
-        }
-
-        update_quality_stats(quality_map[url], timestamp, dropout_threshold_us);
-      });
+      record_quality(frame);
+    });
+  } else {
+    player->register_output_callback(std::move(record_quality));
+  }
 
   vlink::BagReader::Config play_config;
   play_config.begin_time = effective_begin;
@@ -576,7 +834,6 @@ static int run_quality_only_scan(const vlink::dump::SliceOptions& opt, const std
   }
 
   player.reset();
-  vlink::Utils::register_terminate_signal([](int) { vlink::dump::DumpContext::get().has_quit = true; }, true);
 
   auto scan_json = build_scan_header(opt, 0);
   scan_json["events"] = nlohmann::ordered_json::array();
@@ -594,7 +851,8 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     return -1;
   }
 
-  auto filesys_out_dir = std::filesystem::path(opt.out_dir);
+  std::vector<std::filesystem::path> protected_input_paths;
+  auto filesys_out_dir = vlink::dump::utf8_to_path(opt.out_dir);
 
   std::string scan_output_name;
 
@@ -609,7 +867,12 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       std::cerr << "Warning: unsafe scan output file name sanitized to " << scan_output_name << std::endl;
     }
 
-    if VUNLIKELY (!vlink::dump::preflight_output_files(filesys_out_dir, {scan_output_name}, opt.force)) {
+    if VUNLIKELY (opt.force && !collect_protected_input_paths(opt, protected_input_paths)) {
+      return -1;
+    }
+
+    if VUNLIKELY (!vlink::dump::preflight_output_files(filesys_out_dir, {scan_output_name}, opt.force,
+                                                       protected_input_paths)) {
       return -1;
     }
   }
@@ -637,19 +900,23 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     return -1;
   }
 
-  ctx.bind_bag_plugin(player);
-
-  int64_t effective_begin = opt.begin_time_set ? opt.begin_time : player->get_info().blank_duration;
-  int64_t effective_end =
-      opt.end_time_set ? std::min(opt.end_time, player->get_info().total_duration) : player->get_info().total_duration;
-  auto window_ms = vlink::dump::seconds_to_milliseconds(opt.window_seconds);
-
-  if VUNLIKELY (effective_begin >= effective_end) {
-    std::cerr << "Invalid time range." << std::endl;
+  if VUNLIKELY (!player) {
+    std::cerr << "Unsupported bag file suffix: " << opt.bag_file << std::endl;
     return -1;
   }
 
-  if (!opt.event_expr.empty() && vlink::dump::seconds_to_milliseconds(opt.event_pre + opt.event_post) <= 0) {
+  ctx.bind_bag_plugin(player);
+
+  int64_t effective_begin = 0;
+  int64_t effective_end = 0;
+
+  if VUNLIKELY (!resolve_time_range(opt, player->get_info(), effective_begin, effective_end)) {
+    return -1;
+  }
+
+  auto window_ms = vlink::dump::seconds_to_milliseconds(opt.window_seconds);
+
+  if (!opt.event_expr.empty() && opt.event_pre <= 0 && opt.event_post <= 0) {
     std::cerr << "--pre and --post cannot both be zero for event slicing/scanning." << std::endl;
     return -1;
   }
@@ -683,33 +950,6 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     auto scan_proto_runtime = load_proto_runtime(collect_proto_dirs(schema_config, opt.proto_dir));
     vlink::dump::ProtoMessageCache scan_proto_cache(scan_proto_runtime);
 
-    if (!ctx.field_specs.empty() && !scan_proto_runtime.pool && !scan_proto_runtime.plugin) {
-      bool needs_protobuf = false;
-
-      for (const auto& meta : player->get_info().url_metas) {
-        auto types = resolve_url_types(meta.url, meta.ser_type, meta.schema_type, url_ser_override);
-
-        if (types.resolved == vlink::SchemaType::kProtobuf) {
-          needs_protobuf = true;
-          break;
-        }
-      }
-
-      if (needs_protobuf) {
-        std::cerr << "Event field extraction for protobuf topics requires -d/--proto_dir, --schema_config, or "
-                     "VLINK_SCHEMA_PLUGIN."
-                  << std::endl;
-        return -1;
-      }
-    }
-
-    std::vector<std::vector<std::string>> event_field_paths;
-    event_field_paths.reserve(ctx.field_specs.size());
-
-    for (const auto& spec : ctx.field_specs) {
-      event_field_paths.emplace_back(vlink::Helpers::split(spec, '.'));
-    }
-
 #ifdef VLINK_ENABLE_EXPRTK
 
     vlink::dump::ExprContext event_ctx;
@@ -722,41 +962,18 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     }
 
     std::unordered_map<std::string, std::unordered_map<std::string, vlink::dump::EventVarState>> cross_topic_state;
-    double dropout_threshold_us = opt.dropout_threshold * 1000000.0;
+    const int64_t dropout_threshold_us = dropout_threshold_to_us(opt.dropout_threshold);
+    const int64_t scan_inclusive_begin_us = effective_begin * 1000;
+    const int64_t scan_exclusive_end_us = effective_end * 1000;
     auto event_state_max_age_ms = vlink::dump::seconds_to_milliseconds(opt.event_state_max_age);
     auto event_min_interval_ms = vlink::dump::seconds_to_milliseconds(opt.event_min_interval);
 
     std::vector<int64_t> event_timestamps_ms;
     bool event_active = false;
-    int64_t last_event_timestamp_ms = std::numeric_limits<int64_t>::min() / 2;
+    int64_t last_event_timestamp_ms = 0;
+    bool has_last_event_timestamp = false;
 
-    std::shared_ptr<vlink::BagReader> scan_player;
-
-    try {
-      scan_player = vlink::BagReader::create(opt.bag_file, true);
-
-      vlink::dump::DumpContext::get().bind_bag_plugin(scan_player);
-
-      vlink::Utils::register_terminate_signal(
-          [&scan_player](int) {
-            auto& sig_ctx = vlink::dump::DumpContext::get();
-
-            if VUNLIKELY (sig_ctx.has_quit) {
-              return;
-            }
-
-            sig_ctx.has_quit = true;
-
-            if (scan_player) {
-              scan_player->stop();
-              scan_player->quit(true);
-            }
-          },
-          true);
-    } catch (vlink::Exception::RuntimeError& e) {
-      std::cerr << e.what() << std::endl;
-      return -1;
-    }
+    auto scan_player = std::move(player);
 
     vlink::dump::UrlSelection scan_selection;
 
@@ -765,66 +982,91 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       return -1;
     }
 
-    if VUNLIKELY (!reject_flatbuffers_topics(scan_player->get_info(), scan_selection, url_ser_override, "Scan/event")) {
+    if VUNLIKELY (!validate_field_extraction_topics(scan_player->get_info(), scan_selection, opt.actions,
+                                                    url_ser_override, scan_proto_cache, "Scan/event")) {
       return -1;
     }
 
-    scan_player->register_output_callback(
-        [&ctx, &scan_selection, &opt, &quality_check, &quality_map, &dropout_threshold_us, &url_ser_override,
-         &cross_topic_state, &scan_proto_cache, &event_field_paths, &event_ctx, &event_state_max_age_ms, &event_active,
-         &last_event_timestamp_ms, &event_min_interval_ms, &event_timestamps_ms](const vlink::Frame& frame) {
-          const int64_t timestamp = frame.timestamp;
-          const std::string& url = frame.url;
-          const vlink::ActionType action_type = frame.action_type;
-          const vlink::Bytes& data = frame.data;
+    auto process_event_frame = [&ctx, &scan_selection, &opt, &quality_check, &quality_map, &dropout_threshold_us,
+                                &url_ser_override, &cross_topic_state, &scan_proto_cache, &event_ctx,
+                                &event_state_max_age_ms, &event_active, &last_event_timestamp_ms,
+                                &has_last_event_timestamp, &event_min_interval_ms, &event_timestamps_ms,
+                                &effective_begin, &effective_end](const vlink::Frame& frame) {
+      const int64_t timestamp = frame.timestamp;
+      const std::string& url = frame.url;
+      const vlink::ActionType action_type = frame.action_type;
+      const vlink::Bytes& data = frame.data;
 
-          if VUNLIKELY (ctx.has_quit) {
-            return;
-          }
+      if VUNLIKELY (ctx.has_quit) {
+        return;
+      }
 
-          if (!scan_selection.all && scan_selection.urls.count(url) == 0) {
-            return;
-          }
+      if (!scan_selection.all && scan_selection.urls.count(url) == 0) {
+        return;
+      }
 
-          if (!vlink::dump::action_selected(opt.actions, action_type)) {
-            return;
-          }
+      if (!vlink::dump::action_selected(opt.actions, action_type)) {
+        return;
+      }
 
-          if (quality_check) {
-            update_quality_stats(quality_map[url], timestamp, dropout_threshold_us);
-          }
+      if (quality_check) {
+        update_quality_stats(quality_map[url], timestamp, dropout_threshold_us);
+      }
 
-          auto types = resolve_url_types(url, frame.ser_type, frame.schema_type, url_ser_override);
-          int64_t timestamp_ms = timestamp / 1000;
-          std::vector<bool> vars_ready(ctx.field_specs.size(), false);
+      auto types = resolve_url_types(url, frame.ser_type, frame.schema_type, url_ser_override);
+      int64_t timestamp_ms = timestamp / 1000;
+      std::vector<bool> vars_ready(ctx.field_specs.size(), false);
 
-          bool any_numeric_found =
-              extract_event_values(url, types.ser, types.resolved, data, timestamp_ms, scan_proto_cache,
-                                   event_field_paths, cross_topic_state, event_ctx, vars_ready);
+      bool any_numeric_found =
+          extract_event_values(url, types.ser, types.resolved, data, timestamp_ms, scan_proto_cache, ctx.field_paths,
+                               cross_topic_state, event_ctx, vars_ready);
 
-          if (!any_numeric_found) {
-            return;
-          }
+      if (!any_numeric_found) {
+        return;
+      }
 
-          fill_event_cross_topic_state(timestamp_ms, event_state_max_age_ms, cross_topic_state, event_ctx.var_names(),
-                                       event_ctx, vars_ready);
+      fill_event_cross_topic_state(timestamp_ms, event_state_max_age_ms, cross_topic_state, event_ctx.var_names(),
+                                   event_ctx, vars_ready);
 
-          auto condition_function = [](bool ready) { return !ready; };
+      auto condition_function = [](bool ready) { return !ready; };
 
-          if (std::any_of(vars_ready.begin(), vars_ready.end(), condition_function)) {
-            return;
-          }
+      if (std::any_of(vars_ready.begin(), vars_ready.end(), condition_function)) {
+        return;
+      }
 
-          double result = event_ctx.evaluate_single();
-          bool active = (result != 0.0);
+      double result = event_ctx.evaluate_single();
+      bool active = (result != 0.0);
 
-          if (active && !event_active && timestamp_ms - last_event_timestamp_ms >= event_min_interval_ms) {
-            event_timestamps_ms.emplace_back(timestamp_ms);
-            last_event_timestamp_ms = timestamp_ms;
-          }
+      if (active && !event_active && timestamp_ms >= effective_begin && timestamp_ms < effective_end &&
+          (!has_last_event_timestamp || timestamp_ms - last_event_timestamp_ms >= event_min_interval_ms)) {
+        event_timestamps_ms.emplace_back(timestamp_ms);
+        last_event_timestamp_ms = timestamp_ms;
+        has_last_event_timestamp = true;
+      }
 
-          event_active = active;
-        });
+      event_active = active;
+    };
+
+    if (ctx.bag_plugin_interface) {
+      scan_player->register_output_callback(
+          [process_event_frame, scan_inclusive_begin_us, scan_exclusive_end_us](const vlink::Frame& frame) {
+            if VUNLIKELY (frame.timestamp < scan_inclusive_begin_us || frame.timestamp >= scan_exclusive_end_us) {
+              return;
+            }
+
+            process_event_frame(frame);
+          });
+    } else if (opt.end_time_set) {
+      scan_player->register_output_callback([process_event_frame, scan_exclusive_end_us](const vlink::Frame& frame) {
+        if VUNLIKELY (frame.timestamp >= scan_exclusive_end_us) {
+          return;
+        }
+
+        process_event_frame(frame);
+      });
+    } else {
+      scan_player->register_output_callback(std::move(process_event_frame));
+    }
 
     vlink::BagReader::Config scan_config;
     scan_config.begin_time = effective_begin;
@@ -849,7 +1091,6 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     }
 
     scan_player.reset();
-    vlink::Utils::register_terminate_signal([](int) { vlink::dump::DumpContext::get().has_quit = true; }, true);
 
     if (event_timestamps_ms.empty()) {
       if (!ctx.quiet_flag) {
@@ -878,8 +1119,8 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
 
     for (auto ts_ms : event_timestamps_ms) {
       vlink::dump::SegmentDef seg;
-      seg.begin_ms = std::max<int64_t>(effective_begin, ts_ms - event_pre_ms);
-      seg.end_ms = std::min<int64_t>(effective_end, ts_ms + event_post_ms);
+      seg.begin_ms = event_pre_ms >= ts_ms - effective_begin ? effective_begin : ts_ms - event_pre_ms;
+      seg.end_ms = event_post_ms >= effective_end - ts_ms ? effective_end : ts_ms + event_post_ms;
       seg.name = "event_" + std::to_string(segments.size());
       segments.emplace_back(std::move(seg));
     }
@@ -940,17 +1181,22 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       return -1;
     }
 
+    if VUNLIKELY (!player) {
+      std::cerr << "Unsupported bag file suffix: " << opt.bag_file << std::endl;
+      return -1;
+    }
+
     vlink::dump::DumpContext::get().bind_bag_plugin(player);
 
 #else
-    (void)event_field_paths;
     (void)event_pre_ms;
     (void)event_post_ms;
     std::cerr << "Event expression requires exprtk library." << std::endl;
     return -1;
 #endif
   } else if (window_ms > 0) {
-    int64_t count = (effective_end - effective_begin + window_ms - 1) / window_ms;
+    const int64_t span = effective_end - effective_begin;
+    const int64_t count = span / window_ms + (span % window_ms != 0 ? 1 : 0);
 
     if VUNLIKELY (count > kMaxSliceCount) {
       std::cerr << "Too many segments (" << count << "), maximum is " << kMaxSliceCount
@@ -967,6 +1213,34 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
   if VUNLIKELY (!vlink::dump::normalize_segment_plan(
                     segments, effective_begin, effective_end,
                     opt.segments_file.empty() ? std::string{"generated segments"} : opt.segments_file)) {
+    return -1;
+  }
+
+  int64_t output_start_timestamp = player->get_info().start_timestamp;
+
+  if (output_start_timestamp == 0) {
+    output_start_timestamp = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now())
+                                 .time_since_epoch()
+                                 .count();
+
+    if VUNLIKELY (output_start_timestamp <= 0) {
+      std::cerr << "Failed to establish a valid slice output start timestamp." << std::endl;
+      return -1;
+    }
+  }
+
+  const int64_t max_segment_begin = segments.back().begin_ms;
+  const int64_t max_segment_end = segments.back().end_ms;
+  const bool vcap_output = output_suffix == ".vcap";
+
+  if VUNLIKELY (output_start_timestamp > std::numeric_limits<int64_t>::max() - max_segment_begin) {
+    std::cerr << "Slice start timestamp is outside the supported range." << std::endl;
+    return -1;
+  }
+
+  if VUNLIKELY (vcap_output && (output_start_timestamp > kMaxVcapOutputTimestampMs ||
+                                max_segment_end > kMaxVcapOutputTimestampMs - output_start_timestamp)) {
+    std::cerr << "VCAP output timestamp is outside the supported range." << std::endl;
     return -1;
   }
 
@@ -993,24 +1267,17 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     }
   }
 
-  auto slice_proto_runtime = load_proto_runtime(collect_proto_dirs(schema_config, opt.proto_dir));
+  const bool has_filter = !opt.filter_expr.empty();
+  const bool has_fields = !ctx.field_specs.empty();
+  const bool needs_slice_field_extraction = has_fields && (has_filter || opt.export_csv);
+  auto slice_proto_runtime = needs_slice_field_extraction
+                                 ? load_proto_runtime(collect_proto_dirs(schema_config, opt.proto_dir))
+                                 : ProtoRuntime{};
   vlink::dump::ProtoMessageCache slice_proto_cache(slice_proto_runtime);
 
-  if ((slice_proto_runtime.pool != nullptr || slice_proto_runtime.plugin) && !ctx.quiet_flag) {
+  if (needs_slice_field_extraction && (slice_proto_runtime.pool != nullptr || slice_proto_runtime.plugin) &&
+      !ctx.quiet_flag) {
     std::cout << "Loaded protobuf schemas" << std::endl;
-  }
-
-  bool has_filter = !opt.filter_expr.empty();
-  bool has_fields = !ctx.field_specs.empty();
-
-  std::vector<std::vector<std::string>> slice_field_paths;
-
-  if (has_fields) {
-    slice_field_paths.reserve(ctx.field_specs.size());
-
-    for (const auto& spec : ctx.field_specs) {
-      slice_field_paths.emplace_back(vlink::Helpers::split(spec, '.'));
-    }
   }
 
 #ifdef VLINK_ENABLE_EXPRTK
@@ -1048,8 +1315,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
   }
 
   if VUNLIKELY (slice_count > kMaxSliceCount) {
-    std::cerr << "Too many segments (" << slice_count << "), maximum is " << kMaxSliceCount
-              << ". Use a larger --window value." << std::endl;
+    std::cerr << "Too many segments (" << slice_count << "), maximum is " << kMaxSliceCount << std::endl;
     return -1;
   }
 
@@ -1061,6 +1327,8 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     stats.index = static_cast<int>(i);
     stats.begin_time_ms = segments[static_cast<size_t>(i)].begin_ms;
     stats.end_time_ms = segments[static_cast<size_t>(i)].end_ms;
+    stats.begin_time_us = stats.begin_time_ms * 1000;
+    stats.end_time_us = stats.end_time_ms * 1000;
     stats.file_name = segments[static_cast<size_t>(i)].name + output_suffix;
   }
 
@@ -1092,7 +1360,9 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     return -1;
   }
 
-  if VUNLIKELY (!reject_flatbuffers_topics(player->get_info(), slice_selection, url_ser_override, "Slice")) {
+  if VUNLIKELY (needs_slice_field_extraction &&
+                !validate_field_extraction_topics(player->get_info(), slice_selection, opt.actions, url_ser_override,
+                                                  slice_proto_cache, "Slice")) {
     return -1;
   }
 
@@ -1143,7 +1413,12 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     return -1;
   }
 
-  if VUNLIKELY (!vlink::dump::preflight_output_files(filesys_out_dir, planned_output_files, opt.force)) {
+  if VUNLIKELY (opt.force && !collect_protected_input_paths(opt, protected_input_paths)) {
+    return -1;
+  }
+
+  if VUNLIKELY (!vlink::dump::preflight_output_files(filesys_out_dir, planned_output_files, opt.force,
+                                                     protected_input_paths)) {
     return -1;
   }
 
@@ -1161,10 +1436,10 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     current_csv_file.close();
 
     if (!current_csv_file.good()) {
-      std::cerr << "Failed to write CSV: " << current_csv_path.string() << std::endl;
+      std::cerr << "Failed to write CSV: " << vlink::dump::path_to_utf8(current_csv_path) << std::endl;
       slice_error = true;
     } else if (!ctx.quiet_flag) {
-      std::cout << "CSV: " << current_csv_path.string() << std::endl;
+      std::cout << "CSV: " << vlink::dump::path_to_utf8(current_csv_path) << std::endl;
     }
   };
 
@@ -1173,8 +1448,6 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       return true;
     }
 
-    current_writer->quit();
-    current_writer->wait_for_quit();
     current_writer->close();
     const bool success = !current_writer->fail();
     current_writer.reset();
@@ -1182,14 +1455,20 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
   };
 
   auto create_writer_for_slice = [&ctx, &slice_stats_list, &opt, &player, &current_writer, &schema_list,
-                                  &close_current_writer, &has_fields, &current_csv_path,
-                                  &current_csv_file](int idx) -> bool {
+                                  &close_current_writer, &has_fields, &current_csv_path, &current_csv_file,
+                                  &filesys_out_dir, output_start_timestamp](int idx) -> bool {
     auto& stats = slice_stats_list[static_cast<size_t>(idx)];
-    auto slice_path = (std::filesystem::path(opt.out_dir) / stats.file_name).string();
+    auto filesys_slice_path = filesys_out_dir / stats.file_name;
+    auto slice_path = vlink::dump::path_to_utf8(filesys_slice_path);
+
+    if VUNLIKELY (slice_path.empty()) {
+      std::cerr << "Invalid slice output path." << std::endl;
+      return false;
+    }
 
     if (!opt.force) {
       std::error_code exists_ec;
-      bool exists = std::filesystem::exists(slice_path, exists_ec);
+      bool exists = std::filesystem::exists(filesys_slice_path, exists_ec);
 
       if (exists_ec && exists_ec != std::errc::no_such_file_or_directory) {
         std::cerr << "Failed to inspect output path: " << slice_path << " (" << exists_ec.message() << ")" << std::endl;
@@ -1209,7 +1488,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     config.wal_mode = opt.wal_mode;
     config.cache_size = vlink::dump::cache_size_to_bytes(opt.cache_size);
     config.begin_time = stats.begin_time_ms;
-    config.start_timestamp = player->get_info().start_timestamp + stats.begin_time_ms;
+    config.start_timestamp = output_start_timestamp + stats.begin_time_ms;
     config.sync_mode = true;
     config.optimize_on_exit = true;
 
@@ -1243,19 +1522,13 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       }
     }
 
-    if VUNLIKELY (!current_writer->async_run()) {
-      close_current_writer();
-      std::cerr << "Failed to start output writer: " << slice_path << std::endl;
-      return false;
-    }
-
     if (opt.export_csv && has_fields) {
-      current_csv_path = std::filesystem::path(opt.out_dir) / vlink::dump::csv_name_for_slice_file(stats.file_name);
+      current_csv_path = filesys_out_dir / vlink::dump::csv_name_for_slice_file(stats.file_name);
       current_csv_file.open(current_csv_path);
 
       if VUNLIKELY (!current_csv_file.is_open()) {
         close_current_writer();
-        std::cerr << "Failed to write CSV: " << current_csv_path.string() << std::endl;
+        std::cerr << "Failed to write CSV: " << vlink::dump::path_to_utf8(current_csv_path) << std::endl;
         return false;
       }
 
@@ -1304,9 +1577,43 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       auto& counter = sample_counters[url];
       ++counter;
 
-      if (counter % opt.sample_step != 1) {
+      if (counter == opt.sample_step) {
+        counter = 0;
+      }
+
+      if (counter != 1) {
         return;
       }
+    }
+
+    while (current_slice_index < static_cast<int>(slice_stats_list.size()) - 1 &&
+           timestamp >= slice_stats_list[static_cast<size_t>(current_slice_index)].end_time_us) {
+      close_current_csv();
+
+      if VUNLIKELY (slice_error) {
+        player->stop();
+        return;
+      }
+
+      if VUNLIKELY (!close_current_writer()) {
+        slice_error = true;
+        player->stop();
+        return;
+      }
+
+      ++current_slice_index;
+
+      if VUNLIKELY (!create_writer_for_slice(current_slice_index)) {
+        slice_error = true;
+        player->stop();
+        return;
+      }
+    }
+
+    auto& stats = slice_stats_list[static_cast<size_t>(current_slice_index)];
+
+    if (timestamp < stats.begin_time_us || timestamp >= stats.end_time_us) {
+      return;
     }
 
     auto types = resolve_url_types(url, frame.ser_type, frame.schema_type, url_ser_override);
@@ -1316,11 +1623,12 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     google::protobuf::Message* proto_message = nullptr;
     bool fields_applicable = false;
 
-    if (has_fields || has_filter) {
+    if (needs_slice_field_extraction) {
       if (types.resolved == vlink::SchemaType::kProtobuf) {
         auto* msg = slice_proto_cache.get(types.ser);
 
-        if (msg != nullptr && msg->ParseFromArray(data.data(), static_cast<int>(data.size()))) {
+        if (msg != nullptr && data.size() <= static_cast<size_t>(std::numeric_limits<int>::max()) &&
+            msg->ParseFromArray(data.data(), static_cast<int>(data.size()))) {
           proto_message = msg;
         }
       }
@@ -1339,7 +1647,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
           if (is_zerocopy) {
             found = zerocopy_parsed && extract_zerocopy_value(zerocopy_parser, ctx.field_specs[fi], val);
           } else if (proto_message != nullptr) {
-            found = extract_proto_value(*proto_message, slice_field_paths[fi], 0, val);
+            found = extract_proto_value(*proto_message, ctx.field_paths[fi], 0, val);
           }
 
           if (found) {
@@ -1388,34 +1696,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
 
 #endif
 
-    int64_t timestamp_ms = timestamp / 1000;
-
-    while (current_slice_index < static_cast<int>(slice_stats_list.size()) - 1 &&
-           timestamp_ms >= slice_stats_list[static_cast<size_t>(current_slice_index)].end_time_ms) {
-      close_current_csv();
-
-      if VUNLIKELY (!close_current_writer()) {
-        slice_error = true;
-        player->stop();
-        return;
-      }
-
-      ++current_slice_index;
-
-      if (!create_writer_for_slice(current_slice_index)) {
-        slice_error = true;
-        player->stop();
-        return;
-      }
-    }
-
-    auto& stats = slice_stats_list[static_cast<size_t>(current_slice_index)];
-
-    if (timestamp_ms < stats.begin_time_ms || timestamp_ms >= stats.end_time_ms) {
-      return;
-    }
-
-    int64_t relative_timestamp = timestamp - stats.begin_time_ms * 1000;
+    int64_t relative_timestamp = timestamp - stats.begin_time_us;
 
     vlink::Frame push_frame;
     push_frame.timestamp = relative_timestamp;
@@ -1452,27 +1733,11 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
 
     if (!ctx.quiet_flag && ctx.detail_flag) {
       std::cout << "\033[2K\r";
-      std::cout << "[" << current_slice_index << "] " << std::fixed << std::setprecision(6) << timestamp / 1000000.0
-                << "s " << url << std::endl;
+      std::cout << "[" << current_slice_index << "] ";
+      write_seconds_from_us(std::cout, timestamp);
+      std::cout << "s " << url << std::endl;
     }
   });
-
-  vlink::Utils::register_terminate_signal(
-      [&player](int) {
-        auto& sig_ctx = vlink::dump::DumpContext::get();
-
-        if VUNLIKELY (sig_ctx.has_quit) {
-          return;
-        }
-
-        sig_ctx.has_quit = true;
-
-        if (player) {
-          player->stop();
-          player->quit(true);
-        }
-      },
-      true);
 
   vlink::BagReader::Config play_config;
   play_config.begin_time = effective_begin;
@@ -1497,6 +1762,25 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     slice_error = true;
   }
 
+  while (!slice_error && current_slice_index < static_cast<int>(slice_stats_list.size()) - 1) {
+    close_current_csv();
+
+    if VUNLIKELY (slice_error) {
+      break;
+    }
+
+    if VUNLIKELY (!close_current_writer()) {
+      slice_error = true;
+      break;
+    }
+
+    ++current_slice_index;
+
+    if VUNLIKELY (!create_writer_for_slice(current_slice_index)) {
+      slice_error = true;
+    }
+  }
+
   close_current_csv();
 
   if VUNLIKELY (!close_current_writer()) {
@@ -1512,17 +1796,6 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
   }
 
   player.reset();
-
-  if (!ctx.quiet_flag) {
-    int64_t total_messages = 0;
-
-    for (const auto& stats : slice_stats_list) {
-      total_messages += stats.message_count;
-    }
-
-    std::cout << "\033[2K\rDone. " << slice_count << " slice(s), " << total_messages << " message(s) total."
-              << std::endl;
-  }
 
   if (!opt.no_manifest && !slice_error) {
     nlohmann::ordered_json manifest;
@@ -1549,15 +1822,17 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       slice_json["end_time_ms"] = stats.end_time_ms;
       slice_json["message_count"] = stats.message_count;
 
+      std::vector<std::string> sorted_urls(stats.urls.begin(), stats.urls.end());
+      std::sort(sorted_urls.begin(), sorted_urls.end());
       nlohmann::ordered_json urls_json = nlohmann::ordered_json::array();
 
-      for (const auto& u : stats.urls) {
+      for (const auto& u : sorted_urls) {
         urls_json.emplace_back(u);
       }
 
       slice_json["urls"] = urls_json;
 
-      auto slice_file_path = std::filesystem::path(opt.out_dir) / stats.file_name;
+      auto slice_file_path = filesys_out_dir / stats.file_name;
 
       {
         std::error_code size_ec;
@@ -1570,8 +1845,9 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
 
     manifest["slices"] = slices_json;
 
-    auto manifest_path = (std::filesystem::path(opt.out_dir) / manifest_name).string();
-    std::ofstream manifest_file(manifest_path);
+    auto filesys_manifest_path = filesys_out_dir / manifest_name;
+    auto manifest_path = vlink::dump::path_to_utf8(filesys_manifest_path);
+    std::ofstream manifest_file(filesys_manifest_path);
 
     if (manifest_file.is_open()) {
       manifest_file << manifest.dump(2);
@@ -1587,6 +1863,17 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       std::cerr << "Failed to write manifest: " << manifest_path << std::endl;
       slice_error = true;
     }
+  }
+
+  if (!ctx.quiet_flag) {
+    int64_t total_messages = 0;
+
+    for (const auto& stats : slice_stats_list) {
+      total_messages += stats.message_count;
+    }
+
+    std::cout << "\033[2K\r" << (slice_error ? "Break. " : "Done. ") << slice_count << " slice(s), " << total_messages
+              << " message(s) total." << std::endl;
   }
 
   return slice_error ? -1 : 0;

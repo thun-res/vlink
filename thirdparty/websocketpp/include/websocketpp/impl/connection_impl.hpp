@@ -121,6 +121,11 @@ lib::error_code connection<config>::send(typename config::message_type::ptr msg)
         outgoing_msg = msg;
 
         scoped_lock_type lock(m_write_lock);
+
+        if (send_buffer_full(outgoing_msg->get_payload().size())) {
+            return error::make_error_code(error::send_queue_full);
+        }
+
         write_push(outgoing_msg);
         needs_writing = !m_write_flag && !m_send_queue.empty();
     } else {
@@ -135,6 +140,10 @@ lib::error_code connection<config>::send(typename config::message_type::ptr msg)
 
         if (ec) {
             return ec;
+        }
+
+        if (send_buffer_full(outgoing_msg->get_payload().size())) {
+            return error::make_error_code(error::send_queue_full);
         }
 
         write_push(outgoing_msg);
@@ -206,6 +215,15 @@ void connection<config>::ping(std::string const& payload, lib::error_code& ec) {
     bool needs_writing = false;
     {
         scoped_lock_type lock(m_write_lock);
+
+        if (send_buffer_full(msg->get_payload().size())) {
+            if (m_ping_timer) {
+                m_ping_timer->cancel();
+            }
+            ec = error::make_error_code(error::send_queue_full);
+            return;
+        }
+
         write_push(msg);
         needs_writing = !m_write_flag && !m_send_queue.empty();
     }
@@ -277,6 +295,12 @@ void connection<config>::pong(std::string const& payload, lib::error_code& ec) {
     bool needs_writing = false;
     {
         scoped_lock_type lock(m_write_lock);
+
+        if (send_buffer_full(msg->get_payload().size())) {
+            ec = error::make_error_code(error::send_queue_full);
+            return;
+        }
+
         write_push(msg);
         needs_writing = !m_write_flag && !m_send_queue.empty();
     }

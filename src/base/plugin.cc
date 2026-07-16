@@ -23,6 +23,8 @@
 
 #include "./base/plugin.h"
 
+#include <algorithm>
+#include <cctype>
 #include <deque>
 #include <filesystem>
 #include <memory>
@@ -30,6 +32,7 @@
 #include <shared_mutex>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 
@@ -69,9 +72,9 @@ namespace vlink {
   }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 }
 
-[[maybe_unused]] static bool check_exists(const std::string& path) {
+[[maybe_unused]] static bool check_regular_file(const std::string& path) {
   try {
-    return std::filesystem::exists(path);
+    return std::filesystem::is_regular_file(path);
   } catch (std::filesystem::filesystem_error&) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     return false;                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -305,21 +308,42 @@ Plugin::Handle Plugin::load_and_create(const std::string& plugin_id, const std::
   std::string plugin_path;
 
   {
-    std::string plugin_name = DynamicLibrary::kFilenamePrefix + lib_name + DynamicLibrary::kFilenameSuffix;
-    std::string check_path;
+    bool has_filename_suffix = vlink::Helpers::has_endwith(lib_name, DynamicLibrary::kFilenameSuffix);
+#if defined(_WIN32) || defined(_WIN64)
+    const std::string_view filename_suffix = DynamicLibrary::kFilenameSuffix;
 
-    for (const auto& path : search_paths) {
-      if (dir_name.empty()) {
-        // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-        check_path = path + "/" + plugin_name;
-      } else {
-        // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-        check_path = path + "/" + dir_name + "/" + plugin_name;
+    if (!has_filename_suffix && lib_name.size() >= filename_suffix.size()) {
+      has_filename_suffix =
+          std::equal(filename_suffix.begin(), filename_suffix.end(), lib_name.end() - filename_suffix.size(),
+                     [](unsigned char lhs, unsigned char rhs) { return std::tolower(lhs) == std::tolower(rhs); });
+    }
+#endif
+    const bool has_path_separator = lib_name.find_first_of("/\\") != std::string::npos;
+    const bool path_like = has_path_separator || has_filename_suffix;
+
+    if (path_like) {
+      if (check_regular_file(lib_name)) {
+        plugin_path = has_path_separator ? lib_name : get_current_dir() + "/" + lib_name;
       }
+    } else {
+      std::string plugin_name = DynamicLibrary::kFilenamePrefix + lib_name + DynamicLibrary::kFilenameSuffix;
+      std::string check_path;
 
-      if (check_exists(check_path)) {
-        plugin_path = std::move(check_path);
-        break;
+      for (const auto& path : search_paths) {
+        check_path = path;
+        check_path += '/';
+
+        if (!dir_name.empty()) {
+          check_path += dir_name;
+          check_path += '/';
+        }
+
+        check_path += plugin_name;
+
+        if (check_regular_file(check_path)) {
+          plugin_path = std::move(check_path);
+          break;
+        }
       }
     }
   }

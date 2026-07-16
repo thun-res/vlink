@@ -3717,7 +3717,7 @@ NB_MODULE(_vlink_nanobind, m) {
             return self.load<vlink::BagPluginInterface>(lib_name, 2, 0, dir_name);
           },
           "lib_name"_a, "dir_name"_a = "",
-          "Load a BagPluginInterface ABI 2.0 implementation; return None when loading fails.")
+          "Load a BagPluginInterface 2.0 implementation; return None when loading fails.")
       .def(
           "load_trigger_plugin",
           [](vlink::Plugin& self, const std::string& lib_name, const std::string& config,

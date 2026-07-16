@@ -9,7 +9,7 @@
         <mxCell id="title" value="VLink Overview Architecture" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=22;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="40" y="18" width="920" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="subtitle" value="Full-scenario replacement for ROS 2  -  High-performance C++17 communication middleware" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+        <mxCell id="subtitle" value="Full-scenario replacement for ROS 2  -  High-performance communication middleware" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
           <mxGeometry x="40" y="52" width="920" height="22" as="geometry" />
         </mxCell>
 

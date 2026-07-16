@@ -177,6 +177,20 @@ Json FoxgloveParameters::build_parameter_values(const std::vector<std::string>& 
   return msg;
 }
 
+Json FoxgloveParameters::build_parameter_delta(const std::vector<const ParameterEntry*>& entries) {
+  Json msg;
+  msg["op"] = "parameterValues";
+  msg["parameters"] = Json::array();
+
+  for (const auto* entry : entries) {
+    if VLIKELY (entry) {
+      msg["parameters"].emplace_back(make_parameter_json(*entry));
+    }
+  }
+
+  return msg;
+}
+
 bool FoxgloveParameters::apply_set_parameters(const Json& request, Json& response, std::vector<ParameterEntry>& delta,
                                               std::string& error) {
   if VUNLIKELY (!request.contains("parameters") || !request["parameters"].is_array()) {

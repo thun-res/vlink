@@ -22,7 +22,7 @@ quickstart 给出 VLink 三种通信模型（Event / Method / Field）的最小�
 
 ## 🧩 共同前置知识
 
-- C++17 模板与 lambda 捕获基础。
+- C++ 模板与 lambda 捕获基础。
 - `std::optional`、`std::chrono` 字面量（`100ms`、`2s` 等）的常规用法。
 - VLink 通过 URL 协议前缀（`intra://`、`dds://`、`shm://` 等）选择传输后端，业务代码无需改动。
 

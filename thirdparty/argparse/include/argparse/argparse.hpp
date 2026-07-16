@@ -371,7 +371,7 @@ inline const auto generic_strtod<long double> = ARGPARSE_CUSTOM_STRTOLD;
 } // namespace
 
 template <class T> inline auto do_strtod(std::string const &s) -> T {
-  if (isspace(static_cast<unsigned char>(s[0])) || s[0] == '+') {
+  if (s.empty() || isspace(static_cast<unsigned char>(s[0])) || s[0] == '+') {
     throw std::invalid_argument{"pattern '" + s + "' not found"};
   }
 
@@ -1071,7 +1071,7 @@ public:
       }
       return end;
     }
-    if (m_default_value.has_value()) {
+    if (m_default_value.has_value() && num_args_min == 0) {
       if (!dry_run) {
         m_is_used = true;
       }

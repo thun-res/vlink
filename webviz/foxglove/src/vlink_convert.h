@@ -199,6 +199,7 @@ class VlinkConvert final {
   std::vector<CommandMapping> mappings_;
   std::mutex mtx_;
   Config config_;
+  const uint64_t cache_owner_id_{allocate_cache_owner_id()};
 
   std::shared_ptr<SchemaPluginInterface> schema_interface_;
   Plugin convert_plugin_loader_;

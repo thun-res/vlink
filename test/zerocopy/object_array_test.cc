@@ -772,6 +772,28 @@ TEST_SUITE("zerocopy-ObjectArray") {
     CHECK_FALSE((dst << wire));
     CHECK_FALSE(dst.is_valid());
   }
+
+  TEST_CASE("deserialize rejects an overflowing record count with a valid pack size") {
+    zerocopy::ObjectArray src;
+    Bytes wire;
+    REQUIRE((src >> wire));
+
+    static constexpr size_t kWireStructOffset = sizeof(uint32_t) + sizeof(uint32_t);
+    static constexpr size_t kCountOffset = 88u;
+    static constexpr size_t kPackSizeOffset = 92u;
+    const uint32_t count = 1U << 28U;
+    const uint32_t pack_size = sizeof(zerocopy::ObjectArray::Object);
+    std::memcpy(wire.data() + kWireStructOffset + kCountOffset, &count, sizeof(count));
+    std::memcpy(wire.data() + kWireStructOffset + kPackSizeOffset, &pack_size, sizeof(pack_size));
+
+    zerocopy::ObjectArray dst;
+    REQUIRE(dst.create(1));
+    CHECK_FALSE((dst << wire));
+    CHECK_FALSE(dst.is_valid());
+    CHECK_EQ(dst.count(), 0u);
+    CHECK_EQ(dst.pack_size(), 0u);
+    CHECK_EQ(dst.data(), nullptr);
+  }
 }
 
 // NOLINTEND

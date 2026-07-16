@@ -12,7 +12,7 @@ const DICT = {
   zh: {
     /* ---- site meta ---- */
     'site.title': 'VLink · 一套 API，12 种传输，切换零代价 — 面向自动驾驶与具身智能的 C++ 通信中间件',
-    'site.desc':  'VLink 是面向自动驾驶与具身智能的轻量级 C++17 通信中间件。三种通信模型、12 种传输后端、14 种序列化格式、编译期自动推导、零代码迁移。Apache 2.0 开源，国产自主可控。',
+    'site.desc':  'VLink 是面向自动驾驶与具身智能的轻量级通信中间件。三种通信模型、12 种传输后端、14 种序列化格式、编译期自动推导、零代码迁移。Apache 2.0 开源，国产自主可控。',
 
     /* ---- nav ---- */
     'nav.position':   '项目简介',
@@ -36,7 +36,7 @@ const DICT = {
     'nav.primary':     '主导航',
 
     /* ---- hero ---- */
-    'hero.kicker':       '<span class="hk-cpp">C++17</span> · <span class="hk-perf">高性能</span> · <span class="hk-light">轻量级</span> · <span class="hk-easy">易上手</span> · <span class="hk-safe">自主可控</span>',
+    'hero.kicker':       '<span class="hk-cpp">量产级</span> · <span class="hk-perf">高性能</span> · <span class="hk-light">轻量级</span> · <span class="hk-easy">易上手</span> · <span class="hk-safe">自主可控</span>',
     'hero.sub':          '面向 <strong>自动驾驶</strong> 与 <strong>具身智能</strong> 的量产级 C++ 通信中间件。<strong>一套极简 API 贯通 12 种传输后端</strong> —— 业务代码零改动，开发者只需专注业务逻辑。',
     'hero.cta.start':    '示例代码',
     'hero.meta.tr':      '传输后端',
@@ -47,7 +47,7 @@ const DICT = {
     /* ---- position ---- */
     'pos.eyebrow':  'VLink 是什么',
     'pos.title':    '为 <span class="grad">量产级实时通信</span> 而生',
-    'pos.sub':      '面向自动驾驶与具身智能的 C++17 通信中间件。编译期模板派发、全栈工具链、跨平台可移植 —— 支撑从开发、调试到量产的完整实时系统底座。',
+    'pos.sub':      '面向自动驾驶与具身智能的通信中间件。编译期模板派发、全栈工具链、跨平台可移植 —— 支撑从开发、调试到量产的完整实时系统底座。',
     'pos.c1.h':     '全栈工具链',
     'pos.c1.p':     'Viewer · Player · Analyzer 桌面 GUI · CLI 十件套 · Foxglove / Rerun Web 桥 · Bag 录制回放 —— 开发、调试、回归一站式。',
     'pos.c1.vs1':   'ROS2: rqt + 外装 bridge',
@@ -188,7 +188,7 @@ const DICT = {
     'vs.r.size.b': '<strong>全量约 25 万行</strong>，<strong>核心代码不到 10 万行</strong>；无运行时绑定，依赖清晰，易于移植到 QNX / Android 等平台',
     'vs.r.lang.k': '多语言支持',
     'vs.r.lang.a': 'rclcpp / rclpy 为官方主线；rclnodejs / rcljava 等语言客户端由社区维护，版本滞后',
-    'vs.r.lang.b': 'C++17 主线 + 官方 <strong>Python</strong> 绑定；稳定的 <strong>C API</strong> 供 Go / Rust / Java / Lua 等语言包装',
+    'vs.r.lang.b': 'C++ 主线 + 官方 <strong>Python</strong> 绑定；稳定的 <strong>C API</strong> 供 Go / Rust / Java / Lua 等语言包装',
     'vs.r.arch.k': '架构与扩展',
     'vs.r.arch.a': 'rclcpp + rmw 分层，但扩展依赖 pluginlib 与 ament 包管理',
     'vs.r.arch.b': '传输 / 序列化 / CLI / 可视化均为独立 CMake 组件，按需裁剪；<br><strong>六类插件接口</strong> (Logger · Runable · Convert · Schema · Bag · Trigger) 运行期 dlopen 加载',
@@ -367,7 +367,7 @@ const DICT = {
 
   en: {
     'site.title': 'VLink · One API, 12 Transports, Zero Migration Cost — C++ middleware for AD & Embodied AI',
-    'site.desc':  'VLink is a lightweight C++17 communication middleware for autonomous driving and embodied AI. Three communication models, 12 transport backends, 14 serialization formats, compile-time auto-dispatch, zero migration cost. Apache 2.0.',
+    'site.desc':  'VLink is lightweight communication middleware for autonomous driving and embodied AI. Three communication models, 12 transport backends, 14 serialization formats, compile-time auto-dispatch, zero migration cost. Apache 2.0.',
 
     'nav.position':   'What is VLink',
     'nav.unified':    'Unified API',
@@ -389,7 +389,7 @@ const DICT = {
     'nav.lang.menu':   'Language list',
     'nav.primary':     'Primary navigation',
 
-    'hero.kicker':       '<span class="hk-cpp">C++17</span> · <span class="hk-perf">High Performance</span> · <span class="hk-light">Lightweight</span> · <span class="hk-easy">Easy to Pick Up</span> · <span class="hk-safe">Self-Sovereign</span>',
+    'hero.kicker':       '<span class="hk-cpp">Production-ready</span> · <span class="hk-perf">High Performance</span> · <span class="hk-light">Lightweight</span> · <span class="hk-easy">Easy to Pick Up</span> · <span class="hk-safe">Self-Sovereign</span>',
     'hero.sub':          'A production-grade C++ communication middleware for <strong>autonomous driving</strong> and <strong>embodied AI</strong>. <strong>One minimalist API spans 12 transport protocols</strong> — your business code never changes, so developers stay focused on the business.',
     'hero.cta.start':    'Example Code',
     'hero.meta.tr':      'Transports',
@@ -399,7 +399,7 @@ const DICT = {
 
     'pos.eyebrow':  'What is VLink',
     'pos.title':    'Built for <span class="grad">production-grade real-time</span> communication',
-    'pos.sub':      'A C++17 communication middleware for autonomous driving and embodied AI. Compile-time template dispatch, an in-tree toolchain, portable across platforms — a complete real-time foundation from development through production.',
+    'pos.sub':      'Communication middleware for autonomous driving and embodied AI. Compile-time template dispatch, an in-tree toolchain, portable across platforms — a complete real-time foundation from development through production.',
     'pos.c1.h':     'Full toolchain',
     'pos.c1.p':     'Viewer · Player · Analyzer desktop GUI · 10-piece CLI · Foxglove / Rerun web bridge · bag record/replay — develop, debug, and regress in one place.',
     'pos.c1.vs1':   'ROS2: rqt + bolt-on bridges',
@@ -524,7 +524,7 @@ const DICT = {
     'vs.r.size.b': '<strong>~250 K LOC in total</strong>, <strong>under 100 K LOC in the core</strong>; no runtime lock-in, clean dependencies — easy to port to QNX / Android and beyond',
     'vs.r.lang.k': 'Language support',
     'vs.r.lang.a': 'rclcpp / rclpy are the officially maintained bindings; rclnodejs / rcljava and other clients are community-maintained and lag mainline features',
-    'vs.r.lang.b': 'C++17 core + official <strong>Python</strong> binding; stable <strong>C API</strong> for wrapping Go, Rust, Java, Lua and more',
+    'vs.r.lang.b': 'C++ core + official <strong>Python</strong> binding; stable <strong>C API</strong> for wrapping Go, Rust, Java, Lua and more',
     'vs.r.arch.k': 'Architecture &amp; extensibility',
     'vs.r.arch.a': 'rclcpp + rmw are layered by design, but extensions rely on pluginlib and ament package management',
     'vs.r.arch.b': 'Transport / serializer / CLI / visualizer are each standalone CMake components;<br><strong>six runtime plugin interfaces</strong> (Logger · Runable · Convert · Schema · Bag · Trigger) load via dlopen',
@@ -703,7 +703,7 @@ const DICT = {
 
   ja: {
     'site.title': 'VLink · ひとつの API、12 種のトランスポート、移行コストゼロ — 自動運転・具現化 AI 向け C++ ミドルウェア',
-    'site.desc':  'VLink は自動運転および具現化 AI 向けの軽量 C++17 通信ミドルウェアです。3 つの通信モデル、12 種のトランスポート、14 種のシリアライズ形式、コンパイル時自動ディスパッチ、ゼロ移行コスト。Apache 2.0 オープンソース。',
+    'site.desc':  'VLink は自動運転および具現化 AI 向けの軽量な通信ミドルウェアです。3 つの通信モデル、12 種のトランスポート、14 種のシリアライズ形式、コンパイル時自動ディスパッチ、ゼロ移行コスト。Apache 2.0 オープンソース。',
 
     'nav.position':   'VLink とは',
     'nav.unified':    '統一 API',
@@ -725,7 +725,7 @@ const DICT = {
     'nav.lang.menu':   '言語一覧',
     'nav.primary':     'メインナビゲーション',
 
-    'hero.kicker':       '<span class="hk-cpp">C++17</span> · <span class="hk-perf">高性能</span> · <span class="hk-light">軽量</span> · <span class="hk-easy">すぐ使える</span> · <span class="hk-safe">自主運用可能</span>',
+    'hero.kicker':       '<span class="hk-cpp">量産対応</span> · <span class="hk-perf">高性能</span> · <span class="hk-light">軽量</span> · <span class="hk-easy">すぐ使える</span> · <span class="hk-safe">自主運用可能</span>',
     'hero.sub':          '<strong>自動運転</strong>と<strong>具現化 AI</strong>のための量産グレード C++ 通信ミドルウェア。<strong>最小構成の API が 12 種のトランスポートを一貫して扱い</strong> —— 業務コードを変えずに済み、開発者は業務に集中できます。',
     'hero.cta.start':    'サンプルコード',
     'hero.meta.tr':      'トランスポート',
@@ -735,7 +735,7 @@ const DICT = {
 
     'pos.eyebrow':  'VLink とは',
     'pos.title':    '<span class="grad">量産グレードのリアルタイム通信</span> のために',
-    'pos.sub':      '自動運転と具現化 AI のための C++17 通信ミドルウェア。コンパイル時テンプレートディスパッチ、フルスタックツールチェーン、マルチプラットフォーム対応 —— 開発から量産までを支えるリアルタイムシステムの土台。',
+    'pos.sub':      '自動運転と具現化 AI のための通信ミドルウェア。コンパイル時テンプレートディスパッチ、フルスタックツールチェーン、マルチプラットフォーム対応 —— 開発から量産までを支えるリアルタイムシステムの土台。',
     'pos.c1.h':     'フルスタックツールチェーン',
     'pos.c1.p':     'Viewer · Player · Analyzer デスクトップ GUI · CLI 10 点セット · Foxglove / Rerun Web ブリッジ · Bag 録画再生 —— 開発・デバッグ・回帰を一貫対応。',
     'pos.c1.vs1':   'ROS2: rqt + 外付けブリッジ',
@@ -860,7 +860,7 @@ const DICT = {
     'vs.r.size.b': '<strong>全体で約 25 万行</strong>、<strong>コアは 10 万行未満</strong>；ランタイムバインディングなし、依存も明快で QNX / Android などへの移植が容易',
     'vs.r.lang.k': '多言語サポート',
     'vs.r.lang.a': 'rclcpp / rclpy が公式本流；rclnodejs / rcljava などはコミュニティ管理で本流より遅れる',
-    'vs.r.lang.b': 'C++17 本体 + 公式 <strong>Python</strong> バインディング；安定した <strong>C API</strong> を通じて Go / Rust / Java / Lua 等を包める',
+    'vs.r.lang.b': 'C++ 本体 + 公式 <strong>Python</strong> バインディング；安定した <strong>C API</strong> を通じて Go / Rust / Java / Lua 等を包める',
     'vs.r.arch.k': 'アーキテクチャと拡張性',
     'vs.r.arch.a': 'rclcpp + rmw は設計上は分層されているが、拡張は pluginlib と ament パッケージ管理に依存',
     'vs.r.arch.b': 'トランスポート / シリアライズ / CLI / 可視化はそれぞれ独立した CMake コンポーネント；<br><strong>6 種のプラグイン I/F</strong> (Logger · Runable · Convert · Schema · Bag · Trigger) は実行時に dlopen ロード',

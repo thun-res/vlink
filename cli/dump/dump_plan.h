@@ -27,7 +27,6 @@
 #include <vlink/impl/types.h>
 
 #include <algorithm>
-#include <cctype>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -96,17 +95,9 @@ struct EventVarState final {
   int64_t timestamp_ms{0};
 };
 
-std::string trim_copy(std::string value);
-
 std::string to_lower_copy(std::string value);
 
-uint32_t stable_hash_32(std::string_view value);
-
-std::string hex8(uint32_t value);
-
 std::string sanitize_file_component(const std::string& raw, const std::string& fallback);
-
-bool is_supported_bag_suffix(std::string suffix);
 
 std::string sanitize_suffix(const std::string& raw_suffix);
 
@@ -136,6 +127,6 @@ bool normalize_segment_plan(std::vector<SegmentDef>& segments, int64_t effective
                             const std::string& source_name);
 
 bool preflight_output_files(const std::filesystem::path& out_dir, const std::vector<std::string>& file_names,
-                            bool force);
+                            bool force, const std::vector<std::filesystem::path>& protected_paths);
 
 }  // namespace vlink::dump

@@ -164,13 +164,15 @@ output/
 
 ### 🖥️ 1.3.3 各平台编译器要求
 
-| 平台 | 推荐编译器 | C++ 标准 | 备注 |
-| --- | --- | --- | --- |
-| Linux | GCC 9+ / Clang 10+ | C++17 | GCC 7/8 需 `-lstdc++fs` |
-| macOS | Apple Clang 12+ | C++17 | 需要 macOS 10.15+ |
-| Windows | MSVC 2019+ / Clang-cl | C++17 | 需要 Windows SDK 10 |
-| QNX 7/8 | QCC（GCC 8.3 / 12.2） | C++17 | 需要 QNX SDP 7.1 / 8.0 |
-| Android | NDK r25+ | C++17 | API Level 21+，推荐 30+ |
+所有平台均以 C++17 为基线；差异主要在编译器、SDK 与系统版本：
+
+| 平台 | 推荐编译器 | 备注 |
+| --- | --- | --- |
+| Linux | GCC 9+ / Clang 10+ | GCC 7/8 需 `-lstdc++fs` |
+| macOS | Apple Clang 12+ | 需要 macOS 10.15+ |
+| Windows | MSVC 2019+ / Clang-cl | 需要 Windows SDK 10 |
+| QNX 7/8 | QCC（GCC 8.3 / 12.2） | 需要 QNX SDP 7.1 / 8.0 |
+| Android | NDK r25+ | API Level 21+，推荐 30+ |
 
 ---
 

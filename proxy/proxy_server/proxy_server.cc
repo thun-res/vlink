@@ -1193,19 +1193,15 @@ void ProxyServer::update_all() {
             const auto current_seq = total_seq.load(std::memory_order_relaxed);
 
             if (impl_->config.async) {
-              auto forward_task = [this, control_id = impl_->control_id.load(std::memory_order_relaxed),
-                                   mode = impl_->mode.load(std::memory_order_relaxed),
-                                   elapsed = impl_->main_elapsed.get(), seq = current_seq, url, ser, schema, bytes]() {
-                zerocopy::ProxyData t_data;
-                t_data.set_control_id(control_id);
-                t_data.set_mode(mode);
-                t_data.set_timestamp(elapsed);
-                t_data.set_seq(seq);
+              zerocopy::ProxyData t_data;
+              t_data.set_control_id(impl_->control_id.load(std::memory_order_relaxed));
+              t_data.set_mode(impl_->mode.load(std::memory_order_relaxed));
+              t_data.set_timestamp(impl_->main_elapsed.get());
+              t_data.set_seq(current_seq);
 
-                t_data.create(bytes, url, ser, static_cast<uint32_t>(schema), impl_->current_host_name);
+              t_data.create(bytes, url, ser, static_cast<uint32_t>(schema), impl_->current_host_name);
 
-                impl_->data_pub->publish(t_data, true);
-              };
+              auto forward_task = [this, t_data = std::move(t_data)]() { impl_->data_pub->publish(t_data, true); };
 
               if VUNLIKELY (!post_task(std::move(forward_task))) {
                 VLOG_E("ProxyServer: Failed to post async forwarding task.");
@@ -1279,13 +1275,16 @@ void ProxyServer::update_all() {
     double latency = 0;
     int weight = 1;
     int total_weight = 0;
+    const int64_t current_seq = seq.exchange(0, std::memory_order_relaxed);
+    const size_t current_size = size.exchange(0, std::memory_order_relaxed);
+    const int64_t current_lat = lat.exchange(0, std::memory_order_relaxed);
 
-    seq_buffer.emplace_back(seq.load(std::memory_order_relaxed));
+    seq_buffer.emplace_back(current_seq);
     while (seq_buffer.size() > kCounterCache) {
       seq_buffer.pop_front();
     }
 
-    size_buffer.emplace_back(size.load(std::memory_order_relaxed));
+    size_buffer.emplace_back(current_size);
     while (size_buffer.size() > kCounterCache) {
       size_buffer.pop_front();
     }
@@ -1295,11 +1294,10 @@ void ProxyServer::update_all() {
       lost_buffer.pop_front();
     }
 
-    if VUNLIKELY (seq.load(std::memory_order_relaxed) <= 0) {
-      lat_buffer.emplace_back(lat.load(std::memory_order_relaxed));
+    if VUNLIKELY (current_seq <= 0) {
+      lat_buffer.emplace_back(current_lat);
     } else {
-      lat_buffer.emplace_back(static_cast<double>(lat.load(std::memory_order_relaxed)) /
-                              seq.load(std::memory_order_relaxed));
+      lat_buffer.emplace_back(static_cast<double>(current_lat) / current_seq);
     }
 
     while (lat_buffer.size() > kCounterCache) {
@@ -1333,7 +1331,7 @@ void ProxyServer::update_all() {
     out_info.rate = static_cast<uint64_t>(rate);
     out_info.loss = static_cast<float>(loss);
 
-    if (seq.load(std::memory_order_relaxed) == 0) {
+    if (current_seq == 0) {
       out_info.latency = -1;
     } else if (latency > 5000'000'000 || latency < -500'000) {
       out_info.latency = -2;
@@ -1342,10 +1340,6 @@ void ProxyServer::update_all() {
     } else {
       out_info.latency = static_cast<float>(latency / 1000'000);
     }
-
-    seq.store(0, std::memory_order_relaxed);
-    size.store(0, std::memory_order_relaxed);
-    lat.store(0, std::memory_order_relaxed);
   }
 
   packet.control_id = impl_->control_id.load(std::memory_order_relaxed);

@@ -31,6 +31,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -62,8 +63,9 @@ struct DumpContext final {
   DumpType dump_type{DumpType::kConsole};
   int64_t begin_time{0};
   int64_t end_time{0};
+  int64_t min_output_interval_us{0};
+  int64_t last_output_us{std::numeric_limits<int64_t>::min()};
   int max_count{0};
-  double max_hz{0};
 
   vlink::Plugin bag_plugin;
   std::shared_ptr<vlink::BagPluginInterface> bag_plugin_interface;
@@ -86,7 +88,6 @@ struct DumpContext final {
   std::vector<std::string> field_specs;
   std::vector<std::vector<std::string>> field_paths;
   std::atomic<int64_t> output_count{0};
-  std::atomic<int64_t> last_output_us{0};
   std::vector<std::string> expr_strings;
   ExprContext expr_ctx;
   std::mutex expr_mtx;

@@ -34,11 +34,6 @@ namespace vlink::dump {
 
 ProtoMessageCache::ProtoMessageCache(ProtoRuntime runtime) : runtime_(std::move(runtime)) {}
 
-void ProtoMessageCache::reset(ProtoRuntime runtime) {
-  runtime_ = std::move(runtime);
-  cache_.clear();
-}
-
 bool ProtoMessageCache::ready() const { return runtime_.factory && (runtime_.pool != nullptr || runtime_.plugin); }
 
 const google::protobuf::Descriptor* ProtoMessageCache::lookup_descriptor(const std::string& ser) {

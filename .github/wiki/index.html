@@ -5,17 +5,17 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#070b18">
 <title>VLink · 一套 API，12 种传输，切换零代价 — 面向自动驾驶与具身智能的 C++ 通信中间件</title>
-<meta name="description" content="VLink 是面向自动驾驶与具身智能的轻量级 C++17 通信中间件。三种通信模型、12 种传输后端、14 种序列化格式、编译期自动推导、零代码迁移。Apache 2.0 开源，国产自主可控。">
+<meta name="description" content="VLink 是面向自动驾驶与具身智能的轻量级通信中间件。三种通信模型、12 种传输后端、14 种序列化格式、编译期自动推导、零代码迁移。Apache 2.0 开源，国产自主可控。">
 <meta name="author" content="Thun Lu">
 <meta name="robots" content="index,follow">
 <meta property="og:title" content="VLink — One API, 12 Transports, Zero Migration Cost">
-<meta property="og:description" content="Lightweight C++17 communication middleware for autonomous driving and embodied AI. Apache 2.0.">
+<meta property="og:description" content="Lightweight communication middleware for autonomous driving and embodied AI. Apache 2.0.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://thun-res.github.io/vlink/">
 <meta property="og:image" content="https://thun-res.github.io/vlink/assets/img/vlink-logo.svg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="VLink — One API, 12 Transports, Zero Migration Cost">
-<meta name="twitter:description" content="Lightweight C++17 communication middleware for autonomous driving and embodied AI. Apache 2.0.">
+<meta name="twitter:description" content="Lightweight communication middleware for autonomous driving and embodied AI. Apache 2.0.">
 <meta name="twitter:image" content="https://thun-res.github.io/vlink/assets/img/vlink-logo.svg">
 <link rel="canonical" href="https://thun-res.github.io/vlink/">
 <link rel="icon" type="image/svg+xml" href="assets/img/vlink-icon.svg">
@@ -100,7 +100,7 @@
 <section class="hero" id="top">
   <div class="container hero-inner">
     <div>
-      <span class="hero-kicker" data-i18n="hero.kicker"><span class="dot"></span> <span class="hk-cpp">C++17</span> · <span class="hk-perf">高性能</span> · <span class="hk-light">轻量级</span> · <span class="hk-easy">易上手</span> · <span class="hk-safe">自主可控</span></span>
+      <span class="hero-kicker" data-i18n="hero.kicker"><span class="dot"></span> <span class="hk-cpp">量产级</span> · <span class="hk-perf">高性能</span> · <span class="hk-light">轻量级</span> · <span class="hk-easy">易上手</span> · <span class="hk-safe">自主可控</span></span>
       <h1 data-i18n="hero.h1">一套 <span class="grad">API</span>，<br><span class="num">12</span> 种传输，<br><span class="grad">切换零代价</span></h1>
       <p class="hero-sub" data-i18n="hero.sub">面向 <strong>自动驾驶</strong> 与 <strong>具身智能</strong> 的量产级 C++ 通信中间件。<strong>一套极简 API 贯通 12 种传输后端</strong> —— 业务代码零改动，开发者只需专注业务逻辑。</p>
       <div class="hero-cta">
@@ -163,7 +163,7 @@
     <div class="section-head center reveal">
       <div class="section-eyebrow" data-i18n="pos.eyebrow">VLink 是什么</div>
       <h2 class="section-title" data-i18n="pos.title">为 <span class="grad">量产级实时通信</span> 而生</h2>
-      <p class="section-sub" data-i18n="pos.sub">面向自动驾驶与具身智能的 C++17 通信中间件。编译期模板派发、全栈工具链、跨平台可移植 —— 支撑从开发、调试到量产的完整实时系统底座。</p>
+      <p class="section-sub" data-i18n="pos.sub">面向自动驾驶与具身智能的通信中间件。编译期模板派发、全栈工具链、跨平台可移植 —— 支撑从开发、调试到量产的完整实时系统底座。</p>
     </div>
 
     <div class="why-grid">
@@ -818,7 +818,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
       </div>
       <div class="vs-row"><div data-i18n="vs.r.api.k">API 心智</div><div class="vs-col-ros2" data-i18n="vs.r.api.a">Node · Executor · Context · CallbackGroup 多层栈，小样例也要几十行 boilerplate</div><div class="vs-col-vlink" data-i18n="vs.r.api.b"><strong>一个模板类就是一个节点</strong>，3 行代码完成端到端 Pub/Sub</div></div>
       <div class="vs-row"><div data-i18n="vs.r.size.k">代码体量</div><div class="vs-col-ros2" data-i18n="vs.r.size.a">主仓 + 生态包累计数百万行代码，依赖链庞杂，裁剪 / 移植成本高</div><div class="vs-col-vlink" data-i18n="vs.r.size.b"><strong>全量约 25 万行</strong>，<strong>核心代码不到 10 万行</strong>；无运行时绑定，依赖清晰，易于移植到 QNX / Android 等平台</div></div>
-      <div class="vs-row"><div data-i18n="vs.r.lang.k">多语言支持</div><div class="vs-col-ros2" data-i18n="vs.r.lang.a">rclcpp / rclpy 为官方主线；rclnodejs / rcljava 等语言客户端由社区维护，版本滞后</div><div class="vs-col-vlink" data-i18n="vs.r.lang.b">C++17 主线 + 官方 <strong>Python</strong> 绑定；稳定的 <strong>C API</strong> 供 Go / Rust / Java / Lua 等语言包装</div></div>
+      <div class="vs-row"><div data-i18n="vs.r.lang.k">多语言支持</div><div class="vs-col-ros2" data-i18n="vs.r.lang.a">rclcpp / rclpy 为官方主线；rclnodejs / rcljava 等语言客户端由社区维护，版本滞后</div><div class="vs-col-vlink" data-i18n="vs.r.lang.b">C++ 主线 + 官方 <strong>Python</strong> 绑定；稳定的 <strong>C API</strong> 供 Go / Rust / Java / Lua 等语言包装</div></div>
       <div class="vs-row"><div data-i18n="vs.r.arch.k">架构与扩展</div><div class="vs-col-ros2" data-i18n="vs.r.arch.a">rclcpp + rmw 分层，但扩展依赖 pluginlib 与 ament 包管理</div><div class="vs-col-vlink" data-i18n="vs.r.arch.b">传输 / 序列化 / CLI / 可视化均为独立 CMake 组件，按需裁剪；<br><strong>六类插件接口</strong> (Logger · Runable · Convert · Schema · Bag · Trigger) 运行期 dlopen 加载</div></div>
       <div class="vs-row"><div data-i18n="vs.r.perf.k">性能</div><div class="vs-col-ros2" data-i18n="vs.r.perf.a">DDS 跨进程延迟随 RMW / QoS 波动；进程内零拷贝需 <code>NodeOptions::use_intra_process_comms(true)</code> 且消息 POD 化</div><div class="vs-col-vlink" data-i18n="vs.r.perf.b"><code>intra://</code> 无锁队列 <strong>亚微秒级</strong>；<code>shm://</code> 基于 Iceoryx 的 <strong>10 μs 级</strong> 零拷贝；<strong>浅拷贝 · 栈内存优先分配 · 无锁队列 · 分支预测友好</strong>，编译期模板派发，无虚函数开销</div></div>
       <div class="vs-row"><div data-i18n="vs.r.trans.k">传输与零拷贝</div><div class="vs-col-ros2" data-i18n="vs.r.trans.a">默认 DDS 生态 (Fast-DDS · Cyclone · Connext)；rmw_zenoh 等为实验性；LoanedMessage 零拷贝仅部分 RMW + POD 消息</div><div class="vs-col-vlink" data-i18n="vs.r.trans.b"><strong>12 种 URL 切换</strong>：intra · shm · shm2 · dds · ddsc · zenoh · someip · qnx · mqtt · fdbus …… 业务代码零改动</div></div>

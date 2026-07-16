@@ -23,12 +23,11 @@
 
 #include "./dump_validate.h"
 
+#include <vlink/base/helpers.h>
+
 #include <array>
 #include <iostream>
-#include <string_view>
 #include <vector>
-
-#include "./dump_plan.h"
 
 namespace vlink::dump {
 
@@ -93,14 +92,13 @@ struct ModeRule final {
   bool valid_in_scan;
 };
 
-static constexpr std::array<ModeRule, 35> kModeRules{{
+static constexpr std::array<ModeRule, 34> kModeRules{{
     {"-m", "dump/export modes", true, false, false},
     {"-n", "dump/export modes", true, false, false},
     {"--hz", "dump/export modes", true, false, false},
     {"-x", "dump/export modes", true, false, false},
     {"-l", "dump/export modes or -t slice", true, true, false},
     {"-w", "-t slice", false, true, false},
-    {"--window", "-t slice", false, true, false},
     {"--segments", "-t slice", false, true, false},
     {"--suffix", "-t slice", false, true, false},
     {"--compress", "-t slice", false, true, false},
@@ -170,7 +168,8 @@ static bool check_url_arguments(const argparse::ArgumentParser& program, DumpTyp
     return true;
   }
 
-  if (program.is_used("--url_filter") && trim_copy(program.get<std::string>("--url_filter")).empty()) {
+  if (program.is_used("--url_filter") &&
+      vlink::Helpers::trim_string_view(program.get<std::string>("--url_filter")).empty()) {
     std::cerr << "Option --url_filter requires at least one non-space keyword." << std::endl;
     return false;
   }
@@ -198,6 +197,11 @@ static bool check_event_dependencies(const argparse::ArgumentParser& program, Du
     return true;
   }
 
+  if (program.is_used("--event") && vlink::Helpers::trim_string_view(program.get<std::string>("--event")).empty()) {
+    std::cerr << "Option --event requires a non-space expression." << std::endl;
+    return false;
+  }
+
   if (program.is_used("--event") && !option_used(program, "-c", "--condition")) {
     std::cerr << "Option --event requires -c/--condition to bind expression variables." << std::endl;
     return false;
@@ -218,7 +222,7 @@ static bool check_event_dependencies(const argparse::ArgumentParser& program, Du
 
 static bool check_dump_export_only(const argparse::ArgumentParser& program, DumpType type, bool has_bag_input,
                                    bool url_argument_used, const std::string& target_url) {
-  if (!url_argument_used && is_dump_export_type(type)) {
+  if (is_dump_export_type(type) && (!url_argument_used || target_url == "*")) {
     std::cerr << "A target URL is required for -t " << dump_type_to_string(type)
               << ". Use '*' only with slice/scan when selecting all topics." << std::endl;
     return false;
@@ -231,6 +235,11 @@ static bool check_dump_export_only(const argparse::ArgumentParser& program, Dump
 
   if (program.is_used("--native") && has_bag_input) {
     std::cerr << "Option --native is only valid without -f/--bag_file." << std::endl;
+    return false;
+  }
+
+  if (program.is_used("--plugin") && !has_bag_input) {
+    std::cerr << "Option --plugin requires -f/--bag_file." << std::endl;
     return false;
   }
 
@@ -277,6 +286,11 @@ static bool check_quality_constraints(const argparse::ArgumentParser& program, D
 static bool check_slice_segment_sources(const argparse::ArgumentParser& program, DumpType type) {
   if (type != DumpType::kSlice) {
     return true;
+  }
+
+  if (program.is_used("--filter") && vlink::Helpers::trim_string_view(program.get<std::string>("--filter")).empty()) {
+    std::cerr << "Option --filter requires a non-space expression." << std::endl;
+    return false;
   }
 
   int segment_plan_count = 0;

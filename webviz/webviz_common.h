@@ -125,6 +125,21 @@ inline uint64_t hash_cache_string(std::string_view value) {
 
 inline uint64_t pointer_cache_identity(const void* ptr) noexcept { return reinterpret_cast<uintptr_t>(ptr); }
 
+struct ActiveCacheContext final {
+  uint64_t owner_id{0};
+#ifdef VLINK_HAS_FBS_COMPILER
+  uint64_t fbs_schema_generation{0};
+  uint64_t next_fbs_schema_generation{0};
+#endif
+};
+
+inline ActiveCacheContext& get_active_cache_context() {
+  thread_local ActiveCacheContext context;
+  return context;
+}
+
+inline void activate_cache_owner(uint64_t owner_id) noexcept { get_active_cache_context().owner_id = owner_id; }
+
 template <typename UIntT>
 inline UIntT checked_unsigned_cast(double value, UIntT fallback = 0) {
   static_assert(std::is_integral_v<UIntT> && std::is_unsigned_v<UIntT>,
@@ -249,6 +264,48 @@ inline const reflection::Schema* get_verified_fbs_schema(std::string_view ser, c
   return schema;
 }
 
+struct ThreadLocalFbsSchemaCache final {
+  uint64_t owner_id{0};
+  uint64_t generation{0};
+  std::string ser;
+  std::string schema_data;
+  const reflection::Schema* schema{nullptr};
+};
+
+inline ThreadLocalFbsSchemaCache& get_thread_local_fbs_schema_cache() {
+  thread_local ThreadLocalFbsSchemaCache cache;
+  return cache;
+}
+
+template <typename ResolverT>
+inline bool resolve_thread_local_fbs_schema(const std::string& ser, uint64_t owner_id, ResolverT&& resolver,
+                                            const reflection::Schema*& out_schema) {
+  auto& cache = get_thread_local_fbs_schema_cache();
+  auto& context = get_active_cache_context();
+
+  if VUNLIKELY (cache.schema == nullptr || cache.owner_id != owner_id || cache.ser != ser) {
+    cache.schema_data.clear();
+    cache.schema = nullptr;
+    cache.generation = ++context.next_fbs_schema_generation;
+    context.fbs_schema_generation = cache.generation;
+
+    if VUNLIKELY (!resolver(ser, cache.schema_data)) {
+      cache.owner_id = 0;
+      cache.ser.clear();
+      out_schema = nullptr;
+      return false;
+    }
+
+    cache.owner_id = owner_id;
+    cache.ser = ser;
+    cache.schema = get_verified_fbs_schema(ser, cache.schema_data);
+  }
+
+  context.fbs_schema_generation = cache.generation;
+  out_schema = cache.schema;
+  return out_schema != nullptr;
+}
+
 inline bool verify_fbs_payload(const reflection::Schema& schema, const Bytes& raw, std::string_view ser,
                                std::string_view context = {}) {
   if VUNLIKELY (!schema.root_table()) {
@@ -314,6 +371,7 @@ struct ProtoFieldLookupCacheEntry final {
 struct ProtoFieldLookupCacheStore final {
   std::unordered_map<uint64_t, std::vector<ProtoFieldLookupCacheEntry>> buckets;
   std::vector<std::pair<uint64_t, ProtoFieldLookupCacheEntry>> insertion_order;
+  uint64_t owner_id{0};
   size_t size{0};
   uint64_t last_hash{0};
   const google::protobuf::Descriptor* last_descriptor{nullptr};
@@ -347,6 +405,8 @@ struct FbsFieldLookupCacheEntry final {
 struct FbsFieldLookupCacheStore final {
   std::unordered_map<uint64_t, std::vector<FbsFieldLookupCacheEntry>> buckets;
   std::vector<std::pair<uint64_t, FbsFieldLookupCacheEntry>> insertion_order;
+  uint64_t owner_id{0};
+  uint64_t schema_generation{0};
   size_t size{0};
   uint64_t last_hash{0};
   const reflection::Object* last_object{nullptr};
@@ -370,7 +430,28 @@ struct FbsIndexedFieldRef final {
   std::vector<FbsPathStep> steps;
   size_t value_idx{0};
 };
+
+struct FbsObjectView final {
+  const reflection::Object* object{nullptr};
+  const flatbuffers::Table* table{nullptr};
+  const flatbuffers::Struct* structure{nullptr};
+
+  explicit operator bool() const { return table != nullptr || structure != nullptr; }
+};
+
+inline bool is_fbs_field_present(const FbsObjectView& view, const reflection::Field& field) {
+  return view.structure != nullptr || (view.table != nullptr && view.table->CheckField(field.offset()));
+}
 #endif
+
+inline bool mul_size(size_t a, size_t b, size_t& out) {
+  if VUNLIKELY (a != 0 && b > std::numeric_limits<size_t>::max() / a) {
+    return false;
+  }
+
+  out = a * b;
+  return true;
+}
 
 inline bool tokenize_field_path(std::string_view path, std::vector<FieldPathToken>& tokens) {
   auto is_ident_start = [](char ch) -> bool { return std::isalpha(static_cast<unsigned char>(ch)) != 0 || ch == '_'; };
@@ -508,6 +589,19 @@ inline const std::vector<FieldPathToken>* get_tokenized_field_path(std::string_v
 inline const google::protobuf::FieldDescriptor* find_proto_field_cached(const google::protobuf::Descriptor& descriptor,
                                                                         std::string_view field_name) {
   thread_local ProtoFieldLookupCacheStore cache;
+  const auto owner_id = get_active_cache_context().owner_id;
+
+  if VUNLIKELY (cache.owner_id != owner_id) {
+    cache.last_descriptor = nullptr;
+    cache.last_field = nullptr;
+    cache.last_field_name.clear();
+    cache.buckets.clear();
+    cache.insertion_order.clear();
+    cache.size = 0;
+    cache.last_hash = 0;
+    cache.owner_id = owner_id;
+  }
+
   auto hash =
       Helpers::hash_combine(reinterpret_cast<uintptr_t>(&descriptor), std::hash<std::string_view>{}(field_name));
 
@@ -1228,6 +1322,7 @@ inline constexpr size_t kExpressionCacheLimit = 256;
 struct CachedExpressionStore final {
   std::unordered_map<std::string, CachedExpression> proto_cache;
   std::vector<std::string> proto_insertion_order;
+  uint64_t proto_owner_id{0};
   uint64_t proto_generation{0};
   std::string last_proto_expression;
   const google::protobuf::Descriptor* last_proto_desc{nullptr};
@@ -1236,6 +1331,8 @@ struct CachedExpressionStore final {
 #ifdef VLINK_HAS_FBS_COMPILER
   std::unordered_map<std::string, CachedExpression> fbs_cache;
   std::vector<std::string> fbs_insertion_order;
+  uint64_t fbs_owner_id{0};
+  uint64_t fbs_schema_generation{0};
   uint64_t fbs_generation{0};
   std::string last_fbs_expression;
   const reflection::Object* last_fbs_obj{nullptr};
@@ -1258,6 +1355,18 @@ inline double evaluate_expression_with_msg(const std::string& expression, const 
 
   const auto* desc = msg.GetDescriptor();
   auto& cache_store = get_expr_cache_store();
+  const auto owner_id = get_active_cache_context().owner_id;
+
+  if VUNLIKELY (cache_store.proto_owner_id != owner_id) {
+    cache_store.last_proto_cached = nullptr;
+    cache_store.last_proto_desc = nullptr;
+    cache_store.last_proto_expression.clear();
+    cache_store.proto_cache.clear();
+    cache_store.proto_insertion_order.clear();
+    ++cache_store.proto_generation;
+    cache_store.last_proto_generation = 0;
+    cache_store.proto_owner_id = owner_id;
+  }
 
   if VLIKELY (cache_store.last_proto_generation == cache_store.proto_generation &&
               cache_store.last_proto_expression == expression && cache_store.last_proto_desc == desc &&
@@ -1494,6 +1603,20 @@ inline const reflection::Field* find_fbs_field(const reflection::Object& obj, st
   }
 
   thread_local FbsFieldLookupCacheStore cache;
+  const auto& context = get_active_cache_context();
+
+  if VUNLIKELY (cache.owner_id != context.owner_id || cache.schema_generation != context.fbs_schema_generation) {
+    cache.last_object = nullptr;
+    cache.last_field = nullptr;
+    cache.last_field_name.clear();
+    cache.buckets.clear();
+    cache.insertion_order.clear();
+    cache.size = 0;
+    cache.last_hash = 0;
+    cache.owner_id = context.owner_id;
+    cache.schema_generation = context.fbs_schema_generation;
+  }
+
   auto hash = Helpers::hash_combine(reinterpret_cast<uintptr_t>(&obj), std::hash<std::string_view>{}(field_name));
 
   if VLIKELY (cache.last_object == &obj && cache.last_hash == hash && cache.last_field_name == field_name) {
@@ -1555,14 +1678,139 @@ inline const reflection::Field* find_fbs_field(const reflection::Object& obj, st
   return cache.last_field;
 }
 
-inline double resolve_nested_fbs_double(const flatbuffers::Table& table, const reflection::Object& obj,
-                                        const reflection::Schema& schema, const std::string& path) {
+inline bool is_fbs_byte_vector(const reflection::Field& field) {
+  const auto element = field.type()->element();
+  return field.type()->base_type() == reflection::Vector &&
+         (element == reflection::Byte || element == reflection::UByte);
+}
+
+inline const reflection::Object* find_fbs_object(const reflection::Schema& schema, int32_t type_index) {
+  if VUNLIKELY (!schema.objects() || type_index < 0 || static_cast<uint32_t>(type_index) >= schema.objects()->size()) {
+    return nullptr;
+  }
+
+  return schema.objects()->Get(static_cast<uint32_t>(type_index));
+}
+
+inline const flatbuffers::VectorOfAny* get_fbs_vector(const FbsObjectView& view, const reflection::Field& field) {
+  if VUNLIKELY (!view.table || field.type()->base_type() != reflection::Vector) {
+    return nullptr;
+  }
+
+  return flatbuffers::GetFieldAnyV(*view.table, field);
+}
+
+inline bool resolve_fbs_object_field(const FbsObjectView& parent, const reflection::Field& field,
+                                     const reflection::Object& child_obj, FbsObjectView& child) {
+  if VUNLIKELY (!parent || field.type()->base_type() != reflection::Obj) {
+    return false;
+  }
+
+  child = {};
+  child.object = &child_obj;
+
+  if (child_obj.is_struct()) {
+    child.structure = parent.table ? flatbuffers::GetFieldStruct(*parent.table, field)
+                                   : flatbuffers::GetFieldStruct(*parent.structure, field);
+    return child.structure != nullptr;
+  }
+
+  if VUNLIKELY (!parent.table) {
+    return false;
+  }
+
+  child.table = flatbuffers::GetFieldT(*parent.table, field);
+  return child.table != nullptr;
+}
+
+inline bool resolve_fbs_vector_object_unchecked(const flatbuffers::VectorOfAny& vec, size_t index,
+                                                const reflection::Object& child_obj, FbsObjectView& child) {
+  child = {};
+  child.object = &child_obj;
+
+  if (child_obj.is_struct()) {
+    if VUNLIKELY (child_obj.bytesize() <= 0) {
+      return false;
+    }
+
+    child.structure = flatbuffers::GetAnyVectorElemAddressOf<const flatbuffers::Struct>(
+        &vec, index, static_cast<size_t>(child_obj.bytesize()));
+    return child.structure != nullptr;
+  }
+
+  child.table = flatbuffers::GetAnyVectorElemPointer<const flatbuffers::Table>(&vec, index);
+  return child.table != nullptr;
+}
+
+template <typename Func>
+inline void for_each_fbs_vector_object(const FbsObjectView& parent, const reflection::Field& field,
+                                       const reflection::Schema& schema, Func&& func) {
+  if VUNLIKELY (field.type()->base_type() != reflection::Vector || field.type()->element() != reflection::Obj) {
+    return;
+  }
+
+  const auto* vec = get_fbs_vector(parent, field);
+  const auto* child_obj = find_fbs_object(schema, field.type()->index());
+
+  if VUNLIKELY (!vec || !child_obj) {
+    return;
+  }
+
+  for (flatbuffers::uoffset_t i = 0; i < vec->size(); ++i) {
+    FbsObjectView child;
+
+    if VLIKELY (resolve_fbs_vector_object_unchecked(*vec, i, *child_obj, child)) {
+      func(child, i);
+    }
+  }
+}
+
+inline bool is_fbs_numeric_type(reflection::BaseType type);
+
+inline double get_fbs_field_as_double(const FbsObjectView& view, const reflection::Field& field) {
+  if VUNLIKELY (!view) {
+    return 0.0;
+  }
+
+  switch (field.type()->base_type()) {
+    case reflection::Float:
+    case reflection::Double:
+      return view.table ? flatbuffers::GetAnyFieldF(*view.table, field)
+                        : flatbuffers::GetAnyFieldF(*view.structure, field);
+    case reflection::ULong:
+      return static_cast<double>(view.table ? flatbuffers::GetFieldI<uint64_t>(*view.table, field)
+                                            : view.structure->GetField<uint64_t>(field.offset()));
+    case reflection::Byte:
+    case reflection::Short:
+    case reflection::Int:
+    case reflection::Long:
+    case reflection::UByte:
+    case reflection::UShort:
+    case reflection::UInt:
+    case reflection::Bool:
+      return static_cast<double>(view.table ? flatbuffers::GetAnyFieldI(*view.table, field)
+                                            : flatbuffers::GetAnyFieldI(*view.structure, field));
+    default:
+      return 0.0;
+  }
+}
+
+inline std::string get_fbs_field_as_string(const FbsObjectView& view, const reflection::Field& field,
+                                           const reflection::Schema* schema = nullptr) {
+  if VUNLIKELY (field.type()->base_type() != reflection::String || !view.table) {
+    return {};
+  }
+
+  return flatbuffers::GetAnyFieldS(*view.table, field, schema);
+}
+
+inline double resolve_nested_fbs_double(const FbsObjectView& root, const reflection::Schema& schema,
+                                        const std::string& path, bool require_present = false) {
   constexpr double kNotFound = std::numeric_limits<double>::quiet_NaN();
-  const auto* current_table = &table;
-  const auto* current_obj = &obj;
+  FbsObjectView current = root;
   const auto* tokens = get_tokenized_field_path(path);
 
-  if VUNLIKELY (!tokens) {
+  if VUNLIKELY (!current.object || !current || !tokens) {
     return kNotFound;
   }
 
@@ -1571,26 +1819,21 @@ inline double resolve_nested_fbs_double(const flatbuffers::Table& table, const r
       return kNotFound;
     }
 
-    const auto* field = find_fbs_field(*current_obj, (*tokens)[i].name);
+    const auto* field = find_fbs_field(*current.object, (*tokens)[i].name);
 
     if VUNLIKELY (!field) {
       return kNotFound;
     }
 
     if VLIKELY (field->type()->base_type() == reflection::Obj) {
-      const auto* sub_table = flatbuffers::GetFieldT(*current_table, *field);
+      const auto* child_obj = find_fbs_object(schema, field->type()->index());
+      FbsObjectView child;
 
-      if VUNLIKELY (!sub_table || !schema.objects()) {
+      if VUNLIKELY (!child_obj || !resolve_fbs_object_field(current, *field, *child_obj, child)) {
         return kNotFound;
       }
 
-      current_obj = schema.objects()->Get(static_cast<uint32_t>(field->type()->index()));
-
-      if VUNLIKELY (!current_obj) {
-        return kNotFound;
-      }
-
-      current_table = sub_table;
+      current = child;
       continue;
     }
 
@@ -1599,7 +1842,7 @@ inline double resolve_nested_fbs_double(const flatbuffers::Table& table, const r
         return kNotFound;
       }
 
-      const auto* vec = flatbuffers::GetFieldAnyV(*current_table, *field);
+      const auto* vec = get_fbs_vector(current, *field);
       auto index = (*tokens)[i + 1].index;
 
       if VUNLIKELY (!vec || index >= vec->size()) {
@@ -1609,19 +1852,14 @@ inline double resolve_nested_fbs_double(const flatbuffers::Table& table, const r
       const auto elem_type = field->type()->element();
 
       if VLIKELY (elem_type == reflection::Obj) {
-        const auto* sub_table = flatbuffers::GetAnyVectorElemPointer<const flatbuffers::Table>(vec, index);
+        const auto* child_obj = find_fbs_object(schema, field->type()->index());
+        FbsObjectView child;
 
-        if VUNLIKELY (!sub_table || !schema.objects()) {
+        if VUNLIKELY (!child_obj || !resolve_fbs_vector_object_unchecked(*vec, index, *child_obj, child)) {
           return kNotFound;
         }
 
-        current_obj = schema.objects()->Get(static_cast<uint32_t>(field->type()->index()));
-
-        if VUNLIKELY (!current_obj) {
-          return kNotFound;
-        }
-
-        current_table = sub_table;
+        current = child;
         ++i;
         continue;
       }
@@ -1634,6 +1872,8 @@ inline double resolve_nested_fbs_double(const flatbuffers::Table& table, const r
         case reflection::Float:
         case reflection::Double:
           return flatbuffers::GetAnyVectorElemF(vec, elem_type, index);
+        case reflection::ULong:
+          return static_cast<double>(flatbuffers::ReadScalar<uint64_t>(vec->Data() + sizeof(uint64_t) * index));
         case reflection::Byte:
         case reflection::Short:
         case reflection::Int:
@@ -1641,7 +1881,6 @@ inline double resolve_nested_fbs_double(const flatbuffers::Table& table, const r
         case reflection::UByte:
         case reflection::UShort:
         case reflection::UInt:
-        case reflection::ULong:
         case reflection::Bool:
           return static_cast<double>(flatbuffers::GetAnyVectorElemI(vec, elem_type, index));
         default:
@@ -1653,26 +1892,24 @@ inline double resolve_nested_fbs_double(const flatbuffers::Table& table, const r
       return kNotFound;
     }
 
-    switch (field->type()->base_type()) {
-      case reflection::Float:
-      case reflection::Double:
-        return flatbuffers::GetAnyFieldF(*current_table, *field);
-      case reflection::Byte:
-      case reflection::Short:
-      case reflection::Int:
-      case reflection::Long:
-      case reflection::UByte:
-      case reflection::UShort:
-      case reflection::UInt:
-      case reflection::ULong:
-      case reflection::Bool:
-        return static_cast<double>(flatbuffers::GetAnyFieldI(*current_table, *field));
-      default:
-        return kNotFound;
+    if VUNLIKELY (!is_fbs_numeric_type(field->type()->base_type())) {
+      return kNotFound;
     }
+
+    if VUNLIKELY (require_present && !is_fbs_field_present(current, *field)) {
+      return kNotFound;
+    }
+
+    return get_fbs_field_as_double(current, *field);
   }
 
   return kNotFound;
+}
+
+inline double resolve_nested_fbs_double(const flatbuffers::Table& table, const reflection::Object& obj,
+                                        const reflection::Schema& schema, const std::string& path,
+                                        bool require_present = false) {
+  return resolve_nested_fbs_double(FbsObjectView{&obj, &table, nullptr}, schema, path, require_present);
 }
 
 inline double safe_nested_fbs_double(const flatbuffers::Table& table, const reflection::Object& obj,
@@ -1681,18 +1918,17 @@ inline double safe_nested_fbs_double(const flatbuffers::Table& table, const refl
   return std::isnan(val) ? 0.0 : val;
 }
 
-inline std::string resolve_nested_fbs_string(const flatbuffers::Table& table, const reflection::Object& obj,
-                                             const reflection::Schema& schema, const std::string& path,
-                                             bool* found = nullptr) {
-  const auto* current_table = &table;
-  const auto* current_obj = &obj;
+inline std::string resolve_nested_fbs_string(const FbsObjectView& root, const reflection::Schema& schema,
+                                             const std::string& path, bool* found = nullptr,
+                                             bool require_present = false) {
+  FbsObjectView current = root;
   const auto* tokens = get_tokenized_field_path(path);
 
   if VLIKELY (found) {
     *found = false;
   }
 
-  if VUNLIKELY (!tokens) {
+  if VUNLIKELY (!current.object || !current || !tokens) {
     return {};
   }
 
@@ -1701,26 +1937,21 @@ inline std::string resolve_nested_fbs_string(const flatbuffers::Table& table, co
       return {};
     }
 
-    const auto* field = find_fbs_field(*current_obj, (*tokens)[i].name);
+    const auto* field = find_fbs_field(*current.object, (*tokens)[i].name);
 
     if VUNLIKELY (!field) {
       return {};
     }
 
     if VLIKELY (field->type()->base_type() == reflection::Obj) {
-      const auto* sub_table = flatbuffers::GetFieldT(*current_table, *field);
+      const auto* child_obj = find_fbs_object(schema, field->type()->index());
+      FbsObjectView child;
 
-      if VUNLIKELY (!sub_table || !schema.objects()) {
+      if VUNLIKELY (!child_obj || !resolve_fbs_object_field(current, *field, *child_obj, child)) {
         return {};
       }
 
-      current_obj = schema.objects()->Get(static_cast<uint32_t>(field->type()->index()));
-
-      if VUNLIKELY (!current_obj) {
-        return {};
-      }
-
-      current_table = sub_table;
+      current = child;
       continue;
     }
 
@@ -1729,7 +1960,7 @@ inline std::string resolve_nested_fbs_string(const flatbuffers::Table& table, co
         return {};
       }
 
-      const auto* vec = flatbuffers::GetFieldAnyV(*current_table, *field);
+      const auto* vec = get_fbs_vector(current, *field);
       auto index = (*tokens)[i + 1].index;
 
       if VUNLIKELY (!vec || index >= vec->size()) {
@@ -1739,19 +1970,14 @@ inline std::string resolve_nested_fbs_string(const flatbuffers::Table& table, co
       const auto elem_type = field->type()->element();
 
       if VLIKELY (elem_type == reflection::Obj) {
-        const auto* sub_table = flatbuffers::GetAnyVectorElemPointer<const flatbuffers::Table>(vec, index);
+        const auto* child_obj = find_fbs_object(schema, field->type()->index());
+        FbsObjectView child;
 
-        if VUNLIKELY (!sub_table || !schema.objects()) {
+        if VUNLIKELY (!child_obj || !resolve_fbs_vector_object_unchecked(*vec, index, *child_obj, child)) {
           return {};
         }
 
-        current_obj = schema.objects()->Get(static_cast<uint32_t>(field->type()->index()));
-
-        if VUNLIKELY (!current_obj) {
-          return {};
-        }
-
-        current_table = sub_table;
+        current = child;
         ++i;
         continue;
       }
@@ -1775,10 +2001,14 @@ inline std::string resolve_nested_fbs_string(const flatbuffers::Table& table, co
     }
 
     if VLIKELY (field->type()->base_type() == reflection::String) {
+      if VUNLIKELY (require_present && !is_fbs_field_present(current, *field)) {
+        return {};
+      }
+
       if VLIKELY (found) {
         *found = true;
       }
-      return flatbuffers::GetAnyFieldS(*current_table, *field, nullptr);
+      return get_fbs_field_as_string(current, *field);
     }
 
     return {};
@@ -1787,38 +2017,37 @@ inline std::string resolve_nested_fbs_string(const flatbuffers::Table& table, co
   return {};
 }
 
-inline bool resolve_fbs_table_path(const flatbuffers::Table& root_table, const reflection::Object& root_obj,
-                                   const reflection::Schema& schema, const std::vector<FieldPathToken>& tokens,
-                                   size_t token_count, const flatbuffers::Table*& out_table,
-                                   const reflection::Object*& out_obj) {
-  const auto* current_table = &root_table;
-  const auto* current_obj = &root_obj;
+inline std::string resolve_nested_fbs_string(const flatbuffers::Table& table, const reflection::Object& obj,
+                                             const reflection::Schema& schema, const std::string& path,
+                                             bool* found = nullptr, bool require_present = false) {
+  return resolve_nested_fbs_string(FbsObjectView{&obj, &table, nullptr}, schema, path, found, require_present);
+}
+
+inline bool resolve_fbs_object_path(const flatbuffers::Table& root_table, const reflection::Object& root_obj,
+                                    const reflection::Schema& schema, const std::vector<FieldPathToken>& tokens,
+                                    size_t token_count, FbsObjectView& out) {
+  FbsObjectView current{&root_obj, &root_table, nullptr};
 
   for (size_t i = 0; i < token_count; ++i) {
     if VUNLIKELY (tokens[i].is_index) {
       return false;
     }
 
-    const auto* field = find_fbs_field(*current_obj, tokens[i].name);
+    const auto* field = find_fbs_field(*current.object, tokens[i].name);
 
     if VUNLIKELY (!field) {
       return false;
     }
 
     if VLIKELY (field->type()->base_type() == reflection::Obj) {
-      const auto* sub_table = flatbuffers::GetFieldT(*current_table, *field);
+      const auto* child_obj = find_fbs_object(schema, field->type()->index());
+      FbsObjectView child;
 
-      if VUNLIKELY (!sub_table || !schema.objects()) {
+      if VUNLIKELY (!child_obj || !resolve_fbs_object_field(current, *field, *child_obj, child)) {
         return false;
       }
 
-      current_obj = schema.objects()->Get(static_cast<uint32_t>(field->type()->index()));
-
-      if VUNLIKELY (!current_obj) {
-        return false;
-      }
-
-      current_table = sub_table;
+      current = child;
       continue;
     }
 
@@ -1827,30 +2056,25 @@ inline bool resolve_fbs_table_path(const flatbuffers::Table& root_table, const r
         return false;
       }
 
-      if VUNLIKELY (field->type()->element() != reflection::Obj || !schema.objects()) {
-        return false;
-      }
-
-      const auto* vec = flatbuffers::GetFieldAnyV(*current_table, *field);
+      const auto* vec = get_fbs_vector(current, *field);
       auto index = tokens[i + 1].index;
 
       if VUNLIKELY (!vec || index >= vec->size()) {
         return false;
       }
 
-      const auto* sub_table = flatbuffers::GetAnyVectorElemPointer<const flatbuffers::Table>(vec, index);
-
-      if VUNLIKELY (!sub_table) {
+      if VUNLIKELY (field->type()->element() != reflection::Obj) {
         return false;
       }
 
-      current_obj = schema.objects()->Get(static_cast<uint32_t>(field->type()->index()));
+      const auto* child_obj = find_fbs_object(schema, field->type()->index());
+      FbsObjectView child;
 
-      if VUNLIKELY (!current_obj) {
+      if VUNLIKELY (!child_obj || !resolve_fbs_vector_object_unchecked(*vec, index, *child_obj, child)) {
         return false;
       }
 
-      current_table = sub_table;
+      current = child;
       ++i;
       continue;
     }
@@ -1858,27 +2082,13 @@ inline bool resolve_fbs_table_path(const flatbuffers::Table& root_table, const r
     return false;
   }
 
-  out_table = current_table;
-  out_obj = current_obj;
+  out = current;
   return true;
-}
-
-inline bool resolve_fbs_table_path(const flatbuffers::Table& root_table, const reflection::Object& root_obj,
-                                   const reflection::Schema& schema, const std::string& path,
-                                   const flatbuffers::Table*& out_table, const reflection::Object*& out_obj) {
-  const auto* tokens = get_tokenized_field_path(path);
-
-  if VUNLIKELY (!tokens) {
-    return false;
-  }
-
-  return resolve_fbs_table_path(root_table, root_obj, schema, *tokens, tokens->size(), out_table, out_obj);
 }
 
 inline bool resolve_fbs_parent_field_path(const flatbuffers::Table& root_table, const reflection::Object& root_obj,
                                           const reflection::Schema& schema, const std::string& path,
-                                          const flatbuffers::Table*& out_parent,
-                                          const reflection::Object*& out_parent_obj, std::string& out_field) {
+                                          FbsObjectView& out_parent, std::string& out_field) {
   const auto* tokens = get_tokenized_field_path(path);
 
   if VUNLIKELY (!tokens || tokens->empty() || tokens->back().is_index) {
@@ -1886,14 +2096,12 @@ inline bool resolve_fbs_parent_field_path(const flatbuffers::Table& root_table, 
   }
 
   if VUNLIKELY (tokens->size() == 1U) {
-    out_parent = &root_table;
-    out_parent_obj = &root_obj;
+    out_parent = {&root_obj, &root_table, nullptr};
     out_field = tokens->front().name;
     return true;
   }
 
-  if VUNLIKELY (!resolve_fbs_table_path(root_table, root_obj, schema, *tokens, tokens->size() - 1, out_parent,
-                                        out_parent_obj)) {
+  if VUNLIKELY (!resolve_fbs_object_path(root_table, root_obj, schema, *tokens, tokens->size() - 1, out_parent)) {
     return false;
   }
 
@@ -1917,26 +2125,6 @@ inline bool is_fbs_numeric_type(reflection::BaseType type) {
       return true;
     default:
       return false;
-  }
-}
-
-inline double get_fbs_field_as_double(const flatbuffers::Table& table, const reflection::Field& field) {
-  switch (field.type()->base_type()) {
-    case reflection::Float:
-    case reflection::Double:
-      return flatbuffers::GetAnyFieldF(table, field);
-    case reflection::Byte:
-    case reflection::Short:
-    case reflection::Int:
-    case reflection::Long:
-    case reflection::UByte:
-    case reflection::UShort:
-    case reflection::UInt:
-    case reflection::ULong:
-    case reflection::Bool:
-      return static_cast<double>(flatbuffers::GetAnyFieldI(table, field));
-    default:
-      return 0.0;
   }
 }
 
@@ -1980,8 +2168,8 @@ inline bool compile_fbs_numeric_path(const reflection::Object& root_obj, const r
 
       const auto elem_type = field->type()->element();
 
-      if VLIKELY (elem_type == reflection::Obj && schema.objects()) {
-        step.next_obj = schema.objects()->Get(static_cast<uint32_t>(field->type()->index()));
+      if VLIKELY (elem_type == reflection::Obj) {
+        step.next_obj = find_fbs_object(schema, field->type()->index());
 
         if VUNLIKELY (!step.next_obj) {
           steps.clear();
@@ -2003,8 +2191,8 @@ inline bool compile_fbs_numeric_path(const reflection::Object& root_obj, const r
       return false;
     }
 
-    if VLIKELY (field->type()->base_type() == reflection::Obj && schema.objects()) {
-      step.next_obj = schema.objects()->Get(static_cast<uint32_t>(field->type()->index()));
+    if VLIKELY (field->type()->base_type() == reflection::Obj) {
+      step.next_obj = find_fbs_object(schema, field->type()->index());
 
       if VUNLIKELY (!step.next_obj) {
         steps.clear();
@@ -2029,20 +2217,19 @@ inline bool compile_fbs_numeric_path(const reflection::Object& root_obj, const r
   return false;
 }
 
-inline double resolve_fbs_numeric_path_fast(const flatbuffers::Table& root_table,
-                                            const std::vector<FbsPathStep>& steps) {
+inline double resolve_fbs_numeric_path_fast(const FbsObjectView& root, const std::vector<FbsPathStep>& steps) {
   constexpr double kNotFound = std::numeric_limits<double>::quiet_NaN();
-  const auto* current_table = &root_table;
+  FbsObjectView current = root;
 
   for (const auto& step : steps) {
-    if VUNLIKELY (!current_table || !step.field) {
+    if VUNLIKELY (!current || !step.field) {
       return kNotFound;
     }
 
     const auto* field = step.field;
 
     if VUNLIKELY (field->type()->base_type() == reflection::Vector) {
-      const auto* vec = flatbuffers::GetFieldAnyV(*current_table, *field);
+      const auto* vec = get_fbs_vector(current, *field);
       auto index = step.index;
 
       if VUNLIKELY (!vec || index >= vec->size()) {
@@ -2052,13 +2239,13 @@ inline double resolve_fbs_numeric_path_fast(const flatbuffers::Table& root_table
       const auto elem_type = field->type()->element();
 
       if VLIKELY (elem_type == reflection::Obj) {
-        const auto* sub_table = flatbuffers::GetAnyVectorElemPointer<const flatbuffers::Table>(vec, index);
+        FbsObjectView child;
 
-        if VUNLIKELY (!sub_table) {
+        if VUNLIKELY (!step.next_obj || !resolve_fbs_vector_object_unchecked(*vec, index, *step.next_obj, child)) {
           return kNotFound;
         }
 
-        current_table = sub_table;
+        current = child;
         continue;
       }
 
@@ -2066,6 +2253,8 @@ inline double resolve_fbs_numeric_path_fast(const flatbuffers::Table& root_table
         case reflection::Float:
         case reflection::Double:
           return flatbuffers::GetAnyVectorElemF(vec, elem_type, index);
+        case reflection::ULong:
+          return static_cast<double>(flatbuffers::ReadScalar<uint64_t>(vec->Data() + sizeof(uint64_t) * index));
         case reflection::Byte:
         case reflection::Short:
         case reflection::Int:
@@ -2073,7 +2262,6 @@ inline double resolve_fbs_numeric_path_fast(const flatbuffers::Table& root_table
         case reflection::UByte:
         case reflection::UShort:
         case reflection::UInt:
-        case reflection::ULong:
         case reflection::Bool:
           return static_cast<double>(flatbuffers::GetAnyVectorElemI(vec, elem_type, index));
         default:
@@ -2082,17 +2270,17 @@ inline double resolve_fbs_numeric_path_fast(const flatbuffers::Table& root_table
     }
 
     if VLIKELY (field->type()->base_type() == reflection::Obj) {
-      const auto* sub_table = flatbuffers::GetFieldT(*current_table, *field);
+      FbsObjectView child;
 
-      if VUNLIKELY (!sub_table) {
+      if VUNLIKELY (!step.next_obj || !resolve_fbs_object_field(current, *field, *step.next_obj, child)) {
         return kNotFound;
       }
 
-      current_table = sub_table;
+      current = child;
       continue;
     }
 
-    return get_fbs_field_as_double(*current_table, *field);
+    return get_fbs_field_as_double(current, *field);
   }
 
   return kNotFound;
@@ -2125,8 +2313,8 @@ inline void collect_nested_numeric_fbs_fields(const reflection::Object& obj, con
       if VLIKELY (!prefix.empty()) {
         out.emplace_back(dot_path, make_expression_variable_name("fbs", out.size()));
       }
-    } else if VLIKELY (field->type()->base_type() == reflection::Obj && schema.objects()) {
-      const auto* sub_obj = schema.objects()->Get(static_cast<uint32_t>(field->type()->index()));
+    } else if VLIKELY (field->type()->base_type() == reflection::Obj) {
+      const auto* sub_obj = find_fbs_object(schema, field->type()->index());
 
       if VLIKELY (sub_obj) {
         collect_nested_numeric_fbs_fields(*sub_obj, schema, dot_path, out, depth + 1);
@@ -2137,12 +2325,13 @@ inline void collect_nested_numeric_fbs_fields(const reflection::Object& obj, con
 
 #ifdef VLINK_ENABLE_EXPRTK
 
-inline double evaluate_expression_with_fbs(const std::string& expression, const flatbuffers::Table& table,
-                                           const reflection::Object& obj, const reflection::Schema& schema) {
-  if VLIKELY (expression.empty()) {
+inline double evaluate_expression_with_fbs(const std::string& expression, const FbsObjectView& root,
+                                           const reflection::Schema& schema) {
+  if VUNLIKELY (expression.empty() || !root || !root.object) {
     return 0.0;
   }
 
+  const auto& obj = *root.object;
   const auto* obj_name = obj.name();
 
   if VUNLIKELY (!obj_name) {
@@ -2150,6 +2339,20 @@ inline double evaluate_expression_with_fbs(const std::string& expression, const 
   }
 
   auto& cache_store = get_expr_cache_store();
+  const auto& context = get_active_cache_context();
+
+  if VUNLIKELY (cache_store.fbs_owner_id != context.owner_id ||
+                cache_store.fbs_schema_generation != context.fbs_schema_generation) {
+    cache_store.last_fbs_cached = nullptr;
+    cache_store.last_fbs_obj = nullptr;
+    cache_store.last_fbs_expression.clear();
+    cache_store.fbs_cache.clear();
+    cache_store.fbs_insertion_order.clear();
+    ++cache_store.fbs_generation;
+    cache_store.last_fbs_generation = 0;
+    cache_store.fbs_owner_id = context.owner_id;
+    cache_store.fbs_schema_generation = context.fbs_schema_generation;
+  }
 
   if VLIKELY (cache_store.last_fbs_generation == cache_store.fbs_generation &&
               cache_store.last_fbs_expression == expression && cache_store.last_fbs_obj == &obj &&
@@ -2157,11 +2360,11 @@ inline double evaluate_expression_with_fbs(const std::string& expression, const 
     auto& cached = *cache_store.last_fbs_cached;
 
     for (const auto& field_ref : cached.fbs_direct_fields) {
-      cached.field_values[field_ref.value_idx] = get_fbs_field_as_double(table, *field_ref.field);
+      cached.field_values[field_ref.value_idx] = get_fbs_field_as_double(root, *field_ref.field);
     }
 
     for (const auto& field_ref : cached.fbs_indexed_field_refs) {
-      auto val = resolve_fbs_numeric_path_fast(table, field_ref.steps);
+      auto val = resolve_fbs_numeric_path_fast(root, field_ref.steps);
       cached.field_values[field_ref.value_idx] = std::isnan(val) ? 0.0 : val;
     }
 
@@ -2232,8 +2435,8 @@ inline double evaluate_expression_with_fbs(const std::string& expression, const 
 
           const auto elem_type = field->type()->element();
 
-          if VLIKELY (elem_type == reflection::Obj && schema.objects()) {
-            current_obj = schema.objects()->Get(static_cast<uint32_t>(field->type()->index()));
+          if VLIKELY (elem_type == reflection::Obj) {
+            current_obj = find_fbs_object(schema, field->type()->index());
             ++i;
             continue;
           }
@@ -2242,8 +2445,8 @@ inline double evaluate_expression_with_fbs(const std::string& expression, const 
           break;
         }
 
-        if VLIKELY (field->type()->base_type() == reflection::Obj && schema.objects()) {
-          current_obj = schema.objects()->Get(static_cast<uint32_t>(field->type()->index()));
+        if VLIKELY (field->type()->base_type() == reflection::Obj) {
+          current_obj = find_fbs_object(schema, field->type()->index());
           continue;
         }
 
@@ -2332,18 +2535,32 @@ inline double evaluate_expression_with_fbs(const std::string& expression, const 
   cache_store.last_fbs_generation = cache_store.fbs_generation;
 
   for (const auto& field_ref : cached.fbs_direct_fields) {
-    cached.field_values[field_ref.value_idx] = get_fbs_field_as_double(table, *field_ref.field);
+    cached.field_values[field_ref.value_idx] = get_fbs_field_as_double(root, *field_ref.field);
   }
 
   for (const auto& field_ref : cached.fbs_indexed_field_refs) {
-    auto val = resolve_fbs_numeric_path_fast(table, field_ref.steps);
+    auto val = resolve_fbs_numeric_path_fast(root, field_ref.steps);
     cached.field_values[field_ref.value_idx] = std::isnan(val) ? 0.0 : val;
   }
 
   return cached.expr.value();
 }
 
+inline double evaluate_expression_with_fbs(const std::string& expression, const flatbuffers::Table& table,
+                                           const reflection::Object& obj, const reflection::Schema& schema) {
+  return evaluate_expression_with_fbs(expression, FbsObjectView{&obj, &table, nullptr}, schema);
+}
+
 #else
+
+inline double evaluate_expression_with_fbs(const std::string& expression, const FbsObjectView& root,
+                                           const reflection::Schema& schema) {
+  (void)expression;
+  (void)root;
+  (void)schema;
+
+  return 0.0;
+}
 
 inline double evaluate_expression_with_fbs(const std::string& expression, const flatbuffers::Table& table,
                                            const reflection::Object& obj, const reflection::Schema& schema) {
@@ -2387,37 +2604,39 @@ inline double get_proto_double(const google::protobuf::Message& msg, std::string
 
   double value = 0.0;
 
-  if VLIKELY (field) {
-    switch (field->cpp_type()) {
-      case google::protobuf::FieldDescriptor::CPPTYPE_DOUBLE:
-        value = ref->GetDouble(msg, field);
-        break;
-      case google::protobuf::FieldDescriptor::CPPTYPE_FLOAT:
-        value = static_cast<double>(ref->GetFloat(msg, field));
-        break;
-      case google::protobuf::FieldDescriptor::CPPTYPE_INT32:
-        value = static_cast<double>(ref->GetInt32(msg, field));
-        break;
-      case google::protobuf::FieldDescriptor::CPPTYPE_INT64:
-        value = expression_integer_to_double(ref->GetInt64(msg, field));
-        break;
-      case google::protobuf::FieldDescriptor::CPPTYPE_UINT32:
-        value = static_cast<double>(ref->GetUInt32(msg, field));
-        break;
-      case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
-        value = expression_integer_to_double(ref->GetUInt64(msg, field));
-        break;
-      case google::protobuf::FieldDescriptor::CPPTYPE_BOOL:
-        value = ref->GetBool(msg, field) ? 1.0 : 0.0;
-        break;
-      case google::protobuf::FieldDescriptor::CPPTYPE_ENUM:
-        value = static_cast<double>(ref->GetEnumValue(msg, field));
-        break;
-      default:
-        break;
-    }
-  } else {
+  if VUNLIKELY (field == nullptr || field->is_repeated() || (field->has_presence() && !ref->HasField(msg, field))) {
     try_parse_numeric_default(mapping, value);
+    return value;
+  }
+
+  switch (field->cpp_type()) {
+    case google::protobuf::FieldDescriptor::CPPTYPE_DOUBLE:
+      value = ref->GetDouble(msg, field);
+      break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_FLOAT:
+      value = static_cast<double>(ref->GetFloat(msg, field));
+      break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_INT32:
+      value = static_cast<double>(ref->GetInt32(msg, field));
+      break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_INT64:
+      value = expression_integer_to_double(ref->GetInt64(msg, field));
+      break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_UINT32:
+      value = static_cast<double>(ref->GetUInt32(msg, field));
+      break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
+      value = expression_integer_to_double(ref->GetUInt64(msg, field));
+      break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_BOOL:
+      value = ref->GetBool(msg, field) ? 1.0 : 0.0;
+      break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_ENUM:
+      value = static_cast<double>(ref->GetEnumValue(msg, field));
+      break;
+    default:
+      try_parse_numeric_default(mapping, value);
+      break;
   }
 
   return value;
@@ -2710,8 +2929,7 @@ inline int64_t extract_proto_timestamp_ns(const google::protobuf::Message& msg, 
 inline int64_t extract_fbs_timestamp_ns(const flatbuffers::Table& table, const reflection::Object& obj,
                                         const reflection::Schema& schema, const std::string& timestamp_field,
                                         std::string_view timestamp_unit) {
-  const auto* current_table = &table;
-  const auto* current_obj = &obj;
+  FbsObjectView current{&obj, &table, nullptr};
   const auto* tokens = get_tokenized_field_path(timestamp_field);
 
   if VUNLIKELY (!tokens) {
@@ -2723,26 +2941,21 @@ inline int64_t extract_fbs_timestamp_ns(const flatbuffers::Table& table, const r
       return -1;
     }
 
-    const auto* field = find_fbs_field(*current_obj, (*tokens)[i].name);
+    const auto* field = find_fbs_field(*current.object, (*tokens)[i].name);
 
     if VUNLIKELY (!field) {
       return -1;
     }
 
     if VLIKELY (field->type()->base_type() == reflection::Obj) {
-      const auto* sub_table = flatbuffers::GetFieldT(*current_table, *field);
+      const auto* child_obj = find_fbs_object(schema, field->type()->index());
+      FbsObjectView child;
 
-      if VUNLIKELY (!sub_table || !schema.objects()) {
+      if VUNLIKELY (!child_obj || !resolve_fbs_object_field(current, *field, *child_obj, child)) {
         return -1;
       }
 
-      current_obj = schema.objects()->Get(static_cast<uint32_t>(field->type()->index()));
-
-      if VUNLIKELY (!current_obj) {
-        return -1;
-      }
-
-      current_table = sub_table;
+      current = child;
       continue;
     }
 
@@ -2751,7 +2964,7 @@ inline int64_t extract_fbs_timestamp_ns(const flatbuffers::Table& table, const r
         return -1;
       }
 
-      const auto* vec = flatbuffers::GetFieldAnyV(*current_table, *field);
+      const auto* vec = get_fbs_vector(current, *field);
       auto index = (*tokens)[i + 1].index;
 
       if VUNLIKELY (!vec || index >= vec->size()) {
@@ -2761,19 +2974,14 @@ inline int64_t extract_fbs_timestamp_ns(const flatbuffers::Table& table, const r
       const auto elem_type = field->type()->element();
 
       if VLIKELY (elem_type == reflection::Obj) {
-        const auto* sub_table = flatbuffers::GetAnyVectorElemPointer<const flatbuffers::Table>(vec, index);
+        const auto* child_obj = find_fbs_object(schema, field->type()->index());
+        FbsObjectView child;
 
-        if VUNLIKELY (!sub_table || !schema.objects()) {
+        if VUNLIKELY (!child_obj || !resolve_fbs_vector_object_unchecked(*vec, index, *child_obj, child)) {
           return -1;
         }
 
-        current_obj = schema.objects()->Get(static_cast<uint32_t>(field->type()->index()));
-
-        if VUNLIKELY (!current_obj) {
-          return -1;
-        }
-
-        current_table = sub_table;
+        current = child;
         ++i;
         continue;
       }
@@ -2786,6 +2994,9 @@ inline int64_t extract_fbs_timestamp_ns(const flatbuffers::Table& table, const r
         case reflection::Float:
         case reflection::Double:
           return convert_timestamp_to_ns(flatbuffers::GetAnyVectorElemF(vec, elem_type, index), timestamp_unit);
+        case reflection::ULong:
+          return convert_timestamp_to_ns(flatbuffers::ReadScalar<uint64_t>(vec->Data() + sizeof(uint64_t) * index),
+                                         timestamp_unit);
         case reflection::Byte:
         case reflection::Short:
         case reflection::Int:
@@ -2793,7 +3004,6 @@ inline int64_t extract_fbs_timestamp_ns(const flatbuffers::Table& table, const r
         case reflection::UByte:
         case reflection::UShort:
         case reflection::UInt:
-        case reflection::ULong:
         case reflection::Bool:
           return convert_timestamp_to_ns(flatbuffers::GetAnyVectorElemI(vec, elem_type, index), timestamp_unit);
         default:
@@ -2808,7 +3018,13 @@ inline int64_t extract_fbs_timestamp_ns(const flatbuffers::Table& table, const r
     switch (field->type()->base_type()) {
       case reflection::Float:
       case reflection::Double:
-        return convert_timestamp_to_ns(flatbuffers::GetAnyFieldF(*current_table, *field), timestamp_unit);
+        return convert_timestamp_to_ns(current.table ? flatbuffers::GetAnyFieldF(*current.table, *field)
+                                                     : flatbuffers::GetAnyFieldF(*current.structure, *field),
+                                       timestamp_unit);
+      case reflection::ULong:
+        return convert_timestamp_to_ns(current.table ? flatbuffers::GetFieldI<uint64_t>(*current.table, *field)
+                                                     : current.structure->GetField<uint64_t>(field->offset()),
+                                       timestamp_unit);
       case reflection::Byte:
       case reflection::Short:
       case reflection::Int:
@@ -2816,9 +3032,10 @@ inline int64_t extract_fbs_timestamp_ns(const flatbuffers::Table& table, const r
       case reflection::UByte:
       case reflection::UShort:
       case reflection::UInt:
-      case reflection::ULong:
       case reflection::Bool:
-        return convert_timestamp_to_ns(flatbuffers::GetAnyFieldI(*current_table, *field), timestamp_unit);
+        return convert_timestamp_to_ns(current.table ? flatbuffers::GetAnyFieldI(*current.table, *field)
+                                                     : flatbuffers::GetAnyFieldI(*current.structure, *field),
+                                       timestamp_unit);
       default:
         return -1;
     }

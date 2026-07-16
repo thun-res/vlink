@@ -36,24 +36,12 @@
 
 namespace vlink::dump {
 
-std::string trim_copy(std::string value) {
-  while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())) != 0) {
-    value.erase(value.begin());
-  }
-
-  while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back())) != 0) {
-    value.pop_back();
-  }
-
-  return value;
-}
-
 std::string to_lower_copy(std::string value) {
   std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return std::tolower(c); });
   return value;
 }
 
-uint32_t stable_hash_32(std::string_view value) {
+static uint32_t stable_hash_32(std::string_view value) {
   uint32_t hash = 2166136261U;
 
   for (unsigned char ch : value) {
@@ -64,7 +52,7 @@ uint32_t stable_hash_32(std::string_view value) {
   return hash;
 }
 
-std::string hex8(uint32_t value) {
+static std::string hex8(uint32_t value) {
   static constexpr char kHex[] = "0123456789abcdef";
   std::string out(8, '0');
 
@@ -77,7 +65,7 @@ std::string hex8(uint32_t value) {
 }
 
 std::string sanitize_file_component(const std::string& raw, const std::string& fallback) {
-  auto trimmed = trim_copy(raw);
+  auto trimmed = vlink::Helpers::trim_string(raw);
   std::string result;
   result.reserve(trimmed.size());
 
@@ -103,17 +91,19 @@ std::string sanitize_file_component(const std::string& raw, const std::string& f
     }
   }
 
-  result = trim_copy(result);
+  const auto first_valid = result.find_first_not_of("._");
 
-  while (!result.empty() && (result.front() == '.' || result.front() == '_')) {
-    result.erase(result.begin());
+  if (first_valid == std::string::npos) {
+    return fallback;
   }
+
+  result.erase(0, first_valid);
 
   while (!result.empty() && (result.back() == '.' || result.back() == '_')) {
     result.pop_back();
   }
 
-  if (result.empty() || result == "." || result == "..") {
+  if (result.empty()) {
     return fallback;
   }
 
@@ -137,19 +127,10 @@ std::string sanitize_file_component(const std::string& raw, const std::string& f
   return result;
 }
 
-bool is_supported_bag_suffix(std::string suffix) {
-  suffix = to_lower_copy(std::move(suffix));
-  return suffix == ".vdb" || suffix == ".vdbx" || suffix == ".vcap" || suffix == ".vcapx";
-}
-
 std::string sanitize_suffix(const std::string& raw_suffix) {
   auto suffix = sanitize_file_component(raw_suffix, "");
 
-  while (!suffix.empty() && suffix.front() == '_') {
-    suffix.erase(suffix.begin());
-  }
-
-  if (suffix.empty() || suffix == ".") {
+  if (suffix.empty()) {
     return {};
   }
 
@@ -159,7 +140,7 @@ std::string sanitize_suffix(const std::string& raw_suffix) {
 
   suffix = to_lower_copy(std::move(suffix));
 
-  if (!is_supported_bag_suffix(suffix)) {
+  if (suffix != ".vdb" && suffix != ".vcap") {
     return {};
   }
 
@@ -269,7 +250,7 @@ bool validate_common_slice_options(const SliceOptions& opt) {
   }
 
   if (!opt.suffix.empty() && sanitize_suffix(opt.suffix).empty()) {
-    std::cerr << "--suffix must be one of .vdb, .vdbx, .vcap, or .vcapx.\n";
+    std::cerr << "--suffix must be .vdb or .vcap.\n";
     return false;
   }
 
@@ -300,17 +281,13 @@ bool build_url_selection(const vlink::BagReader::Info& info, const std::vector<s
     });
   };
 
-  auto trimmed_filter = trim_copy(url_filter);
-  auto trimmed_target = trim_copy(target_url);
+  auto trimmed_filter = vlink::Helpers::trim_string(url_filter);
+  auto trimmed_target = vlink::Helpers::trim_string(target_url);
 
   if (!trimmed_filter.empty()) {
     auto keywords = split_keywords(trimmed_filter);
 
     for (const auto& meta : info.url_metas) {
-      if (meta.url_type == "Method") {
-        continue;
-      }
-
       bool match = url_matches(meta.url, keywords);
       bool keep = black_mode ? !match : match;
 
@@ -324,7 +301,7 @@ bool build_url_selection(const vlink::BagReader::Info& info, const std::vector<s
     std::unordered_set<std::string> matched_urls;
 
     for (const auto& raw_url : urls) {
-      auto clean_url = trim_copy(raw_url);
+      auto clean_url = vlink::Helpers::trim_string(raw_url);
 
       if (!clean_url.empty()) {
         clean_urls.emplace_back(std::move(clean_url));
@@ -341,10 +318,6 @@ bool build_url_selection(const vlink::BagReader::Info& info, const std::vector<s
     }
 
     for (const auto& meta : info.url_metas) {
-      if (meta.url_type == "Method") {
-        continue;
-      }
-
       auto iter = std::find(clean_urls.begin(), clean_urls.end(), meta.url);
       bool keep = black_mode ? iter == clean_urls.end() : iter != clean_urls.end();
 
@@ -367,7 +340,7 @@ bool build_url_selection(const vlink::BagReader::Info& info, const std::vector<s
     }
   } else if (!trimmed_target.empty() && trimmed_target != "*") {
     for (const auto& meta : info.url_metas) {
-      if (meta.url == trimmed_target && meta.url_type != "Method") {
+      if (meta.url == trimmed_target) {
         selection.urls.emplace(meta.url);
         break;
       }
@@ -393,7 +366,7 @@ bool normalize_segment_plan(std::vector<SegmentDef>& segments, int64_t effective
     auto seg = segment;
     auto original_begin_ms = seg.begin_ms;
     auto original_end_ms = seg.end_ms;
-    seg.name = trim_copy(seg.name);
+    seg.name = vlink::Helpers::trim_string(seg.name);
 
     if (seg.end_ms <= seg.begin_ms) {
       std::cerr << "Invalid segment time range";
@@ -462,14 +435,22 @@ bool normalize_segment_plan(std::vector<SegmentDef>& segments, int64_t effective
   for (size_t i = 0; i < normalized.size(); ++i) {
     auto base_name = sanitize_file_component(normalized[i].name, "seg_" + std::to_string(i));
     auto candidate = base_name;
-    auto& counter = suffix_counters[base_name];
+    auto candidate_key = candidate;
+#ifdef _WIN32
+    candidate_key = to_lower_copy(std::move(candidate_key));
+#endif
+    auto& counter = suffix_counters[candidate_key];
 
-    while (used_names.count(candidate) != 0) {
+    while (used_names.count(candidate_key) != 0) {
       ++counter;
       candidate = base_name + "_" + std::to_string(counter + 1);
+      candidate_key = candidate;
+#ifdef _WIN32
+      candidate_key = to_lower_copy(std::move(candidate_key));
+#endif
     }
 
-    used_names.emplace(candidate);
+    used_names.emplace(std::move(candidate_key));
     normalized[i].name = std::move(candidate);
   }
 
@@ -478,7 +459,7 @@ bool normalize_segment_plan(std::vector<SegmentDef>& segments, int64_t effective
 }
 
 bool preflight_output_files(const std::filesystem::path& out_dir, const std::vector<std::string>& file_names,
-                            bool force) {
+                            bool force, const std::vector<std::filesystem::path>& protected_paths) {
   std::unordered_set<std::string> planned_paths;
 
   for (const auto& file_name : file_names) {
@@ -490,14 +471,18 @@ bool preflight_output_files(const std::filesystem::path& out_dir, const std::vec
     }
 
     auto path = out_dir / file_name;
-    auto normalized = path.lexically_normal().string();
+    auto normalized = vlink::Helpers::path_to_string(path.lexically_normal());
+    auto normalized_key = normalized;
+#ifdef _WIN32
+    normalized_key = to_lower_copy(std::move(normalized_key));
+#endif
 
-    if (planned_paths.count(normalized) != 0) {
+    if (planned_paths.count(normalized_key) != 0) {
       std::cerr << "Duplicate output path: " << normalized << '\n';
       return false;
     }
 
-    planned_paths.emplace(normalized);
+    planned_paths.emplace(std::move(normalized_key));
 
     std::error_code status_error;
     auto status = std::filesystem::symlink_status(path, status_error);
@@ -507,28 +492,46 @@ bool preflight_output_files(const std::filesystem::path& out_dir, const std::vec
         continue;
       }
 
-      std::cerr << "Failed to inspect output path: " << path.string() << " (" << status_error.message() << ")\n";
+      std::cerr << "Failed to inspect output path: " << normalized << " (" << status_error.message() << ")\n";
       return false;
     }
 
     if (std::filesystem::exists(status)) {
       if (std::filesystem::is_symlink(status)) {
-        std::cerr << "Refusing to overwrite symlink: " << path.string() << '\n';
+        std::cerr << "Refusing to overwrite symlink: " << normalized << '\n';
         return false;
       }
 
       if (std::filesystem::is_directory(status)) {
-        std::cerr << "Output path is a directory: " << path.string() << '\n';
+        std::cerr << "Output path is a directory: " << normalized << '\n';
         return false;
       }
 
       if (!std::filesystem::is_regular_file(status)) {
-        std::cerr << "Output path is not a regular file: " << path.string() << '\n';
+        std::cerr << "Output path is not a regular file: " << normalized << '\n';
         return false;
       }
 
+      if (force) {
+        for (const auto& protected_path : protected_paths) {
+          std::error_code equivalent_error;
+          const bool is_protected = std::filesystem::equivalent(path, protected_path, equivalent_error);
+
+          if (equivalent_error) {
+            std::cerr << "Failed to compare output path with input: " << normalized << " ("
+                      << equivalent_error.message() << ")\n";
+            return false;
+          }
+
+          if (is_protected) {
+            std::cerr << "Refusing to overwrite input file: " << normalized << '\n';
+            return false;
+          }
+        }
+      }
+
       if (!force) {
-        std::cerr << "File already exists: " << path.string() << " (use --force to overwrite)\n";
+        std::cerr << "File already exists: " << normalized << " (use --force to overwrite)\n";
         return false;
       }
     }

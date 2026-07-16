@@ -478,6 +478,8 @@ VLink 的扩展点按调用主体分为两类，决定其在文档中的展开�
 
 `TriggerPluginInterface` 实现声明 ABI `2.0`，并通过 `init(config)` 接收宿主原样传入的配置字符串；字符串可由插件自行解释为 JSON、文件路径或其他格式。`vlink-trigger daemon` 在绑定插件和启动 recorder 前调用一次 `init()`，返回 `false` 时拒绝启动。
 
+`BagPluginInterface` 接口版本为 `2.0`。读侧 `on_read()` 接收已填充有效序列化元数据的 `Frame`；每个顶层回放会话开始前调用 `reset()` 丢弃前一中断会话的缓存状态，只有自然完成的回放轮次及解绑时调用 `flush()` 排空尾帧。若 reader 在轮次边界排空前观察到 `stop()` / `jump()`，则跳过 `flush()`，由下一会话的 `reset()` 丢弃缓存。实现重排缓冲的插件通常分别转发到 `BagProcessor::reset()` / `flush()`，并使用当前头文件重新构建、声明 `VLINK_PLUGIN_DECLARE(Impl, 2, 0)`。
+
 `TriggerRecorder` 对 bag 插件采用纯接口注入：它只接受宿主通过 `bind_bag_interface()` 绑定的 `shared_ptr<BagPluginInterface>`，不接收库名、搜索目录，也不调用 `Plugin::load()`。应用宿主可直接构造实现，或自行用 `Plugin` 完成库搜索、ABI 校验与实例创建后再绑定；`vlink-trigger daemon` 的 `bag_plugin` / `bag_plugin_dir` 正是 CLI 宿主层配置，不属于 `TriggerRecorder::Config`。
 
 > QoS 与安全相关扩展见 [QoS 配置](05-qos.md)、[安全加密](07-security.md)；录制 / 回放扩展见 [录制与回放](09-recording.md)。

@@ -39,11 +39,7 @@ namespace vlink::dump {
 
 class ProtoMessageCache final {
  public:
-  ProtoMessageCache() = default;
-
   explicit ProtoMessageCache(ProtoRuntime runtime);
-
-  void reset(ProtoRuntime runtime);
 
   bool ready() const;
 

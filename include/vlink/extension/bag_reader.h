@@ -283,7 +283,8 @@ class VLINK_EXPORT BagReader : public MessageLoop {
    * @details
    * The plugin's @c convert_url_meta() runs once per URL discovered in the bag and may
    * rename topics, override serialisation types or filter URLs out.  Its @c on_read() hook
-   * sees every replayed frame before it reaches the user @c OutputCallback.
+   * sees every replayed frame, with effective serialisation metadata populated, before it reaches
+   * the user @c OutputCallback.
    *
    * @param bag_interface Plugin interface instance, or @c nullptr to detach the current binding.
    *
@@ -561,6 +562,8 @@ class VLINK_EXPORT BagReader : public MessageLoop {
   void process_output(Frame& frame);
 
   void fill_frame_meta(Frame& frame) const;
+
+  void reset_plugin();
 
   void flush_plugin();
 

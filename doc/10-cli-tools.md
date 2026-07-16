@@ -328,7 +328,7 @@ vlink-bag tag /tmp/test.vdb "highway_test_20260317"
 
 **内存与保留模型**　守护进程采用恒定保留策略：每个 URL 缓冲 `effective_pre + max_post_all + 2 * retention_guard` 时长的历史（`only_back` 的 `effective_pre` 为 0，其他 URL 为各自的 pre；`max_post_all` 为所有 URL 中最大的生效 post 窗口），使采集热路径无需判断"当前是否有触发在进行"。该全局最大值只决定环形缓冲的保留时长；单次 dump 在受理时筛选参与 URL，并按这些 URL 的最大有效 post 调度落盘，其中有效值为请求 post 与 URL 配置 post 的较小值。该值大于 0 时等待它加 `retention_guard`，为 0 或没有 URL 命中时立即调度。由此，单个 URL 配置过大的 post 会抬高所有 URL 的保留时长与内存占用，内存紧张时应约束 post；启用 `bag_plugin` 重排插件时，其滑窗会在落盘期间额外持有部分窗口副本，峰值内存可接近窗口大小的两倍。
 
-**两类插件**　`vlink-trigger` 可同时使用两类互不混淆的插件：CLI 宿主按 `bag_plugin` 加载 `BagPluginInterface`，再经引擎 API `bind_bag_interface()` 绑定；该接口位于落盘写入路径内部，负责按数据面时间重排。而 `TriggerPluginInterface` 经 `bind_trigger_interface()` 绑定，只观察打点生命周期，用于 dump 完成后的上传 / 归档等后续行为，不改写帧。两类库的解析、搜索、ABI 校验和加载均属于 CLI 宿主职责，`TriggerRecorder` 只持有并调用已绑定的接口。当前两类插件 ABI 版本均为 `2.0`，实现应使用 `VLINK_PLUGIN_DECLARE(Impl, 2, 0)`。
+**两类插件**　`vlink-trigger` 可同时使用两类互不混淆的插件：CLI 宿主按 `bag_plugin` 加载 `BagPluginInterface`，再经引擎 API `bind_bag_interface()` 绑定；该接口位于落盘写入路径内部，负责按数据面时间重排。而 `TriggerPluginInterface` 经 `bind_trigger_interface()` 绑定，只观察打点生命周期，用于 dump 完成后的上传 / 归档等后续行为，不改写帧。两类库的解析、搜索、版本校验和加载均属于 CLI 宿主职责，`TriggerRecorder` 只持有并调用已绑定的接口。`BagPluginInterface` 接口版本为 `2.0`，实现应使用 `VLINK_PLUGIN_DECLARE(Impl, 2, 0)`；`TriggerPluginInterface` 同为 `2.0`。
 
 #### daemon 子命令
 
@@ -492,7 +492,13 @@ vlink-dump dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /tm
 
 输出类型语义：`console` 在终端打印消息内容；`csv` / `json` 输出选定字段；`bin` 将每条消息的原始字节存为独立文件；`jpg` / `h264` / `h265` / `raw` 适用于 CameraFrame 或含 bytes 字段的消息；`pcd` 将零拷贝 PointCloud 每帧存为 PCD 文件。`slice` / `scan` 为离线 bag 的高级用法（按窗口/事件切片、按事件或质量扫描），参数较多，详见 `vlink-dump --help`。
 
-字段路径写法：Protobuf 使用点路径（`header.seq`、`status.velocity.x`）；八种零拷贝类型统一经 `MessageParser` 读取，根字段使用 `header.seq`、`width` 等点路径，集合使用 `data[N].field`、`shape[N].value` 或 `strides[N].value`。完整清单与边界规则见 [零拷贝](06-zerocopy.md)。整数在字段导出时保持原始 64 位值；只有送入 ExprTk 表达式、必须转换为 `double` 时，工具才会对超出精确表示范围的整数给出精度提示。
+所有带值的标量参数都必须显式提供值；空 URL、空字段列表以及空白的 `--event` / `--filter` / `--url_filter` 会直接报错。URL 的首尾空白在解析后统一移除；dump/导出模式必须指定具体 URL，`*` 只用于 `slice` / `scan`。`-n` 精确限制通过 URL 与限频门控的样本数，`--hz` 是严格的最大输出频率；限频间隔只在参数解析时换算，数据热路径使用整数微秒比较。
+
+`slice` / `scan` 只接受已完整结束且包含消息的 bag，时间区间按毫秒解释为半开区间 `[begin, end)`；未指定结束时间时会覆盖最后一个不足整毫秒的消息。切片输出只支持 `.vdb` 或 `.vcap`，分片输入的 `.vdbx` / `.vcapx` 会映射到对应的单文件格式。URL 筛选包含 Event、Method 与 Field，实际帧再由 `--actions` 过滤（默认 `6=Subscribe`）；显式 URL 与 `--urls` / `--url_filter` 不可混用。
+
+内容过滤、事件表达式和切片 CSV 导出只支持零拷贝类型与 Protobuf；Protobuf 必须能从 `-d`、`--schema_config` 或 `VLINK_SCHEMA_PLUGIN` 找到目标消息的真实 descriptor。`--schema_plugin` 与 `VLINK_SCHEMA_PLUGIN` 均可使用插件 stem 或共享库直接路径，显式配置但加载失败会终止命令。Method、FlatBuffers、Raw 或未知 schema 参与这些字段操作时会在写文件前拒绝；这项预检验证解码能力，但不会假定每个 selector 都存在于异构 topic 的每一种消息中。不做 `--filter` / `--event` / `--export_csv` 时，单独的 `-c` 不会触发无用解码。`--force` 仍拒绝覆盖符号链接、输入 bag 及其分片成员，也不会覆盖本次命令读取的 `--segments` / `--schema_config` 文件。
+
+字段路径写法：Protobuf 使用点路径（`header.seq`、`status.velocity.x`），repeated 字段使用完整的非负整数下标（如 `chunks[1].data`）；空路径分量、尾随字符、负数或用于非 repeated 字段的下标不会被宽松解释。八种零拷贝类型统一经 `MessageParser` 读取，根字段使用 `header.seq`、`width` 等点路径，集合使用 `data[N].field`、`shape[N].value` 或 `strides[N].value`。完整清单与边界规则见 [零拷贝](06-zerocopy.md)。整数在字段导出时保持原始 64 位值；只有送入 ExprTk 表达式、必须转换为 `double` 时，工具才会对超出精确表示范围的整数给出精度提示。
 
 ```bash
 vlink-dump dds://sensor/imu -t csv -c "header.seq" -o /tmp/ -d /home/protos/

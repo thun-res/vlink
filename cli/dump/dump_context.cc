@@ -49,7 +49,6 @@ bool DumpContext::invoke_callback(int64_t timestamp, const std::string& url, con
 void DumpContext::request_stop() {
   if (dump_for_bag) {
     if (bag_player) {
-      bag_player->clear_bag_interface();
       bag_player->stop();
     }
   } else if (discovery_viewer) {

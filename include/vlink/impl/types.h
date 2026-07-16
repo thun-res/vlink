@@ -222,16 +222,15 @@ enum class SchemaType : uint8_t {
  * each hop so the payload is never deep-copied on the synchronous path; a stage that must take
  * ownership (an async reorder cache) or rewrite a field (playback URL remap) copies explicitly, and
  * the payload @c Bytes itself is normally a shallow view at the source.  @c ser_type / @c schema_type
- * are supplied by the caller on the write side; on the read side they arrive empty at a plugin's
- * @c on_read(), and @c BagReader fills them from the bag's URL metadata before invoking the user's
- * output callback (so a fully-populated frame reaches consumers without a separate @c get_ser_type()
- * lookup).
+ * are supplied by the caller on the write side; on the read side @c BagReader fills them from the
+ * effective URL metadata before invoking either a plugin's @c on_read() hook or the user's output
+ * callback.
  */
 struct Frame final {
-  int64_t timestamp{-1};                               ///< Canonical time in microseconds (record / playback).
-  std::string url;                                     ///< Topic URL.
-  std::string ser_type;                                ///< Serialisation type; reader fills it before user output.
-  SchemaType schema_type{SchemaType::kUnknown};        ///< Coarse schema family; reader fills it before user output.
+  int64_t timestamp{-1};                         ///< Canonical time in microseconds (record / playback).
+  std::string url;                               ///< Topic URL.
+  std::string ser_type;                          ///< Serialisation type; reader fills it before read-side hooks.
+  SchemaType schema_type{SchemaType::kUnknown};  ///< Coarse schema family; reader fills it before read-side hooks.
   ActionType action_type{ActionType::kUnknownAction};  ///< Recorded action kind.
   Bytes data;                                          ///< Serialised payload bytes.
 };

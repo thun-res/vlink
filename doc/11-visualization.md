@@ -286,6 +286,8 @@ vlink-foxglove -c foxglove_config.json --proto_dir ./protos
 
 `vlink-foxglove` 另支持连接图（节点拓扑可视化，默认开启）、前端下发消息回写 VLink（`--foxglove_msgs`）、服务调用（`--rpc_msgs`）、参数面板（`--parameters_url`）与时间更新下发（`--send_time`，默认关闭，开启后将 VLink 时间戳同步至前端时间轴），经对应参数或 JSON 配置文件开启。
 
+为防止慢速或异常客户端使待发送队列无界增长，每条 Foxglove 连接的排队数据设有 64 MiB 字节阈值和 4096 条消息阈值；达到任一阈值后按慢客户端关闭。阈值只约束已经排队的消息，空队列中的首条大消息仍可正常发送。
+
 此外，自定义消息映射（见 §11.2.7）可指定两种零转换 converter，二者均以浅拷贝直接透传原始字节、不做反序列化，并按 `timestamp_field` 提取时间戳：`passthrough` 用于原样转发已是 Foxglove 兼容编码的消息；`send_time` 在透传的同时将该消息标记为时间源，配合 `--send_time` 驱动前端时间轴同步。
 
 ### 🟣 11.2.5 vlink-rerun 接口
@@ -420,6 +422,8 @@ vlink-foxglove --vlink_msgs ./my_gps.json
 | `expression` | 否 | exprtk 数学表达式，可引用源消息任意数值字段，见 §11.2.10 |
 | `default_value` | 否 | 源字段缺失时的默认值（字符串/数字/布尔/`null`）；亦可单独用于注入常量 |
 
+对 FlatBuffers table 的直接字段映射会区分“字段未写入”和“字段写入了 schema 默认值”：未写入时使用映射的 `default_value`；内联 struct 没有字段存在位，始终视为存在。表达式求值遵循 FlatBuffers 反射读取语义，可读取 schema 中声明的默认值。
+
 **进阶映射**　障碍物到 3D 包围盒（数组多映射 + 时间戳，目标 Rerun `Boxes3D`）：
 
 ```json
@@ -492,13 +496,15 @@ foxglove.RawImage（原始图像）：
 
 Rerun Archetype（`GeoPoints` / `Transform3D` / `Boxes3D` / `Points3D` / `Scalars` / `Pinhole` 等）的 `target` 字段结构类似，按 `archetype` 选用对应字段，示例见仓库 `vlink_msgs/example_*.json`。
 
+Rerun 的 `send_time` converter 只为同一消息实际写入的 Archetype 数据行附加 `vlink_time` 时间轴，必须与同一 `ser` 的普通 Archetype 映射配对；单独设置时间而不写数据不会在 Rerun 中产生时间事件。
+
 ### ⚡ 11.2.8 内置零拷贝转换
 
 VLink 零拷贝类型无需编写 `field_mappings`，转换层自动选择内置路径。只要消息 `ser` 为下表类型，不写任何映射即可可视化。
 
 | VLink 零拷贝类型 | Foxglove 目标 | Rerun 目标 | 可选 `converter` |
 | --- | --- | --- | --- |
-| `CameraFrame` | `foxglove.RawImage` / `foxglove.CompressedImage` / `foxglove.CompressedVideo` | `EncodedImage` / `Image` / `AssetVideo` | `camera_frame` |
+| `CameraFrame` | `foxglove.RawImage` / `foxglove.CompressedImage` / `foxglove.CompressedVideo` | `EncodedImage` / `Image` / `VideoStream` | `camera_frame` |
 | `PointCloud` | `foxglove.PointCloud` | `Points3D` | `point_cloud` |
 | `OccupancyGrid` | `foxglove.Grid` | `Image`（灰度） | `occupancy_grid`† |
 | `ObjectArray` | `foxglove.SceneUpdate` | `Boxes3D` | `object_array`† |
@@ -511,6 +517,10 @@ VLink 零拷贝类型无需编写 `field_mappings`，转换层自动选择内置
 若需要对零拷贝字段进行单位换算、坐标变换或派生计算，可显式配置 `field_mappings` 并将 `encoding` 设为 `zerocopy`。此时转换器会优先执行映射和 ExprTk 表达式；未配置映射时仍走上表中的内置快速路径。`ObjectArray.data`、`PointCloud.data`、`OccupancyGrid.data`、`Tensor.shape` / `strides` / `data` 均支持数组下标访问。
 
 通用字段映射使用 `vlink::zerocopy::MessageParser` 完成类型识别、边界检查和标量读取；性能敏感的 CameraFrame / PointCloud 专用快速路径直接调用对应容器 codec，不经过通用字段映射。字段映射中的 `int64` / `uint64` 值在进入表达式前保持整数类型，ExprTk 计算需要转成 `double` 且整数超出精确范围时会记录精度警告。
+
+压缩视频 `CameraFrame` 必须按目标协议提供单帧样本：H.264 / H.265 使用 Annex B，AV1 使用 low-overhead bitstream，并且不能包含 B 帧。转换器会拒绝显式标记为 `kStreamB` 的帧，但不会为避免热路径开销而深度重解析码流。
+
+Rerun C++ SDK 0.31 与 0.34 的 `ImageFormat` 对三平面 I444 返回 4 bytes/pixel，与 VLink YUV444 的 3 bytes/pixel 不一致；该格式在 Rerun 路径中因此以零拷贝方式显示 Y 平面灰度图，不会把不一致的彩色载荷伪装为成功。
 
 零拷贝类型的定义见 [零拷贝](06-zerocopy.md)。
 
@@ -600,6 +610,8 @@ cmake --install build
 | exprtk | 数学表达式引擎 | 两者共用 |
 | websocketpp + asio | WebSocket 服务端 | Foxglove |
 | rerun_sdk | Rerun C++ SDK | Rerun（`vlink-rerun` / `vlink-bag2rrd` 须本机可定位 `rerun_sdk`） |
+
+VLink 的 CMake 基线保持为 3.15。CMake 3.15 下应提供已安装的 `rerun_sdk` 包或预先定义的 `rerun_sdk` target；官方 Rerun C++ SDK 源码包自身要求 CMake 3.16+，因此仅在使用源码包构建时需要更高版本。`RERUN_SDK_DIR` 可指向安装前缀、CMake package 目录或官方源码包。
 
 常用环境变量（命令行参数优先级更高）：`VLINK_PROTO_DIR` / `VLINK_FBS_DIR`（对应 `--proto_dir` / `--fbs_dir`）、`VLINK_SCHEMA_PLUGIN` / `VLINK_CONVERT_PLUGIN`（对应 `--schema_plugin` / `--convert_plugin`）。完整环境变量清单见 [C API、扩展与环境变量](13-integration.md)。
 

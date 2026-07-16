@@ -94,8 +94,10 @@ recorder = vlink.TriggerRecorder(config)
 recorder.bind_bag_interface(bag_plugin)
 ```
 
-`load_bag_plugin()` 按 `BagPluginInterface` ABI 2.0 加载；返回对象可直接交给
-`bind_bag_interface()`，`clear_bag_interface()` 用于恢复默认的采集时间顺序。
+`load_bag_plugin()` 按 `BagPluginInterface` 接口版本 2.0 加载；返回对象可直接交给
+`bind_bag_interface()`，`clear_bag_interface()` 用于恢复默认的采集时间顺序。`reset()` / `flush()`
+属于插件与 C++ 宿主之间的内部生命周期，Python 侧不直接调用。reader 仅在自然完成的回放轮次调用
+`flush()`；若在边界排空前观察到 `stop()` / `jump()`，下一会话通过 `reset()` 丢弃保留尾帧。
 
 触发生命周期插件（`TriggerPluginInterface`）同样由宿主加载并绑定，`load_trigger_plugin()`
 会在加载后调用一次插件的 `init(config)`：

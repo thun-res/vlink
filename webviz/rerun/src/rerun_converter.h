@@ -76,6 +76,10 @@ namespace webviz {
 
 using Json = nlohmann::json;
 
+#ifdef VLINK_HAS_FBS_COMPILER
+struct FbsObjectView;
+#endif
+
 struct RerunMap final {
   std::string ser;
   UrlSelector url_selector;
@@ -294,18 +298,34 @@ class RerunConverter final {
                             const std::string& ser, const Bytes& raw);
 
   static double get_fbs_double(const flatbuffers::Table& table, const reflection::Object& obj,
-                               const std::string& field_name, const std::string& default_value = {},
-                               bool has_default_value = false);
+                               const std::string& field_name);
+
+  static double get_fbs_double(const FbsObjectView& view, const std::string& field_name);
+
+  static double get_fbs_double(const flatbuffers::Table& table, const reflection::Object& obj,
+                               const std::string& field_name, const FieldMapping& mapping);
+
+  static double get_fbs_double(const FbsObjectView& view, const std::string& field_name, const FieldMapping& mapping);
 
   static std::string get_fbs_string(const flatbuffers::Table& table, const reflection::Object& obj,
-                                    const std::string& field_name, const std::string& default_value = {},
-                                    bool has_default_value = false, const reflection::Schema* schema = nullptr);
+                                    const std::string& field_name, const reflection::Schema* schema = nullptr);
+
+  static std::string get_fbs_string(const FbsObjectView& view, const std::string& field_name,
+                                    const reflection::Schema* schema = nullptr);
+
+  static std::string get_fbs_string(const flatbuffers::Table& table, const reflection::Object& obj,
+                                    const std::string& field_name, const FieldMapping& mapping,
+                                    const reflection::Schema* schema = nullptr);
+
+  static std::string get_fbs_string(const FbsObjectView& view, const std::string& field_name,
+                                    const FieldMapping& mapping, const reflection::Schema* schema = nullptr);
 #endif
 
   std::vector<RerunMap> mappings_;
   std::unordered_map<std::string, std::vector<const RerunMap*>> mapping_multi_index_;
   std::mutex mtx_;
   Config config_;
+  const uint64_t cache_owner_id_{allocate_cache_owner_id()};
 
   std::shared_ptr<SchemaPluginInterface> schema_interface_;
   Plugin convert_plugin_loader_;

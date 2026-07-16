@@ -25,6 +25,7 @@
 
 #include <argparse/argparse.hpp>
 #include <string>
+#include <string_view>
 
 #include "./dump_types.h"
 

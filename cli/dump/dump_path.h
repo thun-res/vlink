@@ -34,8 +34,6 @@ std::string path_to_utf8(const std::filesystem::path& path) noexcept;
 
 std::string normalize_dir(std::string dir);
 
-std::string get_home_config_path(const std::string& filename);
-
 std::string read_home_config(const std::string& filename);
 
 }  // namespace vlink::dump

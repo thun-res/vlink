@@ -54,6 +54,17 @@ namespace vlink {
 namespace webviz {
 
 static constexpr size_t kMaxTaskDepth = 10000U;
+static constexpr size_t kMaxClientSendBufferSize = 64U * 1024U * 1024U;
+static constexpr size_t kMaxClientSendQueueSize = 4096U;
+
+static void close_slow_client(const ConnectionPtr& conn, const websocketpp::lib::error_code& ec) {
+  if VLIKELY (!conn || ec != websocketpp::error::make_error_code(websocketpp::error::send_queue_full)) {
+    return;
+  }
+
+  websocketpp::lib::error_code close_ec;
+  conn->close(websocketpp::close::status::policy_violation, "outgoing send buffer limit exceeded", close_ec);
+}
 
 Json FoxgloveServer::make_advertise_channel_json(const ChannelInfo& channel_info) {
   Json channel;
@@ -276,7 +287,10 @@ void FoxgloveServer::log_connect_hint() const {
   MLOG_I("*****************************************************");
 }
 
-FoxgloveServer::~FoxgloveServer() { stop(); }
+FoxgloveServer::~FoxgloveServer() {
+  stop();
+  rpc_.reset();
+}
 
 bool FoxgloveServer::start() {
   if VUNLIKELY (running_.exchange(true)) {
@@ -436,6 +450,14 @@ bool FoxgloveServer::init_websocket() {
 
   ws_server_->set_message_handler([this](ConnectionHdl hdl, MessagePtr msg) { on_ws_message(hdl, msg); });
 
+  ws_server_->set_ping_handler([this](ConnectionHdl hdl, const std::string& payload) -> bool {
+    auto conn = ws_server_->get_con_from_hdl(hdl);
+    websocketpp::lib::error_code ec;
+    conn->pong(payload, ec);
+    close_slow_client(conn, ec);
+    return false;
+  });
+
   ws_server_->set_validate_handler([this](ConnectionHdl hdl) -> bool {
     auto conn = ws_server_->get_con_from_hdl(hdl);
     const auto& subprotocols = conn->get_requested_subprotocols();
@@ -579,6 +601,8 @@ void FoxgloveServer::install_publish_channels() {
 
 void FoxgloveServer::on_ws_open(ConnectionHdl hdl) {
   auto conn = ws_server_->get_con_from_hdl(hdl);
+  conn->set_max_send_queue_size(kMaxClientSendQueueSize);
+  conn->set_max_send_buffer_size(kMaxClientSendBufferSize);
   auto* raw_ptr = conn.get();
   bool need_update = false;
 
@@ -838,6 +862,13 @@ void FoxgloveServer::handle_subscribe(ConnectionHdl hdl, const Json& msg) {
       return;
     }
 
+    std::unordered_set<uint32_t> subscribed_channels;
+    subscribed_channels.reserve(client->subscription_map.size() + msg["subscriptions"].size());
+
+    for (const auto& subscription : client->subscription_map) {
+      subscribed_channels.emplace(subscription.second);
+    }
+
     for (const auto& sub : msg["subscriptions"]) {
       if VUNLIKELY (!sub.is_object()) {
         continue;
@@ -856,68 +887,39 @@ void FoxgloveServer::handle_subscribe(ConnectionHdl hdl, const Json& msg) {
 
       auto old_sub_iter = client->subscription_map.find(sub_id);
 
-      if VUNLIKELY (old_sub_iter != client->subscription_map.end() && old_sub_iter->second != channel_id) {
-        auto old_ch_id = old_sub_iter->second;
-        auto old_channel_iter = channels_.find(old_ch_id);
-
-        if VLIKELY (old_channel_iter != channels_.end()) {
-          if VLIKELY (!old_channel_iter->second.is_control_only) {
-            auto old_sub_count_iter = url_sub_counts_.find(old_channel_iter->second.url);
-
-            if VLIKELY (old_sub_count_iter != url_sub_counts_.end()) {
-              if VLIKELY (old_sub_count_iter->second <= 1) {
-                url_sub_counts_.erase(old_sub_count_iter);
-                need_update = true;
-              } else {
-                --old_sub_count_iter->second;
-              }
-            }
-          }
-        }
-
-        auto old_subscriber_iter = channel_subscribers_.find(old_ch_id);
-
-        if VLIKELY (old_subscriber_iter != channel_subscribers_.end()) {
-          auto& old_subs = old_subscriber_iter->second;
-          old_subs.erase(std::remove_if(old_subs.begin(), old_subs.end(),
-                                        [raw_ptr, sub_id](const ChannelSubscriber& s) {
-                                          return s.client_ptr == raw_ptr && s.subscription_id == sub_id;
-                                        }),
-                         old_subs.end());
-
-          if VLIKELY (old_subs.empty()) {
-            channel_subscribers_.erase(old_subscriber_iter);
-          }
-        }
+      if VUNLIKELY (old_sub_iter != client->subscription_map.end()) {
+        MLOG_W("Ignoring reuse of active subscription id: {}", sub_id);
+        continue;
       }
 
-      auto sub_iter = client->subscription_map.find(sub_id);
-      bool is_new = (sub_iter == client->subscription_map.end() || sub_iter->second != channel_id);
-
-      if VLIKELY (is_new) {
-        auto channel_iter = channels_.find(channel_id);
-
-        if VLIKELY (channel_iter != channels_.end()) {
-          if VUNLIKELY (channel_iter->second.is_control_only) {
-            MLOG_W("Ignoring subscribe to publish-only control channel: {}", channel_iter->second.topic);
-            continue;
-          }
-
-          client->subscription_map[sub_id] = channel_id;
-
-          channel_subscribers_[channel_id].push_back({raw_ptr, sub_id});
-
-          auto& count = url_sub_counts_[channel_iter->second.url];
-
-          if VLIKELY (count == 0) {
-            need_update = true;
-          }
-
-          ++count;
-        } else {
-          MLOG_W("Subscribe to unknown channel_id: {}", channel_id);
-        }
+      if VUNLIKELY (subscribed_channels.count(channel_id) != 0U) {
+        MLOG_W("Ignoring duplicate subscription to channel id: {}", channel_id);
+        continue;
       }
+
+      auto channel_iter = channels_.find(channel_id);
+
+      if VUNLIKELY (channel_iter == channels_.end()) {
+        MLOG_W("Subscribe to unknown channel_id: {}", channel_id);
+        continue;
+      }
+
+      if VUNLIKELY (channel_iter->second.is_control_only) {
+        MLOG_W("Ignoring subscribe to publish-only control channel: {}", channel_iter->second.topic);
+        continue;
+      }
+
+      client->subscription_map[sub_id] = channel_id;
+      subscribed_channels.emplace(channel_id);
+      channel_subscribers_[channel_id].push_back({raw_ptr, sub_id});
+
+      auto& count = url_sub_counts_[channel_iter->second.url];
+
+      if VLIKELY (count == 0) {
+        need_update = true;
+      }
+
+      ++count;
     }
   }
 
@@ -1551,11 +1553,13 @@ void FoxgloveServer::handle_subscribe_parameter_updates(ConnectionHdl hdl, const
       client->parameter_subscriptions.clear();
       client->parameter_exclusions.clear();
       initial_values = parameters_->build_parameter_values({}, {});
-    } else {
-      client->subscribed_all_parameters = false;
-      client->parameter_subscriptions.clear();
-      client->parameter_exclusions.clear();
+    } else if VUNLIKELY (client->subscribed_all_parameters) {
+      for (const auto& name : names) {
+        client->parameter_exclusions.erase(name);
+      }
 
+      initial_values = parameters_->build_parameter_values(names, {});
+    } else {
       for (const auto& name : names) {
         client->parameter_subscriptions.emplace(name);
       }
@@ -1775,6 +1779,8 @@ void FoxgloveServer::broadcast_connection_graph_update() {
       auto ec = conn->send(payload, websocketpp::frame::opcode::text);
 
       if VUNLIKELY (ec) {
+        close_slow_client(conn, ec);
+
         if VLIKELY (running_.load()) {
           MLOG_W("Failed to broadcast connection graph: {}", ec.message());
         }
@@ -2006,6 +2012,8 @@ void FoxgloveServer::send_json(const ConnectionPtr& conn, const Json& msg) {
     auto ec = conn->send(payload, websocketpp::frame::opcode::text);
 
     if VUNLIKELY (ec) {
+      close_slow_client(conn, ec);
+
       if VLIKELY (running_.load()) {
         MLOG_W("Failed to send JSON: {}", ec.message());
       }
@@ -2048,6 +2056,8 @@ void FoxgloveServer::send_binary(const ConnectionPtr& conn, const Bytes& buf) {
     auto ec = conn->send(buf.data(), buf.size(), websocketpp::frame::opcode::binary);
 
     if VUNLIKELY (ec) {
+      close_slow_client(conn, ec);
+
       if VLIKELY (running_.load()) {
         MLOG_W("Failed to send binary: {}", ec.message());
       }
@@ -2258,6 +2268,8 @@ void FoxgloveServer::broadcast_json(const Json& msg) {
       auto ec = conn->send(payload, websocketpp::frame::opcode::text);
 
       if VUNLIKELY (ec) {
+        close_slow_client(conn, ec);
+
         if VLIKELY (running_.load()) {
           MLOG_W("Failed to broadcast JSON: {}", ec.message());
         }
@@ -2275,19 +2287,12 @@ void FoxgloveServer::on_parameters_changed(const std::vector<FoxgloveParameters:
     return;
   }
 
-  bool has_removals = false;
-
-  for (const auto& entry : delta) {
-    if VUNLIKELY (!entry.has_value) {
-      has_removals = true;
-      break;
-    }
-  }
-
   std::vector<std::pair<ConnectionPtr, Json>> pending;
 
   {
     std::shared_lock lock(clients_mtx_);
+    std::vector<const FoxgloveParameters::ParameterEntry*> matched_delta;
+    matched_delta.reserve(delta.size());
 
     for (auto& client_entry : clients_) {
       auto& client = client_entry.second;
@@ -2296,37 +2301,20 @@ void FoxgloveServer::on_parameters_changed(const std::vector<FoxgloveParameters:
         continue;
       }
 
-      std::vector<std::string> matched_names;
-      matched_names.reserve(delta.size());
+      matched_delta.clear();
 
       for (const auto& entry : delta) {
         if VLIKELY (client.subscribed_all_parameters) {
           if VLIKELY (client.parameter_exclusions.count(entry.name) == 0U) {
-            matched_names.emplace_back(entry.name);
+            matched_delta.emplace_back(&entry);
           }
         } else if VLIKELY (client.parameter_subscriptions.count(entry.name) > 0U) {
-          matched_names.emplace_back(entry.name);
+          matched_delta.emplace_back(&entry);
         }
       }
 
-      if VLIKELY (!matched_names.empty()) {
-        if VUNLIKELY (has_removals) {
-          if VLIKELY (client.subscribed_all_parameters) {
-            auto current_names = parameters_->get_names();
-            current_names.erase(std::remove_if(current_names.begin(), current_names.end(),
-                                               [&client](const std::string& name) {
-                                                 return client.parameter_exclusions.count(name) > 0U;
-                                               }),
-                                current_names.end());
-            pending.emplace_back(client.conn, parameters_->build_parameter_values(current_names, {}));
-          } else {
-            std::sort(matched_names.begin(), matched_names.end());
-            matched_names.erase(std::unique(matched_names.begin(), matched_names.end()), matched_names.end());
-            pending.emplace_back(client.conn, parameters_->build_parameter_values(matched_names, {}));
-          }
-        } else {
-          pending.emplace_back(client.conn, parameters_->build_parameter_values(matched_names, {}));
-        }
+      if VLIKELY (!matched_delta.empty()) {
+        pending.emplace_back(client.conn, FoxgloveParameters::build_parameter_delta(matched_delta));
       }
     }
   }
@@ -2515,11 +2503,8 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
   bool schema_changed = false;
   Json remove_msg;
   Json add_msg;
-  std::string updated_topic;
-  std::string updated_schema;
   uint32_t old_channel_id = 0;
-  uint32_t new_channel_id = 0;
-  bool move_channel_needed = false;
+  bool drop_message = false;
 
   if VUNLIKELY (!result.schema_name.empty()) {
     std::unique_lock lock(channels_mtx_);
@@ -2553,11 +2538,7 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
             channels_[new_id] = updated;
             url_to_channel_id_[data.url] = new_id;
             schema_changed = true;
-            updated_topic = updated.topic;
-            updated_schema = result.schema_name;
             old_channel_id = old_id;
-            new_channel_id = new_id;
-            move_channel_needed = true;
 
             remove_msg["op"] = "unadvertise";
             remove_msg["channelIds"] = Json::array({old_id});
@@ -2567,18 +2548,25 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
 
             add_msg["channels"].emplace_back(make_advertise_channel_json(updated));
           }
+        } else {
+          drop_message = true;
         }
       }
+    } else {
+      drop_message = true;
     }
   }
 
-  if VUNLIKELY (schema_changed) {
-    if VUNLIKELY (move_channel_needed) {
-      move_channel_runtime_state(old_channel_id, new_channel_id);
-    }
+  if VUNLIKELY (drop_message) {
+    return;
+  }
 
+  if VUNLIKELY (schema_changed) {
+    clear_channel_runtime_state(old_channel_id, data.url);
     broadcast_json(remove_msg);
     broadcast_json(add_msg);
+    update_bridge_control();
+    return;
   }
 
   auto fallback_timestamp_ns = estimate_bridge_wall_time_ns(last_sys_time_ns_.load(), bridge_time_elapsed_);
@@ -2641,6 +2629,8 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
         auto ec = target.first->send(buf.data(), buf.size(), websocketpp::frame::opcode::binary);
 
         if VUNLIKELY (ec) {
+          close_slow_client(target.first, ec);
+
           if VLIKELY (running_.load()) {
             MLOG_W("Failed to send binary: {}", ec.message());
           }
@@ -2666,73 +2656,45 @@ void FoxgloveServer::on_bridge_time(uint64_t sys_time, uint64_t boot_time) {
 }
 
 void FoxgloveServer::clear_channel_runtime_state(uint32_t channel_id, std::string_view url) {
-  {
-    std::unique_lock lock(clients_mtx_);
+  std::scoped_lock state_lock(clients_mtx_, channels_mtx_, sub_counts_mtx_);
+  size_t remaining_url_subscriptions = 0;
 
-    for (auto& client_entry : clients_) {
-      auto& client = client_entry.second;
-      for (auto subscription_iter = client.subscription_map.begin();
-           subscription_iter != client.subscription_map.end();) {
-        if VUNLIKELY (subscription_iter->second == channel_id) {
-          subscription_iter = client.subscription_map.erase(subscription_iter);
-        } else {
-          ++subscription_iter;
-        }
+  for (auto& client_entry : clients_) {
+    auto& client = client_entry.second;
+
+    for (auto subscription_iter = client.subscription_map.begin();
+         subscription_iter != client.subscription_map.end();) {
+      if VUNLIKELY (subscription_iter->second == channel_id) {
+        subscription_iter = client.subscription_map.erase(subscription_iter);
+      } else {
+        ++subscription_iter;
+      }
+    }
+
+    for (const auto& subscription : client.subscription_map) {
+      auto channel_iter = channels_.find(subscription.second);
+
+      if VUNLIKELY (channel_iter != channels_.end() && !channel_iter->second.is_control_only &&
+                    channel_iter->second.url == url) {
+        ++remaining_url_subscriptions;
       }
     }
   }
 
-  {
-    std::unique_lock sc_lock(sub_counts_mtx_);
-    channel_subscribers_.erase(channel_id);
+  channel_subscribers_.erase(channel_id);
+
+  if VUNLIKELY (remaining_url_subscriptions > 0U) {
+    url_sub_counts_[std::string(url)] = remaining_url_subscriptions;
+  } else {
     url_sub_counts_.erase(std::string(url));
   }
 
-  rebuild_active_bridge_urls();
-}
-
-void FoxgloveServer::move_channel_runtime_state(uint32_t old_channel_id, uint32_t new_channel_id) {
-  if VUNLIKELY (old_channel_id == 0 || new_channel_id == 0 || old_channel_id == new_channel_id) {
-    return;
-  }
-
-  {
-    std::unique_lock lock(clients_mtx_);
-
-    for (auto& client_entry : clients_) {
-      auto& client = client_entry.second;
-
-      for (auto& subscription_entry : client.subscription_map) {
-        auto& channel_id = subscription_entry.second;
-
-        if VUNLIKELY (channel_id == old_channel_id) {
-          channel_id = new_channel_id;
-        }
-      }
-    }
-  }
-
-  {
-    std::unique_lock sc_lock(sub_counts_mtx_);
-    auto old_subscriber_iter = channel_subscribers_.find(old_channel_id);
-
-    if VUNLIKELY (old_subscriber_iter == channel_subscribers_.end()) {
-      return;
-    }
-
-    auto& target = channel_subscribers_[new_channel_id];
-    auto& source = old_subscriber_iter->second;
-    target.insert(target.end(), std::make_move_iterator(source.begin()), std::make_move_iterator(source.end()));
-    channel_subscribers_.erase(old_subscriber_iter);
-  }
-
-  rebuild_active_bridge_urls();
+  rebuild_active_bridge_urls_locked();
 }
 
 void FoxgloveServer::update_channels(const std::vector<ProxyAPI::Info>& info_list) {
   struct RemovedChannelState final {
     uint32_t id{0};
-    uint32_t replacement_id{0};
     std::string url;
   };
 
@@ -2833,7 +2795,7 @@ void FoxgloveServer::update_channels(const std::vector<ProxyAPI::Info>& info_lis
             channels_.erase(channel_iter);
             channels_[new_id] = updated;
             url_to_channel_id_[info.url] = new_id;
-            removed_channel_states.push_back({old_id, is_time_only ? 0U : new_id, info.url});
+            removed_channel_states.push_back({old_id, info.url});
 
             if VUNLIKELY (!was_time_only) {
               removed_advertised_ids.emplace_back(old_id);
@@ -2847,7 +2809,7 @@ void FoxgloveServer::update_channels(const std::vector<ProxyAPI::Info>& info_lis
           }
         } else {
           active_urls.erase(info.url);
-          removed_channel_states.push_back({ch.id, 0, info.url});
+          removed_channel_states.push_back({ch.id, info.url});
 
           if VUNLIKELY (!ch.is_time_only) {
             removed_advertised_ids.emplace_back(ch.id);
@@ -2909,7 +2871,7 @@ void FoxgloveServer::update_channels(const std::vector<ProxyAPI::Info>& info_lis
         auto channel_iter = channels_.find(url_iter->second);
 
         if VLIKELY (channel_iter != channels_.end()) {
-          removed_channel_states.push_back({url_iter->second, 0, url_iter->first});
+          removed_channel_states.push_back({url_iter->second, url_iter->first});
 
           if VUNLIKELY (!channel_iter->second.is_time_only) {
             removed_advertised_ids.emplace_back(url_iter->second);
@@ -2934,11 +2896,7 @@ void FoxgloveServer::update_channels(const std::vector<ProxyAPI::Info>& info_lis
 
   if VUNLIKELY (!removed_channel_states.empty()) {
     for (const auto& state : removed_channel_states) {
-      if VUNLIKELY (state.replacement_id != 0) {
-        move_channel_runtime_state(state.id, state.replacement_id);
-      } else {
-        clear_channel_runtime_state(state.id, state.url);
-      }
+      clear_channel_runtime_state(state.id, state.url);
     }
   }
 
@@ -2975,7 +2933,7 @@ void FoxgloveServer::update_channels(const std::vector<ProxyAPI::Info>& info_lis
 
 bool FoxgloveServer::should_process_bridge_data(const std::string& url) {
   struct ActiveBridgeUrlCacheEntry final {
-    const FoxgloveServer* owner{nullptr};
+    uint64_t owner_id{0};
     uint64_t generation{0};
     std::string url;
     bool active{false};
@@ -2991,13 +2949,14 @@ bool FoxgloveServer::should_process_bridge_data(const std::string& url) {
   const auto cache_index = std::hash<std::string_view>{}(url) % cache_entries.size();
   auto& cache_entry = cache_entries[cache_index];
 
-  if VLIKELY (cache_entry.owner == this && cache_entry.generation == generation && cache_entry.url == url) {
+  if VLIKELY (cache_entry.owner_id == cache_owner_id_ && cache_entry.generation == generation &&
+              cache_entry.url == url) {
     return cache_entry.active;
   }
 
   std::shared_lock lock(active_bridge_urls_mtx_);
   const auto active = active_bridge_urls_.find(url) != active_bridge_urls_.end();
-  cache_entry.owner = this;
+  cache_entry.owner_id = cache_owner_id_;
   cache_entry.generation = generation;
   cache_entry.url = url;
   cache_entry.active = active;

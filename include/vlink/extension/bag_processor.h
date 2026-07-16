@@ -168,6 +168,18 @@ class VLINK_EXPORT BagProcessor {
    */
   void flush();
 
+  /**
+   * @brief Synchronously discards every buffered frame and starts a fresh timestamp timeline.
+   *
+   * @details
+   * Waits for any output callback already in progress, clears the cache without emitting it, and resets
+   * all data-time resolution and output timestamp anchors.  Read-side plugins use this at the start of a
+   * new playback session so frames retained by an interrupted stop or jump cannot enter the next timeline.
+   * Do not call this from the processor's output callback or concurrently with @c push().  A no-op before
+   * callback registration or during shutdown.
+   */
+  void reset();
+
  private:
   bool on_check();
 
@@ -176,6 +188,8 @@ class VLINK_EXPORT BagProcessor {
   void on_run();
 
   void on_exec(bool at_end);
+
+  void reset_timeline();
 
   struct Impl;
   std::unique_ptr<Impl> impl_;

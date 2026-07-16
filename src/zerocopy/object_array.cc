@@ -85,7 +85,9 @@ ObjectArray& ObjectArray::operator=(ObjectArray&& target) noexcept {
 bool ObjectArray::operator<<(const Bytes& bytes) noexcept {
   static constexpr size_t kMagicNumberBeginSize = sizeof(kMagicNumberBegin);
   static constexpr size_t kVersionSize = sizeof(kWireVersion);
-  // static constexpr size_t kMagicNumberEndSize = sizeof(kMagicNumberEnd);
+  static constexpr size_t kMagicNumberEndSize = sizeof(kMagicNumberEnd);
+  static constexpr size_t kSerializedOverhead =
+      kMagicNumberBeginSize + kVersionSize + sizeof(ObjectArray) + kMagicNumberEndSize;
 
   if VUNLIKELY (bytes.empty()) {
     return false;
@@ -127,6 +129,14 @@ bool ObjectArray::operator<<(const Bytes& bytes) noexcept {
   capacity_ = 0;
 
   is_owner_ = false;
+
+  const auto payload_size = bytes.size() - kSerializedOverhead;
+
+  if VUNLIKELY (count_ != 0 &&
+                (pack_size_ != sizeof(Object) || static_cast<size_t>(count_) > payload_size / sizeof(Object))) {
+    clear();
+    return false;
+  }
 
   if VUNLIKELY (bytes.size() != get_serialized_size()) {
     clear();

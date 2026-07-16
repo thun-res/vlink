@@ -34,9 +34,10 @@
 
 #include "dump_context.h"
 #include "dump_extract.h"
+#include "dump_path.h"
 
 bool load_schema_config(const std::string& config_path, SchemaConfig& config) {
-  std::ifstream file(config_path);
+  std::ifstream file(vlink::dump::utf8_to_path(config_path));
 
   if VUNLIKELY (!file.is_open()) {
     std::cerr << "Failed to open schema config: " << config_path << std::endl;
@@ -130,9 +131,10 @@ std::vector<std::string> collect_proto_dirs(const SchemaConfig& config, const st
 ProtoRuntime load_proto_runtime(const std::vector<std::string>& proto_dirs) {
   ProtoRuntime runtime;
   bool has_import = false;
+  std::vector<std::filesystem::path> valid_dirs;
 
   for (const auto& proto_dir : proto_dirs) {
-    auto filesys_dir = std::filesystem::path(proto_dir);
+    auto filesys_dir = vlink::dump::utf8_to_path(proto_dir);
     std::error_code fs_ec;
 
     if (!std::filesystem::exists(filesys_dir, fs_ec) || fs_ec || !std::filesystem::is_directory(filesys_dir, fs_ec) ||
@@ -140,14 +142,22 @@ ProtoRuntime load_proto_runtime(const std::vector<std::string>& proto_dirs) {
       continue;
     }
 
-    if (!runtime.factory) {
-      runtime.factory = std::make_shared<google::protobuf::DynamicMessageFactory>();
-      runtime.source_tree = std::make_shared<google::protobuf::compiler::DiskSourceTree>();
-      runtime.importer = std::make_shared<google::protobuf::compiler::Importer>(runtime.source_tree.get(), nullptr);
+    valid_dirs.emplace_back(std::move(filesys_dir));
+  }
+
+  if (!valid_dirs.empty()) {
+    runtime.factory = std::make_shared<google::protobuf::DynamicMessageFactory>();
+    runtime.source_tree = std::make_shared<google::protobuf::compiler::DiskSourceTree>();
+
+    for (const auto& filesys_dir : valid_dirs) {
+      runtime.source_tree->MapPath("", vlink::dump::path_to_utf8(filesys_dir));
     }
 
-    runtime.source_tree->MapPath("", filesys_dir.string());
-    import_protos(runtime.importer.get(), filesys_dir, filesys_dir, has_import);
+    runtime.importer = std::make_shared<google::protobuf::compiler::Importer>(runtime.source_tree.get(), nullptr);
+
+    for (const auto& filesys_dir : valid_dirs) {
+      import_protos(runtime.importer.get(), filesys_dir, filesys_dir, has_import);
+    }
   }
 
   if (has_import && runtime.importer) {
@@ -198,6 +208,10 @@ std::vector<vlink::SchemaData> import_schemas_from_config(const SchemaConfig& co
                                                           const std::string& extra_fbs_dir) {
   std::vector<vlink::SchemaData> result;
 
+  if (config.rules.empty()) {
+    return result;
+  }
+
   auto all_proto_dirs = collect_proto_dirs(config, extra_proto_dir);
 
   std::vector<std::string> all_fbs_dirs = config.fbs_dirs;
@@ -206,55 +220,50 @@ std::vector<vlink::SchemaData> import_schemas_from_config(const SchemaConfig& co
     all_fbs_dirs.emplace_back(extra_fbs_dir);
   }
 
-  std::unordered_set<std::string> imported_names;
+  auto import_key = [](const std::string& name, vlink::SchemaType schema_type) {
+    return name + ":" + std::to_string(static_cast<int>(schema_type));
+  };
+  std::unordered_set<std::string> imported_schema_keys;
 
   auto plugin = vlink::SchemaPluginManager::get().get_interface();
 
   if (plugin) {
     for (const auto& rule : config.rules) {
-      if (imported_names.count(rule.ser_type) != 0) {
+      auto hint = parse_schema_type_hint(rule.schema_type_str);
+      auto key = import_key(rule.ser_type, hint);
+
+      if (hint != vlink::SchemaType::kUnknown && imported_schema_keys.count(key) != 0) {
         continue;
       }
 
-      auto hint = parse_schema_type_hint(rule.schema_type_str);
       auto schema = plugin->search_schema(rule.ser_type, hint);
+      auto resolved_schema_type = vlink::SchemaData::resolve_type(schema.schema_type, rule.ser_type, schema.encoding);
 
-      if (!schema.data.empty() && (hint == vlink::SchemaType::kUnknown || schema.schema_type == hint)) {
+      if (!schema.data.empty() && (hint == vlink::SchemaType::kUnknown || resolved_schema_type == hint)) {
+        key = import_key(rule.ser_type, resolved_schema_type);
+
+        if (!imported_schema_keys.emplace(key).second) {
+          continue;
+        }
+
         result.emplace_back(std::move(schema));
-        imported_names.emplace(rule.ser_type);
       }
     }
   }
 
-  for (const auto& proto_dir : all_proto_dirs) {
-    std::error_code fs_ec;
+  auto proto_runtime = load_proto_runtime(all_proto_dirs);
 
-    if (!std::filesystem::exists(proto_dir, fs_ec) || fs_ec || !std::filesystem::is_directory(proto_dir, fs_ec) ||
-        fs_ec) {
-      continue;
-    }
-
-    auto source_tree = std::make_shared<google::protobuf::compiler::DiskSourceTree>();
-    source_tree->MapPath("", proto_dir);
-
-    auto importer = std::make_shared<google::protobuf::compiler::Importer>(source_tree.get(), nullptr);
-
-    bool has_import = false;
-    auto filesys_proto_dir = std::filesystem::path(proto_dir);
-    import_protos(importer.get(), filesys_proto_dir, filesys_proto_dir, has_import);
-
-    if (!has_import) {
-      continue;
-    }
-
-    const auto* pool = importer->pool();
+  if (proto_runtime.pool != nullptr) {
+    const auto* pool = proto_runtime.pool;
 
     for (const auto& rule : config.rules) {
       if (parse_schema_type_hint(rule.schema_type_str) != vlink::SchemaType::kProtobuf) {
         continue;
       }
 
-      if (imported_names.count(rule.ser_type) != 0) {
+      auto key = import_key(rule.ser_type, vlink::SchemaType::kProtobuf);
+
+      if (imported_schema_keys.count(key) != 0) {
         continue;
       }
 
@@ -281,7 +290,7 @@ std::vector<vlink::SchemaData> import_schemas_from_config(const SchemaConfig& co
       schema.data = vlink::Bytes::deep_copy(reinterpret_cast<const uint8_t*>(serialized.data()), serialized.size());
 
       result.emplace_back(std::move(schema));
-      imported_names.emplace(rule.ser_type);
+      imported_schema_keys.emplace(std::move(key));
 
       if (!vlink::dump::DumpContext::get().quiet_flag) {
         std::cout << "Imported schema: " << rule.ser_type << " (protobuf)" << std::endl;
@@ -304,7 +313,9 @@ std::vector<vlink::SchemaData> import_schemas_from_config(const SchemaConfig& co
         continue;
       }
 
-      if (imported_names.count(rule.ser_type) != 0) {
+      auto key = import_key(rule.ser_type, vlink::SchemaType::kFlatbuffers);
+
+      if (imported_schema_keys.count(key) != 0) {
         continue;
       }
 
@@ -329,7 +340,7 @@ std::vector<vlink::SchemaData> import_schemas_from_config(const SchemaConfig& co
         schema.data = vlink::Bytes::deep_copy(buf, buf_size);
 
         result.emplace_back(std::move(schema));
-        imported_names.emplace(rule.ser_type);
+        imported_schema_keys.emplace(std::move(key));
 
         if (!vlink::dump::DumpContext::get().quiet_flag) {
           std::cout << "Imported schema: " << rule.ser_type << " (flatbuffers)" << std::endl;
@@ -361,13 +372,17 @@ void import_fbs(std::shared_ptr<flatbuffers::Parser>& parser, const std::string&
 
   try {
     for (const auto& entry : std::filesystem::directory_iterator(sub_dir)) {
+      if VUNLIKELY (file_list.size() >= kMaxSchemaDirEntries) {
+        return;
+      }
+
       file_list.emplace_back(entry);
     }
   } catch (std::filesystem::filesystem_error&) {
     return;
   }
 
-  if VUNLIKELY (file_list.empty() || file_list.size() > kMaxSchemaDirEntries) {
+  if VUNLIKELY (file_list.empty()) {
     return;
   }
 
@@ -403,6 +418,10 @@ void import_fbs(std::shared_ptr<flatbuffers::Parser>& parser, const std::string&
         }
       } else if (file.is_directory()) {
         import_fbs(parser, target_ser, root_dir, file.path(), has_import, depth + 1);
+
+        if (parser) {
+          return;
+        }
       }
     } catch (std::filesystem::filesystem_error&) {
       continue;

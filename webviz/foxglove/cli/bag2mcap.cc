@@ -454,13 +454,14 @@ int main(int argc, char* argv[]) {
   reader->run();
 
   mcap_writer.close();
+  const auto failed = msg_failed.load();
 
   std::cerr << std::endl;
-  std::cerr << "Conversion complete:" << std::endl;
+  std::cerr << (failed == 0 ? "Conversion complete:" : "Conversion finished with errors:") << std::endl;
   std::cerr << "  Output: " << output_path << std::endl;
   std::cerr << "  Converted: " << msg_converted.load() << std::endl;
-  std::cerr << "  Raw fallback: " << msg_skipped.load() << std::endl;
-  std::cerr << "  Failed: " << msg_failed.load() << std::endl;
+  std::cerr << "  Raw fallback/skipped: " << msg_skipped.load() << std::endl;
+  std::cerr << "  Failed: " << failed << std::endl;
 
   std::error_code output_ec;
 
@@ -472,5 +473,5 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  return 0;
+  return failed == 0 ? 0 : 1;
 }

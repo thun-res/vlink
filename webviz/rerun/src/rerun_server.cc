@@ -558,7 +558,7 @@ void RerunServer::on_bridge_data(const ProxyAPI::Data& data) {
   }
 
   struct SubscribedUrlCache final {
-    const RerunServer* owner{nullptr};
+    uint64_t owner_id{0};
     uint64_t generation{0};
     std::string url;
     bool known{false};
@@ -566,14 +566,15 @@ void RerunServer::on_bridge_data(const ProxyAPI::Data& data) {
 
   thread_local SubscribedUrlCache cache;
   auto generation = subscribed_urls_generation_.load();
-  bool known_url = cache.owner == this && cache.generation == generation && cache.known && cache.url == data.url;
+  bool known_url =
+      cache.owner_id == cache_owner_id_ && cache.generation == generation && cache.known && cache.url == data.url;
 
   if VUNLIKELY (!known_url) {
     {
       std::shared_lock lock(info_mtx_);
 
       if VLIKELY (subscribed_urls_.find(data.url) != subscribed_urls_.end()) {
-        cache.owner = this;
+        cache.owner_id = cache_owner_id_;
         cache.generation = generation;
         cache.url.assign(data.url);
         cache.known = true;
@@ -594,7 +595,7 @@ void RerunServer::on_bridge_data(const ProxyAPI::Data& data) {
       generation = subscribed_urls_generation_.fetch_add(1) + 1;
     }
 
-    cache.owner = this;
+    cache.owner_id = cache_owner_id_;
     cache.generation = generation;
     cache.url.assign(data.url);
     cache.known = true;

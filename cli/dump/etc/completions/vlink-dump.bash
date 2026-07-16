@@ -4,6 +4,7 @@ _vlink_dash_dump() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     local prev="${COMP_WORDS[COMP_CWORD-1]}"
     local active_variadic=""
+    local i
 
     COMPREPLY=()
 

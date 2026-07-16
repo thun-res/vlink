@@ -29,6 +29,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <future>
@@ -40,6 +41,7 @@
 
 #include "../common_test.h"
 #include "./extension/bag_plugin_interface.h"
+#include "./extension/bag_processor.h"
 #include "./extension/bag_reader.h"
 #include "./extension/trigger_plugin_interface.h"
 #include "./publisher.h"
@@ -208,6 +210,40 @@ class CountingBagPlugin final : public vlink::BagPluginInterface {
   std::atomic<int> reads{0};
   std::atomic<int> writes{0};
 };
+
+class ReorderBagPlugin final : public vlink::BagPluginInterface {
+ public:
+  ReorderBagPlugin() : processor_(make_config()) {
+    processor_.register_output_callback([this](const Frame& frame) { do_callback(frame); });
+  }
+
+  void on_read(const Frame& frame) override { do_callback(frame); }
+
+  void on_write(const Frame& frame) override {
+    int64_t data_timestamp = 0;
+    std::memcpy(&data_timestamp, frame.data.data(), sizeof(data_timestamp));
+    processor_.push(data_timestamp, frame);
+  }
+
+  void reset() override { processor_.reset(); }
+
+  void flush() override { processor_.flush(); }
+
+ private:
+  static vlink::BagProcessor::Config make_config() {
+    vlink::BagProcessor::Config config;
+    config.min_cache_time = 60'000;
+    return config;
+  }
+
+  vlink::BagProcessor processor_;
+};
+
+vlink::Bytes make_data_timestamp(int64_t timestamp) {
+  auto data = vlink::Bytes::create(sizeof(timestamp));
+  std::memcpy(data.data(), &timestamp, sizeof(timestamp));
+  return data;
+}
 
 TEST_SUITE("extension-TriggerRecorder") {
   TEST_CASE("overflow policy and file type enums have stable wire values") {
@@ -931,6 +967,66 @@ TEST_SUITE("extension-TriggerRecorder") {
     auto reader = vlink::BagReader::create(out);
     REQUIRE(reader != nullptr);
     CHECK_GT(reader->get_info().message_count, 0);
+  }
+
+  TEST_CASE("trigger dumps flush bag-plugin frames in data-time order") {
+    ScratchDir scratch("reorder-data-path");
+
+    const std::string url = "intra://__trigger_test_reorder__";
+    vlink::Publisher<vlink::Bytes> pub(url);
+
+    vlink::TriggerRecorder::Config config;
+    config.dump_dir = scratch.path;
+    config.default_pre_ms = 4000;
+    config.default_post_ms = 0;
+    config.enable_compress = false;
+    config.whitelist = {url};
+
+    vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
+    recorder.bind_bag_interface(std::make_shared<ReorderBagPlugin>());
+
+    REQUIRE(recorder.async_run());
+    REQUIRE(wait_until_ready(recorder));
+
+    if (!pub.wait_for_subscribers(std::chrono::milliseconds(3000))) {
+      recorder.quit();
+      recorder.wait_for_quit();
+      MESSAGE("multicast discovery unavailable; skipping the reorder assertions");
+      return;
+    }
+
+    REQUIRE(pub.publish(make_data_timestamp(3'000)));
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    REQUIRE(pub.publish(make_data_timestamp(1'000)));
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    REQUIRE(pub.publish(make_data_timestamp(2'000)));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    const std::string out = scratch.path + "/reordered.vdb";
+    vlink::TriggerRecorder::TriggerParams params;
+    params.out_file = out;
+
+    REQUIRE(recorder.dump(params));
+    REQUIRE(wait_until_idle(recorder, 8000));
+    recorder.quit();
+    recorder.wait_for_quit();
+
+    auto reader = vlink::BagReader::create(out);
+    REQUIRE(reader != nullptr);
+    REQUIRE(reader->open_cursor());
+
+    std::vector<int64_t> timestamps;
+    vlink::Frame frame;
+    while (reader->read_next(frame)) {
+      int64_t timestamp = 0;
+      std::memcpy(&timestamp, frame.data.data(), sizeof(timestamp));
+      timestamps.emplace_back(timestamp);
+    }
+
+    REQUIRE_EQ(timestamps.size(), 3u);
+    CHECK_EQ(timestamps[0], 1'000);
+    CHECK_EQ(timestamps[1], 2'000);
+    CHECK_EQ(timestamps[2], 3'000);
   }
 }
 

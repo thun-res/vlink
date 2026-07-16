@@ -38,6 +38,12 @@ namespace vlink {
 
 // BagProcessor::Impl
 struct BagProcessor::Impl final {
+  enum class Request : uint8_t {
+    kNone = 0,
+    kFlush = 1,
+    kReset = 2,
+  };
+
   struct CacheEntry final {
     int64_t data_timestamp{0};
     Frame frame;
@@ -59,7 +65,7 @@ struct BagProcessor::Impl final {
   int64_t last_output_timestamp{0};
 
   std::atomic_bool quit_flag{false};
-  bool flush_request{false};
+  Request request{Request::kNone};
   bool last_resolved_data_timestamp_valid{false};
   bool timestamp_anchor_valid{false};
   bool output_timestamp_valid{false};
@@ -169,18 +175,48 @@ void BagProcessor::flush() {
     return;
   }
 
-  impl_->flush_request = true;
+  impl_->cv.wait(lock, [this]() -> bool {
+    return impl_->request == Impl::Request::kNone || impl_->quit_flag.load(std::memory_order_acquire);
+  });
+
+  if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
+    return;
+  }
+
+  impl_->request = Impl::Request::kFlush;
 
   impl_->cv.notify_all();
 
   impl_->cv.wait(lock, [this]() -> bool {
-    return !impl_->flush_request || impl_->quit_flag.load(std::memory_order_acquire);
+    return impl_->request == Impl::Request::kNone || impl_->quit_flag.load(std::memory_order_acquire);
   });  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+}
 
-  if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
-    return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+void BagProcessor::reset() {
+  std::unique_lock lock(impl_->mtx);
+
+  if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire) || !impl_->thread.joinable()) {
+    return;
   }
 
+  impl_->cv.wait(lock, [this]() -> bool {
+    return impl_->request == Impl::Request::kNone || impl_->quit_flag.load(std::memory_order_acquire);
+  });
+
+  if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
+    return;
+  }
+
+  impl_->request = Impl::Request::kReset;
+
+  impl_->cv.notify_all();
+
+  impl_->cv.wait(lock, [this]() -> bool {
+    return impl_->request == Impl::Request::kNone || impl_->quit_flag.load(std::memory_order_acquire);
+  });  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+}
+
+void BagProcessor::reset_timeline() {
   impl_->last_data_timestamp = 0;
   impl_->last_timestamp = 0;
   impl_->data_timestamp_anchor = 0;
@@ -276,17 +312,23 @@ void BagProcessor::on_exec(bool at_end) {
 
   if VLIKELY (!at_end) {
     impl_->cv.wait(lock, [this]() -> bool {
-      return impl_->quit_flag.load(std::memory_order_acquire) || impl_->flush_request || on_check();
+      return impl_->quit_flag.load(std::memory_order_acquire) || impl_->request != Impl::Request::kNone || on_check();
     });
 
     if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
       return;
     }
 
-    if VUNLIKELY (impl_->flush_request) {
-      on_output(lock, true);
+    if VUNLIKELY (impl_->request != Impl::Request::kNone) {
+      if (impl_->request == Impl::Request::kFlush) {
+        on_output(lock, true);
+      } else {
+        impl_->data_queue.clear();
+        impl_->current_size = 0;
+      }
 
-      impl_->flush_request = false;
+      reset_timeline();
+      impl_->request = Impl::Request::kNone;
 
       impl_->cv.notify_all();
 

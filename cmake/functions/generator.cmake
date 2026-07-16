@@ -287,7 +287,7 @@ function(
       COMMAND ${command}
       COMMAND ${CMAKE_COMMAND} -E touch ${gen_hdr}
       COMMAND ${CMAKE_COMMAND} -E touch ${gen_bfbs_hdr}
-      DEPENDS ${it}
+      DEPENDS ${inputs}
       VERBATIM
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )

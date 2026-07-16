@@ -40,24 +40,54 @@ namespace webviz {
 
 FoxgloveRpc::FoxgloveRpc(const Config& config, VlinkConvert* vlink_convert, MessageLoop* loop)
     : config_(config), vlink_convert_(vlink_convert), loop_(loop) {
-  lifetime_handle_ = std::make_shared<LifetimeHandle>();
+  load_rpc_msgs();
 
-  if VLIKELY (loop_ && rpc_timeout_timer_.attach(loop_)) {
+  size_t worker_count = 0;
+
+  {
+    std::shared_lock lock(rpc_mtx_);
+    worker_count = std::min<size_t>(4U, rpcs_.size());
+  }
+
+  if (worker_count > 0U) {
+    rpc_workers_ = std::make_unique<ThreadPool>(worker_count, ThreadPool::kNormalType);
+    rpc_workers_->set_name("FoxgloveRpc");
+  }
+
+  if (worker_count > 0U && loop_ && rpc_timeout_timer_.attach(loop_)) {
     rpc_timeout_timer_.set_interval(10);
     rpc_timeout_timer_.set_loop_count(Timer::kInfinite);
     rpc_timeout_timer_.set_callback([this]() { process_rpc_timeout(); });
     rpc_timeout_timer_.start();
   }
-
-  load_rpc_msgs();
 }
 
 FoxgloveRpc::~FoxgloveRpc() {
   stopping_.store(true);
-  lifetime_handle_.reset();
 
   rpc_timeout_timer_.stop();
   rpc_timeout_timer_.detach();
+
+  std::vector<RawClient::SharedPtr> clients;
+
+  {
+    std::shared_lock lock(rpc_mtx_);
+    clients.reserve(rpcs_.size());
+
+    for (const auto& rpc_entry : rpcs_) {
+      if VLIKELY (rpc_entry.second.client) {
+        clients.emplace_back(rpc_entry.second.client);
+      }
+    }
+  }
+
+  for (const auto& client : clients) {
+    client->interrupt();
+  }
+
+  if (rpc_workers_) {
+    rpc_workers_->shutdown();
+  }
 
   {
     std::lock_guard lock(pending_rpc_mtx_);
@@ -192,7 +222,7 @@ bool FoxgloveRpc::call_rpc(uint64_t client_key, uint32_t rpc_id, uint32_t call_i
 
   const auto expected_request_encoding = std::string("json");
 
-  if VUNLIKELY (!request_encoding.empty() && expected_request_encoding != request_encoding) {
+  if VUNLIKELY (expected_request_encoding != request_encoding) {
     if VLIKELY (error_callback) {
       error_callback(rpc_id, call_id, "RPC request encoding mismatch");
     }
@@ -233,74 +263,123 @@ bool FoxgloveRpc::call_rpc(uint64_t client_key, uint32_t rpc_id, uint32_t call_i
     return false;
   }
 
+  if VUNLIKELY (!rpc_workers_) {
+    if VLIKELY (error_callback) {
+      error_callback(rpc_id, call_id, "RPC worker pool is not initialized");
+    }
+
+    return false;
+  }
+
   PendingRpcKey pending_key;
   pending_key.client_key = client_key;
   pending_key.rpc_id = rpc_id;
   pending_key.call_id = call_id;
+  const auto deadline_ms =
+      ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli, false) + static_cast<uint64_t>(state.timeout_ms);
+  bool duplicate_call = false;
 
   {
     std::lock_guard lock(pending_rpc_mtx_);
 
     if VUNLIKELY (pending_rpc_calls_.find(pending_key) != pending_rpc_calls_.end()) {
-      if VLIKELY (error_callback) {
-        error_callback(rpc_id, call_id, "Duplicate in-flight RPC call");
-      }
-
-      return false;
+      duplicate_call = true;
+    } else {
+      PendingRpcCall pending;
+      pending.deadline_ms = deadline_ms;
+      pending.rpc_id = rpc_id;
+      pending.call_id = call_id;
+      pending.error_callback = std::move(error_callback);
+      pending_rpc_calls_.emplace(pending_key, std::move(pending));
     }
-
-    PendingRpcCall pending;
-    pending.deadline_ms =
-        ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli, false) + static_cast<uint64_t>(state.timeout_ms);
-    pending.rpc_id = rpc_id;
-    pending.call_id = call_id;
-    pending.error_callback = std::move(error_callback);
-    pending_rpc_calls_.emplace(pending_key, std::move(pending));
   }
 
-  auto weak_lifetime = std::weak_ptr<LifetimeHandle>(lifetime_handle_);
+  if VUNLIKELY (duplicate_call) {
+    if VLIKELY (error_callback) {
+      error_callback(rpc_id, call_id, "Duplicate in-flight RPC call");
+    }
 
-  if VUNLIKELY (!state.client->invoke(converted.payload, [this, weak_lifetime, pending_key, state, rpc_id, call_id,
-                                                          response_callback](const Bytes& response_raw) {
-                  auto lifetime_guard = weak_lifetime.lock();
+    return false;
+  }
 
-                  if VUNLIKELY (!lifetime_guard) {
-                    return;
-                  }
+  converted.payload.deep_copy_self();
 
-                  PendingRpcCall pending;
+  PostTaskOptions options;
+  options.overflow_policy = TaskOverflowPolicy::kReject;
+  options.drop_policy = TaskDropPolicy::kProtected;
+  auto task = rpc_workers_->post_task_handle(
+      [this, pending_key, rpc_id, call_id, deadline_ms, client = std::move(state.client),
+       response_ser = std::move(state.response_ser), response_type = state.response_type,
+       request_payload = std::move(converted.payload), response_callback = std::move(response_callback)]() mutable {
+        if VUNLIKELY (stopping_.load()) {
+          return;
+        }
 
-                  if VUNLIKELY (!take_pending_rpc(pending_key, pending)) {
-                    return;
-                  }
+        {
+          std::lock_guard lock(pending_rpc_mtx_);
 
-                  if VUNLIKELY (stopping_.load()) {
-                    return;
-                  }
+          if VUNLIKELY (pending_rpc_calls_.find(pending_key) == pending_rpc_calls_.end()) {
+            return;
+          }
+        }
 
-                  if VUNLIKELY (!vlink_convert_) {
-                    if VLIKELY (pending.error_callback) {
-                      pending.error_callback(rpc_id, call_id, "Vlink convert is not initialized");
-                    }
+        auto now_ms = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli, false);
 
-                    return;
-                  }
+        if VUNLIKELY (now_ms >= deadline_ms) {
+          PendingRpcCall pending;
 
-                  Bytes response_payload;
+          if VLIKELY (take_pending_rpc(pending_key, pending) && pending.error_callback) {
+            pending.error_callback(rpc_id, call_id, "RPC call timed out");
+          }
 
-                  if VUNLIKELY (!vlink_convert_->decode_backend_message_to_json(state.response_ser, state.response_type,
-                                                                                response_raw, response_payload)) {
-                    if VLIKELY (pending.error_callback) {
-                      pending.error_callback(rpc_id, call_id, "Failed to convert RPC response");
-                    }
+          return;
+        }
 
-                    return;
-                  }
+        Bytes response_raw;
+        auto remaining_timeout = std::chrono::milliseconds(deadline_ms - now_ms);
+        const bool invoke_success = client->invoke(request_payload, response_raw, remaining_timeout);
+        PendingRpcCall pending;
 
-                  if VLIKELY (response_callback) {
-                    response_callback(rpc_id, call_id, "json", response_payload);
-                  }
-                })) {
+        if VUNLIKELY (!take_pending_rpc(pending_key, pending) || stopping_.load()) {
+          return;
+        }
+
+        if VUNLIKELY (!invoke_success) {
+          if VLIKELY (pending.error_callback) {
+            now_ms = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli, false);
+            pending.error_callback(rpc_id, call_id,
+                                   now_ms >= deadline_ms ? "RPC call timed out" : "RPC request failed");
+          }
+
+          return;
+        }
+
+        if VUNLIKELY (!vlink_convert_) {
+          if VLIKELY (pending.error_callback) {
+            pending.error_callback(rpc_id, call_id, "Vlink convert is not initialized");
+          }
+
+          return;
+        }
+
+        Bytes response_payload;
+
+        if VUNLIKELY (!vlink_convert_->decode_backend_message_to_json(response_ser, response_type, response_raw,
+                                                                      response_payload)) {
+          if VLIKELY (pending.error_callback) {
+            pending.error_callback(rpc_id, call_id, "Failed to convert RPC response");
+          }
+
+          return;
+        }
+
+        if VLIKELY (response_callback) {
+          response_callback(rpc_id, call_id, "json", response_payload);
+        }
+      },
+      options);
+
+  if VUNLIKELY (!task.valid() || task.state() == TaskExecutionState::kRejected) {
     PendingRpcCall pending;
     take_pending_rpc(pending_key, pending);
 

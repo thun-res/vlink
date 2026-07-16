@@ -86,7 +86,11 @@ bool ExprContext::compile(const std::vector<std::string>& field_specs, const std
   impl_->symbol_table.add_constants();
 
   for (size_t i = 0; i < var_names_.size(); ++i) {
-    impl_->symbol_table.add_variable(var_names_[i], var_values_[i]);
+    if VUNLIKELY (!impl_->symbol_table.add_variable(var_names_[i], var_values_[i])) {
+      std::cerr << "Invalid or reserved expression variable name for field '" << field_specs[i]
+                << "': " << var_names_[i] << std::endl;
+      return false;
+    }
   }
 
   impl_->expressions.resize(expr_strings.size());

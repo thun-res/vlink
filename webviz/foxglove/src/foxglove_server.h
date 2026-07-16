@@ -247,8 +247,6 @@ class FoxgloveServer final : public MessageLoop {
 
   void clear_channel_runtime_state(uint32_t channel_id, std::string_view url);
 
-  void move_channel_runtime_state(uint32_t old_channel_id, uint32_t new_channel_id);
-
   void update_channels(const std::vector<ProxyAPI::Info>& info_list);
 
   void install_publish_channels();
@@ -272,6 +270,7 @@ class FoxgloveServer final : public MessageLoop {
   bool is_url_allowed(std::string_view url) const;
 
   Config config_;
+  const uint64_t cache_owner_id_{allocate_cache_owner_id()};
   std::unique_ptr<WsServer> ws_server_;
   std::unique_ptr<ProxyBridge> bridge_;
   std::unique_ptr<FoxgloveConverter> foxglove_converter_;

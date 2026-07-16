@@ -368,7 +368,7 @@ MCAP 格式的文件头内嵌 schema 与 channel 元数据并支持随机访问�
 
 ## 🧩 9.12 多文件合并回放
 
-录制按大小或时间分割会产生多个文件；多源或乱序数据需按真实数据时间重新排序时，用 `vlink::BagProcessor` 做时间滑窗重排。它维护一个缓冲窗口，将多个 reader 汇入的帧按 `push(data_timestamp, frame)` 传入的 data-plane time 升序输出，给"迟到但更早"的帧一个排到已缓存帧之前的机会。仅当窗口内最旧帧与最新帧的 data-plane time 跨度达到 `Config::min_cache_time`（默认 `500` ms）才释放最旧帧，生产者静默时再由墙钟回退强制排空。`BagProcessor::Config` 另有两个可调字段：`max_cache_size`（默认 256 MiB，缓冲帧总载荷字节上限）与 `max_jump_time`（默认 1 h，data-plane time 单次跳变的绝对上限）。输出时 `Frame::timestamp` 会映射到排序后的 data-plane-time 轴，并在单个 flush 段（单个文件）内保持严格单调递增（`flush()` 作为文件边界会重置时间锚点）；如果某帧无法提取 data-plane time，可传入负值，processor 会按上一帧的 data 时间叠加 `Frame::timestamp` 差值补齐（无前序锚点时保持 `-1` 并排在最前）。`BagProcessor` 的输出回调在其独立 worker 线程触发，结束前须调用 `flush()` 同步排空尾部缓存帧。
+录制按大小或时间分割会产生多个文件；多源或乱序数据需按真实数据时间重新排序时，用 `vlink::BagProcessor` 做时间滑窗重排。它维护一个缓冲窗口，将多个 reader 汇入的帧按 `push(data_timestamp, frame)` 传入的 data-plane time 升序输出，给"迟到但更早"的帧一个排到已缓存帧之前的机会。仅当窗口内最旧帧与最新帧的 data-plane time 跨度达到 `Config::min_cache_time`（默认 `500` ms）才释放最旧帧；墙钟时间绝不推进该窗口，生产者静默后的尾帧仅由显式 `flush()` 排空。`BagProcessor::Config` 另有两个可调字段：`max_cache_size`（默认 256 MiB，缓冲帧总载荷字节上限）与 `max_jump_time`（默认 1 h，data-plane time 单次跳变的绝对上限）；超过该阈值时，该帧按上一有效数据时间加录制时间 `Frame::timestamp` 的增量回退，避免异常数据时间跨越污染排序轴。输出时 `Frame::timestamp` 会映射到排序后的 data-plane-time 轴，并在单个 flush 段内保持严格单调递增；`flush()` 同步排空并重置时间锚点，`reset()` 则等待正在执行的输出回调结束、丢弃缓存而不输出并重置全部锚点。如果某帧无法提取 data-plane time，可传入负值，processor 会按上一帧的数据时间叠加 `Frame::timestamp` 差值补齐（无前序锚点时保持 `-1` 并排在最前）。`BagProcessor` 的输出回调在其独立 worker 线程触发，不得在该回调内调用 `flush()` / `reset()`，也不得让 `push()` 与边界操作并发。
 
 ```cpp
 #include <vlink/extension/bag_reader.h>
@@ -417,7 +417,7 @@ int main() {
 }
 ```
 
-`BagProcessor` 同时是 `BagPluginInterface` 派生插件的基本构件，用于录制前 / 回放前的重排与转码：写侧由 `BagWriter::bind_bag_interface()` 在落盘前调用插件的 `on_write()`，读侧由 `BagReader::bind_bag_interface()` 在回放前调用 `on_read()`，二者均经插件内部的 `do_callback()` 重新发出。`BagPluginInterface` 的加载与生命周期见 [13-integration.md](13-integration.md)。
+`BagProcessor` 同时是 `BagPluginInterface` 派生插件的基本构件，用于录制前 / 回放前的重排与转码：写侧由 `BagWriter::bind_bag_interface()` 在落盘前调用插件的 `on_write()`，读侧由 `BagReader::bind_bag_interface()` 在回放前调用 `on_read()`，二者均经插件内部的 `do_callback()` 重新发出。reader 在每个顶层 `play()` / `jump()` 读会话开始、ready 回调之前调用插件 `reset()`；重排插件应在此调用 `BagProcessor::reset()`，确保 `stop()` / `jump()` 留下的缓存和时间锚点不会污染新会话。只有自然完成的回放轮次才调用 `flush()`，保留尾帧并隔离下一轮；若在边界排空前观察到 `stop()` / `jump()`，则跳过 `flush()`，由下一会话的 `reset()` 丢弃尾帧。`on_read()` 收到的帧已填充经 `convert_url_meta()` 处理后的有效 `ser_type` / `schema_type`；若 `on_read()` 另行更改输出 URL，保留类型表示 payload 类型不变，若要按新 URL 的已知元数据重新解析则须先清空 `ser_type` 并把 `schema_type` 设为 `kUnknown`，转码时则应显式填写新类型。`BagPluginInterface` 接口版本为 2.0，加载与完整生命周期见 [13-integration.md](13-integration.md)。
 
 ---
 

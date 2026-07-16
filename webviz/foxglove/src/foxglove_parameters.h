@@ -74,6 +74,8 @@ class FoxgloveParameters final {
 
   [[nodiscard]] nlohmann::json build_parameter_values(const std::vector<std::string>& names, std::string_view id) const;
 
+  [[nodiscard]] static nlohmann::json build_parameter_delta(const std::vector<const ParameterEntry*>& entries);
+
   bool apply_set_parameters(const nlohmann::json& request, nlohmann::json& response, std::vector<ParameterEntry>& delta,
                             std::string& error);
 

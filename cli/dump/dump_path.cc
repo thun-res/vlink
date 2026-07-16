@@ -53,40 +53,42 @@ std::filesystem::path utf8_to_path(const std::string& utf8) noexcept {
 }
 
 std::string path_to_utf8(const std::filesystem::path& path) noexcept {
-  try {
+  auto result = vlink::Helpers::path_to_string(path);
+
 #ifdef _WIN32
-    auto result = vlink::Helpers::path_to_string(path);
-    std::replace(result.begin(), result.end(), '\\', '/');
-    return result;
-#else
-    return path.string();
+  std::replace(result.begin(), result.end(), '\\', '/');
 #endif
-  } catch (const std::filesystem::filesystem_error&) {
-    return {};
-  } catch (const std::exception&) {
-    return {};
-  }
+
+  return result;
 }
 
 std::string normalize_dir(std::string dir) {
-#ifdef _WIN32
-
-  try {
-    dir = vlink::Helpers::path_to_string(std::filesystem::path(dir));
-  } catch (std::filesystem::filesystem_error&) {
+  if (dir.empty()) {
+    return dir;
   }
 
-  std::replace(dir.begin(), dir.end(), '\\', '/');
+  const auto path = utf8_to_path(dir);
+
+  if VUNLIKELY (path.empty()) {
+    return dir;
+  }
+
+#ifdef _WIN32
+  auto normalized = path_to_utf8(path);
+
+  if VLIKELY (!normalized.empty()) {
+    dir = normalized;
+  }
 #endif
 
-  if (!dir.empty() && dir.back() == '/') {
+  if (!dir.empty() && dir.back() == '/' && path != path.root_path()) {
     dir.pop_back();
   }
 
   return dir;
 }
 
-std::string get_home_config_path(const std::string& filename) {
+static std::string get_home_config_path(const std::string& filename) {
   std::string home = vlink::Utils::get_env("HOME");
 
   if (home.empty()) {
@@ -140,22 +142,7 @@ std::string read_home_config(const std::string& filename) {
 
   std::string content;
   content.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
-
-  auto back_pos = content.find_last_not_of(" \t\r\n");
-
-  if (back_pos != std::string::npos) {
-    content.erase(back_pos + 1);
-  } else {
-    content.clear();
-  }
-
-  auto front_pos = content.find_first_not_of(" \t\r\n");
-
-  if (front_pos != std::string::npos) {
-    content.erase(0, front_pos);
-  }
-
-  return content;
+  return vlink::Helpers::trim_string(content);
 }
 
 }  // namespace vlink::dump

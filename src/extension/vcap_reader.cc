@@ -1858,6 +1858,8 @@ bool VCAPReader::do_read_next(Frame& out, bool& is_error) {
 void VCAPReader::read(const Config& config) {
   int loop_times = 0;
 
+  reset_plugin();
+
   if (config.auto_pause) {
     impl_->pause_flag.store(true, std::memory_order_relaxed);
   }
@@ -2072,16 +2074,20 @@ void VCAPReader::read(const Config& config) {
         impl_->begin_time.store(config.begin_time, std::memory_order_relaxed);
       }
     }
+
+    if (impl_->stop_flag.load(std::memory_order_relaxed) || impl_->jump_flag.load(std::memory_order_relaxed) ||
+        is_ready_to_quit()) {
+      is_interrupted = true;
+      break;
+    }
+
+    flush_plugin();
   } while (impl_->times.load(std::memory_order_relaxed) <= 0 ||
            (impl_->times.load(std::memory_order_relaxed) > 0 &&
             ++loop_times < impl_->times.load(std::memory_order_relaxed)));
 
   if (impl_->stop_flag.load(std::memory_order_relaxed)) {
     is_interrupted = true;
-  }
-
-  if (!impl_->jump_flag.load(std::memory_order_relaxed) && !is_interrupted) {
-    flush_plugin();
   }
 
   if (!impl_->jump_flag.load(std::memory_order_relaxed) && impl_->finish_callback) {

@@ -235,6 +235,35 @@ TEST_SUITE("extension-BagProcessor") {
     CHECK_EQ(received[3], 101);
   }
 
+  TEST_CASE("reset discards buffered frames and clears data-time anchors") {
+    std::vector<BagProcessorOutput> received;
+
+    BagProcessor::Config cfg;
+    cfg.min_cache_time = 60'000;
+    cfg.max_jump_time = 100;
+    BagProcessor processor(cfg);
+
+    processor.register_output_callback([&](const Frame& frame) { received.push_back({frame.timestamp, frame.url}); });
+
+    processor.push(1'000'000, make_frame(50'000, "old"));
+    processor.reset();
+
+    processor.push(10'000, make_frame(100, "new-later"));
+    processor.push(1'000, make_frame(200, "new-earlier"));
+    processor.flush();
+
+    REQUIRE_EQ(received.size(), 2u);
+    CHECK_EQ(received[0].url, "new-earlier");
+    CHECK_EQ(received[1].url, "new-later");
+    CHECK_EQ(received[0].timestamp, 200);
+    CHECK_EQ(received[1].timestamp, 9'200);
+  }
+
+  TEST_CASE("reset before output callback registration is a no-op") {
+    BagProcessor processor;
+    CHECK_NOTHROW(processor.reset());
+  }
+
   TEST_CASE("flush is a no-op on an empty cache and after a prior drain") {
     std::vector<int64_t> received;
     std::mutex mtx;

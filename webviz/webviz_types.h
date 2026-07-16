@@ -25,12 +25,19 @@
 
 #include <vlink/base/macros.h>
 
+#include <atomic>
+#include <cstdint>
 #include <exception>
 #include <string>
 #include <vector>
 
 namespace vlink {
 namespace webviz {
+
+inline uint64_t allocate_cache_owner_id() noexcept {
+  static std::atomic<uint64_t> next_id{1};
+  return next_id.fetch_add(1, std::memory_order_relaxed);
+}
 
 struct UrlSelector final {
   bool configured{false};

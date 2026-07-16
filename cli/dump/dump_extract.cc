@@ -29,8 +29,11 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <system_error>
 #include <type_traits>
 #include <vector>
+
+#include "./dump_path.h"
 
 #ifdef VLINK_HAS_PROTOBUF_COMPILER
 
@@ -62,13 +65,17 @@ void import_protos(google::protobuf::compiler::Importer* importer, const std::fi
 
   try {
     for (const auto& entry : std::filesystem::directory_iterator(sub_dir)) {
+      if VUNLIKELY (file_list.size() >= kMaxSchemaDirEntries) {
+        return;
+      }
+
       file_list.emplace_back(entry);
     }
   } catch (std::filesystem::filesystem_error&) {
     return;
   }
 
-  if VUNLIKELY (file_list.empty() || file_list.size() > kMaxSchemaDirEntries) {
+  if VUNLIKELY (file_list.empty()) {
     return;
   }
 
@@ -108,18 +115,32 @@ bool extract_proto_value(const google::protobuf::Message& message, const std::ve
 
   auto bracket_pos = field_name.find('[');
 
-  if VUNLIKELY (bracket_pos != std::string::npos) {
+  if (bracket_pos != std::string::npos) {
     auto close_pos = field_name.find(']', bracket_pos);
 
-    if VLIKELY (close_pos != std::string::npos && close_pos > bracket_pos) {
-      std::from_chars(field_name.data() + bracket_pos + 1, field_name.data() + close_pos, array_index);
-      field_name = field_name.substr(0, bracket_pos);
+    if VUNLIKELY (close_pos == std::string::npos || close_pos != field_name.size() - 1 ||
+                  close_pos == bracket_pos + 1) {
+      return false;
     }
+
+    const auto* index_begin = field_name.data() + bracket_pos + 1;
+    const auto* index_end = field_name.data() + close_pos;
+    const auto [ptr, ec] = std::from_chars(index_begin, index_end, array_index);
+
+    if VUNLIKELY (ec != std::errc() || ptr != index_end || array_index < 0) {
+      return false;
+    }
+
+    field_name.resize(bracket_pos);
   }
 
   const auto* field = descriptor->FindFieldByName(field_name);
 
   if VUNLIKELY (!field) {
+    return false;
+  }
+
+  if VUNLIKELY (array_index >= 0 && !field->is_repeated()) {
     return false;
   }
 
@@ -322,7 +343,7 @@ vlink::Bytes extract_zerocopy_binary(const std::string& ser, const vlink::Bytes&
     return {};
   }
 
-  return vlink::Bytes::shallow_copy(const_cast<uint8_t*>(binary->data()), binary->size());
+  return vlink::Bytes::shallow_copy(binary->data(), binary->size());
 }
 
 template <typename T>
@@ -348,7 +369,7 @@ bool write_pcd_file(const std::string& file_path, const vlink::zerocopy::PointCl
     return false;
   }
 
-  std::ofstream file(file_path, std::ios::binary);
+  std::ofstream file(vlink::dump::utf8_to_path(file_path), std::ios::binary);
 
   if VUNLIKELY (!file.is_open()) {
     return false;

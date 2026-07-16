@@ -1,6 +1,6 @@
 # 🗒️ 更新日志
 
-## v2.1.0 (2026/07/15)
+## v2.1.0 (2026/07/18)
 
 ### 新增功能
 
@@ -8,7 +8,7 @@
 - **CameraFrame**：扩展图像格式支持，新增更多 Raw、Bayer、YUV 与压缩格式；增加编码辅助函数、Python 绑定和“自动”解码模式，同时保持线上格式的枚举值兼容。
 - **zenoh**：新增调试环境变量开关，默认关闭 gossip scouting。
 - **trigger**：新增内存触发式事件数据记录工具 `vlink-trigger`（EDR）及 `vlink::TriggerRecorder` 引擎，并提供 Python 绑定。为服务发现到的每个 URL 维护滚动环形缓冲，触发时（`dump()` 或 `vlink-trigger dump`）将触发点前后的窗口落盘为 bag 并轮转历史文件，窗口大小可按 URL 覆盖。默认按采集时刻写盘，可选绑定 `BagPluginInterface` 按真实数据面时间重排。另提供独立的 `TriggerPluginInterface` 生命周期插件，`on_dump_finished` 为 dump 后的上传 / 归档钩子。两类插件均由宿主（CLI 或 Python）加载并绑定。
-- **bag-plugin**：将 `BagPluginInterface::on_read` 与 `on_write` 改为纯虚函数，并从 `BagPluginInterface` 移除 `VersionInfo` 与 `get_version_info`（仅 `SchemaPluginInterface` 保留；新增的 `TriggerPluginInterface` 从未包含它们）。**破坏性变更**：虚表布局已改变，`BagPluginInterface` 插件主版本提升至 2。插件必须基于新头文件重新构建并声明 `VLINK_PLUGIN_DECLARE(..., 2, 0)`；宿主 `vlink-bag`、`vlink-dump` 与 `vlink-trigger` 现请求主版本 2，并拒绝旧插件二进制。
+- **bag-plugin**：将 `BagPluginInterface::on_read` 与 `on_write` 改为纯虚函数，移除 `VersionInfo` / `get_version_info`，并新增读会话 `reset()` 钩子；回放调用 `on_read()` 前会填充有效 `ser_type` / `schema_type`。插件接口版本保持 2.0，实现必须基于新头文件重新构建并声明 `VLINK_PLUGIN_DECLARE(..., 2, 0)`；C++ CLI 与 Python `Plugin.load_bag_plugin()` 均请求 2.0。
 
 ### 改进
 
@@ -29,10 +29,16 @@
 - **shm/shm2**：删除 wait 模式的逐消息 INFO 日志。
 - **shm2**：大尺寸 `Bytes` 发布改用借贷内存以避免拷贝；无 fd 的 iceoryx2 listener 使用非忙等等待路径；默认 slice 与内存大小提升至 4 KiB。
 - **eproto/efbs**：兼容 protobuf 3.21.12 及以上版本的 proto3 默认标量输出，按字段编号输出，排序 map 条目，并生成合法 JSON。
+- **vlink-dump**：收紧命令行参数值与模式校验；`-n` 精确停止，`--hz` 按整数微秒执行严格最大频率限制。slice/scan 将字段解析移到 URL、action、采样和时间窗口门控之后，未使用过滤/事件/CSV 时不再建立字段解码 runtime 或逐帧解析 payload；同步切片 writer 不再启动无用后台线程；质量与 manifest 输出顺序保持确定。
 - **bench**：根据 payload 大小自动调整 shm2 运行时 URL，并改进报告分组与一致性。
 
 ### 修复
 
+- 修复 VDB / VCAP 多次回放、`stop()` 后重播及 `jump()` 后新会话之间的 bag 重排缓存污染：自然完成的每轮回放同步 `flush()`；若在边界排空前观察到中断则跳过 `flush()`，新顶层读会话在 ready 回调前同步 `reset()` 并丢弃中断会话尾帧，同时重置数据时间与输出时间锚点。
+- 修复 `vlink-dump` 从 bag 插件输出回调达到数量上限时同步解绑插件造成的自等待死锁；回调现在只请求 reader 停止，插件在安全生命周期边界处理。
+- 修复 `vlink-dump` live 订阅初始化失败、提前返回和输出写失败时的资源生命周期问题；最终状态只在回调停止且 CSV/JSON/切片 writer 完成关闭后报告，空 JSON 结果稳定输出 `[]`。
+- 修复 `vlink-dump slice/scan` 的末尾亚毫秒消息遗漏、空尾段未生成、Method URL 选择、bag/分片/segments/schema config 输入与输出碰撞、跨 Protobuf 根目录与同名异构 schema 导入，以及缺失/不支持的 schema 解码器导致的静默空输出；字段相关操作现仅放行可解码的 ZeroCopy 与 Protobuf 主题。
+- 修复 `--schema_plugin` / `VLINK_SCHEMA_PLUGIN` 无法按文档加载共享库完整路径的问题；显式配置的插件加载失败时不再静默回退。
 - 修复 `proxy_server` 的 `max_packet_size` 处理。
 - 修复 `vlink-bag record` 退出时崩溃。
 - 任务队列已满时不再丢弃已接受的异步 bag 写入；在任务的所有结束路径释放队列内存，并通过 `BagWriter::fail()` 暴露延迟帧/Schema 写入失败与关闭阶段失败。
@@ -40,6 +46,7 @@
 - 仅在 writer 循环启动后为限时 `vlink-bag record` 计时，并使 `--deft` 模式保持 DiscoveryViewer 后台运行；Python `TriggerRecorder.async_run()` 等待 recorder 启动完成；viewer 会报告录制文件关闭失败。
 - 加强图像 payload 校验与不安全尺寸处理。
 - 在 `vlink-efbs`、`vlink-dump`、viewer 感知显示和 webviz RPC 解码前验证 FlatBuffers schema 与 payload，拒绝损坏或类型不匹配的数据。
+- 同步内置 Foxglove FlatBuffers schema，并修复 webviz 动态 schema / 字段 / 表达式线程缓存的实例与 schema 生命周期隔离、FlatBuffers table 缺失字段的映射默认值、重复 RPC 请求的多余拷贝及慢客户端发送队列无界增长；Rerun typed tensor 在对齐数据上直接借用输入缓冲，图像与占据栅格转换减少整帧拷贝，CMake 3.15 可从默认安装路径发现 Rerun SDK。
 - 修复 Release 构建的 Python 状态字典将非 `PublicationMatched` 状态按错误派生类型读取，导致字段错误或未定义行为的问题。
 - 修复 Python `ZeroCopyMessageParser` 在 `parse()` / `parse_type()` 后借用已释放临时缓冲的悬垂访问（use-after-free）：解析器现直接借用输入 `Bytes` 的存储，并由绑定持有该输入以维持其生存期；输入指针或大小改变后，绑定会拒绝继续读取。解析器有效期间仍禁止原地修改输入内容。
 - 修复 `MemoryResource::is_equal()` 与外部 PMR resource 比较时的未定义行为。
