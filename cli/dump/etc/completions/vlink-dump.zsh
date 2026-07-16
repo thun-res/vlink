@@ -81,5 +81,5 @@ _vlink-dump() {
 }
 
 if (( $+functions[compdef] )); then
-    compdef _vlink-dump vlink-dump dump
+    _vlink_zsh_register_completion _vlink-dump vlink-dump dump
 fi

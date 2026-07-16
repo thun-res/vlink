@@ -13,4 +13,4 @@ _vlink_list() {
     _vlink_bash_complete_words "-n --native -m --name -p --pid -c --check_process_count -h --help -v --version" "$cur"
 }
 
-complete -F _vlink_list vlink-list list
+_vlink_bash_register_completion _vlink_list vlink-list list

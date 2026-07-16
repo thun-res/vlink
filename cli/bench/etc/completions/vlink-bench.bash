@@ -63,7 +63,7 @@ _vlink_bench_complete_run_multi() {
         -q|--qos) _vlink_bench_complete_qos_csv "$2"; return 0 ;;
         --report) _vlink_bench_complete_reports_csv "$_vlink_bench_reports" "$2"; return 0 ;;
         --property|--pub-property|--sub-property|--size|--latency-size|--topology-size|-r|--rate|-f|--fanout|\
-        --publishers|--burst) return 0 ;;
+        --publishers|--burst|--backpressure-sleep) return 0 ;;
     esac
 
     return 1
@@ -109,7 +109,8 @@ _vlink_bench_positional_count() {
             run:-u|run:--url|run:-s|run:--suite|run:-m|run:--mode|run:-t|run:--topology|run:--pattern|\
             run:-k|run:--payload|run:-q|run:--qos|run:--property|run:--pub-property|run:--sub-property|\
             run:--size|run:--latency-size|run:--topology-size|run:-r|run:--rate|run:-f|run:--fanout|\
-            run:--publishers|run:--burst|run:--report|plot:--report|pub:--property|pub:--pub-property|pub:--sub-property|\
+            run:--publishers|run:--burst|run:--backpressure-sleep|run:--report|plot:--report|\
+            pub:--property|pub:--pub-property|pub:--sub-property|\
             sub:--property|sub:--pub-property|sub:--sub-property)
                 expect="multi"
                 continue
@@ -159,7 +160,7 @@ _vlink_bench() {
                     ;;
                 -u|--url|-s|--suite|-m|--mode|-t|--topology|--pattern|-k|--payload|-q|--qos|\
                 --property|--pub-property|--sub-property|--size|--latency-size|--topology-size|-r|--rate|\
-                -f|--fanout|--publishers|--burst)
+                -f|--fanout|--publishers|--burst|--backpressure-sleep)
                     _vlink_bench_complete_run_multi "$prev" "$cur" && return
                     ;;
                 --warmup|--duration|--drain|--serialization-duration|--repeat)
@@ -183,7 +184,7 @@ _vlink_bench() {
             _vlink_bash_complete_words "-p --preset -u --url -s --suite -m --mode -t --topology \
 --pattern -k --payload -q --qos --property --pub-property --sub-property \
 --size --latency-size --topology-size -r --rate -f --fanout --publishers \
---burst --warmup --duration --drain --serialization-duration --repeat \
+--burst --backpressure-sleep --warmup --duration --drain --serialization-duration --repeat \
 -o --output --report --no-pager --silent --verbose -h --help -v --version" "$cur"
             ;;
         plot)
@@ -271,4 +272,4 @@ _vlink_bench() {
     esac
 }
 
-complete -F _vlink_bench vlink-bench bench
+_vlink_bash_register_completion _vlink_bench vlink-bench bench

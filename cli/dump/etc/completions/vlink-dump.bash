@@ -77,4 +77,4 @@ _vlink_dash_dump() {
     _vlink_bash_complete_url "$cur"
 }
 
-complete -F _vlink_dash_dump vlink-dump dump
+_vlink_bash_register_completion _vlink_dash_dump vlink-dump dump

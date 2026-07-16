@@ -67,5 +67,5 @@ _vlink-foxglove() {
 }
 
 if (( $+functions[compdef] )); then
-    compdef _vlink-foxglove vlink-foxglove webviz_foxglove
+    _vlink_zsh_register_completion _vlink-foxglove vlink-foxglove webviz_foxglove
 fi

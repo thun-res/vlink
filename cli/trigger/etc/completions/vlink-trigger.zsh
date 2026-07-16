@@ -74,5 +74,5 @@ _vlink-trigger() {
 }
 
 if (( $+functions[compdef] )); then
-    compdef _vlink-trigger vlink-trigger trigger
+    _vlink_zsh_register_completion _vlink-trigger vlink-trigger trigger
 fi

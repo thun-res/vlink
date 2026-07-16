@@ -76,5 +76,5 @@ _vlink-efbs() {
 }
 
 if (( $+functions[compdef] )); then
-    compdef _vlink-efbs vlink-efbs efbs
+    _vlink_zsh_register_completion _vlink-efbs vlink-efbs efbs
 fi

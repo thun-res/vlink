@@ -50,5 +50,5 @@ _vlink-check() {
 }
 
 if (( $+functions[compdef] )); then
-    compdef _vlink-check vlink-check check
+    _vlink_zsh_register_completion _vlink-check vlink-check check
 fi

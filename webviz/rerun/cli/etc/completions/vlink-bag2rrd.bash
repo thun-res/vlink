@@ -45,4 +45,4 @@ _vlink_bag2rrd() {
     _vlink_bash_complete_files_ext "$cur" "$_vlink_bash_play_ext"
 }
 
-complete -F _vlink_bag2rrd vlink-bag2rrd bag2rrd
+_vlink_bash_register_completion _vlink_bag2rrd vlink-bag2rrd bag2rrd

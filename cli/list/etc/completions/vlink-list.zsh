@@ -13,5 +13,5 @@ _vlink-list() {
 }
 
 if (( $+functions[compdef] )); then
-    compdef _vlink-list vlink-list list
+    _vlink_zsh_register_completion _vlink-list vlink-list list
 fi

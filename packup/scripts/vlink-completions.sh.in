@@ -66,6 +66,38 @@ _vlink_bash_complete_dirs() {
     _vlink_bash_collect_candidates < <(compgen -d -- "$1")
 }
 
+_vlink_completion_alias_available() {
+    local completion_alias="$1"
+    local target="$2"
+    local alias_definition=""
+    local alias_path=""
+    local target_path=""
+
+    alias_definition=$(alias "$completion_alias" 2>/dev/null) || alias_definition=""
+    if [[ -n "$alias_definition" && "$alias_definition" == *"$target"* ]]; then
+        return 0
+    fi
+
+    alias_path=$(command -v "$completion_alias" 2>/dev/null) || return 1
+    target_path=$(command -v "$target" 2>/dev/null) || return 1
+    [[ -e "$alias_path" && -e "$target_path" && "$alias_path" -ef "$target_path" ]]
+}
+
+_vlink_bash_register_completion() {
+    local function_name="$1"
+    local target="$2"
+    local completion_alias
+
+    shift 2
+    complete -F "$function_name" "$target"
+
+    for completion_alias in "$@"; do
+        if _vlink_completion_alias_available "$completion_alias" "$target"; then
+            complete -F "$function_name" "$completion_alias"
+        fi
+    done
+}
+
 _vlink_bash_find_subcommand() {
     local subcommands="$1"
     local index command=""
@@ -138,6 +170,21 @@ _vlink_zsh_complete_plugin_file() {
 
 _vlink_zsh_complete_json_file() {
     _files -g "*.json"
+}
+
+_vlink_zsh_register_completion() {
+    local function_name="$1"
+    local target="$2"
+    local completion_alias
+
+    shift 2
+    compdef "$function_name" "$target"
+
+    for completion_alias in "$@"; do
+        if _vlink_completion_alias_available "$completion_alias" "$target"; then
+            compdef "$function_name" "$completion_alias"
+        fi
+    done
 }
 
 _vlink_zsh_last_option() {

@@ -54,5 +54,5 @@ _vlink-monitor() {
 }
 
 if (( $+functions[compdef] )); then
-    compdef _vlink-monitor vlink-monitor monitor
+    _vlink_zsh_register_completion _vlink-monitor vlink-monitor monitor
 fi

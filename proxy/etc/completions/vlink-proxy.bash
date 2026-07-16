@@ -43,4 +43,4 @@ _vlink_proxy() {
 --dds_impl --runnable -h --help -v --version" "$cur"
 }
 
-complete -F _vlink_proxy vlink-proxy proxy
+_vlink_bash_register_completion _vlink_proxy vlink-proxy proxy

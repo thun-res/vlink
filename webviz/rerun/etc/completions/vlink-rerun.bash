@@ -63,4 +63,4 @@ _vlink_rerun() {
 -i --filter -k --black $_vlink_bash_webviz_proxy_opts -h --help -v --version" "$cur"
 }
 
-complete -F _vlink_rerun vlink-rerun webviz_rerun
+_vlink_bash_register_completion _vlink_rerun vlink-rerun webviz_rerun

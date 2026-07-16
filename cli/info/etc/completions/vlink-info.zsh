@@ -10,5 +10,5 @@ _vlink-info() {
 }
 
 if (( $+functions[compdef] )); then
-    compdef _vlink-info vlink-info info
+    _vlink_zsh_register_completion _vlink-info vlink-info info
 fi

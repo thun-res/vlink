@@ -222,5 +222,5 @@ _vlink-bag() {
 }
 
 if (( $+functions[compdef] )); then
-    compdef _vlink-bag vlink-bag bag
+    _vlink_zsh_register_completion _vlink-bag vlink-bag bag
 fi

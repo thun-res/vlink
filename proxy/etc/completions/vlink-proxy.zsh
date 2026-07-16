@@ -44,5 +44,5 @@ _vlink-proxy() {
 }
 
 if (( $+functions[compdef] )); then
-    compdef _vlink-proxy vlink-proxy proxy
+    _vlink_zsh_register_completion _vlink-proxy vlink-proxy proxy
 fi

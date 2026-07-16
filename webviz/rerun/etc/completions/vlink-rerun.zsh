@@ -79,5 +79,5 @@ _vlink-rerun() {
 }
 
 if (( $+functions[compdef] )); then
-    compdef _vlink-rerun vlink-rerun webviz_rerun
+    _vlink_zsh_register_completion _vlink-rerun vlink-rerun webviz_rerun
 fi
