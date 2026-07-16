@@ -483,11 +483,30 @@ void unbind_python_instance_owner_after_loop_idle(nb::handle instance, vlink::Me
   defer_python_owner_until_loop_idle(iter->second.owner, loop);
 }
 
+template <typename MessageT, typename = void>
+struct HasInternalData : std::false_type {};
+
+template <typename MessageT>
+struct HasInternalData<MessageT, std::void_t<decltype(std::declval<const MessageT&>().get_internal_data())>>
+    : std::true_type {};
+
+template <typename MessageT, typename = void>
+struct HasData : std::false_type {};
+
+template <typename MessageT>
+struct HasData<MessageT, std::void_t<decltype(std::declval<const MessageT&>().data())>> : std::true_type {};
+
+template <typename MessageT, typename = void>
+struct HasFullClear : std::false_type {};
+
+template <typename MessageT>
+struct HasFullClear<MessageT, std::void_t<decltype(std::declval<MessageT&>().clear(true))>> : std::true_type {};
+
 template <typename MessageT>
 const uint8_t* zerocopy_payload_address(const MessageT& message) noexcept {
-  if constexpr (requires { message.get_internal_data(); }) {
+  if constexpr (HasInternalData<MessageT>::value) {
     return message.get_internal_data();
-  } else if constexpr (requires { message.data(); }) {
+  } else if constexpr (HasData<MessageT>::value) {
     return message.data();
   } else {
     const vlink::Bytes raw = message.raw();
@@ -508,7 +527,7 @@ const uint8_t* zerocopy_payload_address(const MessageT& message) noexcept {
 
 template <typename MessageT>
 void zerocopy_full_clear(MessageT& target) noexcept {
-  if constexpr (requires { target.clear(true); }) {
+  if constexpr (HasFullClear<MessageT>::value) {
     target.clear(true);
   } else {
     target.clear();
@@ -923,7 +942,7 @@ auto make_owned_void_callback(NativeT* native, nb::callable py_cb, const char* c
 
     nb::gil_scoped_acquire gil;
 
-    if VUNLIKELY (python_native_finalizing().contains(native)) {
+    if VUNLIKELY (python_native_finalizing().find(native) != python_native_finalizing().end()) {
       return;
     }
 
@@ -953,7 +972,7 @@ auto make_owned_value_callback(NativeT* native, nb::callable py_cb, const char* 
 
     nb::gil_scoped_acquire gil;
 
-    if VUNLIKELY (python_native_finalizing().contains(native)) {
+    if VUNLIKELY (python_native_finalizing().find(native) != python_native_finalizing().end()) {
       return;
     }
 
@@ -983,7 +1002,7 @@ auto make_owned_connect_callback(NativeT* native, nb::callable py_cb, const char
 
     nb::gil_scoped_acquire gil;
 
-    if VUNLIKELY (python_native_finalizing().contains(native)) {
+    if VUNLIKELY (python_native_finalizing().find(native) != python_native_finalizing().end()) {
       return;
     }
 
@@ -1010,7 +1029,7 @@ void invoke_owned_python_callback(NativeT* native, const std::shared_ptr<PythonC
 
   nb::gil_scoped_acquire gil;
 
-  if VUNLIKELY (python_native_finalizing().contains(native)) {
+  if VUNLIKELY (python_native_finalizing().find(native) != python_native_finalizing().end()) {
     return;
   }
 

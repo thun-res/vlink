@@ -136,7 +136,7 @@ struct private_access {
   }                                                                                   \
   }
 
-#define PRIVATE_ACCESS_DETAIL_UNIQUE_TAG PRIVATE_ACCESS_DETAIL_CONCATENATE(PrivateAccessTag, __COUNTER__)
+#define PRIVATE_ACCESS_DETAIL_UNIQUE_TAG PRIVATE_ACCESS_DETAIL_CONCATENATE(PrivateAccessTag, __LINE__)
 
 #define ACCESS_PRIVATE_FIELD(Class, Type, Name) \
   PRIVATE_ACCESS_DETAIL_ACCESS_PRIVATE_FIELD(PRIVATE_ACCESS_DETAIL_UNIQUE_TAG, Class, Type, Name)
