@@ -133,8 +133,7 @@ vlink::ElapsedTimer total_size_timer;
   return -1;
 }
 
-[[maybe_unused]] static void start_print(int64_t start_time, int64_t total_time, int64_t date_time, bool restart,
-                                         int64_t progress_start_time = 0) {
+[[maybe_unused]] static void start_print(int64_t start_time, int64_t total_time, int64_t date_time, bool restart) {
   quit_flag = false;
 
   static bool has_start = false;
@@ -158,7 +157,7 @@ vlink::ElapsedTimer total_size_timer;
     return;
   }
 
-  print_thread = std::thread([start_time, total_time, date_time, progress_start_time]() {
+  print_thread = std::thread([start_time, total_time, date_time]() {
     int64_t print_time = 0;
     int split_index = 0;
 
@@ -252,8 +251,8 @@ vlink::ElapsedTimer total_size_timer;
         }
       }
 
-      const int64_t play_duration = std::max(total_time - progress_start_time, static_cast<int64_t>(1));
-      percent = (static_cast<double>(print_time - progress_start_time) / static_cast<double>(play_duration)) * 100.0;
+      const int64_t duration = std::max(total_time, static_cast<int64_t>(1));
+      percent = (static_cast<double>(print_time) / static_cast<double>(duration)) * 100.0;
 
       if VUNLIKELY (percent < 0) {
         percent = 0;
@@ -1412,8 +1411,6 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
   vlink::BagReader::Status last_status = vlink::BagReader::kStopped;
 
   const int64_t total_time = player->get_info().total_duration;
-  const int64_t progress_start_time = skip_blank ? player->get_info().blank_duration : 0;
-
   time_callback = [player_ptr = player.get()]() -> int64_t {
     if VUNLIKELY (has_quit) {
       return 0;
@@ -1474,52 +1471,51 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
     }
   });
 
-  player->register_status_callback([player_ptr = player.get(), begin_time, total_time, progress_start_time, date_time,
-                                    &last_status](vlink::BagReader::Status status) {
-    split_count = player_ptr->get_info().split_count;
+  player->register_status_callback(
+      [player_ptr = player.get(), begin_time, total_time, date_time, &last_status](vlink::BagReader::Status status) {
+        split_count = player_ptr->get_info().split_count;
 
-    if (last_status == vlink::BagReader::kStopped) {
-      ++play_loop_index;
-    }
-
-    if (status == vlink::BagReader::kStopped) {
-      pause_to_next_flag = false;
-      is_paused = false;
-
-      if (!quiet_flag && !detail_flag) {
-        stop_print();
-      }
-    } else {
-      is_paused = (status == vlink::BagReader::kPaused);
-
-      int64_t target_date_time = 0;
-
-      if (time_method == kUseLocalTime) {
-        target_date_time = date_time + player_ptr->get_info().timezone * 60 * 1000;
-      } else if (time_method == kUseUtcTime) {
-        target_date_time = date_time;
-
-        if (target_date_time > 24 * 60 * 60 * 1000) {
-          target_date_time -= 24 * 60 * 60 * 1000;
+        if (last_status == vlink::BagReader::kStopped) {
+          ++play_loop_index;
         }
-      }
 
-      if (!quiet_flag && !detail_flag) {
-        const bool restart = last_status == vlink::BagReader::kStopped && !player_ptr->is_ready_to_quit();
+        if (status == vlink::BagReader::kStopped) {
+          pause_to_next_flag = false;
+          is_paused = false;
 
-        if (skip_blank && begin_time == 0) {
-          start_print(player_ptr->get_info().blank_duration, total_time, target_date_time, restart,
-                      progress_start_time);
+          if (!quiet_flag && !detail_flag) {
+            stop_print();
+          }
         } else {
-          start_print(begin_time, total_time, target_date_time, restart, progress_start_time);
+          is_paused = (status == vlink::BagReader::kPaused);
+
+          int64_t target_date_time = 0;
+
+          if (time_method == kUseLocalTime) {
+            target_date_time = date_time + player_ptr->get_info().timezone * 60 * 1000;
+          } else if (time_method == kUseUtcTime) {
+            target_date_time = date_time;
+
+            if (target_date_time > 24 * 60 * 60 * 1000) {
+              target_date_time -= 24 * 60 * 60 * 1000;
+            }
+          }
+
+          if (!quiet_flag && !detail_flag) {
+            const bool restart = last_status == vlink::BagReader::kStopped && !player_ptr->is_ready_to_quit();
+
+            if (skip_blank && begin_time == 0) {
+              start_print(player_ptr->get_info().blank_duration, total_time, target_date_time, restart);
+            } else {
+              start_print(begin_time, total_time, target_date_time, restart);
+            }
+          }
         }
-      }
-    }
 
-    last_status = status;
+        last_status = status;
 
-    update_print();
-  });
+        update_print();
+      });
 
   auto quit_function = [&player](int) {
     if VUNLIKELY (has_quit) {
