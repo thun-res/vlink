@@ -1898,6 +1898,27 @@ TEST_SUITE("intra-field") {
     CHECK_EQ(captured.load(), 77);
   }
 
+  TEST_CASE("getter invokes the installed callback object without holding its value mutex") {
+    MESSAGE("[intra-field] getter invokes the installed callback object without holding its value mutex");
+
+    int observed_state = 0;
+    bool called_get = false;
+    Setter<int> setter(IntraConf("field_stateful_callback", "", 0, "direct"));
+    Getter<int> getter(IntraConf("field_stateful_callback", "", 0, "direct"));
+
+    REQUIRE(getter.listen([&getter, &observed_state, &called_get, state = 0](const int&) mutable {
+      observed_state = ++state;
+      called_get = true;
+      (void)getter.get();
+    }));
+
+    setter.set(1);
+    setter.set(2);
+
+    CHECK(called_get);
+    CHECK_EQ(observed_state, 2);
+  }
+
   TEST_CASE("late getter receives cached value after setter write") {
     MESSAGE("[intra-field] late getter receives cached value after setter write");
 

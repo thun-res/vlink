@@ -183,6 +183,8 @@ void DdsSubscriberImpl::deinit() {
   topic_.reset();
   participant_.reset();
   type_support_.reset();
+  callback_ = {};
+  is_listened = false;
 }
 
 bool DdsSubscriberImpl::suspend() {

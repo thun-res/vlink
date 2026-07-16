@@ -134,9 +134,13 @@ Shm2Factory::Shm2Factory() {
     return;
   }
 
-  iox2_config_defaults_publish_subscribe_set_publisher_max_loaned_samples(&config_, default_depth_);
-  iox2_config_defaults_publish_subscribe_set_subscriber_max_buffer_size(&config_, default_depth_);
-  iox2_config_defaults_request_response_set_max_loaned_requests(&config_, default_depth_);
+  if (!depth_env_str.empty()) {
+    iox2_config_defaults_publish_subscribe_set_publisher_max_loaned_samples(&config_, default_depth_);
+    iox2_config_defaults_publish_subscribe_set_subscriber_max_buffer_size(&config_, default_depth_);
+    iox2_config_defaults_request_response_set_max_loaned_requests(&config_, default_depth_);
+  } else if (config_str.empty()) {
+    iox2_config_defaults_publish_subscribe_set_subscriber_max_buffer_size(&config_, default_depth_);
+  }
 
   std::string name = Utils::get_app_name() + "_" + Utils::get_pid_str();
 
@@ -153,6 +157,7 @@ Shm2Factory::Shm2Factory() {
   auto* node_builder_handle = iox2_node_builder_new(nullptr);
   iox2_node_builder_set_name(&node_builder_handle, iox2_cast_node_name_ptr(node_name_handle));
   iox2_node_builder_set_signal_handling_mode(&node_builder_handle, iox2_signal_handling_mode_e_DISABLED);
+  iox2_node_builder_set_config(&node_builder_handle, &config_);
 
   ret = iox2_node_builder_create(node_builder_handle, nullptr, iox2_service_type_e_IPC, &node_);
   iox2_node_name_drop(node_name_handle);
@@ -266,6 +271,11 @@ Shm2Factory::~Shm2Factory() {
 
   iox2_node_drop(node_);
   node_ = nullptr;
+
+  if (config_) {
+    iox2_config_drop(config_);
+    config_ = nullptr;
+  }
 }
 
 std::string Shm2Factory::make_service_name(const std::string& address, const std::string& suffix, int32_t domain) {
@@ -1593,9 +1603,6 @@ Shm2Publisher::Shm2Publisher(const ShmID2& id) {
 
   if (depth > 0) {
     iox2_service_builder_pub_sub_set_subscriber_max_buffer_size(&ps_builder, static_cast<size_t>(depth));
-  } else {
-    iox2_service_builder_pub_sub_set_subscriber_max_buffer_size(&ps_builder,
-                                                                static_cast<size_t>(factory.get_default_depth()));
   }
 
   iox2_service_builder_pub_sub_set_enable_safe_overflow(&ps_builder, true);
@@ -2033,9 +2040,6 @@ Shm2Subscriber::Shm2Subscriber(const ShmID2& id) {
 
   if (depth > 0) {
     iox2_service_builder_pub_sub_set_subscriber_max_buffer_size(&ps_builder, static_cast<size_t>(depth));
-  } else {
-    iox2_service_builder_pub_sub_set_subscriber_max_buffer_size(&ps_builder,
-                                                                static_cast<size_t>(factory.get_default_depth()));
   }
 
   iox2_service_builder_pub_sub_set_enable_safe_overflow(&ps_builder, true);

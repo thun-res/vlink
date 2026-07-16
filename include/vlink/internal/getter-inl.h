@@ -127,6 +127,8 @@ inline bool Getter<ValueT, SecT>::wait_for_value(std::chrono::milliseconds timeo
 
 template <typename ValueT, SecurityType SecT>
 inline bool Getter<ValueT, SecT>::listen(MsgCallback&& callback) {
+  std::lock_guard lock(mtx_);
+
   if VUNLIKELY (this->impl_->is_listened) {
     VLOG_F("Getter has already been listened.");
     return false;
@@ -188,6 +190,8 @@ inline bool Getter<ValueT, SecT>::init() {
     CpuProfilerGuard profiler_guard(this->impl_->profiler.get());
 #endif
 
+    bool has_callback = false;
+
     {
       std::lock_guard lock(mtx_);
 
@@ -198,10 +202,12 @@ inline bool Getter<ValueT, SecT>::init() {
 
         last_cache_ = data;
       }
+
+      has_callback = static_cast<bool>(callback_);
     }
 
     if constexpr (std::is_same_v<ValueT, Bytes>) {
-      if VLIKELY (callback_) {
+      if VLIKELY (has_callback) {
         callback_(data);
       }
 
@@ -223,7 +229,7 @@ inline bool Getter<ValueT, SecT>::init() {
         return;
       }
 
-      if VLIKELY (callback_) {
+      if VLIKELY (has_callback) {
         callback_(value);
       }
 

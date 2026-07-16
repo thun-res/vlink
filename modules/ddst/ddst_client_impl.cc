@@ -193,6 +193,10 @@ void DdstClientImpl::deinit() {
   topic_resp_.reset();
   topic_req_.reset();
   participant_.reset();
+  std::lock_guard lock(param_mtx_);
+  callbacks_.clear();
+  write_session_count_.store(0, std::memory_order_release);
+  read_session_count_.store(0, std::memory_order_release);
 }
 
 void DdstClientImpl::interrupt() {

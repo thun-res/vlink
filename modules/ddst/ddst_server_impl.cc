@@ -147,6 +147,9 @@ void DdstServerImpl::deinit() {
   topic_resp_.reset();
   topic_req_.reset();
   participant_.reset();
+  callback_ = {};
+  is_listened = false;
+  read_session_count_.store(0, std::memory_order_relaxed);
 }
 
 bool DdstServerImpl::suspend() {

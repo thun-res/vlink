@@ -35,13 +35,12 @@ ZenohServerImpl::ZenohServerImpl(const ZenohConf& conf) : conf_(conf) {}
 void ZenohServerImpl::init() {
   static auto& factory = ZenohFactory::get();
 
-  conf_.hash_code = Helpers::get_hash_code(conf_.event);
+  conf_.hash_code = ZenohFactory::get_channel(conf_.event);
 
-  auto properties = get_all_properties();
-  conf_.append_properties(properties);
+  auto properties = ZenohFactory::resolve_properties(conf_, get_all_properties());
 
   object_ = factory.get_object<Object>(
-      {kImplType, conf_.address, conf_.domain, conf_.depth, conf_.qos, conf_.fragment, properties});
+      {kImplType, conf_.address, conf_.event, conf_.domain, conf_.depth, conf_.qos, conf_.fragment, properties});
 
   object_->add_impl(this);
 }
@@ -51,6 +50,12 @@ void ZenohServerImpl::deinit() {
 
   object_->remove_impl(this);
 }
+
+bool ZenohServerImpl::suspend() { return object_->suspend(); }
+
+bool ZenohServerImpl::resume() { return object_->resume(); }
+
+bool ZenohServerImpl::is_suspend() const { return object_->is_suspend(); }
 
 const Conf* ZenohServerImpl::get_conf() const { return &conf_; }
 

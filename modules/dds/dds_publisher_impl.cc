@@ -85,6 +85,7 @@ void DdsPublisherImpl::deinit() {
   publisher_.reset();
   topic_.reset();
   participant_.reset();
+  session_count_.store(0, std::memory_order_release);
 }
 
 const Conf* DdsPublisherImpl::get_conf() const { return &conf_; }

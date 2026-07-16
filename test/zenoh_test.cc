@@ -100,6 +100,7 @@ TEST_SUITE("zenoh-init") {
     MESSAGE("[zenoh-init] registered qos profile is accessible via conf");
 
     Qos qos;
+    qos.valid = true;
     qos.reliability.kind = Qos::Reliability::kReliable;
 
     try {
@@ -110,9 +111,57 @@ TEST_SUITE("zenoh-init") {
     ZenohConf conf("zenoh/qos/test1", "", 0, "zenoh_reliable");
     CHECK(conf.qos == "zenoh_reliable");
   }
+
+  TEST_CASE("suspend state is exposed for receiving and server nodes") {
+    MESSAGE("[zenoh-init] suspend state is exposed for receiving and server nodes");
+
+    Subscriber<int> subscriber("zenoh://zenoh/init/suspend/subscriber");
+    Getter<int> getter("zenoh://zenoh/init/suspend/getter");
+    Server<int, int> server("zenoh://zenoh/init/suspend/server");
+
+    CHECK_FALSE(subscriber.is_suspend());
+    CHECK(subscriber.suspend());
+    CHECK(subscriber.is_suspend());
+    CHECK(subscriber.resume());
+    CHECK_FALSE(subscriber.is_suspend());
+
+    CHECK_FALSE(getter.is_suspend());
+    CHECK(getter.suspend());
+    CHECK(getter.is_suspend());
+    CHECK(getter.resume());
+    CHECK_FALSE(getter.is_suspend());
+
+    CHECK_FALSE(server.is_suspend());
+    CHECK(server.suspend());
+    CHECK(server.is_suspend());
+    CHECK(server.resume());
+    CHECK_FALSE(server.is_suspend());
+  }
 }
 
 TEST_SUITE("zenoh-pubsub") {
+  TEST_CASE("matching and delivery are isolated by event and domain") {
+    MESSAGE("[zenoh-pubsub] matching and delivery are isolated by event and domain");
+
+    Publisher<int> event_a(ZenohConf("zenoh/isolation/event", "a"));
+    Subscriber<int> event_b("zenoh://zenoh/isolation/event?event=b");
+    event_b.listen([](const int&) {});
+
+    CHECK_FALSE(event_a.wait_for_subscribers(200ms));
+
+    std::atomic<int> received{0};
+    Subscriber<int> matching_event("zenoh://zenoh/isolation/event?event=a");
+    matching_event.listen([&received](const int&) { received.fetch_add(1, std::memory_order_relaxed); });
+    CHECK(event_a.wait_for_subscribers(1s));
+    CHECK(event_a.publish(7));
+    CHECK(common_test::wait_until([&received] { return received.load(std::memory_order_relaxed) == 1; }, 1s));
+
+    Publisher<int> domain_one(ZenohConf("zenoh/isolation/domain", "data", 1));
+    Subscriber<int> colliding_name("zenoh://zenoh/isolation/domain_1?event=data&domain=0");
+    colliding_name.listen([](const int&) {});
+    CHECK_FALSE(domain_one.wait_for_subscribers(200ms));
+  }
+
   TEST_CASE("bytes payload is delivered to subscriber") {
     MESSAGE("[zenoh-pubsub] bytes payload is delivered to subscriber");
 
@@ -292,6 +341,22 @@ TEST_SUITE("zenoh-pubsub") {
 }
 
 TEST_SUITE("zenoh-method") {
+  TEST_CASE("client and server presence is isolated by event") {
+    MESSAGE("[zenoh-method] client and server presence is isolated by event");
+
+    Server<std::string, std::string> server_b(ZenohConf("zenoh/isolation/service", "b"));
+    server_b.listen([](const std::string& req, std::string& resp) { resp = req; });
+
+    Client<std::string, std::string> client_a("zenoh://zenoh/isolation/service?event=a");
+    std::this_thread::sleep_for(100ms);
+    CHECK_FALSE(client_a.is_connected());
+
+    Server<std::string, std::string> server_a(ZenohConf("zenoh/isolation/service", "a"));
+    server_a.listen([](const std::string& req, std::string& resp) { resp = req; });
+
+    CHECK(client_a.wait_for_connected(1s));
+  }
+
   TEST_CASE("fire and forget send increments server counter") {
     MESSAGE("[zenoh-method] fire and forget send increments server counter");
 
@@ -371,6 +436,51 @@ TEST_SUITE("zenoh-method") {
 
     REQUIRE(fut.wait_for(5s) == std::future_status::ready);
     CHECK(fut.get() == "deferred_zenoh");
+  }
+
+  TEST_CASE("infinite invoke retains deferred query") {
+    std::atomic<uint64_t> saved_id{0};
+    std::atomic<bool> req_received{false};
+
+    Server<std::string, std::string> server(ZenohConf("zenoh/mth/infinite_deferred", "req"), InitType::kWithoutInit);
+    server.set_property("zenoh.deferred_timeout_ms", "100");
+    REQUIRE(server.init());
+    server.listen_for_reply([&](uint64_t req_id, const std::string&) {
+      saved_id.store(req_id, std::memory_order_release);
+      req_received.store(true, std::memory_order_release);
+    });
+
+    Client<std::string, std::string> client("zenoh://zenoh/mth/infinite_deferred?event=req");
+    REQUIRE(client.wait_for_connected(1s));
+
+    auto invoke_future = std::async(std::launch::async, [&] {
+      std::string response;
+      const bool result = client.invoke("defer", response, 0ms);
+      return std::make_pair(result, response);
+    });
+
+    const bool request_result =
+        common_test::wait_until([&req_received] { return req_received.load(std::memory_order_acquire); }, 1s);
+    bool reply_result = false;
+    if (request_result) {
+      std::this_thread::sleep_for(350ms);
+      reply_result = server.reply(saved_id.load(std::memory_order_acquire), std::string("late_response"));
+    }
+    if (!request_result || !reply_result) {
+      client.interrupt();
+    }
+
+    CHECK(request_result);
+    CHECK(reply_result);
+    auto invoke_status = invoke_future.wait_for(1s);
+    if (invoke_status != std::future_status::ready) {
+      client.interrupt();
+      invoke_status = invoke_future.wait_for(1s);
+    }
+    REQUIRE(invoke_status == std::future_status::ready);
+    const auto [invoke_result, response] = invoke_future.get();
+    CHECK(invoke_result);
+    CHECK(response == "late_response");
   }
 
   TEST_CASE("async callback receives the response") {
@@ -499,6 +609,22 @@ TEST_SUITE("zenoh-method") {
 }
 
 TEST_SUITE("zenoh-field") {
+  TEST_CASE("late getter sync is isolated from other events") {
+    MESSAGE("[zenoh-field] late getter sync is isolated from other events");
+
+    Setter<int> setter_a(ZenohConf("zenoh/isolation/field", "a"));
+    Getter<int> getter_b("zenoh://zenoh/isolation/field?event=b");
+
+    setter_a.set(42);
+    std::this_thread::sleep_for(50ms);
+    CHECK_FALSE(getter_b.get().has_value());
+
+    Getter<int> getter_a("zenoh://zenoh/isolation/field?event=a");
+    CHECK(getter_a.wait_for_value(1s));
+    REQUIRE(getter_a.get().has_value());
+    CHECK(*getter_a.get() == 42);
+  }
+
   TEST_CASE("setter and getter exchange values") {
     MESSAGE("[zenoh-field] setter and getter exchange values");
 
@@ -1420,11 +1546,12 @@ TEST_SUITE("zenoh-flatbuffers") {
 #endif  // VLINK_TEST_SUPPORT_FLATBUFFERS
 
 TEST_SUITE("zenoh-qos") {
-  TEST_CASE("keep-last history depth variants all deliver messages") {
-    MESSAGE("[zenoh-qos] keep-last history depth variants all deliver messages");
+  TEST_CASE("positive history depth profiles keep live delivery working") {
+    MESSAGE("[zenoh-qos] positive history depth profiles keep live delivery working");
 
     SUBCASE("depth 1") {
       Qos qos;
+      qos.valid = true;
       qos.history.kind = Qos::History::kKeepLast;
       qos.history.depth = 1;
       try {
@@ -1447,6 +1574,7 @@ TEST_SUITE("zenoh-qos") {
 
     SUBCASE("depth 5") {
       Qos qos;
+      qos.valid = true;
       qos.history.kind = Qos::History::kKeepLast;
       qos.history.depth = 5;
       try {
@@ -1472,10 +1600,11 @@ TEST_SUITE("zenoh-qos") {
     }
   }
 
-  TEST_CASE("keep-all history accumulates published samples") {
-    MESSAGE("[zenoh-qos] keep-all history accumulates published samples");
+  TEST_CASE("unsupported keep-all selection does not break live delivery") {
+    MESSAGE("[zenoh-qos] unsupported keep-all selection does not break live delivery");
 
     Qos qos;
+    qos.valid = true;
     qos.history.kind = Qos::History::kKeepAll;
     qos.reliability.kind = Qos::Reliability::kReliable;
     try {
@@ -1504,6 +1633,7 @@ TEST_SUITE("zenoh-qos") {
     MESSAGE("[zenoh-qos] durability volatile qos struct field is stored and registered");
 
     Qos qos;
+    qos.valid = true;
     qos.durability.kind = Qos::Durability::kVolatile;
     try {
       ZenohConf::register_qos("zenoh_dur_volatile", qos);
@@ -1514,10 +1644,11 @@ TEST_SUITE("zenoh-qos") {
     CHECK_EQ(conf.qos, "zenoh_dur_volatile");
   }
 
-  TEST_CASE("latency budget duration hint is registered and does not affect delivery") {
-    MESSAGE("[zenoh-qos] latency budget duration hint is registered and does not affect delivery");
+  TEST_CASE("unsupported latency budget selection does not break live delivery") {
+    MESSAGE("[zenoh-qos] unsupported latency budget selection does not break live delivery");
 
     Qos qos;
+    qos.valid = true;
     qos.latency_budget.duration = 5;
     try {
       ZenohConf::register_qos("zenoh_latbud_5ms", qos);

@@ -181,7 +181,7 @@ class Shm2Factory final : public AbstractFactory<ShmID2> {
   std::atomic_bool poll_quit_{false};
 
   iox2_config_t config_storage_{};
-  iox2_config_h config_;
+  iox2_config_h config_{nullptr};
 
   iox2_node_h node_{nullptr};
   iox2_waitset_h waitset_{nullptr};

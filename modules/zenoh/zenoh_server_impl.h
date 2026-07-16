@@ -44,6 +44,12 @@ class ZenohServerImpl final : public ServerImpl, public AbstractNode {
 
   void deinit() override;
 
+  bool suspend() override;
+
+  bool resume() override;
+
+  bool is_suspend() const override;
+
   const Conf* get_conf() const override;
 
   const AbstractNode* get_abstract_node() const override;

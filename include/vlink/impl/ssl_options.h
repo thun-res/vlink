@@ -38,7 +38,7 @@
  * | MQTT        | @c MQTTClient_SSLOptions (Paho C); auto promotes @c tcp:// to @c ssl:// |
  * | DDS         | @c TCPv4TransportDescriptor::tls_config (Fast-DDS)                      |
  * | CycloneDDS  | @c ddsi_config SSL fields (requires @c DDS_HAS_SSL)                     |
- * | Zenoh       | @c transport/link/tls config keys (zenoh-c, not zenoh-pico)             |
+ * | Zenoh       | @c transport/link/tls keys (zenoh-c or TLS-enabled zenoh-pico)          |
  *
  * @par SSL options table
  * | Field            | Property key         | Description                                  |
@@ -91,8 +91,8 @@
  * @endcode
  *
  * @note
- * - Zenoh-pico (@c VLINK_ENABLE_ZENOH_PICO) does not support TLS; SSL
- *   properties trigger a warning.
+ * - Zenoh-pico requires @c Z_FEATURE_LINK_TLS=1; otherwise SSL properties
+ *   trigger a warning.
  * - CycloneDDS requires @c DDS_HAS_SSL at compile time; if the feature was
  *   not compiled in, SSL properties also trigger a warning.
  */
@@ -167,7 +167,8 @@ struct VLINK_EXPORT SslOptions final {
    *
    * @details
    * When non-empty the handshake announces this name to the server instead of
-   * the host derived from the URL.  Honoured by MQTT, DDS and Zenoh.
+   * the host derived from the URL.  Honoured by MQTT and DDS; the Zenoh 1.x
+   * config schema derives the name from the TLS endpoint and has no override.
    */
   std::string server_name;
 

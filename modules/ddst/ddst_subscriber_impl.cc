@@ -129,6 +129,8 @@ void DdstSubscriberImpl::deinit() {
   subscriber_.reset();
   topic_.reset();
   participant_.reset();
+  callback_ = {};
+  is_listened = false;
 }
 
 bool DdstSubscriberImpl::suspend() {

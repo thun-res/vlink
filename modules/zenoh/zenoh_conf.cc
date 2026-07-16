@@ -104,7 +104,7 @@ bool ZenohConf::parse_protocol(struct Protocol* protocol) {
 }
 
 bool ZenohConf::is_valid() const {
-  if VUNLIKELY (domain < 0 || address.empty()) {
+  if VUNLIKELY (domain < 0 || depth < 0 || address.empty()) {
     return false;
   }
 

@@ -88,9 +88,7 @@ bool ShmServerImpl::reply(uint64_t req_id, const Bytes& resp_data, bool is_sync)
     return false;
   }
 
-  object_->reply(static_cast<uint64_t>(conf_.hash_code), resp_data);
-
-  return true;
+  return object_->reply(static_cast<uint64_t>(conf_.hash_code), resp_data);
 }
 
 }  // namespace vlink

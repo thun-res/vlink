@@ -26,12 +26,12 @@
  * @brief Transport configuration for the @c zenoh:// Eclipse Zenoh transport.
  *
  * @details
- * @c ZenohConf binds the @c zenoh:// URL scheme to Eclipse Zenoh, a unified data
- * protocol that combines publish/subscribe, queryable storage, and computed query
- * patterns under a single key-expression namespace.  Zenoh scales from constrained
- * micro-controllers to cloud-side routers and is well suited to multi-site fleet
- * and edge deployments.  Optional shared-memory acceleration lowers latency for
- * large payloads exchanged between processes on the same host.
+ * @c ZenohConf binds the @c zenoh:// URL scheme to Eclipse Zenoh.  The VLink
+ * backend maps the six VLink node types onto Zenoh publish/subscribe,
+ * query/queryable, liveliness and matching primitives.  Generic Zenoh storage,
+ * delete, scouting and admin-space APIs are intentionally not re-exposed through
+ * this transport abstraction.  Optional zenoh-c shared-memory acceleration lowers
+ * latency for large payloads exchanged between processes on the same host.
  *
  * @par Supported Node Types
  *
@@ -45,7 +45,7 @@
  * | --------- | ------------------------------------------------- | ------------------------------ |
  * | @c peer   | Fully meshed P2P between participants             | LAN with no router             |
  * | @c client | Connects to a router as a leaf node               | Fleet edge connecting to cloud |
- * | @c router | Forwards and stores data for connected clients    | Gateway / aggregation point    |
+ * | @c router | Forwards data for connected clients               | Gateway / aggregation point    |
  *
  * @par URL Format
  * @code
@@ -56,8 +56,8 @@
  *
  * | Component             | Description                                                            |
  * | --------------------- | ---------------------------------------------------------------------- |
- * | @c address            | Zenoh key expression (URL host concatenated with path)                 |
- * | @c event              | Optional secondary event filter (@c ?event=)                           |
+ * | @c address            | Base key expression (URL host concatenated with path)                  |
+ * | @c event              | Optional event identity included in the derived native key             |
  * | @c domain             | Zenoh session/domain identifier (@c ?domain=); factory default applied |
  * | @c qos                | Named QoS profile registered via @c register_qos()                     |
  * | @c depth              | TX queue override; @c 0 uses the QoS-selected history depth            |
@@ -72,6 +72,7 @@
  * @par QoS Registration
  * @code
  *   vlink::Qos qos;
+ *   qos.valid = true;
  *   qos.reliability.kind = vlink::Qos::Reliability::kReliable;
  *   vlink::ZenohConf::register_qos("reliable", qos);
  *
@@ -79,7 +80,12 @@
  * @endcode
  *
  * @note Compiled only when @c VLINK_SUPPORT_ZENOH is defined.
- * @note @c is_valid() returns @c false when @c address is empty or @c domain is negative.
+ * @note @c is_valid() returns @c false when @c address is empty, @c domain is negative,
+ *       or @c depth is negative.
+ * @note Zenoh consumes only the profile's reliability/congestion hint, priority,
+ *       express flag and positive history depth; other @c Qos fields remain DDS-only.
+ * @note The zenoh-pico build must enable local subscriber and local queryable
+ *       support because VLink intentionally reuses compatible sessions.
  */
 
 #pragma once
@@ -102,13 +108,13 @@ namespace vlink {
  * @brief Concrete @c Conf describing a Zenoh endpoint addressed by a @c zenoh:// URL.
  *
  * @details
- * Stores the Zenoh key expression, an optional secondary event filter, the session
+ * Stores the Zenoh base key expression, an optional event identity, the session
  * domain identifier, an optional named QoS profile and depth override, plus the
  * tunable SHM-acceleration knobs exposed through URL query keys.
  */
 struct VLINK_EXPORT ZenohConf final : public Conf {
-  std::string address;             ///< Zenoh key expression (URL host concatenated with path).
-  std::string event;               ///< Optional secondary event filter string.
+  std::string address;             ///< Base key expression (URL host concatenated with path).
+  std::string event;               ///< Optional event identity included in the native key.
   int32_t domain{0};               ///< Zenoh session / domain identifier (non-negative).
   int32_t depth{0};                ///< TX queue override; @c 0 uses the QoS-selected history depth.
   std::string qos;                 ///< Named QoS profile key registered via @c register_qos().
@@ -123,8 +129,8 @@ struct VLINK_EXPORT ZenohConf final : public Conf {
   /**
    * @brief Builds a @c ZenohConf from the URL's primary fields.
    *
-   * @param _address   Zenoh key expression.
-   * @param _event     Optional secondary event filter; empty by default.
+   * @param _address   Base key expression.
+   * @param _event     Optional event identity; empty by default.
    * @param _domain    Domain identifier; defaults to @c 0.
    * @param _qos       Named QoS profile key; empty by default.
    * @param _fragment  Optional transport-hint fragment; empty by default.

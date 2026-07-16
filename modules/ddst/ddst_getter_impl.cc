@@ -129,6 +129,7 @@ void DdstGetterImpl::deinit() {
   subscriber_.reset();
   topic_.reset();
   participant_.reset();
+  callback_ = {};
 }
 
 bool DdstGetterImpl::suspend() {

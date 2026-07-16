@@ -113,10 +113,6 @@ template <typename T>
 
   dds_qos.liveliness.lease_duration = get_dds_duration(qos.liveliness.duration);
 
-  if (qos.liveliness.duration > 0) {
-    dds_qos.liveliness.assertions_per_lease_duration = qos.liveliness.duration / 10;  // warning
-  }
-
   // destination_order
 
   if (qos.destination_order.kind == Qos::DestinationOrder::kReceptionTimestamp) {
