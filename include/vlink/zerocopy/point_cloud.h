@@ -1014,7 +1014,7 @@ inline bool PointCloud::get_value(T& t, size_t loop_index, uint16_t offset) cons
     if constexpr (std::is_same_v<T, float> || std::is_same_v<T, double>) {
       int16_t value = 0;
 
-      if VUNLIKELY (sizeof(value) > pack_size_ - offset) {
+      if VUNLIKELY (sizeof(value) > static_cast<size_t>(pack_size_ - offset)) {
         t = 0;
         return false;
       }
@@ -1027,7 +1027,7 @@ inline bool PointCloud::get_value(T& t, size_t loop_index, uint16_t offset) cons
     }
   }
 
-  if VUNLIKELY (sizeof(T) > pack_size_ - offset) {
+  if VUNLIKELY (sizeof(T) > static_cast<size_t>(pack_size_ - offset)) {
     std::memset(&t, 0, sizeof(T));
     return false;
   }

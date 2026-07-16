@@ -307,7 +307,8 @@ bool CameraFrame::operator>>(Bytes& bytes) const noexcept {
   std::memcpy(bytes.data() + kMagicNumberBeginSize + kVersionSize, this, sizeof(CameraFrame));
 
   const auto data_offset = reinterpret_cast<const uint8_t*>(&data_) - reinterpret_cast<const uint8_t*>(this);
-  std::memset(bytes.data() + kMagicNumberBeginSize + kVersionSize + data_offset, 0, sizeof(data_));
+  const size_t data_pointer_size = sizeof(data_);
+  std::memset(bytes.data() + kMagicNumberBeginSize + kVersionSize + data_offset, 0, data_pointer_size);
 
   if VLIKELY (data_ != nullptr && size_ != 0) {
     std::memcpy(bytes.data() + kMagicNumberBeginSize + kVersionSize + sizeof(CameraFrame), data_, size_);
