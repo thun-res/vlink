@@ -8,7 +8,7 @@
         <mxCell id="title" value="VLink &#8212; Layered Architecture" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="40" y="18" width="920" height="34" as="geometry" />
         </mxCell>
-        <mxCell id="subtitle" value="Full-scenario alternative to ROS 2 &#160;&#183;&#160; One API &#160;&#183;&#160; 12 transports &#160;&#183;&#160; Pluggable backends" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#607d8b;shadow=0;" vertex="1" parent="1">
+        <mxCell id="subtitle" value="Full-scenario alternative to ROS 2 &#160;&#183;&#160; One API &#160;&#183;&#160; 10 transports &#160;&#183;&#160; Pluggable backends" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#607d8b;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="40" y="54" width="920" height="22" as="geometry" />
         </mxCell>
 
@@ -135,9 +135,6 @@
         <mxCell id="b2" value="&lt;b&gt;ddsr://&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="283" y="582" width="78" height="34" as="geometry" />
         </mxCell>
-        <mxCell id="b3" value="&lt;b&gt;ddst://&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="371" y="582" width="78" height="34" as="geometry" />
-        </mxCell>
         <mxCell id="b4" value="&lt;b&gt;zenoh://&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="459" y="582" width="78" height="34" as="geometry" />
         </mxCell>
@@ -149,9 +146,6 @@
         </mxCell>
         <mxCell id="b7" value="&lt;b&gt;fdbus://&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="723" y="582" width="78" height="34" as="geometry" />
-        </mxCell>
-        <mxCell id="b8" value="&lt;b&gt;qnx://&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="811" y="582" width="78" height="34" as="geometry" />
         </mxCell>
 
         <mxCell id="basebg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;arcSize=4;dashed=1;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">

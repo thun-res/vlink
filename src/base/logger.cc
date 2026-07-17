@@ -25,10 +25,12 @@
 
 #include <atomic>
 #include <charconv>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
@@ -521,6 +523,50 @@ bool Logger::is_writable(Level level) noexcept {
 
   return level >= global_instance.console_level.load(std::memory_order_acquire) ||
          level >= global_instance.file_level.load(std::memory_order_acquire);
+}
+
+bool Logger::try_acquire_periodic_log(Level level, int64_t interval_ms,
+                                      std::atomic<uint64_t>& last_log_time_ns) noexcept {
+  if VUNLIKELY (level >= kFatal) {
+    return false;
+  }
+
+  if (!is_writable(level)) {
+    return false;
+  }
+
+  if VUNLIKELY (interval_ms <= 0) {
+    return true;
+  }
+
+  constexpr uint64_t kNanosecondsPerMillisecond = 1000U * 1000U;
+  const auto unsigned_interval_ms = static_cast<uint64_t>(interval_ms);
+  const auto interval_ns = unsigned_interval_ms > std::numeric_limits<uint64_t>::max() / kNanosecondsPerMillisecond
+                               ? std::numeric_limits<uint64_t>::max()
+                               : unsigned_interval_ms * kNanosecondsPerMillisecond;
+  static const auto start_time = std::chrono::steady_clock::now();
+  const auto now_ns =
+      static_cast<uint64_t>(
+          std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start_time).count()) +
+      1U;
+  auto last_ns = last_log_time_ns.load(std::memory_order_relaxed);
+
+  for (;;) {
+    if VLIKELY (last_ns != 0U) {
+      if VUNLIKELY (last_ns >= now_ns) {
+        return false;
+      }
+
+      if VLIKELY (now_ns - last_ns < interval_ns) {
+        return false;
+      }
+    }
+
+    if VLIKELY (last_log_time_ns.compare_exchange_weak(last_ns, now_ns, std::memory_order_relaxed,
+                                                       std::memory_order_relaxed)) {
+      return true;
+    }
+  }
 }
 
 Logger::Logger() noexcept : impl_(std::make_unique<Impl>()) {

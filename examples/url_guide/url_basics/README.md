@@ -10,7 +10,7 @@ VLink 用 URL 将“业务话题”与“传输后端”解耦：同一通信 AP
 
 | 字段 | 含义 |
 |------|------|
-| `transport` | 后端选择：`intra` / `shm` / `dds` / `ddsc` / `zenoh` / `someip` / `mqtt` / `fdbus` / `qnx` … |
+| `transport` | 后端选择：`intra` / `shm` / `shm2` / `dds` / `ddsc` / `ddsr` / `zenoh` / `someip` / `mqtt` / `fdbus` |
 | `host` + `path` | 在该后端内寻路的话题 / 服务 / 字段名 |
 | `query` | 后端可调参数，如 `domain=42&depth=10&qos=sensor` |
 | `fragment` | 后端特定提示，如 mqtt 的 broker、fdbus 的服务名、intra 的派发模式 |

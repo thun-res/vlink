@@ -125,9 +125,6 @@
         </mxCell>
 
         <!-- Transport row 2 -->
-        <mxCell id="t7" value="ddst://&#10;TravoDDS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="52" y="508" width="142" height="44" as="geometry" />
-        </mxCell>
         <mxCell id="t8" value="zenoh://&#10;Eclipse Zenoh" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="204" y="508" width="142" height="44" as="geometry" />
         </mxCell>
@@ -139,9 +136,6 @@
         </mxCell>
         <mxCell id="t11" value="fdbus://&#10;FDBus IPC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="660" y="508" width="142" height="44" as="geometry" />
-        </mxCell>
-        <mxCell id="t12" value="qnx://&#10;QNX Channel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="812" y="508" width="136" height="44" as="geometry" />
         </mxCell>
 
         <!-- CLI tools strip -->

@@ -10,7 +10,7 @@
 
 VLink 是面向自动驾驶与具身智能的高性能通信中间件，定位为 ROS 2 的全场景替代方案。它以一套类型安全的统一 API 覆盖进程内、共享内存、车载以太网与跨机网络的全部通信需求；通信后端由 URL 选择，切换时按目标后端调整 URL 及必要参数，而通信原语和主要业务逻辑保持不变。
 
-当前版本支持 12 种传输后端、14 种序列化格式、3 种通信模型与 6 个核心原语，并提供安全加密、录制回放、服务发现、10 个 CLI 工具及 Foxglove / Rerun 可视化桥接。
+当前版本支持 10 种传输后端、14 种序列化格式、3 种通信模型与 6 个核心原语，并提供安全加密、录制回放、服务发现、10 个 CLI 工具及 Foxglove / Rerun 可视化桥接。
 
 ![VLink 架构](doc/images/readme-architecture.png)
 
@@ -90,12 +90,10 @@ getter.listen([](const Status& s) { use(s); });
 | `ddsc://` | CycloneDDS | 跨机网络 | 否 | 稳定 |
 | `shm2://` | Iceoryx2 | 同机跨进程 | 是 | Beta |
 | `ddsr://` | RTI Connext | 跨机网络 | 否 | Beta |
-| `ddst://` | 国产 DDS | 跨机网络 | 否 | Beta |
 | `zenoh://` | Zenoh | 跨机 / 云边 | 条件 | Beta |
 | `someip://` | vsomeip | 车载以太网 | 否 | Beta |
 | `mqtt://` | Paho MQTT | 云端 | 否 | Beta |
 | `fdbus://` | FDBus | 同机 | 否 | Beta |
-| `qnx://` | QNX IPC | 同机（QNX） | 否 | Beta |
 
 URL 语法、查询参数与各后端要点见 [传输后端与 URL](doc/04-transport.md)。
 
@@ -214,7 +212,7 @@ VLink 在每次版本发布时自动运行基准测试与覆盖率统计，并�
 vlink/
 ├── include/vlink/   公共头文件（6 原语 + 基础库 + 扩展 + 零拷贝）
 ├── src/             核心库实现
-├── modules/         12 种传输后端实现
+├── modules/         10 种传输后端实现
 ├── cli/             10 个命令行工具
 ├── proxy/           ProxyServer / ProxyAPI
 ├── viewer/          Qt 桌面可视化工具

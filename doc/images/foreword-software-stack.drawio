@@ -67,10 +67,10 @@
         <mxCell id="L3t" value="Transport &#160;&#160;(12)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=16;fontStyle=1;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="72" y="300" width="220" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="L3d" value="intra &#160;&#183;&#160; shm &#160;&#183;&#160; shm2 &#160;&#183;&#160; dds &#160;&#183;&#160; ddsc &#160;&#183;&#160; ddsr &#160;&#183;&#160; ddst" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
+        <mxCell id="L3d" value="intra &#160;&#183;&#160; shm &#160;&#183;&#160; shm2 &#160;&#183;&#160; dds &#160;&#183;&#160; ddsc &#160;&#183;&#160; ddsr" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="300" y="300" width="446" height="20" as="geometry" />
         </mxCell>
-        <mxCell id="L3d2" value="zenoh &#160;&#183;&#160; someip &#160;&#183;&#160; mqtt &#160;&#183;&#160; fdbus &#160;&#183;&#160; qnx" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
+        <mxCell id="L3d2" value="zenoh &#160;&#183;&#160; someip &#160;&#183;&#160; mqtt &#160;&#183;&#160; fdbus" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="300" y="326" width="446" height="20" as="geometry" />
         </mxCell>
 

@@ -14,7 +14,7 @@ QoS 是一组约束消息投递行为的策略集合，控制可靠性、历史�
 
 QoS 在 VLink 中以 `vlink::Qos` 聚合结构承载，由传输后端解释，其生效遵循三条规则：
 
-- **后端选择性消费**：通过 `register_qos` / `?qos=<name>` 引用命名 `Qos` profile 的机制由 DDS 家族（`dds://`、`ddsc://`、`ddsr://`、`ddst://`）与 `zenoh://` 提供。`intra://`、`shm://`、`someip://` 等后端不解释该结构，传入的 QoS 被静默忽略。注意 `mqtt://` 的 `?qos=` 含义不同：它取 MQTT 原生的数值等级 `0`/`1`/`2`，而非此处的命名 profile。各后端支持范围见 [传输后端与 URL](04-transport.md)。
+- **后端选择性消费**：通过 `register_qos` / `?qos=<name>` 引用命名 `Qos` profile 的机制由 DDS 家族（`dds://`、`ddsc://`、`ddsr://`）与 `zenoh://` 提供。`intra://`、`shm://`、`someip://` 等后端不解释该结构，传入的 QoS 被静默忽略。注意 `mqtt://` 的 `?qos=` 含义不同：它取 MQTT 原生的数值等级 `0`/`1`/`2`，而非此处的命名 profile。各后端支持范围见 [传输后端与 URL](04-transport.md)。
 - **按名引用**：`vlink::QosProfile` 内置 16 个 profile，其名字可在上述后端的 URL 中直接使用（如 `?qos=sensor`）；自定义 QoS 需先经 `register_qos("name", qos)` 注册，再以该名引用。
 - **显式有效位**：`Qos::valid` 必须为 `true`，传输层才会应用该策略。所有预定义 profile 已置位；手工构造的 `Qos` 须自行置 `true`。
 

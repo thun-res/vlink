@@ -6,7 +6,7 @@
 
 | 示例 | 传输 | 序列化 | 通信模型 | 说明 |
 |------|------|--------|----------|------|
-| [helloworld](helloworld/) | 多后端可切换（dds / ddsc / shm / someip / fdbus / qnx） | Protobuf | Method + Event | API 覆盖最广，环境变量切换后端，推荐入口 |
+| [helloworld](helloworld/) | 多后端可切换（dds / ddsc / shm / someip / fdbus） | Protobuf | Method + Event | API 覆盖最广，环境变量切换后端，推荐入口 |
 | [ping_pong](ping_pong/) | 多后端可切换 | Bytes（raw） | Event（双向） | 跨进程 Round-trip 延迟测量 |
 | [shm_raw](shm_raw/) | `shm://` | Bytes | Method + Event + Field + Security | 单进程内全部六原语 + 加密 |
 | [someip_flat](someip_flat/) | `someip://` | FlatBuffers | Method + Event + Field | AUTOSAR Adaptive / 车载以太网场景 |
@@ -30,7 +30,7 @@
 
 | 示例 | 变量 | 取值 | 默认 |
 |------|------|------|------|
-| helloworld | `METHOD_TRANSPORT` / `EVENT_TRANSPORT` | `dds` / `ddsc` / `shm` / `someip` / `fdbus` / `qnx` | `dds` |
+| helloworld | `METHOD_TRANSPORT` / `EVENT_TRANSPORT` | `dds` / `ddsc` / `shm` / `someip` / `fdbus` | `dds` |
 | helloworld | `METHOD_URL` / `EVENT_URL` | 完整 URL | 未设（覆盖 TRANSPORT） |
 | ping_pong | `PING_TRANSPORT` / `PONG_TRANSPORT` | 同上 | `dds` |
 | ping_pong | `PING_URL` / `PONG_URL` | 完整 URL | 未设 |
@@ -44,7 +44,6 @@
 | `someip://` | `vsomeipd`（vsomeip routing manager） |
 | `fdbus://` | `fdb_name_server` |
 | `mqtt://` | MQTT broker（如 Mosquitto） |
-| `qnx://` | 无（要求 QNX OS） |
 
 ## 🛠️ 构建
 

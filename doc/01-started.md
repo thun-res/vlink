@@ -160,7 +160,7 @@ output/
 | Paho MQTT C | MQTT（`mqtt://`） | 模块依赖 | 见 [Eclipse Paho](https://github.com/eclipse/paho.mqtt.c) |
 | quill / DLT | 可选日志后端 | `SELECT_LOG_BACKEND=` | quill 已内嵌；DLT 用 `sudo apt install libdlt-dev` |
 
-> 其余传输后端（someip / fdbus / shm2 / ddsr / ddst 等）依赖见 [传输后端与 URL](04-transport.md)。无系统库时可让 CMake 自动下载，见 [§1.4.5 CPM 选项](#-145-用-cpm-自动下载依赖)。
+> 其余传输后端（someip / fdbus / shm2 / ddsr 等）依赖见 [传输后端与 URL](04-transport.md)。无系统库时可让 CMake 自动下载，见 [§1.4.5 CPM 选项](#-145-用-cpm-自动下载依赖)。
 
 ### 🖥️ 1.3.3 各平台编译器要求
 
@@ -211,7 +211,6 @@ Viewer / WebViz 子开关：`ENABLE_VIEWER_FFMPEG`、`ENABLE_VIEWER_OSG`、`ENAB
 | `SKIP_SHM2` | `OFF` | 跳过 `shm2://`（Iceoryx2） | `SKIP_SOMEIP` | `OFF` | 跳过 `someip://` |
 | `SKIP_DDS` | `OFF` | 跳过 `dds://`（Fast-DDS） | `SKIP_FDBUS` | `OFF` | 跳过 `fdbus://` |
 | `SKIP_DDSC` | `OFF` | 跳过 `ddsc://`（CycloneDDS） | `SKIP_DDSR` | `ON` | 跳过 `ddsr://`（需 RTI SDK） |
-| `SKIP_QNX` | `ON` | 跳过 `qnx://`（仅 QNX 平台） | `SKIP_DDST` | `ON` | 跳过 `ddst://` |
 
 ### 🧪 1.4.3 CLI / 测试 / 日志后端
 
@@ -287,7 +286,7 @@ target_link_libraries(my_app PRIVATE vlink::vlink vlink::dds vlink::shm vlink::i
 | `mqtt://` | `vlink::mqtt` | IoT / 云端桥接（Beta） |
 | —（C 调用） | `vlink::c_api` | 纯 C API / 跨语言 FFI |
 
-> 其余后端（`ddsr` / `ddst` / `fdbus` / `qnx`）目标名同理，均为 `vlink::<scheme>`。完整后端对比见 [传输后端与 URL](04-transport.md)。
+> 其余后端（`ddsr` / `fdbus`）目标名同理，均为 `vlink::<scheme>`。完整后端对比见 [传输后端与 URL](04-transport.md)。
 
 ### 📝 1.5.3 CMakeLists.txt 模板
 
@@ -514,9 +513,8 @@ VLink 支持 Linux（x86_64 / aarch64）、Android、QNX 7.1 / 8.0、macOS（App
 | `zenoh://` | 是 | 是 | 是 | 是 | 云边场景 |
 | `someip://` | 是 | 是 | 是 | 否 | 车载以太网 |
 | `mqtt://` | 是 | 是 | 是 | 是 | IoT / 云端桥接 |
-| `qnx://` | 否 | 否 | 是 | 否 | QNX 专用 |
 
-> 完整矩阵（含 shm2 / ddsr / ddst / fdbus）见 [传输后端与 URL](04-transport.md)。
+> 完整矩阵（含 shm2 / ddsr / fdbus）见 [传输后端与 URL](04-transport.md)。
 
 ### 🪜 1.8.2 通用三步法
 
@@ -539,7 +537,7 @@ cmake --build build_cross -j$(nproc)
 | --- | --- | --- | --- |
 | ARM Linux | `linux/linux.toolchain.aarch64.cmake` | `CROSS_COMPILE_PREFIX`（如 `aarch64-linux-gnu-`），sysroot 设 `LINUX_INSTALL_PREFIX` | 先装 `gcc-aarch64-linux-gnu g++-aarch64-linux-gnu` |
 | Android | `android/android.toolchain.aarch64.cmake` | `ANDROID_NDK`（NDK 根目录） | 必须 `c++_shared`；`shm://` 不可用，改用 `dds://`/`intra://`；日志走 native；API 21+ |
-| QNX | `qnx/qnx.toolchain.aarch64.cmake` | `QNX_HOST` / `QNX_TARGET`（source `qnxsdp-env.sh` 后自动设） | `qnx://` 仅在 QNX 目标可用；`shm://` 需构建 Iceoryx 模块并运行 RouDi |
+| QNX | `qnx/qnx.toolchain.aarch64.cmake` | `QNX_HOST` / `QNX_TARGET`（source `qnxsdp-env.sh` 后自动设） | `shm://` 需构建 Iceoryx 模块并运行 RouDi |
 | macOS | 本机直接编；交叉用 `darwin/darwin.toolchain.aarch64.cmake` | 交叉时 `VLINK_HOST_PLATFORM=darwin-x86_64` | Universal 包用 `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`；`shm://` 需构建 Iceoryx 模块并运行 RouDi |
 | Yocto | `linux/linux.toolchain.aarch64.cmake` | source SDK 后自动有 `SYSROOT` / `OE_CMAKE_TOOLCHAIN_FILE` | 工具链文件自动 include OE 配置 |
 | Buildroot | `linux/linux.toolchain.aarch64.cmake` | `CROSS_COMPILE_PREFIX` + `LINUX_INSTALL_PREFIX` 指向 Buildroot host/staging | 建议 `MinSizeRel` + 关闭 Proxy/SQLite |

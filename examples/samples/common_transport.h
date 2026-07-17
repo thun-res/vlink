@@ -34,14 +34,14 @@ namespace Common {  // NOLINT(readability-identifier-naming)
 // Resolve a transport URL for a sample topic.
 //
 // The whole point of this helper is that VLink's URL scheme (intra:// / shm://
-// / dds:// / ddsc:// / fdbus:// / qnx:// / someip:// ...) decouples application
+// / dds:// / ddsc:// / fdbus:// / someip:// ...) decouples application
 // code from the underlying transport. Most topic-style backends can reuse the
 // same path with another scheme; protocol-specific backends may require a full
 // address. The samples ask this helper to compose or select that URL at runtime.
 //
 //   env_var       : full-URL override (highest priority). If set, used verbatim.
-//   transport_env : selects scheme: "dds" / "ddsc" / "someip" / "shm" / "fdbus" / "qnx".
-//   topic         : topic/path used by URL-style schemes (dds/ddsc/shm/fdbus/qnx).
+//   transport_env : selects scheme: "dds" / "ddsc" / "someip" / "shm" / "fdbus".
+//   topic         : topic/path used by URL-style schemes (dds/ddsc/shm/fdbus).
 //   someip_url    : SOME/IP requires numeric service/instance/event IDs rather than
 //                   a free-form path, so the caller must pre-format it; this
 //                   helper only forwards it when transport == "someip".
@@ -66,8 +66,6 @@ inline std::string get_transport_url(const std::string& env_var, const std::stri
     url = "shm://" + topic;
   } else if (transport == "fdbus") {
     url = "fdbus://" + topic;
-  } else if (transport == "qnx") {
-    url = "qnx://" + topic;
   } else if (transport == "someip") {
     // SOME/IP cannot use the path-style topic; fall back to dds:// if the
     // caller forgot to supply a properly-formed SOME/IP URL.

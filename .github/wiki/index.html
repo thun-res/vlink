@@ -4,17 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#070b18">
-<title>VLink · 一套 API，12 种传输后端 — C++ 通信中间件</title>
-<meta name="description" content="VLink 是一款 C++ 通信中间件，提供 Event、Method、Field 三种模型、12 种传输后端、14 类序列化支持以及配套 CLI、录制回放和可视化工具。Apache 2.0 开源。">
+<title>VLink · 一套 API，10 种传输后端 — C++ 通信中间件</title>
+<meta name="description" content="VLink 是一款 C++ 通信中间件，提供 Event、Method、Field 三种模型、10 种传输后端、14 类序列化支持以及配套 CLI、录制回放和可视化工具。Apache 2.0 开源。">
 <meta name="author" content="Thun Lu">
 <meta name="robots" content="index,follow">
-<meta property="og:title" content="VLink — One API, 12 Transport Backends">
+<meta property="og:title" content="VLink — One API, 10 Transport Backends">
 <meta property="og:description" content="Lightweight communication middleware for autonomous driving and embodied AI. Apache 2.0.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://thun-res.github.io/vlink/">
 <meta property="og:image" content="https://thun-res.github.io/vlink/assets/img/vlink-logo.svg">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="VLink — One API, 12 Transport Backends">
+<meta name="twitter:title" content="VLink — One API, 10 Transport Backends">
 <meta name="twitter:description" content="Lightweight communication middleware for autonomous driving and embodied AI. Apache 2.0.">
 <meta name="twitter:image" content="https://thun-res.github.io/vlink/assets/img/vlink-logo.svg">
 <link rel="canonical" href="https://thun-res.github.io/vlink/">
@@ -150,9 +150,9 @@
       </div>
     </div>
 
-    <!-- Hero right: 12-transport radial — the whole value prop in one visual -->
-    <figure class="hero-radial" aria-label="VLink 12-transport fabric" data-i18n-attr="aria-label:hero.fabric.alt">
-      <img src="assets/svg/hero-radial.svg" alt="VLink core radiates to 12 transports including intra, shm, dds, zenoh, someip, qnx" data-i18n-attr="alt:hero.fabric.alt">
+    <!-- Hero right: 10-transport radial — the whole value prop in one visual -->
+    <figure class="hero-radial" aria-label="VLink 10-transport fabric" data-i18n-attr="aria-label:hero.fabric.alt">
+      <img src="assets/svg/hero-radial.svg" alt="VLink core radiates to 10 transports including intra, shm, dds, zenoh, and someip" data-i18n-attr="alt:hero.fabric.alt">
     </figure>
   </div>
 </section>
@@ -207,7 +207,7 @@
   <div class="container">
     <div class="section-head center reveal">
       <div class="section-eyebrow" data-i18n="uni.eyebrow">统一 API</div>
-      <h2 class="section-title" data-i18n="uni.title">一套节点 API · <span class="grad">12 种传输后端</span></h2>
+      <h2 class="section-title" data-i18n="uni.title">一套节点 API · <span class="grad">10 种传输后端</span></h2>
       <p class="section-sub" data-i18n="uni.sub">URL scheme 用于选择传输后端。话题式后端通常可复用 path；SOME/IP 等专用后端则要求完整的合法 URL、依赖和运行时配置。</p>
     </div>
 
@@ -220,7 +220,7 @@
 
     <div class="unified-matrix-head reveal">
       <span class="unified-matrix-label" data-i18n="uni.mx.label">传输后端</span>
-      <h3 class="unified-matrix-title" data-i18n="uni.mx.title">12 种传输后端 · 统一节点 API</h3>
+      <h3 class="unified-matrix-title" data-i18n="uni.mx.title">10 种传输后端 · 统一节点 API</h3>
     </div>
 
     <div class="matrix-wrap reveal">
@@ -269,13 +269,6 @@
       </div>
       <div class="mx d4">
         <span class="status beta" data-i18n="mx.status.beta">Beta</span>
-        <div class="transport-prefix">ddst</div>
-        <div class="name" data-i18n="mx.c.ddst.n">TravoDDS · 国产</div>
-        <div class="meta" data-i18n="mx.c.ddst.m">TravoDDS 传输后端</div>
-        <div class="tags"><span class="tag zc" data-i18n="mx.tag.domestic">国产</span><span class="tag" data-i18n="mx.tag.dds">DDS</span></div>
-      </div>
-      <div class="mx d4">
-        <span class="status beta" data-i18n="mx.status.beta">Beta</span>
         <div class="transport-prefix">zenoh</div>
         <div class="name" data-i18n="mx.c.zenoh.n">Eclipse Zenoh</div>
         <div class="meta" data-i18n="mx.c.zenoh.m">云-边-端统一数据，pub/sub + query</div>
@@ -298,13 +291,6 @@
       </div>
       <div class="mx d6">
         <span class="status beta" data-i18n="mx.status.beta">Beta</span>
-        <div class="transport-prefix">qnx</div>
-        <div class="name" data-i18n="mx.c.qnx.n">QNX Neutrino IPC</div>
-        <div class="meta" data-i18n="mx.c.qnx.m">基于 QNX 原生 IPC 原语的传输后端</div>
-        <div class="tags"><span class="tag" data-i18n="mx.tag.qnx">QNX</span><span class="tag" data-i18n="mx.tag.rtos">RTOS</span></div>
-      </div>
-      <div class="mx d6">
-        <span class="status beta" data-i18n="mx.status.beta">Beta</span>
         <div class="transport-prefix">mqtt</div>
         <div class="name" data-i18n="mx.c.mqtt.n">Paho MQTT</div>
         <div class="meta" data-i18n="mx.c.mqtt.m">物联网 · 带宽受限</div>
@@ -312,7 +298,7 @@
       </div>
     </div>
 
-    <p class="mx-foot" data-i18n="mx.foot" style="margin-top:22px; font-size:12px; color:var(--ink-3); text-align:center">※ <code>intra</code> 与 <code>dds</code>(CDR) 不支持消息级加密 · <code>qnx</code> 仅 QNX 平台 · <code>someip</code> 需 vsomeip 配置 · 详见 <a href="https://thun-res.github.io/vlink/zh_cn/" target="_blank" rel="noopener">开发者文档</a></p>
+    <p class="mx-foot" data-i18n="mx.foot" style="margin-top:22px; font-size:12px; color:var(--ink-3); text-align:center">※ <code>intra</code> 与 <code>dds</code>(CDR) 不支持消息级加密 · <code>someip</code> 需 vsomeip 配置 · 详见 <a href="https://thun-res.github.io/vlink/zh_cn/" target="_blank" rel="noopener">开发者文档</a></p>
   </div>
 </section>
 
@@ -726,7 +712,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M6 8v3h12V8M12 11v5"/></svg>
         </div>
         <h4 data-i18n="pl.c.core.h">通信核心</h4>
-        <p data-i18n="pl.c.core.p">Event / Method / Field 三模型 + 12 种传输矩阵 + 14 种序列化。</p>
+        <p data-i18n="pl.c.core.p">Event / Method / Field 三模型 + 10 种传输矩阵 + 14 种序列化。</p>
       </div>
       <div class="plat reveal d1">
         <div class="plat-ico" style="background:linear-gradient(135deg,#4faafd,#00e5b0)">
@@ -849,7 +835,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
       <div class="vs-row"><div data-i18n="vs.r.lang.k">多语言支持</div><div class="vs-col-ros2" data-i18n="vs.r.lang.a">rclcpp / rclpy 为官方主线；rclnodejs / rcljava 等语言客户端由社区维护，版本滞后</div><div class="vs-col-vlink" data-i18n="vs.r.lang.b">C++ 主线 + 官方 <strong>Python</strong> 绑定；稳定的 <strong>C API</strong> 供 Go / Rust / Java / Lua 等语言包装</div></div>
       <div class="vs-row"><div data-i18n="vs.r.arch.k">架构与扩展</div><div class="vs-col-ros2" data-i18n="vs.r.arch.a">rclcpp + rmw 分层，但扩展依赖 pluginlib 与 ament 包管理</div><div class="vs-col-vlink" data-i18n="vs.r.arch.b">传输 / 序列化 / CLI / 可视化均为独立 CMake 组件，按需裁剪；<br><strong>七类插件接口</strong> (Logger · Runable · Convert · Schema · Bag · Trigger · Conf) 运行期 dlopen 加载</div></div>
       <div class="vs-row"><div data-i18n="vs.r.perf.k">性能验证</div><div class="vs-col-ros2" data-i18n="vs.r.perf.a">结果受 RMW、QoS、消息大小、拓扑与硬件影响，应在目标配置上测量</div><div class="vs-col-vlink" data-i18n="vs.r.perf.b">同样需按目标配置测量；<code>intra://</code> 直接/共享指针路径与 <code>shm://</code> 显式 loan 路径可减少载荷复制</div></div>
-      <div class="vs-row"><div data-i18n="vs.r.trans.k">传输与零拷贝</div><div class="vs-col-ros2" data-i18n="vs.r.trans.a">传输和 loan 能力由所选 RMW、消息类型及配置决定</div><div class="vs-col-vlink" data-i18n="vs.r.trans.b">提供 12 种 URL scheme；迁移时必须满足各后端的 URL 结构、依赖、QoS 与运行时配置</div></div>
+      <div class="vs-row"><div data-i18n="vs.r.trans.k">传输与零拷贝</div><div class="vs-col-ros2" data-i18n="vs.r.trans.a">传输和 loan 能力由所选 RMW、消息类型及配置决定</div><div class="vs-col-vlink" data-i18n="vs.r.trans.b">提供 10 种 URL scheme；迁移时必须满足各后端的 URL 结构、依赖、QoS 与运行时配置</div></div>
       <div class="vs-row"><div data-i18n="vs.r.ser.k">序列化</div><div class="vs-col-ros2" data-i18n="vs.r.ser.a">rosidl (ROS Msg IDL) 为主；Type Adaptation 允许回调用 Eigen 等自定义类型</div><div class="vs-col-vlink" data-i18n="vs.r.ser.b"><strong>14 类编译期派发</strong>：Bytes · DynamicData · CDR · Protobuf · Protobuf 指针 · FlatBuffers 对象 · FlatBuffers 表指针 · FlatBuffers builder · 自定义 · string · const char* · POD · POD 指针 · 流式兜底</div></div>
       <div class="vs-row"><div data-i18n="vs.r.debug.k">调试与观测</div><div class="vs-col-ros2" data-i18n="vs.r.debug.a">rqt · rosbag2 · Foxglove Bridge / Rerun 为独立社区包</div><div class="vs-col-vlink" data-i18n="vs.r.debug.b">Viewer · Player · Analyzer 桌面 GUI + Foxglove / Rerun Web 桥 <strong>原生同构</strong>；<strong>.vdb (SQLite+LZAV) / .vcap (MCAP+Zstd)</strong> · 分片 · 倍速回放</div></div>
       <div class="vs-row"><div data-i18n="vs.r.sec.k">安全机制</div><div class="vs-col-ros2" data-i18n="vs.r.sec.a">可使用 SROS2 / DDS Security；部署模型与证书配置取决于所选中间件</div><div class="vs-col-vlink" data-i18n="vs.r.sec.b">提供消息级 AES-128-GCM 与自定义加密回调；并非所有传输和序列化路径都支持消息级加密</div></div>
@@ -937,7 +923,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
   <div class="container footer-inner">
     <div class="footer-brand">
       <img src="assets/img/vlink-logo.svg" alt="VLink">
-      <p data-i18n="ft.brand.p">C++ 通信中间件：统一节点 API、12 种传输后端，以及配套 CLI、录制回放和可视化工具。</p>
+      <p data-i18n="ft.brand.p">C++ 通信中间件：统一节点 API、10 种传输后端，以及配套 CLI、录制回放和可视化工具。</p>
     </div>
     <div>
       <h5 data-i18n="ft.h.prod">产品</h5>

@@ -68,7 +68,7 @@
         <mxCell id="reg_a_t" value="Path A: register + URL construction" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="460" y="164" width="280" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="reg_a" value="DdsConf::register_qos(&quot;custom_sensor&quot;, qos)&#10;DdscConf / DdsrConf / DdstConf / ZenohConf" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#0d47a1;arcSize=10;shadow=0;" vertex="1" parent="1">
+        <mxCell id="reg_a" value="DdsConf::register_qos(&quot;custom_sensor&quot;, qos)&#10;DdscConf / DdsrConf / ZenohConf" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#0d47a1;arcSize=10;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="460" y="190" width="280" height="52" as="geometry" />
         </mxCell>
         <mxCell id="reg_a_url" value="dds://sensor/lidar?qos=custom_sensor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#0d47a1;arcSize=10;shadow=0;" vertex="1" parent="1">
@@ -108,7 +108,7 @@
         <mxCell id="tr_t" value="3. Transports" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;fontFamily=Helvetica;fontSize=16;fontStyle=1;fontColor=#ffffff;arcSize=8;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="800" y="100" width="280" height="34" as="geometry" />
         </mxCell>
-        <mxCell id="tr_st" value="QoS support per backend (12 transports)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+        <mxCell id="tr_st" value="QoS support per backend (10 transports)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
           <mxGeometry x="800" y="138" width="280" height="18" as="geometry" />
         </mxCell>
 
@@ -123,9 +123,6 @@
         </mxCell>
         <mxCell id="tr_ddsr" value="ddsr://    DdsrConf" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#1b5e20;arcSize=14;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="820" y="232" width="240" height="22" as="geometry" />
-        </mxCell>
-        <mxCell id="tr_ddst" value="ddst://    DdstConf" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#1b5e20;arcSize=14;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="820" y="256" width="240" height="22" as="geometry" />
         </mxCell>
         <mxCell id="tr_zenoh" value="zenoh://   ZenohConf" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#1b5e20;arcSize=14;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="820" y="280" width="240" height="22" as="geometry" />
@@ -151,9 +148,6 @@
         </mxCell>
         <mxCell id="tr_fdbus" value="fdbus://    no transport QoS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;arcSize=14;shadow=0;dashed=1;" vertex="1" parent="1">
           <mxGeometry x="820" y="450" width="240" height="22" as="geometry" />
-        </mxCell>
-        <mxCell id="tr_qnx" value="qnx://      depth / history only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;arcSize=14;shadow=0;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="820" y="474" width="240" height="22" as="geometry" />
         </mxCell>
 
         <mxCell id="tr_note" value="name length &#8804; 20 bytes (19 + NUL)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">

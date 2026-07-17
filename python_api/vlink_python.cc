@@ -1861,11 +1861,9 @@ NB_MODULE(_vlink_nanobind, m) {
       .value("Dds", vlink::TransportType::kDds)
       .value("Ddsc", vlink::TransportType::kDdsc)
       .value("Ddsr", vlink::TransportType::kDdsr)
-      .value("Ddst", vlink::TransportType::kDdst)
       .value("Someip", vlink::TransportType::kSomeip)
       .value("Mqtt", vlink::TransportType::kMqtt)
-      .value("Fdbus", vlink::TransportType::kFdbus)
-      .value("Qnx", vlink::TransportType::kQnx);
+      .value("Fdbus", vlink::TransportType::kFdbus);
 
   nb::enum_<vlink::InitType>(m, "InitType")
       .value("WithoutInit", vlink::InitType::kWithoutInit)

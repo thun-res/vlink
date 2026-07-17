@@ -10,7 +10,7 @@
 
 随着自动驾驶与具身智能产业的快速发展，车载与机器人系统对进程间通信（IPC）中间件的性能、可靠性与可移植性提出了前所未有的高要求。现有主流方案——包括 ROS2、eProsima Fast-DDS、SOME/IP 等——在传输后端绑定、API 复杂度、序列化开销、调试工具链完整性等方面均存在明显短板。国内自动驾驶与智能机器人产业的崛起，也对中间件的国产化、自主可控提出了迫切诉求。
 
-本文以开源项目 VLink 为研究对象，深入分析其产生背景、核心设计理念、体系结构与关键技术。VLink 以"一套极简的 API，多种传输，业务代码低成本切换"为核心目标，提供事件（Event）、方法（Method）、字段（Field）三种通信模型共六种通信原语（Publisher、Subscriber、Server、Client、Getter、Setter），支持 intra、shm、shm2、dds、ddsc、ddsr、ddst、zenoh、someip、mqtt、fdbus、qnx 共 12 种传输后端，并内置零拷贝、安全加密、多格式序列化、消息录制、实时发现监控、CLI 工具链等完整的工程能力。本文从行业背景、痛点剖析、架构设计、技术优势、横向对比、性能分析、开发效率与调试工具等维度展开系统论述，力图为自动驾驶与具身智能领域的中间件选型与设计提供参考。
+本文以开源项目 VLink 为研究对象，深入分析其产生背景、核心设计理念、体系结构与关键技术。VLink 以"一套极简的 API，多种传输，业务代码低成本切换"为核心目标，提供事件（Event）、方法（Method）、字段（Field）三种通信模型共六种通信原语（Publisher、Subscriber、Server、Client、Getter、Setter），支持 intra、shm、shm2、dds、ddsc、ddsr、zenoh、someip、mqtt、fdbus 共 10 种传输后端，并内置零拷贝、安全加密、多格式序列化、消息录制、实时发现监控、CLI 工具链等完整的工程能力。本文从行业背景、痛点剖析、架构设计、技术优势、横向对比、性能分析、开发效率与调试工具等维度展开系统论述，力图为自动驾驶与具身智能领域的中间件选型与设计提供参考。
 
 **关键词：** 中间件；进程间通信；自动驾驶；具身智能；DDS；ROS2；零拷贝；国产化；VLink
 
@@ -444,12 +444,10 @@ VLink 通过 URL 前缀选择传输后端，同一套业务代码可以在不同
 | ----------- | ----------------- | -------------- | ------ | ------ | ----------------------------- |
 | `shm2://`   | Iceoryx2          | 同机跨进程     | 条件支持（transport loan） | 极高 | 次代共享内存方案 |
 | `ddsr://`   | RTI Connext DDS   | 跨机器         | 否     | 高     | 高可靠性工业级场景            |
-| `ddst://`   | TravoDDS（国产 DDS） | 跨机器       | 否     | 中     | 国产自主可控 DDS 替代方案     |
 | `zenoh://`  | Zenoh 协议        | 跨机/云边      | 条件   | 高     | IoT 边缘节点通信              |
 | `someip://` | vsomeip SOME/IP   | 车载以太网     | 否     | 高     | 车载 ECU 服务化通信           |
 | `fdbus://`  | FDBus IPC         | 同机           | 否     | 高     | Android/Linux 混合系统        |
 | `mqtt://`   | MQTT (Paho C)     | 跨网络/云端    | 否     | 中     | IoT 传感器桥接、云端消息      |
-| `qnx://`    | QNX IPC           | 同机（QNX）    | 否     | 极高   | QNX 实时系统内部通信          |
 
 每种传输后端通过独立的 `*Conf` 结构体进行配置，支持通过 URL 参数传递后端特定选项（如 DDS 的 `?domain=1&depth=10`）。URL 解析由 `Url` 类统一处理，`Node` 基类在初始化时自动根据 transport 类型选择对应的传输工厂。
 
@@ -841,7 +839,7 @@ ROS2 使用 `.msg` 格式定义消息类型，序列化为 CDR，与 Protobuf/Fl
 
 **传输灵活性**
 
-ROS2 通过 rmw 层支持多种 DDS 实现，但切换需要重新编译并更新环境变量，且传输协议种类有限（主要为 DDS）。VLink 通过 URL 前缀支持 12 种传输后端，切换无需重新编译。
+ROS2 通过 rmw 层支持多种 DDS 实现，但切换需要重新编译并更新环境变量，且传输协议种类有限（主要为 DDS）。VLink 通过 URL 前缀支持 10 种传输后端，切换无需重新编译。
 
 **依赖规模**
 
@@ -879,7 +877,7 @@ SOME/IP 是车载以太网的核心通信协议，VLink 在 someip:// 传输后�
 Zenoh 是新兴的云边一体通信协议，VLink 在 zenoh:// 后端下兼容 Zenoh 协议。
 
 对比维度：
-- **协议灵活性**：Zenoh 支持 P2P 与路由拓扑；跨 NAT 部署须连接可达的 Zenoh router/显式 endpoint 或另配网络穿透，VLink 不自动穿透 NAT。`ddst://` 则以国产 DDS 运行时作为 Fast-DDS/CycloneDDS 的替代选项。
+- **协议灵活性**：Zenoh 支持 P2P 与路由拓扑；跨 NAT 部署须连接可达的 Zenoh router/显式 endpoint 或另配网络穿透，VLink 不自动穿透 NAT。
 - **API 一致性**：Zenoh 有独立的 API 设计哲学（key expression、subscriber、publisher），与 ROS2/DDS 生态差异较大；VLink 在 zenoh:// 后端上仍使用同一套 `Publisher<T>`/`Subscriber<T>` API。
 - **序列化支持**：Zenoh 本身不约定序列化格式（传递 raw bytes）；VLink 在 zenoh 后端上自动应用配置的序列化策略。
 
@@ -1128,7 +1126,7 @@ lib.vlink_publish(pub, data, 4)
 | Publisher / Subscriber     | ✅    | ✅          | ✅     |
 | Client / Server（RPC）     | ✅    | ✅          | ✅     |
 | Setter / Getter            | ✅    | ✅          | ✅     |
-| 全部 12 种传输后端          | ✅    | ✅          | ✅     |
+| 全部 10 种传输后端          | ✅    | ✅          | ✅     |
 | MessageLoop / Timer        | ✅    | ✅          | —     |
 | BagWriter / BagReader      | ✅    | ✅          | —     |
 | DiscoveryViewer            | ✅    | ✅          | —     |
@@ -1514,9 +1512,7 @@ vlink-bench run \
 | 同网段多机器分布式通信            | `dds://` / `ddsc://`   | 标准 RTPS 协议，互联互通性强                      | **稳定** |
 | 同机多进程，无 RouDi 依赖         | `shm2://`              | Iceoryx2 无需中心守护进程，部署更简单              | Beta     |
 | 跨 NAT / 云边协同                 | `zenoh://`             | 可经可达的 Zenoh router / 显式 endpoint 连接；VLink 不自动穿透 NAT | Beta     |
-| 国产自主可控 DDS 替代             | `ddst://`              | TravoDDS（国产开源 DDS）；VLink 配置接口与 `DdsConf` 近似 | Beta     |
 | 车载以太网，AUTOSAR 兼容          | `someip://`            | 符合 AUTOSAR AP 规范，与车载 ECU 互联              | Beta     |
-| QNX RTOS 环境                     | `qnx://`               | 基于 QNX 原生 IPC，面向实时系统内部通信           | Beta     |
 
 综合延迟、吞吐、资源消耗、API 复杂度、工具链完整性等维度，对 VLink 与主流竞品的综合能力矩阵如下：
 
@@ -1582,7 +1578,7 @@ VLink 的多传输后端架构使得系统可以在不同阶段使用不同的�
 | 本机开发与单元测试 | `intra://`      | 零外部依赖，断点调试，最快编译-运行循环         |
 | 同机集成测试      | `shm://`        | 接近共享内存部署形态，验证 RouDi 与内存池配置    |
 | 多机联调验证      | `dds://` / `ddsc://` | 真实网络拓扑，验证 QoS 策略                 |
-| 车辆级系统集成    | `someip://` / `qnx://` | 车载以太网 / 实时 OS，接近量产环境       |
+| 车辆级系统集成    | `someip://`       | 车载以太网，接近量产环境                       |
 | 生产部署          | 根据硬件约束选择 | 零代码改动，仅修改 URL 配置                    |
 
 这种"渐进式部署"能力大幅降低了集成风险，使每个阶段的问题能够在最小环境中被复现和修复。一个典型的工程实践是：在模块开发完成后，先在 `intra://` 下通过全部单元测试，再逐步切换到 `shm://` 和 `dds://` 进行集成验证，如果 `shm://` 或 `dds://` 下出现问题而 `intra://` 下正常，则可以快速将问题定位为传输层问题而非业务逻辑问题，大幅缩短排查时间。

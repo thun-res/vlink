@@ -42,8 +42,7 @@
  *      +---------+--------+--------+---------+----------+--------------+-----------+
  *      |         |        |        |         |          |              |           |
  *   IntraConf ShmConf  Shm2Conf ZenohConf  DdsConf  DdscConf        MqttConf   ...etc
- *                                                      (DdsrConf,   DdstConf,  SomeipConf,
- *                                                       FdbusConf,  QnxConf,   plugin Conf)
+ *                                                      (DdsrConf, SomeipConf, FdbusConf, plugin Conf)
  * @endcode
  *
  * @par Virtual interface contract

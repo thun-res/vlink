@@ -178,7 +178,7 @@ int main() {
 
 发现层回答的是"系统中存在哪些端点"。若需进一步掌握单个端点底层传输的运行状态——匹配对端的出现与消失、截止时间错过、liveliness 变化——则使用节点的 `register_status_handler()`。
 
-该机制仅 DDS 系列后端生效（`dds://`、`ddsc://`、`ddsr://`、`ddst://`）；其它后端调用将打印警告并被忽略。回调接收 `Status::BasePtr`，在回调内经 `status->get_type()` 分发、经 `status->as<...>()` 安全下转以读取详情字段。
+该机制仅 DDS 系列后端生效（`dds://`、`ddsc://`、`ddsr://`）；其它后端调用将打印警告并被忽略。回调接收 `Status::BasePtr`，在回调内经 `status->get_type()` 分发、经 `status->as<...>()` 安全下转以读取详情字段。
 
 写方（Publisher / Server / Setter）与读方（Subscriber / Client / Getter）的状态类型如下：
 

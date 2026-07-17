@@ -59,11 +59,9 @@
  * | @c kDds      | @c dds://     | Fast-DDS RTPS.                       |
  * | @c kDdsc     | @c ddsc://    | CycloneDDS.                          |
  * | @c kDdsr     | @c ddsr://    | RTI DDS.                             |
- * | @c kDdst     | @c ddst://    | TravoDDS.                            |
  * | @c kSomeip   | @c someip://  | SOME/IP through vsomeip.             |
  * | @c kMqtt     | @c mqtt://    | MQTT publish / subscribe.            |
  * | @c kFdbus    | @c fdbus://   | FDBus IPC.                           |
- * | @c kQnx      | @c qnx://     | QNX IPC (QNX only).                  |
  *
  * @par InitType
  * Controls whether the public Node<> template runs @c init() immediately or
@@ -134,11 +132,9 @@ enum class TransportType : uint8_t {
   kDds = 5,      ///< Fast-DDS RTPS (@c dds://).
   kDdsc = 6,     ///< CycloneDDS (@c ddsc://).
   kDdsr = 7,     ///< RTI DDS (@c ddsr://).
-  kDdst = 8,     ///< TravoDDS (@c ddst://).
   kSomeip = 9,   ///< SOME/IP through vsomeip (@c someip://).
   kMqtt = 10,    ///< MQTT (@c mqtt://).
   kFdbus = 11,   ///< FDBus IPC (@c fdbus://).
-  kQnx = 12,     ///< QNX IPC (@c qnx://; QNX only).
 };
 
 /**

@@ -265,7 +265,7 @@ TEST_SUITE("impl-NodeImpl") {
   }
 
   TEST_CASE("register_status_handler works for all DDS family transports") {
-    for (auto tt : {TransportType::kDds, TransportType::kDdsc, TransportType::kDdsr, TransportType::kDdst}) {
+    for (auto tt : {TransportType::kDds, TransportType::kDdsc, TransportType::kDdsr}) {
       TestNodeImpl node;
       node.transport_type = tt;
       node.register_status_handler([](const Status::BasePtr&) {});
@@ -460,15 +460,6 @@ TEST_SUITE("impl-NodeImpl") {
   TEST_CASE("schema_type defaults to unknown") {
     TestNodeImpl node;
     CHECK_EQ(node.schema_type, SchemaType::kUnknown);
-  }
-
-  TEST_CASE("register_status_handler on kDdsr and kDdst transports stores handler") {
-    for (auto tt : {TransportType::kDdsr, TransportType::kDdst}) {
-      TestNodeImpl node;
-      node.transport_type = tt;
-      node.register_status_handler([](const Status::BasePtr&) {});
-      CHECK(node.has_register_status() == true);
-    }
   }
 
   TEST_CASE("set_discovery_enabled propagates through multiple nodes independently") {

@@ -13,7 +13,7 @@ _vlink_proxy() {
             return
             ;;
         --dds_impl)
-            _vlink_bash_complete_words "dds ddsc ddsr ddst" "$cur"
+            _vlink_bash_complete_words "dds ddsc ddsr" "$cur"
             return
             ;;
         -l|--iox_strategy)

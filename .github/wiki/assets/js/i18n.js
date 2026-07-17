@@ -11,8 +11,8 @@
 const DICT = {
   zh: {
     /* ---- site meta ---- */
-    'site.title': 'VLink · 一套 API，12 种传输后端 — C++ 通信中间件',
-    'site.desc':  'VLink 是一款 C++ 通信中间件，提供 Event、Method、Field 三种模型、12 种传输后端、14 类序列化支持以及配套 CLI、录制回放和可视化工具。Apache 2.0 开源。',
+    'site.title': 'VLink · 一套 API，10 种传输后端 — C++ 通信中间件',
+    'site.desc':  'VLink 是一款 C++ 通信中间件，提供 Event、Method、Field 三种模型、10 种传输后端、14 类序列化支持以及配套 CLI、录制回放和可视化工具。Apache 2.0 开源。',
 
     /* ---- nav ---- */
     'nav.position':   '项目简介',
@@ -67,10 +67,10 @@ const DICT = {
 
     /* ---- unified api ---- */
     'uni.eyebrow': '统一 API',
-    'uni.title':   '一套节点 API · <span class="grad">12 种传输后端</span>',
+    'uni.title':   '一套节点 API · <span class="grad">10 种传输后端</span>',
     'uni.sub':     'URL scheme 用于选择传输后端。话题式后端通常可复用 path；SOME/IP 等专用后端则要求完整的合法 URL、依赖和运行时配置。',
     'uni.mx.label': '传输后端',
-    'uni.mx.title': '12 种传输后端 · 统一节点 API',
+    'uni.mx.title': '10 种传输后端 · 统一节点 API',
     'uni.b1':      '<strong>直接构造节点</strong> — 创建 Publisher / Subscriber 等模板节点后即可调用 <code>publish()</code>、<code>listen()</code> 等接口。',
     'uni.b2':      '<strong>统一生命周期</strong> — 六类节点共享匹配、等待、错误处理与回调等基础能力。',
     'uni.b3':      '<strong>复用业务处理</strong> — 上层消息处理通常无需依赖后端 API；后端地址、QoS、依赖和部署配置仍需分别核对。',
@@ -112,7 +112,7 @@ const DICT = {
     'mdl.field.d':  '状态值的 set / get / listen 模型。晚加入 Getter 能否取得历史最新值取决于后端及其历史、持久性 QoS。',
 
     /* ---- matrix ---- */
-    'mx.foot':     '※ <code>intra</code> 与 <code>dds</code>(CDR) 不支持消息级加密 · <code>qnx</code> 仅 QNX 平台 · <code>someip</code> 需 vsomeip 配置 · 详见 <a href="https://thun-res.github.io/vlink/zh_cn/" target="_blank" rel="noopener">开发者文档</a>',
+    'mx.foot':     '※ <code>intra</code> 与 <code>dds</code>(CDR) 不支持消息级加密 · <code>someip</code> 需 vsomeip 配置 · 详见 <a href="https://thun-res.github.io/vlink/zh_cn/" target="_blank" rel="noopener">开发者文档</a>',
 
     /* ---- quickstart ---- */
     'qs.eyebrow':  '快速上手',
@@ -170,7 +170,7 @@ const DICT = {
     /* ---- cta ---- */
 
     /* ---- footer ---- */
-    'ft.brand.p': 'C++ 通信中间件：统一节点 API、12 种传输后端，以及配套 CLI、录制回放和可视化工具。',
+    'ft.brand.p': 'C++ 通信中间件：统一节点 API、10 种传输后端，以及配套 CLI、录制回放和可视化工具。',
     'ft.h.prod':  '产品',
     'ft.h.tool':  '工具',
     'ft.h.res':   '资源',
@@ -197,7 +197,7 @@ const DICT = {
     'vs.r.perf.b': '同样需按目标配置测量；<code>intra://</code> 直接/共享指针路径与 <code>shm://</code> 显式 loan 路径可减少载荷复制',
     'vs.r.trans.k': '传输与零拷贝',
     'vs.r.trans.a': '传输和 loan 能力由所选 RMW、消息类型及配置决定',
-    'vs.r.trans.b': '提供 12 种 URL scheme；迁移时必须满足各后端的 URL 结构、依赖、QoS 与运行时配置',
+    'vs.r.trans.b': '提供 10 种 URL scheme；迁移时必须满足各后端的 URL 结构、依赖、QoS 与运行时配置',
     'vs.r.ser.k': '序列化',
     'vs.r.ser.a': 'rosidl (ROS Msg IDL) 为主；Type Adaptation 允许回调用 Eigen 等自定义类型',
     'vs.r.ser.b': '<strong>14 种编译期派发</strong>：Bytes · DynamicData · CDR · Protobuf · Protobuf 指针 · FlatBuffers 对象 · FlatBuffers 表指针 · FlatBuffers builder · 自定义 · string · const char* · POD · POD 指针 · 流式兜底',
@@ -214,7 +214,7 @@ const DICT = {
     'vs.r.plat.a': '支持范围随 ROS2 发行版、RMW 与第三方包而变化，需查对应发行版文档',
     'vs.r.plat.b': '源码包含 Linux · macOS · Windows · QNX · Android 适配；具体模块可用性取决于依赖和构建选项',
     'pl.c.core.h': '通信核心',
-    'pl.c.core.p': 'Event / Method / Field 三模型 + 12 种传输矩阵 + 14 种序列化。',
+    'pl.c.core.p': 'Event / Method / Field 三模型 + 10 种传输矩阵 + 14 种序列化。',
     'pl.c.viz.h': '可视化套件',
     'pl.c.viz.p': 'Viewer 桌面 GUI · Player 回放 · Analyzer 波形 · Foxglove / Rerun Web 桥。',
     'pl.c.bag.h': '录制回放',
@@ -256,21 +256,17 @@ const DICT = {
     'mx.c.shm2.m': '下一代共享内存,无需 RouDi 守护',
     'mx.c.ddsr.n': 'RTI Connext DDS',
     'mx.c.ddsr.m': 'RTI Connext 商用 DDS 传输后端',
-    'mx.c.ddst.n': 'TravoDDS · 国产',
-    'mx.c.ddst.m': 'TravoDDS 传输后端',
     'mx.c.zenoh.n': 'Eclipse Zenoh',
     'mx.c.zenoh.m': '云-边-端统一数据,pub/sub + query',
     'mx.c.someip.n': 'SOME/IP · vsomeip',
     'mx.c.someip.m': 'AUTOSAR 车载以太网标准',
     'mx.c.fdbus.n': 'FDBus',
     'mx.c.fdbus.m': 'Android/Linux 轻量级 D-Bus 替代',
-    'mx.c.qnx.n': 'QNX Neutrino IPC',
-    'mx.c.qnx.m': '基于 QNX 原生 IPC 原语的传输后端',
     'mx.c.mqtt.n': 'Paho MQTT',
     'mx.c.mqtt.m': '物联网 · 带宽受限',
 
     /* ---- extra translations (round 2) ---- */
-    'hero.h1': '一套 <span class="grad">API</span>，<br><span class="num">12</span> 种传输后端，<br><span class="grad">按部署选择</span>',
+    'hero.h1': '一套 <span class="grad">API</span>，<br><span class="num">10</span> 种传输后端，<br><span class="grad">按部署选择</span>',
     'vs.foot': '※ 本表只说明项目定位与接口边界，不构成通用性能结论；请对目标版本、平台、消息类型、QoS 与依赖组合进行验证。',
     'vz.c.viewer': '<p class="viz-intro">Qt6 桌面端的 VLink 实时监控与可视化工作台。</p><ul><li>URL 话题树并列显示 Freq / Rate / Loss / Latency 四列实时指标</li><li>TrafficWidget 波形，以及进程列表与通信拓扑图</li><li>Protobuf / FlatBuffers 消息递归展开到字段级,<code>.proto</code> 目录热加载</li><li>OSG 3D 点云叠加车体模型,相机多路并排,JPEG / H.264 / H.265 / NV12 软硬解</li><li>脱离中间件也能打开 <code>.vdb</code> SQLite 库离线浏览</li></ul>',
     'vz.c.webviz': '<p class="viz-intro">常驻 C++ 桥接进程,把 VLink 数据送进 Foxglove Studio 与 Rerun Viewer。</p><ul><li><code>vlink-foxglove</code>:WebSocket :8765,遵循 Foxglove WS 协议 v1</li><li><code>vlink-rerun</code>:gRPC :9876,支持 spawn / connect / serve / save 四种运行模式</li><li>7 组零拷贝容器内置自动映射(CameraFrame / PointCloud / OccupancyGrid / Tensor / ObjectArray / AudioFrame / RawData)，另附 vlink_msgs 示例映射文件</li><li>经 <code>--foxglove_msgs</code>、<code>--rpc_msgs</code>、<code>--parameters_url</code> 等对应配置后，可启用 <code>clientPublish</code>、<code>Service Call</code> 与 <code>Parameters</code></li><li>内置 ExprTk 做字段重映射与单位换算,支持话题白 / 黑名单过滤</li></ul>',
@@ -324,7 +320,7 @@ const DICT = {
     'hero.os.label': '多平台支持',
     'hero.os.qnx.title': 'QNX Neutrino RTOS · 支持的平台',
     'hero.os.arch.title': 'x86_64 与 ARM64 交叉编译',
-    'hero.fabric.alt': 'VLink 核心连接 intra、shm、dds、zenoh、someip、qnx 等 12 种传输后端',
+    'hero.fabric.alt': 'VLink 核心连接 intra、shm、dds、zenoh、someip 等 10 种传输后端',
     'mx.status.stable': '稳定',
     'mx.status.beta': '测试版',
     'mx.tag.conditional_zc': '条件式零拷贝',
@@ -335,14 +331,11 @@ const DICT = {
     'mx.tag.ros2': 'ROS2',
     'mx.tag.daemonless': '无守护',
     'mx.tag.commercial': '商用',
-    'mx.tag.domestic': '国产',
     'mx.tag.dds': 'DDS',
     'mx.tag.cloud_edge': '云边',
     'mx.tag.autosar': 'AUTOSAR',
     'mx.tag.soa': 'SOA',
     'mx.tag.ipc': 'IPC',
-    'mx.tag.qnx': 'QNX',
-    'mx.tag.rtos': 'RTOS',
     'mx.tag.iot': 'IoT',
     'mx.tag.pubsub': 'Pub/Sub',
     'mdl.event.tag': 'Event · 发布/订阅',
@@ -366,8 +359,8 @@ const DICT = {
   },
 
   en: {
-    'site.title': 'VLink · One API, 12 Transport Backends — C++ Communication Middleware',
-    'site.desc':  'VLink is C++ communication middleware with Event, Method and Field models, 12 transport backends, 14 serialization categories, and in-tree CLI, record/replay and visualization tools. Apache 2.0.',
+    'site.title': 'VLink · One API, 10 Transport Backends — C++ Communication Middleware',
+    'site.desc':  'VLink is C++ communication middleware with Event, Method and Field models, 10 transport backends, 14 serialization categories, and in-tree CLI, record/replay and visualization tools. Apache 2.0.',
 
     'nav.position':   'What is VLink',
     'nav.unified':    'Unified API',
@@ -418,10 +411,10 @@ const DICT = {
     'num.viz':      'GUI / Web Viz',
 
     'uni.eyebrow': 'Unified API',
-    'uni.title':   'One node API · <span class="grad">12 transport backends</span>',
+    'uni.title':   'One node API · <span class="grad">10 transport backends</span>',
     'uni.sub':     'The URL scheme selects a transport backend. Topic-style backends can often reuse the path; specialized backends such as SOME/IP require a complete valid URL, dependencies and runtime configuration.',
     'uni.mx.label': 'Transport Backends',
-    'uni.mx.title': '12 transport backends · one node API',
+    'uni.mx.title': '10 transport backends · one node API',
     'uni.b1':      '<strong>Construct nodes directly</strong> — create a Publisher, Subscriber or another template node and call methods such as <code>publish()</code> or <code>listen()</code>.',
     'uni.b2':      '<strong>Shared lifecycle</strong> — the six node types share matching, waiting, error handling and callback capabilities.',
     'uni.b3':      '<strong>Reuse application processing</strong> — upper-layer message handling usually avoids backend APIs, while backend addresses, QoS, dependencies and deployment configuration remain backend-specific.',
@@ -459,7 +452,7 @@ const DICT = {
     'mdl.field.h':  'Field Model',
     'mdl.field.d':  'A set / get / listen model for state. Whether a late-joining Getter receives the latest historical value depends on backend history and durability QoS.',
 
-    'mx.foot':     '※ <code>intra</code> and <code>dds</code>(CDR) do not support message-level encryption · <code>qnx</code> is QNX-only · <code>someip</code> needs vsomeip config · see the <a href="https://thun-res.github.io/vlink/en_us/" target="_blank" rel="noopener">Developer Docs</a>',
+    'mx.foot':     '※ <code>intra</code> and <code>dds</code>(CDR) do not support message-level encryption · <code>someip</code> needs vsomeip config · see the <a href="https://thun-res.github.io/vlink/en_us/" target="_blank" rel="noopener">Developer Docs</a>',
 
     'qs.eyebrow':  'Quickstart',
     'qs.title':    'Example Code',
@@ -506,7 +499,7 @@ const DICT = {
 
 
 
-    'ft.brand.p': 'C++ communication middleware with one node API, 12 transport backends, and companion CLI, record/replay and visualization tools.',
+    'ft.brand.p': 'C++ communication middleware with one node API, 10 transport backends, and companion CLI, record/replay and visualization tools.',
     'ft.h.prod':  'Product',
     'ft.h.tool':  'Tools',
     'ft.h.res':   'Resources',
@@ -533,7 +526,7 @@ const DICT = {
     'vs.r.perf.b': 'Measure the target configuration as well; <code>intra://</code> direct/shared-pointer paths and explicit <code>shm://</code> loan paths can reduce payload copying',
     'vs.r.trans.k': 'Transport &amp; zero-copy',
     'vs.r.trans.a': 'Transport and loan capabilities depend on the selected RMW, message type and configuration',
-    'vs.r.trans.b': 'Provides 12 URL schemes; migration must satisfy each backend&#39;s URL structure, dependencies, QoS and runtime configuration',
+    'vs.r.trans.b': 'Provides 10 URL schemes; migration must satisfy each backend&#39;s URL structure, dependencies, QoS and runtime configuration',
     'vs.r.ser.k': 'Serialization',
     'vs.r.ser.a': 'rosidl (ROS Msg IDL) is primary; Type Adaptation lets callbacks use Eigen and custom types',
     'vs.r.ser.b': '<strong>14 compile-time dispatched formats</strong>: Bytes · DynamicData · CDR · Protobuf · Protobuf ptr · FlatBuffers object · FlatBuffers table ptr · FlatBuffers builder · custom · string · const char* · POD · POD ptr · stream fallback',
@@ -550,7 +543,7 @@ const DICT = {
     'vs.r.plat.a': 'Support varies by ROS2 distribution, RMW and third-party package; check the corresponding distribution documentation',
     'vs.r.plat.b': 'The source contains Linux, macOS, Windows, QNX and Android adaptations; module availability depends on dependencies and build options',
     'pl.c.core.h': 'Comms core',
-    'pl.c.core.p': 'Event / Method / Field models + 12 transports + 14 serializers.',
+    'pl.c.core.p': 'Event / Method / Field models + 10 transports + 14 serializers.',
     'pl.c.viz.h': 'Visual suite',
     'pl.c.viz.p': 'Viewer desktop GUI · Player replay · Analyzer waveform · Foxglove / Rerun web bridge.',
     'pl.c.bag.h': 'Record &amp; replay',
@@ -592,21 +585,17 @@ const DICT = {
     'mx.c.shm2.m': 'Next-gen shared memory, no RouDi daemon',
     'mx.c.ddsr.n': 'RTI Connext DDS',
     'mx.c.ddsr.m': 'Commercial RTI Connext DDS transport backend',
-    'mx.c.ddst.n': 'TravoDDS · Chinese',
-    'mx.c.ddst.m': 'TravoDDS transport backend',
     'mx.c.zenoh.n': 'Eclipse Zenoh',
     'mx.c.zenoh.m': 'Unified cloud-edge data — pub/sub + query',
     'mx.c.someip.n': 'SOME/IP · vsomeip',
     'mx.c.someip.m': 'AUTOSAR automotive-Ethernet standard',
     'mx.c.fdbus.n': 'FDBus',
     'mx.c.fdbus.m': 'Lightweight D-Bus alternative for Android / Linux',
-    'mx.c.qnx.n': 'QNX Neutrino IPC',
-    'mx.c.qnx.m': 'Transport backend based on native QNX IPC primitives',
     'mx.c.mqtt.n': 'Paho MQTT',
     'mx.c.mqtt.m': 'IoT · bandwidth-constrained',
 
     /* ---- extra translations (round 2) ---- */
-    'hero.h1': 'One <span class="grad">API</span>,<br><span class="num">12</span> transport backends,<br><span class="grad">chosen per deployment</span>',
+    'hero.h1': 'One <span class="grad">API</span>,<br><span class="num">10</span> transport backends,<br><span class="grad">chosen per deployment</span>',
     'vs.foot': '※ This table describes positioning and interface boundaries, not universal performance. Validate the target version, platform, payload, QoS and dependency combination.',
     'vz.c.viewer': '<p class="viz-intro">A Qt6 desktop workbench for real-time monitoring and inspection of a VLink network.</p><ul><li>URL topic tree with live Freq / Rate / Loss / Latency columns</li><li>TrafficWidget waveforms, process lists and a communication topology graph</li><li>Protobuf / FlatBuffers messages unfolded field-by-field, with <code>.proto</code> directories hot-loaded</li><li>OSG 3D point cloud with vehicle overlay, plus multi-stream camera tile (JPEG / H.264 / H.265 / NV12, software or hardware decoders)</li><li>Works offline too &mdash; open a <code>.vdb</code> SQLite file without any running middleware</li></ul>',
     'vz.c.webviz': '<p class="viz-intro">A long-running C++ bridge that feeds VLink data into Foxglove Studio and Rerun Viewer.</p><ul><li><code>vlink-foxglove</code>: WebSocket :8765, speaking Foxglove WS protocol v1</li><li><code>vlink-rerun</code>: gRPC :9876, with four run modes &mdash; spawn / connect / serve / save</li><li>7 built-in zero-copy container mappings (CameraFrame, PointCloud, OccupancyGrid, Tensor, ObjectArray, AudioFrame, RawData), plus shippable vlink_msgs example mappings</li><li>After configuring <code>--foxglove_msgs</code>, <code>--rpc_msgs</code>, <code>--parameters_url</code> as applicable, the bridge can enable <code>clientPublish</code>, <code>Service Call</code>, and <code>Parameters</code></li><li>Built-in ExprTk for field remapping and unit conversion, with topic white / black-list filtering</li></ul>',
@@ -660,7 +649,7 @@ const DICT = {
     'hero.os.label': 'Runs on',
     'hero.os.qnx.title': 'QNX Neutrino RTOS · supported platform',
     'hero.os.arch.title': 'x86_64 and ARM64 cross-compilation',
-    'hero.fabric.alt': 'VLink core connected to 12 transport backends including intra, shm, dds, zenoh, someip, and qnx',
+    'hero.fabric.alt': 'VLink core connected to 10 transport backends including intra, shm, dds, zenoh, and someip',
     'mx.status.stable': 'Stable',
     'mx.status.beta': 'Beta',
     'mx.tag.conditional_zc': 'Conditional Zero-Copy',
@@ -671,14 +660,11 @@ const DICT = {
     'mx.tag.ros2': 'ROS2',
     'mx.tag.daemonless': 'Daemon-less',
     'mx.tag.commercial': 'Commercial',
-    'mx.tag.domestic': 'Chinese',
     'mx.tag.dds': 'DDS',
     'mx.tag.cloud_edge': 'Cloud-Edge',
     'mx.tag.autosar': 'AUTOSAR',
     'mx.tag.soa': 'SOA',
     'mx.tag.ipc': 'IPC',
-    'mx.tag.qnx': 'QNX',
-    'mx.tag.rtos': 'RTOS',
     'mx.tag.iot': 'IoT',
     'mx.tag.pubsub': 'Pub/Sub',
     'mdl.event.tag': 'Event · Pub/Sub',
@@ -702,8 +688,8 @@ const DICT = {
   },
 
   ja: {
-    'site.title': 'VLink · 1 つの API、12 種のトランスポートバックエンド — C++ 通信ミドルウェア',
-    'site.desc':  'VLink は Event、Method、Field、12 種のトランスポート、14 分類のシリアライズ、および CLI、記録・再生、可視化ツールを備えた C++ 通信ミドルウェアです。Apache 2.0。',
+    'site.title': 'VLink · 1 つの API、10 種のトランスポートバックエンド — C++ 通信ミドルウェア',
+    'site.desc':  'VLink は Event、Method、Field、10 種のトランスポート、14 分類のシリアライズ、および CLI、記録・再生、可視化ツールを備えた C++ 通信ミドルウェアです。Apache 2.0。',
 
     'nav.position':   'VLink とは',
     'nav.unified':    '統一 API',
@@ -754,10 +740,10 @@ const DICT = {
     'num.viz':      'GUI / Web 可視化',
 
     'uni.eyebrow': '統一 API',
-    'uni.title':   '1 つのノード API · <span class="grad">12 トランスポートバックエンド</span>',
+    'uni.title':   '1 つのノード API · <span class="grad">10 トランスポートバックエンド</span>',
     'uni.sub':     'URL scheme がバックエンドを選択します。トピック型バックエンドでは path を再利用できる場合がありますが、SOME/IP などは完全で有効な URL、依存、実行時設定が必要です。',
     'uni.mx.label': 'トランスポートバックエンド',
-    'uni.mx.title': '12 種のバックエンド · 統一ノード API',
+    'uni.mx.title': '10 種のバックエンド · 統一ノード API',
     'uni.b1':      '<strong>ノードを直接構築</strong> — Publisher / Subscriber などのテンプレートノードを作り、<code>publish()</code> や <code>listen()</code> を呼び出します。',
     'uni.b2':      '<strong>共通ライフサイクル</strong> — 6 ノード型はマッチング、待機、エラー処理、コールバックなどの基礎機能を共有します。',
     'uni.b3':      '<strong>アプリ処理を再利用</strong> — 上位処理は通常バックエンド API に依存しませんが、アドレス、QoS、依存、配備設定はバックエンド別に確認します。',
@@ -795,7 +781,7 @@ const DICT = {
     'mdl.field.h':  'Field モデル',
     'mdl.field.d':  '状態の set / get / listen モデル。遅れて参加した Getter が履歴最新値を得られるかは、バックエンドの履歴・永続性 QoS に依存します。',
 
-    'mx.foot':     '※ <code>intra</code> と <code>dds</code>(CDR) はメッセージ暗号化非対応 · <code>qnx</code> は QNX 専用 · <code>someip</code> は vsomeip 設定が必要 · 詳細は <a href="https://thun-res.github.io/vlink/en_us/" target="_blank" rel="noopener">開発者ドキュメント</a> を参照',
+    'mx.foot':     '※ <code>intra</code> と <code>dds</code>(CDR) はメッセージ暗号化非対応 · <code>someip</code> は vsomeip 設定が必要 · 詳細は <a href="https://thun-res.github.io/vlink/en_us/" target="_blank" rel="noopener">開発者ドキュメント</a> を参照',
 
     'qs.eyebrow':  'クイックスタート',
     'qs.title':    'サンプルコード',
@@ -842,7 +828,7 @@ const DICT = {
 
 
 
-    'ft.brand.p': '統一ノード API、12 種のトランスポート、CLI、記録・再生、可視化ツールを備えた C++ 通信ミドルウェア。',
+    'ft.brand.p': '統一ノード API、10 種のトランスポート、CLI、記録・再生、可視化ツールを備えた C++ 通信ミドルウェア。',
     'ft.h.prod':  'プロダクト',
     'ft.h.tool':  'ツール',
     'ft.h.res':   'リソース',
@@ -869,7 +855,7 @@ const DICT = {
     'vs.r.perf.b': '同様に対象構成で計測。<code>intra://</code> の直接/共有ポインタ経路と <code>shm://</code> の明示 loan 経路はペイロードコピーを削減可能',
     'vs.r.trans.k': 'トランスポートとゼロコピー',
     'vs.r.trans.a': 'トランスポートと loan の能力は選択した RMW、メッセージ型、設定に依存',
-    'vs.r.trans.b': '12 種の URL scheme を提供。移行時は各バックエンドの URL 構造、依存、QoS、実行時設定を満たす必要あり',
+    'vs.r.trans.b': '10 種の URL scheme を提供。移行時は各バックエンドの URL 構造、依存、QoS、実行時設定を満たす必要あり',
     'vs.r.ser.k': 'シリアライズ',
     'vs.r.ser.a': 'rosidl (ROS Msg IDL) が主流；Type Adaptation でコールバックに Eigen 等のカスタム型を渡せる',
     'vs.r.ser.b': '<strong>14 種をコンパイル時ディスパッチ</strong>：Bytes · DynamicData · CDR · Protobuf · Protobuf ポインタ · FlatBuffers オブジェクト · FlatBuffers テーブルポインタ · FlatBuffers builder · カスタム · string · const char* · POD · POD ポインタ · ストリームフォールバック',
@@ -886,7 +872,7 @@ const DICT = {
     'vs.r.plat.a': '対応範囲は ROS2 ディストリビューション、RMW、第三者パッケージで異なるため、該当版の文書を確認',
     'vs.r.plat.b': 'ソースに Linux · macOS · Windows · QNX · Android 向け適応を収録。モジュール可否は依存とビルド設定に左右される',
     'pl.c.core.h': '通信コア',
-    'pl.c.core.p': 'Event / Method / Field 3 モデル + 12 種のトランスポート + 14 種のシリアライズ。',
+    'pl.c.core.p': 'Event / Method / Field 3 モデル + 10 種のトランスポート + 14 種のシリアライズ。',
     'pl.c.viz.h': '可視化スイート',
     'pl.c.viz.p': 'Viewer デスクトップ GUI · Player 再生 · Analyzer 波形 · Foxglove / Rerun Web ブリッジ。',
     'pl.c.bag.h': '記録と再生',
@@ -928,21 +914,17 @@ const DICT = {
     'mx.c.shm2.m': '次世代共有メモリ、RouDi デーモン不要',
     'mx.c.ddsr.n': 'RTI Connext DDS',
     'mx.c.ddsr.m': '商用 RTI Connext DDS トランスポートバックエンド',
-    'mx.c.ddst.n': 'TravoDDS · 中国製',
-    'mx.c.ddst.m': 'TravoDDS トランスポートバックエンド',
     'mx.c.zenoh.n': 'Eclipse Zenoh',
     'mx.c.zenoh.m': 'クラウド-エッジ統合データ — pub/sub + query',
     'mx.c.someip.n': 'SOME/IP · vsomeip',
     'mx.c.someip.m': 'AUTOSAR 車載イーサネット標準',
     'mx.c.fdbus.n': 'FDBus',
     'mx.c.fdbus.m': 'Android / Linux 向け軽量 D-Bus 代替',
-    'mx.c.qnx.n': 'QNX Neutrino IPC',
-    'mx.c.qnx.m': 'QNX ネイティブ IPC プリミティブに基づくトランスポート',
     'mx.c.mqtt.n': 'Paho MQTT',
     'mx.c.mqtt.m': 'IoT · 帯域制約向け',
 
     /* ---- extra translations (round 2) ---- */
-    'hero.h1': '一つの <span class="grad">API</span>、<br><span class="num">12</span> 種のバックエンド、<br><span class="grad">配備ごとに選択</span>',
+    'hero.h1': '一つの <span class="grad">API</span>、<br><span class="num">10</span> 種のバックエンド、<br><span class="grad">配備ごとに選択</span>',
     'vs.foot': '※ 本表は位置付けと API 境界を説明するもので、普遍的な性能結論ではありません。対象版、環境、データ、QoS、依存構成を検証してください。',
     'vz.c.viewer': '<p class="viz-intro">Qt6 デスクトップの VLink ネットワーク監視・可視化ワークベンチ。</p><ul><li>URL 話題ツリーに Freq / Rate / Loss / Latency の 4 列リアルタイム指標</li><li>TrafficWidget 波形、プロセス一覧、通信トポロジー</li><li>Protobuf / FlatBuffers メッセージをフィールド単位で再帰展開、<code>.proto</code> ディレクトリをホットロード</li><li>OSG 3D 点群に車体モデル重畳、カメラ多系統の並列表示（JPEG / H.264 / H.265 / NV12、ソフト・ハード両対応）</li><li>ミドルウェアから切断しても、<code>.vdb</code> SQLite ファイルをオフライン閲覧可能</li></ul>',
     'vz.c.webviz': '<p class="viz-intro">VLink データを Foxglove Studio と Rerun Viewer へ送り込む常駐 C++ ブリッジ。</p><ul><li><code>vlink-foxglove</code>: WebSocket :8765、Foxglove WS プロトコル v1 準拠</li><li><code>vlink-rerun</code>: gRPC :9876、spawn / connect / serve / save の 4 モード対応</li><li>ゼロコピーコンテナ 7 種を内蔵自動マッピング（CameraFrame / PointCloud / OccupancyGrid / Tensor / ObjectArray / AudioFrame / RawData）、別途 vlink_msgs サンプルマッピングを同梱</li><li><code>--foxglove_msgs</code>、<code>--rpc_msgs</code>、<code>--parameters_url</code> などを設定すると <code>clientPublish</code> / <code>Service Call</code> / <code>Parameters</code> を有効化可能</li><li>内蔵 ExprTk でフィールド再マップ・単位変換、話題ホワイト / ブラックリスト対応</li></ul>',
@@ -996,7 +978,7 @@ const DICT = {
     'hero.os.label': '対応プラットフォーム',
     'hero.os.qnx.title': 'QNX Neutrino RTOS · 対応プラットフォーム',
     'hero.os.arch.title': 'x86_64 と ARM64 のクロスコンパイル',
-    'hero.fabric.alt': 'VLink コアから intra、shm、dds、zenoh、someip、qnx など 12 種のトランスポートへ接続する図',
+    'hero.fabric.alt': 'VLink コアから intra、shm、dds、zenoh、someip など 10 種のトランスポートへ接続する図',
     'mx.status.stable': '安定版',
     'mx.status.beta': 'ベータ',
     'mx.tag.conditional_zc': '条件付きゼロコピー',
@@ -1007,14 +989,11 @@ const DICT = {
     'mx.tag.ros2': 'ROS2',
     'mx.tag.daemonless': 'デーモン不要',
     'mx.tag.commercial': '商用',
-    'mx.tag.domestic': '中国製',
     'mx.tag.dds': 'DDS',
     'mx.tag.cloud_edge': 'クラウド-エッジ',
     'mx.tag.autosar': 'AUTOSAR',
     'mx.tag.soa': 'SOA',
     'mx.tag.ipc': 'IPC',
-    'mx.tag.qnx': 'QNX',
-    'mx.tag.rtos': 'RTOS',
     'mx.tag.iot': 'IoT',
     'mx.tag.pubsub': 'Pub/Sub',
     'mdl.event.tag': 'Event · Pub/Sub',

@@ -44,8 +44,8 @@ using namespace std::chrono_literals;  // NOLINT(build/namespaces, google-build-
 //   <transport>://<host>/<path>?<query>#<fragment>
 //
 // Components:
-//   transport -- backend tag (intra / shm / dds / ddsc / ddsr / ddst /
-//                zenoh / someip / mqtt / fdbus / qnx). Drives backend
+//   transport -- backend tag (intra / shm / shm2 / dds / ddsc / ddsr /
+//                zenoh / someip / mqtt / fdbus). Drives backend
 //                selection during Node construction.
 //   host      -- logical address; for local backends this is the first
 //                segment of the topic name.
@@ -54,7 +54,7 @@ using namespace std::chrono_literals;  // NOLINT(build/namespaces, google-build-
 //                parsed into a dictionary the backend consults during
 //                configuration and initialization.
 //   fragment  -- backend-specific hint (e.g. `#direct` for synchronous intra dispatch,
-//                broker spec for mqtt, mode tag for fdbus/qnx).
+//                broker spec for mqtt, mode tag for fdbus).
 //
 // Component dictionary construction and clone-with-override below show how
 // tooling builds/edits URLs without string surgery. Static classifier
@@ -95,7 +95,6 @@ int main() {
   show("someip://4660/22136?groups=1|2&event=16&field=1");
   show("mqtt://home/temperature?qos=1#tcp://192.168.1.100:1883");
   show("fdbus://audio/volume?event=level_changed#svc");
-  show("qnx://sensor/radar?event=target_detected");
 
   // ---- Build a URL from individual components ----
   // Component dictionary -> canonical URL string. The Category argument

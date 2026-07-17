@@ -72,7 +72,6 @@ pub.publish(25.6f);
 | 车载以太网、AUTOSAR 服务化 | `someip://` | Beta |
 | 带宽受限的物联网消息分发 | `mqtt://` | Beta |
 | 同机标准 IPC，类 D-Bus | `fdbus://` | Beta |
-| QNX 实时操作系统原生 IPC | `qnx://` | Beta |
 
 ---
 
@@ -88,16 +87,14 @@ pub.publish(25.6f);
 | `ddsc://` | 跨机 / 局域网 | 否 | CycloneDDS | 稳定 |
 | `shm2://` | 同机跨进程 | 是 | iceoryx2-c | Beta |
 | `ddsr://` | 跨机 / 局域网 | 否 | RTI Connext DDS | Beta |
-| `ddst://` | 跨机 | 否 | TravoDDS（国产） | Beta |
 | `zenoh://` | 跨机 / 云边 | 条件支持 | zenoh-c / zenoh-pico | Beta |
 | `someip://` | 车载以太网 | 否 | vsomeip | Beta |
 | `mqtt://` | 跨机 / 物联网 | 否 | Paho MQTT C | Beta |
 | `fdbus://` | 同机 | 否 | fdbus | Beta |
-| `qnx://` | 同机（QNX） | 否 | QNX SDK | Beta |
 
 能力边界条件：
 
-- **QoS**：`dds`/`ddsc`/`ddsr`/`ddst` 支持完整 DDS QoS；`shm`/`shm2`/`zenoh`/`mqtt` 支持部分配置；`intra`/`fdbus`/`qnx` 不涉及。作用域与生效模型见 [QoS 配置](05-qos.md)。
+- **QoS**：`dds`/`ddsc`/`ddsr` 支持完整 DDS QoS；`shm`/`shm2`/`zenoh`/`mqtt` 支持部分配置；`intra`/`fdbus` 不涉及。作用域与生效模型见 [QoS 配置](05-qos.md)。
 - **消息级加密**：`intra` 不支持；`shm`、各 DDS、`zenoh` 等支持，但 `dds://` 配合 CDR 原生类型时不经 VLink 加密管道。详见 [安全加密](07-security.md)。
 - **零拷贝**：`shm`/`shm2` 支持 transport loan；只有业务直接写入借出缓冲且后续路径不再复制时才形成发布端端到端零拷贝。`zenoh` 仅在启用 SHM 时提供借用。详见 [零拷贝](06-zerocopy.md)。
 
@@ -114,7 +111,7 @@ pub.publish(25.6f);
 | `?qos=` | 引用命名 QoS Profile | `?qos=sensor` |
 | `?event=` | 次级事件过滤名，同一地址下再分流（DDS 系列不支持，改以独立 Topic 区分） | `?event=notify` |
 
-并非每个后端都支持上述全部参数：`?event=` 见于 `intra`/`shm`/`shm2`/`zenoh`/`mqtt`/`fdbus`/`qnx`，DDS 系列无此字段；`?qos=` 仅 DDS 系列与 `zenoh` 支持（`mqtt` 的 `?qos=` 是 MQTT 自身的 0/1/2 级别，含义不同，见 [§4.6.7](#-467-mqtt--fdbus--qnxbeta)）。各后端实际接受的参数见对应小节。
+并非每个后端都支持上述全部参数：`?event=` 见于 `intra`/`shm`/`shm2`/`zenoh`/`mqtt`/`fdbus`，DDS 系列无此字段；`?qos=` 仅 DDS 系列与 `zenoh` 支持（`mqtt` 的 `?qos=` 是 MQTT 自身的 0/1/2 级别，含义不同，见 [§4.6.7](#-467-mqtt--fdbusbeta)）。各后端实际接受的参数见对应小节。
 
 两种等价的构造方式：URL 字符串，或参数与查询项一一对应的 `XxxConf` 对象（参数较多或需复用时更清晰）：
 
@@ -242,16 +239,15 @@ sub.listen([](const vlink::Bytes& data) {
 
 边界条件：`shm2://` 与 `shm://` 互不兼容，两者节点无法互通；消息大小须在 URL 片段中预先声明。
 
-### 🛰️ 4.6.4 DDS 系列：dds:// / ddsc:// / ddsr:// / ddst://
+### 🛰️ 4.6.4 DDS 系列：dds:// / ddsc:// / ddsr://
 
-四者共享同一套 DDS API，仅底层运行时与前缀不同，业务代码不变。均面向局域网多播发现，不提供 NAT 穿透：
+三者共享同一套 DDS API，仅底层运行时与前缀不同，业务代码不变。均面向局域网多播发现，不提供 NAT 穿透：
 
 | 前缀 | 底层运行时 | 定位 |
 | --- | --- | --- |
 | `dds://` | eProsima Fast-DDS | 默认主力跨机后端，支持扩展 QoS 与原生类型（`ddsf://` 是 `dds://` 的等价别名） |
 | `ddsc://` | Eclipse CycloneDDS | Apache 协议开源生态 |
 | `ddsr://` | RTI Connext DDS | 商业 DDS，需 RTI 许可证（Beta） |
-| `ddst://` | TravoDDS | 自主可控替代方案（Beta） |
 
 以 `dds://` 为例，其余替换前缀即可：
 
@@ -276,7 +272,7 @@ vlink::Subscriber<std::string> sub("dds://system/log?qos=event");
 sub.listen([](const std::string& msg) { VLOG_I("recv: ", msg); });
 ```
 
-边界条件：URL 中显式 `domain=` 优先于环境变量；不同 Domain 的节点互不发现。方法模型的响应 Topic 自动派生（在 Topic 名后追加 `___resp` 后缀），无需手动注册。`dds://`、`ddsr://`、`ddst://` 另支持 `?part=`/`?topic=`/`?pub=`/`?sub=`/`?writer=`/`?reader=` 形式的逐实体扩展 QoS（即 `DdsConf` 的 `qos_ext` 构造重载，与 `?qos=` 互斥）；CDR 原生类型注册的模板入口 `register_topic<T>()` / `register_url<T>()` 仅 `dds://` 提供；XML Profile 加载 `load_global_qos_file()` 与发现快照 `get_discovered_topics()` 由 `dds://`、`ddst://` 提供（`ddsr://` 不含）；`ddsc://` 最精简，仅支持命名 Profile（`?qos=`），无 `qos_ext`、无 XML 加载、无发现接口。QoS 设置入口见 [QoS 配置](05-qos.md)，环境变量见 [集成](13-integration.md)。
+边界条件：URL 中显式 `domain=` 优先于环境变量；不同 Domain 的节点互不发现。方法模型的响应 Topic 自动派生（在 Topic 名后追加 `___resp` 后缀），无需手动注册。`dds://`、`ddsr://` 另支持 `?part=`/`?topic=`/`?pub=`/`?sub=`/`?writer=`/`?reader=` 形式的逐实体扩展 QoS（即 `DdsConf` 的 `qos_ext` 构造重载，与 `?qos=` 互斥）；CDR 原生类型注册的模板入口 `register_topic<T>()` / `register_url<T>()` 仅 `dds://` 提供；XML Profile 加载 `load_global_qos_file()` 与发现快照 `get_discovered_topics()` 仅由 `dds://` 提供；`ddsc://` 最精简，仅支持命名 Profile（`?qos=`），无 `qos_ext`、无 XML 加载、无发现接口。QoS 设置入口见 [QoS 配置](05-qos.md)，环境变量见 [集成](13-integration.md)。
 
 ### 🌐 4.6.5 zenoh:// — Zenoh 协议（Beta）
 
@@ -350,7 +346,7 @@ sub.listen([](const float& v) { VLOG_I("recv: ", v); });
 
 边界条件：依赖 vsomeip JSON 配置文件，路径由环境变量 `VSOMEIP_CONFIGURATION` 指定；事件与字段节点须同时设 `groups` 与 `event`，字段还需 `field=1`；vsomeip 可能要求网络权限（root 或 `CAP_NET_RAW`）。建议进程启动时调用 `SomeipConf::load_global_config_file()` 预加载配置。
 
-### 📦 4.6.7 mqtt:// / fdbus:// / qnx://（Beta）
+### 📦 4.6.7 mqtt:// / fdbus://（Beta）
 
 **mqtt://** — 面向物联网的轻量发布/订阅，适用于带宽受限、网络不稳定场景，依赖外部 MQTT Broker（Mosquitto、EMQX 等）。`?qos=` 为 MQTT 自身的 0/1/2 级别，`#tcp://ip:1883` 可覆盖 Broker 地址。
 
@@ -370,15 +366,6 @@ pub.publish("hello from fdbus");
 
 vlink::Subscriber<std::string> sub("fdbus://my_service");
 sub.listen([](const std::string& msg) { VLOG_I("recv: ", msg); });
-```
-
-**qnx://** — QNX Neutrino RTOS 原生 IPC（Pulse / Message Passing），提供确定性实时延迟，适用于功能安全（ASIL）场景。仅在 QNX 目标平台可用，Linux 上不可用。
-
-```cpp
-vlink::Publisher<float>  pub("qnx://sensor/imu");
-vlink::Subscriber<float> sub("qnx://sensor/imu");
-sub.listen([](const float& v) { VLOG_I("recv: ", v); });
-pub.publish(9.8f);
 ```
 
 ---
@@ -426,7 +413,6 @@ shm_sub.listen([&dds_pub](const vlink::Bytes& frame) {
 | `someip://` | 推荐 `SomeipConf::load_global_config_file()` | 节点析构自动 |
 | `mqtt://` | 无需（依赖外部 Broker） | 节点析构自动 |
 | `fdbus://` | 无需（依赖系统级名称服务） | 节点析构自动 |
-| `qnx://` | 无需 | 节点析构自动 |
 
 进程启动时可调用 `vlink::Url::global_init(...)` 预初始化指定的已链接后端；它不控制传输插件发现。`VLINK_URL_PLUGINS` 的完整值选择一种互斥模式：等于 `auto`（大小写不敏感）时，允许未链接的已知后端在对应 URL 首次使用时按固定名称 `vlink-<module>` 加载；为空或等于 `none`（大小写不敏感）时关闭插件加载；其他非空值仍按逗号或空格分隔的显式预加载列表解析，并在首次 URL 初始化时加载其中列出的已知模块。`auto` / `none` 必须是完整值，不能与模块列表混写。该设置在进程级插件管理器首次初始化时读取一次，此后修改无效。已链接后端始终优先，未知 transport / 自定义 URL scheme 不会通过该机制加载；插件机制只适用于共享模块，不会加载静态归档（Unix `.a` / Windows 静态 `.lib`），共享库搜索路径可用 `VLINK_PLUGIN_DIR` 配置。分包安装时，运行时组件已包含这些可加载名称，无需开发组件。
 

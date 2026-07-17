@@ -171,7 +171,7 @@ target_link_libraries(my_app PRIVATE vlink::vlink)
 - `intra://`：当前实现显式排除整个 intra 路径；其中 `shared_ptr<IntraDataType>` 专用对象路径还会对安全模板触发编译期 `static_assert`。普通 intra 消息虽经 Bytes 编解码，也不因此启用安全层。
 - `dds://` 配合 CDR 类型：CDR 直接交由 DDS 处理，应改用 DDS Security 插件或传输层 TLS。
 
-其余后端（`shm://`、`shm2://`、`ddsc://`、`ddsr://`、`ddst://`、`zenoh://`、`mqtt://`、`fdbus://`、`someip://`、`qnx://`，以及 `dds://` 的非 CDR 类型）均支持。
+其余后端（`shm://`、`shm2://`、`ddsc://`、`ddsr://`、`zenoh://`、`mqtt://`、`fdbus://`、`someip://`，以及 `dds://` 的非 CDR 类型）均支持。
 
 ![后端选择决策树](images/transport-decision-tree.png)
 

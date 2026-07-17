@@ -25,7 +25,7 @@
 //
 // Demonstrates a half-duplex round-trip timing harness using two raw-Bytes
 // pub/sub topics (ping and pong). The transport backend is URL-driven via
-// ping_pong_common.h so the same code measures DDS, shared memory, fdbus, qnx
+// ping_pong_common.h so the same code measures DDS, shared memory, FDBus,
 // or SOME/IP. Payload size is configurable (CLI arg). Typical engineering
 // scenario: characterising end-to-end latency of a candidate transport for a
 // given message size before committing it to a production data flow.

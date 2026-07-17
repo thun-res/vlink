@@ -1,6 +1,6 @@
 # 🔒 qos_basics — 自定义 `vlink::Qos`、注册命名 profile、URL 引用
 
-构造 `vlink::Qos` 策略，经后端 `register_qos(name, qos)` 注册为命名 profile，在 URL 中以 `?qos=name` 引用。仅 DDS 家族（`dds://` / `ddsc://` / `ddsr://` / `ddst://`）与 `zenoh://` 生效；`intra` / `shm` / `someip` / `mqtt` / `fdbus` / `qnx` 忽略 QoS。
+构造 `vlink::Qos` 策略，经后端 `register_qos(name, qos)` 注册为命名 profile，在 URL 中以 `?qos=name` 引用。仅 DDS 家族（`dds://` / `ddsc://` / `ddsr://`）与 `zenoh://` 生效；`intra` / `shm` / `someip` / `mqtt` / `fdbus` 忽略 QoS。
 
 ![QoS 配置数据流](./images/qos-basic-config.png)
 

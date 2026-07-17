@@ -482,10 +482,8 @@ add_subdirectory(modules/zenoh)
 add_subdirectory(modules/dds)
 add_subdirectory(modules/ddsc)
 add_subdirectory(modules/ddsr)
-add_subdirectory(modules/ddst)
 add_subdirectory(modules/someip)
 add_subdirectory(modules/fdbus)
-add_subdirectory(modules/qnx)
 add_subdirectory(modules/mqtt)
 set(VLINK_DEFAULT_LIBRARIES ${VLINK_LIBRARIES})
 if(VLINK_LIBRARIES)
@@ -594,7 +592,6 @@ if(ENABLE_TEST)
         */modules/dds/builtin/*
         */modules/ddsc/builtin/*
         */modules/ddsr/builtin/*
-        */modules/ddst/builtin/*
         */include/private/*
         */src/private/*
     )

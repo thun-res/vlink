@@ -28,9 +28,12 @@
 #include <doctest/doctest.h>
 
 #include <atomic>
+#include <chrono>
 #include <filesystem>
+#include <limits>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -490,6 +493,127 @@ TEST_SUITE("base-Logger") {
     received.clear();
     Logger::print_stream_style<Logger::kOff>(Logger::NoDetail{}, "ignored");
     CHECK(received.empty());
+
+    Logger::register_console_handler(nullptr);
+  }
+
+  TEST_CASE("periodic log macros throttle before evaluating arguments") {
+    Logger::init("test");
+    Logger::set_console_level(Logger::kInfo);
+    Logger::set_file_level(Logger::kOff);
+
+    std::atomic<int> calls{0};
+    std::atomic<int> evaluations{0};
+    Logger::register_console_handler(
+        [&calls](Logger::Level, std::string_view) { calls.fetch_add(1, std::memory_order_relaxed); });
+
+    auto emit = [&evaluations] {
+      VLOG_I_EVERY_MS(50, "periodic value=", evaluations.fetch_add(1, std::memory_order_relaxed));
+    };
+
+    emit();
+    emit();
+    CHECK_EQ(calls.load(std::memory_order_relaxed), 1);
+    CHECK_EQ(evaluations.load(std::memory_order_relaxed), 1);
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    for (;;) {
+      emit();
+      if (calls.load(std::memory_order_relaxed) != 1 || std::chrono::steady_clock::now() >= deadline) {
+        break;
+      }
+      std::this_thread::yield();
+    }
+    CHECK_EQ(calls.load(std::memory_order_relaxed), 2);
+    CHECK_EQ(evaluations.load(std::memory_order_relaxed), 2);
+
+    Logger::register_console_handler(nullptr);
+  }
+
+  TEST_CASE("periodic log macros keep independent call-site state and allow non-positive intervals") {
+    Logger::init("test");
+    Logger::set_console_level(Logger::kTrace);
+    Logger::set_file_level(Logger::kOff);
+
+    std::vector<Logger::Level> levels;
+    Logger::register_console_handler([&levels](Logger::Level level, std::string_view) { levels.emplace_back(level); });
+
+    int64_t vlink_interval_ms = 60'000;
+    int vlink_last_log_time_ns = 1;
+    VLINK_LOG_T_EVERY_MS(60'000, "full periodic macro");
+    VLOG_D_EVERY_MS(vlink_interval_ms, "macro hygiene ", vlink_last_log_time_ns);
+    VLOG_I_EVERY_MS(60'000, "info periodic macro");
+    VLOG_W_EVERY_MS(60'000, "warn periodic macro");
+    VLOG_E_EVERY_MS(60'000, "error periodic macro");
+    VLOG_I_EVERY_MS(60'000, "first independent info call site");
+    VLOG_I_EVERY_MS(60'000, "second independent info call site");
+
+    const std::vector<Logger::Level> expected_levels{Logger::kTrace, Logger::kDebug, Logger::kInfo, Logger::kWarn,
+                                                     Logger::kError, Logger::kInfo,  Logger::kInfo};
+    CHECK_EQ(levels, expected_levels);
+
+    for (int interval_ms : {0, -1, 0}) {
+      VLOG_T_EVERY_MS(interval_ms, "unlimited periodic ", interval_ms);
+    }
+    CHECK_EQ(levels.size(), 10);
+
+    Logger::register_console_handler(nullptr);
+  }
+
+  TEST_CASE("periodic log macro is shared safely by concurrent callers") {
+    Logger::init("test");
+    Logger::set_console_level(Logger::kInfo);
+    Logger::set_file_level(Logger::kOff);
+
+    std::atomic<int> calls{0};
+    std::atomic<bool> start{false};
+    Logger::register_console_handler(
+        [&calls](Logger::Level, std::string_view) { calls.fetch_add(1, std::memory_order_relaxed); });
+
+    auto emit = [&start] {
+      while (!start.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+      }
+      VLOG_I_EVERY_MS(60'000, "concurrent periodic");
+    };
+
+    std::vector<std::thread> threads;
+    threads.reserve(8);
+    for (int i = 0; i < 8; ++i) {
+      threads.emplace_back(emit);
+    }
+
+    start.store(true, std::memory_order_release);
+    for (auto& thread : threads) {
+      thread.join();
+    }
+    CHECK_EQ(calls.load(std::memory_order_relaxed), 1);
+
+    std::atomic<uint64_t> future_time{std::numeric_limits<uint64_t>::max()};
+    CHECK_FALSE(Logger::try_acquire_periodic_log(Logger::kInfo, 1, future_time));
+    CHECK_EQ(future_time.load(std::memory_order_relaxed), std::numeric_limits<uint64_t>::max());
+
+    std::atomic<uint64_t> fatal_time{0};
+    CHECK_FALSE(Logger::try_acquire_periodic_log(Logger::kFatal, 1, fatal_time));
+    CHECK_EQ(fatal_time.load(std::memory_order_relaxed), 0);
+
+    Logger::register_console_handler(nullptr);
+  }
+
+  TEST_CASE("disabled periodic log does not consume its next writable period") {
+    Logger::init("test");
+    Logger::set_console_level(Logger::kOff);
+    Logger::set_file_level(Logger::kOff);
+
+    std::atomic<int> calls{0};
+    Logger::register_console_handler(
+        [&calls](Logger::Level, std::string_view) { calls.fetch_add(1, std::memory_order_relaxed); });
+
+    auto emit = [] { VLOG_I_EVERY_MS(60'000, "periodic after enable"); };
+    emit();
+    Logger::set_console_level(Logger::kInfo);
+    emit();
+    CHECK_EQ(calls.load(std::memory_order_relaxed), 1);
 
     Logger::register_console_handler(nullptr);
   }

@@ -65,7 +65,7 @@
         <mxCell id="tr_sch" value="&lt;b&gt;URL scheme dispatch&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.2;arcSize=12;shadow=0;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
           <mxGeometry x="444" y="186" width="232" height="34" as="geometry" />
         </mxCell>
-        <mxCell id="tr_sch_list" value="intra  shm  shm2  dds  ddsc  ddsr&#10;ddst  zenoh  someip  mqtt  fdbus  qnx" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=0;fontColor=#607d8b;" vertex="1" parent="1">
+        <mxCell id="tr_sch_list" value="intra  shm  shm2  dds  ddsc  ddsr&#10;zenoh  someip  mqtt  fdbus" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=0;fontColor=#607d8b;" vertex="1" parent="1">
           <mxGeometry x="444" y="222" width="232" height="40" as="geometry" />
         </mxCell>
         <mxCell id="tr_route" value="&lt;b&gt;route &amp;amp; fan-out&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;strokeWidth=1.2;arcSize=12;shadow=0;fontSize=13;fontFamily=Helvetica;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">

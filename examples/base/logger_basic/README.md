@@ -11,6 +11,7 @@ vlink Logger 是线程安全、双 sink（控制台 + 文件）的日志库，�
 | `Logger::set_file_level(Level)` | 设置文件输出级别（与控制台独立） |
 | `Logger::flush()` | 强制刷盘；退出/abort 前调用避免丢日志 |
 | `VLOG_T/D/I/W/E/F` | variadic 参数拼接：`VLOG_I("x=", x)` |
+| `VLOG_{T,D,I,W,E}_EVERY_MS` | 调用点级周期限频；首次立即输出，抑制时不求值日志参数 |
 | `MLOG_T/D/I/W/E/F` | format：`{}` 占位符 |
 | `CLOG_T/D/I/W/E/F` | printf：`%d %s` 风格 |
 | `SLOG_T/D/I/W/E/F` | RAII iostream：链式 `<<` 到分号为止 |

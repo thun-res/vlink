@@ -8,7 +8,7 @@
         <mxCell id="title" value="Transport Decision Tree" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="40" y="18" width="1120" height="34" as="geometry" />
         </mxCell>
-        <mxCell id="subtitle" value="VLink — full-scenario alternative to ROS 2 · 12 transports · pick a URL scheme by answering one question per row · Stable (green) · Beta (orange)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+        <mxCell id="subtitle" value="VLink — full-scenario alternative to ROS 2 · 10 transports · pick a URL scheme by answering one question per row · Stable (green) · Beta (orange)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
           <mxGeometry x="40" y="54" width="1120" height="22" as="geometry" />
         </mxCell>
 
@@ -83,9 +83,6 @@
         <mxCell id="r_ddsr" value="&lt;b&gt;ddsr://&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;RTI Connext · Beta&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#e65100;shadow=0;align=center;" vertex="1" parent="1">
           <mxGeometry x="800" y="510" width="190" height="48" as="geometry" />
         </mxCell>
-        <mxCell id="r_ddst" value="&lt;b&gt;ddst://&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;TravoDDS · Beta&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#e65100;shadow=0;align=center;" vertex="1" parent="1">
-          <mxGeometry x="1010" y="510" width="190" height="48" as="geometry" />
-        </mxCell>
         <mxCell id="e_d3_dds" value="Yes" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2;strokeColor=#388e3c;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="d3" target="r_dds">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
@@ -93,9 +90,6 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e_dds_ddsr" value="" style="endArrow=none;html=1;rounded=1;strokeWidth=1.4;strokeColor=#90a4ae;dashed=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="r_dds" target="r_ddsr">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_ddsc_ddst" value="" style="endArrow=none;html=1;rounded=1;strokeWidth=1.4;strokeColor=#90a4ae;dashed=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="r_ddsc" target="r_ddst">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
@@ -113,26 +107,13 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
-        <!-- D5: QNX? -->
-        <mxCell id="d5" value="QNX system?" style="rhombus;whiteSpace=wrap;html=1;rounded=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="470" y="740" width="260" height="100" as="geometry" />
-        </mxCell>
-        <mxCell id="e_d4_d5" value="No" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#37474f;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="d4" target="d5">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="r_qnx" value="&lt;b&gt;qnx://&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;QNX IPC · Beta&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#e65100;shadow=0;align=center;" vertex="1" parent="1">
-          <mxGeometry x="190" y="766" width="190" height="48" as="geometry" />
-        </mxCell>
-        <mxCell id="e_d5_qnx" value="Yes" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2;strokeColor=#ef6c00;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="d5" target="r_qnx">
+        <mxCell id="e_d4_d6" value="No" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#37474f;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="d4" target="d6">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
         <!-- D6: IoT / Cloud? -->
         <mxCell id="d6" value="IoT / Cloud messaging?" style="rhombus;whiteSpace=wrap;html=1;rounded=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="470" y="884" width="260" height="100" as="geometry" />
-        </mxCell>
-        <mxCell id="e_d5_d6" value="No" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#37474f;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="d5" target="d6">
-          <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
         <mxCell id="r_mqtt" value="&lt;b&gt;mqtt://&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;Paho MQTT · Beta&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#e65100;shadow=0;align=center;" vertex="1" parent="1">
@@ -149,7 +130,7 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
-        <mxCell id="footer" value="shm2:// (Iceoryx2) is an alternative to shm:// — Beta.  ·  12 transports total: intra, shm, shm2, dds, ddsc, ddsr, ddst, zenoh, someip, mqtt, fdbus, qnx." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+        <mxCell id="footer" value="shm2:// (Iceoryx2) is an alternative to shm:// — Beta.  ·  10 transports total: intra, shm, shm2, dds, ddsc, ddsr, zenoh, someip, mqtt, fdbus." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
           <mxGeometry x="40" y="1006" width="1120" height="22" as="geometry" />
         </mxCell>
 

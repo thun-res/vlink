@@ -157,7 +157,7 @@ class VLINK_EXPORT AbstractNode {
  *       lacking the operation can be detected gracefully.
  *
  * @note @c register_status_handler() and @c call_status() are only meaningful
- *       on DDS-family transports (@c kDds, @c kDdsc, @c kDdsr, @c kDdst);
+ *       on DDS-family transports (@c kDds, @c kDdsc, @c kDdsr);
  *       other backends log a warning and treat them as no-ops.
  */
 class VLINK_EXPORT NodeImpl {

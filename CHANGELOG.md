@@ -4,6 +4,7 @@
 
 ### 新增功能
 
+- **日志限频**：C++ 新增线程安全的调用点级 `VLOG_{T,D,I,W,E}_EVERY_MS(interval_ms, ...)` 宏，支持按周期抑制重复日志且不求值被抑制的日志参数。
 - **CLI/dump 改名**：`cli/dump` 已彻底改为 `cli/parse`，命令由 `vlink-dump` / `dump` 改为 `vlink-parse` / `parse`，构建开关由 `ENABLE_CLI_DUMP` 改为 `ENABLE_CLI_PARSE`；不提供旧名称兼容入口。
 - **零拷贝解析**：新增统一的 C++ / Python `MessageParser`，支持反射解析、零拷贝视图和通用文本渲染；Parse、Viewer、Analyzer、eproto 与 efbs 已接入。
 - **CameraFrame**：扩展 Raw、Bayer、YUV 和压缩图像格式，新增编码辅助函数、Python 绑定与自动解码模式，线上枚举值保持兼容。
@@ -13,6 +14,7 @@
 
 ### 改进
 
+- **传输后端移除**：删除 `modules/ddst` 与 `modules/qnx`，不再支持 `ddst://` 和 `qnx://`；同步移除 `DdstConf` / `QnxConf`、对应 `TransportType` 与启用标志、构建选项、CLI / 补全入口、Python 枚举、测试和文档。QNX 目标操作系统的工具链、原生日志及平台适配不受影响。
 - **公共 API**：`TerminalStream` 移至 base，并统一 Bag / Trigger 接口命名；旧接口不再保留。
 - **URL 插件**：扩展 `VLINK_URL_PLUGINS`，支持按需自动加载 transport、关闭加载或显式预加载；运行时包可独立完成动态加载。
 - **Bag**：公开幂等的 `BagWriter::close()`，并由 `Config::sync_mode` 统一帧、Schema 和插件输出的写入模式。逐调用 `immediate` 参数及受保护 `record()` 签名已调整，外部派生类和既有二进制需适配并重新构建。

@@ -90,11 +90,9 @@ TEST_SUITE("impl-TransportType") {
     CHECK_EQ(static_cast<uint8_t>(TransportType::kDds), 5);
     CHECK_EQ(static_cast<uint8_t>(TransportType::kDdsc), 6);
     CHECK_EQ(static_cast<uint8_t>(TransportType::kDdsr), 7);
-    CHECK_EQ(static_cast<uint8_t>(TransportType::kDdst), 8);
     CHECK_EQ(static_cast<uint8_t>(TransportType::kSomeip), 9);
     CHECK_EQ(static_cast<uint8_t>(TransportType::kMqtt), 10);
     CHECK_EQ(static_cast<uint8_t>(TransportType::kFdbus), 11);
-    CHECK_EQ(static_cast<uint8_t>(TransportType::kQnx), 12);
   }
 
   TEST_CASE("distinct transports compare not-equal") {

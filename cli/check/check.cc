@@ -942,8 +942,7 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
 
   run_check(ctx, "* Check available IP addresses...", 100, [&ctx]() { check_ipv4_addresses(ctx); });
 
-#if defined(VLINK_SUPPORT_DDS) || defined(VLINK_SUPPORT_DDSC) || defined(VLINK_SUPPORT_DDSR) || \
-    defined(VLINK_SUPPORT_DDST)
+#if defined(VLINK_SUPPORT_DDS) || defined(VLINK_SUPPORT_DDSC) || defined(VLINK_SUPPORT_DDSR)
   run_check(ctx, "* Check VLink DDS IP available...", 100, [&ctx]() { check_dds_ip(ctx); });
   run_check(ctx, "* Check VLink DDS interface...", 100, [&ctx]() { check_dds_interface(ctx); });
   run_check(ctx, "* Check VLink DDS interface MTU...", 100, [&ctx]() { check_interface_mtu(ctx); });
@@ -952,8 +951,7 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
   run_check(ctx, "* Check VLink multicast address...", 100,
             [&ctx]() { check_multicast_address(ctx, kMulticastDiscovery, false); });
 
-#if defined(VLINK_SUPPORT_DDS) || defined(VLINK_SUPPORT_DDSC) || defined(VLINK_SUPPORT_DDSR) || \
-    defined(VLINK_SUPPORT_DDST)
+#if defined(VLINK_SUPPORT_DDS) || defined(VLINK_SUPPORT_DDSC) || defined(VLINK_SUPPORT_DDSR)
   run_check(ctx, "* Check DDS multicast address...", 100,
             [&ctx]() { check_multicast_address(ctx, kMulticastDds, true); });
   run_check(ctx, "* Check VLINK_DDS_DOMAIN range...", 50, [&ctx]() { check_dds_domain_range(ctx); });
@@ -1274,15 +1272,12 @@ int check_env(bool available_case, const std::string& prefix) {
        false},
 #endif
 
-#if defined(VLINK_SUPPORT_DDS) || defined(VLINK_SUPPORT_DDSC) || defined(VLINK_SUPPORT_DDSR) || \
-    defined(VLINK_SUPPORT_DDST)
+#if defined(VLINK_SUPPORT_DDS) || defined(VLINK_SUPPORT_DDSC) || defined(VLINK_SUPPORT_DDSR)
       {"VLINK_DDS_BIND", "",
        "Rebinds dds:// URLs to a specific DDS backend at runtime: dds (Fast-DDS) / ddsf (alias of dds) / ddsc "
-       "(CycloneDDS) / ddsr (RTI) / ddst (TravoDDS). Empty = no rebind.",
+       "(CycloneDDS) / ddsr (RTI). Empty = no rebind.",
        false},
-      {"VLINK_DDS_DEBUG", "",
-       "When set to 1 raises Fast-DDS / CycloneDDS / RTI / TravoDDS internal log verbosity (Error -> Info / "
-       "FATAL -> ALL / ERROR -> STATUS_ALL / 0xffff respectively); default 0.",
+      {"VLINK_DDS_DEBUG", "", "When set to 1 raises Fast-DDS / CycloneDDS / RTI internal log verbosity; default 0.",
        false},
       {"VLINK_DDS_EVENT_QOS", "", "Default QoS profile name for DDS Publisher/Subscriber nodes.", false},
       {"VLINK_DDS_METHOD_QOS", "", "Default QoS profile name for DDS Client/Server nodes.", false},
@@ -1310,10 +1305,6 @@ int check_env(bool available_case, const std::string& prefix) {
 
 #ifdef VLINK_SUPPORT_DDSC
       {"VLINK_CYCLONEDDS_URI", "", "Cyclone DDS config URI (file://..., <CycloneDDS>... inline XML).", false},
-#endif
-
-#ifdef VLINK_SUPPORT_DDST
-      {"VLINK_TRAVODDS_QOS_FILE", "", "Path to the TravoDDS (ddst://) QoS profile file.", false},
 #endif
 
 #ifdef VLINK_SUPPORT_SHM
@@ -1784,12 +1775,6 @@ int check_test() {
   account(run_module_field_test("FIELD  ddsr://", "ddsr://check/module/ddsr/field", 3000, true, true, nullptr));
 #endif
 
-#ifdef VLINK_SUPPORT_DDST
-  account(run_module_event_test("EVENT  ddst://", "ddst://check/module/ddst/event", 3000, true, true, nullptr));
-  account(run_module_method_test("METHOD ddst://", "ddst://check/module/ddst/method", 3000, true, true, nullptr));
-  account(run_module_field_test("FIELD  ddst://", "ddst://check/module/ddst/field", 3000, true, true, nullptr));
-#endif
-
 #ifdef VLINK_SUPPORT_ZENOH
   account(run_module_event_test("EVENT  zenoh://", "zenoh://check/module/zenoh/event", 3000, true, true, nullptr));
   account(run_module_method_test("METHOD zenoh://", "zenoh://check/module/zenoh/method", 3000, true, true, nullptr));
@@ -1819,12 +1804,6 @@ int check_test() {
     account(run_module_field_test("FIELD  fdbus://", "fdbus://check/module/fdbus/field", 2000, true, name_server_ok,
                                   "name_server not running"));
   }
-#endif
-
-#ifdef VLINK_SUPPORT_QNX
-  account(run_module_event_test("EVENT  qnx://", "qnx://check/module/qnx/event", 2000, true, true, nullptr));
-  account(run_module_method_test("METHOD qnx://", "qnx://check/module/qnx/method", 2000, true, true, nullptr));
-  account(run_module_field_test("FIELD  qnx://", "qnx://check/module/qnx/field", 2000, true, true, nullptr));
 #endif
 
   std::cout << std::endl;

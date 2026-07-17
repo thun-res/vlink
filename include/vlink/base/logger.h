@@ -68,6 +68,13 @@
  *  - @c VLINK_LOG_DETAIL_LEVEL @c =N changes the level at which file/line is appended.
  *  - @c VLINK_LOG_DISABLE_SHORT removes the @c VLOG_* / @c MLOG_* / @c CLOG_* / @c SLOG_* aliases.
  *
+ * @par Periodic call-site limiting
+ * @c VLOG_x_EVERY_MS(interval_ms, ...) emits immediately, then at most once per interval at that
+ * macro call site.  The state is shared by concurrent callers, and suppressed log arguments are
+ * not evaluated.  A non-positive interval bypasses limiting without updating the saved timestamp.
+ * Function-template specializations keep separate state.  Fatal logs intentionally have no
+ * periodic variant.
+ *
  * @par Formatting cheat sheet
  *
  * | Need                              | Snippet                                                |
@@ -94,6 +101,8 @@
 
 #pragma once
 
+#include <atomic>
+#include <cstdint>
 #include <cstdio>
 #include <iomanip>
 #include <iostream>
@@ -371,6 +380,17 @@ class VLINK_EXPORT Logger final {
    * @return @c true when the level passes either sink threshold.
    */
   [[nodiscard]] static bool is_writable(Level level) noexcept;
+
+  /**
+   * @brief Attempts to acquire the current period for one limited log call site.
+   *
+   * @param level             Severity from @c kTrace through @c kError; other values are rejected.
+   * @param interval_ms       Minimum interval in milliseconds; non-positive values disable limiting.
+   * @param last_log_time_ns  Per-call-site monotonic timestamp, initially @c 0.
+   * @return @c true when the level is writable and the current period is acquired.
+   */
+  [[nodiscard]] static bool try_acquire_periodic_log(Level level, int64_t interval_ms,
+                                                     std::atomic<uint64_t>& last_log_time_ns) noexcept;
 
   /**
    * @brief Strips a path down to its final filename component at compile time.
@@ -776,7 +796,39 @@ using VLinkLogger = vlink::Logger;
 
 #define VLINK_SLOG_F VLinkLogger::WrapperStream<VLinkLogger::kFatal>(VLINK_LOG_GET_DETAIL(VLinkLogger::kFatal))
 
+#define VLINK_LOG_EVERY_MS_IMPL(level, interval_ms, ...)                                                              \
+  do {                                                                                                                \
+    if constexpr ((level) >= VLinkLogger::kMinimumLevel && (level) < VLinkLogger::kFatal) {                           \
+      if VUNLIKELY ([](int64_t vlink_interval_ms) noexcept {                                                          \
+                      static std::atomic<uint64_t> vlink_last_log_time_ns{0};                                         \
+                      return VLinkLogger::try_acquire_periodic_log(level, vlink_interval_ms, vlink_last_log_time_ns); \
+                    }(static_cast<int64_t>(interval_ms))) {                                                           \
+        VLinkLogger::print_stream_style<level>(VLINK_LOG_GET_DETAIL(level), __VA_ARGS__);                             \
+      }                                                                                                               \
+    }                                                                                                                 \
+  } while (false)
+
+#define VLINK_LOG_T_EVERY_MS(interval_ms, ...) VLINK_LOG_EVERY_MS_IMPL(VLinkLogger::kTrace, interval_ms, __VA_ARGS__)
+
+#define VLINK_LOG_D_EVERY_MS(interval_ms, ...) VLINK_LOG_EVERY_MS_IMPL(VLinkLogger::kDebug, interval_ms, __VA_ARGS__)
+
+#define VLINK_LOG_I_EVERY_MS(interval_ms, ...) VLINK_LOG_EVERY_MS_IMPL(VLinkLogger::kInfo, interval_ms, __VA_ARGS__)
+
+#define VLINK_LOG_W_EVERY_MS(interval_ms, ...) VLINK_LOG_EVERY_MS_IMPL(VLinkLogger::kWarn, interval_ms, __VA_ARGS__)
+
+#define VLINK_LOG_E_EVERY_MS(interval_ms, ...) VLINK_LOG_EVERY_MS_IMPL(VLinkLogger::kError, interval_ms, __VA_ARGS__)
+
 #ifndef VLINK_LOG_DISABLE_SHORT
+
+#define VLOG_T_EVERY_MS(interval_ms, ...) VLINK_LOG_T_EVERY_MS(interval_ms, __VA_ARGS__)
+
+#define VLOG_D_EVERY_MS(interval_ms, ...) VLINK_LOG_D_EVERY_MS(interval_ms, __VA_ARGS__)
+
+#define VLOG_I_EVERY_MS(interval_ms, ...) VLINK_LOG_I_EVERY_MS(interval_ms, __VA_ARGS__)
+
+#define VLOG_W_EVERY_MS(interval_ms, ...) VLINK_LOG_W_EVERY_MS(interval_ms, __VA_ARGS__)
+
+#define VLOG_E_EVERY_MS(interval_ms, ...) VLINK_LOG_E_EVERY_MS(interval_ms, __VA_ARGS__)
 
 #define VLOG_T(...) VLINK_LOG_T(__VA_ARGS__)
 

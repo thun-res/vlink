@@ -473,7 +473,7 @@ bool ProxyConfigHelper::validate(const ProxyBridge::Config& config, std::string&
   }
 
   if VUNLIKELY (!config.transport.dds_impl.empty() && !is_valid_dds_impl(config.transport.dds_impl)) {
-    error = "proxy_dds_impl must be one of: dds, ddsc, ddsr, ddst";
+    error = "proxy_dds_impl must be one of: dds, ddsc, ddsr";
     return false;
   }
 
@@ -530,7 +530,7 @@ std::string ProxyConfigHelper::normalize_token(std::string_view value) {
 
 bool ProxyConfigHelper::is_valid_dds_impl(std::string_view value) {
   const auto normalized = normalize_token(value);
-  return normalized == "dds" || normalized == "ddsc" || normalized == "ddsr" || normalized == "ddst";
+  return normalized == "dds" || normalized == "ddsc" || normalized == "ddsr";
 }
 
 bool ProxyConfigHelper::parse_role(std::string_view value, ProxyAPI::Role& role) {

@@ -406,11 +406,9 @@ int main() {
     if (url.startsWith('dds://')) return 5;
     if (url.startsWith('ddsc://')) return 6;
     if (url.startsWith('ddsr://')) return 7;
-    if (url.startsWith('ddst://')) return 8;
     if (url.startsWith('someip://')) return 9;
     if (url.startsWith('mqtt://')) return 10;
     if (url.startsWith('fdbus://')) return 11;
-    if (url.startsWith('qnx://')) return 12;
     return 99;
   };
   const makeMonitorRow = (typeBits, url, ser, baseFreq, baseRate, baseLatency, activity = 'active', baseLoss = 0) => ({

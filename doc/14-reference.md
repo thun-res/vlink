@@ -112,7 +112,7 @@ auto sp = vlink::Publisher<T>::create_shared(url_str);             // shared_ptr
 | --- | --- |
 | `bool init()` / `bool deinit()` | 显式生命周期；构造默认 `kWithInit` 即自动 `init()` |
 | `void interrupt()` | 中断阻塞中的 `wait_for_*` 调用 |
-| `bool attach(MessageLoop*)` / `bool detach()` | 后端支持时将回调投递到指定 MessageLoop；intra/fdbus/qnx/someip 当前不支持 |
+| `bool attach(MessageLoop*)` / `bool detach()` | 后端支持时将回调投递到指定 MessageLoop；intra/fdbus/someip 当前不支持 |
 | `bool suspend()` / `bool resume()` / `bool is_suspend() const` | 暂停 / 恢复 / 查询收发 |
 | `bool is_support_loan() const` | 当前后端是否支持零拷贝借贷 |
 | `Bytes loan(int64_t size)` / `bool return_loan(const Bytes&)` | 借用 / 归还共享内存（见 [§14.10](#-1410-零拷贝)） |
@@ -138,12 +138,10 @@ URL 语法：`<scheme>://[<host>[:<port>]]/<path>[?<query>][#<frag>]`。`scheme`
 | `dds://` | Fast-DDS | 跨机 | 否 | 多 ECU 协同 | 稳定 |
 | `ddsc://` | CycloneDDS | 跨机 | 否 | 轻量跨机 | 稳定 |
 | `ddsr://` | RTI Connext | 跨机 | 否 | 工业高可靠 | Beta |
-| `ddst://` | TravoDDS | 跨机 | 否 | 国产 DDS | Beta |
 | `zenoh://` | Zenoh | 跨机 / 云边 | 条件 | IoT 边缘 | Beta |
 | `someip://` | vsomeip | 车载以太网 | 否 | ECU 服务化 | Beta |
 | `mqtt://` | Paho MQTT | 跨机 / 云 | 否 | IoT 云端 | Beta |
 | `fdbus://` | FDBus | 同机 | 否 | Android/Linux 混合 | Beta |
-| `qnx://` | QNX IPC | 同机（QNX） | 否 | QNX 实时 | Beta |
 
 后端选型按部署拓扑与负载推进：同进程高频传递选 `intra://`；同机大负载选 `shm://`；跨机通用选 `dds://` 或轻量 `ddsc://`；车载服务化选 `someip://`；云边协同选 `zenoh://`；云端桥接选 `mqtt://`。
 
@@ -199,6 +197,8 @@ vlink::Publisher<Imu> pub2("dds://sensor/imu?qos=my_sensor");
 | 格式化 `MLOG_X` | `MLOG_W("t={} C", temp);` | fmt 风格占位 |
 | printf 风格 `CLOG_X` | `CLOG_E("errno=%d", errno);` | 兼容既有 C 代码 |
 | RAII 流 `SLOG_X` | `SLOG_D << "a=" << a;` | 链式 `<<` |
+
+高频路径可用 `VLOG_{T,D,I,W,E}_EVERY_MS(interval_ms, ...)` 做线程安全的调用点级周期限频；Fatal 和其他日志宏族不提供该变体。
 
 运行期由环境变量 `VLINK_LOG_LEVEL=0..6` 设定总级别，`VLINK_LOG_CONSOLE_LEVEL` / `VLINK_LOG_FILE_LEVEL` 分别控制控制台与文件两个 sink。编译期将宏 `VLINK_LOG_LEVEL` 设为某级别后，更低级别的日志在 Release 下被整条消除。完整日志能力见 [基础库](08-base-library.md)。
 

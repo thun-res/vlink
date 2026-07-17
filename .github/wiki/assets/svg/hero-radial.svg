@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-20 0 640 680" role="img" aria-label="VLink 12-transport fabric">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-20 0 640 680" role="img" aria-label="VLink 10-transport fabric">
   <defs>
     <radialGradient id="h-core" cx="0.5" cy="0.5" r="0.5">
       <stop offset="0"   stop-color="#4faafd" stop-opacity="0.9"/>
@@ -28,21 +28,19 @@
     </path>
   </g>
 
-  <!-- 12 radial lines (center → node); solid stroke so every spoke renders
+  <!-- 10 radial lines (center → node); solid stroke so every spoke renders
        identically regardless of direction. -->
   <g stroke="#4faafd" stroke-width="1.2" stroke-opacity="0.38" fill="none" stroke-linecap="round">
     <line x1="300" y1="300" x2="560"    y2="300"/>
-    <line x1="300" y1="300" x2="525.17" y2="430"/>
-    <line x1="300" y1="300" x2="430"    y2="525.17"/>
-    <line x1="300" y1="300" x2="300"    y2="560"/>
-    <line x1="300" y1="300" x2="170"    y2="525.17"/>
-    <line x1="300" y1="300" x2="74.83"  y2="430"/>
+    <line x1="300" y1="300" x2="510.34" y2="452.82"/>
+    <line x1="300" y1="300" x2="380.34" y2="547.27"/>
+    <line x1="300" y1="300" x2="219.66" y2="547.27"/>
+    <line x1="300" y1="300" x2="89.66"  y2="452.82"/>
     <line x1="300" y1="300" x2="40"     y2="300"/>
-    <line x1="300" y1="300" x2="74.83"  y2="170"/>
-    <line x1="300" y1="300" x2="170"    y2="74.83"/>
-    <line x1="300" y1="300" x2="300"    y2="40"/>
-    <line x1="300" y1="300" x2="430"    y2="74.83"/>
-    <line x1="300" y1="300" x2="525.17" y2="170"/>
+    <line x1="300" y1="300" x2="89.66"  y2="147.18"/>
+    <line x1="300" y1="300" x2="219.66" y2="52.73"/>
+    <line x1="300" y1="300" x2="380.34" y2="52.73"/>
+    <line x1="300" y1="300" x2="510.34" y2="147.18"/>
   </g>
 
   <!-- flowing packets along select lines -->
@@ -52,53 +50,51 @@
       <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="2s" repeatCount="indefinite"/>
     </circle>
     <circle r="5" fill="#00e5b0" filter="url(#h-glow)">
-      <animateMotion dur="2s" begin="0.5s" repeatCount="indefinite" path="M 300 300 L 525.17 430"/>
+      <animateMotion dur="2s" begin="0.5s" repeatCount="indefinite" path="M 300 300 L 510.34 452.82"/>
       <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="2s" begin="0.5s" repeatCount="indefinite"/>
     </circle>
     <circle r="5" fill="#4faafd" filter="url(#h-glow)">
-      <animateMotion dur="2.2s" begin="0.2s" repeatCount="indefinite" path="M 300 300 L 300 560"/>
+      <animateMotion dur="2.2s" begin="0.2s" repeatCount="indefinite" path="M 300 300 L 219.66 547.27"/>
       <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="2.2s" begin="0.2s" repeatCount="indefinite"/>
     </circle>
     <circle r="5" fill="#4faafd" filter="url(#h-glow)">
-      <animateMotion dur="2.2s" begin="1s" repeatCount="indefinite" path="M 300 300 L 74.83 430"/>
+      <animateMotion dur="2.2s" begin="1s" repeatCount="indefinite" path="M 300 300 L 40 300"/>
       <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="2.2s" begin="1s" repeatCount="indefinite"/>
     </circle>
     <circle r="4.5" fill="#ffd166" filter="url(#h-glow)">
-      <animateMotion dur="2.4s" begin="0.7s" repeatCount="indefinite" path="M 300 300 L 300 40"/>
+      <animateMotion dur="2.4s" begin="0.7s" repeatCount="indefinite" path="M 300 300 L 380.34 52.73"/>
       <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="2.4s" begin="0.7s" repeatCount="indefinite"/>
     </circle>
     <circle r="4.5" fill="#ffd166" filter="url(#h-glow)">
-      <animateMotion dur="2.4s" begin="1.4s" repeatCount="indefinite" path="M 300 300 L 430 74.83"/>
+      <animateMotion dur="2.4s" begin="1.4s" repeatCount="indefinite" path="M 300 300 L 510.34 147.18"/>
       <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="2.4s" begin="1.4s" repeatCount="indefinite"/>
     </circle>
   </g>
 
-  <!-- 12 transport-prefix badges — rounded rectangles, all identical (108 × 48, rx 14).
+  <!-- 10 transport-prefix badges — rounded rectangles, all identical (108 × 48, rx 14).
        Single-line label with "://" suffix at font-size 18.
-       Bottom arc (left → right): intra · dds · ddsc · shm.
-       shm2:// sits immediately to the right of shm.
-       Ring radius pushed to 260 so neighbouring pills breathe. -->
+       Ten badges are evenly distributed on a ring with radius 260. -->
   <g font-family="JetBrains Mono, monospace" font-size="18" font-weight="700" text-anchor="middle">
-    <!-- ── STABLE backends — bottom arc ── -->
-    <g transform="translate(74.83 430)">
+    <!-- ── STABLE backends ── -->
+    <g transform="translate(40 300)">
       <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#4faafd22" stroke="#4faafd" stroke-width="2.2"/>
       <text y="7" fill="#4faafd">intra://</text>
     </g>
-    <g transform="translate(170 525.17)">
+    <g transform="translate(89.66 452.82)">
       <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#4faafd22" stroke="#4faafd" stroke-width="2.2"/>
       <text y="7" fill="#4faafd">dds://</text>
     </g>
-    <g transform="translate(300 560)">
+    <g transform="translate(219.66 547.27)">
       <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#4faafd22" stroke="#4faafd" stroke-width="2.2"/>
       <text y="7" fill="#4faafd">ddsc://</text>
     </g>
-    <g transform="translate(430 525.17)">
+    <g transform="translate(380.34 547.27)">
       <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#4faafd22" stroke="#4faafd" stroke-width="2.2"/>
       <text y="7" fill="#4faafd">shm://</text>
     </g>
 
     <!-- ── BETA (available, maturing) ── -->
-    <g transform="translate(525.17 430)" opacity="0.88">
+    <g transform="translate(510.34 452.82)" opacity="0.88">
       <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#0b1228" stroke="#ffd166" stroke-width="1.5" stroke-dasharray="5 3"/>
       <text y="7" fill="#ffd166">shm2://</text>
     </g>
@@ -106,29 +102,21 @@
       <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#0b1228" stroke="#ffd166" stroke-width="1.5" stroke-dasharray="5 3"/>
       <text y="7" fill="#ffd166">mqtt://</text>
     </g>
-    <g transform="translate(525.17 170)" opacity="0.88">
-      <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#0b1228" stroke="#ffd166" stroke-width="1.5" stroke-dasharray="5 3"/>
-      <text y="7" fill="#ffd166">qnx://</text>
-    </g>
-    <g transform="translate(430 74.83)" opacity="0.88">
+    <g transform="translate(510.34 147.18)" opacity="0.88">
       <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#0b1228" stroke="#ffd166" stroke-width="1.5" stroke-dasharray="5 3"/>
       <text y="7" fill="#ffd166">fdbus://</text>
     </g>
-    <g transform="translate(300 40)" opacity="0.88">
+    <g transform="translate(380.34 52.73)" opacity="0.88">
       <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#0b1228" stroke="#ffd166" stroke-width="1.5" stroke-dasharray="5 3"/>
       <text y="7" fill="#ffd166">someip://</text>
     </g>
-    <g transform="translate(170 74.83)" opacity="0.88">
+    <g transform="translate(219.66 52.73)" opacity="0.88">
       <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#0b1228" stroke="#ffd166" stroke-width="1.5" stroke-dasharray="5 3"/>
       <text y="7" fill="#ffd166">zenoh://</text>
     </g>
-    <g transform="translate(74.83 170)" opacity="0.88">
+    <g transform="translate(89.66 147.18)" opacity="0.88">
       <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#0b1228" stroke="#ffd166" stroke-width="1.5" stroke-dasharray="5 3"/>
       <text y="7" fill="#ffd166">ddsr://</text>
-    </g>
-    <g transform="translate(40 300)" opacity="0.88">
-      <rect x="-54" y="-24" width="108" height="48" rx="14" fill="#0b1228" stroke="#ffd166" stroke-width="1.5" stroke-dasharray="5 3"/>
-      <text y="7" fill="#ffd166">ddst://</text>
     </g>
   </g>
 

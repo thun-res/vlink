@@ -56,9 +56,9 @@ test/
 ├── shm_test.cc        # shm:// 共享内存
 ├── shm2_test.cc       # shm2://
 ├── dds_test.cc        # dds://（FastDDS）
-├── ddsc_test.cc / ddsr_test.cc / ddst_test.cc   # ddsc:// / ddsr:// / ddst://
+├── ddsc_test.cc / ddsr_test.cc                  # ddsc:// / ddsr://
 ├── zenoh_test.cc      # zenoh://
-├── someip_test.cc / mqtt_test.cc / fdbus_test.cc / qnx_test.cc
+├── someip_test.cc / mqtt_test.cc / fdbus_test.cc
 ├── serializer_test.cc # 序列化（suite 前缀 ser-）
 ├── base/              # 基础库：logger/bytes/timer/message_loop 等
 ├── extension/         # bag/discovery/qos/security 等扩展

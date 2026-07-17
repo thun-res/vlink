@@ -60,7 +60,7 @@ using namespace std::chrono_literals;  // NOLINT(build/namespaces, google-build-
 //
 // Profiles are registered per-backend (DdsConf / DdscConf / ...). The URL
 // query "?qos=name" then references the registered profile by name. Only
-// DDS-family + Zenoh use QoS; intra/shm/mqtt/someip/fdbus/qnx ignore it.
+// DDS-family + Zenoh use QoS; intra/shm/mqtt/someip/fdbus ignore it.
 // ---------------------------------------------------------------------------
 
 static void print_qos(const vlink::Qos& qos) {
@@ -159,7 +159,7 @@ int main() {
 
   // Registration map per transport.
   VLOG_I("Registration: dds=DdsConf::register_qos, ddsc=DdscConf::register_qos,",
-         " ddsr=DdsrConf::register_qos, ddst=DdstConf::register_qos, zenoh=ZenohConf::register_qos");
+         " ddsr=DdsrConf::register_qos, zenoh=ZenohConf::register_qos");
   VLOG_I("intra/shm/someip/mqtt/fdbus do not use Qos profiles");
 
   return 0;

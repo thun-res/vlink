@@ -18,7 +18,7 @@ VLink 通过 URL 将“业务话题”与“传输后端”两层概念解耦：
 
 | 字段 | 含义 |
 |------|------|
-| `transport` | 传输后端：`intra` / `shm` / `shm2` / `dds` / `ddsc` / `ddsr` / `ddst` / `zenoh` / `someip` / `fdbus` / `qnx` / `mqtt` |
+| `transport` | 传输后端：`intra` / `shm` / `shm2` / `dds` / `ddsc` / `ddsr` / `zenoh` / `someip` / `fdbus` / `mqtt` |
 | `host` | 主话题 / 服务标识符 |
 | `path` | 二级话题路径 |
 | `query` | 后端特定参数（`domain` / `depth` / `history` / `qos` / `event` / `field` / `method` …） |

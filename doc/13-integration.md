@@ -904,7 +904,7 @@ domain/QoS/depth 等后端参数可由三处声明，遵循就近覆盖原则。
 | 变量 | 作用 |
 | --- | --- |
 | `VLINK_URL_PLUGINS` | `auto` 按需加载未链接的已知共享后端，`none` / 空值关闭插件加载，其他非空值为显式预加载列表（模式值大小写不敏感） |
-| `VLINK_DDS_BIND` | 将所有 `dds://` 整体绑定到指定 DDS 实现（`ddsc`/`ddsr`/`ddst`） |
+| `VLINK_DDS_BIND` | 将所有 `dds://` 整体绑定到指定 DDS 实现（`ddsc`/`ddsr`） |
 | `VLINK_INTRA_BIND` | 将所有 `intra://` 重定向到其他 scheme（`shm`/`dds` 等） |
 | `VLINK_LOG_LEVEL` | 全局日志级别（`0`=TRACE … `6`=OFF） |
 | `VLINK_DDS_IP` | 指定 DDS 单播 IP，多网卡主机通常必设 |
@@ -987,7 +987,7 @@ export VLINK_LOG_DIR=/var/log/vlink
 
 ### 🛰️ 13.23 DDS 传输
 
-影响 `dds://`、`ddsc://`、`ddsr://`、`ddst://` 后端，详见 [传输后端与 URL](04-transport.md)。各变量是否生效取决于当前实际启用的 DDS 实现。IP 与 peer 列表以逗号或空格分隔。
+影响 `dds://`、`ddsc://`、`ddsr://` 后端，详见 [传输后端与 URL](04-transport.md)。各变量是否生效取决于当前实际启用的 DDS 实现。IP 与 peer 列表以逗号或空格分隔。
 
 | 变量 | 类型 | 说明 |
 | --- | --- | --- |
@@ -1001,11 +1001,10 @@ export VLINK_LOG_DIR=/var/log/vlink
 | `VLINK_DDS_UDP` / `_TCP` / `_SHM` | 字符串 | 对应传输层配置 |
 | `VLINK_DDS_LESS_MEMORY` | `1`/`0` | 低内存使用模式 |
 | `VLINK_DDS_DEBUG` | `1`/`0` | 启用 DDS 调试日志 |
-| `VLINK_DDS_BIND` | 字符串 | 将所有 `dds://` 整体重定向到某实现：`dds`（Fast-DDS）、`ddsf`（`dds` 的别名）、`ddsc`（CycloneDDS）、`ddsr`（RTI Connext）、`ddst`（TravoDDS） |
+| `VLINK_DDS_BIND` | 字符串 | 将所有 `dds://` 整体重定向到某实现：`dds`（Fast-DDS）、`ddsf`（`dds` 的别名）、`ddsc`（CycloneDDS）、`ddsr`（RTI Connext） |
 | `VLINK_DDS_EVENT_QOS` / `_METHOD_QOS` / `_FIELD_QOS` | 字符串 | 三种模型的默认 QoS 配置，URL `?qos=profile` 优先级更高，见 [QoS 配置](05-qos.md) |
 | `VLINK_FASTDDS_QOS_FILE` | 文件路径 | Fast-DDS QoS XML 路径 |
 | `VLINK_CYCLONEDDS_URI` | URI | CycloneDDS 配置 URI |
-| `VLINK_TRAVODDS_QOS_FILE` | 文件路径 | TravoDDS（`ddst://`）QoS XML 路径 |
 
 ```bash
 export VLINK_DDS_BIND=ddsc

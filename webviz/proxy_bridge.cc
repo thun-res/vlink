@@ -1226,7 +1226,7 @@ bool ProxyBridge::parse_interface_mode(std::string_view value, InterfaceMode& mo
 
 bool ProxyBridge::is_dds_transport(std::string_view url) {
   return Helpers::has_startwith(url, "dds://") || Helpers::has_startwith(url, "ddsc://") ||
-         Helpers::has_startwith(url, "ddsr://") || Helpers::has_startwith(url, "ddst://");
+         Helpers::has_startwith(url, "ddsr://");
 }
 
 }  // namespace webviz

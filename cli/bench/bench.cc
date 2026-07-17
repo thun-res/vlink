@@ -2838,9 +2838,8 @@ bool run_process_pubsub_case(const Bench::RunOptions& options, const Bench::Scen
 
   const std::string transport_scheme = get_transport_from_url(runtime_url);
   const bool transport_needs_stagger = transport_scheme == "dds" || transport_scheme == "ddsc" ||
-                                       transport_scheme == "ddsr" || transport_scheme == "ddst" ||
-                                       transport_scheme == "someip" || transport_scheme == "zenoh" ||
-                                       transport_scheme == "mqtt";
+                                       transport_scheme == "ddsr" || transport_scheme == "someip" ||
+                                       transport_scheme == "zenoh" || transport_scheme == "mqtt";
   const int sub_spawn_stagger_ms = transport_needs_stagger && scenario.subscribers > 4 ? 120 : 0;
 
   for (int index = 0; index < scenario.subscribers; ++index) {

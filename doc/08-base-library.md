@@ -74,6 +74,18 @@ SLOG_D << "values: " << 42 << " temp=" << 78.5;
 
 `kFatal` 级别在写日志后抛出异常，`e.what()` 携带日志消息，可经 try/catch 捕获。编译期级别过滤、自定义日志后端、崩溃回溯环形缓冲等进阶能力见头文件。完整示例见 [`examples/base/logger_basic/`](../examples/base/logger_basic/)。
 
+### 8.2.3 调用点限频
+
+高频路径可使用 `VLOG_{T,D,I,W,E}_EVERY_MS(interval_ms, ...)`，在同一源码调用点按周期限制重复日志：
+
+```cpp
+VLOG_W_EVERY_MS(1000, "queue remains full, size=", queue.size());
+```
+
+首次满足日志级别的调用立即输出；此后同一调用点在间隔内最多输出一次。调用点状态由并发线程共享，竞争时仅一个线程获得输出资格；函数模板中的调用点由各模板特化分别持有状态。被抑制时日志参数不会求值。`interval_ms <= 0` 表示不限制，且不更新时间戳。
+
+该能力仅提供给 C++ 拼接式 `VLOG` 的 Trace 至 Error 级别，不提供 Fatal、`MLOG`、`CLOG` 或 `SLOG` 变体。Python 日志函数接收已经构造完成的字符串，无法保留宏的调用点及参数惰性求值语义，因此不提供对应接口。完整宏名和底层契约见 [`base/logger.h`](../include/vlink/base/logger.h)。
+
 ---
 
 ## 📦 8.3 Bytes 字节载体

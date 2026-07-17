@@ -12,7 +12,7 @@ _vlink_completion_etc_dir="$(cd "$(dirname "$_vlink_completion_script")" && pwd)
 _vlink_completion_dir="$_vlink_completion_etc_dir/vlink-completions"
 _vlink_webviz_target="@VLINK_WEBVIZ_COMPLETION_TARGET@"
 
-_vlink_bash_schemes="intra shm shm2 zenoh dds ddsc ddsr ddst someip mqtt fdbus qnx"
+_vlink_bash_schemes="intra shm shm2 zenoh dds ddsc ddsr someip mqtt fdbus"
 _vlink_bash_bag_ext="vdb|vdbx|vcap|vcapx"
 _vlink_bash_play_ext="vdb|vdbx|vcap|vcapx"
 _vlink_bash_plugin_ext="so|dll|dylib"
@@ -131,7 +131,7 @@ _vlink_bash_complete_webviz_proxy_prev() {
     case "$1" in
         --proxy_interface) _vlink_bash_complete_words "proxy_api proxy_server" "$2"; return 0 ;;
         --proxy_role) _vlink_bash_complete_words "controller listener" "$2"; return 0 ;;
-        --proxy_dds_impl) _vlink_bash_complete_words "dds ddsc ddsr ddst" "$2"; return 0 ;;
+        --proxy_dds_impl) _vlink_bash_complete_words "dds ddsc ddsr" "$2"; return 0 ;;
         --proxy_data_callback_mode) _vlink_bash_complete_words "direct queued" "$2"; return 0 ;;
         --proxy_iox_monitoring) _vlink_bash_complete_words "on off" "$2"; return 0 ;;
         --proxy_iox_strategy) _vlink_bash_complete_words "1 2 3" "$2"; return 0 ;;
@@ -144,7 +144,7 @@ _vlink_bash_complete_webviz_proxy_prev() {
 }
 
 if [[ -n "${ZSH_VERSION:-}" ]]; then
-    typeset -ga _vlink_zsh_schemes=(intra shm shm2 zenoh dds ddsc ddsr ddst someip mqtt fdbus qnx)
+    typeset -ga _vlink_zsh_schemes=(intra shm shm2 zenoh dds ddsc ddsr someip mqtt fdbus)
     typeset -g _vlink_zsh_bag_glob='*.(vdb|vdbx|vcap|vcapx)'
     typeset -g _vlink_zsh_play_glob='*.(vdb|vdbx|vcap|vcapx)'
     typeset -g _vlink_zsh_plugin_glob='*.(so|dll|dylib)'

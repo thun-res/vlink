@@ -1,6 +1,6 @@
 # 👋 helloworld —— Method + Event 综合入门示例
 
-同一份代码可由环境变量选择 dds / ddsc / shm / someip / fdbus / qnx 后端，无需重新编译；topic 型后端复用 path，SOME/IP 等由示例提供符合协议的完整 URL。示例同时演示 Method（RPC）与 Event（pub/sub）两种通信模型，消息采用 Protobuf 序列化。为 samples 类目首推示例。
+同一份代码可由环境变量选择 dds / ddsc / shm / someip / fdbus 后端，无需重新编译；topic 型后端复用 path，SOME/IP 等由示例提供符合协议的完整 URL。示例同时演示 Method（RPC）与 Event（pub/sub）两种通信模型，消息采用 Protobuf 序列化。为 samples 类目首推示例。
 
 ![samples 关系图](../images/samples-relationship.png)
 
@@ -62,7 +62,6 @@ client.invoke(req, resp, 3s);  // resp.sum() 即结果
 | `shm` | `METHOD_TRANSPORT=shm EVENT_TRANSPORT=shm` | `iox-roudi &` |
 | `someip` | `METHOD_TRANSPORT=someip EVENT_TRANSPORT=someip` | vsomeip routing manager |
 | `fdbus` | `METHOD_TRANSPORT=fdbus EVENT_TRANSPORT=fdbus` | `fdb_name_server &` |
-| `qnx` | `METHOD_TRANSPORT=qnx EVENT_TRANSPORT=qnx` | QNX target |
 
 或用 `METHOD_URL` / `EVENT_URL` 直接传入完整 URL，覆盖 `*_TRANSPORT`。
 

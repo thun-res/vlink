@@ -82,9 +82,6 @@
         <mxCell id="env5" value="fdbus     fdbus://ping_pong/*" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;arcSize=10;strokeWidth=1.2;shadow=0;fontFamily=Courier New;fontSize=10;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
           <mxGeometry x="460" y="330" width="200" height="30" as="geometry" />
         </mxCell>
-        <mxCell id="env6" value="qnx       qnx://ping_pong/*" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;arcSize=10;strokeWidth=1.2;shadow=0;fontFamily=Courier New;fontSize=10;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
-          <mxGeometry x="460" y="366" width="200" height="30" as="geometry" />
-        </mxCell>
         <mxCell id="env_foot" value="run iox-roudi  before shm  &#183;  raw Bytes  -  no serializer" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Courier New;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
           <mxGeometry x="440" y="548" width="240" height="40" as="geometry" />
         </mxCell>

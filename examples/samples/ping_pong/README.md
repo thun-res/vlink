@@ -51,7 +51,7 @@ sub.listen([&pub](const vlink::Bytes& data) { pub.publish(data); });  // 原样�
 
 | 环境变量 | 取值 |
 |----------|------|
-| `PING_TRANSPORT` / `PONG_TRANSPORT` | `dds` / `ddsc` / `shm` / `someip` / `fdbus` / `qnx` |
+| `PING_TRANSPORT` / `PONG_TRANSPORT` | `dds` / `ddsc` / `shm` / `someip` / `fdbus` |
 | `PING_URL` / `PONG_URL` | 完整 URL（覆盖 TRANSPORT） |
 
 `shm://` 运行依赖 `iox-roudi`。本例通过 `Bytes::create()` 创建普通缓冲区，SHM 发布时仍会复制到 transport loan；若要验证零拷贝路径，应改用 `loan()` 并按发布结果归还所有权。多数 topic 型后端可替换 scheme，SOME/IP 等专用后端还需要符合其地址格式。

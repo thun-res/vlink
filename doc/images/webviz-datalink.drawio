@@ -47,7 +47,7 @@
         </mxCell>
 
         <!-- Transport chips -->
-        <mxCell id="transport_label" value="Transport Backends (12)&#10;intra &#183; shm &#183; shm2 &#183; dds &#183; ddsc &#183; ddsr &#183; ddst &#183; zenoh &#183; someip &#183; mqtt &#183; fdbus &#183; qnx&#10;Proxy discovery/subscription: intra requires VLINK_INTRA_BIND&#10;ProxyAPI direct=true: SHM data bypasses ProxyServer" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=8;fontStyle=1;fontColor=#607d8b;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="transport_label" value="Transport Backends (10)&#10;intra &#183; shm &#183; shm2 &#183; dds &#183; ddsc &#183; ddsr &#183; zenoh &#183; someip &#183; mqtt &#183; fdbus&#10;Proxy discovery/subscription: intra requires VLINK_INTRA_BIND&#10;ProxyAPI direct=true: SHM data bypasses ProxyServer" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=8;fontStyle=1;fontColor=#607d8b;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="50" y="534" width="360" height="50" as="geometry" />
         </mxCell>
         <mxCell id="t_dds" value="dds" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.2;fontSize=11;fontFamily=Courier New;fontStyle=1;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
