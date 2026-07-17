@@ -125,49 +125,49 @@
           <mxGeometry x="820" y="232" width="240" height="22" as="geometry" />
         </mxCell>
         <mxCell id="tr_zenoh" value="zenoh://   ZenohConf" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#1b5e20;arcSize=14;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="820" y="280" width="240" height="22" as="geometry" />
+          <mxGeometry x="820" y="256" width="240" height="22" as="geometry" />
         </mxCell>
 
         <mxCell id="tr_partial" value="No QoS / partial" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
-          <mxGeometry x="820" y="308" width="240" height="20" as="geometry" />
+          <mxGeometry x="820" y="284" width="240" height="20" as="geometry" />
         </mxCell>
         <mxCell id="tr_intra" value="intra://    no transport QoS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;arcSize=14;shadow=0;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="820" y="330" width="240" height="22" as="geometry" />
+          <mxGeometry x="820" y="306" width="240" height="22" as="geometry" />
         </mxCell>
         <mxCell id="tr_shm" value="shm://      depth / history only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;arcSize=14;shadow=0;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="820" y="354" width="240" height="22" as="geometry" />
+          <mxGeometry x="820" y="330" width="240" height="22" as="geometry" />
         </mxCell>
         <mxCell id="tr_shm2" value="shm2://     depth / history only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;arcSize=14;shadow=0;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="820" y="378" width="240" height="22" as="geometry" />
+          <mxGeometry x="820" y="354" width="240" height="22" as="geometry" />
         </mxCell>
         <mxCell id="tr_someip" value="someip://   service-level QoS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;arcSize=14;shadow=0;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="820" y="402" width="240" height="22" as="geometry" />
+          <mxGeometry x="820" y="378" width="240" height="22" as="geometry" />
         </mxCell>
         <mxCell id="tr_mqtt" value="mqtt://     QoS 0 / 1 / 2 via ?qos" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;arcSize=14;shadow=0;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="820" y="426" width="240" height="22" as="geometry" />
+          <mxGeometry x="820" y="402" width="240" height="22" as="geometry" />
         </mxCell>
         <mxCell id="tr_fdbus" value="fdbus://    no transport QoS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#37474f;arcSize=14;shadow=0;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="820" y="450" width="240" height="22" as="geometry" />
+          <mxGeometry x="820" y="426" width="240" height="22" as="geometry" />
         </mxCell>
 
         <mxCell id="tr_note" value="name length &#8804; 20 bytes (19 + NUL)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
-          <mxGeometry x="820" y="504" width="240" height="20" as="geometry" />
+          <mxGeometry x="820" y="474" width="240" height="20" as="geometry" />
         </mxCell>
         <mxCell id="tr_note2" value="unsupported policies are silently ignored" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
-          <mxGeometry x="820" y="524" width="240" height="20" as="geometry" />
+          <mxGeometry x="820" y="494" width="240" height="20" as="geometry" />
         </mxCell>
 
         <!-- Arrows -->
-        <mxCell id="a_qos_reg" value="register" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.18;entryX=0;entryY=0.5;" edge="1" parent="1" source="qos_bg" target="reg_a">
+        <mxCell id="a_qos_reg" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.18;entryX=0;entryY=0.5;" edge="1" parent="1" source="qos_bg" target="reg_a">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="a_qos_prop" value="configure Conf" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#37474f;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.6;entryX=0;entryY=0.5;" edge="1" parent="1" source="qos_bg" target="reg_b">
+        <mxCell id="a_qos_prop" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#607d8b;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.6;entryX=0;entryY=0.5;" edge="1" parent="1" source="qos_bg" target="reg_b">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="a_a_url" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;rounded=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="reg_a" target="reg_a_url">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="a_reg_tr" value="apply" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="reg_a_url" target="tr_dds">
+        <mxCell id="a_reg_tr" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;rounded=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="reg_a_url" target="tr_dds">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 

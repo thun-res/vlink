@@ -156,34 +156,34 @@
         </mxCell>
 
         <mxCell id="l4n1" value="intra" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="60" y="566" width="135" height="40" as="geometry" />
+          <mxGeometry x="60" y="566" width="164" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l4n2" value="shm" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="205" y="566" width="135" height="40" as="geometry" />
+          <mxGeometry x="239" y="566" width="164" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l4n3" value="shm2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="350" y="566" width="135" height="40" as="geometry" />
+          <mxGeometry x="418" y="566" width="164" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l4n4" value="dds" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="495" y="566" width="135" height="40" as="geometry" />
+          <mxGeometry x="597" y="566" width="164" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l4n5" value="ddsc" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="640" y="566" width="135" height="40" as="geometry" />
+          <mxGeometry x="776" y="566" width="164" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l4n6" value="ddsr" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="785" y="566" width="135" height="40" as="geometry" />
+          <mxGeometry x="60" y="618" width="164" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l4n8" value="zenoh" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="205" y="618" width="135" height="40" as="geometry" />
+          <mxGeometry x="239" y="618" width="164" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l4n9" value="someip" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="350" y="618" width="135" height="40" as="geometry" />
+          <mxGeometry x="418" y="618" width="164" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l4n10" value="mqtt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="495" y="618" width="135" height="40" as="geometry" />
+          <mxGeometry x="597" y="618" width="164" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l4n11" value="fdbus" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="640" y="618" width="135" height="40" as="geometry" />
+          <mxGeometry x="776" y="618" width="164" height="40" as="geometry" />
         </mxCell>
 
         <mxCell id="arr45" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=2.2;strokeColor=#1976d2;" edge="1" parent="1">

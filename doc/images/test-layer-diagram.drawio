@@ -44,21 +44,30 @@
           <mxGeometry x="60" y="200" width="148" height="40" as="geometry" />
         </mxCell>
         <mxCell id="t8" value="zenoh" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="376" y="200" width="148" height="40" as="geometry" />
+          <mxGeometry x="218" y="200" width="148" height="40" as="geometry" />
         </mxCell>
         <mxCell id="t9" value="someip" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="534" y="200" width="148" height="40" as="geometry" />
+          <mxGeometry x="376" y="200" width="148" height="40" as="geometry" />
         </mxCell>
         <mxCell id="t10" value="fdbus" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="692" y="200" width="148" height="40" as="geometry" />
+          <mxGeometry x="534" y="200" width="148" height="40" as="geometry" />
         </mxCell>
         <mxCell id="t11" value="mqtt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="218" y="250" width="148" height="40" as="geometry" />
+          <mxGeometry x="692" y="200" width="148" height="40" as="geometry" />
         </mxCell>
 
-        <mxCell id="arr" value="compiles into the same vlink-test binary" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1976d2;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+        <mxCell id="test_binary" value="vlink-test binary" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#ffffff;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="365" y="310" width="170" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="arr_transport_binary" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="450" y="300" as="sourcePoint" />
+            <mxPoint x="450" y="310" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arr_base_binary" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#388e3c;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="450" y="350" as="sourcePoint" />
             <mxPoint x="450" y="340" as="targetPoint" />
           </mxGeometry>
         </mxCell>
