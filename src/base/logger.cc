@@ -544,10 +544,10 @@ bool Logger::try_acquire_periodic_log(Level level, int64_t interval_ms,
   const auto interval_ns = unsigned_interval_ms > std::numeric_limits<uint64_t>::max() / kNanosecondsPerMillisecond
                                ? std::numeric_limits<uint64_t>::max()
                                : unsigned_interval_ms * kNanosecondsPerMillisecond;
-  static const auto start_time = std::chrono::steady_clock::now();
+  static const auto kStartTime = std::chrono::steady_clock::now();
   const auto now_ns =
       static_cast<uint64_t>(
-          std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start_time).count()) +
+          std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - kStartTime).count()) +
       1U;
   auto last_ns = last_log_time_ns.load(std::memory_order_relaxed);
 
