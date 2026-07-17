@@ -128,6 +128,7 @@ class DdsrFactory final {
   std::map<TopicFilter, std::weak_ptr<ddsr::Topic>> topic_map_;
   std::map<PublisherFilter, std::weak_ptr<ddsr::Publisher>> publisher_map_;
   std::map<SubscriberFilter, std::weak_ptr<ddsr::Subscriber>> subscriber_map_;
+  std::recursive_mutex participant_mtx_;
   std::mutex mtx_;
   DDS_DomainParticipantFactory* dds_factory_{nullptr};
 

@@ -97,6 +97,7 @@ std::shared_ptr<ddsr::DomainParticipant> DdsrFactory::create_participant(uint8_t
   const auto& dds_qos_ext = get_qos_ext(conf.qos_ext, "part");
   const auto& id = std::make_tuple(type, conf.domain, dds_qos_ext, properties);
 
+  std::lock_guard lifecycle_lock(factory.participant_mtx_);
   std::unique_lock lock(factory.mtx_);
   std::shared_ptr<ddsr::DomainParticipant> part = get_weak_ptr(factory.part_map_, id).lock();
 
@@ -124,6 +125,8 @@ std::shared_ptr<ddsr::DomainParticipant> DdsrFactory::create_participant(uint8_t
     }
 
     part = std::shared_ptr<ddsr::DomainParticipant>(ptr, [id](ddsr::DomainParticipant* part) {
+      std::lock_guard lifecycle_lock(factory.participant_mtx_);
+
       {
         std::lock_guard lock(factory.mtx_);
         auto iter = factory.part_map_.find(id);

@@ -1,5 +1,5 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index d16959371..491213962 100644
+index d16959371..471d387b0 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -257,14 +257,10 @@ include_directories(thirdparty/filewatch)
@@ -20,3 +20,809 @@ index d16959371..491213962 100644
  endif()
  
  if(OPENSSL_FOUND)
+@@ -285,15 +281,18 @@ if(SECURITY OR TLS_FOUND)
+ endif()
+ 
+ if(SECURITY AND QNX)
+-    add_library(OpenSSL::SSL INTERFACE IMPORTED)
+-    add_library(OpenSSL::Crypto INTERFACE IMPORTED)
+-
+-    set_target_properties(OpenSSL::SSL PROPERTIES
+-        INTERFACE_LINK_LIBRARIES ssl
+-    )
+-    set_target_properties(OpenSSL::Crypto PROPERTIES
+-        INTERFACE_LINK_LIBRARIES crypto
+-    )
++    if(NOT TARGET OpenSSL::SSL)
++        add_library(OpenSSL::SSL INTERFACE IMPORTED)
++        set_target_properties(OpenSSL::SSL PROPERTIES
++            INTERFACE_LINK_LIBRARIES ssl
++        )
++    endif()
++    if(NOT TARGET OpenSSL::Crypto)
++        add_library(OpenSSL::Crypto INTERFACE IMPORTED)
++        set_target_properties(OpenSSL::Crypto PROPERTIES
++            INTERFACE_LINK_LIBRARIES crypto
++        )
++    endif()
+ 
+     set(OPENSSL_LIBRARIES ssl crypto)
+ endif()
+# Backport of eProsima/Fast-DDS commit 28e2ce8fafb0cc1ebfdf883896fa39148e91c95c.
+# Fix destruction data-race on participant removal in intra-process (#5034/#5367).
+# Adapted for Fast-DDS v2.10.7 and hardened pointer acquisition; upstream tests are omitted.
+diff --git a/include/fastdds/rtps/reader/LocalReaderPointer.hpp b/include/fastdds/rtps/reader/LocalReaderPointer.hpp
+--- a/include/fastdds/rtps/reader/LocalReaderPointer.hpp	1970-01-01 08:00:00.000000000 +0800
++++ b/include/fastdds/rtps/reader/LocalReaderPointer.hpp	2026-07-17 09:44:34.925831384 +0800
+@@ -0,0 +1,50 @@
++// Copyright 2024 Proyectos y Sistemas de Mantenimiento SL (eProsima).
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++/**
++ * @file LocalReaderPointer.hpp
++ */
++
++#ifndef FASTDDS_RTPS_READER__LOCALREADERPOINTER_HPP
++#define FASTDDS_RTPS_READER__LOCALREADERPOINTER_HPP
++
++#ifndef DOXYGEN_SHOULD_SKIP_THIS_PUBLIC
++
++#include <fastrtps/utils/RefCountedPointer.hpp>
++
++namespace eprosima {
++namespace fastrtps {
++namespace rtps {
++
++class RTPSReader;
++
++struct LocalReaderPointer : public RefCountedPointer<RTPSReader>
++{
++    LocalReaderPointer(
++            RTPSReader* ptr)
++        : RefCountedPointer<RTPSReader>(ptr)
++    {
++    }
++
++    virtual ~LocalReaderPointer() = default;
++
++};
++
++}  // namespace rtps
++}  // namespace fastdds
++}  // namespace eprosima
++
++#endif  // ifndef DOXYGEN_SHOULD_SKIP_THIS_PUBLIC
++
++#endif // FASTDDS_RTPS_READER__LOCALREADERPOINTER_HPP
+diff --git a/include/fastdds/rtps/reader/RTPSReader.h b/include/fastdds/rtps/reader/RTPSReader.h
+--- a/include/fastdds/rtps/reader/RTPSReader.h	2025-06-02 16:45:52.000000000 +0800
++++ b/include/fastdds/rtps/reader/RTPSReader.h	2026-07-17 09:44:34.925831384 +0800
+@@ -45,6 +45,7 @@
+ struct ReaderHistoryState;
+ class WriterProxyData;
+ class IDataSharingListener;
++struct LocalReaderPointer;
+ 
+ /**
+  * Class RTPSReader, manages the reception of data from its matched writers.
+@@ -171,6 +172,11 @@
+             const SequenceNumberSet_t& gapList) = 0;
+ 
+     /**
++     * @brief Waits for not being referenced/used by any other entity.
++     */
++    virtual void local_actions_on_reader_removed();
++
++    /**
+      * Method to indicate the reader that some change has been removed due to HistoryQos requirements.
+      * @param change Pointer to the CacheChange_t.
+      * @param prox Pointer to the WriterProxy.
+@@ -471,6 +477,14 @@
+     bool is_datasharing_compatible_with(
+             const WriterProxyData& wdata);
+ 
++    /**
++     * @brief Retrieves the local pointer to this reader
++     * to be used by other local entities.
++     *
++     * @return Local pointer to this reader.
++     */
++    std::shared_ptr<LocalReaderPointer> get_local_pointer();
++
+     //!ReaderHistory
+     ReaderHistory* mp_history;
+     //!Listener
+@@ -481,6 +495,10 @@
+     bool m_acceptMessagesFromUnkownWriters;
+     //!Trusted writer (for Builtin)
+     EntityId_t m_trustedWriterEntityId;
++
++    /// RefCountedPointer of this instance.
++    std::shared_ptr<LocalReaderPointer> local_ptr_;
++
+     //!Expects Inline Qos.
+     bool m_expectsInlineQos;
+ 
+diff --git a/include/fastdds/rtps/writer/ReaderLocator.h b/include/fastdds/rtps/writer/ReaderLocator.h
+--- a/include/fastdds/rtps/writer/ReaderLocator.h	2025-06-02 16:45:52.000000000 +0800
++++ b/include/fastdds/rtps/writer/ReaderLocator.h	2026-07-17 09:44:34.925831384 +0800
+@@ -21,11 +21,12 @@
+ #ifndef DOXYGEN_SHOULD_SKIP_THIS_PUBLIC
+ 
+ #include <vector>
+-#include <fastdds/rtps/common/Locator.h>
+ #include <fastdds/rtps/common/Guid.h>
++#include <fastdds/rtps/common/Locator.h>
++#include <fastdds/rtps/common/LocatorSelectorEntry.hpp>
+ #include <fastdds/rtps/common/SequenceNumber.h>
+ #include <fastdds/rtps/messages/RTPSMessageGroup.h>
+-#include <fastdds/rtps/common/LocatorSelectorEntry.hpp>
++#include <fastdds/rtps/reader/LocalReaderPointer.hpp>
+ 
+ namespace eprosima {
+ namespace fastrtps {
+@@ -69,10 +70,10 @@
+         return is_local_reader_;
+     }
+ 
+-    RTPSReader* local_reader();
++    LocalReaderPointer::Instance local_reader();
+ 
+     void local_reader(
+-            RTPSReader* local_reader)
++            std::shared_ptr<LocalReaderPointer> local_reader)
+     {
+         local_reader_ = local_reader;
+     }
+@@ -260,7 +261,7 @@
+     LocatorSelectorEntry async_locator_info_;
+     bool expects_inline_qos_;
+     bool is_local_reader_;
+-    RTPSReader* local_reader_;
++    std::shared_ptr<LocalReaderPointer> local_reader_;
+     std::vector<GuidPrefix_t> guid_prefix_as_vector_;
+     std::vector<GUID_t> guid_as_vector_;
+     IDataSharingNotifier* datasharing_notifier_;
+diff --git a/include/fastdds/rtps/writer/ReaderProxy.h b/include/fastdds/rtps/writer/ReaderProxy.h
+--- a/include/fastdds/rtps/writer/ReaderProxy.h	2025-06-02 16:45:52.000000000 +0800
++++ b/include/fastdds/rtps/writer/ReaderProxy.h	2026-07-17 09:44:34.925831384 +0800
+@@ -294,7 +294,7 @@
+      * Get the local reader on the same process (if any).
+      * @return The local reader on the same process.
+      */
+-    inline RTPSReader* local_reader()
++    inline LocalReaderPointer::Instance local_reader()
+     {
+         return locator_info_.local_reader();
+     }
+diff --git a/include/fastrtps/utils/RefCountedPointer.hpp b/include/fastrtps/utils/RefCountedPointer.hpp
+--- a/include/fastrtps/utils/RefCountedPointer.hpp	1970-01-01 08:00:00.000000000 +0800
++++ b/include/fastrtps/utils/RefCountedPointer.hpp	2026-07-17 09:44:34.925831384 +0800
+@@ -0,0 +1,220 @@
++// Copyright 2024 Proyectos y Sistemas de Mantenimiento SL (eProsima).
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++/**
++ * @file RefCountedPointer.hpp
++ */
++
++#ifndef UTILS__REFCOUNTEDPOINTER_HPP
++#define UTILS__REFCOUNTEDPOINTER_HPP
++
++#ifndef DOXYGEN_SHOULD_SKIP_THIS_PUBLIC
++
++#include <atomic>
++#include <cassert>
++#include <condition_variable>
++#include <cstdint>
++#include <memory>
++#include <mutex>
++
++namespace eprosima {
++namespace fastrtps {
++
++/**
++ * @brief Class to manage a local pointer with reference counting.
++ *
++ * It is similar to std::shared_ptr, but designed for cases where
++ * a shared pointer cannot be used due to API restrictions.
++ *
++ * USAGE:
++ * - On T class:
++ *   - Add a shared_ptr<RefCountedPointer<T>> local_ptr_ member.
++ *   - Call local_ptr_->deactivate() before destroying T.
++ *
++ * - On classes that need to use a pointer to T:
++ *   - Keep a copy of the shared_ptr<RefCountedPointer<T>>.
++ *   - Whenever you need to access T:
++ *     RefCountedPointer<T>::Instance instance(local_ptr_)
++ *     if (instance)
++ *     {
++ *         ptr->method();
++ *     }
++ */
++template<typename T>
++class RefCountedPointer
++{
++public:
++
++    class Instance;
++
++    /**
++     * @brief Explicit constructor.
++     * @param ptr Pointer to manage.
++     *
++     * @pre nullptr != ptr. We must ensure that the pointer we
++     * are manaing is valid.
++     */
++    explicit RefCountedPointer(
++            T* ptr)
++        : ptr_(ptr)
++        , is_active_(true)
++        , instances_(0)
++    {
++        assert(nullptr != ptr);
++    }
++
++    ~RefCountedPointer() = default;
++
++    // Non-copyable and non-movable
++    RefCountedPointer(
++            const RefCountedPointer&) = delete;
++    RefCountedPointer& operator =(
++            const RefCountedPointer&) = delete;
++    RefCountedPointer(
++            RefCountedPointer&&) = delete;
++    RefCountedPointer& operator =(
++            RefCountedPointer&&) = delete;
++
++    /**
++     * @brief Class to manage the local pointer instance.
++     * It will increase the reference count on construction and decrease
++     * it on destruction. Provides a facade to access the pointee.
++     */
++    class Instance
++    {
++    public:
++
++        /**
++         * @brief Constructor.
++         * @param parent Shared pointer reference to its RefCountedPointer.
++         */
++        explicit Instance(
++                const std::shared_ptr<RefCountedPointer<T>>& parent)
++            : parent_(parent)
++            , ptr_(parent_ ? parent_->inc_instances() : nullptr)
++        {
++        }
++
++        /**
++         * @brief Destructor.
++         */
++        ~Instance()
++        {
++            if (parent_)
++            {
++                parent_->dec_instances();
++            }
++        }
++
++        // Non-copyable, default movable
++        Instance(
++                const Instance&) = delete;
++        Instance& operator =(
++                const Instance&) = delete;
++        Instance(
++                Instance&&) = default;
++        Instance& operator =(
++                Instance&&) = default;
++
++        /**
++         * @brief operator to check if the pointer is valid.
++         */
++        operator bool() const
++        {
++            return nullptr != ptr_;
++        }
++
++        /**
++         * @brief operator to call the T methods.
++         */
++        T* operator ->() const
++        {
++            assert(nullptr != ptr_);
++            return ptr_;
++        }
++
++    private:
++
++        std::shared_ptr<RefCountedPointer<T>> parent_;
++        T* const ptr_;
++    };
++
++    /**
++     * @brief Ensure no more valid local pointer instances are created, and wait for current ones to die.
++     */
++    void deactivate()
++    {
++        std::unique_lock<std::mutex> lock(mutex_);
++        is_active_ = false;
++        cv_.wait(lock, [this]() -> bool
++                {
++                    return instances_ == 0;
++                });
++    }
++
++private:
++
++    /**
++     * @brief Increase the reference count and retrieve the pointer if active.
++     * @return Managed pointer if active, nullptr otherwise.
++     */
++    T* inc_instances()
++    {
++        std::unique_lock<std::mutex> lock(mutex_);
++        ++instances_;
++        return is_active_ ? ptr_ : nullptr;
++    }
++
++    /**
++     * @brief Decrease the reference count.
++     */
++    void dec_instances()
++    {
++        std::unique_lock<std::mutex> lock(mutex_);
++        --instances_;
++        if (instances_ == 0)
++        {
++            cv_.notify_one();
++        }
++    }
++
++    /**
++     * Pointer to the managed object.
++     */
++    T* const ptr_;
++
++    /**
++     * Indicates whether the pointee is still alive
++     * and accessing the pointer is valid.
++     */
++    std::atomic<bool> is_active_;
++
++    /**
++     * Protections for the number of instances.
++     */
++    mutable std::mutex mutex_;
++    std::condition_variable cv_;
++
++    /**
++     * Number of active instances (currently using the pointee).
++     */
++    size_t instances_;
++};
++
++}  // namespace fastdds
++}  // namespace eprosima
++
++#endif // DOXYGEN_SHOULD_SKIP_THIS_PUBLIC
++
++#endif // UTILS__REFCOUNTEDPOINTER_HPP
+diff --git a/src/cpp/rtps/RTPSDomain.cpp b/src/cpp/rtps/RTPSDomain.cpp
+--- a/src/cpp/rtps/RTPSDomain.cpp	2025-06-02 16:45:52.000000000 +0800
++++ b/src/cpp/rtps/RTPSDomain.cpp	2026-07-17 09:44:34.925831384 +0800
+@@ -29,6 +29,7 @@
+ #include <fastdds/dds/log/Log.hpp>
+ #include <fastdds/rtps/history/WriterHistory.h>
+ #include <fastdds/rtps/participant/RTPSParticipant.h>
++#include <fastdds/rtps/reader/LocalReaderPointer.hpp>
+ #include <fastdds/rtps/reader/RTPSReader.h>
+ #include <fastdds/rtps/writer/RTPSWriter.h>
+ 
+@@ -768,7 +769,7 @@
+     return nullptr;
+ }
+ 
+-RTPSReader* RTPSDomainImpl::find_local_reader(
++std::shared_ptr<LocalReaderPointer> RTPSDomainImpl::find_local_reader(
+         const GUID_t& reader_guid)
+ {
+     auto instance = get_instance();
+@@ -782,7 +783,7 @@
+         }
+     }
+ 
+-    return nullptr;
++    return std::shared_ptr<LocalReaderPointer>(nullptr);
+ }
+ 
+ RTPSWriter* RTPSDomainImpl::find_local_writer(
+diff --git a/src/cpp/rtps/RTPSDomainImpl.hpp b/src/cpp/rtps/RTPSDomainImpl.hpp
+--- a/src/cpp/rtps/RTPSDomainImpl.hpp	2025-06-02 16:45:52.000000000 +0800
++++ b/src/cpp/rtps/RTPSDomainImpl.hpp	2026-07-17 09:46:06.697745580 +0800
+@@ -25,6 +25,7 @@
+ #include <FileWatch.hpp>
+ #endif // defined(_WIN32) || defined(__unix__)
+ 
++#include <fastdds/rtps/reader/LocalReaderPointer.hpp>
+ #include <fastrtps/rtps/reader/RTPSReader.h>
+ #include <fastrtps/rtps/RTPSDomain.h>
+ #include <fastrtps/rtps/writer/RTPSWriter.h>
+@@ -176,7 +177,7 @@
+      *
+      * @returns A pointer to a local reader given its endpoint guid, or nullptr if not found.
+      */
+-    static RTPSReader* find_local_reader(
++    static std::shared_ptr<LocalReaderPointer> find_local_reader(
+             const GUID_t& reader_guid);
+ 
+     /**
+diff --git a/src/cpp/rtps/participant/RTPSParticipantImpl.cpp b/src/cpp/rtps/participant/RTPSParticipantImpl.cpp
+--- a/src/cpp/rtps/participant/RTPSParticipantImpl.cpp	2025-06-02 16:45:52.000000000 +0800
++++ b/src/cpp/rtps/participant/RTPSParticipantImpl.cpp	2026-07-17 09:46:06.697745580 +0800
+@@ -39,6 +39,7 @@
+ #include <fastdds/rtps/messages/MessageReceiver.h>
+ #include <fastdds/rtps/participant/ParticipantDiscoveryInfo.h>
+ #include <fastdds/rtps/participant/RTPSParticipant.h>
++#include <fastdds/rtps/reader/LocalReaderPointer.hpp>
+ #include <fastdds/rtps/reader/StatelessReader.h>
+ #include <fastdds/rtps/reader/StatefulReader.h>
+ #include <fastdds/rtps/reader/StatelessPersistentReader.h>
+@@ -1433,7 +1434,7 @@
+     return create_reader(ReaderOut, param, entityId, isBuiltin, enable, callback);
+ }
+ 
+-RTPSReader* RTPSParticipantImpl::find_local_reader(
++std::shared_ptr<LocalReaderPointer> RTPSParticipantImpl::find_local_reader(
+         const GUID_t& reader_guid)
+ {
+     shared_lock<shared_mutex> _(endpoints_list_mutex);
+@@ -1442,11 +1443,11 @@
+     {
+         if (reader->getGuid() == reader_guid)
+         {
+-            return reader;
++            return reader->get_local_pointer();
+         }
+     }
+ 
+-    return nullptr;
++    return std::shared_ptr<LocalReaderPointer>();
+ }
+ 
+ RTPSWriter* RTPSParticipantImpl::find_local_writer(
+@@ -2126,6 +2127,7 @@
+ 
+     bool found = false, found_in_users = false;
+     Endpoint* p_endpoint = nullptr;
++    RTPSReader* reader = nullptr;
+ 
+     if (endpoint.entityId.is_writer())
+     {
+@@ -2160,6 +2162,7 @@
+         {
+             if ((*rit)->getGuid().entityId == endpoint.entityId) //Found it
+             {
++                reader = *rit;
+                 m_userReaderList.erase(rit);
+                 found_in_users = true;
+                 break;
+@@ -2170,6 +2173,7 @@
+         {
+             if ((*rit)->getGuid().entityId == endpoint.entityId) //Found it
+             {
++                reader = *rit;
+                 p_endpoint = *rit;
+                 m_allReaderList.erase(rit);
+                 found = true;
+@@ -2228,6 +2232,10 @@
+ #endif // if HAVE_SECURITY
+     }
+ 
++    if (reader)
++    {
++        reader->local_actions_on_reader_removed();
++    }
+     delete(p_endpoint);
+     return true;
+ }
+@@ -2315,6 +2323,11 @@
+         }
+ #endif // if HAVE_SECURITY
+ 
++        if (kind == READER)
++        {
++            static_cast<RTPSReader*>(endpoint)->local_actions_on_reader_removed();
++        }
++
+         // remove the endpoints
+         delete(endpoint);
+     }
+@@ -3054,8 +3067,11 @@
+     }
+     else if (!fastdds::statistics::is_statistics_builtin(reader_guid.entityId))
+     {
+-        RTPSReader* reader = find_local_reader(reader_guid);
+-        res = reader->add_statistics_listener(listener);
++        LocalReaderPointer::Instance local_reader(find_local_reader(reader_guid));
++        if (local_reader)
++        {
++            res = local_reader->add_statistics_listener(listener);
++        }
+     }
+ 
+     return res;
+diff --git a/src/cpp/rtps/participant/RTPSParticipantImpl.h b/src/cpp/rtps/participant/RTPSParticipantImpl.h
+--- a/src/cpp/rtps/participant/RTPSParticipantImpl.h	2025-06-02 16:45:52.000000000 +0800
++++ b/src/cpp/rtps/participant/RTPSParticipantImpl.h	2026-07-17 09:44:34.925831384 +0800
+@@ -101,6 +101,7 @@
+ class PDPSimple;
+ class IPersistenceService;
+ class WLP;
++struct LocalReaderPointer;
+ 
+ /**
+  * @brief Class RTPSParticipantImpl, it contains the private implementation of the RTPSParticipant functions and
+@@ -466,7 +467,7 @@
+     /***
+      * @returns A pointer to a local reader given its endpoint guid, or nullptr if not found.
+      */
+-    RTPSReader* find_local_reader(
++    std::shared_ptr<LocalReaderPointer> find_local_reader(
+             const GUID_t& reader_guid);
+ 
+     /***
+diff --git a/src/cpp/rtps/reader/RTPSReader.cpp b/src/cpp/rtps/reader/RTPSReader.cpp
+--- a/src/cpp/rtps/reader/RTPSReader.cpp	2025-06-02 16:45:52.000000000 +0800
++++ b/src/cpp/rtps/reader/RTPSReader.cpp	2026-07-17 09:44:34.925831384 +0800
+@@ -21,19 +21,11 @@
+ #include <algorithm>
+ #include <chrono>
+ 
+-#include <rtps/history/BasicPayloadPool.hpp>
+-#include <rtps/history/CacheChangePool.h>
+-
+-#include <rtps/DataSharing/DataSharingListener.hpp>
+-
+-#include <rtps/participant/RTPSParticipantImpl.h>
+-
+-#include <rtps/reader/ReaderHistoryState.hpp>
++#include <fastdds/rtps/reader/RTPSReader.h>
+ 
+ #include <fastdds/dds/log/Log.hpp>
+-
+-#include <fastdds/rtps/reader/RTPSReader.h>
+ #include <fastdds/rtps/history/ReaderHistory.h>
++#include <fastdds/rtps/reader/LocalReaderPointer.hpp>
+ #include <fastdds/rtps/reader/ReaderListener.h>
+ #include <fastdds/rtps/resources/ResourceEvent.h>
+ 
+@@ -41,6 +33,12 @@
+ 
+ #include <statistics/rtps/StatisticsBase.hpp>
+ 
++#include <rtps/DataSharing/DataSharingListener.hpp>
++#include <rtps/history/BasicPayloadPool.hpp>
++#include <rtps/history/CacheChangePool.h>
++#include <rtps/participant/RTPSParticipantImpl.h>
++#include <rtps/reader/ReaderHistoryState.hpp>
++
+ 
+ namespace eprosima {
+ namespace fastrtps {
+@@ -105,6 +103,11 @@
+     init(payload_pool, change_pool, att);
+ }
+ 
++void RTPSReader::local_actions_on_reader_removed()
++{
++    local_ptr_->deactivate();
++}
++
+ void RTPSReader::init(
+         const std::shared_ptr<IPayloadPool>& payload_pool,
+         const std::shared_ptr<IChangePool>& change_pool,
+@@ -143,6 +146,8 @@
+     mp_history->mp_reader = this;
+     mp_history->mp_mutex = &mp_mutex;
+ 
++    local_ptr_ = std::make_shared<LocalReaderPointer>(this);
++
+     EPROSIMA_LOG_INFO(RTPS_READER, "RTPSReader created correctly");
+ }
+ 
+@@ -213,6 +218,11 @@
+     return true;
+ }
+ 
++std::shared_ptr<LocalReaderPointer> RTPSReader::get_local_pointer()
++{
++    return local_ptr_;
++}
++
+ History::const_iterator RTPSReader::findCacheInFragmentedProcess(
+         const SequenceNumber_t& sequence_number,
+         const GUID_t& writer_guid,
+diff --git a/src/cpp/rtps/writer/ReaderLocator.cpp b/src/cpp/rtps/writer/ReaderLocator.cpp
+--- a/src/cpp/rtps/writer/ReaderLocator.cpp	2025-06-02 16:45:52.000000000 +0800
++++ b/src/cpp/rtps/writer/ReaderLocator.cpp	2026-07-17 09:44:34.925831384 +0800
+@@ -42,7 +42,7 @@
+     , async_locator_info_(max_unicast_locators, max_multicast_locators)
+     , expects_inline_qos_(false)
+     , is_local_reader_(false)
+-    , local_reader_(nullptr)
++    , local_reader_()
+     , guid_prefix_as_vector_(1u)
+     , guid_as_vector_(1u)
+     , datasharing_notifier_(nullptr)
+@@ -81,7 +81,7 @@
+ 
+         is_local_reader_ = RTPSDomainImpl::should_intraprocess_between(owner_->getGuid(), remote_guid);
+         is_datasharing &= !is_local_reader_;
+-        local_reader_ = nullptr;
++        local_reader_.reset();
+ 
+         if (!is_local_reader_ && !is_datasharing)
+         {
+@@ -174,7 +174,7 @@
+     guid_prefix_as_vector_.at(0) = c_GuidPrefix_Unknown;
+     expects_inline_qos_ = false;
+     is_local_reader_ = false;
+-    local_reader_ = nullptr;
++    local_reader_.reset();
+ }
+ 
+ bool ReaderLocator::send(
+@@ -202,13 +202,13 @@
+     return true;
+ }
+ 
+-RTPSReader* ReaderLocator::local_reader()
++LocalReaderPointer::Instance ReaderLocator::local_reader()
+ {
+     if (!local_reader_)
+     {
+         local_reader_ = RTPSDomainImpl::find_local_reader(general_locator_info_.remote_guid);
+     }
+-    return local_reader_;
++    return LocalReaderPointer::Instance(local_reader_);
+ }
+ 
+ bool ReaderLocator::is_datasharing_reader() const
+@@ -218,15 +218,13 @@
+ 
+ void ReaderLocator::datasharing_notify()
+ {
+-    RTPSReader* reader = nullptr;
+     if (is_local_reader())
+     {
+-        reader = local_reader();
+-    }
+-
+-    if (reader)
+-    {
+-        reader->datasharing_listener()->notify(true);
++        LocalReaderPointer::Instance reader = local_reader();
++        if (reader)
++        {
++            reader->datasharing_listener()->notify(true);
++        }
+     }
+     else
+     {
+diff --git a/src/cpp/rtps/writer/StatefulWriter.cpp b/src/cpp/rtps/writer/StatefulWriter.cpp
+--- a/src/cpp/rtps/writer/StatefulWriter.cpp	2025-06-02 16:45:52.000000000 +0800
++++ b/src/cpp/rtps/writer/StatefulWriter.cpp	2026-07-17 09:46:06.701078973 +0800
+@@ -34,6 +34,7 @@
+ #include <fastdds/rtps/messages/RTPSMessageGroup.h>
+ 
+ #include <fastdds/rtps/participant/RTPSParticipant.h>
++#include <fastdds/rtps/reader/LocalReaderPointer.hpp>
+ #include <fastdds/rtps/resources/ResourceEvent.h>
+ #include <fastdds/rtps/resources/TimedEvent.h>
+ 
+@@ -471,14 +472,14 @@
+         CacheChange_t* change,
+         ReaderProxy* reader_proxy)
+ {
+-    RTPSReader* reader = reader_proxy->local_reader();
+-    if (reader)
++    LocalReaderPointer::Instance local_reader = reader_proxy->local_reader();
++    if (local_reader)
+     {
+         if (change->write_params.related_sample_identity() != SampleIdentity::unknown())
+         {
+             change->write_params.sample_identity(change->write_params.related_sample_identity());
+         }
+-        return reader->processDataMsg(change);
++        return local_reader->processDataMsg(change);
+     }
+     return false;
+ }
+@@ -488,10 +489,10 @@
+         const SequenceNumber_t& first_seq,
+         const SequenceNumber_t& last_seq)
+ {
+-    RTPSReader* reader = reader_proxy->local_reader();
+-    if (reader)
++    LocalReaderPointer::Instance local_reader = reader_proxy->local_reader();
++    if (local_reader)
+     {
+-        return reader->processGapMsg(m_guid, first_seq, SequenceNumberSet_t(last_seq));
++        return local_reader->processGapMsg(m_guid, first_seq, SequenceNumberSet_t(last_seq));
+     }
+ 
+     return false;
+@@ -502,12 +503,11 @@
+         bool liveliness)
+ {
+     bool returned_value = false;
++    LocalReaderPointer::Instance local_reader = reader_proxy->local_reader();
+ 
+-    std::lock_guard<RecursiveTimedMutex> guardW(mp_mutex);
+-    RTPSReader* reader = RTPSDomainImpl::find_local_reader(reader_proxy->guid());
+-
+-    if (reader)
++    if (local_reader)
+     {
++        std::unique_lock<RecursiveTimedMutex> lockW(mp_mutex);
+         SequenceNumber_t first_seq = get_seq_num_min();
+         SequenceNumber_t last_seq = get_seq_num_max();
+ 
+@@ -524,8 +524,10 @@
+                 (liveliness || reader_proxy->has_changes()))
+         {
+             incrementHBCount();
++            Count_t hb_count = m_heartbeatCount;
++            lockW.unlock();
+             returned_value =
+-                    reader->processHeartbeatMsg(m_guid, m_heartbeatCount, first_seq, last_seq, true, liveliness);
++                    local_reader->processHeartbeatMsg(m_guid, hb_count, first_seq, last_seq, true, liveliness);
+         }
+     }
+ 
+diff --git a/src/cpp/rtps/writer/StatelessWriter.cpp b/src/cpp/rtps/writer/StatelessWriter.cpp
+--- a/src/cpp/rtps/writer/StatelessWriter.cpp	2025-06-02 16:45:52.000000000 +0800
++++ b/src/cpp/rtps/writer/StatelessWriter.cpp	2026-07-17 09:44:34.925831384 +0800
+@@ -344,16 +344,16 @@
+         CacheChange_t* change,
+         ReaderLocator& reader_locator)
+ {
+-    RTPSReader* reader = reader_locator.local_reader();
++    LocalReaderPointer::Instance local_reader = reader_locator.local_reader();
+ 
+-    if (reader &&
++    if (local_reader &&
+             (!reader_data_filter_ || reader_data_filter_->is_relevant(*change, reader_locator.remote_guid())))
+     {
+         if (change->write_params.related_sample_identity() != SampleIdentity::unknown())
+         {
+             change->write_params.sample_identity(change->write_params.related_sample_identity());
+         }
+-        return reader->processDataMsg(change);
++        return local_reader->processDataMsg(change);
+     }
+ 
+     return false;
