@@ -23,7 +23,7 @@
 
 #pragma once
 
-#include "./dump_features.h"
+#include "./parse_features.h"
 
 #ifdef VLINK_HAS_PROTOBUF_COMPILER
 
@@ -33,9 +33,9 @@
 #include <string>
 #include <unordered_map>
 
-#include "./dump_schema.h"
+#include "./parse_schema.h"
 
-namespace vlink::dump {
+namespace vlink::parse {
 
 class ProtoMessageCache final {
  public:
@@ -52,6 +52,6 @@ class ProtoMessageCache final {
   std::unordered_map<std::string, std::unique_ptr<google::protobuf::Message>> cache_;
 };
 
-}  // namespace vlink::dump
+}  // namespace vlink::parse
 
 #endif

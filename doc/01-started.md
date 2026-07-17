@@ -151,8 +151,8 @@ output/
 | OpenSSL | 消息加密（AES） | `ENABLE_SECURITY=ON` | `sudo apt install libssl-dev` |
 | SQLite3 | 录制/回放 | `ENABLE_SQLITE=ON` | `sudo apt install libsqlite3-dev` |
 | zstd | 数据压缩 | `ENABLE_ZSTD=ON` | `sudo apt install libzstd-dev` |
-| Protobuf | CLI 工具（eproto/dump）/ Viewer / WebViz | `ENABLE_CLI_EPROTO` / `ENABLE_CLI_DUMP` / `ENABLE_VIEWER` / `ENABLE_WEBVIZ` | `sudo apt install libprotobuf-dev protobuf-compiler` |
-| FlatBuffers | CLI 工具（efbs/dump）/ Viewer / WebViz | `ENABLE_CLI_EFBS` / `ENABLE_CLI_DUMP` / `ENABLE_VIEWER` / `ENABLE_WEBVIZ` | `sudo apt install libflatbuffers-dev flatbuffers-compiler` |
+| Protobuf | CLI 工具（eproto/parse）/ Viewer / WebViz | `ENABLE_CLI_EPROTO` / `ENABLE_CLI_PARSE` / `ENABLE_VIEWER` / `ENABLE_WEBVIZ` | `sudo apt install libprotobuf-dev protobuf-compiler` |
+| FlatBuffers | CLI 工具（efbs/parse）/ Viewer / WebViz | `ENABLE_CLI_EFBS` / `ENABLE_CLI_PARSE` / `ENABLE_VIEWER` / `ENABLE_WEBVIZ` | `sudo apt install libflatbuffers-dev flatbuffers-compiler` |
 | Fast-DDS | DDS 传输（`dds://`） | 模块依赖 | 见 [Fast-DDS 官方文档](https://fast-dds.docs.eprosima.com/) |
 | CycloneDDS | DDS 传输（`ddsc://`） | 模块依赖 | 见 [CycloneDDS 官方文档](https://github.com/eclipse-cyclonedds/cyclonedds) |
 | Iceoryx | 共享内存（`shm://`） | 模块依赖 | 见 [Iceoryx 官方文档](https://iceoryx.io/) |
@@ -215,7 +215,7 @@ Viewer / WebViz 子开关：`ENABLE_VIEWER_FFMPEG`、`ENABLE_VIEWER_OSG`、`ENAB
 
 ### 🧪 1.4.3 CLI / 测试 / 日志后端
 
-- **CLI 工具**：`ENABLE_CLI_INFO` / `BAG` / `TRIGGER` / `LIST` / `MONITOR` / `CHECK` / `BENCH` / `EPROTO` / `EFBS` / `DUMP`，默认全 `ON`。其中 `EPROTO` 依赖 Protobuf、`EFBS` 依赖 FlatBuffers、`DUMP` 两者皆需，对应依赖缺失时自动关闭。`ENABLE_EXPRTK`（默认 `ON`）提供 `DUMP` / Viewer / WebViz 的表达式引擎。
+- **CLI 工具**：`ENABLE_CLI_INFO` / `BAG` / `TRIGGER` / `LIST` / `MONITOR` / `CHECK` / `BENCH` / `EPROTO` / `EFBS` / `PARSE`，默认全 `ON`。其中 `EPROTO` 依赖 Protobuf、`EFBS` 依赖 FlatBuffers、`PARSE` 两者皆需，对应依赖缺失时自动关闭。`ENABLE_EXPRTK`（默认 `ON`）提供 `PARSE` / Viewer / WebViz 的表达式引擎。
 - **测试**：`ENABLE_TEST`（doctest）、`ENABLE_TEST_SANITIZE`（ASan）、`ENABLE_TEST_COVERAGE`（gcov/lcov）、`ENABLE_TEST_WARN`。
 - **日志后端**：`SELECT_LOG_BACKEND=spdlog|quill|dlt|native`，Android/QNX 平台默认 `native`，其余平台默认 `spdlog`；`quill` 提供更低延迟，`dlt` 面向车载 GENIVI，`native` 用于 Android/QNX 平台原生日志。
 
@@ -761,7 +761,7 @@ ls build/output/bin/
 **1. 找不到 OpenSSL / SQLite / zstd，对应功能被自动关闭。**
 安装对应 `-dev` 包（如 `sudo apt install libssl-dev`）后重新配置；或显式 `-DENABLE_SECURITY=OFF` 接受关闭。
 
-**2. 找不到 Protobuf / FlatBuffers，相关 CLI 工具（eproto/efbs/dump）或 Viewer / WebViz 被关闭。**
+**2. 找不到 Protobuf / FlatBuffers，相关 CLI 工具（eproto/efbs/parse）或 Viewer / WebViz 被关闭。**
 安装 `libprotobuf-dev protobuf-compiler libflatbuffers-dev`；非标准路径用 `-DProtobuf_ROOT=...`（macOS Homebrew 用 `-DProtobuf_DIR=$(brew --prefix protobuf)/lib/cmake/protobuf`）。
 
 **3. `ENABLE_PROXY` 被关闭。**

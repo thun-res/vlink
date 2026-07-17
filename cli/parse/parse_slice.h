@@ -23,22 +23,6 @@
 
 #pragma once
 
-#include <argparse/argparse.hpp>
-#include <string>
-#include <string_view>
+#include "./parse_plan.h"
 
-#include "./dump_types.h"
-
-namespace vlink::dump {
-
-const char* dump_type_to_string(DumpType type);
-
-bool is_dump_export_type(DumpType type);
-
-bool option_used(const argparse::ArgumentParser& program, std::string_view short_option,
-                 std::string_view long_option = {});
-
-bool validate_mode_options(const argparse::ArgumentParser& program, DumpType type, bool has_bag_input,
-                           bool url_argument_used, const std::string& target_url);
-
-}  // namespace vlink::dump
+int start_slice(const vlink::parse::SliceOptions& opt);

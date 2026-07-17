@@ -23,7 +23,7 @@
 
 #pragma once
 
-#include "./dump_features.h"
+#include "./parse_features.h"
 
 #ifdef VLINK_ENABLE_EXPRTK
 
@@ -31,7 +31,7 @@
 #include <string>
 #include <vector>
 
-#include "./dump_types.h"
+#include "./parse_types.h"
 
 #ifdef _WIN32
 #undef min
@@ -40,7 +40,7 @@
 #undef ERROR
 #endif
 
-namespace vlink::dump {
+namespace vlink::parse {
 
 std::vector<std::string> sanitize_expr_var_names(const std::vector<std::string>& field_specs, bool warn_collisions);
 
@@ -82,16 +82,16 @@ class ExprContext final {
   bool compiled_{false};
 };
 
-}  // namespace vlink::dump
+}  // namespace vlink::parse
 
 #else
 
 #include <string>
 #include <vector>
 
-#include "dump_types.h"
+#include "parse_types.h"
 
-namespace vlink::dump {
+namespace vlink::parse {
 
 std::vector<std::string> sanitize_expr_var_names(const std::vector<std::string>& field_specs, bool warn_collisions);
 
@@ -142,6 +142,6 @@ class ExprContext final {
   bool enabled_{false};
 };
 
-}  // namespace vlink::dump
+}  // namespace vlink::parse
 
 #endif

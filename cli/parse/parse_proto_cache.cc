@@ -21,7 +21,7 @@
  * limitations under the License.
  */
 
-#include "./dump_proto_cache.h"
+#include "./parse_proto_cache.h"
 
 #ifdef VLINK_HAS_PROTOBUF_COMPILER
 
@@ -30,7 +30,7 @@
 
 #include <utility>
 
-namespace vlink::dump {
+namespace vlink::parse {
 
 ProtoMessageCache::ProtoMessageCache(ProtoRuntime runtime) : runtime_(std::move(runtime)) {}
 
@@ -84,6 +84,6 @@ google::protobuf::Message* ProtoMessageCache::get(const std::string& ser) {
   return raw;
 }
 
-}  // namespace vlink::dump
+}  // namespace vlink::parse
 
 #endif

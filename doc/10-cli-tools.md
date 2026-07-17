@@ -20,7 +20,7 @@ VLink 在通信原语之外随库交付一套完整的命令行工具链（`vlin
 | 命令行 | `vlink-monitor` | 实时监控话题的频率、速率、丢包率与时延 |
 | 命令行 | `vlink-bag` | 录制、回放与运维消息数据包 |
 | 命令行 | `vlink-trigger` | 内存触发录制（EDR）：后台滚动缓冲，事件触发落盘触发点前后窗口 |
-| 命令行 | `vlink-dump` | 从话题或 bag 提取字段，导出 CSV/JSON/图像/点云 |
+| 命令行 | `vlink-parse` | 从话题或 bag 提取字段，导出 CSV/JSON/图像/点云 |
 | 命令行 | `vlink-eproto` / `vlink-efbs` | 订阅/发布 Protobuf / FlatBuffers 消息并在终端解析显示 |
 | 命令行 | `vlink-bench` | 发布/订阅性能基准测试与报告 |
 | 桌面 | `vlink-viewer` | 实时监控全部活跃 URL，预览相机图像、点云、目标检测等结构化数据 |
@@ -36,7 +36,7 @@ VLink 在通信原语之外随库交付一套完整的命令行工具链（`vlin
 
 | 需求 | 选择 |
 | --- | --- |
-| 仅需话题列表、频率、原始字节，或需脚本/CI 对接 | 命令行（`vlink-list` / `vlink-monitor` / `vlink-dump`） |
+| 仅需话题列表、频率、原始字节，或需脚本/CI 对接 | 命令行（`vlink-list` / `vlink-monitor` / `vlink-parse`） |
 | 需本地图形化预览图像、点云、目标检测，强交互 | 桌面 `vlink-viewer` 套件 |
 | 需浏览器访问、远程协作、团队共享或 CI 集成 | Web `vlink-foxglove` |
 | 需本机高性能三维渲染与多模态融合 | Web `vlink-rerun` |
@@ -76,7 +76,7 @@ export PATH=/usr/local/bin:$PATH
 | 检视话题消息内容 | `vlink-eproto sub` / `vlink-efbs sub` |
 | 录制与回放数据 | `vlink-bag record` / `vlink-bag play` |
 | 长期运行仅保留关键事件前后片段 | `vlink-trigger daemon` / `vlink-trigger dump` |
-| 导出字段供离线分析 | `vlink-dump` |
+| 导出字段供离线分析 | `vlink-parse` |
 | 评估链路吞吐与时延 | `vlink-bench run` |
 
 最高频的三条工作流：
@@ -469,17 +469,17 @@ vlink-trigger daemon -c /etc/vlink/trigger/trigger.json &
 vlink-trigger dump -r takeover --post 8000
 ```
 
-**与离线分析衔接**　落盘产物即标准 bag 文件，可直接交由 `vlink-bag`、`vlink-dump` 或图形化 `vlink-player` 处理：
+**与离线分析衔接**　落盘产物即标准 bag 文件，可直接交由 `vlink-bag`、`vlink-parse` 或图形化 `vlink-player` 处理：
 
 ```bash
 vlink-trigger dump -r anomaly -o /data/edr/anomaly.vdb
 vlink-bag info /data/edr/anomaly.vdb
-vlink-dump dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /tmp/
+vlink-parse dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /tmp/
 ```
 
-### 📤 10.2.9 vlink-dump：字段提取与转储
+### 📤 10.2.9 vlink-parse：字段提取与转储
 
-`vlink-dump` 从实时话题或 bag 文件中提取指定字段，输出为 CSV、JSON、原始二进制、图像/视频或点云，并支持对离线 bag 做切片（`slice`）与扫描（`scan`）。它面向"将通信数据转为可离线分析的结构化产物"这一任务。
+`vlink-parse` 从实时话题或 bag 文件中提取指定字段，输出为 CSV、JSON、原始二进制、图像/视频或点云，并支持对离线 bag 做切片（`slice`）与扫描（`scan`）。它面向"将通信数据转为可离线分析的结构化产物"这一任务。
 
 提取 Protobuf 字段需经 `-d` 或 `VLINK_PROTO_DIR` 指定 `.proto` 目录，FlatBuffers 经 `--fbs_dir` 或 `VLINK_FBS_DIR` 指定 `.fbs` 目录；零拷贝类型（CameraFrame、PointCloud、Tensor、OccupancyGrid 等）的内置字段无需额外配置，字段定义见 [零拷贝](06-zerocopy.md)。表达式功能需构建时启用 `ENABLE_EXPRTK=ON`。
 
@@ -487,7 +487,7 @@ vlink-dump dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /tm
 
 | 参数 | 说明 |
 | --- | --- |
-| `url` | 目标话题 URL（dump/导出模式必填具体 URL，不可省；`slice` / `scan` 可省，默认 `*` 匹配全部话题） |
+| `url` | 目标话题 URL（parse/导出模式必填具体 URL，不可省；`slice` / `scan` 可省，默认 `*` 匹配全部话题） |
 | `-t` / `--type <type>` | 输出类型：`console`（别名 `text`）/`csv`/`json`/`bin`/`jpg`（别名 `jpeg`）/`h264`/`h265`/`raw`/`pcd`/`slice`/`scan`（默认 `csv`） |
 | `-c` / `--condition <fields>` | 提取字段，逗号/空格分隔（CSV/JSON 必填），如 `header.seq,pose.x` |
 | `-f` / `--bag_file <path>` | 从 bag 提取（缺省则从实时通信） |
@@ -500,9 +500,9 @@ vlink-dump dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /tm
 | `-i` / `--url_filter <str>` | `slice` / `scan` URL 关键字过滤，空格或逗号分隔且不区分大小写 |
 | `-k` / `--black` | 与 `vlink-monitor -k` 一致，将两种 URL 过滤切换为黑名单模式 |
 
-输出类型语义：`console` 在终端打印消息内容；`csv` / `json` 输出选定字段；`bin` 将每条消息的原始字节存为独立文件；`jpg` / `h264` / `h265` / `raw` 适用于 CameraFrame 或含 bytes 字段的消息；`pcd` 将零拷贝 PointCloud 每帧存为 PCD 文件。`slice` / `scan` 为离线 bag 的高级用法（按窗口/事件切片、按事件或质量扫描），参数较多，详见 `vlink-dump --help`。
+输出类型语义：`console` 在终端打印消息内容；`csv` / `json` 输出选定字段；`bin` 将每条消息的原始字节存为独立文件；`jpg` / `h264` / `h265` / `raw` 适用于 CameraFrame 或含 bytes 字段的消息；`pcd` 将零拷贝 PointCloud 每帧存为 PCD 文件。`slice` / `scan` 为离线 bag 的高级用法（按窗口/事件切片、按事件或质量扫描），参数较多，详见 `vlink-parse --help`。
 
-所有带值的标量参数都必须显式提供值；空 URL、空字段列表以及空白的 `--event` / `--filter` / `--url_filter` 会直接报错。URL 的首尾空白在解析后统一移除；dump/导出模式必须指定具体 URL，`*` 只用于 `slice` / `scan`。`-n` 精确限制通过 URL 与限频门控的样本数，`--hz` 是严格的最大输出频率；限频间隔只在参数解析时换算，数据热路径使用整数微秒比较。
+所有带值的标量参数都必须显式提供值；空 URL、空字段列表以及空白的 `--event` / `--filter` / `--url_filter` 会直接报错。URL 的首尾空白在解析后统一移除；parse/导出模式必须指定具体 URL，`*` 只用于 `slice` / `scan`。`-n` 精确限制通过 URL 与限频门控的样本数，`--hz` 是严格的最大输出频率；限频间隔只在参数解析时换算，数据热路径使用整数微秒比较。
 
 `slice` / `scan` 只接受已完整结束且包含消息的 bag，时间区间按毫秒解释为半开区间 `[begin, end)`；未指定结束时间时会覆盖最后一个不足整毫秒的消息。切片输出只支持 `.vdb` 或 `.vcap`，分片输入的 `.vdbx` / `.vcapx` 会映射到对应的单文件格式。URL 筛选包含 Event、Method 与 Field，实际帧再由 `--actions` 过滤（默认 `6=Subscribe`）；显式 URL 与 `-u` / `--urls`、`-i` / `--url_filter` 不可混用。未使用 `-k` 时，两种过滤同时出现取交集；使用 `-k` 时剔除任一过滤命中的 URL，与 `vlink-monitor` 的处理一致。单独使用 `-k` 不改变选集；黑名单中不存在于 bag 的 URL 会被忽略，白名单中的 URL 不存在时仍会报错。
 
@@ -511,23 +511,23 @@ vlink-dump dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /tm
 字段路径写法：Protobuf 使用点路径（`header.seq`、`status.velocity.x`），repeated 字段使用完整的非负整数下标（如 `chunks[1].data`）；空路径分量、尾随字符、负数或用于非 repeated 字段的下标不会被宽松解释。八种零拷贝类型统一经 `MessageParser` 读取，根字段使用 `header.seq`、`width` 等点路径，集合使用 `data[N].field`、`shape[N].value` 或 `strides[N].value`。完整清单与边界规则见 [零拷贝](06-zerocopy.md)。整数在字段导出时保持原始 64 位值；只有送入 ExprTk 表达式、必须转换为 `double` 时，工具才会对超出精确表示范围的整数给出精度提示。
 
 ```bash
-vlink-dump dds://sensor/imu -t csv -c "header.seq" -o /tmp/ -d /home/protos/
+vlink-parse dds://sensor/imu -t csv -c "header.seq" -o /tmp/ -d /home/protos/
 
-vlink-dump dds://vehicle/state -t csv -c "velocity.x" \
+vlink-parse dds://vehicle/state -t csv -c "velocity.x" \
   -f /tmp/test.vdb -b 10 -e 60 -o /tmp/ -d /home/protos/
 
-vlink-dump dds://test -t console -n 5
+vlink-parse dds://test -t console -n 5
 
-vlink-dump dds://camera/front -t jpg -c data -o /tmp/frames/ -d /home/protos/
+vlink-parse dds://camera/front -t jpg -c data -o /tmp/frames/ -d /home/protos/
 
-vlink-dump dds://lidar -t pcd -f /tmp/bag.vdb -d /home/protos/
+vlink-parse dds://lidar -t pcd -f /tmp/bag.vdb -d /home/protos/
 
-vlink-dump dds://test -c "pose.x,pose.y" \
+vlink-parse dds://test -c "pose.x,pose.y" \
   -x "sqrt(pose_x*pose_x+pose_y*pose_y)" -t csv --hz 10
 
-vlink-dump -t slice -f /tmp/test.vdb -w 30 -o /tmp/slices
+vlink-parse -t slice -f /tmp/test.vdb -w 30 -o /tmp/slices
 
-vlink-dump -t scan -f /tmp/test.vdb -c "brake" --event "brake>80" -d /home/protos/ -o /tmp/scan
+vlink-parse -t scan -f /tmp/test.vdb -c "brake" --event "brake>80" -d /home/protos/ -o /tmp/scan
 ```
 
 ### 🔍 10.2.10 vlink-eproto / vlink-efbs：消息调试
@@ -658,7 +658,7 @@ vlink-eproto sub dds://sensor/imu -d /home/protos/
 ```bash
 vlink-bag record /tmp/test.vdb -d 60 -p
 vlink-bag info /tmp/test.vdb
-vlink-dump dds://sensor/imu -t csv -c "linear_acceleration.x" \
+vlink-parse dds://sensor/imu -t csv -c "linear_acceleration.x" \
   -f /tmp/test.vdb -o /tmp/analysis/ -d /home/protos/
 vlink-bag clone /tmp/test.vdb /tmp/clipped.vcap -b 5 -e 55 -p
 ```

@@ -23,17 +23,22 @@
 
 #pragma once
 
-#include <filesystem>
+#include <argparse/argparse.hpp>
 #include <string>
+#include <string_view>
 
-namespace vlink::dump {
+#include "./parse_types.h"
 
-std::filesystem::path utf8_to_path(const std::string& utf8) noexcept;
+namespace vlink::parse {
 
-std::string path_to_utf8(const std::filesystem::path& path) noexcept;
+const char* parse_type_to_string(ParseType type);
 
-std::string normalize_dir(std::string dir);
+bool is_parse_export_type(ParseType type);
 
-std::string read_home_config(const std::string& filename);
+bool option_used(const argparse::ArgumentParser& program, std::string_view short_option,
+                 std::string_view long_option = {});
 
-}  // namespace vlink::dump
+bool validate_mode_options(const argparse::ArgumentParser& program, ParseType type, bool has_bag_input,
+                           bool url_argument_used, const std::string& target_url);
+
+}  // namespace vlink::parse

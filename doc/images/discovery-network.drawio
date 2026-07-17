@@ -111,7 +111,7 @@
         <mxCell id="tool_mon" value="vlink-monitor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#388e3c;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#1b5e20;shadow=0;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="243" y="446" width="130" height="38" as="geometry" />
         </mxCell>
-        <mxCell id="tool_dump" value="vlink-dump" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#388e3c;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#1b5e20;shadow=0;arcSize=12;" vertex="1" parent="1">
+        <mxCell id="tool_parse" value="vlink-parse" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#388e3c;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#1b5e20;shadow=0;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="387" y="446" width="130" height="38" as="geometry" />
         </mxCell>
         <mxCell id="tool_trigger" value="vlink-trigger" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#388e3c;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#1b5e20;shadow=0;arcSize=12;" vertex="1" parent="1">

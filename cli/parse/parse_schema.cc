@@ -21,7 +21,7 @@
  * limitations under the License.
  */
 
-#include "./dump_schema.h"
+#include "./parse_schema.h"
 
 #ifdef VLINK_HAS_PROTOBUF_COMPILER
 
@@ -32,12 +32,12 @@
 #include <iostream>
 #include <system_error>
 
-#include "dump_context.h"
-#include "dump_extract.h"
-#include "dump_path.h"
+#include "parse_context.h"
+#include "parse_extract.h"
+#include "parse_path.h"
 
 bool load_schema_config(const std::string& config_path, SchemaConfig& config) {
-  std::ifstream file(vlink::dump::utf8_to_path(config_path));
+  std::ifstream file(vlink::parse::utf8_to_path(config_path));
 
   if VUNLIKELY (!file.is_open()) {
     std::cerr << "Failed to open schema config: " << config_path << std::endl;
@@ -134,7 +134,7 @@ ProtoRuntime load_proto_runtime(const std::vector<std::string>& proto_dirs) {
   std::vector<std::filesystem::path> valid_dirs;
 
   for (const auto& proto_dir : proto_dirs) {
-    auto filesys_dir = vlink::dump::utf8_to_path(proto_dir);
+    auto filesys_dir = vlink::parse::utf8_to_path(proto_dir);
     std::error_code fs_ec;
 
     if (!std::filesystem::exists(filesys_dir, fs_ec) || fs_ec || !std::filesystem::is_directory(filesys_dir, fs_ec) ||
@@ -150,7 +150,7 @@ ProtoRuntime load_proto_runtime(const std::vector<std::string>& proto_dirs) {
     runtime.source_tree = std::make_shared<google::protobuf::compiler::DiskSourceTree>();
 
     for (const auto& filesys_dir : valid_dirs) {
-      runtime.source_tree->MapPath("", vlink::dump::path_to_utf8(filesys_dir));
+      runtime.source_tree->MapPath("", vlink::parse::path_to_utf8(filesys_dir));
     }
 
     runtime.importer = std::make_shared<google::protobuf::compiler::Importer>(runtime.source_tree.get(), nullptr);
@@ -292,7 +292,7 @@ std::vector<vlink::SchemaData> import_schemas_from_config(const SchemaConfig& co
       result.emplace_back(std::move(schema));
       imported_schema_keys.emplace(std::move(key));
 
-      if (!vlink::dump::DumpContext::get().quiet_flag) {
+      if (!vlink::parse::ParseContext::get().quiet_flag) {
         std::cout << "Imported schema: " << rule.ser_type << " (protobuf)" << std::endl;
       }
     }
@@ -342,7 +342,7 @@ std::vector<vlink::SchemaData> import_schemas_from_config(const SchemaConfig& co
         result.emplace_back(std::move(schema));
         imported_schema_keys.emplace(std::move(key));
 
-        if (!vlink::dump::DumpContext::get().quiet_flag) {
+        if (!vlink::parse::ParseContext::get().quiet_flag) {
           std::cout << "Imported schema: " << rule.ser_type << " (flatbuffers)" << std::endl;
         }
       }

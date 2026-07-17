@@ -94,7 +94,7 @@ def _make_node(cls, url, ser_type=""):
 
     All node types share the same factory pattern: ``cls(url)`` then
     ``init()`` (mandatory).  An optional ``ser_type`` records the
-    serialisation schema name so introspection tools (vlink-dump etc.) can
+    serialisation schema name so introspection tools (vlink-parse etc.) can
     decode payloads.
     """
     node = cls(url)
@@ -279,7 +279,7 @@ def demo_pubsub_protobuf():
     # --- Publisher side -----------------------------------------------------
     pub = _vlink.Publisher("intra://demo/protobuf")
     # set_ser_type advertises BOTH the fully-qualified message name AND the
-    # schema-type enum.  The latter lets dump tools pick the right decoder.
+    # schema-type enum.  The latter lets parse tools pick the right decoder.
     pub.set_ser_type("pb.Message", _vlink.SchemaType.Protobuf)
     pub.init()
     pub.wait_for_subscribers(timeout_ms=2000)

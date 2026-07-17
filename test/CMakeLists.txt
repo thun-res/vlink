@@ -127,7 +127,7 @@ if(UNIX)
     vlink_add_completion_consistency_test(
       vlink-check ${CMAKE_SOURCE_DIR}/cli/check/etc/completions/vlink-check diag env test
     )
-    vlink_add_completion_consistency_test(vlink-dump ${CMAKE_SOURCE_DIR}/cli/dump/etc/completions/vlink-dump)
+    vlink_add_completion_consistency_test(vlink-parse ${CMAKE_SOURCE_DIR}/cli/parse/etc/completions/vlink-parse)
     vlink_add_completion_consistency_test(
       vlink-efbs ${CMAKE_SOURCE_DIR}/cli/efbs/etc/completions/vlink-efbs pub sub import
     )

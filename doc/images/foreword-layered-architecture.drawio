@@ -214,7 +214,7 @@
         <mxCell id="clibg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;arcSize=18;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="40" y="778" width="920" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="clil" value="10 CLI tools&#160;&#160;&#183;&#160;&#160;vlink-info &#160;&#183;&#160; check &#160;&#183;&#160; list &#160;&#183;&#160; monitor &#160;&#183;&#160; bag &#160;&#183;&#160; dump &#160;&#183;&#160; eproto &#160;&#183;&#160; efbs &#160;&#183;&#160; bench &#160;&#183;&#160; trigger" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+        <mxCell id="clil" value="10 CLI tools&#160;&#160;&#183;&#160;&#160;vlink-info &#160;&#183;&#160; check &#160;&#183;&#160; list &#160;&#183;&#160; monitor &#160;&#183;&#160; bag &#160;&#183;&#160; parse &#160;&#183;&#160; eproto &#160;&#183;&#160; efbs &#160;&#183;&#160; bench &#160;&#183;&#160; trigger" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
           <mxGeometry x="60" y="782" width="880" height="24" as="geometry" />
         </mxCell>
 

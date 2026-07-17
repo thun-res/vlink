@@ -30,8 +30,8 @@
 #include <string_view>
 #include <vector>
 
-#include "./dump_features.h"
-#include "./dump_types.h"
+#include "./parse_features.h"
+#include "./parse_types.h"
 
 #ifdef VLINK_HAS_PROTOBUF_COMPILER
 

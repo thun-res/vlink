@@ -39,14 +39,14 @@
 #include <unordered_map>
 #include <vector>
 
-#include "./dump_expr.h"
-#include "./dump_types.h"
+#include "./parse_expr.h"
+#include "./parse_types.h"
 
-namespace vlink::dump {
+namespace vlink::parse {
 
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
-struct DumpContext final {
-  static DumpContext& get();
+struct ParseContext final {
+  static ParseContext& get();
 
   std::atomic_bool has_quit{false};
   std::atomic_bool is_broken{false};
@@ -59,8 +59,8 @@ struct DumpContext final {
   vlink::ConditionVariable quit_cv;
   std::mutex print_mtx;
   std::thread print_thread;
-  bool dump_for_bag{false};
-  DumpType dump_type{DumpType::kConsole};
+  bool parse_for_bag{false};
+  ParseType parse_type{ParseType::kConsole};
   int64_t begin_time{0};
   int64_t end_time{0};
   int64_t min_output_interval_us{0};
@@ -78,8 +78,8 @@ struct DumpContext final {
   std::unordered_map<std::string, std::shared_ptr<RawSub>> sub_urls;
   std::mutex sub_urls_mtx;
 
-  DumpCallback dump_callback;
-  std::mutex dump_callback_mtx;
+  ParseCallback parse_callback;
+  std::mutex parse_callback_mtx;
 
   vlink::ElapsedTimer main_elapsed_timer{vlink::ElapsedTimer::kMicro};
   std::vector<std::string> field_specs;
@@ -99,4 +99,4 @@ struct DumpContext final {
   void request_stop();
 };
 
-}  // namespace vlink::dump
+}  // namespace vlink::parse

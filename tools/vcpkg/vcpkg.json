@@ -40,7 +40,7 @@
       ]
     },
     "protobuf": {
-      "description": "Protobuf schema support for cli-eproto/cli-dump (maps to ENABLE_CLI_EPROTO)",
+      "description": "Protobuf schema support for cli-eproto/cli-parse (maps to ENABLE_CLI_EPROTO)",
       "dependencies": [
         {
           "name": "protobuf",
@@ -50,7 +50,7 @@
       ]
     },
     "flatbuffers": {
-      "description": "FlatBuffers schema support for cli-efbs/cli-dump (maps to ENABLE_CLI_EFBS)",
+      "description": "FlatBuffers schema support for cli-efbs/cli-parse (maps to ENABLE_CLI_EFBS)",
       "dependencies": [
         {
           "name": "flatbuffers",

@@ -485,16 +485,16 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
     <div class="section-head reveal">
       <div class="section-eyebrow" data-i18n="cli.eyebrow">命令行工具</div>
       <h2 class="section-title" data-i18n="cli.title">多个 <span class="grad">CLI 工具窗口</span></h2>
-      <p class="section-sub" data-i18n="cli.sub">完整工具链覆盖 info、list、monitor、eproto、efbs、dump、check、bag、bench、trigger；以下窗口按 cli/*.cc 的真实接口排布，重点平铺 monitor、list、check、bag，便于同时对照实时观测、拓扑发现、环境诊断与录制回放。</p>
+      <p class="section-sub" data-i18n="cli.sub">完整工具链覆盖 info、list、monitor、eproto、efbs、parse、check、bag、bench、trigger；以下窗口按 cli/*.cc 的真实接口排布，重点平铺 monitor、list、check、bag，便于同时对照实时观测、拓扑发现、环境诊断与录制回放。</p>
     </div>
-    <p class="cli-note reveal" data-i18n="cli.note">完整 CLI 工具体系包含 vlink-info、vlink-list、vlink-monitor、vlink-eproto、vlink-efbs、vlink-dump、vlink-check、vlink-bag、vlink-bench、vlink-trigger；当前网页重点演示 vlink-monitor -loc、vlink-list、vlink-check diag / env，以及 vlink-bag info / record / play / clone。monitor 在 TUI 内按 Enter 会直接切入对应解析界面。</p>
+    <p class="cli-note reveal" data-i18n="cli.note">完整 CLI 工具体系包含 vlink-info、vlink-list、vlink-monitor、vlink-eproto、vlink-efbs、vlink-parse、vlink-check、vlink-bag、vlink-bench、vlink-trigger；当前网页重点演示 vlink-monitor -loc、vlink-list、vlink-check diag / env，以及 vlink-bag info / record / play / clone。monitor 在 TUI 内按 Enter 会直接切入对应解析界面。</p>
     <div class="cli-chip-row reveal" aria-label="CLI command index" data-i18n-attr="aria-label:cli.index.aria">
       <span class="cli-chip">vlink-info</span>
       <span class="cli-chip">vlink-list</span>
       <span class="cli-chip">vlink-monitor</span>
       <span class="cli-chip">vlink-eproto</span>
       <span class="cli-chip">vlink-efbs</span>
-      <span class="cli-chip">vlink-dump</span>
+      <span class="cli-chip">vlink-parse</span>
       <span class="cli-chip">vlink-check</span>
       <span class="cli-chip">vlink-bag</span>
       <span class="cli-chip">vlink-bench</span>
@@ -754,7 +754,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2"><path d="M3 3v18h18M7 15l4-4 4 4 5-7"/></svg>
         </div>
         <h4 data-i18n="pl.c.cli.h">命令行工具</h4>
-        <p data-i18n="pl.c.cli.p">monitor · bag · list · check · info · dump · eproto · efbs · bench · trigger —— 10 件套开箱即用。</p>
+        <p data-i18n="pl.c.cli.p">monitor · bag · list · check · info · parse · eproto · efbs · bench · trigger —— 10 件套开箱即用。</p>
       </div>
       <div class="plat reveal d3">
         <div class="plat-ico" style="background:linear-gradient(135deg,#4faafd,#345af6)">

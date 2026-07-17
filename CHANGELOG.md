@@ -4,7 +4,8 @@
 
 ### 新增功能
 
-- **零拷贝解析**：新增统一的 C++ / Python `MessageParser`，支持反射解析、零拷贝视图和通用文本渲染；Dump、Viewer、Analyzer、eproto 与 efbs 已接入。
+- **CLI/dump 改名**：`cli/dump` 已彻底改为 `cli/parse`，命令由 `vlink-dump` / `dump` 改为 `vlink-parse` / `parse`，构建开关由 `ENABLE_CLI_DUMP` 改为 `ENABLE_CLI_PARSE`；不提供旧名称兼容入口。
+- **零拷贝解析**：新增统一的 C++ / Python `MessageParser`，支持反射解析、零拷贝视图和通用文本渲染；Parse、Viewer、Analyzer、eproto 与 efbs 已接入。
 - **CameraFrame**：扩展 Raw、Bayer、YUV 和压缩图像格式，新增编码辅助函数、Python 绑定与自动解码模式，线上枚举值保持兼容。
 - **Trigger**：新增 `vlink-trigger`、`TriggerRecorder` 及 Python 绑定，支持触发前后数据缓存、Bag 落盘、历史轮转和完成回调插件。
 - **Bag 插件**：新增读会话 `on_reset()`，回放前补全序列化和 Schema 类型。`on_read()` / `on_write()` 改为纯虚函数，并移除版本查询接口；插件仍声明 2.0，但需按新头文件适配并重新构建。
@@ -20,7 +21,7 @@
 - **序列化**：新增 `Serializer::serialize_to_transport()`，修复 transport loan 生命周期，并加强字符串、Schema 和 payload 的边界校验。
 - **Zenoh**：原生 Key Expression 增加 domain / event 隔离；采用该寻址的新旧版本不能互通，升级时需同步通信两端。未设置环境变量时沿用配置文件默认值；zenoh-pico 构建要求启用 local subscriber、local queryable、liveliness 和 matching。
 - **Viewer / Webviz**：改进多相机解码、感知帧合并、动态 Schema 解析及多种图像格式在 Foxglove / Rerun 中的展示。
-- **Dump**：收紧参数校验，优化 slice / scan 的解析时机、频率限制和同步写入路径，并保证质量与 manifest 输出稳定。
+- **Parse**：收紧参数校验，优化 slice / scan 的解析时机、频率限制和同步写入路径，并保证质量与 manifest 输出稳定。
 - **eproto / efbs**：兼容较新 Protobuf 版本，统一默认标量、字段顺序、map 排序和 JSON 输出行为。
 - **构建与基准**：修正无 intra 构建和 lcov 2.x 排除规则；benchmark 可按 payload 调整 shm2 配置，并改进延迟统计与报告分组。
 
@@ -31,8 +32,8 @@
 - **SHM / SHM2**：回复路径现在返回真实发送结果；SHM2 正确应用 iceoryx 配置，优化大消息 loan、listener 等待和节点生命周期处理。
 - **VDB / VCAP**：修复多次回放、停止或跳转后的重排缓存污染；新会话通过 `on_reset()` 清理旧状态，并正确处理自然完成与中断边界。
 - **Bag / Trigger**：修复退出崩溃、队列满时丢写、延迟写入错误未上报，以及已放弃的 Trigger dump 残留或重现。
-- **Dump**：修复插件解绑死锁、live 资源生命周期、slice / scan 边界遗漏、输入输出碰撞、Schema 插件路径加载和 proxy 包大小处理。
-- **图像与 Schema**：加强异常图像尺寸处理；在 efbs、Dump、Viewer 和 Webviz 解码前验证 FlatBuffers Schema 与 payload。
+- **Parse**：修复插件解绑死锁、live 资源生命周期、slice / scan 边界遗漏、输入输出碰撞、Schema 插件路径加载和 proxy 包大小处理。
+- **图像与 Schema**：加强异常图像尺寸处理；在 efbs、Parse、Viewer 和 Webviz 解码前验证 FlatBuffers Schema 与 payload。
 - **Viewer / Webviz**：修复动态 Schema 生命周期、缺失字段默认值、慢客户端队列增长、Rerun 多格式路由及录制关闭错误上报。
 - **Python**：修复状态字典的错误派生类型读取，以及零拷贝解析器借用临时缓冲导致的 use-after-free。
 - **基础库**：修复 `MemoryResource::is_equal()` 与外部 PMR resource 比较时的未定义行为。

@@ -23,6 +23,17 @@
 
 #pragma once
 
-#include "./dump_plan.h"
+#include <filesystem>
+#include <string>
 
-int start_slice(const vlink::dump::SliceOptions& opt);
+namespace vlink::parse {
+
+std::filesystem::path utf8_to_path(const std::string& utf8) noexcept;
+
+std::string path_to_utf8(const std::filesystem::path& path) noexcept;
+
+std::string normalize_dir(std::string dir);
+
+std::string read_home_config(const std::string& filename);
+
+}  // namespace vlink::parse

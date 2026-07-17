@@ -166,7 +166,7 @@
         <mxCell id="cli5" value="bag" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="416" y="598" width="80" height="26" as="geometry" />
         </mxCell>
-        <mxCell id="cli6" value="dump" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
+        <mxCell id="cli6" value="parse" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="504" y="598" width="80" height="26" as="geometry" />
         </mxCell>
         <mxCell id="cli7" value="eproto" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">

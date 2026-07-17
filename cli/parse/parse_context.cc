@@ -21,33 +21,33 @@
  * limitations under the License.
  */
 
-#include "./dump_context.h"
+#include "./parse_context.h"
 
 #include <vlink/extension/bag_plugin_interface.h>
 
 #include <iostream>
 
-namespace vlink::dump {
+namespace vlink::parse {
 
-DumpContext& DumpContext::get() {
-  static DumpContext ctx;
+ParseContext& ParseContext::get() {
+  static ParseContext ctx;
   return ctx;
 }
 
-bool DumpContext::invoke_callback(int64_t timestamp, const std::string& url, const std::string& ser,
-                                  vlink::SchemaType schema_type, const vlink::Bytes& bytes) {
-  std::lock_guard lock(dump_callback_mtx);
+bool ParseContext::invoke_callback(int64_t timestamp, const std::string& url, const std::string& ser,
+                                   vlink::SchemaType schema_type, const vlink::Bytes& bytes) {
+  std::lock_guard lock(parse_callback_mtx);
 
-  if VUNLIKELY (!callback_has_set || !dump_callback) {
+  if VUNLIKELY (!callback_has_set || !parse_callback) {
     return false;
   }
 
-  dump_callback(timestamp, url, ser, schema_type, bytes);
+  parse_callback(timestamp, url, ser, schema_type, bytes);
   return true;
 }
 
-void DumpContext::request_stop() {
-  if (dump_for_bag) {
+void ParseContext::request_stop() {
+  if (parse_for_bag) {
     if (bag_player) {
       bag_player->stop();
     }
@@ -56,7 +56,7 @@ void DumpContext::request_stop() {
   }
 }
 
-bool DumpContext::prepare_bag_plugin() {
+bool ParseContext::prepare_bag_plugin() {
   if (bag_plugin_name.empty()) {
     return true;
   }
@@ -71,10 +71,10 @@ bool DumpContext::prepare_bag_plugin() {
   return true;
 }
 
-void DumpContext::bind_bag_plugin(const std::shared_ptr<vlink::BagReader>& reader) {
+void ParseContext::bind_bag_plugin(const std::shared_ptr<vlink::BagReader>& reader) {
   if (reader && bag_plugin_interface) {
     reader->bind_bag_interface(bag_plugin_interface);
   }
 }
 
-}  // namespace vlink::dump
+}  // namespace vlink::parse

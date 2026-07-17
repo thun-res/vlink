@@ -1,8 +1,8 @@
-#compdef vlink-dump dump
+#compdef vlink-parse parse
 
-# VLink zsh completion for vlink-dump.
+# VLink zsh completion for vlink-parse.
 
-_vlink-dump_complete_multi() {
+_vlink-parse_complete_multi() {
     case "$1" in
         -u|--urls|--ignore_compress)
             _vlink_zsh_complete_url
@@ -17,15 +17,15 @@ _vlink-dump_complete_multi() {
     return 1
 }
 
-_vlink-dump() {
+_vlink-parse() {
     local cur="${words[CURRENT]}"
     local last_option=""
 
-    _vlink-dump_complete_multi "${words[CURRENT-1]}" && return
+    _vlink-parse_complete_multi "${words[CURRENT-1]}" && return
 
     if [[ "$cur" != -* ]]; then
         last_option=$(_vlink_zsh_last_option)
-        _vlink-dump_complete_multi "$last_option" && return
+        _vlink-parse_complete_multi "$last_option" && return
     fi
 
     _arguments -s \
@@ -81,5 +81,5 @@ _vlink-dump() {
 }
 
 if (( $+functions[compdef] )); then
-    _vlink_zsh_register_completion _vlink-dump vlink-dump dump
+    _vlink_zsh_register_completion _vlink-parse vlink-parse parse
 fi

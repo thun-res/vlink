@@ -21,7 +21,7 @@
  * limitations under the License.
  */
 
-#include "./dump_extract.h"
+#include "./parse_extract.h"
 
 #include <vlink/base/helpers.h>
 
@@ -33,7 +33,7 @@
 #include <type_traits>
 #include <vector>
 
-#include "./dump_path.h"
+#include "./parse_path.h"
 
 #ifdef VLINK_HAS_PROTOBUF_COMPILER
 
@@ -369,7 +369,7 @@ bool write_pcd_file(const std::string& file_path, const vlink::zerocopy::PointCl
     return false;
   }
 
-  std::ofstream file(vlink::dump::utf8_to_path(file_path), std::ios::binary);
+  std::ofstream file(vlink::parse::utf8_to_path(file_path), std::ios::binary);
 
   if VUNLIKELY (!file.is_open()) {
     return false;

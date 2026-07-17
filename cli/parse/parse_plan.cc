@@ -21,7 +21,7 @@
  * limitations under the License.
  */
 
-#include "./dump_plan.h"
+#include "./parse_plan.h"
 
 #include <vlink/base/helpers.h>
 
@@ -34,7 +34,7 @@
 #include <unordered_map>
 #include <utility>
 
-namespace vlink::dump {
+namespace vlink::parse {
 
 std::string to_lower_copy(std::string value) {
   std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return std::tolower(c); });
@@ -159,7 +159,7 @@ bool validate_duration_seconds(std::string_view option, double seconds, bool all
   }
 
   if (seconds > 0 && seconds * 1000.0 < 1.0) {
-    std::cerr << option << " must be at least 0.001 seconds; dump time precision is 1 ms.\n";
+    std::cerr << option << " must be at least 0.001 seconds; parse time precision is 1 ms.\n";
     return false;
   }
 
@@ -535,4 +535,4 @@ bool preflight_output_files(const std::filesystem::path& out_dir, const std::vec
   return true;
 }
 
-}  // namespace vlink::dump
+}  // namespace vlink::parse

@@ -21,7 +21,7 @@
  * limitations under the License.
  */
 
-#include "./dump_expr.h"
+#include "./parse_expr.h"
 
 #ifdef VLINK_ENABLE_EXPRTK
 #include <vlink/external/exprtk_api.h>
@@ -30,7 +30,7 @@
 #include <iostream>
 #include <unordered_set>
 
-namespace vlink::dump {
+namespace vlink::parse {
 
 std::vector<std::string> sanitize_expr_var_names(const std::vector<std::string>& field_specs, bool warn_collisions) {
   std::vector<std::string> names(field_specs.size());
@@ -157,4 +157,4 @@ std::vector<double> ExprContext::evaluate_all() {
 
 #endif
 
-}  // namespace vlink::dump
+}  // namespace vlink::parse

@@ -36,7 +36,7 @@
 #include <variant>
 #include <vector>
 
-enum class DumpType : uint8_t {
+enum class ParseType : uint8_t {
   kConsole = 0,
   kCsv,
   kJson,
@@ -53,14 +53,14 @@ enum class DumpType : uint8_t {
 using VariantType = std::variant<int64_t, uint64_t, double, std::string, vlink::Bytes>;
 using RawSub = vlink::Subscriber<vlink::Bytes>;
 
-struct DumpRecord final {
+struct ParseRecord final {
   int64_t timestamp{0};
   std::vector<VariantType> values;
   std::vector<double> expr_results;
 };
 
-using DumpCallback = vlink::Function<void(int64_t timestamp, const std::string& url, const std::string& ser,
-                                          vlink::SchemaType schema_type, const vlink::Bytes& bytes)>;
+using ParseCallback = vlink::Function<void(int64_t timestamp, const std::string& url, const std::string& ser,
+                                           vlink::SchemaType schema_type, const vlink::Bytes& bytes)>;
 
 inline std::string variant_to_string(const VariantType& v) {
   if (std::holds_alternative<int64_t>(v)) {

@@ -676,7 +676,7 @@ int main() {
     ['* Check memory usage...', 'warn', 'Usage 61.37%', 100],
     ['* Check proxy running...', 'err', 'Proxy is not running', 100],
     ['* Check bag running...', 'ok', 'Bag is not running', 100],
-    ['* Check dump running...', 'ok', 'Dump is not running', 100],
+    ['* Check parse running...', 'ok', 'Parse is not running', 100],
     ['* Check eproto running...', 'ok', 'Eproto is not running', 100],
     ['* Check monitor running...', 'warn', 'Monitor is running', 100],
     ['* Check viewer running...', 'ok', 'Viewer is not running', 100],

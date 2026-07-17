@@ -1,6 +1,6 @@
-# VLink bash completion for vlink-dump.
+# VLink bash completion for vlink-parse.
 
-_vlink_dash_dump() {
+_vlink_dash_parse() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     local prev="${COMP_WORDS[COMP_CWORD-1]}"
     local active_variadic=""
@@ -77,4 +77,4 @@ _vlink_dash_dump() {
     _vlink_bash_complete_url "$cur"
 }
 
-_vlink_bash_register_completion _vlink_dash_dump vlink-dump dump
+_vlink_bash_register_completion _vlink_dash_parse vlink-parse parse

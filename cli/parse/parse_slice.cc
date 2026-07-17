@@ -21,16 +21,16 @@
  * limitations under the License.
  */
 
-#include "./dump_slice.h"
+#include "./parse_slice.h"
 
-#include "./dump_context.h"
-#include "./dump_expr.h"
-#include "./dump_extract.h"
-#include "./dump_path.h"
-#include "./dump_plan.h"
-#include "./dump_proto_cache.h"
-#include "./dump_schema.h"
-#include "./dump_types.h"
+#include "./parse_context.h"
+#include "./parse_expr.h"
+#include "./parse_extract.h"
+#include "./parse_path.h"
+#include "./parse_plan.h"
+#include "./parse_proto_cache.h"
+#include "./parse_schema.h"
+#include "./parse_types.h"
 
 #ifdef VLINK_HAS_PROTOBUF_COMPILER
 
@@ -134,7 +134,7 @@ class BoundedReadBagPlugin final : public vlink::BagPluginInterface {
 
 static std::shared_ptr<vlink::BagPluginInterface> bind_bounded_read_plugin(
     const std::shared_ptr<vlink::BagReader>& player, int64_t begin_ms, int64_t end_ms) {
-  auto plugin = vlink::dump::DumpContext::get().bag_plugin_interface;
+  auto plugin = vlink::parse::ParseContext::get().bag_plugin_interface;
 
   if (!player || !plugin) {
     return nullptr;
@@ -185,7 +185,7 @@ static bool read_json_int64(const nlohmann::json& object, const char* key, int64
   return true;
 }
 
-static bool resolve_time_range(const vlink::dump::SliceOptions& opt, const vlink::BagReader::Info& info,
+static bool resolve_time_range(const vlink::parse::SliceOptions& opt, const vlink::BagReader::Info& info,
                                int64_t& effective_begin, int64_t& effective_end) {
   if VUNLIKELY (!info.has_completed) {
     std::cerr << "Slice/scan requires a completed bag; repair or finalize the input first." << std::endl;
@@ -263,7 +263,7 @@ static ResolvedTypes resolve_url_types(const std::string& url, const std::string
 
 static bool meta_action_selected(const vlink::BagReader::Info::UrlMeta& meta, const std::vector<int>& actions) {
   if (meta.action_type != vlink::ActionType::kUnknownAction) {
-    return vlink::dump::action_selected(actions, meta.action_type);
+    return vlink::parse::action_selected(actions, meta.action_type);
   }
 
   for (auto action : actions) {
@@ -282,11 +282,11 @@ static bool meta_action_selected(const vlink::BagReader::Info::UrlMeta& meta, co
 }
 
 static bool validate_field_extraction_topics(const vlink::BagReader::Info& info,
-                                             const vlink::dump::UrlSelection& selection,
+                                             const vlink::parse::UrlSelection& selection,
                                              const std::vector<int>& actions,
                                              const std::unordered_map<std::string, UrlSchemaOverride>& overrides,
-                                             vlink::dump::ProtoMessageCache& proto_cache, std::string_view mode) {
-  auto& ctx = vlink::dump::DumpContext::get();
+                                             vlink::parse::ProtoMessageCache& proto_cache, std::string_view mode) {
+  auto& ctx = vlink::parse::ParseContext::get();
 
   if (ctx.field_specs.empty()) {
     return true;
@@ -354,15 +354,15 @@ static bool ensure_output_dir(const std::filesystem::path& dir, const std::strin
   return true;
 }
 
-static std::string infer_output_suffix(const vlink::dump::SliceOptions& opt) {
-  auto suffix = vlink::dump::sanitize_suffix(opt.suffix);
+static std::string infer_output_suffix(const vlink::parse::SliceOptions& opt) {
+  auto suffix = vlink::parse::sanitize_suffix(opt.suffix);
 
   if (!suffix.empty()) {
     return suffix;
   }
 
   auto src_ext =
-      vlink::dump::to_lower_copy(vlink::dump::path_to_utf8(vlink::dump::utf8_to_path(opt.bag_file).extension()));
+      vlink::parse::to_lower_copy(vlink::parse::path_to_utf8(vlink::parse::utf8_to_path(opt.bag_file).extension()));
 
   if (src_ext == ".vdbx") {
     suffix = ".vdb";
@@ -372,12 +372,12 @@ static std::string infer_output_suffix(const vlink::dump::SliceOptions& opt) {
     suffix = src_ext;
   }
 
-  return vlink::dump::sanitize_suffix(suffix);
+  return vlink::parse::sanitize_suffix(suffix);
 }
 
-static bool collect_protected_input_paths(const vlink::dump::SliceOptions& opt,
+static bool collect_protected_input_paths(const vlink::parse::SliceOptions& opt,
                                           std::vector<std::filesystem::path>& protected_paths) {
-  const auto index_path = vlink::dump::utf8_to_path(opt.bag_file);
+  const auto index_path = vlink::parse::utf8_to_path(opt.bag_file);
 
   if VUNLIKELY (index_path.empty()) {
     std::cerr << "Invalid input bag path: " << opt.bag_file << std::endl;
@@ -391,7 +391,7 @@ static bool collect_protected_input_paths(const vlink::dump::SliceOptions& opt,
       continue;
     }
 
-    auto filesys_input_path = vlink::dump::utf8_to_path(*input_path);
+    auto filesys_input_path = vlink::parse::utf8_to_path(*input_path);
 
     if VUNLIKELY (filesys_input_path.empty()) {
       std::cerr << "Invalid input path: " << *input_path << std::endl;
@@ -401,7 +401,7 @@ static bool collect_protected_input_paths(const vlink::dump::SliceOptions& opt,
     protected_paths.emplace_back(std::move(filesys_input_path));
   }
 
-  auto suffix = vlink::dump::to_lower_copy(vlink::Helpers::path_to_string(index_path.extension()));
+  auto suffix = vlink::parse::to_lower_copy(vlink::Helpers::path_to_string(index_path.extension()));
 
   if (suffix != ".vdbx" && suffix != ".vcapx") {
     return true;
@@ -435,7 +435,7 @@ static bool collect_protected_input_paths(const vlink::dump::SliceOptions& opt,
 
       const auto source_string = file.get<std::string>();
 
-      auto source_path = vlink::dump::utf8_to_path(source_string);
+      auto source_path = vlink::parse::utf8_to_path(source_string);
 
       if VUNLIKELY (source_path.empty()) {
         std::cerr << "Bag index contains an invalid source path: " << opt.bag_file << std::endl;
@@ -457,8 +457,8 @@ static bool collect_protected_input_paths(const vlink::dump::SliceOptions& opt,
 }
 
 static bool load_segments_from_file(const std::string& path, int64_t bag_start_ts,
-                                    std::vector<vlink::dump::SegmentDef>& segments) {
-  std::ifstream seg_file(vlink::dump::utf8_to_path(path));
+                                    std::vector<vlink::parse::SegmentDef>& segments) {
+  std::ifstream seg_file(vlink::parse::utf8_to_path(path));
 
   if VUNLIKELY (!seg_file.is_open()) {
     std::cerr << "Failed to open segments file: " << path << std::endl;
@@ -485,7 +485,7 @@ static bool load_segments_from_file(const std::string& path, int64_t bag_start_t
         return false;
       }
 
-      vlink::dump::SegmentDef seg;
+      vlink::parse::SegmentDef seg;
       seg.name = entry.value("name", "");
 
       if (entry.contains("epoch_begin_ms")) {
@@ -532,7 +532,7 @@ static bool load_segments_from_file(const std::string& path, int64_t bag_start_t
 }
 
 static void build_window_segments(int64_t effective_begin, int64_t effective_end, int64_t window_ms,
-                                  std::vector<vlink::dump::SegmentDef>& segments) {
+                                  std::vector<vlink::parse::SegmentDef>& segments) {
   const int64_t span = effective_end - effective_begin;
   const int64_t count = span / window_ms + (span % window_ms != 0 ? 1 : 0);
   int pad_width = 1;
@@ -548,7 +548,7 @@ static void build_window_segments(int64_t effective_begin, int64_t effective_end
   segments.reserve(static_cast<size_t>(count));
 
   for (int64_t i = 0; i < count; ++i) {
-    vlink::dump::SegmentDef seg;
+    vlink::parse::SegmentDef seg;
     std::ostringstream oss;
     oss << "slice_" << std::setfill('0') << std::setw(pad_width) << i;
     seg.name = oss.str();
@@ -560,11 +560,12 @@ static void build_window_segments(int64_t effective_begin, int64_t effective_end
 
 #ifdef VLINK_ENABLE_EXPRTK
 
-static void merge_overlapping_event_segments(std::vector<vlink::dump::SegmentDef>& segments) {
-  std::sort(segments.begin(), segments.end(),
-            [](const vlink::dump::SegmentDef& a, const vlink::dump::SegmentDef& b) { return a.begin_ms < b.begin_ms; });
+static void merge_overlapping_event_segments(std::vector<vlink::parse::SegmentDef>& segments) {
+  std::sort(segments.begin(), segments.end(), [](const vlink::parse::SegmentDef& a, const vlink::parse::SegmentDef& b) {
+    return a.begin_ms < b.begin_ms;
+  });
 
-  std::vector<vlink::dump::SegmentDef> merged;
+  std::vector<vlink::parse::SegmentDef> merged;
 
   for (const auto& seg : segments) {
     if (!merged.empty() && seg.begin_ms <= merged.back().end_ms) {
@@ -601,7 +602,7 @@ static void update_quality_stats(QualityStats& qs, int64_t timestamp_us, int64_t
   qs.last_timestamp_us = timestamp_us;
 }
 
-static nlohmann::ordered_json build_scan_header(const vlink::dump::SliceOptions& opt, size_t event_count) {
+static nlohmann::ordered_json build_scan_header(const vlink::parse::SliceOptions& opt, size_t event_count) {
   nlohmann::ordered_json scan_json;
   scan_json["schema_version"] = 1;
   scan_json["time_base"] = "relative_ms";
@@ -645,9 +646,9 @@ static nlohmann::ordered_json build_quality_object(const std::unordered_map<std:
 
 static bool write_scan_json(const std::filesystem::path& out_dir, const std::string& scan_output_name,
                             const nlohmann::ordered_json& scan_json) {
-  auto& ctx = vlink::dump::DumpContext::get();
+  auto& ctx = vlink::parse::ParseContext::get();
   auto scan_path = out_dir / scan_output_name;
-  auto scan_path_display = vlink::dump::path_to_utf8(scan_path);
+  auto scan_path_display = vlink::parse::path_to_utf8(scan_path);
   std::ofstream scan_file(scan_path);
 
   if (!scan_file.is_open()) {
@@ -674,11 +675,11 @@ static bool write_scan_json(const std::filesystem::path& out_dir, const std::str
 
 static bool extract_event_values(
     const std::string& url, const std::string& ser, vlink::SchemaType resolved_schema_type, const vlink::Bytes& data,
-    int64_t timestamp_ms, vlink::dump::ProtoMessageCache& proto_cache,
+    int64_t timestamp_ms, vlink::parse::ProtoMessageCache& proto_cache,
     const std::vector<std::vector<std::string>>& event_field_paths,
-    std::unordered_map<std::string, std::unordered_map<std::string, vlink::dump::EventVarState>>& cross_topic_state,
-    vlink::dump::ExprContext& event_ctx, std::vector<bool>& vars_ready) {
-  auto& ctx = vlink::dump::DumpContext::get();
+    std::unordered_map<std::string, std::unordered_map<std::string, vlink::parse::EventVarState>>& cross_topic_state,
+    vlink::parse::ExprContext& event_ctx, std::vector<bool>& vars_ready) {
+  auto& ctx = vlink::parse::ParseContext::get();
   bool any_numeric_found = false;
 
   auto assign = [&event_ctx, &vars_ready, &any_numeric_found, &cross_topic_state, &url, &timestamp_ms](
@@ -692,7 +693,7 @@ static bool extract_event_values(
     event_ctx.set_value(fi, dv);
     vars_ready[fi] = true;
     any_numeric_found = true;
-    cross_topic_state[url][event_ctx.var_names()[fi]] = vlink::dump::EventVarState{dv, timestamp_ms};
+    cross_topic_state[url][event_ctx.var_names()[fi]] = vlink::parse::EventVarState{dv, timestamp_ms};
   };
 
   if (resolved_schema_type == vlink::SchemaType::kZeroCopy) {
@@ -731,9 +732,9 @@ static bool extract_event_values(
 
 static void fill_event_cross_topic_state(
     int64_t timestamp_ms, int64_t event_state_max_age_ms,
-    const std::unordered_map<std::string, std::unordered_map<std::string, vlink::dump::EventVarState>>&
+    const std::unordered_map<std::string, std::unordered_map<std::string, vlink::parse::EventVarState>>&
         cross_topic_state,
-    const std::vector<std::string>& var_names, vlink::dump::ExprContext& event_ctx, std::vector<bool>& vars_ready) {
+    const std::vector<std::string>& var_names, vlink::parse::ExprContext& event_ctx, std::vector<bool>& vars_ready) {
   for (size_t fi = 0; fi < var_names.size(); ++fi) {
     if (vars_ready[fi]) {
       continue;
@@ -779,9 +780,9 @@ static void fill_event_cross_topic_state(
 
 #endif
 
-static int run_quality_only_scan(const vlink::dump::SliceOptions& opt, const std::filesystem::path& out_dir,
+static int run_quality_only_scan(const vlink::parse::SliceOptions& opt, const std::filesystem::path& out_dir,
                                  const std::string& scan_output_name) {
-  auto& ctx = vlink::dump::DumpContext::get();
+  auto& ctx = vlink::parse::ParseContext::get();
   std::shared_ptr<vlink::BagReader> player;
 
   try {
@@ -805,10 +806,10 @@ static int run_quality_only_scan(const vlink::dump::SliceOptions& opt, const std
 
   auto bounded_plugin = bind_bounded_read_plugin(player, effective_begin, effective_end);
 
-  vlink::dump::UrlSelection selection;
+  vlink::parse::UrlSelection selection;
 
-  if VUNLIKELY (!vlink::dump::build_url_selection(player->get_info(), opt.urls, opt.url_filter, opt.black_mode,
-                                                  opt.target_url, selection)) {
+  if VUNLIKELY (!vlink::parse::build_url_selection(player->get_info(), opt.urls, opt.url_filter, opt.black_mode,
+                                                   opt.target_url, selection)) {
     return -1;
   }
 
@@ -834,7 +835,7 @@ static int run_quality_only_scan(const vlink::dump::SliceOptions& opt, const std
       return;
     }
 
-    if (!vlink::dump::action_selected(opt.actions, action_type)) {
+    if (!vlink::parse::action_selected(opt.actions, action_type)) {
       return;
     }
 
@@ -917,15 +918,15 @@ static int run_quality_only_scan(const vlink::dump::SliceOptions& opt, const std
 }
 
 // NOLINTNEXTLINE(google-readability-function-size)
-int start_slice(const vlink::dump::SliceOptions& opt) {
-  auto& ctx = vlink::dump::DumpContext::get();
+int start_slice(const vlink::parse::SliceOptions& opt) {
+  auto& ctx = vlink::parse::ParseContext::get();
 
-  if VUNLIKELY (!vlink::dump::validate_common_slice_options(opt)) {
+  if VUNLIKELY (!vlink::parse::validate_common_slice_options(opt)) {
     return -1;
   }
 
   std::vector<std::filesystem::path> protected_input_paths;
-  auto filesys_out_dir = vlink::dump::utf8_to_path(opt.out_dir);
+  auto filesys_out_dir = vlink::parse::utf8_to_path(opt.out_dir);
 
   std::string scan_output_name;
 
@@ -934,7 +935,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       return -1;
     }
 
-    scan_output_name = vlink::dump::sanitize_file_component(opt.scan_output_name, "events.json");
+    scan_output_name = vlink::parse::sanitize_file_component(opt.scan_output_name, "events.json");
 
     if (scan_output_name != opt.scan_output_name && !ctx.quiet_flag) {
       std::cerr << "Warning: unsafe scan output file name sanitized to " << scan_output_name << std::endl;
@@ -944,8 +945,8 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       return -1;
     }
 
-    if VUNLIKELY (!vlink::dump::preflight_output_files(filesys_out_dir, {scan_output_name}, opt.force,
-                                                       protected_input_paths)) {
+    if VUNLIKELY (!vlink::parse::preflight_output_files(filesys_out_dir, {scan_output_name}, opt.force,
+                                                        protected_input_paths)) {
       return -1;
     }
   }
@@ -989,14 +990,14 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
   const int64_t playback_end = effective_end;
   auto bounded_plugin = bind_bounded_read_plugin(player, playback_begin, playback_end);
 
-  vlink::dump::UrlSelection slice_selection;
+  vlink::parse::UrlSelection slice_selection;
 
-  if VUNLIKELY (!vlink::dump::build_url_selection(player->get_info(), opt.urls, opt.url_filter, opt.black_mode,
-                                                  opt.target_url, slice_selection)) {
+  if VUNLIKELY (!vlink::parse::build_url_selection(player->get_info(), opt.urls, opt.url_filter, opt.black_mode,
+                                                   opt.target_url, slice_selection)) {
     return -1;
   }
 
-  auto window_ms = vlink::dump::seconds_to_milliseconds(opt.window_seconds);
+  auto window_ms = vlink::parse::seconds_to_milliseconds(opt.window_seconds);
 
   if (!opt.event_expr.empty() && opt.event_pre <= 0 && opt.event_post <= 0) {
     std::cerr << "--pre and --post cannot both be zero for event slicing/scanning." << std::endl;
@@ -1010,7 +1011,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     return -1;
   }
 
-  std::vector<vlink::dump::SegmentDef> segments;
+  std::vector<vlink::parse::SegmentDef> segments;
 
   if (!opt.segments_file.empty()) {
     if VUNLIKELY (!load_segments_from_file(opt.segments_file, player->get_info().start_timestamp, segments)) {
@@ -1026,15 +1027,15 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       std::cout << "Scanning for events..." << std::endl;
     }
 
-    auto event_pre_ms = vlink::dump::seconds_to_milliseconds(opt.event_pre);
-    auto event_post_ms = vlink::dump::seconds_to_milliseconds(opt.event_post);
+    auto event_pre_ms = vlink::parse::seconds_to_milliseconds(opt.event_pre);
+    auto event_post_ms = vlink::parse::seconds_to_milliseconds(opt.event_post);
 
     auto scan_proto_runtime = load_proto_runtime(collect_proto_dirs(schema_config, opt.proto_dir));
-    vlink::dump::ProtoMessageCache scan_proto_cache(scan_proto_runtime);
+    vlink::parse::ProtoMessageCache scan_proto_cache(scan_proto_runtime);
 
 #ifdef VLINK_ENABLE_EXPRTK
 
-    vlink::dump::ExprContext event_ctx;
+    vlink::parse::ExprContext event_ctx;
     std::unordered_map<std::string, QualityStats> quality_map;
     bool quality_check = opt.quality_check;
 
@@ -1043,10 +1044,10 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       return -1;
     }
 
-    std::unordered_map<std::string, std::unordered_map<std::string, vlink::dump::EventVarState>> cross_topic_state;
+    std::unordered_map<std::string, std::unordered_map<std::string, vlink::parse::EventVarState>> cross_topic_state;
     const int64_t dropout_threshold_us = dropout_threshold_to_us(opt.dropout_threshold);
-    auto event_state_max_age_ms = vlink::dump::seconds_to_milliseconds(opt.event_state_max_age);
-    auto event_min_interval_ms = vlink::dump::seconds_to_milliseconds(opt.event_min_interval);
+    auto event_state_max_age_ms = vlink::parse::seconds_to_milliseconds(opt.event_state_max_age);
+    auto event_min_interval_ms = vlink::parse::seconds_to_milliseconds(opt.event_min_interval);
 
     std::vector<int64_t> event_timestamps_ms;
     bool event_active = false;
@@ -1088,7 +1089,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
         return;
       }
 
-      if (!vlink::dump::action_selected(opt.actions, action_type)) {
+      if (!vlink::parse::action_selected(opt.actions, action_type)) {
         return;
       }
 
@@ -1238,7 +1239,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     }
 
     for (auto ts_ms : event_timestamps_ms) {
-      vlink::dump::SegmentDef seg;
+      vlink::parse::SegmentDef seg;
       seg.begin_ms = event_pre_ms >= ts_ms - effective_begin ? effective_begin : ts_ms - event_pre_ms;
       seg.end_ms = event_post_ms >= effective_end - ts_ms ? effective_end : ts_ms + event_post_ms;
       seg.name = "event_" + std::to_string(segments.size());
@@ -1327,7 +1328,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
 
       player->register_output_callback([&](const vlink::Frame& frame) {
         if ((!slice_selection.all && slice_selection.urls.count(frame.url) == 0) ||
-            !vlink::dump::action_selected(opt.actions, frame.action_type)) {
+            !vlink::parse::action_selected(opt.actions, frame.action_type)) {
           return;
         }
 
@@ -1430,7 +1431,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     return -1;
   }
 
-  if VUNLIKELY (!vlink::dump::normalize_segment_plan(
+  if VUNLIKELY (!vlink::parse::normalize_segment_plan(
                     segments, effective_begin, effective_end,
                     opt.segments_file.empty() ? std::string{"generated segments"} : opt.segments_file)) {
     return -1;
@@ -1493,7 +1494,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
   auto slice_proto_runtime = needs_slice_field_extraction
                                  ? load_proto_runtime(collect_proto_dirs(schema_config, opt.proto_dir))
                                  : ProtoRuntime{};
-  vlink::dump::ProtoMessageCache slice_proto_cache(slice_proto_runtime);
+  vlink::parse::ProtoMessageCache slice_proto_cache(slice_proto_runtime);
 
   if (needs_slice_field_extraction && (slice_proto_runtime.pool != nullptr || slice_proto_runtime.plugin) &&
       !ctx.quiet_flag) {
@@ -1502,7 +1503,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
 
 #ifdef VLINK_ENABLE_EXPRTK
 
-  vlink::dump::ExprContext filter_ctx;
+  vlink::parse::ExprContext filter_ctx;
 
   if (has_filter && has_fields) {
     if (!filter_ctx.compile_single(ctx.field_specs, opt.filter_expr)) {
@@ -1552,7 +1553,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     stats.file_name = segments[static_cast<size_t>(i)].name + output_suffix;
   }
 
-  std::string manifest_name = vlink::dump::sanitize_file_component(opt.manifest_name, "manifest.json");
+  std::string manifest_name = vlink::parse::sanitize_file_component(opt.manifest_name, "manifest.json");
 
   if (!opt.no_manifest && manifest_name != opt.manifest_name && !ctx.quiet_flag) {
     std::cerr << "Warning: unsafe manifest file name sanitized to " << manifest_name << std::endl;
@@ -1565,7 +1566,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     planned_output_files.emplace_back(stats.file_name);
 
     if (opt.export_csv && has_fields) {
-      planned_output_files.emplace_back(vlink::dump::csv_name_for_slice_file(stats.file_name));
+      planned_output_files.emplace_back(vlink::parse::csv_name_for_slice_file(stats.file_name));
     }
   }
 
@@ -1630,8 +1631,8 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     return -1;
   }
 
-  if VUNLIKELY (!vlink::dump::preflight_output_files(filesys_out_dir, planned_output_files, opt.force,
-                                                     protected_input_paths)) {
+  if VUNLIKELY (!vlink::parse::preflight_output_files(filesys_out_dir, planned_output_files, opt.force,
+                                                      protected_input_paths)) {
     return -1;
   }
 
@@ -1649,10 +1650,10 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     current_csv_file.close();
 
     if (!current_csv_file.good()) {
-      std::cerr << "Failed to write CSV: " << vlink::dump::path_to_utf8(current_csv_path) << std::endl;
+      std::cerr << "Failed to write CSV: " << vlink::parse::path_to_utf8(current_csv_path) << std::endl;
       slice_error = true;
     } else if (!ctx.quiet_flag) {
-      std::cout << "CSV: " << vlink::dump::path_to_utf8(current_csv_path) << std::endl;
+      std::cout << "CSV: " << vlink::parse::path_to_utf8(current_csv_path) << std::endl;
     }
   };
 
@@ -1672,7 +1673,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
                                   &filesys_out_dir, output_start_timestamp](int idx) -> bool {
     auto& stats = slice_stats_list[static_cast<size_t>(idx)];
     auto filesys_slice_path = filesys_out_dir / stats.file_name;
-    auto slice_path = vlink::dump::path_to_utf8(filesys_slice_path);
+    auto slice_path = vlink::parse::path_to_utf8(filesys_slice_path);
 
     if VUNLIKELY (slice_path.empty()) {
       std::cerr << "Invalid slice output path." << std::endl;
@@ -1699,7 +1700,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     config.compress_level = opt.compress_level;
     config.tag_name = opt.tag_name.empty() ? player->get_info().tag_name : opt.tag_name;
     config.wal_mode = opt.wal_mode;
-    config.cache_size = vlink::dump::cache_size_to_bytes(opt.cache_size);
+    config.cache_size = vlink::parse::cache_size_to_bytes(opt.cache_size);
     config.begin_time = stats.begin_time_ms;
     config.start_timestamp = output_start_timestamp + stats.begin_time_ms;
     config.sync_mode = true;
@@ -1736,12 +1737,12 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     }
 
     if (opt.export_csv && has_fields) {
-      current_csv_path = filesys_out_dir / vlink::dump::csv_name_for_slice_file(stats.file_name);
+      current_csv_path = filesys_out_dir / vlink::parse::csv_name_for_slice_file(stats.file_name);
       current_csv_file.open(current_csv_path);
 
       if VUNLIKELY (!current_csv_file.is_open()) {
         close_current_writer();
-        std::cerr << "Failed to write CSV: " << vlink::dump::path_to_utf8(current_csv_path) << std::endl;
+        std::cerr << "Failed to write CSV: " << vlink::parse::path_to_utf8(current_csv_path) << std::endl;
         return false;
       }
 
@@ -1784,7 +1785,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
       return;
     }
 
-    if (!vlink::dump::action_selected(opt.actions, action_type)) {
+    if (!vlink::parse::action_selected(opt.actions, action_type)) {
       return;
     }
 
@@ -2081,7 +2082,7 @@ int start_slice(const vlink::dump::SliceOptions& opt) {
     manifest["slices"] = slices_json;
 
     auto filesys_manifest_path = filesys_out_dir / manifest_name;
-    auto manifest_path = vlink::dump::path_to_utf8(filesys_manifest_path);
+    auto manifest_path = vlink::parse::path_to_utf8(filesys_manifest_path);
     std::ofstream manifest_file(filesys_manifest_path);
 
     if (manifest_file.is_open()) {

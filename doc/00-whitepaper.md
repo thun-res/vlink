@@ -1179,7 +1179,7 @@ VLink CLI 工具链由 10 个独立可执行程序构成，覆盖从系统诊断
 
 > **图 13-1**：VLink CLI 工具链全景
 
-所有工具均采用 `argparse` 库统一解析命令行参数，支持 `-h/--help` 自动生成帮助文档，并通过编译宏自动植入版本号。需要节点发现的工具（`vlink-list`、`vlink-monitor`、`vlink-dump` 等）内部依赖基于 UDP 组播的运行时发现机制进行拓扑感知，跨机器场景下需确保相关组播路由已正确配置。下文按职责对十个工具的定位与代表性能力做提纲式说明。
+所有工具均采用 `argparse` 库统一解析命令行参数，支持 `-h/--help` 自动生成帮助文档，并通过编译宏自动植入版本号。需要节点发现的工具（`vlink-list`、`vlink-monitor`、`vlink-parse` 等）内部依赖基于 UDP 组播的运行时发现机制进行拓扑感知，跨机器场景下需确保相关组播路由已正确配置。下文按职责对十个工具的定位与代表性能力做提纲式说明。
 
 | 工具          | 定位                                                         |
 | ------------- | ------------------------------------------------------------ |
@@ -1189,7 +1189,7 @@ VLink CLI 工具链由 10 个独立可执行程序构成，覆盖从系统诊断
 | `vlink-monitor` | 全屏 TUI 实时监控面板，绘制频率/速率/延迟/丢包曲线         |
 | `vlink-bag`   | Bag 文件全生命周期管理（录制/回放/克隆/校验/修复/标注）       |
 | `vlink-trigger` | 内存触发录制（EDR），内存环形缓冲滚动、事件触发落盘触发点前后窗口 |
-| `vlink-dump`  | 实时流或 Bag 数据提取导出（多格式）与离线切片/扫描           |
+| `vlink-parse`  | 实时流或 Bag 数据提取导出（多格式）与离线切片/扫描           |
 | `vlink-eproto`| Protobuf 动态发布/订阅调试（免预编译）                       |
 | `vlink-efbs`  | FlatBuffers 动态发布/订阅调试（免预编译）                    |
 | `vlink-bench` | 发布/订阅链路矩阵化性能基准测试与报告生成                     |
@@ -1233,7 +1233,7 @@ VLink Bag 文件按后缀显式选择后端：`.vdb`/`.vdbx` 使用 SQLite，`.v
 
 此外，`tag` 子命令为 Bag 文件提供 key-value 元数据标注能力，可用于构建基于场景描述（如"雨天 + 高速公路"）的数据集检索系统，服务于边缘场景的算法回归验证。两种后端在压缩实现上有所差异：SQLite 路径采用 LZAV，MCAP 路径采用 Zstandard。
 
-**数据导出（vlink-dump）。** `vlink-dump` 可从实时流或 Bag 文件提取并导出数据，覆盖从终端文本调试到数据集制作的多种输出格式，并提供离线 Bag 切片与扫描模式：
+**数据导出（vlink-parse）。** `vlink-parse` 可从实时流或 Bag 文件提取并导出数据，覆盖从终端文本调试到数据集制作的多种输出格式，并提供离线 Bag 切片与扫描模式：
 
 | 类型/模式 | 适用场景               |
 | --------- | ---------------------- |
@@ -1246,9 +1246,9 @@ VLink Bag 文件按后缀显式选择后端：`.vdb`/`.vdbx` 使用 SQLite，`.v
 | `scan`    | 按事件或质量检查扫描 Bag 并生成报告   |
 
 ```bash
-vlink-dump <url> -t console -n 5                     # 终端查看最多 5 条消息
-vlink-dump <url> -t csv -c "angular_velocity.x" -f data.vdb  # 提取字段为 CSV
-vlink-dump <url> -t pcd -f data.vdb                  # 导出点云为 PCD 文件
+vlink-parse <url> -t console -n 5                     # 终端查看最多 5 条消息
+vlink-parse <url> -t csv -c "angular_velocity.x" -f data.vdb  # 提取字段为 CSV
+vlink-parse <url> -t pcd -f data.vdb                  # 导出点云为 PCD 文件
 ```
 
 **免预编译序列化调试（vlink-eproto / vlink-efbs）。** 这两个工具分别支持 Protobuf（`.proto`）与 FlatBuffers（`.fbs`）schema 的动态加载与解析，**无需预先编译消息类型**即可进行发布与订阅，均提供 `pub`/`sub`/`import` 三个子命令。`vlink-efbs` 在结构上与 `vlink-eproto` 一致，区别仅在于使用 `flatc` 动态解析 `.fbs` 文件并以 schema 目录持久化路径替代 proto 目录。这一能力在跨团队协作、无法统一编译消息定义的场景下尤为重要——任意一方都能仅凭 schema 文件即时观察或注入数据流。
@@ -1657,7 +1657,7 @@ VLink 的长期价值需要依托健康的开源生态来实现。生态建设�
 
 **第三，将零拷贝、安全加密、多序列化等高级特性封装到统一 API 中**。零拷贝 SHM 传输通过框架 API 封装借贷细节，安全加密可通过模板参数 `SecurityType::kWithSecurity` 开启，多格式序列化（Protobuf/FlatBuffers/CDR/POD/自定义）通过统一的序列化 traits 自动推导。这些特性在现有方案中往往需要额外配置，VLink 将其收敛为编译期选项或 URL 参数，降低了工程实现难度。
 
-**第四，构建了完整的工程工具链**。10 个 CLI 工具（vlink-info、vlink-check、vlink-list、vlink-monitor、vlink-bag、vlink-trigger、vlink-dump、vlink-eproto、vlink-efbs、vlink-bench）覆盖了从环境诊断、拓扑发现、实时监控、数据管理到性能基准测试的全链路调试需求；BagWriter、DiscoveryViewer、CpuProfiler、Logger 等基础组件内建于框架，使系统可观测性成为默认能力。这使 VLink 从单纯的通信库升级为具备完整运维支撑的通信基础设施平台。
+**第四，构建了完整的工程工具链**。10 个 CLI 工具（vlink-info、vlink-check、vlink-list、vlink-monitor、vlink-bag、vlink-trigger、vlink-parse、vlink-eproto、vlink-efbs、vlink-bench）覆盖了从环境诊断、拓扑发现、实时监控、数据管理到性能基准测试的全链路调试需求；BagWriter、DiscoveryViewer、CpuProfiler、Logger 等基础组件内建于框架，使系统可观测性成为默认能力。这使 VLink 从单纯的通信库升级为具备完整运维支撑的通信基础设施平台。
 
 **第五，提供了自动驾驶领域专项设计的多层次可视化工具链**。桌面端，vlink-viewer 的多通道相机显示、FFmpeg 视频解码、OpenSceneGraph 三维点云渲染、相机-点云 2D/3D 联动投影，vlink-player 的三窗口时间轴联动与 URL 重映射，vlink-analyzer 的 JSON 驱动时序分析——这三个工具组成的可视化套件在功能深度与自动驾驶场景适配性上，提供了较为完整的国产中间件可视化能力。此外，WebViz 工具集（`vlink-foxglove` 和 `vlink-rerun` 两个独立 C++ 桥接可执行文件）通过标准 WebSocket / gRPC 协议将 VLink 实时数据桥接到 Foxglove Studio 与 Rerun Viewer 前端，结合 `vlink-bag2mcap` 与 `vlink-bag2rrd` 离线转换工具，构成了"桌面 Qt GUI + Foxglove 浏览器前端 + Rerun 客户端 + 离线文件"的组合式可视化覆盖。
 

@@ -21,7 +21,7 @@
  * limitations under the License.
  */
 
-#include "./dump_path.h"
+#include "./parse_path.h"
 
 #include <vlink/base/helpers.h>
 #include <vlink/base/utils.h>
@@ -32,7 +32,7 @@
 #include <string>
 #include <system_error>
 
-namespace vlink::dump {
+namespace vlink::parse {
 
 std::filesystem::path utf8_to_path(const std::string& utf8) noexcept {
   try {
@@ -145,4 +145,4 @@ std::string read_home_config(const std::string& filename) {
   return vlink::Helpers::trim_string(content);
 }
 
-}  // namespace vlink::dump
+}  // namespace vlink::parse

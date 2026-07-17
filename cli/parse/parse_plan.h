@@ -34,7 +34,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace vlink::dump {
+namespace vlink::parse {
 
 struct SliceOptions final {
   double window_seconds{0};
@@ -129,4 +129,4 @@ bool normalize_segment_plan(std::vector<SegmentDef>& segments, int64_t effective
 bool preflight_output_files(const std::filesystem::path& out_dir, const std::vector<std::string>& file_names,
                             bool force, const std::vector<std::filesystem::path>& protected_paths);
 
-}  // namespace vlink::dump
+}  // namespace vlink::parse

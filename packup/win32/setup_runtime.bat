@@ -46,7 +46,7 @@ if exist "%VLINK_FBS_DIR_CONFIG%" (
     )
 )
 
-echo Support commands: [proxy] [info] [monitor] [bag] [trigger] [list] [eproto] [efbs] [dump] [check] [bench] [viewer] [player] [analyzer] [webviz]
+echo Support commands: [proxy] [info] [monitor] [bag] [trigger] [list] [eproto] [efbs] [parse] [check] [bench] [viewer] [player] [analyzer] [webviz]
 echo.
 
 echo ;%PATH%; | findstr /C:";%VLINK_ROOT_DIR%\bin;" >nul 2>&1 || set "PATH=%VLINK_ROOT_DIR%\bin;%PATH%"
@@ -66,7 +66,7 @@ doskey trigger="%VLINK_ROOT_DIR%\bin\vlink-trigger" $*
 doskey list="%VLINK_ROOT_DIR%\bin\vlink-list" $*
 doskey eproto="%VLINK_ROOT_DIR%\bin\vlink-eproto" $*
 doskey efbs="%VLINK_ROOT_DIR%\bin\vlink-efbs" $*
-doskey dump="%VLINK_ROOT_DIR%\bin\vlink-dump" $*
+doskey parse="%VLINK_ROOT_DIR%\bin\vlink-parse" $*
 doskey check="%VLINK_ROOT_DIR%\bin\vlink-check" $*
 doskey bench="%VLINK_ROOT_DIR%\bin\vlink-bench" $*
 doskey viewer="%VLINK_ROOT_DIR%\bin\vlink-viewer" $*

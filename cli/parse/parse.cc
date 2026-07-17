@@ -26,17 +26,17 @@
 #include <vlink/extension/schema_plugin_manager.h>
 #include <vlink/version.h>
 
-#include "./dump_context.h"
-#include "./dump_expr.h"
-#include "./dump_extract.h"
-#include "./dump_features.h"
-#include "./dump_path.h"
-#include "./dump_plan.h"
-#include "./dump_proto_cache.h"
-#include "./dump_schema.h"
-#include "./dump_slice.h"
-#include "./dump_types.h"
-#include "./dump_validate.h"
+#include "./parse_context.h"
+#include "./parse_expr.h"
+#include "./parse_extract.h"
+#include "./parse_features.h"
+#include "./parse_path.h"
+#include "./parse_plan.h"
+#include "./parse_proto_cache.h"
+#include "./parse_schema.h"
+#include "./parse_slice.h"
+#include "./parse_types.h"
+#include "./parse_validate.h"
 
 #if __has_include(<google/protobuf/compiler/importer.h>) && __has_include(<google/protobuf/text_format.h>)
 
@@ -97,7 +97,7 @@
 
 #ifdef VLINK_HAS_PROTOBUF_COMPILER
 
-namespace vlink::dump {
+namespace vlink::parse {
 
 bool condition_contains_empty_comma_field(std::string_view condition) {
   const auto trimmed = vlink::Helpers::trim_string_view(condition);
@@ -126,14 +126,14 @@ bool condition_contains_empty_comma_field(std::string_view condition) {
   return false;
 }
 
-}  // namespace vlink::dump
+}  // namespace vlink::parse
 
 static constexpr int64_t kReaderTimestampMarginUs = 10000 + 999;
 static constexpr int64_t kMaxPlaybackTimeMs = (std::numeric_limits<int64_t>::max() - kReaderTimestampMarginUs) / 1000;
 static constexpr int64_t kMaxVcapStartTimestampMs = std::numeric_limits<int64_t>::max() / 1000000;
 
 static bool check_rate_limit() {
-  auto& ctx = vlink::dump::DumpContext::get();
+  auto& ctx = vlink::parse::ParseContext::get();
 
   if VUNLIKELY (ctx.min_output_interval_us > 0) {
     const int64_t now = ctx.main_elapsed_timer.get();
@@ -157,7 +157,7 @@ static bool check_rate_limit() {
 }
 
 static void start_print() {
-  auto& ctx = vlink::dump::DumpContext::get();
+  auto& ctx = vlink::parse::ParseContext::get();
 
   ctx.main_elapsed_timer.start();
 
@@ -170,12 +170,12 @@ static void start_print() {
   }
 
   ctx.print_thread = std::thread([]() {
-    auto& ctx_ref = vlink::dump::DumpContext::get();
+    auto& ctx_ref = vlink::parse::ParseContext::get();
     int64_t print_time = 0;
     int64_t real_begin_time = 0;
     int64_t real_end_time = 0;
 
-    if (ctx_ref.dump_for_bag) {
+    if (ctx_ref.parse_for_bag) {
       real_begin_time = ctx_ref.begin_time > 0 ? ctx_ref.begin_time : ctx_ref.bag_player->get_info().blank_duration;
       real_end_time = ctx_ref.end_time > 0 ? ctx_ref.end_time : ctx_ref.bag_player->get_info().total_duration;
     }
@@ -188,11 +188,11 @@ static void start_print() {
         break;
       }
 
-      if (ctx_ref.detail_flag || ctx_ref.dump_type == DumpType::kConsole) {
+      if (ctx_ref.detail_flag || ctx_ref.parse_type == ParseType::kConsole) {
         continue;
       }
 
-      if (ctx_ref.dump_for_bag) {
+      if (ctx_ref.parse_for_bag) {
         if VLIKELY (ctx_ref.bag_player->get_status() == vlink::BagReader::kPlaying) {
           std::cout << "\033[2K\r";
           std::cout << "Progress: ";
@@ -227,7 +227,7 @@ static void start_print() {
 }
 
 static void stop_print() {
-  auto& ctx = vlink::dump::DumpContext::get();
+  auto& ctx = vlink::parse::ParseContext::get();
 
   if (ctx.quiet_flag) {
     return;
@@ -247,7 +247,7 @@ static void stop_print() {
 }
 
 static int start_bag_play(const std::string& bag_file) {
-  auto& ctx = vlink::dump::DumpContext::get();
+  auto& ctx = vlink::parse::ParseContext::get();
   ctx.bag_config.begin_time = ctx.begin_time;
   ctx.bag_config.end_time = ctx.end_time;
   ctx.bag_config.times = 1;
@@ -288,7 +288,7 @@ static int start_bag_play(const std::string& bag_file) {
   ctx.bind_bag_plugin(ctx.bag_player);
 
   ctx.bag_player->register_output_callback([](const vlink::Frame& frame) {
-    auto& cb_ctx = vlink::dump::DumpContext::get();
+    auto& cb_ctx = vlink::parse::ParseContext::get();
 
     if VUNLIKELY (!cb_ctx.callback_has_set) {
       return;
@@ -301,7 +301,7 @@ static int start_bag_play(const std::string& bag_file) {
 }
 
 static int stop_bag_play() {
-  auto& ctx = vlink::dump::DumpContext::get();
+  auto& ctx = vlink::parse::ParseContext::get();
 
   if VUNLIKELY (!ctx.bag_player) {
     return -1;
@@ -313,7 +313,7 @@ static int stop_bag_play() {
 }
 
 static int start_viewer(bool native_mode) {
-  auto& ctx = vlink::dump::DumpContext::get();
+  auto& ctx = vlink::parse::ParseContext::get();
 
   try {
     auto filter_type = native_mode ? vlink::DiscoveryViewer::kFilterNative : vlink::DiscoveryViewer::kFilterNone;
@@ -335,7 +335,7 @@ static int start_viewer(bool native_mode) {
   ctx.main_elapsed_timer.restart();
 
   auto sync_subs = [native_mode](const std::vector<vlink::DiscoveryViewer::Info>& info_list) {
-    auto& sync_ctx = vlink::dump::DumpContext::get();
+    auto& sync_ctx = vlink::parse::ParseContext::get();
     std::unordered_set<std::string> current_urls;
     current_urls.reserve(info_list.size());
 
@@ -382,7 +382,7 @@ static int start_viewer(bool native_mode) {
           std::weak_ptr<RawSub> weak_sub = raw_sub;
 
           if (!raw_sub->listen([weak_sub, url = info.url](const vlink::Bytes& bytes) {
-                auto& cb_ctx = vlink::dump::DumpContext::get();
+                auto& cb_ctx = vlink::parse::ParseContext::get();
 
                 if VUNLIKELY (cb_ctx.has_quit || !cb_ctx.callback_has_set) {
                   return;
@@ -426,7 +426,7 @@ static int start_viewer(bool native_mode) {
 }
 
 static int stop_viewer() {
-  auto& ctx = vlink::dump::DumpContext::get();
+  auto& ctx = vlink::parse::ParseContext::get();
 
   if VUNLIKELY (!ctx.discovery_viewer) {
     return -1;
@@ -451,7 +451,7 @@ static void print_console_header(int64_t timestamp, int64_t seq) {
 
 static void print_console_fields(int64_t timestamp, int64_t seq, const std::vector<VariantType>& values,
                                  const std::vector<double>& expr_results = {}) {
-  const auto& ctx = vlink::dump::DumpContext::get();
+  const auto& ctx = vlink::parse::ParseContext::get();
   std::cout << "\033[36m[" << seq << "] ";
   write_seconds_from_us(std::cout, timestamp);
   std::cout << "s\033[0m ";
@@ -476,7 +476,7 @@ static void print_console_fields(int64_t timestamp, int64_t seq, const std::vect
 }
 
 static std::vector<double> evaluate_expressions(const std::vector<VariantType>& values) {
-  auto& ctx = vlink::dump::DumpContext::get();
+  auto& ctx = vlink::parse::ParseContext::get();
 
   if (!ctx.expr_ctx.ready()) {
     return {};
@@ -488,7 +488,7 @@ static std::vector<double> evaluate_expressions(const std::vector<VariantType>& 
 }
 
 static void fail_output_write(const std::string& path) {
-  auto& ctx = vlink::dump::DumpContext::get();
+  auto& ctx = vlink::parse::ParseContext::get();
   std::cerr << "Failed to write output file: " << path << std::endl;
   ctx.is_broken = true;
   ctx.callback_has_set = false;
@@ -496,7 +496,7 @@ static void fail_output_write(const std::string& path) {
 }
 
 static bool write_binary_output(const std::string& path, const vlink::Bytes& data) {
-  std::ofstream file(vlink::dump::utf8_to_path(path), std::ios::binary);
+  std::ofstream file(vlink::parse::utf8_to_path(path), std::ios::binary);
 
   if (!file.is_open()) {
     fail_output_write(path);
@@ -514,7 +514,7 @@ static bool write_binary_output(const std::string& path, const vlink::Bytes& dat
   return true;
 }
 
-static void write_csv_record(std::ostream& file, const DumpRecord& record) {
+static void write_csv_record(std::ostream& file, const ParseRecord& record) {
   write_seconds_from_us(file, record.timestamp);
 
   for (const auto& value : record.values) {
@@ -540,7 +540,7 @@ static void write_csv_record(std::ostream& file, const DumpRecord& record) {
   file << "\n";
 }
 
-static nlohmann::ordered_json make_json_record(const DumpRecord& record, const std::vector<std::string>& field_specs,
+static nlohmann::ordered_json make_json_record(const ParseRecord& record, const std::vector<std::string>& field_specs,
                                                const std::vector<std::string>& expr_strings) {
   nlohmann::ordered_json json;
   json["timestamp"] = record.timestamp / 1000000.0;
@@ -569,12 +569,12 @@ static nlohmann::ordered_json make_json_record(const DumpRecord& record, const s
 }
 
 // NOLINTNEXTLINE(google-readability-function-size)
-static int start_dump(const std::string& target_url, const std::string& out_dir, const std::string& base_name,
-                      const std::string& proto_dir, [[maybe_unused]] const std::string& fbs_dir,
-                      const std::string& dump_type_suffix) {
-  auto& ctx = vlink::dump::DumpContext::get();
-  auto filesys_out_dir = vlink::dump::utf8_to_path(out_dir);
-  auto filesys_proto_dir = vlink::dump::utf8_to_path(proto_dir);
+static int start_parse(const std::string& target_url, const std::string& out_dir, const std::string& base_name,
+                       const std::string& proto_dir, [[maybe_unused]] const std::string& fbs_dir,
+                       const std::string& parse_type_suffix) {
+  auto& ctx = vlink::parse::ParseContext::get();
+  auto filesys_out_dir = vlink::parse::utf8_to_path(out_dir);
+  auto filesys_proto_dir = vlink::parse::utf8_to_path(proto_dir);
 
   std::error_code fs_ec;
 
@@ -603,7 +603,7 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
     proto_runtime = load_proto_runtime({});
   }
 
-  vlink::dump::ProtoMessageCache proto_cache(proto_runtime);
+  vlink::parse::ProtoMessageCache proto_cache(proto_runtime);
 
 #ifdef VLINK_HAS_FBS_COMPILER
   std::shared_ptr<flatbuffers::Parser> fbs_parser;
@@ -615,7 +615,7 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
   std::string out_file_name;
 
   try {
-    const auto filesys_base_name = vlink::dump::utf8_to_path(base_name);
+    const auto filesys_base_name = vlink::parse::utf8_to_path(base_name);
 
     if VUNLIKELY (base_name.empty() || filesys_base_name.empty() || filesys_base_name.has_root_path() ||
                   filesys_base_name.has_parent_path() || filesys_base_name == "." || filesys_base_name == "..") {
@@ -625,7 +625,7 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
     }
 
     std::filesystem::path out_file = filesys_out_dir / filesys_base_name;
-    out_file_name = vlink::dump::path_to_utf8(out_file);
+    out_file_name = vlink::parse::path_to_utf8(out_file);
 
     if VUNLIKELY (out_file_name.empty()) {
       std::cerr << "Invalid output path." << std::endl;
@@ -643,9 +643,9 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
   int64_t table_record_count = 0;
   bool first_json_record = true;
 
-  if (ctx.dump_type == DumpType::kCsv || ctx.dump_type == DumpType::kJson) {
-    table_output_path = out_file_name + "." + dump_type_suffix;
-    table_output.open(vlink::dump::utf8_to_path(table_output_path));
+  if (ctx.parse_type == ParseType::kCsv || ctx.parse_type == ParseType::kJson) {
+    table_output_path = out_file_name + "." + parse_type_suffix;
+    table_output.open(vlink::parse::utf8_to_path(table_output_path));
 
     if (!table_output.is_open()) {
       std::cerr << "Failed to write output file: " << table_output_path << std::endl;
@@ -653,7 +653,7 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
       return -1;
     }
 
-    if (ctx.dump_type == DumpType::kCsv) {
+    if (ctx.parse_type == ParseType::kCsv) {
       write_csv_cell(table_output, "timestamp");
 
       for (const auto& spec : ctx.field_specs) {
@@ -678,7 +678,7 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
     }
   }
 
-  int64_t dump_seq = 0;
+  int64_t parse_seq = 0;
   std::string cached_ser;
   const std::vector<std::string> default_binary_field_path{"data"};
 
@@ -751,21 +751,21 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
     }
 
     warned_flatbuffers_fields = true;
-    std::cerr << "Warning: FlatBuffers field extraction is not supported in dump " << mode
+    std::cerr << "Warning: FlatBuffers field extraction is not supported in parse " << mode
               << "; use explicit protobuf fields or raw/console output." << std::endl;
   };
 
   {
-    std::lock_guard lock(ctx.dump_callback_mtx);
-    ctx.dump_callback = [target_url, &dump_seq, &out_file_name, &proto_cache, &default_binary_field_path, &table_output,
-                         &table_output_path, &table_record_count, &first_json_record,
+    std::lock_guard lock(ctx.parse_callback_mtx);
+    ctx.parse_callback = [target_url, &parse_seq, &out_file_name, &proto_cache, &default_binary_field_path,
+                          &table_output, &table_output_path, &table_record_count, &first_json_record,
 #ifdef VLINK_HAS_FBS_COMPILER
-                         &ensure_fbs_parser, &fbs_schema, &fbs_root_object,
+                          &ensure_fbs_parser, &fbs_schema, &fbs_root_object,
 #endif
-                         &warn_flatbuffers_fields,
-                         &dump_type_suffix](int64_t timestamp, const std::string& url, const std::string& ser,
-                                            vlink::SchemaType schema_type, const vlink::Bytes& bytes) {
-      auto& cb_ctx = vlink::dump::DumpContext::get();
+                          &warn_flatbuffers_fields,
+                          &parse_type_suffix](int64_t timestamp, const std::string& url, const std::string& ser,
+                                              vlink::SchemaType schema_type, const vlink::Bytes& bytes) {
+      auto& cb_ctx = vlink::parse::ParseContext::get();
 
       if VLIKELY (target_url != url) {
         return;
@@ -798,7 +798,7 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
         return msg;
       };
 
-      if (cb_ctx.dump_type == DumpType::kConsole) {
+      if (cb_ctx.parse_type == ParseType::kConsole) {
         if (cb_ctx.field_specs.empty()) {
           print_console_header(timestamp, cb_ctx.output_count);
 
@@ -883,14 +883,14 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
         return;
       }
 
-      if (cb_ctx.dump_type == DumpType::kBin) {
-        ++dump_seq;
-        write_binary_output(out_file_name + "." + std::to_string(dump_seq) + ".bin", bytes);
+      if (cb_ctx.parse_type == ParseType::kBin) {
+        ++parse_seq;
+        write_binary_output(out_file_name + "." + std::to_string(parse_seq) + ".bin", bytes);
 
         return;
       }
 
-      if (cb_ctx.dump_type == DumpType::kPcd) {
+      if (cb_ctx.parse_type == ParseType::kPcd) {
         if (!is_zerocopy ||
             vlink::zerocopy::MessageParser::detect_type(ser) != vlink::zerocopy::MessageParser::Type::kPointCloud) {
           return;
@@ -902,8 +902,8 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
           return;
         }
 
-        ++dump_seq;
-        std::string pcd_path = out_file_name + "." + std::to_string(dump_seq) + ".pcd";
+        ++parse_seq;
+        std::string pcd_path = out_file_name + "." + std::to_string(parse_seq) + ".pcd";
 
         if (!write_pcd_file(pcd_path, point_cloud)) {
           fail_output_write(pcd_path);
@@ -917,8 +917,8 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
         return;
       }
 
-      if (cb_ctx.dump_type == DumpType::kJpg || cb_ctx.dump_type == DumpType::kH264 ||
-          cb_ctx.dump_type == DumpType::kH265 || cb_ctx.dump_type == DumpType::kRaw) {
+      if (cb_ctx.parse_type == ParseType::kJpg || cb_ctx.parse_type == ParseType::kH264 ||
+          cb_ctx.parse_type == ParseType::kH265 || cb_ctx.parse_type == ParseType::kRaw) {
         vlink::Bytes out_bytes;
         std::string field_to_extract = cb_ctx.field_specs.empty() ? "data" : cb_ctx.field_specs[0];
 
@@ -940,14 +940,14 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
         }
 
         if VLIKELY (!out_bytes.empty()) {
-          ++dump_seq;
-          write_binary_output(out_file_name + "." + std::to_string(dump_seq) + "." + dump_type_suffix, out_bytes);
+          ++parse_seq;
+          write_binary_output(out_file_name + "." + std::to_string(parse_seq) + "." + parse_type_suffix, out_bytes);
         }
 
         return;
       }
 
-      if (cb_ctx.dump_type == DumpType::kCsv || cb_ctx.dump_type == DumpType::kJson) {
+      if (cb_ctx.parse_type == ParseType::kCsv || cb_ctx.parse_type == ParseType::kJson) {
         google::protobuf::Message* proto_message = nullptr;
 
         if (resolved_schema_type == vlink::SchemaType::kProtobuf) {
@@ -956,7 +956,7 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
           warn_flatbuffers_fields("csv/json mode");
         }
 
-        DumpRecord record;
+        ParseRecord record;
         record.timestamp = timestamp;
         record.values.reserve(cb_ctx.field_specs.size());
         vlink::zerocopy::MessageParser zerocopy_parser;
@@ -994,7 +994,7 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
           std::cout << std::endl;
         }
 
-        if (cb_ctx.dump_type == DumpType::kCsv) {
+        if (cb_ctx.parse_type == ParseType::kCsv) {
           write_csv_record(table_output, record);
         } else {
           const auto json = make_json_record(record, cb_ctx.field_specs, cb_ctx.expr_strings);
@@ -1016,7 +1016,7 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
     ctx.callback_has_set = true;
   }
 
-  if (ctx.dump_for_bag) {
+  if (ctx.parse_for_bag) {
     start_print();
     ctx.bag_player->play(ctx.bag_config);
 
@@ -1030,9 +1030,9 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
     ctx.has_quit = true;
 
     {
-      std::lock_guard lock(ctx.dump_callback_mtx);
+      std::lock_guard lock(ctx.parse_callback_mtx);
       ctx.callback_has_set = false;
-      ctx.dump_callback = nullptr;
+      ctx.parse_callback = nullptr;
     }
 
     stop_print();
@@ -1040,7 +1040,7 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
     start_print();
 
     auto quit_function = [discovery_viewer = ctx.discovery_viewer](int) {
-      auto& sig_ctx = vlink::dump::DumpContext::get();
+      auto& sig_ctx = vlink::parse::ParseContext::get();
 
       if VUNLIKELY (sig_ctx.has_quit.exchange(true, std::memory_order_relaxed)) {
         return;
@@ -1065,9 +1065,9 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
     ctx.has_quit = true;
 
     {
-      std::lock_guard lock(ctx.dump_callback_mtx);
+      std::lock_guard lock(ctx.parse_callback_mtx);
       ctx.callback_has_set = false;
-      ctx.dump_callback = nullptr;
+      ctx.parse_callback = nullptr;
     }
 
     stop_print();
@@ -1075,7 +1075,7 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
   }
 
   if (table_output.is_open()) {
-    if (ctx.dump_type == DumpType::kJson) {
+    if (ctx.parse_type == ParseType::kJson) {
       table_output << (first_json_record ? "" : "\n") << "]\n";
     }
 
@@ -1090,13 +1090,13 @@ static int start_dump(const std::string& target_url, const std::string& out_dir,
   if (!ctx.quiet_flag) {
     std::cout << "\033[2K\r" << (ctx.is_broken ? "Break." : "Done.") << std::endl;
 
-    if (!ctx.is_broken && (ctx.dump_type == DumpType::kCsv || ctx.dump_type == DumpType::kJson)) {
-      std::cout << "Saved " << table_record_count << " records to " << out_file_name << "." << dump_type_suffix
+    if (!ctx.is_broken && (ctx.parse_type == ParseType::kCsv || ctx.parse_type == ParseType::kJson)) {
+      std::cout << "Saved " << table_record_count << " records to " << out_file_name << "." << parse_type_suffix
                 << std::endl;
-    } else if (!ctx.is_broken && (ctx.dump_type == DumpType::kBin || ctx.dump_type == DumpType::kJpg ||
-                                  ctx.dump_type == DumpType::kH264 || ctx.dump_type == DumpType::kH265 ||
-                                  ctx.dump_type == DumpType::kRaw || ctx.dump_type == DumpType::kPcd)) {
-      std::cout << "Saved " << dump_seq << " files to " << out_dir << std::endl;
+    } else if (!ctx.is_broken && (ctx.parse_type == ParseType::kBin || ctx.parse_type == ParseType::kJpg ||
+                                  ctx.parse_type == ParseType::kH264 || ctx.parse_type == ParseType::kH265 ||
+                                  ctx.parse_type == ParseType::kRaw || ctx.parse_type == ParseType::kPcd)) {
+      std::cout << "Saved " << parse_seq << " files to " << out_dir << std::endl;
     }
   }
 
@@ -1116,18 +1116,18 @@ int main(int argc, char* argv[]) {
   vlink::Utils::set_console_utf8_output();
 
 #ifdef VLINK_HAS_PROTOBUF_COMPILER
-  auto& ctx = vlink::dump::DumpContext::get();
+  auto& ctx = vlink::parse::ParseContext::get();
 
   vlink::Logger::set_file_level(vlink::Logger::kOff);
-  vlink::Logger::init("vlink-dump");
+  vlink::Logger::init("vlink-parse");
 
   vlink::Utils::unset_env("VLINK_BAG_PATH");
 
-  argparse::ArgumentParser program("vlink-dump", VLINK_VERSION, argparse::default_arguments::all);
+  argparse::ArgumentParser program("vlink-parse", VLINK_VERSION, argparse::default_arguments::all);
 
   program.add_description(
       "Versatile data extraction and export tool for VLink topics.\n"
-      "Modes: dump/export a topic, or slice/scan a bag.\n"
+      "Modes: parse/export a topic, or slice/scan a bag.\n"
       "Note: You may need to add multicast/broadcast [" +
       vlink::DiscoveryViewer::get_listen_address() + "]");
 
@@ -1151,7 +1151,7 @@ int main(int argc, char* argv[]) {
   program.add_argument("-o", "--out_dir").help("Output directory").default_value(std::string("./")).nargs(1);
 
   program.add_argument("-m", "--base_name")
-      .help("Output file base name for dump/export")
+      .help("Output file base name for parse/export")
       .default_value(std::string("output"))
       .nargs(1);
 
@@ -1381,24 +1381,25 @@ int main(int argc, char* argv[]) {
       .nargs(1);
 
   std::string example_str = "Examples:\n";
-  example_str += "  Dump/export:\n";
-  example_str += "    vlink-dump dds://test -c 'header.seq' -t csv -f /tmp/bag.vdb\n";
-  example_str += "    vlink-dump dds://test -c 'pose.x,pose.y,pose.z' -t csv --hz 10\n";
-  example_str += "    vlink-dump dds://test -t console -n 5\n";
-  example_str += "    vlink-dump dds://camera -c 'data' -t jpg -f /tmp/bag.vcap\n";
-  example_str += "    vlink-dump dds://test -t bin -o /tmp/raw_output\n";
-  example_str += "    vlink-dump dds://test -c 'header.seq' -t json --hz 1\n";
+  example_str += "  Parse/export:\n";
+  example_str += "    vlink-parse dds://test -c 'header.seq' -t csv -f /tmp/bag.vdb\n";
+  example_str += "    vlink-parse dds://test -c 'pose.x,pose.y,pose.z' -t csv --hz 10\n";
+  example_str += "    vlink-parse dds://test -t console -n 5\n";
+  example_str += "    vlink-parse dds://camera -c 'data' -t jpg -f /tmp/bag.vcap\n";
+  example_str += "    vlink-parse dds://test -t bin -o /tmp/raw_output\n";
+  example_str += "    vlink-parse dds://test -c 'header.seq' -t json --hz 1\n";
   example_str +=
-      "    vlink-dump dds://test -c 'pose.x,pose.y' -x 'sqrt(pose_x*pose_x+pose_y*pose_y)' -x 'pose_x-pose_y' -t csv\n";
-  example_str += "    vlink-dump dds://lidar -t pcd -f /tmp/bag.vdb\n";
+      "    vlink-parse dds://test -c 'pose.x,pose.y' -x 'sqrt(pose_x*pose_x+pose_y*pose_y)' -x 'pose_x-pose_y' -t "
+      "csv\n";
+  example_str += "    vlink-parse dds://lidar -t pcd -f /tmp/bag.vdb\n";
   example_str += "  Slice/scan:\n";
-  example_str += "    vlink-dump -t slice -f bag.vdb -w 30 -o /tmp/slices\n";
-  example_str += "    vlink-dump -t slice -f bag.vdb --segments events.json -o /tmp/slices\n";
-  example_str += "    vlink-dump -t slice -f bag.vdb -c 'brake' -d /opt/protos --event 'brake>80' --pre 5 --post 3\n";
+  example_str += "    vlink-parse -t slice -f bag.vdb -w 30 -o /tmp/slices\n";
+  example_str += "    vlink-parse -t slice -f bag.vdb --segments events.json -o /tmp/slices\n";
+  example_str += "    vlink-parse -t slice -f bag.vdb -c 'brake' -d /opt/protos --event 'brake>80' --pre 5 --post 3\n";
   example_str +=
-      "    vlink-dump -t slice -f bag.vdb -w 30 --urls dds://camera dds://lidar -c 'header.seq' --export_csv\n";
-  example_str += "    vlink-dump -t scan -f bag.vdb --quality_check -o /tmp/scan\n";
-  example_str += "    vlink-dump -t scan -f bag.vdb -c 'brake' -d /opt/protos --event 'brake>80' -o /tmp";
+      "    vlink-parse -t slice -f bag.vdb -w 30 --urls dds://camera dds://lidar -c 'header.seq' --export_csv\n";
+  example_str += "    vlink-parse -t scan -f bag.vdb --quality_check -o /tmp/scan\n";
+  example_str += "    vlink-parse -t scan -f bag.vdb -c 'brake' -d /opt/protos --event 'brake>80' -o /tmp";
   program.add_epilog(example_str);
 
   try {
@@ -1411,7 +1412,7 @@ int main(int argc, char* argv[]) {
 
   auto target_url = vlink::Helpers::trim_string(program.get<std::string>("url"));
   bool url_argument_used = program.is_used("url");
-  auto type = vlink::dump::to_lower_copy(program.get<std::string>("-t"));
+  auto type = vlink::parse::to_lower_copy(program.get<std::string>("-t"));
   auto condition = program.get<std::string>("-c");
   const auto& out_dir = program.get<std::string>("-o");
   const auto& base_name = program.get<std::string>("-m");
@@ -1423,14 +1424,14 @@ int main(int argc, char* argv[]) {
 
   auto bag_file = program.get<std::string>("-f");
 
-  if VUNLIKELY (vlink::dump::option_used(program, "-f", "--bag_file") && bag_file.empty()) {
+  if VUNLIKELY (vlink::parse::option_used(program, "-f", "--bag_file") && bag_file.empty()) {
     std::cerr << "Option -f/--bag_file requires a non-empty path." << std::endl;
     return -1;
   }
 
 #ifdef _WIN32
   if (!bag_file.empty()) {
-    bag_file = vlink::dump::path_to_utf8(vlink::dump::utf8_to_path(bag_file));
+    bag_file = vlink::parse::path_to_utf8(vlink::parse::utf8_to_path(bag_file));
 
     if VUNLIKELY (bag_file.empty()) {
       std::cerr << "Invalid bag file path." << std::endl;
@@ -1439,18 +1440,18 @@ int main(int argc, char* argv[]) {
   }
 #endif
 
-  ctx.dump_for_bag = !bag_file.empty();
+  ctx.parse_for_bag = !bag_file.empty();
 
   auto begin_seconds = program.get<double>("-b");
   auto end_seconds = program.get<double>("-e");
 
-  if VUNLIKELY (!vlink::dump::validate_duration_seconds("-b/--begin_time", begin_seconds, true) ||
-                !vlink::dump::validate_duration_seconds("-e/--end_time", end_seconds, true)) {
+  if VUNLIKELY (!vlink::parse::validate_duration_seconds("-b/--begin_time", begin_seconds, true) ||
+                !vlink::parse::validate_duration_seconds("-e/--end_time", end_seconds, true)) {
     return -1;
   }
 
-  ctx.begin_time = vlink::dump::seconds_to_milliseconds(begin_seconds);
-  ctx.end_time = vlink::dump::seconds_to_milliseconds(end_seconds);
+  ctx.begin_time = vlink::parse::seconds_to_milliseconds(begin_seconds);
+  ctx.end_time = vlink::parse::seconds_to_milliseconds(end_seconds);
   ctx.max_count = program.get<int>("-n");
   const auto max_hz = program.get<double>("--hz");
 
@@ -1490,7 +1491,7 @@ int main(int argc, char* argv[]) {
   }
 
   if (proto_dir.empty()) {
-    proto_dir = vlink::dump::read_home_config(".vlink_proto_dir");
+    proto_dir = vlink::parse::read_home_config(".vlink_proto_dir");
   }
 
   if (fbs_dir.empty()) {
@@ -1498,14 +1499,14 @@ int main(int argc, char* argv[]) {
   }
 
   if (fbs_dir.empty()) {
-    fbs_dir = vlink::dump::read_home_config(".vlink_fbs_dir");
+    fbs_dir = vlink::parse::read_home_config(".vlink_fbs_dir");
   }
 
   auto schema_plugin_path = program.get<std::string>("--schema_plugin");
 
-  proto_dir = vlink::dump::normalize_dir(std::move(proto_dir));
-  fbs_dir = vlink::dump::normalize_dir(std::move(fbs_dir));
-  schema_plugin_path = vlink::dump::normalize_dir(std::move(schema_plugin_path));
+  proto_dir = vlink::parse::normalize_dir(std::move(proto_dir));
+  fbs_dir = vlink::parse::normalize_dir(std::move(fbs_dir));
+  schema_plugin_path = vlink::parse::normalize_dir(std::move(schema_plugin_path));
 
   const auto configured_schema_plugin =
       schema_plugin_path.empty() ? vlink::Utils::get_env("VLINK_SCHEMA_PLUGIN") : schema_plugin_path;
@@ -1518,47 +1519,47 @@ int main(int argc, char* argv[]) {
 
   ctx.bag_plugin_name = program.get<std::string>("--plugin");
 
-  std::string dump_type_suffix;
+  std::string parse_type_suffix;
 
   if (type == "console" || type == "text") {
-    ctx.dump_type = DumpType::kConsole;
+    ctx.parse_type = ParseType::kConsole;
   } else if (type == "csv") {
-    ctx.dump_type = DumpType::kCsv;
+    ctx.parse_type = ParseType::kCsv;
   } else if (type == "json") {
-    ctx.dump_type = DumpType::kJson;
+    ctx.parse_type = ParseType::kJson;
   } else if (type == "bin") {
-    ctx.dump_type = DumpType::kBin;
+    ctx.parse_type = ParseType::kBin;
   } else if (type == "jpg" || type == "jpeg") {
-    ctx.dump_type = DumpType::kJpg;
-    dump_type_suffix = "jpg";
+    ctx.parse_type = ParseType::kJpg;
+    parse_type_suffix = "jpg";
   } else if (type == "h264") {
-    ctx.dump_type = DumpType::kH264;
-    dump_type_suffix = "h264";
+    ctx.parse_type = ParseType::kH264;
+    parse_type_suffix = "h264";
   } else if (type == "h265") {
-    ctx.dump_type = DumpType::kH265;
-    dump_type_suffix = "h265";
+    ctx.parse_type = ParseType::kH265;
+    parse_type_suffix = "h265";
   } else if (type == "raw") {
-    ctx.dump_type = DumpType::kRaw;
-    dump_type_suffix = "raw";
+    ctx.parse_type = ParseType::kRaw;
+    parse_type_suffix = "raw";
   } else if (type == "pcd") {
-    ctx.dump_type = DumpType::kPcd;
-    dump_type_suffix = "pcd";
+    ctx.parse_type = ParseType::kPcd;
+    parse_type_suffix = "pcd";
   } else if (type == "slice") {
-    ctx.dump_type = DumpType::kSlice;
+    ctx.parse_type = ParseType::kSlice;
   } else if (type == "scan") {
-    ctx.dump_type = DumpType::kScan;
+    ctx.parse_type = ParseType::kScan;
   } else {
     std::cerr << "Unknown type: " << type << std::endl;
     std::cerr << "Supported: console/text, csv, json, bin, jpg/jpeg, h264, h265, raw, pcd, slice, scan" << std::endl;
     return -1;
   }
 
-  if (dump_type_suffix.empty()) {
-    dump_type_suffix = type;
+  if (parse_type_suffix.empty()) {
+    parse_type_suffix = type;
   }
 
-  if VUNLIKELY (!vlink::dump::validate_mode_options(program, ctx.dump_type, !bag_file.empty(), url_argument_used,
-                                                    target_url)) {
+  if VUNLIKELY (!vlink::parse::validate_mode_options(program, ctx.parse_type, !bag_file.empty(), url_argument_used,
+                                                     target_url)) {
     return -1;
   }
 
@@ -1567,19 +1568,19 @@ int main(int argc, char* argv[]) {
   }
 
   struct BagPluginInterfaceGuard final {
-    vlink::dump::DumpContext& context;
+    vlink::parse::ParseContext& context;
 
     ~BagPluginInterfaceGuard() { context.bag_plugin_interface.reset(); }
   } bag_plugin_interface_guard{ctx};
 
-  if VUNLIKELY (vlink::dump::option_used(program, "-c", "--condition") &&
+  if VUNLIKELY (vlink::parse::option_used(program, "-c", "--condition") &&
                 vlink::Helpers::trim_string_view(condition).empty()) {
     std::cerr << "Option -c/--condition requires at least one non-space field." << std::endl;
     return -1;
   }
 
   if (!condition.empty()) {
-    if (vlink::dump::condition_contains_empty_comma_field(condition)) {
+    if (vlink::parse::condition_contains_empty_comma_field(condition)) {
       std::cerr << "Option -c/--condition contains an empty field." << std::endl;
       return -1;
     }
@@ -1627,7 +1628,7 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  if ((ctx.dump_type == DumpType::kCsv || ctx.dump_type == DumpType::kJson) && ctx.field_specs.empty()) {
+  if ((ctx.parse_type == ParseType::kCsv || ctx.parse_type == ParseType::kJson) && ctx.field_specs.empty()) {
     std::cerr << "CSV/JSON mode requires -c to specify fields." << std::endl;
     std::cerr << "Example: -c 'header.seq,pose.x,pose.y'" << std::endl;
     return -1;
@@ -1656,7 +1657,7 @@ int main(int argc, char* argv[]) {
 #endif
 
   if (proto_dir.empty() && fbs_dir.empty() && !vlink::SchemaPluginManager::get().is_valid() &&
-      ctx.dump_type != DumpType::kSlice && ctx.dump_type != DumpType::kScan) {
+      ctx.parse_type != ParseType::kSlice && ctx.parse_type != ParseType::kScan) {
     std::cerr << "Warning: No proto_dir or fbs_dir set, only zerocopy types will work." << std::endl;
     std::cerr << "Set via [-d] / [--fbs_dir], env VLINK_PROTO_DIR / VLINK_FBS_DIR, or --schema_plugin / "
                  "VLINK_SCHEMA_PLUGIN"
@@ -1668,11 +1669,11 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 
-  ctx.quiet_flag = vlink::dump::option_used(program, "-q", "--quiet");
-  ctx.detail_flag = vlink::dump::option_used(program, "-l", "--detail");
+  ctx.quiet_flag = vlink::parse::option_used(program, "-q", "--quiet");
+  ctx.detail_flag = vlink::parse::option_used(program, "-l", "--detail");
 
-  if (ctx.dump_type == DumpType::kSlice || ctx.dump_type == DumpType::kScan) {
-    if VUNLIKELY (!ctx.dump_for_bag) {
+  if (ctx.parse_type == ParseType::kSlice || ctx.parse_type == ParseType::kScan) {
+    if VUNLIKELY (!ctx.parse_for_bag) {
       std::cerr << "Slice/scan mode requires -f/--bag_file." << std::endl;
       return -1;
     }
@@ -1681,12 +1682,12 @@ int main(int argc, char* argv[]) {
     auto event_expr = program.get<std::string>("--event");
     auto window = program.get<double>("-w");
 
-    if (segments_file.empty() && event_expr.empty() && window <= 0 && ctx.dump_type == DumpType::kSlice) {
+    if (segments_file.empty() && event_expr.empty() && window <= 0 && ctx.parse_type == ParseType::kSlice) {
       std::cerr << "Slice mode requires one of: --window (-w), --segments, or --event." << std::endl;
       return -1;
     }
 
-    vlink::dump::SliceOptions opt;
+    vlink::parse::SliceOptions opt;
     opt.bag_file = bag_file;
     opt.target_url = target_url;
     opt.out_dir = out_dir;
@@ -1720,20 +1721,20 @@ int main(int argc, char* argv[]) {
     opt.event_post = program.get<double>("--post");
     opt.event_state_max_age = program.get<double>("--event_state_max_age");
     opt.event_min_interval = program.get<double>("--event_min_interval");
-    opt.scan_only = (ctx.dump_type == DumpType::kScan);
+    opt.scan_only = (ctx.parse_type == ParseType::kScan);
     opt.dry_run = program.is_used("--dry_run");
     opt.quality_check = program.is_used("--quality_check");
     opt.quality_only = opt.scan_only && opt.quality_check && opt.event_expr.empty();
     opt.dropout_threshold = program.get<double>("--dropout_threshold");
-    opt.begin_time_set = vlink::dump::option_used(program, "-b", "--begin_time");
-    opt.end_time_set = vlink::dump::option_used(program, "-e", "--end_time") && ctx.end_time > 0;
+    opt.begin_time_set = vlink::parse::option_used(program, "-b", "--begin_time");
+    opt.end_time_set = vlink::parse::option_used(program, "-e", "--end_time") && ctx.end_time > 0;
 
     return start_slice(opt);
   }
 
   int ret = 0;
 
-  if (ctx.dump_for_bag) {
+  if (ctx.parse_for_bag) {
     ret = start_bag_play(bag_file);
 
     if (ret != 0) {
@@ -1751,9 +1752,9 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  ret = start_dump(target_url, out_dir, base_name, proto_dir, fbs_dir, dump_type_suffix);
+  ret = start_parse(target_url, out_dir, base_name, proto_dir, fbs_dir, parse_type_suffix);
 
-  if (ctx.dump_for_bag) {
+  if (ctx.parse_for_bag) {
     stop_bag_play();
   } else {
     stop_viewer();

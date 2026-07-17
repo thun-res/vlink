@@ -21,7 +21,7 @@
  * limitations under the License.
  */
 
-#include "./dump_validate.h"
+#include "./parse_validate.h"
 
 #include <vlink/base/helpers.h>
 
@@ -29,51 +29,51 @@
 #include <iostream>
 #include <vector>
 
-namespace vlink::dump {
+namespace vlink::parse {
 
-const char* dump_type_to_string(DumpType type) {
+const char* parse_type_to_string(ParseType type) {
   switch (type) {
-    case DumpType::kConsole:
+    case ParseType::kConsole:
       return "console";
-    case DumpType::kCsv:
+    case ParseType::kCsv:
       return "csv";
-    case DumpType::kJson:
+    case ParseType::kJson:
       return "json";
-    case DumpType::kBin:
+    case ParseType::kBin:
       return "bin";
-    case DumpType::kJpg:
+    case ParseType::kJpg:
       return "jpg";
-    case DumpType::kH264:
+    case ParseType::kH264:
       return "h264";
-    case DumpType::kH265:
+    case ParseType::kH265:
       return "h265";
-    case DumpType::kRaw:
+    case ParseType::kRaw:
       return "raw";
-    case DumpType::kPcd:
+    case ParseType::kPcd:
       return "pcd";
-    case DumpType::kSlice:
+    case ParseType::kSlice:
       return "slice";
-    case DumpType::kScan:
+    case ParseType::kScan:
       return "scan";
   }
 
   return "unknown";
 }
 
-bool is_dump_export_type(DumpType type) {
+bool is_parse_export_type(ParseType type) {
   switch (type) {
-    case DumpType::kConsole:
-    case DumpType::kCsv:
-    case DumpType::kJson:
-    case DumpType::kBin:
-    case DumpType::kJpg:
-    case DumpType::kH264:
-    case DumpType::kH265:
-    case DumpType::kRaw:
-    case DumpType::kPcd:
+    case ParseType::kConsole:
+    case ParseType::kCsv:
+    case ParseType::kJson:
+    case ParseType::kBin:
+    case ParseType::kJpg:
+    case ParseType::kH264:
+    case ParseType::kH265:
+    case ParseType::kRaw:
+    case ParseType::kPcd:
       return true;
-    case DumpType::kSlice:
-    case DumpType::kScan:
+    case ParseType::kSlice:
+    case ParseType::kScan:
       return false;
   }
 
@@ -87,17 +87,17 @@ bool option_used(const argparse::ArgumentParser& program, std::string_view short
 struct ModeRule final {
   std::string_view option;
   std::string_view valid_modes_hint;
-  bool valid_in_dump_export;
+  bool valid_in_parse_export;
   bool valid_in_slice;
   bool valid_in_scan;
 };
 
 static constexpr std::array<ModeRule, 34> kModeRules{{
-    {"-m", "dump/export modes", true, false, false},
-    {"-n", "dump/export modes", true, false, false},
-    {"--hz", "dump/export modes", true, false, false},
-    {"-x", "dump/export modes", true, false, false},
-    {"-l", "dump/export modes or -t slice", true, true, false},
+    {"-m", "parse/export modes", true, false, false},
+    {"-n", "parse/export modes", true, false, false},
+    {"--hz", "parse/export modes", true, false, false},
+    {"-x", "parse/export modes", true, false, false},
+    {"-l", "parse/export modes or -t slice", true, true, false},
     {"-w", "-t slice", false, true, false},
     {"--segments", "-t slice", false, true, false},
     {"--suffix", "-t slice", false, true, false},
@@ -129,23 +129,23 @@ static constexpr std::array<ModeRule, 34> kModeRules{{
     {"--actions", "-t slice or -t scan", false, true, true},
 }};
 
-static bool mode_allows_rule(const ModeRule& rule, DumpType type) {
-  if (is_dump_export_type(type)) {
-    return rule.valid_in_dump_export;
+static bool mode_allows_rule(const ModeRule& rule, ParseType type) {
+  if (is_parse_export_type(type)) {
+    return rule.valid_in_parse_export;
   }
 
-  if (type == DumpType::kSlice) {
+  if (type == ParseType::kSlice) {
     return rule.valid_in_slice;
   }
 
-  if (type == DumpType::kScan) {
+  if (type == ParseType::kScan) {
     return rule.valid_in_scan;
   }
 
   return false;
 }
 
-static bool check_table(const argparse::ArgumentParser& program, DumpType type) {
+static bool check_table(const argparse::ArgumentParser& program, ParseType type) {
   for (const auto& rule : kModeRules) {
     if (!program.is_used(rule.option)) {
       continue;
@@ -156,15 +156,15 @@ static bool check_table(const argparse::ArgumentParser& program, DumpType type) 
     }
 
     std::cerr << "Option " << rule.option << " is only valid with " << rule.valid_modes_hint << " (current: -t "
-              << dump_type_to_string(type) << ")." << std::endl;
+              << parse_type_to_string(type) << ")." << std::endl;
     return false;
   }
 
   return true;
 }
 
-static bool check_url_arguments(const argparse::ArgumentParser& program, DumpType type) {
-  if (type != DumpType::kSlice && type != DumpType::kScan) {
+static bool check_url_arguments(const argparse::ArgumentParser& program, ParseType type) {
+  if (type != ParseType::kSlice && type != ParseType::kScan) {
     return true;
   }
 
@@ -182,8 +182,8 @@ static bool check_url_arguments(const argparse::ArgumentParser& program, DumpTyp
   return true;
 }
 
-static bool check_event_dependencies(const argparse::ArgumentParser& program, DumpType type) {
-  if (type != DumpType::kSlice && type != DumpType::kScan) {
+static bool check_event_dependencies(const argparse::ArgumentParser& program, ParseType type) {
+  if (type != ParseType::kSlice && type != ParseType::kScan) {
     return true;
   }
 
@@ -200,7 +200,7 @@ static bool check_event_dependencies(const argparse::ArgumentParser& program, Du
   if (!program.is_used("--event")) {
     for (const auto* option : {"--pre", "--post", "--event_state_max_age", "--event_min_interval"}) {
       if (program.is_used(option)) {
-        std::cerr << "Option " << option << " is only valid with --event (current: -t " << dump_type_to_string(type)
+        std::cerr << "Option " << option << " is only valid with --event (current: -t " << parse_type_to_string(type)
                   << ")." << std::endl;
         return false;
       }
@@ -210,16 +210,16 @@ static bool check_event_dependencies(const argparse::ArgumentParser& program, Du
   return true;
 }
 
-static bool check_dump_export_only(const argparse::ArgumentParser& program, DumpType type, bool has_bag_input,
-                                   bool url_argument_used, const std::string& target_url) {
-  if (is_dump_export_type(type) && (!url_argument_used || target_url == "*")) {
-    std::cerr << "A target URL is required for -t " << dump_type_to_string(type)
+static bool check_parse_export_only(const argparse::ArgumentParser& program, ParseType type, bool has_bag_input,
+                                    bool url_argument_used, const std::string& target_url) {
+  if (is_parse_export_type(type) && (!url_argument_used || target_url == "*")) {
+    std::cerr << "A target URL is required for -t " << parse_type_to_string(type)
               << ". Use '*' only with slice/scan when selecting all topics." << std::endl;
     return false;
   }
 
-  if (program.is_used("--native") && !is_dump_export_type(type)) {
-    std::cerr << "Option --native is only valid for live dump/export modes." << std::endl;
+  if (program.is_used("--native") && !is_parse_export_type(type)) {
+    std::cerr << "Option --native is only valid for live parse/export modes." << std::endl;
     return false;
   }
 
@@ -243,7 +243,7 @@ static bool check_dump_export_only(const argparse::ArgumentParser& program, Dump
     return false;
   }
 
-  if ((type == DumpType::kSlice || type == DumpType::kScan) && url_argument_used && target_url != "*" &&
+  if ((type == ParseType::kSlice || type == ParseType::kScan) && url_argument_used && target_url != "*" &&
       (program.is_used("--urls") || program.is_used("--url_filter"))) {
     std::cerr << "Use either positional url '" << target_url
               << "' or --urls/--url_filter, not both. This avoids silently changing the selected topics." << std::endl;
@@ -253,18 +253,18 @@ static bool check_dump_export_only(const argparse::ArgumentParser& program, Dump
   return true;
 }
 
-static bool check_quality_constraints(const argparse::ArgumentParser& program, DumpType type) {
+static bool check_quality_constraints(const argparse::ArgumentParser& program, ParseType type) {
   if (program.is_used("--dropout_threshold") && !program.is_used("--quality_check")) {
     std::cerr << "Option --dropout_threshold requires --quality_check." << std::endl;
     return false;
   }
 
-  if (type == DumpType::kScan && !program.is_used("--event") && !program.is_used("--quality_check")) {
+  if (type == ParseType::kScan && !program.is_used("--event") && !program.is_used("--quality_check")) {
     std::cerr << "Scan mode requires --event or --quality_check." << std::endl;
     return false;
   }
 
-  if (type == DumpType::kScan && program.is_used("--quality_check") && !program.is_used("--event") &&
+  if (type == ParseType::kScan && program.is_used("--quality_check") && !program.is_used("--event") &&
       option_used(program, "-c", "--condition")) {
     std::cerr << "Option -c/--condition is only valid with --event in scan mode." << std::endl;
     return false;
@@ -273,8 +273,8 @@ static bool check_quality_constraints(const argparse::ArgumentParser& program, D
   return true;
 }
 
-static bool check_slice_segment_sources(const argparse::ArgumentParser& program, DumpType type) {
-  if (type != DumpType::kSlice) {
+static bool check_slice_segment_sources(const argparse::ArgumentParser& program, ParseType type) {
+  if (type != ParseType::kSlice) {
     return true;
   }
 
@@ -301,9 +301,9 @@ static bool check_slice_segment_sources(const argparse::ArgumentParser& program,
   return true;
 }
 
-bool validate_mode_options(const argparse::ArgumentParser& program, DumpType type, bool has_bag_input,
+bool validate_mode_options(const argparse::ArgumentParser& program, ParseType type, bool has_bag_input,
                            bool url_argument_used, const std::string& target_url) {
-  if (!check_dump_export_only(program, type, has_bag_input, url_argument_used, target_url)) {
+  if (!check_parse_export_only(program, type, has_bag_input, url_argument_used, target_url)) {
     return false;
   }
 
@@ -330,4 +330,4 @@ bool validate_mode_options(const argparse::ArgumentParser& program, DumpType typ
   return true;
 }
 
-}  // namespace vlink::dump
+}  // namespace vlink::parse

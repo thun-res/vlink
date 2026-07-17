@@ -394,7 +394,7 @@ if (parser.value("data", 3, "track_id", value)) {
 
 根字段使用点路径，例如 `header.frame_id`、`width`、`dtype`。变长集合通过 `value(collection, index, field, out)` 读取：`PointCloud.data[N].field` 与 `ObjectArray.data[N].field` 读取记录字段，`OccupancyGrid.data[N].value` 和 `Tensor.data[N].value` 读取标量，`Tensor.shape[N].value` / `strides[N].value` 读取维度信息。`collection_size()` 提供统一的边界；`fields()` 与 `element_fields()` 可用于动态 UI 或 schema 构建。
 
-`Field` 描述符除字段名与 `Value` 类型外，还带有呈现语义：`enum_kind` 标明字段编码的内置枚举（供解析出符号名）、`is_time` 标明纳秒时间戳、`is_bool` 标明布尔、`is_reserved` 标明可隐藏的保留槽。基于这些元数据，同一头文件提供一个纯反射驱动的可读渲染器 `format_message(parser, options)`：它遍历 `fields()` / `element_fields()` 生成规范文本，包括 `header {}`、PointCloud 的 `protocol {}` 与逐点展开、Tensor shape、枚举符号名、日期、十六进制和布尔；其他二进制集合保持摘要形式。`vlink-dump`、`vlink-efbs`、`vlink-eproto` 共用这一渲染器，输出保持一致。
+`Field` 描述符除字段名与 `Value` 类型外，还带有呈现语义：`enum_kind` 标明字段编码的内置枚举（供解析出符号名）、`is_time` 标明纳秒时间戳、`is_bool` 标明布尔、`is_reserved` 标明可隐藏的保留槽。基于这些元数据，同一头文件提供一个纯反射驱动的可读渲染器 `format_message(parser, options)`：它遍历 `fields()` / `element_fields()` 生成规范文本，包括 `header {}`、PointCloud 的 `protocol {}` 与逐点展开、Tensor shape、枚举符号名、日期、十六进制和布尔；其他二进制集合保持摘要形式。`vlink-parse`、`vlink-efbs`、`vlink-eproto` 共用这一渲染器，输出保持一致。
 
 `Value` 保留 `int64_t` / `uint64_t` 的整数精度。只有调用 `numeric(..., double&, &precision_loss)` 为 ExprTk 等浮点计算显式转换时，超过 IEEE-754 精确整数范围的值才会通过 `precision_loss` 报告精度损失。解析得到的容器可能借用输入 `Bytes` 的存储，因而输入缓冲区必须至少与解析器同寿命，并且在解析器有效期间不得修改其内容、大小、容量或底层存储。Python 的 `parse()` / `parse_type()` 会自动保活输入对象；如果检测到输入指针或大小发生变化，后续读取会令该解析结果表现为无效。原地内容修改无法由解析器可靠检测，仍属于调用方禁止操作。
 

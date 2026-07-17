@@ -245,7 +245,7 @@ VLink 自带命令行工具与可视化套件，覆盖发现、监控、录制�
 | `vlink-monitor` | 终端内实时监控话题频率与延迟   |
 | `vlink-bag`     | 录制、回放与运维消息数据包      |
 | `vlink-trigger` | 内存触发录制（EDR），事件触发时落盘前后窗口 |
-| `vlink-dump`    | 以多种格式打印消息             |
+| `vlink-parse`    | 以多种格式打印消息             |
 | `vlink-eproto` / `vlink-efbs` | 终端内解析显示 Protobuf / FlatBuffers 消息 |
 | `vlink-bench`   | 延迟与吞吐基准测试             |
 

@@ -2,7 +2,7 @@
 # Copyright (C) 2026 by Thun Lu. All rights reserved.
 #
 
-project(vlink-dump LANGUAGES CXX)
+project(vlink-parse LANGUAGES CXX)
 
 # requires
 if(NOT TARGET protobuf::libprotobuf)
@@ -16,28 +16,28 @@ endif()
 
 add_executable(
   ${PROJECT_NAME}
-  dump_cli.h
-  dump_context.h
-  dump_expr.h
-  dump_extract.h
-  dump_features.h
-  dump_path.h
-  dump_plan.h
-  dump_proto_cache.h
-  dump_schema.h
-  dump_slice.h
-  dump_types.h
-  dump_validate.h
-  dump.cc
-  dump_context.cc
-  dump_expr.cc
-  dump_extract.cc
-  dump_path.cc
-  dump_plan.cc
-  dump_proto_cache.cc
-  dump_schema.cc
-  dump_slice.cc
-  dump_validate.cc
+  parse_cli.h
+  parse_context.h
+  parse_expr.h
+  parse_extract.h
+  parse_features.h
+  parse_path.h
+  parse_plan.h
+  parse_proto_cache.h
+  parse_schema.h
+  parse_slice.h
+  parse_types.h
+  parse_validate.h
+  parse.cc
+  parse_context.cc
+  parse_expr.cc
+  parse_extract.cc
+  parse_path.cc
+  parse_plan.cc
+  parse_proto_cache.cc
+  parse_schema.cc
+  parse_slice.cc
+  parse_validate.cc
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE vlink::vlink ${VLINK_NO_INTRA_LIBRARIES})
 target_link_libraries(${PROJECT_NAME} PRIVATE thirdparty::argparse thirdparty::json protobuf::libprotobuf)
@@ -68,13 +68,13 @@ install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # symlinks
 if(ENABLE_SYMLINKS)
-  vlink_install_symlink(dump SYMLINK ${PROJECT_NAME} DESTINATION ${CMAKE_INSTALL_BINDIR})
+  vlink_install_symlink(parse SYMLINK ${PROJECT_NAME} DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
 # completions
 if(ENABLE_COMPLETIONS)
   if(ENABLE_SYMLINKS)
-    vlink_install_completions(${PROJECT_NAME} ALIAS dump)
+    vlink_install_completions(${PROJECT_NAME} ALIAS parse)
   else()
     vlink_install_completions(${PROJECT_NAME})
   endif()

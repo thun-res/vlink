@@ -39,7 +39,7 @@ if [ -f "$VLINK_FBS_DIR_CONFIG" ]; then
     echo "VLINK_FBS_DIR: $VLINK_FBS_DIR"
 fi
 
-echo -e "Support commands: [proxy] [info] [monitor] [bag] [trigger] [list] [eproto] [efbs] [dump] [check] [bench]"
+echo -e "Support commands: [proxy] [info] [monitor] [bag] [trigger] [list] [eproto] [efbs] [parse] [check] [bench]"
 echo -e ""
 
 [[ "$PATH" != *"$VLINK_ROOT_DIR/bin"* ]] && export PATH="$VLINK_ROOT_DIR/bin:$PATH"
@@ -54,7 +54,7 @@ alias trigger="\"$VLINK_ROOT_DIR/bin/vlink-trigger\""
 alias list="\"$VLINK_ROOT_DIR/bin/vlink-list\""
 alias eproto="\"$VLINK_ROOT_DIR/bin/vlink-eproto\""
 alias efbs="\"$VLINK_ROOT_DIR/bin/vlink-efbs\""
-alias dump="\"$VLINK_ROOT_DIR/bin/vlink-dump\""
+alias parse="\"$VLINK_ROOT_DIR/bin/vlink-parse\""
 alias check="\"$VLINK_ROOT_DIR/bin/vlink-check\""
 alias bench="\"$VLINK_ROOT_DIR/bin/vlink-bench\""
 [ -x "$VLINK_ROOT_DIR/bin/vlink-bag2mcap" ] && alias bag2mcap="\"$VLINK_ROOT_DIR/bin/vlink-bag2mcap\""
@@ -67,7 +67,12 @@ elif [ -x "$VLINK_ROOT_DIR/bin/vlink-rerun" ]; then
     alias webviz="\"$VLINK_ROOT_DIR/bin/vlink-rerun\""
 fi
 if [ -r "$VLINK_COMPLETIONS" ]; then
+    if [[ -n "${ZSH_VERSION:-}" ]]; then
+        setopt COMPLETE_ALIASES
+    fi
+    _VLINK_COMPLETION_REGISTER_ALIASES=1
     source "$VLINK_COMPLETIONS"
+    unset _VLINK_COMPLETION_REGISTER_ALIASES
 fi
 
 function kill_proxy() {

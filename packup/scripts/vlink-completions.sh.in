@@ -73,6 +73,10 @@ _vlink_completion_alias_available() {
     local alias_path=""
     local target_path=""
 
+    if [[ "${_VLINK_COMPLETION_REGISTER_ALIASES:-}" == "1" ]]; then
+        return 0
+    fi
+
     alias_definition=$(alias "$completion_alias" 2>/dev/null) || alias_definition=""
     if [[ -n "$alias_definition" && "$alias_definition" == *"$target"* ]]; then
         return 0
