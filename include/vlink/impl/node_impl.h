@@ -43,7 +43,7 @@
  * | Concern                | API surface                                                   |
  * | ---------------------- | ------------------------------------------------------------- |
  * | Transport lifecycle    | @c init() / @c deinit()                                       |
- * | Zero-copy loans        | @c loan() / @c return_loan() / @c set_manual_unloan           |
+ * | Zero-copy loans        | @c loan() / @c return_loan()                                  |
  * | Suspend / resume       | @c suspend() / @c resume() / @c is_suspend()                  |
  * | Interrupt              | @c interrupt() / @c reset_interrupted() / @c is_interrupted   |
  * | Property store         | @c set_property() / @c get_property() / @c get_all_properties |
@@ -301,18 +301,6 @@ class VLINK_EXPORT NodeImpl {
    * @return @c true on success; @c false when loaning is unsupported.
    */
   virtual bool return_loan(const Bytes& bytes);
-
-  /**
-   * @brief Toggles automatic versus manual release of received loaned buffers.
-   *
-   * @details
-   * With @p manual_unloan set to @c true the backend does not release loaned
-   * buffers after callback dispatch; the application must call @c return_loan()
-   * itself.
-   *
-   * @param manual_unloan  @c true for manual release; @c false for automatic.
-   */
-  virtual void set_manual_unloan(bool manual_unloan);
 
   /**
    * @brief Returns the associated transport @c Conf, or @c nullptr in the base.

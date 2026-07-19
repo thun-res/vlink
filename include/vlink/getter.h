@@ -233,13 +233,6 @@ class Getter : public Node<GetterImpl, SecT> {
   void set_change_reporting(bool enable);
 
   /**
-   * @brief Enables or disables manual-unloan mode for zero-copy receives.
-   *
-   * @param manual_unloan  @c true to enable manual return; @c false for auto-return.
-   */
-  void set_manual_unloan(bool manual_unloan) override;
-
-  /**
    * @brief Toggles per-value latency and sample-loss measurement.
    *
    * @param enable  @c true to begin tracking; @c false to stop.

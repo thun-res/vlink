@@ -121,12 +121,6 @@ inline bool Subscriber<MsgT, SecT>::listen(MsgCallback&& callback) {
 }
 
 template <typename MsgT, SecurityType SecT>
-inline void Subscriber<MsgT, SecT>::set_manual_unloan(bool manual_unloan) {
-  this->impl_->set_manual_unloan(manual_unloan);
-  this->is_manual_unloan_ = manual_unloan;
-}
-
-template <typename MsgT, SecurityType SecT>
 inline void Subscriber<MsgT, SecT>::set_latency_and_lost_enabled(bool enable) {
   this->impl_->set_latency_and_lost_enabled(enable);
 }

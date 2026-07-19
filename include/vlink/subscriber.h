@@ -130,8 +130,8 @@ namespace vlink {
  *
  * @details
  * Inherits the full @c Node API and adds receive-specific operations:
- * @c listen() to register the user callback, manual-unloan control for
- * zero-copy back-ends, and latency / sample-loss tracking.  The transport
+ * @c listen() to register the user callback and latency / sample-loss
+ * tracking.  The transport
  * implementation (@c SubscriberImpl) is selected by the URL scheme or by
  * the typed configuration object supplied at construction time.
  *
@@ -201,10 +201,12 @@ class Subscriber : public Node<SubscriberImpl, SecT> {
    * @c IntraDataType shared pointer the value is forwarded zero-copy and
    * no deserialisation occurs.
    *
-   * @warning The argument reference points at @c thread_local scratch
-   *          memory that is reused across invocations.  Copy the data before
-   *          stashing it outside the callback.  This restriction does not
-   *          apply to @c Bytes or @c IntraData payloads.
+   * @warning The argument reference is valid only for the duration of the
+   *          callback.  Ordinary messages use reusable @c thread_local
+   *          storage, while @c Bytes may view a transport buffer that is
+   *          returned immediately afterwards.  Copy the value before keeping
+   *          it; copying @c Bytes creates owned storage, and copying an
+   *          @c IntraData shared pointer extends that object's lifetime.
    *
    * @note Calling @c listen() more than once is fatal.  The subscriber must
    *       be initialised before the first call to @c listen().
@@ -213,18 +215,6 @@ class Subscriber : public Node<SubscriberImpl, SecT> {
    * @return          @c true if the callback was installed successfully.
    */
   bool listen(MsgCallback&& callback);
-
-  /**
-   * @brief Enables or disables manual-unloan mode for zero-copy receives.
-   *
-   * @details
-   * In manual-unloan mode the user must call @c return_loan() after consuming
-   * each delivered buffer.  Only relevant on loan-capable transports
-   * (@c shm://, Zenoh with SHM, etc.).
-   *
-   * @param manual_unloan  @c true to enable manual return; @c false for auto-return.
-   */
-  void set_manual_unloan(bool manual_unloan) override;
 
   /**
    * @brief Toggles per-message latency and sample-loss measurement.

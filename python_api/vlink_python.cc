@@ -1376,8 +1376,6 @@ void bind_node_common(Class& cls) {
             return self.return_loan(bytes);
           },
           "bytes"_a)
-      .def("set_manual_unloan", &NodeT::set_manual_unloan, "enable"_a)
-      .def("is_manual_unloan", &NodeT::is_manual_unloan)
       .def("suspend", &NodeT::suspend)
       .def("resume", &NodeT::resume)
       .def("is_suspend", &NodeT::is_suspend)

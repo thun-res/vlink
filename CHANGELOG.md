@@ -14,6 +14,7 @@
 
 ### 改进
 
+- **接收端 loan API 移除**：删除 C++ / Python 的 `set_manual_unloan()` 与 `is_manual_unloan()`；接收缓冲统一在回调后自动归还，发布侧 `loan()` / `return_loan()` 不受影响。
 - **传输后端移除**：删除 `modules/ddst` 与 `modules/qnx`，不再支持 `ddst://` 和 `qnx://`；同步移除 `DdstConf` / `QnxConf`、对应 `TransportType` 与启用标志、构建选项、CLI / 补全入口、Python 枚举、测试和文档。QNX 目标操作系统的工具链、原生日志及平台适配不受影响。
 - **公共 API**：`TerminalStream` 移至 base，并统一 Bag / Trigger 接口命名；旧接口不再保留。
 - **URL 插件**：扩展 `VLINK_URL_PLUGINS`，支持按需自动加载 transport、关闭加载或显式预加载；运行时包可独立完成动态加载。

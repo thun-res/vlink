@@ -251,25 +251,6 @@ class Node {
   bool return_loan(const Bytes& bytes);
 
   /**
-   * @brief Toggles manual-unloan mode for zero-copy receives.
-   *
-   * @details
-   * In manual mode the user must call @c return_loan() after consuming each
-   * received buffer.  The base implementation logs a warning; only
-   * @c Subscriber and @c Getter provide a meaningful override.
-   *
-   * @param manual_unloan  @c true to enable; @c false for automatic (default).
-   */
-  virtual void set_manual_unloan(bool manual_unloan);
-
-  /**
-   * @brief Reports whether manual-unloan mode is currently active.
-   *
-   * @return @c true if @c set_manual_unloan(true) was invoked.
-   */
-  [[nodiscard]] virtual bool is_manual_unloan() const;
-
-  /**
    * @brief Suspends message delivery on this node.
    *
    * @details
@@ -593,7 +574,6 @@ class Node {
 
   void* proto_arena_{nullptr};
   bool is_support_loan_{false};
-  bool is_manual_unloan_{false};
 
   std::atomic_bool has_inited_{false};
   std::optional<std::mutex> quit_mtx_;

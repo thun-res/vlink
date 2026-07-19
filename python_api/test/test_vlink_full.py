@@ -1210,9 +1210,6 @@ assert ended.wait(2.0)
     # Transport type
     assert pub.get_transport_type() == _vlink.TransportType.Intra
 
-    # Manual unloan
-    assert not pub.is_manual_unloan()
-
     # Properties
     pub.set_property("test_key", "test_val")
     assert pub.get_property("test_key") == "test_val"
@@ -1912,7 +1909,7 @@ def test_api_surface():
         "get_schema_type", "set_ser_type", "get_ser_type", "set_property", "get_property",
         "get_discovery_enabled", "set_record_path", "set_ssl_options", "set_safety_quit",
         "get_safety_quit", "get_cpu_usage", "has_inited", "interrupt", "suspend", "resume",
-        "is_suspend", "is_support_loan", "loan", "return_loan", "set_manual_unloan", "is_manual_unloan",
+        "is_suspend", "is_support_loan", "loan", "return_loan",
         "attach", "detach", "get_message_loop", "get_abstract_node", "get_status", "register_status_handler",
     ]
     for cls in (
@@ -1921,6 +1918,8 @@ def test_api_surface():
     ):
         for method in node_methods:
             assert hasattr(cls, method), f"{cls.__name__} missing method: {method}"
+        for method in ("set_manual_unloan", "is_manual_unloan"):
+            assert not hasattr(cls, method), f"{cls.__name__} still exposes removed method: {method}"
 
     class_methods = {
         _vlink.Publisher: ["detect_subscribers", "wait_for_subscribers", "has_subscribers", "publish",

@@ -106,17 +106,6 @@ inline bool Node<ImplT, SecT>::return_loan(const Bytes& bytes) {
 }
 
 template <typename ImplT, SecurityType SecT>
-inline void Node<ImplT, SecT>::set_manual_unloan(bool manual_unloan) {
-  (void)manual_unloan;
-  VLOG_W("Node: Function [set_manual_unloan] is not supported.");
-}
-
-template <typename ImplT, SecurityType SecT>
-inline bool Node<ImplT, SecT>::is_manual_unloan() const {
-  return is_manual_unloan_;
-}
-
-template <typename ImplT, SecurityType SecT>
 inline bool Node<ImplT, SecT>::suspend() {
   return impl_->suspend();
 }

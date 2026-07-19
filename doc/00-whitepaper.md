@@ -677,7 +677,7 @@ client.invoke(req, resp);
 
 ### 8.3 零拷贝的工程化封装
 
-VLink 将 Iceoryx 的 loan/unloan 机制封装为通用接口，使零拷贝使用变得简单：
+VLink 将 Iceoryx 的发布端 loan 机制封装为通用接口，使零拷贝使用变得简单：
 
 零拷贝发布。借贷缓冲区在发布后自动归还：
 

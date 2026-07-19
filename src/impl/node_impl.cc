@@ -143,8 +143,6 @@ bool NodeImpl::return_loan(const Bytes& bytes) {
   return false;
 }
 
-void NodeImpl::set_manual_unloan(bool manual_unloan) { (void)manual_unloan; }
-
 bool NodeImpl::suspend() {
   // has_suspend = true;
 

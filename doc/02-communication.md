@@ -242,7 +242,7 @@ if (pub.is_support_loan()) {
 }
 ```
 
-边界条件：借贷路径要求使用 `Publisher<vlink::Bytes>`，`loan()` 返回的 `Bytes` 作为消息直接发送；`is_support_loan()` 为 `false` 时 `loan()` 返回空 `Bytes`。只有成功被后端接受的发布才消费 loan，发布返回 `false` 时仍须显式归还。订阅端手动归还等完整用法见 [零拷贝](06-zerocopy.md)。
+边界条件：借贷路径要求使用 `Publisher<vlink::Bytes>`，`loan()` 返回的 `Bytes` 作为消息直接发送；`is_support_loan()` 为 `false` 时 `loan()` 返回空 `Bytes`。只有成功被后端接受的发布才消费 loan，发布返回 `false` 时仍须显式归还。订阅端接收缓冲在回调返回后自动归还；若需异步留用，须在回调内复制。完整用法见 [零拷贝](06-zerocopy.md)。
 
 ### 2.2.9 🏭 工厂方法
 
@@ -365,7 +365,7 @@ sub.listen([](const MyMsg& msg) { handle(msg); });
 
 两项约束必须遵守：
 
-- 普通反序列化类型的 `const MsgT& msg` 指向框架临时存储，仅在回调体内有效，带出回调前须复制。`Bytes` 遵循 transport loan / manual-unloan 所有权契约；`shared_ptr<IntraDataType>` 可复制 shared_ptr 延长对象生命周期，二者不适用这一普通临时对象规则。
+- 回调参数引用仅在回调体内有效：普通反序列化类型使用框架临时存储，`Bytes` 可能直接引用会在回调返回后自动归还的 transport buffer。带出回调前须复制；复制 `Bytes` 会生成独立存储，`shared_ptr<IntraDataType>` 则可通过复制 shared_ptr 延长对象生命周期。
 - `listen()` 仅可调用一次，重复调用为致命错误。
 
 回调默认由后端 delivery context 执行。后端支持时可先 `attach(MessageLoop*)` 并入自有线程串行处理，限制见 2.2.6。性能分析时可开启统计：
