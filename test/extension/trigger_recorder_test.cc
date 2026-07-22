@@ -61,24 +61,6 @@ struct ScratchDir final {
   }
 };
 
-static bool wait_until_idle(const vlink::TriggerRecorder& recorder, int max_ms = 4000) {
-  for (int elapsed = 0; elapsed < max_ms; elapsed += 5) {
-    if (!recorder.is_dumping()) {
-      return true;
-    }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
-
-  return !recorder.is_dumping();
-}
-
-static vlink::TriggerRecorder::RawSubFactory make_raw_sub_factory() {
-  return [](const std::string& url, vlink::InitType type) {
-    return vlink::TriggerRecorder::RawSub::create_shared(url, type);
-  };
-}
-
 static bool wait_until_ready(vlink::TriggerRecorder& recorder, int max_ms = 4000) {
   auto ready = recorder.invoke_task([]() {});
 
@@ -88,6 +70,28 @@ static bool wait_until_ready(vlink::TriggerRecorder& recorder, int max_ms = 4000
 
   ready.get();
   return true;
+}
+
+static bool wait_until_idle(vlink::TriggerRecorder& recorder, int max_ms = 4000) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(max_ms);
+
+  for (int elapsed = 0; elapsed < max_ms; elapsed += 5) {
+    if (!recorder.is_dumping()) {
+      const auto remaining =
+          std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+      return remaining > 0 && wait_until_ready(recorder, static_cast<int>(remaining));
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+
+  return false;
+}
+
+static vlink::TriggerRecorder::RawSubFactory make_raw_sub_factory() {
+  return [](const std::string& url, vlink::InitType type) {
+    return vlink::TriggerRecorder::RawSub::create_shared(url, type);
+  };
 }
 
 class RecordingTriggerPlugin : public vlink::TriggerPluginInterface {

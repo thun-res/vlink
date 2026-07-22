@@ -23,6 +23,7 @@
 
 #include "./impl/client_impl.h"
 
+#include <atomic>
 #include <mutex>
 #include <utility>
 
@@ -33,7 +34,7 @@ namespace vlink {
 
 // ClientImplHelper
 struct ClientImplHelper final {
-  bool connected{false};
+  std::atomic_bool connected{false};
   NodeImpl::ConnectCallback connected_callback;
   ConditionVariable connected_cv;
   std::mutex mtx;
@@ -56,7 +57,7 @@ void ClientImpl::detect_connected(ConnectCallback&& callback) {
   std::unique_lock lock(helper_->callback_mtx);
   helper_->connected_callback = std::move(callback);
 
-  if (helper_->connected) {
+  if (helper_->connected.load(std::memory_order_acquire)) {
     auto callback_copy = helper_->connected_callback;
     lock.unlock();
     callback_copy(true);
@@ -74,11 +75,11 @@ bool ClientImpl::wait_for_connected(std::chrono::milliseconds timeout) {
 
   reset_interrupted();
 
-  auto predicate = [this]() -> bool { return is_connected() || is_interrupted(); };
+  auto predicate = [this]() -> bool { return helper_->connected.load(std::memory_order_acquire) || is_interrupted(); };
 
   if VUNLIKELY (timeout.count() < 0) {
     helper_->connected_cv.wait(lock, std::move(predicate));
-    return is_connected();
+    return helper_->connected.load(std::memory_order_acquire);
   } else {
     return helper_->connected_cv.wait_for(lock, timeout, std::move(predicate)) && !is_interrupted();
   }
@@ -88,12 +89,11 @@ void ClientImpl::update_connected() {
   Utils::yield_cpu();
 
   std::unique_lock lock(helper_->callback_mtx);
+  const bool connected_now = is_connected();
 
-  if (helper_->connected == is_connected()) {
+  if (helper_->connected.exchange(connected_now, std::memory_order_acq_rel) == connected_now) {
     return;
   }
-
-  helper_->connected = !helper_->connected;
 
   {
     std::lock_guard sync_lock(helper_->mtx);
@@ -102,10 +102,9 @@ void ClientImpl::update_connected() {
   helper_->connected_cv.notify_all();
 
   if (helper_->connected_callback) {
-    bool connected = helper_->connected;
     auto callback_copy = helper_->connected_callback;
     lock.unlock();
-    callback_copy(connected);
+    callback_copy(connected_now);
   }
 }
 
