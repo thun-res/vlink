@@ -789,16 +789,30 @@ static bool rsa_oaep_decrypt(EVP_PKEY* pkey, const uint8_t* in, size_t in_len, B
   return true;
 }
 
-static bool rsa_pss_sign(EVP_PKEY* pkey, const uint8_t* data, size_t data_len, Bytes& sig_out) noexcept {
-  if VUNLIKELY (!size_fits_int(data_len)) {
+static bool sha256_digest_parts(const uint8_t* first, size_t first_len, const uint8_t* second, size_t second_len,
+                                uint8_t* digest, unsigned int& digest_len) noexcept {
+  EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+
+  if VUNLIKELY (!ctx) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
+  const bool success = EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) == 1 &&
+                       EVP_DigestUpdate(ctx, first, first_len) == 1 && EVP_DigestUpdate(ctx, second, second_len) == 1 &&
+                       EVP_DigestFinal_ex(ctx, digest, &digest_len) == 1;
+
+  EVP_MD_CTX_free(ctx);
+
+  return success;
+}
+
+static bool rsa_pss_sign(EVP_PKEY* pkey, const uint8_t* first, size_t first_len, const uint8_t* second,
+                         size_t second_len, Bytes& sig_out) noexcept {
   uint8_t digest[EVP_MAX_MD_SIZE];
   DigestScrub digest_scrub{digest, sizeof(digest)};
   unsigned int digest_len = 0;
 
-  if VUNLIKELY (EVP_Digest(data, data_len, digest, &digest_len, EVP_sha256(), nullptr) != 1) {
+  if VUNLIKELY (!sha256_digest_parts(first, first_len, second, second_len, digest, digest_len)) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
@@ -847,9 +861,9 @@ static bool rsa_pss_sign(EVP_PKEY* pkey, const uint8_t* data, size_t data_len, B
   return true;
 }
 
-static bool rsa_pss_verify(EVP_PKEY* pkey, const uint8_t* data, size_t data_len, const uint8_t* sig,
-                           size_t sig_len) noexcept {
-  if VUNLIKELY (!size_fits_int(data_len) || !size_fits_int(sig_len)) {
+static bool rsa_pss_verify(EVP_PKEY* pkey, const uint8_t* first, size_t first_len, const uint8_t* second,
+                           size_t second_len, const uint8_t* sig, size_t sig_len) noexcept {
+  if VUNLIKELY (!size_fits_int(sig_len)) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
@@ -857,7 +871,7 @@ static bool rsa_pss_verify(EVP_PKEY* pkey, const uint8_t* data, size_t data_len,
   DigestScrub digest_scrub{digest, sizeof(digest)};
   unsigned int digest_len = 0;
 
-  if VUNLIKELY (EVP_Digest(data, data_len, digest, &digest_len, EVP_sha256(), nullptr) != 1) {
+  if VUNLIKELY (!sha256_digest_parts(first, first_len, second, second_len, digest, digest_len)) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
@@ -1506,16 +1520,8 @@ bool Security::encrypt(const Bytes& in, Bytes& out) {
     Bytes signature;
 
     if (impl_->signing_key) {
-      Bytes signed_range = Bytes::create(aad.size() + body_size);
-
-      if VUNLIKELY (signed_range.data() == nullptr) {
-        return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
-
-      std::memcpy(signed_range.data(), aad.data(), aad.size());
-      std::memcpy(signed_range.data() + aad.size(), body.data(), body_size);
-
-      if VUNLIKELY (!rsa_pss_sign(impl_->signing_key.get(), signed_range.data(), signed_range.size(), signature)) {
+      if VUNLIKELY (!rsa_pss_sign(impl_->signing_key.get(), aad.data(), aad.size(), body.data(), body_size,
+                                  signature)) {
         VLOG_W("Security::encrypt RSA-PSS sign failed");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         return false;                                     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
@@ -1694,17 +1700,8 @@ bool Security::decrypt(const Bytes& in, Bytes& out) {
         return false;
       }
 
-      Bytes signed_range = Bytes::create(aad.size() + cipher_len + kAesTagSize);
-
-      if VUNLIKELY (signed_range.data() == nullptr) {
-        return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
-
-      std::memcpy(signed_range.data(), aad.data(), aad.size());
-      std::memcpy(signed_range.data() + aad.size(), cipher, cipher_len + kAesTagSize);
-
-      if VUNLIKELY (!rsa_pss_verify(impl_->verify_key.get(), signed_range.data(), signed_range.size(), sig_ptr,
-                                    sig_len)) {
+      if VUNLIKELY (!rsa_pss_verify(impl_->verify_key.get(), aad.data(), aad.size(), cipher, cipher_len + kAesTagSize,
+                                    sig_ptr, sig_len)) {
         VLOG_W("Security::decrypt RSA-PSS signature verification failed");
         return false;
       }
