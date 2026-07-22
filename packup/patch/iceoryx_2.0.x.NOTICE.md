@@ -32,6 +32,7 @@ text covering both the original work and these modifications is shipped at
 | `iceoryx_hoofs/include/iceoryx_hoofs/internal/concurrent/sofi.inl` | Annotate a benign data race observed by ThreadSanitizer when sofi is shared by multiple readers (atomic ordering tighten). |
 | `iceoryx_hoofs/platform/linux/include/iceoryx_hoofs/platform/semaphore.hpp` | Use the new wrapper instead of `sem_timedwait` for predictable timeout behaviour under suspend/resume. |
 | `iceoryx_hoofs/platform/qnx/include/iceoryx_hoofs/platform/semaphore.hpp` | Mirror the Linux change on QNX. |
+| `iceoryx_hoofs/source/posix_wrapper/access_control.cpp` | Allow ACL setup to be disabled explicitly and tolerate file systems that report ACL support as unavailable. |
 | `iceoryx_hoofs/source/posix_wrapper/message_queue.cpp` | Same wait-primitive switch on the message-queue receive path. |
 | `iceoryx_hoofs/source/posix_wrapper/mutex.cpp` | When `_POSIX_CLOCK_SELECTION` is supported, force the mutex internal clock to `CLOCK_MONOTONIC` so `timed_lock` cannot be skewed by wall-clock jumps. |
 | `iceoryx_hoofs/source/posix_wrapper/semaphore.cpp` | Use the new wait primitive on the timed-wait path. |
@@ -39,6 +40,9 @@ text covering both the original work and these modifications is shipped at
 | `iceoryx_posh/CMakeLists.txt` | Skip the `cmake_minimum_required` policy adjustment that conflicts with our CPM toolchain pinning. |
 | `iceoryx_posh/cmake/Config.cmake.in` | Same `${PACKAGE_PREFIX_DIR}` relocation fix as `iceoryx_hoofs`. |
 | `iceoryx_posh/cmake/iceoryx_versions.hpp.in` | Strip dev-only `git describe` invocations that fail when iceoryx is built outside its own git tree. |
+| `iceoryx_posh/include/iceoryx_posh/internal/runtime/ipc_runtime_interface.hpp` | Add an optional timeout to synchronous RouDi requests while preserving blocking behaviour for existing callers. |
+| `iceoryx_posh/source/runtime/ipc_runtime_interface.cpp` | Use the timed IPC receive path only when a caller supplies a timeout. |
+| `iceoryx_posh/source/runtime/posh_runtime_impl.cpp` | Bound the final RouDi termination acknowledgement wait to three seconds so runtime destruction cannot block indefinitely. |
 
 ## Why the modifications
 
@@ -49,11 +53,25 @@ VLink statically links iceoryx into `libvlink-shm.so` and ships the
   (`packup/patch/iceoryx_2.0.x.patch` is applied at configure time);
 * tighten the underlying wait primitives so VLink's real-time deadlines
   are not exposed to wall-clock adjustments;
+* prevent a probabilistic runtime-teardown deadlock if RouDi stops replying
+  while a process is waiting for its termination acknowledgement;
 * turn off upstream features that are not consumed by VLink.
 
-No change introduces additional third-party code; every modification is
-authored by VLink contributors and is offered to downstream consumers
-under the same Apache License, Version 2.0 as the upstream files.
+## Backported upstream fix
+
+The bounded termination wait is adapted to the iceoryx v2.0.8 API from
+upstream issue [eclipse-iceoryx/iceoryx#2493](https://github.com/eclipse-iceoryx/iceoryx/issues/2493)
+and upstream commits
+[`782e68105387685157de1576b48732ed33b9351c`](https://github.com/eclipse-iceoryx/iceoryx/commit/782e68105387685157de1576b48732ed33b9351c)
+and
+[`5ab4faca8fb2495b78058516186a07bfb71a7867`](https://github.com/eclipse-iceoryx/iceoryx/commit/5ab4faca8fb2495b78058516186a07bfb71a7867).
+The adaptation changes only iceoryx's internal runtime IPC interface: callers
+that do not provide a timeout retain the v2.0.8 blocking receive behaviour,
+while runtime destruction supplies the same three-second bound chosen upstream.
+
+No additional third-party project is introduced. The backported code and all
+other VLink modifications remain covered by the upstream Apache License,
+Version 2.0.
 
 ## Where to obtain the corresponding source
 
