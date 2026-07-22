@@ -308,23 +308,28 @@ const reflection::Field* FlatbuffersObjectView::find_field(const reflection::Obj
 
 std::string FlatbuffersObjectView::get_field_type_name(const reflection::Field& field,
                                                        const reflection::Schema& schema) {
-  if (field.type()->base_type() == reflection::Vector || field.type()->base_type() == reflection::Vector64) {
+  if (field.type()->base_type() == reflection::Vector || field.type()->base_type() == reflection::Vector64 ||
+      field.type()->base_type() == reflection::Array) {
     const auto element_type = field.type()->element();
+    const std::string suffix = field.type()->base_type() == reflection::Array
+                                   ? "[" + std::to_string(field.type()->fixed_length()) + "]"
+                                   : "[]";
+
     if (element_type == reflection::Obj && schema.objects()) {
       const auto* obj = schema.objects()->Get(static_cast<uint32_t>(field.type()->index()));
       if (obj && obj->name()) {
-        return obj->name()->str() + "[]";
+        return obj->name()->str() + suffix;
       }
     }
 
     if (field.type()->index() >= 0 && schema.enums()) {
       const auto* enum_def = schema.enums()->Get(static_cast<flatbuffers::uoffset_t>(field.type()->index()));
       if (enum_def && enum_def->name()) {
-        return enum_def->name()->str() + "[]";
+        return enum_def->name()->str() + suffix;
       }
     }
 
-    return get_base_type_name(element_type) + "[]";
+    return get_base_type_name(element_type) + suffix;
   }
 
   if (field.type()->base_type() == reflection::Obj && schema.objects()) {

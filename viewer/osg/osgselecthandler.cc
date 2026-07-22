@@ -166,7 +166,6 @@ osg::Geode* OsgSelectHandler::createSelectBox(double fStartPosX, double fStartPo
   pGeode->getOrCreateStateSet()->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::PROTECTED);
   pGeode->getOrCreateStateSet()->setMode(GL_BLEND, osg::StateAttribute::ON);
 
-  pGeode->addChild(pQuardGeomerty);
   pGeode->addDrawable(pQuardGeomerty);
 
   return pGeode;

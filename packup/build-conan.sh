@@ -359,7 +359,7 @@ EOL
     ln -sf bin/vlink-list      "$MACOS_PACKUP_DIR/MacOS/list"
     ln -sf bin/vlink-eproto    "$MACOS_PACKUP_DIR/MacOS/eproto"
     ln -sf bin/vlink-efbs      "$MACOS_PACKUP_DIR/MacOS/efbs"
-    ln -sf bin/vlink-dump      "$MACOS_PACKUP_DIR/MacOS/dump"
+    ln -sf bin/vlink-parse     "$MACOS_PACKUP_DIR/MacOS/parse"
     ln -sf bin/vlink-check     "$MACOS_PACKUP_DIR/MacOS/check"
     ln -sf bin/vlink-bench     "$MACOS_PACKUP_DIR/MacOS/bench"
     ln -sf bin/vlink-foxglove  "$MACOS_PACKUP_DIR/MacOS/webviz_foxglove"

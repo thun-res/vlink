@@ -359,6 +359,67 @@ TEST_SUITE("intra-pubsub") {
     CHECK(count.load() == 1);
   }
 
+  TEST_CASE("direct callback may deinitialize its subscriber") {
+    MESSAGE("[intra-pubsub] direct callback may deinitialize its subscriber");
+
+    Publisher<int> pub(IntraConf("event_direct_reentrant_deinit", "", 0, "direct"));
+    Subscriber<int> deinit_sub("intra://event_direct_reentrant_deinit#direct");
+    Subscriber<int> remaining_sub("intra://event_direct_reentrant_deinit#direct");
+    bool deinit_callback_called = false;
+    bool deinit_succeeded = false;
+    int remaining_callback_count = 0;
+
+    deinit_sub.listen([&](const int&) {
+      deinit_callback_called = true;
+      deinit_succeeded = deinit_sub.deinit();
+    });
+    remaining_sub.listen([&](const int&) { ++remaining_callback_count; });
+
+    CHECK(pub.publish(1));
+    CHECK(deinit_callback_called);
+    CHECK(deinit_succeeded);
+    CHECK(remaining_callback_count == 1);
+
+    CHECK(pub.publish(2));
+    CHECK(remaining_callback_count == 2);
+  }
+
+  TEST_CASE("stateful direct callback keeps its stored state") {
+    MESSAGE("[intra-pubsub] stateful direct callback keeps its stored state");
+
+    Publisher<int> pub(IntraConf("event_direct_stateful_callback", "", 0, "direct"));
+    Subscriber<int> sub("intra://event_direct_stateful_callback#direct");
+    int observed_count = 0;
+
+    sub.listen([count = 0, &observed_count](const int&) mutable { observed_count = ++count; });
+
+    CHECK(pub.publish(1));
+    CHECK_EQ(observed_count, 1);
+    CHECK(pub.publish(2));
+    CHECK_EQ(observed_count, 2);
+  }
+
+  TEST_CASE("nested direct delivery preserves the outer callback value") {
+    MESSAGE("[intra-pubsub] nested direct delivery preserves the outer callback value");
+
+    Publisher<int> outer_pub(IntraConf("event_direct_nested_outer", "", 0, "direct"));
+    Publisher<int> inner_pub(IntraConf("event_direct_nested_inner", "", 0, "direct"));
+    Subscriber<int> outer_sub("intra://event_direct_nested_outer#direct");
+    Subscriber<int> inner_sub("intra://event_direct_nested_inner#direct");
+    int outer_value_after_nested_delivery = 0;
+    int inner_value = 0;
+
+    inner_sub.listen([&](const int& value) { inner_value = value; });
+    outer_sub.listen([&](const int& value) {
+      CHECK(inner_pub.publish(22));
+      outer_value_after_nested_delivery = value;
+    });
+
+    CHECK(outer_pub.publish(11));
+    CHECK(inner_value == 22);
+    CHECK(outer_value_after_nested_delivery == 11);
+  }
+
   TEST_CASE("multiple subscribers each receive the published message") {
     MESSAGE("[intra-pubsub] multiple subscribers each receive the published message");
 
@@ -997,6 +1058,52 @@ TEST_SUITE("intra-method") {
     CHECK_EQ(out, "ok_resp");
   }
 
+  TEST_CASE("nested direct client callback preserves the outer response") {
+    MESSAGE("[intra-method] nested direct client callback preserves the outer response");
+
+    Server<int, int> outer_server(IntraConf("test_direct_nested_client_outer", "null", 0, "direct"));
+    Server<int, int> inner_server(IntraConf("test_direct_nested_client_inner", "null", 0, "direct"));
+    Client<int, int> outer_client(IntraConf("test_direct_nested_client_outer", "null", 0, "direct"));
+    Client<int, int> inner_client(IntraConf("test_direct_nested_client_inner", "null", 0, "direct"));
+    int outer_response_after_nested_call = 0;
+    int inner_response = 0;
+
+    CHECK(outer_server.listen([](const int& request, int& response) { response = request + 1; }));
+    CHECK(inner_server.listen([](const int& request, int& response) { response = request + 1; }));
+    CHECK(outer_client.wait_for_connected(1s));
+    CHECK(inner_client.wait_for_connected(1s));
+
+    CHECK(outer_client.invoke(10, [&](const int& response) {
+      CHECK(inner_client.invoke(20, [&](const int& nested_response) { inner_response = nested_response; }));
+      outer_response_after_nested_call = response;
+    }));
+    CHECK(inner_response == 21);
+    CHECK(outer_response_after_nested_call == 11);
+  }
+
+  TEST_CASE("nested queue rpc on the same pipeline does not deadlock") {
+    MESSAGE("[intra-method] nested queue rpc on the same pipeline does not deadlock");
+
+    Server<int, int> inner_server(IntraConf("test_queue_nested_inner", "null", 17, "queue"));
+    Client<int, int> inner_client(IntraConf("test_queue_nested_inner", "null", 17, "queue"));
+    Server<int, int> outer_server(IntraConf("test_queue_nested_outer", "null", 17, "queue"));
+    Client<int, int> outer_client(IntraConf("test_queue_nested_outer", "null", 17, "queue"));
+
+    CHECK(inner_server.listen([](const int& request, int& response) { response = request + 1; }));
+    CHECK(outer_server.listen([&](const int& request, int& response) {
+      int inner_response = 0;
+      if (inner_client.invoke(request, inner_response, 1s)) {
+        response = inner_response + 1;
+      }
+    }));
+    REQUIRE(inner_client.wait_for_connected(1s));
+    REQUIRE(outer_client.wait_for_connected(1s));
+
+    int response = 0;
+    CHECK(outer_client.invoke(10, response, 1s));
+    CHECK_EQ(response, 12);
+  }
+
   TEST_CASE("direct fire and forget calls server without response callback") {
     MESSAGE("[intra-method] direct fire and forget calls server without response callback");
 
@@ -1232,6 +1339,29 @@ TEST_SUITE("intra-field") {
     REQUIRE(getter2.get().has_value());
     CHECK_EQ(*getter1.get(), 3);
     CHECK_EQ(*getter2.get(), 3);
+  }
+
+  TEST_CASE("nested direct getter update preserves the outer cached value") {
+    MESSAGE("[intra-field] nested direct getter update preserves the outer cached value");
+
+    Getter<int> outer_getter("intra://field_direct_nested_outer#direct");
+    Getter<int> inner_getter("intra://field_direct_nested_inner#direct");
+    Setter<int> outer_setter(IntraConf("field_direct_nested_outer", "", 0, "direct"));
+    Setter<int> inner_setter(IntraConf("field_direct_nested_inner", "", 0, "direct"));
+    int outer_callback_value_after_nested_update = 0;
+
+    CHECK(outer_getter.listen([&](const int& value) {
+      inner_setter.set(22);
+      outer_callback_value_after_nested_update = value;
+    }));
+
+    outer_setter.set(11);
+
+    REQUIRE(outer_getter.get().has_value());
+    REQUIRE(inner_getter.get().has_value());
+    CHECK(*outer_getter.get() == 11);
+    CHECK(*inner_getter.get() == 22);
+    CHECK(outer_callback_value_after_nested_update == 11);
   }
 }
 
@@ -1764,7 +1894,7 @@ TEST_SUITE("intra-method") {
 
     CHECK(client_a.wait_for_connected(1s));
     CHECK(client_b.wait_for_connected(1s));
-    CHECK(client_c.wait_for_connected(1s));
+    CHECK_FALSE(client_c.wait_for_connected(20ms));
 
     std::string out;
     CHECK(client_a.invoke("one", out, 1s));
@@ -1896,6 +2026,27 @@ TEST_SUITE("intra-field") {
 
     CHECK(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 1s));
     CHECK_EQ(captured.load(), 77);
+  }
+
+  TEST_CASE("getter invokes the installed callback object without holding its value mutex") {
+    MESSAGE("[intra-field] getter invokes the installed callback object without holding its value mutex");
+
+    int observed_state = 0;
+    bool called_get = false;
+    Setter<int> setter(IntraConf("field_stateful_callback", "", 0, "direct"));
+    Getter<int> getter(IntraConf("field_stateful_callback", "", 0, "direct"));
+
+    REQUIRE(getter.listen([&getter, &observed_state, &called_get, state = 0](const int&) mutable {
+      observed_state = ++state;
+      called_get = true;
+      (void)getter.get();
+    }));
+
+    setter.set(1);
+    setter.set(2);
+
+    CHECK(called_get);
+    CHECK_EQ(observed_state, 2);
   }
 
   TEST_CASE("late getter receives cached value after setter write") {
@@ -2776,162 +2927,28 @@ TEST_SUITE("intra-flatbuffers") {
 
 #if defined(VLINK_TEST_SUPPORT_SECURITY)
 
-#include "./security_test_helpers.h"
-
 namespace {}  // namespace
 
 TEST_SUITE("intra-security") {
-  TEST_CASE("security publisher and subscriber round trip with default key") {
-    MESSAGE("[intra-security] security publisher and subscriber round trip with default key");
+  TEST_CASE("security publisher is rejected") {
+    MESSAGE("[intra-security] security publisher is rejected");
 
-    try {
-      std::atomic<bool> received{false};
-      std::atomic<int> captured{0};
-
-      SecurityPublisher<int> pub(IntraConf("ev_sec_basic", "", 0, "queue"));
-      SecuritySubscriber<int> sub("intra://ev_sec_basic");
-
-      sub.listen([&](const int& v) {
-        captured.store(v, std::memory_order_relaxed);
-        received.store(true, std::memory_order_release);
-      });
-
-      if (pub.wait_for_subscribers(1s)) {
-        pub.publish(123);
-
-        CHECK(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 1s));
-
-        CHECK_EQ(captured.load(), 123);
-      }
-    } catch (const std::exception&) {
-      return;
-    }
+    CHECK_THROWS(SecurityPublisher<int>(IntraConf("ev_sec_pub", "", 0, "queue")));
   }
 
-  TEST_CASE("non-security subscriber does not receive encrypted message") {
-    MESSAGE("[intra-security] non-security subscriber does not receive encrypted message");
+  TEST_CASE("security subscriber is rejected") {
+    MESSAGE("[intra-security] security subscriber is rejected");
 
-    try {
-      std::atomic<bool> received{false};
-
-      SecurityPublisher<int> pub(IntraConf("ev_sec_mismatch", "", 0, "queue"));
-      Subscriber<int> sub("intra://ev_sec_mismatch");
-
-      sub.listen([&](const int& /*v*/) { received.store(true, std::memory_order_release); });
-
-      if (pub.wait_for_subscribers(1s)) {
-        pub.publish(1);
-        CHECK_FALSE(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 50ms));
-      }
-    } catch (const std::exception&) {
-      return;
-    }
+    CHECK_THROWS(SecuritySubscriber<int>("intra://ev_sec_sub"));
   }
 
-  TEST_CASE("asymmetric config round trip does not crash even if intra ignores it") {
-    MESSAGE("[intra-security] asymmetric config round trip does not crash even if intra ignores it");
+  TEST_CASE("asymmetric security config is rejected") {
+    MESSAGE("[intra-security] asymmetric security config is rejected");
 
-    try {
-      const auto kp = vlink_test_sec::generate_rsa_keypair(2048);
+    Security::Config config;
+    config.public_key_pem = "unsupported";
 
-      if (kp.public_pem.empty()) {
-        return;
-      }
-
-      std::atomic<bool> received{false};
-      Bytes captured;
-
-      Security::Config pub_cfg;
-      pub_cfg.public_key_pem = kp.public_pem;
-
-      Security::Config sub_cfg;
-      sub_cfg.private_key_pem = kp.private_pem;
-
-      SecurityPublisher<Bytes> pub(IntraConf("ev_sec_rsa1", "", 0, "queue"), std::move(pub_cfg));
-      SecuritySubscriber<Bytes> sub("intra://ev_sec_rsa1", std::move(sub_cfg));
-
-      sub.listen([&](const Bytes& data) {
-        captured = data;
-        received.store(true, std::memory_order_release);
-      });
-
-      if (pub.wait_for_subscribers(1s)) {
-        pub.publish(Bytes{0xAA, 0xBB, 0xCC});
-
-        CHECK(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 2s));
-
-        CHECK_EQ(captured.size(), 3u);
-      }
-    } catch (const std::exception&) {
-      return;
-    }
-  }
-
-  TEST_CASE("asymmetric mismatched key path completes without delivery") {
-    MESSAGE("[intra-security] asymmetric mismatched key path completes without delivery");
-
-    try {
-      const auto kp1 = vlink_test_sec::generate_rsa_keypair(2048);
-      const auto kp2 = vlink_test_sec::generate_rsa_keypair(2048);
-
-      if (kp1.public_pem.empty() || kp2.private_pem.empty()) {
-        return;
-      }
-
-      std::atomic<bool> received{false};
-
-      Security::Config pub_cfg;
-      pub_cfg.public_key_pem = kp1.public_pem;
-
-      Security::Config sub_cfg;
-      sub_cfg.private_key_pem = kp2.private_pem;
-
-      SecurityPublisher<Bytes> pub(IntraConf("ev_sec_rsa_mm1", "", 0, "queue"), std::move(pub_cfg));
-      SecuritySubscriber<Bytes> sub("intra://ev_sec_rsa_mm1", std::move(sub_cfg));
-
-      sub.listen([&](const Bytes& /*data*/) { received.store(true, std::memory_order_release); });
-
-      if (pub.wait_for_subscribers(1s)) {
-        pub.publish(Bytes{0x01, 0x02});
-        CHECK_FALSE(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 100ms));
-      }
-    } catch (const std::exception&) {
-      return;
-    }
-  }
-
-  TEST_CASE("asymmetric with signing keys path completes without crash") {
-    MESSAGE("[intra-security] asymmetric with signing keys path completes without crash");
-
-    try {
-      const auto kp = vlink_test_sec::generate_rsa_keypair(2048);
-
-      if (kp.public_pem.empty()) {
-        return;
-      }
-
-      std::atomic<bool> received{false};
-
-      Security::Config pub_cfg;
-      pub_cfg.public_key_pem = kp.public_pem;
-      pub_cfg.private_key_pem = kp.private_pem;
-
-      Security::Config sub_cfg;
-      sub_cfg.private_key_pem = kp.private_pem;
-      sub_cfg.public_key_pem = kp.public_pem;
-
-      SecurityPublisher<Bytes> pub(IntraConf("ev_sec_rsa_sign1", "", 0, "queue"), std::move(pub_cfg));
-      SecuritySubscriber<Bytes> sub("intra://ev_sec_rsa_sign1", std::move(sub_cfg));
-
-      sub.listen([&](const Bytes& /*data*/) { received.store(true, std::memory_order_release); });
-
-      if (pub.wait_for_subscribers(1s)) {
-        pub.publish(Bytes{0xDE, 0xAD});
-        std::this_thread::sleep_for(100ms);
-      }
-    } catch (const std::exception&) {
-      return;
-    }
+    CHECK_THROWS(SecurityPublisher<Bytes>(IntraConf("ev_sec_asymmetric", "", 0, "queue"), std::move(config)));
   }
 }
 
@@ -3029,53 +3046,35 @@ TEST_SUITE("intra-lifecycle") {
   TEST_CASE("wait_for_subscribers with short timeout returns false when no subscriber") {
     MESSAGE("[intra-lifecycle] wait_for_subscribers with short timeout returns false when no subscriber");
 
-    try {
-      Publisher<int> pub(IntraConf("lc_no_sub_timeout", "", 0, "queue"));
-      CHECK_FALSE(pub.wait_for_subscribers(30ms));
-    } catch (...) {
-    }
+    Publisher<int> pub(IntraConf("lc_no_sub_timeout", "", 0, "queue"));
+    CHECK_FALSE(pub.wait_for_subscribers(30ms));
   }
 
   TEST_CASE("rapid create destroy publisher subscriber pairs over 50 iterations completes without crash") {
     MESSAGE(
         "[intra-lifecycle] rapid create destroy publisher subscriber pairs over 50 iterations completes without crash");
 
-    try {
-      for (int i = 0; i < 50; ++i) {
-        Publisher<int> pub(IntraConf("lc_churn50", "", 0, "queue"));
-        Subscriber<int> sub("intra://lc_churn50");
+    for (int i = 0; i < 50; ++i) {
+      Publisher<int> pub(IntraConf("lc_churn50", "", 0, "queue"));
+      Subscriber<int> sub("intra://lc_churn50");
 
-        sub.listen([](const int& /*v*/) {});
-        pub.publish(i, true);
-      }
-    } catch (...) {
+      REQUIRE(sub.listen([](const int& /*v*/) {}));
+      REQUIRE(pub.publish(i, true));
     }
-
-    CHECK(true);
   }
 
   TEST_CASE("publisher constructed with kWithoutInit destructs safely without use") {
     MESSAGE("[intra-lifecycle] publisher constructed with kWithoutInit destructs safely without use");
 
-    try {
-      Publisher<int> pub(IntraConf("lc_no_init", "", 0, "queue"), InitType::kWithoutInit);
-      (void)pub;
-    } catch (...) {
-    }
-
-    CHECK(true);
+    Publisher<int> pub(IntraConf("lc_no_init", "", 0, "queue"), InitType::kWithoutInit);
+    (void)pub;
   }
 
   TEST_CASE("subscriber constructed with kWithoutInit destructs safely without use") {
     MESSAGE("[intra-lifecycle] subscriber constructed with kWithoutInit destructs safely without use");
 
-    try {
-      Subscriber<int> sub(IntraConf("lc_sub_no_init", "", 0, "queue"), InitType::kWithoutInit);
-      (void)sub;
-    } catch (...) {
-    }
-
-    CHECK(true);
+    Subscriber<int> sub(IntraConf("lc_sub_no_init", "", 0, "queue"), InitType::kWithoutInit);
+    (void)sub;
   }
 }
 

@@ -10,7 +10,7 @@
 |-----|------|
 | `vlink::SecurityPublisher<T>(url, cfg)` | 加密版 `Publisher<T>` |
 | `vlink::SecuritySubscriber<T>(url, cfg)` | 解密版 `Subscriber<T>` |
-| `Security::Config::key` | 对称密钥种子（两端相同即可） |
+| `Security::Config::key` | 非空对称密钥种子；内部以 SHA-256 派生 AES-128 密钥 |
 | `Security::Config::passphrase` + `pbkdf2_salt` + `pbkdf2_iterations` | 口令派生密钥（PBKDF2） |
 
 ## 🚀 最小示例

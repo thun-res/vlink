@@ -351,10 +351,6 @@ class ShmSubscriber final : public AbstractObject<ShmID>, public std::enable_sha
 
   void unsubscribe();
 
-  void set_manual_unloan(bool manual_unloan);
-
-  bool release(const Bytes& bytes);
-
   void set_latency_and_lost_enabled(bool enable);
 
   bool is_latency_and_lost_enabled() const;
@@ -378,8 +374,6 @@ class ShmSubscriber final : public AbstractObject<ShmID>, public std::enable_sha
   std::atomic_bool is_latency_and_lost_enabled_{false};
 
   CalculateSample calc_sample_;
-
-  std::atomic_bool manual_unloan_{false};
 
   std::atomic_bool quit_flag_{false};
 

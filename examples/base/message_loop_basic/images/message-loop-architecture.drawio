@@ -135,7 +135,7 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
-        <mxCell id="legend" value="&lt;b&gt;Thread-safe:&lt;/b&gt; post_task() can be called from any thread &#160;&#183;&#160; all callbacks execute serially on the dispatch thread &#8212; no locking needed. &#160; Idle dispatch is always condition-variable driven, independent of the overflow Strategy." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
+        <mxCell id="legend" value="&lt;b&gt;Thread-safe:&lt;/b&gt; post_task() can be called from any thread &#160;&#183;&#160; callbacks attached to this loop execute serially; state shared with other threads still needs synchronization. &#160; Idle dispatch is always condition-variable driven, independent of the overflow Strategy." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="620" y="410" width="540" height="70" as="geometry" />
         </mxCell>
 

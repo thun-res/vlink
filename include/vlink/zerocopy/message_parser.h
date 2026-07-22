@@ -150,7 +150,7 @@ class VLINK_EXPORT MessageParser final {
    * @brief Exact C++ alternative stored by @c Value for a field.
    */
   enum ValueType : uint8_t {
-    kValueUnknown = 0,  ///< Field type has not been initialised.
+    kValueUnknown = 0,  ///< Field has no supported value representation.
     kInt64 = 1,         ///< Signed integral value retained as @c int64_t.
     kUInt64 = 2,        ///< Unsigned integral value retained as @c uint64_t.
     kDouble = 3,        ///< Floating-point value represented as @c double.
@@ -464,7 +464,7 @@ struct MessageFormatOptions final {
  * @details
  * Walks @p parser purely through its field reflection (@c fields, @c element_fields,
  * @c collection_size, @c value) and renders the canonical text form shared by
- * @c vlink-dump, @c vlink-efbs and @c vlink-eproto. Per-type presentation -- header
+ * @c vlink-parse, @c vlink-efbs and @c vlink-eproto. Per-type presentation -- header
  * grouping, hidden reserved slots, symbolic enumerator names, nanosecond timestamps,
  * boolean rendering, the PointCloud protocol block and Tensor shape line -- is driven
  * by the @c MessageParser::Field metadata rather than by per-message branches.

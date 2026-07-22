@@ -902,10 +902,11 @@ class ProxyServerBridge final : public ProxyBridge {
       sub->set_latency_and_lost_enabled(true);
       ProxyBridge::apply_transport(*sub, config_.transport, true);
       sub->set_ser_type(target_ser, target_schema);
+      sub->set_safety_quit(true);
       sub->init();
 
-      sub->listen([this, state_ptr = &state, sub_ptr = sub.get(), url = info.url, ser = target_ser,
-                   schema = target_schema](const Bytes& bytes) {
+      auto on_data = [this, state_ptr = &state, sub_ptr = sub.get(), url = info.url, ser = target_ser,
+                      schema = target_schema](const Bytes& bytes) {
         if VUNLIKELY (!started_.load()) {
           return;
         }
@@ -927,7 +928,11 @@ class ProxyServerBridge final : public ProxyBridge {
         auto seq = state_ptr->total_seq.fetch_add(1);
         ProxyAPI::Data data{url, ser, schema, Bytes::shallow_copy(bytes.data(), bytes.size()), timestamp, seq};
         dispatch_data_callback(data);
-      });
+      };
+
+      if VUNLIKELY (!sub->listen(std::move(on_data))) {
+        throw Exception::RuntimeError("subscriber listen returned false");
+      }
 
       {
         std::unique_lock lock(state.state_mtx);
@@ -1121,7 +1126,8 @@ class ProxyServerBridge final : public ProxyBridge {
 
         if VLIKELY (current_seq > 0 || state.previous_seq > 0) {
           proxy_info.status = ProxyAPI::kActive;
-        } else if VUNLIKELY (((last_activity_us > 0 && now_us - last_activity_us >= 2000U * 1000U) ||
+        } else if VUNLIKELY (((last_activity_us > 0 && now_us >= last_activity_us &&
+                               now_us - last_activity_us >= 2000U * 1000U) ||
                               (last_activity_us == 0 && now_us - first_seen_us >= 2000U * 1000U))) {
           proxy_info.status = ProxyAPI::kInActive;
         } else {
@@ -1221,7 +1227,7 @@ bool ProxyBridge::parse_interface_mode(std::string_view value, InterfaceMode& mo
 
 bool ProxyBridge::is_dds_transport(std::string_view url) {
   return Helpers::has_startwith(url, "dds://") || Helpers::has_startwith(url, "ddsc://") ||
-         Helpers::has_startwith(url, "ddsr://") || Helpers::has_startwith(url, "ddst://");
+         Helpers::has_startwith(url, "ddsr://");
 }
 
 }  // namespace webviz

@@ -35,7 +35,7 @@
         <mxCell id="l1n3" value="&lt;b&gt;Client&amp;lt;Req,Resp&amp;gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#1976d2&quot;&gt;invoke&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="360" y="136" width="160" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="l1n4" value="&lt;b&gt;Server&amp;lt;Req,Resp&amp;gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#1976d2&quot;&gt;send&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+        <mxCell id="l1n4" value="&lt;b&gt;Server&amp;lt;Req,Resp&amp;gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#1976d2&quot;&gt;listen / reply&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="530" y="136" width="160" height="50" as="geometry" />
         </mxCell>
         <mxCell id="l1n5" value="&lt;b&gt;Setter&amp;lt;T&amp;gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#1976d2&quot;&gt;set&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
@@ -151,45 +151,39 @@
         <mxCell id="l4t" value="L4 &#160;&#183;&#160; Transport Backends" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
           <mxGeometry x="60" y="530" width="420" height="26" as="geometry" />
         </mxCell>
-        <mxCell id="l4badge" value="URL prefix selects backend &#160;&#183;&#160; 12 schemes" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+        <mxCell id="l4badge" value="URL scheme selects backend &#160;&#183;&#160; complete URL carries backend-specific addressing" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
           <mxGeometry x="500" y="532" width="444" height="22" as="geometry" />
         </mxCell>
 
         <mxCell id="l4n1" value="intra" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="60" y="566" width="135" height="40" as="geometry" />
+          <mxGeometry x="60" y="566" width="164" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l4n2" value="shm" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="205" y="566" width="135" height="40" as="geometry" />
+          <mxGeometry x="239" y="566" width="164" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l4n3" value="shm2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="350" y="566" width="135" height="40" as="geometry" />
+          <mxGeometry x="418" y="566" width="164" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l4n4" value="dds" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="495" y="566" width="135" height="40" as="geometry" />
+          <mxGeometry x="597" y="566" width="164" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l4n5" value="ddsc" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="640" y="566" width="135" height="40" as="geometry" />
+          <mxGeometry x="776" y="566" width="164" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l4n6" value="ddsr" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="785" y="566" width="135" height="40" as="geometry" />
-        </mxCell>
-        <mxCell id="l4n7" value="ddst" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="60" y="618" width="135" height="40" as="geometry" />
+          <mxGeometry x="60" y="618" width="164" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l4n8" value="zenoh" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="205" y="618" width="135" height="40" as="geometry" />
+          <mxGeometry x="239" y="618" width="164" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l4n9" value="someip" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="350" y="618" width="135" height="40" as="geometry" />
+          <mxGeometry x="418" y="618" width="164" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l4n10" value="mqtt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="495" y="618" width="135" height="40" as="geometry" />
+          <mxGeometry x="597" y="618" width="164" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l4n11" value="fdbus" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="640" y="618" width="135" height="40" as="geometry" />
-        </mxCell>
-        <mxCell id="l4n12" value="qnx" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="785" y="618" width="135" height="40" as="geometry" />
+          <mxGeometry x="776" y="618" width="164" height="40" as="geometry" />
         </mxCell>
 
         <mxCell id="arr45" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=2.2;strokeColor=#1976d2;" edge="1" parent="1">
@@ -214,7 +208,7 @@
         <mxCell id="clibg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;arcSize=18;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="40" y="778" width="920" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="clil" value="10 CLI tools&#160;&#160;&#183;&#160;&#160;vlink-info &#160;&#183;&#160; check &#160;&#183;&#160; list &#160;&#183;&#160; monitor &#160;&#183;&#160; bag &#160;&#183;&#160; dump &#160;&#183;&#160; eproto &#160;&#183;&#160; efbs &#160;&#183;&#160; bench &#160;&#183;&#160; trigger" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
+        <mxCell id="clil" value="10 CLI tools&#160;&#160;&#183;&#160;&#160;vlink-info &#160;&#183;&#160; check &#160;&#183;&#160; list &#160;&#183;&#160; monitor &#160;&#183;&#160; bag &#160;&#183;&#160; parse &#160;&#183;&#160; eproto &#160;&#183;&#160; efbs &#160;&#183;&#160; bench &#160;&#183;&#160; trigger" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#e65100;" vertex="1" parent="1">
           <mxGeometry x="60" y="782" width="880" height="24" as="geometry" />
         </mxCell>
 

@@ -104,12 +104,11 @@ struct ProxyAPI::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddin
   std::shared_mutex control_mtx;
   std::shared_mutex connect_mtx;
   std::shared_mutex error_mtx;
-  // Guards top-level transport handle pointers while they are rebuilt.
   std::shared_mutex handle_mtx;
+  std::shared_mutex time_state_mtx;
   std::shared_mutex time_mtx;
   std::shared_mutex info_mtx;
   std::shared_mutex data_mtx;
-  // Guards proxy_version, hostname/machine_id, and their discovered value sets.
   std::shared_mutex version_mtx;
   std::shared_mutex direct_mtx;
 
@@ -413,6 +412,8 @@ std::string ProxyAPI::get_current_machine_id() const {
 }
 
 uint64_t ProxyAPI::get_current_sys_time() const {
+  std::shared_lock time_state_lock(impl_->time_state_mtx);
+
   if VUNLIKELY (!impl_->sys_elapsed_timer.is_active()) {
     return impl_->sys_time.load(std::memory_order_relaxed);
   }
@@ -421,6 +422,8 @@ uint64_t ProxyAPI::get_current_sys_time() const {
 }
 
 uint64_t ProxyAPI::get_current_boot_time() const {
+  std::shared_lock time_state_lock(impl_->time_state_mtx);
+
   if VUNLIKELY (!impl_->boot_elapsed_timer.is_active()) {
     return impl_->boot_time.load(std::memory_order_relaxed);
   }
@@ -1362,13 +1365,12 @@ void ProxyAPI::reset_handle() {
 }
 
 void ProxyAPI::process_connected(bool connected) {
-  if (impl_->is_connected.load(std::memory_order_relaxed) != connected) {
-    impl_->is_connected.store(connected, std::memory_order_relaxed);
+  if VUNLIKELY (impl_->is_connected.load(std::memory_order_relaxed) != connected &&
+                impl_->is_connected.exchange(connected, std::memory_order_acq_rel) != connected) {
+    if (!connected) {
+      impl_->cpu_usage.store(0, std::memory_order_relaxed);
+      impl_->memory_usage.store(0, std::memory_order_relaxed);
 
-    impl_->cpu_usage.store(0, std::memory_order_relaxed);
-    impl_->memory_usage.store(0, std::memory_order_relaxed);
-
-    if (!impl_->is_connected.load(std::memory_order_relaxed)) {
       std::lock_guard version_lock(impl_->version_mtx);
       impl_->hostname.clear();
       // impl_->hostname_set.clear();
@@ -1385,7 +1387,7 @@ void ProxyAPI::process_connected(bool connected) {
       }
     }
 
-    if (!impl_->is_connected.load(std::memory_order_relaxed) && impl_->config.role == kController &&
+    if (!impl_->is_connected.load(std::memory_order_acquire) && impl_->config.role == kController &&
         !impl_->resetting.load(std::memory_order_relaxed) &&
         (impl_->error.load(std::memory_order_relaxed) == kNoError ||
          impl_->error.load(std::memory_order_relaxed) == kTokenError ||
@@ -1396,10 +1398,13 @@ void ProxyAPI::process_connected(bool connected) {
 }
 
 void ProxyAPI::process_time(uint64_t sys_time, uint64_t boot_time) {
-  impl_->sys_time.store(sys_time, std::memory_order_relaxed);
-  impl_->boot_time.store(boot_time, std::memory_order_relaxed);
-  impl_->sys_elapsed_timer.restart();
-  impl_->boot_elapsed_timer.restart();
+  {
+    std::unique_lock time_state_lock(impl_->time_state_mtx);
+    impl_->sys_time.store(sys_time, std::memory_order_relaxed);
+    impl_->boot_time.store(boot_time, std::memory_order_relaxed);
+    impl_->sys_elapsed_timer.restart();
+    impl_->boot_elapsed_timer.restart();
+  }
 
   std::shared_lock lock(impl_->time_mtx);
 

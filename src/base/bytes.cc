@@ -81,7 +81,9 @@ static constexpr uint8_t kCompressFooterMagic[4] = {
     0x71,
 };
 
-static constexpr size_t kMaxCompressCacheSize = 1024UL * 1024UL;
+static constexpr size_t kCompressCacheSize = 1024UL * 1024UL;
+
+static constexpr size_t kMaxCompressionDataSize = 256UL * 1024UL * 1024UL;
 
 static constexpr auto check_magic(const uint8_t* data, const uint8_t* magic, size_t len) noexcept {
   for (size_t i = 0; i < len; ++i) {
@@ -94,7 +96,7 @@ static constexpr auto check_magic(const uint8_t* data, const uint8_t* magic, siz
 }
 
 static auto& bytes_compress_cache() noexcept {
-  thread_local std::vector<uint8_t> compress_cache(kMaxCompressCacheSize);
+  thread_local std::vector<uint8_t> compress_cache(kCompressCacheSize);
 
   return compress_cache;
 }
@@ -123,10 +125,20 @@ Bytes Bytes::create(size_t size, uint8_t offset) noexcept {
 }
 
 Bytes Bytes::shallow_copy(uint8_t* data, size_t size) noexcept {
+  if VUNLIKELY (!data && size > 0) {
+    VLOG_E("Bytes: Cannot shallow copy null data with a non-zero size.");
+    return {};
+  }
+
   return Bytes(kShallowCopy, size == 0 ? nullptr : data, size, 0, false);
 }
 
 Bytes Bytes::shallow_copy(const uint8_t* data, size_t size) noexcept {
+  if VUNLIKELY (!data && size > 0) {
+    VLOG_E("Bytes: Cannot shallow copy null data with a non-zero size.");
+    return {};
+  }
+
   return Bytes(kShallowCopy, size == 0 ? nullptr : const_cast<uint8_t*>(data), size, 0, false);
 }
 
@@ -135,18 +147,38 @@ Bytes Bytes::shallow_copy_ptr(void* data) noexcept {
 }
 
 Bytes Bytes::deep_copy(uint8_t* data, size_t size, uint8_t offset) noexcept {
+  if VUNLIKELY (!data && size > 0) {
+    VLOG_E("Bytes: Cannot deep copy null data with a non-zero size.");
+    return {};
+  }
+
   return Bytes(kDeepCopy, size == 0 ? nullptr : data, size, offset, false);
 }
 
 Bytes Bytes::deep_copy(const uint8_t* data, size_t size, uint8_t offset) noexcept {
+  if VUNLIKELY (!data && size > 0) {
+    VLOG_E("Bytes: Cannot deep copy null data with a non-zero size.");
+    return {};
+  }
+
   return Bytes(kDeepCopy, size == 0 ? nullptr : const_cast<uint8_t*>(data), size, offset, false);
 }
 
 Bytes Bytes::loan_internal(uint8_t* data, size_t size) noexcept {
+  if VUNLIKELY (!data && size > 0) {
+    VLOG_E("Bytes: Cannot loan null data with a non-zero size.");
+    return {};
+  }
+
   return Bytes(kShallowCopy, size == 0 ? nullptr : data, size, 0, true);
 }
 
 Bytes Bytes::loan_internal(const uint8_t* data, size_t size) noexcept {
+  if VUNLIKELY (!data && size > 0) {
+    VLOG_E("Bytes: Cannot loan null data with a non-zero size.");
+    return {};
+  }
+
   return Bytes(kShallowCopy, size == 0 ? nullptr : const_cast<uint8_t*>(data), size, 0, true);
 }
 
@@ -282,7 +314,7 @@ std::string Bytes::encode_to_base64(const Bytes& target) noexcept {
 
   std::string encoded;
 
-  int val = 0;
+  uint32_t val = 0;
   int valb = -6;
 
   for (auto c : target) {
@@ -459,7 +491,7 @@ Bytes::Bytes(const std::initializer_list<uint8_t>& list) noexcept {
 }
 
 Bytes::Bytes(const std::vector<uint8_t>& data) noexcept {
-  process_type(kDeepCopy, const_cast<uint8_t*>(data.data()), data.size(), 0, false);
+  process_type(kDeepCopy, data.empty() ? nullptr : const_cast<uint8_t*>(data.data()), data.size(), 0, false);
 }
 
 Bytes::~Bytes() noexcept {
@@ -500,7 +532,7 @@ Bytes& Bytes::operator=(Bytes&& target) noexcept {
 }
 
 Bytes& Bytes::operator=(const std::vector<uint8_t>& data) noexcept {
-  process_type(kDeepCopy, const_cast<uint8_t*>(data.data()), data.size(), 0, false);
+  process_type(kDeepCopy, data.empty() ? nullptr : const_cast<uint8_t*>(data.data()), data.size(), 0, false);
 
   return *this;
 }
@@ -597,19 +629,20 @@ bool Bytes::is_compress_data(const uint8_t* data, size_t size) noexcept {
 Bytes Bytes::compress_data(const uint8_t* data, size_t size, bool high_ratio) noexcept {
   Bytes target_bytes;
 
-  if VUNLIKELY (!data || size == 0) {
+  if VUNLIKELY (!data || size == 0 || size > kMaxCompressionDataSize) {
     return target_bytes;
   }
 
-  if VUNLIKELY (size > kMaxCompressCacheSize) {
-    CLOG_E("Bytes: Input size too large: %zu.", size);
+  const auto source_size = static_cast<int>(size);
+  const int max_compressed_size =
+      high_ratio ? lzav::lzav_compress_bound_hi(source_size) : lzav::lzav_compress_bound(source_size);
 
+  if VUNLIKELY (max_compressed_size <= 0) {
     return target_bytes;
   }
 
-  size_t max_compressed_size = high_ratio ? lzav::lzav_compress_bound_hi(size) : lzav::lzav_compress_bound(size);
-
-  target_bytes = Bytes::create(sizeof(kCompressHeaderMagic) + 4 + max_compressed_size + sizeof(kCompressFooterMagic));
+  target_bytes = Bytes::create(sizeof(kCompressHeaderMagic) + 4 + static_cast<size_t>(max_compressed_size) +
+                               sizeof(kCompressFooterMagic));
 
   if VUNLIKELY (target_bytes.empty()) {
     return target_bytes;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -625,17 +658,17 @@ Bytes Bytes::compress_data(const uint8_t* data, size_t size, bool high_ratio) no
   int result = 0;
 
   if (high_ratio) {
-    result = lzav::lzav_compress_hi(data, target_bytes.data() + sizeof(kCompressHeaderMagic) + 4,
-                                    static_cast<int>(size), static_cast<int>(max_compressed_size));
+    result = lzav::lzav_compress_hi(data, target_bytes.data() + sizeof(kCompressHeaderMagic) + 4, source_size,
+                                    max_compressed_size);
   } else {
     if (size < lzav::LZAV_MR5_THR) {
-      result = lzav::lzav_compress_mref5(data, target_bytes.data() + sizeof(kCompressHeaderMagic) + 4,
-                                         static_cast<int>(size), static_cast<int>(max_compressed_size),
-                                         bytes_compress_cache().data(), bytes_compress_cache().size());
+      result = lzav::lzav_compress_mref5(data, target_bytes.data() + sizeof(kCompressHeaderMagic) + 4, source_size,
+                                         max_compressed_size, bytes_compress_cache().data(),
+                                         static_cast<int>(bytes_compress_cache().size()));
     } else {
-      result = lzav::lzav_compress_mref6(data, target_bytes.data() + sizeof(kCompressHeaderMagic) + 4,
-                                         static_cast<int>(size), static_cast<int>(max_compressed_size),
-                                         bytes_compress_cache().data(), bytes_compress_cache().size());
+      result = lzav::lzav_compress_mref6(data, target_bytes.data() + sizeof(kCompressHeaderMagic) + 4, source_size,
+                                         max_compressed_size, bytes_compress_cache().data(),
+                                         static_cast<int>(bytes_compress_cache().size()));
     }
   }
 
@@ -675,11 +708,15 @@ Bytes Bytes::uncompress_data(const uint8_t* data, size_t size, bool check_valid)
   uint32_t target_size = (static_cast<uint32_t>(data[4]) << 24) | (static_cast<uint32_t>(data[5]) << 16) |
                          (static_cast<uint32_t>(data[6]) << 8) | (static_cast<uint32_t>(data[7]));
 
-  static constexpr uint32_t kMaxUncompressedSize = 256 * 1024 * 1024;  // 256MB
-
-  if VUNLIKELY (target_size == 0 || target_size > kMaxUncompressedSize) {
+  if VUNLIKELY (target_size == 0 || target_size > kMaxCompressionDataSize) {
     CLOG_E("Bytes: Invalid uncompressed size: %u.", target_size);
 
+    return target_bytes;
+  }
+
+  const size_t compressed_size = size - sizeof(kCompressHeaderMagic) - 4 - sizeof(kCompressFooterMagic);
+
+  if VUNLIKELY (compressed_size > static_cast<size_t>(std::numeric_limits<int>::max())) {
     return target_bytes;
   }
 
@@ -688,8 +725,6 @@ Bytes Bytes::uncompress_data(const uint8_t* data, size_t size, bool check_valid)
   if VUNLIKELY (target_bytes.empty()) {
     return target_bytes;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
-
-  size_t compressed_size = size - sizeof(kCompressHeaderMagic) - 4 - sizeof(kCompressFooterMagic);
 
   int result = lzav::lzav_decompress(data + sizeof(kCompressHeaderMagic) + 4, target_bytes.data(),
                                      static_cast<int>(compressed_size), static_cast<int>(target_size));
@@ -830,18 +865,11 @@ Bytes& Bytes::shallow_copy(const Bytes& bytes) noexcept {
 }
 
 Bytes& Bytes::deep_copy(const Bytes& bytes) noexcept {
-  if (bytes.offset_ > 0 && bytes.data_) {
-    Bytes tmp = Bytes::deep_copy(bytes.data_, bytes.size_ + bytes.offset_);
-    process_type(kCreate, nullptr, bytes.size_, bytes.offset_, false);
-
-    if VLIKELY (data_ && tmp.data_) {
-      std::memcpy(data_, tmp.data_, bytes.size_ + bytes.offset_);
-    }
-  } else {
-    process_type(kDeepCopy, const_cast<uint8_t*>(bytes.data()), bytes.size_, 0, false);
+  if VUNLIKELY (this == &bytes) {
+    return deep_copy_self();
   }
 
-  return *this;
+  return operator=(bytes);
 }
 
 Bytes& Bytes::deep_copy_self() noexcept {
@@ -925,8 +953,11 @@ void Bytes::process_type(Type type, uint8_t* data, size_t size, uint8_t offset, 
       // VLOG_W("kShallowCopy");
 
       if (is_owner_ && data_) {
-        if VUNLIKELY (data_ == data) {
-          VLOG_E("Bytes: Cannot shallow copy self.");
+        const auto owner_address = reinterpret_cast<uintptr_t>(data_);
+        const auto source_address = reinterpret_cast<uintptr_t>(data);
+
+        if VUNLIKELY (source_address >= owner_address && source_address - owner_address < capacity_ + offset_) {
+          VLOG_E("Bytes: Cannot shallow copy an alias into owned storage.");
           return;
         }
 
@@ -960,8 +991,7 @@ void Bytes::process_type(Type type, uint8_t* data, size_t size, uint8_t offset, 
       size_t deferred_free_size = 0;
 
       if (is_owner_ && data_) {
-        if VUNLIKELY (data_ == data) {
-          VLOG_E("Bytes: Cannot deep copy self.");
+        if VUNLIKELY (data_ == data && size_ == size && offset_ == offset) {
           return;
         }
 
@@ -990,7 +1020,7 @@ void Bytes::process_type(Type type, uint8_t* data, size_t size, uint8_t offset, 
 
       if VLIKELY (total_size != 0) {
         if (total_size > kStackSize) {
-          if (capacity_ + offset_ != total_size || data_ == stack_data_) {
+          if (!is_owner_ || capacity_ + offset_ != total_size || data_ == stack_data_) {
             data_ = bytes_malloc(total_size);
 
             if VUNLIKELY (!data_) {
@@ -1017,7 +1047,7 @@ void Bytes::process_type(Type type, uint8_t* data, size_t size, uint8_t offset, 
 
         if VLIKELY (data && data_) {
           if VLIKELY (size > 0) {
-            std::memcpy(data_ + offset, data, size);
+            std::memmove(data_ + offset, data, size);
           }
         }
 
@@ -1051,9 +1081,12 @@ void Bytes::process_type(Type type, uint8_t* data, size_t size, uint8_t offset, 
       }
 
       if (is_owner_ && data_) {
-        if VUNLIKELY (data_ == data) {
-          VLOG_E("Bytes: Cannot move self.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-          return;                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        const auto owner_address = reinterpret_cast<uintptr_t>(data_);
+        const auto source_address = reinterpret_cast<uintptr_t>(data);
+
+        if VUNLIKELY (source_address >= owner_address && source_address - owner_address < capacity_ + offset_) {
+          VLOG_E("Bytes: Cannot move an alias into owned storage.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          return;                                                     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
         if (data_ != stack_data_ && capacity_ + offset_ > kStackSize) {

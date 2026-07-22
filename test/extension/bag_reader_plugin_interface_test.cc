@@ -308,6 +308,12 @@ TEST_SUITE("extension-BagPluginInterface") {
     CHECK_EQ(observed_url, "dds://raw");
     CHECK_EQ(observed_ser_type, "raw");
   }
+
+  TEST_CASE("default on_reset and flush hooks are no-ops") {
+    DefaultPlugin plugin;
+    CHECK_NOTHROW(plugin.on_reset());
+    CHECK_NOTHROW(plugin.flush());
+  }
 }
 
 // NOLINTEND

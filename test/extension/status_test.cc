@@ -93,6 +93,12 @@ TEST_SUITE("extension-Status") {
     CHECK_FALSE(Status::is_for_reader(Status::kLivelinessLost));
   }
 
+  TEST_CASE("is_for_reader rejects unknown and out-of-range values") {
+    CHECK_FALSE(Status::is_for_reader(Status::kUnknown));
+    CHECK_FALSE(Status::is_for_reader(static_cast<Status::Type>(11)));
+    CHECK_FALSE(Status::is_for_reader(static_cast<Status::Type>(255)));
+  }
+
   TEST_CASE("Unknown get_type returns kUnknown and get_string is non-empty") {
     Status::Unknown u;
     CHECK_EQ(u.get_type(), Status::kUnknown);

@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <string_view>
 
 #include "./perception_mapping.h"
@@ -109,20 +110,36 @@ bool decode_zerocopy_occupancy_grid(const vlink::Bytes& raw, Layer& out) {
   }
 
   out.type = RenderType::kOccupancyGrid;
+  out.grid_valid = false;
 
   Grid& grid = out.grid;
-  double value = 0.0;
-  parser.numeric("width", value);
-  grid.width = static_cast<uint32_t>(value);
-  parser.numeric("height", value);
-  grid.height = static_cast<uint32_t>(value);
-  parser.numeric("resolution", grid.resolution);
-  parser.numeric("origin_x", grid.origin_x);
-  parser.numeric("origin_y", grid.origin_y);
-  parser.numeric("origin_z", grid.origin_z);
+  double width = 0.0;
+  double height = 0.0;
+
+  if (!parser.numeric("width", width) || !parser.numeric("height", height) ||
+      !parser.numeric("resolution", grid.resolution) || !parser.numeric("origin_x", grid.origin_x) ||
+      !parser.numeric("origin_y", grid.origin_y) || !parser.numeric("origin_z", grid.origin_z) || width < 1.0 ||
+      height < 1.0 || !std::isfinite(grid.resolution) || grid.resolution <= 0.0 || !std::isfinite(grid.origin_x) ||
+      !std::isfinite(grid.origin_y) || !std::isfinite(grid.origin_z)) {
+    return false;
+  }
+
+  grid.width = static_cast<uint32_t>(width);
+  grid.height = static_cast<uint32_t>(height);
 
   const size_t cell_count = parser.collection_size("cells");
-  parser.numeric("cell_type", value);
+  const bool valid_dimensions = grid.width <= std::numeric_limits<size_t>::max() / grid.height;
+
+  if (!valid_dimensions || cell_count != static_cast<size_t>(grid.width) * grid.height) {
+    return false;
+  }
+
+  double value = 0.0;
+
+  if (!parser.numeric("cell_type", value)) {
+    return false;
+  }
+
   const auto cell_type = static_cast<uint8_t>(value);
 
   grid.cells.clear();
@@ -136,7 +153,7 @@ bool decode_zerocopy_occupancy_grid(const vlink::Bytes& raw, Layer& out) {
     grid.cells.push_back(occupancy_cell_to_int8(cell_type, value));
   }
 
-  out.grid_valid = !grid.cells.empty();
+  out.grid_valid = grid.cells.size() == cell_count;
   return out.grid_valid;
 }
 
@@ -174,7 +191,7 @@ bool decode_zerocopy_point_cloud(const vlink::Bytes& raw, Layer& out) {
       continue;
     }
 
-    if (std::isnan(v3f.x) || std::isnan(v3f.y) || std::isnan(v3f.z)) {
+    if (!std::isfinite(v3f.x) || !std::isfinite(v3f.y) || !std::isfinite(v3f.z)) {
       continue;
     }
 
@@ -186,6 +203,11 @@ bool decode_zerocopy_point_cloud(const vlink::Bytes& raw, Layer& out) {
     if (has_intensity) {
       float value = 0;
       pcl.get_value<float>(value, i, intensity_offset);
+
+      if (!std::isfinite(value)) {
+        continue;
+      }
+
       point.value = value;
     }
 

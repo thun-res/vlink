@@ -23,6 +23,7 @@
 
 #include "./fdbus_client_impl.h"
 
+#include <limits>
 #include <utility>
 
 #include "./base/elapsed_timer.h"
@@ -37,6 +38,7 @@ void FdbusClientImpl::init() {
   static auto& factory = FdbusFactory::get();
 
   conf_.hash_code = Helpers::get_hash_code(conf_.event);
+  callback_state_ = std::make_shared<CallbackState>();
 
   object_ = factory.get_object<Object>({kImplType, conf_.transport, conf_.address});
 
@@ -49,7 +51,14 @@ void FdbusClientImpl::init() {
   ClientImpl::update_connected();
 }
 
-void FdbusClientImpl::deinit() { object_->remove_impl(this); }
+void FdbusClientImpl::deinit() {
+  {
+    std::lock_guard lock(callback_state_->mtx);
+    callback_state_->active = false;
+  }
+
+  object_->remove_impl(this);
+}
 
 void FdbusClientImpl::interrupt() {
   ClientImpl::interrupt();
@@ -81,6 +90,11 @@ bool FdbusClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::c
   if (timeout.count() != 0) {
     ack_manager_.reset_interrupted();
 
+    if VUNLIKELY (object_->worker()->isSelf()) {
+      VLOG_W("Blocking call is not allowed on the fdbus worker thread.");
+      return false;
+    }
+
     ElapsedTimer timer;
     timer.start();
 
@@ -95,18 +109,55 @@ bool FdbusClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::c
     }
 
     auto ack_request = ack_manager_.create_request();
+    auto callback_state = callback_state_;
 
-    auto ack_function = [this, ack_request, callback = std::move(callback)](const Bytes& resp_data) mutable {
+    auto ack_function = [this, callback_state = std::move(callback_state), ack_request,
+                         callback = std::move(callback)](const Bytes& resp_data) mutable {
+      std::lock_guard lock(callback_state->mtx);
+
+      if VUNLIKELY (!callback_state->active) {
+        return;
+      }
+
       ack_manager_.notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
     };
 
-    return ack_manager_.process(ack_request, timeout.count() - elapsed,
-                                [this, &req_data, ack_function = std::move(ack_function)]() mutable {
-                                  return object_->call(conf_.hash_code, req_data, std::move(ack_function));
+    int32_t remaining_timeout = -1;
+    int32_t object_timeout = 0;
+
+    if (timeout.count() > 0) {
+      auto remaining = timeout.count() - elapsed;
+
+      if VUNLIKELY (remaining > std::numeric_limits<int32_t>::max()) {
+        remaining_timeout = std::numeric_limits<int32_t>::max();
+      } else {
+        remaining_timeout = static_cast<int32_t>(remaining);
+      }
+
+      object_timeout = remaining_timeout;
+    }
+
+    return ack_manager_.process(ack_request, remaining_timeout,
+                                [this, &req_data, ack_function = std::move(ack_function), object_timeout]() mutable {
+                                  return object_->call(conf_.hash_code, req_data, std::move(ack_function),
+                                                       object_timeout);
                                 });
   }
 
-  return object_->call(conf_.hash_code, req_data, std::move(callback));
+  auto callback_state = callback_state_;
+
+  auto response_callback = [callback_state = std::move(callback_state),
+                            callback = std::move(callback)](const Bytes& resp_data) mutable {
+    std::lock_guard lock(callback_state->mtx);
+
+    if VUNLIKELY (!callback_state->active) {
+      return;
+    }
+
+    callback(resp_data);
+  };
+
+  return object_->call(conf_.hash_code, req_data, std::move(response_callback));
 }
 
 }  // namespace vlink

@@ -29,17 +29,19 @@
 //
 // Two construction-time modes control when transport resources are created:
 //   kWithInit (default) -- the constructor immediately calls init(). Suitable
-//                          when you do not need to tweak QoS / ser_type /
-//                          properties before the transport exists.
+//                          when you do not need to set backend properties,
+//                          ser_type, or other pre-init options.
 //   kWithoutInit        -- the constructor only stores the URL + type info.
 //                          The user then calls set_property / set_ser_type /
 //                          set_discovery_enabled etc., and only then init().
 //
+// Endpoint QoS is configured through the URL/backend Conf. set_property() is
+// only for properties explicitly supported by the selected backend.
 // Recommended pattern (used in section "Recommended lifecycle pattern" below):
-//   construct(kWithoutInit) -> set_property() ... -> init() -> listen() ... -> deinit()
+//   construct(kWithoutInit) -> configure as needed -> init() -> listen() ... -> deinit()
 //
 // Difference between deinit() and interrupt():
-//   deinit()    -- tears down the transport; has_inited() becomes false;
+//   deinit()    -- unregisters the node's transport endpoint; has_inited() becomes false;
 //                  publish/listen become no-ops; re-callable.
 //   interrupt() -- wakes up any blocked wait_for_*() calls (returns false)
 //                  but leaves the transport up and callbacks active.
@@ -62,15 +64,14 @@ int main() {
   }
 
   // Section: deferred init. kWithoutInit defers transport creation until
-  // init(), giving us a window to apply property-based QoS overrides that
-  // MUST be set before the transport is created (after init they are
-  // ignored for fields that are immutable at runtime).
+  // init(), giving us a window to apply backend properties that must be set
+  // before the transport is created. DDS endpoint QoS itself is configured
+  // through the URL/DdsConf, not through arbitrary set_property() keys.
   {
     vlink::Publisher<std::string> pub("dds://lifecycle/deferred", vlink::InitType::kWithoutInit);
     VLOG_I("deferred before init: has_inited=", pub.has_inited());
 
-    pub.set_property("qos.reliability.kind", "1");
-    pub.set_property("qos.history.depth", "10");
+    pub.set_property("dds.ip", "127.0.0.1");
 
     pub.init();
     VLOG_I("deferred after init: has_inited=", pub.has_inited());
@@ -109,11 +110,10 @@ int main() {
   }
 
   // Section: the recommended end-to-end pattern. construct(kWithoutInit) ->
-  // set_property -> init -> listen -> deinit.
+  // apply supported pre-init configuration -> init -> listen -> deinit.
   {
     vlink::Subscriber<std::string> sub("dds://lifecycle/pattern", vlink::InitType::kWithoutInit);
-    sub.set_property("qos.reliability.kind", "1");
-    sub.set_property("qos.history.depth", "50");
+    sub.set_property("dds.ip", "127.0.0.1");
     sub.init();
     // listen() installs the data callback. It runs on the subscriber's
     // delivery thread (or on the attached MessageLoop if one was attached).

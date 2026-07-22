@@ -97,25 +97,34 @@ std::shared_ptr<ddsr::DomainParticipant> DdsrFactory::create_participant(uint8_t
   const auto& dds_qos_ext = get_qos_ext(conf.qos_ext, "part");
   const auto& id = std::make_tuple(type, conf.domain, dds_qos_ext, properties);
 
+  std::lock_guard lifecycle_lock(factory.participant_mtx_);
   std::unique_lock lock(factory.mtx_);
   std::shared_ptr<ddsr::DomainParticipant> part = get_weak_ptr(factory.part_map_, id).lock();
 
   if (!part) {
     lock.unlock();
 
-    ddsr::DomainParticipant* ptr = nullptr;
+    DDS_DomainParticipantQos dds_qos;
+    DDS_DomainParticipantQos_initialize(&dds_qos);
+
     if (dds_qos_ext.empty()) {
-      DDS_DomainParticipantQos dds_qos;
-      DDS_DomainParticipantQos_initialize(&dds_qos);
       DDS_DomainParticipantQos_get_defaultI(&dds_qos);
-      set_participant_qos(dds_qos, properties);
-
-      ptr = new ddsr::DomainParticipant(conf.domain, &dds_qos);
-
-      DDS_DomainParticipantQos_finalize(&dds_qos);
     } else {
-      ptr = new ddsr::DomainParticipant(conf.domain, nullptr, dds_qos_ext);
+      auto ret = DDS_DomainParticipantFactory_get_participant_qos_from_profile(
+          factory.dds_factory_, &dds_qos, DDS_BUILTIN_QOS_LIB, dds_qos_ext.c_str());
+
+      if VUNLIKELY (ret != DDS_RETCODE_OK) {
+        VLOG_E("DdsrFactory: Failed to load participant QoS profile [", dds_qos_ext, "].");
+        DDS_DomainParticipantQos_finalize(&dds_qos);
+        return nullptr;
+      }
     }
+
+    set_participant_qos(dds_qos, properties);
+
+    auto* ptr = new ddsr::DomainParticipant(conf.domain, &dds_qos);
+
+    DDS_DomainParticipantQos_finalize(&dds_qos);
 
     if VUNLIKELY (!ptr || !ptr->entity) {
       VLOG_E("DdsrFactory: Failed to create participant.");
@@ -124,6 +133,8 @@ std::shared_ptr<ddsr::DomainParticipant> DdsrFactory::create_participant(uint8_t
     }
 
     part = std::shared_ptr<ddsr::DomainParticipant>(ptr, [id](ddsr::DomainParticipant* part) {
+      std::lock_guard lifecycle_lock(factory.participant_mtx_);
+
       {
         std::lock_guard lock(factory.mtx_);
         auto iter = factory.part_map_.find(id);
@@ -502,11 +513,19 @@ bool DdsrFactory::release_data(DDS_DataReader* reader, ReadMessage& msg) {
 }
 
 uint64_t DdsrFactory::get_guid(DDS_GUID_t* guid, uint32_t seq) {
-  uint64_t result = 0;
+  uint64_t result = 14695981039346656037ULL;
 
-  std::memcpy(&result, guid->value, sizeof(uint64_t));
+  for (const auto value : guid->value) {
+    result ^= static_cast<uint64_t>(value);
+    result *= 1099511628211ULL;
+  }
 
-  return result << 32 | seq;
+  for (size_t i = 0; i < sizeof(seq); ++i) {
+    result ^= static_cast<uint64_t>((seq >> (i * 8)) & 0xFFU);
+    result *= 1099511628211ULL;
+  }
+
+  return result;
 }
 
 int DdsrFactory::get_default_domain_id() {

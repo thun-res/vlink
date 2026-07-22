@@ -29,6 +29,7 @@
 
 #include <atomic>
 #include <map>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include <shared_mutex>
 #include <string>
@@ -74,6 +75,8 @@ class FoxgloveParameters final {
 
   [[nodiscard]] nlohmann::json build_parameter_values(const std::vector<std::string>& names, std::string_view id) const;
 
+  [[nodiscard]] static nlohmann::json build_parameter_delta(const std::vector<const ParameterEntry*>& entries);
+
   bool apply_set_parameters(const nlohmann::json& request, nlohmann::json& response, std::vector<ParameterEntry>& delta,
                             std::string& error);
 
@@ -98,6 +101,7 @@ class FoxgloveParameters final {
 
   Config config_;
   Setter<Bytes>::SharedPtr setter_;
+  std::mutex lifecycle_mtx_;
   mutable std::shared_mutex state_mtx_;
   ParameterMap state_;
   std::atomic_bool started_{false};

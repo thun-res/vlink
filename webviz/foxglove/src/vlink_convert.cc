@@ -923,7 +923,7 @@ int VlinkConvert::get_mapping_match_score(const CommandMapping& mapping, const C
 
 const CommandMapping* VlinkConvert::find_mapping(const CommandChannel& channel, bool* ambiguous) const {
   struct MappingCache final {
-    const VlinkConvert* owner{nullptr};
+    uint64_t owner_id{0};
     std::string topic;
     std::string encoding;
     std::string schema_name;
@@ -934,7 +934,7 @@ const CommandMapping* VlinkConvert::find_mapping(const CommandChannel& channel, 
 
   thread_local MappingCache cache;
 
-  if VLIKELY (cache.owner == this && cache.topic == channel.topic && cache.encoding == channel.encoding &&
+  if VLIKELY (cache.owner_id == cache_owner_id_ && cache.topic == channel.topic && cache.encoding == channel.encoding &&
               cache.schema_name == channel.schema_name && cache.schema_encoding == channel.schema_encoding) {
     if VLIKELY (ambiguous) {
       *ambiguous = cache.ambiguous;
@@ -970,7 +970,7 @@ const CommandMapping* VlinkConvert::find_mapping(const CommandChannel& channel, 
     *ambiguous = has_ambiguity;
   }
 
-  cache.owner = this;
+  cache.owner_id = cache_owner_id_;
   cache.topic = channel.topic;
   cache.encoding = channel.encoding;
   cache.schema_name = channel.schema_name;

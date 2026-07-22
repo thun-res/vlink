@@ -196,10 +196,8 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
    * | @c runnable_list           | {}      | Ordered names of @c RunablePluginInterface plugins to load.       |
    *
    * @note
-   * @c max_packet_size is interpreted in MiB.  The default value @c 0 drops every
-   * non-empty message -- there is no special case in the implementation.  Set it to
-   * a positive number to forward larger packets.  The @c vlink-proxy CLI defaults
-   * this field to @c 4.0.
+   * @c max_packet_size is interpreted in MiB.  The default value @c 0 disables the
+   * payload-size limit.  The @c vlink-proxy CLI defaults this field to @c 4.0.
    */
   struct Config final {
     bool async{false};                       ///< Forward data asynchronously on the MessageLoop thread.
@@ -210,7 +208,7 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
     int domain_id{0};                        ///< DDS domain ID.
     uint32_t buf_size{0};                    ///< DDS socket buffer in bytes; 0 = default.
     uint32_t mtu_size{0};                    ///< DDS fragment MTU in bytes; 0 = default.
-    double max_packet_size{0};               ///< Maximum relayed payload in MiB; 0 drops every non-empty message.
+    double max_packet_size{0};               ///< Maximum relayed payload in MiB; 0 disables the limit.
     std::string security_key;                ///< Security key; empty = default security slot.
     std::string bind_ip;                     ///< Local IP for DDS sockets; empty = any.
     std::string peer_ip;                     ///< Peer unicast IP for DDS; empty = multicast.

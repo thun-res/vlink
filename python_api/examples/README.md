@@ -15,7 +15,7 @@
 | 文件 | 主题 | 行数 |
 |---|---|---|
 | `demo_vlink_communication.py` | 三种通信模型完整演示 | ~1100 |
-| `demo_vlink_bag.py`    | bag 记录与回放（数据闭环）| ~430 |
+| `demo_vlink_bag.py`    | bag 记录与回放（数据闭环）| ~700 |
 
 ---
 
@@ -39,7 +39,7 @@
 | | `demo_rpc_async` | `Client.invoke_async(req, cb)` 异步回调 |
 | | `demo_rpc_with_zerocopy` | RPC 负载是 `Tensor`（模拟推理服务） |
 | **5. Field · 状态同步** | `demo_field_push` | `Getter.listen(cb)` 推式订阅 |
-| | `demo_field_pull` | `Getter.get()` 拉式获取最新值（含晚加入者场景） |
+| | `demo_field_pull` | `Getter.get()` 拉式读取 Getter 已接收的最新值 |
 
 通用骨架（Section 1-3）：
 
@@ -60,9 +60,10 @@
 | `demo_bag_simple_record_replay` | 最小化记录/回放循环（5 条消息往返） |
 | `demo_bag_with_compression` | `LZAV` 压缩配置（`.vdb` 后端；MCAP 后端使用 Zstd 或 none） |
 | `demo_bag_zerocopy_record_replay` | 记录 `CameraFrame` + `OccupancyGrid`，回放时分主题反序列化 |
-| `demo_bag_playback_control` | `play / jump / pause / resume`，`rate=0.0` 最快回放 |
+| `demo_bag_playback_control` | `play / jump / pause / resume`，`rate=100.0` 加速回放 |
 | `demo_bag_filter_urls` | `Config.filter_urls` 只回放指定主题子集 |
 | `demo_bag_inspect_only` | `get_info()` 元数据只读检视（不回放） |
+| `demo_bag_cursor_read` | `open_cursor()` + 迭代器同步拉取帧 |
 
 `BagReader` 与默认异步 `BagWriter` 生命周期：
 
@@ -94,8 +95,10 @@ recorder = vlink.TriggerRecorder(config)
 recorder.bind_bag_interface(bag_plugin)
 ```
 
-`load_bag_plugin()` 按 `BagPluginInterface` ABI 2.0 加载；返回对象可直接交给
-`bind_bag_interface()`，`clear_bag_interface()` 用于恢复默认的采集时间顺序。
+`load_bag_plugin()` 按 `BagPluginInterface` 接口版本 2.0 加载；返回对象可直接交给
+`bind_bag_interface()`，`clear_bag_interface()` 用于恢复默认的采集时间顺序。`on_reset()` / `flush()`
+属于插件与 C++ 宿主之间的内部生命周期，Python 侧不直接调用。reader 仅在自然完成的回放轮次调用
+`flush()`；若在边界排空前观察到 `stop()` / `jump()`，下一会话通过 `on_reset()` 丢弃保留尾帧。
 
 触发生命周期插件（`TriggerPluginInterface`）同样由宿主加载并绑定，`load_trigger_plugin()`
 会在加载后调用一次插件的 `init(config)`：
@@ -125,7 +128,7 @@ python3 demo_vlink_bag.py
 ```
 
 依赖：
-- VLink Python 绑定模块 `_vlink_nanobind`（由 `_vlink_nanobind` CMake target 构建；工程名为 `vlink-python_api`）
+- VLink Python 公开模块 `vlink`（底层 `_vlink_nanobind` 由同名 CMake target 构建；工程名为 `vlink-python_api`）
 - `demo_pubsub_protobuf` 需要 `google.protobuf` 及 `protoc --python_out=. test/idl/test.proto` 生成的 `test_pb2.py`
 - `demo_pubsub_flatbuffers` 需要 `flatbuffers` Python 模块及 `flatc --python test/idl/test.fbs` 生成的 `fbs/Message.py`
 
@@ -137,15 +140,15 @@ python3 demo_vlink_bag.py
 
 每个 demo 函数都被设计成 **可整段复制**：
 - 去掉 `def demo_xxx():` 一行 + 缩进，就是一个独立脚本
-- 在脚本顶部加 `import _vlink_nanobind as _vlink` 即可
+- 在脚本顶部加 `import vlink as _vlink` 即可
 - URL 中的 `intra://demo/...` 替换成你的实际 topic
 - 主题约定遵循 VLink URL 方案：`<transport>://<topic_path>`，
   传输前缀可换为 `shm://`、`shm2://`、`dds://`、`zenoh://` 等
 
-如果你的代码需要 **跨进程** 通讯（不是本地 `intra://`）：把 URL 前缀
-换成 `shm://`（共享内存零拷贝）或 `dds://`（DDS 局域网/广域网）即可，
+如果你的代码需要 **跨进程** 通讯（不是本地 `intra://`）：对于地址兼容的话题，可把 URL scheme
+换成 `shm://`（共享内存，支持 transport loan）或 `dds://`（DDS 局域网/广域网），
 demo 中的所有 Publisher / Subscriber / Server / Client / Setter / Getter
-代码不需要任何改动。
+调用结构不需要改动；具体复制语义、依赖与 QoS 随后端而异。
 
 ---
 

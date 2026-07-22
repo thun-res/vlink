@@ -44,11 +44,12 @@ if exist "%VLINK_FBS_DIR_CONFIG%" (
     )
 )
 
-echo Support commands: [proxy] [info] [monitor] [bag] [trigger] [list] [eproto] [efbs] [dump] [check] [bench]
+echo Support commands: [proxy] [info] [monitor] [bag] [trigger] [list] [eproto] [efbs] [parse] [check] [bench]
 echo.
 
 echo ;%PATH%; | findstr /C:";%VLINK_BIN_DIR%;" >nul 2>&1 || set "PATH=%VLINK_BIN_DIR%;%PATH%"
 echo ;%PYTHONPATH%; | findstr /C:";%VLINK_ROOT_DIR%\lib;" >nul 2>&1 || set "PYTHONPATH=%VLINK_ROOT_DIR%\lib;%PYTHONPATH%"
+echo ;%PYTHONPATH%; | findstr /C:";%VLINK_ROOT_DIR%\lib\python;" >nul 2>&1 || set "PYTHONPATH=%VLINK_ROOT_DIR%\lib\python;%PYTHONPATH%"
 
 doskey proxy="%VLINK_BIN_DIR%vlink-proxy" $*
 doskey info="%VLINK_BIN_DIR%vlink-info" $*
@@ -58,7 +59,7 @@ doskey trigger="%VLINK_BIN_DIR%vlink-trigger" $*
 doskey list="%VLINK_BIN_DIR%vlink-list" $*
 doskey eproto="%VLINK_BIN_DIR%vlink-eproto" $*
 doskey efbs="%VLINK_BIN_DIR%vlink-efbs" $*
-doskey dump="%VLINK_BIN_DIR%vlink-dump" $*
+doskey parse="%VLINK_BIN_DIR%vlink-parse" $*
 doskey check="%VLINK_BIN_DIR%vlink-check" $*
 doskey bench="%VLINK_BIN_DIR%vlink-bench" $*
 

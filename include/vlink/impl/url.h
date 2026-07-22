@@ -64,11 +64,9 @@
  * | @c dds://     | @c DdsConf                                      |
  * | @c ddsc://    | @c DdscConf                                     |
  * | @c ddsr://    | @c DdsrConf                                     |
- * | @c ddst://    | @c DdstConf                                     |
  * | @c someip://  | @c SomeipConf                                   |
  * | @c mqtt://    | @c MqttConf                                     |
  * | @c fdbus://   | @c FdbusConf                                    |
- * | @c qnx://     | @c QnxConf                                      |
  * | other         | Unsupported; custom schemes are not registered. |
  *
  * @par Construction flow
@@ -144,11 +142,9 @@
 #include "../modules/dds_conf.h"
 #include "../modules/ddsc_conf.h"
 #include "../modules/ddsr_conf.h"
-#include "../modules/ddst_conf.h"
 #include "../modules/fdbus_conf.h"
 #include "../modules/intra_conf.h"
 #include "../modules/mqtt_conf.h"
-#include "../modules/qnx_conf.h"
 #include "../modules/shm2_conf.h"
 #include "../modules/shm_conf.h"
 #include "../modules/someip_conf.h"
@@ -236,11 +232,9 @@ struct Url final : public Conf {
    * | @c kEnableDds    | 11           | @c dds://       |
    * | @c kEnableDdsc   | 10           | @c ddsc://      |
    * | @c kEnableDdsr   |  9           | @c ddsr://      |
-   * | @c kEnableDdst   |  8           | @c ddst://      |
    * | @c kEnableSomeip |  7           | @c someip://    |
    * | @c kEnableMqtt   |  6           | @c mqtt://      |
    * | @c kEnableFdbus  |  5           | @c fdbus://     |
-   * | @c kEnableQnx    |  4           | @c qnx://       |
    * | @c kEnableAll    | all bits set | Every transport |
    */
   enum TransportEnableFlag : uint16_t {
@@ -252,11 +246,9 @@ struct Url final : public Conf {
     kEnableDds = 0b0000'1000'0000'0000,     ///< Enable the @c dds:// (Fast-DDS) transport.
     kEnableDdsc = 0b0000'0100'0000'0000,    ///< Enable the @c ddsc:// (CycloneDDS) transport.
     kEnableDdsr = 0b0000'0010'0000'0000,    ///< Enable the @c ddsr:// (RTI DDS) transport.
-    kEnableDdst = 0b0000'0001'0000'0000,    ///< Enable the @c ddst:// (TravoDDS) transport.
     kEnableSomeip = 0b0000'0000'1000'0000,  ///< Enable the @c someip:// transport.
     kEnableMqtt = 0b0000'0000'0100'0000,    ///< Enable the @c mqtt:// transport.
     kEnableFdbus = 0b0000'0000'0010'0000,   ///< Enable the @c fdbus:// transport.
-    kEnableQnx = 0b0000'0000'0001'0000,     ///< Enable the @c qnx:// transport (QNX only).
     kEnableAll = 0b1111'1111'1111'1111,     ///< Enable every transport.
   };
 
@@ -655,13 +647,6 @@ inline void Url::global_init(uint16_t transport_enable_flags) {
   }
 #endif
 
-#ifdef VLINK_SUPPORT_DDST
-
-  if (transport_enable_flags & kEnableDdst) {
-    DdstConf::global_init();
-  }
-#endif
-
 #ifdef VLINK_SUPPORT_SOMEIP
 
   if (transport_enable_flags & kEnableSomeip) {
@@ -680,13 +665,6 @@ inline void Url::global_init(uint16_t transport_enable_flags) {
 
   if (transport_enable_flags & kEnableFdbus) {
     FdbusConf::global_init();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-#endif
-
-#ifdef VLINK_SUPPORT_QNX
-
-  if (transport_enable_flags & kEnableQnx) {
-    QnxConf::global_init();
   }
 #endif
 
@@ -724,10 +702,6 @@ inline uint16_t Url::get_transport_enable_flags() {
   flags |= kEnableDdsr;
 #endif
 
-#ifdef VLINK_SUPPORT_DDST
-  flags |= kEnableDdst;
-#endif
-
 #ifdef VLINK_SUPPORT_SOMEIP
   flags |= kEnableSomeip;
 #endif
@@ -738,10 +712,6 @@ inline uint16_t Url::get_transport_enable_flags() {
 
 #ifdef VLINK_SUPPORT_FDBUS
   flags |= kEnableFdbus;
-#endif
-
-#ifdef VLINK_SUPPORT_QNX
-  flags |= kEnableQnx;
 #endif
 
   return flags;
@@ -796,12 +766,6 @@ inline void Url::init_target_internal(const Protocol& protocol, std::unique_ptr<
       break;
 #endif
 
-#ifdef VLINK_SUPPORT_DDST
-    case TransportType::kDdst:
-      target = std::make_unique<DdstConf>();
-      break;
-#endif
-
 #ifdef VLINK_SUPPORT_SOMEIP
     case TransportType::kSomeip:
       target = std::make_unique<SomeipConf>();
@@ -817,12 +781,6 @@ inline void Url::init_target_internal(const Protocol& protocol, std::unique_ptr<
 #ifdef VLINK_SUPPORT_FDBUS
     case TransportType::kFdbus:
       target = std::make_unique<FdbusConf>();
-      break;
-#endif
-
-#ifdef VLINK_SUPPORT_QNX
-    case TransportType::kQnx:
-      target = std::make_unique<QnxConf>();
       break;
 #endif
 

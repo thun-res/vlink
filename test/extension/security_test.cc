@@ -41,6 +41,7 @@
 #include <fstream>
 #include <limits>
 #include <memory>
+#include <set>
 #include <string>
 #include <system_error>
 #include <thread>
@@ -372,6 +373,52 @@ TEST_SUITE("extension-Security") {
     REQUIRE(receiver.decrypt(cipher, recovered_again));
     REQUIRE_EQ(recovered_again.size(), plain.size());
     CHECK_EQ(std::memcmp(plain.data(), recovered_again.data(), plain.size()), 0);
+  }
+
+  TEST_CASE("replay peer tracking is bounded without limiting disabled replay mode") {
+    static constexpr size_t kExpectedReplayPeerLimit = 1024U;
+
+    for (const uint32_t replay_window : {64U, 0U}) {
+      auto cfg = make_key_cfg("replay_peer_limit_seed");
+      cfg.advanced.replay_window = replay_window;
+      Security receiver(cfg);
+      std::set<uint64_t> sender_ids;
+      size_t attempts = 0;
+
+      while (sender_ids.size() <= kExpectedReplayPeerLimit && attempts < kExpectedReplayPeerLimit * 2U) {
+        ++attempts;
+        Security sender(cfg);
+        Bytes plain = Bytes::create(1);
+        plain[0] = 0x65U;
+
+        Bytes cipher;
+        REQUIRE(sender.encrypt(plain, cipher));
+        REQUIRE_GE(cipher.size(), 14U);
+
+        uint64_t sender_id = 0;
+        for (size_t index = 0; index < sizeof(sender_id); ++index) {
+          sender_id |= static_cast<uint64_t>(cipher[6U + index]) << (index * 8U);
+        }
+
+        if (!sender_ids.insert(sender_id).second) {
+          continue;
+        }
+
+        Bytes recovered;
+        const bool accepted = receiver.decrypt(cipher, recovered);
+
+        if (replay_window == 0U || sender_ids.size() <= kExpectedReplayPeerLimit) {
+          REQUIRE(accepted);
+          CHECK_EQ(recovered.size(), 1U);
+          CHECK_EQ(recovered[0], 0x65U);
+        } else {
+          CHECK_FALSE(accepted);
+          CHECK(recovered.empty());
+        }
+      }
+
+      REQUIRE_EQ(sender_ids.size(), kExpectedReplayPeerLimit + 1U);
+    }
   }
 
   TEST_CASE("replay window accepts out of order ciphertext inside the configured range") {

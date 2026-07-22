@@ -61,9 +61,9 @@ struct WheelTimer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
     Handler& operator=(Handler&&) = default;
   };
 
-  alignas(64) std::atomic_bool stop_flag{false};
-  alignas(64) std::atomic_bool paused_flag{false};
-  alignas(64) std::atomic_bool is_running{false};
+  std::atomic_bool stop_flag{false};
+  std::atomic_bool paused_flag{false};
+  std::atomic_bool is_running{false};
 
   std::atomic<uint32_t> catchup_limit{0};
   std::atomic<WheelTimer::Key> next_key{1};

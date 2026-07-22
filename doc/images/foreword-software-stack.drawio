@@ -64,14 +64,11 @@
         <mxCell id="L3bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=40;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="50" y="288" width="720" height="6" as="geometry" />
         </mxCell>
-        <mxCell id="L3t" value="Transport &#160;&#160;(12)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=16;fontStyle=1;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="72" y="300" width="220" height="22" as="geometry" />
+        <mxCell id="L3t" value="Transport &#160;&#160;(10)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=16;fontStyle=1;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="72" y="300" width="676" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="L3d" value="intra &#160;&#183;&#160; shm &#160;&#183;&#160; shm2 &#160;&#183;&#160; dds &#160;&#183;&#160; ddsc &#160;&#183;&#160; ddsr &#160;&#183;&#160; ddst" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="300" y="300" width="446" height="20" as="geometry" />
-        </mxCell>
-        <mxCell id="L3d2" value="zenoh &#160;&#183;&#160; someip &#160;&#183;&#160; mqtt &#160;&#183;&#160; fdbus &#160;&#183;&#160; qnx" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="300" y="326" width="446" height="20" as="geometry" />
+        <mxCell id="L3d" value="intra &#160;&#183;&#160; shm &#160;&#183;&#160; shm2 &#160;&#183;&#160; dds &#160;&#183;&#160; ddsc &#160;&#183;&#160; ddsr &#160;&#183;&#160; zenoh &#160;&#183;&#160; someip &#160;&#183;&#160; mqtt &#160;&#183;&#160; fdbus" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#1b5e20;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="72" y="326" width="676" height="20" as="geometry" />
         </mxCell>
 
         <mxCell id="a3" value="syscalls &#160;&#183;&#160; NIC &#160;&#183;&#160; shared memory" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#37474f;labelBackgroundColor=#ffffff;shadow=0;" edge="1" parent="1">
@@ -96,7 +93,7 @@
         </mxCell>
 
         <!-- CLI tooling footnote -->
-        <mxCell id="cli" value="CLI: vlink-info / check / list / monitor / bag / dump / eproto / efbs / bench / trigger" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1;arcSize=20;shadow=0;fontFamily=Helvetica;fontSize=10;fontStyle=0;fontColor=#e65100;align=center;verticalAlign=middle;" vertex="1" parent="1">
+        <mxCell id="cli" value="CLI: vlink-info / check / list / monitor / bag / parse / eproto / efbs / bench / trigger" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1;arcSize=20;shadow=0;fontFamily=Helvetica;fontSize=10;fontStyle=0;fontColor=#e65100;align=center;verticalAlign=middle;" vertex="1" parent="1">
           <mxGeometry x="160" y="474" width="500" height="26" as="geometry" />
         </mxCell>
 

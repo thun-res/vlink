@@ -127,6 +127,19 @@ void BagReader::detach_plugin() {
   }
 }
 
+void BagReader::reset_plugin() {
+  std::shared_ptr<BagPluginInterface> plugin_interface;
+
+  {
+    std::shared_lock state_lock(impl_->playback_state_mtx);
+    plugin_interface = impl_->plugin_interface;
+  }
+
+  if (plugin_interface) {
+    plugin_interface->on_reset();
+  }
+}
+
 void BagReader::flush_plugin() {
   std::shared_ptr<BagPluginInterface> plugin_interface;
 
@@ -173,7 +186,11 @@ void BagReader::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& ba
         out.schema_type = frame.schema_type;
         out.action_type = frame.action_type;
         out.data = Bytes::shallow_copy(frame.data.data(), frame.data.size());
-        fill_frame_meta(out);
+
+        if (out.ser_type.empty() || out.schema_type == SchemaType::kUnknown) {
+          fill_frame_meta(out);
+        }
+
         impl_->output_callback(out);
       }
     });
@@ -283,21 +300,29 @@ void BagReader::process_output(Frame& frame) {
       return;
     }
 
-    if (!plugin_interface) {
-      if (frame.ser_type.empty()) {
-        auto ser_iter = impl_->url_to_ser_map.find(frame.url);
+    const std::string* meta_url = &frame.url;
 
-        if VLIKELY (ser_iter != impl_->url_to_ser_map.end()) {
-          frame.ser_type = ser_iter->second;
-        }
+    if (plugin_interface) {
+      auto remap_iter = impl_->playback_url_remap.find(frame.url);
+
+      if (remap_iter != impl_->playback_url_remap.end()) {
+        meta_url = &remap_iter->second;
       }
+    }
 
-      if (frame.schema_type == SchemaType::kUnknown) {
-        auto schema_iter = impl_->url_to_schema_type_map.find(frame.url);
+    if (frame.ser_type.empty()) {
+      auto ser_iter = impl_->url_to_ser_map.find(*meta_url);
 
-        if VLIKELY (schema_iter != impl_->url_to_schema_type_map.end()) {
-          frame.schema_type = schema_iter->second;
-        }
+      if VLIKELY (ser_iter != impl_->url_to_ser_map.end()) {
+        frame.ser_type = ser_iter->second;
+      }
+    }
+
+    if (frame.schema_type == SchemaType::kUnknown) {
+      auto schema_iter = impl_->url_to_schema_type_map.find(*meta_url);
+
+      if VLIKELY (schema_iter != impl_->url_to_schema_type_map.end()) {
+        frame.schema_type = schema_iter->second;
       }
     }
   }

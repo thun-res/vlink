@@ -167,6 +167,7 @@
 
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -349,7 +350,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
    * @brief Serialises the struct snapshot plus point bytes into @p bytes.
    *
    * @param bytes Output buffer; resized automatically when its size differs from the serialized size.
-   * @return Always @c true.
+   * @return @c true on success; @c false when output allocation fails.
    */
   bool operator>>(Bytes& bytes) const noexcept;
 
@@ -372,7 +373,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
    * @brief Borrows @p target's point buffer and protocol without copying.
    *
    * @param target Source cloud whose buffer must outlive @c *this.
-   * @return @c false on self-borrow, otherwise @c true.
+   * @return @c false on self-borrow or owned-buffer aliasing, otherwise @c true.
    */
   bool shallow_copy(const PointCloud& target) noexcept;
 
@@ -380,7 +381,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
    * @brief Allocates (or reuses) an owned buffer and copies @p target's protocol and point bytes.
    *
    * @param target Source cloud to clone.
-   * @return @c false on self-copy, otherwise @c true.
+   * @return @c false on self-copy, owned-buffer aliasing, size overflow, or allocation failure.
    */
   bool deep_copy(const PointCloud& target) noexcept;
 
@@ -407,6 +408,13 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
    * @return Map from field name to byte offset within one packed point.
    */
   [[nodiscard]] KeyMap get_key_map(KeyList* key_list = nullptr) const noexcept;
+
+  /**
+   * @brief Returns the ordered field descriptors from the embedded protocol.
+   *
+   * @return Field descriptors in packed byte order.
+   */
+  [[nodiscard]] KeyList get_key_list() const noexcept;
 
   /**
    * @brief Number of points currently stored.
@@ -612,7 +620,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
    * @param t Output value.
    * @param loop_index Zero-based point index.
    * @param key_map Map obtained from @c get_key_map().
-   * @param key NUL-terminated full field name to look up.
+   * @param key Full field name to look up.
    * @return @c false (and zeroes @p t) on unknown key or out-of-bounds access.
    */
   template <typename T>
@@ -624,7 +632,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
    * @tparam T Field type; must be fundamental.
    * @param loop_index Zero-based point index.
    * @param key_map Map obtained from @c get_key_map().
-   * @param key NUL-terminated full field name.
+   * @param key Full field name.
    * @return Field value; zero-initialised on unknown key or out-of-bounds access.
    */
   template <typename T>
@@ -645,7 +653,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
    *
    * @param loop_index Zero-based point index.
    * @param key_map Map obtained from @c get_key_map().
-   * @param key NUL-terminated full field name.
+   * @param key Full field name.
    * @param type @c Type tag for this field.
    * @return Field value as @c double, or 0 on unknown key / type.
    */
@@ -667,7 +675,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
    *
    * @param loop_index Zero-based point index.
    * @param key_map Map obtained from @c get_key_map().
-   * @param key NUL-terminated full field name.
+   * @param key Full field name.
    * @param type @c Type tag.
    * @return Stringified value; empty for unknown @p type.
    */
@@ -688,8 +696,8 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
    * @param key_str Comma-separated field names (3..16 fields, up to 152 bytes).
    * @param extent Optional XYZ quantisation extent; @c 0 disables quantisation.
    * @param vertical When @c true the serialised payload uses structure-of-arrays column order.
-   * @return @c false on protocol validation failure (including XYZ that is not @c float / @c double / @c int16_t when
-   * @p extent is non-zero).
+   * @return @c false on protocol validation failure, size overflow, or allocation failure (including XYZ that is not
+   * @c float / @c double / @c int16_t when @p extent is non-zero).
    */
   bool create(size_t size, uint64_t size_num, uint64_t type_num, std::string_view key_str, uint16_t extent = 0,
               bool vertical = false) noexcept;
@@ -697,12 +705,12 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
   /**
    * @brief Creates a cloud with a type-safe variadic field schema.
    *
-   * @tparam T Field types; must all be fundamental.  3..16 types required.
+   * @tparam T Fixed-width field types supported by @c PointCloud::Type.  3..16 types required.
    * @param _size Maximum number of points.
    * @param keys Field names in the same order as @c T... .
    * @param extent Optional XYZ quantisation extent; @c 0 disables quantisation.
    * @param vertical When @c true the serialised payload uses structure-of-arrays column order.
-   * @return @c false when key count is wrong or schema packing fails.
+   * @return @c false when key count is wrong, schema packing fails, size overflows, or allocation fails.
    */
   template <typename... T>
   bool create(size_t _size, const std::vector<std::string>& keys = {}, uint16_t extent = 0,
@@ -716,7 +724,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
    * @param keys Names for the additional fields (excluding x, y, z).
    * @param extent Optional XYZ quantisation extent; @c 0 disables quantisation.
    * @param vertical When @c true the serialised payload uses structure-of-arrays column order.
-   * @return @c false on schema packing failure.
+   * @return @c false on schema packing failure, size overflow, or allocation failure.
    */
   template <typename... T>
   bool create_v3f(size_t _size, const std::vector<std::string>& keys = {}, uint16_t extent = 0,
@@ -730,7 +738,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
    * @param keys Names for the additional fields (excluding x, y, z).
    * @param extent Optional XYZ quantisation extent; @c 0 disables quantisation.
    * @param vertical When @c true the serialised payload uses structure-of-arrays column order.
-   * @return @c false on schema packing failure.
+   * @return @c false on schema packing failure, size overflow, or allocation failure.
    */
   template <typename... T>
   bool create_v3d(size_t _size, const std::vector<std::string>& keys = {}, uint16_t extent = 0,
@@ -1004,17 +1012,21 @@ template <typename T>
 inline bool PointCloud::get_value(T& t, size_t loop_index, uint16_t offset) const noexcept {
   static_assert(std::is_fundamental_v<T>, "T must be fundamental.");
 
+  if VUNLIKELY (!data_ || loop_index >= size_ || offset > pack_size_) {
+    std::memset(&t, 0, sizeof(T));
+    return false;
+  }
+
   if (extent_ != 0 && offset < sizeof(int16_t) * 3) {
     if constexpr (std::is_same_v<T, float> || std::is_same_v<T, double>) {
       int16_t value = 0;
 
-      size_t p = (loop_index * pack_size_) + offset;
-
-      if VUNLIKELY (p + sizeof(value) > size_ * pack_size_) {
+      if VUNLIKELY (sizeof(value) > static_cast<size_t>(pack_size_ - offset)) {
         t = 0;
         return false;
       }
 
+      const size_t p = (loop_index * pack_size_) + offset;
       std::memcpy(&value, data_ + p, sizeof(value));
       t = Quantize::decode<T>(extent_, value);
 
@@ -1022,13 +1034,12 @@ inline bool PointCloud::get_value(T& t, size_t loop_index, uint16_t offset) cons
     }
   }
 
-  size_t p = (loop_index * pack_size_) + offset;
-
-  if VUNLIKELY (p + sizeof(T) > size_ * pack_size_) {
+  if VUNLIKELY (sizeof(T) > static_cast<size_t>(pack_size_ - offset)) {
     std::memset(&t, 0, sizeof(T));
     return false;
   }
 
+  const size_t p = (loop_index * pack_size_) + offset;
   std::memcpy(&t, data_ + p, sizeof(T));
 
   return true;
@@ -1049,7 +1060,8 @@ template <typename T>
 inline bool PointCloud::get_value(T& t, size_t loop_index, KeyMap& key_map, std::string_view key) const noexcept {
   static_assert(std::is_fundamental_v<T>, "T must be fundamental.");
 
-  auto iter = key_map.find(key.data());
+  const std::string lookup(key);
+  auto iter = key_map.find(lookup);
 
   if VUNLIKELY (iter == key_map.end()) {
     std::memset(&t, 0, sizeof(T));
@@ -1077,6 +1089,9 @@ inline bool PointCloud::create(size_t size, const std::vector<std::string>& keys
 
   static_assert(sizeof...(T) >= 3 && sizeof...(T) <= 16, "The number of keys ranges is [3 ~ 16].");
 
+  static_assert(((Protocol::get_type<T>() != kUnknownType) && ...),
+                "All field types must map to a supported PointCloud::Type.");
+
   if VUNLIKELY (sizeof...(T) != keys.size()) {
     return false;
   }
@@ -1095,10 +1110,6 @@ inline bool PointCloud::create(size_t size, const std::vector<std::string>& keys
 
   uint64_t type_num = Protocol::get_type_num<T...>();
 
-  if VUNLIKELY (type_num == 0) {
-    return false;
-  }
-
   Protocol new_protocol{};
   new_protocol.size_num = size_num;
   std::memset(new_protocol.names, 0, sizeof(new_protocol.names));
@@ -1116,6 +1127,12 @@ inline bool PointCloud::create(size_t size, const std::vector<std::string>& keys
     new_protocol = protocol_probe.protocol_;
   }
 
+  const size_t new_pack_size = new_protocol.get_pack_size();
+
+  if VUNLIKELY (new_pack_size != 0 && size > std::numeric_limits<size_t>::max() / new_pack_size) {
+    return false;
+  }
+
   if (is_owner_ && data_ && capacity_ != 0) {
     Bytes::bytes_free(data_, capacity_);
   }
@@ -1131,11 +1148,17 @@ inline bool PointCloud::create(size_t size, const std::vector<std::string>& keys
   vertical_ = vertical;
   downsample_ = 0;
 
-  pack_size_ = protocol_.get_pack_size();
+  pack_size_ = new_pack_size;
   capacity_ = size * pack_size_;
 
   if VLIKELY (capacity_ != 0) {
     data_ = Bytes::bytes_malloc(capacity_);
+
+    if VUNLIKELY (!data_) {
+      capacity_ = 0;
+      return false;
+    }
+
     is_owner_ = true;
   }
 
@@ -1169,7 +1192,7 @@ inline bool PointCloud::fill_packed_data(const uint8_t* src_data, size_t _size) 
     is_fill_success = false;
   } else if VUNLIKELY (!is_owner_ || !data_ || pack_size_ == 0 || capacity_ == 0) {
     is_fill_success = false;
-  } else if VUNLIKELY (_size * pack_size_ > capacity_) {
+  } else if VUNLIKELY (_size > std::numeric_limits<size_t>::max() / pack_size_ || _size * pack_size_ > capacity_) {
     is_fill_success = false;
   } else {
     std::memcpy(data_, src_data, _size * pack_size_);
@@ -1262,6 +1285,10 @@ inline bool PointCloud::push_value_v3d(Vector3d v3d, T... args) noexcept {
 
 inline bool PointCloud::resize(size_t size) noexcept {
   if VUNLIKELY (!is_owner_ || !data_ || pack_size_ == 0 || capacity_ == 0) {
+    return false;
+  }
+
+  if VUNLIKELY (size > std::numeric_limits<size_t>::max() / pack_size_) {
     return false;
   }
 

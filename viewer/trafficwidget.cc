@@ -32,6 +32,11 @@ TrafficWidget::TrafficWidget(QWidget* parent) : QWidget{parent} {}
 TrafficWidget::~TrafficWidget() {}
 
 void TrafficWidget::set_value_range(double min, double max) {
+  if (min == max) {
+    min -= 1.0;
+    max += 1.0;
+  }
+
   min_value_ = min;
   max_value_ = max;
 }

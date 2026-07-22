@@ -401,12 +401,14 @@ TEST_SUITE("ddsr-field") {
         setter.set(Bytes{0xAA, 0xBB});
       });
 
-      CHECK(getter.wait_for_value(kDdsrDiscoveryTimeout));
+      const bool has_value = getter.wait_for_value(kDdsrDiscoveryTimeout);
       auto v = getter.get();
-      REQUIRE(v.has_value());
-      CHECK((*v)[0] == 0xAA);
 
       writer.join();
+
+      CHECK(has_value);
+      REQUIRE(v.has_value());
+      CHECK((*v)[0] == 0xAA);
     }
 
     SUBCASE("listen callback is invoked on value change") {

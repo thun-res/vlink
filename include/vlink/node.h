@@ -251,25 +251,6 @@ class Node {
   bool return_loan(const Bytes& bytes);
 
   /**
-   * @brief Toggles manual-unloan mode for zero-copy receives.
-   *
-   * @details
-   * In manual mode the user must call @c return_loan() after consuming each
-   * received buffer.  The base implementation logs a warning; only
-   * @c Subscriber and @c Getter provide a meaningful override.
-   *
-   * @param manual_unloan  @c true to enable; @c false for automatic (default).
-   */
-  virtual void set_manual_unloan(bool manual_unloan);
-
-  /**
-   * @brief Reports whether manual-unloan mode is currently active.
-   *
-   * @return @c true if @c set_manual_unloan(true) was invoked.
-   */
-  [[nodiscard]] virtual bool is_manual_unloan() const;
-
-  /**
    * @brief Suspends message delivery on this node.
    *
    * @details
@@ -474,9 +455,13 @@ class Node {
    * @brief Binds a Protobuf Arena for arena-allocated message objects.
    *
    * @details
-   * Required when @c MsgT is a raw Protobuf pointer type (e.g. @c MyProto*).
-   * The arena must outlive this node.  Forgetting to bind an arena before
-   * the first received message triggers a fatal log.
+   * Required whenever this node must create a raw Protobuf pointer object
+   * (e.g. a subscriber message, server request/response, client response, or
+   * getter value of type @c MyProto*).  The arena must outlive this node.
+   * Forgetting to bind it before the first such operation triggers a fatal
+   * log.  Receive paths allocate a distinct message in the arena for each
+   * delivery, so that storage is retained until the caller resets or destroys
+   * the arena.
    *
    * @param proto_arena  Pointer to a @c google::protobuf::Arena instance (typed as @c void*).
    */
@@ -593,7 +578,6 @@ class Node {
 
   void* proto_arena_{nullptr};
   bool is_support_loan_{false};
-  bool is_manual_unloan_{false};
 
   std::atomic_bool has_inited_{false};
   std::optional<std::mutex> quit_mtx_;

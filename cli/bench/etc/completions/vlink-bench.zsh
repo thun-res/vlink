@@ -56,7 +56,7 @@ _vlink-bench_complete_run_multi() {
         -q|--qos) _vlink-bench_qos_profiles; return 0 ;;
         --report) _vlink-bench_reports; return 0 ;;
         --property|--pub-property|--sub-property|--size|--latency-size|--topology-size|-r|--rate|-f|--fanout|\
-        --publishers|--burst) return 0 ;;
+        --publishers|--burst|--backpressure-sleep) return 0 ;;
     esac
 
     return 1
@@ -149,6 +149,7 @@ _vlink-bench_run() {
         '*'{-f,--fanout}'=[Fanout subscriber count list (repeatable)]:count:' \
         '*--publishers=[Publisher count list (repeatable)]:count:' \
         '*--burst=[Burst message count list (repeatable)]:count:' \
+        '*--backpressure-sleep=[Backpressure subscriber sleep list in microseconds]:us:' \
         '--warmup=[Warmup duration in milliseconds]:ms:' \
         '--duration=[Run duration in milliseconds]:ms:' \
         '--drain=[Drain duration in milliseconds]:ms:' \
@@ -291,5 +292,5 @@ _vlink-bench() {
 }
 
 if (( $+functions[compdef] )); then
-    compdef _vlink-bench vlink-bench bench
+    _vlink_zsh_register_completion _vlink-bench vlink-bench bench
 fi

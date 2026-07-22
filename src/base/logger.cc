@@ -25,10 +25,12 @@
 
 #include <atomic>
 #include <charconv>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
@@ -523,6 +525,50 @@ bool Logger::is_writable(Level level) noexcept {
          level >= global_instance.file_level.load(std::memory_order_acquire);
 }
 
+bool Logger::try_acquire_periodic_log(Level level, int64_t interval_ms,
+                                      std::atomic<uint64_t>& last_log_time_ns) noexcept {
+  if VUNLIKELY (level >= kFatal) {
+    return false;
+  }
+
+  if (!is_writable(level)) {
+    return false;
+  }
+
+  if VUNLIKELY (interval_ms <= 0) {
+    return true;
+  }
+
+  constexpr uint64_t kNanosecondsPerMillisecond = 1000U * 1000U;
+  const auto unsigned_interval_ms = static_cast<uint64_t>(interval_ms);
+  const auto interval_ns = unsigned_interval_ms > std::numeric_limits<uint64_t>::max() / kNanosecondsPerMillisecond
+                               ? std::numeric_limits<uint64_t>::max()
+                               : unsigned_interval_ms * kNanosecondsPerMillisecond;
+  static const auto kStartTime = std::chrono::steady_clock::now();
+  const auto now_ns =
+      static_cast<uint64_t>(
+          std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - kStartTime).count()) +
+      1U;
+  auto last_ns = last_log_time_ns.load(std::memory_order_relaxed);
+
+  for (;;) {
+    if VLIKELY (last_ns != 0U) {
+      if VUNLIKELY (last_ns >= now_ns) {
+        return false;
+      }
+
+      if VLIKELY (now_ns - last_ns < interval_ns) {
+        return false;
+      }
+    }
+
+    if VLIKELY (last_log_time_ns.compare_exchange_weak(last_ns, now_ns, std::memory_order_relaxed,
+                                                       std::memory_order_relaxed)) {
+      return true;
+    }
+  }
+}
+
 Logger::Logger() noexcept : impl_(std::make_unique<Impl>()) {
   static auto& global_instance = LoggerGlobal::get();
 
@@ -716,9 +762,6 @@ Logger::Logger() noexcept : impl_(std::make_unique<Impl>()) {
         impl_->disk_emergency.store(true, std::memory_order_release);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
         std::cerr << "VLink logger disk emergency: " << e.what() << std::endl;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        impl_->spd_file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-            log_path, log_max_size,           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-            log_max_count, !use_log_append);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
     } else {
@@ -733,16 +776,15 @@ Logger::Logger() noexcept : impl_(std::make_unique<Impl>()) {
         impl_->disk_emergency.store(true, std::memory_order_release);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
         std::cerr << "VLink logger disk emergency: " << e.what() << std::endl;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        impl_->spd_file_sink =
-            std::make_shared<spdlog_custom_sink::TimeRollingFile_mt>(  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                global_instance.log_path, log_max_size, log_max_count, timezone,
-                !use_log_append);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
     std::vector<spdlog::sink_ptr> spd_sinks;
     spd_sinks.emplace_back(impl_->spd_console_sink);
-    spd_sinks.emplace_back(impl_->spd_file_sink);
+
+    if (impl_->spd_file_sink) {
+      spd_sinks.emplace_back(impl_->spd_file_sink);
+    }
 
     impl_->spd = std::make_shared<spdlog::async_logger>(
         global_instance.app_name, spd_sinks.begin(), spd_sinks.end(), impl_->spd_thread_pool,
@@ -834,10 +876,20 @@ Logger::Logger() noexcept : impl_(std::make_unique<Impl>()) {
 
     impl_->quill_console_sink = std::make_shared<quill::ConsoleSink>();
     impl_->quill_console_sink->set_log_level_filter(quill::LogLevel::Backtrace);
-    impl_->quill_file_sink = std::make_shared<quill::RotatingFileSink>(log_path, sink_config);
+
+    try {
+      impl_->quill_file_sink = std::make_shared<quill::RotatingFileSink>(log_path, sink_config);
+    } catch (const std::exception& e) {                                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      impl_->disk_emergency.store(true, std::memory_order_release);           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      std::cerr << "VLink logger disk emergency: " << e.what() << std::endl;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
 
     std::vector<std::shared_ptr<quill::Sink> > quill_sinks;
-    quill_sinks.emplace_back(impl_->quill_file_sink);
+
+    if (impl_->quill_file_sink) {
+      quill_sinks.emplace_back(impl_->quill_file_sink);
+    }
+
     quill_sinks.emplace_back(impl_->quill_console_sink);
 
     impl_->quill_log = quill::Frontend::create_or_get_logger(global_instance.app_name, quill_sinks, format_options);
@@ -908,7 +960,11 @@ Logger::~Logger() noexcept {
 #elif defined(VLINK_ENABLE_LOG_QUI)
   try {
     quill::Backend::notify();
-    impl_->quill_file_sink->flush_sink();
+
+    if (impl_->quill_file_sink) {
+      impl_->quill_file_sink->flush_sink();
+    }
+
     quill::Backend::stop();
     impl_->quill_console_sink.reset();
     impl_->quill_file_sink.reset();

@@ -69,6 +69,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <queue>
 #include <string>
 
@@ -769,7 +770,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
 }
 
 MainWindow::~MainWindow() {
+  proxy_->register_connect_callback(vlink::ProxyAPI::ConnectCallback{});
+  proxy_->register_error_callback(vlink::ProxyAPI::ErrorCallback{});
+  proxy_->register_info_callback(vlink::ProxyAPI::InfoCallback{});
+  proxy_->register_data_callback(vlink::ProxyAPI::DataCallback{});
   proxy_->quit();
+  proxy_->wait_for_quit();
+  proxy_.reset();
 
   {
     std::lock_guard lock(data_mutex_);
@@ -1626,14 +1633,11 @@ void MainWindow::on_pushButton_datareload_clicked() {
     auto player = vlink::BagReader::create(ui->lineEdit_datapath->text().toStdString(), true);
     local_info_ = player->get_info();
     local_use_compress_ = (local_info_.compression_type != "None");
-    ser_map_.clear();
-    schema_type_map_.clear();
-    ser_map_.reserve(local_info_.url_metas.size());
-    schema_type_map_.reserve(local_info_.url_metas.size());
+    local_schema_type_map_.clear();
+    local_schema_type_map_.reserve(local_info_.url_metas.size());
 
     for (const auto& meta : local_info_.url_metas) {
-      ser_map_[meta.url] = meta.ser_type;
-      schema_type_map_[meta.url] = vlink::SchemaData::resolve_type(meta.schema_type, meta.ser_type);
+      local_schema_type_map_[meta.url] = vlink::SchemaData::resolve_type(meta.schema_type, meta.ser_type);
     }
   } catch (std::exception&) {
     QMessageBox::warning(this, tr("Warning"), tr("Cannot open database."));
@@ -3124,9 +3128,10 @@ bool MainWindow::update_proto_root_msg(const std::string& url, const std::string
 
   ui->lineEdit_protoser->setText(QString::fromStdString(ser));
 
-  const auto schema_iter = schema_type_map_.find(url);
+  const auto& schema_type_map = ui->stackedWidget_main->currentIndex() == 0 ? schema_type_map_ : local_schema_type_map_;
+  const auto schema_iter = schema_type_map.find(url);
   const auto schema_type = vlink::SchemaData::resolve_type(
-      schema_iter != schema_type_map_.end() ? schema_iter->second : vlink::SchemaType::kUnknown, ser);
+      schema_iter != schema_type_map.end() ? schema_iter->second : vlink::SchemaType::kUnknown, ser);
 
   if (ser.find('|') != std::string::npos) {
     desc_ = nullptr;
@@ -3228,10 +3233,8 @@ void MainWindow::update_local_proto() {
   proxy_data.timestamp = time_variant.toLongLong();
   proxy_data.url = url_variant.toString().toStdString();
   proxy_data.ser = ser_variant.toString().toStdString();
-  {
-    const auto schema_iter = schema_type_map_.find(proxy_data.url);
-    proxy_data.schema = schema_iter != schema_type_map_.end() ? schema_iter->second : vlink::SchemaType::kUnknown;
-  }
+  const auto schema_iter = local_schema_type_map_.find(proxy_data.url);
+  proxy_data.schema = schema_iter != local_schema_type_map_.end() ? schema_iter->second : vlink::SchemaType::kUnknown;
 
   const auto& byte_array = data_variant.toByteArray();
 
@@ -3265,6 +3268,14 @@ QString MainWindow::get_str_for_number(int64_t num) {
   }
 }
 
+QString MainWindow::get_str_for_unsigned_number(uint64_t num) {
+  if (ui->checkBox_hex->isChecked()) {
+    return "0x" + QString::number(static_cast<qulonglong>(num), 16).toUpper();
+  } else {
+    return QString::number(static_cast<qulonglong>(num), 10);
+  }
+}
+
 QString MainWindow::get_str_for_enum(const std::string& enum_str, int64_t num) {
   if (ui->checkBox_enum->isChecked()) {
     return QString::fromStdString(enum_str);
@@ -3274,7 +3285,21 @@ QString MainWindow::get_str_for_enum(const std::string& enum_str, int64_t num) {
 }
 
 int MainWindow::get_int_for_str(const QString& str) {
-  if (str.startsWith("0x") || str.startsWith("0X")) {
+  if (str.startsWith("-0x", Qt::CaseInsensitive)) {
+    bool ok = false;
+    const auto magnitude = str.mid(3).toUInt(&ok, 16);
+    const auto min_magnitude = static_cast<unsigned int>(std::numeric_limits<int>::max()) + 1U;
+
+    if (!ok || magnitude > min_magnitude) {
+      return 0;
+    }
+
+    if (magnitude == min_magnitude) {
+      return std::numeric_limits<int>::min();
+    }
+
+    return -static_cast<int>(magnitude);
+  } else if (str.startsWith("0x") || str.startsWith("0X")) {
     return str.mid(2).toInt(nullptr, 16);
   } else {
     return str.toInt(nullptr, 10);
@@ -3282,7 +3307,21 @@ int MainWindow::get_int_for_str(const QString& str) {
 }
 
 qlonglong MainWindow::get_longlong_for_str(const QString& str) {
-  if (str.startsWith("0x") || str.startsWith("0X")) {
+  if (str.startsWith("-0x", Qt::CaseInsensitive)) {
+    bool ok = false;
+    const auto magnitude = str.mid(3).toULongLong(&ok, 16);
+    const auto min_magnitude = static_cast<qulonglong>(std::numeric_limits<qlonglong>::max()) + 1ULL;
+
+    if (!ok || magnitude > min_magnitude) {
+      return 0;
+    }
+
+    if (magnitude == min_magnitude) {
+      return std::numeric_limits<qlonglong>::min();
+    }
+
+    return -static_cast<qlonglong>(magnitude);
+  } else if (str.startsWith("0x") || str.startsWith("0X")) {
     return str.mid(2).toLongLong(nullptr, 16);
   } else {
     return str.toLongLong(nullptr, 10);
@@ -3586,7 +3625,7 @@ bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& paren
         } break;
         case google::protobuf::FieldDescriptor::CPPTYPE_UINT32: {
           auto value = ref->GetUInt32(*msg, field);
-          item->setText(3, get_str_for_number(value));
+          item->setText(3, get_str_for_unsigned_number(value));
 
           item->setData(1, Qt::UserRole, AnalyzeDialog::kNumberType);
 
@@ -3600,7 +3639,7 @@ bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& paren
           if (ui->checkBox_time->isChecked() && field->name().find("time") != std::string::npos) {
             item->setText(3, QString::fromStdString(vlink::Helpers::format_date(value)));
           } else {
-            item->setText(3, get_str_for_number(value));
+            item->setText(3, get_str_for_unsigned_number(value));
           }
 
           item->setData(1, Qt::UserRole, AnalyzeDialog::kNumberType);
@@ -3818,7 +3857,7 @@ bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& paren
             } break;
             case google::protobuf::FieldDescriptor::CPPTYPE_UINT32: {
               auto value = ref->GetRepeatedUInt32(*msg, field, j);
-              item->setText(3, get_str_for_number(value));
+              item->setText(3, get_str_for_unsigned_number(value));
 
               item->setData(1, Qt::UserRole, AnalyzeDialog::kNumberType);
 
@@ -3832,7 +3871,7 @@ bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& paren
               if (ui->checkBox_time->isChecked() && field->name().find("time") != std::string::npos) {
                 item->setText(3, QString::fromStdString(vlink::Helpers::format_date(value)));
               } else {
-                item->setText(3, get_str_for_number(value));
+                item->setText(3, get_str_for_unsigned_number(value));
               }
 
               item->setData(1, Qt::UserRole, AnalyzeDialog::kNumberType);

@@ -1,6 +1,6 @@
 # 💨 6. 零拷贝
 
-零拷贝是 VLink 在数据路径上施加的一类非侵入能力：削减大负载在收发链路上的内存复制，使相机帧、点云、栅格地图、张量、目标列表、音频等传感器数据的搬运延迟与带宽消耗降至最低。它遵循统一的 URL 契约（[传输后端与 URL](04-transport.md)、[QoS 配置](05-qos.md)）——业务代码仍只面对六个通信原语，能力以"领域容器作为消息类型 `T`"或"借贷接口 `loan()`"的形式接入，调用方式不因启用而改变。零拷贝优化的是序列化前后的内存搬运，与序列化之后插入的[安全加密](07-security.md)管线正交，可在同一端点叠加。
+零拷贝是 VLink 在数据路径上施加的一类非侵入能力：削减大负载在收发链路上的内存复制，使相机帧、点云、栅格地图、张量、目标列表、音频等传感器数据的搬运延迟与带宽消耗降至最低。它遵循统一的 URL 契约（[传输后端与 URL](04-transport.md)、[QoS 配置](05-qos.md)）——业务代码仍只面对六个通信原语，能力以“领域容器作为消息类型 `T`”或“借贷接口 `loan()`”的形式接入，调用方式不因启用而改变。安全节点可以使用共享内存后端，但会关闭 transport loan，并先生成密文缓冲区；因此[安全加密](07-security.md)与零拷贝接口可组合，却不会保留端到端零拷贝路径。
 
 ![零拷贝分层](images/zerocopy-layers.png)
 
@@ -10,18 +10,18 @@
 
 大负载传感器数据（相机帧、点云、栅格地图、张量、目标列表、音频）在通信链路中反复复制，会成为延迟与带宽的主要来源。VLink 通过两条互相独立、可叠加的机制消除这类复制，二者作用于数据路径的不同阶段：
 
-- **传输层零拷贝（loan）**：`shm://` / `shm2://`（以及显式开启共享内存的 `zenoh://`）允许发布端从共享内存池借出缓冲区并就地写入，订阅端经指针收到同一块内存，避免一次内核拷贝。作用于跨进程搬运阶段。
+- **传输层零拷贝（loan）**：`shm://` / `shm2://`（以及显式开启共享内存的 `zenoh://`）允许发布端从共享内存池借出缓冲区并就地写入，订阅端经指针收到同一块内存，避免一次发送侧用户态 payload 复制。作用于跨进程搬运阶段。
 - **容器层零拷贝**：`vlink::zerocopy` 命名空间下的领域容器在反序列化时使内部指针直接指向接收缓冲区，负载数据不被复制。作用于解码阶段，与后端无关。
 
 两层的组合效果取决于后端：
 
 | 后端 | 容器层借用 | 传输层 loan | 数据路径 |
 | --- | :---: | :---: | --- |
-| `shm://` / `shm2://` | 是 | 是 | 双层零拷贝 |
-| `zenoh://?shm=1` | 是 | 是 | 双层零拷贝 |
+| `shm://` / `shm2://` | 是 | 是 | transport 可借贷，接收容器不复制 payload |
+| `zenoh://?shm=1` | 是 | 是 | transport 可借贷，接收容器不复制 payload |
 | `dds://` / `intra://` 等 | 是 | 否 | 仅容器层借用 |
 
-传输层 loan 的机制与配置见 [6.10](#-610-传输层-loan)，完整后端参数见 [传输后端与 URL](04-transport.md)。
+这里的两层组合表示 transport 提供 loan 且接收容器不做 payload 解码复制，不保证调用方本地 payload 到接收端全程零复制：普通 `Publisher<zerocopy容器>` 的 `operator>>` 仍可能把本地 payload 复制进 transport loan。发布端要直接就地写共享池，应使用 [6.10](#-610-传输层-loan) 的显式 `Publisher<Bytes>::loan()` 路径；完整后端参数见 [传输后端与 URL](04-transport.md)。
 
 ### 6.1.1 容器选型概览
 
@@ -156,7 +156,7 @@ sub.listen([](const vlink::zerocopy::CameraFrame& frame) {
 });
 ```
 
-编码视频流：发布端经 `shallow_copy(data, size)` 借用编码器输出缓冲区，并以 `set_format(kFormatH264)`、`set_format(kFormatH265)`、`set_format(kFormatH266)` 或 `set_format(kFormatAv1)` 与 `set_stream(...)` 标注；订阅端按 `format()` / `stream()` 路由至解码器。
+编码视频流：发布端经 `shallow_copy(data, size)` 避免先把编码器输出复制进容器，并以 `set_format(kFormatH264)`、`set_format(kFormatH265)`、`set_format(kFormatH266)` 或 `set_format(kFormatAv1)` 与 `set_stream(...)` 标注；普通发布仍会由容器序列化器把 payload 复制进 transport buffer，订阅端再按 `format()` / `stream()` 路由至解码器。
 
 ---
 
@@ -171,6 +171,7 @@ sub.listen([](const vlink::zerocopy::CameraFrame& frame) {
 | `create_v3f<ExtraT...>(count, names)` | 创建 XYZ + 附加字段的点云，预留 `count` 个点 |
 | `push_value_v3f(x, y, z, extras...)` | 追加一个点 |
 | `get_value_v3f(index)` | 读第 `index` 个点的 XYZ，返回 `Vector3f` |
+| `get_key_list()` | 按打包顺序返回字段名、逻辑类型和存储字节数；量化点云的前三个坐标仍报告为浮点逻辑类型 |
 | `get_key_map()` + `get_value<T>(index, key_map, "field")` | 按字段名读任意字段 |
 
 `size()` 返回当前点数，`pack_size()` 返回单点字节数。需要双精度坐标时改用 `create_v3d` / `push_value_v3d` / `get_value_v3d`。
@@ -338,7 +339,7 @@ pub.publish(frame);
 
 ## 📦 6.9 RawData：自定义二进制负载
 
-头文件 `include/vlink/zerocopy/raw_data.h`。最简容器，仅封装一个 `Header` 与一段无类型字节缓冲区，适合承载自定义协议结构体。经 `create(size)` 分配后写入 `data()`，订阅端按约定结构体解读；亦可经 `shallow_copy(ptr, size)` 借用外部缓冲区直接零拷贝发布。
+头文件 `include/vlink/zerocopy/raw_data.h`。最简容器，仅封装一个 `Header` 与一段无类型字节缓冲区，适合承载自定义协议结构体。经 `create(size)` 分配后写入 `data()`，订阅端按约定结构体解读；`shallow_copy(ptr, size)` 可避免先复制进本地容器，但普通发布仍会把 payload 复制进 transport buffer。
 
 ```cpp
 struct MyProtocol {
@@ -394,7 +395,7 @@ if (parser.value("data", 3, "track_id", value)) {
 
 根字段使用点路径，例如 `header.frame_id`、`width`、`dtype`。变长集合通过 `value(collection, index, field, out)` 读取：`PointCloud.data[N].field` 与 `ObjectArray.data[N].field` 读取记录字段，`OccupancyGrid.data[N].value` 和 `Tensor.data[N].value` 读取标量，`Tensor.shape[N].value` / `strides[N].value` 读取维度信息。`collection_size()` 提供统一的边界；`fields()` 与 `element_fields()` 可用于动态 UI 或 schema 构建。
 
-`Field` 描述符除字段名与 `Value` 类型外，还带有呈现语义：`enum_kind` 标明字段编码的内置枚举（供解析出符号名）、`is_time` 标明纳秒时间戳、`is_bool` 标明布尔、`is_reserved` 标明可隐藏的保留槽。基于这些元数据，同一头文件提供一个纯反射驱动的可读渲染器 `format_message(parser, options)`：它遍历 `fields()` / `element_fields()` 生成规范文本，包括 `header {}`、PointCloud 的 `protocol {}` 与逐点展开、Tensor shape、枚举符号名、日期、十六进制和布尔；其他二进制集合保持摘要形式。`vlink-dump`、`vlink-efbs`、`vlink-eproto` 共用这一渲染器，输出保持一致。
+`Field` 描述符除字段名与 `Value` 类型外，还带有呈现语义：`enum_kind` 标明字段编码的内置枚举（供解析出符号名）、`is_time` 标明纳秒时间戳、`is_bool` 标明布尔、`is_reserved` 标明可隐藏的保留槽。基于这些元数据，同一头文件提供一个纯反射驱动的可读渲染器 `format_message(parser, options)`：它遍历 `fields()` / `element_fields()` 生成规范文本，包括 `header {}`、PointCloud 的 `protocol {}` 与逐点展开、Tensor shape、枚举符号名、日期、十六进制和布尔；其他二进制集合保持摘要形式。`vlink-parse`、`vlink-efbs`、`vlink-eproto` 共用这一渲染器，输出保持一致。
 
 `Value` 保留 `int64_t` / `uint64_t` 的整数精度。只有调用 `numeric(..., double&, &precision_loss)` 为 ExprTk 等浮点计算显式转换时，超过 IEEE-754 精确整数范围的值才会通过 `precision_loss` 报告精度损失。解析得到的容器可能借用输入 `Bytes` 的存储，因而输入缓冲区必须至少与解析器同寿命，并且在解析器有效期间不得修改其内容、大小、容量或底层存储。Python 的 `parse()` / `parse_type()` 会自动保活输入对象；如果检测到输入指针或大小发生变化，后续读取会令该解析结果表现为无效。原地内容修改无法由解析器可靠检测，仍属于调用方禁止操作。
 
@@ -411,7 +412,6 @@ loan 作用于跨进程搬运阶段：发布端从共享内存池借出缓冲区
 | `is_support_loan()` | 查询当前后端是否支持 loan |
 | `loan(size)` | 从共享内存池借出 `size` 字节缓冲区，失败返回空 `Bytes` |
 | `return_loan(bytes)` | 归还借出但未发布的缓冲区 |
-| `set_manual_unloan(true)` | 订阅端关闭回调返回后的自动归还 |
 
 ```cpp
 vlink::Publisher<vlink::Bytes> pub("shm://camera/raw");
@@ -422,26 +422,18 @@ if (pub.is_support_loan()) {
 
   if (!buf.empty()) {
     camera_driver_fill(buf.data(), buf.size());
-    pub.publish(buf);
+    if (!pub.publish(buf)) {
+      pub.return_loan(buf);
+    }
   }
 }
 ```
 
-边界条件：借出后若未 `publish()`，必须显式 `pub.return_loan(buf)`，否则共享内存池会耗尽。
+边界条件：借出后若未 `publish()`，必须显式 `pub.return_loan(buf)`，否则共享内存池会耗尽；`publish()` 返回 `false` 时同样应调用 `return_loan()`——对已被后端消费的缓冲区该调用是无害空操作。
 
-订阅端默认在回调返回后自动归还 loan。若需在回调外继续持有指针，开启手动模式并自行归还：
+订阅端在回调返回后自动归还 loan；若需在回调外继续使用数据，应在回调内完成拷贝（如容器的 `deep_copy`）。
 
-```cpp
-vlink::Subscriber<vlink::Bytes> sub("shm://camera/raw");
-sub.set_manual_unloan(true);
-
-sub.listen([&](const vlink::Bytes& msg) {
-  process(msg);
-  sub.return_loan(msg);
-});
-```
-
-> 安全端点（`SecT == kWithSecurity` / `SecurityPublisher`）发布时会跳过传输层 loan——密文长度在加密前未知，框架退回常规序列化路径。容器层借用不受影响，加密管线见 [安全加密](07-security.md)。
+> 安全端点（`SecT == kWithSecurity` / `SecurityPublisher`）发布时会跳过传输层 loan——密文长度在加密前未知，框架退回常规序列化路径。`is_support_loan()` 反映的是传输能力、不感知安全配置，因此安全端点不应使用显式 `loan()` 路径（借出的缓冲不会被发布消费）。容器层借用不受影响，加密管线见 [安全加密](07-security.md)。
 
 loan 的完整传输配置见 [传输后端与 URL](04-transport.md)。
 
@@ -471,12 +463,12 @@ process(rd);
 | 维度 | 裸 `Bytes` | zerocopy 容器 |
 | --- | --- | --- |
 | 元数据 | 无 | 宽高 / 格式 / 形状 / 时间戳 / 类别等 |
-| 反序列化拷贝 | 有 | 无（借用指针） |
+| payload 解码拷贝 | 无，回调直接接收 `Bytes` 视图（回调返回后接收缓冲自动归还） | 无（容器内部借用接收缓冲区） |
 | 格式校验 | 无 | 有（`check_valid`） |
 | 跨语言互操作 | 需自行约定协议 | 内置 Schema（`PointCloud` / `Tensor`） |
 | 适用场景 | 通用小消息 | 传感器 / 模型 / 地图 / 检测 / 音频大负载 |
 
-判据：小消息或已有自定义序列化时用 `Bytes`；传感器领域大负载优先用对应领域容器，并在 `shm://` 上叠加传输层 loan 取得双层零拷贝。
+判据：小消息或已有自定义序列化时用 `Bytes`；传感器领域大负载可用对应领域容器取得结构化元数据与接收侧 payload 借用。普通容器发布仍可能复制进 transport buffer；发布端要直接写共享池须使用 `Publisher<Bytes>::loan()`。
 
 ---
 
@@ -486,5 +478,5 @@ process(rd);
 - [消息序列化](03-serialization.md) —— 序列化类型与零拷贝读写的关系
 - [传输后端与 URL](04-transport.md) —— shm / shm2 / zenoh 传输与 loan 配置
 - [QoS 配置](05-qos.md) —— 可靠性、历史深度与 profile
-- [安全加密](07-security.md) —— 序列化之后的认证加密管线，可与零拷贝叠加
+- [安全加密](07-security.md) —— 序列化之后的认证加密管线；启用后 transport loan 被关闭
 - [基础库](08-base-library.md) —— `Bytes` 类 API 与基础组件

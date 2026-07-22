@@ -116,8 +116,9 @@ struct PluginEntry;
  *
  * @details
  * A single @c Plugin instance can host multiple distinct interface types simultaneously
- * and tracks each loaded library so repeated @c load() calls share the underlying
- * @c dlopen handle.  All operations are thread safe through the internal implementation.
+ * and tracks each loaded library by its library/interface pair.  Loading the same pair
+ * more than once returns @c nullptr.  All operations are thread safe through the internal
+ * implementation.
  */
 class VLINK_EXPORT Plugin final {
  public:
@@ -166,14 +167,15 @@ class VLINK_EXPORT Plugin final {
    * @brief Loads a shared library that implements interface @c T and returns a tracked handle.
    *
    * @details
-   * The loader appends the platform's library prefix/suffix to @p lib_name, scans
-   * @p search_paths, opens the first matching file, invokes the @p function_name entry
-   * point with the caller's ID and version, and finally wraps the returned object pointer
-   * in a @c shared_ptr<T> whose deleter invokes @c vlink_plugin_destroy.
+   * A path-like or platform-suffixed @p lib_name that names a regular file is opened
+   * directly.  Otherwise the loader appends the platform's library prefix/suffix, scans
+   * @p search_paths, and opens the first matching regular file.  It then invokes the
+   * @p function_name entry point with the caller's ID and version and wraps the returned
+   * object pointer in a @c shared_ptr<T> whose deleter invokes @c vlink_plugin_destroy.
    *
    * @tparam T             Interface type carrying @c get_plugin_id() (added by
    *                       @c VLINK_PLUGIN_REGISTER or @c VLINK_PLUGIN_REGISTER_BY_ID).
-   * @param lib_name       Library file name without prefix/suffix.
+   * @param lib_name       Library stem without prefix/suffix, or a direct shared-library path.
    * @param version_major  Required interface major version.
    * @param version_minor  Required interface minor version.
    * @param dir_name       Optional subdirectory tried under each entry of @p search_paths.

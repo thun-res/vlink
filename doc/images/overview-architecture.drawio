@@ -9,7 +9,7 @@
         <mxCell id="title" value="VLink Overview Architecture" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=22;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="40" y="18" width="920" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="subtitle" value="Full-scenario replacement for ROS 2  -  High-performance C++17 communication middleware" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+        <mxCell id="subtitle" value="Full-scenario replacement for ROS 2  -  High-performance communication middleware" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
           <mxGeometry x="40" y="52" width="920" height="22" as="geometry" />
         </mxCell>
 
@@ -25,22 +25,22 @@
         </mxCell>
 
         <mxCell id="impl1" value="Publisher" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="52" y="144" width="142" height="36" as="geometry" />
+          <mxGeometry x="52" y="144" width="141" height="36" as="geometry" />
         </mxCell>
         <mxCell id="impl2" value="Subscriber" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="206" y="144" width="142" height="36" as="geometry" />
+          <mxGeometry x="203" y="144" width="141" height="36" as="geometry" />
         </mxCell>
         <mxCell id="impl3" value="Client" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="360" y="144" width="142" height="36" as="geometry" />
+          <mxGeometry x="354" y="144" width="141" height="36" as="geometry" />
         </mxCell>
         <mxCell id="impl4" value="Server" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="514" y="144" width="142" height="36" as="geometry" />
+          <mxGeometry x="505" y="144" width="141" height="36" as="geometry" />
         </mxCell>
         <mxCell id="impl5" value="Setter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="668" y="144" width="142" height="36" as="geometry" />
+          <mxGeometry x="656" y="144" width="141" height="36" as="geometry" />
         </mxCell>
         <mxCell id="impl6" value="Getter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="810" y="144" width="138" height="36" as="geometry" />
+          <mxGeometry x="807" y="144" width="141" height="36" as="geometry" />
         </mxCell>
 
         <!-- ===================== Utilities layer ===================== -->
@@ -86,7 +86,7 @@
         </mxCell>
 
         <!-- Plugin Interface arrow -->
-        <mxCell id="arr12" value="Plugin Interface  (dynamic .so / .dll)" style="endArrow=block;endFill=1;startArrow=block;startFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#546e7a;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+        <mxCell id="arr12" value="Plugin-loaded  (dynamic .so / .dll)" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#546e7a;labelBackgroundColor=#ffffff;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="500" y="360" as="sourcePoint" />
             <mxPoint x="500" y="394" as="targetPoint" />
@@ -97,51 +97,45 @@
         <mxCell id="L3bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;arcSize=4;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="40" y="404" width="920" height="244" as="geometry" />
         </mxCell>
-        <mxCell id="L3t" value="Transport Modules  -  12 Backends  /  URL Prefix Routing" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;fillColor=#1976d2;strokeColor=#0d47a1;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#ffffff;spacingLeft=14;arcSize=14;shadow=0;" vertex="1" parent="1">
+        <mxCell id="L3t" value="Transport Modules  -  10 Backends  /  URL Prefix Routing" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;fillColor=#1976d2;strokeColor=#0d47a1;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#ffffff;spacingLeft=14;arcSize=14;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="52" y="416" width="500" height="28" as="geometry" />
         </mxCell>
-        <mxCell id="L3badge" value="Switch backend by URL prefix  -  Zero app-code change" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+        <mxCell id="L3badge" value="URL scheme selects backend &#183; addressing is backend-specific" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
           <mxGeometry x="528" y="418" width="420" height="24" as="geometry" />
         </mxCell>
 
         <!-- Transport row 1 -->
         <mxCell id="t1" value="intra://&#10;built-in" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="52" y="456" width="142" height="44" as="geometry" />
+          <mxGeometry x="52" y="456" width="166" height="44" as="geometry" />
         </mxCell>
         <mxCell id="t2" value="shm://&#10;Iceoryx" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="204" y="456" width="142" height="44" as="geometry" />
+          <mxGeometry x="234" y="456" width="166" height="44" as="geometry" />
         </mxCell>
         <mxCell id="t3" value="shm2://&#10;Iceoryx2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="356" y="456" width="142" height="44" as="geometry" />
+          <mxGeometry x="416" y="456" width="166" height="44" as="geometry" />
         </mxCell>
         <mxCell id="t4" value="dds://&#10;Fast-DDS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="508" y="456" width="142" height="44" as="geometry" />
+          <mxGeometry x="598" y="456" width="166" height="44" as="geometry" />
         </mxCell>
         <mxCell id="t5" value="ddsc://&#10;CycloneDDS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="660" y="456" width="142" height="44" as="geometry" />
+          <mxGeometry x="780" y="456" width="166" height="44" as="geometry" />
         </mxCell>
         <mxCell id="t6" value="ddsr://&#10;RTI Connext" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="812" y="456" width="136" height="44" as="geometry" />
+          <mxGeometry x="52" y="508" width="166" height="44" as="geometry" />
         </mxCell>
 
         <!-- Transport row 2 -->
-        <mxCell id="t7" value="ddst://&#10;TravoDDS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="52" y="508" width="142" height="44" as="geometry" />
-        </mxCell>
         <mxCell id="t8" value="zenoh://&#10;Eclipse Zenoh" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="204" y="508" width="142" height="44" as="geometry" />
+          <mxGeometry x="234" y="508" width="166" height="44" as="geometry" />
         </mxCell>
         <mxCell id="t9" value="someip://&#10;SOME/IP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="356" y="508" width="142" height="44" as="geometry" />
+          <mxGeometry x="416" y="508" width="166" height="44" as="geometry" />
         </mxCell>
         <mxCell id="t10" value="mqtt://&#10;MQTT Bridge" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="508" y="508" width="142" height="44" as="geometry" />
+          <mxGeometry x="598" y="508" width="166" height="44" as="geometry" />
         </mxCell>
         <mxCell id="t11" value="fdbus://&#10;FDBus IPC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="660" y="508" width="142" height="44" as="geometry" />
-        </mxCell>
-        <mxCell id="t12" value="qnx://&#10;QNX Channel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;align=center;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="812" y="508" width="136" height="44" as="geometry" />
+          <mxGeometry x="780" y="508" width="166" height="44" as="geometry" />
         </mxCell>
 
         <!-- CLI tools strip -->
@@ -166,7 +160,7 @@
         <mxCell id="cli5" value="bag" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="416" y="598" width="80" height="26" as="geometry" />
         </mxCell>
-        <mxCell id="cli6" value="dump" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
+        <mxCell id="cli6" value="parse" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="504" y="598" width="80" height="26" as="geometry" />
         </mxCell>
         <mxCell id="cli7" value="eproto" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ef6c00;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#e65100;align=center;shadow=0;" vertex="1" parent="1">

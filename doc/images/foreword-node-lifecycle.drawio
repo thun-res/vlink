@@ -43,7 +43,7 @@
         </mxCell>
 
         <!-- Interrupt side (right, alert dashed) -->
-        <mxCell id="sR" value="Interrupted" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#c62828;strokeWidth=1.3;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#b71c1c;shadow=0;arcSize=10;dashed=1;" vertex="1" parent="1">
+        <mxCell id="sR" value="wait_for_* awakened&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;node stays Running&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#c62828;strokeWidth=1.3;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#b71c1c;shadow=0;arcSize=10;dashed=1;" vertex="1" parent="1">
           <mxGeometry x="650" y="302" width="160" height="56" as="geometry" />
         </mxCell>
 
@@ -70,12 +70,12 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
-        <!-- Running -> Interrupted -->
+        <!-- Running -> wait wake-up callout -->
         <mxCell id="eR" value="interrupt()" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#c62828;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#b71c1c;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="s2" target="sR">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <!-- Interrupted -> deinit -->
-        <mxCell id="eRb" value="unblocks" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#c62828;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#b71c1c;labelBackgroundColor=#ffffff;dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;entryX=1;entryY=0.3;" edge="1" parent="1" source="sR" target="s3">
+        <!-- Wake-up returns to the same running state -->
+        <mxCell id="eRb" value="wait returns" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#c62828;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#b71c1c;labelBackgroundColor=#ffffff;dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;entryX=1;entryY=0.3;" edge="1" parent="1" source="sR" target="s2">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 

@@ -152,6 +152,8 @@ class PlayerWindow : public QMainWindow {
 
   void handle_analyzer_timestamp(int64_t timestamp);
 
+  void kill_proxy_clients();
+
   inline static PlayerWindow* instance_{nullptr};
 
   Ui::PlayerWindow* ui;

@@ -367,17 +367,17 @@ cc_binary {
     ],
 }
 
-// vlink-dump
+// vlink-parse
 cc_binary {
-    name: "vlink-dump",
+    name: "vlink-parse",
     defaults: [
         "libvlink-defaults",
     ],
     srcs: [
-        "cli/dump/*.cc",
+        "cli/parse/*.cc",
     ],
     local_include_dirs: [
-        "cli/dump",
+        "cli/parse",
         "include/vlink",
         "include/private",
         "thirdparty/argparse/include",

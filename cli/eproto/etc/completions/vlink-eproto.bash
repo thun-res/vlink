@@ -67,4 +67,4 @@ _vlink_eproto() {
     _vlink_bash_complete_url "$cur"
 }
 
-complete -F _vlink_eproto vlink-eproto eproto
+_vlink_bash_register_completion _vlink_eproto vlink-eproto eproto

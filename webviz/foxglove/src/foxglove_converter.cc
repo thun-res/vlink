@@ -31,11 +31,14 @@
 #include <CameraCalibration_bfbs.fbs.hpp>
 #include <CircleAnnotation.fbs.hpp>
 #include <Color.fbs.hpp>
+#include <CompressedAudio_bfbs.fbs.hpp>
 #include <CompressedImage.fbs.hpp>
 #include <CompressedImage_bfbs.fbs.hpp>
+#include <CompressedPointCloud_bfbs.fbs.hpp>
 #include <CompressedVideo.fbs.hpp>
 #include <CompressedVideo_bfbs.fbs.hpp>
 #include <CubePrimitive.fbs.hpp>
+#include <Event_bfbs.fbs.hpp>
 #include <FrameTransform.fbs.hpp>
 #include <FrameTransform_bfbs.fbs.hpp>
 #include <FrameTransforms.fbs.hpp>
@@ -57,6 +60,7 @@
 #include <LocationFixes_bfbs.fbs.hpp>
 #include <Log.fbs.hpp>
 #include <Log_bfbs.fbs.hpp>
+#include <Odometry_bfbs.fbs.hpp>
 #include <PackedElementField.fbs.hpp>
 #include <Point2.fbs.hpp>
 #include <Point3.fbs.hpp>
@@ -84,7 +88,6 @@
 #include <VoxelGrid.fbs.hpp>
 #include <VoxelGrid_bfbs.fbs.hpp>
 #include <algorithm>
-#include <cctype>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -112,12 +115,7 @@ namespace vlink {
 namespace webviz {
 
 [[maybe_unused]] static bool is_flatbuffers_schema_encoding(std::string_view encoding) {
-  std::string normalized{encoding};
-
-  std::transform(normalized.begin(), normalized.end(), normalized.begin(),
-                 [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-
-  return normalized == "flatbuffers" || normalized == "flatbuffer" || normalized == "fbs" || normalized == "bfbs";
+  return is_flatbuffers_encoding(normalize_token(encoding));
 }
 
 constexpr std::string_view kFoxgloveFlatbufferEncoding = "flatbuffer";
@@ -163,39 +161,6 @@ flatbuffers::Offset<flatbuffers::Vector<uint8_t>> FoxgloveConverter::create_prot
 
   return builder.CreateVector(dst, static_cast<size_t>(count));
 }
-#ifdef VLINK_HAS_FBS_COMPILER
-template <typename ResolverT>
-bool resolve_thread_local_fbs_schema(const std::string& ser, const void* owner, ResolverT&& resolver,
-                                     const reflection::Schema*& out_schema) {
-  struct ThreadLocalFbsSchemaCache final {
-    const void* owner{nullptr};
-    std::string ser;
-    std::string schema_data;
-    const reflection::Schema* schema{nullptr};
-  };
-
-  thread_local ThreadLocalFbsSchemaCache cache;
-
-  if VUNLIKELY (cache.schema == nullptr || cache.owner != owner || cache.ser != ser) {
-    cache.schema_data.clear();
-
-    if VUNLIKELY (!resolver(ser, cache.schema_data)) {
-      cache.owner = nullptr;
-      cache.ser.clear();
-      cache.schema = nullptr;
-      return false;
-    }
-
-    cache.owner = owner;
-    cache.ser = ser;
-    cache.schema = get_verified_fbs_schema(ser, cache.schema_data);
-  }
-
-  out_schema = cache.schema;
-  return out_schema != nullptr;
-}
-#endif
-
 FoxgloveConverter::FoxgloveConverter(const Config& config) : config_(config) {
   Bytes::init_memory_pool();
   init_proto_resolver();
@@ -501,43 +466,58 @@ bool FoxgloveConverter::resolve_custom_fbs_schema(const std::string& fbs_ser, st
     return true;
   }
 
-  if VUNLIKELY (!schema_interface_) {
+  if VLIKELY (schema_interface_) {
+    auto schema = schema_interface_->search_schema(fbs_ser, SchemaType::kFlatbuffers);
+
+    if VLIKELY (schema.schema_type == SchemaType::kFlatbuffers && !schema.data.empty()) {
+      schema_data.assign(reinterpret_cast<const char*>(schema.data.data()), schema.data.size());
+      schema_cache_[cache_key] = schema_data;
+      return true;
+    }
+  }
+
+  if VUNLIKELY (!find_fbs_parser_locked(fbs_ser)) {
     return false;
   }
 
-  auto schema = schema_interface_->search_schema(fbs_ser, SchemaType::kFlatbuffers);
+  auto parser_iter = fbs_parsers_.find(fbs_ser);
 
-  if VUNLIKELY (schema.schema_type != SchemaType::kFlatbuffers || schema.data.empty()) {
+  if VUNLIKELY (parser_iter == fbs_parsers_.end() || parser_iter->second >= fbs_parser_vec_.size() ||
+                !fbs_parser_vec_[parser_iter->second]) {
     return false;
   }
 
-  schema_data.assign(reinterpret_cast<const char*>(schema.data.data()), schema.data.size());
+  auto& parser = *fbs_parser_vec_[parser_iter->second];
+
+  if VUNLIKELY (!parser.SetRootType(fbs_ser.c_str())) {
+    return false;
+  }
+
+  parser.Serialize();
+  const auto* buf_ptr = parser.builder_.GetBufferPointer();
+  auto buf_size = parser.builder_.GetSize();
+
+  if VUNLIKELY (!buf_ptr || buf_size == 0) {
+    MLOG_W("Failed to serialize BFBS for: {}", fbs_ser);
+    return false;
+  }
+
+  schema_data.assign(reinterpret_cast<const char*>(buf_ptr), buf_size);
   schema_cache_[cache_key] = schema_data;
   return true;
 }
 
 double FoxgloveConverter::get_fbs_double(const flatbuffers::Table& table, const reflection::Object& obj,
                                          const std::string& field_name, const FieldMapping& mapping) {
-  const auto* field = find_fbs_field(obj, field_name);
+  return get_fbs_double(FbsObjectView{&obj, &table, nullptr}, field_name, mapping);
+}
 
-  if VLIKELY (field) {
-    switch (field->type()->base_type()) {
-      case reflection::Float:
-      case reflection::Double:
-        return flatbuffers::GetAnyFieldF(table, *field);
-      case reflection::Byte:
-      case reflection::Short:
-      case reflection::Int:
-      case reflection::Long:
-      case reflection::UByte:
-      case reflection::UShort:
-      case reflection::UInt:
-      case reflection::ULong:
-      case reflection::Bool:
-        return static_cast<double>(flatbuffers::GetAnyFieldI(table, *field));
-      default:
-        break;
-    }
+double FoxgloveConverter::get_fbs_double(const FbsObjectView& view, const std::string& field_name,
+                                         const FieldMapping& mapping) {
+  const auto* field = view && view.object ? find_fbs_field(*view.object, field_name) : nullptr;
+
+  if VLIKELY (field && is_fbs_numeric_type(field->type()->base_type()) && is_fbs_field_present(view, *field)) {
+    return get_fbs_field_as_double(view, *field);
   }
 
   double default_value = 0.0;
@@ -552,14 +532,19 @@ double FoxgloveConverter::get_fbs_double(const flatbuffers::Table& table, const 
 std::string FoxgloveConverter::get_fbs_string(const flatbuffers::Table& table, const reflection::Object& obj,
                                               const std::string& field_name, const FieldMapping& mapping,
                                               const reflection::Schema* schema) {
-  if VUNLIKELY (!mapping.expression.empty() && schema != nullptr) {
-    return format_expression_string(evaluate_expression_with_fbs(mapping.expression, table, obj, *schema));
+  return get_fbs_string(FbsObjectView{&obj, &table, nullptr}, field_name, mapping, schema);
+}
+
+std::string FoxgloveConverter::get_fbs_string(const FbsObjectView& view, const std::string& field_name,
+                                              const FieldMapping& mapping, const reflection::Schema* schema) {
+  if VUNLIKELY (!mapping.expression.empty() && schema != nullptr && view && view.object) {
+    return format_expression_string(evaluate_expression_with_fbs(mapping.expression, view, *schema));
   }
 
-  const auto* field = find_fbs_field(obj, field_name);
+  const auto* field = view && view.object ? find_fbs_field(*view.object, field_name) : nullptr;
 
-  if VLIKELY (field && field->type()->base_type() == reflection::String) {
-    return flatbuffers::GetAnyFieldS(table, *field, nullptr);
+  if VLIKELY (field && field->type()->base_type() == reflection::String && is_fbs_field_present(view, *field)) {
+    return get_fbs_field_as_string(view, *field, schema);
   }
 
   return mapping.has_default_value ? mapping.default_value : std::string{};
@@ -571,7 +556,7 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
   const reflection::Schema* schema = nullptr;
 
   if VUNLIKELY (!resolve_thread_local_fbs_schema(
-                    ser, this,
+                    ser, cache_owner_id_,
                     [this](const std::string& type_name, std::string& schema_data) {
                       return resolve_custom_fbs_schema(type_name, schema_data);
                     },
@@ -606,33 +591,72 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
         extract_fbs_timestamp_ns(*root_table, obj, *schema, mapping.timestamp_field, mapping.timestamp_unit);
   }
 
-  auto fbs_get_double = [schema](const flatbuffers::Table& tbl, const reflection::Object& o, const std::string& src,
-                                 const std::string& expr = {}) -> double {
-    if VUNLIKELY (!expr.empty()) {
-      return evaluate_expression_with_fbs(expr, tbl, o, *schema);
+  auto fbs_get_mapped_double = [schema](const flatbuffers::Table& tbl, const reflection::Object& o,
+                                        const FieldMapping& fm) -> double {
+    if VUNLIKELY (!fm.expression.empty()) {
+      return evaluate_expression_with_fbs(fm.expression, tbl, o, *schema);
     }
 
-    if VUNLIKELY (has_nested_field_path(src)) {
-      return safe_nested_fbs_double(tbl, o, *schema, src);
+    if VUNLIKELY (has_nested_field_path(fm.source)) {
+      const auto value = resolve_nested_fbs_double(tbl, o, *schema, fm.source, true);
+
+      if VLIKELY (!std::isnan(value)) {
+        return value;
+      }
     }
 
-    FieldMapping empty_fm;
-    return get_fbs_double(tbl, o, src, empty_fm);
+    return get_fbs_double(tbl, o, fm.source, fm);
   };
 
-  auto fbs_get_string = [schema](const flatbuffers::Table& tbl, const reflection::Object& o, const std::string& src,
-                                 const std::string& def) -> std::string {
-    if VUNLIKELY (has_nested_field_path(src)) {
-      bool found = false;
-      auto val = resolve_nested_fbs_string(tbl, o, *schema, src, &found);
-      return found ? val : def;
+  auto fbs_get_mapped_string = [schema](const flatbuffers::Table& tbl, const reflection::Object& o,
+                                        const FieldMapping& fm) -> std::string {
+    if VUNLIKELY (!fm.expression.empty()) {
+      return format_expression_string(evaluate_expression_with_fbs(fm.expression, tbl, o, *schema));
     }
 
-    FieldMapping fm;
-    fm.default_value = def;
-    fm.has_default_value = true;
-    fm.default_value_is_string = true;
-    return get_fbs_string(tbl, o, src, fm, schema);
+    if VUNLIKELY (has_nested_field_path(fm.source)) {
+      bool found = false;
+      auto value = resolve_nested_fbs_string(tbl, o, *schema, fm.source, &found, true);
+
+      if VLIKELY (found) {
+        return value;
+      }
+    }
+
+    return get_fbs_string(tbl, o, fm.source, fm, schema);
+  };
+
+  auto fbs_get_object_mapped_double = [schema](const FbsObjectView& view, const FieldMapping& fm) -> double {
+    if VUNLIKELY (!fm.expression.empty()) {
+      return evaluate_expression_with_fbs(fm.expression, view, *schema);
+    }
+
+    if VUNLIKELY (has_nested_field_path(fm.source)) {
+      const auto value = resolve_nested_fbs_double(view, *schema, fm.source, true);
+
+      if VLIKELY (!std::isnan(value)) {
+        return value;
+      }
+    }
+
+    return get_fbs_double(view, fm.source, fm);
+  };
+
+  auto fbs_get_object_mapped_string = [schema](const FbsObjectView& view, const FieldMapping& fm) -> std::string {
+    if VUNLIKELY (!fm.expression.empty()) {
+      return format_expression_string(evaluate_expression_with_fbs(fm.expression, view, *schema));
+    }
+
+    if VUNLIKELY (has_nested_field_path(fm.source)) {
+      bool found = false;
+      auto value = resolve_nested_fbs_string(view, *schema, fm.source, &found, true);
+
+      if VLIKELY (found) {
+        return value;
+      }
+    }
+
+    return get_fbs_string(view, fm.source, fm, schema);
   };
 
   if (mapping.schema == "foxglove.LocationFix") {
@@ -649,17 +673,17 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "timestamp") {
-        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "timestamp_ns") {
-        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "frame_id") {
-        frame_id = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        frame_id = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "latitude") {
-        latitude = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        latitude = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "longitude") {
-        longitude = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        longitude = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "altitude") {
-        altitude = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        altitude = fbs_get_mapped_double(*root_table, obj, fm);
       }
     }
 
@@ -699,50 +723,45 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "timestamp") {
-        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "timestamp_ns") {
-        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "frame_id") {
-        frame_id = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        frame_id = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "pose" || fm.target == "pose_euler") {
-        const flatbuffers::Table* target_tbl = nullptr;
-        const reflection::Object* target_obj_ptr = nullptr;
+        FbsObjectView target_parent;
         std::string target_field_name;
 
-        if (resolve_fbs_parent_field_path(*root_table, obj, *schema, fm.source, target_tbl, target_obj_ptr,
-                                          target_field_name)) {
-          const auto* target_field = find_fbs_field(*target_obj_ptr, target_field_name);
+        if (resolve_fbs_parent_field_path(*root_table, obj, *schema, fm.source, target_parent, target_field_name)) {
+          const auto* target_field = find_fbs_field(*target_parent.object, target_field_name);
 
           if (target_field && target_field->type()->base_type() == reflection::Obj) {
-            const auto* sub_table = flatbuffers::GetFieldT(*target_tbl, *target_field);
+            const auto* sub_obj = find_fbs_object(*schema, target_field->type()->index());
+            FbsObjectView child;
 
-            if (sub_table && schema->objects()) {
-              const auto* sub_obj = schema->objects()->Get(static_cast<uint32_t>(target_field->type()->index()));
+            if (sub_obj && resolve_fbs_object_field(target_parent, *target_field, *sub_obj, child)) {
+              FieldMapping empty_fm;
 
-              if (sub_obj) {
-                FieldMapping empty_fm;
-
-                if (fm.target == "pose") {
-                  qx = get_fbs_double(*sub_table, *sub_obj, "x", empty_fm);
-                  qy = get_fbs_double(*sub_table, *sub_obj, "y", empty_fm);
-                  qz = get_fbs_double(*sub_table, *sub_obj, "z", empty_fm);
-                  qw = get_fbs_double(*sub_table, *sub_obj, "w", empty_fm);
-                } else {
-                  euler_roll = get_fbs_double(*sub_table, *sub_obj, "x", empty_fm);
-                  euler_pitch = get_fbs_double(*sub_table, *sub_obj, "y", empty_fm);
-                  euler_yaw = get_fbs_double(*sub_table, *sub_obj, "z", empty_fm);
-                  has_euler = true;
-                }
+              if (fm.target == "pose") {
+                qx = get_fbs_double(child, "x", empty_fm);
+                qy = get_fbs_double(child, "y", empty_fm);
+                qz = get_fbs_double(child, "z", empty_fm);
+                qw = get_fbs_double(child, "w", empty_fm);
+              } else {
+                euler_roll = get_fbs_double(child, "x", empty_fm);
+                euler_pitch = get_fbs_double(child, "y", empty_fm);
+                euler_yaw = get_fbs_double(child, "z", empty_fm);
+                has_euler = true;
               }
             }
           }
         }
       } else if (fm.target == "position_x") {
-        position_x = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        position_x = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "position_y") {
-        position_y = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        position_y = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "position_z") {
-        position_z = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        position_z = fbs_get_mapped_double(*root_table, obj, fm);
       }
     }
 
@@ -792,65 +811,50 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
     std::string frame_id = "base_link";
 
     std::string entity_sub_items;
-    std::string entity_x_src;
-    std::string entity_y_src;
-    std::string entity_z_src;
-    std::string entity_w_src;
-    std::string entity_l_src;
-    std::string entity_h_src;
-    std::string entity_heading_src;
-    std::string entity_x_expr;
-    std::string entity_y_expr;
-    std::string entity_z_expr;
-    std::string entity_w_expr;
-    std::string entity_l_expr;
-    std::string entity_h_expr;
-    std::string entity_heading_expr;
+    const FieldMapping* entity_x_fm = nullptr;
+    const FieldMapping* entity_y_fm = nullptr;
+    const FieldMapping* entity_z_fm = nullptr;
+    const FieldMapping* entity_w_fm = nullptr;
+    const FieldMapping* entity_l_fm = nullptr;
+    const FieldMapping* entity_h_fm = nullptr;
+    const FieldMapping* entity_heading_fm = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "timestamp") {
-        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "timestamp_ns") {
-        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "frame_id") {
-        frame_id = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        frame_id = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "entity_sub_items") {
         entity_sub_items = fm.source;
       } else if (fm.target == "entity_x") {
-        entity_x_src = fm.source;
-        entity_x_expr = fm.expression;
+        entity_x_fm = &fm;
       } else if (fm.target == "entity_y") {
-        entity_y_src = fm.source;
-        entity_y_expr = fm.expression;
+        entity_y_fm = &fm;
       } else if (fm.target == "entity_z") {
-        entity_z_src = fm.source;
-        entity_z_expr = fm.expression;
+        entity_z_fm = &fm;
       } else if (fm.target == "entity_width") {
-        entity_w_src = fm.source;
-        entity_w_expr = fm.expression;
+        entity_w_fm = &fm;
       } else if (fm.target == "entity_length") {
-        entity_l_src = fm.source;
-        entity_l_expr = fm.expression;
+        entity_l_fm = &fm;
       } else if (fm.target == "entity_height") {
-        entity_h_src = fm.source;
-        entity_h_expr = fm.expression;
+        entity_h_fm = &fm;
       } else if (fm.target == "entity_heading") {
-        entity_heading_src = fm.source;
-        entity_heading_expr = fm.expression;
+        entity_heading_fm = &fm;
       }
     }
 
-    bool has_entity_fields = !entity_x_src.empty() || !entity_y_src.empty() || !entity_z_src.empty();
+    bool has_entity_fields = entity_x_fm != nullptr || entity_y_fm != nullptr || entity_z_fm != nullptr ||
+                             entity_w_fm != nullptr || entity_l_fm != nullptr || entity_h_fm != nullptr ||
+                             entity_heading_fm != nullptr;
 
     auto ts = (timestamp_ns > 0) ? make_timestamp_from_ns(timestamp_ns) : make_timestamp_from_us(timestamp_us);
     std::vector<flatbuffers::Offset<::foxglove::SceneEntity>> entity_offsets;
 
-    auto build_fbs_cube = [&entity_offsets, &fbs_get_double, &frame_id, &has_entity_fields, &schema,
-                           &entity_heading_expr, &entity_heading_src, &entity_h_expr, &entity_h_src, &entity_l_expr,
-                           &entity_l_src, &entity_w_expr, &entity_w_src, &entity_x_expr, &entity_x_src, &entity_y_expr,
-                           &entity_y_src, &entity_z_expr, &entity_z_src,
-                           &ts](const flatbuffers::Table& item_tbl, const reflection::Object& item_obj, int idx,
-                                const std::string& parent_id) {
+    auto build_fbs_cube = [&entity_h_fm, &entity_heading_fm, &entity_l_fm, &entity_offsets, &entity_w_fm, &entity_x_fm,
+                           &entity_y_fm, &entity_z_fm, &fbs_get_object_mapped_double, &frame_id, &has_entity_fields,
+                           &schema, &ts](const FbsObjectView& item, int idx, const std::string& parent_id) {
       double px = 0.0;
       double py = 0.0;
       double pz = 0.0;
@@ -862,77 +866,74 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
       FieldMapping empty_fm;
 
       if (has_entity_fields) {
-        if (!entity_x_src.empty()) {
-          px = fbs_get_double(item_tbl, item_obj, entity_x_src, entity_x_expr);
+        if (entity_x_fm) {
+          px = fbs_get_object_mapped_double(item, *entity_x_fm);
         }
 
-        if (!entity_y_src.empty()) {
-          py = fbs_get_double(item_tbl, item_obj, entity_y_src, entity_y_expr);
+        if (entity_y_fm) {
+          py = fbs_get_object_mapped_double(item, *entity_y_fm);
         }
 
-        if (!entity_z_src.empty()) {
-          pz = fbs_get_double(item_tbl, item_obj, entity_z_src, entity_z_expr);
+        if (entity_z_fm) {
+          pz = fbs_get_object_mapped_double(item, *entity_z_fm);
         }
 
-        if (!entity_w_src.empty()) {
-          auto v = fbs_get_double(item_tbl, item_obj, entity_w_src, entity_w_expr);
+        if (entity_w_fm) {
+          auto v = fbs_get_object_mapped_double(item, *entity_w_fm);
 
           if (v != 0.0) {
             sx = v;
           }
         }
 
-        if (!entity_l_src.empty()) {
-          auto v = fbs_get_double(item_tbl, item_obj, entity_l_src, entity_l_expr);
+        if (entity_l_fm) {
+          auto v = fbs_get_object_mapped_double(item, *entity_l_fm);
 
           if (v != 0.0) {
             sy = v;
           }
         }
 
-        if (!entity_h_src.empty()) {
-          auto v = fbs_get_double(item_tbl, item_obj, entity_h_src, entity_h_expr);
+        if (entity_h_fm) {
+          auto v = fbs_get_object_mapped_double(item, *entity_h_fm);
 
           if (v != 0.0) {
             sz = v;
           }
         }
 
-        if (!entity_heading_src.empty()) {
-          heading = fbs_get_double(item_tbl, item_obj, entity_heading_src, entity_heading_expr);
+        if (entity_heading_fm) {
+          heading = fbs_get_object_mapped_double(item, *entity_heading_fm);
         }
       } else {
-        px = get_fbs_double(item_tbl, item_obj, "x", empty_fm);
-        py = get_fbs_double(item_tbl, item_obj, "y", empty_fm);
-        pz = get_fbs_double(item_tbl, item_obj, "z", empty_fm);
+        px = get_fbs_double(item, "x", empty_fm);
+        py = get_fbs_double(item, "y", empty_fm);
+        pz = get_fbs_double(item, "z", empty_fm);
 
         if (px == 0.0 && py == 0.0 && pz == 0.0) {
-          px = get_fbs_double(item_tbl, item_obj, "cx", empty_fm);
-          py = get_fbs_double(item_tbl, item_obj, "cy", empty_fm);
-          pz = get_fbs_double(item_tbl, item_obj, "cz", empty_fm);
+          px = get_fbs_double(item, "cx", empty_fm);
+          py = get_fbs_double(item, "cy", empty_fm);
+          pz = get_fbs_double(item, "cz", empty_fm);
         }
 
         if (px == 0.0 && py == 0.0 && pz == 0.0) {
-          const auto* pos_field = find_fbs_field(item_obj, "position");
+          const auto* pos_field = find_fbs_field(*item.object, "position");
 
           if (pos_field && pos_field->type()->base_type() == reflection::Obj) {
-            const auto* pos_tbl = flatbuffers::GetFieldT(item_tbl, *pos_field);
+            const auto* pos_obj = find_fbs_object(*schema, pos_field->type()->index());
+            FbsObjectView position;
 
-            if (pos_tbl && schema->objects()) {
-              const auto* pos_obj = schema->objects()->Get(static_cast<uint32_t>(pos_field->type()->index()));
-
-              if (pos_obj) {
-                px = get_fbs_double(*pos_tbl, *pos_obj, "x", empty_fm);
-                py = get_fbs_double(*pos_tbl, *pos_obj, "y", empty_fm);
-                pz = get_fbs_double(*pos_tbl, *pos_obj, "z", empty_fm);
-              }
+            if (pos_obj && resolve_fbs_object_field(item, *pos_field, *pos_obj, position)) {
+              px = get_fbs_double(position, "x", empty_fm);
+              py = get_fbs_double(position, "y", empty_fm);
+              pz = get_fbs_double(position, "z", empty_fm);
             }
           }
         }
 
-        auto w_val = get_fbs_double(item_tbl, item_obj, "width", empty_fm);
-        auto l_val = get_fbs_double(item_tbl, item_obj, "length", empty_fm);
-        auto h_val = get_fbs_double(item_tbl, item_obj, "height", empty_fm);
+        auto w_val = get_fbs_double(item, "width", empty_fm);
+        auto l_val = get_fbs_double(item, "length", empty_fm);
+        auto h_val = get_fbs_double(item, "height", empty_fm);
 
         if (w_val != 0.0) {
           sx = w_val;
@@ -946,10 +947,10 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
           sz = h_val;
         }
 
-        heading = get_fbs_double(item_tbl, item_obj, "heading_angle", empty_fm);
+        heading = get_fbs_double(item, "heading_angle", empty_fm);
 
         if (heading == 0.0) {
-          heading = get_fbs_double(item_tbl, item_obj, "yaw", empty_fm);
+          heading = get_fbs_double(item, "yaw", empty_fm);
         }
       }
 
@@ -978,20 +979,15 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
         continue;
       }
 
-      const flatbuffers::Table* entities_parent = nullptr;
-      const reflection::Object* entities_parent_obj = nullptr;
+      FbsObjectView entities_parent;
       std::string entities_field_name;
 
       if VUNLIKELY (!resolve_fbs_parent_field_path(*root_table, obj, *schema, fm.source, entities_parent,
-                                                   entities_parent_obj, entities_field_name)) {
+                                                   entities_field_name)) {
         continue;
       }
 
-      if VUNLIKELY (!entities_parent || !entities_parent_obj) {
-        continue;
-      }
-
-      const auto* vec_field = find_fbs_field(*entities_parent_obj, entities_field_name);
+      const auto* vec_field = find_fbs_field(*entities_parent.object, entities_field_name);
 
       if VUNLIKELY (!vec_field || vec_field->type()->base_type() != reflection::Vector) {
         continue;
@@ -1001,28 +997,22 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
         continue;
       }
 
-      const auto* vec = flatbuffers::GetFieldV<flatbuffers::Offset<flatbuffers::Table>>(*entities_parent, *vec_field);
+      const auto* vec = get_fbs_vector(entities_parent, *vec_field);
 
       if VUNLIKELY (!vec) {
         continue;
       }
 
-      auto sub_obj_idx = vec_field->type()->index();
-
-      if VUNLIKELY (sub_obj_idx < 0 || !schema->objects()) {
-        continue;
-      }
-
-      const auto* sub_obj = schema->objects()->Get(static_cast<uint32_t>(sub_obj_idx));
+      const auto* sub_obj = find_fbs_object(*schema, vec_field->type()->index());
 
       if VUNLIKELY (!sub_obj) {
         continue;
       }
 
       for (flatbuffers::uoffset_t i = 0; i < vec->size(); ++i) {
-        const auto* item = vec->Get(i);
+        FbsObjectView item;
 
-        if VUNLIKELY (!item) {
+        if VUNLIKELY (!resolve_fbs_vector_object_unchecked(*vec, i, *sub_obj, item)) {
           continue;
         }
 
@@ -1031,24 +1021,24 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
           if (sub_field && sub_field->type()->base_type() == reflection::Vector &&
               sub_field->type()->element() == reflection::Obj && sub_field->type()->index() >= 0) {
-            const auto* sub_vec = flatbuffers::GetFieldV<flatbuffers::Offset<flatbuffers::Table>>(*item, *sub_field);
+            const auto* sub_vec = get_fbs_vector(item, *sub_field);
 
-            if (sub_vec && schema->objects()) {
-              const auto* sub_sub_obj = schema->objects()->Get(static_cast<uint32_t>(sub_field->type()->index()));
+            if (sub_vec) {
+              const auto* sub_sub_obj = find_fbs_object(*schema, sub_field->type()->index());
 
               if (sub_sub_obj) {
                 for (flatbuffers::uoffset_t j = 0; j < sub_vec->size(); ++j) {
-                  const auto* sub_item = sub_vec->Get(j);
+                  FbsObjectView sub_item;
 
-                  if (sub_item) {
-                    build_fbs_cube(*sub_item, *sub_sub_obj, static_cast<int>(j), std::to_string(i));
+                  if (resolve_fbs_vector_object_unchecked(*sub_vec, j, *sub_sub_obj, sub_item)) {
+                    build_fbs_cube(sub_item, static_cast<int>(j), std::to_string(i));
                   }
                 }
               }
             }
           }
         } else {
-          build_fbs_cube(*item, *sub_obj, static_cast<int>(i), "e");
+          build_fbs_cube(item, static_cast<int>(i), "e");
         }
       }
     }
@@ -1089,35 +1079,35 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "timestamp") {
-        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "timestamp_ns") {
-        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "parent_frame_id") {
-        parent_frame_id = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        parent_frame_id = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "child_frame_id") {
-        child_frame_id = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        child_frame_id = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "translation_x") {
-        tx = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        tx = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "translation_y") {
-        ty = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        ty = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "translation_z") {
-        tz = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        tz = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "rotation_x") {
-        qx = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        qx = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "rotation_y") {
-        qy = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        qy = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "rotation_z") {
-        qz = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        qz = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "rotation_w") {
-        qw = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        qw = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "euler_roll") {
-        euler_roll = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        euler_roll = fbs_get_mapped_double(*root_table, obj, fm);
         has_euler = true;
       } else if (fm.target == "euler_pitch") {
-        euler_pitch = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        euler_pitch = fbs_get_mapped_double(*root_table, obj, fm);
         has_euler = true;
       } else if (fm.target == "euler_yaw") {
-        euler_yaw = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        euler_yaw = fbs_get_mapped_double(*root_table, obj, fm);
         has_euler = true;
       }
     }
@@ -1168,19 +1158,19 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "timestamp") {
-        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "timestamp_ns") {
-        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "level") {
-        level_str = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        level_str = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "message") {
-        message = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        message = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "name") {
-        name = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        name = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "file") {
-        file = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        file = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "line") {
-        line = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        line = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       }
     }
 
@@ -1229,15 +1219,15 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "timestamp") {
-        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "timestamp_ns") {
-        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "frame_id") {
-        frame_id = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        frame_id = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "start_angle") {
-        start_angle = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        start_angle = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "end_angle") {
-        end_angle = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        end_angle = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "ranges") {
         ranges_src = fm.source;
       } else if (fm.target == "intensities") {
@@ -1402,19 +1392,19 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "timestamp") {
-        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "timestamp_ns") {
-        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "frame_id") {
-        frame_id = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        frame_id = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "width") {
-        width = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        width = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "height") {
-        height = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        height = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "encoding") {
-        encoding = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        encoding = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "step") {
-        step = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        step = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "data") {
         data_src = fm.source;
       }
@@ -1425,7 +1415,7 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
     if (!data_src.empty()) {
       const auto* field = find_fbs_field(obj, data_src);
 
-      if (field && field->type()->base_type() == reflection::Vector) {
+      if (field && is_fbs_byte_vector(*field)) {
         const auto* vec = flatbuffers::GetFieldV<uint8_t>(*root_table, *field);
 
         // NOLINTNEXTLINE(readability-container-size-empty, clang-analyzer-core.StackAddressEscape)
@@ -1459,7 +1449,7 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "geojson") {
-        geojson = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        geojson = fbs_get_mapped_string(*root_table, obj, fm);
       }
     }
 
@@ -1485,51 +1475,37 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
     uint64_t timestamp_ns = 0;
     std::string frame_id;
     std::string poses_src;
-    std::string pose_px_src;
-    std::string pose_py_src;
-    std::string pose_pz_src;
-    std::string pose_qx_src;
-    std::string pose_qy_src;
-    std::string pose_qz_src;
-    std::string pose_qw_src;
-    std::string pose_px_expr;
-    std::string pose_py_expr;
-    std::string pose_pz_expr;
-    std::string pose_qx_expr;
-    std::string pose_qy_expr;
-    std::string pose_qz_expr;
-    std::string pose_qw_expr;
+    const FieldMapping* pose_px_fm = nullptr;
+    const FieldMapping* pose_py_fm = nullptr;
+    const FieldMapping* pose_pz_fm = nullptr;
+    const FieldMapping* pose_qx_fm = nullptr;
+    const FieldMapping* pose_qy_fm = nullptr;
+    const FieldMapping* pose_qz_fm = nullptr;
+    const FieldMapping* pose_qw_fm = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "timestamp") {
-        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "timestamp_ns") {
-        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "frame_id") {
-        frame_id = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        frame_id = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "poses") {
         poses_src = fm.source;
       } else if (fm.target == "pose_position_x") {
-        pose_px_src = fm.source;
-        pose_px_expr = fm.expression;
+        pose_px_fm = &fm;
       } else if (fm.target == "pose_position_y") {
-        pose_py_src = fm.source;
-        pose_py_expr = fm.expression;
+        pose_py_fm = &fm;
       } else if (fm.target == "pose_position_z") {
-        pose_pz_src = fm.source;
-        pose_pz_expr = fm.expression;
+        pose_pz_fm = &fm;
       } else if (fm.target == "pose_orientation_x") {
-        pose_qx_src = fm.source;
-        pose_qx_expr = fm.expression;
+        pose_qx_fm = &fm;
       } else if (fm.target == "pose_orientation_y") {
-        pose_qy_src = fm.source;
-        pose_qy_expr = fm.expression;
+        pose_qy_fm = &fm;
       } else if (fm.target == "pose_orientation_z") {
-        pose_qz_src = fm.source;
-        pose_qz_expr = fm.expression;
+        pose_qz_fm = &fm;
       } else if (fm.target == "pose_orientation_w") {
-        pose_qw_src = fm.source;
-        pose_qw_expr = fm.expression;
+        pose_qw_fm = &fm;
       }
     }
 
@@ -1537,73 +1513,64 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
     std::vector<flatbuffers::Offset<::foxglove::Pose>> pose_offsets;
 
     if (!poses_src.empty()) {
-      const flatbuffers::Table* vec_parent = nullptr;
-      const reflection::Object* vec_parent_obj = nullptr;
+      FbsObjectView vec_parent;
       std::string vec_field_name;
 
-      if VUNLIKELY (!resolve_fbs_parent_field_path(*root_table, obj, *schema, poses_src, vec_parent, vec_parent_obj,
-                                                   vec_field_name)) {
-        vec_parent = nullptr;
-      }
-
-      if (vec_parent && vec_parent_obj) {
-        const auto* vec_field = find_fbs_field(*vec_parent_obj, vec_field_name);
+      if (resolve_fbs_parent_field_path(*root_table, obj, *schema, poses_src, vec_parent, vec_field_name)) {
+        const auto* vec_field = find_fbs_field(*vec_parent.object, vec_field_name);
 
         if (vec_field && vec_field->type()->base_type() == reflection::Vector &&
             vec_field->type()->element() == reflection::Obj) {
-          const auto* vec = flatbuffers::GetFieldV<flatbuffers::Offset<flatbuffers::Table>>(*vec_parent, *vec_field);
+          const auto* vec = get_fbs_vector(vec_parent, *vec_field);
+          const auto* sub_obj = find_fbs_object(*schema, vec_field->type()->index());
 
-          if (vec && schema->objects()) {
-            const auto* sub_obj = schema->objects()->Get(static_cast<uint32_t>(vec_field->type()->index()));
+          if (vec && sub_obj) {
+            for (flatbuffers::uoffset_t i = 0; i < vec->size(); ++i) {
+              FbsObjectView item;
 
-            if (sub_obj) {
-              for (flatbuffers::uoffset_t i = 0; i < vec->size(); ++i) {
-                const auto* item = vec->Get(i);
-
-                if VUNLIKELY (!item) {
-                  continue;
-                }
-
-                double px = 0.0;
-                double py = 0.0;
-                double pz = 0.0;
-                double qx = 0.0;
-                double qy = 0.0;
-                double qz = 0.0;
-                double qw = 1.0;
-
-                if (!pose_px_src.empty()) {
-                  px = fbs_get_double(*item, *sub_obj, pose_px_src, pose_px_expr);
-                }
-
-                if (!pose_py_src.empty()) {
-                  py = fbs_get_double(*item, *sub_obj, pose_py_src, pose_py_expr);
-                }
-
-                if (!pose_pz_src.empty()) {
-                  pz = fbs_get_double(*item, *sub_obj, pose_pz_src, pose_pz_expr);
-                }
-
-                if (!pose_qx_src.empty()) {
-                  qx = fbs_get_double(*item, *sub_obj, pose_qx_src, pose_qx_expr);
-                }
-
-                if (!pose_qy_src.empty()) {
-                  qy = fbs_get_double(*item, *sub_obj, pose_qy_src, pose_qy_expr);
-                }
-
-                if (!pose_qz_src.empty()) {
-                  qz = fbs_get_double(*item, *sub_obj, pose_qz_src, pose_qz_expr);
-                }
-
-                if (!pose_qw_src.empty()) {
-                  qw = fbs_get_double(*item, *sub_obj, pose_qw_src, pose_qw_expr);
-                }
-
-                auto position = ::foxglove::CreateVector3(builder, px, py, pz);
-                auto orientation = ::foxglove::CreateQuaternion(builder, qx, qy, qz, qw);
-                pose_offsets.emplace_back(::foxglove::CreatePose(builder, position, orientation));
+              if VUNLIKELY (!resolve_fbs_vector_object_unchecked(*vec, i, *sub_obj, item)) {
+                continue;
               }
+
+              double px = 0.0;
+              double py = 0.0;
+              double pz = 0.0;
+              double qx = 0.0;
+              double qy = 0.0;
+              double qz = 0.0;
+              double qw = 1.0;
+
+              if (pose_px_fm) {
+                px = fbs_get_object_mapped_double(item, *pose_px_fm);
+              }
+
+              if (pose_py_fm) {
+                py = fbs_get_object_mapped_double(item, *pose_py_fm);
+              }
+
+              if (pose_pz_fm) {
+                pz = fbs_get_object_mapped_double(item, *pose_pz_fm);
+              }
+
+              if (pose_qx_fm) {
+                qx = fbs_get_object_mapped_double(item, *pose_qx_fm);
+              }
+
+              if (pose_qy_fm) {
+                qy = fbs_get_object_mapped_double(item, *pose_qy_fm);
+              }
+
+              if (pose_qz_fm) {
+                qz = fbs_get_object_mapped_double(item, *pose_qz_fm);
+              }
+
+              if (pose_qw_fm) {
+                qw = fbs_get_object_mapped_double(item, *pose_qw_fm);
+              }
+
+              auto position = ::foxglove::CreateVector3(builder, px, py, pz);
+              auto orientation = ::foxglove::CreateQuaternion(builder, qx, qy, qz, qw);
+              pose_offsets.emplace_back(::foxglove::CreatePose(builder, position, orientation));
             }
           }
         }
@@ -1630,61 +1597,43 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
     builder.Clear();
 
     std::string transforms_src;
-    std::string ft_ts_src;
-    std::string ft_ts_ns_src;
-    std::string ft_parent_src;
-    std::string ft_child_src;
-    std::string ft_tx_src;
-    std::string ft_ty_src;
-    std::string ft_tz_src;
-    std::string ft_qx_src;
-    std::string ft_qy_src;
-    std::string ft_qz_src;
-    std::string ft_qw_src;
-    std::string ft_ts_expr;
-    std::string ft_ts_ns_expr;
-    std::string ft_tx_expr;
-    std::string ft_ty_expr;
-    std::string ft_tz_expr;
-    std::string ft_qx_expr;
-    std::string ft_qy_expr;
-    std::string ft_qz_expr;
-    std::string ft_qw_expr;
+    const FieldMapping* ft_ts_fm = nullptr;
+    const FieldMapping* ft_ts_ns_fm = nullptr;
+    const FieldMapping* ft_parent_fm = nullptr;
+    const FieldMapping* ft_child_fm = nullptr;
+    const FieldMapping* ft_tx_fm = nullptr;
+    const FieldMapping* ft_ty_fm = nullptr;
+    const FieldMapping* ft_tz_fm = nullptr;
+    const FieldMapping* ft_qx_fm = nullptr;
+    const FieldMapping* ft_qy_fm = nullptr;
+    const FieldMapping* ft_qz_fm = nullptr;
+    const FieldMapping* ft_qw_fm = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "transforms") {
         transforms_src = fm.source;
       } else if (fm.target == "transform_timestamp") {
-        ft_ts_src = fm.source;
-        ft_ts_expr = fm.expression;
+        ft_ts_fm = &fm;
       } else if (fm.target == "transform_timestamp_ns") {
-        ft_ts_ns_src = fm.source;
-        ft_ts_ns_expr = fm.expression;
+        ft_ts_ns_fm = &fm;
       } else if (fm.target == "transform_parent_frame_id") {
-        ft_parent_src = fm.source;
+        ft_parent_fm = &fm;
       } else if (fm.target == "transform_child_frame_id") {
-        ft_child_src = fm.source;
+        ft_child_fm = &fm;
       } else if (fm.target == "transform_translation_x") {
-        ft_tx_src = fm.source;
-        ft_tx_expr = fm.expression;
+        ft_tx_fm = &fm;
       } else if (fm.target == "transform_translation_y") {
-        ft_ty_src = fm.source;
-        ft_ty_expr = fm.expression;
+        ft_ty_fm = &fm;
       } else if (fm.target == "transform_translation_z") {
-        ft_tz_src = fm.source;
-        ft_tz_expr = fm.expression;
+        ft_tz_fm = &fm;
       } else if (fm.target == "transform_rotation_x") {
-        ft_qx_src = fm.source;
-        ft_qx_expr = fm.expression;
+        ft_qx_fm = &fm;
       } else if (fm.target == "transform_rotation_y") {
-        ft_qy_src = fm.source;
-        ft_qy_expr = fm.expression;
+        ft_qy_fm = &fm;
       } else if (fm.target == "transform_rotation_z") {
-        ft_qz_src = fm.source;
-        ft_qz_expr = fm.expression;
+        ft_qz_fm = &fm;
       } else if (fm.target == "transform_rotation_w") {
-        ft_qw_src = fm.source;
-        ft_qw_expr = fm.expression;
+        ft_qw_fm = &fm;
       }
     }
 
@@ -1695,59 +1644,46 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
       if (vec_field && vec_field->type()->base_type() == reflection::Vector &&
           vec_field->type()->element() == reflection::Obj) {
-        const auto* vec = flatbuffers::GetFieldV<flatbuffers::Offset<flatbuffers::Table>>(*root_table, *vec_field);
-
-        if (vec && schema->objects()) {
-          const auto* sub_obj = schema->objects()->Get(static_cast<uint32_t>(vec_field->type()->index()));
-
-          if (sub_obj) {
-            for (flatbuffers::uoffset_t i = 0; i < vec->size(); ++i) {
-              const auto* item = vec->Get(i);
-
-              if VUNLIKELY (!item) {
-                continue;
-              }
-
-              FieldMapping empty_fm;
-
+        for_each_fbs_vector_object(
+            FbsObjectView{&obj, root_table, nullptr}, *vec_field, *schema,
+            [&](const FbsObjectView& item, flatbuffers::uoffset_t) {
               uint64_t ft_ts_us = 0;
               uint64_t ft_ts_ns = 0;
 
-              if (!ft_ts_src.empty()) {
-                ft_ts_us = checked_unsigned_cast<uint64_t>(fbs_get_double(*item, *sub_obj, ft_ts_src, ft_ts_expr));
+              if (ft_ts_fm) {
+                ft_ts_us = checked_unsigned_cast<uint64_t>(fbs_get_object_mapped_double(item, *ft_ts_fm));
               }
 
-              if (!ft_ts_ns_src.empty()) {
-                ft_ts_ns =
-                    checked_unsigned_cast<uint64_t>(fbs_get_double(*item, *sub_obj, ft_ts_ns_src, ft_ts_ns_expr));
+              if (ft_ts_ns_fm) {
+                ft_ts_ns = checked_unsigned_cast<uint64_t>(fbs_get_object_mapped_double(item, *ft_ts_ns_fm));
               }
 
               std::string parent_fid;
 
-              if (!ft_parent_src.empty()) {
-                parent_fid = get_fbs_string(*item, *sub_obj, ft_parent_src, empty_fm);
+              if (ft_parent_fm) {
+                parent_fid = fbs_get_object_mapped_string(item, *ft_parent_fm);
               }
 
               std::string child_fid;
 
-              if (!ft_child_src.empty()) {
-                child_fid = get_fbs_string(*item, *sub_obj, ft_child_src, empty_fm);
+              if (ft_child_fm) {
+                child_fid = fbs_get_object_mapped_string(item, *ft_child_fm);
               }
 
               double itx = 0.0;
               double ity = 0.0;
               double itz = 0.0;
 
-              if (!ft_tx_src.empty()) {
-                itx = fbs_get_double(*item, *sub_obj, ft_tx_src, ft_tx_expr);
+              if (ft_tx_fm) {
+                itx = fbs_get_object_mapped_double(item, *ft_tx_fm);
               }
 
-              if (!ft_ty_src.empty()) {
-                ity = fbs_get_double(*item, *sub_obj, ft_ty_src, ft_ty_expr);
+              if (ft_ty_fm) {
+                ity = fbs_get_object_mapped_double(item, *ft_ty_fm);
               }
 
-              if (!ft_tz_src.empty()) {
-                itz = fbs_get_double(*item, *sub_obj, ft_tz_src, ft_tz_expr);
+              if (ft_tz_fm) {
+                itz = fbs_get_object_mapped_double(item, *ft_tz_fm);
               }
 
               double iqx = 0.0;
@@ -1755,20 +1691,20 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
               double iqz = 0.0;
               double iqw = 1.0;
 
-              if (!ft_qx_src.empty()) {
-                iqx = fbs_get_double(*item, *sub_obj, ft_qx_src, ft_qx_expr);
+              if (ft_qx_fm) {
+                iqx = fbs_get_object_mapped_double(item, *ft_qx_fm);
               }
 
-              if (!ft_qy_src.empty()) {
-                iqy = fbs_get_double(*item, *sub_obj, ft_qy_src, ft_qy_expr);
+              if (ft_qy_fm) {
+                iqy = fbs_get_object_mapped_double(item, *ft_qy_fm);
               }
 
-              if (!ft_qz_src.empty()) {
-                iqz = fbs_get_double(*item, *sub_obj, ft_qz_src, ft_qz_expr);
+              if (ft_qz_fm) {
+                iqz = fbs_get_object_mapped_double(item, *ft_qz_fm);
               }
 
-              if (!ft_qw_src.empty()) {
-                iqw = fbs_get_double(*item, *sub_obj, ft_qw_src, ft_qw_expr);
+              if (ft_qw_fm) {
+                iqw = fbs_get_object_mapped_double(item, *ft_qw_fm);
               }
 
               auto item_ts = (ft_ts_ns > 0) ? make_timestamp_from_ns(ft_ts_ns) : make_timestamp_from_us(ft_ts_us);
@@ -1778,9 +1714,7 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
               auto rotation = ::foxglove::CreateQuaternion(builder, iqx, iqy, iqz, iqw);
               transform_offsets.emplace_back(
                   ::foxglove::CreateFrameTransform(builder, &item_ts, pfid, cfid, translation, rotation));
-            }
-          }
-        }
+            });
       }
     }
 
@@ -1803,38 +1737,28 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
     builder.Clear();
 
     std::string fixes_src;
-    std::string fix_ts_src;
-    std::string fix_ts_ns_src;
-    std::string fix_frame_id_src;
-    std::string fix_lat_src;
-    std::string fix_lon_src;
-    std::string fix_alt_src;
-    std::string fix_ts_expr;
-    std::string fix_ts_ns_expr;
-    std::string fix_lat_expr;
-    std::string fix_lon_expr;
-    std::string fix_alt_expr;
+    const FieldMapping* fix_ts_fm = nullptr;
+    const FieldMapping* fix_ts_ns_fm = nullptr;
+    const FieldMapping* fix_frame_id_fm = nullptr;
+    const FieldMapping* fix_lat_fm = nullptr;
+    const FieldMapping* fix_lon_fm = nullptr;
+    const FieldMapping* fix_alt_fm = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "fixes") {
         fixes_src = fm.source;
       } else if (fm.target == "fix_timestamp") {
-        fix_ts_src = fm.source;
-        fix_ts_expr = fm.expression;
+        fix_ts_fm = &fm;
       } else if (fm.target == "fix_timestamp_ns") {
-        fix_ts_ns_src = fm.source;
-        fix_ts_ns_expr = fm.expression;
+        fix_ts_ns_fm = &fm;
       } else if (fm.target == "fix_frame_id") {
-        fix_frame_id_src = fm.source;
+        fix_frame_id_fm = &fm;
       } else if (fm.target == "fix_latitude") {
-        fix_lat_src = fm.source;
-        fix_lat_expr = fm.expression;
+        fix_lat_fm = &fm;
       } else if (fm.target == "fix_longitude") {
-        fix_lon_src = fm.source;
-        fix_lon_expr = fm.expression;
+        fix_lon_fm = &fm;
       } else if (fm.target == "fix_altitude") {
-        fix_alt_src = fm.source;
-        fix_alt_expr = fm.expression;
+        fix_alt_fm = &fm;
       }
     }
 
@@ -1845,61 +1769,46 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
       if (vec_field && vec_field->type()->base_type() == reflection::Vector &&
           vec_field->type()->element() == reflection::Obj) {
-        const auto* vec = flatbuffers::GetFieldV<flatbuffers::Offset<flatbuffers::Table>>(*root_table, *vec_field);
-
-        if (vec && schema->objects()) {
-          const auto* sub_obj = schema->objects()->Get(static_cast<uint32_t>(vec_field->type()->index()));
-
-          if (sub_obj) {
-            for (flatbuffers::uoffset_t i = 0; i < vec->size(); ++i) {
-              const auto* item = vec->Get(i);
-
-              if VUNLIKELY (!item) {
-                continue;
-              }
-
-              FieldMapping empty_fm;
-
+        for_each_fbs_vector_object(
+            FbsObjectView{&obj, root_table, nullptr}, *vec_field, *schema,
+            [&](const FbsObjectView& item, flatbuffers::uoffset_t) {
               uint64_t item_ts_us = 0;
               uint64_t item_ts_ns = 0;
 
-              if (!fix_ts_src.empty()) {
-                item_ts_us = checked_unsigned_cast<uint64_t>(fbs_get_double(*item, *sub_obj, fix_ts_src, fix_ts_expr));
+              if (fix_ts_fm) {
+                item_ts_us = checked_unsigned_cast<uint64_t>(fbs_get_object_mapped_double(item, *fix_ts_fm));
               }
 
-              if (!fix_ts_ns_src.empty()) {
-                item_ts_ns =
-                    checked_unsigned_cast<uint64_t>(fbs_get_double(*item, *sub_obj, fix_ts_ns_src, fix_ts_ns_expr));
+              if (fix_ts_ns_fm) {
+                item_ts_ns = checked_unsigned_cast<uint64_t>(fbs_get_object_mapped_double(item, *fix_ts_ns_fm));
               }
 
               std::string item_frame_id;
 
-              if (!fix_frame_id_src.empty()) {
-                item_frame_id = get_fbs_string(*item, *sub_obj, fix_frame_id_src, empty_fm);
+              if (fix_frame_id_fm) {
+                item_frame_id = fbs_get_object_mapped_string(item, *fix_frame_id_fm);
               }
 
               double lat = 0.0;
               double lon = 0.0;
               double alt = 0.0;
 
-              if (!fix_lat_src.empty()) {
-                lat = fbs_get_double(*item, *sub_obj, fix_lat_src, fix_lat_expr);
+              if (fix_lat_fm) {
+                lat = fbs_get_object_mapped_double(item, *fix_lat_fm);
               }
 
-              if (!fix_lon_src.empty()) {
-                lon = fbs_get_double(*item, *sub_obj, fix_lon_src, fix_lon_expr);
+              if (fix_lon_fm) {
+                lon = fbs_get_object_mapped_double(item, *fix_lon_fm);
               }
 
-              if (!fix_alt_src.empty()) {
-                alt = fbs_get_double(*item, *sub_obj, fix_alt_src, fix_alt_expr);
+              if (fix_alt_fm) {
+                alt = fbs_get_object_mapped_double(item, *fix_alt_fm);
               }
 
               auto item_ts = (item_ts_ns > 0) ? make_timestamp_from_ns(item_ts_ns) : make_timestamp_from_us(item_ts_us);
               auto fid = builder.CreateString(item_frame_id);
               fix_offsets.emplace_back(::foxglove::CreateLocationFix(builder, &item_ts, fid, lat, lon, alt));
-            }
-          }
-        }
+            });
       }
     }
 
@@ -1934,17 +1843,17 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "timestamp") {
-        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "timestamp_ns") {
-        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "frame_id") {
-        frame_id = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        frame_id = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "width") {
-        width = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        width = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "height") {
-        height = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        height = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "distortion_model") {
-        distortion_model = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        distortion_model = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "d") {
         d_src = fm.source;
       } else if (fm.target == "k") {
@@ -2033,13 +1942,13 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "timestamp") {
-        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "timestamp_ns") {
-        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "frame_id") {
-        frame_id = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        frame_id = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "format") {
-        format = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        format = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "data") {
         data_src = fm.source;
       }
@@ -2050,7 +1959,7 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
     if (!data_src.empty()) {
       const auto* field = find_fbs_field(obj, data_src);
 
-      if (field && field->type()->base_type() == reflection::Vector) {
+      if (field && is_fbs_byte_vector(*field)) {
         const auto* vec = flatbuffers::GetFieldV<uint8_t>(*root_table, *field);
 
         // NOLINTNEXTLINE(readability-container-size-empty, clang-analyzer-core.StackAddressEscape)
@@ -2093,21 +2002,21 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "timestamp") {
-        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "timestamp_ns") {
-        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "frame_id") {
-        frame_id = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        frame_id = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "column_count") {
-        column_count = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        column_count = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "cell_size_x") {
-        cell_size_x = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        cell_size_x = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "cell_size_y") {
-        cell_size_y = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        cell_size_y = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "row_stride") {
-        row_stride = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        row_stride = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "cell_stride") {
-        cell_stride = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        cell_stride = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "fields") {
         fields_src = fm.source;
       } else if (fm.target == "data") {
@@ -2122,29 +2031,17 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
       if (vec_field && vec_field->type()->base_type() == reflection::Vector &&
           vec_field->type()->element() == reflection::Obj) {
-        const auto* vec = flatbuffers::GetFieldV<flatbuffers::Offset<flatbuffers::Table>>(*root_table, *vec_field);
-
-        if (vec && schema->objects()) {
-          const auto* sub_obj = schema->objects()->Get(static_cast<uint32_t>(vec_field->type()->index()));
-
-          if (sub_obj) {
-            for (flatbuffers::uoffset_t i = 0; i < vec->size(); ++i) {
-              const auto* item = vec->Get(i);
-
-              if VUNLIKELY (!item) {
-                continue;
-              }
-
+        for_each_fbs_vector_object(
+            FbsObjectView{&obj, root_table, nullptr}, *vec_field, *schema,
+            [&](const FbsObjectView& item, flatbuffers::uoffset_t) {
               FieldMapping empty_fm;
-              auto fname = get_fbs_string(*item, *sub_obj, "name", empty_fm);
-              auto foffset = checked_unsigned_cast<uint32_t>(get_fbs_double(*item, *sub_obj, "offset", empty_fm));
-              auto ftype_val = checked_unsigned_cast<uint8_t>(get_fbs_double(*item, *sub_obj, "type", empty_fm));
+              auto fname = get_fbs_string(item, "name", empty_fm);
+              auto foffset = checked_unsigned_cast<uint32_t>(get_fbs_double(item, "offset", empty_fm));
+              auto ftype_val = checked_unsigned_cast<uint8_t>(get_fbs_double(item, "type", empty_fm));
               auto ftype = static_cast<::foxglove::NumericType>(ftype_val);
               auto fname_off = builder.CreateString(fname);
               field_offsets.emplace_back(::foxglove::CreatePackedElementField(builder, fname_off, foffset, ftype));
-            }
-          }
-        }
+            });
       }
     }
 
@@ -2153,7 +2050,7 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
     if (!data_src.empty()) {
       const auto* field = find_fbs_field(obj, data_src);
 
-      if (field && field->type()->base_type() == reflection::Vector) {
+      if (field && is_fbs_byte_vector(*field)) {
         const auto* vec = flatbuffers::GetFieldV<uint8_t>(*root_table, *field);
 
         // NOLINTNEXTLINE(readability-container-size-empty, clang-analyzer-core.StackAddressEscape)
@@ -2195,9 +2092,9 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "timestamp") {
-        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "timestamp_ns") {
-        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "circles") {
         circles_src = fm.source;
       } else if (fm.target == "points") {
@@ -2216,33 +2113,20 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
       if (vec_field && vec_field->type()->base_type() == reflection::Vector &&
           vec_field->type()->element() == reflection::Obj) {
-        const auto* vec = flatbuffers::GetFieldV<flatbuffers::Offset<flatbuffers::Table>>(*root_table, *vec_field);
+        for_each_fbs_vector_object(FbsObjectView{&obj, root_table, nullptr}, *vec_field, *schema,
+                                   [&](const FbsObjectView& item, flatbuffers::uoffset_t) {
+                                     FieldMapping empty_fm;
+                                     double cx = get_fbs_double(item, "x", empty_fm);
+                                     double cy = get_fbs_double(item, "y", empty_fm);
+                                     double diameter = get_fbs_double(item, "diameter", empty_fm);
+                                     double thickness = get_fbs_double(item, "thickness", empty_fm);
 
-        if (vec && schema->objects()) {
-          const auto* sub_obj = schema->objects()->Get(static_cast<uint32_t>(vec_field->type()->index()));
-
-          if (sub_obj) {
-            for (flatbuffers::uoffset_t i = 0; i < vec->size(); ++i) {
-              const auto* item = vec->Get(i);
-
-              if VUNLIKELY (!item) {
-                continue;
-              }
-
-              FieldMapping empty_fm;
-              double cx = get_fbs_double(*item, *sub_obj, "x", empty_fm);
-              double cy = get_fbs_double(*item, *sub_obj, "y", empty_fm);
-              double diameter = get_fbs_double(*item, *sub_obj, "diameter", empty_fm);
-              double thickness = get_fbs_double(*item, *sub_obj, "thickness", empty_fm);
-
-              auto pos = ::foxglove::CreatePoint2(builder, cx, cy);
-              auto fill = ::foxglove::CreateColor(builder, 1.0, 0.0, 0.0, 0.5);
-              auto outline = ::foxglove::CreateColor(builder, 1.0, 0.0, 0.0, 1.0);
-              circle_offsets.emplace_back(
-                  ::foxglove::CreateCircleAnnotation(builder, &ts, pos, diameter, thickness, fill, outline));
-            }
-          }
-        }
+                                     auto pos = ::foxglove::CreatePoint2(builder, cx, cy);
+                                     auto fill = ::foxglove::CreateColor(builder, 1.0, 0.0, 0.0, 0.5);
+                                     auto outline = ::foxglove::CreateColor(builder, 1.0, 0.0, 0.0, 1.0);
+                                     circle_offsets.emplace_back(::foxglove::CreateCircleAnnotation(
+                                         builder, &ts, pos, diameter, thickness, fill, outline));
+                                   });
       }
     }
 
@@ -2253,32 +2137,19 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
       if (vec_field && vec_field->type()->base_type() == reflection::Vector &&
           vec_field->type()->element() == reflection::Obj) {
-        const auto* vec = flatbuffers::GetFieldV<flatbuffers::Offset<flatbuffers::Table>>(*root_table, *vec_field);
+        for_each_fbs_vector_object(FbsObjectView{&obj, root_table, nullptr}, *vec_field, *schema,
+                                   [&](const FbsObjectView& item, flatbuffers::uoffset_t) {
+                                     FieldMapping empty_fm;
+                                     double px = get_fbs_double(item, "x", empty_fm);
+                                     double py = get_fbs_double(item, "y", empty_fm);
 
-        if (vec && schema->objects()) {
-          const auto* sub_obj = schema->objects()->Get(static_cast<uint32_t>(vec_field->type()->index()));
-
-          if (sub_obj) {
-            for (flatbuffers::uoffset_t i = 0; i < vec->size(); ++i) {
-              const auto* item = vec->Get(i);
-
-              if VUNLIKELY (!item) {
-                continue;
-              }
-
-              FieldMapping empty_fm;
-              double px = get_fbs_double(*item, *sub_obj, "x", empty_fm);
-              double py = get_fbs_double(*item, *sub_obj, "y", empty_fm);
-
-              auto pt = ::foxglove::CreatePoint2(builder, px, py);
-              std::vector<flatbuffers::Offset<::foxglove::Point2>> pts_vec = {pt};
-              auto pts = builder.CreateVector(pts_vec);
-              auto outline = ::foxglove::CreateColor(builder, 0.0, 1.0, 0.0, 1.0);
-              points_offsets.emplace_back(::foxglove::CreatePointsAnnotation(
-                  builder, &ts, ::foxglove::PointsAnnotationType::POINTS, pts, outline));
-            }
-          }
-        }
+                                     auto pt = ::foxglove::CreatePoint2(builder, px, py);
+                                     std::vector<flatbuffers::Offset<::foxglove::Point2>> pts_vec = {pt};
+                                     auto pts = builder.CreateVector(pts_vec);
+                                     auto outline = ::foxglove::CreateColor(builder, 0.0, 1.0, 0.0, 1.0);
+                                     points_offsets.emplace_back(::foxglove::CreatePointsAnnotation(
+                                         builder, &ts, ::foxglove::PointsAnnotationType::POINTS, pts, outline));
+                                   });
       }
     }
 
@@ -2289,37 +2160,24 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
       if (vec_field && vec_field->type()->base_type() == reflection::Vector &&
           vec_field->type()->element() == reflection::Obj) {
-        const auto* vec = flatbuffers::GetFieldV<flatbuffers::Offset<flatbuffers::Table>>(*root_table, *vec_field);
+        for_each_fbs_vector_object(FbsObjectView{&obj, root_table, nullptr}, *vec_field, *schema,
+                                   [&](const FbsObjectView& item, flatbuffers::uoffset_t) {
+                                     FieldMapping empty_fm;
+                                     double tx = get_fbs_double(item, "x", empty_fm);
+                                     double ty = get_fbs_double(item, "y", empty_fm);
+                                     auto text_str = get_fbs_string(item, "text", empty_fm);
+                                     double font_size = get_fbs_double(item, "font_size", empty_fm);
 
-        if (vec && schema->objects()) {
-          const auto* sub_obj = schema->objects()->Get(static_cast<uint32_t>(vec_field->type()->index()));
+                                     if (font_size <= 0.0) {
+                                       font_size = 12.0;
+                                     }
 
-          if (sub_obj) {
-            for (flatbuffers::uoffset_t i = 0; i < vec->size(); ++i) {
-              const auto* item = vec->Get(i);
-
-              if VUNLIKELY (!item) {
-                continue;
-              }
-
-              FieldMapping empty_fm;
-              double tx = get_fbs_double(*item, *sub_obj, "x", empty_fm);
-              double ty = get_fbs_double(*item, *sub_obj, "y", empty_fm);
-              auto text_str = get_fbs_string(*item, *sub_obj, "text", empty_fm);
-              double font_size = get_fbs_double(*item, *sub_obj, "font_size", empty_fm);
-
-              if (font_size <= 0.0) {
-                font_size = 12.0;
-              }
-
-              auto pos = ::foxglove::CreatePoint2(builder, tx, ty);
-              auto text_off = builder.CreateString(text_str);
-              auto text_color = ::foxglove::CreateColor(builder, 1.0, 1.0, 1.0, 1.0);
-              text_offsets.emplace_back(
-                  ::foxglove::CreateTextAnnotation(builder, &ts, pos, text_off, font_size, text_color));
-            }
-          }
-        }
+                                     auto pos = ::foxglove::CreatePoint2(builder, tx, ty);
+                                     auto text_off = builder.CreateString(text_str);
+                                     auto text_color = ::foxglove::CreateColor(builder, 1.0, 1.0, 1.0, 1.0);
+                                     text_offsets.emplace_back(::foxglove::CreateTextAnnotation(
+                                         builder, &ts, pos, text_off, font_size, text_color));
+                                   });
       }
     }
 
@@ -2346,26 +2204,26 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
     uint64_t timestamp_us = 0;
     uint64_t timestamp_ns = 0;
     std::string joints_src;
-    std::string joint_name_src;
-    std::string joint_position_src;
-    std::string joint_velocity_src;
-    std::string joint_effort_src;
+    const FieldMapping* joint_name_fm = nullptr;
+    const FieldMapping* joint_position_fm = nullptr;
+    const FieldMapping* joint_velocity_fm = nullptr;
+    const FieldMapping* joint_effort_fm = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "timestamp") {
-        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "timestamp_ns") {
-        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "joints") {
         joints_src = fm.source;
       } else if (fm.target == "joint_name") {
-        joint_name_src = fm.source;
+        joint_name_fm = &fm;
       } else if (fm.target == "joint_position") {
-        joint_position_src = fm.source;
+        joint_position_fm = &fm;
       } else if (fm.target == "joint_velocity") {
-        joint_velocity_src = fm.source;
+        joint_velocity_fm = &fm;
       } else if (fm.target == "joint_effort") {
-        joint_effort_src = fm.source;
+        joint_effort_fm = &fm;
       }
     }
 
@@ -2376,36 +2234,23 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
       if (vec_field && vec_field->type()->base_type() == reflection::Vector &&
           vec_field->type()->element() == reflection::Obj) {
-        const auto* vec = flatbuffers::GetFieldV<flatbuffers::Offset<flatbuffers::Table>>(*root_table, *vec_field);
-
-        if (vec && schema->objects()) {
-          const auto* sub_obj = schema->objects()->Get(static_cast<uint32_t>(vec_field->type()->index()));
-
-          if (sub_obj) {
-            for (flatbuffers::uoffset_t i = 0; i < vec->size(); ++i) {
-              const auto* item = vec->Get(i);
-
-              if VUNLIKELY (!item) {
-                continue;
-              }
-
+        for_each_fbs_vector_object(
+            FbsObjectView{&obj, root_table, nullptr}, *vec_field, *schema,
+            [&](const FbsObjectView& item, flatbuffers::uoffset_t) {
               FieldMapping empty_fm;
-              auto name_field = joint_name_src.empty() ? "name" : joint_name_src;
-              auto pos_field = joint_position_src.empty() ? "position" : joint_position_src;
-              auto vel_field = joint_velocity_src.empty() ? "velocity" : joint_velocity_src;
-              auto eff_field = joint_effort_src.empty() ? "effort" : joint_effort_src;
-
-              auto jname = get_fbs_string(*item, *sub_obj, name_field, empty_fm);
-              double jpos = get_fbs_double(*item, *sub_obj, pos_field, empty_fm);
-              double jvel = get_fbs_double(*item, *sub_obj, vel_field, empty_fm);
-              double jeff = get_fbs_double(*item, *sub_obj, eff_field, empty_fm);
+              auto jname = joint_name_fm ? fbs_get_object_mapped_string(item, *joint_name_fm)
+                                         : get_fbs_string(item, "name", empty_fm);
+              double jpos = joint_position_fm ? fbs_get_object_mapped_double(item, *joint_position_fm)
+                                              : get_fbs_double(item, "position", empty_fm);
+              double jvel = joint_velocity_fm ? fbs_get_object_mapped_double(item, *joint_velocity_fm)
+                                              : get_fbs_double(item, "velocity", empty_fm);
+              double jeff = joint_effort_fm ? fbs_get_object_mapped_double(item, *joint_effort_fm)
+                                            : get_fbs_double(item, "effort", empty_fm);
 
               auto name_off = builder.CreateString(jname);
               joint_offsets.emplace_back(
                   ::foxglove::CreateJointState(builder, name_off, jpos, jvel, ::flatbuffers::nullopt, jeff));
-            }
-          }
-        }
+            });
       }
     }
 
@@ -2437,17 +2282,17 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "timestamp") {
-        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "timestamp_ns") {
-        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "frame_id") {
-        frame_id = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        frame_id = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "position_x") {
-        position_x = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        position_x = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "position_y") {
-        position_y = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        position_y = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "position_z") {
-        position_z = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        position_z = fbs_get_mapped_double(*root_table, obj, fm);
       }
     }
 
@@ -2480,16 +2325,15 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "timestamp") {
-        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "timestamp_ns") {
-        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "sample_rate") {
-        sample_rate = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        sample_rate = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "number_of_channels") {
-        number_of_channels =
-            checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        number_of_channels = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "format") {
-        format = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        format = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "data") {
         data_src = fm.source;
       }
@@ -2500,7 +2344,7 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
     if (!data_src.empty()) {
       const auto* field = find_fbs_field(obj, data_src);
 
-      if (field && field->type()->base_type() == reflection::Vector) {
+      if (field && is_fbs_byte_vector(*field)) {
         const auto* vec = flatbuffers::GetFieldV<uint8_t>(*root_table, *field);
 
         // NOLINTNEXTLINE(readability-container-size-empty, clang-analyzer-core.StackAddressEscape)
@@ -2545,27 +2389,27 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "timestamp") {
-        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_us = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "timestamp_ns") {
-        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        timestamp_ns = checked_unsigned_cast<uint64_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "frame_id") {
-        frame_id = fbs_get_string(*root_table, obj, fm.source, fm.default_value);
+        frame_id = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "voxel_size_x") {
-        voxel_size_x = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        voxel_size_x = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "voxel_size_y") {
-        voxel_size_y = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        voxel_size_y = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "voxel_size_z") {
-        voxel_size_z = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        voxel_size_z = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "row_count") {
-        row_count = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        row_count = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "column_count") {
-        column_count = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        column_count = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "slice_stride") {
-        slice_stride = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        slice_stride = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "row_stride") {
-        row_stride = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        row_stride = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "cell_stride") {
-        cell_stride = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        cell_stride = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "fields") {
         fields_src = fm.source;
       } else if (fm.target == "data") {
@@ -2580,29 +2424,17 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
 
       if (vec_field && vec_field->type()->base_type() == reflection::Vector &&
           vec_field->type()->element() == reflection::Obj) {
-        const auto* vec = flatbuffers::GetFieldV<flatbuffers::Offset<flatbuffers::Table>>(*root_table, *vec_field);
-
-        if (vec && schema->objects()) {
-          const auto* sub_obj = schema->objects()->Get(static_cast<uint32_t>(vec_field->type()->index()));
-
-          if (sub_obj) {
-            for (flatbuffers::uoffset_t i = 0; i < vec->size(); ++i) {
-              const auto* item = vec->Get(i);
-
-              if VUNLIKELY (!item) {
-                continue;
-              }
-
+        for_each_fbs_vector_object(
+            FbsObjectView{&obj, root_table, nullptr}, *vec_field, *schema,
+            [&](const FbsObjectView& item, flatbuffers::uoffset_t) {
               FieldMapping empty_fm;
-              auto fname = get_fbs_string(*item, *sub_obj, "name", empty_fm);
-              auto foffset = checked_unsigned_cast<uint32_t>(get_fbs_double(*item, *sub_obj, "offset", empty_fm));
-              auto ftype_val = checked_unsigned_cast<uint8_t>(get_fbs_double(*item, *sub_obj, "type", empty_fm));
+              auto fname = get_fbs_string(item, "name", empty_fm);
+              auto foffset = checked_unsigned_cast<uint32_t>(get_fbs_double(item, "offset", empty_fm));
+              auto ftype_val = checked_unsigned_cast<uint8_t>(get_fbs_double(item, "type", empty_fm));
               auto ftype = static_cast<::foxglove::NumericType>(ftype_val);
               auto fname_off = builder.CreateString(fname);
               field_offsets.emplace_back(::foxglove::CreatePackedElementField(builder, fname_off, foffset, ftype));
-            }
-          }
-        }
+            });
       }
     }
 
@@ -2611,7 +2443,7 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
     if (!data_src.empty()) {
       const auto* field = find_fbs_field(obj, data_src);
 
-      if (field && field->type()->base_type() == reflection::Vector) {
+      if (field && is_fbs_byte_vector(*field)) {
         const auto* vec = flatbuffers::GetFieldV<uint8_t>(*root_table, *field);
 
         // NOLINTNEXTLINE(readability-container-size-empty, clang-analyzer-core.StackAddressEscape)
@@ -2684,6 +2516,14 @@ bool FoxgloveConverter::load_mapping_file(const std::string& path) {
           mapping.schema_encoding = obj.value("schema_encoding", std::string(kFoxgloveFlatbufferEncoding));
           mapping.converter = obj.value("converter", std::string());
           mapping.timestamp_field = obj.value("timestamp_field", std::string());
+
+          if (is_flatbuffers_schema_encoding(mapping.encoding)) {
+            mapping.encoding = std::string(kFoxgloveFlatbufferEncoding);
+          }
+
+          if (is_flatbuffers_schema_encoding(mapping.schema_encoding)) {
+            mapping.schema_encoding = std::string(kFoxgloveFlatbufferEncoding);
+          }
 
           if VUNLIKELY (!parse_timestamp_unit(obj, "timestamp_unit", path, "mapping", mapping.timestamp_unit)) {
             return false;
@@ -2764,7 +2604,7 @@ bool FoxgloveConverter::load_mapping_file(const std::string& path) {
 const FoxgloveMapping* FoxgloveConverter::find_mapping(std::string_view url, const std::string& ser,
                                                        bool* ambiguous) const {
   struct MappingCache final {
-    const FoxgloveConverter* owner{nullptr};
+    uint64_t owner_id{0};
     std::string url;
     std::string ser;
     const FoxgloveMapping* mapping{nullptr};
@@ -2773,7 +2613,7 @@ const FoxgloveMapping* FoxgloveConverter::find_mapping(std::string_view url, con
 
   thread_local MappingCache cache;
 
-  if (cache.owner == this && cache.url == url && cache.ser == ser) {
+  if (cache.owner_id == cache_owner_id_ && cache.url == url && cache.ser == ser) {
     if (ambiguous) {
       *ambiguous = cache.ambiguous;
     }
@@ -2784,7 +2624,7 @@ const FoxgloveMapping* FoxgloveConverter::find_mapping(std::string_view url, con
   auto mapping_iter = mapping_index_.find(ser);
 
   if VUNLIKELY (mapping_iter == mapping_index_.end()) {
-    cache.owner = this;
+    cache.owner_id = cache_owner_id_;
     cache.url.assign(url.data(), url.size());
     cache.ser = ser;
     cache.mapping = nullptr;
@@ -2824,7 +2664,7 @@ const FoxgloveMapping* FoxgloveConverter::find_mapping(std::string_view url, con
     *ambiguous = has_ambiguity;
   }
 
-  cache.owner = this;
+  cache.owner_id = cache_owner_id_;
   cache.url.assign(url.data(), url.size());
   cache.ser = ser;
   cache.mapping = best;
@@ -2938,8 +2778,11 @@ bool FoxgloveConverter::resolve_fbs_schema(const std::string& schema_name, std::
   // NOLINTBEGIN
   static const std::unordered_map<std::string, std::pair<const uint8_t*, size_t>> kSchemaRegistry = {
     {"foxglove.CameraCalibration",  {::foxglove::CameraCalibrationBinarySchema::data(),  ::foxglove::CameraCalibrationBinarySchema::size()}},
+    {"foxglove.CompressedAudio",    {::foxglove::CompressedAudioBinarySchema::data(),     ::foxglove::CompressedAudioBinarySchema::size()}},
     {"foxglove.CompressedImage",    {::foxglove::CompressedImageBinarySchema::data(),     ::foxglove::CompressedImageBinarySchema::size()}},
+    {"foxglove.CompressedPointCloud", {::foxglove::CompressedPointCloudBinarySchema::data(), ::foxglove::CompressedPointCloudBinarySchema::size()}},
     {"foxglove.CompressedVideo",    {::foxglove::CompressedVideoBinarySchema::data(),     ::foxglove::CompressedVideoBinarySchema::size()}},
+    {"foxglove.Event",              {::foxglove::EventBinarySchema::data(),               ::foxglove::EventBinarySchema::size()}},
     {"foxglove.FrameTransform",     {::foxglove::FrameTransformBinarySchema::data(),      ::foxglove::FrameTransformBinarySchema::size()}},
     {"foxglove.FrameTransforms",    {::foxglove::FrameTransformsBinarySchema::data(),     ::foxglove::FrameTransformsBinarySchema::size()}},
     {"foxglove.GeoJSON",            {::foxglove::GeoJSONBinarySchema::data(),             ::foxglove::GeoJSONBinarySchema::size()}},
@@ -2950,6 +2793,7 @@ bool FoxgloveConverter::resolve_fbs_schema(const std::string& schema_name, std::
     {"foxglove.LocationFix",        {::foxglove::LocationFixBinarySchema::data(),         ::foxglove::LocationFixBinarySchema::size()}},
     {"foxglove.LocationFixes",      {::foxglove::LocationFixesBinarySchema::data(),       ::foxglove::LocationFixesBinarySchema::size()}},
     {"foxglove.Log",                {::foxglove::LogBinarySchema::data(),                 ::foxglove::LogBinarySchema::size()}},
+    {"foxglove.Odometry",           {::foxglove::OdometryBinarySchema::data(),            ::foxglove::OdometryBinarySchema::size()}},
     {"foxglove.Point3InFrame",      {::foxglove::Point3InFrameBinarySchema::data(),       ::foxglove::Point3InFrameBinarySchema::size()}},
     {"foxglove.PointCloud",         {::foxglove::PointCloudBinarySchema::data(),          ::foxglove::PointCloudBinarySchema::size()}},
     {"foxglove.PoseInFrame",        {::foxglove::PoseInFrameBinarySchema::data(),         ::foxglove::PoseInFrameBinarySchema::size()}},
@@ -3225,20 +3069,13 @@ FoxgloveMessage FoxgloveConverter::convert_scene_update(const FoxgloveMapping& m
   std::string frame_id = "base_link";
 
   std::string entity_sub_items;
-  std::string entity_x_src;
-  std::string entity_y_src;
-  std::string entity_z_src;
-  std::string entity_w_src;
-  std::string entity_l_src;
-  std::string entity_h_src;
-  std::string entity_heading_src;
-  std::string entity_x_expr;
-  std::string entity_y_expr;
-  std::string entity_z_expr;
-  std::string entity_w_expr;
-  std::string entity_l_expr;
-  std::string entity_h_expr;
-  std::string entity_heading_expr;
+  const FieldMapping* entity_x_fm = nullptr;
+  const FieldMapping* entity_y_fm = nullptr;
+  const FieldMapping* entity_z_fm = nullptr;
+  const FieldMapping* entity_w_fm = nullptr;
+  const FieldMapping* entity_l_fm = nullptr;
+  const FieldMapping* entity_h_fm = nullptr;
+  const FieldMapping* entity_heading_fm = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "timestamp") {
@@ -3250,59 +3087,33 @@ FoxgloveMessage FoxgloveConverter::convert_scene_update(const FoxgloveMapping& m
     } else if (fm.target == "entity_sub_items") {
       entity_sub_items = fm.source;
     } else if (fm.target == "entity_x") {
-      entity_x_src = fm.source;
-      entity_x_expr = fm.expression;
+      entity_x_fm = &fm;
     } else if (fm.target == "entity_y") {
-      entity_y_src = fm.source;
-      entity_y_expr = fm.expression;
+      entity_y_fm = &fm;
     } else if (fm.target == "entity_z") {
-      entity_z_src = fm.source;
-      entity_z_expr = fm.expression;
+      entity_z_fm = &fm;
     } else if (fm.target == "entity_width") {
-      entity_w_src = fm.source;
-      entity_w_expr = fm.expression;
+      entity_w_fm = &fm;
     } else if (fm.target == "entity_length") {
-      entity_l_src = fm.source;
-      entity_l_expr = fm.expression;
+      entity_l_fm = &fm;
     } else if (fm.target == "entity_height") {
-      entity_h_src = fm.source;
-      entity_h_expr = fm.expression;
+      entity_h_fm = &fm;
     } else if (fm.target == "entity_heading") {
-      entity_heading_src = fm.source;
-      entity_heading_expr = fm.expression;
+      entity_heading_fm = &fm;
     }
   }
 
-  bool has_entity_fields = !entity_x_src.empty() || !entity_y_src.empty() || !entity_z_src.empty();
+  bool has_entity_fields = entity_x_fm != nullptr || entity_y_fm != nullptr || entity_z_fm != nullptr ||
+                           entity_w_fm != nullptr || entity_l_fm != nullptr || entity_h_fm != nullptr ||
+                           entity_heading_fm != nullptr;
 
   auto ts = (timestamp_ns > 0) ? make_timestamp_from_ns(timestamp_ns) : make_timestamp_from_us(timestamp_us);
 
   std::vector<flatbuffers::Offset<::foxglove::SceneEntity>> entity_offsets;
 
-  auto try_get_field = [](const google::protobuf::Message& m, const std::string& name,
-                          const std::string& expr) -> double {
-    if (!expr.empty()) {
-      return evaluate_expression_with_msg(expr, m);
-    }
-
-    if (has_nested_field_path(name)) {
-      return safe_nested_double(m, name);
-    }
-
-    const auto* d = m.GetDescriptor();
-    const auto* f = find_proto_field_cached(*d, name);
-
-    if VUNLIKELY (!f) {
-      return 0.0;
-    }
-
-    return get_proto_numeric_value(m, f);
-  };
-
-  auto build_cube = [&entity_h_expr, &entity_h_src, &entity_heading_expr, &entity_heading_src, &entity_l_expr,
-                     &entity_l_src, &entity_offsets, &entity_w_expr, &entity_w_src, &entity_x_expr, &entity_x_src,
-                     &entity_y_expr, &entity_y_src, &entity_z_expr, &entity_z_src, &frame_id, &has_entity_fields,
-                     &try_get_field, &ts](const google::protobuf::Message& sub, int idx, const std::string& parent_id) {
+  auto build_cube = [&entity_h_fm, &entity_heading_fm, &entity_l_fm, &entity_offsets, &entity_w_fm, &entity_x_fm,
+                     &entity_y_fm, &entity_z_fm, &frame_id, &has_entity_fields,
+                     &ts](const google::protobuf::Message& sub, int idx, const std::string& parent_id) {
     double px = 0.0;
     double py = 0.0;
     double pz = 0.0;
@@ -3312,44 +3123,44 @@ FoxgloveMessage FoxgloveConverter::convert_scene_update(const FoxgloveMapping& m
     double heading = 0.0;
 
     if (has_entity_fields) {
-      if (!entity_x_src.empty()) {
-        px = try_get_field(sub, entity_x_src, entity_x_expr);
+      if (entity_x_fm) {
+        px = get_proto_double(sub, entity_x_fm->source, *entity_x_fm);
       }
 
-      if (!entity_y_src.empty()) {
-        py = try_get_field(sub, entity_y_src, entity_y_expr);
+      if (entity_y_fm) {
+        py = get_proto_double(sub, entity_y_fm->source, *entity_y_fm);
       }
 
-      if (!entity_z_src.empty()) {
-        pz = try_get_field(sub, entity_z_src, entity_z_expr);
+      if (entity_z_fm) {
+        pz = get_proto_double(sub, entity_z_fm->source, *entity_z_fm);
       }
 
-      if (!entity_w_src.empty()) {
-        auto v = try_get_field(sub, entity_w_src, entity_w_expr);
+      if (entity_w_fm) {
+        auto v = get_proto_double(sub, entity_w_fm->source, *entity_w_fm);
 
         if (v != 0.0) {
           sx = v;
         }
       }
 
-      if (!entity_l_src.empty()) {
-        auto v = try_get_field(sub, entity_l_src, entity_l_expr);
+      if (entity_l_fm) {
+        auto v = get_proto_double(sub, entity_l_fm->source, *entity_l_fm);
 
         if (v != 0.0) {
           sy = v;
         }
       }
 
-      if (!entity_h_src.empty()) {
-        auto v = try_get_field(sub, entity_h_src, entity_h_expr);
+      if (entity_h_fm) {
+        auto v = get_proto_double(sub, entity_h_fm->source, *entity_h_fm);
 
         if (v != 0.0) {
           sz = v;
         }
       }
 
-      if (!entity_heading_src.empty()) {
-        heading = try_get_field(sub, entity_heading_src, entity_heading_expr);
+      if (entity_heading_fm) {
+        heading = get_proto_double(sub, entity_heading_fm->source, *entity_heading_fm);
       }
     } else {
       const auto* sub_desc = sub.GetDescriptor();
@@ -3461,7 +3272,8 @@ FoxgloveMessage FoxgloveConverter::convert_scene_update(const FoxgloveMapping& m
     const auto* ref = entities_parent->GetReflection();
     const auto* field = find_proto_field_cached(*desc, entities_field_name);
 
-    if VUNLIKELY (!field || !field->is_repeated()) {
+    if VUNLIKELY (!field || !field->is_repeated() ||
+                  field->cpp_type() != google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
       continue;
     }
 
@@ -3475,7 +3287,8 @@ FoxgloveMessage FoxgloveConverter::convert_scene_update(const FoxgloveMapping& m
         const auto* item_ref = item.GetReflection();
         const auto* sub_field = find_proto_field_cached(*item_desc, entity_sub_items);
 
-        if (sub_field && sub_field->is_repeated()) {
+        if (sub_field && sub_field->is_repeated() &&
+            sub_field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
           int sub_count = item_ref->FieldSize(item, sub_field);
 
           for (int j = 0; j < sub_count; ++j) {
@@ -3856,13 +3669,13 @@ FoxgloveMessage FoxgloveConverter::convert_poses_in_frame(const FoxgloveMapping&
   uint64_t timestamp_ns = 0;
   std::string frame_id;
   std::string poses_src;
-  std::string pose_px_src;
-  std::string pose_py_src;
-  std::string pose_pz_src;
-  std::string pose_qx_src;
-  std::string pose_qy_src;
-  std::string pose_qz_src;
-  std::string pose_qw_src;
+  const FieldMapping* pose_px_fm = nullptr;
+  const FieldMapping* pose_py_fm = nullptr;
+  const FieldMapping* pose_pz_fm = nullptr;
+  const FieldMapping* pose_qx_fm = nullptr;
+  const FieldMapping* pose_qy_fm = nullptr;
+  const FieldMapping* pose_qz_fm = nullptr;
+  const FieldMapping* pose_qw_fm = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "timestamp") {
@@ -3874,19 +3687,19 @@ FoxgloveMessage FoxgloveConverter::convert_poses_in_frame(const FoxgloveMapping&
     } else if (fm.target == "poses") {
       poses_src = fm.source;
     } else if (fm.target == "pose_position_x") {
-      pose_px_src = fm.source;
+      pose_px_fm = &fm;
     } else if (fm.target == "pose_position_y") {
-      pose_py_src = fm.source;
+      pose_py_fm = &fm;
     } else if (fm.target == "pose_position_z") {
-      pose_pz_src = fm.source;
+      pose_pz_fm = &fm;
     } else if (fm.target == "pose_orientation_x") {
-      pose_qx_src = fm.source;
+      pose_qx_fm = &fm;
     } else if (fm.target == "pose_orientation_y") {
-      pose_qy_src = fm.source;
+      pose_qy_fm = &fm;
     } else if (fm.target == "pose_orientation_z") {
-      pose_qz_src = fm.source;
+      pose_qz_fm = &fm;
     } else if (fm.target == "pose_orientation_w") {
-      pose_qw_src = fm.source;
+      pose_qw_fm = &fm;
     }
   }
 
@@ -3906,37 +3719,19 @@ FoxgloveMessage FoxgloveConverter::convert_poses_in_frame(const FoxgloveMapping&
       const auto* ref = poses_parent->GetReflection();
       const auto* field = find_proto_field_cached(*desc, poses_field_name);
 
-      if (field && field->is_repeated()) {
+      if (field && field->is_repeated() && field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
         int count = ref->FieldSize(*poses_parent, field);
 
         for (int i = 0; i < count; ++i) {
           const auto& item = ref->GetRepeatedMessage(*poses_parent, field, i);
 
-          auto direct_get = [&item](const std::string& name) -> double {
-            if (name.empty()) {
-              return 0.0;
-            }
-
-            if (has_nested_field_path(name)) {
-              return safe_nested_double(item, name);
-            }
-
-            const auto* f = find_proto_field_cached(*item.GetDescriptor(), name);
-
-            if VUNLIKELY (!f || !is_proto_numeric_type(f->cpp_type())) {
-              return 0.0;
-            }
-
-            return get_proto_numeric_value(item, f);
-          };
-
-          double px = direct_get(pose_px_src);
-          double py = direct_get(pose_py_src);
-          double pz = direct_get(pose_pz_src);
-          double qx = direct_get(pose_qx_src);
-          double qy = direct_get(pose_qy_src);
-          double qz = direct_get(pose_qz_src);
-          double qw = pose_qw_src.empty() ? 1.0 : direct_get(pose_qw_src);
+          double px = pose_px_fm ? get_proto_double(item, pose_px_fm->source, *pose_px_fm) : 0.0;
+          double py = pose_py_fm ? get_proto_double(item, pose_py_fm->source, *pose_py_fm) : 0.0;
+          double pz = pose_pz_fm ? get_proto_double(item, pose_pz_fm->source, *pose_pz_fm) : 0.0;
+          double qx = pose_qx_fm ? get_proto_double(item, pose_qx_fm->source, *pose_qx_fm) : 0.0;
+          double qy = pose_qy_fm ? get_proto_double(item, pose_qy_fm->source, *pose_qy_fm) : 0.0;
+          double qz = pose_qz_fm ? get_proto_double(item, pose_qz_fm->source, *pose_qz_fm) : 0.0;
+          double qw = pose_qw_fm ? get_proto_double(item, pose_qw_fm->source, *pose_qw_fm) : 1.0;
 
           auto position = ::foxglove::CreateVector3(builder, px, py, pz);
           auto orientation = ::foxglove::CreateQuaternion(builder, qx, qy, qz, qw);
@@ -3967,43 +3762,43 @@ FoxgloveMessage FoxgloveConverter::convert_frame_transforms(const FoxgloveMappin
   builder.Clear();
 
   std::string transforms_src;
-  std::string ft_ts_src;
-  std::string ft_ts_ns_src;
-  std::string ft_parent_src;
-  std::string ft_child_src;
-  std::string ft_tx_src;
-  std::string ft_ty_src;
-  std::string ft_tz_src;
-  std::string ft_qx_src;
-  std::string ft_qy_src;
-  std::string ft_qz_src;
-  std::string ft_qw_src;
+  const FieldMapping* ft_ts_fm = nullptr;
+  const FieldMapping* ft_ts_ns_fm = nullptr;
+  const FieldMapping* ft_parent_fm = nullptr;
+  const FieldMapping* ft_child_fm = nullptr;
+  const FieldMapping* ft_tx_fm = nullptr;
+  const FieldMapping* ft_ty_fm = nullptr;
+  const FieldMapping* ft_tz_fm = nullptr;
+  const FieldMapping* ft_qx_fm = nullptr;
+  const FieldMapping* ft_qy_fm = nullptr;
+  const FieldMapping* ft_qz_fm = nullptr;
+  const FieldMapping* ft_qw_fm = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "transforms") {
       transforms_src = fm.source;
     } else if (fm.target == "transform_timestamp") {
-      ft_ts_src = fm.source;
+      ft_ts_fm = &fm;
     } else if (fm.target == "transform_timestamp_ns") {
-      ft_ts_ns_src = fm.source;
+      ft_ts_ns_fm = &fm;
     } else if (fm.target == "transform_parent_frame_id") {
-      ft_parent_src = fm.source;
+      ft_parent_fm = &fm;
     } else if (fm.target == "transform_child_frame_id") {
-      ft_child_src = fm.source;
+      ft_child_fm = &fm;
     } else if (fm.target == "transform_translation_x") {
-      ft_tx_src = fm.source;
+      ft_tx_fm = &fm;
     } else if (fm.target == "transform_translation_y") {
-      ft_ty_src = fm.source;
+      ft_ty_fm = &fm;
     } else if (fm.target == "transform_translation_z") {
-      ft_tz_src = fm.source;
+      ft_tz_fm = &fm;
     } else if (fm.target == "transform_rotation_x") {
-      ft_qx_src = fm.source;
+      ft_qx_fm = &fm;
     } else if (fm.target == "transform_rotation_y") {
-      ft_qy_src = fm.source;
+      ft_qy_fm = &fm;
     } else if (fm.target == "transform_rotation_z") {
-      ft_qz_src = fm.source;
+      ft_qz_fm = &fm;
     } else if (fm.target == "transform_rotation_w") {
-      ft_qw_src = fm.source;
+      ft_qw_fm = &fm;
     }
   }
 
@@ -4014,59 +3809,27 @@ FoxgloveMessage FoxgloveConverter::convert_frame_transforms(const FoxgloveMappin
     const auto* ref = msg.GetReflection();
     const auto* field = find_proto_field_cached(*desc, transforms_src);
 
-    if (field && field->is_repeated()) {
+    if (field && field->is_repeated() && field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
       int count = ref->FieldSize(msg, field);
 
       for (int i = 0; i < count; ++i) {
         const auto& item = ref->GetRepeatedMessage(msg, field, i);
 
-        auto direct_get = [&item](const std::string& name) -> double {
-          if (name.empty()) {
-            return 0.0;
-          }
-
-          if (has_nested_field_path(name)) {
-            return safe_nested_double(item, name);
-          }
-
-          const auto* f = find_proto_field_cached(*item.GetDescriptor(), name);
-
-          if VUNLIKELY (!f || !is_proto_numeric_type(f->cpp_type())) {
-            return 0.0;
-          }
-
-          return get_proto_numeric_value(item, f);
-        };
-
-        auto direct_get_str = [&item](const std::string& name) -> std::string {
-          if (name.empty()) {
-            return {};
-          }
-
-          if (has_nested_field_path(name)) {
-            return resolve_nested_string(item, name);
-          }
-
-          const auto* f = find_proto_field_cached(*item.GetDescriptor(), name);
-
-          if VUNLIKELY (!f || f->cpp_type() != google::protobuf::FieldDescriptor::CPPTYPE_STRING) {
-            return {};
-          }
-
-          return item.GetReflection()->GetString(item, f);
-        };
-
-        auto item_ts_us = checked_unsigned_cast<uint64_t>(direct_get(ft_ts_src));
-        auto item_ts_ns = checked_unsigned_cast<uint64_t>(direct_get(ft_ts_ns_src));
-        std::string parent_fid = direct_get_str(ft_parent_src);
-        std::string child_fid = direct_get_str(ft_child_src);
-        double itx = direct_get(ft_tx_src);
-        double ity = direct_get(ft_ty_src);
-        double itz = direct_get(ft_tz_src);
-        double iqx = direct_get(ft_qx_src);
-        double iqy = direct_get(ft_qy_src);
-        double iqz = direct_get(ft_qz_src);
-        double iqw = ft_qw_src.empty() ? 1.0 : direct_get(ft_qw_src);
+        auto item_ts_us =
+            ft_ts_fm ? checked_unsigned_cast<uint64_t>(get_proto_double(item, ft_ts_fm->source, *ft_ts_fm)) : 0;
+        auto item_ts_ns =
+            ft_ts_ns_fm ? checked_unsigned_cast<uint64_t>(get_proto_double(item, ft_ts_ns_fm->source, *ft_ts_ns_fm))
+                        : 0;
+        std::string parent_fid =
+            ft_parent_fm ? get_proto_string(item, ft_parent_fm->source, *ft_parent_fm) : std::string{};
+        std::string child_fid = ft_child_fm ? get_proto_string(item, ft_child_fm->source, *ft_child_fm) : std::string{};
+        double itx = ft_tx_fm ? get_proto_double(item, ft_tx_fm->source, *ft_tx_fm) : 0.0;
+        double ity = ft_ty_fm ? get_proto_double(item, ft_ty_fm->source, *ft_ty_fm) : 0.0;
+        double itz = ft_tz_fm ? get_proto_double(item, ft_tz_fm->source, *ft_tz_fm) : 0.0;
+        double iqx = ft_qx_fm ? get_proto_double(item, ft_qx_fm->source, *ft_qx_fm) : 0.0;
+        double iqy = ft_qy_fm ? get_proto_double(item, ft_qy_fm->source, *ft_qy_fm) : 0.0;
+        double iqz = ft_qz_fm ? get_proto_double(item, ft_qz_fm->source, *ft_qz_fm) : 0.0;
+        double iqw = ft_qw_fm ? get_proto_double(item, ft_qw_fm->source, *ft_qw_fm) : 1.0;
 
         auto item_ts = (item_ts_ns > 0) ? make_timestamp_from_ns(item_ts_ns) : make_timestamp_from_us(item_ts_us);
         auto pfid = builder.CreateString(parent_fid);
@@ -4099,28 +3862,28 @@ FoxgloveMessage FoxgloveConverter::convert_location_fixes(const FoxgloveMapping&
   builder.Clear();
 
   std::string fixes_src;
-  std::string fix_ts_src;
-  std::string fix_ts_ns_src;
-  std::string fix_frame_id_src;
-  std::string fix_lat_src;
-  std::string fix_lon_src;
-  std::string fix_alt_src;
+  const FieldMapping* fix_ts_fm = nullptr;
+  const FieldMapping* fix_ts_ns_fm = nullptr;
+  const FieldMapping* fix_frame_id_fm = nullptr;
+  const FieldMapping* fix_lat_fm = nullptr;
+  const FieldMapping* fix_lon_fm = nullptr;
+  const FieldMapping* fix_alt_fm = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "fixes") {
       fixes_src = fm.source;
     } else if (fm.target == "fix_timestamp") {
-      fix_ts_src = fm.source;
+      fix_ts_fm = &fm;
     } else if (fm.target == "fix_timestamp_ns") {
-      fix_ts_ns_src = fm.source;
+      fix_ts_ns_fm = &fm;
     } else if (fm.target == "fix_frame_id") {
-      fix_frame_id_src = fm.source;
+      fix_frame_id_fm = &fm;
     } else if (fm.target == "fix_latitude") {
-      fix_lat_src = fm.source;
+      fix_lat_fm = &fm;
     } else if (fm.target == "fix_longitude") {
-      fix_lon_src = fm.source;
+      fix_lon_fm = &fm;
     } else if (fm.target == "fix_altitude") {
-      fix_alt_src = fm.source;
+      fix_alt_fm = &fm;
     }
   }
 
@@ -4131,54 +3894,22 @@ FoxgloveMessage FoxgloveConverter::convert_location_fixes(const FoxgloveMapping&
     const auto* ref = msg.GetReflection();
     const auto* field = find_proto_field_cached(*desc, fixes_src);
 
-    if (field && field->is_repeated()) {
+    if (field && field->is_repeated() && field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
       int count = ref->FieldSize(msg, field);
 
       for (int i = 0; i < count; ++i) {
         const auto& item = ref->GetRepeatedMessage(msg, field, i);
 
-        auto direct_get = [&item](const std::string& name) -> double {
-          if (name.empty()) {
-            return 0.0;
-          }
-
-          if (has_nested_field_path(name)) {
-            return safe_nested_double(item, name);
-          }
-
-          const auto* f = find_proto_field_cached(*item.GetDescriptor(), name);
-
-          if VUNLIKELY (!f || !is_proto_numeric_type(f->cpp_type())) {
-            return 0.0;
-          }
-
-          return get_proto_numeric_value(item, f);
-        };
-
-        auto direct_get_str = [&item](const std::string& name) -> std::string {
-          if (name.empty()) {
-            return {};
-          }
-
-          if (has_nested_field_path(name)) {
-            return resolve_nested_string(item, name);
-          }
-
-          const auto* f = find_proto_field_cached(*item.GetDescriptor(), name);
-
-          if VUNLIKELY (!f || f->cpp_type() != google::protobuf::FieldDescriptor::CPPTYPE_STRING) {
-            return {};
-          }
-
-          return item.GetReflection()->GetString(item, f);
-        };
-
-        auto item_ts_us = checked_unsigned_cast<uint64_t>(direct_get(fix_ts_src));
-        auto item_ts_ns = checked_unsigned_cast<uint64_t>(direct_get(fix_ts_ns_src));
-        std::string item_frame_id = direct_get_str(fix_frame_id_src);
-        double lat = direct_get(fix_lat_src);
-        double lon = direct_get(fix_lon_src);
-        double alt = direct_get(fix_alt_src);
+        auto item_ts_us =
+            fix_ts_fm ? checked_unsigned_cast<uint64_t>(get_proto_double(item, fix_ts_fm->source, *fix_ts_fm)) : 0;
+        auto item_ts_ns =
+            fix_ts_ns_fm ? checked_unsigned_cast<uint64_t>(get_proto_double(item, fix_ts_ns_fm->source, *fix_ts_ns_fm))
+                         : 0;
+        std::string item_frame_id =
+            fix_frame_id_fm ? get_proto_string(item, fix_frame_id_fm->source, *fix_frame_id_fm) : std::string{};
+        double lat = fix_lat_fm ? get_proto_double(item, fix_lat_fm->source, *fix_lat_fm) : 0.0;
+        double lon = fix_lon_fm ? get_proto_double(item, fix_lon_fm->source, *fix_lon_fm) : 0.0;
+        double alt = fix_alt_fm ? get_proto_double(item, fix_alt_fm->source, *fix_alt_fm) : 0.0;
 
         auto item_ts = (item_ts_ns > 0) ? make_timestamp_from_ns(item_ts_ns) : make_timestamp_from_us(item_ts_us);
         auto fid = builder.CreateString(item_frame_id);
@@ -4420,7 +4151,7 @@ FoxgloveMessage FoxgloveConverter::convert_grid(const FoxgloveMapping& mapping, 
     const auto* ref = msg.GetReflection();
     const auto* field = find_proto_field_cached(*desc, fields_src);
 
-    if (field && field->is_repeated()) {
+    if (field && field->is_repeated() && field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
       int count = ref->FieldSize(msg, field);
 
       for (int i = 0; i < count; ++i) {
@@ -4540,7 +4271,8 @@ FoxgloveMessage FoxgloveConverter::convert_image_annotations(const FoxgloveMappi
     const auto* ref = msg.GetReflection();
     const auto* field = find_proto_field_cached(*desc, field_name);
 
-    if VUNLIKELY (!field || !field->is_repeated()) {
+    if VUNLIKELY (!field || !field->is_repeated() ||
+                  field->cpp_type() != google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
       return out;
     }
 
@@ -4644,10 +4376,10 @@ FoxgloveMessage FoxgloveConverter::convert_joint_states(const FoxgloveMapping& m
   uint64_t timestamp_us = 0;
   uint64_t timestamp_ns = 0;
   std::string joints_src;
-  std::string joint_name_src;
-  std::string joint_position_src;
-  std::string joint_velocity_src;
-  std::string joint_effort_src;
+  const FieldMapping* joint_name_fm = nullptr;
+  const FieldMapping* joint_position_fm = nullptr;
+  const FieldMapping* joint_velocity_fm = nullptr;
+  const FieldMapping* joint_effort_fm = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "timestamp") {
@@ -4657,13 +4389,13 @@ FoxgloveMessage FoxgloveConverter::convert_joint_states(const FoxgloveMapping& m
     } else if (fm.target == "joints") {
       joints_src = fm.source;
     } else if (fm.target == "joint_name") {
-      joint_name_src = fm.source;
+      joint_name_fm = &fm;
     } else if (fm.target == "joint_position") {
-      joint_position_src = fm.source;
+      joint_position_fm = &fm;
     } else if (fm.target == "joint_velocity") {
-      joint_velocity_src = fm.source;
+      joint_velocity_fm = &fm;
     } else if (fm.target == "joint_effort") {
-      joint_effort_src = fm.source;
+      joint_effort_fm = &fm;
     }
   }
 
@@ -4674,59 +4406,21 @@ FoxgloveMessage FoxgloveConverter::convert_joint_states(const FoxgloveMapping& m
     const auto* ref = msg.GetReflection();
     const auto* field = find_proto_field_cached(*desc, joints_src);
 
-    if (field && field->is_repeated()) {
+    if (field && field->is_repeated() && field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
       int count = ref->FieldSize(msg, field);
 
       for (int i = 0; i < count; ++i) {
         const auto& item = ref->GetRepeatedMessage(msg, field, i);
 
-        auto direct_get = [&item](const std::string& name) -> double {
-          if (name.empty()) {
-            return 0.0;
-          }
-
-          if (has_nested_field_path(name)) {
-            return safe_nested_double(item, name);
-          }
-
-          const auto* f = find_proto_field_cached(*item.GetDescriptor(), name);
-
-          if VUNLIKELY (!f || !is_proto_numeric_type(f->cpp_type())) {
-            return 0.0;
-          }
-
-          return get_proto_numeric_value(item, f);
-        };
-
-        auto direct_get_str = [&item](const std::string& name) -> std::string {
-          if (name.empty()) {
-            return {};
-          }
-
-          if (has_nested_field_path(name)) {
-            bool found = false;
-            auto value = resolve_nested_string(item, name, &found);
-            return found ? value : std::string{};
-          }
-
-          const auto* f = find_proto_field_cached(*item.GetDescriptor(), name);
-
-          if VUNLIKELY (!f || f->cpp_type() != google::protobuf::FieldDescriptor::CPPTYPE_STRING) {
-            return {};
-          }
-
-          return item.GetReflection()->GetString(item, f);
-        };
-
-        auto name_field = joint_name_src.empty() ? "name" : joint_name_src;
-        auto pos_field = joint_position_src.empty() ? "position" : joint_position_src;
-        auto vel_field = joint_velocity_src.empty() ? "velocity" : joint_velocity_src;
-        auto eff_field = joint_effort_src.empty() ? "effort" : joint_effort_src;
-
-        auto jname = direct_get_str(name_field);
-        double jpos = direct_get(pos_field);
-        double jvel = direct_get(vel_field);
-        double jeff = direct_get(eff_field);
+        FieldMapping empty_fm;
+        auto jname = joint_name_fm ? get_proto_string(item, joint_name_fm->source, *joint_name_fm)
+                                   : get_proto_string(item, "name", empty_fm);
+        double jpos = joint_position_fm ? get_proto_double(item, joint_position_fm->source, *joint_position_fm)
+                                        : get_proto_double(item, "position", empty_fm);
+        double jvel = joint_velocity_fm ? get_proto_double(item, joint_velocity_fm->source, *joint_velocity_fm)
+                                        : get_proto_double(item, "velocity", empty_fm);
+        double jeff = joint_effort_fm ? get_proto_double(item, joint_effort_fm->source, *joint_effort_fm)
+                                      : get_proto_double(item, "effort", empty_fm);
 
         auto name_off = builder.CreateString(jname);
         joint_offsets.emplace_back(
@@ -4914,7 +4608,7 @@ FoxgloveMessage FoxgloveConverter::convert_voxel_grid(const FoxgloveMapping& map
     const auto* ref = msg.GetReflection();
     const auto* field = find_proto_field_cached(*desc, fields_src);
 
-    if (field && field->is_repeated()) {
+    if (field && field->is_repeated() && field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
       int count = ref->FieldSize(msg, field);
 
       for (int i = 0; i < count; ++i) {
@@ -4997,6 +4691,7 @@ FoxgloveMessage FoxgloveConverter::convert_voxel_grid(const FoxgloveMapping& map
 
 FoxgloveMessage FoxgloveConverter::convert(std::string_view url, SchemaType schema_type, const std::string& ser,
                                            const Bytes& raw) {
+  activate_cache_owner(cache_owner_id_);
   FoxgloveMessage result;
   bool ambiguous = false;
   const auto* mapping = find_mapping(url, ser, &ambiguous);
@@ -5079,7 +4774,7 @@ FoxgloveMessage FoxgloveConverter::convert(std::string_view url, SchemaType sche
           const reflection::Schema* schema = nullptr;
 
           if (resolve_thread_local_fbs_schema(
-                  ser, this,
+                  ser, cache_owner_id_,
                   [this](const std::string& type_name, std::string& schema_data) {
                     return resolve_custom_fbs_schema(type_name, schema_data);
                   },
@@ -5128,7 +4823,7 @@ FoxgloveMessage FoxgloveConverter::convert(std::string_view url, SchemaType sche
             const reflection::Schema* schema = nullptr;
 
             if (resolve_thread_local_fbs_schema(
-                    ser, this,
+                    ser, cache_owner_id_,
                     [this](const std::string& type_name, std::string& schema_data) {
                       return resolve_custom_fbs_schema(type_name, schema_data);
                     },
@@ -5213,6 +4908,14 @@ FoxgloveMessage FoxgloveConverter::convert(std::string_view url, SchemaType sche
       plugin_result.encoding = std::move(schema_info.encoding);
       plugin_result.schema_encoding = std::move(schema_info.schema_encoding);
       plugin_result.schema_data = std::move(schema_info.schema_data);
+
+      if (is_flatbuffers_schema_encoding(plugin_result.encoding)) {
+        plugin_result.encoding = std::string(kFoxgloveFlatbufferEncoding);
+      }
+
+      if (is_flatbuffers_schema_encoding(plugin_result.schema_encoding)) {
+        plugin_result.schema_encoding = std::string(kFoxgloveFlatbufferEncoding);
+      }
     }
 
     return plugin_result;
@@ -5392,6 +5095,14 @@ bool FoxgloveConverter::get_schema_info(std::string_view url, SchemaType schema_
       schema_encoding = std::move(schema_info.schema_encoding);
       schema_data = std::move(schema_info.schema_data);
 
+      if (is_flatbuffers_schema_encoding(encoding)) {
+        encoding = std::string(kFoxgloveFlatbufferEncoding);
+      }
+
+      if (is_flatbuffers_schema_encoding(schema_encoding)) {
+        schema_encoding = std::string(kFoxgloveFlatbufferEncoding);
+      }
+
       if (schema_name == "SendTime") {
         encoding = "send_time";
 
@@ -5532,15 +5243,6 @@ FoxgloveMessage FoxgloveConverter::string_to_log(const Bytes& raw) {
   return result;
 }
 
-static bool mul_size(size_t a, size_t b, size_t& out) {
-  if VUNLIKELY (a != 0 && b > std::numeric_limits<size_t>::max() / a) {
-    return false;
-  }
-
-  out = a * b;
-  return true;
-}
-
 static bool set_raw_info(std::string_view encoding, size_t row_bytes, size_t data_size, std::string& out_encoding,
                          uint32_t& step, size_t& expected) {
   if VUNLIKELY (row_bytes > static_cast<size_t>(std::numeric_limits<uint32_t>::max())) {
@@ -5645,6 +5347,11 @@ FoxgloveMessage FoxgloveConverter::camera_frame_fbs(const Bytes& raw) {
   const auto* data = frame.data();
   const size_t data_size = frame.size();
 
+  if VUNLIKELY (data == nullptr || data_size == 0) {
+    MLOG_W("CameraFrame payload is empty");
+    return result;
+  }
+
   std::string fmt_str(zerocopy::CameraFrame::encoding_from_format(fmt));
 
   if VUNLIKELY (fmt == zerocopy::CameraFrame::kFormatUnknown || fmt_str == "unknown") {
@@ -5658,13 +5365,18 @@ FoxgloveMessage FoxgloveConverter::camera_frame_fbs(const Bytes& raw) {
   auto ts = make_timestamp_from_ns(time_meas);
   auto frame_id = builder.CreateString(frame_id_value.data(), frame_id_value.size());
 
-  if (fmt == zerocopy::CameraFrame::kFormatH266) {
+  if VUNLIKELY (fmt == zerocopy::CameraFrame::kFormatH266) {
     MLOG_W("Foxglove CompressedVideo does not support H.266");
     return result;
   }
 
   if (fmt == zerocopy::CameraFrame::kFormatH264 || fmt == zerocopy::CameraFrame::kFormatH265 ||
       fmt == zerocopy::CameraFrame::kFormatAv1) {
+    if VUNLIKELY (frame.stream() == zerocopy::CameraFrame::kStreamB) {
+      MLOG_W("Foxglove CompressedVideo does not support B-frames");
+      return result;
+    }
+
     auto data_vec = builder.CreateVector(data, data_size);
     auto format = builder.CreateString(fmt_str);
     auto msg = ::foxglove::CreateCompressedVideo(builder, &ts, frame_id, data_vec, format);
@@ -5687,7 +5399,7 @@ FoxgloveMessage FoxgloveConverter::camera_frame_fbs(const Bytes& raw) {
     bool rgb_planar = false;
 
     if VUNLIKELY (!camera_frame_raw_info(fmt, width, height, fmt_str, step, expected, rgb_planar) ||
-                  data_size < expected) {
+                  data_size != expected) {
       MLOG_W("CameraFrame raw format is invalid or unsupported, format={} width={} height={} size={}", fmt_str, width,
              height, data_size);
       return result;
@@ -5749,10 +5461,6 @@ static bool read_parser_uint64(const zerocopy::MessageParser& parser, std::strin
 
   out = *integer;
   return true;
-}
-
-static bool read_parser_string(const zerocopy::MessageParser& parser, std::string_view path, std::string& out) {
-  return parser.text(path, out);
 }
 
 static bool read_parser_bytes(const zerocopy::MessageParser& parser, std::string_view path, Bytes& out) {
@@ -5870,11 +5578,6 @@ FoxgloveMessage FoxgloveConverter::point_cloud_fbs(const Bytes& raw) {
 
   const auto data_size = static_cast<size_t>(point_count * pack_size);
   const bool has_compressed_xyz = extent != 0;
-
-  thread_local flatbuffers::FlatBufferBuilder builder(1024 * 1024);
-  builder.Clear();
-
-  auto frame_id = builder.CreateString(frame_id_value.data(), frame_id_value.size());
   const auto& fields = view.fields();
 
   if VUNLIKELY (fields.empty()) {
@@ -5882,11 +5585,34 @@ FoxgloveMessage FoxgloveConverter::point_cloud_fbs(const Bytes& raw) {
     return result;
   }
 
-  if VUNLIKELY (has_compressed_xyz && fields.size() < 3) {
-    MLOG_W("Compressed PointCloud has fewer than 3 fields");
+  const bool leading_xyz =
+      fields.size() >= 3 && fields[0].field.name == "x" && fields[1].field.name == "y" && fields[2].field.name == "z";
+  bool has_x = leading_xyz;
+  bool has_y = leading_xyz;
+  bool has_z = leading_xyz;
+
+  if VUNLIKELY (!leading_xyz) {
+    for (const auto& field : fields) {
+      has_x = has_x || field.field.name == "x";
+      has_y = has_y || field.field.name == "y";
+      has_z = has_z || field.field.name == "z";
+    }
+  }
+
+  if VUNLIKELY (static_cast<unsigned>(has_x) + static_cast<unsigned>(has_y) + static_cast<unsigned>(has_z) < 2U) {
+    MLOG_W("Foxglove PointCloud requires at least two coordinate fields from x, y, and z");
     return result;
   }
 
+  if VUNLIKELY (has_compressed_xyz && !leading_xyz) {
+    MLOG_W("Compressed PointCloud requires x, y, and z as its first three fields");
+    return result;
+  }
+
+  thread_local flatbuffers::FlatBufferBuilder builder(1024 * 1024);
+  builder.Clear();
+
+  auto frame_id = builder.CreateString(frame_id_value.data(), frame_id_value.size());
   std::vector<flatbuffers::Offset<::foxglove::PackedElementField>> field_offsets;
   struct PointCloudFieldCopy {
     const PointCloudFieldView* source{nullptr};
@@ -6050,8 +5776,7 @@ FoxgloveMessage FoxgloveConverter::occupancy_grid_fbs(const Bytes& raw) {
                 !read_parser_uint64(parser, "header.time_meas", time_meas) || !parser.numeric("origin_x", origin_x) ||
                 !parser.numeric("origin_y", origin_y) || !parser.numeric("origin_z", origin_z) ||
                 !parser.numeric("origin_yaw", origin_yaw) || !parser.numeric("resolution", resolution) ||
-                !read_parser_string(parser, "header.frame_id", frame_id_value) ||
-                !read_parser_bytes(parser, "data", data)) {
+                !parser.text("header.frame_id", frame_id_value) || !read_parser_bytes(parser, "data", data)) {
     MLOG_W("OccupancyGrid metadata is incomplete");
     return result;
   }
@@ -6080,8 +5805,8 @@ FoxgloveMessage FoxgloveConverter::occupancy_grid_fbs(const Bytes& raw) {
 
   const size_t data_size = cell_count * static_cast<size_t>(cell_sz);
 
-  if VUNLIKELY (data_size > data.size()) {
-    MLOG_W("OccupancyGrid payload too small: need={} have={}", data_size, data.size());
+  if VUNLIKELY (data_size != data.size()) {
+    MLOG_W("OccupancyGrid payload size mismatch: expected={} actual={}", data_size, data.size());
     return result;
   }
 
@@ -6193,8 +5918,8 @@ FoxgloveMessage FoxgloveConverter::tensor_fbs(const Bytes& raw) {
                 !read_parser_uint64(parser, "batch_size", batch_size) ||
                 !read_parser_uint64(parser, "header.time_meas", time_meas) ||
                 !parser.numeric("quant_scale", quant_scale) || !parser.numeric("quant_zero_point", quant_zero_point) ||
-                !read_parser_string(parser, "name", name) || !read_parser_string(parser, "model_id", model_id) ||
-                !read_parser_string(parser, "layout", layout) || !read_parser_bytes(parser, "data", data)) {
+                !parser.text("name", name) || !parser.text("model_id", model_id) || !parser.text("layout", layout) ||
+                !read_parser_bytes(parser, "data", data)) {
     MLOG_W("Tensor metadata is incomplete");
     return result;
   }
@@ -6289,8 +6014,7 @@ FoxgloveMessage FoxgloveConverter::object_array_fbs(const Bytes& raw) {
   std::string source_id_str;
 
   if VUNLIKELY (!read_parser_uint64(parser, "header.time_meas", time_meas) ||
-                !read_parser_string(parser, "header.frame_id", frame_id) ||
-                !read_parser_string(parser, "source_id", source_id_str)) {
+                !parser.text("header.frame_id", frame_id) || !parser.text("source_id", source_id_str)) {
     MLOG_W("ObjectArray metadata is incomplete");
     return result;
   }

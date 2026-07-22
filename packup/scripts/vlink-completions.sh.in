@@ -12,7 +12,7 @@ _vlink_completion_etc_dir="$(cd "$(dirname "$_vlink_completion_script")" && pwd)
 _vlink_completion_dir="$_vlink_completion_etc_dir/vlink-completions"
 _vlink_webviz_target="@VLINK_WEBVIZ_COMPLETION_TARGET@"
 
-_vlink_bash_schemes="intra shm shm2 zenoh dds ddsc ddsr ddst someip mqtt fdbus qnx"
+_vlink_bash_schemes="intra shm shm2 zenoh dds ddsc ddsr someip mqtt fdbus"
 _vlink_bash_bag_ext="vdb|vdbx|vcap|vcapx"
 _vlink_bash_play_ext="vdb|vdbx|vcap|vcapx"
 _vlink_bash_plugin_ext="so|dll|dylib"
@@ -66,6 +66,42 @@ _vlink_bash_complete_dirs() {
     _vlink_bash_collect_candidates < <(compgen -d -- "$1")
 }
 
+_vlink_completion_alias_available() {
+    local completion_alias="$1"
+    local target="$2"
+    local alias_definition=""
+    local alias_path=""
+    local target_path=""
+
+    if [[ "${_VLINK_COMPLETION_REGISTER_ALIASES:-}" == "1" ]]; then
+        return 0
+    fi
+
+    alias_definition=$(alias "$completion_alias" 2>/dev/null) || alias_definition=""
+    if [[ -n "$alias_definition" && "$alias_definition" == *"$target"* ]]; then
+        return 0
+    fi
+
+    alias_path=$(command -v "$completion_alias" 2>/dev/null) || return 1
+    target_path=$(command -v "$target" 2>/dev/null) || return 1
+    [[ -e "$alias_path" && -e "$target_path" && "$alias_path" -ef "$target_path" ]]
+}
+
+_vlink_bash_register_completion() {
+    local function_name="$1"
+    local target="$2"
+    local completion_alias
+
+    shift 2
+    complete -F "$function_name" "$target"
+
+    for completion_alias in "$@"; do
+        if _vlink_completion_alias_available "$completion_alias" "$target"; then
+            complete -F "$function_name" "$completion_alias"
+        fi
+    done
+}
+
 _vlink_bash_find_subcommand() {
     local subcommands="$1"
     local index command=""
@@ -95,7 +131,7 @@ _vlink_bash_complete_webviz_proxy_prev() {
     case "$1" in
         --proxy_interface) _vlink_bash_complete_words "proxy_api proxy_server" "$2"; return 0 ;;
         --proxy_role) _vlink_bash_complete_words "controller listener" "$2"; return 0 ;;
-        --proxy_dds_impl) _vlink_bash_complete_words "dds ddsc ddsr ddst" "$2"; return 0 ;;
+        --proxy_dds_impl) _vlink_bash_complete_words "dds ddsc ddsr" "$2"; return 0 ;;
         --proxy_data_callback_mode) _vlink_bash_complete_words "direct queued" "$2"; return 0 ;;
         --proxy_iox_monitoring) _vlink_bash_complete_words "on off" "$2"; return 0 ;;
         --proxy_iox_strategy) _vlink_bash_complete_words "1 2 3" "$2"; return 0 ;;
@@ -108,7 +144,7 @@ _vlink_bash_complete_webviz_proxy_prev() {
 }
 
 if [[ -n "${ZSH_VERSION:-}" ]]; then
-    typeset -ga _vlink_zsh_schemes=(intra shm shm2 zenoh dds ddsc ddsr ddst someip mqtt fdbus qnx)
+    typeset -ga _vlink_zsh_schemes=(intra shm shm2 zenoh dds ddsc ddsr someip mqtt fdbus)
     typeset -g _vlink_zsh_bag_glob='*.(vdb|vdbx|vcap|vcapx)'
     typeset -g _vlink_zsh_play_glob='*.(vdb|vdbx|vcap|vcapx)'
     typeset -g _vlink_zsh_plugin_glob='*.(so|dll|dylib)'
@@ -138,6 +174,21 @@ _vlink_zsh_complete_plugin_file() {
 
 _vlink_zsh_complete_json_file() {
     _files -g "*.json"
+}
+
+_vlink_zsh_register_completion() {
+    local function_name="$1"
+    local target="$2"
+    local completion_alias
+
+    shift 2
+    compdef "$function_name" "$target"
+
+    for completion_alias in "$@"; do
+        if _vlink_completion_alias_available "$completion_alias" "$target"; then
+            compdef "$function_name" "$completion_alias"
+        fi
+    done
 }
 
 _vlink_zsh_last_option() {

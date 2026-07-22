@@ -36,11 +36,11 @@ namespace vlink {
 
 namespace zerocopy {
 
-static void pc_pack_to_vertical(uint8_t* dst, const uint8_t* src, size_t count, uint16_t pack,
-                                const std::vector<uint16_t>& offsets, const std::vector<uint8_t>& sizes) noexcept {
+static void pc_pack_to_vertical(uint8_t* dst, const uint8_t* src, size_t count, uint16_t pack, const uint16_t* offsets,
+                                const uint8_t* sizes, size_t field_count) noexcept {
   size_t out_pos = 0;
 
-  for (size_t f = 0; f < offsets.size(); ++f) {
+  for (size_t f = 0; f < field_count; ++f) {
     uint16_t field_offset = offsets[f];
     uint8_t field_size = sizes[f];
 
@@ -53,10 +53,10 @@ static void pc_pack_to_vertical(uint8_t* dst, const uint8_t* src, size_t count, 
 }
 
 static void pc_unpack_from_vertical(uint8_t* dst, const uint8_t* src, size_t count, uint16_t pack,
-                                    const std::vector<uint16_t>& offsets, const std::vector<uint8_t>& sizes) noexcept {
+                                    const uint16_t* offsets, const uint8_t* sizes, size_t field_count) noexcept {
   size_t in_pos = 0;
 
-  for (size_t f = 0; f < offsets.size(); ++f) {
+  for (size_t f = 0; f < field_count; ++f) {
     uint16_t field_offset = offsets[f];
     uint8_t field_size = sizes[f];
 
@@ -258,6 +258,7 @@ bool PointCloud::operator<<(const Bytes& bytes) noexcept {
     return false;
   }
 
+  std::array<uint16_t, 16> field_offsets{};
   std::array<uint8_t, 16> field_sizes{};
   size_t field_count = 0;
 
@@ -273,7 +274,9 @@ bool PointCloud::operator<<(const Bytes& bytes) noexcept {
       }
 
       leading_zero = false;
-      field_sizes[field_count++] = field_size;
+      field_offsets[field_count] = field_offset;
+      field_sizes[field_count] = field_size;
+      ++field_count;
       field_offset += field_size;
     }
 
@@ -299,22 +302,7 @@ bool PointCloud::operator<<(const Bytes& bytes) noexcept {
     is_owner_ = true;
     index_ = capacity_;
 
-    std::vector<uint16_t> offsets;
-    std::vector<uint8_t> sizes;
-    offsets.reserve(field_count);
-    sizes.reserve(field_count);
-
-    uint16_t field_offset = 0;
-
-    for (size_t i = 0; i < field_count; ++i) {
-      uint8_t field_size = field_sizes[i];
-      offsets.emplace_back(field_offset);
-      sizes.emplace_back(field_size);
-
-      field_offset += field_size;
-    }
-
-    pc_unpack_from_vertical(data_, payload, size_, pack_size_, offsets, sizes);
+    pc_unpack_from_vertical(data_, payload, size_, pack_size_, field_offsets.data(), field_sizes.data(), field_count);
   }
 
   return true;
@@ -327,6 +315,10 @@ bool PointCloud::operator>>(Bytes& bytes) const noexcept {
 
   if (bytes.empty() || bytes.size() != get_serialized_size()) {
     bytes = Bytes::create(get_serialized_size());
+
+    if VUNLIKELY (bytes.empty()) {
+      return false;
+    }
   }
 
   std::memcpy(bytes.data(), &kMagicNumberBegin, kMagicNumberBeginSize);
@@ -336,27 +328,36 @@ bool PointCloud::operator>>(Bytes& bytes) const noexcept {
   // NOLINTNEXTLINE(bugprone-undefined-memory-manipulation)
   std::memcpy(bytes.data() + kMagicNumberBeginSize + kVersionSize, this, sizeof(PointCloud));
 
+  const auto data_offset = reinterpret_cast<const uint8_t*>(&data_) - reinterpret_cast<const uint8_t*>(this);
+  const size_t data_pointer_size = sizeof(data_);
+  std::memset(bytes.data() + kMagicNumberBeginSize + kVersionSize + data_offset, 0, data_pointer_size);
+
   if VLIKELY (data_ != nullptr && size_ != 0 && pack_size_ != 0) {
     uint8_t* payload = bytes.data() + kMagicNumberBeginSize + kVersionSize + sizeof(PointCloud);
 
     if (vertical_) {
-      KeyList key_list = protocol_.get_key_list();
-
-      std::vector<uint16_t> offsets;
-      std::vector<uint8_t> sizes;
-      offsets.reserve(key_list.size());
-      sizes.reserve(key_list.size());
-
+      std::array<uint16_t, 16> field_offsets{};
+      std::array<uint8_t, 16> field_sizes{};
+      size_t field_count = 0;
       uint16_t field_offset = 0;
+      bool leading_zero = true;
 
-      for (const auto& key : key_list) {
-        offsets.emplace_back(field_offset);
-        sizes.emplace_back(key.size);
+      for (int i = 15; i >= 0; --i) {
+        uint8_t field_size = (protocol_.size_num >> (i * 4)) & 0xF;
 
-        field_offset += key.size;
+        if (leading_zero && field_size == 0) {
+          continue;
+        }
+
+        leading_zero = false;
+        field_offsets[field_count] = field_offset;
+        field_sizes[field_count] = field_size;
+        ++field_count;
+
+        field_offset += field_size;
       }
 
-      pc_pack_to_vertical(payload, data_, size_, pack_size_, offsets, sizes);
+      pc_pack_to_vertical(payload, data_, size_, pack_size_, field_offsets.data(), field_sizes.data(), field_count);
     } else {
       std::memcpy(payload, data_, size_ * pack_size_);
     }
@@ -409,6 +410,13 @@ bool PointCloud::shallow_copy(const PointCloud& target) noexcept {
   }
 
   if (is_owner_ && data_ && capacity_ != 0) {
+    const auto current = reinterpret_cast<uintptr_t>(data_);
+    const auto source = reinterpret_cast<uintptr_t>(target.data_);
+
+    if VUNLIKELY (source >= current && source - current < capacity_) {
+      return false;
+    }
+
     Bytes::bytes_free(data_, capacity_);
   }
 
@@ -434,9 +442,18 @@ bool PointCloud::shallow_copy(const PointCloud& target) noexcept {
 }
 
 bool PointCloud::deep_copy(const PointCloud& target) noexcept {
-  if VLIKELY (data_ && is_owner_ && target.data_ && capacity_ != 0 && capacity_ == target.size_ * target.pack_size_) {
-    if VUNLIKELY (this == &target) {
-      return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  if VUNLIKELY (target.pack_size_ != 0 && target.size_ > std::numeric_limits<size_t>::max() / target.pack_size_) {
+    return false;
+  }
+
+  const size_t target_size = target.size_ * target.pack_size_;
+
+  if VLIKELY (data_ && is_owner_ && target.data_ && capacity_ != 0 && capacity_ == target_size) {
+    const auto current = reinterpret_cast<uintptr_t>(data_);
+    const auto source = reinterpret_cast<uintptr_t>(target.data_);
+
+    if VUNLIKELY (source >= current && source - current < capacity_) {
+      return false;
     }
 
     header = target.header;
@@ -463,13 +480,19 @@ bool PointCloud::deep_copy(const PointCloud& target) noexcept {
     return false;
   }
 
-  if VLIKELY (data_ != nullptr && size_ != 0 && pack_size_ != 0) {
-    capacity_ = size_ * pack_size_;
-
+  if VLIKELY (data_ != nullptr && target_size != 0) {
+    auto* target_data = data_;
+    capacity_ = target_size;
     data_ = Bytes::bytes_malloc(capacity_);
 
-    std::memcpy(data_, target.data_, capacity_);
+    if VUNLIKELY (!data_) {
+      capacity_ = 0;
+      size_ = 0;
+      index_ = 0;
+      return false;
+    }
 
+    std::memcpy(data_, target_data, capacity_);
     is_owner_ = true;
   }
 
@@ -482,6 +505,7 @@ bool PointCloud::move_copy(PointCloud& target) noexcept {
   }
 
   is_owner_ = target.is_owner_;
+  capacity_ = target.capacity_;
 
   target.capacity_ = 0;
   target.size_ = 0;
@@ -551,6 +575,20 @@ PointCloud::KeyMap PointCloud::get_key_map(KeyList* key_list) const noexcept {
   }
 
   return map;
+}
+
+PointCloud::KeyList PointCloud::get_key_list() const noexcept {
+  auto key_list = protocol_.get_key_list();
+
+  if (extent_ != 0) {
+    for (size_t i = 0; i < key_list.size() && i < 3; ++i) {
+      if (key_list[i].type == kInt16Type && key_list[i].size == sizeof(int16_t)) {
+        key_list[i].type = kFloatType;
+      }
+    }
+  }
+
+  return key_list;
 }
 
 size_t PointCloud::size() const noexcept { return size_; }
@@ -744,7 +782,7 @@ size_t PointCloud::get_reserved_size() const noexcept {
 
 bool PointCloud::get_value_v3f(float& x, float& y, float& z, size_t loop_index) const noexcept {
   if (extent_ != 0) {
-    if VUNLIKELY ((loop_index * pack_size_) + (sizeof(int16_t) * 3) > size_ * pack_size_) {
+    if VUNLIKELY (!data_ || loop_index >= size_ || pack_size_ < sizeof(int16_t) * 3) {
       return false;
     }
 
@@ -765,7 +803,7 @@ bool PointCloud::get_value_v3f(float& x, float& y, float& z, size_t loop_index) 
     return true;
   }
 
-  if VUNLIKELY (loop_index * pack_size_ + sizeof(float) * 3 > size_ * pack_size_) {
+  if VUNLIKELY (!data_ || loop_index >= size_ || pack_size_ < sizeof(float) * 3) {
     return false;
   }
 
@@ -781,7 +819,7 @@ bool PointCloud::get_value_v3f(Vector3f& v3f, size_t loop_index) const noexcept 
     return get_value_v3f(v3f.x, v3f.y, v3f.z, loop_index);
   }
 
-  if VUNLIKELY ((loop_index * pack_size_) + (sizeof(float) * 3) > size_ * pack_size_) {
+  if VUNLIKELY (!data_ || loop_index >= size_ || pack_size_ < sizeof(float) * 3) {
     return false;
   }
 
@@ -800,7 +838,7 @@ PointCloud::Vector3f PointCloud::get_value_v3f(size_t loop_index) const noexcept
 
 bool PointCloud::get_value_v3d(double& x, double& y, double& z, size_t loop_index) const noexcept {
   if (extent_ != 0) {
-    if VUNLIKELY ((loop_index * pack_size_) + (sizeof(int16_t) * 3) > size_ * pack_size_) {
+    if VUNLIKELY (!data_ || loop_index >= size_ || pack_size_ < sizeof(int16_t) * 3) {
       return false;
     }
 
@@ -821,7 +859,7 @@ bool PointCloud::get_value_v3d(double& x, double& y, double& z, size_t loop_inde
     return true;
   }
 
-  if VUNLIKELY ((loop_index * pack_size_) + (sizeof(double) * 3) > size_ * pack_size_) {
+  if VUNLIKELY (!data_ || loop_index >= size_ || pack_size_ < sizeof(double) * 3) {
     return false;
   }
 
@@ -837,7 +875,7 @@ bool PointCloud::get_value_v3d(Vector3d& v3d, size_t loop_index) const noexcept 
     return get_value_v3d(v3d.x, v3d.y, v3d.z, loop_index);
   }
 
-  if VUNLIKELY ((loop_index * pack_size_) + (sizeof(double) * 3) > size_ * pack_size_) {
+  if VUNLIKELY (!data_ || loop_index >= size_ || pack_size_ < sizeof(double) * 3) {
     return false;
   }
 
@@ -1029,6 +1067,12 @@ bool PointCloud::create(size_t size, uint64_t size_num, uint64_t type_num, std::
     new_protocol = protocol_probe.protocol_;
   }
 
+  const size_t new_pack_size = new_protocol.get_pack_size();
+
+  if VUNLIKELY (new_pack_size != 0 && size > std::numeric_limits<size_t>::max() / new_pack_size) {
+    return false;
+  }
+
   if (is_owner_ && data_ && capacity_ != 0) {
     Bytes::bytes_free(data_, capacity_);
   }
@@ -1044,11 +1088,17 @@ bool PointCloud::create(size_t size, uint64_t size_num, uint64_t type_num, std::
   vertical_ = vertical;
   downsample_ = 0;
 
-  pack_size_ = protocol_.get_pack_size();
+  pack_size_ = new_pack_size;
   capacity_ = size * pack_size_;
 
   if VLIKELY (capacity_ != 0) {
     data_ = Bytes::bytes_malloc(capacity_);
+
+    if VUNLIKELY (!data_) {
+      capacity_ = 0;
+      return false;
+    }
+
     is_owner_ = true;
   }
 

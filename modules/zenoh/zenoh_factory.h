@@ -30,6 +30,7 @@
 #endif
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <deque>
 #include <memory>
@@ -52,6 +53,8 @@
 
 namespace vlink {
 
+class ZenohClient;
+
 #if !defined(VLINK_ENABLE_ZENOH_PICO) && defined(Z_FEATURE_SHARED_MEMORY) && defined(Z_FEATURE_UNSTABLE_API)
 #define VLINK_ZENOH_SHM_AVAILABLE 1
 #else
@@ -59,7 +62,8 @@ namespace vlink {
 #endif
 
 using SessionID = std::tuple<int32_t, int32_t, std::string, Conf::PropertiesMap>;
-using ZenohID = std::tuple<uint8_t, std::string, int32_t, int32_t, std::string, std::string, Conf::PropertiesMap>;
+using ZenohID =
+    std::tuple<uint8_t, std::string, std::string, int32_t, int32_t, std::string, std::string, Conf::PropertiesMap>;
 using ZenohSessionPtr = std::shared_ptr<z_owned_session_t>;
 static constexpr size_t kZenohDefaultShmLoanThreshold{8 * 1024};
 
@@ -122,6 +126,12 @@ class ZenohFactory final : public AbstractFactory<ZenohID> {
 
   static int get_default_domain_id();
 
+  static uint32_t get_channel(const std::string& event) noexcept;
+
+  static std::string get_topic(const std::string& address, const std::string& event, int32_t domain);
+
+  static Conf::PropertiesMap resolve_properties(ZenohConf& conf, const Conf::PropertiesMap& node_properties);
+
   static z_priority_t convert_priority(Qos::Additions::Priority priority);
 
 #if defined(Z_FEATURE_UNSTABLE_API)
@@ -137,14 +147,29 @@ class ZenohFactory final : public AbstractFactory<ZenohID> {
 
   MessageLoop& get_message_loop();
 
+#ifdef VLINK_ENABLE_ZENOH_PICO
+  void register_local_server(const std::string& topic);
+
+  void unregister_local_server(const std::string& topic);
+
+  void register_local_client(const std::string& topic, const std::shared_ptr<ZenohClient>& client);
+
+  void unregister_local_client(const std::string& topic, const ZenohClient* client);
+#endif
+
  private:
   std::atomic_bool has_inited_{false};
   std::atomic_bool has_config_{false};
 
   MessageLoop message_loop_{MessageLoop::kNormalType};
   z_owned_config_t global_config_;
-  std::map<SessionID, ZenohSessionPtr> session_map_;
+  std::map<SessionID, std::weak_ptr<z_owned_session_t>> session_map_;
   std::mutex session_mtx_;
+#ifdef VLINK_ENABLE_ZENOH_PICO
+  std::unordered_map<std::string, uint32_t> local_server_counts_;
+  std::unordered_map<std::string, std::vector<std::weak_ptr<ZenohClient>>> local_clients_;
+  std::mutex local_liveliness_mtx_;
+#endif
   Qos default_event_qos_;
   Qos default_method_qos_;
   Qos default_field_qos_;
@@ -175,7 +200,7 @@ class ZenohServer final : public AbstractObject<ZenohID>, public std::enable_sha
 
   bool reply(uint64_t channel, uint64_t req_id, const Bytes& resp_data);
 
-  void process_message(uint64_t channel, uint64_t seq, MessageLoop* message_loop, Bytes&& req_bytes);
+  void process_message(uint64_t channel, uint64_t seq, MessageLoop* message_loop, const Bytes& req_bytes);
 
   static void on_data_callback(z_loaned_query_t* query, void* context);
 
@@ -183,6 +208,8 @@ class ZenohServer final : public AbstractObject<ZenohID>, public std::enable_sha
   bool build_payload(z_owned_bytes_t* payload, const Bytes& bytes);
 
   void drop_query(uint64_t req_id);
+
+  void cleanup_expired_queries();
 
   std::atomic_bool is_suspend_{false};
 
@@ -199,8 +226,14 @@ class ZenohServer final : public AbstractObject<ZenohID>, public std::enable_sha
   z_priority_t priority_{Z_PRIORITY_DATA};
   bool is_express_{false};
   std::unordered_map<uint64_t, z_owned_query_t> query_map_;
+  std::unordered_map<uint64_t, std::chrono::steady_clock::time_point> query_deadlines_;
   std::mutex query_mtx_;
   std::mutex mtx_;
+  uint32_t deferred_timeout_ms_{60000};
+  std::optional<Timer> query_cleanup_timer_;
+#ifdef VLINK_ENABLE_ZENOH_PICO
+  bool local_server_registered_{false};
+#endif
 #if VLINK_ZENOH_SHM_AVAILABLE
   mutable ZenohShmSupport shm_;
 #endif
@@ -217,6 +250,12 @@ class ZenohClient final : public AbstractObject<ZenohID>, public std::enable_sha
 
   bool is_connected() const;
 
+  void start_liveliness();
+
+#ifdef VLINK_ENABLE_ZENOH_PICO
+  void update_local_server_count(uint32_t count);
+#endif
+
   bool is_support_loan() const;
 
   Bytes loan(uint64_t channel, int64_t size);
@@ -228,8 +267,6 @@ class ZenohClient final : public AbstractObject<ZenohID>, public std::enable_sha
 
   void cancel_calls(NodeImpl* owner);
 
-  void check_online();
-
   static void on_data_callback(z_loaned_reply_t* reply, void* context);
 
   static void on_reply_drop(void* context);
@@ -238,6 +275,8 @@ class ZenohClient final : public AbstractObject<ZenohID>, public std::enable_sha
 
  private:
   bool build_payload(z_owned_bytes_t* payload, const Bytes& bytes);
+
+  void update_connection_state();
 
   std::atomic_bool has_connected_{false};
   alignas(64) std::atomic<uint64_t> seq_{0};
@@ -253,6 +292,12 @@ class ZenohClient final : public AbstractObject<ZenohID>, public std::enable_sha
   z_congestion_control_t congestion_control_{Z_CONGESTION_CONTROL_BLOCK};
   z_priority_t priority_{Z_PRIORITY_DATA};
   bool is_express_{false};
+  std::atomic_bool liveliness_started_{false};
+  std::atomic_uint32_t server_count_{0};
+#ifdef VLINK_ENABLE_ZENOH_PICO
+  std::atomic_uint32_t local_server_count_{0};
+  std::atomic_bool local_client_registered_{false};
+#endif
   std::mutex mtx_;
 
   struct ResponseCallback final {
@@ -277,6 +322,8 @@ class ZenohPublisher final : public AbstractObject<ZenohID>, public std::enable_
 
   void check_matching();
 
+  void start_matching();
+
   bool has_subscribers() const;
 
   bool is_support_loan() const;
@@ -289,6 +336,10 @@ class ZenohPublisher final : public AbstractObject<ZenohID>, public std::enable_
 
   static void on_matching_status(const z_matching_status_t* status, void* context);
 
+#ifdef VLINK_ENABLE_ZENOH_PICO
+  static void on_subscriber_liveliness(z_loaned_sample_t* sample, void* context);
+#endif
+
  private:
   bool build_payload(z_owned_bytes_t* payload, const Bytes& bytes);
 
@@ -298,11 +349,21 @@ class ZenohPublisher final : public AbstractObject<ZenohID>, public std::enable_
 
   uint64_t guid_{0};
   std::string topic_;
+#ifdef VLINK_ENABLE_ZENOH_PICO
+  std::string matching_key_;
+#endif
   ZenohSessionPtr session_;
   z_owned_publisher_t pub_;
   z_view_keyexpr_t keyexpr_;
   z_publisher_options_t options_;
   z_owned_matching_listener_t matching_listener_;
+#ifdef VLINK_ENABLE_ZENOH_PICO
+  z_owned_subscriber_t matching_sub_;
+  z_view_keyexpr_t matching_keyexpr_;
+  std::optional<Timer> matching_timer_;
+  std::atomic_bool matching_started_{false};
+  std::atomic_uint32_t remote_subscriber_count_{0};
+#endif
 #if VLINK_ZENOH_SHM_AVAILABLE
   mutable ZenohShmSupport shm_;
 #endif
@@ -336,7 +397,7 @@ class ZenohSubscriber final : public AbstractObject<ZenohID>, public std::enable
   const CalculateSample& get_calculate_sample() const;
 
   void process_message(uint64_t channel, uint64_t seq, uint64_t guid, uint64_t timestamp, MessageLoop* message_loop,
-                       Bytes&& bytes);
+                       const Bytes& bytes);
 
   static void on_data_callback(z_loaned_sample_t* sample, void* context);
 
@@ -347,8 +408,15 @@ class ZenohSubscriber final : public AbstractObject<ZenohID>, public std::enable
 
   uint64_t guid_{0};
   std::string topic_;
+#ifdef VLINK_ENABLE_ZENOH_PICO
+  std::string matching_key_;
+#endif
   ZenohSessionPtr session_;
   z_owned_subscriber_t sub_;
+#ifdef VLINK_ENABLE_ZENOH_PICO
+  z_owned_liveliness_token_t matching_token_;
+  z_view_keyexpr_t matching_keyexpr_;
+#endif
   z_view_keyexpr_t keyexpr_;
   z_subscriber_options_t options_;
   CalculateSample calc_sample_;

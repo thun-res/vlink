@@ -31,6 +31,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -235,6 +236,14 @@ TEST_SUITE("base-ConditionVariable") {
     vlink::condition_variable cv;
     CHECK(cv.native_handle() != nullptr);
   }
+
+  TEST_CASE("predicate exceptions propagate to the caller") {
+    ConditionVariable cv;
+    std::mutex mtx;
+    std::unique_lock lock(mtx);
+
+    CHECK_THROWS_AS(cv.wait(lock, []() -> bool { throw std::runtime_error("predicate failure"); }), std::runtime_error);
+  }
 }
 
 TEST_SUITE("base-ConditionVariableAny") {
@@ -384,6 +393,15 @@ TEST_SUITE("base-ConditionVariableAny") {
     vlink::condition_variable_any cva;
     (void)cva;
     CHECK(true);
+  }
+
+  TEST_CASE("predicate exceptions propagate to the caller") {
+    ConditionVariableAny cva;
+    std::mutex mtx;
+    std::unique_lock lock(mtx);
+
+    CHECK_THROWS_AS(cva.wait(lock, []() -> bool { throw std::runtime_error("predicate failure"); }),
+                    std::runtime_error);
   }
 }
 

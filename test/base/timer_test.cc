@@ -297,6 +297,49 @@ TEST_SUITE("base-Timer") {
     loop.wait_for_quit();
   }
 
+  TEST_CASE("stop and restart discard a tick queued by an earlier activation") {
+    SUBCASE("stop then start") {
+      MessageLoop loop;
+      std::atomic<int> fire_count{0};
+      Timer timer(&loop, 20, Timer::kInfinite, [&fire_count] { fire_count.fetch_add(1); });
+
+      timer.start();
+      std::this_thread::sleep_for(30ms);
+      CHECK(loop.spin_once(false));
+      CHECK_EQ(loop.get_task_count(), 1U);
+
+      timer.stop();
+      timer.start();
+      CHECK(loop.spin_once(false));
+      CHECK_EQ(fire_count.load(), 0);
+
+      std::this_thread::sleep_for(30ms);
+      CHECK(loop.spin_once(false));
+      CHECK(loop.spin_once(false));
+      CHECK_EQ(fire_count.load(), 1);
+    }
+
+    SUBCASE("restart") {
+      MessageLoop loop;
+      std::atomic<int> fire_count{0};
+      Timer timer(&loop, 20, Timer::kInfinite, [&fire_count] { fire_count.fetch_add(1); });
+
+      timer.start();
+      std::this_thread::sleep_for(30ms);
+      CHECK(loop.spin_once(false));
+      CHECK_EQ(loop.get_task_count(), 1U);
+
+      timer.restart();
+      CHECK(loop.spin_once(false));
+      CHECK_EQ(fire_count.load(), 0);
+
+      std::this_thread::sleep_for(30ms);
+      CHECK(loop.spin_once(false));
+      CHECK(loop.spin_once(false));
+      CHECK_EQ(fire_count.load(), 1);
+    }
+  }
+
   TEST_CASE("start with replacement callback uses new callback") {
     MessageLoop loop;
     loop.async_run();

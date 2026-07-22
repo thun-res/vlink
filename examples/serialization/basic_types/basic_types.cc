@@ -35,20 +35,20 @@ using namespace std::chrono_literals;  // NOLINT(build/namespaces, google-build-
 //
 // Demonstrates VLink's compile-time serialization dispatch for the three
 // built-in "trivial" wire shapes:
-//   * vlink::Bytes  -> kBytesType    (raw byte buffer, length-prefixed)
-//   * std::string   -> kStringType   (UTF-8, length-prefixed)
+//   * vlink::Bytes  -> kBytesType    (raw payload bytes)
+//   * std::string   -> kStringType   (string bytes, no terminator)
 //   * POD struct    -> kStandardType (sizeof(T) raw memcpy, host endian)
 // The Serializer<T> template picks the correct strategy at compile time via
 // trait probing (is_bytes / is_string / is_trivial_standard_layout / etc.),
 // so user code never specifies a wire format manually. Each helper below
-// runs a publish-subscribe round trip on the local DDS backend so the
+// runs a publish-subscribe round trip on the intra-process backend so the
 // listen() callback exercises the deserialization path end to end.
 // ---------------------------------------------------------------------------
 
 // Plain Old Data demo struct (kStandardType).
 // Trivial + standard-layout is the contract that lets Serializer route to the
-// raw-memcpy strategy. The reserved[7] padding makes the layout deterministic
-// across compilers (no implicit tail padding surprises).
+// raw-memcpy strategy. The explicit reserved field is application data, not an
+// ABI guarantee: both endpoints must still agree on compiler layout and endian.
 struct SensorReading {
   uint32_t sensor_id;
   double temperature;
@@ -69,32 +69,28 @@ static_assert(vlink::Serializer::get_type_of<std::string>() == vlink::Serializer
 static_assert(vlink::Serializer::get_type_of<SensorReading>() == vlink::Serializer::kStandardType);
 static_assert(vlink::Serializer::get_type_of<int>() == vlink::Serializer::kStandardType);
 
-// Wire format for Bytes: [4-byte length][payload bytes]. Bytes is VLink's
-// shared-ownership byte buffer (ref-counted, supports shallow_copy), so the
-// subscriber receives a zero-copy view of the same underlying storage when
-// the backend is intra-process.
-static void demo_bytes(vlink::MessageLoop* loop) {
+// Wire format for Bytes is the raw payload with no framework length prefix.
+// Ordinary Bytes copies are deep; explicit shallow_copy creates a non-owning
+// alias. Transport delivery may still copy, so this example makes no storage-
+// identity guarantee between publisher and subscriber.
+static void demo_bytes() {
   VLOG_I("--- Bytes (kBytesType) ---");
 
   int received = 0;
-  vlink::Subscriber<vlink::Bytes> sub("intra://example/basic/bytes");
-  sub.attach(loop);
-  // Callback fires on `loop`'s thread once the DDS backend hands the sample
-  // up the stack. Capturing `received` by reference is safe because the loop
-  // is single-threaded and outlives the subscriber.
+  vlink::Subscriber<vlink::Bytes> sub("intra://example/basic/bytes#direct");
+  // #direct invokes the callback synchronously before publish() returns.
   sub.listen([&received](const vlink::Bytes& msg) {
     received++;
     VLOG_I("[Bytes] #", received, " size=", msg.size(), " text=", msg.to_string());
   });
 
-  vlink::Publisher<vlink::Bytes> pub("intra://example/basic/bytes");
-  pub.attach(loop);
+  vlink::Publisher<vlink::Bytes> pub("intra://example/basic/bytes#direct");
 
   // Four publishes exercising different construction paths:
   //   1. from_string -> copy a const char* into a freshly allocated buffer.
   //   2. initializer_list -> raw bytes "Hello".
   //   3. preallocated buffer filled in place (zero-copy fill pattern).
-  //   4. empty Bytes -- valid edge case, wire = 4-byte zero length.
+  //   4. empty Bytes -- valid edge case, represented by an empty payload.
   pub.publish(vlink::Bytes::from_string("Hello VLink Bytes!"));
   pub.publish(vlink::Bytes{0x48, 0x65, 0x6C, 0x6C, 0x6F});
 
@@ -112,28 +108,25 @@ static void demo_bytes(vlink::MessageLoop* loop) {
   VLOG_I("[Bytes] base64=", b64, " decoded=", decoded.to_string(), " crc32=", vlink::Bytes::get_crc_32(sample));
 }
 
-// Wire format for std::string: [4-byte length][UTF-8 bytes, no NUL terminator].
-// Identical layout to Bytes -- the only difference is the trait routing picks
-// kStringType, which forces a deep copy into a fresh std::string on the
-// subscriber side (Bytes can be shared, std::string cannot).
-static void demo_string(vlink::MessageLoop* loop) {
+// Wire format for std::string is its character bytes without a framework
+// length prefix or trailing NUL. The trait routes through kStringType and
+// reconstructs the receiving std::string from the payload size supplied by
+// the transport.
+static void demo_string() {
   VLOG_I("--- std::string (kStringType) ---");
 
   int received = 0;
-  vlink::Subscriber<std::string> sub("intra://example/basic/string");
-  sub.attach(loop);
-  // Listener runs on loop's thread. The string parameter is a fresh allocation
-  // owned by the subscriber stack frame.
+  vlink::Subscriber<std::string> sub("intra://example/basic/string#direct");
+  // The string parameter is valid only for this callback invocation.
   sub.listen([&received](const std::string& msg) {
     received++;
     VLOG_I("[String] #", received, " len=", msg.size(), " text=\"", msg, "\"");
   });
 
-  vlink::Publisher<std::string> pub("intra://example/basic/string");
-  pub.attach(loop);
+  vlink::Publisher<std::string> pub("intra://example/basic/string#direct");
 
   // Five publishes covering: short ASCII, multibyte content, empty, long
-  // single-char payload (length-prefix correctness), and an embedded JSON
+  // single-char payload (payload-length preservation), and an embedded JSON
   // literal with quotes (verifies no in-band escaping is required).
   pub.publish(std::string("Hello, VLink!"));
   pub.publish(std::string("UTF-8 supported"));
@@ -158,23 +151,20 @@ static void demo_string(vlink::MessageLoop* loop) {
 // publisher and subscriber must agree on the exact struct layout (same
 // compiler ABI, same alignment, same field order). Cross-architecture or
 // cross-language interop should prefer Proto/CDR/FlatTable instead.
-static void demo_pod(vlink::MessageLoop* loop) {
+static void demo_pod() {
   VLOG_I("--- POD struct (kStandardType) ---");
 
   int received = 0;
-  vlink::Subscriber<SensorReading> sub("intra://example/basic/pod");
-  sub.attach(loop);
-  // Callback executes on `loop`'s thread; r references a temporary in the
-  // subscriber's deserialization buffer, valid only for the duration of the
-  // callback.
+  vlink::Subscriber<SensorReading> sub("intra://example/basic/pod#direct");
+  // r references a temporary in the subscriber's deserialization buffer,
+  // valid only for the duration of the callback.
   sub.listen([&received](const SensorReading& r) {
     received++;
     VLOG_I("[POD] #", received, " id=", r.sensor_id, " temp=", r.temperature, " humidity=", r.humidity,
            " status=", static_cast<int>(r.status));
   });
 
-  vlink::Publisher<SensorReading> pub("intra://example/basic/pod");
-  pub.attach(loop);
+  vlink::Publisher<SensorReading> pub("intra://example/basic/pod#direct");
 
   SensorReading reading{};
   reading.sensor_id = 42;
@@ -188,21 +178,11 @@ static void demo_pod(vlink::MessageLoop* loop) {
          " serialized_size=", vlink::Serializer::get_serialized_size(reading));
 }
 int main() {
-  vlink::MessageLoop loop;
-
-  // Register all three subscribers + publishers up front. They share the
-  // same loop, so registration and dispatch are serialized.
-  demo_bytes(&loop);
-  demo_string(&loop);
-  demo_pod(&loop);
-
-  // async_run -> wait_for_idle drains all pending publishes (and their
-  // notify callbacks) before we initiate shutdown. 1000 ms is plenty for
-  // local DDS loopback delivery; bump it on slower CI machines if needed.
-  loop.async_run();
-  loop.wait_for_idle(1000);
-  loop.quit();
-  loop.wait_for_quit();
+  // intra:// does not support attach(). #direct keeps each demo synchronous,
+  // so its local endpoints remain alive until every callback has completed.
+  demo_bytes();
+  demo_string();
+  demo_pod();
 
   VLOG_I("=== Basic types demo complete ===");
   return 0;

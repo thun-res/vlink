@@ -8,16 +8,16 @@
 
 | API | 语义 |
 |-----|------|
-| `Getter::set_change_reporting(bool)` | 开启后仅在值真正变化时触发 `listen` 回调，须在 `listen` 前调用 |
+| `Getter::set_change_reporting(bool)` | 开启后抑制序列化字节与上一值相同的回调，须在 `listen` 前调用 |
 | `Getter::get_change_reporting()` | 查询当前是否开启变化上报 |
 | `Getter::wait_for_value(timeout)` | 阻塞等到首次拿到值，超时返回 `false` |
-| `Getter::set_latency_and_lost_enabled(bool)` | 开启端到端延迟 / 丢包统计，须在 `listen` 前调用 |
+| `Getter::set_latency_and_lost_enabled(bool)` | 开启 / 关闭端到端延迟与丢包统计，可在 `listen` 前后切换 |
 | `Getter::get_latency()` | 最近一次回调的端到端延迟（纳秒） |
 | `Getter::get_lost()` | 返回 `SampleLostInfo{ total, lost }` 累计统计 |
 
 ## 🚀 最小示例
 
-变化上报：连续相同的 `set` 不重复触发回调。
+变化上报：连续写入序列化字节相同的值时不重复触发回调。使用 Standard 序列化的结构体应确保 padding / reserved 字节确定。
 
 ```cpp
 vlink::Setter<BrightnessConfig> setter("ddsc://display/brightness");

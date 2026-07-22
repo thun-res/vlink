@@ -41,19 +41,13 @@ void IntraServerImpl::init() {
 
   conf_.hash_code = Helpers::get_hash_code(conf_.event);
 
-  object_ = factory.get_object<Object>({kImplType, conf_.address, conf_.pipeline, type_});
-
-  if (object_->req_resp_map_is_empty()) {
-    object_->add_impl(this);
-
-    object_->traverse_server_connect_callback([](NodeImpl*, const auto& callback) { callback(true); });
-  } else {
-    object_->add_impl(this);
-  }
+  object_ = factory.get_object<Object>({kImplType, conf_.address, conf_.pipeline, type_, conf_.hash_code});
+  object_->add_impl(this);
 }
 
 void IntraServerImpl::deinit() {
   object_->remove_impl(this);
+  is_listened = false;
 
   if (object_->req_resp_map_is_empty()) {
     object_->traverse_server_connect_callback([](NodeImpl*, const auto& callback) { callback(false); });
@@ -91,7 +85,13 @@ bool IntraServerImpl::detach() {
 bool IntraServerImpl::has_clients() const { return !object_->server_connect_map_is_empty(); }
 
 bool IntraServerImpl::listen(ReqRespCallback&& callback) {
+  const bool was_empty = object_->req_resp_map_is_empty();
+
   object_->register_req_resp_callback(this, std::move(callback));
+
+  if VLIKELY (was_empty) {
+    object_->traverse_server_connect_callback([](NodeImpl*, const auto& target_callback) { target_callback(true); });
+  }
 
   return true;
 }

@@ -60,7 +60,7 @@ using namespace std::chrono_literals;  // NOLINT(build/namespaces, google-build-
 //
 // Profiles are registered per-backend (DdsConf / DdscConf / ...). The URL
 // query "?qos=name" then references the registered profile by name. Only
-// DDS-family + Zenoh use QoS; intra/shm/mqtt/someip/fdbus/qnx ignore it.
+// DDS-family + Zenoh use QoS; intra/shm/mqtt/someip/fdbus ignore it.
 // ---------------------------------------------------------------------------
 
 static void print_qos(const vlink::Qos& qos) {
@@ -83,9 +83,9 @@ int main() {
   // ---- Sensor profile: best-effort, shallow history, async publish ----
   // Tuned for high-rate sampled data (lidar/imu/camera): dropping a frame
   // is cheaper than blocking the producer. depth=5 holds a small ring so
-  // late readers see *some* recent samples without unbounded memory.
+  // already-matched readers can absorb a short burst without unbounded memory.
   vlink::Qos sensor_qos;
-  std::strncpy(sensor_qos.name, "sensor", sizeof(sensor_qos.name) - 1);
+  std::strncpy(sensor_qos.name, "custom_sensor", sizeof(sensor_qos.name) - 1);
   sensor_qos.valid = true;
   sensor_qos.reliability.kind = vlink::Qos::Reliability::kBestEffort;
   sensor_qos.history.kind = vlink::Qos::History::kKeepLast;
@@ -98,13 +98,13 @@ int main() {
 
 #ifdef VLINK_SUPPORT_DDS
   // register_qos installs the profile in DdsConf's name table. The URL
-  // "?qos=sensor" then resolves to this Qos struct at attach time. Note
+  // "?qos=custom_sensor" then resolves to this Qos struct at attach time. Note
   // that registration is independent per backend: each transport family
   // has its own register_qos function with its own name space.
-  vlink::DdsConf::register_qos("sensor", sensor_qos);
+  vlink::DdsConf::register_qos("custom_sensor", sensor_qos);
 
-  vlink::Publisher<std::string> pub("dds://sensor/lidar_data?qos=sensor");
-  vlink::Subscriber<std::string> sub("dds://sensor/lidar_data?qos=sensor");
+  vlink::Publisher<std::string> pub("dds://sensor/lidar_data?qos=custom_sensor");
+  vlink::Subscriber<std::string> sub("dds://sensor/lidar_data?qos=custom_sensor");
   // Listener runs on the subscriber's internal dispatch thread (no loop
   // attached in this example -- DDS spins its own).
   sub.listen([](const std::string& msg) { VLOG_I("Received with sensor QoS:", msg); });
@@ -116,13 +116,14 @@ int main() {
 #endif
 
   // ---- Command profile: reliable, KeepAll, transient-local, sync publish ----
-  // Tuned for control messages where every sample MUST be delivered, and
-  // late joiners must see the most recent command. block_time caps how
+  // Tuned for control messages where retransmission is enabled and
+  // late joiners should receive retained commands. block_time caps how
   // long publish() may stall waiting for ACKs before reporting failure.
   // KeepAll without a paired resource_limits would risk OOM in production
-  // -- see qos_history_depth for the safer pattern.
+  // -- production profiles should pair KeepAll with explicit resource_limits;
+  // see doc/05-qos.md for the complete policy fields.
   vlink::Qos cmd_qos;
-  std::strncpy(cmd_qos.name, "command", sizeof(cmd_qos.name) - 1);
+  std::strncpy(cmd_qos.name, "custom_command", sizeof(cmd_qos.name) - 1);
   cmd_qos.valid = true;
   cmd_qos.reliability.kind = vlink::Qos::Reliability::kReliable;
   cmd_qos.reliability.block_time = 500;
@@ -133,20 +134,21 @@ int main() {
   print_qos(cmd_qos);
 
 #ifdef VLINK_SUPPORT_DDS
-  vlink::DdsConf::register_qos("command", cmd_qos);
+  vlink::DdsConf::register_qos("custom_command", cmd_qos);
 
   // Method model (RPC) also honours QoS -- reliability + sync semantics
   // matter even more for request/response than for pub/sub.
-  vlink::Server<std::string, std::string> server("dds://control/brake?qos=command");
+  vlink::Server<std::string, std::string> server("dds://control/brake?qos=custom_command");
   // Server callback runs on the DDS dispatch thread; resp is written in
   // place and returned to the client.
   server.listen([](const std::string& req, std::string& resp) { resp = "ACK:" + req; });
 
-  vlink::Client<std::string, std::string> client("dds://control/brake?qos=command");
+  vlink::Client<std::string, std::string> client("dds://control/brake?qos=custom_command");
 
   if (client.wait_for_connected(2s)) {
-    // invoke() blocks until the server's listen() returns or the QoS
-    // block_time fires.
+    // invoke() blocks until the server's listen() returns. QoS block_time
+    // controls a reliable DDS write when its resource limits are exhausted;
+    // it is not the RPC response timeout.
     auto resp = client.invoke("emergency_stop");
 
     if (resp.has_value()) {
@@ -157,7 +159,7 @@ int main() {
 
   // Registration map per transport.
   VLOG_I("Registration: dds=DdsConf::register_qos, ddsc=DdscConf::register_qos,",
-         " ddsr=DdsrConf::register_qos, ddst=DdstConf::register_qos, zenoh=ZenohConf::register_qos");
+         " ddsr=DdsrConf::register_qos, zenoh=ZenohConf::register_qos");
   VLOG_I("intra/shm/someip/mqtt/fdbus do not use Qos profiles");
 
   return 0;

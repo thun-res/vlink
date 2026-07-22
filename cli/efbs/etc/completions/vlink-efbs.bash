@@ -66,4 +66,4 @@ _vlink_efbs() {
     _vlink_bash_complete_url "$cur"
 }
 
-complete -F _vlink_efbs vlink-efbs efbs
+_vlink_bash_register_completion _vlink_efbs vlink-efbs efbs

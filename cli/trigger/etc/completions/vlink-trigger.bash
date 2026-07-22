@@ -59,4 +59,4 @@ _vlink_trigger() {
     esac
 }
 
-complete -F _vlink_trigger vlink-trigger trigger
+_vlink_bash_register_completion _vlink_trigger vlink-trigger trigger

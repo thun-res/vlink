@@ -278,9 +278,6 @@ TEST_SUITE("impl-Url") {
 #ifdef VLINK_SUPPORT_DDSR
       types.push_back(TransportType::kDdsr);
 #endif
-#ifdef VLINK_SUPPORT_DDST
-      types.push_back(TransportType::kDdst);
-#endif
 #ifdef VLINK_SUPPORT_SOMEIP
       types.push_back(TransportType::kSomeip);
 #endif
@@ -290,20 +287,14 @@ TEST_SUITE("impl-Url") {
 #ifdef VLINK_SUPPORT_FDBUS
       types.push_back(TransportType::kFdbus);
 #endif
-#ifdef VLINK_SUPPORT_QNX
-      types.push_back(TransportType::kQnx);
-#endif
 
       const std::vector<TransportType> all_types{
           TransportType::kIntra,
 #if !defined(__ANDROID__)
-          TransportType::kShm,   TransportType::kShm2,
+          TransportType::kShm,    TransportType::kShm2,
 #endif
-          TransportType::kZenoh, TransportType::kDds,    TransportType::kDdsc, TransportType::kDdsr,
-          TransportType::kDdst,  TransportType::kSomeip, TransportType::kMqtt, TransportType::kFdbus,
-#if defined(__QNX__)
-          TransportType::kQnx,
-#endif
+          TransportType::kZenoh,  TransportType::kDds,  TransportType::kDdsc,  TransportType::kDdsr,
+          TransportType::kSomeip, TransportType::kMqtt, TransportType::kFdbus,
       };
 
       for (const auto type : all_types) {
@@ -522,16 +513,6 @@ TEST_SUITE("impl-Url") {
   TEST_CASE("ddsr url throws when ddsr transport is not linked") { CHECK_THROWS((void)Url("ddsr://namespace/topic")); }
 #endif
 
-#ifdef VLINK_SUPPORT_DDST
-  TEST_CASE("get_transport_type returns kDdst for ddst url") {
-    Url url("ddst://namespace/topic");
-
-    CHECK_EQ(url.get_transport_type(), TransportType::kDdst);
-  }
-#else
-  TEST_CASE("ddst url throws when ddst transport is not linked") { CHECK_THROWS((void)Url("ddst://namespace/topic")); }
-#endif
-
 #ifdef VLINK_SUPPORT_SOMEIP
   TEST_CASE("get_transport_type returns kSomeip for someip url") {
     Url url("someip://namespace/topic");
@@ -564,16 +545,6 @@ TEST_SUITE("impl-Url") {
   TEST_CASE("fdbus url throws when fdbus transport is not linked") {
     CHECK_THROWS((void)Url("fdbus://namespace/topic"));
   }
-#endif
-
-#ifdef VLINK_SUPPORT_QNX
-  TEST_CASE("get_transport_type returns kQnx for qnx url") {
-    Url url("qnx://namespace/topic");
-
-    CHECK_EQ(url.get_transport_type(), TransportType::kQnx);
-  }
-#elif defined(__QNX__)
-  TEST_CASE("qnx url throws when qnx transport is not linked") { CHECK_THROWS((void)Url("qnx://namespace/topic")); }
 #endif
 
   TEST_CASE("is_local_type identifies intra shm and shm2 as local") {
@@ -636,7 +607,6 @@ TEST_SUITE("impl-Url") {
     CHECK_EQ(Url::get_sort_index("ddsf://t"), static_cast<int>(TransportType::kDds));
     CHECK_EQ(Url::get_sort_index("ddsc://t"), static_cast<int>(TransportType::kDdsc));
     CHECK_EQ(Url::get_sort_index("ddsr://t"), static_cast<int>(TransportType::kDdsr));
-    CHECK_EQ(Url::get_sort_index("ddst://t"), static_cast<int>(TransportType::kDdst));
     CHECK_EQ(Url::get_sort_index("someip://t"), static_cast<int>(TransportType::kSomeip));
     CHECK_EQ(Url::get_sort_index("mqtt://t"), static_cast<int>(TransportType::kMqtt));
     CHECK_EQ(Url::get_sort_index("fdbus://t"), static_cast<int>(TransportType::kFdbus));
@@ -672,11 +642,9 @@ TEST_SUITE("impl-Url") {
     CHECK_NE((Url::kEnableAll & Url::kEnableDds), 0);
     CHECK_NE((Url::kEnableAll & Url::kEnableDdsc), 0);
     CHECK_NE((Url::kEnableAll & Url::kEnableDdsr), 0);
-    CHECK_NE((Url::kEnableAll & Url::kEnableDdst), 0);
     CHECK_NE((Url::kEnableAll & Url::kEnableSomeip), 0);
     CHECK_NE((Url::kEnableAll & Url::kEnableMqtt), 0);
     CHECK_NE((Url::kEnableAll & Url::kEnableFdbus), 0);
-    CHECK_NE((Url::kEnableAll & Url::kEnableQnx), 0);
   }
 
   TEST_CASE("individual TransportEnableFlag values are pairwise distinct") {

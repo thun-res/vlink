@@ -81,13 +81,15 @@ TerminalStream::~TerminalStream() noexcept {
 }
 
 void TerminalStream::init() noexcept {
-  bool expected = false;
-
-  if (!initialized_.compare_exchange_strong(expected, true, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+  if (initialized_.load(std::memory_order_acquire)) {
     return;
   }
 
   std::lock_guard lock(mutex_);
+
+  if (initialized_.load(std::memory_order_relaxed)) {
+    return;
+  }
 
   fd_ = VLINK_TERM_STDOUT_FILENO;
 
@@ -105,6 +107,7 @@ void TerminalStream::init() noexcept {
 #endif
 
   is_tty_.store(VLINK_TERM_ISATTY(fd_) != 0, std::memory_order_release);
+  initialized_.store(true, std::memory_order_release);
 }
 
 bool TerminalStream::is_tty() const noexcept { return is_tty_.load(std::memory_order_acquire); }
@@ -213,10 +216,15 @@ TerminalStream& TerminalStream::operator<<(const void* ptr) noexcept {
 
 TerminalStream& TerminalStream::operator<<(ManipType manip) noexcept { return manip(*this); }
 
-TerminalStream& TerminalStream::operator<<(std::ostream& (*)(std::ostream&)) noexcept {
+TerminalStream& TerminalStream::operator<<(std::ostream& (*manip)(std::ostream&)) noexcept {
   std::lock_guard lock(mutex_);
 
-  write_to_buffer("\n", 1);
+  const auto std_flush = static_cast<std::ostream& (*)(std::ostream&)>(&std::flush<char, std::char_traits<char>>);
+
+  if (manip != std_flush) {
+    write_to_buffer("\n", 1);
+  }
+
   flush_unlocked();
 
   return *this;

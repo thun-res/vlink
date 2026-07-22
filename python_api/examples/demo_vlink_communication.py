@@ -82,7 +82,7 @@ nanobind module.
 import threading
 import time
 
-import _vlink_nanobind as _vlink  # type: ignore
+import vlink as _vlink  # type: ignore
 
 
 # ===========================================================================
@@ -94,7 +94,7 @@ def _make_node(cls, url, ser_type=""):
 
     All node types share the same factory pattern: ``cls(url)`` then
     ``init()`` (mandatory).  An optional ``ser_type`` records the
-    serialisation schema name so introspection tools (vlink-dump etc.) can
+    serialisation schema name so introspection tools (vlink-parse etc.) can
     decode payloads.
     """
     node = cls(url)
@@ -159,12 +159,11 @@ def demo_pubsub_bytes():
 def demo_pubsub_vlink_bytes():
     """Tutorial: publish ``vlink.Bytes`` (the VLink-native byte buffer).
 
-    ``vlink.Bytes`` is the C++ side of the wire and exposes shallow_copy /
-    deep_copy / loan semantics that plain Python ``bytes`` cannot.  The
-    binding accepts BOTH types on ``publish`` -- pick whichever fits the
+    ``vlink.Bytes`` is the C++ side of the wire and exposes reusable owned
+    storage plus transport-loan state that plain Python ``bytes`` cannot.
+    The binding accepts BOTH types on ``publish`` -- pick whichever fits the
     surrounding code.  Using ``vlink.Bytes`` matters when:
 
-      * You want to wrap a buffer without copying (``shallow_copy``).
       * You want to reuse a pre-sized buffer (``create(n)``).
       * You are interoperating with a C++ component that produced the
         Bytes already.
@@ -190,8 +189,8 @@ def demo_pubsub_vlink_bytes():
     pub.wait_for_subscribers(timeout_ms=2000)
 
     # --- Publish using vlink.Bytes ----------------------------------------
-    # Construct a vlink.Bytes that owns its memory.  In real code you might
-    # fill it via the C++ side or via shallow_copy(...) from a numpy buffer.
+    # Construct a vlink.Bytes that owns its memory. In real code it may also
+    # arrive from a bound C++ component or a transport loan.
     owned = _vlink.Bytes.create(8)
     pub.publish(owned)
 
@@ -280,7 +279,7 @@ def demo_pubsub_protobuf():
     # --- Publisher side -----------------------------------------------------
     pub = _vlink.Publisher("intra://demo/protobuf")
     # set_ser_type advertises BOTH the fully-qualified message name AND the
-    # schema-type enum.  The latter lets dump tools pick the right decoder.
+    # schema-type enum.  The latter lets parse tools pick the right decoder.
     pub.set_ser_type("pb.Message", _vlink.SchemaType.Protobuf)
     pub.init()
     pub.wait_for_subscribers(timeout_ms=2000)
@@ -1030,10 +1029,12 @@ def demo_rpc_with_zerocopy():
 
     # Synchronous invoke -- response bytes come back inline.
     response_bytes = client.invoke(in_tensor.to_bytes())
+    assert response_bytes is not None, "client: RPC timed out"
 
     # Decode the response as a Tensor.
     out_tensor = _vlink.Tensor()
-    assert out_tensor.from_bytes(response_bytes), "client: response did not parse"
+    response = _vlink.Bytes.from_bytes(response_bytes)
+    assert out_tensor.from_bytes(response), "client: response did not parse"
     assert out_tensor.dtype() == _vlink.Tensor.DataType.Float32
     assert int(out_tensor.num_elements()) == 1 * 3 * 16 * 16
 
@@ -1047,10 +1048,10 @@ def demo_rpc_with_zerocopy():
 # ===========================================================================
 #
 # Field is for state that has a "latest value" -- vehicle speed,
-# parameter values, configuration knobs, etc.  Unlike Publisher /
-# Subscriber, the Field model GUARANTEES the late-joiner sees the
-# most recent value as soon as it attaches, even if no Setter has run
-# since.  Conceptually: a key/value store backed by VLink transport.
+# parameter values, configuration knobs, etc.  Setter caches its current
+# value and Getter caches the most recently received update.  Applications
+# should still wait for endpoint matching before relying on the first value,
+# especially with asynchronous transports.
 #
 # Two reading patterns:
 #   * push:  Getter.listen(callback) -- callback fires on every change
@@ -1104,22 +1105,17 @@ def demo_field_push():
 def demo_field_pull():
     """Tutorial: pull-style Field consumer via ``Getter.get()``.
 
-    The Setter publishes a value; the Getter polls ``get()`` until it
-    sees the latest value.  Useful for late-joiner consumers or anywhere
-    a callback is awkward (e.g. inside a sync function).
-
-    Note: Field model is "latest-value cached", so any Getter started
-    AFTER the Setter has published will still receive the most recent
-    value -- there is no need to start the Getter first.
+    The Getter receives field updates internally, while application code
+    polls ``get()`` instead of registering a user callback.  This is useful
+    anywhere a callback is awkward (for example, inside a sync function).
     """
-    setter = _make_node(_vlink.Setter, "intra://demo/field/config")
-    setter.set(b"max_speed=60")
-
-    # Tiny delay so the value lands before the Getter attaches.
-    time.sleep(0.05)
-
-    # Getter attaches AFTER the Setter -- still sees the cached value.
     getter = _make_node(_vlink.Getter, "intra://demo/field/config")
+    setter = _make_node(_vlink.Setter, "intra://demo/field/config")
+
+    # Allow the in-process endpoints to match before publishing the first
+    # value; Getter.get() itself remains a pull-style application API.
+    time.sleep(0.05)
+    setter.set(b"max_speed=60")
 
     # Poll up to 2 s for the value to become visible.
     deadline = time.time() + 2.0

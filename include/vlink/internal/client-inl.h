@@ -203,10 +203,10 @@ inline std::optional<RespT> Client<ReqT, RespT, SecT>::invoke(const ReqT& req, s
   CpuProfilerGuard profiler_guard(this->impl_->profiler.get());
 #endif
 
-  thread_local auto resp = this->template get_default_value<RespT>();
+  auto resp = this->template get_default_value<RespT>();
 
   if VLIKELY (invoke(req, resp, timeout)) {
-    return std::make_optional<RespT>(resp);
+    return std::make_optional<RespT>(std::move(resp));
   }
 
   return std::nullopt;
@@ -243,7 +243,7 @@ inline bool Client<ReqT, RespT, SecT>::invoke(const ReqT& req, RespCallback&& ca
     }
 
     ret = call_bytes(req_data, [this, callback = std::move(callback)](const Bytes& resp_data) {
-      thread_local auto resp = this->template get_default_value<RespT>();
+      auto resp = this->template get_default_value<RespT>();
 
       if VUNLIKELY (!Serializer::deserialize<kRespType>(resp_data, resp, this->impl_->transport_type)) {
         VLOG_T("Client deserialize failed, url: ", this->impl_->url, ".");
@@ -320,7 +320,7 @@ inline std::future<RespT> Client<ReqT, RespT, SecT>::async_invoke(const ReqT& re
     ret = call_bytes(req_data, [this, target_seq](const Bytes& resp_data) {
       bool convert_success = false;
 
-      thread_local auto resp = this->template get_default_value<RespT>();
+      auto resp = this->template get_default_value<RespT>();
 
       if VLIKELY (Serializer::deserialize<kRespType>(resp_data, resp, this->impl_->transport_type)) {
         convert_success = true;
@@ -334,7 +334,7 @@ inline std::future<RespT> Client<ReqT, RespT, SecT>::async_invoke(const ReqT& re
 
       if VLIKELY (it != future_map_.end()) {
         if VLIKELY (convert_success) {
-          it->second->set_value(resp);
+          it->second->set_value(std::move(resp));
         } else {
           try {
             throw Exception::RuntimeError("Client async_invoke error (Failed to deserialize resp)");

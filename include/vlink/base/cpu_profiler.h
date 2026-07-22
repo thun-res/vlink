@@ -157,7 +157,7 @@ class VLINK_EXPORT CpuProfiler final {
   double restart() noexcept;
 
  private:
-  alignas(64) std::atomic<uint64_t> total_active_{0};
+  std::atomic<uint64_t> total_active_{0};
   ElapsedTimer cpu_active_timer_{ElapsedTimer::kCpuActiveTime, ElapsedTimer::kNano};
   ElapsedTimer cpu_timestamp_timer_{ElapsedTimer::kCpuTimestamp, ElapsedTimer::kNano};
   SpinLock spin_;

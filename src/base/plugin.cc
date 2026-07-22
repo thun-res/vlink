@@ -23,6 +23,9 @@
 
 #include "./base/plugin.h"
 
+#include <algorithm>
+#include <atomic>
+#include <cctype>
 #include <deque>
 #include <filesystem>
 #include <memory>
@@ -30,6 +33,7 @@
 #include <shared_mutex>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 
@@ -69,9 +73,9 @@ namespace vlink {
   }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 }
 
-[[maybe_unused]] static bool check_exists(const std::string& path) {
+[[maybe_unused]] static bool check_regular_file(const std::string& path) {
   try {
-    return std::filesystem::exists(path);
+    return std::filesystem::is_regular_file(path);
   } catch (std::filesystem::filesystem_error&) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     return false;                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -224,7 +228,7 @@ struct PluginEntry final {
 
 // Plugin::Impl
 struct Plugin::Impl final {
-  Logger::Level log_level{Logger::kTrace};
+  std::atomic<Logger::Level> log_level{Logger::kTrace};
   std::shared_mutex mtx;
   std::unordered_map<std::string, std::shared_ptr<PluginEntry>> plugin_map;
 };
@@ -232,9 +236,9 @@ struct Plugin::Impl final {
 // Plugin
 Plugin::Plugin() : impl_(std::make_unique<Impl>()) {}
 
-void Plugin::set_log_level(Logger::Level level) { impl_->log_level = level; }
+void Plugin::set_log_level(Logger::Level level) { impl_->log_level.store(level, std::memory_order_release); }
 
-Logger::Level Plugin::get_log_level() const { return impl_->log_level; }
+Logger::Level Plugin::get_log_level() const { return impl_->log_level.load(std::memory_order_acquire); }
 
 Plugin::~Plugin() = default;
 
@@ -272,16 +276,18 @@ Plugin::Handle Plugin::load_and_create(const std::string& plugin_id, const std::
                                        uint16_t version_major, uint16_t version_minor, const std::string& dir_name,
                                        const std::deque<std::string>& search_paths, const std::string& function_name,
                                        std::shared_ptr<PluginEntry>* plugin_entry) {
+  const auto log_level = impl_->log_level.load(std::memory_order_acquire);
+
   if VUNLIKELY (plugin_id.empty()) {
-    if (impl_->log_level <= Logger::kError) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      VLOG_E("Plugin: Plugin id is empty.");   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    if (log_level <= Logger::kError) {        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      VLOG_E("Plugin: Plugin id is empty.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
     return nullptr;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
   if VUNLIKELY (lib_name.empty()) {
-    if (impl_->log_level <= Logger::kError) {
+    if (log_level <= Logger::kError) {
       VLOG_E("Plugin: Lib name is empty.");
     }
 
@@ -294,7 +300,7 @@ Plugin::Handle Plugin::load_and_create(const std::string& plugin_id, const std::
     std::unique_lock load_lock(impl_->mtx);
 
     if VUNLIKELY (impl_->plugin_map.count(plugin_complex_id) != 0U) {
-      if (impl_->log_level <= Logger::kError) {
+      if (log_level <= Logger::kError) {
         VLOG_E("Plugin: Already loaded (", plugin_complex_id, ").");
       }
 
@@ -305,21 +311,42 @@ Plugin::Handle Plugin::load_and_create(const std::string& plugin_id, const std::
   std::string plugin_path;
 
   {
-    std::string plugin_name = DynamicLibrary::kFilenamePrefix + lib_name + DynamicLibrary::kFilenameSuffix;
-    std::string check_path;
+    bool has_filename_suffix = vlink::Helpers::has_endwith(lib_name, DynamicLibrary::kFilenameSuffix);
+#if defined(_WIN32) || defined(_WIN64)
+    const std::string_view filename_suffix = DynamicLibrary::kFilenameSuffix;
 
-    for (const auto& path : search_paths) {
-      if (dir_name.empty()) {
-        // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-        check_path = path + "/" + plugin_name;
-      } else {
-        // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-        check_path = path + "/" + dir_name + "/" + plugin_name;
+    if (!has_filename_suffix && lib_name.size() >= filename_suffix.size()) {
+      has_filename_suffix =
+          std::equal(filename_suffix.begin(), filename_suffix.end(), lib_name.end() - filename_suffix.size(),
+                     [](unsigned char lhs, unsigned char rhs) { return std::tolower(lhs) == std::tolower(rhs); });
+    }
+#endif
+    const bool has_path_separator = lib_name.find_first_of("/\\") != std::string::npos;
+    const bool path_like = has_path_separator || has_filename_suffix;
+
+    if (path_like) {
+      if (check_regular_file(lib_name)) {
+        plugin_path = has_path_separator ? lib_name : get_current_dir() + "/" + lib_name;
       }
+    } else {
+      std::string plugin_name = DynamicLibrary::kFilenamePrefix + lib_name + DynamicLibrary::kFilenameSuffix;
+      std::string check_path;
 
-      if (check_exists(check_path)) {
-        plugin_path = std::move(check_path);
-        break;
+      for (const auto& path : search_paths) {
+        check_path = path;
+        check_path += '/';
+
+        if (!dir_name.empty()) {
+          check_path += dir_name;
+          check_path += '/';
+        }
+
+        check_path += plugin_name;
+
+        if (check_regular_file(check_path)) {
+          plugin_path = std::move(check_path);
+          break;
+        }
       }
     }
   }
@@ -327,14 +354,14 @@ Plugin::Handle Plugin::load_and_create(const std::string& plugin_id, const std::
   Handle handle = nullptr;
 
   if VUNLIKELY (plugin_path.empty()) {
-    if (impl_->log_level <= Logger::kError) {
+    if (log_level <= Logger::kError) {
       VLOG_E("Plugin: Cannot find plugin (", plugin_complex_id, ").");
     }
 
     return handle;
   }
 
-  if (impl_->log_level <= Logger::kTrace) {
+  if (log_level <= Logger::kTrace) {
     VLOG_T("Plugin: Loading plugin: ", plugin_path, ".");
   }
 
@@ -342,14 +369,14 @@ Plugin::Handle Plugin::load_and_create(const std::string& plugin_id, const std::
     auto entry = std::make_shared<PluginEntry>();
     entry->loader = std::make_unique<DynamicLibrary>(std::move(plugin_path));
     entry->plugin_complex_id = plugin_complex_id;
-    entry->log_level = impl_->log_level;
+    entry->log_level = log_level;
 
     auto create_function =
         entry->loader->get_function<Handle(const char*, const char*, uint16_t, uint16_t, uint8_t)>(function_name);
 
     if VUNLIKELY (!create_function) {
       // LCOV_EXCL_START GCOVR_EXCL_START
-      if (impl_->log_level <= Logger::kError) {
+      if (log_level <= Logger::kError) {
         VLOG_E("Plugin: Cannot find symbol function to create (", plugin_complex_id, ").");
       }
 
@@ -357,17 +384,17 @@ Plugin::Handle Plugin::load_and_create(const std::string& plugin_id, const std::
       // LCOV_EXCL_STOP GCOVR_EXCL_STOP
     }
 
-    handle = create_function(lib_name.c_str(), plugin_id.c_str(), version_major, version_minor, impl_->log_level);
+    handle = create_function(lib_name.c_str(), plugin_id.c_str(), version_major, version_minor, log_level);
 
     if VUNLIKELY (!handle) {
-      if (impl_->log_level <= Logger::kError) {
+      if (log_level <= Logger::kError) {
         VLOG_E("Plugin: Failed to create handle (", plugin_complex_id, ").");
       }
 
       return handle;
     }
 
-    if (impl_->log_level <= Logger::kTrace) {
+    if (log_level <= Logger::kTrace) {
       VLOG_T("Plugin: Loaded successfully (", plugin_complex_id, ").");
     }
 
@@ -391,7 +418,7 @@ Plugin::Handle Plugin::load_and_create(const std::string& plugin_id, const std::
 
     return handle;
   } catch (const DynamicLibrary::Exception& e) {
-    if (impl_->log_level <= Logger::kError) {
+    if (log_level <= Logger::kError) {
       VLOG_E("Plugin: Failed to load plugin (", plugin_complex_id, "): ", e.what(), ".");
     }
 
@@ -400,25 +427,29 @@ Plugin::Handle Plugin::load_and_create(const std::string& plugin_id, const std::
 }
 
 bool Plugin::unload(const std::string& plugin_complex_id) {
+  const auto log_level = impl_->log_level.load(std::memory_order_acquire);
+
   if VUNLIKELY (plugin_complex_id.empty()) {
-    if (impl_->log_level <= Logger::kError) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      VLOG_E("Plugin: Plugin id is empty.");   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    if (log_level <= Logger::kError) {        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      VLOG_E("Plugin: Plugin id is empty.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  if VUNLIKELY (!has_loaded(plugin_complex_id)) {
-    if (impl_->log_level <= Logger::kError) {
+  bool erased = false;
+
+  {
+    std::lock_guard lock(impl_->mtx);
+    erased = impl_->plugin_map.erase(plugin_complex_id) != 0U;
+  }
+
+  if VUNLIKELY (!erased) {
+    if (log_level <= Logger::kError) {
       VLOG_E("Plugin: Not loaded (", plugin_complex_id, ").");
     }
 
     return false;
-  }
-
-  {
-    std::lock_guard lock(impl_->mtx);
-    impl_->plugin_map.erase(plugin_complex_id);
   }
 
   return true;

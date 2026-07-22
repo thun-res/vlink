@@ -84,14 +84,13 @@ int main() {
   sub2.attach(&loop);
   sub2.listen([&count2](const SensorReading&) { count2.fetch_add(1); });
 
-  // set_latency_and_lost_enabled(true) MUST be called BEFORE listen(): it
-  // allocates the per-sample timing buffers and reconfigures the dispatch
-  // path. Calling it after listen() is a no-op (or worse, undefined).
+  // Statistics can be enabled before or after listen(); this example enables
+  // them first so every delivered sample participates.
   vlink::Subscriber<SensorReading> sub3(kUrl);
   sub3.attach(&loop);
   sub3.set_latency_and_lost_enabled(true);
   // Callback runs on the loop thread; get_latency() reads the most-recent
-  // measurement for this delivery in microseconds.
+  // measurement for this delivery in nanoseconds.
   sub3.listen([&sub3, &count3](const SensorReading& msg) {
     count3.fetch_add(1);
     VLOG_I("[sub3] id=", msg.sensor_id, " latency=", sub3.get_latency(), "ns");

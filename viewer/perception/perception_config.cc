@@ -27,7 +27,9 @@
 
 #include <QFileInfo>
 #include <algorithm>
+#include <cstdint>
 #include <fstream>
+#include <limits>
 #include <nlohmann/json.hpp>
 #include <utility>
 
@@ -235,7 +237,15 @@ int json_int_value(const Json& object, std::initializer_list<const char*> keys, 
     return fallback;
   }
 
-  return value->get<int>();
+  if (value->is_number_unsigned()) {
+    const auto number = value->get<std::uint64_t>();
+    return number <= static_cast<std::uint64_t>(std::numeric_limits<int>::max()) ? static_cast<int>(number) : fallback;
+  }
+
+  const auto number = value->get<std::int64_t>();
+  return number >= std::numeric_limits<int>::min() && number <= std::numeric_limits<int>::max()
+             ? static_cast<int>(number)
+             : fallback;
 }
 
 QStringList json_string_list_any(const Json& object, std::initializer_list<const char*> keys) {
@@ -354,11 +364,7 @@ std::vector<QRegularExpression> compiled_regex_list(const QStringList& patterns)
       continue;
     }
 
-    QRegularExpression regex(pattern, QRegularExpression::CaseInsensitiveOption);
-
-    if (regex.isValid()) {
-      out.emplace_back(std::move(regex));
-    }
+    out.emplace_back(pattern, QRegularExpression::CaseInsensitiveOption);
   }
 
   return out;
@@ -370,7 +376,7 @@ bool regex_any_or_empty(const QString& text, const std::vector<QRegularExpressio
   }
 
   for (const auto& regex : patterns) {
-    if (regex.match(text).hasMatch()) {
+    if (regex.isValid() && regex.match(text).hasMatch()) {
       return true;
     }
   }
@@ -391,6 +397,19 @@ bool schema_matches(const QStringList& schemas, const QString& schema) {
   }
 
   return false;
+}
+
+bool encoding_matches(perception::Encoding encoding, vlink::SchemaType schema_type) {
+  switch (encoding) {
+    case perception::Encoding::kProtobuf:
+      return schema_type == vlink::SchemaType::kProtobuf;
+    case perception::Encoding::kFlatbuffers:
+      return schema_type == vlink::SchemaType::kFlatbuffers;
+    case perception::Encoding::kZeroCopy:
+      return schema_type == vlink::SchemaType::kZeroCopy;
+    default:
+      return true;
+  }
 }
 
 bool match_spec_matches(const PerceptionConfig::MatchSpec& spec, const QString& url_text, const QString& ser_text,
@@ -490,9 +509,9 @@ void load_field_mappings(const Json& object, std::vector<perception::FieldMappin
     }
 
     perception::FieldMapping field;
-    field.source = fm.value("source", std::string());
-    field.target = fm.value("target", std::string());
-    field.expression = fm.value("expression", std::string());
+    field.source = json_string_value(fm, {"source"}).toStdString();
+    field.target = json_string_value(fm, {"target"}).toStdString();
+    field.expression = json_string_value(fm, {"expression"}).toStdString();
 
     if (fm.contains("default_value")) {
       field.has_default_value = true;
@@ -1230,6 +1249,10 @@ perception::RenderType PerceptionConfig::detect_render_type(const std::string& u
   const MappingRule* best_mapping = nullptr;
 
   for (const auto& rule : mappings_) {
+    if (!pcd::encoding_matches(rule.encoding, schema_type)) {
+      continue;
+    }
+
     if (!rule.ser_normalized.isEmpty() && !ser_text.contains(rule.ser_normalized)) {
       continue;
     }
@@ -1265,6 +1288,10 @@ const PerceptionConfig::MappingRule* PerceptionConfig::mapping_rule_for(const st
       continue;
     }
 
+    if (!pcd::encoding_matches(rule.encoding, schema_type)) {
+      continue;
+    }
+
     if (!rule.ser_normalized.isEmpty() && !ser_text.contains(rule.ser_normalized)) {
       continue;
     }
@@ -1292,6 +1319,10 @@ std::vector<const PerceptionConfig::MappingRule*> PerceptionConfig::mappings_for
   std::vector<const MappingRule*> out;
 
   for (const auto& rule : mappings_) {
+    if (!pcd::encoding_matches(rule.encoding, schema_type)) {
+      continue;
+    }
+
     if (!rule.ser_normalized.isEmpty() && !ser_text.contains(rule.ser_normalized)) {
       continue;
     }
@@ -1318,6 +1349,10 @@ std::vector<const PerceptionConfig::MappingRule*> PerceptionConfig::hud_bindings
   std::vector<const MappingRule*> out;
 
   for (const auto& rule : hud_bindings_) {
+    if (!pcd::encoding_matches(rule.encoding, schema_type)) {
+      continue;
+    }
+
     if (!rule.ser_normalized.isEmpty() && !ser_text.contains(rule.ser_normalized)) {
       continue;
     }

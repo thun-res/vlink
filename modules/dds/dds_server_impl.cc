@@ -207,6 +207,11 @@ void DdsServerImpl::deinit() {
   topic_req_.reset();
   participant_.reset();
   type_support_req_.reset();
+  std::lock_guard lock(param_mtx_);
+  cdr_id_map_.clear();
+  callback_ = {};
+  is_listened = false;
+  read_session_count_.store(0, std::memory_order_relaxed);
 }
 
 bool DdsServerImpl::suspend() {

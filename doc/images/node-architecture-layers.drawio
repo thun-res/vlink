@@ -111,10 +111,10 @@
         <mxCell id="l4bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="40" y="528" width="920" height="6" as="geometry" />
         </mxCell>
-        <mxCell id="l4t" value="Transport Backend &#160;&#183;&#160; 12 URL schemes" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+        <mxCell id="l4t" value="Transport Backend &#160;&#183;&#160; 10 URL schemes" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="60" y="542" width="400" height="26" as="geometry" />
         </mxCell>
-        <mxCell id="l4list" value="intra &#160;&#183;&#160; shm &#160;&#183;&#160; shm2 &#160;&#183;&#160; dds &#160;&#183;&#160; ddsc &#160;&#183;&#160; ddsr &#160;&#183;&#160; ddst &#160;&#183;&#160; zenoh &#160;&#183;&#160; someip &#160;&#183;&#160; mqtt &#160;&#183;&#160; fdbus &#160;&#183;&#160; qnx" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;arcSize=10;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#e65100;shadow=0;" vertex="1" parent="1">
+        <mxCell id="l4list" value="intra &#160;&#183;&#160; shm &#160;&#183;&#160; shm2 &#160;&#183;&#160; dds &#160;&#183;&#160; ddsc &#160;&#183;&#160; ddsr &#160;&#183;&#160; zenoh &#160;&#183;&#160; someip &#160;&#183;&#160; mqtt &#160;&#183;&#160; fdbus" style="rounded=1;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;arcSize=10;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#e65100;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="60" y="576" width="890" height="34" as="geometry" />
         </mxCell>
 

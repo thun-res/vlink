@@ -128,6 +128,7 @@ class RerunServer final : public MessageLoop {
   static std::string url_to_entity_path(const std::string& url);
 
   Config config_;
+  const uint64_t cache_owner_id_{allocate_cache_owner_id()};
   std::unique_ptr<ProxyBridge> bridge_;
   mutable std::shared_mutex rec_mtx_;
   std::shared_ptr<::rerun::RecordingStream> rec_;

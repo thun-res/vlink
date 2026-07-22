@@ -36,4 +36,4 @@ _vlink_monitor() {
 -h --help -v --version" "$cur"
 }
 
-complete -F _vlink_monitor vlink-monitor monitor
+_vlink_bash_register_completion _vlink_monitor vlink-monitor monitor

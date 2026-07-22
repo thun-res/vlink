@@ -909,23 +909,24 @@ TEST_SUITE("shm-field") {
     }
 
     SUBCASE("listen callback is invoked on set") {
-      std::atomic<bool> notified{false};
-      Bytes cb_val;
+      std::atomic<bool> received_expected{false};
+      const Bytes expected{0xFF, 0x00};
 
       Setter<Bytes> setter(ShmConf("shm/fld/cb1", "val", 0, 0, 1));
       Getter<Bytes> getter("shm://shm/fld/cb1?event=val");
 
-      getter.listen([&](const Bytes& val) {
-        cb_val = val;
-        notified.store(true, std::memory_order_release);
-      });
+      getter.listen([&](const Bytes& val) { received_expected.store(val == expected, std::memory_order_release); });
 
-      std::this_thread::sleep_for(100ms);
-      setter.set(Bytes{0xFF, 0x00});
+      CHECK(common_test::wait_until(
+          [&] {
+            if (received_expected.load(std::memory_order_acquire)) {
+              return true;
+            }
 
-      CHECK(common_test::wait_until([&notified] { return notified.load(std::memory_order_acquire); }, 5s));
-      REQUIRE(cb_val.size() == 2u);
-      CHECK(cb_val[0] == 0xFF);
+            setter.set(expected);
+            return received_expected.load(std::memory_order_acquire);
+          },
+          5s));
     }
 
     SUBCASE("change reporting suppresses duplicate values") {

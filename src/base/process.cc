@@ -406,10 +406,10 @@ static void run_windows_write(WindowsWriteContext* context) {
 
 // Process::Impl
 struct Process::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding)
-  alignas(64) std::atomic<Process::State> state{Process::kNotRunningState};
-  alignas(64) std::atomic<Process::ExitStatus> exit_status{Process::kNormalExitStatus};
-  alignas(64) std::atomic<Process::Error> error{Process::kNoError};
-  alignas(64) std::atomic<Process::Mode> mode{Process::kSeparateMode};
+  std::atomic<Process::State> state{Process::kNotRunningState};
+  std::atomic<Process::ExitStatus> exit_status{Process::kNormalExitStatus};
+  std::atomic<Process::Error> error{Process::kNoError};
+  std::atomic<Process::Mode> mode{Process::kSeparateMode};
 
   std::atomic<int> exit_code{-1};
   std::atomic<bool> exit_processed{false};
@@ -2657,8 +2657,13 @@ bool Process::start_program(const std::string& program, const std::vector<std::s
 
   if (mode != kForwardedMode && mode != kForwardedOutputMode) {
     if (impl_->stdout_pipe[1] >= 0) {
+      const int stdout_write = impl_->stdout_pipe[1];
       ::close(impl_->stdout_pipe[1]);
       impl_->stdout_pipe[1] = -1;
+
+      if (impl_->stderr_pipe[1] == stdout_write) {
+        impl_->stderr_pipe[1] = -1;
+      }
     }
   }
 

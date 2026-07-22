@@ -43,7 +43,7 @@
  *      | inbound frame                          |
  *      |--------------------------------------> |
  *      |                                        |  Serializer::deserialize
- *      |                                        |  (thread-local scratch)
+ *      |                                        |  (per-delivery local value)
  *      |                                        |
  *      |                                        |  optional MessageLoop hop
  *      |                                        |
@@ -61,8 +61,12 @@
  * | FlatBuffers ptr   | @c MyTable*                      | @c kFlatPtrType     | Zero-copy view of buffer.      |
  * | DDS CDR           | type with @c deserialize(Cdr&)   | @c kCdrType         | DDS fast path.                 |
  * | POD struct        | trivial standard-layout type     | @c kStandardType    | @c sizeof(T) byte copy.        |
- * | UTF-8 text        | @c std::string                   | @c kStringType      | Length-prefixed.               |
+ * | String            | @c std::string                   | @c kStringType      | Payload-sized byte string.     |
  * | Custom            | type with @c operator>>/<<       | @c kCustomType      | User-supplied codec.           |
+ *
+ * Raw Protobuf pointer receivers allocate a distinct message in the bound
+ * Arena for each delivery; that storage remains until the Arena is reset or
+ * destroyed.
  *
  * @par Basic Listen Example
  * @code
@@ -99,11 +103,13 @@
  * auto stats = sub.get_lost();
  * @endcode
  *
- * @warning The deserialised callback argument is backed by @c thread_local
- *          scratch storage and is overwritten on the next delivery.  Copy
- *          the value before storing it outside the callback scope.  This
- *          warning does not apply to @c Bytes or @c IntraData arguments,
- *          which are owned by value or by shared pointer.
+ * @warning For value message types, the deserialised callback argument is a
+ *          per-delivery local object whose reference is valid only for the
+ *          callback duration.  Pointer-view types may instead refer to an
+ *          external buffer or arena and follow that storage's lifetime.
+ *          Copy retained values into explicitly owned storage.  Copying
+ *          @c Bytes creates owned storage, and copying an @c IntraData shared
+ *          pointer extends that object's lifetime.
  *
  * @note Calling @c listen() more than once is a fatal error.  The subscriber
  *       must be initialised (either by @c InitType::kWithInit or by explicit
@@ -130,8 +136,8 @@ namespace vlink {
  *
  * @details
  * Inherits the full @c Node API and adds receive-specific operations:
- * @c listen() to register the user callback, manual-unloan control for
- * zero-copy back-ends, and latency / sample-loss tracking.  The transport
+ * @c listen() to register the user callback and latency / sample-loss
+ * tracking.  The transport
  * implementation (@c SubscriberImpl) is selected by the URL scheme or by
  * the typed configuration object supplied at construction time.
  *
@@ -201,10 +207,12 @@ class Subscriber : public Node<SubscriberImpl, SecT> {
    * @c IntraDataType shared pointer the value is forwarded zero-copy and
    * no deserialisation occurs.
    *
-   * @warning The argument reference points at @c thread_local scratch
-   *          memory that is reused across invocations.  Copy the data before
-   *          stashing it outside the callback.  This restriction does not
-   *          apply to @c Bytes or @c IntraData payloads.
+   * @warning The argument reference is valid only for the duration of the
+   *          callback.  Value messages use per-delivery local storage, while
+   *          pointer-view messages and @c Bytes may refer to external storage.
+   *          Copy retained values into explicitly owned storage; copying
+   *          @c Bytes creates owned storage, and copying an @c IntraData shared
+   *          pointer extends that object's lifetime.
    *
    * @note Calling @c listen() more than once is fatal.  The subscriber must
    *       be initialised before the first call to @c listen().
@@ -213,18 +221,6 @@ class Subscriber : public Node<SubscriberImpl, SecT> {
    * @return          @c true if the callback was installed successfully.
    */
   bool listen(MsgCallback&& callback);
-
-  /**
-   * @brief Enables or disables manual-unloan mode for zero-copy receives.
-   *
-   * @details
-   * In manual-unloan mode the user must call @c return_loan() after consuming
-   * each delivered buffer.  Only relevant on loan-capable transports
-   * (@c shm://, Zenoh with SHM, etc.).
-   *
-   * @param manual_unloan  @c true to enable manual return; @c false for auto-return.
-   */
-  void set_manual_unloan(bool manual_unloan) override;
 
   /**
    * @brief Toggles per-message latency and sample-loss measurement.

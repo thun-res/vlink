@@ -108,7 +108,7 @@ inline bool Subscriber<MsgT, SecT>::listen(MsgCallback&& callback) {
 
       callback(data);
     } else {
-      thread_local auto msg = this->template get_default_value<MsgT>();
+      auto msg = this->template get_default_value<MsgT>();
 
       if VUNLIKELY (!Serializer::deserialize<kMsgType>(data, msg, this->impl_->transport_type)) {
         VLOG_T("Subscriber deserialize failed, url: ", this->impl_->url, ".");
@@ -118,12 +118,6 @@ inline bool Subscriber<MsgT, SecT>::listen(MsgCallback&& callback) {
       callback(msg);
     }
   });
-}
-
-template <typename MsgT, SecurityType SecT>
-inline void Subscriber<MsgT, SecT>::set_manual_unloan(bool manual_unloan) {
-  this->impl_->set_manual_unloan(manual_unloan);
-  this->is_manual_unloan_ = manual_unloan;
 }
 
 template <typename MsgT, SecurityType SecT>

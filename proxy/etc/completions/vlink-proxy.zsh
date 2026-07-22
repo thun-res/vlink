@@ -37,12 +37,12 @@ _vlink-proxy() {
         '(-c --iox_config)'{-c,--iox_config}'=[Iceoryx config]:file:_files -g "*.toml"' \
         '(-l --iox_strategy)'{-l,--iox_strategy}'=[Iceoryx memory strategy]:level:(1 2 3)' \
         '(-m --iox_monitoring)'{-m,--iox_monitoring}'=[Iceoryx monitoring]:mode:(on off)' \
-        '--dds_impl=[DDS implementation transport]:impl:(dds ddsc ddsr ddst)' \
+        '--dds_impl=[DDS implementation transport]:impl:(dds ddsc ddsr)' \
         '*--runnable=[Load runnable plugins]:plugin:' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '(-v --version)'{-v,--version}'[Show version]'
 }
 
 if (( $+functions[compdef] )); then
-    compdef _vlink-proxy vlink-proxy proxy
+    _vlink_zsh_register_completion _vlink-proxy vlink-proxy proxy
 fi

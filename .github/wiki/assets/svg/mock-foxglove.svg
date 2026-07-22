@@ -219,7 +219,6 @@
     <tspan fill="#00e5b0">● bridge OK</tspan>
     <tspan dx="12">8.4 MB/s</tspan>
     <tspan dx="12">ws://:8765</tspan>
-    <tspan dx="12">rerun: serve :9876</tspan>
   </text>
   <text x="706" y="411" text-anchor="end" fill="#5A6687" font-size="10.5" font-family="'JetBrains Mono',monospace">vlink-foxglove</text>
 </svg>

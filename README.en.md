@@ -8,9 +8,9 @@
 
 English | [中文](README.md) · [Website](https://vlink.work) · [Documentation](doc/00-overview.md)
 
-VLink is a high-performance C++17 communication middleware for autonomous driving and embodied intelligence, positioned as a full-scenario alternative to ROS 2. A single type-safe API covers intra-process, shared-memory, automotive-Ethernet, and cross-machine communication, reducing a backend change to editing a URL prefix while application code stays untouched.
+VLink is high-performance communication middleware for autonomous driving and embodied intelligence, positioned as a full-scenario alternative to ROS 2. A single type-safe API covers intra-process, shared-memory, automotive-Ethernet, and cross-machine communication. The URL selects the backend; switching may require backend-specific addressing and parameters, while the communication primitives and main application logic remain unchanged.
 
-The current release supports 12 transport backends, 14 serialization formats, 3 communication models with 6 core primitives, plus security, recording/playback, service discovery, 10 CLI tools, and Foxglove / Rerun visualization bridges.
+The current release supports 10 transport backends, 14 serialization formats, 3 communication models with 6 core primitives, plus security, recording/playback, service discovery, 10 CLI tools, and Foxglove / Rerun visualization bridges.
 
 ![VLink architecture](doc/images/readme-architecture.png)
 
@@ -18,17 +18,17 @@ The current release supports 12 transport backends, 14 serialization formats, 3 
 
 ## 🧩 Core Abstraction: the URL as a Communication Contract
 
-VLink's entire design centers on one abstraction: a communication is defined by a model, a URL, and a core method; the backend is an implementation detail of the URL prefix and is invisible to application logic.
+VLink's design centers on one abstraction: a communication is defined by a model, a URL, and a core method. The URL scheme selects the backend, while the complete URL carries that backend's address and parameters.
 
 ```
 <scheme>://<topic_name>[?params]
 ```
 
-The `scheme` selects the backend; switching backends requires only changing the prefix, leaving application code unchanged:
+The `scheme` selects the backend. Topic-style backends with compatible addressing can usually be switched by changing the scheme while preserving the communication primitive and message-handling logic; specialized backends such as SOME/IP, MQTT, and FDBUS also require their own valid address and query parameters:
 
 ```cpp
 vlink::Publisher<Imu> pub("intra://sensor/imu");  // intra-process
-vlink::Publisher<Imu> pub("shm://sensor/imu");    // same-host zero-copy
+vlink::Publisher<Imu> pub("shm://sensor/imu");    // same-host shared memory (loan-capable)
 vlink::Publisher<Imu> pub("dds://sensor/imu");    // cross-machine
 ```
 
@@ -90,12 +90,10 @@ getter.listen([](const Status& s) { use(s); });
 | `ddsc://` | CycloneDDS | cross-machine | no | stable |
 | `shm2://` | Iceoryx2 | same-host | yes | beta |
 | `ddsr://` | RTI Connext | cross-machine | no | beta |
-| `ddst://` | domestic DDS | cross-machine | no | beta |
 | `zenoh://` | Zenoh | cross-machine / edge | conditional | beta |
 | `someip://` | vsomeip | automotive Ethernet | no | beta |
 | `mqtt://` | Paho MQTT | cloud | no | beta |
 | `fdbus://` | FDBus | same-host | no | beta |
-| `qnx://` | QNX IPC | same-host (QNX) | no | beta |
 
 URL syntax, query parameters, and per-backend notes are in [Transport Backends and URL](doc/04-transport.md).
 
@@ -160,7 +158,7 @@ The following is a 16-part learning path, best read in order.
 
 | Document | Content |
 | --- | --- |
-| [4. Transport and URL](doc/04-transport.md) | 12 backends and URL specification |
+| [4. Transport and URL](doc/04-transport.md) | 10 backends and URL specification |
 | [5. QoS](doc/05-qos.md) | quality-of-service policies and profiles |
 | [6. Zero-Copy](doc/06-zerocopy.md) | loan interface and perception data containers |
 | [7. Security](doc/07-security.md) | message-level encryption and key management |
@@ -214,7 +212,7 @@ VLink automatically runs benchmarks and coverage analysis on every release and p
 vlink/
 ├── include/vlink/   public headers (6 primitives + base library + extensions + zero-copy)
 ├── src/             core library implementation
-├── modules/         12 transport backend implementations
+├── modules/         10 transport backend implementations
 ├── cli/             10 command-line tools
 ├── proxy/           ProxyServer / ProxyAPI
 ├── viewer/          Qt desktop visualization tools

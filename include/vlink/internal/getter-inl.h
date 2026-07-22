@@ -127,6 +127,8 @@ inline bool Getter<ValueT, SecT>::wait_for_value(std::chrono::milliseconds timeo
 
 template <typename ValueT, SecurityType SecT>
 inline bool Getter<ValueT, SecT>::listen(MsgCallback&& callback) {
+  std::lock_guard lock(mtx_);
+
   if VUNLIKELY (this->impl_->is_listened) {
     VLOG_F("Getter has already been listened.");
     return false;
@@ -143,12 +145,6 @@ template <typename ValueT, SecurityType SecT>
 inline void Getter<ValueT, SecT>::set_change_reporting(bool enable) {
   std::lock_guard lock(mtx_);
   change_reporting_ = enable;
-}
-
-template <typename ValueT, SecurityType SecT>
-inline void Getter<ValueT, SecT>::set_manual_unloan(bool manual_unloan) {
-  this->impl_->set_manual_unloan(manual_unloan);
-  this->is_manual_unloan_ = manual_unloan;
 }
 
 template <typename ValueT, SecurityType SecT>
@@ -188,6 +184,8 @@ inline bool Getter<ValueT, SecT>::init() {
     CpuProfilerGuard profiler_guard(this->impl_->profiler.get());
 #endif
 
+    bool has_callback = false;
+
     {
       std::lock_guard lock(mtx_);
 
@@ -198,10 +196,12 @@ inline bool Getter<ValueT, SecT>::init() {
 
         last_cache_ = data;
       }
+
+      has_callback = static_cast<bool>(callback_);
     }
 
     if constexpr (std::is_same_v<ValueT, Bytes>) {
-      if VLIKELY (callback_) {
+      if VLIKELY (has_callback) {
         callback_(data);
       }
 
@@ -216,14 +216,14 @@ inline bool Getter<ValueT, SecT>::init() {
       cv_.notify_all();
 
     } else {
-      thread_local auto value = this->template get_default_value<ValueT>();
+      auto value = this->template get_default_value<ValueT>();
 
       if VUNLIKELY (!Serializer::deserialize<kValueType>(data, value, this->impl_->transport_type)) {
         VLOG_T("Getter deserialize failed, url: ", this->impl_->url, ".");
         return;
       }
 
-      if VLIKELY (callback_) {
+      if VLIKELY (has_callback) {
         callback_(value);
       }
 
@@ -232,7 +232,7 @@ inline bool Getter<ValueT, SecT>::init() {
 
         has_value_notification_ = true;
 
-        value_.emplace(value);
+        value_.emplace(std::move(value));
       }
 
       cv_.notify_all();
@@ -244,7 +244,10 @@ inline bool Getter<ValueT, SecT>::init() {
 
 template <typename ValueT, SecurityType SecT>
 inline void Getter<ValueT, SecT>::interrupt() {
-  Node<GetterImpl, SecT>::interrupt();
+  {
+    std::lock_guard lock(mtx_);
+    Node<GetterImpl, SecT>::interrupt();
+  }
 
   cv_.notify_all();
 }

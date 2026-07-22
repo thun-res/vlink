@@ -384,7 +384,19 @@ TEST_SUITE("zerocopy-OccupancyGrid") {
   TEST_CASE("deep_copy from raw pointer rejects self buffer and resizes owned storage") {
     zerocopy::OccupancyGrid og;
     REQUIRE(og.create(16));
-    CHECK_FALSE(og.deep_copy(const_cast<uint8_t*>(og.data()), og.size()));
+    auto* original = const_cast<uint8_t*>(og.data());
+    original[0] = 0xA5u;
+    CHECK_FALSE(og.shallow_copy(original + 1, og.size() - 1));
+    CHECK_FALSE(og.deep_copy(original + 1, og.size() - 1));
+    CHECK_FALSE(og.deep_copy(original, og.size()));
+    CHECK(og.is_owner());
+    CHECK_EQ(og.data(), original);
+    CHECK_EQ(og.data()[0], 0xA5u);
+
+    zerocopy::OccupancyGrid borrowed;
+    REQUIRE(borrowed.shallow_copy(original, og.size()));
+    CHECK_FALSE(og.shallow_copy(borrowed));
+    CHECK_FALSE(og.deep_copy(borrowed));
 
     std::vector<uint8_t> larger(128);
     fill_pattern(larger.data(), larger.size(), 0x51u);
@@ -560,6 +572,9 @@ TEST_SUITE("zerocopy-OccupancyGrid") {
     CHECK((src >> wire));
     CHECK(zerocopy::OccupancyGrid::check_valid(wire));
     CHECK_EQ(wire.size(), src.get_serialized_size());
+    uintptr_t serialized_pointer = 1;
+    std::memcpy(&serialized_pointer, wire.data() + 8u + 40u, sizeof(serialized_pointer));
+    CHECK_EQ(serialized_pointer, 0u);
 
     zerocopy::OccupancyGrid dst;
     CHECK((dst << wire));

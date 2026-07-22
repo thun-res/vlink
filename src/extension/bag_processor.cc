@@ -25,7 +25,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -33,16 +32,20 @@
 #include <utility>
 
 #include "./base/condition_variable.h"
-#include "./base/elapsed_timer.h"
 #include "./base/logger.h"
 
 namespace vlink {
 
 // BagProcessor::Impl
 struct BagProcessor::Impl final {
+  enum class Request : uint8_t {
+    kNone = 0,
+    kFlush = 1,
+    kReset = 2,
+  };
+
   struct CacheEntry final {
     int64_t data_timestamp{0};
-    int64_t enqueue_time{0};
     Frame frame;
     bool data_timestamp_valid{false};
   };
@@ -62,7 +65,7 @@ struct BagProcessor::Impl final {
   int64_t last_output_timestamp{0};
 
   std::atomic_bool quit_flag{false};
-  bool flush_request{false};
+  Request request{Request::kNone};
   bool last_resolved_data_timestamp_valid{false};
   bool timestamp_anchor_valid{false};
   bool output_timestamp_valid{false};
@@ -124,8 +127,6 @@ void BagProcessor::push(int64_t data_timestamp, const Frame& frame) {
     return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  const int64_t enqueue_time = ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMicro);
-
   bool data_timestamp_valid = true;
 
   if (data_timestamp < 0) {
@@ -152,12 +153,16 @@ void BagProcessor::push(int64_t data_timestamp, const Frame& frame) {
 
   impl_->current_size += frame.data.size();
 
-  Impl::CacheEntry entry{data_timestamp, enqueue_time, frame, data_timestamp_valid};
+  Impl::CacheEntry entry{data_timestamp, frame, data_timestamp_valid};
 
   auto iter = std::upper_bound(impl_->data_queue.begin(), impl_->data_queue.end(), entry,
                                [](const Impl::CacheEntry& candidate, const Impl::CacheEntry& queued) {
                                  if (candidate.data_timestamp_valid != queued.data_timestamp_valid) {
                                    return !candidate.data_timestamp_valid;
+                                 }
+
+                                 if (!candidate.data_timestamp_valid) {
+                                   return candidate.frame.timestamp < queued.frame.timestamp;
                                  }
 
                                  return candidate.data_timestamp < queued.data_timestamp;
@@ -174,18 +179,48 @@ void BagProcessor::flush() {
     return;
   }
 
-  impl_->flush_request = true;
+  impl_->cv.wait(lock, [this]() -> bool {
+    return impl_->request == Impl::Request::kNone || impl_->quit_flag.load(std::memory_order_acquire);
+  });
+
+  if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
+    return;
+  }
+
+  impl_->request = Impl::Request::kFlush;
 
   impl_->cv.notify_all();
 
   impl_->cv.wait(lock, [this]() -> bool {
-    return !impl_->flush_request || impl_->quit_flag.load(std::memory_order_acquire);
+    return impl_->request == Impl::Request::kNone || impl_->quit_flag.load(std::memory_order_acquire);
   });  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+}
 
-  if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
-    return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+void BagProcessor::reset() {
+  std::unique_lock lock(impl_->mtx);
+
+  if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire) || !impl_->thread.joinable()) {
+    return;
   }
 
+  impl_->cv.wait(lock, [this]() -> bool {
+    return impl_->request == Impl::Request::kNone || impl_->quit_flag.load(std::memory_order_acquire);
+  });
+
+  if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
+    return;
+  }
+
+  impl_->request = Impl::Request::kReset;
+
+  impl_->cv.notify_all();
+
+  impl_->cv.wait(lock, [this]() -> bool {
+    return impl_->request == Impl::Request::kNone || impl_->quit_flag.load(std::memory_order_acquire);
+  });  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+}
+
+void BagProcessor::reset_timeline() {
   impl_->last_data_timestamp = 0;
   impl_->last_timestamp = 0;
   impl_->data_timestamp_anchor = 0;
@@ -206,15 +241,17 @@ bool BagProcessor::on_check() {
   }
 
   const int64_t min_cache_time = impl_->config.min_cache_time * 1000;
+  const auto& oldest = impl_->data_queue.front();
+  const auto& newest = impl_->data_queue.back();
 
-  if (impl_->data_queue.back().data_timestamp - impl_->data_queue.front().data_timestamp >= min_cache_time) {
+  if (oldest.data_timestamp_valid != newest.data_timestamp_valid) {
     return true;
   }
 
-  const int64_t cache_elapsed = static_cast<int64_t>(ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMicro)) -
-                                impl_->data_queue.front().enqueue_time;
+  const int64_t oldest_timestamp = oldest.data_timestamp_valid ? oldest.data_timestamp : oldest.frame.timestamp;
+  const int64_t newest_timestamp = newest.data_timestamp_valid ? newest.data_timestamp : newest.frame.timestamp;
 
-  return cache_elapsed >= min_cache_time;
+  return newest_timestamp - oldest_timestamp >= min_cache_time;
 }
 
 void BagProcessor::on_output(std::unique_lock<std::mutex>& lock, bool at_end) {
@@ -228,16 +265,17 @@ void BagProcessor::on_output(std::unique_lock<std::mutex>& lock, bool at_end) {
     bool should_output = flush_all;
 
     if (!should_output) {
-      const int64_t timestamp_span = impl_->data_queue.back().data_timestamp - impl_->data_queue.front().data_timestamp;
+      const auto& oldest = impl_->data_queue.front();
+      const auto& newest = impl_->data_queue.back();
 
-      if (timestamp_span >= min_cache_time) {
-        should_output =
-            impl_->data_queue.front().data_timestamp <= impl_->data_queue.back().data_timestamp - min_cache_time;
+      if (oldest.data_timestamp_valid != newest.data_timestamp_valid) {
+        should_output = true;
       } else {
-        const int64_t cache_elapsed = static_cast<int64_t>(ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMicro)) -
-                                      impl_->data_queue.front().enqueue_time;
+        const int64_t oldest_timestamp = oldest.data_timestamp_valid ? oldest.data_timestamp : oldest.frame.timestamp;
+        const int64_t newest_timestamp = newest.data_timestamp_valid ? newest.data_timestamp : newest.frame.timestamp;
+        const int64_t timestamp_span = newest_timestamp - oldest_timestamp;
 
-        should_output = cache_elapsed >= min_cache_time;
+        should_output = timestamp_span >= min_cache_time && oldest_timestamp <= newest_timestamp - min_cache_time;
       }
 
       if (!should_output) {
@@ -295,54 +333,27 @@ void BagProcessor::on_exec(bool at_end) {
 
   if VLIKELY (!at_end) {
     impl_->cv.wait(lock, [this]() -> bool {
-      return !impl_->data_queue.empty() || impl_->quit_flag.load(std::memory_order_acquire) || impl_->flush_request;
+      return impl_->quit_flag.load(std::memory_order_acquire) || impl_->request != Impl::Request::kNone || on_check();
     });
 
     if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
       return;
     }
 
-    if VUNLIKELY (impl_->flush_request) {
-      on_output(lock, true);
+    if VUNLIKELY (impl_->request != Impl::Request::kNone) {
+      if (impl_->request == Impl::Request::kFlush) {
+        on_output(lock, true);
+      } else {
+        impl_->data_queue.clear();
+        impl_->current_size = 0;
+      }
 
-      impl_->flush_request = false;
+      reset_timeline();
+      impl_->request = Impl::Request::kNone;
 
       impl_->cv.notify_all();
 
       return;
-    }
-  }
-
-  if VLIKELY (!at_end) {
-    if (!on_check()) {
-      const int64_t min_cache_time = impl_->config.min_cache_time * 1000;
-      const int64_t cache_elapsed = static_cast<int64_t>(ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMicro)) -
-                                    impl_->data_queue.front().enqueue_time;
-      const int64_t wait_time = min_cache_time - cache_elapsed;
-
-      if (wait_time > 0) {
-        impl_->cv.wait_for(lock, std::chrono::microseconds(wait_time), [this]() -> bool {
-          return impl_->quit_flag.load(std::memory_order_acquire) || impl_->flush_request || on_check();
-        });
-      }
-
-      if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
-        return;
-      }
-
-      if VUNLIKELY (impl_->flush_request) {
-        on_output(lock, true);
-
-        impl_->flush_request = false;
-
-        impl_->cv.notify_all();
-
-        return;
-      }
-
-      if (!on_check()) {
-        return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
     }
   }
 

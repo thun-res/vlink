@@ -31,7 +31,7 @@ if [ -f "$VLINK_FBS_DIR_CONFIG" ]; then
     echo "VLINK_FBS_DIR: $VLINK_FBS_DIR"
 fi
 
-echo -e "Support commands: [proxy] [info] [monitor] [bag] [trigger] [list] [eproto] [efbs] [dump] [check] [bench] [viewer] [player] [analyzer] [webviz]"
+echo -e "Support commands: [proxy] [info] [monitor] [bag] [trigger] [list] [eproto] [efbs] [parse] [check] [bench] [viewer] [player] [analyzer] [webviz]"
 echo -e ""
 
 [[ "$PATH" != *"$VLINK_ROOT_DIR/bin"* ]] && export PATH="$VLINK_ROOT_DIR/bin:$PATH"

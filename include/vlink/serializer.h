@@ -49,16 +49,15 @@
  * | @c kFlatPtrType     | Pointer to @c flatbuffers::Table    | @c is_flat_ptr_type     | Zero-copy FlatBuffers view. |
  * | @c kFlatBuilderType | Has @c fbb_ member and @c Finish()  | @c is_flat_builder_type | FlatBuffers builder.        |
  * | @c kCustomType      | Has @c operator>>/<<(Bytes&)        | @c is_custom_type       | User-supplied codec.        |
- * | @c kStringType      | @c T == @c std::string              | @c is_string_type       | UTF-8 string.               |
- * | @c kCharsType       | String-constructible (not @c string)| @c is_chars_type        | C string / @c char*.        |
- * | @c kStreamType      | Streamable via @c std::stringstream | @c is_stream_type       | Reached only as fallback.   |
- * | @c kStandardType    | Trivial standard-layout value (POD) | @c is_standard_type     | @c sizeof(T) byte copy.     |
- * | @c kStandardPtrType | Pointer to trivial standard-layout  | @c is_standard_ptr_type | Zero-copy POD pointer.      |
+ * | @c kStringType      | @c T == @c std::string              | @c is_string_type       | Payload-sized byte string.  |
+ * | @c kCharsType       | Pointer/array of non-volatile char   | @c is_chars_type        | Serialisation only. | | @c
+ * kStreamType      | Streamable via @c std::stringstream | @c is_stream_type       | Reached only as fallback.   | | @c
+ * kStandardType    | Trivial standard-layout value (POD) | @c is_standard_type     | @c sizeof(T) byte copy.     | | @c
+ * kStandardPtrType | Pointer to trivial standard-layout  | @c is_standard_ptr_type | Zero-copy POD pointer.      |
  *
  * Most value-like detectors unwrap @c std::shared_ptr\<T\> before matching
  * (e.g. Protobuf values, CDR values, FlatBuffers native tables, custom
  * codecs, strings, stream types, and standard-layout values).
- *
  * @par Detection Precedence Flow
  * @verbatim
  *   get_type_of<T>() probes traits in this fixed order; first match wins:
@@ -162,8 +161,8 @@ enum Type : uint8_t {
   kFlatTableType = 7,     ///< FlatBuffers NativeTable (object API).
   kFlatPtrType = 8,       ///< Pointer to @c flatbuffers::Table (zero-copy view).
   kFlatBuilderType = 9,   ///< FlatBuffers builder (@c fbb_ + @c Finish()).
-  kStringType = 10,       ///< @c std::string -- UTF-8 text.
-  kCharsType = 11,        ///< C string / @c char*.
+  kStringType = 10,       ///< @c std::string payload bytes; no text-encoding validation.
+  kCharsType = 11,        ///< C string serialisation; deserialise as @c std::string.
   kStreamType = 12,       ///< Stream-serialisable via @c std::stringstream.
   kStandardType = 13,     ///< Trivial standard-layout struct (POD value).
   kStandardPtrType = 14,  ///< Pointer to trivial standard-layout struct (POD pointer).
@@ -173,9 +172,11 @@ enum Type : uint8_t {
  * @brief Reports whether @p type identifies a usable codec.
  *
  * @details
- * @c kUnknownType is the only unsupported value.  This function is invoked
- * from the @c static_assert in every primitive constructor so unsupported
- * message types fail at compile time with a clear diagnostic.
+ * @c kUnknownType is the only unsupported value.  Support may be directional:
+ * @c kCharsType supports C-string serialisation but requires @c std::string on
+ * the deserialisation side.  This function is invoked from the @c static_assert
+ * in every primitive constructor so unknown message types fail at compile time
+ * with a clear diagnostic.
  *
  * @param type  Codec enumerator.
  * @return      @c false only for @c kUnknownType.
@@ -306,11 +307,13 @@ static bool serialize(const T& src, Bytes& des);
  * @brief Serialises into transport-provided storage when available.
  *
  * @details
- * When @p use_loan is true, @p loan is called with the available size hint and
- * may return either loaned or owning storage.  FlatBuilder sources are finished
+ * When @p use_loan is true and a non-zero size hint is available, @p loan is
+ * called and may return either loaned or owning storage.  A zero hint falls
+ * back to normal owning serialisation.  FlatBuilder sources are finished
  * before requesting their exact-size destination, including when that request
  * subsequently fails.  Other codecs use @c get_serialized_size() followed by
- * the normal @c serialize() path.
+ * the normal @c serialize() path.  A non-zero size hint requires storage of
+ * exactly that size.  A codec must not replace transport-loaned storage.
  *
  * @tparam TypeT  Codec kind.
  * @tparam T       C++ message type.
@@ -332,6 +335,9 @@ static bool serialize_to_transport(const T& src, Bytes& des, TransportType trans
  * @details
  * @p transport activates transport-specific fast paths (e.g. @c kDds
  * dereferences a CDR pointer stored in @p src instead of copying bytes).
+ * @c kCharsType destinations are rejected because a raw pointer cannot carry
+ * ownership of the required null-terminated storage.  Use @c std::string for
+ * deserialisation.
  *
  * @tparam TypeT       Codec kind.
  * @tparam T           C++ message type.
@@ -507,10 +513,17 @@ template <typename T>
 [[nodiscard]] static constexpr bool is_string_type() noexcept;
 
 /**
- * @brief Reports whether @c std::string is constructible from @c T (but @c T is not @c string).
+ * @brief Reports whether @c T is a pointer or array of non-volatile @c char.
  *
  * @details
- * Matches @c char*, @c const char*, and string literal types.
+ * Matches @c char*, @c const char*, and string literal source types for
+ * serialisation.  Deserialisation into a raw character pointer is rejected
+ * because the pointer cannot own the decoded storage; use @c std::string as
+ * the destination.  The trait deliberately excludes other string-like types
+ * such as @c std::string_view because the chars codec requires a null-terminated
+ * source when serialising.  Arrays must contain a null terminator within their
+ * extent; pointer callers must guarantee that a terminator is reachable.  Bytes
+ * after the first terminator are ignored.
  *
  * @tparam T  Type to test.
  * @return    @c true for C-string-compatible types.

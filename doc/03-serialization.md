@@ -33,21 +33,23 @@
 | 消息类型 | 自动编码 | 关键约束 | 适用场景 |
 | --- | --- | --- | --- |
 | POD 结构体（`SensorData`） | 内存直拷 | 两端结构体定义须完全一致；不跨字节序 | 同机高频、结构固定、追求极致开销 |
-| POD 指针（`LargeFrame*`） | 零拷贝 | 大块 POD（相机帧、点云）经 `shm://` 跨进程零拷贝 | 大消息同机传递 |
+| POD 指针（`LargeFrame*`） | 指针内容视图 | 避免 serializer 中间 owning 分配；SHM 发布仍复制一次进 transport loan | 大消息同机单拷贝传递 |
 | FlatBuffers 对象（`MyMsgT`） | FlatBuffers | NativeTable Object API，读写均便利 | 高性能结构化消息、需向前兼容 |
 | FlatBuffers 表指针（`const MyMsg*`） | FlatBuffers（零拷贝只读） | 指针指向接收缓冲区，仅在回调内有效 | 高性能只读路径 |
 | FlatBuffers builder（含 `fbb_` + `Finish()`） | FlatBuffers | 直接发布手工构建的 builder，序列化时完成构建并按最终大小申请目标缓冲 | 自管缓冲区的高性能写入路径 |
 | Protobuf 消息（`MyMsg`） | Protobuf 二进制 | 需由 `.proto` 生成代码 | 跨语言、字段随版本演进 |
-| Protobuf 指针（`MyMsg*`） | Protobuf 二进制 | 配合 Arena 分配，降低高频发布的内存管理开销 | 高频发布大量消息 |
+| Protobuf 指针（`MyMsg*`） | Protobuf 二进制 | 调用方管理发送指针；框架创建接收或响应对象前须先 `bind_proto_arena()`，每次投递在 Arena 中分配独立对象 | 高频收发大量消息 |
 | `vlink::Bytes` | 原始字节直传 | 框架不解释其结构 | 透明代理、私有二进制协议、原始帧 |
-| `std::string` / `const char*` | 文本直传 | UTF-8 文本 | 日志、命令字符串 |
+| `std::string` / `const char*` | 文本直传 | `std::string` 支持收发；`const char*` / `char[]` 仅支持发送 | 日志、命令字符串 |
 | 自定义类型（重载 `operator>>`/`<<`） | 用户编解码 | 字段顺序须严格对应，见 [3.5](#-35-自定义序列化器) | 自有紧凑布局、带外信息 |
 | DDS IDL 类型（`MyMsg`） | CDR | 需注册 TypeSupport，见 [3.6](#-36-dds-cdr-与-dynamicdata) | 与外部 DDS 系统互操作 |
 | `vlink::DynamicData` | 类型名标签 + 已序列化负载 | 运行期按类型名标签选择编解码，无需编译期固定消息类型，见 [3.6](#-36-dds-cdr-与-dynamicdata) | 监控、协议桥接 |
 
 判据的取舍要点：POD 提供最低开销，但不携带版本信息且不跨字节序；FlatBuffers 与 Protobuf 以编码开销换取结构演进能力；`Bytes` 不解释内容，适合协议透传。后端选择与 URL 写法见 [传输后端](04-transport.md)；面向感知的零拷贝容器见 [零拷贝](06-zerocopy.md)。
 
-传输后端集成可调用公开的 `Serializer::serialize_to_transport<TypeT>()`：`use_loan=true` 时，回调至多按序列化大小请求一次目标 `Bytes`，返回值既可以是真实 loan，也可以是 owning storage。普通应用仍应使用 Publisher、Client、Server 或 Setter，由框架自动选择该路径。builder 类型在进入该路径后会完成构建，即使目标分配失败也应使用新 builder 重试。
+发送字符指针时，调用方必须保证其可访问到 NUL；字符数组必须在数组边界内包含 NUL。两者都只序列化首个 NUL 之前的字节。接收端不能使用 `char*` 或 `const char*`，因为指针本身不拥有反序列化存储；接收文本必须使用 `std::string`。
+
+传输后端集成可调用公开的 `Serializer::serialize_to_transport<TypeT>()`：`use_loan=true` 且存在非零 size hint 时，回调至多按序列化大小请求一次目标 `Bytes`，返回值既可以是真实 loan，也可以是 owning storage；返回值必须与 hint 大小完全相同，codec 不得替换 transport loan。size hint 为 0 时不请求 loan，直接回退到 owning 序列化。普通应用仍应使用 Publisher、Client、Server 或 Setter，由框架自动选择该路径。builder 类型在进入该路径后会完成构建，即使目标分配失败也应使用新 builder 重试。
 
 ---
 
@@ -82,6 +84,8 @@ auto* state = google::protobuf::Arena::Create<example::VehicleState>(&arena);
 state->set_speed(80.0f);
 pub.publish(state);
 ```
+
+框架需要创建裸 Protobuf 指针对象时必须先调用 `bind_proto_arena()`：这包括 `Subscriber` 的 `MsgT`、`Server` 的 `ReqT` / `RespT`、`Client` 的 `RespT` 和 `Getter` 的 `ValueT`。`Subscriber` / `Server` 应在 `listen()` 前绑定，`Client` 应在首次调用前绑定；`Getter` 建议以 `InitType::kWithoutInit` 构造，绑定后再 `init()`。框架会为每次投递创建独立消息，避免嵌套或并发回调覆盖同一对象；消息占用的存储会保留到调用方 reset 或销毁 Arena。完整节点说明见 [通信模型](02-communication.md#-225-属性配置与查询)。
 
 ---
 
@@ -141,7 +145,7 @@ sub.listen([](const SensorData& d) {
 });
 ```
 
-边界条件：POD 不携带任何版本或结构元信息，发布端与订阅端的字段顺序与大小必须完全一致，且不做字节序转换，因此不适用于跨架构（大小端不同）通信。大块 POD 应以 `MyStruct*` + `shm://` 走跨进程零拷贝。
+边界条件：POD 不携带任何版本或结构元信息，发布端与订阅端的字段顺序与大小必须完全一致，且不做字节序转换，因此不适用于跨架构（大小端不同）通信。`MyStruct*` 可避免 serializer 的中间 owning 分配，但普通 SHM 发布仍会把数据复制进 transport loan；发布端真正就地写池内存须使用 `Publisher<Bytes>::loan()`。
 
 `vlink::Bytes` 原样传输字节内容，框架不解释其结构，适合透明代理与私有协议：
 
@@ -178,28 +182,48 @@ void operator<<(const vlink::Bytes& in);   // 从 in 还原自身（解码）
 ```cpp
 #include "vlink/vlink.h"
 #include <cstring>
+#include <limits>
 
 struct MyCustomProtocol {
   uint16_t cmd{0};
   std::vector<uint8_t> payload;
 
-  void operator>>(vlink::Bytes& out) const {
+  bool operator>>(vlink::Bytes& out) const {
+    if (payload.size() > std::numeric_limits<uint32_t>::max()) {
+      return false;
+    }
     uint32_t n = static_cast<uint32_t>(payload.size());
     out = vlink::Bytes::create(sizeof(cmd) + sizeof(n) + payload.size());
+
+    if (out.empty()) {
+      return false;
+    }
 
     uint8_t* p = out.data();
     std::memcpy(p, &cmd, sizeof(cmd)); p += sizeof(cmd);
     std::memcpy(p, &n, sizeof(n)); p += sizeof(n);
-    std::memcpy(p, payload.data(), payload.size());
+    if (!payload.empty()) {
+      std::memcpy(p, payload.data(), payload.size());
+    }
+    return true;
   }
 
-  void operator<<(const vlink::Bytes& in) {
+  bool operator<<(const vlink::Bytes& in) {
+    constexpr size_t kHeaderSize = sizeof(cmd) + sizeof(uint32_t);
+    if (in.size() < kHeaderSize || in.data() == nullptr) {
+      return false;
+    }
+
     const uint8_t* p = in.data();
     std::memcpy(&cmd, p, sizeof(cmd)); p += sizeof(cmd);
 
     uint32_t n = 0;
     std::memcpy(&n, p, sizeof(n)); p += sizeof(n);
+    if (static_cast<size_t>(n) != in.size() - kHeaderSize) {
+      return false;
+    }
     payload.assign(p, p + n);
+    return true;
   }
 };
 
@@ -277,6 +301,7 @@ vlink::Publisher<BadMsg> pub("shm://bad");  // 编译失败：<MsgT> is not a su
 | --- | --- |
 | POD 跨架构字节序 | 内存直拷不做字节序转换；大小端不同的机器间通信应改用 Protobuf / FlatBuffers / CDR，或在自定义序列化器内显式处理字节序 |
 | FlatBuffers 零拷贝指针生命期 | `const MyMsg*` 指向接收缓冲区，回调返回后即失效；需在回调外保留时先 `s->UnPack()` 拷成 Object |
+| C 字符串方向性 | `const char*` / `char[]` 只支持序列化；反序列化为字符指针会失败，接收端应声明为 `std::string` |
 | 自定义序列化器字段对齐 | 写入与读取的字段顺序必须严格对应，`operator<<` 读取前须校验 `in.size()` 合法性 |
 | 流式回退编码 | 若类型对 `std::stringstream` 同时重载了 `<<`/`>>`（且非上述任一类型族），框架会以文本流作为兜底编码，而非编译失败；需要紧凑二进制时应改用 [3.5](#-35-自定义序列化器) 的 `operator>>`/`<<(Bytes&)` |
 

@@ -40,6 +40,8 @@ set_target_properties(
              RUNTIME_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
 )
 
+configure_file(vlink.py "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/vlink.py" COPYONLY)
+
 install(TARGETS _vlink_nanobind LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/python)
 
 install(FILES vlink.py DESTINATION ${CMAKE_INSTALL_LIBDIR}/python)

@@ -36,6 +36,7 @@ namespace vlink {
 
 std::ostream& operator<<(std::ostream& os, const Uint128& value) noexcept {
   std::ios_base::fmtflags f(os.flags());
+  char fill = os.fill();
 
   os << "0x" << std::uppercase << std::hex << std::setfill('0');
 
@@ -46,6 +47,7 @@ std::ostream& operator<<(std::ostream& os, const Uint128& value) noexcept {
   }
 
   os.flags(f);
+  os.fill(fill);
 
   return os;
 }

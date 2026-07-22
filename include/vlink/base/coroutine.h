@@ -1700,6 +1700,12 @@ inline Task<void> exec(MessageLoop& loop, const Schedule::Config& config, Callba
     }
   });
 
+  if (config.schedule_timeout_ms > 0) {
+    status.on_schedule_timeout([promise_ptr]() {
+      promise_ptr->set_exception(std::make_exception_ptr(std::runtime_error("Coroutine::exec: schedule timeout")));
+    });
+  }
+
   if VUNLIKELY (!status.dispatch()) {
     promise_ptr->set_exception(std::make_exception_ptr(std::runtime_error("Coroutine::exec: exec_task post failed")));
   }

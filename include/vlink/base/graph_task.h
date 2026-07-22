@@ -496,6 +496,8 @@ class VLINK_EXPORT GraphTask final : public std::enable_shared_from_this<GraphTa
 
   bool mark_predecessor_satisfied(bool active, bool* has_active);
 
+  void mark_ready(bool enable);
+
   void update_status(Status status);
 
   bool detect_cycle(const GraphTask* task, std::unordered_set<const GraphTask*>& visited,

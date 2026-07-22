@@ -35,7 +35,7 @@ namespace vlink {
 class ZenohGetterImpl final : public GetterImpl {
  public:
   using Object = ZenohSubscriber;
-  static constexpr uint8_t kImplType = kSubscriber | kGetter;
+  static constexpr uint8_t kImplType = kGetter;
 
   explicit ZenohGetterImpl(const ZenohConf& conf);
 
@@ -47,6 +47,8 @@ class ZenohGetterImpl final : public GetterImpl {
   bool suspend() override;
 
   bool resume() override;
+
+  bool is_suspend() const override;
 
   const Conf* get_conf() const override;
 

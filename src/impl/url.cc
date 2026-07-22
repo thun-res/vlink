@@ -88,10 +88,6 @@ namespace vlink {
     return TransportType::kDdsr;
   }
 
-  if (str == "ddst") {
-    return TransportType::kDdst;
-  }
-
   if (str == "someip") {
     return TransportType::kSomeip;
   }
@@ -103,13 +99,6 @@ namespace vlink {
   if (str == "fdbus") {
     return TransportType::kFdbus;
   }
-
-#if defined(__QNX__)
-
-  if (str == "qnx") {
-    return TransportType::kQnx;
-  }
-#endif
 
   return TransportType::kUnknown;
 }
@@ -127,16 +116,11 @@ namespace vlink {
     return TransportType::kDdsr;
   }
 
-  if (str == "ddst") {
-    return TransportType::kDdst;
-  }
-
   return TransportType::kUnknown;
 }
 
 [[maybe_unused]] inline static bool is_dds_type(const TransportType& transport) noexcept {
-  return transport == TransportType::kDds || transport == TransportType::kDdsc || transport == TransportType::kDdsr ||
-         transport == TransportType::kDdst;
+  return transport == TransportType::kDds || transport == TransportType::kDdsc || transport == TransportType::kDdsr;
 }
 
 [[maybe_unused]] inline static const char* get_module_for_transport(TransportType type) noexcept {
@@ -165,9 +149,6 @@ namespace vlink {
     case TransportType::kDdsr:
       return "ddsr";
 
-    case TransportType::kDdst:
-      return "ddst";
-
     case TransportType::kSomeip:
       return "someip";
 
@@ -176,12 +157,6 @@ namespace vlink {
 
     case TransportType::kFdbus:
       return "fdbus";
-
-#if defined(__QNX__)
-
-    case TransportType::kQnx:
-      return "qnx";
-#endif
 
     default:
       return nullptr;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -232,10 +207,6 @@ namespace vlink {
     return static_cast<int>(TransportType::kDdsr);
   }
 
-  if (Helpers::has_startwith(url, "ddst://")) {
-    return static_cast<int>(TransportType::kDdst);
-  }
-
   if (Helpers::has_startwith(url, "someip://")) {
     return static_cast<int>(TransportType::kSomeip);
   }
@@ -247,13 +218,6 @@ namespace vlink {
   if (Helpers::has_startwith(url, "fdbus://")) {
     return static_cast<int>(TransportType::kFdbus);
   }
-
-#if defined(__QNX__)
-
-  if (Helpers::has_startwith(url, "qnx://")) {
-    return static_cast<int>(TransportType::kQnx);
-  }
-#endif
 
   return 0;
 }

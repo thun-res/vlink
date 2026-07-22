@@ -77,11 +77,9 @@
  * | @c dds://      | FastDDS (CDR)                     | Standards-compliant DDS distribution   |
  * | @c ddsc://     | CycloneDDS                        | CycloneDDS-based deployments           |
  * | @c ddsr://     | RTI Connext DDS                   | RTI-licensed deployments               |
- * | @c ddst://     | TravoDDS                          | TravoDDS-based deployments             |
- * | @c zenoh://    | Eclipse Zenoh                     | Pub/sub-storage-query, edge to cloud   |
+ * | @c zenoh://    | Eclipse Zenoh                     | Pub/sub and query/reply, edge to cloud |
  * | @c someip://   | SOME/IP                           | Automotive AUTOSAR adaptive services   |
  * | @c fdbus://    | FDBus                             | Linux/Android service bus              |
- * | @c qnx://      | QNX native IPC                    | QNX safety-critical platforms          |
  * | @c mqtt://     | MQTT                              | Telemetry to cloud brokers             |
  *
  * @par Quick-start Example -- one process, three models

@@ -1,6 +1,6 @@
 [
   {
-    "_comment": "Example 1: Protobuf time sync - extract timestamp_ns and set vlink_time timeline",
+    "_comment": "Protobuf: send_time tags the logged TextLog row with vlink_time; it is not a standalone event",
     "ser": "system.proto.TimeSync",
     "converter": "send_time",
     "encoding": "protobuf",
@@ -8,19 +8,33 @@
     "timestamp_unit": "ns"
   },
   {
-    "_comment": "Example 2: Protobuf time sync - extract microsecond timestamp field",
-    "ser": "system.proto.TimeSyncUs",
-    "converter": "send_time",
+    "ser": "system.proto.TimeSync",
+    "archetype": "TextLog",
     "encoding": "protobuf",
-    "timestamp_field": "system_time_us",
-    "timestamp_unit": "us"
+    "field_mappings": [
+      {
+        "target": "message",
+        "default_value": "time sync"
+      }
+    ]
   },
   {
-    "_comment": "Example 3: FlatBuffers time sync - extract nested timestamp field",
+    "_comment": "FlatBuffers: pair send_time with an archetype mapping for the same message",
     "ser": "system.TimeSyncFbs",
     "converter": "send_time",
     "encoding": "flatbuffers",
     "timestamp_field": "header.timestamp_ns",
     "timestamp_unit": "ns"
+  },
+  {
+    "ser": "system.TimeSyncFbs",
+    "archetype": "TextLog",
+    "encoding": "flatbuffers",
+    "field_mappings": [
+      {
+        "target": "message",
+        "default_value": "time sync"
+      }
+    ]
   }
 ]

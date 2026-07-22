@@ -1377,24 +1377,19 @@ void ShmSubscriber::process_message() {
             }
           }
 
-          bool called = false;
-
-          traverse_msg_callback([channel, &msg_bytes, &called](NodeImpl* impl, const auto& callback) {
+          traverse_msg_callback([channel, &msg_bytes](NodeImpl* impl, const auto& callback) {
             const auto* conf_ptr = impl->get_target_conf<ShmConf>();
 
             if (static_cast<uint64_t>(conf_ptr->hash_code) != channel) {
               return;
             }
 
-            called = true;
             callback(msg_bytes);
           });
 
-          if VLIKELY (!manual_unloan_.load(std::memory_order_relaxed) || !called) {
-            sub_->release(read_msg);
-            if (sem_) {
-              sem_->release();
-            }
+          sub_->release(read_msg);
+          if (sem_) {
+            sem_->release();
           }
         })
         .or_else([](auto& e) { VLOG_E("ShmFactory: Failed to take sample, error: ", e, "."); });
@@ -1404,29 +1399,6 @@ void ShmSubscriber::process_message() {
 void ShmSubscriber::subscribe() { sub_->subscribe(); }
 
 void ShmSubscriber::unsubscribe() { sub_->unsubscribe(); }
-
-void ShmSubscriber::set_manual_unloan(bool manual_unloan) {
-  manual_unloan_.store(manual_unloan, std::memory_order_relaxed);
-}
-
-bool ShmSubscriber::release(const Bytes& bytes) {
-  if VUNLIKELY (!bytes.is_loaned()) {
-    return false;
-  }
-
-  if VUNLIKELY (!manual_unloan_.load(std::memory_order_relaxed)) {
-    VLOG_F("ShmFactory: Manual release is not supported without manual_unloan mode.");
-    return false;
-  }
-
-  sub_->release(const_cast<uint8_t*>(bytes.data()) - ShmFactory::get_loaned_offset());
-
-  if (sem_) {
-    sem_->release();
-  }
-
-  return true;
-}
 
 void ShmSubscriber::set_latency_and_lost_enabled(bool enable) {
   is_latency_and_lost_enabled_.store(enable, std::memory_order_release);

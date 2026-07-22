@@ -9,7 +9,7 @@
         <mxCell id="title" value="QoS Reliability Modes" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=22;fontStyle=1;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="40" y="20" width="820" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="subtitle" value="BestEffort (low latency, drops allowed)  vs  Reliable (guaranteed delivery, ACK/NACK)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#1976d2;shadow=0;" vertex="1" parent="1">
+        <mxCell id="subtitle" value="BestEffort (low latency, drops allowed)  vs  Reliable (retransmission / ACK-NACK until success or timeout)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#1976d2;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="40" y="54" width="820" height="22" as="geometry" />
         </mxCell>
 
@@ -75,7 +75,7 @@
         <mxCell id="re_a1" value="send" style="endArrow=block;endFill=1;html=1;strokeColor=#1976d2;strokeWidth=2.2;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#1976d2;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;shadow=0;" edge="1" parent="1" source="re_pub" target="re_tr">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="re_a2" value="confirmed delivery" style="endArrow=block;endFill=1;html=1;strokeColor=#1976d2;strokeWidth=2.2;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#1976d2;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;shadow=0;" edge="1" parent="1" source="re_tr" target="re_sub2">
+        <mxCell id="re_a2" value="delivery with retransmission" style="endArrow=block;endFill=1;html=1;strokeColor=#1976d2;strokeWidth=2.2;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#1976d2;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;shadow=0;" edge="1" parent="1" source="re_tr" target="re_sub2">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="re_ack" value="ACK / NACK" style="endArrow=block;endFill=1;html=1;strokeColor=#388e3c;strokeWidth=2.2;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1b5e20;labelBackgroundColor=#ffffff;dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=1;entryY=0.5;shadow=0;" edge="1" parent="1" source="re_sub2" target="re_tr">
@@ -87,7 +87,7 @@
           </mxGeometry>
         </mxCell>
 
-        <mxCell id="re_note" value="Guaranteed delivery - used for RPC, commands, configuration" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
+        <mxCell id="re_note" value="Loss recovery attempted - useful for RPC, commands, configuration" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="480" y="460" width="360" height="44" as="geometry" />
         </mxCell>
 

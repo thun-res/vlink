@@ -8,7 +8,7 @@ VLink 方法模型（Method Model）的最小可运行示例：Server 在某个 
 |-----|------|
 | `vlink::Server<Req, Resp>` | 服务端节点，构造时传 URL |
 | `Server::listen(cb)` | 注册同步处理回调 `void(const Req&, Resp&)`，原地填 `resp` 即自动回发 |
-| `Server::attach(loop)` | 将回调派发到指定 `MessageLoop`（须在 `listen` 之前调用） |
+| URL fragment `#direct` | `intra://` 在调用线程内同步派发请求回调 |
 | `vlink::Client<Req, Resp>` | 客户端节点，构造时传 URL |
 | `Client::wait_for_connected()` | 阻塞直到 Server 可达 |
 | `Client::invoke(req)` | 同步 RPC，返回 `std::optional<Resp>`，超时/失败为 `nullopt` |
@@ -16,13 +16,12 @@ VLink 方法模型（Method Model）的最小可运行示例：Server 在某个 
 ## ⚙️ 最小示例
 
 ```cpp
-vlink::Server<CalcRequest, CalcResponse> server("intra://hello/rpc");
-server.attach(&loop);  // 须在 listen() 之前
+vlink::Server<CalcRequest, CalcResponse> server("intra://hello/rpc#direct");
 server.listen([](const CalcRequest& req, CalcResponse& resp) {
   resp.result = req.a + req.b;  // 原地填响应，返回后框架自动回发
 });
 
-vlink::Client<CalcRequest, CalcResponse> client("intra://hello/rpc");
+vlink::Client<CalcRequest, CalcResponse> client("intra://hello/rpc#direct");
 client.wait_for_connected();
 auto resp = client.invoke(CalcRequest{10, 3, '+'});  // 同步阻塞，返回 optional
 if (resp.has_value()) { VLOG_I("10 + 3 = ", resp->result); }
@@ -34,13 +33,13 @@ if (resp.has_value()) { VLOG_I("10 + 3 = ", resp->result); }
 ./build/output/bin/example_hello_rpc   # 预期输出 [server]/[client] 10 + 3 = 13
 ```
 
-`intra://` 无需环境变量。若输出 `invoke failed`，多半是 Server 尚未 `listen` 就发起了调用——`wait_for_connected()` 仅检查传输连接，不保证回调已注册。
+`intra://` 无需环境变量且不支持 `Node::attach()`；`#direct` 让本示例的 Server handler 在 `invoke()` 调用线程内执行。若输出 `invoke failed`，应检查 Server 是否已构造并完成 `listen()`。
 
 ## 🔀 何时用 / 换哪个模型
 
 - 需要对端**明确返回**才能继续 → 用本模型（Method）。多种 `invoke` 形态见 [`method_sync`](../../communication/method_sync/)。
 - 只广播不要应答 → Event 模型（[`hello_pubsub`](../hello_pubsub/)）；只同步「最新值」→ Field 模型（[`hello_field`](../hello_field/)）。
-- 换后端只改 URL 前缀：`dds://`、`zenoh://`、`someip://` 等，业务代码不变。
+- 换后端时，`dds://`、`zenoh://` 等地址模型兼容的后端可保留 `hello/rpc`；SOME/IP 须改为合法的 service/instance/method URL。Client/Server 调用逻辑不变。
 
 ## 🔗 参考
 

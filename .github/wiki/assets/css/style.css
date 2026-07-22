@@ -318,8 +318,10 @@ a:hover { color: var(--brand-300); }
   display: grid; grid-template-columns: 1.1fr 1fr; gap: 60px;
   align-items: center;
 }
+.hero-inner > * { min-width: 0; }
 .hero-kicker {
   display: inline-flex; align-items: center; gap: 10px;
+  flex-wrap: wrap; max-width: 100%;
   padding: 6px 14px; border-radius: 999px;
   border: 1px solid var(--line-strong);
   background: rgba(52,90,246,0.08);
@@ -428,7 +430,7 @@ a:hover { color: var(--brand-300); }
   shape-rendering: geometricPrecision;
 }
 
-/* Special accent: QNX (safety-certified automotive OS) */
+/* Special accent: QNX platform */
 .hero-os .os-chip-safety {
   border-color: rgba(255, 209, 102, 0.48);
   background: rgba(255, 209, 102, 0.1);
@@ -619,7 +621,7 @@ a:hover { color: var(--brand-300); }
   background: linear-gradient(180deg, var(--brand-300), var(--brand-500));
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
 }
-/* "+" suffix for animated counters marked as .count-plus (e.g. 12+ transports). */
+/* "+" suffix for animated counters marked as .count-plus (e.g. 10+ transports). */
 .num-item .big.count-plus::after {
   content: "+"; font-size: 0.6em; vertical-align: 0.45em;
   margin-left: 2px;
@@ -640,7 +642,7 @@ a:hover { color: var(--brand-300); }
           a glowing gradient border, and large bold titles. These read as
           hero cards — the "why you want this".
    ——————— dashed divider with sub-heading ———————
-   Row 2: 12 plain-bordered transport cards — the catalogue of backends.
+   Row 2: 10 plain-bordered transport cards — the catalogue of backends.
    The stylistic gap between the two rows is intentional. */
 .unified-benefits {
   list-style: none; padding: 0; margin: 0 0 40px;
@@ -1683,11 +1685,12 @@ html[lang="ja-JP"] .cli-tab .desc { font-size: 9.5px; line-height: 1.3; }
 @media (max-width: 860px) { .footer-inner { grid-template-columns: 1fr 1fr; } }
 
 /* =============== Reveal on scroll =============== */
-.reveal {
+.reveal { opacity: 1; transform: none; }
+.reveal.reveal-pending {
   opacity: 0; transform: translateY(24px);
   transition: opacity .7s cubic-bezier(.2,.7,.3,1), transform .7s cubic-bezier(.2,.7,.3,1);
 }
-.reveal.in { opacity: 1; transform: translateY(0); }
+.reveal.reveal-pending.in { opacity: 1; transform: translateY(0); }
 .reveal.d1  { transition-delay: 0.05s; }
 .reveal.d2  { transition-delay: 0.12s; }
 .reveal.d3  { transition-delay: 0.2s; }

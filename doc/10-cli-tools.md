@@ -2,7 +2,7 @@
 
 VLink 在通信原语之外随库交付一套完整的命令行工具链（`vlink-*` 前缀），用于在不修改业务代码的前提下对运行中的系统进行发现、监控、录制、调试与性能评估。该层最轻量、可脚本化、零图形依赖，适合终端排障与 CI 对接。需要本地图形化预览图像、点云、目标检测，或经浏览器远程协作的可视化能力，见 [可视化工具](11-visualization.md)。
 
-命令行工具与桌面、Web 可视化层共享同一套底层观测设施：服务发现枚举活跃话题，代理层（ProxyAPI / `vlink-proxy`）聚合话题、序列化类型与统计信息。因此工具对传输后端（`intra://` / `shm://` / `dds://` 等）一律透明——业务侧更换后端只改 URL 前缀，工具侧无需任何改动。
+命令行工具与桌面、Web 可视化层共享同一套观测设施：启用了 `DiscoveryReporter` 的进程向观测面上报节点，代理层（ProxyAPI / `vlink-proxy`）再聚合 URL、序列化类型与统计信息；这与各后端自身的数据面发现不是同一机制。工具侧通常无需随 topic 后端改代码，但业务 URL 必须满足目标后端契约：`intra://` / `shm://` / `dds://` 等兼容地址可只换 scheme，SOME/IP 等专用寻址须重写完整 URL，并部署相应运行时。
 
 ![CLI 工具生态](images/cli-tools-overview.png)
 
@@ -20,7 +20,7 @@ VLink 在通信原语之外随库交付一套完整的命令行工具链（`vlin
 | 命令行 | `vlink-monitor` | 实时监控话题的频率、速率、丢包率与时延 |
 | 命令行 | `vlink-bag` | 录制、回放与运维消息数据包 |
 | 命令行 | `vlink-trigger` | 内存触发录制（EDR）：后台滚动缓冲，事件触发落盘触发点前后窗口 |
-| 命令行 | `vlink-dump` | 从话题或 bag 提取字段，导出 CSV/JSON/图像/点云 |
+| 命令行 | `vlink-parse` | 从话题或 bag 提取字段，导出 CSV/JSON/图像/点云 |
 | 命令行 | `vlink-eproto` / `vlink-efbs` | 订阅/发布 Protobuf / FlatBuffers 消息并在终端解析显示 |
 | 命令行 | `vlink-bench` | 发布/订阅性能基准测试与报告 |
 | 桌面 | `vlink-viewer` | 实时监控全部活跃 URL，预览相机图像、点云、目标检测等结构化数据 |
@@ -36,7 +36,7 @@ VLink 在通信原语之外随库交付一套完整的命令行工具链（`vlin
 
 | 需求 | 选择 |
 | --- | --- |
-| 仅需话题列表、频率、原始字节，或需脚本/CI 对接 | 命令行（`vlink-list` / `vlink-monitor` / `vlink-dump`） |
+| 仅需话题列表、频率、原始字节，或需脚本/CI 对接 | 命令行（`vlink-list` / `vlink-monitor` / `vlink-parse`） |
 | 需本地图形化预览图像、点云、目标检测，强交互 | 桌面 `vlink-viewer` 套件 |
 | 需浏览器访问、远程协作、团队共享或 CI 集成 | Web `vlink-foxglove` |
 | 需本机高性能三维渲染与多模态融合 | Web `vlink-rerun` |
@@ -76,7 +76,7 @@ export PATH=/usr/local/bin:$PATH
 | 检视话题消息内容 | `vlink-eproto sub` / `vlink-efbs sub` |
 | 录制与回放数据 | `vlink-bag record` / `vlink-bag play` |
 | 长期运行仅保留关键事件前后片段 | `vlink-trigger daemon` / `vlink-trigger dump` |
-| 导出字段供离线分析 | `vlink-dump` |
+| 导出字段供离线分析 | `vlink-parse` |
 | 评估链路吞吐与时延 | `vlink-bench run` |
 
 最高频的三条工作流：
@@ -328,13 +328,15 @@ vlink-bag tag /tmp/test.vdb "highway_test_20260317"
 
 **内存与保留模型**　守护进程采用恒定保留策略：每个 URL 缓冲 `effective_pre + max_post_all + 2 * retention_guard` 时长的历史（`only_back` 的 `effective_pre` 为 0，其他 URL 为各自的 pre；`max_post_all` 为所有 URL 中最大的生效 post 窗口），使采集热路径无需判断"当前是否有触发在进行"。该全局最大值只决定环形缓冲的保留时长；单次 dump 在受理时筛选参与 URL，并按这些 URL 的最大有效 post 调度落盘，其中有效值为请求 post 与 URL 配置 post 的较小值。该值大于 0 时等待它加 `retention_guard`，为 0 或没有 URL 命中时立即调度。由此，单个 URL 配置过大的 post 会抬高所有 URL 的保留时长与内存占用，内存紧张时应约束 post；启用 `bag_plugin` 重排插件时，其滑窗会在落盘期间额外持有部分窗口副本，峰值内存可接近窗口大小的两倍。
 
-**两类插件**　`vlink-trigger` 可同时使用两类互不混淆的插件：CLI 宿主按 `bag_plugin` 加载 `BagPluginInterface`，再经引擎 API `bind_bag_interface()` 绑定；该接口位于落盘写入路径内部，负责按数据面时间重排。而 `TriggerPluginInterface` 经 `bind_trigger_interface()` 绑定，只观察打点生命周期，用于 dump 完成后的上传 / 归档等后续行为，不改写帧。两类库的解析、搜索、ABI 校验和加载均属于 CLI 宿主职责，`TriggerRecorder` 只持有并调用已绑定的接口。当前两类插件 ABI 版本均为 `2.0`，实现应使用 `VLINK_PLUGIN_DECLARE(Impl, 2, 0)`。
+**两类插件**　`vlink-trigger` 可同时使用两类互不混淆的插件：CLI 宿主按 `bag_plugin` 加载 `BagPluginInterface`，再经引擎 API `bind_bag_interface()` 绑定；该接口位于落盘写入路径内部，负责按数据面时间重排。而 `TriggerPluginInterface` 经 `bind_trigger_interface()` 绑定，只观察打点生命周期，用于 dump 完成后的上传 / 归档等后续行为，不改写帧。两类库的解析、搜索、版本校验和加载均属于 CLI 宿主职责，`TriggerRecorder` 只持有并调用已绑定的接口。`BagPluginInterface` 接口版本为 `2.0`，实现应使用 `VLINK_PLUGIN_DECLARE(Impl, 2, 0)`；`TriggerPluginInterface` 同为 `2.0`。
 
 #### daemon 子命令
 
-`vlink-trigger daemon` 读取 JSON 配置并启动守护进程，随后常驻缓冲直至收到终止信号：
+`vlink-trigger daemon` 使用内置默认配置启动守护进程，随后常驻缓冲直至收到终止信号；需要覆盖默认值时再通过 `-c` 读取 JSON 配置：
 
 ```bash
+vlink-trigger daemon
+
 vlink-trigger daemon -c /etc/vlink/trigger/trigger.json
 
 vlink-trigger daemon -c /etc/vlink/trigger/trigger.json -n
@@ -346,13 +348,13 @@ vlink-trigger daemon -c /etc/vlink/trigger/trigger.json \
 
 | 参数 | 说明 |
 | --- | --- |
-| `-c` / `--config <path>` | 配置文件路径（JSON，必填） |
-| `-n` / `--native` | 本地模式：本机发现，并在未配置 `dds_ip` 时将其置为 `127.0.0.1`（仅作用于数据面订阅，不影响 `method_url` 控制面） |
+| `-c` / `--config <path>` | 可选配置文件路径（JSON）；省略时全部使用内置默认值 |
+| `-n` / `--native` | 本地模式：本机发现，并将数据面订阅绑定到 `127.0.0.1`（不影响 `method_url` 控制面） |
 | `--bag_plugin <name>` | 覆盖配置文件中的 `bag_plugin`；由 CLI 宿主加载并绑定，不传入 `TriggerRecorder::Config` |
 | `--trigger_plugin <name>` | 覆盖配置文件中的 `trigger_plugin` |
 | `--trigger_plugin_config <str>` | 覆盖配置文件中的 `trigger_plugin_config`；字符串内容由插件解释 |
 
-daemon 先读取 JSON，再按字段应用命令行中**显式出现**的三个插件参数，最后应用 `--native`。三个字段相互独立：未指定的参数保留 JSON 值，显式传入空字符串则清空相应值。因此可以只从命令行替换插件配置而沿用 JSON 中的插件名，也可以用 `--trigger_plugin ''` 禁用 JSON 中配置的 trigger 插件。
+daemon 在指定 `-c` 时先读取 JSON，再按字段应用命令行中**显式出现**的三个插件参数，最后应用 `--native`。未指定 `-c` 时从内置默认值开始应用命令行参数。三个插件字段相互独立：未指定的参数保留 JSON 值，显式传入空字符串则清空相应值。因此可以只从命令行替换插件配置而沿用 JSON 中的插件名，也可以用 `--trigger_plugin ''` 禁用 JSON 中配置的 trigger 插件。
 
 配置文件字段如下（时间单位毫秒，容量单位 MB）：
 
@@ -360,22 +362,21 @@ daemon 先读取 JSON，再按字段应用命令行中**显式出现**的三个�
 | --- | --- | --- |
 | `method_url` | `dds://trigger/method` | 控制面 RPC 的服务 URL（scheme 决定后端，可换 `shm://` 等），客户端 `-m` 须与之一致 |
 | `dump_dir` | `{tmp}/vlink-trigger` | 落盘目录，空则取系统临时目录下的 `vlink-trigger` |
-| `allow_out_file_outside_dump_dir` | `false` | 是否允许 RPC 的显式 `out_file` 位于 `dump_dir` 外；默认关闭，开启前应确保控制面调用方可信。该开关不改变相对路径基准和后缀校验 |
+| `allow_outside_dir` | `true` | 是否允许 RPC 的显式 `out_file` 位于 `dump_dir` 外；设为 `false` 时限制在 `dump_dir` 内。该开关不改变相对路径基准和后缀校验 |
 | `file_type` | `vdb` | 落盘格式：`vdb`（SQLite 容器）/ `vcap`（MCAP 容器） |
-| `default_pre_ms` | `60000` | 默认触发前窗口（毫秒） |
-| `default_post_ms` | `5000` | 默认触发后窗口（毫秒） |
+| `default_pre_ms` | `15000` | 默认触发前窗口（毫秒） |
+| `default_post_ms` | `0` | 默认触发后窗口（毫秒） |
 | `default_max_packet_size` | `4` | 默认单包上限（MB），`0` 表示不限制，超限的包丢弃 |
 | `default_max_size` | `0` | 默认每 URL 缓冲字节上限（MB），`0` 不限制 |
-| `max_cache_size` | `1024` | 全局缓冲字节上限（MB），跨所有 URL 汇总；超限腾挪仅发生在正接收数据的 URL 自身环内，不会跨 URL 淘汰他人历史 |
-| `retention_guard_ms` | `300` | 额外保留裕量（毫秒），吸收落盘定时抖动 |
-| `max_dump_file_count` | `16` | 落盘文件保留上限；仅自动命名的落盘触发轮转，按后缀统计并清理 `dump_dir` 下最旧文件（显式 `out_file` 的落盘不触发轮转） |
-| `enable_compress` | `true` | 落盘 bag 是否压缩 |
+| `max_cache_size` | `2048` | 全局缓冲字节上限（MB），跨所有 URL 汇总；首次超限时输出警告，超限腾挪仅发生在正接收数据的 URL 自身环内，不会跨 URL 淘汰他人历史 |
+| `retention_guard_ms` | `500` | 额外保留裕量（毫秒），吸收落盘定时抖动 |
+| `max_dump_file_count` | `10` | 落盘文件保留上限；仅自动命名的落盘触发轮转，按后缀统计并清理 `dump_dir` 下最旧文件（显式 `out_file` 的落盘不触发轮转） |
+| `enable_compress` | `false` | 落盘 bag 是否压缩 |
 | `busy_skip_data` | `false` | 落盘进行中丢弃新到数据（会在环形缓冲留下时间空洞） |
 | `destroy_on_offline` | `false` | URL 从发现中消失时销毁其订阅者；已缓冲数据仍供在飞落盘读取 |
-| `overflow` | `cover` | 字节上限溢出策略：`cover`（淘汰最旧帧）/ `drop`（丢弃新帧） |
+| `overflow` | `drop` | 字节上限溢出策略：`cover`（淘汰最旧帧）/ `drop`（丢弃新帧） |
 | `sleep_interval_mb` | `4` | 落盘流控：每推送该字节数（MB）后休眠一次，摊薄 dump 瞬时的 IO 与写入队列压力 |
 | `sleep_time_ms` | `0` | 落盘流控：单次休眠时长（毫秒），`0` 关闭流控 |
-| `dds_ip` | 空 | 非空时将订阅者绑定到该 DDS IP（本地模式） |
 | `discovery_filter` | `available` | 发现过滤：`available` / `native` / `none` |
 | `whitelist` | `[]` | 非空时仅录制其中精确匹配的 URL |
 | `blacklist` | `[]` | 其中精确匹配的 URL 永不录制 |
@@ -393,15 +394,15 @@ daemon 先读取 JSON，再按字段应用命令行中**显式出现**的三个�
 ```json
 {
     "dump_dir": "/data/edr",
-    "allow_out_file_outside_dump_dir": false,
+    "allow_outside_dir": true,
     "file_type": "vdb",
-    "default_pre_ms": 60000,
-    "default_post_ms": 5000,
+    "default_pre_ms": 15000,
+    "default_post_ms": 0,
     "default_max_packet_size": 4,
     "max_cache_size": 2048,
-    "max_dump_file_count": 16,
-    "enable_compress": true,
-    "overflow": "cover",
+    "max_dump_file_count": 10,
+    "enable_compress": false,
+    "overflow": "drop",
     "sleep_interval_mb": 4,
     "sleep_time_ms": 2,
     "discovery_filter": "available",
@@ -420,11 +421,11 @@ daemon 先读取 JSON，再按字段应用命令行中**显式出现**的三个�
 }
 ```
 
-上例中相机保留触发前 60 s、触发后 5 s，雷达仅保留触发前 15 s（`post_ms=0`），制动信号仅录触发后 10 s（`only_back`），三者窗口互不相同。默认按采集时刻落盘；若配置 `bag_plugin`，CLI 宿主会加载该插件并绑定给 recorder，由插件按 payload 内数据面时间重排。JSON 中的 `bag_plugin` / `bag_plugin_dir` 是 `vlink-trigger` 的宿主配置，不是引擎配置字段。
+上例中相机保留触发前 60 s、触发后 5 s，雷达仅保留触发前 15 s（`post_ms=0`），制动信号仅录触发后 10 s（`only_back`），三者窗口互不相同。默认按采集时刻落盘；若配置 `bag_plugin`，CLI 宿主会加载该插件并绑定给 recorder，由插件按 payload 内数据面时间重排。重排只改变帧的落盘顺序和 bag 时间轴，不改写 payload 内的 `time_meas`；具体排序与异常时间处理策略由插件实现决定。JSON 中的 `bag_plugin` / `bag_plugin_dir` 是 `vlink-trigger` 的宿主配置，不是引擎配置字段。
 
 #### dump 子命令
 
-`vlink-trigger dump` 向运行中的守护进程发起一次触发，可临时覆盖输出路径、原因、文件名与窗口，并按 URL 缩小本次落盘范围。显式输出路径默认必须位于 daemon 的 `dump_dir` 内；相对路径始终按 `dump_dir` 解析，且后缀必须与 daemon 的 `file_type` 匹配。默认情况下 `..` 与符号链接不能逃逸该目录；只有 daemon 配置 `allow_out_file_outside_dump_dir: true` 时才跳过这一包含性校验：
+`vlink-trigger dump` 向运行中的守护进程发起一次触发，可临时覆盖输出路径、原因、文件名与窗口，并按 URL 缩小本次落盘范围。显式输出路径默认可位于 daemon 的 `dump_dir` 外；将 `allow_outside_dir` 配置为 `false` 后，`..` 与符号链接均不能逃逸该目录。相对路径始终按 `dump_dir` 解析，且后缀必须与 daemon 的 `file_type` 匹配。请求接受后，dump 客户端和 daemon 都显示包含自动命名或防覆盖后缀的最终绝对路径：
 
 ```bash
 vlink-trigger dump
@@ -434,6 +435,8 @@ vlink-trigger dump -r hard-brake -o /data/edr/case_001.vdb
 vlink-trigger dump -r collision --pre 10000 --post 3000
 
 vlink-trigger dump -u dds://camera/front dds://control/brake
+
+vlink-trigger dump -u dds://camera/front dds://camera/rear -i front
 
 vlink-trigger dump -i "camera radar" -k
 ```
@@ -446,11 +449,15 @@ vlink-trigger dump -i "camera radar" -k
 | `-n` / `--name <str>` | 输出文件名提示，空则生成时间戳文件名 |
 | `--pre <ms>` | 本次触发前窗口（毫秒），仅可缩小；`-1` 保持各 URL 配置值，其他负数或超出录制器安全范围的过大值会被拒绝 |
 | `--post <ms>` | 本次触发后窗口（毫秒），仅可缩小；`-1` 保持各 URL 配置值，其他负数或超出录制器安全范围的过大值会被拒绝 |
-| `-u` / `--urls <url...>` | 仅落盘这些精确匹配的 URL |
-| `-i` / `--filter <str>` | 以子串过滤 URL（`--urls` 为空时生效）；用逗号分隔，或用引号包住以空格分隔的多个子串 |
-| `-k` / `--black` | 配合 `--filter` 的黑名单模式，剔除命中的 URL |
+| `-u` / `--urls <url...>` | 精确 URL 过滤；默认仅保留命中项，`-k` 时剔除命中项 |
+| `-i` / `--filter <str>` | 在精确 URL 判断后执行不区分大小写的子串过滤；用逗号分隔，或用引号包住以空格分隔的多个子串 |
+| `-k` / `--black` | 与 `vlink-monitor -k` 一致，同时把 `--urls` 和 `--filter` 切换为黑名单模式 |
 
-本次触发的窗口只能相对配置缩小、不能放大：`--pre` / `--post` 大于某 URL 配置值时以配置值为准，因为环形缓冲仅按配置时长保留历史。触发请求为非阻塞——守护进程接受后异步完成"等待本次参与 URL 的最大有效 post 窗口 → 重排 → 写盘"，其间若再次触发则被拒绝（触发串行化）。参与本次落盘的 URL 集合在触发受理瞬间筛选并冻结：此后新发现的话题不进入本次落盘，已在集合中的话题即使离线，其缓冲数据也保留到本次落盘完成。
+未使用 `-k` 时，`--urls` 与 `--filter` 同时出现等价于先做精确白名单、再做关键字白名单，最终保留两者交集；使用 `-k` 时两层都按黑名单执行，最终剔除两者命中的并集。这一处理顺序、分词方式、大小写规则和反转语义与 `vlink-monitor` 一致。
+
+控制面 `dump` 请求用独立的 `whitelist` 和 `blacklist` 数组传输精确 URL；字段省略或数组为空表示不启用对应名单，两者可单独设置，也可在同一次请求中同时设置，daemon 先应用白名单再应用黑名单。当前 CLI 参数保持不变：未使用 `-k` 时将 `-u` 写入 `whitelist`，使用 `-k` 时写入 `blacklist`；`filter_str` 的模式仍由 `black_mode` 表示。
+
+本次触发的窗口只能相对配置缩小、不能放大：`--pre` / `--post` 大于某 URL 配置值时以配置值为准，因为环形缓冲仅按配置时长保留历史。触发请求为非阻塞——守护进程接受后异步完成"等待本次参与 URL 的最大有效 post 窗口 → 重排 → 写盘"，其间若再次触发则被拒绝（触发串行化）。daemon 日志覆盖收到请求、调度等待、开始写盘及成功或失败阶段；成功日志包含帧数、字节数和最终绝对路径。参与本次落盘的 URL 集合在触发受理瞬间筛选并冻结：此后新发现的话题不进入本次落盘，已在集合中的话题即使离线，其缓冲数据也保留到本次落盘完成。
 
 #### 典型场景
 
@@ -462,17 +469,17 @@ vlink-trigger daemon -c /etc/vlink/trigger/trigger.json &
 vlink-trigger dump -r takeover --post 8000
 ```
 
-**与离线分析衔接**　落盘产物即标准 bag 文件，可直接交由 `vlink-bag`、`vlink-dump` 或图形化 `vlink-player` 处理：
+**与离线分析衔接**　落盘产物即标准 bag 文件，可直接交由 `vlink-bag`、`vlink-parse` 或图形化 `vlink-player` 处理：
 
 ```bash
 vlink-trigger dump -r anomaly -o /data/edr/anomaly.vdb
 vlink-bag info /data/edr/anomaly.vdb
-vlink-dump dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /tmp/
+vlink-parse dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /tmp/
 ```
 
-### 📤 10.2.9 vlink-dump：字段提取与转储
+### 📤 10.2.9 vlink-parse：字段提取与转储
 
-`vlink-dump` 从实时话题或 bag 文件中提取指定字段，输出为 CSV、JSON、原始二进制、图像/视频或点云，并支持对离线 bag 做切片（`slice`）与扫描（`scan`）。它面向"将通信数据转为可离线分析的结构化产物"这一任务。
+`vlink-parse` 从实时话题或 bag 文件中提取指定字段，输出为 CSV、JSON、原始二进制、图像/视频或点云，并支持对离线 bag 做切片（`slice`）与扫描（`scan`）。它面向"将通信数据转为可离线分析的结构化产物"这一任务。
 
 提取 Protobuf 字段需经 `-d` 或 `VLINK_PROTO_DIR` 指定 `.proto` 目录，FlatBuffers 经 `--fbs_dir` 或 `VLINK_FBS_DIR` 指定 `.fbs` 目录；零拷贝类型（CameraFrame、PointCloud、Tensor、OccupancyGrid 等）的内置字段无需额外配置，字段定义见 [零拷贝](06-zerocopy.md)。表达式功能需构建时启用 `ENABLE_EXPRTK=ON`。
 
@@ -480,7 +487,7 @@ vlink-dump dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /tm
 
 | 参数 | 说明 |
 | --- | --- |
-| `url` | 目标话题 URL（dump/导出模式必填具体 URL，不可省；`slice` / `scan` 可省，默认 `*` 匹配全部话题） |
+| `url` | 目标话题 URL（parse/导出模式必填具体 URL，不可省；`slice` / `scan` 可省，默认 `*` 匹配全部话题） |
 | `-t` / `--type <type>` | 输出类型：`console`（别名 `text`）/`csv`/`json`/`bin`/`jpg`（别名 `jpeg`）/`h264`/`h265`/`raw`/`pcd`/`slice`/`scan`（默认 `csv`） |
 | `-c` / `--condition <fields>` | 提取字段，逗号/空格分隔（CSV/JSON 必填），如 `header.seq,pose.x` |
 | `-f` / `--bag_file <path>` | 从 bag 提取（缺省则从实时通信） |
@@ -489,29 +496,38 @@ vlink-dump dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /tm
 | `-o` / `--out_dir` / `-m` / `--base_name` | 输出目录 / 文件基础名 |
 | `-d` / `--proto_dir` / `--fbs_dir` | schema 目录 |
 | `-x` / `--expression <expr>` | 表达式，可重复（配合 `-c`，需 exprtk） |
+| `-u` / `--urls <url...>` | `slice` / `scan` 精确 URL 过滤 |
+| `-i` / `--url_filter <str>` | `slice` / `scan` URL 关键字过滤，空格或逗号分隔且不区分大小写 |
+| `-k` / `--black` | 与 `vlink-monitor -k` 一致，将两种 URL 过滤切换为黑名单模式 |
 
-输出类型语义：`console` 在终端打印消息内容；`csv` / `json` 输出选定字段；`bin` 将每条消息的原始字节存为独立文件；`jpg` / `h264` / `h265` / `raw` 适用于 CameraFrame 或含 bytes 字段的消息；`pcd` 将零拷贝 PointCloud 每帧存为 PCD 文件。`slice` / `scan` 为离线 bag 的高级用法（按窗口/事件切片、按事件或质量扫描），参数较多，详见 `vlink-dump --help`。
+输出类型语义：`console` 在终端打印消息内容；`csv` / `json` 输出选定字段；`bin` 将每条消息的原始字节存为独立文件；`jpg` / `h264` / `h265` / `raw` 适用于 CameraFrame 或含 bytes 字段的消息；`pcd` 将零拷贝 PointCloud 每帧存为 PCD 文件。`slice` / `scan` 为离线 bag 的高级用法（按窗口/事件切片、按事件或质量扫描），参数较多，详见 `vlink-parse --help`。
 
-字段路径写法：Protobuf 使用点路径（`header.seq`、`status.velocity.x`）；八种零拷贝类型统一经 `MessageParser` 读取，根字段使用 `header.seq`、`width` 等点路径，集合使用 `data[N].field`、`shape[N].value` 或 `strides[N].value`。完整清单与边界规则见 [零拷贝](06-zerocopy.md)。整数在字段导出时保持原始 64 位值；只有送入 ExprTk 表达式、必须转换为 `double` 时，工具才会对超出精确表示范围的整数给出精度提示。
+所有带值的标量参数都必须显式提供值；空 URL、空字段列表以及空白的 `--event` / `--filter` / `--url_filter` 会直接报错。URL 的首尾空白在解析后统一移除；parse/导出模式必须指定具体 URL，`*` 只用于 `slice` / `scan`。`-n` 精确限制通过 URL 与限频门控的样本数，`--hz` 是严格的最大输出频率；限频间隔只在参数解析时换算，数据热路径使用整数微秒比较。
+
+`slice` / `scan` 只接受已完整结束且包含消息的 bag，时间区间按毫秒解释为半开区间 `[begin, end)`；未指定结束时间时会覆盖最后一个不足整毫秒的消息。切片输出只支持 `.vdb` 或 `.vcap`，分片输入的 `.vdbx` / `.vcapx` 会映射到对应的单文件格式。URL 筛选包含 Event、Method 与 Field，实际帧再由 `--actions` 过滤（默认 `6=Subscribe`）；显式 URL 与 `-u` / `--urls`、`-i` / `--url_filter` 不可混用。未使用 `-k` 时，两种过滤同时出现取交集；使用 `-k` 时剔除任一过滤命中的 URL，与 `vlink-monitor` 的处理一致。单独使用 `-k` 不改变选集；黑名单中不存在于 bag 的 URL 会被忽略，白名单中的 URL 不存在时仍会报错。
+
+内容过滤、事件表达式和切片 CSV 导出只支持零拷贝类型与 Protobuf；Protobuf 必须能从 `-d`、`--schema_config` 或 `VLINK_SCHEMA_PLUGIN` 找到目标消息的真实 descriptor。`--schema_plugin` 与 `VLINK_SCHEMA_PLUGIN` 均可使用插件 stem 或共享库直接路径，显式配置但加载失败会终止命令。Method、FlatBuffers、Raw 或未知 schema 参与这些字段操作时会在写文件前拒绝；这项预检验证解码能力，但不会假定每个 selector 都存在于异构 topic 的每一种消息中。不做 `--filter` / `--event` / `--export_csv` 时，单独的 `-c` 不会触发无用解码。`--force` 仍拒绝覆盖符号链接、输入 bag 及其分片成员，也不会覆盖本次命令读取的 `--segments` / `--schema_config` 文件。
+
+字段路径写法：Protobuf 使用点路径（`header.seq`、`status.velocity.x`），repeated 字段使用完整的非负整数下标（如 `chunks[1].data`）；空路径分量、尾随字符、负数或用于非 repeated 字段的下标不会被宽松解释。八种零拷贝类型统一经 `MessageParser` 读取，根字段使用 `header.seq`、`width` 等点路径，集合使用 `data[N].field`、`shape[N].value` 或 `strides[N].value`。完整清单与边界规则见 [零拷贝](06-zerocopy.md)。整数在字段导出时保持原始 64 位值；只有送入 ExprTk 表达式、必须转换为 `double` 时，工具才会对超出精确表示范围的整数给出精度提示。
 
 ```bash
-vlink-dump dds://sensor/imu -t csv -c "header.seq" -o /tmp/ -d /home/protos/
+vlink-parse dds://sensor/imu -t csv -c "header.seq" -o /tmp/ -d /home/protos/
 
-vlink-dump dds://vehicle/state -t csv -c "velocity.x" \
+vlink-parse dds://vehicle/state -t csv -c "velocity.x" \
   -f /tmp/test.vdb -b 10 -e 60 -o /tmp/ -d /home/protos/
 
-vlink-dump dds://test -t console -n 5
+vlink-parse dds://test -t console -n 5
 
-vlink-dump dds://camera/front -t jpg -c data -o /tmp/frames/ -d /home/protos/
+vlink-parse dds://camera/front -t jpg -c data -o /tmp/frames/ -d /home/protos/
 
-vlink-dump dds://lidar -t pcd -f /tmp/bag.vdb -d /home/protos/
+vlink-parse dds://lidar -t pcd -f /tmp/bag.vdb -d /home/protos/
 
-vlink-dump dds://test -c "pose.x,pose.y" \
+vlink-parse dds://test -c "pose.x,pose.y" \
   -x "sqrt(pose_x*pose_x+pose_y*pose_y)" -t csv --hz 10
 
-vlink-dump -t slice -f /tmp/test.vdb -w 30 -o /tmp/slices
+vlink-parse -t slice -f /tmp/test.vdb -w 30 -o /tmp/slices
 
-vlink-dump -t scan -f /tmp/test.vdb -c "brake" --event "brake>80" -d /home/protos/ -o /tmp/scan
+vlink-parse -t scan -f /tmp/test.vdb -c "brake" --event "brake>80" -d /home/protos/ -o /tmp/scan
 ```
 
 ### 🔍 10.2.10 vlink-eproto / vlink-efbs：消息调试
@@ -642,7 +658,7 @@ vlink-eproto sub dds://sensor/imu -d /home/protos/
 ```bash
 vlink-bag record /tmp/test.vdb -d 60 -p
 vlink-bag info /tmp/test.vdb
-vlink-dump dds://sensor/imu -t csv -c "linear_acceleration.x" \
+vlink-parse dds://sensor/imu -t csv -c "linear_acceleration.x" \
   -f /tmp/test.vdb -o /tmp/analysis/ -d /home/protos/
 vlink-bag clone /tmp/test.vdb /tmp/clipped.vcap -b 5 -e 55 -p
 ```

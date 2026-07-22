@@ -50,6 +50,12 @@ int main() {
   VLOG_W("stream [W]: disk usage=", 91, "%");
   VLOG_E("stream [E]: failed to open config");
 
+  // VLOG_*_EVERY_MS -- per-call-site periodic limiting. The first iteration
+  // is emitted; the remaining iterations at this call site are suppressed.
+  for (int retry = 1; retry <= 3; ++retry) {
+    VLOG_W_EVERY_MS(1000, "periodic [W]: retry=", retry);
+  }
+
   // MLOG_* -- {fmt}-style. Compile-time format string checking when fmt is
   // built with FMT_ENFORCE_COMPILE_STRING; preferred for typed formatting.
   MLOG_T("format [T]: value={}, label={}", 42, "beta");

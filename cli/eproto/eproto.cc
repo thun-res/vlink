@@ -520,7 +520,8 @@ class CustomFieldValuePrinter final : public google::protobuf::TextFormat::FastF
   std::string left_str = field->name();
 #endif
 
-  std::transform(left_str.begin(), left_str.end(), left_str.begin(), [](char& c) { return std::tolower(c); });
+  std::transform(left_str.begin(), left_str.end(), left_str.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
   for (const auto& f : filter_list) {
     if (f.empty()) {
@@ -528,7 +529,8 @@ class CustomFieldValuePrinter final : public google::protobuf::TextFormat::FastF
     }
 
     std::string right_str = f;
-    std::transform(right_str.begin(), right_str.end(), right_str.begin(), [](char& c) { return std::tolower(c); });
+    std::transform(right_str.begin(), right_str.end(), right_str.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
     if (left_str.find(right_str) != std::string::npos) {
       skip = black_mode ? true : false;
@@ -881,15 +883,12 @@ class DefaultScalarMessagePrinter final : public google::protobuf::TextFormat::M
     }
 
     if (field->containing_oneof()) {
-      const auto* oneof = field->containing_oneof();
-      if (reflection->HasOneof(*message, oneof)) {
-        continue;
-      }
-    } else {
-      if (reflection->HasField(*message, field) &&
-          field->cpp_type() != google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
-        continue;
-      }
+      continue;
+    }
+
+    if (reflection->HasField(*message, field) &&
+        field->cpp_type() != google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
+      continue;
     }
 
     switch (field->cpp_type()) {
@@ -925,7 +924,10 @@ class DefaultScalarMessagePrinter final : public google::protobuf::TextFormat::M
         reflection->SetEnum(message, field, field->default_value_enum());
         break;
       case google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE:
-        set_proto_value_to_default(reflection->MutableMessage(message, field));
+        if (reflection->HasField(*message, field)) {
+          set_proto_value_to_default(reflection->MutableMessage(message, field));
+        }
+
         break;
     }
   }
@@ -1348,15 +1350,36 @@ int start_eproto_pub(const std::string& url, const std::string& proto_dir, const
   elapsed.start();
 
   int dx = 0;
+  int64_t paused_elapsed = 0;
 
-  for (int i = 0; i < times || times <= 0; ++i) {
+  for (int64_t i = 0; i < times || times <= 0; ++i) {
     if (!raw_pub->has_inited()) {
       break;
     }
 
+    if (is_paused) {
+      const int64_t pause_begin = elapsed.get();
+
+      while (is_paused && raw_pub->has_inited() && !has_quit) {
+        if (discovery_viewer) {
+          if (discovery_viewer->wait_for_quit(10)) {
+            break;
+          }
+        } else {
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+      }
+
+      paused_elapsed += std::max<int64_t>(elapsed.get() - pause_begin, 0);
+
+      if (!raw_pub->has_inited() || has_quit || (discovery_viewer && discovery_viewer->is_ready_to_quit())) {
+        break;
+      }
+    }
+
     raw_pub->publish(raw_data);
 
-    dx = static_cast<int>((static_cast<int64_t>(i) + 1) * interval - elapsed.get());
+    dx = static_cast<int>((i + 1) * interval - (elapsed.get() - paused_elapsed));
 
     if (dx < 0) {
       dx = 0;
@@ -1847,7 +1870,8 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
 #else
             std::string left_str = field->name();
 #endif
-            std::transform(left_str.begin(), left_str.end(), left_str.begin(), [](char& c) { return std::tolower(c); });
+            std::transform(left_str.begin(), left_str.end(), left_str.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
             for (const auto& f : filter_list) {
               if (f.empty()) {
                 continue;
@@ -1855,7 +1879,7 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
 
               std::string right_str = f;
               std::transform(right_str.begin(), right_str.end(), right_str.begin(),
-                             [](char& c) { return std::tolower(c); });
+                             [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
               if (left_str.find(right_str) != std::string::npos) {
                 skip = black_mode ? true : false;

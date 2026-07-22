@@ -131,6 +131,7 @@ class DdscFactory final {
   std::map<TopicFilter, std::weak_ptr<ddsc::Topic>> topic_map_;
   std::map<PublisherFilter, std::weak_ptr<ddsc::Publisher>> publisher_map_;
   std::map<SubscriberFilter, std::weak_ptr<ddsc::Subscriber>> subscriber_map_;
+  std::recursive_mutex participant_mtx_;
   std::mutex mtx_;
 
   Qos default_event_qos_;

@@ -59,8 +59,6 @@ bool ShmGetterImpl::is_suspend() const { return object_->is_suspend(); }
 
 bool ShmGetterImpl::is_support_loan() const { return true; }
 
-bool ShmGetterImpl::return_loan(const Bytes& bytes) { return object_->release(bytes); }
-
 const Conf* ShmGetterImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* ShmGetterImpl::get_abstract_node() const { return object_.get(); }

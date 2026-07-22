@@ -235,6 +235,35 @@ TEST_SUITE("extension-BagProcessor") {
     CHECK_EQ(received[3], 101);
   }
 
+  TEST_CASE("reset discards buffered frames and clears data-time anchors") {
+    std::vector<BagProcessorOutput> received;
+
+    BagProcessor::Config cfg;
+    cfg.min_cache_time = 60'000;
+    cfg.max_jump_time = 100;
+    BagProcessor processor(cfg);
+
+    processor.register_output_callback([&](const Frame& frame) { received.push_back({frame.timestamp, frame.url}); });
+
+    processor.push(1'000'000, make_frame(50'000, "old"));
+    processor.reset();
+
+    processor.push(10'000, make_frame(100, "new-later"));
+    processor.push(1'000, make_frame(200, "new-earlier"));
+    processor.flush();
+
+    REQUIRE_EQ(received.size(), 2u);
+    CHECK_EQ(received[0].url, "new-earlier");
+    CHECK_EQ(received[1].url, "new-later");
+    CHECK_EQ(received[0].timestamp, 200);
+    CHECK_EQ(received[1].timestamp, 9'200);
+  }
+
+  TEST_CASE("reset before output callback registration is a no-op") {
+    BagProcessor processor;
+    CHECK_NOTHROW(processor.reset());
+  }
+
   TEST_CASE("flush is a no-op on an empty cache and after a prior drain") {
     std::vector<int64_t> received;
     std::mutex mtx;
@@ -376,6 +405,39 @@ TEST_SUITE("extension-BagProcessor") {
     CHECK_EQ(received[2].timestamp, 1030);
   }
 
+  TEST_CASE("initial missing data-plane times advance the cache window on canonical time") {
+    std::vector<BagProcessorOutput> received;
+    std::mutex mtx;
+    ConditionVariable cv;
+
+    BagProcessor::Config cfg;
+    cfg.min_cache_time = 1;
+    BagProcessor processor(cfg);
+
+    processor.register_output_callback([&](const Frame& frame) {
+      std::lock_guard lock(mtx);
+      received.push_back({frame.timestamp, frame.url});
+      cv.notify_all();
+    });
+
+    processor.push(-1, make_frame(3000, "missing-middle"));
+    processor.push(-1, make_frame(1000, "missing-earlier"));
+    processor.push(-1, make_frame(4001, "missing-later"));
+
+    {
+      std::unique_lock lock(mtx);
+      REQUIRE(cv.wait_for(lock, 2s, [&] { return received.size() >= 2u; }));
+      CHECK_EQ(received[0].url, "missing-earlier");
+      CHECK_EQ(received[1].url, "missing-middle");
+    }
+
+    processor.flush();
+
+    std::lock_guard lock(mtx);
+    REQUIRE_EQ(received.size(), 3u);
+    CHECK_EQ(received[2].url, "missing-later");
+  }
+
   TEST_CASE("initial missing data-plane time stays before marked data-plane time") {
     std::vector<BagProcessorOutput> received;
 
@@ -454,6 +516,36 @@ TEST_SUITE("extension-BagProcessor") {
     processor.reset();
   }
 
+  TEST_CASE("wall time does not advance the data-plane reorder window") {
+    std::vector<BagProcessorOutput> received;
+    std::mutex mtx;
+
+    BagProcessor::Config cfg;
+    cfg.min_cache_time = 10;
+    BagProcessor processor(cfg);
+
+    processor.register_output_callback([&](const Frame& frame) {
+      std::lock_guard lock(mtx);
+      received.push_back({frame.timestamp, frame.url});
+    });
+
+    processor.push(1'618'807'486, make_frame(1000, "pointcloud"));
+    std::this_thread::sleep_for(30ms);
+
+    {
+      std::lock_guard lock(mtx);
+      CHECK(received.empty());
+    }
+
+    processor.push(1'618'800'059, make_frame(2000, "objects"));
+    processor.flush();
+
+    std::lock_guard lock(mtx);
+    REQUIRE_EQ(received.size(), 2u);
+    CHECK_EQ(received[0].url, "objects");
+    CHECK_EQ(received[1].url, "pointcloud");
+  }
+
   TEST_CASE("max cache size forces output in data-plane order") {
     std::vector<int64_t> received;
     std::mutex mtx;
@@ -515,6 +607,7 @@ TEST_SUITE("extension-BagProcessor") {
     in.data = Bytes::create(7u);
 
     processor->push(222, in);
+    processor->flush();
 
     {
       std::unique_lock lock(mtx);
@@ -595,7 +688,7 @@ TEST_SUITE("extension-BagProcessor") {
     }
   }
 
-  TEST_CASE("processor flushes all cached frames on destruction after timeout") {
+  TEST_CASE("data-plane window retains its tail until flush") {
     std::vector<int64_t> received;
     std::mutex mtx;
     ConditionVariable cv;
@@ -616,9 +709,16 @@ TEST_SUITE("extension-BagProcessor") {
 
     {
       std::unique_lock lock(mtx);
-      REQUIRE(cv.wait_for(lock, 2s, [&] { return received.size() >= 3u; }));
+      REQUIRE(cv.wait_for(lock, 2s, [&] { return received.size() >= 2u; }));
       CHECK_EQ(received[0], 1);
       CHECK_EQ(received[1], 2000);
+    }
+
+    processor->flush();
+
+    {
+      std::lock_guard lock(mtx);
+      REQUIRE_EQ(received.size(), 3u);
       CHECK_EQ(received[2], 5001);
     }
 

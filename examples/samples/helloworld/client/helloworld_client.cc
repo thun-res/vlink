@@ -38,6 +38,7 @@
 #include <vlink/base/utils.h>
 #include <vlink/vlink.h>
 
+#include <atomic>
 #include <chrono>
 
 #if defined(__ANDROID__) && __has_include("helloworld/proto/helloworld.pb.h")
@@ -83,14 +84,17 @@ int sub() {
   // listen() callback fires on the transport's worker thread for every event.
   sub.listen([](const Helloworld::Message& msg) { CLOG_D("[Client] Receive event: %s.", msg.detail().c_str()); });
 
-  // Park the main thread on a condition variable. The signal handler runs in
-  // async-signal context and merely calls notify_one(), letting wait() return
-  // normally so destructors of the subscriber unwind cleanly on the main thread.
+  // Park the main thread on a condition variable until the terminate callback
+  // records the quit request, then unwind the subscriber on this thread.
   std::mutex mtx;
   std::unique_lock lock(mtx);
   vlink::ConditionVariable cv;
-  vlink::Utils::register_terminate_signal([&cv](int) { cv.notify_one(); });
-  cv.wait(lock);
+  std::atomic_bool quit{false};
+  vlink::Utils::register_terminate_signal([&cv, &quit](int) {
+    quit.store(true, std::memory_order_release);
+    cv.notify_one();
+  });
+  cv.wait(lock, [&quit]() { return quit.load(std::memory_order_acquire); });
 
   return 0;
 }

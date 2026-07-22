@@ -21,7 +21,6 @@
  * limitations under the License.
  */
 
-#include <vlink/base/condition_variable.h>
 #include <vlink/base/helpers.h>
 #include <vlink/base/message_loop.h>
 #include <vlink/base/utils.h>
@@ -45,7 +44,6 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
-#include <mutex>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -139,18 +137,18 @@ enum class DiagType : uint8_t {
 
 struct DiagContext final {
   vlink::MessageLoop* loop{nullptr};
-  std::atomic_bool stop_flag{false};
   std::atomic<int> passed_count{0};
   std::atomic<int> warning_count{0};
   std::atomic<int> failed_count{0};
-  std::atomic<DiagType> last_type{DiagType::kFailed};
-  std::mutex mtx;
-  vlink::ConditionVariable cv;
-  std::string detail;
+  std::string title;
   std::string filter;
 };
 
 static bool diag_accepted(const DiagContext& ctx, const std::string& title) {
+  if (ctx.loop != nullptr && ctx.loop->is_ready_to_quit()) {
+    return false;
+  }
+
   if VLIKELY (ctx.filter.empty()) {
     return true;
   }
@@ -164,59 +162,43 @@ static bool diag_accepted(const DiagContext& ctx, const std::string& title) {
 }
 
 static void begin_diag(DiagContext& ctx, const std::string& title, int delay_ms) {
-  ctx.loop->post_task([&ctx, title]() {
-    std::unique_lock lock(ctx.mtx);
-
-    ctx.cv.wait(lock, [&ctx]() -> bool { return !ctx.stop_flag || ctx.loop->is_ready_to_quit(); });
-
-    std::cout << title << std::string(kTitleWidth - title.size(), ' ');
-    std::cout << "......";
-    std::cout.flush();
-
-    ctx.cv.wait(lock, [&ctx]() -> bool { return ctx.stop_flag || ctx.loop->is_ready_to_quit(); });
-
-    ctx.stop_flag = false;
-
-    std::cout << "\033[2K\r";
-
-    const int detail_len = static_cast<int>(ctx.detail.size());
-
-    switch (ctx.last_type) {
-      case DiagType::kPass:
-        std::cout << kColorPass;
-        std::cout << title << std::string(kTitleWidth - title.size(), ' ') << "PASSED";
-        std::cout << std::string(std::max(kStatusPassPad - detail_len, 2), ' ');
-        std::cout << ctx.detail << kColorReset << std::endl;
-        break;
-
-      case DiagType::kWarning:
-        std::cout << kColorWarn;
-        std::cout << title << std::string(kTitleWidth - title.size(), ' ') << "WARNING";
-        std::cout << std::string(std::max(kStatusWarnPad - detail_len, 2), ' ');
-        std::cout << ctx.detail << kColorReset << std::endl;
-        break;
-
-      case DiagType::kFailed:
-        std::cout << kColorFail;
-        std::cout << title << std::string(kTitleWidth - title.size(), ' ') << "FAILED";
-        std::cout << std::string(std::max(kStatusFailPad - detail_len, 2), ' ');
-        std::cout << ctx.detail << kColorReset << std::endl;
-        break;
-
-      default:
-        break;
-    }
-  });
+  ctx.title = title;
+  std::cout << title << std::string(kTitleWidth - title.size(), ' ');
+  std::cout << "......";
+  std::cout.flush();
 
   ctx.loop->wait_for_quit(delay_ms);
 }
 
 static void end_diag(DiagContext& ctx, DiagType type, const std::string& detail) {
-  {
-    std::lock_guard lock(ctx.mtx);
-    ctx.stop_flag = true;
-    ctx.last_type = type;
-    ctx.detail = detail;
+  std::cout << "\033[2K\r";
+
+  const int detail_len = static_cast<int>(detail.size());
+
+  switch (type) {
+    case DiagType::kPass:
+      std::cout << kColorPass;
+      std::cout << ctx.title << std::string(kTitleWidth - ctx.title.size(), ' ') << "PASSED";
+      std::cout << std::string(std::max(kStatusPassPad - detail_len, 2), ' ');
+      std::cout << detail << kColorReset << std::endl;
+      break;
+
+    case DiagType::kWarning:
+      std::cout << kColorWarn;
+      std::cout << ctx.title << std::string(kTitleWidth - ctx.title.size(), ' ') << "WARNING";
+      std::cout << std::string(std::max(kStatusWarnPad - detail_len, 2), ' ');
+      std::cout << detail << kColorReset << std::endl;
+      break;
+
+    case DiagType::kFailed:
+      std::cout << kColorFail;
+      std::cout << ctx.title << std::string(kTitleWidth - ctx.title.size(), ' ') << "FAILED";
+      std::cout << std::string(std::max(kStatusFailPad - detail_len, 2), ' ');
+      std::cout << detail << kColorReset << std::endl;
+      break;
+
+    default:
+      break;
   }
 
   switch (type) {
@@ -232,8 +214,6 @@ static void end_diag(DiagContext& ctx, DiagType type, const std::string& detail)
     default:
       break;
   }
-
-  ctx.cv.notify_one();
 }
 
 static void run_check(DiagContext& ctx, const std::string& title, int delay_ms,
@@ -345,15 +325,21 @@ void check_multicast_address(DiagContext& ctx, const int (&octets)[4], bool warn
     return;
   }
 
+  auto is_address_character = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '.'; };
+
   size_t scan_pos = 0;
 
   while ((scan_pos = result.find(needle, scan_pos)) != std::string::npos) {
-    scan_pos += needle.size();
+    const size_t match_end = scan_pos + needle.size();
+    const bool valid_left = scan_pos == 0 || !is_address_character(result[scan_pos - 1]);
+    const bool valid_right = match_end >= result.size() || !is_address_character(result[match_end]);
 
-    if (scan_pos >= result.size() || !std::isdigit(static_cast<unsigned char>(result[scan_pos]))) {
+    if (valid_left && valid_right) {
       end_diag(ctx, DiagType::kPass, "Found " + needle);
       return;
     }
+
+    scan_pos = match_end;
   }
 
   if (warn_on_missing) {
@@ -555,7 +541,7 @@ void check_process(DiagContext& ctx, const ProcessCheck& pc) {
 
 void check_others_running(DiagContext& ctx) {
 #ifdef _WIN32
-  const std::string command_str = vlink::Utils::get_app_dir() + "/vlink-list.exe -nc";
+  const std::string command_str = "\"" + vlink::Utils::get_app_dir() + "/vlink-list.exe\" -nc";
 
   int exit_code = _wsystem(vlink::Helpers::string_to_wstring(command_str).c_str());
 
@@ -813,6 +799,16 @@ void check_log_level_range(DiagContext& ctx) {
     return;
   }
 
+  static constexpr std::array<std::string_view, 21> kNamedLevels = {
+      "Trace", "TRACE", "trace", "Debug", "DEBUG", "debug", "Info",  "INFO", "info", "Warn", "WARN",
+      "warn",  "Error", "ERROR", "error", "Fatal", "FATAL", "fatal", "Off",  "OFF",  "off",
+  };
+
+  if (std::find(kNamedLevels.begin(), kNamedLevels.end(), value) != kNamedLevels.end()) {
+    end_diag(ctx, DiagType::kPass, "VLINK_LOG_LEVEL=" + value);
+    return;
+  }
+
   const int level = vlink::Helpers::to_int(value, -1);
 
   if VUNLIKELY (level < 0 || level > 6) {
@@ -940,10 +936,7 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
   ctx.loop = &message_loop;
   ctx.filter = filter;
 
-  vlink::Utils::register_terminate_signal([&message_loop, &ctx](int) {
-    message_loop.quit();
-    ctx.cv.notify_one();
-  });
+  vlink::Utils::register_terminate_signal([&message_loop](int) { message_loop.quit(); });
 
   message_loop.async_run();
 
@@ -959,8 +952,7 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
 
   run_check(ctx, "* Check available IP addresses...", 100, [&ctx]() { check_ipv4_addresses(ctx); });
 
-#if defined(VLINK_SUPPORT_DDS) || defined(VLINK_SUPPORT_DDSC) || defined(VLINK_SUPPORT_DDSR) || \
-    defined(VLINK_SUPPORT_DDST)
+#if defined(VLINK_SUPPORT_DDS) || defined(VLINK_SUPPORT_DDSC) || defined(VLINK_SUPPORT_DDSR)
   run_check(ctx, "* Check VLink DDS IP available...", 100, [&ctx]() { check_dds_ip(ctx); });
   run_check(ctx, "* Check VLink DDS interface...", 100, [&ctx]() { check_dds_interface(ctx); });
   run_check(ctx, "* Check VLink DDS interface MTU...", 100, [&ctx]() { check_interface_mtu(ctx); });
@@ -969,8 +961,7 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
   run_check(ctx, "* Check VLink multicast address...", 100,
             [&ctx]() { check_multicast_address(ctx, kMulticastDiscovery, false); });
 
-#if defined(VLINK_SUPPORT_DDS) || defined(VLINK_SUPPORT_DDSC) || defined(VLINK_SUPPORT_DDSR) || \
-    defined(VLINK_SUPPORT_DDST)
+#if defined(VLINK_SUPPORT_DDS) || defined(VLINK_SUPPORT_DDSC) || defined(VLINK_SUPPORT_DDSR)
   run_check(ctx, "* Check DDS multicast address...", 100,
             [&ctx]() { check_multicast_address(ctx, kMulticastDds, true); });
   run_check(ctx, "* Check VLINK_DDS_DOMAIN range...", 50, [&ctx]() { check_dds_domain_range(ctx); });
@@ -1033,7 +1024,7 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
       {"* Check proxy running...", "proxy", "vlink-proxy", "vlink-proxy.exe", true, "Proxy"},
       {"* Check bag running...", "bag", "vlink-bag", "vlink-bag.exe", false, "Bag"},
       {"* Check trigger running...", "trigger", "vlink-trigger", "vlink-trigger.exe", false, "Trigger"},
-      {"* Check dump running...", "dump", "vlink-dump", "vlink-dump.exe", false, "Dump"},
+      {"* Check parse running...", "parse", "vlink-parse", "vlink-parse.exe", false, "Parse"},
       {"* Check eproto running...", "eproto", "vlink-eproto", "vlink-eproto.exe", false, "Eproto"},
       {"* Check efbs running...", "efbs", "vlink-efbs", "vlink-efbs.exe", false, "Efbs"},
       {"* Check monitor running...", "monitor", "vlink-monitor", "vlink-monitor.exe", false, "Monitor"},
@@ -1051,7 +1042,7 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
   run_check(ctx, "* Check others running...", 100, [&ctx]() { check_others_running(ctx); });
 
   if (all_case) {
-    message_loop.post_task([]() { std::cout << std::endl; });
+    std::cout << std::endl;
 
 #ifdef VLINK_ENABLE_CXX_STD_20
     check_flag(ctx, "- Check cxx_20 enabled...", "VLINK_ENABLE_CXX_STD_20", true);
@@ -1125,10 +1116,10 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
     check_flag(ctx, "- Check cli-monitor enabled...", "VLINK_ENABLE_CLI_MONITOR", false);
 #endif
 
-#ifdef VLINK_ENABLE_CLI_DUMP
-    check_flag(ctx, "- Check cli-dump enabled...", "VLINK_ENABLE_CLI_DUMP", true);
+#ifdef VLINK_ENABLE_CLI_PARSE
+    check_flag(ctx, "- Check cli-parse enabled...", "VLINK_ENABLE_CLI_PARSE", true);
 #else
-    check_flag(ctx, "- Check cli-dump enabled...", "VLINK_ENABLE_CLI_DUMP", false);
+    check_flag(ctx, "- Check cli-parse enabled...", "VLINK_ENABLE_CLI_PARSE", false);
 #endif
 
 #ifdef VLINK_ENABLE_CLI_CHECK
@@ -1271,7 +1262,7 @@ int check_env(bool available_case, const std::string& prefix) {
 
       {"VLINK_BAG_PATH", "",
        "Activates the process-global BagWriter (BagWriter::global_get()) at the given .vdb/.vcap path. All "
-       "Publisher/Setter messages are auto-recorded transparently. CLI tools (vlink-bag/trigger/dump/eproto/efbs/"
+       "Publisher/Setter messages are auto-recorded transparently. CLI tools (vlink-bag/trigger/parse/eproto/efbs/"
        "list/monitor/bench) explicitly unset this on startup to avoid recursive recording.",
        false},
       {"VLINK_BAG_TAG", "", "User tag stored in bag metadata to label the recording session (default 'Empty').", false},
@@ -1291,15 +1282,12 @@ int check_env(bool available_case, const std::string& prefix) {
        false},
 #endif
 
-#if defined(VLINK_SUPPORT_DDS) || defined(VLINK_SUPPORT_DDSC) || defined(VLINK_SUPPORT_DDSR) || \
-    defined(VLINK_SUPPORT_DDST)
+#if defined(VLINK_SUPPORT_DDS) || defined(VLINK_SUPPORT_DDSC) || defined(VLINK_SUPPORT_DDSR)
       {"VLINK_DDS_BIND", "",
        "Rebinds dds:// URLs to a specific DDS backend at runtime: dds (Fast-DDS) / ddsf (alias of dds) / ddsc "
-       "(CycloneDDS) / ddsr (RTI) / ddst (TravoDDS). Empty = no rebind.",
+       "(CycloneDDS) / ddsr (RTI). Empty = no rebind.",
        false},
-      {"VLINK_DDS_DEBUG", "",
-       "When set to 1 raises Fast-DDS / CycloneDDS / RTI / TravoDDS internal log verbosity (Error -> Info / "
-       "FATAL -> ALL / ERROR -> STATUS_ALL / 0xffff respectively); default 0.",
+      {"VLINK_DDS_DEBUG", "", "When set to 1 raises Fast-DDS / CycloneDDS / RTI internal log verbosity; default 0.",
        false},
       {"VLINK_DDS_EVENT_QOS", "", "Default QoS profile name for DDS Publisher/Subscriber nodes.", false},
       {"VLINK_DDS_METHOD_QOS", "", "Default QoS profile name for DDS Client/Server nodes.", false},
@@ -1327,10 +1315,6 @@ int check_env(bool available_case, const std::string& prefix) {
 
 #ifdef VLINK_SUPPORT_DDSC
       {"VLINK_CYCLONEDDS_URI", "", "Cyclone DDS config URI (file://..., <CycloneDDS>... inline XML).", false},
-#endif
-
-#ifdef VLINK_SUPPORT_DDST
-      {"VLINK_TRAVODDS_QOS_FILE", "", "Path to the TravoDDS (ddst://) QoS profile file.", false},
 #endif
 
 #ifdef VLINK_SUPPORT_SHM
@@ -1801,12 +1785,6 @@ int check_test() {
   account(run_module_field_test("FIELD  ddsr://", "ddsr://check/module/ddsr/field", 3000, true, true, nullptr));
 #endif
 
-#ifdef VLINK_SUPPORT_DDST
-  account(run_module_event_test("EVENT  ddst://", "ddst://check/module/ddst/event", 3000, true, true, nullptr));
-  account(run_module_method_test("METHOD ddst://", "ddst://check/module/ddst/method", 3000, true, true, nullptr));
-  account(run_module_field_test("FIELD  ddst://", "ddst://check/module/ddst/field", 3000, true, true, nullptr));
-#endif
-
 #ifdef VLINK_SUPPORT_ZENOH
   account(run_module_event_test("EVENT  zenoh://", "zenoh://check/module/zenoh/event", 3000, true, true, nullptr));
   account(run_module_method_test("METHOD zenoh://", "zenoh://check/module/zenoh/method", 3000, true, true, nullptr));
@@ -1836,12 +1814,6 @@ int check_test() {
     account(run_module_field_test("FIELD  fdbus://", "fdbus://check/module/fdbus/field", 2000, true, name_server_ok,
                                   "name_server not running"));
   }
-#endif
-
-#ifdef VLINK_SUPPORT_QNX
-  account(run_module_event_test("EVENT  qnx://", "qnx://check/module/qnx/event", 2000, true, true, nullptr));
-  account(run_module_method_test("METHOD qnx://", "qnx://check/module/qnx/method", 2000, true, true, nullptr));
-  account(run_module_field_test("FIELD  qnx://", "qnx://check/module/qnx/field", 2000, true, true, nullptr));
 #endif
 
   std::cout << std::endl;

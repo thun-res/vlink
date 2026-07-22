@@ -27,6 +27,7 @@
 
 #include <doctest/doctest.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <deque>
@@ -34,6 +35,7 @@
 #include <fstream>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <utility>
 
 #include "../common_test.h"
@@ -341,6 +343,33 @@ TEST_SUITE("base-Plugin") {
     auto wrong_interface = plugin.load<MyTestInterface>("vlink-intra", 1, 0, "", search_paths);
     CHECK_EQ(wrong_interface, nullptr);
     CHECK_FALSE(plugin.has_loaded<MyTestInterface>("vlink-intra"));
+  }
+
+  TEST_CASE("concurrent unload reports exactly one removal") {
+    const auto search_paths = plugin_runtime_search_paths();
+    if (!has_runtime_plugin("vlink-intra", search_paths)) {
+      return;
+    }
+
+    Plugin plugin;
+    plugin.set_log_level(Logger::Level::kOff);
+
+    auto loaded = plugin.load<ConfPluginInterface>("vlink-intra", 1, 0, "", search_paths);
+    REQUIRE(loaded != nullptr);
+
+    std::atomic<int> success_count{0};
+    auto unload = [&]() {
+      if (plugin.unload<ConfPluginInterface>("vlink-intra")) {
+        success_count.fetch_add(1, std::memory_order_relaxed);
+      }
+    };
+
+    std::thread first(unload);
+    std::thread second(unload);
+    first.join();
+    second.join();
+
+    CHECK_EQ(success_count.load(std::memory_order_relaxed), 1);
   }
 #endif
 

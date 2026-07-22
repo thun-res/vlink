@@ -32,13 +32,13 @@
 // vlink's plugin system uses C++ virtual dispatch across a dlopen boundary.
 // For that to work safely, every interface class participates in a small
 // boilerplate dance:
-//   - VLINK_PLUGIN_REGISTER expands to a static get_plugin_id() that returns
-//     a stable, compiler-independent identifier string. The same macro is
+//   - VLINK_PLUGIN_REGISTER expands to a static get_plugin_id() based on the
+//     detected interface type name. The same macro is
 //     placed on the implementation class so the loader can match interface
 //     to implementation across DSOs.
 //   - The implementation .cc file additionally invokes VLINK_PLUGIN_DECLARE
-//     which exports the extern "C" factory / destroyer / version-info symbols
-//     that vlink::Plugin::load<T>() resolves via dlsym.
+//     which exports the extern "C" factory and destroyer symbols that
+//     vlink::Plugin::load<T>() resolves via dlsym.
 // =============================================================================
 
 #ifndef EXAMPLES_PLUGIN_PLUGIN_BASIC_GREETER_INTERFACE_H_
@@ -49,15 +49,15 @@
 #include <string>
 
 // User-defined abstract interface. Anything callable across the plugin
-// boundary must be a virtual method. Trivially-copyable parameters and
-// std::string are safe because the .so and host are guaranteed (by build
-// rules) to use the same libstdc++ ABI.
+// boundary must be a virtual method. Host and plugin must be built with ABI-
+// compatible compilers, standard libraries, flags, and dependent types;
+// Plugin's id/version checks do not validate the C++ standard-library ABI.
 class GreeterInterface {
-  // Generates a static get_plugin_id() returning a stable_id derived from the
-  // interface name "GreeterInterface". The exact same macro argument MUST be
+  // Generates a static get_plugin_id() derived from the detected interface
+  // type name "GreeterInterface". The exact same macro argument MUST be
   // used on the implementation class so the loader can pair them up.
-  // The stable_id is computed by the macro at compile time to avoid relying
-  // on typeid/RTTI, which is not portable across compilers/linkers.
+  // The ID/version check rejects a mismatched interface contract, but does not
+  // make different C++ compiler or standard-library ABIs interoperable.
   VLINK_PLUGIN_REGISTER(GreeterInterface)
 
  public:

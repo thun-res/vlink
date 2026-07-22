@@ -7,4 +7,4 @@ _vlink_info() {
     _vlink_bash_complete_words "-l --list_options -h --help -v --version" "$cur"
 }
 
-complete -F _vlink_info vlink-info info
+_vlink_bash_register_completion _vlink_info vlink-info info

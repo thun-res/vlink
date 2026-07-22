@@ -25,7 +25,7 @@
         <mxCell id="pSer" value="Serialize&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;to Bytes&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#0d47a1;arcSize=10;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="270" y="180" width="160" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="pPad" value="Nonce&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;12 B random per msg&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#0d47a1;arcSize=10;shadow=0;" vertex="1" parent="1">
+        <mxCell id="pPad" value="Nonce&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;12 B random base XOR sequence&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#0d47a1;arcSize=10;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="470" y="180" width="170" height="70" as="geometry" />
         </mxCell>
         <mxCell id="pEnc" value="Encrypt + Tag&lt;br&gt;&lt;span style=&quot;font-size:10px&quot;&gt;AES-128-GCM&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#ffffff;arcSize=10;shadow=0;" vertex="1" parent="1">

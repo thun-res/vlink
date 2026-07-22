@@ -76,12 +76,11 @@ namespace vlink {
 
 /**
  * @class DeadlineTimer
- * @brief Cache-line aligned atomic deadline counter with millisecond / microsecond / nanosecond precision.
+ * @brief Atomic deadline counter with millisecond / microsecond / nanosecond precision.
  *
  * @details
  * Reuses @c ElapsedTimer::Accuracy for time precision.  Reads and writes go through a single
- * @c std::atomic<uint64_t> aligned to 64 bytes to avoid false sharing when several timers share
- * a structure.  An invalid (unset) timer stores @c 0 and never reports expiry.
+ * @c std::atomic<uint64_t>.  An invalid (unset) timer stores @c 0 and never reports expiry.
  */
 class VLINK_EXPORT DeadlineTimer final {
  public:
@@ -215,7 +214,7 @@ class VLINK_EXPORT DeadlineTimer final {
   [[nodiscard]] Accuracy get_accuracy() const noexcept;
 
  private:
-  alignas(64) std::atomic<uint64_t> deadline_{0};
+  std::atomic<uint64_t> deadline_{0};
   Accuracy accuracy_{ElapsedTimer::kMilli};
 };
 

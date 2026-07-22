@@ -183,6 +183,7 @@ void DdsGetterImpl::deinit() {
   topic_.reset();
   participant_.reset();
   type_support_.reset();
+  callback_ = {};
 }
 
 bool DdsGetterImpl::suspend() {

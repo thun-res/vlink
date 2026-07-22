@@ -39,5 +39,5 @@ _vlink-bag2mcap() {
 }
 
 if (( $+functions[compdef] )); then
-    compdef _vlink-bag2mcap vlink-bag2mcap bag2mcap
+    _vlink_zsh_register_completion _vlink-bag2mcap vlink-bag2mcap bag2mcap
 fi

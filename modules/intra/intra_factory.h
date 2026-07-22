@@ -44,7 +44,7 @@ enum class IntraType : uint8_t {
   kDirect = 1,
 };
 
-using IntraID = std::tuple<uint8_t, std::string, int32_t, IntraType>;
+using IntraID = std::tuple<uint8_t, std::string, int32_t, IntraType, uint32_t>;
 
 // IntraPipeline
 class IntraPipeline final : public MessageLoop {
@@ -84,7 +84,8 @@ class IntraNode final : public AbstractObject<IntraID>, public std::enable_share
 
   bool publish(IntraType type, uint32_t channel, const IntraData& intra_data);
 
-  bool call(IntraType type, uint32_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback = nullptr);
+  bool call(NodeImpl* requester, IntraType type, uint32_t channel, const Bytes& req_data,
+            NodeImpl::MsgCallback&& callback = nullptr, bool inline_if_same_thread = false);
 
  private:
   IntraPipeline* pipeline_{nullptr};

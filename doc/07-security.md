@@ -1,6 +1,6 @@
 # 🔏 7. 安全加密
 
-安全加密是 VLink 在数据路径上施加的一类非侵入能力：在不可信链路（车云通道、跨域 DDS、MQTT 等）上保护 payload 的机密性与完整性。它遵循统一的 URL 契约——业务代码仍只面对六个通信原语，能力以"节点变体 `Security*`"或"`Security::Config` 配置参数"的形式接入，调用方式不因启用而改变。从数据流位置看，加密在序列化之后、传输之前透明插入，与同样作用于数据路径的[零拷贝](06-zerocopy.md)正交且互补，可在同一端点叠加。
+安全加密是 VLink 在数据路径上施加的一类非侵入能力：在不可信链路（车云通道、跨域 DDS、MQTT 等）上保护 payload 的机密性与完整性。它遵循统一的 URL 契约——业务代码仍只面对六个通信原语，能力以“节点变体 `Security*`”或“`Security::Config` 配置参数”的形式接入，调用方式不因启用而改变。从数据流位置看，加密在序列化之后、传输之前透明插入；接口可与共享内存后端组合，但安全节点会关闭 transport loan，先生成密文再由后端传输，因此不保留端到端零拷贝。
 
 ![安全加密管道](images/security-pipeline.png)
 
@@ -14,8 +14,8 @@ VLink 在序列化层与传输层之间提供一层应用级认证加密（authe
 
 每个端点（六原语之一）至多持有一个安全上下文，其行为由三个不变量界定：
 
-- **透明接入**：将普通节点类型替换为对应的 `Security*` 变体，`publish` / `invoke` / `set` 及回调注册的语义完全不变。
-- **构造期一次配置**：全部参数经 `Security::Config` 在构造时传入，配置在构造后不可变；更换密钥或回调需重建节点。
+- **透明接入**：将普通节点类型替换为对应的 `Security*` 变体时，调用签名与业务消息类型不变；发送返回值和回调投递额外受加解密、验签与防重放结果约束。
+- **初始化前配置**：可在构造时传入 `Security::Config`，也可对延迟初始化节点在 `init()` 前调用 `enable_security()`；节点初始化后不可再替换配置，更换运行中端点的密钥或回调需重建节点。
 - **零侵入**：未使用 `Security*` 变体的端点不引入任何加密代码路径。
 
 框架支持三种工作模式，按 `Config` 中实际填写的字段自动选择，优先级为**自定义回调 > 非对称 > 对称**：
@@ -168,10 +168,10 @@ target_link_libraries(my_app PRIVATE vlink::vlink)
 
 以下传输组合不支持消息级加密：构造时 `enable_security()` 打印警告（`Security::Config will ignore intra/dds(cdr) transport.`）并返回 `false`，**不安装任何安全对象**。由于安全节点变体默认以 `InitType::kWithInit` 构造，紧随其后的 `init()` 检测到无可用 `Security`，会以 `VLOG_F` 致命级日志抛出 `Exception::RuntimeError`（即构造期 fatal）。须由调用方自行避免在不可信链路上对这些传输使用 `Security*` 变体；若需在 `init()` 前自查配置，可用 `InitType::kWithoutInit` 延迟初始化并在内部 `Security` 上检查 `can_encrypt()` / `can_decrypt()`。机制原因与替代方案见 [传输后端与 URL](04-transport.md)：
 
-- `intra://`：进程内直接传递对象，不进入加密管道。对基于 `IntraDataType` 的零拷贝类型，`SecurityType::kWithSecurity` 还会触发编译期 `static_assert`。
+- `intra://`：当前实现显式排除整个 intra 路径；其中 `shared_ptr<IntraDataType>` 专用对象路径还会对安全模板触发编译期 `static_assert`。普通 intra 消息虽经 Bytes 编解码，也不因此启用安全层。
 - `dds://` 配合 CDR 类型：CDR 直接交由 DDS 处理，应改用 DDS Security 插件或传输层 TLS。
 
-其余后端（`shm://`、`shm2://`、`ddsc://`、`ddsr://`、`ddst://`、`zenoh://`、`mqtt://`、`fdbus://`、`someip://`、`qnx://`，以及 `dds://` 的非 CDR 类型）均支持。
+其余后端（`shm://`、`shm2://`、`ddsc://`、`ddsr://`、`zenoh://`、`mqtt://`、`fdbus://`、`someip://`，以及 `dds://` 的非 CDR 类型）均支持。
 
 ![后端选择决策树](images/transport-decision-tree.png)
 
@@ -179,7 +179,7 @@ target_link_libraries(my_app PRIVATE vlink::vlink)
 
 ## 🛡️ 7.8 传输层 TLS
 
-`VLINK_SSL_*` 系列环境变量（`VLINK_SSL_CA` / `_CERT` / `_KEY` / `_KEY_PASS` / `_VERIFY` / `_SNI` / `_CIPHERS`，分别映射到 `ssl.ca` / `ssl.cert` / `ssl.key` / `ssl.key_password` / `ssl.verify` / `ssl.server_name` / `ssl.ciphers` 属性）为支持 TLS 的传输端点提供 CA、客户端证书、证书校验等配置；显式属性优先于环境变量。具备原生 TLS 机制的后端为 `mqtt://`（Paho `MQTTClient_SSLOptions`，自动将 `tcp://` 升级为 `ssl://`）、`dds://`（Fast-DDS `TCPv4TransportDescriptor::tls_config`）、`ddsc://`（CycloneDDS，需编译期 `DDS_HAS_SSL`）、`ddsr://`（RTI Connext DDS，`SslOptions::parse_from` 写入 `dds.transport.tcp.tcp1.tls.*` 属性并启用 `NDDS_TRANSPORT_CLASSID_TLSV4_LAN`）、`zenoh://`（zenoh-c；zenoh-pico 构建不支持 TLS）。除手动 `set_ssl_options()` / `set_property("ssl.ca", ...)` 外，`ca_file` 或 `cert_file` 任一非空即自动启用 TLS，无独立开关；DDS/CycloneDDS 启用 TLS 会强制改用 TCP 传输。这属于链路层安全，与本章的消息级加密是两个独立层次，可叠加形成纵深防御：消息级加密保护 payload 端到端机密性，TLS 保护链路握手与传输通道。完整变量清单见 [集成与环境](13-integration.md)。
+`VLINK_SSL_*` 系列环境变量（`VLINK_SSL_CA` / `_CERT` / `_KEY` / `_KEY_PASS` / `_VERIFY` / `_SNI` / `_CIPHERS`，分别映射到 `ssl.ca` / `ssl.cert` / `ssl.key` / `ssl.key_password` / `ssl.verify` / `ssl.server_name` / `ssl.ciphers` 属性）为支持 TLS 的传输端点提供 CA、客户端证书、证书校验等配置；显式属性优先于环境变量。具备原生 TLS 机制的后端为 `mqtt://`（Paho `MQTTClient_SSLOptions`，自动将 `tcp://` 升级为 `ssl://`）、`dds://`（Fast-DDS `TCPv4TransportDescriptor::tls_config`）、`ddsc://`（CycloneDDS，需编译期 `DDS_HAS_SSL`）、`ddsr://`（RTI Connext DDS，`SslOptions::parse_from` 写入 `dds.transport.tcp.tcp1.tls.*` 属性并启用 `NDDS_TRANSPORT_CLASSID_TLSV4_LAN`）、`zenoh://`（zenoh-c；zenoh-pico 需以 `Z_FEATURE_LINK_TLS=1` 构建）。除手动 `set_ssl_options()` / `set_property("ssl.ca", ...)` 外，`ca_file` 或 `cert_file` 任一非空即自动启用 TLS，无独立开关；DDS/CycloneDDS 启用 TLS 会强制改用 TCP 传输。Zenoh 1.x 映射 CA、连接/监听证书与私钥、mTLS 和 hostname 校验，但不支持 VLink 的 `ssl.server_name`、`ssl.key_password`、`ssl.ciphers` 覆盖。这属于链路层安全，与本章的消息级加密是两个独立层次，可叠加形成纵深防御：消息级加密保护 payload 端到端机密性，TLS 保护链路握手与传输通道。完整变量清单见 [集成与环境](13-integration.md)。
 
 ---
 
@@ -187,8 +187,8 @@ target_link_libraries(my_app PRIVATE vlink::vlink)
 
 | 维度 | 对称（AES-128-GCM） | 非对称（RSA 混合） |
 | --- | --- | --- |
-| 每消息开销 | AEAD，借助 AES-NI / ARMv8 Crypto 扩展达 GB/s 级 | 每消息一次 RSA 运算（约 0.1–1 ms） |
-| 适用频率 | 高频小消息热路径 | 会话初始化或低频高敏感链路 |
+| 每消息开销 | 一次 AEAD 加密/解密与认证 | 每消息生成 AES 密钥并做 RSA-OAEP 封装/解封；启用签名时再做 RSA-PSS 签名/验签 |
+| 适用频率 | 通常适合较高频消息；仍需按目标 CPU/OpenSSL/载荷实测 | 计算开销更高，是否满足频率要求须按密钥位数、签名配置和目标平台实测 |
 | 密钥分发 | 需安全渠道预共享 | 公钥可公开分发 |
 
 - **PBKDF2 仅算一次**：在节点构造时计算，不在热路径；`pbkdf2_iterations` 默认 `200000`，按目标硬件调整。
@@ -216,6 +216,6 @@ vlink::SecurityPublisher<MyMsg> pub("dds://secure/topic", cfg);
 - [通信模型](02-communication.md) —— Publisher / Subscriber 收发用法与节点生命周期
 - [消息序列化](03-serialization.md) —— 序列化类型、零拷贝读写与加密管道的关系
 - [传输后端与 URL](04-transport.md) —— 各后端加密兼容性与不支持的传输组合
-- [零拷贝](06-zerocopy.md) —— 与加密正交的内存路径优化，可叠加于同一端点
+- [零拷贝](06-zerocopy.md) —— 借贷接口与所有权约束；启用安全节点时 transport loan 被关闭
 - [基础库](08-base-library.md) —— `Bytes` 类 API 与基础组件
 - [集成与环境](13-integration.md) —— `VLINK_SSL_*` 等环境变量清单

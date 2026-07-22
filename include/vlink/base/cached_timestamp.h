@@ -62,7 +62,6 @@
 
 #pragma once
 
-#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <mutex>
@@ -77,7 +76,7 @@ namespace vlink {
  * @brief Mutable cached generator for short formatted timestamps.
  *
  * @details
- * Holds a 32-byte buffer protected by a mutex plus an atomic last-second counter so concurrent
+ * Holds a 32-byte buffer and last-second counter protected by a mutex so concurrent
  * @c get calls share a single formatted prefix and only the millisecond suffix is rewritten.
  * The first call seeds the cache; subsequent same-second calls patch only the trailing three
  * characters in place.
@@ -120,7 +119,7 @@ class VLINK_EXPORT CachedTimestamp final {
 
   void update_milliseconds(int ms);
 
-  alignas(64) std::atomic<int64_t> last_sec_{0};
+  int64_t last_sec_{0};
   std::mutex mtx_;
   char buffer_[32]{};
   size_t buffer_len_{0};

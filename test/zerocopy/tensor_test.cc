@@ -28,6 +28,7 @@
 #include <doctest/doctest.h>
 
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -177,6 +178,48 @@ TEST_SUITE("zerocopy-Tensor") {
     t.set_shape(shape, 16);
 
     CHECK_EQ(t.rank(), zerocopy::Tensor::kMaxRank);
+  }
+
+  TEST_CASE("set_shape rejects unrepresentable element counts and strides") {
+    zerocopy::Tensor t;
+
+    SUBCASE("uint64 element count overflow") {
+      const uint32_t shape[4] = {65536u, 65536u, 65536u, 65536u};
+      t.set_shape(shape, 4u);
+
+      CHECK_EQ(t.rank(), 0u);
+      CHECK_EQ(t.num_elements(), 0u);
+      CHECK_EQ(t.batch_size(), 0u);
+      CHECK_EQ(t.shape_at(0u), 0u);
+      CHECK_EQ(t.stride_at(0u), 0u);
+    }
+
+    SUBCASE("uint32 stride overflow") {
+      const uint32_t shape[3] = {2u, std::numeric_limits<uint32_t>::max(), 2u};
+      t.set_shape(shape, 3u);
+
+      CHECK_EQ(t.rank(), 0u);
+      CHECK_EQ(t.num_elements(), 0u);
+      CHECK_EQ(t.batch_size(), 0u);
+      CHECK_EQ(t.shape_at(0u), 0u);
+      CHECK_EQ(t.stride_at(0u), 0u);
+    }
+  }
+
+  TEST_CASE("set_shape preserves representable zero-sized dimensions") {
+    zerocopy::Tensor t;
+    const uint32_t maximum = std::numeric_limits<uint32_t>::max();
+    const uint32_t shape[4] = {maximum, maximum, maximum, 0u};
+    t.set_shape(shape, 4u);
+
+    CHECK_EQ(t.rank(), 4u);
+    CHECK_EQ(t.num_elements(), 0u);
+    CHECK_EQ(t.batch_size(), maximum);
+    CHECK_EQ(t.shape_at(3u), 0u);
+    CHECK_EQ(t.stride_at(0u), 0u);
+    CHECK_EQ(t.stride_at(1u), 0u);
+    CHECK_EQ(t.stride_at(2u), 0u);
+    CHECK_EQ(t.stride_at(3u), 1u);
   }
 
   TEST_CASE("set_shape_at and set_stride_at modify single dimensions and respect bounds") {
@@ -469,7 +512,19 @@ TEST_SUITE("zerocopy-Tensor") {
   TEST_CASE("deep_copy from raw pointer rejects self buffer and resizes owned storage") {
     zerocopy::Tensor t;
     REQUIRE(t.create(16));
-    CHECK_FALSE(t.deep_copy(const_cast<uint8_t*>(t.data()), t.size()));
+    auto* original = const_cast<uint8_t*>(t.data());
+    original[0] = 0xA5u;
+    CHECK_FALSE(t.shallow_copy(original + 1, t.size() - 1));
+    CHECK_FALSE(t.deep_copy(original + 1, t.size() - 1));
+    CHECK_FALSE(t.deep_copy(original, t.size()));
+    CHECK(t.is_owner());
+    CHECK_EQ(t.data(), original);
+    CHECK_EQ(t.data()[0], 0xA5u);
+
+    zerocopy::Tensor borrowed;
+    REQUIRE(borrowed.shallow_copy(original, t.size()));
+    CHECK_FALSE(t.shallow_copy(borrowed));
+    CHECK_FALSE(t.deep_copy(borrowed));
 
     std::vector<uint8_t> larger(96);
     fill_pattern(larger.data(), larger.size(), 0x61u);
@@ -630,6 +685,9 @@ TEST_SUITE("zerocopy-Tensor") {
     CHECK((src >> wire));
     CHECK(zerocopy::Tensor::check_valid(wire));
     CHECK_EQ(wire.size(), src.get_serialized_size());
+    uintptr_t serialized_pointer = 1;
+    std::memcpy(&serialized_pointer, wire.data() + 8u + 40u, sizeof(serialized_pointer));
+    CHECK_EQ(serialized_pointer, 0u);
 
     zerocopy::Tensor dst;
     CHECK((dst << wire));

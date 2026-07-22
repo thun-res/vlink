@@ -82,7 +82,7 @@
         <mxCell id="e1t" value="transport" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="70" y="256" width="230" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="e1d" value="Transport backend&#10;Selects 1 of 12 backends&#10;intra / shm / dds / zenoh / ..." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;" vertex="1" parent="1">
+        <mxCell id="e1d" value="Transport backend&#10;Selects 1 of 10 backends&#10;intra / shm / dds / zenoh / ..." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;" vertex="1" parent="1">
           <mxGeometry x="70" y="284" width="230" height="68" as="geometry" />
         </mxCell>
 
@@ -146,7 +146,7 @@
         <mxCell id="samples_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;arcSize=8;shadow=0;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="60" y="390" width="880" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="samples_title" value="Switching transport backend = changing URL prefix only, no application code changes" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
+        <mxCell id="samples_title" value="Topic-addressed backends share one API; backend-specific URL parameters still apply" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
           <mxGeometry x="60" y="400" width="880" height="24" as="geometry" />
         </mxCell>
 
@@ -159,7 +159,7 @@
         <mxCell id="ex3" value="zenoh://topic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#e65100;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="480" y="435" width="150" height="38" as="geometry" />
         </mxCell>
-        <mxCell id="ex4" value="someip://topic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+        <mxCell id="ex4" value="intra://topic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="670" y="435" width="150" height="38" as="geometry" />
         </mxCell>
         <mxCell id="exarr1" style="endArrow=block;endFill=1;html=1;strokeWidth=1.5;strokeColor=#1976d2;" edge="1" parent="1">

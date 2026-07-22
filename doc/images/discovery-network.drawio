@@ -5,7 +5,7 @@
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
 
-        <mxCell id="title" value="Discovery Network Topology" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=22;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
+        <mxCell id="title" value="DiscoveryReporter Topology Channel" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=22;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="40" y="20" width="680" height="32" as="geometry" />
         </mxCell>
         <mxCell id="subtitle" value="UDP multicast 239.255.0.100 : 51694  ·  heartbeat every ~500 ms" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
@@ -111,7 +111,7 @@
         <mxCell id="tool_mon" value="vlink-monitor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#388e3c;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#1b5e20;shadow=0;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="243" y="446" width="130" height="38" as="geometry" />
         </mxCell>
-        <mxCell id="tool_dump" value="vlink-dump" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#388e3c;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#1b5e20;shadow=0;arcSize=12;" vertex="1" parent="1">
+        <mxCell id="tool_parse" value="vlink-parse" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#388e3c;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#1b5e20;shadow=0;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="387" y="446" width="130" height="38" as="geometry" />
         </mxCell>
         <mxCell id="tool_trigger" value="vlink-trigger" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#388e3c;fontSize=12;fontFamily=Helvetica;fontStyle=1;fontColor=#1b5e20;shadow=0;arcSize=12;" vertex="1" parent="1">
@@ -129,7 +129,7 @@
           <mxGeometry x="459" y="492" width="130" height="38" as="geometry" />
         </mxCell>
 
-        <mxCell id="footer" value="DiscoveryReporters publish heartbeats; DiscoveryViewers subscribe and prune stale entries by timeout." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+        <mxCell id="footer" value="Observability only: transport backends perform their own data-plane discovery and connection." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
           <mxGeometry x="40" y="556" width="680" height="22" as="geometry" />
         </mxCell>
 

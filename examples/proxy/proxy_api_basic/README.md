@@ -25,7 +25,7 @@
 | `Mode` | `kObserveAll` | 观察全部 topic |
 | | `kRecord` | 录制 |
 | | `kPlay` | 回放注入 |
-| `Error` | `kTokenError` | 握手被拒（多见于 Server 未启动） |
+| `Error` | `kTokenError` | Server 拒绝 token 或返回空 token |
 | | `kVersionCompError` | 两端 VLink 版本不一致 |
 
 ## 🚀 最小可运行片段
@@ -57,7 +57,7 @@ api.quit();
 api.wait_for_quit();
 ```
 
-回调均运行于 ProxyAPI 内部线程，**不要在回调中阻塞**；重活另起线程处理。运行前须在另一进程启动 `ProxyServer`，否则握手失败、`is_connected()` 持续返回 false 并触发 `kTokenError`。
+回调均运行于 ProxyAPI 内部线程，**不要在回调中阻塞**；重活另起线程处理。运行前须在另一进程启动 `ProxyServer`，否则连接等待失败且 `is_connected()` 持续返回 false；这一路径本身不等同于 `kTokenError`。
 
 ## 🧭 角色选择
 

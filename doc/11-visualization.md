@@ -2,7 +2,7 @@
 
 当文本与统计不足以表达数据语义——需要观看相机图像、三维点云、目标检测或字段波形——时，VLink 在命令行工具之外提供两层图形化可视化能力：基于 Qt 的桌面 GUI 套件（图像、点云、目标检测等结构化数据的本地图形化呈现与时序分析），以及把实时数据桥接至 Foxglove Studio 与 Rerun 的 Web 可视化工具集（浏览器访问、远程协作、高性能三维渲染）。
 
-两层与命令行工具共享同一套底层观测设施：服务发现枚举活跃话题，代理层（ProxyAPI / `vlink-proxy`）聚合话题、序列化类型与统计信息。因此可视化工具对传输后端（`intra://` / `shm://` / `dds://` 等）一律透明——业务侧更换后端只改 URL 前缀，工具侧无需任何改动。仅需查看话题列表、频率、原始字节，或需脚本/CI 对接时，命令行工具更轻量，见 [命令行工具](10-cli-tools.md)。
+两层与命令行工具共享同一套观测设施：启用了 `DiscoveryReporter` 的进程向观测面上报节点，代理层（ProxyAPI / `vlink-proxy`）再聚合 URL、序列化类型与统计信息；这与各后端自身的数据面发现不是同一机制。可视化工具侧通常无需随 topic 后端改代码，但业务 URL 必须满足目标后端契约，专用寻址后端不能只换 scheme。仅需查看话题列表、频率、原始字节，或需脚本/CI 对接时，命令行工具更轻量，见 [命令行工具](10-cli-tools.md)。
 
 ![viewer 工作流](images/foreword-viewer-workflow.png)
 
@@ -92,9 +92,13 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 
 ### 🎥 11.1.5 相机与 3D 可视化
 
-**相机帧预览（S）**　按 `S` 打开相机窗口，预览图像话题。零拷贝 `CameraFrame` 会按 `format()` 自动选择直接渲染或解码路径；Protobuf、FlatBuffers 与原始字节入口的格式下拉框默认使用 `Auto`，可识别内嵌的序列化 `CameraFrame` 或 Qt 支持的静态图像。裸 YUV / 裸 RGB 等无头原始像素流需手动指定格式和尺寸；H.264、H.265、H.266、AV1、MPEG4 等编码视频流需手动指定格式，尺寸由解码器从码流解析。JPEG、PNG、WebP 等静态图像优先走 Qt 解码，Qt 失败且启用 FFmpeg 时会尝试解码 fallback；FFmpeg 还支持 MJPEG、YUV420/422/444、NV12、NV21、YUYV、YVYU、UYVY、BGR888、RGB888 等格式。通用 OpenCV/ROS 数值格式按首通道灰度预览；彩色图像应使用 `rgb8`、`bgr8`、`rgba8`、`bgra8` 等明确通道顺序的编码。支持多通道并排显示、暂停、硬件解码，并可联动 3D 投影视图将图像投射至点云。关闭 `ENABLE_VIEWER_FFMPEG` 时，零拷贝 `CameraFrame` 的直接渲染格式与 Qt 可解码的静态图像仍可显示，手动裸流和编码视频解码不可用。
+**相机帧预览（S）**　按 `S` 打开相机窗口，预览图像话题。零拷贝 `CameraFrame` 会按 `format()` 自动选择直接渲染或解码路径；Protobuf、FlatBuffers 与原始字节入口的格式下拉框默认使用 `Auto`，可识别内嵌的序列化 `CameraFrame` 或 Qt 支持的静态图像。裸 YUV / 裸 RGB 等无头原始像素流需手动指定格式和尺寸；H.264、H.265、H.266、AV1、MPEG4 等编码视频流需手动指定格式，尺寸由解码器从码流解析。JPEG、PNG、WebP 等静态图像优先走 Qt 解码，Qt 失败且启用 FFmpeg 时会尝试解码 fallback；FFmpeg 还支持 MJPEG、YUV420/422/444、NV12、NV21、YUYV、YVYU、UYVY、BGR888、RGB888 等格式。通用 OpenCV/ROS 数值格式按首通道灰度预览；彩色图像应使用 `rgb8`、`bgr8`、`rgba8`、`bgra8` 等明确通道顺序的编码。支持多通道并排显示、暂停、硬件解码，并可联动 3D 投影视图将点云投影并叠加到图像。关闭 `ENABLE_VIEWER_FFMPEG` 时，零拷贝 `CameraFrame` 的直接渲染格式与 Qt 可解码的静态图像仍可显示，手动裸流和编码视频解码不可用。
 
 ![相机帧结构](images/camera-frame-structure.png)
+
+相机窗口启用点云联动后，Viewer 使用外参、内参与可选畸变参数把当前 `Point3DDialog` 点集投影到图像坐标，并在本地相机视图上叠加有效点；该路径不产生或重新发布新的话题。
+
+![Viewer 点云到相机视图的本地投影流程](images/foreword-projection-flow.png)
 
 **3D 场景可视化（Z）**　按 `Z` 打开 3D 场景窗口，是自动驾驶场景可视化的核心。`Point3DRenderType` 共定义十四类渲染：
 
@@ -195,7 +199,7 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 
 ## 🌐 11.2 Web 可视化（WebViz）
 
-WebViz 是 VLink 的可视化桥接工具集，解决"实时数据如何接入主流可视化平台"的问题。它自动发现系统中全部在线 URL，将 VLink 消息转换为目标平台可直接消费的 Schema，并推送至浏览器或桌面可视化器。其设计遵循桥接而非重写：业务侧照常发布消息，WebViz 仅消费发现结果（后端透明性见本章导言）。
+WebViz 是 VLink 的可视化桥接工具集，解决"实时数据如何接入主流可视化平台"的问题。它发现代理桥可见的在线 URL，将 VLink 消息转换为目标平台可直接消费的 Schema，并推送至浏览器或桌面可视化器。其设计遵循桥接而非重写：业务侧照常发布消息，WebViz 仅消费发现结果（后端透明性见本章导言）。
 
 ![WebViz 架构](images/webviz-architecture.png)
 
@@ -215,9 +219,13 @@ WebViz 支持两个可视化后端，并各自配套一个离线转换工具。�
 ![WebViz 数据流](images/webviz-dataflow.png)
 
 1. VLink 应用经任意后端（`dds://`、`shm://`、`intra://`、`zenoh://` 等）发布消息。
-2. WebViz 接入 VLink 网络，自动发现全部在线 URL 并按需订阅。
-3. 转换层依据消息类型选择转换路径，优先级为零拷贝转换 > JSON 字段映射 > 转换插件。
+2. WebViz 通过代理桥接收可见 URL 的发现信息；Foxglove 以 `kAuto` 随前端通道订阅按需控制数据转发，Rerun 则以 `kAutoAndObserveAll` 订阅每个发现的 URL，再由白名单与黑名单决定是否处理。
+3. 转换层依次尝试显式 zerocopy 字段映射、内置 zerocopy 转换、其余 JSON / 专用映射与转换插件；仍未命中时，Foxglove 可按消息类型走通用透传，Rerun 则降级为文本日志。ExprTk 表达式属于字段映射内部处理。
 4. 经 WebSocket（Foxglove）或 gRPC（Rerun）推送至前端可视化器。
+
+下图展开 `proxy_api` 部署下的发现、订阅、转换与前端数据链路；底部同时标出复用相同转换器的离线 MCAP / RRD 路径。若选择 `proxy_server` 模式，发现与订阅逻辑改为嵌入桥接进程。
+
+![WebViz 的 ProxyAPI 数据链路与离线转换路径](images/webviz-datalink.png)
 
 ### 🚀 11.2.2 快速开始
 
@@ -285,6 +293,8 @@ vlink-foxglove -c foxglove_config.json --proto_dir ./protos
 ```
 
 `vlink-foxglove` 另支持连接图（节点拓扑可视化，默认开启）、前端下发消息回写 VLink（`--foxglove_msgs`）、服务调用（`--rpc_msgs`）、参数面板（`--parameters_url`）与时间更新下发（`--send_time`，默认关闭，开启后将 VLink 时间戳同步至前端时间轴），经对应参数或 JSON 配置文件开启。
+
+为防止慢速或异常客户端使待发送队列无界增长，每条 Foxglove 连接的排队数据设有 64 MiB 字节阈值和 4096 条消息阈值；达到任一阈值后按慢客户端关闭。阈值只约束已经排队的消息，空队列中的首条大消息仍可正常发送。
 
 此外，自定义消息映射（见 §11.2.7）可指定两种零转换 converter，二者均以浅拷贝直接透传原始字节、不做反序列化，并按 `timestamp_field` 提取时间戳：`passthrough` 用于原样转发已是 Foxglove 兼容编码的消息；`send_time` 在透传的同时将该消息标记为时间源，配合 `--send_time` 驱动前端时间轴同步。
 
@@ -420,6 +430,8 @@ vlink-foxglove --vlink_msgs ./my_gps.json
 | `expression` | 否 | exprtk 数学表达式，可引用源消息任意数值字段，见 §11.2.10 |
 | `default_value` | 否 | 源字段缺失时的默认值（字符串/数字/布尔/`null`）；亦可单独用于注入常量 |
 
+对 FlatBuffers table 的直接字段映射会区分“字段未写入”和“字段写入了 schema 默认值”：未写入时使用映射的 `default_value`；内联 struct 没有字段存在位，始终视为存在。表达式求值遵循 FlatBuffers 反射读取语义，可读取 schema 中声明的默认值。
+
 **进阶映射**　障碍物到 3D 包围盒（数组多映射 + 时间戳，目标 Rerun `Boxes3D`）：
 
 ```json
@@ -492,13 +504,15 @@ foxglove.RawImage（原始图像）：
 
 Rerun Archetype（`GeoPoints` / `Transform3D` / `Boxes3D` / `Points3D` / `Scalars` / `Pinhole` 等）的 `target` 字段结构类似，按 `archetype` 选用对应字段，示例见仓库 `vlink_msgs/example_*.json`。
 
+Rerun 的 `send_time` converter 只为同一消息实际写入的 Archetype 数据行附加 `vlink_time` 时间轴，必须与同一 `ser` 的普通 Archetype 映射配对；单独设置时间而不写数据不会在 Rerun 中产生时间事件。
+
 ### ⚡ 11.2.8 内置零拷贝转换
 
 VLink 零拷贝类型无需编写 `field_mappings`，转换层自动选择内置路径。只要消息 `ser` 为下表类型，不写任何映射即可可视化。
 
 | VLink 零拷贝类型 | Foxglove 目标 | Rerun 目标 | 可选 `converter` |
 | --- | --- | --- | --- |
-| `CameraFrame` | `foxglove.RawImage` / `foxglove.CompressedImage` / `foxglove.CompressedVideo` | `EncodedImage` / `Image` / `AssetVideo` | `camera_frame` |
+| `CameraFrame` | `foxglove.RawImage` / `foxglove.CompressedImage` / `foxglove.CompressedVideo` | `EncodedImage` / `Image` / `VideoStream` | `camera_frame` |
 | `PointCloud` | `foxglove.PointCloud` | `Points3D` | `point_cloud` |
 | `OccupancyGrid` | `foxglove.Grid` | `Image`（灰度） | `occupancy_grid`† |
 | `ObjectArray` | `foxglove.SceneUpdate` | `Boxes3D` | `object_array`† |
@@ -511,6 +525,10 @@ VLink 零拷贝类型无需编写 `field_mappings`，转换层自动选择内置
 若需要对零拷贝字段进行单位换算、坐标变换或派生计算，可显式配置 `field_mappings` 并将 `encoding` 设为 `zerocopy`。此时转换器会优先执行映射和 ExprTk 表达式；未配置映射时仍走上表中的内置快速路径。`ObjectArray.data`、`PointCloud.data`、`OccupancyGrid.data`、`Tensor.shape` / `strides` / `data` 均支持数组下标访问。
 
 通用字段映射使用 `vlink::zerocopy::MessageParser` 完成类型识别、边界检查和标量读取；性能敏感的 CameraFrame / PointCloud 专用快速路径直接调用对应容器 codec，不经过通用字段映射。字段映射中的 `int64` / `uint64` 值在进入表达式前保持整数类型，ExprTk 计算需要转成 `double` 且整数超出精确范围时会记录精度警告。
+
+压缩视频 `CameraFrame` 必须按目标协议提供单帧样本：H.264 / H.265 使用 Annex B，AV1 使用 low-overhead bitstream，并且不能包含 B 帧。转换器会拒绝显式标记为 `kStreamB` 的帧，但不会为避免热路径开销而深度重解析码流。
+
+Rerun C++ SDK 0.31 与 0.34 的 `ImageFormat` 对三平面 I444 返回 4 bytes/pixel，与 VLink YUV444 的 3 bytes/pixel 不一致；该格式在 Rerun 路径中因此以零拷贝方式显示 Y 平面灰度图，不会把不一致的彩色载荷伪装为成功。
 
 零拷贝类型的定义见 [零拷贝](06-zerocopy.md)。
 
@@ -600,6 +618,8 @@ cmake --install build
 | exprtk | 数学表达式引擎 | 两者共用 |
 | websocketpp + asio | WebSocket 服务端 | Foxglove |
 | rerun_sdk | Rerun C++ SDK | Rerun（`vlink-rerun` / `vlink-bag2rrd` 须本机可定位 `rerun_sdk`） |
+
+VLink 的 CMake 基线保持为 3.15。CMake 3.15 下应提供已安装的 `rerun_sdk` 包或预先定义的 `rerun_sdk` target；官方 Rerun C++ SDK 源码包自身要求 CMake 3.16+，因此仅在使用源码包构建时需要更高版本。`RERUN_SDK_DIR` 可指向安装前缀、CMake package 目录或官方源码包。
 
 常用环境变量（命令行参数优先级更高）：`VLINK_PROTO_DIR` / `VLINK_FBS_DIR`（对应 `--proto_dir` / `--fbs_dir`）、`VLINK_SCHEMA_PLUGIN` / `VLINK_CONVERT_PLUGIN`（对应 `--schema_plugin` / `--convert_plugin`）。完整环境变量清单见 [C API、扩展与环境变量](13-integration.md)。
 

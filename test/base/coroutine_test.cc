@@ -255,6 +255,21 @@ Task<> body_exec_throws(MessageLoop* loop, std::atomic<bool>* caught, std::promi
   co_return;
 }
 
+Task<> body_exec_schedule_timeout(MessageLoop* loop, std::atomic<bool>* ran, std::atomic<bool>* caught,
+                                  std::promise<void>* done) {
+  loop->post_task([] { std::this_thread::sleep_for(40ms); });
+  vlink::Schedule::Config cfg(0, 0, 5);
+
+  try {
+    co_await exec(*loop, cfg, [ran] { ran->store(true, std::memory_order_release); });
+  } catch (const std::runtime_error&) {
+    caught->store(true, std::memory_order_release);
+  }
+
+  done->set_value();
+  co_return;
+}
+
 Task<int> body_int_const(int v) { co_return v; }
 
 Task<int> body_delay_then(MessageLoop* loop, uint32_t ms, int v) {
@@ -1094,6 +1109,26 @@ TEST_SUITE("base-Coroutine") {
     co_spawn(loop, body_exec_throws(&loop, &caught, &done));
 
     fut.get();
+    CHECK(caught.load(std::memory_order_acquire));
+
+    loop.quit();
+    loop.wait_for_quit();
+  }
+
+  TEST_CASE("exec resumes with an exception when its schedule times out") {
+    MessageLoop loop;
+    loop.async_run();
+
+    std::atomic<bool> ran{false};
+    std::atomic<bool> caught{false};
+    std::promise<void> done;
+    auto fut = done.get_future();
+
+    co_spawn(loop, body_exec_schedule_timeout(&loop, &ran, &caught, &done));
+
+    REQUIRE(fut.wait_for(2s) == std::future_status::ready);
+    fut.get();
+    CHECK_FALSE(ran.load(std::memory_order_acquire));
     CHECK(caught.load(std::memory_order_acquire));
 
     loop.quit();

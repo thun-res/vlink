@@ -29,6 +29,7 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <map>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -64,6 +65,7 @@ namespace vlink {
 [[maybe_unused]] static constexpr uint8_t kEnvelopeModeAsymmetric = 2U;
 [[maybe_unused]] static constexpr size_t kEnvelopeFixedHeaderSize = 34U;
 [[maybe_unused]] static constexpr uint32_t kReplayWindowMax = 65536U;
+[[maybe_unused]] static constexpr size_t kReplayPeerMax = 1024U;
 [[maybe_unused]] static constexpr char kAadDomain[] = "vlink-security-v2";
 [[maybe_unused]] static constexpr size_t kAadDomainSize = sizeof(kAadDomain) - 1U;
 
@@ -78,14 +80,12 @@ struct ReplayWindow final {
   std::vector<uint64_t> words;
 };
 
-struct PeerReplay final {
-  uint64_t sender_id{0};
-  ReplayWindow window;
-};
+using PeerReplayMap = std::map<uint64_t, ReplayWindow>;
 
 struct SymmetricKeySlot final {
   Bytes key;
-  std::vector<PeerReplay> peers;
+  PeerReplayMap peers;
+  bool peer_limit_reported{false};
 };
 
 struct EnvelopeHeader final {
@@ -180,32 +180,8 @@ static uint32_t normalize_replay_window(uint32_t window) noexcept {
   return (window > kReplayWindowMax) ? kReplayWindowMax : window;
 }
 
-static ReplayWindow& get_peer_window(std::vector<PeerReplay>& peers, uint64_t sender_id) {
-  for (auto& peer : peers) {
-    if (peer.sender_id == sender_id) {
-      return peer.window;
-    }
-  }
-
-  peers.push_back(PeerReplay{sender_id, {}});
-
-  return peers.back().window;
-}
-
 static bool accept_replay(ReplayWindow& replay, uint64_t seq, uint32_t window_bits) {
-  if (window_bits == 0U) {
-    return true;
-  }
-
-  if VUNLIKELY (seq == 0U) {
-    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
   const auto word_count = static_cast<size_t>((window_bits + 63U) / 64U);
-
-  if VUNLIKELY (word_count == 0U) {
-    return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
 
   if VUNLIKELY (replay.words.size() != word_count) {
     replay.words.assign(word_count, 0U);
@@ -254,6 +230,34 @@ static bool accept_replay(ReplayWindow& replay, uint64_t seq, uint32_t window_bi
   set_seq(seq);
 
   return true;
+}
+
+static bool accept_peer_replay(PeerReplayMap& peers, bool& peer_limit_reported, uint64_t sender_id, uint64_t seq,
+                               uint32_t window_bits) {
+  if (window_bits == 0U) {
+    return true;
+  }
+
+  if VUNLIKELY (seq == 0U) {
+    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  auto peer_iter = peers.find(sender_id);
+
+  if (peer_iter == peers.end()) {
+    if VUNLIKELY (peers.size() >= kReplayPeerMax) {
+      if VUNLIKELY (!peer_limit_reported) {
+        VLOG_W("Security: replay peer limit reached; rejecting new sender identities.");
+        peer_limit_reported = true;
+      }
+
+      return false;
+    }
+
+    peer_iter = peers.try_emplace(sender_id).first;
+  }
+
+  return accept_replay(peer_iter->second, seq, window_bits);
 }
 
 static bool write_envelope_header(uint8_t mode, uint64_t sender_id, uint64_t seq, const uint8_t* nonce, uint8_t* dst,
@@ -785,16 +789,30 @@ static bool rsa_oaep_decrypt(EVP_PKEY* pkey, const uint8_t* in, size_t in_len, B
   return true;
 }
 
-static bool rsa_pss_sign(EVP_PKEY* pkey, const uint8_t* data, size_t data_len, Bytes& sig_out) noexcept {
-  if VUNLIKELY (!size_fits_int(data_len)) {
+static bool sha256_digest_parts(const uint8_t* first, size_t first_len, const uint8_t* second, size_t second_len,
+                                uint8_t* digest, unsigned int& digest_len) noexcept {
+  EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+
+  if VUNLIKELY (!ctx) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
+  const bool success = EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) == 1 &&
+                       EVP_DigestUpdate(ctx, first, first_len) == 1 && EVP_DigestUpdate(ctx, second, second_len) == 1 &&
+                       EVP_DigestFinal_ex(ctx, digest, &digest_len) == 1;
+
+  EVP_MD_CTX_free(ctx);
+
+  return success;
+}
+
+static bool rsa_pss_sign(EVP_PKEY* pkey, const uint8_t* first, size_t first_len, const uint8_t* second,
+                         size_t second_len, Bytes& sig_out) noexcept {
   uint8_t digest[EVP_MAX_MD_SIZE];
   DigestScrub digest_scrub{digest, sizeof(digest)};
   unsigned int digest_len = 0;
 
-  if VUNLIKELY (EVP_Digest(data, data_len, digest, &digest_len, EVP_sha256(), nullptr) != 1) {
+  if VUNLIKELY (!sha256_digest_parts(first, first_len, second, second_len, digest, digest_len)) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
@@ -843,9 +861,9 @@ static bool rsa_pss_sign(EVP_PKEY* pkey, const uint8_t* data, size_t data_len, B
   return true;
 }
 
-static bool rsa_pss_verify(EVP_PKEY* pkey, const uint8_t* data, size_t data_len, const uint8_t* sig,
-                           size_t sig_len) noexcept {
-  if VUNLIKELY (!size_fits_int(data_len) || !size_fits_int(sig_len)) {
+static bool rsa_pss_verify(EVP_PKEY* pkey, const uint8_t* first, size_t first_len, const uint8_t* second,
+                           size_t second_len, const uint8_t* sig, size_t sig_len) noexcept {
+  if VUNLIKELY (!size_fits_int(sig_len)) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
@@ -853,7 +871,7 @@ static bool rsa_pss_verify(EVP_PKEY* pkey, const uint8_t* data, size_t data_len,
   DigestScrub digest_scrub{digest, sizeof(digest)};
   unsigned int digest_len = 0;
 
-  if VUNLIKELY (EVP_Digest(data, data_len, digest, &digest_len, EVP_sha256(), nullptr) != 1) {
+  if VUNLIKELY (!sha256_digest_parts(first, first_len, second, second_len, digest, digest_len)) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
@@ -1120,7 +1138,8 @@ struct Security::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddin
   uint64_t sender_id{0};
   std::array<uint8_t, kAesNonceSize> nonce_base{};
   bool nonce_ready{false};
-  std::vector<PeerReplay> asym_peers;
+  PeerReplayMap asym_peers;
+  bool asym_peer_limit_reported{false};
   EvpPkeyPtr public_key;
   EvpPkeyPtr private_key;
   EvpPkeyPtr signing_key;
@@ -1501,16 +1520,8 @@ bool Security::encrypt(const Bytes& in, Bytes& out) {
     Bytes signature;
 
     if (impl_->signing_key) {
-      Bytes signed_range = Bytes::create(aad.size() + body_size);
-
-      if VUNLIKELY (signed_range.data() == nullptr) {
-        return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
-
-      std::memcpy(signed_range.data(), aad.data(), aad.size());
-      std::memcpy(signed_range.data() + aad.size(), body.data(), body_size);
-
-      if VUNLIKELY (!rsa_pss_sign(impl_->signing_key.get(), signed_range.data(), signed_range.size(), signature)) {
+      if VUNLIKELY (!rsa_pss_sign(impl_->signing_key.get(), aad.data(), aad.size(), body.data(), body_size,
+                                  signature)) {
         VLOG_W("Security::encrypt RSA-PSS sign failed");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         return false;                                     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
@@ -1689,17 +1700,8 @@ bool Security::decrypt(const Bytes& in, Bytes& out) {
         return false;
       }
 
-      Bytes signed_range = Bytes::create(aad.size() + cipher_len + kAesTagSize);
-
-      if VUNLIKELY (signed_range.data() == nullptr) {
-        return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
-
-      std::memcpy(signed_range.data(), aad.data(), aad.size());
-      std::memcpy(signed_range.data() + aad.size(), cipher, cipher_len + kAesTagSize);
-
-      if VUNLIKELY (!rsa_pss_verify(impl_->verify_key.get(), signed_range.data(), signed_range.size(), sig_ptr,
-                                    sig_len)) {
+      if VUNLIKELY (!rsa_pss_verify(impl_->verify_key.get(), aad.data(), aad.size(), cipher, cipher_len + kAesTagSize,
+                                    sig_ptr, sig_len)) {
         VLOG_W("Security::decrypt RSA-PSS signature verification failed");
         return false;
       }
@@ -1735,8 +1737,8 @@ bool Security::decrypt(const Bytes& in, Bytes& out) {
       return false;
     }
 
-    if VUNLIKELY (!accept_replay(get_peer_window(impl_->asym_peers, header.sender_id), header.seq,
-                                 impl_->config.advanced.replay_window)) {
+    if VUNLIKELY (!accept_peer_replay(impl_->asym_peers, impl_->asym_peer_limit_reported, header.sender_id, header.seq,
+                                      impl_->config.advanced.replay_window)) {
       OPENSSL_cleanse(plain.data(), plain.size());
       return false;
     }
@@ -1782,8 +1784,8 @@ bool Security::decrypt(const Bytes& in, Bytes& out) {
       return false;
     }
 
-    if VUNLIKELY (!accept_replay(get_peer_window(key_slot->peers, header.sender_id), header.seq,
-                                 impl_->config.advanced.replay_window)) {
+    if VUNLIKELY (!accept_peer_replay(key_slot->peers, key_slot->peer_limit_reported, header.sender_id, header.seq,
+                                      impl_->config.advanced.replay_window)) {
       OPENSSL_cleanse(plain.data(), plain.size());
       return false;
     }

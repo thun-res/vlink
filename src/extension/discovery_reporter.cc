@@ -59,6 +59,14 @@
 
 namespace vlink {
 
+#ifdef _WIN32
+using SocketHandle = SOCKET;
+static constexpr SocketHandle kInvalidSocket = INVALID_SOCKET;
+#else
+using SocketHandle = int;
+static constexpr SocketHandle kInvalidSocket = -1;
+#endif
+
 [[maybe_unused]] static constexpr int kReportFirstInterval = 100;
 [[maybe_unused]] static constexpr int kReportInterval = 500;
 [[maybe_unused]] static constexpr size_t kMaxTaskSize = 10000U;
@@ -104,9 +112,12 @@ struct DiscoveryReporter::Impl final {
   bool is_profiler_enabled{false};
   int64_t seq{0};
 
-  int sock{-1};
+  SocketHandle sock{kInvalidSocket};
   sockaddr_in address;
   bool enable_native_discovery{false};
+#ifdef _WIN32
+  bool winsock_initialized{false};
+#endif
 };
 
 DiscoveryReporter::DiscoveryReporter() : impl_(std::make_unique<Impl>()) {
@@ -132,10 +143,12 @@ DiscoveryReporter::DiscoveryReporter() : impl_(std::make_unique<Impl>()) {
     VLOG_F("DiscoveryReporter: Failed to initialize winsock.");
     return;
   }
+
+  impl_->winsock_initialized = true;
 #endif
   impl_->sock = ::socket(AF_INET, SOCK_DGRAM, 0);
 
-  if VUNLIKELY (impl_->sock < 0) {
+  if VUNLIKELY (impl_->sock == kInvalidSocket) {
     VLOG_F("DiscoveryReporter: Failed to create socket.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     return;                                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
@@ -200,16 +213,22 @@ DiscoveryReporter::~DiscoveryReporter() {
   send_offline();
 #endif
 
-  if VLIKELY (impl_->sock >= 0) {
+  if VLIKELY (impl_->sock != kInvalidSocket) {
 #ifdef _WIN32
     ::closesocket(impl_->sock);
-    ::WSACleanup();
 #else
     ::close(impl_->sock);
 #endif
 
-    impl_->sock = -1;
+    impl_->sock = kInvalidSocket;
   }
+
+#ifdef _WIN32
+  if VLIKELY (impl_->winsock_initialized) {
+    ::WSACleanup();
+    impl_->winsock_initialized = false;
+  }
+#endif
 }
 
 void DiscoveryReporter::add(NodeImpl* node) {

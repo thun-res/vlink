@@ -316,6 +316,8 @@ public:
       , m_state(session::state::connecting)
       , m_internal_state(session::internal_state::USER_INIT)
       , m_msg_manager(new con_msg_manager_type())
+      , m_max_send_queue_size(0)
+      , m_max_send_buffer_size(0)
       , m_send_buffer_size(0)
       , m_write_flag(false)
       , m_read_flag(true)
@@ -627,6 +629,25 @@ public:
      * @return The current number of bytes in the outgoing send buffer.
      */
     size_t get_buffered_amount() const;
+
+    /// Set the maximum number of queued outgoing payload bytes.
+    /**
+     * A value of zero disables the limit. A single message is allowed when the
+     * queue is empty even when its payload is larger than the configured limit.
+     * This setting must be configured before concurrent sends begin.
+     */
+    void set_max_send_buffer_size(size_t new_value) {
+        m_max_send_buffer_size = new_value;
+    }
+
+    /// Set the maximum number of queued outgoing messages.
+    /**
+     * A value of zero disables the limit. This setting must be configured
+     * before concurrent sends begin.
+     */
+    void set_max_send_queue_size(size_t new_value) {
+        m_max_send_queue_size = new_value;
+    }
 
     /// Get the size of the outgoing write buffer (in payload bytes)
     /**
@@ -1442,6 +1463,13 @@ private:
      */
     void write_push(message_ptr msg);
 
+    bool send_buffer_full(size_t payload_size) const {
+        return (m_max_send_queue_size != 0 && m_send_queue.size() >= m_max_send_queue_size) ||
+            (m_max_send_buffer_size != 0 && !m_send_queue.empty() &&
+             (payload_size > m_max_send_buffer_size ||
+              m_send_buffer_size > m_max_send_buffer_size - payload_size));
+    }
+
     /// Pop a message from the write queue
     /**
      * Removes and returns a message from the write queue and updates any
@@ -1571,6 +1599,8 @@ private:
     /**
      * Lock: m_write_lock
      */
+    size_t m_max_send_queue_size;
+    size_t m_max_send_buffer_size;
     size_t m_send_buffer_size;
 
     /// buffer holding the various parts of the current message being writen

@@ -33,17 +33,16 @@ ZenohSetterImpl::ZenohSetterImpl(const ZenohConf& conf) : conf_(conf) {}
 void ZenohSetterImpl::init() {
   static auto& factory = ZenohFactory::get();
 
-  conf_.hash_code = Helpers::get_hash_code(conf_.event);
+  conf_.hash_code = ZenohFactory::get_channel(conf_.event);
 
-  auto properties = get_all_properties();
-  conf_.append_properties(properties);
+  auto properties = ZenohFactory::resolve_properties(conf_, get_all_properties());
 
   object_ = factory.get_object<Object>(
-      {kImplType, conf_.address, conf_.domain, conf_.depth, conf_.qos, conf_.fragment, properties});
+      {kImplType, conf_.address, conf_.event, conf_.domain, conf_.depth, conf_.qos, conf_.fragment, properties});
 
   object_->add_impl(this);
 
-  object_->check_matching();
+  object_->start_matching();
 }
 
 void ZenohSetterImpl::deinit() {

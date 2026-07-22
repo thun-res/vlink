@@ -1,0 +1,1773 @@
+/*
+ * Copyright (C) 2026 by Thun Lu. All rights reserved.
+ * Author: Thun Lu <thun.lu@zohomail.cn>
+ * Repo:   https://github.com/thun-res/vlink
+ *  _    __   __      _           __
+ * | |  / /  / /     (_) ____    / /__
+ * | | / /  / /     / / / __ \  / //_/
+ * | |/ /  / /___  / / / / / / / ,<
+ * |___/  /_____/ /_/ /_/ /_/ /_/|_|
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#include <vlink/base/helpers.h>
+#include <vlink/base/utils.h>
+#include <vlink/extension/schema_plugin_manager.h>
+#include <vlink/version.h>
+
+#include "./parse_context.h"
+#include "./parse_expr.h"
+#include "./parse_extract.h"
+#include "./parse_features.h"
+#include "./parse_path.h"
+#include "./parse_plan.h"
+#include "./parse_proto_cache.h"
+#include "./parse_schema.h"
+#include "./parse_slice.h"
+#include "./parse_types.h"
+#include "./parse_validate.h"
+
+#if __has_include(<google/protobuf/compiler/importer.h>) && __has_include(<google/protobuf/text_format.h>)
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcpp"
+#endif
+
+#include <google/protobuf/compiler/importer.h>
+#include <google/protobuf/descriptor.h>
+#include <google/protobuf/dynamic_message.h>
+#include <google/protobuf/io/zero_copy_stream_impl.h>
+#include <google/protobuf/message.h>
+#include <google/protobuf/reflection.h>
+#include <google/protobuf/text_format.h>
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+
+#endif
+
+#if __has_include(<flatbuffers/idl.h>)
+#include <flatbuffers/flatbuffers.h>
+#include <flatbuffers/idl.h>
+
+#if FLATBUFFERS_VERSION_MAJOR >= 22
+#include <flatbuffers/reflection.h>
+
+#include "private/flat_gen_text.h"
+#endif
+
+#endif
+
+#include <argparse/argparse.hpp>
+#include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <limits>
+#include <nlohmann/json.hpp>
+#include <sstream>
+#include <string_view>
+#include <system_error>
+#include <unordered_set>
+
+#if __has_include(<unistd.h>)
+#include <unistd.h>
+#endif
+
+#ifdef _WIN32
+#include <Windows.h>
+#undef min
+#undef max
+#undef GetMessage
+#endif
+
+#ifdef VLINK_HAS_PROTOBUF_COMPILER
+
+namespace vlink::parse {
+
+bool condition_contains_empty_comma_field(std::string_view condition) {
+  const auto trimmed = vlink::Helpers::trim_string_view(condition);
+
+  if (trimmed.empty()) {
+    return false;
+  }
+
+  size_t start = 0;
+
+  while (start <= trimmed.size()) {
+    const size_t comma = trimmed.find(',', start);
+    const size_t end = comma == std::string_view::npos ? trimmed.size() : comma;
+
+    if (vlink::Helpers::trim_string_view(trimmed.substr(start, end - start)).empty()) {
+      return true;
+    }
+
+    if (comma == std::string_view::npos) {
+      break;
+    }
+
+    start = comma + 1;
+  }
+
+  return false;
+}
+
+}  // namespace vlink::parse
+
+static constexpr int64_t kReaderTimestampMarginUs = 10000 + 999;
+static constexpr int64_t kMaxPlaybackTimeMs = (std::numeric_limits<int64_t>::max() - kReaderTimestampMarginUs) / 1000;
+static constexpr int64_t kMaxVcapStartTimestampMs = std::numeric_limits<int64_t>::max() / 1000000;
+
+static bool check_rate_limit() {
+  auto& ctx = vlink::parse::ParseContext::get();
+
+  if VUNLIKELY (ctx.min_output_interval_us > 0) {
+    const int64_t now = ctx.main_elapsed_timer.get();
+    const auto elapsed_us = static_cast<uint64_t>(now) - static_cast<uint64_t>(ctx.last_output_us);
+
+    if (elapsed_us < static_cast<uint64_t>(ctx.min_output_interval_us)) {
+      return false;
+    }
+
+    ctx.last_output_us = now;
+  }
+
+  const auto previous_count = ctx.output_count.fetch_add(1, std::memory_order_relaxed);
+
+  if VUNLIKELY (ctx.max_count > 0 && previous_count >= static_cast<int64_t>(ctx.max_count) - 1) {
+    ctx.callback_has_set = false;
+    ctx.request_stop();
+  }
+
+  return true;
+}
+
+static void start_print() {
+  auto& ctx = vlink::parse::ParseContext::get();
+
+  ctx.main_elapsed_timer.start();
+
+  if (ctx.quiet_flag) {
+    return;
+  }
+
+  if VUNLIKELY (ctx.print_thread.joinable()) {
+    return;
+  }
+
+  ctx.print_thread = std::thread([]() {
+    auto& ctx_ref = vlink::parse::ParseContext::get();
+    int64_t print_time = 0;
+    int64_t real_begin_time = 0;
+    int64_t real_end_time = 0;
+
+    if (ctx_ref.parse_for_bag) {
+      real_begin_time = ctx_ref.begin_time > 0 ? ctx_ref.begin_time : ctx_ref.bag_player->get_info().blank_duration;
+      real_end_time = ctx_ref.end_time > 0 ? ctx_ref.end_time : ctx_ref.bag_player->get_info().total_duration;
+    }
+
+    while (!ctx_ref.quit_flag) {
+      std::unique_lock lock(ctx_ref.print_mtx);
+      ctx_ref.quit_cv.wait_for(lock, std::chrono::milliseconds(50), [&ctx_ref]() -> bool { return ctx_ref.quit_flag; });
+
+      if VUNLIKELY (ctx_ref.quit_flag) {
+        break;
+      }
+
+      if (ctx_ref.detail_flag || ctx_ref.parse_type == ParseType::kConsole) {
+        continue;
+      }
+
+      if (ctx_ref.parse_for_bag) {
+        if VLIKELY (ctx_ref.bag_player->get_status() == vlink::BagReader::kPlaying) {
+          std::cout << "\033[2K\r";
+          std::cout << "Progress: ";
+          const auto duration = real_end_time - real_begin_time;
+          std::cout << vlink::Helpers::double_to_string(
+              duration > 0 ? static_cast<double>(100 * (ctx_ref.bag_player->get_real_timestamp() - real_begin_time)) /
+                                 static_cast<double>(duration)
+                           : 0.0,
+              2);
+          std::cout << "% [" << ctx_ref.output_count << " samples]";
+          std::cout.flush();
+        }
+      } else {
+        std::cout << "\033[2K\r";
+
+        if (ctx_ref.data_has_changed) {
+          ctx_ref.data_has_changed = false;
+          std::cout << "\033[32m";
+        } else {
+          std::cout << "\033[31m";
+        }
+
+        print_time = ctx_ref.main_elapsed_timer.get() / 1000;
+        std::cout << vlink::Helpers::format_milliseconds(print_time + 50, false);
+        std::cout << " (" << std::fixed << std::setprecision(1) << print_time / 1000.0F << "s)";
+        std::cout << " [" << ctx_ref.output_count << " samples]";
+        std::cout << "\033[0m:";
+        std::cout.flush();
+      }
+    }
+  });
+}
+
+static void stop_print() {
+  auto& ctx = vlink::parse::ParseContext::get();
+
+  if (ctx.quiet_flag) {
+    return;
+  }
+
+  std::unique_lock lock(ctx.print_mtx);
+
+  if VLIKELY (!ctx.quit_flag) {
+    ctx.quit_flag = true;
+    lock.unlock();
+    ctx.quit_cv.notify_all();
+
+    if VLIKELY (ctx.print_thread.joinable()) {
+      ctx.print_thread.join();
+    }
+  }
+}
+
+static int start_bag_play(const std::string& bag_file) {
+  auto& ctx = vlink::parse::ParseContext::get();
+  ctx.bag_config.begin_time = ctx.begin_time;
+  ctx.bag_config.end_time = ctx.end_time;
+  ctx.bag_config.times = 1;
+  ctx.bag_config.rate = 1.0;
+  ctx.bag_config.skip_blank = false;
+  ctx.bag_config.force_delay = 0;
+  ctx.bag_config.auto_pause = false;
+  ctx.bag_config.auto_quit = true;
+
+  try {
+    ctx.bag_player = vlink::BagReader::create(bag_file, true);
+  } catch (vlink::Exception::RuntimeError& e) {
+    std::cerr << e.what() << std::endl;
+    ctx.has_quit = true;
+    return -1;
+  }
+
+  if VUNLIKELY (!ctx.bag_player) {
+    std::cerr << "Unsupported bag file suffix: " << bag_file << std::endl;
+    return -1;
+  }
+
+  const auto& info = ctx.bag_player->get_info();
+
+  if VUNLIKELY (info.total_duration < 0 || info.blank_duration < 0 || info.total_duration < info.blank_duration ||
+                info.total_duration > kMaxPlaybackTimeMs) {
+    std::cerr << "Bag playback time range is outside the supported range." << std::endl;
+    return -1;
+  }
+
+  if VUNLIKELY (info.storage_type == "vcap" &&
+                (info.start_timestamp < 0 || info.start_timestamp > kMaxVcapStartTimestampMs ||
+                 ctx.begin_time > kMaxVcapStartTimestampMs - info.start_timestamp)) {
+    std::cerr << "VCAP playback start time is outside the supported range." << std::endl;
+    return -1;
+  }
+
+  ctx.bind_bag_plugin(ctx.bag_player);
+
+  ctx.bag_player->register_output_callback([](const vlink::Frame& frame) {
+    auto& cb_ctx = vlink::parse::ParseContext::get();
+
+    if VUNLIKELY (!cb_ctx.callback_has_set) {
+      return;
+    }
+
+    cb_ctx.invoke_callback(frame.timestamp, frame.url, frame.ser_type, frame.schema_type, frame.data);
+  });
+
+  return 0;
+}
+
+static int stop_bag_play() {
+  auto& ctx = vlink::parse::ParseContext::get();
+
+  if VUNLIKELY (!ctx.bag_player) {
+    return -1;
+  }
+
+  ctx.has_quit = true;
+  ctx.bag_player.reset();
+  return 0;
+}
+
+static int start_viewer(bool native_mode) {
+  auto& ctx = vlink::parse::ParseContext::get();
+
+  try {
+    auto filter_type = native_mode ? vlink::DiscoveryViewer::kFilterNative : vlink::DiscoveryViewer::kFilterNone;
+    ctx.discovery_viewer = std::make_shared<vlink::DiscoveryViewer>(filter_type);
+  } catch (vlink::Exception::RuntimeError& e) {
+    std::cerr << e.what() << std::endl;
+    ctx.has_quit = true;
+    return -1;
+  }
+
+  ctx.discovery_viewer->async_run();
+
+  std::cout << "Information Collecting, Please Wait...";
+  std::cout.flush();
+  ctx.discovery_viewer->wait_for_quit(1000);
+  std::cout << "\033[2K\r";
+  std::cout.flush();
+
+  ctx.main_elapsed_timer.restart();
+
+  auto sync_subs = [native_mode](const std::vector<vlink::DiscoveryViewer::Info>& info_list) {
+    auto& sync_ctx = vlink::parse::ParseContext::get();
+    std::unordered_set<std::string> current_urls;
+    current_urls.reserve(info_list.size());
+
+    {
+      std::lock_guard lock(sync_ctx.sub_urls_mtx);
+
+      for (const auto& info : info_list) {
+        if ((info.type & vlink::kPublisher) == 0 && (info.type & vlink::kSetter) == 0) {
+          continue;
+        }
+
+        current_urls.emplace(info.url);
+
+        auto sub_iter = sync_ctx.sub_urls.find(info.url);
+
+        if (sub_iter != sync_ctx.sub_urls.end()) {
+          const auto current_schema_type = sub_iter->second->get_schema_type();
+          const auto expected_schema_type =
+              info.schema_type == vlink::SchemaType::kUnknown ? current_schema_type : info.schema_type;
+
+          if VUNLIKELY (sub_iter->second->get_ser_type() != info.ser_type ||
+                        current_schema_type != expected_schema_type) {
+            sub_iter->second->set_ser_type(info.ser_type, info.schema_type);
+          }
+
+          continue;
+        }
+
+        std::shared_ptr<RawSub> raw_sub;
+
+        try {
+          raw_sub = std::make_shared<RawSub>(info.url, vlink::InitType::kWithoutInit);
+
+          if (native_mode) {
+            raw_sub->set_property("dds.ip", "127.0.0.1");
+          }
+
+          raw_sub->set_ser_type(info.ser_type, info.schema_type);
+
+          if (!raw_sub->init()) {
+            continue;
+          }
+
+          std::weak_ptr<RawSub> weak_sub = raw_sub;
+
+          if (!raw_sub->listen([weak_sub, url = info.url](const vlink::Bytes& bytes) {
+                auto& cb_ctx = vlink::parse::ParseContext::get();
+
+                if VUNLIKELY (cb_ctx.has_quit || !cb_ctx.callback_has_set) {
+                  return;
+                }
+
+                auto sub = weak_sub.lock();
+
+                if VUNLIKELY (!sub) {
+                  return;
+                }
+
+                cb_ctx.invoke_callback(cb_ctx.main_elapsed_timer.get(), url, sub->get_ser_type(),
+                                       sub->get_schema_type(), bytes);
+              })) {
+            continue;
+          }
+        } catch (vlink::Exception::RuntimeError&) {
+          continue;
+        }
+
+        sync_ctx.sub_urls.emplace(info.url, std::move(raw_sub));
+      }
+
+      for (auto iter = sync_ctx.sub_urls.begin(); iter != sync_ctx.sub_urls.end();) {
+        if VUNLIKELY (current_urls.count(iter->first) == 0) {
+          iter = sync_ctx.sub_urls.erase(iter);
+        } else {
+          ++iter;
+        }
+      }
+    }
+  };
+
+  sync_subs(ctx.discovery_viewer->get_info_list());
+  ctx.discovery_viewer->register_callback(
+      [sync_subs = std::move(sync_subs)](const std::vector<vlink::DiscoveryViewer::Info>& info_list) {
+        sync_subs(info_list);
+      });
+
+  return 0;
+}
+
+static int stop_viewer() {
+  auto& ctx = vlink::parse::ParseContext::get();
+
+  if VUNLIKELY (!ctx.discovery_viewer) {
+    return -1;
+  }
+
+  ctx.has_quit = true;
+  ctx.discovery_viewer.reset();
+
+  {
+    std::lock_guard lock(ctx.sub_urls_mtx);
+    ctx.sub_urls.clear();
+  }
+
+  return 0;
+}
+
+static void print_console_header(int64_t timestamp, int64_t seq) {
+  std::cout << "\033[36m--- [" << seq << "] ";
+  write_seconds_from_us(std::cout, timestamp);
+  std::cout << "s ---\033[0m" << std::endl;
+}
+
+static void print_console_fields(int64_t timestamp, int64_t seq, const std::vector<VariantType>& values,
+                                 const std::vector<double>& expr_results = {}) {
+  const auto& ctx = vlink::parse::ParseContext::get();
+  std::cout << "\033[36m[" << seq << "] ";
+  write_seconds_from_us(std::cout, timestamp);
+  std::cout << "s\033[0m ";
+
+  for (size_t i = 0; i < ctx.field_specs.size() && i < values.size(); ++i) {
+    if (i > 0) {
+      std::cout << ", ";
+    }
+
+    std::cout << "\033[33m" << ctx.field_specs[i] << "\033[0m=";
+    std::cout << variant_to_string(values[i]);
+  }
+
+  for (size_t i = 0; i < expr_results.size() && i < ctx.expr_strings.size(); ++i) {
+    std::cout << ", \033[35mexpr(" << ctx.expr_strings[i] << ")\033[0m=";
+    std::ostringstream oss;
+    oss << std::setprecision(12) << expr_results[i];
+    std::cout << oss.str();
+  }
+
+  std::cout << std::endl;
+}
+
+static std::vector<double> evaluate_expressions(const std::vector<VariantType>& values) {
+  auto& ctx = vlink::parse::ParseContext::get();
+
+  if (!ctx.expr_ctx.ready()) {
+    return {};
+  }
+
+  std::lock_guard lock(ctx.expr_mtx);
+  ctx.expr_ctx.load_values(values);
+  return ctx.expr_ctx.evaluate_all();
+}
+
+static void fail_output_write(const std::string& path) {
+  auto& ctx = vlink::parse::ParseContext::get();
+  std::cerr << "Failed to write output file: " << path << std::endl;
+  ctx.is_broken = true;
+  ctx.callback_has_set = false;
+  ctx.request_stop();
+}
+
+static bool write_binary_output(const std::string& path, const vlink::Bytes& data) {
+  std::ofstream file(vlink::parse::utf8_to_path(path), std::ios::binary);
+
+  if (!file.is_open()) {
+    fail_output_write(path);
+    return false;
+  }
+
+  file.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
+  file.close();
+
+  if (!file.good()) {
+    fail_output_write(path);
+    return false;
+  }
+
+  return true;
+}
+
+static void write_csv_record(std::ostream& file, const ParseRecord& record) {
+  write_seconds_from_us(file, record.timestamp);
+
+  for (const auto& value : record.values) {
+    file << ",";
+
+    if (std::holds_alternative<int64_t>(value)) {
+      file << std::get<int64_t>(value);
+    } else if (std::holds_alternative<uint64_t>(value)) {
+      file << std::get<uint64_t>(value);
+    } else if (std::holds_alternative<double>(value)) {
+      file << std::setprecision(12) << std::get<double>(value);
+    } else if (std::holds_alternative<std::string>(value)) {
+      write_csv_cell(file, std::get<std::string>(value));
+    } else if (std::holds_alternative<vlink::Bytes>(value)) {
+      file << "<bytes:" << std::get<vlink::Bytes>(value).size() << ">";
+    }
+  }
+
+  for (const auto result : record.expr_results) {
+    file << "," << std::setprecision(12) << result;
+  }
+
+  file << "\n";
+}
+
+static nlohmann::ordered_json make_json_record(const ParseRecord& record, const std::vector<std::string>& field_specs,
+                                               const std::vector<std::string>& expr_strings) {
+  nlohmann::ordered_json json;
+  json["timestamp"] = record.timestamp / 1000000.0;
+
+  for (size_t i = 0; i < field_specs.size() && i < record.values.size(); ++i) {
+    const auto& value = record.values[i];
+
+    if (std::holds_alternative<int64_t>(value)) {
+      json[field_specs[i]] = std::get<int64_t>(value);
+    } else if (std::holds_alternative<uint64_t>(value)) {
+      json[field_specs[i]] = std::get<uint64_t>(value);
+    } else if (std::holds_alternative<double>(value)) {
+      json[field_specs[i]] = std::get<double>(value);
+    } else if (std::holds_alternative<std::string>(value)) {
+      json[field_specs[i]] = std::get<std::string>(value);
+    } else if (std::holds_alternative<vlink::Bytes>(value)) {
+      json[field_specs[i]] = "<bytes:" + std::to_string(std::get<vlink::Bytes>(value).size()) + ">";
+    }
+  }
+
+  for (size_t i = 0; i < record.expr_results.size() && i < expr_strings.size(); ++i) {
+    json["expr(" + expr_strings[i] + ")"] = record.expr_results[i];
+  }
+
+  return json;
+}
+
+// NOLINTNEXTLINE(google-readability-function-size)
+static int start_parse(const std::string& target_url, const std::string& out_dir, const std::string& base_name,
+                       const std::string& proto_dir, [[maybe_unused]] const std::string& fbs_dir,
+                       const std::string& parse_type_suffix) {
+  auto& ctx = vlink::parse::ParseContext::get();
+  auto filesys_out_dir = vlink::parse::utf8_to_path(out_dir);
+  auto filesys_proto_dir = vlink::parse::utf8_to_path(proto_dir);
+
+  std::error_code fs_ec;
+
+  if (!std::filesystem::exists(filesys_out_dir, fs_ec) && !fs_ec) {
+    std::filesystem::create_directories(filesys_out_dir, fs_ec);
+
+    if (fs_ec) {
+      std::cerr << "Failed to create output directory: " << out_dir << " (" << fs_ec.message() << ")" << std::endl;
+      ctx.has_quit = true;
+      return -1;
+    }
+  }
+
+  if VUNLIKELY (!std::filesystem::is_directory(filesys_out_dir, fs_ec) || fs_ec) {
+    std::cerr << "Output path is not a directory: " << out_dir << std::endl;
+    ctx.has_quit = true;
+    return -1;
+  }
+
+  ProtoRuntime proto_runtime;
+
+  if (!proto_dir.empty() && std::filesystem::exists(filesys_proto_dir, fs_ec) && !fs_ec &&
+      std::filesystem::is_directory(filesys_proto_dir, fs_ec) && !fs_ec) {
+    proto_runtime = load_proto_runtime({proto_dir});
+  } else {
+    proto_runtime = load_proto_runtime({});
+  }
+
+  vlink::parse::ProtoMessageCache proto_cache(proto_runtime);
+
+#ifdef VLINK_HAS_FBS_COMPILER
+  std::shared_ptr<flatbuffers::Parser> fbs_parser;
+  const reflection::Schema* fbs_schema = nullptr;
+  const reflection::Object* fbs_root_object = nullptr;
+#endif
+  bool warned_flatbuffers_fields = false;
+
+  std::string out_file_name;
+
+  try {
+    const auto filesys_base_name = vlink::parse::utf8_to_path(base_name);
+
+    if VUNLIKELY (base_name.empty() || filesys_base_name.empty() || filesys_base_name.has_root_path() ||
+                  filesys_base_name.has_parent_path() || filesys_base_name == "." || filesys_base_name == "..") {
+      std::cerr << "Invalid output base name: " << base_name << std::endl;
+      ctx.has_quit = true;
+      return -1;
+    }
+
+    std::filesystem::path out_file = filesys_out_dir / filesys_base_name;
+    out_file_name = vlink::parse::path_to_utf8(out_file);
+
+    if VUNLIKELY (out_file_name.empty()) {
+      std::cerr << "Invalid output path." << std::endl;
+      ctx.has_quit = true;
+      return -1;
+    }
+  } catch (std::filesystem::filesystem_error& e) {
+    std::cerr << e.what() << std::endl;
+    ctx.has_quit = true;
+    return -1;
+  }
+
+  std::ofstream table_output;
+  std::string table_output_path;
+  int64_t table_record_count = 0;
+  bool first_json_record = true;
+
+  if (ctx.parse_type == ParseType::kCsv || ctx.parse_type == ParseType::kJson) {
+    table_output_path = out_file_name + "." + parse_type_suffix;
+    table_output.open(vlink::parse::utf8_to_path(table_output_path));
+
+    if (!table_output.is_open()) {
+      std::cerr << "Failed to write output file: " << table_output_path << std::endl;
+      ctx.has_quit = true;
+      return -1;
+    }
+
+    if (ctx.parse_type == ParseType::kCsv) {
+      write_csv_cell(table_output, "timestamp");
+
+      for (const auto& spec : ctx.field_specs) {
+        table_output << ",";
+        write_csv_cell(table_output, spec);
+      }
+
+      for (const auto& expression : ctx.expr_strings) {
+        table_output << ",";
+        write_csv_cell(table_output, "expr(" + expression + ")");
+      }
+
+      table_output << "\n";
+    } else {
+      table_output << "[";
+    }
+
+    if (!table_output.good()) {
+      std::cerr << "Failed to write output file: " << table_output_path << std::endl;
+      ctx.has_quit = true;
+      return -1;
+    }
+  }
+
+  int64_t parse_seq = 0;
+  std::string cached_ser;
+  const std::vector<std::string> default_binary_field_path{"data"};
+
+#ifdef VLINK_HAS_FBS_COMPILER
+  auto reset_cached_decoder = [&fbs_parser, &fbs_schema, &fbs_root_object]() {
+    fbs_parser.reset();
+    fbs_schema = nullptr;
+    fbs_root_object = nullptr;
+  };
+#else
+  auto reset_cached_decoder = []() {};
+#endif
+
+  auto sync_cached_ser = [&cached_ser, &reset_cached_decoder](const std::string& ser) {
+    if (cached_ser == ser) {
+      return;
+    }
+
+    cached_ser = ser;
+    reset_cached_decoder();
+  };
+
+#ifdef VLINK_HAS_FBS_COMPILER
+  auto schema_interface = vlink::SchemaPluginManager::get().get_interface();
+
+  auto ensure_fbs_parser = [&fbs_dir, &fbs_parser, &fbs_schema, &fbs_root_object, &sync_cached_ser,
+                            &schema_interface](const std::string& ser) -> flatbuffers::Parser* {
+    sync_cached_ser(ser);
+
+    if (!fbs_parser) {
+      if (schema_interface) {
+        auto* plugin_parser = static_cast<flatbuffers::Parser*>(schema_interface->create_flatbuffers_parser(ser));
+
+        if (plugin_parser != nullptr) {
+          fbs_parser = std::shared_ptr<flatbuffers::Parser>(schema_interface, plugin_parser);
+        }
+      }
+
+      if (!fbs_parser && !fbs_dir.empty()) {
+        bool has_import = false;
+        std::error_code fbs_ec;
+        auto fbs_path = std::filesystem::path(fbs_dir);
+
+        if (std::filesystem::exists(fbs_path, fbs_ec) && !fbs_ec) {
+          import_fbs(fbs_parser, ser, fbs_path, fbs_path, has_import);
+        }
+      }
+
+      if (fbs_parser) {
+        fbs_parser->Serialize();
+
+        flatbuffers::Verifier verifier(fbs_parser->builder_.GetBufferPointer(), fbs_parser->builder_.GetSize());
+
+        if (reflection::VerifySchemaBuffer(verifier)) {
+          fbs_schema = reflection::GetSchema(fbs_parser->builder_.GetBufferPointer());
+          fbs_root_object = fbs_schema != nullptr ? fbs_schema->root_table() : nullptr;
+        }
+      }
+    }
+
+    return fbs_parser.get();
+  };
+#else
+  (void)sync_cached_ser;
+#endif
+
+  auto warn_flatbuffers_fields = [&warned_flatbuffers_fields](std::string_view mode) {
+    if (warned_flatbuffers_fields) {
+      return;
+    }
+
+    warned_flatbuffers_fields = true;
+    std::cerr << "Warning: FlatBuffers field extraction is not supported in parse " << mode
+              << "; use explicit protobuf fields or raw/console output." << std::endl;
+  };
+
+  {
+    std::lock_guard lock(ctx.parse_callback_mtx);
+    ctx.parse_callback = [target_url, &parse_seq, &out_file_name, &proto_cache, &default_binary_field_path,
+                          &table_output, &table_output_path, &table_record_count, &first_json_record,
+#ifdef VLINK_HAS_FBS_COMPILER
+                          &ensure_fbs_parser, &fbs_schema, &fbs_root_object,
+#endif
+                          &warn_flatbuffers_fields,
+                          &parse_type_suffix](int64_t timestamp, const std::string& url, const std::string& ser,
+                                              vlink::SchemaType schema_type, const vlink::Bytes& bytes) {
+      auto& cb_ctx = vlink::parse::ParseContext::get();
+
+      if VLIKELY (target_url != url) {
+        return;
+      }
+
+      if VUNLIKELY (!check_rate_limit()) {
+        return;
+      }
+
+      cb_ctx.data_has_changed = true;
+
+      const auto resolved_schema_type = vlink::SchemaData::resolve_type(schema_type, ser);
+      const bool is_zerocopy = resolved_schema_type == vlink::SchemaType::kZeroCopy;
+
+      auto print_raw_summary = [&bytes, &ser, resolved_schema_type]() {
+        const auto schema_label = vlink::SchemaData::convert_type(resolved_schema_type);
+        std::cout << "<raw " << bytes.size() << " bytes, ser=" << ser
+                  << ", schema=" << (schema_label.empty() ? std::string_view{"unknown"} : schema_label) << ">"
+                  << std::endl;
+      };
+
+      auto parse_proto = [&proto_cache, &bytes](const std::string& proto_ser) -> google::protobuf::Message* {
+        auto* msg = proto_cache.get(proto_ser);
+
+        if (msg == nullptr || bytes.size() > static_cast<size_t>(std::numeric_limits<int>::max()) ||
+            !msg->ParseFromArray(bytes.data(), static_cast<int>(bytes.size()))) {
+          return nullptr;
+        }
+
+        return msg;
+      };
+
+      if (cb_ctx.parse_type == ParseType::kConsole) {
+        if (cb_ctx.field_specs.empty()) {
+          print_console_header(timestamp, cb_ctx.output_count);
+
+          if (is_zerocopy) {
+            std::cout << format_zerocopy_message(ser, bytes) << std::endl;
+          } else if (resolved_schema_type == vlink::SchemaType::kProtobuf) {
+            auto* proto_message = parse_proto(ser);
+
+            if (proto_message != nullptr) {
+              std::string text;
+              bool ret = google::protobuf::TextFormat::PrintToString(*proto_message, &text);
+
+              if VLIKELY (ret) {
+                std::cout << text << std::endl;
+              }
+            } else {
+              print_raw_summary();
+            }
+          } else if (resolved_schema_type == vlink::SchemaType::kFlatbuffers) {
+#ifdef VLINK_HAS_FBS_COMPILER
+            auto* parser = ensure_fbs_parser(ser);
+
+            const bool fbs_verified =
+                parser != nullptr && fbs_schema != nullptr && fbs_root_object != nullptr && !bytes.empty() &&
+                (parser->opts.size_prefixed
+                     ? flatbuffers::VerifySizePrefixed(*fbs_schema, *fbs_root_object, bytes.data(), bytes.size())
+                     : flatbuffers::Verify(*fbs_schema, *fbs_root_object, bytes.data(), bytes.size()));
+
+            if (fbs_verified) {
+              std::string text;
+              const auto* error_chars = flatbuffers::custom::GenText(*parser, bytes.data(), &text);
+
+              if VLIKELY (error_chars == nullptr) {
+                std::cout << text << std::endl;
+              } else {
+                print_raw_summary();
+              }
+            } else
+#endif
+            {
+              print_raw_summary();
+            }
+          } else {
+            print_raw_summary();
+          }
+        } else {
+          google::protobuf::Message* proto_message = nullptr;
+
+          if (resolved_schema_type == vlink::SchemaType::kProtobuf) {
+            proto_message = parse_proto(ser);
+          } else if (resolved_schema_type == vlink::SchemaType::kFlatbuffers) {
+            warn_flatbuffers_fields("console mode");
+          }
+
+          std::vector<VariantType> values;
+          values.reserve(cb_ctx.field_specs.size());
+          vlink::zerocopy::MessageParser zerocopy_parser;
+          const bool zerocopy_parsed = is_zerocopy && zerocopy_parser.parse(ser, bytes);
+
+          for (size_t i = 0; i < cb_ctx.field_specs.size(); ++i) {
+            VariantType val;
+            bool found = false;
+
+            if (is_zerocopy) {
+              found = zerocopy_parsed && extract_zerocopy_value(zerocopy_parser, cb_ctx.field_specs[i], val);
+            } else if (proto_message != nullptr) {
+              found = extract_proto_value(*proto_message, cb_ctx.field_paths[i], 0, val);
+            }
+
+            values.emplace_back(found ? std::move(val) : VariantType{std::string{"N/A"}});
+          }
+
+          std::vector<double> expr_results;
+
+          if (cb_ctx.expr_ctx.ready()) {
+            expr_results = evaluate_expressions(values);
+          }
+
+          print_console_fields(timestamp, cb_ctx.output_count, values, expr_results);
+        }
+
+        return;
+      }
+
+      if (cb_ctx.parse_type == ParseType::kBin) {
+        ++parse_seq;
+        write_binary_output(out_file_name + "." + std::to_string(parse_seq) + ".bin", bytes);
+
+        return;
+      }
+
+      if (cb_ctx.parse_type == ParseType::kPcd) {
+        if (!is_zerocopy ||
+            vlink::zerocopy::MessageParser::detect_type(ser) != vlink::zerocopy::MessageParser::Type::kPointCloud) {
+          return;
+        }
+
+        vlink::zerocopy::PointCloud point_cloud;
+
+        if VUNLIKELY (!vlink::Serializer::convert(bytes, point_cloud)) {
+          return;
+        }
+
+        ++parse_seq;
+        std::string pcd_path = out_file_name + "." + std::to_string(parse_seq) + ".pcd";
+
+        if (!write_pcd_file(pcd_path, point_cloud)) {
+          fail_output_write(pcd_path);
+          return;
+        }
+
+        if (!cb_ctx.quiet_flag && cb_ctx.detail_flag) {
+          std::cout << "PCD: " << pcd_path << " (" << point_cloud.size() << " points)" << std::endl;
+        }
+
+        return;
+      }
+
+      if (cb_ctx.parse_type == ParseType::kJpg || cb_ctx.parse_type == ParseType::kH264 ||
+          cb_ctx.parse_type == ParseType::kH265 || cb_ctx.parse_type == ParseType::kRaw) {
+        vlink::Bytes out_bytes;
+        std::string field_to_extract = cb_ctx.field_specs.empty() ? "data" : cb_ctx.field_specs[0];
+
+        if (is_zerocopy) {
+          out_bytes = extract_zerocopy_binary(ser, bytes, field_to_extract);
+        } else if (resolved_schema_type == vlink::SchemaType::kProtobuf) {
+          auto* proto_message = parse_proto(ser);
+
+          if (proto_message != nullptr) {
+            VariantType val;
+            const auto& field_path = cb_ctx.field_paths.empty() ? default_binary_field_path : cb_ctx.field_paths[0];
+
+            if (extract_proto_value(*proto_message, field_path, 0, val) && std::holds_alternative<vlink::Bytes>(val)) {
+              out_bytes = std::get<vlink::Bytes>(std::move(val));
+            }
+          }
+        } else if (resolved_schema_type == vlink::SchemaType::kFlatbuffers) {
+          warn_flatbuffers_fields("binary mode");
+        }
+
+        if VLIKELY (!out_bytes.empty()) {
+          ++parse_seq;
+          write_binary_output(out_file_name + "." + std::to_string(parse_seq) + "." + parse_type_suffix, out_bytes);
+        }
+
+        return;
+      }
+
+      if (cb_ctx.parse_type == ParseType::kCsv || cb_ctx.parse_type == ParseType::kJson) {
+        google::protobuf::Message* proto_message = nullptr;
+
+        if (resolved_schema_type == vlink::SchemaType::kProtobuf) {
+          proto_message = parse_proto(ser);
+        } else if (resolved_schema_type == vlink::SchemaType::kFlatbuffers) {
+          warn_flatbuffers_fields("csv/json mode");
+        }
+
+        ParseRecord record;
+        record.timestamp = timestamp;
+        record.values.reserve(cb_ctx.field_specs.size());
+        vlink::zerocopy::MessageParser zerocopy_parser;
+        const bool zerocopy_parsed = is_zerocopy && zerocopy_parser.parse(ser, bytes);
+
+        for (size_t i = 0; i < cb_ctx.field_specs.size(); ++i) {
+          VariantType val;
+          bool found = false;
+
+          if (is_zerocopy) {
+            found = zerocopy_parsed && extract_zerocopy_value(zerocopy_parser, cb_ctx.field_specs[i], val);
+          } else if (proto_message != nullptr) {
+            found = extract_proto_value(*proto_message, cb_ctx.field_paths[i], 0, val);
+          }
+
+          record.values.emplace_back(found ? std::move(val) : VariantType{std::string{"N/A"}});
+        }
+
+        if (cb_ctx.expr_ctx.ready()) {
+          record.expr_results = evaluate_expressions(record.values);
+        }
+
+        if (!cb_ctx.quiet_flag && cb_ctx.detail_flag) {
+          std::cout << "timestamp: ";
+          write_seconds_from_us(std::cout, timestamp);
+
+          for (size_t i = 0; i < cb_ctx.field_specs.size() && i < record.values.size(); ++i) {
+            std::cout << ", " << cb_ctx.field_specs[i] << "=" << variant_to_string(record.values[i]);
+          }
+
+          for (size_t i = 0; i < record.expr_results.size() && i < cb_ctx.expr_strings.size(); ++i) {
+            std::cout << ", expr(" << cb_ctx.expr_strings[i] << ")=" << std::setprecision(12) << record.expr_results[i];
+          }
+
+          std::cout << std::endl;
+        }
+
+        if (cb_ctx.parse_type == ParseType::kCsv) {
+          write_csv_record(table_output, record);
+        } else {
+          const auto json = make_json_record(record, cb_ctx.field_specs, cb_ctx.expr_strings);
+          table_output << (first_json_record ? "\n" : ",\n") << json.dump(2);
+          first_json_record = false;
+        }
+
+        if VUNLIKELY (!table_output.good()) {
+          fail_output_write(table_output_path);
+          return;
+        }
+
+        ++table_record_count;
+
+        return;
+      }
+    };
+
+    ctx.callback_has_set = true;
+  }
+
+  if (ctx.parse_for_bag) {
+    start_print();
+    ctx.bag_player->play(ctx.bag_config);
+
+    try {
+      ctx.bag_player->run();
+    } catch (const std::exception& e) {
+      std::cerr << "Playback error: " << e.what() << std::endl;
+      ctx.is_broken = true;
+    }
+
+    ctx.has_quit = true;
+
+    {
+      std::lock_guard lock(ctx.parse_callback_mtx);
+      ctx.callback_has_set = false;
+      ctx.parse_callback = nullptr;
+    }
+
+    stop_print();
+  } else {
+    start_print();
+
+    auto quit_function = [discovery_viewer = ctx.discovery_viewer](int) {
+      auto& sig_ctx = vlink::parse::ParseContext::get();
+
+      if VUNLIKELY (sig_ctx.has_quit.exchange(true, std::memory_order_relaxed)) {
+        return;
+      }
+
+      sig_ctx.is_broken = true;
+
+      if (discovery_viewer) {
+        discovery_viewer->quit(true);
+      }
+    };
+
+    vlink::Utils::start_detect_keyboard([&quit_function](const std::string& key) {
+      if (key == "q" || key == "esc") {
+        quit_function(0);
+      }
+    });
+
+    vlink::Utils::register_terminate_signal(quit_function, true);
+
+    ctx.discovery_viewer->wait_for_quit();
+    ctx.has_quit = true;
+
+    {
+      std::lock_guard lock(ctx.parse_callback_mtx);
+      ctx.callback_has_set = false;
+      ctx.parse_callback = nullptr;
+    }
+
+    stop_print();
+    vlink::Utils::stop_detect_keyboard();
+  }
+
+  if (table_output.is_open()) {
+    if (ctx.parse_type == ParseType::kJson) {
+      table_output << (first_json_record ? "" : "\n") << "]\n";
+    }
+
+    table_output.close();
+
+    if (!table_output.good()) {
+      std::cerr << "Failed to write output file: " << table_output_path << std::endl;
+      ctx.is_broken = true;
+    }
+  }
+
+  if (!ctx.quiet_flag) {
+    std::cout << "\033[2K\r" << (ctx.is_broken ? "Break." : "Done.") << std::endl;
+
+    if (!ctx.is_broken && (ctx.parse_type == ParseType::kCsv || ctx.parse_type == ParseType::kJson)) {
+      std::cout << "Saved " << table_record_count << " records to " << out_file_name << "." << parse_type_suffix
+                << std::endl;
+    } else if (!ctx.is_broken && (ctx.parse_type == ParseType::kBin || ctx.parse_type == ParseType::kJpg ||
+                                  ctx.parse_type == ParseType::kH264 || ctx.parse_type == ParseType::kH265 ||
+                                  ctx.parse_type == ParseType::kRaw || ctx.parse_type == ParseType::kPcd)) {
+      std::cout << "Saved " << parse_seq << " files to " << out_dir << std::endl;
+    }
+  }
+
+  ctx.has_quit = true;
+
+  {
+    std::lock_guard lock(ctx.sub_urls_mtx);
+    ctx.sub_urls.clear();
+  }
+
+  return ctx.is_broken ? -1 : 0;
+}
+
+#endif
+
+int main(int argc, char* argv[]) {
+  vlink::Utils::set_console_utf8_output();
+
+#ifdef VLINK_HAS_PROTOBUF_COMPILER
+  auto& ctx = vlink::parse::ParseContext::get();
+
+  // vlink::Logger::set_console_level(vlink::Logger::kOff);
+  // vlink::Logger::set_file_level(vlink::Logger::kOff);
+  vlink::Logger::init("vlink-parse");
+
+  vlink::Utils::unset_env("VLINK_BAG_PATH");
+
+  argparse::ArgumentParser program("vlink-parse", VLINK_VERSION, argparse::default_arguments::all);
+
+  program.add_description(
+      "Versatile data extraction and export tool for VLink topics.\n"
+      "Modes: parse/export a topic, or slice/scan a bag.\n"
+      "Note: You may need to add multicast/broadcast [" +
+      vlink::DiscoveryViewer::get_listen_address() + "]");
+
+  program.add_argument("url")
+      .help("Target topic URL; optional for slice/scan, defaults to '*'")
+      .default_value(std::string("*"))
+      .nargs(argparse::nargs_pattern::optional);
+
+  program.add_argument("-t", "--type")
+      .help("Output type: console/text, csv, json, bin, jpg/jpeg, h264, h265, raw, pcd, slice, scan")
+      .default_value(std::string("csv"))
+      .nargs(1);
+
+  program.add_argument("-c", "--condition")
+      .help(
+          "Field(s) to extract, comma-separated or quoted space-separated "
+          "(e.g. 'header.seq,pose.x,pose.y' or 'header.seq pose.x pose.y')")
+      .default_value(std::string())
+      .nargs(1);
+
+  program.add_argument("-o", "--out_dir").help("Output directory").default_value(std::string("./")).nargs(1);
+
+  program.add_argument("-m", "--base_name")
+      .help("Output file base name for parse/export")
+      .default_value(std::string("output"))
+      .nargs(1);
+
+  program.add_argument("-f", "--bag_file")
+      .help("Bag file path (.vdb / .vdbx / .vcap / .vcapx)")
+      .default_value(std::string())
+      .nargs(1);
+
+  program.add_argument("-b", "--begin_time")
+      .help("Playback start time in seconds (bag/slice/scan)")
+      .scan<'g', double>()
+      .default_value(0.0)
+      .nargs(1);
+
+  program.add_argument("-e", "--end_time")
+      .help("Playback end time in seconds (bag/slice/scan)")
+      .scan<'g', double>()
+      .default_value(0.0)
+      .nargs(1);
+
+  program.add_argument("-n", "--count")
+      .help("Maximum number of samples (0 = unlimited)")
+      .scan<'d', int>()
+      .default_value(0)
+      .nargs(1);
+
+  program.add_argument("--hz")
+      .help("Maximum output rate in Hz (0 = unlimited)")
+      .scan<'g', double>()
+      .default_value(0.0)
+      .nargs(1);
+
+  program.add_argument("--native").help("Use native/loopback mode").default_value(false).implicit_value(true);
+
+  program.add_argument("-d", "--proto_dir").help("Protobuf .proto directory").default_value(std::string()).nargs(1);
+
+  program.add_argument("--fbs_dir")
+      .help("FlatBuffers .fbs directory (for FBS types)")
+      .default_value(std::string())
+      .nargs(1);
+
+  program.add_argument("-q", "--quiet").help("Suppress progress output").default_value(false).implicit_value(true);
+
+  program.add_argument("-l", "--detail")
+      .help("Print each value in real-time")
+      .default_value(false)
+      .implicit_value(true);
+
+  program.add_argument("-x", "--expression")
+      .help(
+          "Math expression(s) on extracted fields.\n"
+          "Variables are field names with dots replaced by underscores.\n"
+          "E.g. -c 'pose.x,pose.y' -x 'sqrt(pose_x*pose_x + pose_y*pose_y)'\n"
+          "Multiple: -x 'pose_x+pose_y' -x 'pose_x-pose_y'\n"
+          "Functions: -x 'min(pose_x, pose_y)' -x 'max(pose_x, pose_y)'")
+      .default_value(std::vector<std::string>())
+      .nargs(1)
+      .append();
+
+  program.add_argument("-w", "--window")
+      .help("Slice time window in seconds (for -t slice)")
+      .scan<'g', double>()
+      .default_value(0.0)
+      .nargs(1);
+
+  program.add_argument("--segments")
+      .help("JSON file with segment list for slice (alternative to --window)")
+      .default_value(std::string())
+      .nargs(1);
+
+  program.add_argument("--event")
+      .help(
+          "Event expression for scan or event-driven slice (requires -c).\n"
+          "E.g. --event 'brake > 80' with -c 'brake'")
+      .default_value(std::string())
+      .nargs(1);
+
+  program.add_argument("--pre")
+      .help("Seconds before event to include (for --event)")
+      .scan<'g', double>()
+      .default_value(5.0)
+      .nargs(1);
+
+  program.add_argument("--plugin")
+      .help("Bag plugin name (rewrites frames on read)")
+      .default_value(std::string())
+      .nargs(1);
+
+  program.add_argument("--post")
+      .help("Seconds after event to include (for --event)")
+      .scan<'g', double>()
+      .default_value(3.0)
+      .nargs(1);
+
+  program.add_argument("--event_state_max_age")
+      .help("Max age in seconds for cross-topic event variables (0 = no age limit)")
+      .scan<'g', double>()
+      .default_value(0.5)
+      .nargs(1);
+
+  program.add_argument("--event_min_interval")
+      .help("Minimum seconds between emitted event triggers")
+      .scan<'g', double>()
+      .default_value(0.0)
+      .nargs(1);
+
+  program.add_argument("--suffix")
+      .help("Output file suffix for slice (.vdb or .vcap; default: source storage type)")
+      .default_value(std::string())
+      .nargs(1);
+
+  program.add_argument("--compress")
+      .help("Compress output bag data (for -t slice)")
+      .default_value(false)
+      .implicit_value(true);
+
+  program.add_argument("--force")
+      .help("Overwrite existing output files (for -t slice/scan)")
+      .default_value(false)
+      .implicit_value(true);
+
+  program.add_argument("--no_manifest")
+      .help("Do not output manifest file (for -t slice)")
+      .default_value(false)
+      .implicit_value(true);
+
+  program.add_argument("--manifest")
+      .help("Manifest file name (default: manifest.json)")
+      .default_value(std::string("manifest.json"))
+      .nargs(1);
+
+  program.add_argument("--scan_output")
+      .help("Scan result JSON file name under -o (default: events.json)")
+      .default_value(std::string("events.json"))
+      .nargs(1);
+
+  program.add_argument("--schema_config")
+      .help("JSON config file for schema import rules (for -t slice/scan)")
+      .default_value(std::string())
+      .nargs(1);
+
+  program.add_argument("--schema_plugin")
+      .help("Path to schema plugin shared library (or set VLINK_SCHEMA_PLUGIN)")
+      .default_value(std::string())
+      .nargs(1);
+
+  program.add_argument("--filter")
+      .help(
+          "Content filter expression (requires -c fields).\n"
+          "Messages where expression evaluates to 0 are excluded.\n"
+          "E.g. --filter 'speed > 60' with -c 'speed'")
+      .default_value(std::string())
+      .nargs(1);
+
+  program.add_argument("--export_csv")
+      .help("Export parsed fields as CSV alongside each slice (requires -c)")
+      .default_value(false)
+      .implicit_value(true);
+
+  program.add_argument("-u", "--urls")
+      .help("Exact URL filter for slice/scan")
+      .default_value(std::vector<std::string>())
+      .nargs(argparse::nargs_pattern::at_least_one);
+
+  program.add_argument("-i", "--url_filter")
+      .help("Quoted keyword filter for URLs (space- or comma-separated), e.g. --url_filter 'camera lidar'")
+      .default_value(std::string())
+      .nargs(1);
+
+  program.add_argument("-k", "--black")
+      .help("Blacklist mode for --urls and --url_filter")
+      .default_value(false)
+      .implicit_value(true);
+
+  program.add_argument("--actions")
+      .help(
+          "Action filter for slice/scan: 0=Unknown 1=ClientReq 2=ClientResp 3=ServerReq 4=ServerResp 5=Pub 6=Sub 7=Set "
+          "8=Get (default: 6)")
+      .scan<'d', int>()
+      .default_value(std::vector<int>{6})
+      .nargs(argparse::nargs_pattern::at_least_one);
+
+  program.add_argument("--tag").help("Tag name for output bag (for -t slice)").default_value(std::string()).nargs(1);
+
+  program.add_argument("--wal_mode")
+      .help("Enable WAL mode for output (for -t slice)")
+      .default_value(false)
+      .implicit_value(true);
+
+  program.add_argument("--cache_size")
+      .help("Write cache size in MB (for -t slice)")
+      .scan<'g', double>()
+      .default_value(4.0)
+      .nargs(1);
+
+  program.add_argument("--compress_level")
+      .help("Compress level 1-5, 0=default (for -t slice)")
+      .scan<'d', int>()
+      .default_value(3)
+      .nargs(1);
+
+  program.add_argument("--ignore_compress")
+      .help("URLs to skip compression (for -t slice)")
+      .default_value(std::vector<std::string>())
+      .nargs(argparse::nargs_pattern::at_least_one);
+
+  program.add_argument("--sample_step")
+      .help("Keep every Nth message per URL (for -t slice, 1=all)")
+      .scan<'d', int>()
+      .default_value(1)
+      .nargs(1);
+
+  program.add_argument("--dry_run")
+      .help("Show what would happen without writing files (for -t slice)")
+      .default_value(false)
+      .implicit_value(true);
+
+  program.add_argument("--quality_check")
+      .help("Enable data quality checks during scan: dropout detection, frequency validation")
+      .default_value(false)
+      .implicit_value(true);
+
+  program.add_argument("--dropout_threshold")
+      .help("Max gap in seconds before reporting dropout (for --quality_check)")
+      .scan<'g', double>()
+      .default_value(1.0)
+      .nargs(1);
+
+  std::string example_str = "Examples:\n";
+  example_str += "  Parse/export:\n";
+  example_str += "    vlink-parse dds://test -c 'header.seq' -t csv -f /tmp/bag.vdb\n";
+  example_str += "    vlink-parse dds://test -c 'pose.x,pose.y,pose.z' -t csv --hz 10\n";
+  example_str += "    vlink-parse dds://test -t console -n 5\n";
+  example_str += "    vlink-parse dds://camera -c 'data' -t jpg -f /tmp/bag.vcap\n";
+  example_str += "    vlink-parse dds://test -t bin -o /tmp/raw_output\n";
+  example_str += "    vlink-parse dds://test -c 'header.seq' -t json --hz 1\n";
+  example_str +=
+      "    vlink-parse dds://test -c 'pose.x,pose.y' -x 'sqrt(pose_x*pose_x+pose_y*pose_y)' -x 'pose_x-pose_y' -t "
+      "csv\n";
+  example_str += "    vlink-parse dds://lidar -t pcd -f /tmp/bag.vdb\n";
+  example_str += "  Slice/scan:\n";
+  example_str += "    vlink-parse -t slice -f bag.vdb -w 30 -o /tmp/slices\n";
+  example_str += "    vlink-parse -t slice -f bag.vdb --segments events.json -o /tmp/slices\n";
+  example_str += "    vlink-parse -t slice -f bag.vdb -c 'brake' -d /opt/protos --event 'brake>80' --pre 5 --post 3\n";
+  example_str +=
+      "    vlink-parse -t slice -f bag.vdb -w 30 --urls dds://camera dds://lidar -c 'header.seq' --export_csv\n";
+  example_str += "    vlink-parse -t scan -f bag.vdb --quality_check -o /tmp/scan\n";
+  example_str += "    vlink-parse -t scan -f bag.vdb -c 'brake' -d /opt/protos --event 'brake>80' -o /tmp";
+  program.add_epilog(example_str);
+
+  try {
+    program.parse_args(argc, argv);
+  } catch (const std::exception& e) {
+    std::cerr << e.what() << std::endl;
+    std::cerr << program << std::endl;
+    return 1;
+  }
+
+  auto target_url = vlink::Helpers::trim_string(program.get<std::string>("url"));
+  bool url_argument_used = program.is_used("url");
+  auto type = vlink::parse::to_lower_copy(program.get<std::string>("-t"));
+  auto condition = program.get<std::string>("-c");
+  const auto& out_dir = program.get<std::string>("-o");
+  const auto& base_name = program.get<std::string>("-m");
+
+  if VUNLIKELY (target_url.empty()) {
+    std::cerr << "[url] cannot be empty or whitespace." << std::endl;
+    return -1;
+  }
+
+  auto bag_file = program.get<std::string>("-f");
+
+  if VUNLIKELY (vlink::parse::option_used(program, "-f", "--bag_file") && bag_file.empty()) {
+    std::cerr << "Option -f/--bag_file requires a non-empty path." << std::endl;
+    return -1;
+  }
+
+#ifdef _WIN32
+  if (!bag_file.empty()) {
+    bag_file = vlink::parse::path_to_utf8(vlink::parse::utf8_to_path(bag_file));
+
+    if VUNLIKELY (bag_file.empty()) {
+      std::cerr << "Invalid bag file path." << std::endl;
+      return -1;
+    }
+  }
+#endif
+
+  ctx.parse_for_bag = !bag_file.empty();
+
+  auto begin_seconds = program.get<double>("-b");
+  auto end_seconds = program.get<double>("-e");
+
+  if VUNLIKELY (!vlink::parse::validate_duration_seconds("-b/--begin_time", begin_seconds, true) ||
+                !vlink::parse::validate_duration_seconds("-e/--end_time", end_seconds, true)) {
+    return -1;
+  }
+
+  ctx.begin_time = vlink::parse::seconds_to_milliseconds(begin_seconds);
+  ctx.end_time = vlink::parse::seconds_to_milliseconds(end_seconds);
+  ctx.max_count = program.get<int>("-n");
+  const auto max_hz = program.get<double>("--hz");
+
+  if VUNLIKELY (ctx.begin_time > kMaxPlaybackTimeMs || ctx.end_time > kMaxPlaybackTimeMs) {
+    std::cerr << "Playback time range is too large." << std::endl;
+    return -1;
+  }
+
+  if VUNLIKELY (ctx.max_count < 0) {
+    std::cerr << "count [-n] must be non-negative." << std::endl;
+    return -1;
+  }
+
+  if VUNLIKELY (!std::isfinite(max_hz) || max_hz < 0) {
+    std::cerr << "--hz must be non-negative." << std::endl;
+    return -1;
+  }
+
+  if (max_hz > 0) {
+    const double min_interval_us = std::ceil(1000000.0 / max_hz);
+
+    if VUNLIKELY (!std::isfinite(min_interval_us) || min_interval_us >= 0x1p63) {
+      std::cerr << "--hz is too small." << std::endl;
+      return -1;
+    }
+
+    ctx.min_output_interval_us = static_cast<int64_t>(min_interval_us);
+  }
+
+  auto native_mode = program.is_used("--native");
+
+  auto proto_dir = program.get<std::string>("-d");
+  auto fbs_dir = program.get<std::string>("--fbs_dir");
+
+  if (proto_dir.empty()) {
+    proto_dir = vlink::Utils::get_env("VLINK_PROTO_DIR");
+  }
+
+  if (proto_dir.empty()) {
+    proto_dir = vlink::parse::read_home_config(".vlink_proto_dir");
+  }
+
+  if (fbs_dir.empty()) {
+    fbs_dir = vlink::Utils::get_env("VLINK_FBS_DIR");
+  }
+
+  if (fbs_dir.empty()) {
+    fbs_dir = vlink::parse::read_home_config(".vlink_fbs_dir");
+  }
+
+  auto schema_plugin_path = program.get<std::string>("--schema_plugin");
+
+  proto_dir = vlink::parse::normalize_dir(std::move(proto_dir));
+  fbs_dir = vlink::parse::normalize_dir(std::move(fbs_dir));
+  schema_plugin_path = vlink::parse::normalize_dir(std::move(schema_plugin_path));
+
+  const auto configured_schema_plugin =
+      schema_plugin_path.empty() ? vlink::Utils::get_env("VLINK_SCHEMA_PLUGIN") : schema_plugin_path;
+  auto& schema_plugin_manager = vlink::SchemaPluginManager::get(schema_plugin_path);
+
+  if VUNLIKELY (!configured_schema_plugin.empty() && !schema_plugin_manager.is_valid()) {
+    std::cerr << "Failed to load schema plugin: " << configured_schema_plugin << std::endl;
+    return -1;
+  }
+
+  ctx.bag_plugin_name = program.get<std::string>("--plugin");
+
+  std::string parse_type_suffix;
+
+  if (type == "console" || type == "text") {
+    ctx.parse_type = ParseType::kConsole;
+  } else if (type == "csv") {
+    ctx.parse_type = ParseType::kCsv;
+  } else if (type == "json") {
+    ctx.parse_type = ParseType::kJson;
+  } else if (type == "bin") {
+    ctx.parse_type = ParseType::kBin;
+  } else if (type == "jpg" || type == "jpeg") {
+    ctx.parse_type = ParseType::kJpg;
+    parse_type_suffix = "jpg";
+  } else if (type == "h264") {
+    ctx.parse_type = ParseType::kH264;
+    parse_type_suffix = "h264";
+  } else if (type == "h265") {
+    ctx.parse_type = ParseType::kH265;
+    parse_type_suffix = "h265";
+  } else if (type == "raw") {
+    ctx.parse_type = ParseType::kRaw;
+    parse_type_suffix = "raw";
+  } else if (type == "pcd") {
+    ctx.parse_type = ParseType::kPcd;
+    parse_type_suffix = "pcd";
+  } else if (type == "slice") {
+    ctx.parse_type = ParseType::kSlice;
+  } else if (type == "scan") {
+    ctx.parse_type = ParseType::kScan;
+  } else {
+    std::cerr << "Unknown type: " << type << std::endl;
+    std::cerr << "Supported: console/text, csv, json, bin, jpg/jpeg, h264, h265, raw, pcd, slice, scan" << std::endl;
+    return -1;
+  }
+
+  if (parse_type_suffix.empty()) {
+    parse_type_suffix = type;
+  }
+
+  if VUNLIKELY (!vlink::parse::validate_mode_options(program, ctx.parse_type, !bag_file.empty(), url_argument_used,
+                                                     target_url)) {
+    return -1;
+  }
+
+  if (!ctx.prepare_bag_plugin()) {
+    return -1;
+  }
+
+  struct BagPluginInterfaceGuard final {
+    vlink::parse::ParseContext& context;
+
+    ~BagPluginInterfaceGuard() { context.bag_plugin_interface.reset(); }
+  } bag_plugin_interface_guard{ctx};
+
+  if VUNLIKELY (vlink::parse::option_used(program, "-c", "--condition") &&
+                vlink::Helpers::trim_string_view(condition).empty()) {
+    std::cerr << "Option -c/--condition requires at least one non-space field." << std::endl;
+    return -1;
+  }
+
+  if (!condition.empty()) {
+    if (vlink::parse::condition_contains_empty_comma_field(condition)) {
+      std::cerr << "Option -c/--condition contains an empty field." << std::endl;
+      return -1;
+    }
+
+    auto raw_field_specs = vlink::Helpers::split_any(condition);
+
+    for (auto& spec : raw_field_specs) {
+      std::vector<std::string> path_parts;
+      size_t path_start = 0;
+
+      while (path_start <= spec.size()) {
+        const auto dot_pos = spec.find('.', path_start);
+
+        if (dot_pos == std::string::npos) {
+          path_parts.emplace_back(spec.substr(path_start));
+          break;
+        }
+
+        path_parts.emplace_back(spec.substr(path_start, dot_pos - path_start));
+        path_start = dot_pos + 1;
+      }
+
+      ctx.field_specs.emplace_back(spec);
+      ctx.field_paths.emplace_back(std::move(path_parts));
+    }
+  }
+
+  auto expr_values = program.get<std::vector<std::string>>("-x");
+
+  if VUNLIKELY (program.is_used("-x") && expr_values.empty()) {
+    std::cerr << "Option -x/--expression requires an expression." << std::endl;
+    return -1;
+  }
+
+  if (!expr_values.empty()) {
+    ctx.expr_strings = std::move(expr_values);
+
+    for (auto& ex : ctx.expr_strings) {
+      ex = vlink::Helpers::trim_string(ex);
+
+      if VUNLIKELY (ex.empty()) {
+        std::cerr << "Option -x/--expression contains an empty expression." << std::endl;
+        return -1;
+      }
+    }
+  }
+
+  if ((ctx.parse_type == ParseType::kCsv || ctx.parse_type == ParseType::kJson) && ctx.field_specs.empty()) {
+    std::cerr << "CSV/JSON mode requires -c to specify fields." << std::endl;
+    std::cerr << "Example: -c 'header.seq,pose.x,pose.y'" << std::endl;
+    return -1;
+  }
+
+  if (!ctx.expr_strings.empty() && ctx.field_specs.empty()) {
+    std::cerr << "Expression (-x) requires -c to specify fields as variables." << std::endl;
+    return -1;
+  }
+
+#ifdef VLINK_ENABLE_EXPRTK
+
+  if (!ctx.expr_strings.empty()) {
+    if (!ctx.expr_ctx.compile(ctx.field_specs, ctx.expr_strings)) {
+      return -1;
+    }
+  }
+
+#else
+
+  if (!ctx.expr_strings.empty()) {
+    std::cerr << "Expression support requires exprtk library." << std::endl;
+    return -1;
+  }
+
+#endif
+
+  if (proto_dir.empty() && fbs_dir.empty() && !vlink::SchemaPluginManager::get().is_valid() &&
+      ctx.parse_type != ParseType::kSlice && ctx.parse_type != ParseType::kScan) {
+    std::cerr << "Warning: No proto_dir or fbs_dir set, only zerocopy types will work." << std::endl;
+    std::cerr << "Set via [-d] / [--fbs_dir], env VLINK_PROTO_DIR / VLINK_FBS_DIR, or --schema_plugin / "
+                 "VLINK_SCHEMA_PLUGIN"
+              << std::endl;
+  }
+
+  if VUNLIKELY (ctx.begin_time > 0 && ctx.end_time > 0 && ctx.begin_time >= ctx.end_time) {
+    std::cerr << "Invalid begin_time and end_time [-b] [-e]" << std::endl;
+    return -1;
+  }
+
+  ctx.quiet_flag = vlink::parse::option_used(program, "-q", "--quiet");
+  ctx.detail_flag = vlink::parse::option_used(program, "-l", "--detail");
+
+  if (ctx.parse_type == ParseType::kSlice || ctx.parse_type == ParseType::kScan) {
+    if VUNLIKELY (!ctx.parse_for_bag) {
+      std::cerr << "Slice/scan mode requires -f/--bag_file." << std::endl;
+      return -1;
+    }
+
+    auto segments_file = program.get<std::string>("--segments");
+    auto event_expr = program.get<std::string>("--event");
+    auto window = program.get<double>("-w");
+
+    if (segments_file.empty() && event_expr.empty() && window <= 0 && ctx.parse_type == ParseType::kSlice) {
+      std::cerr << "Slice mode requires one of: --window (-w), --segments, or --event." << std::endl;
+      return -1;
+    }
+
+    vlink::parse::SliceOptions opt;
+    opt.bag_file = bag_file;
+    opt.target_url = target_url;
+    opt.out_dir = out_dir;
+    opt.window_seconds = window;
+    opt.suffix = program.get<std::string>("--suffix");
+    opt.compress = program.is_used("--compress");
+    opt.force = program.is_used("--force");
+    opt.no_manifest = program.is_used("--no_manifest");
+    opt.manifest_name = program.get<std::string>("--manifest");
+    opt.scan_output_name = program.get<std::string>("--scan_output");
+    opt.proto_dir = proto_dir;
+    opt.fbs_dir = fbs_dir;
+    opt.schema_config_path = program.get<std::string>("--schema_config");
+    opt.filter_expr = program.get<std::string>("--filter");
+    opt.export_csv = program.is_used("--export_csv");
+    opt.tag_name = program.get<std::string>("--tag");
+    opt.urls = program.get<std::vector<std::string>>("-u");
+    opt.url_filter = program.get<std::string>("-i");
+    opt.black_mode = program.is_used("-k");
+    opt.actions = program.get<std::vector<int>>("--actions");
+    opt.begin_time = ctx.begin_time;
+    opt.end_time = ctx.end_time;
+    opt.wal_mode = program.is_used("--wal_mode");
+    opt.cache_size = program.get<double>("--cache_size");
+    opt.compress_level = program.get<int>("--compress_level");
+    opt.ignore_compress = program.get<std::vector<std::string>>("--ignore_compress");
+    opt.sample_step = program.get<int>("--sample_step");
+    opt.segments_file = segments_file;
+    opt.event_expr = event_expr;
+    opt.event_pre = program.get<double>("--pre");
+    opt.event_post = program.get<double>("--post");
+    opt.event_state_max_age = program.get<double>("--event_state_max_age");
+    opt.event_min_interval = program.get<double>("--event_min_interval");
+    opt.scan_only = (ctx.parse_type == ParseType::kScan);
+    opt.dry_run = program.is_used("--dry_run");
+    opt.quality_check = program.is_used("--quality_check");
+    opt.quality_only = opt.scan_only && opt.quality_check && opt.event_expr.empty();
+    opt.dropout_threshold = program.get<double>("--dropout_threshold");
+    opt.begin_time_set = vlink::parse::option_used(program, "-b", "--begin_time");
+    opt.end_time_set = vlink::parse::option_used(program, "-e", "--end_time") && ctx.end_time > 0;
+
+    return start_slice(opt);
+  }
+
+  int ret = 0;
+
+  if (ctx.parse_for_bag) {
+    ret = start_bag_play(bag_file);
+
+    if (ret != 0) {
+      if (ctx.bag_player) {
+        stop_bag_play();
+      }
+
+      return ret;
+    }
+  } else {
+    ret = start_viewer(native_mode);
+
+    if (ret != 0) {
+      return ret;
+    }
+  }
+
+  ret = start_parse(target_url, out_dir, base_name, proto_dir, fbs_dir, parse_type_suffix);
+
+  if (ctx.parse_for_bag) {
+    stop_bag_play();
+  } else {
+    stop_viewer();
+  }
+
+  return ret;
+#else
+  (void)argc;
+  (void)argv;
+
+  std::cerr << "The lower version of protobuf is not supported. Please change to a higher version of protobuf."
+            << std::endl;
+  return -1;
+#endif
+}

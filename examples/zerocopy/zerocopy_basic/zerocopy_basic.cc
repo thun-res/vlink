@@ -25,34 +25,26 @@
 #include <vlink/vlink.h>
 #include <vlink/zerocopy/raw_data.h>
 
-#include <chrono>
 #include <cstring>
-#include <thread>
-
-using namespace std::chrono_literals;  // NOLINT(build/namespaces, google-build-using-namespace)
 
 // ---------------------------------------------------------------------------
 // zerocopy_basic.cc
 //
-// Walks the zerocopy primitives -- loan/return_loan, manual_unloan mode,
-// and RawData copy semantics. The "zerocopy" promise applies to backends
-// that can hand the publisher a pool-allocated buffer (currently shm://,
-// shm2://). The publisher writes data directly into that buffer; the
-// subscriber receives a reference to the same shared-memory region.
+// Walks the zerocopy primitives -- loan/return_loan and RawData copy
+// semantics. The "zerocopy" promise applies to backends that can hand the
+// publisher a pool-allocated buffer (currently shm://, shm2://). The
+// publisher writes data directly into that buffer; the subscriber receives
+// a reference to the same shared-memory region.
 //
 // Key contracts:
 //
 //   loan(size)       -- borrow a buffer from the transport pool. MUST be
-//                       paired with either publish(buf) (which consumes
-//                       and returns the loan automatically) or
-//                       return_loan(buf) (cancel the loan unused).
+//                       paired with either publish(buf) or return_loan(buf).
+//                       When publish returns false, call return_loan; it is
+//                       a harmless no-op if the backend already consumed
+//                       the buffer.
 //   is_support_loan  -- query whether this transport has a pool. dds://
 //                       returns false; user must fall back to Bytes::create.
-//   manual_unloan    -- when true, the *subscriber* owns the buffer until
-//                       it explicitly calls return_loan(). Lets the
-//                       subscriber defer release (e.g. while async
-//                       processing). When false (default) the buffer is
-//                       reclaimed as soon as the listener returns.
 //
 // RawData copy semantics:
 //   shallow_copy -- alias the source storage; is_owner=false; cheapest.
@@ -86,7 +78,7 @@ int main() {
     VLOG_I("[2] loan() / return_loan() with fallback");
 
     static constexpr size_t kPayloadSize = sizeof(SensorSample);
-    vlink::Publisher<vlink::Bytes> pub("dds://zerocopy_basic/loan_demo");
+    vlink::Publisher<vlink::Bytes> pub("shm://zerocopy_basic/loan_demo");
 
     if (pub.is_support_loan()) {
       vlink::Bytes buf = pub.loan(kPayloadSize);
@@ -96,8 +88,11 @@ int main() {
         sensor->id = 1;
         sensor->value = 42.0;
         sensor->timestamp = 1234567890;
-        pub.publish(buf);
-        VLOG_I("  Published via loaned buffer, size=", buf.size());
+        const bool published = pub.publish(buf, true);
+        if (!published) {
+          pub.return_loan(buf);
+        }
+        VLOG_I("  Published via loaned buffer, size=", buf.size(), " accepted=", published);
       }
     } else {
       VLOG_I("  Transport does not support loan -- using regular allocation");
@@ -106,58 +101,18 @@ int main() {
       sensor->id = 1;
       sensor->value = 42.0;
       sensor->timestamp = 1234567890;
-      VLOG_I("  Allocated ", buf.size(), " bytes, ready to publish");
+      const bool published = pub.publish(buf, true);
+      VLOG_I("  Published regular allocation, size=", buf.size(), " accepted=", published);
     }
   }
 
-  // ---- Section 3: manual unloan mode (Subscriber) ----
-  // With set_manual_unloan(true), the listener is responsible for calling
-  // return_loan(msg) before the buffer's underlying pool slot can be
-  // reused. Forgetting to return drains the pool and stalls the publisher.
-  // Use only when listener offloads work to another thread that must keep
-  // the buffer alive past listener return.
-  {
-    VLOG_I("[3] Manual unloan mode (Subscriber)");
-
-    vlink::MessageLoop loop;
-    loop.set_name("loan_loop");
-    loop.async_run();
-
-    vlink::Subscriber<vlink::Bytes> sub("dds://zerocopy_basic/manual");
-    sub.attach(&loop);
-
-    VLOG_I("  default is_manual_unloan() = ", sub.is_manual_unloan());
-    sub.set_manual_unloan(true);
-    VLOG_I("  after set_manual_unloan(true) = ", sub.is_manual_unloan());
-
-    int received = 0;
-    // Listener runs on `loop`'s thread. Because manual_unloan is on, we
-    // explicitly return the buffer at the end. Skipping this would leak
-    // the pool slot for the lifetime of the subscriber.
-    sub.listen([&received, &sub](const vlink::Bytes& msg) {
-      received++;
-      VLOG_I("  [Sub] received ", msg.size(), " bytes");
-      sub.return_loan(msg);
-    });
-
-    vlink::Publisher<vlink::Bytes> pub("dds://zerocopy_basic/manual");
-    pub.wait_for_subscribers();
-    pub.publish(vlink::Bytes::from_string("manual_unloan_test"));
-
-    loop.wait_for_idle(1000);
-    VLOG_I("  messages received: ", received);
-
-    loop.quit();
-    loop.wait_for_quit();
-  }
-
-  // ---- Section 4: RawData -- owned buffer with header and serialization ----
+  // ---- Section 3: RawData -- owned buffer with header and serialization ----
   // RawData is the base of CameraFrame/PointCloud: a header struct + an
   // owned byte buffer + a 16-bit reserved field for transport metadata.
   // operator>> / operator<< produce a self-describing wire format so the
   // type works over non-shm backends too (with a copy).
   {
-    VLOG_I("[4] RawData: create + header + serialize");
+    VLOG_I("[3] RawData: create + header + serialize");
 
     vlink::zerocopy::RawData original;
     original.create(1024);
@@ -183,12 +138,12 @@ int main() {
     VLOG_I("  restored size=", restored.size(), " seq=", restored.header.seq, " is_owner=", restored.is_owner());
   }
 
-  // ---- Section 5: RawData copy semantics ----
+  // ---- Section 4: RawData copy semantics ----
   // Three explicit copy verbs spell out cost. Default-constructing a copy
   // is forbidden; users must pick the semantics they want, eliminating
   // the "is this a deep or shallow copy?" question entirely.
   {
-    VLOG_I("[5] RawData: shallow_copy vs deep_copy vs move_copy");
+    VLOG_I("[4] RawData: shallow_copy vs deep_copy vs move_copy");
 
     vlink::zerocopy::RawData source;
     source.create(128);
@@ -207,11 +162,13 @@ int main() {
     VLOG_I("  moved:   moved.is_valid=", moved.is_valid(), " source.is_valid=", source.is_valid());
   }
 
-  // ---- Section 6: pub/sub with RawData over SHM ----
-  // The full zero-copy path: shm:// + RawData. Subscriber's `rd` references
-  // the same shared-memory pages the publisher wrote.
+  // ---- Section 5: pub/sub with RawData over SHM ----
+  // RawData::create() allocates locally; publish(rd) serializes it once into a
+  // transport-provided SHM buffer. Subscriber `rd` then views that SHM buffer
+  // without another payload copy. For publisher-side direct pool writes, use
+  // Publisher<Bytes>::loan() as shown in Section 2.
   {
-    VLOG_I("[6] Pub/Sub with RawData (shm://)");
+    VLOG_I("[5] Pub/Sub with RawData (shm://)");
 
     vlink::MessageLoop loop;
     loop.set_name("rawdata_loop");
@@ -220,8 +177,8 @@ int main() {
     int received = 0;
     vlink::Subscriber<vlink::zerocopy::RawData> sub("shm://zerocopy_basic/rawdata");
     sub.attach(&loop);
-    // Listener fires on `loop`'s thread. `rd` is a non-owning view into
-    // SHM; treat it as read-only.
+    // Listener fires on `loop`'s thread. `rd` is a non-owning view into the
+    // received SHM buffer; treat it as read-only.
     sub.listen([&received](const vlink::zerocopy::RawData& rd) {
       received++;
       VLOG_I("  [Sub] seq=", rd.header.seq, " size=", rd.size(), " bytes");
@@ -245,13 +202,12 @@ int main() {
     loop.wait_for_quit();
   }
 
-  // Section 7: API summary
+  // Section 6: API summary
   {
-    VLOG_I("[7] API Summary");
+    VLOG_I("[6] API Summary");
     VLOG_I("  is_support_loan()      -- transport-pool availability");
     VLOG_I("  loan(size)             -- borrow from pool (SHM only)");
     VLOG_I("  return_loan(bytes)     -- return unused loan");
-    VLOG_I("  set_manual_unloan(b)   -- subscriber controls buffer lifetime");
     VLOG_I("  RawData: create/header/serialize/shallow_copy/deep_copy/move_copy");
     VLOG_I("  Loan-capable transports: shm://, shm2://");
   }

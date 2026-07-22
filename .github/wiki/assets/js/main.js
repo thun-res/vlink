@@ -13,6 +13,7 @@
 /* ---------- 1. Reveal on scroll ---------- */
 (() => {
   const els = document.querySelectorAll('.reveal');
+  els.forEach(e => e.classList.add('reveal-pending'));
   if (!('IntersectionObserver' in window)) { els.forEach(e => e.classList.add('in')); return; }
   const io = new IntersectionObserver((entries) => {
     entries.forEach(en => {
@@ -31,6 +32,7 @@
       if (!en.isIntersecting) return;
       const el = en.target;
       const end = +el.dataset.countTarget;
+      el.textContent = '0';
       const dur = 1200;
       const t0 = performance.now();
       const tick = (t) => {
@@ -154,12 +156,13 @@
     'cpp-pub': {
       title: 'publisher.cc — publishes to dds://sensor/imu',
       code:
-`// Run alongside subscriber.cc — same URL, they pair automatically.
+`// Run alongside subscriber.cc — wait until the DDS endpoints match.
 #include <vlink/vlink.h>
 #include "proto/sensor.pb.h"        // protobuf-generated header
 
 int main() {
   vlink::Publisher<pb::Sensor::Imu> pub("dds://sensor/imu");
+  pub.wait_for_subscribers();
 
   for (int seq = 0; ; ++seq) {
     pb::Sensor::Imu msg;
@@ -176,7 +179,7 @@ int main() {
     'cpp-sub': {
       title: 'subscriber.cc — receives from dds://sensor/imu',
       code:
-`// Run alongside publisher.cc — picks up every sample on the same URL.
+`// Run alongside publisher.cc — receives samples after matching/QoS delivery.
 #include <vlink/vlink.h>
 #include "proto/sensor.pb.h"        // protobuf-generated header
 
@@ -228,10 +231,9 @@ int main() {
     host.insertAdjacentHTML('beforeend', lines[idx] + '\n');
     host.scrollTop = host.scrollHeight;
     idx++;
-    // Strict 500 ms publish cadence: Publisher fires, Subscriber receives
-    // ~40 ms later, then we wait ~460 ms for the next Publisher tick.
-    // (idx is now odd right after a Publisher line, even after a Subscriber.)
-    const wait = idx % 2 === 1 ? 460 : 40;
+    // Illustrative pacing only: show the receive line shortly after its publish
+    // line, then pause before the next sample. This is not a latency benchmark.
+    const wait = idx % 2 === 1 ? 40 : 460;
     setTimeout(pushLine, wait);
   };
 
@@ -404,11 +406,9 @@ int main() {
     if (url.startsWith('dds://')) return 5;
     if (url.startsWith('ddsc://')) return 6;
     if (url.startsWith('ddsr://')) return 7;
-    if (url.startsWith('ddst://')) return 8;
     if (url.startsWith('someip://')) return 9;
     if (url.startsWith('mqtt://')) return 10;
     if (url.startsWith('fdbus://')) return 11;
-    if (url.startsWith('qnx://')) return 12;
     return 99;
   };
   const makeMonitorRow = (typeBits, url, ser, baseFreq, baseRate, baseLatency, activity = 'active', baseLoss = 0) => ({
@@ -562,19 +562,19 @@ int main() {
     ].forEach((item) => addSetGet(...item));
 
     [
-      ['dds://map/service', 'pb.MapQueryResp'],
-      ['dds://planner/service', 'pb.PlanningServiceResp'],
-      ['dds://routing/service', 'pb.RouteServiceResp'],
-      ['shm://maintenance/service', 'pb.MaintenanceResp'],
-      ['shm://tools/service', 'pb.ToolsServiceResp'],
+      ['dds://map/service', 'pb.MapQueryReq|pb.MapQueryResp'],
+      ['dds://planner/service', 'pb.PlanningServiceReq|pb.PlanningServiceResp'],
+      ['dds://routing/service', 'pb.RouteServiceReq|pb.RouteServiceResp'],
+      ['shm://maintenance/service', 'pb.MaintenanceReq|pb.MaintenanceResp'],
+      ['shm://tools/service', 'pb.ToolsServiceReq|pb.ToolsServiceResp'],
     ].forEach((item) => addServer(...item));
 
     [
-      ['dds://map/client', 'pb.MapQueryReq'],
-      ['dds://planner/client', 'pb.PlanningServiceReq'],
-      ['dds://routing/client', 'pb.RouteServiceReq'],
-      ['shm://maintenance/client', 'pb.MaintenanceReq'],
-      ['shm://tools/client', 'pb.ToolsServiceReq'],
+      ['dds://map/service', 'pb.MapQueryReq|pb.MapQueryResp'],
+      ['dds://planner/service', 'pb.PlanningServiceReq|pb.PlanningServiceResp'],
+      ['dds://routing/service', 'pb.RouteServiceReq|pb.RouteServiceResp'],
+      ['shm://maintenance/service', 'pb.MaintenanceReq|pb.MaintenanceResp'],
+      ['shm://tools/service', 'pb.ToolsServiceReq|pb.ToolsServiceResp'],
     ].forEach((item) => addClient(...item));
 
     const sorted = rows.sort((lhs, rhs) =>
@@ -641,7 +641,7 @@ int main() {
       pid: 4326,
       host: 'xavier',
       ip: '192.168.1.10',
-      server: [['dds://map/service', 'pb.MapQueryResp']],
+      server: [['dds://map/service', 'pb.MapQueryReq|pb.MapQueryResp']],
       getter: [['dds://config/active_route', 'pb.RouteConfig']],
     },
     {
@@ -657,13 +657,14 @@ int main() {
       pid: 4348,
       host: 'xavier',
       ip: '192.168.1.10',
-      client: [['dds://map/client', 'pb.MapQueryReq']],
+      client: [['dds://map/service', 'pb.MapQueryReq|pb.MapQueryResp']],
       publisher: [['dds://decision/path', 'pb.PlanningPath']],
       subscriber: [['dds://fusion/tracks', 'pb.FusionTracks'], ['dds://localization/pose', 'pb.LocalizationPose']],
     },
   ].sort((lhs, rhs) => lhs.name.localeCompare(rhs.name));
 
   const checkDiagItems = [
+    ['* Website demo: representative diag excerpt...', 'warn', 'The current build may run additional checks', 100],
     ['* Check available IP addresses...', 'ok', 'Found 3 IP Address', 100],
     ['* Check VLink DDS IP available...', 'ok', '192.168.1.10 is valid', 100],
     ['* Check VLink multicast address...', 'ok', 'Found 239.255.0.100', 100],
@@ -673,7 +674,7 @@ int main() {
     ['* Check memory usage...', 'warn', 'Usage 61.37%', 100],
     ['* Check proxy running...', 'err', 'Proxy is not running', 100],
     ['* Check bag running...', 'ok', 'Bag is not running', 100],
-    ['* Check dump running...', 'ok', 'Dump is not running', 100],
+    ['* Check parse running...', 'ok', 'Parse is not running', 100],
     ['* Check eproto running...', 'ok', 'Eproto is not running', 100],
     ['* Check monitor running...', 'warn', 'Monitor is running', 100],
     ['* Check viewer running...', 'ok', 'Viewer is not running', 100],
@@ -691,10 +692,10 @@ int main() {
     ['VLINK_LOG_CONSOLE_LEVEL', '', 'Defines the log level for console output.', false],
     ['VLINK_LOG_FILE_LEVEL', '', 'Specifies the log level for file output.', false],
     ['VLINK_LOG_CONSOLE_UNORDER', '', 'Enable non-synchronized console output for better performance.', false],
-    ['VLINK_LOG_CONSOLE_FMT', '', 'Set the console to output in a specific format.', false],
+    ['VLINK_LOG_CONSOLE_FMT', '', 'Boolean: 1 enables the extended console format; empty/0 uses the minimal format.', false],
     ['VLINK_LOG_DIR', '', 'Directory path where log files will be stored.', false],
     ['VLINK_LOG_ENABLE_UTC', '', 'Set whether to use UTC time as the printed timestamp', false],
-    ['VLINK_LOG_MAX_SIZE', '', 'Maximum size (in MB) of a single log file before rotation.', false],
+    ['VLINK_LOG_MAX_SIZE', '', 'Maximum size in bytes per log file before rotation.', false],
     ['VLINK_LOG_MAX_COUNT', '', 'Maximum number of log files to retain after rotation.', false],
     ['VLINK_LOG_FLUSH_DELAY', '', 'Time delay (in milliseconds) to flush log buffers to storage.', false],
     ['VLINK_LOG_PLUGIN', '', 'Specifies a custom plugin for handling log output.', false],
@@ -703,7 +704,7 @@ int main() {
     ['VLINK_LOG_BLOCK_SYNC', '', 'User thread is blocked when queue is full until queue is consumed.', false],
     ['VLINK_LOG_WRITE_DEPTH', '', 'Set the depth of the log backend write queue.', false],
     ['VLINK_PLUGIN_DIR', '', 'Directory path where plugins are stored and loaded from.', false],
-    ['VLINK_BAG_PATH', '', 'Path to store or load bag files for data recording or replay.', false],
+    ['VLINK_BAG_PATH', '', 'Activates process-global recording at the specified .vdb/.vcap path.', false],
     ['VLINK_BAG_TAG', '', 'A tag or identifier for the current data recording session.', false],
     ['VLINK_DISCOVER_DISABLE', '', 'Disables the system discovery feature when set to true.', false],
     ['VLINK_DISCOVER_NATIVE', '', 'Restricts discovery to localhost only.', false],
@@ -711,8 +712,8 @@ int main() {
     ['VLINK_QOS_CONFIG', '', 'Path to the configuration file for Quality of Service (QoS) settings.', false],
     ['VLINK_URL_PLUGINS', '', 'Before first URL initialization: auto enables on-demand recognized shared transports; none or empty disables plugins; other non-empty values are explicit preload lists (auto/none are case-insensitive).', false],
     ['VLINK_URL_REMAP', '', 'Configuration for remapping URLs or endpoints.', false],
-    ['VLINK_INTRA_BIND', '', 'Specifies the binding address for Intra communication.', false],
-    ['VLINK_DDS_BIND', '', 'Specifies the binding address for DDS communication.', false],
+    ['VLINK_INTRA_BIND', '', 'Rebinds intra:// URLs to another transport scheme for this process.', false],
+    ['VLINK_DDS_BIND', '', 'Rebinds dds:// URLs to a selected DDS backend.', false],
     ['VLINK_DDS_DEBUG', '', 'Enables or disables debug logs for DDS communication.', false],
     ['VLINK_DDS_EVENT_QOS', '', 'Quality of Service (QoS) settings for DDS events.', false],
     ['VLINK_DDS_METHOD_QOS', '', 'Quality of Service (QoS) settings for DDS methods.', false],
@@ -723,7 +724,7 @@ int main() {
     ['VLINK_DDS_MULTICAST_IP', '', 'Sets the multicast IP address for DDS communication.', false],
     ['VLINK_DDS_PEER', '', 'Configures the DDS peer-to-peer communication settings.', false],
     ['VLINK_DDS_BUF', '', 'Buffer size settings for DDS communication.', false],
-    ['VLINK_DDS_MTU', '', 'Maximum message size (MTU) for DDS transport layer.', false],
+    ['VLINK_DDS_MTU', '', 'Maximum DDS payload size in bytes before fragmentation.', false],
     ['VLINK_DDS_UDP', '', 'Enables or configures UDP transport for DDS.', false],
     ['VLINK_DDS_TCP', '', 'Enables or configures TCP transport for DDS.', false],
     ['VLINK_DDS_SHM', '', 'Enables or configures shared memory transport for DDS.', false],
@@ -1452,7 +1453,7 @@ int main() {
     const envElapsed = diagElapsed - diagTotalMs - exitMs;
     if (envElapsed < envTypingMs) return padScreen([typedPromptLine(envCmd, envElapsed)], rows);
     if (envElapsed < envTypingMs + promptHoldMs) return padScreen([prompt(envCmd)], rows);
-    const lines = [prompt(envCmd), ''];
+    const lines = [prompt(envCmd), '', '<span class="warn">[Website demo: representative env excerpt; build options may add entries]</span>', ''];
     checkEnvItems.forEach(([key, value, desc, isSet]) => {
       if (isSet) lines.push(`<span class="ok">[${key}]: ${escapeTerminalText(value)}</span>`);
       else lines.push(`<span class="err">[${key}]</span>`);
@@ -1495,7 +1496,7 @@ int main() {
       prompt(cmd),
       '',
       'File Name:     <span class="url">/data/drive.vdb</span>',
-      'File Size:     <span class="num">2.80GB</span> (Raw: <span class="num">4.12GB</span>)',
+      'File Size:     <span class="num">2.80GB</span> (Raw: <span class="num">10.80GB</span>)',
       'Tag Name:      drive-2026-04-17',
       'Version:       2.0.0',
       'Storage Type:  sqlite',
@@ -1504,7 +1505,7 @@ int main() {
       'Meta Flags:    completed | idx_elapsed | idx_url | schema',
       'Date Time:     2026-04-17 14:43:00.000 (Timezone: +08:00:00)',
       'Duration:      00:00:00:001 ~ 00:05:12:841',
-      'Message Count: 2400158',
+      'Message Count: 143185',
       'Split Count:   3 (By time: 120.00s)',
       ...renderBagInfoTable(),
     ];

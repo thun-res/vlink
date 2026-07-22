@@ -248,6 +248,11 @@ void DdsClientImpl::deinit() {
   topic_req_.reset();
   participant_.reset();
   type_support_resp_.reset();
+  std::lock_guard lock(param_mtx_);
+  callbacks_.clear();
+  cdr_callbacks_.clear();
+  write_session_count_.store(0, std::memory_order_release);
+  read_session_count_.store(0, std::memory_order_release);
 }
 
 void DdsClientImpl::interrupt() {

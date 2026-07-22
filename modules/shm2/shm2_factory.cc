@@ -134,9 +134,13 @@ Shm2Factory::Shm2Factory() {
     return;
   }
 
-  iox2_config_defaults_publish_subscribe_set_publisher_max_loaned_samples(&config_, default_depth_);
-  iox2_config_defaults_publish_subscribe_set_subscriber_max_buffer_size(&config_, default_depth_);
-  iox2_config_defaults_request_response_set_max_loaned_requests(&config_, default_depth_);
+  if (!depth_env_str.empty()) {
+    iox2_config_defaults_publish_subscribe_set_publisher_max_loaned_samples(&config_, default_depth_);
+    iox2_config_defaults_publish_subscribe_set_subscriber_max_buffer_size(&config_, default_depth_);
+    iox2_config_defaults_request_response_set_max_loaned_requests(&config_, default_depth_);
+  } else if (config_str.empty()) {
+    iox2_config_defaults_publish_subscribe_set_subscriber_max_buffer_size(&config_, default_depth_);
+  }
 
   std::string name = Utils::get_app_name() + "_" + Utils::get_pid_str();
 
@@ -153,6 +157,7 @@ Shm2Factory::Shm2Factory() {
   auto* node_builder_handle = iox2_node_builder_new(nullptr);
   iox2_node_builder_set_name(&node_builder_handle, iox2_cast_node_name_ptr(node_name_handle));
   iox2_node_builder_set_signal_handling_mode(&node_builder_handle, iox2_signal_handling_mode_e_DISABLED);
+  iox2_node_builder_set_config(&node_builder_handle, &config_);
 
   ret = iox2_node_builder_create(node_builder_handle, nullptr, iox2_service_type_e_IPC, &node_);
   iox2_node_name_drop(node_name_handle);
@@ -266,6 +271,11 @@ Shm2Factory::~Shm2Factory() {
 
   iox2_node_drop(node_);
   node_ = nullptr;
+
+  if (config_) {
+    iox2_config_drop(config_);
+    config_ = nullptr;
+  }
 }
 
 std::string Shm2Factory::make_service_name(const std::string& address, const std::string& suffix, int32_t domain) {
@@ -1593,9 +1603,6 @@ Shm2Publisher::Shm2Publisher(const ShmID2& id) {
 
   if (depth > 0) {
     iox2_service_builder_pub_sub_set_subscriber_max_buffer_size(&ps_builder, static_cast<size_t>(depth));
-  } else {
-    iox2_service_builder_pub_sub_set_subscriber_max_buffer_size(&ps_builder,
-                                                                static_cast<size_t>(factory.get_default_depth()));
   }
 
   iox2_service_builder_pub_sub_set_enable_safe_overflow(&ps_builder, true);
@@ -2033,9 +2040,6 @@ Shm2Subscriber::Shm2Subscriber(const ShmID2& id) {
 
   if (depth > 0) {
     iox2_service_builder_pub_sub_set_subscriber_max_buffer_size(&ps_builder, static_cast<size_t>(depth));
-  } else {
-    iox2_service_builder_pub_sub_set_subscriber_max_buffer_size(&ps_builder,
-                                                                static_cast<size_t>(factory.get_default_depth()));
   }
 
   iox2_service_builder_pub_sub_set_enable_safe_overflow(&ps_builder, true);
@@ -2065,16 +2069,6 @@ Shm2Subscriber::Shm2Subscriber(const ShmID2& id) {
 
 Shm2Subscriber::~Shm2Subscriber() {
   unsubscribe();
-
-  {
-    std::lock_guard lock(loan_mtx_);
-
-    for (auto& [_, entry] : loan_map_) {
-      iox2_sample_drop(entry.handle);
-    }
-
-    loan_map_.clear();
-  }
 
   if (sem_) {
     sem_->detach(false);
@@ -2106,19 +2100,10 @@ void Shm2Subscriber::process_message() {
   bool has_samples = false;
 
   while (iox2_subscriber_has_samples(&subscriber_, &has_samples) == IOX2_OK && has_samples) {
-    std::unique_ptr<iox2_sample_t> heap_storage;
     iox2_sample_t stack_storage{};
-    iox2_sample_t* storage_ptr = nullptr;
-
-    if VUNLIKELY (manual_unloan_.load(std::memory_order_relaxed)) {
-      heap_storage = std::make_unique<iox2_sample_t>();
-      storage_ptr = heap_storage.get();
-    } else {
-      storage_ptr = &stack_storage;
-    }
 
     iox2_sample_h sample_handle{nullptr};
-    auto ret = iox2_subscriber_receive(&subscriber_, storage_ptr, &sample_handle);
+    auto ret = iox2_subscriber_receive(&subscriber_, &stack_storage, &sample_handle);
 
     if VUNLIKELY (ret != IOX2_OK || !sample_handle) {
       break;
@@ -2149,50 +2134,20 @@ void Shm2Subscriber::process_message() {
       calc_sample_.update(seq, 0);
     }
 
-    if VUNLIKELY (manual_unloan_.load(std::memory_order_relaxed)) {
-      std::lock_guard lock(loan_mtx_);
-      loan_map_.emplace(msg_bytes.data(), SubscriberLoanEntry{std::move(heap_storage), sample_handle});
-    }
-
-    bool called = false;
-
-    traverse_msg_callback([channel, &msg_bytes, &called](NodeImpl* impl, const auto& callback) {
+    traverse_msg_callback([channel, &msg_bytes](NodeImpl* impl, const auto& callback) {
       const auto* conf_ptr = impl->get_target_conf<Shm2Conf>();
 
       if (static_cast<uint64_t>(conf_ptr->hash_code) != channel) {
         return;
       }
 
-      called = true;
       callback(msg_bytes);
     });
 
-    if VUNLIKELY (manual_unloan_.load(std::memory_order_relaxed) && !called) {
-      SubscriberLoanEntry entry;
+    iox2_sample_drop(sample_handle);
 
-      {
-        std::lock_guard lock(loan_mtx_);
-        auto it = loan_map_.find(msg_bytes.data());
-
-        if (it != loan_map_.end()) {
-          entry = std::move(it->second);
-          loan_map_.erase(it);
-        }
-      }
-
-      if (entry.handle) {
-        iox2_sample_drop(entry.handle);
-      }
-
-      if (sem_) {
-        sem_->release();
-      }
-    } else if VLIKELY (!manual_unloan_.load(std::memory_order_relaxed)) {
-      iox2_sample_drop(sample_handle);
-
-      if (sem_) {
-        sem_->release();
-      }
+    if (sem_) {
+      sem_->release();
     }
   }
 }
@@ -2373,44 +2328,6 @@ void Shm2Subscriber::unsubscribe() {
     iox2_subscriber_drop(subscriber_);
     subscriber_ = nullptr;
   }
-}
-
-void Shm2Subscriber::set_manual_unloan(bool manual_unloan) {
-  manual_unloan_.store(manual_unloan, std::memory_order_relaxed);
-}
-
-bool Shm2Subscriber::release(const Bytes& bytes) {
-  if VUNLIKELY (!bytes.is_loaned()) {
-    return false;
-  }
-
-  if VUNLIKELY (!manual_unloan_.load(std::memory_order_relaxed)) {
-    VLOG_F("Shm2Factory: Manual release is not supported without manual_unloan mode.");
-    return false;
-  }
-
-  SubscriberLoanEntry entry;
-
-  {
-    std::lock_guard lock(loan_mtx_);
-    auto it = loan_map_.find(bytes.data());
-
-    if VUNLIKELY (it == loan_map_.end()) {
-      VLOG_F("Shm2Factory: release() called on bytes not tracked in loan_map.");
-      return false;
-    }
-
-    entry = std::move(it->second);
-    loan_map_.erase(it);
-  }
-
-  iox2_sample_drop(entry.handle);
-
-  if (sem_) {
-    sem_->release();
-  }
-
-  return true;
 }
 
 void Shm2Subscriber::set_latency_and_lost_enabled(bool enable) {

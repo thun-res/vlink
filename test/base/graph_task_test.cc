@@ -839,6 +839,30 @@ TEST_SUITE("base-GraphTask") {
     CHECK_NE(dot.find("[Multiple]"), std::string::npos);
     CHECK_NE(dot.find("[Waitfor]"), std::string::npos);
   }
+
+  TEST_CASE("single-thread engine submits a deep cross-branch join in topological order") {
+    auto deep_ran = std::make_shared<std::atomic<int>>(0);
+    auto join_ran = std::make_shared<std::atomic<int>>(0);
+
+    auto root = GraphTask::create("root", [] {});
+    auto branch_a = GraphTask::create("branch_a", [] {});
+    auto branch_b = GraphTask::create("branch_b", [] {});
+    auto deep = GraphTask::create("deep", [deep_ran] { deep_ran->store(1); });
+    auto join = GraphTask::create("join", [deep_ran, join_ran] { join_ran->store(deep_ran->load()); });
+
+    join->set_policy(GraphTask::kPolicyWaitAll);
+    root->precede(branch_a);
+    root->precede(branch_b);
+    branch_a->precede(deep);
+    deep->precede(join);
+    branch_b->precede(join);
+
+    run_graph(root, 100);
+
+    CHECK_EQ(deep_ran->load(), 1);
+    CHECK_EQ(join_ran->load(), 1);
+    CHECK_EQ(join->get_status(), GraphTask::kStatusDone);
+  }
 }
 
 // NOLINTEND

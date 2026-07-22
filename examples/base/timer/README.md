@@ -12,8 +12,8 @@
 | `Timer(interval_ms, loop_count)` | 构造但不绑定，稍后 `attach` |
 | `start()` / `stop()` / `restart()` | 启动 / 停止 / 重新启动 |
 | `attach(loop)` / `detach()` | 绑定 / 解绑 loop（`detach` 前需先 `stop`） |
-| `set_interval(ms)` | 改周期（下次 start 生效） |
-| `set_loop_count(n)` | 改触发次数（下次 start 生效） |
+| `set_interval(ms)` | 改周期；运行中会立即重算调度并唤醒 loop |
+| `set_loop_count(n)` | 改触发次数；运行中会立即更新剩余次数并唤醒 loop |
 | `set_callback(cb)` | 改回调 |
 | `is_active()` / `get_interval()` | 是否在跑 / 当前周期 |
 | `Timer::call_once(loop, delay_ms, cb)` | 单次延迟触发，无需持有对象（静态） |

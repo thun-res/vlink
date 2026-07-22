@@ -155,13 +155,13 @@
       <rect width="170" height="62" rx="8" fill="#0f193b" stroke="#4faafd" stroke-opacity="0.45"/>
       <text x="12" y="22" fill="#C8D1EE" font-weight="700">Fleet Telemetry</text>
       <text x="12" y="38" fill="#5A6687" font-size="9">zenoh://fleet/*</text>
-      <text x="12" y="52" fill="#00e5b0" font-size="9">● 8 cars · 128 kB/s</text>
+      <text x="12" y="52" fill="#00e5b0" font-size="9">● router endpoint configured</text>
     </g>
     <g transform="translate(600 80)">
       <rect width="170" height="62" rx="8" fill="#0f193b" stroke="#4faafd" stroke-opacity="0.45"/>
-      <text x="12" y="22" fill="#C8D1EE" font-weight="700">OTA Gateway</text>
-      <text x="12" y="38" fill="#5A6687" font-size="9">vkit build → push</text>
-      <text x="12" y="52" fill="#ffd166" font-size="9">⏲  2 pending</text>
+      <text x="12" y="22" fill="#C8D1EE" font-weight="700">External Deployment</text>
+      <text x="12" y="38" fill="#5A6687" font-size="9">build → package</text>
+      <text x="12" y="52" fill="#ffd166" font-size="9">external system</text>
     </g>
     <g transform="translate(30 320)">
       <rect width="170" height="62" rx="8" fill="#0f193b" stroke="#4faafd" stroke-opacity="0.45"/>
@@ -180,6 +180,6 @@
   <!-- Caption -->
   <g font-family="JetBrains Mono, monospace" font-size="10">
     <text x="30" y="34" fill="#4faafd" letter-spacing="2">VLINK · CLOUD-EDGE</text>
-    <text x="30" y="50" fill="#5A6687">fleet telemetry · OTA · remote observability · zenoh://</text>
+    <text x="30" y="50" fill="#5A6687">fleet telemetry · external deployment · remote observability</text>
   </g>
 </svg>

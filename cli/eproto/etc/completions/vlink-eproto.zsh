@@ -78,5 +78,5 @@ _vlink-eproto() {
 }
 
 if (( $+functions[compdef] )); then
-    compdef _vlink-eproto vlink-eproto eproto
+    _vlink_zsh_register_completion _vlink-eproto vlink-eproto eproto
 fi

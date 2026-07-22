@@ -36,23 +36,25 @@ using namespace std::chrono_literals;  // NOLINT(build/namespaces, google-build-
 // url_basics.cc
 //
 // VLink uses a URL string as the single source of truth for "where + how"
-// a message flows: changing the wire backend is just changing the URL
-// prefix, no code edits required. The UrlParser parses any URL into its
+// a message flows. Compatible topic backends can often reuse the path with a
+// different scheme; specialized backends require a complete valid URL. The
+// UrlParser parses any URL into its
 // canonical components:
 //
 //   <transport>://<host>/<path>?<query>#<fragment>
 //
 // Components:
-//   transport -- backend tag (intra / shm / dds / ddsc / ddsr / ddst /
-//                zenoh / someip / mqtt / fdbus / qnx). Drives backend
+//   transport -- backend tag (intra / shm / shm2 / dds / ddsc / ddsr /
+//                zenoh / someip / mqtt / fdbus). Drives backend
 //                selection during Node construction.
 //   host      -- logical address; for local backends this is the first
 //                segment of the topic name.
 //   path      -- remainder of the topic identifier (slash-separated).
 //   query     -- key/value pairs (domain, depth, qos profile name, etc.)
-//                parsed into a dictionary the backend consults at attach.
-//   fragment  -- backend-specific hint (e.g. `#direct` for intra zero-copy,
-//                broker spec for mqtt, mode tag for fdbus/qnx).
+//                parsed into a dictionary the backend consults during
+//                configuration and initialization.
+//   fragment  -- backend-specific hint (e.g. `#direct` for synchronous intra dispatch,
+//                broker spec for mqtt, mode tag for fdbus).
 //
 // Component dictionary construction and clone-with-override below show how
 // tooling builds/edits URLs without string surgery. Static classifier
@@ -61,8 +63,8 @@ using namespace std::chrono_literals;  // NOLINT(build/namespaces, google-build-
 // in proxies and bag tools.
 // ---------------------------------------------------------------------------
 
-// Pretty-print every UrlParser-exposed field. The query dictionary is built
-// lazily on first access; subsequent get_query_dictionary() calls are O(1).
+// Pretty-print every UrlParser-exposed field, including the parsed query
+// dictionary maintained by the parser.
 static void show(const std::string& url_str) {
   vlink::UrlParser parser(url_str);
 
@@ -93,14 +95,12 @@ int main() {
   show("someip://4660/22136?groups=1|2&event=16&field=1");
   show("mqtt://home/temperature?qos=1#tcp://192.168.1.100:1883");
   show("fdbus://audio/volume?event=level_changed#svc");
-  show("qnx://sensor/radar?event=target_detected");
 
   // ---- Build a URL from individual components ----
   // Component dictionary -> canonical URL string. The Category argument
   // (kHierarchical) controls whether the parser emits `://` (hierarchical)
-  // or `:` (opaque). The boolean flag enables strict validation -- it
-  // throws on malformed component combinations instead of silently
-  // producing garbage.
+  // or `:` (opaque). The boolean flag marks the path as rooted, so to_string()
+  // emits a leading slash before the path.
   std::map<vlink::UrlParser::Component, std::string> components;
   components[vlink::UrlParser::Component::kTransport] = "dds";
   components[vlink::UrlParser::Component::kHost] = "vehicle";
@@ -112,8 +112,8 @@ int main() {
   VLOG_I("Built URL:", built.to_string());
 
   // ---- Override query on an existing URL without re-parsing the rest ----
-  // The (parent, overrides) constructor is the "clone with edits" path. The
-  // parsed AST is reused; only the overridden components are re-parsed.
+  // The (parent, overrides) constructor copies a parsed URL and replaces the
+  // selected components.
   // UrlRemap layers on top of this to do runtime URL rewriting (e.g.
   // dev<->prod environment swap) without touching application code.
   vlink::UrlParser original("dds://vehicle/speed?domain=0&qos=sensor");
@@ -124,10 +124,11 @@ int main() {
   VLOG_I("Original:", original.to_string(), " Modified:", modified.to_string());
 
   // ---- Same API regardless of transport -- only the URL string changes ----
-  // Subscriber/Publisher take the URL directly; replacing "intra://" with
-  // "dds://" or "shm://" yields identical code, identical behavior, just
-  // different wire path. Listener runs on the publisher's thread for intra
-  // direct mode.
+  // Subscriber/Publisher take the URL directly; for topic-style addresses the
+  // communication API stays the same when switching among intra/dds/shm. The
+  // runtime, discovery, QoS, callback context, and copy/loan behavior remain
+  // backend-specific. Listener runs on the publisher's thread in intra direct
+  // mode.
   vlink::Subscriber<std::string> sub("intra://demo/url_basics");
   sub.listen([](const std::string& msg) { VLOG_I("Received:", msg); });
 

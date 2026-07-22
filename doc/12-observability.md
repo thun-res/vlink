@@ -178,7 +178,7 @@ int main() {
 
 发现层回答的是"系统中存在哪些端点"。若需进一步掌握单个端点底层传输的运行状态——匹配对端的出现与消失、截止时间错过、liveliness 变化——则使用节点的 `register_status_handler()`。
 
-该机制仅 DDS 系列后端生效（`dds://`、`ddsc://`、`ddsr://`、`ddst://`）；其它后端调用将打印警告并被忽略。回调接收 `Status::BasePtr`，在回调内经 `status->get_type()` 分发、经 `status->as<...>()` 安全下转以读取详情字段。
+该机制仅 DDS 系列后端生效（`dds://`、`ddsc://`、`ddsr://`）；其它后端调用将打印警告并被忽略。回调接收 `Status::BasePtr`，在回调内经 `status->get_type()` 分发、经 `status->as<...>()` 安全下转以读取详情字段。
 
 写方（Publisher / Server / Setter）与读方（Subscriber / Client / Getter）的状态类型如下：
 
@@ -555,7 +555,7 @@ api.send_control(ctrl);
 
 ## 🌐 12.16 代理监控：跨网段部署
 
-典型场景：车载计算单元（EdgePC）运行业务节点与代理服务端，开发机（DevPC）远程监控与注入。两端以 `bind_ip` / `peer_ip` 做 DDS 单播发现，双方 IP 须可路由可达（非 NAT 穿透；穿透场景改用 `zenoh://`）。
+典型场景：车载计算单元（EdgePC）运行业务节点与代理服务端，开发机（DevPC）远程监控与注入。两端以 `bind_ip` / `peer_ip` 做 DDS 单播发现，双方 IP 须可路由可达。跨 NAT 时可改用 `zenoh://` 并部署双方可达的 router/显式 endpoint，或另配网络穿透；VLink 不自动穿透 NAT。
 
 EdgePC 在 12.13 的嵌入式服务端基础上补充绑定 IP：
 
@@ -582,7 +582,7 @@ cfg.peer_ip      = "192.168.1.100";  // EdgePC IP
 
 ## ⏺️ 12.17 代理监控：录制与回放
 
-**录制**：选 `kRecord` 模式，在 `DataCallback` 中将数据写入 bag（落盘容器用法见 [录制与回放](09-recording.md)）。`Data::raw` 仅在回调内有效，异步写盘前需以 `shallow_copy` 保留载荷视图后再交由落盘线程持有。
+**录制**：选 `kRecord` 模式，在 `DataCallback` 中立即将数据写入 bag（落盘容器用法见 [录制与回放](09-recording.md)）。`Data::raw` 仅在回调内有效，因此下例的 shallow view 只覆盖紧随其后的 `BagWriter::push()` 调用；`push()` 的异步分支会在返回前建立 owning `Bytes` 副本，同步分支则在调用内完成写入。若应用先把 `Frame` 排入自己的异步队列、稍后才调用 `push()`，必须在回调内改用 `deep_copy`。
 
 ```cpp
 vlink::ProxyAPI::Control ctrl;
@@ -650,7 +650,7 @@ target_link_libraries(my_server PRIVATE vlink::proxy_server)
 | ---- | ---- |
 | 连接被拒，报 `kReliableCompError` 等 | `reliable` / `enable_tcp` / `direct` 客户端与服务端不一致，须逐项对齐后重连 |
 | 报 `kMultiProxyError` | 同一 DDS 域内运行了多个 ProxyServer，须每域一个实例或为各实例分配独立 `domain_id` |
-| `Data::raw` 外带后失效 | `raw` 仅在回调内有效，外带前须先复制（`Bytes::shallow_copy` 保留视图） |
+| `Data::raw` 外带后失效 | 不要单独保存 shallow view；可在回调内立即 `BagWriter::push()` 由 writer 同步消费或建立 owning 副本，其他外带路径须先 `Bytes::deep_copy` |
 | `direct` 模式无数据 | SHM 直连需 Iceoryx RouDi 在运行，须先启动 `iox-roudi` 或由代理内嵌拉起 |
 | 进程退出残留句柄 | `ProxyServer` 析构同步阻塞清理 DDS 句柄，须在进程退出前显式调用 |
 

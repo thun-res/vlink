@@ -27,7 +27,9 @@
 #include <vlink/zerocopy/message_parser.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <cmath>
 #include <fstream>
 #include <limits>
 #include <mutex>
@@ -46,39 +48,6 @@
 
 namespace vlink {
 namespace webviz {
-
-#ifdef VLINK_HAS_FBS_COMPILER
-template <typename ResolverT>
-bool resolve_thread_local_fbs_schema(const std::string& ser, const void* owner, ResolverT&& resolver,
-                                     const reflection::Schema*& out_schema) {
-  struct ThreadLocalFbsSchemaCache final {
-    const void* owner{nullptr};
-    std::string ser;
-    std::string schema_data;
-    const reflection::Schema* schema{nullptr};
-  };
-
-  thread_local ThreadLocalFbsSchemaCache cache;
-
-  if VUNLIKELY (cache.schema == nullptr || cache.owner != owner || cache.ser != ser) {
-    cache.schema_data.clear();
-
-    if VUNLIKELY (!resolver(ser, cache.schema_data)) {
-      cache.owner = nullptr;
-      cache.ser.clear();
-      cache.schema = nullptr;
-      return false;
-    }
-
-    cache.owner = owner;
-    cache.ser = ser;
-    cache.schema = get_verified_fbs_schema(ser, cache.schema_data);
-  }
-
-  out_schema = cache.schema;
-  return out_schema != nullptr;
-}
-#endif
 
 void RerunConverter::apply_message_timestamp(::rerun::RecordingStream& rec, int64_t timestamp_ns) const {
   if VUNLIKELY (timestamp_ns < 0) {
@@ -104,15 +73,6 @@ int64_t RerunConverter::clamp_header_timestamp_ns(uint64_t timestamp_ns) {
   return static_cast<int64_t>(timestamp_ns);
 }
 
-static bool mul_size(size_t a, size_t b, size_t& out) {
-  if VUNLIKELY (a != 0 && b > std::numeric_limits<size_t>::max() / a) {
-    return false;
-  }
-
-  out = a * b;
-  return true;
-}
-
 static uint64_t zerocopy_timestamp(const zerocopy::MessageParser& parser) {
   zerocopy::MessageParser::Value value;
 
@@ -124,8 +84,25 @@ static uint64_t zerocopy_timestamp(const zerocopy::MessageParser& parser) {
   return timestamp == nullptr ? 0 : *timestamp;
 }
 
+static bool read_parser_size(const zerocopy::MessageParser& parser, std::string_view path, size_t& out) {
+  zerocopy::MessageParser::Value value;
+
+  if VUNLIKELY (!parser.value(path, value)) {
+    return false;
+  }
+
+  const auto* size = std::get_if<uint64_t>(&value);
+
+  if VUNLIKELY (size == nullptr || *size > std::numeric_limits<size_t>::max()) {
+    return false;
+  }
+
+  out = static_cast<size_t>(*size);
+  return true;
+}
+
 static bool image_size(size_t pixels, size_t bytes_per_pixel, size_t data_size, size_t& out) {
-  if VUNLIKELY (!mul_size(pixels, bytes_per_pixel, out) || out > data_size) {
+  if VUNLIKELY (!mul_size(pixels, bytes_per_pixel, out) || out != data_size) {
     return false;
   }
 
@@ -161,7 +138,7 @@ static bool log_raw_image(::rerun::RecordingStream& rec, const std::string& enti
 
 static bool log_raw_image(::rerun::RecordingStream& rec, const std::string& entity_path, std::vector<uint8_t>&& data,
                           uint32_t width, uint32_t height, ::rerun::datatypes::ColorModel color_model) {
-  auto pixel_data = ::rerun::Collection<uint8_t>::take_ownership(std::move(data));
+  auto pixel_data = ::rerun::Collection<uint8_t>::borrow(data.data(), data.size());
   auto image = ::rerun::archetypes::Image(std::move(pixel_data), {width, height}, color_model);
   rec.log(entity_path, image);
 
@@ -171,13 +148,51 @@ static bool log_raw_image(::rerun::RecordingStream& rec, const std::string& enti
 static bool log_pixel_image(::rerun::RecordingStream& rec, const std::string& entity_path, const uint8_t* data,
                             size_t data_size, uint32_t width, uint32_t height,
                             ::rerun::datatypes::PixelFormat pixel_format) {
-  const auto format = ::rerun::datatypes::ImageFormat({width, height}, pixel_format);
+  size_t pixels = 0;
+  size_t expected_size = 0;
 
-  if VUNLIKELY (format.num_bytes() > data_size) {
+  if VUNLIKELY (!mul_size(static_cast<size_t>(width), static_cast<size_t>(height), pixels)) {
     return false;
   }
 
-  auto pixel_data = ::rerun::Collection<uint8_t>::borrow(data, format.num_bytes());
+  switch (pixel_format) {
+    case ::rerun::datatypes::PixelFormat::Y_U_V24_FullRange:
+    case ::rerun::datatypes::PixelFormat::Y_U_V24_LimitedRange:
+      if VUNLIKELY (!mul_size(pixels, 3U, expected_size)) {
+        return false;
+      }
+      break;
+    case ::rerun::datatypes::PixelFormat::Y_U_V16_FullRange:
+    case ::rerun::datatypes::PixelFormat::Y_U_V16_LimitedRange:
+    case ::rerun::datatypes::PixelFormat::YUY2:
+      if VUNLIKELY (!mul_size(pixels, 2U, expected_size)) {
+        return false;
+      }
+      break;
+    case ::rerun::datatypes::PixelFormat::Y_U_V12_FullRange:
+    case ::rerun::datatypes::PixelFormat::Y_U_V12_LimitedRange:
+    case ::rerun::datatypes::PixelFormat::NV12:
+      if VUNLIKELY (!mul_size(pixels, 3U, expected_size) || (expected_size % 2U) != 0) {
+        return false;
+      }
+      expected_size /= 2U;
+      break;
+    case ::rerun::datatypes::PixelFormat::Y8_LimitedRange:
+    case ::rerun::datatypes::PixelFormat::Y8_FullRange:
+      expected_size = pixels;
+      break;
+    default:
+      return false;
+  }
+
+  const auto format = ::rerun::datatypes::ImageFormat({width, height}, pixel_format);
+  const auto sdk_size = format.num_bytes();
+
+  if VUNLIKELY (expected_size != data_size || sdk_size != expected_size) {
+    return false;
+  }
+
+  auto pixel_data = ::rerun::Collection<uint8_t>::borrow(data, expected_size);
   auto image = ::rerun::archetypes::Image(std::move(pixel_data), {width, height}, pixel_format);
   rec.log(entity_path, image);
 
@@ -187,24 +202,168 @@ static bool log_pixel_image(::rerun::RecordingStream& rec, const std::string& en
 static bool log_typed_image(::rerun::RecordingStream& rec, const std::string& entity_path, const uint8_t* data,
                             size_t data_size, uint32_t width, uint32_t height,
                             ::rerun::datatypes::ColorModel color_model, ::rerun::datatypes::ChannelDatatype datatype) {
-  const auto format = ::rerun::datatypes::ImageFormat({width, height}, color_model, datatype);
+  size_t channels = 0;
 
-  if VUNLIKELY (format.num_bytes() > data_size) {
+  switch (color_model) {
+    case ::rerun::datatypes::ColorModel::L:
+      channels = 1;
+      break;
+    case ::rerun::datatypes::ColorModel::BGR:
+    case ::rerun::datatypes::ColorModel::RGB:
+      channels = 3;
+      break;
+    case ::rerun::datatypes::ColorModel::BGRA:
+    case ::rerun::datatypes::ColorModel::RGBA:
+      channels = 4;
+      break;
+    default:
+      return false;
+  }
+
+  size_t element_size = 0;
+
+  switch (datatype) {
+    case ::rerun::datatypes::ChannelDatatype::U8:
+    case ::rerun::datatypes::ChannelDatatype::I8:
+      element_size = 1;
+      break;
+    case ::rerun::datatypes::ChannelDatatype::U16:
+    case ::rerun::datatypes::ChannelDatatype::I16:
+    case ::rerun::datatypes::ChannelDatatype::F16:
+      element_size = 2;
+      break;
+    case ::rerun::datatypes::ChannelDatatype::U32:
+    case ::rerun::datatypes::ChannelDatatype::I32:
+    case ::rerun::datatypes::ChannelDatatype::F32:
+      element_size = 4;
+      break;
+    case ::rerun::datatypes::ChannelDatatype::U64:
+    case ::rerun::datatypes::ChannelDatatype::I64:
+    case ::rerun::datatypes::ChannelDatatype::F64:
+      element_size = 8;
+      break;
+    default:
+      return false;
+  }
+
+  size_t pixels = 0;
+  size_t elements = 0;
+  size_t expected_size = 0;
+
+  if VUNLIKELY (!mul_size(static_cast<size_t>(width), static_cast<size_t>(height), pixels) ||
+                !mul_size(pixels, channels, elements) || !mul_size(elements, element_size, expected_size)) {
     return false;
   }
 
-  auto pixel_data = ::rerun::Collection<uint8_t>::borrow(data, format.num_bytes());
+  const auto format = ::rerun::datatypes::ImageFormat({width, height}, color_model, datatype);
+  const auto sdk_size = format.num_bytes();
+
+  if VUNLIKELY (expected_size != data_size || sdk_size != expected_size) {
+    return false;
+  }
+
+  auto pixel_data = ::rerun::Collection<uint8_t>::borrow(data, expected_size);
   auto image = ::rerun::archetypes::Image(std::move(pixel_data), {width, height}, color_model, datatype);
   rec.log(entity_path, image);
 
   return true;
 }
 
+static ::rerun::archetypes::Pinhole make_pinhole(float fx, float fy, float cx, float cy, float width, float height) {
+  return ::rerun::archetypes::Pinhole(
+             ::rerun::components::PinholeProjection(std::array<float, 9>{fx, 0.0F, 0.0F, 0.0F, fy, 0.0F, cx, cy, 1.0F}))
+      .with_resolution(width, height);
+}
+
+static bool parse_depth_datatype(std::string_view name, ::rerun::datatypes::ChannelDatatype& datatype,
+                                 size_t& element_size) {
+  using ChannelDatatype = ::rerun::datatypes::ChannelDatatype;
+
+  if (name.empty() || name == "U8") {
+    datatype = ChannelDatatype::U8;
+    element_size = sizeof(uint8_t);
+  } else if (name == "I8") {
+    datatype = ChannelDatatype::I8;
+    element_size = sizeof(int8_t);
+  } else if (name == "U16") {
+    datatype = ChannelDatatype::U16;
+    element_size = sizeof(uint16_t);
+  } else if (name == "I16") {
+    datatype = ChannelDatatype::I16;
+    element_size = sizeof(int16_t);
+  } else if (name == "U32") {
+    datatype = ChannelDatatype::U32;
+    element_size = sizeof(uint32_t);
+  } else if (name == "I32") {
+    datatype = ChannelDatatype::I32;
+    element_size = sizeof(int32_t);
+  } else if (name == "U64") {
+    datatype = ChannelDatatype::U64;
+    element_size = sizeof(uint64_t);
+  } else if (name == "I64") {
+    datatype = ChannelDatatype::I64;
+    element_size = sizeof(int64_t);
+  } else if (name == "F16") {
+    datatype = ChannelDatatype::F16;
+    element_size = sizeof(uint16_t);
+  } else if (name == "F32") {
+    datatype = ChannelDatatype::F32;
+    element_size = sizeof(float);
+  } else if (name == "F64") {
+    datatype = ChannelDatatype::F64;
+    element_size = sizeof(double);
+  } else {
+    return false;
+  }
+
+  return true;
+}
+
+static bool log_depth_image_bytes(::rerun::RecordingStream& rec, const std::string& entity_path, const uint8_t* data,
+                                  size_t data_size, uint32_t width, uint32_t height, std::string_view datatype_name,
+                                  float meter) {
+  ::rerun::datatypes::ChannelDatatype datatype;
+  size_t element_size = 0;
+  size_t pixel_count = 0;
+  size_t expected_size = 0;
+
+  if VUNLIKELY (data == nullptr || width == 0 || height == 0 ||
+                !parse_depth_datatype(datatype_name, datatype, element_size) ||
+                !mul_size(static_cast<size_t>(width), static_cast<size_t>(height), pixel_count) ||
+                !mul_size(pixel_count, element_size, expected_size) || data_size != expected_size) {
+    return false;
+  }
+
+  auto pixel_data = ::rerun::Collection<uint8_t>::borrow(data, data_size);
+  auto depth_image = ::rerun::archetypes::DepthImage(std::move(pixel_data), {width, height}, datatype);
+
+  if (meter > 0.0F && std::isfinite(meter)) {
+    depth_image = std::move(depth_image).with_meter(::rerun::components::DepthMeter(meter));
+  }
+
+  rec.log(entity_path, depth_image);
+  return true;
+}
+
+template <typename T>
+static ::rerun::datatypes::TensorBuffer make_tensor_buffer(const uint8_t* data, size_t elements) {
+  if VLIKELY (reinterpret_cast<uintptr_t>(data) % alignof(T) == 0U) {
+    return ::rerun::datatypes::TensorBuffer(::rerun::Collection<T>::borrow(static_cast<const void*>(data), elements));
+  }
+
+  std::vector<T> values(elements);
+  std::memcpy(values.data(), data, elements * sizeof(T));
+  return ::rerun::datatypes::TensorBuffer(::rerun::Collection<T>::take_ownership(std::move(values)));
+}
+
 static bool log_camera_frame_tensor(::rerun::RecordingStream& rec, const std::string& entity_path,
                                     zerocopy::CameraFrame::Format format, const uint8_t* data, size_t data_size,
                                     uint32_t width, uint32_t height, size_t pixels) {
+  enum class ElementType : uint8_t { kU8, kI8, kU16, kI16, kI32, kF32, kF64 };
+
   size_t channels = 0;
   size_t element_size = 0;
+  ElementType element_type = ElementType::kU8;
   ::rerun::datatypes::TensorBuffer buffer;
 
   switch (format) {
@@ -221,6 +380,7 @@ static bool log_camera_frame_tensor(::rerun::RecordingStream& rec, const std::st
     case zerocopy::CameraFrame::kFormatInt8C4:
       channels = static_cast<size_t>(format) - static_cast<size_t>(zerocopy::CameraFrame::kFormatInt8C1) + 1U;
       element_size = sizeof(int8_t);
+      element_type = ElementType::kI8;
       break;
     case zerocopy::CameraFrame::kFormatUint16C1:
     case zerocopy::CameraFrame::kFormatUint16C2:
@@ -228,6 +388,7 @@ static bool log_camera_frame_tensor(::rerun::RecordingStream& rec, const std::st
     case zerocopy::CameraFrame::kFormatUint16C4:
       channels = static_cast<size_t>(format) - static_cast<size_t>(zerocopy::CameraFrame::kFormatUint16C1) + 1U;
       element_size = sizeof(uint16_t);
+      element_type = ElementType::kU16;
       break;
     case zerocopy::CameraFrame::kFormatInt16C1:
     case zerocopy::CameraFrame::kFormatInt16C2:
@@ -235,6 +396,7 @@ static bool log_camera_frame_tensor(::rerun::RecordingStream& rec, const std::st
     case zerocopy::CameraFrame::kFormatInt16C4:
       channels = static_cast<size_t>(format) - static_cast<size_t>(zerocopy::CameraFrame::kFormatInt16C1) + 1U;
       element_size = sizeof(int16_t);
+      element_type = ElementType::kI16;
       break;
     case zerocopy::CameraFrame::kFormatInt32C1:
     case zerocopy::CameraFrame::kFormatInt32C2:
@@ -242,6 +404,7 @@ static bool log_camera_frame_tensor(::rerun::RecordingStream& rec, const std::st
     case zerocopy::CameraFrame::kFormatInt32C4:
       channels = static_cast<size_t>(format) - static_cast<size_t>(zerocopy::CameraFrame::kFormatInt32C1) + 1U;
       element_size = sizeof(int32_t);
+      element_type = ElementType::kI32;
       break;
     case zerocopy::CameraFrame::kFormatFloat32C1:
     case zerocopy::CameraFrame::kFormatFloat32C2:
@@ -249,6 +412,7 @@ static bool log_camera_frame_tensor(::rerun::RecordingStream& rec, const std::st
     case zerocopy::CameraFrame::kFormatFloat32C4:
       channels = static_cast<size_t>(format) - static_cast<size_t>(zerocopy::CameraFrame::kFormatFloat32C1) + 1U;
       element_size = sizeof(float);
+      element_type = ElementType::kF32;
       break;
     case zerocopy::CameraFrame::kFormatFloat64C1:
     case zerocopy::CameraFrame::kFormatFloat64C2:
@@ -256,6 +420,7 @@ static bool log_camera_frame_tensor(::rerun::RecordingStream& rec, const std::st
     case zerocopy::CameraFrame::kFormatFloat64C4:
       channels = static_cast<size_t>(format) - static_cast<size_t>(zerocopy::CameraFrame::kFormatFloat64C1) + 1U;
       element_size = sizeof(double);
+      element_type = ElementType::kF64;
       break;
     case zerocopy::CameraFrame::kFormatBayerRggb16:
     case zerocopy::CameraFrame::kFormatBayerBggr16:
@@ -263,6 +428,7 @@ static bool log_camera_frame_tensor(::rerun::RecordingStream& rec, const std::st
     case zerocopy::CameraFrame::kFormatBayerGrbg16:
       channels = 1U;
       element_size = sizeof(uint16_t);
+      element_type = ElementType::kU16;
       break;
     default:
       return false;
@@ -280,14 +446,36 @@ static bool log_camera_frame_tensor(::rerun::RecordingStream& rec, const std::st
 
   const size_t bytes = elements * element_size;
 
-  if VUNLIKELY (bytes > data_size) {
+  if VUNLIKELY (bytes != data_size) {
     return false;
   }
 
-  buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<uint8_t>::borrow(data, bytes));
+  switch (element_type) {
+    case ElementType::kU8:
+      buffer = ::rerun::datatypes::TensorBuffer(::rerun::Collection<uint8_t>::borrow(data, elements));
+      break;
+    case ElementType::kI8:
+      buffer = make_tensor_buffer<int8_t>(data, elements);
+      break;
+    case ElementType::kU16:
+      buffer = make_tensor_buffer<uint16_t>(data, elements);
+      break;
+    case ElementType::kI16:
+      buffer = make_tensor_buffer<int16_t>(data, elements);
+      break;
+    case ElementType::kI32:
+      buffer = make_tensor_buffer<int32_t>(data, elements);
+      break;
+    case ElementType::kF32:
+      buffer = make_tensor_buffer<float>(data, elements);
+      break;
+    case ElementType::kF64:
+      buffer = make_tensor_buffer<double>(data, elements);
+      break;
+  }
 
   std::vector<uint64_t> shape;
-  shape.reserve((channels > 1U ? 3U : 2U) + (element_size > 1U ? 1U : 0U));
+  shape.reserve(channels > 1U ? 3U : 2U);
   shape.emplace_back(height);
   shape.emplace_back(width);
 
@@ -295,18 +483,10 @@ static bool log_camera_frame_tensor(::rerun::RecordingStream& rec, const std::st
     shape.emplace_back(channels);
   }
 
-  if (element_size > 1U) {
-    shape.emplace_back(element_size);
-  }
-
   auto tensor = ::rerun::archetypes::Tensor(std::move(shape), std::move(buffer));
 
-  if (channels > 1U && element_size > 1U) {
-    tensor = std::move(tensor).with_dim_names({"height", "width", "channel", "byte"});
-  } else if (channels > 1U) {
+  if (channels > 1U) {
     tensor = std::move(tensor).with_dim_names({"height", "width", "channel"});
-  } else if (element_size > 1U) {
-    tensor = std::move(tensor).with_dim_names({"height", "width", "byte"});
   } else {
     tensor = std::move(tensor).with_dim_names({"height", "width"});
   }
@@ -431,55 +611,68 @@ void RerunConverter::log_view_coordinates_value(::rerun::RecordingStream& rec, c
 #ifdef VLINK_HAS_FBS_COMPILER  // NOLINT(readability-redundant-preprocessor)
 
 double RerunConverter::get_fbs_double(const flatbuffers::Table& table, const reflection::Object& obj,
-                                      const std::string& field_name, const std::string& default_value,
-                                      bool has_default_value) {
-  const auto* field = find_fbs_field(obj, field_name);
+                                      const std::string& field_name) {
+  return get_fbs_double(FbsObjectView{&obj, &table, nullptr}, field_name);
+}
 
-  if VLIKELY (field) {
-    switch (field->type()->base_type()) {
-      case reflection::Float:
-      case reflection::Double:
-        return flatbuffers::GetAnyFieldF(table, *field);
-      case reflection::Byte:
-      case reflection::Short:
-      case reflection::Int:
-      case reflection::Long:
-      case reflection::UByte:
-      case reflection::UShort:
-      case reflection::UInt:
-      case reflection::ULong:
-      case reflection::Bool:
-        return static_cast<double>(flatbuffers::GetAnyFieldI(table, *field));
-      default:
-        break;
-    }
-  }
+double RerunConverter::get_fbs_double(const FbsObjectView& view, const std::string& field_name) {
+  const auto* field = view && view.object ? find_fbs_field(*view.object, field_name) : nullptr;
 
-  if VLIKELY (has_default_value) {
-    FieldMapping mapping;
-    mapping.default_value = default_value;
-    mapping.has_default_value = true;
-    mapping.default_value_is_string = false;
-    double parsed_default = 0.0;
-
-    if VLIKELY (try_parse_numeric_default(mapping, parsed_default)) {
-      return parsed_default;
-    }
+  if VLIKELY (field && is_fbs_numeric_type(field->type()->base_type())) {
+    return get_fbs_field_as_double(view, *field);
   }
 
   return 0.0;
 }
 
-std::string RerunConverter::get_fbs_string(const flatbuffers::Table& table, const reflection::Object& obj,
-                                           const std::string& field_name, const std::string& default_value,
-                                           bool has_default_value, const reflection::Schema* schema) {
-  const auto* field = find_fbs_field(obj, field_name);
+double RerunConverter::get_fbs_double(const flatbuffers::Table& table, const reflection::Object& obj,
+                                      const std::string& field_name, const FieldMapping& mapping) {
+  return get_fbs_double(FbsObjectView{&obj, &table, nullptr}, field_name, mapping);
+}
 
-  if VLIKELY (field && field->type()->base_type() == reflection::String) {
-    return flatbuffers::GetAnyFieldS(table, *field, schema);
+double RerunConverter::get_fbs_double(const FbsObjectView& view, const std::string& field_name,
+                                      const FieldMapping& mapping) {
+  const auto* field = view && view.object ? find_fbs_field(*view.object, field_name) : nullptr;
+
+  if VLIKELY (field && is_fbs_numeric_type(field->type()->base_type()) && is_fbs_field_present(view, *field)) {
+    return get_fbs_field_as_double(view, *field);
   }
 
-  return has_default_value ? default_value : std::string{};
+  double default_value = 0.0;
+  return try_parse_numeric_default(mapping, default_value) ? default_value : 0.0;
+}
+
+std::string RerunConverter::get_fbs_string(const flatbuffers::Table& table, const reflection::Object& obj,
+                                           const std::string& field_name, const reflection::Schema* schema) {
+  return get_fbs_string(FbsObjectView{&obj, &table, nullptr}, field_name, schema);
+}
+
+std::string RerunConverter::get_fbs_string(const FbsObjectView& view, const std::string& field_name,
+                                           const reflection::Schema* schema) {
+  const auto* field = view && view.object ? find_fbs_field(*view.object, field_name) : nullptr;
+
+  if VLIKELY (field && field->type()->base_type() == reflection::String) {
+    return get_fbs_field_as_string(view, *field, schema);
+  }
+
+  return {};
+}
+
+std::string RerunConverter::get_fbs_string(const flatbuffers::Table& table, const reflection::Object& obj,
+                                           const std::string& field_name, const FieldMapping& mapping,
+                                           const reflection::Schema* schema) {
+  return get_fbs_string(FbsObjectView{&obj, &table, nullptr}, field_name, mapping, schema);
+}
+
+std::string RerunConverter::get_fbs_string(const FbsObjectView& view, const std::string& field_name,
+                                           const FieldMapping& mapping, const reflection::Schema* schema) {
+  const auto* field = view && view.object ? find_fbs_field(*view.object, field_name) : nullptr;
+
+  if VLIKELY (field && field->type()->base_type() == reflection::String && is_fbs_field_present(view, *field)) {
+    return get_fbs_field_as_string(view, *field, schema);
+  }
+
+  return mapping.has_default_value ? mapping.default_value : std::string{};
 }
 
 #endif
@@ -892,7 +1085,7 @@ bool RerunConverter::load_mapping_file(const std::string& path) {
 const std::vector<const RerunMap*>& RerunConverter::find_all_mappings(std::string_view url,
                                                                       const std::string& ser) const {
   struct MappingCache final {
-    const RerunConverter* owner{nullptr};
+    uint64_t owner_id{0};
     std::string url;
     std::string ser;
     std::vector<const RerunMap*> matches;
@@ -900,11 +1093,11 @@ const std::vector<const RerunMap*>& RerunConverter::find_all_mappings(std::strin
 
   thread_local MappingCache cache;
 
-  if (cache.owner == this && cache.url == url && cache.ser == ser) {
+  if (cache.owner_id == cache_owner_id_ && cache.url == url && cache.ser == ser) {
     return cache.matches;
   }
 
-  cache.owner = this;
+  cache.owner_id = cache_owner_id_;
   cache.url.assign(url.data(), url.size());
   cache.ser = ser;
   cache.matches.clear();
@@ -971,6 +1164,7 @@ const std::vector<const RerunMap*>& RerunConverter::find_all_mappings(std::strin
 void RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::string& entity_path,
                                      std::string_view url, SchemaType schema_type, const std::string& ser,
                                      const Bytes& raw, int64_t fallback_timestamp_ns) {
+  activate_cache_owner(cache_owner_id_);
   const auto zerocopy_type = zerocopy::MessageParser::detect_type(ser);
   zerocopy::MessageParser zerocopy_parser;
 
@@ -1161,106 +1355,121 @@ void RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::s
 
   if VLIKELY (!all_mappings.empty()) {
     bool handled_send_time = false;
+    int64_t send_time_ns = -1;
+    size_t archetype_mapping_count = 0;
 
     for (const auto* mapping : all_mappings) {
-      if VUNLIKELY (!mapping->converter.empty()) {
-        if (mapping->converter == "camera_frame") {
-          apply_primary_timestamp(-1);
-          log_camera_frame(rec, entity_path, raw);
-          return;
+      if VLIKELY (mapping->converter.empty()) {
+        ++archetype_mapping_count;
+        continue;
+      }
+
+      if (mapping->converter == "camera_frame") {
+        apply_primary_timestamp(-1);
+        log_camera_frame(rec, entity_path, raw);
+        return;
+      }
+
+      if (mapping->converter == "point_cloud") {
+        apply_primary_timestamp(-1);
+        log_point_cloud(rec, entity_path, raw);
+        return;
+      }
+
+      if (mapping->converter == "raw_data") {
+        apply_primary_timestamp(-1);
+        log_raw_data(rec, entity_path, raw);
+        return;
+      }
+
+      if (mapping->converter == "occupancy_grid") {
+        apply_primary_timestamp(-1);
+        log_occupancy_grid(rec, entity_path, raw);
+        return;
+      }
+
+      if (mapping->converter == "tensor") {
+        apply_primary_timestamp(-1);
+        log_tensor(rec, entity_path, raw);
+        return;
+      }
+
+      if (mapping->converter == "object_array") {
+        apply_primary_timestamp(-1);
+        log_object_array(rec, entity_path, raw);
+        return;
+      }
+
+      if (mapping->converter == "audio_frame") {
+        apply_primary_timestamp(-1);
+        log_audio_frame(rec, entity_path, raw);
+        return;
+      }
+
+      if (mapping->converter == "send_time" && !mapping->timestamp_field.empty()) {
+        handled_send_time = true;
+
+        if (schema_type == SchemaType::kProtobuf && mapping->encoding == "protobuf") {
+          auto msg = deserialize_proto_message(ser, raw);
+
+          if VLIKELY (msg) {
+            auto ts = extract_proto_timestamp_ns(*msg, mapping->timestamp_field, mapping->timestamp_unit);
+
+            if (ts >= 0) {
+              send_time_ns = ts;
+            }
+          }
         }
+#ifdef VLINK_HAS_FBS_COMPILER  // NOLINT(readability-redundant-preprocessor)
+        else if (schema_type == SchemaType::kFlatbuffers && mapping->encoding == "flatbuffers") {
+          const reflection::Schema* schema = nullptr;
 
-        if (mapping->converter == "point_cloud") {
-          apply_primary_timestamp(-1);
-          log_point_cloud(rec, entity_path, raw);
-          return;
-        }
+          if (resolve_thread_local_fbs_schema(
+                  ser, cache_owner_id_,
+                  [this](const std::string& type_name, std::string& schema_data) {
+                    return resolve_fbs_schema(type_name, schema_data);
+                  },
+                  schema) &&
+              schema != nullptr && schema->root_table() != nullptr &&
+              verify_fbs_payload(*schema, raw, ser, "Rerun send_time timestamp")) {
+            const auto* root_table = flatbuffers::GetAnyRoot(raw.data());
 
-        if (mapping->converter == "raw_data") {
-          apply_primary_timestamp(-1);
-          log_raw_data(rec, entity_path, raw);
-          return;
-        }
-
-        if (mapping->converter == "occupancy_grid") {
-          apply_primary_timestamp(-1);
-          log_occupancy_grid(rec, entity_path, raw);
-          return;
-        }
-
-        if (mapping->converter == "tensor") {
-          apply_primary_timestamp(-1);
-          log_tensor(rec, entity_path, raw);
-          return;
-        }
-
-        if (mapping->converter == "object_array") {
-          apply_primary_timestamp(-1);
-          log_object_array(rec, entity_path, raw);
-          return;
-        }
-
-        if (mapping->converter == "audio_frame") {
-          apply_primary_timestamp(-1);
-          log_audio_frame(rec, entity_path, raw);
-          return;
-        }
-
-        if (mapping->converter == "send_time" && !mapping->timestamp_field.empty()) {
-          handled_send_time = true;
-
-          if (schema_type == SchemaType::kProtobuf && mapping->encoding == "protobuf") {
-            auto msg = deserialize_proto_message(ser, raw);
-
-            if VLIKELY (msg) {
-              auto ts = extract_proto_timestamp_ns(*msg, mapping->timestamp_field, mapping->timestamp_unit);
+            if (root_table) {
+              auto ts = extract_fbs_timestamp_ns(*root_table, *schema->root_table(), *schema, mapping->timestamp_field,
+                                                 mapping->timestamp_unit);
 
               if (ts >= 0) {
-                rec.set_time_duration_nanos("vlink_time", ts);
+                send_time_ns = ts;
               }
             }
           }
-#ifdef VLINK_HAS_FBS_COMPILER  // NOLINT(readability-redundant-preprocessor)
-          else if (schema_type == SchemaType::kFlatbuffers && mapping->encoding == "flatbuffers") {
-            const reflection::Schema* schema = nullptr;
-
-            if (resolve_thread_local_fbs_schema(
-                    ser, this,
-                    [this](const std::string& type_name, std::string& schema_data) {
-                      return resolve_fbs_schema(type_name, schema_data);
-                    },
-                    schema) &&
-                schema != nullptr && schema->root_table() != nullptr &&
-                verify_fbs_payload(*schema, raw, ser, "Rerun send_time timestamp")) {
-              const auto* root_table = flatbuffers::GetAnyRoot(raw.data());
-
-              if (root_table) {
-                auto ts = extract_fbs_timestamp_ns(*root_table, *schema->root_table(), *schema,
-                                                   mapping->timestamp_field, mapping->timestamp_unit);
-
-                if (ts >= 0) {
-                  rec.set_time_duration_nanos("vlink_time", ts);
-                }
-              }
-            }
-          }
+        }
 #endif
 
-          continue;
-        }
+        continue;
       }
     }
 
-    if VUNLIKELY (handled_send_time &&
-                  std::all_of(all_mappings.begin(), all_mappings.end(),
-                              [](const RerunMap* mapping) { return mapping && !mapping->converter.empty(); })) {
+    if VUNLIKELY (handled_send_time && archetype_mapping_count == 0) {
+      std::lock_guard lock(mtx_);
+
+      if (warned_types_.insert("standalone_send_time:" + ser).second) {
+        MLOG_W("Rerun send_time mapping for '{}' has no archetype mapping; timeline values only apply to logged data",
+               ser);
+      }
+
       return;
+    }
+
+    if VUNLIKELY (handled_send_time && send_time_ns >= 0) {
+      rec.set_time_duration_nanos("vlink_time", send_time_ns);
     }
 
     int64_t message_timestamp_ns = -1;
 
-    bool need_proto = std::any_of(all_mappings.begin(), all_mappings.end(),
-                                  [](const RerunMap* m) { return m->encoding == "protobuf"; });
+    bool need_proto = std::any_of(all_mappings.begin(), all_mappings.end(), [](const RerunMap* mapping) {
+      return mapping->converter.empty() && mapping->encoding == "protobuf";
+    });
 
     std::unique_ptr<google::protobuf::Message> msg;
 
@@ -1269,18 +1478,19 @@ void RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::s
     }
 
     for (const auto* mapping : all_mappings) {
-      if (mapping->timestamp_field.empty()) {
+      if (!mapping->converter.empty() || mapping->timestamp_field.empty()) {
         continue;
       }
 
       if (schema_type == SchemaType::kProtobuf && mapping->encoding == "protobuf" && msg) {
         auto ts = extract_proto_timestamp_ns(*msg, mapping->timestamp_field, mapping->timestamp_unit);
 
-        if (ts >= 0) {
+        if VLIKELY (ts >= 0) {
           message_timestamp_ns = ts;
+          break;
         }
 
-        break;
+        continue;
       }
 
 #ifdef VLINK_HAS_FBS_COMPILER  // NOLINT(readability-redundant-preprocessor)
@@ -1289,7 +1499,7 @@ void RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::s
         const reflection::Schema* schema = nullptr;
 
         if (resolve_thread_local_fbs_schema(
-                ser, this,
+                ser, cache_owner_id_,
                 [this](const std::string& type_name, std::string& schema_data) {
                   return resolve_fbs_schema(type_name, schema_data);
                 },
@@ -1302,13 +1512,15 @@ void RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::s
             auto ts = extract_fbs_timestamp_ns(*root_table, *schema->root_table(), *schema, mapping->timestamp_field,
                                                mapping->timestamp_unit);
 
-            if (ts >= 0) {
+            if VLIKELY (ts >= 0) {
               message_timestamp_ns = ts;
             }
           }
         }
 
-        break;
+        if VLIKELY (message_timestamp_ns >= 0) {
+          break;
+        }
       }
 #endif
     }
@@ -1318,7 +1530,11 @@ void RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::s
     bool any_logged = false;
 
     for (const auto* mapping : all_mappings) {
-      auto log_path = (all_mappings.size() > 1) ? entity_path + "/" + mapping->archetype : entity_path;
+      if VUNLIKELY (!mapping->converter.empty()) {
+        continue;
+      }
+
+      auto log_path = archetype_mapping_count > 1 ? entity_path + "/" + mapping->archetype : entity_path;
 
       if (schema_type == SchemaType::kProtobuf && mapping->encoding == "protobuf") {
         if VLIKELY (msg && log_proto_with_mapping(rec, log_path, *mapping, *msg)) {
@@ -1354,8 +1570,11 @@ void RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::s
     bool has_schema = convert_plugin_->get_schema(ser, ConvertPluginInterface::Target::kRerun, schema_info);
 
     if VUNLIKELY (has_schema && schema_info.type_name == "SendTime") {
-      if VLIKELY (plugin_ts >= 0) {
-        rec.set_time_duration_nanos("vlink_time", plugin_ts);
+      std::lock_guard lock(mtx_);
+
+      if (warned_types_.insert("plugin_send_time:" + ser).second) {
+        MLOG_W("Rerun plugin SendTime for '{}' has no logged archetype; standalone timeline updates are unsupported",
+               ser);
       }
 
       return;
@@ -1450,18 +1669,6 @@ bool RerunConverter::log_camera_frame(::rerun::RecordingStream& rec, const std::
     case zerocopy::CameraFrame::kFormatWebp:
       media_type = "image/webp";
       break;
-    case zerocopy::CameraFrame::kFormatH264:
-      media_type = "video/h264";
-      break;
-    case zerocopy::CameraFrame::kFormatH265:
-      media_type = "video/h265";
-      break;
-    case zerocopy::CameraFrame::kFormatH266:
-      media_type = "video/h266";
-      break;
-    case zerocopy::CameraFrame::kFormatAv1:
-      media_type = "video/av1";
-      break;
     default:
       break;
   }
@@ -1469,12 +1676,29 @@ bool RerunConverter::log_camera_frame(::rerun::RecordingStream& rec, const std::
   const auto* data_ptr = frame.data();
   const size_t data_size = frame.size();
 
+  if VUNLIKELY (fmt == zerocopy::CameraFrame::kFormatH266) {
+    MLOG_W("Rerun VideoStream does not support H.266 CameraFrame samples");
+    return false;
+  }
+
   if (fmt == zerocopy::CameraFrame::kFormatH264 || fmt == zerocopy::CameraFrame::kFormatH265 ||
-      fmt == zerocopy::CameraFrame::kFormatH266 || fmt == zerocopy::CameraFrame::kFormatAv1) {
+      fmt == zerocopy::CameraFrame::kFormatAv1) {
+    if VUNLIKELY (frame.stream() == zerocopy::CameraFrame::kStreamB) {
+      MLOG_W("Rerun VideoStream does not support B-frames");
+      return false;
+    }
+
+    auto codec = ::rerun::components::VideoCodec::H264;
+
+    if (fmt == zerocopy::CameraFrame::kFormatH265) {
+      codec = ::rerun::components::VideoCodec::H265;
+    } else if (fmt == zerocopy::CameraFrame::kFormatAv1) {
+      codec = ::rerun::components::VideoCodec::AV1;
+    }
+
     auto blob = ::rerun::Collection<uint8_t>::borrow(data_ptr, data_size);
-    auto video =
-        ::rerun::archetypes::AssetVideo::from_bytes(std::move(blob), ::rerun::components::MediaType(media_type));
-    rec.log(entity_path, video);
+    rec.log(entity_path,
+            ::rerun::archetypes::VideoStream(codec).with_sample(::rerun::components::VideoSample(std::move(blob))));
     return true;
   }
 
@@ -1525,22 +1749,12 @@ bool RerunConverter::log_camera_frame(::rerun::RecordingStream& rec, const std::
 
       return log_raw_image(rec, entity_path, data_ptr, bytes, width, height, ::rerun::datatypes::ColorModel::RGBA);
 
-    case zerocopy::CameraFrame::kFormatBgra8888Packed: {
+    case zerocopy::CameraFrame::kFormatBgra8888Packed:
       if VUNLIKELY (!image_size(pixels, 4U, data_size, bytes)) {
         return false;
       }
 
-      std::vector<uint8_t> rgba(bytes);
-
-      for (size_t i = 0; i < pixels; ++i) {
-        rgba[i * 4U + 0U] = data_ptr[i * 4U + 2U];
-        rgba[i * 4U + 1U] = data_ptr[i * 4U + 1U];
-        rgba[i * 4U + 2U] = data_ptr[i * 4U + 0U];
-        rgba[i * 4U + 3U] = data_ptr[i * 4U + 3U];
-      }
-
-      return log_raw_image(rec, entity_path, std::move(rgba), width, height, ::rerun::datatypes::ColorModel::RGBA);
-    }
+      return log_raw_image(rec, entity_path, data_ptr, bytes, width, height, ::rerun::datatypes::ColorModel::BGRA);
 
     case zerocopy::CameraFrame::kFormatRgb888Planar: {
       if VUNLIKELY (!image_size(pixels, 3U, data_size, bytes)) {
@@ -1580,7 +1794,7 @@ bool RerunConverter::log_camera_frame(::rerun::RecordingStream& rec, const std::
 
     case zerocopy::CameraFrame::kFormatNv21:
       if VUNLIKELY ((width % 2U) != 0 || (height % 2U) != 0 ||
-                    pixels > std::numeric_limits<size_t>::max() - pixels / 2U || pixels + pixels / 2U > data_size) {
+                    pixels > std::numeric_limits<size_t>::max() - pixels / 2U || pixels + pixels / 2U != data_size) {
         return false;
       }
 
@@ -1643,7 +1857,7 @@ bool RerunConverter::log_camera_frame(::rerun::RecordingStream& rec, const std::
     case zerocopy::CameraFrame::kFormatBayerBggr8:
     case zerocopy::CameraFrame::kFormatBayerGbrg8:
     case zerocopy::CameraFrame::kFormatBayerGrbg8:
-      if VUNLIKELY (pixels > data_size) {
+      if VUNLIKELY (pixels != data_size) {
         return false;
       }
 
@@ -1790,25 +2004,33 @@ bool RerunConverter::log_point_cloud(::rerun::RecordingStream& rec, const std::s
   const bool has_class_id = class_id_field != nullptr;
   const bool has_label = label_field != nullptr;
 
-  float intensity_min = std::numeric_limits<float>::max();
-  float intensity_max = std::numeric_limits<float>::lowest();
+  double intensity_min = std::numeric_limits<double>::max();
+  double intensity_max = std::numeric_limits<double>::lowest();
+  double intensity_scale = 1.0;
+  bool scaled_intensity = false;
 
   if (has_intensity) {
     for (size_t i = 0; i < point_count; ++i) {
       double value = 0.0;
 
-      if VUNLIKELY (!view.numeric(i, *intensity_field, value)) {
+      if VUNLIKELY (!view.numeric(i, *intensity_field, value) || !std::isfinite(value)) {
         return false;
       }
 
-      const auto intensity = static_cast<float>(value);
-      intensity_min = std::min(intensity_min, intensity);
-      intensity_max = std::max(intensity_max, intensity);
+      intensity_min = std::min(intensity_min, value);
+      intensity_max = std::max(intensity_max, value);
     }
 
+    const double intensity_range = intensity_max - intensity_min;
+
     if (intensity_max <= intensity_min) {
-      intensity_min = 0.0F;
-      intensity_max = 1.0F;
+      intensity_min = 0.0;
+      intensity_max = 1.0;
+    } else if VUNLIKELY (!std::isfinite(intensity_range) || intensity_range < std::numeric_limits<double>::min()) {
+      intensity_scale = std::max(std::abs(intensity_min), std::abs(intensity_max));
+      intensity_min /= intensity_scale;
+      intensity_max /= intensity_scale;
+      scaled_intensity = true;
     }
   }
 
@@ -1831,7 +2053,7 @@ bool RerunConverter::log_point_cloud(::rerun::RecordingStream& rec, const std::s
   }
 
   // NOLINTNEXTLINE(readability-redundant-parentheses)
-  float inv_range = (has_intensity) ? 1.0F / (intensity_max - intensity_min) : 0.0F;
+  double inv_range = (has_intensity) ? 1.0 / (intensity_max - intensity_min) : 0.0;
 
   for (size_t i = 0; i < point_count; ++i) {
     double x = 0.0;
@@ -1839,6 +2061,13 @@ bool RerunConverter::log_point_cloud(::rerun::RecordingStream& rec, const std::s
     double z = 0.0;
 
     if VUNLIKELY (!view.numeric(i, *x_field, x) || !view.numeric(i, *y_field, y) || !view.numeric(i, *z_field, z)) {
+      return false;
+    }
+
+    constexpr auto kFloatMax = static_cast<double>(std::numeric_limits<float>::max());
+
+    if VUNLIKELY (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) || std::abs(x) > kFloatMax ||
+                  std::abs(y) > kFloatMax || std::abs(z) > kFloatMax) {
       return false;
     }
 
@@ -1873,33 +2102,36 @@ bool RerunConverter::log_point_cloud(::rerun::RecordingStream& rec, const std::s
     } else if (has_intensity) {
       double value = 0.0;
 
-      if VUNLIKELY (!view.numeric(i, *intensity_field, value)) {
+      if VUNLIKELY (!view.numeric(i, *intensity_field, value) || !std::isfinite(value)) {
         return false;
       }
 
-      const auto intensity = static_cast<float>(value);
-      auto val = std::min(std::max((intensity - intensity_min) * inv_range, 0.0F), 1.0F);
+      if VUNLIKELY (scaled_intensity) {
+        value /= intensity_scale;
+      }
+
+      auto val = std::clamp((value - intensity_min) * inv_range, 0.0, 1.0);
 
       uint8_t r = 0;
       uint8_t g = 0;
       uint8_t b = 0;
 
-      if (val < 0.25F) {
-        auto t = val * 4.0F;
-        g = static_cast<uint8_t>(255.0F * t);
+      if (val < 0.25) {
+        auto t = val * 4.0;
+        g = static_cast<uint8_t>(255.0 * t);
         b = 255;
-      } else if (val < 0.5F) {
-        auto t = (val - 0.25F) * 4.0F;
+      } else if (val < 0.5) {
+        auto t = (val - 0.25) * 4.0;
         g = 255;
-        b = static_cast<uint8_t>(255.0F * (1.0F - t));
-      } else if (val < 0.75F) {
-        auto t = (val - 0.5F) * 4.0F;
-        r = static_cast<uint8_t>(255.0F * t);
+        b = static_cast<uint8_t>(255.0 * (1.0 - t));
+      } else if (val < 0.75) {
+        auto t = (val - 0.5) * 4.0;
+        r = static_cast<uint8_t>(255.0 * t);
         g = 255;
       } else {
-        auto t = (val - 0.75F) * 4.0F;
+        auto t = (val - 0.75) * 4.0;
         r = 255;
-        g = static_cast<uint8_t>(255.0F * (1.0F - t));
+        g = static_cast<uint8_t>(255.0 * (1.0 - t));
       }
 
       colors[i] = ::rerun::Color(r, g, b);
@@ -1908,7 +2140,7 @@ bool RerunConverter::log_point_cloud(::rerun::RecordingStream& rec, const std::s
     if (has_radius) {
       double radius = 0.0;
 
-      if VUNLIKELY (!view.numeric(i, *radius_field, radius)) {
+      if VUNLIKELY (!view.numeric(i, *radius_field, radius) || !std::isfinite(radius) || std::abs(radius) > kFloatMax) {
         return false;
       }
 
@@ -1931,14 +2163,28 @@ bool RerunConverter::log_point_cloud(::rerun::RecordingStream& rec, const std::s
     labels.reserve(point_count);
 
     for (size_t i = 0; i < point_count; ++i) {
-      double label = 0.0;
+      zerocopy::MessageParser::Value label;
 
-      if VUNLIKELY (!view.numeric(i, *label_field, label)) {
+      if VUNLIKELY (!view.value(i, *label_field, label)) {
         return false;
       }
 
-      auto lbl = static_cast<int64_t>(label);
-      labels.emplace_back(std::to_string(lbl));
+      if (const auto* value = std::get_if<int64_t>(&label)) {
+        labels.emplace_back(std::to_string(*value));
+      } else if (const auto* value = std::get_if<uint64_t>(&label)) {
+        labels.emplace_back(std::to_string(*value));
+      } else if (const auto* value = std::get_if<double>(&label)) {
+        constexpr double kInt64Lower = -0x1p63;
+        constexpr double kInt64Upper = 0x1p63;
+
+        if VUNLIKELY (!std::isfinite(*value) || *value < kInt64Lower || *value >= kInt64Upper) {
+          return false;
+        }
+
+        labels.emplace_back(std::to_string(static_cast<int64_t>(*value)));
+      } else {
+        return false;
+      }
     }
   }
 
@@ -2013,9 +2259,12 @@ bool RerunConverter::log_occupancy_grid(::rerun::RecordingStream& rec, const std
   double width = 0;
   double height = 0;
   double cell_type_value = 0;
+  size_t cell_size = 0;
+  size_t payload_size = 0;
 
   if VUNLIKELY (!parser.numeric("width", width) || !parser.numeric("height", height) ||
-                !parser.numeric("cell_type", cell_type_value)) {
+                !parser.numeric("cell_type", cell_type_value) || !read_parser_size(parser, "cell_size", cell_size) ||
+                !read_parser_size(parser, "size", payload_size)) {
     MLOG_W("OccupancyGrid metadata is incomplete");
     return false;
   }
@@ -2028,10 +2277,13 @@ bool RerunConverter::log_occupancy_grid(::rerun::RecordingStream& rec, const std
     return false;
   }
 
-  const size_t cell_count = static_cast<size_t>(w) * h;
+  size_t cell_count = 0;
+  size_t expected_size = 0;
 
-  if VUNLIKELY (parser.collection_size("data") != cell_count) {
-    MLOG_W("OccupancyGrid size mismatch: cells={} readable={}", cell_count, parser.collection_size("data"));
+  if VUNLIKELY (cell_size == 0 || !mul_size(static_cast<size_t>(w), static_cast<size_t>(h), cell_count) ||
+                !mul_size(cell_count, cell_size, expected_size) || payload_size != expected_size) {
+    MLOG_W("OccupancyGrid payload size mismatch: width={} height={} cell_size={} expected={} actual={}", w, h,
+           cell_size, expected_size, payload_size);
     return false;
   }
 
@@ -2092,7 +2344,7 @@ bool RerunConverter::log_occupancy_grid(::rerun::RecordingStream& rec, const std
       parser.numeric("value_min", v_min);
       parser.numeric("value_max", v_max);
 
-      if (!(v_max > v_min)) {
+      if (!std::isfinite(v_min) || !std::isfinite(v_max) || !(v_max > v_min)) {
         v_min = 0.0;
         v_max = 1.0;
       }
@@ -2103,6 +2355,10 @@ bool RerunConverter::log_occupancy_grid(::rerun::RecordingStream& rec, const std
         double value = 0;
 
         if VUNLIKELY (!parser.numeric("data", i, "value", value)) {
+          return false;
+        }
+
+        if VUNLIKELY (!std::isfinite(value)) {
           return false;
         }
 
@@ -2118,8 +2374,8 @@ bool RerunConverter::log_occupancy_grid(::rerun::RecordingStream& rec, const std
     }
   }
 
-  auto pixel_data = ::rerun::Collection<uint8_t>::take_ownership(std::move(gray));
-  auto image = ::rerun::archetypes::Image(pixel_data, {w, h}, ::rerun::datatypes::ColorModel::L);
+  auto pixel_data = ::rerun::Collection<uint8_t>::borrow(gray.data(), gray.size());
+  auto image = ::rerun::archetypes::Image(std::move(pixel_data), {w, h}, ::rerun::datatypes::ColorModel::L);
   rec.log(entity_path, image);
 
   return true;
@@ -2225,6 +2481,37 @@ bool RerunConverter::log_tensor(::rerun::RecordingStream& rec, const std::string
 
   if VUNLIKELY (expected_elements > std::numeric_limits<size_t>::max() / element_size) {
     MLOG_W("Tensor byte size overflow");
+    return false;
+  }
+
+  size_t expected_stride = 1;
+
+  for (size_t i = rank; i > 0; --i) {
+    double stride_value = 0.0;
+
+    if VUNLIKELY (!parser.numeric("strides", i - 1U, "value", stride_value) ||
+                  stride_value != static_cast<double>(expected_stride)) {
+      MLOG_W("Rerun Tensor requires contiguous row-major strides");
+      return false;
+    }
+
+    expected_stride *= static_cast<size_t>(shape[i - 1U]);
+  }
+
+  const size_t expected_bytes = expected_elements * element_size;
+  zerocopy::MessageParser::Value declared_elements_value;
+  zerocopy::MessageParser::Value declared_size_value;
+
+  if VUNLIKELY (!parser.value("num_elements", declared_elements_value) || !parser.value("size", declared_size_value)) {
+    return false;
+  }
+
+  const auto* declared_elements = std::get_if<uint64_t>(&declared_elements_value);
+  const auto* declared_size = std::get_if<uint64_t>(&declared_size_value);
+
+  if VUNLIKELY (declared_elements == nullptr || declared_size == nullptr || *declared_elements != expected_elements ||
+                *declared_size != expected_bytes) {
+    MLOG_W("Tensor payload metadata does not match shape: elements={} bytes={}", expected_elements, expected_bytes);
     return false;
   }
 
@@ -2521,10 +2808,11 @@ bool RerunConverter::log_audio_frame(::rerun::RecordingStream& rec, const std::s
   double num_samples_value = 0;
   double layout_value = 0;
   double format_value = 0;
+  size_t payload_size = 0;
 
   if VUNLIKELY (!parser.numeric("num_channels", num_channels_value) ||
                 !parser.numeric("num_samples", num_samples_value) || !parser.numeric("layout", layout_value) ||
-                !parser.numeric("format", format_value)) {
+                !parser.numeric("format", format_value) || !read_parser_size(parser, "size", payload_size)) {
     return false;
   }
 
@@ -2564,17 +2852,18 @@ bool RerunConverter::log_audio_frame(::rerun::RecordingStream& rec, const std::s
   }
 
   const size_t channel_sample_size = static_cast<size_t>(num_channels) * element_size;
+  size_t expected_size = 0;
 
-  if VUNLIKELY (channel_sample_size == 0 || num_samples > std::numeric_limits<size_t>::max() / channel_sample_size) {
+  if VUNLIKELY (channel_sample_size == 0 ||
+                !mul_size(static_cast<size_t>(num_samples), channel_sample_size, expected_size)) {
     MLOG_W("AudioFrame byte size overflow: samples={} channels={}", num_samples, num_channels);
     return false;
   }
 
   const size_t expected_elements = static_cast<size_t>(num_samples) * num_channels;
 
-  if VUNLIKELY (parser.collection_size("data") != expected_elements) {
-    MLOG_W("AudioFrame sample count mismatch: actual={} expected={}", parser.collection_size("data"),
-           expected_elements);
+  if VUNLIKELY (payload_size != expected_size || parser.collection_size("data") != expected_elements) {
+    MLOG_W("AudioFrame payload size mismatch: actual={} expected={}", payload_size, expected_size);
     return false;
   }
 
@@ -2857,59 +3146,46 @@ bool RerunConverter::log_transform3d(::rerun::RecordingStream& rec, const std::s
 bool RerunConverter::log_boxes3d(::rerun::RecordingStream& rec, const std::string& entity_path, const RerunMap& mapping,
                                  const google::protobuf::Message& msg) {
   std::string entity_sub_items;
-  std::string entity_x_src;
-  std::string entity_y_src;
-  std::string entity_z_src;
-  std::string entity_w_src;
-  std::string entity_l_src;
-  std::string entity_h_src;
-  std::string entity_heading_src;
-  std::string entity_x_expr;
-  std::string entity_y_expr;
-  std::string entity_z_expr;
-  std::string entity_w_expr;
-  std::string entity_l_expr;
-  std::string entity_h_expr;
-  std::string entity_heading_expr;
+  const FieldMapping* entity_x_mapping = nullptr;
+  const FieldMapping* entity_y_mapping = nullptr;
+  const FieldMapping* entity_z_mapping = nullptr;
+  const FieldMapping* entity_w_mapping = nullptr;
+  const FieldMapping* entity_l_mapping = nullptr;
+  const FieldMapping* entity_h_mapping = nullptr;
+  const FieldMapping* entity_heading_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "entity_sub_items") {
       entity_sub_items = fm.source;
     } else if (fm.target == "entity_x") {
-      entity_x_src = fm.source;
-      entity_x_expr = fm.expression;
+      entity_x_mapping = &fm;
     } else if (fm.target == "entity_y") {
-      entity_y_src = fm.source;
-      entity_y_expr = fm.expression;
+      entity_y_mapping = &fm;
     } else if (fm.target == "entity_z") {
-      entity_z_src = fm.source;
-      entity_z_expr = fm.expression;
+      entity_z_mapping = &fm;
     } else if (fm.target == "entity_width") {
-      entity_w_src = fm.source;
-      entity_w_expr = fm.expression;
+      entity_w_mapping = &fm;
     } else if (fm.target == "entity_length") {
-      entity_l_src = fm.source;
-      entity_l_expr = fm.expression;
+      entity_l_mapping = &fm;
     } else if (fm.target == "entity_height") {
-      entity_h_src = fm.source;
-      entity_h_expr = fm.expression;
+      entity_h_mapping = &fm;
     } else if (fm.target == "entity_heading") {
-      entity_heading_src = fm.source;
-      entity_heading_expr = fm.expression;
+      entity_heading_mapping = &fm;
     }
   }
 
-  bool has_entity_fields = !entity_x_src.empty() || !entity_y_src.empty() || !entity_z_src.empty();
+  bool has_entity_fields = entity_x_mapping != nullptr || entity_y_mapping != nullptr || entity_z_mapping != nullptr ||
+                           entity_w_mapping != nullptr || entity_l_mapping != nullptr || entity_h_mapping != nullptr ||
+                           entity_heading_mapping != nullptr;
 
   std::vector<::rerun::Position3D> centers;
   std::vector<::rerun::HalfSize3D> half_sizes;
   std::vector<::rerun::components::RotationQuat> rotations;
   std::vector<::rerun::Color> box_colors;
 
-  auto process_item = [&box_colors, &centers, &entity_h_expr, &entity_h_src, &entity_heading_expr, &entity_heading_src,
-                       &entity_l_expr, &entity_l_src, &entity_w_expr, &entity_w_src, &entity_x_expr, &entity_x_src,
-                       &entity_y_expr, &entity_y_src, &entity_z_expr, &entity_z_src, &half_sizes, &has_entity_fields,
-                       &rotations](const google::protobuf::Message& item) {
+  auto process_item = [&box_colors, &centers, &entity_h_mapping, &entity_heading_mapping, &entity_l_mapping,
+                       &entity_w_mapping, &entity_x_mapping, &entity_y_mapping, &entity_z_mapping, &half_sizes,
+                       &has_entity_fields, &rotations](const google::protobuf::Message& item) {
     double px = 0.0;
     double py = 0.0;
     double pz = 0.0;
@@ -2919,58 +3195,44 @@ bool RerunConverter::log_boxes3d(::rerun::RecordingStream& rec, const std::strin
     double heading = 0.0;
 
     if (has_entity_fields) {
-      auto entity_get = [](const google::protobuf::Message& m, const std::string& src,
-                           const std::string& expr) -> double {
-        if (!expr.empty()) {
-          return evaluate_expression_with_msg(expr, m);
-        }
-
-        if (has_nested_field_path(src)) {
-          return safe_nested_double(m, src);
-        }
-
-        FieldMapping fm;
-        return get_proto_double(m, src, fm);
-      };
-
-      if (!entity_x_src.empty()) {
-        px = entity_get(item, entity_x_src, entity_x_expr);
+      if (entity_x_mapping) {
+        px = get_proto_double(item, entity_x_mapping->source, *entity_x_mapping);
       }
 
-      if (!entity_y_src.empty()) {
-        py = entity_get(item, entity_y_src, entity_y_expr);
+      if (entity_y_mapping) {
+        py = get_proto_double(item, entity_y_mapping->source, *entity_y_mapping);
       }
 
-      if (!entity_z_src.empty()) {
-        pz = entity_get(item, entity_z_src, entity_z_expr);
+      if (entity_z_mapping) {
+        pz = get_proto_double(item, entity_z_mapping->source, *entity_z_mapping);
       }
 
-      if (!entity_w_src.empty()) {
-        auto v = entity_get(item, entity_w_src, entity_w_expr);
+      if (entity_w_mapping) {
+        auto v = get_proto_double(item, entity_w_mapping->source, *entity_w_mapping);
 
         if (v != 0.0) {
           sx = v;
         }
       }
 
-      if (!entity_l_src.empty()) {
-        auto v = entity_get(item, entity_l_src, entity_l_expr);
+      if (entity_l_mapping) {
+        auto v = get_proto_double(item, entity_l_mapping->source, *entity_l_mapping);
 
         if (v != 0.0) {
           sy = v;
         }
       }
 
-      if (!entity_h_src.empty()) {
-        auto v = entity_get(item, entity_h_src, entity_h_expr);
+      if (entity_h_mapping) {
+        auto v = get_proto_double(item, entity_h_mapping->source, *entity_h_mapping);
 
         if (v != 0.0) {
           sz = v;
         }
       }
 
-      if (!entity_heading_src.empty()) {
-        heading = entity_get(item, entity_heading_src, entity_heading_expr);
+      if (entity_heading_mapping) {
+        heading = get_proto_double(item, entity_heading_mapping->source, *entity_heading_mapping);
       }
     } else {
       FieldMapping fm;
@@ -3099,25 +3361,19 @@ bool RerunConverter::log_boxes3d(::rerun::RecordingStream& rec, const std::strin
 bool RerunConverter::log_points3d(::rerun::RecordingStream& rec, const std::string& entity_path,
                                   const RerunMap& mapping, const google::protobuf::Message& msg) {
   std::string ranges_src;
-  std::string entity_x_src;
-  std::string entity_y_src;
-  std::string entity_z_src;
-  std::string entity_x_expr;
-  std::string entity_y_expr;
-  std::string entity_z_expr;
+  const FieldMapping* entity_x_mapping = nullptr;
+  const FieldMapping* entity_y_mapping = nullptr;
+  const FieldMapping* entity_z_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "ranges") {
       ranges_src = fm.source;
     } else if (fm.target == "entity_x" || fm.target == "point_x") {
-      entity_x_src = fm.source;
-      entity_x_expr = fm.expression;
+      entity_x_mapping = &fm;
     } else if (fm.target == "entity_y" || fm.target == "point_y") {
-      entity_y_src = fm.source;
-      entity_y_expr = fm.expression;
+      entity_y_mapping = &fm;
     } else if (fm.target == "entity_z" || fm.target == "point_z") {
-      entity_z_src = fm.source;
-      entity_z_expr = fm.expression;
+      entity_z_mapping = &fm;
     }
   }
 
@@ -3212,26 +3468,17 @@ bool RerunConverter::log_points3d(::rerun::RecordingStream& rec, const std::stri
       const auto& item = p_ref->GetRepeatedMessage(*parent, vec_field, i);
       FieldMapping empty_fm;
 
-      auto resolve_field = [&empty_fm, &item](const std::string& src, const std::string& expr,
-                                              const std::string& fallback) -> double {
-        if (!expr.empty()) {
-          return evaluate_expression_with_msg(expr, item);
-        }
-
-        if (src.empty()) {
+      auto resolve_field = [&empty_fm, &item](const FieldMapping* field_mapping, std::string_view fallback) -> double {
+        if (!field_mapping) {
           return get_proto_double(item, fallback, empty_fm);
         }
 
-        if (has_nested_field_path(src)) {
-          return safe_nested_double(item, src);
-        }
-
-        return get_proto_double(item, src, empty_fm);
+        return get_proto_double(item, field_mapping->source, *field_mapping);
       };
 
-      double px = resolve_field(entity_x_src, entity_x_expr, "x");
-      double py = resolve_field(entity_y_src, entity_y_expr, "y");
-      double pz = resolve_field(entity_z_src, entity_z_expr, "z");
+      double px = resolve_field(entity_x_mapping, "x");
+      double py = resolve_field(entity_y_mapping, "y");
+      double pz = resolve_field(entity_z_mapping, "z");
 
       positions.emplace_back(static_cast<float>(px), static_cast<float>(py), static_cast<float>(pz));
     }
@@ -3309,26 +3556,30 @@ bool RerunConverter::log_image(::rerun::RecordingStream& rec, const std::string&
     return false;
   }
 
-  auto pixel_total = static_cast<size_t>(width) * static_cast<size_t>(height);
-  auto channels = static_cast<uint32_t>(data.size() / pixel_total);
+  size_t pixel_total = 0;
 
-  if (channels == 0) {
+  if VUNLIKELY (!mul_size(static_cast<size_t>(width), static_cast<size_t>(height), pixel_total)) {
     return false;
   }
 
-  auto pixel_data = ::rerun::Collection<uint8_t>::borrow(data.data(), data.size());
-
-  ::rerun::datatypes::ColorModel color_model = ::rerun::datatypes::ColorModel::L;
-
-  if (channels >= 4) {
-    color_model = ::rerun::datatypes::ColorModel::RGBA;
-  } else if (channels >= 3) {
-    color_model = ::rerun::datatypes::ColorModel::RGB;
+  if (data.size() == pixel_total) {
+    return log_typed_image(rec, entity_path, data.data(), data.size(), width, height, ::rerun::datatypes::ColorModel::L,
+                           ::rerun::datatypes::ChannelDatatype::U8);
   }
 
-  rec.log(entity_path, ::rerun::archetypes::Image(pixel_data, {width, height}, color_model));
+  size_t expected_size = 0;
 
-  return true;
+  if (mul_size(pixel_total, 3U, expected_size) && data.size() == expected_size) {
+    return log_typed_image(rec, entity_path, data.data(), data.size(), width, height,
+                           ::rerun::datatypes::ColorModel::RGB, ::rerun::datatypes::ChannelDatatype::U8);
+  }
+
+  if (mul_size(pixel_total, 4U, expected_size) && data.size() == expected_size) {
+    return log_typed_image(rec, entity_path, data.data(), data.size(), width, height,
+                           ::rerun::datatypes::ColorModel::RGBA, ::rerun::datatypes::ChannelDatatype::U8);
+  }
+
+  return false;
 }
 
 bool RerunConverter::log_text_log(::rerun::RecordingStream& rec, const std::string& entity_path,
@@ -3367,6 +3618,8 @@ bool RerunConverter::log_pinhole(::rerun::RecordingStream& rec, const std::strin
   double cy = 0.0;
   uint32_t width = 0;
   uint32_t height = 0;
+  bool has_cx = false;
+  bool has_cy = false;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "fx") {
@@ -3375,8 +3628,10 @@ bool RerunConverter::log_pinhole(::rerun::RecordingStream& rec, const std::strin
       fy = get_proto_double(msg, fm.source, fm);
     } else if (fm.target == "cx") {
       cx = get_proto_double(msg, fm.source, fm);
+      has_cx = true;
     } else if (fm.target == "cy") {
       cy = get_proto_double(msg, fm.source, fm);
+      has_cy = true;
     } else if (fm.target == "width" || fm.target == "image_width") {
       width = checked_unsigned_cast<uint32_t>(get_proto_double(msg, fm.source, fm));
     } else if (fm.target == "height" || fm.target == "image_height") {
@@ -3384,13 +3639,19 @@ bool RerunConverter::log_pinhole(::rerun::RecordingStream& rec, const std::strin
     }
   }
 
-  if (fx <= 0.0 || fy <= 0.0) {
+  const auto resolution_width = static_cast<float>(width > 0 ? width : cx * 2.0);
+  const auto resolution_height = static_cast<float>(height > 0 ? height : cy * 2.0);
+  const auto principal_x = has_cx ? static_cast<float>(cx) : resolution_width * 0.5F;
+  const auto principal_y = has_cy ? static_cast<float>(cy) : resolution_height * 0.5F;
+
+  if VUNLIKELY (!std::isfinite(fx) || !std::isfinite(fy) || !std::isfinite(principal_x) ||
+                !std::isfinite(principal_y) || !std::isfinite(resolution_width) || !std::isfinite(resolution_height) ||
+                fx <= 0.0 || fy <= 0.0 || resolution_width <= 0.0F || resolution_height <= 0.0F) {
     return false;
   }
 
-  auto pinhole = ::rerun::archetypes::Pinhole::from_focal_length_and_resolution(
-      {static_cast<float>(fx), static_cast<float>(fy)},
-      {static_cast<float>(width > 0 ? width : cx * 2), static_cast<float>(height > 0 ? height : cy * 2)});
+  auto pinhole = make_pinhole(static_cast<float>(fx), static_cast<float>(fy), principal_x, principal_y,
+                              resolution_width, resolution_height);
 
   rec.log_static(entity_path, pinhole);
 
@@ -3402,6 +3663,8 @@ bool RerunConverter::log_depth_image(::rerun::RecordingStream& rec, const std::s
   uint32_t width = 0;
   uint32_t height = 0;
   std::string data_src;
+  std::string datatype;
+  float meter = 0.0F;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "column_count" || fm.target == "width") {
@@ -3410,6 +3673,10 @@ bool RerunConverter::log_depth_image(::rerun::RecordingStream& rec, const std::s
       height = checked_unsigned_cast<uint32_t>(get_proto_double(msg, fm.source, fm));
     } else if (fm.target == "data") {
       data_src = fm.source;
+    } else if (fm.target == "datatype") {
+      datatype = get_proto_string(msg, fm.source, fm);
+    } else if (fm.target == "meter") {
+      meter = static_cast<float>(get_proto_double(msg, fm.source, fm));
     }
   }
 
@@ -3428,9 +3695,8 @@ bool RerunConverter::log_depth_image(::rerun::RecordingStream& rec, const std::s
 
   std::string scratch;
   const auto& data = ref->GetStringReference(msg, data_field, &scratch);
-  auto pixel_data = ::rerun::Collection<uint8_t>::borrow(reinterpret_cast<const uint8_t*>(data.data()), data.size());
-  rec.log(entity_path, ::rerun::archetypes::DepthImage(std::move(pixel_data), {width, height}));
-  return true;
+  return log_depth_image_bytes(rec, entity_path, reinterpret_cast<const uint8_t*>(data.data()), data.size(), width,
+                               height, datatype, meter);
 }
 
 bool RerunConverter::log_scalars(::rerun::RecordingStream& rec, const std::string& entity_path, const RerunMap& mapping,
@@ -3451,19 +3717,19 @@ bool RerunConverter::log_scalars(::rerun::RecordingStream& rec, const std::strin
 bool RerunConverter::log_line_strips3d(::rerun::RecordingStream& rec, const std::string& entity_path,
                                        const RerunMap& mapping, const google::protobuf::Message& msg) {
   std::string entities_src;
-  std::string x_src;
-  std::string y_src;
-  std::string z_src;
+  const FieldMapping* x_mapping = nullptr;
+  const FieldMapping* y_mapping = nullptr;
+  const FieldMapping* z_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "entities" || fm.target == "strips" || fm.target == "points") {
       entities_src = fm.source;
     } else if (fm.target == "point_x") {
-      x_src = fm.source;
+      x_mapping = &fm;
     } else if (fm.target == "point_y") {
-      y_src = fm.source;
+      y_mapping = &fm;
     } else if (fm.target == "point_z") {
-      z_src = fm.source;
+      z_mapping = &fm;
     }
   }
 
@@ -3482,9 +3748,12 @@ bool RerunConverter::log_line_strips3d(::rerun::RecordingStream& rec, const std:
 
     for (int i = 0; i < count; ++i) {
       const auto& item = ref->GetRepeatedMessage(msg, vec_field, i);
-      double px = x_src.empty() ? get_proto_double(item, "x", empty_fm) : get_proto_double(item, x_src, empty_fm);
-      double py = y_src.empty() ? get_proto_double(item, "y", empty_fm) : get_proto_double(item, y_src, empty_fm);
-      double pz = z_src.empty() ? get_proto_double(item, "z", empty_fm) : get_proto_double(item, z_src, empty_fm);
+      double px =
+          x_mapping ? get_proto_double(item, x_mapping->source, *x_mapping) : get_proto_double(item, "x", empty_fm);
+      double py =
+          y_mapping ? get_proto_double(item, y_mapping->source, *y_mapping) : get_proto_double(item, "y", empty_fm);
+      double pz =
+          z_mapping ? get_proto_double(item, z_mapping->source, *z_mapping) : get_proto_double(item, "z", empty_fm);
       strip.emplace_back(static_cast<float>(px), static_cast<float>(py), static_cast<float>(pz));
     }
 
@@ -3501,16 +3770,16 @@ bool RerunConverter::log_line_strips3d(::rerun::RecordingStream& rec, const std:
 bool RerunConverter::log_line_strips2d(::rerun::RecordingStream& rec, const std::string& entity_path,
                                        const RerunMap& mapping, const google::protobuf::Message& msg) {
   std::string entities_src;
-  std::string x_src;
-  std::string y_src;
+  const FieldMapping* x_mapping = nullptr;
+  const FieldMapping* y_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "entities" || fm.target == "strips" || fm.target == "points") {
       entities_src = fm.source;
     } else if (fm.target == "point_x") {
-      x_src = fm.source;
+      x_mapping = &fm;
     } else if (fm.target == "point_y") {
-      y_src = fm.source;
+      y_mapping = &fm;
     }
   }
 
@@ -3529,8 +3798,10 @@ bool RerunConverter::log_line_strips2d(::rerun::RecordingStream& rec, const std:
 
     for (int i = 0; i < count; ++i) {
       const auto& item = ref->GetRepeatedMessage(msg, vec_field, i);
-      double px = x_src.empty() ? get_proto_double(item, "x", empty_fm) : get_proto_double(item, x_src, empty_fm);
-      double py = y_src.empty() ? get_proto_double(item, "y", empty_fm) : get_proto_double(item, y_src, empty_fm);
+      double px =
+          x_mapping ? get_proto_double(item, x_mapping->source, *x_mapping) : get_proto_double(item, "x", empty_fm);
+      double py =
+          y_mapping ? get_proto_double(item, y_mapping->source, *y_mapping) : get_proto_double(item, "y", empty_fm);
       strip.emplace_back(static_cast<float>(px), static_cast<float>(py));
     }
 
@@ -3547,22 +3818,22 @@ bool RerunConverter::log_line_strips2d(::rerun::RecordingStream& rec, const std:
 bool RerunConverter::log_boxes2d(::rerun::RecordingStream& rec, const std::string& entity_path, const RerunMap& mapping,
                                  const google::protobuf::Message& msg) {
   std::string entities_src;
-  std::string x_src;
-  std::string y_src;
-  std::string w_src;
-  std::string h_src;
+  const FieldMapping* x_mapping = nullptr;
+  const FieldMapping* y_mapping = nullptr;
+  const FieldMapping* w_mapping = nullptr;
+  const FieldMapping* h_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "entities") {
       entities_src = fm.source;
     } else if (fm.target == "center_x") {
-      x_src = fm.source;
+      x_mapping = &fm;
     } else if (fm.target == "center_y") {
-      y_src = fm.source;
+      y_mapping = &fm;
     } else if (fm.target == "width" || fm.target == "size_x") {
-      w_src = fm.source;
+      w_mapping = &fm;
     } else if (fm.target == "height" || fm.target == "size_y") {
-      h_src = fm.source;
+      h_mapping = &fm;
     }
   }
 
@@ -3590,10 +3861,14 @@ bool RerunConverter::log_boxes2d(::rerun::RecordingStream& rec, const std::strin
     const auto& item = ref->GetRepeatedMessage(msg, vec_field, i);
     FieldMapping empty_fm;
 
-    double cx = x_src.empty() ? get_proto_double(item, "center_x", empty_fm) : get_proto_double(item, x_src, empty_fm);
-    double cy = y_src.empty() ? get_proto_double(item, "center_y", empty_fm) : get_proto_double(item, y_src, empty_fm);
-    double w = w_src.empty() ? get_proto_double(item, "width", empty_fm) : get_proto_double(item, w_src, empty_fm);
-    double h = h_src.empty() ? get_proto_double(item, "height", empty_fm) : get_proto_double(item, h_src, empty_fm);
+    double cx = x_mapping ? get_proto_double(item, x_mapping->source, *x_mapping)
+                          : get_proto_double(item, "center_x", empty_fm);
+    double cy = y_mapping ? get_proto_double(item, y_mapping->source, *y_mapping)
+                          : get_proto_double(item, "center_y", empty_fm);
+    double w =
+        w_mapping ? get_proto_double(item, w_mapping->source, *w_mapping) : get_proto_double(item, "width", empty_fm);
+    double h =
+        h_mapping ? get_proto_double(item, h_mapping->source, *h_mapping) : get_proto_double(item, "height", empty_fm);
 
     centers.emplace_back(static_cast<float>(cx), static_cast<float>(cy));
     half_sizes.emplace_back(static_cast<float>(w * 0.5), static_cast<float>(h * 0.5));
@@ -3609,28 +3884,28 @@ bool RerunConverter::log_boxes2d(::rerun::RecordingStream& rec, const std::strin
 bool RerunConverter::log_arrows3d(::rerun::RecordingStream& rec, const std::string& entity_path,
                                   const RerunMap& mapping, const google::protobuf::Message& msg) {
   std::string entities_src;
-  std::string origin_x_src;
-  std::string origin_y_src;
-  std::string origin_z_src;
-  std::string vec_x_src;
-  std::string vec_y_src;
-  std::string vec_z_src;
+  const FieldMapping* origin_x_mapping = nullptr;
+  const FieldMapping* origin_y_mapping = nullptr;
+  const FieldMapping* origin_z_mapping = nullptr;
+  const FieldMapping* vec_x_mapping = nullptr;
+  const FieldMapping* vec_y_mapping = nullptr;
+  const FieldMapping* vec_z_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "entities") {
       entities_src = fm.source;
     } else if (fm.target == "origin_x") {
-      origin_x_src = fm.source;
+      origin_x_mapping = &fm;
     } else if (fm.target == "origin_y") {
-      origin_y_src = fm.source;
+      origin_y_mapping = &fm;
     } else if (fm.target == "origin_z") {
-      origin_z_src = fm.source;
+      origin_z_mapping = &fm;
     } else if (fm.target == "vector_x") {
-      vec_x_src = fm.source;
+      vec_x_mapping = &fm;
     } else if (fm.target == "vector_y") {
-      vec_y_src = fm.source;
+      vec_y_mapping = &fm;
     } else if (fm.target == "vector_z") {
-      vec_z_src = fm.source;
+      vec_z_mapping = &fm;
     }
   }
 
@@ -3642,12 +3917,18 @@ bool RerunConverter::log_arrows3d(::rerun::RecordingStream& rec, const std::stri
 
   if VUNLIKELY (!vec_field || !vec_field->is_repeated()) {
     FieldMapping empty_fm;
-    double ox = get_proto_double(msg, origin_x_src.empty() ? "origin_x" : origin_x_src, empty_fm);
-    double oy = get_proto_double(msg, origin_y_src.empty() ? "origin_y" : origin_y_src, empty_fm);
-    double oz = get_proto_double(msg, origin_z_src.empty() ? "origin_z" : origin_z_src, empty_fm);
-    double vx = get_proto_double(msg, vec_x_src.empty() ? "vector_x" : vec_x_src, empty_fm);
-    double vy = get_proto_double(msg, vec_y_src.empty() ? "vector_y" : vec_y_src, empty_fm);
-    double vz = get_proto_double(msg, vec_z_src.empty() ? "vector_z" : vec_z_src, empty_fm);
+    double ox = origin_x_mapping ? get_proto_double(msg, origin_x_mapping->source, *origin_x_mapping)
+                                 : get_proto_double(msg, "origin_x", empty_fm);
+    double oy = origin_y_mapping ? get_proto_double(msg, origin_y_mapping->source, *origin_y_mapping)
+                                 : get_proto_double(msg, "origin_y", empty_fm);
+    double oz = origin_z_mapping ? get_proto_double(msg, origin_z_mapping->source, *origin_z_mapping)
+                                 : get_proto_double(msg, "origin_z", empty_fm);
+    double vx = vec_x_mapping ? get_proto_double(msg, vec_x_mapping->source, *vec_x_mapping)
+                              : get_proto_double(msg, "vector_x", empty_fm);
+    double vy = vec_y_mapping ? get_proto_double(msg, vec_y_mapping->source, *vec_y_mapping)
+                              : get_proto_double(msg, "vector_y", empty_fm);
+    double vz = vec_z_mapping ? get_proto_double(msg, vec_z_mapping->source, *vec_z_mapping)
+                              : get_proto_double(msg, "vector_z", empty_fm);
 
     auto arrows = ::rerun::archetypes::Arrows3D::from_vectors(
         {::rerun::Vector3D(static_cast<float>(vx), static_cast<float>(vy), static_cast<float>(vz))});
@@ -3670,12 +3951,18 @@ bool RerunConverter::log_arrows3d(::rerun::RecordingStream& rec, const std::stri
 
     const auto& item = ref->GetRepeatedMessage(msg, vec_field, i);
     FieldMapping empty_fm;
-    double ox = get_proto_double(item, origin_x_src.empty() ? "origin_x" : origin_x_src, empty_fm);
-    double oy = get_proto_double(item, origin_y_src.empty() ? "origin_y" : origin_y_src, empty_fm);
-    double oz = get_proto_double(item, origin_z_src.empty() ? "origin_z" : origin_z_src, empty_fm);
-    double vx = get_proto_double(item, vec_x_src.empty() ? "vector_x" : vec_x_src, empty_fm);
-    double vy = get_proto_double(item, vec_y_src.empty() ? "vector_y" : vec_y_src, empty_fm);
-    double vz = get_proto_double(item, vec_z_src.empty() ? "vector_z" : vec_z_src, empty_fm);
+    double ox = origin_x_mapping ? get_proto_double(item, origin_x_mapping->source, *origin_x_mapping)
+                                 : get_proto_double(item, "origin_x", empty_fm);
+    double oy = origin_y_mapping ? get_proto_double(item, origin_y_mapping->source, *origin_y_mapping)
+                                 : get_proto_double(item, "origin_y", empty_fm);
+    double oz = origin_z_mapping ? get_proto_double(item, origin_z_mapping->source, *origin_z_mapping)
+                                 : get_proto_double(item, "origin_z", empty_fm);
+    double vx = vec_x_mapping ? get_proto_double(item, vec_x_mapping->source, *vec_x_mapping)
+                              : get_proto_double(item, "vector_x", empty_fm);
+    double vy = vec_y_mapping ? get_proto_double(item, vec_y_mapping->source, *vec_y_mapping)
+                              : get_proto_double(item, "vector_y", empty_fm);
+    double vz = vec_z_mapping ? get_proto_double(item, vec_z_mapping->source, *vec_z_mapping)
+                              : get_proto_double(item, "vector_z", empty_fm);
 
     origins.emplace_back(static_cast<float>(ox), static_cast<float>(oy), static_cast<float>(oz));
     vectors.emplace_back(static_cast<float>(vx), static_cast<float>(vy), static_cast<float>(vz));
@@ -3693,16 +3980,16 @@ bool RerunConverter::log_arrows3d(::rerun::RecordingStream& rec, const std::stri
 bool RerunConverter::log_points2d(::rerun::RecordingStream& rec, const std::string& entity_path,
                                   const RerunMap& mapping, const google::protobuf::Message& msg) {
   std::string entities_src;
-  std::string x_src;
-  std::string y_src;
+  const FieldMapping* x_mapping = nullptr;
+  const FieldMapping* y_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "entities" || fm.target == "points") {
       entities_src = fm.source;
     } else if (fm.target == "point_x") {
-      x_src = fm.source;
+      x_mapping = &fm;
     } else if (fm.target == "point_y") {
-      y_src = fm.source;
+      y_mapping = &fm;
     }
   }
 
@@ -3727,8 +4014,10 @@ bool RerunConverter::log_points2d(::rerun::RecordingStream& rec, const std::stri
 
     const auto& item = ref->GetRepeatedMessage(msg, vec_field, i);
     FieldMapping empty_fm;
-    double px = x_src.empty() ? get_proto_double(item, "x", empty_fm) : get_proto_double(item, x_src, empty_fm);
-    double py = y_src.empty() ? get_proto_double(item, "y", empty_fm) : get_proto_double(item, y_src, empty_fm);
+    double px =
+        x_mapping ? get_proto_double(item, x_mapping->source, *x_mapping) : get_proto_double(item, "x", empty_fm);
+    double py =
+        y_mapping ? get_proto_double(item, y_mapping->source, *y_mapping) : get_proto_double(item, "y", empty_fm);
     positions.emplace_back(static_cast<float>(px), static_cast<float>(py));
   }
 
@@ -3756,6 +4045,13 @@ bool RerunConverter::log_segmentation_image(::rerun::RecordingStream& rec, const
   }
 
   if VUNLIKELY (data.empty() || width == 0 || height == 0) {
+    return false;
+  }
+
+  size_t pixel_total = 0;
+
+  if VUNLIKELY (!mul_size(static_cast<size_t>(width), static_cast<size_t>(height), pixel_total) ||
+                data.size() != pixel_total) {
     return false;
   }
 
@@ -3802,22 +4098,22 @@ bool RerunConverter::log_series_point(::rerun::RecordingStream& rec, const std::
 bool RerunConverter::log_arrows2d(::rerun::RecordingStream& rec, const std::string& entity_path,
                                   const RerunMap& mapping, const google::protobuf::Message& msg) {
   std::string entities_src;
-  std::string origin_x_src;
-  std::string origin_y_src;
-  std::string vec_x_src;
-  std::string vec_y_src;
+  const FieldMapping* origin_x_mapping = nullptr;
+  const FieldMapping* origin_y_mapping = nullptr;
+  const FieldMapping* vec_x_mapping = nullptr;
+  const FieldMapping* vec_y_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "entities") {
       entities_src = fm.source;
     } else if (fm.target == "origin_x") {
-      origin_x_src = fm.source;
+      origin_x_mapping = &fm;
     } else if (fm.target == "origin_y") {
-      origin_y_src = fm.source;
+      origin_y_mapping = &fm;
     } else if (fm.target == "vector_x") {
-      vec_x_src = fm.source;
+      vec_x_mapping = &fm;
     } else if (fm.target == "vector_y") {
-      vec_y_src = fm.source;
+      vec_y_mapping = &fm;
     }
   }
 
@@ -3829,10 +4125,14 @@ bool RerunConverter::log_arrows2d(::rerun::RecordingStream& rec, const std::stri
 
   if VUNLIKELY (!vec_field || !vec_field->is_repeated()) {
     FieldMapping empty_fm;
-    double ox = get_proto_double(msg, origin_x_src.empty() ? "origin_x" : origin_x_src, empty_fm);
-    double oy = get_proto_double(msg, origin_y_src.empty() ? "origin_y" : origin_y_src, empty_fm);
-    double vx = get_proto_double(msg, vec_x_src.empty() ? "vector_x" : vec_x_src, empty_fm);
-    double vy = get_proto_double(msg, vec_y_src.empty() ? "vector_y" : vec_y_src, empty_fm);
+    double ox = origin_x_mapping ? get_proto_double(msg, origin_x_mapping->source, *origin_x_mapping)
+                                 : get_proto_double(msg, "origin_x", empty_fm);
+    double oy = origin_y_mapping ? get_proto_double(msg, origin_y_mapping->source, *origin_y_mapping)
+                                 : get_proto_double(msg, "origin_y", empty_fm);
+    double vx = vec_x_mapping ? get_proto_double(msg, vec_x_mapping->source, *vec_x_mapping)
+                              : get_proto_double(msg, "vector_x", empty_fm);
+    double vy = vec_y_mapping ? get_proto_double(msg, vec_y_mapping->source, *vec_y_mapping)
+                              : get_proto_double(msg, "vector_y", empty_fm);
 
     auto arrows = ::rerun::archetypes::Arrows2D::from_vectors(
         {::rerun::components::Vector2D(static_cast<float>(vx), static_cast<float>(vy))});
@@ -3854,10 +4154,14 @@ bool RerunConverter::log_arrows2d(::rerun::RecordingStream& rec, const std::stri
 
     const auto& item = ref->GetRepeatedMessage(msg, vec_field, i);
     FieldMapping empty_fm;
-    double ox = get_proto_double(item, origin_x_src.empty() ? "origin_x" : origin_x_src, empty_fm);
-    double oy = get_proto_double(item, origin_y_src.empty() ? "origin_y" : origin_y_src, empty_fm);
-    double vx = get_proto_double(item, vec_x_src.empty() ? "vector_x" : vec_x_src, empty_fm);
-    double vy = get_proto_double(item, vec_y_src.empty() ? "vector_y" : vec_y_src, empty_fm);
+    double ox = origin_x_mapping ? get_proto_double(item, origin_x_mapping->source, *origin_x_mapping)
+                                 : get_proto_double(item, "origin_x", empty_fm);
+    double oy = origin_y_mapping ? get_proto_double(item, origin_y_mapping->source, *origin_y_mapping)
+                                 : get_proto_double(item, "origin_y", empty_fm);
+    double vx = vec_x_mapping ? get_proto_double(item, vec_x_mapping->source, *vec_x_mapping)
+                              : get_proto_double(item, "vector_x", empty_fm);
+    double vy = vec_y_mapping ? get_proto_double(item, vec_y_mapping->source, *vec_y_mapping)
+                              : get_proto_double(item, "vector_y", empty_fm);
 
     origins.emplace_back(static_cast<float>(ox), static_cast<float>(oy));
     vectors.emplace_back(static_cast<float>(vx), static_cast<float>(vy));
@@ -4075,39 +4379,46 @@ bool RerunConverter::log_mesh3d(::rerun::RecordingStream& rec, const std::string
 bool RerunConverter::log_cylinders3d(::rerun::RecordingStream& rec, const std::string& entity_path,
                                      const RerunMap& mapping, const google::protobuf::Message& msg) {
   std::string entities_src;
-  std::string length_src;
-  std::string radius_src;
-  std::string center_x_src;
-  std::string center_y_src;
-  std::string center_z_src;
-  std::string color_r_src;
-  std::string color_g_src;
-  std::string color_b_src;
-  std::string color_a_src;
+  const FieldMapping* length_mapping = nullptr;
+  const FieldMapping* radius_mapping = nullptr;
+  const FieldMapping* center_x_mapping = nullptr;
+  const FieldMapping* center_y_mapping = nullptr;
+  const FieldMapping* center_z_mapping = nullptr;
+  const FieldMapping* color_r_mapping = nullptr;
+  const FieldMapping* color_g_mapping = nullptr;
+  const FieldMapping* color_b_mapping = nullptr;
+  const FieldMapping* color_a_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "entities") {
       entities_src = fm.source;
     } else if (fm.target == "length") {
-      length_src = fm.source;
+      length_mapping = &fm;
     } else if (fm.target == "radius") {
-      radius_src = fm.source;
+      radius_mapping = &fm;
     } else if (fm.target == "center_x") {
-      center_x_src = fm.source;
+      center_x_mapping = &fm;
     } else if (fm.target == "center_y") {
-      center_y_src = fm.source;
+      center_y_mapping = &fm;
     } else if (fm.target == "center_z") {
-      center_z_src = fm.source;
+      center_z_mapping = &fm;
     } else if (fm.target == "color_r") {
-      color_r_src = fm.source;
+      color_r_mapping = &fm;
     } else if (fm.target == "color_g") {
-      color_g_src = fm.source;
+      color_g_mapping = &fm;
     } else if (fm.target == "color_b") {
-      color_b_src = fm.source;
+      color_b_mapping = &fm;
     } else if (fm.target == "color_a") {
-      color_a_src = fm.source;
+      color_a_mapping = &fm;
     }
   }
+
+  FieldMapping empty_fm;
+  auto get_value = [&empty_fm](const google::protobuf::Message& value, const FieldMapping* field_mapping,
+                               std::string_view fallback) {
+    return field_mapping ? get_proto_double(value, field_mapping->source, *field_mapping)
+                         : get_proto_double(value, fallback, empty_fm);
+  };
 
   const auto* desc = msg.GetDescriptor();
   const auto* ref = msg.GetReflection();
@@ -4116,22 +4427,20 @@ bool RerunConverter::log_cylinders3d(::rerun::RecordingStream& rec, const std::s
   const auto* vec_field = find_proto_field_cached(*desc, field_name);
 
   if VUNLIKELY (!vec_field || !vec_field->is_repeated()) {
-    FieldMapping empty_fm;
-    auto length = static_cast<float>(get_proto_double(msg, length_src.empty() ? "length" : length_src, empty_fm));
-    auto radius = static_cast<float>(get_proto_double(msg, radius_src.empty() ? "radius" : radius_src, empty_fm));
-    auto cx = static_cast<float>(get_proto_double(msg, center_x_src.empty() ? "center_x" : center_x_src, empty_fm));
-    auto cy = static_cast<float>(get_proto_double(msg, center_y_src.empty() ? "center_y" : center_y_src, empty_fm));
-    auto cz = static_cast<float>(get_proto_double(msg, center_z_src.empty() ? "center_z" : center_z_src, empty_fm));
+    auto length = static_cast<float>(get_value(msg, length_mapping, "length"));
+    auto radius = static_cast<float>(get_value(msg, radius_mapping, "radius"));
+    auto cx = static_cast<float>(get_value(msg, center_x_mapping, "center_x"));
+    auto cy = static_cast<float>(get_value(msg, center_y_mapping, "center_y"));
+    auto cz = static_cast<float>(get_value(msg, center_z_mapping, "center_z"));
 
     auto cylinders = ::rerun::archetypes::Cylinders3D::from_lengths_and_radii({length}, {radius});
     cylinders = std::move(cylinders).with_centers({::rerun::datatypes::Vec3D{cx, cy, cz}});
 
-    if (!color_r_src.empty()) {
-      auto r = checked_unsigned_cast<uint8_t>(get_proto_double(msg, color_r_src, empty_fm));
-      auto g = checked_unsigned_cast<uint8_t>(get_proto_double(msg, color_g_src, empty_fm));
-      auto b = checked_unsigned_cast<uint8_t>(get_proto_double(msg, color_b_src, empty_fm));
-      auto a =
-          checked_unsigned_cast<uint8_t>(color_a_src.empty() ? 255.0 : get_proto_double(msg, color_a_src, empty_fm));
+    if (color_r_mapping) {
+      auto r = checked_unsigned_cast<uint8_t>(get_value(msg, color_r_mapping, {}));
+      auto g = checked_unsigned_cast<uint8_t>(get_value(msg, color_g_mapping, {}));
+      auto b = checked_unsigned_cast<uint8_t>(get_value(msg, color_b_mapping, {}));
+      auto a = checked_unsigned_cast<uint8_t>(color_a_mapping ? get_value(msg, color_a_mapping, {}) : 255.0);
       cylinders = std::move(cylinders).with_colors({::rerun::Color(r, g, b, a)});
     }
 
@@ -4154,22 +4463,18 @@ bool RerunConverter::log_cylinders3d(::rerun::RecordingStream& rec, const std::s
     }
 
     const auto& item = ref->GetRepeatedMessage(msg, vec_field, i);
-    FieldMapping empty_fm;
-    lengths.emplace_back(
-        static_cast<float>(get_proto_double(item, length_src.empty() ? "length" : length_src, empty_fm)));
-    radii.emplace_back(
-        static_cast<float>(get_proto_double(item, radius_src.empty() ? "radius" : radius_src, empty_fm)));
-    auto cx = static_cast<float>(get_proto_double(item, center_x_src.empty() ? "center_x" : center_x_src, empty_fm));
-    auto cy = static_cast<float>(get_proto_double(item, center_y_src.empty() ? "center_y" : center_y_src, empty_fm));
-    auto cz = static_cast<float>(get_proto_double(item, center_z_src.empty() ? "center_z" : center_z_src, empty_fm));
+    lengths.emplace_back(static_cast<float>(get_value(item, length_mapping, "length")));
+    radii.emplace_back(static_cast<float>(get_value(item, radius_mapping, "radius")));
+    auto cx = static_cast<float>(get_value(item, center_x_mapping, "center_x"));
+    auto cy = static_cast<float>(get_value(item, center_y_mapping, "center_y"));
+    auto cz = static_cast<float>(get_value(item, center_z_mapping, "center_z"));
     centers.emplace_back(cx, cy, cz);
 
-    if (!color_r_src.empty()) {
-      auto r = checked_unsigned_cast<uint8_t>(get_proto_double(item, color_r_src, empty_fm));
-      auto g = checked_unsigned_cast<uint8_t>(get_proto_double(item, color_g_src, empty_fm));
-      auto b = checked_unsigned_cast<uint8_t>(get_proto_double(item, color_b_src, empty_fm));
-      auto a =
-          checked_unsigned_cast<uint8_t>(color_a_src.empty() ? 255.0 : get_proto_double(item, color_a_src, empty_fm));
+    if (color_r_mapping) {
+      auto r = checked_unsigned_cast<uint8_t>(get_value(item, color_r_mapping, {}));
+      auto g = checked_unsigned_cast<uint8_t>(get_value(item, color_g_mapping, {}));
+      auto b = checked_unsigned_cast<uint8_t>(get_value(item, color_b_mapping, {}));
+      auto a = checked_unsigned_cast<uint8_t>(color_a_mapping ? get_value(item, color_a_mapping, {}) : 255.0);
       colors.emplace_back(r, g, b, a);
     }
   }
@@ -4191,42 +4496,49 @@ bool RerunConverter::log_cylinders3d(::rerun::RecordingStream& rec, const std::s
 bool RerunConverter::log_ellipsoids3d(::rerun::RecordingStream& rec, const std::string& entity_path,
                                       const RerunMap& mapping, const google::protobuf::Message& msg) {
   std::string entities_src;
-  std::string half_size_x_src;
-  std::string half_size_y_src;
-  std::string half_size_z_src;
-  std::string center_x_src;
-  std::string center_y_src;
-  std::string center_z_src;
-  std::string color_r_src;
-  std::string color_g_src;
-  std::string color_b_src;
-  std::string color_a_src;
+  const FieldMapping* half_size_x_mapping = nullptr;
+  const FieldMapping* half_size_y_mapping = nullptr;
+  const FieldMapping* half_size_z_mapping = nullptr;
+  const FieldMapping* center_x_mapping = nullptr;
+  const FieldMapping* center_y_mapping = nullptr;
+  const FieldMapping* center_z_mapping = nullptr;
+  const FieldMapping* color_r_mapping = nullptr;
+  const FieldMapping* color_g_mapping = nullptr;
+  const FieldMapping* color_b_mapping = nullptr;
+  const FieldMapping* color_a_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "entities") {
       entities_src = fm.source;
     } else if (fm.target == "half_size_x") {
-      half_size_x_src = fm.source;
+      half_size_x_mapping = &fm;
     } else if (fm.target == "half_size_y") {
-      half_size_y_src = fm.source;
+      half_size_y_mapping = &fm;
     } else if (fm.target == "half_size_z") {
-      half_size_z_src = fm.source;
+      half_size_z_mapping = &fm;
     } else if (fm.target == "center_x") {
-      center_x_src = fm.source;
+      center_x_mapping = &fm;
     } else if (fm.target == "center_y") {
-      center_y_src = fm.source;
+      center_y_mapping = &fm;
     } else if (fm.target == "center_z") {
-      center_z_src = fm.source;
+      center_z_mapping = &fm;
     } else if (fm.target == "color_r") {
-      color_r_src = fm.source;
+      color_r_mapping = &fm;
     } else if (fm.target == "color_g") {
-      color_g_src = fm.source;
+      color_g_mapping = &fm;
     } else if (fm.target == "color_b") {
-      color_b_src = fm.source;
+      color_b_mapping = &fm;
     } else if (fm.target == "color_a") {
-      color_a_src = fm.source;
+      color_a_mapping = &fm;
     }
   }
+
+  FieldMapping empty_fm;
+  auto get_value = [&empty_fm](const google::protobuf::Message& value, const FieldMapping* field_mapping,
+                               std::string_view fallback) {
+    return field_mapping ? get_proto_double(value, field_mapping->source, *field_mapping)
+                         : get_proto_double(value, fallback, empty_fm);
+  };
 
   const auto* desc = msg.GetDescriptor();
   const auto* ref = msg.GetReflection();
@@ -4235,26 +4547,21 @@ bool RerunConverter::log_ellipsoids3d(::rerun::RecordingStream& rec, const std::
   const auto* vec_field = find_proto_field_cached(*desc, field_name);
 
   if VUNLIKELY (!vec_field || !vec_field->is_repeated()) {
-    FieldMapping empty_fm;
-    auto hx =
-        static_cast<float>(get_proto_double(msg, half_size_x_src.empty() ? "half_size_x" : half_size_x_src, empty_fm));
-    auto hy =
-        static_cast<float>(get_proto_double(msg, half_size_y_src.empty() ? "half_size_y" : half_size_y_src, empty_fm));
-    auto hz =
-        static_cast<float>(get_proto_double(msg, half_size_z_src.empty() ? "half_size_z" : half_size_z_src, empty_fm));
-    auto cx = static_cast<float>(get_proto_double(msg, center_x_src.empty() ? "center_x" : center_x_src, empty_fm));
-    auto cy = static_cast<float>(get_proto_double(msg, center_y_src.empty() ? "center_y" : center_y_src, empty_fm));
-    auto cz = static_cast<float>(get_proto_double(msg, center_z_src.empty() ? "center_z" : center_z_src, empty_fm));
+    auto hx = static_cast<float>(get_value(msg, half_size_x_mapping, "half_size_x"));
+    auto hy = static_cast<float>(get_value(msg, half_size_y_mapping, "half_size_y"));
+    auto hz = static_cast<float>(get_value(msg, half_size_z_mapping, "half_size_z"));
+    auto cx = static_cast<float>(get_value(msg, center_x_mapping, "center_x"));
+    auto cy = static_cast<float>(get_value(msg, center_y_mapping, "center_y"));
+    auto cz = static_cast<float>(get_value(msg, center_z_mapping, "center_z"));
 
     auto ellipsoids = ::rerun::archetypes::Ellipsoids3D::from_centers_and_half_sizes(
         {::rerun::datatypes::Vec3D{cx, cy, cz}}, {::rerun::HalfSize3D(hx, hy, hz)});
 
-    if (!color_r_src.empty()) {
-      auto r = checked_unsigned_cast<uint8_t>(get_proto_double(msg, color_r_src, empty_fm));
-      auto g = checked_unsigned_cast<uint8_t>(get_proto_double(msg, color_g_src, empty_fm));
-      auto b = checked_unsigned_cast<uint8_t>(get_proto_double(msg, color_b_src, empty_fm));
-      auto a =
-          checked_unsigned_cast<uint8_t>(color_a_src.empty() ? 255.0 : get_proto_double(msg, color_a_src, empty_fm));
+    if (color_r_mapping) {
+      auto r = checked_unsigned_cast<uint8_t>(get_value(msg, color_r_mapping, {}));
+      auto g = checked_unsigned_cast<uint8_t>(get_value(msg, color_g_mapping, {}));
+      auto b = checked_unsigned_cast<uint8_t>(get_value(msg, color_b_mapping, {}));
+      auto a = checked_unsigned_cast<uint8_t>(color_a_mapping ? get_value(msg, color_a_mapping, {}) : 255.0);
       ellipsoids = std::move(ellipsoids).with_colors({::rerun::Color(r, g, b, a)});
     }
 
@@ -4275,26 +4582,21 @@ bool RerunConverter::log_ellipsoids3d(::rerun::RecordingStream& rec, const std::
     }
 
     const auto& item = ref->GetRepeatedMessage(msg, vec_field, i);
-    FieldMapping empty_fm;
-    auto hx =
-        static_cast<float>(get_proto_double(item, half_size_x_src.empty() ? "half_size_x" : half_size_x_src, empty_fm));
-    auto hy =
-        static_cast<float>(get_proto_double(item, half_size_y_src.empty() ? "half_size_y" : half_size_y_src, empty_fm));
-    auto hz =
-        static_cast<float>(get_proto_double(item, half_size_z_src.empty() ? "half_size_z" : half_size_z_src, empty_fm));
-    auto cx = static_cast<float>(get_proto_double(item, center_x_src.empty() ? "center_x" : center_x_src, empty_fm));
-    auto cy = static_cast<float>(get_proto_double(item, center_y_src.empty() ? "center_y" : center_y_src, empty_fm));
-    auto cz = static_cast<float>(get_proto_double(item, center_z_src.empty() ? "center_z" : center_z_src, empty_fm));
+    auto hx = static_cast<float>(get_value(item, half_size_x_mapping, "half_size_x"));
+    auto hy = static_cast<float>(get_value(item, half_size_y_mapping, "half_size_y"));
+    auto hz = static_cast<float>(get_value(item, half_size_z_mapping, "half_size_z"));
+    auto cx = static_cast<float>(get_value(item, center_x_mapping, "center_x"));
+    auto cy = static_cast<float>(get_value(item, center_y_mapping, "center_y"));
+    auto cz = static_cast<float>(get_value(item, center_z_mapping, "center_z"));
 
     half_sizes.emplace_back(hx, hy, hz);
     centers.emplace_back(cx, cy, cz);
 
-    if (!color_r_src.empty()) {
-      auto r = checked_unsigned_cast<uint8_t>(get_proto_double(item, color_r_src, empty_fm));
-      auto g = checked_unsigned_cast<uint8_t>(get_proto_double(item, color_g_src, empty_fm));
-      auto b = checked_unsigned_cast<uint8_t>(get_proto_double(item, color_b_src, empty_fm));
-      auto a =
-          checked_unsigned_cast<uint8_t>(color_a_src.empty() ? 255.0 : get_proto_double(item, color_a_src, empty_fm));
+    if (color_r_mapping) {
+      auto r = checked_unsigned_cast<uint8_t>(get_value(item, color_r_mapping, {}));
+      auto g = checked_unsigned_cast<uint8_t>(get_value(item, color_g_mapping, {}));
+      auto b = checked_unsigned_cast<uint8_t>(get_value(item, color_b_mapping, {}));
+      auto a = checked_unsigned_cast<uint8_t>(color_a_mapping ? get_value(item, color_a_mapping, {}) : 255.0);
       colors.emplace_back(r, g, b, a);
     }
   }
@@ -4316,16 +4618,16 @@ bool RerunConverter::log_ellipsoids3d(::rerun::RecordingStream& rec, const std::
 bool RerunConverter::log_geo_line_strings(::rerun::RecordingStream& rec, const std::string& entity_path,
                                           const RerunMap& mapping, const google::protobuf::Message& msg) {
   std::string entities_src;
-  std::string lat_src;
-  std::string lon_src;
+  const FieldMapping* lat_mapping = nullptr;
+  const FieldMapping* lon_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "entities" || fm.target == "line_strings" || fm.target == "points") {
       entities_src = fm.source;
     } else if (fm.target == "latitude" || fm.target == "lat") {
-      lat_src = fm.source;
+      lat_mapping = &fm;
     } else if (fm.target == "longitude" || fm.target == "lon") {
-      lon_src = fm.source;
+      lon_mapping = &fm;
     }
   }
 
@@ -4344,8 +4646,10 @@ bool RerunConverter::log_geo_line_strings(::rerun::RecordingStream& rec, const s
 
     for (int i = 0; i < count; ++i) {
       const auto& item = ref->GetRepeatedMessage(msg, vec_field, i);
-      double lat = get_proto_double(item, lat_src.empty() ? "latitude" : lat_src, empty_fm);
-      double lon = get_proto_double(item, lon_src.empty() ? "longitude" : lon_src, empty_fm);
+      double lat = lat_mapping ? get_proto_double(item, lat_mapping->source, *lat_mapping)
+                               : get_proto_double(item, "latitude", empty_fm);
+      double lon = lon_mapping ? get_proto_double(item, lon_mapping->source, *lon_mapping)
+                               : get_proto_double(item, "longitude", empty_fm);
       lat_lons.emplace_back(lat, lon);
     }
 
@@ -4363,10 +4667,12 @@ bool RerunConverter::log_geo_line_strings(::rerun::RecordingStream& rec, const s
 bool RerunConverter::log_bar_chart(::rerun::RecordingStream& rec, const std::string& entity_path,
                                    const RerunMap& mapping, const google::protobuf::Message& msg) {
   std::string values_src;
+  const FieldMapping* values_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "values") {
       values_src = fm.source;
+      values_mapping = &fm;
       break;
     }
   }
@@ -4378,12 +4684,19 @@ bool RerunConverter::log_bar_chart(::rerun::RecordingStream& rec, const std::str
   const auto* values_field = find_proto_field_cached(*desc, field_name);
 
   if VUNLIKELY (!values_field) {
-    return false;
+    if (!values_mapping) {
+      return false;
+    }
+
+    double value = get_proto_double(msg, values_mapping->source, *values_mapping);
+    rec.log(entity_path, ::rerun::archetypes::BarChart::f64({value}));
+    return true;
   }
 
   if VUNLIKELY (!values_field->is_repeated()) {
     FieldMapping empty_fm;
-    double value = get_proto_double(msg, field_name, empty_fm);
+    double value = values_mapping ? get_proto_double(msg, values_mapping->source, *values_mapping)
+                                  : get_proto_double(msg, field_name, empty_fm);
     rec.log(entity_path, ::rerun::archetypes::BarChart::f64({value}));
     return true;
   }
@@ -4418,28 +4731,28 @@ bool RerunConverter::log_bar_chart(::rerun::RecordingStream& rec, const std::str
 bool RerunConverter::log_annotation_context(::rerun::RecordingStream& rec, const std::string& entity_path,
                                             const RerunMap& mapping, const google::protobuf::Message& msg) {
   std::string entities_src;
-  std::string class_id_src;
-  std::string label_src;
-  std::string color_r_src;
-  std::string color_g_src;
-  std::string color_b_src;
-  std::string color_a_src;
+  const FieldMapping* class_id_mapping = nullptr;
+  const FieldMapping* label_mapping = nullptr;
+  const FieldMapping* color_r_mapping = nullptr;
+  const FieldMapping* color_g_mapping = nullptr;
+  const FieldMapping* color_b_mapping = nullptr;
+  const FieldMapping* color_a_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "entities" || fm.target == "annotations" || fm.target == "class_descriptions") {
       entities_src = fm.source;
     } else if (fm.target == "class_id") {
-      class_id_src = fm.source;
+      class_id_mapping = &fm;
     } else if (fm.target == "label") {
-      label_src = fm.source;
+      label_mapping = &fm;
     } else if (fm.target == "color_r") {
-      color_r_src = fm.source;
+      color_r_mapping = &fm;
     } else if (fm.target == "color_g") {
-      color_g_src = fm.source;
+      color_g_mapping = &fm;
     } else if (fm.target == "color_b") {
-      color_b_src = fm.source;
+      color_b_mapping = &fm;
     } else if (fm.target == "color_a") {
-      color_a_src = fm.source;
+      color_a_mapping = &fm;
     }
   }
 
@@ -4466,22 +4779,20 @@ bool RerunConverter::log_annotation_context(::rerun::RecordingStream& rec, const
     FieldMapping empty_fm;
 
     auto class_id = checked_unsigned_cast<uint16_t>(
-        get_proto_double(item, class_id_src.empty() ? "class_id" : class_id_src, empty_fm));
+        class_id_mapping ? get_proto_double(item, class_id_mapping->source, *class_id_mapping)
+                         : get_proto_double(item, "class_id", empty_fm));
 
-    std::string label;
+    auto label = label_mapping ? get_proto_string(item, label_mapping->source, *label_mapping)
+                               : get_proto_string(item, "label", empty_fm);
 
-    if (!label_src.empty()) {
-      label = get_proto_string(item, label_src, empty_fm);
-    } else {
-      label = get_proto_string(item, "label", empty_fm);
-    }
-
-    if (!color_r_src.empty()) {
-      auto r = checked_unsigned_cast<uint8_t>(get_proto_double(item, color_r_src, empty_fm));
-      auto g = checked_unsigned_cast<uint8_t>(get_proto_double(item, color_g_src, empty_fm));
-      auto b = checked_unsigned_cast<uint8_t>(get_proto_double(item, color_b_src, empty_fm));
-      auto a =
-          checked_unsigned_cast<uint8_t>(color_a_src.empty() ? 255.0 : get_proto_double(item, color_a_src, empty_fm));
+    if (color_r_mapping) {
+      auto r = checked_unsigned_cast<uint8_t>(get_proto_double(item, color_r_mapping->source, *color_r_mapping));
+      auto g = checked_unsigned_cast<uint8_t>(
+          color_g_mapping ? get_proto_double(item, color_g_mapping->source, *color_g_mapping) : 0.0);
+      auto b = checked_unsigned_cast<uint8_t>(
+          color_b_mapping ? get_proto_double(item, color_b_mapping->source, *color_b_mapping) : 0.0);
+      auto a = checked_unsigned_cast<uint8_t>(
+          color_a_mapping ? get_proto_double(item, color_a_mapping->source, *color_a_mapping) : 255.0);
 
       if (label.empty()) {
         annotations.emplace_back(class_id, ::rerun::datatypes::Rgba32(r, g, b, a));
@@ -4515,51 +4826,58 @@ bool RerunConverter::log_annotation_context(::rerun::RecordingStream& rec, const
 bool RerunConverter::log_capsules3d(::rerun::RecordingStream& rec, const std::string& entity_path,
                                     const RerunMap& mapping, const google::protobuf::Message& msg) {
   std::string entities_src;
-  std::string length_src;
-  std::string radius_src;
-  std::string center_x_src;
-  std::string center_y_src;
-  std::string center_z_src;
-  std::string color_r_src;
-  std::string color_g_src;
-  std::string color_b_src;
-  std::string color_a_src;
-  std::string qx_src;
-  std::string qy_src;
-  std::string qz_src;
-  std::string qw_src;
+  const FieldMapping* length_mapping = nullptr;
+  const FieldMapping* radius_mapping = nullptr;
+  const FieldMapping* center_x_mapping = nullptr;
+  const FieldMapping* center_y_mapping = nullptr;
+  const FieldMapping* center_z_mapping = nullptr;
+  const FieldMapping* color_r_mapping = nullptr;
+  const FieldMapping* color_g_mapping = nullptr;
+  const FieldMapping* color_b_mapping = nullptr;
+  const FieldMapping* color_a_mapping = nullptr;
+  const FieldMapping* qx_mapping = nullptr;
+  const FieldMapping* qy_mapping = nullptr;
+  const FieldMapping* qz_mapping = nullptr;
+  const FieldMapping* qw_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "entities") {
       entities_src = fm.source;
     } else if (fm.target == "length") {
-      length_src = fm.source;
+      length_mapping = &fm;
     } else if (fm.target == "radius") {
-      radius_src = fm.source;
+      radius_mapping = &fm;
     } else if (fm.target == "center_x") {
-      center_x_src = fm.source;
+      center_x_mapping = &fm;
     } else if (fm.target == "center_y") {
-      center_y_src = fm.source;
+      center_y_mapping = &fm;
     } else if (fm.target == "center_z") {
-      center_z_src = fm.source;
+      center_z_mapping = &fm;
     } else if (fm.target == "color_r") {
-      color_r_src = fm.source;
+      color_r_mapping = &fm;
     } else if (fm.target == "color_g") {
-      color_g_src = fm.source;
+      color_g_mapping = &fm;
     } else if (fm.target == "color_b") {
-      color_b_src = fm.source;
+      color_b_mapping = &fm;
     } else if (fm.target == "color_a") {
-      color_a_src = fm.source;
+      color_a_mapping = &fm;
     } else if (fm.target == "qx") {
-      qx_src = fm.source;
+      qx_mapping = &fm;
     } else if (fm.target == "qy") {
-      qy_src = fm.source;
+      qy_mapping = &fm;
     } else if (fm.target == "qz") {
-      qz_src = fm.source;
+      qz_mapping = &fm;
     } else if (fm.target == "qw") {
-      qw_src = fm.source;
+      qw_mapping = &fm;
     }
   }
+
+  FieldMapping empty_fm;
+  auto get_value = [&empty_fm](const google::protobuf::Message& value, const FieldMapping* field_mapping,
+                               std::string_view fallback) {
+    return field_mapping ? get_proto_double(value, field_mapping->source, *field_mapping)
+                         : get_proto_double(value, fallback, empty_fm);
+  };
 
   const auto* desc = msg.GetDescriptor();
   const auto* ref = msg.GetReflection();
@@ -4568,31 +4886,29 @@ bool RerunConverter::log_capsules3d(::rerun::RecordingStream& rec, const std::st
   const auto* vec_field = find_proto_field_cached(*desc, field_name);
 
   if VUNLIKELY (!vec_field || !vec_field->is_repeated()) {
-    FieldMapping empty_fm;
-    auto length = static_cast<float>(get_proto_double(msg, length_src.empty() ? "length" : length_src, empty_fm));
-    auto radius = static_cast<float>(get_proto_double(msg, radius_src.empty() ? "radius" : radius_src, empty_fm));
+    auto length = static_cast<float>(get_value(msg, length_mapping, "length"));
+    auto radius = static_cast<float>(get_value(msg, radius_mapping, "radius"));
 
     auto capsules = ::rerun::archetypes::Capsules3D::from_lengths_and_radii({length}, {radius});
 
-    auto cx = static_cast<float>(get_proto_double(msg, center_x_src.empty() ? "center_x" : center_x_src, empty_fm));
-    auto cy = static_cast<float>(get_proto_double(msg, center_y_src.empty() ? "center_y" : center_y_src, empty_fm));
-    auto cz = static_cast<float>(get_proto_double(msg, center_z_src.empty() ? "center_z" : center_z_src, empty_fm));
+    auto cx = static_cast<float>(get_value(msg, center_x_mapping, "center_x"));
+    auto cy = static_cast<float>(get_value(msg, center_y_mapping, "center_y"));
+    auto cz = static_cast<float>(get_value(msg, center_z_mapping, "center_z"));
     capsules = std::move(capsules).with_translations({::rerun::components::Translation3D(cx, cy, cz)});
 
-    if (!qx_src.empty()) {
-      auto qx = static_cast<float>(get_proto_double(msg, qx_src, empty_fm));
-      auto qy = static_cast<float>(get_proto_double(msg, qy_src, empty_fm));
-      auto qz = static_cast<float>(get_proto_double(msg, qz_src, empty_fm));
-      auto qw = static_cast<float>(get_proto_double(msg, qw_src, empty_fm));
+    if (qx_mapping) {
+      auto qx = static_cast<float>(get_value(msg, qx_mapping, {}));
+      auto qy = static_cast<float>(get_value(msg, qy_mapping, {}));
+      auto qz = static_cast<float>(get_value(msg, qz_mapping, {}));
+      auto qw = static_cast<float>(get_value(msg, qw_mapping, {}));
       capsules = std::move(capsules).with_quaternions({::rerun::datatypes::Quaternion::from_xyzw(qx, qy, qz, qw)});
     }
 
-    if (!color_r_src.empty()) {
-      auto r = checked_unsigned_cast<uint8_t>(get_proto_double(msg, color_r_src, empty_fm));
-      auto g = checked_unsigned_cast<uint8_t>(get_proto_double(msg, color_g_src, empty_fm));
-      auto b = checked_unsigned_cast<uint8_t>(get_proto_double(msg, color_b_src, empty_fm));
-      auto a =
-          checked_unsigned_cast<uint8_t>(color_a_src.empty() ? 255.0 : get_proto_double(msg, color_a_src, empty_fm));
+    if (color_r_mapping) {
+      auto r = checked_unsigned_cast<uint8_t>(get_value(msg, color_r_mapping, {}));
+      auto g = checked_unsigned_cast<uint8_t>(get_value(msg, color_g_mapping, {}));
+      auto b = checked_unsigned_cast<uint8_t>(get_value(msg, color_b_mapping, {}));
+      auto a = checked_unsigned_cast<uint8_t>(color_a_mapping ? get_value(msg, color_a_mapping, {}) : 255.0);
       capsules = std::move(capsules).with_colors({::rerun::Color(r, g, b, a)});
     }
 
@@ -4616,30 +4932,26 @@ bool RerunConverter::log_capsules3d(::rerun::RecordingStream& rec, const std::st
     }
 
     const auto& item = ref->GetRepeatedMessage(msg, vec_field, i);
-    FieldMapping empty_fm;
-    lengths.emplace_back(
-        static_cast<float>(get_proto_double(item, length_src.empty() ? "length" : length_src, empty_fm)));
-    radii.emplace_back(
-        static_cast<float>(get_proto_double(item, radius_src.empty() ? "radius" : radius_src, empty_fm)));
-    auto cx = static_cast<float>(get_proto_double(item, center_x_src.empty() ? "center_x" : center_x_src, empty_fm));
-    auto cy = static_cast<float>(get_proto_double(item, center_y_src.empty() ? "center_y" : center_y_src, empty_fm));
-    auto cz = static_cast<float>(get_proto_double(item, center_z_src.empty() ? "center_z" : center_z_src, empty_fm));
+    lengths.emplace_back(static_cast<float>(get_value(item, length_mapping, "length")));
+    radii.emplace_back(static_cast<float>(get_value(item, radius_mapping, "radius")));
+    auto cx = static_cast<float>(get_value(item, center_x_mapping, "center_x"));
+    auto cy = static_cast<float>(get_value(item, center_y_mapping, "center_y"));
+    auto cz = static_cast<float>(get_value(item, center_z_mapping, "center_z"));
     translations.emplace_back(cx, cy, cz);
 
-    if (!qx_src.empty()) {
-      auto qx = static_cast<float>(get_proto_double(item, qx_src, empty_fm));
-      auto qy = static_cast<float>(get_proto_double(item, qy_src, empty_fm));
-      auto qz = static_cast<float>(get_proto_double(item, qz_src, empty_fm));
-      auto qw = static_cast<float>(get_proto_double(item, qw_src, empty_fm));
+    if (qx_mapping) {
+      auto qx = static_cast<float>(get_value(item, qx_mapping, {}));
+      auto qy = static_cast<float>(get_value(item, qy_mapping, {}));
+      auto qz = static_cast<float>(get_value(item, qz_mapping, {}));
+      auto qw = static_cast<float>(get_value(item, qw_mapping, {}));
       quaternions.emplace_back(::rerun::datatypes::Quaternion::from_xyzw(qx, qy, qz, qw));
     }
 
-    if (!color_r_src.empty()) {
-      auto r = checked_unsigned_cast<uint8_t>(get_proto_double(item, color_r_src, empty_fm));
-      auto g = checked_unsigned_cast<uint8_t>(get_proto_double(item, color_g_src, empty_fm));
-      auto b = checked_unsigned_cast<uint8_t>(get_proto_double(item, color_b_src, empty_fm));
-      auto a =
-          checked_unsigned_cast<uint8_t>(color_a_src.empty() ? 255.0 : get_proto_double(item, color_a_src, empty_fm));
+    if (color_r_mapping) {
+      auto r = checked_unsigned_cast<uint8_t>(get_value(item, color_r_mapping, {}));
+      auto g = checked_unsigned_cast<uint8_t>(get_value(item, color_g_mapping, {}));
+      auto b = checked_unsigned_cast<uint8_t>(get_value(item, color_b_mapping, {}));
+      auto a = checked_unsigned_cast<uint8_t>(color_a_mapping ? get_value(item, color_a_mapping, {}) : 255.0);
       colors.emplace_back(r, g, b, a);
     }
   }
@@ -4665,16 +4977,16 @@ bool RerunConverter::log_capsules3d(::rerun::RecordingStream& rec, const std::st
 bool RerunConverter::log_encoded_depth_image(::rerun::RecordingStream& rec, const std::string& entity_path,
                                              const RerunMap& mapping, const google::protobuf::Message& msg) {
   std::string data_src;
-  std::string media_type_src;
-  std::string meter_src;
+  const FieldMapping* media_type_mapping = nullptr;
+  const FieldMapping* meter_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "data") {
       data_src = fm.source;
     } else if (fm.target == "media_type") {
-      media_type_src = fm.source;
+      media_type_mapping = &fm;
     } else if (fm.target == "meter") {
-      meter_src = fm.source;
+      meter_mapping = &fm;
     }
   }
 
@@ -4689,14 +5001,15 @@ bool RerunConverter::log_encoded_depth_image(::rerun::RecordingStream& rec, cons
   auto depth_image = ::rerun::archetypes::EncodedDepthImage(::rerun::components::Blob(std::move(blob)));
 
   FieldMapping empty_fm;
-  auto media_type_val = get_proto_string(msg, media_type_src.empty() ? "media_type" : media_type_src, empty_fm);
+  auto media_type_val = media_type_mapping ? get_proto_string(msg, media_type_mapping->source, *media_type_mapping)
+                                           : get_proto_string(msg, "media_type", empty_fm);
 
   if (!media_type_val.empty()) {
     depth_image = std::move(depth_image).with_media_type(::rerun::components::MediaType(media_type_val));
   }
 
-  if (!meter_src.empty()) {
-    auto meter_val = static_cast<float>(get_proto_double(msg, meter_src, empty_fm));
+  if (meter_mapping) {
+    auto meter_val = static_cast<float>(get_proto_double(msg, meter_mapping->source, *meter_mapping));
 
     if (meter_val > 0.0F) {
       depth_image = std::move(depth_image).with_meter(::rerun::components::DepthMeter(meter_val));
@@ -4716,13 +5029,13 @@ bool RerunConverter::log_encoded_depth_image(::rerun::RecordingStream& rec, cons
 bool RerunConverter::log_asset3d(::rerun::RecordingStream& rec, const std::string& entity_path, const RerunMap& mapping,
                                  const google::protobuf::Message& msg) {
   std::string data_src;
-  std::string media_type_src;
+  const FieldMapping* media_type_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "data") {
       data_src = fm.source;
     } else if (fm.target == "media_type") {
-      media_type_src = fm.source;
+      media_type_mapping = &fm;
     }
   }
 
@@ -4734,7 +5047,8 @@ bool RerunConverter::log_asset3d(::rerun::RecordingStream& rec, const std::strin
   }
 
   FieldMapping empty_fm;
-  auto media_type_val = get_proto_string(msg, media_type_src.empty() ? "media_type" : media_type_src, empty_fm);
+  auto media_type_val = media_type_mapping ? get_proto_string(msg, media_type_mapping->source, *media_type_mapping)
+                                           : get_proto_string(msg, "media_type", empty_fm);
 
   auto blob = ::rerun::Collection<uint8_t>::borrow(raw_data.data(), raw_data.size());
 
@@ -4749,36 +5063,43 @@ bool RerunConverter::log_asset3d(::rerun::RecordingStream& rec, const std::strin
 bool RerunConverter::log_graph_nodes(::rerun::RecordingStream& rec, const std::string& entity_path,
                                      const RerunMap& mapping, const google::protobuf::Message& msg) {
   std::string entities_src;
-  std::string node_id_src;
-  std::string pos_x_src;
-  std::string pos_y_src;
-  std::string label_src;
-  std::string color_r_src;
-  std::string color_g_src;
-  std::string color_b_src;
-  std::string color_a_src;
+  const FieldMapping* node_id_mapping = nullptr;
+  const FieldMapping* pos_x_mapping = nullptr;
+  const FieldMapping* pos_y_mapping = nullptr;
+  const FieldMapping* label_mapping = nullptr;
+  const FieldMapping* color_r_mapping = nullptr;
+  const FieldMapping* color_g_mapping = nullptr;
+  const FieldMapping* color_b_mapping = nullptr;
+  const FieldMapping* color_a_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "entities" || fm.target == "nodes") {
       entities_src = fm.source;
     } else if (fm.target == "node_id") {
-      node_id_src = fm.source;
+      node_id_mapping = &fm;
     } else if (fm.target == "position_x") {
-      pos_x_src = fm.source;
+      pos_x_mapping = &fm;
     } else if (fm.target == "position_y") {
-      pos_y_src = fm.source;
+      pos_y_mapping = &fm;
     } else if (fm.target == "label") {
-      label_src = fm.source;
+      label_mapping = &fm;
     } else if (fm.target == "color_r") {
-      color_r_src = fm.source;
+      color_r_mapping = &fm;
     } else if (fm.target == "color_g") {
-      color_g_src = fm.source;
+      color_g_mapping = &fm;
     } else if (fm.target == "color_b") {
-      color_b_src = fm.source;
+      color_b_mapping = &fm;
     } else if (fm.target == "color_a") {
-      color_a_src = fm.source;
+      color_a_mapping = &fm;
     }
   }
+
+  FieldMapping empty_fm;
+  auto get_value = [&empty_fm](const google::protobuf::Message& value, const FieldMapping* field_mapping,
+                               std::string_view fallback) {
+    return field_mapping ? get_proto_double(value, field_mapping->source, *field_mapping)
+                         : get_proto_double(value, fallback, empty_fm);
+  };
 
   const auto* desc = msg.GetDescriptor();
   const auto* ref = msg.GetReflection();
@@ -4787,8 +5108,8 @@ bool RerunConverter::log_graph_nodes(::rerun::RecordingStream& rec, const std::s
   const auto* vec_field = find_proto_field_cached(*desc, field_name);
 
   if VUNLIKELY (!vec_field || !vec_field->is_repeated()) {
-    FieldMapping empty_fm;
-    auto node_id = get_proto_string(msg, node_id_src.empty() ? "node_id" : node_id_src, empty_fm);
+    auto node_id = node_id_mapping ? get_proto_string(msg, node_id_mapping->source, *node_id_mapping)
+                                   : get_proto_string(msg, "node_id", empty_fm);
 
     if (node_id.empty()) {
       return false;
@@ -4796,26 +5117,25 @@ bool RerunConverter::log_graph_nodes(::rerun::RecordingStream& rec, const std::s
 
     auto nodes = ::rerun::archetypes::GraphNodes({::rerun::components::GraphNode(node_id)});
 
-    if (!pos_x_src.empty()) {
-      auto px = static_cast<float>(get_proto_double(msg, pos_x_src, empty_fm));
-      auto py = static_cast<float>(get_proto_double(msg, pos_y_src, empty_fm));
+    if (pos_x_mapping) {
+      auto px = static_cast<float>(get_value(msg, pos_x_mapping, {}));
+      auto py = static_cast<float>(get_value(msg, pos_y_mapping, {}));
       nodes = std::move(nodes).with_positions({::rerun::components::Position2D(px, py)});
     }
 
-    if (!label_src.empty()) {
-      auto label = get_proto_string(msg, label_src, empty_fm);
+    if (label_mapping) {
+      auto label = get_proto_string(msg, label_mapping->source, *label_mapping);
 
       if (!label.empty()) {
         nodes = std::move(nodes).with_labels({::rerun::components::Text(label)});
       }
     }
 
-    if (!color_r_src.empty()) {
-      auto r = checked_unsigned_cast<uint8_t>(get_proto_double(msg, color_r_src, empty_fm));
-      auto g = checked_unsigned_cast<uint8_t>(get_proto_double(msg, color_g_src, empty_fm));
-      auto b = checked_unsigned_cast<uint8_t>(get_proto_double(msg, color_b_src, empty_fm));
-      auto a =
-          checked_unsigned_cast<uint8_t>(color_a_src.empty() ? 255.0 : get_proto_double(msg, color_a_src, empty_fm));
+    if (color_r_mapping) {
+      auto r = checked_unsigned_cast<uint8_t>(get_value(msg, color_r_mapping, {}));
+      auto g = checked_unsigned_cast<uint8_t>(get_value(msg, color_g_mapping, {}));
+      auto b = checked_unsigned_cast<uint8_t>(get_value(msg, color_b_mapping, {}));
+      auto a = checked_unsigned_cast<uint8_t>(color_a_mapping ? get_value(msg, color_a_mapping, {}) : 255.0);
       nodes = std::move(nodes).with_colors({::rerun::Color(r, g, b, a)});
     }
 
@@ -4839,8 +5159,8 @@ bool RerunConverter::log_graph_nodes(::rerun::RecordingStream& rec, const std::s
     }
 
     const auto& item = ref->GetRepeatedMessage(msg, vec_field, i);
-    FieldMapping empty_fm;
-    auto node_id = get_proto_string(item, node_id_src.empty() ? "node_id" : node_id_src, empty_fm);
+    auto node_id = node_id_mapping ? get_proto_string(item, node_id_mapping->source, *node_id_mapping)
+                                   : get_proto_string(item, "node_id", empty_fm);
 
     if VUNLIKELY (node_id.empty()) {
       continue;
@@ -4848,23 +5168,22 @@ bool RerunConverter::log_graph_nodes(::rerun::RecordingStream& rec, const std::s
 
     node_ids.emplace_back(node_id);
 
-    if (!pos_x_src.empty()) {
-      auto px = static_cast<float>(get_proto_double(item, pos_x_src, empty_fm));
-      auto py = static_cast<float>(get_proto_double(item, pos_y_src, empty_fm));
+    if (pos_x_mapping) {
+      auto px = static_cast<float>(get_value(item, pos_x_mapping, {}));
+      auto py = static_cast<float>(get_value(item, pos_y_mapping, {}));
       positions.emplace_back(px, py);
     }
 
-    if (!label_src.empty()) {
-      auto label = get_proto_string(item, label_src, empty_fm);
+    if (label_mapping) {
+      auto label = get_proto_string(item, label_mapping->source, *label_mapping);
       labels.emplace_back(label);
     }
 
-    if (!color_r_src.empty()) {
-      auto r = checked_unsigned_cast<uint8_t>(get_proto_double(item, color_r_src, empty_fm));
-      auto g = checked_unsigned_cast<uint8_t>(get_proto_double(item, color_g_src, empty_fm));
-      auto b = checked_unsigned_cast<uint8_t>(get_proto_double(item, color_b_src, empty_fm));
-      auto a =
-          checked_unsigned_cast<uint8_t>(color_a_src.empty() ? 255.0 : get_proto_double(item, color_a_src, empty_fm));
+    if (color_r_mapping) {
+      auto r = checked_unsigned_cast<uint8_t>(get_value(item, color_r_mapping, {}));
+      auto g = checked_unsigned_cast<uint8_t>(get_value(item, color_g_mapping, {}));
+      auto b = checked_unsigned_cast<uint8_t>(get_value(item, color_b_mapping, {}));
+      auto a = checked_unsigned_cast<uint8_t>(color_a_mapping ? get_value(item, color_a_mapping, {}) : 255.0);
       colors.emplace_back(r, g, b, a);
     }
   }
@@ -4893,19 +5212,19 @@ bool RerunConverter::log_graph_nodes(::rerun::RecordingStream& rec, const std::s
 bool RerunConverter::log_graph_edges(::rerun::RecordingStream& rec, const std::string& entity_path,
                                      const RerunMap& mapping, const google::protobuf::Message& msg) {
   std::string entities_src;
-  std::string source_src;
-  std::string target_src;
-  std::string graph_type_src;
+  const FieldMapping* source_mapping = nullptr;
+  const FieldMapping* target_mapping = nullptr;
+  const FieldMapping* graph_type_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "entities" || fm.target == "edges") {
       entities_src = fm.source;
     } else if (fm.target == "source") {
-      source_src = fm.source;
+      source_mapping = &fm;
     } else if (fm.target == "target") {
-      target_src = fm.source;
+      target_mapping = &fm;
     } else if (fm.target == "graph_type") {
-      graph_type_src = fm.source;
+      graph_type_mapping = &fm;
     }
   }
 
@@ -4917,8 +5236,10 @@ bool RerunConverter::log_graph_edges(::rerun::RecordingStream& rec, const std::s
 
   if VUNLIKELY (!vec_field || !vec_field->is_repeated()) {
     FieldMapping empty_fm;
-    auto src = get_proto_string(msg, source_src.empty() ? "source" : source_src, empty_fm);
-    auto tgt = get_proto_string(msg, target_src.empty() ? "target" : target_src, empty_fm);
+    auto src = source_mapping ? get_proto_string(msg, source_mapping->source, *source_mapping)
+                              : get_proto_string(msg, "source", empty_fm);
+    auto tgt = target_mapping ? get_proto_string(msg, target_mapping->source, *target_mapping)
+                              : get_proto_string(msg, "target", empty_fm);
 
     if (src.empty() || tgt.empty()) {
       return false;
@@ -4926,7 +5247,8 @@ bool RerunConverter::log_graph_edges(::rerun::RecordingStream& rec, const std::s
 
     auto edges = ::rerun::archetypes::GraphEdges({::rerun::components::GraphEdge(src, tgt)});
 
-    auto type_str = get_proto_string(msg, graph_type_src.empty() ? "graph_type" : graph_type_src, empty_fm);
+    auto type_str = graph_type_mapping ? get_proto_string(msg, graph_type_mapping->source, *graph_type_mapping)
+                                       : get_proto_string(msg, "graph_type", empty_fm);
 
     if (type_str == "directed" || type_str == "Directed") {
       edges = std::move(edges).with_graph_type(::rerun::components::GraphType::Directed);
@@ -4947,8 +5269,10 @@ bool RerunConverter::log_graph_edges(::rerun::RecordingStream& rec, const std::s
 
     const auto& item = ref->GetRepeatedMessage(msg, vec_field, i);
     FieldMapping empty_fm;
-    auto src = get_proto_string(item, source_src.empty() ? "source" : source_src, empty_fm);
-    auto tgt = get_proto_string(item, target_src.empty() ? "target" : target_src, empty_fm);
+    auto src = source_mapping ? get_proto_string(item, source_mapping->source, *source_mapping)
+                              : get_proto_string(item, "source", empty_fm);
+    auto tgt = target_mapping ? get_proto_string(item, target_mapping->source, *target_mapping)
+                              : get_proto_string(item, "target", empty_fm);
 
     if VUNLIKELY (src.empty() || tgt.empty()) {
       continue;
@@ -4961,7 +5285,8 @@ bool RerunConverter::log_graph_edges(::rerun::RecordingStream& rec, const std::s
     auto edges = ::rerun::archetypes::GraphEdges(std::move(edge_list));
 
     FieldMapping empty_fm;
-    auto type_str = get_proto_string(msg, graph_type_src.empty() ? "graph_type" : graph_type_src, empty_fm);
+    auto type_str = graph_type_mapping ? get_proto_string(msg, graph_type_mapping->source, *graph_type_mapping)
+                                       : get_proto_string(msg, "graph_type", empty_fm);
 
     if (type_str == "directed" || type_str == "Directed") {
       edges = std::move(edges).with_graph_type(::rerun::components::GraphType::Directed);
@@ -4975,16 +5300,17 @@ bool RerunConverter::log_graph_edges(::rerun::RecordingStream& rec, const std::s
 
 bool RerunConverter::log_view_coordinates(::rerun::RecordingStream& rec, const std::string& entity_path,
                                           const RerunMap& mapping, const google::protobuf::Message& msg) {
-  std::string system_src;
+  const FieldMapping* system_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "system" || fm.target == "coordinates") {
-      system_src = fm.source;
+      system_mapping = &fm;
     }
   }
 
   FieldMapping empty_fm;
-  auto system_str = get_proto_string(msg, system_src.empty() ? "system" : system_src, empty_fm);
+  auto system_str = system_mapping ? get_proto_string(msg, system_mapping->source, *system_mapping)
+                                   : get_proto_string(msg, "system", empty_fm);
 
   if (system_str.empty()) {
     system_str = get_proto_string(msg, "coordinates", empty_fm);
@@ -4998,42 +5324,49 @@ bool RerunConverter::log_view_coordinates(::rerun::RecordingStream& rec, const s
 bool RerunConverter::log_instance_poses3d(::rerun::RecordingStream& rec, const std::string& entity_path,
                                           const RerunMap& mapping, const google::protobuf::Message& msg) {
   std::string entities_src;
-  std::string tx_src;
-  std::string ty_src;
-  std::string tz_src;
-  std::string qx_src;
-  std::string qy_src;
-  std::string qz_src;
-  std::string qw_src;
-  std::string sx_src;
-  std::string sy_src;
-  std::string sz_src;
+  const FieldMapping* tx_mapping = nullptr;
+  const FieldMapping* ty_mapping = nullptr;
+  const FieldMapping* tz_mapping = nullptr;
+  const FieldMapping* qx_mapping = nullptr;
+  const FieldMapping* qy_mapping = nullptr;
+  const FieldMapping* qz_mapping = nullptr;
+  const FieldMapping* qw_mapping = nullptr;
+  const FieldMapping* sx_mapping = nullptr;
+  const FieldMapping* sy_mapping = nullptr;
+  const FieldMapping* sz_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "entities" || fm.target == "poses") {
       entities_src = fm.source;
     } else if (fm.target == "translation_x") {
-      tx_src = fm.source;
+      tx_mapping = &fm;
     } else if (fm.target == "translation_y") {
-      ty_src = fm.source;
+      ty_mapping = &fm;
     } else if (fm.target == "translation_z") {
-      tz_src = fm.source;
+      tz_mapping = &fm;
     } else if (fm.target == "qx") {
-      qx_src = fm.source;
+      qx_mapping = &fm;
     } else if (fm.target == "qy") {
-      qy_src = fm.source;
+      qy_mapping = &fm;
     } else if (fm.target == "qz") {
-      qz_src = fm.source;
+      qz_mapping = &fm;
     } else if (fm.target == "qw") {
-      qw_src = fm.source;
+      qw_mapping = &fm;
     } else if (fm.target == "scale_x") {
-      sx_src = fm.source;
+      sx_mapping = &fm;
     } else if (fm.target == "scale_y") {
-      sy_src = fm.source;
+      sy_mapping = &fm;
     } else if (fm.target == "scale_z") {
-      sz_src = fm.source;
+      sz_mapping = &fm;
     }
   }
+
+  FieldMapping empty_fm;
+  auto get_value = [&empty_fm](const google::protobuf::Message& value, const FieldMapping* field_mapping,
+                               std::string_view fallback) {
+    return field_mapping ? get_proto_double(value, field_mapping->source, *field_mapping)
+                         : get_proto_double(value, fallback, empty_fm);
+  };
 
   const auto* desc = msg.GetDescriptor();
   const auto* ref = msg.GetReflection();
@@ -5042,26 +5375,25 @@ bool RerunConverter::log_instance_poses3d(::rerun::RecordingStream& rec, const s
   const auto* vec_field = find_proto_field_cached(*desc, field_name);
 
   if VUNLIKELY (!vec_field || !vec_field->is_repeated()) {
-    FieldMapping empty_fm;
     auto poses = ::rerun::archetypes::InstancePoses3D();
 
-    auto tx = static_cast<float>(get_proto_double(msg, tx_src.empty() ? "translation_x" : tx_src, empty_fm));
-    auto ty = static_cast<float>(get_proto_double(msg, ty_src.empty() ? "translation_y" : ty_src, empty_fm));
-    auto tz = static_cast<float>(get_proto_double(msg, tz_src.empty() ? "translation_z" : tz_src, empty_fm));
+    auto tx = static_cast<float>(get_value(msg, tx_mapping, "translation_x"));
+    auto ty = static_cast<float>(get_value(msg, ty_mapping, "translation_y"));
+    auto tz = static_cast<float>(get_value(msg, tz_mapping, "translation_z"));
     poses = std::move(poses).with_translations({::rerun::components::Translation3D(tx, ty, tz)});
 
-    if (!qx_src.empty()) {
-      auto qx = static_cast<float>(get_proto_double(msg, qx_src, empty_fm));
-      auto qy = static_cast<float>(get_proto_double(msg, qy_src, empty_fm));
-      auto qz = static_cast<float>(get_proto_double(msg, qz_src, empty_fm));
-      auto qw = static_cast<float>(get_proto_double(msg, qw_src, empty_fm));
+    if (qx_mapping) {
+      auto qx = static_cast<float>(get_value(msg, qx_mapping, {}));
+      auto qy = static_cast<float>(get_value(msg, qy_mapping, {}));
+      auto qz = static_cast<float>(get_value(msg, qz_mapping, {}));
+      auto qw = static_cast<float>(get_value(msg, qw_mapping, {}));
       poses = std::move(poses).with_quaternions({::rerun::datatypes::Quaternion::from_xyzw(qx, qy, qz, qw)});
     }
 
-    if (!sx_src.empty()) {
-      auto sx = static_cast<float>(get_proto_double(msg, sx_src, empty_fm));
-      auto sy = static_cast<float>(get_proto_double(msg, sy_src, empty_fm));
-      auto sz = static_cast<float>(get_proto_double(msg, sz_src, empty_fm));
+    if (sx_mapping) {
+      auto sx = static_cast<float>(get_value(msg, sx_mapping, {}));
+      auto sy = static_cast<float>(get_value(msg, sy_mapping, {}));
+      auto sz = static_cast<float>(get_value(msg, sz_mapping, {}));
       poses = std::move(poses).with_scales({::rerun::components::Scale3D(sx, sy, sz)});
     }
 
@@ -5081,24 +5413,23 @@ bool RerunConverter::log_instance_poses3d(::rerun::RecordingStream& rec, const s
     }
 
     const auto& item = ref->GetRepeatedMessage(msg, vec_field, i);
-    FieldMapping empty_fm;
-    auto tx = static_cast<float>(get_proto_double(item, tx_src.empty() ? "translation_x" : tx_src, empty_fm));
-    auto ty = static_cast<float>(get_proto_double(item, ty_src.empty() ? "translation_y" : ty_src, empty_fm));
-    auto tz = static_cast<float>(get_proto_double(item, tz_src.empty() ? "translation_z" : tz_src, empty_fm));
+    auto tx = static_cast<float>(get_value(item, tx_mapping, "translation_x"));
+    auto ty = static_cast<float>(get_value(item, ty_mapping, "translation_y"));
+    auto tz = static_cast<float>(get_value(item, tz_mapping, "translation_z"));
     translations.emplace_back(tx, ty, tz);
 
-    if (!qx_src.empty()) {
-      auto qx = static_cast<float>(get_proto_double(item, qx_src, empty_fm));
-      auto qy = static_cast<float>(get_proto_double(item, qy_src, empty_fm));
-      auto qz = static_cast<float>(get_proto_double(item, qz_src, empty_fm));
-      auto qw = static_cast<float>(get_proto_double(item, qw_src, empty_fm));
+    if (qx_mapping) {
+      auto qx = static_cast<float>(get_value(item, qx_mapping, {}));
+      auto qy = static_cast<float>(get_value(item, qy_mapping, {}));
+      auto qz = static_cast<float>(get_value(item, qz_mapping, {}));
+      auto qw = static_cast<float>(get_value(item, qw_mapping, {}));
       quaternions.emplace_back(::rerun::datatypes::Quaternion::from_xyzw(qx, qy, qz, qw));
     }
 
-    if (!sx_src.empty()) {
-      auto sx = static_cast<float>(get_proto_double(item, sx_src, empty_fm));
-      auto sy = static_cast<float>(get_proto_double(item, sy_src, empty_fm));
-      auto sz = static_cast<float>(get_proto_double(item, sz_src, empty_fm));
+    if (sx_mapping) {
+      auto sx = static_cast<float>(get_value(item, sx_mapping, {}));
+      auto sy = static_cast<float>(get_value(item, sy_mapping, {}));
+      auto sz = static_cast<float>(get_value(item, sz_mapping, {}));
       scales.emplace_back(sx, sy, sz);
     }
   }
@@ -5124,13 +5455,13 @@ bool RerunConverter::log_instance_poses3d(::rerun::RecordingStream& rec, const s
 bool RerunConverter::log_asset_video(::rerun::RecordingStream& rec, const std::string& entity_path,
                                      const RerunMap& mapping, const google::protobuf::Message& msg) {
   std::string data_src;
-  std::string media_type_src;
+  const FieldMapping* media_type_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "data") {
       data_src = fm.source;
     } else if (fm.target == "media_type") {
-      media_type_src = fm.source;
+      media_type_mapping = &fm;
     }
   }
 
@@ -5142,7 +5473,8 @@ bool RerunConverter::log_asset_video(::rerun::RecordingStream& rec, const std::s
   }
 
   FieldMapping empty_fm;
-  auto media_type_val = get_proto_string(msg, media_type_src.empty() ? "media_type" : media_type_src, empty_fm);
+  auto media_type_val = media_type_mapping ? get_proto_string(msg, media_type_mapping->source, *media_type_mapping)
+                                           : get_proto_string(msg, "media_type", empty_fm);
 
   auto blob = ::rerun::Collection<uint8_t>::borrow(raw_data.data(), raw_data.size());
   auto video = ::rerun::archetypes::AssetVideo::from_bytes(
@@ -5155,26 +5487,27 @@ bool RerunConverter::log_asset_video(::rerun::RecordingStream& rec, const std::s
 
 bool RerunConverter::log_video_frame_reference(::rerun::RecordingStream& rec, const std::string& entity_path,
                                                const RerunMap& mapping, const google::protobuf::Message& msg) {
-  std::string timestamp_ns_src;
-  std::string video_reference_src;
+  const FieldMapping* timestamp_ns_mapping = nullptr;
+  const FieldMapping* video_reference_mapping = nullptr;
 
   for (const auto& fm : mapping.field_mappings) {
     if (fm.target == "timestamp_ns") {
-      timestamp_ns_src = fm.source;
+      timestamp_ns_mapping = &fm;
     } else if (fm.target == "video_reference") {
-      video_reference_src = fm.source;
+      video_reference_mapping = &fm;
     }
   }
 
   FieldMapping empty_fm;
-  auto ts_ns = static_cast<int64_t>(
-      get_proto_double(msg, timestamp_ns_src.empty() ? "timestamp_ns" : timestamp_ns_src, empty_fm));
+  auto ts_ns = static_cast<int64_t>(timestamp_ns_mapping
+                                        ? get_proto_double(msg, timestamp_ns_mapping->source, *timestamp_ns_mapping)
+                                        : get_proto_double(msg, "timestamp_ns", empty_fm));
 
   auto frame_ref =
       ::rerun::archetypes::VideoFrameReference(::rerun::components::VideoTimestamp(std::chrono::nanoseconds(ts_ns)));
 
-  if (!video_reference_src.empty()) {
-    auto ref_path = get_proto_string(msg, video_reference_src, empty_fm);
+  if (video_reference_mapping) {
+    auto ref_path = get_proto_string(msg, video_reference_mapping->source, *video_reference_mapping);
 
     if (!ref_path.empty()) {
       frame_ref = std::move(frame_ref).with_video_reference(ref_path);
@@ -5468,10 +5801,22 @@ bool RerunConverter::log_plugin_json(::rerun::RecordingStream& rec, const std::s
       auto cx = mat[0][2].get<float>();
       auto cy = mat[1][2].get<float>();
 
-      auto width = j.value("resolution", Json::array()).size() >= 2 ? j["resolution"][0].get<float>() : cx * 2.0F;
-      auto height = j.value("resolution", Json::array()).size() >= 2 ? j["resolution"][1].get<float>() : cy * 2.0F;
+      auto width = cx * 2.0F;
+      auto height = cy * 2.0F;
+      const auto resolution = j.find("resolution");
 
-      auto pinhole = ::rerun::archetypes::Pinhole::from_focal_length_and_resolution({fx, fy}, {width, height});
+      if (resolution != j.end() && resolution->is_array() && resolution->size() >= 2) {
+        width = (*resolution)[0].get<float>();
+        height = (*resolution)[1].get<float>();
+      }
+
+      if VUNLIKELY (!std::isfinite(fx) || !std::isfinite(fy) || !std::isfinite(cx) || !std::isfinite(cy) ||
+                    !std::isfinite(width) || !std::isfinite(height) || fx <= 0.0F || fy <= 0.0F || width <= 0.0F ||
+                    height <= 0.0F) {
+        return false;
+      }
+
+      auto pinhole = make_pinhole(fx, fy, cx, cy, width, height);
 
       rec.log(entity_path, pinhole);
       return true;
@@ -5494,9 +5839,19 @@ bool RerunConverter::log_plugin_json(::rerun::RecordingStream& rec, const std::s
       return false;
     }
 
-    auto pixel_data = ::rerun::Collection<uint8_t>::borrow(data.data(), data.size());
-    rec.log(entity_path, ::rerun::archetypes::DepthImage(pixel_data, {width, height}));
-    return true;
+    std::string_view datatype;
+    const auto datatype_iter = j.find("datatype");
+
+    if (datatype_iter != j.end()) {
+      if VUNLIKELY (!datatype_iter->is_string()) {
+        return false;
+      }
+
+      datatype = datatype_iter->get_ref<const std::string&>();
+    }
+
+    const auto meter = j.value("meter", 0.0F);
+    return log_depth_image_bytes(rec, entity_path, data.data(), data.size(), width, height, datatype, meter);
   }
 
   if (archetype == "Image") {
@@ -5513,8 +5868,12 @@ bool RerunConverter::log_plugin_json(::rerun::RecordingStream& rec, const std::s
       return false;
     }
 
-    const auto pixel_count = static_cast<size_t>(width) * static_cast<size_t>(height);
-    const auto bytes_per_pixel = pixel_count == 0 ? 0 : (data.size() / pixel_count);
+    size_t pixel_count = 0;
+
+    if VUNLIKELY (!mul_size(static_cast<size_t>(width), static_cast<size_t>(height), pixel_count)) {
+      return false;
+    }
+
     auto color_model = normalize_plugin_text(j.value("color_model", std::string{}));
 
     if (color_model.empty()) {
@@ -5523,22 +5882,27 @@ bool RerunConverter::log_plugin_json(::rerun::RecordingStream& rec, const std::s
 
     auto rerun_color_model = ::rerun::datatypes::ColorModel::L;
 
-    if (color_model == "rgba" || color_model == "rgba8" || color_model == "bgra" || color_model == "bgra8") {
+    if (color_model == "rgba" || color_model == "rgba8") {
       rerun_color_model = ::rerun::datatypes::ColorModel::RGBA;
-    } else if (color_model == "rgb" || color_model == "rgb8" || color_model == "bgr" || color_model == "bgr8") {
+    } else if (color_model == "bgra" || color_model == "bgra8") {
+      rerun_color_model = ::rerun::datatypes::ColorModel::BGRA;
+    } else if (color_model == "rgb" || color_model == "rgb8") {
       rerun_color_model = ::rerun::datatypes::ColorModel::RGB;
+    } else if (color_model == "bgr" || color_model == "bgr8") {
+      rerun_color_model = ::rerun::datatypes::ColorModel::BGR;
     } else if (!(color_model == "l" || color_model == "gray" || color_model == "grey" || color_model == "mono8" ||
                  color_model == "y8")) {
-      if (bytes_per_pixel >= 4) {
+      size_t expected_size = 0;
+
+      if (mul_size(pixel_count, 4U, expected_size) && data.size() == expected_size) {
         rerun_color_model = ::rerun::datatypes::ColorModel::RGBA;
-      } else if (bytes_per_pixel >= 3) {
+      } else if (mul_size(pixel_count, 3U, expected_size) && data.size() == expected_size) {
         rerun_color_model = ::rerun::datatypes::ColorModel::RGB;
       }
     }
 
-    auto pixel_data = ::rerun::Collection<uint8_t>::borrow(data.data(), data.size());
-    rec.log(entity_path, ::rerun::archetypes::Image(pixel_data, {width, height}, rerun_color_model));
-    return true;
+    return log_typed_image(rec, entity_path, data.data(), data.size(), width, height, rerun_color_model,
+                           ::rerun::datatypes::ChannelDatatype::U8);
   }
 
   if (archetype == "LineStrips3D") {
@@ -5733,6 +6097,13 @@ bool RerunConverter::log_plugin_json(::rerun::RecordingStream& rec, const std::s
     auto data = decode_plugin_binary(j);
 
     if (data.empty()) {
+      return false;
+    }
+
+    size_t pixel_count = 0;
+
+    if VUNLIKELY (!mul_size(static_cast<size_t>(width), static_cast<size_t>(height), pixel_count) ||
+                  data.size() != pixel_count) {
       return false;
     }
 
@@ -6400,7 +6771,7 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
   const reflection::Schema* schema = nullptr;
 
   if VUNLIKELY (!resolve_thread_local_fbs_schema(
-                    ser, this,
+                    ser, cache_owner_id_,
                     [this](const std::string& type_name, std::string& schema_data) {
                       return resolve_fbs_schema(type_name, schema_data);
                     },
@@ -6437,8 +6808,8 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
     return get_fbs_double(tbl, o, src);
   };
 
-  auto fbs_get_string = [schema](const flatbuffers::Table& tbl, const reflection::Object& o, const std::string& src,
-                                 const std::string& def, bool has_default = false) -> std::string {
+  auto fbs_get_string = [schema](const flatbuffers::Table& tbl, const reflection::Object& o,
+                                 const std::string& src) -> std::string {
     if (has_nested_field_path(src)) {
       bool found = false;
       auto val = resolve_nested_fbs_string(tbl, o, *schema, src, &found);
@@ -6447,10 +6818,61 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
         return val;
       }
 
-      return has_default ? def : std::string{};
+      return {};
     }
 
-    return get_fbs_string(tbl, o, src, def, has_default);
+    return get_fbs_string(tbl, o, src);
+  };
+
+  auto fbs_get_mapped_double = [schema](const flatbuffers::Table& tbl, const reflection::Object& o,
+                                        const FieldMapping& fm) -> double {
+    if VUNLIKELY (!fm.expression.empty()) {
+      return evaluate_expression_with_fbs(fm.expression, tbl, o, *schema);
+    }
+
+    if VUNLIKELY (has_nested_field_path(fm.source)) {
+      const auto value = resolve_nested_fbs_double(tbl, o, *schema, fm.source, true);
+
+      if VLIKELY (!std::isnan(value)) {
+        return value;
+      }
+    }
+
+    return get_fbs_double(tbl, o, fm.source, fm);
+  };
+
+  auto fbs_get_mapped_string = [schema](const flatbuffers::Table& tbl, const reflection::Object& o,
+                                        const FieldMapping& fm) -> std::string {
+    if VUNLIKELY (!fm.expression.empty()) {
+      return format_expression_string(evaluate_expression_with_fbs(fm.expression, tbl, o, *schema));
+    }
+
+    if VUNLIKELY (has_nested_field_path(fm.source)) {
+      bool found = false;
+      auto value = resolve_nested_fbs_string(tbl, o, *schema, fm.source, &found, true);
+
+      if VLIKELY (found) {
+        return value;
+      }
+    }
+
+    return get_fbs_string(tbl, o, fm.source, fm, schema);
+  };
+
+  auto fbs_get_object_mapped_double = [schema](const FbsObjectView& view, const FieldMapping& fm) -> double {
+    if VUNLIKELY (!fm.expression.empty()) {
+      return evaluate_expression_with_fbs(fm.expression, view, *schema);
+    }
+
+    if VUNLIKELY (has_nested_field_path(fm.source)) {
+      const auto value = resolve_nested_fbs_double(view, *schema, fm.source, true);
+
+      if VLIKELY (!std::isnan(value)) {
+        return value;
+      }
+    }
+
+    return get_fbs_double(view, fm.source, fm);
   };
 
   const auto& archetype = mapping.archetype;
@@ -6461,9 +6883,9 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "latitude") {
-        latitude = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        latitude = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "longitude") {
-        longitude = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        longitude = fbs_get_mapped_double(*root_table, obj, fm);
       }
     }
 
@@ -6486,42 +6908,37 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "pose" || fm.target == "pose_euler") {
-        const flatbuffers::Table* target_tbl = nullptr;
-        const reflection::Object* target_obj_ptr = nullptr;
+        FbsObjectView target_parent;
         std::string target_field_name;
 
-        if (resolve_fbs_parent_field_path(*root_table, obj, *schema, fm.source, target_tbl, target_obj_ptr,
-                                          target_field_name)) {
-          const auto* target_field = find_fbs_field(*target_obj_ptr, target_field_name);
+        if (resolve_fbs_parent_field_path(*root_table, obj, *schema, fm.source, target_parent, target_field_name)) {
+          const auto* target_field = find_fbs_field(*target_parent.object, target_field_name);
 
           if (target_field && target_field->type()->base_type() == reflection::Obj) {
-            const auto* sub_table = flatbuffers::GetFieldT(*target_tbl, *target_field);
+            const auto* sub_obj = find_fbs_object(*schema, target_field->type()->index());
+            FbsObjectView child;
 
-            if (sub_table && schema->objects()) {
-              const auto* sub_obj = schema->objects()->Get(static_cast<uint32_t>(target_field->type()->index()));
-
-              if (sub_obj) {
-                if (fm.target == "pose") {
-                  qx = get_fbs_double(*sub_table, *sub_obj, "x");
-                  qy = get_fbs_double(*sub_table, *sub_obj, "y");
-                  qz = get_fbs_double(*sub_table, *sub_obj, "z");
-                  qw = get_fbs_double(*sub_table, *sub_obj, "w");
-                } else {
-                  euler_roll = get_fbs_double(*sub_table, *sub_obj, "x");
-                  euler_pitch = get_fbs_double(*sub_table, *sub_obj, "y");
-                  euler_yaw = get_fbs_double(*sub_table, *sub_obj, "z");
-                  has_euler = true;
-                }
+            if (sub_obj && resolve_fbs_object_field(target_parent, *target_field, *sub_obj, child)) {
+              if (fm.target == "pose") {
+                qx = get_fbs_double(child, "x");
+                qy = get_fbs_double(child, "y");
+                qz = get_fbs_double(child, "z");
+                qw = get_fbs_double(child, "w");
+              } else {
+                euler_roll = get_fbs_double(child, "x");
+                euler_pitch = get_fbs_double(child, "y");
+                euler_yaw = get_fbs_double(child, "z");
+                has_euler = true;
               }
             }
           }
         }
       } else if (fm.target == "position_x") {
-        px = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        px = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "position_y") {
-        py = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        py = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "position_z") {
-        pz = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        pz = fbs_get_mapped_double(*root_table, obj, fm);
       }
     }
 
@@ -6551,60 +6968,48 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
   if (archetype == "Boxes3D") {
     std::string entity_sub_items;
-    std::string entity_x_src;
-    std::string entity_y_src;
-    std::string entity_z_src;
-    std::string entity_w_src;
-    std::string entity_l_src;
-    std::string entity_h_src;
-    std::string entity_heading_src;
-    std::string entity_x_expr;
-    std::string entity_y_expr;
-    std::string entity_z_expr;
-    std::string entity_w_expr;
-    std::string entity_l_expr;
-    std::string entity_h_expr;
-    std::string entity_heading_expr;
+    const FieldMapping* entity_x_mapping = nullptr;
+    const FieldMapping* entity_y_mapping = nullptr;
+    const FieldMapping* entity_z_mapping = nullptr;
+    const FieldMapping* entity_w_mapping = nullptr;
+    const FieldMapping* entity_l_mapping = nullptr;
+    const FieldMapping* entity_h_mapping = nullptr;
+    const FieldMapping* entity_heading_mapping = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "entity_sub_items") {
         entity_sub_items = fm.source;
       } else if (fm.target == "entity_x") {
-        entity_x_src = fm.source;
-        entity_x_expr = fm.expression;
+        entity_x_mapping = &fm;
       } else if (fm.target == "entity_y") {
-        entity_y_src = fm.source;
-        entity_y_expr = fm.expression;
+        entity_y_mapping = &fm;
       } else if (fm.target == "entity_z") {
-        entity_z_src = fm.source;
-        entity_z_expr = fm.expression;
+        entity_z_mapping = &fm;
       } else if (fm.target == "entity_width") {
-        entity_w_src = fm.source;
-        entity_w_expr = fm.expression;
+        entity_w_mapping = &fm;
       } else if (fm.target == "entity_length") {
-        entity_l_src = fm.source;
-        entity_l_expr = fm.expression;
+        entity_l_mapping = &fm;
       } else if (fm.target == "entity_height") {
-        entity_h_src = fm.source;
-        entity_h_expr = fm.expression;
+        entity_h_mapping = &fm;
       } else if (fm.target == "entity_heading") {
-        entity_heading_src = fm.source;
-        entity_heading_expr = fm.expression;
+        entity_heading_mapping = &fm;
       }
     }
 
-    bool has_entity_fields = !entity_x_src.empty() || !entity_y_src.empty() || !entity_z_src.empty();
+    bool has_entity_fields = entity_x_mapping != nullptr || entity_y_mapping != nullptr ||
+                             entity_z_mapping != nullptr || entity_w_mapping != nullptr ||
+                             entity_l_mapping != nullptr || entity_h_mapping != nullptr ||
+                             entity_heading_mapping != nullptr;
 
     std::vector<::rerun::Position3D> centers;
     std::vector<::rerun::HalfSize3D> half_sizes;
     std::vector<::rerun::components::RotationQuat> rotations;
     std::vector<::rerun::Color> box_colors;
 
-    auto build_fbs_box = [&box_colors, &centers, &entity_h_expr, &entity_h_src, &entity_heading_expr,
-                          &entity_heading_src, &entity_l_expr, &entity_l_src, &entity_w_expr, &entity_w_src,
-                          &entity_x_expr, &entity_x_src, &entity_y_expr, &entity_y_src, &entity_z_expr, &entity_z_src,
-                          &fbs_get_double, &half_sizes, &has_entity_fields, &rotations,
-                          &schema](const flatbuffers::Table& item_tbl, const reflection::Object& item_obj) {
+    auto build_fbs_box = [&box_colors, &centers, &entity_h_mapping, &entity_heading_mapping, &entity_l_mapping,
+                          &entity_w_mapping, &entity_x_mapping, &entity_y_mapping, &entity_z_mapping,
+                          &fbs_get_object_mapped_double, &half_sizes, &has_entity_fields, &rotations,
+                          &schema](const FbsObjectView& item) {
       double bpx = 0.0;
       double bpy = 0.0;
       double bpz = 0.0;
@@ -6614,77 +7019,74 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
       double heading = 0.0;
 
       if (has_entity_fields) {
-        if (!entity_x_src.empty()) {
-          bpx = fbs_get_double(item_tbl, item_obj, entity_x_src, entity_x_expr);
+        if (entity_x_mapping) {
+          bpx = fbs_get_object_mapped_double(item, *entity_x_mapping);
         }
 
-        if (!entity_y_src.empty()) {
-          bpy = fbs_get_double(item_tbl, item_obj, entity_y_src, entity_y_expr);
+        if (entity_y_mapping) {
+          bpy = fbs_get_object_mapped_double(item, *entity_y_mapping);
         }
 
-        if (!entity_z_src.empty()) {
-          bpz = fbs_get_double(item_tbl, item_obj, entity_z_src, entity_z_expr);
+        if (entity_z_mapping) {
+          bpz = fbs_get_object_mapped_double(item, *entity_z_mapping);
         }
 
-        if (!entity_w_src.empty()) {
-          auto v = fbs_get_double(item_tbl, item_obj, entity_w_src, entity_w_expr);
+        if (entity_w_mapping) {
+          auto v = fbs_get_object_mapped_double(item, *entity_w_mapping);
 
           if (v != 0.0) {
             bsx = v;
           }
         }
 
-        if (!entity_l_src.empty()) {
-          auto v = fbs_get_double(item_tbl, item_obj, entity_l_src, entity_l_expr);
+        if (entity_l_mapping) {
+          auto v = fbs_get_object_mapped_double(item, *entity_l_mapping);
 
           if (v != 0.0) {
             bsy = v;
           }
         }
 
-        if (!entity_h_src.empty()) {
-          auto v = fbs_get_double(item_tbl, item_obj, entity_h_src, entity_h_expr);
+        if (entity_h_mapping) {
+          auto v = fbs_get_object_mapped_double(item, *entity_h_mapping);
 
           if (v != 0.0) {
             bsz = v;
           }
         }
 
-        if (!entity_heading_src.empty()) {
-          heading = fbs_get_double(item_tbl, item_obj, entity_heading_src, entity_heading_expr);
+        if (entity_heading_mapping) {
+          heading = fbs_get_object_mapped_double(item, *entity_heading_mapping);
         }
       } else {
-        bpx = get_fbs_double(item_tbl, item_obj, "x");
-        bpy = get_fbs_double(item_tbl, item_obj, "y");
-        bpz = get_fbs_double(item_tbl, item_obj, "z");
+        bpx = get_fbs_double(item, "x");
+        bpy = get_fbs_double(item, "y");
+        bpz = get_fbs_double(item, "z");
 
         if (bpx == 0.0 && bpy == 0.0 && bpz == 0.0) {
-          bpx = get_fbs_double(item_tbl, item_obj, "cx");
-          bpy = get_fbs_double(item_tbl, item_obj, "cy");
-          bpz = get_fbs_double(item_tbl, item_obj, "cz");
+          bpx = get_fbs_double(item, "cx");
+          bpy = get_fbs_double(item, "cy");
+          bpz = get_fbs_double(item, "cz");
         }
 
         if (bpx == 0.0 && bpy == 0.0 && bpz == 0.0) {
-          const auto* pos_field = find_fbs_field(item_obj, "position");
+          const auto* pos_field = find_fbs_field(*item.object, "position");
 
           if (pos_field && pos_field->type()->base_type() == reflection::Obj) {
-            const auto* pos_tbl = flatbuffers::GetFieldT(item_tbl, *pos_field);
+            const auto* pos_obj = find_fbs_object(*schema, pos_field->type()->index());
+            FbsObjectView position;
 
-            if (pos_tbl && schema->objects()) {
-              const auto* pos_obj = schema->objects()->Get(static_cast<uint32_t>(pos_field->type()->index()));
-
-              if (pos_obj) {
-                bpx = get_fbs_double(*pos_tbl, *pos_obj, "x");
-                bpy = get_fbs_double(*pos_tbl, *pos_obj, "y");
-                bpz = get_fbs_double(*pos_tbl, *pos_obj, "z");
-              }
+            if (pos_obj && resolve_fbs_object_field(item, *pos_field, *pos_obj, position)) {
+              bpx = get_fbs_double(position, "x");
+              bpy = get_fbs_double(position, "y");
+              bpz = get_fbs_double(position, "z");
             }
           }
         }
 
-        auto w_val = get_fbs_double(item_tbl, item_obj, "width");
-        auto l_val = get_fbs_double(item_tbl, item_obj, "length");
-        auto h_val = get_fbs_double(item_tbl, item_obj, "height");
+        auto w_val = get_fbs_double(item, "width");
+        auto l_val = get_fbs_double(item, "length");
+        auto h_val = get_fbs_double(item, "height");
 
         if (w_val != 0.0) {
           bsx = w_val;
@@ -6698,10 +7100,10 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
           bsz = h_val;
         }
 
-        heading = get_fbs_double(item_tbl, item_obj, "heading_angle");
+        heading = get_fbs_double(item, "heading_angle");
 
         if (heading == 0.0) {
-          heading = get_fbs_double(item_tbl, item_obj, "yaw");
+          heading = get_fbs_double(item, "yaw");
         }
       }
 
@@ -6725,72 +7127,62 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
         continue;
       }
 
-      const flatbuffers::Table* entities_parent = nullptr;
-      const reflection::Object* entities_parent_obj = nullptr;
+      FbsObjectView entities_parent;
       std::string entities_field_name;
 
-      if (!resolve_fbs_parent_field_path(*root_table, obj, *schema, fm.source, entities_parent, entities_parent_obj,
-                                         entities_field_name)) {
+      if (!resolve_fbs_parent_field_path(*root_table, obj, *schema, fm.source, entities_parent, entities_field_name)) {
         continue;
       }
 
-      if (!entities_parent || !entities_parent_obj) {
+      const auto* vec_field = find_fbs_field(*entities_parent.object, entities_field_name);
+
+      if (!vec_field || vec_field->type()->base_type() != reflection::Vector ||
+          vec_field->type()->element() != reflection::Obj) {
         continue;
       }
 
-      const auto* vec_field = find_fbs_field(*entities_parent_obj, entities_field_name);
-
-      if (!vec_field || vec_field->type()->base_type() != reflection::Vector) {
-        continue;
-      }
-
-      const auto* vec = flatbuffers::GetFieldV<flatbuffers::Offset<flatbuffers::Table>>(*entities_parent, *vec_field);
+      const auto* vec = get_fbs_vector(entities_parent, *vec_field);
 
       if (!vec) {
         continue;
       }
 
-      auto sub_obj_idx = vec_field->type()->index();
-
-      if (sub_obj_idx < 0 || !schema->objects()) {
-        continue;
-      }
-
-      const auto* sub_obj = schema->objects()->Get(static_cast<uint32_t>(sub_obj_idx));
+      const auto* sub_obj = find_fbs_object(*schema, vec_field->type()->index());
 
       if (!sub_obj) {
         continue;
       }
 
       for (flatbuffers::uoffset_t i = 0; i < vec->size(); ++i) {
-        const auto* item = vec->Get(i);
+        FbsObjectView item;
 
-        if (!item) {
+        if (!resolve_fbs_vector_object_unchecked(*vec, i, *sub_obj, item)) {
           continue;
         }
 
         if (!entity_sub_items.empty()) {
           const auto* sub_field = find_fbs_field(*sub_obj, entity_sub_items);
 
-          if (sub_field && sub_field->type()->base_type() == reflection::Vector) {
-            const auto* sub_vec = flatbuffers::GetFieldV<flatbuffers::Offset<flatbuffers::Table>>(*item, *sub_field);
+          if (sub_field && sub_field->type()->base_type() == reflection::Vector &&
+              sub_field->type()->element() == reflection::Obj) {
+            const auto* sub_vec = get_fbs_vector(item, *sub_field);
 
-            if (sub_vec && schema->objects()) {
-              const auto* sub_sub_obj = schema->objects()->Get(static_cast<uint32_t>(sub_field->type()->index()));
+            if (sub_vec) {
+              const auto* sub_sub_obj = find_fbs_object(*schema, sub_field->type()->index());
 
               if (sub_sub_obj) {
                 for (flatbuffers::uoffset_t j = 0; j < sub_vec->size(); ++j) {
-                  const auto* sub_item = sub_vec->Get(j);
+                  FbsObjectView sub_item;
 
-                  if (sub_item) {
-                    build_fbs_box(*sub_item, *sub_sub_obj);
+                  if (resolve_fbs_vector_object_unchecked(*sub_vec, j, *sub_sub_obj, sub_item)) {
+                    build_fbs_box(sub_item);
                   }
                 }
               }
             }
           }
         } else {
-          build_fbs_box(*item, *sub_obj);
+          build_fbs_box(item);
         }
       }
     }
@@ -6814,26 +7206,27 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
   if (archetype == "TextLog") {
     std::string message;
-    std::string level_field = "level";
+    const FieldMapping* level_mapping = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "message") {
-        message = fbs_get_string(*root_table, obj, fm.source, fm.default_value, fm.has_default_value);
+        message = fbs_get_mapped_string(*root_table, obj, fm);
       } else if (fm.target == "level" || fm.target == "severity") {
-        level_field = fm.source;
+        level_mapping = &fm;
       }
     }
 
     if (message.empty()) {
-      message = fbs_get_string(*root_table, obj, "message", "");
+      message = fbs_get_string(*root_table, obj, "message");
 
       if (message.empty()) {
-        message = fbs_get_string(*root_table, obj, "msg", "");
+        message = fbs_get_string(*root_table, obj, "msg");
       }
     }
 
     if (!message.empty()) {
-      auto level_str = fbs_get_string(*root_table, obj, level_field, "");
+      auto level_str = level_mapping ? fbs_get_mapped_string(*root_table, obj, *level_mapping)
+                                     : fbs_get_string(*root_table, obj, "level");
       auto text_log = ::rerun::TextLog(message);
 
       if (!level_str.empty()) {
@@ -6847,26 +7240,27 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
   if (archetype == "EncodedImage") {
     std::string data_field_name = "data";
-    std::string format_field_name = "format";
+    const FieldMapping* format_mapping = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "data") {
         data_field_name = fm.source;
       } else if (fm.target == "format") {
-        format_field_name = fm.source;
+        format_mapping = &fm;
       }
     }
 
     const auto* data_fld = find_fbs_field(obj, data_field_name);
 
-    if (data_fld && data_fld->type()->base_type() == reflection::Vector) {
+    if (data_fld && is_fbs_byte_vector(*data_fld)) {
       const auto* vec = flatbuffers::GetFieldV<uint8_t>(*root_table, *data_fld);
 
       // NOLINTNEXTLINE(readability-container-size-empty)
       if VLIKELY (vec != nullptr && vec->size() != 0) {
         auto blob = ::rerun::Collection<uint8_t>::borrow(vec->data(), vec->size());
 
-        auto format_str = fbs_get_string(*root_table, obj, format_field_name, "");
+        auto format_str = format_mapping ? fbs_get_mapped_string(*root_table, obj, *format_mapping)
+                                         : fbs_get_string(*root_table, obj, "format");
         std::string media_type;
 
         if (format_str == "jpeg" || format_str == "jpg") {
@@ -6893,9 +7287,9 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "width") {
-        width = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        width = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "height") {
-        height = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        height = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       }
     }
 
@@ -6914,7 +7308,7 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
     const auto* data_fld = find_fbs_field(obj, data_field_name);
 
-    if (!data_fld || data_fld->type()->base_type() != reflection::Vector) {
+    if (!data_fld || !is_fbs_byte_vector(*data_fld)) {
       return false;
     }
 
@@ -6925,30 +7319,30 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
       return false;
     }
 
-    auto pixel_total = static_cast<size_t>(width) * static_cast<size_t>(height);
+    size_t pixel_total = 0;
 
-    if (pixel_total == 0) {
+    if VUNLIKELY (!mul_size(static_cast<size_t>(width), static_cast<size_t>(height), pixel_total)) {
       return false;
     }
 
-    auto channels = static_cast<uint32_t>(vec->size() / pixel_total);
-
-    if (channels == 0) {
-      return false;
+    if (vec->size() == pixel_total) {
+      return log_typed_image(rec, entity_path, vec->data(), vec->size(), width, height,
+                             ::rerun::datatypes::ColorModel::L, ::rerun::datatypes::ChannelDatatype::U8);
     }
 
-    auto pixel_data = ::rerun::Collection<uint8_t>::borrow(vec->data(), vec->size());
+    size_t expected_size = 0;
 
-    ::rerun::datatypes::ColorModel color_model = ::rerun::datatypes::ColorModel::L;
-
-    if (channels >= 4) {
-      color_model = ::rerun::datatypes::ColorModel::RGBA;
-    } else if (channels >= 3) {
-      color_model = ::rerun::datatypes::ColorModel::RGB;
+    if (mul_size(pixel_total, 3U, expected_size) && vec->size() == expected_size) {
+      return log_typed_image(rec, entity_path, vec->data(), vec->size(), width, height,
+                             ::rerun::datatypes::ColorModel::RGB, ::rerun::datatypes::ChannelDatatype::U8);
     }
 
-    rec.log(entity_path, ::rerun::archetypes::Image(pixel_data, {width, height}, color_model));
-    return true;
+    if (mul_size(pixel_total, 4U, expected_size) && vec->size() == expected_size) {
+      return log_typed_image(rec, entity_path, vec->data(), vec->size(), width, height,
+                             ::rerun::datatypes::ColorModel::RGBA, ::rerun::datatypes::ChannelDatatype::U8);
+    }
+
+    return false;
   }
 
   if (archetype == "Pinhole") {
@@ -6958,30 +7352,41 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
     double cy = 0.0;
     uint32_t width = 0;
     uint32_t height = 0;
+    bool has_cx = false;
+    bool has_cy = false;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "fx") {
-        fx = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        fx = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "fy") {
-        fy = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        fy = fbs_get_mapped_double(*root_table, obj, fm);
       } else if (fm.target == "cx") {
-        cx = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        cx = fbs_get_mapped_double(*root_table, obj, fm);
+        has_cx = true;
       } else if (fm.target == "cy") {
-        cy = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        cy = fbs_get_mapped_double(*root_table, obj, fm);
+        has_cy = true;
       } else if (fm.target == "width" || fm.target == "image_width") {
-        width = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        width = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "height" || fm.target == "image_height") {
-        height = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        height = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       }
     }
 
-    if (fx <= 0.0 || fy <= 0.0) {
+    const auto resolution_width = static_cast<float>(width > 0 ? width : cx * 2.0);
+    const auto resolution_height = static_cast<float>(height > 0 ? height : cy * 2.0);
+    const auto principal_x = has_cx ? static_cast<float>(cx) : resolution_width * 0.5F;
+    const auto principal_y = has_cy ? static_cast<float>(cy) : resolution_height * 0.5F;
+
+    if VUNLIKELY (!std::isfinite(fx) || !std::isfinite(fy) || !std::isfinite(principal_x) ||
+                  !std::isfinite(principal_y) || !std::isfinite(resolution_width) ||
+                  !std::isfinite(resolution_height) || fx <= 0.0 || fy <= 0.0 || resolution_width <= 0.0F ||
+                  resolution_height <= 0.0F) {
       return false;
     }
 
-    auto pinhole = ::rerun::archetypes::Pinhole::from_focal_length_and_resolution(
-        {static_cast<float>(fx), static_cast<float>(fy)},
-        {static_cast<float>(width > 0 ? width : cx * 2), static_cast<float>(height > 0 ? height : cy * 2)});
+    auto pinhole = make_pinhole(static_cast<float>(fx), static_cast<float>(fy), principal_x, principal_y,
+                                resolution_width, resolution_height);
 
     rec.log_static(entity_path, pinhole);
     return true;
@@ -6991,14 +7396,20 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
     uint32_t width = 0;
     uint32_t height = 0;
     std::string data_field_name = "data";
+    std::string datatype;
+    float meter = 0.0F;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "column_count" || fm.target == "width") {
-        width = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        width = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "row_count" || fm.target == "height") {
-        height = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        height = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "data") {
         data_field_name = fm.source;
+      } else if (fm.target == "datatype") {
+        datatype = fbs_get_mapped_string(*root_table, obj, fm);
+      } else if (fm.target == "meter") {
+        meter = static_cast<float>(fbs_get_mapped_double(*root_table, obj, fm));
       }
     }
 
@@ -7008,7 +7419,7 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
     const auto* data_fld = find_fbs_field(obj, data_field_name);
 
-    if (!data_fld || data_fld->type()->base_type() != reflection::Vector) {
+    if (!data_fld || !is_fbs_byte_vector(*data_fld)) {
       return false;
     }
 
@@ -7019,9 +7430,7 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
       return false;
     }
 
-    auto pixel_data = ::rerun::Collection<uint8_t>::borrow(vec->data(), vec->size());
-    rec.log(entity_path, ::rerun::archetypes::DepthImage(std::move(pixel_data), {width, height}));
-    return true;
+    return log_depth_image_bytes(rec, entity_path, vec->data(), vec->size(), width, height, datatype, meter);
   }
 
   if (archetype == "SegmentationImage") {
@@ -7030,9 +7439,9 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "width") {
-        width = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        width = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       } else if (fm.target == "height") {
-        height = checked_unsigned_cast<uint32_t>(fbs_get_double(*root_table, obj, fm.source, fm.expression));
+        height = checked_unsigned_cast<uint32_t>(fbs_get_mapped_double(*root_table, obj, fm));
       }
     }
 
@@ -7051,7 +7460,7 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
     const auto* data_fld = find_fbs_field(obj, data_field_name);
 
-    if (!data_fld || data_fld->type()->base_type() != reflection::Vector) {
+    if (!data_fld || !is_fbs_byte_vector(*data_fld)) {
       return false;
     }
 
@@ -7059,6 +7468,13 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
     // NOLINTNEXTLINE(readability-container-size-empty)
     if VUNLIKELY (vec == nullptr || vec->size() == 0) {
+      return false;
+    }
+
+    size_t pixel_total = 0;
+
+    if VUNLIKELY (!mul_size(static_cast<size_t>(width), static_cast<size_t>(height), pixel_total) ||
+                  vec->size() != pixel_total) {
       return false;
     }
 
@@ -7072,7 +7488,7 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "value") {
-        value = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        value = fbs_get_mapped_double(*root_table, obj, fm);
         break;
       }
     }
@@ -7086,7 +7502,7 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "value") {
-        value = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        value = fbs_get_mapped_double(*root_table, obj, fm);
         break;
       }
     }
@@ -7101,7 +7517,7 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "value") {
-        value = fbs_get_double(*root_table, obj, fm.source, fm.expression);
+        value = fbs_get_mapped_double(*root_table, obj, fm);
         break;
       }
     }
@@ -7113,58 +7529,48 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
   if (archetype == "LineStrips3D") {
     std::string entities_src;
-    std::string x_src;
-    std::string y_src;
-    std::string z_src;
+    const FieldMapping* x_mapping = nullptr;
+    const FieldMapping* y_mapping = nullptr;
+    const FieldMapping* z_mapping = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "entities" || fm.target == "strips" || fm.target == "points") {
         entities_src = fm.source;
       } else if (fm.target == "point_x") {
-        x_src = fm.source;
+        x_mapping = &fm;
       } else if (fm.target == "point_y") {
-        y_src = fm.source;
+        y_mapping = &fm;
       } else if (fm.target == "point_z") {
-        z_src = fm.source;
+        z_mapping = &fm;
       }
     }
 
     std::string field_name = entities_src.empty() ? "points" : entities_src;
     const auto* vec_field = find_fbs_field(obj, field_name);
 
-    if (vec_field && vec_field->type()->base_type() == reflection::Vector) {
-      auto sub_obj_idx = vec_field->type()->index();
+    if (vec_field && vec_field->type()->base_type() == reflection::Vector &&
+        vec_field->type()->element() == reflection::Obj) {
+      FbsObjectView root{&obj, root_table, nullptr};
+      const auto* vec = get_fbs_vector(root, *vec_field);
 
-      if (sub_obj_idx >= 0 && schema->objects()) {
-        const auto* sub_obj = schema->objects()->Get(static_cast<uint32_t>(sub_obj_idx));
+      if (vec) {
+        std::vector<::rerun::Position3D> strip;
+        strip.reserve(vec->size());
+        for_each_fbs_vector_object(root, *vec_field, *schema, [&](const FbsObjectView& item, flatbuffers::uoffset_t) {
+          auto px = static_cast<float>(x_mapping ? fbs_get_object_mapped_double(item, *x_mapping)
+                                                 : get_fbs_double(item, "x"));
+          auto py = static_cast<float>(y_mapping ? fbs_get_object_mapped_double(item, *y_mapping)
+                                                 : get_fbs_double(item, "y"));
+          auto pz = static_cast<float>(z_mapping ? fbs_get_object_mapped_double(item, *z_mapping)
+                                                 : get_fbs_double(item, "z"));
+          strip.emplace_back(px, py, pz);
+        });
 
-        if (sub_obj) {
-          const auto* vec = flatbuffers::GetFieldV<flatbuffers::Offset<flatbuffers::Table>>(*root_table, *vec_field);
-
-          if (vec) {
-            std::vector<::rerun::Position3D> strip;
-            strip.reserve(vec->size());
-
-            for (flatbuffers::uoffset_t i = 0; i < vec->size(); ++i) {
-              const auto* item = vec->Get(i);
-
-              if (!item) {
-                continue;
-              }
-
-              auto px = static_cast<float>(get_fbs_double(*item, *sub_obj, x_src.empty() ? "x" : x_src));
-              auto py = static_cast<float>(get_fbs_double(*item, *sub_obj, y_src.empty() ? "y" : y_src));
-              auto pz = static_cast<float>(get_fbs_double(*item, *sub_obj, z_src.empty() ? "z" : z_src));
-              strip.emplace_back(px, py, pz);
-            }
-
-            if (!strip.empty()) {
-              rec.log(entity_path, ::rerun::archetypes::LineStrips3D({std::move(strip)}));
-            }
-
-            return true;
-          }
+        if (!strip.empty()) {
+          rec.log(entity_path, ::rerun::archetypes::LineStrips3D({std::move(strip)}));
         }
+
+        return true;
       }
     }
 
@@ -7173,54 +7579,43 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
   if (archetype == "LineStrips2D") {
     std::string entities_src;
-    std::string x_src;
-    std::string y_src;
+    const FieldMapping* x_mapping = nullptr;
+    const FieldMapping* y_mapping = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "entities" || fm.target == "strips" || fm.target == "points") {
         entities_src = fm.source;
       } else if (fm.target == "point_x") {
-        x_src = fm.source;
+        x_mapping = &fm;
       } else if (fm.target == "point_y") {
-        y_src = fm.source;
+        y_mapping = &fm;
       }
     }
 
     std::string field_name = entities_src.empty() ? "points" : entities_src;
     const auto* vec_field = find_fbs_field(obj, field_name);
 
-    if (vec_field && vec_field->type()->base_type() == reflection::Vector) {
-      auto sub_obj_idx = vec_field->type()->index();
+    if (vec_field && vec_field->type()->base_type() == reflection::Vector &&
+        vec_field->type()->element() == reflection::Obj) {
+      FbsObjectView root{&obj, root_table, nullptr};
+      const auto* vec = get_fbs_vector(root, *vec_field);
 
-      if (sub_obj_idx >= 0 && schema->objects()) {
-        const auto* sub_obj = schema->objects()->Get(static_cast<uint32_t>(sub_obj_idx));
+      if (vec) {
+        std::vector<::rerun::Position2D> strip;
+        strip.reserve(vec->size());
+        for_each_fbs_vector_object(root, *vec_field, *schema, [&](const FbsObjectView& item, flatbuffers::uoffset_t) {
+          auto px = static_cast<float>(x_mapping ? fbs_get_object_mapped_double(item, *x_mapping)
+                                                 : get_fbs_double(item, "x"));
+          auto py = static_cast<float>(y_mapping ? fbs_get_object_mapped_double(item, *y_mapping)
+                                                 : get_fbs_double(item, "y"));
+          strip.emplace_back(px, py);
+        });
 
-        if (sub_obj) {
-          const auto* vec = flatbuffers::GetFieldV<flatbuffers::Offset<flatbuffers::Table>>(*root_table, *vec_field);
-
-          if (vec) {
-            std::vector<::rerun::Position2D> strip;
-            strip.reserve(vec->size());
-
-            for (flatbuffers::uoffset_t i = 0; i < vec->size(); ++i) {
-              const auto* item = vec->Get(i);
-
-              if (!item) {
-                continue;
-              }
-
-              auto px = static_cast<float>(get_fbs_double(*item, *sub_obj, x_src.empty() ? "x" : x_src));
-              auto py = static_cast<float>(get_fbs_double(*item, *sub_obj, y_src.empty() ? "y" : y_src));
-              strip.emplace_back(px, py);
-            }
-
-            if (!strip.empty()) {
-              rec.log(entity_path, ::rerun::archetypes::LineStrips2D({std::move(strip)}));
-            }
-
-            return true;
-          }
+        if (!strip.empty()) {
+          rec.log(entity_path, ::rerun::archetypes::LineStrips2D({std::move(strip)}));
         }
+
+        return true;
       }
     }
 
@@ -7229,22 +7624,22 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
   if (archetype == "Boxes2D") {
     std::string entities_src;
-    std::string x_src;
-    std::string y_src;
-    std::string w_src;
-    std::string h_src;
+    const FieldMapping* x_mapping = nullptr;
+    const FieldMapping* y_mapping = nullptr;
+    const FieldMapping* w_mapping = nullptr;
+    const FieldMapping* h_mapping = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "entities") {
         entities_src = fm.source;
       } else if (fm.target == "center_x") {
-        x_src = fm.source;
+        x_mapping = &fm;
       } else if (fm.target == "center_y") {
-        y_src = fm.source;
+        y_mapping = &fm;
       } else if (fm.target == "width" || fm.target == "size_x") {
-        w_src = fm.source;
+        w_mapping = &fm;
       } else if (fm.target == "height" || fm.target == "size_y") {
-        h_src = fm.source;
+        h_mapping = &fm;
       }
     }
 
@@ -7255,19 +7650,12 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
       return false;
     }
 
-    auto sub_obj_idx = vec_field->type()->index();
-
-    if (sub_obj_idx < 0 || !schema->objects()) {
+    if (vec_field->type()->element() != reflection::Obj) {
       return false;
     }
 
-    const auto* sub_obj = schema->objects()->Get(static_cast<uint32_t>(sub_obj_idx));
-
-    if (!sub_obj) {
-      return false;
-    }
-
-    const auto* vec = flatbuffers::GetFieldV<flatbuffers::Offset<flatbuffers::Table>>(*root_table, *vec_field);
+    FbsObjectView root{&obj, root_table, nullptr};
+    const auto* vec = get_fbs_vector(root, *vec_field);
 
     if (!vec) {
       return false;
@@ -7278,21 +7666,15 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
     centers.reserve(vec->size());
     half_sizes.reserve(vec->size());
 
-    for (flatbuffers::uoffset_t i = 0; i < vec->size(); ++i) {
-      const auto* item = vec->Get(i);
-
-      if (!item) {
-        continue;
-      }
-
-      double cx = get_fbs_double(*item, *sub_obj, x_src.empty() ? "center_x" : x_src);
-      double cy = get_fbs_double(*item, *sub_obj, y_src.empty() ? "center_y" : y_src);
-      double w = get_fbs_double(*item, *sub_obj, w_src.empty() ? "width" : w_src);
-      double h = get_fbs_double(*item, *sub_obj, h_src.empty() ? "height" : h_src);
+    for_each_fbs_vector_object(root, *vec_field, *schema, [&](const FbsObjectView& item, flatbuffers::uoffset_t) {
+      double cx = x_mapping ? fbs_get_object_mapped_double(item, *x_mapping) : get_fbs_double(item, "center_x");
+      double cy = y_mapping ? fbs_get_object_mapped_double(item, *y_mapping) : get_fbs_double(item, "center_y");
+      double w = w_mapping ? fbs_get_object_mapped_double(item, *w_mapping) : get_fbs_double(item, "width");
+      double h = h_mapping ? fbs_get_object_mapped_double(item, *h_mapping) : get_fbs_double(item, "height");
 
       centers.emplace_back(static_cast<float>(cx), static_cast<float>(cy));
       half_sizes.emplace_back(static_cast<float>(w * 0.5), static_cast<float>(h * 0.5));
-    }
+    });
 
     if (!centers.empty()) {
       rec.log(entity_path, ::rerun::archetypes::Boxes2D::from_centers_and_half_sizes(centers, half_sizes));
@@ -7303,29 +7685,33 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
   if (archetype == "Arrows2D") {
     std::string entities_src;
-    std::string origin_x_src;
-    std::string origin_y_src;
-    std::string vec_x_src;
-    std::string vec_y_src;
+    const FieldMapping* origin_x_mapping = nullptr;
+    const FieldMapping* origin_y_mapping = nullptr;
+    const FieldMapping* vec_x_mapping = nullptr;
+    const FieldMapping* vec_y_mapping = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "entities") {
         entities_src = fm.source;
       } else if (fm.target == "origin_x") {
-        origin_x_src = fm.source;
+        origin_x_mapping = &fm;
       } else if (fm.target == "origin_y") {
-        origin_y_src = fm.source;
+        origin_y_mapping = &fm;
       } else if (fm.target == "vector_x") {
-        vec_x_src = fm.source;
+        vec_x_mapping = &fm;
       } else if (fm.target == "vector_y") {
-        vec_y_src = fm.source;
+        vec_y_mapping = &fm;
       }
     }
 
-    auto ox = static_cast<float>(fbs_get_double(*root_table, obj, origin_x_src.empty() ? "origin_x" : origin_x_src));
-    auto oy = static_cast<float>(fbs_get_double(*root_table, obj, origin_y_src.empty() ? "origin_y" : origin_y_src));
-    auto vx = static_cast<float>(fbs_get_double(*root_table, obj, vec_x_src.empty() ? "vector_x" : vec_x_src));
-    auto vy = static_cast<float>(fbs_get_double(*root_table, obj, vec_y_src.empty() ? "vector_y" : vec_y_src));
+    auto ox = static_cast<float>(origin_x_mapping ? fbs_get_mapped_double(*root_table, obj, *origin_x_mapping)
+                                                  : fbs_get_double(*root_table, obj, "origin_x"));
+    auto oy = static_cast<float>(origin_y_mapping ? fbs_get_mapped_double(*root_table, obj, *origin_y_mapping)
+                                                  : fbs_get_double(*root_table, obj, "origin_y"));
+    auto vx = static_cast<float>(vec_x_mapping ? fbs_get_mapped_double(*root_table, obj, *vec_x_mapping)
+                                               : fbs_get_double(*root_table, obj, "vector_x"));
+    auto vy = static_cast<float>(vec_y_mapping ? fbs_get_mapped_double(*root_table, obj, *vec_y_mapping)
+                                               : fbs_get_double(*root_table, obj, "vector_y"));
 
     auto arrows = ::rerun::archetypes::Arrows2D::from_vectors({::rerun::components::Vector2D(vx, vy)});
     arrows = std::move(arrows).with_origins({::rerun::Position2D(ox, oy)});
@@ -7334,35 +7720,41 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
   }
 
   if (archetype == "Arrows3D") {
-    std::string origin_x_src;
-    std::string origin_y_src;
-    std::string origin_z_src;
-    std::string vec_x_src;
-    std::string vec_y_src;
-    std::string vec_z_src;
+    const FieldMapping* origin_x_mapping = nullptr;
+    const FieldMapping* origin_y_mapping = nullptr;
+    const FieldMapping* origin_z_mapping = nullptr;
+    const FieldMapping* vec_x_mapping = nullptr;
+    const FieldMapping* vec_y_mapping = nullptr;
+    const FieldMapping* vec_z_mapping = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "origin_x") {
-        origin_x_src = fm.source;
+        origin_x_mapping = &fm;
       } else if (fm.target == "origin_y") {
-        origin_y_src = fm.source;
+        origin_y_mapping = &fm;
       } else if (fm.target == "origin_z") {
-        origin_z_src = fm.source;
+        origin_z_mapping = &fm;
       } else if (fm.target == "vector_x") {
-        vec_x_src = fm.source;
+        vec_x_mapping = &fm;
       } else if (fm.target == "vector_y") {
-        vec_y_src = fm.source;
+        vec_y_mapping = &fm;
       } else if (fm.target == "vector_z") {
-        vec_z_src = fm.source;
+        vec_z_mapping = &fm;
       }
     }
 
-    auto ox = static_cast<float>(fbs_get_double(*root_table, obj, origin_x_src.empty() ? "origin_x" : origin_x_src));
-    auto oy = static_cast<float>(fbs_get_double(*root_table, obj, origin_y_src.empty() ? "origin_y" : origin_y_src));
-    auto oz = static_cast<float>(fbs_get_double(*root_table, obj, origin_z_src.empty() ? "origin_z" : origin_z_src));
-    auto vx = static_cast<float>(fbs_get_double(*root_table, obj, vec_x_src.empty() ? "vector_x" : vec_x_src));
-    auto vy = static_cast<float>(fbs_get_double(*root_table, obj, vec_y_src.empty() ? "vector_y" : vec_y_src));
-    auto vz = static_cast<float>(fbs_get_double(*root_table, obj, vec_z_src.empty() ? "vector_z" : vec_z_src));
+    auto ox = static_cast<float>(origin_x_mapping ? fbs_get_mapped_double(*root_table, obj, *origin_x_mapping)
+                                                  : fbs_get_double(*root_table, obj, "origin_x"));
+    auto oy = static_cast<float>(origin_y_mapping ? fbs_get_mapped_double(*root_table, obj, *origin_y_mapping)
+                                                  : fbs_get_double(*root_table, obj, "origin_y"));
+    auto oz = static_cast<float>(origin_z_mapping ? fbs_get_mapped_double(*root_table, obj, *origin_z_mapping)
+                                                  : fbs_get_double(*root_table, obj, "origin_z"));
+    auto vx = static_cast<float>(vec_x_mapping ? fbs_get_mapped_double(*root_table, obj, *vec_x_mapping)
+                                               : fbs_get_double(*root_table, obj, "vector_x"));
+    auto vy = static_cast<float>(vec_y_mapping ? fbs_get_mapped_double(*root_table, obj, *vec_y_mapping)
+                                               : fbs_get_double(*root_table, obj, "vector_y"));
+    auto vz = static_cast<float>(vec_z_mapping ? fbs_get_mapped_double(*root_table, obj, *vec_z_mapping)
+                                               : fbs_get_double(*root_table, obj, "vector_z"));
 
     auto arrows = ::rerun::archetypes::Arrows3D::from_vectors({::rerun::Vector3D(vx, vy, vz)});
     arrows = std::move(arrows).with_origins({::rerun::Position3D(ox, oy, oz)});
@@ -7371,31 +7763,36 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
   }
 
   if (archetype == "Cylinders3D") {
-    std::string length_src;
-    std::string radius_src;
-    std::string cx_src;
-    std::string cy_src;
-    std::string cz_src;
+    const FieldMapping* length_mapping = nullptr;
+    const FieldMapping* radius_mapping = nullptr;
+    const FieldMapping* cx_mapping = nullptr;
+    const FieldMapping* cy_mapping = nullptr;
+    const FieldMapping* cz_mapping = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "length") {
-        length_src = fm.source;
+        length_mapping = &fm;
       } else if (fm.target == "radius") {
-        radius_src = fm.source;
+        radius_mapping = &fm;
       } else if (fm.target == "center_x") {
-        cx_src = fm.source;
+        cx_mapping = &fm;
       } else if (fm.target == "center_y") {
-        cy_src = fm.source;
+        cy_mapping = &fm;
       } else if (fm.target == "center_z") {
-        cz_src = fm.source;
+        cz_mapping = &fm;
       }
     }
 
-    auto length = static_cast<float>(fbs_get_double(*root_table, obj, length_src.empty() ? "length" : length_src));
-    auto radius = static_cast<float>(fbs_get_double(*root_table, obj, radius_src.empty() ? "radius" : radius_src));
-    auto cx = static_cast<float>(fbs_get_double(*root_table, obj, cx_src.empty() ? "center_x" : cx_src));
-    auto cy = static_cast<float>(fbs_get_double(*root_table, obj, cy_src.empty() ? "center_y" : cy_src));
-    auto cz = static_cast<float>(fbs_get_double(*root_table, obj, cz_src.empty() ? "center_z" : cz_src));
+    auto length = static_cast<float>(length_mapping ? fbs_get_mapped_double(*root_table, obj, *length_mapping)
+                                                    : fbs_get_double(*root_table, obj, "length"));
+    auto radius = static_cast<float>(radius_mapping ? fbs_get_mapped_double(*root_table, obj, *radius_mapping)
+                                                    : fbs_get_double(*root_table, obj, "radius"));
+    auto cx = static_cast<float>(cx_mapping ? fbs_get_mapped_double(*root_table, obj, *cx_mapping)
+                                            : fbs_get_double(*root_table, obj, "center_x"));
+    auto cy = static_cast<float>(cy_mapping ? fbs_get_mapped_double(*root_table, obj, *cy_mapping)
+                                            : fbs_get_double(*root_table, obj, "center_y"));
+    auto cz = static_cast<float>(cz_mapping ? fbs_get_mapped_double(*root_table, obj, *cz_mapping)
+                                            : fbs_get_double(*root_table, obj, "center_z"));
 
     auto cylinders = ::rerun::archetypes::Cylinders3D::from_lengths_and_radii({length}, {radius});
     cylinders = std::move(cylinders).with_centers({::rerun::datatypes::Vec3D{cx, cy, cz}});
@@ -7404,35 +7801,41 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
   }
 
   if (archetype == "Ellipsoids3D") {
-    std::string hx_src;
-    std::string hy_src;
-    std::string hz_src;
-    std::string cx_src;
-    std::string cy_src;
-    std::string cz_src;
+    const FieldMapping* hx_mapping = nullptr;
+    const FieldMapping* hy_mapping = nullptr;
+    const FieldMapping* hz_mapping = nullptr;
+    const FieldMapping* cx_mapping = nullptr;
+    const FieldMapping* cy_mapping = nullptr;
+    const FieldMapping* cz_mapping = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "half_size_x") {
-        hx_src = fm.source;
+        hx_mapping = &fm;
       } else if (fm.target == "half_size_y") {
-        hy_src = fm.source;
+        hy_mapping = &fm;
       } else if (fm.target == "half_size_z") {
-        hz_src = fm.source;
+        hz_mapping = &fm;
       } else if (fm.target == "center_x") {
-        cx_src = fm.source;
+        cx_mapping = &fm;
       } else if (fm.target == "center_y") {
-        cy_src = fm.source;
+        cy_mapping = &fm;
       } else if (fm.target == "center_z") {
-        cz_src = fm.source;
+        cz_mapping = &fm;
       }
     }
 
-    auto hx = static_cast<float>(fbs_get_double(*root_table, obj, hx_src.empty() ? "half_size_x" : hx_src));
-    auto hy = static_cast<float>(fbs_get_double(*root_table, obj, hy_src.empty() ? "half_size_y" : hy_src));
-    auto hz = static_cast<float>(fbs_get_double(*root_table, obj, hz_src.empty() ? "half_size_z" : hz_src));
-    auto cx = static_cast<float>(fbs_get_double(*root_table, obj, cx_src.empty() ? "center_x" : cx_src));
-    auto cy = static_cast<float>(fbs_get_double(*root_table, obj, cy_src.empty() ? "center_y" : cy_src));
-    auto cz = static_cast<float>(fbs_get_double(*root_table, obj, cz_src.empty() ? "center_z" : cz_src));
+    auto hx = static_cast<float>(hx_mapping ? fbs_get_mapped_double(*root_table, obj, *hx_mapping)
+                                            : fbs_get_double(*root_table, obj, "half_size_x"));
+    auto hy = static_cast<float>(hy_mapping ? fbs_get_mapped_double(*root_table, obj, *hy_mapping)
+                                            : fbs_get_double(*root_table, obj, "half_size_y"));
+    auto hz = static_cast<float>(hz_mapping ? fbs_get_mapped_double(*root_table, obj, *hz_mapping)
+                                            : fbs_get_double(*root_table, obj, "half_size_z"));
+    auto cx = static_cast<float>(cx_mapping ? fbs_get_mapped_double(*root_table, obj, *cx_mapping)
+                                            : fbs_get_double(*root_table, obj, "center_x"));
+    auto cy = static_cast<float>(cy_mapping ? fbs_get_mapped_double(*root_table, obj, *cy_mapping)
+                                            : fbs_get_double(*root_table, obj, "center_y"));
+    auto cz = static_cast<float>(cz_mapping ? fbs_get_mapped_double(*root_table, obj, *cz_mapping)
+                                            : fbs_get_double(*root_table, obj, "center_z"));
 
     auto ellipsoids = ::rerun::archetypes::Ellipsoids3D::from_centers_and_half_sizes(
         {::rerun::datatypes::Vec3D{cx, cy, cz}}, {::rerun::HalfSize3D(hx, hy, hz)});
@@ -7442,10 +7845,12 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
   if (archetype == "BarChart") {
     std::string values_src;
+    const FieldMapping* values_mapping = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "values") {
         values_src = fm.source;
+        values_mapping = &fm;
         break;
       }
     }
@@ -7509,195 +7914,178 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
       }
     }
 
-    double value = fbs_get_double(*root_table, obj, field_name);
+    double value = values_mapping ? fbs_get_mapped_double(*root_table, obj, *values_mapping)
+                                  : fbs_get_double(*root_table, obj, field_name);
     rec.log(entity_path, ::rerun::archetypes::BarChart::f64({value}));
     return true;
   }
 
   if (archetype == "Points2D") {
     std::string entities_src;
-    std::string x_src;
-    std::string y_src;
+    const FieldMapping* x_mapping = nullptr;
+    const FieldMapping* y_mapping = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "entities" || fm.target == "points") {
         entities_src = fm.source;
       } else if (fm.target == "point_x") {
-        x_src = fm.source;
+        x_mapping = &fm;
       } else if (fm.target == "point_y") {
-        y_src = fm.source;
+        y_mapping = &fm;
       }
     }
 
     std::string field_name = entities_src.empty() ? "points" : entities_src;
     const auto* vec_field = find_fbs_field(obj, field_name);
 
-    if (vec_field && vec_field->type()->base_type() == reflection::Vector) {
-      auto sub_obj_idx = vec_field->type()->index();
+    if (vec_field && vec_field->type()->base_type() == reflection::Vector &&
+        vec_field->type()->element() == reflection::Obj) {
+      FbsObjectView root{&obj, root_table, nullptr};
+      const auto* vec = get_fbs_vector(root, *vec_field);
 
-      if (sub_obj_idx >= 0 && schema->objects()) {
-        const auto* sub_obj = schema->objects()->Get(static_cast<uint32_t>(sub_obj_idx));
+      if (vec) {
+        std::vector<::rerun::Position2D> positions;
+        positions.reserve(vec->size());
+        for_each_fbs_vector_object(root, *vec_field, *schema, [&](const FbsObjectView& item, flatbuffers::uoffset_t) {
+          auto px = static_cast<float>(x_mapping ? fbs_get_object_mapped_double(item, *x_mapping)
+                                                 : get_fbs_double(item, "x"));
+          auto py = static_cast<float>(y_mapping ? fbs_get_object_mapped_double(item, *y_mapping)
+                                                 : get_fbs_double(item, "y"));
+          positions.emplace_back(px, py);
+        });
 
-        if (sub_obj) {
-          const auto* vec = flatbuffers::GetFieldV<flatbuffers::Offset<flatbuffers::Table>>(*root_table, *vec_field);
-
-          if (vec) {
-            std::vector<::rerun::Position2D> positions;
-            positions.reserve(vec->size());
-
-            for (flatbuffers::uoffset_t i = 0; i < vec->size(); ++i) {
-              const auto* item = vec->Get(i);
-
-              if (!item) {
-                continue;
-              }
-
-              auto px = static_cast<float>(get_fbs_double(*item, *sub_obj, x_src.empty() ? "x" : x_src));
-              auto py = static_cast<float>(get_fbs_double(*item, *sub_obj, y_src.empty() ? "y" : y_src));
-              positions.emplace_back(px, py);
-            }
-
-            if (!positions.empty()) {
-              rec.log(entity_path, ::rerun::archetypes::Points2D(std::move(positions)));
-            }
-
-            return true;
-          }
+        if (!positions.empty()) {
+          rec.log(entity_path, ::rerun::archetypes::Points2D(std::move(positions)));
         }
+
+        return true;
       }
     }
 
-    auto px = static_cast<float>(fbs_get_double(*root_table, obj, x_src.empty() ? "x" : x_src));
-    auto py = static_cast<float>(fbs_get_double(*root_table, obj, y_src.empty() ? "y" : y_src));
+    auto px = static_cast<float>(x_mapping ? fbs_get_mapped_double(*root_table, obj, *x_mapping)
+                                           : fbs_get_double(*root_table, obj, "x"));
+    auto py = static_cast<float>(y_mapping ? fbs_get_mapped_double(*root_table, obj, *y_mapping)
+                                           : fbs_get_double(*root_table, obj, "y"));
     rec.log(entity_path, ::rerun::archetypes::Points2D({::rerun::Position2D(px, py)}));
     return true;
   }
 
   if (archetype == "Points3D") {
     std::string entities_src;
-    std::string x_src;
-    std::string y_src;
-    std::string z_src;
+    const FieldMapping* x_mapping = nullptr;
+    const FieldMapping* y_mapping = nullptr;
+    const FieldMapping* z_mapping = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "entities" || fm.target == "points") {
         entities_src = fm.source;
       } else if (fm.target == "point_x") {
-        x_src = fm.source;
+        x_mapping = &fm;
       } else if (fm.target == "point_y") {
-        y_src = fm.source;
+        y_mapping = &fm;
       } else if (fm.target == "point_z") {
-        z_src = fm.source;
+        z_mapping = &fm;
       }
     }
 
     std::string field_name = entities_src.empty() ? "points" : entities_src;
     const auto* vec_field = find_fbs_field(obj, field_name);
 
-    if (vec_field && vec_field->type()->base_type() == reflection::Vector) {
-      auto sub_obj_idx = vec_field->type()->index();
+    if (vec_field && vec_field->type()->base_type() == reflection::Vector &&
+        vec_field->type()->element() == reflection::Obj) {
+      FbsObjectView root{&obj, root_table, nullptr};
+      const auto* vec = get_fbs_vector(root, *vec_field);
 
-      if (sub_obj_idx >= 0 && schema->objects()) {
-        const auto* sub_obj = schema->objects()->Get(static_cast<uint32_t>(sub_obj_idx));
+      if (vec) {
+        std::vector<::rerun::Position3D> positions;
+        positions.reserve(vec->size());
+        for_each_fbs_vector_object(root, *vec_field, *schema, [&](const FbsObjectView& item, flatbuffers::uoffset_t) {
+          auto px = static_cast<float>(x_mapping ? fbs_get_object_mapped_double(item, *x_mapping)
+                                                 : get_fbs_double(item, "x"));
+          auto py = static_cast<float>(y_mapping ? fbs_get_object_mapped_double(item, *y_mapping)
+                                                 : get_fbs_double(item, "y"));
+          auto pz = static_cast<float>(z_mapping ? fbs_get_object_mapped_double(item, *z_mapping)
+                                                 : get_fbs_double(item, "z"));
+          positions.emplace_back(px, py, pz);
+        });
 
-        if (sub_obj) {
-          const auto* vec = flatbuffers::GetFieldV<flatbuffers::Offset<flatbuffers::Table>>(*root_table, *vec_field);
-
-          if (vec) {
-            std::vector<::rerun::Position3D> positions;
-            positions.reserve(vec->size());
-
-            for (flatbuffers::uoffset_t i = 0; i < vec->size(); ++i) {
-              const auto* item = vec->Get(i);
-
-              if (!item) {
-                continue;
-              }
-
-              auto px = static_cast<float>(get_fbs_double(*item, *sub_obj, x_src.empty() ? "x" : x_src));
-              auto py = static_cast<float>(get_fbs_double(*item, *sub_obj, y_src.empty() ? "y" : y_src));
-              auto pz = static_cast<float>(get_fbs_double(*item, *sub_obj, z_src.empty() ? "z" : z_src));
-              positions.emplace_back(px, py, pz);
-            }
-
-            if (!positions.empty()) {
-              rec.log(entity_path, ::rerun::archetypes::Points3D(std::move(positions)));
-            }
-
-            return true;
-          }
+        if (!positions.empty()) {
+          rec.log(entity_path, ::rerun::archetypes::Points3D(std::move(positions)));
         }
+
+        return true;
       }
     }
 
-    auto px = static_cast<float>(fbs_get_double(*root_table, obj, x_src.empty() ? "x" : x_src));
-    auto py = static_cast<float>(fbs_get_double(*root_table, obj, y_src.empty() ? "y" : y_src));
-    auto pz = static_cast<float>(fbs_get_double(*root_table, obj, z_src.empty() ? "z" : z_src));
+    auto px = static_cast<float>(x_mapping ? fbs_get_mapped_double(*root_table, obj, *x_mapping)
+                                           : fbs_get_double(*root_table, obj, "x"));
+    auto py = static_cast<float>(y_mapping ? fbs_get_mapped_double(*root_table, obj, *y_mapping)
+                                           : fbs_get_double(*root_table, obj, "y"));
+    auto pz = static_cast<float>(z_mapping ? fbs_get_mapped_double(*root_table, obj, *z_mapping)
+                                           : fbs_get_double(*root_table, obj, "z"));
     rec.log(entity_path, ::rerun::archetypes::Points3D({::rerun::Position3D(px, py, pz)}));
     return true;
   }
 
-  if (archetype == "AnnotationContext") {
-    rec.log(entity_path, ::rerun::TextLog("[FBS] AnnotationContext for " + ser));
-    return true;
-  }
-
-  if (archetype == "GeoLineStrings") {
-    rec.log(entity_path, ::rerun::TextLog("[FBS] GeoLineStrings for " + ser));
-    return true;
-  }
-
-  if (archetype == "Mesh3D") {
-    rec.log(entity_path, ::rerun::TextLog("[FBS] Mesh3D for " + ser));
-    return true;
+  if (archetype == "AnnotationContext" || archetype == "GeoLineStrings" || archetype == "Mesh3D") {
+    return false;
   }
 
   if (archetype == "Capsules3D") {
-    std::string length_src = "length";
-    std::string radius_src = "radius";
-    std::string cx_src = "center_x";
-    std::string cy_src = "center_y";
-    std::string cz_src = "center_z";
-    std::string qx_src = "qx";
-    std::string qy_src = "qy";
-    std::string qz_src = "qz";
-    std::string qw_src = "qw";
+    const FieldMapping* length_mapping = nullptr;
+    const FieldMapping* radius_mapping = nullptr;
+    const FieldMapping* cx_mapping = nullptr;
+    const FieldMapping* cy_mapping = nullptr;
+    const FieldMapping* cz_mapping = nullptr;
+    const FieldMapping* qx_mapping = nullptr;
+    const FieldMapping* qy_mapping = nullptr;
+    const FieldMapping* qz_mapping = nullptr;
+    const FieldMapping* qw_mapping = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "length") {
-        length_src = fm.source;
+        length_mapping = &fm;
       } else if (fm.target == "radius") {
-        radius_src = fm.source;
+        radius_mapping = &fm;
       } else if (fm.target == "center_x") {
-        cx_src = fm.source;
+        cx_mapping = &fm;
       } else if (fm.target == "center_y") {
-        cy_src = fm.source;
+        cy_mapping = &fm;
       } else if (fm.target == "center_z") {
-        cz_src = fm.source;
+        cz_mapping = &fm;
       } else if (fm.target == "qx" || fm.target == "rotation.x") {
-        qx_src = fm.source;
+        qx_mapping = &fm;
       } else if (fm.target == "qy" || fm.target == "rotation.y") {
-        qy_src = fm.source;
+        qy_mapping = &fm;
       } else if (fm.target == "qz" || fm.target == "rotation.z") {
-        qz_src = fm.source;
+        qz_mapping = &fm;
       } else if (fm.target == "qw" || fm.target == "rotation.w") {
-        qw_src = fm.source;
+        qw_mapping = &fm;
       }
     }
 
-    auto length = static_cast<float>(fbs_get_double(*root_table, obj, length_src));
-    auto radius = static_cast<float>(fbs_get_double(*root_table, obj, radius_src));
-    auto cx = static_cast<float>(fbs_get_double(*root_table, obj, cx_src));
-    auto cy = static_cast<float>(fbs_get_double(*root_table, obj, cy_src));
-    auto cz = static_cast<float>(fbs_get_double(*root_table, obj, cz_src));
+    auto length = static_cast<float>(length_mapping ? fbs_get_mapped_double(*root_table, obj, *length_mapping)
+                                                    : fbs_get_double(*root_table, obj, "length"));
+    auto radius = static_cast<float>(radius_mapping ? fbs_get_mapped_double(*root_table, obj, *radius_mapping)
+                                                    : fbs_get_double(*root_table, obj, "radius"));
+    auto cx = static_cast<float>(cx_mapping ? fbs_get_mapped_double(*root_table, obj, *cx_mapping)
+                                            : fbs_get_double(*root_table, obj, "center_x"));
+    auto cy = static_cast<float>(cy_mapping ? fbs_get_mapped_double(*root_table, obj, *cy_mapping)
+                                            : fbs_get_double(*root_table, obj, "center_y"));
+    auto cz = static_cast<float>(cz_mapping ? fbs_get_mapped_double(*root_table, obj, *cz_mapping)
+                                            : fbs_get_double(*root_table, obj, "center_z"));
 
     auto capsules = ::rerun::archetypes::Capsules3D::from_lengths_and_radii({length}, {radius});
     capsules = std::move(capsules).with_translations({::rerun::components::Translation3D(cx, cy, cz)});
 
-    auto qx = static_cast<float>(fbs_get_double(*root_table, obj, qx_src));
-    auto qy = static_cast<float>(fbs_get_double(*root_table, obj, qy_src));
-    auto qz = static_cast<float>(fbs_get_double(*root_table, obj, qz_src));
-    auto qw = static_cast<float>(fbs_get_double(*root_table, obj, qw_src));
+    auto qx = static_cast<float>(qx_mapping ? fbs_get_mapped_double(*root_table, obj, *qx_mapping)
+                                            : fbs_get_double(*root_table, obj, "qx"));
+    auto qy = static_cast<float>(qy_mapping ? fbs_get_mapped_double(*root_table, obj, *qy_mapping)
+                                            : fbs_get_double(*root_table, obj, "qy"));
+    auto qz = static_cast<float>(qz_mapping ? fbs_get_mapped_double(*root_table, obj, *qz_mapping)
+                                            : fbs_get_double(*root_table, obj, "qz"));
+    auto qw = static_cast<float>(qw_mapping ? fbs_get_mapped_double(*root_table, obj, *qw_mapping)
+                                            : fbs_get_double(*root_table, obj, "qw"));
 
     if (qx != 0.0F || qy != 0.0F || qz != 0.0F || qw != 0.0F) {
       capsules = std::move(capsules).with_quaternions({::rerun::datatypes::Quaternion::from_xyzw(qx, qy, qz, qw)});
@@ -7709,22 +8097,22 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
   if (archetype == "EncodedDepthImage") {
     std::string data_field_name = "data";
-    std::string media_type_field_name = "media_type";
-    std::string meter_field_name = "meter";
+    const FieldMapping* media_type_mapping = nullptr;
+    const FieldMapping* meter_mapping = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "data") {
         data_field_name = fm.source;
       } else if (fm.target == "media_type") {
-        media_type_field_name = fm.source;
+        media_type_mapping = &fm;
       } else if (fm.target == "meter") {
-        meter_field_name = fm.source;
+        meter_mapping = &fm;
       }
     }
 
     const auto* data_fld = find_fbs_field(obj, data_field_name);
 
-    if (data_fld && data_fld->type()->base_type() == reflection::Vector) {
+    if (data_fld && is_fbs_byte_vector(*data_fld)) {
       const auto* vec = flatbuffers::GetFieldV<uint8_t>(*root_table, *data_fld);
 
       // NOLINTNEXTLINE(readability-container-size-empty)
@@ -7732,13 +8120,15 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
         auto blob = ::rerun::Collection<uint8_t>::borrow(vec->data(), vec->size());
         auto depth_image = ::rerun::archetypes::EncodedDepthImage(::rerun::components::Blob(std::move(blob)));
 
-        auto media_type_str = fbs_get_string(*root_table, obj, media_type_field_name, "");
+        auto media_type_str = media_type_mapping ? fbs_get_mapped_string(*root_table, obj, *media_type_mapping)
+                                                 : fbs_get_string(*root_table, obj, "media_type");
 
         if (!media_type_str.empty()) {
           depth_image = std::move(depth_image).with_media_type(::rerun::components::MediaType(media_type_str));
         }
 
-        auto meter_val = static_cast<float>(fbs_get_double(*root_table, obj, meter_field_name));
+        auto meter_val = static_cast<float>(meter_mapping ? fbs_get_mapped_double(*root_table, obj, *meter_mapping)
+                                                          : fbs_get_double(*root_table, obj, "meter"));
 
         if (meter_val > 0.0F) {
           depth_image = std::move(depth_image).with_meter(::rerun::components::DepthMeter(meter_val));
@@ -7752,25 +8142,26 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
   if (archetype == "Asset3D") {
     std::string data_field_name = "data";
-    std::string media_type_field_name = "media_type";
+    const FieldMapping* media_type_mapping = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "data") {
         data_field_name = fm.source;
       } else if (fm.target == "media_type") {
-        media_type_field_name = fm.source;
+        media_type_mapping = &fm;
       }
     }
 
     const auto* data_fld = find_fbs_field(obj, data_field_name);
 
-    if (data_fld && data_fld->type()->base_type() == reflection::Vector) {
+    if (data_fld && is_fbs_byte_vector(*data_fld)) {
       const auto* vec = flatbuffers::GetFieldV<uint8_t>(*root_table, *data_fld);
 
       // NOLINTNEXTLINE(readability-container-size-empty)
       if VLIKELY (vec != nullptr && vec->size() != 0) {
         auto blob = ::rerun::Collection<uint8_t>::borrow(vec->data(), vec->size());
-        auto media_type_str = fbs_get_string(*root_table, obj, media_type_field_name, "");
+        auto media_type_str = media_type_mapping ? fbs_get_mapped_string(*root_table, obj, *media_type_mapping)
+                                                 : fbs_get_string(*root_table, obj, "media_type");
 
         auto asset = ::rerun::archetypes::Asset3D::from_file_contents(
             std::move(blob), media_type_str.empty() ? std::optional<::rerun::components::MediaType>(std::nullopt)
@@ -7782,32 +8173,28 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
     }
   }
 
-  if (archetype == "GraphNodes") {
-    rec.log(entity_path, ::rerun::TextLog("[FBS] GraphNodes for " + ser));
-    return true;
-  }
-
-  if (archetype == "GraphEdges") {
-    rec.log(entity_path, ::rerun::TextLog("[FBS] GraphEdges for " + ser));
-    return true;
+  if (archetype == "GraphNodes" || archetype == "GraphEdges") {
+    return false;
   }
 
   if (archetype == "ViewCoordinates") {
-    std::string system_field_name = "system";
-    std::string coordinates_field_name = "coordinates";
+    const FieldMapping* system_mapping = nullptr;
+    const FieldMapping* coordinates_mapping = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "system") {
-        system_field_name = fm.source;
+        system_mapping = &fm;
       } else if (fm.target == "coordinates") {
-        coordinates_field_name = fm.source;
+        coordinates_mapping = &fm;
       }
     }
 
-    auto system_str = fbs_get_string(*root_table, obj, system_field_name, "");
+    auto system_str = system_mapping ? fbs_get_mapped_string(*root_table, obj, *system_mapping)
+                                     : fbs_get_string(*root_table, obj, "system");
 
     if (system_str.empty()) {
-      system_str = fbs_get_string(*root_table, obj, coordinates_field_name, "");
+      system_str = coordinates_mapping ? fbs_get_mapped_string(*root_table, obj, *coordinates_mapping)
+                                       : fbs_get_string(*root_table, obj, "coordinates");
     }
 
     log_view_coordinates_value(rec, entity_path, system_str);
@@ -7815,43 +8202,50 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
   }
 
   if (archetype == "InstancePoses3D") {
-    std::string tx_src = "translation_x";
-    std::string ty_src = "translation_y";
-    std::string tz_src = "translation_z";
-    std::string qx_src = "qx";
-    std::string qy_src = "qy";
-    std::string qz_src = "qz";
-    std::string qw_src = "qw";
+    const FieldMapping* tx_mapping = nullptr;
+    const FieldMapping* ty_mapping = nullptr;
+    const FieldMapping* tz_mapping = nullptr;
+    const FieldMapping* qx_mapping = nullptr;
+    const FieldMapping* qy_mapping = nullptr;
+    const FieldMapping* qz_mapping = nullptr;
+    const FieldMapping* qw_mapping = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "translation_x" || fm.target == "translation.x") {
-        tx_src = fm.source;
+        tx_mapping = &fm;
       } else if (fm.target == "translation_y" || fm.target == "translation.y") {
-        ty_src = fm.source;
+        ty_mapping = &fm;
       } else if (fm.target == "translation_z" || fm.target == "translation.z") {
-        tz_src = fm.source;
+        tz_mapping = &fm;
       } else if (fm.target == "qx" || fm.target == "rotation.x") {
-        qx_src = fm.source;
+        qx_mapping = &fm;
       } else if (fm.target == "qy" || fm.target == "rotation.y") {
-        qy_src = fm.source;
+        qy_mapping = &fm;
       } else if (fm.target == "qz" || fm.target == "rotation.z") {
-        qz_src = fm.source;
+        qz_mapping = &fm;
       } else if (fm.target == "qw" || fm.target == "rotation.w") {
-        qw_src = fm.source;
+        qw_mapping = &fm;
       }
     }
 
-    auto tx = static_cast<float>(fbs_get_double(*root_table, obj, tx_src));
-    auto ty = static_cast<float>(fbs_get_double(*root_table, obj, ty_src));
-    auto tz = static_cast<float>(fbs_get_double(*root_table, obj, tz_src));
+    auto tx = static_cast<float>(tx_mapping ? fbs_get_mapped_double(*root_table, obj, *tx_mapping)
+                                            : fbs_get_double(*root_table, obj, "translation_x"));
+    auto ty = static_cast<float>(ty_mapping ? fbs_get_mapped_double(*root_table, obj, *ty_mapping)
+                                            : fbs_get_double(*root_table, obj, "translation_y"));
+    auto tz = static_cast<float>(tz_mapping ? fbs_get_mapped_double(*root_table, obj, *tz_mapping)
+                                            : fbs_get_double(*root_table, obj, "translation_z"));
 
     auto poses = ::rerun::archetypes::InstancePoses3D();
     poses = std::move(poses).with_translations({::rerun::components::Translation3D(tx, ty, tz)});
 
-    auto qx = static_cast<float>(fbs_get_double(*root_table, obj, qx_src));
-    auto qy = static_cast<float>(fbs_get_double(*root_table, obj, qy_src));
-    auto qz = static_cast<float>(fbs_get_double(*root_table, obj, qz_src));
-    auto qw = static_cast<float>(fbs_get_double(*root_table, obj, qw_src));
+    auto qx = static_cast<float>(qx_mapping ? fbs_get_mapped_double(*root_table, obj, *qx_mapping)
+                                            : fbs_get_double(*root_table, obj, "qx"));
+    auto qy = static_cast<float>(qy_mapping ? fbs_get_mapped_double(*root_table, obj, *qy_mapping)
+                                            : fbs_get_double(*root_table, obj, "qy"));
+    auto qz = static_cast<float>(qz_mapping ? fbs_get_mapped_double(*root_table, obj, *qz_mapping)
+                                            : fbs_get_double(*root_table, obj, "qz"));
+    auto qw = static_cast<float>(qw_mapping ? fbs_get_mapped_double(*root_table, obj, *qw_mapping)
+                                            : fbs_get_double(*root_table, obj, "qw"));
 
     if (qx != 0.0F || qy != 0.0F || qz != 0.0F || qw != 0.0F) {
       poses = std::move(poses).with_quaternions({::rerun::datatypes::Quaternion::from_xyzw(qx, qy, qz, qw)});
@@ -7863,25 +8257,26 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
   if (archetype == "AssetVideo") {
     std::string data_field_name = "data";
-    std::string media_type_field_name = "media_type";
+    const FieldMapping* media_type_mapping = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "data") {
         data_field_name = fm.source;
       } else if (fm.target == "media_type") {
-        media_type_field_name = fm.source;
+        media_type_mapping = &fm;
       }
     }
 
     const auto* data_fld = find_fbs_field(obj, data_field_name);
 
-    if (data_fld && data_fld->type()->base_type() == reflection::Vector) {
+    if (data_fld && is_fbs_byte_vector(*data_fld)) {
       const auto* vec = flatbuffers::GetFieldV<uint8_t>(*root_table, *data_fld);
 
       // NOLINTNEXTLINE(readability-container-size-empty)
       if VLIKELY (vec != nullptr && vec->size() != 0) {
         auto blob = ::rerun::Collection<uint8_t>::borrow(vec->data(), vec->size());
-        auto media_type_str = fbs_get_string(*root_table, obj, media_type_field_name, "");
+        auto media_type_str = media_type_mapping ? fbs_get_mapped_string(*root_table, obj, *media_type_mapping)
+                                                 : fbs_get_string(*root_table, obj, "media_type");
 
         auto video = ::rerun::archetypes::AssetVideo::from_bytes(
             std::move(blob), media_type_str.empty() ? std::optional<::rerun::components::MediaType>(std::nullopt)
@@ -7894,22 +8289,24 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
   }
 
   if (archetype == "VideoFrameReference") {
-    std::string timestamp_field_name = "timestamp_ns";
-    std::string video_reference_field_name = "video_reference";
+    const FieldMapping* timestamp_mapping = nullptr;
+    const FieldMapping* video_reference_mapping = nullptr;
 
     for (const auto& fm : mapping.field_mappings) {
       if (fm.target == "timestamp_ns") {
-        timestamp_field_name = fm.source;
+        timestamp_mapping = &fm;
       } else if (fm.target == "video_reference") {
-        video_reference_field_name = fm.source;
+        video_reference_mapping = &fm;
       }
     }
 
-    auto ts_ns = static_cast<int64_t>(fbs_get_double(*root_table, obj, timestamp_field_name));
+    auto ts_ns = static_cast<int64_t>(timestamp_mapping ? fbs_get_mapped_double(*root_table, obj, *timestamp_mapping)
+                                                        : fbs_get_double(*root_table, obj, "timestamp_ns"));
     auto frame_ref =
         ::rerun::archetypes::VideoFrameReference(::rerun::components::VideoTimestamp(std::chrono::nanoseconds(ts_ns)));
 
-    auto ref_path = fbs_get_string(*root_table, obj, video_reference_field_name, "");
+    auto ref_path = video_reference_mapping ? fbs_get_mapped_string(*root_table, obj, *video_reference_mapping)
+                                            : fbs_get_string(*root_table, obj, "video_reference");
 
     if (!ref_path.empty()) {
       frame_ref = std::move(frame_ref).with_video_reference(ref_path);
@@ -7938,7 +8335,7 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
     const auto* data_fld = find_fbs_field(obj, data_field_name);
 
     if (!shape_fld || !data_fld || shape_fld->type()->base_type() != reflection::Vector ||
-        data_fld->type()->base_type() != reflection::Vector) {
+        !is_fbs_byte_vector(*data_fld)) {
       return false;
     }
 

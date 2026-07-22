@@ -57,7 +57,7 @@ _vlink-rerun() {
         '--proxy_interface=[Proxy interface]:iface:(proxy_api proxy_server)' \
         '--proxy_role=[Proxy role]:role:(controller listener)' \
         '--proxy_domain_id=[Proxy domain id]:id:' \
-        '--proxy_dds_impl=[Proxy DDS impl]:impl:(dds ddsc ddsr ddst)' \
+        '--proxy_dds_impl=[Proxy DDS impl]:impl:(dds ddsc ddsr)' \
         '--proxy_bind_ip=[Proxy bind IP]:ip:' \
         '--proxy_peer_ip=[Proxy peer IP]:ip:' \
         '--proxy_buf_size=[Proxy buffer size]:n:' \
@@ -79,5 +79,5 @@ _vlink-rerun() {
 }
 
 if (( $+functions[compdef] )); then
-    compdef _vlink-rerun vlink-rerun webviz_rerun
+    _vlink_zsh_register_completion _vlink-rerun vlink-rerun webviz_rerun
 fi

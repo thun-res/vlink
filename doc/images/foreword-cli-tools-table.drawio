@@ -62,8 +62,8 @@
           <mxGeometry x="400" y="236" width="440" height="48" as="geometry" />
         </mxCell>
 
-        <!-- Row 4: vlink-dump (Inspect - neutral) -->
-        <mxCell id="r4a" value="vlink-dump" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#90a4ae;strokeWidth=1;fontFamily=Courier New;fontSize=12;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
+        <!-- Row 4: vlink-parse (Inspect - neutral) -->
+        <mxCell id="r4a" value="vlink-parse" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#90a4ae;strokeWidth=1;fontFamily=Courier New;fontSize=12;fontStyle=1;fontColor=#0d47a1;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="60" y="284" width="180" height="48" as="geometry" />
         </mxCell>
         <mxCell id="r4b" value="Inspect" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#37474f;align=center;verticalAlign=middle;shadow=0;" vertex="1" parent="1">

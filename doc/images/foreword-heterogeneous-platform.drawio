@@ -9,7 +9,7 @@
         <mxCell id="title" value="VLink on Heterogeneous Platforms" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=22;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="20" y="20" width="960" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="subtitle" value="ROS 2 full-scenario replacement &#8212; same API, same user code, change only the URL prefix to switch transport" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=2;fontColor=#37474f;" vertex="1" parent="1">
+        <mxCell id="subtitle" value="One API across platforms &#8212; select each transport with its backend-specific URL and configuration" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=2;fontColor=#37474f;" vertex="1" parent="1">
           <mxGeometry x="20" y="54" width="960" height="22" as="geometry" />
         </mxCell>
 
@@ -61,7 +61,7 @@
         <mxCell id="bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;fontFamily=Helvetica;shadow=0;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="40" y="220" width="920" height="62" as="geometry" />
         </mxCell>
-        <mxCell id="barlabel" value="&lt;b&gt;VLink Middleware&lt;/b&gt;&#160;&#160;&#8212;&#160;&#160;unified URL addressing &#183; 12 pluggable transports &#183; 14 serializers &#183; 3 communication models &#183; shared API" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+        <mxCell id="barlabel" value="&lt;b&gt;VLink Middleware&lt;/b&gt;&#160;&#160;&#8212;&#160;&#160;unified URL addressing &#183; 10 pluggable transports &#183; 14 serializers &#183; 3 communication models &#183; shared API" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
           <mxGeometry x="50" y="220" width="900" height="62" as="geometry" />
         </mxCell>
 
@@ -74,48 +74,42 @@
         </mxCell>
 
         <!-- Transport scheme label -->
-        <mxCell id="trlabel" value="12 pluggable transport backends" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#37474f;" vertex="1" parent="1">
-          <mxGeometry x="40" y="300" width="920" height="22" as="geometry" />
+        <mxCell id="trlabel" value="10 pluggable transport backends" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#37474f;" vertex="1" parent="1">
+          <mxGeometry x="40" y="300" width="300" height="22" as="geometry" />
         </mxCell>
 
-        <!-- Transport tiles: 12 tiles in 2 rows of 6. width 920, tile w=140, gap=(920-6*140)/5=16 -->
-        <!-- Row 1: intra shm shm2 dds ddsc ddsr  (ARM blue x3, x86 green x3) -->
+        <!-- Transport tiles: 10 tiles in 2 rows of 5. width 920, tile w=172, gap=15 -->
+        <!-- Row 1: intra shm shm2 dds ddsc -->
         <mxCell id="sch1" value="intra://" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;shadow=0;verticalAlign=middle;align=center;arcSize=14;" vertex="1" parent="1">
-          <mxGeometry x="40" y="332" width="140" height="38" as="geometry" />
+          <mxGeometry x="40" y="332" width="172" height="38" as="geometry" />
         </mxCell>
         <mxCell id="sch2" value="shm://" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;shadow=0;verticalAlign=middle;align=center;arcSize=14;" vertex="1" parent="1">
-          <mxGeometry x="196" y="332" width="140" height="38" as="geometry" />
+          <mxGeometry x="227" y="332" width="172" height="38" as="geometry" />
         </mxCell>
         <mxCell id="sch3" value="shm2://" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;shadow=0;verticalAlign=middle;align=center;arcSize=14;" vertex="1" parent="1">
-          <mxGeometry x="352" y="332" width="140" height="38" as="geometry" />
+          <mxGeometry x="414" y="332" width="172" height="38" as="geometry" />
         </mxCell>
         <mxCell id="sch4" value="dds://" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#1b5e20;shadow=0;verticalAlign=middle;align=center;arcSize=14;" vertex="1" parent="1">
-          <mxGeometry x="508" y="332" width="140" height="38" as="geometry" />
+          <mxGeometry x="601" y="332" width="172" height="38" as="geometry" />
         </mxCell>
         <mxCell id="sch5" value="ddsc://" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#1b5e20;shadow=0;verticalAlign=middle;align=center;arcSize=14;" vertex="1" parent="1">
-          <mxGeometry x="664" y="332" width="140" height="38" as="geometry" />
+          <mxGeometry x="788" y="332" width="172" height="38" as="geometry" />
         </mxCell>
         <mxCell id="sch6" value="ddsr://" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#1b5e20;shadow=0;verticalAlign=middle;align=center;arcSize=14;" vertex="1" parent="1">
-          <mxGeometry x="820" y="332" width="140" height="38" as="geometry" />
+          <mxGeometry x="40" y="380" width="172" height="38" as="geometry" />
         </mxCell>
-        <!-- Row 2: ddst zenoh someip qnx mqtt fdbus  (x86 green, edge grey, qnx amber x2, edge grey x2) -->
-        <mxCell id="sch7" value="ddst://" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#1b5e20;shadow=0;verticalAlign=middle;align=center;arcSize=14;" vertex="1" parent="1">
-          <mxGeometry x="40" y="380" width="140" height="38" as="geometry" />
-        </mxCell>
+        <!-- Row 2: ddsr zenoh someip mqtt fdbus -->
         <mxCell id="sch8" value="zenoh://" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#37474f;shadow=0;verticalAlign=middle;align=center;arcSize=14;" vertex="1" parent="1">
-          <mxGeometry x="196" y="380" width="140" height="38" as="geometry" />
+          <mxGeometry x="227" y="380" width="172" height="38" as="geometry" />
         </mxCell>
         <mxCell id="sch9" value="someip://" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#e65100;shadow=0;verticalAlign=middle;align=center;arcSize=14;" vertex="1" parent="1">
-          <mxGeometry x="352" y="380" width="140" height="38" as="geometry" />
-        </mxCell>
-        <mxCell id="sch10" value="qnx://" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#e65100;shadow=0;verticalAlign=middle;align=center;arcSize=14;" vertex="1" parent="1">
-          <mxGeometry x="508" y="380" width="140" height="38" as="geometry" />
+          <mxGeometry x="414" y="380" width="172" height="38" as="geometry" />
         </mxCell>
         <mxCell id="sch11" value="mqtt://" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#37474f;shadow=0;verticalAlign=middle;align=center;arcSize=14;" vertex="1" parent="1">
-          <mxGeometry x="664" y="380" width="140" height="38" as="geometry" />
+          <mxGeometry x="601" y="380" width="172" height="38" as="geometry" />
         </mxCell>
         <mxCell id="sch12" value="fdbus://" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#37474f;shadow=0;verticalAlign=middle;align=center;arcSize=14;" vertex="1" parent="1">
-          <mxGeometry x="820" y="380" width="140" height="38" as="geometry" />
+          <mxGeometry x="788" y="380" width="172" height="38" as="geometry" />
         </mxCell>
 
         <!-- Legend background (light body) -->
@@ -129,21 +123,21 @@
         <mxCell id="lg_arm_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontFamily=Helvetica;arcSize=20;" vertex="1" parent="1">
           <mxGeometry x="60" y="482" width="18" height="18" as="geometry" />
         </mxCell>
-        <mxCell id="lg_arm_txt" value="ARM SoC &#8594; intra, shm, shm2" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontColor=#0d47a1;" vertex="1" parent="1">
+        <mxCell id="lg_arm_txt" value="ARM Linux &#8594; intra, shm, shm2 &#183; Android &#8594; intra" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="86" y="482" width="380" height="18" as="geometry" />
         </mxCell>
 
         <mxCell id="lg_x86_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;fontFamily=Helvetica;arcSize=20;" vertex="1" parent="1">
           <mxGeometry x="500" y="482" width="18" height="18" as="geometry" />
         </mxCell>
-        <mxCell id="lg_x86_txt" value="x86 Server &#8594; dds, ddsc, ddsr, ddst" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontColor=#1b5e20;" vertex="1" parent="1">
+        <mxCell id="lg_x86_txt" value="x86 Server &#8594; dds, ddsc, ddsr" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontColor=#1b5e20;" vertex="1" parent="1">
           <mxGeometry x="526" y="482" width="420" height="18" as="geometry" />
         </mxCell>
 
         <mxCell id="lg_qnx_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;fontFamily=Helvetica;arcSize=20;" vertex="1" parent="1">
           <mxGeometry x="60" y="512" width="18" height="18" as="geometry" />
         </mxCell>
-        <mxCell id="lg_qnx_txt" value="QNX RTOS &#8594; someip, qnx" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontColor=#e65100;" vertex="1" parent="1">
+        <mxCell id="lg_qnx_txt" value="QNX RTOS &#8594; shm, someip" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontColor=#e65100;" vertex="1" parent="1">
           <mxGeometry x="86" y="512" width="380" height="18" as="geometry" />
         </mxCell>
 
@@ -154,7 +148,7 @@
           <mxGeometry x="526" y="512" width="420" height="18" as="geometry" />
         </mxCell>
 
-        <mxCell id="lgnote" value="Note: the URL prefix selects the transport; user code stays unchanged when swapping backends. Models: Publisher/Subscriber, Client/Server, Setter/Getter." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#37474f;" vertex="1" parent="1">
+        <mxCell id="lgnote" value="URL scheme selects transport; endpoint addressing and parameters may differ. API models remain shared: Pub/Sub, Client/Server, Setter/Getter." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#37474f;" vertex="1" parent="1">
           <mxGeometry x="60" y="542" width="880" height="22" as="geometry" />
         </mxCell>
 

@@ -37,7 +37,7 @@
  * | --------------------------------- | ------------------------------------- | --------------------------------- |
  * | @c "intra://sensor/lidar"         | @c "dds://vehicle/lidar"              | promote local topic to DDS        |
  * | @c "shm://camera/front"           | @c "zenoh://camera/front"             | switch transport to Zenoh         |
- * | @c "dds://"                       | @c "ddst://"                          | force TCP DDS transport globally  |
+ * | @c "dds://"                       | @c "ddsc://"                          | select CycloneDDS globally        |
  * | @c "fdbus://"                     | @c "intra://"                         | merge to intra-process bus        |
  *
  * Lookup is linear in the configured order; the first key that occurs as a substring of the

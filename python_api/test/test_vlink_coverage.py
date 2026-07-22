@@ -14,7 +14,7 @@ Targets binding surface NOT exercised by test_vlink.py / test_vlink_full.py:
   * Utils leftover: get_app_dir/get_app_name/get_env/set_env/unset_env/yield_cpu/
                     try_release_sys_memory/set_thread_priority/set_thread_stick/
                     set_console_utf8_output/get_all_ipv6_address/get_interface_name_by_ipv4
-  * Bytes leftover: from_string/init_memory_pool guard/__getitem__ bound check/
+  * Bytes leftover: from_string/init_memory_pool guard/__getitem__ positive/negative bounds/
                     convert_to_hex_str (static)/__bytes__/copy via deep_copy_self
   * ElapsedTimer extra ctors + restart + get_cpu_timestamp
   * DeadlineTimer set_deadline + has_expired
@@ -24,6 +24,7 @@ Targets binding surface NOT exercised by test_vlink.py / test_vlink_full.py:
 """
 
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -123,6 +124,37 @@ def test_spin_lock():
 
     assert sl.try_lock() is True
     sl.unlock()
+
+    # Keep a possible GIL deadlock contained so a regression fails by timeout
+    # instead of hanging the complete test process.
+    contention_check = """
+import threading
+import time
+import vlink
+
+lock = vlink.SpinLock()
+lock.lock()
+acquired = threading.Event()
+
+def wait_for_lock():
+    lock.lock()
+    acquired.set()
+    lock.unlock()
+
+waiter = threading.Thread(target=wait_for_lock)
+waiter.start()
+time.sleep(0.02)
+lock.unlock()
+waiter.join(timeout=1.0)
+assert acquired.is_set()
+"""
+    subprocess.run(
+        [sys.executable, "-c", contention_check],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=3.0,
+    )
 
     fired = []
     with sl as guarded:
@@ -371,8 +403,18 @@ def test_bytes_leftover():
     assert _vlink.Bytes.convert_to_hex_str(raw) in ("DE AD BE EF", "deadbeef", "de ad be ef", "DEADBEEF")
 
     assert bytes(raw) == b"\xde\xad\xbe\xef"
+    assert raw[0] == 0xDE
+    assert raw[-1] == 0xEF
+    assert raw[-len(raw)] == 0xDE
+
     try:
         _ = raw[100]
+        assert False, "expected IndexError"
+    except IndexError:
+        pass
+
+    try:
+        _ = raw[-len(raw) - 1]
         assert False, "expected IndexError"
     except IndexError:
         pass
@@ -493,7 +535,30 @@ def test_schema_data_default_bool():
     assert not s
     s.encoding = "protobuf"
     assert s
-    print("[PASS] SchemaData __bool__")
+
+    raw = _vlink.RawData()
+    assert raw.create(4096)
+    assert raw.fill_data(b"A" * 4096)
+    s.data = raw.to_bytes()
+    wire = s.data
+    parsed = _vlink.RawData()
+    assert parsed.from_bytes(wire)
+
+    # Replacing a Bytes-valued member used to bypass Bytes.resize/clear guards
+    # and leave parsed pointing at freed storage.
+    try:
+        s.data = _vlink.Bytes.from_bytes(b"replacement")
+        assert False, "SchemaData.data must not replace pinned storage"
+    except BufferError:
+        pass
+    assert parsed.data() == b"A" * 4096
+
+    # Assigning the exact same member is a true no-op and remains valid.
+    s.data = wire
+    del parsed
+    s.data = _vlink.Bytes.from_bytes(b"replacement")
+    assert s.data.to_bytes() == b"replacement"
+    print("[PASS] SchemaData __bool__ / pinned data replacement")
 
 
 def test_sample_lost_info():
@@ -608,6 +673,26 @@ def test_bytes_buffer_protocol_roundtrip():
     mv = memoryview(b)
     assert bytes(mv) == b"abc123"
     assert len(mv) == 6
+
+    assert b.resize(b.size())
+    assert b.reserve(b.capacity())
+    assert b.shrink_to(b.size())
+    assert b.deep_copy_self() is b
+
+    for mutate in (
+        lambda: b.clear(),
+        lambda: b.resize(1024),
+        lambda: b.reserve(1024),
+        lambda: b.shrink_to(1),
+    ):
+        try:
+            mutate()
+            assert False, "buffer-invalidating mutation must reject an active memoryview"
+        except BufferError:
+            pass
+
+    del mv
+    assert b.resize(1024)
     print("[PASS] Bytes buffer-protocol round-trip")
 
 

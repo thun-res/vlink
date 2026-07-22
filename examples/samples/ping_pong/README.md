@@ -9,7 +9,7 @@
 | API | 用途 |
 |-----|------|
 | `Publisher<Bytes>` / `Subscriber<Bytes>` | 一对单向 Bytes 通道（ping、pong 各一对） |
-| `pub.publish(data)` | 发送原始字节，shm 后端下零拷贝 |
+| `pub.publish(data)` | 发送原始字节；普通 `Bytes` 在 SHM 后端会复制进 transport loan |
 | `sub.listen(cb)` | 注册收包回调（回调入参仅回调内有效） |
 | `Bytes::create(n)` | 预分配定长缓冲，复用以排除分配抖动 |
 | `Timer` + `MessageLoop` | 定时重发；`run()` 驻留、`quit()` 退出 |
@@ -27,7 +27,7 @@ std::atomic<std::chrono::steady_clock::time_point> start = std::chrono::steady_c
 sub.listen([&start](const vlink::Bytes&) {
   auto us = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - start.load()).count();
-  CLOG_D("Delay(ms) = %.3lf.", us / 2000.0);  // RTT / 2 = 单向延迟
+  CLOG_D("Delay(ms) = %.3lf.", us / 2000.0);  // RTT / 2 单向估计（假设路径对称）
 });
 
 vlink::Bytes data = vlink::Bytes::create(test_size);  // 预分配一次，循环复用
@@ -51,10 +51,10 @@ sub.listen([&pub](const vlink::Bytes& data) { pub.publish(data); });  // 原样�
 
 | 环境变量 | 取值 |
 |----------|------|
-| `PING_TRANSPORT` / `PONG_TRANSPORT` | `dds` / `ddsc` / `shm` / `someip` / `fdbus` / `qnx` |
+| `PING_TRANSPORT` / `PONG_TRANSPORT` | `dds` / `ddsc` / `shm` / `someip` / `fdbus` |
 | `PING_URL` / `PONG_URL` | 完整 URL（覆盖 TRANSPORT） |
 
-shm 后端零拷贝延迟最低（需先启动 `iox-roudi`）；仅切换 URL 前缀即更换后端，代码不变。
+`shm://` 运行依赖 `iox-roudi`。本例通过 `Bytes::create()` 创建普通缓冲区，SHM 发布时仍会复制到 transport loan；若要验证零拷贝路径，应改用 `loan()` 并按发布结果归还所有权。多数 topic 型后端可替换 scheme，SOME/IP 等专用后端还需要符合其地址格式。
 
 ## 🧭 模型选择
 

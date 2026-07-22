@@ -42,8 +42,8 @@
  *
  * - @b Read (playback).  Frames originate inside the reader and flow @e out to the user.
  *   @c on_read() receives each frame and re-emits it via @c do_callback().  URL/type remapping is a
- *   separate, once-per-URL hook, @c convert_url_meta(), applied when the bag is opened.  On the read
- *   side @c Frame::ser_type / @c schema_type are empty (query @c BagReader::get_ser_type() if needed).
+ *   separate, once-per-URL hook, @c convert_url_meta(), applied when the bag is opened.  The effective
+ *   @c Frame::ser_type / @c schema_type metadata is populated before @c on_read() runs.
  *
  * - @b Write (recording).  Frames originate from the caller and flow @e into the bag.  @c on_write()
  *   receives each frame -- fully populated with @c ser_type / @c schema_type because recording
@@ -61,8 +61,10 @@
  * | bind_direction()    | both  | At bind time: stored, observable via get_direction()          |
  * | register_callback() | both  | At bind time: store the forwarding sink                       |
  * | convert_url_meta()  | read  | Once per URL at open: true = keep, false = drop               |
+ * | on_reset()          | read  | Before a playback session: discard retained session state     |
  * | on_read()           | read  | Every replayed frame: re-emit via do_callback()               |
  * | on_write()          | write | Every frame before persist: re-emit via do_callback()         |
+ * | flush()             | both  | At a completed boundary or detach: drain buffered tail        |
  * | do_callback()       | both  | Forward one frame to the sink (drop = not call)               |
  *
  * @c on_read() and @c on_write() are both pure: an implementation defines both even when it serves a single
@@ -72,10 +74,14 @@
  *
  * @verbatim
  *   read  : load .so -> bind_direction(kRead) -> register_callback -> convert_url_meta (per URL)
- *                    -> on_read (per frame) -> do_callback -> callback_ -> user
+ *                    -> on_reset -> [on_read -> do_callback -> callback_ -> user] (per frame) -> flush
  *   write : load .so -> bind_direction(kWrite) -> register_callback
  *                    -> on_write (per frame) -> do_callback -> callback_ -> writer persists
  * @endverbatim
+ *
+ * A read pass calls @c flush() only after natural completion.  If the reader observes @c stop() or
+ * @c jump() before the boundary drain begins, it skips @c flush(); the next top-level session calls
+ * @c on_reset() to discard that retained tail.
  *
  * @par Read-side example (rename a topic on replay)
  * @code
@@ -142,8 +148,8 @@ namespace vlink {
  * The host binds an instance through @c BagReader::bind_bag_interface() or
  * @c BagWriter::bind_bag_interface().  At bind time the host calls @c bind_direction() to
  * record which side the plugin serves and @c register_callback() to supply the forwarding sink.  The frame
- * hooks @c on_read() and @c on_write() are pure and must both be defined; @c convert_url_meta() and @c flush()
- * carry defaults.  Implementations are expected to be thread-compatible with the host's loop thread.
+ * hooks @c on_read() and @c on_write() are pure and must both be defined; @c convert_url_meta(), @c on_reset(),
+ * and @c flush() carry defaults.  Implementations are expected to be thread-compatible with the host's loop thread.
  */
 class BagPluginInterface {
   VLINK_PLUGIN_REGISTER(BagPluginInterface)
@@ -228,10 +234,15 @@ class BagPluginInterface {
    * (emitting several), or buffering and re-emitting frames @e reordered by data-plane time (e.g. via
    * @c BagProcessor) is permitted.
    *
-   * @note @c Frame::ser_type / @c schema_type are empty on the read side; query
-   *       @c BagReader::get_ser_type() / @c get_schema_type() (or stash them from @c convert_url_meta())
-   *       if needed.  The payload is a shallow view valid for the duration of the call; copy it before
-   *       buffering for asynchronous emit.
+   * @note @c Frame::ser_type and @c Frame::schema_type contain the effective URL metadata, including
+   *       overrides made by @c convert_url_meta().  The payload is a shallow view valid for the duration
+   *       of the call; copy it before buffering for asynchronous emit.
+   *
+   * @note Prefer @c convert_url_meta() for stable URL remapping.  If this hook emits a frame under a
+   *       different URL, existing type fields remain authoritative because the plugin may have renamed a
+   *       TypeA payload or transcoded it intentionally.  To resolve metadata registered for the emitted
+   *       URL, clear @c ser_type and set @c schema_type to @c SchemaType::kUnknown before calling
+   *       @c do_callback(); otherwise update both fields to describe the emitted payload explicitly.
    *
    * @param frame Replayed frame.
    */
@@ -265,16 +276,29 @@ class BagPluginInterface {
   virtual void on_write(const Frame& frame) = 0;
 
   /**
+   * @brief Discards state retained from an earlier read-side playback session.
+   *
+   * @details
+   * Called synchronously before a reader starts each top-level playback session and before its ready
+   * callback.  A plugin that buffers frames must override this to discard the cache and reset all time
+   * anchors without emitting frames, typically with @c processor_.reset().  This isolates a new play or
+   * jump from frames retained when the preceding session was interrupted.  The default implementation is
+   * a no-op for synchronous plugins.  The writer does not call this hook.
+   */
+  virtual void on_reset();
+
+  /**
    * @brief Drains any internally-buffered frames downstream before the host unbinds and tears down.
    *
    * @details
-   * Called by the host on its own thread, while its sink is still valid, right before it detaches this
-   * plugin (read side: at reader teardown; write side: at writer teardown, before the recording loop is
-   * stopped).  A plugin that buffers frames for asynchronous re-emit (e.g. a @c BagProcessor reorder
-   * buffer) must override this to flush those frames synchronously -- typically @c processor_.flush() --
-   * so a buffered tail is recorded / replayed instead of dropped.  The default implementation is a no-op
-   * (a synchronous plugin holds nothing back).  After @c flush() returns the host stops delivering this
-   * plugin's emitted frames, so any frame produced afterwards is ignored.
+   * Called by the host on its own thread, while its sink is still valid, after each naturally completed
+   * read-side playback pass and right before either side detaches the plugin.  An interrupted pass skips
+   * this boundary call.  A plugin that buffers frames for
+   * asynchronous re-emit (e.g. a @c BagProcessor reorder buffer) must override this to flush those frames
+   * synchronously -- typically @c processor_.flush() -- so a buffered tail is recorded / replayed instead
+   * of dropped and cannot leak into the next playback pass.  The default implementation is a no-op (a
+   * synchronous plugin holds nothing back).  On detach, after @c flush() returns, the host stops delivering
+   * this plugin's emitted frames, so any frame produced afterwards is ignored.
    */
   virtual void flush();
 
@@ -317,6 +341,8 @@ inline bool BagPluginInterface::convert_url_meta(std::string& url, std::string& 
 
   return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 }
+
+inline void BagPluginInterface::on_reset() {}
 
 inline void BagPluginInterface::flush() {}
 

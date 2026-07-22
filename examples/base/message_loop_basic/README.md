@@ -1,6 +1,6 @@
 # 🔄 message_loop_basic — `MessageLoop` 入门
 
-`vlink::MessageLoop` 是 vlink 应用层的中央事件循环：**Publisher / Subscriber / Client / Server / Setter / Getter / Timer 的所有回调都跑在某个 MessageLoop 上**。把多个原语 `attach` 到同一个 loop，它们的回调天然串行执行，业务无需自己加锁。
+`vlink::MessageLoop` 是 vlink 应用层的显式事件循环。后端支持时，将 Subscriber / Server / Getter 等有入站回调的原语 `attach` 到同一个 loop 后，回调会投递到该 loop 并串行执行；当前 intra/fdbus/someip 不支持节点 attach/detach，调用方应检查返回值。Timer 必须在 `start()` 前 attach 到 MessageLoop（或在构造时传入 loop），其回调也由该 loop 调度。
 
 ![MessageLoop architecture](./images/message-loop-architecture.png)
 

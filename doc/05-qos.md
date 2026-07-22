@@ -14,9 +14,11 @@ QoS 是一组约束消息投递行为的策略集合，控制可靠性、历史�
 
 QoS 在 VLink 中以 `vlink::Qos` 聚合结构承载，由传输后端解释，其生效遵循三条规则：
 
-- **后端选择性消费**：通过 `register_qos` / `?qos=<name>` 引用命名 `Qos` profile 的机制由 DDS 家族（`dds://`、`ddsc://`、`ddsr://`、`ddst://`）与 `zenoh://` 提供。`intra://`、`shm://`、`someip://` 等后端不解释该结构，传入的 QoS 被静默忽略。注意 `mqtt://` 的 `?qos=` 含义不同：它取 MQTT 原生的数值等级 `0`/`1`/`2`，而非此处的命名 profile。各后端支持范围见 [传输后端与 URL](04-transport.md)。
+- **后端选择性消费**：通过 `register_qos` / `?qos=<name>` 引用命名 `Qos` profile 的机制由 DDS 家族（`dds://`、`ddsc://`、`ddsr://`）与 `zenoh://` 提供。`intra://`、`shm://`、`someip://` 等后端不解释该结构，传入的 QoS 被静默忽略。注意 `mqtt://` 的 `?qos=` 含义不同：它取 MQTT 原生的数值等级 `0`/`1`/`2`，而非此处的命名 profile。各后端支持范围见 [传输后端与 URL](04-transport.md)。
 - **按名引用**：`vlink::QosProfile` 内置 16 个 profile，其名字可在上述后端的 URL 中直接使用（如 `?qos=sensor`）；自定义 QoS 需先经 `register_qos("name", qos)` 注册，再以该名引用。
 - **显式有效位**：`Qos::valid` 必须为 `true`，传输层才会应用该策略。所有预定义 profile 已置位；手工构造的 `Qos` 须自行置 `true`。
+
+`zenoh://` 的命名 profile 接口与 DDS 一致，但原生能力映射不是 DDS QoS 的等价实现：可靠性用于选择 block/drop 拥塞控制（带 unstable API 的 zenoh-c 还设置 publisher reliability），`additions.priority` 与 `is_express` 直接映射到 Zenoh 发布、请求和响应选项；在 zenoh-c 中，正的 `history.depth`（或显式 `?depth=`）还用于链路 data/real-time TX 队列并限制到 1–16，pico 没有对应的队列配置。Durability、KeepAll、Deadline、Lifespan、Liveliness、Ownership、DestinationOrder、LatencyBudget、ResourceLimits 与 PublishMode 当前不映射到 Zenoh 原生 QoS。Field 的迟到 Getter 获得最新值依赖 VLink Setter 缓存及匹配后重发，不等同于 Zenoh durability/storage。
 
 ---
 
@@ -72,7 +74,7 @@ auto pub = vlink::Publisher<MyMsg>::create_unique("dds://lidar/points?qos=sensor
 | 发布模式 | `publish_mode.kind` | `kSync` / `kASync` | 控制/RPC 用 `kSync`；高频大流量用 `kASync` 换取吞吐 |
 | Deadline | `deadline.period` | 毫秒，`-1` 不约束 | 监测周期数据断流：设为预期周期的 2~3 倍 |
 | Lifespan | `lifespan.duration` | 毫秒，`-1` 永久 | 时效数据（如实时位置）超时自动丢弃 |
-| 优先级 | `additions.priority` | `kPriorityRealTime` … `kPriorityBackground` | 配合 MessageLoop 优先级队列调度回调顺序 |
+| 优先级 | `additions.priority` | `kPriorityRealTime` … `kPriorityBackground` | 当前映射为 Zenoh 传输优先级；与 MessageLoop 任务优先级无关 |
 
 其余子策略（Liveliness、DestinationOrder、Ownership、LatencyBudget、ResourceLimits）属低频进阶项，默认值适用于绝大多数场景，完整字段说明见 [参考](14-reference.md)。
 
@@ -116,21 +118,18 @@ auto setter = vlink::Setter<int>::create_unique("dds://system/mode?qos=my_field"
 
 ## 🎛️ 5.6 设置入口
 
-`?qos=<name>` 是最常用的入口，框架另提供两种等价方式，按「配置在何时确定」选择：
+`?qos=<name>` 是最常用的入口；也可直接构造后端 `Conf`。命名 profile 须先注册到对应后端，两种写法最终都写入 `Conf::qos`：
 
 | 入口 | 写法 | 适用 |
 | --- | --- | --- |
 | URL 查询参数 | `"dds://topic?qos=sensor"` | 最常用；可叠加 `&depth=` 覆盖深度 |
 | Conf 构造填名字 | `vlink::DdsConf("topic", 0, 20, "sensor")` | 需在构造时一并指定 domain/depth |
-| 延迟初始化 + `set_property` | 构造传 `kWithoutInit`，逐项 `set_property` 后 `init()` | 构造与配置分离的场景 |
 
-延迟初始化入口示例：
+`set_property()` 不是 DDS endpoint QoS 的通用逐字段入口。DDS 的 `dds.*` 属性用于 participant/transport 配置；Zenoh 另行支持 `qos`、`depth` 属性。DDS endpoint QoS 应通过 URL、`DdsConf` 或 `qos_ext` 配置，例如：
 
 ```cpp
-vlink::Publisher<MyMsg> pub("dds://vehicle/speed", vlink::InitType::kWithoutInit);
-pub.set_property("depth", "20");
-pub.set_property("qos", "sensor");
-pub.init();
+vlink::DdsConf conf("vehicle/speed", /*domain=*/0, /*depth=*/20, /*qos=*/"sensor");
+vlink::Publisher<MyMsg> pub(conf);
 ```
 
 `register_qos` 之外的进阶配置仅限 DDS 家族：在运行期组装每个 endpoint 各自 QoS 的 per-entity 属性映射 `qos_ext`（与命名 profile 的 `qos` 字段互斥，二者同时非空会令 `is_valid()` 为 `false`），以及加载 Fast-DDS XML profile 的 `load_global_qos_file`。这些由对应的 `*Conf` 提供，详见 [传输后端与 URL](04-transport.md) 所述 DDS 系列的扩展 QoS 形式。

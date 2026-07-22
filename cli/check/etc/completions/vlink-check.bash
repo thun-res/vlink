@@ -29,4 +29,4 @@ _vlink_check() {
     esac
 }
 
-complete -F _vlink_check vlink-check check
+_vlink_bash_register_completion _vlink_check vlink-check check

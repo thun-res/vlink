@@ -256,7 +256,19 @@ TEST_SUITE("zerocopy-RawData") {
   TEST_CASE("deep_copy from raw pointer rejects self buffer and resizes owned storage") {
     zerocopy::RawData rd;
     REQUIRE(rd.create(16));
-    CHECK_FALSE(rd.deep_copy(const_cast<uint8_t*>(rd.data()), rd.size()));
+    auto* original = const_cast<uint8_t*>(rd.data());
+    original[0] = 0xA5u;
+    CHECK_FALSE(rd.shallow_copy(original + 1, rd.size() - 1));
+    CHECK_FALSE(rd.deep_copy(original + 1, rd.size() - 1));
+    CHECK_FALSE(rd.deep_copy(original, rd.size()));
+    CHECK(rd.is_owner());
+    CHECK_EQ(rd.data(), original);
+    CHECK_EQ(rd.data()[0], 0xA5u);
+
+    zerocopy::RawData borrowed;
+    REQUIRE(borrowed.shallow_copy(original, rd.size()));
+    CHECK_FALSE(rd.shallow_copy(borrowed));
+    CHECK_FALSE(rd.deep_copy(borrowed));
 
     std::vector<uint8_t> larger(64);
     fill_pattern(larger.data(), larger.size(), 0x41u);
@@ -398,6 +410,12 @@ TEST_SUITE("zerocopy-RawData") {
     CHECK((rd >> wire));
     CHECK(zerocopy::RawData::check_valid(wire));
     CHECK_EQ(wire.size(), rd.get_serialized_size());
+    uintptr_t serialized_pointer = 1;
+    std::memcpy(&serialized_pointer, wire.data() + 8u + 40u, sizeof(serialized_pointer));
+    CHECK_EQ(serialized_pointer, 0u);
+
+    const uintptr_t legacy_pointer = reinterpret_cast<uintptr_t>(rd.data());
+    std::memcpy(wire.data() + 8u + 40u, &legacy_pointer, sizeof(legacy_pointer));
 
     zerocopy::RawData rd2;
     CHECK((rd2 << wire));

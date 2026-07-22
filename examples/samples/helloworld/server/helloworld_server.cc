@@ -27,7 +27,7 @@
 // in a single process, using Protobuf-generated messages (Helloworld::Request,
 // Helloworld::Response, Helloworld::Message). The transport backend is selected
 // at runtime via environment variables in helloworld_common.h (defaults to DDS),
-// so the same binary works over dds://, ddsc://, shm://, fdbus://, qnx://, or
+// so the same binary works over dds://, ddsc://, shm://, fdbus://, or
 // someip:// without recompilation -- this is the canonical VLink URL-driven
 // dispatch pattern. Typical engineering scenario: a long-lived service that
 // answers synchronous RPC requests while periodically broadcasting status events

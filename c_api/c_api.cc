@@ -240,7 +240,7 @@ static vlink::Security::Config build_security_config(const vlink_security_config
         std::free(buf);  // NOLINT(cppcoreguidelines-no-malloc)
 
         if VUNLIKELY (size > 0U && (result.data() == nullptr || result.size() != size)) {
-          VLOG_W("vlink_security_config.decrypt_callback: deep_copy failed (size=%zu).", size);
+          CLOG_W("vlink_security_config.decrypt_callback: deep_copy failed (size=%zu).", size);
           result = vlink::Bytes{};
           return false;
         }
@@ -833,7 +833,7 @@ static int create_server_impl(const char* url, const vlink_schema_info_t* schema
             vlink::Bytes plain;
 
             if VUNLIKELY (!state->security->security.decrypt(req_data, plain)) {
-              VLOG_W(
+              CLOG_W(
                   "vlink_server: decrypt request failed, dropping (url='%s'). vlink_reply on this request will return "
                   "VLINK_RET_RUNTIME_ERROR.",
                   server_url.c_str());
@@ -948,7 +948,7 @@ static int create_secure_server_impl(const char* url, const vlink_schema_info_t*
           vlink::Bytes plain;
 
           if VUNLIKELY (!state->security || !state->security->security.decrypt(req_data, plain)) {
-            VLOG_W(
+            CLOG_W(
                 "vlink_server: decrypt request failed, dropping (url='%s'). vlink_reply on this request will return "
                 "VLINK_RET_RUNTIME_ERROR.",
                 server_url.c_str());
@@ -1728,7 +1728,10 @@ int vlink_get(const vlink_getter_handle_t handle, uint8_t* data, size_t* size) {
       return VLINK_RET_MEMORY_ERROR;
     }
 
-    std::memcpy(data, plain.data(), plain.size());
+    if VLIKELY (!plain.empty()) {
+      std::memcpy(data, plain.data(), plain.size());
+    }
+
     *size = plain.size();
 
     return VLINK_RET_NO_ERROR;
@@ -1740,7 +1743,9 @@ int vlink_get(const vlink_getter_handle_t handle, uint8_t* data, size_t* size) {
     return VLINK_RET_MEMORY_ERROR;
   }
 
-  std::memcpy(data, val.data(), val.size());
+  if VLIKELY (!val.empty()) {
+    std::memcpy(data, val.data(), val.size());
+  }
 
   *size = val.size();
 

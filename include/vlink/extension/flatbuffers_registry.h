@@ -248,7 +248,8 @@ inline SchemaData FlatbuffersRegistry::build_data(const std::string& name, const
  * constructor invokes @c VLINK_REGISTER_FLATBUFFERS_NOW.  Each expansion uses
  * @c __COUNTER__ to obtain a unique helper specialisation so the macro can be used
  * multiple times in the same translation unit and works correctly with namespaced or
- * templated @p binary_schema_type values.
+ * templated @p binary_schema_type values.  Compilers without @c __COUNTER__ fall back
+ * to the standard @c __LINE__ macro.
  *
  * @par Example
  * @code
@@ -256,24 +257,34 @@ inline SchemaData FlatbuffersRegistry::build_data(const std::string& name, const
  *                            Helloworld::fbs::UserBinarySchema);
  * @endcode
  */
-#define VLINK_REGISTER_FLATBUFFERS(schema_name, binary_schema_type)    \
-  /* NOLINTBEGIN */                                                    \
-  namespace {                                                          \
-  template <int Id>                                                    \
-  struct VlinkAutoRegisterFlatbuffersHelper;                           \
-                                                                       \
-  template <>                                                          \
-  struct VlinkAutoRegisterFlatbuffersHelper<__COUNTER__> {             \
-    struct Init {                                                      \
-      Init() noexcept {                                                \
-        using SchemaType = binary_schema_type;                         \
-        (void)VLINK_REGISTER_FLATBUFFERS_NOW(schema_name, SchemaType); \
-      }                                                                \
-    };                                                                 \
-                                                                       \
-    [[maybe_unused]] inline static const Init instance{};              \
-  };                                                                   \
-  }                                                                    \
+#if defined(__COUNTER__)
+#if defined(__clang__) || defined(__GNUC__)
+#define VLINK_INTERNAL_FLATBUFFERS_UNIQUE_ID __extension__ __COUNTER__
+#else
+#define VLINK_INTERNAL_FLATBUFFERS_UNIQUE_ID __COUNTER__
+#endif
+#else
+#define VLINK_INTERNAL_FLATBUFFERS_UNIQUE_ID __LINE__
+#endif
+
+#define VLINK_REGISTER_FLATBUFFERS(schema_name, binary_schema_type)                 \
+  /* NOLINTBEGIN */                                                                 \
+  namespace {                                                                       \
+  template <int Id>                                                                 \
+  struct VlinkAutoRegisterFlatbuffersHelper;                                        \
+                                                                                    \
+  template <>                                                                       \
+  struct VlinkAutoRegisterFlatbuffersHelper<VLINK_INTERNAL_FLATBUFFERS_UNIQUE_ID> { \
+    struct Init {                                                                   \
+      Init() noexcept {                                                             \
+        using SchemaType = binary_schema_type;                                      \
+        (void)VLINK_REGISTER_FLATBUFFERS_NOW(schema_name, SchemaType);              \
+      }                                                                             \
+    };                                                                              \
+                                                                                    \
+    [[maybe_unused]] inline static const Init instance{};                           \
+  };                                                                                \
+  }                                                                                 \
   /* NOLINTEND */
 
 #endif  // VLINK_HAS_SCHEMA_PLUGIN_FLATBUFFERS

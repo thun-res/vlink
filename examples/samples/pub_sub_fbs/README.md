@@ -36,7 +36,7 @@ pub.publish(u);                                  // 框架自动序列化
 ## 🔍 行为要点
 
 1. FlatBuffers 被框架自动识别，无需手动设置序列化类型。
-2. 发布端立即开始发送，FlatBuffers 路径下 CycloneDDS 提供的语义已满足，无需 `wait_for_subscribers`。
+2. 本例持续周期发布，允许 discovery 匹配前的首批样本丢失，因此未调用 `wait_for_subscribers()`；若首条消息必须送达，发布前仍应等待订阅者。
 3. 序列号 `seq` 使 `user_id` / `nickname` / `order` 等字段逐周期变化，订阅端看到的是消息流而非固定包。
 4. `User*` 指针仅回调内有效；需长期保留时复制到 `UserT`。
 

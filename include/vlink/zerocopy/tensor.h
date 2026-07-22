@@ -247,7 +247,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) Tensor final {
    * @brief Serialises the struct snapshot plus element bytes into @p bytes.
    *
    * @param bytes Output buffer; resized automatically when its size differs from the serialized size.
-   * @return Always @c true.
+   * @return @c true on success; @c false when output allocation fails.
    */
   bool operator>>(Bytes& bytes) const noexcept;
 
@@ -277,7 +277,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) Tensor final {
    * @brief Borrows @p target's data buffer without copying.
    *
    * @param target Source tensor whose buffer must outlive @c *this.
-   * @return @c false on self-borrow, otherwise @c true.
+   * @return @c false on self-borrow or owned-buffer aliasing, otherwise @c true.
    */
   bool shallow_copy(const Tensor& target) noexcept;
 
@@ -285,7 +285,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) Tensor final {
    * @brief Allocates (or reuses) an owned buffer and copies @p target's elements.
    *
    * @param target Source tensor to clone.
-   * @return @c false on self-copy, otherwise @c true.
+   * @return @c false on self-copy, owned-buffer aliasing, or allocation failure.
    */
   bool deep_copy(const Tensor& target) noexcept;
 
@@ -305,7 +305,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) Tensor final {
    * @c num_elements() * @c element_size().
    *
    * @param size Byte count; must be non-zero.
-   * @return @c false when @p size is zero, otherwise @c true.
+   * @return @c false when @p size is zero or allocation fails, otherwise @c true.
    */
   bool create(size_t size) noexcept;
 
@@ -319,7 +319,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) Tensor final {
    *
    * @param data Non-null source pointer that must outlive @c *this.
    * @param size Buffer length in bytes; must be non-zero.
-   * @return @c false on invalid arguments or unchanged pointer, otherwise @c true.
+   * @return @c false on invalid arguments, unchanged pointer, or owned-buffer aliasing, otherwise @c true.
    */
   bool shallow_copy(uint8_t* data, size_t size) noexcept;
 
@@ -328,7 +328,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) Tensor final {
    *
    * @param data Non-null source pointer.
    * @param size Number of bytes to copy; must be non-zero.
-   * @return @c false on invalid arguments or aliasing, otherwise @c true.
+   * @return @c false on invalid arguments, aliasing, or allocation failure, otherwise @c true.
    */
   bool deep_copy(uint8_t* data, size_t size) noexcept;
 
@@ -525,6 +525,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) Tensor final {
    * @p rank is clamped to @c kMaxRank.  Strides are derived assuming a
    * contiguous row-major layout (last dimension changes fastest).
    * @c batch_size is cached from @p shape[0] when @p rank > 0.
+   * Unrepresentable element counts or strides clear the shape state.
    *
    * @param shape Pointer to a shape array of length @p rank.
    * @param rank Number of valid dimensions.

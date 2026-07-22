@@ -178,6 +178,7 @@ class DdsFactory final {
   std::map<PublisherFilter, std::weak_ptr<dds::Publisher>> publisher_map_;
   std::map<SubscriberFilter, std::weak_ptr<dds::Subscriber>> subscriber_map_;
   dds::TypeSupport raw_typesupport_;
+  std::recursive_mutex participant_mtx_;
   std::mutex raw_typesupport_mtx_;
   std::mutex mtx_;
 

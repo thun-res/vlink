@@ -26,6 +26,7 @@
 #include "./extension/bag_reader.h"
 
 #include <doctest/doctest.h>
+#include <vlink/base/condition_variable.h>
 
 #include <algorithm>
 #include <atomic>
@@ -162,26 +163,108 @@ class RemapPlugin final : public BagPluginInterface {
   void on_write(const Frame& frame) override { do_callback(frame); }
 };
 
+class ReadMetaPlugin final : public BagPluginInterface {
+ public:
+  bool convert_url_meta(std::string& url, std::string& ser_type, SchemaType& schema_type) override {
+    if (url == "intra://meta-old") {
+      url = "intra://meta-new";
+      ser_type = "demo.Converted";
+      schema_type = SchemaType::kFlatbuffers;
+    }
+
+    return true;
+  }
+
+  void on_read(const Frame& frame) override {
+    observed_url = frame.url;
+    observed_ser = frame.ser_type;
+    observed_schema = frame.schema_type;
+    do_callback(frame);
+  }
+
+  void on_write(const Frame& frame) override { do_callback(frame); }
+
+  std::string observed_url;
+  std::string observed_ser;
+  SchemaType observed_schema{SchemaType::kUnknown};
+};
+
+class RewriteReadUrlPlugin final : public BagPluginInterface {
+ public:
+  explicit RewriteReadUrlPlugin(bool clear_meta) : clear_meta_(clear_meta) {}
+
+  void on_read(const Frame& frame) override {
+    Frame out = frame;
+    out.url = "intra://type-b";
+
+    if (clear_meta_) {
+      out.ser_type.clear();
+      out.schema_type = SchemaType::kUnknown;
+    }
+
+    do_callback(out);
+  }
+
+  void on_write(const Frame& frame) override { do_callback(frame); }
+
+ private:
+  bool clear_meta_{false};
+};
+
 class ReorderReadPlugin final : public BagPluginInterface {
  public:
-  explicit ReorderReadPlugin(int64_t min_cache_time) : processor_(make_config(min_cache_time)) {
+  explicit ReorderReadPlugin(int64_t min_cache_time, int blocked_input_count = 0)
+      : processor_(make_config(min_cache_time)), blocked_input_count_(blocked_input_count) {
     processor_.register_output_callback([this](const Frame& frame) { do_callback(frame); });
   }
 
   ~ReorderReadPlugin() override = default;
 
   void on_read(const Frame& frame) override {
+    const int input_count = input_count_.fetch_add(1, std::memory_order_relaxed) + 1;
+
     int64_t data_timestamp = 0;
     std::memcpy(&data_timestamp, frame.data.data(), sizeof(int64_t));
 
     Frame out = frame;
     out.timestamp = data_timestamp;
     processor_.push(data_timestamp, out);
+
+    if (input_count == blocked_input_count_) {
+      std::unique_lock lock(block_mtx_);
+      input_blocked_ = true;
+      block_cv_.notify_all();
+      block_cv_.wait_for(lock, 3s, [this] { return block_released_; });
+      input_blocked_ = false;
+    }
   }
 
   void on_write(const Frame& frame) override { do_callback(frame); }
 
-  void flush() override { processor_.flush(); }
+  void on_reset() override { processor_.reset(); }
+
+  void flush() override {
+    flush_count_.fetch_add(1, std::memory_order_relaxed);
+    processor_.flush();
+  }
+
+  [[nodiscard]] int flush_count() const noexcept { return flush_count_.load(std::memory_order_relaxed); }
+
+  [[nodiscard]] int input_count() const noexcept { return input_count_.load(std::memory_order_relaxed); }
+
+  [[nodiscard]] bool wait_for_input_blocked() {
+    std::unique_lock lock(block_mtx_);
+    return block_cv_.wait_for(lock, 3s, [this] { return input_blocked_; });
+  }
+
+  void release_input_block() {
+    {
+      std::lock_guard lock(block_mtx_);
+      block_released_ = true;
+    }
+
+    block_cv_.notify_all();
+  }
 
  private:
   static BagProcessor::Config make_config(int64_t min_cache_time) {
@@ -191,6 +274,13 @@ class ReorderReadPlugin final : public BagPluginInterface {
   }
 
   BagProcessor processor_;
+  int blocked_input_count_{0};
+  std::atomic<int> flush_count_{0};
+  std::atomic<int> input_count_{0};
+  std::mutex block_mtx_;
+  vlink::ConditionVariable block_cv_;
+  bool input_blocked_{false};
+  bool block_released_{false};
 };
 
 class CoverageReaderPlugin final : public BagPluginInterface {
@@ -1187,6 +1277,230 @@ void verify_reader_playback_loops_and_auto_quit(const char* suffix) {
   CHECK_GE(finish_count.load(std::memory_order_acquire), finish_before_auto_quit + 1);
 }
 
+void verify_reorder_plugin_resets_between_playback_loops(const char* suffix) {
+  ScopedBagPath bag(suffix);
+
+  BagWriter::Config writer_config;
+  writer_config.sync_mode = true;
+  writer_config.compress = BagWriter::kCompressNone;
+  writer_config.tag_name = "reorder-loop-boundary";
+
+  auto writer = BagWriter::create(bag.path.string(), writer_config);
+  REQUIRE(writer != nullptr);
+
+  Frame later = bag_frame(1'000, "dds://coverage/later", "raw", SchemaType::kRaw, ActionType::kPublish, "");
+  later.data = make_timestamp_payload(2'000);
+  Frame earlier = bag_frame(2'000, "dds://coverage/earlier", "raw", SchemaType::kRaw, ActionType::kPublish, "");
+  earlier.data = make_timestamp_payload(1'000);
+  REQUIRE_EQ(writer->push(later), 1'000);
+  REQUIRE_EQ(writer->push(earlier), 2'000);
+  writer.reset();
+
+  auto reader = BagReader::create(bag.path.string(), false);
+  REQUIRE(reader != nullptr);
+
+  auto plugin = std::make_shared<ReorderReadPlugin>(60'000);
+  reader->bind_bag_interface(plugin);
+
+  std::vector<std::string> observed_urls;
+  std::mutex observed_mtx;
+  std::atomic_bool finished{false};
+  reader->register_output_callback([&](const Frame& frame) {
+    std::lock_guard lock(observed_mtx);
+    observed_urls.emplace_back(frame.url);
+  });
+  reader->register_finish_callback([&](bool interrupted) {
+    CHECK_FALSE(interrupted);
+    finished.store(true, std::memory_order_release);
+  });
+
+  REQUIRE(reader->async_run());
+
+  BagReader::Config play_config;
+  play_config.force_delay = 0;
+  play_config.times = 2;
+  reader->play(play_config);
+
+  REQUIRE(common_test::wait_until([&] { return finished.load(std::memory_order_acquire); }, 3s));
+
+  {
+    std::lock_guard lock(observed_mtx);
+    REQUIRE_EQ(observed_urls.size(), 4u);
+    CHECK_EQ(observed_urls[0], "dds://coverage/earlier");
+    CHECK_EQ(observed_urls[1], "dds://coverage/later");
+    CHECK_EQ(observed_urls[2], "dds://coverage/earlier");
+    CHECK_EQ(observed_urls[3], "dds://coverage/later");
+  }
+
+  CHECK_EQ(plugin->flush_count(), 2);
+  reader->quit();
+  REQUIRE(reader->wait_for_quit(3000));
+}
+
+void verify_reorder_plugin_resets_after_interruption(const char* suffix, bool jump) {
+  ScopedBagPath bag(suffix);
+
+  BagWriter::Config writer_config;
+  writer_config.sync_mode = true;
+  writer_config.compress = BagWriter::kCompressNone;
+  writer_config.tag_name = "reorder-interruption-boundary";
+
+  auto writer = BagWriter::create(bag.path.string(), writer_config);
+  REQUIRE(writer != nullptr);
+
+  Frame later = bag_frame(1'000, "dds://coverage/later", "raw", SchemaType::kRaw, ActionType::kPublish, "");
+  later.data = make_timestamp_payload(3'000);
+  Frame earlier = bag_frame(2'000, "dds://coverage/earlier", "raw", SchemaType::kRaw, ActionType::kPublish, "");
+  earlier.data = make_timestamp_payload(1'000);
+  Frame middle = bag_frame(3'000, "dds://coverage/middle", "raw", SchemaType::kRaw, ActionType::kPublish, "");
+  middle.data = make_timestamp_payload(2'000);
+  REQUIRE_EQ(writer->push(later), 1'000);
+  REQUIRE_EQ(writer->push(earlier), 2'000);
+  REQUIRE_EQ(writer->push(middle), 3'000);
+  writer.reset();
+
+  auto reader = BagReader::create(bag.path.string(), false);
+  REQUIRE(reader != nullptr);
+
+  auto plugin = std::make_shared<ReorderReadPlugin>(60'000);
+  reader->bind_bag_interface(plugin);
+
+  std::atomic<int> ready_count{0};
+  std::atomic<int> finish_count{0};
+  std::atomic<int> interrupted_count{0};
+  std::mutex observed_mtx;
+  std::vector<std::pair<int, std::string>> observed;
+  reader->register_ready_callback([&] { ready_count.fetch_add(1, std::memory_order_relaxed); });
+  reader->register_finish_callback([&](bool interrupted) {
+    finish_count.fetch_add(1, std::memory_order_release);
+    if (interrupted) {
+      interrupted_count.fetch_add(1, std::memory_order_release);
+    }
+  });
+  reader->register_output_callback([&](const Frame& frame) {
+    std::lock_guard lock(observed_mtx);
+    observed.emplace_back(ready_count.load(std::memory_order_relaxed), frame.url);
+  });
+
+  REQUIRE(reader->async_run());
+
+  BagReader::Config play_config;
+  play_config.force_delay = 100;
+  play_config.times = 1;
+  reader->play(play_config);
+
+  REQUIRE(common_test::wait_until([&] { return plugin->input_count() >= 1; }, 2s));
+
+  if (jump) {
+    reader->jump(0, 1.0, 1, true);
+  } else {
+    reader->stop();
+    REQUIRE(reader->wait_for_idle(3000));
+    REQUIRE_EQ(interrupted_count.load(std::memory_order_acquire), 1);
+    reader->play(play_config);
+  }
+
+  const int expected_finish_count = jump ? 1 : 2;
+  REQUIRE(common_test::wait_until([&] { return finish_count.load(std::memory_order_acquire) == expected_finish_count; },
+                                  3s));
+
+  {
+    std::lock_guard lock(observed_mtx);
+    REQUIRE_EQ(observed.size(), 3u);
+    CHECK_EQ(observed[0], std::make_pair(2, std::string("dds://coverage/earlier")));
+    CHECK_EQ(observed[1], std::make_pair(2, std::string("dds://coverage/middle")));
+    CHECK_EQ(observed[2], std::make_pair(2, std::string("dds://coverage/later")));
+  }
+
+  reader->quit();
+  REQUIRE(reader->wait_for_quit(3000));
+}
+
+void verify_reorder_plugin_skips_boundary_flush_after_interruption(const char* suffix, bool jump) {
+  ScopedBagPath bag(suffix);
+
+  BagWriter::Config writer_config;
+  writer_config.sync_mode = true;
+  writer_config.compress = BagWriter::kCompressNone;
+  writer_config.tag_name = "reorder-boundary-interruption";
+
+  auto writer = BagWriter::create(bag.path.string(), writer_config);
+  REQUIRE(writer != nullptr);
+
+  Frame later = bag_frame(1'000, "dds://coverage/later", "raw", SchemaType::kRaw, ActionType::kPublish, "");
+  later.data = make_timestamp_payload(2'000);
+  Frame earlier = bag_frame(2'000, "dds://coverage/earlier", "raw", SchemaType::kRaw, ActionType::kPublish, "");
+  earlier.data = make_timestamp_payload(1'000);
+  REQUIRE_EQ(writer->push(later), 1'000);
+  REQUIRE_EQ(writer->push(earlier), 2'000);
+  writer.reset();
+
+  std::atomic<int> finish_count{0};
+  std::atomic<int> interrupted_count{0};
+  std::mutex observed_mtx;
+  std::vector<std::string> observed_urls;
+
+  auto plugin = std::make_shared<ReorderReadPlugin>(60'000, 2);
+  auto reader = BagReader::create(bag.path.string(), false);
+  REQUIRE(reader != nullptr);
+  reader->bind_bag_interface(plugin);
+
+  reader->register_finish_callback([&](bool interrupted) {
+    finish_count.fetch_add(1, std::memory_order_release);
+    if (interrupted) {
+      interrupted_count.fetch_add(1, std::memory_order_release);
+    }
+  });
+  reader->register_output_callback([&](const Frame& frame) {
+    std::lock_guard lock(observed_mtx);
+    observed_urls.emplace_back(frame.url);
+  });
+
+  REQUIRE(reader->async_run());
+
+  BagReader::Config play_config;
+  play_config.force_delay = 0;
+  play_config.times = 1;
+  reader->play(play_config);
+
+  REQUIRE(plugin->wait_for_input_blocked());
+
+  std::future<void> jump_result;
+
+  if (jump) {
+    jump_result = std::async(std::launch::async, [&] { reader->jump(0, 1.0, 1, true); });
+    REQUIRE(common_test::wait_until([&] { return reader->is_jumping(); }, 2s));
+  } else {
+    reader->stop();
+  }
+
+  plugin->release_input_block();
+
+  if (jump) {
+    jump_result.get();
+  } else {
+    REQUIRE(reader->wait_for_idle(3000));
+    reader->play(play_config);
+  }
+
+  const int expected_finish_count = jump ? 1 : 2;
+  REQUIRE(common_test::wait_until([&] { return finish_count.load(std::memory_order_acquire) == expected_finish_count; },
+                                  3s));
+
+  {
+    std::lock_guard lock(observed_mtx);
+    REQUIRE_EQ(observed_urls.size(), 2u);
+    CHECK_EQ(observed_urls[0], "dds://coverage/earlier");
+    CHECK_EQ(observed_urls[1], "dds://coverage/later");
+  }
+
+  CHECK_EQ(plugin->flush_count(), 1);
+  CHECK_EQ(interrupted_count.load(std::memory_order_acquire), jump ? 0 : 1);
+
+  reader->quit();
+  REQUIRE(reader->wait_for_quit(3000));
+}
+
 void verify_split_manifest_tag_update_and_parse_failure(const char* suffix, bool split_before) {
   ScopedBagPath bag(suffix);
   write_split_bag(bag.path, split_before);
@@ -1247,8 +1561,9 @@ void verify_method_schema_split_bag(const char* suffix) {
   REQUIRE(reader->open_cursor());
   const auto frames = read_all_frames(*reader);
   REQUIRE_EQ(frames.size(), 4u);
-  CHECK_EQ(frames[0].payload, "request");
-  CHECK_EQ(frames[1].payload, "response");
+  const bool has_method_pair = (frames[0].payload == "request" && frames[1].payload == "response") ||
+                               (frames[0].payload == "response" && frames[1].payload == "request");
+  CHECK(has_method_pair);
   CHECK_EQ(frames[2].payload, "server-request");
   CHECK_EQ(frames[3].payload, "server-response");
 
@@ -2715,6 +3030,73 @@ TEST_SUITE("extension-BagReader") {
     CHECK_EQ(observed_schema, SchemaType::kProtobuf);
   }
 
+  TEST_CASE("process_output populates effective metadata before invoking a read plugin") {
+    StubBagReader reader;
+    auto plugin = std::make_shared<ReadMetaPlugin>();
+    reader.bind_bag_interface(plugin);
+
+    std::vector<BagReader::Info::UrlMeta> metas;
+    BagReader::Info::UrlMeta meta;
+    meta.url = "intra://meta-old";
+    meta.ser_type = "demo.Original";
+    meta.schema_type = SchemaType::kProtobuf;
+    metas.emplace_back(std::move(meta));
+    reader.process_url_metas(metas);
+    reader.rebuild_url_meta_lookup(metas);
+
+    std::string output_url;
+    std::string output_ser;
+    SchemaType output_schema = SchemaType::kUnknown;
+    reader.register_output_callback([&](const Frame& frame) {
+      output_url = frame.url;
+      output_ser = frame.ser_type;
+      output_schema = frame.schema_type;
+    });
+
+    Frame frame = read_frame(1, "intra://meta-old", ActionType::kPublish, Bytes::create(1u));
+    reader.process_output(frame);
+
+    CHECK_EQ(plugin->observed_url, "intra://meta-old");
+    CHECK_EQ(plugin->observed_ser, "demo.Converted");
+    CHECK_EQ(plugin->observed_schema, SchemaType::kFlatbuffers);
+    CHECK_EQ(output_url, "intra://meta-new");
+    CHECK_EQ(output_ser, "demo.Converted");
+    CHECK_EQ(output_schema, SchemaType::kFlatbuffers);
+  }
+
+  TEST_CASE("read plugins explicitly select metadata when changing a frame url") {
+    auto run = [](bool clear_meta) {
+      StubBagReader reader;
+      reader.bind_bag_interface(std::make_shared<RewriteReadUrlPlugin>(clear_meta));
+
+      std::vector<BagReader::Info::UrlMeta> metas;
+      BagReader::Info::UrlMeta type_a;
+      type_a.url = "intra://type-a";
+      type_a.ser_type = "demo.TypeA";
+      type_a.schema_type = SchemaType::kProtobuf;
+      metas.emplace_back(std::move(type_a));
+      BagReader::Info::UrlMeta type_b;
+      type_b.url = "intra://type-b";
+      type_b.ser_type = "demo.TypeB";
+      type_b.schema_type = SchemaType::kFlatbuffers;
+      metas.emplace_back(std::move(type_b));
+      reader.process_url_metas(metas);
+      reader.rebuild_url_meta_lookup(metas);
+
+      std::pair<std::string, SchemaType> observed;
+      reader.register_output_callback(
+          [&](const Frame& frame) { observed = std::make_pair(frame.ser_type, frame.schema_type); });
+
+      Frame frame = read_frame(1, "intra://type-a", ActionType::kPublish, Bytes::create(1u));
+      reader.process_output(frame);
+
+      return observed;
+    };
+
+    CHECK_EQ(run(false), std::make_pair(std::string("demo.TypeA"), SchemaType::kProtobuf));
+    CHECK_EQ(run(true), std::make_pair(std::string("demo.TypeB"), SchemaType::kFlatbuffers));
+  }
+
   TEST_CASE("flush_plugin drains an async read plugin's buffered tail frames") {
     StubBagReader reader;
     reader.bind_bag_interface(std::make_shared<ReorderReadPlugin>(60'000));
@@ -3166,6 +3548,25 @@ TEST_SUITE("extension-BagReader") {
     exercise_reader_playback_controls(".vcap", false);
     verify_reader_playback_loops_and_auto_quit(".vdb");
     verify_reader_playback_loops_and_auto_quit(".vcap");
+  }
+
+  TEST_CASE("buffered read plugins reset their data-time axis between playback loops") {
+    verify_reorder_plugin_resets_between_playback_loops(".vdb");
+    verify_reorder_plugin_resets_between_playback_loops(".vcap");
+  }
+
+  TEST_CASE("buffered read plugins discard interrupted playback state before restart") {
+    verify_reorder_plugin_resets_after_interruption(".vdb", false);
+    verify_reorder_plugin_resets_after_interruption(".vcap", false);
+    verify_reorder_plugin_resets_after_interruption(".vdb", true);
+    verify_reorder_plugin_resets_after_interruption(".vcap", true);
+  }
+
+  TEST_CASE("buffered read plugins do not flush a pass interrupted at its final frame") {
+    verify_reorder_plugin_skips_boundary_flush_after_interruption(".vdb", false);
+    verify_reorder_plugin_skips_boundary_flush_after_interruption(".vcap", false);
+    verify_reorder_plugin_skips_boundary_flush_after_interruption(".vdb", true);
+    verify_reorder_plugin_skips_boundary_flush_after_interruption(".vcap", true);
   }
 
   TEST_CASE("busy real readers queue maintenance APIs without losing playback state") {

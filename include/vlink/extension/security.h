@@ -167,10 +167,15 @@ class VLINK_EXPORT Security final {
      * @brief Low-frequency policy knobs and sender-authentication keys.
      */
     struct Advanced final {
-      std::string aad_context;        ///< Application or channel tag (<= 65535 bytes) bound into AEAD AAD.
-      uint32_t replay_window{4096U};  ///< Sliding replay-window size in messages; @c 0 disables anti-replay.
-      std::string signing_key_pem;    ///< Local RSA private key (PEM) used to sign with RSA-PSS-SHA256.
-      std::string verify_key_pem;     ///< Peer's RSA public key (PEM) required for RSA-PSS verification.
+      std::string aad_context;  ///< Application or channel tag (<= 65535 bytes) bound into AEAD AAD.
+      /**
+       * Sliding replay-window size in messages; @c 0 disables anti-replay. Built-in replay protection separately
+       * tracks at most 1024 symmetric and 1024 asymmetric sender identities for the lifetime of a @c Security
+       * instance; a mode rejects previously unseen identities after its table reaches that limit.
+       */
+      uint32_t replay_window{4096U};
+      std::string signing_key_pem;  ///< Local RSA private key (PEM) used to sign with RSA-PSS-SHA256.
+      std::string verify_key_pem;   ///< Peer's RSA public key (PEM) required for RSA-PSS verification.
     };
 
     std::string key;                      ///< Raw symmetric seed; SHA-256 truncated to 16 bytes.

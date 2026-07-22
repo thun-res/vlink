@@ -29,6 +29,7 @@
 #include <utility>
 
 #include "./base/exception.h"
+#include "./base/helpers.h"
 
 namespace vlink {
 
@@ -209,7 +210,7 @@ std::string UrlParser::to_string() const {
 
   if (category_ == Category::kNonHierarchical) {
     full_url.append(content_);
-  } else if (content_.length() > path_.length()) {
+  } else if (Helpers::has_startwith(content_, "//") || !host_.empty() || !username_.empty() || port_ != 0) {
     full_url.append("//");
 
     if (!(username_.empty() || password_.empty())) {
@@ -313,8 +314,11 @@ std::string::const_iterator UrlParser::parse_content(const std::string& str,
 
     if (!content_.compare(0, 2, "//")) {
       std::string::const_iterator authority_cursor = (content_.begin() + 2);
+      const size_t userinfo_pos = content_.find('@', 2);
+      const size_t authority_end_pos = content_.find_first_of("/?#", 2);
 
-      if (content_.find_first_of('@') != std::string::npos) {
+      if (userinfo_pos != std::string::npos &&
+          (authority_end_pos == std::string::npos || userinfo_pos < authority_end_pos)) {
         std::string::const_iterator userpass_divider = parse_username(str, content_, authority_cursor);
         authority_cursor = parse_password(str, content_, (userpass_divider + 1));
         ++authority_cursor;

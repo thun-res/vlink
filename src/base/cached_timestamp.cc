@@ -40,7 +40,7 @@ std::string_view CachedTimestamp::get(const char* format, bool use_utc) {
 
   std::lock_guard lock(mtx_);
 
-  int64_t cached_sec = last_sec_.load(std::memory_order_relaxed);
+  int64_t cached_sec = last_sec_;
 
   if VLIKELY (sec == cached_sec && is_utc_ == use_utc) {
     update_milliseconds(ms);
@@ -49,7 +49,7 @@ std::string_view CachedTimestamp::get(const char* format, bool use_utc) {
 
   format_full_timestamp(format, now, use_utc, ms);
 
-  last_sec_.store(sec, std::memory_order_release);
+  last_sec_ = sec;
   is_utc_ = use_utc;
 
   return std::string_view(buffer_, buffer_len_);

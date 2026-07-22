@@ -66,6 +66,7 @@
 
 #pragma once
 
+#include <cmath>
 #include <limits>
 #include <type_traits>
 
@@ -85,7 +86,7 @@ namespace Quantize {  // NOLINT(readability-identifier-naming)
  * @param quant_min Minimum value of the real range.
  * @param quant_max Maximum value of the real range.
  * @param value Value to quantize.
- * @return Quantized value.
+ * @return Quantized value, or @c 0 for an invalid / non-finite range or NaN input.
  */
 template <typename QuantT, typename MinT, typename MaxT, typename ValueT>
 [[nodiscard]] QuantT encode(MinT quant_min, MaxT quant_max, ValueT value) noexcept;
@@ -96,7 +97,7 @@ template <typename QuantT, typename MinT, typename MaxT, typename ValueT>
  * @param quant_min Minimum value of the real range.
  * @param quant_max Maximum value of the real range.
  * @param value Quantized value.
- * @return Dequantized value.
+ * @return Dequantized value, or @c 0 for an invalid / non-finite range.
  */
 template <typename ReturnT, typename MinT, typename MaxT, typename ValueT>
 [[nodiscard]] ReturnT decode(MinT quant_min, MaxT quant_max, ValueT value) noexcept;
@@ -109,7 +110,7 @@ template <typename ReturnT, typename MinT, typename MaxT, typename ValueT>
  *
  * @param extent Positive symmetric extent.
  * @param value Value to quantize.
- * @return Quantized value, or @c 0 for invalid extent / NaN input.
+ * @return Quantized value, or @c 0 for invalid / non-finite extent or NaN input.
  */
 template <typename QuantT, typename ExtentT, typename ValueT>
 [[nodiscard]] QuantT encode(ExtentT extent, ValueT value) noexcept;
@@ -122,7 +123,7 @@ template <typename QuantT, typename ExtentT, typename ValueT>
  *
  * @param extent Positive symmetric extent.
  * @param value Quantized value.
- * @return Dequantized value, or @c 0 for invalid extent.
+ * @return Dequantized value, or @c 0 for invalid / non-finite extent.
  */
 template <typename ReturnT, typename ExtentT, typename ValueT>
 [[nodiscard]] ReturnT decode(ExtentT extent, ValueT value) noexcept;
@@ -144,7 +145,7 @@ inline QuantT encode(MinT quant_min, MaxT quant_max, ValueT value) noexcept {
   auto max = static_cast<CalcT>(quant_max);
   auto target = static_cast<CalcT>(value);
 
-  if VUNLIKELY (min != min || max != max || target != target || max <= min) {
+  if VUNLIKELY (!std::isfinite(min) || !std::isfinite(max) || std::isnan(target) || max <= min) {
     return static_cast<QuantT>(0);
   }
 
@@ -156,7 +157,18 @@ inline QuantT encode(MinT quant_min, MaxT quant_max, ValueT value) noexcept {
   auto quant_range = quant_max_value - quant_min_value;
 
   auto scaled = ((target - min) * quant_range / (max - min)) + quant_min_value;
+
+  if VUNLIKELY (!std::isfinite(scaled)) {
+    auto scale = std::fmax(std::fabs(min), std::fabs(max));
+    auto ratio = ((target / scale) - (min / scale)) / ((max / scale) - (min / scale));
+    scaled = (ratio * quant_range) + quant_min_value;
+  }
+
   auto rounded = scaled >= static_cast<CalcT>(0) ? scaled + static_cast<CalcT>(0.5) : scaled - static_cast<CalcT>(0.5);
+
+  if VUNLIKELY (std::isnan(rounded)) {
+    return static_cast<QuantT>(0);
+  }
 
   if VUNLIKELY (rounded >= quant_max_value) {
     return std::numeric_limits<QuantT>::max();
@@ -181,14 +193,23 @@ inline QuantT encode(ExtentT extent, ValueT value) noexcept {
   auto extent_value = static_cast<CalcT>(extent);
   auto target = static_cast<CalcT>(value);
 
-  if VUNLIKELY (extent_value != extent_value || target != target || extent_value <= static_cast<CalcT>(0)) {
+  if VUNLIKELY (!std::isfinite(extent_value) || std::isnan(target) || extent_value <= static_cast<CalcT>(0)) {
     return static_cast<QuantT>(0);
   }
 
   auto quant_max_value = static_cast<CalcT>(std::numeric_limits<QuantT>::max());
   auto quant_lowest_value = static_cast<CalcT>(std::numeric_limits<QuantT>::lowest());
   auto scaled = target * quant_max_value / extent_value;
+
+  if VUNLIKELY (!std::isfinite(scaled) && std::isfinite(target)) {
+    scaled = (target / extent_value) * quant_max_value;
+  }
+
   auto rounded = scaled >= static_cast<CalcT>(0) ? scaled + static_cast<CalcT>(0.5) : scaled - static_cast<CalcT>(0.5);
+
+  if VUNLIKELY (std::isnan(rounded)) {
+    return static_cast<QuantT>(0);
+  }
 
   if VUNLIKELY (rounded >= quant_max_value) {
     return std::numeric_limits<QuantT>::max();
@@ -214,7 +235,7 @@ inline ReturnT decode(MinT quant_min, MaxT quant_max, ValueT value) noexcept {
   auto max = static_cast<CalcT>(quant_max);
   auto target = static_cast<CalcT>(value);
 
-  if VUNLIKELY (min != min || max != max || target != target || max <= min) {
+  if VUNLIKELY (!std::isfinite(min) || !std::isfinite(max) || std::isnan(target) || max <= min) {
     return static_cast<ReturnT>(0);
   }
 
@@ -231,7 +252,33 @@ inline ReturnT decode(MinT quant_min, MaxT quant_max, ValueT value) noexcept {
     target = quant_lowest_value;
   }
 
-  return static_cast<ReturnT>(((target - quant_min_value) * (max - min) / quant_range) + min);
+  auto decoded = ((target - quant_min_value) * (max - min) / quant_range) + min;
+
+  if VUNLIKELY (!std::isfinite(decoded)) {
+    auto ratio = (target - quant_min_value) / quant_range;
+    auto scale = std::fmax(std::fabs(min), std::fabs(max));
+    auto normalized = ((static_cast<CalcT>(1) - ratio) * (min / scale)) + (ratio * (max / scale));
+    decoded = normalized * scale;
+  }
+
+  if VUNLIKELY (std::isnan(decoded)) {
+    return static_cast<ReturnT>(0);
+  }
+
+  if constexpr (std::is_integral_v<ReturnT>) {
+    auto return_max_value = static_cast<CalcT>(std::numeric_limits<ReturnT>::max());
+    auto return_lowest_value = static_cast<CalcT>(std::numeric_limits<ReturnT>::lowest());
+
+    if VUNLIKELY (decoded >= return_max_value) {
+      return std::numeric_limits<ReturnT>::max();
+    }
+
+    if VUNLIKELY (decoded <= return_lowest_value) {
+      return std::numeric_limits<ReturnT>::lowest();
+    }
+  }
+
+  return static_cast<ReturnT>(decoded);
 }
 
 template <typename ReturnT, typename ExtentT, typename ValueT>
@@ -245,14 +292,36 @@ inline ReturnT decode(ExtentT extent, ValueT value) noexcept {
 
   auto extent_value = static_cast<CalcT>(extent);
 
-  if VUNLIKELY (extent_value != extent_value || extent_value <= static_cast<CalcT>(0)) {
+  if VUNLIKELY (!std::isfinite(extent_value) || extent_value <= static_cast<CalcT>(0)) {
     return static_cast<ReturnT>(0);
   }
 
   auto target = static_cast<CalcT>(value);
   auto quant_max_value = static_cast<CalcT>(std::numeric_limits<ValueT>::max());
+  auto decoded = target * extent_value / quant_max_value;
 
-  return static_cast<ReturnT>(target * extent_value / quant_max_value);
+  if VUNLIKELY (!std::isfinite(decoded)) {
+    decoded = (target / quant_max_value) * extent_value;
+  }
+
+  if VUNLIKELY (std::isnan(decoded)) {
+    return static_cast<ReturnT>(0);
+  }
+
+  if constexpr (std::is_integral_v<ReturnT>) {
+    auto return_max_value = static_cast<CalcT>(std::numeric_limits<ReturnT>::max());
+    auto return_lowest_value = static_cast<CalcT>(std::numeric_limits<ReturnT>::lowest());
+
+    if VUNLIKELY (decoded >= return_max_value) {
+      return std::numeric_limits<ReturnT>::max();
+    }
+
+    if VUNLIKELY (decoded <= return_lowest_value) {
+      return std::numeric_limits<ReturnT>::lowest();
+    }
+  }
+
+  return static_cast<ReturnT>(decoded);
 }
 
 }  // namespace Quantize

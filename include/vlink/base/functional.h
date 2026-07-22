@@ -68,11 +68,12 @@
  *  - a null pointer-to-member.
  *
  * @par Exception safety
- * Copy operations use copy-and-swap and offer the strong guarantee; @c swap, move construction
- * and move assignment are @c noexcept.  The @c kIsInline predicate guarantees that inline-path
- * moves never throw, while the heap path simply moves a pointer.  Inline construction uses
- * placement-new directly into the SBO; heap construction is wrapped in @c try / @c catch so the
- * pool block is returned on a constructor exception.
+ * Copy assignment constructs the replacement first and installs it with a non-throwing move,
+ * preserving the strong guarantee without a three-way swap.  @c swap, move construction and move
+ * assignment are @c noexcept.  The @c kIsInline predicate guarantees that inline-path moves never
+ * throw, while the heap path simply moves a pointer.  Inline construction uses placement-new
+ * directly into the SBO; heap construction is wrapped in @c try / @c catch so the pool block is
+ * returned on a constructor exception.
  *
  * @par Object-lifetime model
  * Inline targets are placement-new'd into the SBO.  Heap storage holds a @c FunctorT*; the
@@ -187,9 +188,9 @@ struct IsStdMoveOnlyFunction<std::move_only_function<SignatureT>> : std::true_ty
  * @c operator() is @c const (matching @c std::function 's logical-const convention -- the
  * placement-newed target itself is non-const, so the @c const_cast pattern inside the invoker is
  * well-defined).  Empty construction, @c nullptr-from-nullptr, and the @c std::bad_function_call
- * empty-call exception all match @c std::function.  Copy operations follow copy-and-swap and
- * provide the strong exception guarantee; move construction, move assignment and @c swap are
- * @c noexcept.
+ * empty-call exception all match @c std::function.  Copy assignment builds its replacement before
+ * modifying the current target and therefore provides the strong exception guarantee; move
+ * construction, move assignment and @c swap are @c noexcept.
  *
  * @tparam ReturnT  Result type of the invocable target.
  * @tparam ArgsT    Argument types of the invocable target.
@@ -246,6 +247,7 @@ class Function<ReturnT(ArgsT...), SboSizeT> {
             typename = std::enable_if_t<std::conjunction_v<std::negation<std::is_same<DecayFunctorT, Function>>,
                                                            std::negation<std::is_same<DecayFunctorT, std::nullptr_t>>,
                                                            std::is_invocable_r<ReturnT, DecayFunctorT&, ArgsT...>,
+                                                           std::is_constructible<DecayFunctorT, FunctorT>,
                                                            std::is_copy_constructible<DecayFunctorT>>>>
   Function(FunctorT&& f);  // NOLINT(google-explicit-constructor)
 
@@ -274,6 +276,7 @@ class Function<ReturnT(ArgsT...), SboSizeT> {
             typename = std::enable_if_t<std::conjunction_v<std::negation<std::is_same<DecayFunctorT, Function>>,
                                                            std::negation<std::is_same<DecayFunctorT, std::nullptr_t>>,
                                                            std::is_invocable_r<ReturnT, DecayFunctorT&, ArgsT...>,
+                                                           std::is_constructible<DecayFunctorT, FunctorT>,
                                                            std::is_copy_constructible<DecayFunctorT>>>>
   Function& operator=(FunctorT&& f);
 
@@ -336,7 +339,7 @@ class Function<ReturnT(ArgsT...), SboSizeT> {
                                     std::is_nothrow_move_constructible_v<FunctorT>;
 
   struct VTable final {
-    ReturnT (*invoke)(const void* storage, ArgsT... args);
+    ReturnT (*invoke)(const void* storage, ArgsT&&... args);
 
     void (*copy_construct)(void* dst, const void* src);
 
@@ -355,7 +358,7 @@ class Function<ReturnT(ArgsT...), SboSizeT> {
 
   template <typename FunctorT>
   struct InlineVTable {
-    static ReturnT invoke(const void* storage, ArgsT... args);
+    static ReturnT invoke(const void* storage, ArgsT&&... args);
 
     static void copy_construct(void* dst, const void* src);
 
@@ -374,7 +377,7 @@ class Function<ReturnT(ArgsT...), SboSizeT> {
 
   template <typename FunctorT>
   struct HeapVTable {
-    static ReturnT invoke(const void* storage, ArgsT... args);
+    static ReturnT invoke(const void* storage, ArgsT&&... args);
 
     static void copy_construct(void* dst, const void* src);
 
@@ -403,7 +406,7 @@ class Function<ReturnT(ArgsT...), SboSizeT> {
 
   void reset() noexcept;
 
-  alignas(std::max_align_t) std::byte storage_[SboSizeT]{};
+  alignas(std::max_align_t) std::byte storage_[SboSizeT];
 
   const VTable* vtable_{nullptr};
 };
@@ -597,7 +600,7 @@ class MoveFunction<ReturnT(ArgsT...), SboSizeT> {
                                     std::is_nothrow_move_constructible_v<FunctorT>;
 
   struct VTable final {
-    ReturnT (*invoke)(void* storage, ArgsT... args);
+    ReturnT (*invoke)(void* storage, ArgsT&&... args);
 
     void (*move_construct)(void* dst, void* src) noexcept;
 
@@ -614,7 +617,7 @@ class MoveFunction<ReturnT(ArgsT...), SboSizeT> {
 
   template <typename FunctorT>
   struct InlineVTable {
-    static ReturnT invoke(void* storage, ArgsT... args);
+    static ReturnT invoke(void* storage, ArgsT&&... args);
 
     static void move_construct(void* dst, void* src) noexcept;
 
@@ -631,7 +634,7 @@ class MoveFunction<ReturnT(ArgsT...), SboSizeT> {
 
   template <typename FunctorT>
   struct HeapVTable {
-    static ReturnT invoke(void* storage, ArgsT... args);
+    static ReturnT invoke(void* storage, ArgsT&&... args);
 
     static void move_construct(void* dst, void* src) noexcept;
 
@@ -656,7 +659,7 @@ class MoveFunction<ReturnT(ArgsT...), SboSizeT> {
 
   void reset() noexcept;
 
-  alignas(std::max_align_t) std::byte storage_[SboSizeT]{};
+  alignas(std::max_align_t) std::byte storage_[SboSizeT];
 
   const VTable* vtable_{nullptr};
 };
@@ -732,7 +735,8 @@ template <typename ReturnT, typename... ArgsT, size_t SboSizeT>
 inline Function<ReturnT(ArgsT...), SboSizeT>& Function<ReturnT(ArgsT...), SboSizeT>::operator=(const Function& other) {
   if VLIKELY (this != &other) {
     Function tmp(other);
-    swap(tmp);
+    reset();
+    move_from(std::move(tmp));
   }
 
   return *this;
@@ -760,7 +764,8 @@ template <typename ReturnT, typename... ArgsT, size_t SboSizeT>
 template <typename FunctorT, typename DecayFunctorT, typename>
 inline Function<ReturnT(ArgsT...), SboSizeT>& Function<ReturnT(ArgsT...), SboSizeT>::operator=(FunctorT&& f) {
   Function tmp(std::forward<FunctorT>(f));
-  swap(tmp);
+  reset();
+  move_from(std::move(tmp));
   return *this;
 }
 
@@ -832,7 +837,7 @@ inline void Function<ReturnT(ArgsT...), SboSizeT>::swap(Function& other) noexcep
 template <typename ReturnT, typename... ArgsT, size_t SboSizeT>
 template <typename FunctorT>
 inline ReturnT Function<ReturnT(ArgsT...), SboSizeT>::InlineVTable<FunctorT>::invoke(const void* storage,
-                                                                                     ArgsT... args) {
+                                                                                     ArgsT&&... args) {
   auto* f = std::launder(reinterpret_cast<FunctorT*>(const_cast<void*>(storage)));
 
   if constexpr (std::is_void_v<ReturnT>) {
@@ -888,7 +893,8 @@ inline const void* Function<ReturnT(ArgsT...), SboSizeT>::InlineVTable<FunctorT>
 
 template <typename ReturnT, typename... ArgsT, size_t SboSizeT>
 template <typename FunctorT>
-inline ReturnT Function<ReturnT(ArgsT...), SboSizeT>::HeapVTable<FunctorT>::invoke(const void* storage, ArgsT... args) {
+inline ReturnT Function<ReturnT(ArgsT...), SboSizeT>::HeapVTable<FunctorT>::invoke(const void* storage,
+                                                                                   ArgsT&&... args) {
   FunctorT* f = *std::launder(static_cast<FunctorT* const*>(storage));
 
   if constexpr (std::is_void_v<ReturnT>) {
@@ -1116,7 +1122,8 @@ template <typename ReturnT, typename... ArgsT, size_t SboSizeT>
 template <typename FunctorT, typename DecayFunctorT, typename>
 inline MoveFunction<ReturnT(ArgsT...), SboSizeT>& MoveFunction<ReturnT(ArgsT...), SboSizeT>::operator=(FunctorT&& f) {
   MoveFunction tmp(std::forward<FunctorT>(f));
-  swap(tmp);
+  reset();
+  move_from(std::move(tmp));
   return *this;
 }
 
@@ -1187,7 +1194,8 @@ inline void MoveFunction<ReturnT(ArgsT...), SboSizeT>::swap(MoveFunction& other)
 
 template <typename ReturnT, typename... ArgsT, size_t SboSizeT>
 template <typename FunctorT>
-inline ReturnT MoveFunction<ReturnT(ArgsT...), SboSizeT>::InlineVTable<FunctorT>::invoke(void* storage, ArgsT... args) {
+inline ReturnT MoveFunction<ReturnT(ArgsT...), SboSizeT>::InlineVTable<FunctorT>::invoke(void* storage,
+                                                                                         ArgsT&&... args) {
   auto* f = std::launder(reinterpret_cast<FunctorT*>(storage));
 
   if constexpr (std::is_void_v<ReturnT>) {
@@ -1236,7 +1244,7 @@ inline const void* MoveFunction<ReturnT(ArgsT...), SboSizeT>::InlineVTable<Funct
 
 template <typename ReturnT, typename... ArgsT, size_t SboSizeT>
 template <typename FunctorT>
-inline ReturnT MoveFunction<ReturnT(ArgsT...), SboSizeT>::HeapVTable<FunctorT>::invoke(void* storage, ArgsT... args) {
+inline ReturnT MoveFunction<ReturnT(ArgsT...), SboSizeT>::HeapVTable<FunctorT>::invoke(void* storage, ArgsT&&... args) {
   FunctorT* f = *std::launder(static_cast<FunctorT**>(storage));
 
   if constexpr (std::is_void_v<ReturnT>) {

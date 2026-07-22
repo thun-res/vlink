@@ -47,9 +47,11 @@
  *
  * The oldest cached frame is released only once the data-plane-time span between the oldest and
  * newest cached frames reaches @c Config::min_cache_time, giving a late-but-earlier frame a chance to
- * slot ahead of already-cached later frames.  A wall-clock fallback drains the cache when a producer
- * goes silent, so the stream can always make progress.  Data-plane timestamps passed to @c push() are
- * in microseconds; @c Config time tunables are expressed in milliseconds and converted internally.
+ * slot ahead of already-cached later frames.  Before the first valid data-plane timestamp, the canonical
+ * @c Frame::timestamp advances the window and orders missing-time frames so streams without embedded
+ * timestamps remain bounded.  Producer wall time never advances this window; a silent producer's tail is
+ * released by @c flush().  Data-plane timestamps passed to @c push() are in microseconds; @c Config time
+ * tunables are expressed in milliseconds and converted internally.
  *
  * @par Write-side example (reorder by header time, then persist)
  * @code
@@ -99,7 +101,8 @@ class VLINK_EXPORT BagProcessor {
    *
    * @details
    * Invoked once @c Config::min_cache_time of data-plane time has accumulated ahead of the candidate
-   * frame (or a wall-clock drain has fired).  The frame is moved out of the cache into the callback.
+   * frame, the size limit forces progress, or @c flush() drains the tail.  The frame is moved out of
+   * the cache into the callback.
    * The callback frame timestamp is remapped onto the sorted data-plane-time axis so it stays strictly
    * increasing after the reorder.
    */
@@ -145,9 +148,10 @@ class VLINK_EXPORT BagProcessor {
    * @details
    * Safe to call from any thread after @c register_output_callback().  Frames are ordered by
    * @p data_timestamp.  Negative @p data_timestamp is filled from the previous data timestamp and the
-   * @c Frame::timestamp delta; without a previous anchor it stays -1 and sorts first.  Output frame
-   * timestamps are remapped on the data-time axis and kept strictly increasing within a flush segment
-   * (@c flush() resets the axis).  The frame is copied into the owning cache.
+   * @c Frame::timestamp delta; without a previous anchor it stays -1, sorts before valid data timestamps,
+   * and is ordered against other missing-time frames by @c Frame::timestamp.  Output frame timestamps are
+   * remapped on the data-time axis and kept strictly increasing within a flush segment (@c flush() resets
+   * the axis).  The frame is copied into the owning cache.
    *
    * @param data_timestamp Reorder key in microseconds (the data-plane time), or negative when missing.
    * @param frame          Frame to cache; @c Frame::timestamp is the canonical time before remapping.
@@ -167,6 +171,18 @@ class VLINK_EXPORT BagProcessor {
    */
   void flush();
 
+  /**
+   * @brief Synchronously discards every buffered frame and starts a fresh timestamp timeline.
+   *
+   * @details
+   * Waits for any output callback already in progress, clears the cache without emitting it, and resets
+   * all data-time resolution and output timestamp anchors.  Read-side plugins use this at the start of a
+   * new playback session so frames retained by an interrupted stop or jump cannot enter the next timeline.
+   * Do not call this from the processor's output callback or concurrently with @c push().  A no-op before
+   * callback registration or during shutdown.
+   */
+  void reset();
+
  private:
   bool on_check();
 
@@ -175,6 +191,8 @@ class VLINK_EXPORT BagProcessor {
   void on_run();
 
   void on_exec(bool at_end);
+
+  void reset_timeline();
 
   struct Impl;
   std::unique_ptr<Impl> impl_;

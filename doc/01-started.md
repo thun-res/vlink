@@ -151,8 +151,8 @@ output/
 | OpenSSL | 消息加密（AES） | `ENABLE_SECURITY=ON` | `sudo apt install libssl-dev` |
 | SQLite3 | 录制/回放 | `ENABLE_SQLITE=ON` | `sudo apt install libsqlite3-dev` |
 | zstd | 数据压缩 | `ENABLE_ZSTD=ON` | `sudo apt install libzstd-dev` |
-| Protobuf | CLI 工具（eproto/dump）/ Viewer / WebViz | `ENABLE_CLI_EPROTO` / `ENABLE_CLI_DUMP` / `ENABLE_VIEWER` / `ENABLE_WEBVIZ` | `sudo apt install libprotobuf-dev protobuf-compiler` |
-| FlatBuffers | CLI 工具（efbs/dump）/ Viewer / WebViz | `ENABLE_CLI_EFBS` / `ENABLE_CLI_DUMP` / `ENABLE_VIEWER` / `ENABLE_WEBVIZ` | `sudo apt install libflatbuffers-dev flatbuffers-compiler` |
+| Protobuf | CLI 工具（eproto/parse）/ Viewer / WebViz | `ENABLE_CLI_EPROTO` / `ENABLE_CLI_PARSE` / `ENABLE_VIEWER` / `ENABLE_WEBVIZ` | `sudo apt install libprotobuf-dev protobuf-compiler` |
+| FlatBuffers | CLI 工具（efbs/parse）/ Viewer / WebViz | `ENABLE_CLI_EFBS` / `ENABLE_CLI_PARSE` / `ENABLE_VIEWER` / `ENABLE_WEBVIZ` | `sudo apt install libflatbuffers-dev flatbuffers-compiler` |
 | Fast-DDS | DDS 传输（`dds://`） | 模块依赖 | 见 [Fast-DDS 官方文档](https://fast-dds.docs.eprosima.com/) |
 | CycloneDDS | DDS 传输（`ddsc://`） | 模块依赖 | 见 [CycloneDDS 官方文档](https://github.com/eclipse-cyclonedds/cyclonedds) |
 | Iceoryx | 共享内存（`shm://`） | 模块依赖 | 见 [Iceoryx 官方文档](https://iceoryx.io/) |
@@ -160,17 +160,19 @@ output/
 | Paho MQTT C | MQTT（`mqtt://`） | 模块依赖 | 见 [Eclipse Paho](https://github.com/eclipse/paho.mqtt.c) |
 | quill / DLT | 可选日志后端 | `SELECT_LOG_BACKEND=` | quill 已内嵌；DLT 用 `sudo apt install libdlt-dev` |
 
-> 其余传输后端（someip / fdbus / shm2 / ddsr / ddst 等）依赖见 [传输后端与 URL](04-transport.md)。无系统库时可让 CMake 自动下载，见 [§1.4.5 CPM 选项](#-145-用-cpm-自动下载依赖)。
+> 其余传输后端（someip / fdbus / shm2 / ddsr 等）依赖见 [传输后端与 URL](04-transport.md)。无系统库时可让 CMake 自动下载，见 [§1.4.5 CPM 选项](#-145-用-cpm-自动下载依赖)。
 
 ### 🖥️ 1.3.3 各平台编译器要求
 
-| 平台 | 推荐编译器 | C++ 标准 | 备注 |
-| --- | --- | --- | --- |
-| Linux | GCC 9+ / Clang 10+ | C++17 | GCC 7/8 需 `-lstdc++fs` |
-| macOS | Apple Clang 12+ | C++17 | 需要 macOS 10.15+ |
-| Windows | MSVC 2019+ / Clang-cl | C++17 | 需要 Windows SDK 10 |
-| QNX 7/8 | QCC（GCC 8.3 / 12.2） | C++17 | 需要 QNX SDP 7.1 / 8.0 |
-| Android | NDK r25+ | C++17 | API Level 21+，推荐 30+ |
+所有平台均以 C++17 为基线；差异主要在编译器、SDK 与系统版本：
+
+| 平台 | 推荐编译器 | 备注 |
+| --- | --- | --- |
+| Linux | GCC 9+ / Clang 10+ | GCC 7/8 需 `-lstdc++fs` |
+| macOS | Apple Clang 12+ | 需要 macOS 10.15+ |
+| Windows | MSVC 2019+ / Clang-cl | 需要 Windows SDK 10 |
+| QNX 7/8 | QCC（GCC 8.3 / 12.2） | 需要 QNX SDP 7.1 / 8.0 |
+| Android | NDK r25+ | API Level 21+，推荐 30+ |
 
 ---
 
@@ -209,11 +211,10 @@ Viewer / WebViz 子开关：`ENABLE_VIEWER_FFMPEG`、`ENABLE_VIEWER_OSG`、`ENAB
 | `SKIP_SHM2` | `OFF` | 跳过 `shm2://`（Iceoryx2） | `SKIP_SOMEIP` | `OFF` | 跳过 `someip://` |
 | `SKIP_DDS` | `OFF` | 跳过 `dds://`（Fast-DDS） | `SKIP_FDBUS` | `OFF` | 跳过 `fdbus://` |
 | `SKIP_DDSC` | `OFF` | 跳过 `ddsc://`（CycloneDDS） | `SKIP_DDSR` | `ON` | 跳过 `ddsr://`（需 RTI SDK） |
-| `SKIP_QNX` | `ON` | 跳过 `qnx://`（仅 QNX 平台） | `SKIP_DDST` | `ON` | 跳过 `ddst://` |
 
 ### 🧪 1.4.3 CLI / 测试 / 日志后端
 
-- **CLI 工具**：`ENABLE_CLI_INFO` / `BAG` / `TRIGGER` / `LIST` / `MONITOR` / `CHECK` / `BENCH` / `EPROTO` / `EFBS` / `DUMP`，默认全 `ON`。其中 `EPROTO` 依赖 Protobuf、`EFBS` 依赖 FlatBuffers、`DUMP` 两者皆需，对应依赖缺失时自动关闭。`ENABLE_EXPRTK`（默认 `ON`）提供 `DUMP` / Viewer / WebViz 的表达式引擎。
+- **CLI 工具**：`ENABLE_CLI_INFO` / `BAG` / `TRIGGER` / `LIST` / `MONITOR` / `CHECK` / `BENCH` / `EPROTO` / `EFBS` / `PARSE`，默认全 `ON`。其中 `EPROTO` 依赖 Protobuf、`EFBS` 依赖 FlatBuffers、`PARSE` 两者皆需，对应依赖缺失时自动关闭。`ENABLE_EXPRTK`（默认 `ON`）提供 `PARSE` / Viewer / WebViz 的表达式引擎。
 - **测试**：`ENABLE_TEST`（doctest）、`ENABLE_TEST_SANITIZE`（ASan）、`ENABLE_TEST_COVERAGE`（gcov/lcov）、`ENABLE_TEST_WARN`。
 - **日志后端**：`SELECT_LOG_BACKEND=spdlog|quill|dlt|native`，Android/QNX 平台默认 `native`，其余平台默认 `spdlog`；`quill` 提供更低延迟，`dlt` 面向车载 GENIVI，`native` 用于 Android/QNX 平台原生日志。
 
@@ -276,7 +277,7 @@ target_link_libraries(my_app PRIVATE vlink::vlink vlink::dds vlink::shm vlink::i
 | URL 前缀 | 链接目标 | 说明 |
 | --- | --- | --- |
 | `intra://` | `vlink::intra` | 进程内，无需序列化 |
-| `shm://` | `vlink::shm` | Iceoryx 共享内存，同机零拷贝 |
+| `shm://` | `vlink::shm` | Iceoryx 共享内存；支持 transport loan |
 | `shm2://` | `vlink::shm2` | Iceoryx2 共享内存（Beta） |
 | `dds://` | `vlink::dds` | Fast-DDS，跨机首选 |
 | `ddsc://` | `vlink::ddsc` | CycloneDDS，跨机 |
@@ -285,7 +286,7 @@ target_link_libraries(my_app PRIVATE vlink::vlink vlink::dds vlink::shm vlink::i
 | `mqtt://` | `vlink::mqtt` | IoT / 云端桥接（Beta） |
 | —（C 调用） | `vlink::c_api` | 纯 C API / 跨语言 FFI |
 
-> 其余后端（`ddsr` / `ddst` / `fdbus` / `qnx`）目标名同理，均为 `vlink::<scheme>`。完整后端对比见 [传输后端与 URL](04-transport.md)。
+> 其余后端（`ddsr` / `fdbus`）目标名同理，均为 `vlink::<scheme>`。完整后端对比见 [传输后端与 URL](04-transport.md)。
 
 ### 📝 1.5.3 CMakeLists.txt 模板
 
@@ -512,9 +513,8 @@ VLink 支持 Linux（x86_64 / aarch64）、Android、QNX 7.1 / 8.0、macOS（App
 | `zenoh://` | 是 | 是 | 是 | 是 | 云边场景 |
 | `someip://` | 是 | 是 | 是 | 否 | 车载以太网 |
 | `mqtt://` | 是 | 是 | 是 | 是 | IoT / 云端桥接 |
-| `qnx://` | 否 | 否 | 是 | 否 | QNX 专用 |
 
-> 完整矩阵（含 shm2 / ddsr / ddst / fdbus）见 [传输后端与 URL](04-transport.md)。
+> 完整矩阵（含 shm2 / ddsr / fdbus）见 [传输后端与 URL](04-transport.md)。
 
 ### 🪜 1.8.2 通用三步法
 
@@ -537,8 +537,8 @@ cmake --build build_cross -j$(nproc)
 | --- | --- | --- | --- |
 | ARM Linux | `linux/linux.toolchain.aarch64.cmake` | `CROSS_COMPILE_PREFIX`（如 `aarch64-linux-gnu-`），sysroot 设 `LINUX_INSTALL_PREFIX` | 先装 `gcc-aarch64-linux-gnu g++-aarch64-linux-gnu` |
 | Android | `android/android.toolchain.aarch64.cmake` | `ANDROID_NDK`（NDK 根目录） | 必须 `c++_shared`；`shm://` 不可用，改用 `dds://`/`intra://`；日志走 native；API 21+ |
-| QNX | `qnx/qnx.toolchain.aarch64.cmake` | `QNX_HOST` / `QNX_TARGET`（source `qnxsdp-env.sh` 后自动设） | `qnx://` 仅在 QNX 目标可用；`shm://` 不可用 |
-| macOS | 本机直接编；交叉用 `darwin/darwin.toolchain.aarch64.cmake` | 交叉时 `VLINK_HOST_PLATFORM=darwin-x86_64` | Universal 包用 `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`；`shm://` 不可用 |
+| QNX | `qnx/qnx.toolchain.aarch64.cmake` | `QNX_HOST` / `QNX_TARGET`（source `qnxsdp-env.sh` 后自动设） | `shm://` 需构建 Iceoryx 模块并运行 RouDi |
+| macOS | 本机直接编；交叉用 `darwin/darwin.toolchain.aarch64.cmake` | 交叉时 `VLINK_HOST_PLATFORM=darwin-x86_64` | Universal 包用 `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`；`shm://` 需构建 Iceoryx 模块并运行 RouDi |
 | Yocto | `linux/linux.toolchain.aarch64.cmake` | source SDK 后自动有 `SYSROOT` / `OE_CMAKE_TOOLCHAIN_FILE` | 工具链文件自动 include OE 配置 |
 | Buildroot | `linux/linux.toolchain.aarch64.cmake` | `CROSS_COMPILE_PREFIX` + `LINUX_INSTALL_PREFIX` 指向 Buildroot host/staging | 建议 `MinSizeRel` + 关闭 Proxy/SQLite |
 
@@ -564,6 +564,7 @@ cmake --build build_cross -j$(nproc)
 ├── lib/
 │   ├── libvlink.so                 # 核心库
 │   ├── libvlink-dds.so / -shm.so / -intra.so / ...   # 各传输模块（按构建配置）
+│   ├── python/                     # Python 绑定（启用 ENABLE_PYTHON_API 时）
 │   └── cmake/vlink/                # find_package 入口（vlink-config.cmake 等）
 ├── bin/                    # CLI 工具（vlink-info / vlink-bag / vlink-monitor ...）
 └── etc/vlink/
@@ -681,7 +682,7 @@ ls build/output/bin/
 
 ### 📡 1.12.3 通信模型示例
 
-`communication/` 覆盖三种模型的完整用法。模型选型遵循语义判据：数据持续流动且消费者不要求历史一致，选 Event；需要返回值的请求 / 响应，选 Method；只关心当前状态且后加入者须立即获得最新值，选 Field。
+`communication/` 覆盖三种模型的完整用法。模型选型遵循语义判据：数据持续流动且消费者不要求历史一致，选 Event；需要返回值的请求 / 响应，选 Method；只关心当前状态，选 Field。后加入 Getter 是否能立即获得最新值仍取决于后端与 durability/QoS。
 
 | 示例 | 模型 | 演示的 API |
 | --- | --- | --- |
@@ -697,7 +698,7 @@ ls build/output/bin/
 
 | 分类 | 示例 | 主题 | 详解 |
 | --- | --- | --- | --- |
-| serialization | `basic_types` | POD 结构体与基本类型，零序列化开销 | [消息序列化](03-serialization.md) |
+| serialization | `basic_types` | POD 结构体与基本类型，无编码转换、直接内存复制 | [消息序列化](03-serialization.md) |
 | url_guide | `url_basics` | URL 结构、参数与话题重映射 | [传输后端与 URL](04-transport.md) |
 | qos | `qos_basics` | QoS 基础参数与预设 profile（事件 / 方法 / 字段 / 传感器） | [QoS 配置](05-qos.md) |
 
@@ -734,7 +735,7 @@ ls build/output/bin/
 | --- | --- | --- | --- | --- |
 | `helloworld` | 多后端可切换 | Protobuf | Method + Event | 覆盖面最广的入门样例 |
 | `ping_pong` | 多后端可切换 | Bytes（POD） | Event（双向） | 端到端延迟测量 |
-| `shm_raw` | `shm://` | Bytes | Method + Event + Field | 零拷贝与加密的全模型演示 |
+| `shm_raw` | `shm://` | Bytes | Method + Event + Field | 共享内存后端上的加密全模型演示（安全路径会复制密文） |
 | `someip_flat` | `someip://` | FlatBuffers | Method + Event + Field | SOME/IP 车载以太网场景（Beta） |
 
 ### 🚦 1.12.8 后端运行前置
@@ -759,7 +760,7 @@ ls build/output/bin/
 **1. 找不到 OpenSSL / SQLite / zstd，对应功能被自动关闭。**
 安装对应 `-dev` 包（如 `sudo apt install libssl-dev`）后重新配置；或显式 `-DENABLE_SECURITY=OFF` 接受关闭。
 
-**2. 找不到 Protobuf / FlatBuffers，相关 CLI 工具（eproto/efbs/dump）或 Viewer / WebViz 被关闭。**
+**2. 找不到 Protobuf / FlatBuffers，相关 CLI 工具（eproto/efbs/parse）或 Viewer / WebViz 被关闭。**
 安装 `libprotobuf-dev protobuf-compiler libflatbuffers-dev`；非标准路径用 `-DProtobuf_ROOT=...`（macOS Homebrew 用 `-DProtobuf_DIR=$(brew --prefix protobuf)/lib/cmake/protobuf`）。
 
 **3. `ENABLE_PROXY` 被关闭。**

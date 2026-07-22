@@ -288,12 +288,12 @@ cc_prebuilt_binary {
     },
 }
 
-// vlink-dump
+// vlink-parse
 cc_prebuilt_binary {
-    name: "vlink-dump",
+    name: "vlink-parse",
     owner: "vlink",
     vendor_available: true,
-    srcs: ["bin/vlink-dump"],
+    srcs: ["bin/vlink-parse"],
     check_elf_files: false,
     strip: {
         none: true,

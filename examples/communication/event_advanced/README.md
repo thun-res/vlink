@@ -21,7 +21,7 @@
 | `pub.has_subscribers()` | 非阻塞查询当前是否有订阅者 |
 | `pub.wait_for_subscribers(timeout)` | 同步等到至少一个订阅者，超时返回 `false` |
 | `pub.publish(msg, force)` | `force=true` 时无订阅者也下发 |
-| `sub.set_latency_and_lost_enabled(true)` | 开启延迟 + 丢包统计，须在 `listen()` 之前调用 |
+| `sub.set_latency_and_lost_enabled(true)` | 开启延迟 + 丢包统计；可在 `listen()` 前后切换 |
 | `sub.get_latency()` | 上一条消息的端到端延迟（纳秒） |
 | `sub.get_lost()` | 返回 `SampleLostInfo{ total, lost }` 累计计数 |
 
@@ -51,7 +51,7 @@ vlink::SampleLostInfo lost = sub.get_lost();
 VLOG_I("total=", lost.total, " lost=", lost.lost);
 ```
 
-同一 URL 上可挂任意多个 Subscriber，每条消息复制送达每一个；attach 到同一 loop 时回调顺序串行，分别 attach 到不同 loop 才并行执行。`dds://` 需启用 FastDDS 组件，改用 `intra://advanced/sensor` 可在无 DDS 环境下运行。
+同一 URL 上可挂多个 Subscriber，每个匹配端点获得一次投递；底层存储是否复制随后端与消息类型。FastDDS 支持 attach 到同一 loop 后串行派发；本示例依赖该能力，不能直接把 URL 改成不支持 attach 的 `intra://` 而仍用 `loop.wait_for_idle()` 判断完成。
 
 ## 🔀 模型选择
 

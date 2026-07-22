@@ -293,8 +293,30 @@ VCAPWriter::VCAPWriter(const std::string& path, const Config& config)
           nlohmann::json files_json = root_json["VLinkFiles"];
 
           for (const auto& file_info : files_json) {
-            if (!parent_path.empty() && std::filesystem::exists(parent_path / file_info)) {
-              std::filesystem::remove(parent_path / file_info);
+            if (!file_info.is_string()) {
+              continue;
+            }
+
+            const auto stale_file_name = file_info.get<std::string>();
+#ifdef _WIN32
+            const std::filesystem::path stale_file_path(Helpers::string_to_wstring(stale_file_name));
+#else
+            const std::filesystem::path stale_file_path(stale_file_name);
+#endif
+
+            if (stale_file_path.empty() || stale_file_path == "." || stale_file_path == ".." ||
+                stale_file_path != stale_file_path.filename()) {
+              CLOG_W("VCAPWriter: Ignore unsafe split file path [%s].", stale_file_name.c_str());
+              continue;
+            }
+
+            const auto stale_output_path = parent_path / stale_file_path;
+            std::error_code remove_ec;
+            std::filesystem::remove(stale_output_path, remove_ec);
+
+            if VUNLIKELY (remove_ec) {
+              CLOG_W("VCAPWriter: Failed to remove stale split path [%s]: %s.", stale_file_name.c_str(),
+                     remove_ec.message().c_str());
             }
           }
 
@@ -528,8 +550,11 @@ bool VCAPWriter::load_schema(const std::string& ser_type, SchemaType& schema_typ
     }
   }
 
-  if (schema_iter != impl_->total_schema_map.end()) {
-    schema_data = schema_iter->second;
+  if VLIKELY (schema_iter != impl_->total_schema_map.end()) {
+    schema_data.name = schema_iter->second.name;
+    schema_data.encoding = schema_iter->second.encoding;
+    schema_data.schema_type = schema_iter->second.schema_type;
+    schema_data.data.shallow_copy(schema_iter->second.data);
   } else if (impl_->schema_plugin_interface) {
     schema_data =
         impl_->schema_plugin_interface->search_schema(ser_type, schema_type);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -560,12 +585,24 @@ bool VCAPWriter::load_schema(const std::string& ser_type, SchemaType& schema_typ
     resolved_schema_key.push_back('\x1F');
     resolved_schema_key.append(SchemaData::convert_type(schema_data.schema_type));
 
-    if (schema_iter != impl_->total_schema_map.end() && schema_iter->first != resolved_schema_key &&
-        schema_iter->second.schema_type == SchemaType::kUnknown && schema_data.schema_type != SchemaType::kUnknown) {
-      impl_->total_schema_map.erase(schema_iter);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
+    if VLIKELY (schema_iter != impl_->total_schema_map.end() && schema_iter->first == resolved_schema_key) {
+      if (schema_iter->second.encoding.empty() && !schema_data.encoding.empty()) {
+        schema_iter->second.encoding = schema_data.encoding;
+      }
 
-    impl_->total_schema_map.insert_or_assign(resolved_schema_key, schema_data);
+      schema_iter->second.schema_type = schema_data.schema_type;
+    } else {
+      SchemaData stored_schema = schema_data;
+
+      if (schema_iter != impl_->total_schema_map.end() && schema_iter->second.schema_type == SchemaType::kUnknown &&
+          schema_data.schema_type != SchemaType::kUnknown) {
+        impl_->total_schema_map.erase(schema_iter);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
+
+      const auto stored_iter =
+          impl_->total_schema_map.insert_or_assign(resolved_schema_key, std::move(stored_schema)).first;
+      schema_data.data.shallow_copy(stored_iter->second.data);
+    }
   }
 
   return true;
@@ -1137,13 +1174,7 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
 
   // insert data
 
-  if VUNLIKELY (impl_->last_timestamp > microseconds_timestamp) {
-    if (impl_->last_timestamp - microseconds_timestamp < 1000'00U) {
-      microseconds_timestamp = impl_->last_timestamp + 1;
-    }
-  }
-
-  impl_->last_timestamp = microseconds_timestamp;
+  impl_->last_timestamp = std::max(impl_->last_timestamp, microseconds_timestamp);
 
   mcap::Message message;
   message.channelId = url_msg_info.index + 1;
@@ -1168,7 +1199,7 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
 
   ++impl_->total_current_row;
   impl_->total_current_size += data.size();
-  impl_->total_timestamp = microseconds_timestamp;
+  impl_->total_timestamp = std::max(impl_->total_timestamp, microseconds_timestamp);
 
   return true;
 }

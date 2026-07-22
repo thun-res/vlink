@@ -417,13 +417,25 @@ function(vlink_install_completions cmdname)
     set(_build_install_dir "${_install_dir}")
   endif()
   if(TARGET ${_target})
-    add_custom_command(
-      TARGET ${_target}
-      POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_directory "${_src_dir}/"
-              "${CMAKE_BINARY_DIR}/output/${_build_install_dir}/vlink-completions/"
-      COMMENT "Copying ${_target} completion scripts to build output"
-    )
+    set(_completion_sources "")
+    if(EXISTS "${_bash_src}")
+      list(APPEND _completion_sources "${_bash_src}")
+    endif()
+    if(EXISTS "${_zsh_src}")
+      list(APPEND _completion_sources "${_zsh_src}")
+    endif()
+    if(_completion_sources)
+      add_custom_target(
+        ${_target}-completions
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/output/${_build_install_dir}/vlink-completions/"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_completion_sources}
+                "${CMAKE_BINARY_DIR}/output/${_build_install_dir}/vlink-completions/"
+        DEPENDS ${_completion_sources}
+        COMMENT "Copying ${_target} completion scripts to build output"
+        VERBATIM
+      )
+      add_dependencies(${_target} ${_target}-completions)
+    endif()
   endif()
   install(DIRECTORY "${_src_dir}/" DESTINATION "${_install_dir}/vlink-completions/")
   set(_stub_dir "${CMAKE_BINARY_DIR}/completions-stubs/${_target}")

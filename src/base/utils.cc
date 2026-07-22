@@ -1470,18 +1470,46 @@ void start_detect_keyboard(MoveFunction<void(const std::string& key)>&& callback
     return;
   }
 
-  instance.quit_flag.store(false, std::memory_order_release);
-
   if (callback) {
     instance.callback = std::move(callback);
   }
 
-  instance.thread = std::thread([poll_ms]() {
-    std::unique_lock lock(instance.mtx);
+  if VUNLIKELY (!instance.callback) {
+    return;
+  }
 
-    if VUNLIKELY (!instance.callback) {
-      return;
-    }
+#ifndef _WIN32
+  termios last_ttystate{};
+
+  if VUNLIKELY (::tcgetattr(STDIN_FILENO, &last_ttystate) != 0) {
+    return;
+  }
+
+  termios tmp_ttystate = last_ttystate;
+  tmp_ttystate.c_lflag &= ~(ICANON | ECHO);
+  tmp_ttystate.c_cc[VTIME] = 0;
+  tmp_ttystate.c_cc[VMIN] = 1;
+
+  if VUNLIKELY (::tcsetattr(STDIN_FILENO, TCSANOW, &tmp_ttystate) != 0) {
+    return;
+  }
+
+  int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+
+  if VUNLIKELY (flags == -1 || ::fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK) == -1) {
+    ::tcsetattr(STDIN_FILENO, TCSANOW, &last_ttystate);
+    return;
+  }
+#endif
+
+  instance.quit_flag.store(false, std::memory_order_release);
+
+#ifdef _WIN32
+  auto detector = [poll_ms]() {
+#else
+  auto detector = [poll_ms, last_ttystate, flags]() {
+#endif
+    std::unique_lock lock(instance.mtx);
 
 #ifdef _WIN32
     HANDLE hconsole = ::GetStdHandle(STD_INPUT_HANDLE);
@@ -1571,18 +1599,6 @@ void start_detect_keyboard(MoveFunction<void(const std::string& key)>&& callback
     ::FlushConsoleInputBuffer(hconsole);
 
 #else
-    termios last_ttystate;
-    ::tcgetattr(STDIN_FILENO, &last_ttystate);
-
-    termios tmp_ttystate = last_ttystate;
-    tmp_ttystate.c_lflag &= ~(ICANON | ECHO);
-    tmp_ttystate.c_cc[VTIME] = 0;
-    tmp_ttystate.c_cc[VMIN] = 1;
-
-    ::tcsetattr(STDIN_FILENO, TCSANOW, &tmp_ttystate);
-    int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
-    ::fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
-
     int pending_escape_polls = 0;
     std::string pending_input;
     pending_input.reserve(64);
@@ -1736,9 +1752,20 @@ void start_detect_keyboard(MoveFunction<void(const std::string& key)>&& callback
       instance.cv.wait_for(lock, std::chrono::milliseconds(poll_ms));
     }
 
+    ::fcntl(STDIN_FILENO, F_SETFL, flags);
     ::tcsetattr(STDIN_FILENO, TCSANOW, &last_ttystate);
 #endif
-  });
+  };
+
+  try {
+    instance.thread = std::thread(std::move(detector));
+  } catch (...) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+#ifndef _WIN32
+    ::fcntl(STDIN_FILENO, F_SETFL, flags);               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    ::tcsetattr(STDIN_FILENO, TCSANOW, &last_ttystate);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+#endif
+    return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
 
   instance.has_detect.store(true, std::memory_order_release);
 }
@@ -1808,6 +1835,9 @@ std::pair<int, int> get_terminal_size() noexcept {
 }
 
 double get_cpu_usage() noexcept {
+  static std::mutex sample_mtx;
+  std::lock_guard sample_lock(sample_mtx);
+
 #ifdef _WIN32
   FILETIME idle_time;
   FILETIME kernel_time;
@@ -1852,24 +1882,42 @@ double get_cpu_usage() noexcept {
   iss.str(line);
 
   std::string cpu;
-  int64_t user;
-  int64_t nice;
-  int64_t system;
-  int64_t idle;
+  uint64_t user = 0;
+  uint64_t nice = 0;
+  uint64_t system = 0;
+  uint64_t idle = 0;
+  uint64_t io_wait = 0;
+  uint64_t irq = 0;
+  uint64_t soft_irq = 0;
+  uint64_t steal = 0;
 
   iss >> cpu >> user >> nice >> system >> idle;
 
-  static int64_t last_idle = 0;
-  static int64_t last_total = 0;
+  if VUNLIKELY (!iss || cpu != "cpu") {
+    return -1;
+  }
 
-  int64_t total = user + nice + system + idle;
-  int64_t idle_diff = idle - last_idle;
-  int64_t total_diff = total - last_total;
+  iss >> io_wait >> irq >> soft_irq >> steal;
 
-  last_idle = idle;
+  static uint64_t last_idle = 0;
+  static uint64_t last_total = 0;
+
+  uint64_t idle_all = idle + io_wait;
+  uint64_t total = user + nice + system + idle_all + irq + soft_irq + steal;
+
+  if VUNLIKELY (idle_all < last_idle || total < last_total) {
+    last_idle = idle_all;
+    last_total = total;
+    return -1;
+  }
+
+  uint64_t idle_diff = idle_all - last_idle;
+  uint64_t total_diff = total - last_total;
+
+  last_idle = idle_all;
   last_total = total;
 
-  if VUNLIKELY (total_diff == 0) {
+  if VUNLIKELY (total_diff == 0 || idle_diff > total_diff) {
     return -1;
   }
 
@@ -1884,17 +1932,20 @@ double get_cpu_usage() noexcept {
   }
 
   static uint64_t last_user = 0;
+  static uint64_t last_nice = 0;
   static uint64_t last_system = 0;
   static uint64_t last_idle = 0;
 
   uint64_t user = cpu_info.cpu_ticks[CPU_STATE_USER];
+  uint64_t nice = cpu_info.cpu_ticks[CPU_STATE_NICE];
   uint64_t system = cpu_info.cpu_ticks[CPU_STATE_SYSTEM];
   uint64_t idle = cpu_info.cpu_ticks[CPU_STATE_IDLE];
 
-  uint64_t total = (user - last_user) + (system - last_system) + (idle - last_idle);
+  uint64_t total = (user - last_user) + (nice - last_nice) + (system - last_system) + (idle - last_idle);
   uint64_t idle_diff = idle - last_idle;
 
   last_user = user;
+  last_nice = nice;
   last_system = system;
   last_idle = idle;
 
@@ -1929,12 +1980,17 @@ double get_memory_usage() noexcept {
   std::string key;
   int64_t mem_total = 0;
   int64_t mem_free = 0;
+  int64_t mem_available = 0;
   int64_t buffers = 0;
   int64_t cached = 0;
+  bool has_mem_available = false;
 
   while (mem_file >> key) {
     if (key == "MemTotal:") {
       mem_file >> mem_total;
+    } else if (key == "MemAvailable:") {
+      mem_file >> mem_available;
+      has_mem_available = true;
     } else if (key == "MemFree:") {
       mem_file >> mem_free;
     } else if (key == "Buffers:") {
@@ -1946,10 +2002,12 @@ double get_memory_usage() noexcept {
     mem_file.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
   }
 
-  int64_t mem_available = mem_free + buffers + cached;
-
   if VUNLIKELY (mem_total == 0) {
     return -1;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  if (!has_mem_available) {
+    mem_available = mem_free + buffers + cached;
   }
 
   return (static_cast<double>(mem_total - mem_available) / mem_total) * 100.0;

@@ -24,6 +24,7 @@
 #include "./modules/shm2_conf.h"
 
 #include <cerrno>
+#include <cmath>
 #include <memory>
 #include <string>
 
@@ -105,8 +106,8 @@ bool Shm2Conf::parse_protocol(struct Protocol* protocol) {
       return false;
     }
 
-    if VUNLIKELY (val < 0) {
-      VLOG_E("Shm2Conf: Negative size in fragment: ", protocol->fragment, ".");
+    if VUNLIKELY (!std::isfinite(val) || val < 0) {
+      VLOG_E("Shm2Conf: Invalid size in fragment: ", protocol->fragment, ".");
       return false;
     }
 
@@ -154,7 +155,14 @@ bool Shm2Conf::parse_protocol(struct Protocol* protocol) {
       return false;
     }
 
-    size = static_cast<uint64_t>(val * static_cast<double>(multiplier));
+    const double size_value = val * static_cast<double>(multiplier);
+
+    if VUNLIKELY (!std::isfinite(size_value) || size_value > static_cast<double>(kMaxMemSize)) {
+      VLOG_E("Shm2Conf: Size is out of range in fragment: ", protocol->fragment, ".");
+      return false;
+    }
+
+    size = static_cast<uint64_t>(size_value);
   }
 
   return true;

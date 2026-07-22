@@ -32,7 +32,10 @@
 #include <argparse/argparse.hpp>
 //
 #include <algorithm>
+#include <cctype>
+#include <cerrno>
 #include <cmath>
+#include <csignal>
 #include <cstdio>
 #include <deque>
 #include <iostream>
@@ -51,6 +54,15 @@
 #include <unistd.h>
 #endif
 
+#ifndef _WIN32
+#include <spawn.h>
+#include <sys/wait.h>
+#endif
+
+#ifdef __APPLE__
+#include <crt_externs.h>
+#endif
+
 #ifdef _WIN32
 #include <Windows.h>
 #undef min
@@ -64,6 +76,8 @@
 #else
 [[maybe_unused]] static constexpr int kFlushMinSleep{50};
 [[maybe_unused]] static constexpr int kFlushMinLine{5};
+
+extern char** environ;
 #endif
 
 [[maybe_unused]] static constexpr int kCounterCache{2};
@@ -72,6 +86,219 @@
 [[maybe_unused]] static constexpr int kTerminalInterval{50};
 [[maybe_unused]] static constexpr int kMaxElapsedTime{200};
 [[maybe_unused]] static constexpr int kChartHeight{30};
+[[maybe_unused]] static constexpr uint64_t kSubscriberRetryDelayNs{5'000'000'000ULL};
+
+static bool append_command_arguments(const std::string& text, std::vector<std::string>& args) {
+  std::string current;
+  char quote = '\0';
+  bool has_token = false;
+
+  for (size_t i = 0; i < text.size(); ++i) {
+    const char c = text[i];
+
+    if (quote != '\0') {
+      if (c == quote) {
+        quote = '\0';
+      } else if (c == '\\' && quote == '"' && i + 1 < text.size() && text[i + 1] == '"') {
+        current.push_back(text[++i]);
+      } else {
+        current.push_back(c);
+      }
+
+      has_token = true;
+      continue;
+    }
+
+    if (c == '\'' || c == '"') {
+      quote = c;
+      has_token = true;
+    } else if (std::isspace(static_cast<unsigned char>(c))) {
+      if (has_token) {
+        args.emplace_back(std::move(current));
+        current.clear();
+        has_token = false;
+      }
+    } else if (c == '\\' && i + 1 < text.size() &&
+               (std::isspace(static_cast<unsigned char>(text[i + 1])) || text[i + 1] == '\'' || text[i + 1] == '"')) {
+      current.push_back(text[++i]);
+      has_token = true;
+    } else {
+      current.push_back(c);
+      has_token = true;
+    }
+  }
+
+  if (quote != '\0') {
+    return false;
+  }
+
+  if (has_token) {
+    args.emplace_back(std::move(current));
+  }
+
+  return true;
+}
+
+static int run_decoder_process(const std::string& executable, const std::vector<std::string>& args) {
+#ifdef _WIN32
+  std::wstring command_line;
+
+  auto append_quoted_argument = [&command_line](const std::wstring& argument) {
+    if (!command_line.empty()) {
+      command_line.push_back(L' ');
+    }
+
+    command_line.push_back(L'"');
+    size_t backslash_count = 0;
+
+    for (const wchar_t c : argument) {
+      if (c == L'\\') {
+        ++backslash_count;
+      } else if (c == L'"') {
+        command_line.append(backslash_count * 2 + 1, L'\\');
+        command_line.push_back(c);
+        backslash_count = 0;
+      } else {
+        command_line.append(backslash_count, L'\\');
+        command_line.push_back(c);
+        backslash_count = 0;
+      }
+    }
+
+    command_line.append(backslash_count * 2, L'\\');
+    command_line.push_back(L'"');
+  };
+
+  const auto wide_executable = vlink::Helpers::string_to_wstring(executable);
+
+  for (const auto& arg : args) {
+    append_quoted_argument(vlink::Helpers::string_to_wstring(arg));
+  }
+
+  STARTUPINFOW startup_info{};
+  startup_info.cb = sizeof(startup_info);
+  startup_info.dwFlags = STARTF_USESTDHANDLES;
+  const HANDLE standard_handles[] = {::GetStdHandle(STD_INPUT_HANDLE), ::GetStdHandle(STD_OUTPUT_HANDLE),
+                                     ::GetStdHandle(STD_ERROR_HANDLE)};
+  HANDLE inherited_handles[3]{};
+
+  for (size_t i = 0; i < 3; ++i) {
+    if (standard_handles[i] == nullptr || standard_handles[i] == INVALID_HANDLE_VALUE ||
+        !::DuplicateHandle(::GetCurrentProcess(), standard_handles[i], ::GetCurrentProcess(), &inherited_handles[i], 0,
+                           TRUE, DUPLICATE_SAME_ACCESS)) {
+      for (size_t j = 0; j < i; ++j) {
+        ::CloseHandle(inherited_handles[j]);
+      }
+
+      return -1;
+    }
+  }
+
+  startup_info.hStdInput = inherited_handles[0];
+  startup_info.hStdOutput = inherited_handles[1];
+  startup_info.hStdError = inherited_handles[2];
+  PROCESS_INFORMATION process_info{};
+
+  const bool created = ::CreateProcessW(wide_executable.c_str(), command_line.data(), nullptr, nullptr, TRUE, 0,
+                                        nullptr, nullptr, &startup_info, &process_info);
+
+  for (const HANDLE handle : inherited_handles) {
+    ::CloseHandle(handle);
+  }
+
+  if (!created) {
+    return -1;
+  }
+
+  ::CloseHandle(process_info.hThread);
+
+  const DWORD wait_result = ::WaitForSingleObject(process_info.hProcess, INFINITE);
+  DWORD exit_code = 0;
+  const bool exited = wait_result == WAIT_OBJECT_0 && ::GetExitCodeProcess(process_info.hProcess, &exit_code);
+  ::CloseHandle(process_info.hProcess);
+
+  return exited ? static_cast<int>(exit_code) : -1;
+#else
+  std::vector<char*> argv;
+  argv.reserve(args.size() + 1);
+
+  for (const auto& arg : args) {
+    argv.emplace_back(const_cast<char*>(arg.c_str()));
+  }
+
+  argv.emplace_back(nullptr);
+
+  struct sigaction ignore_action{};
+  struct sigaction old_int_action{};
+  struct sigaction old_quit_action{};
+  ignore_action.sa_handler = SIG_IGN;
+  sigemptyset(&ignore_action.sa_mask);
+
+  if (sigaction(SIGINT, &ignore_action, &old_int_action) != 0) {
+    return -1;
+  }
+
+  if (sigaction(SIGQUIT, &ignore_action, &old_quit_action) != 0) {
+    sigaction(SIGINT, &old_int_action, nullptr);
+    return -1;
+  }
+
+  posix_spawnattr_t attr;
+
+  if (posix_spawnattr_init(&attr) != 0) {
+    sigaction(SIGINT, &old_int_action, nullptr);
+    sigaction(SIGQUIT, &old_quit_action, nullptr);
+    return -1;
+  }
+
+  sigset_t child_default_signals;
+  sigemptyset(&child_default_signals);
+  sigaddset(&child_default_signals, SIGINT);
+  sigaddset(&child_default_signals, SIGQUIT);
+
+  if (posix_spawnattr_setsigdefault(&attr, &child_default_signals) != 0 ||
+      posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGDEF) != 0) {
+    posix_spawnattr_destroy(&attr);
+    sigaction(SIGINT, &old_int_action, nullptr);
+    sigaction(SIGQUIT, &old_quit_action, nullptr);
+    return -1;
+  }
+
+  pid_t pid = -1;
+#ifdef __APPLE__
+  char** environment = *_NSGetEnviron();
+#else
+  char** environment = environ;
+#endif
+  const int spawn_error = posix_spawn(&pid, executable.c_str(), nullptr, &attr, argv.data(), environment);
+  posix_spawnattr_destroy(&attr);
+
+  if (spawn_error != 0) {
+    sigaction(SIGINT, &old_int_action, nullptr);
+    sigaction(SIGQUIT, &old_quit_action, nullptr);
+    return -1;
+  }
+
+  int status = 0;
+
+  while (waitpid(pid, &status, 0) < 0) {
+    if (errno != EINTR) {
+      sigaction(SIGINT, &old_int_action, nullptr);
+      sigaction(SIGQUIT, &old_quit_action, nullptr);
+      return -1;
+    }
+  }
+
+  sigaction(SIGINT, &old_int_action, nullptr);
+  sigaction(SIGQUIT, &old_quit_action, nullptr);
+
+  if (WIFEXITED(status)) {
+    return WEXITSTATUS(status);
+  }
+
+  return WIFSIGNALED(status) ? 128 + WTERMSIG(status) : -1;
+#endif
+}
 
 [[maybe_unused]] static std::atomic_bool has_quit{false};
 
@@ -878,7 +1105,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
   std::unordered_map<std::string, std::deque<int64_t>> sub_lat_buffer_map;
   std::unordered_map<std::string, vlink::SampleLostInfo> sub_last_sample_map;
   std::unordered_map<std::string, SparklineHistory> sparkline_history_map;
-  std::unordered_set<std::string> sub_error_url_set;
+  std::unordered_map<std::string, uint64_t> sub_retry_after_map;
 
   vlink::ElapsedTimer key_elapsed_timer;
 
@@ -1602,7 +1829,8 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
   };
 
   auto clear_function = [&sub_ptr_map, &sub_seq_map, &sub_size_map, &sub_lost_map, &sub_lat_map, &sub_elapsed_map,
-                         &sub_seq_buffer_map, &sub_size_buffer_map, &sub_last_sample_map, &sparkline_history_map]() {
+                         &sub_seq_buffer_map, &sub_size_buffer_map, &sub_lost_buffer_map, &sub_lat_buffer_map,
+                         &sub_last_sample_map, &sparkline_history_map, &sub_retry_after_map]() {
     sub_ptr_map.clear();
     sub_seq_map.clear();
     sub_size_map.clear();
@@ -1611,14 +1839,17 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
     sub_elapsed_map.clear();
     sub_seq_buffer_map.clear();
     sub_size_buffer_map.clear();
+    sub_lost_buffer_map.clear();
+    sub_lat_buffer_map.clear();
     sub_last_sample_map.clear();
     sparkline_history_map.clear();
+    sub_retry_after_map.clear();
   };
 
   auto update_function = [&target_urls_set, &filter_list, &discovery_viewer, &sub_ptr_map, &sub_seq_map, &sub_size_map,
                           &sub_lost_map, &sub_lat_map, &sub_elapsed_map, &sub_seq_buffer_map, &sub_size_buffer_map,
                           &sub_lost_buffer_map, &sub_lat_buffer_map, &sub_last_sample_map, &sparkline_history_map,
-                          &sub_error_url_set, &clear_function, &active_cnt, &total_rate, &key_elapsed_timer]() {
+                          &sub_retry_after_map, &clear_function, &active_cnt, &total_rate, &key_elapsed_timer]() {
     total_profiler = -1;
     active_cnt = 0;
     total_rate = 0;
@@ -1644,30 +1875,23 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         current_urls.emplace(info.url);
       }
 
-      for (auto iter = sub_seq_buffer_map.begin(); iter != sub_seq_buffer_map.end();) {
+      for (auto iter = sub_seq_map.begin(); iter != sub_seq_map.end();) {
         if VUNLIKELY (current_urls.count(iter->first) == 0) {
-          std::atomic<int64_t>& seq = sub_seq_map[iter->first];
-          std::atomic<size_t>& size = sub_size_map[iter->first];
-          std::atomic<double>& lost = sub_lost_map[iter->first];
-          std::atomic<int64_t>& lat = sub_lat_map[iter->first];
-          vlink::ElapsedTimer& elapsed = sub_elapsed_map[iter->first];
+          const std::string url = iter->first;
+          sub_ptr_map.erase(url);
+          sub_size_map.erase(url);
+          sub_lost_map.erase(url);
+          sub_lat_map.erase(url);
+          sub_elapsed_map.erase(url);
+          sub_seq_buffer_map.erase(url);
+          sub_size_buffer_map.erase(url);
+          sub_lost_buffer_map.erase(url);
+          sub_lat_buffer_map.erase(url);
+          sub_last_sample_map.erase(url);
+          sub_retry_after_map.erase(url);
+          sparkline_history_map.erase(url);
 
-          seq = 0;
-          size = 0;
-          lost = 0;
-          lat = 0;
-
-          elapsed.stop();
-
-          sub_size_buffer_map.erase(iter->first);
-          sub_lost_buffer_map.erase(iter->first);
-          sub_lat_buffer_map.erase(iter->first);
-
-          sub_ptr_map.erase(iter->first);
-
-          sparkline_history_map.erase(iter->first);
-
-          iter = sub_seq_buffer_map.erase(iter);
+          iter = sub_seq_map.erase(iter);
         } else {
           ++iter;
         }
@@ -1680,6 +1904,10 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
     for (const auto& info : info_list) {
       max_url_size = std::max(info.url.size(), max_url_size.load());
       max_ser_size = std::max(info.ser_type.size(), max_ser_size.load());
+    }
+
+    if (!detail_mode) {
+      clear_function();
     }
 
     int space_cnt = 0;
@@ -1851,8 +2079,6 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
           print_lines.emplace_back(line.str());
         }
 
-        clear_function();
-
         continue;
       }
 
@@ -1878,18 +2104,19 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
           (!has_intra_bind && vlink::Url::is_intra_type(info.url)) ||
           (!observe_all_mode &&
            (selected_line != static_cast<int>(print_lines.size()) || key_elapsed_timer.get() < 250))) {
-        seq = 0;
-        size = 0;
-        lost = 0;
-        lat = 0;
-        elapsed.stop();
+        sub_ptr_map.erase(info.url);
+        sub_seq_map.erase(info.url);
+        sub_size_map.erase(info.url);
+        sub_lost_map.erase(info.url);
+        sub_lat_map.erase(info.url);
+        sub_elapsed_map.erase(info.url);
         sub_seq_buffer_map.erase(info.url);
         sub_size_buffer_map.erase(info.url);
         sub_lost_buffer_map.erase(info.url);
         sub_lat_buffer_map.erase(info.url);
         sparkline_history_map.erase(info.url);
-
-        sub_ptr_map.erase(info.url);
+        sub_last_sample_map.erase(info.url);
+        sub_retry_after_map.erase(info.url);
 
         if (observe_all_mode && active_mode) {
           continue;
@@ -1953,8 +2180,12 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         elapsed.start();
       }
 
-      if VUNLIKELY (sub_error_url_set.count(info.url) != 0) {
-        continue;
+      if (auto retry_iter = sub_retry_after_map.find(info.url); retry_iter != sub_retry_after_map.end()) {
+        if (vlink::ElapsedTimer::get_cpu_timestamp(vlink::ElapsedTimer::kNano) < retry_iter->second) {
+          continue;
+        }
+
+        sub_retry_after_map.erase(retry_iter);
       }
 
       auto ptr_iter = sub_ptr_map.find(info.url);
@@ -1978,6 +2209,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         try {
           sub = std::make_shared<RawSub>(info.url, vlink::InitType::kWithoutInit);
 
+          sub->set_safety_quit(true);
           sub->set_latency_and_lost_enabled(true);
 
           if (native_mode) {
@@ -2006,7 +2238,8 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
 
           sub_ptr_map.emplace(info.url, std::move(sub));
         } catch (vlink::Exception::RuntimeError&) {
-          sub_error_url_set.emplace(info.url);
+          sub_retry_after_map[info.url] =
+              vlink::ElapsedTimer::get_cpu_timestamp(vlink::ElapsedTimer::kNano) + kSubscriberRetryDelayNs;
           seq = 0;
           size = 0;
           lost = 0;
@@ -2264,7 +2497,8 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
   terminal_timer.set_callback([&update_terminal_function]() { update_terminal_function(true); });
   terminal_timer.start();
 
-  auto sub_command_function = [&proto_dir, &fbs_dir](std::string& command_str) -> bool {
+  auto sub_command_function = [&proto_dir, &fbs_dir](std::string& executable,
+                                                     std::vector<std::string>& command_args) -> bool {
     uint32_t selected_type = 0;
     vlink::SchemaType selected_schema_type = vlink::SchemaType::kUnknown;
     std::string selected_url;
@@ -2276,6 +2510,12 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
       selected_schema_type = static_cast<vlink::SchemaType>(current_schema_type.load(std::memory_order_relaxed));
       selected_url = current_url;
       selected_ser = current_ser;
+    }
+
+    if VUNLIKELY (selected_url.empty() || selected_url.front() == '-' ||
+                  (!selected_ser.empty() && selected_ser.front() == '-')) {
+      std::cerr << "Unable to use invalid discovery metadata." << std::endl;
+      return false;
     }
 
     if VUNLIKELY (selected_type & vlink::kServer || selected_type & vlink::kClient) {
@@ -2323,31 +2563,39 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
     if (command_schema_type == vlink::SchemaType::kProtobuf || command_schema_type == vlink::SchemaType::kZeroCopy ||
         command_schema_type == vlink::SchemaType::kRaw) {
 #ifdef _WIN32
-      command_str = vlink::Utils::get_app_dir() + "/vlink-eproto.exe" + " sub \"" + selected_url + "\"";
+      executable = vlink::Utils::get_app_dir() + "/vlink-eproto.exe";
 #else
-      command_str = "\"" + vlink::Utils::get_app_dir() + "/vlink-eproto" + "\" sub \"" + selected_url + "\"";
+      executable = vlink::Utils::get_app_dir() + "/vlink-eproto";
 #endif
 
+      command_args = {executable, "sub", selected_url};
+
       if (!selected_ser.empty()) {
-        command_str += " -s " + selected_ser;
+        command_args.emplace_back("-s");
+        command_args.emplace_back(selected_ser);
       }
 
       if (!proto_dir.empty()) {
-        command_str += " -d \"" + proto_dir + "\"";
+        command_args.emplace_back("-d");
+        command_args.emplace_back(proto_dir);
       }
     } else if (command_schema_type == vlink::SchemaType::kFlatbuffers) {
 #ifdef _WIN32
-      command_str = vlink::Utils::get_app_dir() + "/vlink-efbs.exe" + " sub \"" + selected_url + "\"";
+      executable = vlink::Utils::get_app_dir() + "/vlink-efbs.exe";
 #else
-      command_str = "\"" + vlink::Utils::get_app_dir() + "/vlink-efbs" + "\" sub \"" + selected_url + "\"";
+      executable = vlink::Utils::get_app_dir() + "/vlink-efbs";
 #endif
 
+      command_args = {executable, "sub", selected_url};
+
       if (!selected_ser.empty()) {
-        command_str += " -s " + selected_ser;
+        command_args.emplace_back("-s");
+        command_args.emplace_back(selected_ser);
       }
 
       if (!fbs_dir.empty()) {
-        command_str += " -d \"" + fbs_dir + "\"";
+        command_args.emplace_back("-d");
+        command_args.emplace_back(fbs_dir);
       }
     } else {
       std::cerr << "Unable to build decoder command for url: " << selected_url << "." << std::endl;
@@ -2355,33 +2603,37 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
     }
 
     if (should_use_getter) {
-      command_str += " -g";
+      command_args.emplace_back("-g");
     }
 
-    command_str += " -x ";
+    command_args.emplace_back("-x");
 
     if (blob_mode) {
-      command_str += "blob";
+      command_args.emplace_back("blob");
     } else {
-      command_str += std::string(schema_label);
+      command_args.emplace_back(schema_label);
     }
 
-    command_str += " -e -y";
+    command_args.emplace_back("-e");
+    command_args.emplace_back("-y");
 
     if (native_mode) {
-      command_str += " -n";
+      command_args.emplace_back("-n");
     }
 
     if (max_columns > 0) {
-      command_str += " --columns " + std::to_string(max_columns);
+      command_args.emplace_back("--columns");
+      command_args.emplace_back(std::to_string(max_columns));
     }
 
     if (max_rows > 0) {
-      command_str += " --rows " + std::to_string(max_rows);
+      command_args.emplace_back("--rows");
+      command_args.emplace_back(std::to_string(max_rows));
     }
 
-    if (!proto_args.empty()) {
-      command_str += " " + proto_args;
+    if (!proto_args.empty() && !append_command_arguments(proto_args, command_args)) {
+      std::cerr << "Unable to parse proto_args: unmatched quote." << std::endl;
+      return false;
     }
 
     return true;
@@ -2561,16 +2813,11 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
           VLINK_TERM_OUT.flush();
 
           int ret = 0;
-          std::string command_str;
+          std::string executable;
+          std::vector<std::string> command_args;
 
-          if VLIKELY (sub_command_function(command_str)) {
-#ifdef _WIN32
-            // NOLINTNEXTLINE(bugprone-command-processor)
-            ret = _wsystem(vlink::Helpers::string_to_wstring(command_str).c_str());
-#else
-            // NOLINTNEXTLINE(bugprone-command-processor)
-            ret = std::system(command_str.c_str());
-#endif
+          if VLIKELY (sub_command_function(executable, command_args)) {
+            ret = run_decoder_process(executable, command_args);
           } else {
             ret = -1;
           }

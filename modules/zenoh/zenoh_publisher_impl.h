@@ -35,7 +35,7 @@ namespace vlink {
 class ZenohPublisherImpl final : public PublisherImpl {
  public:
   using Object = ZenohPublisher;
-  static constexpr uint8_t kImplType = kPublisher | kSetter;
+  static constexpr uint8_t kImplType = kPublisher;
 
   explicit ZenohPublisherImpl(const ZenohConf& conf);
 

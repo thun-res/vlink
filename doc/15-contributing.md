@@ -56,9 +56,9 @@ test/
 ├── shm_test.cc        # shm:// 共享内存
 ├── shm2_test.cc       # shm2://
 ├── dds_test.cc        # dds://（FastDDS）
-├── ddsc_test.cc / ddsr_test.cc / ddst_test.cc   # ddsc:// / ddsr:// / ddst://
+├── ddsc_test.cc / ddsr_test.cc                  # ddsc:// / ddsr://
 ├── zenoh_test.cc      # zenoh://
-├── someip_test.cc / mqtt_test.cc / fdbus_test.cc / qnx_test.cc
+├── someip_test.cc / mqtt_test.cc / fdbus_test.cc
 ├── serializer_test.cc # 序列化（suite 前缀 ser-）
 ├── base/              # 基础库：logger/bytes/timer/message_loop 等
 ├── extension/         # bag/discovery/qos/security 等扩展
@@ -430,7 +430,7 @@ fix(viewer): resolve Qt6 OpenGLWidgets missing on ARM macOS
 
 ### 🌐 15.13.2 注释语言
 
-所有代码注释必须为英文，覆盖 `//`、`/* */`、Doxygen，以及 `CMakeLists.txt`/shell/python 脚本注释与临时 `TODO`。中文仅允许出现在 `doc/**/*.md`、`README.md`、`CHANGELOG.md`、`examples/**/README.md` 等文档资产中。CI 以 grep 拦截违例；确需中文术语进入代码时在 PR 说明，并标 `// NOLINT: chinese-ok reason`。
+所有代码注释必须为英文，覆盖 `//`、`/* */`、Doxygen，以及 `CMakeLists.txt`/shell/python 脚本注释与临时 `TODO`。中文仅允许出现在 `doc/**/*.md`、`README.md`、`CHANGELOG.md`、`examples/**/README.md` 等文档资产中。当前 CI 没有独立的中文注释扫描器，该约束由提交者和评审者检查；普通 `NOLINT` 标记不会豁免此项目约定，确需保留中文术语时应在 PR 中说明。
 
 ```cpp
 /** @brief Serialise @p msg into a raw byte buffer. */
@@ -542,7 +542,7 @@ PR 门槛为两条硬规则；测试框架细节（doctest、断言宏、`TEST_C
 - 改动 CLI 任一子命令 / 顶层选项 → 同步更新 `cli/TOOL/etc/completions/vlink-TOOL.bash` 与 `.zsh` 两份补全脚本，二者子命令集合必须一致。
 - 改动 env 变量 → 同步 [集成](13-integration.md)。
 - 公共 API 的调用方式写在 Doxygen 注释中，其语义、动机与使用模式写在 `doc/`；不将 Doxygen 内容大段复制进教程 doc（存在过期风险），教程中引一个示例并链接到头文件即可。
-- 跨 doc 引用一律用相对路径 + markdown 锚点（如 `[02-communication.md#...](02-communication.md#...)`），禁止绝对 URL / GitHub 直链 / 项目根绝对路径。
+- 跨 doc 引用一律用相对路径 + markdown 锚点（如 [通信模型总览](02-communication.md#-21-模型总览与选型)），禁止绝对 URL / GitHub 直链 / 项目根绝对路径。
 
 ---
 
@@ -575,7 +575,7 @@ VLink 遵循 [Semantic Versioning 2.0](https://semver.org)：**MAJOR** 可含破
 ### ⚡ 15.18.2 性能
 
 - 改动任一快路径（publish / invoke / listen 回调链）须以 `vlink-bench` quick 预设对比基线，并在 PR 中附对比；下降 > 5% 须说明原因或回滚。
-- 订阅回调不在内部线程阻塞超过 1ms，重负载交给 `ThreadPool`；热路径日志用低优先级的 `VLOG_T`/`VLOG_D`，运行期按日志级别过滤，低于阈值时几近零开销。
+- 不得在回调执行线程（包括 intra direct 的调用线程与后端 delivery thread）阻塞超过 1ms，重负载交给 `ThreadPool`；热路径日志用低优先级的 `VLOG_T`/`VLOG_D`，运行期按日志级别过滤，低于阈值时几近零开销。
 - 不允许无上界容器（`vector` 未 `reserve()`、任意深度递归、无 TTL 的 cache）；全局状态须为进程级单例，或提供显式销毁接口。
 
 ### 🔒 15.18.3 安全

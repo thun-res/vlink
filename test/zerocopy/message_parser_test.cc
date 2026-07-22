@@ -421,6 +421,22 @@ TEST_SUITE("zerocopy-MessageParser") {
     REQUIRE(parser.value("points", 0, "u8", value));
     CHECK_EQ(std::get<double>(value), doctest::Approx(2.5));
 
+    constexpr uint64_t kOpaqueSizes = UINT64_C(0x333);
+    zerocopy::PointCloud opaque;
+    REQUIRE(opaque.create(1, kOpaqueSizes, 0, "a,b,c"));
+    const uint8_t opaque_data[9]{};
+    REQUIRE(opaque.fill_packed_data(opaque_data, 1));
+    REQUIRE((opaque >> wire));
+    REQUIRE(parser.parse(zerocopy::MessageParser::Type::kPointCloud, wire));
+
+    const auto opaque_fields = parser.element_fields("points");
+    REQUIRE_EQ(opaque_fields.size(), 3U);
+
+    for (const auto& field : opaque_fields) {
+      CHECK_EQ(field.type, zerocopy::MessageParser::ValueType::kValueUnknown);
+      CHECK_FALSE(parser.value("points", 0, field, value));
+    }
+
     zerocopy::PointCloud compressed;
     REQUIRE(compressed.create_v3f<>(1, {}, 100));
     REQUIRE(compressed.push_value_v3f(1.25F, -2.5F, 3.75F));

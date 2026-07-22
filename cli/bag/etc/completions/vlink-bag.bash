@@ -191,4 +191,4 @@ _vlink_bag() {
     esac
 }
 
-complete -F _vlink_bag vlink-bag bag
+_vlink_bash_register_completion _vlink_bag vlink-bag bag

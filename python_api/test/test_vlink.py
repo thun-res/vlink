@@ -4,7 +4,7 @@ VLink Python bindings self-test.
 
 Usage:
     cd build_python/output/lib
-    LD_LIBRARY_PATH=. python3 ../../../python_api/test_vlink.py
+    LD_LIBRARY_PATH=. PYTHONPATH=. python3 ../../../python_api/test/test_vlink.py
 """
 
 import gc
@@ -391,6 +391,7 @@ def test_zerocopy_raw_data():
 
     rd2 = _vlink.RawData()
     assert rd2.from_bytes(wire)
+    assert not rd2.is_owner()
     assert rd2.size() == 1024
     assert rd2.header.seq == 1
     assert rd2.header.frame_id == "raw_test"
@@ -415,6 +416,7 @@ def test_zerocopy_camera_frame():
 
     cf2 = _vlink.CameraFrame()
     assert cf2.from_bytes(wire)
+    assert not cf2.is_owner()
     assert cf2.width() == 640
     assert cf2.height() == 480
     assert cf2.format() == _vlink.CameraFrame.Format.Nv12
@@ -440,6 +442,13 @@ def test_zerocopy_point_cloud():
     assert pc.push_value_v3f(4.0, 5.0, 6.0)
     assert pc.size() == 2
 
+    keys = pc.get_key_list()
+    assert [(key.name, key.type, key.size) for key in keys] == [
+        ("x", _vlink.PointCloud.Type.Float, 4),
+        ("y", _vlink.PointCloud.Type.Float, 4),
+        ("z", _vlink.PointCloud.Type.Float, 4),
+    ]
+
     v = pc.get_value_v3f(0)
     assert abs(v.x - 1.0) < 1e-6 and abs(v.y - 2.0) < 1e-6 and abs(v.z - 3.0) < 1e-6
 
@@ -448,11 +457,173 @@ def test_zerocopy_point_cloud():
 
     pc2 = _vlink.PointCloud()
     assert pc2.from_bytes(wire)
+    assert not pc2.is_owner()
     assert pc2.size() == 2
     v2 = pc2.get_value_v3f(1)
     assert abs(v2.x - 4.0) < 1e-6
 
     print("[PASS] PointCloud")
+
+
+def test_zerocopy_python_ownership_guards():
+    """Regression checks for Python buffer length and parsed-message ownership."""
+    raw = _vlink.RawData()
+    assert raw.create(4)
+    assert raw.fill_data(b"safe")
+    wire = raw.to_bytes()
+    parsed = _vlink.RawData()
+    assert parsed.from_bytes(wire)
+    assert not parsed.is_owner()
+    assert parsed.data() == b"safe"
+
+    # The borrowed payload remains zero-copy, so its source storage is pinned.
+    try:
+        wire.resize(1024 * 1024)
+        assert False, "a zero-copy input must stay pinned while borrowed"
+    except BufferError:
+        pass
+    assert parsed.data() == b"safe"
+
+    raw2 = _vlink.RawData()
+    assert raw2.create(5)
+    assert raw2.fill_data(b"newer")
+    wire2 = raw2.to_bytes()
+    assert parsed.from_bytes(wire2)
+    assert parsed.data() == b"newer"
+    assert wire.resize(1024 * 1024)
+
+    # An early validation failure leaves the old borrowed payload unchanged,
+    # so its pin must remain active.
+    assert not parsed.from_bytes(_vlink.Bytes.from_bytes(b"invalid"))
+    assert parsed.data() == b"newer"
+    try:
+        wire2.resize(1024 * 1024)
+        assert False, "an unchanged borrowed payload must remain pinned"
+    except BufferError:
+        pass
+
+    # A later failure can clear the native target after reading its header. In
+    # that case the old source is no longer referenced and must be unpinned.
+    corrupt_source = _vlink.RawData()
+    assert corrupt_source.create(4)
+    assert corrupt_source.fill_data(b"data")
+    corrupt_wire = corrupt_source.to_bytes()
+    corrupt_view = memoryview(corrupt_wire)
+    # Wire offset 56 is RawData::size_ (4-byte magic + 4-byte version +
+    # offsetof(RawData, size_)); claiming five payload bytes makes the envelope
+    # length inconsistent after the target has been overwritten.
+    corrupt_view[56:64] = (5).to_bytes(8, sys.byteorder)
+    del corrupt_view
+    assert not parsed.from_bytes(corrupt_wire)
+    assert not parsed.is_valid()
+    assert wire2.resize(1024 * 1024)
+    assert corrupt_wire.resize(1024 * 1024)
+
+    del parsed
+
+    # ProxyData can borrow a valid wire whose raw field is empty. Its string
+    # fields still point into the wire and must keep that storage pinned after
+    # an early parse failure.
+    proxy_source = _vlink.ProxyData()
+    proxy_source.create(_vlink.Bytes(), "intra://empty-raw", "demo.Empty", 1)
+    proxy_wire = proxy_source.to_bytes()
+    proxy = _vlink.ProxyData()
+    assert proxy.from_bytes(proxy_wire)
+    assert proxy.raw().empty()
+    assert proxy.url() == "intra://empty-raw"
+    assert not proxy.from_bytes(_vlink.Bytes.from_bytes(b"invalid"))
+    assert proxy.url() == "intra://empty-raw"
+    try:
+        proxy_wire.resize(1024 * 1024)
+        assert False, "an empty-raw ProxyData still borrows its string fields"
+    except BufferError:
+        pass
+    del proxy
+    assert proxy_wire.resize(1024 * 1024)
+
+    # ProxyData.raw() is itself a shallow Bytes view. A message parsed from
+    # that nested view must retain the complete owner chain back to the outer
+    # serialized ProxyData storage.
+    inner = _vlink.RawData()
+    assert inner.create(4096)
+    assert inner.fill_data(b"nested" * 682 + b"nest")
+    proxy_source = _vlink.ProxyData()
+    proxy_source.create(inner.to_bytes(), "intra://nested", "demo.RawData", 1)
+    outer_wire = proxy_source.to_bytes()
+    outer_proxy = _vlink.ProxyData()
+    assert outer_proxy.from_bytes(outer_wire)
+    nested_wire = outer_proxy.raw()
+    nested = _vlink.RawData()
+    assert nested.from_bytes(nested_wire)
+    del outer_proxy
+    try:
+        outer_wire.resize(1024 * 1024)
+        assert False, "a nested shallow view must retain the outer wire"
+    except BufferError:
+        pass
+    del nested
+    del nested_wire
+    assert outer_wire.resize(1024 * 1024)
+
+    parsed = _vlink.RawData()
+    wire3 = raw.to_bytes()
+    assert parsed.from_bytes(wire3)
+    parsed.clear()
+    assert wire3.resize(1024 * 1024)
+
+    for message_type in (
+        _vlink.RawData,
+        _vlink.CameraFrame,
+        _vlink.OccupancyGrid,
+        _vlink.Tensor,
+        _vlink.AudioFrame,
+    ):
+        source = message_type()
+        assert source.create(4)
+        assert source.fill_data(b"old!")
+        source_wire = source.to_bytes()
+        parsed = message_type()
+        assert parsed.from_bytes(source_wire)
+        assert not parsed.is_owner()
+        assert parsed.fill_data(b"new!")
+        assert parsed.is_owner()
+        assert source_wire.resize(1024 * 1024)
+
+    pc = _vlink.PointCloud()
+    size_num = (4 << 8) | (4 << 4) | 4
+    type_num = (10 << 8) | (10 << 4) | 10
+    assert pc.create(4, size_num, type_num, "x,y,z")
+
+    try:
+        pc.fill_packed_data(b"short", 1)
+        assert False, "short packed input must be rejected"
+    except ValueError:
+        pass
+
+    try:
+        pc.fill_packed_data(b"", sys.maxsize * 2)
+        assert False, "overflowing count * pack_size must be rejected"
+    except ValueError:
+        pass
+
+    assert not pc.create(1 << 62, size_num, type_num, "x,y,z")
+    assert not pc.resize(1 << 62)
+
+    pc_small = _vlink.PointCloud()
+    assert pc_small.create(1, size_num, type_num, "x,y,z")
+    assert pc_small.push_value_v3f(1.0, 2.0, 3.0)
+    # These values made the old byte-offset guards wrap back into the valid
+    # range on 64-bit platforms and read beyond the single point.
+    assert pc_small.get_value_v3f(sys.maxsize // 3).x == 0.0
+
+    pc_double = _vlink.PointCloud()
+    double_size_num = (8 << 8) | (8 << 4) | 8
+    double_type_num = (11 << 8) | (11 << 4) | 11
+    assert pc_double.create(1, double_size_num, double_type_num, "x,y,z")
+    assert pc_double.push_value_v3d(1.0, 2.0, 3.0)
+    assert pc_double.get_value_v3d(sys.maxsize).x == 0.0
+
+    print("[PASS] Zero-copy Python ownership guards")
 
 
 def test_zerocopy_point_cloud_compress():
@@ -482,10 +653,12 @@ def test_zerocopy_point_cloud_compress():
 
     rx = _vlink.PointCloud()
     assert rx.from_bytes(wire)
+    assert rx.is_owner()
     assert rx.get_extent() == 10
     assert rx.get_vertical() is True
     v2 = rx.get_value_v3f(0)
     assert abs(v2.x - 1.234) < 1e-3 and abs(v2.y + 5.678) < 1e-3 and abs(v2.z - 9.012) < 1e-3
+    assert wire.resize(1024 * 1024)
 
     rx.set_vertical(False)
     assert rx.get_vertical() is False
@@ -521,6 +694,7 @@ def test_zerocopy_proxy_data():
 
     pd2 = _vlink.ProxyData()
     assert pd2.from_bytes(wire)
+    assert not pd2.is_owner()
     assert pd2.url() == "intra://test/proxy"
     assert pd2.ser() == "demo.RawBytes"
     assert pd2.hostname() == "host01"
@@ -547,6 +721,7 @@ def test_zerocopy_occupancy_grid():
 
     og2 = _vlink.OccupancyGrid()
     assert og2.from_bytes(wire)
+    assert not og2.is_owner()
     assert og2.width() == 40
     assert og2.height() == 40
     assert og2.cell_type() == _vlink.OccupancyGrid.CellType.Int8
@@ -575,6 +750,7 @@ def test_zerocopy_tensor():
 
     t2 = _vlink.Tensor()
     assert t2.from_bytes(wire)
+    assert not t2.is_owner()
     assert t2.rank() == 4
     assert t2.num_elements() == expected_elements
     assert t2.shape() == [1, 3, 224, 224]
@@ -614,6 +790,7 @@ def test_zerocopy_object_array():
 
     arr2 = _vlink.ObjectArray()
     assert arr2.from_bytes(wire)
+    assert not arr2.is_owner()
     assert arr2.count() == 1
     assert arr2.source_id() == "fusion"
     got = arr2.objects(0)
@@ -714,6 +891,7 @@ def test_zerocopy_audio_frame():
 
     af2 = _vlink.AudioFrame()
     assert af2.from_bytes(wire)
+    assert not af2.is_owner()
     assert af2.sample_rate() == 48000
     assert af2.num_channels() == 2
     assert af2.format() == _vlink.AudioFrame.Format.PcmS16
@@ -744,6 +922,7 @@ if __name__ == "__main__":
     test_zerocopy_raw_data()
     test_zerocopy_camera_frame()
     test_zerocopy_point_cloud()
+    test_zerocopy_python_ownership_guards()
     test_zerocopy_point_cloud_compress()
     test_zerocopy_proxy_data()
     test_zerocopy_occupancy_grid()

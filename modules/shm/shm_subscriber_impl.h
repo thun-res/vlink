@@ -52,8 +52,6 @@ class ShmSubscriberImpl final : public SubscriberImpl {
 
   bool is_support_loan() const override;
 
-  bool return_loan(const Bytes& bytes) override;
-
   const Conf* get_conf() const override;
 
   const AbstractNode* get_abstract_node() const override;

@@ -29,7 +29,7 @@
  * ExprTk (@c thirdparty/exprtk/include/exprtk/exprtk.hpp) is a header-only template
  * library of roughly 46k lines.  Every translation unit that includes it instantiates
  * the full parser/optimizer/evaluator for @c double, which previously caused the same
- * engine to be compiled into nine separate object files (CLI dump, analyzer, perception,
+ * engine to be compiled into nine separate object files (CLI parse, analyzer, perception,
  * the three webviz converters, and so on).  The result was severe object-code bloat and
  * long compile times.
  *

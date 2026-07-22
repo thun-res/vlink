@@ -13,43 +13,43 @@
         </mxCell>
 
         <mxCell id="srvbg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;arcSize=4;fontFamily=Helvetica;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="40" y="100" width="320" height="240" as="geometry" />
+          <mxGeometry x="40" y="100" width="300" height="240" as="geometry" />
         </mxCell>
         <mxCell id="srvbar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#388e3c;strokeColor=none;arcSize=30;fontFamily=Helvetica;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="40" y="100" width="320" height="6" as="geometry" />
+          <mxGeometry x="40" y="100" width="300" height="6" as="geometry" />
         </mxCell>
         <mxCell id="srvtitle" value="sample_helloworld_server" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#1b5e20;rounded=1;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="60" y="114" width="300" height="24" as="geometry" />
+          <mxGeometry x="60" y="114" width="260" height="24" as="geometry" />
         </mxCell>
 
         <mxCell id="srv_server" value="&lt;b&gt;Server&amp;lt;Request, Response&amp;gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#1b5e20;arcSize=8;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="60" y="160" width="280" height="56" as="geometry" />
+          <mxGeometry x="60" y="160" width="260" height="56" as="geometry" />
         </mxCell>
         <mxCell id="srv_pub" value="&lt;b&gt;Publisher&amp;lt;SensorData&amp;gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#1b5e20;arcSize=8;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="60" y="250" width="280" height="56" as="geometry" />
+          <mxGeometry x="60" y="250" width="260" height="56" as="geometry" />
         </mxCell>
 
         <mxCell id="clibg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;arcSize=4;fontFamily=Helvetica;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="540" y="100" width="320" height="240" as="geometry" />
+          <mxGeometry x="560" y="100" width="300" height="240" as="geometry" />
         </mxCell>
         <mxCell id="clibar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=none;arcSize=30;fontFamily=Helvetica;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="540" y="100" width="320" height="6" as="geometry" />
+          <mxGeometry x="560" y="100" width="300" height="6" as="geometry" />
         </mxCell>
         <mxCell id="clititle" value="sample_helloworld_client" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#0d47a1;rounded=1;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="560" y="114" width="300" height="24" as="geometry" />
+          <mxGeometry x="580" y="114" width="260" height="24" as="geometry" />
         </mxCell>
 
         <mxCell id="cli_client" value="&lt;b&gt;Client&amp;lt;Request, Response&amp;gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;arcSize=8;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="560" y="160" width="280" height="56" as="geometry" />
+          <mxGeometry x="580" y="160" width="260" height="56" as="geometry" />
         </mxCell>
         <mxCell id="cli_sub" value="&lt;b&gt;Subscriber&amp;lt;SensorData&amp;gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#0d47a1;arcSize=8;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="560" y="250" width="280" height="56" as="geometry" />
+          <mxGeometry x="580" y="250" width="260" height="56" as="geometry" />
         </mxCell>
 
-        <mxCell id="method_req" value="invoke(req)" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2.2;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;exitX=1;exitY=0.35;exitDx=0;exitDy=0;entryX=0;entryY=0.35;entryDx=0;entryDy=0;shadow=0;" edge="1" source="cli_client" target="srv_server" parent="1">
+        <mxCell id="method_req" value="invoke(req)" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2.2;strokeColor=#1976d2;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;exitX=0;exitY=0.35;exitDx=0;exitDy=0;entryX=1;entryY=0.35;entryDx=0;entryDy=0;shadow=0;" edge="1" source="cli_client" target="srv_server" parent="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="method_resp" value="send(resp)" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2.2;strokeColor=#1976d2;dashed=1;dashPattern=8 4;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;exitX=0;exitY=0.7;exitDx=0;exitDy=0;entryX=1;entryY=0.7;entryDx=0;entryDy=0;shadow=0;" edge="1" source="srv_server" target="cli_client" parent="1">
+        <mxCell id="method_resp" value="reply after listen(req, resp)" style="endArrow=block;endFill=1;html=1;rounded=1;strokeWidth=2.2;strokeColor=#1976d2;dashed=1;dashPattern=8 4;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#0d47a1;labelBackgroundColor=#ffffff;exitX=1;exitY=0.7;exitDx=0;exitDy=0;entryX=0;entryY=0.7;entryDx=0;entryDy=0;shadow=0;" edge="1" source="srv_server" target="cli_client" parent="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
@@ -57,11 +57,11 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
-        <mxCell id="bottom" value="Transport backend &#160;&#183;&#160; intra:// / shm:// / shm2:// / dds:// / ddsc:// / ddsr:// / ddst:// / zenoh:// / someip:// / mqtt:// / fdbus:// / qnx:// &#160;&#183;&#160; switchable via URL prefix" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#37474f;align=center;verticalAlign=middle;arcSize=6;dashed=1;shadow=0;" vertex="1" parent="1">
+        <mxCell id="bottom" value="Transport backend selected by URL scheme &#160;&#183;&#160; backend-specific addressing and query parameters may differ" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#37474f;align=center;verticalAlign=middle;arcSize=6;dashed=1;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="80" y="368" width="740" height="44" as="geometry" />
         </mxCell>
 
-        <mxCell id="footnote" value="VLink &#8212; full-scenario ROS 2 replacement &#160;&#183;&#160; 3 communication models / 6 primitives &#160;&#183;&#160; 12 transports &#160;&#183;&#160; 14 serialization formats" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#607d8b;rounded=1;shadow=0;" vertex="1" parent="1">
+        <mxCell id="footnote" value="VLink &#8212; full-scenario ROS 2 replacement &#160;&#183;&#160; 3 communication models / 6 primitives &#160;&#183;&#160; 10 transports &#160;&#183;&#160; 14 serialization formats" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#607d8b;rounded=1;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="40" y="424" width="820" height="22" as="geometry" />
         </mxCell>
 

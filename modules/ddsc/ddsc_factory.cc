@@ -91,73 +91,89 @@ std::shared_ptr<ddsc::DomainParticipant> DdscFactory::create_participant(uint8_t
   static auto& factory = DdscFactory::get();
 
   const auto& id = std::make_tuple(type, conf.domain, properties);
-  std::unique_lock lock(factory.mtx_);
-  std::shared_ptr<ddsc::DomainParticipant> part = get_weak_ptr(factory.part_map_, id).lock();
+  std::lock_guard lifecycle_lock(factory.participant_mtx_);
+  std::shared_ptr<ddsc::DomainParticipant> part;
+  dds_qos_t* dds_qos = nullptr;
+  bool has_domain_ref = false;
 
-  if (!part) {
+  {
+    std::lock_guard lock(factory.mtx_);
+    part = get_weak_ptr(factory.part_map_, id).lock();
+
+    if (part) {
+      return part;
+    }
+
     factory.part_map_.erase(id);
 
-    dds_qos_t* dds_qos = dds_create_qos();
-
+    dds_qos = dds_create_qos();
     set_participant_qos(conf.domain, dds_qos, properties);
 
-    bool has_domain_ref = false;
     auto domain_iter = factory.domain_map_.find(conf.domain);
 
     if (domain_iter != factory.domain_map_.end()) {
       ++domain_iter->second.ref_count;
       has_domain_ref = true;
     }
+  }
 
-    auto* ptr = new ddsc::DomainParticipant(conf.domain, dds_qos);
+  auto* ptr = new ddsc::DomainParticipant(conf.domain, dds_qos);
 
-    if VUNLIKELY (!ptr || ptr->entity <= 0) {
-      VLOG_E("DdscFactory: Failed to create participant.");
-      delete ptr;
-      dds_delete_qos(dds_qos);
+  if VUNLIKELY (!ptr || ptr->entity <= 0) {
+    VLOG_E("DdscFactory: Failed to create participant.");
+    delete ptr;
+    dds_delete_qos(dds_qos);
 
-      if (has_domain_ref) {
-        auto iter = factory.domain_map_.find(conf.domain);
-        if VLIKELY (iter != factory.domain_map_.end() && iter->second.ref_count > 0) {
-          --iter->second.ref_count;
-        }
+    if (has_domain_ref) {
+      std::lock_guard lock(factory.mtx_);
+      auto iter = factory.domain_map_.find(conf.domain);
+      if VLIKELY (iter != factory.domain_map_.end() && iter->second.ref_count > 0) {
+        --iter->second.ref_count;
       }
-
-      return nullptr;
     }
 
-    part = std::shared_ptr<ddsc::DomainParticipant>(
-        ptr, [id, domain = conf.domain, has_domain_ref](ddsc::DomainParticipant* part) {
-          {
-            std::lock_guard lock(factory.mtx_);
+    return nullptr;
+  }
 
-            if (auto iter = factory.part_map_.find(id); iter != factory.part_map_.end() && iter->second.expired()) {
-              factory.part_map_.erase(iter);
-            }
+  part = std::shared_ptr<ddsc::DomainParticipant>(
+      ptr, [id, domain = conf.domain, has_domain_ref](ddsc::DomainParticipant* part) {
+        std::lock_guard lifecycle_lock(factory.participant_mtx_);
+        dds_entity_t domain_entity = 0;
 
-            delete part;
+        {
+          std::lock_guard lock(factory.mtx_);
 
-            if (!has_domain_ref) {
-              return;
-            }
+          if (auto iter = factory.part_map_.find(id); iter != factory.part_map_.end() && iter->second.expired()) {
+            factory.part_map_.erase(iter);
+          }
 
+          if (has_domain_ref) {
             auto iter = factory.domain_map_.find(domain);
 
             if VLIKELY (iter != factory.domain_map_.end() && iter->second.ref_count > 0) {
               --iter->second.ref_count;
 
               if (iter->second.ref_count == 0) {
-                dds_delete(iter->second.entity);
+                domain_entity = iter->second.entity;
                 factory.domain_map_.erase(iter);
               }
             }
           }
-        });
+        }
 
+        delete part;
+
+        if (domain_entity > 0) {
+          dds_delete(domain_entity);
+        }
+      });
+
+  {
+    std::lock_guard lock(factory.mtx_);
     factory.part_map_.emplace(id, part);
-
-    dds_delete_qos(dds_qos);
   }
+
+  dds_delete_qos(dds_qos);
 
   return part;
 }

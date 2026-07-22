@@ -49,6 +49,8 @@ FoxgloveParameters::FoxgloveParameters(const Config& config) : config_(config) {
 FoxgloveParameters::~FoxgloveParameters() { stop(); }
 
 bool FoxgloveParameters::start() {
+  std::lock_guard lifecycle_lock(lifecycle_mtx_);
+
   if VUNLIKELY (started_.exchange(true)) {
     return true;
   }
@@ -92,6 +94,8 @@ bool FoxgloveParameters::start() {
 }
 
 void FoxgloveParameters::stop() {
+  std::lock_guard lifecycle_lock(lifecycle_mtx_);
+
   if VUNLIKELY (!started_.exchange(false)) {
     return;
   }
@@ -177,6 +181,20 @@ Json FoxgloveParameters::build_parameter_values(const std::vector<std::string>& 
   return msg;
 }
 
+Json FoxgloveParameters::build_parameter_delta(const std::vector<const ParameterEntry*>& entries) {
+  Json msg;
+  msg["op"] = "parameterValues";
+  msg["parameters"] = Json::array();
+
+  for (const auto* entry : entries) {
+    if VLIKELY (entry) {
+      msg["parameters"].emplace_back(make_parameter_json(*entry));
+    }
+  }
+
+  return msg;
+}
+
 bool FoxgloveParameters::apply_set_parameters(const Json& request, Json& response, std::vector<ParameterEntry>& delta,
                                               std::string& error) {
   if VUNLIKELY (!request.contains("parameters") || !request["parameters"].is_array()) {
@@ -213,22 +231,26 @@ bool FoxgloveParameters::apply_set_parameters(const Json& request, Json& respons
     state_ = new_state;
   }
 
-  if VLIKELY (setter_) {
-    Bytes payload;
+  {
+    std::lock_guard lifecycle_lock(lifecycle_mtx_);
 
-    if VUNLIKELY (!encode_json_payload(new_state, payload)) {
-      error = "failed to encode parameter JSON payload";
+    if VLIKELY (setter_) {
+      Bytes payload;
+
+      if VUNLIKELY (!encode_json_payload(new_state, payload)) {
+        error = "failed to encode parameter JSON payload";
+        std::unique_lock lock(state_mtx_);
+        state_ = std::move(old_state);
+        return false;
+      }
+
+      setter_->set(payload);
+    } else if VUNLIKELY (!config_.url.empty()) {
+      error = "parameter setter is not initialized";
       std::unique_lock lock(state_mtx_);
       state_ = std::move(old_state);
       return false;
     }
-
-    setter_->set(payload);
-  } else if VUNLIKELY (!config_.url.empty()) {
-    error = "parameter setter is not initialized";
-    std::unique_lock lock(state_mtx_);
-    state_ = std::move(old_state);
-    return false;
   }
 
   delta = diff_states(old_state, new_state);

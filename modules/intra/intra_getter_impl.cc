@@ -41,7 +41,7 @@ void IntraGetterImpl::init() {
 
   conf_.hash_code = Helpers::get_hash_code(conf_.event);
 
-  object_ = factory.get_object<Object>({kImplType, conf_.address, conf_.pipeline, type_});
+  object_ = factory.get_object<Object>({kImplType, conf_.address, conf_.pipeline, type_, conf_.hash_code});
 
   if (object_->msg_map_is_empty()) {
     object_->add_impl(this);

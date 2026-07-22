@@ -261,7 +261,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) ObjectArray final {
    * @brief Serialises the struct snapshot plus record buffer into @p bytes.
    *
    * @param bytes Output buffer; resized automatically when too small.
-   * @return Always @c true.
+   * @return @c true on success; @c false when output allocation fails.
    */
   bool operator>>(Bytes& bytes) const noexcept;
 
@@ -292,7 +292,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) ObjectArray final {
    * @brief Borrows @p target's record buffer without copying.
    *
    * @param target Source array whose buffer must outlive @c *this.
-   * @return @c false on self-borrow, otherwise @c true.
+   * @return @c false on self-borrow or owned-buffer aliasing, otherwise @c true.
    */
   bool shallow_copy(const ObjectArray& target) noexcept;
 
@@ -300,7 +300,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) ObjectArray final {
    * @brief Allocates (or reuses) an owned buffer and copies @p target's records.
    *
    * @param target Source array to clone.
-   * @return @c false on self-copy, otherwise @c true.
+   * @return @c false on self-copy, owned-buffer aliasing, or allocation failure.
    */
   bool deep_copy(const ObjectArray& target) noexcept;
 
@@ -316,7 +316,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) ObjectArray final {
    * @brief Pre-allocates capacity for @p count records and resets the logical count.
    *
    * @param count Maximum number of records; must be non-zero.
-   * @return @c false when @p count is zero, otherwise @c true.
+   * @return @c false when @p count is zero, its byte size overflows, or allocation fails.
    */
   bool create(size_t count) noexcept;
 

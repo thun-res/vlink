@@ -27,7 +27,10 @@
 
 #ifdef VLINK_ENABLE_VIEWER_OSG
 
+#include <vlink/base/macros.h>
+
 #include <iostream>
+#include <limits>
 
 namespace OsgCommon {
 
@@ -38,6 +41,11 @@ osg::Vec3d worldToScreen(const osg::Vec3d& worldPoint, osg::Camera* camera) {
 
   osg::Vec4d worldPointH(worldPoint.x(), worldPoint.y(), worldPoint.z(), 1.0);
   osg::Vec4d clipSpacePoint = worldPointH * viewMatrix * projMatrix;
+
+  if VUNLIKELY (clipSpacePoint.w() <= 0.0) {
+    const double invalid = std::numeric_limits<double>::quiet_NaN();
+    return {invalid, invalid, invalid};
+  }
 
   osg::Vec3d normalizedScreenPoint(clipSpacePoint.x() / clipSpacePoint.w(), clipSpacePoint.y() / clipSpacePoint.w(),
                                    clipSpacePoint.z() / clipSpacePoint.w());

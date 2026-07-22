@@ -170,7 +170,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) RawData final {
    * @brief Serialises the struct snapshot plus payload into @p bytes.
    *
    * @param bytes Output buffer; resized automatically when its size differs from the serialized size.
-   * @return Always @c true.
+   * @return @c true on success; @c false when output allocation fails.
    */
   bool operator>>(Bytes& bytes) const noexcept;
 
@@ -200,7 +200,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) RawData final {
    * @brief Borrows @p target's payload pointer without copying.
    *
    * @param target Source container whose buffer must outlive @c *this.
-   * @return @c false on self-borrow, otherwise @c true.
+   * @return @c false on self-borrow or owned-buffer aliasing, otherwise @c true.
    */
   bool shallow_copy(const RawData& target) noexcept;
 
@@ -208,7 +208,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) RawData final {
    * @brief Allocates (or reuses) an owned buffer and copies @p target's payload.
    *
    * @param target Source container to clone.
-   * @return @c false on self-copy, otherwise @c true.
+   * @return @c false on self-copy, owned-buffer aliasing, or allocation failure.
    */
   bool deep_copy(const RawData& target) noexcept;
 
@@ -224,7 +224,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) RawData final {
    * @brief Allocates an uninitialised owned buffer of @p size bytes.
    *
    * @param size Byte count; must be non-zero.
-   * @return @c false when @p size is zero, otherwise @c true.
+   * @return @c false when @p size is zero or allocation fails, otherwise @c true.
    */
   bool create(size_t size) noexcept;
 
@@ -238,7 +238,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) RawData final {
    *
    * @param data Non-null source pointer that must outlive @c *this.
    * @param size Buffer length in bytes; must be non-zero.
-   * @return @c false on invalid arguments or unchanged pointer, otherwise @c true.
+   * @return @c false on invalid arguments, unchanged pointer, or owned-buffer aliasing, otherwise @c true.
    */
   bool shallow_copy(uint8_t* data, size_t size) noexcept;
 
@@ -247,7 +247,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) RawData final {
    *
    * @param data Non-null source pointer.
    * @param size Number of bytes to copy; must be non-zero.
-   * @return @c false on invalid arguments or aliasing, otherwise @c true.
+   * @return @c false on invalid arguments, aliasing, or allocation failure, otherwise @c true.
    */
   bool deep_copy(uint8_t* data, size_t size) noexcept;
 

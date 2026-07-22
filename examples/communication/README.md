@@ -1,6 +1,6 @@
 # 📡 communication —— 三种通信模型的进阶示例
 
-本类目在 `quickstart/` 的最小骨架之上，按 Event / Method / Field 三大模型分别展开更完整的 API 矩阵：连接检测、强制发布、多订阅者扇出、端到端延迟与丢包统计、变化上报、晚加入同步等。示例以 `dds://` / `ddsc://` 作为主要传输，贴近分布式部署场景；切换后端仅需替换 URL 前缀。异步应答（回调 / future）与服务端延迟应答 `listen_for_reply` + `reply(req_id, resp)` 的完整规范见顶层 `doc/02-communication.md`。
+本类目在 `quickstart/` 的最小骨架之上，按 Event / Method / Field 三大模型分别展开更完整的 API 矩阵：连接检测、强制发布、多订阅者扇出、端到端延迟与丢包统计、变化上报、晚加入同步等。示例以 `dds://` / `ddsc://` 作为主要传输，贴近分布式部署场景；地址模型兼容的 topic 后端通常可只替换 scheme，专用协议须填写完整合法 URL。异步应答（回调 / future）与服务端延迟应答 `listen_for_reply` + `reply(req_id, resp)` 的完整规范见顶层 `doc/02-communication.md`。
 
 ![通信模型总览](../../doc/images/readme-communication-models.png)
 

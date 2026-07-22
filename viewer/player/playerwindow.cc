@@ -56,6 +56,45 @@
 
 #define USE_LOCK_PROXY_DESTROY 0
 
+void PlayerWindow::kill_proxy_clients() {
+#ifdef Q_OS_WINDOWS
+  QProcess kill_eproto;
+  kill_eproto.start(QString("cmd.exe"), QStringList() << QString("/c") << QString("taskkill") << QString("-f")
+                                                      << QString("-im") << "vlink-eproto.exe");
+  kill_eproto.waitForStarted(500);
+  kill_eproto.waitForFinished(1000);
+
+  QProcess kill_efbs;
+  kill_efbs.start(QString("cmd.exe"), QStringList() << QString("/c") << QString("taskkill") << QString("-f")
+                                                    << QString("-im") << "vlink-efbs.exe");
+  kill_efbs.waitForStarted(500);
+  kill_efbs.waitForFinished(1000);
+
+  QProcess kill_bag;
+  kill_bag.start(QString("cmd.exe"), QStringList() << QString("/c") << QString("taskkill") << QString("-f")
+                                                   << QString("-im") << "vlink-bag.exe");
+  kill_bag.waitForStarted(500);
+  kill_bag.waitForFinished(1000);
+
+  QProcess kill_monitor;
+  kill_monitor.start(QString("cmd.exe"), QStringList() << QString("/c") << QString("taskkill") << QString("-f")
+                                                       << QString("-im") << "vlink-monitor.exe");
+  kill_monitor.waitForStarted(500);
+  kill_monitor.waitForFinished(1000);
+#else
+  int ret = 0;
+  ret += std::system(QString("killall -q -9 eproto >/dev/null 2>&1").toUtf8());
+  ret += std::system(QString("killall -q -9 efbs >/dev/null 2>&1").toUtf8());
+  ret += std::system(QString("killall -q -9 bag >/dev/null 2>&1").toUtf8());
+  ret += std::system(QString("killall -q -9 monitor >/dev/null 2>&1").toUtf8());
+  ret += std::system(QString("killall -q -9 vlink-eproto >/dev/null 2>&1").toUtf8());
+  ret += std::system(QString("killall -q -9 vlink-efbs >/dev/null 2>&1").toUtf8());
+  ret += std::system(QString("killall -q -9 vlink-bag >/dev/null 2>&1").toUtf8());
+  ret += std::system(QString("killall -q -9 vlink-monitor >/dev/null 2>&1").toUtf8());
+  (void)ret;
+#endif
+}
+
 PlayerWindow::PlayerWindow(const QString& bag_path, QWidget* parent) : QMainWindow(parent), ui(new Ui::PlayerWindow) {
   setWindowFlags(Qt::Dialog | Qt::WindowMinimizeButtonHint | Qt::WindowCloseButtonHint | Qt::WindowStaysOnTopHint);
 
@@ -452,6 +491,10 @@ void PlayerWindow::handle_analyzer_timestamp(int64_t timestamp) {
 
 PlayerWindow::~PlayerWindow() {
   quit_flag_ = true;
+
+  if (proxy_process_.state() != QProcess::NotRunning) {
+    kill_proxy_clients();
+  }
 
   if (viewer_process_.state() != QProcess::NotRunning) {
     viewer_process_.terminate();
@@ -1018,6 +1061,7 @@ void PlayerWindow::on_toolButton_play_clicked() {
 #endif
 
   bool is_black_mode = ui->checkBox_black->isChecked();
+  bool is_native_mode = ui->checkBox_native->isChecked();
 
   std::string filter_str = ui->lineEdit_filter->text().toStdString();
   std::vector<std::string> filter_list;
@@ -1033,7 +1077,7 @@ void PlayerWindow::on_toolButton_play_clicked() {
 
   wait_widget_->start_wait();
 
-  player_->post_task([is_black_mode, filter_list, this]() {
+  player_->post_task([is_black_mode, is_native_mode, filter_list, this]() {
     has_played_ = false;
 
     {
@@ -1119,7 +1163,7 @@ void PlayerWindow::on_toolButton_play_clicked() {
 
         ptr->set_ser_type(url_meta.ser_type, url_meta.schema_type);
 
-        if (ui->checkBox_native->isChecked()) {
+        if (is_native_mode) {
           ptr->set_property("dds.ip", "127.0.0.1");
         }
 
@@ -1388,26 +1432,7 @@ void PlayerWindow::on_toolButton_proxy_clicked(bool checked) {
       analyzer_process_.waitForFinished(1000);
     }
 
-#ifdef Q_OS_WINDOWS
-    QProcess kill_eproto;
-    kill_eproto.start(QString("cmd.exe"), QStringList() << QString("/c") << QString("taskkill") << QString("-f")
-                                                        << QString("-im") << "vlink-eproto.exe");
-    kill_eproto.waitForStarted(500);
-    kill_eproto.waitForFinished(1000);
-
-    QProcess kill_monitor;
-    kill_monitor.start(QString("cmd.exe"), QStringList() << QString("/c") << QString("taskkill") << QString("-f")
-                                                         << QString("-im") << "vlink-monitor.exe");
-    kill_monitor.waitForStarted(500);
-    kill_monitor.waitForFinished(1000);
-#else
-    int ret = 0;
-    ret += std::system(QString("killall -q -9 eproto >/dev/null 2>&1").toUtf8());
-    ret += std::system(QString("killall -q -9 monitor >/dev/null 2>&1").toUtf8());
-    ret += std::system(QString("killall -q -9 vlink-eproto >/dev/null 2>&1").toUtf8());
-    ret += std::system(QString("killall -q -9 vlink-monitor >/dev/null 2>&1").toUtf8());
-    (void)ret;
-#endif
+    kill_proxy_clients();
 
     {
       std::lock_guard lock(urls_mtx_);
@@ -1482,7 +1507,7 @@ void PlayerWindow::on_horizontalSlider_progress_sliderReleased() {
     return;
   }
 
-  auto timestamp = ui->horizontalSlider_progress->value() * 100;
+  auto timestamp = static_cast<int64_t>(ui->horizontalSlider_progress->value()) * 100;
 
   update_timestamp(timestamp);
 
@@ -1515,7 +1540,7 @@ void PlayerWindow::on_horizontalSlider_progress_sliderMoved(int position) {
     return;
   }
 
-  update_timestamp(position * 100);
+  update_timestamp(static_cast<int64_t>(position) * 100);
 }
 
 void PlayerWindow::on_doubleSpinBox_rate_editingFinished() {

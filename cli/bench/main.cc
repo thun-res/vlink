@@ -251,14 +251,6 @@ std::string transport_unavailable_reason(const std::string& url) {
 #endif
   }
 
-  if (scheme == "ddst") {
-#ifndef VLINK_SUPPORT_DDST
-    return "ddst:// is not compiled in this build";
-#else
-    return {};
-#endif
-  }
-
   if (scheme == "zenoh") {
 #ifndef VLINK_SUPPORT_ZENOH
     return "zenoh:// is not compiled in this build";
@@ -301,14 +293,6 @@ std::string transport_unavailable_reason(const std::string& url) {
 #endif
   }
 
-  if (scheme == "qnx") {
-#ifndef VLINK_SUPPORT_QNX
-    return "qnx:// is not compiled in this build";
-#else
-    return {};
-#endif
-  }
-
   return {};
 }
 
@@ -344,9 +328,6 @@ std::vector<std::string> get_builtin_urls(bool include_intra) {
 #ifdef VLINK_SUPPORT_DDSR
   append_if_runnable(urls, "ddsr://bench/perf_ddsr?qos=better");
 #endif
-#ifdef VLINK_SUPPORT_DDST
-  append_if_runnable(urls, "ddst://bench/perf_ddst?qos=better");
-#endif
 #ifdef VLINK_SUPPORT_ZENOH
   append_if_runnable(urls, "zenoh://bench/perf_zenoh?qos=better");
 #endif
@@ -358,9 +339,6 @@ std::vector<std::string> get_builtin_urls(bool include_intra) {
 #endif
 #ifdef VLINK_SUPPORT_FDBUS
   append_if_runnable(urls, "fdbus://bench/perf_fdbus");
-#endif
-#ifdef VLINK_SUPPORT_QNX
-  append_if_runnable(urls, "qnx://bench/perf_qnx");
 #endif
 
   return urls;
@@ -936,12 +914,19 @@ bool build_worker_options(const argparse::ArgumentParser& command, bool allow_la
     return false;
   }
 
-  if (options.rate_pattern != vlink::bench::Bench::kMaxRatePattern && options.rate_hz == 0) {
+  const bool internal_idle_fixed = options.wait_start &&
+                                   options.rate_pattern == vlink::bench::Bench::kFixedRatePattern &&
+                                   options.rate_hz == 0 && options.burst_messages > 0;
+  const bool internal_idle_burst = options.wait_start &&
+                                   options.rate_pattern == vlink::bench::Bench::kBurstRatePattern &&
+                                   options.rate_hz > 0 && options.burst_messages == 0;
+
+  if (options.rate_pattern != vlink::bench::Bench::kMaxRatePattern && options.rate_hz == 0 && !internal_idle_fixed) {
     error = "rate must be > 0 for fixed/burst pattern";
     return false;
   }
 
-  if (options.burst_messages <= 0) {
+  if (options.burst_messages <= 0 && !internal_idle_burst) {
     error = "burst must be > 0";
     return false;
   }

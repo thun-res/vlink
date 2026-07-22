@@ -28,6 +28,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <limits>
 
 namespace vlink {
 namespace webviz {
@@ -471,7 +473,7 @@ bool ProxyConfigHelper::validate(const ProxyBridge::Config& config, std::string&
   }
 
   if VUNLIKELY (!config.transport.dds_impl.empty() && !is_valid_dds_impl(config.transport.dds_impl)) {
-    error = "proxy_dds_impl must be one of: dds, ddsc, ddsr, ddst";
+    error = "proxy_dds_impl must be one of: dds, ddsc, ddsr";
     return false;
   }
 
@@ -482,6 +484,14 @@ bool ProxyConfigHelper::validate(const ProxyBridge::Config& config, std::string&
 
   if VUNLIKELY (config.server.max_packet_size < 0.0) {
     error = "proxy_max_packet_size must be >= 0";
+    return false;
+  }
+
+  constexpr double kBytesPerMiB = 1024.0 * 1024.0;
+  const auto max_packet_size_mib = std::ldexp(1.0, std::numeric_limits<size_t>::digits) / kBytesPerMiB;
+
+  if VUNLIKELY (!std::isfinite(config.server.max_packet_size) || config.server.max_packet_size >= max_packet_size_mib) {
+    error = "proxy_max_packet_size must be finite and representable in bytes";
     return false;
   }
 
@@ -520,7 +530,7 @@ std::string ProxyConfigHelper::normalize_token(std::string_view value) {
 
 bool ProxyConfigHelper::is_valid_dds_impl(std::string_view value) {
   const auto normalized = normalize_token(value);
-  return normalized == "dds" || normalized == "ddsc" || normalized == "ddsr" || normalized == "ddst";
+  return normalized == "dds" || normalized == "ddsc" || normalized == "ddsr";
 }
 
 bool ProxyConfigHelper::parse_role(std::string_view value, ProxyAPI::Role& role) {

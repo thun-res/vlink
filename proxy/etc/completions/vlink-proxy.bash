@@ -13,7 +13,7 @@ _vlink_proxy() {
             return
             ;;
         --dds_impl)
-            _vlink_bash_complete_words "dds ddsc ddsr ddst" "$cur"
+            _vlink_bash_complete_words "dds ddsc ddsr" "$cur"
             return
             ;;
         -l|--iox_strategy)
@@ -43,4 +43,4 @@ _vlink_proxy() {
 --dds_impl --runnable -h --help -v --version" "$cur"
 }
 
-complete -F _vlink_proxy vlink-proxy proxy
+_vlink_bash_register_completion _vlink_proxy vlink-proxy proxy

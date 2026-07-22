@@ -23,6 +23,8 @@
 
 #pragma once
 
+// NOLINTBEGIN
+
 #ifndef DOCTEST_CONFIG_USE_STD_HEADERS
 #define DOCTEST_CONFIG_USE_STD_HEADERS
 #endif
@@ -80,9 +82,7 @@
 #endif
 #endif
 
-// NOLINTNEXTLINE(build/namespaces, google-build-using-namespace, google-global-names-in-headers)
 using namespace std::chrono_literals;
-// NOLINTNEXTLINE(build/namespaces, google-build-using-namespace, google-global-names-in-headers)
 using namespace vlink;
 
 namespace common_test {
@@ -121,3 +121,5 @@ bool wait_until(PredicateT&& predicate, std::chrono::milliseconds timeout = std:
 }
 
 }  // namespace common_test
+
+// NOLINTEND

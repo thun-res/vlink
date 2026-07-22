@@ -183,6 +183,7 @@ TEST_SUITE("modules-ZenohConf") {
 
   TEST_CASE("register_qos accepts a valid profile name") {
     Qos qos;
+    qos.valid = true;
     qos.reliability.kind = Qos::Reliability::kReliable;
 
     CHECK_NOTHROW(ZenohConf::register_qos("zenoh_test_profile", qos));
@@ -208,6 +209,10 @@ TEST_SUITE("modules-ZenohConf") {
     ZenohConf invalid_domain("addr");
     invalid_domain.domain = -1;
     CHECK_FALSE(invalid_domain.is_valid());
+
+    ZenohConf invalid_depth("addr");
+    invalid_depth.depth = -1;
+    CHECK_FALSE(invalid_depth.is_valid());
 
     CHECK(conf.is_valid());
   }

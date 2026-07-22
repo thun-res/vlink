@@ -24,7 +24,7 @@ files).
 | `quill` | MIT | <https://github.com/odygrd/quill> | header-only, optional log backend |
 | `argparse` | MIT | <https://github.com/p-ranav/argparse> | header-only, linked into CLI binaries |
 | `bitsery` | MIT | <https://github.com/fraillt/bitsery> | header-only, linked into proxy binaries |
-| `exprtk` | MIT | <https://www.partow.net/programming/exprtk/> | header-only, linked into dump/viewer/webviz |
+| `exprtk` | MIT | <https://www.partow.net/programming/exprtk/> | header-only, linked into parse/viewer/webviz |
 | `websocketpp` | BSD-3-Clause | <https://github.com/zaphoyd/websocketpp> | header-only, linked into vlink-foxglove |
 | `asio` | BSL-1.0 | <https://think-async.com/Asio/> | header-only, linked into vlink-foxglove |
 | `eigen3` | MPL-2.0 | <https://eigen.tuxfamily.org> | header-only, linked into vlink-viewer (MPL-2.0 subset only — see below) |

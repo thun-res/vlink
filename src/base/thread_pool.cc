@@ -75,7 +75,7 @@ struct ThreadPool::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
   using LockfreeQueue = MpmcQueue<LockfreeTaskTuple>;
 #endif
 
-  alignas(64) std::atomic_bool quit_flag{false};
+  std::atomic_bool quit_flag{false};
   alignas(64) std::atomic_size_t lockfree_task_count{0U};
   alignas(64) std::atomic_size_t lockfree_producer_count{0U};
 

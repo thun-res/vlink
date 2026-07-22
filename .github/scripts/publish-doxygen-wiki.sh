@@ -43,10 +43,10 @@ vlink_progress_start "Render Home page"
 home="${wiki_dir}/Home.md"
 if {
   printf '# ⚡ VLink\n\n'
-  printf '> 面向自动驾驶与具身智能的高性能 C++17 通信中间件\n\n'
+  printf '> 面向自动驾驶与具身智能的高性能通信中间件\n\n'
   printf '一套类型安全的统一 API 覆盖进程内、共享内存、车载以太网与跨机网络，'
   printf '更换通信后端仅需修改 URL 前缀，业务代码无需改动。\n\n'
-  printf '当前支持 **12 种传输后端**、**14 种序列化格式**、**3 种通信模型**与 '
+  printf '当前支持 **10 种传输后端**、**14 种序列化格式**、**3 种通信模型**与 '
   printf '**6 个核心原语**，并提供安全加密、录制回放、服务发现、命令行工具及 '
   printf 'Foxglove / Rerun 可视化桥接。\n\n'
 

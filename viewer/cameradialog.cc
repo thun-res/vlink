@@ -2748,7 +2748,7 @@ void CameraDialog::process_projection() {
         py = proj_fy * cy_distorted + proj_cy;
       }
 
-      if (px < 0 || px > proj_params_.img_width || py < 0 || py > proj_params_.img_height) {
+      if (px < 0 || px >= proj_params_.img_width || py < 0 || py >= proj_params_.img_height) {
         continue;
       }
 

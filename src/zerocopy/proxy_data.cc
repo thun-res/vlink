@@ -152,6 +152,10 @@ bool ProxyData::operator>>(Bytes& bytes) const noexcept {
 
   if (bytes.empty() || bytes.size() != get_serialized_size()) {
     bytes = Bytes::create(get_serialized_size());
+
+    if VUNLIKELY (bytes.empty()) {
+      return false;
+    }
   }
 
   std::memcpy(bytes.data(), &kMagicNumberBegin, kMagicNumberBeginSize);
@@ -160,6 +164,10 @@ bool ProxyData::operator>>(Bytes& bytes) const noexcept {
 
   // NOLINTNEXTLINE(bugprone-undefined-memory-manipulation)
   std::memcpy(bytes.data() + kMagicNumberBeginSize + kVersionSize, this, sizeof(ProxyData));
+
+  const auto data_offset = reinterpret_cast<const uint8_t*>(&data_) - reinterpret_cast<const uint8_t*>(this);
+  const size_t data_pointer_size = sizeof(data_);
+  std::memset(bytes.data() + kMagicNumberBeginSize + kVersionSize + data_offset, 0, data_pointer_size);
 
   if VLIKELY (data_ != nullptr && size_ != 0) {
     std::memcpy(bytes.data() + kMagicNumberBeginSize + kVersionSize + sizeof(ProxyData), data_, size_);
@@ -290,6 +298,13 @@ bool ProxyData::shallow_copy(const ProxyData& target) noexcept {
   }
 
   if (is_owner_ && data_ && size_ != 0) {
+    const auto current = reinterpret_cast<uintptr_t>(data_);
+    const auto source = reinterpret_cast<uintptr_t>(target.data_);
+
+    if VUNLIKELY (source >= current && source - current < size_) {
+      return false;
+    }
+
     Bytes::bytes_free(data_, size_);
   }
 
@@ -324,7 +339,10 @@ bool ProxyData::shallow_copy(const ProxyData& target) noexcept {
 
 bool ProxyData::deep_copy(const ProxyData& target) noexcept {
   if VLIKELY (data_ && is_owner_ && target.data_ && size_ != 0 && size_ == target.size_) {
-    if VUNLIKELY (this == &target) {
+    const auto current = reinterpret_cast<uintptr_t>(data_);
+    const auto source = reinterpret_cast<uintptr_t>(target.data_);
+
+    if VUNLIKELY (source >= current && source - current < size_) {
       return false;
     }
 
@@ -359,10 +377,15 @@ bool ProxyData::deep_copy(const ProxyData& target) noexcept {
   }
 
   if (data_ && size_ != 0) {
+    auto* target_data = data_;
     data_ = Bytes::bytes_malloc(size_);
 
-    std::memcpy(data_, target.data_, size_);
+    if VUNLIKELY (!data_) {
+      clear();
+      return false;
+    }
 
+    std::memcpy(data_, target_data, size_);
     is_owner_ = true;
   }
 
@@ -406,10 +429,6 @@ bool ProxyData::move_copy(ProxyData& target) noexcept {
 
 void ProxyData::create(const Bytes& raw, std::string_view url, std::string_view ser, uint32_t schema,
                        std::string_view hostname) noexcept {
-  if (is_owner_ && data_ && size_ != 0) {
-    Bytes::bytes_free(data_, size_);
-  }
-
   static constexpr uint64_t kMax = std::numeric_limits<uint32_t>::max();
 
   if VUNLIKELY (raw.size() > kMax || url.size() > kMax || ser.size() > kMax || hostname.size() > kMax) {
@@ -424,34 +443,83 @@ void ProxyData::create(const Bytes& raw, std::string_view url, std::string_view 
     return;   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
+  bool aliases_owned = false;
+
+  if (is_owner_ && data_ && size_ != 0) {
+    const auto current = reinterpret_cast<uintptr_t>(data_);
+    const auto raw_source = reinterpret_cast<uintptr_t>(raw.data());
+    const auto url_source = reinterpret_cast<uintptr_t>(url.data());
+    const auto ser_source = reinterpret_cast<uintptr_t>(ser.data());
+    const auto hostname_source = reinterpret_cast<uintptr_t>(hostname.data());
+
+    aliases_owned = (!raw.empty() && raw_source >= current && raw_source - current < size_) ||
+                    (!url.empty() && url_source >= current && url_source - current < size_) ||
+                    (!ser.empty() && ser_source >= current && ser_source - current < size_) ||
+                    (!hostname.empty() && hostname_source >= current && hostname_source - current < size_);
+
+    if VLIKELY (!aliases_owned) {
+      Bytes::bytes_free(data_, size_);
+      data_ = nullptr;
+      size_ = 0;
+      is_owner_ = false;
+    }
+  }
+
+  const auto data_size = static_cast<uint32_t>(raw.size());
+  const uint32_t url_pos = data_size;
+  const auto url_size = static_cast<uint32_t>(url.size());
+  const uint32_t ser_pos = url_pos + url_size;
+  const auto ser_size = static_cast<uint32_t>(ser.size());
+  const uint32_t hostname_pos = ser_pos + ser_size;
+  const auto hostname_size = static_cast<uint32_t>(hostname.size());
+
+  uint8_t* new_data = nullptr;
+  if VLIKELY (total != 0) {
+    new_data = Bytes::bytes_malloc(total);
+
+    if VUNLIKELY (!new_data) {
+      clear();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      return;   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    if VLIKELY (data_size != 0) {
+      std::memcpy(new_data, raw.data(), data_size);
+    }
+
+    if (url_size != 0) {
+      std::memcpy(new_data + url_pos, url.data(), url_size);
+    }
+
+    if (ser_size != 0) {
+      std::memcpy(new_data + ser_pos, ser.data(), ser_size);
+    }
+
+    if (hostname_size != 0) {
+      std::memcpy(new_data + hostname_pos, hostname.data(), hostname_size);
+    }
+  }
+
+  if VUNLIKELY (aliases_owned) {
+    Bytes::bytes_free(data_, size_);
+  }
+
   schema_ = schema;
 
   data_pos_ = 0;
-  data_size_ = static_cast<uint32_t>(raw.size());
+  data_size_ = data_size;
 
-  url_pos_ = data_pos_ + data_size_;
-  url_size_ = static_cast<uint32_t>(url.size());
+  url_pos_ = url_pos;
+  url_size_ = url_size;
 
-  ser_pos_ = url_pos_ + url_size_;
-  ser_size_ = static_cast<uint32_t>(ser.size());
+  ser_pos_ = ser_pos;
+  ser_size_ = ser_size;
 
-  hostname_pos_ = ser_pos_ + ser_size_;
-  hostname_size_ = static_cast<uint32_t>(hostname.size());
+  hostname_pos_ = hostname_pos;
+  hostname_size_ = hostname_size;
 
   size_ = total;
-  data_ = Bytes::bytes_malloc(size_);
-
-  if VLIKELY (data_size_ > 0) {
-    std::memcpy(data_ + data_pos_, raw.data(), data_size_);
-  }
-
-  std::memcpy(data_ + url_pos_, url.data(), url_size_);
-
-  std::memcpy(data_ + ser_pos_, ser.data(), ser_size_);
-
-  std::memcpy(data_ + hostname_pos_, hostname.data(), hostname_size_);
-
-  is_owner_ = true;
+  data_ = new_data;
+  is_owner_ = new_data != nullptr;
 }
 
 void ProxyData::clear() noexcept {

@@ -58,8 +58,8 @@ struct GraphTask::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddi
   alignas(64) std::atomic<size_t> pending_index{0};
   alignas(64) std::atomic<size_t> active_index{0};
   alignas(64) std::atomic<bool> is_ready{false};
-  alignas(64) std::atomic<bool> is_enable{false};
-  alignas(64) std::atomic<GraphTask::Status> status{GraphTask::kStatusInActive};
+  std::atomic<bool> is_enable{false};
+  std::atomic<GraphTask::Status> status{GraphTask::kStatusInActive};
 
   std::atomic<uint32_t> max_recursion_depth{10'000};
   std::atomic<GraphTask::Policy> policy{GraphTask::kPolicyOnce};
@@ -174,7 +174,7 @@ void GraphTask::cancel() {
     }
 
     current_task->update_status(kStatusInActive);
-    current_task->impl_->cv.notify_all();
+    current_task->mark_ready(false);
 
     for (const auto& weak_task : succ_snapshot) {
       if (auto task_ptr = weak_task.lock()) {
@@ -443,6 +443,7 @@ void GraphTask::process_and_traverse(FindTaskCallback&& callback) {
   task_stack.emplace(shared_from_this());
 
   std::unordered_map<GraphTask*, int> pending_count_map;
+  std::unordered_map<GraphTask*, std::vector<std::shared_ptr<GraphTask>>> successor_map;
   std::unordered_set<GraphTask*> processed;
 
   std::vector<std::shared_ptr<GraphTask>> top_task_list;
@@ -478,6 +479,8 @@ void GraphTask::process_and_traverse(FindTaskCallback&& callback) {
           continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
+        successor_map[current_task.get()].emplace_back(task_ptr);
+
         bool first_seen = (pending_count_map.find(task_ptr.get()) == pending_count_map.end());
 
         auto& sub_pending_count = pending_count_map[task_ptr.get()];
@@ -500,6 +503,31 @@ void GraphTask::process_and_traverse(FindTaskCallback&& callback) {
       }
     }
   }
+
+  std::vector<std::shared_ptr<GraphTask>> ready_task_list;
+  std::vector<std::shared_ptr<GraphTask>> sorted_task_list;
+  ready_task_list.reserve(top_task_list.size());
+  sorted_task_list.reserve(top_task_list.size());
+  ready_task_list.emplace_back(top_task_list.front());
+
+  for (size_t index = 0; index < ready_task_list.size(); ++index) {
+    const auto& current_task = ready_task_list[index];
+    sorted_task_list.emplace_back(current_task);
+
+    for (const auto& successor : successor_map[current_task.get()]) {
+      auto pending_iter = pending_count_map.find(successor.get());
+      if (pending_iter != pending_count_map.end() && --pending_iter->second == 0) {
+        ready_task_list.emplace_back(successor);
+      }
+    }
+  }
+
+  if VUNLIKELY (sorted_task_list.size() != top_task_list.size()) {
+    CLOG_E("GraphTask: Failed to produce a topological task order.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return;                                                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  top_task_list = std::move(sorted_task_list);
 
   for (const auto& top_task : top_task_list) {
     top_task->update_status(kStatusPending);
@@ -777,15 +805,11 @@ void GraphTask::notify(int condition_number) {
           const bool ready = task_ptr->mark_predecessor_satisfied(false, &has_active);
 
           if (ready && !has_active) {
-            task_ptr->impl_->is_ready.store(true, std::memory_order_release);
-            task_ptr->impl_->is_enable.store(false, std::memory_order_release);
-            task_ptr->impl_->cv.notify_all();
+            task_ptr->mark_ready(false);
             skip_list.emplace_back(task_ptr);
             // LCOV_EXCL_START GCOVR_EXCL_START
           } else if (ready && task_ptr->impl_->policy.load(std::memory_order_relaxed) == kPolicyWaitAll) {
-            task_ptr->impl_->is_ready.store(true, std::memory_order_release);
-            task_ptr->impl_->is_enable.store(true, std::memory_order_release);
-            task_ptr->impl_->cv.notify_all();
+            task_ptr->mark_ready(true);
           }
           // LCOV_EXCL_STOP GCOVR_EXCL_STOP
         }
@@ -795,14 +819,10 @@ void GraphTask::notify(int condition_number) {
 
       if (task_ptr->impl_->policy.load(std::memory_order_relaxed) == kPolicyOnce) {
         task_ptr->mark_predecessor_satisfied(true, nullptr);
-        task_ptr->impl_->is_ready.store(true, std::memory_order_release);
-        task_ptr->impl_->is_enable.store(true, std::memory_order_release);
-        task_ptr->impl_->cv.notify_all();
+        task_ptr->mark_ready(true);
       } else if (task_ptr->impl_->policy.load(std::memory_order_relaxed) == kPolicyMultiple) {
         task_ptr->mark_predecessor_satisfied(true, nullptr);
-        task_ptr->impl_->is_ready.store(true, std::memory_order_release);
-        task_ptr->impl_->is_enable.store(false, std::memory_order_release);
-        task_ptr->impl_->cv.notify_all();
+        task_ptr->mark_ready(false);
 
         invoke_list.emplace_back(task);
       } else if (task_ptr->impl_->policy.load(std::memory_order_relaxed) ==
@@ -813,9 +833,7 @@ void GraphTask::notify(int condition_number) {
           continue;
         }
 
-        task_ptr->impl_->is_ready.store(true, std::memory_order_release);
-        task_ptr->impl_->is_enable.store(true, std::memory_order_release);
-        task_ptr->impl_->cv.notify_all();
+        task_ptr->mark_ready(true);
       }
     }
   }
@@ -860,15 +878,11 @@ void GraphTask::notify_skip() {
     }
 
     if (!has_active) {
-      task_ptr->impl_->is_ready.store(true, std::memory_order_release);
-      task_ptr->impl_->is_enable.store(false, std::memory_order_release);
-      task_ptr->impl_->cv.notify_all();
+      task_ptr->mark_ready(false);
       skip_list.emplace_back(task_ptr);
       // LCOV_EXCL_START GCOVR_EXCL_START
     } else if (task_ptr->impl_->policy.load(std::memory_order_relaxed) == kPolicyWaitAll) {
-      task_ptr->impl_->is_ready.store(true, std::memory_order_release);
-      task_ptr->impl_->is_enable.store(true, std::memory_order_release);
-      task_ptr->impl_->cv.notify_all();
+      task_ptr->mark_ready(true);
     }
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
@@ -905,6 +919,16 @@ bool GraphTask::mark_predecessor_satisfied(bool active, bool* has_active) {
   }
 
   return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+}
+
+void GraphTask::mark_ready(bool enable) {
+  {
+    std::lock_guard lock(impl_->mtx);
+    impl_->is_ready.store(true, std::memory_order_release);
+    impl_->is_enable.store(enable, std::memory_order_release);
+  }
+
+  impl_->cv.notify_all();
 }
 
 void GraphTask::update_status(Status status) {

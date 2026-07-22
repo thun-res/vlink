@@ -181,7 +181,8 @@ class VLINK_EXPORT Bytes final {  // size == 128 bytes
    *
    * @details
    * Performs no allocation and no copy.  The caller guarantees the lifetime of @p data exceeds
-   * the lifetime of the returned object.
+   * the lifetime of the returned object.  A null pointer with a non-zero @p size is rejected and
+   * produces an empty object.
    *
    * @param data  External buffer to alias.
    * @param size  Length of the buffer in bytes.
@@ -194,7 +195,8 @@ class VLINK_EXPORT Bytes final {  // size == 128 bytes
    *
    * @details
    * Identical to the mutable overload; the @c const pointer is stored verbatim through a
-   * @c const_cast so the non-const @c data() accessor returns the same address.
+   * @c const_cast so the non-const @c data() accessor returns the same address.  A null pointer
+   * with a non-zero @p size is rejected and produces an empty object.
    *
    * @param data  External read-only buffer to alias.
    * @param size  Length of the buffer in bytes.
@@ -218,9 +220,10 @@ class VLINK_EXPORT Bytes final {  // size == 128 bytes
    * @brief Produces an owned copy of an external mutable buffer.
    *
    * @details
-   * Allocates a fresh buffer and @c memcpy s @p size bytes from @p data into it.  When the source
-   * is empty (null pointer or zero size) and @p offset is @c 0 the result is empty and non-owning;
-   * with a non-zero @p offset only the prefix region is allocated.
+   * Allocates a fresh buffer and @c memcpy s @p size bytes from @p data into it.  A null pointer
+   * with a non-zero @p size is rejected and produces an empty object.  When @p size is zero and
+   * @p offset is @c 0 the result is empty and non-owning; with a non-zero @p offset only the prefix
+   * region is allocated.
    *
    * @param data    Source buffer.
    * @param size    Number of bytes to copy.
@@ -248,7 +251,8 @@ class VLINK_EXPORT Bytes final {  // size == 128 bytes
    *
    * @details
    * Marks @c is_loaned() as @c true so the destructor skips the free call -- the underlying
-   * memory is owned by RouDi.  Used internally by the @c shm:// transport backend.
+   * memory is owned by RouDi.  Used internally by the @c shm:// transport backend.  A null pointer
+   * with a non-zero @p size is rejected and produces an empty object.
    *
    * @param data  Pointer to the iceoryx chunk payload.
    * @param size  Length of the payload in bytes.
@@ -258,6 +262,8 @@ class VLINK_EXPORT Bytes final {  // size == 128 bytes
 
   /**
    * @brief Wraps an iceoryx-loaned read-only payload as a non-owning, non-aliasing carrier.
+   *
+   * @details A null pointer with a non-zero @p size is rejected and produces an empty object.
    *
    * @param data  Pointer to the read-only iceoryx chunk payload.
    * @param size  Length of the payload in bytes.
@@ -693,8 +699,8 @@ class VLINK_EXPORT Bytes final {  // size == 128 bytes
    * @brief Compresses a payload using LZAV and wraps it in the VLink compression frame.
    *
    * @details
-   * Emits the layout shown in the file-level diagram.  Inputs larger than @c 1 @c MiB
-   * (@c kMaxCompressCacheSize) are rejected and produce an empty result.
+   * Emits the layout shown in the file-level diagram.  Inputs above the codec's @c 256 @c MiB decoded-size
+   * boundary are rejected and produce an empty result.
    *
    * @param data       Source pointer.
    * @param size       Source length in bytes.

@@ -205,10 +205,16 @@ void PlayDialog::on_pushButton_select_clicked() {
     player_.reset();
   }
 
+  ui->listWidget->clear();
+  ser_map_.clear();
+  schema_type_map_.clear();
+  status_ = kDisable;
+
   try {
     player_ = vlink::BagReader::create(file_path.toStdString(), true);
   } catch (vlink::Exception::RuntimeError& e) {
     QMessageBox::critical(this, tr("Error"), QString::fromStdString(e.what()));
+    update_status();
     return;
   }
 
@@ -255,10 +261,6 @@ void PlayDialog::on_pushButton_select_clicked() {
   player_->register_status_callback([this](vlink::BagReader::Status status) {
     QMetaObject::invokeMethod(this, "update_status_for_player", Qt::QueuedConnection, Q_ARG(int, status));
   });
-
-  ui->listWidget->clear();
-  ser_map_.clear();
-  schema_type_map_.clear();
 
   const auto& player_info = player_->get_info();
 

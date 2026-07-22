@@ -1,6 +1,6 @@
 # 🔒 QoS 配置教程
 
-本目录讲解 vlink QoS（Quality of Service）系统：自定义 `vlink::Qos` 策略、注册命名 profile、在 URL 中按名引用。QoS 主要在 DDS 家族后端（`dds://` / `ddsc://` / `ddsr://` / `ddst://`）与 `zenoh://` 上生效；`intra://`、`shm://`、`someip://`、`mqtt://`、`fdbus://`、`qnx://` 等后端忽略 vlink Qos，它们各自具备独立的可靠性机制。
+本目录讲解 vlink QoS（Quality of Service）系统：自定义 `vlink::Qos` 策略、注册命名 profile、在 URL 中按名引用。QoS 主要在 DDS 家族后端（`dds://` / `ddsc://` / `ddsr://`）与 `zenoh://` 上生效；`intra://`、`shm://`、`someip://`、`mqtt://`、`fdbus://` 等后端忽略 vlink Qos，它们各自具备独立的可靠性机制。
 
 ## 📂 子示例索引
 
@@ -32,7 +32,7 @@
 | `Reliable + KeepLast(5) + Volatile + Sync` | 离散控制事件 |
 | `Reliable + KeepLast(1) + TransientLocal + Sync` | 字段状态同步 |
 | `Reliable + KeepAll + Volatile + Sync` | RPC 调用 |
-| `Reliable + KeepAll + TransientLocal + Sync` | 安全报警（绝不丢失，补送晚加入者） |
+| `Reliable + KeepAll + TransientLocal + Sync` | 启用重传的报警，并补送晚加入者 |
 
 ## 🖼️ 配图
 

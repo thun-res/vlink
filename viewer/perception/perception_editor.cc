@@ -61,6 +61,16 @@ static constexpr int kFieldTreeMaxDepth = 5;
 static constexpr int kPathRole = Qt::UserRole + 1;
 static constexpr int kHudComboData = -1;
 
+static QString normalized_serializer(QString value) {
+  value = value.toLower();
+  value.remove('_');
+  value.remove(' ');
+  value.remove('.');
+  value.remove('-');
+  value.remove(':');
+  return value;
+}
+
 static const std::vector<perception::RenderType>& editor_render_types() {
   static const std::vector<perception::RenderType> kTypes{
       perception::RenderType::kPointCloud,    perception::RenderType::kObjectDetection,
@@ -249,10 +259,30 @@ PerceptionEditorDialog::PerceptionEditorDialog(const PerceptionConfig& config, Q
   connect(ok_button, &QPushButton::clicked, this, &QDialog::accept);
   connect(cancel_button, &QPushButton::clicked, this, &QDialog::reject);
 
-  const auto refresh_tree = [this]() { rebuild_field_tree(ser_edit_->text(), vlink::SchemaType::kUnknown); };
+  const auto refresh_tree = [this]() {
+    auto schema = vlink::SchemaType::kUnknown;
+
+    switch (static_cast<perception::Encoding>(encoding_combo_->currentData().toInt())) {
+      case perception::Encoding::kProtobuf:
+        schema = vlink::SchemaType::kProtobuf;
+        break;
+      case perception::Encoding::kFlatbuffers:
+        schema = vlink::SchemaType::kFlatbuffers;
+        break;
+      case perception::Encoding::kZeroCopy:
+        schema = vlink::SchemaType::kZeroCopy;
+        break;
+      default:
+        break;
+    }
+
+    rebuild_field_tree(ser_edit_->text(), schema);
+  };
   connect(ser_edit_, &QLineEdit::editingFinished, this, refresh_tree);
   connect(collection_edit_, &QLineEdit::editingFinished, this, refresh_tree);
   connect(inner_collection_edit_, &QLineEdit::editingFinished, this, refresh_tree);
+  connect(encoding_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+          [refresh_tree](int) { refresh_tree(); });
 
   load_entries_from_config();
   update_path_label();
@@ -361,7 +391,9 @@ void PerceptionEditorDialog::load_mapping_to_form(int index) {
   collection_edit_->setEnabled(!is_hud);
   inner_collection_edit_->setEnabled(!is_hud);
 
+  encoding_combo_->blockSignals(true);
   encoding_combo_->setCurrentIndex(encoding_combo_->findData(static_cast<int>(rule.encoding)));
+  encoding_combo_->blockSignals(false);
   collection_edit_->setText(rule.collection);
   inner_collection_edit_->setText(rule.inner_collection);
 
@@ -376,6 +408,9 @@ void PerceptionEditorDialog::load_mapping_to_form(int index) {
       break;
     case perception::Encoding::kFlatbuffers:
       schema = vlink::SchemaType::kFlatbuffers;
+      break;
+    case perception::Encoding::kZeroCopy:
+      schema = vlink::SchemaType::kZeroCopy;
       break;
     default:
       break;
@@ -394,9 +429,28 @@ void PerceptionEditorDialog::commit_form_to_mapping(int index) {
   const bool is_hud = current_is_hud();
   entry.is_hud = is_hud;
 
+  const auto new_ser = ser_edit_->text();
+  const auto old_ser_normalized = normalized_serializer(rule.ser);
+  const auto new_ser_normalized = normalized_serializer(new_ser);
+
+  if (!old_ser_normalized.isEmpty() && rule.match.serializer_equals.size() == 1 &&
+      rule.match.serializer_equals.front() == old_ser_normalized) {
+    rule.match.serializer_equals = new_ser_normalized.isEmpty() ? QStringList{} : QStringList{new_ser_normalized};
+  }
+
+  const auto new_encoding = static_cast<perception::Encoding>(encoding_combo_->currentData().toInt());
+
+  if (rule.encoding != perception::Encoding::kUnknown && rule.match.schema_types.size() == 1 &&
+      rule.match.schema_types.front() == normalized_serializer(PerceptionConfig::encoding_to_string(rule.encoding))) {
+    rule.match.schema_types =
+        new_encoding == perception::Encoding::kUnknown
+            ? QStringList{}
+            : QStringList{normalized_serializer(PerceptionConfig::encoding_to_string(new_encoding))};
+  }
+
   rule.name = name_edit_->text();
-  rule.ser = ser_edit_->text();
-  rule.encoding = static_cast<perception::Encoding>(encoding_combo_->currentData().toInt());
+  rule.ser = new_ser;
+  rule.encoding = new_encoding;
 
   if (is_hud) {
     rule.collection.clear();
@@ -445,10 +499,22 @@ void PerceptionEditorDialog::commit_form_to_mapping(int index) {
 
 void PerceptionEditorDialog::rebuild_target_table(const QStringList& slot_names,
                                                   const PerceptionConfig::MappingRule* rule) {
-  target_table_->setRowCount(slot_names.size());
+  QStringList rows = slot_names;
 
-  for (int row = 0; row < slot_names.size(); ++row) {
-    const QString& slot = slot_names.at(row);
+  if (rule) {
+    for (const auto& mapping : rule->field_mappings) {
+      const auto target = QString::fromStdString(mapping.target);
+
+      if (!target.isEmpty() && !rows.contains(target)) {
+        rows << target;
+      }
+    }
+  }
+
+  target_table_->setRowCount(rows.size());
+
+  for (int row = 0; row < rows.size(); ++row) {
+    const QString& slot = rows.at(row);
 
     QString source;
     QString expression;
@@ -475,34 +541,25 @@ void PerceptionEditorDialog::rebuild_target_table(const QStringList& slot_names,
 }
 
 void PerceptionEditorDialog::rebuild_field_tree(const QString& ser, vlink::SchemaType schema) {
-  (void)schema;
-
   field_tree_->clear();
 
   if (ser.isEmpty()) {
     return;
   }
 
-  auto normalize = [](QString value) {
-    value = value.toLower();
-    value.remove('_');
-    value.remove(' ');
-    value.remove('.');
-    value.remove('-');
-    value.remove(':');
-    return value;
-  };
-
-  const QString want = normalize(ser);
+  const QString want = normalized_serializer(ser);
 
   const google::protobuf::Descriptor* descriptor = nullptr;
 
-  if (window_ && window_->des_pool_) {
+  const bool allow_proto = schema == vlink::SchemaType::kUnknown || schema == vlink::SchemaType::kProtobuf;
+  const bool allow_fbs = schema == vlink::SchemaType::kUnknown || schema == vlink::SchemaType::kFlatbuffers;
+
+  if (allow_proto && window_ && window_->des_pool_) {
     descriptor = window_->des_pool_->FindMessageTypeByName(ser.toStdString());
 
     if (!descriptor) {
       for (const auto& candidate : scanned_types_) {
-        const QString have = normalize(candidate);
+        const QString have = normalized_serializer(candidate);
 
         if (!have.isEmpty() && (have.contains(want) || want.contains(have))) {
           descriptor = window_->des_pool_->FindMessageTypeByName(candidate.toStdString());
@@ -519,14 +576,18 @@ void PerceptionEditorDialog::rebuild_field_tree(const QString& ser, vlink::Schem
 
   if (!descriptor) {
     for (const auto& source : sources_) {
-      const QString have = normalize(source.ser);
+      if (schema != vlink::SchemaType::kUnknown && source.schema != schema) {
+        continue;
+      }
+
+      const QString have = normalized_serializer(source.ser);
 
       if (have.isEmpty() || !(have.contains(want) || want.contains(have))) {
         continue;
       }
 
-      descriptor = source.proto_desc;
-      fbs_context = source.fbs_ctx;
+      descriptor = allow_proto ? source.proto_desc : nullptr;
+      fbs_context = allow_fbs ? source.fbs_ctx : nullptr;
 
       if (descriptor || fbs_context) {
         break;
@@ -534,7 +595,7 @@ void PerceptionEditorDialog::rebuild_field_tree(const QString& ser, vlink::Schem
     }
   }
 
-  if (!descriptor && !fbs_context && window_) {
+  if (allow_fbs && !descriptor && !fbs_context && window_) {
     fbs_context = window_->flatbuffers_runtime_.find_context(ser.toStdString());
   }
 

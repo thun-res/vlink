@@ -313,8 +313,8 @@ struct alignas(64) MemoryTierState final {
   std::atomic<bool> sharded{false};
   std::atomic<uint32_t> contention_count{0U};
 
-  alignas(64) std::atomic<uint64_t> chunk_count{0};
-  alignas(64) std::atomic<uint64_t> upstream_alloc_count{0};
+  std::atomic<uint64_t> chunk_count{0};
+  std::atomic<uint64_t> upstream_alloc_count{0};
   std::atomic<uint64_t> upstream_alloc_bytes{0};
 };
 
@@ -338,7 +338,7 @@ class MemoryTierShardLockGuard final {
   VLINK_DISALLOW_COPY_AND_ASSIGN(MemoryTierShardLockGuard)
 };
 
-struct alignas(64) MemoryAllocCounters final {
+struct MemoryAllocCounters final {
   std::atomic<uint64_t> count{0};
   std::atomic<uint64_t> bytes{0};
 };
@@ -694,7 +694,7 @@ struct MemoryPool::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
   std::vector<std::unique_ptr<MemoryTierState>> owned_states;
   MemoryAllocCounters oversized_alloc;
 
-  alignas(64) std::atomic<uint64_t> oversized_dealloc_count{0};
+  std::atomic<uint64_t> oversized_dealloc_count{0};
 };
 
 MemoryPool::MemoryPool() : MemoryPool(Config{}) {}

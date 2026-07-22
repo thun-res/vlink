@@ -45,5 +45,5 @@ _vlink-bag2rrd() {
 }
 
 if (( $+functions[compdef] )); then
-    compdef _vlink-bag2rrd vlink-bag2rrd bag2rrd
+    _vlink_zsh_register_completion _vlink-bag2rrd vlink-bag2rrd bag2rrd
 fi

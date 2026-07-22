@@ -19,9 +19,8 @@ endif()
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(
   DIRECTORY ${PROJECT_SOURCE_DIR}/etc/
-  DESTINATION ${INSTALL_CONFIG_DIR}/trigger
+  DESTINATION ${INSTALL_CONFIG_DIR}/vlink-trigger/
   FILES_MATCHING
-  PATTERN "*.json*"
   PATTERN "completions" EXCLUDE
 )
 
@@ -37,4 +36,19 @@ if(ENABLE_COMPLETIONS)
   else()
     vlink_install_completions(${PROJECT_NAME})
   endif()
+endif()
+
+# etc
+if(EXISTS ${PROJECT_SOURCE_DIR}/etc)
+  add_custom_command(
+    TARGET ${PROJECT_NAME}
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_SOURCE_DIR}/etc/
+            ${CMAKE_BINARY_DIR}/output/${BUILD_CONFIG_DIR}/vlink-trigger/
+  )
+  install(
+    DIRECTORY ${PROJECT_SOURCE_DIR}/etc/
+    DESTINATION ${INSTALL_CONFIG_DIR}/vlink-trigger/
+    REGEX "completions" EXCLUDE
+  )
 endif()

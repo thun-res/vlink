@@ -178,8 +178,9 @@ TEST_SUITE("modules-Shm2Conf") {
     CHECK_EQ(default_conf->size, Shm2Conf::kDefaultMemSize);
 
     const char* invalid_urls[] = {
-        "shm2://parse/bad# 1K", "shm2://parse/bad#bad", "shm2://parse/bad#-1",
-        "shm2://parse/bad#1TB", "shm2://parse/bad#1X",
+        "shm2://parse/bad# 1K", "shm2://parse/bad#bad",    "shm2://parse/bad#-1",
+        "shm2://parse/bad#1TB", "shm2://parse/bad#1X",     "shm2://parse/bad#nan",
+        "shm2://parse/bad#inf", "shm2://parse/bad#1e308G", "shm2://parse/bad#33M",
     };
     for (const auto* url_text : invalid_urls) {
       Url url(url_text);

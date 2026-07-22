@@ -143,8 +143,6 @@ bool NodeImpl::return_loan(const Bytes& bytes) {
   return false;
 }
 
-void NodeImpl::set_manual_unloan(bool manual_unloan) { (void)manual_unloan; }
-
 bool NodeImpl::suspend() {
   // has_suspend = true;
 
@@ -228,7 +226,7 @@ class MessageLoop* NodeImpl::get_message_loop() const { return helper_->message_
 
 void NodeImpl::register_status_handler(StatusCallback&& callback) {
   if VUNLIKELY (transport_type != TransportType::kDds && transport_type != TransportType::kDdsc &&
-                transport_type != TransportType::kDdsr && transport_type != TransportType::kDdst) {
+                transport_type != TransportType::kDdsr) {
     VLOG_W("Function [register_status_handler] is not supported.");
     return;
   }
@@ -239,7 +237,7 @@ void NodeImpl::register_status_handler(StatusCallback&& callback) {
 
 bool NodeImpl::has_register_status() const {
   if VUNLIKELY (transport_type != TransportType::kDds && transport_type != TransportType::kDdsc &&
-                transport_type != TransportType::kDdsr && transport_type != TransportType::kDdst) {
+                transport_type != TransportType::kDdsr) {
     VLOG_W("Function [has_register_status] is not supported.");
     return false;
   }
@@ -251,7 +249,7 @@ bool NodeImpl::has_register_status() const {
 
 void NodeImpl::call_status(Status::BasePtr ptr) {
   if VUNLIKELY (transport_type != TransportType::kDds && transport_type != TransportType::kDdsc &&
-                transport_type != TransportType::kDdsr && transport_type != TransportType::kDdst) {
+                transport_type != TransportType::kDdsr) {
     VLOG_W("Function [call_status] is not supported.");
     return;
   }

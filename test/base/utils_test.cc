@@ -33,6 +33,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <mutex>
 #include <string>
 #include <system_error>
@@ -615,6 +616,28 @@ TEST_SUITE("base-Utils") {
     (void)cpu2;
   }
 
+  TEST_CASE("get_cpu_usage remains bounded during concurrent sampling") {
+    std::atomic<bool> valid{true};
+    std::vector<std::thread> workers;
+
+    for (int i = 0; i < 4; ++i) {
+      workers.emplace_back([&valid]() {
+        for (int j = 0; j < 20; ++j) {
+          const double cpu = Utils::get_cpu_usage();
+          if (cpu != -1.0 && (cpu < 0.0 || cpu > 100.0)) {
+            valid.store(false, std::memory_order_relaxed);
+          }
+        }
+      });
+    }
+
+    for (auto& worker : workers) {
+      worker.join();
+    }
+
+    CHECK(valid.load(std::memory_order_relaxed));
+  }
+
   TEST_CASE("get_memory_usage returns a non-negative value") {
     double mem = Utils::get_memory_usage();
 
@@ -626,6 +649,32 @@ TEST_SUITE("base-Utils") {
 
     CHECK(mem < 100.0);
   }
+
+#if defined(__linux__)
+  TEST_CASE("get_memory_usage follows MemAvailable when provided by Linux") {
+    std::ifstream mem_file("/proc/meminfo");
+    std::string key;
+    int64_t mem_total = 0;
+    int64_t mem_available = 0;
+    bool has_mem_available = false;
+
+    while (mem_file >> key) {
+      if (key == "MemTotal:") {
+        mem_file >> mem_total;
+      } else if (key == "MemAvailable:") {
+        mem_file >> mem_available;
+        has_mem_available = true;
+      }
+      mem_file.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    }
+
+    REQUIRE(mem_total > 0);
+    REQUIRE(has_mem_available);
+
+    const double expected = static_cast<double>(mem_total - mem_available) / mem_total * 100.0;
+    CHECK_EQ(Utils::get_memory_usage(), doctest::Approx(expected).epsilon(0.02));
+  }
+#endif
 
   TEST_CASE("try_release_sys_memory does not crash") { Utils::try_release_sys_memory(); }
 
@@ -735,7 +784,26 @@ TEST_SUITE("base-Utils") {
       return;
     }
 
+    int null_fd = ::open("/dev/null", O_RDONLY);
+    if (null_fd >= 0) {
+      if (::dup2(null_fd, STDIN_FILENO) >= 0) {
+        Utils::start_detect_keyboard([](const std::string&) {}, 1);
+        Utils::stop_detect_keyboard();
+      }
+      ::close(null_fd);
+    }
+
     if (::dup2(slave_fd, STDIN_FILENO) < 0) {
+      ::close(slave_fd);
+      ::close(master_fd);
+      ::close(saved_stdin);
+      return;
+    }
+
+    int initial_stdin_flags = ::fcntl(STDIN_FILENO, F_GETFL, 0);
+
+    if (initial_stdin_flags < 0) {
+      (void)::dup2(saved_stdin, STDIN_FILENO);
       ::close(slave_fd);
       ::close(master_fd);
       ::close(saved_stdin);
@@ -775,6 +843,7 @@ TEST_SUITE("base-Utils") {
         1000ms));
 
     Utils::stop_detect_keyboard();
+    CHECK_EQ(::fcntl(STDIN_FILENO, F_GETFL, 0), initial_stdin_flags);
     (void)::dup2(saved_stdin, STDIN_FILENO);
 
     std::vector<std::string> observed;

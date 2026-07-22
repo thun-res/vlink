@@ -589,79 +589,6 @@ double fbs_field_numeric(const flatbuffers::Table& table, const reflection::Fiel
   return false;
 }
 
-bool resolve_fbs_string(const flatbuffers::Table& root_table, const reflection::Object& root_obj,
-                        const reflection::Schema& schema, const std::string& path, std::string& out) {
-  const std::vector<PathToken>& tokens = tokenize_path_cached(path);
-
-  if (tokens.empty()) {
-    return false;
-  }
-
-  const flatbuffers::Table* table = &root_table;
-  const reflection::Object* obj = &root_obj;
-
-  for (size_t i = 0; i < tokens.size(); ++i) {
-    if (tokens[i].is_index) {
-      return false;
-    }
-
-    const auto* field = find_fbs_field(*obj, tokens[i].name);
-
-    if (!field) {
-      return false;
-    }
-
-    const bool last = i + 1 == tokens.size();
-    const auto base_type = field->type()->base_type();
-
-    if (last) {
-      if (base_type == reflection::String) {
-        const auto* value = flatbuffers::GetFieldS(*table, *field);
-        out = value ? value->str() : std::string();
-        return true;
-      }
-
-      const int enum_index = field->type()->index();
-
-      if (enum_index >= 0 && schema.enums() && enum_index < static_cast<int>(schema.enums()->size())) {
-        const auto* enum_def = schema.enums()->Get(static_cast<uint32_t>(enum_index));
-        const int64_t enum_value = flatbuffers::GetAnyFieldI(*table, *field);
-
-        if (enum_def && enum_def->values()) {
-          for (const auto* enum_val : *enum_def->values()) {
-            if (enum_val && enum_val->value() == enum_value && enum_val->name()) {
-              const std::string name = enum_val->name()->str();
-              const size_t last_underscore = name.find_last_of('_');
-              out = (last_underscore != std::string::npos && last_underscore + 1 < name.size())
-                        ? name.substr(last_underscore + 1)
-                        : name;
-              return true;
-            }
-          }
-        }
-      }
-
-      return false;
-    }
-
-    if (base_type != reflection::Obj || !schema.objects()) {
-      return false;
-    }
-
-    const auto* sub_table = flatbuffers::GetFieldT(*table, *field);
-    const auto* sub_obj = schema.objects()->Get(static_cast<uint32_t>(field->type()->index()));
-
-    if (!sub_table || !sub_obj) {
-      return false;
-    }
-
-    table = sub_table;
-    obj = sub_obj;
-  }
-
-  return false;
-}
-
 [[maybe_unused]] bool resolve_fbs_uint64(const flatbuffers::Table& root_table, const reflection::Object& root_obj,
                                          const reflection::Schema& schema, const std::string& path, uint64_t& out) {
   const std::vector<PathToken>& tokens = tokenize_path_cached(path);
@@ -868,6 +795,89 @@ bool resolve_fbs_ref_uint64(FbsRef ref, const reflection::Schema& schema, const 
                                type == reflection::UByte || type == reflection::Bool;
       out = is_unsigned ? static_cast<uint64_t>(value) : (value > 0 ? static_cast<uint64_t>(value) : 0);
       return true;
+    }
+
+    if (field->type()->base_type() == reflection::Vector) {
+      if (i + 1 >= tokens.size() || !tokens[i + 1].is_index) {
+        return false;
+      }
+
+      ref = fbs_vector_child(ref, *field, schema, tokens[i + 1].index);
+      ++i;
+    } else {
+      ref = fbs_child(ref, *field, schema);
+    }
+
+    if (!ref.obj || (!ref.table && !ref.structure)) {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+bool resolve_fbs_ref_string(FbsRef ref, const reflection::Schema& schema, const std::string& path, std::string& out) {
+  const auto& tokens = tokenize_path_cached(path);
+
+  if (tokens.empty() || !ref.obj || (!ref.table && !ref.structure)) {
+    return false;
+  }
+
+  for (size_t i = 0; i < tokens.size(); ++i) {
+    if (tokens[i].is_index) {
+      return false;
+    }
+
+    const auto* field = find_fbs_field(*ref.obj, tokens[i].name);
+
+    if (!field) {
+      return false;
+    }
+
+    if (i + 1 == tokens.size()) {
+      if (field->type()->base_type() == reflection::String) {
+        if (!ref.table || ref.structure) {
+          return false;
+        }
+
+        const auto* value = flatbuffers::GetFieldS(*ref.table, *field);
+        out = value ? value->str() : std::string();
+        return true;
+      }
+
+      const auto base_type = field->type()->base_type();
+
+      if ((!fbs_type_is_numeric(base_type) && base_type != reflection::UType) || base_type == reflection::Float ||
+          base_type == reflection::Double) {
+        return false;
+      }
+
+      const int enum_index = field->type()->index();
+
+      if (enum_index < 0 || !schema.enums() || enum_index >= static_cast<int>(schema.enums()->size())) {
+        return false;
+      }
+
+      const auto* enum_def = schema.enums()->Get(static_cast<uint32_t>(enum_index));
+
+      if (!enum_def || !enum_def->values()) {
+        return false;
+      }
+
+      const int64_t enum_value = fbs_ref_integer(ref, *field);
+
+      for (const auto* value : *enum_def->values()) {
+        if (value && value->value() == enum_value && value->name()) {
+          const std::string name = value->name()->str();
+          const size_t last_underscore = name.find_last_of('_');
+          out = (last_underscore != std::string::npos && last_underscore + 1 < name.size())
+                    ? name.substr(last_underscore + 1)
+                    : name;
+          return true;
+        }
+      }
+
+      return false;
     }
 
     if (field->type()->base_type() == reflection::Vector) {
@@ -1500,6 +1510,16 @@ void fill_cloud(const ReaderT& reader, const std::string& collection, const Slot
 
 template <typename ReaderT>
 void fill_grid(const ReaderT& reader, const std::string& collection, const SlotMap& slot_map, Layer& out) {
+  Grid& grid = out.grid;
+  out.grid_valid = false;
+  grid.origin_x = 0.0;
+  grid.origin_y = 0.0;
+  grid.origin_z = 0.0;
+  grid.resolution = 0.1;
+  grid.width = 0;
+  grid.height = 0;
+  grid.cells.clear();
+
   std::vector<typename ReaderT::Elem> elems;
   reader.collect(reader.root(), collection, elems);
 
@@ -1508,7 +1528,6 @@ void fill_grid(const ReaderT& reader, const std::string& collection, const SlotM
   }
 
   const auto elem = elems.front();
-  Grid& grid = out.grid;
 
   read_double(reader, elem, slot_map, "origin_x", grid.origin_x);
   read_double(reader, elem, slot_map, "origin_y", grid.origin_y);
@@ -1523,7 +1542,7 @@ void fill_grid(const ReaderT& reader, const std::string& collection, const SlotM
     grid.cells.reserve(values.size());
 
     for (const double value : values) {
-      if (std::isnan(value)) {
+      if (!std::isfinite(value)) {
         grid.cells.emplace_back(static_cast<int8_t>(-1));
         continue;
       }
@@ -1533,7 +1552,10 @@ void fill_grid(const ReaderT& reader, const std::string& collection, const SlotM
     }
   }
 
-  out.grid_valid = grid.width > 0 && grid.height > 0 && !grid.cells.empty();
+  const bool valid_dimensions =
+      grid.width > 0 && grid.height > 0 && grid.width <= std::numeric_limits<size_t>::max() / grid.height;
+  const size_t expected_cells = valid_dimensions ? static_cast<size_t>(grid.width) * grid.height : 0;
+  out.grid_valid = valid_dimensions && grid.resolution > 0.0 && grid.cells.size() == expected_cells;
 }
 
 template <typename ReaderT>
@@ -1913,8 +1935,7 @@ class FbsReader final {
 
     std::string resolved;
 
-    if (!elem.structure && !mapping.source.empty() &&
-        resolve_fbs_string(*elem.table, *elem.obj, *schema_, mapping.source, resolved)) {
+    if (!mapping.source.empty() && resolve_fbs_ref_string(elem, *schema_, mapping.source, resolved)) {
       return resolved;
     }
 
@@ -1928,10 +1949,9 @@ class FbsReader final {
       return;
     }
 
-    const flatbuffers::Table* table = base.table;
-    const reflection::Object* obj = base.obj;
+    FbsRef current = base;
 
-    if (!table || !obj) {
+    if (!current.obj || (!current.table && !current.structure)) {
       return;
     }
 
@@ -1940,34 +1960,31 @@ class FbsReader final {
         return;
       }
 
-      const auto* field = find_fbs_field(*obj, tokens[i].name);
+      const auto* field = find_fbs_field(*current.obj, tokens[i].name);
 
       if (!field || field->type()->base_type() != reflection::Obj) {
         return;
       }
 
-      const auto* sub_table = flatbuffers::GetFieldT(*table, *field);
-      const auto* sub_obj = schema_->objects()->Get(static_cast<uint32_t>(field->type()->index()));
+      current = fbs_child(current, *field, *schema_);
 
-      if (!sub_table || !sub_obj) {
+      if (!current.obj || (!current.table && !current.structure)) {
         return;
       }
-
-      table = sub_table;
-      obj = sub_obj;
     }
 
     if (tokens.back().is_index) {
       return;
     }
 
-    const auto* field = find_fbs_field(*obj, tokens.back().name);
+    const auto* field = find_fbs_field(*current.obj, tokens.back().name);
 
-    if (!field || field->type()->base_type() != reflection::Vector || !fbs_type_is_numeric(field->type()->element())) {
+    if (!field || !current.table || field->type()->base_type() != reflection::Vector ||
+        !fbs_type_is_numeric(field->type()->element())) {
       return;
     }
 
-    const auto* vec = flatbuffers::GetFieldAnyV(*table, *field);
+    const auto* vec = flatbuffers::GetFieldAnyV(*current.table, *field);
 
     if (!vec) {
       return;

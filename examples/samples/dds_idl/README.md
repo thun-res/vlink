@@ -17,7 +17,7 @@ fastddsgen --version                              # 确认工具链已安装
 # 取消 examples/samples/CMakeLists.txt 中该行的注释：
 #   # add_subdirectory(dds_idl)  →  add_subdirectory(dds_idl)
 
-cmake -B build -S . -DENABLE_EXAMPLES=ON -DSELECT_DDS_BACKEND=fast-dds
+cmake -B build -S . -DENABLE_EXAMPLES=ON -DSKIP_DDS=OFF
 cmake --build build --target sample_dds_idl
 ./build/output/bin/sample_dds_idl
 ```
@@ -32,7 +32,7 @@ cmake --build build --target sample_dds_idl
    ```
 
 2. CDR 序列化：框架自动识别 IDL 生成类型并走 CDR 路径，无需用户手写序列化器。
-3. 安全限制：CDR 类型不支持 `SecurityPublisher`（构造时传入 `Security::Config` 将被忽略并打印 warning）；需加密请改用 Protobuf 或 FlatBuffers。
+3. 安全限制：CDR 类型不支持 `SecurityPublisher`；`enable_security()` 会告警并返回 `false`，默认安全节点随后因没有可用安全上下文而拒绝初始化，不会降级为明文。需消息级加密请改用受支持的非 CDR 类型，或使用 DDS Security / TLS。
 
 ## 📊 与其他 sample 的区别
 

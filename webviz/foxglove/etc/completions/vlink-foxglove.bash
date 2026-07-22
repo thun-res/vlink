@@ -51,4 +51,4 @@ _vlink_foxglove() {
 $_vlink_bash_webviz_proxy_opts -h --help -v --version" "$cur"
 }
 
-complete -F _vlink_foxglove vlink-foxglove webviz_foxglove
+_vlink_bash_register_completion _vlink_foxglove vlink-foxglove webviz_foxglove

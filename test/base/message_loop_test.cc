@@ -484,6 +484,37 @@ TEST_SUITE("base-MessageLoop") {
     (void)result;
   }
 
+  TEST_CASE("blocking spin_once is woken by a cross-thread post before run") {
+    for (auto type : {MessageLoop::kNormalType, MessageLoop::kLockfreeType, MessageLoop::kPriorityType}) {
+      MessageLoop loop(type);
+      std::atomic<bool> ran{false};
+      std::promise<bool> spin_result;
+      auto spin_future = spin_result.get_future();
+
+      std::thread waiter([&loop, &spin_result] { spin_result.set_value(loop.spin_once(true)); });
+
+      std::this_thread::sleep_for(20ms);
+      const bool accepted = loop.post_task([&ran] { ran.store(true, std::memory_order_release); });
+      CHECK(accepted);
+
+      const bool woke = accepted && spin_future.wait_for(500ms) == std::future_status::ready;
+      CHECK(woke);
+
+      if (!woke) {
+        loop.quit(true);
+      }
+
+      waiter.join();
+      CHECK(spin_future.get());
+
+      if (!ran.load(std::memory_order_acquire)) {
+        CHECK(loop.spin_once(false));
+      }
+
+      CHECK(ran.load(std::memory_order_acquire));
+    }
+  }
+
   TEST_CASE("spin_once from outside an async loop thread is rejected") {
     MessageLoop loop;
     loop.async_run();
@@ -975,6 +1006,35 @@ TEST_SUITE("base-MessageLoop") {
       CHECK(loop.post_task([] {}));
       CHECK_FALSE(loop.wait_for_idle(1, false));
       CHECK_EQ(loop.get_task_count(), 1u);
+    }
+  }
+
+  TEST_CASE("wait_for_idle observes a callback running under manual spin") {
+    for (auto type : {MessageLoop::kNormalType, MessageLoop::kLockfreeType, MessageLoop::kPriorityType}) {
+      MessageLoop loop(type);
+      std::promise<void> started;
+      auto started_future = started.get_future();
+      std::atomic<bool> release{false};
+
+      REQUIRE(loop.post_task([&started, &release] {
+        started.set_value();
+
+        while (!release.load(std::memory_order_acquire)) {
+          std::this_thread::yield();
+        }
+      }));
+
+      std::thread spinner([&loop] { CHECK(loop.spin_once(false)); });
+      const bool callback_started = started_future.wait_for(500ms) == std::future_status::ready;
+      CHECK(callback_started);
+
+      if (callback_started) {
+        CHECK_FALSE(loop.wait_for_idle(20, false));
+      }
+
+      release.store(true, std::memory_order_release);
+      spinner.join();
+      CHECK(loop.wait_for_idle(100, false));
     }
   }
 

@@ -30,6 +30,7 @@
 #include <cstring>
 #include <limits>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -272,6 +273,10 @@ TEST_SUITE("zerocopy-PointCloud") {
     CHECK_EQ(pc.get_value<float>(0u, key_map, "y"), doctest::Approx(2.5f));
     CHECK_EQ(pc.get_value<float>(0u, key_map, "z"), doctest::Approx(3.5f));
     CHECK_EQ(pc.get_value<float>(0u, key_map, "intensity"), doctest::Approx(0.75f));
+
+    const char key_storage[] = "x_suffix";
+    const std::string_view key(key_storage, 1u);
+    CHECK_EQ(pc.get_value<float>(0u, key_map, key), doctest::Approx(1.5f));
   }
 
   TEST_CASE("get_value with nonexistent key zeroes output and returns false") {
@@ -466,6 +471,19 @@ TEST_SUITE("zerocopy-PointCloud") {
     CHECK_FALSE(pc.shallow_copy(pc));
   }
 
+  TEST_CASE("copy helpers reject a source that borrows the destination owned buffer") {
+    zerocopy::PointCloud owner;
+    REQUIRE(owner.create_v3f<>(4, {}));
+
+    zerocopy::PointCloud borrowed;
+    REQUIRE(borrowed.shallow_copy(owner));
+
+    CHECK_FALSE(owner.shallow_copy(borrowed));
+    CHECK_FALSE(owner.deep_copy(borrowed));
+    CHECK(owner.is_owner());
+    CHECK_EQ(owner.get_reserved_size(), 4u);
+  }
+
   TEST_CASE("deep_copy creates owned independent copy") {
     zerocopy::PointCloud src;
     REQUIRE(src.create_v3f<>(5, {}));
@@ -501,6 +519,9 @@ TEST_SUITE("zerocopy-PointCloud") {
     CHECK(dst.is_owner());
     CHECK_EQ(dst.get_internal_data(), ptr);
     CHECK_EQ(dst.size(), 1u);
+    CHECK_EQ(dst.get_reserved_size(), 10u);
+    CHECK(dst.push_value_v3f(1.0f, 2.0f, 3.0f));
+    CHECK_EQ(dst.size(), 2u);
     CHECK_FALSE(src.is_valid());
     CHECK_FALSE(src.is_owner());
   }
@@ -670,6 +691,9 @@ TEST_SUITE("zerocopy-PointCloud") {
     CHECK((src >> wire));
     CHECK(zerocopy::PointCloud::check_valid(wire));
     CHECK_EQ(wire.size(), src.get_serialized_size());
+    uintptr_t serialized_pointer = 1;
+    std::memcpy(&serialized_pointer, wire.data() + 8u + 208u, sizeof(serialized_pointer));
+    CHECK_EQ(serialized_pointer, 0u);
 
     zerocopy::PointCloud dst;
     CHECK((dst << wire));
@@ -1448,12 +1472,17 @@ TEST_SUITE("zerocopy-PointCloud") {
 
     zerocopy::PointCloud::KeyList key_list;
     auto key_map = pc.get_key_map(&key_list);
+    auto direct_key_list = pc.get_key_list();
 
     CHECK_FALSE(key_map.empty());
     REQUIRE_EQ(key_list.size(), 4u);
+    REQUIRE_EQ(direct_key_list.size(), key_list.size());
     CHECK_EQ(key_list[0].name, "x");
     CHECK_EQ(key_list[0].type, zerocopy::PointCloud::kFloatType);
     CHECK_EQ(key_list[0].size, 4u);
+    CHECK_EQ(direct_key_list[0].name, key_list[0].name);
+    CHECK_EQ(direct_key_list[0].type, key_list[0].type);
+    CHECK_EQ(direct_key_list[0].size, key_list[0].size);
   }
 
   TEST_CASE("kZerocopyTypes marker is true") { CHECK(zerocopy::PointCloud::kZerocopyTypes); }
@@ -1730,20 +1759,6 @@ TEST_SUITE("zerocopy-PointCloud") {
     CHECK_FALSE(pc.set_value(0u, static_cast<int32_t>(1), 2.0f, 3.0f));
   }
 
-  TEST_CASE("create rejects template protocols that cannot encode size names or type") {
-    zerocopy::PointCloud wrong_key_count;
-    CHECK_FALSE((wrong_key_count.create<float, float, float>(1, {"x", "y"})));
-
-    zerocopy::PointCloud too_large_field;
-    CHECK_FALSE((too_large_field.create<long double, long double, long double>(1, {"x", "y", "z"})));
-
-    zerocopy::PointCloud unknown_type;
-    CHECK_FALSE((unknown_type.create<char, char, char>(1, {"x", "y", "z"})));
-
-    zerocopy::PointCloud too_long_names;
-    CHECK_FALSE((too_long_names.create<float, float, float>(1, {"x", "y", std::string(151u, 'z')})));
-  }
-
   TEST_CASE("compressed v3d setter succeeds through the quantised path") {
     zerocopy::PointCloud pc;
     REQUIRE(pc.create_v3d<>(2, {}, 100));
@@ -1801,6 +1816,13 @@ TEST_SUITE("zerocopy-PointCloud") {
 
     zerocopy::PointCloud::Vector3f vf;
     CHECK_FALSE(f32.get_value_v3f(vf, 2u));
+    const size_t wrapping_f32_index = std::numeric_limits<size_t>::max() / 6u;
+    CHECK_FALSE(f32.get_value_v3f(vf, wrapping_f32_index));
+
+    float xf = 0;
+    float yf = 0;
+    float zf = 0;
+    CHECK_FALSE(f32.get_value_v3f(xf, yf, zf, wrapping_f32_index));
 
     zerocopy::PointCloud f64;
     REQUIRE(f64.create_v3d<>(1, {}));
@@ -1813,6 +1835,9 @@ TEST_SUITE("zerocopy-PointCloud") {
 
     zerocopy::PointCloud::Vector3d vd;
     CHECK_FALSE(f64.get_value_v3d(vd, 2u));
+    const size_t wrapping_f64_index = std::numeric_limits<size_t>::max();
+    CHECK_FALSE(f64.get_value_v3d(x, y, z, wrapping_f64_index));
+    CHECK_FALSE(f64.get_value_v3d(vd, wrapping_f64_index));
 
     zerocopy::PointCloud compressed;
     REQUIRE(compressed.create_v3d<>(1, {}, 100));

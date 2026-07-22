@@ -28,11 +28,17 @@
 #if defined(__unix__) && !defined(__CYGWIN__)
 
 #include <doctest/doctest.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
+#include <cerrno>
+#include <cstdlib>
 #include <limits>
 #include <ostream>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <vector>
 
 #include "../common_test.h"
 
@@ -47,9 +53,18 @@ TEST_SUITE("base-TerminalStream") {
 
   TEST_CASE("init is idempotent and sets is_initialized") {
     TerminalStream& ts = TerminalStream::get();
-    ts.init();
-    CHECK(ts.is_initialized());
-    ts.init();
+
+    std::vector<std::thread> threads;
+    threads.reserve(8);
+
+    for (int i = 0; i < 8; ++i) {
+      threads.emplace_back([&ts]() { ts.init(); });
+    }
+
+    for (auto& thread : threads) {
+      thread.join();
+    }
+
     CHECK(ts.is_initialized());
   }
 
@@ -134,6 +149,64 @@ TEST_SUITE("base-TerminalStream") {
   }
 
   TEST_CASE("std endl is accepted as manipulator alias") { TerminalStream::get() << "before std::endl" << std::endl; }
+
+  TEST_CASE("std flush does not append a newline while other standard manipulators retain old behavior") {
+    TerminalStream& ts = TerminalStream::get();
+    ts.flush();
+
+    int pipe_fds[2] = {-1, -1};
+    if (::pipe(pipe_fds) != 0) {
+      FAIL("pipe failed");
+      return;
+    }
+
+    pid_t child = ::fork();
+    if (child < 0) {
+      ::close(pipe_fds[0]);
+      ::close(pipe_fds[1]);
+      FAIL("fork failed");
+      return;
+    }
+
+    if (child == 0) {
+      ::close(pipe_fds[0]);
+
+      if (::dup2(pipe_fds[1], STDOUT_FILENO) != STDOUT_FILENO) {
+        std::_Exit(2);
+      }
+
+      ::close(pipe_fds[1]);
+
+      ts << "flush" << std::flush;
+      ts << "ends" << std::ends;
+      std::_Exit(0);
+    }
+
+    ::close(pipe_fds[1]);
+
+    std::string output;
+    char buffer[32] = {};
+
+    while (true) {
+      const ssize_t size = ::read(pipe_fds[0], buffer, sizeof(buffer));
+      if (size > 0) {
+        output.append(buffer, static_cast<size_t>(size));
+      } else if (size == 0) {
+        break;
+      } else if (errno != EINTR) {
+        FAIL("read failed");
+        break;
+      }
+    }
+
+    ::close(pipe_fds[0]);
+
+    int status = 0;
+    REQUIRE_EQ(::waitpid(child, &status, 0), child);
+    REQUIRE(WIFEXITED(status));
+    REQUIRE_EQ(WEXITSTATUS(status), 0);
+    CHECK_EQ(output, "flushends\n");
+  }
 
   TEST_CASE("write_raw with non-zero length writes without crash") {
     TerminalStream& ts = TerminalStream::get();

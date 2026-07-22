@@ -39,7 +39,7 @@ class VLinkConan(ConanFile):
         "enable_cli_efbs": [True, False],
         "enable_cli_list": [True, False],
         "enable_cli_monitor": [True, False],
-        "enable_cli_dump": [True, False],
+        "enable_cli_parse": [True, False],
         "enable_cli_check": [True, False],
         "enable_cli_bench": [True, False],
         "enable_proxy": [True, False],
@@ -79,7 +79,7 @@ class VLinkConan(ConanFile):
         "enable_cli_efbs": True,
         "enable_cli_list": True,
         "enable_cli_monitor": True,
-        "enable_cli_dump": True,
+        "enable_cli_parse": True,
         "enable_cli_check": True,
         "enable_cli_bench": True,
         "enable_proxy": True,
@@ -226,7 +226,7 @@ class VLinkConan(ConanFile):
         tc.variables["ENABLE_CLI_EFBS"]        = "ON" if self.options.enable_cli_efbs else "OFF"
         tc.variables["ENABLE_CLI_LIST"]        = "ON" if self.options.enable_cli_list else "OFF"
         tc.variables["ENABLE_CLI_MONITOR"]     = "ON" if self.options.enable_cli_monitor else "OFF"
-        tc.variables["ENABLE_CLI_DUMP"]        = "ON" if self.options.enable_cli_dump else "OFF"
+        tc.variables["ENABLE_CLI_PARSE"]       = "ON" if self.options.enable_cli_parse else "OFF"
         tc.variables["ENABLE_CLI_CHECK"]       = "ON" if self.options.enable_cli_check else "OFF"
         tc.variables["ENABLE_CLI_BENCH"]       = "ON" if self.options.enable_cli_bench else "OFF"
         tc.variables["ENABLE_PROXY"]           = "ON" if self.options.enable_proxy else "OFF"
@@ -332,7 +332,7 @@ class VLinkConan(ConanFile):
             self.cpp_info.components["proxy_server"].set_property("cmake_target_aliases", ["vlink-proxy_server"])
 
         if self.options.enable_exprtk and (
-            self.options.enable_cli_dump
+            self.options.enable_cli_parse
             or self.options.enable_viewer
             or self.options.enable_webviz
         ):

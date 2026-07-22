@@ -148,7 +148,7 @@ enum Type : uint8_t {
  * @return @c true for values @c 5..10.
  */
 [[nodiscard]] [[maybe_unused]] static constexpr bool is_for_reader(Type type) noexcept {
-  return type >= kSubscriptionMatched;
+  return type >= kSubscriptionMatched && type <= kSampleLost;
 }
 
 /**

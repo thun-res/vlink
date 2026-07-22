@@ -4,18 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#070b18">
-<title>VLink · 一套 API，12 种传输，切换零代价 — 面向自动驾驶与具身智能的 C++ 通信中间件</title>
-<meta name="description" content="VLink 是面向自动驾驶与具身智能的轻量级 C++17 通信中间件。三种通信模型、12 种传输后端、14 种序列化格式、编译期自动推导、零代码迁移。Apache 2.0 开源，国产自主可控。">
+<title>VLink · 一套 API，10 种传输后端 — C++ 通信中间件</title>
+<meta name="description" content="VLink 是一款 C++ 通信中间件，提供 Event、Method、Field 三种模型、10 种传输后端、14 类序列化支持以及配套 CLI、录制回放和可视化工具。Apache 2.0 开源。">
 <meta name="author" content="Thun Lu">
 <meta name="robots" content="index,follow">
-<meta property="og:title" content="VLink — One API, 12 Transports, Zero Migration Cost">
-<meta property="og:description" content="Lightweight C++17 communication middleware for autonomous driving and embodied AI. Apache 2.0.">
+<meta property="og:title" content="VLink — One API, 10 Transport Backends">
+<meta property="og:description" content="Lightweight communication middleware for autonomous driving and embodied AI. Apache 2.0.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://thun-res.github.io/vlink/">
 <meta property="og:image" content="https://thun-res.github.io/vlink/assets/img/vlink-logo.svg">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="VLink — One API, 12 Transports, Zero Migration Cost">
-<meta name="twitter:description" content="Lightweight C++17 communication middleware for autonomous driving and embodied AI. Apache 2.0.">
+<meta name="twitter:title" content="VLink — One API, 10 Transport Backends">
+<meta name="twitter:description" content="Lightweight communication middleware for autonomous driving and embodied AI. Apache 2.0.">
 <meta name="twitter:image" content="https://thun-res.github.io/vlink/assets/img/vlink-logo.svg">
 <link rel="canonical" href="https://thun-res.github.io/vlink/">
 <link rel="icon" type="image/svg+xml" href="assets/img/vlink-icon.svg">
@@ -100,9 +100,9 @@
 <section class="hero" id="top">
   <div class="container hero-inner">
     <div>
-      <span class="hero-kicker" data-i18n="hero.kicker"><span class="dot"></span> <span class="hk-cpp">C++17</span> · <span class="hk-perf">高性能</span> · <span class="hk-light">轻量级</span> · <span class="hk-easy">易上手</span> · <span class="hk-safe">自主可控</span></span>
-      <h1 data-i18n="hero.h1">一套 <span class="grad">API</span>，<br><span class="num">12</span> 种传输，<br><span class="grad">切换零代价</span></h1>
-      <p class="hero-sub" data-i18n="hero.sub">面向 <strong>自动驾驶</strong> 与 <strong>具身智能</strong> 的量产级 C++ 通信中间件。<strong>一套极简 API 贯通 12 种传输后端</strong> —— 业务代码零改动，开发者只需专注业务逻辑。</p>
+      <span class="hero-kicker" data-i18n="hero.kicker"><span class="dot"></span> <span class="hk-cpp">C++</span> · <span class="hk-perf">多后端</span> · <span class="hk-light">轻量级</span> · <span class="hk-easy">跨平台</span> · <span class="hk-safe">Apache 2.0</span></span>
+      <h1 data-i18n="hero.h1">一套 <span class="grad">API</span>，<br><span class="num">10</span> 种传输后端，<br><span class="grad">按部署选择</span></h1>
+      <p class="hero-sub" data-i18n="hero.sub">VLink 用 Publisher / Subscriber、Client / Server、Setter / Getter 六类节点覆盖 Event、Method、Field 三种通信模型。业务处理代码可在后端间复用；地址、依赖、QoS 与运行时配置仍须满足所选后端的约束。</p>
       <div class="hero-cta">
         <a class="btn btn-primary" href="#quickstart">
           <span data-i18n="hero.cta.start">示例代码</span>
@@ -110,7 +110,7 @@
         </a>
       </div>
       <div class="hero-meta">
-        <div><strong>12</strong> <span data-i18n="hero.meta.tr">传输后端</span></div>
+        <div><strong>10</strong> <span data-i18n="hero.meta.tr">传输后端</span></div>
         <div><strong>14</strong> <span data-i18n="hero.meta.ser">序列化格式</span></div>
         <div><strong>6</strong> <span data-i18n="hero.meta.nt">节点类型</span></div>
         <div><strong>10</strong> <span data-i18n="hero.meta.cli">CLI 工具</span></div>
@@ -133,7 +133,7 @@
             <svg class="os-ico" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M3 5.1L10.5 4v7.5H3V5.1zm0 13.8v-6.4h7.5V20L3 18.9zM11.5 3.85L21 2.5v9H11.5V3.85zm0 16.3V12.5H21V21l-9.5-.85z"/></svg>
             Windows
           </span>
-          <span class="os-chip os-chip-safety" title="QNX Neutrino RTOS · safety-certified" data-i18n-attr="title:hero.os.qnx.title">
+          <span class="os-chip os-chip-safety" title="QNX Neutrino RTOS · supported platform" data-i18n-attr="title:hero.os.qnx.title">
             <svg class="os-ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M12 3l8 3v5c0 4.3-3.3 8.2-8 9.2-4.7-1-8-4.9-8-9.2V6z"/><path d="M9.5 12a2.5 2.5 0 105 0 2.5 2.5 0 10-5 0m3.5 1.5l1.5 1.5"/></svg>
             QNX
           </span>
@@ -150,9 +150,9 @@
       </div>
     </div>
 
-    <!-- Hero right: 12-transport radial — the whole value prop in one visual -->
-    <figure class="hero-radial" aria-label="VLink 12-transport fabric" data-i18n-attr="aria-label:hero.fabric.alt">
-      <img src="assets/svg/hero-radial.svg" alt="VLink core radiates to 12 transports including intra, shm, dds, zenoh, someip, qnx" data-i18n-attr="alt:hero.fabric.alt">
+    <!-- Hero right: 10-transport radial — the whole value prop in one visual -->
+    <figure class="hero-radial" aria-label="VLink 10-transport fabric" data-i18n-attr="aria-label:hero.fabric.alt">
+      <img src="assets/svg/hero-radial.svg" alt="VLink core radiates to 10 transports including intra, shm, dds, zenoh, and someip" data-i18n-attr="alt:hero.fabric.alt">
     </figure>
   </div>
 </section>
@@ -162,8 +162,8 @@
   <div class="container">
     <div class="section-head center reveal">
       <div class="section-eyebrow" data-i18n="pos.eyebrow">VLink 是什么</div>
-      <h2 class="section-title" data-i18n="pos.title">为 <span class="grad">量产级实时通信</span> 而生</h2>
-      <p class="section-sub" data-i18n="pos.sub">面向自动驾驶与具身智能的 C++17 通信中间件。编译期模板派发、全栈工具链、跨平台可移植 —— 支撑从开发、调试到量产的完整实时系统底座。</p>
+      <h2 class="section-title" data-i18n="pos.title">面向多种部署环境的 <span class="grad">C++ 通信框架</span></h2>
+      <p class="section-sub" data-i18n="pos.sub">VLink 将通信节点 API、编译期序列化选择、录制回放、CLI 与可视化工具放在同一源码树中；实际可用能力取决于构建选项、平台和所启用的后端。</p>
     </div>
 
     <div class="why-grid">
@@ -175,9 +175,9 @@
       </div>
       <div class="why-card reveal d2">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M3 3v18h18M7 15l4-4 4 4 5-7"/></svg></div>
-        <h3 data-i18n="pos.c2.h">量产级性能</h3>
-        <p data-i18n="pos.c2.p">浅拷贝 · 栈内存优先 · 无锁队列 · 分支预测优化 —— 编译期模板派发，零虚函数开销；<code>intra://</code> 亚微秒，<code>shm://</code> Iceoryx 10 μs 级零拷贝。</p>
-        <div class="vs"><span class="strike" data-i18n="pos.c2.vs1">DDS 跨进程 ms 级</span><span data-i18n="pos.c2.vs2"><strong>μs 级零拷贝</strong></span></div>
+        <h3 data-i18n="pos.c2.h">按路径选择数据传递方式</h3>
+        <p data-i18n="pos.c2.p">序列化类型在编译期选择；Bytes 提供小缓冲与多种所有权语义，事件循环可选无锁队列。进程内直接路径和共享内存 loan 路径可减少拷贝，实际延迟与吞吐须在目标平台按消息大小和 QoS 实测。</p>
+        <div class="vs"><span data-i18n="pos.c2.vs1">普通发布路径可能包含复制或序列化</span><span data-i18n="pos.c2.vs2"><strong>显式选择适合的数据路径</strong></span></div>
       </div>
       <div class="why-card reveal d3">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M4 4h16v4H4zM4 10h16v4H4zM4 16h16v4H4z"/></svg></div>
@@ -188,16 +188,16 @@
       <div class="why-card reveal d4">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="22" height="22"><rect x="2.5" y="2.5" width="8.5" height="8.5" rx="1.5"/><rect x="13" y="2.5" width="8.5" height="8.5" rx="1.5"/><rect x="2.5" y="13" width="8.5" height="8.5" rx="1.5"/><rect x="13" y="13" width="8.5" height="8.5" rx="1.5"/></svg></div>
         <h3 data-i18n="pos.c4.h">多平台支持</h3>
-        <p data-i18n="pos.c4.p">一份源码,同时跑在 <strong>Linux · macOS · Windows · QNX · Android</strong> 上,x86_64 与 ARM64 双架构交叉编译开箱即用。</p>
-        <div class="vs"><span class="strike" data-i18n="pos.c4.vs1">锁死单一生态</span><span data-i18n="pos.c4.vs2"><strong>桌面 · 车规 · 移动 全覆盖</strong></span></div>
+        <p data-i18n="pos.c4.p">源码包含 <strong>Linux · macOS · Windows · QNX · Android</strong> 的平台适配，并支持 x86_64 与 ARM64；具体后端与工具是否可用由平台依赖和构建配置决定。</p>
+        <div class="vs"><span data-i18n="pos.c4.vs1">平台支持不等于所有可选模块均可用</span><span data-i18n="pos.c4.vs2"><strong>按构建文档核对依赖</strong></span></div>
       </div>
     </div>
 
     <div class="numbers reveal">
-      <div class="num-item"><div class="big count-plus" data-count-target="12">0</div><div class="label" data-i18n="num.tr">传输后端</div></div>
-      <div class="num-item"><div class="big" data-count-target="14">0</div><div class="label" data-i18n="num.ser">序列化格式</div></div>
-      <div class="num-item"><div class="big" data-count-target="10">0</div><div class="label" data-i18n="num.cli">CLI 工具</div></div>
-      <div class="num-item"><div class="big" data-count-target="4">0</div><div class="label" data-i18n="num.viz">GUI / Web 可视化</div></div>
+      <div class="num-item"><div class="big count-plus" data-count-target="10">10</div><div class="label" data-i18n="num.tr">传输后端</div></div>
+      <div class="num-item"><div class="big" data-count-target="14">14</div><div class="label" data-i18n="num.ser">序列化格式</div></div>
+      <div class="num-item"><div class="big" data-count-target="10">10</div><div class="label" data-i18n="num.cli">CLI 工具</div></div>
+      <div class="num-item"><div class="big" data-count-target="4">4</div><div class="label" data-i18n="num.viz">GUI / Web 可视化</div></div>
     </div>
   </div>
 </section>
@@ -207,20 +207,20 @@
   <div class="container">
     <div class="section-head center reveal">
       <div class="section-eyebrow" data-i18n="uni.eyebrow">统一 API</div>
-      <h2 class="section-title" data-i18n="uni.title">一套 API · <span class="grad">12 种传输</span> · 零心智负担</h2>
-      <p class="section-sub" data-i18n="uni.sub">URL 前缀即传输后端选择 —— 同一份业务代码，只改 URL 前缀就换后端。</p>
+      <h2 class="section-title" data-i18n="uni.title">一套节点 API · <span class="grad">10 种传输后端</span></h2>
+      <p class="section-sub" data-i18n="uni.sub">URL scheme 用于选择传输后端。话题式后端通常可复用 path；SOME/IP 等专用后端则要求完整的合法 URL、依赖和运行时配置。</p>
     </div>
 
     <ul class="unified-benefits reveal">
-      <li data-i18n="uni.b1"><strong>5 行上手</strong> — 从 <code>#include</code> 到 <code>publish()</code> 一共不超过 5 行，新人 10 分钟就能跑通一条 Pub/Sub 链路。</li>
-      <li data-i18n="uni.b2"><strong>零心智负担</strong>没有 Node / Executor / Context 多层栈，一个模板类就是一个节点，接口形状始终一致。</li>
-      <li data-i18n="uni.b3"><strong>协议无感</strong>业务代码完全不依赖底层传输 API，DDS / SHM / Zenoh / SOME/IP 任选其一，业务逻辑不变。</li>
-      <li data-i18n="uni.b4"><strong>无缝迁移</strong>从调试到预研再到量产，只改 URL 前缀，业务一行都不动。</li>
+      <li data-i18n="uni.b1"><strong>直接构造节点</strong> — 创建 Publisher / Subscriber 等模板节点后即可调用 <code>publish()</code>、<code>listen()</code> 等接口。</li>
+      <li data-i18n="uni.b2"><strong>统一生命周期</strong> — 六类节点共享匹配、等待、错误处理与回调等基础能力。</li>
+      <li data-i18n="uni.b3"><strong>复用业务处理</strong> — 上层消息处理通常无需依赖后端 API；后端地址、QoS、依赖和部署配置仍需分别核对。</li>
+      <li data-i18n="uni.b4"><strong>显式迁移边界</strong> — topic 风格后端可能只需替换 scheme，专用协议的 URL 结构与配置不能直接照搬。</li>
     </ul>
 
     <div class="unified-matrix-head reveal">
       <span class="unified-matrix-label" data-i18n="uni.mx.label">传输后端</span>
-      <h3 class="unified-matrix-title" data-i18n="uni.mx.title">12 种传输后端 · 一行 URL 切换</h3>
+      <h3 class="unified-matrix-title" data-i18n="uni.mx.title">10 种传输后端 · 统一节点 API</h3>
     </div>
 
     <div class="matrix-wrap reveal">
@@ -228,15 +228,15 @@
         <span class="status stable" data-i18n="mx.status.stable">Stable</span>
         <div class="transport-prefix">intra</div>
         <div class="name" data-i18n="mx.c.intra.n">进程内消息队列</div>
-        <div class="meta" data-i18n="mx.c.intra.m">同进程模块间通信，无序列化、无内核调用</div>
-        <div class="tags"><span class="tag zc" data-i18n="mx.tag.zero_copy">Zero-Copy</span><span class="tag" data-i18n="mx.tag.no_deps">No-Deps</span></div>
+        <div class="meta" data-i18n="mx.c.intra.m">同进程模块间通信；直接与共享指针路径可避免载荷复制</div>
+        <div class="tags"><span class="tag zc" data-i18n="mx.tag.conditional_zc">Conditional Zero-Copy</span><span class="tag" data-i18n="mx.tag.no_deps">No-Deps</span></div>
       </div>
       <div class="mx d1">
         <span class="status stable" data-i18n="mx.status.stable">Stable</span>
         <div class="transport-prefix">shm</div>
         <div class="name" data-i18n="mx.c.shm.n">Iceoryx RouDi</div>
-        <div class="meta" data-i18n="mx.c.shm.m">同机跨进程零拷贝，相机点云首选</div>
-        <div class="tags"><span class="tag zc" data-i18n="mx.tag.zero_copy">Zero-Copy</span><span class="tag" data-i18n="mx.tag.real_time">Real-Time</span></div>
+        <div class="meta" data-i18n="mx.c.shm.m">同机跨进程；显式 loan 路径可避免额外载荷复制</div>
+        <div class="tags"><span class="tag zc" data-i18n="mx.tag.conditional_zc">Conditional Zero-Copy</span><span class="tag" data-i18n="mx.tag.real_time">Real-Time</span></div>
       </div>
       <div class="mx d2">
         <span class="status stable" data-i18n="mx.status.stable">Stable</span>
@@ -258,21 +258,14 @@
         <div class="transport-prefix">shm2</div>
         <div class="name" data-i18n="mx.c.shm2.n">Iceoryx2</div>
         <div class="meta" data-i18n="mx.c.shm2.m">下一代共享内存，无需 RouDi 守护</div>
-        <div class="tags"><span class="tag zc" data-i18n="mx.tag.zero_copy">Zero-Copy</span><span class="tag" data-i18n="mx.tag.daemonless">Daemon-less</span></div>
+        <div class="tags"><span class="tag zc" data-i18n="mx.tag.conditional_zc">Conditional Zero-Copy</span><span class="tag" data-i18n="mx.tag.daemonless">Daemon-less</span></div>
       </div>
       <div class="mx d3">
         <span class="status beta" data-i18n="mx.status.beta">Beta</span>
         <div class="transport-prefix">ddsr</div>
         <div class="name" data-i18n="mx.c.ddsr.n">RTI Connext DDS</div>
-        <div class="meta" data-i18n="mx.c.ddsr.m">商用 DDS，RTI 生态与认证场景</div>
+        <div class="meta" data-i18n="mx.c.ddsr.m">RTI Connext 商用 DDS 传输后端</div>
         <div class="tags"><span class="tag" data-i18n="mx.tag.commercial">Commercial</span></div>
-      </div>
-      <div class="mx d4">
-        <span class="status beta" data-i18n="mx.status.beta">Beta</span>
-        <div class="transport-prefix">ddst</div>
-        <div class="name" data-i18n="mx.c.ddst.n">TravoDDS · 国产</div>
-        <div class="meta" data-i18n="mx.c.ddst.m">国产 DDS 实现 · 车联网与云边场景</div>
-        <div class="tags"><span class="tag zc" data-i18n="mx.tag.domestic">国产</span><span class="tag" data-i18n="mx.tag.wan">WAN</span></div>
       </div>
       <div class="mx d4">
         <span class="status beta" data-i18n="mx.status.beta">Beta</span>
@@ -287,7 +280,7 @@
         <div class="transport-prefix">someip</div>
         <div class="name" data-i18n="mx.c.someip.n">SOME/IP · vsomeip</div>
         <div class="meta" data-i18n="mx.c.someip.m">AUTOSAR 车载以太网标准</div>
-        <div class="tags"><span class="tag" data-i18n="mx.tag.autosar">AUTOSAR</span><span class="tag" data-i18n="mx.tag.v2x">V2X</span></div>
+        <div class="tags"><span class="tag" data-i18n="mx.tag.autosar">AUTOSAR</span><span class="tag" data-i18n="mx.tag.soa">SOA</span></div>
       </div>
       <div class="mx d5">
         <span class="status beta" data-i18n="mx.status.beta">Beta</span>
@@ -298,13 +291,6 @@
       </div>
       <div class="mx d6">
         <span class="status beta" data-i18n="mx.status.beta">Beta</span>
-        <div class="transport-prefix">qnx</div>
-        <div class="name" data-i18n="mx.c.qnx.n">QNX Neutrino IPC</div>
-        <div class="meta" data-i18n="mx.c.qnx.m">QNX 原生实时原语，功能安全</div>
-        <div class="tags"><span class="tag" data-i18n="mx.tag.asil">ASIL</span><span class="tag" data-i18n="mx.tag.rtos">RTOS</span></div>
-      </div>
-      <div class="mx d6">
-        <span class="status beta" data-i18n="mx.status.beta">Beta</span>
         <div class="transport-prefix">mqtt</div>
         <div class="name" data-i18n="mx.c.mqtt.n">Paho MQTT</div>
         <div class="meta" data-i18n="mx.c.mqtt.m">物联网 · 带宽受限</div>
@@ -312,7 +298,7 @@
       </div>
     </div>
 
-    <p class="mx-foot" data-i18n="mx.foot" style="margin-top:22px; font-size:12px; color:var(--ink-3); text-align:center">※ <code>intra</code> 与 <code>dds</code>(CDR) 不支持消息级加密 · <code>qnx</code> 仅 QNX 平台 · <code>someip</code> 需 vsomeip 配置 · 详见 <a href="https://thun-res.github.io/vlink/zh_cn/" target="_blank" rel="noopener">开发者文档</a></p>
+    <p class="mx-foot" data-i18n="mx.foot" style="margin-top:22px; font-size:12px; color:var(--ink-3); text-align:center">※ <code>intra</code> 与 <code>dds</code>(CDR) 不支持消息级加密 · <code>someip</code> 需 vsomeip 配置 · 详见 <a href="https://thun-res.github.io/vlink/zh_cn/" target="_blank" rel="noopener">开发者文档</a></p>
   </div>
 </section>
 
@@ -339,7 +325,23 @@
             <div class="dots"><span></span><span></span><span></span></div>
             <div class="title"><span class="qs-fname">publisher.cc</span></div>
           </div>
-          <div class="term-body" id="qs-body-pub"></div>
+          <div class="term-body" id="qs-body-pub">// Run alongside subscriber.cc — wait until the DDS endpoints match.
+#include &lt;vlink/vlink.h&gt;
+#include "proto/sensor.pb.h"
+
+int main() {
+  vlink::Publisher&lt;pb::Sensor::Imu&gt; pub("dds://sensor/imu");
+  pub.wait_for_subscribers();
+
+  for (int seq = 0; ; ++seq) {
+    pb::Sensor::Imu msg;
+    msg.set_sequence(seq);
+    msg.set_acc_x(0.01 * seq);
+    pub.publish(msg);
+    MLOG_I("[Publisher]  published seq=#{}", seq);
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  }
+}</div>
         </div>
       </div>
 
@@ -348,22 +350,33 @@
           <span class="qs-tag" data-i18n="qs.pill.sub">C++ Subscriber</span>
           <h4 class="qs-block-title" data-i18n="qs.sub.title">订阅者 · 回调里直接拿到消息</h4>
         </div>
-        <p class="qs-desc" data-i18n="qs.sub.desc">注册 <code>sub.listen(...)</code> 回调即可；订阅者跑在独立工作线程上，主线程无须轮询。</p>
+        <p class="qs-desc" data-i18n="qs.sub.desc">注册 <code>sub.listen(...)</code> 回调即可；回调执行上下文由所选后端及其运行模式决定，示例主线程只负责保持进程存活。</p>
         <div class="hero-term qs-file">
           <div class="term-bar">
             <div class="dots"><span></span><span></span><span></span></div>
             <div class="title"><span class="qs-fname">subscriber.cc</span></div>
           </div>
-          <div class="term-body" id="qs-body-sub"></div>
+          <div class="term-body" id="qs-body-sub">// Run alongside publisher.cc — receives samples after matching/QoS delivery.
+#include &lt;vlink/vlink.h&gt;
+#include "proto/sensor.pb.h"
+
+int main() {
+  vlink::Subscriber&lt;pb::Sensor::Imu&gt; sub("dds://sensor/imu");
+  sub.listen([](const pb::Sensor::Imu&amp; m) {
+    MLOG_I("[Subscriber] seq=#{} ax={}", m.sequence(), m.acc_x());
+  });
+
+  ...
+}</div>
         </div>
       </div>
 
       <div class="qs-block qs-block-live">
         <div class="qs-block-head">
           <span class="qs-tag qs-tag-live" data-i18n="qs.live.tag">实时运行</span>
-          <h4 class="qs-block-title" data-i18n="qs.live.title">实时运行日志 · 发布即接收</h4>
+        <h4 class="qs-block-title" data-i18n="qs.live.title">运行日志动画 · 展示匹配后的收发</h4>
         </div>
-        <p class="qs-desc" data-i18n="qs.live.desc">同时启动 <code>publisher</code> 与 <code>subscriber</code>，DDS 发现后即开始互通。以下为真实日志的实时滚动回放。</p>
+        <p class="qs-desc" data-i18n="qs.live.desc">同时启动 <code>publisher</code> 与 <code>subscriber</code>，等待 DDS 完成匹配后开始收发。以下动画仅说明日志顺序，不代表固定延迟或吞吐。</p>
         <div class="qs-demo-frame qs-live">
           <div class="qs-demo-head">
             <span class="ql-dot"></span><span class="ql-dot"></span><span class="ql-dot"></span>
@@ -382,7 +395,7 @@
     <div class="section-head reveal">
       <div class="section-eyebrow" data-i18n="mdl.eyebrow">三种模型</div>
       <h2 class="section-title" data-i18n="mdl.title">三种通信模型 · 一致的心智模型</h2>
-      <p class="section-sub" data-i18n="mdl.sub">Event / Method / Field —— 三种模式覆盖 99% 的通信需求，API 形状完全对齐。</p>
+      <p class="section-sub" data-i18n="mdl.sub">Event / Method / Field 分别表达异步事件、请求响应与状态字段，并使用一致的节点生命周期与错误处理能力。</p>
     </div>
 
     <div class="models">
@@ -431,13 +444,14 @@ cli.<span class="fn">invoke</span>(req, [](<span class="kw">const</span> <span c
       <div class="model-card reveal d3">
         <span class="tag" data-i18n="mdl.field.tag">Field · Setter/Getter</span>
         <h3 data-i18n="mdl.field.h">字段模型</h3>
-        <p class="desc" data-i18n="mdl.field.d">最新值同步。晚加入的 Getter 自动补发当前值，适合配置与状态。</p>
+        <p class="desc" data-i18n="mdl.field.d">状态值的 set / get / listen 模型。晚加入 Getter 能否取得历史最新值取决于后端及其历史、持久性 QoS。</p>
 <pre><span class="com">// Setter</span>
 vlink::<span class="tpl">Setter</span>&lt;<span class="tpl">Gear</span>&gt; setter(<span class="str">"shm://vehicle/gear"</span>);
 setter.<span class="fn">set</span>({<span class="str">1</span>, <span class="kw">true</span>});
 
-<span class="com">// Getter — late joiner gets latest</span>
+<span class="com">// shm Field defaults to history depth 1; wait for delivery</span>
 vlink::<span class="tpl">Getter</span>&lt;<span class="tpl">Gear</span>&gt; getter(<span class="str">"shm://vehicle/gear"</span>);
+getter.<span class="fn">wait_for_value</span>(std::chrono::seconds(<span class="str">1</span>));
 <span class="kw">auto</span> g = getter.<span class="fn">get</span>();
 
 <span class="com">// Callback on every set()</span>
@@ -457,16 +471,16 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
     <div class="section-head reveal">
       <div class="section-eyebrow" data-i18n="cli.eyebrow">命令行工具</div>
       <h2 class="section-title" data-i18n="cli.title">多个 <span class="grad">CLI 工具窗口</span></h2>
-      <p class="section-sub" data-i18n="cli.sub">完整工具链覆盖 info、list、monitor、eproto、efbs、dump、check、bag、bench、trigger；以下窗口按 cli/*.cc 的真实接口排布，重点平铺 monitor、list、check、bag，便于同时对照实时观测、拓扑发现、环境诊断与录制回放。</p>
+      <p class="section-sub" data-i18n="cli.sub">完整工具链覆盖 info、list、monitor、eproto、efbs、parse、check、bag、bench、trigger；以下窗口按 cli/*.cc 的真实接口排布，重点平铺 monitor、list、check、bag，便于同时对照实时观测、拓扑发现、环境诊断与录制回放。</p>
     </div>
-    <p class="cli-note reveal" data-i18n="cli.note">完整 CLI 工具体系包含 vlink-info、vlink-list、vlink-monitor、vlink-eproto、vlink-efbs、vlink-dump、vlink-check、vlink-bag、vlink-bench、vlink-trigger；当前网页重点演示 vlink-monitor -loc、vlink-list、vlink-check diag / env，以及 vlink-bag info / record / play / clone。monitor 在 TUI 内按 Enter 会直接切入对应解析界面。</p>
+    <p class="cli-note reveal" data-i18n="cli.note">完整 CLI 工具体系包含 vlink-info、vlink-list、vlink-monitor、vlink-eproto、vlink-efbs、vlink-parse、vlink-check、vlink-bag、vlink-bench、vlink-trigger；当前网页重点演示 vlink-monitor -loc、vlink-list、vlink-check diag / env，以及 vlink-bag info / record / play / clone。monitor 在 TUI 内按 Enter 会直接切入对应解析界面。</p>
     <div class="cli-chip-row reveal" aria-label="CLI command index" data-i18n-attr="aria-label:cli.index.aria">
       <span class="cli-chip">vlink-info</span>
       <span class="cli-chip">vlink-list</span>
       <span class="cli-chip">vlink-monitor</span>
       <span class="cli-chip">vlink-eproto</span>
       <span class="cli-chip">vlink-efbs</span>
-      <span class="cli-chip">vlink-dump</span>
+      <span class="cli-chip">vlink-parse</span>
       <span class="cli-chip">vlink-check</span>
       <span class="cli-chip">vlink-bag</span>
       <span class="cli-chip">vlink-bench</span>
@@ -514,7 +528,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
         <div class="cli-card-copy">
           <div class="tag" data-i18n="cli.card.check.tag">环境诊断</div>
           <h3>vlink-check</h3>
-          <p data-i18n="cli.card.check.desc">覆盖 IP、组播地址、磁盘空间、CPU、内存以及关联进程运行状态；网页仅演示源码中的 diag 与 env 两个子命令，保持一条命令一轮输出。</p>
+          <p data-i18n="cli.card.check.desc">覆盖 IP、组播地址、磁盘空间、CPU、内存以及关联进程运行状态；网页展示 diag 与 env 的代表性节选，实际项目会随构建选项增加检查项和环境变量。</p>
         </div>
         <div class="cli-stage">
           <div class="term-bar">
@@ -555,7 +569,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
     <div class="section-head reveal">
       <div class="section-eyebrow" data-i18n="vz.eyebrow">可视化</div>
       <h2 class="section-title" data-i18n="vz.title">可视化四件套</h2>
-      <p class="section-sub" data-i18n="vz.sub">桌面 GUI + Web 浏览器 —— 从本地调试到远程观测，全栈打通。</p>
+      <p class="section-sub" data-i18n="vz.sub">桌面 GUI 与 Web 桥接工具，覆盖本地调试、录制分析与远程观测。</p>
     </div>
 
     <div class="viz-grid">
@@ -563,7 +577,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
         <div class="viz-meta">
           <div class="tag" data-i18n="vz.tag.viewer">Desktop · Qt6 + OpenSceneGraph</div>
           <h3>vlink-viewer</h3>
-          <div class="viz-desc" data-i18n="vz.c.viewer"><p class="viz-intro">Qt6 桌面端的 VLink 实时监控与可视化工作台。</p><ul><li>URL 话题树并列显示 Freq / Rate / Loss / Latency 四列实时指标</li><li>TrafficWidget 波形叠加进程级 QoS 与通信拓扑图</li><li>Protobuf / FlatBuffers 消息递归展开到字段级，<code>.proto</code> 目录热加载</li><li>OSG 3D 点云叠加车体模型，相机多路并排，JPEG / H.264 / H.265 / NV12 软硬解</li><li>脱离中间件也能打开 <code>.vdb</code> SQLite 库离线浏览</li></ul></div>
+          <div class="viz-desc" data-i18n="vz.c.viewer"><p class="viz-intro">Qt6 桌面端的 VLink 实时监控与可视化工作台。</p><ul><li>URL 话题树并列显示 Freq / Rate / Loss / Latency 四列实时指标</li><li>TrafficWidget 波形，以及进程列表与通信拓扑图</li><li>Protobuf / FlatBuffers 消息递归展开到字段级，<code>.proto</code> 目录热加载</li><li>OSG 3D 点云叠加车体模型，相机多路并排，JPEG / H.264 / H.265 / NV12 软硬解</li><li>脱离中间件也能打开 <code>.vdb</code> SQLite 库离线浏览</li></ul></div>
         </div>
         <div class="viz-mock"><img src="assets/svg/mock-viewer.svg" alt="vlink-viewer UI: topic tree, traffic charts, proto viewer" data-i18n-attr="alt:vz.alt.viewer"></div>
       </div>
@@ -571,7 +585,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
         <div class="viz-meta">
           <div class="tag" data-i18n="vz.tag.webviz">Web Bridge · Foxglove / Rerun</div>
           <h3>vlink-webviz</h3>
-          <div class="viz-desc" data-i18n="vz.c.webviz"><p class="viz-intro">常驻 C++ 桥接进程，把 VLink 数据送进 Foxglove Studio 与 Rerun Viewer。</p><ul><li><code>vlink-foxglove</code>：WebSocket :8765，遵循 Foxglove WS 协议 v1</li><li><code>vlink-rerun</code>：gRPC :9876，支持 spawn / connect / serve / save 四种运行模式</li><li>7 组零拷贝容器内置自动映射（CameraFrame / PointCloud / OccupancyGrid / Tensor / ObjectArray / AudioFrame / RawData），另附 vlink_msgs 示例映射文件</li><li>反向通道：<code>clientPublish</code> 发消息、<code>Service Call</code>、<code>Parameters</code> 读写全部打通</li><li>内置 ExprTk 做字段重映射与单位换算，支持话题白 / 黑名单过滤</li></ul></div>
+          <div class="viz-desc" data-i18n="vz.c.webviz"><p class="viz-intro">常驻 C++ 桥接进程，把 VLink 数据送进 Foxglove Studio 与 Rerun Viewer。</p><ul><li><code>vlink-foxglove</code>：WebSocket :8765，遵循 Foxglove WS 协议 v1</li><li><code>vlink-rerun</code>：gRPC :9876，支持 spawn / connect / serve / save 四种运行模式</li><li>7 组零拷贝容器内置自动映射（CameraFrame / PointCloud / OccupancyGrid / Tensor / ObjectArray / AudioFrame / RawData），另附 vlink_msgs 示例映射文件</li><li>经 <code>--foxglove_msgs</code>、<code>--rpc_msgs</code>、<code>--parameters_url</code> 等对应配置后，可启用 <code>clientPublish</code>、<code>Service Call</code> 与 <code>Parameters</code></li><li>内置 ExprTk 做字段重映射与单位换算，支持话题白 / 黑名单过滤</li></ul></div>
         </div>
         <div class="viz-mock"><img src="assets/svg/mock-foxglove.svg" alt="vlink-webviz bridging to Foxglove studio in browser" data-i18n-attr="alt:vz.alt.webviz"></div>
       </div>
@@ -579,7 +593,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
         <div class="viz-meta">
           <div class="tag" data-i18n="vz.tag.player">Replay · .vdb / .vcap</div>
           <h3>vlink-player</h3>
-          <div class="viz-desc" data-i18n="vz.c.player"><p class="viz-intro">Bag 帧级回放窗口，也能把录像反向放回 VLink 网络。</p><ul><li><code>.vdb</code> / <code>.vdbx</code>（SQLite + LZAV）与 <code>.vcap</code> / <code>.vcapx</code>（MCAP + Zstd，Foxglove 兼容）双后端</li><li>倍速 0 ～ ∞×，单步、循环、拖动 seek，URL 白名单 + <code>UrlRemap</code> 重映射</li><li>Proxy 模式拉起 <code>vlink-proxy</code>，把 bag 当成 live 源注入整张 VLink 网络</li><li>IPC 通道把当前时间戳推给 Analyzer，波形游标与回放同步</li><li>Bag 完整性检查、索引重建、修复一键完成</li></ul></div>
+          <div class="viz-desc" data-i18n="vz.c.player"><p class="viz-intro">Bag 帧级回放窗口，也能把录像反向放回 VLink 网络。</p><ul><li><code>.vdb</code> / <code>.vdbx</code>（SQLite，可选 LZAV）与 <code>.vcap</code> / <code>.vcapx</code>（MCAP，可选 Zstd）双后端</li><li>回放速率最高 100×；设置为 0 时播放会归一为 1×。支持单步、循环、拖动 seek、URL 白名单与 <code>UrlRemap</code></li><li>Proxy 模式拉起 <code>vlink-proxy</code>，把 bag 作为 live 源重新发布</li><li>IPC 通道把当前时间戳推给 Analyzer，用于波形游标联动</li><li>完整性检查与修复由 <code>vlink-bag check/fix</code> 命令提供</li></ul></div>
         </div>
         <div class="viz-mock"><img src="assets/svg/mock-player.svg" alt="vlink-player floating window with progress bar" data-i18n-attr="alt:vz.alt.player"></div>
       </div>
@@ -607,12 +621,12 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
       <div class="base-card">
         <div class="ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h10M4 19h16"/></svg></div>
         <h4>Logger</h4>
-        <p data-i18n="bs.c.logger.p">流式 / 格式化 / printf 风格 / RAII 四种调用，后端可插件化切换 spdlog · quill · DLT · logcat · slog2 等实现。</p>
+        <p data-i18n="bs.c.logger.p">支持流式、格式化、printf 风格与 RAII 调用。内置日志实现由构建选项选择；自定义实现可通过 <code>LoggerPluginInterface</code> 在运行时加载。</p>
       </div>
       <div class="base-card">
         <div class="ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M7 12l3 3 7-7"/></svg></div>
         <h4>MessageLoop</h4>
-        <p data-i18n="bs.c.loop.p">单线程事件循环：FIFO / 优先级两种派发策略，挂载 Timer 与回调，天然串行化、无需显式锁。</p>
+        <p data-i18n="bs.c.loop.p">单线程事件循环，支持普通或无锁任务队列，可挂载 Timer 与回调。循环内任务串行执行；跨线程共享状态仍需按调用场景同步。</p>
       </div>
       <div class="base-card">
         <div class="ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="18" cy="12" r="2"/><path d="M4 6h16v12H4z"/></svg></div>
@@ -622,7 +636,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
       <div class="base-card">
         <div class="ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
         <h4>Timer</h4>
-        <p data-i18n="bs.c.timer.p">单次 / 周期定时器，独立线程或挂入 MessageLoop 都可以；与 <code>DeadlineTimer</code> 搭配可做超时控制。</p>
+        <p data-i18n="bs.c.timer.p">单次 / 周期定时器，需附着到 MessageLoop 执行；与 <code>DeadlineTimer</code> 搭配可做超时控制。</p>
       </div>
       <div class="base-card">
         <div class="ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></div>
@@ -637,7 +651,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
       <div class="base-card">
         <div class="ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="16" r="3"/><path d="M10 10l4 4"/></svg></div>
         <h4>ThreadPool</h4>
-        <p data-i18n="bs.c.threadpool.p">工作线程池 + 任务队列：支持任务优先级与批量提交，给通用异步工作使用。</p>
+        <p data-i18n="bs.c.threadpool.p">固定 worker 数的线程池，可选普通或无锁任务队列，并提供 post / invoke、future 与任务句柄接口。</p>
       </div>
       <div class="base-card">
         <div class="ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M8 7l3 9M16 7l-3 9"/></svg></div>
@@ -657,7 +671,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
       <div class="base-card">
         <div class="ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v4H4zm0 8h16v4H4z"/><path d="M8 10v4M16 10v4"/></svg></div>
         <h4>MpmcQueue</h4>
-        <p data-i18n="bs.c.mpmc.p">多生产者 / 多消费者无锁队列：<code>intra://</code> 传输与 MessageLoop 任务派发的底层数据结构。</p>
+        <p data-i18n="bs.c.mpmc.p">多生产者 / 多消费者无锁队列；MessageLoop 与 ThreadPool 选择 <code>kLockfreeType</code> 时使用，普通队列仍是可选实现。</p>
       </div>
       <div class="base-card">
         <div class="ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l9 5v10l-9 5-9-5V7l9-5z"/></svg></div>
@@ -667,12 +681,12 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
       <div class="base-card">
         <div class="ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3"/></svg></div>
         <h4>ObjectPool</h4>
-        <p data-i18n="bs.c.objpool.p">线程安全对象池：预分配 + 自由列表 + 可配置 reset 策略；RAII 自动归还，消除热路径分配抖动。</p>
+        <p data-i18n="bs.c.objpool.p">线程安全对象池：预分配 + 自由列表 + 可配置 reset 策略；RAII 自动归还，减少热路径分配抖动。</p>
       </div>
       <div class="base-card">
         <div class="ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 13l4-4 4 4 5-7"/></svg></div>
         <h4>CpuProfiler</h4>
-        <p data-i18n="bs.c.cpuprof.p">采样式 CPU 分析器：周期采 backtrace，定位热点函数，与 <code>CpuProfilerGuard</code> 配合可做局部开启 / 关闭。</p>
+        <p data-i18n="bs.c.cpuprof.p">按 CPU active time 与 wall time 的比值统计当前进程 CPU 使用率；<code>CpuProfilerGuard</code> 用于作用域内启停统计。</p>
       </div>
       <div class="base-card">
         <div class="ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a5 5 0 015 5v4a5 5 0 01-10 0V7a5 5 0 015-5z"/><path d="M3 20a9 9 0 0118 0"/></svg></div>
@@ -687,9 +701,9 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
 <section class="section" id="platform">
   <div class="container">
     <div class="section-head reveal">
-      <div class="section-eyebrow" data-i18n="pl.eyebrow">完整实时开发平台</div>
-      <h2 class="section-title" data-i18n="pl.title">不仅是中间件 · <span class="grad">完整的实时开发平台</span></h2>
-      <p class="section-sub" data-i18n="pl.sub">通信核心 · 可视化 · 录制回放 · CLI · Proxy 监控 · 插件系统 —— 从调试到量产的一整条工具链都在源码树内。</p>
+      <div class="section-eyebrow" data-i18n="pl.eyebrow">配套工具链</div>
+      <h2 class="section-title" data-i18n="pl.title">通信核心之外 · <span class="grad">工具与扩展组件</span></h2>
+      <p class="section-sub" data-i18n="pl.sub">通信核心、可视化、录制回放、CLI、Proxy 监控与插件系统均在源码树中；可用组件取决于构建选项和第三方依赖。</p>
     </div>
 
     <div class="platform-grid">
@@ -698,7 +712,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M6 8v3h12V8M12 11v5"/></svg>
         </div>
         <h4 data-i18n="pl.c.core.h">通信核心</h4>
-        <p data-i18n="pl.c.core.p">Event / Method / Field 三模型 + 12 种传输矩阵 + 14 种序列化。</p>
+        <p data-i18n="pl.c.core.p">Event / Method / Field 三模型 + 10 种传输矩阵 + 14 种序列化。</p>
       </div>
       <div class="plat reveal d1">
         <div class="plat-ico" style="background:linear-gradient(135deg,#4faafd,#00e5b0)">
@@ -726,7 +740,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2"><path d="M3 3v18h18M7 15l4-4 4 4 5-7"/></svg>
         </div>
         <h4 data-i18n="pl.c.cli.h">命令行工具</h4>
-        <p data-i18n="pl.c.cli.p">monitor · bag · list · check · info · dump · eproto · efbs · bench · trigger —— 10 件套开箱即用。</p>
+        <p data-i18n="pl.c.cli.p">monitor · bag · list · check · info · parse · eproto · efbs · bench · trigger —— 10 件套开箱即用。</p>
       </div>
       <div class="plat reveal d3">
         <div class="plat-ico" style="background:linear-gradient(135deg,#4faafd,#345af6)">
@@ -740,7 +754,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2"><path d="M4 4l8 4 8-4M4 4v16l8 4 8-4V4M12 8v16"/></svg>
         </div>
         <h4 data-i18n="pl.c.plug.h">插件系统</h4>
-        <p data-i18n="pl.c.plug.p">dlopen / LoadLibrary <strong>动态加载</strong>，模板化 <code>Plugin::load&lt;T&gt;()</code> 实现<strong>运行时多态</strong>，并执行 major.minor <strong>版本强校验</strong>。<code>VLINK_URL_PLUGINS</code> 的完整值为 <code>auto</code> 时按需加载，为 <code>none</code> 或空值时关闭，其他非空值为显式预加载列表；模式值大小写不敏感。</p>
+        <p data-i18n="pl.c.plug.p">dlopen / LoadLibrary <strong>动态加载</strong>，模板化 <code>Plugin::load&lt;T&gt;()</code> 实现<strong>运行时多态</strong>。兼容规则要求 major 相等，且插件 minor 不低于宿主所需 minor。<code>VLINK_URL_PLUGINS</code> 的完整值为 <code>auto</code> 时按需加载，为 <code>none</code> 或空值时关闭，其他非空值为显式预加载列表；模式值大小写不敏感。</p>
       </div>
       <div class="plat reveal d4">
         <a class="plat-link" href="https://github.com/thun-res/vkit" target="_blank" rel="noopener">
@@ -748,7 +762,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2"><path d="M12 2l9 5v10l-9 5-9-5V7l9-5zM3 7l9 5M21 7l-9 5M12 12v10"/></svg>
           </div>
           <h4 data-i18n="pl.c.vkit.h">vkit · 集成构建 ↗</h4>
-          <p data-i18n="pl.c.vkit.p">配套的跨项目 CMake 构建与工程管理工具，一条命令编好整条自驾 / 机器人栈。</p>
+          <p data-i18n="pl.c.vkit.p">配套的跨项目 CMake 构建与工程管理工具，用于编排 workspace 的拉取、构建与打包。</p>
         </a>
       </div>
     </div>
@@ -769,7 +783,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
         <div class="viz-meta">
           <div class="tag" data-i18n="sc.ad.tag">自动驾驶</div>
           <h3 data-i18n="sc.ad.h">多传感器感知链路</h3>
-          <p data-i18n="sc.ad.p">文档将自动驾驶列为核心目标场景之一。对图像与点云这类同机大消息，推荐 <code>shm://</code> 做零拷贝；需要跨机器分发时可切到 <code>dds://</code> / <code>ddsc://</code>，业务代码保持不变。</p>
+          <p data-i18n="sc.ad.p">文档将自动驾驶列为目标场景之一。图像与点云等同机大消息可使用 <code>shm://</code> 的显式 loan 路径减少复制；跨机器分发可选择 <code>dds://</code> / <code>ddsc://</code>，同时核对 URL、QoS 与部署配置。</p>
         </div>
         <div class="viz-mock"><img src="assets/svg/scene-autonomous.svg" alt="Autonomous driving multi-sensor data pipelines" loading="lazy" data-i18n-attr="alt:sc.alt.ad"></div>
       </div>
@@ -796,7 +810,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
         <div class="viz-meta">
           <div class="tag" data-i18n="sc.cl.tag">跨网段 / Web</div>
           <h3 data-i18n="sc.cl.h">远程监控与云边接入</h3>
-          <p data-i18n="sc.cl.p">对于跨网段、跨 VLAN 或需要浏览器可视化的场景，文档提供了两条路径：<code>zenoh://</code> 面向跨 NAT / 云边协同，Proxy / WebViz 则用于远程监控、数据转发，以及接入 Foxglove Studio / Rerun Viewer。</p>
+          <p data-i18n="sc.cl.p">跨网段或浏览器可视化场景可使用 <code>zenoh://</code>、Proxy 或 WebViz。Zenoh 跨网段需要可达的 router / peer 端点；NAT 穿透须由网络或外部基础设施另行解决。</p>
         </div>
         <div class="viz-mock"><img src="assets/svg/scene-cloud.svg" alt="Cross-network monitoring and Web visualization" loading="lazy" data-i18n-attr="alt:sc.alt.cl"></div>
       </div>
@@ -809,26 +823,26 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
   <div class="container">
     <div class="section-head center reveal">
       <div class="section-eyebrow" data-i18n="vs.eyebrow">VLink vs ROS2</div>
-      <h2 class="section-title" data-i18n="vs.title">替代 <span class="grad">ROS2</span> · 更轻、更快、更现代</h2>
-      <p class="section-sub" data-i18n="vs.sub">VLink 并非 ROS2 的"又一个节点库"。它是面向量产车与商用机器人的 <strong>完整实时系统开发平台</strong> —— 从通信到可视化、从录制到加密、从 CLI 到 Web，一次到位。</p>
+      <h2 class="section-title" data-i18n="vs.title"><span class="grad">VLink 与 ROS2</span> · 定位与能力边界</h2>
+      <p class="section-sub" data-i18n="vs.sub">ROS2 是包含节点、构建、包管理和机器人生态的完整框架；VLink 聚焦通信节点 API，并在同一源码树提供录制、CLI 与可视化工具。选择应以目标生态、平台和后端验证结果为准。</p>
     </div>
     <div class="vs-table reveal">
       <div class="vs-row vs-head">
         <div data-i18n="vs.head.k">能力维度</div><div class="vs-col-ros2" data-i18n="vs.head.a">ROS2</div><div class="vs-col-vlink" data-i18n="vs.head.b">VLink</div>
       </div>
-      <div class="vs-row"><div data-i18n="vs.r.api.k">API 心智</div><div class="vs-col-ros2" data-i18n="vs.r.api.a">Node · Executor · Context · CallbackGroup 多层栈，小样例也要几十行 boilerplate</div><div class="vs-col-vlink" data-i18n="vs.r.api.b"><strong>一个模板类就是一个节点</strong>，3 行代码完成端到端 Pub/Sub</div></div>
-      <div class="vs-row"><div data-i18n="vs.r.size.k">代码体量</div><div class="vs-col-ros2" data-i18n="vs.r.size.a">主仓 + 生态包累计数百万行代码，依赖链庞杂，裁剪 / 移植成本高</div><div class="vs-col-vlink" data-i18n="vs.r.size.b"><strong>全量约 25 万行</strong>，<strong>核心代码不到 10 万行</strong>；无运行时绑定，依赖清晰，易于移植到 QNX / Android 等平台</div></div>
-      <div class="vs-row"><div data-i18n="vs.r.lang.k">多语言支持</div><div class="vs-col-ros2" data-i18n="vs.r.lang.a">rclcpp / rclpy 为官方主线；rclnodejs / rcljava 等语言客户端由社区维护，版本滞后</div><div class="vs-col-vlink" data-i18n="vs.r.lang.b">C++17 主线 + 官方 <strong>Python</strong> 绑定；稳定的 <strong>C API</strong> 供 Go / Rust / Java / Lua 等语言包装</div></div>
-      <div class="vs-row"><div data-i18n="vs.r.arch.k">架构与扩展</div><div class="vs-col-ros2" data-i18n="vs.r.arch.a">rclcpp + rmw 分层，但扩展依赖 pluginlib 与 ament 包管理</div><div class="vs-col-vlink" data-i18n="vs.r.arch.b">传输 / 序列化 / CLI / 可视化均为独立 CMake 组件，按需裁剪；<br><strong>六类插件接口</strong> (Logger · Runable · Convert · Schema · Bag · Trigger) 运行期 dlopen 加载</div></div>
-      <div class="vs-row"><div data-i18n="vs.r.perf.k">性能</div><div class="vs-col-ros2" data-i18n="vs.r.perf.a">DDS 跨进程延迟随 RMW / QoS 波动；进程内零拷贝需 <code>NodeOptions::use_intra_process_comms(true)</code> 且消息 POD 化</div><div class="vs-col-vlink" data-i18n="vs.r.perf.b"><code>intra://</code> 无锁队列 <strong>亚微秒级</strong>；<code>shm://</code> 基于 Iceoryx 的 <strong>10 μs 级</strong> 零拷贝；<strong>浅拷贝 · 栈内存优先分配 · 无锁队列 · 分支预测友好</strong>，编译期模板派发，无虚函数开销</div></div>
-      <div class="vs-row"><div data-i18n="vs.r.trans.k">传输与零拷贝</div><div class="vs-col-ros2" data-i18n="vs.r.trans.a">默认 DDS 生态 (Fast-DDS · Cyclone · Connext)；rmw_zenoh 等为实验性；LoanedMessage 零拷贝仅部分 RMW + POD 消息</div><div class="vs-col-vlink" data-i18n="vs.r.trans.b"><strong>12 种 URL 切换</strong>：intra · shm · shm2 · dds · ddsc · zenoh · someip · qnx · mqtt · fdbus …… 业务代码零改动</div></div>
-      <div class="vs-row"><div data-i18n="vs.r.ser.k">序列化</div><div class="vs-col-ros2" data-i18n="vs.r.ser.a">rosidl (ROS Msg IDL) 为主；Type Adaptation 允许回调用 Eigen 等自定义类型</div><div class="vs-col-vlink" data-i18n="vs.r.ser.b"><strong>14 种编译期派发</strong>：Protobuf · FlatBuffers · CDR · POD · String · Stream · Bytes · Dynamic · 自定义</div></div>
+      <div class="vs-row"><div data-i18n="vs.r.api.k">API 模型</div><div class="vs-col-ros2" data-i18n="vs.r.api.a">Node、Executor、Context、CallbackGroup 等对象共同描述执行与回调模型</div><div class="vs-col-vlink" data-i18n="vs.r.api.b">直接构造六类模板节点；执行与回调语义仍由节点类型、后端和运行模式共同决定</div></div>
+      <div class="vs-row"><div data-i18n="vs.r.size.k">范围与依赖</div><div class="vs-col-ros2" data-i18n="vs.r.size.a">完整机器人框架与包生态，组件和依赖按发行版及所选功能组合</div><div class="vs-col-vlink" data-i18n="vs.r.size.b">通信核心和配套工具按 CMake 组件构建；实际依赖取决于启用的传输、序列化与 GUI 模块</div></div>
+      <div class="vs-row"><div data-i18n="vs.r.lang.k">多语言支持</div><div class="vs-col-ros2" data-i18n="vs.r.lang.a">rclcpp / rclpy 为官方主线；rclnodejs / rcljava 等语言客户端由社区维护，版本滞后</div><div class="vs-col-vlink" data-i18n="vs.r.lang.b">C++ 主线 + 官方 <strong>Python</strong> 绑定；稳定的 <strong>C API</strong> 供 Go / Rust / Java / Lua 等语言包装</div></div>
+      <div class="vs-row"><div data-i18n="vs.r.arch.k">架构与扩展</div><div class="vs-col-ros2" data-i18n="vs.r.arch.a">rclcpp + rmw 分层，但扩展依赖 pluginlib 与 ament 包管理</div><div class="vs-col-vlink" data-i18n="vs.r.arch.b">传输 / 序列化 / CLI / 可视化均为独立 CMake 组件，按需裁剪；<br><strong>七类插件接口</strong> (Logger · Runable · Convert · Schema · Bag · Trigger · Conf) 运行期 dlopen 加载</div></div>
+      <div class="vs-row"><div data-i18n="vs.r.perf.k">性能验证</div><div class="vs-col-ros2" data-i18n="vs.r.perf.a">结果受 RMW、QoS、消息大小、拓扑与硬件影响，应在目标配置上测量</div><div class="vs-col-vlink" data-i18n="vs.r.perf.b">同样需按目标配置测量；<code>intra://</code> 直接/共享指针路径与 <code>shm://</code> 显式 loan 路径可减少载荷复制</div></div>
+      <div class="vs-row"><div data-i18n="vs.r.trans.k">传输与零拷贝</div><div class="vs-col-ros2" data-i18n="vs.r.trans.a">传输和 loan 能力由所选 RMW、消息类型及配置决定</div><div class="vs-col-vlink" data-i18n="vs.r.trans.b">提供 10 种 URL scheme；迁移时必须满足各后端的 URL 结构、依赖、QoS 与运行时配置</div></div>
+      <div class="vs-row"><div data-i18n="vs.r.ser.k">序列化</div><div class="vs-col-ros2" data-i18n="vs.r.ser.a">rosidl (ROS Msg IDL) 为主；Type Adaptation 允许回调用 Eigen 等自定义类型</div><div class="vs-col-vlink" data-i18n="vs.r.ser.b"><strong>14 类编译期派发</strong>：Bytes · DynamicData · CDR · Protobuf · Protobuf 指针 · FlatBuffers 对象 · FlatBuffers 表指针 · FlatBuffers builder · 自定义 · string · const char*（仅发送） · POD · POD 指针 · 流式兜底</div></div>
       <div class="vs-row"><div data-i18n="vs.r.debug.k">调试与观测</div><div class="vs-col-ros2" data-i18n="vs.r.debug.a">rqt · rosbag2 · Foxglove Bridge / Rerun 为独立社区包</div><div class="vs-col-vlink" data-i18n="vs.r.debug.b">Viewer · Player · Analyzer 桌面 GUI + Foxglove / Rerun Web 桥 <strong>原生同构</strong>；<strong>.vdb (SQLite+LZAV) / .vcap (MCAP+Zstd)</strong> · 分片 · 倍速回放</div></div>
-      <div class="vs-row"><div data-i18n="vs.r.sec.k">安全加密</div><div class="vs-col-ros2" data-i18n="vs.r.sec.a">SROS2 / DDS Security — 证书体系较重</div><div class="vs-col-vlink" data-i18n="vs.r.sec.b"><strong>模板参数一键启用</strong>：内置 AES-128-GCM（AEAD，OpenSSL EVP）+ 自定义加密回调旁路</div></div>
+      <div class="vs-row"><div data-i18n="vs.r.sec.k">安全机制</div><div class="vs-col-ros2" data-i18n="vs.r.sec.a">可使用 SROS2 / DDS Security；部署模型与证书配置取决于所选中间件</div><div class="vs-col-vlink" data-i18n="vs.r.sec.b">提供消息级 AES-128-GCM 与自定义加密回调；并非所有传输和序列化路径都支持消息级加密</div></div>
       <div class="vs-row"><div data-i18n="vs.r.build.k">构建与工程</div><div class="vs-col-ros2" data-i18n="vs.r.build.a">colcon + ament + rosdep + DDS vendor 包；工具链与 Python 深度绑定</div><div class="vs-col-vlink" data-i18n="vs.r.build.b">标准 <strong>CMake / Conan</strong>，支持静态链接；配套 <a href="https://github.com/thun-res/vkit" target="_blank" rel="noopener"><strong>vkit</strong></a> 统一拉取 / 编译 / 打包</div></div>
-      <div class="vs-row"><div data-i18n="vs.r.plat.k">跨平台</div><div class="vs-col-ros2" data-i18n="vs.r.plat.a">Linux / Windows 官方主线支持；macOS 仅社区维护；QNX / Android 需社区适配</div><div class="vs-col-vlink" data-i18n="vs.r.plat.b">Linux · Windows · QNX · Android 官方稳定支持，原生覆盖车规与嵌入式平台；macOS 为 Beta</div></div>
+      <div class="vs-row"><div data-i18n="vs.r.plat.k">跨平台</div><div class="vs-col-ros2" data-i18n="vs.r.plat.a">支持范围随 ROS2 发行版、RMW 与第三方包而变化，需查对应发行版文档</div><div class="vs-col-vlink" data-i18n="vs.r.plat.b">源码包含 Linux · macOS · Windows · QNX · Android 适配；具体模块可用性取决于依赖和构建选项</div></div>
     </div>
-    <p class="vs-foot" data-i18n="vs.foot" style="margin-top:22px; font-size:12px; color:var(--ink-3); text-align:center">※ 对比基于 ROS2 Humble LTS 与 VLink 当前主线的公开文档与源码；部分 ROS2 特性可通过社区包补齐，此处只对比默认开箱体验。</p>
+    <p class="vs-foot" data-i18n="vs.foot" style="margin-top:22px; font-size:12px; color:var(--ink-3); text-align:center">※ 本表只说明项目定位与接口边界，不构成通用性能结论；请对目标版本、平台、消息类型、QoS 与依赖组合进行验证。</p>
 
     <div class="domestic reveal">
       <div class="domestic-ico">
@@ -836,7 +850,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
       </div>
       <div>
         <h3 data-i18n="vs.dom.h">供应链与合规</h3>
-        <p data-i18n="vs.dom.p">ROS2 的 RMW 层默认由 Fast-DDS / CycloneDDS / Connext 几家海外组织主导，替换路径有限。VLink 框架层 Apache 2.0 开源，传输后端按 URL 解耦 —— 可自由切换 CycloneDDS · QNX IPC · 国产 <strong>TravoDDS</strong> 等可信栈，便于满足 <strong>信创与合规</strong> 要求。</p>
+        <p data-i18n="vs.dom.p">VLink 框架以 Apache 2.0 发布，并可按构建配置选择不同传输后端。每个后端及其第三方依赖都有独立的许可证、支持范围与运行时要求，合规性和供应链风险应针对实际交付组合分别评估。</p>
       </div>
     </div>
   </div>
@@ -909,7 +923,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
   <div class="container footer-inner">
     <div class="footer-brand">
       <img src="assets/img/vlink-logo.svg" alt="VLink">
-      <p data-i18n="ft.brand.p">面向自动驾驶与具身智能的 C++ 实时开发平台。一套 API,12 种传输,切换零代价,持续扩展。</p>
+      <p data-i18n="ft.brand.p">C++ 通信中间件：统一节点 API、10 种传输后端，以及配套 CLI、录制回放和可视化工具。</p>
     </div>
     <div>
       <h5 data-i18n="ft.h.prod">产品</h5>
