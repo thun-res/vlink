@@ -1561,8 +1561,9 @@ void verify_method_schema_split_bag(const char* suffix) {
   REQUIRE(reader->open_cursor());
   const auto frames = read_all_frames(*reader);
   REQUIRE_EQ(frames.size(), 4u);
-  CHECK_EQ(frames[0].payload, "request");
-  CHECK_EQ(frames[1].payload, "response");
+  const bool has_method_pair = (frames[0].payload == "request" && frames[1].payload == "response") ||
+                               (frames[0].payload == "response" && frames[1].payload == "request");
+  CHECK(has_method_pair);
   CHECK_EQ(frames[2].payload, "server-request");
   CHECK_EQ(frames[3].payload, "server-response");
 

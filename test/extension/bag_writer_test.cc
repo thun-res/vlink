@@ -1109,18 +1109,19 @@ void verify_real_writer_timestamp_and_unknown_action_variants(const char* suffix
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/out_of_order", "raw", SchemaType::kRaw, ActionType::kPublish,
                                       Bytes::from_string("first"), 5'000'000)),
              5'000'000);
-  REQUIRE_EQ(writer->push(write_frame("dds://coverage/out_of_order", "raw", SchemaType::kRaw, ActionType::kPublish,
-                                      Bytes::from_string("second"), 4'999'950)),
-             4'999'950);
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/unknown_action", "raw", SchemaType::kRaw,
                                       ActionType::kUnknownAction, Bytes::from_string("unknown"), 6'000'000)),
              6'000'000);
+  REQUIRE_EQ(writer->push(write_frame("dds://coverage/out_of_order", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("second"), 4'999'950)),
+             4'999'950);
   writer.reset();
 
   auto reader = BagReader::create(bag.path.string(), false);
   REQUIRE(reader != nullptr);
   REQUIRE(reader->async_run());
   CHECK(reader->check().get());
+  CHECK_EQ(reader->get_info().total_duration, 6'000);
 
   bool saw_auto_timestamp = false;
   bool saw_unknown_action = false;
@@ -1150,8 +1151,9 @@ void verify_real_writer_timestamp_and_unknown_action_variants(const char* suffix
   }
 
   REQUIRE_EQ(out_of_order_timestamps.size(), 2u);
-  CHECK_EQ(out_of_order_timestamps[0], 5'000'000);
-  CHECK_EQ(out_of_order_timestamps[1], 5'000'001);
+  std::sort(out_of_order_timestamps.begin(), out_of_order_timestamps.end());
+  CHECK_EQ(out_of_order_timestamps[0], 4'999'950);
+  CHECK_EQ(out_of_order_timestamps[1], 5'000'000);
 
   reader->quit();
   REQUIRE(reader->wait_for_quit(3000));
@@ -2093,7 +2095,7 @@ TEST_SUITE("extension-BagWriter") {
     verify_real_writer_rejects_url_metadata_conflicts(".vcap");
   }
 
-  TEST_CASE("real writers normalize timestamps and persist unknown action metadata") {
+  TEST_CASE("real writers preserve timestamps and persist unknown action metadata") {
     verify_real_writer_timestamp_and_unknown_action_variants(".vdb");
     verify_real_writer_timestamp_and_unknown_action_variants(".vcap");
   }
