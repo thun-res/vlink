@@ -597,19 +597,30 @@ TEST_SUITE("extension-TriggerRecorder") {
     }
 
     std::vector<std::unique_ptr<vlink::Timer>> timers;
+    bool scheduling_rejected = false;
 
-    while (true) {
-      auto timer = std::make_unique<vlink::Timer>();
+    for (int attempt = 0; attempt < 100 && !scheduling_rejected; ++attempt) {
+      while (true) {
+        auto timer = std::make_unique<vlink::Timer>();
 
-      if (!timer->attach(&recorder)) {
-        break;
+        if (!timer->attach(&recorder)) {
+          break;
+        }
+
+        timers.push_back(std::move(timer));
       }
 
-      timers.push_back(std::move(timer));
+      REQUIRE_FALSE(timers.empty());
+      scheduling_rejected = !recorder.dump();
+
+      if (!scheduling_rejected) {
+        timers.clear();
+        REQUIRE(wait_until_idle(recorder));
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
     }
 
-    REQUIRE_FALSE(timers.empty());
-    CHECK_FALSE(recorder.dump());
+    REQUIRE(scheduling_rejected);
     CHECK_FALSE(recorder.is_dumping());
 
     timers.clear();

@@ -140,6 +140,7 @@ struct MessageLoop::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
 
   std::thread thread;
   std::unordered_set<Timer*> timer_set;
+  std::mutex spin_once_mtx;
   std::mutex mtx;
   ConditionVariable cv;
 };
@@ -358,6 +359,12 @@ bool MessageLoop::async_run() {
 bool MessageLoop::spin() { return run(); }
 
 bool MessageLoop::spin_once(bool block) {
+  std::unique_lock spin_once_lock(impl_->spin_once_mtx, std::try_to_lock);
+
+  if VUNLIKELY (!spin_once_lock.owns_lock()) {
+    return false;
+  }
+
   if VUNLIKELY (!is_in_same_thread() && impl_->thread_id.load(std::memory_order_acquire) != std::thread::id()) {
     CLOG_E("MessageLoop spin_once called from different thread than run/async_run (%s).", impl_->name.c_str());
     return false;
@@ -411,6 +418,7 @@ bool MessageLoop::wait_for_quit(int ms, bool check) {
 
   if (thread_handle != nullptr) {
     DWORD thread_status = STILL_ACTIVE;
+
     if (::GetExitCodeThread(thread_handle, &thread_status) && thread_status != STILL_ACTIVE) {
       impl_->is_running.store(false, std::memory_order_release);
       impl_->is_busy.store(false, std::memory_order_release);
@@ -525,10 +533,10 @@ bool MessageLoop::wakeup() {
     return true;
   }
 
-  // Pair the first pending wakeup with the wait mutex so a concurrent waiter cannot miss the notify.
   {
     std::lock_guard lock(impl_->mtx);
   }
+
   impl_->cv.notify_all();
 
   return true;
@@ -1587,6 +1595,7 @@ void MessageLoop::drop_pending_tasks() {
   Impl::PriorityQueue priority_droppable_queue;
   Impl::PriorityQueue priority_protected_queue;
 #endif
+
   std::vector<Impl::LockfreeTaskTuple> lockfree_tasks;
 
   {
