@@ -323,7 +323,7 @@ vmsgs 以 Protobuf 与 FlatBuffers schema 提供上述领域的标准消息定�
 | 01   | [快速开始](01-started.md)               | 构建与集成、find_package、最小可运行示例               |
 | 02   | [通信模型](02-communication.md)         | 节点生命周期与事件 / 方法 / 字段三模型完整接口         |
 | 03   | [消息序列化](03-serialization.md)       | 类型自动推导、支持的类型族、自定义编解码               |
-| 04   | [传输后端与 URL](04-transport.md)       | 12 种后端与 URL 解析、后端选择                         |
+| 04   | [传输后端与 URL](04-transport.md)       | 10 种后端与 URL 解析、后端选择                         |
 | 05   | [QoS 配置](05-qos.md)                   | QoS profile 与可靠性 / 历史 / 持久化                   |
 | 06   | [零拷贝](06-zerocopy.md)                | 借贷型零拷贝、感知容器                                 |
 | 07   | [安全加密](07-security.md)              | 加密管线、密钥与传输安全                               |

@@ -564,6 +564,7 @@ cmake --build build_cross -j$(nproc)
 ├── lib/
 │   ├── libvlink.so                 # 核心库
 │   ├── libvlink-dds.so / -shm.so / -intra.so / ...   # 各传输模块（按构建配置）
+│   ├── python/                     # Python 绑定（启用 ENABLE_PYTHON_API 时）
 │   └── cmake/vlink/                # find_package 入口（vlink-config.cmake 等）
 ├── bin/                    # CLI 工具（vlink-info / vlink-bag / vlink-monitor ...）
 └── etc/vlink/

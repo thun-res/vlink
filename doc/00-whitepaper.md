@@ -469,7 +469,7 @@ VLink 通过 URL 前缀选择传输后端，同一套业务代码可以在不同
 | `kFlatBuilderType`   | 含 `fbb_` 成员 + `Finish()` 的结构体           | FlatBuffers Builder 模式（结构体走常规 `publish()`；裸 `flatbuffers::FlatBufferBuilder*` 需用 `Publisher::publish_fbb()` 重载） |
 | `kCustomType`        | 实现 `operator>>(Bytes&) const` / `operator<<(const Bytes&)` 的类型 | 自定义序列化协议   |
 | `kStringType`        | `std::string`                                   | 字符串消息                          |
-| `kCharsType`         | `char[]` / `const char*`                        | C 字符串                            |
+| `kCharsType`         | `char[]` / `const char*`                        | 仅序列化；反序列化使用 `std::string` |
 | `kStreamType`        | 支持 `std::stringstream` 输入/输出运算符的类型  | 兜底序列化路径（无更优编解码时回退）|
 | `kStandardType`      | POD 类型（`int`、`float`、结构体等）            | 简单数据类型，直接内存拷贝          |
 | `kStandardPtrType`   | `T*`（指向 POD 类型的原始指针）                 | 发送侧指针浅视图；transport 仍可能复制，接收侧借用 wire 缓冲 |
@@ -887,7 +887,7 @@ Zenoh 是新兴的云边一体通信协议，VLink 在 zenoh:// 后端下兼容 
 
 | 评估维度           | VLink                  | ROS2                     | Fast-DDS          | SOME/IP             | Zenoh                |
 | ------------------ | ---------------------- | ------------------------ | ----------------- | ------------------- | -------------------- |
-| 多传输后端支持     | 支持（12 种 scheme）   | 部分（以 DDS 为主）      | 不支持（仅 DDS）  | 不支持（仅 SOME/IP）| 部分                 |
+| 多传输后端支持     | 支持（10 种 scheme）   | 部分（以 DDS 为主）      | 不支持（仅 DDS）  | 不支持（仅 SOME/IP）| 部分                 |
 | 极简 API           | 支持                   | 部分（需继承 Node）      | 不支持（API 复杂）| 不支持（协议复杂）  | 支持                 |
 | 零拷贝支持         | 条件支持（SHM loan / Intra 共享指针直达路径） | 部分（intra-process） | 部分 | 不支持 | 部分（实验性） |
 | 多序列化格式支持   | 支持（14 种）          | 部分（CDR 为主）         | 部分（CDR）       | 不支持              | 不支持（raw bytes）  |

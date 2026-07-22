@@ -171,6 +171,7 @@ sub.listen([](const vlink::zerocopy::CameraFrame& frame) {
 | `create_v3f<ExtraT...>(count, names)` | 创建 XYZ + 附加字段的点云，预留 `count` 个点 |
 | `push_value_v3f(x, y, z, extras...)` | 追加一个点 |
 | `get_value_v3f(index)` | 读第 `index` 个点的 XYZ，返回 `Vector3f` |
+| `get_key_list()` | 按打包顺序返回字段名、逻辑类型和存储字节数；量化点云的前三个坐标仍报告为浮点逻辑类型 |
 | `get_key_map()` + `get_value<T>(index, key_map, "field")` | 按字段名读任意字段 |
 
 `size()` 返回当前点数，`pack_size()` 返回单点字节数。需要双精度坐标时改用 `create_v3d` / `push_value_v3d` / `get_value_v3d`。

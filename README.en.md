@@ -158,7 +158,7 @@ The following is a 16-part learning path, best read in order.
 
 | Document | Content |
 | --- | --- |
-| [4. Transport and URL](doc/04-transport.md) | 12 backends and URL specification |
+| [4. Transport and URL](doc/04-transport.md) | 10 backends and URL specification |
 | [5. QoS](doc/05-qos.md) | quality-of-service policies and profiles |
 | [6. Zero-Copy](doc/06-zerocopy.md) | loan interface and perception data containers |
 | [7. Security](doc/07-security.md) | message-level encryption and key management |

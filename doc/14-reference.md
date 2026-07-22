@@ -183,7 +183,7 @@ vlink::Publisher<Imu> pub2("dds://sensor/imu?qos=my_sensor");
 
 ![序列化类型自动推导](images/serialization-type-detection.png)
 
-开箱即用的类型族：POD 结构体（二进制直存，无编码转换但会内存复制）、Protobuf、FlatBuffers、DDS CDR（实现 `serialize/deserialize(Cdr&)`，DDS 快路径）、`std::string` / `const char*`、`vlink::Bytes`，以及实现一对编解码运算符的自定义类型。机制与自定义序列化见 [消息序列化](03-serialization.md)。
+开箱即用的类型族：POD 结构体（二进制直存，无编码转换但会内存复制）、Protobuf、FlatBuffers、DDS CDR（实现 `serialize/deserialize(Cdr&)`，DDS 快路径）、`std::string`、仅用于发送的 `const char*` / `char[]`、`vlink::Bytes`，以及实现一对编解码运算符的自定义类型。接收文本必须使用 `std::string`；机制与自定义序列化见 [消息序列化](03-serialization.md)。
 
 ---
 
@@ -200,7 +200,7 @@ vlink::Publisher<Imu> pub2("dds://sensor/imu?qos=my_sensor");
 
 高频路径可用 `VLOG_{T,D,I,W,E}_EVERY_MS(interval_ms, ...)` 做线程安全的调用点级周期限频；Fatal 和其他日志宏族不提供该变体。
 
-运行期由环境变量 `VLINK_LOG_LEVEL=0..6` 设定总级别，`VLINK_LOG_CONSOLE_LEVEL` / `VLINK_LOG_FILE_LEVEL` 分别控制控制台与文件两个 sink。编译期将宏 `VLINK_LOG_LEVEL` 设为某级别后，更低级别的日志在 Release 下被整条消除。完整日志能力见 [基础库](08-base-library.md)。
+运行期由环境变量 `VLINK_LOG_LEVEL` 设定总级别，可填写 `0`..`6` 或对应英文名称（首字母大写、全大写、全小写）；`VLINK_LOG_CONSOLE_LEVEL` / `VLINK_LOG_FILE_LEVEL` 分别控制控制台与文件两个 sink，并接受相同取值。编译期将宏 `VLINK_LOG_LEVEL` 设为某级别后，更低级别的日志在 Release 下被整条消除。完整日志能力见 [基础库](08-base-library.md)。
 
 ---
 
@@ -280,7 +280,7 @@ if (pub.is_support_loan()) {
 
 | 变量 | 作用 |
 | --- | --- |
-| `VLINK_LOG_LEVEL` | 日志总级别（`0=Trace` .. `5=Fatal`，`6=Off`） |
+| `VLINK_LOG_LEVEL` | 日志总级别（`0=Trace` .. `5=Fatal`，`6=Off`；也接受对应英文名称） |
 | `VLINK_LOG_DIR` | 日志输出目录 |
 | `VLINK_DDS_IP` | DDS 发现对外通告的本机单播 IP 列表（多值以逗号或空格分隔） |
 | `VLINK_DDS_PEER` | DDS 静态单播对端列表，绕开多播发现（多值以逗号或空格分隔，见 [§14.18](#-1418-跨机或容器不连通)） |

@@ -621,7 +621,7 @@ a:hover { color: var(--brand-300); }
   background: linear-gradient(180deg, var(--brand-300), var(--brand-500));
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
 }
-/* "+" suffix for animated counters marked as .count-plus (e.g. 12+ transports). */
+/* "+" suffix for animated counters marked as .count-plus (e.g. 10+ transports). */
 .num-item .big.count-plus::after {
   content: "+"; font-size: 0.6em; vertical-align: 0.45em;
   margin-left: 2px;
@@ -642,7 +642,7 @@ a:hover { color: var(--brand-300); }
           a glowing gradient border, and large bold titles. These read as
           hero cards — the "why you want this".
    ——————— dashed divider with sub-heading ———————
-   Row 2: 12 plain-bordered transport cards — the catalogue of backends.
+   Row 2: 10 plain-bordered transport cards — the catalogue of backends.
    The stylistic gap between the two rows is intentional. */
 .unified-benefits {
   list-style: none; padding: 0; margin: 0 0 40px;

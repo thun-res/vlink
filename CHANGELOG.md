@@ -1,12 +1,13 @@
 # 🗒️ 更新日志
 
-## v2.1.0 (2026/07/18)
+## v2.1.0 (2026/07/24)
 
 ### 新增功能
 
 - **日志限频**：C++ 新增线程安全的调用点级 `VLOG_{T,D,I,W,E}_EVERY_MS(interval_ms, ...)` 宏，支持按周期抑制重复日志且不求值被抑制的日志参数。
 - **CLI/dump 改名**：`cli/dump` 已彻底改为 `cli/parse`，命令由 `vlink-dump` / `dump` 改为 `vlink-parse` / `parse`，构建开关由 `ENABLE_CLI_DUMP` 改为 `ENABLE_CLI_PARSE`；不提供旧名称兼容入口。
 - **零拷贝解析**：新增统一的 C++ / Python `MessageParser`，支持反射解析、零拷贝视图和通用文本渲染；Parse、Viewer、Analyzer、eproto 与 efbs 已接入。
+- **PointCloud**：C++ / Python 新增 `get_key_list()` 字段描述接口。
 - **CameraFrame**：扩展 Raw、Bayer、YUV 和压缩图像格式，新增编码辅助函数、Python 绑定与自动解码模式，线上枚举值保持兼容。
 - **Trigger**：新增 `vlink-trigger`、`TriggerRecorder` 及 Python 绑定，支持触发前后数据缓存、Bag 落盘、历史轮转和完成回调插件。
 - **Bag 插件**：新增读会话 `on_reset()`，回放前补全序列化和 Schema 类型。`on_read()` / `on_write()` 改为纯虚函数，并移除版本查询接口；插件仍声明 2.0，但需按新头文件适配并重新构建。
@@ -21,7 +22,8 @@
 - **Bag**：公开幂等的 `BagWriter::close()`，并由 `Config::sync_mode` 统一帧、Schema 和插件输出的写入模式。逐调用 `immediate` 参数及受保护 `record()` 签名已调整，外部派生类和既有二进制需适配并重新构建。
 - **Bag 性能**：优化异步写入、回放过滤、Schema 持久化和未启用录制时的热路径。
 - **基础库**：优化 MemoryPool 和任务调度；`MemoryPool::Config` 新增 `batch_size`，使用该配置的外部 C++ 二进制需重新构建。
-- **序列化**：新增 `Serializer::serialize_to_transport()`，修复 transport loan 生命周期，并加强字符串、Schema 和 payload 的边界校验。
+- **序列化**：新增 `Serializer::serialize_to_transport()`，修复 transport loan 生命周期并加强边界校验；C 字符串改为仅支持发送，接收端须使用 `std::string`。
+- **接收回调**：每次投递使用独立值对象，裸 Protobuf 指针也在 Arena 中逐条分配，避免嵌套回调覆盖。
 - **Zenoh**：原生 Key Expression 增加 domain / event 隔离；采用该寻址的新旧版本不能互通，升级时需同步通信两端。未设置环境变量时沿用配置文件默认值；zenoh-pico 构建要求启用 local subscriber、local queryable、liveliness 和 matching。
 - **Viewer / Webviz**：改进多相机解码、感知帧合并、动态 Schema 解析及多种图像格式在 Foxglove / Rerun 中的展示。
 - **Parse**：收紧参数校验，优化 slice / scan 的解析时机、频率限制和同步写入路径，并保证质量与 manifest 输出稳定。
@@ -38,7 +40,8 @@
 - **Parse**：修复插件解绑死锁、live 资源生命周期、slice / scan 边界遗漏、输入输出碰撞、Schema 插件路径加载和 proxy 包大小处理。
 - **图像与 Schema**：加强异常图像尺寸处理；在 efbs、Parse、Viewer 和 Webviz 解码前验证 FlatBuffers Schema 与 payload。
 - **Viewer / Webviz**：修复动态 Schema 生命周期、缺失字段默认值、慢客户端队列增长、Rerun 多格式路由及录制关闭错误上报。
-- **Python**：修复状态字典的错误派生类型读取，以及零拷贝解析器借用临时缓冲导致的 use-after-free。
+- **Intra**：修复回调内注销、嵌套投递、同 pipeline RPC 死锁和跨 event 误连接。
+- **Python**：修复状态字典类型读取、零拷贝解析器 use-after-free 和 `vlink` 模块路径；`Bytes` 支持负索引。
 - **基础库**：修复 `MemoryResource::is_equal()` 与外部 PMR resource 比较时的未定义行为。
 
 ## v2.0.0 (2025/07/01)

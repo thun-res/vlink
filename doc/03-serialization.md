@@ -38,16 +38,16 @@
 | FlatBuffers 表指针（`const MyMsg*`） | FlatBuffers（零拷贝只读） | 指针指向接收缓冲区，仅在回调内有效 | 高性能只读路径 |
 | FlatBuffers builder（含 `fbb_` + `Finish()`） | FlatBuffers | 直接发布手工构建的 builder，序列化时完成构建并按最终大小申请目标缓冲 | 自管缓冲区的高性能写入路径 |
 | Protobuf 消息（`MyMsg`） | Protobuf 二进制 | 需由 `.proto` 生成代码 | 跨语言、字段随版本演进 |
-| Protobuf 指针（`MyMsg*`） | Protobuf 二进制 | 配合 Arena 分配，降低高频发布的内存管理开销 | 高频发布大量消息 |
+| Protobuf 指针（`MyMsg*`） | Protobuf 二进制 | 调用方管理发送指针；框架创建接收或响应对象前须先 `bind_proto_arena()`，每次投递在 Arena 中分配独立对象 | 高频收发大量消息 |
 | `vlink::Bytes` | 原始字节直传 | 框架不解释其结构 | 透明代理、私有二进制协议、原始帧 |
-| `std::string` / `const char*` | 文本直传 | UTF-8 文本；接收的字符指针仅到同线程下一次字符解码前有效 | 日志、命令字符串 |
+| `std::string` / `const char*` | 文本直传 | `std::string` 支持收发；`const char*` / `char[]` 仅支持发送 | 日志、命令字符串 |
 | 自定义类型（重载 `operator>>`/`<<`） | 用户编解码 | 字段顺序须严格对应，见 [3.5](#-35-自定义序列化器) | 自有紧凑布局、带外信息 |
 | DDS IDL 类型（`MyMsg`） | CDR | 需注册 TypeSupport，见 [3.6](#-36-dds-cdr-与-dynamicdata) | 与外部 DDS 系统互操作 |
 | `vlink::DynamicData` | 类型名标签 + 已序列化负载 | 运行期按类型名标签选择编解码，无需编译期固定消息类型，见 [3.6](#-36-dds-cdr-与-dynamicdata) | 监控、协议桥接 |
 
 判据的取舍要点：POD 提供最低开销，但不携带版本信息且不跨字节序；FlatBuffers 与 Protobuf 以编码开销换取结构演进能力；`Bytes` 不解释内容，适合协议透传。后端选择与 URL 写法见 [传输后端](04-transport.md)；面向感知的零拷贝容器见 [零拷贝](06-zerocopy.md)。
 
-字符指针由调用方保证可访问到 NUL；字符数组必须在数组边界内包含 NUL。两者都只序列化首个 NUL 之前的字节。
+发送字符指针时，调用方必须保证其可访问到 NUL；字符数组必须在数组边界内包含 NUL。两者都只序列化首个 NUL 之前的字节。接收端不能使用 `char*` 或 `const char*`，因为指针本身不拥有反序列化存储；接收文本必须使用 `std::string`。
 
 传输后端集成可调用公开的 `Serializer::serialize_to_transport<TypeT>()`：`use_loan=true` 且存在非零 size hint 时，回调至多按序列化大小请求一次目标 `Bytes`，返回值既可以是真实 loan，也可以是 owning storage；返回值必须与 hint 大小完全相同，codec 不得替换 transport loan。size hint 为 0 时不请求 loan，直接回退到 owning 序列化。普通应用仍应使用 Publisher、Client、Server 或 Setter，由框架自动选择该路径。builder 类型在进入该路径后会完成构建，即使目标分配失败也应使用新 builder 重试。
 
@@ -84,6 +84,8 @@ auto* state = google::protobuf::Arena::Create<example::VehicleState>(&arena);
 state->set_speed(80.0f);
 pub.publish(state);
 ```
+
+框架需要创建裸 Protobuf 指针对象时必须先调用 `bind_proto_arena()`：这包括 `Subscriber` 的 `MsgT`、`Server` 的 `ReqT` / `RespT`、`Client` 的 `RespT` 和 `Getter` 的 `ValueT`。`Subscriber` / `Server` 应在 `listen()` 前绑定，`Client` 应在首次调用前绑定；`Getter` 建议以 `InitType::kWithoutInit` 构造，绑定后再 `init()`。框架会为每次投递创建独立消息，避免嵌套或并发回调覆盖同一对象；消息占用的存储会保留到调用方 reset 或销毁 Arena。完整节点说明见 [通信模型](02-communication.md#-225-属性配置与查询)。
 
 ---
 
@@ -299,6 +301,7 @@ vlink::Publisher<BadMsg> pub("shm://bad");  // 编译失败：<MsgT> is not a su
 | --- | --- |
 | POD 跨架构字节序 | 内存直拷不做字节序转换；大小端不同的机器间通信应改用 Protobuf / FlatBuffers / CDR，或在自定义序列化器内显式处理字节序 |
 | FlatBuffers 零拷贝指针生命期 | `const MyMsg*` 指向接收缓冲区，回调返回后即失效；需在回调外保留时先 `s->UnPack()` 拷成 Object |
+| C 字符串方向性 | `const char*` / `char[]` 只支持序列化；反序列化为字符指针会失败，接收端应声明为 `std::string` |
 | 自定义序列化器字段对齐 | 写入与读取的字段顺序必须严格对应，`operator<<` 读取前须校验 `in.size()` 合法性 |
 | 流式回退编码 | 若类型对 `std::stringstream` 同时重载了 `<<`/`>>`（且非上述任一类型族），框架会以文本流作为兜底编码，而非编译失败；需要紧凑二进制时应改用 [3.5](#-35-自定义序列化器) 的 `operator>>`/`<<(Bytes&)` |
 

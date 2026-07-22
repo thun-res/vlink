@@ -82,7 +82,7 @@
         <mxCell id="e1t" value="transport" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="70" y="256" width="230" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="e1d" value="Transport backend&#10;Selects 1 of 12 backends&#10;intra / shm / dds / zenoh / ..." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;" vertex="1" parent="1">
+        <mxCell id="e1d" value="Transport backend&#10;Selects 1 of 10 backends&#10;intra / shm / dds / zenoh / ..." style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontColor=#37474f;" vertex="1" parent="1">
           <mxGeometry x="70" y="284" width="230" height="68" as="geometry" />
         </mxCell>
 

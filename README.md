@@ -158,7 +158,7 @@ VLink 由三个协同的仓库构成：
 
 | 文档 | 内容 |
 | --- | --- |
-| [4. 传输后端与 URL](doc/04-transport.md) | 12 种后端与 URL 规范 |
+| [4. 传输后端与 URL](doc/04-transport.md) | 10 种后端与 URL 规范 |
 | [5. QoS 配置](doc/05-qos.md) | 服务质量策略与 profile |
 | [6. 零拷贝](doc/06-zerocopy.md) | 借贷接口与感知数据容器 |
 | [7. 安全加密](doc/07-security.md) | 消息级加密与密钥管理 |

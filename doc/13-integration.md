@@ -313,7 +313,7 @@ vlink_create_publisher_with_ssl_options("mqtt://sensor/data", &schema, &pub, &op
 
 vlink 为 Python 提供两条路径，**首选原生绑定**：
 
-- **原生 nanobind 绑定（首选）**：源码位于 `python_api/`（`vlink_python.cc` + `vlink.py`），编译产出名为 `_vlink_nanobind` 的扩展模块，由 `vlink.py` 再导出（`from _vlink_nanobind import *`）。它是一等公民的面向对象 API，无需手写 ABI 声明，并自动管理生命周期。需在配置时开启构建开关 `ENABLE_PYTHON_API`（`CMakeLists.txt` 中默认 `OFF`），即 `cmake -DENABLE_PYTHON_API=ON ...`；该开关依赖系统已安装 `nanobind`。导出的完整类/接口清单（以 `python_api/vlink.py` 的 `__all__` 为准）包括：
+- **原生 nanobind 绑定（首选）**：源码位于 `python_api/`（`vlink_python.cc` + `vlink.py`），编译产出名为 `_vlink_nanobind` 的扩展模块，由 `vlink.py` 再导出（`from _vlink_nanobind import *`）。它是一等公民的面向对象 API，无需手写 ABI 声明，并自动管理生命周期。需在配置时开启构建开关 `ENABLE_PYTHON_API`（`CMakeLists.txt` 中默认 `OFF`），即 `cmake -DENABLE_PYTHON_API=ON ...`；该开关依赖系统已安装 `nanobind`。导出的主要类/接口如下，完整清单以 `python_api/vlink.py` 的 `__all__` 为准：
   - 收发端点：`Publisher`、`Subscriber`、`Server`、`Client`、`Setter`、`Getter`、`FireForgetServer`、`FireForgetClient`；
   - 安全版端点：`Security`、`SecurityConfig`、`SecurityConfigAdvanced`、`SecurityPublisher`、`SecuritySubscriber`、`SecurityServer`、`SecurityClient`、`SecuritySetter`、`SecurityGetter`、`SecurityFireForgetServer`、`SecurityFireForgetClient`、`SslOptions`；
   - 录制/回放与发现：`BagWriter`、`BagReader`、`TriggerRecorder`、`DiscoveryViewer`；
@@ -906,7 +906,7 @@ domain/QoS/depth 等后端参数可由三处声明，遵循就近覆盖原则。
 | `VLINK_URL_PLUGINS` | `auto` 按需加载未链接的已知共享后端，`none` / 空值关闭插件加载，其他非空值为显式预加载列表（模式值大小写不敏感） |
 | `VLINK_DDS_BIND` | 将所有 `dds://` 整体绑定到指定 DDS 实现（`ddsc`/`ddsr`） |
 | `VLINK_INTRA_BIND` | 将所有 `intra://` 重定向到其他 scheme（`shm`/`dds` 等） |
-| `VLINK_LOG_LEVEL` | 全局日志级别（`0`=TRACE … `6`=OFF） |
+| `VLINK_LOG_LEVEL` | 全局日志级别（`0`=TRACE … `6`=OFF，也接受对应英文名称） |
 | `VLINK_DDS_IP` | 指定 DDS 单播 IP，多网卡主机通常必设 |
 
 ```bash
@@ -951,13 +951,13 @@ export VLINK_FBS_DIR=/opt/vlink/fbs
 
 ### 📋 13.21 日志控制
 
-内置日志系统 `vlink::Logger` 的级别、目录与轮转策略均可经环境变量调整。日志级别取值：`0`=TRACE、`1`=DEBUG、`2`=INFO、`3`=WARN、`4`=ERROR、`5`=FATAL、`6`=OFF。控制台与文件级别可分别覆盖全局级别。
+内置日志系统 `vlink::Logger` 的级别、目录与轮转策略均可经环境变量调整。日志级别取值：`0`=TRACE、`1`=DEBUG、`2`=INFO、`3`=WARN、`4`=ERROR、`5`=FATAL、`6`=OFF；也可填写 `Trace`、`Debug`、`Info`、`Warn`、`Error`、`Fatal`、`Off`，并支持全大写或全小写。控制台与文件级别可分别覆盖全局级别。
 
 | 变量 | 类型 | 说明 |
 | --- | --- | --- |
-| `VLINK_LOG_LEVEL` | 数字 | 全局日志级别（`0`..`6`） |
-| `VLINK_LOG_CONSOLE_LEVEL` | 数字 | 控制台级别，覆盖全局 |
-| `VLINK_LOG_FILE_LEVEL` | 数字 | 文件级别，覆盖全局 |
+| `VLINK_LOG_LEVEL` | 数字或英文名称 | 全局日志级别（`0`..`6` 或对应英文名称） |
+| `VLINK_LOG_CONSOLE_LEVEL` | 数字或英文名称 | 控制台级别，覆盖全局 |
+| `VLINK_LOG_FILE_LEVEL` | 数字或英文名称 | 文件级别，覆盖全局 |
 | `VLINK_LOG_DIR` | 目录路径 | 日志文件目录 |
 | `VLINK_LOG_CONSOLE_UNORDER` | `1`/`0` | 非同步控制台输出，吞吐更高 |
 | `VLINK_LOG_CONSOLE_FMT` | `1`/`0` | 启用扩展控制台格式 |

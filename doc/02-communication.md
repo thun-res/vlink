@@ -39,7 +39,7 @@ VLink 的全部通信能力由三种模型、六个原语承载：事件模型�
 
 ### 2.2.1 🗺️ 概念与模型
 
-`Node` 统一暴露下列跨原语服务：初始化与反初始化（建立、释放底层传输通道）；属性配置与查询（URL、传输类型、后端调优键值对）；在后端支持时绑定 `MessageLoop`；零拷贝借贷；阻塞等待的中断、消息传递的暂停与恢复。具体能力仍可能受后端约束。
+`Node` 统一暴露下列跨原语服务：初始化与反初始化（注册、注销节点的传输端点）；属性配置与查询（URL、传输类型、后端调优键值对）；在后端支持时绑定 `MessageLoop`；零拷贝借贷；阻塞等待的中断、消息传递的暂停与恢复。具体能力仍可能受后端约束。
 
 理解节点的关键是一条不变量：**节点先经历"构造 → 初始化"建立通道，使用期间收发消息，最后经历"反初始化 → 析构"释放资源；初始化前后允许施加的配置集合不同。**
 
@@ -83,10 +83,10 @@ pub.init();
 | 方法 | 语义 | 幂等性 |
 | --- | --- | --- |
 | `bool init()` | 建立底层传输通道并开始收发；成功返回 `true` | 已初始化时返回 `false` |
-| `bool deinit()` | 中断所有阻塞等待并释放传输资源 | 可安全重复调用 |
+| `bool deinit()` | 中断所有阻塞等待并注销该节点的传输端点 | 可安全重复调用；后端可缓存共享 native endpoint |
 | `bool has_inited()` | 查询当前是否已初始化 | — |
 
-两条默认行为消除了绝大部分手动管理：**构造默认执行 `init()`**（`InitType::kWithInit`），通常无需显式调用；**析构自动执行 `deinit()`**，节点离开作用域即释放资源并唤醒等待者，仅在需要提前释放时才显式调用 `deinit()`。重复调用会由状态检查挡住，但调用方不得让 `init()` 与 `deinit()` 彼此并发。借助 RAII，典型用法无需任何显式生命周期调用：
+两条默认行为消除了绝大部分手动管理：**构造默认执行 `init()`**（`InitType::kWithInit`），通常无需显式调用；**析构自动执行 `deinit()`**，节点离开作用域即注销自身、停止回调并唤醒等待者，仅在需要提前注销时才显式调用 `deinit()`。为复用 native 连接，后端 factory 可以继续缓存已无该节点注册的共享 endpoint。重复调用会由状态检查挡住，但调用方不得让 `init()` 与 `deinit()` 彼此并发。借助 RAII，典型用法无需任何显式生命周期调用：
 
 ```cpp
 {
@@ -116,7 +116,7 @@ pub.init();
 | `set_ssl_options()` | 必须 | 不生效 |
 | `set_ser_type()` | 推荐 | 自动重启扩展后生效 |
 | `set_discovery_enabled()` | 推荐 | 自动重启扩展后生效 |
-| `bind_proto_arena()` | 在 `listen()` 前即可 | — |
+| `bind_proto_arena()` | 必须在对应节点首次创建接收对象前；`Getter` 建议以 `kWithoutInit` 构造，绑定后再 `init()` | 可在首次 `listen()` / `invoke()` / 接收更新前绑定 |
 | `set_record_path()` | 允许 | 允许 |
 | 安全配置（构造参数或 `enable_security()`） | 必须在 `init()` 前 | 拒绝修改 |
 
@@ -148,7 +148,7 @@ pub->init();
 void set_ser_type(const std::string& ser_type, SchemaType schema_type = SchemaType::kUnknown);
 ```
 
-**Protobuf Arena `bind_proto_arena()`**　当 `MsgT` 为裸 Protobuf 指针（如 `MyProto*`）时，必须在 `listen()` 之前绑定一个生存期长于节点的 Arena。
+**Protobuf Arena `bind_proto_arena()`**　当框架需要创建的消息类型是裸 Protobuf 指针（如 `MyProto*`）时，必须绑定一个生存期长于节点的 Arena。适用位置包括 `Subscriber` 的 `MsgT`、`Server` 的 `ReqT` / `RespT`、`Client` 的 `RespT` 和 `Getter` 的 `ValueT`；发布方传入的 `Publisher::MsgT`、`Client::ReqT` 与 `Setter::ValueT` 指针仍由调用方管理。`Subscriber` / `Server` 应在 `listen()` 前绑定，`Client` 应在首次 `invoke()` / `async_invoke()` 前绑定；`Getter` 为避免初始化后立即收到更新，应以 `InitType::kWithoutInit` 构造，绑定后再调用 `init()`。接收路径会为每次投递在 Arena 中创建独立消息，避免嵌套或并发回调覆盖同一对象；这些对象占用的存储会保留到调用方 reset 或销毁 Arena。
 
 ```cpp
 google::protobuf::Arena arena;
@@ -365,7 +365,7 @@ sub.listen([](const MyMsg& msg) { handle(msg); });
 
 两项约束必须遵守：
 
-- 回调参数引用仅在回调体内有效：普通反序列化类型使用框架临时存储，`Bytes` 可能直接引用会在回调返回后自动归还的 transport buffer。带出回调前须复制；复制 `Bytes` 会生成独立存储，`shared_ptr<IntraDataType>` 则可通过复制 shared_ptr 延长对象生命周期。
+- 回调参数引用仅在回调体内有效：值类型使用每次投递独立的局部临时对象，指针视图类型和 `Bytes` 可能引用外部 arena 或会在回调返回后自动归还的 transport buffer。带出回调前须复制到明确拥有的存储；复制 `Bytes` 会生成独立存储，`shared_ptr<IntraDataType>` 则可通过复制 shared_ptr 延长对象生命周期。
 - `listen()` 仅可调用一次，重复调用为致命错误。
 
 回调默认由后端 delivery context 执行。后端支持时可先 `attach(MessageLoop*)` 并入自有线程串行处理，限制见 2.2.6。性能分析时可开启统计：
