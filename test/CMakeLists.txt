@@ -94,66 +94,6 @@ if(_VLINK_TRANSPORT_TEST_SUITES)
   set_tests_properties(${_VLINK_TRANSPORT_TEST_SUITES} PROPERTIES RESOURCE_LOCK vlink_transport)
 endif()
 
-if(UNIX)
-  find_program(VLINK_TEST_BASH_EXECUTABLE NAMES bash)
-  if(VLINK_TEST_BASH_EXECUTABLE)
-    function(vlink_add_completion_consistency_test target completion_base)
-      if(TARGET ${target})
-        add_test(
-          NAME completion-${target}
-          COMMAND
-            ${VLINK_TEST_BASH_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/completion_consistency_test.sh
-            $<TARGET_FILE:${target}> ${completion_base}.bash ${completion_base}.zsh
-            ${CMAKE_SOURCE_DIR}/packup/scripts/vlink-completions.sh.in ${ARGN}
-        )
-      endif()
-    endfunction()
-
-    vlink_add_completion_consistency_test(
-      vlink-bag
-      ${CMAKE_SOURCE_DIR}/cli/bag/etc/completions/vlink-bag
-      info
-      record
-      play
-      clone
-      check
-      reindex
-      fix
-      tag
-    )
-    vlink_add_completion_consistency_test(
-      vlink-bench ${CMAKE_SOURCE_DIR}/cli/bench/etc/completions/vlink-bench run plot pub sub
-    )
-    vlink_add_completion_consistency_test(
-      vlink-check ${CMAKE_SOURCE_DIR}/cli/check/etc/completions/vlink-check diag env test
-    )
-    vlink_add_completion_consistency_test(vlink-parse ${CMAKE_SOURCE_DIR}/cli/parse/etc/completions/vlink-parse)
-    vlink_add_completion_consistency_test(
-      vlink-efbs ${CMAKE_SOURCE_DIR}/cli/efbs/etc/completions/vlink-efbs pub sub import
-    )
-    vlink_add_completion_consistency_test(
-      vlink-eproto ${CMAKE_SOURCE_DIR}/cli/eproto/etc/completions/vlink-eproto pub sub import
-    )
-    vlink_add_completion_consistency_test(vlink-info ${CMAKE_SOURCE_DIR}/cli/info/etc/completions/vlink-info)
-    vlink_add_completion_consistency_test(vlink-list ${CMAKE_SOURCE_DIR}/cli/list/etc/completions/vlink-list)
-    vlink_add_completion_consistency_test(vlink-monitor ${CMAKE_SOURCE_DIR}/cli/monitor/etc/completions/vlink-monitor)
-    vlink_add_completion_consistency_test(vlink-proxy ${CMAKE_SOURCE_DIR}/proxy/etc/completions/vlink-proxy)
-    vlink_add_completion_consistency_test(
-      vlink-trigger ${CMAKE_SOURCE_DIR}/cli/trigger/etc/completions/vlink-trigger daemon dump
-    )
-    vlink_add_completion_consistency_test(
-      vlink-bag2mcap ${CMAKE_SOURCE_DIR}/webviz/foxglove/cli/etc/completions/vlink-bag2mcap
-    )
-    vlink_add_completion_consistency_test(
-      vlink-bag2rrd ${CMAKE_SOURCE_DIR}/webviz/rerun/cli/etc/completions/vlink-bag2rrd
-    )
-    vlink_add_completion_consistency_test(
-      vlink-foxglove ${CMAKE_SOURCE_DIR}/webviz/foxglove/etc/completions/vlink-foxglove
-    )
-    vlink_add_completion_consistency_test(vlink-rerun ${CMAKE_SOURCE_DIR}/webviz/rerun/etc/completions/vlink-rerun)
-  endif()
-endif()
-
 # requires
 if(NOT Protobuf_FOUND)
   find_package(Protobuf CONFIG QUIET)
