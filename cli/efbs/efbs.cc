@@ -682,7 +682,7 @@ int start_efbs_pub(const std::string& url, const std::string& fbs_dir, const std
   int dx = 0;
   int64_t paused_elapsed = 0;
 
-  for (int i = 0; i < times || times <= 0; ++i) {
+  for (int64_t i = 0; i < times || times <= 0; ++i) {
     if (!raw_pub->has_inited()) {
       break;
     }
@@ -709,7 +709,7 @@ int start_efbs_pub(const std::string& url, const std::string& fbs_dir, const std
 
     raw_pub->publish(raw_data);
 
-    dx = static_cast<int>((static_cast<int64_t>(i) + 1) * interval - (elapsed.get() - paused_elapsed));
+    dx = static_cast<int>((i + 1) * interval - (elapsed.get() - paused_elapsed));
 
     if (dx < 0) {
       dx = 0;

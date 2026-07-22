@@ -82,12 +82,14 @@ std::atomic<uint8_t> time_method{kUseUnknown};
 
 [[maybe_unused]] static std::atomic_bool has_quit{false};
 [[maybe_unused]] static constexpr int kCollectInterval{1000};
+[[maybe_unused]] static constexpr int64_t kDayMilliseconds{24 * 60 * 60 * 1000};
 [[maybe_unused]] static bool quiet_flag{false};
 [[maybe_unused]] static bool detail_flag{false};
 
 vlink::ConditionVariable quit_cv;
 std::mutex print_mtx;
 std::thread print_thread;
+bool print_stopping{false};
 vlink::ElapsedTimer main_elapsed_timer{vlink::ElapsedTimer::kMicro};
 vlink::ElapsedTimer pause_elapsed_timer{vlink::ElapsedTimer::kMicro};
 vlink::Function<int64_t()> time_callback;
@@ -134,27 +136,23 @@ vlink::ElapsedTimer total_size_timer;
 }
 
 [[maybe_unused]] static void start_print(int64_t start_time, int64_t total_time, int64_t date_time, bool restart) {
-  quit_flag = false;
-
   static bool has_start = false;
 
-  {
-    std::unique_lock lock(print_mtx);
+  std::unique_lock lock(print_mtx);
 
-    if (!has_start) {
-      has_start = true;
-      main_elapsed_timer.start();
-    } else {
-      if (restart) {
-        main_elapsed_timer.restart();
-        pause_elapsed_timer.stop();
-        pause_total_time = 0;
-      }
-    }
+  if (print_stopping || print_thread.joinable()) {
+    return;
   }
 
-  if VUNLIKELY (print_thread.joinable()) {
-    return;
+  quit_flag = false;
+
+  if (!has_start) {
+    has_start = true;
+    main_elapsed_timer.start();
+  } else if (restart) {
+    main_elapsed_timer.restart();
+    pause_elapsed_timer.stop();
+    pause_total_time = 0;
   }
 
   print_thread = std::thread([start_time, total_time, date_time]() {
@@ -308,20 +306,34 @@ vlink::ElapsedTimer total_size_timer;
 }
 
 [[maybe_unused]] static void stop_print() {
-  std::unique_lock lock(print_mtx);
+  std::thread thread_to_join;
 
-  if (!quit_flag) {
+  {
+    std::unique_lock lock(print_mtx);
+
+    if (print_stopping) {
+      quit_cv.wait(lock, []() { return !print_stopping; });
+      return;
+    }
+
     quit_flag = true;
     is_paused = false;
-
-    lock.unlock();
-
-    quit_cv.notify_all();
-
-    if VLIKELY (print_thread.joinable()) {
-      print_thread.join();
-    }
+    print_stopping = true;
+    thread_to_join = std::move(print_thread);
   }
+
+  quit_cv.notify_all();
+
+  if VLIKELY (thread_to_join.joinable()) {
+    thread_to_join.join();
+  }
+
+  {
+    std::unique_lock lock(print_mtx);
+    print_stopping = false;
+  }
+
+  quit_cv.notify_all();
 }
 
 [[maybe_unused]] static void update_print() {
@@ -1492,13 +1504,13 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
           int64_t target_date_time = 0;
 
           if (time_method == kUseLocalTime) {
-            target_date_time = date_time + player_ptr->get_info().timezone * 60 * 1000;
+            target_date_time = (date_time + player_ptr->get_info().timezone * 60 * 1000) % kDayMilliseconds;
+
+            if (target_date_time < 0) {
+              target_date_time += kDayMilliseconds;
+            }
           } else if (time_method == kUseUtcTime) {
             target_date_time = date_time;
-
-            if (target_date_time > 24 * 60 * 60 * 1000) {
-              target_date_time -= 24 * 60 * 60 * 1000;
-            }
           }
 
           if (!quiet_flag && !detail_flag) {
@@ -2444,7 +2456,7 @@ int main(int argc, char* argv[]) {
 
   // init
   // vlink::Logger::set_console_level(vlink::Logger::kOff);
-  vlink::Logger::set_file_level(vlink::Logger::kOff);
+  // vlink::Logger::set_file_level(vlink::Logger::kOff);
   vlink::Logger::init("vlink-bag");
 
   // env

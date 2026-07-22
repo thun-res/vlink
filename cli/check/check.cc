@@ -541,7 +541,7 @@ void check_process(DiagContext& ctx, const ProcessCheck& pc) {
 
 void check_others_running(DiagContext& ctx) {
 #ifdef _WIN32
-  const std::string command_str = vlink::Utils::get_app_dir() + "/vlink-list.exe -nc";
+  const std::string command_str = "\"" + vlink::Utils::get_app_dir() + "/vlink-list.exe\" -nc";
 
   int exit_code = _wsystem(vlink::Helpers::string_to_wstring(command_str).c_str());
 
@@ -796,6 +796,16 @@ void check_log_level_range(DiagContext& ctx) {
 
   if (value.empty()) {
     end_diag(ctx, DiagType::kPass, "VLINK_LOG_LEVEL unset (default)");
+    return;
+  }
+
+  static constexpr std::array<std::string_view, 21> kNamedLevels = {
+      "Trace", "TRACE", "trace", "Debug", "DEBUG", "debug", "Info",  "INFO", "info", "Warn", "WARN",
+      "warn",  "Error", "ERROR", "error", "Fatal", "FATAL", "fatal", "Off",  "OFF",  "off",
+  };
+
+  if (std::find(kNamedLevels.begin(), kNamedLevels.end(), value) != kNamedLevels.end()) {
+    end_diag(ctx, DiagType::kPass, "VLINK_LOG_LEVEL=" + value);
     return;
   }
 

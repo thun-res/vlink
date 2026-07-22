@@ -1118,7 +1118,8 @@ int main(int argc, char* argv[]) {
 #ifdef VLINK_HAS_PROTOBUF_COMPILER
   auto& ctx = vlink::parse::ParseContext::get();
 
-  vlink::Logger::set_file_level(vlink::Logger::kOff);
+  // vlink::Logger::set_console_level(vlink::Logger::kOff);
+  // vlink::Logger::set_file_level(vlink::Logger::kOff);
   vlink::Logger::init("vlink-parse");
 
   vlink::Utils::unset_env("VLINK_BAG_PATH");

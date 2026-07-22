@@ -713,8 +713,8 @@ static int run_dump(const std::string& method_url, const std::string& out_file, 
 
 int main(int argc, char* argv[]) {
   vlink::Utils::set_console_utf8_output();
-
-  vlink::Logger::set_file_level(vlink::Logger::kOff);
+  // vlink::Logger::set_console_level(vlink::Logger::kOff);
+  // vlink::Logger::set_file_level(vlink::Logger::kOff);
   vlink::Logger::init("vlink-trigger");
 
   vlink::Utils::unset_env("VLINK_BAG_PATH");

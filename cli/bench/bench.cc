@@ -1889,28 +1889,25 @@ bool run_local_pubsub_case(const Bench::Scenario& scenario, Bench::ScenarioResul
   std::atomic<uint64_t> measured_bytes{0};
   std::atomic_bool start_flag{false};
   std::atomic_bool publisher_thread_failed{false};
-  std::vector<double> publisher_cpu_ms(static_cast<size_t>(scenario.publishers), 0.0);
   std::vector<std::vector<double>> publisher_send_block_us(static_cast<size_t>(scenario.publishers));
   std::vector<std::thread> publisher_threads;
   publisher_threads.reserve(static_cast<size_t>(scenario.publishers));
-  const uint64_t publish_begin_ns = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kNano);
-  const uint64_t publish_end_ns =
-      publish_begin_ns + static_cast<uint64_t>(scenario.warmup_ms + scenario.duration_ms) * 1000000ULL;
-  const uint64_t baseline_time_ns = publish_begin_ns + static_cast<uint64_t>(scenario.warmup_ms) * 1000000ULL;
+  uint64_t publish_begin_ns = 0;
+  uint64_t publish_end_ns = 0;
+  uint64_t baseline_time_ns = 0;
   std::atomic<uint64_t> publish_measure_begin_ns{std::numeric_limits<uint64_t>::max()};
   std::atomic<uint64_t> publish_measure_end_ns{0};
+  ElapsedTimer publisher_cpu(ElapsedTimer::kCpuActiveTime, ElapsedTimer::kMicro);
 
   for (int i = 0; i < scenario.publishers; ++i) {
     publisher_threads.emplace_back([&, index = i]() {
       try {
         MsgT message_template = BenchCodec<MsgT>::create_template(scenario.payload_size);
-        ElapsedTimer pub_cpu(ElapsedTimer::kCpuActiveTime, ElapsedTimer::kMicro);
 
         while (!start_flag.load(std::memory_order_acquire)) {
           std::this_thread::yield();
         }
 
-        pub_cpu.start();
         uint64_t seq = 1;
         int burst_count = std::max(scenario.burst_messages, 1);
 
@@ -1927,7 +1924,6 @@ bool run_local_pubsub_case(const Bench::Scenario& scenario, Bench::ScenarioResul
         if ((scenario.rate_pattern == Bench::kFixedRatePattern && rate_hz <= 0) ||
             (scenario.rate_pattern == Bench::kBurstRatePattern && burst_count <= 0)) {
           sleep_until_or_stop_unchecked(publish_end_ns);
-          publisher_cpu_ms.at(static_cast<size_t>(index)) = static_cast<double>(pub_cpu.get()) / 1000.0;
           return;
         }
 
@@ -1974,8 +1970,6 @@ bool run_local_pubsub_case(const Bench::Scenario& scenario, Bench::ScenarioResul
             next_time_ns += static_cast<uint64_t>(1000000000LL / std::max(rate_hz, 1));
           }
         }
-
-        publisher_cpu_ms.at(static_cast<size_t>(index)) = static_cast<double>(pub_cpu.get()) / 1000.0;
       } catch (std::exception&) {
         publisher_thread_failed.store(true, std::memory_order_relaxed);
       }
@@ -1983,29 +1977,24 @@ bool run_local_pubsub_case(const Bench::Scenario& scenario, Bench::ScenarioResul
   }
 
   if (scenario.warmup_ms <= 0) {
-    const uint64_t measure_begin_ns = steady_time_ns();
-    collector.measure_begin_ns.store(measure_begin_ns, std::memory_order_relaxed);
-    collector.measure_end_ns.store(
-        measure_begin_ns + static_cast<uint64_t>(std::max(scenario.duration_ms, 1)) * 1000000ULL,
-        std::memory_order_relaxed);
-    publish_measure_begin_ns.store(measure_begin_ns, std::memory_order_relaxed);
-    publish_measure_end_ns.store(collector.measure_end_ns.load(std::memory_order_relaxed), std::memory_order_relaxed);
     resource_sampler.start();
     sampler_started = true;
   }
 
+  publish_begin_ns = steady_time_ns();
+  baseline_time_ns = publish_begin_ns + static_cast<uint64_t>(scenario.warmup_ms) * 1000000ULL;
+  publish_end_ns = baseline_time_ns + static_cast<uint64_t>(scenario.duration_ms) * 1000000ULL;
+  const uint64_t measure_end_ns =
+      baseline_time_ns + static_cast<uint64_t>(std::max(scenario.duration_ms, 1)) * 1000000ULL;
+  collector.measure_begin_ns.store(baseline_time_ns, std::memory_order_relaxed);
+  collector.measure_end_ns.store(measure_end_ns, std::memory_order_relaxed);
+  publish_measure_begin_ns.store(baseline_time_ns, std::memory_order_relaxed);
+  publish_measure_end_ns.store(measure_end_ns, std::memory_order_relaxed);
+  publisher_cpu.start();
   start_flag.store(true, std::memory_order_release);
 
   if (scenario.warmup_ms > 0) {
     sleep_until_or_stop_unchecked(baseline_time_ns);
-
-    const uint64_t measure_begin_ns = steady_time_ns();
-    collector.measure_begin_ns.store(measure_begin_ns, std::memory_order_relaxed);
-    collector.measure_end_ns.store(
-        measure_begin_ns + static_cast<uint64_t>(std::max(scenario.duration_ms, 1)) * 1000000ULL,
-        std::memory_order_relaxed);
-    publish_measure_begin_ns.store(measure_begin_ns, std::memory_order_relaxed);
-    publish_measure_end_ns.store(collector.measure_end_ns.load(std::memory_order_relaxed), std::memory_order_relaxed);
     resource_sampler.start();
     sampler_started = true;
   }
@@ -2013,6 +2002,8 @@ bool run_local_pubsub_case(const Bench::Scenario& scenario, Bench::ScenarioResul
   for (auto& thread : publisher_threads) {
     thread.join();
   }
+
+  const double publisher_cpu_ms = static_cast<double>(publisher_cpu.get()) / 1000.0;
 
   if (sampler_started) {
     resource_sampler.stop(result.cpu_usage, result.memory_usage);
@@ -2039,7 +2030,7 @@ bool run_local_pubsub_case(const Bench::Scenario& scenario, Bench::ScenarioResul
   result.wire_size = collector.wire_size;
   result.sent = measured_sent.load(std::memory_order_relaxed);
   result.received = collector.measured_received.load(std::memory_order_relaxed);
-  result.pub_cpu_ms = std::accumulate(publisher_cpu_ms.begin(), publisher_cpu_ms.end(), 0.0);
+  result.pub_cpu_ms = publisher_cpu_ms;
   const auto subscriber_count = static_cast<uint64_t>(scenario.subscribers);
   result.expected = subscriber_count != 0 && result.sent > std::numeric_limits<uint64_t>::max() / subscriber_count
                         ? std::numeric_limits<uint64_t>::max()

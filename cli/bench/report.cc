@@ -1345,9 +1345,7 @@ bool print_terminal(const Bench::Result& result, const TerminalOptions& options,
   std::atomic_bool has_quit{false};
 
   bool show_help = false;
-  std::atomic_bool help_visible{false};
   bool search_mode = false;
-  std::atomic_bool search_visible{false};
   std::string search_buffer;
   std::string search_query;
   bool reverse_sort = false;
@@ -1497,21 +1495,12 @@ bool print_terminal(const Bench::Result& result, const TerminalOptions& options,
   });
   terminal_timer.start();
 
-  auto detect_keyboard_function = [&has_quit, &quit_function, &help_visible, &search_visible, &terminal_loop,
-                                   &search_mode, &search_query, &selected_index, &detail_offset, &view_dirty, &redraw,
-                                   &footer_flash_message, &footer_flash_ttl, &print_function, &search_buffer,
-                                   &show_help, &suite_filter, &mode_filter, &transport_filter, &failures_only, &items,
-                                   &sort_mode, &view, &rows_per_page, &terminal_size, &reverse_sort,
-                                   &page_index](const std::string& key) {
+  auto detect_keyboard_function = [&has_quit, &quit_function, &terminal_loop, &search_mode, &search_query,
+                                   &selected_index, &detail_offset, &view_dirty, &redraw, &footer_flash_message,
+                                   &footer_flash_ttl, &print_function, &search_buffer, &show_help, &suite_filter,
+                                   &mode_filter, &transport_filter, &failures_only, &items, &sort_mode, &view,
+                                   &rows_per_page, &terminal_size, &reverse_sort, &page_index](const std::string& key) {
     if VUNLIKELY (has_quit.load(std::memory_order_relaxed) || Bench::stop_requested()) {
-      quit_function();
-      return;
-    }
-
-    const bool can_quit_immediately =
-        !search_visible.load(std::memory_order_relaxed) && !help_visible.load(std::memory_order_relaxed);
-
-    if ((key == "q" || key == "esc") && can_quit_immediately) {
       quit_function();
       return;
     }
@@ -1525,7 +1514,6 @@ bool print_terminal(const Bench::Result& result, const TerminalOptions& options,
       if (search_mode) {
         if (key == "enter") {
           search_mode = false;
-          search_visible.store(false, std::memory_order_relaxed);
           search_query = ascii_tolower(search_buffer);
           selected_index = 0;
           page_index = 0;
@@ -1546,7 +1534,6 @@ bool print_terminal(const Bench::Result& result, const TerminalOptions& options,
 
         if (key == "esc") {
           search_mode = false;
-          search_visible.store(false, std::memory_order_relaxed);
           search_buffer.clear();
           footer_flash_message = "search canceled";
           footer_flash_ttl = 2;
@@ -1572,7 +1559,6 @@ bool print_terminal(const Bench::Result& result, const TerminalOptions& options,
       if (show_help) {
         if (key == "?" || key == "h" || key == "esc" || key == "q") {
           show_help = false;
-          help_visible.store(false, std::memory_order_relaxed);
           redraw = true;
           print_function();
         }
@@ -1587,7 +1573,6 @@ bool print_terminal(const Bench::Result& result, const TerminalOptions& options,
 
       if (key == "?" || key == "h") {
         show_help = true;
-        help_visible.store(true, std::memory_order_relaxed);
         redraw = true;
         print_function();
         return;
@@ -1595,7 +1580,6 @@ bool print_terminal(const Bench::Result& result, const TerminalOptions& options,
 
       if (key == "/") {
         search_mode = true;
-        search_visible.store(true, std::memory_order_relaxed);
         search_buffer.clear();
         redraw = true;
         print_function();

@@ -278,61 +278,6 @@ std::vector<AggregatedCase> aggregate_cases(const Bench::Result& result) {
     items.emplace_back(std::move(item));
   }
 
-  auto collapse_worst_high = [](MetricSummary& s) {
-    if (s.count <= 1) {
-      return;
-    }
-
-    s.sum = s.max;
-    s.count = 1;
-  };
-  auto collapse_worst_low = [](MetricSummary& s) {
-    if (s.count <= 1) {
-      return;
-    }
-
-    s.sum = s.min;
-    s.count = 1;
-  };
-
-  for (auto& item : items) {
-    if (item.success_count > 1) {
-      collapse_worst_low(item.sent);
-      collapse_worst_low(item.received);
-      collapse_worst_high(item.expected);
-      collapse_worst_high(item.lost);
-      collapse_worst_high(item.discovery_ms);
-      collapse_worst_high(item.first_message_ms);
-      collapse_worst_low(item.send_msgs_per_sec);
-      collapse_worst_low(item.recv_msgs_per_sec);
-      collapse_worst_low(item.send_mb_per_sec);
-      collapse_worst_low(item.recv_mb_per_sec);
-      collapse_worst_high(item.avg_latency_us);
-      collapse_worst_high(item.p50_latency_us);
-      collapse_worst_high(item.p90_latency_us);
-      collapse_worst_high(item.p95_latency_us);
-      collapse_worst_high(item.p99_latency_us);
-      collapse_worst_high(item.p999_latency_us);
-      collapse_worst_high(item.p9999_latency_us);
-      collapse_worst_high(item.max_latency_us);
-      collapse_worst_high(item.latency_stddev_us);
-      collapse_worst_high(item.avg_send_block_us);
-      collapse_worst_high(item.p50_send_block_us);
-      collapse_worst_high(item.p95_send_block_us);
-      collapse_worst_high(item.p99_send_block_us);
-      collapse_worst_high(item.max_send_block_us);
-      collapse_worst_high(item.send_block_samples);
-      collapse_worst_low(item.serialize_msgs_per_sec);
-      collapse_worst_low(item.deserialize_msgs_per_sec);
-      collapse_worst_low(item.serialize_mb_per_sec);
-      collapse_worst_low(item.deserialize_mb_per_sec);
-      collapse_worst_high(item.pub_cpu_ms);
-      collapse_worst_high(item.sub_cpu_ms);
-      collapse_worst_high(item.cpu_usage);
-      collapse_worst_high(item.memory_usage);
-    }
-  }
-
   for (auto& item : items) {
     switch (item.scenario.mode) {
       case Bench::kLocalDirectMode:
