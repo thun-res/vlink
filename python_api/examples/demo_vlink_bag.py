@@ -64,7 +64,7 @@ via ``push_schema(...)``.  Tags are user-defined time markers inserted via
 
 ``BagReader.play(config)`` walks the messages in timestamp order,
 dispatching each one to the registered output callback, modulated by
-``rate`` (1.0 = real-time, 2.0 = double speed, 0 = as fast as possible).
+``rate`` (1.0 = real-time, 2.0 = double speed; values <= 0 are normalised to 1.0).
 """
 
 import os
@@ -72,7 +72,7 @@ import tempfile
 import threading
 import time
 
-import _vlink_nanobind as _vlink  # type: ignore
+import vlink as _vlink  # type: ignore
 
 
 # ===========================================================================
@@ -168,10 +168,10 @@ def demo_bag_simple_record_replay():
     reader.register_output_callback(on_output)
 
     # Configure the playback.  Defaults (rate=1.0, no auto_quit) replay
-    # everything once at real-time speed.  We set rate to 0 ("as fast as
-    # possible") and auto_quit so the reader stops on its own when done.
+    # everything once at real-time speed.  We use 100x playback and auto_quit
+    # so the reader stops on its own when done.
     cfg = _vlink.BagReader.Config()
-    cfg.rate = 0.0
+    cfg.rate = 100.0
     cfg.auto_quit = True
 
     reader.async_run()
@@ -358,7 +358,7 @@ def demo_bag_zerocopy_record_replay():
     reader.register_output_callback(on_output)
 
     cfg = _vlink.BagReader.Config()
-    cfg.rate = 0.0           # as fast as possible
+    cfg.rate = 100.0         # accelerated playback
     cfg.auto_quit = True
 
     reader.async_run()
@@ -504,7 +504,7 @@ def demo_bag_filter_urls():
 
     cfg = _vlink.BagReader.Config()
     cfg.filter_urls = {"intra://demo/camera", "intra://demo/imu"}
-    cfg.rate = 0.0
+    cfg.rate = 100.0
     cfg.auto_quit = True
 
     reader.async_run()

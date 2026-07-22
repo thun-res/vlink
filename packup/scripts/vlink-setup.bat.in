@@ -49,6 +49,7 @@ echo.
 
 echo ;%PATH%; | findstr /C:";%VLINK_BIN_DIR%;" >nul 2>&1 || set "PATH=%VLINK_BIN_DIR%;%PATH%"
 echo ;%PYTHONPATH%; | findstr /C:";%VLINK_ROOT_DIR%\lib;" >nul 2>&1 || set "PYTHONPATH=%VLINK_ROOT_DIR%\lib;%PYTHONPATH%"
+echo ;%PYTHONPATH%; | findstr /C:";%VLINK_ROOT_DIR%\lib\python;" >nul 2>&1 || set "PYTHONPATH=%VLINK_ROOT_DIR%\lib\python;%PYTHONPATH%"
 
 doskey proxy="%VLINK_BIN_DIR%vlink-proxy" $*
 doskey info="%VLINK_BIN_DIR%vlink-info" $*

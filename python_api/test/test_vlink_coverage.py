@@ -14,7 +14,7 @@ Targets binding surface NOT exercised by test_vlink.py / test_vlink_full.py:
   * Utils leftover: get_app_dir/get_app_name/get_env/set_env/unset_env/yield_cpu/
                     try_release_sys_memory/set_thread_priority/set_thread_stick/
                     set_console_utf8_output/get_all_ipv6_address/get_interface_name_by_ipv4
-  * Bytes leftover: from_string/init_memory_pool guard/__getitem__ bound check/
+  * Bytes leftover: from_string/init_memory_pool guard/__getitem__ positive/negative bounds/
                     convert_to_hex_str (static)/__bytes__/copy via deep_copy_self
   * ElapsedTimer extra ctors + restart + get_cpu_timestamp
   * DeadlineTimer set_deadline + has_expired
@@ -403,8 +403,18 @@ def test_bytes_leftover():
     assert _vlink.Bytes.convert_to_hex_str(raw) in ("DE AD BE EF", "deadbeef", "de ad be ef", "DEADBEEF")
 
     assert bytes(raw) == b"\xde\xad\xbe\xef"
+    assert raw[0] == 0xDE
+    assert raw[-1] == 0xEF
+    assert raw[-len(raw)] == 0xDE
+
     try:
         _ = raw[100]
+        assert False, "expected IndexError"
+    except IndexError:
+        pass
+
+    try:
+        _ = raw[-len(raw) - 1]
         assert False, "expected IndexError"
     except IndexError:
         pass

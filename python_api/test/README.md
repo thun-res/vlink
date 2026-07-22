@@ -1,6 +1,6 @@
 # python_api/test — VLink Python 绑定测试
 
-本目录承载 VLink Python 绑定（`_vlink_nanobind` 模块）的功能与契约测试。
+本目录承载 VLink Python 公开模块 `vlink`（底层扩展为 `_vlink_nanobind`）的功能与契约测试。
 
 > 与 `python_api/examples/` 的区别：本目录目标是 **验证绑定**（断言+回归），
 > 而 `examples/` 用同样的代码风格 **讲解 API 用法**。两者风格上接近，但

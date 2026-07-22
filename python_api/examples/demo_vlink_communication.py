@@ -82,7 +82,7 @@ nanobind module.
 import threading
 import time
 
-import _vlink_nanobind as _vlink  # type: ignore
+import vlink as _vlink  # type: ignore
 
 
 # ===========================================================================

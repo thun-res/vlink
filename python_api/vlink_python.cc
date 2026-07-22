@@ -2080,12 +2080,16 @@ NB_MODULE(_vlink_nanobind, m) {
       .def("__eq__", [](const vlink::Bytes& a, const vlink::Bytes& b) { return a == b; })
       .def("__ne__", [](const vlink::Bytes& a, const vlink::Bytes& b) { return a != b; })
       .def("__getitem__",
-           [](const vlink::Bytes& self, size_t i) -> uint8_t {
-             if VUNLIKELY (i >= self.size()) {
+           [](const vlink::Bytes& self, Py_ssize_t i) -> uint8_t {
+             if (i < 0) {
+               i += static_cast<Py_ssize_t>(self.size());
+             }
+
+             if VUNLIKELY (i < 0 || static_cast<size_t>(i) >= self.size()) {
                throw nb::index_error();
              }
 
-             return self.data()[i];
+             return self.data()[static_cast<size_t>(i)];
            })
       .def("__repr__", [](const vlink::Bytes& self) {
         std::string repr = "Bytes(size=" + std::to_string(self.size());
@@ -2528,6 +2532,7 @@ NB_MODULE(_vlink_nanobind, m) {
       .def("is_valid", &vlink::zerocopy::PointCloud::is_valid)
       .def("get_serialized_size", &vlink::zerocopy::PointCloud::get_serialized_size)
       .def_static("check_valid", &vlink::zerocopy::PointCloud::check_valid, "bytes"_a)
+      .def("get_key_list", &vlink::zerocopy::PointCloud::get_key_list)
       .def("get_protocol_size_num", &vlink::zerocopy::PointCloud::get_protocol_size_num)
       .def("get_protocol_type_num", &vlink::zerocopy::PointCloud::get_protocol_type_num)
       .def("get_protocol_size_str", &vlink::zerocopy::PointCloud::get_protocol_size_str)

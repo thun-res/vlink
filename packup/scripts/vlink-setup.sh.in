@@ -45,6 +45,7 @@ echo -e ""
 [[ "$PATH" != *"$VLINK_ROOT_DIR/bin"* ]] && export PATH="$VLINK_ROOT_DIR/bin:$PATH"
 [[ "$LD_LIBRARY_PATH" != *"$VLINK_ROOT_DIR/lib"* ]] && export LD_LIBRARY_PATH="$VLINK_ROOT_DIR/lib:$LD_LIBRARY_PATH"
 [[ "$PYTHONPATH" != *"$VLINK_ROOT_DIR/lib"* ]] && export PYTHONPATH="$VLINK_ROOT_DIR/lib:$PYTHONPATH"
+[[ "$PYTHONPATH" != *"$VLINK_ROOT_DIR/lib/python"* ]] && export PYTHONPATH="$VLINK_ROOT_DIR/lib/python:$PYTHONPATH"
 
 alias proxy="\"$VLINK_ROOT_DIR/bin/vlink-proxy\""
 alias info="\"$VLINK_ROOT_DIR/bin/vlink-info\""
