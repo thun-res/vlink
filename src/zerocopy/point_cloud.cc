@@ -36,11 +36,11 @@ namespace vlink {
 
 namespace zerocopy {
 
-static void pc_pack_to_vertical(uint8_t* dst, const uint8_t* src, size_t count, uint16_t pack,
-                                const std::vector<uint16_t>& offsets, const std::vector<uint8_t>& sizes) noexcept {
+static void pc_pack_to_vertical(uint8_t* dst, const uint8_t* src, size_t count, uint16_t pack, const uint16_t* offsets,
+                                const uint8_t* sizes, size_t field_count) noexcept {
   size_t out_pos = 0;
 
-  for (size_t f = 0; f < offsets.size(); ++f) {
+  for (size_t f = 0; f < field_count; ++f) {
     uint16_t field_offset = offsets[f];
     uint8_t field_size = sizes[f];
 
@@ -53,10 +53,10 @@ static void pc_pack_to_vertical(uint8_t* dst, const uint8_t* src, size_t count, 
 }
 
 static void pc_unpack_from_vertical(uint8_t* dst, const uint8_t* src, size_t count, uint16_t pack,
-                                    const std::vector<uint16_t>& offsets, const std::vector<uint8_t>& sizes) noexcept {
+                                    const uint16_t* offsets, const uint8_t* sizes, size_t field_count) noexcept {
   size_t in_pos = 0;
 
-  for (size_t f = 0; f < offsets.size(); ++f) {
+  for (size_t f = 0; f < field_count; ++f) {
     uint16_t field_offset = offsets[f];
     uint8_t field_size = sizes[f];
 
@@ -258,6 +258,7 @@ bool PointCloud::operator<<(const Bytes& bytes) noexcept {
     return false;
   }
 
+  std::array<uint16_t, 16> field_offsets{};
   std::array<uint8_t, 16> field_sizes{};
   size_t field_count = 0;
 
@@ -273,7 +274,9 @@ bool PointCloud::operator<<(const Bytes& bytes) noexcept {
       }
 
       leading_zero = false;
-      field_sizes[field_count++] = field_size;
+      field_offsets[field_count] = field_offset;
+      field_sizes[field_count] = field_size;
+      ++field_count;
       field_offset += field_size;
     }
 
@@ -299,22 +302,7 @@ bool PointCloud::operator<<(const Bytes& bytes) noexcept {
     is_owner_ = true;
     index_ = capacity_;
 
-    std::vector<uint16_t> offsets;
-    std::vector<uint8_t> sizes;
-    offsets.reserve(field_count);
-    sizes.reserve(field_count);
-
-    uint16_t field_offset = 0;
-
-    for (size_t i = 0; i < field_count; ++i) {
-      uint8_t field_size = field_sizes[i];
-      offsets.emplace_back(field_offset);
-      sizes.emplace_back(field_size);
-
-      field_offset += field_size;
-    }
-
-    pc_unpack_from_vertical(data_, payload, size_, pack_size_, offsets, sizes);
+    pc_unpack_from_vertical(data_, payload, size_, pack_size_, field_offsets.data(), field_sizes.data(), field_count);
   }
 
   return true;
@@ -348,23 +336,28 @@ bool PointCloud::operator>>(Bytes& bytes) const noexcept {
     uint8_t* payload = bytes.data() + kMagicNumberBeginSize + kVersionSize + sizeof(PointCloud);
 
     if (vertical_) {
-      KeyList key_list = protocol_.get_key_list();
-
-      std::vector<uint16_t> offsets;
-      std::vector<uint8_t> sizes;
-      offsets.reserve(key_list.size());
-      sizes.reserve(key_list.size());
-
+      std::array<uint16_t, 16> field_offsets{};
+      std::array<uint8_t, 16> field_sizes{};
+      size_t field_count = 0;
       uint16_t field_offset = 0;
+      bool leading_zero = true;
 
-      for (const auto& key : key_list) {
-        offsets.emplace_back(field_offset);
-        sizes.emplace_back(key.size);
+      for (int i = 15; i >= 0; --i) {
+        uint8_t field_size = (protocol_.size_num >> (i * 4)) & 0xF;
 
-        field_offset += key.size;
+        if (leading_zero && field_size == 0) {
+          continue;
+        }
+
+        leading_zero = false;
+        field_offsets[field_count] = field_offset;
+        field_sizes[field_count] = field_size;
+        ++field_count;
+
+        field_offset += field_size;
       }
 
-      pc_pack_to_vertical(payload, data_, size_, pack_size_, offsets, sizes);
+      pc_pack_to_vertical(payload, data_, size_, pack_size_, field_offsets.data(), field_sizes.data(), field_count);
     } else {
       std::memcpy(payload, data_, size_ * pack_size_);
     }
@@ -582,6 +575,20 @@ PointCloud::KeyMap PointCloud::get_key_map(KeyList* key_list) const noexcept {
   }
 
   return map;
+}
+
+PointCloud::KeyList PointCloud::get_key_list() const noexcept {
+  auto key_list = protocol_.get_key_list();
+
+  if (extent_ != 0) {
+    for (size_t i = 0; i < key_list.size() && i < 3; ++i) {
+      if (key_list[i].type == kInt16Type && key_list[i].size == sizeof(int16_t)) {
+        key_list[i].type = kFloatType;
+      }
+    }
+  }
+
+  return key_list;
 }
 
 size_t PointCloud::size() const noexcept { return size_; }

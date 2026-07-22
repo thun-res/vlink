@@ -410,6 +410,13 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
   [[nodiscard]] KeyMap get_key_map(KeyList* key_list = nullptr) const noexcept;
 
   /**
+   * @brief Returns the ordered field descriptors from the embedded protocol.
+   *
+   * @return Field descriptors in packed byte order.
+   */
+  [[nodiscard]] KeyList get_key_list() const noexcept;
+
+  /**
    * @brief Number of points currently stored.
    *
    * @return Point count, or 0 when empty.
@@ -698,7 +705,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
   /**
    * @brief Creates a cloud with a type-safe variadic field schema.
    *
-   * @tparam T Field types; must all be fundamental.  3..16 types required.
+   * @tparam T Fixed-width field types supported by @c PointCloud::Type.  3..16 types required.
    * @param _size Maximum number of points.
    * @param keys Field names in the same order as @c T... .
    * @param extent Optional XYZ quantisation extent; @c 0 disables quantisation.
@@ -1082,6 +1089,9 @@ inline bool PointCloud::create(size_t size, const std::vector<std::string>& keys
 
   static_assert(sizeof...(T) >= 3 && sizeof...(T) <= 16, "The number of keys ranges is [3 ~ 16].");
 
+  static_assert(((Protocol::get_type<T>() != kUnknownType) && ...),
+                "All field types must map to a supported PointCloud::Type.");
+
   if VUNLIKELY (sizeof...(T) != keys.size()) {
     return false;
   }
@@ -1099,10 +1109,6 @@ inline bool PointCloud::create(size_t size, const std::vector<std::string>& keys
   }
 
   uint64_t type_num = Protocol::get_type_num<T...>();
-
-  if VUNLIKELY (type_num == 0) {
-    return false;
-  }
 
   Protocol new_protocol{};
   new_protocol.size_num = size_num;

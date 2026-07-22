@@ -230,7 +230,11 @@ static MessageParser::ValueType point_value_type(uint8_t type, uint8_t size) noe
         return MessageParser::ValueType::kInt64;
       }
 
-      return MessageParser::ValueType::kDouble;
+      if (size == sizeof(float) || size == sizeof(double)) {
+        return MessageParser::ValueType::kDouble;
+      }
+
+      return MessageParser::ValueType::kValueUnknown;
     default:
       return MessageParser::ValueType::kDouble;
   }
@@ -386,9 +390,7 @@ bool MessageParser::parse(Type type, const Bytes& bytes) {
 
   if (type == Type::kPointCloud) {
     const auto& message = std::get<PointCloud>(message_);
-    PointCloud::KeyList keys;
-
-    [[maybe_unused]] const auto key_map = message.get_key_map(&keys);
+    PointCloud::KeyList keys = message.get_key_list();
     point_fields_.reserve(keys.size());
 
     size_t byte_offset = 0;

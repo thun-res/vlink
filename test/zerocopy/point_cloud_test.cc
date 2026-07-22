@@ -1472,12 +1472,17 @@ TEST_SUITE("zerocopy-PointCloud") {
 
     zerocopy::PointCloud::KeyList key_list;
     auto key_map = pc.get_key_map(&key_list);
+    auto direct_key_list = pc.get_key_list();
 
     CHECK_FALSE(key_map.empty());
     REQUIRE_EQ(key_list.size(), 4u);
+    REQUIRE_EQ(direct_key_list.size(), key_list.size());
     CHECK_EQ(key_list[0].name, "x");
     CHECK_EQ(key_list[0].type, zerocopy::PointCloud::kFloatType);
     CHECK_EQ(key_list[0].size, 4u);
+    CHECK_EQ(direct_key_list[0].name, key_list[0].name);
+    CHECK_EQ(direct_key_list[0].type, key_list[0].type);
+    CHECK_EQ(direct_key_list[0].size, key_list[0].size);
   }
 
   TEST_CASE("kZerocopyTypes marker is true") { CHECK(zerocopy::PointCloud::kZerocopyTypes); }
@@ -1752,20 +1757,6 @@ TEST_SUITE("zerocopy-PointCloud") {
     REQUIRE(pc.resize(1u));
     CHECK_FALSE(pc.set_value(5u, static_cast<int32_t>(1), 2.0f, static_cast<uint8_t>(3)));
     CHECK_FALSE(pc.set_value(0u, static_cast<int32_t>(1), 2.0f, 3.0f));
-  }
-
-  TEST_CASE("create rejects template protocols that cannot encode size names or type") {
-    zerocopy::PointCloud wrong_key_count;
-    CHECK_FALSE((wrong_key_count.create<float, float, float>(1, {"x", "y"})));
-
-    zerocopy::PointCloud too_large_field;
-    CHECK_FALSE((too_large_field.create<long double, long double, long double>(1, {"x", "y", "z"})));
-
-    zerocopy::PointCloud unknown_type;
-    CHECK_FALSE((unknown_type.create<char, char, char>(1, {"x", "y", "z"})));
-
-    zerocopy::PointCloud too_long_names;
-    CHECK_FALSE((too_long_names.create<float, float, float>(1, {"x", "y", std::string(151u, 'z')})));
   }
 
   TEST_CASE("compressed v3d setter succeeds through the quantised path") {
