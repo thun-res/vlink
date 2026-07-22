@@ -44,10 +44,9 @@ struct PublisherImplHelper final {
 PublisherImpl::~PublisherImpl() = default;
 
 void PublisherImpl::interrupt() {
-  NodeImpl::interrupt();
-
   {
     std::lock_guard sync_lock(helper_->mtx);
+    NodeImpl::interrupt();
   }
 
   helper_->connected_cv.notify_all();

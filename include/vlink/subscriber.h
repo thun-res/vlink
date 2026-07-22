@@ -43,7 +43,7 @@
  *      | inbound frame                          |
  *      |--------------------------------------> |
  *      |                                        |  Serializer::deserialize
- *      |                                        |  (thread-local scratch)
+ *      |                                        |  (per-delivery local value)
  *      |                                        |
  *      |                                        |  optional MessageLoop hop
  *      |                                        |
@@ -61,8 +61,12 @@
  * | FlatBuffers ptr   | @c MyTable*                      | @c kFlatPtrType     | Zero-copy view of buffer.      |
  * | DDS CDR           | type with @c deserialize(Cdr&)   | @c kCdrType         | DDS fast path.                 |
  * | POD struct        | trivial standard-layout type     | @c kStandardType    | @c sizeof(T) byte copy.        |
- * | UTF-8 text        | @c std::string                   | @c kStringType      | Length-prefixed.               |
+ * | String            | @c std::string                   | @c kStringType      | Payload-sized byte string.     |
  * | Custom            | type with @c operator>>/<<       | @c kCustomType      | User-supplied codec.           |
+ *
+ * Raw Protobuf pointer receivers allocate a distinct message in the bound
+ * Arena for each delivery; that storage remains until the Arena is reset or
+ * destroyed.
  *
  * @par Basic Listen Example
  * @code
@@ -99,11 +103,13 @@
  * auto stats = sub.get_lost();
  * @endcode
  *
- * @warning The deserialised callback argument is backed by @c thread_local
- *          scratch storage and is overwritten on the next delivery.  Copy
- *          the value before storing it outside the callback scope.  This
- *          warning does not apply to @c Bytes or @c IntraData arguments,
- *          which are owned by value or by shared pointer.
+ * @warning For value message types, the deserialised callback argument is a
+ *          per-delivery local object whose reference is valid only for the
+ *          callback duration.  Pointer-view types may instead refer to an
+ *          external buffer or arena and follow that storage's lifetime.
+ *          Copy retained values into explicitly owned storage.  Copying
+ *          @c Bytes creates owned storage, and copying an @c IntraData shared
+ *          pointer extends that object's lifetime.
  *
  * @note Calling @c listen() more than once is a fatal error.  The subscriber
  *       must be initialised (either by @c InitType::kWithInit or by explicit
@@ -202,11 +208,11 @@ class Subscriber : public Node<SubscriberImpl, SecT> {
    * no deserialisation occurs.
    *
    * @warning The argument reference is valid only for the duration of the
-   *          callback.  Ordinary messages use reusable @c thread_local
-   *          storage, while @c Bytes may view a transport buffer that is
-   *          returned immediately afterwards.  Copy the value before keeping
-   *          it; copying @c Bytes creates owned storage, and copying an
-   *          @c IntraData shared pointer extends that object's lifetime.
+   *          callback.  Value messages use per-delivery local storage, while
+   *          pointer-view messages and @c Bytes may refer to external storage.
+   *          Copy retained values into explicitly owned storage; copying
+   *          @c Bytes creates owned storage, and copying an @c IntraData shared
+   *          pointer extends that object's lifetime.
    *
    * @note Calling @c listen() more than once is fatal.  The subscriber must
    *       be initialised before the first call to @c listen().

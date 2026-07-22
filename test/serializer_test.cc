@@ -478,35 +478,28 @@ TEST_SUITE("ser-string") {
 }
 
 TEST_SUITE("ser-chars") {
-  TEST_CASE("chars keep the existing wire format and deserialize as a terminated string") {
+  TEST_CASE("chars keep the existing serialization wire format") {
     const char* original = "abc";
     Bytes serialized;
 
     REQUIRE(Serializer::serialize(original, serialized));
     REQUIRE_EQ(serialized.size(), 3u);
     CHECK(std::memcmp(serialized.data(), original, serialized.size()) == 0);
-
-    const std::array<uint8_t, 4> storage{'a', 'b', 'c', 'X'};
-    const auto payload = Bytes::shallow_copy(storage.data(), 3u);
-    const char* result = nullptr;
-
-    REQUIRE(Serializer::deserialize(payload, result));
-    CHECK(std::strcmp(result, "abc") == 0);
-    CHECK_EQ(std::strlen(result), 3u);
   }
 
-  TEST_CASE("mutable chars support empty payloads") {
-    Bytes empty;
+  TEST_CASE("chars deserialization is rejected in favor of string ownership") {
+    const std::array<uint8_t, 3> storage{'a', 'b', 'c'};
+    const auto payload = Bytes::shallow_copy(storage.data(), storage.size());
+    const Bytes empty;
     char* mutable_result = nullptr;
     const char* const_result = nullptr;
 
-    REQUIRE(Serializer::deserialize(empty, mutable_result));
-    REQUIRE(mutable_result != nullptr);
-    CHECK_EQ(mutable_result[0], '\0');
-
-    REQUIRE(Serializer::deserialize(empty, const_result));
-    REQUIRE(const_result != nullptr);
-    CHECK_EQ(const_result[0], '\0');
+    CHECK_FALSE(Serializer::deserialize(payload, mutable_result));
+    CHECK_FALSE(Serializer::deserialize(payload, const_result));
+    CHECK_FALSE(Serializer::deserialize(empty, mutable_result));
+    CHECK_FALSE(Serializer::deserialize(empty, const_result));
+    CHECK(mutable_result == nullptr);
+    CHECK(const_result == nullptr);
   }
 
   TEST_CASE("null chars source is rejected") {
@@ -532,6 +525,35 @@ TEST_SUITE("ser-chars") {
 
     CHECK_FALSE(Serializer::serialize(source, serialized));
     CHECK(serialized.empty());
+  }
+}
+
+TEST_SUITE("ser-stream") {
+  TEST_CASE("consecutive stream conversions use independent local state") {
+    const StreamMsg first{12};
+    const StreamMsg second{345};
+    Bytes first_bytes;
+    Bytes second_bytes;
+
+    REQUIRE(Serializer::serialize(first, first_bytes));
+    REQUIRE(Serializer::serialize(second, second_bytes));
+
+    StreamMsg first_result;
+    StreamMsg second_result;
+    REQUIRE(Serializer::deserialize(first_bytes, first_result));
+    REQUIRE(Serializer::deserialize(second_bytes, second_result));
+    CHECK(first_result.number == first.number);
+    CHECK(second_result.number == second.number);
+  }
+
+  TEST_CASE("failed stream conversion does not affect the next conversion") {
+    const Bytes invalid = Bytes::from_string("invalid");
+    const Bytes valid = Bytes::from_string("42");
+    StreamMsg result;
+
+    CHECK_FALSE(Serializer::deserialize(invalid, result));
+    REQUIRE(Serializer::deserialize(valid, result));
+    CHECK(result.number == 42);
   }
 }
 

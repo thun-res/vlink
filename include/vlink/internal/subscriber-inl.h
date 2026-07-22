@@ -108,7 +108,7 @@ inline bool Subscriber<MsgT, SecT>::listen(MsgCallback&& callback) {
 
       callback(data);
     } else {
-      thread_local auto msg = this->template get_default_value<MsgT>();
+      auto msg = this->template get_default_value<MsgT>();
 
       if VUNLIKELY (!Serializer::deserialize<kMsgType>(data, msg, this->impl_->transport_type)) {
         VLOG_T("Subscriber deserialize failed, url: ", this->impl_->url, ".");

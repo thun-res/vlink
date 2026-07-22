@@ -216,7 +216,7 @@ inline bool Getter<ValueT, SecT>::init() {
       cv_.notify_all();
 
     } else {
-      thread_local auto value = this->template get_default_value<ValueT>();
+      auto value = this->template get_default_value<ValueT>();
 
       if VUNLIKELY (!Serializer::deserialize<kValueType>(data, value, this->impl_->transport_type)) {
         VLOG_T("Getter deserialize failed, url: ", this->impl_->url, ".");
@@ -232,7 +232,7 @@ inline bool Getter<ValueT, SecT>::init() {
 
         has_value_notification_ = true;
 
-        value_.emplace(value);
+        value_.emplace(std::move(value));
       }
 
       cv_.notify_all();
@@ -244,7 +244,10 @@ inline bool Getter<ValueT, SecT>::init() {
 
 template <typename ValueT, SecurityType SecT>
 inline void Getter<ValueT, SecT>::interrupt() {
-  Node<GetterImpl, SecT>::interrupt();
+  {
+    std::lock_guard lock(mtx_);
+    Node<GetterImpl, SecT>::interrupt();
+  }
 
   cv_.notify_all();
 }

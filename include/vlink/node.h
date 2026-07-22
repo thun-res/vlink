@@ -455,9 +455,13 @@ class Node {
    * @brief Binds a Protobuf Arena for arena-allocated message objects.
    *
    * @details
-   * Required when @c MsgT is a raw Protobuf pointer type (e.g. @c MyProto*).
-   * The arena must outlive this node.  Forgetting to bind an arena before
-   * the first received message triggers a fatal log.
+   * Required whenever this node must create a raw Protobuf pointer object
+   * (e.g. a subscriber message, server request/response, client response, or
+   * getter value of type @c MyProto*).  The arena must outlive this node.
+   * Forgetting to bind it before the first such operation triggers a fatal
+   * log.  Receive paths allocate a distinct message in the arena for each
+   * delivery, so that storage is retained until the caller resets or destroys
+   * the arena.
    *
    * @param proto_arena  Pointer to a @c google::protobuf::Arena instance (typed as @c void*).
    */

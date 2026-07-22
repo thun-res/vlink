@@ -101,15 +101,12 @@
 
 #pragma once
 
-#include <algorithm>
-#include <atomic>
 #include <map>
 #include <memory>
 #include <mutex>
-#include <string>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 #include "../base/functional.h"
 #include "../base/logger.h"
@@ -127,6 +124,11 @@ namespace vlink {
  * accounting through a @c std::recursive_mutex.  The traversal helpers honour
  * the @c ignore_called() escape hatch so that individual callbacks can opt out
  * of the "any callback was invoked" accounting tracked by @c has_called().
+ * Mutations that arrive while a traversal is running on the same thread are
+ * deferred: removals queue up and apply once the outermost traversal unwinds,
+ * so a handler that removes its own @c NodeImpl keeps executing on a live
+ * callable without per-entry copies or shared ownership, while node-based
+ * callback storage keeps live traversal iterators valid across registrations.
  *
  * @tparam FilterT Key type used by the owning @c AbstractFactory for this object.
  */
@@ -135,12 +137,11 @@ class AbstractObject : public AbstractNode {
  public:
   using ImplList = std::unordered_set<NodeImpl*>;  ///< Set of currently registered @c NodeImpl peers.
 
-  using ConnectCallbackMap = std::unordered_map<NodeImpl*, NodeImpl::ConnectCallback>;  ///< Connect handlers per impl.
-  using ReqRespCallbackMap =
-      std::unordered_map<NodeImpl*, NodeImpl::ReqRespCallback>;                 ///< Req/resp callbacks, keyed by impl.
-  using MsgCallbackMap = std::unordered_map<NodeImpl*, NodeImpl::MsgCallback>;  ///< Message callbacks, keyed by impl.
-  using IntraMsgCallbackMap = std::unordered_map<NodeImpl*, NodeImpl::IntraMsgCallback>;  ///< Intra-message callbacks.
-  using StatusCallbackMap = std::unordered_map<NodeImpl*, NodeImpl::StatusCallback>;  ///< Status callbacks per impl.
+  using ConnectCallbackMap = std::map<NodeImpl*, NodeImpl::ConnectCallback>;    ///< Connect handlers per impl.
+  using ReqRespCallbackMap = std::map<NodeImpl*, NodeImpl::ReqRespCallback>;    ///< Req/resp callbacks, keyed by impl.
+  using MsgCallbackMap = std::map<NodeImpl*, NodeImpl::MsgCallback>;            ///< Message callbacks, keyed by impl.
+  using IntraMsgCallbackMap = std::map<NodeImpl*, NodeImpl::IntraMsgCallback>;  ///< Intra-message callbacks.
+  using StatusCallbackMap = std::map<NodeImpl*, NodeImpl::StatusCallback>;      ///< Status callbacks per impl.
 
   using FindConnectCallback =
       Function<void(NodeImpl*, const NodeImpl::ConnectCallback&)>;  ///< Visitor invoked for each connect entry.
@@ -359,12 +360,38 @@ class AbstractObject : public AbstractNode {
   void ignore_called();
 
  private:
+  struct TraverseGuard final {
+    AbstractObject& object;
+
+    ~TraverseGuard() {
+      --object.traverse_depth_;
+
+      if VLIKELY (object.traverse_depth_ == 0) {
+        object.apply_deferred_removals();
+      }
+    }
+  };
+
+  template <typename CallbackMapT, typename CallbackT>
+  bool register_internal_callback(CallbackMapT& map, NodeImpl* impl, CallbackT&& callback);
+
+  template <typename CallbackMapT>
+  [[nodiscard]] bool is_map_effectively_empty(const CallbackMapT& map) const;
+
   template <typename CallbackMapT, typename CallbackT>
   void traverse_internal_callback(const CallbackMapT& map, const CallbackT& callback);
 
+  [[nodiscard]] bool is_deferred_removed(NodeImpl* impl) const;
+
+  void erase_impl_callbacks(NodeImpl* impl);
+
+  void apply_deferred_removals();
+
   bool has_called_{false};
   bool ignore_called_{false};
+  size_t traverse_depth_{0};
   ImplList impl_list_;
+  std::vector<NodeImpl*> deferred_remove_list_;
   mutable std::recursive_mutex mtx_;
   ConnectCallbackMap server_connect_callback_map_;
   ConnectCallbackMap sub_connect_callback_map_;
@@ -453,6 +480,10 @@ template <typename FilterT>
 inline bool AbstractObject<FilterT>::add_impl(NodeImpl* impl) {
   std::lock_guard lock(mtx_);
 
+  if VUNLIKELY (is_deferred_removed(impl)) {
+    return false;
+  }
+
   first_impl_ = impl;
 
   return impl_list_.emplace(impl).second;
@@ -462,6 +493,20 @@ template <typename FilterT>
 inline bool AbstractObject<FilterT>::remove_impl(NodeImpl* impl) {
   std::lock_guard lock(mtx_);
 
+  if VUNLIKELY (traverse_depth_ != 0) {
+    if VUNLIKELY (impl_list_.find(impl) == impl_list_.end() || is_deferred_removed(impl)) {
+      return false;
+    }
+
+    deferred_remove_list_.push_back(impl);
+
+    if (first_impl_ == impl) {
+      first_impl_ = nullptr;
+    }
+
+    return true;
+  }
+
   if VUNLIKELY (impl_list_.erase(impl) == 0) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
@@ -470,12 +515,8 @@ inline bool AbstractObject<FilterT>::remove_impl(NodeImpl* impl) {
     first_impl_ = impl_list_.empty() ? nullptr : *impl_list_.begin();
   }
 
-  server_connect_callback_map_.erase(impl);
-  sub_connect_callback_map_.erase(impl);
-  req_resp_callback_map_.erase(impl);
-  msg_callback_map_.erase(impl);
-  intra_msg_callback_map_.erase(impl);
-  status_callback_map_.erase(impl);
+  erase_impl_callbacks(impl);
+
   return true;
 }
 
@@ -488,88 +529,93 @@ NodeImpl* AbstractObject<FilterT>::get_first_impl() const {
 template <typename FilterT>
 inline bool AbstractObject<FilterT>::is_contains_impl(NodeImpl* impl) const {
   std::lock_guard lock(mtx_);
-  return impl_list_.find(impl) != impl_list_.end();
+  return impl_list_.find(impl) != impl_list_.end() && !is_deferred_removed(impl);
 }
 
 template <typename FilterT>
 inline bool AbstractObject<FilterT>::has_impl() const {
   std::lock_guard lock(mtx_);
-  return !impl_list_.empty();
+
+  if VLIKELY (deferred_remove_list_.empty()) {
+    return !impl_list_.empty();
+  }
+
+  for (auto* impl : impl_list_) {
+    if (!is_deferred_removed(impl)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 template <typename FilterT>
 inline bool AbstractObject<FilterT>::register_server_connect_callback(NodeImpl* impl,
                                                                       NodeImpl::ConnectCallback&& callback) {
-  std::lock_guard lock(this->mtx_);
-  return server_connect_callback_map_.try_emplace(impl, std::move(callback)).second;
+  return register_internal_callback(server_connect_callback_map_, impl, std::move(callback));
 }
 
 template <typename FilterT>
 inline bool AbstractObject<FilterT>::register_sub_connect_callback(NodeImpl* impl,
                                                                    NodeImpl::ConnectCallback&& callback) {
-  std::lock_guard lock(this->mtx_);
-  return sub_connect_callback_map_.try_emplace(impl, std::move(callback)).second;
+  return register_internal_callback(sub_connect_callback_map_, impl, std::move(callback));
 }
 
 template <typename FilterT>
 inline bool AbstractObject<FilterT>::register_req_resp_callback(NodeImpl* impl, NodeImpl::ReqRespCallback&& callback) {
-  std::lock_guard lock(this->mtx_);
-  return req_resp_callback_map_.try_emplace(impl, std::move(callback)).second;
+  return register_internal_callback(req_resp_callback_map_, impl, std::move(callback));
 }
 
 template <typename FilterT>
 inline bool AbstractObject<FilterT>::register_msg_callback(NodeImpl* impl, NodeImpl::MsgCallback&& callback) {
-  std::lock_guard lock(this->mtx_);
-  return msg_callback_map_.try_emplace(impl, std::move(callback)).second;
+  return register_internal_callback(msg_callback_map_, impl, std::move(callback));
 }
 
 template <typename FilterT>
 inline bool AbstractObject<FilterT>::register_intra_msg_callback(NodeImpl* impl,
                                                                  NodeImpl::IntraMsgCallback&& callback) {
-  std::lock_guard lock(this->mtx_);
-  return intra_msg_callback_map_.try_emplace(impl, std::move(callback)).second;
+  return register_internal_callback(intra_msg_callback_map_, impl, std::move(callback));
 }
 
 template <typename FilterT>
 inline bool AbstractObject<FilterT>::register_status_callback(NodeImpl* impl, NodeImpl::StatusCallback&& callback) {
-  std::lock_guard lock(this->mtx_);
-  return status_callback_map_.try_emplace(impl, std::move(callback)).second;
+  return register_internal_callback(status_callback_map_, impl, std::move(callback));
 }
 
 template <typename FilterT>
 inline bool AbstractObject<FilterT>::server_connect_map_is_empty() const {
   std::lock_guard lock(this->mtx_);
-  return server_connect_callback_map_.empty();
+  return is_map_effectively_empty(server_connect_callback_map_);
 }
 
 template <typename FilterT>
 inline bool AbstractObject<FilterT>::sub_connect_map_is_empty() const {
   std::lock_guard lock(this->mtx_);
-  return sub_connect_callback_map_.empty();
+  return is_map_effectively_empty(sub_connect_callback_map_);
 }
 
 template <typename FilterT>
 inline bool AbstractObject<FilterT>::req_resp_map_is_empty() const {
   std::lock_guard lock(this->mtx_);
-  return req_resp_callback_map_.empty();
+  return is_map_effectively_empty(req_resp_callback_map_);
 }
 
 template <typename FilterT>
 inline bool AbstractObject<FilterT>::msg_map_is_empty() const {
   std::lock_guard lock(this->mtx_);
-  return msg_callback_map_.empty();
+  return is_map_effectively_empty(msg_callback_map_);
 }
 
 template <typename FilterT>
 inline bool AbstractObject<FilterT>::intra_msg_map_is_empty() const {
   std::lock_guard lock(this->mtx_);
-  return intra_msg_callback_map_.empty();
+  return is_map_effectively_empty(intra_msg_callback_map_);
 }
 
 template <typename FilterT>
 inline bool AbstractObject<FilterT>::status_map_is_empty() const {
   std::lock_guard lock(this->mtx_);
-  return status_callback_map_.empty();
+  return is_map_effectively_empty(status_callback_map_);
 }
 
 template <typename FilterT>
@@ -620,13 +666,89 @@ inline void AbstractObject<FilterT>::ignore_called() {
 
 template <typename FilterT>
 template <typename CallbackMapT, typename CallbackT>
+inline bool AbstractObject<FilterT>::register_internal_callback(CallbackMapT& map, NodeImpl* impl,
+                                                                CallbackT&& callback) {
+  std::lock_guard lock(mtx_);
+
+  if VUNLIKELY (is_deferred_removed(impl)) {
+    return false;
+  }
+
+  return map.try_emplace(impl, std::forward<CallbackT>(callback)).second;
+}
+
+template <typename FilterT>
+template <typename CallbackMapT>
+inline bool AbstractObject<FilterT>::is_map_effectively_empty(const CallbackMapT& map) const {
+  if VLIKELY (deferred_remove_list_.empty()) {
+    return map.empty();
+  }
+
+  for (const auto& item : map) {
+    if (!is_deferred_removed(item.first)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+template <typename FilterT>
+inline bool AbstractObject<FilterT>::is_deferred_removed(NodeImpl* impl) const {
+  for (auto* target : deferred_remove_list_) {
+    if (target == impl) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+template <typename FilterT>
+inline void AbstractObject<FilterT>::erase_impl_callbacks(NodeImpl* impl) {
+  server_connect_callback_map_.erase(impl);
+  sub_connect_callback_map_.erase(impl);
+  req_resp_callback_map_.erase(impl);
+  msg_callback_map_.erase(impl);
+  intra_msg_callback_map_.erase(impl);
+  status_callback_map_.erase(impl);
+}
+
+template <typename FilterT>
+inline void AbstractObject<FilterT>::apply_deferred_removals() {
+  if VLIKELY (deferred_remove_list_.empty()) {
+    return;
+  }
+
+  for (auto* impl : deferred_remove_list_) {
+    impl_list_.erase(impl);
+    erase_impl_callbacks(impl);
+  }
+
+  deferred_remove_list_.clear();
+
+  if (first_impl_ == nullptr && !impl_list_.empty()) {
+    first_impl_ = *impl_list_.begin();
+  }
+}
+
+template <typename FilterT>
+template <typename CallbackMapT, typename CallbackT>
 inline void AbstractObject<FilterT>::traverse_internal_callback(const CallbackMapT& map, const CallbackT& callback) {
   std::lock_guard lock(mtx_);
 
   this->ignore_called_ = false;
   this->has_called_ = false;
 
+  ++traverse_depth_;
+
+  TraverseGuard guard{*this};
+
   for (const auto& [impl, target_callback] : map) {
+    if VUNLIKELY (is_deferred_removed(impl)) {
+      continue;
+    }
+
     callback(impl, target_callback);
 
     if VUNLIKELY (this->ignore_called_) {

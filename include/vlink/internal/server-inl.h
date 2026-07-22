@@ -122,7 +122,7 @@ inline bool Server<ReqT, RespT, SecT>::listen(ReqCallback&& callback) {
 
       callback(req_data);
     } else {
-      thread_local auto req = this->template get_default_value<ReqT>();
+      auto req = this->template get_default_value<ReqT>();
 
       if VUNLIKELY (!Serializer::deserialize<kReqType>(req_data, req, this->impl_->transport_type)) {
         VLOG_T("Server deserialize failed, url: ", this->impl_->url, ".");
@@ -157,7 +157,7 @@ inline bool Server<ReqT, RespT, SecT>::listen(ReqRespCallback&& callback) {
 
       reply_bytes<true>(req_id, *resp_data, true, resp_data);
     } else {
-      thread_local auto req = this->template get_default_value<ReqT>();
+      auto req = this->template get_default_value<ReqT>();
       auto resp = this->template get_default_value<RespT>();
 
       if VUNLIKELY (!Serializer::deserialize<kReqType>(req_data, req, this->impl_->transport_type)) {
@@ -203,7 +203,7 @@ inline bool Server<ReqT, RespT, SecT>::listen_for_reply(ReqAsyncRespCallback&& c
 
       callback(req_id, req_data);
     } else {
-      thread_local auto req = this->template get_default_value<ReqT>();
+      auto req = this->template get_default_value<ReqT>();
 
       if VUNLIKELY (!Serializer::deserialize<kReqType>(req_data, req, this->impl_->transport_type)) {
         VLOG_T("Server deserialize failed, url: ", this->impl_->url, ".");

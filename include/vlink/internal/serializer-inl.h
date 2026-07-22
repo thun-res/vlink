@@ -500,12 +500,9 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
 
     des = Bytes::deep_copy(reinterpret_cast<const uint8_t*>(src), size, offset);
   } else if constexpr (TypeT == kStreamType) {
-    thread_local std::stringstream ss;
-    ss.clear();
-    ss.str("");
-
+    std::stringstream ss;
     ss << deref(src);
-    const std::string& str = ss.str();
+    const std::string str = ss.str();
     des = Bytes::deep_copy(reinterpret_cast<const uint8_t*>(str.data()), str.size(), offset);
   } else if constexpr (TypeT == kStandardType) {
     const auto* src_ptr = reinterpret_cast<const uint8_t*>(&deref(src));
@@ -705,25 +702,12 @@ inline bool deserialize(const Bytes& src, T& des, [[maybe_unused]] TransportType
       deref(des) = std::string();
     }
   } else if constexpr (TypeT == kCharsType) {
-    static_assert(std::is_pointer_v<T>, "Chars deserialization requires a char pointer destination.");
-
-    thread_local std::string chars;
-
-    if (src.empty()) {
-      chars.clear();
-    } else {
-      chars.assign(reinterpret_cast<const char*>(src.data()), src.size());
-    }
-
-    if constexpr (std::is_const_v<std::remove_pointer_t<T>>) {
-      des = chars.c_str();
-    } else {
-      des = chars.data();
-    }
+    (void)src;
+    (void)des;
+    VLOG_E("Serializer: Chars deserialization is not supported; use std::string.");
+    return false;
   } else if constexpr (TypeT == kStreamType) {
-    thread_local std::stringstream ss;
-    ss.clear();
-    ss.str(std::string(reinterpret_cast<const char*>(src.data()), src.size()));
+    std::stringstream ss(std::string(reinterpret_cast<const char*>(src.data()), src.size()));
 
     ss >> deref(des);
 
