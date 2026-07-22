@@ -27,7 +27,6 @@
 #include <cctype>
 #include <charconv>
 #include <chrono>
-#include <iterator>
 #include <limits>
 #include <optional>
 #include <string>
@@ -1074,8 +1073,22 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
     auto ips = Helpers::split_any(prop_ip);
 
     for (const auto& ip : ips) {
-      const std::string proto = use_tls ? "tls" : (fragment_is_tcp ? "tcp" : "udp");
-      std::string endpoint = proto + "/" + ip + ":7447";
+      const char* proto = "udp";
+
+      if (use_tls) {
+        proto = "tls";
+      } else if (fragment_is_tcp) {
+        proto = "tcp";
+      }
+
+      std::string endpoint;
+      endpoint.reserve(std::strlen(proto) + 1 + ip.size() + 5);
+
+      endpoint += proto;
+      endpoint += '/';
+      endpoint += ip;
+      endpoint += ":7447";
+
       zp_config_insert(z_loan_mut(config), Z_CONFIG_CONNECT_KEY, endpoint.c_str());
     }
   }
@@ -1909,10 +1922,10 @@ bool ZenohServer::reply(uint64_t channel, uint64_t req_id, const Bytes& resp_dat
   return ret == Z_OK;
 }
 
-void ZenohServer::process_message(uint64_t channel, uint64_t seq, MessageLoop* message_loop, Bytes&& req_bytes) {
+void ZenohServer::process_message(uint64_t channel, uint64_t seq, MessageLoop* message_loop, const Bytes& req_bytes) {
   if (message_loop) {
     auto weak_self = weak_from_this();
-    auto task = [weak_self, channel, seq, req_bytes = std::move(req_bytes)]() mutable {
+    auto task = [weak_self, channel, seq, req_bytes]() mutable {
       auto self = weak_self.lock();
 
       if VUNLIKELY (!self || !ZenohFactory::get().has_object(self.get())) {
@@ -2023,9 +2036,8 @@ void ZenohServer::on_data_callback(z_loaned_query_t* query, void* context) {
 
   auto* first_impl = instance->get_first_impl();
   auto* message_loop = first_impl ? first_impl->get_message_loop() : nullptr;
-  Bytes req_bytes = Bytes::deep_copy(payload.data, payload.size);
-  z_owned_query_t kept_query;
 
+  z_owned_query_t kept_query;
   z_internal_null(&kept_query);
 
   if VUNLIKELY (!keep_query_for_deferred_reply(&kept_query, query)) {
@@ -2056,7 +2068,7 @@ void ZenohServer::on_data_callback(z_loaned_query_t* query, void* context) {
     }
   }
 
-  instance->process_message(header.channel, header.seq, message_loop, std::move(req_bytes));
+  instance->process_message(header.channel, header.seq, message_loop, Bytes::shallow_copy(payload.data, payload.size));
 }
 
 // ZenohClient
@@ -2233,7 +2245,7 @@ bool ZenohClient::call(NodeImpl* owner, uint64_t channel, const Bytes& req_data,
   opts.is_express = is_express_;
   opts.attachment = z_move(attachment);
   opts.payload = z_move(payload);
-#ifdef VLINK_ENABLE_ZENOH_PICO
+#if defined(VLINK_ENABLE_ZENOH_PICO) && Z_FEATURE_LOCAL_QUERYABLE == 1
   if (local_server_count_.load(std::memory_order_acquire) > 0) {
     opts.allowed_destination = Z_LOCALITY_SESSION_LOCAL;
   }
@@ -2831,7 +2843,7 @@ int64_t ZenohSubscriber::get_latency() const {
 const CalculateSample& ZenohSubscriber::get_calculate_sample() const { return calc_sample_; }
 
 void ZenohSubscriber::process_message(uint64_t channel, uint64_t seq, uint64_t guid, uint64_t timestamp,
-                                      MessageLoop* message_loop, Bytes&& bytes) {
+                                      MessageLoop* message_loop, const Bytes& bytes) {
   if VUNLIKELY (is_latency_and_lost_enabled_.load(std::memory_order_acquire)) {
     calc_sample_.update(seq, guid);
     last_latency_.store(ElapsedTimer::get_sys_timestamp(ElapsedTimer::kNano, false) - timestamp,
@@ -2840,7 +2852,7 @@ void ZenohSubscriber::process_message(uint64_t channel, uint64_t seq, uint64_t g
 
   if (message_loop) {
     auto weak_self = weak_from_this();
-    auto task = [weak_self, channel, bytes = std::move(bytes)]() mutable {
+    auto task = [weak_self, channel, bytes]() mutable {
       auto self = weak_self.lock();
 
       if VUNLIKELY (!self || !ZenohFactory::get().has_object(self.get())) {
@@ -2908,11 +2920,8 @@ void ZenohSubscriber::on_data_callback(z_loaned_sample_t* sample, void* context)
   auto* first_impl = instance->get_first_impl();
   auto* message_loop = first_impl ? first_impl->get_message_loop() : nullptr;
 
-  Bytes msg_bytes =
-      message_loop ? Bytes::deep_copy(payload.data, payload.size) : Bytes::shallow_copy(payload.data, payload.size);
-
   instance->process_message(header.channel, header.seq, header.guid, header.timestamp, message_loop,
-                            std::move(msg_bytes));
+                            Bytes::shallow_copy(payload.data, payload.size));
 }
 
 }  // namespace vlink

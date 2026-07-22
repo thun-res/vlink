@@ -25,12 +25,6 @@
 
 #ifdef VLINK_ENABLE_ZENOH_PICO
 #include <zenoh-pico.h>
-// See doc/04-transport.md for the complete pico build requirements.
-#if Z_FEATURE_MULTI_THREAD != 1 || Z_FEATURE_PUBLICATION != 1 || Z_FEATURE_SUBSCRIPTION != 1 || \
-    Z_FEATURE_QUERY != 1 || Z_FEATURE_QUERYABLE != 1 || Z_FEATURE_LOCAL_SUBSCRIBER != 1 ||      \
-    Z_FEATURE_LOCAL_QUERYABLE != 1 || Z_FEATURE_LIVELINESS != 1 || Z_FEATURE_INTEREST != 1 || Z_FEATURE_MATCHING != 1
-#error "Unsupported zenoh-pico feature set for VLink"
-#endif
 #else
 #include <zenoh.h>
 #endif
@@ -206,7 +200,7 @@ class ZenohServer final : public AbstractObject<ZenohID>, public std::enable_sha
 
   bool reply(uint64_t channel, uint64_t req_id, const Bytes& resp_data);
 
-  void process_message(uint64_t channel, uint64_t seq, MessageLoop* message_loop, Bytes&& req_bytes);
+  void process_message(uint64_t channel, uint64_t seq, MessageLoop* message_loop, const Bytes& req_bytes);
 
   static void on_data_callback(z_loaned_query_t* query, void* context);
 
@@ -403,7 +397,7 @@ class ZenohSubscriber final : public AbstractObject<ZenohID>, public std::enable
   const CalculateSample& get_calculate_sample() const;
 
   void process_message(uint64_t channel, uint64_t seq, uint64_t guid, uint64_t timestamp, MessageLoop* message_loop,
-                       Bytes&& bytes);
+                       const Bytes& bytes);
 
   static void on_data_callback(z_loaned_sample_t* sample, void* context);
 

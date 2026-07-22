@@ -214,7 +214,7 @@ bool FdbusClient::call(uint32_t channel, const Bytes& req_data, NodeImpl::MsgCal
       [channel, callback = std::move(callback)](fdbus::CBaseJob::Ptr& msg_ref, fdbus::CFdbBaseObject*) {
         auto* msg = fdbus::castToMessage<fdbus::CBaseMessage*>(msg_ref);
 
-        if VUNLIKELY (msg->code() != static_cast<int32_t>(channel)) {
+        if VUNLIKELY (msg->isStatus() || msg->code() != static_cast<int32_t>(channel)) {
           return;
         }
 

@@ -94,6 +94,7 @@ std::vector<std::tuple<std::string, std::string>> DdsFactory::get_discovered_top
   std::vector<std::tuple<std::string, std::string>> topics;
 
   static auto& factory = DdsFactory::get();
+  std::lock_guard lifecycle_lock(factory.participant_mtx_);
 
   auto* part = factory.dds_factory_->lookup_participant(_domain);
 
@@ -661,14 +662,19 @@ bool DdsFactory::take_cdr_data(dds::DataReader* reader, ReadCdrMessage& msg) {
 
 uint64_t DdsFactory::get_guid(const rtps::GUID_t& guid, uint32_t seq) {
   const auto& handle = static_cast<const rtps::InstanceHandle_t&>(guid);
+  uint64_t result = 14695981039346656037ULL;
 
-  uint64_t result = static_cast<uint64_t>(handle.value[0] + handle.value[1] + handle.value[2] + handle.value[3]) << 24 |
-                    static_cast<uint64_t>(handle.value[4] + handle.value[5] + handle.value[6] + handle.value[7]) << 16 |
-                    static_cast<uint64_t>(handle.value[8] + handle.value[9] + handle.value[10] + handle.value[11])
-                        << 8 |
-                    static_cast<uint64_t>(handle.value[12] + handle.value[13] + handle.value[14] + handle.value[15]);
+  for (size_t i = 0; i < 16U; ++i) {
+    result ^= static_cast<uint64_t>(handle.value[i]);
+    result *= 1099511628211ULL;
+  }
 
-  return result << 32 | seq;
+  for (size_t i = 0; i < sizeof(seq); ++i) {
+    result ^= static_cast<uint64_t>((seq >> (i * 8)) & 0xFFU);
+    result *= 1099511628211ULL;
+  }
+
+  return result;
 }
 
 int DdsFactory::get_default_domain_id() {
