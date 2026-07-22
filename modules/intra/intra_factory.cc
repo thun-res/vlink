@@ -65,7 +65,7 @@ IntraFactory::~IntraFactory() {
 
 // IntraNode
 IntraNode::IntraNode(const IntraID& id) {
-  const auto& [impl_type, address, pipeline, type] = id;
+  const auto& [impl_type, address, pipeline, type, channel] = id;
 
   static auto& factory = IntraFactory::get();
 
@@ -82,7 +82,7 @@ bool IntraNode::publish(IntraType type, uint32_t channel, const Bytes& msg_data)
   if (type == IntraType::kQueue && pipeline_) {
     std::weak_ptr<IntraNode> weak_self = shared_from_this();
 
-    pipeline_->post_task([weak_self, channel, msg_data]() {
+    return pipeline_->post_task([weak_self, channel, msg_data]() {
       auto self = weak_self.lock();
 
       if VUNLIKELY (!self) {
@@ -100,7 +100,6 @@ bool IntraNode::publish(IntraType type, uint32_t channel, const Bytes& msg_data)
       });
     });
 
-    return true;
   } else {
     bool ok = false;
 
@@ -124,7 +123,7 @@ bool IntraNode::publish(IntraType type, uint32_t channel, const IntraData& intra
   if (type == IntraType::kQueue && pipeline_) {
     std::weak_ptr<IntraNode> weak_self = shared_from_this();
 
-    pipeline_->post_task([weak_self, channel, intra_data]() {
+    return pipeline_->post_task([weak_self, channel, intra_data]() {
       auto self = weak_self.lock();
 
       if VUNLIKELY (!self) {
@@ -142,7 +141,6 @@ bool IntraNode::publish(IntraType type, uint32_t channel, const IntraData& intra
       });
     });
 
-    return true;
   } else {
     bool ok = false;
 
@@ -162,41 +160,46 @@ bool IntraNode::publish(IntraType type, uint32_t channel, const IntraData& intra
   }
 }
 
-bool IntraNode::call(IntraType type, uint32_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback) {
-  if (type == IntraType::kQueue && pipeline_) {
+bool IntraNode::call(NodeImpl* requester, IntraType type, uint32_t channel, const Bytes& req_data,
+                     NodeImpl::MsgCallback&& callback, bool inline_if_same_thread) {
+  if VLIKELY (type == IntraType::kQueue && pipeline_ && !(inline_if_same_thread && pipeline_->is_in_same_thread())) {
     std::weak_ptr<IntraNode> weak_self = shared_from_this();
 
-    pipeline_->post_task([weak_self, channel, req_data, callback = std::move(callback)]() {
+    return pipeline_->post_task([weak_self, requester, channel, req_data, callback = std::move(callback)]() {
       auto self = weak_self.lock();
 
       if VUNLIKELY (!self) {
         return;
       }
 
-      self->traverse_req_resp_callback([&self, channel, &req_data, &callback](NodeImpl* impl, const auto& callback2) {
-        const auto* conf_ptr = impl->get_target_conf<IntraConf>();
+      self->traverse_req_resp_callback(
+          [&self, requester, channel, &req_data, &callback](NodeImpl* impl, const auto& callback2) {
+            if VUNLIKELY (!self->is_contains_impl(requester)) {
+              self->ignore_called();
+              return;
+            }
 
-        if (conf_ptr->hash_code != channel || impl->has_suspend) {
-          self->ignore_called();
-          return;
-        }
+            const auto* conf_ptr = impl->get_target_conf<IntraConf>();
 
-        if VUNLIKELY (self->has_called()) {
-          VLOG_F(*conf_ptr, "Two identical service requests.");
-          return;
-        }
+            if (conf_ptr->hash_code != channel || impl->has_suspend) {
+              self->ignore_called();
+              return;
+            }
 
-        if (callback) {
-          Bytes bytes;
-          callback2(0, req_data, &bytes);
-          callback(bytes);
-        } else {
-          callback2(0, req_data, nullptr);
-        }
-      });
+            if VUNLIKELY (self->has_called()) {
+              VLOG_F(*conf_ptr, "Two identical service requests.");
+              return;
+            }
+
+            if (callback) {
+              Bytes bytes;
+              callback2(0, req_data, &bytes);
+              callback(bytes);
+            } else {
+              callback2(0, req_data, nullptr);
+            }
+          });
     });
-
-    return true;
   } else {
     bool ok = false;
 

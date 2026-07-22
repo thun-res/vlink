@@ -42,7 +42,7 @@ void IntraClientImpl::init() {
 
   conf_.hash_code = Helpers::get_hash_code(conf_.event);
 
-  object_ = factory.get_object<Object>({kImplType, conf_.address, conf_.pipeline, type_});
+  object_ = factory.get_object<Object>({kImplType, conf_.address, conf_.pipeline, type_, conf_.hash_code});
 
   object_->add_impl(this);
 
@@ -77,7 +77,7 @@ bool IntraClientImpl::is_connected() const { return !object_->req_resp_map_is_em
 
 bool IntraClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::chrono::milliseconds timeout) {
   if VUNLIKELY (!callback) {
-    return object_->call(type_, conf_.hash_code, req_data);
+    return object_->call(this, type_, conf_.hash_code, req_data);
   }
 
   if (timeout.count() != 0) {
@@ -102,13 +102,13 @@ bool IntraClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::c
       ack_manager_.notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
     };
 
-    return ack_manager_.process(ack_request, timeout.count() - elapsed,
-                                [this, &req_data, ack_function = std::move(ack_function)]() mutable {
-                                  return object_->call(type_, conf_.hash_code, req_data, std::move(ack_function));
-                                });
+    return ack_manager_.process(
+        ack_request, timeout.count() - elapsed, [this, &req_data, ack_function = std::move(ack_function)]() mutable {
+          return object_->call(this, type_, conf_.hash_code, req_data, std::move(ack_function), true);
+        });
   }
 
-  return object_->call(type_, conf_.hash_code, req_data, std::move(callback));
+  return object_->call(this, type_, conf_.hash_code, req_data, std::move(callback));
 }
 
 }  // namespace vlink

@@ -41,21 +41,17 @@ void IntraSubscriberImpl::init() {
 
   conf_.hash_code = Helpers::get_hash_code(conf_.event);
 
-  object_ = factory.get_object<Object>({kImplType, conf_.address, conf_.pipeline, type_});
-
-  if (object_->msg_map_is_empty()) {
-    object_->add_impl(this);
-
-    object_->traverse_sub_connect_callback([](NodeImpl*, const auto& callback) { callback(true); });
-  } else {
-    object_->add_impl(this);
-  }
+  object_ = factory.get_object<Object>({kImplType, conf_.address, conf_.pipeline, type_, conf_.hash_code});
+  object_->add_impl(this);
 }
 
 void IntraSubscriberImpl::deinit() {
-  object_->remove_impl(this);
+  bool was_listened = is_listened;
 
-  if (object_->msg_map_is_empty()) {
+  object_->remove_impl(this);
+  is_listened = false;
+
+  if (was_listened && object_->msg_map_is_empty() && object_->intra_msg_map_is_empty()) {
     object_->traverse_sub_connect_callback([](NodeImpl*, const auto& callback) { callback(false); });
   }
 }
@@ -89,13 +85,25 @@ bool IntraSubscriberImpl::detach() {
 }
 
 bool IntraSubscriberImpl::listen(MsgCallback&& callback) {
+  const bool was_empty = object_->msg_map_is_empty() && object_->intra_msg_map_is_empty();
+
   object_->register_msg_callback(this, std::move(callback));
+
+  if VLIKELY (was_empty) {
+    object_->traverse_sub_connect_callback([](NodeImpl*, const auto& target_callback) { target_callback(true); });
+  }
 
   return true;
 }
 
 bool IntraSubscriberImpl::listen(IntraMsgCallback&& callback) {
+  const bool was_empty = object_->msg_map_is_empty() && object_->intra_msg_map_is_empty();
+
   object_->register_intra_msg_callback(this, std::move(callback));
+
+  if VLIKELY (was_empty) {
+    object_->traverse_sub_connect_callback([](NodeImpl*, const auto& target_callback) { target_callback(true); });
+  }
 
   return true;
 }
