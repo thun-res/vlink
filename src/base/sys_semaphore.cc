@@ -218,16 +218,30 @@ bool SysSemaphore::acquire(size_t n, int timeout_ms) {
 
   return true;
 #elif defined(__APPLE__)
-  for (; n > 0; --n) {
-    if (timeout_ms < 0) {
+  if (timeout_ms < 0) {
+    for (; n > 0; --n) {
       dispatch_semaphore_wait(impl_->handle, DISPATCH_TIME_FOREVER);
-    } else {
-      int64_t timeout_ns = static_cast<int64_t>(timeout_ms) * 1000000;
-      if VUNLIKELY (dispatch_semaphore_wait(impl_->handle, dispatch_time(DISPATCH_TIME_NOW, timeout_ns)) != 0) {
-        VLOG_E("SysSemaphore: dispatch_semaphore_wait timeout or failed.");
-        return false;
-      }
     }
+
+    return true;
+  }
+
+  size_t acquired = 0;
+  const int64_t timeout_ns = static_cast<int64_t>(timeout_ms) * 1000000;
+  const dispatch_time_t timeout = dispatch_time(DISPATCH_TIME_NOW, timeout_ns);
+
+  for (; n > 0; --n) {
+    if VUNLIKELY (dispatch_semaphore_wait(impl_->handle, timeout) != 0) {
+      VLOG_E("SysSemaphore: dispatch_semaphore_wait timeout or failed.");
+
+      if (acquired > 0) {
+        release(acquired);
+      }
+
+      return false;
+    }
+
+    ++acquired;
   }
 
   return true;

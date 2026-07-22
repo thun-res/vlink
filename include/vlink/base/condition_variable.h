@@ -496,6 +496,7 @@ inline void ConditionVariableAny::wait(LockT& lock) noexcept {
   } guard{lock};
 
   state->cv.wait(internal_lock);
+  internal_lock.unlock();
 }
 
 template <typename LockT, typename PredicateT>
@@ -585,7 +586,10 @@ inline std::cv_status ConditionVariableAny::wait_until_impl(
     }
   } guard{lock};
 
-  return state->cv.wait_until(internal_lock, atime);
+  const auto status = state->cv.wait_until(internal_lock, atime);
+  internal_lock.unlock();
+
+  return status;
 }
 
 /**

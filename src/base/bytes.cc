@@ -491,7 +491,7 @@ Bytes::Bytes(const std::initializer_list<uint8_t>& list) noexcept {
 }
 
 Bytes::Bytes(const std::vector<uint8_t>& data) noexcept {
-  process_type(kDeepCopy, const_cast<uint8_t*>(data.data()), data.size(), 0, false);
+  process_type(kDeepCopy, data.empty() ? nullptr : const_cast<uint8_t*>(data.data()), data.size(), 0, false);
 }
 
 Bytes::~Bytes() noexcept {
@@ -532,7 +532,7 @@ Bytes& Bytes::operator=(Bytes&& target) noexcept {
 }
 
 Bytes& Bytes::operator=(const std::vector<uint8_t>& data) noexcept {
-  process_type(kDeepCopy, const_cast<uint8_t*>(data.data()), data.size(), 0, false);
+  process_type(kDeepCopy, data.empty() ? nullptr : const_cast<uint8_t*>(data.data()), data.size(), 0, false);
 
   return *this;
 }
@@ -865,18 +865,11 @@ Bytes& Bytes::shallow_copy(const Bytes& bytes) noexcept {
 }
 
 Bytes& Bytes::deep_copy(const Bytes& bytes) noexcept {
-  if (bytes.offset_ > 0 && bytes.data_) {
-    Bytes tmp = Bytes::deep_copy(bytes.data_, bytes.size_ + bytes.offset_);
-    process_type(kCreate, nullptr, bytes.size_, bytes.offset_, false);
-
-    if VLIKELY (data_ && tmp.data_) {
-      std::memcpy(data_, tmp.data_, bytes.size_ + bytes.offset_);
-    }
-  } else {
-    process_type(kDeepCopy, const_cast<uint8_t*>(bytes.data()), bytes.size_, 0, false);
+  if VUNLIKELY (this == &bytes) {
+    return deep_copy_self();
   }
 
-  return *this;
+  return operator=(bytes);
 }
 
 Bytes& Bytes::deep_copy_self() noexcept {
@@ -998,8 +991,7 @@ void Bytes::process_type(Type type, uint8_t* data, size_t size, uint8_t offset, 
       size_t deferred_free_size = 0;
 
       if (is_owner_ && data_) {
-        if VUNLIKELY (data_ == data) {
-          VLOG_E("Bytes: Cannot deep copy self.");
+        if VUNLIKELY (data_ == data && size_ == size && offset_ == offset) {
           return;
         }
 
@@ -1028,7 +1020,7 @@ void Bytes::process_type(Type type, uint8_t* data, size_t size, uint8_t offset, 
 
       if VLIKELY (total_size != 0) {
         if (total_size > kStackSize) {
-          if (capacity_ + offset_ != total_size || data_ == stack_data_) {
+          if (!is_owner_ || capacity_ + offset_ != total_size || data_ == stack_data_) {
             data_ = bytes_malloc(total_size);
 
             if VUNLIKELY (!data_) {

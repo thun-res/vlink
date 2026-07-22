@@ -2657,8 +2657,13 @@ bool Process::start_program(const std::string& program, const std::vector<std::s
 
   if (mode != kForwardedMode && mode != kForwardedOutputMode) {
     if (impl_->stdout_pipe[1] >= 0) {
+      const int stdout_write = impl_->stdout_pipe[1];
       ::close(impl_->stdout_pipe[1]);
       impl_->stdout_pipe[1] = -1;
+
+      if (impl_->stderr_pipe[1] == stdout_write) {
+        impl_->stderr_pipe[1] = -1;
+      }
     }
   }
 

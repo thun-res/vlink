@@ -686,6 +686,8 @@ int64_t convert_date_to_timestamp(const std::string& date) noexcept {
     }
   }
 
+  tm.tm_isdst = -1;
+
   auto tp = std::chrono::system_clock::from_time_t(std::mktime(&tm));
   auto ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(tp).time_since_epoch().count();
 
