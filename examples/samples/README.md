@@ -42,7 +42,7 @@
 | `dds://` / `ddsc://` | 无 |
 | `shm://` | `iox-roudi`（Iceoryx RouDi） |
 | `someip://` | `vsomeipd`（vsomeip routing manager） |
-| `fdbus://` | `fdb_name_server` |
+| `fdbus://` | `name_server` |
 | `mqtt://` | MQTT broker（如 Mosquitto） |
 
 ## 🛠️ 构建

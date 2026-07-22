@@ -54,7 +54,7 @@ fdbus://服务名?event=话题名
 ```bash
 cmake -B build -S . -DCMAKE_PREFIX_PATH=<vlink安装路径>
 cmake --build build
-fdb_name_server &                       # fdbus:// 端点依赖 FDBus name server
+name_server &                           # fdbus:// 端点依赖 FDBus name server
 ./build/output/bin/sample_fdbus_proto
 ```
 

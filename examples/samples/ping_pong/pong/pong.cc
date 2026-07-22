@@ -46,8 +46,8 @@ int main(int argc, char* argv[]) {
   vlink::MessageLoop message_loop;
   vlink::Utils::register_terminate_signal([&message_loop](int) { message_loop.quit(); });
 
-  vlink::Subscriber<vlink::Bytes> sub(Common::get_ping_url());
   vlink::Publisher<vlink::Bytes> pub(Common::get_pong_url());
+  vlink::Subscriber<vlink::Bytes> sub(Common::get_ping_url());
 
   // Echo: callback runs on transport worker thread; pub.publish() is safe to
   // call from any thread, so we forward directly without bouncing onto the

@@ -23,7 +23,7 @@ vlink 六种原语（Publisher / Subscriber / Server / Client / Setter / Getter�
 |-----|------|
 | `InitType::kWithInit / kWithoutInit` | 构造时是否自动 init |
 | `init()` | 创建底层 transport，返回是否成功；幂等 |
-| `deinit()` | 释放 transport，此后 publish/listen 返回 false；可再次 init |
+| `deinit()` | 注销节点的 transport 端点，此后 publish/listen 返回 false；可再次 init |
 | `interrupt()` | 立即唤醒所有 `wait_for_*` 阻塞，不停止回调、不释放 transport |
 | `has_inited()` | 查询是否已 init |
 

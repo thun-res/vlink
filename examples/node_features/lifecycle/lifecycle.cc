@@ -41,7 +41,7 @@
 //   construct(kWithoutInit) -> configure as needed -> init() -> listen() ... -> deinit()
 //
 // Difference between deinit() and interrupt():
-//   deinit()    -- tears down the transport; has_inited() becomes false;
+//   deinit()    -- unregisters the node's transport endpoint; has_inited() becomes false;
 //                  publish/listen become no-ops; re-callable.
 //   interrupt() -- wakes up any blocked wait_for_*() calls (returns false)
 //                  but leaves the transport up and callbacks active.

@@ -35,6 +35,7 @@
 #include <vlink/base/utils.h>
 #include <vlink/vlink.h>
 
+#include <atomic>
 #include <charconv>
 #include <chrono>
 #include <string>

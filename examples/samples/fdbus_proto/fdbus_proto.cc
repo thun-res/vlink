@@ -30,7 +30,7 @@
 // field independently. Typical engineering scenario: IPC inside an automotive
 // HMI process tree where FDBus is the native bus.
 //
-// Prerequisite: an fdbus_ns name server must be running on the host.
+// Prerequisite: the FDBus name_server process must be running on the host.
 
 #include <vlink/base/logger.h>
 #include <vlink/vlink.h>

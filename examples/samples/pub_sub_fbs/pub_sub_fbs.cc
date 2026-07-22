@@ -190,16 +190,20 @@ int run_sub() {
     print_user_summary(user);
   });
 
-  // Park on a condition variable until Ctrl+C; the signal handler only
-  // notify_one()s, which is async-signal-safe-compatible with our cv.
+  // Park on a condition variable until the terminate callback records a quit
+  // request, then unwind the subscriber on this thread.
   std::mutex mtx;
   std::unique_lock lock(mtx);
   vlink::ConditionVariable cv;
+  std::atomic_bool quit{false};
 
-  vlink::Utils::register_terminate_signal([&cv](int) { cv.notify_one(); });
+  vlink::Utils::register_terminate_signal([&cv, &quit](int) {
+    quit.store(true, std::memory_order_release);
+    cv.notify_one();
+  });
 
   VLOG_I("[Subscriber] listening on ", kEventUrl, ", press Ctrl+C to quit.");
-  cv.wait(lock);
+  cv.wait(lock, [&quit]() { return quit.load(std::memory_order_acquire); });
 
   VLOG_I("[Subscriber] total received: ", received_count.load());
 
