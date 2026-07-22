@@ -441,7 +441,7 @@ bool OsgGraphicsView::needDoFrame() {
 
 int OsgGraphicsView::getOsgKey(QKeyEvent* event) {
   auto iter = m_keyMap.find(event->key());
-  return iter == m_keyMap.end() ? static_cast<int>(*(event->text().toLatin1().data())) : iter->second;
+  return iter == m_keyMap.end() ? static_cast<unsigned char>(*(event->text().toLatin1().data())) : iter->second;
 }
 
 void OsgGraphicsView::setKeyboardModifiers(QInputEvent* event) {
@@ -465,7 +465,7 @@ void OsgGraphicsView::setKeyboardModifiers(QInputEvent* event) {
 }
 
 void OsgGraphicsView::updateOsgSize(double w, double h) {
-  if (!m_viewer || !m_gw) {
+  if (!m_viewer || !m_gw || h <= 0.0) {
     return;
   }
 

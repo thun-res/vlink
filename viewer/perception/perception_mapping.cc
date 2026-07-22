@@ -1949,10 +1949,9 @@ class FbsReader final {
       return;
     }
 
-    const flatbuffers::Table* table = base.table;
-    const reflection::Object* obj = base.obj;
+    FbsRef current = base;
 
-    if (!table || !obj) {
+    if (!current.obj || (!current.table && !current.structure)) {
       return;
     }
 
@@ -1961,34 +1960,31 @@ class FbsReader final {
         return;
       }
 
-      const auto* field = find_fbs_field(*obj, tokens[i].name);
+      const auto* field = find_fbs_field(*current.obj, tokens[i].name);
 
       if (!field || field->type()->base_type() != reflection::Obj) {
         return;
       }
 
-      const auto* sub_table = flatbuffers::GetFieldT(*table, *field);
-      const auto* sub_obj = schema_->objects()->Get(static_cast<uint32_t>(field->type()->index()));
+      current = fbs_child(current, *field, *schema_);
 
-      if (!sub_table || !sub_obj) {
+      if (!current.obj || (!current.table && !current.structure)) {
         return;
       }
-
-      table = sub_table;
-      obj = sub_obj;
     }
 
     if (tokens.back().is_index) {
       return;
     }
 
-    const auto* field = find_fbs_field(*obj, tokens.back().name);
+    const auto* field = find_fbs_field(*current.obj, tokens.back().name);
 
-    if (!field || field->type()->base_type() != reflection::Vector || !fbs_type_is_numeric(field->type()->element())) {
+    if (!field || !current.table || field->type()->base_type() != reflection::Vector ||
+        !fbs_type_is_numeric(field->type()->element())) {
       return;
     }
 
-    const auto* vec = flatbuffers::GetFieldAnyV(*table, *field);
+    const auto* vec = flatbuffers::GetFieldAnyV(*current.table, *field);
 
     if (!vec) {
       return;

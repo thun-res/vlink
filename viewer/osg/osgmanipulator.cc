@@ -476,10 +476,11 @@ bool OsgManipulator::processFlyFrame(const osg::ref_ptr<osg::AnimationPath>& pat
   double animDelta = (animTime - m_animTime);
 
   if (animDelta >= path->getPeriod()) {
+    const int finished_index = m_flyIndex;
     m_flyIndex = -1;
 
     if (m_flyFinishedCallback) {
-      m_flyFinishedCallback(m_flyIndex);
+      m_flyFinishedCallback(finished_index);
     }
 
     m_realTime = time;

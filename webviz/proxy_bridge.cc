@@ -1126,7 +1126,8 @@ class ProxyServerBridge final : public ProxyBridge {
 
         if VLIKELY (current_seq > 0 || state.previous_seq > 0) {
           proxy_info.status = ProxyAPI::kActive;
-        } else if VUNLIKELY (((last_activity_us > 0 && now_us - last_activity_us >= 2000U * 1000U) ||
+        } else if VUNLIKELY (((last_activity_us > 0 && now_us >= last_activity_us &&
+                               now_us - last_activity_us >= 2000U * 1000U) ||
                               (last_activity_us == 0 && now_us - first_seen_us >= 2000U * 1000U))) {
           proxy_info.status = ProxyAPI::kInActive;
         } else {

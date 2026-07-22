@@ -2842,9 +2842,11 @@ void FoxgloveServer::update_channels(const std::vector<ProxyAPI::Info>& info_lis
       std::string schema_encoding;
       std::string schema_data;
       bool is_send_time = false;
+      const auto reported_schema_type = SchemaData::is_valid_type(info.schema) ? info.schema : SchemaType::kUnknown;
+      const auto effective_schema_type = SchemaData::resolve_type(reported_schema_type, info.ser);
 
-      if VUNLIKELY (!foxglove_converter_->get_schema_info(info.url, info.schema, info.ser, schema_name, encoding,
-                                                          schema_encoding, schema_data, &is_send_time)) {
+      if VUNLIKELY (!foxglove_converter_->get_schema_info(info.url, effective_schema_type, info.ser, schema_name,
+                                                          encoding, schema_encoding, schema_data, &is_send_time)) {
         continue;
       }
 
@@ -2857,8 +2859,7 @@ void FoxgloveServer::update_channels(const std::vector<ProxyAPI::Info>& info_lis
       ch.schema_name = schema_name;
       ch.schema = schema_data;
       ch.schema_encoding = schema_encoding;
-      ch.schema_type = SchemaData::resolve_type(
-          SchemaData::is_valid_type(info.schema) ? info.schema : SchemaType::kUnknown, info.ser);
+      ch.schema_type = effective_schema_type;
       ch.is_send_time = is_send_time;
       ch.is_time_only = (encoding == "send_time");
 

@@ -29,6 +29,7 @@
 
 #include <atomic>
 #include <map>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include <shared_mutex>
 #include <string>
@@ -100,6 +101,7 @@ class FoxgloveParameters final {
 
   Config config_;
   Setter<Bytes>::SharedPtr setter_;
+  std::mutex lifecycle_mtx_;
   mutable std::shared_mutex state_mtx_;
   ParameterMap state_;
   std::atomic_bool started_{false};

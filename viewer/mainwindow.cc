@@ -69,6 +69,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <queue>
 #include <string>
 
@@ -769,7 +770,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
 }
 
 MainWindow::~MainWindow() {
+  proxy_->register_connect_callback(vlink::ProxyAPI::ConnectCallback{});
+  proxy_->register_error_callback(vlink::ProxyAPI::ErrorCallback{});
+  proxy_->register_info_callback(vlink::ProxyAPI::InfoCallback{});
+  proxy_->register_data_callback(vlink::ProxyAPI::DataCallback{});
   proxy_->quit();
+  proxy_->wait_for_quit();
+  proxy_.reset();
 
   {
     std::lock_guard lock(data_mutex_);
@@ -3261,6 +3268,14 @@ QString MainWindow::get_str_for_number(int64_t num) {
   }
 }
 
+QString MainWindow::get_str_for_unsigned_number(uint64_t num) {
+  if (ui->checkBox_hex->isChecked()) {
+    return "0x" + QString::number(static_cast<qulonglong>(num), 16).toUpper();
+  } else {
+    return QString::number(static_cast<qulonglong>(num), 10);
+  }
+}
+
 QString MainWindow::get_str_for_enum(const std::string& enum_str, int64_t num) {
   if (ui->checkBox_enum->isChecked()) {
     return QString::fromStdString(enum_str);
@@ -3270,7 +3285,21 @@ QString MainWindow::get_str_for_enum(const std::string& enum_str, int64_t num) {
 }
 
 int MainWindow::get_int_for_str(const QString& str) {
-  if (str.startsWith("0x") || str.startsWith("0X")) {
+  if (str.startsWith("-0x", Qt::CaseInsensitive)) {
+    bool ok = false;
+    const auto magnitude = str.mid(3).toUInt(&ok, 16);
+    const auto min_magnitude = static_cast<unsigned int>(std::numeric_limits<int>::max()) + 1U;
+
+    if (!ok || magnitude > min_magnitude) {
+      return 0;
+    }
+
+    if (magnitude == min_magnitude) {
+      return std::numeric_limits<int>::min();
+    }
+
+    return -static_cast<int>(magnitude);
+  } else if (str.startsWith("0x") || str.startsWith("0X")) {
     return str.mid(2).toInt(nullptr, 16);
   } else {
     return str.toInt(nullptr, 10);
@@ -3278,7 +3307,21 @@ int MainWindow::get_int_for_str(const QString& str) {
 }
 
 qlonglong MainWindow::get_longlong_for_str(const QString& str) {
-  if (str.startsWith("0x") || str.startsWith("0X")) {
+  if (str.startsWith("-0x", Qt::CaseInsensitive)) {
+    bool ok = false;
+    const auto magnitude = str.mid(3).toULongLong(&ok, 16);
+    const auto min_magnitude = static_cast<qulonglong>(std::numeric_limits<qlonglong>::max()) + 1ULL;
+
+    if (!ok || magnitude > min_magnitude) {
+      return 0;
+    }
+
+    if (magnitude == min_magnitude) {
+      return std::numeric_limits<qlonglong>::min();
+    }
+
+    return -static_cast<qlonglong>(magnitude);
+  } else if (str.startsWith("0x") || str.startsWith("0X")) {
     return str.mid(2).toLongLong(nullptr, 16);
   } else {
     return str.toLongLong(nullptr, 10);
@@ -3582,7 +3625,7 @@ bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& paren
         } break;
         case google::protobuf::FieldDescriptor::CPPTYPE_UINT32: {
           auto value = ref->GetUInt32(*msg, field);
-          item->setText(3, get_str_for_number(value));
+          item->setText(3, get_str_for_unsigned_number(value));
 
           item->setData(1, Qt::UserRole, AnalyzeDialog::kNumberType);
 
@@ -3596,7 +3639,7 @@ bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& paren
           if (ui->checkBox_time->isChecked() && field->name().find("time") != std::string::npos) {
             item->setText(3, QString::fromStdString(vlink::Helpers::format_date(value)));
           } else {
-            item->setText(3, get_str_for_number(value));
+            item->setText(3, get_str_for_unsigned_number(value));
           }
 
           item->setData(1, Qt::UserRole, AnalyzeDialog::kNumberType);
@@ -3814,7 +3857,7 @@ bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& paren
             } break;
             case google::protobuf::FieldDescriptor::CPPTYPE_UINT32: {
               auto value = ref->GetRepeatedUInt32(*msg, field, j);
-              item->setText(3, get_str_for_number(value));
+              item->setText(3, get_str_for_unsigned_number(value));
 
               item->setData(1, Qt::UserRole, AnalyzeDialog::kNumberType);
 
@@ -3828,7 +3871,7 @@ bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& paren
               if (ui->checkBox_time->isChecked() && field->name().find("time") != std::string::npos) {
                 item->setText(3, QString::fromStdString(vlink::Helpers::format_date(value)));
               } else {
-                item->setText(3, get_str_for_number(value));
+                item->setText(3, get_str_for_unsigned_number(value));
               }
 
               item->setData(1, Qt::UserRole, AnalyzeDialog::kNumberType);

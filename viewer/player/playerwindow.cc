@@ -1061,6 +1061,7 @@ void PlayerWindow::on_toolButton_play_clicked() {
 #endif
 
   bool is_black_mode = ui->checkBox_black->isChecked();
+  bool is_native_mode = ui->checkBox_native->isChecked();
 
   std::string filter_str = ui->lineEdit_filter->text().toStdString();
   std::vector<std::string> filter_list;
@@ -1076,7 +1077,7 @@ void PlayerWindow::on_toolButton_play_clicked() {
 
   wait_widget_->start_wait();
 
-  player_->post_task([is_black_mode, filter_list, this]() {
+  player_->post_task([is_black_mode, is_native_mode, filter_list, this]() {
     has_played_ = false;
 
     {
@@ -1162,7 +1163,7 @@ void PlayerWindow::on_toolButton_play_clicked() {
 
         ptr->set_ser_type(url_meta.ser_type, url_meta.schema_type);
 
-        if (ui->checkBox_native->isChecked()) {
+        if (is_native_mode) {
           ptr->set_property("dds.ip", "127.0.0.1");
         }
 
@@ -1506,7 +1507,7 @@ void PlayerWindow::on_horizontalSlider_progress_sliderReleased() {
     return;
   }
 
-  auto timestamp = ui->horizontalSlider_progress->value() * 100;
+  auto timestamp = static_cast<int64_t>(ui->horizontalSlider_progress->value()) * 100;
 
   update_timestamp(timestamp);
 
@@ -1539,7 +1540,7 @@ void PlayerWindow::on_horizontalSlider_progress_sliderMoved(int position) {
     return;
   }
 
-  update_timestamp(position * 100);
+  update_timestamp(static_cast<int64_t>(position) * 100);
 }
 
 void PlayerWindow::on_doubleSpinBox_rate_editingFinished() {

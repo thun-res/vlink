@@ -207,6 +207,8 @@ class MainWindow : public QMainWindow {
 
   QString get_str_for_number(int64_t num);
 
+  QString get_str_for_unsigned_number(uint64_t num);
+
   QString get_str_for_enum(const std::string& enum_str, int64_t num);
 
   int get_int_for_str(const QString& str);
