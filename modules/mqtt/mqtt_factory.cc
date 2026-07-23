@@ -1186,7 +1186,7 @@ void MqttClient::start_listening() {
                                        }
 
                                        Bytes resp_bytes =
-                                           Bytes::deep_copy(data + kMqttHeaderSize, size - kMqttHeaderSize);
+                                           Bytes::shallow_copy(data + kMqttHeaderSize, size - kMqttHeaderSize);
 
                                        Function<void(uint64_t, const Bytes&)> callback;
                                        NodeImpl* owner = nullptr;
