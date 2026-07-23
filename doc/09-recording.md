@@ -18,7 +18,7 @@
 | `url` | `std::string` | 消息所属 topic URL，不得为空 | 经插件 URL 重映射后的回放 URL |
 | `data` | `vlink::Bytes` | 序列化后的 payload | 浅视图，仅在回调内有效，需外带先复制 |
 | `ser_type` | `std::string` | 序列化类型名（如 `"demo.proto.PointCloud"`），原样存盘 | 由 reader 从元数据回填 |
-| `schema_type` | `vlink::SchemaType` | schema 家族：`kProtobuf` / `kFlatbuffers` / `kZeroCopy` / `kRaw` | 由 reader 从元数据回填 |
+| `schema_type` | `vlink::SchemaType` | schema 家族：`kProtobuf` / `kFlatbuffers` / `kZeroCopy` / `kRaw` / `kCdr` | 由 reader 从元数据回填 |
 | `action_type` | `vlink::ActionType` | 消息动作，通常 `kPublish` | 原样回传 |
 
 `ser_type` 标识 payload 的精确序列化类型，应用层据此选择解码器；`schema_type` 是供工具快速分派的粗粒度家族标签。两者关系与完整取值见 [03-serialization.md](03-serialization.md)。
@@ -287,7 +287,7 @@ vlink::Subscriber<LidarPoint> sub("dds://sensors/lidar");
 sub.set_record_path("/data/lidar.vdb");   // 后缀须为 .vdb/.vdbx/.vcap/.vcapx
 ```
 
-> **约束**：`intra://` 节点与使用原生 CDR 序列化的 `dds://` 节点**不支持节点级 `set_record_path()`**——调用会触发致命日志（`VLOG_F`，抛出 `RuntimeError`）。对支持的传输，路径会交给 `BagWriter::filter_get()`；后缀不在 `.vdb`/`.vdbx`/`.vcap`/`.vcapx` 之内时返回空指针，节点录制静默关闭。`VLINK_BAG_PATH` 全局 writer 可捕获经过 Bytes 序列化路径的普通 intra 消息，但不捕获 `IntraData` 直通消息或 DDS CDR；需要覆盖这些类型、或在录制前转码、过滤、重排时，应使用下面的手动 `BagWriter` 接管。
+> **约束**：`intra://` 节点**不支持节点级 `set_record_path()`**——调用会触发致命日志（`VLOG_F`，抛出 `RuntimeError`）。对支持的传输，路径会交给 `BagWriter::filter_get()`；后缀不在 `.vdb`/`.vdbx`/`.vcap`/`.vcapx` 之内时返回空指针，节点录制静默关闭。DDS CDR 以包含 encapsulation header 的完整字节负载录制和回放。`VLINK_BAG_PATH` 全局 writer 可捕获经过 Bytes 序列化路径的普通 intra 消息与 DDS CDR，但不捕获 `IntraData` 直通消息；需要在录制前转码、过滤或重排时，应使用下面的手动 `BagWriter` 接管。
 
 需要完全掌控帧内容时，把 `BagWriter` 注入订阅回调，回放时将 reader 输出转回 `Publisher`，是与业务通信结合的标准用法。
 

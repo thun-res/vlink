@@ -183,7 +183,7 @@ vlink::Publisher<Imu> pub2("dds://sensor/imu?qos=my_sensor");
 
 ![序列化类型自动推导](images/serialization-type-detection.png)
 
-开箱即用的类型族：POD 结构体（二进制直存，无编码转换但会内存复制）、Protobuf、FlatBuffers、DDS CDR（实现 `serialize/deserialize(Cdr&)`，DDS 快路径）、`std::string`、仅用于发送的 `const char*` / `char[]`、`vlink::Bytes`，以及实现一对编解码运算符的自定义类型。接收文本必须使用 `std::string`；机制与自定义序列化见 [消息序列化](03-serialization.md)。
+开箱即用的类型族：POD 结构体（二进制直存，无编码转换但会内存复制）、Protobuf、FlatBuffers、DDS CDR（实现 `serialize/deserialize(Cdr&)`，生成含 encapsulation header 的字节负载）、`std::string`、仅用于发送的 `const char*` / `char[]`、`vlink::Bytes`，以及实现一对编解码运算符的自定义类型。接收文本必须使用 `std::string`；机制与自定义序列化见 [消息序列化](03-serialization.md)。
 
 ---
 
@@ -291,7 +291,7 @@ if (pub.is_support_loan()) {
 | `VLINK_URL_PLUGINS` | 首次 URL 初始化前设置：完整值 `auto` 按需加载未链接的已知共享 transport，`none` / 空值关闭插件加载，其他非空值为显式预加载列表；模式值大小写不敏感 |
 | `VLINK_BAG_PATH` | 进程级全局录制的 bag 文件路径（后缀须为 `.vdb`/`.vdbx`/`.vcap`/`.vcapx`），录制经过 Bytes 路径的普通六原语收发 action；限制见 [消息录制与回放](09-recording.md) |
 
-如需逐节点而非进程级录制，可调用 API 层唯一录制钩子 `node.set_record_path(path)`：按相同后缀规则（`.vdb`/`.vdbx`/`.vcap`/`.vcapx`，不支持的后缀静默禁用）单独开启该节点的收发录制；`intra://` 与 `dds://` CDR 节点不支持（触发 fatal 日志）。
+如需逐节点而非进程级录制，可调用 API 层唯一录制钩子 `node.set_record_path(path)`：按相同后缀规则（`.vdb`/`.vdbx`/`.vcap`/`.vcapx`，不支持的后缀静默禁用）单独开启该节点的收发录制；`intra://` 不支持（触发 fatal 日志），`dds://` CDR 按完整封装字节录制。
 
 ---
 
@@ -590,7 +590,7 @@ if (!pub.init()) {
 
 - **Bag 损坏或无法打开**：先 `vlink-bag check file.vdb`；结构损坏用 `vlink-bag reindex`，数据损坏用 `vlink-bag fix`（`-y` 进入重建模式）。录制进程须经 `SIGINT`/`SIGTERM` 优雅退出，不可 `kill -9`。`.vcap` 即 MCAP，可由 Foxglove 直接打开；读写 `.vdb` 须在构建时启用 `ENABLE_SQLITE`。详见 [录制与回放](09-recording.md)。
 - **C API 返回码**：`VLINK_RET_RUNTIME_ERROR` 表示底层构造或初始化抛异常（以 `VLINK_LOG_LEVEL=0` 取 `what()`）；`VLINK_RET_MEMORY_ERROR` 表示调用方缓冲过小，此时 `vlink_get()` 会把所需字节数写回 `*size`，据此扩容后重试（`data` 不可为 `NULL`）；`VLINK_RET_TRANSFER_ERROR` 表示发布、监听或调用失败（发布端常因无订阅者）。每个 `vlink_create_*` 须配对 `vlink_destroy_*`。详见 [集成](13-integration.md)。
-- **安全模式**：两端密钥与配置须完全一致，不一致时连接建立但解密失败（GCM 校验失败返回 `false`）。CDR 类型不支持 VLink 加密，因其编码直接交由 DDS 处理而绕过加密流程；需加密时改用 Protobuf、FlatBuffers 或 Bytes，或改用 DDS 自身的 RTPS-Security。详见 [安全加密](07-security.md)。
+- **安全模式**：两端密钥与配置须完全一致，不一致时连接建立但解密失败（GCM 校验失败返回 `false`）。CDR 类型不支持 VLink 消息级加密，因为安全封装后的字节不再是合法的原生 CDR 负载；需加密时改用 Protobuf、FlatBuffers 或 Bytes，或改用 DDS 自身的 RTPS-Security。详见 [安全加密](07-security.md)。
 
 ---
 
@@ -604,7 +604,8 @@ if (!pub.init()) {
 | `Bad key in the query string!` | URL `?` 之后参数名拼写错误，见 §14.20 |
 | `Unsupported plugin module, libname: ...` | scheme 对应后端未编入或插件缺失，见 §14.20 |
 | `Cdr type does not support security.` | CDR 与加密不兼容，改用 Protobuf/FlatBuffers 或 DDS-Security，见 §14.23 |
-| `Topic ... has no registered typesupport.` | DDS 使用 CDR 但未注册 schema，改用 Protobuf/FlatBuffers 由框架自动处理 |
+| `Topic ... has no CDR type name.` | CDR 节点未提供 DDS 类型名；为 Bytes 节点调用 `set_ser_type(type, SchemaType::kCdr)`，或使用可自动推导类型名的 IDL/ROS 2 消息 |
+| `DDS raw/CDR mode and CDR type name cannot be changed while initialised` | 先调用 `deinit()`，修改序列化元数据后再调用 `init()` |
 | `Failed to loan buffer, size: ...` | 共享内存池不足或借出未归还，见 §14.19 |
 | `Shm roudi is not supported.` | 确认 `vlink-proxy -c` 已启动，业务进程不应自行启动 RouDi，见 §14.19 |
 | `ShmConf: Input string length is too long.` | 共享内存 runtime name 超过 80 字符，缩短后重试，见 §14.19 |

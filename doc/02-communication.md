@@ -114,7 +114,7 @@ pub.init();
 | --- | --- | --- |
 | `set_property()` | 推荐 | 一般不再生效 |
 | `set_ssl_options()` | 必须 | 不生效 |
-| `set_ser_type()` | 推荐 | 自动重启扩展后生效 |
+| `set_ser_type()` | 推荐 | 通常自动重启扩展；DDS raw/CDR 模式或 CDR 类型名变更须先 `deinit()` |
 | `set_discovery_enabled()` | 推荐 | 自动重启扩展后生效 |
 | `bind_proto_arena()` | 必须在对应节点首次创建接收对象前；`Getter` 建议以 `kWithoutInit` 构造，绑定后再 `init()` | 可在首次 `listen()` / `invoke()` / 接收更新前绑定 |
 | `set_record_path()` | 允许 | 允许 |
@@ -142,7 +142,7 @@ pub->init();
 | `SchemaType get_schema_type() const` | 返回当前 schema 家族（`SchemaType`） |
 | `bool get_discovery_enabled() const` | 查询发现是否启用 |
 
-**序列化类型 `set_ser_type()`**　序列化策略通常由消息类型 `MsgT` 在编译期自动推导，绝大多数情况无需手动设置。仅在使用动态类型或需自定义类型名时调用以覆盖默认；建议在 `init()` 前配置，初始化后调用会重启扩展元数据路径。
+**序列化类型 `set_ser_type()`**　序列化策略通常由消息类型 `MsgT` 在编译期自动推导，绝大多数情况无需手动设置。仅在使用动态类型或需自定义类型名时调用以覆盖默认；建议在 `init()` 前配置。初始化后修改通常会重启扩展元数据路径，但 DDS 的 raw/CDR 模式和 CDR 类型名同时决定原生 Topic/DataWriter/DataReader 类型，节点仍处于初始化状态时禁止修改；须先 `deinit()`，修改后再 `init()`。
 
 ```cpp
 void set_ser_type(const std::string& ser_type, SchemaType schema_type = SchemaType::kUnknown);
@@ -452,7 +452,7 @@ vlink::SecuritySubscriber<MyMsg> sub("dds://secure/data", cfg);
 sub.listen([](const MyMsg& msg) { handle(msg); });
 ```
 
-边界条件：消息级加密不支持两类组合——当前实现显式排除整个 `intra://` 路径（其中 `shared_ptr<IntraDataType>` 专用路径还会触发编译期 `static_assert`），也排除 `dds://` 配合 CDR 类型（CDR 直接交由 DDS 处理）。在这些组合上 `enable_security()` 会打印警告并返回 `false`；`Security*` 构造随后因没有可用安全上下文而拒绝初始化，不会静默降级成明文。完整用法见 [安全加密](07-security.md)。
+边界条件：消息级加密不支持两类组合——当前实现显式排除整个 `intra://` 路径（其中 `shared_ptr<IntraDataType>` 专用路径还会触发编译期 `static_assert`），也排除 `dds://` 配合 CDR 类型（加密后的字节不再是合法的原生 CDR 负载）。在这些组合上 `enable_security()` 会打印警告并返回 `false`；`Security*` 构造随后因没有可用安全上下文而拒绝初始化，不会静默降级成明文。完整用法见 [安全加密](07-security.md)。
 
 ---
 
