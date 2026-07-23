@@ -71,7 +71,7 @@ bool ExprtkExpression::compile(const std::string& expression) {
 }
 
 double ExprtkExpression::value() const {
-  if (!impl_->compiled) {
+  if VUNLIKELY (!impl_->compiled) {
     return 0.0;
   }
 
