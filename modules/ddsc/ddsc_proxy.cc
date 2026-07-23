@@ -53,7 +53,7 @@ DomainParticipant::~DomainParticipant() {
 Topic::Topic(dds_entity_t part, const std::string& topic, const std::string& type_name) {
   (void)type_name;
 
-  entity = dds_create_topic(part, &vlink_BuiltInRaw_desc, topic.c_str(), nullptr, nullptr);
+  entity = dds_create_topic(part, &vlink_dds__BuiltInRaw__desc, topic.c_str(), nullptr, nullptr);
 
   if VUNLIKELY (entity <= 0) {
     CLOG_E("dds_create_topic: %s.", dds_strretcode(-entity));

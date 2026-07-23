@@ -431,7 +431,7 @@ std::shared_ptr<ddsc::DataReader> DdscFactory::create_datareader(uint8_t type, c
 }
 
 bool DdscFactory::write_data(dds_entity_t entity, const Bytes& bytes, uint64_t id) {
-  vlink_BuiltInRaw msg;
+  vlink_dds__BuiltInRaw_ msg;
 
   msg.id = id;
   msg.data._buffer = const_cast<uint8_t*>(bytes.data());
@@ -461,11 +461,14 @@ bool DdscFactory::take_data(dds_entity_t entity, ReadMessage& msg) {
     return false;
   }
 
-  auto* sample = static_cast<vlink_BuiltInRaw*>(msg.sample);
-
-  msg.id = sample->id;
-
-  msg.bytes = Bytes::shallow_copy(sample->data._buffer, sample->data._length);
+  if VLIKELY (msg.info.valid_data) {
+    auto* sample = static_cast<vlink_dds__BuiltInRaw_*>(msg.sample);
+    msg.id = sample->id;
+    msg.bytes = Bytes::shallow_copy(sample->data._buffer, sample->data._length);
+  } else {
+    msg.id = 0;
+    msg.bytes.clear();
+  }
 
   msg.timestamp = msg.info.source_timestamp;
 
