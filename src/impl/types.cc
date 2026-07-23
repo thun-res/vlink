@@ -45,6 +45,7 @@ bool SchemaData::is_valid_type(SchemaType schema_type) noexcept {
     case SchemaType::kFlatbuffers:
     case SchemaType::kRaw:
     case SchemaType::kZeroCopy:
+    case SchemaType::kCdr:
       return true;
     default:         // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -72,6 +73,8 @@ std::string_view SchemaData::convert_type(SchemaType schema_type) noexcept {
       return "raw";
     case SchemaType::kZeroCopy:
       return "zerocopy";
+    case SchemaType::kCdr:
+      return "cdr";
     default:
       return "";
   }
@@ -130,6 +133,10 @@ SchemaType SchemaData::convert_encoding(std::string_view encoding) noexcept {
     return SchemaType::kZeroCopy;
   }
 
+  if (iequals(encoding, "cdr")) {
+    return SchemaType::kCdr;
+  }
+
   return SchemaType::kUnknown;
 }
 
@@ -183,6 +190,7 @@ Version Version::from_string(const std::string& version_str) noexcept {
   if (std::getline(ss, token, '.')) {
     const auto* end = token.data() + token.size();
     auto result = std::from_chars(token.data(), end, version.major);
+
     if VUNLIKELY (result.ptr != end) {
       version.major = -1;
     }
@@ -191,6 +199,7 @@ Version Version::from_string(const std::string& version_str) noexcept {
   if (std::getline(ss, token, '.')) {
     const auto* end = token.data() + token.size();
     auto result = std::from_chars(token.data(), end, version.minor);
+
     if VUNLIKELY (result.ptr != end) {
       version.minor = -1;
     }
@@ -199,6 +208,7 @@ Version Version::from_string(const std::string& version_str) noexcept {
   if (std::getline(ss, token, '.')) {
     const auto* end = token.data() + token.size();
     auto result = std::from_chars(token.data(), end, version.patch);
+
     if VUNLIKELY (result.ptr != end) {
       version.patch = -1;
     }
