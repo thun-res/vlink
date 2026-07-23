@@ -41,12 +41,12 @@ jobs:
               repo: context.repo.repo,
               issue_number: context.payload.pull_request.number,
               body: [
-                '🤖 **Codex + Claude automated review started**',
+                '🤖 **Codex + Claude 自动审查已启动**',
                 '',
-                '- Codex: handled by the repository Codex Automatic reviews integration.',
-                '- Claude: running in this GitHub Actions workflow.',
+                '- Codex：由仓库的 Codex Automatic reviews 自动处理。',
+                '- Claude：正在通过此 GitHub Actions 工作流运行。',
                 '',
-                `[View workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+                `[查看工作流运行记录](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
               ].join('\n'),
             });
 
@@ -77,6 +77,13 @@ jobs:
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Write every GitHub review response in Simplified Chinese (zh-CN),
+            including the top-level summary, finding titles, explanations,
+            impact descriptions, and remediation suggestions. Keep code
+            identifiers, file paths, commands, API names, logs, and quoted
+            error messages in their original form, but explain them in
+            Simplified Chinese. Do not respond in English.
 
             Review this pull request for actionable correctness, security,
             concurrency, performance, API/ABI compatibility, portability, and
