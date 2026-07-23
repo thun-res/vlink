@@ -42,19 +42,20 @@ void DdsSubscriberImpl::ReaderListener::on_data_available(dds::DataReader* reade
     if (instance->is_cdr_type) {
       DdsFactory::ReadCdrMessage msg;
 
-      msg.sample = instance->type_support_.create_data();
-
       while (DdsFactory::take_cdr_data(reader, msg)) {
-        if VUNLIKELY (instance->quit_flag_.load(std::memory_order_acquire)) {
+        const bool should_quit = instance->quit_flag_.load(std::memory_order_acquire);
+        DdsFactory::return_cdr_loan(reader, msg);
+
+        if VUNLIKELY (should_quit) {
           break;
         }
       }
-
-      instance->type_support_.delete_data(msg.sample);
     } else {
       DdsFactory::ReadMessage msg;
 
       while (DdsFactory::take_data(reader, msg)) {
+        DdsFactory::return_data_loan(reader, msg);
+
         if VUNLIKELY (instance->quit_flag_.load(std::memory_order_acquire)) {
           break;
         }
@@ -88,14 +89,16 @@ void DdsSubscriberImpl::process_message(dds::DataReader* reader) {
   if (is_cdr_type) {
     DdsFactory::ReadCdrMessage msg;
 
-    msg.sample = type_support_.create_data();
-
     while (DdsFactory::take_cdr_data(reader, msg)) {
       if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
+        DdsFactory::return_cdr_loan(reader, msg);
         break;
       }
 
-      if VUNLIKELY (!msg.info.valid_data) {
+      const auto& info = msg.infos[0];
+
+      if VUNLIKELY (!info.valid_data) {
+        DdsFactory::return_cdr_loan(reader, msg);
         continue;
       }
 
@@ -106,25 +109,28 @@ void DdsSubscriberImpl::process_message(dds::DataReader* reader) {
         uint64_t part1 = 0;
         uint64_t part2 = 0;
 
-        std::memcpy(&part1, msg.info.publication_handle.value, sizeof(uint64_t));
-        std::memcpy(&part2, msg.info.publication_handle.value + 8, sizeof(uint64_t));
+        std::memcpy(&part1, info.publication_handle.value, sizeof(uint64_t));
+        std::memcpy(&part2, info.publication_handle.value + 8, sizeof(uint64_t));
 
         calc_sample_.update(msg.id, part1 ^ part2);
       }
 
-      callback_(msg.bytes);
+      callback_(msg.samples[0]);
+      DdsFactory::return_cdr_loan(reader, msg);
     }
-
-    type_support_.delete_data(msg.sample);
   } else {
     DdsFactory::ReadMessage msg;
 
     while (DdsFactory::take_data(reader, msg)) {
       if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
+        DdsFactory::return_data_loan(reader, msg);
         break;
       }
 
-      if VUNLIKELY (!msg.info.valid_data) {
+      const auto& info = msg.infos[0];
+
+      if VUNLIKELY (!info.valid_data) {
+        DdsFactory::return_data_loan(reader, msg);
         continue;
       }
 
@@ -135,13 +141,14 @@ void DdsSubscriberImpl::process_message(dds::DataReader* reader) {
         uint64_t part1 = 0;
         uint64_t part2 = 0;
 
-        std::memcpy(&part1, msg.info.publication_handle.value, sizeof(uint64_t));
-        std::memcpy(&part2, msg.info.publication_handle.value + 8, sizeof(uint64_t));
+        std::memcpy(&part1, info.publication_handle.value, sizeof(uint64_t));
+        std::memcpy(&part2, info.publication_handle.value + 8, sizeof(uint64_t));
 
         calc_sample_.update(msg.id, part1 ^ part2);
       }
 
-      callback_(msg.bytes);
+      callback_(msg.samples[0].data());
+      DdsFactory::return_data_loan(reader, msg);
     }
   }
 }
@@ -153,7 +160,7 @@ void DdsSubscriberImpl::init() {
 
   participant_ = DdsFactory::create_participant(kPublisher | kSubscriber, conf_, get_all_properties());
 
-  topic_ = DdsFactory::create_topic(kPublisher | kSubscriber, conf_, participant_.get(), is_cdr_type);
+  topic_ = DdsFactory::create_topic(kPublisher | kSubscriber, conf_, participant_.get(), is_cdr_type, {}, ser_type);
 
   subscriber_ = DdsFactory::create_subscriber(kSubscriber, conf_, participant_.get());
 
@@ -163,10 +170,8 @@ void DdsSubscriberImpl::init() {
     return;
   }
 
-  type_support_ = participant_->find_type(topic_->get_type_name());
-
-  if VUNLIKELY (!type_support_) {
-    CLOG_F("Failed to find typesupport (%s).", topic_->get_type_name().c_str());
+  if (is_cdr_type) {
+    ser_type = topic_->get_type_name();
   }
 
   quit_flag_.store(false, std::memory_order_release);
@@ -182,7 +187,6 @@ void DdsSubscriberImpl::deinit() {
   subscriber_.reset();
   topic_.reset();
   participant_.reset();
-  type_support_.reset();
   callback_ = {};
   is_listened = false;
 }
@@ -224,7 +228,8 @@ bool DdsSubscriberImpl::listen(MsgCallback&& callback) {
 
   listener_.emplace(this);
 
-  reader_ = DdsFactory::create_datareader(kSubscriber, conf_, subscriber_.get(), topic_.get(), &listener_.value());
+  reader_ = DdsFactory::create_datareader(kSubscriber, conf_, subscriber_.get(), topic_.get(), &listener_.value(),
+                                          is_cdr_type);
 
   return true;
 }

@@ -53,19 +53,20 @@ void DdsServerImpl::ReaderListener::on_data_available(dds::DataReader* reader) {
     if (instance->is_cdr_type) {
       DdsFactory::ReadCdrMessage msg;
 
-      msg.sample = instance->type_support_req_.create_data();
-
       while (DdsFactory::take_cdr_data(reader, msg)) {
-        if VUNLIKELY (instance->quit_flag_.load(std::memory_order_relaxed)) {
+        const bool should_quit = instance->quit_flag_.load(std::memory_order_relaxed);
+        DdsFactory::return_cdr_loan(reader, msg);
+
+        if VUNLIKELY (should_quit) {
           break;
         }
       }
-
-      instance->type_support_req_.delete_data(msg.sample);
     } else {
       DdsFactory::ReadMessage msg;
 
       while (DdsFactory::take_data(reader, msg)) {
+        DdsFactory::return_data_loan(reader, msg);
+
         if VUNLIKELY (instance->quit_flag_.load(std::memory_order_relaxed)) {
           break;
         }
@@ -97,20 +98,18 @@ DdsServerImpl::DdsServerImpl(const DdsConf& conf) : conf_(conf) {}
 
 void DdsServerImpl::process_message(dds::DataReader* reader) {
   if (is_cdr_type) {
-    if VUNLIKELY (!type_support_req_) {
-      return;
-    }
-
     DdsFactory::ReadCdrMessage msg;
-
-    msg.sample = type_support_req_.create_data();
 
     while (DdsFactory::take_cdr_data(reader, msg)) {
       if VUNLIKELY (quit_flag_.load(std::memory_order_relaxed)) {
+        DdsFactory::return_cdr_loan(reader, msg);
         break;
       }
 
-      if VUNLIKELY (!msg.info.valid_data) {
+      const auto& info = msg.infos[0];
+
+      if VUNLIKELY (!info.valid_data) {
+        DdsFactory::return_cdr_loan(reader, msg);
         continue;
       }
 
@@ -118,43 +117,53 @@ void DdsServerImpl::process_message(dds::DataReader* reader) {
         {
           std::lock_guard lock(param_mtx_);
           rtps::WriteParams param;
-          param.related_sample_identity() = msg.info.sample_identity;
+          param.related_sample_identity() = info.sample_identity;
           msg.id = cdr_seq_.fetch_add(1, std::memory_order_relaxed) + 1;
           cdr_id_map_.emplace(msg.id, std::move(param));
         }
 
         Bytes resp_data;
 
-        callback_(msg.id, msg.bytes, &resp_data);
+        callback_(msg.id, msg.samples[0], &resp_data);
       } else {
-        callback_(msg.id, msg.bytes, nullptr);
+        callback_(msg.id, msg.samples[0], nullptr);
       }
-    }
 
-    type_support_req_.delete_data(msg.sample);
+      DdsFactory::return_cdr_loan(reader, msg);
+    }
   } else {
     DdsFactory::ReadMessage msg;
 
     while (DdsFactory::take_data(reader, msg)) {
       if VUNLIKELY (quit_flag_.load(std::memory_order_relaxed)) {
+        DdsFactory::return_data_loan(reader, msg);
         break;
       }
 
-      if VUNLIKELY (!msg.info.valid_data) {
+      const auto& info = msg.infos[0];
+
+      if VUNLIKELY (!info.valid_data) {
+        DdsFactory::return_data_loan(reader, msg);
         continue;
       }
 
       if (writer_) {
         Bytes resp_data;
-        callback_(msg.id, msg.bytes, &resp_data);
+        callback_(msg.id, msg.samples[0].data(), &resp_data);
       } else {
-        callback_(msg.id, msg.bytes, nullptr);
+        callback_(msg.id, msg.samples[0].data(), nullptr);
       }
+
+      DdsFactory::return_data_loan(reader, msg);
     }
   }
 }
 
 void DdsServerImpl::init() {
+  if VUNLIKELY (is_resp_type && is_cdr_type != is_resp_cdr_type) {
+    VLOG_F("DdsServer: Request and response must both use raw or CDR serialization.");
+  }
+
   if VUNLIKELY (is_cdr_type && is_security_type) {
     VLOG_F("Cdr type does not support security.");
   }
@@ -163,31 +172,33 @@ void DdsServerImpl::init() {
 
   if (is_resp_type) {
     std::tie(topic_req_, topic_resp_) =
-        DdsFactory::create_method_topic(kServer | kClient, conf_, participant_.get(), is_cdr_type);
+        DdsFactory::create_method_topic(kServer | kClient, conf_, participant_.get(), is_cdr_type, ser_type);
+  } else {
+    topic_req_ = DdsFactory::create_topic(kServer | kClient, conf_, participant_.get(), is_cdr_type, {}, ser_type);
+  }
 
+  if VUNLIKELY (!participant_ || !topic_req_ || (is_resp_type && !topic_resp_)) {
+    VLOG_E("DdsServerImpl::init(): participant/topic creation failed; server left uninitialised.");
+    return;
+  }
+
+  if (is_cdr_type) {
+    ser_type = topic_req_->get_type_name();
+    if (is_resp_type) {
+      ser_type += "|" + topic_resp_->get_type_name();
+    }
+  }
+
+  if (is_resp_type) {
     publisher_ = DdsFactory::create_publisher(kServer, conf_, participant_.get());
 
     writer_listener_.emplace(this);
 
-    writer_ =
-        DdsFactory::create_datawriter(kServer, conf_, publisher_.get(), topic_resp_.get(), &writer_listener_.value());
-  } else {
-    topic_req_ = DdsFactory::create_topic(kServer | kClient, conf_, participant_.get(), is_cdr_type);
+    writer_ = DdsFactory::create_datawriter(kServer, conf_, publisher_.get(), topic_resp_.get(),
+                                            &writer_listener_.value(), is_cdr_type);
   }
 
   subscriber_ = DdsFactory::create_subscriber(kServer, conf_, participant_.get());
-
-  if VUNLIKELY (!participant_ || !topic_req_) {
-    VLOG_E("DdsServerImpl::init(): participant/topic creation failed; server left uninitialised.");
-
-    return;
-  }
-
-  type_support_req_ = participant_->find_type(topic_req_->get_type_name());
-
-  if VUNLIKELY (!type_support_req_) {
-    CLOG_F("Failed to find typesupport (%s).", topic_req_->get_type_name().c_str());
-  }
 
   quit_flag_.store(false, std::memory_order_relaxed);
 }
@@ -206,7 +217,6 @@ void DdsServerImpl::deinit() {
   topic_resp_.reset();
   topic_req_.reset();
   participant_.reset();
-  type_support_req_.reset();
   std::lock_guard lock(param_mtx_);
   cdr_id_map_.clear();
   callback_ = {};
@@ -260,8 +270,8 @@ bool DdsServerImpl::listen(ReqRespCallback&& callback) {
 
   reader_listener_.emplace(this);
 
-  reader_ =
-      DdsFactory::create_datareader(kServer, conf_, subscriber_.get(), topic_req_.get(), &reader_listener_.value());
+  reader_ = DdsFactory::create_datareader(kServer, conf_, subscriber_.get(), topic_req_.get(),
+                                          &reader_listener_.value(), is_cdr_type);
 
   return true;
 }

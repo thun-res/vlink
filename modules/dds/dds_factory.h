@@ -23,6 +23,8 @@
 
 #pragma once
 
+#include <fastdds/dds/core/LoanableSequence.hpp>
+
 #ifdef VLINK_SUPPORT_DDS_V3
 #include <fastdds/dds/domain/DomainParticipant.hpp>
 #include <fastdds/dds/domain/DomainParticipantFactory.hpp>
@@ -94,19 +96,16 @@ class DdsFactory final {
 
  public:
   struct ReadCdrMessage final {
-    Bytes bytes;
-    dds::SampleInfo info;
+    dds::LoanableSequence<Bytes> samples;
+    dds::SampleInfoSeq infos;
     uint64_t id{0};
-    void* sample{nullptr};
     int64_t timestamp{0};
   };
 
   struct ReadMessage final {
-    Bytes bytes;
-    dds::SampleInfo info;
-    BuiltInRaw raw;
+    dds::LoanableSequence<BuiltInRaw> samples;
+    dds::SampleInfoSeq infos;
     uint64_t id{0};
-    uint64_t guid{0};
     int64_t timestamp{0};
   };
 
@@ -118,10 +117,12 @@ class DdsFactory final {
                                                                     const Conf::PropertiesMap& properties);
 
   static std::shared_ptr<dds::Topic> create_topic(uint8_t type, const DdsConf& conf, dds::DomainParticipant* part,
-                                                  bool is_cdr_type, std::string topic = "");
+                                                  bool is_cdr_type, std::string topic = "",
+                                                  std::string cdr_type_name = "");
 
   static std::pair<std::shared_ptr<dds::Topic>, std::shared_ptr<dds::Topic>> create_method_topic(
-      uint8_t type, const DdsConf& conf, dds::DomainParticipant* part, bool is_cdr_type);
+      uint8_t type, const DdsConf& conf, dds::DomainParticipant* part, bool is_cdr_type,
+      const std::string& cdr_type_names = "");
 
   static std::shared_ptr<dds::Publisher> create_publisher(uint8_t type, const DdsConf& conf,
                                                           dds::DomainParticipant* part);
@@ -131,11 +132,11 @@ class DdsFactory final {
 
   static std::shared_ptr<dds::DataWriter> create_datawriter(uint8_t type, const DdsConf& conf,
                                                             dds::Publisher* publisher, dds::Topic* topic,
-                                                            dds::DataWriterListener* listener);
+                                                            dds::DataWriterListener* listener, bool is_cdr_type);
 
   static std::shared_ptr<dds::DataReader> create_datareader(uint8_t type, const DdsConf& conf,
                                                             dds::Subscriber* subscriber, dds::Topic* topic,
-                                                            dds::DataReaderListener* listener);
+                                                            dds::DataReaderListener* listener, bool is_cdr_type);
 
   static bool write_data(dds::DataWriter* writer, const Bytes& bytes, uint64_t id);
 
@@ -143,7 +144,11 @@ class DdsFactory final {
 
   static bool take_data(dds::DataReader* reader, ReadMessage& msg);
 
+  static void return_data_loan(dds::DataReader* reader, ReadMessage& msg);
+
   static bool take_cdr_data(dds::DataReader* reader, ReadCdrMessage& msg);
+
+  static void return_cdr_loan(dds::DataReader* reader, ReadCdrMessage& msg);
 
   static uint64_t get_guid(const rtps::GUID_t& guid, uint32_t seq);
 

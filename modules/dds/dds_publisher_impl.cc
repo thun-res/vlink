@@ -62,7 +62,7 @@ void DdsPublisherImpl::init() {
 
   participant_ = DdsFactory::create_participant(kPublisher | kSubscriber, conf_, get_all_properties());
 
-  topic_ = DdsFactory::create_topic(kPublisher | kSubscriber, conf_, participant_.get(), is_cdr_type);
+  topic_ = DdsFactory::create_topic(kPublisher | kSubscriber, conf_, participant_.get(), is_cdr_type, {}, ser_type);
 
   publisher_ = DdsFactory::create_publisher(kPublisher, conf_, participant_.get());
 
@@ -72,9 +72,14 @@ void DdsPublisherImpl::init() {
     return;
   }
 
+  if (is_cdr_type) {
+    ser_type = topic_->get_type_name();
+  }
+
   listener_.emplace(this);
 
-  writer_ = DdsFactory::create_datawriter(kPublisher, conf_, publisher_.get(), topic_.get(), &listener_.value());
+  writer_ =
+      DdsFactory::create_datawriter(kPublisher, conf_, publisher_.get(), topic_.get(), &listener_.value(), is_cdr_type);
 }
 
 void DdsPublisherImpl::deinit() {
