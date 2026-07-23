@@ -108,11 +108,11 @@ void DdsCdrPubSubType::register_type_object_representation() {
 }
 #else
 bool DdsCdrPubSubType::serialize(void* data, rtps::SerializedPayload_t* payload) {
-  return payload && copy_to_payload(*static_cast<const Bytes*>(data), *payload);
+  return payload != nullptr && copy_to_payload(*static_cast<const Bytes*>(data), *payload);
 }
 
 bool DdsCdrPubSubType::deserialize(rtps::SerializedPayload_t* payload, void* data) {
-  return payload && copy_from_payload(*payload, *static_cast<Bytes*>(data));
+  return payload != nullptr && copy_from_payload(*payload, *static_cast<Bytes*>(data));
 }
 
 std::function<uint32_t()> DdsCdrPubSubType::getSerializedSizeProvider(void* data) {
@@ -134,8 +134,8 @@ bool DdsCdrPubSubType::getKey(void* data, rtps::InstanceHandle_t* handle, bool f
   }
 
   void* sample = native_type_.create_data();
-  const bool result =
-      sample && native_type_->deserialize(&payload, sample) && native_type_->getKey(sample, handle, force_md5);
+  const bool result = sample != nullptr && native_type_->deserialize(&payload, sample) &&
+                      native_type_->getKey(sample, handle, force_md5);
 
   if VUNLIKELY (sample) {
     native_type_.delete_data(sample);
