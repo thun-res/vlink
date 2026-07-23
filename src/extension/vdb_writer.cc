@@ -286,12 +286,7 @@ VDBWriter::VDBWriter(const std::string& path, const Config& config)
     std::string suffix = file_path.extension().string();
 #endif
 
-    std::filesystem::path parent_path;
-
-    try {
-      parent_path = file_path.parent_path();
-    } catch (std::filesystem::filesystem_error&) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    const auto parent_path = file_path.parent_path();
 
     std::transform(suffix.begin(), suffix.end(), suffix.begin(), [](unsigned char c) { return std::tolower(c); });
 
@@ -339,7 +334,8 @@ VDBWriter::VDBWriter(const std::string& path, const Config& config)
           }
 
           std::filesystem::remove(file_path);
-        } catch (nlohmann::json::exception&) {
+        } catch (const nlohmann::json::exception& e) {
+          CLOG_W("VDBWriter: Failed to parse stale split manifest [%s]: %s.", path.c_str(), e.what());
         }
       }
 
@@ -674,10 +670,6 @@ bool VDBWriter::load_schema(const std::string& ser_type, SchemaType& schema_type
 
 bool VDBWriter::push_schema(const SchemaData& schema_data) {
   SchemaData stored_schema = schema_data;
-
-  if VUNLIKELY (!stored_schema.data.is_owner()) {
-    stored_schema.data.deep_copy(schema_data.data);
-  }
 
   if (impl_->config.sync_mode) {
     std::lock_guard lock(impl_->write_mtx);
@@ -2225,9 +2217,9 @@ bool VDBWriter::write_filex(bool complete) {
     if VUNLIKELY (!filex) {
       return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
-  } catch (nlohmann::json::exception& e) {
-    VLOG_F("VDBWriter: JSON error during config export, ", e.what(), ".");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return false;                                                           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  } catch (const nlohmann::json::exception& e) {
+    CLOG_W("VDBWriter: JSON error during config export: %s.", e.what());  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return false;                                                         // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
   return true;

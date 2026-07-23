@@ -245,10 +245,6 @@ VCAPWriter::VCAPWriter(const std::string& path, const Config& config)
     }
   }
 
-  // if VUNLIKELY (impl_->config.wal_mode) {
-  //   VLOG_W("VCAPWriter not support [config.wal_mode]");
-  // }
-
   if VUNLIKELY (impl_->config.max_task_depth <= 0) {
     impl_->config.max_task_depth = BagWriter::Config().max_task_depth;
   }
@@ -268,12 +264,7 @@ VCAPWriter::VCAPWriter(const std::string& path, const Config& config)
     std::string suffix = file_path.extension().string();
 #endif
 
-    std::filesystem::path parent_path;
-
-    try {
-      parent_path = file_path.parent_path();
-    } catch (std::filesystem::filesystem_error&) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    const auto parent_path = file_path.parent_path();
 
     std::transform(suffix.begin(), suffix.end(), suffix.begin(), [](unsigned char c) { return std::tolower(c); });
 
@@ -321,8 +312,9 @@ VCAPWriter::VCAPWriter(const std::string& path, const Config& config)
           }
 
           std::filesystem::remove(file_path);
-        } catch (nlohmann::json::exception&) {
-        }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        } catch (const nlohmann::json::exception& e) {
+          CLOG_W("VCAPWriter: Failed to parse stale split manifest [%s]: %s.", path.c_str(), e.what());
+        }
       }
 
       impl_->is_split_mode.store(true, std::memory_order_relaxed);
@@ -610,10 +602,6 @@ bool VCAPWriter::load_schema(const std::string& ser_type, SchemaType& schema_typ
 
 bool VCAPWriter::push_schema(const SchemaData& schema_data) {
   SchemaData stored_schema = schema_data;
-
-  if VUNLIKELY (!stored_schema.data.is_owner()) {
-    stored_schema.data.deep_copy(schema_data.data);
-  }
 
   if (impl_->config.sync_mode) {
     std::lock_guard lock(impl_->write_mtx);
@@ -1278,9 +1266,9 @@ bool VCAPWriter::write_filex(bool complete) {
     if VUNLIKELY (!filex) {
       return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
-  } catch (nlohmann::json::exception& e) {
-    VLOG_F("VCAPWriter: Filesystem error, ", e.what(), ".");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return false;                                             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  } catch (const nlohmann::json::exception& e) {
+    CLOG_W("VCAPWriter: JSON error during config export: %s.", e.what());  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return false;                                                          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
   return true;
