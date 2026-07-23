@@ -59,7 +59,7 @@
  * | Protobuf pointer  | @c MyProto*                      | @c kProtoPtrType    | Needs @c bind_proto_arena.     |
  * | FlatBuffers obj   | @c MyTableT (NativeTable)        | @c kFlatTableType   | Object API.                    |
  * | FlatBuffers ptr   | @c MyTable*                      | @c kFlatPtrType     | Zero-copy view of buffer.      |
- * | DDS CDR           | type with @c deserialize(Cdr&)   | @c kCdrType         | DDS fast path.                 |
+ * | DDS CDR           | FastDDS IDL or ROS2 message type | @c kCdrType         | Encapsulated CDR bytes.        |
  * | POD struct        | trivial standard-layout type     | @c kStandardType    | @c sizeof(T) byte copy.        |
  * | String            | @c std::string                   | @c kStringType      | Payload-sized byte string.     |
  * | Custom            | type with @c operator>>/<<       | @c kCustomType      | User-supplied codec.           |

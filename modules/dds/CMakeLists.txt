@@ -57,10 +57,17 @@ else()
   vlink_target_system_includes_from(${PROJECT_NAME} fastrtps)
   message(STATUS "Use fastdds v2")
 endif()
+if(NOT TARGET fastcdr)
+  find_package(fastcdr CONFIG QUIET)
+endif()
+if(NOT TARGET fastcdr)
+  message(FATAL_ERROR "DDS CDR requires fastcdr")
+endif()
+target_link_libraries(${PROJECT_NAME} PUBLIC fastcdr)
 target_compile_definitions(
   ${PROJECT_NAME}
   PRIVATE "${VLINK_LIB_DEFINES}"
-  PUBLIC "VLINK_SUPPORT_DDS"
+  PUBLIC "VLINK_SUPPORT_DDS" "VLINK_SUPPORT_CDR"
 )
 
 # install

@@ -24,6 +24,7 @@
 #include "./dds_factory.h"
 
 #include <charconv>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -32,6 +33,7 @@
 #include "./base/helpers.h"
 #include "./base/utils.h"
 #include "./dds_qos.h"
+#include "./dds_topic.h"
 #include "./extension/qos_profile.h"
 #include "./impl/ssl_options.h"
 
@@ -180,6 +182,7 @@ std::shared_ptr<dds::DomainParticipant> DdsFactory::create_participant(uint8_t t
 
     if (!inserted) {
       auto inserted_part = iter->second.lock();
+
       if VLIKELY (inserted_part) {
         lock.unlock();
         part = std::move(inserted_part);
@@ -193,10 +196,11 @@ std::shared_ptr<dds::DomainParticipant> DdsFactory::create_participant(uint8_t t
 }
 
 std::shared_ptr<dds::Topic> DdsFactory::create_topic(uint8_t type, const DdsConf& conf, dds::DomainParticipant* part,
-                                                     bool is_cdr_type, std::string topic) {
+                                                     bool is_cdr_type, std::string topic, std::string cdr_type_name) {
   static auto& factory = DdsFactory::get();
 
   dds::TypeSupport type_support;
+  dds::TypeSupport native_type;
 
   if (topic.empty()) {
     topic = conf.topic;
@@ -205,8 +209,25 @@ std::shared_ptr<dds::Topic> DdsFactory::create_topic(uint8_t type, const DdsConf
   Function<void*()> type_support_callback = DdsConf::find_type_support(topic);
 
   if (is_cdr_type) {
-    if VUNLIKELY (!type_support_callback) {
-      VLOG_F("DdsFactory: Topic ", topic, " has no registered typesupport.");
+    if (type_support_callback) {
+      native_type.reset(static_cast<dds::TopicDataType*>(type_support_callback()));
+
+      if VUNLIKELY (!native_type) {
+        VLOG_F("DdsFactory: Topic ", topic, " CDR typesupport creation failed.");
+      }
+
+      const auto& native_type_name = native_type.get_type_name();
+
+      if VUNLIKELY (!cdr_type_name.empty() && cdr_type_name != native_type_name) {
+        CLOG_W("DdsFactory: Topic [%s] CDR type [%s] => [%s].", topic.c_str(), cdr_type_name.c_str(),
+               native_type_name.c_str());
+      }
+
+      cdr_type_name = native_type_name;
+    }
+
+    if VUNLIKELY (cdr_type_name.empty()) {
+      VLOG_F("DdsFactory: Topic ", topic, " has no CDR type name.");
     }
   } else {
     if VUNLIKELY (type_support_callback) {
@@ -236,7 +257,7 @@ std::shared_ptr<dds::Topic> DdsFactory::create_topic(uint8_t type, const DdsConf
     lock.unlock();
 
     if (is_cdr_type) {
-      type_support.reset(static_cast<dds::TopicDataType*>(type_support_callback()));
+      type_support.reset(new DdsCdrPubSubType(cdr_type_name, std::move(native_type)));
     } else {
       std::lock_guard raw_lock(factory.raw_typesupport_mtx_);
       type_support = factory.raw_typesupport_;
@@ -283,6 +304,7 @@ std::shared_ptr<dds::Topic> DdsFactory::create_topic(uint8_t type, const DdsConf
 
     if (!inserted) {
       auto inserted_topic = iter->second.lock();
+
       if VLIKELY (inserted_topic) {
         lock.unlock();
         dds_topic = std::move(inserted_topic);
@@ -291,11 +313,17 @@ std::shared_ptr<dds::Topic> DdsFactory::create_topic(uint8_t type, const DdsConf
       }
     }
   } else {
+    const auto& expected_type_name = is_cdr_type ? cdr_type_name : factory.raw_typesupport_.get_type_name();
+
+    if VUNLIKELY (dds_topic->get_type_name() != expected_type_name) {
+      VLOG_F("DdsFactory: Topic ", topic, " type mismatch.");
+    }
+
     type_support = part->find_type(dds_topic->get_type_name());
 
     if (!type_support) {
       if (is_cdr_type) {
-        type_support.reset(static_cast<dds::TopicDataType*>(type_support_callback()));
+        type_support.reset(new DdsCdrPubSubType(cdr_type_name, std::move(native_type)));
       } else {
         std::lock_guard raw_lock(factory.raw_typesupport_mtx_);
         type_support = factory.raw_typesupport_;
@@ -309,11 +337,18 @@ std::shared_ptr<dds::Topic> DdsFactory::create_topic(uint8_t type, const DdsConf
     }
   }
 
+  const auto& expected_type_name = is_cdr_type ? cdr_type_name : factory.raw_typesupport_.get_type_name();
+
+  if VUNLIKELY (dds_topic->get_type_name() != expected_type_name) {
+    VLOG_F("DdsFactory: Topic ", topic, " type mismatch.");
+  }
+
   return dds_topic;
 }
 
 std::pair<std::shared_ptr<dds::Topic>, std::shared_ptr<dds::Topic>> DdsFactory::create_method_topic(
-    uint8_t type, const DdsConf& conf, dds::DomainParticipant* part, bool is_cdr_type) {
+    uint8_t type, const DdsConf& conf, dds::DomainParticipant* part, bool is_cdr_type,
+    const std::string& cdr_type_names) {
   const std::string& resp_topic = conf.topic + DdsConf::kRespSuffix;
 
   if VUNLIKELY (conf.topic.empty() || resp_topic.empty()) {
@@ -324,8 +359,31 @@ std::pair<std::shared_ptr<dds::Topic>, std::shared_ptr<dds::Topic>> DdsFactory::
     VLOG_F("DdsFactory: Method conf topic req and resp cannot be equal.");
   }
 
-  return {create_topic(type, conf, part, is_cdr_type, conf.topic),
-          create_topic(type, conf, part, is_cdr_type, resp_topic)};
+  std::string req_cdr_type_name;
+  std::string resp_cdr_type_name;
+
+  if (is_cdr_type) {
+    const auto separator = cdr_type_names.find('|');
+
+    if (separator == std::string::npos) {
+      req_cdr_type_name = cdr_type_names;
+      resp_cdr_type_name = cdr_type_names;
+    } else {
+      if VUNLIKELY (separator == 0U) {
+        VLOG_F("DdsFactory: CDR method request type name is empty.");
+      }
+
+      if VUNLIKELY (separator + 1U == cdr_type_names.size()) {
+        VLOG_F("DdsFactory: CDR method response type name is empty.");
+      }
+
+      req_cdr_type_name = cdr_type_names.substr(0U, separator);
+      resp_cdr_type_name = cdr_type_names.substr(separator + 1U);
+    }
+  }
+
+  return {create_topic(type, conf, part, is_cdr_type, conf.topic, std::move(req_cdr_type_name)),
+          create_topic(type, conf, part, is_cdr_type, resp_topic, std::move(resp_cdr_type_name))};
 }
 
 std::shared_ptr<dds::Publisher> DdsFactory::create_publisher(uint8_t type, const DdsConf& conf,
@@ -372,6 +430,7 @@ std::shared_ptr<dds::Publisher> DdsFactory::create_publisher(uint8_t type, const
           factory.publisher_map_.erase(iter);
         }
       }
+
       auto* participant = const_cast<dds::DomainParticipant*>(publisher->get_participant());
       participant->delete_publisher(publisher);
     });
@@ -382,6 +441,7 @@ std::shared_ptr<dds::Publisher> DdsFactory::create_publisher(uint8_t type, const
 
     if (!inserted) {
       auto inserted_publisher = iter->second.lock();
+
       if VLIKELY (inserted_publisher) {
         lock.unlock();
         publisher = std::move(inserted_publisher);
@@ -415,9 +475,9 @@ std::shared_ptr<dds::Subscriber> DdsFactory::create_subscriber(uint8_t type, con
   if (!subscriber) {
     lock.unlock();
     dds::Subscriber* ptr = nullptr;
+
     if (dds_qos_ext.empty()) {
       auto dds_qos = dds::SUBSCRIBER_QOS_DEFAULT;
-
       ptr = part->create_subscriber(dds_qos, nullptr);
     } else {
       ptr = part->create_subscriber_with_profile(dds_qos_ext, nullptr);
@@ -447,6 +507,7 @@ std::shared_ptr<dds::Subscriber> DdsFactory::create_subscriber(uint8_t type, con
 
     if (!inserted) {
       auto inserted_subscriber = iter->second.lock();
+
       if VLIKELY (inserted_subscriber) {
         lock.unlock();
         subscriber = std::move(inserted_subscriber);
@@ -461,7 +522,7 @@ std::shared_ptr<dds::Subscriber> DdsFactory::create_subscriber(uint8_t type, con
 
 std::shared_ptr<dds::DataWriter> DdsFactory::create_datawriter(uint8_t type, const DdsConf& conf,
                                                                dds::Publisher* publisher, dds::Topic* topic,
-                                                               dds::DataWriterListener* listener) {
+                                                               dds::DataWriterListener* listener, bool is_cdr_type) {
   static auto& factory = DdsFactory::get();
 
   const auto& dds_qos_ext = get_qos_ext(conf.qos_ext, "writer");
@@ -488,7 +549,23 @@ std::shared_ptr<dds::DataWriter> DdsFactory::create_datawriter(uint8_t type, con
       convert_qos(dds_qos, DdsConf::find_qos(conf.qos), conf.depth);
     }
 
+    if VUNLIKELY (is_cdr_type) {
+      dds_qos.endpoint().history_memory_policy = rtps::PREALLOCATED_WITH_REALLOC_MEMORY_MODE;
+    }
+
     ptr = publisher->create_datawriter(topic, dds_qos, listener);
+  } else if VUNLIKELY (is_cdr_type) {
+    auto dds_qos = dds::DATAWRITER_QOS_DEFAULT;
+    const auto ret = publisher->get_datawriter_qos_from_profile(dds_qos_ext, dds_qos);
+
+#ifdef VLINK_SUPPORT_DDS_V3
+    if VLIKELY (ret == dds::RETCODE_OK) {
+#else
+    if VLIKELY (ret == ReturnCode_t::RETCODE_OK) {
+#endif
+      dds_qos.endpoint().history_memory_policy = rtps::PREALLOCATED_WITH_REALLOC_MEMORY_MODE;
+      ptr = publisher->create_datawriter(topic, dds_qos, listener);
+    }
   } else {
     ptr = publisher->create_datawriter_with_profile(topic, dds_qos_ext, listener);
   }
@@ -507,7 +584,7 @@ std::shared_ptr<dds::DataWriter> DdsFactory::create_datawriter(uint8_t type, con
 
 std::shared_ptr<dds::DataReader> DdsFactory::create_datareader(uint8_t type, const DdsConf& conf,
                                                                dds::Subscriber* subscriber, dds::Topic* topic,
-                                                               dds::DataReaderListener* listener) {
+                                                               dds::DataReaderListener* listener, bool is_cdr_type) {
   static auto& factory = DdsFactory::get();
 
   const auto& dds_qos_ext = get_qos_ext(conf.qos_ext, "reader");
@@ -534,7 +611,23 @@ std::shared_ptr<dds::DataReader> DdsFactory::create_datareader(uint8_t type, con
       convert_qos(dds_qos, DdsConf::find_qos(conf.qos), conf.depth);
     }
 
+    if VUNLIKELY (is_cdr_type) {
+      dds_qos.endpoint().history_memory_policy = rtps::PREALLOCATED_WITH_REALLOC_MEMORY_MODE;
+    }
+
     ptr = subscriber->create_datareader(topic, dds_qos, listener);
+  } else if VUNLIKELY (is_cdr_type) {
+    auto dds_qos = dds::DATAREADER_QOS_DEFAULT;
+    const auto ret = subscriber->get_datareader_qos_from_profile(dds_qos_ext, dds_qos);
+
+#ifdef VLINK_SUPPORT_DDS_V3
+    if VLIKELY (ret == dds::RETCODE_OK) {
+#else
+    if VLIKELY (ret == ReturnCode_t::RETCODE_OK) {
+#endif
+      dds_qos.endpoint().history_memory_policy = rtps::PREALLOCATED_WITH_REALLOC_MEMORY_MODE;
+      ptr = subscriber->create_datareader(topic, dds_qos, listener);
+    }
   } else {
     ptr = subscriber->create_datareader_with_profile(topic, dds_qos_ext, listener);
   }
@@ -570,30 +663,30 @@ bool DdsFactory::write_data(dds::DataWriter* writer, const Bytes& bytes, uint64_
 }
 
 bool DdsFactory::write_cdr_data(dds::DataWriter* writer, const Bytes& bytes, rtps::WriteParams* params) {
-  if VUNLIKELY (!bytes.is_ptr()) {
-    VLOG_E("DdsFactory: write_cdr_data() type mismatch, expected ptr type but received raw bytes.");
+  if VUNLIKELY (bytes.is_ptr() || bytes.size() < 4U || bytes.size() > std::numeric_limits<uint32_t>::max()) {
+    VLOG_E("DdsFactory: write_cdr_data() expected an encapsulated CDR payload.");
     return false;
   }
 
 #ifdef VLINK_SUPPORT_DDS_V3
 
   if (params) {
-    return writer->write(bytes.to_ptr(), *params) == dds::RETCODE_OK;
+    return writer->write(const_cast<Bytes*>(&bytes), *params) == dds::RETCODE_OK;
   }
 
-  return writer->write(bytes.to_ptr()) == dds::RETCODE_OK;
+  return writer->write(const_cast<Bytes*>(&bytes)) == dds::RETCODE_OK;
 #else
 
   if (params) {
-    return writer->write(bytes.to_ptr(), *params);
+    return writer->write(const_cast<Bytes*>(&bytes), *params);
   }
 
-  return writer->write(bytes.to_ptr());
+  return writer->write(const_cast<Bytes*>(&bytes));
 #endif
 }
 
 bool DdsFactory::take_data(dds::DataReader* reader, ReadMessage& msg) {
-  auto ret = reader->take_next_sample(&msg.raw, &msg.info);
+  auto ret = reader->take(msg.samples, msg.infos, 1);
 
 #ifdef VLINK_SUPPORT_DDS_V3
 
@@ -617,19 +710,37 @@ bool DdsFactory::take_data(dds::DataReader* reader, ReadMessage& msg) {
   }
 #endif
 
-  msg.id = msg.raw.id();
+  const auto& info = msg.infos[0];
 
-  msg.bytes.shallow_copy(msg.raw.data());
+  if VLIKELY (info.valid_data) {
+    msg.id = msg.samples[0].id();
+  } else {
+    msg.id = 0;
+  }
 
-  msg.timestamp = msg.info.source_timestamp.to_ns();
-
-  // std::memcpy(&msg.guid, msg.info.publication_handle.value + 8, sizeof(uint64_t));
+  msg.timestamp = info.source_timestamp.to_ns();
 
   return true;
 }
 
+void DdsFactory::return_data_loan(dds::DataReader* reader, ReadMessage& msg) {
+  auto ret = reader->return_loan(msg.samples, msg.infos);
+
+#ifdef VLINK_SUPPORT_DDS_V3
+
+  if VUNLIKELY (ret != dds::RETCODE_OK) {
+    VLOG_E("DdsFactory: Failed to return data loan.");
+  }
+#else
+
+  if VUNLIKELY (ret != ReturnCode_t::RETCODE_OK) {
+    VLOG_E("DdsFactory: Failed to return data loan.");
+  }
+#endif
+}
+
 bool DdsFactory::take_cdr_data(dds::DataReader* reader, ReadCdrMessage& msg) {
-  auto ret = reader->take_next_sample(msg.sample, &msg.info);
+  auto ret = reader->take(msg.samples, msg.infos, 1);
 
 #ifdef VLINK_SUPPORT_DDS_V3
 
@@ -653,11 +764,28 @@ bool DdsFactory::take_cdr_data(dds::DataReader* reader, ReadCdrMessage& msg) {
   }
 #endif
 
-  msg.bytes = Bytes::shallow_copy_ptr(msg.sample);
+  const auto& info = msg.infos[0];
+  msg.id = info.sample_identity.sequence_number().to64long();
 
-  msg.timestamp = msg.info.source_timestamp.to_ns();
+  msg.timestamp = info.source_timestamp.to_ns();
 
   return true;
+}
+
+void DdsFactory::return_cdr_loan(dds::DataReader* reader, ReadCdrMessage& msg) {
+  auto ret = reader->return_loan(msg.samples, msg.infos);
+
+#ifdef VLINK_SUPPORT_DDS_V3
+
+  if VUNLIKELY (ret != dds::RETCODE_OK) {
+    VLOG_E("DdsFactory: Failed to return CDR loan.");
+  }
+#else
+
+  if VUNLIKELY (ret != ReturnCode_t::RETCODE_OK) {
+    VLOG_E("DdsFactory: Failed to return CDR loan.");
+  }
+#endif
 }
 
 uint64_t DdsFactory::get_guid(const rtps::GUID_t& guid, uint32_t seq) {
@@ -746,7 +874,9 @@ void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
   }
 
   dds_qos.transport().use_builtin_transports = false;
+#if defined(VLINK_SUPPORT_DDS_V3) || FASTRTPS_VERSION_MINOR >= 10
   dds_qos.wire_protocol().ignore_non_matching_locators = true;
+#endif
   dds_qos.wire_protocol().builtin.avoid_builtin_multicast = true;
 
   //   dds_qos.wire_protocol().port.domainIDGain = 250;
@@ -907,9 +1037,11 @@ void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
         tcp_descriptor->tls_config.password = ssl_cfg.key_password;
       }
 
+#if defined(VLINK_SUPPORT_DDS_V3) || FASTRTPS_VERSION_MINOR >= 10
       if (!ssl_cfg.server_name.empty()) {
         tcp_descriptor->tls_config.server_name = ssl_cfg.server_name;
       }
+#endif
 
       if (ssl_cfg.verify_peer) {
         tcp_descriptor->tls_config.add_verify_mode(

@@ -208,7 +208,7 @@ int main() {
   // ---- Section 5: transport limitations ----
   // Some backends bake their own framing and can't carry the security
   // envelope; intra:// is in-process so encryption is meaningless. CDR-
-  // mode dds:// is excluded because CDR rewrites the payload bytes.
+  // mode dds:// is excluded because the envelope is not a native CDR payload.
   {
     VLOG_I("[5] Security Limitations");
     VLOG_I("  Not supported: intra://, dds:// with CDR serialization");

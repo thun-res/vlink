@@ -952,24 +952,27 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
         continue;
       }
 
-      auto sub_iter = sub_map.find(info.url);
+      {
+        std::lock_guard lock(subs_mtx);
+        auto sub_iter = sub_map.find(info.url);
 
-      if (sub_iter != sub_map.end()) {
-        auto* target_sub = sub_iter->second.get();
+        if (sub_iter != sub_map.end()) {
+          auto* target_sub = sub_iter->second.get();
 
-        if VUNLIKELY (!target_sub) {
-          continue;
+          if VUNLIKELY (!target_sub) {
+            continue;
+          }
+
+          const auto current_schema_type = target_sub->get_schema_type();
+          const auto expected_schema_type =
+              info.schema_type == vlink::SchemaType::kUnknown ? current_schema_type : info.schema_type;
+
+          if VUNLIKELY (target_sub->get_ser_type() != info.ser_type || current_schema_type != expected_schema_type) {
+            sub_map.erase(sub_iter);
+          } else {
+            continue;
+          }
         }
-
-        const auto current_schema_type = target_sub->get_schema_type();
-        const auto expected_schema_type =
-            info.schema_type == vlink::SchemaType::kUnknown ? current_schema_type : info.schema_type;
-
-        if VUNLIKELY (target_sub->get_ser_type() != info.ser_type || current_schema_type != expected_schema_type) {
-          target_sub->set_ser_type(info.ser_type, info.schema_type);
-        }
-
-        continue;
       }
 
       if (!target_urls_set.empty()) {

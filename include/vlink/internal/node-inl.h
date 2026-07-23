@@ -177,9 +177,8 @@ inline const std::string& Node<ImplT, SecT>::get_url() const {
 
 template <typename ImplT, SecurityType SecT>
 inline void Node<ImplT, SecT>::set_record_path(const std::string& path) {
-  if VUNLIKELY (impl_->transport_type == TransportType::kIntra ||
-                (impl_->transport_type == TransportType::kDds && impl_->is_cdr_type)) {
-    VLOG_F("Node: Intra or Dds(cdr) type does not support record.");
+  if VUNLIKELY (impl_->transport_type == TransportType::kIntra) {
+    VLOG_F("Node: Intra type does not support record.");
     return;
   }
 
@@ -206,9 +205,18 @@ inline void Node<ImplT, SecT>::set_ser_type(const std::string& ser_type, SchemaT
 
   const bool ser_changed = impl_->ser_type != ser_type;
   const bool schema_changed = impl_->schema_type != next_schema_type;
+  const bool next_is_cdr_type = next_schema_type == SchemaType::kCdr;
 
   if VLIKELY (!ser_changed && !schema_changed) {
     return;
+  }
+
+  const bool has_inited = has_inited_.load(std::memory_order_acquire);
+  if VUNLIKELY (has_inited && impl_->transport_type == TransportType::kDds &&
+                (impl_->is_cdr_type != next_is_cdr_type || (impl_->is_cdr_type && ser_changed))) {
+    VLOG_F(
+        "Node: DDS raw/CDR mode and CDR type name cannot be changed while initialised; call "
+        "deinit() before changing serialization metadata.");
   }
 
   if VUNLIKELY (ser_changed && !impl_->ser_type.empty() && !ser_type.empty()) {
@@ -221,14 +229,23 @@ inline void Node<ImplT, SecT>::set_ser_type(const std::string& ser_type, SchemaT
            static_cast<int>(next_schema_type));
   }
 
-  if VUNLIKELY (has_inited_.load(std::memory_order_acquire)) {
+  if VUNLIKELY (has_inited) {
     impl_->deinit_ext();
   }
 
   impl_->ser_type = ser_type;
   impl_->schema_type = next_schema_type;
 
-  if VUNLIKELY (has_inited_.load(std::memory_order_acquire)) {
+  if (impl_->transport_type == TransportType::kDds) {
+    impl_->is_cdr_type = next_is_cdr_type;
+    if constexpr (VLINK_HAS_MEMBER(ImplT, is_resp_cdr_type)) {
+      if (impl_->is_resp_type) {
+        impl_->is_resp_cdr_type = next_is_cdr_type;
+      }
+    }
+  }
+
+  if VUNLIKELY (has_inited) {
     impl_->init_ext();
   }
 }
@@ -345,6 +362,7 @@ template <typename TypeT>
 inline TypeT Node<ImplT, SecT>::get_default_value() {
   if constexpr (Traits::IsSharedPtr<TypeT>()) {
     return std::make_shared<typename TypeT::element_type>();
+#ifdef VLINK_HAS_PROTOBUF
   } else if constexpr (Serializer::is_proto_ptr_type<TypeT>()) {
     if VLIKELY (this->proto_arena_) {
       return google::protobuf::Arena::Create<std::remove_pointer_t<TypeT>>(
@@ -354,6 +372,7 @@ inline TypeT Node<ImplT, SecT>::get_default_value() {
     VLOG_F("Node: Proto arena is not bound, url: ", this->impl_->url, ".");
 
     return nullptr;
+#endif
   } else if constexpr (std::is_default_constructible_v<TypeT>) {
     return TypeT{};
   } else {

@@ -66,7 +66,7 @@ bool BuiltInRawPubSubType::serialize(const void* const data, SerializedPayload_t
   payload.encapsulation = ser.endianness() == eprosima::fastcdr::Cdr::BIG_ENDIANNESS ? CDR_BE : CDR_LE;
   ser.set_encoding_flag(data_representation == DataRepresentationId_t::XCDR_DATA_REPRESENTATION
                             ? eprosima::fastcdr::EncodingAlgorithmFlag::PLAIN_CDR
-                            : eprosima::fastcdr::EncodingAlgorithmFlag::DELIMIT_CDR2);
+                            : eprosima::fastcdr::EncodingAlgorithmFlag::PLAIN_CDR2);
 
   try {
     // Serialize encapsulation
@@ -117,7 +117,7 @@ uint32_t BuiltInRawPubSubType::calculate_serialized_size(const void* const data,
     size_t current_alignment{0};
     return static_cast<uint32_t>(calculator.calculate_serialized_size(*static_cast<const ::vlink::BuiltInRaw*>(data),
                                                                       current_alignment)) +
-           4u /*encapsulation*/;
+           4U /*encapsulation*/;
   } catch (eprosima::fastcdr::exception::Exception& /*exception*/) {
     return 0;
   }

@@ -1,4 +1,4 @@
-project(lzav VERSION 5.12)
+project(lzav VERSION 5.16)
 
 add_library(${PROJECT_NAME} INTERFACE)
 add_library("thirdparty::${PROJECT_NAME}" ALIAS ${PROJECT_NAME})

@@ -23,6 +23,7 @@
 
 #include "./impl/publisher_impl.h"
 
+#include <atomic>
 #include <mutex>
 #include <utility>
 
@@ -33,7 +34,7 @@ namespace vlink {
 
 // PublisherImplHelper
 struct PublisherImplHelper final {
-  bool has_subscribers{false};
+  std::atomic_bool has_subscribers{false};
   NodeImpl::ConnectCallback connected_callback;
   ConditionVariable connected_cv;
   std::mutex mtx;
@@ -56,7 +57,7 @@ void PublisherImpl::detect_subscribers(ConnectCallback&& callback) {
   std::unique_lock lock(helper_->callback_mtx);
   helper_->connected_callback = std::move(callback);
 
-  if (helper_->has_subscribers) {
+  if (helper_->has_subscribers.load(std::memory_order_acquire)) {
     auto callback_copy = helper_->connected_callback;
     lock.unlock();
     callback_copy(true);
@@ -74,11 +75,13 @@ bool PublisherImpl::wait_for_subscribers(std::chrono::milliseconds timeout) {
 
   reset_interrupted();
 
-  auto predicate = [this]() -> bool { return has_subscribers() || is_interrupted(); };
+  auto predicate = [this]() -> bool {
+    return helper_->has_subscribers.load(std::memory_order_acquire) || is_interrupted();
+  };
 
   if VUNLIKELY (timeout.count() < 0) {
     helper_->connected_cv.wait(lock, std::move(predicate));
-    return has_subscribers();
+    return helper_->has_subscribers.load(std::memory_order_acquire);
   } else {
     return helper_->connected_cv.wait_for(lock, timeout, std::move(predicate)) && !is_interrupted();
   }
@@ -96,12 +99,11 @@ void PublisherImpl::update_subscribers() {
   Utils::yield_cpu();
 
   std::unique_lock lock(helper_->callback_mtx);
+  const bool has_subscribers_now = has_subscribers();
 
-  if (helper_->has_subscribers == has_subscribers()) {
+  if (helper_->has_subscribers.exchange(has_subscribers_now, std::memory_order_acq_rel) == has_subscribers_now) {
     return;
   }
-
-  helper_->has_subscribers = !helper_->has_subscribers;
 
   {
     std::lock_guard sync_lock(helper_->mtx);
@@ -110,10 +112,9 @@ void PublisherImpl::update_subscribers() {
   helper_->connected_cv.notify_all();
 
   if (helper_->connected_callback) {
-    bool has_subs = helper_->has_subscribers;
     auto callback_copy = helper_->connected_callback;
     lock.unlock();
-    callback_copy(has_subs);
+    callback_copy(has_subscribers_now);
   }
 }
 

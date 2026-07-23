@@ -61,24 +61,6 @@ struct ScratchDir final {
   }
 };
 
-static bool wait_until_idle(const vlink::TriggerRecorder& recorder, int max_ms = 4000) {
-  for (int elapsed = 0; elapsed < max_ms; elapsed += 5) {
-    if (!recorder.is_dumping()) {
-      return true;
-    }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
-
-  return !recorder.is_dumping();
-}
-
-static vlink::TriggerRecorder::RawSubFactory make_raw_sub_factory() {
-  return [](const std::string& url, vlink::InitType type) {
-    return vlink::TriggerRecorder::RawSub::create_shared(url, type);
-  };
-}
-
 static bool wait_until_ready(vlink::TriggerRecorder& recorder, int max_ms = 4000) {
   auto ready = recorder.invoke_task([]() {});
 
@@ -88,6 +70,28 @@ static bool wait_until_ready(vlink::TriggerRecorder& recorder, int max_ms = 4000
 
   ready.get();
   return true;
+}
+
+static bool wait_until_idle(vlink::TriggerRecorder& recorder, int max_ms = 4000) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(max_ms);
+
+  for (int elapsed = 0; elapsed < max_ms; elapsed += 5) {
+    if (!recorder.is_dumping()) {
+      const auto remaining =
+          std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+      return remaining > 0 && wait_until_ready(recorder, static_cast<int>(remaining));
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+
+  return false;
+}
+
+static vlink::TriggerRecorder::RawSubFactory make_raw_sub_factory() {
+  return [](const std::string& url, vlink::InitType type) {
+    return vlink::TriggerRecorder::RawSub::create_shared(url, type);
+  };
 }
 
 class RecordingTriggerPlugin : public vlink::TriggerPluginInterface {
@@ -597,19 +601,30 @@ TEST_SUITE("extension-TriggerRecorder") {
     }
 
     std::vector<std::unique_ptr<vlink::Timer>> timers;
+    bool scheduling_rejected = false;
 
-    while (true) {
-      auto timer = std::make_unique<vlink::Timer>();
+    for (int attempt = 0; attempt < 100 && !scheduling_rejected; ++attempt) {
+      while (true) {
+        auto timer = std::make_unique<vlink::Timer>();
 
-      if (!timer->attach(&recorder)) {
-        break;
+        if (!timer->attach(&recorder)) {
+          break;
+        }
+
+        timers.push_back(std::move(timer));
       }
 
-      timers.push_back(std::move(timer));
+      REQUIRE_FALSE(timers.empty());
+      scheduling_rejected = !recorder.dump();
+
+      if (!scheduling_rejected) {
+        timers.clear();
+        REQUIRE(wait_until_idle(recorder));
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
     }
 
-    REQUIRE_FALSE(timers.empty());
-    CHECK_FALSE(recorder.dump());
+    REQUIRE(scheduling_rejected);
     CHECK_FALSE(recorder.is_dumping());
 
     timers.clear();

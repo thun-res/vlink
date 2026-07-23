@@ -42,6 +42,7 @@ extern "C" int test_schema_type_mapping(void) {
       {"dds://c_interface/schema_type/raw", "text", VLINK_SCHEMA_RAW, vlink::SchemaType::kRaw},
       {"dds://c_interface/schema_type/zerocopy", "vlink::zerocopy::RawData", VLINK_SCHEMA_ZEROCOPY,
        vlink::SchemaType::kZeroCopy},
+      {"dds://c_interface/schema_type/cdr", "dds::CInterfaceMessage", VLINK_SCHEMA_CDR, vlink::SchemaType::kCdr},
   };
 
   int ret = 0;

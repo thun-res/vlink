@@ -517,8 +517,9 @@ class VLINK_EXPORT NodeImpl {
    * @brief Records a message to the global and / or per-node bag writers.
    *
    * @details
-   * Skips DDS CDR payloads and (when the ignore-intra filter is on) intra
-   * messages.  Used by every node role to feed @c BagWriter pipelines.
+   * Skips intra messages when the ignore-intra filter is on. DDS CDR payloads
+   * are recorded as encapsulated bytes. Used by every node role to feed
+   * @c BagWriter pipelines.
    *
    * @param action_type  Logical role under which the message is being recorded.
    * @param data         Raw serialised payload bytes.
@@ -547,7 +548,8 @@ class VLINK_EXPORT NodeImpl {
    * @details
    * Invoked at the end of @c init() by every public Node<> template.  Also
    * starts the per-node @c CpuProfiler when global profiling is enabled.
-   * Skips registration for CDR, security, and (by default) intra nodes.
+   * Skips registration for security and (by default) intra nodes. DDS CDR
+   * nodes are reported with their serialisation metadata.
    */
   void init_ext();
 

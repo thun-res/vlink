@@ -60,7 +60,7 @@
  * | FlatBuffers obj   | @c MyTableT (NativeTable)         | @c kFlatTableType   | Object API.                    |
  * | FlatBuffers ptr   | @c MyTable* (Table pointer)       | @c kFlatPtrType     | Zero-copy read view.           |
  * | FlatBuffers build | @c MyBuilder (@c fbb_ + Finish)   | @c kFlatBuilderType | Finishes builder on publish.   |
- * | DDS CDR           | type with @c serialize(Cdr&)      | @c kCdrType         | DDS fast path.                 |
+ * | DDS CDR           | FastDDS IDL or ROS2 message type  | @c kCdrType         | Encapsulated CDR bytes.        |
  * | POD struct        | trivial standard-layout type      | @c kStandardType    | @c sizeof(T) byte copy.        |
  * | UTF-8 text        | @c std::string                    | @c kStringType      | Length-prefixed.               |
  * | Custom            | type with @c operator>>/<<        | @c kCustomType      | User-supplied codec.           |

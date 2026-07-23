@@ -161,7 +161,7 @@ enum class InitType : uint8_t {
  * @c Subscriber<T, SecurityType> and the rest of the public node templates.
  * @c kWithSecurity enables authenticated AES-128-GCM encryption (optionally
  * wrapped with RSA-OAEP and signed with RSA-PSS) over the serialised payload.
- * Both the @c intra:// transport and DDS variants using native CDR rejection
+ * Both the @c intra:// transport and DDS variants using native CDR reject
  * the configuration; on those transports the security-prefixed node simply
  * has no usable security object once @c init() runs.
  */
@@ -206,6 +206,7 @@ enum class SchemaType : uint8_t {
   kZeroCopy = 2,     ///< Decode through the VLink zero-copy structs.
   kProtobuf = 3,     ///< Decode through the Protocol Buffers stack.
   kFlatbuffers = 4,  ///< Decode through the FlatBuffers stack.
+  kCdr = 5,          ///< Native DDS CDR payload including its encapsulation header.
 };
 
 /**

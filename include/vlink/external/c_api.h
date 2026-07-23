@@ -195,6 +195,7 @@ typedef enum {
   VLINK_SCHEMA_ZEROCOPY = 2,    /**< VLink zero-copy payload.          */
   VLINK_SCHEMA_PROTOBUF = 3,    /**< Protocol Buffers payload.         */
   VLINK_SCHEMA_FLATBUFFERS = 4, /**< FlatBuffers payload.              */
+  VLINK_SCHEMA_CDR = 5,         /**< Native DDS CDR payload.           */
 } vlink_schema_t;
 
 /**

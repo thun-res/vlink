@@ -33,7 +33,7 @@
 两个边界条件需明确：
 
 - 对端上报与超时剔除均由运行时自动完成，应用代码不参与心跳维护。
-- 启用安全的节点，以及 `dds://` 配合 CDR 序列化的节点，默认不参与上报，不出现在发现视图中。
+- 启用安全的节点默认不参与上报；`dds://` 的 raw 与 CDR 节点都会携带序列化类型和 schema family 出现在发现视图中。
 
 整条发现链路（节点上报 → 组播 → 监听者聚合 → 回调通知）的时序如下：
 
@@ -116,7 +116,7 @@ auto snapshot = viewer.get_info_list();
 | `url` | 完整 VLink URL，如 `"dds://camera_image"` |
 | `type` | 该 URL 上全部角色的位掩码，经 `convert_type_to_view` 转为可读标签 |
 | `ser_type` | 序列化类型名，如 `"demo.proto.PointCloud"`、`"standard"` |
-| `schema_type` | 粗粒度 schema 家族：`kProtobuf` / `kFlatbuffers` / `kRaw` / `kZeroCopy` / `kUnknown` |
+| `schema_type` | 粗粒度 schema 家族：`kProtobuf` / `kFlatbuffers` / `kRaw` / `kZeroCopy` / `kCdr` / `kUnknown` |
 | `process_list` | 承载此 URL 的进程列表 |
 
 | `Process` 字段 | 含义 |
@@ -427,7 +427,7 @@ api.register_time_callback([](uint64_t sys_time, uint64_t boot_time) {
 | ---- | ---- | ---- |
 | `url` | `std::string` | 话题 URL，如 `"dds://sensor/lidar"` |
 | `ser` | `std::string` | 序列化类型名，如 `"demo.proto.PointCloud"` |
-| `schema` | `SchemaType` | 粗粒度 schema 家族（`kProtobuf` / `kFlatbuffers` 等） |
+| `schema` | `SchemaType` | 粗粒度 schema 家族（`kProtobuf` / `kFlatbuffers` / `kCdr` 等） |
 | `status` | `Status` | `kActive` / `kInActive` / `kPending` / `kInvalid` |
 | `freq` / `rate` | `float` / `uint64_t` | 频率（条/秒）/ 吞吐（字节/秒），滑动平均 |
 | `loss` / `latency` | `float` / `float` | 丢包率 [0,1] / 延迟（毫秒；`-1` 无样本，`-2` 无效） |

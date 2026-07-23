@@ -2077,6 +2077,10 @@ def test_schema_data_and_version():
     assert _vlink.SchemaData.is_real_type(_vlink.SchemaType.Protobuf)
     assert _vlink.SchemaData.convert_type(_vlink.SchemaType.Protobuf) == "protobuf"
     assert _vlink.SchemaData.convert_encoding("proto") == _vlink.SchemaType.Protobuf
+    assert _vlink.SchemaData.is_valid_type(_vlink.SchemaType.Cdr)
+    assert not _vlink.SchemaData.is_real_type(_vlink.SchemaType.Cdr)
+    assert _vlink.SchemaData.convert_type(_vlink.SchemaType.Cdr) == "cdr"
+    assert _vlink.SchemaData.convert_encoding("cdr") == _vlink.SchemaType.Cdr
     assert _vlink.SchemaData.infer_ser_type("raw") == _vlink.SchemaType.Raw
     assert _vlink.SchemaData.resolve_type(_vlink.SchemaType.Unknown, "raw", "") == _vlink.SchemaType.Raw
 

@@ -770,3 +770,76 @@ index 51e90c9f6..1b4beebb7 100644
  #define ICEORYX_SHA1                      "@ICEORYX_SHA1@"
  
  #include "iceoryx_posh/internal/log/posh_logging.hpp"
+
+diff --git a/iceoryx_posh/include/iceoryx_posh/internal/runtime/ipc_runtime_interface.hpp b/iceoryx_posh/include/iceoryx_posh/internal/runtime/ipc_runtime_interface.hpp
+index a6b834793..2797c1540 100644
+--- a/iceoryx_posh/include/iceoryx_posh/internal/runtime/ipc_runtime_interface.hpp
++++ b/iceoryx_posh/include/iceoryx_posh/internal/runtime/ipc_runtime_interface.hpp
+@@ -43,8 +43,11 @@ class IpcRuntimeInterface
+     /// @brief send a request to the RouDi daemon
+     /// @param[in] msg request to RouDi
+     /// @param[out] answer response from RouDi
++    /// @param[in] timeout optional receive timeout; disabled by default
+     /// @return true if communication was successful, false if not
+-    bool sendRequestToRouDi(const IpcMessage& msg, IpcMessage& answer) noexcept;
++    bool sendRequestToRouDi(const IpcMessage& msg,
++                            IpcMessage& answer,
++                            cxx::optional<units::Duration> timeout = cxx::nullopt) noexcept;
+
+     /// @brief get the adress offset of the segment manager
+     /// @return address offset as rp::BaseRelativePointer::offset_t
+diff --git a/iceoryx_posh/source/runtime/ipc_runtime_interface.cpp b/iceoryx_posh/source/runtime/ipc_runtime_interface.cpp
+index 77d50d154..9f052d92d 100644
+--- a/iceoryx_posh/source/runtime/ipc_runtime_interface.cpp
++++ b/iceoryx_posh/source/runtime/ipc_runtime_interface.cpp
+@@ -154,7 +154,9 @@ rp::BaseRelativePointer::offset_t IpcRuntimeInterface::getSegmentManagerAddressO
+     return m_segmentManagerAddressOffset.value();
+ }
+
+-bool IpcRuntimeInterface::sendRequestToRouDi(const IpcMessage& msg, IpcMessage& answer) noexcept
++bool IpcRuntimeInterface::sendRequestToRouDi(const IpcMessage& msg,
++                                             IpcMessage& answer,
++                                             cxx::optional<units::Duration> timeout) noexcept
+ {
+     if (!m_RoudiIpcInterface.send(msg))
+     {
+@@ -162,10 +164,21 @@ bool IpcRuntimeInterface::sendRequestToRouDi(const IpcMessage& msg, IpcMessage&
+         return false;
+     }
+
+-    if (!m_AppIpcInterface.receive(answer))
++    if (timeout.has_value())
+     {
+-        LogError() << "Could not receive request via App IPC channel interface.\n";
+-        return false;
++        if (!m_AppIpcInterface.timedReceive(timeout.value(), answer))
++        {
++            LogError() << "Could not receive request via App IPC channel interface.\n";
++            return false;
++        }
++    }
++    else
++    {
++        if (!m_AppIpcInterface.receive(answer))
++        {
++            LogError() << "Could not receive request via App IPC channel interface.\n";
++            return false;
++        }
+     }
+
+     return true;
+diff --git a/iceoryx_posh/source/runtime/posh_runtime_impl.cpp b/iceoryx_posh/source/runtime/posh_runtime_impl.cpp
+index 0af2671c4..e42b552c9 100644
+--- a/iceoryx_posh/source/runtime/posh_runtime_impl.cpp
++++ b/iceoryx_posh/source/runtime/posh_runtime_impl.cpp
+@@ -57,7 +57,9 @@ PoshRuntimeImpl::~PoshRuntimeImpl() noexcept
+     sendBuffer << IpcMessageTypeToString(IpcMessageType::TERMINATION) << m_appName;
+     IpcMessage receiveBuffer;
+
+-    if (m_ipcChannelInterface.sendRequestToRouDi(sendBuffer, receiveBuffer)
++    constexpr uint64_t TERMINATION_TIMEOUT_SECONDS{3U};
++    if (m_ipcChannelInterface.sendRequestToRouDi(
++            sendBuffer, receiveBuffer, units::Duration::fromSeconds(TERMINATION_TIMEOUT_SECONDS))
+         && (1U == receiveBuffer.getNumberOfElements()))
+     {
+         std::string IpcMessage = receiveBuffer.getElementAtIndex(0U);

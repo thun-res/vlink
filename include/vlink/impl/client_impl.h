@@ -164,7 +164,8 @@ class VLINK_EXPORT ClientImpl : public NodeImpl {
    */
   void update_connected();
 
-  bool is_resp_type{false};  ///< @c true when the public @c Client expects a response payload.
+  bool is_resp_type{false};      ///< @c true when the public @c Client expects a response payload.
+  bool is_resp_cdr_type{false};  ///< @c true when the response payload uses native DDS CDR.
 
  protected:
   /**

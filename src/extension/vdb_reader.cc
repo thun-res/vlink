@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -227,7 +228,6 @@ void VDBReader::play(const Config& config) {
 
   if VUNLIKELY (is_busy()) {
     VLOG_W("VDBReader: Is busy.");
-    // return;
   }
 
   if (config.skip_blank) {
@@ -380,7 +380,6 @@ std::future<bool> VDBReader::check() {
 
   if VUNLIKELY (is_busy()) {
     VLOG_W("VDBReader: Is busy.");
-    // return std::future<bool>();
   }
 
   return invoke_task([this]() {
@@ -509,7 +508,8 @@ std::future<bool> VDBReader::check() {
         is_ok = false;
       }
 
-      if VUNLIKELY (url_meta.loss < 0.0 || url_meta.loss > 1.0) {
+      if VUNLIKELY (!std::isfinite(url_meta.loss) ||
+                    (url_meta.loss != -1.0 && (url_meta.loss < 0.0 || url_meta.loss > 1.0))) {
         CLOG_W("VDBReader: Invalid loss=%f detected for url=%s.", url_meta.loss, url_meta.url.c_str());
         is_ok = false;
       }
@@ -565,7 +565,6 @@ std::future<bool> VDBReader::reindex() {
 
   if VUNLIKELY (is_busy()) {
     VLOG_W("VDBReader: Is busy.");
-    // return std::future<bool>();
   }
 
   return invoke_task([this]() {
@@ -720,7 +719,6 @@ std::future<bool> VDBReader::fix(bool rebuild) {
 
   if VUNLIKELY (is_busy()) {
     VLOG_W("VDBReader: Is busy.");
-    // return std::future<bool>();
   }
 
   return invoke_task([this, rebuild]() {
@@ -1019,7 +1017,6 @@ void VDBReader::tag(const std::string& tag_name) {
 
   if VUNLIKELY (is_busy()) {
     VLOG_W("VDBReader: Is busy.");
-    // return;
   }
 
   post_task([this, tag_name]() {
@@ -2556,8 +2553,6 @@ int VDBReader::get_reset_index(const Config& config) {
       wrapper_file.stmt = nullptr;
     }
 
-    // VLOG_W(select_sql);
-
     if VLIKELY (!select_sql) {
       VLOG_E("VDBReader: Failed to prepare select sql str.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       break;                                                   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -2647,7 +2642,7 @@ bool VDBReader::prepare_cursor_stmt(int file_index) {
     select_sql.append(where);
   }
 
-  const bool order_by_elapsed = wrapper_file.has_idx_elapsed && wrapper_file.has_idx_url;
+  const bool order_by_elapsed = wrapper_file.has_idx_elapsed;
 
   select_sql.append(order_by_elapsed ? " ORDER BY elapsed;" : " ORDER BY rowid;");
 
@@ -2839,7 +2834,6 @@ void VDBReader::read(const Config& config) {
       impl_->pause_elapsed_timer.restart();
       update_status(kPaused);
       do_pause();
-      // impl_->pause_next_flag = false;
       {
         std::lock_guard time_lock(impl_->time_mtx);
         impl_->pause_elapsed.store(0, std::memory_order_relaxed);

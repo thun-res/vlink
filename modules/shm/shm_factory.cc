@@ -442,7 +442,6 @@ void ShmFactory::deinit_runtime() {
 #if SHM_USE_RUNTIME_IMPL
 
     if (global_instance.shm_runtime) {
-      global_instance.shm_runtime->shutdown();
       global_instance.shm_runtime.reset();
     }
 #endif

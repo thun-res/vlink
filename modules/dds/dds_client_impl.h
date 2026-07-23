@@ -102,7 +102,6 @@ class DdsClientImpl final : public ClientImpl, public AbstractNode {
   std::optional<ReaderListener> reader_listener_;
   std::shared_ptr<dds::DataWriter> writer_;
   std::shared_ptr<dds::DataReader> reader_;
-  dds::TypeSupport type_support_resp_;
   std::recursive_mutex param_mtx_;
   std::map<uint64_t, MsgCallback> callbacks_;
   std::map<rtps::SampleIdentity, MsgCallback> cdr_callbacks_;

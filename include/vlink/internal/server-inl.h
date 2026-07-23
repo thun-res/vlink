@@ -88,6 +88,9 @@ inline Server<ReqT, RespT, SecT>::Server(const ConfT& conf, InitType type) {
 
   this->impl_->is_cdr_type = Serializer::is_cdr_type<ReqT>();
   this->impl_->is_resp_type = kHasResp;
+  if constexpr (kHasResp) {
+    this->impl_->is_resp_cdr_type = Serializer::is_cdr_type<RespT>();
+  }
 
   if constexpr (std::is_same_v<ConfT, Url>) {
     this->impl_->url = conf.get_str();

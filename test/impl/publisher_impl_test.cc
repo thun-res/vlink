@@ -42,7 +42,10 @@ class TestPublisher : public PublisherImpl {
   void init() override {}
   void deinit() override {}
 
-  bool has_subscribers() const override { return has_subs_.load(); }
+  bool has_subscribers() const override {
+    has_subscriber_checks_.fetch_add(1, std::memory_order_relaxed);
+    return has_subs_.load();
+  }
 
   bool write(const Bytes& /*msg*/) override {
     ++write_count;
@@ -51,10 +54,13 @@ class TestPublisher : public PublisherImpl {
 
   void set_has_subs(bool v) { has_subs_ = v; }
 
+  int has_subscriber_checks() const { return has_subscriber_checks_.load(std::memory_order_relaxed); }
+
   int write_count{0};
 
  private:
   std::atomic_bool has_subs_{false};
+  mutable std::atomic<int> has_subscriber_checks_{0};
 };
 
 }  // namespace
@@ -146,6 +152,13 @@ TEST_SUITE("impl-PublisherImpl") {
     bool result = pub.wait_for_subscribers(50ms);
 
     CHECK_FALSE(result);
+  }
+
+  TEST_CASE("wait_for_subscribers does not query transport state under its wait lock") {
+    TestPublisher pub;
+
+    CHECK_FALSE(pub.wait_for_subscribers(20ms));
+    CHECK_EQ(pub.has_subscriber_checks(), 1);
   }
 
   TEST_CASE("wait_for_subscribers returns true when subscriber appears mid-wait") {

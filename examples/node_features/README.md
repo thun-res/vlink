@@ -22,7 +22,7 @@ vlink 的六种通信原语（Publisher / Subscriber / Server / Client / Setter 
 |------|----------|------|
 | Endpoint QoS | URL `?qos=&depth=`、后端 `Conf` / `register_qos()` | transport 投递行为 |
 | 后端支持的节点属性 | `set_property()`，例如 DDS participant 的 `dds.*` | 后端初始化参数 |
-| `ser_type` / `schema_type` | `set_ser_type()` | discovery 元数据，供 bag / proxy 使用 |
+| `ser_type` / `schema_type` | `set_ser_type()` | discovery/bag/proxy 元数据；DDS raw/CDR 模式与 CDR 类型名还决定原生 endpoint 类型 |
 | `discovery_enabled` | `set_discovery_enabled()` | 是否对 DiscoveryReporter / Viewer 可见 |
 
 ## 🖼️ 配图

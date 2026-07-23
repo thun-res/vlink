@@ -1,6 +1,6 @@
 # 🗒️ 更新日志
 
-## v2.1.0 (2026/07/24)
+## v2.1.0 (2026/07/26)
 
 ### 新增功能
 
@@ -12,6 +12,7 @@
 - **Trigger**：新增 `vlink-trigger`、`TriggerRecorder` 及 Python 绑定，支持触发前后数据缓存、Bag 落盘、历史轮转和完成回调插件。
 - **Bag 插件**：新增读会话 `on_reset()`，回放前补全序列化和 Schema 类型。`on_read()` / `on_write()` 改为纯虚函数，并移除版本查询接口；插件仍声明 2.0，但需按新头文件适配并重新构建。
 - **Viewer 感知显示**：新增可配置的 Protobuf / FlatBuffers 消息映射，覆盖目标、雷达、车道、轨迹、停车位、占据栅格和车辆 HUD。
+- **原生 DDS CDR**：支持 FastDDS IDL、ROS 2 消息及按类型名加入 Topic，并支持 CDR 录制、回放和发现上报。
 
 ### 改进
 
@@ -23,6 +24,7 @@
 - **Bag 性能**：优化异步写入、回放过滤、Schema 持久化和未启用录制时的热路径。
 - **基础库**：优化 MemoryPool 和任务调度；`MemoryPool::Config` 新增 `batch_size`，使用该配置的外部 C++ 二进制需重新构建。
 - **序列化**：新增 `Serializer::serialize_to_transport()`，修复 transport loan 生命周期并加强边界校验；C 字符串改为仅支持发送，接收端须使用 `std::string`。
+- **CDR 数据面**：统一使用含 encapsulation header 的字节负载，接收侧在回调期间直接借用 FastDDS payload；C API、Python API 与构建宏同步支持 CDR / ROS 2。
 - **接收回调**：每次投递使用独立值对象，裸 Protobuf 指针也在 Arena 中逐条分配，避免嵌套回调覆盖。
 - **Zenoh**：原生 Key Expression 增加 domain / event 隔离；采用该寻址的新旧版本不能互通，升级时需同步通信两端。未设置环境变量时沿用配置文件默认值；zenoh-pico 构建要求启用 local subscriber、local queryable、liveliness 和 matching。
 - **Viewer / Webviz**：改进多相机解码、感知帧合并、动态 Schema 解析及多种图像格式在 Foxglove / Rerun 中的展示。
@@ -33,7 +35,8 @@
 ### 修复
 
 - **Bytes 压缩**：修复错误地将 1 MiB LZAV 哈希缓存大小当作压缩输入上限的问题。
-- **DDS**：节点释放时清理回调、请求状态和匹配计数，支持同进程重新初始化；同时修正 DDSR liveliness 配置及无 SSL DDSC 的 TCP 误启用。
+- **DDS**：节点释放时清理回调、请求状态和匹配计数，支持同进程重新初始化；安全处理无数据样本，修复 FastDDS 3 与 CycloneDDS 的内置 Raw 类型互操作，同时修正 DDSR liveliness 配置及无 SSL DDSC 的 TCP 误启用。
+- **DDS CDR**：修复类型名兼容、运行中切换类型、RPC 类型一致性、ROS 2 空消息、接收 payload loan 生命周期及旧版 FastDDS 变长 payload 扩容。
 - **SHM / SHM2**：回复路径现在返回真实发送结果；SHM2 正确应用 iceoryx 配置，优化大消息 loan、listener 等待和节点生命周期处理。
 - **VDB / VCAP**：修复多次回放、停止或跳转后的重排缓存污染；新会话通过 `on_reset()` 清理旧状态，并正确处理自然完成与中断边界。
 - **Bag / Trigger**：修复退出崩溃、队列满时丢写、延迟写入错误未上报，以及已放弃的 Trigger dump 残留或重现。

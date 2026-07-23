@@ -42,7 +42,7 @@
  * | ------------------- | ----------------------------------- | ----------------------- | --------------------------- |
  * | @c kBytesType       | @c T == @c Bytes                    | @c is_bytes_type        | Pass-through, no codec.     |
  * | @c kDynamicType     | Has @c is_vlink_dynamic_data()      | @c is_dynamic_type      | Dynamic typed data.         |
- * | @c kCdrType         | Has @c serialize/deserialize(Cdr&)  | @c is_cdr_type          | FastDDS CDR fast path.      |
+ * | @c kCdrType         | FastDDS IDL or ROS2 message type    | @c is_cdr_type          | Encapsulated CDR bytes.     |
  * | @c kProtoType       | Has SerializeToArray/ParseFromArray | @c is_proto_type        | Protobuf-like value.        |
  * | @c kProtoPtrType    | Pointer with proto serialize/parse  | @c is_proto_ptr_type    | Caller owns the pointee.    |
  * | @c kFlatTableType   | Derives from FB NativeTable         | @c is_flat_table_type   | FlatBuffers object API.     |
@@ -107,9 +107,10 @@
  * // vlink::Serializer::get_type_of<MyCustomMsg>() == vlink::Serializer::kCustomType
  * @endcode
  *
- * @par Transport-aware Fast Path
- * Some transports (e.g. @c dds://) use pointer passing for CDR types.  Use
- * the explicit overloads to opt into the transport-specific path:
+ * @par Explicit Codec Selection
+ * CDR serialization produces a byte stream containing the 4-byte DDS
+ * encapsulation header. Use the explicit overload when the codec cannot be
+ * inferred from @c T:
  * @code
  * vlink::Serializer::serialize<vlink::Serializer::kCdrType>(msg, bytes, vlink::TransportType::kDds);
  * @endcode
@@ -201,7 +202,7 @@ template <typename T>
  *
  * @tparam TypeT  Explicit VLink codec kind.
  * @tparam T      C++ message type to classify.
- * @return        @c SchemaType::kProtobuf, @c kFlatbuffers, @c kZeroCopy, or @c kRaw.
+ * @return        @c SchemaType::kProtobuf, @c kFlatbuffers, @c kZeroCopy, @c kCdr, or @c kRaw.
  */
 template <Type TypeT, typename T>
 [[nodiscard]] static constexpr SchemaType get_schema_type() noexcept;
@@ -210,7 +211,7 @@ template <Type TypeT, typename T>
  * @brief Returns the coarse schema family inferred from @c T alone.
  *
  * @tparam T  C++ message type to classify.
- * @return    @c SchemaType::kProtobuf, @c kFlatbuffers, @c kZeroCopy, or @c kRaw.
+ * @return    @c SchemaType::kProtobuf, @c kFlatbuffers, @c kZeroCopy, @c kCdr, or @c kRaw.
  */
 template <typename T>
 [[nodiscard]] static constexpr SchemaType get_schema_type() noexcept;
@@ -270,10 +271,10 @@ template <typename T>
  * @brief Serialises @p src into @p des with explicit codec and transport tags.
  *
  * @details
- * @p transport activates transport-specific fast paths (e.g. CDR pointer
- * passing on @c kDds).  Pass @c TransportType::kUnknown for the default
- * copy-based path.  @p offset prepends that many zero bytes before the
- * payload (used internally by some transports for framing).
+ * @p transport identifies the active transport. CDR output is the same
+ * encapsulated byte representation for every transport. @p offset prepends
+ * that many zero bytes before the payload (used internally by some transports
+ * for framing).
  *
  * For @c kFlatBuilderType, serialisation calls the builder's @c Finish()
  * path so @p src may be mutated.  Because the final size is unavailable
@@ -285,7 +286,7 @@ template <typename T>
  * @tparam T           C++ message type.
  * @param src          Source value to serialise.
  * @param des          Destination @c Bytes buffer (may be loaned).
- * @param transport    Active transport back-end for fast-path selection.
+ * @param transport    Active transport back-end.
  * @param offset       Number of header bytes to prepend (default @c 0).
  * @return             @c true on success; @c false on codec failure.
  */
@@ -333,11 +334,10 @@ static bool serialize_to_transport(const T& src, Bytes& des, TransportType trans
  * @brief Deserialises @p src into @p des with explicit codec and transport tags.
  *
  * @details
- * @p transport activates transport-specific fast paths (e.g. @c kDds
- * dereferences a CDR pointer stored in @p src instead of copying bytes).
- * @c kCharsType destinations are rejected because a raw pointer cannot carry
- * ownership of the required null-terminated storage.  Use @c std::string for
- * deserialisation.
+ * CDR input must contain its DDS encapsulation header and is decoded
+ * identically for every transport. @c kCharsType destinations are rejected
+ * because a raw pointer cannot carry ownership of the required null-terminated
+ * storage. Use @c std::string for deserialisation.
  *
  * @tparam TypeT       Codec kind.
  * @tparam T           C++ message type.
@@ -419,12 +419,13 @@ template <typename T>
  * @brief Reports whether @c T is a FastDDS CDR-serialisable type.
  *
  * @details
- * Requires @c fastcdr to be available, plus either both
+ * Requires @c VLINK_HAS_CDR, plus either both
  * @c serialize(Cdr&) and @c deserialize(Cdr&) methods, or a type name
- * carrying the @c VLINK_FASTDDS_IDL_PREFIX prefix.
+ * carrying the @c VLINK_DDS_IDL_PREFIX prefix. When @c VLINK_HAS_ROS2 is
+ * defined, ROS2 message traits are also recognised.
  *
  * @tparam T  Type to test.
- * @return    @c true for CDR types when @c fastcdr is available.
+ * @return    @c true for supported CDR types.
  */
 template <typename T>
 [[nodiscard]] static constexpr bool is_cdr_type() noexcept;

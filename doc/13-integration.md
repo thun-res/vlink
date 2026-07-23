@@ -133,6 +133,7 @@ typedef enum {
     VLINK_SCHEMA_ZEROCOPY    = 2,
     VLINK_SCHEMA_PROTOBUF    = 3,
     VLINK_SCHEMA_FLATBUFFERS = 4,
+    VLINK_SCHEMA_CDR         = 5,
 } vlink_schema_t;
 
 typedef struct {

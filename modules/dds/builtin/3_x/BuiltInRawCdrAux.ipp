@@ -48,38 +48,12 @@ namespace fastcdr {
 template <>
 eProsima_user_DllExport size_t calculate_serialized_size(eprosima::fastcdr::CdrSizeCalculator& calculator,
                                                          const vlink::BuiltInRaw& data, size_t& current_alignment) {
-  // using namespace vlink;
+  static_cast<void>(calculator);
 
-  // static_cast<void>(data);
-
-  // eprosima::fastcdr::EncodingAlgorithmFlag previous_encoding = calculator.get_encoding();
-  // size_t calculated_size{calculator.begin_calculate_type_serialized_size(
-  //     eprosima::fastcdr::CdrVersion::XCDRv2 == calculator.get_cdr_version()
-  //         ? eprosima::fastcdr::EncodingAlgorithmFlag::DELIMIT_CDR2
-  //         : eprosima::fastcdr::EncodingAlgorithmFlag::PLAIN_CDR,
-  //     current_alignment)};
-
-  // calculated_size +=
-  //     calculator.calculate_member_serialized_size(eprosima::fastcdr::MemberId(0), data.id(), current_alignment);
-
-  // calculated_size +=
-  //     calculator.calculate_member_serialized_size(eprosima::fastcdr::MemberId(1), data.data(), current_alignment);
-
-  // calculated_size += calculator.end_calculate_type_serialized_size(previous_encoding, current_alignment);
-
-  // return calculated_size;
-
-  (void)calculator;
-
-  size_t initial_alignment = current_alignment;
-
+  const size_t initial_alignment = current_alignment;
   current_alignment += 8 + eprosima::fastcdr::Cdr::alignment(current_alignment, 8);
-
   current_alignment += 4 + eprosima::fastcdr::Cdr::alignment(current_alignment, 4);
-
-  if (data.data().size() > 0) {
-    current_alignment += (data.data().size() * 1) + eprosima::fastcdr::Cdr::alignment(current_alignment, 1);
-  }
+  current_alignment += data.data().size();
 
   return current_alignment - initial_alignment;
 }
@@ -90,7 +64,7 @@ eProsima_user_DllExport void serialize(eprosima::fastcdr::Cdr& scdr, const vlink
 
   eprosima::fastcdr::Cdr::state current_state(scdr);
   scdr.begin_serialize_type(current_state, eprosima::fastcdr::CdrVersion::XCDRv2 == scdr.get_cdr_version()
-                                               ? eprosima::fastcdr::EncodingAlgorithmFlag::DELIMIT_CDR2
+                                               ? eprosima::fastcdr::EncodingAlgorithmFlag::PLAIN_CDR2
                                                : eprosima::fastcdr::EncodingAlgorithmFlag::PLAIN_CDR);
 
   scdr << eprosima::fastcdr::MemberId(0) << data.id() << eprosima::fastcdr::MemberId(1)
@@ -104,7 +78,7 @@ eProsima_user_DllExport void deserialize(eprosima::fastcdr::Cdr& cdr, vlink::Bui
   using namespace vlink;
 
   cdr.deserialize_type(eprosima::fastcdr::CdrVersion::XCDRv2 == cdr.get_cdr_version()
-                           ? eprosima::fastcdr::EncodingAlgorithmFlag::DELIMIT_CDR2
+                           ? eprosima::fastcdr::EncodingAlgorithmFlag::PLAIN_CDR2
                            : eprosima::fastcdr::EncodingAlgorithmFlag::PLAIN_CDR,
                        [&data](eprosima::fastcdr::Cdr& dcdr, const eprosima::fastcdr::MemberId& mid) -> bool {
                          bool ret_value = true;

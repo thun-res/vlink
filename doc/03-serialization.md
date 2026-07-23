@@ -42,7 +42,7 @@
 | `vlink::Bytes` | 原始字节直传 | 框架不解释其结构 | 透明代理、私有二进制协议、原始帧 |
 | `std::string` / `const char*` | 文本直传 | `std::string` 支持收发；`const char*` / `char[]` 仅支持发送 | 日志、命令字符串 |
 | 自定义类型（重载 `operator>>`/`<<`） | 用户编解码 | 字段顺序须严格对应，见 [3.5](#-35-自定义序列化器) | 自有紧凑布局、带外信息 |
-| DDS IDL 类型（`MyMsg`） | CDR | 需注册 TypeSupport，见 [3.6](#-36-dds-cdr-与-dynamicdata) | 与外部 DDS 系统互操作 |
+| DDS IDL 类型（`MyMsg`） | CDR | 基础无 key 传输可直接使用；完整类型元数据见 [3.6](#-36-dds-cdr-与-dynamicdata) | 与外部 DDS 系统互操作 |
 | `vlink::DynamicData` | 类型名标签 + 已序列化负载 | 运行期按类型名标签选择编解码，无需编译期固定消息类型，见 [3.6](#-36-dds-cdr-与-dynamicdata) | 监控、协议桥接 |
 
 判据的取舍要点：POD 提供最低开销，但不携带版本信息且不跨字节序；FlatBuffers 与 Protobuf 以编码开销换取结构演进能力；`Bytes` 不解释内容，适合协议透传。后端选择与 URL 写法见 [传输后端](04-transport.md)；面向感知的零拷贝容器见 [零拷贝](06-zerocopy.md)。
@@ -245,7 +245,11 @@ pub.publish(msg);
 
 ## 🔗 3.6 DDS CDR 与 DynamicData
 
-CDR 是 DDS 标准二进制格式，用于与外部 DDS 系统互操作，消息类型通常由 IDL 自动生成。使用前需注册对应的 TypeSupport：
+CDR 是 DDS 标准二进制格式，用于与外部 DDS 系统互操作，消息类型通常由 IDL 自动生成。基础无 key CDR 传输不强制注册 TypeSupport；需要 key、TypeIdentifier/TypeObject 或原生最大序列化尺寸时，应在端点初始化前注册：
+
+DDS target 向消费者导出 `VLINK_SUPPORT_CDR`；`Serializer` 包含 Fast-CDR 成功后定义 `VLINK_HAS_CDR`，后续 CDR 实现仅判断该能力宏。显式定义 `VLINK_SUPPORT_ROS2` 会同时请求 CDR 支持；ROS2 Fast RTPS 类型支持头包含成功后定义 `VLINK_HAS_ROS2`，无需再单独定义 `VLINK_SUPPORT_CDR`。请求的依赖不可用时编译器给出警告且不定义对应 `VLINK_HAS_*`。Typed Serializer 生成 XCDRv1；Bytes 路径可原样承载 XCDRv1/XCDRv2，FastDDS 3 发送时会校验 payload encapsulation 与 DataWriter representation QoS 一致，不进行隐式转码。
+
+DDS raw/CDR 模式与 CDR 类型名参与原生 endpoint 创建，必须在 `init()` 前确定；需要修改时先 `deinit()`，重新设置后再 `init()`。仅变更其他序列化元数据不受此限制。
 
 ```cpp
 #include "MyMessage.h"

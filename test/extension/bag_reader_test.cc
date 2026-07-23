@@ -2363,7 +2363,7 @@ void verify_vdb_check_rejects_corrupt_schema_encoding() {
   REQUIRE(reader->wait_for_quit(3000));
 }
 
-void verify_vdb_check_rejects_writer_invalid_loss() {
+void verify_vdb_check_accepts_writer_unknown_loss() {
   ScopedBagPath bag(".vdb");
 
   BagWriter::Config config;
@@ -2384,7 +2384,7 @@ void verify_vdb_check_rejects_writer_invalid_loss() {
   REQUIRE(reader != nullptr);
   REQUIRE(reader->async_run());
 
-  CHECK_FALSE(reader->check().get());
+  CHECK(reader->check().get());
 
   reader->quit();
   REQUIRE(reader->wait_for_quit(3000));
@@ -3415,7 +3415,7 @@ TEST_SUITE("extension-BagReader") {
     verify_vdb_check_rejects_empty_ser_metadata();
     verify_vdb_reader_rejects_corrupt_single_header_accuracy();
     verify_vdb_check_rejects_corrupt_schema_encoding();
-    verify_vdb_check_rejects_writer_invalid_loss();
+    verify_vdb_check_accepts_writer_unknown_loss();
     verify_vdb_sqlite_metadata_mutations_fail_check();
     verify_vdb_sqlite_cursor_handles_missing_url_and_null_action();
     verify_vdb_sqlite_missing_tables_are_rejected_cleanly();

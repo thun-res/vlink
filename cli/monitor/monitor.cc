@@ -2197,9 +2197,10 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         const auto sub_expected_schema_type =
             info.schema_type == vlink::SchemaType::kUnknown ? sub_current_schema_type : info.schema_type;
 
-        if (sub_ptr &&
-            (sub_ptr->get_ser_type() != info.ser_type || sub_current_schema_type != sub_expected_schema_type)) {
-          sub_ptr->set_ser_type(info.ser_type, info.schema_type);
+        if VUNLIKELY (sub_ptr && (sub_ptr->get_ser_type() != info.ser_type ||
+                                  sub_current_schema_type != sub_expected_schema_type)) {
+          sub_ptr_map.erase(ptr_iter);
+          ptr_iter = sub_ptr_map.end();
         }
       }
 

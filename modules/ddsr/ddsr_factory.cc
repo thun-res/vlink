@@ -492,11 +492,14 @@ bool DdsrFactory::take_data(DDS_DataReader* reader, ReadMessage& msg) {
     return false;
   }
 
-  auto* sample = vlink_BuiltInRawSeq_get_reference(&msg.seq, 0);
-
-  msg.id = sample->id;
-
-  msg.bytes = Bytes::shallow_copy(sample->data._contiguous_buffer, sample->data._length);
+  if VLIKELY (msg.info->valid_data) {
+    auto* sample = vlink_BuiltInRawSeq_get_reference(&msg.seq, 0);
+    msg.id = sample->id;
+    msg.bytes = Bytes::shallow_copy(sample->data._contiguous_buffer, sample->data._length);
+  } else {
+    msg.id = 0;
+    msg.bytes.clear();
+  }
 
   msg.timestamp =
       static_cast<int64_t>(msg.info->source_timestamp.sec) * 1000000000LL + msg.info->source_timestamp.nanosec;

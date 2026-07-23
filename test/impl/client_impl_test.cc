@@ -45,7 +45,10 @@ class TestClientImpl : public ClientImpl {
   void init() override {}
   void deinit() override {}
 
-  [[nodiscard]] bool is_connected() const override { return connected_.load(); }
+  [[nodiscard]] bool is_connected() const override {
+    connected_checks_.fetch_add(1, std::memory_order_relaxed);
+    return connected_.load();
+  }
 
   bool call(const Bytes& /*req_data*/, MsgCallback&& /*callback*/, std::chrono::milliseconds /*timeout*/) override {
     return false;
@@ -53,8 +56,11 @@ class TestClientImpl : public ClientImpl {
 
   void set_connected(bool v) { connected_ = v; }
 
+  int connected_checks() const { return connected_checks_.load(std::memory_order_relaxed); }
+
  private:
   std::atomic_bool connected_{false};
+  mutable std::atomic<int> connected_checks_{0};
 };
 
 }  // namespace
@@ -182,6 +188,13 @@ TEST_SUITE("impl-ClientImpl") {
     auto elapsed = std::chrono::steady_clock::now() - start;
     CHECK(result == false);
     CHECK(elapsed >= 40ms);
+  }
+
+  TEST_CASE("wait_for_connected does not query transport state under its wait lock") {
+    TestClientImpl client;
+
+    CHECK_FALSE(client.wait_for_connected(20ms));
+    CHECK_EQ(client.connected_checks(), 1);
   }
 
   TEST_CASE("wait_for_connected returns true when server appears during wait") {

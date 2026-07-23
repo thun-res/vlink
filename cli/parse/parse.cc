@@ -358,10 +358,10 @@ static int start_viewer(bool native_mode) {
 
           if VUNLIKELY (sub_iter->second->get_ser_type() != info.ser_type ||
                         current_schema_type != expected_schema_type) {
-            sub_iter->second->set_ser_type(info.ser_type, info.schema_type);
+            sync_ctx.sub_urls.erase(sub_iter);
+          } else {
+            continue;
           }
-
-          continue;
         }
 
         std::shared_ptr<RawSub> raw_sub;

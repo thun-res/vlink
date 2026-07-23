@@ -514,7 +514,7 @@ vlink::Publisher<MyCustomType> pub("shm://my/topic");
 - **懒初始化**：通过 `InitType::kWithoutInit` 参数，可以推迟 `init()` 调用，用于在构造器中注册回调后再初始化
 - **QoS 配置**：通过传输配置对象（如 `DdsConf`）或 URL 参数（如 `?qos=name&depth=10`）配置 QoS 策略
 - **安全密钥**：通过 `SecurityXxx` 派生类构造函数（第二参数）一次性传入 `Security::Config` 配置加密/解密参数；省略时使用内置默认安全槽位
-- **消息录制**：`set_record_path()` 为受支持的传输与序列化路径启用节点级 bag 录制；`intra://` 与 DDS CDR 不支持该接口
+- **消息录制**：`set_record_path()` 为受支持的传输与序列化路径启用节点级 bag 录制；`intra://` 不支持该接口，DDS CDR 按完整封装字节录制
 - **拓扑上报**：`set_discovery_enabled()` 控制节点是否由 DiscoveryReporter 上报给 Viewer/CLI，不控制传输后端的数据面发现
 - **属性 KV 存储**：`set_property()` / `get_property()` 用于存储节点元数据
 - **性能监控**：`get_cpu_usage()` 查询节点的 CPU 占用（通过 CpuProfiler 实现）
@@ -716,6 +716,8 @@ pub.publish(my_msg);
 
 pub.set_ser_type("my.proto.MessageType", vlink::SchemaType::kProtobuf);
 ```
+
+对 DDS 节点，raw/CDR 模式与 CDR 类型名还参与原生 endpoint 创建，须在 `init()` 前设置；运行中需要调整时先 `deinit()`，修改后再 `init()`。
 
 这一能力在消息录制（BagWriter）中得到了直接应用——无论节点使用何种序列化格式，都可以将原始字节流统一存储，并在回放时按原格式解码。
 
@@ -1111,7 +1113,7 @@ class VlinkPublisherHandle(ctypes.Structure):
     _fields_ = [("native_handle", ctypes.c_void_p), ("reserved", ctypes.c_void_p * 8)]
 
 lib = ctypes.CDLL("libvlink-c_api.so")
-VLINK_SCHEMA_PROTOBUF = 3                      # 见 vlink/external/c_api.h vlink_schema_t（0=UNKNOWN, 1=RAW, 2=ZEROCOPY, 3=PROTOBUF, 4=FLATBUFFERS）
+VLINK_SCHEMA_PROTOBUF = 3                      # 见 vlink/external/c_api.h vlink_schema_t（0=UNKNOWN, 1=RAW, 2=ZEROCOPY, 3=PROTOBUF, 4=FLATBUFFERS, 5=CDR）
 schema = VlinkSchemaInfo(b"demo.proto.Imu", VLINK_SCHEMA_PROTOBUF)
 pub = VlinkPublisherHandle()
 lib.vlink_create_publisher(b"dds://my/topic", ctypes.byref(schema), ctypes.byref(pub))

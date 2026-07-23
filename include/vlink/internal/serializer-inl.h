@@ -24,6 +24,8 @@
 #pragma once
 
 #include <cstring>
+#include <exception>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <type_traits>
@@ -35,123 +37,51 @@
 #include "../base/traits.h"
 #include "../serializer.h"
 
-#ifndef VLINK_FASTDDS_IDL_PREFIX
-#define VLINK_FASTDDS_IDL_PREFIX "dds::"
+#ifndef VLINK_DDS_IDL_PREFIX
+#define VLINK_DDS_IDL_PREFIX "dds::"
 #endif
 
-// NOLINTBEGIN
-
+#if defined(VLINK_SUPPORT_CDR) || defined(VLINK_SUPPORT_ROS2)
 #if __has_include(<fastcdr/Cdr.h>)
-[[maybe_unused]] static constexpr bool kVlinkHasFastcdr = true;
-
 #include <fastcdr/Cdr.h>
+#if FASTCDR_VERSION_MAJOR >= 2
+#include <fastcdr/CdrSizeCalculator.hpp>
+#endif
+#ifndef VLINK_HAS_CDR
+#define VLINK_HAS_CDR
+#endif
 #else
-#define FASTCDR_VERSION_MAJOR 1
-[[maybe_unused]] static constexpr bool kVlinkHasFastcdr = false;
+#warning "Fast CDR headers are required when CDR serialization support is enabled."
+#endif
+#endif
 
-namespace eprosima::fastcdr {
+#ifdef VLINK_SUPPORT_ROS2
+#if defined(VLINK_HAS_CDR) && __has_include(<rosidl_typesupport_fastrtps_cpp/message_type_support.h>)
+#include <rosidl_typesupport_fastrtps_cpp/message_type_support.h>
 
-class FastBuffer {
- public:
-  explicit FastBuffer(char*, size_t) {}
-};
-
-class CdrVersion {
- public:
-  enum Type {
-    DDS_CDR,
-  };
-};
-
-class Cdr {
- public:
-  enum Type {
-    DDS_CDR,
-    DEFAULT_ENDIAN,
-  };
-
-  explicit Cdr(FastBuffer&, int, int) {}
-};
-}  // namespace eprosima::fastcdr
+#include <rosidl_runtime_cpp/traits.hpp>
+#include <rosidl_typesupport_fastrtps_cpp/message_type_support_decl.hpp>
+#ifndef VLINK_HAS_ROS2
+#define VLINK_HAS_ROS2
+#endif
+#elif defined(VLINK_HAS_CDR)
+#warning "ROS 2 message headers are required when ROS 2 message support is enabled."
+#endif
 #endif
 
 #if __has_include(<google/protobuf/message_lite.h>)
-[[maybe_unused]] static constexpr bool kVlinkHasProtobuf = true;
-
+#ifndef VLINK_HAS_PROTOBUF
+#define VLINK_HAS_PROTOBUF
+#endif
 #include <google/protobuf/message_lite.h>
-
-#if __has_include(<google/protobuf/stubs/common.h>)
-#include <google/protobuf/stubs/common.h>
-#endif
-
-#if __has_include(<google/protobuf/arena.h>)
-#include <google/protobuf/arena.h>
-#endif
-
-#else
-
-#ifndef GOOGLE_PROTOBUF_VERSION
-#define GOOGLE_PROTOBUF_VERSION 0
-#endif
-
-[[maybe_unused]] static constexpr bool kVlinkHasProtobuf = false;
-
-namespace google::protobuf {
-
-struct Arena {
-  template <typename T>
-  [[maybe_unused]] static T* Create(Arena*) {
-    return nullptr;
-  }
-};
-
-}  // namespace google::protobuf
-
 #endif
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
-[[maybe_unused]] static constexpr bool kVlinkHasFlatbuffers = true;
-
-#include <flatbuffers/flatbuffers.h>
-#else
-[[maybe_unused]] static constexpr bool kVlinkHasFlatbuffers = false;
-
-namespace flatbuffers {
-
-template <typename ReturnT, typename T>
-[[maybe_unused]] static const ReturnT* GetRoot(const T&) {
-  return nullptr;
-}
-
-struct FlatBufferBuilder {
-  size_t GetSize() const { return 0; }
-
-  const uint8_t* GetBufferPointer() const { return nullptr; }
-
-  const uint8_t* GetCurrentBufferPointer() const { return nullptr; }
-
-  void PushBytes(const uint8_t*, size_t) {}
-
-  void Finish() const {}
-};
-
-struct Table {};
-
-struct NativeTable {};
-
-struct Verifier {
-  Verifier(const uint8_t*, size_t) {}
-
-  template <typename T>
-  bool VerifyBuffer(void*) {
-    return false;
-  }
-};
-
-}  // namespace flatbuffers
+#ifndef VLINK_HAS_FLATBUFFERS
+#define VLINK_HAS_FLATBUFFERS
 #endif
-
-// NOLINTEND
+#include <flatbuffers/flatbuffers.h>
+#endif
 
 namespace vlink {
 
@@ -159,24 +89,44 @@ namespace Serializer {  // NOLINT(readability-identifier-naming)
 
 [[maybe_unused]] inline constexpr bool is_supported(Type type) noexcept { return type != kUnknownType; }
 
+#ifdef VLINK_HAS_ROS2
+template <typename T>
+inline constexpr bool is_ros2_msg_type() noexcept {
+  using RealType = typename Traits::RemoveSharedPtr<T>::Type;
+  return rosidl_generator_traits::is_message<RealType>::value;
+}
+
+template <typename T>
+inline const message_type_support_callbacks_t* get_ros2_msg_callbacks() noexcept {
+  const auto* type_support = rosidl_typesupport_fastrtps_cpp::get_message_type_support_handle<T>();
+  return type_support ? static_cast<const message_type_support_callbacks_t*>(type_support->data) : nullptr;
+}
+#endif
+
 template <typename T>
 inline constexpr Type get_type_of() noexcept {
   if constexpr (is_bytes_type<T>()) {
     return kBytesType;
   } else if constexpr (is_dynamic_type<T>()) {
     return kDynamicType;
+#ifdef VLINK_HAS_CDR
   } else if constexpr (is_cdr_type<T>()) {
     return kCdrType;
+#endif
+#ifdef VLINK_HAS_PROTOBUF
   } else if constexpr (is_proto_type<T>()) {
     return kProtoType;
   } else if constexpr (is_proto_ptr_type<T>()) {
     return kProtoPtrType;
+#endif
+#ifdef VLINK_HAS_FLATBUFFERS
   } else if constexpr (is_flat_table_type<T>()) {
     return kFlatTableType;
   } else if constexpr (is_flat_ptr_type<T>()) {
     return kFlatPtrType;
   } else if constexpr (is_flat_builder_type<T>()) {
     return kFlatBuilderType;
+#endif
   } else if constexpr (is_custom_type<T>()) {
     return kCustomType;
   } else if constexpr (is_string_type<T>()) {
@@ -212,10 +162,18 @@ inline static constexpr SchemaType get_schema_type() noexcept {
     } else {
       return SchemaType::kRaw;
     }
+#ifdef VLINK_HAS_PROTOBUF
   } else if constexpr (TypeT == kProtoType || TypeT == kProtoPtrType) {
     return SchemaType::kProtobuf;
+#endif
+#ifdef VLINK_HAS_FLATBUFFERS
   } else if constexpr (TypeT == kFlatTableType || TypeT == kFlatPtrType || TypeT == kFlatBuilderType) {
     return SchemaType::kFlatbuffers;
+#endif
+#ifdef VLINK_HAS_CDR
+  } else if constexpr (TypeT == kCdrType) {
+    return SchemaType::kCdr;
+#endif
   } else {
     return SchemaType::kRaw;
   }
@@ -239,18 +197,11 @@ inline std::string get_serialized_type() noexcept {
     return "vlink::DynamicData";
   } else if constexpr (TypeT == kCustomType && VLINK_HAS_MEMBER(RealType, get_serialized_type())) {
     return RealType::get_serialized_type();
-  } else if constexpr (TypeT == kProtoType) {
-#if GOOGLE_PROTOBUF_VERSION >= 6030000
-    return std::string(RealType{}.GetTypeName());
-#else
-    return RealType{}.GetTypeName();
+#ifdef VLINK_HAS_PROTOBUF
+  } else if constexpr (TypeT == kProtoType || TypeT == kProtoPtrType) {
+    return std::string(NamedType{}.GetTypeName());
 #endif
-  } else if constexpr (TypeT == kProtoPtrType) {
-#if GOOGLE_PROTOBUF_VERSION >= 6030000
-    return std::string(std::remove_pointer_t<T>().GetTypeName());
-#else
-    return std::remove_pointer_t<T>().GetTypeName();
-#endif
+#ifdef VLINK_HAS_FLATBUFFERS
   } else if constexpr (TypeT == kFlatTableType) {
     using TableType = typename RealType::TableType;
     if constexpr (VLINK_HAS_MEMBER(TableType, GetFullyQualifiedName)) {
@@ -278,6 +229,20 @@ inline std::string get_serialized_type() noexcept {
       Helpers::replace_string(name, "::", ".");
       return name;
     }
+#endif
+#ifdef VLINK_HAS_ROS2
+  } else if constexpr (TypeT == kCdrType && is_ros2_msg_type<RealType>()) {
+    const auto* callbacks = get_ros2_msg_callbacks<RealType>();
+
+    if VUNLIKELY (!callbacks || !callbacks->message_namespace_ || !callbacks->message_name_) {
+      return "";
+    }
+
+    std::string name(callbacks->message_namespace_);
+    name.append("::dds_::").append(callbacks->message_name_).append("_");
+
+    return name;
+#endif
   } else if constexpr (TypeT == kStringType || TypeT == kCharsType) {
     return "string";
   } else if constexpr (NameDetector::is_support<NamedType>()) {
@@ -302,12 +267,43 @@ inline size_t get_serialized_size(const T& src) noexcept {
     return 0;
   } else if constexpr (TypeT == kDynamicType) {
     return 0;
+#ifdef VLINK_HAS_CDR
   } else if constexpr (TypeT == kCdrType) {
-    if constexpr (VLINK_HAS_MEMBER(RealType, getCdrSerializedSize(deref(src)))) {
-      return RealType::getCdrSerializedSize(deref(src));
-    } else {
+    try {
+#ifdef VLINK_HAS_ROS2
+      if constexpr (is_ros2_msg_type<RealType>()) {
+        const auto* callbacks = get_ros2_msg_callbacks<RealType>();
+
+        if VUNLIKELY (!callbacks || !callbacks->get_serialized_size) {
+          return 0U;
+        }
+
+        const size_t payload_size = callbacks->get_serialized_size(&deref(src));
+        return payload_size <= std::numeric_limits<uint32_t>::max() - 4U ? payload_size + 4U : 0U;
+      } else {
+#endif
+        if constexpr (VLINK_HAS_MEMBER(RealType, getCdrSerializedSize(deref(src)))) {
+          const size_t payload_size = RealType::getCdrSerializedSize(deref(src));
+          return payload_size <= std::numeric_limits<uint32_t>::max() - 4U ? payload_size + 4U : 0U;
+#if FASTCDR_VERSION_MAJOR >= 2
+        } else {
+          eprosima::fastcdr::CdrSizeCalculator calculator(eprosima::fastcdr::CdrVersion::XCDRv1);
+          size_t current_alignment = 0;
+          const size_t payload_size = calculator.calculate_serialized_size(deref(src), current_alignment);
+          return payload_size <= std::numeric_limits<uint32_t>::max() - 4U ? payload_size + 4U : 0U;
+#else
+      } else {
+        return 0;
+#endif
+        }
+#ifdef VLINK_HAS_ROS2
+      }
+#endif
+    } catch (const std::exception&) {
       return 0;
     }
+#endif
+#ifdef VLINK_HAS_PROTOBUF
   } else if constexpr (TypeT == kProtoType) {
     if constexpr (VLINK_HAS_MEMBER(RealType, ByteSizeLong())) {
       return deref(src).ByteSizeLong();
@@ -320,28 +316,13 @@ inline size_t get_serialized_size(const T& src) noexcept {
     } else {
       return src->ByteSize();
     }
-  } else if constexpr (TypeT == kFlatTableType) {
-    return 0;
-  } else if constexpr (TypeT == kFlatBuilderType) {
-    return 0;
-  } else if constexpr (TypeT == kFlatPtrType) {
-    return 0;
+#endif
   } else if constexpr (TypeT == kCustomType) {
     if constexpr (VLINK_HAS_MEMBER(RealType, get_serialized_size())) {
       return deref(src).get_serialized_size();
     } else {
       return 0;
     }
-  } else if constexpr (TypeT == kStringType) {
-    return 0;
-  } else if constexpr (TypeT == kCharsType) {
-    return 0;
-  } else if constexpr (TypeT == kStreamType) {
-    return 0;
-  } else if constexpr (TypeT == kStandardType) {
-    return 0;
-  } else if constexpr (TypeT == kStandardPtrType) {
-    return 0;
   } else {
     return 0;
   }
@@ -372,32 +353,68 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
     } else {
       deref(src) >> des;
     }
+#ifdef VLINK_HAS_CDR
   } else if constexpr (TypeT == kCdrType) {
-    if (transport == TransportType::kDds) {
-      des = Bytes::shallow_copy_ptr(&const_cast<RealType&>(deref(src)));
-    } else {
-      if (!des.is_loaned()) {
-        if constexpr (VLINK_HAS_MEMBER(RealType, getCdrSerializedSize(deref(src)))) {
-          size_t target_size = RealType::getCdrSerializedSize(deref(src));
+    const size_t target_size = get_serialized_size<TypeT>(src);
 
-          if VUNLIKELY (des.size() != target_size) {
-            des = Bytes::create(target_size, offset);
-          }
-        } else {
-          VLOG_W("Serializer: FastBuffer serialize is not supported without dds(v3).");
-          return false;
-        }
+    if VUNLIKELY (target_size < 4U || target_size > std::numeric_limits<uint32_t>::max()) {
+      VLOG_W("Serializer: FastBuffer serialized size is invalid.");
+      return false;
+    }
+
+    if (!des.is_loaned()) {
+      if VUNLIKELY (des.size() != target_size) {
+        des = Bytes::create(target_size, offset);
       }
+    }
 
+    if VUNLIKELY (!des.data() || des.size() != target_size) {
+      return false;
+    }
+
+    try {
       eprosima::fastcdr::FastBuffer buffer(reinterpret_cast<char*>(des.data()), des.size());
 #if FASTCDR_VERSION_MAJOR >= 2
-      eprosima::fastcdr::Cdr cdr(buffer, eprosima::fastcdr::Cdr::DEFAULT_ENDIAN,
-                                 eprosima::fastcdr::CdrVersion::DDS_CDR);
+      constexpr auto kCdrVersion = VLINK_HAS_MEMBER(RealType, serialize(std::declval<eprosima::fastcdr::Cdr&>()))
+                                       ? eprosima::fastcdr::CdrVersion::DDS_CDR
+                                       : eprosima::fastcdr::CdrVersion::XCDRv1;
+      eprosima::fastcdr::Cdr cdr(buffer, eprosima::fastcdr::Cdr::DEFAULT_ENDIAN, kCdrVersion);
+      if constexpr (kCdrVersion == eprosima::fastcdr::CdrVersion::XCDRv1) {
+        cdr.set_encoding_flag(eprosima::fastcdr::EncodingAlgorithmFlag::PLAIN_CDR);
+      }
 #else
       eprosima::fastcdr::Cdr cdr(buffer, eprosima::fastcdr::Cdr::DEFAULT_ENDIAN, eprosima::fastcdr::Cdr::DDS_CDR);
 #endif
-      deref(src).serialize(cdr);
+      cdr.serialize_encapsulation();
+
+#ifdef VLINK_HAS_ROS2
+      if constexpr (is_ros2_msg_type<RealType>()) {
+        const auto* callbacks = get_ros2_msg_callbacks<RealType>();
+
+        if VUNLIKELY (!callbacks || !callbacks->cdr_serialize || !callbacks->cdr_serialize(&deref(src), cdr)) {
+          return false;
+        }
+      } else {
+#endif
+        if constexpr (VLINK_HAS_MEMBER(RealType, serialize(cdr))) {
+          deref(src).serialize(cdr);
+#if FASTCDR_VERSION_MAJOR >= 2
+        } else {
+          cdr << deref(src);
+#endif
+        }
+#ifdef VLINK_HAS_ROS2
+      }
+#endif
+    } catch (const eprosima::fastcdr::exception::Exception& e) {
+      VLOG_T("Serializer: FastBuffer serialize failed: ", e.what(), ".");
+      return false;
+    } catch (const std::exception& e) {
+      VLOG_T("Serializer: CDR serialize failed: ", e.what(), ".");
+      return false;
     }
+#endif
+#ifdef VLINK_HAS_PROTOBUF
   } else if constexpr (TypeT == kProtoType) {
     if (!des.is_loaned()) {
       if constexpr (VLINK_HAS_MEMBER(RealType, ByteSizeLong())) {
@@ -440,6 +457,8 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
       VLOG_T("Serializer: Protobuf ptr serialize failed.");
       return false;
     }
+#endif
+#ifdef VLINK_HAS_FLATBUFFERS
   } else if constexpr (TypeT == kFlatTableType) {
     flatbuffers::FlatBufferBuilder fbb;
     fbb.Finish(RealType::TableType::Pack(fbb, &deref(src)));
@@ -459,6 +478,7 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
     des = Bytes::deep_copy(mutable_src.fbb_.GetBufferPointer(), mutable_src.fbb_.GetSize(), offset);
   } else if constexpr (TypeT == kFlatPtrType) {
     static_assert(Traits::ExpectFalse<T>(), "Not support flat ptr type.");
+#endif
   } else if constexpr (TypeT == kCustomType) {
     using ReturnT = decltype(const_cast<RealType&>(deref(src)) >> des);
 
@@ -539,6 +559,7 @@ inline bool serialize(const T& src, Bytes& des) {
 template <Type TypeT, typename T, typename LoanCallbackT>
 inline bool serialize_to_transport(const T& src, Bytes& des, TransportType transport, bool use_loan,
                                    LoanCallbackT&& loan) {
+#ifdef VLINK_HAS_FLATBUFFERS
   if constexpr (TypeT == kFlatBuilderType) {
     auto& mutable_src = const_cast<T&>(src);
     mutable_src.fbb_.Finish(mutable_src.Finish());
@@ -554,11 +575,12 @@ inline bool serialize_to_transport(const T& src, Bytes& des, TransportType trans
 
       std::memcpy(des.data(), mutable_src.fbb_.GetBufferPointer(), size);
     } else {
-      des = Bytes::deep_copy(mutable_src.fbb_.GetBufferPointer(), size);
+      des = Bytes::shallow_copy(mutable_src.fbb_.GetBufferPointer(), size);
     }
 
     return true;
   } else {
+#endif
     if (use_loan) {
       const size_t size = get_serialized_size<TypeT>(src);
 
@@ -584,7 +606,9 @@ inline bool serialize_to_transport(const T& src, Bytes& des, TransportType trans
     }
 
     return ret;
+#ifdef VLINK_HAS_FLATBUFFERS
   }
+#endif
 }
 
 template <Type TypeT, typename T>
@@ -610,29 +634,51 @@ inline bool deserialize(const Bytes& src, T& des, [[maybe_unused]] TransportType
       VLOG_T("Serializer: Dynamic deserialize threw: ", e.what(), ".");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       return false;                                                      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
+#ifdef VLINK_HAS_CDR
   } else if constexpr (TypeT == kCdrType) {
-    if (transport == TransportType::kDds) {
-      if VUNLIKELY (!src.is_ptr()) {
-        VLOG_T("Serializer: Fastcdr src is not ptr.");
-        return false;
-      }
-
-      deref(des) = *src.to_ptr<RealType>();
-    } else {
-      if constexpr (VLINK_HAS_MEMBER(RealType, getCdrSerializedSize(deref(des)))) {
-        eprosima::fastcdr::FastBuffer buffer(reinterpret_cast<char*>(const_cast<uint8_t*>(src.data())), src.size());
-#if FASTCDR_VERSION_MAJOR >= 2
-        eprosima::fastcdr::Cdr cdr(buffer, eprosima::fastcdr::Cdr::DEFAULT_ENDIAN,
-                                   eprosima::fastcdr::CdrVersion::DDS_CDR);
-#else
-        eprosima::fastcdr::Cdr cdr(buffer, eprosima::fastcdr::Cdr::DEFAULT_ENDIAN, eprosima::fastcdr::Cdr::DDS_CDR);
-#endif
-        deref(des).deserialize(cdr);
-      } else {
-        VLOG_W("Serializer: FastBuffer deserialize is not supported without dds(v3).");
-        return false;
-      }
+    if VUNLIKELY (!src.data() || src.size() < 4U || src.size() > std::numeric_limits<uint32_t>::max()) {
+      VLOG_T("Serializer: FastBuffer payload has no CDR encapsulation.");
+      return false;
     }
+
+    try {
+      eprosima::fastcdr::FastBuffer buffer(reinterpret_cast<char*>(const_cast<uint8_t*>(src.data())), src.size());
+#if FASTCDR_VERSION_MAJOR >= 2
+      eprosima::fastcdr::Cdr cdr(buffer, eprosima::fastcdr::Cdr::DEFAULT_ENDIAN,
+                                 eprosima::fastcdr::CdrVersion::DDS_CDR);
+#else
+      eprosima::fastcdr::Cdr cdr(buffer, eprosima::fastcdr::Cdr::DEFAULT_ENDIAN, eprosima::fastcdr::Cdr::DDS_CDR);
+#endif
+      cdr.read_encapsulation();
+
+#ifdef VLINK_HAS_ROS2
+      if constexpr (is_ros2_msg_type<RealType>()) {
+        const auto* callbacks = get_ros2_msg_callbacks<RealType>();
+
+        if VUNLIKELY (!callbacks || !callbacks->cdr_deserialize || !callbacks->cdr_deserialize(cdr, &deref(des))) {
+          return false;
+        }
+      } else {
+#endif
+        if constexpr (VLINK_HAS_MEMBER(RealType, deserialize(cdr))) {
+          deref(des).deserialize(cdr);
+#if FASTCDR_VERSION_MAJOR >= 2
+        } else {
+          cdr >> deref(des);
+#endif
+        }
+#ifdef VLINK_HAS_ROS2
+      }
+#endif
+    } catch (const eprosima::fastcdr::exception::Exception& e) {
+      VLOG_T("Serializer: FastBuffer deserialize failed: ", e.what(), ".");
+      return false;
+    } catch (const std::exception& e) {
+      VLOG_T("Serializer: CDR deserialize failed: ", e.what(), ".");
+      return false;
+    }
+#endif
+#ifdef VLINK_HAS_PROTOBUF
   } else if constexpr (TypeT == kProtoType) {
     if (!src.empty()) {
       if VUNLIKELY (!deref(des).ParseFromArray(src.data(), src.size())) {
@@ -651,6 +697,8 @@ inline bool deserialize(const Bytes& src, T& des, [[maybe_unused]] TransportType
     } else {
       des->Clear();
     }
+#endif
+#ifdef VLINK_HAS_FLATBUFFERS
   } else if constexpr (TypeT == kFlatTableType) {
     deref(des) = RealType{};
 
@@ -679,6 +727,7 @@ inline bool deserialize(const Bytes& src, T& des, [[maybe_unused]] TransportType
       VLOG_T("Serializer: Flatbuffers ptr deserialize failed.");
       return false;
     }
+#endif
   } else if constexpr (TypeT == kCustomType) {
     try {
       using ReturnT = decltype(deref(des) << src);
@@ -779,42 +828,69 @@ inline constexpr bool is_dynamic_type() noexcept {
 
 template <typename T>
 inline constexpr bool is_cdr_type() noexcept {
+#ifdef VLINK_HAS_CDR
   using RealType = typename Traits::RemoveSharedPtr<T>::Type;
 
-  return kVlinkHasFastcdr && ((VLINK_HAS_MEMBER(RealType, serialize(std::declval<eprosima::fastcdr::Cdr&>())) &&
-                               VLINK_HAS_MEMBER(RealType, deserialize(std::declval<eprosima::fastcdr::Cdr&>()))) ||
-                              Helpers::contains_substring(NameDetector::get<RealType>(), VLINK_FASTDDS_IDL_PREFIX));
+#ifdef VLINK_HAS_ROS2
+  if constexpr (is_ros2_msg_type<RealType>()) {
+    return true;
+  }
+#endif
+
+  return (VLINK_HAS_MEMBER(RealType, serialize(std::declval<eprosima::fastcdr::Cdr&>())) &&
+          VLINK_HAS_MEMBER(RealType, deserialize(std::declval<eprosima::fastcdr::Cdr&>()))) ||
+         Helpers::contains_substring(NameDetector::get<RealType>(), VLINK_DDS_IDL_PREFIX);
+#else
+  return false;
+#endif
 }
 
 template <typename T>
 inline constexpr bool is_proto_type() noexcept {
+#ifdef VLINK_HAS_PROTOBUF
   using RealType = typename Traits::RemoveSharedPtr<T>::Type;
-  return kVlinkHasProtobuf && VLINK_HAS_MEMBER(RealType, SerializeToArray(0, 0)) &&
-         VLINK_HAS_MEMBER(RealType, ParseFromArray(0, 0));
+  return VLINK_HAS_MEMBER(RealType, SerializeToArray(0, 0)) && VLINK_HAS_MEMBER(RealType, ParseFromArray(0, 0));
+#else
+  return false;
+#endif
 }
 
 template <typename T>
 inline constexpr bool is_proto_ptr_type() noexcept {
-  return kVlinkHasProtobuf && std::is_pointer_v<T> &&
-         VLINK_HAS_MEMBER(std::remove_pointer_t<T>, SerializeToArray(0, 0)) &&
+#ifdef VLINK_HAS_PROTOBUF
+  return std::is_pointer_v<T> && VLINK_HAS_MEMBER(std::remove_pointer_t<T>, SerializeToArray(0, 0)) &&
          VLINK_HAS_MEMBER(std::remove_pointer_t<T>, ParseFromArray(0, 0));
+#else
+  return false;
+#endif
 }
 
 template <typename T>
 inline constexpr bool is_flat_table_type() noexcept {
+#ifdef VLINK_HAS_FLATBUFFERS
   using RealType = typename Traits::RemoveSharedPtr<T>::Type;
-  return kVlinkHasFlatbuffers && std::is_base_of_v<flatbuffers::NativeTable, RealType>;
+  return std::is_base_of_v<flatbuffers::NativeTable, RealType>;
+#else
+  return false;
+#endif
 }
 
 template <typename T>
 inline constexpr bool is_flat_builder_type() noexcept {
-  return kVlinkHasFlatbuffers && VLINK_HAS_MEMBER(T, fbb_) && VLINK_HAS_MEMBER(T, Finish());
+#ifdef VLINK_HAS_FLATBUFFERS
+  return VLINK_HAS_MEMBER(T, fbb_) && VLINK_HAS_MEMBER(T, Finish());
+#else
+  return false;
+#endif
 }
 
 template <typename T>
 inline constexpr bool is_flat_ptr_type() noexcept {
-  return kVlinkHasFlatbuffers && std::is_pointer_v<T> &&
-         std::is_base_of_v<flatbuffers::Table, std::remove_pointer_t<T>>;
+#ifdef VLINK_HAS_FLATBUFFERS
+  return std::is_pointer_v<T> && std::is_base_of_v<flatbuffers::Table, std::remove_pointer_t<T>>;
+#else
+  return false;
+#endif
 }
 
 template <typename T>

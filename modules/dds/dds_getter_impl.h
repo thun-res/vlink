@@ -90,7 +90,6 @@ class DdsGetterImpl final : public GetterImpl, public AbstractNode {
   std::shared_ptr<dds::Subscriber> subscriber_;
   std::optional<ReaderListener> listener_;
   std::shared_ptr<dds::DataReader> reader_;
-  dds::TypeSupport type_support_;
   MsgCallback callback_;
   CalculateSample calc_sample_;
   std::atomic_bool is_latency_and_lost_enabled_{false};

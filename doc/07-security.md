@@ -169,7 +169,7 @@ target_link_libraries(my_app PRIVATE vlink::vlink)
 以下传输组合不支持消息级加密：构造时 `enable_security()` 打印警告（`Security::Config will ignore intra/dds(cdr) transport.`）并返回 `false`，**不安装任何安全对象**。由于安全节点变体默认以 `InitType::kWithInit` 构造，紧随其后的 `init()` 检测到无可用 `Security`，会以 `VLOG_F` 致命级日志抛出 `Exception::RuntimeError`（即构造期 fatal）。须由调用方自行避免在不可信链路上对这些传输使用 `Security*` 变体；若需在 `init()` 前自查配置，可用 `InitType::kWithoutInit` 延迟初始化并在内部 `Security` 上检查 `can_encrypt()` / `can_decrypt()`。机制原因与替代方案见 [传输后端与 URL](04-transport.md)：
 
 - `intra://`：当前实现显式排除整个 intra 路径；其中 `shared_ptr<IntraDataType>` 专用对象路径还会对安全模板触发编译期 `static_assert`。普通 intra 消息虽经 Bytes 编解码，也不因此启用安全层。
-- `dds://` 配合 CDR 类型：CDR 直接交由 DDS 处理，应改用 DDS Security 插件或传输层 TLS。
+- `dds://` 配合 CDR 类型：消息级安全封装会破坏原生 CDR 负载格式，应改用 DDS Security 插件或传输层 TLS。
 
 其余后端（`shm://`、`shm2://`、`ddsc://`、`ddsr://`、`zenoh://`、`mqtt://`、`fdbus://`、`someip://`，以及 `dds://` 的非 CDR 类型）均支持。
 
