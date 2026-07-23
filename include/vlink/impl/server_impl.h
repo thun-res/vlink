@@ -124,9 +124,10 @@ class VLINK_EXPORT ServerImpl : public NodeImpl {
    */
   virtual bool reply(uint64_t req_id, const Bytes& resp_data, bool is_sync);
 
-  bool is_listened{false};   ///< @c true once @c listen() has been registered successfully.
-  bool is_resp_type{false};  ///< @c true when the server is expected to produce a response.
-  bool is_sync_type{false};  ///< @c true when the reply is delivered inside the request callback.
+  bool is_listened{false};       ///< @c true once @c listen() has been registered successfully.
+  bool is_resp_type{false};      ///< @c true when the server is expected to produce a response.
+  bool is_resp_cdr_type{false};  ///< @c true when the response payload uses native DDS CDR.
+  bool is_sync_type{false};      ///< @c true when the reply is delivered inside the request callback.
 
  protected:
   /**
