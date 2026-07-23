@@ -1,5 +1,8 @@
 name: Codex + Claude PR Review
 
+# Codex reviews are triggered by the repository's Codex Automatic reviews
+# setting. This workflow announces both reviewers and runs Claude.
+
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
@@ -40,63 +43,11 @@ jobs:
               body: [
                 '🤖 **Codex + Claude automated review started**',
                 '',
-                'Both reviewers are running in GitHub Actions. Their findings will be posted to this pull request.',
+                '- Codex: handled by the repository Codex Automatic reviews integration.',
+                '- Claude: running in this GitHub Actions workflow.',
                 '',
                 `[View workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
               ].join('\n'),
-            });
-
-  codex-review:
-    name: Codex review
-    if: >-
-      github.event.pull_request.draft == false &&
-      github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      final_message: ${{ steps.run-codex.outputs.final-message }}
-    steps:
-      - name: Checkout pull request merge commit
-        uses: actions/checkout@v5
-        with:
-          ref: refs/pull/${{ github.event.pull_request.number }}/merge
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Run Codex review
-        id: run-codex
-        uses: openai/codex-action@v1
-        with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          prompt-file: .github/codex/prompts/review.md
-          output-file: codex-review.md
-          sandbox: read-only
-          safety-strategy: drop-sudo
-
-  codex-feedback:
-    name: Post Codex feedback
-    needs: codex-review
-    if: >-
-      needs.codex-review.result == 'success' &&
-      needs.codex-review.outputs.final_message != ''
-    runs-on: ubuntu-latest
-    permissions:
-      issues: write
-      pull-requests: write
-    steps:
-      - name: Post review comment
-        uses: actions/github-script@v7
-        env:
-          CODEX_FINAL_MESSAGE: ${{ needs.codex-review.outputs.final_message }}
-        with:
-          github-token: ${{ github.token }}
-          script: |
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              body: `## Codex PR review\n\n${process.env.CODEX_FINAL_MESSAGE}`,
             });
 
   claude-review:
