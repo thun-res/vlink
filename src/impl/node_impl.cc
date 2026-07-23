@@ -102,8 +102,7 @@ struct GlobalDiscoveryReporter final {
 };
 
 static bool should_report_discovery(const NodeImpl& node) {
-  return node.is_discovery_enabled && !node.url.empty() &&
-         !(node.transport_type == TransportType::kDds && node.is_cdr_type) && !node.is_security_type &&
+  return node.is_discovery_enabled && !node.url.empty() && !node.is_security_type &&
          (!kIgnoreIntraUrl || node.transport_type != TransportType::kIntra);
 }
 
@@ -413,8 +412,7 @@ void NodeImpl::try_record(ActionType action_type, const Bytes& data) {
     return;
   }
 
-  if ((kIgnoreIntraUrl && transport_type == TransportType::kIntra) ||
-      (transport_type == TransportType::kDds && is_cdr_type)) {
+  if (kIgnoreIntraUrl && transport_type == TransportType::kIntra) {
     return;
   }
 
