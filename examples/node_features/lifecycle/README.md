@@ -50,6 +50,7 @@ waker.join();
 ## ⚠️ 注意事项
 
 - `init` 之后修改 property 多数不生效：大部分 property 在 init 期被 transport 读取。
+- DDS raw/CDR 模式与 CDR 类型名不能在初始化状态下修改；先 `deinit()`，修改后再 `init()`。
 - `interrupt` 仅唤醒等待，要真正停用须 `deinit`。
 
 ## 🔗 相关文档

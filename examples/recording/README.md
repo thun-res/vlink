@@ -1,11 +1,11 @@
 # 📼 recording — 通信数据的录制与回放
 
-VLink 提供录制与回放基础设施，可将受支持的通信原语消息持久化为 bag 文件，用于事后回放、离线分析与回归测试。`intra://` 与 DDS CDR 数据面不支持节点级录制；其余限制见顶层 `doc/09-recording.md`。支持两种 bag 格式：
+VLink 提供录制与回放基础设施，可将受支持的通信原语消息持久化为 bag 文件，用于事后回放、离线分析与回归测试。`intra://` 不支持节点级录制；DDS CDR 按完整封装字节录制与回放。其余限制见顶层 `doc/09-recording.md`。支持两种 bag 格式：
 
 - **`.vdb`**：SQLite 后端的 VLink 原生格式，支持复杂查询、分片、压缩与 WAL。
 - **`.vcap` / `.vcapx`**：MCAP 格式，与 Foxglove、ROS 2 工具链兼容。
 
-本类目示范节点级录制的最简形态：在受支持的 Publisher / Subscriber 等原语上调用 `set_record_path()`，或通过 `VLINK_BAG_PATH` 环境变量启用进程级 writer。全局 writer 可记录经过序列化 Bytes 路径的普通 `intra://` 消息，但不会记录绕过 Bytes 的 `IntraData` 直通消息或 DDS CDR。`BagWriter` / `BagReader` 直接读写、读取过滤、多 bag 合并，以及 MCAP 格式与压缩选择器（None / Zstd / LZ4 / LZAV）的取舍，属于进阶主题，详见顶层 `doc/09-recording.md`。
+本类目示范节点级录制的最简形态：在受支持的 Publisher / Subscriber 等原语上调用 `set_record_path()`，或通过 `VLINK_BAG_PATH` 环境变量启用进程级 writer。全局 writer 可记录经过序列化 Bytes 路径的普通 `intra://` 消息和 DDS CDR，但不会记录绕过 Bytes 的 `IntraData` 直通消息。`BagWriter` / `BagReader` 直接读写、读取过滤、多 bag 合并，以及 MCAP 格式与压缩选择器（None / Zstd / LZ4 / LZAV）的取舍，属于进阶主题，详见顶层 `doc/09-recording.md`。
 
 ## 📑 子示例索引
 
