@@ -73,10 +73,11 @@
  * @endcode
  *
  * @par Type-Support Registration
- * For CDR-serialised messages the Fast-DDS @c TopicDataType factory must be wired
- * to the topic name before any endpoint is opened on that topic.  An optional
- * response type can be registered at the same time for RPC topics; the helper
- * automatically appends the @c "___resp" suffix.
+ * CDR messages can use a type name alone for unkeyed byte-stream transport.
+ * Register the Fast-DDS @c TopicDataType factory before opening an endpoint
+ * when key extraction, TypeObject metadata, or an accurate native maximum
+ * serialised size is required. An optional response type can be registered at
+ * the same time for RPC topics; the helper appends the @c "___resp" suffix.
  * @code
  *   vlink::DdsConf::register_topic<MyMsgPubSubType>("my_topic");
  *   vlink::DdsConf::register_topic<MyReqPubSubType, MyRespPubSubType>("my_rpc");
@@ -215,10 +216,11 @@ struct VLINK_EXPORT DdsConf final : public Conf {
    * @brief Registers a Fast-DDS @c TopicDataType factory for a topic name.
    *
    * @details
-   * Required for any CDR-serialised (non-Protobuf) message type.  Call once per
-   * topic before any endpoint is opened on it.  When @c TypeSupportRespT is not
-   * @c void, the response type is also registered under the topic name with a
-   * trailing @c "___resp" suffix.
+   * Optional for unkeyed CDR byte-stream transport. Call once per topic before
+   * any endpoint is opened when native key extraction, TypeObject metadata, or
+   * an accurate maximum serialised size is required. When
+   * @c TypeSupportRespT is not @c void, the response type is also registered
+   * under the topic name with a trailing @c "___resp" suffix.
    *
    * @tparam TypeSupportT      Fast-DDS @c TopicDataType subclass for the request/message type.
    * @tparam TypeSupportRespT  Fast-DDS @c TopicDataType subclass for the response type; @c void to skip.
