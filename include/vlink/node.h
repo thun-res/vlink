@@ -388,7 +388,8 @@ class Node {
    * @brief Enables recording of inbound or outbound messages to a bag file.
    *
    * @details
-   * Not supported on @c intra:// or @c dds:// CDR nodes (triggers a fatal log).
+   * Not supported on @c intra:// nodes (triggers a fatal log). DDS CDR nodes
+   * record the complete payload, including the encapsulation header.
    * Supported file suffixes are @c .vdb, @c .vdbx, @c .vcap, and @c .vcapx;
    * an unknown suffix logs an error and disables recording.
    *
@@ -411,7 +412,11 @@ class Node {
    * @p ser_type clears both fields.
    *
    * If invoked post-@c init() the transport extension is restarted so that
-   * external metadata stays in sync.
+   * external metadata stays in sync. A DDS node's raw/CDR mode is part of its
+   * native Topic/DataWriter/DataReader type and therefore cannot be changed
+   * while initialised; neither can the type name of an initialised DDS CDR
+   * node. Call @c deinit() before changing either value, then call @c init()
+   * again.
    *
    * @param ser_type     Concrete runtime type identifier, or empty to clear.
    * @param schema_type  Optional explicit schema family; default preserves the current family.

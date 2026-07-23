@@ -156,6 +156,7 @@ inline bool Publisher<MsgT, SecT>::publish(const MsgT& msg, bool force) {
 
 template <typename MsgT, SecurityType SecT>
 bool Publisher<MsgT, SecT>::publish_fbb(const void* fbb, bool force) {
+#ifdef VLINK_HAS_FLATBUFFERS
   const auto* fbb_ptr = static_cast<const flatbuffers::FlatBufferBuilder*>(fbb);
 
 #ifndef VLINK_DISABLE_PROFILER
@@ -169,6 +170,11 @@ bool Publisher<MsgT, SecT>::publish_fbb(const void* fbb, bool force) {
   }
 
   return write_bytes(Bytes::shallow_copy(fbb_ptr->GetBufferPointer(), fbb_ptr->GetSize()));
+#else
+  (void)fbb;
+  (void)force;
+  return false;
+#endif
 }
 
 template <typename MsgT, SecurityType SecT>
