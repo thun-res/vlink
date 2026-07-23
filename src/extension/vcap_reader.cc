@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cinttypes>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -195,7 +196,6 @@ void VCAPReader::register_output_callback(OutputCallback&& output_callback) {
 void VCAPReader::play(const Config& config) {
   if VUNLIKELY (is_busy()) {
     VLOG_W("VCAPReader: Is busy.");
-    // return;
   }
 
   if (config.skip_blank) {
@@ -323,7 +323,6 @@ void VCAPReader::jump(int64_t begin_time, double rate, int times, bool force_to_
 std::future<bool> VCAPReader::check() {
   if VUNLIKELY (is_busy()) {
     VLOG_W("VCAPReader: Is busy.");
-    // return std::future<bool>();
   }
 
   return invoke_task([this]() {
@@ -413,7 +412,8 @@ std::future<bool> VCAPReader::check() {
         is_ok = false;
       }
 
-      if VUNLIKELY (url_meta.loss < 0.0 || url_meta.loss > 1.0) {
+      if VUNLIKELY (!std::isfinite(url_meta.loss) ||
+                    (url_meta.loss != -1.0 && (url_meta.loss < 0.0 || url_meta.loss > 1.0))) {
         CLOG_W("VCAPReader: Invalid loss=%f detected for url=%s.", url_meta.loss, url_meta.url.c_str());
         is_ok = false;
       }
@@ -465,7 +465,6 @@ std::future<bool> VCAPReader::check() {
 std::future<bool> VCAPReader::reindex() {
   if VUNLIKELY (is_busy()) {
     VLOG_W("VCAPReader: Is busy.");
-    // return std::future<bool>();
   }
 
   return invoke_task([]() {
@@ -478,7 +477,6 @@ std::future<bool> VCAPReader::reindex() {
 std::future<bool> VCAPReader::fix(bool rebuild) {
   if VUNLIKELY (is_busy()) {
     VLOG_W("VCAPReader: Is busy.");
-    // return std::future<bool>();
   }
 
   return invoke_task([rebuild]() {
@@ -493,7 +491,6 @@ std::future<bool> VCAPReader::fix(bool rebuild) {
 void VCAPReader::tag(const std::string& tag_name) {
   if VUNLIKELY (is_busy()) {
     VLOG_W("VCAPReader: Is busy.");
-    // return;
   }
 
   post_task([this, tag_name]() {
@@ -1802,7 +1799,7 @@ bool VCAPReader::do_read_next(Frame& out, bool& is_error) {
       return false;
     }
 
-    const int64_t timestamp = (iter->message.logTime - impl_->total_start_timestamp_ns) / 1000;
+    const int64_t timestamp = (static_cast<int64_t>(iter->message.logTime) - impl_->total_start_timestamp_ns) / 1000;
 
     if (impl_->cursor_begin_us > 0 && timestamp < impl_->cursor_begin_us) {
       iter++;    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -1912,7 +1909,6 @@ void VCAPReader::read(const Config& config) {
       impl_->pause_elapsed_timer.restart();
       update_status(kPaused);
       do_pause();
-      // impl_->pause_next_flag = false;
       {
         std::lock_guard time_lock(impl_->time_mtx);
         impl_->pause_elapsed.store(0, std::memory_order_relaxed);
@@ -1951,7 +1947,7 @@ void VCAPReader::read(const Config& config) {
       auto iter_end = std::move(wrapper_file.msg_view_end).value();  // NOLINT
 
       for (; iter != iter_end; iter++) {
-        timestamp = (iter->message.logTime - impl_->total_start_timestamp_ns) / 1000;
+        timestamp = (static_cast<int64_t>(iter->message.logTime) - impl_->total_start_timestamp_ns) / 1000;
 
         if VUNLIKELY (last_timestamp > timestamp + 10'000U) {
           VLOG_W("VCAPReader: The vcap timestamp is incorrect.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
