@@ -1,6 +1,0 @@
-module vlink {
-  struct BuiltInRaw {
-    unsigned long long id;
-    sequence<octet> data;
-  };
-};

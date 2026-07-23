@@ -47,8 +47,8 @@ void register_BuiltInRaw_type_identifier(TypeIdentifierPair& type_ids_BuiltInRaw
       eprosima::fastdds::dds::DomainParticipantFactory::get_instance()->type_object_registry().get_type_identifiers(
           "vlink::dds_::BuiltInRaw_", type_ids_BuiltInRaw);
   if (eprosima::fastdds::dds::RETCODE_OK != return_code_BuiltInRaw) {
-    StructTypeFlag struct_flags_BuiltInRaw = TypeObjectUtils::build_struct_type_flag(
-        eprosima::fastdds::dds::xtypes::ExtensibilityKind::APPENDABLE, false, false);
+    StructTypeFlag struct_flags_BuiltInRaw =
+        TypeObjectUtils::build_struct_type_flag(eprosima::fastdds::dds::xtypes::ExtensibilityKind::FINAL, false, false);
     QualifiedTypeName type_name_BuiltInRaw = "vlink::dds_::BuiltInRaw_";
     eprosima::fastcdr::optional<AppliedBuiltinTypeAnnotations> type_ann_builtin_BuiltInRaw;
     eprosima::fastcdr::optional<AppliedAnnotationSeq> ann_custom_BuiltInRaw;
@@ -159,7 +159,7 @@ void register_BuiltInRaw_type_identifier(TypeIdentifierPair& type_ids_BuiltInRaw
         TypeObjectUtils::build_and_register_struct_type_object(struct_type_BuiltInRaw, type_name_BuiltInRaw.to_string(),
                                                                type_ids_BuiltInRaw)) {
       EPROSIMA_LOG_ERROR(XTYPES_TYPE_REPRESENTATION,
-                         "vlink::BuiltInRaw already registered in TypeObjectRegistry for a different type.");
+                         "vlink::dds_::BuiltInRaw_ already registered in TypeObjectRegistry for a different type.");
     }
   }
 }

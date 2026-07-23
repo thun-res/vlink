@@ -115,7 +115,7 @@ bool BuiltInRawPubSubType::deserialize(SerializedPayload_t* payload, void* data)
 
 std::function<uint32_t()> BuiltInRawPubSubType::getSerializedSizeProvider(void* data) {
   return [data]() -> uint32_t {
-    return static_cast<uint32_t>(type::getCdrSerializedSize(*static_cast<BuiltInRaw*>(data))) + 4u /*encapsulation*/;
+    return static_cast<uint32_t>(type::getCdrSerializedSize(*static_cast<BuiltInRaw*>(data))) + 4U /*encapsulation*/;
   };
 }
 
