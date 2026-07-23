@@ -412,8 +412,10 @@ void NodeImpl::try_record(ActionType action_type, const Bytes& data) {
     return;
   }
 
-  if (kIgnoreIntraUrl && transport_type == TransportType::kIntra) {
-    return;
+  if constexpr (kIgnoreIntraUrl) {
+    if (transport_type == TransportType::kIntra) {
+      return;
+    }
   }
 
   Frame frame;
