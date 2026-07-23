@@ -284,11 +284,7 @@ struct PythonCodec<vlink::Bytes> {
   static nb::object to_python(const vlink::Bytes& value) { return nb::bytes(value.data(), value.size()); }
 };
 
-vlink::Frame frame_from_python(const vlink::Frame& frame) {
-  vlink::Frame owned = frame;
-  owned.data.deep_copy_self();
-  return owned;
-}
+vlink::Frame frame_from_python(const vlink::Frame& frame) { return frame; }
 
 struct PythonZerocopyMessageParser final {
   using Parser = vlink::zerocopy::MessageParser;
@@ -1355,7 +1351,9 @@ void bind_node_common(Class& cls) {
       .def("has_inited", &NodeT::has_inited)
       .def("get_url", &NodeT::get_url)
       .def("get_ser_type", &NodeT::get_ser_type)
-      .def("set_ser_type", &NodeT::set_ser_type, "ser_type"_a, "schema_type"_a = vlink::SchemaType::kUnknown)
+      .def("set_ser_type", &NodeT::set_ser_type, "ser_type"_a, "schema_type"_a = vlink::SchemaType::kUnknown,
+           "Override serialization metadata. While a DDS node is initialized, its raw/CDR mode and CDR type name "
+           "are immutable; call deinit(), update them, then init().")
       .def("get_schema_type", &NodeT::get_schema_type)
       .def("get_transport_type", &NodeT::get_transport_type)
       .def("set_property", &NodeT::set_property, "key"_a, "value"_a)
@@ -1887,7 +1885,8 @@ NB_MODULE(_vlink_nanobind, m) {
       .value("Protobuf", vlink::SchemaType::kProtobuf)
       .value("Flatbuffers", vlink::SchemaType::kFlatbuffers)
       .value("Raw", vlink::SchemaType::kRaw)
-      .value("ZeroCopy", vlink::SchemaType::kZeroCopy);
+      .value("ZeroCopy", vlink::SchemaType::kZeroCopy)
+      .value("Cdr", vlink::SchemaType::kCdr);
 
   auto quantize = m.def_submodule("quantize", "Linear numeric quantization helpers");
   quantize.def(

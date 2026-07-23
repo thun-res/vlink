@@ -211,7 +211,7 @@ def demo_pubsub_vlink_bytes():
 
 
 # ===========================================================================
-# Section 2.  Schema-typed payloads (Protobuf / FlatBuffers)
+# Section 2.  Schema-typed payloads (Protobuf / FlatBuffers / DDS CDR)
 # ===========================================================================
 #
 # VLink does NOT serialise Protobuf or FlatBuffers messages for you.  The
@@ -219,6 +219,11 @@ def demo_pubsub_vlink_bytes():
 # via ``set_ser_type(name, schema_type)``.  Producers and consumers MUST
 # share the schema generator output (``*_pb2.py`` for proto, ``*.py`` for
 # fbs) out-of-band.
+#
+# DDS CDR Bytes nodes use ``SchemaType.Cdr`` and require a payload containing
+# the 4-byte encapsulation header.  Supply the type name/schema in the
+# constructor or before ``init()``; changing DDS raw/CDR mode or the CDR type
+# name while initialized is rejected.
 #
 # The demos below try to import the schema-generated modules.  If they are
 # absent, the demos print a ``[SKIP]`` message and return without failing.
