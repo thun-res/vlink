@@ -632,21 +632,37 @@ TEST_SUITE("base-Timer") {
     loop.async_run();
 
     std::atomic<int> count{0};
-    Timer t(&loop, 200, Timer::kInfinite, [&count] { count.fetch_add(1); });
+    std::atomic<int64_t> first_elapsed_ms{-1};
+    Timer t(&loop, 10, Timer::kInfinite);
 
-    t.start();
-    std::this_thread::sleep_for(50ms);
+    t.set_interval(200);
+    CHECK_EQ(t.get_interval(), 200u);
 
-    CHECK_EQ(count.load(), 0);
+    const auto first_start = std::chrono::steady_clock::now();
+    t.start([&count, &first_elapsed_ms, first_start] {
+      const auto elapsed = std::chrono::steady_clock::now() - first_start;
+      int64_t expected = -1;
+      first_elapsed_ms.compare_exchange_strong(expected,
+                                               std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count(),
+                                               std::memory_order_release, std::memory_order_relaxed);
+      count.fetch_add(1, std::memory_order_release);
+    });
+
+    REQUIRE(common_test::wait_until([&count] { return count.load(std::memory_order_acquire) >= 1; }, 2s));
+    CHECK_GE(first_elapsed_ms.load(std::memory_order_acquire), 150);
 
     t.stop();
+    REQUIRE(loop.wait_for_idle(1000));
+
+    const int count_before_restart = count.load(std::memory_order_acquire);
     t.set_interval(10);
+    CHECK_EQ(t.get_interval(), 10u);
     t.start();
 
-    std::this_thread::sleep_for(200ms);
+    REQUIRE(common_test::wait_until(
+        [&count, count_before_restart] { return count.load(std::memory_order_acquire) >= count_before_restart + 3; },
+        2s));
     t.stop();
-
-    CHECK(count.load() >= 3);
 
     loop.quit();
     loop.wait_for_quit();
