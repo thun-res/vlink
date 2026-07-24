@@ -49,4 +49,4 @@ target_link_libraries(my_c_app PRIVATE vlink::c_api)
 
 - `doc/13-integration.md` — C API 参考手册（Event / Method / Field / 安全的完整 C 接口）
 - `include/vlink/external/c_api.h` — 唯一头文件
-- `python_api/vlink_python.cc` — 同类 FFI 适配实现，可作对照
+- `languages/python_api/vlink_python.cc` — 同类 FFI 适配实现，可作对照

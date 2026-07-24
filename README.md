@@ -217,8 +217,9 @@ vlink/
 ├── proxy/           ProxyServer / ProxyAPI
 ├── viewer/          Qt 桌面可视化工具
 ├── webviz/          Foxglove / Rerun 桥接
-├── c_api/           C API（供 Python / Rust 等 FFI 调用）
-├── python_api/      nanobind Python 绑定
+├── languages/       多语言绑定
+│   ├── c_api/       C API（供 Python / Rust 等 FFI 调用）
+│   └── python_api/  nanobind Python 绑定
 ├── examples/        使用示例（14 个分类，29 个工程）
 ├── test/            测试套件
 ├── doc/             文档

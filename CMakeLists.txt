@@ -498,12 +498,12 @@ endif()
 
 # c-interface
 if(ENABLE_C_API)
-  add_subdirectory(c_api)
+  add_subdirectory(languages/c_api)
 endif()
 
 # python-interface
 if(ENABLE_PYTHON_API)
-  add_subdirectory(python_api)
+  add_subdirectory(languages/python_api)
 endif()
 
 # exprtk
@@ -579,7 +579,7 @@ if(ENABLE_TEST)
   if(ENABLE_TEST_COVERAGE)
     set(VLINK_TEST_COVERAGE_EXCLUDES
         */build-*/*
-        */c_api/*
+        */languages/c_api/*
         */cli/*
         */exprtk/*
         */proxy/*

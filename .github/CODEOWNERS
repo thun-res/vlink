@@ -12,7 +12,7 @@
 #   /proxy/        @some-runtime-maintainer
 #   /viewer/       @some-graphics-maintainer
 #   /webviz/       @some-graphics-maintainer
-#   /python_api/   @some-bindings-maintainer
-#   /c_api/        @some-bindings-maintainer
+#   /languages/python_api/   @some-bindings-maintainer
+#   /languages/c_api/        @some-bindings-maintainer
 #   /.github/      @some-ci-maintainer
 #   /packup/       @some-release-maintainer

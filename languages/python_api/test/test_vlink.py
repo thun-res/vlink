@@ -4,7 +4,7 @@ VLink Python bindings self-test.
 
 Usage:
     cd build_python/output/lib
-    LD_LIBRARY_PATH=. PYTHONPATH=. python3 ../../../python_api/test/test_vlink.py
+    LD_LIBRARY_PATH=. PYTHONPATH=. python3 ../../../languages/python_api/test/test_vlink.py
 """
 
 import gc
