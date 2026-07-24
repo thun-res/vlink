@@ -1,0 +1,284 @@
+name: Codex + Claude Community Reply
+
+on:
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created, edited]
+  discussion:
+    types: [created, edited]
+  discussion_comment:
+    types: [created, edited]
+
+permissions: {}
+
+concurrency:
+  group: community-ai-reply-${{ github.event.comment.id || github.event.issue.id || github.event.discussion.id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  codex-generate:
+    name: Generate Codex reply
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: read
+      discussions: read
+    outputs:
+      should_reply: ${{ steps.prepare.outputs.should_reply }}
+      target_kind: ${{ steps.prepare.outputs.target_kind }}
+      source_digest: ${{ steps.prepare.outputs.source_digest }}
+      reply: ${{ steps.codex.outputs.final-message }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Prepare untrusted thread context
+        id: prepare
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPYCACHEPREFIX: ${{ github.workspace }}/build-ai/community-ai-reply/codex/__pycache__
+        run: >-
+          python3 .github/scripts/community-ai-reply.py prepare
+          --provider codex
+          --prompt-file build-ai/community-ai-reply/codex/prompt.md
+
+      - name: Generate reply with Codex
+        id: codex
+        if: steps.prepare.outputs.should_reply == 'true'
+        uses: openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56 # v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: ${{ steps.prepare.outputs.prompt_file }}
+          permission-profile: ":read-only"
+          safety-strategy: drop-sudo
+          allow-users: "*"
+          codex-args: '["--ephemeral"]'
+
+  claude-issue-generate:
+    name: Generate Claude Issue reply
+    if: github.event_name == 'issues' || github.event_name == 'issue_comment'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      should_reply: ${{ steps.prepare.outputs.should_reply }}
+      target_kind: ${{ steps.prepare.outputs.target_kind }}
+      source_digest: ${{ steps.prepare.outputs.source_digest }}
+      reply: ${{ steps.claude.outputs.structured_output }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Prepare untrusted thread context
+        id: prepare
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPYCACHEPREFIX: ${{ github.workspace }}/build-ai/community-ai-reply/claude/__pycache__
+        run: >-
+          python3 .github/scripts/community-ai-reply.py prepare
+          --provider claude
+          --prompt-file build-ai/community-ai-reply/claude/prompt.md
+
+      - name: Generate reply with Claude
+        id: claude
+        if: steps.prepare.outputs.should_reply == 'true'
+        uses: anthropics/claude-code-action@44423bdec74b97d67543eb16c110546762c110b2 # v1.0.181
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          allowed_non_write_users: "*"
+          track_progress: false
+          include_fix_links: false
+          display_report: false
+          show_full_output: false
+          prompt: ${{ steps.prepare.outputs.prompt }}
+          claude_args: >-
+            --max-turns 6
+            --allowedTools "Read,Grep,Glob"
+            --disallowedTools "Bash,Edit,Write,NotebookEditCell,WebSearch,WebFetch"
+            --json-schema
+            '{"type":"object","properties":{"reply":{"type":"string"}},"required":["reply"],"additionalProperties":false}'
+
+  claude-discussion-generate:
+    name: Generate Claude Discussion reply
+    if: github.event_name == 'discussion' || github.event_name == 'discussion_comment'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      discussions: read
+    outputs:
+      should_reply: ${{ steps.prepare.outputs.should_reply }}
+      target_kind: ${{ steps.prepare.outputs.target_kind }}
+      source_digest: ${{ steps.prepare.outputs.source_digest }}
+      reply: ${{ steps.claude.outputs.structured_output }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Prepare untrusted thread context
+        id: prepare
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPYCACHEPREFIX: ${{ github.workspace }}/build-ai/community-ai-reply/claude-discussion/__pycache__
+        run: >-
+          python3 .github/scripts/community-ai-reply.py prepare
+          --provider claude
+          --prompt-file build-ai/community-ai-reply/claude-discussion/prompt.md
+          --thread-only
+
+      - name: Generate tool-free reply with Claude
+        id: claude
+        if: steps.prepare.outputs.should_reply == 'true'
+        uses: anthropics/claude-code-action/base-action@44423bdec74b97d67543eb16c110546762c110b2 # v1.0.181
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt_file: ${{ steps.prepare.outputs.prompt_file }}
+          show_full_output: false
+          claude_args: >-
+            --bare
+            --disable-slash-commands
+            --strict-mcp-config
+            --tools ""
+            --max-turns 1
+            --json-schema
+            '{"type":"object","properties":{"reply":{"type":"string"}},"required":["reply"],"additionalProperties":false}'
+
+  post-codex-issue:
+    name: Post Codex Issue reply
+    needs: codex-generate
+    if: >-
+      needs.codex-generate.result == 'success' &&
+      needs.codex-generate.outputs.should_reply == 'true' &&
+      needs.codex-generate.outputs.target_kind == 'issue'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout reply publisher
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Publish and verify Codex reply
+        env:
+          AI_REPLY: ${{ needs.codex-generate.outputs.reply }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPYCACHEPREFIX: ${{ github.workspace }}/build-ai/community-ai-reply/post-codex-issue/__pycache__
+          SOURCE_DIGEST: ${{ needs.codex-generate.outputs.source_digest }}
+        run: >-
+          python3 .github/scripts/community-ai-reply.py post
+          --provider codex
+          --reply-env AI_REPLY
+          --source-digest-env SOURCE_DIGEST
+
+  post-codex-discussion:
+    name: Post Codex Discussion reply
+    needs: codex-generate
+    if: >-
+      needs.codex-generate.result == 'success' &&
+      needs.codex-generate.outputs.should_reply == 'true' &&
+      needs.codex-generate.outputs.target_kind == 'discussion'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      discussions: write
+    steps:
+      - name: Checkout reply publisher
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Publish and verify Codex reply
+        env:
+          AI_REPLY: ${{ needs.codex-generate.outputs.reply }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPYCACHEPREFIX: ${{ github.workspace }}/build-ai/community-ai-reply/post-codex-discussion/__pycache__
+          SOURCE_DIGEST: ${{ needs.codex-generate.outputs.source_digest }}
+        run: >-
+          python3 .github/scripts/community-ai-reply.py post
+          --provider codex
+          --reply-env AI_REPLY
+          --source-digest-env SOURCE_DIGEST
+
+  post-claude-issue:
+    name: Post Claude Issue reply
+    needs: claude-issue-generate
+    if: >-
+      needs.claude-issue-generate.result == 'success' &&
+      needs.claude-issue-generate.outputs.should_reply == 'true' &&
+      needs.claude-issue-generate.outputs.target_kind == 'issue'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout reply publisher
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Publish and verify Claude reply
+        env:
+          AI_REPLY_JSON: ${{ needs.claude-issue-generate.outputs.reply }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPYCACHEPREFIX: ${{ github.workspace }}/build-ai/community-ai-reply/post-claude-issue/__pycache__
+          SOURCE_DIGEST: ${{ needs.claude-issue-generate.outputs.source_digest }}
+        run: >-
+          python3 .github/scripts/community-ai-reply.py post
+          --provider claude
+          --reply-env AI_REPLY_JSON
+          --source-digest-env SOURCE_DIGEST
+          --structured
+
+  post-claude-discussion:
+    name: Post Claude Discussion reply
+    needs: claude-discussion-generate
+    if: >-
+      needs.claude-discussion-generate.result == 'success' &&
+      needs.claude-discussion-generate.outputs.should_reply == 'true' &&
+      needs.claude-discussion-generate.outputs.target_kind == 'discussion'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      discussions: write
+    steps:
+      - name: Checkout reply publisher
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Publish and verify Claude reply
+        env:
+          AI_REPLY_JSON: ${{ needs.claude-discussion-generate.outputs.reply }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPYCACHEPREFIX: ${{ github.workspace }}/build-ai/community-ai-reply/post-claude-discussion/__pycache__
+          SOURCE_DIGEST: ${{ needs.claude-discussion-generate.outputs.source_digest }}
+        run: >-
+          python3 .github/scripts/community-ai-reply.py post
+          --provider claude
+          --reply-env AI_REPLY_JSON
+          --source-digest-env SOURCE_DIGEST
+          --structured
