@@ -26,8 +26,9 @@
   能传回 workflow,不得由后续成功命令掩盖。
 - reusable workflow 的 `uses`、input、secret、output、artifact 传播链
   完整;`release.yml` 与各 `release-*`、coverage、docker 子流程一致。
-- `ci-agent-skills.yml` 覆盖 `AGENTS.md`、`AI-POLICY.md`、`.agents/**`、
-  安装/校验入口和自身,只授予 `contents: read`,不得自动创建社区内容。
+- `ci-agent-skills.yml` 覆盖 `AGENTS.md`、`AI-POLICY.md`、
+  `.github/copilot-instructions.md`、`.agents/**`、安装/校验入口和自身,
+  只授予 `contents: read`,不得自动创建社区内容。
 
 新增、删除、改名或改变触发语义后,同步 `.agents/CI-AND-PR.md`、
 `.agents/REPO-REFERENCE.md`、`/cicd` skill 触发矩阵及适用的贡献文档。
@@ -73,27 +74,14 @@
   `/pr`、`/commit`、`doc/15`、CI workflow 一致。
 - `CODEOWNERS` 的路径真实存在,owner 有效,关键 workflow、发布、API 和
   Agent 规则范围没有因目录改名失去覆盖。
-- `ai-code-review.yml` 的事件、fork/draft/bot 过滤、权限、checkout、
-  prompt、工具 allowlist、评论方式和超时与实际评审行为一致;PR 内容按
-  不可信输入处理。
-- `community-ai-reply.yml` 由 Issue/Discussion 标题、正文与评论中的
-  `@codex`/`@claude` 及 PR 普通评论中的 `@codex` 触发;核对生成 job
-  始终从事件固定的默认分支提交执行受信 helper、PR 独立发布 job、
-  PR Claude 过滤、官方 `@codex review` 互斥、Bot/自身回复过滤、
-  编辑幂等、`author_association` 可信角色门槛、非真人/AI 内容判断、
-  当前 mention 与身份回读、生成/发布正文摘要一致性、上下文分页/清洗/
-  限长及不可信输入边界。PR 裸 mention 必须使用 thread-only prompt,
-  不得声称读取 PR diff;长线程必须保留标题、正文和最近上下文。
-- Codex/Claude 凭据只进入各自只读生成 job;发布 job 不接触模型凭据,
-  且只按目标获得 `issues: write`、`pull-requests: write` 或
-  `discussions: write`。回复必须披露模型来源,幂等 marker 只信任
-  `github-actions[bot]`,发布后核对正文、目标和 Discussion `replyTo`。
-- Claude 顶层 action 当前不识别 Discussion 事件;Discussion job 只能
-  使用同一固定提交的 base action,必须 `--bare`、`--tools ""`、禁用
-  slash command/MCP 并使用 thread-only prompt,不得向不可信内容开放工具。
+- `.github/copilot-instructions.md` 只路由到根 `AGENTS.md`、相关分册和
+  GitHub 原生智能体边界,不得复制产品知识或整套 Agent 规则。
+- PR 自动审查只使用 GitHub 内置 Copilot code review;仓库不得保留模型
+  action、供应商 secret、mention handler、Issue/Discussion 自动回复或
+  智能体必需状态检查。Automatic Copilot code review 的实时状态必须在
+  GitHub 设置中另行核对,不得从仓库文件推断为已启用。
 - `/issue` 与 `/discussion` skill 的授权、去重、模板/分类、创建、单条
-  人工回复、mention 自动回复和回读流程与 GitHub 当前配置一致,不得
-  伪装身份、批量回复或制造虚假互动。
+  人工回复和回读流程与 GitHub 当前配置一致。
 
 ## 5. Wiki 与前端资产
 

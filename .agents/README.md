@@ -69,10 +69,10 @@ link 模式会立即看到新增 skill;copy 模式是安装时快照,skill 变�
 | `/bench` | `vlink-bench` 性能基准(showcase/quick/full) |
 | `/deep-review` | 按范围、审查维度、对抗复核与报告分工执行重度评审 |
 | `/sync-review` | 按 API、构建打包、横向易漂移项与 `.github` 全表面执行同步审计 |
-| `/sync-agent` | 根据仓库事实同步 AGENTS.md、AI-POLICY.md、.agents 路由、索引与 skills |
+| `/sync-agent` | 根据仓库事实同步 AGENTS.md、AI-POLICY.md、Copilot 指令、.agents 路由、索引与 skills |
 | `/report` | 结合仓库与当前行业证据分析 VLink 定位、前景和建议 |
-| `/issue` | 调查/创建/回复 Issue,维护 `@codex`/`@claude` 自动回复 |
-| `/discussion` | 调查/发布/回复 Discussion,维护 AI mention 自动回复 |
+| `/issue` | 调查、创建或回复 Issue |
+| `/discussion` | 调查、发布或回复 Discussion |
 | `/commit` | 强制通过 `/format` 与 `/check` 后,按模块/功能拆分并创建规范 commit |
 | `/pr` | 提交 dev 到 master,用中文填写云端内容并创建或更新 PR |
 | `/release` | 在 master 校验版本和 CI,用中文填写云端内容并发布 Release |

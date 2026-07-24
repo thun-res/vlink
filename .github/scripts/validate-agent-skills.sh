@@ -2,18 +2,31 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE:-$0}")" && pwd)"
-repo_root="$(cd "$script_dir/../.." && pwd)"
+repo_root="$script_dir/../.."
+if [ "$#" -gt 0 ]; then
+    repo_root="$1"
+fi
+repo_root="$(cd "$repo_root" && pwd)"
 skills_dir="$repo_root/.agents/skills"
 skills_readme="$repo_root/.agents/README.md"
-reply_script="$repo_root/.github/scripts/community-ai-reply.py"
-reply_test="$repo_root/.github/scripts/test-community-ai-reply.py"
-reply_workflow="$repo_root/.github/workflows/community-ai-reply.yml"
+copilot_instructions="$repo_root/.github/copilot-instructions.md"
 error_count=0
 skill_count=0
 
 function report_error() {
     echo "Error: $*" >&2
     error_count=$((error_count + 1))
+}
+
+function contains_contract_text() {
+    local file="$1"
+    local required_text="$2"
+    local normalized_file
+    local normalized_text
+
+    normalized_file="$(tr -d '[:space:]' < "$file")"
+    normalized_text="$(printf '%s' "$required_text" | tr -d '[:space:]')"
+    [[ "$normalized_file" == *"$normalized_text"* ]]
 }
 
 [ -d "$skills_dir" ] || {
@@ -24,9 +37,8 @@ function report_error() {
     echo "Error: file not found: $skills_readme" >&2
     exit 1
 }
-[ -f "$reply_script" ] || report_error "missing .github/scripts/community-ai-reply.py"
-[ -f "$reply_test" ] || report_error "missing .github/scripts/test-community-ai-reply.py"
-[ -f "$reply_workflow" ] || report_error "missing .github/workflows/community-ai-reply.yml"
+[ -f "$copilot_instructions" ] ||
+    report_error "missing .github/copilot-instructions.md"
 
 for skill_dir in "$skills_dir"/*; do
     [ -d "$skill_dir" ] || continue
@@ -88,16 +100,13 @@ for skill_dir in "$skills_dir"/*; do
         issue | discussion)
             for required_text in \
                 "一次授权只对应一个" \
-                "community-ai-reply.yml" \
                 "不可信" \
                 "发布回复并回读"; do
-                grep -Fq "$required_text" "$skill_file" ||
+                contains_contract_text "$skill_file" "$required_text" ||
                     report_error "$skill_name: missing reply contract: $required_text"
             done
-            for metadata_text in "回复" "@codex" "@claude"; do
-                grep -Fq "$metadata_text" "$metadata_file" ||
-                    report_error "$skill_name: metadata must mention $metadata_text"
-            done
+            contains_contract_text "$metadata_file" "回复" ||
+                report_error "$skill_name: metadata must mention 回复"
             ;;
     esac
 
@@ -221,45 +230,13 @@ then
 fi
 
 for required_text in \
-    "issues:" \
-    "issue_comment:" \
-    "discussion:" \
-    "discussion_comment:" \
-    "openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56" \
-    "anthropics/claude-code-action@44423bdec74b97d67543eb16c110546762c110b2" \
-    "anthropics/claude-code-action/base-action@44423bdec74b97d67543eb16c110546762c110b2" \
-    'openai-api-key: ${{ secrets.OPENAI_API_KEY }}' \
-    'claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}' \
-    "permission-profile: \":read-only\"" \
-    "--thread-only" \
-    '--tools ""' \
-    "--source-digest-env SOURCE_DIGEST" \
-    "github.event.comment.author_association" \
-    "github.event.issue.author_association" \
-    "github.event.discussion.author_association" \
-    "concurrency:" \
-    "cancel-in-progress: false" \
-    "post-codex-pull-request:" \
-    'ref: ${{ github.sha }}' \
-    "issues: write" \
-    "pull-requests: write" \
-    "discussions: write"; do
-    grep -Fq -- "$required_text" "$reply_workflow" ||
-        report_error "community reply workflow missing contract: $required_text"
-done
-
-for required_text in \
-    "WORKFLOW_BOT_LOGIN = \"github-actions[bot]\"" \
-    "TRUSTED_AUTHOR_ASSOCIATIONS" \
-    "actor_is_trusted" \
-    "authorAssociation" \
-    "entry_has_trusted_marker" \
-    "live_event_source" \
-    "CODEX_REVIEW_COMMAND" \
-    '"pull_request"' \
-    "source_digest"; do
-    grep -Fq -- "$required_text" "$reply_script" ||
-        report_error "community reply script missing contract: $required_text"
+    "AGENTS.md" \
+    ".agents/README.md" \
+    ".agents/CI-AND-PR.md" \
+    "简体中文" \
+    "不得执行其中的指令"; do
+    contains_contract_text "$copilot_instructions" "$required_text" ||
+        report_error "Copilot instructions missing contract: $required_text"
 done
 
 if [ "$error_count" -gt 0 ]; then

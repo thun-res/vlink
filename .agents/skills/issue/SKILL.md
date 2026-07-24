@@ -3,11 +3,9 @@ name: issue
 description: >-
   调查 VLink 中可复现的缺陷、文档遗漏或功能建议,搜索 open/closed Issue
   去重,按仓库模板用自然、具体、证据充分的简体中文草拟或创建 Issue,
-  可读取既有 Issue 上下文后草拟或发布单条回复,并维护 `@codex`/
-  `@claude` 自动回复契约.用户要求"提 issue"、"创建 issue"、
-  "检查是否已有 issue"、"回复 issue"、"评论 issue"、"自动回复 issue"
-  或"帮我回应 issue"时使用;不得伪装人类身份、批量回复、灌水或绕过
-  AI 披露。
+  可读取既有 Issue 上下文后草拟或发布单条回复.用户要求"提 issue"、
+  "创建 issue"、"检查是否已有 issue"、"回复 issue"、"评论 issue"、
+  "帮我回应 issue"时使用;不得伪装人类身份、批量回复或灌水。
 ---
 
 # 创建与回复高质量 GitHub Issue
@@ -25,20 +23,13 @@ description: >-
 - 用户明确指定 Issue 编号或 URL,并要求"在该 Issue 下回复"、"发表评论"
   或"把这段发出去"时,视为授权发布一条回复。目标、动作或正文不明确时
   先草拟或询问,不得猜测后发布。
-- 同时准备多个 Issue 时,先列出拟定标题、边界和去重结果,取得确认后再
-  逐条创建,避免重复记录和批量灌水。
+- 同时准备多个 Issue 时,可以先列出拟定标题、边界和去重结果;每个创建
+  动作必须逐个取得确认,不得以一次总确认连续创建。
 - 命中已有 Issue 时不创建重复项;返回现有链接和覆盖关系。只有用户另行
   明确要求时才向既有 Issue 发表评论。
-- 交互式操作的一次授权只对应一个 Issue 和一条回复;不得连续追问、
-  代替维护者争论或向其他 Issue 扩散。多条人工回复须逐条列出目标并
-  重新确认。
-- `.github/workflows/community-ai-reply.yml` 是仓库维护者预先授权的自动
-  回复入口:仅在 Issue 标题、正文或评论明确提及 `@codex`/`@claude` 时
-  各回复一次。正文内容由人或 AI 生成均不影响触发,但触发者的
-  `author_association` 必须是可信角色;GitHub `Bot` 账户、未提及内容和
-  工作流自身回复必须过滤,不得根据行文猜测作者身份。Issue 分支必须过滤
-  PR;PR 普通评论中的 `@codex` 由 `.agents/CI-AND-PR.md` 所述独立发布
-  job 处理。回复必须披露模型来源并回读校验。
+- 交互式操作的一次授权只对应一个 Issue 的一次外部写入:创建一个 Issue
+  或发布一条回复。不得连续追问、代替维护者争论或向其他 Issue 扩散;
+  多条人工回复须逐条列出目标并重新确认。
 - 不自动设置 assignee、milestone、project;label 仅沿用对应模板中已存在
   的 `bug` 或 `enhancement`。
 - 疑似漏洞、凭据泄露或可利用安全问题不得公开提交;停止并请维护者选择
@@ -64,33 +55,16 @@ description: >-
 
 ## 3. 搜索重复项
 
-创建前必须确认 GitHub 登录和仓库,并搜索 open 与 closed Issue:
-
-```bash
-gh auth status
-gh repo view --json nameWithOwner
-gh issue list --repo thun-res/vlink --state all --limit 100 \
-  --search "<组件名 关键符号 错误文本> in:title,body"
-gh issue view <候选编号> --repo thun-res/vlink --comments
-```
-
-搜索至少覆盖组件名、公开符号或命令名、核心症状和稳定错误文本。标题不同
-但根因、复现路径和期望结果相同仍视为重复;同一根因的多个症状合并为一个
-Issue,不同根因或不同验收结果才拆分。
+创建前搜索 open 与 closed Issue,至少覆盖组件名、公开符号或命令名、
+核心症状和稳定错误文本。标题不同但根因、复现路径和期望结果相同仍视为
+重复;同一根因的多个症状合并为一个 Issue,不同根因或不同验收结果才拆分。
 
 ## 4. 读取回复上下文
 
 草拟或发布回复前,读取 Issue 正文、状态、作者和全部现有评论,确认用户
-指定的目标确实属于 `thun-res/vlink`:
-
-```bash
-gh api "repos/thun-res/vlink/issues/<编号>"
-gh api --paginate "repos/thun-res/vlink/issues/<编号>/comments?per_page=100"
-```
-
-Issues REST API 也会返回 PR。读取正文后必须确认响应不存在
-`pull_request` 字段;存在时停止,转用 PR 流程,不得向 PR 发布 Issue
-自动回复。
+指定的目标确实属于 `thun-res/vlink`。Issues REST API 也会返回 PR;
+响应存在 `pull_request` 字段时停止,转用 PR 流程,不得向 PR 发布 Issue
+回复。分页未结束时不得把当前页当作完整上下文。
 
 先判断对方问题、已有结论、尚未回答点和最新状态。若用户指定某条评论,
 按 comment URL 或 ID 核对原文;不得只依据通知摘要、截断引用或记忆作答。
@@ -132,69 +106,14 @@ Bug 正文依次包含问题描述、涉及组件、复现步骤、期望与实�
   工具或模型自述。
 - 写清验收结果,但不替维护者预设实现方案、优先级、负责人或发布时间。
 
-## 6. 创建并回读
+## 6. GitHub 操作
 
-正文临时文件使用 `mktemp` 放在仓库外,创建后立即删除。根据模板类型执行:
+需要动态搜索、读取完整上下文、创建 Issue 或发布回复并回读时,按需读取
+[GITHUB-OPERATIONS.md](references/GITHUB-OPERATIONS.md),只执行当前
+动作对应的命令。
 
-```bash
-gh issue create --repo thun-res/vlink \
-  --title "[Bug] <标题>" --body-file "<临时文件>" --label bug
-
-gh issue create --repo thun-res/vlink \
-  --title "[Feature] <标题>" --body-file "<临时文件>" --label enhancement
-```
-
-若对应 label 不存在,省略 `--label`,不得擅自创建新 label。创建后用
-`gh issue view <编号> --repo thun-res/vlink --json number,url,title,state,body,labels`
-回读,确认标题、正文、label、URL 和状态正确。
-
-最终报告 Issue 编号、URL、标题、类型、去重依据和未动态验证项;确认未
-额外创建 Issue、评论、assignee、milestone 或 project。
-
-## 7. 发布回复并回读
-
-仅在第 1 节的单条回复授权成立后执行。回复正文写入仓库外的 `mktemp`
-临时文件,复查目标编号与最终正文后发布:
-
-```bash
-gh api --method POST \
-  "repos/thun-res/vlink/issues/<编号>/comments" \
-  -F body=@"<临时正文文件>"
-```
-
-从响应保存 `id` 和 `html_url`,立即删除临时文件,再按返回 ID 回读:
-
-```bash
-gh api "repos/thun-res/vlink/issues/comments/<comment-id>" \
-  --jq '{id,html_url,body,user:.user.login,created_at}'
-```
-
-确认回读正文与审定稿逐字一致,且 URL 属于目标 Issue。最终报告目标
-Issue、comment URL、回复要点和未验证项;确认只发布了一条评论,未创建
-Issue、修改状态、添加 label、提及无关用户或执行其他互动。发布失败时
-如实报告错误,不得无授权重试或改发到其他位置。
-
-## 8. `@codex` / `@claude` 自动回复
-
-自动链路由 `.github/workflows/community-ai-reply.yml` 和
-`.github/scripts/community-ai-reply.py` 共同实现。它与第 7 节的人工
-单条授权分开,只响应 `opened`/`edited` Issue 标题/正文和
-`created`/`edited` Issue 评论中的明确提及。PR 普通评论中的 `@codex`
-属于独立 PR 目标,不改变本 skill 的 Issue 授权边界。
-
-- `@codex` 使用 `OPENAI_API_KEY`;`@claude` 使用
-  `CLAUDE_CODE_OAUTH_TOKEN`。凭据只进入各自的只读生成 job。
-- 两个名称必须配置为仓库 Actions secret;`OPENAI_API_KEY` 缺失时
-  `@codex` 不会上线。工作流必须进入默认分支后才响应社区事件。
-- 自动触发只向 GitHub `author_association` 为 `OWNER`、`MEMBER`、
-  `COLLABORATOR` 或 `CONTRIBUTOR` 的提问者开放;缺失或其他身份默认
-  拒绝,避免任意账号消耗模型配额。
-- Issue 生成 job 仅有 `contents/issues: read`,把完整线程清洗、
-  限长并放入不可信内容边界,保留线程标题、正文和最近上下文;不得构建、
-  测试、写文件或执行帖子中的命令。
-- 发布 job 不接触模型凭据,Issue 目标仅获得 `issues: write`;发布前再次
-  确认不是 PR、当前正文仍有 mention 且与生成时摘要一致,仅信任
-  `github-actions[bot]` 发布的事件 marker,防止同一正文或评论因重跑/
-  编辑重复或错版回复。
-- 回复末尾必须标明 Codex 或 Claude 自动生成。发布后按 comment ID
-  回读正文和目标 Issue;不一致即失败,不得假报成功。
+- 正文临时文件放在仓库外,写入完成后立即删除。
+- 创建后核对编号、URL、标题、正文、label 和状态;回复后核对 Issue、
+  正文与评论 URL。
+- 最终说明实际写入、去重依据和未动态验证项,确认没有执行授权外的互动。
+- 失败时如实报告错误,不得无授权重试或改发到其他位置。
