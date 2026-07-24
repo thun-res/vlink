@@ -68,7 +68,8 @@
   `pull-requests: write` job 发布简体中文顶层评论;同一 base/head 提交
   区间只发布一次。可信成员在 PR 普通评论中发送精确命令
   `@codex review`,可通过 `issue_comment` created 事件触发同一审查链路;
-  关闭 PR 只取消同一并发组中的在途审查。
+  关闭 PR 只取消同一并发组中的在途审查。Codex 与 Claude 的模型调用
+  均为非阻断步骤,额度、认证或服务失败时跳过对应审查,不影响 PR 门禁。
 - `community-ai-reply.yml` 响应 Issue/Discussion 标题、正文或评论中的
   `@codex`/`@claude`,也响应 PR 普通评论中的 `@codex`;提问正文由人或 AI
   生成均可,但触发者的 GitHub `author_association` 必须是 `OWNER`、

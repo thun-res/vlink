@@ -54,6 +54,7 @@ jobs:
                 '- Codex：正在通过此 GitHub Actions 工作流运行并回帖。',
                 '- Claude：正在通过此 GitHub Actions 工作流运行。',
                 '- 手动复审：在 PR 评论中发送 `@codex review`。',
+                '- 非阻断：模型额度或服务不可用时跳过对应审查，不影响 PR 门禁。',
                 '',
                 `[查看工作流运行记录](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
               ].join('\n'),
@@ -151,6 +152,7 @@ jobs:
       - name: Run Codex review
         id: codex
         if: steps.resolve.outputs.should_review == 'true'
+        continue-on-error: true
         uses: openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56 # v1
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -286,6 +288,7 @@ jobs:
           persist-credentials: false
 
       - name: Run Claude review
+        continue-on-error: true
         uses: anthropics/claude-code-action@44423bdec74b97d67543eb16c110546762c110b2 # v1.0.181
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

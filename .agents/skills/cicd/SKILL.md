@@ -37,7 +37,9 @@ description: >-
 synchronize、ready_for_review、reopened 时运行 Codex/Claude 审查;
 closed 事件只通过并发组取消同一 PR 尚未结束的审查。可信成员新建包含
 精确命令 `@codex review` 的 PR 评论时,还会由 `issue_comment` 触发同一
-Codex 审查;自动和手动 Codex 审查都需要 `OPENAI_API_KEY`。
+Codex 审查;自动和手动 Codex 审查都需要 `OPENAI_API_KEY`。Codex 与
+Claude 模型调用均为非阻断步骤,额度、认证或服务失败只跳过相应审查,
+不会阻塞 PR。
 
 ² `community-ai-reply.yml` 由 `issues`、`issue_comment`、`discussion`
 和 `discussion_comment` 的创建/编辑事件触发。Issue/Discussion 的
