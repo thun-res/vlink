@@ -181,7 +181,7 @@ RUN set -eu; \
     esac; \
     GIT_LFS_SKIP_SMUDGE=1 git clone --quiet --depth 1 --branch master https://github.com/thun-res/osg_sdk.git /opt/vlink/osg_sdk; \
     git -C /opt/vlink/osg_sdk lfs install --local >/dev/null; \
-    git -C /opt/vlink/osg_sdk lfs pull --include="${osg_sdk_arch}/**" --exclude="*" >/dev/null; \
+    git -C /opt/vlink/osg_sdk lfs pull --include="${osg_sdk_arch}/**" --exclude="" >/dev/null; \
     ln -sfn "/opt/vlink/osg_sdk/${osg_sdk_arch}" /opt/vlink/osg_sdk/current
 
 WORKDIR /tmp/qt-build

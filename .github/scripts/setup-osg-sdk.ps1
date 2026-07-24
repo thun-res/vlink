@@ -68,7 +68,7 @@ Invoke-GitHubProgressStep "Install Git LFS hooks" {
 }
 
 Invoke-GitHubProgressStep "Pull $PlatformRoot SDK files" {
-  git -C $Root lfs pull --include="$PlatformRoot/**" --exclude="*" *> $Log
+  git -C $Root lfs pull --include="$PlatformRoot/**" --exclude="" *> $Log
   if ($LASTEXITCODE -ne 0) {
     Get-Content $Log -Tail 100
     throw "git lfs pull failed with exit code $LASTEXITCODE"
