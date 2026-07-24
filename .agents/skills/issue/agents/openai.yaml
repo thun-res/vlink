@@ -1,0 +1,4 @@
+interface:
+  display_name: "Issue"
+  short_description: "调查、创建、回复并维护 Issue AI mention 自动回复"
+  default_prompt: "使用 $issue 调查、草拟或创建 VLink Issue，按授权回复，或维护 @codex/@claude 自动回复链路。"

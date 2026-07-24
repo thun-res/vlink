@@ -16,6 +16,37 @@ modernize-* 等,豁免项集中管理)且 `WarningsAsErrors: '*'` —— 任何�
 
 ```bash
 REPO_ROOT="$(git rev-parse --show-toplevel)"
+PHYSICAL_CORES=
+case "$(uname -s 2>/dev/null)" in
+  Linux)
+    PHYSICAL_CORES="$(
+      LC_ALL=C lscpu -p=CORE,SOCKET 2>/dev/null |
+        awk -F, '
+          $1 !~ /^#/ && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ {
+            cores[$2 SUBSEP $1] = 1
+          }
+          END {
+            for (core in cores) {
+              count++
+            }
+            if (count > 0) {
+              print count
+            }
+          }'
+    )" || PHYSICAL_CORES=
+    ;;
+  Darwin)
+    PHYSICAL_CORES="$(sysctl -n hw.physicalcpu 2>/dev/null)" || PHYSICAL_CORES=
+    ;;
+esac
+case "$PHYSICAL_CORES" in
+  '' | *[!0-9]* | 0) PHYSICAL_CORES=1 ;;
+esac
+if [ "$PHYSICAL_CORES" -gt 1 ]; then
+  BUILD_JOBS=$((PHYSICAL_CORES - 1))
+else
+  BUILD_JOBS=1
+fi
 ```
 
 AI 创建的 clang-tidy 构建目录必须位于 `build-ai/` 下并使用
@@ -59,10 +90,14 @@ export PYTHONPYCACHEPREFIX="$BUILD_DIR/__pycache__"
 cmake -S "$REPO_ROOT" -B "$BUILD_DIR" \
   -DENABLE_CXX_STD_20=OFF \
   -DCMAKE_CXX_CLANG_TIDY=clang-tidy
-cmake --build "$BUILD_DIR" --parallel
+cmake --build "$BUILD_DIR" --parallel "$BUILD_JOBS"
 ```
 
 耗时长(CI 限时 120 分钟),仅在需要完整复现 CI 门禁时使用。
+`BUILD_JOBS` 必须严格等于 `max(真实物理核心数 - 1, 1)`。禁止改用逻辑
+CPU 数、裸 `--parallel`/`-j` 或固定高并行度;无法可靠获取时固定单核,
+且同一时刻只运行一个本地构建,防止 clang-tidy 随编译并发卡死或耗尽
+内存。
 
 ## 3. 结果处理
 

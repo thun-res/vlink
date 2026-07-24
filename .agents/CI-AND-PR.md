@@ -1,7 +1,7 @@
 # 评审、PR 与 CI
 
 所有评审与提交先遵循根 `AGENTS.md` 的强制规则和
-`.agents/AI-POLICY.md` 的 AI 贡献政策;本分册只补 GitHub、PR 和 CI 的
+`AI-POLICY.md` 的 AI 贡献政策;本分册只补 GitHub、PR 和 CI 的
 具体流程。
 
 ## 1. 代码评审规则

@@ -17,8 +17,8 @@ description: >-
 `cmake/functions/common.cmake`):注入 `-O0 -g -fprofile-arcs
 -ftest-coverage`;构建并运行 `vlink-test` 产生被测库 profile 数据,
 并生成 `coverage` 构建目标。排除目录由根 CMakeLists 的
-`VLINK_TEST_COVERAGE_EXCLUDES` 统一维护(`c_api/`、`cli/`、`exprtk/`、
-`proxy/`、`test/`、`thirdparty/` 等)。
+`VLINK_TEST_COVERAGE_EXCLUDES` 统一维护(`languages/c_api/`、`cli/`、
+`exprtk/`、`proxy/`、`test/`、`thirdparty/` 等)。
 
 当前覆盖率流程不同时启用 ASan;CI 的 coverage job 固定
 `ENABLE_TEST_SANITIZE=OFF`(`.github/workflows/ci-coverage.yml`)。
@@ -34,6 +34,37 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 BUILD_DIR_REL=build-ai/skill_coverage
 BUILD_DIR="$REPO_ROOT/$BUILD_DIR_REL"
 export PYTHONPYCACHEPREFIX="$BUILD_DIR/__pycache__"
+PHYSICAL_CORES=
+case "$(uname -s 2>/dev/null)" in
+  Linux)
+    PHYSICAL_CORES="$(
+      LC_ALL=C lscpu -p=CORE,SOCKET 2>/dev/null |
+        awk -F, '
+          $1 !~ /^#/ && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ {
+            cores[$2 SUBSEP $1] = 1
+          }
+          END {
+            for (core in cores) {
+              count++
+            }
+            if (count > 0) {
+              print count
+            }
+          }'
+    )" || PHYSICAL_CORES=
+    ;;
+  Darwin)
+    PHYSICAL_CORES="$(sysctl -n hw.physicalcpu 2>/dev/null)" || PHYSICAL_CORES=
+    ;;
+esac
+case "$PHYSICAL_CORES" in
+  '' | *[!0-9]* | 0) PHYSICAL_CORES=1 ;;
+esac
+if [ "$PHYSICAL_CORES" -gt 1 ]; then
+  BUILD_JOBS=$((PHYSICAL_CORES - 1))
+else
+  BUILD_JOBS=1
+fi
 ```
 
 1. 配置:
@@ -58,7 +89,7 @@ export PYTHONPYCACHEPREFIX="$BUILD_DIR/__pycache__"
    `vlink-proxy`,并沿用 CI 的测试参数:
 
    ```bash
-   cmake --build "$BUILD_DIR" --target vlink-test vlink-proxy --parallel
+   cmake --build "$BUILD_DIR" --target vlink-test vlink-proxy --parallel "$BUILD_JOBS"
    cd "$REPO_ROOT"
    BUILD_DIR="$BUILD_DIR_REL" bash .github/scripts/run-posix-ci-tests.sh
    ```
@@ -66,7 +97,7 @@ export PYTHONPYCACHEPREFIX="$BUILD_DIR/__pycache__"
 3. 生成报告:
 
    ```bash
-   cmake --build "$BUILD_DIR" --target coverage
+   cmake --build "$BUILD_DIR" --target coverage --parallel "$BUILD_JOBS"
    ```
 
    HTML 报告位于 `$BUILD_DIR/coverage/index.html`,汇总文本可重定向保存
@@ -76,6 +107,10 @@ export PYTHONPYCACHEPREFIX="$BUILD_DIR/__pycache__"
 
 - 根工程当前固定使用 `lcov`;底层 helper 也支持 `gcovr`,但本配置未
   选用。缺少 `lcov` 时 CMake 只告警、`coverage` 目标不可用。
+- `BUILD_JOBS` 必须严格等于 `max(真实物理核心数 - 1, 1)`。禁止改用
+  逻辑 CPU 数、裸 `--parallel`/`-j` 或固定高并行度;无法可靠获取物理
+  核心数时固定单核,且同一时刻只运行一个本地构建,防止编译卡死或耗尽
+  内存。
 - 默认 `BUILD_DIR_REL` 为 `build-ai/skill_coverage`;正被其他任务使用时
   先改为 `build-ai/skill_coverage_<task_name>`,再派生 `BUILD_DIR`,不得
   共用或清理其他构建目录。

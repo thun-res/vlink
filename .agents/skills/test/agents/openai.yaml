@@ -1,4 +1,4 @@
 interface:
   display_name: "Test"
-  short_description: "按平台运行 VLink 普通单元测试或指定 suite"
-  default_prompt: "使用 $test 按当前平台运行普通单元测试；若指定 suite 或 case，仅验证对应范围并汇总结果。"
+  short_description: "按平台运行 VLink CTest 与 C/Python 绑定测试"
+  default_prompt: "使用 $test 按当前平台运行普通单元测试与绑定测试；若指定 suite、case 或绑定层，仅验证对应范围并汇总结果。"

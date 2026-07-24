@@ -16,9 +16,11 @@ description: >-
 
 | 工作流 | PR | push¹ | release | schedule | dispatch | workflow_call |
 | ------ | :-: | :---: | :-----: | :------: | :------: | :-----------: |
+| `ci-agent-skills.yml` | ✔ | ✔ | — | — | ✔ | — |
 | `ci-lint.yml` | ✔ | ✔ | — | — | ✔ | — |
 | `ci-test.yml` | ✔ | ✔ | — | — | ✔ | — |
 | `ai-code-review.yml` | ✔ | — | — | — | — | — |
+| `community-ai-reply.yml`² | — | — | — | — | — | — |
 | `ci-coverage.yml` | — | — | — | 每周 | ✔ | ✔ |
 | `docker-images.yml` | — | — | — | — | ✔ | ✔ |
 | `release-portable-linux.yml` | — | — | — | — | — | ✔ |
@@ -27,10 +29,18 @@ description: >-
 | `release-linux-packages.yml` | — | — | — | — | — | ✔ |
 | `release.yml` | — | — | published | — | ✔ | — |
 
-¹ `ci-lint.yml` 与 `ci-test.yml` 的 push 分支为
-`master`/`main`/`develop`/`dev`;PR 使用同一分支集合。两者忽略纯
-`**.md`、`doc/**`、`.github/wiki/**` 改动。`ai-code-review.yml`
-只处理 opened、synchronize、ready_for_review、reopened。
+¹ `ci-agent-skills.yml`、`ci-lint.yml` 与 `ci-test.yml` 的 push 分支为
+`master`/`main`/`develop`/`dev`;PR 使用同一分支集合。`ci-lint.yml` 与
+`ci-test.yml` 忽略纯 `**.md`、`doc/**`、`.github/wiki/**` 改动;
+`ci-agent-skills.yml` 只处理 `AGENTS.md`、`.agents/**` 及对应安装、
+校验入口和根 `AI-POLICY.md`。`ai-code-review.yml` 只处理 opened、
+synchronize、ready_for_review、reopened。
+
+² `community-ai-reply.yml` 由 `issues`、`issue_comment`、`discussion`
+和 `discussion_comment` 的创建/编辑事件触发,仅在标题、正文或评论明确包含
+`@codex`/`@claude` 时回复。该 workflow 必须位于默认分支;
+`@codex` 需要 `OPENAI_API_KEY`,`@claude` 需要
+`CLAUDE_CODE_OAUTH_TOKEN`,不支持手动 dispatch。
 
 `release.yml` 复用 docker、coverage 与四个 `release-*` 子工作流;
 四个子工作流只能由 `workflow_call` 调用,不能直接 dispatch。
@@ -52,13 +62,14 @@ coverage 的定时任务为每周日 18:30 UTC,并带最近提交门禁;手动 d
 vlink_ref="<feature-branch>"
 gh workflow run ci-lint.yml --repo thun-res/vlink --ref "${vlink_ref}"
 gh workflow run ci-test.yml --repo thun-res/vlink --ref "${vlink_ref}"
+gh workflow run ci-agent-skills.yml --repo thun-res/vlink --ref "${vlink_ref}"
 gh workflow run ci-coverage.yml --repo thun-res/vlink --ref "${vlink_ref}"
 gh workflow run docker-images.yml --repo thun-res/vlink --ref master
 gh workflow run release.yml --repo thun-res/vlink --ref master \
   -f publish_pages=true -f build_portable=true -f build_linux_packages=true
 ```
 
-前三条的 `vlink_ref` 应设为待验证的功能分支。发布类工作流固定从
+前四条的 `vlink_ref` 应设为待验证的功能分支。发布类工作流固定从
 `master` 触发。
 
 `docker-images.yml` 会向 GHCR 推送镜像并移动

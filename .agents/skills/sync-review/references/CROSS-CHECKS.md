@@ -8,6 +8,8 @@
   是否与当前代码一致。
 - `.github/wiki/index.html` 与 `assets/js/i18n.js` 的三语特性、后端
   数量、scheme、API 片段是否与 `doc/00`、`doc/04` 一致。
+- `.github` 的完整工程、模板、治理和 Wiki 核对范围见
+  [GITHUB-SURFACES.md](GITHUB-SURFACES.md),不得只检查 workflow 文件名。
 - README.md、README.en.md 与 `doc/01-started.md` 的快速上手入口和
   示例是否同步。
 - `doc/04-transport.md` 的 scheme、参数和默认值是否对应 `modules/`
@@ -38,6 +40,9 @@
 
 ## 工程与版本
 
+- 构建、安装和打包的完整传播链见
+  [BUILD-PACKAGING-SURFACES.md](BUILD-PACKAGING-SURFACES.md);不得只核对
+  顶层 CMake 选项或版本号。
 - `doc/01` §1.4 的用户 CMake 选项是否对应第一方 `option()` 与 cache
   配置;排除 `cmake/cpm.cmake` 的上游内部选项。
 - CLI 子命令或顶层选项变化时,同步对应
@@ -62,7 +67,7 @@
 
 - `.agents/FEATURE-INDEX.md` 的代码入口、doc 章节和小节仍存在且语义相符。
 - `.agents/REPO-REFERENCE.md` 的目录职责、工程设施和章节映射与仓库一致。
-- `AGENTS.md`、`.agents/AI-POLICY.md`、`.agents/README.md`、语言分册与
+- `AGENTS.md`、`AI-POLICY.md`、`.agents/README.md`、语言分册与
   skill 不重复维护冲突的规则。
 - 每个 skill 的 frontmatter、`agents/openai.yaml` 和 README 清单保持
   同一定位;reference 链接和文件名大小写必须有效。

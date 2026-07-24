@@ -41,5 +41,6 @@ Windows runner 会补充运行库搜索路径,设置测试 IP,管理
 - `vlink-proxy` 缺失或提前退出属于测试链路失败,不得绕过。
 - 只有 runner 正常结束且没有失败 suite 时,才能报告普通单元测试全量
   通过。
-- 需要改变并行度时使用 `CMAKE_BUILD_PARALLEL_LEVEL`,不要修改 runner
-  默认值。
+- runner 将 `CMAKE_BUILD_PARALLEL_LEVEL` 仅作为 CTest 并行度;不要用它
+  控制编译。编译并行度必须在构建步骤按
+  [CONFIGURE-AND-BUILD.md](CONFIGURE-AND-BUILD.md) 显式传入。

@@ -24,6 +24,7 @@ description: >-
 | Viewer | [VIEWER.md](references/VIEWER.md) | `vlink-viewer`、`vlink-player`、`vlink-analyzer` |
 | WebViz | [WEBVIZ.md](references/WEBVIZ.md) | Foxglove、Rerun、bag2mcap、bag2rrd |
 | Bag 数据集 | [BAG-DATASETS.md](references/BAG-DATASETS.md) | 数据集选择、只读保护、正常/异常场景 |
+| 本地构建 | [BUILD.md](references/BUILD.md) | 物理核心探测、并行上限与构建命令 |
 
 ## 2. 执行流程
 
@@ -35,9 +36,13 @@ description: >-
    `build-ai/skill_mock_cli`、`build-ai/skill_mock_proxy`、
    `build-ai/skill_mock_viewer` 或 `build-ai/skill_mock_webviz`;固定
    `ENABLE_CXX_STD_20=OFF`,只开启目标模块
-   并构建所需 target。执行 Python、CMake、测试或辅助脚本前设置
+   并构建所需 target。构建前必须读取并执行
+   [BUILD.md](references/BUILD.md)。执行 Python、CMake、测试或辅助脚本前设置
    `PYTHONPYCACHEPREFIX={project}/build-ai/skill_mock_<function_name>/__pycache__`。
-   不得复用、删除或重置维护者、IDE、CI 的构建目录。
+   编译前按平台取得真实物理核心数,显式使用
+   `max(真实物理核心数 - 1, 1)` 个并行 job;探测失败时固定单核。禁止
+   逻辑 CPU 计数、裸 `--parallel`/`-j`、固定高并行度或同时启动多个
+   本地构建,也不得复用、删除或重置维护者、IDE、CI 的构建目录。
 4. 为本次运行创建独立临时目录。输入数据集始终只读;`clone`、`fix`、
    `reindex`、`tag`、录制和导出等写操作只针对临时副本或临时输出。
 5. 先做参数解析和预期失败,再做单进程入口,最后做需要多个进程、GUI、

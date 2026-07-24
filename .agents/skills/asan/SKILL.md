@@ -24,6 +24,37 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 BUILD_DIR_REL=build-ai/skill_asan
 BUILD_DIR="$REPO_ROOT/$BUILD_DIR_REL"
 export PYTHONPYCACHEPREFIX="$BUILD_DIR/__pycache__"
+PHYSICAL_CORES=
+case "$(uname -s 2>/dev/null)" in
+  Linux)
+    PHYSICAL_CORES="$(
+      LC_ALL=C lscpu -p=CORE,SOCKET 2>/dev/null |
+        awk -F, '
+          $1 !~ /^#/ && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ {
+            cores[$2 SUBSEP $1] = 1
+          }
+          END {
+            for (core in cores) {
+              count++
+            }
+            if (count > 0) {
+              print count
+            }
+          }'
+    )" || PHYSICAL_CORES=
+    ;;
+  Darwin)
+    PHYSICAL_CORES="$(sysctl -n hw.physicalcpu 2>/dev/null)" || PHYSICAL_CORES=
+    ;;
+esac
+case "$PHYSICAL_CORES" in
+  '' | *[!0-9]* | 0) PHYSICAL_CORES=1 ;;
+esac
+if [ "$PHYSICAL_CORES" -gt 1 ]; then
+  BUILD_JOBS=$((PHYSICAL_CORES - 1))
+else
+  BUILD_JOBS=1
+fi
 ```
 
 1. 配置(AI 专用构建目录):
@@ -47,7 +78,7 @@ export PYTHONPYCACHEPREFIX="$BUILD_DIR/__pycache__"
 2. 构建:
 
    ```bash
-   cmake --build "$BUILD_DIR" --target vlink-test vlink-proxy --parallel
+   cmake --build "$BUILD_DIR" --target vlink-test vlink-proxy --parallel "$BUILD_JOBS"
    ```
 
 3. 运行测试。复用 CI 脚本,确保先启动测试依赖的 `vlink-proxy`,并沿用
@@ -63,6 +94,10 @@ export PYTHONPYCACHEPREFIX="$BUILD_DIR/__pycache__"
 
 - `detect_odr_violation=0` 是 CI 既有约定(共享库场景误报),不要再额外
   放宽 `ASAN_OPTIONS`。
+- `BUILD_JOBS` 必须严格等于 `max(真实物理核心数 - 1, 1)`。禁止改用
+  逻辑 CPU 数、裸 `--parallel`/`-j` 或固定高并行度;无法可靠获取物理
+  核心数时固定单核,且同一时刻只运行一个本地构建,防止编译卡死或耗尽
+  内存。
 - 默认 `BUILD_DIR_REL` 为 `build-ai/skill_asan`;正被其他任务使用时先改为
   `build-ai/skill_asan_<task_name>`,再派生 `BUILD_DIR`,不得共用或清理
   其他构建目录。

@@ -119,8 +119,8 @@ agent 渐进式披露:先在本表定位功能 → 再读对应 doc 小节 → �
 
 | 功能 | 代码入口 | 文档小节 |
 | ---- | ---- | ---- |
-| 纯 C API(多语言集成,`ENABLE_C_API`) | `c_api/` + `include/vlink/external/c_api.h` | `doc/13` §13.1–§13.8 |
-| Python API(`ENABLE_PYTHON_API`) | `python_api/vlink_python.cc` + `python_api/vlink.py` | `doc/13` §13.7.1/§13.8.3 |
+| 纯 C API(多语言集成,`ENABLE_C_API`) | `languages/c_api/` + `include/vlink/external/c_api.h` | `doc/13` §13.1–§13.8 |
+| Python API(`ENABLE_PYTHON_API`) | `languages/python_api/vlink_python.cc` + `languages/python_api/vlink.py` | `doc/13` §13.7.1/§13.8.3 |
 | UrlRemap 与 DynamicData | `include/vlink/extension/url_remap.h`、`include/vlink/extension/dynamic_data.h` | `doc/13` §13.10/§13.11 |
 | 动态库 Plugin 加载器 | `include/vlink/base/plugin.h` | `doc/13` §13.12/§13.13 |
 | Logger 插件接口 | `include/vlink/base/logger_plugin_interface.h` | `doc/13` §13.14 |
@@ -138,7 +138,7 @@ agent 渐进式披露:先在本表定位功能 → 再读对应 doc 小节 → �
 | ---- | ---- | ---- |
 | VKit 构建(官方推荐) | github.com/thun-res/vkit | `doc/01` §1.1 |
 | standalone CMake / 环境依赖 / 构建选项(主要 `ENABLE_*`) | 根及子目录 CMake 文件 | `doc/01` §1.2–§1.4 |
-| Conan / 交叉编译与平台支持 / 安装路径 / 打包发布 | `conanfile.py`、`packup/`、`tools/` | `doc/01` §1.7–§1.10 |
+| Conan / Soong / vcpkg / 交叉编译 / 安装与打包发布 | `conanfile.py`、`Android.bp`、`tools/vcpkg/`、`packup/`、`tools/` | `doc/01` §1.7–§1.10 |
 | 构建与运行问题排查 | — | `doc/01` §1.13 |
 
 ## 12. CLI 工具（`cli/<名称>/`）
