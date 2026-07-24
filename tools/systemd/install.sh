@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE:-$0}")/../.." && pwd)"
 SRC_DIR="${REPO_DIR}/tools/systemd"
 UNIT_DIR="${UNIT_DIR:-/etc/systemd/system}"
 

@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-REPO_DIR="${VLINK_REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+REPO_DIR="${VLINK_REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE:-$0}")/../.." && pwd)}"
 BRANCH="${VLINK_REPO_BRANCH:-master}"
 GIT_BIN="${GIT_BIN:-$(command -v git || true)}"
 

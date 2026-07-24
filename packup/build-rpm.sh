@@ -26,7 +26,7 @@
 shopt -s extglob
 set -e
 
-WORK_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+WORK_DIR=$(cd "$(dirname "${BASH_SOURCE:-$0}")" && pwd)
 PLATFORM_ARCH=$(uname -m)
 
 GITHUB_URL=""
