@@ -33,7 +33,7 @@
 
 shopt -s extglob
 
-WORK_DIR=$(cd $(dirname ${BASH_SOURCE:-$0}) && pwd)
+WORK_DIR=$(cd "$(dirname "${BASH_SOURCE:-$0}")" && pwd)
 PLATFORM_OS=$(uname -s)
 PLATFORM_ARCH=$(uname -m)
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Bench"
+  short_description: "运行 VLink 性能基准并生成 HTML 和 JSON 对比报告"
+  default_prompt: "使用 $bench 运行 VLink 性能基准并生成报告。"

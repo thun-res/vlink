@@ -1,0 +1,4 @@
+interface:
+  display_name: "CI/CD"
+  short_description: "触发和查看 GitHub CI 工作流、日志及失败重跑"
+  default_prompt: "使用 $cicd 查看或操作 VLink GitHub CI 工作流。"

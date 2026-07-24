@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sync Review"
+  short_description: "审计代码、文档、绑定、测试、示例和 Agent 索引同步"
+  default_prompt: "使用 $sync-review 审计当前 API 改动的全仓同步情况。"

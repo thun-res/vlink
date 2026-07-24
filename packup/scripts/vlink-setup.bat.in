@@ -20,28 +20,24 @@ echo +--------------------------------------+
 
 echo Version: @CMAKE_PROJECT_VERSION@
 
-if exist "%VLINK_PROTO_DIR_CONFIG%" (
-    setlocal enabledelayedexpansion
-    for /f "delims=" %%i in ('type "%VLINK_PROTO_DIR_CONFIG%"') do (
-        set "proto_dir=%%i"
-    )
-    echo VLINK_PROTO_DIR: !proto_dir!
-    for /f "delims=" %%j in ("!proto_dir!") do (
-        endlocal
-        set "VLINK_PROTO_DIR=%%j"
-    )
+setlocal DisableDelayedExpansion
+set "proto_dir="
+if exist "%VLINK_PROTO_DIR_CONFIG%" for /f "delims=" %%i in ('type "%VLINK_PROTO_DIR_CONFIG%"') do set "proto_dir=%%i"
+if defined proto_dir (
+    echo VLINK_PROTO_DIR: "%proto_dir%"
+    endlocal & set "VLINK_PROTO_DIR=%proto_dir%"
+) else (
+    endlocal
 )
 
-if exist "%VLINK_FBS_DIR_CONFIG%" (
-    setlocal enabledelayedexpansion
-    for /f "delims=" %%i in ('type "%VLINK_FBS_DIR_CONFIG%"') do (
-        set "fbs_dir=%%i"
-    )
-    echo VLINK_FBS_DIR: !fbs_dir!
-    for /f "delims=" %%j in ("!fbs_dir!") do (
-        endlocal
-        set "VLINK_FBS_DIR=%%j"
-    )
+setlocal DisableDelayedExpansion
+set "fbs_dir="
+if exist "%VLINK_FBS_DIR_CONFIG%" for /f "delims=" %%i in ('type "%VLINK_FBS_DIR_CONFIG%"') do set "fbs_dir=%%i"
+if defined fbs_dir (
+    echo VLINK_FBS_DIR: "%fbs_dir%"
+    endlocal & set "VLINK_FBS_DIR=%fbs_dir%"
+) else (
+    endlocal
 )
 
 echo Support commands: [proxy] [info] [monitor] [bag] [trigger] [list] [eproto] [efbs] [parse] [check] [bench]

@@ -14,7 +14,7 @@ VLink 的用法与 API 详见 [概述](00-overview.md) 与 [通信模型](02-com
 
 VLink 的测试体系建立在一个关键性质之上：`intra://` 后端在单进程内提供完整的发布订阅、请求响应与状态同步语义，无需任何守护进程或网络配置。因此一对通信原语的往返验证可在普通单元测试进程内完成，并因 URL 契约而平滑迁移到跨进程、跨机后端。
 
-通信代码的测试难点在于其异步性与跨端点性：消息的发送方与接收方解耦，回调在独立线程触发，端点的就绪存在时序窗口。直接"发送后立即断言收到"会引入与机器负载相关的不稳定结果。
+通信代码的测试难点在于其执行上下文与跨端点性：回调线程随后端和模式而异，默认 intra queue 异步调度，`#direct` 则在 publish/invoke 调用线程同步执行；端点的就绪仍存在时序窗口。直接"发送后立即断言收到"会引入与机器负载相关的不稳定结果。
 
 VLink 提供两类机制消除时序不确定性：
 
@@ -95,7 +95,7 @@ TEST_SUITE("intra-pubsub") {
 
     sub.listen([&count](const std::string& msg) {
       if (msg == "hello") {
-        ++count;
+        count.fetch_add(1, std::memory_order_relaxed);
       }
     });
 
@@ -103,7 +103,7 @@ TEST_SUITE("intra-pubsub") {
     CHECK(pub.publish("hello"));
 
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    CHECK(count.load() == 1);
+    CHECK(count.load(std::memory_order_relaxed) == 1);
   }
 }
 ```
@@ -247,7 +247,7 @@ git checkout -b feat/add-websocket-transport-42 origin/master
 clang-format -i path/to/your_file.cc
 
 # 3. 以 Conventional Commits 格式提交（type(scope): subject）
-git commit -m "feat(module-websocket): add websocket transport backend"
+git commit -m "feat(module-websocket): 增加 websocket 传输后端"
 
 # 4. 推送到自己的分支并发起 PR（PR 标题取最重要那条 commit 的 subject）
 git push -u origin feat/add-websocket-transport-42
@@ -263,11 +263,11 @@ git push -u origin feat/add-websocket-transport-42
 
 **代码**
 
-- [ ] 新建 C/C++ 源文件顶部有完整 Apache 2.0 license header（[§15.13.4](#-15134-license-header)）
+- [ ] 第一方且采用 VLink 模板的新建 C/C++ 源文件顶部有完整 Apache 2.0 license header（[§15.13.4](#-15134-license-header)）
 - [ ] `clang-format`、`clang-tidy`、`cpplint`、`cmake-format`、`actionlint` 五道关均通过、零告警（[§15.14](#-1514-静态检查clang-format--clang-tidy)）；仅本地跑 `clang-format`/`clang-tidy` 不足以通过 CI
-- [ ] 新增公共头文件有 Doxygen 注释（至少 `@brief` + `@param` + `@return`）
-- [ ] 不残留 `TODO`/`FIXME`/`XXX`/占位文本；确需保留写成 `// TODO(user, YYYY-MM-DD): what`
-- [ ] 代码注释一律英文（中文仅允许出现在 `.md`/`.txt` 文档资产中）
+- [ ] 新增公共头文件有 Doxygen 注释（`@brief` 必需，按实体签名补适用的 `@tparam` / `@param` / `@return`）
+- [ ] 不残留 `TODO`/`FIXME`/`XXX`、注释掉的代码或占位文本
+- [ ] `.cc` 不新增说明性注释；公共头文件 Doxygen 使用英文，examples 教学说明写入对应 README
 
 **构建**
 
@@ -300,7 +300,7 @@ git push -u origin feat/add-websocket-transport-42
 
 | 组件 | 最低版本 | 约束来源 |
 |---|---|---|
-| CMake | 3.15 | Conan 2 要求 |
+| CMake | 3.15 | 根 `CMakeLists.txt` 与项目构建基线 |
 | C++ 编译器 | GCC 9 / Clang 10 / MSVC 2019 / Apple Clang 12 | 必须支持 C++17 |
 | clang-format / clang-tidy | 14+ | 低版本对 `.clang-format` 选项兼容性不一致 |
 | Git | 2.25 | worktree / sparse-checkout |
@@ -315,7 +315,7 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-约束项：不以 IDE"格式化整个文件"的结果提交（仅格式化改动行）；不提交 `.idea/`/`.vscode/` 等个人配置；不提交 `.log`/`.so`/`.exe`/`.a`/`.pdb` 等产物。drawio 导出的 `.png` 是文档资产，是唯一被纳入版本控制的二进制例外。
+约束项：不对无关文件做全仓格式化，只格式化本次改动文件；不提交 `.idea/`/`.vscode/` 等个人配置；不提交 `.log`/`.so`/`.exe`/`.a`/`.pdb` 等构建产物。图片、字体等二进制资产仅在产品或文档确实使用时纳入版本控制。
 
 ---
 
@@ -324,6 +324,8 @@ ctest --test-dir build --output-on-failure
 ### 🌱 15.11.1 分支模型与命名
 
 VLink 采用 master + 功能分支模型：`master` 为保护分支，禁止直推与 force-push；功能分支从 `master` 起，合并后 30 天内删除；发布分支 `release/vX.Y.Z` 打完 tag 即删。
+
+维护者另保留长期集成分支 `dev`，通过专用 `/pr` 流程合入 `master`；普通功能分支仍按上述模型提交。
 
 分支名格式 `type/summary-issue?`：全小写、连字符分词、`summary` ≤ 50 字符、尽量附 issue 号。
 
@@ -350,29 +352,29 @@ footer (optional)
 
 - **type**：`feat` `fix` `refactor` `perf` `docs` `test` `build` `ci` `chore` `style` `revert`
 - **scope**（可选）：如 `core` `base` `extension` `proxy` `viewer` `webviz` `cli-NAME` `module-NAME` `examples` `docs` `cmake`；跨多 scope 可省略或用 `*`
-- **subject**：英文祈使句、小写开头、不以句号结尾、≤ 72 字符；禁止 `update`/`various fixes`/`misc` 等无信息量措辞
-- **body**（subject 未表达完整时）：说明改动动机、做法与影响面，每行 ≤ 72 字符
+- **subject**：英文祈使句，不以句号结尾、≤ 72 字符；禁止 `update`、`adjust`、`misc fixes`、`cleanup` 等无信息量措辞
+- **body**（subject 未表达完整时）：使用英文说明改动动机、做法与影响面，每行 ≤ 72 字符；代码标识、路径、API 名和错误信息保持原文
 - **footer**：破坏性变更写 `BREAKING CHANGE: <描述 + 迁移提示>`；关联 issue 写 `Closes: #123` / `Refs: #98`
 
 合规示例：
 
 ```
-feat(module-mqtt): add TLS mutual-auth support via SslOptions
+feat(module-mqtt): add mutual TLS authentication with SslOptions
 
-Public-cloud IoT brokers need mTLS for compliance. Wires the existing
-SslOptions struct through the Paho MQTT C API on publish/subscribe paths.
+Public cloud IoT brokers require mTLS authentication. Apply the existing
+SslOptions to the Paho MQTT C API publish and subscribe paths.
 
 Refs: #207
 ```
 
 ```
-docs: fix CLI count drift across README and doc/00-overview
+docs: synchronize CLI counts across project documentation
 
-vlink-bench was missed in several docs. Synced README (EN+ZH),
-overview, reference and the cli-tools-overview drawio + PNG.
+Several documents omit vlink-bench. Synchronize both README variants,
+overview, reference, and the cli-tools-overview drawio and PNG.
 ```
 
-不合规示例：`wip` / `update` / `fix bug` / `改了下代码` / `Merge branch 'master' into ...`（PR 内不应有 merge commit，用 rebase 替代）。
+不合规示例：`wip` / `update` / `fix bug` / `misc fixes` / `cleanup` / `Merge branch 'master' into ...`（PR 内不应有 merge commit，用 rebase 替代）。
 
 ---
 
@@ -380,33 +382,18 @@ overview, reference and the cli-tools-overview drawio + PNG.
 
 ### 🏷️ 15.12.1 PR 标题
 
-PR 标题取本次最重要那条 commit 的 subject，遵循相同规则（含 type/scope、小写开头、≤ 72 字符）：
+PR 标题取本次最重要那条 commit 的 subject，使用简体中文并遵循相同规则（含 type/scope、≤ 72 字符）：
 
 ```
-feat(module-zenoh): expose keyexpr cache size via URL query
-fix(viewer): resolve Qt6 OpenGLWidgets missing on ARM macOS
+feat(module-zenoh): 通过 URL 参数公开 keyexpr 缓存大小
+fix(viewer): 修复 ARM macOS 缺少 Qt6 OpenGLWidgets
 ```
 
 ### 📄 15.12.2 PR 描述模板
 
-仓库已提供 `.github/PULL_REQUEST_TEMPLATE.md`，发起 PR 时会自动套用；其结构与下述模板一致：
-
-```markdown
-## 背景（Why）
-问题 / 动机 / 上下文；有 issue 写 `Closes #123`。
-
-## 改动（What）
-- 主要改动（≤ 5 条）；为何不选备选方案；哪些属破坏性变更。
-
-## 影响面
-- CMake 目标 / 公共头文件 / env 变量 / URL query / 连带的示例与测试。
-
-## 验证（How）
-- 本地构建 + 单测命令与结果；端到端手工步骤（如有）。
-
-## ✅ Checklist
-照 §15.9 逐项标注完成 / 未完成。
-```
+仓库已提供 `.github/PULL_REQUEST_TEMPLATE.md`，发起 PR 时会自动套用。
+以该文件为准，依次填写 Summary、Type of change、Related issues、
+How was this tested 与 Checklist；不适用的说明项可删除。
 
 ### 📐 15.12.3 大小、评审与合并
 
@@ -426,25 +413,27 @@ fix(viewer): resolve Qt6 OpenGLWidgets missing on ARM macOS
 - **命名**：文件 `snake_case.{h,cc}`、类 `PascalCase`、函数/方法 `snake_case()`、成员 `snake_case_`、常量 `kPascalCase`、宏 `SCREAMING_SNAKE_CASE`、命名空间 `snake_case`、模板类型形参 `PascalCase` 加 `T` 后缀（`MsgT`、`SecT`）。
 - **头文件守卫** 统一 `#pragma once`。
 - **include 顺序**：本文件对应头 → C 系统头 → C++ 标准库 → 第三方库 → 项目头，组间空行。
-- **禁用**：头文件中 `using namespace`、裸 `new`/`delete`、C 风格强制转换、`NULL`（用 `nullptr`）。
+- **禁用**：头文件中 `using namespace`、C 风格强制转换、`NULL`（用 `nullptr`）。普通所有权代码避免裸 `new`/`delete`；内存资源、placement new 或第三方 ABI 等低层场景沿用相邻实现并明确所有权。
+- **控制流**：`if` / `else if` / `else` 分支体必须使用大括号；`if` 的语法、初始化语句与条件表达式保持 C++17 可编译，不依赖 C++20 专属语法、类型或 API。
+- **错误处理**：可预期失败沿用既有返回值、错误码或结果类型，不用异常代替普通控制流；异常不得越过 C ABI，禁止空 `catch` 或吞掉原始失败。
+- **日志**：默认优先 `VLOG_*`，复杂嵌入格式推荐 `CLOG_*`，`MLOG_*` 只沿用相邻模块的 `{}` 格式；Info 只记录低频正常状态，Warn/Error/Fatal 分别对应可恢复异常、当前操作失败和无法安全继续。
 
-### 🌐 15.13.2 注释语言
+### 🌐 15.13.2 注释范围与语言
 
-所有代码注释必须为英文，覆盖 `//`、`/* */`、Doxygen，以及 `CMakeLists.txt`/shell/python 脚本注释与临时 `TODO`。中文仅允许出现在 `doc/**/*.md`、`README.md`、`CHANGELOG.md`、`examples/**/README.md` 等文档资产中。当前 CI 没有独立的中文注释扫描器，该约束由提交者和评审者检查；普通 `NOLINT` 标记不会豁免此项目约定，确需保留中文术语时应在 PR 中说明。
+`.cc` 不新增说明性注释、横幅、注释掉的代码或临时 `TODO`，逻辑通过命名与结构表达；许可证头、`NOLINT`、`LCOV_EXCL_*`、`GCOVR_EXCL_*` 等工具必需指令保留。公共头文件 Doxygen 及其他语言确有必要的代码注释使用英文；examples 教学说明写入对应 README。中文用于 `doc/**/*.md`、`README.md`、`CHANGELOG.md`、`examples/**/README.md` 等文档资产。当前任务未触及的历史注释不得为统一风格机械清理。
 
 ```cpp
 /** @brief Serialise @p msg into a raw byte buffer. */
 vlink::Bytes serialize(const MsgT& msg);
-// TODO(zhangsan, 2026-05-01): fix the loan-path leak.
 ```
 
 ### 📖 15.13.3 Doxygen 注释
 
-公共头文件（`include/vlink/**`）的导出类、函数与枚举均需 Doxygen 注释，使用 `@brief`/`@tparam`/`@param[in,out]`/`@return`/`@note`/`@see` 等标记；代码块用 `@code{.cpp} ... @endcode`。不写"参数 a：第一个参数"这类零信息量内容。
+公共入口头文件的导出类、函数与枚举均需 Doxygen 注释；`include/vlink/internal/` 与 `include/vlink/impl/` 是实现路径，但进入公开签名或供用户配置的符号仍按公开契约维护。按实体使用适用的 `@brief`/`@tparam`/`@param[in,out]`/`@return`/`@note`/`@see` 等标记；代码块用 `@code{.cpp} ... @endcode`。不写"参数 a：第一个参数"这类零信息量内容。
 
 ```cpp
 /**
- * @brief One-line summary (under 80 chars).
+ * @brief Concise summary of the operation.
  * @param[in]  url  Target URL, e.g. "shm://sensor/imu".
  * @param[out] out  Filled on success.
  * @return  @c true on success; @c false if URL is malformed.
@@ -453,12 +442,12 @@ vlink::Bytes serialize(const MsgT& msg);
 
 ### 🪪 15.13.4 License header
 
-所有新建 C/C++ 源文件以完整的 22 行 Apache 2.0 header（含 ASCII logo）开头，可从任意现有 VLink 源文件复制；`YEAR` 填创建年份。CMake / shell / python 文件以相应注释风格转写同一段 license 文本。
+第一方且采用 VLink 模板的新建 C/C++ 源文件以完整的 22 行 Apache 2.0 header（含 ASCII logo）开头；年份与作者由维护者确认后从相邻 VLink 源文件复制。第三方、生成代码、保留上游版权的文件及其他语言文件沿用各自相邻文件，不机械转写该模板。
 
 ```cpp
 /*
- * Copyright (C) YEAR by Thun Lu. All rights reserved.
- * Author: <Your Name> <your.email@example.com>
+ * Copyright (C) 2026 by Thun Lu. All rights reserved.
+ * Author: Thun Lu <thun.lu@zohomail.cn>
  * Repo:   https://github.com/thun-res/vlink
  *  _    __   __      _           __
  * | |  / /  / /     (_) ____    / /__
@@ -499,7 +488,7 @@ git diff --name-only --diff-filter=ACMR origin/master...HEAD \
   | grep -E '\.(cc|cpp|cxx)$' | xargs -r -n1 clang-tidy -p build-tidy
 ```
 
-具体何种写法触发 tidy 告警属 clang-tidy 通用知识，以仓库根 `.clang-tidy` 配置为准，本章不展开。确需抑制单行时用 `// NOLINTNEXTLINE(具体-check-名): reason`：必须指定 check 名、必须附原因，禁止裸 `NOLINT`，评审会严查滥用。在本地先跑干净再推送，可避免因 lint 问题被打回而消耗评审轮次。
+具体何种写法触发 tidy 告警属 clang-tidy 通用知识，以仓库根 `.clang-tidy` 配置为准，本章不展开。确属误报或有意写法时，按相邻代码使用带具体 check 名的行级 `NOLINT`；宏区、生成式代码块与 `test/` 全文件豁免沿用仓库既有边界，详见 `.agents/languages/CPP.md` §11。
 
 ---
 
@@ -512,7 +501,7 @@ PR 门槛为两条硬规则；测试框架细节（doctest、断言宏、`TEST_C
 
 禁用的测试写法：
 
-- 禁止 `sleep_for(...)` 等固定延时，改用事件同步（`wait_for` / `condition_variable` / `std::future`）。
+- 时序测试优先事件同步（`wait_for` / `vlink::ConditionVariable` / `std::future`）；确需固定延时测试时间行为时，断言必须容忍调度抖动，不依赖精确睡眠时长。
 - 禁止测试依赖互联网（下载资源、调用远程 API）。
 - 禁止并发用例共用同一 DDS domain / SHM 段，改用随机化的 domain ID / topic 前缀隔离。
 
@@ -526,14 +515,14 @@ PR 门槛为两条硬规则；测试框架细节（doctest、断言宏、`TEST_C
 
 | 事实 | 必须同步的位置 |
 |---|---|
-| CLI 工具数量 | 根 README（中文 + `README.en.md`）/ [白皮书](00-whitepaper.md) / [概述](00-overview.md) / [快速开始](01-started.md) `ENABLE_CLI_*` 列表 / [CLI 工具](10-cli-tools.md) / [速查参考](14-reference.md) / `cli-tools-overview.drawio`、`overview-architecture.drawio`、`foreword-*.drawio` + PNG / `.github/wiki/`（`index.html` + `i18n.js` 三语）/ `CHANGELOG.md` |
+| CLI 工具数量 | 根 README（中文 + `README.en.md`）/ [白皮书](00-whitepaper.md) / [概述](00-overview.md) / [快速开始](01-started.md) `ENABLE_CLI_*` 列表 / [CLI 工具](10-cli-tools.md) / [速查参考](14-reference.md) / `cli-tools-overview.drawio`、`overview-architecture.drawio`、`foreword-*.drawio` + PNG / `.github/wiki/`（`index.html` + `assets/js/i18n.js` 三语）/ `CHANGELOG.md` |
 | transport 模块数量 | 同上 + [传输后端与 URL](04-transport.md) |
 | 序列化类型数量 | [消息序列化](03-serialization.md) / 根 README / [速查参考](14-reference.md) |
 | QoS 预设数量 | [QoS 配置](05-qos.md) / [速查参考](14-reference.md) / `CHANGELOG.md` |
 | base 库组件数量 | [基础库](08-base-library.md) 表格 / 概述相应表 |
 | 示例数量 / 类别 | [快速开始](01-started.md) / 各 `examples/CATEGORY/README.md` |
 | 环境变量 | [集成](13-integration.md) / [速查参考](14-reference.md) |
-| CMake 选项 | 根 README / [快速开始](01-started.md) / 概述 |
+| CMake 选项 | [快速开始](01-started.md) §1.4 / 第一方面向用户的 `option()` 与 cache 配置 |
 
 计数本身易过期，以源码与专题 doc 为准，不在多处转抄数字。
 
@@ -554,7 +543,7 @@ VLink 遵循 [Semantic Versioning 2.0](https://semver.org)：**MAJOR** 可含破
 |---|---|
 | 删除或 rename 任何 `include/vlink/**` 公共符号 | 新增 public symbol |
 | 改现有公共函数/方法签名（入参 / 返回值 / 默认值） | 新增 enum 值（放末尾，不动已有值） |
-| 改已有 enum 值 / struct 字段顺序或类型（破 ABI） | 新增 struct 字段（放末尾） |
+| 改已有 enum 值；增删、重排或改变公开 struct 字段（破 ABI；zerocopy 线格式禁止变更） | — |
 | 改 URL scheme 或 query 参数名 | 新增 URL query 参数 |
 | 改 CLI 子命令 / 顶层 flag 名 | 新增 CLI 子命令 |
 | 改 CMake 导出目标名 / C API 返回码 / env 变量名 | 新增 CMake 选项（默认值对存量构建无影响） |
@@ -568,20 +557,20 @@ VLink 遵循 [Semantic Versioning 2.0](https://semver.org)：**MAJOR** 可含破
 ### 🖥️ 15.18.1 跨平台
 
 - 系统头用 `<>`；条件编译集中声明，不散落进函数体；路径分隔符只用 `/`。
-- 线程优先 `std::thread`/`std::atomic`/`std::mutex`；时间一律 `std::chrono`，禁止混用 `time()`/`GetSystemTime()`。
-- 整数用 cstdint 定长类型（`int32_t`/`uint8_t`），不用 `int`/`long`（Windows 与 Linux 宽度不一致）。
+- 线程、调度与同步优先复用 `MessageLoop`、`Timer`、`ThreadPool` 及 `include/vlink/base/` 的并发抽象；没有匹配抽象时再沿用相邻代码使用标准库。时间统一使用 `std::chrono`。
+- ABI、线格式、文件格式与跨平台宽度敏感字段使用 `<cstdint>` 定宽类型；普通计数、索引与平台 API 参数按语义和相邻接口选型，不机械替换 `int`/`long`。
 - QNX 不用 Linux 专有 `epoll`/`signalfd`/`eventfd`；Android 不链接 glibc-only 符号、不用 `pthread_cancel`；二者在 CMake 中以 `target_compile_definitions` 区分。
 
 ### ⚡ 15.18.2 性能
 
-- 改动任一快路径（publish / invoke / listen 回调链）须以 `vlink-bench` quick 预设对比基线，并在 PR 中附对比；下降 > 5% 须说明原因或回滚。
-- 不得在回调执行线程（包括 intra direct 的调用线程与后端 delivery thread）阻塞超过 1ms，重负载交给 `ThreadPool`；热路径日志用低优先级的 `VLOG_T`/`VLOG_D`，运行期按日志级别过滤，低于阈值时几近零开销。
-- 不允许无上界容器（`vector` 未 `reserve()`、任意深度递归、无 TTL 的 cache）；全局状态须为进程级单例，或提供显式销毁接口。
+- 维护者明确要求或 PR 提出性能结论时，使用 `vlink-bench` 的同一预设、同一环境对比快路径基线；明显下降必须分析原因并说明取舍。
+- 回调执行线程（包括 intra direct 的调用线程与后端 delivery thread）不做阻塞 I/O 或长任务，重负载交给 `ThreadPool`；热路径日志用可按级别关闭的项目日志宏。
+- 容器、递归与缓存必须有与输入契约匹配的资源边界；热路径在容量可预估时预留空间。共享状态须明确所有权、并发与销毁时机，不为统一形式强制改成单例。
 
 ### 🔒 15.18.3 安全
 
-- 绝不将密钥 / 证书 / token / passphrase 提交到仓库；测试用密钥放 `test/fixtures/` 并明确标注 "TEST ONLY" 的自签证书。
-- 所有公共 API 在入口校验输入（非空、边界、类型合法）；外部来源（URL / env / 文件 / 网络）字符串须有长度上限；反序列化前校验 size / CRC / 头。
+- 绝不提交真实密钥、证书、token 或 passphrase；确需纳入的测试材料沿用相邻测试目录，使用无生产价值的自签内容并明确标注 "TEST ONLY"。
+- 在 URL、环境变量、文件、网络等不受信任边界按具体协议与格式契约校验必要的长度、size、header 或完整性信息；内部已经保证的不变量不重复防御。
 - 加密只用项目内置的 `vlink::Security` 或业务回调，禁止自行实现 AES/RSA 或散落调用 OpenSSL 低层 API。
 - 改动 `src/extension/security.cc`、处理加密 payload 的模块、密钥/证书/签名逻辑或认证握手流程的 PR，必须打 `security-review` 标签走安全评审。
 
@@ -619,16 +608,17 @@ VLink 遵循 [Semantic Versioning 2.0](https://semver.org)：**MAJOR** 可含破
 ### 🖼️ 15.19.1 示意图（drawio）贡献规则
 
 - **成对提交**：源 `doc/images/TOPIC.drawio` 与导出 `doc/images/TOPIC.png` 必须同名成对；仅改 PNG 不改 drawio 的 PR 将被拒。PNG 统一使用白色不透明背景，导出命令 `drawio --export --format png --scale 2 --output TOPIC.png TOPIC.drawio`（不要加透明选项 `-t`；headless 遇沙箱报错时加 `--no-sandbox`）。
-- **配色按文档 Part 统一**（drawio 默认字体 Helvetica/Arial，字号 ≥ 11pt）：
+- **配色按语义统一**（默认沿用 Helvetica；代码、标识符和 URL 是否
+  使用 Courier New 跟随相邻图与同层级元素。主体文字通常不小于 11pt，
+  脚注与连线标签沿用相邻图的层级字号并保证导出可读）：
 
-  | Part | 主题 | 配色（填充 / 描边） |
-  |---|---|---|
-  | I 入门 | 浅绿 | `#d5e8d4` / `#82b366` |
-  | II 通信模型 | 浅蓝 | `#dae8fc` / `#6c8ebf` |
-  | III 基础库 | 浅黄 | `#fff2cc` / `#d6b656` |
-  | IV 工具链 | 浅紫 | `#e1d5e7` / `#9673a6` |
-  | V 高级/参考 | 浅红 | `#f8cecc` / `#b85450` |
-  | 辅助/参考 | 浅灰 | `#f5f5f5` / `#666666` |
+  | 语义 | 配色（填充 / 描边） |
+  |---|---|
+  | 主体模块 | `#e3f2fd` 或 `#bbdefb` / `#1976d2` |
+  | 正常流 / 数据 | `#c8e6c9` / `#388e3c` |
+  | 警示 / 特殊路径 | `#ffe082` / `#ef6c00` |
+  | 外部 / 底层 | `#eceff1` / `#607d8b` |
+  | 容器 / 分组框 | `#ffffff` 或无填充 / 相邻语义色 |
 
 - 每张图至少被引用它的 doc 提及一次（标题或 `images/NAME.png`）；改代码若影响图面信息（数量、枚举、流程）须同步改源并重生 PNG；无引用的孤儿 drawio 会被周期清理。
 
@@ -639,7 +629,7 @@ VLink 遵循 [Semantic Versioning 2.0](https://semver.org)：**MAJOR** 可含破
 - **是否该做**：解决的是真实问题吗（有 issue / 设计讨论）？有无更小的改法？时机是否合适（feature freeze / release 前禁止大改）？
 - **设计**：新 API 面是否最小、无不必要公共符号暴露？命名是否符合 [§15.13.1](#-15131-c-风格要点)？是否避免了不必要的抽象 / 继承 / 模板元编程？异常路径是否被正确处理（不是 catch 后吞掉）？
 - **正确性**：是否存在多线程数据竞争？生命周期是否正确（循环引用、loan 未释放）？是否存在整数溢出 / 未处理的失败 IO？跨平台假设（sizeof / 对齐 / 字节序 / 有符号移位）是否成立？
-- **可读性**：命名是否表意（非 `x`/`tmp`/`data2`）？注释是否解释"为什么"而非"是什么"？函数 ≤ 80 行、嵌套 ≤ 4 层？
+- **可读性**：命名是否表意（非 `x`/`tmp`/`data2`）？`.cc` 是否没有新增说明性注释、注释掉的代码或无信息横幅？函数是否职责单一，复杂分支与嵌套是否已按相邻代码合理收敛？
 - **测试与文档**：正常 / 边界 / 异常路径是否均覆盖？Doxygen 是否完整、相关 doc 与 drawio 是否同步？
 
 所有项通过后维护者 "Approve"；有疑虑用 "Request changes" 并明确列出阻塞项。
@@ -648,10 +638,10 @@ VLink 遵循 [Semantic Versioning 2.0](https://semver.org)：**MAJOR** 可含破
 
 仅维护者操作，贡献者了解即可。版本号按 [§15.17](#-1517-api--abi-兼容性与-semver) 的 SemVer 选取（MAJOR/MINOR/PATCH）。
 
-1. 开 `release/vX.Y.Z` 分支，更新 `version.txt`，将 `CHANGELOG.md` 的 `Unreleased` 段整理为正式版本段
+1. 开 `release/vX.Y.Z` 分支，使用 `tools/update_version.sh X.Y.Z` 同步版本镜像并在 `CHANGELOG.md` 插入正式版本段
 2. 跑完整 CI（所有平台、所有模块），合并回 `master`
 3. 在 master 打 annotated tag：`git tag -a vX.Y.Z -m "Release vX.Y.Z"` 并 `git push origin vX.Y.Z`
-4. 触发 release workflow（构建二进制、发布到 conan），删 `release/` 分支
+4. 基于该 tag 创建并发布 GitHub Release；`release: published` 事件会触发 workflow 构建并上传发布产物。完成后删除 `release/` 分支
 
 紧急 patch：从最后一个 tag 起 `hotfix/vX.Y.Z+1` 分支，只收 fix 类 commit，打 tag 后 cherry-pick 回 `master`。
 
@@ -663,7 +653,7 @@ VLink 遵循 [Semantic Versioning 2.0](https://semver.org)：**MAJOR** 可含破
 2. 绕过 CI / clang-tidy 检查合并 PR（即便是维护者；`WarningsAsErrors: '*'` 是硬门槛）
 3. 在公共 API 改已有 enum 值或函数签名而不走 MAJOR 升级
 4. commit 写 `WIP`/`fix`/`update` 等无信息量内容
-5. 把密钥 / token / 证书 / passphrase 提交到仓库
+5. 把真实或生产用密钥 / token / 证书 / passphrase 提交到仓库（§15.18.3 明确的 "TEST ONLY" 测试材料除外）
 6. 在 PR 中夹带不相关的大段格式化 / rename；删除他人代码而不在描述说明
 7. commit 中包含构建产物（`build/`、`.so`、`.exe`、`.a`）
 8. 在 `.h` 中用 `using namespace`，或在头文件放函数定义（template/constexpr/inline 除外）

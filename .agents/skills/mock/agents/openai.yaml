@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mock"
+  short_description: "按功能编排 CLI、Proxy、Viewer、WebViz 与 Bag 场景测试"
+  default_prompt: "使用 $mock 选择目标模块和 bag 数据集，执行入口级 mock 集成测试并汇总覆盖死角。"

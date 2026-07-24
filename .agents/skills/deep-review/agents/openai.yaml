@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deep Review"
+  short_description: "按模块并行派发子代理执行 VLink 全仓重度代码审查并生成报告"
+  default_prompt: "使用 $deep-review 对 VLink 仓库执行全局重度审查。"

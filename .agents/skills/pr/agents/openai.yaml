@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR"
+  short_description: "提交 dev 到 master 并用中文填写云端 PR 内容"
+  default_prompt: "使用 $pr 整理当前改动，从 dev 向 master 创建或更新全部人工内容为中文的 PR。"

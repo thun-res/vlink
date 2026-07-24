@@ -1,0 +1,4 @@
+interface:
+  display_name: "Coverage"
+  short_description: "构建并运行覆盖率测试，生成 VLink lcov 报告"
+  default_prompt: "使用 $coverage 运行 VLink 覆盖率流程并生成报告。"

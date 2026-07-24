@@ -84,8 +84,8 @@ getter.listen([](const Status& s) { use(s); });
 
 | Scheme | Underlying | Scope | Zero-copy | Status |
 | --- | --- | --- | :---: | :---: |
-| `intra://` | built-in queue | intra-process | yes | stable |
-| `shm://` | Iceoryx | same-host | yes | stable |
+| `intra://` | built-in queue | intra-process | conditional (direct shared-pointer path) | stable |
+| `shm://` | Iceoryx | same-host | conditional (transport loan) | stable |
 | `dds://` | Fast-DDS | cross-machine | no | stable |
 | `ddsc://` | CycloneDDS | cross-machine | no | stable |
 | `shm2://` | Iceoryx2 | same-host | yes | beta |

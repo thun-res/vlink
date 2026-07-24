@@ -1,0 +1,4 @@
+interface:
+  display_name: "Clang-Tidy"
+  short_description: "对指定文件或全仓运行严格的 clang-tidy 检查"
+  default_prompt: "使用 $clang-tidy 检查当前改动中的 C++ 文件。"

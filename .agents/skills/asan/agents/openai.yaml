@@ -1,0 +1,4 @@
+interface:
+  display_name: "ASan"
+  short_description: "构建并运行 VLink ASan 单元测试，复现 Linux CI 内存门禁"
+  default_prompt: "使用 $asan 构建并运行 VLink ASan 单元测试。"
