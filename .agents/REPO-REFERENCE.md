@@ -44,7 +44,8 @@
 | `exprtk/` | 表达式引擎封装(`vlink::exprtk_api`,PIMPL 共享库) | `doc/01-started.md`、`doc/10-cli-tools.md`(API 无专节) |
 | `cmake/`、`conanfile.py`、`Android.bp`、`tools/vcpkg/`、`packup/` | CMake/Conan/Soong/vcpkg 构建、安装与打包 | `doc/01-started.md`;运行时变量另见 `doc/13-integration.md` |
 | `tools/` | 维护脚本:`format.sh`、`check.sh`、`update_version.sh`、平台脚本 | — |
-| `.github/workflows`、`.github/scripts` | CI、发布、AI 评审与社区 mention 回复 | — |
+| `.github/workflows`、`.github/scripts` | CI、发布与对应 runner 脚本 | — |
+| `.github/copilot-instructions.md` | GitHub 原生 Copilot 的仓库级规则入口 | `AGENTS.md`、`.agents/README.md` |
 | `doc/` | 用户文档 00–15 章(中文)+ Doxygen 配置 | 自身 |
 
 ## 4. 工程设施
@@ -53,8 +54,9 @@
 | ---- | ---- |
 | `.clang-format` / `.clang-tidy` | 格式与静态检查配置;误报只按 CPP.md §11 做最小范围 NOLINT |
 | `tools/` | 维护脚本;版本同步入口为 `update_version.sh`,脚本编码规则见 `languages/SHELL.md`/`BATCH.md`/`POWERSHELL.md` 并保持相邻入口接口 |
-| `.github/workflows/` | CI、发布、PR AI 评审及 `community-ai-reply.yml`;触发矩阵见 `/cicd` skill |
-| `.github/scripts/` | CI 脚本及 `community-ai-reply.py` 上下文清洗、发布与回读入口 |
+| `.github/workflows/` | CI 与发布工作流;触发矩阵见 `/cicd` skill |
+| `.github/scripts/` | CI、打包、发布与通知脚本 |
+| `.github/copilot-instructions.md` | 原生 Copilot Agent/Review 的仓库指令,继续按根 `AGENTS.md` 路由 |
 | `.github/wiki/` | GitHub Wiki 落地页(`index.html`),与 `doc/` 同源,同步规则见 `DOCS-AND-FORMATTING.md` |
 | `.agents/cache-report/` | 本地评审/审计报告缓存,已忽略提交 |
 | `cmake/functions/common.cmake` | `vlink_test_sanitize` / `vlink_test_coverage` 等构建函数 |

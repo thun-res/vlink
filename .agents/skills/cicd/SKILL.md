@@ -19,8 +19,6 @@ description: >-
 | `ci-agent-skills.yml` | ✔ | ✔ | — | — | ✔ | — |
 | `ci-lint.yml` | ✔ | ✔ | — | — | ✔ | — |
 | `ci-test.yml` | ✔ | ✔ | — | — | ✔ | — |
-| `ai-code-review.yml` | ✔ | — | — | — | — | — |
-| `community-ai-reply.yml`² | — | — | — | — | — | — |
 | `ci-coverage.yml` | — | — | — | 每周 | ✔ | ✔ |
 | `docker-images.yml` | — | — | — | — | ✔ | ✔ |
 | `release-portable-linux.yml` | — | — | — | — | — | ✔ |
@@ -32,18 +30,12 @@ description: >-
 ¹ `ci-agent-skills.yml`、`ci-lint.yml` 与 `ci-test.yml` 的 push 分支为
 `master`/`main`/`develop`/`dev`;PR 使用同一分支集合。`ci-lint.yml` 与
 `ci-test.yml` 忽略纯 `**.md`、`doc/**`、`.github/wiki/**` 改动;
-`ci-agent-skills.yml` 只处理 `AGENTS.md`、`.agents/**` 及对应安装、
-校验入口和根 `AI-POLICY.md`。`ai-code-review.yml` 只处理 opened、
-synchronize、ready_for_review、reopened。
+`ci-agent-skills.yml` 只处理 `AGENTS.md`、`AI-POLICY.md`、`.agents/**`、
+`.github/copilot-instructions.md` 及对应安装、校验入口。
 
-² `community-ai-reply.yml` 由 `issues`、`issue_comment`、`discussion`
-和 `discussion_comment` 的创建/编辑事件触发。Issue/Discussion 的
-`@codex`/`@claude` 与 PR 普通评论的 `@codex` 会在触发者的
-`author_association` 为 `OWNER`、`MEMBER`、`COLLABORATOR` 或
-`CONTRIBUTOR` 时回复;PR `@claude` 不走该链路。该 workflow 必须位于
-默认分支;PR 裸 `@codex` 只读取线程,官方 `@codex review` 与普通回复互斥;
-`@codex` 需要 `OPENAI_API_KEY`,`@claude` 需要
-`CLAUDE_CODE_OAUTH_TOKEN`,不支持手动 dispatch。
+Copilot code review 是 GitHub 托管服务,不是仓库 Actions workflow,
+不支持通过本 skill dispatch、查看 job 日志或重跑。其自动审查设置在
+GitHub 账户/仓库中管理,不得把服务可用性配置为 CI 必需检查。
 
 `release.yml` 复用 docker、coverage 与四个 `release-*` 子工作流;
 四个子工作流只能由 `workflow_call` 调用,不能直接 dispatch。

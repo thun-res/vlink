@@ -12,11 +12,10 @@ on:
       - 'AI-POLICY.md'
       - '.agents/**'
       - 'tools/install_skills.sh'
-      - '.github/scripts/community-ai-reply.py'
-      - '.github/scripts/test-community-ai-reply.py'
+      - '.github/copilot-instructions.md'
+      - '.github/scripts/test-validate-agent-skills.sh'
       - '.github/scripts/validate-agent-skills.sh'
       - '.github/workflows/ci-agent-skills.yml'
-      - '.github/workflows/community-ai-reply.yml'
   push:
     branches:
       - master
@@ -28,11 +27,10 @@ on:
       - 'AI-POLICY.md'
       - '.agents/**'
       - 'tools/install_skills.sh'
-      - '.github/scripts/community-ai-reply.py'
-      - '.github/scripts/test-community-ai-reply.py'
+      - '.github/copilot-instructions.md'
+      - '.github/scripts/test-validate-agent-skills.sh'
       - '.github/scripts/validate-agent-skills.sh'
       - '.github/workflows/ci-agent-skills.yml'
-      - '.github/workflows/community-ai-reply.yml'
   workflow_dispatch:
 
 permissions:
@@ -54,20 +52,15 @@ jobs:
           persist-credentials: false
 
       - name: Check shell syntax
-        run: bash -n tools/install_skills.sh .github/scripts/validate-agent-skills.sh
+        run: |
+          bash -n tools/install_skills.sh
+          bash -n .github/scripts/test-validate-agent-skills.sh
+          bash -n .github/scripts/validate-agent-skills.sh
 
-      - name: Check Python syntax
+      - name: Test Agent skill validator
         env:
           PYTHONPYCACHEPREFIX: ${{ github.workspace }}/build-ai/ci-agent-skills/__pycache__
-        run: >-
-          python3 -m py_compile
-          .github/scripts/community-ai-reply.py
-          .github/scripts/test-community-ai-reply.py
-
-      - name: Test community AI reply helper
-        env:
-          PYTHONPYCACHEPREFIX: ${{ github.workspace }}/build-ai/ci-agent-skills/__pycache__
-        run: python3 .github/scripts/test-community-ai-reply.py
+        run: bash .github/scripts/test-validate-agent-skills.sh
 
       - name: Validate Agent skills
         env:

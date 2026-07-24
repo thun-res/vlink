@@ -53,29 +53,27 @@
 - 工作流:`ci-agent-skills.yml`(Agent skill 结构与元数据)、
   `ci-lint.yml`(format + cpplint + clang-tidy)、
   `ci-test.yml`(Linux+ASan / macOS / Windows)、`ci-coverage.yml`、
-  `release.yml`、`ai-code-review.yml`、`community-ai-reply.yml` 等;
-  完整触发矩阵见 `/cicd`,实际执行脚本在 `.github/scripts/`,本地复现
-  以脚本为准。
+  `release.yml` 等;完整触发矩阵见 `/cicd`,实际执行脚本在
+  `.github/scripts/`,本地复现以脚本为准。
 - 触发矩阵、dispatch 命令、失败日志查看与重跑口径见 `/cicd` skill;
   本地复现:lint 失败 → `/format` `/check` `/clang-tidy`;Linux ASan
   或内存错误 → `/asan`;普通单元测试或 macOS/Windows 非 ASan 失败
   → `/test`,并按对应 job 日志在同平台复现。
 - 代码性失败先修代码再 push;仅环境抖动(网络/runner 超时)才直接
   重跑。
-- `community-ai-reply.yml` 响应 Issue/Discussion 标题、正文或评论中的
-  `@codex`/`@claude`,也响应 PR 普通评论中的 `@codex`;提问正文由人或 AI
-  生成均可,但触发者的 GitHub `author_association` 必须是 `OWNER`、
-  `MEMBER`、`COLLABORATOR` 或 `CONTRIBUTOR`,GitHub `Bot` 账户和工作流
-  自身回复除外。模型生成 job 只读,发布 job 按目标隔离
-  `issues: write`/`pull-requests: write`/`discussions: write`,发布前重读
-  当前 mention、身份并核对生成时正文摘要,且只信任
-  `github-actions[bot]` 的幂等 marker。PR 的 `@claude` 不走本工作流。
-  PR 裸 `@codex` 只依据 PR 线程回答,不读取 diff;官方 `@codex review`
-  命令不走此普通回复链路,由 Codex code review 处理,避免双重触发。
-- `@codex` 和 `@claude` 分别依赖名称完全一致的仓库 Actions secret
-  `OPENAI_API_KEY` 和 `CLAUDE_CODE_OAUTH_TOKEN`;不得记录或回显 secret。
-  社区事件工作流必须进入默认分支才会上线。公开 mention 会消耗外部模型
-  配额,上线前由管理员配置独立项目、速率/用量监控和密钥轮换。
+- PR 代码审查只使用 GitHub 内置 Copilot code review,不由仓库
+  GitHub Actions 调用模型。单个 PR 在 Reviewers 中手动请求 Copilot。
+- 个人账户的 Automatic Copilot code review 仅自动审查本人创建的 PR;
+  仓库或组织范围通过 branch ruleset 的
+  `Automatically request Copilot code review` 配置。需要每次推送复审时,
+  在该 ruleset 中启用 `Review new pushes`。
+- Copilot review 只发表评论,不得配置为智能体必需状态检查;额度、认证或
+  服务暂不可用不能变成 CI 门禁失败。Issue 与 Discussion 不设自动回复,
+  仓库不得维护模型供应商 secret、模型 action 或 mention handler。
+- `.github/copilot-instructions.md` 是 Copilot 的仓库级入口,继续要求
+  读取根 `AGENTS.md` 和本分册。Automatic Copilot code review 属于
+  GitHub 账户/仓库外部设置,无法仅由仓库提交证明已启用,核对时必须如实
+  区分文件配置与实时设置状态。
 
 ## 4. Workflow 与 Dockerfile
 
