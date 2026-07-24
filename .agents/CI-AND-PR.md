@@ -62,6 +62,13 @@
   → `/test`,并按对应 job 日志在同平台复现。
 - 代码性失败先修代码再 push;仅环境抖动(网络/runner 超时)才直接
   重跑。
+- `ai-code-review.yml` 在非 draft、同仓库且非 Bot 的 PR opened、
+  synchronize、ready_for_review、reopened 事件中,用只读
+  `openai/codex-action` 审查 base/head 提交区间,再由独立的
+  `pull-requests: write` job 发布简体中文顶层评论;同一 base/head 提交
+  区间只发布一次。可信成员在 PR 普通评论中发送精确命令
+  `@codex review`,可通过 `issue_comment` created 事件触发同一审查链路;
+  关闭 PR 只取消同一并发组中的在途审查。
 - `community-ai-reply.yml` 响应 Issue/Discussion 标题、正文或评论中的
   `@codex`/`@claude`,也响应 PR 普通评论中的 `@codex`;提问正文由人或 AI
   生成均可,但触发者的 GitHub `author_association` 必须是 `OWNER`、
@@ -70,12 +77,14 @@
   `issues: write`/`pull-requests: write`/`discussions: write`,发布前重读
   当前 mention、身份并核对生成时正文摘要,且只信任
   `github-actions[bot]` 的幂等 marker。PR 的 `@claude` 不走本工作流。
-  PR 裸 `@codex` 只依据 PR 线程回答,不读取 diff;官方 `@codex review`
-  命令不走此普通回复链路,由 Codex code review 处理,避免双重触发。
-- `@codex` 和 `@claude` 分别依赖名称完全一致的仓库 Actions secret
-  `OPENAI_API_KEY` 和 `CLAUDE_CODE_OAUTH_TOKEN`;不得记录或回显 secret。
-  社区事件工作流必须进入默认分支才会上线。公开 mention 会消耗外部模型
-  配额,上线前由管理员配置独立项目、速率/用量监控和密钥轮换。
+  PR 裸 `@codex` 只依据 PR 线程回答,不读取 diff;`@codex review` 不走
+  此普通回复链路,由 `ai-code-review.yml` 处理,避免双重触发。
+- Codex 自动 PR 审查、`@codex review` 与普通 `@codex` 回复都依赖名称
+  完全一致的仓库 Actions secret `OPENAI_API_KEY`;`@claude` 与 Claude
+  PR 审查依赖 `CLAUDE_CODE_OAUTH_TOKEN`,不得记录或回显 secret。社区和
+  PR 评论事件工作流必须进入默认分支才会上线。公开 mention 与自动审查
+  会消耗外部模型配额,上线前由管理员配置独立项目、速率/用量监控和密钥
+  轮换。
 
 ## 4. Workflow 与 Dockerfile
 
