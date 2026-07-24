@@ -38,22 +38,22 @@
  * @c set() / @c get() implementations.
  *
  * @par Codec Table -- @c Serializer::Type Enum
- * | Constant            | C++ Type Criterion                  | Trait check             | Notes                       |
- * | ------------------- | ----------------------------------- | ----------------------- | --------------------------- |
- * | @c kBytesType       | @c T == @c Bytes                    | @c is_bytes_type        | Pass-through, no codec.     |
- * | @c kDynamicType     | Has @c is_vlink_dynamic_data()      | @c is_dynamic_type      | Dynamic typed data.         |
- * | @c kCdrType         | FastDDS IDL or ROS2 message type    | @c is_cdr_type          | Encapsulated CDR bytes.     |
- * | @c kProtoType       | Has SerializeToArray/ParseFromArray | @c is_proto_type        | Protobuf-like value.        |
- * | @c kProtoPtrType    | Pointer with proto serialize/parse  | @c is_proto_ptr_type    | Caller owns the pointee.    |
- * | @c kFlatTableType   | Derives from FB NativeTable         | @c is_flat_table_type   | FlatBuffers object API.     |
- * | @c kFlatPtrType     | Pointer to @c flatbuffers::Table    | @c is_flat_ptr_type     | Zero-copy FlatBuffers view. |
- * | @c kFlatBuilderType | Has @c fbb_ member and @c Finish()  | @c is_flat_builder_type | FlatBuffers builder.        |
- * | @c kCustomType      | Has @c operator>>/<<(Bytes&)        | @c is_custom_type       | User-supplied codec.        |
- * | @c kStringType      | @c T == @c std::string              | @c is_string_type       | Payload-sized byte string.  |
- * | @c kCharsType       | Pointer/array of non-volatile char   | @c is_chars_type        | Serialisation only. | | @c
- * kStreamType      | Streamable via @c std::stringstream | @c is_stream_type       | Reached only as fallback.   | | @c
- * kStandardType    | Trivial standard-layout value (POD) | @c is_standard_type     | @c sizeof(T) byte copy.     | | @c
- * kStandardPtrType | Pointer to trivial standard-layout  | @c is_standard_ptr_type | Zero-copy POD pointer.      |
+ * | Constant             | C++ criterion                    | Trait                   | Notes              |
+ * | -------------------- | -------------------------------- | ----------------------- | ------------------ |
+ * | @c kBytesType        | @c T is @c Bytes                 | @c is_bytes_type        | Pass-through.      |
+ * | @c kDynamicType      | Has @c is_vlink_dynamic_data()   | @c is_dynamic_type      | Dynamic data.      |
+ * | @c kCdrType          | FastDDS IDL or ROS 2 type        | @c is_cdr_type          | CDR bytes.         |
+ * | @c kProtoType        | Protobuf-like value              | @c is_proto_type        | Protobuf value.    |
+ * | @c kProtoPtrType     | Protobuf-like pointer            | @c is_proto_ptr_type    | Caller-owned.      |
+ * | @c kFlatTableType    | FlatBuffers NativeTable          | @c is_flat_table_type   | Object API.        |
+ * | @c kFlatPtrType      | Pointer to @c flatbuffers::Table | @c is_flat_ptr_type     | Zero-copy view.    |
+ * | @c kFlatBuilderType  | Has @c fbb_ and @c Finish()      | @c is_flat_builder_type | Builder.           |
+ * | @c kCustomType       | Has @c operator>>/<<(Bytes&)     | @c is_custom_type       | Custom codec.      |
+ * | @c kStringType       | @c T is @c std::string           | @c is_string_type       | Byte string.       |
+ * | @c kCharsType        | Character pointer or array       | @c is_chars_type        | Serialise only.    |
+ * | @c kStreamType       | Supports @c std::stringstream    | @c is_stream_type       | Fallback.          |
+ * | @c kStandardType     | Trivial standard-layout value    | @c is_standard_type     | Byte copy.         |
+ * | @c kStandardPtrType  | Pointer to trivial standard type | @c is_standard_ptr_type | Zero-copy pointer. |
  *
  * Most value-like detectors unwrap @c std::shared_ptr\<T\> before matching
  * (e.g. Protobuf values, CDR values, FlatBuffers native tables, custom

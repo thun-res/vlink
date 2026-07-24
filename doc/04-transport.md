@@ -348,7 +348,7 @@ sub.listen([](const float& v) { VLOG_I("recv: ", v); });
 
 ### 📦 4.6.7 mqtt:// / fdbus://（Beta）
 
-**mqtt://** — 面向物联网的轻量发布/订阅，适用于带宽受限、网络不稳定场景，依赖外部 MQTT Broker（Mosquitto、EMQX 等）。`?qos=` 为 MQTT 自身的 0/1/2 级别，`#tcp://ip:1883` 可覆盖 Broker 地址。
+**mqtt://** — 面向物联网的轻量发布/订阅，适用于带宽受限、网络不稳定场景，依赖外部 MQTT Broker（Mosquitto、EMQX 等）。`?event=` 设置次级事件名；`?domain=` 设置隔离域，默认读取 `VLINK_MQTT_DOMAIN`（未设置时为 `0`）；`?qos=` 为 MQTT 自身的 0/1/2 级别，默认读取 `VLINK_MQTT_QOS`（未设置时为 `1`）；`#tcp://ip:1883` 可覆盖 Broker 地址。
 
 ```cpp
 vlink::Publisher<std::string> pub("mqtt://sensor/data");
@@ -358,7 +358,7 @@ vlink::Subscriber<std::string> sub("mqtt://sensor/data");
 sub.listen([](const std::string& msg) { VLOG_I("recv: ", msg); });
 ```
 
-**fdbus://** — 面向 Android/Linux 的轻量 IPC，语义类 D-Bus。`#svc`（经名称服务发现，默认）或 `#ipc`（直接 P2P）选择模式；`svc` 模式需系统中运行 fdbus 名称服务进程 `name_server`。
+**fdbus://** — 面向 Android/Linux 的轻量 IPC，语义类 D-Bus。`?event=` 设置次级事件名；`#svc`（经名称服务发现，默认）或 `#ipc`（直接 P2P）选择模式；`svc` 模式需系统中运行 fdbus 名称服务进程 `name_server`。
 
 ```cpp
 vlink::Publisher<std::string> pub("fdbus://my_service");

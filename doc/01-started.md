@@ -197,6 +197,7 @@ output/
 | `ENABLE_VIEWER` | `OFF` | 编译桌面 Viewer（需 Qt + `ENABLE_PROXY`） |
 | `ENABLE_WEBVIZ` | `OFF` | 编译 WebViz 桥接（Foxglove / Rerun，需 `ENABLE_PROXY`） |
 | `ENABLE_DOC` | `OFF` | 构建 Doxygen 文档（需 doxygen + graphviz） |
+| `ENABLE_COMPLETIONS` | `ON` | 在非 Windows 平台安装 Shell 补全脚本 |
 
 Viewer / WebViz 子开关：`ENABLE_VIEWER_FFMPEG`、`ENABLE_VIEWER_OSG`、`ENABLE_WEBVIZ_FOXGLOVE`、`ENABLE_WEBVIZ_RERUN`，按需启用对应渲染/导出能力。
 
