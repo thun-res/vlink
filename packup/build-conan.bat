@@ -27,14 +27,14 @@
 ::   cmake >= 3.15 on PATH
 ::   Visual Studio 2019+ with C++ workload (cl.exe reachable via vcvars)
 ::
-setlocal enabledelayedexpansion
+setlocal DisableDelayedExpansion
 
-set VSLANG=1033
-set DOTNET_CLI_UI_LANGUAGE=en
+set "VSLANG=1033"
+set "DOTNET_CLI_UI_LANGUAGE=en"
 
 set "WORK_DIR=%~dp0"
-set "WORK_DIR=!WORK_DIR:\=/!"
-if "!WORK_DIR:~-1!"=="/" set "WORK_DIR=!WORK_DIR:~0,-1!"
+set "WORK_DIR=%WORK_DIR:\=/%"
+if "%WORK_DIR:~-1%"=="/" set "WORK_DIR=%WORK_DIR:~0,-1%"
 
 set "GITHUB_URL="
 set "PROJECT_DIR="
@@ -88,11 +88,11 @@ echo ********************************************
 echo.
 
 set "SRC_DIR=%PROJECT_DIR%"
-set "SRC_DIR=!SRC_DIR:\=/!"
-if "!SRC_DIR:~-1!"=="/" set "SRC_DIR=!SRC_DIR:~0,-1!"
-set "BUILD_DIR=!SRC_DIR!/build-conan"
-set "INSTALL_DIR=!BUILD_DIR!/install"
-set "PACKUP_DIR=!BUILD_DIR!/packup/win32/vlink"
+set "SRC_DIR=%SRC_DIR:\=/%"
+if "%SRC_DIR:~-1%"=="/" set "SRC_DIR=%SRC_DIR:~0,-1%"
+set "BUILD_DIR=%SRC_DIR%/build-conan"
+set "INSTALL_DIR=%BUILD_DIR%/install"
+set "PACKUP_DIR=%BUILD_DIR%/packup/win32/vlink"
 
 if exist "%BUILD_DIR%" rmdir /s /q "%BUILD_DIR%"
 
@@ -200,7 +200,7 @@ if exist "%BUILD_DIR%\output\bin\iox-roudi.exe" (
     cmake -E copy "%BUILD_DIR%/iox-roudi.exe" "%PACKUP_DIR%/bin/"
 )
 
-set QT_VERSION=
+set "QT_VERSION="
 for /f "delims=" %%i in ('"%QT_DIR%\bin\qmake" -query QT_VERSION') do set QT_VERSION=%%i
 echo QT_VERSION=%QT_VERSION%
 
@@ -254,9 +254,9 @@ if "%QT_VERSION:~0,2%"=="5." (
     exit /b 3
 )
 
-set OSG_VERSION=3.6.5
-set OSG_PREFIX2=ot21-
-set OSG_PREFIX3=osg161-
+set "OSG_VERSION=3.6.5"
+set "OSG_PREFIX2=ot21-"
+set "OSG_PREFIX3=osg161-"
 
 if not "%OSG_DIR%"=="" (
     echo OSG_VERSION=%OSG_VERSION%
@@ -294,55 +294,67 @@ if exist "%WORK_DIR%\win32\uninstall.bat" cmake -E copy "%WORK_DIR%/win32/uninst
 if exist "%WORK_DIR%\win32\setup_runtime.bat" cmake -E copy "%WORK_DIR%/win32/setup_runtime.bat" "%PACKUP_DIR%/"
 echo Copying MSVC runtime files from Visual Studio redist...
 set "MSVC_CRT_DIR="
+set "MSVC_REDIST_CANDIDATE="
 if defined VCToolsRedistDir (
-    call :find_msvc_crt_in_redist_root "!VCToolsRedistDir!"
-    if not defined MSVC_CRT_DIR call :find_msvc_crt_in_redist_parent "!VCToolsRedistDir!"
+    set "MSVC_REDIST_CANDIDATE=%VCToolsRedistDir%"
+    call :find_msvc_crt_in_redist_root
+    if not defined MSVC_CRT_DIR call :find_msvc_crt_in_redist_parent
 )
 if not defined MSVC_CRT_DIR (
     if defined VCINSTALLDIR (
-        call :find_msvc_crt_in_redist_parent "!VCINSTALLDIR!\Redist\MSVC"
+        set "MSVC_REDIST_CANDIDATE=%VCINSTALLDIR%\Redist\MSVC"
+        call :find_msvc_crt_in_redist_parent
     )
 )
 if not defined MSVC_CRT_DIR (
     if defined VSINSTALLDIR (
-        call :find_msvc_crt_in_redist_parent "!VSINSTALLDIR!\VC\Redist\MSVC"
+        set "MSVC_REDIST_CANDIDATE=%VSINSTALLDIR%\VC\Redist\MSVC"
+        call :find_msvc_crt_in_redist_parent
     )
 )
+set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if not defined MSVC_CRT_DIR (
-    set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
-    if exist "!VSWHERE!" (
-        for /f "usebackq delims=" %%v in (`"!VSWHERE!" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do (
-            call :find_msvc_crt_in_redist_parent "%%~fv\VC\Redist\MSVC"
+    if exist "%VSWHERE%" (
+        for /f "usebackq delims=" %%v in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do (
+            set "MSVC_REDIST_CANDIDATE=%%~fv\VC\Redist\MSVC"
+            call :find_msvc_crt_in_redist_parent
         )
     )
 )
 if not defined MSVC_CRT_DIR (
     for /d %%v in ("%ProgramFiles%\Microsoft Visual Studio\20*") do (
         for /d %%e in ("%%~fv\*") do (
-            if exist "%%~fe\VC\Redist\MSVC" call :find_msvc_crt_in_redist_parent "%%~fe\VC\Redist\MSVC"
+            if exist "%%~fe\VC\Redist\MSVC" (
+                set "MSVC_REDIST_CANDIDATE=%%~fe\VC\Redist\MSVC"
+                call :find_msvc_crt_in_redist_parent
+            )
         )
     )
 )
 if not defined MSVC_CRT_DIR (
     for /d %%v in ("%ProgramFiles(x86)%\Microsoft Visual Studio\20*") do (
         for /d %%e in ("%%~fv\*") do (
-            if exist "%%~fe\VC\Redist\MSVC" call :find_msvc_crt_in_redist_parent "%%~fe\VC\Redist\MSVC"
+            if exist "%%~fe\VC\Redist\MSVC" (
+                set "MSVC_REDIST_CANDIDATE=%%~fe\VC\Redist\MSVC"
+                call :find_msvc_crt_in_redist_parent
+            )
         )
     )
 )
+set "MSVC_REDIST_CANDIDATE="
 if not defined MSVC_CRT_DIR (
     echo Error: MSVC x64 CRT redist directory not found.
     echo Install the Visual Studio C++ Redistributable component or run from a Visual Studio Developer Command Prompt.
     exit /b 2
 )
-echo MSVC_CRT_DIR=!MSVC_CRT_DIR!
-for /f "delims=" %%f in ('dir /b "!MSVC_CRT_DIR!\*.dll" 2^>nul') do (
-    cmake -E copy "!MSVC_CRT_DIR!\%%f" "!PACKUP_DIR!/bin/"
-    if !errorlevel! neq 0 exit /b 2
+echo MSVC_CRT_DIR="%MSVC_CRT_DIR%"
+for /f "delims=" %%f in ('dir /b "%MSVC_CRT_DIR%\*.dll" 2^>nul') do (
+    cmake -E copy "%MSVC_CRT_DIR%\%%f" "%PACKUP_DIR%/bin/"
+    if errorlevel 1 exit /b 2
 )
 for %%f in (vcruntime140.dll msvcp140.dll) do (
-    if not exist "!PACKUP_DIR!\bin\%%f" (
-        echo Error: failed to copy %%f from !MSVC_CRT_DIR!
+    if not exist "%PACKUP_DIR%\bin\%%f" (
+        echo Error: failed to copy %%f from "%MSVC_CRT_DIR%"
         exit /b 2
     )
 )
@@ -408,9 +420,9 @@ if not "%QT_DIR%"=="" (
     ) else if exist "%QT_DIR%\..\Licenses" (
         cmake -E copy_directory "%QT_DIR%/../Licenses" "%PACKUP_DIR%/licenses/qt/"
     )
-    set "_has_icu=0"
+    set "_has_icu="
     for /f "delims=" %%f in ('dir /b "%PACKUP_DIR%\bin\icu*.dll" 2^>nul') do set "_has_icu=1"
-    if "!_has_icu!"=="1" (
+    if defined _has_icu (
         cmake -E make_directory "%PACKUP_DIR%/licenses/icu"
         if exist "%WORK_DIR%\licenses\icu\README.md" cmake -E copy "%WORK_DIR%/licenses/icu/README.md" "%PACKUP_DIR%/licenses/icu/"
     )
@@ -493,7 +505,7 @@ exit /b 0
 
 if not exist "%WORK_DIR%\installer\config\config.xml" (
     echo Warning: Installer templates not found, skipping installer creation.
-    echo Packup directory: %PACKUP_DIR%
+    echo Packup directory: "%PACKUP_DIR%"
     echo Done.
     exit /b 0
 )
@@ -547,12 +559,12 @@ echo.
 
 if %errorlevel% neq 0 (
     echo Error: binarycreator failed!
-    echo Packup directory: %PACKUP_DIR%
+    echo Packup directory: "%PACKUP_DIR%"
     exit /b 2
 ) else (
     echo.
     echo ********************************************
-    echo *** Installer created: %OUTPUT_PATH%
+    echo *** Installer created: "%OUTPUT_PATH%"
     echo ********************************************
 )
 
@@ -563,18 +575,19 @@ exit /b 0
 
 :find_msvc_crt_in_redist_parent
 if defined MSVC_CRT_DIR exit /b 0
-set "_msvc_redist_parent=%~1"
+set "_msvc_redist_parent=%MSVC_REDIST_CANDIDATE%"
 if "%_msvc_redist_parent%"=="" exit /b 0
 if not exist "%_msvc_redist_parent%" exit /b 0
 for /f "delims=" %%v in ('dir /b /ad /o-n "%_msvc_redist_parent%" 2^>nul') do (
-    call :find_msvc_crt_in_redist_root "%_msvc_redist_parent%\%%v"
+    set "MSVC_REDIST_CANDIDATE=%_msvc_redist_parent%\%%v"
+    call :find_msvc_crt_in_redist_root
     if defined MSVC_CRT_DIR exit /b 0
 )
 exit /b 0
 
 :find_msvc_crt_in_redist_root
 if defined MSVC_CRT_DIR exit /b 0
-set "_msvc_redist_root=%~1"
+set "_msvc_redist_root=%MSVC_REDIST_CANDIDATE%"
 if "%_msvc_redist_root%"=="" exit /b 0
 for /d %%d in ("%_msvc_redist_root%\x64\Microsoft.VC*.CRT") do (
     set "MSVC_CRT_DIR=%%~fd"

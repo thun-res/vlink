@@ -19,31 +19,30 @@ echo ^| ^|___/  /_____/ /_/ /_/ /_/ /_/^|_^|    ^|
 echo ^|                                      ^|
 echo +--------------------------------------+
 
-setlocal enabledelayedexpansion
-if exist "%VLINK_ROOT_DIR%\version.txt" (
-    for /f "delims=" %%i in ('type "%VLINK_ROOT_DIR%\version.txt"') do set "version=%%i"
-    echo Version: !version!
-)
+setlocal DisableDelayedExpansion
+set "version="
+if exist "%VLINK_ROOT_DIR%\version.txt" set /p "version="<"%VLINK_ROOT_DIR%\version.txt"
+if defined version echo Version: %version%
 endlocal
 
-if exist "%VLINK_PROTO_DIR_CONFIG%" (
-    setlocal enabledelayedexpansion
-    set /p proto_dir=<"%VLINK_PROTO_DIR_CONFIG%"
-    echo VLINK_PROTO_DIR: !proto_dir!
-    for /f "delims=" %%j in ("!proto_dir!") do (
-        endlocal
-        set "VLINK_PROTO_DIR=%%j"
-    )
+setlocal DisableDelayedExpansion
+set "proto_dir="
+if exist "%VLINK_PROTO_DIR_CONFIG%" set /p "proto_dir="<"%VLINK_PROTO_DIR_CONFIG%"
+if defined proto_dir (
+    echo VLINK_PROTO_DIR: "%proto_dir%"
+    endlocal & set "VLINK_PROTO_DIR=%proto_dir%"
+) else (
+    endlocal
 )
 
-if exist "%VLINK_FBS_DIR_CONFIG%" (
-    setlocal enabledelayedexpansion
-    set /p fbs_dir=<"%VLINK_FBS_DIR_CONFIG%"
-    echo VLINK_FBS_DIR: !fbs_dir!
-    for /f "delims=" %%j in ("!fbs_dir!") do (
-        endlocal
-        set "VLINK_FBS_DIR=%%j"
-    )
+setlocal DisableDelayedExpansion
+set "fbs_dir="
+if exist "%VLINK_FBS_DIR_CONFIG%" set /p "fbs_dir="<"%VLINK_FBS_DIR_CONFIG%"
+if defined fbs_dir (
+    echo VLINK_FBS_DIR: "%fbs_dir%"
+    endlocal & set "VLINK_FBS_DIR=%fbs_dir%"
+) else (
+    endlocal
 )
 
 echo Support commands: [proxy] [info] [monitor] [bag] [trigger] [list] [eproto] [efbs] [parse] [check] [bench] [viewer] [player] [analyzer] [webviz]
