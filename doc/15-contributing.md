@@ -181,13 +181,31 @@ QoS 档语义与自定义见 [QoS 配置](05-qos.md)；传输后端选型见 [�
 
 ## ⚙️ 15.5 编译与运行
 
-测试目标为 `vlink-test`，由 `ctest` 统一调度。
+核心 C++ 测试目标为 `vlink-test`，由 `ctest` 统一调度。完整普通测试
+还包括独立的 `vlink-c-test` 与三个 Python 绑定脚本；这些绑定测试未注册
+到 CTest，必须分别执行。C API 测试固定使用 Fast DDS 的 `dds://`，运行
+前将 `VLINK_DDS_IP` 设为回环地址以避免多网卡选择不稳定。
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_TEST=ON
-cmake --build build --target vlink-test -j
-ctest --test-dir build --output-on-failure
+cmake -B build -DCMAKE_BUILD_TYPE=Release \
+  -DENABLE_TEST=ON -DENABLE_C_API=ON -DENABLE_PYTHON_API=ON
+cmake --build build \
+  --target vlink-test vlink-proxy vlink-c-test _vlink_nanobind -j
+BUILD_DIR=build .github/scripts/run-posix-ci-tests.sh
+
+export VLINK_DDS_IP=127.0.0.1
+export PYTHONPATH="$PWD/build/output/lib"
+export LD_LIBRARY_PATH="$PWD/build/output/bin:$PWD/build/output/lib:$PWD/build/output/external/lib:${LD_LIBRARY_PATH:-}"
+./build/output/bin/vlink-c-test
+python3 languages/python_api/test/test_vlink.py
+python3 languages/python_api/test/test_vlink_full.py
+python3 languages/python_api/test/test_vlink_coverage.py
 ```
+
+macOS 将上例的 `LD_LIBRARY_PATH` 换为 `DYLD_LIBRARY_PATH`。Windows 使用
+`.github/scripts/run-windows-ci-tests.ps1` 运行 CTest，并执行同名
+`vlink-c-test.exe` 与三个 Python 脚本。Python 绑定构建需要可被当前
+解释器发现的 nanobind。
 
 按 suite 或 case 过滤，其余 flag 见 doctest 官方文档：
 
@@ -271,7 +289,7 @@ git push -u origin feat/add-websocket-transport-42
 
 **构建**
 
-- [ ] `cmake -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_TEST=ON -DENABLE_TEST_WARN=ON` 通过（`ENABLE_TEST_WARN` 给 `vlink` 库目标加 `PUBLIC` 的 `-Wall -Wpedantic -Wextra -Werror`，并经依赖传播到测试目标；需同时开 `ENABLE_TEST` 才会编译测试）
+- [ ] `cmake -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_TEST=ON -DENABLE_TEST_WARN=ON -DENABLE_C_API=ON -DENABLE_PYTHON_API=ON` 通过（`ENABLE_TEST_WARN` 给 `vlink` 库目标加 `PUBLIC` 的 `-Wall -Wpedantic -Wextra -Werror`，并经依赖传播到测试目标；需同时开 `ENABLE_TEST` 才会编译测试）
 - [ ] `cmake --build build -j` 全量通过；改动 module/CLI 的，对应 `ENABLE_*` 开关在 ON/OFF 两种状态下均通过
 - [ ] 不提交 `build/` 目录与任何二进制产物
 
@@ -279,6 +297,7 @@ git push -u origin feat/add-websocket-transport-42
 
 - [ ] 新功能至少 1 条正常 + 1 条边界/异常用例；修复 bug 必带能复现该 bug 的回归测试
 - [ ] `ctest --test-dir build --output-on-failure` 全部通过（[§15.15](#-1515-测试要求)）
+- [ ] `vlink-c-test` 及 `languages/python_api/test/` 下的基础、完整、覆盖三个绑定脚本分别通过（[§15.5](#-155-编译与运行)）
 
 **文档**
 

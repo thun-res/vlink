@@ -43,7 +43,7 @@
 - 安装规则同步头文件、运行库、开发库、CMake export、namespace、
   version/config 文件与许可证组件;同时验证 build tree 和 install tree。
 - 公开模块、选项或生成物变化按影响面同步 `doc/`、examples、
-  python_api 与 package 配置(如适用);公共安装/export 变化必须验证
+  `languages/python_api` 与 package 配置(如适用);公共安装/export 变化必须验证
   下游消费者能从 install tree 正常 `find_package` 和链接。
 - 只有维护者明确要求时才对本次触及的 CMake 文件运行
   `cmake-format`;显式调用 `/format` 时运行全仓 `tools/format.sh`,
@@ -53,3 +53,7 @@
   其他构建目录,也不得直接把 `build-ai` 作为构建目录。
   可能启动 Python 时,`PYTHONPYCACHEPREFIX` 必须指向
   `{project}/build-ai/<task_name>/__pycache__`。
+- 编译前按根 `AGENTS.md` 第 6 条取得真实物理核心数,将
+  `max(物理核心数 - 1, 1)` 作为显式数值传给 `cmake --build --parallel`;
+  获取失败时使用 1。禁止让 CMake/生成器自行采用全部逻辑 CPU,也禁止
+  裸 `--parallel`、裸 `-j`、固定高并行度或同时启动多个本地构建。

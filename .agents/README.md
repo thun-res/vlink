@@ -8,7 +8,7 @@
 | 你要做的事 | 先加载 |
 | ---------- | ------ |
 | 任何任务 | 根 `AGENTS.md` |
-| 实现、修改、评审、验证、提交或发布 | `AI-POLICY.md` + 当前任务分册 |
+| 实现、修改、评审、验证、提交或发布 | 根 `AI-POLICY.md` + 当前任务分册 |
 | 浏览仓库 / 定位某段代码 | `REPO-REFERENCE.md` |
 | 找某个功能的代码入口与文档 | `FEATURE-INDEX.md` |
 | 写/改任何 C++ 代码 | `languages/CPP.md`(全文 13 节) |
@@ -31,7 +31,7 @@
 
 | 文件 | 内容 |
 | ---- | ---- |
-| [AI-POLICY.md](AI-POLICY.md) | AI 贡献责任、验证与复核政策 |
+| [AI-POLICY.md](../AI-POLICY.md) | AI 贡献责任、验证与复核政策 |
 | [REPO-REFERENCE.md](REPO-REFERENCE.md) | 目录 → 职责 → `doc/` 章节映射;`doc/` 章节总表;工程设施(lint/CI/脚本/版本);相关仓库 |
 | [FEATURE-INDEX.md](FEATURE-INDEX.md) | 全功能平铺索引(功能 → 代码入口 → doc 小节,渐进式披露) |
 | [languages/CPP.md](languages/CPP.md) | C++ 规范:克制、复用、许可证、命名、内存、并发、多平台、性能、注释、Lint 与流程 |
@@ -62,14 +62,17 @@ link 模式会立即看到新增 skill;copy 模式是安装时快照,skill 变�
 | `/format` | `tools/format.sh`:clang-format + cmake-format + 行尾符 |
 | `/check` | `tools/check.sh`:cpplint(120 列,项目过滤集) |
 | `/clang-tidy` | 指定文件或全仓 clang-tidy(WarningsAsErrors) |
-| `/test` | 按功能运行普通 `vlink-test` 全量/定向测试并诊断失败 |
+| `/test` | 运行普通 CTest、C/Python 绑定测试或定向 suite/case 并诊断失败 |
 | `/mock` | 按功能测试 CLI、Proxy、Viewer、WebViz 与 bag 数据集场景 |
 | `/asan` | `ENABLE_TEST_SANITIZE=ON` 构建并跑 ASan 单元测试 |
 | `/coverage` | `ENABLE_TEST_COVERAGE=ON` 生成 lcov 覆盖率报告 |
 | `/bench` | `vlink-bench` 性能基准(showcase/quick/full) |
 | `/deep-review` | 按范围、审查维度、对抗复核与报告分工执行重度评审 |
-| `/sync-review` | 按 API 使用面和横向易漂移项执行全仓同步审计 |
+| `/sync-review` | 按 API、构建打包、横向易漂移项与 `.github` 全表面执行同步审计 |
+| `/sync-agent` | 根据仓库事实同步 AGENTS.md、AI-POLICY.md、.agents 路由、索引与 skills |
 | `/report` | 结合仓库与当前行业证据分析 VLink 定位、前景和建议 |
+| `/issue` | 调查/创建/回复 Issue,维护 `@codex`/`@claude` 自动回复 |
+| `/discussion` | 调查/发布/回复 Discussion,维护 AI mention 自动回复 |
 | `/commit` | 强制通过 `/format` 与 `/check` 后,按模块/功能拆分并创建规范 commit |
 | `/pr` | 提交 dev 到 master,用中文填写云端内容并创建或更新 PR |
 | `/release` | 在 master 校验版本和 CI,用中文填写云端内容并发布 Release |

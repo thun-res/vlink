@@ -217,8 +217,9 @@ vlink/
 ├── proxy/           ProxyServer / ProxyAPI
 ├── viewer/          Qt desktop visualization tools
 ├── webviz/          Foxglove / Rerun bridges
-├── c_api/           C API (for Python / Rust FFI)
-├── python_api/      nanobind Python bindings
+├── languages/       multi-language bindings
+│   ├── c_api/       C API (for Python / Rust FFI)
+│   └── python_api/  nanobind Python bindings
 ├── examples/        usage examples (14 categories, 29 projects)
 ├── test/            test suite
 ├── doc/             documentation

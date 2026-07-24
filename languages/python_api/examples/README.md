@@ -1,10 +1,10 @@
-# python_api/examples — VLink Python 教学示例
+# languages/python_api/examples — VLink Python 教学示例
 
 本目录收录 **教学性** 的 Python 脚本，目的是帮助读者从零理解 VLink 的 Python
 绑定如何使用。每个文件都是 **独立可运行** 的——可以直接 `python3 xxx.py`
 执行，看到每个 demo 的 `[OK]` 行。
 
-> 与 `python_api/test/` 的区别：`test/` 验证绑定契约（断言+回归），
+> 与 `languages/python_api/test/` 的区别：`test/` 验证绑定契约（断言+回归），
 > 而 `examples/` 用同样的代码风格 **讲清楚 API 的使用方式**，注释解释
 > "WHY"，每个函数都可以直接复制成新脚本的起点。
 

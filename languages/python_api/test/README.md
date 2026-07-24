@@ -1,8 +1,8 @@
-# python_api/test — VLink Python 绑定测试
+# languages/python_api/test — VLink Python 绑定测试
 
 本目录承载 VLink Python 公开模块 `vlink`（底层扩展为 `_vlink_nanobind`）的功能与契约测试。
 
-> 与 `python_api/examples/` 的区别：本目录目标是 **验证绑定**（断言+回归），
+> 与 `languages/python_api/examples/` 的区别：本目录目标是 **验证绑定**（断言+回归），
 > 而 `examples/` 用同样的代码风格 **讲解 API 用法**。两者风格上接近，但
 > 用途不同——本目录文件不适合作为教学入门读物。
 
@@ -18,7 +18,7 @@
 
 三个文件相互独立，可以单独运行。三层覆盖的设计意图：
 
-- `test_vlink.py`：CI 烟雾测试入口（最快，跑通 = 绑定可用）
+- `test_vlink.py`：基础烟雾测试入口（最快，跑通 = 绑定可用）
 - `test_vlink_full.py`：本地 / 夜间深度跑，验证 schema / security / discovery 等高阶子系统
 - `test_vlink_coverage.py`：变更绑定时跑，确保关键 API surface 没有被无意删除
 
@@ -104,7 +104,7 @@ python3 test_vlink_coverage.py
 
 ## 与 examples 的关系
 
-本目录的代码与 `python_api/examples/` 的 demo 在 API 调用模式上是**镜像**关系：
+本目录的代码与 `languages/python_api/examples/` 的 demo 在 API 调用模式上是**镜像**关系：
 
 | 同主题 | `examples/` 的教学版本 | `test/` 的验证版本 |
 |---|---|---|

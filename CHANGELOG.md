@@ -7,7 +7,7 @@
 - **日志限频**：C++ 新增线程安全的调用点级 `VLOG_{T,D,I,W,E}_EVERY_MS(interval_ms, ...)` 宏，支持按周期抑制重复日志且不求值被抑制的日志参数。
 - **CLI/dump 改名**：`cli/dump` 已彻底改为 `cli/parse`，命令由 `vlink-dump` / `dump` 改为 `vlink-parse` / `parse`，构建开关由 `ENABLE_CLI_DUMP` 改为 `ENABLE_CLI_PARSE`；不提供旧名称兼容入口。
 - **零拷贝解析**：新增统一的 C++ / Python `MessageParser`，支持反射解析、零拷贝视图和通用文本渲染；Parse、Viewer、Analyzer、eproto 与 efbs 已接入。
-- **PointCloud**：C++ / Python 新增 `get_key_list()` 字段描述接口。
+- **PointCloud**：C++ / Python 新增 `get_key_list()` 字段描述接口；Python `Key.type` 返回 `PointCloud.Type` 枚举。
 - **CameraFrame**：扩展 Raw、Bayer、YUV 和压缩图像格式，新增编码辅助函数、Python 绑定与自动解码模式，线上枚举值保持兼容。
 - **Trigger**：新增 `vlink-trigger`、`TriggerRecorder` 及 Python 绑定，支持触发前后数据缓存、Bag 落盘、历史轮转和完成回调插件。
 - **Bag 插件**：新增读会话 `on_reset()`，回放前补全序列化和 Schema 类型。`on_read()` / `on_write()` 改为纯虚函数，并移除版本查询接口；插件仍声明 2.0，但需按新头文件适配并重新构建。
@@ -16,6 +16,7 @@
 
 ### 改进
 
+- **工程布局**：C / Python 绑定源码迁至 `languages/c_api/` 与 `languages/python_api/`；公开构建开关、CMake target、库名和安装布局保持不变。
 - **接收端 loan API 移除**：删除 C++ / Python 的 `set_manual_unloan()` 与 `is_manual_unloan()`；接收缓冲统一在回调后自动归还，发布侧 `loan()` / `return_loan()` 不受影响。
 - **传输后端移除**：删除 `modules/ddst` 与 `modules/qnx`，不再支持 `ddst://` 和 `qnx://`；同步移除 `DdstConf` / `QnxConf`、对应 `TransportType` 与启用标志、构建选项、CLI / 补全入口、Python 枚举、测试和文档。QNX 目标操作系统的工具链、原生日志及平台适配不受影响。
 - **公共 API**：`TerminalStream` 移至 base，并统一 Bag / Trigger 接口命名；旧接口不再保留。

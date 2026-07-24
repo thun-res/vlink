@@ -1,0 +1,4 @@
+interface:
+  display_name: "Discussion"
+  short_description: "调查、发布、回复并维护 Discussion AI mention 自动回复"
+  default_prompt: "使用 $discussion 调查、草拟或发布 VLink Discussion，按授权回复，或维护 @codex/@claude 自动回复链路。"

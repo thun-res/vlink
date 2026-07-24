@@ -1,6 +1,6 @@
 # Python 编码规范
 
-适用于 `python_api/`、`conanfile.py`、仓库工具脚本和测试。人工整改
+适用于 `languages/python_api/`、`conanfile.py`、仓库工具脚本和测试。人工整改
 不触及第三方、预构建、构建目录与生成文件;当前 `/format` 不格式化
 Python 文件。没有仓库配置支持的外部风格规则不得自行引入;先保持相邻
 文件与 nanobind 导出层的一致性。
@@ -10,7 +10,7 @@ Python 文件。没有仓库配置支持的外部风格规则不得自行引入;
 - 使用 4 空格缩进、UTF-8、`snake_case` 函数/变量、`PascalCase`
   类型、`UPPER_SNAKE_CASE` 常量。
 - 导入顺序为标准库、第三方、本项目,分组间空一行。通配导入只允许
-  `python_api/vlink.py` 这种明确的绑定转发层,并保留 lint 说明。
+  `languages/python_api/vlink.py` 这种明确的绑定转发层,并保留 lint 说明。
 - 公共入口提供简短 docstring;注释解释约束和原因,不逐行翻译代码。
 - 类型标注跟随相邻公开 API;不得为了补 typing 引入运行时依赖或改变
   Python 兼容版本。

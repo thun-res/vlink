@@ -1,7 +1,7 @@
 # 评审、PR 与 CI
 
 所有评审与提交先遵循根 `AGENTS.md` 的强制规则和
-`.agents/AI-POLICY.md` 的 AI 贡献政策;本分册只补 GitHub、PR 和 CI 的
+`AI-POLICY.md` 的 AI 贡献政策;本分册只补 GitHub、PR 和 CI 的
 具体流程。
 
 ## 1. 代码评审规则
@@ -50,16 +50,32 @@
 
 ## 3. CI
 
-- 工作流:`ci-lint.yml`(format + cpplint + clang-tidy)、
+- 工作流:`ci-agent-skills.yml`(Agent skill 结构与元数据)、
+  `ci-lint.yml`(format + cpplint + clang-tidy)、
   `ci-test.yml`(Linux+ASan / macOS / Windows)、`ci-coverage.yml`、
-  `release.yml`、`ai-code-review.yml` 等;完整触发矩阵见 `/cicd`,
-  实际执行脚本在 `.github/scripts/`,本地复现以脚本为准。
+  `release.yml`、`ai-code-review.yml`、`community-ai-reply.yml` 等;
+  完整触发矩阵见 `/cicd`,实际执行脚本在 `.github/scripts/`,本地复现
+  以脚本为准。
 - 触发矩阵、dispatch 命令、失败日志查看与重跑口径见 `/cicd` skill;
   本地复现:lint 失败 → `/format` `/check` `/clang-tidy`;Linux ASan
   或内存错误 → `/asan`;普通单元测试或 macOS/Windows 非 ASan 失败
   → `/test`,并按对应 job 日志在同平台复现。
 - 代码性失败先修代码再 push;仅环境抖动(网络/runner 超时)才直接
   重跑。
+- `community-ai-reply.yml` 响应 Issue/Discussion 标题、正文或评论中的
+  `@codex`/`@claude`,也响应 PR 普通评论中的 `@codex`;提问正文由人或 AI
+  生成均可,但触发者的 GitHub `author_association` 必须是 `OWNER`、
+  `MEMBER`、`COLLABORATOR` 或 `CONTRIBUTOR`,GitHub `Bot` 账户和工作流
+  自身回复除外。模型生成 job 只读,发布 job 按目标隔离
+  `issues: write`/`pull-requests: write`/`discussions: write`,发布前重读
+  当前 mention、身份并核对生成时正文摘要,且只信任
+  `github-actions[bot]` 的幂等 marker。PR 的 `@claude` 不走本工作流。
+  PR 裸 `@codex` 只依据 PR 线程回答,不读取 diff;官方 `@codex review`
+  命令不走此普通回复链路,由 Codex code review 处理,避免双重触发。
+- `@codex` 和 `@claude` 分别依赖名称完全一致的仓库 Actions secret
+  `OPENAI_API_KEY` 和 `CLAUDE_CODE_OAUTH_TOKEN`;不得记录或回显 secret。
+  社区事件工作流必须进入默认分支才会上线。公开 mention 会消耗外部模型
+  配额,上线前由管理员配置独立项目、速率/用量监控和密钥轮换。
 
 ## 4. Workflow 与 Dockerfile
 

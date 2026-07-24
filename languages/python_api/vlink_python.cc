@@ -2413,7 +2413,18 @@ NB_MODULE(_vlink_nanobind, m) {
   nb::class_<vlink::zerocopy::PointCloud::Key>(point_cloud_cls, "Key")
       .def(nb::init<>())
       .def_rw("name", &vlink::zerocopy::PointCloud::Key::name)
-      .def_rw("type", &vlink::zerocopy::PointCloud::Key::type)
+      .def_prop_rw(
+          "type",
+          [](const vlink::zerocopy::PointCloud::Key& self) {
+            if (self.type > static_cast<uint8_t>(vlink::zerocopy::PointCloud::kDoubleType)) {
+              return vlink::zerocopy::PointCloud::kUnknownType;
+            }
+
+            return static_cast<vlink::zerocopy::PointCloud::Type>(self.type);
+          },
+          [](vlink::zerocopy::PointCloud::Key& self, vlink::zerocopy::PointCloud::Type type) {
+            self.type = static_cast<uint8_t>(type);
+          })
       .def_rw("size", &vlink::zerocopy::PointCloud::Key::size);
   nb::class_<vlink::zerocopy::PointCloud::Vector3f>(point_cloud_cls, "Vector3f")
       .def(nb::init<>())

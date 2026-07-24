@@ -141,7 +141,7 @@ cc_library_shared {
     ],
     // vendor_available: true,
     srcs: [
-        "c_api/*.cc",
+        "languages/c_api/*.cc",
     ],
     local_include_dirs: [
         "include/vlink",

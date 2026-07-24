@@ -4,7 +4,7 @@ VLink Python bindings self-test.
 
 Usage:
     cd build_python/output/lib
-    LD_LIBRARY_PATH=. PYTHONPATH=. python3 ../../../python_api/test/test_vlink.py
+    LD_LIBRARY_PATH=. PYTHONPATH=. python3 ../../../languages/python_api/test/test_vlink.py
 """
 
 import gc
@@ -447,6 +447,15 @@ def test_zerocopy_point_cloud():
         ("x", _vlink.PointCloud.Type.Float, 4),
         ("y", _vlink.PointCloud.Type.Float, 4),
         ("z", _vlink.PointCloud.Type.Float, 4),
+    ]
+
+    unknown_pc = _vlink.PointCloud()
+    unknown_type_num = (12 << 8) | (12 << 4) | 12
+    assert unknown_pc.create(1, size_num, unknown_type_num, "x,y,z")
+    assert [key.type for key in unknown_pc.get_key_list()] == [
+        _vlink.PointCloud.Type.Unknown,
+        _vlink.PointCloud.Type.Unknown,
+        _vlink.PointCloud.Type.Unknown,
     ]
 
     v = pc.get_value_v3f(0)

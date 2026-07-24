@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sync Agent"
+  short_description: "基于仓库事实同步 Agent 规则、索引、路由与 skill 元数据"
+  default_prompt: "使用 $sync-agent 分析当前 VLink 仓库，并同步 AGENTS.md、AI-POLICY.md、.agents 与相关 skill。"

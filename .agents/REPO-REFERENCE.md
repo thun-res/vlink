@@ -36,15 +36,15 @@
 | 目录 | 职责 | 对应文档 |
 | ---- | ---- | -------- |
 | `cli/` | CLI 工具:bag、bench、check、efbs、eproto、info、list、monitor、parse、trigger | `doc/10-cli-tools.md` |
-| `c_api/` / `python_api/` | C / Python 绑定(python:`vlink_python.cc` + `vlink.py`) | `doc/13-integration.md` |
+| `languages/c_api/` / `languages/python_api/` | C / Python 绑定(python:`vlink_python.cc` + `vlink.py`) | `doc/13-integration.md` |
 | `proxy/` | 服务发现与代理监控 | `doc/12-observability.md` |
 | `viewer/`、`webviz/` | 可视化(Qt Viewer / Foxglove / Rerun) | `doc/11-visualization.md` |
 | `examples/` | 分主题示例(quickstart、communication、qos、security、zerocopy 等);编码专属规则见 languages/CPP.md §12 | `doc/01-started.md` |
 | `test/` | doctest 单元测试,见 `.agents/testing/UNIT-TESTS.md` | `doc/15-contributing.md` |
 | `exprtk/` | 表达式引擎封装(`vlink::exprtk_api`,PIMPL 共享库) | `doc/01-started.md`、`doc/10-cli-tools.md`(API 无专节) |
-| `cmake/`、`packup/`、`conanfile.py` | 构建函数(`cmake/functions/common.cmake`)、依赖与打包 | `doc/01-started.md`;运行时变量另见 `doc/13-integration.md` |
+| `cmake/`、`conanfile.py`、`Android.bp`、`tools/vcpkg/`、`packup/` | CMake/Conan/Soong/vcpkg 构建、安装与打包 | `doc/01-started.md`;运行时变量另见 `doc/13-integration.md` |
 | `tools/` | 维护脚本:`format.sh`、`check.sh`、`update_version.sh`、平台脚本 | — |
-| `.github/workflows`、`.github/scripts` | CI:lint(format+cpplint+tidy)、test(三平台+ASan)、coverage、release | — |
+| `.github/workflows`、`.github/scripts` | CI、发布、AI 评审与社区 mention 回复 | — |
 | `doc/` | 用户文档 00–15 章(中文)+ Doxygen 配置 | 自身 |
 
 ## 4. 工程设施
@@ -53,8 +53,8 @@
 | ---- | ---- |
 | `.clang-format` / `.clang-tidy` | 格式与静态检查配置;误报只按 CPP.md §11 做最小范围 NOLINT |
 | `tools/` | 维护脚本;版本同步入口为 `update_version.sh`,脚本编码规则见 `languages/SHELL.md`/`BATCH.md`/`POWERSHELL.md` 并保持相邻入口接口 |
-| `.github/workflows/` | CI:`ci-lint.yml`、`ci-test.yml`、`ci-coverage.yml`、`release.yml`、`ai-code-review.yml` 等;触发矩阵见 `/cicd` skill |
-| `.github/scripts/` | CI 实际执行脚本(`ci-lint.sh`、`ci-tidy.sh`、`run-posix-ci-tests.sh` 等),本地复现 CI 以此为准 |
+| `.github/workflows/` | CI、发布、PR AI 评审及 `community-ai-reply.yml`;触发矩阵见 `/cicd` skill |
+| `.github/scripts/` | CI 脚本及 `community-ai-reply.py` 上下文清洗、发布与回读入口 |
 | `.github/wiki/` | GitHub Wiki 落地页(`index.html`),与 `doc/` 同源,同步规则见 `DOCS-AND-FORMATTING.md` |
 | `.agents/cache-report/` | 本地评审/审计报告缓存,已忽略提交 |
 | `cmake/functions/common.cmake` | `vlink_test_sanitize` / `vlink_test_coverage` 等构建函数 |
