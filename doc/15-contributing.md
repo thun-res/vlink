@@ -352,29 +352,29 @@ footer (optional)
 
 - **type**：`feat` `fix` `refactor` `perf` `docs` `test` `build` `ci` `chore` `style` `revert`
 - **scope**（可选）：如 `core` `base` `extension` `proxy` `viewer` `webviz` `cli-NAME` `module-NAME` `examples` `docs` `cmake`；跨多 scope 可省略或用 `*`
-- **subject**：简体中文动宾短语，不以句号结尾、≤ 72 字符；禁止“更新”“调整”“若干修复”“清理”等无信息量措辞
-- **body**（subject 未表达完整时）：使用简体中文说明改动动机、做法与影响面，每行 ≤ 72 字符；代码标识、路径、API 名和错误信息保持原文
+- **subject**：英文祈使句，不以句号结尾、≤ 72 字符；禁止 `update`、`adjust`、`misc fixes`、`cleanup` 等无信息量措辞
+- **body**（subject 未表达完整时）：使用英文说明改动动机、做法与影响面，每行 ≤ 72 字符；代码标识、路径、API 名和错误信息保持原文
 - **footer**：破坏性变更写 `BREAKING CHANGE: <描述 + 迁移提示>`；关联 issue 写 `Closes: #123` / `Refs: #98`
 
 合规示例：
 
 ```
-feat(module-mqtt): 增加基于 SslOptions 的 TLS 双向认证
+feat(module-mqtt): add mutual TLS authentication with SslOptions
 
-公有云 IoT broker 需要 mTLS 认证。将现有 SslOptions 接入 Paho MQTT
-C API 的发布和订阅路径。
+Public cloud IoT brokers require mTLS authentication. Apply the existing
+SslOptions to the Paho MQTT C API publish and subscribe paths.
 
 Refs: #207
 ```
 
 ```
-docs: 修复 README 与 doc/00-overview 的 CLI 数量漂移
+docs: synchronize CLI counts across project documentation
 
-多处文档遗漏 vlink-bench。同步 README 中英文版、overview、reference
-以及 cli-tools-overview 的 drawio 和 PNG。
+Several documents omit vlink-bench. Synchronize both README variants,
+overview, reference, and the cli-tools-overview drawio and PNG.
 ```
 
-不合规示例：`wip` / `update` / `fix bug` / `改了下代码` / `若干修复` / `Merge branch 'master' into ...`（PR 内不应有 merge commit，用 rebase 替代）。
+不合规示例：`wip` / `update` / `fix bug` / `misc fixes` / `cleanup` / `Merge branch 'master' into ...`（PR 内不应有 merge commit，用 rebase 替代）。
 
 ---
 

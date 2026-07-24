@@ -3,7 +3,7 @@ name: commit
 description: >-
   提交前强制执行 VLink 的 format 与 check skill，再分析当前工作树的全部
   staged、unstaged 与 untracked 改动，按模块、功能和依赖关系拆分为可独立
-  评审的 Conventional Commits，生成简洁且覆盖重要行为的中文 commit
+  评审的 Conventional Commits，生成简洁且覆盖重要行为的英文 commit
   message 并逐组提交。用户要求“提交当前改动”、“按功能拆 commit”、
   “自动写 commit msg”或“整理提交历史”时使用。
 ---
@@ -73,19 +73,20 @@ description: >-
 
 ## 4. 编写 Commit Message
 
-遵循 `type(scope): subject`。`type`/`scope` 保留规范的英文标识,
-subject 与必要的 body 使用简体中文;代码标识、路径、API 名和错误信息
-保持原文,与 `doc/15-contributing.md` §15.11 一致。
+遵循 `type(scope): subject`。`type`、`scope`、subject 与必要的 body
+全部使用英文;代码标识、路径、API 名和错误信息保持原文,与
+`doc/15-contributing.md` §15.11 一致。
 
 - type 从 `feat`、`fix`、`refactor`、`perf`、`docs`、`test`、`build`、
   `ci`、`chore`、`style`、`revert` 中选择。
 - scope 使用仓库现有模块名，如 `base`、`extension`、`proxy`、
   `module-dds`、`cli-bag`、`cmake`、`agents`；不可拆分的跨 scope
   改动可省略 scope 或使用 `*`,但可拆分时不得用 `*` 掩盖混合提交。
-- subject 使用简洁明确的中文动宾短语，不加句号且不超过 72 字符；准确
-  写出行为，不使用“更新”“调整”“若干修复”“清理”等空泛表述。
+- subject 使用简洁明确的英文祈使句，不加句号且不超过 72 字符；准确
+  写出行为，不使用 `update`、`adjust`、`misc fixes`、`cleanup` 等
+  空泛表述。
 - subject 已足够时不写 body。重要行为无法在 subject 中讲清时添加一个
-  简短中文 body，优先说明原因、用户可见影响、性能/兼容变化或关键约束，
+  简短英文 body，优先说明原因、用户可见影响、性能/兼容变化或关键约束，
   不逐文件复述 diff；每行不超过 72 字符。
 - 仅在确有破坏性变更或 issue 时写 `BREAKING CHANGE:`、`Closes:`、
   `Refs:` footer，不推测编号。
@@ -93,9 +94,9 @@ subject 与必要的 body 使用简体中文;代码标识、路径、API 名和�
 示例：
 
 ```text
-ci: 统一 GitHub Actions 脚本风格
-fix(packup): 修复空配置导致的局部作用域泄漏
-docs(agents): 增加按模块和功能拆分提交的 skill
+ci: standardize GitHub Actions script style
+fix(packup): prevent empty config from leaking local scope
+docs(agents): add module-aware commit skill
 ```
 
 ## 5. 逐组暂存和提交
