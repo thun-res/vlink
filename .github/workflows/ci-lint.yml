@@ -9,7 +9,7 @@ on:
       - dev
     paths-ignore:
       - '**.md'
-      - 'docs/**'
+      - 'doc/**'
       - '.github/wiki/**'
   push:
     branches:
@@ -19,7 +19,7 @@ on:
       - dev
     paths-ignore:
       - '**.md'
-      - 'docs/**'
+      - 'doc/**'
       - '.github/wiki/**'
   workflow_dispatch:
 
