@@ -78,9 +78,9 @@
   不可信输入处理。
 - `community-ai-reply.yml` 只由 Issue/Discussion 标题、正文与评论中的
   `@codex`/`@claude` 触发;核对 PR/Bot/自身回复过滤、编辑幂等、
-  非真人/AI 内容判断、当前 mention 回读、生成/发布正文摘要一致性、
-  上下文分页/清洗/限长及不可信输入边界。长线程必须保留标题、正文和
-  最近上下文。
+  `author_association` 可信角色门槛、非真人/AI 内容判断、当前 mention
+  与身份回读、生成/发布正文摘要一致性、上下文分页/清洗/限长及不可信
+  输入边界。长线程必须保留标题、正文和最近上下文。
 - Codex/Claude 凭据只进入各自只读生成 job;发布 job 不接触模型凭据,
   且只按目标获得 `issues: write` 或 `discussions: write`。回复必须披露
   模型来源,幂等 marker 只信任 `github-actions[bot]`,发布后核对正文、

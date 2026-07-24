@@ -19,6 +19,13 @@ concurrency:
 jobs:
   codex-generate:
     name: Generate Codex reply
+    if: >-
+      contains(
+        fromJSON('["OWNER","MEMBER","COLLABORATOR","CONTRIBUTOR"]'),
+        github.event.comment.author_association ||
+        github.event.issue.author_association ||
+        github.event.discussion.author_association
+      )
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -61,7 +68,13 @@ jobs:
 
   claude-issue-generate:
     name: Generate Claude Issue reply
-    if: github.event_name == 'issues' || github.event_name == 'issue_comment'
+    if: >-
+      (github.event_name == 'issues' || github.event_name == 'issue_comment') &&
+      contains(
+        fromJSON('["OWNER","MEMBER","COLLABORATOR","CONTRIBUTOR"]'),
+        github.event.comment.author_association ||
+        github.event.issue.author_association
+      )
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -111,7 +124,13 @@ jobs:
 
   claude-discussion-generate:
     name: Generate Claude Discussion reply
-    if: github.event_name == 'discussion' || github.event_name == 'discussion_comment'
+    if: >-
+      (github.event_name == 'discussion' || github.event_name == 'discussion_comment') &&
+      contains(
+        fromJSON('["OWNER","MEMBER","COLLABORATOR","CONTRIBUTOR"]'),
+        github.event.comment.author_association ||
+        github.event.discussion.author_association
+      )
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

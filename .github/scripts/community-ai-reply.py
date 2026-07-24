@@ -21,6 +21,12 @@ MAX_ITEM_CHARS = 6000
 MAX_CONTEXT_CHARS = 30000
 MAX_REPLY_CHARS = 60000
 WORKFLOW_BOT_LOGIN = "github-actions[bot]"
+TRUSTED_AUTHOR_ASSOCIATIONS = {
+    "COLLABORATOR",
+    "CONTRIBUTOR",
+    "MEMBER",
+    "OWNER",
+}
 PROVIDERS = {
     "codex": {
         "display_name": "Codex",
@@ -201,6 +207,14 @@ def actor_is_bot(source: dict[str, Any]) -> bool:
     login = string_field(user, "login")
     user_type = string_field(user, "type") or string_field(user, "__typename")
     return user_type.casefold() == "bot" or login.casefold().endswith("[bot]")
+
+
+def actor_is_trusted(source: dict[str, Any]) -> bool:
+    association = string_field(source, "author_association") or string_field(
+        source,
+        "authorAssociation",
+    )
+    return association.upper() in TRUSTED_AUTHOR_ASSOCIATIONS
 
 
 def actor_is_workflow_bot(actor: dict[str, Any]) -> bool:
@@ -457,6 +471,7 @@ query($owner: String!, $repo: String!, $number: Int!) {
     discussion(number: $number) {
       title
       body
+      authorAssociation
       author { login __typename }
     }
   }
@@ -468,6 +483,7 @@ query($id: ID!) {
   node(id: $id) {
     ... on DiscussionComment {
       body
+      authorAssociation
       author { login __typename }
     }
   }
@@ -641,6 +657,7 @@ def prepare(provider: str, prompt_file: Path, thread_only: bool) -> None:
     should_reply = (
         target_kind in {"issue", "discussion"}
         and not actor_is_bot(source)
+        and actor_is_trusted(source)
         and bool(mention.search(source_body))
     )
     values = {
@@ -661,7 +678,7 @@ def prepare(provider: str, prompt_file: Path, thread_only: bool) -> None:
     client = GitHubClient()
     kind, number, discussion_id, reply_to_id, entries = resolve_target(client, event_name, payload)
     source_body, source = live_event_source(client, event_name, payload)
-    if actor_is_bot(source) or not mention.search(source_body):
+    if actor_is_bot(source) or not actor_is_trusted(source) or not mention.search(source_body):
         values.update(
             {
                 "target_kind": kind,
@@ -959,7 +976,11 @@ def post(provider: str, reply_env: str, source_digest_env: str, structured: bool
         raise ReplyError("Resolved target kind does not match the event")
 
     source_body, source = live_event_source(client, event_name, payload)
-    if actor_is_bot(source) or not PROVIDERS[provider]["mention"].search(source_body):
+    if (
+        actor_is_bot(source)
+        or not actor_is_trusted(source)
+        or not PROVIDERS[provider]["mention"].search(source_body)
+    ):
         print("The source no longer satisfies the mention trigger; skipping reply.")
         return
     expected_digest = os.environ.get(source_digest_env, "")

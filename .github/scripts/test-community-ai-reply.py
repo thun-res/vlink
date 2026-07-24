@@ -23,10 +23,17 @@ SPEC.loader.exec_module(community_ai_reply)
 
 
 class FakeIssueClient:
-    def __init__(self, pull_request: bool = False, comments=None, issue_body: str = "") -> None:
+    def __init__(
+        self,
+        pull_request: bool = False,
+        comments=None,
+        issue_body: str = "",
+        author_association: str = "CONTRIBUTOR",
+    ) -> None:
         self.pull_request = pull_request
         self.comments = comments or []
         self.issue_body = issue_body
+        self.author_association = author_association
         self.published_body = ""
 
     def rest(self, method: str, path: str, payload=None):
@@ -35,6 +42,7 @@ class FakeIssueClient:
                 "number": 7,
                 "title": "",
                 "body": self.issue_body,
+                "author_association": self.author_association,
                 "user": {"login": "user", "type": "User"},
             }
             if self.pull_request:
@@ -71,6 +79,7 @@ class FakeDiscussionClient:
                         "number": 7,
                         "title": "Question",
                         "body": "@codex answer",
+                        "authorAssociation": "CONTRIBUTOR",
                         "author": {"login": "user", "__typename": "User"},
                         "comments": {
                             "nodes": [
@@ -109,6 +118,7 @@ class FakeDiscussionClient:
                     "discussion": {
                         "title": "Question",
                         "body": "@codex current question",
+                        "authorAssociation": "CONTRIBUTOR",
                         "author": {"login": "user", "__typename": "User"},
                     }
                 }
@@ -117,6 +127,7 @@ class FakeDiscussionClient:
             return {
                 "node": {
                     "body": "@codex current comment",
+                    "authorAssociation": "CONTRIBUTOR",
                     "author": {"login": "user", "__typename": "User"},
                 }
             }
@@ -158,7 +169,13 @@ class FakeDiscussionClient:
 
 
 class CommunityAiReplyTest(unittest.TestCase):
-    def run_issue_prepare(self, client, body: str, live_body: str | None = None):
+    def run_issue_prepare(
+        self,
+        client,
+        body: str,
+        live_body: str | None = None,
+        author_association: str = "CONTRIBUTOR",
+    ):
         client.issue_body = body if live_body is None else live_body
         test_root = SCRIPT_PATH.parents[2] / "build-ai" / "community-ai-reply-tests"
         test_root.mkdir(parents=True, exist_ok=True)
@@ -175,6 +192,7 @@ class CommunityAiReplyTest(unittest.TestCase):
                             "number": 7,
                             "title": "",
                             "body": body,
+                            "author_association": author_association,
                             "user": {"login": "user", "type": "User"},
                         }
                     }
@@ -209,6 +227,7 @@ class CommunityAiReplyTest(unittest.TestCase):
                             "number": 7,
                             "title": "",
                             "body": body,
+                            "author_association": "CONTRIBUTOR",
                             "user": {"login": "user", "type": "User"},
                         }
                     }
@@ -272,6 +291,28 @@ class CommunityAiReplyTest(unittest.TestCase):
 
         self.assertTrue(community_ai_reply.actor_is_bot(source))
 
+    def test_only_trusted_author_associations_can_trigger_replies(self) -> None:
+        for association in ("OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"):
+            with self.subTest(association=association):
+                self.assertTrue(
+                    community_ai_reply.actor_is_trusted(
+                        {"author_association": association}
+                    )
+                )
+
+        for association in ("", "NONE", "FIRST_TIMER", "FIRST_TIME_CONTRIBUTOR"):
+            with self.subTest(association=association):
+                self.assertFalse(
+                    community_ai_reply.actor_is_trusted(
+                        {"author_association": association}
+                    )
+                )
+        self.assertTrue(
+            community_ai_reply.actor_is_trusted(
+                {"authorAssociation": "CONTRIBUTOR"}
+            )
+        )
+
     def test_event_marker_is_stable_for_each_source(self) -> None:
         issue_payload = {"issue": {"id": 101}}
         comment_payload = {"comment": {"id": 202}}
@@ -334,6 +375,27 @@ class CommunityAiReplyTest(unittest.TestCase):
         self.assertLess(prompt.index("当前触发内容"), prompt.index("Issue 标题"))
         self.assertIn("@codex 最新问题", prompt)
 
+    def test_prepare_skips_an_untrusted_author_before_api_access(self) -> None:
+        client = FakeIssueClient(author_association="NONE")
+
+        output, prompt = self.run_issue_prepare(
+            client,
+            "@codex 最新问题",
+            author_association="NONE",
+        )
+
+        self.assertIn("should_reply=false", output)
+        self.assertEqual(prompt, "")
+
+    def test_prepare_skips_when_live_author_association_is_no_longer_trusted(self) -> None:
+        output, prompt = self.run_issue_prepare(
+            FakeIssueClient(author_association="NONE"),
+            "@codex 最新问题",
+        )
+
+        self.assertIn("should_reply=false", output)
+        self.assertEqual(prompt, "")
+
     def test_prepare_skips_an_event_that_already_has_a_reply_marker(self) -> None:
         marker = community_ai_reply.marker("codex", "issue-101")
         client = FakeIssueClient(
@@ -376,6 +438,16 @@ class CommunityAiReplyTest(unittest.TestCase):
 
     def test_post_skips_when_mention_was_removed_after_generation(self) -> None:
         client = FakeIssueClient(issue_body="已经移除 mention")
+
+        self.run_issue_post(client, "@codex 旧问题")
+
+        self.assertEqual(client.published_body, "")
+
+    def test_post_skips_when_live_author_association_is_no_longer_trusted(self) -> None:
+        client = FakeIssueClient(
+            issue_body="@codex 旧问题",
+            author_association="NONE",
+        )
 
         self.run_issue_post(client, "@codex 旧问题")
 

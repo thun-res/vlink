@@ -63,10 +63,12 @@
 - 代码性失败先修代码再 push;仅环境抖动(网络/runner 超时)才直接
   重跑。
 - `community-ai-reply.yml` 只响应 Issue/Discussion 标题、正文或评论中的
-  `@codex`/`@claude`;提问正文由人或 AI 生成均可,GitHub `Bot` 账户和
-  工作流自身回复除外。模型生成 job 只读,发布 job 按目标隔离
-  `issues: write`/`discussions: write`,发布前重读当前 mention 并核对
-  生成时正文摘要,且只信任 `github-actions[bot]` 的幂等 marker。
+  `@codex`/`@claude`;提问正文由人或 AI 生成均可,但触发者的 GitHub
+  `author_association` 必须是 `OWNER`、`MEMBER`、`COLLABORATOR` 或
+  `CONTRIBUTOR`,GitHub `Bot` 账户和工作流自身回复除外。模型生成 job
+  只读,发布 job 按目标隔离 `issues: write`/`discussions: write`,
+  发布前重读当前 mention、身份并核对生成时正文摘要,且只信任
+  `github-actions[bot]` 的幂等 marker。
 - `@codex` 和 `@claude` 分别依赖名称完全一致的仓库 Actions secret
   `OPENAI_API_KEY` 和 `CLAUDE_CODE_OAUTH_TOKEN`;不得记录或回显 secret。
   社区事件工作流必须进入默认分支才会上线。公开 mention 会消耗外部模型

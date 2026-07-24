@@ -34,8 +34,9 @@ description: >-
 - `.github/workflows/community-ai-reply.yml` 是仓库维护者预先授权的自动
   回复入口:仅在 Discussion 标题、正文或评论明确提及 `@codex`/
   `@claude` 时各回复一次。正文内容由人或 AI 生成均不影响触发,但
-  GitHub `Bot` 账户、未提及内容和工作流自身回复必须过滤;不得根据
-  行文猜测作者身份。回复必须披露模型来源并回读校验。
+  触发者的 `author_association` 必须是可信角色;GitHub `Bot` 账户、
+  未提及内容和工作流自身回复必须过滤,不得根据行文猜测作者身份。回复
+  必须披露模型来源并回读校验。
 - 发布回复的授权不包含点赞、标记/取消答案、编辑、删除、关闭或锁定;
   这些操作仍须分别明确授权。
 - 不自动创建分类、置顶、锁定、关闭或修改社区状态。
@@ -259,6 +260,9 @@ Discussion 评论中的明确提及。
   `CLAUDE_CODE_OAUTH_TOKEN`。凭据只进入各自的只读生成 job。
 - 两个名称必须配置为仓库 Actions secret;`OPENAI_API_KEY` 缺失时
   `@codex` 不会上线。Discussion 事件只在工作流进入默认分支后触发。
+- 自动触发只向 GitHub `author_association` 为 `OWNER`、`MEMBER`、
+  `COLLABORATOR` 或 `CONTRIBUTOR` 的提问者开放;缺失或其他身份默认
+  拒绝,避免任意账号消耗模型配额。
 - 生成 job 仅有 `contents/discussions: read`,分页读取顶层评论与楼中楼,
   清洗、限长并保留标题、正文和最近上下文,再把线程放入不可信内容边界。
   Codex 使用只读仓库沙箱;Claude 因官方顶层 action 尚不识别 Discussion

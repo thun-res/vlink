@@ -234,6 +234,9 @@ for required_text in \
     "--thread-only" \
     '--tools ""' \
     "--source-digest-env SOURCE_DIGEST" \
+    "github.event.comment.author_association" \
+    "github.event.issue.author_association" \
+    "github.event.discussion.author_association" \
     "concurrency:" \
     "cancel-in-progress: false" \
     "issues: write" \
@@ -244,6 +247,9 @@ done
 
 for required_text in \
     "WORKFLOW_BOT_LOGIN = \"github-actions[bot]\"" \
+    "TRUSTED_AUTHOR_ASSOCIATIONS" \
+    "actor_is_trusted" \
+    "authorAssociation" \
     "entry_has_trusted_marker" \
     "live_event_source" \
     "source_digest"; do

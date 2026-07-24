@@ -38,7 +38,9 @@ synchronize、ready_for_review、reopened。
 
 ² `community-ai-reply.yml` 由 `issues`、`issue_comment`、`discussion`
 和 `discussion_comment` 的创建/编辑事件触发,仅在标题、正文或评论明确包含
-`@codex`/`@claude` 时回复。该 workflow 必须位于默认分支;
+`@codex`/`@claude`,且触发者的 `author_association` 为 `OWNER`、
+`MEMBER`、`COLLABORATOR` 或 `CONTRIBUTOR` 时回复。该 workflow 必须
+位于默认分支;
 `@codex` 需要 `OPENAI_API_KEY`,`@claude` 需要
 `CLAUDE_CODE_OAUTH_TOKEN`,不支持手动 dispatch。
 
