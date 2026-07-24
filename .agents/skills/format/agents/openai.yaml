@@ -1,0 +1,4 @@
+interface:
+  display_name: "Format"
+  short_description: "统一 VLink C++、CMake 和脚本文件格式与行尾"
+  default_prompt: "使用 $format 对 VLink 仓库执行统一格式化。"

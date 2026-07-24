@@ -1,11 +1,66 @@
-# Repository Agent Guidance
+# AGENTS.md
 
-## Code Review Rules
+VLink 的产品与架构知识只维护在 `doc/`(中文 00–15 章),Agent 文件只收
+规则与指向。先读本文件,再按 `.agents/README.md`
+**只加载当前任务需要的分册**,进入 `doc/` 后按小节号定点读取。
 
-### Review language
+## 按需加载指引
 
-- Write every GitHub code review response in Simplified Chinese (`zh-CN`),
-  including the review summary, finding titles, explanations, impact
-  descriptions, and remediation suggestions.
-- Keep code identifiers, file paths, commands, API names, logs, and quoted
-  error messages in their original form, but explain them in Simplified Chinese.
+- 定位代码先读 `.agents/REPO-REFERENCE.md`;查功能再从
+  `.agents/FEATURE-INDEX.md` 进入 `doc/` 小节与代码。
+- 写/改前按路由加载对应分册;skill 清单与安装方式也只在路由维护。
+
+## Agent 强制规则
+
+1. **许可证头**:第一方 VLink 模板 C/C++ 文件保留逐字节一致的 22 行
+   Apache 2.0 头;第三方、生成及上游版权文件维持原头(模板见
+   `.agents/languages/CPP.md` §3)。
+2. **性能优先**:多余/隐藏拷贝均为缺陷。`Bytes` 拷贝与 `deep_copy`
+   均为深拷贝,优先移动或 `shallow_copy`;非平凡对象按
+   `const T&`/`T&&`/`T&` 传递(豁免与细则见 CPP §5.1、§9.1)。
+3. **禁止自行构建/运行**:未经明确要求(含显式调用 skill),不得自行构建
+   或运行测试、`clang-tidy`、脚本及 stub;是否需要不明确时先询问。
+   只读语法检查除外,验证结果据实报告。
+4. **未授权只读**:用户未明确要求修改、修复或实现时,分析、检查、
+   review、解释和状态查询一律只读;禁止修改代码、脚本、配置或文档,
+   也不得格式化、暂存或提交。报告文件也只有用户明确要求时才写入。
+5. **AI 构建目录**:本地 AI 构建配置与编译只准在
+   `{project}/build-ai/` 的独立任务子目录;不得复用、覆盖或清理其他
+   目录。Python cache 只准放在
+   `{project}/build-ai/<task_name>/__pycache__`。
+6. **编码克制**:只做当前需求,不得过度设计、过度封装或引入无必要的
+   代码封装;不为假设故障增加缓存、marker、重试、兜底、预检、严格解析
+   或兼容层,不夹带无关改名、注释、格式化或清理(CPP §1)。
+7. **分支预测**:在可判断的热路径充分且合理使用
+   `VLIKELY`/`VUNLIKELY`,普通分支不得为形式滥用(CPP §9)。
+8. **大规模重构确认**:先以讯问式对话确认目标、边界、步骤、兼容影响和
+   验证方式;未确认不实施,每步复查后再继续。
+9. **同步义务**:公开 API、功能入口或文档结构变化必须执行
+   `/sync-review`,同批同步受影响项并说明不适用项。
+10. **关联适配**:新增、优化或修复代码时不得只关注局部;沿调用与依赖
+    关系评估其他影响,核对调用方、实现方及受影响的接口、配置与测试,
+    相关代码同批适配。
+11. **风格一致**:加载对应分册;命名、排版、类型、控制流、注释、日志和
+    错误处理遵循相邻代码,独立逻辑段用空行合理隔离;未覆盖处不引入
+    外部惯例。
+12. **语言与平台**:保持 C++17 及既有高版本门控;核对 Windows、Linux、
+    macOS、QNX、Android 受影响分支,不得缩窄支持(CPP §7)。
+13. **授权与工作树**:无授权不做外部写入、发布、force、覆盖或破坏性
+    操作;工作树改动归维护者,不得重置、清理或无关整理。
+14. **多 Agent 协作**:任何写操作前重读文件、`git status` 与 diff;
+    陌生或重叠变化视为他人工作,不得覆盖、回退、stash 或清理。不同
+    任务不得共用构建目录。
+15. **异常边界**:不得为无事实依据的臆测异常扩展控制流;可预期失败沿用
+    返回语义,异常只用于既有契约,不得作普通控制流、越过 C ABI 或吞错
+    (CPP §5.3)。
+16. **证据与回归**:改前核对实现、调用链和最新 diff;改后复查 diff,并在
+    授权范围内按风险验证。失败或未执行项如实说明,不得写成通过。
+17. **门禁不得消音**:禁止修改 `.clang-format`、`.clang-tidy`、cpplint
+    过滤集或 coverage `EXCLUDES` 来规避告警;优先修代码。静态检查确需
+    豁免时按 CPP §11 保持最小范围,注释必须带检查名。
+18. **敏感信息**:禁止输出或提交 token、密码、私钥及带凭据 URL;只报告
+    脱敏状态并提示移除本地暴露面、完成服务端轮换;获授权后再执行移除。
+19. **任务闭环**:任务未完成不得自行中止;遇阻先尝试授权范围内的可行
+    方案。确因权限、信息或外部条件阻塞时,说明证据与剩余项并询问维护者。
+20. **中文交流**:自始至终使用简体中文与维护者沟通;代码标识、路径、
+    命令及原始错误信息保持原文。

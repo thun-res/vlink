@@ -1,0 +1,4 @@
+interface:
+  display_name: "Commit"
+  short_description: "先执行格式化和静态检查，再按模块与功能创建规范中文本地提交"
+  default_prompt: "使用 $commit 先执行 $format 和 $check，再分析全部改动并按模块和功能拆分提交。"

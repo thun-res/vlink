@@ -1,0 +1,4 @@
+interface:
+  display_name: "Check"
+  short_description: "运行 VLink 全仓 cpplint 静态检查并汇总告警"
+  default_prompt: "使用 $check 运行 VLink 全仓 cpplint 检查。"

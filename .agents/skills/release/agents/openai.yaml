@@ -1,0 +1,4 @@
+interface:
+  display_name: "Release"
+  short_description: "在 master 校验后用中文填写并发布 Release"
+  default_prompt: "使用 $release 校验 master 当前版本，创建中文注释 tag，并发布全部人工内容为中文的 GitHub Release。"
