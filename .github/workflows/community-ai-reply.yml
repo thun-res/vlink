@@ -31,6 +31,7 @@ jobs:
     permissions:
       contents: read
       issues: read
+      pull-requests: read
       discussions: read
     outputs:
       should_reply: ${{ steps.prepare.outputs.should_reply }}
@@ -38,11 +39,12 @@ jobs:
       source_digest: ${{ steps.prepare.outputs.source_digest }}
       reply: ${{ steps.codex.outputs.final-message }}
     steps:
-      - name: Checkout
+      - name: Checkout trusted default-branch workflow
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 1
           persist-credentials: false
+          ref: ${{ github.sha }}
 
       - name: Prepare untrusted thread context
         id: prepare
@@ -69,7 +71,8 @@ jobs:
   claude-issue-generate:
     name: Generate Claude Issue reply
     if: >-
-      (github.event_name == 'issues' || github.event_name == 'issue_comment') &&
+      (github.event_name == 'issues' ||
+        (github.event_name == 'issue_comment' && !github.event.issue.pull_request)) &&
       contains(
         fromJSON('["OWNER","MEMBER","COLLABORATOR","CONTRIBUTOR"]'),
         github.event.comment.author_association ||
@@ -231,6 +234,37 @@ jobs:
           AI_REPLY: ${{ needs.codex-generate.outputs.reply }}
           GITHUB_TOKEN: ${{ github.token }}
           PYTHONPYCACHEPREFIX: ${{ github.workspace }}/build-ai/community-ai-reply/post-codex-discussion/__pycache__
+          SOURCE_DIGEST: ${{ needs.codex-generate.outputs.source_digest }}
+        run: >-
+          python3 .github/scripts/community-ai-reply.py post
+          --provider codex
+          --reply-env AI_REPLY
+          --source-digest-env SOURCE_DIGEST
+
+  post-codex-pull-request:
+    name: Post Codex Pull Request reply
+    needs: codex-generate
+    if: >-
+      needs.codex-generate.result == 'success' &&
+      needs.codex-generate.outputs.should_reply == 'true' &&
+      needs.codex-generate.outputs.target_kind == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout reply publisher
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Publish and verify Codex reply
+        env:
+          AI_REPLY: ${{ needs.codex-generate.outputs.reply }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPYCACHEPREFIX: ${{ github.workspace }}/build-ai/community-ai-reply/post-codex-pull-request/__pycache__
           SOURCE_DIGEST: ${{ needs.codex-generate.outputs.source_digest }}
         run: >-
           python3 .github/scripts/community-ai-reply.py post

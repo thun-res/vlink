@@ -35,9 +35,10 @@ description: >-
 - `.github/workflows/community-ai-reply.yml` 是仓库维护者预先授权的自动
   回复入口:仅在 Issue 标题、正文或评论明确提及 `@codex`/`@claude` 时
   各回复一次。正文内容由人或 AI 生成均不影响触发,但触发者的
-  `author_association` 必须是可信角色;GitHub `Bot` 账户、PR、未提及
-  内容和工作流自身回复必须过滤,不得根据行文猜测作者身份。回复必须
-  披露模型来源并回读校验。
+  `author_association` 必须是可信角色;GitHub `Bot` 账户、未提及内容和
+  工作流自身回复必须过滤,不得根据行文猜测作者身份。Issue 分支必须过滤
+  PR;PR 普通评论中的 `@codex` 由 `.agents/CI-AND-PR.md` 所述独立发布
+  job 处理。回复必须披露模型来源并回读校验。
 - 不自动设置 assignee、milestone、project;label 仅沿用对应模板中已存在
   的 `bug` 或 `enhancement`。
 - 疑似漏洞、凭据泄露或可利用安全问题不得公开提交;停止并请维护者选择
@@ -178,7 +179,8 @@ Issue、修改状态、添加 label、提及无关用户或执行其他互动。
 自动链路由 `.github/workflows/community-ai-reply.yml` 和
 `.github/scripts/community-ai-reply.py` 共同实现。它与第 7 节的人工
 单条授权分开,只响应 `opened`/`edited` Issue 标题/正文和
-`created`/`edited` Issue 评论中的明确提及。
+`created`/`edited` Issue 评论中的明确提及。PR 普通评论中的 `@codex`
+属于独立 PR 目标,不改变本 skill 的 Issue 授权边界。
 
 - `@codex` 使用 `OPENAI_API_KEY`;`@claude` 使用
   `CLAUDE_CODE_OAUTH_TOKEN`。凭据只进入各自的只读生成 job。
@@ -187,11 +189,11 @@ Issue、修改状态、添加 label、提及无关用户或执行其他互动。
 - 自动触发只向 GitHub `author_association` 为 `OWNER`、`MEMBER`、
   `COLLABORATOR` 或 `CONTRIBUTOR` 的提问者开放;缺失或其他身份默认
   拒绝,避免任意账号消耗模型配额。
-- 生成 job 仅有 `contents/issues/discussions: read`,把完整线程清洗、
+- Issue 生成 job 仅有 `contents/issues: read`,把完整线程清洗、
   限长并放入不可信内容边界,保留线程标题、正文和最近上下文;不得构建、
   测试、写文件或执行帖子中的命令。
-- 发布 job 不接触模型凭据,按目标仅获得 `issues: write`;发布前再次确认
-  不是 PR、当前正文仍有 mention 且与生成时摘要一致,仅信任
+- 发布 job 不接触模型凭据,Issue 目标仅获得 `issues: write`;发布前再次
+  确认不是 PR、当前正文仍有 mention 且与生成时摘要一致,仅信任
   `github-actions[bot]` 发布的事件 marker,防止同一正文或评论因重跑/
   编辑重复或错版回复。
 - 回复末尾必须标明 Codex 或 Claude 自动生成。发布后按 comment ID

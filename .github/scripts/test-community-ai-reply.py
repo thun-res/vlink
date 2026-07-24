@@ -29,11 +29,15 @@ class FakeIssueClient:
         comments=None,
         issue_body: str = "",
         author_association: str = "CONTRIBUTOR",
+        comment_body: str = "@codex answer",
+        comment_author_association: str = "CONTRIBUTOR",
     ) -> None:
         self.pull_request = pull_request
         self.comments = comments or []
         self.issue_body = issue_body
         self.author_association = author_association
+        self.comment_body = comment_body
+        self.comment_author_association = comment_author_association
         self.published_body = ""
 
     def rest(self, method: str, path: str, payload=None):
@@ -56,6 +60,13 @@ class FakeIssueClient:
                 "body": self.published_body,
                 "html_url": "https://github.com/thun-res/vlink/issues/7#issuecomment-303",
                 "issue_url": "https://api.github.com/repos/thun-res/vlink/issues/7",
+            }
+        if method == "GET" and path.endswith("/issues/comments/202"):
+            return {
+                "id": 202,
+                "body": self.comment_body,
+                "author_association": self.comment_author_association,
+                "user": {"login": "user", "type": "User"},
             }
         raise AssertionError(f"Unexpected REST request: {method} {path}")
 
@@ -247,6 +258,89 @@ class CommunityAiReplyTest(unittest.TestCase):
             ):
                 community_ai_reply.post("codex", "AI_REPLY", "SOURCE_DIGEST", False)
 
+    def run_pull_request_prepare(
+        self,
+        client,
+        body: str,
+        provider: str = "codex",
+        author_association: str = "CONTRIBUTOR",
+    ):
+        test_root = SCRIPT_PATH.parents[2] / "build-ai" / "community-ai-reply-tests"
+        test_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=test_root) as temporary_dir:
+            temporary_path = Path(temporary_dir)
+            event_path = temporary_path / "event.json"
+            output_path = temporary_path / "output.txt"
+            prompt_path = temporary_path / "prompt.md"
+            event_path.write_text(
+                json.dumps(
+                    {
+                        "issue": {
+                            "id": 101,
+                            "number": 7,
+                            "pull_request": {"url": "https://example.invalid"},
+                        },
+                        "comment": {
+                            "id": 202,
+                            "body": body,
+                            "author_association": author_association,
+                            "user": {"login": "user", "type": "User"},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            environment = {
+                "GITHUB_EVENT_NAME": "issue_comment",
+                "GITHUB_EVENT_PATH": str(event_path),
+                "GITHUB_REPOSITORY": "thun-res/vlink",
+                "GITHUB_OUTPUT": str(output_path),
+            }
+            with (
+                mock.patch.dict(os.environ, environment, clear=False),
+                mock.patch.object(community_ai_reply, "GitHubClient", return_value=client),
+            ):
+                community_ai_reply.prepare(provider, prompt_path, False)
+            output = output_path.read_text(encoding="utf-8")
+            prompt = prompt_path.read_text(encoding="utf-8") if prompt_path.exists() else ""
+        return output, prompt
+
+    def run_pull_request_post(self, client, body: str, provider: str = "codex") -> None:
+        test_root = SCRIPT_PATH.parents[2] / "build-ai" / "community-ai-reply-tests"
+        test_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=test_root) as temporary_dir:
+            event_path = Path(temporary_dir) / "event.json"
+            event_path.write_text(
+                json.dumps(
+                    {
+                        "issue": {
+                            "id": 101,
+                            "number": 7,
+                            "pull_request": {"url": "https://example.invalid"},
+                        },
+                        "comment": {
+                            "id": 202,
+                            "body": body,
+                            "author_association": "CONTRIBUTOR",
+                            "user": {"login": "user", "type": "User"},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            environment = {
+                "AI_REPLY": "答复",
+                "GITHUB_EVENT_NAME": "issue_comment",
+                "GITHUB_EVENT_PATH": str(event_path),
+                "GITHUB_REPOSITORY": "thun-res/vlink",
+                "SOURCE_DIGEST": community_ai_reply.source_digest(body),
+            }
+            with (
+                mock.patch.dict(os.environ, environment, clear=False),
+                mock.patch.object(community_ai_reply, "GitHubClient", return_value=client),
+            ):
+                community_ai_reply.post(provider, "AI_REPLY", "SOURCE_DIGEST", False)
+
     def test_mentions_are_case_insensitive_and_require_a_boundary(self) -> None:
         codex = community_ai_reply.PROVIDERS["codex"]["mention"]
         claude = community_ai_reply.PROVIDERS["claude"]["mention"]
@@ -256,16 +350,79 @@ class CommunityAiReplyTest(unittest.TestCase):
         self.assertIsNone(codex.search("mail@codexample.com"))
         self.assertIsNotNone(claude.search("prefix-@claude"))
 
-    def test_issue_comment_for_pull_request_is_excluded(self) -> None:
+    def test_codex_issue_comment_for_pull_request_is_accepted(self) -> None:
         payload = {
             "issue": {"number": 12, "pull_request": {"url": "https://example.invalid"}},
-            "comment": {"body": "@codex answer", "user": {"login": "user", "type": "User"}},
+            "comment": {
+                "body": "@codex answer",
+                "author_association": "CONTRIBUTOR",
+                "user": {"login": "user", "type": "User"},
+            },
         }
 
-        target_kind, source_body, _ = community_ai_reply.event_source("issue_comment", payload)
+        target_kind, source_body, source = community_ai_reply.event_source(
+            "issue_comment",
+            payload,
+        )
 
         self.assertEqual(target_kind, "pull_request")
-        self.assertEqual(source_body, "")
+        self.assertEqual(source_body, "@codex answer")
+        self.assertTrue(community_ai_reply.actor_is_trusted(source))
+
+    def test_pull_request_prepare_accepts_bare_codex_mention(self) -> None:
+        output, prompt = self.run_pull_request_prepare(
+            FakeIssueClient(pull_request=True),
+            "@codex answer",
+        )
+
+        self.assertIn("should_reply=true", output)
+        self.assertIn("target_kind=pull_request", output)
+        self.assertIn("Pull Request #7", prompt)
+        self.assertIn("只依据下方线程上下文回答", prompt)
+        self.assertNotIn("分析当前 checkout", prompt)
+
+    def test_pull_request_prepare_rejects_claude_and_codex_review(self) -> None:
+        claude_output, _ = self.run_pull_request_prepare(
+            FakeIssueClient(pull_request=True, comment_body="@claude answer"),
+            "@claude answer",
+            provider="claude",
+        )
+        review_output, _ = self.run_pull_request_prepare(
+            FakeIssueClient(pull_request=True, comment_body="@codex review"),
+            "@codex review",
+        )
+
+        self.assertIn("should_reply=false", claude_output)
+        self.assertIn("should_reply=false", review_output)
+
+    def test_pull_request_prepare_rechecks_live_author_association(self) -> None:
+        output, prompt = self.run_pull_request_prepare(
+            FakeIssueClient(
+                pull_request=True,
+                comment_author_association="NONE",
+            ),
+            "@codex answer",
+        )
+
+        self.assertIn("should_reply=false", output)
+        self.assertEqual(prompt, "")
+
+    def test_pull_request_post_rechecks_and_verifies_target(self) -> None:
+        client = FakeIssueClient(pull_request=True)
+
+        self.run_pull_request_post(client, "@codex answer")
+
+        self.assertIn("由 **Codex** 自动生成", client.published_body)
+        self.assertIn(
+            "<!-- vlink-ai-reply:codex:issue-comment-202 -->",
+            client.published_body,
+        )
+        with self.assertRaises(community_ai_reply.ReplyError):
+            self.run_pull_request_post(
+                FakeIssueClient(pull_request=True, comment_body="@claude answer"),
+                "@claude answer",
+                provider="claude",
+            )
 
     def test_ai_generated_question_from_user_is_accepted(self) -> None:
         payload = {
@@ -507,6 +664,24 @@ class CommunityAiReplyTest(unittest.TestCase):
                 body,
                 community_ai_reply.marker("codex", "issue-101"),
             )
+
+    def test_pull_request_post_is_verified(self) -> None:
+        client = FakeIssueClient(pull_request=True)
+        body = community_ai_reply.final_body("codex", "答复", "issue-comment-202")
+        url = community_ai_reply.post_issue(
+            client,
+            "thun-res",
+            "vlink",
+            7,
+            body,
+            community_ai_reply.marker("codex", "issue-comment-202"),
+            "pull_request",
+        )
+
+        self.assertEqual(
+            url,
+            "https://github.com/thun-res/vlink/issues/7#issuecomment-303",
+        )
 
     def test_nested_discussion_reply_targets_top_level_comment(self) -> None:
         client = FakeDiscussionClient()

@@ -76,15 +76,18 @@
 - `ai-code-review.yml` 的事件、fork/draft/bot 过滤、权限、checkout、
   prompt、工具 allowlist、评论方式和超时与实际评审行为一致;PR 内容按
   不可信输入处理。
-- `community-ai-reply.yml` 只由 Issue/Discussion 标题、正文与评论中的
-  `@codex`/`@claude` 触发;核对 PR/Bot/自身回复过滤、编辑幂等、
-  `author_association` 可信角色门槛、非真人/AI 内容判断、当前 mention
-  与身份回读、生成/发布正文摘要一致性、上下文分页/清洗/限长及不可信
-  输入边界。长线程必须保留标题、正文和最近上下文。
+- `community-ai-reply.yml` 由 Issue/Discussion 标题、正文与评论中的
+  `@codex`/`@claude` 及 PR 普通评论中的 `@codex` 触发;核对生成 job
+  始终从事件固定的默认分支提交执行受信 helper、PR 独立发布 job、
+  PR Claude 过滤、官方 `@codex review` 互斥、Bot/自身回复过滤、
+  编辑幂等、`author_association` 可信角色门槛、非真人/AI 内容判断、
+  当前 mention 与身份回读、生成/发布正文摘要一致性、上下文分页/清洗/
+  限长及不可信输入边界。PR 裸 mention 必须使用 thread-only prompt,
+  不得声称读取 PR diff;长线程必须保留标题、正文和最近上下文。
 - Codex/Claude 凭据只进入各自只读生成 job;发布 job 不接触模型凭据,
-  且只按目标获得 `issues: write` 或 `discussions: write`。回复必须披露
-  模型来源,幂等 marker 只信任 `github-actions[bot]`,发布后核对正文、
-  目标和 Discussion `replyTo`。
+  且只按目标获得 `issues: write`、`pull-requests: write` 或
+  `discussions: write`。回复必须披露模型来源,幂等 marker 只信任
+  `github-actions[bot]`,发布后核对正文、目标和 Discussion `replyTo`。
 - Claude 顶层 action 当前不识别 Discussion 事件;Discussion job 只能
   使用同一固定提交的 base action,必须 `--bare`、`--tools ""`、禁用
   slash command/MCP 并使用 thread-only prompt,不得向不可信内容开放工具。

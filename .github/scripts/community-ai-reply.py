@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare and publish mention-triggered AI replies for Issues and Discussions."""
+"""Prepare and publish mention-triggered AI replies for community threads."""
 
 from __future__ import annotations
 
@@ -39,6 +39,7 @@ PROVIDERS = {
 }
 HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+CODEX_REVIEW_COMMAND = re.compile(r"(?<!\w)@codex\s+review\b", re.IGNORECASE)
 
 
 class ReplyError(RuntimeError):
@@ -169,9 +170,9 @@ def event_source(event_name: str, payload: dict[str, Any]) -> tuple[str, str, di
         return "issue", source_text, issue
     if event_name == "issue_comment":
         issue = object_field(payload, "issue")
-        if "pull_request" in issue:
-            return "pull_request", "", issue
         comment = object_field(payload, "comment")
+        if "pull_request" in issue:
+            return "pull_request", string_field(comment, "body"), comment
         return "issue", string_field(comment, "body"), comment
     if event_name == "discussion":
         discussion = object_field(payload, "discussion")
@@ -217,6 +218,16 @@ def actor_is_trusted(source: dict[str, Any]) -> bool:
     return association.upper() in TRUSTED_AUTHOR_ASSOCIATIONS
 
 
+def is_reply_request(provider: str, target_kind: str, body: str) -> bool:
+    if not PROVIDERS[provider]["mention"].search(body):
+        return False
+    return not (
+        provider == "codex"
+        and target_kind == "pull_request"
+        and CODEX_REVIEW_COMMAND.search(body)
+    )
+
+
 def actor_is_workflow_bot(actor: dict[str, Any]) -> bool:
     login = string_field(actor, "login")
     actor_type = string_field(actor, "type") or string_field(actor, "__typename")
@@ -250,25 +261,33 @@ def event_key(event_name: str, payload: dict[str, Any]) -> str:
     return f"{marker_kind}-{safe_identifier}"
 
 
-def get_issue_context(client: GitHubClient, owner: str, repo: str, number: int) -> list[dict[str, str]]:
+def get_issue_context(
+    client: GitHubClient,
+    owner: str,
+    repo: str,
+    number: int,
+    target_kind: str = "issue",
+) -> list[dict[str, str]]:
     issue = client.rest("GET", f"repos/{owner}/{repo}/issues/{number}")
     if not isinstance(issue, dict):
         raise ReplyError("Issue lookup returned a non-object response")
-    if "pull_request" in issue:
-        raise ReplyError("Pull requests are not supported by the community reply workflow")
+    is_pull_request = "pull_request" in issue
+    if is_pull_request != (target_kind == "pull_request"):
+        raise ReplyError(f"Resolved target does not match expected {target_kind}")
 
     issue_author = object_field(issue, "user")
     author = string_field(issue_author, "login")
     author_type = string_field(issue_author, "type")
+    target_name = "Pull Request" if is_pull_request else "Issue"
     entries = [
         {
-            "kind": "Issue 标题",
+            "kind": f"{target_name} 标题",
             "author": author,
             "author_type": author_type,
             "body": string_field(issue, "title"),
         },
         {
-            "kind": "Issue 正文",
+            "kind": f"{target_name} 正文",
             "author": author,
             "author_type": author_type,
             "body": string_field(issue, "body"),
@@ -279,7 +298,7 @@ def get_issue_context(client: GitHubClient, owner: str, repo: str, number: int) 
         comment_author = object_field(comment, "user")
         entries.append(
             {
-                "kind": "Issue 评论",
+                "kind": f"{target_name} 评论",
                 "author": string_field(comment_author, "login"),
                 "author_type": string_field(comment_author, "type"),
                 "body": string_field(comment, "body"),
@@ -544,10 +563,11 @@ def resolve_target(
 ) -> tuple[str, int, str, str, list[dict[str, str]]]:
     owner, repo = repository_parts()
     target_kind, _, _ = event_source(event_name, payload)
-    if target_kind == "issue":
+    if target_kind in {"issue", "pull_request"}:
         issue = object_field(payload, "issue")
         number = integer_field(issue, "number")
-        return "issue", number, "", "", get_issue_context(client, owner, repo, number)
+        entries = get_issue_context(client, owner, repo, number, target_kind)
+        return target_kind, number, "", "", entries
     if target_kind == "discussion":
         discussion = object_field(payload, "discussion")
         number = integer_field(discussion, "number")
@@ -604,7 +624,12 @@ def build_prompt(
     rendered.extend(reversed(recent))
 
     truncation_note = "线程内容存在截断，回答时不得假装已看到完整内容。" if truncated else "线程内容未因长度截断。"
-    target_name = "Issue" if target_kind == "issue" else "Discussion"
+    target_names = {
+        "issue": "Issue",
+        "pull_request": "Pull Request",
+        "discussion": "Discussion",
+    }
+    target_name = target_names[target_kind]
     evidence_rule = (
         "只依据下方线程上下文回答；不得尝试访问文件、命令、网络、MCP 或其他工具。"
         if thread_only
@@ -653,12 +678,14 @@ def write_output(values: dict[str, str]) -> None:
 def prepare(provider: str, prompt_file: Path, thread_only: bool) -> None:
     event_name, payload = load_event()
     target_kind, source_body, source = event_source(event_name, payload)
-    mention = PROVIDERS[provider]["mention"]
+    supports_target = target_kind in {"issue", "discussion"} or (
+        provider == "codex" and target_kind == "pull_request"
+    )
     should_reply = (
-        target_kind in {"issue", "discussion"}
+        supports_target
         and not actor_is_bot(source)
         and actor_is_trusted(source)
-        and bool(mention.search(source_body))
+        and is_reply_request(provider, target_kind, source_body)
     )
     values = {
         "should_reply": "false",
@@ -678,7 +705,11 @@ def prepare(provider: str, prompt_file: Path, thread_only: bool) -> None:
     client = GitHubClient()
     kind, number, discussion_id, reply_to_id, entries = resolve_target(client, event_name, payload)
     source_body, source = live_event_source(client, event_name, payload)
-    if actor_is_bot(source) or not actor_is_trusted(source) or not mention.search(source_body):
+    if (
+        actor_is_bot(source)
+        or not actor_is_trusted(source)
+        or not is_reply_request(provider, kind, source_body)
+    ):
         values.update(
             {
                 "target_kind": kind,
@@ -713,7 +744,7 @@ def prepare(provider: str, prompt_file: Path, thread_only: bool) -> None:
             "body": source_body,
         },
     )
-    prompt = build_prompt(provider, kind, number, entries, thread_only)
+    prompt = build_prompt(provider, kind, number, entries, thread_only or kind == "pull_request")
     try:
         prompt_file.parent.mkdir(parents=True, exist_ok=True)
         prompt_file.write_text(prompt, encoding="utf-8")
@@ -766,12 +797,20 @@ def final_body(provider: str, reply: str, key: str) -> str:
     )
 
 
-def issue_has_marker(client: GitHubClient, owner: str, repo: str, number: int, value: str) -> bool:
+def issue_has_marker(
+    client: GitHubClient,
+    owner: str,
+    repo: str,
+    number: int,
+    value: str,
+    target_kind: str = "issue",
+) -> bool:
     issue = client.rest("GET", f"repos/{owner}/{repo}/issues/{number}")
     if not isinstance(issue, dict):
         raise ReplyError("Issue lookup returned a non-object response")
-    if "pull_request" in issue:
-        raise ReplyError("Refusing to post an Issue reply to a pull request")
+    is_pull_request = "pull_request" in issue
+    if is_pull_request != (target_kind == "pull_request"):
+        raise ReplyError(f"Refusing to post a {target_kind} reply to a different target")
     comments = client.paginate(f"repos/{owner}/{repo}/issues/{number}/comments?per_page=100")
     return any(
         actor_is_workflow_bot(object_field(comment, "user"))
@@ -787,8 +826,9 @@ def post_issue(
     number: int,
     body: str,
     marker_value: str,
+    target_kind: str = "issue",
 ) -> str:
-    if issue_has_marker(client, owner, repo, number, marker_value):
+    if issue_has_marker(client, owner, repo, number, marker_value, target_kind):
         print("Reply already exists for this event; skipping duplicate post.")
         return ""
     created = client.rest(
@@ -967,8 +1007,10 @@ def post_discussion(
 def post(provider: str, reply_env: str, source_digest_env: str, structured: bool) -> None:
     event_name, payload = load_event()
     target_kind, _, _ = event_source(event_name, payload)
-    if target_kind not in {"issue", "discussion"}:
-        raise ReplyError("The event does not target an Issue or Discussion")
+    if target_kind not in {"issue", "pull_request", "discussion"}:
+        raise ReplyError("The event does not target a supported community thread")
+    if target_kind == "pull_request" and provider != "codex":
+        raise ReplyError("Pull Request mentions are only supported for Codex")
 
     client = GitHubClient()
     kind, number, discussion_id, reply_to_id, _ = resolve_target(client, event_name, payload)
@@ -979,7 +1021,7 @@ def post(provider: str, reply_env: str, source_digest_env: str, structured: bool
     if (
         actor_is_bot(source)
         or not actor_is_trusted(source)
-        or not PROVIDERS[provider]["mention"].search(source_body)
+        or not is_reply_request(provider, target_kind, source_body)
     ):
         print("The source no longer satisfies the mention trigger; skipping reply.")
         return
@@ -994,8 +1036,8 @@ def post(provider: str, reply_env: str, source_digest_env: str, structured: bool
     marker_value = marker(provider, key)
     body = final_body(provider, load_reply(provider, reply_env, structured), key)
     owner, repo = repository_parts()
-    if kind == "issue":
-        url = post_issue(client, owner, repo, number, body, marker_value)
+    if kind in {"issue", "pull_request"}:
+        url = post_issue(client, owner, repo, number, body, marker_value, kind)
     else:
         url = post_discussion(
             client,

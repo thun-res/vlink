@@ -239,7 +239,10 @@ for required_text in \
     "github.event.discussion.author_association" \
     "concurrency:" \
     "cancel-in-progress: false" \
+    "post-codex-pull-request:" \
+    'ref: ${{ github.sha }}' \
     "issues: write" \
+    "pull-requests: write" \
     "discussions: write"; do
     grep -Fq -- "$required_text" "$reply_workflow" ||
         report_error "community reply workflow missing contract: $required_text"
@@ -252,6 +255,8 @@ for required_text in \
     "authorAssociation" \
     "entry_has_trusted_marker" \
     "live_event_source" \
+    "CODEX_REVIEW_COMMAND" \
+    '"pull_request"' \
     "source_digest"; do
     grep -Fq -- "$required_text" "$reply_script" ||
         report_error "community reply script missing contract: $required_text"
