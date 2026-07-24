@@ -34,7 +34,8 @@ description: >-
 `ci-test.yml` 忽略纯 `**.md`、`doc/**`、`.github/wiki/**` 改动;
 `ci-agent-skills.yml` 只处理 `AGENTS.md`、`.agents/**` 及对应安装、
 校验入口和根 `AI-POLICY.md`。`ai-code-review.yml` 只处理 opened、
-synchronize、ready_for_review、reopened。
+synchronize、ready_for_review、reopened;closed 事件只通过并发组取消
+同一 PR 尚未结束的审查,不运行审查 job。
 
 ² `community-ai-reply.yml` 由 `issues`、`issue_comment`、`discussion`
 和 `discussion_comment` 的创建/编辑事件触发。Issue/Discussion 的

@@ -5,7 +5,8 @@ name: Codex + Claude PR Review
 
 on:
   pull_request:
-    types: [opened, synchronize, ready_for_review, reopened]
+    # Let the concurrency group cancel an in-progress review when its PR closes.
+    types: [opened, synchronize, ready_for_review, reopened, closed]
     branches:
       - master
       - main
@@ -57,6 +58,7 @@ jobs:
   claude-review:
     name: Claude review
     if: >-
+      github.event.action != 'closed' &&
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.user.type != 'Bot' &&
@@ -68,10 +70,10 @@ jobs:
       pull-requests: write
       id-token: write
     steps:
-      - name: Checkout pull request merge commit
+      - name: Checkout pull request head commit
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 1
           persist-credentials: false
 
