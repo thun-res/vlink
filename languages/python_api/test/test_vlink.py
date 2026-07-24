@@ -449,6 +449,15 @@ def test_zerocopy_point_cloud():
         ("z", _vlink.PointCloud.Type.Float, 4),
     ]
 
+    unknown_pc = _vlink.PointCloud()
+    unknown_type_num = (12 << 8) | (12 << 4) | 12
+    assert unknown_pc.create(1, size_num, unknown_type_num, "x,y,z")
+    assert [key.type for key in unknown_pc.get_key_list()] == [
+        _vlink.PointCloud.Type.Unknown,
+        _vlink.PointCloud.Type.Unknown,
+        _vlink.PointCloud.Type.Unknown,
+    ]
+
     v = pc.get_value_v3f(0)
     assert abs(v.x - 1.0) < 1e-6 and abs(v.y - 2.0) < 1e-6 and abs(v.z - 3.0) < 1e-6
 
