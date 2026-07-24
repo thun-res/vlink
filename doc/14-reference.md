@@ -198,6 +198,11 @@ vlink::Publisher<Imu> pub2("dds://sensor/imu?qos=my_sensor");
 | printf 风格 `CLOG_X` | `CLOG_E("errno=%d", errno);` | 兼容既有 C 代码 |
 | RAII 流 `SLOG_X` | `SLOG_D << "a=" << a;` | 链式 `<<` |
 
+新代码默认优先 `VLOG_X`；多段嵌入值或复杂格式控制推荐 `CLOG_X`；
+`MLOG_X` 只在相邻模块已采用 `{}` 占位格式时沿用。Info 只记录低频
+正常状态，Warn 表示可恢复异常或降级，Error 表示当前操作失败，
+Fatal 只用于无法安全继续的错误。
+
 高频路径可用 `VLOG_{T,D,I,W,E}_EVERY_MS(interval_ms, ...)` 做线程安全的调用点级周期限频；Fatal 和其他日志宏族不提供该变体。
 
 运行期由环境变量 `VLINK_LOG_LEVEL` 设定总级别，可填写 `0`..`6` 或对应英文名称（首字母大写、全大写、全小写）；`VLINK_LOG_CONSOLE_LEVEL` / `VLINK_LOG_FILE_LEVEL` 分别控制控制台与文件两个 sink，并接受相同取值。编译期将宏 `VLINK_LOG_LEVEL` 设为某级别后，更低级别的日志在 Release 下被整条消除。完整日志能力见 [基础库](08-base-library.md)。

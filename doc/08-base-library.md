@@ -57,13 +57,13 @@ SLOG_D << "values: " << 42 << " temp=" << 78.5;
 | --- | --- |
 | `kTrace` | 详细内部跟踪 |
 | `kDebug` | 开发调试信息 |
-| `kInfo` | 正常运行信息 |
+| `kInfo` | 低频正常状态或生命周期 |
 | `kWarn` | 异常但可恢复 |
-| `kError` | 影响运行的错误 |
-| `kFatal` | 写日志后抛出 `Exception::RuntimeError` |
+| `kError` | 当前操作失败但进程可继续 |
+| `kFatal` | 无法安全继续；记录后抛出 `Exception::RuntimeError` |
 | `kOff` | 关闭对应 Sink |
 
-四种写法对应同一套级别短宏（`_T`/`_D`/`_I`/`_W`/`_E`/`_F`），语义等价，按习惯任选其一。
+四种写法对应同一套级别短宏（`_T`/`_D`/`_I`/`_W`/`_E`/`_F`）。
 
 | 写法 | 宏前缀 | 示例 | 特点 |
 | --- | --- | --- | --- |
@@ -71,6 +71,11 @@ SLOG_D << "values: " << 42 << " temp=" << 78.5;
 | 占位格式化 | `MLOG_*` | `MLOG_I("x={}", x)` | `{}` 占位符 |
 | C 风格 | `CLOG_*` | `CLOG_I("x=%d", x)` | `printf` 风格 |
 | RAII 流 | `SLOG_*` | `SLOG_I << "x=" << x` | 析构时提交 |
+
+新代码默认优先 `VLOG_*`。多段嵌入值、宽度/精度等复杂格式控制推荐
+`CLOG_*`，格式符必须与实参类型一致；`MLOG_*` 主要沿用已经采用 `{}`
+占位和 formatter 的模块。Info 不用于逐帧热路径；Fatal 只用于状态已
+无法安全继续的错误，不用于普通参数校验或可恢复失败。
 
 `kFatal` 级别在写日志后抛出异常，`e.what()` 携带日志消息，可经 try/catch 捕获。编译期级别过滤、自定义日志后端、崩溃回溯环形缓冲等进阶能力见头文件。完整示例见 [`examples/base/logger_basic/`](../examples/base/logger_basic/)。
 
@@ -98,7 +103,7 @@ VLOG_W_EVERY_MS(1000, "queue remains full, size=", queue.size());
 
 ### 8.3.1 所有权模型
 
-构造方式决定所有权与复制语义。性能敏感路径优先 `shallow_copy`，仅在需要独立持有数据的副本时才用 `deep_copy`。
+构造方式决定所有权与复制语义。`Bytes` 的拷贝构造和拷贝赋值都会产生拥有数据的深拷贝；性能敏感路径传递已有对象时优先移动，明确需要零拷贝别名时使用 `shallow_copy`，仅在需要独立持有数据的副本时才用 `deep_copy`。
 
 | 构造方式 | 是否拥有数据 | 复制语义 | 用途 |
 | --- | --- | --- | --- |
@@ -113,6 +118,7 @@ VLOG_W_EVERY_MS(1000, "queue remains full, size=", queue.size());
 | `Bytes::create(size, offset=0)` | 分配缓冲区，可预留前缀字节 |
 | `Bytes::shallow_copy(data, size)` | 零拷贝包装外部缓冲区 |
 | `Bytes::deep_copy(data, size)` | 拷贝外部数据并拥有 |
+| 拷贝构造 / 拷贝赋值 | 深拷贝并拥有；传递时不可视为廉价共享 |
 | `Bytes::from_string(str)` | 从字符串构造 |
 | `data()` / `size()` / `empty()` | 访问指针、长度、是否为空 |
 | `to_string()` / `to_string_view()` | 转字符串 / 视图 |
