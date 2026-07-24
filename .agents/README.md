@@ -47,10 +47,11 @@
 
 ## 3. 可执行 Skill（`.agents/skills/`，按任务触发）
 
-首次使用执行 `bash tools/install_skills.sh`,将 `.agents/skills` 链接到
-`.claude/skills` 与 `.codex/skills`,并创建
-`CLAUDE.md -> AGENTS.md`(均被 gitignore)。skill 目录不支持符号链接的
-环境可用 `--copy` 安装 skills;`CLAUDE.md` 始终要求真实符号链接。
+首次使用由维护者显式授权后执行 `bash tools/install_skills.sh`,将
+`.agents/skills` 链接到 `.claude/skills` 与 `.codex/skills`,并创建
+`CLAUDE.md -> AGENTS.md`(均被 gitignore);Agent 不得仅因读取本路由
+而自行安装。skill 目录不支持符号链接的环境可用 `--copy` 安装
+skills;`CLAUDE.md` 始终要求真实符号链接。
 Git Bash 必须先启用原生符号链接;目标不是本脚本安装的内容时拒绝覆盖。
 link 模式会立即看到新增 skill;copy 模式是安装时快照,skill 变化后需
 重新运行脚本刷新。已启动的 Agent 会话不保证热刷新 skill 清单;首次

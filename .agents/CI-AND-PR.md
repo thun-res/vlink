@@ -33,9 +33,9 @@
   `.github/PULL_REQUEST_TEMPLATE.md` 的 Summary、Type of change、
   Related issues、How was this tested、Checklist 五节为准。提交前
   核对清单见 `doc/15-contributing.md` §15.9。
-- commit subject/body 与 PR 标题/正文使用简体中文,type/scope、代码
-  标识、路径、API 名和错误信息保持原文.按模块/功能提交用 `/commit`,
-  `dev` → `master` PR 用 `/pr`,master 正式发版用 `/release`.
+- commit subject/body 使用英文,PR 标题/正文使用简体中文;type/scope、
+  代码标识、路径、API 名和错误信息保持原文.按模块/功能提交用
+  `/commit`,`dev` → `master` PR 用 `/pr`,master 正式发版用 `/release`.
 - `/pr` 与 `/release` 写入 GitHub 的标题、正文、notes、tag 注释等人工
   内容使用简体中文;产品名、版本、tag、代码标识和原始信息保持原文.
 - 按 `doc/15-contributing.md` §15.11 从最新 `master` 创建规范命名的
