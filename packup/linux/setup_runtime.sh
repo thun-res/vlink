@@ -50,6 +50,10 @@ fi
 # export VLINK_FLATC_PROGRAM="$VLINK_ROOT_DIR/bin/flatc"
 [ -f "$VLINK_COMPLETIONS" ] && source "$VLINK_COMPLETIONS"
 
+alias viewer="$VLINK_ROOT_DIR/bin/run_viewer.sh"
+alias player="$VLINK_ROOT_DIR/bin/run_player.sh"
+alias analyzer="$VLINK_ROOT_DIR/bin/run_analyzer.sh"
+
 function kill_proxy() {
     killall -q -9 proxy
     killall -q -9 vlink-proxy
