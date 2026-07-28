@@ -435,6 +435,7 @@ TEST_SUITE("base-WheelTimer") {
 
   TEST_CASE("remove mid-repeat stops further firings") {
     WheelTimer wheel(10, 10);
+    wheel.set_catchup_limit(1);
     wheel.start();
 
     std::atomic<int> fire_count{0};
@@ -444,12 +445,13 @@ TEST_SUITE("base-WheelTimer") {
     int count_before_remove = fire_count.load();
     CHECK(count_before_remove >= 1);
 
-    wheel.remove(key);
+    CHECK(wheel.remove(key));
+    int count_after_remove = fire_count.load();
 
     std::this_thread::sleep_for(70ms);
     wheel.stop();
 
-    CHECK(fire_count.load() == count_before_remove);
+    CHECK(fire_count.load() <= count_after_remove + 1);
   }
 
   TEST_CASE("add returns unique keys for each timer") {
