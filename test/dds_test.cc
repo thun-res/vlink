@@ -113,10 +113,12 @@ struct DdsFailingCustomMsg {
   bool operator<<(const Bytes&) { return false; }
 };
 
+#ifdef VLINK_HAS_CDR
 struct DdsUnregisteredCdrMsg {
   void serialize(eprosima::fastcdr::Cdr&) const {}
   void deserialize(eprosima::fastcdr::Cdr&) {}
 };
+#endif
 
 }  // namespace
 
@@ -350,6 +352,7 @@ TEST_SUITE("dds-init") {
     }
   }
 
+#ifdef VLINK_HAS_CDR
   TEST_CASE("unregistered CDR topic init is either rejected or cleaned up") {
     Publisher<DdsUnregisteredCdrMsg> pub(DdsConf("dds/init/unregistered_cdr_pub"), InitType::kWithoutInit);
     bool pub_init = false;
@@ -377,6 +380,7 @@ TEST_SUITE("dds-init") {
       CHECK(sub.deinit());
     }
   }
+#endif
 
   TEST_CASE("deferred nodes cover every role without runtime init") {
     Publisher<int> pub(DdsConf("dds/init/deferred_roles_pub"), InitType::kWithoutInit);
