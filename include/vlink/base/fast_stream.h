@@ -67,6 +67,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <ostream>
 #include <string>
 #include <string_view>
@@ -76,8 +77,6 @@
 #include "./macros.h"
 
 namespace vlink {
-
-class Logger;
 
 /**
  * @class FastStream
@@ -168,13 +167,26 @@ class VLINK_EXPORT FastStream : public std::ostream {
    */
   FastStream& write_raw(const char* data, size_t len);
 
- private:
+  /**
+   * @brief Appends a value using the logger's fast formatting paths when applicable.
+   *
+   * @note Integer fast formatting is locale-independent.
+   *
+   * @tparam T Value type.
+   * @param value Value to append.
+   * @return Reference to @c *this for chaining.
+   */
   template <typename T>
   FastStream& push(T&& value);
 
+ private:
   FastStream& push_floating(float value);
 
   FastStream& push_floating(double value);
+
+  bool push_integer(int64_t value);
+
+  bool push_integer(uint64_t value);
 
   static constexpr size_t kDefaultCapacity{256};
   static constexpr size_t kMinCapacity{64};
@@ -212,8 +224,6 @@ class VLINK_EXPORT FastStream : public std::ostream {
 
   StringBuf buf_;
 
-  friend class Logger;
-
   VLINK_DISALLOW_COPY_AND_ASSIGN(FastStream)
 };
 
@@ -243,8 +253,23 @@ inline FastStream& FastStream::push(T&& value) {
     }
   } else if constexpr (std::is_same_v<ValueT, float> || std::is_same_v<ValueT, double>) {
     return push_floating(value);
+  } else if constexpr (std::is_integral_v<ValueT> && sizeof(ValueT) <= sizeof(uint64_t) &&
+                       !std::is_same_v<ValueT, bool> && !std::is_same_v<ValueT, char> &&
+                       !std::is_same_v<ValueT, signed char> && !std::is_same_v<ValueT, unsigned char> &&
+                       !std::is_same_v<ValueT, wchar_t> && !std::is_same_v<ValueT, char16_t> &&
+                       !std::is_same_v<ValueT, char32_t>) {
+    if constexpr (std::is_signed_v<ValueT>) {
+      if VLIKELY (push_integer(static_cast<int64_t>(value))) {
+        return *this;
+      }
+    } else {
+      if VLIKELY (push_integer(static_cast<uint64_t>(value))) {
+        return *this;
+      }
+    }
   }
 
+  // NOLINTNEXTLINE(bugprone-unintended-char-ostream-output)
   static_cast<std::ostream&>(*this) << std::forward<T>(value);
   return *this;
 }

@@ -87,6 +87,32 @@ namespace vlink {
 [[maybe_unused]] static constexpr size_t kDefaultLogMaxCount = 10U;
 [[maybe_unused]] static constexpr int kDefaultLogFlushDelay = 500;
 
+#if defined(VLINK_ENABLE_LOG_QUI)
+template <quill::QueueType QueueTypeT>
+struct QuillFrontendOptions final : quill::FrontendOptions {
+  // NOLINTNEXTLINE(readability-identifier-naming)
+  static constexpr quill::QueueType queue_type{QueueTypeT};
+  // NOLINTNEXTLINE(readability-identifier-naming)
+  inline static size_t initial_queue_capacity{quill::FrontendOptions::initial_queue_capacity};
+  // NOLINTNEXTLINE(readability-identifier-naming)
+  inline static size_t unbounded_queue_max_capacity{quill::FrontendOptions::unbounded_queue_max_capacity};
+};
+
+using QuillBlockingFrontend = quill::FrontendImpl<QuillFrontendOptions<quill::QueueType::UnboundedBlocking>>;
+using QuillDroppingFrontend = quill::FrontendImpl<QuillFrontendOptions<quill::QueueType::BoundedDropping>>;
+
+template <bool ImmediateFlushT>
+static void log_quill(QuillBlockingFrontend::logger_t* blocking_logger,
+                      QuillDroppingFrontend::logger_t* dropping_logger, const quill::MacroMetadata* metadata,
+                      std::string_view log) {
+  if VLIKELY (dropping_logger) {
+    (void)dropping_logger->template log_statement<ImmediateFlushT>(metadata, log);
+  } else {
+    (void)blocking_logger->template log_statement<ImmediateFlushT>(metadata, log);
+  }
+}
+#endif
+
 [[maybe_unused]] static std::string get_current_date(bool use_utc = false) {
   auto now = std::chrono::system_clock::now();
   std::time_t now_time_t = std::chrono::system_clock::to_time_t(now);
@@ -307,7 +333,8 @@ struct Logger::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding)
   std::shared_ptr<spdlog::sinks::sink> spd_file_sink;
   std::shared_ptr<spdlog::details::thread_pool> spd_thread_pool;
 #elif defined(VLINK_ENABLE_LOG_QUI)
-  quill::Logger* quill_log{nullptr};
+  QuillBlockingFrontend::logger_t* quill_blocking_log{nullptr};
+  QuillDroppingFrontend::logger_t* quill_dropping_log{nullptr};
   std::shared_ptr<quill::StreamSink> quill_console_sink;
   std::shared_ptr<quill::StreamSink> quill_file_sink;
   quill::MacroMetadata quill_metadata_trace{
@@ -525,7 +552,11 @@ void Logger::enable_backtrace(size_t size) noexcept {
   instance.impl_->spd->set_level(spdlog::level::warn);
   instance.impl_->spd->enable_backtrace(size);
 #elif defined(VLINK_ENABLE_LOG_QUI)
-  instance.impl_->quill_log->init_backtrace(size, quill::LogLevel::TraceL3);
+  if VLIKELY (instance.impl_->quill_dropping_log) {
+    instance.impl_->quill_dropping_log->init_backtrace(size, quill::LogLevel::TraceL3);
+  } else {
+    instance.impl_->quill_blocking_log->init_backtrace(size, quill::LogLevel::TraceL3);
+  }
 #endif
 
   instance.impl_->is_enable_backtrace.store(true, std::memory_order_release);
@@ -558,8 +589,13 @@ void Logger::disable_backtrace() noexcept {
   instance.impl_->spd_console_sink->set_level(spdlog::level::off);
   instance.impl_->spd->set_level(spdlog::level::trace);
 #elif defined(VLINK_ENABLE_LOG_QUI)
-  instance.impl_->quill_log->flush_log();
-  instance.impl_->quill_log->init_backtrace(0, quill::LogLevel::None);
+  if VLIKELY (instance.impl_->quill_dropping_log) {
+    instance.impl_->quill_dropping_log->flush_log();
+    instance.impl_->quill_dropping_log->init_backtrace(0, quill::LogLevel::None);
+  } else {
+    instance.impl_->quill_blocking_log->flush_log();
+    instance.impl_->quill_blocking_log->init_backtrace(0, quill::LogLevel::None);
+  }
 #else
   (void)instance;
 #endif
@@ -591,7 +627,11 @@ void Logger::dump_backtrace() noexcept {
   instance.impl_->spd_console_sink->flush();
   std::this_thread::sleep_for(std::chrono::milliseconds(100));  // wait for dump to console
 #elif defined(VLINK_ENABLE_LOG_QUI)
-  instance.impl_->quill_log->flush_backtrace();
+  if VLIKELY (instance.impl_->quill_dropping_log) {
+    instance.impl_->quill_dropping_log->flush_backtrace();
+  } else {
+    instance.impl_->quill_blocking_log->flush_backtrace();
+  }
 #else
   (void)instance;
 #endif
@@ -611,10 +651,11 @@ bool Logger::can_log(Level level) noexcept {
 }
 
 bool Logger::is_writable(Level level) noexcept {
-  auto& global_instance = LoggerGlobal::get();
+  if VUNLIKELY (level >= kOff) {
+    return false;
+  }
 
-  return level >= global_instance.console_level.load(std::memory_order_acquire) ||
-         level >= global_instance.file_level.load(std::memory_order_acquire);
+  return can_log(level);
 }
 
 void Logger::write(Level level, std::string_view log) noexcept {
@@ -890,14 +931,26 @@ Logger::Logger() noexcept : impl_(std::make_unique<Impl>()) {
 
 #elif defined(VLINK_ENABLE_LOG_QUI)
     std::string log_append = Utils::get_env("VLINK_LOG_OPEN_APPEND");
+    std::string log_block = Utils::get_env("VLINK_LOG_BLOCK_SYNC");
     std::string log_depth = Utils::get_env("VLINK_LOG_WRITE_DEPTH");
 
     bool use_log_append = (log_append == "1");
-    int log_write_depth = kDefaultWriteDepth;
+    bool use_log_block = (log_block == "1");
+    size_t log_queue_capacity = quill::FrontendOptions::initial_queue_capacity;
 
     if (!log_depth.empty()) {
-      std::from_chars(log_depth.data(), log_depth.data() + log_depth.size(), log_write_depth);
+      std::from_chars(log_depth.data(), log_depth.data() + log_depth.size(), log_queue_capacity);
     }
+
+    static constexpr size_t kMinimumQuillQueueCapacity = static_cast<size_t>(Logger::kLocalBufferSize) * 2U;
+
+    if (log_queue_capacity < kMinimumQuillQueueCapacity) {
+      log_queue_capacity = kMinimumQuillQueueCapacity;
+    }
+
+    QuillFrontendOptions<quill::QueueType::UnboundedBlocking>::initial_queue_capacity = log_queue_capacity;
+    QuillFrontendOptions<quill::QueueType::UnboundedBlocking>::unbounded_queue_max_capacity = log_queue_capacity;
+    QuillFrontendOptions<quill::QueueType::BoundedDropping>::initial_queue_capacity = log_queue_capacity;
 
     std::string log_path = global_instance.log_path + "/" + global_instance.app_name + ".log";
 
@@ -907,7 +960,10 @@ Logger::Logger() noexcept : impl_(std::make_unique<Impl>()) {
     backend_options.sleep_duration = std::chrono::microseconds(500);
     backend_options.transit_event_buffer_initial_capacity = 1024U;
     backend_options.transit_events_soft_limit = 8192U;
+    backend_options.transit_events_hard_limit = 8192U;
     backend_options.wait_for_queues_to_empty_before_exit = true;
+    backend_options.sink_min_flush_interval =
+        std::chrono::milliseconds(log_flush_delay_ms > 0 ? log_flush_delay_ms : 0);
     backend_options.log_level_descriptions = {"TRACE", "TRACE", "TRACE", "DEBUG",     "INFO", "NOTICE",
                                               "WARN",  "ERROR", "FATAL", "BACKTRACE", "EMPTY"};
     backend_options.log_level_short_codes = {"T", "T", "T", "D", "I", "N", "W", "E", "F", "BT", " "};
@@ -928,7 +984,6 @@ Logger::Logger() noexcept : impl_(std::make_unique<Impl>()) {
     quill::RotatingFileSinkConfig sink_config;
 
     sink_config.set_open_mode('a');
-    sink_config.set_write_buffer_size(log_write_depth);
     sink_config.set_rotation_max_file_size(log_max_size);
     sink_config.set_max_backup_files(log_max_count);
     sink_config.set_overwrite_rolled_files(true);
@@ -961,7 +1016,7 @@ Logger::Logger() noexcept : impl_(std::make_unique<Impl>()) {
       std::cerr << "VLink logger disk emergency: " << e.what() << std::endl;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
-    std::vector<std::shared_ptr<quill::Sink> > quill_sinks;
+    std::vector<std::shared_ptr<quill::Sink>> quill_sinks;
 
     if (impl_->quill_file_sink) {
       quill_sinks.emplace_back(impl_->quill_file_sink);
@@ -969,8 +1024,15 @@ Logger::Logger() noexcept : impl_(std::make_unique<Impl>()) {
 
     quill_sinks.emplace_back(impl_->quill_console_sink);
 
-    impl_->quill_log = quill::Frontend::create_or_get_logger(global_instance.app_name, quill_sinks, format_options);
-    impl_->quill_log->set_log_level(quill::LogLevel::None);
+    if (use_log_block) {
+      impl_->quill_blocking_log =
+          QuillBlockingFrontend::create_or_get_logger(global_instance.app_name, quill_sinks, format_options);
+      impl_->quill_blocking_log->set_log_level(quill::LogLevel::None);
+    } else {
+      impl_->quill_dropping_log =
+          QuillDroppingFrontend::create_or_get_logger(global_instance.app_name, quill_sinks, format_options);
+      impl_->quill_dropping_log->set_log_level(quill::LogLevel::None);
+    }
 
 #elif defined(VLINK_ENABLE_LOG_DLT)
     DLT_REGISTER_APP(global_instance.app_name.c_str(), "Application for Logging");
@@ -1041,8 +1103,14 @@ Logger::~Logger() noexcept {
     quill::Backend::stop();
     impl_->quill_console_sink.reset();
     impl_->quill_file_sink.reset();
-    quill::Frontend::remove_logger(impl_->quill_log);
-    impl_->quill_log = nullptr;
+
+    if (impl_->quill_dropping_log) {
+      QuillDroppingFrontend::remove_logger(impl_->quill_dropping_log);
+      impl_->quill_dropping_log = nullptr;
+    } else {
+      QuillBlockingFrontend::remove_logger(impl_->quill_blocking_log);
+      impl_->quill_blocking_log = nullptr;
+    }
   } catch (std::exception&) {
   }
 
@@ -1269,7 +1337,7 @@ void Logger::write_to_file(Level level, std::string_view log) noexcept {
       std::lock_guard lock(impl_->backtrace_mtx);
 
       if (impl_->is_enable_backtrace.load(std::memory_order_acquire)) {
-        impl_->quill_log->log_statement<true>(&impl_->quill_metadata_backtrace, log);
+        log_quill<true>(impl_->quill_blocking_log, impl_->quill_dropping_log, &impl_->quill_metadata_backtrace, log);
 
         if (level < kWarn) {
           return;
@@ -1279,23 +1347,23 @@ void Logger::write_to_file(Level level, std::string_view log) noexcept {
 
     switch (level) {
       case kTrace:
-        impl_->quill_log->log_statement<false>(&impl_->quill_metadata_trace, log);
+        log_quill<false>(impl_->quill_blocking_log, impl_->quill_dropping_log, &impl_->quill_metadata_trace, log);
         break;
       case kDebug:
-        impl_->quill_log->log_statement<false>(&impl_->quill_metadata_debug, log);
+        log_quill<false>(impl_->quill_blocking_log, impl_->quill_dropping_log, &impl_->quill_metadata_debug, log);
         break;
       case kInfo:
-        impl_->quill_log->log_statement<false>(&impl_->quill_metadata_info, log);
+        log_quill<false>(impl_->quill_blocking_log, impl_->quill_dropping_log, &impl_->quill_metadata_info, log);
         break;
       case kWarn:
-        impl_->quill_log->log_statement<false>(&impl_->quill_metadata_warn, log);
+        log_quill<false>(impl_->quill_blocking_log, impl_->quill_dropping_log, &impl_->quill_metadata_warn, log);
         break;
       case kError:
-        impl_->quill_log->log_statement<true>(&impl_->quill_metadata_error, log);
+        log_quill<true>(impl_->quill_blocking_log, impl_->quill_dropping_log, &impl_->quill_metadata_error, log);
         quill::Backend::notify();
         break;
       case kFatal:
-        impl_->quill_log->log_statement<true>(&impl_->quill_metadata_fatal, log);
+        log_quill<true>(impl_->quill_blocking_log, impl_->quill_dropping_log, &impl_->quill_metadata_fatal, log);
         quill::Backend::notify();
         break;
       case kOff:

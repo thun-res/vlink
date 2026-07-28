@@ -24,6 +24,7 @@
 #include "./base/fast_stream.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cstring>
 #include <limits>
 #include <locale>
@@ -85,6 +86,44 @@ FastStream& FastStream::push_floating(double value) {
   static_cast<std::ostream&>(*this) << value;
 
   return *this;
+}
+
+bool FastStream::push_integer(int64_t value) {
+  if VUNLIKELY (width() != 0 || flags() != (std::ios_base::dec | std::ios_base::skipws)) {
+    return false;
+  }
+
+  static constexpr size_t kBufferSize{std::numeric_limits<int64_t>::digits10 + 3};
+
+  char buffer[kBufferSize];
+  auto result = std::to_chars(buffer, buffer + sizeof(buffer), value);
+
+  if VUNLIKELY (result.ec != std::errc{}) {
+    return false;
+  }
+
+  write_raw(buffer, static_cast<size_t>(result.ptr - buffer));
+
+  return true;
+}
+
+bool FastStream::push_integer(uint64_t value) {
+  if VUNLIKELY (width() != 0 || flags() != (std::ios_base::dec | std::ios_base::skipws)) {
+    return false;
+  }
+
+  static constexpr size_t kBufferSize{std::numeric_limits<uint64_t>::digits10 + 3};
+
+  char buffer[kBufferSize];
+  auto result = std::to_chars(buffer, buffer + sizeof(buffer), value);
+
+  if VUNLIKELY (result.ec != std::errc{}) {
+    return false;
+  }
+
+  write_raw(buffer, static_cast<size_t>(result.ptr - buffer));
+
+  return true;
 }
 
 // FastStream::StringBuf

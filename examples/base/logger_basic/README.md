@@ -17,6 +17,7 @@ vlink Logger 是线程安全、双 sink（控制台 + 文件）的日志库，�
 | `SLOG_T/D/I/W/E/F` | RAII iostream：链式 `<<` 到分号为止 |
 
 级别由低到高：`kTrace / kDebug / kInfo / kWarn / kError / kFatal`，只有不低于所设级别的消息才输出到对应 sink。
+四种普通宏都会在运行期级别检查通过后才求值消息参数；被控制台和文件同时过滤时，参数中的函数调用或自增不会执行。
 
 ## 🚀 最小可运行片段
 

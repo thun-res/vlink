@@ -68,6 +68,10 @@
  *  - @c VLINK_LOG_DETAIL_LEVEL @c =N changes the level at which file/line is appended.
  *  - @c VLINK_LOG_DISABLE_SHORT removes the @c VLOG_* / @c MLOG_* / @c CLOG_* / @c SLOG_* aliases.
  *
+ * @par Runtime gating
+ * The four macro families test the active sink levels before evaluating their message arguments.
+ * Use @c VLINK_LOG_IF_x only when expensive preparation happens outside the macro arguments.
+ *
  * @par Periodic call-site limiting
  * @c VLOG_x_EVERY_MS(interval_ms, ...) emits immediately, then at most once per interval at that
  * macro call site.  The state is shared by concurrent callers, and suppressed log arguments are
@@ -380,10 +384,12 @@ class VLINK_EXPORT Logger final {
    * @brief Reports whether a record at @p level would currently be emitted.
    *
    * @details
-   * Use the result to gate expensive argument computation before a macro call.
+   * Ordinary logging macros already use this gate before evaluating their arguments.  Call it
+   * directly only to guard preparation performed outside a macro call.
    *
    * @param level  Severity level under test.
-   * @return @c true when the level passes either sink threshold.
+   * @return @c true when the logger is active and the level passes a sink threshold, or when
+   *         @p level is @c kFatal.
    */
   [[nodiscard]] static bool is_writable(Level level) noexcept;
 
@@ -518,6 +524,13 @@ class VLINK_EXPORT Logger final {
 
       return *this;
     }
+
+    /**
+     * @brief Reports whether this stream accepted the record.
+     *
+     * @return @c true when the runtime level gate passed.
+     */
+    explicit operator bool() const noexcept { return enabled_; }
 
    private:
     VLINK_DISALLOW_COPY_AND_ASSIGN(WrapperStream)
@@ -735,71 +748,63 @@ using VLinkLogger = vlink::Logger;
 
 #define VLINK_LOG_IF_F VLinkLogger::is_writable(VLinkLogger::kFatal)
 
-#define VLINK_LOG_T(...) \
-  VLinkLogger::print_stream_style<VLinkLogger::kTrace>(VLINK_LOG_GET_DETAIL(VLinkLogger::kTrace), __VA_ARGS__)
+#define VLINK_LOG_IS_WRITABLE(level) \
+  ((level) >= VLinkLogger::kMinimumLevel && (level) < VLinkLogger::kOff && VLinkLogger::is_writable(level))
 
-#define VLINK_LOG_D(...) \
-  VLinkLogger::print_stream_style<VLinkLogger::kDebug>(VLINK_LOG_GET_DETAIL(VLinkLogger::kDebug), __VA_ARGS__)
+#define VLINK_LOG_CALL(level, function, ...)                                                             \
+  (VLINK_LOG_IS_WRITABLE(level) ? VLinkLogger::function<level>(VLINK_LOG_GET_DETAIL(level), __VA_ARGS__) \
+                                : static_cast<void>(0))
 
-#define VLINK_LOG_I(...) \
-  VLinkLogger::print_stream_style<VLinkLogger::kInfo>(VLINK_LOG_GET_DETAIL(VLinkLogger::kInfo), __VA_ARGS__)
+#define VLINK_LOG_T(...) VLINK_LOG_CALL(VLinkLogger::kTrace, print_stream_style, __VA_ARGS__)
 
-#define VLINK_LOG_W(...) \
-  VLinkLogger::print_stream_style<VLinkLogger::kWarn>(VLINK_LOG_GET_DETAIL(VLinkLogger::kWarn), __VA_ARGS__)
+#define VLINK_LOG_D(...) VLINK_LOG_CALL(VLinkLogger::kDebug, print_stream_style, __VA_ARGS__)
 
-#define VLINK_LOG_E(...) \
-  VLinkLogger::print_stream_style<VLinkLogger::kError>(VLINK_LOG_GET_DETAIL(VLinkLogger::kError), __VA_ARGS__)
+#define VLINK_LOG_I(...) VLINK_LOG_CALL(VLinkLogger::kInfo, print_stream_style, __VA_ARGS__)
 
-#define VLINK_LOG_F(...) \
-  VLinkLogger::print_stream_style<VLinkLogger::kFatal>(VLINK_LOG_GET_DETAIL(VLinkLogger::kFatal), __VA_ARGS__)
+#define VLINK_LOG_W(...) VLINK_LOG_CALL(VLinkLogger::kWarn, print_stream_style, __VA_ARGS__)
 
-#define VLINK_MLOG_T(...) \
-  VLinkLogger::print_format_style<VLinkLogger::kTrace>(VLINK_LOG_GET_DETAIL(VLinkLogger::kTrace), __VA_ARGS__)
+#define VLINK_LOG_E(...) VLINK_LOG_CALL(VLinkLogger::kError, print_stream_style, __VA_ARGS__)
 
-#define VLINK_MLOG_D(...) \
-  VLinkLogger::print_format_style<VLinkLogger::kDebug>(VLINK_LOG_GET_DETAIL(VLinkLogger::kDebug), __VA_ARGS__)
+#define VLINK_LOG_F(...) VLINK_LOG_CALL(VLinkLogger::kFatal, print_stream_style, __VA_ARGS__)
 
-#define VLINK_MLOG_I(...) \
-  VLinkLogger::print_format_style<VLinkLogger::kInfo>(VLINK_LOG_GET_DETAIL(VLinkLogger::kInfo), __VA_ARGS__)
+#define VLINK_MLOG_T(...) VLINK_LOG_CALL(VLinkLogger::kTrace, print_format_style, __VA_ARGS__)
 
-#define VLINK_MLOG_W(...) \
-  VLinkLogger::print_format_style<VLinkLogger::kWarn>(VLINK_LOG_GET_DETAIL(VLinkLogger::kWarn), __VA_ARGS__)
+#define VLINK_MLOG_D(...) VLINK_LOG_CALL(VLinkLogger::kDebug, print_format_style, __VA_ARGS__)
 
-#define VLINK_MLOG_E(...) \
-  VLinkLogger::print_format_style<VLinkLogger::kError>(VLINK_LOG_GET_DETAIL(VLinkLogger::kError), __VA_ARGS__)
+#define VLINK_MLOG_I(...) VLINK_LOG_CALL(VLinkLogger::kInfo, print_format_style, __VA_ARGS__)
 
-#define VLINK_MLOG_F(...) \
-  VLinkLogger::print_format_style<VLinkLogger::kFatal>(VLINK_LOG_GET_DETAIL(VLinkLogger::kFatal), __VA_ARGS__)
+#define VLINK_MLOG_W(...) VLINK_LOG_CALL(VLinkLogger::kWarn, print_format_style, __VA_ARGS__)
 
-#define VLINK_CLOG_T(...) \
-  VLinkLogger::print_c_style<VLinkLogger::kTrace>(VLINK_LOG_GET_DETAIL(VLinkLogger::kTrace), __VA_ARGS__)
+#define VLINK_MLOG_E(...) VLINK_LOG_CALL(VLinkLogger::kError, print_format_style, __VA_ARGS__)
 
-#define VLINK_CLOG_D(...) \
-  VLinkLogger::print_c_style<VLinkLogger::kDebug>(VLINK_LOG_GET_DETAIL(VLinkLogger::kDebug), __VA_ARGS__)
+#define VLINK_MLOG_F(...) VLINK_LOG_CALL(VLinkLogger::kFatal, print_format_style, __VA_ARGS__)
 
-#define VLINK_CLOG_I(...) \
-  VLinkLogger::print_c_style<VLinkLogger::kInfo>(VLINK_LOG_GET_DETAIL(VLinkLogger::kInfo), __VA_ARGS__)
+#define VLINK_CLOG_T(...) VLINK_LOG_CALL(VLinkLogger::kTrace, print_c_style, __VA_ARGS__)
 
-#define VLINK_CLOG_W(...) \
-  VLinkLogger::print_c_style<VLinkLogger::kWarn>(VLINK_LOG_GET_DETAIL(VLinkLogger::kWarn), __VA_ARGS__)
+#define VLINK_CLOG_D(...) VLINK_LOG_CALL(VLinkLogger::kDebug, print_c_style, __VA_ARGS__)
 
-#define VLINK_CLOG_E(...) \
-  VLinkLogger::print_c_style<VLinkLogger::kError>(VLINK_LOG_GET_DETAIL(VLinkLogger::kError), __VA_ARGS__)
+#define VLINK_CLOG_I(...) VLINK_LOG_CALL(VLinkLogger::kInfo, print_c_style, __VA_ARGS__)
 
-#define VLINK_CLOG_F(...) \
-  VLinkLogger::print_c_style<VLinkLogger::kFatal>(VLINK_LOG_GET_DETAIL(VLinkLogger::kFatal), __VA_ARGS__)
+#define VLINK_CLOG_W(...) VLINK_LOG_CALL(VLinkLogger::kWarn, print_c_style, __VA_ARGS__)
 
-#define VLINK_SLOG_T VLinkLogger::WrapperStream<VLinkLogger::kTrace>(VLINK_LOG_GET_DETAIL(VLinkLogger::kTrace))
+#define VLINK_CLOG_E(...) VLINK_LOG_CALL(VLinkLogger::kError, print_c_style, __VA_ARGS__)
 
-#define VLINK_SLOG_D VLinkLogger::WrapperStream<VLinkLogger::kDebug>(VLINK_LOG_GET_DETAIL(VLinkLogger::kDebug))
+#define VLINK_CLOG_F(...) VLINK_LOG_CALL(VLinkLogger::kFatal, print_c_style, __VA_ARGS__)
 
-#define VLINK_SLOG_I VLinkLogger::WrapperStream<VLinkLogger::kInfo>(VLINK_LOG_GET_DETAIL(VLinkLogger::kInfo))
+#define VLINK_SLOG_IMPL(level) \
+  VLINK_LOG_IS_WRITABLE(level) && VLinkLogger::WrapperStream<level>(VLINK_LOG_GET_DETAIL(level))
 
-#define VLINK_SLOG_W VLinkLogger::WrapperStream<VLinkLogger::kWarn>(VLINK_LOG_GET_DETAIL(VLinkLogger::kWarn))
+#define VLINK_SLOG_T VLINK_SLOG_IMPL(VLinkLogger::kTrace)
 
-#define VLINK_SLOG_E VLinkLogger::WrapperStream<VLinkLogger::kError>(VLINK_LOG_GET_DETAIL(VLinkLogger::kError))
+#define VLINK_SLOG_D VLINK_SLOG_IMPL(VLinkLogger::kDebug)
 
-#define VLINK_SLOG_F VLinkLogger::WrapperStream<VLinkLogger::kFatal>(VLINK_LOG_GET_DETAIL(VLinkLogger::kFatal))
+#define VLINK_SLOG_I VLINK_SLOG_IMPL(VLinkLogger::kInfo)
+
+#define VLINK_SLOG_W VLINK_SLOG_IMPL(VLinkLogger::kWarn)
+
+#define VLINK_SLOG_E VLINK_SLOG_IMPL(VLinkLogger::kError)
+
+#define VLINK_SLOG_F VLINK_SLOG_IMPL(VLinkLogger::kFatal)
 
 #define VLINK_LOG_EVERY_MS_IMPL(level, interval_ms, ...)                                                              \
   do {                                                                                                                \

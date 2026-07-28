@@ -982,12 +982,24 @@ export VLINK_FBS_DIR=/opt/vlink/fbs
 | `VLINK_LOG_ENABLE_UTC` | `1`/`0` | 使用 UTC 时间戳 |
 | `VLINK_LOG_MAX_SIZE` | 数字 | 单文件最大字节数，超过后轮转（默认 10 MiB） |
 | `VLINK_LOG_MAX_COUNT` | 数字 | 日志文件最大保留数量 |
-| `VLINK_LOG_FLUSH_DELAY` | 数字 | 刷新延迟，毫秒（默认 500） |
+| `VLINK_LOG_FLUSH_DELAY` | 数字 | 异步 Sink 刷新间隔，毫秒（默认 500）；后端细节见下文 |
 | `VLINK_LOG_PLUGIN` | 插件名 | 首次使用 Logger 前设置的文件通道插件基础名；仅在文件级别低于 `Off` 时加载 |
 | `VLINK_LOG_STORE_STRATEGY` | `1`/`0` | 启用备用文件存储策略 |
 | `VLINK_LOG_OPEN_APPEND` | `1`/`0` | 启动时追加既有日志 |
-| `VLINK_LOG_BLOCK_SYNC` | `1`/`0` | 写入繁忙时阻塞调用线程，保证不丢日志，牺牲实时性 |
-| `VLINK_LOG_WRITE_DEPTH` | 数字 | 日志写入队列深度 |
+| `VLINK_LOG_BLOCK_SYNC` | `1`/`0` | `1`：队列满时阻塞生产线程；`0`：非阻塞并允许丢日志（默认） |
+| `VLINK_LOG_WRITE_DEPTH` | 数字 | spdlog：全局队列槽数（默认 8192 条）；Quill：每个生产线程的队列容量（默认 128 KiB，单位字节） |
+
+三个异步参数在后端中的细节并不完全相同。spdlog 的
+`VLINK_LOG_WRITE_DEPTH` 是全局定长记录队列的槽数；Quill 是每个日志
+生产线程独立队列的字节容量，低于 8 KiB 时按 8 KiB 处理，底层会向上
+取整为 2 的幂。该值不再充当 Quill 文件 Sink 的 `fwrite` 缓冲区大小。
+`VLINK_LOG_BLOCK_SYNC=0` 时，spdlog 淘汰最旧记录，Quill 丢弃当前无法
+入队的记录；设为 `1` 时两者都会等待队列腾出空间。
+
+`VLINK_LOG_FLUSH_DELAY` 在 spdlog 中驱动周期 flush，Error 及以上另触发
+flush；在 Quill 中是后台 Sink 的最小 flush 周期，繁忙时可能晚于该值，
+文件 Sink 还会按同一最小间隔执行 `fsync`。设为 `0` 时，spdlog 每条
+记录触发 flush，Quill 则在后台无待处理工作时 flush。
 
 ```bash
 export VLINK_LOG_CONSOLE_LEVEL=4

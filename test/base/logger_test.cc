@@ -422,6 +422,29 @@ TEST_SUITE("base-Logger") {
     SLOG_E << "slog_error_test";
   }
 
+  TEST_CASE("disabled ordinary log macros do not evaluate arguments") {
+    Logger::init("test");
+    Logger::set_console_level(Logger::kOff);
+    Logger::set_file_level(Logger::kOff);
+
+    int evaluations = 0;
+    auto evaluate = [&evaluations] {
+      ++evaluations;
+      return evaluations;
+    };
+
+    VLOG_I("stream value=", evaluate());
+    MLOG_I("format value={}", evaluate());
+    CLOG_I("c-style value=%d", evaluate());
+    SLOG_I << "raii value=" << evaluate();
+
+    CHECK_EQ(evaluations, 0);
+    CHECK_THROWS(VLOG_F("fatal value=", evaluate()));
+    CHECK_EQ(evaluations, 1);
+
+    Logger::set_console_level(Logger::kTrace);
+  }
+
   TEST_CASE("register_console_handler is invoked when a message is logged") {
     Logger::init("test");
     Logger::set_console_level(Logger::kInfo);
@@ -494,6 +517,42 @@ TEST_SUITE("base-Logger") {
     Logger::print_stream_style<Logger::kOff>(Logger::NoDetail{}, "ignored");
     CHECK(received.empty());
 
+    Logger::register_console_handler(nullptr);
+  }
+
+  TEST_CASE("stream log macros preserve integer formatting") {
+    Logger::init("test");
+    Logger::set_console_level(Logger::kInfo);
+    Logger::set_file_level(Logger::kOff);
+    Logger::set_stream_width(0);
+
+    std::string received;
+    Logger::register_console_handler([&received](Logger::Level, std::string_view log) { received.assign(log); });
+
+    Logger::set_stream_flag(std::ios_base::dec | std::ios_base::skipws);
+    VLOG_I(std::numeric_limits<int64_t>::min(), "/", std::numeric_limits<uint64_t>::max());
+    CHECK_EQ(received, "-9223372036854775808/18446744073709551615");
+
+    SLOG_I << std::numeric_limits<int64_t>::max() << "/" << std::numeric_limits<uint64_t>::max();
+    CHECK_EQ(received, "9223372036854775807/18446744073709551615");
+
+    VLOG_I(static_cast<unsigned char>('A'));
+    CHECK_EQ(received, "A");
+
+    Logger::set_stream_flag(std::ios_base::hex);
+    VLOG_I(255);
+    CHECK_EQ(received, "ff");
+
+    Logger::set_stream_flag(std::ios_base::dec | std::ios_base::skipws | std::ios_base::showpos);
+    VLOG_I(42);
+    CHECK_EQ(received, "+42");
+
+    Logger::set_stream_flag(std::ios_base::dec | std::ios_base::skipws);
+    Logger::set_stream_width(5);
+    VLOG_I(42);
+    CHECK_EQ(received, "   42");
+
+    Logger::set_stream_width(0);
     Logger::register_console_handler(nullptr);
   }
 

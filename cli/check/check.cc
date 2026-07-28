@@ -1241,8 +1241,8 @@ int check_env(bool available_case, const std::string& prefix) {
        false},
       {"VLINK_LOG_MAX_COUNT", "", "Maximum number of rotated log files to retain.", false},
       {"VLINK_LOG_FLUSH_DELAY", "",
-       "Periodic async-flush interval in milliseconds (default 500). >0 also flushes immediately at ERROR. "
-       "Set to 0 to disable periodic flush and flush every record (TRACE-level flush).",
+       "Async sink-flush interval in milliseconds (default 500). spdlog also flushes at ERROR and flushes every "
+       "record when set to 0; Quill treats it as the minimum sink flush/fsync interval and flushes when idle at 0.",
        false},
       {"VLINK_LOG_PLUGIN", "",
        "Custom logger plugin base name (no 'lib' prefix or '.so' suffix); implements LoggerPluginInterface and is "
@@ -1255,10 +1255,13 @@ int check_env(bool available_case, const std::string& prefix) {
       {"VLINK_LOG_OPEN_APPEND", "",
        "When set to 1 appends to the previous log file on start instead of truncating; default 0.", false},
       {"VLINK_LOG_BLOCK_SYNC", "",
-       "When set to 1 blocks producer threads if the async log queue is full (prevents drops); default 0 = drop "
-       "oldest. spdlog backend only.",
+       "When set to 1 blocks producer threads if the async log queue is full; default 0 allows drops (spdlog drops "
+       "the oldest record, Quill drops the current record).",
        false},
-      {"VLINK_LOG_WRITE_DEPTH", "", "Depth of the async log backend (spdlog / quill) thread-pool queue.", false},
+      {"VLINK_LOG_WRITE_DEPTH", "",
+       "spdlog global queue depth in records (default 8192); Quill per-producer queue capacity in bytes (default "
+       "131072, minimum 8192, rounded up to a power of two).",
+       false},
 
       {"VLINK_BAG_PATH", "",
        "Activates the process-global BagWriter (BagWriter::global_get()) at the given .vdb/.vcap path. All "

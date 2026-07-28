@@ -72,6 +72,10 @@ SLOG_D << "values: " << 42 << " temp=" << 78.5;
 | C 风格 | `CLOG_*` | `CLOG_I("x=%d", x)` | `printf` 风格 |
 | RAII 流 | `SLOG_*` | `SLOG_I << "x=" << x` | 析构时提交 |
 
+四种普通宏都会先检查编译期与运行期级别，再求值消息参数；当控制台和文件
+Sink 都过滤该级别时，函数调用、自增等参数副作用不会发生。若昂贵计算在
+宏调用之前完成，仍应使用 `VLINK_LOG_IF_T/D/I/W/E/F` 包住整段准备逻辑。
+
 新代码默认优先 `VLOG_*`。多段嵌入值、宽度/精度等复杂格式控制推荐
 `CLOG_*`，格式符必须与实参类型一致；`MLOG_*` 主要沿用已经采用 `{}`
 占位和 formatter 的模块。Info 不用于逐帧热路径；Fatal 只用于状态已
@@ -1104,7 +1108,7 @@ vlink::Co::Task<void> orchestrate(vlink::MessageLoop& loop) {
 | 组件 | 头文件 | 功能 |
 | --- | --- | --- |
 | `Format` | `base/format.h` | 轻量 `{}` 占位符格式化器（`MLOG_*` 内部使用） |
-| `FastStream` | `base/fast_stream.h` | 高性能输出流（Logger 内部引擎） |
+| `FastStream` | `base/fast_stream.h` | 高性能输出流；`push()` 提供 Logger 使用的无 locale 快速拼接 |
 | `TerminalStream` | `base/terminal_stream.h` | CLI 使用的线程安全、TTY 感知带缓冲 stdout 单例 |
 | `Utils` | `base/utils.h` | 进程/线程/网络/信号等跨平台工具函数 |
 | `Helpers` | `base/helpers.h` | 字符串/数字/哈希/转义等无状态工具 |
