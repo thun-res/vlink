@@ -26,8 +26,11 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <locale>
 #include <string>
 #include <string_view>
+
+#include "./base/helpers.h"
 
 namespace vlink {
 
@@ -53,6 +56,34 @@ void FastStream::shrink_to_fit() noexcept { buf_.shrink_to_fit(); }
 
 FastStream& FastStream::write_raw(const char* data, size_t len) {
   buf_.xsputn(data, static_cast<std::streamsize>(len));
+  return *this;
+}
+
+FastStream& FastStream::push_floating(float value) {
+  if VLIKELY (width() == 0 && precision() == 6 && flags() == (std::ios_base::dec | std::ios_base::skipws) &&
+              getloc() == std::locale::classic()) {
+    char buffer[32];
+    auto size = Helpers::format_floating_to(buffer, sizeof(buffer), value);
+
+    return write_raw(buffer, size);
+  }
+
+  static_cast<std::ostream&>(*this) << value;
+
+  return *this;
+}
+
+FastStream& FastStream::push_floating(double value) {
+  if VLIKELY (width() == 0 && precision() == 6 && flags() == (std::ios_base::dec | std::ios_base::skipws) &&
+              getloc() == std::locale::classic()) {
+    char buffer[32];
+    auto size = Helpers::format_floating_to(buffer, sizeof(buffer), value);
+
+    return write_raw(buffer, size);
+  }
+
+  static_cast<std::ostream&>(*this) << value;
+
   return *this;
 }
 

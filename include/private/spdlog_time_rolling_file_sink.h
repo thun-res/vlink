@@ -145,6 +145,7 @@ class TimeRollingFile final : public spdlog::sinks::base_sink<MutexT> {
   TimeZone timezone_{TimeZone::kTimezoneLocal};
   spdlog::details::file_helper file_helper_;
   std::deque<FileInfo> file_list_;
+  spdlog::memory_buf_t formatted_;
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(TimeRollingFile)
 };
@@ -383,22 +384,21 @@ inline typename TimeRollingFile<MutexT>::FileInfo TimeRollingFile<MutexT>::gener
 
 template <typename MutexT>
 inline void TimeRollingFile<MutexT>::sink_it_(const spdlog::details::log_msg& msg) {
-  spdlog::memory_buf_t formatted;
+  formatted_.clear();
+  spdlog::sinks::base_sink<MutexT>::formatter_->format(msg, formatted_);
 
-  spdlog::sinks::base_sink<MutexT>::formatter_->format(msg, formatted);
-
-  auto new_size = current_size_ + formatted.size();
+  auto new_size = current_size_ + formatted_.size();
 
   if VUNLIKELY (new_size > max_size_) {
     file_helper_.flush();
 
     if (file_helper_.size() > 0) {
       rotate_();
-      new_size = formatted.size();
+      new_size = formatted_.size();
     }
   }
 
-  file_helper_.write(formatted);
+  file_helper_.write(formatted_);
 
   current_size_ = new_size;
 }

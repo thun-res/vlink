@@ -35,6 +35,8 @@
 #include <locale>
 #include <sstream>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -101,6 +103,44 @@ std::string double_to_string(double value, int precision) noexcept {
   ss << std::fixed << std::setprecision(precision) << value;
 
   return ss.str();
+}
+
+template <typename FloatT, typename = void>
+struct HasFloatToChars final : std::false_type {};
+
+template <typename FloatT>
+struct HasFloatToChars<FloatT,
+                       std::void_t<decltype(std::to_chars(std::declval<char*>(), std::declval<char*>(),
+                                                          std::declval<FloatT>(), std::chars_format::general, 6))>>
+    final : std::true_type {};
+
+template <typename FloatT>
+size_t format_floating_to_impl(char* buf, size_t buflen, FloatT value) noexcept {
+  if constexpr (HasFloatToChars<FloatT>::value) {
+    auto result = std::to_chars(buf, buf + buflen, value, std::chars_format::general, 6);
+
+    if VLIKELY (result.ec == std::errc()) {
+      return static_cast<size_t>(result.ptr - buf);
+    }
+
+    return 0;
+  } else {
+    int len = std::snprintf(buf, buflen, "%g", static_cast<double>(value));
+
+    if VLIKELY (len > 0 && static_cast<size_t>(len) < buflen) {
+      return static_cast<size_t>(len);
+    }
+
+    return 0;
+  }
+}
+
+size_t format_floating_to(char* buf, size_t buflen, float value) noexcept {
+  return format_floating_to_impl(buf, buflen, value);
+}
+
+size_t format_floating_to(char* buf, size_t buflen, double value) noexcept {
+  return format_floating_to_impl(buf, buflen, value);
 }
 
 uint64_t hash_combine(uint64_t a, uint64_t b) noexcept {

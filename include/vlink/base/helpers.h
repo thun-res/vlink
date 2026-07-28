@@ -108,6 +108,26 @@ namespace Helpers {  // NOLINT(readability-identifier-naming)
 [[nodiscard]] VLINK_EXPORT std::string double_to_string(double value, int precision = 2) noexcept;
 
 /**
+ * @brief Formats a @c float into a caller-provided buffer using default @c "%g" precision.
+ *
+ * @param buf     Destination buffer.
+ * @param buflen  Destination capacity in bytes.
+ * @param value   Source value.
+ * @return Number of bytes written, or @c 0 when conversion fails.
+ */
+[[nodiscard]] VLINK_EXPORT size_t format_floating_to(char* buf, size_t buflen, float value) noexcept;
+
+/**
+ * @brief Formats a @c double into a caller-provided buffer using default @c "%g" precision.
+ *
+ * @param buf     Destination buffer.
+ * @param buflen  Destination capacity in bytes.
+ * @param value   Source value.
+ * @return Number of bytes written, or @c 0 when conversion fails.
+ */
+[[nodiscard]] VLINK_EXPORT size_t format_floating_to(char* buf, size_t buflen, double value) noexcept;
+
+/**
  * @brief Combines two 64-bit hash values into one via a Murmur-style mix.
  *
  * @param a  First hash value.

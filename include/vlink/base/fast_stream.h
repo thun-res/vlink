@@ -70,10 +70,14 @@
 #include <ostream>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 
 #include "./macros.h"
 
 namespace vlink {
+
+class Logger;
 
 /**
  * @class FastStream
@@ -165,6 +169,13 @@ class VLINK_EXPORT FastStream : public std::ostream {
   FastStream& write_raw(const char* data, size_t len);
 
  private:
+  template <typename T>
+  FastStream& push(T&& value);
+
+  FastStream& push_floating(float value);
+
+  FastStream& push_floating(double value);
+
   static constexpr size_t kDefaultCapacity{256};
   static constexpr size_t kMinCapacity{64};
   static constexpr size_t kMaxExpandSize{8192};
@@ -201,7 +212,41 @@ class VLINK_EXPORT FastStream : public std::ostream {
 
   StringBuf buf_;
 
+  friend class Logger;
+
   VLINK_DISALLOW_COPY_AND_ASSIGN(FastStream)
 };
+
+////////////////////////////////////////////////////////////////
+/// Details
+////////////////////////////////////////////////////////////////
+
+template <typename T>
+inline FastStream& FastStream::push(T&& value) {
+  using ValueT = std::remove_cv_t<std::remove_reference_t<T>>;
+
+  if constexpr (std::is_array_v<ValueT> && std::is_same_v<std::remove_extent_t<ValueT>, char>) {
+    if VLIKELY (width() == 0) {
+      return write_raw(value, std::char_traits<char>::length(value));
+    }
+  } else if constexpr (std::is_same_v<ValueT, char*> || std::is_same_v<ValueT, const char*>) {
+    if VLIKELY (value && width() == 0) {
+      return write_raw(value, std::char_traits<char>::length(value));
+    }
+  } else if constexpr (std::is_same_v<ValueT, std::string>) {
+    if VLIKELY (width() == 0) {
+      return write_raw(value.data(), value.size());
+    }
+  } else if constexpr (std::is_same_v<ValueT, std::string_view>) {
+    if VLIKELY (width() == 0) {
+      return write_raw(value.data(), value.size());
+    }
+  } else if constexpr (std::is_same_v<ValueT, float> || std::is_same_v<ValueT, double>) {
+    return push_floating(value);
+  }
+
+  static_cast<std::ostream&>(*this) << std::forward<T>(value);
+  return *this;
+}
 
 }  // namespace vlink

@@ -701,14 +701,20 @@ monitor->shutdown();
 
 ### 📝 13.14 LoggerPluginInterface：自定义日志后端
 
-实现 `LoggerPluginInterface` 可将 VLink 日志转发至任意第三方框架（spdlog、log4cxx、自定义滚动日志等）。接口仅含两个纯虚函数。
+实现 `LoggerPluginInterface` 可将 VLink 文件通道转发至任意第三方框架（spdlog、log4cxx、自定义滚动日志等）。接口包含三个钩子。
 
 | 方法 | 语义 |
 | --- | --- |
-| `bool init(app_name)` | 初始化后端 |
-| `bool log(int level, str)` | 输出一条日志，`level` 为级别整数 |
+| `bool init(app_name) noexcept` | 初始化后端 |
+| `bool log(int level, str) noexcept` | 输出一条日志，`level` 为级别整数 |
+| `void flush() noexcept` | 排空此前由 `log()` 接受的插件内部异步任务 |
 
 `level` 与 `Logger::Level` 的对照：`0` Trace、`1` Debug、`2` Info、`3` Warn、`4` Error、`5` Fatal。
+
+通过 `VLINK_LOG_PLUGIN` 加载时，插件的 `init()` 在 Logger 单例完成构造后执行并支持同线程 Logger
+重入，因此可在其中创建 `Publisher` 等 VLink 通信节点。初始化期间其他线程不会等待，可继续向
+控制台输出，但日志不会进入尚未就绪的插件。`log()` 可能被多个日志线程并发调用；其同线程调用链
+产生的 VLink 日志仍按控制台配置处理，但不会再次进入同一插件。
 
 ```cpp
 #include <vlink/base/logger_plugin_interface.h>
@@ -718,7 +724,7 @@ monitor->shutdown();
 class SpdlogPlugin : public vlink::LoggerPluginInterface {
     VLINK_PLUGIN_REGISTER(vlink::LoggerPluginInterface)
 public:
-    bool init(std::string_view app_name) override {
+    bool init(std::string_view app_name) noexcept override {
         logger_ = spdlog::rotating_logger_mt(
             std::string(app_name),
             "/var/log/" + std::string(app_name) + ".log",
@@ -726,19 +732,27 @@ public:
         return true;
     }
 
-    bool log(int level, std::string_view str) override {
+    bool log(int level, std::string_view str) noexcept override {
         if (!logger_) {
             return false;
         }
 
         switch (level) {
+        case 0: logger_->trace(str); break;
         case 1: logger_->debug(str); break;
         case 2: logger_->info(str); break;
         case 3: logger_->warn(str); break;
         case 4: logger_->error(str); break;
-        default: logger_->trace(str); break;
+        case 5: logger_->critical(str); break;
+        default: return false;
         }
         return true;
+    }
+
+    void flush() noexcept override {
+        if (logger_) {
+            logger_->flush();
+        }
     }
 
 private:
@@ -748,13 +762,16 @@ private:
 VLINK_PLUGIN_DECLARE(SpdlogPlugin, 1, 0)
 ```
 
-加载后即接管全局日志输出（日志后端总览见 [基础库](08-base-library.md)），亦可经环境变量 `VLINK_LOG_PLUGIN` 注入（见 13.21）：
+手工加载后可直接调用插件接口；要替换 Logger 文件通道，需在 Logger 首次使用前通过环境变量
+`VLINK_LOG_PLUGIN` 注入。控制台通道仍独立按自身级别与回调处理（日志后端总览见
+[基础库](08-base-library.md)，环境变量见 13.21）：
 
 ```cpp
 vlink::Plugin plugin;
 auto backend = plugin.load<vlink::LoggerPluginInterface>("spdlog_plugin", 1, 0);
 if (backend) {
     backend->init("my_app");
+    backend->flush();
 }
 ```
 
@@ -958,7 +975,7 @@ export VLINK_FBS_DIR=/opt/vlink/fbs
 | --- | --- | --- |
 | `VLINK_LOG_LEVEL` | 数字或英文名称 | 全局日志级别（`0`..`6` 或对应英文名称） |
 | `VLINK_LOG_CONSOLE_LEVEL` | 数字或英文名称 | 控制台级别，覆盖全局 |
-| `VLINK_LOG_FILE_LEVEL` | 数字或英文名称 | 文件级别，覆盖全局 |
+| `VLINK_LOG_FILE_LEVEL` | 数字或英文名称 | 文件与自定义日志插件级别，覆盖全局；`Off` 不加载插件 |
 | `VLINK_LOG_DIR` | 目录路径 | 日志文件目录 |
 | `VLINK_LOG_CONSOLE_UNORDER` | `1`/`0` | 非同步控制台输出，吞吐更高 |
 | `VLINK_LOG_CONSOLE_FMT` | `1`/`0` | 启用扩展控制台格式 |
@@ -966,7 +983,7 @@ export VLINK_FBS_DIR=/opt/vlink/fbs
 | `VLINK_LOG_MAX_SIZE` | 数字 | 单文件最大字节数，超过后轮转（默认 10 MiB） |
 | `VLINK_LOG_MAX_COUNT` | 数字 | 日志文件最大保留数量 |
 | `VLINK_LOG_FLUSH_DELAY` | 数字 | 刷新延迟，毫秒（默认 500） |
-| `VLINK_LOG_PLUGIN` | 插件名 | 自定义日志插件基础名，对应 13.14 的 `LoggerPluginInterface` |
+| `VLINK_LOG_PLUGIN` | 插件名 | 首次使用 Logger 前设置的文件通道插件基础名；仅在文件级别低于 `Off` 时加载 |
 | `VLINK_LOG_STORE_STRATEGY` | `1`/`0` | 启用备用文件存储策略 |
 | `VLINK_LOG_OPEN_APPEND` | `1`/`0` | 启动时追加既有日志 |
 | `VLINK_LOG_BLOCK_SYNC` | `1`/`0` | 写入繁忙时阻塞调用线程，保证不丢日志，牺牲实时性 |

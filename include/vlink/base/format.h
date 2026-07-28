@@ -71,8 +71,8 @@
  *   // buf == "x=3 y=4.5"
  * @endcode
  *
- * @note Floats and doubles use @c "%g" via @c snprintf; there is no precision modifier in the
- *       placeholder syntax.  Unsupported argument types trigger a compile-time @c static_assert.
+ * @note Floats and doubles use the default @c "%g" precision; there is no precision modifier in
+ *       the placeholder syntax.  Unsupported argument types trigger a compile-time @c static_assert.
  */
 
 #pragma once
@@ -101,17 +101,17 @@ template <typename TypeT>
 using RemoveCvref = typename std::remove_cv_t<std::remove_reference_t<TypeT>>;
 
 template <typename TypeT, typename = void>
-struct IsOutputIteratorImpl : std::false_type {};
+struct IsOutputIteratorImpl final : std::false_type {};
 
 template <typename TypeT>
 struct IsOutputIteratorImpl<TypeT, std::enable_if_t<std::is_assignable_v<decltype(*std::declval<TypeT&>()++), char>>>
-    : std::true_type {};
+    final : std::true_type {};
 
 template <>
-struct IsOutputIteratorImpl<char*> : std::true_type {};
+struct IsOutputIteratorImpl<char*> final : std::true_type {};
 
 template <typename TypeT, size_t NumT>
-struct IsOutputIteratorImpl<TypeT[NumT]> : std::false_type {};
+struct IsOutputIteratorImpl<TypeT[NumT]> final : std::false_type {};
 
 template <typename TypeT>
 inline constexpr bool kIsOutputIterator = IsOutputIteratorImpl<TypeT>::value;
@@ -133,81 +133,81 @@ enum class Type : uint8_t {
 
 // NOLINTBEGIN
 template <typename T>
-struct TypeConstant : std::integral_constant<Type, Type::kNone> {};
+struct TypeConstant final : std::integral_constant<Type, Type::kNone> {};
 
 template <>
-struct TypeConstant<signed char> : std::integral_constant<Type, Type::kInt> {};
+struct TypeConstant<signed char> final : std::integral_constant<Type, Type::kInt> {};
 
 template <>
-struct TypeConstant<unsigned char> : std::integral_constant<Type, Type::kUint> {};
+struct TypeConstant<unsigned char> final : std::integral_constant<Type, Type::kUint> {};
 
 template <>
-struct TypeConstant<short> : std::integral_constant<Type, Type::kInt> {};
+struct TypeConstant<short> final : std::integral_constant<Type, Type::kInt> {};
 
 template <>
-struct TypeConstant<unsigned short> : std::integral_constant<Type, Type::kUint> {};
+struct TypeConstant<unsigned short> final : std::integral_constant<Type, Type::kUint> {};
 
 template <>
-struct TypeConstant<int> : std::integral_constant<Type, Type::kInt> {};
+struct TypeConstant<int> final : std::integral_constant<Type, Type::kInt> {};
 
 template <>
-struct TypeConstant<unsigned> : std::integral_constant<Type, Type::kUint> {};
+struct TypeConstant<unsigned> final : std::integral_constant<Type, Type::kUint> {};
 
 template <>
-struct TypeConstant<long> : std::integral_constant<Type, Type::kLongLong> {};
+struct TypeConstant<long> final : std::integral_constant<Type, Type::kLongLong> {};
 
 template <>
-struct TypeConstant<unsigned long> : std::integral_constant<Type, Type::kUlongLong> {};
+struct TypeConstant<unsigned long> final : std::integral_constant<Type, Type::kUlongLong> {};
 
 template <>
-struct TypeConstant<long long> : std::integral_constant<Type, Type::kLongLong> {};
+struct TypeConstant<long long> final : std::integral_constant<Type, Type::kLongLong> {};
 
 template <>
-struct TypeConstant<unsigned long long> : std::integral_constant<Type, Type::kUlongLong> {};
+struct TypeConstant<unsigned long long> final : std::integral_constant<Type, Type::kUlongLong> {};
 
 template <>
-struct TypeConstant<bool> : std::integral_constant<Type, Type::kBool> {};
+struct TypeConstant<bool> final : std::integral_constant<Type, Type::kBool> {};
 
 template <>
-struct TypeConstant<char> : std::integral_constant<Type, Type::kChar> {};
+struct TypeConstant<char> final : std::integral_constant<Type, Type::kChar> {};
 
 template <>
-struct TypeConstant<float> : std::integral_constant<Type, Type::kFloat> {};
+struct TypeConstant<float> final : std::integral_constant<Type, Type::kFloat> {};
 
 template <>
-struct TypeConstant<double> : std::integral_constant<Type, Type::kDouble> {};
+struct TypeConstant<double> final : std::integral_constant<Type, Type::kDouble> {};
 
 template <>
-struct TypeConstant<const char*> : std::integral_constant<Type, Type::kCstring> {};
+struct TypeConstant<const char*> final : std::integral_constant<Type, Type::kCstring> {};
 
 template <>
-struct TypeConstant<char*> : std::integral_constant<Type, Type::kCstring> {};
+struct TypeConstant<char*> final : std::integral_constant<Type, Type::kCstring> {};
 
 template <>
-struct TypeConstant<std::string_view> : std::integral_constant<Type, Type::kString> {};
+struct TypeConstant<std::string_view> final : std::integral_constant<Type, Type::kString> {};
 
 template <>
-struct TypeConstant<std::string> : std::integral_constant<Type, Type::kString> {};
+struct TypeConstant<std::string> final : std::integral_constant<Type, Type::kString> {};
 
 template <size_t NumT>
-struct TypeConstant<char[NumT]> : std::integral_constant<Type, Type::kCstring> {};
+struct TypeConstant<char[NumT]> final : std::integral_constant<Type, Type::kCstring> {};
 
 template <size_t NumT>
-struct TypeConstant<const char[NumT]> : std::integral_constant<Type, Type::kCstring> {};
+struct TypeConstant<const char[NumT]> final : std::integral_constant<Type, Type::kCstring> {};
 
 template <typename T>
-struct TypeConstant<T*> : std::integral_constant<Type, Type::kPointer> {};
+struct TypeConstant<T*> final : std::integral_constant<Type, Type::kPointer> {};
 // NOLINTEND
 
-VLINK_EXPORT size_t format_uint_to(char* buf, unsigned value) noexcept;
+VLINK_EXPORT inline size_t format_uint_to(char* buf, unsigned value) noexcept;
 
-VLINK_EXPORT size_t format_int_to(char* buf, int value) noexcept;
+VLINK_EXPORT inline size_t format_int_to(char* buf, int value) noexcept;
 
-VLINK_EXPORT size_t format_ulong_long_to(char* buf,
-                                         unsigned long long value) noexcept;  // NOLINT(runtime/int,google-runtime-int)
+VLINK_EXPORT inline size_t format_ulong_long_to(
+    char* buf, unsigned long long value) noexcept;  // NOLINT(runtime/int,google-runtime-int)
 
-VLINK_EXPORT size_t format_long_long_to(char* buf,
-                                        long long value) noexcept;  // NOLINT(runtime/int,google-runtime-int)
+VLINK_EXPORT inline size_t format_long_long_to(char* buf,
+                                               long long value) noexcept;  // NOLINT(runtime/int,google-runtime-int)
 
 VLINK_EXPORT size_t format_pointer_to(char* buf, const void* ptr) noexcept;
 
@@ -364,7 +364,7 @@ class FormatArg {
 };
 
 template <typename CharT, typename... ArgsT>
-struct FormatArgStore {
+struct FormatArgStore final {
   static constexpr size_t kNumArgs = sizeof...(ArgsT);
   FormatArg<CharT> args[kNumArgs > 0 ? kNumArgs : 1];
 
@@ -419,7 +419,13 @@ class FormatWriter {
       }
 
       if VLIKELY (c != '{') {
-        writer_.write(c);
+        const char* begin = p - 1;
+
+        while (p != end && *p != '{' && *p != '}') {
+          ++p;
+        }
+
+        writer_.write(begin, static_cast<size_t>(p - begin));
         continue;
       }
 
@@ -474,6 +480,11 @@ class FormatWriter {
     }
   }
 
+  template <typename... ArgsT>
+  bool try_format(std::string_view fmt, const ArgsT&... args) {
+    return try_format_args(fmt, args...);
+  }
+
   inline auto out() const { return writer_.out(); }
 
   template <typename WriterImplT = WriterT>
@@ -485,6 +496,75 @@ class FormatWriter {
 
  private:
   // NOLINTBEGIN
+  bool try_format_args(std::string_view fmt) {
+    for (char c : fmt) {
+      if VUNLIKELY (c == '{' || c == '}') {
+        return false;
+      }
+    }
+
+    writer_.write(fmt);
+    return true;
+  }
+
+  template <typename ArgT, typename... ArgsT>
+  bool try_format_args(std::string_view fmt, const ArgT& arg, const ArgsT&... args) {
+    size_t pos = 0;
+
+    while (pos < fmt.size() && fmt[pos] != '{' && fmt[pos] != '}') {
+      ++pos;
+    }
+
+    if (pos == fmt.size()) {
+      writer_.write(fmt);
+      return true;
+    }
+
+    if VUNLIKELY (fmt[pos] != '{' || pos + 1 >= fmt.size() || fmt[pos + 1] != '}') {
+      return false;
+    }
+
+    writer_.write(fmt.data(), pos);
+    write_value(arg);
+
+    return try_format_args(fmt.substr(pos + 2), args...);
+  }
+
+  template <typename TypeT>
+  void write_value(const TypeT& value) {
+    using ValueT = RemoveCvref<TypeT>;
+
+    if constexpr (std::is_enum_v<ValueT>) {
+      write_value(static_cast<std::underlying_type_t<ValueT>>(value));
+    } else if constexpr (TypeConstant<ValueT>::value == Type::kInt) {
+      write_int(static_cast<int>(value));
+    } else if constexpr (TypeConstant<ValueT>::value == Type::kUint) {
+      write_uint(static_cast<unsigned>(value));
+    } else if constexpr (TypeConstant<ValueT>::value == Type::kLongLong) {
+      write_long_long(static_cast<long long>(value));
+    } else if constexpr (TypeConstant<ValueT>::value == Type::kUlongLong) {
+      write_ulong_long(static_cast<unsigned long long>(value));
+    } else if constexpr (TypeConstant<ValueT>::value == Type::kBool) {
+      write_bool(value);
+    } else if constexpr (TypeConstant<ValueT>::value == Type::kChar) {
+      write_char(value);
+    } else if constexpr (TypeConstant<ValueT>::value == Type::kFloat) {
+      write_float(value);
+    } else if constexpr (TypeConstant<ValueT>::value == Type::kDouble) {
+      write_double(value);
+    } else if constexpr (TypeConstant<ValueT>::value == Type::kCstring) {
+      write_string(value);
+    } else if constexpr (TypeConstant<ValueT>::value == Type::kString) {
+      write_string_view(value);
+    } else if constexpr (TypeConstant<ValueT>::value == Type::kPointer) {
+      write_pointer(static_cast<const void*>(value));
+    } else {
+      static_assert(!sizeof(TypeT),
+                    "[vlink::format] unsupported type for format_to/MLOG, "
+                    "convert to string first");
+    }
+  }
+
   void write_int(int value) {
     char buf[11];
     size_t n = format_int_to(buf, value);
@@ -593,24 +673,11 @@ class FormatWriter {
 
 }  // namespace detail
 
-/**
- * @struct FString
- * @brief Compile-time format-string wrapper carrying the expected argument list.
- *
- * @details
- * Wraps a @c std::string_view tagged with the argument types so a call site is type-checked
- * implicitly without runtime dispatch.  Constructible directly from string literals so format
- * arguments accept @c "fmt" without a cast.
- *
- * @tparam ArgsT  Argument types expected by the format string (compile-time only).
- */
 template <typename... ArgsT>
-struct FString {
+struct FString final {
   std::string_view str;
   using t = FString;
 
-  // Implicit ctors are intentional: lets format-string parameters accept string literals directly,
-  // e.g. @c format_to_n(buf, n, "x={}", val).
   template <size_t NumT>
   // NOLINTNEXTLINE(runtime/explicit,google-explicit-constructor,hicpp-explicit-conversions)
   constexpr FString(const char (&s)[NumT]) : str(s, NumT - 1) {}
@@ -626,35 +693,20 @@ struct FString {
   std::string_view get() const { return str; }
 };
 
-/**
- * @brief Convenience alias used as the formal type of format-string parameters.
- *
- * @tparam ArgsT  Expected argument types.
- */
 template <typename... ArgsT>
 using format_string = typename FString<ArgsT...>::t;
 
-/**
- * @struct FormatToNResult
- * @brief Return type of @c format_to_n; carries the end iterator, total size and truncation flag.
- *
- * @tparam OutputItT  Iterator or pointer type used for output.
- */
 template <typename OutputItT>
-struct FormatToNResult {
-  OutputItT out;          ///< Iterator one past the last written character.
-  size_t size{0};         ///< Total characters that the format would have written.
-  bool truncated{false};  ///< @c true when the output was truncated because @c size > @c n.
+struct FormatToNResult final {
+  OutputItT out;
+  size_t size{0};
+  bool truncated{false};
 };
 
-/**
- * @struct FormatToResult
- * @brief Return type of the fixed-array @c format_to overload.
- */
-struct FormatToResult {
-  char* out;       ///< Pointer one past the last written character.
-  size_t size;     ///< Total characters that the format would have written.
-  bool truncated;  ///< @c true when the output was truncated.
+struct FormatToResult final {
+  char* out{nullptr};
+  size_t size{0};
+  bool truncated{false};
 };
 
 ////////////////////////////////////////////////////////////////
@@ -729,7 +781,105 @@ inline detail::RemoveCvref<OutputItT> format_to(OutputItT&& out, format_string<A
 /// Details
 ////////////////////////////////////////////////////////////////
 
-/// @cond INTERNAL
+namespace format {
+namespace detail {
+
+// NOLINTBEGIN
+template <typename UIntT>
+inline int count_digits(UIntT n) noexcept {
+  int count = 1;
+
+  while (n >= 10) {
+    n /= 10;
+    ++count;
+  }
+
+  return count;
+}
+
+template <typename UIntT>
+inline void write_int_digits(char* buf, UIntT value, int num_digits) noexcept {
+  char* end = buf + num_digits;
+
+  while (value >= 10) {
+    auto digit = static_cast<unsigned>(value % 10);
+    *--end = static_cast<char>('0' + digit);
+    value /= 10;
+  }
+
+  *--end = static_cast<char>('0' + value);
+}
+
+inline size_t format_uint_to(char* buf, unsigned value) noexcept {
+  int num_digits = count_digits(value);
+  write_int_digits(buf, value, num_digits);
+
+  return static_cast<size_t>(num_digits);
+}
+
+inline size_t format_int_to(char* buf, int value) noexcept {
+  if (value < 0) {
+    buf[0] = '-';
+    unsigned u = static_cast<unsigned>(-(value + 1)) + 1;
+
+    return 1 + format_uint_to(buf + 1, u);
+  }
+
+  return format_uint_to(buf, static_cast<unsigned>(value));
+}
+
+inline size_t format_ulong_long_to(char* buf, unsigned long long value) noexcept {
+  int num_digits = count_digits(value);
+  write_int_digits(buf, value, num_digits);
+
+  return static_cast<size_t>(num_digits);
+}
+
+inline size_t format_long_long_to(char* buf, long long value) noexcept {
+  if (value < 0) {
+    buf[0] = '-';
+    unsigned long long u = static_cast<unsigned long long>(-(value + 1)) + 1;
+
+    return 1 + format_ulong_long_to(buf + 1, u);
+  }
+
+  return format_ulong_long_to(buf, static_cast<unsigned long long>(value));
+}
+// NOLINTEND
+
+}  // namespace detail
+}  // namespace format
+
+inline format::detail::StringWriter::StringWriter(char* buf, size_t size) noexcept
+    : begin_(buf), ptr_(buf), end_(buf + size) {}
+
+inline char* format::detail::StringWriter::out() const noexcept { return ptr_; }
+
+inline size_t format::detail::StringWriter::written() const noexcept { return static_cast<size_t>(ptr_ - begin_); }
+
+inline size_t format::detail::StringWriter::total_size() const noexcept { return total_size_; }
+
+inline void format::detail::StringWriter::write(char c) {
+  ++total_size_;
+
+  if VLIKELY (ptr_ < end_) {
+    *ptr_++ = c;
+  }
+}
+
+inline void format::detail::StringWriter::write(const char* s, size_t count) {
+  total_size_ += count;
+
+  auto avail = static_cast<size_t>(end_ - ptr_);
+  size_t n = (count <= avail) ? count : avail;
+
+  if VLIKELY (n > 0) {
+    std::memcpy(ptr_, s, n);
+    ptr_ += n;
+  }
+}
+
+inline void format::detail::StringWriter::write(std::string_view sv) { write(sv.data(), sv.size()); }
 
 template <typename... ArgsT>
 inline format::detail::FormatArgStore<char, format::detail::RemoveCvref<ArgsT>...> format::make_format_args(
@@ -740,16 +890,25 @@ inline format::detail::FormatArgStore<char, format::detail::RemoveCvref<ArgsT>..
 template <typename... ArgsT>
 inline format::FormatToNResult<char*> format::format_to_n(char* out, size_t n, format_string<ArgsT...> fmt,
                                                           const ArgsT&... args) {
-  format::detail::FormatArgStore<char, format::detail::RemoveCvref<ArgsT>...> arg_store{args...};
-
-  format::detail::FormatArgs fargs(arg_store);
   format::detail::StringWriter sw(out, n);
   format::detail::FormatWriter<char, format::detail::StringWriter> writer(sw);
-  writer.format(fmt.get(), fargs);
 
-  size_t total = writer.total_size();
+  if VLIKELY (writer.try_format(fmt.get(), args...)) {
+    size_t total = writer.total_size();
 
-  return {writer.out(), total, total > n};
+    return {writer.out(), total, total > n};
+  }
+
+  format::detail::FormatArgStore<char, format::detail::RemoveCvref<ArgsT>...> arg_store{args...};
+  format::detail::FormatArgs fargs(arg_store);
+  format::detail::StringWriter fallback_sw(out, n);
+  format::detail::FormatWriter<char, format::detail::StringWriter> fallback_writer(fallback_sw);
+
+  fallback_writer.format(fmt.get(), fargs);
+
+  size_t total = fallback_writer.total_size();
+
+  return {fallback_writer.out(), total, total > n};
 }
 
 template <size_t NumT, typename... ArgsT>
@@ -777,7 +936,5 @@ inline format::detail::RemoveCvref<OutputItT> format::format_to(OutputItT&& out,
 
   return writer.out();
 }
-
-/// @endcond
 
 }  // namespace vlink

@@ -218,7 +218,7 @@ class VLINK_EXPORT Logger final {
    * @details
    * Used to avoid capturing @c __FILE__ / @c __LINE__ for messages below @c kDetailLevel.
    */
-  struct NoDetail {};
+  struct NoDetail final {};
 
   /**
    * @brief Initialises the logger singleton.
@@ -350,23 +350,29 @@ class VLINK_EXPORT Logger final {
    * @brief Enables a ring-buffer backtrace of the most recent @p size records.
    *
    * @param size  Capacity of the backtrace ring buffer.
+   *
+   * @warning Call during application runtime, before static object destruction begins.
    */
   static void enable_backtrace(size_t size) noexcept;
 
   /**
    * @brief Disables backtrace capture and discards the ring buffer.
+   *
+   * @warning Call during application runtime, before static object destruction begins.
    */
   static void disable_backtrace() noexcept;
 
   /**
    * @brief Flushes the backtrace ring buffer to the active sinks.
+   *
+   * @warning Call during application runtime, before static object destruction begins.
    */
   static void dump_backtrace() noexcept;
 
   /**
-   * @brief Reports whether the logger is currently writing a record.
+   * @brief Reports whether the logger backend is being initialised.
    *
-   * @return @c true while a write is in progress.
+   * @return @c true while backend initialisation is in progress.
    */
   [[nodiscard]] static bool is_busy() noexcept;
 
@@ -454,7 +460,7 @@ class VLINK_EXPORT Logger final {
   static void print(ArgsT&&... args);
 
   /**
-   * @class WrapperStream
+   * @struct WrapperStream
    * @brief RAII helper backing @c SLOG_*; collects tokens and flushes on destruction.
    *
    * @details
@@ -464,11 +470,7 @@ class VLINK_EXPORT Logger final {
    * @tparam LevelT  Compile-time severity level.
    */
   template <Logger::Level LevelT>
-  class WrapperStream final {
-   public:
-    /**
-     * @brief Static gate indicating whether the wrapper emits at the chosen level.
-     */
+  struct WrapperStream final {
     static constexpr bool kIsEnabled = (LevelT >= kMinimumLevel && LevelT < Logger::kOff);
 
     explicit WrapperStream(Logger::NoDetail) noexcept {
@@ -510,7 +512,7 @@ class VLINK_EXPORT Logger final {
     WrapperStream& operator<<(T&& t) noexcept {
       if constexpr (kIsEnabled) {
         if (enabled_) {
-          *stream_ << std::forward<T>(t);
+          stream_->push(std::forward<T>(t));
         }
       }
 
@@ -531,6 +533,10 @@ class VLINK_EXPORT Logger final {
 
   template <Level LevelT>
   static bool should_log() noexcept;
+
+  static bool can_log(Level level) noexcept;
+
+  static void write(Level level, std::string_view log) noexcept;
 
   template <Level LevelT>
   static void finalize_log(std::string_view log_view);
@@ -553,7 +559,7 @@ class VLINK_EXPORT Logger final {
   std::unique_ptr<Impl> impl_;
 
   template <Logger::Level LevelT>
-  friend class WrapperStream;
+  friend struct WrapperStream;
 
   VLINK_SINGLETON_CHECK(Logger)
 
@@ -581,7 +587,7 @@ inline void Logger::print_stream_style([[maybe_unused]] DetailT&& detail, [[mayb
     push_detail_to_stream(detail, stream);
   }
 
-  (void)(stream << ... << args);
+  (stream.push(args), ...);
 
   finalize_log<LevelT>(stream.take_view());
 }
@@ -623,7 +629,7 @@ inline void Logger::print_c_style([[maybe_unused]] DetailT&& detail, [[maybe_unu
       push_detail_to_stream(detail, stream);
     }
 
-    stream << format;
+    stream.push(format);
     log_view = stream.take_view();
   } else {
     auto* local_buffer = get_local_buffer();
@@ -650,19 +656,14 @@ template <Logger::Level LevelT>
 inline bool Logger::should_log() noexcept {
   if constexpr (LevelT < Logger::kMinimumLevel || LevelT >= Logger::kOff) {
     return false;
-  } else if constexpr (LevelT == Logger::kFatal) {
-    return true;
   } else {
-    return Logger::is_writable(LevelT);
+    return Logger::can_log(LevelT);
   }
 }
 
 template <Logger::Level LevelT>
 inline void Logger::finalize_log(std::string_view log_view) {
-  Logger& instance = Logger::get();
-
-  instance.write_to_console(LevelT, log_view);
-  instance.write_to_file(LevelT, log_view);
+  Logger::write(LevelT, log_view);
 
   if constexpr (LevelT == Logger::kFatal) {
     Logger::flush();
@@ -673,7 +674,11 @@ inline void Logger::finalize_log(std::string_view log_view) {
 template <typename DetailT>
 inline void Logger::push_detail_to_stream(DetailT&& detail, FastStream& stream) noexcept {
   auto& [file, line] = detail;
-  stream << "{" << file << ":" << line << "} ";
+  stream.push("{");
+  stream.push(file);
+  stream.push(":");
+  stream.push(line);
+  stream.push("} ");
 }
 
 template <typename DetailT>

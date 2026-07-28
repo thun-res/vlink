@@ -39,13 +39,13 @@ class FakeLoggerPlugin final : public LoggerPluginInterface {
  public:
   FakeLoggerPlugin() = default;
 
-  bool init(std::string_view app_name) override {
+  bool init(std::string_view app_name) noexcept override {
     last_app_name = std::string(app_name);
     init_called = true;
     return init_return_value;
   }
 
-  bool log(int level, std::string_view str) override {
+  bool log(int level, std::string_view str) noexcept override {
     last_level = level;
     last_message = std::string(str);
     log_call_count += 1;
