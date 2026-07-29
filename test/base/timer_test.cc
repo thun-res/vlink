@@ -358,6 +358,46 @@ TEST_SUITE("base-Timer") {
     loop.wait_for_quit();
   }
 
+  TEST_CASE("start callback replacement does not block behind a running callback") {
+    MessageLoop loop;
+    loop.async_run();
+
+    std::atomic_bool callback_entered{false};
+    std::atomic_bool release_callback{false};
+    std::atomic_bool replacement_returned{false};
+    std::atomic<int> replacement_count{0};
+    Timer timer(&loop, 1, Timer::kInfinite, [&callback_entered, &release_callback] {
+      callback_entered.store(true, std::memory_order_release);
+
+      while (!release_callback.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+      }
+    });
+
+    timer.start();
+    REQUIRE(
+        common_test::wait_until([&callback_entered] { return callback_entered.load(std::memory_order_acquire); }, 1s));
+
+    std::thread replacer([&timer, &replacement_returned, &replacement_count] {
+      timer.start([&replacement_count] { replacement_count.fetch_add(1, std::memory_order_relaxed); });
+      replacement_returned.store(true, std::memory_order_release);
+    });
+
+    const bool returned_while_running = common_test::wait_until(
+        [&replacement_returned] { return replacement_returned.load(std::memory_order_acquire); }, 200ms);
+
+    release_callback.store(true, std::memory_order_release);
+    replacer.join();
+
+    CHECK(returned_while_running);
+    CHECK(common_test::wait_until(
+        [&replacement_count] { return replacement_count.load(std::memory_order_relaxed) > 0; }, 1s));
+
+    timer.stop();
+    loop.quit();
+    loop.wait_for_quit();
+  }
+
   TEST_CASE("set_callback replaces callback before start") {
     MessageLoop loop;
     loop.async_run();

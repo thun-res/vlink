@@ -53,8 +53,10 @@ struct Timer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding)
   std::atomic_bool is_strict{false};
 
   bool is_once_type{false};
+  bool has_pending_callback{false};
 
   Timer::Callback callback{nullptr};
+  Timer::Callback pending_callback{nullptr};
 
   std::mutex mtx;
   std::recursive_mutex recursive_mtx;
@@ -204,8 +206,7 @@ bool Timer::detach() {
 
 void Timer::start(Callback&& callback) {
   if (callback) {
-    std::lock_guard lock(impl_->recursive_mtx);
-    impl_->callback = std::move(callback);
+    set_callback(std::move(callback));
   }
 
   if (!is_active() && impl_->remain_loop_count.load(std::memory_order_relaxed) != 0) {
@@ -277,21 +278,39 @@ void Timer::set_loop_count(int32_t loop_count) {
 
 void Timer::set_callback(Callback&& callback) {
   std::lock_guard lock(impl_->recursive_mtx);
+
+  if VUNLIKELY (impl_->is_busy.load(std::memory_order_acquire)) {
+    impl_->pending_callback = std::move(callback);
+    impl_->has_pending_callback = true;
+    return;
+  }
+
   impl_->callback = std::move(callback);
 }
 
 void Timer::run_callback() {
   {
-    std::lock_guard recursive_lock(impl_->recursive_mtx);
     std::lock_guard lock(impl_->mtx);
 
-    impl_->is_busy.store(true, std::memory_order_release);
+    {
+      std::lock_guard callback_lock(impl_->recursive_mtx);
+      impl_->is_busy.store(true, std::memory_order_release);
+    }
 
     if VLIKELY (impl_->callback) {
       impl_->callback();
     }
 
-    impl_->is_busy.store(false, std::memory_order_release);
+    {
+      std::lock_guard callback_lock(impl_->recursive_mtx);
+
+      if VUNLIKELY (impl_->has_pending_callback) {
+        impl_->callback = std::move(impl_->pending_callback);
+        impl_->has_pending_callback = false;
+      }
+
+      impl_->is_busy.store(false, std::memory_order_release);
+    }
   }
 
   impl_->cv.notify_all();
