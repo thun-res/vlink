@@ -42,6 +42,7 @@
 #include <utility>
 #include <vector>
 
+#include "../common_test.h"
 #include "./base/utils.h"
 
 namespace {
