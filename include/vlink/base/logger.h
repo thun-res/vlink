@@ -494,7 +494,7 @@ class VLINK_EXPORT Logger final {
 
     explicit WrapperStream(Logger::NoDetail) noexcept {
       if constexpr (kIsEnabled) {
-        if (should_log<LevelT>()) {
+        if VLIKELY (should_log<LevelT>()) {
           enabled_ = true;
           stream_ = &Logger::get_local_stream();
         }
@@ -503,7 +503,7 @@ class VLINK_EXPORT Logger final {
 
     explicit WrapperStream(DetailInfo&& detail) noexcept {
       if constexpr (kIsEnabled) {
-        if (should_log<LevelT>()) {
+        if VLIKELY (should_log<LevelT>()) {
           enabled_ = true;
           stream_ = &Logger::get_local_stream();
 
@@ -521,7 +521,7 @@ class VLINK_EXPORT Logger final {
 
     ~WrapperStream() noexcept(LevelT != Level::kFatal) {
       if constexpr (kIsEnabled) {
-        if (enabled_) {
+        if VLIKELY (enabled_) {
           finalize_log<LevelT>(stream_->take_view());
         }
       }
@@ -530,7 +530,7 @@ class VLINK_EXPORT Logger final {
     template <typename T>
     WrapperStream& operator<<(T&& t) noexcept {
       if constexpr (kIsEnabled) {
-        if (enabled_) {
+        if VLIKELY (enabled_) {
           stream_->push(std::forward<T>(t));
         }
       }
@@ -605,7 +605,7 @@ inline constexpr std::string_view Logger::extract_filename(std::string_view path
 
 template <Logger::Level LevelT, typename DetailT, typename... ArgsT>
 inline void Logger::print_stream_style([[maybe_unused]] DetailT&& detail, [[maybe_unused]] ArgsT&&... args) {
-  if (!should_log<LevelT>()) {
+  if VUNLIKELY (!should_log<LevelT>()) {
     return;
   }
 
@@ -624,7 +624,7 @@ template <Logger::Level LevelT, typename DetailT, typename... ArgsT>
 inline void Logger::print_format_style([[maybe_unused]] DetailT&& detail,
                                        [[maybe_unused]] format::format_string<ArgsT...> format,
                                        [[maybe_unused]] ArgsT&&... args) {
-  if (!should_log<LevelT>()) {
+  if VUNLIKELY (!should_log<LevelT>()) {
     return;
   }
 
@@ -644,7 +644,7 @@ inline void Logger::print_format_style([[maybe_unused]] DetailT&& detail,
 template <Logger::Level LevelT, typename DetailT, typename FormatT, typename... ArgsT>
 inline void Logger::print_c_style([[maybe_unused]] DetailT&& detail, [[maybe_unused]] FormatT&& format,
                                   [[maybe_unused]] ArgsT&&... args) {
-  if (!should_log<LevelT>()) {
+  if VUNLIKELY (!should_log<LevelT>()) {
     return;
   }
 

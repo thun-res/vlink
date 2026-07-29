@@ -108,6 +108,7 @@ struct LoggerBackend::LoggerRecord final {
     }
 
     auto* header = ::new (allocation) LoggerRecordHeader{allocation_size};
+
     return reinterpret_cast<std::byte*>(header) + kHeaderSize;
   }
 
@@ -128,10 +129,10 @@ struct LoggerBackend::LoggerRecord final {
     operator delete(memory);                                    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  Logger::Level level;
-  std::chrono::system_clock::time_point timestamp;
-  uint64_t thread_id;
-  std::string_view message;
+  Logger::Level level{Logger::kOff};
+  std::chrono::system_clock::time_point timestamp{};
+  uint64_t thread_id{0U};
+  std::string_view message{};
 };
 
 struct LoggerFileInfo final {
@@ -174,6 +175,7 @@ static std::filesystem::path fixed_file_path(const std::filesystem::path& path, 
   filename += ".";
   filename += std::to_string(index);
   filename += path.extension();
+
   return parent / filename;
 }
 
@@ -191,6 +193,7 @@ static FILE* open_log_file_once(const std::filesystem::path& path, bool append, 
 #else
   FILE* file = std::fopen(path.c_str(), append ? "ab" : "wb");
   error_number = file ? 0 : errno;
+
   return file;
 #endif
 }
@@ -244,6 +247,7 @@ static bool get_log_file_size(FILE* file, size_t& size, int& error_number) noexc
   if (descriptor < 0 || ::_fstat64(descriptor, &status) != 0 || status.st_size < 0) {
     // LCOV_EXCL_START GCOVR_EXCL_START
     error_number = errno;
+
     return false;
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
@@ -254,6 +258,7 @@ static bool get_log_file_size(FILE* file, size_t& size, int& error_number) noexc
   if (descriptor < 0 || ::fstat(descriptor, &status) != 0 || status.st_size < 0) {
     // LCOV_EXCL_START GCOVR_EXCL_START
     error_number = errno;
+
     return false;
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
@@ -263,6 +268,7 @@ static bool get_log_file_size(FILE* file, size_t& size, int& error_number) noexc
   size = file_size > std::numeric_limits<size_t>::max() ? std::numeric_limits<size_t>::max()
                                                         : static_cast<size_t>(file_size);
   error_number = 0;
+
   return true;
 }
 
@@ -286,6 +292,7 @@ static LoggerFileInfo parse_timestamp_file(const std::filesystem::path& path) {
   std::string_view index_string(stem.data() + last_dot + 1U, stem.size() - last_dot - 1U);
   auto [end, error] = std::from_chars(index_string.data(), index_string.data() + index_string.size(), info.index);
   info.is_valid = error == std::errc() && end == index_string.data() + index_string.size();
+
   return info;
 }
 
@@ -364,6 +371,7 @@ void LoggerBackend::start_backend() {
 void LoggerBackend::initialize_fixed() {
   impl_->base_path /= impl_->config.app_name + ".log";
   impl_->current_path = impl_->base_path;
+
   open_current(true);
 
   if (!impl_->config.append && impl_->current_size > 0U) {
@@ -431,6 +439,7 @@ void LoggerBackend::initialize_timestamped() {
 
 void LoggerBackend::open_current(bool append) {
   close_current();
+
   int error_number = 0;
   impl_->file = open_log_file(impl_->current_path, append, error_number);
 
@@ -822,6 +831,7 @@ void LoggerBackend::barrier(Callback&& callback) noexcept {
     wait_for_quit(Timer::kInfinite, false);
     std::lock_guard lock(impl_->stopped_mtx);
     invoke_callback();
+
     return;
   }
 
@@ -895,6 +905,7 @@ bool LoggerBackend::log(Logger::Level level, std::string_view message) noexcept 
 
   try {
     static thread_local const uint64_t kThreadId = Utils::get_native_thread_id();
+
     auto record = std::unique_ptr<LoggerRecord>(
         new (message.size()) LoggerRecord(level, std::chrono::system_clock::now(), kThreadId, message));
 

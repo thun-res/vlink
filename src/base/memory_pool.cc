@@ -565,17 +565,19 @@ static void* tier_allocate(MemoryTierState& state, size_t& shard_index) noexcept
     shard_index = current_tier_shard();
   }
 
-  if (MemoryFreeNode* node = try_allocate_from_shards(state, shard_index)) {
+  MemoryFreeNode* node = try_allocate_from_shards(state, shard_index);
+
+  if VLIKELY (node != nullptr) {
     return node;
   }
 
   std::lock_guard grow_lock(state.grow_mtx);
 
-  if (MemoryFreeNode* node = try_allocate_from_shards(state, shard_index)) {
+  node = try_allocate_from_shards(state, shard_index);
+
+  if VLIKELY (node != nullptr) {
     return node;
   }
-
-  MemoryFreeNode* node = nullptr;
 
   if VUNLIKELY (!grow_tier_chunk(state, shard_index, &node)) {
     return nullptr;

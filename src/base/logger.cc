@@ -374,6 +374,7 @@ void Logger::flush() noexcept {
     is_plugin_logging = true;
     instance.impl_->interface->flush();
     is_plugin_logging = false;
+
     return;
   }
 
@@ -712,6 +713,7 @@ Logger::Logger() noexcept {
     if (!impl_->plugin_name.empty()) {
       is_logging = was_logging;
       global_instance.is_busy.store(false, std::memory_order_release);
+
       return;
     }
 
@@ -918,6 +920,7 @@ void Logger::write_to_console(Level level, std::string_view log) noexcept {
       }
 
       is_logging = was_logging;
+
       return;
     }
   }
@@ -1011,6 +1014,7 @@ void Logger::write_to_file(Level level, std::string_view log) noexcept {
       }
 
       is_logging = was_logging;
+
       return;
     }
   }
@@ -1028,6 +1032,7 @@ void Logger::write_to_file(Level level, std::string_view log) noexcept {
     is_plugin_logging = true;
     impl_->interface->log(level, plugin_log);
     is_plugin_logging = false;
+
     return;
   }
 
