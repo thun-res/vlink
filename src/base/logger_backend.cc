@@ -909,6 +909,17 @@ bool LoggerBackend::log(Logger::Level level, std::string_view message) noexcept 
       protected_record = true;
     }
 
+    if VUNLIKELY (protected_record && !impl_->config.block_when_full) {
+      Callback task = [this, record = std::move(record)]() mutable { write(std::move(record)); };
+
+      if (post_untracked_task(std::move(task), TaskOverflowPolicy::kUseDispatcherStrategy,
+                              TaskDropPolicy::kProtected)) {
+        return true;
+      }
+
+      return post_untracked_task(std::move(task), TaskOverflowPolicy::kBlock, TaskDropPolicy::kProtected);
+    }
+
     return post_untracked_task(
         [this, record = std::move(record)]() mutable { write(std::move(record)); },
         protected_record ? TaskOverflowPolicy::kBlock : TaskOverflowPolicy::kUseDispatcherStrategy,
