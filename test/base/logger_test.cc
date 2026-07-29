@@ -27,10 +27,14 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <limits>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -40,8 +44,17 @@
 #include "../common_test.h"
 #include "./base/process.h"
 #include "./base/utils.h"
+#include "./vlink/version.h"
 
 namespace {
+
+#if defined(VLINK_ENABLE_LOG_BACKEND)
+constexpr bool kHasFileLoggerBackend = true;
+#else
+constexpr bool kHasFileLoggerBackend = false;
+#endif
+
+constexpr size_t kTimestampFileCount = 2U;
 
 std::filesystem::path logger_tmp_dir(const std::string& name) {
   auto dir = std::filesystem::path(Utils::get_tmp_dir()) / "vlink-logger-tests" / name;
@@ -50,40 +63,119 @@ std::filesystem::path logger_tmp_dir(const std::string& name) {
   return dir;
 }
 
-void emit_all_nonfatal_logger_levels() {
-  VLOG_T("trace child log");
-  VLOG_D("debug child log");
-  VLOG_I("info child log");
-  VLOG_W("warn child log");
-  VLOG_E("error child log");
+std::vector<std::filesystem::path> logger_files(const std::filesystem::path& root) {
+  std::vector<std::filesystem::path> files;
+  std::error_code error;
+
+  if (!std::filesystem::exists(root, error)) {
+    return files;
+  }
+
+  for (std::filesystem::recursive_directory_iterator iter(root, error), end; iter != end && !error;
+       iter.increment(error)) {
+    if (iter->is_regular_file(error) && iter->path().extension() == ".log") {
+      files.emplace_back(iter->path());
+    }
+  }
+
+  std::sort(files.begin(), files.end());
+  return files;
+}
+
+std::string read_logger_files(const std::filesystem::path& root) {
+  std::string content;
+
+  for (const auto& path : logger_files(root)) {
+    std::ifstream stream(path, std::ios::binary);
+    content.append(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+  }
+
+  return content;
+}
+
+[[maybe_unused]] size_t count_logger_records(std::string_view content, std::string_view marker) {
+  size_t count = 0U;
+  size_t offset = 0U;
+
+  while ((offset = content.find(marker, offset)) != std::string_view::npos) {
+    ++count;
+    offset += marker.size();
+  }
+
+  return count;
+}
+
+void reset_logger_dir(const std::filesystem::path& path) {
+  std::error_code error;
+  std::filesystem::remove_all(path, error);
+  std::filesystem::create_directories(path, error);
 }
 
 Logger::Level expected_logger_level(const std::string& child_case) {
   if (child_case == "level-trace") {
     return Logger::kTrace;
   }
+
   if (child_case == "level-debug") {
     return Logger::kDebug;
   }
+
   if (child_case == "level-info") {
     return Logger::kInfo;
   }
+
   if (child_case == "level-warn") {
     return Logger::kWarn;
   }
+
   if (child_case == "level-error") {
     return Logger::kError;
   }
+
   if (child_case == "level-fatal") {
     return Logger::kFatal;
   }
+
   if (child_case == "numeric-level" || child_case == "common-level") {
     return Logger::kWarn;
   }
+
   return Logger::kOff;
 }
 
 void run_logger_child_case(const std::string& child_case) {
+  if (child_case == "first-log-recursion") {
+    int callback_count = 0;
+    int evaluations = 0;
+    Logger::set_console_level(Logger::kInfo);
+    Logger::set_file_level(Logger::kOff);
+    Logger::register_console_handler([&callback_count, &evaluations](Logger::Level, std::string_view) {
+      ++callback_count;
+      VLOG_I("nested first-log callback ", ++evaluations);
+    });
+
+    VLOG_I("outer first-log callback");
+    CHECK_EQ(callback_count, 1);
+    CHECK_EQ(evaluations, 0);
+    Logger::register_console_handler(nullptr);
+    return;
+  }
+
+  if (child_case == "handler-exception") {
+    int callback_count = 0;
+    Logger::set_console_level(Logger::kInfo);
+    Logger::set_file_level(Logger::kOff);
+    Logger::register_console_handler([&callback_count](Logger::Level, std::string_view) {
+      ++callback_count;
+      throw std::runtime_error("expected handler exception");
+    });
+
+    VLOG_I("throwing handler callback");
+    CHECK_EQ(callback_count, 1);
+    Logger::register_console_handler(nullptr);
+    return;
+  }
+
   if (child_case.rfind("level-", 0) == 0 || child_case == "numeric-level" || child_case == "invalid-level" ||
       child_case == "range-level" || child_case == "common-level") {
     Logger::get();
@@ -92,15 +184,20 @@ void run_logger_child_case(const std::string& child_case) {
   }
 
   if (child_case == "file-time-rolling") {
-    Logger::get();
+    Logger::init("vlink_logger_child", Utils::get_env("VLINK_LOG_DIR"));
     CHECK_EQ(Logger::get_console_level(), Logger::kTrace);
     CHECK_EQ(Logger::get_file_level(), Logger::kTrace);
     CHECK(Logger::get_console_fmt_enable());
 
-    emit_all_nonfatal_logger_levels();
+    for (int index = 0; index < 64; ++index) {
+      VLOG_I("timestamp rotation payload ", index,
+             " abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz");
+    }
+
     CHECK_THROWS(VLOG_F("fatal child log"));
     Logger::enable_backtrace(8);
-    VLOG_I("backtrace child log");
+    VLOG_T("backtrace retained trace");
+    VLOG_I("backtrace retained info");
     Logger::dump_backtrace();
     Logger::disable_backtrace();
     Logger::flush();
@@ -108,12 +205,51 @@ void run_logger_child_case(const std::string& child_case) {
   }
 
   if (child_case == "file-rotating") {
-    Logger::get();
+    Logger::init("vlink_logger_child", Utils::get_env("VLINK_LOG_DIR"));
     CHECK_EQ(Logger::get_console_level(), Logger::kOff);
     CHECK_EQ(Logger::get_file_level(), Logger::kTrace);
 
-    emit_all_nonfatal_logger_levels();
+    for (int index = 0; index < 64; ++index) {
+      VLOG_I("fixed rotation payload ", index,
+             " abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz");
+    }
+
     CHECK_THROWS(VLOG_F("fatal rotating child log"));
+    Logger::flush();
+    return;
+  }
+
+  if (child_case == "queue-block") {
+    Logger::init("vlink_logger_child", Utils::get_env("VLINK_LOG_DIR"));
+    CHECK_EQ(Logger::get_console_level(), Logger::kOff);
+    CHECK_EQ(Logger::get_file_level(), Logger::kTrace);
+
+    for (int index = 0; index < 2000; ++index) {
+      VLOG_I("blocking queue record ", index);
+    }
+
+    VLOG_I("blocking queue final record");
+    Logger::flush();
+    return;
+  }
+
+  if (child_case == "queue-drop-oldest") {
+    Logger::init("vlink_logger_child", Utils::get_env("VLINK_LOG_DIR"));
+    CHECK_EQ(Logger::get_console_level(), Logger::kOff);
+    CHECK_EQ(Logger::get_file_level(), Logger::kTrace);
+
+    for (int index = 0; index < 2000; ++index) {
+      VLOG_I("dropping queue record ", index);
+    }
+
+    VLOG_I("dropping queue final record");
+    Logger::flush();
+    return;
+  }
+
+  if (child_case == "invalid-memory-config") {
+    Logger::init("vlink_logger_child", Utils::get_env("VLINK_LOG_DIR"));
+    VLOG_I("logger initialized with invalid memory configuration");
     Logger::flush();
     return;
   }
@@ -143,10 +279,22 @@ void run_logger_child_case(const std::string& child_case) {
 }
 
 void run_logger_child(const std::string& child_case, Process::EnvironmentMap environment) {
+  static constexpr const char* kIsolatedEnvironmentVariables[]{
+      "VLINK_LOG_LEVEL",       "VLINK_LOG_CONSOLE_LEVEL", "VLINK_LOG_FILE_LEVEL",  "VLINK_LOG_CONSOLE_UNORDER",
+      "VLINK_LOG_ENABLE_UTC",  "VLINK_LOG_CONSOLE_FMT",   "VLINK_LOG_PLUGIN",      "VLINK_LOG_DIR",
+      "VLINK_LOG_MAX_SIZE",    "VLINK_LOG_MAX_COUNT",     "VLINK_LOG_FLUSH_DELAY", "VLINK_LOG_STORE_STRATEGY",
+      "VLINK_LOG_OPEN_APPEND", "VLINK_LOG_BLOCK_SYNC",    "VLINK_LOG_WRITE_DEPTH", "VLINK_MEMORY_LEVEL",
+      "VLINK_MEMORY_PREALLOC", "VLINK_MEMORY_BATCH_SIZE",
+  };
+
+  for (const char* name : kIsolatedEnvironmentVariables) {
+    environment.try_emplace(name, "");
+  }
+
   Process child;
   child.set_process_mode(Process::kForwardedMode);
   child.set_inherit_environment(true);
-  environment.emplace("VLINK_LOGGER_CHILD_CASE", child_case);
+  environment["VLINK_LOGGER_CHILD_CASE"] = child_case;
   child.set_environment(environment);
   child.start(Utils::get_app_path(),
               {"--test-suite=base-Logger",
@@ -458,6 +606,25 @@ TEST_SUITE("base-Logger") {
     Logger::register_console_handler(nullptr);
   }
 
+  TEST_CASE("console handler recursion is rejected before nested formatting") {
+    Logger::init("test");
+    Logger::set_console_level(Logger::kInfo);
+    Logger::set_file_level(Logger::kOff);
+
+    int calls = 0;
+    int evaluations = 0;
+    Logger::register_console_handler([&calls, &evaluations](Logger::Level, std::string_view) {
+      ++calls;
+      VLOG_I("nested callback record ", ++evaluations);
+    });
+
+    VLOG_I("outer callback record");
+    CHECK_EQ(calls, 1);
+    CHECK_EQ(evaluations, 0);
+
+    Logger::register_console_handler(nullptr);
+  }
+
   TEST_CASE("register_console_handler receives the correct level") {
     Logger::init("test");
     Logger::set_console_level(Logger::kWarn);
@@ -483,6 +650,25 @@ TEST_SUITE("base-Logger") {
     Logger::flush();
 
     CHECK(file_calls.load() >= 1);
+
+    Logger::register_file_handler(nullptr);
+  }
+
+  TEST_CASE("file handler recursion is rejected before nested formatting") {
+    Logger::init("test");
+    Logger::set_console_level(Logger::kOff);
+    Logger::set_file_level(Logger::kInfo);
+
+    int calls = 0;
+    int evaluations = 0;
+    Logger::register_file_handler([&calls, &evaluations](Logger::Level, std::string_view) {
+      ++calls;
+      VLOG_I("nested file callback record ", ++evaluations);
+    });
+
+    VLOG_I("outer file callback record");
+    CHECK_EQ(calls, 1);
+    CHECK_EQ(evaluations, 0);
 
     Logger::register_file_handler(nullptr);
   }
@@ -516,6 +702,25 @@ TEST_SUITE("base-Logger") {
     received.clear();
     Logger::print_stream_style<Logger::kOff>(Logger::NoDetail{}, "ignored");
     CHECK(received.empty());
+
+    Logger::register_console_handler(nullptr);
+  }
+
+  TEST_CASE("C-style formatting keeps the terminator outside truncated messages") {
+    Logger::init("test");
+    Logger::set_console_level(Logger::kInfo);
+    Logger::set_file_level(Logger::kOff);
+
+    std::string received;
+    Logger::register_console_handler([&received](Logger::Level, std::string_view log) { received.assign(log); });
+
+    for (size_t payload_size : {4094U, 4095U, 4096U}) {
+      const std::string payload(payload_size, 'x');
+      Logger::print_c_style<Logger::kInfo>(Logger::NoDetail{}, "%s", payload.c_str());
+
+      CHECK_EQ(received.size(), std::min(payload_size, static_cast<size_t>(Logger::kLocalBufferSize - 1)));
+      CHECK_EQ(received.find('\0'), std::string::npos);
+    }
 
     Logger::register_console_handler(nullptr);
   }
@@ -578,9 +783,11 @@ TEST_SUITE("base-Logger") {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
     for (;;) {
       emit();
+
       if (calls.load(std::memory_order_relaxed) != 1 || std::chrono::steady_clock::now() >= deadline) {
         break;
       }
+
       std::this_thread::yield();
     }
     CHECK_EQ(calls.load(std::memory_order_relaxed), 2);
@@ -690,31 +897,6 @@ TEST_SUITE("base-Logger") {
     Logger::register_console_handler(nullptr);
   }
 
-  TEST_CASE("console writer covers formatted and plain severities") {
-    Logger::init("test");
-    Logger::register_console_handler(nullptr);
-    Logger::set_console_level(Logger::kTrace);
-    Logger::set_file_level(Logger::kOff);
-
-    Logger::set_console_fmt_enable(true);
-    VLOG_T("trace formatted");
-    VLOG_D("debug formatted");
-    VLOG_I("info formatted");
-    VLOG_W("warn formatted");
-    VLOG_E("error formatted");
-    CHECK_THROWS(VLOG_F("fatal formatted"));
-
-    Logger::set_console_fmt_enable(false);
-    VLOG_T("trace plain");
-    VLOG_D("debug plain");
-    VLOG_I("info plain");
-    VLOG_W("warn plain");
-    VLOG_E("error plain");
-    CHECK_THROWS(VLOG_F("fatal plain"));
-
-    Logger::set_console_level(Logger::kTrace);
-  }
-
   TEST_CASE("child process covers logger environment initialization branches") {
     const auto child_case = Utils::get_env("VLINK_LOGGER_CHILD_CASE");
 
@@ -727,6 +909,9 @@ TEST_SUITE("base-Logger") {
         {"level-trace", "Trace"}, {"level-debug", "DEBUG"}, {"level-info", "info"}, {"level-warn", "Warn"},
         {"level-error", "ERROR"}, {"level-fatal", "fatal"}, {"level-off", "Off"}};
 
+    run_logger_child("first-log-recursion", {{"VLINK_LOG_CONSOLE_LEVEL", "Info"}, {"VLINK_LOG_FILE_LEVEL", "Off"}});
+    run_logger_child("handler-exception", {{"VLINK_LOG_CONSOLE_LEVEL", "Info"}, {"VLINK_LOG_FILE_LEVEL", "Off"}});
+
     for (const auto& [name, value] : named_levels) {
       run_logger_child(name, {{"VLINK_LOG_CONSOLE_LEVEL", value}, {"VLINK_LOG_FILE_LEVEL", "Off"}});
     }
@@ -735,31 +920,92 @@ TEST_SUITE("base-Logger") {
     run_logger_child("invalid-level", {{"VLINK_LOG_CONSOLE_LEVEL", "not-a-level"}, {"VLINK_LOG_LEVEL", "Off"}});
     run_logger_child("range-level", {{"VLINK_LOG_CONSOLE_LEVEL", "99"}, {"VLINK_LOG_FILE_LEVEL", "Off"}});
 
+    run_logger_child("missing-plugin", {{"VLINK_LOG_FILE_LEVEL", "Info"},
+                                        {"VLINK_LOG_CONSOLE_LEVEL", "Off"},
+                                        {"VLINK_LOG_PLUGIN", "__missing_vlink_logger_plugin__"}});
+
+    if constexpr (!kHasFileLoggerBackend) {
+      return;
+    }
+
+    const auto timestamp_dir = logger_tmp_dir("time");
+    reset_logger_dir(timestamp_dir);
     run_logger_child("file-time-rolling", {{"VLINK_LOG_CONSOLE_LEVEL", "Trace"},
                                            {"VLINK_LOG_FILE_LEVEL", "Trace"},
                                            {"VLINK_LOG_CONSOLE_FMT", "1"},
                                            {"VLINK_LOG_CONSOLE_UNORDER", "1"},
                                            {"VLINK_LOG_ENABLE_UTC", "1"},
-                                           {"VLINK_LOG_DIR", logger_tmp_dir("time").generic_string() + "/"},
-                                           {"VLINK_LOG_MAX_SIZE", "65536"},
+                                           {"VLINK_LOG_DIR", timestamp_dir.generic_string() + "/"},
+                                           {"VLINK_LOG_MAX_SIZE", "512"},
                                            {"VLINK_LOG_MAX_COUNT", "2"},
                                            {"VLINK_LOG_FLUSH_DELAY", "0"},
                                            {"VLINK_LOG_WRITE_DEPTH", "64"}});
+    CHECK_EQ(logger_files(timestamp_dir).size(), kTimestampFileCount);
+    const auto timestamp_content = read_logger_files(timestamp_dir);
+    CHECK(timestamp_content.find(" UTC @") != std::string::npos);
+    CHECK(timestamp_content.find("backtrace retained trace") != std::string::npos);
+    CHECK(timestamp_content.find("backtrace retained info") != std::string::npos);
 
+    const auto rotating_dir = logger_tmp_dir("rotating");
+    reset_logger_dir(rotating_dir);
     run_logger_child("file-rotating", {{"VLINK_LOG_LEVEL", "Trace"},
                                        {"VLINK_LOG_CONSOLE_LEVEL", "Off"},
-                                       {"VLINK_LOG_DIR", logger_tmp_dir("rotating").string()},
+                                       {"VLINK_LOG_DIR", rotating_dir.string()},
                                        {"VLINK_LOG_STORE_STRATEGY", "1"},
                                        {"VLINK_LOG_OPEN_APPEND", "1"},
                                        {"VLINK_LOG_BLOCK_SYNC", "1"},
-                                       {"VLINK_LOG_MAX_SIZE", "65536"},
+                                       {"VLINK_LOG_MAX_SIZE", "512"},
                                        {"VLINK_LOG_MAX_COUNT", "2"},
                                        {"VLINK_LOG_FLUSH_DELAY", "25"},
                                        {"VLINK_LOG_WRITE_DEPTH", "64"}});
+    CHECK_EQ(logger_files(rotating_dir).size(), 3U);
+    CHECK(read_logger_files(rotating_dir).find("fatal rotating child log") != std::string::npos);
 
-    run_logger_child("missing-plugin", {{"VLINK_LOG_FILE_LEVEL", "Info"},
-                                        {"VLINK_LOG_CONSOLE_LEVEL", "Off"},
-                                        {"VLINK_LOG_PLUGIN", "__missing_vlink_logger_plugin__"}});
+#if defined(VLINK_ENABLE_LOG_BACKEND)
+    const auto blocking_dir = logger_tmp_dir("queue-block");
+    reset_logger_dir(blocking_dir);
+    run_logger_child("queue-block", {{"VLINK_LOG_LEVEL", "Trace"},
+                                     {"VLINK_LOG_CONSOLE_LEVEL", "Off"},
+                                     {"VLINK_LOG_DIR", blocking_dir.string()},
+                                     {"VLINK_LOG_STORE_STRATEGY", "1"},
+                                     {"VLINK_LOG_BLOCK_SYNC", "1"},
+                                     {"VLINK_LOG_MAX_SIZE", "1048576"},
+                                     {"VLINK_LOG_MAX_COUNT", "1"},
+                                     {"VLINK_LOG_FLUSH_DELAY", "1"},
+                                     {"VLINK_LOG_WRITE_DEPTH", "1"}});
+    const auto blocking_content = read_logger_files(blocking_dir);
+    CHECK(blocking_content.find("blocking queue record 0") != std::string::npos);
+    CHECK(blocking_content.find("blocking queue final record") != std::string::npos);
+    CHECK_EQ(count_logger_records(blocking_content, "blocking queue record "), 2000U);
+
+    const auto dropping_dir = logger_tmp_dir("queue-drop-oldest");
+    reset_logger_dir(dropping_dir);
+    run_logger_child("queue-drop-oldest", {{"VLINK_LOG_LEVEL", "Trace"},
+                                           {"VLINK_LOG_CONSOLE_LEVEL", "Off"},
+                                           {"VLINK_LOG_DIR", dropping_dir.string()},
+                                           {"VLINK_LOG_STORE_STRATEGY", "1"},
+                                           {"VLINK_LOG_BLOCK_SYNC", "0"},
+                                           {"VLINK_LOG_MAX_SIZE", "1048576"},
+                                           {"VLINK_LOG_MAX_COUNT", "1"},
+                                           {"VLINK_LOG_FLUSH_DELAY", "500"},
+                                           {"VLINK_LOG_WRITE_DEPTH", "1"}});
+    const auto dropping_content = read_logger_files(dropping_dir);
+    CHECK(dropping_content.find("dropping queue final record") != std::string::npos);
+    CHECK(count_logger_records(dropping_content, "dropping queue record ") < 2000U);
+#endif
+
+#if defined(VLINK_ENABLE_LOG_BACKEND)
+    const auto invalid_memory_dir = logger_tmp_dir("invalid-memory-config");
+    reset_logger_dir(invalid_memory_dir);
+    run_logger_child("invalid-memory-config", {{"VLINK_LOG_FILE_LEVEL", "Info"},
+                                               {"VLINK_LOG_CONSOLE_LEVEL", "Off"},
+                                               {"VLINK_LOG_DIR", invalid_memory_dir.string()},
+                                               {"VLINK_LOG_STORE_STRATEGY", "1"},
+                                               {"VLINK_MEMORY_LEVEL", "invalid"},
+                                               {"VLINK_MEMORY_BATCH_SIZE", "invalid"}});
+    CHECK(read_logger_files(invalid_memory_dir).find("logger initialized with invalid memory configuration") !=
+          std::string::npos);
+#endif
 
 #ifndef _WIN32
     run_logger_child(

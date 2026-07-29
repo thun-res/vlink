@@ -89,7 +89,7 @@
  *
  * @par Example
  * @code
- *   vlink::Logger::init("my_app", "/var/log/my_app.log");
+ *   vlink::Logger::init("my_app", "/var/log/my_app");
  *   vlink::Logger::set_console_level(vlink::Logger::kInfo);
  *
  *   VLOG_I("node started, id=", node_id);
@@ -99,8 +99,8 @@
  * @endcode
  *
  * @note @c kFatal messages call @c Logger::flush and then throw @c Exception::RuntimeError so
- *       the application can perform a controlled shutdown.  Backends include spdlog, quill,
- *       DLT, Android logcat, QNX slog2 and kmsg depending on build options.
+ *       the application can perform a controlled shutdown.  Build-time backends include
+ *       @c LoggerBackend, Android logcat, QNX slog2 and kmsg.
  */
 
 #pragma once
@@ -129,10 +129,12 @@ namespace vlink {
  * @brief Global singleton logger with four formatting styles and independently configurable sinks.
  *
  * @details
- * Construct exactly once via @c Logger::init; subsequent calls reconfigure the existing instance.
- * The console sink is always enabled; the file sink activates when @c log_path is non-empty.
- * Logging entry points are macros that wrap the public @c print_* templates and forward a
- * compile-time @c Level so the bodies disappear when the level is below @c kMinimumLevel.
+ * Configure exactly once via @c Logger::init before the first @c get or logging call.  Calls after
+ * singleton construction do not rebuild the active backend and must not be used for reconfiguration.
+ * Console and file output are independently enabled by their level thresholds; an empty
+ * @c log_path selects the configured or temporary default directory.  Logging entry points are
+ * macros that wrap the public @c print_* templates and forward a compile-time @c Level so the
+ * bodies disappear when the level is below @c kMinimumLevel.
  */
 class VLINK_EXPORT Logger final {
  public:
@@ -203,7 +205,9 @@ class VLINK_EXPORT Logger final {
    *
    * @details
    * Invoked synchronously from the logging thread; the @c std::string_view is valid only for
-   * the duration of the call.
+   * the duration of the call.  Do not register or unregister handlers during invocation.
+   * Exceptions are reported to standard error and do not escape the logging boundary.  Nested
+   * logging on the same thread is suppressed before its message arguments are evaluated.
    */
   using Callback = MoveFunction<void(Level, std::string_view)>;
 
@@ -228,11 +232,14 @@ class VLINK_EXPORT Logger final {
    * @brief Initialises the logger singleton.
    *
    * @details
-   * Must be invoked before any logging macros.  Subsequent calls reconfigure the singleton.
-   * Provide a non-empty @p log_path to activate the file sink.
+   * Must be invoked before @c get or any logging macro.  Only values supplied before singleton
+   * construction configure the backend; later calls do not rebuild active sinks.  File output is
+   * controlled by the file level.  An empty @p log_path selects @c VLINK_LOG_DIR or a temporary
+   * default directory.
    *
-   * @param app_name  Application name embedded in log output.  Default: empty.
-   * @param log_path  Absolute path for the file sink.  Default: empty (no file sink).
+   * @param app_name  Application name embedded in log output.  Default: empty (detect automatically).
+   * @param log_path  Base directory for generated log files when @p app_name is non-empty.
+   *                  Default: empty (select automatically).
    */
   static void init(const std::string& app_name = "", const std::string& log_path = "") noexcept;
 
@@ -249,6 +256,8 @@ class VLINK_EXPORT Logger final {
    * @details
    * Useful before abnormal termination.  Invoked automatically before a @c kFatal message
    * throws.
+   *
+   * @warning Call during application runtime, before static object destruction begins.
    */
   static void flush() noexcept;
 
@@ -281,9 +290,13 @@ class VLINK_EXPORT Logger final {
   static void set_file_level(Level level) noexcept;
 
   /**
-   * @brief Enables or disables ANSI colour / formatting on the console sink.
+   * @brief Enables or disables the extended prefix on the console sink.
    *
-   * @param enable  @c true to keep ANSI escapes (default), @c false for plain text.
+   * @details
+   * The extended prefix contains the timestamp, thread ID and severity.  ANSI level colours are
+   * independent of this setting.
+   *
+   * @param enable  @c true to prepend the extended fields, @c false to omit them.
    */
   static void set_console_fmt_enable(bool enable) noexcept;
 
@@ -302,9 +315,9 @@ class VLINK_EXPORT Logger final {
   [[nodiscard]] static Level get_file_level() noexcept;
 
   /**
-   * @brief Returns whether ANSI colour codes are enabled on the console sink.
+   * @brief Returns whether the extended console prefix is enabled.
    *
-   * @return @c true when ANSI escapes are emitted.
+   * @return @c true when timestamp, thread ID and severity fields are prepended.
    */
   [[nodiscard]] static bool get_console_fmt_enable() noexcept;
 
@@ -566,6 +579,8 @@ class VLINK_EXPORT Logger final {
 
   void write_to_console(Level level, std::string_view log) noexcept;
 
+  static void write_to_console_line(Level level, std::string_view log) noexcept;
+
   void write_to_file(Level level, std::string_view log) noexcept;
 
   struct Impl;
@@ -646,11 +661,11 @@ inline void Logger::print_c_style([[maybe_unused]] DetailT&& detail, [[maybe_unu
     log_view = stream.take_view();
   } else {
     auto* local_buffer = get_local_buffer();
-    auto written = std::snprintf(local_buffer, kLocalBufferSize - 1, format, args...);
+    auto written = std::snprintf(local_buffer, kLocalBufferSize, format, args...);
 
     if VUNLIKELY (written < 0) {
       written = 0;
-    } else if VUNLIKELY (written > kLocalBufferSize - 1) {
+    } else if VUNLIKELY (written >= kLocalBufferSize) {
       written = kLocalBufferSize - 1;
     }
 
