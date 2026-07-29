@@ -574,17 +574,15 @@ VLink 的 `Logger` 是全局单例日志系统，支持四种日志书写风格�
 | 宏 | 风格 |
 | --- | --- |
 | `VLOG_I` | 流式（variadic stream，推荐） |
-| `MLOG_I` | 格式化（fmt/std::format 风格） |
+| `MLOG_I` | `vlink::format` 的 `{}` 占位风格 |
 | `CLOG_I` | C 风格（printf 风格） |
 | `SLOG_I` | RAII 流式 |
 
 日志级别：`kTrace / kDebug / kInfo / kWarn / kError / kFatal / kOff`（共 7 级，其中 `kOff` 表示关闭对应 sink）。编译期可通过宏 `VLINK_LOG_LEVEL=N` 剥离低于 `N` 的级别（零开销）；运行时可通过 `Logger::set_console_level()` / `set_file_level()` 分别调整控制台与文件 sink 的级别
 
-后端适配器（通过编译选项 `SELECT_LOG_BACKEND` 切换）：
-- `spdlog`（桌面/Linux 默认，高性能异步日志；Android/QNX 默认 native）
-- `quill`（超低延迟日志，适合实时线程）
-- `dlt`（AUTOSAR DLT 日志格式，适配车载诊断系统）
-- `native`（平台原生日志：Android logcat / QNX slog2 / Linux kmsg，自动适配）
+后端适配器（通过编译选项 `ENABLE_LOG_BACKEND` 切换）：
+- 自研 `LoggerBackend`（桌面/Linux 默认启用，使用 `MessageLoop` 异步队列与文件轮转）
+- 平台日志（关闭自研后端后使用，提供 Android logcat、QNX slog2 与 Linux kmsg）
 
 所有后端实现完全透明切换，业务代码中的日志调用不需要任何修改。
 
@@ -1290,7 +1288,10 @@ VLOG_D("frame count=", frame_count);    // Release 下被编译器完全消除
 VLOG_W("buffer overflow detected");     // 保留
 ```
 
-**多后端适配。** 日志后端通过编译选项可配置为 spdlog（桌面/Linux 默认，高性能异步；Android/QNX 默认 native）、quill（低延迟异步）、dlt（AUTOSAR DLT 协议）或 native（平台原生日志：Android logcat / QNX slog2 / Linux kmsg，自动适配），同一份业务代码即可适应从开发桌面到车规嵌入式的不同部署环境。
+**多后端适配。** 日志后端通过编译选项可配置为 `LoggerBackend`（Android/QNX 以外的
+CMake 与 Conan 默认，使用 `MessageLoop` 异步队列与文件轮转）或平台日志（Android.bp
+与 Android/QNX 的 CMake 默认，使用 Android logcat / QNX slog2；Linux 可选 kmsg），
+同一份业务代码即可适应从开发桌面到车规嵌入式的不同部署环境。
 
 **回溯日志（backtrace）。** 通过 `Logger::enable_backtrace(n)` 维护最近 n 条日志的环形缓冲区，发生错误时调用 `Logger::dump_backtrace()` 即可输出错误前的上下文，帮助定位仅在低日志级别下才暴露的问题。
 

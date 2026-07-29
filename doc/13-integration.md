@@ -701,7 +701,7 @@ monitor->shutdown();
 
 ### 📝 13.14 LoggerPluginInterface：自定义日志后端
 
-实现 `LoggerPluginInterface` 可将 VLink 文件通道转发至任意第三方框架（spdlog、log4cxx、自定义滚动日志等）。接口包含三个钩子。
+实现 `LoggerPluginInterface` 可将 VLink 文件通道转发至自定义滚动日志、远程日志服务等外部系统。接口包含三个钩子。
 
 | 方法 | 语义 |
 | --- | --- |
@@ -717,49 +717,53 @@ monitor->shutdown();
 产生的 VLink 日志仍按控制台配置处理，但不会再次进入同一插件。
 
 ```cpp
+#include <cstdio>
+#include <mutex>
+#include <string>
 #include <vlink/base/logger_plugin_interface.h>
-#include <spdlog/spdlog.h>
-#include <spdlog/sinks/rotating_file_sink.h>
 
-class SpdlogPlugin : public vlink::LoggerPluginInterface {
+class CustomLoggerPlugin : public vlink::LoggerPluginInterface {
     VLINK_PLUGIN_REGISTER(vlink::LoggerPluginInterface)
+
 public:
+    ~CustomLoggerPlugin() override {
+        if (file_ != nullptr) {
+            (void)std::fclose(file_);
+        }
+    }
+
     bool init(std::string_view app_name) noexcept override {
-        logger_ = spdlog::rotating_logger_mt(
-            std::string(app_name),
-            "/var/log/" + std::string(app_name) + ".log",
-            1024 * 1024 * 10, 3);
-        return true;
+        const auto path = "/var/log/" + std::string(app_name) + ".log";
+        file_ = std::fopen(path.c_str(), "ab");
+        return file_ != nullptr;
     }
 
     bool log(int level, std::string_view str) noexcept override {
-        if (!logger_) {
+        (void)level;
+        std::lock_guard lock(mtx_);
+
+        if (file_ == nullptr) {
             return false;
         }
 
-        switch (level) {
-        case 0: logger_->trace(str); break;
-        case 1: logger_->debug(str); break;
-        case 2: logger_->info(str); break;
-        case 3: logger_->warn(str); break;
-        case 4: logger_->error(str); break;
-        case 5: logger_->critical(str); break;
-        default: return false;
-        }
-        return true;
+        return std::fwrite(str.data(), 1U, str.size(), file_) == str.size() &&
+               std::fputc('\n', file_) != EOF;
     }
 
     void flush() noexcept override {
-        if (logger_) {
-            logger_->flush();
+        std::lock_guard lock(mtx_);
+
+        if (file_ != nullptr) {
+            (void)std::fflush(file_);
         }
     }
 
 private:
-    std::shared_ptr<spdlog::logger> logger_;
+    std::mutex mtx_;
+    std::FILE* file_{nullptr};
 };
 
-VLINK_PLUGIN_DECLARE(SpdlogPlugin, 1, 0)
+VLINK_PLUGIN_DECLARE(CustomLoggerPlugin, 1, 0)
 ```
 
 手工加载后可直接调用插件接口；要替换 Logger 文件通道，需在 Logger 首次使用前通过环境变量
@@ -768,7 +772,7 @@ VLINK_PLUGIN_DECLARE(SpdlogPlugin, 1, 0)
 
 ```cpp
 vlink::Plugin plugin;
-auto backend = plugin.load<vlink::LoggerPluginInterface>("spdlog_plugin", 1, 0);
+auto backend = plugin.load<vlink::LoggerPluginInterface>("custom_logger_plugin", 1, 0);
 if (backend) {
     backend->init("my_app");
     backend->flush();
@@ -971,6 +975,10 @@ export VLINK_FBS_DIR=/opt/vlink/fbs
 
 内置日志系统 `vlink::Logger` 的级别、目录与轮转策略均可经环境变量调整。日志级别取值：`0`=TRACE、`1`=DEBUG、`2`=INFO、`3`=WARN、`4`=ERROR、`5`=FATAL、`6`=OFF；也可填写 `Trace`、`Debug`、`Info`、`Warn`、`Error`、`Fatal`、`Off`，并支持全大写或全小写。控制台与文件级别可分别覆盖全局级别。
 
+CMake 在桌面/Linux 默认启用自研后端，在 Android/QNX 默认关闭；Conan 默认启用
+自研后端，Android.bp 使用平台日志。CMake 可通过 `ENABLE_LOG_BACKEND=ON|OFF` 显式切换；
+关闭时在 Android、QNX 或 Linux 上使用平台日志。
+
 | 变量 | 类型 | 说明 |
 | --- | --- | --- |
 | `VLINK_LOG_LEVEL` | 数字或英文名称 | 全局日志级别（`0`..`6` 或对应英文名称） |
@@ -981,25 +989,26 @@ export VLINK_FBS_DIR=/opt/vlink/fbs
 | `VLINK_LOG_CONSOLE_FMT` | `1`/`0` | 启用扩展控制台格式 |
 | `VLINK_LOG_ENABLE_UTC` | `1`/`0` | 使用 UTC 时间戳 |
 | `VLINK_LOG_MAX_SIZE` | 数字 | 单文件最大字节数，超过后轮转（默认 10 MiB） |
-| `VLINK_LOG_MAX_COUNT` | 数字 | 日志文件最大保留数量 |
+| `VLINK_LOG_MAX_COUNT` | 数字 | 时间戳策略文件保留目标（1..10000）；固定文件名策略备份数（0..200000，另有一个活动文件） |
 | `VLINK_LOG_FLUSH_DELAY` | 数字 | 异步 Sink 刷新间隔，毫秒（默认 500）；后端细节见下文 |
 | `VLINK_LOG_PLUGIN` | 插件名 | 首次使用 Logger 前设置的文件通道插件基础名；仅在文件级别低于 `Off` 时加载 |
-| `VLINK_LOG_STORE_STRATEGY` | `1`/`0` | 启用备用文件存储策略 |
-| `VLINK_LOG_OPEN_APPEND` | `1`/`0` | 启动时追加既有日志 |
-| `VLINK_LOG_BLOCK_SYNC` | `1`/`0` | `1`：队列满时阻塞生产线程；`0`：非阻塞并允许丢日志（默认） |
-| `VLINK_LOG_WRITE_DEPTH` | 数字 | spdlog：全局队列槽数（默认 8192 条）；Quill：每个生产线程的队列容量（默认 128 KiB，单位字节） |
+| `VLINK_LOG_STORE_STRATEGY` | `1`/`0` | `1`：固定文件名大小轮转；`0`：时间戳文件大小轮转 |
+| `VLINK_LOG_OPEN_APPEND` | `1`/`0` | `1`：启动时继续活动/最新文件；`0`：启动新文件或轮转既有活动文件 |
+| `VLINK_LOG_BLOCK_SYNC` | `1`/`0` | `1`：队列满时阻塞生产线程；`0`：普通记录非阻塞并允许丢弃（默认）；Error/Fatal 仍阻塞保护 |
+| `VLINK_LOG_WRITE_DEPTH` | 数字 | `LoggerBackend` 的 MessageLoop dispatcher 队列槽数（默认 8192 条） |
 
-三个异步参数在后端中的细节并不完全相同。spdlog 的
-`VLINK_LOG_WRITE_DEPTH` 是全局定长记录队列的槽数；Quill 是每个日志
-生产线程独立队列的字节容量，低于 8 KiB 时按 8 KiB 处理，底层会向上
-取整为 2 的幂。该值不再充当 Quill 文件 Sink 的 `fwrite` 缓冲区大小。
-`VLINK_LOG_BLOCK_SYNC=0` 时，spdlog 淘汰最旧记录，Quill 丢弃当前无法
-入队的记录；设为 `1` 时两者都会等待队列腾出空间。
+`VLINK_LOG_WRITE_DEPTH` 是 `LoggerBackend` 的 `MessageLoop` dispatcher 待处理槽数，
+worker 交换出的当前处理批次不再占用这些槽。
+`VLINK_LOG_BLOCK_SYNC=0` 时，自研后端淘汰 dispatcher 队列中的较旧普通记录，
+Error/Fatal 始终受保护并等待容量。设为 `1` 时生产线程等待队列腾出空间。
 
-`VLINK_LOG_FLUSH_DELAY` 在 spdlog 中驱动周期 flush，Error 及以上另触发
-flush；在 Quill 中是后台 Sink 的最小 flush 周期，繁忙时可能晚于该值，
-文件 Sink 还会按同一最小间隔执行 `fsync`。设为 `0` 时，spdlog 每条
-记录触发 flush，Quill 则在后台无待处理工作时 flush。
+`VLINK_LOG_FLUSH_DELAY` 在自研后端中驱动周期 flush，Error 及以上另触发 flush；
+周期任务与文件写入在同一 `MessageLoop` 串行执行。设为 `0` 时每条记录都触发
+flush。
+
+自研后端的轮转文件集按单写入者设计。多个进程应使用不同日志目录或包含 PID
+的基础目录，不能共享同一组 fixed/timestamp 文件。flush 不承诺断电持久性；需要
+系统级持久化或多进程汇聚时，应使用专用日志服务。
 
 ```bash
 export VLINK_LOG_CONSOLE_LEVEL=4

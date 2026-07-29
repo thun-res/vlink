@@ -1,5 +1,22 @@
 # 🗒️ 更新日志
 
+## Unreleased
+
+### 新增功能
+
+- **自研日志后端**：新增公开的 `LoggerBackend`，支持异步写入、队列背压、周期刷新、固定/时间戳轮转、UTC 和 backtrace。
+
+### 改进
+
+- **日志后端配置**：CMake `ENABLE_LOG_BACKEND` / Conan `enable_log_backend` 取代原后端选择项；Android/QNX CMake 与 Android.bp 默认使用平台日志，其余构建默认启用自研后端；移除 spdlog、Quill、DLT 及其开关和依赖。
+- **日志后端迁移**：原 CMake `SELECT_LOG_BACKEND` / Conan `select_log_backend` 已删除；改用 `LoggerBackend` 时设置新开关为 `ON`，在 Android、QNX、Linux 上改用平台日志时设置为 `OFF`；旧 `VLINK_ENABLE_LOG_{SPD,QUI,DLT,NAT}` 特性宏不再提供。
+- **日志插件与热路径**：`LoggerPluginInterface` 新增 `flush()`，钩子改为 `noexcept`，修复初始化递归与卸载排空；日志宏通过运行期级别过滤后才求值参数。现有插件需适配并重新编译。
+- **MessageLoop 背压**：普通与优先级满队列阻塞改为在容量释放或退出时唤醒；全局阻塞策略也会响应策略切换，避免固定 1 ms 轮询。
+
+### 修复
+
+- **边界正确性**：自定义日志 handler 异常不再越过 `noexcept` 边界，C 风格超长日志不再写入截断 NUL；修复 signed `__int128_t` 构造丢失高 64 位。
+
 ## v2.1.0 (2026/07/26)
 
 ### 新增功能

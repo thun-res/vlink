@@ -194,7 +194,7 @@ vlink::Publisher<Imu> pub2("dds://sensor/imu?qos=my_sensor");
 | 风格 | 示例 | 适用 |
 | --- | --- | --- |
 | 流式 `VLOG_X` | `VLOG_I("frame=", id, " lat=", ms, "ms");` | 默认；多变量、零分配 |
-| 格式化 `MLOG_X` | `MLOG_W("t={} C", temp);` | fmt 风格占位 |
+| 格式化 `MLOG_X` | `MLOG_W("t={} C", temp);` | `vlink::format` 的 `{}` 占位 |
 | printf 风格 `CLOG_X` | `CLOG_E("errno=%d", errno);` | 兼容既有 C 代码 |
 | RAII 流 `SLOG_X` | `SLOG_D << "a=" << a;` | 链式 `<<` |
 
@@ -322,6 +322,7 @@ target_link_libraries(app PRIVATE gen)
 | `ENABLE_SECURITY` | ON | OpenSSL 加密 |
 | `ENABLE_SQLITE` | ON | VDB bag 支持 |
 | `ENABLE_ZSTD` | ON | bag Zstd 压缩 |
+| `ENABLE_LOG_BACKEND` | ON（Android/QNX 为 OFF） | 自研日志后端；Android/QNX/Linux 可设为 OFF 使用平台日志 |
 | `ENABLE_C_API` | ON | C ABI 库 |
 | `ENABLE_PROXY` | ON | proxy / vlink-proxy |
 | `ENABLE_VIEWER` / `ENABLE_WEBVIZ` | OFF | Qt GUI / Foxglove · Rerun 桥接 |

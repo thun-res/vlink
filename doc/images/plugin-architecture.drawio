@@ -48,7 +48,7 @@
         <mxCell id="log_l" value="Log backend extension" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
           <mxGeometry x="576" y="140" width="268" height="18" as="geometry" />
         </mxCell>
-        <mxCell id="log_items" value="spdlog  -  quill&#10;dlt  -  native" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;arcSize=8;fontFamily=Courier New;fontSize=11;fontColor=#0d47a1;align=center;" vertex="1" parent="1">
+        <mxCell id="log_items" value="custom file-channel plugin&#10;rolling log  -  remote service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;arcSize=8;fontFamily=Courier New;fontSize=11;fontColor=#0d47a1;align=center;" vertex="1" parent="1">
           <mxGeometry x="576" y="164" width="268" height="60" as="geometry" />
         </mxCell>
 
