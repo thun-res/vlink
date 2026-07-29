@@ -20,8 +20,6 @@ files).
 | `mcap` | MIT | <https://github.com/foxglove/mcap> | header-only, linked into libvlink |
 | `json` | MIT | <https://github.com/nlohmann/json> | header-only, linked into libvlink and CLIs |
 | `robin-map` | MIT | <https://github.com/Tessil/robin-map> | header-only, linked into libvlink |
-| `spdlog` | MIT | <https://github.com/gabime/spdlog> | header-only, default log backend |
-| `quill` | MIT | <https://github.com/odygrd/quill> | header-only, optional log backend |
 | `argparse` | MIT | <https://github.com/p-ranav/argparse> | header-only, linked into CLI binaries |
 | `bitsery` | MIT | <https://github.com/fraillt/bitsery> | header-only, linked into proxy binaries |
 | `exprtk` | MIT | <https://www.partow.net/programming/exprtk/> | header-only, linked into parse/viewer/webviz |

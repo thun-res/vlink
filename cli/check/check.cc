@@ -1074,6 +1074,12 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
     check_flag(ctx, "- Check zstd enabled...", "VLINK_ENABLE_ZSTD", false);
 #endif
 
+#ifdef VLINK_ENABLE_LOG_BACKEND
+    check_flag(ctx, "- Check logger backend...", "VLINK_ENABLE_LOG_BACKEND", true);
+#else
+    check_flag(ctx, "- Check logger backend...", "VLINK_ENABLE_LOG_BACKEND", false);
+#endif
+
 #ifdef VLINK_ENABLE_CLI_INFO
     check_flag(ctx, "- Check cli-info enabled...", "VLINK_ENABLE_CLI_INFO", true);
 #else
@@ -1132,30 +1138,6 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
     check_flag(ctx, "- Check cli-bench enabled...", "VLINK_ENABLE_CLI_BENCH", true);
 #else
     check_flag(ctx, "- Check cli-bench enabled...", "VLINK_ENABLE_CLI_BENCH", false);
-#endif
-
-#ifdef VLINK_ENABLE_LOG_QUI
-    check_flag(ctx, "- Check quilog enabled...", "VLINK_ENABLE_LOG_QUI", true);
-#else
-    check_flag(ctx, "- Check quilog enabled...", "VLINK_ENABLE_LOG_QUI", false);
-#endif
-
-#ifdef VLINK_ENABLE_LOG_SPD
-    check_flag(ctx, "- Check spdlog enabled...", "VLINK_ENABLE_LOG_SPD", true);
-#else
-    check_flag(ctx, "- Check spdlog enabled...", "VLINK_ENABLE_LOG_SPD", false);
-#endif
-
-#ifdef VLINK_ENABLE_LOG_DLT
-    check_flag(ctx, "- Check dltlog enabled...", "VLINK_ENABLE_LOG_DLT", true);
-#else
-    check_flag(ctx, "- Check dltlog enabled...", "VLINK_ENABLE_LOG_DLT", false);
-#endif
-
-#ifdef VLINK_ENABLE_LOG_NAT
-    check_flag(ctx, "- Check natlog enabled...", "VLINK_ENABLE_LOG_NAT", true);
-#else
-    check_flag(ctx, "- Check natlog enabled...", "VLINK_ENABLE_LOG_NAT", false);
 #endif
 
 #ifdef VLINK_ENABLE_PROXY
@@ -1228,7 +1210,7 @@ int check_env(bool available_case, const std::string& prefix) {
       {"VLINK_LOG_LEVEL", "",
        "Global log level: TRACE=0, DEBUG=1, INFO=2, WARN=3, ERROR=4, FATAL=5, OFF=6 (disable all output).", false},
       {"VLINK_LOG_CONSOLE_LEVEL", "", "Override of the log level used for console sink only.", false},
-      {"VLINK_LOG_FILE_LEVEL", "", "Override of the log level used for the file sink only.", false},
+      {"VLINK_LOG_FILE_LEVEL", "", "Override of the log level used for the file sink and custom logger plugin.", false},
       {"VLINK_LOG_CONSOLE_UNORDER", "",
        "When set to 1 disables ordered console output (faster, may interleave across threads).", false},
       {"VLINK_LOG_CONSOLE_FMT", "",
@@ -1239,28 +1221,28 @@ int check_env(bool available_case, const std::string& prefix) {
       {"VLINK_LOG_ENABLE_UTC", "", "When set to 1 prints timestamps in UTC instead of local time.", false},
       {"VLINK_LOG_MAX_SIZE", "", "Maximum size in bytes per log file before rotation (default 10485760 = 10 MiB).",
        false},
-      {"VLINK_LOG_MAX_COUNT", "", "Maximum number of rotated log files to retain.", false},
+      {"VLINK_LOG_MAX_COUNT", "",
+       "Timestamp retention target (1..10000), or fixed-name backup count (0..200000; active file excluded).", false},
       {"VLINK_LOG_FLUSH_DELAY", "",
-       "Async sink-flush interval in milliseconds (default 500). spdlog also flushes at ERROR and flushes every "
-       "record when set to 0; Quill treats it as the minimum sink flush/fsync interval and flushes when idle at 0.",
+       "LoggerBackend flush interval in milliseconds (default 500). ERROR also triggers a flush; 0 flushes every "
+       "record.",
        false},
       {"VLINK_LOG_PLUGIN", "",
        "Custom logger plugin base name (no 'lib' prefix or '.so' suffix); implements LoggerPluginInterface and is "
        "resolved through Plugin::default_search_path().",
        false},
       {"VLINK_LOG_STORE_STRATEGY", "",
-       "When set to 1 uses spdlog's size-based rotating file sink (VLINK_LOG_MAX_SIZE per file); default empty = "
-       "VLink's time-rolling sink (one file per period). Only honored when spdlog backend is enabled.",
+       "When set to 1 LoggerBackend uses fixed-name size rotation; default empty uses timestamped size rotation.",
        false},
       {"VLINK_LOG_OPEN_APPEND", "",
-       "When set to 1 appends to the previous log file on start instead of truncating; default 0.", false},
-      {"VLINK_LOG_BLOCK_SYNC", "",
-       "When set to 1 blocks producer threads if the async log queue is full; default 0 allows drops (spdlog drops "
-       "the oldest record, Quill drops the current record).",
+       "When set to 1 continues the active/latest file at startup; default 0 starts a new file or rotates the active "
+       "file.",
        false},
-      {"VLINK_LOG_WRITE_DEPTH", "",
-       "spdlog global queue depth in records (default 8192); Quill per-producer queue capacity in bytes (default "
-       "131072, minimum 8192, rounded up to a power of two).",
+      {"VLINK_LOG_BLOCK_SYNC", "",
+       "When set to 1 blocks producer threads if the async log queue is full; default 0 allows drops "
+       "(LoggerBackend drops an older dispatcher record). Error/Fatal records always block and remain protected.",
+       false},
+      {"VLINK_LOG_WRITE_DEPTH", "", "LoggerBackend MessageLoop dispatcher queue depth in records (default 8192).",
        false},
 
       {"VLINK_BAG_PATH", "",

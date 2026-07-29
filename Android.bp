@@ -51,7 +51,6 @@ cc_library_shared {
     ],
     cppflags: [
         "-DVLINK_LIBRARY",
-        "-DVLINK_ENABLE_LOG_NAT",
         "-DVLINK_ENABLE_SECURITY",
         "-DVLINK_ENABLE_SQLITE",
     ],

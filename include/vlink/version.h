@@ -53,9 +53,9 @@
  * | @c VLINK_ENABLE_SECURITY    | Built-in security backends and @c Security* nodes.   |
  * | @c VLINK_ENABLE_SQLITE      | SQLite-backed bag storage.                           |
  * | @c VLINK_ENABLE_ZSTD        | Zstd compression for bag files (off by default).     |
+ * | @c VLINK_ENABLE_LOG_BACKEND | Built-in asynchronous logging back-end.              |
  * | @c VLINK_ENABLE_PROXY       | Proxy monitoring API (see @c external/proxy_api.h).  |
  * | @c VLINK_ENABLE_CLI_*       | Individual CLI sub-commands (info, bag, monitor...). |
- * | @c VLINK_ENABLE_LOG_*       | Optional logging back-ends (NAT, SPD, DLT, QUI).     |
  * | @c VLINK_ENABLE_TEST        | Unit-test build artefacts.                           |
  *
  * @par Compile-time Version Check
@@ -111,12 +111,16 @@
 #define VLINK_ENABLE_SECURITY
 #endif
 
+#ifndef VLINK_ENABLE_SQLITE
+#define VLINK_ENABLE_SQLITE
+#endif
+
 #ifndef VLINK_ENABLE_ZSTD
 // #define VLINK_ENABLE_ZSTD
 #endif
 
-#ifndef VLINK_ENABLE_SQLITE
-#define VLINK_ENABLE_SQLITE
+#ifndef VLINK_ENABLE_LOG_BACKEND
+// #define VLINK_ENABLE_LOG_BACKEND
 #endif
 
 #ifndef VLINK_ENABLE_CLI_INFO
@@ -157,22 +161,6 @@
 
 #ifndef VLINK_ENABLE_CLI_TRIGGER
 #define VLINK_ENABLE_CLI_TRIGGER
-#endif
-
-#ifndef VLINK_ENABLE_LOG_QUI
-// #define VLINK_ENABLE_LOG_QUI
-#endif
-
-#ifndef VLINK_ENABLE_LOG_SPD
-// #define VLINK_ENABLE_LOG_SPD
-#endif
-
-#ifndef VLINK_ENABLE_LOG_DLT
-// #define VLINK_ENABLE_LOG_DLT
-#endif
-
-#ifndef VLINK_ENABLE_LOG_NAT
-#define VLINK_ENABLE_LOG_NAT
 #endif
 
 #ifndef VLINK_ENABLE_EXPRTK
