@@ -44,6 +44,20 @@ class SmallQueueLoop final : public MessageLoop {
   [[nodiscard]] size_t get_max_task_count() const override { return 1U; }
 };
 
+class ObservedSmallQueueLoop final : public MessageLoop {
+ public:
+  using MessageLoop::MessageLoop;
+
+  void reset_capacity_checks() const { capacity_check_count.store(0U, std::memory_order_relaxed); }
+
+  [[nodiscard]] size_t get_max_task_count() const override {
+    capacity_check_count.fetch_add(1U, std::memory_order_relaxed);
+    return 1U;
+  }
+
+  mutable std::atomic_size_t capacity_check_count{0U};
+};
+
 class TimeoutLoop final : public MessageLoop {
  public:
   using MessageLoop::MessageLoop;
@@ -861,24 +875,206 @@ TEST_SUITE("base-MessageLoop") {
   }
 
   TEST_CASE("kBlockStrategy producer unblocks when loop drains") {
-    SmallQueueLoop loop;
+    ObservedSmallQueueLoop loop;
     loop.set_strategy(MessageLoop::kBlockStrategy);
-    loop.async_run();
 
     std::atomic<int> ran{0};
-    CHECK(loop.post_task([&ran] {
-      ran.fetch_add(1);
-      std::this_thread::sleep_for(20ms);
-    }));
+    CHECK(loop.post_task([&ran] { ran.fetch_add(1, std::memory_order_acq_rel); }));
 
-    std::thread producer([&loop, &ran] { CHECK(loop.post_task([&ran] { ran.fetch_add(1); })); });
+    std::atomic_bool producer_returned{false};
+    bool accepted = false;
+
+    loop.reset_capacity_checks();
+
+    std::thread producer([&] {
+      accepted = loop.post_task([&ran] { ran.fetch_add(1, std::memory_order_acq_rel); });
+      producer_returned.store(true, std::memory_order_release);
+    });
+
+    const bool producer_waiting =
+        common_test::wait_until([&loop] { return loop.capacity_check_count.load(std::memory_order_relaxed) >= 2U; });
+    CHECK(producer_waiting);
+
+    const bool loop_started = producer_waiting && loop.async_run();
+    CHECK(loop_started);
+
+    const bool producer_completed = loop_started && common_test::wait_until([&producer_returned] {
+                                      return producer_returned.load(std::memory_order_acquire);
+                                    });
+
+    if (!producer_completed) {
+      (void)loop.quit(true);
+    }
 
     producer.join();
-    loop.wait_for_idle(1000);
-    CHECK_EQ(ran.load(), 2);
+    CHECK(producer_completed);
+    CHECK(accepted);
 
-    loop.quit();
-    loop.wait_for_quit();
+    if (producer_completed) {
+      CHECK(loop.wait_for_idle(1000));
+      CHECK_EQ(ran.load(std::memory_order_acquire), 2);
+      CHECK(loop.quit());
+    }
+
+    if (loop_started) {
+      CHECK(loop.wait_for_quit(1000));
+    }
+  }
+
+  TEST_CASE("changing block strategy wakes a full-queue producer") {
+    ObservedSmallQueueLoop loop;
+    loop.set_strategy(MessageLoop::kBlockStrategy);
+    CHECK(loop.post_task([] {}));
+
+    std::atomic_bool producer_returned{false};
+    bool accepted = false;
+
+    loop.reset_capacity_checks();
+
+    std::thread producer([&] {
+      accepted = loop.post_task([] {});
+      producer_returned.store(true, std::memory_order_release);
+    });
+
+    const bool producer_waiting =
+        common_test::wait_until([&loop] { return loop.capacity_check_count.load(std::memory_order_relaxed) >= 2U; });
+    CHECK(producer_waiting);
+
+    if (producer_waiting) {
+      loop.set_strategy(MessageLoop::kPopStrategy);
+    }
+
+    const bool woke_after_strategy_change = producer_waiting && common_test::wait_until([&producer_returned] {
+                                              return producer_returned.load(std::memory_order_acquire);
+                                            });
+
+    if (!woke_after_strategy_change) {
+      (void)loop.quit(true);
+    }
+
+    producer.join();
+
+    CHECK(woke_after_strategy_change);
+    CHECK(accepted);
+  }
+
+  TEST_CASE("kBlockStrategy priority producer unblocks when loop drains") {
+    ObservedSmallQueueLoop loop(MessageLoop::kPriorityType);
+    loop.set_strategy(MessageLoop::kBlockStrategy);
+
+    std::atomic<int> ran{0};
+    CHECK(loop.post_task_with_priority([&ran] { ran.fetch_add(1, std::memory_order_acq_rel); },
+                                       MessageLoop::kNormalPriority));
+
+    std::atomic_bool producer_returned{false};
+    bool accepted = false;
+
+    loop.reset_capacity_checks();
+
+    std::thread producer([&] {
+      accepted = loop.post_task_with_priority([&ran] { ran.fetch_add(1, std::memory_order_acq_rel); },
+                                              MessageLoop::kNormalPriority);
+      producer_returned.store(true, std::memory_order_release);
+    });
+
+    const bool producer_waiting =
+        common_test::wait_until([&loop] { return loop.capacity_check_count.load(std::memory_order_relaxed) >= 2U; });
+    CHECK(producer_waiting);
+
+    const bool loop_started = producer_waiting && loop.async_run();
+    CHECK(loop_started);
+
+    const bool producer_completed = loop_started && common_test::wait_until([&producer_returned] {
+                                      return producer_returned.load(std::memory_order_acquire);
+                                    });
+
+    if (!producer_completed) {
+      (void)loop.quit(true);
+    }
+
+    producer.join();
+    CHECK(producer_completed);
+    CHECK(accepted);
+
+    if (producer_completed) {
+      CHECK(loop.wait_for_idle(1000));
+      CHECK_EQ(ran.load(std::memory_order_acquire), 2);
+      CHECK(loop.quit());
+    }
+
+    if (loop_started) {
+      CHECK(loop.wait_for_quit(1000));
+    }
+  }
+
+  TEST_CASE("quit wakes normal and priority producers blocked by a full queue") {
+    auto check_quit_wakeup = [](MessageLoop::Type type) {
+      ObservedSmallQueueLoop loop(type);
+      loop.set_strategy(MessageLoop::kBlockStrategy);
+      REQUIRE(loop.async_run());
+
+      auto post = [&loop, type](MessageLoop::Callback&& callback) {
+        if (type == MessageLoop::kPriorityType) {
+          return loop.post_task_with_priority(std::move(callback), MessageLoop::kNormalPriority);
+        }
+
+        return loop.post_task(std::move(callback));
+      };
+
+      std::atomic_bool task_started{false};
+      std::atomic_bool release_task{false};
+      REQUIRE(post([&task_started, &release_task] {
+        task_started.store(true, std::memory_order_release);
+
+        while (!release_task.load(std::memory_order_acquire)) {
+          std::this_thread::yield();
+        }
+      }));
+
+      const bool task_did_start =
+          common_test::wait_until([&task_started] { return task_started.load(std::memory_order_acquire); });
+
+      if (!task_did_start) {
+        release_task.store(true, std::memory_order_release);
+        (void)loop.quit(true);
+        CHECK(loop.wait_for_quit(1000));
+      }
+
+      REQUIRE(task_did_start);
+      REQUIRE(post([] {}));
+
+      std::atomic_bool producer_returned{false};
+      bool accepted = true;
+      loop.reset_capacity_checks();
+
+      std::thread producer([&] {
+        accepted = post([] {});
+        producer_returned.store(true, std::memory_order_release);
+      });
+
+      const bool producer_waiting =
+          common_test::wait_until([&loop] { return loop.capacity_check_count.load(std::memory_order_relaxed) >= 2U; });
+      CHECK(producer_waiting);
+      CHECK(loop.quit(true));
+      release_task.store(true, std::memory_order_release);
+
+      const bool woke_on_quit = producer_waiting && common_test::wait_until([&producer_returned] {
+                                  return producer_returned.load(std::memory_order_acquire);
+                                });
+
+      if (!woke_on_quit) {
+        loop.set_strategy(MessageLoop::kPopStrategy);
+      }
+
+      producer.join();
+      CHECK(woke_on_quit);
+      CHECK_FALSE(accepted);
+      CHECK(loop.wait_for_quit(1000));
+    };
+
+    SUBCASE("normal queue") { check_quit_wakeup(MessageLoop::kNormalType); }
+
+    SUBCASE("priority queue") { check_quit_wakeup(MessageLoop::kPriorityType); }
   }
 
   TEST_CASE("wakeup returns false when loop is not running") {

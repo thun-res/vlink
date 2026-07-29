@@ -40,8 +40,9 @@
  *
  * Back-pressure on a full queue is selected by @c Strategy: @c kOptimizationStrategy retries
  * up to ten times with 1 ms sleeps before dropping an eligible task, @c kPopStrategy drops
- * immediately, @c kBlockStrategy retries indefinitely.  Idle dispatch is always condition-variable
- * driven and independent of @c Strategy.
+ * immediately, and @c kBlockStrategy waits for capacity on lock-based queues or retries indefinitely
+ * on the lock-free queue.  Idle dispatch is always condition-variable driven and independent of
+ * @c Strategy.
  *
  * @par Lifecycle diagram
  *
@@ -152,7 +153,7 @@ class VLINK_EXPORT MessageLoop {
   enum Strategy : uint8_t {
     kOptimizationStrategy = 0,  ///< Retry up to ten times, then drop one eligible task and push.
     kPopStrategy = 1,           ///< Drop one eligible task immediately and push.
-    kBlockStrategy = 2,         ///< Retry indefinitely until space appears.
+    kBlockStrategy = 2,         ///< Wait for capacity on lock-based queues; retry on lock-free.
   };
 
   /**
@@ -227,7 +228,12 @@ class VLINK_EXPORT MessageLoop {
   /**
    * @brief Replaces the back-pressure strategy.
    *
-   * @param strategy  New strategy; takes effect on the next full-queue push.
+   * @details
+   * Wakes producers already waiting under the dispatcher-wide @c kBlockStrategy so they can
+   * observe the new strategy.  A producer using an explicit @c TaskOverflowPolicy::kBlock
+   * remains blocked until it is cancelled, queue capacity becomes available, or the loop quits.
+   *
+   * @param strategy  New dispatcher-wide strategy.
    */
   void set_strategy(Strategy strategy);
 
@@ -602,7 +608,7 @@ class VLINK_EXPORT MessageLoop {
 
   bool push_task(Callback&& callback, uint16_t priority, bool droppable = true,
                  TaskOverflowPolicy overflow_policy = TaskOverflowPolicy::kUseDispatcherStrategy,
-                 const TaskHandle* submit_handle = nullptr);
+                 const TaskHandle* submit_handle = nullptr, bool poll_cancellation = false);
 
   bool drop_one_normal_task();
 
