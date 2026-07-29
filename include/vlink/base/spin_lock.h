@@ -40,7 +40,7 @@
  *   round 2   | XXXX-XXX 16 spins  ----> yield_cpu()
  *   round 3   | XXXXXXXX 32 spins  ----> yield_cpu()
  *   ...       |         ... up to 1024 spins per ladder rung
- *   total > 50000 spins            ----> sleep_for(10 us)  (latched warn-once)
+ *   total > 100000 spins           ----> sleep_for(10 us)  (latched warn-once)
  * @endverbatim
  *
  * Comparison with @c std::mutex:
@@ -78,9 +78,9 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <thread>
 
-#include "./logger.h"
 #include "./macros.h"
 #include "./utils.h"
 
@@ -116,7 +116,7 @@ class SpinLock final {
    * @details
    * The inner loop alternates @c exchange attempts with relaxed-load spins.  Each back-off
    * rung doubles the spin budget from @c 8 up to @c 1024 then yields the CPU.  After
-   * @c 50000 spins the back-off action switches to a 10 us sleep and a one-time warning
+   * @c 100000 spins the back-off action switches to a 10 us sleep and a one-time warning
    * is emitted.
    *
    * @warning Recursive acquisition by the same thread deadlocks the lock.
@@ -189,7 +189,7 @@ class SpinLockGuard final {
 ////////////////////////////////////////////////////////////////
 
 inline void SpinLock::lock() noexcept {
-  constexpr static uint32_t kMaxSpinCount = 50000U;
+  constexpr static uint32_t kMaxSpinCount = 100000U;
 
   constexpr static uint16_t kInitialBackoff = 8U;
   constexpr static uint16_t kMaxBackoff = 1024U;
@@ -199,18 +199,24 @@ inline void SpinLock::lock() noexcept {
   uint16_t backoff = kInitialBackoff;
 
   for (;;) {
-    if (!flag_.exchange(true, std::memory_order_acquire)) {
+    if VLIKELY (!flag_.exchange(true, std::memory_order_acquire)) {
       return;
     }
 
     do {
       ++total_spin;
 
-      if (++spin_count >= backoff) {
+      if VUNLIKELY (++spin_count >= backoff) {
         if VUNLIKELY (total_spin > kMaxSpinCount) {
-          if (!warned_.exchange(true, std::memory_order_relaxed)) {
-            VLOG_E("SpinLock: exceeded max spin count.");
+          if VUNLIKELY (!warned_.load(std::memory_order_relaxed)) {
+            bool expected = false;
+
+            if (warned_.compare_exchange_strong(expected, true, std::memory_order_relaxed)) {
+              std::fputs("SpinLock: exceeded max spin count.\n", stderr);
+              std::fflush(stderr);
+            }
           }
+
           std::this_thread::sleep_for(std::chrono::microseconds(10));
         } else {
           Utils::yield_cpu();
