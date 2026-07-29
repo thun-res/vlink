@@ -4723,9 +4723,10 @@ NB_MODULE(_vlink_nanobind, m) {
         "create",
         [](const std::string& path, const vlink::BagWriter::Config& cfg) {
           return cast_shared_message_loop(vlink::BagWriter::create(path, cfg), [](vlink::BagWriter& writer) {
-            writer.close();
+            writer.wait_for_idle(vlink::Timer::kInfinite, false);
             writer.quit(true);
             writer.wait_for_quit(vlink::Timer::kInfinite, false);
+            writer.close();
           });
         },
         "path"_a, "config"_a = vlink::BagWriter::Config())
@@ -4733,9 +4734,10 @@ NB_MODULE(_vlink_nanobind, m) {
           "filter_get",
           [](const std::string& path) {
             return cast_shared_message_loop(vlink::BagWriter::filter_get(path), [](vlink::BagWriter& writer) {
-              writer.close();
+              writer.wait_for_idle(vlink::Timer::kInfinite, false);
               writer.quit(true);
               writer.wait_for_quit(vlink::Timer::kInfinite, false);
+              writer.close();
             });
           },
           "path"_a)

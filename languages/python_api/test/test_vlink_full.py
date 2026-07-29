@@ -1499,6 +1499,7 @@ def test_bag_writer_stream_fail_state():
     assert not w.fail()
 
     del w
+    del result
     os.remove(bag_path)
     print("[PASS] BagWriter stream fail-state")
 
