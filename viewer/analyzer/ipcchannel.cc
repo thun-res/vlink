@@ -118,6 +118,25 @@ IpcChannel::IpcChannel(QObject* parent) : QObject{parent} {
 #endif
 }
 
+IpcChannel::~IpcChannel() {
+  quit_flag_ = true;
+
+  if (file_.isOpen()) {
+    file_.close();
+  }
+
+#ifdef _WIN32
+  ::CloseHandle(hstdin_dup_);
+  hstdin_dup_ = nullptr;
+#endif
+
+  if (thread_.joinable()) {
+    thread_.join();
+  }
+}
+
+void IpcChannel::send_timestamp(int64_t timestamp) { std::cout << timestamp << std::endl; }
+
 void IpcChannel::consume_timestamp_bytes(const QByteArray& bytes) {
   if (bytes.isEmpty()) {
     return;
@@ -151,24 +170,5 @@ void IpcChannel::consume_timestamp_bytes(const QByteArray& bytes) {
     timestamp_buffer_.clear();
   }
 }
-
-IpcChannel::~IpcChannel() {
-  quit_flag_ = true;
-
-  if (file_.isOpen()) {
-    file_.close();
-  }
-
-#ifdef _WIN32
-  ::CloseHandle(hstdin_dup_);
-  hstdin_dup_ = nullptr;
-#endif
-
-  if (thread_.joinable()) {
-    thread_.join();
-  }
-}
-
-void IpcChannel::send_timestamp(int64_t timestamp) { std::cout << timestamp << std::endl; }
 
 // NOLINTEND

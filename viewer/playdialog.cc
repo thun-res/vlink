@@ -487,6 +487,14 @@ void PlayDialog::on_pushButton_stop_clicked() {
 
 void PlayDialog::on_pushButton_close_clicked() { this->close(); }
 
+void PlayDialog::on_checkBox_blank_toggled(bool checked) {
+  if (checked) {
+    ui->doubleSpinBox_begin->setEnabled(false);
+  } else {
+    ui->doubleSpinBox_begin->setEnabled(true);
+  }
+}
+
 void PlayDialog::update_time_label() {
   if (data_has_changed.exchange(false, std::memory_order_relaxed)) {
     if (status_ == kPlaying || status_ == kPaused) {
@@ -502,14 +510,6 @@ void PlayDialog::update_time_label() {
     ui->label_systime2->setText(
         QString::fromStdString(vlink::Helpers::format_milliseconds(player_->get_timestamp(), true) + "/" +
                                vlink::Helpers::format_milliseconds(player_->get_info().total_duration, true)));
-  }
-}
-
-void PlayDialog::on_checkBox_blank_toggled(bool checked) {
-  if (checked) {
-    ui->doubleSpinBox_begin->setEnabled(false);
-  } else {
-    ui->doubleSpinBox_begin->setEnabled(true);
   }
 }
 

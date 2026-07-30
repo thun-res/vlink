@@ -2163,6 +2163,216 @@ void Point3DDialog::update_ui_for_proto(const QVariant& variant, bool cache, con
   }
 }
 
+void Point3DDialog::update_ui_for_flatbuffers(const QVariant& variant, bool cache, const QElapsedTimer& timer) {
+  if (!target_fbs_context_ || !target_fbs_context_->valid()) {
+    return;
+  }
+
+  if (!cache && timer.elapsed() > 1000) {
+    return;
+  }
+
+  const auto& proxy_data = variant.value<vlink::ProxyAPI::Data>();
+
+  if (ui->comboBox_proto->currentIndex() < 0 ||
+      static_cast<size_t>(ui->comboBox_proto->currentIndex()) >= fbs_msg_list_.size()) {
+    return;
+  }
+
+  const auto& candidate = fbs_msg_list_.at(ui->comboBox_proto->currentIndex());
+  point3d_map_[proxy_data.url].clear();
+
+  if (!candidate.repeated_field) {
+    return;
+  }
+
+  FlatbuffersObjectView root_view;
+
+  if (!make_root_view(*target_fbs_context_, proxy_data.raw, root_view)) {
+    return;
+  }
+
+  const auto* root_field = candidate.repeated_field;
+
+  if (!root_field ||
+      (root_field->type()->base_type() != reflection::Vector &&
+       root_field->type()->base_type() != reflection::Vector64) ||
+      root_field->type()->element() != reflection::Obj) {
+    return;
+  }
+
+  osg::Geode* geode = nullptr;
+  osg::Vec3dArray* vertex_array = nullptr;
+  osg::Vec4dArray* color_array = nullptr;
+
+  if (osg_inited_) {
+    geode = geo_node_map_[proxy_data.url];
+
+    if (!geode) {
+      return;
+    }
+
+    auto* geometry = static_cast<osg::Geometry*>(geode->getDrawable(0));
+    vertex_array = static_cast<osg::Vec3dArray*>(geometry->getVertexArray());
+    color_array = static_cast<osg::Vec4dArray*>(geometry->getColorArray());
+
+    OsgPointCloud::update_point_size(geode, point_size_, std::min(point_size_ * 3, 15.0f), qApp->devicePixelRatio());
+    OsgPointCloud::clear_arrays(geode);
+  }
+
+  point_size_ = ui->doubleSpinBox_point->value();
+
+  const auto vector_size = get_vector_size(root_view, *root_field);
+  const auto target_value_name = ui->comboBox_value->currentText().toStdString();
+  const bool has_exp_value = ui->checkBox_select->isChecked() || ui->checkBox_exp->isChecked();
+
+  uint32_t default_color = 0xFF55FF;
+  double percent = ui->doubleSpinBox_color->value() / 100.0;
+  double total_value = 0;
+  size_t total_cnt = 0;
+  bool has_expr_finished = false;
+
+  for (size_t i = 0; i < vector_size; ++i) {
+    FlatbuffersObjectView element_view;
+
+    if (!get_vector_elem_view(root_view, *root_field, i, *target_fbs_context_->schema, element_view)) {
+      continue;
+    }
+
+    double x = 0;
+    double y = 0;
+    double z = 0;
+
+    if (!get_flatbuffers_numeric_by_path(element_view, candidate.x_path, *target_fbs_context_->schema, x) ||
+        !get_flatbuffers_numeric_by_path(element_view, candidate.y_path, *target_fbs_context_->schema, y) ||
+        !get_flatbuffers_numeric_by_path(element_view, candidate.z_path, *target_fbs_context_->schema, z) ||
+        std::isnan(x) || std::isnan(y) || std::isnan(z)) {
+      continue;
+    }
+
+    PointValueList value_list;
+
+    if (has_exp_value) {
+      value_list.emplace_back("x", vlink::zerocopy::PointCloud::kFloatType, x);
+      value_list.emplace_back("y", vlink::zerocopy::PointCloud::kFloatType, y);
+      value_list.emplace_back("z", vlink::zerocopy::PointCloud::kFloatType, z);
+    }
+
+    float intensity = -1;
+    double p = std::numeric_limits<double>::max();
+    uint32_t color = default_color;
+
+    if (ui->comboBox_value->currentIndex() == 1) {
+      p = get_point3d_distance(x, y, z);
+    }
+
+    for (const auto& value_field : candidate.value_fields) {
+      double value = 0;
+
+      if (!get_flatbuffers_numeric_by_path(element_view, value_field.path, *target_fbs_context_->schema, value)) {
+        continue;
+      }
+
+      if (has_exp_value) {
+        value_list.emplace_back(value_field.display_name, value_field.value_type, value);
+      }
+
+      if (value_field.leaf_name == "intensity" && !this->isVisible()) {
+        intensity = static_cast<float>(value);
+      }
+
+      if (value_field.leaf_name == "color") {
+        color = static_cast<uint32_t>(value);
+      }
+
+      if (ui->comboBox_value->currentIndex() > 1 && target_value_name == value_field.display_name) {
+        p = value;
+      }
+    }
+
+    if (!check_expression(static_cast<int>(i), value_list)) {
+      continue;
+    }
+
+    has_expr_finished = true;
+
+    if (p != std::numeric_limits<double>::max()) {
+      total_value += p;
+      ++total_cnt;
+
+      if (point_min_ == std::numeric_limits<double>::max()) {
+        point_min_ = p;
+      } else {
+        point_min_ = std::min(point_min_, p);
+      }
+
+      if (point_max_ == std::numeric_limits<double>::max()) {
+        point_max_ = p;
+      } else {
+        point_max_ = std::max(point_max_, p);
+      }
+    }
+
+    if (ui->groupBox_range->isChecked()) {
+      auto c = get_point3d_color(p, ui->doubleSpinBox_min->value() * percent, ui->doubleSpinBox_max->value() * percent,
+                                 ui->toolButton_inversion->isChecked());
+      point3d_map_[proxy_data.url].emplace_back(x, y, z, i, c, c, intensity, std::move(value_list));
+
+      if (vertex_array && color_array) {
+        QColor tcolor(c);
+        vertex_array->push_back(osg::Vec3d(x, y, z));
+        color_array->push_back(osg::Vec4d(tcolor.redF(), tcolor.greenF(), tcolor.blueF(), tcolor.alphaF()));
+      }
+    } else {
+      if (p == std::numeric_limits<double>::max() || point_min_ == std::numeric_limits<double>::max() ||
+          point_max_ == std::numeric_limits<double>::max()) {
+        point3d_map_[proxy_data.url].emplace_back(x, y, z, i, color, color, intensity, std::move(value_list));
+
+        if (vertex_array && color_array) {
+          QColor tcolor(color);
+          vertex_array->push_back(osg::Vec3d(x, y, z));
+          color_array->push_back(osg::Vec4d(tcolor.redF(), tcolor.greenF(), tcolor.blueF(), tcolor.alphaF()));
+        }
+      } else {
+        auto c =
+            get_point3d_color(p, point_min_ * percent, point_max_ * percent, ui->toolButton_inversion->isChecked());
+        point3d_map_[proxy_data.url].emplace_back(x, y, z, i, c, c, intensity, std::move(value_list));
+
+        if (vertex_array && color_array) {
+          QColor tcolor(c);
+          vertex_array->push_back(osg::Vec3d(x, y, z));
+          color_array->push_back(osg::Vec4d(tcolor.redF(), tcolor.greenF(), tcolor.blueF(), tcolor.alphaF()));
+        }
+      }
+    }
+
+    ++total_point_count_;
+  }
+
+  if (osg_inited_) {
+    OsgPointCloud::finalize_arrays(geode);
+  }
+
+  if (total_cnt == 0) {
+    average_value_ = std::numeric_limits<double>::max();
+  } else {
+    average_value_ = static_cast<double>(total_value / total_cnt);
+  }
+
+  if (!cache) {
+    ++frame_count_;
+  }
+
+  if (has_expr_finished && has_expr_finished_ == false && !current_expr_.isEmpty()) {
+    has_expr_finished_ = true;
+    ui->lineEdit_exp->setStyleSheet("QLineEdit { color: green; }");
+  }
+
+  if (!this->isVisible()) {
+    emit point3d_map_changed();
+  }
+}
+
 void Point3DDialog::update_ui_for_zero_copy_types(const QVariant& variant, bool cache, const QElapsedTimer& timer) {
   if (!cache && timer.elapsed() > 1000) {
     return;
@@ -2408,216 +2618,6 @@ void Point3DDialog::update_ui_for_zero_copy_types(const QVariant& variant, bool 
   }
 
   if (has_expr_finished == true && has_expr_finished_ == false && !current_expr_.isEmpty()) {
-    has_expr_finished_ = true;
-    ui->lineEdit_exp->setStyleSheet("QLineEdit { color: green; }");
-  }
-
-  if (!this->isVisible()) {
-    emit point3d_map_changed();
-  }
-}
-
-void Point3DDialog::update_ui_for_flatbuffers(const QVariant& variant, bool cache, const QElapsedTimer& timer) {
-  if (!target_fbs_context_ || !target_fbs_context_->valid()) {
-    return;
-  }
-
-  if (!cache && timer.elapsed() > 1000) {
-    return;
-  }
-
-  const auto& proxy_data = variant.value<vlink::ProxyAPI::Data>();
-
-  if (ui->comboBox_proto->currentIndex() < 0 ||
-      static_cast<size_t>(ui->comboBox_proto->currentIndex()) >= fbs_msg_list_.size()) {
-    return;
-  }
-
-  const auto& candidate = fbs_msg_list_.at(ui->comboBox_proto->currentIndex());
-  point3d_map_[proxy_data.url].clear();
-
-  if (!candidate.repeated_field) {
-    return;
-  }
-
-  FlatbuffersObjectView root_view;
-
-  if (!make_root_view(*target_fbs_context_, proxy_data.raw, root_view)) {
-    return;
-  }
-
-  const auto* root_field = candidate.repeated_field;
-
-  if (!root_field ||
-      (root_field->type()->base_type() != reflection::Vector &&
-       root_field->type()->base_type() != reflection::Vector64) ||
-      root_field->type()->element() != reflection::Obj) {
-    return;
-  }
-
-  osg::Geode* geode = nullptr;
-  osg::Vec3dArray* vertex_array = nullptr;
-  osg::Vec4dArray* color_array = nullptr;
-
-  if (osg_inited_) {
-    geode = geo_node_map_[proxy_data.url];
-
-    if (!geode) {
-      return;
-    }
-
-    auto* geometry = static_cast<osg::Geometry*>(geode->getDrawable(0));
-    vertex_array = static_cast<osg::Vec3dArray*>(geometry->getVertexArray());
-    color_array = static_cast<osg::Vec4dArray*>(geometry->getColorArray());
-
-    OsgPointCloud::update_point_size(geode, point_size_, std::min(point_size_ * 3, 15.0f), qApp->devicePixelRatio());
-    OsgPointCloud::clear_arrays(geode);
-  }
-
-  point_size_ = ui->doubleSpinBox_point->value();
-
-  const auto vector_size = get_vector_size(root_view, *root_field);
-  const auto target_value_name = ui->comboBox_value->currentText().toStdString();
-  const bool has_exp_value = ui->checkBox_select->isChecked() || ui->checkBox_exp->isChecked();
-
-  uint32_t default_color = 0xFF55FF;
-  double percent = ui->doubleSpinBox_color->value() / 100.0;
-  double total_value = 0;
-  size_t total_cnt = 0;
-  bool has_expr_finished = false;
-
-  for (size_t i = 0; i < vector_size; ++i) {
-    FlatbuffersObjectView element_view;
-
-    if (!get_vector_elem_view(root_view, *root_field, i, *target_fbs_context_->schema, element_view)) {
-      continue;
-    }
-
-    double x = 0;
-    double y = 0;
-    double z = 0;
-
-    if (!get_flatbuffers_numeric_by_path(element_view, candidate.x_path, *target_fbs_context_->schema, x) ||
-        !get_flatbuffers_numeric_by_path(element_view, candidate.y_path, *target_fbs_context_->schema, y) ||
-        !get_flatbuffers_numeric_by_path(element_view, candidate.z_path, *target_fbs_context_->schema, z) ||
-        std::isnan(x) || std::isnan(y) || std::isnan(z)) {
-      continue;
-    }
-
-    PointValueList value_list;
-
-    if (has_exp_value) {
-      value_list.emplace_back("x", vlink::zerocopy::PointCloud::kFloatType, x);
-      value_list.emplace_back("y", vlink::zerocopy::PointCloud::kFloatType, y);
-      value_list.emplace_back("z", vlink::zerocopy::PointCloud::kFloatType, z);
-    }
-
-    float intensity = -1;
-    double p = std::numeric_limits<double>::max();
-    uint32_t color = default_color;
-
-    if (ui->comboBox_value->currentIndex() == 1) {
-      p = get_point3d_distance(x, y, z);
-    }
-
-    for (const auto& value_field : candidate.value_fields) {
-      double value = 0;
-
-      if (!get_flatbuffers_numeric_by_path(element_view, value_field.path, *target_fbs_context_->schema, value)) {
-        continue;
-      }
-
-      if (has_exp_value) {
-        value_list.emplace_back(value_field.display_name, value_field.value_type, value);
-      }
-
-      if (value_field.leaf_name == "intensity" && !this->isVisible()) {
-        intensity = static_cast<float>(value);
-      }
-
-      if (value_field.leaf_name == "color") {
-        color = static_cast<uint32_t>(value);
-      }
-
-      if (ui->comboBox_value->currentIndex() > 1 && target_value_name == value_field.display_name) {
-        p = value;
-      }
-    }
-
-    if (!check_expression(static_cast<int>(i), value_list)) {
-      continue;
-    }
-
-    has_expr_finished = true;
-
-    if (p != std::numeric_limits<double>::max()) {
-      total_value += p;
-      ++total_cnt;
-
-      if (point_min_ == std::numeric_limits<double>::max()) {
-        point_min_ = p;
-      } else {
-        point_min_ = std::min(point_min_, p);
-      }
-
-      if (point_max_ == std::numeric_limits<double>::max()) {
-        point_max_ = p;
-      } else {
-        point_max_ = std::max(point_max_, p);
-      }
-    }
-
-    if (ui->groupBox_range->isChecked()) {
-      auto c = get_point3d_color(p, ui->doubleSpinBox_min->value() * percent, ui->doubleSpinBox_max->value() * percent,
-                                 ui->toolButton_inversion->isChecked());
-      point3d_map_[proxy_data.url].emplace_back(x, y, z, i, c, c, intensity, std::move(value_list));
-
-      if (vertex_array && color_array) {
-        QColor tcolor(c);
-        vertex_array->push_back(osg::Vec3d(x, y, z));
-        color_array->push_back(osg::Vec4d(tcolor.redF(), tcolor.greenF(), tcolor.blueF(), tcolor.alphaF()));
-      }
-    } else {
-      if (p == std::numeric_limits<double>::max() || point_min_ == std::numeric_limits<double>::max() ||
-          point_max_ == std::numeric_limits<double>::max()) {
-        point3d_map_[proxy_data.url].emplace_back(x, y, z, i, color, color, intensity, std::move(value_list));
-
-        if (vertex_array && color_array) {
-          QColor tcolor(color);
-          vertex_array->push_back(osg::Vec3d(x, y, z));
-          color_array->push_back(osg::Vec4d(tcolor.redF(), tcolor.greenF(), tcolor.blueF(), tcolor.alphaF()));
-        }
-      } else {
-        auto c =
-            get_point3d_color(p, point_min_ * percent, point_max_ * percent, ui->toolButton_inversion->isChecked());
-        point3d_map_[proxy_data.url].emplace_back(x, y, z, i, c, c, intensity, std::move(value_list));
-
-        if (vertex_array && color_array) {
-          QColor tcolor(c);
-          vertex_array->push_back(osg::Vec3d(x, y, z));
-          color_array->push_back(osg::Vec4d(tcolor.redF(), tcolor.greenF(), tcolor.blueF(), tcolor.alphaF()));
-        }
-      }
-    }
-
-    ++total_point_count_;
-  }
-
-  if (osg_inited_) {
-    OsgPointCloud::finalize_arrays(geode);
-  }
-
-  if (total_cnt == 0) {
-    average_value_ = std::numeric_limits<double>::max();
-  } else {
-    average_value_ = static_cast<double>(total_value / total_cnt);
-  }
-
-  if (!cache) {
-    ++frame_count_;
-  }
-
-  if (has_expr_finished && has_expr_finished_ == false && !current_expr_.isEmpty()) {
     has_expr_finished_ = true;
     ui->lineEdit_exp->setStyleSheet("QLineEdit { color: green; }");
   }

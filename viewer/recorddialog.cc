@@ -218,28 +218,6 @@ RecordDialog::RecordDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Record
   setFocus();
 }
 
-RecordDialog::FinalizeResult RecordDialog::finalize_recorder(const std::shared_ptr<vlink::BagWriter>& recorder) {
-  bool stopped = !recorder->is_running();
-
-  if (recorder->is_running()) {
-    recorder->quit(!recorder->wait_for_idle(5000));
-    stopped = recorder->wait_for_quit(5000);
-  }
-
-  if VUNLIKELY (!stopped) {
-    return kStopTimeout;
-  }
-
-  set_record_loss();
-  recorder->close();
-
-  if VUNLIKELY (recorder->fail()) {
-    return kFinalizeFailed;
-  }
-
-  return kFinalized;
-}
-
 RecordDialog::~RecordDialog() {
   {
     std::lock_guard lock(window_->data_mutex_);
@@ -573,6 +551,28 @@ void RecordDialog::update_time_label() {
   }
 
   ui->label_progress->setText(QString(progress_index_, '.'));
+}
+
+RecordDialog::FinalizeResult RecordDialog::finalize_recorder(const std::shared_ptr<vlink::BagWriter>& recorder) {
+  bool stopped = !recorder->is_running();
+
+  if (recorder->is_running()) {
+    recorder->quit(!recorder->wait_for_idle(5000));
+    stopped = recorder->wait_for_quit(5000);
+  }
+
+  if VUNLIKELY (!stopped) {
+    return kStopTimeout;
+  }
+
+  set_record_loss();
+  recorder->close();
+
+  if VUNLIKELY (recorder->fail()) {
+    return kFinalizeFailed;
+  }
+
+  return kFinalized;
 }
 
 void RecordDialog::update_status() {

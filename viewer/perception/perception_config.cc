@@ -620,178 +620,6 @@ Json dump_field_mappings(const std::vector<perception::FieldMapping>& mappings) 
 
 namespace pcd = perception_config_detail;
 
-QString PerceptionConfig::render_type_to_string(perception::RenderType type) {
-  switch (type) {
-    case perception::RenderType::kPointCloud:
-      return "point_cloud";
-    case perception::RenderType::kObjectDetection:
-      return "object_detection";
-    case perception::RenderType::kLaneLine:
-      return "lane_line";
-    case perception::RenderType::kPrediction:
-      return "prediction";
-    case perception::RenderType::kTrafficLight:
-      return "traffic_light";
-    case perception::RenderType::kStopLine:
-      return "stop_line";
-    case perception::RenderType::kTrafficSign:
-      return "traffic_sign";
-    case perception::RenderType::kFreespace:
-      return "freespace";
-    case perception::RenderType::kOccupancyGrid:
-      return "occupancy_grid";
-    case perception::RenderType::kParkingSlot:
-      return "parking_slot";
-    case perception::RenderType::kEgoTrajectory:
-      return "ego_trajectory";
-    case perception::RenderType::kHdMap:
-      return "hdmap";
-    case perception::RenderType::kCameraFrustum:
-      return "camera_frustum";
-    case perception::RenderType::kCovarianceEllipse:
-      return "covariance_ellipse";
-    default:
-      return "point_cloud";
-  }
-}
-
-bool PerceptionConfig::render_type_from_string(QString value, perception::RenderType& type) {
-  value = pcd::normalized_serializer(value);
-
-  if (value == "pointcloud" || value == "pcl") {
-    type = perception::RenderType::kPointCloud;
-  } else if (value == "objectdetection" || value == "object" || value == "objects" || value == "od") {
-    type = perception::RenderType::kObjectDetection;
-  } else if (value == "laneline" || value == "lane" || value == "lanes" || value == "polyline") {
-    type = perception::RenderType::kLaneLine;
-  } else if (value == "prediction" || value == "trajectory" || value == "predictedpath") {
-    type = perception::RenderType::kPrediction;
-  } else if (value == "trafficlight" || value == "light") {
-    type = perception::RenderType::kTrafficLight;
-  } else if (value == "stopline" || value == "crosswalk") {
-    type = perception::RenderType::kStopLine;
-  } else if (value == "trafficsign" || value == "sign") {
-    type = perception::RenderType::kTrafficSign;
-  } else if (value == "freespace" || value == "drivablearea") {
-    type = perception::RenderType::kFreespace;
-  } else if (value == "occupancygrid" || value == "grid" || value == "costmap") {
-    type = perception::RenderType::kOccupancyGrid;
-  } else if (value == "parkingslot" || value == "slot") {
-    type = perception::RenderType::kParkingSlot;
-  } else if (value == "egotrajectory" || value == "egopath" || value == "motionplan") {
-    type = perception::RenderType::kEgoTrajectory;
-  } else if (value == "hdmap" || value == "map") {
-    type = perception::RenderType::kHdMap;
-  } else if (value == "camerafrustum" || value == "camerainfo" || value == "cameracalib") {
-    type = perception::RenderType::kCameraFrustum;
-  } else if (value == "covarianceellipse" || value == "covariance") {
-    type = perception::RenderType::kCovarianceEllipse;
-  } else {
-    return false;
-  }
-
-  return true;
-}
-
-QString PerceptionConfig::encoding_to_string(perception::Encoding encoding) {
-  switch (encoding) {
-    case perception::Encoding::kProtobuf:
-      return "protobuf";
-    case perception::Encoding::kFlatbuffers:
-      return "flatbuffers";
-    case perception::Encoding::kZeroCopy:
-      return "zero_copy";
-    default:
-      return "any";
-  }
-}
-
-perception::Encoding PerceptionConfig::encoding_from_string(QString value) {
-  value = pcd::schema_alias(value);
-
-  if (value == "protobuf") {
-    return perception::Encoding::kProtobuf;
-  }
-
-  if (value == "flatbuffers") {
-    return perception::Encoding::kFlatbuffers;
-  }
-
-  if (value == "zerocopy") {
-    return perception::Encoding::kZeroCopy;
-  }
-
-  return perception::Encoding::kUnknown;
-}
-
-const QStringList& PerceptionConfig::target_slots_for(perception::RenderType type) {
-  static const QStringList kObject{"x",        "y",        "z",  "length", "width", "height", "yaw",  "score",
-                                   "class_id", "track_id", "vx", "vy",     "vz",    "label",  "color"};
-  static const QStringList kPolyline{"x", "y", "z", "color", "type", "label"};
-  static const QStringList kPrediction{"x", "y", "z", "color", "type", "label", "track_id", "confidence"};
-  static const QStringList kEgoTrajectory{"x", "y", "z", "yaw", "speed", "timestamp", "color", "type"};
-  static const QStringList kTrafficLight{"x", "y", "z", "color_state", "confidence", "countdown", "label", "color"};
-  static const QStringList kTrafficSign{"x", "y", "z", "type_id", "marker_size", "color", "label"};
-  static const QStringList kParkingSlot{"corner0_x", "corner0_y", "corner0_z", "corner1_x", "corner1_y", "corner1_z",
-                                        "corner2_x", "corner2_y", "corner2_z", "corner3_x", "corner3_y", "corner3_z",
-                                        "slot_id",   "slot_type", "color",     "confidence"};
-  static const QStringList kCameraFrustum{"x",  "y",     "z",     "qx",   "qy",  "qz",
-                                          "qw", "fov_h", "fov_v", "near", "far", "color"};
-  static const QStringList kCovariance{"x", "y", "z", "cov_xx", "cov_xy", "cov_yy", "color"};
-  static const QStringList kGrid{"origin_x", "origin_y", "origin_z", "resolution", "width", "height", "cells"};
-  static const QStringList kPointCloud{"x", "y", "z", "intensity"};
-  static const QStringList kEmpty;
-
-  switch (type) {
-    case perception::RenderType::kPointCloud:
-      return kPointCloud;
-    case perception::RenderType::kObjectDetection:
-      return kObject;
-    case perception::RenderType::kLaneLine:
-    case perception::RenderType::kStopLine:
-    case perception::RenderType::kFreespace:
-    case perception::RenderType::kHdMap:
-      return kPolyline;
-    case perception::RenderType::kPrediction:
-      return kPrediction;
-    case perception::RenderType::kEgoTrajectory:
-      return kEgoTrajectory;
-    case perception::RenderType::kTrafficLight:
-      return kTrafficLight;
-    case perception::RenderType::kTrafficSign:
-      return kTrafficSign;
-    case perception::RenderType::kParkingSlot:
-      return kParkingSlot;
-    case perception::RenderType::kCameraFrustum:
-      return kCameraFrustum;
-    case perception::RenderType::kCovarianceEllipse:
-      return kCovariance;
-    case perception::RenderType::kOccupancyGrid:
-      return kGrid;
-    default:
-      return kEmpty;
-  }
-}
-
-QString PerceptionConfig::schema_type_to_string(vlink::SchemaType schema_type) {
-  switch (schema_type) {
-    case vlink::SchemaType::kZeroCopy:
-      return "zerocopy";
-    case vlink::SchemaType::kProtobuf:
-      return "protobuf";
-    case vlink::SchemaType::kFlatbuffers:
-      return "flatbuffers";
-    case vlink::SchemaType::kRaw:
-      return "raw";
-    default:
-      return "unknown";
-  }
-}
-
-void PerceptionConfig::finalize_mapping(MappingRule& rule) {
-  rule.ser_normalized = pcd::normalized_serializer(rule.ser);
-}
-
 PerceptionConfig PerceptionConfig::default_config() {
   PerceptionConfig config;
 
@@ -965,6 +793,159 @@ PerceptionConfig PerceptionConfig::default_config() {
   return config;
 }
 
+QString PerceptionConfig::render_type_to_string(perception::RenderType type) {
+  switch (type) {
+    case perception::RenderType::kPointCloud:
+      return "point_cloud";
+    case perception::RenderType::kObjectDetection:
+      return "object_detection";
+    case perception::RenderType::kLaneLine:
+      return "lane_line";
+    case perception::RenderType::kPrediction:
+      return "prediction";
+    case perception::RenderType::kTrafficLight:
+      return "traffic_light";
+    case perception::RenderType::kStopLine:
+      return "stop_line";
+    case perception::RenderType::kTrafficSign:
+      return "traffic_sign";
+    case perception::RenderType::kFreespace:
+      return "freespace";
+    case perception::RenderType::kOccupancyGrid:
+      return "occupancy_grid";
+    case perception::RenderType::kParkingSlot:
+      return "parking_slot";
+    case perception::RenderType::kEgoTrajectory:
+      return "ego_trajectory";
+    case perception::RenderType::kHdMap:
+      return "hdmap";
+    case perception::RenderType::kCameraFrustum:
+      return "camera_frustum";
+    case perception::RenderType::kCovarianceEllipse:
+      return "covariance_ellipse";
+    default:
+      return "point_cloud";
+  }
+}
+
+bool PerceptionConfig::render_type_from_string(QString value, perception::RenderType& type) {
+  value = pcd::normalized_serializer(value);
+
+  if (value == "pointcloud" || value == "pcl") {
+    type = perception::RenderType::kPointCloud;
+  } else if (value == "objectdetection" || value == "object" || value == "objects" || value == "od") {
+    type = perception::RenderType::kObjectDetection;
+  } else if (value == "laneline" || value == "lane" || value == "lanes" || value == "polyline") {
+    type = perception::RenderType::kLaneLine;
+  } else if (value == "prediction" || value == "trajectory" || value == "predictedpath") {
+    type = perception::RenderType::kPrediction;
+  } else if (value == "trafficlight" || value == "light") {
+    type = perception::RenderType::kTrafficLight;
+  } else if (value == "stopline" || value == "crosswalk") {
+    type = perception::RenderType::kStopLine;
+  } else if (value == "trafficsign" || value == "sign") {
+    type = perception::RenderType::kTrafficSign;
+  } else if (value == "freespace" || value == "drivablearea") {
+    type = perception::RenderType::kFreespace;
+  } else if (value == "occupancygrid" || value == "grid" || value == "costmap") {
+    type = perception::RenderType::kOccupancyGrid;
+  } else if (value == "parkingslot" || value == "slot") {
+    type = perception::RenderType::kParkingSlot;
+  } else if (value == "egotrajectory" || value == "egopath" || value == "motionplan") {
+    type = perception::RenderType::kEgoTrajectory;
+  } else if (value == "hdmap" || value == "map") {
+    type = perception::RenderType::kHdMap;
+  } else if (value == "camerafrustum" || value == "camerainfo" || value == "cameracalib") {
+    type = perception::RenderType::kCameraFrustum;
+  } else if (value == "covarianceellipse" || value == "covariance") {
+    type = perception::RenderType::kCovarianceEllipse;
+  } else {
+    return false;
+  }
+
+  return true;
+}
+
+QString PerceptionConfig::encoding_to_string(perception::Encoding encoding) {
+  switch (encoding) {
+    case perception::Encoding::kProtobuf:
+      return "protobuf";
+    case perception::Encoding::kFlatbuffers:
+      return "flatbuffers";
+    case perception::Encoding::kZeroCopy:
+      return "zero_copy";
+    default:
+      return "any";
+  }
+}
+
+perception::Encoding PerceptionConfig::encoding_from_string(QString value) {
+  value = pcd::schema_alias(value);
+
+  if (value == "protobuf") {
+    return perception::Encoding::kProtobuf;
+  }
+
+  if (value == "flatbuffers") {
+    return perception::Encoding::kFlatbuffers;
+  }
+
+  if (value == "zerocopy") {
+    return perception::Encoding::kZeroCopy;
+  }
+
+  return perception::Encoding::kUnknown;
+}
+
+const QStringList& PerceptionConfig::target_slots_for(perception::RenderType type) {
+  static const QStringList kObject{"x",        "y",        "z",  "length", "width", "height", "yaw",  "score",
+                                   "class_id", "track_id", "vx", "vy",     "vz",    "label",  "color"};
+  static const QStringList kPolyline{"x", "y", "z", "color", "type", "label"};
+  static const QStringList kPrediction{"x", "y", "z", "color", "type", "label", "track_id", "confidence"};
+  static const QStringList kEgoTrajectory{"x", "y", "z", "yaw", "speed", "timestamp", "color", "type"};
+  static const QStringList kTrafficLight{"x", "y", "z", "color_state", "confidence", "countdown", "label", "color"};
+  static const QStringList kTrafficSign{"x", "y", "z", "type_id", "marker_size", "color", "label"};
+  static const QStringList kParkingSlot{"corner0_x", "corner0_y", "corner0_z", "corner1_x", "corner1_y", "corner1_z",
+                                        "corner2_x", "corner2_y", "corner2_z", "corner3_x", "corner3_y", "corner3_z",
+                                        "slot_id",   "slot_type", "color",     "confidence"};
+  static const QStringList kCameraFrustum{"x",  "y",     "z",     "qx",   "qy",  "qz",
+                                          "qw", "fov_h", "fov_v", "near", "far", "color"};
+  static const QStringList kCovariance{"x", "y", "z", "cov_xx", "cov_xy", "cov_yy", "color"};
+  static const QStringList kGrid{"origin_x", "origin_y", "origin_z", "resolution", "width", "height", "cells"};
+  static const QStringList kPointCloud{"x", "y", "z", "intensity"};
+  static const QStringList kEmpty;
+
+  switch (type) {
+    case perception::RenderType::kPointCloud:
+      return kPointCloud;
+    case perception::RenderType::kObjectDetection:
+      return kObject;
+    case perception::RenderType::kLaneLine:
+    case perception::RenderType::kStopLine:
+    case perception::RenderType::kFreespace:
+    case perception::RenderType::kHdMap:
+      return kPolyline;
+    case perception::RenderType::kPrediction:
+      return kPrediction;
+    case perception::RenderType::kEgoTrajectory:
+      return kEgoTrajectory;
+    case perception::RenderType::kTrafficLight:
+      return kTrafficLight;
+    case perception::RenderType::kTrafficSign:
+      return kTrafficSign;
+    case perception::RenderType::kParkingSlot:
+      return kParkingSlot;
+    case perception::RenderType::kCameraFrustum:
+      return kCameraFrustum;
+    case perception::RenderType::kCovarianceEllipse:
+      return kCovariance;
+    case perception::RenderType::kOccupancyGrid:
+      return kGrid;
+    default:
+      return kEmpty;
+  }
+}
+
 bool PerceptionConfig::load_from_file(const QString& path, QString* error) {
   if (error) {
     error->clear();
@@ -1101,6 +1082,33 @@ bool PerceptionConfig::load_from_file(const QString& path, QString* error) {
   return true;
 }
 
+bool PerceptionConfig::save_to_file(const QString& path, QString* error) const {
+  if (error) {
+    error->clear();
+  }
+
+  std::ofstream file(path.toStdString(), std::ios::binary | std::ios::trunc);
+
+  if (!file.is_open()) {
+    if (error) {
+      *error = "Can not open config file for writing";
+    }
+    return false;
+  }
+
+  const auto text = to_json_string();
+  file.write(text.data(), static_cast<std::streamsize>(text.size()));
+
+  if (!file.good()) {
+    if (error) {
+      *error = "Failed to write config file";
+    }
+    return false;
+  }
+
+  return true;
+}
+
 std::string PerceptionConfig::to_json_string() const {
   Json root = Json::object();
   root["inherit_default"] = false;
@@ -1198,33 +1206,6 @@ std::string PerceptionConfig::to_json_string() const {
   root["hud_bindings"] = std::move(hud);
 
   return root.dump(2);
-}
-
-bool PerceptionConfig::save_to_file(const QString& path, QString* error) const {
-  if (error) {
-    error->clear();
-  }
-
-  std::ofstream file(path.toStdString(), std::ios::binary | std::ios::trunc);
-
-  if (!file.is_open()) {
-    if (error) {
-      *error = "Can not open config file for writing";
-    }
-    return false;
-  }
-
-  const auto text = to_json_string();
-  file.write(text.data(), static_cast<std::streamsize>(text.size()));
-
-  if (!file.good()) {
-    if (error) {
-      *error = "Failed to write config file";
-    }
-    return false;
-  }
-
-  return true;
 }
 
 perception::RenderType PerceptionConfig::detect_render_type(const std::string& url, const std::string& ser,
@@ -1389,6 +1370,25 @@ QString PerceptionConfig::source_label() const {
   }
 
   return QFileInfo(source_path_).fileName();
+}
+
+void PerceptionConfig::finalize_mapping(MappingRule& rule) {
+  rule.ser_normalized = pcd::normalized_serializer(rule.ser);
+}
+
+QString PerceptionConfig::schema_type_to_string(vlink::SchemaType schema_type) {
+  switch (schema_type) {
+    case vlink::SchemaType::kZeroCopy:
+      return "zerocopy";
+    case vlink::SchemaType::kProtobuf:
+      return "protobuf";
+    case vlink::SchemaType::kFlatbuffers:
+      return "flatbuffers";
+    case vlink::SchemaType::kRaw:
+      return "raw";
+    default:
+      return "unknown";
+  }
 }
 
 void PerceptionConfig::add_render_rule(perception::RenderType type, QStringList schemas,

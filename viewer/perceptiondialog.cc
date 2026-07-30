@@ -438,69 +438,272 @@ PerceptionDialog::~PerceptionDialog() {
   delete ui;
 }
 
-std::unordered_map<std::string, PerceptionDialog::UrlContext> PerceptionDialog::build_contexts() {
-  std::unordered_map<std::string, UrlContext> contexts;
+#ifndef VLINK_ENABLE_VIEWER_OSG
+void PerceptionDialog::init_osg() {}
+#endif
 
-  if (!window_) {
-    return contexts;
+#ifdef VLINK_ENABLE_VIEWER_OSG
+
+void PerceptionDialog::init_osg() {
+  if (osg_inited_) {
+    return;
   }
 
-  const auto& selected_items = window_->ui->treeWidget_url->selectedItems();
+  root_group_ = new osg::Group;
 
-  std::lock_guard lock(window_->data_mutex_);
+#if USE_GRAPHICS_VIEW
+  auto* viewer = osg_view_->getViewer();
+#else
+  auto* viewer = osg_widget_->getViewer();
+#endif
+  viewer->setSceneData(root_group_);
 
-  for (const auto& item : selected_items) {
-    const QString url = item->text(1);
-    const QString ser = item->data(1, Qt::UserRole).toString();
+  auto culling_mode = viewer->getCamera()->getCullingMode();
+  culling_mode &= ~(osg::CullStack::SMALL_FEATURE_CULLING);
+  viewer->getCamera()->setCullingMode(culling_mode);
+  viewer->getCamera()->setComputeNearFarMode(osgUtil::CullVisitor::DO_NOT_COMPUTE_NEAR_FAR);
+  viewer->getCamera()->setProjectionMatrixAsPerspective(30.0, 1920.0 / 1080.0, 1, VLINK_PERCEPTION_PLATFORM_SIZE * 4);
+  viewer->getCamera()->setClearColor(osg::Vec4d(0.18, 0.18, 0.20, 1));
 
-    if (config_.should_skip(url, ser)) {
-      continue;
+  manipulator_ = new OsgManipulator;
+  manipulator_->setLimit(VLINK_PERCEPTION_PLATFORM_SIZE * 0.75, VLINK_PERCEPTION_PLATFORM_SIZE * 2,
+                         VLINK_PERCEPTION_PLATFORM_SIZE * 0.01);
+  manipulator_->setHomePosition(osg::Vec3d(0, 0, VLINK_PERCEPTION_PLATFORM_SIZE * 0.5), osg::Vec3d(1, 0, 0),
+                                osg::Vec3d(0, 0, 1));
+  viewer->setCameraManipulator(manipulator_);
+
+  move_point_map_[0] =
+      std::make_tuple(osg::Vec3d(0, VLINK_PERCEPTION_PLATFORM_SIZE * 0.1, VLINK_PERCEPTION_PLATFORM_SIZE * 0.01),
+                      osg::Vec3d(1, 0, 0), osg::Vec3d(0, 0, 1));
+
+  move_point_map_[1] =
+      std::make_tuple(osg::Vec3d(0, -VLINK_PERCEPTION_PLATFORM_SIZE * 0.1, VLINK_PERCEPTION_PLATFORM_SIZE * 0.01),
+                      osg::Vec3d(-1, 0, 0), osg::Vec3d(0, 0, 1));
+
+  move_point_map_[2] =
+      std::make_tuple(osg::Vec3d(VLINK_PERCEPTION_PLATFORM_SIZE * 0.1, 0, VLINK_PERCEPTION_PLATFORM_SIZE * 0.01),
+                      osg::Vec3d(0, -1, 0), osg::Vec3d(0, 0, 1));
+
+  move_point_map_[3] =
+      std::make_tuple(osg::Vec3d(-VLINK_PERCEPTION_PLATFORM_SIZE * 0.1, 0, VLINK_PERCEPTION_PLATFORM_SIZE * 0.01),
+                      osg::Vec3d(0, 1, 0), osg::Vec3d(0, 0, 1));
+
+  {
+    QFile font_file(":/resource/notomono.ttf");
+    osg::ref_ptr<osgText::Font> font;
+
+    if (font_file.open(QIODevice::ReadOnly)) {
+      const QByteArray font_data = font_file.readAll();
+      font_file.close();
+
+      std::istringstream font_stream(font_data.toStdString());
+      font = osgText::readRefFontStream(font_stream);
     }
 
-    const auto url_str = url.toStdString();
-    const auto ser_str = ser.toStdString();
+    osg_font_ = font;
 
-    const auto schema_iter = window_->schema_type_map_.find(url_str);
-    const auto schema_type =
-        schema_iter != window_->schema_type_map_.end() ? schema_iter->second : vlink::SchemaType::kUnknown;
-
-    UrlContext context;
-    context.schema = schema_type;
-    context.type = config_.detect_render_type(url_str, ser_str, schema_type);
-
-    if (schema_type == vlink::SchemaType::kProtobuf && window_->des_pool_ && window_->factory_ && !ser_str.empty()) {
-      const auto* desc = window_->des_pool_->FindMessageTypeByName(ser_str);
-
-      if (desc) {
-        context.proto_prototype = window_->factory_->GetPrototype(desc)->New();
-      }
-    } else if (schema_type == vlink::SchemaType::kFlatbuffers && !ser_str.empty()) {
-      auto fbs_context = window_->flatbuffers_runtime_.find_context(ser_str);
-
-      if (fbs_context && fbs_context->valid()) {
-        context.fbs_context = fbs_context;
-      }
-    }
-
-    for (const auto* rule : config_.mappings_for(url_str, ser_str, schema_type)) {
-      context.mappings.push_back(*rule);
-    }
-
-    for (const auto* rule : config_.hud_bindings_for(url_str, ser_str, schema_type)) {
-      context.hud_bindings.push_back(*rule);
-    }
-
-    contexts.emplace(url_str, std::move(context));
+    const auto ratio = qApp->devicePixelRatio();
+    root_group_->addChild(OsgCoord::create(viewer->getCamera(), font, ratio));
   }
 
-  return contexts;
+  platform_node_ = OsgPlatform::create(VLINK_PERCEPTION_PLATFORM_SIZE, VLINK_PERCEPTION_PLATFORM_GRID_COUNT);
+  platform_node_->getOrCreateStateSet()->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
+  root_group_->addChild(platform_node_);
+
+  root_group_->addChild(OsgLight::create(viewer->getCamera(), VLINK_PERCEPTION_PLATFORM_SIZE * 3 / 4));
+
+  {
+    osg::ref_ptr<osg::CullFace> cullface = new osg::CullFace(osg::CullFace::BACK);
+    root_group_->getOrCreateStateSet()->setAttribute(cullface);
+    root_group_->getOrCreateStateSet()->setMode(GL_CULL_FACE, osg::StateAttribute::ON);
+    root_group_->setCullingActive(true);
+  }
+
+  {
+    root_group_->getOrCreateStateSet()->setMode(GL_MULTISAMPLE, osg::StateAttribute::ON);
+    root_group_->getOrCreateStateSet()->setMode(GL_LINE_SMOOTH, osg::StateAttribute::ON);
+    root_group_->getOrCreateStateSet()->setMode(GL_POINT_SMOOTH, osg::StateAttribute::ON);
+    root_group_->getOrCreateStateSet()->setMode(GL_BLEND, osg::StateAttribute::ON);
+  }
+
+  {
+    QFile car_file(":/resource/car.osgb");
+
+    if (car_file.open(QIODevice::ReadOnly)) {
+      const QByteArray car_data = car_file.readAll();
+      car_file.close();
+
+      std::istringstream car_stream(car_data.toStdString());
+      osg::ref_ptr<osgDB::ReaderWriter> reader = osgDB::Registry::instance()->getReaderWriterForExtension("osgb");
+
+      if (reader) {
+        auto result = reader->readNode(car_stream);
+        car_node_ = result.getNode();
+
+        if (car_node_.valid()) {
+          car_node_->setNodeMask(0U);
+          root_group_->addChild(car_node_);
+          ui->checkBox_car->setEnabled(true);
+          ui->checkBox_car->setChecked(false);
+        }
+      }
+    }
+  }
+
+  osg_inited_ = true;
 }
 
-void PerceptionDialog::enqueue_render_url(const QString& url) {
-  if VUNLIKELY (!QMetaObject::invokeMethod(this, "render_url", Qt::QueuedConnection, Q_ARG(QString, url))) {
-    std::lock_guard lock(cache_mtx_);
-    pending_render_urls_.erase(url.toStdString());
+#endif
+
+void PerceptionDialog::showEvent(QShowEvent* event) { QDialog::showEvent(event); }
+
+void PerceptionDialog::closeEvent(QCloseEvent* event) { QDialog::closeEvent(event); }
+
+void PerceptionDialog::resizeEvent(QResizeEvent* event) {
+  QDialog::resizeEvent(event);
+
+#ifdef VLINK_ENABLE_VIEWER_OSG
+#if USE_GRAPHICS_VIEW
+
+  if (osg_view_) {
+    osg_view_->resize(ui->label_osg->width(), ui->label_osg->height());
   }
+#else
+
+  if (osg_widget_) {
+    osg_widget_->resize(ui->label_osg->width(), ui->label_osg->height());
+  }
+#endif
+#endif
+}
+
+void PerceptionDialog::on_pushButton_close_clicked() { close(); }
+
+void PerceptionDialog::on_checkBox_platform_clicked(bool checked) {
+#ifdef VLINK_ENABLE_VIEWER_OSG
+  if (!osg_inited_) {
+    ui->checkBox_platform->setChecked(false);
+    return;
+  }
+
+  if (!platform_node_ || !platform_node_.valid()) {
+    return;
+  }
+
+  platform_node_->setNodeMask(checked ? ~0U : 0U);
+#else
+  (void)checked;
+#endif
+}
+
+void PerceptionDialog::on_checkBox_car_clicked(bool checked) {
+#ifdef VLINK_ENABLE_VIEWER_OSG
+  if (!osg_inited_) {
+    ui->checkBox_car->setChecked(false);
+    return;
+  }
+
+  if (!car_node_ || !car_node_.valid()) {
+    return;
+  }
+
+  car_node_->setNodeMask(checked ? ~0U : 0U);
+#else
+  (void)checked;
+#endif
+}
+
+void PerceptionDialog::on_toolButton_config_path_clicked() {
+  const auto path = QFileDialog::getOpenFileName(this, "Select perception config", config_path_, "JSON (*.json)");
+
+  if (path.isEmpty()) {
+    return;
+  }
+
+  PerceptionConfig loaded;
+  QString error;
+
+  if (!loaded.load_from_file(path, &error)) {
+    QMessageBox::warning(this, "Config error", error);
+    return;
+  }
+
+  apply_config(loaded, path, true);
+}
+
+void PerceptionDialog::on_pushButton_edit_clicked() {
+  std::vector<PerceptionEditorDialog::SourceMessage> sources;
+
+  {
+    std::lock_guard lock(cache_mtx_);
+
+    for (const auto& [url, context] : url_ctx_) {
+      PerceptionEditorDialog::SourceMessage source;
+      source.schema = context.schema;
+
+      if (context.proto_prototype) {
+        source.proto_desc = context.proto_prototype->GetDescriptor();
+        source.ser = QString::fromStdString(std::string(source.proto_desc->full_name()));
+      } else if (context.fbs_context) {
+        source.fbs_ctx = context.fbs_context;
+        source.ser = QString::fromStdString(context.fbs_context->type_name);
+      } else {
+        continue;
+      }
+
+      sources.emplace_back(std::move(source));
+    }
+  }
+
+  PerceptionEditorDialog editor(config_, config_path_, window_, std::move(sources), this);
+
+  if (editor.exec() == QDialog::Accepted) {
+    PerceptionConfig edited = editor.result_config();
+    const QString path = editor.result_path();
+
+    if (!path.isEmpty()) {
+      QString error;
+
+      if (edited.save_to_file(path, &error)) {
+        apply_config(edited, path, true);
+      } else {
+        QMessageBox::warning(this, "Save failed", error);
+        apply_config(edited, config_path_, false);
+      }
+
+      return;
+    }
+
+    apply_config(edited, config_path_, false);
+  }
+}
+
+void PerceptionDialog::on_doubleSpinBox_size_valueChanged(double value) {
+  render_size_ = static_cast<float>(value);
+
+#ifdef VLINK_ENABLE_VIEWER_OSG
+  const auto ratio = static_cast<float>(qApp->devicePixelRatio());
+
+  for (auto& [url, geode] : geo_node_map_) {
+    const auto type_iter = url_geode_type_.find(url);
+
+    if (type_iter != url_geode_type_.end() && type_iter->second == perception::RenderType::kPointCloud) {
+      OsgPointCloud::update_point_size(geode, render_size_, std::min(render_size_ * 3.0f, 15.0f), ratio);
+    }
+  }
+#endif
+}
+
+void PerceptionDialog::on_pushButton_camera_clicked() {
+  if (camera_dialog_) {
+    camera_dialog_->show();
+    camera_dialog_->raise();
+    camera_dialog_->activateWindow();
+    return;
+  }
+
+  camera_dialog_ = new CameraDialog(this);
+  camera_dialog_->show();
 }
 
 void PerceptionDialog::render_url(const QString& url) {
@@ -643,6 +846,64 @@ void PerceptionDialog::render_url(const QString& url) {
 #endif
 }
 
+std::unordered_map<std::string, PerceptionDialog::UrlContext> PerceptionDialog::build_contexts() {
+  std::unordered_map<std::string, UrlContext> contexts;
+
+  if (!window_) {
+    return contexts;
+  }
+
+  const auto& selected_items = window_->ui->treeWidget_url->selectedItems();
+
+  std::lock_guard lock(window_->data_mutex_);
+
+  for (const auto& item : selected_items) {
+    const QString url = item->text(1);
+    const QString ser = item->data(1, Qt::UserRole).toString();
+
+    if (config_.should_skip(url, ser)) {
+      continue;
+    }
+
+    const auto url_str = url.toStdString();
+    const auto ser_str = ser.toStdString();
+
+    const auto schema_iter = window_->schema_type_map_.find(url_str);
+    const auto schema_type =
+        schema_iter != window_->schema_type_map_.end() ? schema_iter->second : vlink::SchemaType::kUnknown;
+
+    UrlContext context;
+    context.schema = schema_type;
+    context.type = config_.detect_render_type(url_str, ser_str, schema_type);
+
+    if (schema_type == vlink::SchemaType::kProtobuf && window_->des_pool_ && window_->factory_ && !ser_str.empty()) {
+      const auto* desc = window_->des_pool_->FindMessageTypeByName(ser_str);
+
+      if (desc) {
+        context.proto_prototype = window_->factory_->GetPrototype(desc)->New();
+      }
+    } else if (schema_type == vlink::SchemaType::kFlatbuffers && !ser_str.empty()) {
+      auto fbs_context = window_->flatbuffers_runtime_.find_context(ser_str);
+
+      if (fbs_context && fbs_context->valid()) {
+        context.fbs_context = fbs_context;
+      }
+    }
+
+    for (const auto* rule : config_.mappings_for(url_str, ser_str, schema_type)) {
+      context.mappings.push_back(*rule);
+    }
+
+    for (const auto* rule : config_.hud_bindings_for(url_str, ser_str, schema_type)) {
+      context.hud_bindings.push_back(*rule);
+    }
+
+    contexts.emplace(url_str, std::move(context));
+  }
+
+  return contexts;
+}
+
 void PerceptionDialog::apply_config(const PerceptionConfig& config, const QString& path, bool persist) {
   config_ = config;
   config_path_ = path;
@@ -708,160 +969,12 @@ void PerceptionDialog::apply_config(const PerceptionConfig& config, const QStrin
   }
 }
 
-void PerceptionDialog::on_toolButton_config_path_clicked() {
-  const auto path = QFileDialog::getOpenFileName(this, "Select perception config", config_path_, "JSON (*.json)");
-
-  if (path.isEmpty()) {
-    return;
-  }
-
-  PerceptionConfig loaded;
-  QString error;
-
-  if (!loaded.load_from_file(path, &error)) {
-    QMessageBox::warning(this, "Config error", error);
-    return;
-  }
-
-  apply_config(loaded, path, true);
-}
-
-void PerceptionDialog::on_pushButton_edit_clicked() {
-  std::vector<PerceptionEditorDialog::SourceMessage> sources;
-
-  {
+void PerceptionDialog::enqueue_render_url(const QString& url) {
+  if VUNLIKELY (!QMetaObject::invokeMethod(this, "render_url", Qt::QueuedConnection, Q_ARG(QString, url))) {
     std::lock_guard lock(cache_mtx_);
-
-    for (const auto& [url, context] : url_ctx_) {
-      PerceptionEditorDialog::SourceMessage source;
-      source.schema = context.schema;
-
-      if (context.proto_prototype) {
-        source.proto_desc = context.proto_prototype->GetDescriptor();
-        source.ser = QString::fromStdString(std::string(source.proto_desc->full_name()));
-      } else if (context.fbs_context) {
-        source.fbs_ctx = context.fbs_context;
-        source.ser = QString::fromStdString(context.fbs_context->type_name);
-      } else {
-        continue;
-      }
-
-      sources.emplace_back(std::move(source));
-    }
-  }
-
-  PerceptionEditorDialog editor(config_, config_path_, window_, std::move(sources), this);
-
-  if (editor.exec() == QDialog::Accepted) {
-    PerceptionConfig edited = editor.result_config();
-    const QString path = editor.result_path();
-
-    if (!path.isEmpty()) {
-      QString error;
-
-      if (edited.save_to_file(path, &error)) {
-        apply_config(edited, path, true);
-      } else {
-        QMessageBox::warning(this, "Save failed", error);
-        apply_config(edited, config_path_, false);
-      }
-
-      return;
-    }
-
-    apply_config(edited, config_path_, false);
+    pending_render_urls_.erase(url.toStdString());
   }
 }
-
-void PerceptionDialog::on_doubleSpinBox_size_valueChanged(double value) {
-  render_size_ = static_cast<float>(value);
-
-#ifdef VLINK_ENABLE_VIEWER_OSG
-  const auto ratio = static_cast<float>(qApp->devicePixelRatio());
-
-  for (auto& [url, geode] : geo_node_map_) {
-    const auto type_iter = url_geode_type_.find(url);
-
-    if (type_iter != url_geode_type_.end() && type_iter->second == perception::RenderType::kPointCloud) {
-      OsgPointCloud::update_point_size(geode, render_size_, std::min(render_size_ * 3.0f, 15.0f), ratio);
-    }
-  }
-#endif
-}
-
-void PerceptionDialog::on_pushButton_close_clicked() { close(); }
-
-void PerceptionDialog::on_pushButton_camera_clicked() {
-  if (camera_dialog_) {
-    camera_dialog_->show();
-    camera_dialog_->raise();
-    camera_dialog_->activateWindow();
-    return;
-  }
-
-  camera_dialog_ = new CameraDialog(this);
-  camera_dialog_->show();
-}
-
-void PerceptionDialog::on_checkBox_platform_clicked(bool checked) {
-#ifdef VLINK_ENABLE_VIEWER_OSG
-  if (!osg_inited_) {
-    ui->checkBox_platform->setChecked(false);
-    return;
-  }
-
-  if (!platform_node_ || !platform_node_.valid()) {
-    return;
-  }
-
-  platform_node_->setNodeMask(checked ? ~0U : 0U);
-#else
-  (void)checked;
-#endif
-}
-
-void PerceptionDialog::on_checkBox_car_clicked(bool checked) {
-#ifdef VLINK_ENABLE_VIEWER_OSG
-  if (!osg_inited_) {
-    ui->checkBox_car->setChecked(false);
-    return;
-  }
-
-  if (!car_node_ || !car_node_.valid()) {
-    return;
-  }
-
-  car_node_->setNodeMask(checked ? ~0U : 0U);
-#else
-  (void)checked;
-#endif
-}
-
-void PerceptionDialog::showEvent(QShowEvent* event) { QDialog::showEvent(event); }
-
-void PerceptionDialog::closeEvent(QCloseEvent* event) { QDialog::closeEvent(event); }
-
-void PerceptionDialog::resizeEvent(QResizeEvent* event) {
-  QDialog::resizeEvent(event);
-
-#ifdef VLINK_ENABLE_VIEWER_OSG
-#if USE_GRAPHICS_VIEW
-
-  if (osg_view_) {
-    osg_view_->resize(ui->label_osg->width(), ui->label_osg->height());
-  }
-#else
-
-  if (osg_widget_) {
-    osg_widget_->resize(ui->label_osg->width(), ui->label_osg->height());
-  }
-#endif
-#endif
-}
-
-#ifndef VLINK_ENABLE_VIEWER_OSG
-void PerceptionDialog::init_osg() {}
-#endif
 
 #ifdef VLINK_ENABLE_VIEWER_OSG
 
@@ -917,113 +1030,327 @@ void PerceptionDialog::rebuild_url_controls() {
   }
 }
 
-void PerceptionDialog::init_osg() {
-  if (osg_inited_) {
+void PerceptionDialog::render_layer(const std::string& geode_key, const std::string& base_url,
+                                    const perception::Layer& layer) {
+  if (!osg_inited_) {
     return;
   }
 
-  root_group_ = new osg::Group;
+  osg::Geode* geode = ensure_geode(geode_key, layer.type);
 
-#if USE_GRAPHICS_VIEW
-  auto* viewer = osg_view_->getViewer();
-#else
-  auto* viewer = osg_widget_->getViewer();
-#endif
-  viewer->setSceneData(root_group_);
-
-  auto culling_mode = viewer->getCamera()->getCullingMode();
-  culling_mode &= ~(osg::CullStack::SMALL_FEATURE_CULLING);
-  viewer->getCamera()->setCullingMode(culling_mode);
-  viewer->getCamera()->setComputeNearFarMode(osgUtil::CullVisitor::DO_NOT_COMPUTE_NEAR_FAR);
-  viewer->getCamera()->setProjectionMatrixAsPerspective(30.0, 1920.0 / 1080.0, 1, VLINK_PERCEPTION_PLATFORM_SIZE * 4);
-  viewer->getCamera()->setClearColor(osg::Vec4d(0.18, 0.18, 0.20, 1));
-
-  manipulator_ = new OsgManipulator;
-  manipulator_->setLimit(VLINK_PERCEPTION_PLATFORM_SIZE * 0.75, VLINK_PERCEPTION_PLATFORM_SIZE * 2,
-                         VLINK_PERCEPTION_PLATFORM_SIZE * 0.01);
-  manipulator_->setHomePosition(osg::Vec3d(0, 0, VLINK_PERCEPTION_PLATFORM_SIZE * 0.5), osg::Vec3d(1, 0, 0),
-                                osg::Vec3d(0, 0, 1));
-  viewer->setCameraManipulator(manipulator_);
-
-  move_point_map_[0] =
-      std::make_tuple(osg::Vec3d(0, VLINK_PERCEPTION_PLATFORM_SIZE * 0.1, VLINK_PERCEPTION_PLATFORM_SIZE * 0.01),
-                      osg::Vec3d(1, 0, 0), osg::Vec3d(0, 0, 1));
-
-  move_point_map_[1] =
-      std::make_tuple(osg::Vec3d(0, -VLINK_PERCEPTION_PLATFORM_SIZE * 0.1, VLINK_PERCEPTION_PLATFORM_SIZE * 0.01),
-                      osg::Vec3d(-1, 0, 0), osg::Vec3d(0, 0, 1));
-
-  move_point_map_[2] =
-      std::make_tuple(osg::Vec3d(VLINK_PERCEPTION_PLATFORM_SIZE * 0.1, 0, VLINK_PERCEPTION_PLATFORM_SIZE * 0.01),
-                      osg::Vec3d(0, -1, 0), osg::Vec3d(0, 0, 1));
-
-  move_point_map_[3] =
-      std::make_tuple(osg::Vec3d(-VLINK_PERCEPTION_PLATFORM_SIZE * 0.1, 0, VLINK_PERCEPTION_PLATFORM_SIZE * 0.01),
-                      osg::Vec3d(0, 1, 0), osg::Vec3d(0, 0, 1));
-
-  {
-    QFile font_file(":/resource/notomono.ttf");
-    osg::ref_ptr<osgText::Font> font;
-
-    if (font_file.open(QIODevice::ReadOnly)) {
-      const QByteArray font_data = font_file.readAll();
-      font_file.close();
-
-      std::istringstream font_stream(font_data.toStdString());
-      font = osgText::readRefFontStream(font_stream);
-    }
-
-    osg_font_ = font;
-
-    const auto ratio = qApp->devicePixelRatio();
-    root_group_->addChild(OsgCoord::create(viewer->getCamera(), font, ratio));
+  if (!geode) {
+    return;
   }
 
-  platform_node_ = OsgPlatform::create(VLINK_PERCEPTION_PLATFORM_SIZE, VLINK_PERCEPTION_PLATFORM_GRID_COUNT);
-  platform_node_->getOrCreateStateSet()->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
-  root_group_->addChild(platform_node_);
+  geode->setNodeMask(hidden_urls_.count(base_url) ? 0 : 0xFFFFFFFF);
 
-  root_group_->addChild(OsgLight::create(viewer->getCamera(), VLINK_PERCEPTION_PLATFORM_SIZE * 3 / 4));
+  const auto line_width = render_size_;
+  const auto ratio = static_cast<float>(qApp->devicePixelRatio());
 
-  {
-    osg::ref_ptr<osg::CullFace> cullface = new osg::CullFace(osg::CullFace::BACK);
-    root_group_->getOrCreateStateSet()->setAttribute(cullface);
-    root_group_->getOrCreateStateSet()->setMode(GL_CULL_FACE, osg::StateAttribute::ON);
-    root_group_->setCullingActive(true);
-  }
+  switch (layer.type) {
+    case perception::RenderType::kObjectDetection: {
+      std::vector<OsgObjectArray::ObjectData> objects;
+      objects.reserve(layer.boxes.size());
 
-  {
-    root_group_->getOrCreateStateSet()->setMode(GL_MULTISAMPLE, osg::StateAttribute::ON);
-    root_group_->getOrCreateStateSet()->setMode(GL_LINE_SMOOTH, osg::StateAttribute::ON);
-    root_group_->getOrCreateStateSet()->setMode(GL_POINT_SMOOTH, osg::StateAttribute::ON);
-    root_group_->getOrCreateStateSet()->setMode(GL_BLEND, osg::StateAttribute::ON);
-  }
+      for (const auto& box : layer.boxes) {
+        OsgObjectArray::ObjectData data;
+        data.position[0] = box.position[0];
+        data.position[1] = box.position[1];
+        data.position[2] = box.position[2];
+        data.size[0] = box.size[0];
+        data.size[1] = box.size[1];
+        data.size[2] = box.size[2];
+        data.yaw = box.yaw;
+        data.velocity[0] = box.velocity[0];
+        data.velocity[1] = box.velocity[1];
+        data.velocity[2] = box.velocity[2];
+        data.score = box.score;
+        data.class_id = box.class_id;
+        data.track_id = box.track_id;
+        data.color = box.color;
 
-  {
-    QFile car_file(":/resource/car.osgb");
-
-    if (car_file.open(QIODevice::ReadOnly)) {
-      const QByteArray car_data = car_file.readAll();
-      car_file.close();
-
-      std::istringstream car_stream(car_data.toStdString());
-      osg::ref_ptr<osgDB::ReaderWriter> reader = osgDB::Registry::instance()->getReaderWriterForExtension("osgb");
-
-      if (reader) {
-        auto result = reader->readNode(car_stream);
-        car_node_ = result.getNode();
-
-        if (car_node_.valid()) {
-          car_node_->setNodeMask(0U);
-          root_group_->addChild(car_node_);
-          ui->checkBox_car->setEnabled(true);
-          ui->checkBox_car->setChecked(false);
+        if (!box.label.empty()) {
+          data.label = box.label + (box.track_id > 0 ? " #" + std::to_string(box.track_id) : std::string());
+        } else {
+          data.label = OsgObjectArray::get_class_name(box.class_id) +
+                       (box.track_id > 0 ? std::string(" #") + std::to_string(box.track_id) : std::string());
         }
+
+        objects.emplace_back(std::move(data));
       }
+
+      OsgObjectArray::update(geode, objects, line_width);
+      OsgObjectArray::update_labels(geode, objects, osg_font_, ratio);
+      break;
+    }
+
+    case perception::RenderType::kTrafficLight: {
+      std::vector<OsgTrafficLight::TrafficLightData> lights;
+      lights.reserve(layer.boxes.size());
+
+      for (const auto& box : layer.boxes) {
+        OsgTrafficLight::TrafficLightData data;
+        data.position[0] = box.position[0];
+        data.position[1] = box.position[1];
+        data.position[2] = box.position[2];
+        data.color_state = box.color_state;
+        data.confidence = box.confidence;
+        data.countdown = box.countdown;
+        data.label = box.label;
+        lights.emplace_back(std::move(data));
+      }
+
+      OsgTrafficLight::update(geode, lights, line_width);
+      break;
+    }
+
+    case perception::RenderType::kTrafficSign: {
+      std::vector<OsgTrafficSign::TrafficSignData> signs;
+      signs.reserve(layer.boxes.size());
+
+      for (const auto& box : layer.boxes) {
+        OsgTrafficSign::TrafficSignData data;
+        data.position[0] = box.position[0];
+        data.position[1] = box.position[1];
+        data.position[2] = box.position[2];
+        data.type_id = box.type_id;
+        data.color = box.color;
+        data.marker_size = box.marker_size;
+        data.label = box.label;
+        signs.emplace_back(std::move(data));
+      }
+
+      OsgTrafficSign::update(geode, signs, line_width);
+      break;
+    }
+
+    case perception::RenderType::kCameraFrustum: {
+      std::vector<OsgCameraFrustum::FrustumData> frustums;
+      frustums.reserve(layer.boxes.size());
+
+      for (const auto& box : layer.boxes) {
+        OsgCameraFrustum::FrustumData data;
+        data.position[0] = box.position[0];
+        data.position[1] = box.position[1];
+        data.position[2] = box.position[2];
+        data.orientation[0] = box.orientation[0];
+        data.orientation[1] = box.orientation[1];
+        data.orientation[2] = box.orientation[2];
+        data.orientation[3] = box.orientation[3];
+        data.fov_h = box.fov_h;
+        data.fov_v = box.fov_v;
+        data.near_dist = box.near_dist;
+        data.far_dist = box.far_dist;
+        data.color = box.color != 0 ? box.color : 0x00AAFF;
+        frustums.emplace_back(std::move(data));
+      }
+
+      OsgCameraFrustum::update(geode, frustums, line_width);
+      break;
+    }
+
+    case perception::RenderType::kCovarianceEllipse: {
+      std::vector<OsgCovarianceEllipse::EllipseData> ellipses;
+      ellipses.reserve(layer.boxes.size());
+
+      for (const auto& box : layer.boxes) {
+        OsgCovarianceEllipse::EllipseData data;
+        data.position[0] = box.position[0];
+        data.position[1] = box.position[1];
+        data.position[2] = box.position[2];
+        data.covariance[0] = box.covariance[0];
+        data.covariance[1] = box.covariance[1];
+        data.covariance[2] = box.covariance[2];
+        data.covariance[3] = box.covariance[3];
+        data.color = box.color != 0 ? box.color : 0xFFFF00;
+        data.alpha = box.ellipse_alpha;
+        ellipses.emplace_back(std::move(data));
+      }
+
+      OsgCovarianceEllipse::update(geode, ellipses, line_width);
+      break;
+    }
+
+    case perception::RenderType::kLaneLine: {
+      std::vector<OsgLaneLine::LaneData> lanes;
+      lanes.reserve(layer.polylines.size());
+
+      for (const auto& polyline : layer.polylines) {
+        OsgLaneLine::LaneData data;
+        data.color = polyline.color;
+        data.lane_type = polyline.type;
+        data.points.reserve(polyline.points.size());
+
+        for (const auto& point : polyline.points) {
+          data.points.push_back(OsgLaneLine::LanePoint{point.x, point.y, point.z});
+        }
+
+        lanes.emplace_back(std::move(data));
+      }
+
+      OsgLaneLine::update(geode, lanes, line_width);
+      break;
+    }
+
+    case perception::RenderType::kPrediction: {
+      std::vector<OsgPrediction::PredictionData> predictions;
+      predictions.reserve(layer.polylines.size());
+
+      for (const auto& polyline : layer.polylines) {
+        OsgPrediction::PredictionData data;
+        data.color = polyline.color;
+        data.track_id = polyline.track_id;
+        data.confidence = polyline.confidence;
+        data.points.reserve(polyline.points.size());
+
+        for (const auto& point : polyline.points) {
+          data.points.push_back(OsgPrediction::PredPoint{point.x, point.y, point.z});
+        }
+
+        predictions.emplace_back(std::move(data));
+      }
+
+      OsgPrediction::update(geode, predictions, line_width);
+      break;
+    }
+
+    case perception::RenderType::kStopLine: {
+      std::vector<OsgStopLine::StopLineData> lines;
+      lines.reserve(layer.polylines.size());
+
+      for (const auto& polyline : layer.polylines) {
+        OsgStopLine::StopLineData data;
+        data.color = polyline.color;
+        data.line_type = polyline.type;
+        data.points.reserve(polyline.points.size());
+
+        for (const auto& point : polyline.points) {
+          data.points.push_back(OsgStopLine::StopLinePoint{point.x, point.y, point.z});
+        }
+
+        lines.emplace_back(std::move(data));
+      }
+
+      OsgStopLine::update(geode, lines, line_width);
+      break;
+    }
+
+    case perception::RenderType::kFreespace: {
+      std::vector<OsgFreespace::FreespaceData> areas;
+      areas.reserve(layer.polylines.size());
+
+      for (const auto& polyline : layer.polylines) {
+        OsgFreespace::FreespaceData data;
+        data.color = polyline.color;
+        data.polygon.reserve(polyline.points.size());
+
+        for (const auto& point : polyline.points) {
+          data.polygon.push_back(OsgFreespace::FreespacePoint{point.x, point.y, point.z});
+        }
+
+        areas.emplace_back(std::move(data));
+      }
+
+      OsgFreespace::update(geode, areas, 0.35f);
+      break;
+    }
+
+    case perception::RenderType::kHdMap: {
+      std::vector<OsgHdMap::MapElement> elements;
+      elements.reserve(layer.polylines.size());
+
+      for (const auto& polyline : layer.polylines) {
+        OsgHdMap::MapElement data;
+        data.color = polyline.color;
+        data.element_type = polyline.type;
+        data.label = polyline.label;
+        data.points.reserve(polyline.points.size());
+
+        for (const auto& point : polyline.points) {
+          data.points.push_back(OsgHdMap::MapPoint{point.x, point.y, point.z});
+        }
+
+        elements.emplace_back(std::move(data));
+      }
+
+      OsgHdMap::update(geode, elements, line_width);
+      break;
+    }
+
+    case perception::RenderType::kEgoTrajectory: {
+      std::vector<OsgEgoTrajectory::TrajectoryData> trajectories;
+      trajectories.reserve(layer.polylines.size());
+
+      for (const auto& polyline : layer.polylines) {
+        OsgEgoTrajectory::TrajectoryData data;
+        data.color = polyline.color;
+        data.trajectory_type = polyline.type;
+        data.points.reserve(polyline.points.size());
+
+        for (const auto& point : polyline.points) {
+          OsgEgoTrajectory::TrajectoryPoint traj_point;
+          traj_point.x = point.x;
+          traj_point.y = point.y;
+          traj_point.z = point.z;
+          traj_point.yaw = point.yaw;
+          traj_point.speed = point.speed;
+          data.points.push_back(traj_point);
+        }
+
+        trajectories.emplace_back(std::move(data));
+      }
+
+      OsgEgoTrajectory::update(geode, trajectories, line_width);
+      break;
+    }
+
+    case perception::RenderType::kParkingSlot: {
+      std::vector<OsgParkingSlot::SlotData> slot_list;
+      slot_list.reserve(layer.parking_slots.size());
+
+      for (const auto& slot : layer.parking_slots) {
+        OsgParkingSlot::SlotData data;
+
+        for (int c = 0; c < 4; ++c) {
+          for (int axis = 0; axis < 3; ++axis) {
+            data.corners[c][axis] = slot.corners[c][axis];
+          }
+        }
+
+        data.slot_id = slot.slot_id;
+        data.slot_type = slot.slot_type;
+        data.color = slot.color;
+        data.confidence = slot.confidence;
+        slot_list.emplace_back(std::move(data));
+      }
+
+      OsgParkingSlot::update(geode, slot_list, line_width);
+      break;
+    }
+
+    case perception::RenderType::kOccupancyGrid: {
+      OsgOccupancyGrid::GridData grid;
+
+      if (layer.grid_valid) {
+        grid.origin_x = layer.grid.origin_x;
+        grid.origin_y = layer.grid.origin_y;
+        grid.origin_z = layer.grid.origin_z;
+        grid.resolution = layer.grid.resolution;
+        grid.width = layer.grid.width;
+        grid.height = layer.grid.height;
+        grid.cells = layer.grid.cells;
+      }
+
+      OsgOccupancyGrid::update(geode, grid, 0.6f);
+      break;
+    }
+
+    case perception::RenderType::kPointCloud:
+    default: {
+      render_point_cloud(geode, layer);
+      break;
     }
   }
-
-  osg_inited_ = true;
 }
 
 osg::Geode* PerceptionDialog::ensure_geode(const std::string& geode_key, perception::RenderType type) {
@@ -1402,329 +1729,6 @@ void PerceptionDialog::reposition_hud_overlay() {
   const qreal panel_h = hud_item_->pixmap().height() / dpr;
 
   hud_item_->setPos(scene_rect.width() - panel_w - kMargin - 50, scene_rect.height() - panel_h - kMargin);
-}
-
-void PerceptionDialog::render_layer(const std::string& geode_key, const std::string& base_url,
-                                    const perception::Layer& layer) {
-  if (!osg_inited_) {
-    return;
-  }
-
-  osg::Geode* geode = ensure_geode(geode_key, layer.type);
-
-  if (!geode) {
-    return;
-  }
-
-  geode->setNodeMask(hidden_urls_.count(base_url) ? 0 : 0xFFFFFFFF);
-
-  const auto line_width = render_size_;
-  const auto ratio = static_cast<float>(qApp->devicePixelRatio());
-
-  switch (layer.type) {
-    case perception::RenderType::kObjectDetection: {
-      std::vector<OsgObjectArray::ObjectData> objects;
-      objects.reserve(layer.boxes.size());
-
-      for (const auto& box : layer.boxes) {
-        OsgObjectArray::ObjectData data;
-        data.position[0] = box.position[0];
-        data.position[1] = box.position[1];
-        data.position[2] = box.position[2];
-        data.size[0] = box.size[0];
-        data.size[1] = box.size[1];
-        data.size[2] = box.size[2];
-        data.yaw = box.yaw;
-        data.velocity[0] = box.velocity[0];
-        data.velocity[1] = box.velocity[1];
-        data.velocity[2] = box.velocity[2];
-        data.score = box.score;
-        data.class_id = box.class_id;
-        data.track_id = box.track_id;
-        data.color = box.color;
-
-        if (!box.label.empty()) {
-          data.label = box.label + (box.track_id > 0 ? " #" + std::to_string(box.track_id) : std::string());
-        } else {
-          data.label = OsgObjectArray::get_class_name(box.class_id) +
-                       (box.track_id > 0 ? std::string(" #") + std::to_string(box.track_id) : std::string());
-        }
-
-        objects.emplace_back(std::move(data));
-      }
-
-      OsgObjectArray::update(geode, objects, line_width);
-      OsgObjectArray::update_labels(geode, objects, osg_font_, ratio);
-      break;
-    }
-
-    case perception::RenderType::kTrafficLight: {
-      std::vector<OsgTrafficLight::TrafficLightData> lights;
-      lights.reserve(layer.boxes.size());
-
-      for (const auto& box : layer.boxes) {
-        OsgTrafficLight::TrafficLightData data;
-        data.position[0] = box.position[0];
-        data.position[1] = box.position[1];
-        data.position[2] = box.position[2];
-        data.color_state = box.color_state;
-        data.confidence = box.confidence;
-        data.countdown = box.countdown;
-        data.label = box.label;
-        lights.emplace_back(std::move(data));
-      }
-
-      OsgTrafficLight::update(geode, lights, line_width);
-      break;
-    }
-
-    case perception::RenderType::kTrafficSign: {
-      std::vector<OsgTrafficSign::TrafficSignData> signs;
-      signs.reserve(layer.boxes.size());
-
-      for (const auto& box : layer.boxes) {
-        OsgTrafficSign::TrafficSignData data;
-        data.position[0] = box.position[0];
-        data.position[1] = box.position[1];
-        data.position[2] = box.position[2];
-        data.type_id = box.type_id;
-        data.color = box.color;
-        data.marker_size = box.marker_size;
-        data.label = box.label;
-        signs.emplace_back(std::move(data));
-      }
-
-      OsgTrafficSign::update(geode, signs, line_width);
-      break;
-    }
-
-    case perception::RenderType::kCameraFrustum: {
-      std::vector<OsgCameraFrustum::FrustumData> frustums;
-      frustums.reserve(layer.boxes.size());
-
-      for (const auto& box : layer.boxes) {
-        OsgCameraFrustum::FrustumData data;
-        data.position[0] = box.position[0];
-        data.position[1] = box.position[1];
-        data.position[2] = box.position[2];
-        data.orientation[0] = box.orientation[0];
-        data.orientation[1] = box.orientation[1];
-        data.orientation[2] = box.orientation[2];
-        data.orientation[3] = box.orientation[3];
-        data.fov_h = box.fov_h;
-        data.fov_v = box.fov_v;
-        data.near_dist = box.near_dist;
-        data.far_dist = box.far_dist;
-        data.color = box.color != 0 ? box.color : 0x00AAFF;
-        frustums.emplace_back(std::move(data));
-      }
-
-      OsgCameraFrustum::update(geode, frustums, line_width);
-      break;
-    }
-
-    case perception::RenderType::kCovarianceEllipse: {
-      std::vector<OsgCovarianceEllipse::EllipseData> ellipses;
-      ellipses.reserve(layer.boxes.size());
-
-      for (const auto& box : layer.boxes) {
-        OsgCovarianceEllipse::EllipseData data;
-        data.position[0] = box.position[0];
-        data.position[1] = box.position[1];
-        data.position[2] = box.position[2];
-        data.covariance[0] = box.covariance[0];
-        data.covariance[1] = box.covariance[1];
-        data.covariance[2] = box.covariance[2];
-        data.covariance[3] = box.covariance[3];
-        data.color = box.color != 0 ? box.color : 0xFFFF00;
-        data.alpha = box.ellipse_alpha;
-        ellipses.emplace_back(std::move(data));
-      }
-
-      OsgCovarianceEllipse::update(geode, ellipses, line_width);
-      break;
-    }
-
-    case perception::RenderType::kLaneLine: {
-      std::vector<OsgLaneLine::LaneData> lanes;
-      lanes.reserve(layer.polylines.size());
-
-      for (const auto& polyline : layer.polylines) {
-        OsgLaneLine::LaneData data;
-        data.color = polyline.color;
-        data.lane_type = polyline.type;
-        data.points.reserve(polyline.points.size());
-
-        for (const auto& point : polyline.points) {
-          data.points.push_back(OsgLaneLine::LanePoint{point.x, point.y, point.z});
-        }
-
-        lanes.emplace_back(std::move(data));
-      }
-
-      OsgLaneLine::update(geode, lanes, line_width);
-      break;
-    }
-
-    case perception::RenderType::kPrediction: {
-      std::vector<OsgPrediction::PredictionData> predictions;
-      predictions.reserve(layer.polylines.size());
-
-      for (const auto& polyline : layer.polylines) {
-        OsgPrediction::PredictionData data;
-        data.color = polyline.color;
-        data.track_id = polyline.track_id;
-        data.confidence = polyline.confidence;
-        data.points.reserve(polyline.points.size());
-
-        for (const auto& point : polyline.points) {
-          data.points.push_back(OsgPrediction::PredPoint{point.x, point.y, point.z});
-        }
-
-        predictions.emplace_back(std::move(data));
-      }
-
-      OsgPrediction::update(geode, predictions, line_width);
-      break;
-    }
-
-    case perception::RenderType::kStopLine: {
-      std::vector<OsgStopLine::StopLineData> lines;
-      lines.reserve(layer.polylines.size());
-
-      for (const auto& polyline : layer.polylines) {
-        OsgStopLine::StopLineData data;
-        data.color = polyline.color;
-        data.line_type = polyline.type;
-        data.points.reserve(polyline.points.size());
-
-        for (const auto& point : polyline.points) {
-          data.points.push_back(OsgStopLine::StopLinePoint{point.x, point.y, point.z});
-        }
-
-        lines.emplace_back(std::move(data));
-      }
-
-      OsgStopLine::update(geode, lines, line_width);
-      break;
-    }
-
-    case perception::RenderType::kFreespace: {
-      std::vector<OsgFreespace::FreespaceData> areas;
-      areas.reserve(layer.polylines.size());
-
-      for (const auto& polyline : layer.polylines) {
-        OsgFreespace::FreespaceData data;
-        data.color = polyline.color;
-        data.polygon.reserve(polyline.points.size());
-
-        for (const auto& point : polyline.points) {
-          data.polygon.push_back(OsgFreespace::FreespacePoint{point.x, point.y, point.z});
-        }
-
-        areas.emplace_back(std::move(data));
-      }
-
-      OsgFreespace::update(geode, areas, 0.35f);
-      break;
-    }
-
-    case perception::RenderType::kHdMap: {
-      std::vector<OsgHdMap::MapElement> elements;
-      elements.reserve(layer.polylines.size());
-
-      for (const auto& polyline : layer.polylines) {
-        OsgHdMap::MapElement data;
-        data.color = polyline.color;
-        data.element_type = polyline.type;
-        data.label = polyline.label;
-        data.points.reserve(polyline.points.size());
-
-        for (const auto& point : polyline.points) {
-          data.points.push_back(OsgHdMap::MapPoint{point.x, point.y, point.z});
-        }
-
-        elements.emplace_back(std::move(data));
-      }
-
-      OsgHdMap::update(geode, elements, line_width);
-      break;
-    }
-
-    case perception::RenderType::kEgoTrajectory: {
-      std::vector<OsgEgoTrajectory::TrajectoryData> trajectories;
-      trajectories.reserve(layer.polylines.size());
-
-      for (const auto& polyline : layer.polylines) {
-        OsgEgoTrajectory::TrajectoryData data;
-        data.color = polyline.color;
-        data.trajectory_type = polyline.type;
-        data.points.reserve(polyline.points.size());
-
-        for (const auto& point : polyline.points) {
-          OsgEgoTrajectory::TrajectoryPoint traj_point;
-          traj_point.x = point.x;
-          traj_point.y = point.y;
-          traj_point.z = point.z;
-          traj_point.yaw = point.yaw;
-          traj_point.speed = point.speed;
-          data.points.push_back(traj_point);
-        }
-
-        trajectories.emplace_back(std::move(data));
-      }
-
-      OsgEgoTrajectory::update(geode, trajectories, line_width);
-      break;
-    }
-
-    case perception::RenderType::kParkingSlot: {
-      std::vector<OsgParkingSlot::SlotData> slot_list;
-      slot_list.reserve(layer.parking_slots.size());
-
-      for (const auto& slot : layer.parking_slots) {
-        OsgParkingSlot::SlotData data;
-
-        for (int c = 0; c < 4; ++c) {
-          for (int axis = 0; axis < 3; ++axis) {
-            data.corners[c][axis] = slot.corners[c][axis];
-          }
-        }
-
-        data.slot_id = slot.slot_id;
-        data.slot_type = slot.slot_type;
-        data.color = slot.color;
-        data.confidence = slot.confidence;
-        slot_list.emplace_back(std::move(data));
-      }
-
-      OsgParkingSlot::update(geode, slot_list, line_width);
-      break;
-    }
-
-    case perception::RenderType::kOccupancyGrid: {
-      OsgOccupancyGrid::GridData grid;
-
-      if (layer.grid_valid) {
-        grid.origin_x = layer.grid.origin_x;
-        grid.origin_y = layer.grid.origin_y;
-        grid.origin_z = layer.grid.origin_z;
-        grid.resolution = layer.grid.resolution;
-        grid.width = layer.grid.width;
-        grid.height = layer.grid.height;
-        grid.cells = layer.grid.cells;
-      }
-
-      OsgOccupancyGrid::update(geode, grid, 0.6f);
-      break;
-    }
-
-    case perception::RenderType::kPointCloud:
-    default: {
-      render_point_cloud(geode, layer);
-      break;
-    }
-  }
 }
 
 #endif  // VLINK_ENABLE_VIEWER_OSG
