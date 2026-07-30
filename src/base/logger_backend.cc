@@ -367,6 +367,10 @@ LoggerBackend::~LoggerBackend() {
   impl_->accepting.store(false, std::memory_order_release);
   impl_->flush_timer.stop();
 
+#ifdef _WIN32
+  (void)wait_for_quit(0, false);
+#endif
+
   barrier([this] { flush_file(); });
 
   quit();
