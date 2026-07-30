@@ -563,6 +563,48 @@ void ProxyAPI::on_end() {
   MessageLoop::on_end();
 }
 
+bool ProxyAPI::send_control_sync(const Control& control) {
+  std::shared_lock handle_lock(impl_->handle_mtx);
+
+  if VUNLIKELY (!impl_->control_pub) {
+    return false;
+  }
+
+#if VLINK_PROXY_ENABLE_HANDSHAKE
+  std::string token_copy;
+
+  {
+    std::shared_lock token_lock(impl_->token_mtx);
+    token_copy = impl_->token;
+  }
+
+  if VUNLIKELY (token_copy.empty()) {
+    return false;
+  }
+#endif
+
+  if VUNLIKELY (!impl_->control_pub->has_subscribers()) {
+    return false;
+  }
+
+  proxy::ControlPacket packet;
+  packet.control_id = impl_->control_id;
+#if VLINK_PROXY_ENABLE_HANDSHAKE
+  packet.token = std::move(token_copy);
+#endif
+  packet.body = control;
+
+  for (auto& url_meta : packet.body.url_meta_list) {
+    if VUNLIKELY (!SchemaData::is_valid_type(url_meta.schema)) {
+      url_meta.schema = SchemaType::kUnknown;
+    }
+  }
+
+  impl_->connect_elapsed_timer.restart();
+
+  return impl_->control_pub->publish(packet, true);
+}
+
 void ProxyAPI::sync_direct_maps(const Control& control) {
   std::unique_lock direct_lock(impl_->direct_mtx);
 
@@ -742,48 +784,6 @@ void ProxyAPI::sync_direct_maps(const Control& control) {
     } catch (const Exception::RuntimeError&) {
     }
   }
-}
-
-bool ProxyAPI::send_control_sync(const Control& control) {
-  std::shared_lock handle_lock(impl_->handle_mtx);
-
-  if VUNLIKELY (!impl_->control_pub) {
-    return false;
-  }
-
-#if VLINK_PROXY_ENABLE_HANDSHAKE
-  std::string token_copy;
-
-  {
-    std::shared_lock token_lock(impl_->token_mtx);
-    token_copy = impl_->token;
-  }
-
-  if VUNLIKELY (token_copy.empty()) {
-    return false;
-  }
-#endif
-
-  if VUNLIKELY (!impl_->control_pub->has_subscribers()) {
-    return false;
-  }
-
-  proxy::ControlPacket packet;
-  packet.control_id = impl_->control_id;
-#if VLINK_PROXY_ENABLE_HANDSHAKE
-  packet.token = std::move(token_copy);
-#endif
-  packet.body = control;
-
-  for (auto& url_meta : packet.body.url_meta_list) {
-    if VUNLIKELY (!SchemaData::is_valid_type(url_meta.schema)) {
-      url_meta.schema = SchemaType::kUnknown;
-    }
-  }
-
-  impl_->connect_elapsed_timer.restart();
-
-  return impl_->control_pub->publish(packet, true);
 }
 
 bool ProxyAPI::do_handshake(Error& out_err) {
