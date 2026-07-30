@@ -151,6 +151,39 @@ std::shared_ptr<GraphTask> GraphTask::create_condition(const std::string& name, 
                                          condition_number);
 }
 
+GraphTask::GraphTask(PrivateToken, Callback&& callback, int condition_number) : impl_(std::make_unique<Impl>()) {
+  impl_->name = "Task_" + std::to_string(global_graph_task_count.fetch_add(1, std::memory_order_relaxed));
+  impl_->condition_number.store(condition_number, std::memory_order_relaxed);
+  impl_->is_condition_task = false;
+  impl_->callback = std::move(callback);
+}
+
+GraphTask::GraphTask(PrivateToken, const std::string& name, Callback&& callback, int condition_number)
+    : impl_(std::make_unique<Impl>()) {
+  impl_->name = name;
+  impl_->condition_number.store(condition_number, std::memory_order_relaxed);
+  impl_->is_condition_task = false;
+  impl_->callback = std::move(callback);
+}
+
+GraphTask::GraphTask(PrivateToken, ConditionCallback&& callback, int condition_number)
+    : impl_(std::make_unique<Impl>()) {
+  impl_->name = "Task_" + std::to_string(global_graph_task_count.fetch_add(1, std::memory_order_relaxed));
+  impl_->condition_number.store(condition_number, std::memory_order_relaxed);
+  impl_->is_condition_task = true;
+  impl_->condition_callback = std::move(callback);
+}
+
+GraphTask::GraphTask(PrivateToken, const std::string& name, ConditionCallback&& callback, int condition_number)
+    : impl_(std::make_unique<Impl>()) {
+  impl_->name = name;
+  impl_->condition_number.store(condition_number, std::memory_order_relaxed);
+  impl_->is_condition_task = true;
+  impl_->condition_callback = std::move(callback);
+}
+
+GraphTask::~GraphTask() = default;
+
 void GraphTask::cancel() {
   std::lock_guard topology_lock(topology_mutex());
 
@@ -402,142 +435,6 @@ std::vector<std::weak_ptr<GraphTask>> GraphTask::get_succeed_task_list() const {
 
 bool GraphTask::is_condition_task() const { return impl_->is_condition_task; }
 
-GraphTask::GraphTask(PrivateToken, Callback&& callback, int condition_number) : impl_(std::make_unique<Impl>()) {
-  impl_->name = "Task_" + std::to_string(global_graph_task_count.fetch_add(1, std::memory_order_relaxed));
-  impl_->condition_number.store(condition_number, std::memory_order_relaxed);
-  impl_->is_condition_task = false;
-  impl_->callback = std::move(callback);
-}
-
-GraphTask::GraphTask(PrivateToken, const std::string& name, Callback&& callback, int condition_number)
-    : impl_(std::make_unique<Impl>()) {
-  impl_->name = name;
-  impl_->condition_number.store(condition_number, std::memory_order_relaxed);
-  impl_->is_condition_task = false;
-  impl_->callback = std::move(callback);
-}
-
-GraphTask::GraphTask(PrivateToken, ConditionCallback&& callback, int condition_number)
-    : impl_(std::make_unique<Impl>()) {
-  impl_->name = "Task_" + std::to_string(global_graph_task_count.fetch_add(1, std::memory_order_relaxed));
-  impl_->condition_number.store(condition_number, std::memory_order_relaxed);
-  impl_->is_condition_task = true;
-  impl_->condition_callback = std::move(callback);
-}
-
-GraphTask::GraphTask(PrivateToken, const std::string& name, ConditionCallback&& callback, int condition_number)
-    : impl_(std::make_unique<Impl>()) {
-  impl_->name = name;
-  impl_->condition_number.store(condition_number, std::memory_order_relaxed);
-  impl_->is_condition_task = true;
-  impl_->condition_callback = std::move(callback);
-}
-
-GraphTask::~GraphTask() = default;
-
-void GraphTask::process_and_traverse(FindTaskCallback&& callback) {
-  uint32_t recursion_count = 0;
-
-  std::stack<std::shared_ptr<GraphTask>> task_stack;
-
-  task_stack.emplace(shared_from_this());
-
-  std::unordered_map<GraphTask*, int> pending_count_map;
-  std::unordered_map<GraphTask*, std::vector<std::shared_ptr<GraphTask>>> successor_map;
-  std::unordered_set<GraphTask*> processed;
-
-  std::vector<std::shared_ptr<GraphTask>> top_task_list;
-
-  while (!task_stack.empty()) {
-    auto current_task = task_stack.top();
-    task_stack.pop();
-
-    if (!processed.insert(current_task.get()).second) {
-      continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    {
-      std::lock_guard lock(current_task->impl_->mtx);
-
-      clear_invalid_task(current_task);
-
-      if (recursion_count == 0) {
-        current_task->impl_->is_ready.store(true, std::memory_order_release);
-        current_task->impl_->is_enable.store(true, std::memory_order_release);
-        current_task->impl_->active_index.store(0U, std::memory_order_release);
-
-        auto& sub_pending_count = pending_count_map[current_task.get()];
-        current_task->impl_->pending_index.store(++sub_pending_count, std::memory_order_release);
-
-        top_task_list.emplace_back(current_task);
-      }
-
-      for (const auto& task : current_task->impl_->succeed_task_list) {
-        auto task_ptr = task.lock();
-
-        if VUNLIKELY (!task_ptr) {
-          continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        }
-
-        successor_map[current_task.get()].emplace_back(task_ptr);
-
-        bool first_seen = (pending_count_map.find(task_ptr.get()) == pending_count_map.end());
-
-        auto& sub_pending_count = pending_count_map[task_ptr.get()];
-        task_ptr->impl_->pending_index.store(++sub_pending_count, std::memory_order_release);
-
-        if (first_seen) {
-          task_ptr->impl_->is_ready.store(false, std::memory_order_release);
-          task_ptr->impl_->is_enable.store(false, std::memory_order_release);
-          task_ptr->impl_->active_index.store(0U, std::memory_order_release);
-
-          top_task_list.emplace_back(task_ptr);
-          task_stack.emplace(task_ptr);
-        }
-
-        if VUNLIKELY (recursion_count++ >= impl_->max_recursion_depth.load(std::memory_order_relaxed)) {
-          CLOG_F("GraphTask: Recursion detection exceeds the upper limit (%d).",  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                 impl_->max_recursion_depth.load(std::memory_order_relaxed));
-          return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        }
-      }
-    }
-  }
-
-  std::vector<std::shared_ptr<GraphTask>> ready_task_list;
-  std::vector<std::shared_ptr<GraphTask>> sorted_task_list;
-  ready_task_list.reserve(top_task_list.size());
-  sorted_task_list.reserve(top_task_list.size());
-  ready_task_list.emplace_back(top_task_list.front());
-
-  for (size_t index = 0; index < ready_task_list.size(); ++index) {
-    const auto& current_task = ready_task_list[index];
-    sorted_task_list.emplace_back(current_task);
-
-    for (const auto& successor : successor_map[current_task.get()]) {
-      auto pending_iter = pending_count_map.find(successor.get());
-      if (pending_iter != pending_count_map.end() && --pending_iter->second == 0) {
-        ready_task_list.emplace_back(successor);
-      }
-    }
-  }
-
-  if VUNLIKELY (sorted_task_list.size() != top_task_list.size()) {
-    CLOG_E("GraphTask: Failed to produce a topological task order.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return;                                                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  top_task_list = std::move(sorted_task_list);
-
-  for (const auto& top_task : top_task_list) {
-    top_task->update_status(kStatusPending);
-  }
-
-  for (const auto& top_task : top_task_list) {
-    callback(top_task);
-  }
-}
-
 bool GraphTask::has_cycle() const {
   std::unordered_set<const GraphTask*> visited;
   std::unordered_set<const GraphTask*> recursion_stack;
@@ -545,69 +442,6 @@ bool GraphTask::has_cycle() const {
   const uint32_t max_depth = impl_->max_recursion_depth.load(std::memory_order_relaxed);
 
   return detect_cycle(this, visited, recursion_stack, depth, max_depth);
-}
-
-bool GraphTask::reaches_via_successors(const GraphTask* start_node,
-                                       const std::vector<std::weak_ptr<GraphTask>>& start_successors,
-                                       const GraphTask* target) const {
-  std::unordered_set<const GraphTask*> visited;
-  visited.insert(start_node);
-  visited.insert(target);
-
-  std::stack<std::shared_ptr<GraphTask>> stack;
-
-  for (const auto& w : start_successors) {
-    auto p = w.lock();
-
-    if VUNLIKELY (!p) {
-      continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    if (p.get() == target) {
-      return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    if (visited.insert(p.get()).second) {
-      stack.push(std::move(p));
-    }
-  }
-
-  const uint32_t max_depth = impl_->max_recursion_depth.load(std::memory_order_relaxed);
-  uint32_t visit_count = 0;
-
-  while (!stack.empty()) {
-    auto cur = std::move(stack.top());
-    stack.pop();
-
-    if VUNLIKELY (++visit_count > max_depth) {
-      CLOG_F("GraphTask: reaches() exceeded max_recursion_depth (%u).", max_depth);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      return true;                                                                   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    std::vector<std::weak_ptr<GraphTask>> succ_copy;
-    {
-      std::lock_guard lock(cur->impl_->mtx);
-      succ_copy = cur->impl_->succeed_task_list;
-    }
-
-    for (const auto& w : succ_copy) {
-      auto p = w.lock();
-
-      if VUNLIKELY (!p) {
-        continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
-
-      if (p.get() == target) {
-        return true;
-      }
-
-      if (visited.insert(p.get()).second) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        stack.push(std::move(p));            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
-    }
-  }
-
-  return false;
 }
 
 std::string GraphTask::export_to_dot() const {
@@ -714,6 +548,109 @@ std::string GraphTask::export_to_dot() const {
   dot_stream << "}\n";
 
   return dot_stream.str();
+}
+
+void GraphTask::process_and_traverse(FindTaskCallback&& callback) {
+  uint32_t recursion_count = 0;
+
+  std::stack<std::shared_ptr<GraphTask>> task_stack;
+
+  task_stack.emplace(shared_from_this());
+
+  std::unordered_map<GraphTask*, int> pending_count_map;
+  std::unordered_map<GraphTask*, std::vector<std::shared_ptr<GraphTask>>> successor_map;
+  std::unordered_set<GraphTask*> processed;
+
+  std::vector<std::shared_ptr<GraphTask>> top_task_list;
+
+  while (!task_stack.empty()) {
+    auto current_task = task_stack.top();
+    task_stack.pop();
+
+    if (!processed.insert(current_task.get()).second) {
+      continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    {
+      std::lock_guard lock(current_task->impl_->mtx);
+
+      clear_invalid_task(current_task);
+
+      if (recursion_count == 0) {
+        current_task->impl_->is_ready.store(true, std::memory_order_release);
+        current_task->impl_->is_enable.store(true, std::memory_order_release);
+        current_task->impl_->active_index.store(0U, std::memory_order_release);
+
+        auto& sub_pending_count = pending_count_map[current_task.get()];
+        current_task->impl_->pending_index.store(++sub_pending_count, std::memory_order_release);
+
+        top_task_list.emplace_back(current_task);
+      }
+
+      for (const auto& task : current_task->impl_->succeed_task_list) {
+        auto task_ptr = task.lock();
+
+        if VUNLIKELY (!task_ptr) {
+          continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        }
+
+        successor_map[current_task.get()].emplace_back(task_ptr);
+
+        bool first_seen = (pending_count_map.find(task_ptr.get()) == pending_count_map.end());
+
+        auto& sub_pending_count = pending_count_map[task_ptr.get()];
+        task_ptr->impl_->pending_index.store(++sub_pending_count, std::memory_order_release);
+
+        if (first_seen) {
+          task_ptr->impl_->is_ready.store(false, std::memory_order_release);
+          task_ptr->impl_->is_enable.store(false, std::memory_order_release);
+          task_ptr->impl_->active_index.store(0U, std::memory_order_release);
+
+          top_task_list.emplace_back(task_ptr);
+          task_stack.emplace(task_ptr);
+        }
+
+        if VUNLIKELY (recursion_count++ >= impl_->max_recursion_depth.load(std::memory_order_relaxed)) {
+          CLOG_F("GraphTask: Recursion detection exceeds the upper limit (%d).",  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                 impl_->max_recursion_depth.load(std::memory_order_relaxed));
+          return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        }
+      }
+    }
+  }
+
+  std::vector<std::shared_ptr<GraphTask>> ready_task_list;
+  std::vector<std::shared_ptr<GraphTask>> sorted_task_list;
+  ready_task_list.reserve(top_task_list.size());
+  sorted_task_list.reserve(top_task_list.size());
+  ready_task_list.emplace_back(top_task_list.front());
+
+  for (size_t index = 0; index < ready_task_list.size(); ++index) {
+    const auto& current_task = ready_task_list[index];
+    sorted_task_list.emplace_back(current_task);
+
+    for (const auto& successor : successor_map[current_task.get()]) {
+      auto pending_iter = pending_count_map.find(successor.get());
+      if (pending_iter != pending_count_map.end() && --pending_iter->second == 0) {
+        ready_task_list.emplace_back(successor);
+      }
+    }
+  }
+
+  if VUNLIKELY (sorted_task_list.size() != top_task_list.size()) {
+    CLOG_E("GraphTask: Failed to produce a topological task order.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return;                                                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  top_task_list = std::move(sorted_task_list);
+
+  for (const auto& top_task : top_task_list) {
+    top_task->update_status(kStatusPending);
+  }
+
+  for (const auto& top_task : top_task_list) {
+    callback(top_task);
+  }
 }
 
 int GraphTask::invoke(bool once) {
@@ -1018,6 +955,69 @@ bool GraphTask::detect_cycle(const GraphTask* task, std::unordered_set<const Gra
 
   recursion_stack.erase(task);
   --depth;
+
+  return false;
+}
+
+bool GraphTask::reaches_via_successors(const GraphTask* start_node,
+                                       const std::vector<std::weak_ptr<GraphTask>>& start_successors,
+                                       const GraphTask* target) const {
+  std::unordered_set<const GraphTask*> visited;
+  visited.insert(start_node);
+  visited.insert(target);
+
+  std::stack<std::shared_ptr<GraphTask>> stack;
+
+  for (const auto& w : start_successors) {
+    auto p = w.lock();
+
+    if VUNLIKELY (!p) {
+      continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    if (p.get() == target) {
+      return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    if (visited.insert(p.get()).second) {
+      stack.push(std::move(p));
+    }
+  }
+
+  const uint32_t max_depth = impl_->max_recursion_depth.load(std::memory_order_relaxed);
+  uint32_t visit_count = 0;
+
+  while (!stack.empty()) {
+    auto cur = std::move(stack.top());
+    stack.pop();
+
+    if VUNLIKELY (++visit_count > max_depth) {
+      CLOG_F("GraphTask: reaches() exceeded max_recursion_depth (%u).", max_depth);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      return true;                                                                   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    std::vector<std::weak_ptr<GraphTask>> succ_copy;
+    {
+      std::lock_guard lock(cur->impl_->mtx);
+      succ_copy = cur->impl_->succeed_task_list;
+    }
+
+    for (const auto& w : succ_copy) {
+      auto p = w.lock();
+
+      if VUNLIKELY (!p) {
+        continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
+
+      if (p.get() == target) {
+        return true;
+      }
+
+      if (visited.insert(p.get()).second) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        stack.push(std::move(p));            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
+    }
+  }
 
   return false;
 }

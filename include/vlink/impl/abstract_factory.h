@@ -694,6 +694,33 @@ inline bool AbstractObject<FilterT>::is_map_effectively_empty(const CallbackMapT
 }
 
 template <typename FilterT>
+template <typename CallbackMapT, typename CallbackT>
+inline void AbstractObject<FilterT>::traverse_internal_callback(const CallbackMapT& map, const CallbackT& callback) {
+  std::lock_guard lock(mtx_);
+
+  this->ignore_called_ = false;
+  this->has_called_ = false;
+
+  ++traverse_depth_;
+
+  TraverseGuard guard{*this};
+
+  for (const auto& [impl, target_callback] : map) {
+    if VUNLIKELY (is_deferred_removed(impl)) {
+      continue;
+    }
+
+    callback(impl, target_callback);
+
+    if VUNLIKELY (this->ignore_called_) {
+      this->ignore_called_ = false;
+    } else {
+      this->has_called_ = true;
+    }
+  }
+}
+
+template <typename FilterT>
 inline bool AbstractObject<FilterT>::is_deferred_removed(NodeImpl* impl) const {
   for (auto* target : deferred_remove_list_) {
     if (target == impl) {
@@ -729,33 +756,6 @@ inline void AbstractObject<FilterT>::apply_deferred_removals() {
 
   if (first_impl_ == nullptr && !impl_list_.empty()) {
     first_impl_ = *impl_list_.begin();
-  }
-}
-
-template <typename FilterT>
-template <typename CallbackMapT, typename CallbackT>
-inline void AbstractObject<FilterT>::traverse_internal_callback(const CallbackMapT& map, const CallbackT& callback) {
-  std::lock_guard lock(mtx_);
-
-  this->ignore_called_ = false;
-  this->has_called_ = false;
-
-  ++traverse_depth_;
-
-  TraverseGuard guard{*this};
-
-  for (const auto& [impl, target_callback] : map) {
-    if VUNLIKELY (is_deferred_removed(impl)) {
-      continue;
-    }
-
-    callback(impl, target_callback);
-
-    if VUNLIKELY (this->ignore_called_) {
-      this->ignore_called_ = false;
-    } else {
-      this->has_called_ = true;
-    }
   }
 }
 

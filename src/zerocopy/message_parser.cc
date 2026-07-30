@@ -288,56 +288,6 @@ static size_t audio_element_size(uint8_t format) noexcept {
   }
 }
 
-MessageParser::Type MessageParser::detect_type(std::string_view serialized_type) noexcept {
-  static constexpr std::pair<std::string_view, Type> kTypes[] = {
-      {"RawData", Type::kRawData},         {"CameraFrame", Type::kCameraFrame},     {"PointCloud", Type::kPointCloud},
-      {"ProxyData", Type::kProxyData},     {"OccupancyGrid", Type::kOccupancyGrid}, {"Tensor", Type::kTensor},
-      {"ObjectArray", Type::kObjectArray}, {"AudioFrame", Type::kAudioFrame},
-  };
-
-  for (const auto& [name, type] : kTypes) {
-    if (serialized_type == name) {
-      return type;
-    }
-
-    if (serialized_type.size() <= name.size()) {
-      continue;
-    }
-
-    const size_t offset = serialized_type.size() - name.size();
-    const char separator = serialized_type[offset - 1];
-
-    if ((separator == '.' || separator == ':' || separator == '/') && serialized_type.substr(offset) == name) {
-      return type;
-    }
-  }
-
-  return Type::kUnknown;
-}
-
-std::string_view MessageParser::type_name(Type type) noexcept {
-  switch (type) {
-    case Type::kRawData:
-      return "RawData";
-    case Type::kCameraFrame:
-      return "CameraFrame";
-    case Type::kPointCloud:
-      return "PointCloud";
-    case Type::kProxyData:
-      return "ProxyData";
-    case Type::kOccupancyGrid:
-      return "OccupancyGrid";
-    case Type::kTensor:
-      return "Tensor";
-    case Type::kObjectArray:
-      return "ObjectArray";
-    case Type::kAudioFrame:
-      return "AudioFrame";
-    default:
-      return {};
-  }
-}
-
 bool MessageParser::parse(std::string_view serialized_type, const Bytes& bytes) {
   return parse(detect_type(serialized_type), bytes);
 }
@@ -566,6 +516,559 @@ bool MessageParser::text(std::string_view collection, size_t index, std::string_
   out = std::move(*string);
 
   return true;
+}
+
+size_t MessageParser::collection_size(std::string_view collection) const noexcept {
+  collection = normalize_collection(collection);
+
+  if (type_ == Type::kPointCloud && collection == "data") {
+    return get<PointCloud>()->size();
+  }
+
+  if (type_ == Type::kObjectArray && collection == "data") {
+    return get<ObjectArray>()->count();
+  }
+
+  if (type_ == Type::kOccupancyGrid && collection == "data") {
+    const auto& message = *get<OccupancyGrid>();
+
+    if VUNLIKELY (message.cell_size() == 0) {
+      return 0;
+    }
+
+    const size_t payload_count = message.size() / message.cell_size();
+    const size_t declared_count = static_cast<size_t>(message.width()) * message.height();
+    return std::min(payload_count, declared_count);
+  }
+
+  if (type_ == Type::kTensor) {
+    const auto& message = *get<Tensor>();
+
+    if (collection == "shape" || collection == "strides") {
+      return message.rank();
+    }
+
+    if (collection == "data" && message.element_size() != 0) {
+      return std::min<size_t>(message.num_elements(), message.size() / message.element_size());
+    }
+  }
+
+  if (type_ == Type::kAudioFrame && collection == "data") {
+    const auto& message = *get<AudioFrame>();
+    const size_t element_size = audio_element_size(message.format());
+
+    if VUNLIKELY (element_size == 0 || message.bit_depth() != element_size * 8U) {
+      return 0;
+    }
+
+    return message.size() / element_size;
+  }
+
+  return 0;
+}
+
+std::vector<MessageParser::Field> MessageParser::fields() const {
+  std::vector<Field> result;
+
+  if VUNLIKELY (!valid()) {
+    return result;
+  }
+
+  const auto add_text = [&result](std::string_view name) { result.push_back({std::string(name), ValueType::kString}); };
+
+  const auto add_number = [&result](std::string_view name, ValueType type) {
+    result.push_back({std::string(name), type});
+  };
+
+  const auto add_bytes = [&result](std::string_view name) { result.push_back({std::string(name), ValueType::kBytes}); };
+
+  const auto add_time = [&result](std::string_view name) {
+    Field field{std::string(name), ValueType::kUInt64};
+    field.is_time = true;
+    result.push_back(std::move(field));
+  };
+
+  const auto add_bool = [&result](std::string_view name) {
+    Field field{std::string(name), ValueType::kUInt64};
+    field.is_bool = true;
+    result.push_back(std::move(field));
+  };
+
+  const auto add_enum = [&result](std::string_view name, EnumKind kind) {
+    Field field{std::string(name), ValueType::kUInt64};
+    field.enum_kind = kind;
+    result.push_back(std::move(field));
+  };
+
+  const auto add_reserved = [&result](std::string_view name) {
+    Field field{std::string(name), ValueType::kUInt64};
+    field.is_reserved = true;
+    result.push_back(std::move(field));
+  };
+
+  if (type_ != Type::kProxyData) {
+    add_text("header.frame_id");
+    add_number("header.seq", ValueType::kUInt64);
+    add_reserved("header.reserved");
+    add_time("header.time_meas");
+    add_time("header.time_pub");
+  }
+
+  switch (type_) {
+    case Type::kRawData:
+      add_number("size", ValueType::kUInt64);
+      add_reserved("reserved");
+      add_bytes("data");
+      break;
+
+    case Type::kCameraFrame:
+      add_number("channel", ValueType::kUInt64);
+      add_number("height", ValueType::kUInt64);
+      add_number("width", ValueType::kUInt64);
+      add_number("freq", ValueType::kUInt64);
+      add_enum("format", EnumKind::kEnumCameraFormat);
+      add_enum("stream", EnumKind::kEnumCameraStream);
+      add_number("size", ValueType::kUInt64);
+      add_reserved("reserved");
+      add_bytes("data");
+      break;
+
+    case Type::kPointCloud:
+      add_number("size", ValueType::kUInt64);
+      add_number("pack_size", ValueType::kUInt64);
+      add_number("extent", ValueType::kUInt64);
+      add_number("downsample", ValueType::kUInt64);
+      add_bool("vertical");
+      add_reserved("reserved_size");
+      add_reserved("reserved");
+      add_reserved("reserved2");
+      add_reserved("reserved3");
+      add_bytes("data");
+      break;
+
+    case Type::kProxyData:
+      add_number("control_id", ValueType::kUInt64);
+      add_number("mode", ValueType::kUInt64);
+      add_number("timestamp", ValueType::kInt64);
+      add_number("seq", ValueType::kInt64);
+      add_number("schema", ValueType::kUInt64);
+      add_text("url");
+      add_text("ser");
+      add_text("hostname");
+      add_number("size", ValueType::kUInt64);
+      add_reserved("reserved");
+      add_reserved("reserved2");
+      add_bytes("raw");
+      break;
+
+    case Type::kOccupancyGrid:
+      add_text("map_id");
+      add_number("width", ValueType::kUInt64);
+      add_number("height", ValueType::kUInt64);
+      add_number("channel", ValueType::kUInt64);
+      add_number("freq", ValueType::kUInt64);
+      add_number("valid_cell_count", ValueType::kUInt64);
+      add_number("default_value", ValueType::kInt64);
+      add_number("resolution", ValueType::kDouble);
+      add_number("origin_x", ValueType::kDouble);
+      add_number("origin_y", ValueType::kDouble);
+      add_number("origin_z", ValueType::kDouble);
+      add_number("origin_yaw", ValueType::kDouble);
+      add_number("value_min", ValueType::kDouble);
+      add_number("value_max", ValueType::kDouble);
+      add_number("occupied_threshold", ValueType::kDouble);
+      add_number("free_threshold", ValueType::kDouble);
+      add_enum("cell_type", EnumKind::kEnumGridCellType);
+      add_number("cell_size", ValueType::kUInt64);
+      add_time("update_time_ns");
+      add_number("size", ValueType::kUInt64);
+      add_reserved("reserved");
+      add_reserved("reserved2");
+      add_reserved("reserved3");
+      add_bytes("data");
+      break;
+
+    case Type::kTensor:
+      add_text("name");
+      add_text("model_id");
+      add_text("layout");
+      add_enum("dtype", EnumKind::kEnumTensorDataType);
+      add_enum("device", EnumKind::kEnumTensorDevice);
+      add_number("rank", ValueType::kUInt64);
+      add_number("num_elements", ValueType::kUInt64);
+      add_number("element_size", ValueType::kUInt64);
+      add_number("batch_size", ValueType::kUInt64);
+      add_number("channel", ValueType::kUInt64);
+      add_number("freq", ValueType::kUInt64);
+      add_number("quant_zero_point", ValueType::kInt64);
+      add_number("quant_scale", ValueType::kDouble);
+      add_time("update_time_ns");
+      add_number("size", ValueType::kUInt64);
+      add_reserved("reserved");
+      add_reserved("reserved2");
+      add_reserved("reserved3");
+      add_bytes("data");
+      break;
+
+    case Type::kObjectArray:
+      add_text("source_id");
+      add_number("channel", ValueType::kUInt64);
+      add_number("freq", ValueType::kUInt64);
+      add_number("count", ValueType::kUInt64);
+      add_number("pack_size", ValueType::kUInt64);
+      add_time("update_time_ns");
+      add_number("size", ValueType::kUInt64);
+      add_reserved("reserved");
+      add_reserved("reserved2");
+      add_reserved("reserved3");
+      add_reserved("reserved4");
+      add_reserved("reserved5");
+      add_bytes("data");
+      break;
+
+    case Type::kAudioFrame:
+      add_text("codec");
+      add_text("language");
+      add_number("channel", ValueType::kUInt64);
+      add_number("freq", ValueType::kUInt64);
+      add_number("sample_rate", ValueType::kUInt64);
+      add_number("num_samples", ValueType::kUInt64);
+      add_number("num_channels", ValueType::kUInt64);
+      add_number("bit_depth", ValueType::kUInt64);
+      add_number("bitrate", ValueType::kUInt64);
+      add_enum("format", EnumKind::kEnumAudioFormat);
+      add_enum("layout", EnumKind::kEnumAudioLayout);
+      add_number("duration_ns", ValueType::kUInt64);
+      add_time("update_time_ns");
+      add_number("size", ValueType::kUInt64);
+      add_reserved("reserved");
+      add_reserved("reserved2");
+      add_bytes("data");
+      break;
+    default:
+      break;
+  }
+
+  return result;
+}
+
+std::vector<MessageParser::Field> MessageParser::element_fields(std::string_view collection) const {
+  collection = normalize_collection(collection);
+
+  if (type_ == Type::kPointCloud && collection == "data") {
+    return point_fields_;
+  }
+
+  if (type_ == Type::kTensor && collection == "data") {
+    const auto& message = *get<Tensor>();
+    return {{"value", tensor_value_type(message.dtype()), message.dtype(), message.element_size()}};
+  }
+
+  if (type_ == Type::kTensor && (collection == "shape" || collection == "strides")) {
+    return {{"value", ValueType::kUInt64}};
+  }
+
+  if (type_ == Type::kOccupancyGrid && collection == "data") {
+    const auto& message = *get<OccupancyGrid>();
+
+    switch (message.cell_type()) {
+      case OccupancyGrid::kCellInt8:
+        return {{"value", ValueType::kInt64, message.cell_type(), message.cell_size()}};
+      case OccupancyGrid::kCellUint8:
+      case OccupancyGrid::kCellUint16:
+        return {{"value", ValueType::kUInt64, message.cell_type(), message.cell_size()}};
+      case OccupancyGrid::kCellFloat32:
+        return {{"value", ValueType::kDouble, message.cell_type(), message.cell_size()}};
+      default:
+        return {};
+    }
+  }
+
+  if (type_ == Type::kAudioFrame && collection == "data") {
+    const auto& message = *get<AudioFrame>();
+
+    switch (message.format()) {
+      case AudioFrame::kFormatPcmU8:
+        return {{"value", ValueType::kUInt64, message.format(), static_cast<uint16_t>(sizeof(uint8_t))}};
+      case AudioFrame::kFormatPcmS16:
+        return {{"value", ValueType::kInt64, message.format(), static_cast<uint16_t>(sizeof(int16_t))}};
+      case AudioFrame::kFormatPcmS24:
+        return {{"value", ValueType::kInt64, message.format(), 3}};
+      case AudioFrame::kFormatPcmS32:
+        return {{"value", ValueType::kInt64, message.format(), static_cast<uint16_t>(sizeof(int32_t))}};
+      case AudioFrame::kFormatPcmF32:
+        return {{"value", ValueType::kDouble, message.format(), static_cast<uint16_t>(sizeof(float))}};
+      default:
+        return {};
+    }
+  }
+
+  if (type_ == Type::kObjectArray && collection == "data") {
+    return {{"label", ValueType::kString},
+            {"position[0]", ValueType::kDouble},
+            {"position[1]", ValueType::kDouble},
+            {"position[2]", ValueType::kDouble},
+            {"yaw", ValueType::kDouble},
+            {"size[0]", ValueType::kDouble},
+            {"size[1]", ValueType::kDouble},
+            {"size[2]", ValueType::kDouble},
+            {"yaw_rate", ValueType::kDouble},
+            {"velocity[0]", ValueType::kDouble},
+            {"velocity[1]", ValueType::kDouble},
+            {"velocity[2]", ValueType::kDouble},
+            {"score", ValueType::kDouble},
+            {"acceleration[0]", ValueType::kDouble},
+            {"acceleration[1]", ValueType::kDouble},
+            {"acceleration[2]", ValueType::kDouble},
+            {"existence_probability", ValueType::kDouble},
+            {"position_covariance[0]", ValueType::kDouble},
+            {"position_covariance[1]", ValueType::kDouble},
+            {"position_covariance[2]", ValueType::kDouble},
+            {"position_covariance[3]", ValueType::kDouble},
+            {"position_covariance[4]", ValueType::kDouble},
+            {"position_covariance[5]", ValueType::kDouble},
+            {"class_id", ValueType::kUInt64},
+            {"track_id", ValueType::kUInt64},
+            {"age", ValueType::kUInt64},
+            {"num_observations", ValueType::kUInt64},
+            {"motion_state", ValueType::kUInt64},
+            {"source_type", ValueType::kUInt64},
+            {"subtype_id", ValueType::kUInt64},
+            {"reserved", ValueType::kUInt64}};
+  }
+
+  return {};
+}
+
+static std::string format_integer(const MessageParser::Value& value, bool hex) {
+  if (const auto* number = std::get_if<int64_t>(&value)) {
+    return hex ? Helpers::format_hex_number(*number) : std::to_string(*number);
+  }
+
+  if (const auto* number = std::get_if<uint64_t>(&value)) {
+    return hex ? Helpers::format_hex_number(*number) : std::to_string(*number);
+  }
+
+  if (const auto* number = std::get_if<double>(&value)) {
+    return std::to_string(*number);
+  }
+
+  return {};
+}
+
+static std::string_view enum_label(MessageParser::EnumKind kind, uint64_t value) {
+  switch (kind) {
+    case MessageParser::EnumKind::kEnumCameraFormat:
+      return NameDetector::get_enum(static_cast<CameraFrame::Format>(value));
+    case MessageParser::EnumKind::kEnumCameraStream:
+      return NameDetector::get_enum(static_cast<CameraFrame::Stream>(value));
+    case MessageParser::EnumKind::kEnumGridCellType:
+      return NameDetector::get_enum(static_cast<OccupancyGrid::CellType>(value));
+    case MessageParser::EnumKind::kEnumTensorDataType:
+      return NameDetector::get_enum(static_cast<Tensor::DataType>(value));
+    case MessageParser::EnumKind::kEnumTensorDevice:
+      return NameDetector::get_enum(static_cast<Tensor::Device>(value));
+    case MessageParser::EnumKind::kEnumAudioFormat:
+      return NameDetector::get_enum(static_cast<AudioFrame::Format>(value));
+    case MessageParser::EnumKind::kEnumAudioLayout:
+      return NameDetector::get_enum(static_cast<AudioFrame::Layout>(value));
+    default:
+      return {};
+  }
+}
+
+static std::string format_scalar(const MessageParser& parser, const MessageParser::Field& field,
+                                 const MessageFormatOptions& options) {
+  MessageParser::Value value;
+
+  if VUNLIKELY (!parser.value(field.name, value)) {
+    return {};
+  }
+
+  if (const auto* text = std::get_if<std::string>(&value)) {
+    return *text;
+  }
+
+  if (field.is_bool) {
+    const auto* number = std::get_if<uint64_t>(&value);
+    return number != nullptr && *number != 0 ? "true" : "false";
+  }
+
+  if (field.enum_kind != MessageParser::EnumKind::kEnumNone) {
+    const auto* number = std::get_if<uint64_t>(&value);
+    const uint64_t raw = number != nullptr ? *number : 0;
+    return options.enum_name ? std::string(enum_label(field.enum_kind, raw)) : std::to_string(raw);
+  }
+
+  if (field.is_time) {
+    const auto* number = std::get_if<uint64_t>(&value);
+    const uint64_t raw = number != nullptr ? *number : 0;
+
+    if (options.date) {
+      return Helpers::format_date(static_cast<int64_t>(raw));
+    }
+
+    return options.hex ? Helpers::format_hex_number(raw) : std::to_string(raw);
+  }
+
+  return format_integer(value, options.hex);
+}
+
+static std::string format_pointcloud_protocol(const MessageParser& parser) {
+  static constexpr std::array<std::string_view, 12> kTypeNames = {
+      "unknown", "bool", "int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64", "float", "double"};
+
+  const auto fields = parser.element_fields("data");
+
+  uint64_t extent = 0;
+  MessageParser::Value extent_value;
+
+  if (parser.value("extent", extent_value)) {
+    if (const auto* number = std::get_if<uint64_t>(&extent_value)) {
+      extent = *number;
+    }
+  }
+
+  std::string size_list;
+  std::string name_list;
+  std::string type_list;
+
+  for (size_t i = 0; i < fields.size(); ++i) {
+    if (i != 0) {
+      size_list += ",";
+      name_list += ",";
+      type_list += ",";
+    }
+
+    const auto& field = fields[i];
+    auto native_type = field.native_type;
+
+    if (extent != 0 && i < 3 && native_type == PointCloud::kInt16Type && field.storage_size == sizeof(int16_t)) {
+      native_type = PointCloud::kFloatType;
+    }
+
+    size_list += std::to_string(field.storage_size);
+    name_list += field.name;
+    type_list += native_type < kTypeNames.size() ? std::string(kTypeNames[native_type]) : "unknown";
+  }
+
+  std::string result = "protocol {\n";
+  result += "  size_list: " + size_list + "\n";
+  result += "  name_list: " + name_list + "\n";
+  result += "  type_list: " + type_list + "\n";
+  result += "}\n";
+
+  return result;
+}
+
+static std::string format_tensor_shape(const MessageParser& parser) {
+  std::string shape = "[";
+  const size_t count = parser.collection_size("shape");
+
+  for (size_t d = 0; d < count; ++d) {
+    if (d != 0) {
+      shape += ", ";
+    }
+
+    MessageParser::Value value;
+
+    if (parser.value("shape", d, std::string_view{}, value)) {
+      if (const auto* number = std::get_if<uint64_t>(&value)) {
+        shape += std::to_string(*number);
+      }
+    }
+  }
+
+  shape += "]";
+
+  return "shape: " + shape + "\n";
+}
+
+static std::string format_pointcloud_points(const MessageParser& parser, const MessageFormatOptions& options,
+                                            bool* truncated) {
+  const auto fields = parser.element_fields("data");
+  const size_t total = parser.collection_size("data");
+  const size_t count = std::min(total, options.max_elements);
+
+  if (truncated != nullptr && total > options.max_elements) {
+    *truncated = true;
+  }
+
+  std::string result;
+
+  for (size_t i = 0; i < count; ++i) {
+    result += "data[" + std::to_string(i) + "] {\n";
+
+    for (const auto& field : fields) {
+      MessageParser::Value value;
+      std::string text;
+
+      if (parser.value("data", i, field, value)) {
+        if (field.is_bool) {
+          const auto* number = std::get_if<uint64_t>(&value);
+          text = number != nullptr && *number != 0 ? "true" : "false";
+        } else {
+          text = format_integer(value, options.hex);
+        }
+      }
+
+      result += "  " + field.name + ": " + text + "\n";
+    }
+
+    result += "}\n";
+  }
+
+  return result;
+}
+
+MessageParser::Type MessageParser::detect_type(std::string_view serialized_type) noexcept {
+  static constexpr std::pair<std::string_view, Type> kTypes[] = {
+      {"RawData", Type::kRawData},         {"CameraFrame", Type::kCameraFrame},     {"PointCloud", Type::kPointCloud},
+      {"ProxyData", Type::kProxyData},     {"OccupancyGrid", Type::kOccupancyGrid}, {"Tensor", Type::kTensor},
+      {"ObjectArray", Type::kObjectArray}, {"AudioFrame", Type::kAudioFrame},
+  };
+
+  for (const auto& [name, type] : kTypes) {
+    if (serialized_type == name) {
+      return type;
+    }
+
+    if (serialized_type.size() <= name.size()) {
+      continue;
+    }
+
+    const size_t offset = serialized_type.size() - name.size();
+    const char separator = serialized_type[offset - 1];
+
+    if ((separator == '.' || separator == ':' || separator == '/') && serialized_type.substr(offset) == name) {
+      return type;
+    }
+  }
+
+  return Type::kUnknown;
+}
+
+std::string_view MessageParser::type_name(Type type) noexcept {
+  switch (type) {
+    case Type::kRawData:
+      return "RawData";
+    case Type::kCameraFrame:
+      return "CameraFrame";
+    case Type::kPointCloud:
+      return "PointCloud";
+    case Type::kProxyData:
+      return "ProxyData";
+    case Type::kOccupancyGrid:
+      return "OccupancyGrid";
+    case Type::kTensor:
+      return "Tensor";
+    case Type::kObjectArray:
+      return "ObjectArray";
+    case Type::kAudioFrame:
+      return "AudioFrame";
+    default:
+      return {};
+  }
 }
 
 bool MessageParser::root_value(std::string_view path, Value& out) const {
@@ -1427,509 +1930,6 @@ bool MessageParser::point_value(size_t index, const Field& field, Value& out) co
     default:
       return false;
   }
-}
-
-size_t MessageParser::collection_size(std::string_view collection) const noexcept {
-  collection = normalize_collection(collection);
-
-  if (type_ == Type::kPointCloud && collection == "data") {
-    return get<PointCloud>()->size();
-  }
-
-  if (type_ == Type::kObjectArray && collection == "data") {
-    return get<ObjectArray>()->count();
-  }
-
-  if (type_ == Type::kOccupancyGrid && collection == "data") {
-    const auto& message = *get<OccupancyGrid>();
-
-    if VUNLIKELY (message.cell_size() == 0) {
-      return 0;
-    }
-
-    const size_t payload_count = message.size() / message.cell_size();
-    const size_t declared_count = static_cast<size_t>(message.width()) * message.height();
-    return std::min(payload_count, declared_count);
-  }
-
-  if (type_ == Type::kTensor) {
-    const auto& message = *get<Tensor>();
-
-    if (collection == "shape" || collection == "strides") {
-      return message.rank();
-    }
-
-    if (collection == "data" && message.element_size() != 0) {
-      return std::min<size_t>(message.num_elements(), message.size() / message.element_size());
-    }
-  }
-
-  if (type_ == Type::kAudioFrame && collection == "data") {
-    const auto& message = *get<AudioFrame>();
-    const size_t element_size = audio_element_size(message.format());
-
-    if VUNLIKELY (element_size == 0 || message.bit_depth() != element_size * 8U) {
-      return 0;
-    }
-
-    return message.size() / element_size;
-  }
-
-  return 0;
-}
-
-std::vector<MessageParser::Field> MessageParser::fields() const {
-  std::vector<Field> result;
-
-  if VUNLIKELY (!valid()) {
-    return result;
-  }
-
-  const auto add_text = [&result](std::string_view name) { result.push_back({std::string(name), ValueType::kString}); };
-
-  const auto add_number = [&result](std::string_view name, ValueType type) {
-    result.push_back({std::string(name), type});
-  };
-
-  const auto add_bytes = [&result](std::string_view name) { result.push_back({std::string(name), ValueType::kBytes}); };
-
-  const auto add_time = [&result](std::string_view name) {
-    Field field{std::string(name), ValueType::kUInt64};
-    field.is_time = true;
-    result.push_back(std::move(field));
-  };
-
-  const auto add_bool = [&result](std::string_view name) {
-    Field field{std::string(name), ValueType::kUInt64};
-    field.is_bool = true;
-    result.push_back(std::move(field));
-  };
-
-  const auto add_enum = [&result](std::string_view name, EnumKind kind) {
-    Field field{std::string(name), ValueType::kUInt64};
-    field.enum_kind = kind;
-    result.push_back(std::move(field));
-  };
-
-  const auto add_reserved = [&result](std::string_view name) {
-    Field field{std::string(name), ValueType::kUInt64};
-    field.is_reserved = true;
-    result.push_back(std::move(field));
-  };
-
-  if (type_ != Type::kProxyData) {
-    add_text("header.frame_id");
-    add_number("header.seq", ValueType::kUInt64);
-    add_reserved("header.reserved");
-    add_time("header.time_meas");
-    add_time("header.time_pub");
-  }
-
-  switch (type_) {
-    case Type::kRawData:
-      add_number("size", ValueType::kUInt64);
-      add_reserved("reserved");
-      add_bytes("data");
-      break;
-
-    case Type::kCameraFrame:
-      add_number("channel", ValueType::kUInt64);
-      add_number("height", ValueType::kUInt64);
-      add_number("width", ValueType::kUInt64);
-      add_number("freq", ValueType::kUInt64);
-      add_enum("format", EnumKind::kEnumCameraFormat);
-      add_enum("stream", EnumKind::kEnumCameraStream);
-      add_number("size", ValueType::kUInt64);
-      add_reserved("reserved");
-      add_bytes("data");
-      break;
-
-    case Type::kPointCloud:
-      add_number("size", ValueType::kUInt64);
-      add_number("pack_size", ValueType::kUInt64);
-      add_number("extent", ValueType::kUInt64);
-      add_number("downsample", ValueType::kUInt64);
-      add_bool("vertical");
-      add_reserved("reserved_size");
-      add_reserved("reserved");
-      add_reserved("reserved2");
-      add_reserved("reserved3");
-      add_bytes("data");
-      break;
-
-    case Type::kProxyData:
-      add_number("control_id", ValueType::kUInt64);
-      add_number("mode", ValueType::kUInt64);
-      add_number("timestamp", ValueType::kInt64);
-      add_number("seq", ValueType::kInt64);
-      add_number("schema", ValueType::kUInt64);
-      add_text("url");
-      add_text("ser");
-      add_text("hostname");
-      add_number("size", ValueType::kUInt64);
-      add_reserved("reserved");
-      add_reserved("reserved2");
-      add_bytes("raw");
-      break;
-
-    case Type::kOccupancyGrid:
-      add_text("map_id");
-      add_number("width", ValueType::kUInt64);
-      add_number("height", ValueType::kUInt64);
-      add_number("channel", ValueType::kUInt64);
-      add_number("freq", ValueType::kUInt64);
-      add_number("valid_cell_count", ValueType::kUInt64);
-      add_number("default_value", ValueType::kInt64);
-      add_number("resolution", ValueType::kDouble);
-      add_number("origin_x", ValueType::kDouble);
-      add_number("origin_y", ValueType::kDouble);
-      add_number("origin_z", ValueType::kDouble);
-      add_number("origin_yaw", ValueType::kDouble);
-      add_number("value_min", ValueType::kDouble);
-      add_number("value_max", ValueType::kDouble);
-      add_number("occupied_threshold", ValueType::kDouble);
-      add_number("free_threshold", ValueType::kDouble);
-      add_enum("cell_type", EnumKind::kEnumGridCellType);
-      add_number("cell_size", ValueType::kUInt64);
-      add_time("update_time_ns");
-      add_number("size", ValueType::kUInt64);
-      add_reserved("reserved");
-      add_reserved("reserved2");
-      add_reserved("reserved3");
-      add_bytes("data");
-      break;
-
-    case Type::kTensor:
-      add_text("name");
-      add_text("model_id");
-      add_text("layout");
-      add_enum("dtype", EnumKind::kEnumTensorDataType);
-      add_enum("device", EnumKind::kEnumTensorDevice);
-      add_number("rank", ValueType::kUInt64);
-      add_number("num_elements", ValueType::kUInt64);
-      add_number("element_size", ValueType::kUInt64);
-      add_number("batch_size", ValueType::kUInt64);
-      add_number("channel", ValueType::kUInt64);
-      add_number("freq", ValueType::kUInt64);
-      add_number("quant_zero_point", ValueType::kInt64);
-      add_number("quant_scale", ValueType::kDouble);
-      add_time("update_time_ns");
-      add_number("size", ValueType::kUInt64);
-      add_reserved("reserved");
-      add_reserved("reserved2");
-      add_reserved("reserved3");
-      add_bytes("data");
-      break;
-
-    case Type::kObjectArray:
-      add_text("source_id");
-      add_number("channel", ValueType::kUInt64);
-      add_number("freq", ValueType::kUInt64);
-      add_number("count", ValueType::kUInt64);
-      add_number("pack_size", ValueType::kUInt64);
-      add_time("update_time_ns");
-      add_number("size", ValueType::kUInt64);
-      add_reserved("reserved");
-      add_reserved("reserved2");
-      add_reserved("reserved3");
-      add_reserved("reserved4");
-      add_reserved("reserved5");
-      add_bytes("data");
-      break;
-
-    case Type::kAudioFrame:
-      add_text("codec");
-      add_text("language");
-      add_number("channel", ValueType::kUInt64);
-      add_number("freq", ValueType::kUInt64);
-      add_number("sample_rate", ValueType::kUInt64);
-      add_number("num_samples", ValueType::kUInt64);
-      add_number("num_channels", ValueType::kUInt64);
-      add_number("bit_depth", ValueType::kUInt64);
-      add_number("bitrate", ValueType::kUInt64);
-      add_enum("format", EnumKind::kEnumAudioFormat);
-      add_enum("layout", EnumKind::kEnumAudioLayout);
-      add_number("duration_ns", ValueType::kUInt64);
-      add_time("update_time_ns");
-      add_number("size", ValueType::kUInt64);
-      add_reserved("reserved");
-      add_reserved("reserved2");
-      add_bytes("data");
-      break;
-    default:
-      break;
-  }
-
-  return result;
-}
-
-std::vector<MessageParser::Field> MessageParser::element_fields(std::string_view collection) const {
-  collection = normalize_collection(collection);
-
-  if (type_ == Type::kPointCloud && collection == "data") {
-    return point_fields_;
-  }
-
-  if (type_ == Type::kTensor && collection == "data") {
-    const auto& message = *get<Tensor>();
-    return {{"value", tensor_value_type(message.dtype()), message.dtype(), message.element_size()}};
-  }
-
-  if (type_ == Type::kTensor && (collection == "shape" || collection == "strides")) {
-    return {{"value", ValueType::kUInt64}};
-  }
-
-  if (type_ == Type::kOccupancyGrid && collection == "data") {
-    const auto& message = *get<OccupancyGrid>();
-
-    switch (message.cell_type()) {
-      case OccupancyGrid::kCellInt8:
-        return {{"value", ValueType::kInt64, message.cell_type(), message.cell_size()}};
-      case OccupancyGrid::kCellUint8:
-      case OccupancyGrid::kCellUint16:
-        return {{"value", ValueType::kUInt64, message.cell_type(), message.cell_size()}};
-      case OccupancyGrid::kCellFloat32:
-        return {{"value", ValueType::kDouble, message.cell_type(), message.cell_size()}};
-      default:
-        return {};
-    }
-  }
-
-  if (type_ == Type::kAudioFrame && collection == "data") {
-    const auto& message = *get<AudioFrame>();
-
-    switch (message.format()) {
-      case AudioFrame::kFormatPcmU8:
-        return {{"value", ValueType::kUInt64, message.format(), static_cast<uint16_t>(sizeof(uint8_t))}};
-      case AudioFrame::kFormatPcmS16:
-        return {{"value", ValueType::kInt64, message.format(), static_cast<uint16_t>(sizeof(int16_t))}};
-      case AudioFrame::kFormatPcmS24:
-        return {{"value", ValueType::kInt64, message.format(), 3}};
-      case AudioFrame::kFormatPcmS32:
-        return {{"value", ValueType::kInt64, message.format(), static_cast<uint16_t>(sizeof(int32_t))}};
-      case AudioFrame::kFormatPcmF32:
-        return {{"value", ValueType::kDouble, message.format(), static_cast<uint16_t>(sizeof(float))}};
-      default:
-        return {};
-    }
-  }
-
-  if (type_ == Type::kObjectArray && collection == "data") {
-    return {{"label", ValueType::kString},
-            {"position[0]", ValueType::kDouble},
-            {"position[1]", ValueType::kDouble},
-            {"position[2]", ValueType::kDouble},
-            {"yaw", ValueType::kDouble},
-            {"size[0]", ValueType::kDouble},
-            {"size[1]", ValueType::kDouble},
-            {"size[2]", ValueType::kDouble},
-            {"yaw_rate", ValueType::kDouble},
-            {"velocity[0]", ValueType::kDouble},
-            {"velocity[1]", ValueType::kDouble},
-            {"velocity[2]", ValueType::kDouble},
-            {"score", ValueType::kDouble},
-            {"acceleration[0]", ValueType::kDouble},
-            {"acceleration[1]", ValueType::kDouble},
-            {"acceleration[2]", ValueType::kDouble},
-            {"existence_probability", ValueType::kDouble},
-            {"position_covariance[0]", ValueType::kDouble},
-            {"position_covariance[1]", ValueType::kDouble},
-            {"position_covariance[2]", ValueType::kDouble},
-            {"position_covariance[3]", ValueType::kDouble},
-            {"position_covariance[4]", ValueType::kDouble},
-            {"position_covariance[5]", ValueType::kDouble},
-            {"class_id", ValueType::kUInt64},
-            {"track_id", ValueType::kUInt64},
-            {"age", ValueType::kUInt64},
-            {"num_observations", ValueType::kUInt64},
-            {"motion_state", ValueType::kUInt64},
-            {"source_type", ValueType::kUInt64},
-            {"subtype_id", ValueType::kUInt64},
-            {"reserved", ValueType::kUInt64}};
-  }
-
-  return {};
-}
-
-static std::string format_integer(const MessageParser::Value& value, bool hex) {
-  if (const auto* number = std::get_if<int64_t>(&value)) {
-    return hex ? Helpers::format_hex_number(*number) : std::to_string(*number);
-  }
-
-  if (const auto* number = std::get_if<uint64_t>(&value)) {
-    return hex ? Helpers::format_hex_number(*number) : std::to_string(*number);
-  }
-
-  if (const auto* number = std::get_if<double>(&value)) {
-    return std::to_string(*number);
-  }
-
-  return {};
-}
-
-static std::string_view enum_label(MessageParser::EnumKind kind, uint64_t value) {
-  switch (kind) {
-    case MessageParser::EnumKind::kEnumCameraFormat:
-      return NameDetector::get_enum(static_cast<CameraFrame::Format>(value));
-    case MessageParser::EnumKind::kEnumCameraStream:
-      return NameDetector::get_enum(static_cast<CameraFrame::Stream>(value));
-    case MessageParser::EnumKind::kEnumGridCellType:
-      return NameDetector::get_enum(static_cast<OccupancyGrid::CellType>(value));
-    case MessageParser::EnumKind::kEnumTensorDataType:
-      return NameDetector::get_enum(static_cast<Tensor::DataType>(value));
-    case MessageParser::EnumKind::kEnumTensorDevice:
-      return NameDetector::get_enum(static_cast<Tensor::Device>(value));
-    case MessageParser::EnumKind::kEnumAudioFormat:
-      return NameDetector::get_enum(static_cast<AudioFrame::Format>(value));
-    case MessageParser::EnumKind::kEnumAudioLayout:
-      return NameDetector::get_enum(static_cast<AudioFrame::Layout>(value));
-    default:
-      return {};
-  }
-}
-
-static std::string format_scalar(const MessageParser& parser, const MessageParser::Field& field,
-                                 const MessageFormatOptions& options) {
-  MessageParser::Value value;
-
-  if VUNLIKELY (!parser.value(field.name, value)) {
-    return {};
-  }
-
-  if (const auto* text = std::get_if<std::string>(&value)) {
-    return *text;
-  }
-
-  if (field.is_bool) {
-    const auto* number = std::get_if<uint64_t>(&value);
-    return number != nullptr && *number != 0 ? "true" : "false";
-  }
-
-  if (field.enum_kind != MessageParser::EnumKind::kEnumNone) {
-    const auto* number = std::get_if<uint64_t>(&value);
-    const uint64_t raw = number != nullptr ? *number : 0;
-    return options.enum_name ? std::string(enum_label(field.enum_kind, raw)) : std::to_string(raw);
-  }
-
-  if (field.is_time) {
-    const auto* number = std::get_if<uint64_t>(&value);
-    const uint64_t raw = number != nullptr ? *number : 0;
-
-    if (options.date) {
-      return Helpers::format_date(static_cast<int64_t>(raw));
-    }
-
-    return options.hex ? Helpers::format_hex_number(raw) : std::to_string(raw);
-  }
-
-  return format_integer(value, options.hex);
-}
-
-static std::string format_pointcloud_protocol(const MessageParser& parser) {
-  static constexpr std::array<std::string_view, 12> kTypeNames = {
-      "unknown", "bool", "int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64", "float", "double"};
-
-  const auto fields = parser.element_fields("data");
-
-  uint64_t extent = 0;
-  MessageParser::Value extent_value;
-
-  if (parser.value("extent", extent_value)) {
-    if (const auto* number = std::get_if<uint64_t>(&extent_value)) {
-      extent = *number;
-    }
-  }
-
-  std::string size_list;
-  std::string name_list;
-  std::string type_list;
-
-  for (size_t i = 0; i < fields.size(); ++i) {
-    if (i != 0) {
-      size_list += ",";
-      name_list += ",";
-      type_list += ",";
-    }
-
-    const auto& field = fields[i];
-    auto native_type = field.native_type;
-
-    if (extent != 0 && i < 3 && native_type == PointCloud::kInt16Type && field.storage_size == sizeof(int16_t)) {
-      native_type = PointCloud::kFloatType;
-    }
-
-    size_list += std::to_string(field.storage_size);
-    name_list += field.name;
-    type_list += native_type < kTypeNames.size() ? std::string(kTypeNames[native_type]) : "unknown";
-  }
-
-  std::string result = "protocol {\n";
-  result += "  size_list: " + size_list + "\n";
-  result += "  name_list: " + name_list + "\n";
-  result += "  type_list: " + type_list + "\n";
-  result += "}\n";
-
-  return result;
-}
-
-static std::string format_tensor_shape(const MessageParser& parser) {
-  std::string shape = "[";
-  const size_t count = parser.collection_size("shape");
-
-  for (size_t d = 0; d < count; ++d) {
-    if (d != 0) {
-      shape += ", ";
-    }
-
-    MessageParser::Value value;
-
-    if (parser.value("shape", d, std::string_view{}, value)) {
-      if (const auto* number = std::get_if<uint64_t>(&value)) {
-        shape += std::to_string(*number);
-      }
-    }
-  }
-
-  shape += "]";
-
-  return "shape: " + shape + "\n";
-}
-
-static std::string format_pointcloud_points(const MessageParser& parser, const MessageFormatOptions& options,
-                                            bool* truncated) {
-  const auto fields = parser.element_fields("data");
-  const size_t total = parser.collection_size("data");
-  const size_t count = std::min(total, options.max_elements);
-
-  if (truncated != nullptr && total > options.max_elements) {
-    *truncated = true;
-  }
-
-  std::string result;
-
-  for (size_t i = 0; i < count; ++i) {
-    result += "data[" + std::to_string(i) + "] {\n";
-
-    for (const auto& field : fields) {
-      MessageParser::Value value;
-      std::string text;
-
-      if (parser.value("data", i, field, value)) {
-        if (field.is_bool) {
-          const auto* number = std::get_if<uint64_t>(&value);
-          text = number != nullptr && *number != 0 ? "true" : "false";
-        } else {
-          text = format_integer(value, options.hex);
-        }
-      }
-
-      result += "  " + field.name + ": " + text + "\n";
-    }
-
-    result += "}\n";
-  }
-
-  return result;
 }
 
 std::string format_message(const MessageParser& parser, const MessageFormatOptions& options, bool* truncated) {

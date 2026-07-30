@@ -77,18 +77,6 @@ Schedule::Status& Schedule::Status::operator=(Status&& status) noexcept {
   return *this;
 }
 
-void Schedule::Status::commit() noexcept {
-  if (!impl_ || committed_) {
-    return;
-  }
-
-  committed_ = true;
-
-  if VLIKELY (launcher_) {
-    launcher_();
-  }
-}
-
 void Schedule::Status::set_valid(bool valid) {
   if VLIKELY (impl_) {
     impl_->is_valid.store(valid, std::memory_order_relaxed);
@@ -101,26 +89,6 @@ bool Schedule::Status::dispatch() {
   commit();
 
   return is_valid();
-}
-
-Schedule::Status& Schedule::Status::on_execution_timeout(Callback&& callback) {
-  if VLIKELY (is_valid()) {
-    std::lock_guard lock(impl_->mtx);
-
-    if VUNLIKELY (impl_->dispatched.load(std::memory_order_acquire)) {
-      VLOG_E("Schedule: on_execution_timeout registered after dispatch; ignored.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      return *this;                                                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    if VUNLIKELY (impl_->execution_timeout_callback) {
-      VLOG_E("Schedule: Execution timeout callback is already set.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      return *this;                                                    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    impl_->execution_timeout_callback = std::move(callback);
-  }
-
-  return *this;
 }
 
 Schedule::Status& Schedule::Status::on_schedule_timeout(Callback&& callback) {
@@ -138,6 +106,26 @@ Schedule::Status& Schedule::Status::on_schedule_timeout(Callback&& callback) {
     }
 
     impl_->schedule_timeout_callback = std::move(callback);
+  }
+
+  return *this;
+}
+
+Schedule::Status& Schedule::Status::on_execution_timeout(Callback&& callback) {
+  if VLIKELY (is_valid()) {
+    std::lock_guard lock(impl_->mtx);
+
+    if VUNLIKELY (impl_->dispatched.load(std::memory_order_acquire)) {
+      VLOG_E("Schedule: on_execution_timeout registered after dispatch; ignored.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      return *this;                                                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    if VUNLIKELY (impl_->execution_timeout_callback) {
+      VLOG_E("Schedule: Execution timeout callback is already set.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      return *this;                                                    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    impl_->execution_timeout_callback = std::move(callback);
   }
 
   return *this;
@@ -161,6 +149,18 @@ Schedule::Status& Schedule::Status::on_catch(CatchCallback&& callback) {
   }
 
   return *this;
+}
+
+void Schedule::Status::commit() noexcept {
+  if (!impl_ || committed_) {
+    return;
+  }
+
+  committed_ = true;
+
+  if VLIKELY (launcher_) {
+    launcher_();
+  }
 }
 
 // Schedule::RetStatus

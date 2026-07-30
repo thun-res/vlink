@@ -236,11 +236,11 @@ struct Plugin::Impl final {
 // Plugin
 Plugin::Plugin() : impl_(std::make_unique<Impl>()) {}
 
+Plugin::~Plugin() = default;
+
 void Plugin::set_log_level(Logger::Level level) { impl_->log_level.store(level, std::memory_order_release); }
 
 Logger::Level Plugin::get_log_level() const { return impl_->log_level.load(std::memory_order_acquire); }
-
-Plugin::~Plugin() = default;
 
 std::deque<std::string> Plugin::default_search_path() {
   const std::string current_dir = get_current_dir();
@@ -270,6 +270,34 @@ std::deque<std::string> Plugin::default_search_path() {
 void Plugin::clear() {
   std::lock_guard lock(impl_->mtx);
   impl_->plugin_map.clear();
+}
+
+bool Plugin::process_plugin_internal(const std::string& lib_name, const std::string& local_plugin_id,
+                                     uint16_t local_version_major, uint16_t local_version_minor,
+                                     const std::string& target_plugin_id, uint16_t target_version_major,
+                                     uint16_t target_version_minor, uint8_t log_level) {
+  if (log_level <= Logger::kInfo) {
+    VLOG_I("Plugin: ", lib_name, "@", local_plugin_id, "#", local_version_major, ".", local_version_minor, ".");
+  }
+
+  if VUNLIKELY (target_plugin_id.empty() || target_plugin_id != local_plugin_id) {
+    if (log_level <= Logger::kError) {
+      VLOG_E("Plugin: Plugin id mismatch: expected '", local_plugin_id, "', got '", target_plugin_id, "'.");
+    }
+
+    return false;
+  }
+
+  if VUNLIKELY (target_version_major != local_version_major || target_version_minor > local_version_minor) {
+    if (log_level <= Logger::kError) {
+      VLOG_E("Plugin: Version mismatch: local ", local_version_major, ".", local_version_minor, ", required ",
+             target_version_major, ".", target_version_minor, ".");
+    }
+
+    return false;
+  }
+
+  return true;
 }
 
 Plugin::Handle Plugin::load_and_create(const std::string& plugin_id, const std::string& lib_name,
@@ -500,34 +528,6 @@ bool Plugin::destroy(std::shared_ptr<PluginEntry> plugin_entry, Handle handle, c
     return false;
   }
   // LCOV_EXCL_STOP GCOVR_EXCL_STOP
-
-  return true;
-}
-
-bool Plugin::process_plugin_internal(const std::string& lib_name, const std::string& local_plugin_id,
-                                     uint16_t local_version_major, uint16_t local_version_minor,
-                                     const std::string& target_plugin_id, uint16_t target_version_major,
-                                     uint16_t target_version_minor, uint8_t log_level) {
-  if (log_level <= Logger::kInfo) {
-    VLOG_I("Plugin: ", lib_name, "@", local_plugin_id, "#", local_version_major, ".", local_version_minor, ".");
-  }
-
-  if VUNLIKELY (target_plugin_id.empty() || target_plugin_id != local_plugin_id) {
-    if (log_level <= Logger::kError) {
-      VLOG_E("Plugin: Plugin id mismatch: expected '", local_plugin_id, "', got '", target_plugin_id, "'.");
-    }
-
-    return false;
-  }
-
-  if VUNLIKELY (target_version_major != local_version_major || target_version_minor > local_version_minor) {
-    if (log_level <= Logger::kError) {
-      VLOG_E("Plugin: Version mismatch: local ", local_version_major, ".", local_version_minor, ", required ",
-             target_version_major, ".", target_version_minor, ".");
-    }
-
-    return false;
-  }
 
   return true;
 }

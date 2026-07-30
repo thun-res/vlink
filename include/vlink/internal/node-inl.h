@@ -84,6 +84,11 @@ inline bool Node<ImplT, SecT>::deinit() {
 }
 
 template <typename ImplT, SecurityType SecT>
+inline void Node<ImplT, SecT>::interrupt() {
+  return impl_->interrupt();
+}
+
+template <typename ImplT, SecurityType SecT>
 inline bool Node<ImplT, SecT>::has_inited() const {
   return has_inited_.load(std::memory_order_acquire);
 }
@@ -133,11 +138,6 @@ inline bool Node<ImplT, SecT>::detach() {
 template <typename ImplT, SecurityType SecT>
 inline class MessageLoop* Node<ImplT, SecT>::get_message_loop() const {
   return impl_->get_message_loop();
-}
-
-template <typename ImplT, SecurityType SecT>
-inline void Node<ImplT, SecT>::interrupt() {
-  return impl_->interrupt();
 }
 
 template <typename ImplT, SecurityType SecT>

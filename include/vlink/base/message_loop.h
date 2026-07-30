@@ -649,38 +649,6 @@ class VLINK_EXPORT MessageLoop {
 /// Details
 ////////////////////////////////////////////////////////////////
 
-inline Schedule::Callback MessageLoop::make_launcher(const Schedule::Config& config, Schedule::Callback&& wrapper,
-                                                     std::shared_ptr<Schedule::Status::Impl> impl) {
-  auto alive_state = get_alive_state();
-
-  return [this, alive_state = std::move(alive_state), config, impl = std::move(impl),
-          wrapper = std::move(wrapper)]() mutable {
-    std::lock_guard alive_lock(alive_state->mtx);
-
-    if VUNLIKELY (!alive_state->alive.load(std::memory_order_acquire)) {
-      impl->is_valid.store(false, std::memory_order_relaxed);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      return;                                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    bool post_ret = false;
-
-    {
-      std::lock_guard lock(impl->mtx);
-      impl->submit_time = std::chrono::steady_clock::now();
-    }
-
-    if (config.delay_ms > 0) {
-      post_ret = Timer::call_once(this, config.delay_ms, std::move(wrapper), config.priority);
-    } else if (get_type() == kPriorityType && config.priority != kNoPriority) {
-      post_ret = post_task_with_priority(std::move(wrapper), config.priority);
-    } else {
-      post_ret = post_task(std::move(wrapper));
-    }
-
-    impl->is_valid.store(post_ret, std::memory_order_relaxed);
-  };
-}
-
 template <typename CallbackT, typename>
 Schedule::Status MessageLoop::exec_task(const Schedule::Config& config, CallbackT&& callback) {
   Schedule::Callback wrapper_callback;
@@ -766,6 +734,38 @@ inline std::future<ResultT> MessageLoop::invoke_task_with_priority(FunctionT&& f
 
     return res;
   }
+}
+
+inline Schedule::Callback MessageLoop::make_launcher(const Schedule::Config& config, Schedule::Callback&& wrapper,
+                                                     std::shared_ptr<Schedule::Status::Impl> impl) {
+  auto alive_state = get_alive_state();
+
+  return [this, alive_state = std::move(alive_state), config, impl = std::move(impl),
+          wrapper = std::move(wrapper)]() mutable {
+    std::lock_guard alive_lock(alive_state->mtx);
+
+    if VUNLIKELY (!alive_state->alive.load(std::memory_order_acquire)) {
+      impl->is_valid.store(false, std::memory_order_relaxed);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      return;                                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    bool post_ret = false;
+
+    {
+      std::lock_guard lock(impl->mtx);
+      impl->submit_time = std::chrono::steady_clock::now();
+    }
+
+    if (config.delay_ms > 0) {
+      post_ret = Timer::call_once(this, config.delay_ms, std::move(wrapper), config.priority);
+    } else if (get_type() == kPriorityType && config.priority != kNoPriority) {
+      post_ret = post_task_with_priority(std::move(wrapper), config.priority);
+    } else {
+      post_ret = post_task(std::move(wrapper));
+    }
+
+    impl->is_valid.store(post_ret, std::memory_order_relaxed);
+  };
 }
 
 }  // namespace vlink

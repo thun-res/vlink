@@ -221,15 +221,6 @@ void Timer::restart() {
 
 void Timer::stop() { stop(true); }
 
-void Timer::stop(bool invalidate_pending) {
-  impl_->start_time.store(0, std::memory_order_release);
-  impl_->invoke_count.store(0, std::memory_order_relaxed);
-
-  if (invalidate_pending) {
-    impl_->generation.fetch_add(1, std::memory_order_acq_rel);
-  }
-}
-
 void Timer::set_strict(bool strict) { impl_->is_strict.store(strict, std::memory_order_relaxed); }
 
 void Timer::set_interval(uint32_t interval_ms) {
@@ -288,6 +279,8 @@ void Timer::set_callback(Callback&& callback) {
   impl_->callback = std::move(callback);
 }
 
+void Timer::set_priority(uint16_t priority) { impl_->priority.store(priority, std::memory_order_relaxed); }
+
 void Timer::run_callback() {
   {
     std::lock_guard lock(impl_->mtx);
@@ -333,6 +326,15 @@ void Timer::wait_for_idle() {
   });
 }
 
+void Timer::stop(bool invalidate_pending) {
+  impl_->start_time.store(0, std::memory_order_release);
+  impl_->invoke_count.store(0, std::memory_order_relaxed);
+
+  if (invalidate_pending) {
+    impl_->generation.fetch_add(1, std::memory_order_acq_rel);
+  }
+}
+
 void Timer::clear() { impl_->message_loop.store(nullptr, std::memory_order_release); }
 
 void Timer::force_to_start() {
@@ -369,8 +371,6 @@ void Timer::sub_remain_loop_count() const {
 void Timer::set_invoke_count(uint64_t invoke_count) const {
   impl_->invoke_count.store(invoke_count, std::memory_order_relaxed);
 }
-
-void Timer::set_priority(uint16_t priority) { impl_->priority.store(priority, std::memory_order_relaxed); }
 
 uint64_t Timer::get_start_time() const { return impl_->start_time.load(std::memory_order_acquire); }
 

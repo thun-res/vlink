@@ -30,13 +30,6 @@
 namespace vlink {
 
 // ObjectPoolBase
-ObjectPoolBase::ObjectPoolBase(size_t max_size, size_t initial_size, Policy policy)
-    : policy_(policy), max_size_(max_size) {
-  if VUNLIKELY (max_size_ > 0 && initial_size > max_size_) {
-    throw_invalid_size();
-  }
-}
-
 size_t ObjectPoolBase::borrowed() const {
   std::lock_guard lock(mutex_);
 
@@ -50,6 +43,13 @@ size_t ObjectPoolBase::total_created() const {
 }
 
 size_t ObjectPoolBase::max_size() const noexcept { return max_size_; }
+
+ObjectPoolBase::ObjectPoolBase(size_t max_size, size_t initial_size, Policy policy)
+    : policy_(policy), max_size_(max_size) {
+  if VUNLIKELY (max_size_ > 0 && initial_size > max_size_) {
+    throw_invalid_size();
+  }
+}
 
 void ObjectPoolBase::safe_dec_borrowed_and_live() noexcept {
   std::lock_guard lock(mutex_);

@@ -128,6 +128,39 @@ ThreadPool::Strategy ThreadPool::get_strategy() const { return impl_->strategy.l
 
 void ThreadPool::set_strategy(Strategy strategy) { impl_->strategy.store(strategy, std::memory_order_release); }
 
+bool ThreadPool::shutdown() {
+  {
+    std::lock_guard lock(impl_->mtx);
+
+    if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
+      return false;
+    }
+
+    impl_->quit_flag.store(true, std::memory_order_release);
+  }
+
+  if (impl_->type == kLockfreeType) {
+    std::unique_lock lock(impl_->mtx);
+    impl_->cv.wait(lock, [this] { return impl_->lockfree_producer_count.load(std::memory_order_acquire) == 0U; });
+  }
+
+  impl_->cv.notify_all();
+
+  const auto self_id = std::this_thread::get_id();
+
+  for (auto& thread : impl_->threads) {
+    if (thread.joinable()) {
+      if (thread.get_id() == self_id) {
+        thread.detach();
+      } else {
+        thread.join();
+      }
+    }
+  }
+
+  return true;
+}
+
 bool ThreadPool::post_task(Callback&& callback) {
   return push_task(std::move(callback), true, TaskOverflowPolicy::kUseDispatcherStrategy);
 }
@@ -155,67 +188,122 @@ TaskHandle ThreadPool::post_task_handle(Callback&& callback, const PostTaskOptio
   return handle;
 }
 
-bool ThreadPool::drop_one_normal_task() {
-  for (auto iter = impl_->normal_queue->begin(); iter != impl_->normal_queue->end(); ++iter) {
-    if (std::get<0>(*iter)) {
-      impl_->normal_queue->erase(iter);
-      return true;
-    }
+size_t ThreadPool::get_task_count() const {
+  if (impl_->type == kNormalType) {
+    std::lock_guard lock(impl_->mtx);
+    return impl_->normal_queue->size();
+  } else if (impl_->type == kLockfreeType) {
+    return impl_->lockfree_task_count.load(std::memory_order_acquire);
+  } else {
+    return 0U;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
-
-  return false;
 }
 
-bool ThreadPool::drop_one_lockfree_task(bool keep_reserved) {
-  Impl::LockfreeTaskTuple task;
+bool ThreadPool::is_in_work_thread() const { return Impl::current_thread_pool_impl_ == impl_.get(); }
 
-  if (!impl_->lockfree_queue->try_pop(task)) {
-    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+size_t ThreadPool::get_max_task_count() const { return kMaxTaskSize; }
+
+void ThreadPool::init() {
+  if (impl_->type == kNormalType) {
+    impl_->normal_queue.emplace();
+  } else if (impl_->type == kLockfreeType) {
+    const auto max_task_count = get_max_task_count();  // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
+    impl_->lockfree_queue.emplace(max_task_count);
+    impl_->lockfree_task_count.store(0U, std::memory_order_release);
   }
 
-  if (!keep_reserved) {
-    release_lockfree_task();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  if VUNLIKELY (impl_->thread_count == 0) {
+    VLOG_E("ThreadPool: Thread count is zero.");
+    impl_->quit_flag.store(true, std::memory_order_release);
+    return;
   }
 
-  return true;
-}
+  impl_->threads.reserve(impl_->thread_count);
 
-bool ThreadPool::reserve_lockfree_task(bool* was_empty) {
-  auto count = impl_->lockfree_task_count.load(std::memory_order_acquire);
-  const auto max_count = get_max_task_count();
+  for (size_t i = 0; i < impl_->thread_count; ++i) {
+    if (impl_->type == kNormalType) {
+      auto impl = impl_;
+      std::thread thread([impl] {
+        Impl::current_thread_pool_impl_ = impl.get();
 
-  while (count < max_count) {
-    if (impl_->lockfree_task_count.compare_exchange_weak(count, count + 1U, std::memory_order_acq_rel,
-                                                         std::memory_order_acquire)) {
-      if (was_empty != nullptr) {
-        *was_empty = count == 0U;
-      }
+        for (;;) {
+          Callback task;
 
-      return true;
+          {
+            std::unique_lock lock(impl->mtx);
+            impl->cv.wait(lock, [impl] {
+              return !impl->normal_queue->empty() || impl->quit_flag.load(std::memory_order_acquire);
+            });
+
+            if VUNLIKELY (impl->normal_queue->empty() && impl->quit_flag.load(std::memory_order_acquire)) {
+              break;
+            }
+
+            task = std::move(std::get<1>(impl->normal_queue->front()));
+
+            impl->normal_queue->pop_front();
+          }
+
+          if VLIKELY (task) {
+            task();
+          }
+        }
+
+        Impl::current_thread_pool_impl_ = nullptr;
+      });
+
+      impl_->threads.emplace_back(std::move(thread));
+    } else if (impl_->type == kLockfreeType) {
+      auto impl = impl_;
+      std::thread thread([impl] {
+        Impl::current_thread_pool_impl_ = impl.get();
+
+        for (;;) {
+          Impl::LockfreeTaskTuple task_tuple;
+
+          const bool has_task = impl->lockfree_queue->try_pop(task_tuple);
+
+          if (!has_task) {
+            if VUNLIKELY (impl->quit_flag.load(std::memory_order_acquire) &&
+                          impl->lockfree_task_count.load(std::memory_order_acquire) == 0U) {
+              if (impl->lockfree_producer_count.load(std::memory_order_acquire) ==
+                  0U) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                break;
+              }
+
+              std::this_thread::yield();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+              continue;
+            }
+
+            if (impl->lockfree_task_count.load(std::memory_order_acquire) != 0U) {
+              std::this_thread::yield();
+              continue;
+            }
+
+            std::unique_lock lock(impl->mtx);
+            impl->cv.wait(lock, [impl] {
+              return impl->lockfree_task_count.load(std::memory_order_acquire) != 0U ||
+                     impl->quit_flag.load(std::memory_order_acquire);
+            });
+
+            continue;
+          }
+
+          impl->lockfree_task_count.fetch_sub(1U, std::memory_order_acq_rel);
+
+          auto& task = std::get<0>(task_tuple);
+
+          if VLIKELY (task) {
+            task();
+          }
+        }
+
+        Impl::current_thread_pool_impl_ = nullptr;
+      });
+
+      impl_->threads.emplace_back(std::move(thread));
     }
   }
-
-  return false;
-}
-
-void ThreadPool::release_lockfree_task() {
-  impl_->lockfree_task_count.fetch_sub(1U, std::memory_order_acq_rel);
-}  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-
-bool ThreadPool::push_lockfree_task(Callback&& callback) {
-  for (int retry = 0; retry < kMaxLockfreePushRetry; ++retry) {
-    if VLIKELY (impl_->lockfree_queue->try_push(std::forward_as_tuple(std::move(callback)))) {
-      return true;
-    }
-
-    // LCOV_EXCL_START GCOVR_EXCL_START
-    Utils::yield_cpu();
-  }
-
-  CLOG_E("ThreadPool: Failed to push lockfree task after %d retries (%s).", kMaxLockfreePushRetry, impl_->name.c_str());
-
-  return false;
-  // LCOV_EXCL_STOP GCOVR_EXCL_STOP
 }
 
 bool ThreadPool::push_task(Callback&& callback, bool droppable, TaskOverflowPolicy overflow_policy,
@@ -434,155 +522,67 @@ bool ThreadPool::push_task(Callback&& callback, bool droppable, TaskOverflowPoli
   return !is_full;
 }
 
-size_t ThreadPool::get_task_count() const {
-  if (impl_->type == kNormalType) {
-    std::lock_guard lock(impl_->mtx);
-    return impl_->normal_queue->size();
-  } else if (impl_->type == kLockfreeType) {
-    return impl_->lockfree_task_count.load(std::memory_order_acquire);
-  } else {
-    return 0U;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+bool ThreadPool::drop_one_normal_task() {
+  for (auto iter = impl_->normal_queue->begin(); iter != impl_->normal_queue->end(); ++iter) {
+    if (std::get<0>(*iter)) {
+      impl_->normal_queue->erase(iter);
+      return true;
+    }
   }
+
+  return false;
 }
 
-bool ThreadPool::is_in_work_thread() const { return Impl::current_thread_pool_impl_ == impl_.get(); }
+bool ThreadPool::drop_one_lockfree_task(bool keep_reserved) {
+  Impl::LockfreeTaskTuple task;
 
-size_t ThreadPool::get_max_task_count() const { return kMaxTaskSize; }
-
-bool ThreadPool::shutdown() {
-  {
-    std::lock_guard lock(impl_->mtx);
-
-    if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
-      return false;
-    }
-
-    impl_->quit_flag.store(true, std::memory_order_release);
+  if (!impl_->lockfree_queue->try_pop(task)) {
+    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  if (impl_->type == kLockfreeType) {
-    std::unique_lock lock(impl_->mtx);
-    impl_->cv.wait(lock, [this] { return impl_->lockfree_producer_count.load(std::memory_order_acquire) == 0U; });
-  }
-
-  impl_->cv.notify_all();
-
-  const auto self_id = std::this_thread::get_id();
-
-  for (auto& thread : impl_->threads) {
-    if (thread.joinable()) {
-      if (thread.get_id() == self_id) {
-        thread.detach();
-      } else {
-        thread.join();
-      }
-    }
+  if (!keep_reserved) {
+    release_lockfree_task();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
   return true;
 }
 
-void ThreadPool::init() {
-  if (impl_->type == kNormalType) {
-    impl_->normal_queue.emplace();
-  } else if (impl_->type == kLockfreeType) {
-    const auto max_task_count = get_max_task_count();  // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
-    impl_->lockfree_queue.emplace(max_task_count);
-    impl_->lockfree_task_count.store(0U, std::memory_order_release);
-  }
+bool ThreadPool::reserve_lockfree_task(bool* was_empty) {
+  auto count = impl_->lockfree_task_count.load(std::memory_order_acquire);
+  const auto max_count = get_max_task_count();
 
-  if VUNLIKELY (impl_->thread_count == 0) {
-    VLOG_E("ThreadPool: Thread count is zero.");
-    impl_->quit_flag.store(true, std::memory_order_release);
-    return;
-  }
+  while (count < max_count) {
+    if (impl_->lockfree_task_count.compare_exchange_weak(count, count + 1U, std::memory_order_acq_rel,
+                                                         std::memory_order_acquire)) {
+      if (was_empty != nullptr) {
+        *was_empty = count == 0U;
+      }
 
-  impl_->threads.reserve(impl_->thread_count);
-
-  for (size_t i = 0; i < impl_->thread_count; ++i) {
-    if (impl_->type == kNormalType) {
-      auto impl = impl_;
-      std::thread thread([impl] {
-        Impl::current_thread_pool_impl_ = impl.get();
-
-        for (;;) {
-          Callback task;
-
-          {
-            std::unique_lock lock(impl->mtx);
-            impl->cv.wait(lock, [impl] {
-              return !impl->normal_queue->empty() || impl->quit_flag.load(std::memory_order_acquire);
-            });
-
-            if VUNLIKELY (impl->normal_queue->empty() && impl->quit_flag.load(std::memory_order_acquire)) {
-              break;
-            }
-
-            task = std::move(std::get<1>(impl->normal_queue->front()));
-
-            impl->normal_queue->pop_front();
-          }
-
-          if VLIKELY (task) {
-            task();
-          }
-        }
-
-        Impl::current_thread_pool_impl_ = nullptr;
-      });
-
-      impl_->threads.emplace_back(std::move(thread));
-    } else if (impl_->type == kLockfreeType) {
-      auto impl = impl_;
-      std::thread thread([impl] {
-        Impl::current_thread_pool_impl_ = impl.get();
-
-        for (;;) {
-          Impl::LockfreeTaskTuple task_tuple;
-
-          const bool has_task = impl->lockfree_queue->try_pop(task_tuple);
-
-          if (!has_task) {
-            if VUNLIKELY (impl->quit_flag.load(std::memory_order_acquire) &&
-                          impl->lockfree_task_count.load(std::memory_order_acquire) == 0U) {
-              if (impl->lockfree_producer_count.load(std::memory_order_acquire) ==
-                  0U) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                break;
-              }
-
-              std::this_thread::yield();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-              continue;
-            }
-
-            if (impl->lockfree_task_count.load(std::memory_order_acquire) != 0U) {
-              std::this_thread::yield();
-              continue;
-            }
-
-            std::unique_lock lock(impl->mtx);
-            impl->cv.wait(lock, [impl] {
-              return impl->lockfree_task_count.load(std::memory_order_acquire) != 0U ||
-                     impl->quit_flag.load(std::memory_order_acquire);
-            });
-
-            continue;
-          }
-
-          impl->lockfree_task_count.fetch_sub(1U, std::memory_order_acq_rel);
-
-          auto& task = std::get<0>(task_tuple);
-
-          if VLIKELY (task) {
-            task();
-          }
-        }
-
-        Impl::current_thread_pool_impl_ = nullptr;
-      });
-
-      impl_->threads.emplace_back(std::move(thread));
+      return true;
     }
   }
+
+  return false;
+}
+
+void ThreadPool::release_lockfree_task() {
+  impl_->lockfree_task_count.fetch_sub(1U, std::memory_order_acq_rel);
+}  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+
+bool ThreadPool::push_lockfree_task(Callback&& callback) {
+  for (int retry = 0; retry < kMaxLockfreePushRetry; ++retry) {
+    if VLIKELY (impl_->lockfree_queue->try_push(std::forward_as_tuple(std::move(callback)))) {
+      return true;
+    }
+
+    // LCOV_EXCL_START GCOVR_EXCL_START
+    Utils::yield_cpu();
+  }
+
+  CLOG_E("ThreadPool: Failed to push lockfree task after %d retries (%s).", kMaxLockfreePushRetry, impl_->name.c_str());
+
+  return false;
+  // LCOV_EXCL_STOP GCOVR_EXCL_STOP
 }
 
 }  // namespace vlink

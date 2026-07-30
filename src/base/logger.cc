@@ -549,36 +549,12 @@ void Logger::dump_backtrace() noexcept {
 
 bool Logger::is_busy() noexcept { return LoggerGlobal::get().is_busy.load(std::memory_order_acquire); }
 
-bool Logger::can_log(Level level) noexcept {
-  auto& global_instance = LoggerGlobal::get();
-
-  if VUNLIKELY (is_logging_on_current_thread() || global_instance.is_stopping.load(std::memory_order_acquire)) {
-    return false;
-  }
-
-  return level == kFatal || level >= global_instance.console_level.load(std::memory_order_acquire) ||
-         level >= global_instance.file_level.load(std::memory_order_acquire);
-}
-
 bool Logger::is_writable(Level level) noexcept {
   if VUNLIKELY (level >= kOff) {
     return false;
   }
 
   return can_log(level);
-}
-
-void Logger::write(Level level, std::string_view log) noexcept {
-  Logger& instance = Logger::get();
-  auto& global_instance = LoggerGlobal::get();
-
-  if (level >= global_instance.console_level.load(std::memory_order_acquire)) {
-    instance.write_to_console(level, log);
-  }
-
-  if (level >= global_instance.file_level.load(std::memory_order_acquire)) {
-    instance.write_to_file(level, log);
-  }
 }
 
 bool Logger::try_acquire_periodic_log(Level level, int64_t interval_ms,
@@ -863,6 +839,30 @@ Logger::~Logger() noexcept {
   }
 
 #endif
+}
+
+bool Logger::can_log(Level level) noexcept {
+  auto& global_instance = LoggerGlobal::get();
+
+  if VUNLIKELY (is_logging_on_current_thread() || global_instance.is_stopping.load(std::memory_order_acquire)) {
+    return false;
+  }
+
+  return level == kFatal || level >= global_instance.console_level.load(std::memory_order_acquire) ||
+         level >= global_instance.file_level.load(std::memory_order_acquire);
+}
+
+void Logger::write(Level level, std::string_view log) noexcept {
+  Logger& instance = Logger::get();
+  auto& global_instance = LoggerGlobal::get();
+
+  if (level >= global_instance.console_level.load(std::memory_order_acquire)) {
+    instance.write_to_console(level, log);
+  }
+
+  if (level >= global_instance.file_level.load(std::memory_order_acquire)) {
+    instance.write_to_file(level, log);
+  }
 }
 
 char* Logger::get_local_buffer() noexcept {

@@ -161,34 +161,6 @@ size_t FastStream::StringBuf::size() const noexcept { return static_cast<size_t>
 
 size_t FastStream::StringBuf::capacity() const noexcept { return buffer_.size(); }
 
-void FastStream::StringBuf::grow_buffer(size_t required_size) {
-  auto pos = static_cast<size_t>(pptr() - pbase());
-  auto new_size = buffer_.size();
-
-  if VUNLIKELY (new_size > kMaxExpandSize) {
-    new_size = required_size + kMaxExpandSize;
-  } else {
-    while (new_size < required_size) {
-      new_size *= 2;
-    }
-  }
-
-  buffer_.resize(new_size);
-  setp(buffer_.data(), buffer_.data() + buffer_.size());
-  advance_pptr(pos);
-}
-
-void FastStream::StringBuf::advance_pptr(size_t count) noexcept {
-  static constexpr auto kMaxBump = static_cast<size_t>(std::numeric_limits<int>::max());
-
-  while (count > kMaxBump) {
-    pbump(std::numeric_limits<int>::max());  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    count -= kMaxBump;                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  pbump(static_cast<int>(count));
-}
-
 std::ostream::int_type FastStream::StringBuf::overflow(int_type ch) {
   if VUNLIKELY (traits_type::eq_int_type(ch, traits_type::eof())) {
     return traits_type::eof();
@@ -225,6 +197,34 @@ std::streamsize FastStream::StringBuf::xsputn(const char* s, std::streamsize n) 
   advance_pptr(count);
 
   return n;
+}
+
+void FastStream::StringBuf::grow_buffer(size_t required_size) {
+  auto pos = static_cast<size_t>(pptr() - pbase());
+  auto new_size = buffer_.size();
+
+  if VUNLIKELY (new_size > kMaxExpandSize) {
+    new_size = required_size + kMaxExpandSize;
+  } else {
+    while (new_size < required_size) {
+      new_size *= 2;
+    }
+  }
+
+  buffer_.resize(new_size);
+  setp(buffer_.data(), buffer_.data() + buffer_.size());
+  advance_pptr(pos);
+}
+
+void FastStream::StringBuf::advance_pptr(size_t count) noexcept {
+  static constexpr auto kMaxBump = static_cast<size_t>(std::numeric_limits<int>::max());
+
+  while (count > kMaxBump) {
+    pbump(std::numeric_limits<int>::max());  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    count -= kMaxBump;                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  pbump(static_cast<int>(count));
 }
 
 }  // namespace vlink

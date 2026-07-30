@@ -448,6 +448,31 @@ using uint128_t = Uint128;
 /// Details
 ////////////////////////////////////////////////////////////////
 
+template <typename T>
+inline constexpr Uint128::Uint128(T v) noexcept {
+  // static_assert(std::is_integral_v<T>, "Uint128(T): T must be an integral type");
+
+#if defined(__SIZEOF_INT128__)
+  if constexpr (std::is_same_v<__uint128_t, T> || std::is_same_v<__int128_t, T>) {
+    const auto value = static_cast<__uint128_t>(v);
+    high_ = static_cast<uint64_t>(value >> 64);
+    low_ = static_cast<uint64_t>(value);
+
+    return;
+  }
+#endif
+
+  if constexpr (std::is_constructible_v<uint64_t, T>) {
+    if constexpr (std::is_signed_v<T>) {
+      high_ = (v < 0) ? ~uint64_t{0} : uint64_t{0};
+      low_ = static_cast<uint64_t>(static_cast<int64_t>(v));
+    } else {
+      high_ = 0;
+      low_ = v;
+    }
+  }
+}
+
 inline Uint128::Uint128(uint64_t high, uint64_t low) noexcept : high_(high), low_(low) {}
 
 #if defined(__SIZEOF_INT128__)
@@ -717,31 +742,6 @@ inline Uint128 Uint128::operator--(int) noexcept {
 inline uint64_t Uint128::get_high() const noexcept { return high_; }
 
 inline uint64_t Uint128::get_low() const noexcept { return low_; }
-
-template <typename T>
-inline constexpr Uint128::Uint128(T v) noexcept {
-  // static_assert(std::is_integral_v<T>, "Uint128(T): T must be an integral type");
-
-#if defined(__SIZEOF_INT128__)
-  if constexpr (std::is_same_v<__uint128_t, T> || std::is_same_v<__int128_t, T>) {
-    const auto value = static_cast<__uint128_t>(v);
-    high_ = static_cast<uint64_t>(value >> 64);
-    low_ = static_cast<uint64_t>(value);
-
-    return;
-  }
-#endif
-
-  if constexpr (std::is_constructible_v<uint64_t, T>) {
-    if constexpr (std::is_signed_v<T>) {
-      high_ = (v < 0) ? ~uint64_t{0} : uint64_t{0};
-      low_ = static_cast<uint64_t>(static_cast<int64_t>(v));
-    } else {
-      high_ = 0;
-      low_ = v;
-    }
-  }
-}
 
 }  // namespace vlink
 

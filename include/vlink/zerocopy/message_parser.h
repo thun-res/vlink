@@ -430,11 +430,6 @@ inline MessageParser::Type MessageParser::type() const noexcept { return type_; 
 inline bool MessageParser::valid() const noexcept { return type_ != Type::kUnknown; }
 
 template <typename T>
-inline const T* MessageParser::get() const noexcept {
-  return std::get_if<T>(&message_);
-}
-
-template <typename T>
 inline bool MessageParser::copy_to(T& out) const {
   const auto* message = get<T>();
 
@@ -444,6 +439,11 @@ inline bool MessageParser::copy_to(T& out) const {
 
   out = *message;
   return true;
+}
+
+template <typename T>
+inline const T* MessageParser::get() const noexcept {
+  return std::get_if<T>(&message_);
 }
 
 /**

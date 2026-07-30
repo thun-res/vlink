@@ -128,20 +128,6 @@ struct NodeImplHelper final {
   std::atomic_bool data_recorder_enabled{false};
 };
 
-bool NodeImpl::is_support_loan() const { return false; }
-
-Bytes NodeImpl::loan(int64_t size) {
-  (void)size;
-
-  return Bytes();
-}
-
-bool NodeImpl::return_loan(const Bytes& bytes) {
-  (void)bytes;
-
-  return false;
-}
-
 bool NodeImpl::suspend() {
   // has_suspend = true;
 
@@ -165,6 +151,20 @@ bool NodeImpl::is_suspend() const {
 }
 
 void NodeImpl::interrupt() { helper_->is_interrupted.store(true, std::memory_order_release); }
+
+bool NodeImpl::is_support_loan() const { return false; }
+
+Bytes NodeImpl::loan(int64_t size) {
+  (void)size;
+
+  return Bytes();
+}
+
+bool NodeImpl::return_loan(const Bytes& bytes) {
+  (void)bytes;
+
+  return false;
+}
 
 const struct Conf* NodeImpl::get_conf() const { return nullptr; }
 

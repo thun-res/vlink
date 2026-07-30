@@ -211,6 +211,10 @@ std::string Uuid::to_compact_string() const noexcept {
   }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 }
 
+bool Uuid::is_valid(std::string_view str) noexcept { return from_string(str).has_value(); }
+
+bool Uuid::is_valid(const char* str) noexcept { return from_string(str).has_value(); }
+
 std::optional<Uuid> Uuid::from_string(std::string_view str) noexcept {
   if (str.size() >= 2U && str.front() == '{' && str.back() != '}') {
     return std::nullopt;
@@ -225,8 +229,6 @@ std::optional<Uuid> Uuid::from_string(std::string_view str) noexcept {
   return Uuid{data};
 }
 
-bool Uuid::is_valid(std::string_view str) noexcept { return from_string(str).has_value(); }
-
 std::optional<Uuid> Uuid::from_string(const char* str) noexcept {
   if (str == nullptr) {
     return std::nullopt;
@@ -234,8 +236,6 @@ std::optional<Uuid> Uuid::from_string(const char* str) noexcept {
 
   return from_string(std::string_view(str));
 }
-
-bool Uuid::is_valid(const char* str) noexcept { return from_string(str).has_value(); }
 
 Uuid Uuid::generate_random() noexcept { return generate_random(thread_engine()); }
 
