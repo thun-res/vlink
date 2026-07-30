@@ -49,6 +49,7 @@
 
 #if defined(_WIN32)
 #include <io.h>
+#include <share.h>
 #include <sys/stat.h>
 #else
 #include <sys/stat.h>
@@ -69,6 +70,8 @@ struct alignas(std::max_align_t) LoggerRecordHeader final {
 };
 
 struct LoggerBackend::LoggerRecord final {
+  LoggerRecord() = delete;
+
   LoggerRecord(Logger::Level record_level, std::chrono::system_clock::time_point record_timestamp,
                uint64_t record_thread_id, std::string_view record_message) noexcept
       : level(record_level),
@@ -129,10 +132,10 @@ struct LoggerBackend::LoggerRecord final {
     operator delete(memory);                                    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  Logger::Level level{Logger::kOff};
-  std::chrono::system_clock::time_point timestamp{};
-  uint64_t thread_id{0U};
-  std::string_view message{};
+  Logger::Level level;
+  std::chrono::system_clock::time_point timestamp;
+  uint64_t thread_id;
+  std::string_view message;
 };
 
 struct LoggerFileInfo final {
@@ -181,13 +184,9 @@ static std::filesystem::path fixed_file_path(const std::filesystem::path& path, 
 
 static FILE* open_log_file_once(const std::filesystem::path& path, bool append, int& error_number) {
 #if defined(_WIN32)
-  FILE* file = nullptr;
   const wchar_t* mode = append ? L"ab" : L"wb";
-  error_number = _wfopen_s(&file, path.c_str(), mode);
-
-  if (error_number != 0) {
-    file = nullptr;
-  }
+  FILE* file = ::_wfsopen(path.c_str(), mode, _SH_DENYWR);
+  error_number = file ? 0 : errno;
 
   return file;
 #else
@@ -334,6 +333,162 @@ struct LoggerBackend::Impl final {
   std::deque<std::unique_ptr<LoggerRecord>> backtrace;
 #endif
 };
+
+LoggerBackend::LoggerBackend(Config&& config, ErrorHandler&& error_handler, ConsoleWriter&& console_writer)
+    : impl_(std::make_unique<Impl>()) {
+  (void)MemoryPool::global_instance();
+
+  impl_->config = std::move(config);
+  impl_->config.queue_size = std::max(impl_->config.queue_size, size_t{1});
+  impl_->error_handler = std::move(error_handler);
+  impl_->console_writer = std::move(console_writer);
+  impl_->base_path = impl_->config.log_path;
+  impl_->format_buffer.reserve(4096U);
+
+  if (impl_->config.flush_interval_ms > 0U) {
+    if (!impl_->flush_timer.attach(this)) {
+      throw std::runtime_error("logger backend: failed to attach flush timer");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    impl_->flush_timer.set_interval(impl_->config.flush_interval_ms);
+    impl_->flush_timer.set_loop_count(Timer::kInfinite);
+    impl_->flush_timer.set_callback([this] { flush_file(); });
+  }
+
+  try {
+    start_backend();
+  } catch (...) {
+    close_current();
+    throw;
+  }
+}
+
+LoggerBackend::~LoggerBackend() {
+  impl_->accepting.store(false, std::memory_order_release);
+  impl_->flush_timer.stop();
+
+  barrier([this] { flush_file(); });
+
+  quit();
+  wait_for_quit(Timer::kInfinite, false);
+
+  close_current();
+}
+
+bool LoggerBackend::log(Logger::Level level, std::string_view message) noexcept {
+  if VUNLIKELY (!impl_->accepting.load(std::memory_order_acquire) || impl_->has_error.load(std::memory_order_acquire) ||
+                level >= Logger::kOff) {
+    return false;
+  }
+
+  try {
+    static thread_local const uint64_t kThreadId = Utils::get_native_thread_id();
+
+    auto record = std::unique_ptr<LoggerRecord>(
+        new (message.size()) LoggerRecord(level, std::chrono::system_clock::now(), kThreadId, message));
+
+    if VUNLIKELY (is_in_same_thread()) {
+      write(std::move(record));
+      return !impl_->has_error.load(std::memory_order_acquire);
+    }
+
+    bool protected_record = impl_->config.block_when_full;
+
+    if VUNLIKELY (level >= Logger::kError) {
+      protected_record = true;
+    }
+
+    if VUNLIKELY (protected_record && !impl_->config.block_when_full) {
+      Callback task = [this, record = std::move(record)]() mutable { write(std::move(record)); };
+
+      if (post_untracked_task(std::move(task), TaskOverflowPolicy::kUseDispatcherStrategy,
+                              TaskDropPolicy::kProtected)) {
+        return true;
+      }
+
+      return post_untracked_task(std::move(task), TaskOverflowPolicy::kBlock, TaskDropPolicy::kProtected);
+    }
+
+    return post_untracked_task(
+        [this, record = std::move(record)]() mutable { write(std::move(record)); },
+        protected_record ? TaskOverflowPolicy::kBlock : TaskOverflowPolicy::kUseDispatcherStrategy,
+        protected_record ? TaskDropPolicy::kProtected : TaskDropPolicy::kDroppable);
+    // LCOV_EXCL_START GCOVR_EXCL_START
+  } catch (const std::exception& error) {
+    fail(error.what());
+    return false;
+  } catch (...) {
+    fail("logger backend: failed to enqueue a log record");
+    return false;
+  }
+  // LCOV_EXCL_STOP GCOVR_EXCL_STOP
+}
+
+void LoggerBackend::flush() noexcept {
+  barrier([this] { flush_file(); });
+}
+
+void LoggerBackend::enable_backtrace(size_t size) noexcept {
+  barrier([this, size] {
+    impl_->backtrace.clear();
+    impl_->backtrace_capacity = size;
+    impl_->backtrace_enabled = true;
+  });
+}
+
+void LoggerBackend::disable_backtrace() noexcept {
+  barrier([this] {
+    impl_->backtrace_enabled = false;
+    impl_->backtrace_capacity = 0U;
+    impl_->backtrace.clear();
+  });
+}
+
+void LoggerBackend::dump_backtrace(const ConsoleWriter& console_writer) noexcept {
+  barrier([this, &console_writer] {
+    if VUNLIKELY (impl_->has_error.load(std::memory_order_acquire)) {
+      return;
+    }
+
+    if (!impl_->backtrace_enabled || impl_->backtrace.empty()) {
+      return;
+    }
+
+    try {
+      auto dump_record = [this, &console_writer](const LoggerRecord& record) {
+        const auto formatted = format(record);
+        write_output(formatted);
+
+        if (console_writer) {
+          console_writer(record.level, formatted.substr(0U, formatted.size() - 1U));
+        }
+      };
+
+      const uint64_t thread_id = Utils::get_native_thread_id();
+      auto marker = std::unique_ptr<LoggerRecord>(new (kBacktraceStart.size()) LoggerRecord(
+          Logger::kInfo, std::chrono::system_clock::now(), thread_id, kBacktraceStart));
+      dump_record(*marker);
+
+      while (!impl_->backtrace.empty()) {
+        dump_record(*impl_->backtrace.front());
+        impl_->backtrace.pop_front();
+      }
+
+      marker = std::unique_ptr<LoggerRecord>(new (kBacktraceEnd.size()) LoggerRecord(
+          Logger::kInfo, std::chrono::system_clock::now(), thread_id, kBacktraceEnd));
+      dump_record(*marker);
+      flush_output();
+    } catch (const std::exception& error) {
+      fail(error.what());
+    } catch (...) {
+      fail("logger backend: failed to dump backtrace");
+    }
+  });
+}
+
+bool LoggerBackend::has_error() const noexcept { return impl_->has_error.load(std::memory_order_acquire); }
+
+size_t LoggerBackend::get_max_task_count() const { return impl_->config.queue_size; }
 
 void LoggerBackend::start_backend() {
   if (impl_->config.max_file_size == 0U) {
@@ -856,165 +1011,5 @@ void LoggerBackend::barrier(Callback&& callback) noexcept {
   }
   // LCOV_EXCL_STOP GCOVR_EXCL_STOP
 }
-
-LoggerBackend::LoggerBackend(Config&& config, ErrorHandler&& error_handler, ConsoleWriter&& console_writer)
-    : impl_(std::make_unique<Impl>()) {
-  (void)MemoryPool::global_instance();
-
-  impl_->config = std::move(config);
-  impl_->config.queue_size = std::max(impl_->config.queue_size, size_t{1});
-  impl_->error_handler = std::move(error_handler);
-  impl_->console_writer = std::move(console_writer);
-  impl_->base_path = impl_->config.log_path;
-  impl_->format_buffer.reserve(4096U);
-
-  if (impl_->config.flush_interval_ms > 0U) {
-    if (!impl_->flush_timer.attach(this)) {
-      throw std::runtime_error("logger backend: failed to attach flush timer");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    impl_->flush_timer.set_interval(impl_->config.flush_interval_ms);
-    impl_->flush_timer.set_loop_count(Timer::kInfinite);
-    impl_->flush_timer.set_callback([this] { flush_file(); });
-  }
-
-  try {
-    start_backend();
-  } catch (...) {
-    close_current();
-    throw;
-  }
-}
-
-LoggerBackend::~LoggerBackend() {
-  impl_->accepting.store(false, std::memory_order_release);
-  impl_->flush_timer.stop();
-
-#ifdef _WIN32
-  (void)wait_for_quit(0, false);
-#endif
-
-  barrier([this] { flush_file(); });
-
-  quit();
-  wait_for_quit(Timer::kInfinite, false);
-
-  close_current();
-}
-
-bool LoggerBackend::log(Logger::Level level, std::string_view message) noexcept {
-  if VUNLIKELY (!impl_->accepting.load(std::memory_order_acquire) || impl_->has_error.load(std::memory_order_acquire) ||
-                level >= Logger::kOff) {
-    return false;
-  }
-
-  try {
-    static thread_local const uint64_t kThreadId = Utils::get_native_thread_id();
-
-    auto record = std::unique_ptr<LoggerRecord>(
-        new (message.size()) LoggerRecord(level, std::chrono::system_clock::now(), kThreadId, message));
-
-    if VUNLIKELY (is_in_same_thread()) {
-      write(std::move(record));
-      return !impl_->has_error.load(std::memory_order_acquire);
-    }
-
-    bool protected_record = impl_->config.block_when_full;
-
-    if VUNLIKELY (level >= Logger::kError) {
-      protected_record = true;
-    }
-
-    if VUNLIKELY (protected_record && !impl_->config.block_when_full) {
-      Callback task = [this, record = std::move(record)]() mutable { write(std::move(record)); };
-
-      if (post_untracked_task(std::move(task), TaskOverflowPolicy::kUseDispatcherStrategy,
-                              TaskDropPolicy::kProtected)) {
-        return true;
-      }
-
-      return post_untracked_task(std::move(task), TaskOverflowPolicy::kBlock, TaskDropPolicy::kProtected);
-    }
-
-    return post_untracked_task(
-        [this, record = std::move(record)]() mutable { write(std::move(record)); },
-        protected_record ? TaskOverflowPolicy::kBlock : TaskOverflowPolicy::kUseDispatcherStrategy,
-        protected_record ? TaskDropPolicy::kProtected : TaskDropPolicy::kDroppable);
-    // LCOV_EXCL_START GCOVR_EXCL_START
-  } catch (const std::exception& error) {
-    fail(error.what());
-    return false;
-  } catch (...) {
-    fail("logger backend: failed to enqueue a log record");
-    return false;
-  }
-  // LCOV_EXCL_STOP GCOVR_EXCL_STOP
-}
-
-void LoggerBackend::flush() noexcept {
-  barrier([this] { flush_file(); });
-}
-
-void LoggerBackend::enable_backtrace(size_t size) noexcept {
-  barrier([this, size] {
-    impl_->backtrace.clear();
-    impl_->backtrace_capacity = size;
-    impl_->backtrace_enabled = true;
-  });
-}
-
-void LoggerBackend::disable_backtrace() noexcept {
-  barrier([this] {
-    impl_->backtrace_enabled = false;
-    impl_->backtrace_capacity = 0U;
-    impl_->backtrace.clear();
-  });
-}
-
-void LoggerBackend::dump_backtrace(const ConsoleWriter& console_writer) noexcept {
-  barrier([this, &console_writer] {
-    if VUNLIKELY (impl_->has_error.load(std::memory_order_acquire)) {
-      return;
-    }
-
-    if (!impl_->backtrace_enabled || impl_->backtrace.empty()) {
-      return;
-    }
-
-    try {
-      auto dump_record = [this, &console_writer](const LoggerRecord& record) {
-        const auto formatted = format(record);
-        write_output(formatted);
-
-        if (console_writer) {
-          console_writer(record.level, formatted.substr(0U, formatted.size() - 1U));
-        }
-      };
-
-      const uint64_t thread_id = Utils::get_native_thread_id();
-      auto marker = std::unique_ptr<LoggerRecord>(new (kBacktraceStart.size()) LoggerRecord(
-          Logger::kInfo, std::chrono::system_clock::now(), thread_id, kBacktraceStart));
-      dump_record(*marker);
-
-      while (!impl_->backtrace.empty()) {
-        dump_record(*impl_->backtrace.front());
-        impl_->backtrace.pop_front();
-      }
-
-      marker = std::unique_ptr<LoggerRecord>(new (kBacktraceEnd.size()) LoggerRecord(
-          Logger::kInfo, std::chrono::system_clock::now(), thread_id, kBacktraceEnd));
-      dump_record(*marker);
-      flush_output();
-    } catch (const std::exception& error) {
-      fail(error.what());
-    } catch (...) {
-      fail("logger backend: failed to dump backtrace");
-    }
-  });
-}
-
-bool LoggerBackend::has_error() const noexcept { return impl_->has_error.load(std::memory_order_acquire); }
-
-size_t LoggerBackend::get_max_task_count() const { return impl_->config.queue_size; }
 
 }  // namespace vlink

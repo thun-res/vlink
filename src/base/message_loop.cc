@@ -202,7 +202,15 @@ MessageLoop::~MessageLoop() {
   }
 
   if (impl_->thread.joinable()) {
+#ifdef _WIN32
+    if (wait_for_quit(0, false)) {
+      impl_->thread.detach();
+    } else {
+      impl_->thread.join();
+    }
+#else
     impl_->thread.join();
+#endif
   }
 
 #ifdef _WIN32
@@ -241,11 +249,11 @@ MessageLoop::~MessageLoop() {
   // NOLINTEND
 }
 
-MessageLoop::Type MessageLoop::get_type() const { return impl_->type; }
-
 void MessageLoop::set_name(const std::string& name) { impl_->name = name; }
 
 const std::string& MessageLoop::get_name() const { return impl_->name; }
+
+MessageLoop::Type MessageLoop::get_type() const { return impl_->type; }
 
 MessageLoop::Strategy MessageLoop::get_strategy() const { return impl_->strategy.load(std::memory_order_acquire); }
 
@@ -466,15 +474,6 @@ bool MessageLoop::wait_for_quit(int ms, bool check) {
 
 bool MessageLoop::post_task(Callback&& callback) { return push_task(std::move(callback), kNoPriority); }
 
-bool MessageLoop::post_untracked_task(Callback&& callback, TaskOverflowPolicy overflow_policy,
-                                      TaskDropPolicy drop_policy) {
-  if VUNLIKELY (impl_->type == kLockfreeType && drop_policy == TaskDropPolicy::kProtected) {
-    CLOG_W("MessageLoop: TaskDropPolicy::kProtected is ignored by lock-free queues (%s).", impl_->name.c_str());
-  }
-
-  return push_task(std::move(callback), kNoPriority, drop_policy == TaskDropPolicy::kDroppable, overflow_policy);
-}
-
 TaskHandle MessageLoop::post_task_handle(Callback&& callback, const PostTaskOptions& options) {
   auto handle = TaskHandle::make_task_handle(options.cancellation_token);
 
@@ -659,6 +658,15 @@ bool MessageLoop::is_in_same_thread() const {
 
 std::shared_ptr<MessageLoop::AliveState> MessageLoop::get_alive_state() const { return impl_->alive_state; }
 
+bool MessageLoop::post_untracked_task(Callback&& callback, TaskOverflowPolicy overflow_policy,
+                                      TaskDropPolicy drop_policy) {
+  if VUNLIKELY (impl_->type == kLockfreeType && drop_policy == TaskDropPolicy::kProtected) {
+    CLOG_W("MessageLoop: TaskDropPolicy::kProtected is ignored by lock-free queues (%s).", impl_->name.c_str());
+  }
+
+  return push_task(std::move(callback), kNoPriority, drop_policy == TaskDropPolicy::kDroppable, overflow_policy);
+}
+
 void MessageLoop::on_begin() {
   if (impl_->begin_callback) {
     impl_->begin_callback();
@@ -723,58 +731,6 @@ bool MessageLoop::remove_timer(Timer* timer) {
 
   return impl_->timer_set.erase(timer) != 0;
 }
-
-bool MessageLoop::drop_one_normal_task() {
-  for (auto iter = impl_->normal_queue->begin(); iter != impl_->normal_queue->end(); ++iter) {
-    if (std::get<1>(*iter)) {
-      impl_->normal_queue->erase(iter);
-
-      return true;
-    }
-  }
-
-  return false;
-}
-
-bool MessageLoop::drop_one_lockfree_task(bool keep_reserved) {
-  Impl::LockfreeTaskTuple task;
-
-  if (!impl_->lockfree_queue->try_pop<Impl::LockfreeQueue::kNoBehavior>(task)) {
-    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  if (!keep_reserved) {
-    release_lockfree_task();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  return true;
-}
-
-bool MessageLoop::drop_one_priority_task() {
-  if (impl_->priority_droppable_queue->empty()) {
-    return false;
-  }
-
-  impl_->priority_droppable_queue->pop();
-
-  return true;
-}
-
-bool MessageLoop::reserve_lockfree_task() {
-  auto count = impl_->lockfree_task_count.load(std::memory_order_acquire);
-  const auto max_count = get_max_task_count();
-
-  while (count < max_count) {
-    if (impl_->lockfree_task_count.compare_exchange_weak(count, count + 1U, std::memory_order_acq_rel,
-                                                         std::memory_order_acquire)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-void MessageLoop::release_lockfree_task() { impl_->lockfree_task_count.fetch_sub(1U, std::memory_order_acq_rel); }
 
 bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppable, TaskOverflowPolicy overflow_policy,
                             const TaskHandle* submit_handle, bool poll_cancellation) {
@@ -1128,6 +1084,58 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
   return reject();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 }
 
+bool MessageLoop::drop_one_normal_task() {
+  for (auto iter = impl_->normal_queue->begin(); iter != impl_->normal_queue->end(); ++iter) {
+    if (std::get<1>(*iter)) {
+      impl_->normal_queue->erase(iter);
+
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool MessageLoop::drop_one_lockfree_task(bool keep_reserved) {
+  Impl::LockfreeTaskTuple task;
+
+  if (!impl_->lockfree_queue->try_pop<Impl::LockfreeQueue::kNoBehavior>(task)) {
+    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  if (!keep_reserved) {
+    release_lockfree_task();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  return true;
+}
+
+bool MessageLoop::drop_one_priority_task() {
+  if (impl_->priority_droppable_queue->empty()) {
+    return false;
+  }
+
+  impl_->priority_droppable_queue->pop();
+
+  return true;
+}
+
+bool MessageLoop::reserve_lockfree_task() {
+  auto count = impl_->lockfree_task_count.load(std::memory_order_acquire);
+  const auto max_count = get_max_task_count();
+
+  while (count < max_count) {
+    if (impl_->lockfree_task_count.compare_exchange_weak(count, count + 1U, std::memory_order_acq_rel,
+                                                         std::memory_order_acquire)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void MessageLoop::release_lockfree_task() { impl_->lockfree_task_count.fetch_sub(1U, std::memory_order_acq_rel); }
+
 void MessageLoop::push_normal_task(Callback&& callback, bool droppable) {
   uint32_t start_time = 0;
 
@@ -1220,10 +1228,9 @@ void MessageLoop::do_consume() {
   impl_->thread_id.store(std::thread::id(), std::memory_order_release);
   impl_->is_running.store(false, std::memory_order_release);
   impl_->is_busy.store(false, std::memory_order_release);
+  impl_->cv.notify_all();
 
   lock.unlock();
-
-  impl_->cv.notify_all();
 }
 
 bool MessageLoop::process_normal_task(bool block, bool reuse_queue) {
