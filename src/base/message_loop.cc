@@ -392,9 +392,9 @@ bool MessageLoop::async_run() {
 
   if (::DuplicateHandle(::GetCurrentProcess(), reinterpret_cast<HANDLE>(impl_->thread.native_handle()),
                         ::GetCurrentProcess(), &thread_handle, SYNCHRONIZE, FALSE, 0) != FALSE) {
-    HANDLE expected = nullptr;
+    HANDLE expected_thread_handle = nullptr;
 
-    if (!impl_->thread_handle.compare_exchange_strong(expected, thread_handle, std::memory_order_acq_rel,
+    if (!impl_->thread_handle.compare_exchange_strong(expected_thread_handle, thread_handle, std::memory_order_acq_rel,
                                                       std::memory_order_acquire)) {
       ::CloseHandle(thread_handle);
     }
