@@ -59,6 +59,7 @@ static constexpr size_t kMaxLevelCount = 10U;
 static constexpr size_t kInitialBlocksPerChunk = 1U;
 static constexpr size_t kInitialChunksReserve = 16U;
 static constexpr size_t kInitialChunkBytesTarget = 64U * 1024U;
+static constexpr size_t kMaxLazyChunkBytes = 64U * 1024U;
 static constexpr size_t kTierShardCount = 8U;
 static constexpr size_t kDefaultBatchSize = 16U;
 static constexpr uint32_t kShardingContentionThreshold = 8U;
@@ -470,6 +471,14 @@ static bool grow_tier_chunk(MemoryTierState& state, size_t shard_index, MemoryFr
 
   if VUNLIKELY (blocks > state.blocks_per_chunk) {
     blocks = state.blocks_per_chunk;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  if (allocated != nullptr) {
+    const size_t lazy_cap = std::max(kMaxLazyChunkBytes / state.block_size, size_t{1});
+
+    if (blocks > lazy_cap) {
+      blocks = lazy_cap;
+    }
   }
 
   const size_t block_size = state.block_size;

@@ -30,8 +30,11 @@
  * Every tier owns a small fixed set of singly-linked free-list shards plus one shared vector of
  * upstream chunks.  A tier starts on its primary shard and enables sharded dispatch only after
  * repeated real lock contention is observed.  Empty local shards steal at most
- * @c Config::batch_size nodes at a time.  Chunk capacity starts small and doubles
- * geometrically until it reaches the configured @c blocks_per_chunk; sharding does not multiply
+ * @c Config::batch_size nodes at a time.  Lazy growth installs chunks of at most 64 KiB (or one
+ * block when a single block is larger), so an allocating thread never pays more than a bounded
+ * first-touch burst; the configured @c blocks_per_chunk still bounds every install, and
+ * preallocation fills the whole quota as one chunk.  Lazy tiers therefore accumulate more,
+ * smaller chunks than a preallocated tier holding the same bytes.  Sharding does not multiply
  * chunk quotas.
  * Requests larger than the biggest tier (or with an alignment stricter than
  * @c alignof(std::max_align_t)) bypass the pool and route directly to @c ::operator @c new /

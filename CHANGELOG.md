@@ -12,6 +12,7 @@
 - **日志后端迁移**：原 CMake `SELECT_LOG_BACKEND` / Conan `select_log_backend` 已删除；改用 `LoggerBackend` 时设置新开关为 `ON`，在 Android、QNX、Linux 上改用平台日志时设置为 `OFF`；旧 `VLINK_ENABLE_LOG_{SPD,QUI,DLT,NAT}` 特性宏不再提供。
 - **日志插件与热路径**：`LoggerPluginInterface` 新增 `flush()`，钩子改为 `noexcept`，修复初始化递归与卸载排空；日志宏通过运行期级别过滤后才求值参数。现有插件需适配并重新编译。
 - **MessageLoop 背压**：普通与优先级满队列阻塞改为在容量释放或退出时唤醒；全局阻塞策略也会响应策略切换，避免固定 1 ms 轮询。
+- **内存池增长粒度**：惰性增长改为按最多 64 KiB（且不小于单块）的小 chunk 安装，限定触发增长线程的单次缺页突发；预分配与分配/释放热路径不变，惰性层 chunk 数量相应增多。
 
 ### 修复
 
