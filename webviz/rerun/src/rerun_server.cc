@@ -62,8 +62,6 @@ RerunServer::RerunServer(const Config& config) : MessageLoop(MessageLoop::kNorma
 
 RerunServer::~RerunServer() { stop(); }
 
-size_t RerunServer::get_max_task_count() const { return kMaxTaskDepth; }
-
 bool RerunServer::start() {
   if VUNLIKELY (running_.exchange(true)) {
     return true;
@@ -172,24 +170,7 @@ void RerunServer::stop() {
   }
 }
 
-void RerunServer::flush_recording() {
-  std::shared_ptr<::rerun::RecordingStream> rec;
-
-  {
-    std::shared_lock lock(rec_mtx_);
-    rec = rec_;
-  }
-
-  if VUNLIKELY (!rec) {
-    return;
-  }
-
-  auto err = rec->flush_blocking();
-
-  if VUNLIKELY (err.is_err()) {
-    MLOG_W("Failed to flush: {}", err.description);
-  }
-}
+size_t RerunServer::get_max_task_count() const { return kMaxTaskDepth; }
 
 bool RerunServer::init_rerun() {
   try {
@@ -329,45 +310,6 @@ bool RerunServer::reconnect_recording() {
   return true;
 }
 
-void RerunServer::probe_recording() {
-  if VUNLIKELY (!running_.load()) {
-    return;
-  }
-
-  if VUNLIKELY (config_.mode != RerunServer::kSpawn && config_.mode != RerunServer::kConnect) {
-    return;
-  }
-
-  std::shared_ptr<::rerun::RecordingStream> rec;
-
-  {
-    std::shared_lock lock(rec_mtx_);
-    rec = rec_;
-  }
-
-  if VUNLIKELY (!rec) {
-    if VLIKELY (reconnect_recording()) {
-      MLOG_I("Rerun reconnect succeeded");
-    }
-
-    return;
-  }
-
-  auto err = rec->flush_blocking();
-
-  if VLIKELY (!err.is_err()) {
-    return;
-  }
-
-  MLOG_W("Rerun probe failed: {}; reconnecting", err.description);
-
-  if VLIKELY (reconnect_recording()) {
-    MLOG_I("Rerun reconnect succeeded");
-  } else {
-    MLOG_W("Rerun reconnect failed");
-  }
-}
-
 bool RerunServer::init_bridge() {
   if VUNLIKELY (!bridge_) {
     MLOG_E("Proxy bridge is not initialized");
@@ -421,6 +363,101 @@ bool RerunServer::init_bridge() {
     return false;
   }
 
+  return true;
+}
+
+void RerunServer::flush_recording() {
+  std::shared_ptr<::rerun::RecordingStream> rec;
+
+  {
+    std::shared_lock lock(rec_mtx_);
+    rec = rec_;
+  }
+
+  if VUNLIKELY (!rec) {
+    return;
+  }
+
+  auto err = rec->flush_blocking();
+
+  if VUNLIKELY (err.is_err()) {
+    MLOG_W("Failed to flush: {}", err.description);
+  }
+}
+
+void RerunServer::probe_recording() {
+  if VUNLIKELY (!running_.load()) {
+    return;
+  }
+
+  if VUNLIKELY (config_.mode != RerunServer::kSpawn && config_.mode != RerunServer::kConnect) {
+    return;
+  }
+
+  std::shared_ptr<::rerun::RecordingStream> rec;
+
+  {
+    std::shared_lock lock(rec_mtx_);
+    rec = rec_;
+  }
+
+  if VUNLIKELY (!rec) {
+    if VLIKELY (reconnect_recording()) {
+      MLOG_I("Rerun reconnect succeeded");
+    }
+
+    return;
+  }
+
+  auto err = rec->flush_blocking();
+
+  if VLIKELY (!err.is_err()) {
+    return;
+  }
+
+  MLOG_W("Rerun probe failed: {}; reconnecting", err.description);
+
+  if VLIKELY (reconnect_recording()) {
+    MLOG_I("Rerun reconnect succeeded");
+  } else {
+    MLOG_W("Rerun reconnect failed");
+  }
+}
+
+void RerunServer::apply_timeline_policy(::rerun::RecordingStream& rec) const {
+  if VUNLIKELY (!config_.use_sequence_timeline && !config_.sequence_timeline.empty()) {
+    rec.disable_timeline(config_.sequence_timeline);
+  }
+
+  if VUNLIKELY (!config_.use_timestamp_timeline && !config_.timestamp_timeline.empty()) {
+    rec.disable_timeline(config_.timestamp_timeline);
+  }
+}
+
+bool RerunServer::update_bridge_control() {
+  if VUNLIKELY (!bridge_ || !bridge_->can_control()) {
+    return false;
+  }
+
+  std::lock_guard lock(bridge_control_mtx_);
+
+  ProxyAPI::Control control;
+  control.mode = ProxyAPI::kAutoAndObserveAll;
+
+  auto signature = build_bridge_control_signature(control);
+
+  if VLIKELY (signature == bridge_control_signature_) {
+    return true;
+  }
+
+  reset_bridge_session_time_anchor(session_start_sys_time_ns_);
+
+  if VUNLIKELY (!bridge_->send_control(control, false)) {
+    MLOG_W("Failed to update Rerun bridge control");
+    return false;
+  }
+
+  bridge_control_signature_ = std::move(signature);
   return true;
 }
 
@@ -637,16 +674,6 @@ void RerunServer::on_bridge_data(const ProxyAPI::Data& data) {
                                     fallback_timestamp_ns);
 }
 
-void RerunServer::apply_timeline_policy(::rerun::RecordingStream& rec) const {
-  if VUNLIKELY (!config_.use_sequence_timeline && !config_.sequence_timeline.empty()) {
-    rec.disable_timeline(config_.sequence_timeline);
-  }
-
-  if VUNLIKELY (!config_.use_timestamp_timeline && !config_.timestamp_timeline.empty()) {
-    rec.disable_timeline(config_.timestamp_timeline);
-  }
-}
-
 void RerunServer::on_bridge_time(uint64_t sys_time, uint64_t boot_time) {
   update_bridge_wall_time_state(sys_time, boot_time, last_sys_time_ns_, bridge_time_elapsed_,
                                 &session_start_sys_time_ns_);
@@ -655,33 +682,6 @@ void RerunServer::on_bridge_time(uint64_t sys_time, uint64_t boot_time) {
 bool RerunServer::is_url_allowed(std::string_view url) const {
   return is_allowed_by_filters_cached(cache_owner_id_, url, config_.whitelist_exact, config_.whitelist_patterns,
                                       config_.blacklist_exact, config_.blacklist_patterns);
-}
-
-bool RerunServer::update_bridge_control() {
-  if VUNLIKELY (!bridge_ || !bridge_->can_control()) {
-    return false;
-  }
-
-  std::lock_guard lock(bridge_control_mtx_);
-
-  ProxyAPI::Control control;
-  control.mode = ProxyAPI::kAutoAndObserveAll;
-
-  auto signature = build_bridge_control_signature(control);
-
-  if VLIKELY (signature == bridge_control_signature_) {
-    return true;
-  }
-
-  reset_bridge_session_time_anchor(session_start_sys_time_ns_);
-
-  if VUNLIKELY (!bridge_->send_control(control, false)) {
-    MLOG_W("Failed to update Rerun bridge control");
-    return false;
-  }
-
-  bridge_control_signature_ = std::move(signature);
-  return true;
 }
 
 std::string RerunServer::url_to_entity_path(const std::string& url) {

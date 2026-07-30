@@ -69,70 +69,6 @@ struct ProxyBridge::Impl final {
   mutable std::shared_mutex data_callback_mtx;
 };
 
-ProxyBridge::ProxyBridge(const Config& config, MessageLoop* data_callback_loop) : impl_(std::make_unique<Impl>()) {
-  impl_->data_callback_loop = data_callback_loop;
-  impl_->data_callback_mode = config.data_callback_mode;
-}
-
-ProxyBridge::~ProxyBridge() = default;
-
-bool ProxyBridge::parse_data_callback_mode(std::string_view value, DataCallbackMode& mode) {
-  std::string normalized(value);
-  std::transform(normalized.begin(), normalized.end(), normalized.begin(),
-                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-
-  if VLIKELY (normalized == "direct") {
-    mode = ProxyBridge::kDirect;
-    return true;
-  }
-
-  if VLIKELY (normalized == "queued" || normalized == "queue") {
-    mode = ProxyBridge::kQueued;
-    return true;
-  }
-
-  return false;
-}
-
-void ProxyBridge::register_data_callback(DataCallback&& callback) {
-  std::unique_lock lock(impl_->data_callback_mtx);
-
-  if VUNLIKELY (!callback) {
-    impl_->data_callback = nullptr;
-    return;
-  }
-
-  impl_->data_callback = std::move(callback);
-}
-
-void ProxyBridge::dispatch_data_callback(const ProxyAPI::Data& data) {
-  {
-    std::shared_lock lock(impl_->data_callback_mtx);
-
-    if VUNLIKELY (!impl_->data_callback) {
-      return;
-    }
-  }
-
-  if VLIKELY (impl_->data_callback_mode == ProxyBridge::kDirect || impl_->data_callback_loop == nullptr) {
-    std::shared_lock lock(impl_->data_callback_mtx);
-
-    if VLIKELY (impl_->data_callback) {
-      impl_->data_callback(data);
-    }
-
-    return;
-  }
-
-  impl_->data_callback_loop->post_task([this, queued_data = data]() {
-    std::shared_lock lock(impl_->data_callback_mtx);
-
-    if VLIKELY (impl_->data_callback) {
-      impl_->data_callback(queued_data);
-    }
-  });
-}
-
 class ProxyApiBridge final : public ProxyBridge {
  public:
   ProxyApiBridge(const Config& config, MessageLoop* data_callback_loop)
@@ -1188,6 +1124,13 @@ class ProxyServerBridge final : public ProxyBridge {
   ElapsedTimer session_elapsed_{ElapsedTimer::kMicro};
 };
 
+ProxyBridge::ProxyBridge(const Config& config, MessageLoop* data_callback_loop) : impl_(std::make_unique<Impl>()) {
+  impl_->data_callback_loop = data_callback_loop;
+  impl_->data_callback_mode = config.data_callback_mode;
+}
+
+ProxyBridge::~ProxyBridge() = default;
+
 std::unique_ptr<ProxyBridge> ProxyBridge::create(const Config& config, MessageLoop* data_callback_loop) {
   if VLIKELY (config.interface_mode == ProxyBridge::kProxyApi) {
     return std::make_unique<ProxyApiBridge>(config, data_callback_loop);
@@ -1225,9 +1168,66 @@ bool ProxyBridge::parse_interface_mode(std::string_view value, InterfaceMode& mo
   return false;
 }
 
+bool ProxyBridge::parse_data_callback_mode(std::string_view value, DataCallbackMode& mode) {
+  std::string normalized(value);
+  std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+  if VLIKELY (normalized == "direct") {
+    mode = ProxyBridge::kDirect;
+    return true;
+  }
+
+  if VLIKELY (normalized == "queued" || normalized == "queue") {
+    mode = ProxyBridge::kQueued;
+    return true;
+  }
+
+  return false;
+}
+
 bool ProxyBridge::is_dds_transport(std::string_view url) {
   return Helpers::has_startwith(url, "dds://") || Helpers::has_startwith(url, "ddsc://") ||
          Helpers::has_startwith(url, "ddsr://");
+}
+
+void ProxyBridge::register_data_callback(DataCallback&& callback) {
+  std::unique_lock lock(impl_->data_callback_mtx);
+
+  if VUNLIKELY (!callback) {
+    impl_->data_callback = nullptr;
+    return;
+  }
+
+  impl_->data_callback = std::move(callback);
+}
+
+void ProxyBridge::dispatch_data_callback(const ProxyAPI::Data& data) {
+  {
+    std::shared_lock lock(impl_->data_callback_mtx);
+
+    if VUNLIKELY (!impl_->data_callback) {
+      return;
+    }
+  }
+
+  if VLIKELY (impl_->data_callback_mode == ProxyBridge::kDirect || impl_->data_callback_loop == nullptr) {
+    std::shared_lock lock(impl_->data_callback_mtx);
+
+    if VLIKELY (impl_->data_callback) {
+      impl_->data_callback(data);
+    }
+
+    return;
+  }
+
+  impl_->data_callback_loop->post_task([this, queued_data = data]() {
+    std::shared_lock lock(impl_->data_callback_mtx);
+
+    if VLIKELY (impl_->data_callback) {
+      impl_->data_callback(queued_data);
+    }
+  });
 }
 
 }  // namespace webviz
