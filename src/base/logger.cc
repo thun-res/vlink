@@ -850,8 +850,7 @@ Logger::~Logger() noexcept {
 bool Logger::can_log(Level level) noexcept {
   auto& global_instance = LoggerGlobal::get();
 
-  if VUNLIKELY (is_logging_on_current_thread() ||
-                (level != kFatal && global_instance.is_initializing.load(std::memory_order_acquire)) ||
+  if VUNLIKELY (is_logging_on_current_thread() || global_instance.is_initializing.load(std::memory_order_acquire) ||
                 global_instance.is_stopping.load(std::memory_order_acquire)) {
     return false;
   }
