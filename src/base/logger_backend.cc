@@ -358,6 +358,11 @@ LoggerBackend::LoggerBackend(Config&& config, ErrorHandler&& error_handler, Cons
   try {
     start_backend();
   } catch (...) {
+    if (is_running()) {
+      quit();
+      wait_for_quit(Timer::kInfinite, false);
+    }
+
     close_current();
     throw;
   }
@@ -519,6 +524,17 @@ void LoggerBackend::start_backend() {
   set_strategy(impl_->config.block_when_full ? MessageLoop::kBlockStrategy : MessageLoop::kPopStrategy);
 
   if (!async_run()) {
+    throw std::runtime_error("logger backend: failed to start message loop");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  PostTaskOptions options;
+  options.overflow_policy = TaskOverflowPolicy::kBlock;
+  options.drop_policy = TaskDropPolicy::kProtected;
+
+  auto handle = post_task_handle([] {}, options);
+  (void)handle.wait();
+
+  if VUNLIKELY (handle.state() != TaskExecutionState::kCompleted) {
     throw std::runtime_error("logger backend: failed to start message loop");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 

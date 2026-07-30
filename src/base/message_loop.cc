@@ -195,15 +195,6 @@ MessageLoop::~MessageLoop() {
     impl_->alive_state->alive.store(false, std::memory_order_release);
   }
 
-#ifdef _WIN32
-  HANDLE native_thread_handle = impl_->thread_handle.load(std::memory_order_acquire);
-
-  if (native_thread_handle != nullptr && ::WaitForSingleObject(native_thread_handle, 0) == WAIT_OBJECT_0) {
-    impl_->is_running.store(false, std::memory_order_release);
-    impl_->is_busy.store(false, std::memory_order_release);
-  }
-#endif
-
   if VUNLIKELY (impl_->is_running.load(std::memory_order_acquire)) {
     CLOG_W("MessageLoop is still running(%s).", impl_->name.c_str());
     quit();
@@ -211,15 +202,7 @@ MessageLoop::~MessageLoop() {
   }
 
   if (impl_->thread.joinable()) {
-#ifdef _WIN32
-    if (wait_for_quit(0, false)) {
-      impl_->thread.detach();
-    } else {
-      impl_->thread.join();
-    }
-#else
     impl_->thread.join();
-#endif
   }
 
 #ifdef _WIN32
@@ -386,20 +369,6 @@ bool MessageLoop::async_run() {
     impl_->capacity_cv.notify_all();
     throw;
   }
-
-#ifdef _WIN32
-  HANDLE thread_handle = nullptr;
-
-  if (::DuplicateHandle(::GetCurrentProcess(), reinterpret_cast<HANDLE>(impl_->thread.native_handle()),
-                        ::GetCurrentProcess(), &thread_handle, SYNCHRONIZE, FALSE, 0) != FALSE) {
-    HANDLE expected_thread_handle = nullptr;
-
-    if (!impl_->thread_handle.compare_exchange_strong(expected_thread_handle, thread_handle, std::memory_order_acq_rel,
-                                                      std::memory_order_acquire)) {
-      ::CloseHandle(thread_handle);
-    }
-  }
-#endif
 
   if (!impl_->name.empty()) {
     Utils::set_thread_name(impl_->name, &impl_->thread);
@@ -1211,13 +1180,7 @@ void MessageLoop::do_consume() {
   impl_->thread_id.store(std::this_thread::get_id(), std::memory_order_release);
 
 #ifdef _WIN32
-  HANDLE thread_handle = ::OpenThread(SYNCHRONIZE, FALSE, ::GetCurrentThreadId());
-  HANDLE expected = nullptr;
-
-  if (thread_handle != nullptr && !impl_->thread_handle.compare_exchange_strong(
-                                      expected, thread_handle, std::memory_order_acq_rel, std::memory_order_acquire)) {
-    ::CloseHandle(thread_handle);
-  }
+  impl_->thread_handle.store(::OpenThread(SYNCHRONIZE, FALSE, ::GetCurrentThreadId()), std::memory_order_release);
 #endif
 
   lock.unlock();
