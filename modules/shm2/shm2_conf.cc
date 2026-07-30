@@ -168,6 +168,20 @@ bool Shm2Conf::parse_protocol(struct Protocol* protocol) {
   return true;
 }
 
+std::unique_ptr<ServerImpl> Shm2Conf::create_server() const { return std::make_unique<Shm2ServerImpl>(*this); }
+
+std::unique_ptr<ClientImpl> Shm2Conf::create_client() const { return std::make_unique<Shm2ClientImpl>(*this); }
+
+std::unique_ptr<PublisherImpl> Shm2Conf::create_publisher() const { return std::make_unique<Shm2PublisherImpl>(*this); }
+
+std::unique_ptr<SubscriberImpl> Shm2Conf::create_subscriber() const {
+  return std::make_unique<Shm2SubscriberImpl>(*this);
+}
+
+std::unique_ptr<SetterImpl> Shm2Conf::create_setter() const { return std::make_unique<Shm2SetterImpl>(*this); }
+
+std::unique_ptr<GetterImpl> Shm2Conf::create_getter() const { return std::make_unique<Shm2GetterImpl>(*this); }
+
 bool Shm2Conf::is_valid() const {
   if VUNLIKELY (address.empty()) {
     return false;
@@ -187,20 +201,6 @@ bool Shm2Conf::is_valid() const {
 
   return true;
 }
-
-std::unique_ptr<ServerImpl> Shm2Conf::create_server() const { return std::make_unique<Shm2ServerImpl>(*this); }
-
-std::unique_ptr<ClientImpl> Shm2Conf::create_client() const { return std::make_unique<Shm2ClientImpl>(*this); }
-
-std::unique_ptr<PublisherImpl> Shm2Conf::create_publisher() const { return std::make_unique<Shm2PublisherImpl>(*this); }
-
-std::unique_ptr<SubscriberImpl> Shm2Conf::create_subscriber() const {
-  return std::make_unique<Shm2SubscriberImpl>(*this);
-}
-
-std::unique_ptr<SetterImpl> Shm2Conf::create_setter() const { return std::make_unique<Shm2SetterImpl>(*this); }
-
-std::unique_ptr<GetterImpl> Shm2Conf::create_getter() const { return std::make_unique<Shm2GetterImpl>(*this); }
 
 std::ostream& operator<<(std::ostream& ostream, const Shm2Conf& conf) noexcept {
   std::ios_base::fmtflags f = ostream.flags();

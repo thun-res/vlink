@@ -83,6 +83,22 @@ bool SomeipConf::parse_protocol(struct Protocol* protocol) {
   return true;
 }
 
+std::unique_ptr<ServerImpl> SomeipConf::create_server() const { return std::make_unique<SomeipServerImpl>(*this); }
+
+std::unique_ptr<ClientImpl> SomeipConf::create_client() const { return std::make_unique<SomeipClientImpl>(*this); }
+
+std::unique_ptr<PublisherImpl> SomeipConf::create_publisher() const {
+  return std::make_unique<SomeipPublisherImpl>(*this);
+}
+
+std::unique_ptr<SubscriberImpl> SomeipConf::create_subscriber() const {
+  return std::make_unique<SomeipSubscriberImpl>(*this);
+}
+
+std::unique_ptr<SetterImpl> SomeipConf::create_setter() const { return std::make_unique<SomeipSetterImpl>(*this); }
+
+std::unique_ptr<GetterImpl> SomeipConf::create_getter() const { return std::make_unique<SomeipGetterImpl>(*this); }
+
 bool SomeipConf::is_valid() const {
   if VUNLIKELY (service == 0 || instance == 0) {
     return false;
@@ -99,22 +115,6 @@ bool SomeipConf::is_valid() const {
 
   return true;
 }
-
-std::unique_ptr<ServerImpl> SomeipConf::create_server() const { return std::make_unique<SomeipServerImpl>(*this); }
-
-std::unique_ptr<ClientImpl> SomeipConf::create_client() const { return std::make_unique<SomeipClientImpl>(*this); }
-
-std::unique_ptr<PublisherImpl> SomeipConf::create_publisher() const {
-  return std::make_unique<SomeipPublisherImpl>(*this);
-}
-
-std::unique_ptr<SubscriberImpl> SomeipConf::create_subscriber() const {
-  return std::make_unique<SomeipSubscriberImpl>(*this);
-}
-
-std::unique_ptr<SetterImpl> SomeipConf::create_setter() const { return std::make_unique<SomeipSetterImpl>(*this); }
-
-std::unique_ptr<GetterImpl> SomeipConf::create_getter() const { return std::make_unique<SomeipGetterImpl>(*this); }
 
 std::ostream& operator<<(std::ostream& ostream, const SomeipConf::Groups& groups) noexcept {
   std::ios_base::fmtflags f = ostream.flags();

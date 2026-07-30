@@ -204,27 +204,6 @@ FdbusClient::~FdbusClient() {
   timer_.detach();
 }
 
-bool FdbusClient::call(uint32_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback, int32_t timeout_ms) {
-  if VUNLIKELY (!callback) {
-    return send(channel, req_data.data(), req_data.size(), FDB_QOS_RELIABLE);
-  }
-
-  return invoke(
-      channel,
-      [channel, callback = std::move(callback)](fdbus::CBaseJob::Ptr& msg_ref, fdbus::CFdbBaseObject*) {
-        auto* msg = fdbus::castToMessage<fdbus::CBaseMessage*>(msg_ref);
-
-        if VUNLIKELY (msg->isStatus() || msg->code() != static_cast<int32_t>(channel)) {
-          return;
-        }
-
-        Bytes resp_data = Bytes::shallow_copy(msg->getPayloadBuffer(), msg->getPayloadSize());
-
-        callback(resp_data);
-      },
-      req_data.data(), req_data.size(), nullptr, timeout_ms, FDB_QOS_RELIABLE);
-}
-
 std::any FdbusClient::get_native_handle() const { return this; }
 
 void FdbusClient::start_timer() {
@@ -258,6 +237,27 @@ void FdbusClient::start_timer() {
       self->timer_.set_interval(100);
     }
   });
+}
+
+bool FdbusClient::call(uint32_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback, int32_t timeout_ms) {
+  if VUNLIKELY (!callback) {
+    return send(channel, req_data.data(), req_data.size(), FDB_QOS_RELIABLE);
+  }
+
+  return invoke(
+      channel,
+      [channel, callback = std::move(callback)](fdbus::CBaseJob::Ptr& msg_ref, fdbus::CFdbBaseObject*) {
+        auto* msg = fdbus::castToMessage<fdbus::CBaseMessage*>(msg_ref);
+
+        if VUNLIKELY (msg->isStatus() || msg->code() != static_cast<int32_t>(channel)) {
+          return;
+        }
+
+        Bytes resp_data = Bytes::shallow_copy(msg->getPayloadBuffer(), msg->getPayloadSize());
+
+        callback(resp_data);
+      },
+      req_data.data(), req_data.size(), nullptr, timeout_ms, FDB_QOS_RELIABLE);
 }
 
 void FdbusClient::onOnline(const fdbus::CFdbOnlineInfo& info) {

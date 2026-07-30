@@ -107,18 +107,6 @@ bool DdsrConf::parse_protocol(struct Protocol* protocol) {
   return true;
 }
 
-bool DdsrConf::is_valid() const {
-  if VUNLIKELY (domain < 0 || topic.empty()) {
-    return false;
-  }
-
-  if VUNLIKELY (!qos.empty() && !qos_ext.empty()) {
-    return false;
-  }
-
-  return true;
-}
-
 std::unique_ptr<ServerImpl> DdsrConf::create_server() const { return std::make_unique<DdsrServerImpl>(*this); }
 
 std::unique_ptr<ClientImpl> DdsrConf::create_client() const { return std::make_unique<DdsrClientImpl>(*this); }
@@ -132,6 +120,18 @@ std::unique_ptr<SubscriberImpl> DdsrConf::create_subscriber() const {
 std::unique_ptr<SetterImpl> DdsrConf::create_setter() const { return std::make_unique<DdsrSetterImpl>(*this); }
 
 std::unique_ptr<GetterImpl> DdsrConf::create_getter() const { return std::make_unique<DdsrGetterImpl>(*this); }
+
+bool DdsrConf::is_valid() const {
+  if VUNLIKELY (domain < 0 || topic.empty()) {
+    return false;
+  }
+
+  if VUNLIKELY (!qos.empty() && !qos_ext.empty()) {
+    return false;
+  }
+
+  return true;
+}
 
 std::ostream& operator<<(std::ostream& ostream, const DdsrConf& conf) noexcept {
   std::ios_base::fmtflags f = ostream.flags();

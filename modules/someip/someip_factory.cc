@@ -266,11 +266,11 @@ bool SomeipClient::call(vsomeip_v3::method_t method, const Bytes& req_data, Node
   return true;
 }
 
-bool SomeipClient::is_connected() const { return connected_.load(std::memory_order_acquire); }
-
 void SomeipClient::remove_response_callback(uint64_t seq) {
   std::lock_guard lock(mtx_);
   resp_callbacks_.erase(seq);
 }
+
+bool SomeipClient::is_connected() const { return connected_.load(std::memory_order_acquire); }
 
 }  // namespace vlink

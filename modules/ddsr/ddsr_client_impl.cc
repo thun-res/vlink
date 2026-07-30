@@ -61,42 +61,6 @@ void DdsrClientImpl::WriterListener::on_publication_matched(NodeImpl* impl,
 // ReaderListener
 DdsrClientImpl::ReaderListener::ReaderListener(NodeImpl* impl) : DdsrReaderListener(impl) {}
 
-void DdsrClientImpl::process_message(DDS_DataReader* reader) {
-  DdsrFactory::ReadMessage msg;
-
-  while (DdsrFactory::take_data(reader, msg)) {
-    if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
-      DdsrFactory::release_data(reader, msg);
-      break;
-    }
-
-    if VUNLIKELY (!msg.info->valid_data) {
-      DdsrFactory::release_data(reader, msg);
-      continue;
-    }
-
-    NodeImpl::MsgCallback cb;
-    {
-      std::lock_guard param_lock(param_mtx_);
-      auto iter = callbacks_.find(msg.id);
-
-      if VUNLIKELY (iter == callbacks_.end()) {
-        DdsrFactory::release_data(reader, msg);
-        continue;
-      }
-
-      cb = std::move(iter->second);
-      callbacks_.erase(iter);
-    }
-
-    if VLIKELY (cb) {
-      cb(msg.bytes);
-    }
-
-    DdsrFactory::release_data(reader, msg);
-  }
-}
-
 void DdsrClientImpl::ReaderListener::on_subscription_matched(NodeImpl* impl,
                                                              const DDS_SubscriptionMatchedStatus& status) {
   auto* instance = static_cast<DdsrClientImpl*>(impl);
@@ -138,6 +102,42 @@ void DdsrClientImpl::ReaderListener::on_data_available(NodeImpl* impl, DDS_DataR
 
 // DdsrClientImpl
 DdsrClientImpl::DdsrClientImpl(const DdsrConf& conf) : conf_(conf) {}
+
+void DdsrClientImpl::process_message(DDS_DataReader* reader) {
+  DdsrFactory::ReadMessage msg;
+
+  while (DdsrFactory::take_data(reader, msg)) {
+    if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
+      DdsrFactory::release_data(reader, msg);
+      break;
+    }
+
+    if VUNLIKELY (!msg.info->valid_data) {
+      DdsrFactory::release_data(reader, msg);
+      continue;
+    }
+
+    NodeImpl::MsgCallback cb;
+    {
+      std::lock_guard param_lock(param_mtx_);
+      auto iter = callbacks_.find(msg.id);
+
+      if VUNLIKELY (iter == callbacks_.end()) {
+        DdsrFactory::release_data(reader, msg);
+        continue;
+      }
+
+      cb = std::move(iter->second);
+      callbacks_.erase(iter);
+    }
+
+    if VLIKELY (cb) {
+      cb(msg.bytes);
+    }
+
+    DdsrFactory::release_data(reader, msg);
+  }
+}
 
 void DdsrClientImpl::init() {
   participant_ = DdsrFactory::create_participant(kServer | kClient, conf_, get_all_properties());

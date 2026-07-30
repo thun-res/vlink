@@ -72,18 +72,6 @@ bool FdbusConf::parse_protocol(struct Protocol* protocol) {
   return true;
 }
 
-bool FdbusConf::is_valid() const {
-  if VUNLIKELY (address.empty()) {
-    return false;
-  }
-
-  if VUNLIKELY (transport != "svc" && transport != "ipc") {
-    return false;
-  }
-
-  return true;
-}
-
 std::unique_ptr<ServerImpl> FdbusConf::create_server() const { return std::make_unique<FdbusServerImpl>(*this); }
 
 std::unique_ptr<ClientImpl> FdbusConf::create_client() const { return std::make_unique<FdbusClientImpl>(*this); }
@@ -99,6 +87,18 @@ std::unique_ptr<SubscriberImpl> FdbusConf::create_subscriber() const {
 std::unique_ptr<SetterImpl> FdbusConf::create_setter() const { return std::make_unique<FdbusSetterImpl>(*this); }
 
 std::unique_ptr<GetterImpl> FdbusConf::create_getter() const { return std::make_unique<FdbusGetterImpl>(*this); }
+
+bool FdbusConf::is_valid() const {
+  if VUNLIKELY (address.empty()) {
+    return false;
+  }
+
+  if VUNLIKELY (transport != "svc" && transport != "ipc") {
+    return false;
+  }
+
+  return true;
+}
 
 std::ostream& operator<<(std::ostream& ostream, const FdbusConf& conf) noexcept {
   std::ios_base::fmtflags f = ostream.flags();

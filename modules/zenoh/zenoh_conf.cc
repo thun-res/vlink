@@ -103,14 +103,6 @@ bool ZenohConf::parse_protocol(struct Protocol* protocol) {
   return true;
 }
 
-bool ZenohConf::is_valid() const {
-  if VUNLIKELY (domain < 0 || depth < 0 || address.empty()) {
-    return false;
-  }
-
-  return true;
-}
-
 std::unique_ptr<ServerImpl> ZenohConf::create_server() const { return std::make_unique<ZenohServerImpl>(*this); }
 
 std::unique_ptr<ClientImpl> ZenohConf::create_client() const { return std::make_unique<ZenohClientImpl>(*this); }
@@ -126,6 +118,14 @@ std::unique_ptr<SubscriberImpl> ZenohConf::create_subscriber() const {
 std::unique_ptr<SetterImpl> ZenohConf::create_setter() const { return std::make_unique<ZenohSetterImpl>(*this); }
 
 std::unique_ptr<GetterImpl> ZenohConf::create_getter() const { return std::make_unique<ZenohGetterImpl>(*this); }
+
+bool ZenohConf::is_valid() const {
+  if VUNLIKELY (domain < 0 || depth < 0 || address.empty()) {
+    return false;
+  }
+
+  return true;
+}
 
 std::ostream& operator<<(std::ostream& ostream, const ZenohConf& conf) noexcept {
   std::ios_base::fmtflags f = ostream.flags();

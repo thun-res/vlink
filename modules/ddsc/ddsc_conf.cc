@@ -95,14 +95,6 @@ bool DdscConf::parse_protocol(struct Protocol* protocol) {
   return true;
 }
 
-bool DdscConf::is_valid() const {
-  if VUNLIKELY (domain < 0 || topic.empty()) {
-    return false;
-  }
-
-  return true;
-}
-
 std::unique_ptr<ServerImpl> DdscConf::create_server() const { return std::make_unique<DdscServerImpl>(*this); }
 
 std::unique_ptr<ClientImpl> DdscConf::create_client() const { return std::make_unique<DdscClientImpl>(*this); }
@@ -116,6 +108,14 @@ std::unique_ptr<SubscriberImpl> DdscConf::create_subscriber() const {
 std::unique_ptr<SetterImpl> DdscConf::create_setter() const { return std::make_unique<DdscSetterImpl>(*this); }
 
 std::unique_ptr<GetterImpl> DdscConf::create_getter() const { return std::make_unique<DdscGetterImpl>(*this); }
+
+bool DdscConf::is_valid() const {
+  if VUNLIKELY (domain < 0 || topic.empty()) {
+    return false;
+  }
+
+  return true;
+}
 
 std::ostream& operator<<(std::ostream& ostream, const DdscConf& conf) noexcept {
   std::ios_base::fmtflags f = ostream.flags();
