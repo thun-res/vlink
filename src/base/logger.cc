@@ -220,6 +220,7 @@ template <uint8_t PrefixSizeT, uint8_t SuffixSizeT>
 // LoggerGlobal
 struct LoggerGlobal final {  // NOLINT(clang-analyzer-optin.performance.Padding)
   std::atomic_bool is_busy{false};
+  std::atomic_bool is_initializing{false};
   std::atomic_bool is_stopping{false};
 
   std::string app_name;
@@ -603,6 +604,8 @@ bool Logger::try_acquire_periodic_log(Level level, int64_t interval_ms,
 
 Logger::Logger() noexcept {
   static auto& global_instance = LoggerGlobal::get();
+  global_instance.is_initializing.store(true, std::memory_order_release);
+
   auto& is_logging = is_logging_on_current_thread();
   const bool was_logging = is_logging;
 
@@ -689,6 +692,7 @@ Logger::Logger() noexcept {
     if (!impl_->plugin_name.empty()) {
       is_logging = was_logging;
       global_instance.is_busy.store(false, std::memory_order_release);
+      global_instance.is_initializing.store(false, std::memory_order_release);
 
       return;
     }
@@ -804,6 +808,7 @@ Logger::Logger() noexcept {
 
       is_logging = was_logging;
       global_instance.is_busy.store(false, std::memory_order_release);
+      global_instance.is_initializing.store(false, std::memory_order_release);
 
       return;
     }
@@ -817,6 +822,7 @@ Logger::Logger() noexcept {
 
   is_logging = was_logging;
   global_instance.is_busy.store(false, std::memory_order_release);
+  global_instance.is_initializing.store(false, std::memory_order_release);
 }
 
 Logger::~Logger() noexcept {
@@ -844,7 +850,9 @@ Logger::~Logger() noexcept {
 bool Logger::can_log(Level level) noexcept {
   auto& global_instance = LoggerGlobal::get();
 
-  if VUNLIKELY (is_logging_on_current_thread() || global_instance.is_stopping.load(std::memory_order_acquire)) {
+  if VUNLIKELY (is_logging_on_current_thread() ||
+                (level != kFatal && global_instance.is_initializing.load(std::memory_order_acquire)) ||
+                global_instance.is_stopping.load(std::memory_order_acquire)) {
     return false;
   }
 
