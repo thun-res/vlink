@@ -446,14 +446,10 @@ bool MessageLoop::wait_for_quit(int ms, bool check) {
 #ifdef _WIN32
   HANDLE thread_handle = impl_->thread_handle.load(std::memory_order_acquire);
 
-  if (thread_handle != nullptr) {
-    DWORD thread_status = STILL_ACTIVE;
-
-    if (::GetExitCodeThread(thread_handle, &thread_status) && thread_status != STILL_ACTIVE) {
-      impl_->is_running.store(false, std::memory_order_release);
-      impl_->is_busy.store(false, std::memory_order_release);
-      return true;
-    }
+  if (thread_handle != nullptr && ::WaitForSingleObject(thread_handle, 0) == WAIT_OBJECT_0) {
+    impl_->is_running.store(false, std::memory_order_release);
+    impl_->is_busy.store(false, std::memory_order_release);
+    return true;
   }
 #endif
 
@@ -609,13 +605,10 @@ bool MessageLoop::wait_for_idle(int ms, bool check) {
 #ifdef _WIN32
   HANDLE thread_handle = impl_->thread_handle.load(std::memory_order_acquire);
 
-  if (thread_handle != nullptr) {
-    DWORD thread_status = STILL_ACTIVE;
-    if (::GetExitCodeThread(thread_handle, &thread_status) && thread_status != STILL_ACTIVE) {
-      impl_->is_running.store(false, std::memory_order_release);
-      impl_->is_busy.store(false, std::memory_order_release);
-      return true;
-    }
+  if (thread_handle != nullptr && ::WaitForSingleObject(thread_handle, 0) == WAIT_OBJECT_0) {
+    impl_->is_running.store(false, std::memory_order_release);
+    impl_->is_busy.store(false, std::memory_order_release);
+    return true;
   }
 #endif
 
