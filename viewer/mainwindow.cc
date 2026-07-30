@@ -840,6 +840,18 @@ void MainWindow::destroy_instance() {
 
 MainWindow* MainWindow::get_instance() { return instance_.load(); }
 
+static void collect_proto_message_names(const google::protobuf::Descriptor* descriptor, std::vector<QString>& out) {
+  if (!descriptor) {
+    return;
+  }
+
+  out.push_back(QString::fromStdString(std::string(descriptor->full_name())));
+
+  for (int i = 0; i < descriptor->nested_type_count(); ++i) {
+    collect_proto_message_names(descriptor->nested_type(i), out);
+  }
+}
+
 std::vector<QString> MainWindow::scanned_message_types() const {
   std::vector<QString> out;
 
@@ -3396,18 +3408,6 @@ void MainWindow::import_protos(const QString& dir, bool& has_import, int depth) 
     } else if (file.isDir()) {
       import_protos(file.absoluteFilePath(), has_import, depth + 1);
     }
-  }
-}
-
-static void collect_proto_message_names(const google::protobuf::Descriptor* descriptor, std::vector<QString>& out) {
-  if (!descriptor) {
-    return;
-  }
-
-  out.push_back(QString::fromStdString(std::string(descriptor->full_name())));
-
-  for (int i = 0; i < descriptor->nested_type_count(); ++i) {
-    collect_proto_message_names(descriptor->nested_type(i), out);
   }
 }
 
