@@ -405,8 +405,8 @@ bool LoggerBackend::log(Logger::Level level, std::string_view message) noexcept 
     if VUNLIKELY (protected_record && !impl_->config.block_when_full) {
       Callback task = [this, record = std::move(record)]() mutable { write(std::move(record)); };
 
-      if (post_untracked_task(std::move(task), TaskOverflowPolicy::kUseDispatcherStrategy,
-                              TaskDropPolicy::kProtected)) {
+      if VLIKELY (post_untracked_task(std::move(task), TaskOverflowPolicy::kUseDispatcherStrategy,
+                                      TaskDropPolicy::kProtected)) {
         return true;
       }
 
