@@ -642,6 +642,168 @@ void VCAPReader::on_begin() { MessageLoop::on_begin(); }
 
 void VCAPReader::on_end() { MessageLoop::on_end(); }
 
+bool VCAPReader::do_open_cursor(const Config& config) {
+  impl_->cursor_config = config;
+  impl_->cursor_begin_us = config.begin_time > 0 ? config.begin_time * 1000 : 0;
+  impl_->cursor_end_us = config.end_time > 0 ? config.end_time * 1000 : 0;
+  impl_->cursor_file_index = 0;
+  impl_->cursor_read_error = false;
+
+  if VUNLIKELY (impl_->file_list.empty()) {
+    VLOG_W("VCAPReader: Cursor cannot find any data.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return false;                                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  return prepare_cursor_view(0);
+}
+
+bool VCAPReader::do_read_next(Frame& out, bool& is_error) {
+  is_error = false;
+
+  while (true) {
+    if VUNLIKELY (!impl_->cursor_iter.has_value() || !impl_->cursor_iter_end.has_value()) {
+      return false;
+    }
+
+    auto& iter = impl_->cursor_iter.value();
+    auto& iter_end = impl_->cursor_iter_end.value();
+
+    if (impl_->cursor_need_advance) {
+      if (iter != iter_end) {
+        iter++;
+      }
+
+      impl_->cursor_need_advance = false;
+    }
+
+    if (iter == iter_end) {
+      if VUNLIKELY (impl_->cursor_read_error) {
+        is_error = true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        return false;     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
+
+      if (impl_->cursor_file_index + 1 < static_cast<int>(impl_->file_list.size())) {
+        if VUNLIKELY (!prepare_cursor_view(impl_->cursor_file_index + 1)) {
+          is_error = true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          return false;     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        }
+
+        continue;
+      }
+
+      return false;
+    }
+
+    const int64_t timestamp = (static_cast<int64_t>(iter->message.logTime) - impl_->total_start_timestamp_ns) / 1000;
+
+    if (impl_->cursor_begin_us > 0 && timestamp < impl_->cursor_begin_us) {
+      iter++;    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    if (impl_->cursor_end_us > 0 && timestamp > impl_->cursor_end_us) {
+      return false;
+    }
+
+    if VUNLIKELY (iter->message.dataSize > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+      // LCOV_EXCL_START GCOVR_EXCL_START
+      CLOG_W("VCAPReader: Cursor message data size is too large to address, size = %" PRIu64 ".",
+             static_cast<uint64_t>(iter->message.dataSize));
+      iter++;
+      continue;
+    }
+    // LCOV_EXCL_STOP GCOVR_EXCL_STOP
+
+    std::string output_url;
+
+    if VUNLIKELY (!convert_playback_url(iter->channel->topic, output_url)) {
+      iter++;    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    ActionType action_type = ActionType::kUnknownAction;
+    auto& wrapper_file = impl_->file_list.at(impl_->cursor_file_index);
+
+    if (auto action_iter = wrapper_file.channel_action_map.find(iter->message.channelId);
+        action_iter != wrapper_file.channel_action_map.end()) {
+      action_type = action_iter->second;
+    }
+
+    const auto* data = reinterpret_cast<const uint8_t*>(iter->message.data);
+    const auto size = static_cast<size_t>(iter->message.dataSize);
+
+    out.timestamp = timestamp;
+    out.url = std::move(output_url);
+    out.ser_type.clear();
+    out.schema_type = SchemaType::kUnknown;
+    out.action_type = action_type;
+    out.data = Bytes::shallow_copy(data, size);
+
+    fill_frame_meta(out);
+
+    impl_->cursor_need_advance = true;
+
+    return true;
+  }
+}
+
+bool VCAPReader::prepare_cursor_view(int file_index) {
+  impl_->cursor_iter.reset();
+  impl_->cursor_iter_end.reset();
+  impl_->cursor_msg_view.reset();
+  impl_->cursor_need_advance = false;
+
+  if VUNLIKELY (file_index < 0 || file_index >= static_cast<int>(impl_->file_list.size())) {
+    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  auto& wrapper_file = impl_->file_list.at(file_index);
+
+  if VUNLIKELY (!wrapper_file.reader) {
+    VLOG_W("VCAPReader: Cursor target vcap reader is empty.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return false;                                               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  auto status_function = [this](const mcap::Status& status) {
+    // LCOV_EXCL_START GCOVR_EXCL_START
+    if (!status.ok()) {
+      CLOG_W("VCAPReader: Failed to read cursor message, error = %s.", status.message.c_str());
+      impl_->cursor_read_error = true;
+    }
+  };
+  // LCOV_EXCL_STOP GCOVR_EXCL_STOP
+
+  auto filter_function = [this](std::string_view url) -> bool {
+    return match_playback_url_filter(url, impl_->cursor_config.filter_urls);
+  };
+
+  mcap::ReadMessageOptions read_options;
+  read_options.startTime =
+      impl_->cursor_begin_us > 0 ? impl_->cursor_begin_us * 1000 + impl_->total_start_timestamp_ns : 0;
+  read_options.endTime = mcap::MaxTime;
+  if (!impl_->cursor_config.filter_urls.empty() || has_playback_url_rules()) {
+    read_options.topicFilter = filter_function;
+  }
+  read_options.readOrder = mcap::ReadMessageOptions::ReadOrder::FileOrder;
+
+  const auto [start_offset, end_offset] = wrapper_file.reader->byteRange(read_options.startTime, read_options.endTime);
+
+  // NOLINTNEXTLINE(readability-redundant-smartptr-get)
+  impl_->cursor_msg_view = std::make_unique<mcap::LinearMessageView>(*wrapper_file.reader.get(), read_options,
+                                                                     start_offset, end_offset, status_function);
+
+  if (start_offset == end_offset) {
+    impl_->cursor_iter.emplace(impl_->cursor_msg_view->end());
+  } else {
+    impl_->cursor_iter.emplace(impl_->cursor_msg_view->begin());
+  }
+
+  impl_->cursor_iter_end.emplace(impl_->cursor_msg_view->end());
+  impl_->cursor_file_index = file_index;
+
+  return true;
+}
+
 void VCAPReader::update_status(Status status) {
   bool has_changed = false;
 
@@ -1688,168 +1850,6 @@ int VCAPReader::get_reset_index(const Config& config) {
   impl_->is_pending.store(false, std::memory_order_relaxed);
 
   return start_index;
-}
-
-bool VCAPReader::prepare_cursor_view(int file_index) {
-  impl_->cursor_iter.reset();
-  impl_->cursor_iter_end.reset();
-  impl_->cursor_msg_view.reset();
-  impl_->cursor_need_advance = false;
-
-  if VUNLIKELY (file_index < 0 || file_index >= static_cast<int>(impl_->file_list.size())) {
-    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  auto& wrapper_file = impl_->file_list.at(file_index);
-
-  if VUNLIKELY (!wrapper_file.reader) {
-    VLOG_W("VCAPReader: Cursor target vcap reader is empty.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return false;                                               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  auto status_function = [this](const mcap::Status& status) {
-    // LCOV_EXCL_START GCOVR_EXCL_START
-    if (!status.ok()) {
-      CLOG_W("VCAPReader: Failed to read cursor message, error = %s.", status.message.c_str());
-      impl_->cursor_read_error = true;
-    }
-  };
-  // LCOV_EXCL_STOP GCOVR_EXCL_STOP
-
-  auto filter_function = [this](std::string_view url) -> bool {
-    return match_playback_url_filter(url, impl_->cursor_config.filter_urls);
-  };
-
-  mcap::ReadMessageOptions read_options;
-  read_options.startTime =
-      impl_->cursor_begin_us > 0 ? impl_->cursor_begin_us * 1000 + impl_->total_start_timestamp_ns : 0;
-  read_options.endTime = mcap::MaxTime;
-  if (!impl_->cursor_config.filter_urls.empty() || has_playback_url_rules()) {
-    read_options.topicFilter = filter_function;
-  }
-  read_options.readOrder = mcap::ReadMessageOptions::ReadOrder::FileOrder;
-
-  const auto [start_offset, end_offset] = wrapper_file.reader->byteRange(read_options.startTime, read_options.endTime);
-
-  // NOLINTNEXTLINE(readability-redundant-smartptr-get)
-  impl_->cursor_msg_view = std::make_unique<mcap::LinearMessageView>(*wrapper_file.reader.get(), read_options,
-                                                                     start_offset, end_offset, status_function);
-
-  if (start_offset == end_offset) {
-    impl_->cursor_iter.emplace(impl_->cursor_msg_view->end());
-  } else {
-    impl_->cursor_iter.emplace(impl_->cursor_msg_view->begin());
-  }
-
-  impl_->cursor_iter_end.emplace(impl_->cursor_msg_view->end());
-  impl_->cursor_file_index = file_index;
-
-  return true;
-}
-
-bool VCAPReader::do_open_cursor(const Config& config) {
-  impl_->cursor_config = config;
-  impl_->cursor_begin_us = config.begin_time > 0 ? config.begin_time * 1000 : 0;
-  impl_->cursor_end_us = config.end_time > 0 ? config.end_time * 1000 : 0;
-  impl_->cursor_file_index = 0;
-  impl_->cursor_read_error = false;
-
-  if VUNLIKELY (impl_->file_list.empty()) {
-    VLOG_W("VCAPReader: Cursor cannot find any data.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return false;                                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  return prepare_cursor_view(0);
-}
-
-bool VCAPReader::do_read_next(Frame& out, bool& is_error) {
-  is_error = false;
-
-  while (true) {
-    if VUNLIKELY (!impl_->cursor_iter.has_value() || !impl_->cursor_iter_end.has_value()) {
-      return false;
-    }
-
-    auto& iter = impl_->cursor_iter.value();
-    auto& iter_end = impl_->cursor_iter_end.value();
-
-    if (impl_->cursor_need_advance) {
-      if (iter != iter_end) {
-        iter++;
-      }
-
-      impl_->cursor_need_advance = false;
-    }
-
-    if (iter == iter_end) {
-      if VUNLIKELY (impl_->cursor_read_error) {
-        is_error = true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        return false;     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
-
-      if (impl_->cursor_file_index + 1 < static_cast<int>(impl_->file_list.size())) {
-        if VUNLIKELY (!prepare_cursor_view(impl_->cursor_file_index + 1)) {
-          is_error = true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-          return false;     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        }
-
-        continue;
-      }
-
-      return false;
-    }
-
-    const int64_t timestamp = (static_cast<int64_t>(iter->message.logTime) - impl_->total_start_timestamp_ns) / 1000;
-
-    if (impl_->cursor_begin_us > 0 && timestamp < impl_->cursor_begin_us) {
-      iter++;    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    if (impl_->cursor_end_us > 0 && timestamp > impl_->cursor_end_us) {
-      return false;
-    }
-
-    if VUNLIKELY (iter->message.dataSize > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
-      // LCOV_EXCL_START GCOVR_EXCL_START
-      CLOG_W("VCAPReader: Cursor message data size is too large to address, size = %" PRIu64 ".",
-             static_cast<uint64_t>(iter->message.dataSize));
-      iter++;
-      continue;
-    }
-    // LCOV_EXCL_STOP GCOVR_EXCL_STOP
-
-    std::string output_url;
-
-    if VUNLIKELY (!convert_playback_url(iter->channel->topic, output_url)) {
-      iter++;    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    ActionType action_type = ActionType::kUnknownAction;
-    auto& wrapper_file = impl_->file_list.at(impl_->cursor_file_index);
-
-    if (auto action_iter = wrapper_file.channel_action_map.find(iter->message.channelId);
-        action_iter != wrapper_file.channel_action_map.end()) {
-      action_type = action_iter->second;
-    }
-
-    const auto* data = reinterpret_cast<const uint8_t*>(iter->message.data);
-    const auto size = static_cast<size_t>(iter->message.dataSize);
-
-    out.timestamp = timestamp;
-    out.url = std::move(output_url);
-    out.ser_type.clear();
-    out.schema_type = SchemaType::kUnknown;
-    out.action_type = action_type;
-    out.data = Bytes::shallow_copy(data, size);
-
-    fill_frame_meta(out);
-
-    impl_->cursor_need_advance = true;
-
-    return true;
-  }
 }
 
 void VCAPReader::read(const Config& config) {

@@ -1249,6 +1249,197 @@ void VDBReader::on_begin() { MessageLoop::on_begin(); }
 
 void VDBReader::on_end() { MessageLoop::on_end(); }
 
+bool VDBReader::do_open_cursor(const Config& config) {
+#ifdef VLINK_ENABLE_SQLITE
+  impl_->cursor_stmt.reset();
+  impl_->cursor_config = config;
+  impl_->cursor_begin_us = config.begin_time > 0 ? config.begin_time * 1000 : 0;
+  impl_->cursor_end_us = config.end_time > 0 ? config.end_time * 1000 : 0;
+  impl_->cursor_file_index = 0;
+
+  if VUNLIKELY (impl_->file_list.empty()) {
+    VLOG_W("VDBReader: Cursor cannot find any data.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return false;                                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  return prepare_cursor_stmt(0);
+#else
+  (void)config;
+  return false;
+#endif
+}
+
+bool VDBReader::do_read_next(Frame& out, bool& is_error) {
+#ifdef VLINK_ENABLE_SQLITE
+  is_error = false;
+
+  while (true) {
+    if VUNLIKELY (!impl_->cursor_stmt) {
+      return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    const int step = ::sqlite3_step(impl_->cursor_stmt.get());
+
+    if (step == SQLITE_ROW) {
+      const int64_t timestamp = ::sqlite3_column_int64(impl_->cursor_stmt.get(), get_column(0));
+
+      if (impl_->cursor_end_us > 0 && timestamp > impl_->cursor_end_us) {
+        return false;
+      }
+
+      const int url_id = ::sqlite3_column_int(impl_->cursor_stmt.get(), get_column(1));
+      auto& wrapper_file = impl_->file_list.at(impl_->cursor_file_index);
+      auto iter = wrapper_file.id_to_url_map.find(url_id);
+
+      if VUNLIKELY (iter == wrapper_file.id_to_url_map.end() || iter->second.empty()) {
+        continue;
+      }
+
+      const auto& url = iter->second;
+
+      std::string output_url;
+
+      if VUNLIKELY (!convert_playback_url(url, output_url)) {
+        continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
+
+      if (!impl_->cursor_config.filter_urls.empty() && impl_->cursor_config.filter_urls.count(output_url) == 0U) {
+        continue;
+      }
+
+      std::string_view action_str;
+      const auto* action_ptr =
+          reinterpret_cast<const char*>(::sqlite3_column_text(impl_->cursor_stmt.get(), get_column(2)));
+
+      if (action_ptr != nullptr) {
+        action_str = std::string_view(
+            action_ptr, static_cast<size_t>(::sqlite3_column_bytes(impl_->cursor_stmt.get(), get_column(2))));
+      }
+
+      const auto* data = static_cast<const uint8_t*>(::sqlite3_column_blob(impl_->cursor_stmt.get(), get_column(3)));
+      const int size = ::sqlite3_column_bytes(impl_->cursor_stmt.get(), get_column(3));
+
+      out.timestamp = timestamp;
+      out.url = std::move(output_url);
+      out.ser_type.clear();
+      out.schema_type = SchemaType::kUnknown;
+      out.action_type = convert_action(action_str);
+
+      if VUNLIKELY (impl_->enable_compress && Bytes::is_compress_data(data, size)) {
+        out.data = Bytes::uncompress_data(data, size, false);
+      } else {
+        out.data = Bytes::shallow_copy(data, size);
+      }
+
+      fill_frame_meta(out);
+
+      return true;
+    } else if (step == SQLITE_DONE) {
+      if (impl_->cursor_file_index + 1 < static_cast<int>(impl_->file_list.size())) {
+        if VUNLIKELY (!prepare_cursor_stmt(impl_->cursor_file_index + 1)) {
+          is_error = true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          return false;     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        }
+
+        continue;
+      }
+
+      return false;
+    } else {
+      // LCOV_EXCL_START GCOVR_EXCL_START
+      CLOG_W("VDBReader: Cursor step failed: %s.", ::sqlite3_errmsg(::sqlite3_db_handle(impl_->cursor_stmt.get())));
+      is_error = true;
+      return false;
+      // LCOV_EXCL_STOP GCOVR_EXCL_STOP
+    }
+  }
+#else
+  (void)out;
+  is_error = false;
+  return false;
+#endif
+}
+
+bool VDBReader::prepare_cursor_stmt(int file_index) {
+#ifdef VLINK_ENABLE_SQLITE
+  impl_->cursor_stmt.reset();
+
+  if VUNLIKELY (file_index < 0 || file_index >= static_cast<int>(impl_->file_list.size())) {
+    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  auto& wrapper_file = impl_->file_list.at(file_index);
+
+  if VUNLIKELY (!wrapper_file.db) {
+    VLOG_W("VDBReader: Cursor target db is empty.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return false;                                     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  std::string where;
+
+  if (!impl_->cursor_config.filter_urls.empty()) {
+    std::string id_list = "url IN (";
+    bool id_appended = false;
+
+    for (const auto& [url, id] : wrapper_file.url_to_id_map) {
+      if (!match_playback_url_filter(url, impl_->cursor_config.filter_urls)) {
+        continue;
+      }
+
+      id_list.append(std::to_string(id));
+      id_list.append(",");
+      id_appended = true;
+    }
+
+    if (id_appended) {
+      id_list.pop_back();
+      id_list.append(")");
+    } else {
+      id_list = "url IN (NULL)";
+    }
+
+    where = std::move(id_list);
+  }
+
+  if (impl_->cursor_begin_us > 0) {
+    if (!where.empty()) {
+      where.append(" AND ");
+    }
+
+    where.append("elapsed >= ");
+    where.append(std::to_string(impl_->cursor_begin_us));
+  }
+
+  std::string select_sql = "SELECT elapsed, url, action, data FROM VLinkDatas";
+
+  if (!where.empty()) {
+    select_sql.append(" WHERE ");
+    select_sql.append(where);
+  }
+
+  const bool order_by_elapsed = wrapper_file.has_idx_elapsed;
+
+  select_sql.append(order_by_elapsed ? " ORDER BY elapsed;" : " ORDER BY rowid;");
+
+  ::sqlite3_stmt* stmt = nullptr;
+  const int ret = ::sqlite3_prepare_v2(wrapper_file.db, select_sql.c_str(), -1, &stmt, nullptr);
+
+  if VUNLIKELY (ret != SQLITE_OK) {
+    CLOG_W("VDBReader: Failed to prepare cursor stmt: %s.",  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+           ::sqlite3_errmsg(wrapper_file.db));               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return false;                                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  impl_->cursor_stmt.reset(stmt);
+  impl_->cursor_file_index = file_index;
+
+  return true;
+#else
+  (void)file_index;
+  return false;
+#endif
+}
+
 void VDBReader::update_status(Status status) {
   bool has_changed = false;
 
@@ -2582,197 +2773,6 @@ int VDBReader::get_reset_index(const Config& config) {
 #else
   (void)config;
   return -1;
-#endif
-}
-
-bool VDBReader::prepare_cursor_stmt(int file_index) {
-#ifdef VLINK_ENABLE_SQLITE
-  impl_->cursor_stmt.reset();
-
-  if VUNLIKELY (file_index < 0 || file_index >= static_cast<int>(impl_->file_list.size())) {
-    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  auto& wrapper_file = impl_->file_list.at(file_index);
-
-  if VUNLIKELY (!wrapper_file.db) {
-    VLOG_W("VDBReader: Cursor target db is empty.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return false;                                     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  std::string where;
-
-  if (!impl_->cursor_config.filter_urls.empty()) {
-    std::string id_list = "url IN (";
-    bool id_appended = false;
-
-    for (const auto& [url, id] : wrapper_file.url_to_id_map) {
-      if (!match_playback_url_filter(url, impl_->cursor_config.filter_urls)) {
-        continue;
-      }
-
-      id_list.append(std::to_string(id));
-      id_list.append(",");
-      id_appended = true;
-    }
-
-    if (id_appended) {
-      id_list.pop_back();
-      id_list.append(")");
-    } else {
-      id_list = "url IN (NULL)";
-    }
-
-    where = std::move(id_list);
-  }
-
-  if (impl_->cursor_begin_us > 0) {
-    if (!where.empty()) {
-      where.append(" AND ");
-    }
-
-    where.append("elapsed >= ");
-    where.append(std::to_string(impl_->cursor_begin_us));
-  }
-
-  std::string select_sql = "SELECT elapsed, url, action, data FROM VLinkDatas";
-
-  if (!where.empty()) {
-    select_sql.append(" WHERE ");
-    select_sql.append(where);
-  }
-
-  const bool order_by_elapsed = wrapper_file.has_idx_elapsed;
-
-  select_sql.append(order_by_elapsed ? " ORDER BY elapsed;" : " ORDER BY rowid;");
-
-  ::sqlite3_stmt* stmt = nullptr;
-  const int ret = ::sqlite3_prepare_v2(wrapper_file.db, select_sql.c_str(), -1, &stmt, nullptr);
-
-  if VUNLIKELY (ret != SQLITE_OK) {
-    CLOG_W("VDBReader: Failed to prepare cursor stmt: %s.",  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-           ::sqlite3_errmsg(wrapper_file.db));               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return false;                                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  impl_->cursor_stmt.reset(stmt);
-  impl_->cursor_file_index = file_index;
-
-  return true;
-#else
-  (void)file_index;
-  return false;
-#endif
-}
-
-bool VDBReader::do_open_cursor(const Config& config) {
-#ifdef VLINK_ENABLE_SQLITE
-  impl_->cursor_stmt.reset();
-  impl_->cursor_config = config;
-  impl_->cursor_begin_us = config.begin_time > 0 ? config.begin_time * 1000 : 0;
-  impl_->cursor_end_us = config.end_time > 0 ? config.end_time * 1000 : 0;
-  impl_->cursor_file_index = 0;
-
-  if VUNLIKELY (impl_->file_list.empty()) {
-    VLOG_W("VDBReader: Cursor cannot find any data.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return false;                                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  return prepare_cursor_stmt(0);
-#else
-  (void)config;
-  return false;
-#endif
-}
-
-bool VDBReader::do_read_next(Frame& out, bool& is_error) {
-#ifdef VLINK_ENABLE_SQLITE
-  is_error = false;
-
-  while (true) {
-    if VUNLIKELY (!impl_->cursor_stmt) {
-      return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    const int step = ::sqlite3_step(impl_->cursor_stmt.get());
-
-    if (step == SQLITE_ROW) {
-      const int64_t timestamp = ::sqlite3_column_int64(impl_->cursor_stmt.get(), get_column(0));
-
-      if (impl_->cursor_end_us > 0 && timestamp > impl_->cursor_end_us) {
-        return false;
-      }
-
-      const int url_id = ::sqlite3_column_int(impl_->cursor_stmt.get(), get_column(1));
-      auto& wrapper_file = impl_->file_list.at(impl_->cursor_file_index);
-      auto iter = wrapper_file.id_to_url_map.find(url_id);
-
-      if VUNLIKELY (iter == wrapper_file.id_to_url_map.end() || iter->second.empty()) {
-        continue;
-      }
-
-      const auto& url = iter->second;
-
-      std::string output_url;
-
-      if VUNLIKELY (!convert_playback_url(url, output_url)) {
-        continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
-
-      if (!impl_->cursor_config.filter_urls.empty() && impl_->cursor_config.filter_urls.count(output_url) == 0U) {
-        continue;
-      }
-
-      std::string_view action_str;
-      const auto* action_ptr =
-          reinterpret_cast<const char*>(::sqlite3_column_text(impl_->cursor_stmt.get(), get_column(2)));
-
-      if (action_ptr != nullptr) {
-        action_str = std::string_view(
-            action_ptr, static_cast<size_t>(::sqlite3_column_bytes(impl_->cursor_stmt.get(), get_column(2))));
-      }
-
-      const auto* data = static_cast<const uint8_t*>(::sqlite3_column_blob(impl_->cursor_stmt.get(), get_column(3)));
-      const int size = ::sqlite3_column_bytes(impl_->cursor_stmt.get(), get_column(3));
-
-      out.timestamp = timestamp;
-      out.url = std::move(output_url);
-      out.ser_type.clear();
-      out.schema_type = SchemaType::kUnknown;
-      out.action_type = convert_action(action_str);
-
-      if VUNLIKELY (impl_->enable_compress && Bytes::is_compress_data(data, size)) {
-        out.data = Bytes::uncompress_data(data, size, false);
-      } else {
-        out.data = Bytes::shallow_copy(data, size);
-      }
-
-      fill_frame_meta(out);
-
-      return true;
-    } else if (step == SQLITE_DONE) {
-      if (impl_->cursor_file_index + 1 < static_cast<int>(impl_->file_list.size())) {
-        if VUNLIKELY (!prepare_cursor_stmt(impl_->cursor_file_index + 1)) {
-          is_error = true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-          return false;     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        }
-
-        continue;
-      }
-
-      return false;
-    } else {
-      // LCOV_EXCL_START GCOVR_EXCL_START
-      CLOG_W("VDBReader: Cursor step failed: %s.", ::sqlite3_errmsg(::sqlite3_db_handle(impl_->cursor_stmt.get())));
-      is_error = true;
-      return false;
-      // LCOV_EXCL_STOP GCOVR_EXCL_STOP
-    }
-  }
-#else
-  (void)out;
-  is_error = false;
-  return false;
 #endif
 }
 

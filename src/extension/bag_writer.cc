@@ -210,56 +210,6 @@ BagWriter::BagWriter(const std::string& path, const Config& config) : impl_(std:
   Bytes::init_memory_pool();
 }
 
-void BagWriter::get_url_meta(const std::string& url, const std::string& ser, int& url_index, int& ser_index) const {
-  {
-    std::shared_lock read_lock(impl_->shared_mtx);
-
-    auto url_iter = impl_->url_to_index_map.find(url);
-    auto ser_iter = impl_->ser_to_index_map.find(ser);
-
-    if VLIKELY (url_iter != impl_->url_to_index_map.end() && ser_iter != impl_->ser_to_index_map.end()) {
-      url_index = url_iter->second;
-      ser_index = ser_iter->second;
-      return;
-    }
-  }
-
-  std::unique_lock write_lock(impl_->shared_mtx);
-
-  auto& url_id = impl_->url_to_index_map.try_emplace(url, -1).first->second;
-
-  if (url_id < 0) {
-    url_id = ++impl_->current_url_index;
-    impl_->index_to_url_map[url_id] = url;
-  }
-
-  auto& ser_id = impl_->ser_to_index_map.try_emplace(ser, -1).first->second;
-
-  if (ser_id < 0) {
-    ser_id = ++impl_->current_ser_index;
-    impl_->index_to_ser_map[ser_id] = ser;
-  }
-
-  url_index = url_id;
-  ser_index = ser_id;
-}
-
-void BagWriter::get_url_meta(int url_index, int ser_index, std::string& url, std::string& ser) const {
-  std::shared_lock read_lock(impl_->shared_mtx);
-
-  auto url_iter = impl_->index_to_url_map.find(url_index);
-
-  if VLIKELY (url_iter != impl_->index_to_url_map.end()) {
-    url = url_iter->second;
-  }
-
-  auto ser_iter = impl_->index_to_ser_map.find(ser_index);
-
-  if VLIKELY (ser_iter != impl_->index_to_ser_map.end()) {
-    ser = ser_iter->second;
-  }
-}
-
 BagWriter::~BagWriter() {
   std::shared_ptr<BagPluginInterface> plugin_interface;
 
@@ -269,33 +219,6 @@ BagWriter::~BagWriter() {
   }
 
   if (plugin_interface) {
-    plugin_interface->register_callback({});
-  }
-}
-
-void BagWriter::flush_plugin() {
-  std::shared_ptr<BagPluginInterface> plugin_interface;
-
-  {
-    std::shared_lock state_lock(impl_->record_state_mtx);
-    plugin_interface = impl_->plugin_interface;
-  }
-
-  if (plugin_interface) {
-    plugin_interface->flush();
-  }
-}
-
-void BagWriter::detach_plugin() {
-  std::shared_ptr<BagPluginInterface> plugin_interface;
-
-  {
-    std::unique_lock state_lock(impl_->record_state_mtx);
-    plugin_interface = std::move(impl_->plugin_interface);
-  }
-
-  if (plugin_interface) {
-    plugin_interface->flush();
     plugin_interface->register_callback({});
   }
 }
@@ -418,35 +341,54 @@ BagWriter::operator bool() const noexcept { return !impl_->stream_fail.load(std:
 
 void BagWriter::clear() noexcept { impl_->stream_fail.store(false, std::memory_order_release); }
 
-void BagWriter::close() {}
+void BagWriter::set_url_loss(const std::string& url, double loss) {
+  if (loss > 1) {
+    loss = -1;
+  }
 
-bool BagWriter::post_persistent_task(Callback&& callback) {
-  return post_untracked_task(std::move(callback), TaskOverflowPolicy::kReject, TaskDropPolicy::kProtected);
+  std::lock_guard lock(impl_->sample_mtx);
+
+  impl_->url_loss_map[url] = loss;
+  impl_->total_url_loss_map[url] = loss;
 }
 
-void BagWriter::set_fail() noexcept { impl_->stream_fail.store(true, std::memory_order_release); }
+void BagWriter::close() {}
 
-void BagWriter::learn_recorded_url(const std::string& origin_url, const std::string& recorded_url) {
-  {
-    std::shared_lock state_lock(impl_->record_state_mtx);
+std::string BagWriter::get_format_date(SystemClock* current, bool file_format) {
+  SystemClock time_point;
 
-    auto iter = impl_->recorded_url_remap.find(origin_url);
-
-    if (iter != impl_->recorded_url_remap.end() && iter->second == recorded_url) {
-      return;
-    }
+  if (current) {
+    time_point = *current;
+  } else {
+    time_point = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now());
   }
 
-  std::unique_lock state_lock(impl_->record_state_mtx);
+  auto milliseconds = time_point.time_since_epoch().count() % 1000U;
 
-  impl_->recorded_url_remap.try_emplace(origin_url, recorded_url);
-  auto& recorded_urls = impl_->recorded_urls_by_origin[origin_url];
+  std::time_t now_time_t = std::chrono::system_clock::to_time_t(time_point);
 
-  if (std::find(recorded_urls.begin(), recorded_urls.end(), recorded_url) == recorded_urls.end()) {
-    recorded_urls.emplace_back(recorded_url);
+  std::tm now_tm{};
+
+#ifdef _WIN32
+  localtime_s(&now_tm, &now_time_t);
+#else
+  localtime_r(&now_time_t, &now_tm);
+#endif
+
+  char buffer[32];
+  char full_buffer[64];
+
+  if (file_format) {
+    std::strftime(buffer, sizeof(buffer), "%Y-%m-%d_%H-%M-%S", &now_tm);
+    std::snprintf(full_buffer, sizeof(full_buffer), "%s-%03lld", buffer,
+                  static_cast<long long>(milliseconds));  // NOLINT(runtime/int, google-runtime-int)
+  } else {
+    std::strftime(buffer, sizeof(buffer), "%Y/%m/%d %H:%M:%S", &now_tm);
+    std::snprintf(full_buffer, sizeof(full_buffer), "%s:%03lld", buffer,
+                  static_cast<long long>(milliseconds));  // NOLINT(runtime/int, google-runtime-int)
   }
 
-  impl_->recorded_url_origin[recorded_url] = origin_url;
+  return full_buffer;
 }
 
 std::string BagWriter::convert_recorded_url(const std::string& url) const {
@@ -483,22 +425,61 @@ std::string BagWriter::recover_recorded_url(const std::string& url) const {
   return iter == impl_->recorded_url_origin.end() ? url : iter->second;
 }
 
+void BagWriter::get_url_meta(const std::string& url, const std::string& ser, int& url_index, int& ser_index) const {
+  {
+    std::shared_lock read_lock(impl_->shared_mtx);
+
+    auto url_iter = impl_->url_to_index_map.find(url);
+    auto ser_iter = impl_->ser_to_index_map.find(ser);
+
+    if VLIKELY (url_iter != impl_->url_to_index_map.end() && ser_iter != impl_->ser_to_index_map.end()) {
+      url_index = url_iter->second;
+      ser_index = ser_iter->second;
+      return;
+    }
+  }
+
+  std::unique_lock write_lock(impl_->shared_mtx);
+
+  auto& url_id = impl_->url_to_index_map.try_emplace(url, -1).first->second;
+
+  if (url_id < 0) {
+    url_id = ++impl_->current_url_index;
+    impl_->index_to_url_map[url_id] = url;
+  }
+
+  auto& ser_id = impl_->ser_to_index_map.try_emplace(ser, -1).first->second;
+
+  if (ser_id < 0) {
+    ser_id = ++impl_->current_ser_index;
+    impl_->index_to_ser_map[ser_id] = ser;
+  }
+
+  url_index = url_id;
+  ser_index = ser_id;
+}
+
+void BagWriter::get_url_meta(int url_index, int ser_index, std::string& url, std::string& ser) const {
+  std::shared_lock read_lock(impl_->shared_mtx);
+
+  auto url_iter = impl_->index_to_url_map.find(url_index);
+
+  if VLIKELY (url_iter != impl_->index_to_url_map.end()) {
+    url = url_iter->second;
+  }
+
+  auto ser_iter = impl_->index_to_ser_map.find(ser_index);
+
+  if VLIKELY (ser_iter != impl_->index_to_ser_map.end()) {
+    ser = ser_iter->second;
+  }
+}
+
 std::mutex& BagWriter::sample_mutex() { return impl_->sample_mtx; }
 
 std::unordered_map<std::string, double>& BagWriter::url_loss_map_ref() { return impl_->url_loss_map; }
 
 std::unordered_map<std::string, double>& BagWriter::total_url_loss_map_ref() { return impl_->total_url_loss_map; }
-
-void BagWriter::set_url_loss(const std::string& url, double loss) {
-  if (loss > 1) {
-    loss = -1;
-  }
-
-  std::lock_guard lock(impl_->sample_mtx);
-
-  impl_->url_loss_map[url] = loss;
-  impl_->total_url_loss_map[url] = loss;
-}
 
 const std::string& BagWriter::get_default_tag_name() {
   static std::string tag_name_env_str = Utils::get_env("VLINK_BAG_TAG", "Empty");
@@ -537,41 +518,60 @@ std::string_view BagWriter::convert_action(ActionType type) {
   }
 }
 
-std::string BagWriter::get_format_date(SystemClock* current, bool file_format) {
-  SystemClock time_point;
+void BagWriter::flush_plugin() {
+  std::shared_ptr<BagPluginInterface> plugin_interface;
 
-  if (current) {
-    time_point = *current;
-  } else {
-    time_point = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now());
+  {
+    std::shared_lock state_lock(impl_->record_state_mtx);
+    plugin_interface = impl_->plugin_interface;
   }
 
-  auto milliseconds = time_point.time_since_epoch().count() % 1000U;
+  if (plugin_interface) {
+    plugin_interface->flush();
+  }
+}
 
-  std::time_t now_time_t = std::chrono::system_clock::to_time_t(time_point);
+void BagWriter::detach_plugin() {
+  std::shared_ptr<BagPluginInterface> plugin_interface;
 
-  std::tm now_tm{};
-
-#ifdef _WIN32
-  localtime_s(&now_tm, &now_time_t);
-#else
-  localtime_r(&now_time_t, &now_tm);
-#endif
-
-  char buffer[32];
-  char full_buffer[64];
-
-  if (file_format) {
-    std::strftime(buffer, sizeof(buffer), "%Y-%m-%d_%H-%M-%S", &now_tm);
-    std::snprintf(full_buffer, sizeof(full_buffer), "%s-%03lld", buffer,
-                  static_cast<long long>(milliseconds));  // NOLINT(runtime/int, google-runtime-int)
-  } else {
-    std::strftime(buffer, sizeof(buffer), "%Y/%m/%d %H:%M:%S", &now_tm);
-    std::snprintf(full_buffer, sizeof(full_buffer), "%s:%03lld", buffer,
-                  static_cast<long long>(milliseconds));  // NOLINT(runtime/int, google-runtime-int)
+  {
+    std::unique_lock state_lock(impl_->record_state_mtx);
+    plugin_interface = std::move(impl_->plugin_interface);
   }
 
-  return full_buffer;
+  if (plugin_interface) {
+    plugin_interface->flush();
+    plugin_interface->register_callback({});
+  }
+}
+
+bool BagWriter::post_persistent_task(Callback&& callback) {
+  return post_untracked_task(std::move(callback), TaskOverflowPolicy::kReject, TaskDropPolicy::kProtected);
+}
+
+void BagWriter::set_fail() noexcept { impl_->stream_fail.store(true, std::memory_order_release); }
+
+void BagWriter::learn_recorded_url(const std::string& origin_url, const std::string& recorded_url) {
+  {
+    std::shared_lock state_lock(impl_->record_state_mtx);
+
+    auto iter = impl_->recorded_url_remap.find(origin_url);
+
+    if (iter != impl_->recorded_url_remap.end() && iter->second == recorded_url) {
+      return;
+    }
+  }
+
+  std::unique_lock state_lock(impl_->record_state_mtx);
+
+  impl_->recorded_url_remap.try_emplace(origin_url, recorded_url);
+  auto& recorded_urls = impl_->recorded_urls_by_origin[origin_url];
+
+  if (std::find(recorded_urls.begin(), recorded_urls.end(), recorded_url) == recorded_urls.end()) {
+    recorded_urls.emplace_back(recorded_url);
+  }
+
+  impl_->recorded_url_origin[recorded_url] = origin_url;
 }
 
 }  // namespace vlink

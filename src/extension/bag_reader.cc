@@ -113,46 +113,6 @@ BagReader::~BagReader() {
   }
 }
 
-void BagReader::detach_plugin() {
-  std::shared_ptr<BagPluginInterface> plugin_interface;
-
-  {
-    std::unique_lock state_lock(impl_->playback_state_mtx);
-    plugin_interface = std::move(impl_->plugin_interface);
-  }
-
-  if (plugin_interface) {
-    plugin_interface->flush();
-    plugin_interface->register_callback({});
-  }
-}
-
-void BagReader::reset_plugin() {
-  std::shared_ptr<BagPluginInterface> plugin_interface;
-
-  {
-    std::shared_lock state_lock(impl_->playback_state_mtx);
-    plugin_interface = impl_->plugin_interface;
-  }
-
-  if (plugin_interface) {
-    plugin_interface->on_reset();
-  }
-}
-
-void BagReader::flush_plugin() {
-  std::shared_ptr<BagPluginInterface> plugin_interface;
-
-  {
-    std::shared_lock state_lock(impl_->playback_state_mtx);
-    plugin_interface = impl_->plugin_interface;
-  }
-
-  if (plugin_interface) {
-    plugin_interface->flush();
-  }
-}
-
 void BagReader::bind_bag_interface(const std::shared_ptr<BagPluginInterface>& bag_interface) {
   std::shared_ptr<BagPluginInterface> old_plugin_interface;
 
@@ -274,6 +234,30 @@ bool BagReader::fail() const noexcept { return impl_->cursor_fail; }
 
 BagReader::operator bool() const noexcept { return !impl_->cursor_eof && !impl_->cursor_fail; }
 
+std::string BagReader::get_ser_type(const std::string& url) const {
+  std::shared_lock state_lock(impl_->playback_state_mtx);
+
+  auto iter = impl_->url_to_ser_map.find(url);
+
+  if VLIKELY (iter != impl_->url_to_ser_map.end()) {
+    return iter->second;
+  }
+
+  return {};
+}
+
+SchemaType BagReader::get_schema_type(const std::string& url) const {
+  std::shared_lock state_lock(impl_->playback_state_mtx);
+
+  auto iter = impl_->url_to_schema_type_map.find(url);
+
+  if VLIKELY (iter != impl_->url_to_schema_type_map.end()) {
+    return iter->second;
+  }
+
+  return SchemaType::kUnknown;
+}
+
 bool BagReader::do_open_cursor(const Config& config) {
   (void)config;
 
@@ -286,6 +270,51 @@ bool BagReader::do_read_next(Frame& out, bool& is_error) {  // LCOV_EXCL_LINE GC
   is_error = false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
   return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+}
+
+void BagReader::rebuild_url_meta_maps(const std::vector<Info::UrlMeta>& url_metas,
+                                      std::unordered_map<std::string, std::string>& ser_map,
+                                      std::unordered_map<std::string, SchemaType>& schema_type_map) {
+  ser_map.clear();
+  schema_type_map.clear();
+  ser_map.reserve(url_metas.size());
+  schema_type_map.reserve(url_metas.size());
+
+  std::unordered_set<std::string> ser_conflict_urls;
+  std::unordered_set<std::string> schema_conflict_urls;
+
+  ser_conflict_urls.reserve(url_metas.size());
+  schema_conflict_urls.reserve(url_metas.size());
+
+  for (const auto& meta : url_metas) {
+    auto& merged_ser_type = ser_map[meta.url];
+    auto& merged_schema_type = schema_type_map[meta.url];
+
+    if (ser_conflict_urls.count(meta.url) == 0U && !meta.ser_type.empty()) {
+      if (merged_ser_type.empty() || merged_ser_type == "Bytes") {
+        merged_ser_type = meta.ser_type;
+      } else if (meta.ser_type != "Bytes" && meta.ser_type != merged_ser_type) {
+        CLOG_E("BagReader: URL remap collision on %s, keeping ser_type unknown. ser [%s] vs [%s].", meta.url.c_str(),
+               merged_ser_type.c_str(), meta.ser_type.c_str());
+        merged_ser_type.clear();
+        ser_conflict_urls.emplace(meta.url);
+      }
+    }
+
+    if (schema_conflict_urls.count(meta.url) == 0U && meta.schema_type != SchemaType::kUnknown) {
+      if (merged_schema_type == SchemaType::kUnknown) {
+        merged_schema_type = meta.schema_type;
+      } else if (merged_schema_type != meta.schema_type) {
+        const auto current_label = SchemaData::convert_type(merged_schema_type);
+        const auto new_label = SchemaData::convert_type(meta.schema_type);
+        CLOG_E("BagReader: URL remap collision on %s, keeping schema_type unknown. schema [%.*s] vs [%.*s].",
+               meta.url.c_str(), static_cast<int>(current_label.size()), current_label.data(),
+               static_cast<int>(new_label.size()), new_label.data());
+        merged_schema_type = SchemaType::kUnknown;
+        schema_conflict_urls.emplace(meta.url);
+      }
+    }
+  }
 }
 
 void BagReader::process_output(Frame& frame) {
@@ -358,32 +387,30 @@ void BagReader::fill_frame_meta(Frame& frame) const {
   }
 }
 
-std::unordered_map<std::string, std::string>& BagReader::url_ser_map() { return impl_->url_to_ser_map; }
+void BagReader::reset_plugin() {
+  std::shared_ptr<BagPluginInterface> plugin_interface;
 
-std::unordered_map<std::string, SchemaType>& BagReader::url_schema_type_map() { return impl_->url_to_schema_type_map; }
-
-std::string BagReader::get_ser_type(const std::string& url) const {
-  std::shared_lock state_lock(impl_->playback_state_mtx);
-
-  auto iter = impl_->url_to_ser_map.find(url);
-
-  if VLIKELY (iter != impl_->url_to_ser_map.end()) {
-    return iter->second;
+  {
+    std::shared_lock state_lock(impl_->playback_state_mtx);
+    plugin_interface = impl_->plugin_interface;
   }
 
-  return {};
+  if (plugin_interface) {
+    plugin_interface->on_reset();
+  }
 }
 
-SchemaType BagReader::get_schema_type(const std::string& url) const {
-  std::shared_lock state_lock(impl_->playback_state_mtx);
+void BagReader::flush_plugin() {
+  std::shared_ptr<BagPluginInterface> plugin_interface;
 
-  auto iter = impl_->url_to_schema_type_map.find(url);
-
-  if VLIKELY (iter != impl_->url_to_schema_type_map.end()) {
-    return iter->second;
+  {
+    std::shared_lock state_lock(impl_->playback_state_mtx);
+    plugin_interface = impl_->plugin_interface;
   }
 
-  return SchemaType::kUnknown;
+  if (plugin_interface) {
+    plugin_interface->flush();
+  }
 }
 
 void BagReader::process_url_metas(std::vector<Info::UrlMeta>& url_metas) {
@@ -429,6 +456,16 @@ void BagReader::process_url_metas(std::vector<Info::UrlMeta>& url_metas) {
   }
 }
 
+void BagReader::rebuild_url_meta_lookup(const std::vector<Info::UrlMeta>& url_metas) {
+  std::unique_lock state_lock(impl_->playback_state_mtx);
+
+  rebuild_url_meta_maps(url_metas, impl_->url_to_ser_map, impl_->url_to_schema_type_map);
+}
+
+std::unordered_map<std::string, std::string>& BagReader::url_ser_map() { return impl_->url_to_ser_map; }
+
+std::unordered_map<std::string, SchemaType>& BagReader::url_schema_type_map() { return impl_->url_to_schema_type_map; }
+
 bool BagReader::convert_playback_url(const std::string& input_url, std::string& output_url) const {
   std::shared_lock state_lock(impl_->playback_state_mtx);
 
@@ -470,57 +507,6 @@ bool BagReader::has_playback_url_rules() const noexcept {
   return impl_->playback_url_rules_enabled.load(std::memory_order_acquire);
 }
 
-void BagReader::rebuild_url_meta_lookup(const std::vector<Info::UrlMeta>& url_metas) {
-  std::unique_lock state_lock(impl_->playback_state_mtx);
-
-  rebuild_url_meta_maps(url_metas, impl_->url_to_ser_map, impl_->url_to_schema_type_map);
-}
-
-void BagReader::rebuild_url_meta_maps(const std::vector<Info::UrlMeta>& url_metas,
-                                      std::unordered_map<std::string, std::string>& ser_map,
-                                      std::unordered_map<std::string, SchemaType>& schema_type_map) {
-  ser_map.clear();
-  schema_type_map.clear();
-  ser_map.reserve(url_metas.size());
-  schema_type_map.reserve(url_metas.size());
-
-  std::unordered_set<std::string> ser_conflict_urls;
-  std::unordered_set<std::string> schema_conflict_urls;
-
-  ser_conflict_urls.reserve(url_metas.size());
-  schema_conflict_urls.reserve(url_metas.size());
-
-  for (const auto& meta : url_metas) {
-    auto& merged_ser_type = ser_map[meta.url];
-    auto& merged_schema_type = schema_type_map[meta.url];
-
-    if (ser_conflict_urls.count(meta.url) == 0U && !meta.ser_type.empty()) {
-      if (merged_ser_type.empty() || merged_ser_type == "Bytes") {
-        merged_ser_type = meta.ser_type;
-      } else if (meta.ser_type != "Bytes" && meta.ser_type != merged_ser_type) {
-        CLOG_E("BagReader: URL remap collision on %s, keeping ser_type unknown. ser [%s] vs [%s].", meta.url.c_str(),
-               merged_ser_type.c_str(), meta.ser_type.c_str());
-        merged_ser_type.clear();
-        ser_conflict_urls.emplace(meta.url);
-      }
-    }
-
-    if (schema_conflict_urls.count(meta.url) == 0U && meta.schema_type != SchemaType::kUnknown) {
-      if (merged_schema_type == SchemaType::kUnknown) {
-        merged_schema_type = meta.schema_type;
-      } else if (merged_schema_type != meta.schema_type) {
-        const auto current_label = SchemaData::convert_type(merged_schema_type);
-        const auto new_label = SchemaData::convert_type(meta.schema_type);
-        CLOG_E("BagReader: URL remap collision on %s, keeping schema_type unknown. schema [%.*s] vs [%.*s].",
-               meta.url.c_str(), static_cast<int>(current_label.size()), current_label.data(),
-               static_cast<int>(new_label.size()), new_label.data());
-        merged_schema_type = SchemaType::kUnknown;
-        schema_conflict_urls.emplace(meta.url);
-      }
-    }
-  }
-}
-
 ActionType BagReader::convert_action(std::string_view str) {
   if (str == "C/Req") {
     return ActionType::kClientRequest;
@@ -540,6 +526,20 @@ ActionType BagReader::convert_action(std::string_view str) {
     return ActionType::kGet;
   } else {
     return ActionType::kUnknownAction;
+  }
+}
+
+void BagReader::detach_plugin() {
+  std::shared_ptr<BagPluginInterface> plugin_interface;
+
+  {
+    std::unique_lock state_lock(impl_->playback_state_mtx);
+    plugin_interface = std::move(impl_->plugin_interface);
+  }
+
+  if (plugin_interface) {
+    plugin_interface->flush();
+    plugin_interface->register_callback({});
   }
 }
 

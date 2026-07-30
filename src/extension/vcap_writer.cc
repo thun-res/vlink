@@ -440,166 +440,6 @@ void VCAPWriter::register_schema_callback(SchemaCallback&& callback) {
   impl_->schema_callback = std::move(callback);
 }
 
-bool VCAPWriter::merge_schema(SchemaData& schema_data) {
-  const auto resolved_schema_type =
-      SchemaData::resolve_type(schema_data.schema_type, schema_data.name, schema_data.encoding);
-  schema_data.schema_type = resolved_schema_type;
-
-  if VUNLIKELY (schema_data.name.empty()) {
-    return true;
-  }
-
-  if (schema_data.encoding.empty() && SchemaData::is_real_type(resolved_schema_type)) {
-    schema_data.encoding = std::string(SchemaData::convert_type(resolved_schema_type));
-  }
-
-  std::string schema_key = schema_data.name;
-  schema_key.push_back('\x1F');
-  schema_key.append(SchemaData::convert_type(resolved_schema_type));
-
-  std::string unknown_schema_key;
-  auto schema_iter = impl_->total_schema_map.find(schema_key);
-
-  if (schema_iter == impl_->total_schema_map.end() && SchemaData::is_real_type(resolved_schema_type)) {
-    unknown_schema_key = schema_data.name;
-    unknown_schema_key.push_back('\x1F');
-    schema_iter = impl_->total_schema_map.find(unknown_schema_key);
-  }
-
-  if (schema_iter == impl_->total_schema_map.end()) {
-    impl_->total_schema_map.emplace(schema_key, schema_data);
-  } else {
-    auto& current = schema_iter->second;
-
-    if VUNLIKELY ((!schema_data.encoding.empty() && !current.encoding.empty() &&
-                   current.encoding != schema_data.encoding) ||
-                  (!schema_data.data.empty() && !current.data.empty() && current.data != schema_data.data) ||
-                  (SchemaData::is_real_type(resolved_schema_type) && SchemaData::is_real_type(current.schema_type) &&
-                   current.schema_type != resolved_schema_type)) {
-      CLOG_E("VCAPWriter: Conflicting schema pushed for [%s].", schema_data.name.c_str());
-      return false;
-    }
-
-    if (current.encoding.empty() && !schema_data.encoding.empty()) {
-      current.encoding = schema_data.encoding;
-    }
-
-    if (current.data.empty() && !schema_data.data.empty()) {
-      current.data = schema_data.data;
-    }
-
-    if (!SchemaData::is_real_type(current.schema_type) && SchemaData::is_real_type(resolved_schema_type)) {
-      current.schema_type = resolved_schema_type;
-    }
-
-    schema_data = current;
-
-    if (schema_iter->first != schema_key && current.schema_type == resolved_schema_type) {
-      impl_->total_schema_map.erase(schema_iter);
-      schema_iter = impl_->total_schema_map.emplace(schema_key, schema_data).first;
-    }
-  }
-
-  return true;
-}
-
-bool VCAPWriter::load_schema(const std::string& ser_type, SchemaType& schema_type, SchemaData& schema_data) {
-  schema_data = SchemaData{};
-
-  if VUNLIKELY (ser_type.empty()) {
-    return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  std::string schema_key = ser_type;
-  schema_key.push_back('\x1F');
-  schema_key.append(SchemaData::convert_type(schema_type));
-
-  std::string unknown_schema_key;
-  auto schema_iter = impl_->total_schema_map.end();
-
-  if (schema_type != SchemaType::kUnknown) {
-    schema_iter = impl_->total_schema_map.find(schema_key);
-
-    if (schema_iter == impl_->total_schema_map.end()) {
-      unknown_schema_key = ser_type;
-      unknown_schema_key.push_back('\x1F');
-      schema_iter = impl_->total_schema_map.find(unknown_schema_key);
-    }
-  } else {
-    const auto prefix = ser_type + std::string("\x1F");
-
-    for (auto iter = impl_->total_schema_map.begin(); iter != impl_->total_schema_map.end(); ++iter) {
-      if (!Helpers::has_startwith(iter->first, prefix)) {
-        continue;
-      }
-
-      if (schema_iter != impl_->total_schema_map.end()) {
-        schema_iter = impl_->total_schema_map.end();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        break;                                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
-
-      schema_iter = iter;
-    }
-  }
-
-  if VLIKELY (schema_iter != impl_->total_schema_map.end()) {
-    schema_data.name = schema_iter->second.name;
-    schema_data.encoding = schema_iter->second.encoding;
-    schema_data.schema_type = schema_iter->second.schema_type;
-    schema_data.data.shallow_copy(schema_iter->second.data);
-  } else if (impl_->schema_plugin_interface) {
-    schema_data =
-        impl_->schema_plugin_interface->search_schema(ser_type, schema_type);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  } else if (impl_->schema_callback) {
-    schema_data = impl_->schema_callback(ser_type, schema_type);
-  }
-
-  schema_type = SchemaData::resolve_type(schema_type, ser_type, schema_data.encoding);
-  schema_data.schema_type = SchemaData::resolve_type(schema_data.schema_type, ser_type, schema_data.encoding);
-
-  if (schema_type != SchemaType::kUnknown && schema_data.schema_type != SchemaType::kUnknown &&
-      schema_type != schema_data.schema_type) {
-    CLOG_E("VCAPWriter: Schema family mismatch for [%s], requested = %d, resolved = %d.", ser_type.c_str(),
-           static_cast<int>(schema_type), static_cast<int>(schema_data.schema_type));
-    return false;
-  }
-
-  if (schema_type != SchemaType::kUnknown && schema_data.encoding.empty()) {
-    schema_data.encoding = std::string(SchemaData::convert_type(schema_type));
-  }
-
-  if (schema_data.schema_type == SchemaType::kUnknown && schema_type != SchemaType::kUnknown) {
-    schema_data.schema_type = schema_type;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  if (!schema_data.name.empty()) {
-    std::string resolved_schema_key = ser_type;
-    resolved_schema_key.push_back('\x1F');
-    resolved_schema_key.append(SchemaData::convert_type(schema_data.schema_type));
-
-    if VLIKELY (schema_iter != impl_->total_schema_map.end() && schema_iter->first == resolved_schema_key) {
-      if (schema_iter->second.encoding.empty() && !schema_data.encoding.empty()) {
-        schema_iter->second.encoding = schema_data.encoding;
-      }
-
-      schema_iter->second.schema_type = schema_data.schema_type;
-    } else {
-      SchemaData stored_schema = schema_data;
-
-      if (schema_iter != impl_->total_schema_map.end() && schema_iter->second.schema_type == SchemaType::kUnknown &&
-          schema_data.schema_type != SchemaType::kUnknown) {
-        impl_->total_schema_map.erase(schema_iter);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
-
-      const auto stored_iter =
-          impl_->total_schema_map.insert_or_assign(resolved_schema_key, std::move(stored_schema)).first;
-      schema_data.data.shallow_copy(stored_iter->second.data);
-    }
-  }
-
-  return true;
-}
-
 bool VCAPWriter::push_schema(const SchemaData& schema_data) {
   SchemaData stored_schema = schema_data;
 
@@ -620,6 +460,12 @@ bool VCAPWriter::push_schema(const SchemaData& schema_data) {
 
   return posted;
 }
+
+bool VCAPWriter::is_dumping() const { return impl_->is_dumping.load(std::memory_order_relaxed); }
+
+bool VCAPWriter::is_split_mode() const { return impl_->is_split_mode.load(std::memory_order_relaxed); }
+
+int VCAPWriter::get_split_index() const { return impl_->split_index.load(std::memory_order_relaxed); }
 
 int64_t VCAPWriter::record(const Frame& frame, int64_t timestamp) {
   const std::string& url = frame.url;
@@ -679,12 +525,6 @@ int64_t VCAPWriter::record(const Frame& frame, int64_t timestamp) {
 }
 
 int64_t VCAPWriter::get_record_timestamp() const { return impl_->elapsed_timer.get(); }
-
-bool VCAPWriter::is_dumping() const { return impl_->is_dumping.load(std::memory_order_relaxed); }
-
-bool VCAPWriter::is_split_mode() const { return impl_->is_split_mode.load(std::memory_order_relaxed); }
-
-int VCAPWriter::get_split_index() const { return impl_->split_index.load(std::memory_order_relaxed); }
 
 size_t VCAPWriter::get_max_task_count() const { return impl_->config.max_task_depth; }
 
@@ -847,6 +687,166 @@ void VCAPWriter::close_segment() {
 
   impl_->in_cached.store(false, std::memory_order_relaxed);
   impl_->cached_size.store(0, std::memory_order_relaxed);
+}
+
+bool VCAPWriter::merge_schema(SchemaData& schema_data) {
+  const auto resolved_schema_type =
+      SchemaData::resolve_type(schema_data.schema_type, schema_data.name, schema_data.encoding);
+  schema_data.schema_type = resolved_schema_type;
+
+  if VUNLIKELY (schema_data.name.empty()) {
+    return true;
+  }
+
+  if (schema_data.encoding.empty() && SchemaData::is_real_type(resolved_schema_type)) {
+    schema_data.encoding = std::string(SchemaData::convert_type(resolved_schema_type));
+  }
+
+  std::string schema_key = schema_data.name;
+  schema_key.push_back('\x1F');
+  schema_key.append(SchemaData::convert_type(resolved_schema_type));
+
+  std::string unknown_schema_key;
+  auto schema_iter = impl_->total_schema_map.find(schema_key);
+
+  if (schema_iter == impl_->total_schema_map.end() && SchemaData::is_real_type(resolved_schema_type)) {
+    unknown_schema_key = schema_data.name;
+    unknown_schema_key.push_back('\x1F');
+    schema_iter = impl_->total_schema_map.find(unknown_schema_key);
+  }
+
+  if (schema_iter == impl_->total_schema_map.end()) {
+    impl_->total_schema_map.emplace(schema_key, schema_data);
+  } else {
+    auto& current = schema_iter->second;
+
+    if VUNLIKELY ((!schema_data.encoding.empty() && !current.encoding.empty() &&
+                   current.encoding != schema_data.encoding) ||
+                  (!schema_data.data.empty() && !current.data.empty() && current.data != schema_data.data) ||
+                  (SchemaData::is_real_type(resolved_schema_type) && SchemaData::is_real_type(current.schema_type) &&
+                   current.schema_type != resolved_schema_type)) {
+      CLOG_E("VCAPWriter: Conflicting schema pushed for [%s].", schema_data.name.c_str());
+      return false;
+    }
+
+    if (current.encoding.empty() && !schema_data.encoding.empty()) {
+      current.encoding = schema_data.encoding;
+    }
+
+    if (current.data.empty() && !schema_data.data.empty()) {
+      current.data = schema_data.data;
+    }
+
+    if (!SchemaData::is_real_type(current.schema_type) && SchemaData::is_real_type(resolved_schema_type)) {
+      current.schema_type = resolved_schema_type;
+    }
+
+    schema_data = current;
+
+    if (schema_iter->first != schema_key && current.schema_type == resolved_schema_type) {
+      impl_->total_schema_map.erase(schema_iter);
+      schema_iter = impl_->total_schema_map.emplace(schema_key, schema_data).first;
+    }
+  }
+
+  return true;
+}
+
+bool VCAPWriter::load_schema(const std::string& ser_type, SchemaType& schema_type, SchemaData& schema_data) {
+  schema_data = SchemaData{};
+
+  if VUNLIKELY (ser_type.empty()) {
+    return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  std::string schema_key = ser_type;
+  schema_key.push_back('\x1F');
+  schema_key.append(SchemaData::convert_type(schema_type));
+
+  std::string unknown_schema_key;
+  auto schema_iter = impl_->total_schema_map.end();
+
+  if (schema_type != SchemaType::kUnknown) {
+    schema_iter = impl_->total_schema_map.find(schema_key);
+
+    if (schema_iter == impl_->total_schema_map.end()) {
+      unknown_schema_key = ser_type;
+      unknown_schema_key.push_back('\x1F');
+      schema_iter = impl_->total_schema_map.find(unknown_schema_key);
+    }
+  } else {
+    const auto prefix = ser_type + std::string("\x1F");
+
+    for (auto iter = impl_->total_schema_map.begin(); iter != impl_->total_schema_map.end(); ++iter) {
+      if (!Helpers::has_startwith(iter->first, prefix)) {
+        continue;
+      }
+
+      if (schema_iter != impl_->total_schema_map.end()) {
+        schema_iter = impl_->total_schema_map.end();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        break;                                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
+
+      schema_iter = iter;
+    }
+  }
+
+  if VLIKELY (schema_iter != impl_->total_schema_map.end()) {
+    schema_data.name = schema_iter->second.name;
+    schema_data.encoding = schema_iter->second.encoding;
+    schema_data.schema_type = schema_iter->second.schema_type;
+    schema_data.data.shallow_copy(schema_iter->second.data);
+  } else if (impl_->schema_plugin_interface) {
+    schema_data =
+        impl_->schema_plugin_interface->search_schema(ser_type, schema_type);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  } else if (impl_->schema_callback) {
+    schema_data = impl_->schema_callback(ser_type, schema_type);
+  }
+
+  schema_type = SchemaData::resolve_type(schema_type, ser_type, schema_data.encoding);
+  schema_data.schema_type = SchemaData::resolve_type(schema_data.schema_type, ser_type, schema_data.encoding);
+
+  if (schema_type != SchemaType::kUnknown && schema_data.schema_type != SchemaType::kUnknown &&
+      schema_type != schema_data.schema_type) {
+    CLOG_E("VCAPWriter: Schema family mismatch for [%s], requested = %d, resolved = %d.", ser_type.c_str(),
+           static_cast<int>(schema_type), static_cast<int>(schema_data.schema_type));
+    return false;
+  }
+
+  if (schema_type != SchemaType::kUnknown && schema_data.encoding.empty()) {
+    schema_data.encoding = std::string(SchemaData::convert_type(schema_type));
+  }
+
+  if (schema_data.schema_type == SchemaType::kUnknown && schema_type != SchemaType::kUnknown) {
+    schema_data.schema_type = schema_type;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  if (!schema_data.name.empty()) {
+    std::string resolved_schema_key = ser_type;
+    resolved_schema_key.push_back('\x1F');
+    resolved_schema_key.append(SchemaData::convert_type(schema_data.schema_type));
+
+    if VLIKELY (schema_iter != impl_->total_schema_map.end() && schema_iter->first == resolved_schema_key) {
+      if (schema_iter->second.encoding.empty() && !schema_data.encoding.empty()) {
+        schema_iter->second.encoding = schema_data.encoding;
+      }
+
+      schema_iter->second.schema_type = schema_data.schema_type;
+    } else {
+      SchemaData stored_schema = schema_data;
+
+      if (schema_iter != impl_->total_schema_map.end() && schema_iter->second.schema_type == SchemaType::kUnknown &&
+          schema_data.schema_type != SchemaType::kUnknown) {
+        impl_->total_schema_map.erase(schema_iter);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
+
+      const auto stored_iter =
+          impl_->total_schema_map.insert_or_assign(resolved_schema_key, std::move(stored_schema)).first;
+      schema_data.data.shallow_copy(stored_iter->second.data);
+    }
+  }
+
+  return true;
 }
 
 bool VCAPWriter::write(const std::string& url, const std::string& ser_type, SchemaType schema_type,
