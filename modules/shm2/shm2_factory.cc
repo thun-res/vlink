@@ -25,10 +25,12 @@
 
 #include <charconv>
 #include <chrono>
+#include <new>
 #include <string>
 #include <thread>
 #include <utility>
 
+#include "./base/utils.h"
 #include "./impl/server_impl.h"
 
 #ifndef VLINK_SHM2_NO_FD_LISTENER
@@ -202,6 +204,17 @@ Shm2Factory::Shm2Factory() {
 }
 
 Shm2Factory::~Shm2Factory() {
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    if (poll_thread_.joinable()) {
+      poll_thread_.detach();
+    }
+
+    (void)::new (std::nothrow) auto(std::move(blocking_waiters_));
+    return;
+  }
+#endif
+
   poll_quit_.store(true, std::memory_order_release);
 
   if (wakeup_notifier_) {

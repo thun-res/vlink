@@ -29,6 +29,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <shared_mutex>
 #include <string>
 #include <string_view>
@@ -329,6 +330,13 @@ class GlobalModulesManager final {
         plugin_autoload_enabled_(equals_ignore_case(url_plugins_env_, "auto")) {}
 
   ~GlobalModulesManager() {
+#ifdef _WIN32
+    if (Utils::is_terminating()) {
+      (void)::new (std::nothrow) auto(std::move(ptr_map_));
+      return;
+    }
+#endif
+
     std::lock_guard lock(mtx_);
     ptr_map_.clear();
     plugin_.clear();

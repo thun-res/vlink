@@ -27,6 +27,7 @@
 
 #include "./base/elapsed_timer.h"
 #include "./base/logger.h"
+#include "./base/utils.h"
 
 namespace vlink {
 
@@ -55,6 +56,13 @@ LicenseCheck::LicenseCheck() : impl_(std::make_unique<Impl>()) {
 }
 
 LicenseCheck::~LicenseCheck() {
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    (void)impl_.release();
+    return;
+  }
+#endif
+
   quit();
 
   wait_for_quit();

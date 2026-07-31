@@ -211,6 +211,13 @@ BagWriter::BagWriter(const std::string& path, const Config& config) : impl_(std:
 }
 
 BagWriter::~BagWriter() {
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    (void)impl_.release();
+    return;
+  }
+#endif
+
   std::shared_ptr<BagPluginInterface> plugin_interface;
 
   {

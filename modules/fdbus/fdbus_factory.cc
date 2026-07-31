@@ -25,9 +25,11 @@
 
 #include <charconv>
 #include <memory>
+#include <new>
 #include <string>
 #include <utility>
 
+#include "./base/utils.h"
 #include "./impl/server_impl.h"
 
 namespace vlink {
@@ -57,6 +59,13 @@ FdbusFactory::FdbusFactory() {
 }
 
 FdbusFactory::~FdbusFactory() {
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    (void)::new (std::nothrow) auto(std::move(workers_));
+    return;
+  }
+#endif
+
   message_loop_.quit();
   message_loop_.wait_for_quit();
 

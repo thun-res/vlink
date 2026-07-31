@@ -67,7 +67,15 @@ MqttFactory::MqttFactory() {
   init();
 }
 
-MqttFactory::~MqttFactory() { deinit(); }
+MqttFactory::~MqttFactory() {
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    return;
+  }
+#endif
+
+  deinit();
+}
 
 void MqttFactory::init() {
   bool expected = false;

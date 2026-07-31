@@ -34,6 +34,7 @@
 
 #include "./base/elapsed_timer.h"
 #include "./base/helpers.h"
+#include "./base/utils.h"
 #include "./extension/qos_profile.h"
 #include "./impl/server_impl.h"
 #include "./impl/ssl_options.h"
@@ -626,7 +627,15 @@ ZenohFactory::ZenohFactory() {
   init();
 }
 
-ZenohFactory::~ZenohFactory() { deinit(); }
+ZenohFactory::~ZenohFactory() {
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    return;
+  }
+#endif
+
+  deinit();
+}
 
 void ZenohFactory::init() {
   bool expected = false;

@@ -25,6 +25,8 @@
 
 #include <utility>
 
+#include "./base/utils.h"
+
 namespace vlink {
 
 constexpr size_t kMaxTaskSize = 10000U;
@@ -55,6 +57,12 @@ IntraFactory::IntraFactory() {
 }
 
 IntraFactory::~IntraFactory() {
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    return;
+  }
+#endif
+
   for (auto& [num, pipeline] : pipeline_map_) {
     pipeline.quit(true);
     pipeline.wait_for_quit();

@@ -26,6 +26,7 @@
 #include <charconv>
 #include <filesystem>
 #include <memory>
+#include <new>
 #include <string>
 #include <utility>
 #include <vector>
@@ -35,6 +36,7 @@
 #define SHM_QNX_LOCK_DIR "/var/lock"
 #endif
 
+#include "./base/utils.h"
 #include "./impl/server_impl.h"
 
 #define SHM_USE_RUNTIME_IMPL 1
@@ -66,8 +68,13 @@ struct ShmGlobal final {
 #endif
 
   static ShmGlobal& get() {
+#ifdef _WIN32
+    static ShmGlobal* instance = new ShmGlobal();
+    return *instance;
+#else
     static ShmGlobal instance;
     return instance;
+#endif
   }
 
  private:
@@ -175,6 +182,13 @@ ShmFactory::ShmFactory() {
 }
 
 ShmFactory::~ShmFactory() {
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    (void)::new (std::nothrow) auto(std::move(listener_map_));
+    return;
+  }
+#endif
+
   detect_timer_.stop();
   detect_timer_.detach();
 
@@ -228,6 +242,12 @@ bool ShmFactory::auto_init_roudi(bool same_process_from_roudi) {
     }
 
     ~RoudiManager() {
+#ifdef _WIN32
+      if (Utils::is_terminating()) {
+        return;
+      }
+#endif
+
       if (status_) {
         ShmFactory::deinit_runtime();
         ShmFactory::deinit_roudi();

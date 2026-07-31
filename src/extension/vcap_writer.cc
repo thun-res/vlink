@@ -39,6 +39,7 @@
 #include "./base/elapsed_timer.h"
 #include "./base/helpers.h"
 #include "./base/logger.h"
+#include "./base/utils.h"
 #include "./version.h"
 
 // json
@@ -406,6 +407,13 @@ VCAPWriter::VCAPWriter(const std::string& path, const Config& config)
 }
 
 VCAPWriter::~VCAPWriter() {
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    (void)impl_.release();
+    return;
+  }
+#endif
+
   detach_plugin();
 
   impl_->quit_flag.store(true, std::memory_order_release);
