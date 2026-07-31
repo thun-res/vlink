@@ -850,13 +850,17 @@ Logger::~Logger() noexcept {
 bool Logger::can_log(Level level) noexcept {
   auto& global_instance = LoggerGlobal::get();
 
+  if (level != kFatal && level < global_instance.console_level.load(std::memory_order_acquire) &&
+      level < global_instance.file_level.load(std::memory_order_acquire)) {
+    return false;
+  }
+
   if VUNLIKELY (is_logging_on_current_thread() || global_instance.is_initializing.load(std::memory_order_acquire) ||
                 global_instance.is_stopping.load(std::memory_order_acquire)) {
     return false;
   }
 
-  return level == kFatal || level >= global_instance.console_level.load(std::memory_order_acquire) ||
-         level >= global_instance.file_level.load(std::memory_order_acquire);
+  return true;
 }
 
 void Logger::write(Level level, std::string_view log) noexcept {
