@@ -194,12 +194,12 @@ vlink::Publisher<Imu> pub2("dds://sensor/imu?qos=my_sensor");
 | 风格 | 示例 | 适用 |
 | --- | --- | --- |
 | 流式 `VLOG_X` | `VLOG_I("frame=", id, " lat=", ms, "ms");` | 默认；多变量、零分配 |
-| 格式化 `MLOG_X` | `MLOG_W("t={} C", temp);` | `vlink::format` 的 `{}` 占位 |
+| 格式化 `MLOG_X` | `MLOG_W("t={:.1f} C", temp);` | `vlink::format` 的 `{}` 占位与 std::format 风格修饰 |
 | printf 风格 `CLOG_X` | `CLOG_E("errno=%d", errno);` | 兼容既有 C 代码 |
 | RAII 流 `SLOG_X` | `SLOG_D << "a=" << a;` | 链式 `<<` |
 
-新代码默认优先 `VLOG_X`；多段嵌入值或复杂格式控制推荐 `CLOG_X`；
-`MLOG_X` 只在相邻模块已采用 `{}` 占位格式时沿用。Info 只记录低频
+新代码默认优先 `VLOG_X`；宽度/精度/进制等格式控制用 `MLOG_X` 的
+std::format 风格修饰（如 `{:08.2f}`、`{:#x}`）或 `CLOG_X`。Info 只记录低频
 正常状态，Warn 表示可恢复异常或降级，Error 表示当前操作失败，
 Fatal 只用于无法安全继续的错误。
 

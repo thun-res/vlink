@@ -1295,7 +1295,7 @@ CMake 与 Conan 默认，使用 `MessageLoop` 异步队列与文件轮转）或�
 
 **回溯日志（backtrace）。** 通过 `Logger::enable_backtrace(n)` 维护最近 n 条日志的环形缓冲区，发生错误时调用 `Logger::dump_backtrace()` 即可输出错误前的上下文，帮助定位仅在低日志级别下才暴露的问题。
 
-此外，日志宏提供流式（`VLOG_I`）、格式化（`MLOG_I`，`vlink::format` 的 `{}` 占位）、C 风格（`CLOG_I`，printf）与 RAII 流式（`SLOG_I`）四种写法，底层共享同一套过滤与后端机制。新代码默认优先 `VLOG_*`；多段嵌入值、宽度或精度等复杂格式控制推荐 `CLOG_*`；`MLOG_*` 沿用已采用 `{}` 占位格式的模块：
+此外，日志宏提供流式（`VLOG_I`）、格式化（`MLOG_I`，`vlink::format` 的 `{}` 占位，支持 std::format 风格的宽度/精度/进制修饰）、C 风格（`CLOG_I`，printf）与 RAII 流式（`SLOG_I`）四种写法，底层共享同一套过滤与后端机制。新代码默认优先 `VLOG_*`；宽度或精度等格式控制可直接用 `MLOG_*` 的 `{:spec}` 修饰（如 `{:8.3f}`）或沿用 `CLOG_*`：
 
 ```cpp
 VLOG_I("frame_id=", frame_id, " latency=", latency_ms, "ms");

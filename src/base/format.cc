@@ -63,6 +63,128 @@ size_t format_double_to(char* buf, size_t buflen, double value) noexcept {
   return Helpers::format_floating_to(buf, buflen, value);
 }
 
+size_t format_long_double_to(char* buf, size_t buflen, long double value) noexcept {
+  return Helpers::format_floating_to(buf, buflen, value);
+}
+
+size_t format_double_spec_to(char* buf, size_t buflen, double value, char type, int precision, bool alt) noexcept {
+  return Helpers::format_floating_spec_to(buf, buflen, value, type, precision, alt);
+}
+
+size_t format_long_double_spec_to(char* buf, size_t buflen, long double value, char type, int precision,
+                                  bool alt) noexcept {
+  return Helpers::format_floating_spec_to(buf, buflen, value, type, precision, alt);
+}
+
+const char* parse_spec_ref(const char* p, const char* end, int& ref) noexcept {
+  ++p;
+  int index = kSpecRefAuto;
+
+  if (p != end && *p >= '0' && *p <= '9') {
+    index = 0;
+
+    while (p != end && *p >= '0' && *p <= '9') {
+      if (index < 100000000) {
+        index = index * 10 + (*p - '0');
+      }
+
+      ++p;
+    }
+  }
+
+  if (p != end && *p == '}') {
+    ref = index;
+    ++p;
+  }
+
+  return p;
+}
+
+const char* parse_format_spec(const char* p, const char* end, FormatSpec& spec) noexcept {
+  if (p != end && p + 1 != end && (p[1] == '<' || p[1] == '>' || p[1] == '^') && *p != '{' && *p != '}') {
+    spec.fill = *p;
+    spec.align = p[1] == '<' ? Align::kLeft : (p[1] == '>' ? Align::kRight : Align::kCenter);
+    p += 2;
+  } else if (p != end && (*p == '<' || *p == '>' || *p == '^')) {
+    spec.align = *p == '<' ? Align::kLeft : (*p == '>' ? Align::kRight : Align::kCenter);
+    ++p;
+  }
+
+  if (p != end && (*p == '+' || *p == '-' || *p == ' ')) {
+    spec.sign = *p == '+' ? Sign::kPlus : (*p == ' ' ? Sign::kSpace : Sign::kMinus);
+    ++p;
+  }
+
+  if (p != end && *p == '#') {
+    spec.alt = true;
+    ++p;
+  }
+
+  if (p != end && *p == '0') {
+    spec.zero = true;
+    ++p;
+  }
+
+  if (p != end && *p == '{') {
+    p = parse_spec_ref(p, end, spec.width_ref);
+  } else {
+    while (p != end && *p >= '0' && *p <= '9') {
+      if (spec.width < 100000000) {
+        spec.width = spec.width * 10 + (*p - '0');
+      }
+
+      ++p;
+    }
+  }
+
+  if (p != end && *p == '.') {
+    ++p;
+    spec.precision = 0;
+
+    if (p != end && *p == '{') {
+      p = parse_spec_ref(p, end, spec.precision_ref);
+    } else {
+      while (p != end && *p >= '0' && *p <= '9') {
+        if (spec.precision < 100000000) {
+          spec.precision = spec.precision * 10 + (*p - '0');
+        }
+
+        ++p;
+      }
+    }
+  }
+
+  if (p != end) {
+    switch (*p) {
+      case 'b':
+      case 'B':
+      case 'c':
+      case 'd':
+      case 'o':
+      case 'x':
+      case 'X':
+      case 'a':
+      case 'A':
+      case 'e':
+      case 'E':
+      case 'f':
+      case 'F':
+      case 'g':
+      case 'G':
+      case 's':
+      case 'p':
+      case '?':
+        spec.type = *p;
+        ++p;
+        break;
+      default:
+        break;
+    }
+  }
+
+  return p;
+}
+
 // NOLINTEND
 
 }  // namespace detail
