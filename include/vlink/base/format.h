@@ -1117,7 +1117,7 @@ class FormatWriter {
     write_fill(spec.fill, left);
 
     size_t budget = shown;
-    const auto emit = [this, &budget](const char* data, size_t count) {
+    const auto put = [this, &budget](const char* data, size_t count) {
       const size_t n = count < budget ? count : budget;
 
       if (n > 0U) {
@@ -1126,17 +1126,17 @@ class FormatWriter {
       }
     };
 
-    emit(&quote, 1U);
+    put(&quote, 1U);
 
     for (const char c : sv) {
       if (budget == 0U) {
         break;
       }
 
-      emit(piece, escape_debug_char(c, quote, escape_high, piece));
+      put(piece, escape_debug_char(c, quote, escape_high, piece));
     }
 
-    emit(&quote, 1U);
+    put(&quote, 1U);
     write_fill(spec.fill, pad - left);
   }
 
