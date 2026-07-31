@@ -5,6 +5,7 @@
 ### 新增功能
 
 - **自研日志后端**：新增公开的 `LoggerBackend`，支持异步写入、队列背压、周期刷新、固定/时间戳轮转、UTC 和 backtrace。
+- **格式化修饰符**：`vlink::format` 与 `MLOG_*` 支持完整的 std::format 风格 spec，含动态宽度/精度、`long double`、`nullptr`、`format_as` 扩展点、`{:?}` 和返回 `std::string` 的 `format()`；无效 spec 宽容忽略，不抛异常。
 
 ### 改进
 
@@ -17,6 +18,7 @@
 ### 修复
 
 - **边界正确性**：自定义日志 handler 异常不再越过 `noexcept` 边界，C 风格超长日志不再写入截断 NUL；修复 signed `__int128_t` 构造丢失高 64 位。
+- **Windows 退出挂死**：新增 `Utils::is_terminating()` 探测进程终止阶段；终止期间各模块单例改为泄漏式释放、析构跳过跨线程清理，避免 `ExitProcess` 后 DLL 卸载回调中的锁死锁。
 
 ## v2.1.0 (2026/07/26)
 
