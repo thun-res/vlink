@@ -370,6 +370,14 @@ LoggerBackend::LoggerBackend(Config&& config, ErrorHandler&& error_handler, Cons
 
 LoggerBackend::~LoggerBackend() {
   impl_->accepting.store(false, std::memory_order_release);
+
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    (void)impl_.release();
+    return;
+  }
+#endif
+
   impl_->flush_timer.stop();
 
 #ifdef _WIN32
@@ -389,6 +397,12 @@ bool LoggerBackend::log(Logger::Level level, std::string_view message) noexcept 
                 level >= Logger::kOff) {
     return false;
   }
+
+#ifdef _WIN32
+  if VUNLIKELY (Utils::is_terminating()) {
+    return false;
+  }
+#endif
 
   try {
     static thread_local const uint64_t kThreadId = Utils::get_native_thread_id();
@@ -746,7 +760,15 @@ void LoggerBackend::rotate_timestamped() {
 }
 
 void LoggerBackend::flush_output() {
-  if VUNLIKELY (std::fflush(impl_->file) != 0) {
+  int flush_result = 0;
+
+#if defined(_WIN32)
+  flush_result = ::_fflush_nolock(impl_->file);
+#else
+  flush_result = std::fflush(impl_->file);
+#endif
+
+  if VUNLIKELY (flush_result != 0) {
     const int error_number = errno;
     throw std::runtime_error("logger backend: failed to flush log file " + impl_->current_path.string() + ": " +
                              std::error_code(error_number, std::generic_category()).message());

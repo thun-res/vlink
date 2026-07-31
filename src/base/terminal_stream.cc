@@ -32,6 +32,8 @@
 #include <string>
 #include <string_view>
 
+#include "./base/utils.h"
+
 #ifdef _WIN32
 #include <Windows.h>
 #include <io.h>
@@ -76,6 +78,12 @@ TerminalStream& TerminalStream::flush_manip(TerminalStream& stream) noexcept {
 TerminalStream::TerminalStream() noexcept : buffer_(kDefaultBufferSize) {}
 
 TerminalStream::~TerminalStream() noexcept {
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    return;
+  }
+#endif
+
   std::lock_guard lock(mutex_);
   flush_unlocked();
 }

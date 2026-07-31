@@ -269,6 +269,12 @@ struct Logger::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding)
 
       global_instance.is_stopping.store(true, std::memory_order_release);
 
+#if defined(_WIN32)
+      if (Utils::is_terminating()) {
+        return;
+      }
+#endif
+
       instance.impl_->is_enable_file_channel.store(false, std::memory_order_release);
       instance.impl_->interface->flush();
       instance.impl_->interface.reset();
@@ -828,6 +834,13 @@ Logger::Logger() noexcept {
 Logger::~Logger() noexcept {
   auto& global_instance = LoggerGlobal::get();
   global_instance.is_stopping.store(true, std::memory_order_release);
+
+#if defined(_WIN32)
+  if (Utils::is_terminating()) {
+    (void)impl_.release();
+    return;
+  }
+#endif
 
   if (!impl_->is_enable_file_channel.exchange(false, std::memory_order_acq_rel)) {
     return;

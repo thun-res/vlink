@@ -191,6 +191,14 @@ MessageLoop::MessageLoop(Type type) : impl_(std::make_unique<Impl>()) {
 
 MessageLoop::~MessageLoop() {
   // NOLINTBEGIN
+#ifdef _WIN32
+  if VUNLIKELY (Utils::is_terminating()) {
+    impl_->alive_state->alive.store(false, std::memory_order_release);
+    (void)impl_.release();
+    return;
+  }
+#endif
+
   {
     std::lock_guard lock(impl_->alive_state->mtx);
     impl_->alive_state->alive.store(false, std::memory_order_release);

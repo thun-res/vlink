@@ -807,6 +807,13 @@ MemoryPool::MemoryPool(const Config& config) : impl_(std::make_unique<Impl>()) {
 }
 
 MemoryPool::~MemoryPool() {
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    (void)impl_.release();
+    return;
+  }
+#endif
+
   for (auto& state : impl_->owned_states) {
     for (const MemoryChunk& chunk : state->chunks) {
       ::operator delete(chunk.ptr, chunk.bytes, std::align_val_t{kBlockAlignment});

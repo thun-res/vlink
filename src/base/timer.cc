@@ -34,6 +34,7 @@
 #include "./base/memory_pool.h"
 #include "./base/memory_resource.h"
 #include "./base/message_loop.h"
+#include "./base/utils.h"
 
 namespace vlink {
 
@@ -96,6 +97,13 @@ Timer::Timer(uint32_t interval_ms, int32_t loop_count, Callback&& callback) : im
 
 Timer::~Timer() {
   impl_->alive_flag->store(false, std::memory_order_release);
+
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    (void)impl_.release();
+    return;
+  }
+#endif
 
   MessageLoop* message_loop = impl_->message_loop.load(std::memory_order_acquire);
 
