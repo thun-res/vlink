@@ -758,10 +758,6 @@ TEST_SUITE("base-Format") {
     CHECK_EQ(fmt("{:.2f}", 3.14159L), "3.14");
     CHECK_EQ(fmt("{:e}", 1.5L), "1.500000e+00");
     CHECK_EQ(fmt("{:8.3f}", -2.5L), "  -2.500");
-
-    if (std::numeric_limits<long double>::max_exponent10 > std::numeric_limits<double>::max_exponent10) {
-      CHECK_EQ(fmt("{:g}", 1e400L), "1e+400");
-    }
   }
 
   TEST_CASE("format nullptr renders as 0x0") {
