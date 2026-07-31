@@ -34,7 +34,7 @@
  *
  * | Category               | Representative entry points                                       |
  * | ---------------------- | ----------------------------------------------------------------- |
- * | Process introspection  | @c get_app_path, @c get_app_dir, @c get_app_name, @c get_pid      |
+ * | Process introspection  | @c get_app_path, @c get_app_name, @c get_pid, @c is_terminating   |
  * | Host identity          | @c get_host_name, @c get_machine_id, @c get_timezone_diff         |
  * | Filesystem helpers     | @c get_tmp_dir, @c wait_for_device                                |
  * | Environment management | @c get_env, @c set_env, @c unset_env                              |
@@ -315,6 +315,19 @@ VLINK_EXPORT bool set_thread_stick(uint32_t core_mask, std::thread* thread = nul
  * @return Native thread identifier.
  */
 [[nodiscard]] VLINK_EXPORT uint64_t get_native_thread_id() noexcept;
+
+/**
+ * @brief Reports whether the process has entered its final termination phase.
+ *
+ * @details
+ * On Windows this returns @c true once @c ExitProcess has terminated all other threads and
+ * DLL unload callbacks are running; locks held by those threads are never released, so
+ * cross-thread cleanup must be skipped.  Static destruction during a normal @c exit() and
+ * @c FreeLibrary unloads report @c false.  Other platforms always return @c false.
+ *
+ * @return @c true during terminal process shutdown on Windows.
+ */
+[[nodiscard]] VLINK_EXPORT bool is_terminating() noexcept;
 
 /**
  * @brief Installs a callback for graceful termination signals.

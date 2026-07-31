@@ -33,6 +33,7 @@
 #include <functional>
 #include <iostream>
 #include <mutex>
+#include <new>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -1325,6 +1326,19 @@ uint64_t get_native_thread_id() noexcept {
 #endif
 }
 
+bool is_terminating() noexcept {
+#if defined(_WIN32)
+  using RtlDllShutdownInProgressT = BOOLEAN(NTAPI*)();
+
+  static const auto kRtlDllShutdownInProgress = reinterpret_cast<RtlDllShutdownInProgressT>(
+      ::GetProcAddress(::GetModuleHandleW(L"ntdll.dll"), "RtlDllShutdownInProgress"));
+
+  return kRtlDllShutdownInProgress != nullptr && kRtlDllShutdownInProgress() != FALSE;
+#else
+  return false;
+#endif
+}
+
 // SignalHelper
 struct SignalHelper final {
   bool is_async{false};
@@ -1461,6 +1475,30 @@ struct KeyboardHelper final {
 
  private:
   KeyboardHelper() = default;
+
+  ~KeyboardHelper() {
+#ifdef _WIN32
+    if (is_terminating()) {
+      if (thread.joinable()) {
+        thread.detach();
+      }
+
+      (void)::new (std::nothrow) auto(std::move(callback));
+      return;
+    }
+#endif
+
+    {
+      std::lock_guard lock(mtx);
+      quit_flag.store(true, std::memory_order_release);
+    }
+
+    cv.notify_all();
+
+    if (thread.joinable()) {
+      thread.join();
+    }
+  }
 };
 
 void start_detect_keyboard(MoveFunction<void(const std::string& key)>&& callback, int poll_ms) noexcept {
