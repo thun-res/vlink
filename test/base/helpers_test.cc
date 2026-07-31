@@ -27,13 +27,26 @@
 
 #include <doctest/doctest.h>
 
+#include <charconv>
 #include <filesystem>
 #include <functional>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "../common_test.h"
+
+template <typename FloatT, typename = void>
+struct TestHasFloatToChars final : std::false_type {};
+
+template <typename FloatT>
+struct TestHasFloatToChars<FloatT,
+                           std::void_t<decltype(std::to_chars(std::declval<char*>(), std::declval<char*>(),
+                                                              std::declval<FloatT>(), std::chars_format::general, 6))>>
+    final : std::true_type {};
+
+static constexpr bool kTestHasFloatToChars = TestHasFloatToChars<double>::value;
 
 TEST_SUITE("base-Helpers") {
   TEST_CASE("to_int: valid and invalid inputs") {
@@ -601,6 +614,45 @@ TEST_SUITE("base-Helpers") {
       std::string s = Helpers::path_to_string(p);
       (void)s;
     }
+  }
+
+  TEST_CASE("format_floating_spec_to covers presentation types and edge cases") {
+    char buf[64];
+
+    const auto spec = [&buf](double value, char type, int precision, bool alt) {
+      size_t n = Helpers::format_floating_spec_to(buf, sizeof(buf), value, type, precision, alt);
+      return std::string(buf, n);
+    };
+
+    CHECK_EQ(spec(1.5, 'f', -1, false), "1.500000");
+    CHECK_EQ(spec(3.14159, 'f', 2, false), "3.14");
+    CHECK_EQ(spec(314.15, 'e', 1, false), "3.1e+02");
+    CHECK_EQ(spec(314.15, 'E', 1, false), "3.1E+02");
+    CHECK_EQ(spec(0.00001, 'g', -1, false), "1e-05");
+    CHECK_EQ(spec(0.00001, 'G', -1, false), "1E-05");
+    if constexpr (kTestHasFloatToChars) {
+      CHECK_EQ(spec(255.0, 'a', -1, false), "1.fep+7");
+      CHECK_EQ(spec(255.0, 'A', -1, false), "1.FEP+7");
+      CHECK_EQ(spec(0.5, '\0', 2, true), "0.5");
+    }
+
+    CHECK_EQ(spec(3.14159, '\0', 3, false), "3.14");
+    CHECK_EQ(spec(3.0, 'f', 0, true), "3.");
+    CHECK_EQ(spec(3.0, 'e', 0, true), "3.e+00");
+    CHECK_EQ(spec(1.0, 'g', -1, true), "1.00000");
+    CHECK_EQ(spec(std::numeric_limits<double>::infinity(), 'f', -1, false), "inf");
+    CHECK_EQ(spec(std::numeric_limits<double>::infinity(), 'F', -1, true), "INF");
+    CHECK_EQ(spec(std::numeric_limits<double>::quiet_NaN(), 'e', -1, false), "nan");
+    CHECK_EQ(spec(-2.5, 'f', 1, false), "-2.5");
+    CHECK_EQ(Helpers::format_floating_spec_to(buf, 0, 1.5, 'f', -1, false), 0U);
+
+    const auto spec_l = [&buf](long double value, char type, int precision, bool alt) {
+      size_t n = Helpers::format_floating_spec_to(buf, sizeof(buf), value, type, precision, alt);
+      return std::string(buf, n);
+    };
+
+    CHECK_EQ(spec_l(3.14159L, 'f', 2, false), "3.14");
+    CHECK_EQ(spec_l(1.5L, 'e', 1, false), "1.5e+00");
   }
 }
 
