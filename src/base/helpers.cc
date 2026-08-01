@@ -283,7 +283,7 @@ size_t format_floating_spec_impl(char* buf, size_t buflen, FloatT value, char ty
     return 0U;
   }
 
-  size_t size = static_cast<size_t>(written);
+  auto size = static_cast<size_t>(written);
 
   if (type == 'a' || type == 'A') {
     const size_t start = size > 0U && buf[0] == '-' ? 1U : 0U;
