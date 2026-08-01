@@ -478,6 +478,7 @@ TEST_SUITE("base-Format") {
     CHECK_EQ(fmt("{:x}", 'A'), "41");
     CHECK_EQ(fmt("{:#x}", 'A'), "0x41");
     CHECK_EQ(fmt("{:c}", 'z'), "z");
+    CHECK_EQ(fmt("{:f}", 'A'), "A");
   }
 
   TEST_CASE("spec presentations of bool") {
@@ -487,6 +488,8 @@ TEST_SUITE("base-Format") {
     CHECK_EQ(fmt("{:s}", true), "true");
     CHECK_EQ(fmt("{:>7}", false), "  false");
     CHECK_EQ(fmt("{:05d}", true), "00001");
+    CHECK_EQ(fmt("{:f}", true), "true");
+    CHECK_EQ(fmt("{:>7f}", false), "  false");
   }
 
   TEST_CASE("spec fixed float precision") {
@@ -639,6 +642,14 @@ TEST_SUITE("base-Format") {
     CHECK_EQ(std::string(buf, 5), "00000");
   }
 
+  TEST_CASE("spec huge width remains bounded for a fixed output buffer") {
+    char out[1];
+    auto r = format::format_to_n(out, sizeof(out), "{:999999999}", 1);
+    CHECK_EQ(r.size, 999999999U);
+    CHECK(r.truncated);
+    CHECK_EQ(out[0], ' ');
+  }
+
   TEST_CASE("spec works through format_to array and iterator overloads") {
     char out[8];
     auto r = format::format_to(out, "{:03}", 7);
@@ -788,9 +799,13 @@ TEST_SUITE("base-Format") {
     auto r = format::format_to_n(big, sizeof(big), "{:.0f}", std::numeric_limits<long double>::max());
     CHECK_EQ(r.size, static_cast<size_t>(std::numeric_limits<long double>::max_exponent10) + 1u);
     CHECK_FALSE(r.truncated);
+
+    r = format::format_to_n(big, sizeof(big), "{:.340f}", -std::numeric_limits<long double>::max());
+    CHECK_EQ(r.size, static_cast<size_t>(std::numeric_limits<long double>::max_exponent10) + 343u);
+    CHECK_FALSE(r.truncated);
   }
 
-  TEST_CASE("unparseable nested references are treated literally") {
+  TEST_CASE("malformed nested references do not fail") {
     CHECK_EQ(fmt("{:{x}}", 26), "1a}");
     CHECK_EQ(fmt("{:{:{}}}", 42), "42}");
     CHECK_EQ(fmt("{:{0}}", 5), "    5");
@@ -813,12 +828,15 @@ TEST_SUITE("base-Format") {
     CHECK_EQ(fmt("{:?}", "a\tb\n"), "\"a\\tb\\n\"");
     CHECK_EQ(fmt("{:?}", "\x01\x1f\x7f"), "\"\\u{1}\\u{1f}\\u{7f}\"");
     CHECK_EQ(fmt("{:>10?}", "ab"), "      \"ab\"");
+    CHECK_EQ(fmt("{:.0?}", "ab"), "\"\"");
+    CHECK_EQ(fmt("{:.2?}", "a\nb"), "\"a\\n\"");
   }
 
   TEST_CASE("debug presentation escapes chars") {
     CHECK_EQ(fmt("{:?}", 'q'), "'q'");
     CHECK_EQ(fmt("{:?}", '\''), "'\\''");
     CHECK_EQ(fmt("{:?}", '\n'), "'\\n'");
+    CHECK_EQ(fmt("{:.1?}", 'q'), "'q'");
   }
 }
 

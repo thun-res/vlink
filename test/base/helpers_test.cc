@@ -646,6 +646,12 @@ TEST_SUITE("base-Helpers") {
     CHECK_EQ(spec(-2.5, 'f', 1, false), "-2.5");
     CHECK_EQ(Helpers::format_floating_spec_to(buf, 0, 1.5, 'f', -1, false), 0U);
 
+    char tiny[1];
+    CHECK_EQ(Helpers::format_floating_spec_to(tiny, sizeof(tiny), 1.0, 'f', 0, true), 0U);
+
+    char fallback[2];
+    CHECK_EQ(Helpers::format_floating_spec_to(fallback, sizeof(fallback), 1.0, 'g', -1, true), 0U);
+
     const auto spec_l = [&buf](long double value, char type, int precision, bool alt) {
       size_t n = Helpers::format_floating_spec_to(buf, sizeof(buf), value, type, precision, alt);
       return std::string(buf, n);

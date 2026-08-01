@@ -92,8 +92,7 @@
  *       spec (and for @c {:#} without type and precision), floating values use the @c "%g"
  *       6 significant digit representation.  Platforms without floating-point @c std::to_chars
  *       format floats through @c snprintf with printf semantics, including the @c %a
- *       representation.  Nested width/precision references that cannot be parsed are treated as
- *       literal text.  The @c ? presentation escapes ASCII control bytes, quotes and backslashes;
+ *       representation.  The @c ? presentation escapes ASCII control bytes, quotes and backslashes;
  *       string bytes at or above @c 0x80 pass through unescaped while a lone @c char code unit
  *       above @c 0x7F is escaped as @c \\x{..}.  Unsupported argument types trigger a compile-time @c
  * static_assert.
@@ -315,6 +314,8 @@ class VLINK_EXPORT StringWriter {
 
   void write(std::string_view sv);
 
+  void write_fill(char fill, size_t count);
+
  private:
   char* begin_{nullptr};
   char* ptr_{nullptr};
@@ -345,6 +346,14 @@ class IteratorWriter {
   }
 
   inline void write(std::string_view sv) { write(sv.data(), sv.size()); }
+
+  inline void write_fill(char fill, size_t count) {
+    for (size_t i = 0; i < count; ++i) {
+      *out_++ = fill;
+    }
+
+    count_ += count;
+  }
 
  private:
   OutputItT out_;
@@ -831,21 +840,7 @@ class FormatWriter {
     }
   }
 
-  void write_fill(char fill, size_t count) {
-    char chunk[64];
-
-    if (count == 0U) {
-      return;
-    }
-
-    std::memset(chunk, fill, count < sizeof(chunk) ? count : sizeof(chunk));
-
-    while (count > 0U) {
-      const size_t n = count < sizeof(chunk) ? count : sizeof(chunk);
-      writer_.write(chunk, n);
-      count -= n;
-    }
-  }
+  void write_fill(char fill, size_t count) { writer_.write_fill(fill, count); }
 
   void write_padded(const FormatSpec& spec, std::string_view prefix, std::string_view body, Align default_align,
                     bool allow_zero) {
@@ -971,12 +966,22 @@ class FormatWriter {
   }
 
   void write_bool_spec(bool value, const FormatSpec& spec) {
-    if (spec.type != '\0' && spec.type != 's') {
-      FormatSpec decimal_spec = spec;
-      decimal_spec.type = spec.type == 'c' ? 'd' : spec.type;
-      write_uint_spec(value ? 1U : 0U, false, decimal_spec);
+    switch (spec.type) {
+      case 'b':
+      case 'B':
+      case 'c':
+      case 'd':
+      case 'o':
+      case 'x':
+      case 'X': {
+        FormatSpec decimal_spec = spec;
+        decimal_spec.type = spec.type == 'c' ? 'd' : spec.type;
+        write_uint_spec(value ? 1U : 0U, false, decimal_spec);
 
-      return;
+        return;
+      }
+      default:
+        break;
     }
 
     write_padded(spec, std::string_view(), value ? std::string_view("true") : std::string_view("false"), Align::kLeft,
@@ -990,10 +995,17 @@ class FormatWriter {
       return;
     }
 
-    if (spec.type != '\0' && spec.type != 'c' && spec.type != 's') {
-      write_int_spec(static_cast<long long>(static_cast<unsigned char>(value)), spec);
-
-      return;
+    switch (spec.type) {
+      case 'b':
+      case 'B':
+      case 'd':
+      case 'o':
+      case 'x':
+      case 'X':
+        write_int_spec(static_cast<long long>(static_cast<unsigned char>(value)), spec);
+        return;
+      default:
+        break;
     }
 
     write_padded(spec, std::string_view(), std::string_view(&value, 1), Align::kLeft, false);
@@ -1003,7 +1015,7 @@ class FormatWriter {
   void write_float_spec(FloatT value, const FormatSpec& spec) {
     constexpr size_t kMaxIntegerDigits = std::is_same_v<FloatT, long double> ? 4933U : 309U;
     constexpr int kMaxPrecision = 340;
-    char buf[kMaxIntegerDigits + 2U + kMaxPrecision];
+    char buf[kMaxIntegerDigits + 3U + kMaxPrecision];
     size_t size = 0;
     const int precision = spec.precision > kMaxPrecision ? kMaxPrecision : spec.precision;
 
@@ -1101,10 +1113,8 @@ class FormatWriter {
       body += escape_debug_char(c, quote, escape_high, piece);
     }
 
-    const size_t shown =
-        spec.precision >= 0 && static_cast<size_t>(spec.precision) < body ? static_cast<size_t>(spec.precision) : body;
     const size_t width = static_cast<size_t>(spec.width);
-    const size_t pad = width > shown ? width - shown : 0U;
+    const size_t pad = width > body ? width - body : 0U;
     const Align align = spec.align == Align::kNone ? Align::kLeft : spec.align;
     size_t left = 0U;
 
@@ -1116,27 +1126,13 @@ class FormatWriter {
 
     write_fill(spec.fill, left);
 
-    size_t budget = shown;
-    const auto put = [this, &budget](const char* data, size_t count) {
-      const size_t n = count < budget ? count : budget;
-
-      if (n > 0U) {
-        writer_.write(data, n);
-        budget -= n;
-      }
-    };
-
-    put(&quote, 1U);
+    writer_.write(quote);
 
     for (const char c : sv) {
-      if (budget == 0U) {
-        break;
-      }
-
-      put(piece, escape_debug_char(c, quote, escape_high, piece));
+      writer_.write(piece, escape_debug_char(c, quote, escape_high, piece));
     }
 
-    put(&quote, 1U);
+    writer_.write(quote);
     write_fill(spec.fill, pad - left);
   }
 
@@ -1149,14 +1145,14 @@ class FormatWriter {
   }
 
   void write_string_spec(std::string_view sv, const FormatSpec& spec) {
+    if (spec.precision >= 0 && static_cast<size_t>(spec.precision) < sv.size()) {
+      sv = sv.substr(0, static_cast<size_t>(spec.precision));
+    }
+
     if VUNLIKELY (spec.type == '?') {
       write_debug_spec(sv, '"', spec);
 
       return;
-    }
-
-    if (spec.precision >= 0 && static_cast<size_t>(spec.precision) < sv.size()) {
-      sv = sv.substr(0, static_cast<size_t>(spec.precision));
     }
 
     write_padded(spec, std::string_view(), sv, Align::kLeft, false);
@@ -1455,6 +1451,18 @@ inline void format::detail::StringWriter::write(const char* s, size_t count) {
 }
 
 inline void format::detail::StringWriter::write(std::string_view sv) { write(sv.data(), sv.size()); }
+
+inline void format::detail::StringWriter::write_fill(char fill, size_t count) {
+  total_size_ += count;
+
+  const auto avail = static_cast<size_t>(end_ - ptr_);
+  const size_t n = count <= avail ? count : avail;
+
+  if VLIKELY (n > 0U) {
+    std::memset(ptr_, fill, n);
+    ptr_ += n;
+  }
+}
 
 template <typename... ArgsT>
 inline format::detail::FormatArgStore<char, format::detail::RemoveCvref<ArgsT>...> format::make_format_args(

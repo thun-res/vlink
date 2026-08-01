@@ -213,7 +213,7 @@ size_t format_floating_spec_impl(char* buf, size_t buflen, FloatT value, char ty
         const char exponent = chars_fmt == std::chars_format::hex ? 'p' : 'e';
         const size_t start = size > 0U && buf[0] == '-' ? 1U : 0U;
 
-        if (start < size && buf[start] >= '0' && buf[start] <= '9' && size + 1U <= buflen) {
+        if (start < size && buf[start] >= '0' && buf[start] <= '9') {
           size_t point = size;
 
           for (size_t i = start; i < size; ++i) {
@@ -229,6 +229,10 @@ size_t format_floating_spec_impl(char* buf, size_t buflen, FloatT value, char ty
           }
 
           if (point != 0U) {
+            if VUNLIKELY (size == buflen) {
+              return 0U;
+            }
+
             std::memmove(buf + point + 1U, buf + point, size - point);
             buf[point] = '.';
             ++size;
@@ -275,11 +279,11 @@ size_t format_floating_spec_impl(char* buf, size_t buflen, FloatT value, char ty
 
   const int written = std::snprintf(buf, buflen, spec, value);
 
-  if VUNLIKELY (written < 0) {
+  if VUNLIKELY (written < 0 || static_cast<size_t>(written) >= buflen) {
     return 0U;
   }
 
-  size_t size = static_cast<size_t>(written) < buflen ? static_cast<size_t>(written) : buflen - 1U;
+  size_t size = static_cast<size_t>(written);
 
   if (type == 'a' || type == 'A') {
     const size_t start = size > 0U && buf[0] == '-' ? 1U : 0U;
