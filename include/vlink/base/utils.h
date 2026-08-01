@@ -321,9 +321,9 @@ VLINK_EXPORT bool set_thread_stick(uint32_t core_mask, std::thread* thread = nul
  *
  * @details
  * On Windows this returns @c true once @c ExitProcess has terminated all other threads and
- * DLL unload callbacks are running; locks held by those threads are never released, so
- * cross-thread cleanup must be skipped.  Static destruction during a normal @c exit() and
- * @c FreeLibrary unloads report @c false.  Other platforms always return @c false.
+ * process-detach callbacks are running; locks held by those threads are never released, so
+ * cross-thread cleanup must be skipped.  Executable static destruction during a normal @c exit()
+ * and explicit @c FreeLibrary unloads report @c false.  Other platforms always return @c false.
  *
  * @return @c true during terminal process shutdown on Windows.
  */

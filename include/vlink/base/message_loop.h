@@ -173,7 +173,9 @@ class VLINK_EXPORT MessageLoop {
    * @details
    * The destructor of @c MessageLoop flips @c alive to @c false under @c mtx as its very first
    * step, so a caller that holds @c mtx and observes @c alive @c == @c true is guaranteed the
-   * loop is still safe to touch.  Obtain via @c get_alive_state.
+   * loop is still safe to touch.  During Windows process termination, when all other threads
+   * have already stopped, the destructor performs only the atomic store.  Obtain via
+   * @c get_alive_state.
    */
   struct AliveState final {
     std::mutex mtx;
@@ -194,6 +196,9 @@ class VLINK_EXPORT MessageLoop {
 
   /**
    * @brief Destructor; requests quit and joins the dispatcher thread if needed.
+   *
+   * @details During Windows process termination it skips cross-thread cleanup and releases its
+   * private state without destroying it because the owning threads have already stopped.
    */
   virtual ~MessageLoop();
 

@@ -1330,10 +1330,16 @@ bool is_terminating() noexcept {
 #if defined(_WIN32)
   using RtlDllShutdownInProgressT = BOOLEAN(NTAPI*)();
 
-  static const auto kRtlDllShutdownInProgress = reinterpret_cast<RtlDllShutdownInProgressT>(
-      ::GetProcAddress(::GetModuleHandleW(L"ntdll.dll"), "RtlDllShutdownInProgress"));
+  static std::atomic<RtlDllShutdownInProgressT> rtl_dll_shutdown_in_progress{nullptr};
+  auto proc = rtl_dll_shutdown_in_progress.load(std::memory_order_relaxed);
 
-  return kRtlDllShutdownInProgress != nullptr && kRtlDllShutdownInProgress() != FALSE;
+  if VUNLIKELY (proc == nullptr) {
+    proc = reinterpret_cast<RtlDllShutdownInProgressT>(
+        ::GetProcAddress(::GetModuleHandleW(L"ntdll.dll"), "RtlDllShutdownInProgress"));
+    rtl_dll_shutdown_in_progress.store(proc, std::memory_order_relaxed);
+  }
+
+  return proc != nullptr && proc() != FALSE;
 #else
   return false;
 #endif
