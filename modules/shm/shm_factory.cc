@@ -1183,6 +1183,8 @@ Bytes ShmPublisher::loan(uint64_t channel, int64_t size) {
     return Bytes();
   }
 
+  std::lock_guard lock(mtx_);
+
   auto write_msg_result = pub_->loan(size + ShmFactory::get_loaned_offset(), ShmFactory::get_loaned_alignment());
 
   seq_.fetch_add(1, std::memory_order_relaxed);
@@ -1205,6 +1207,8 @@ bool ShmPublisher::release(const Bytes& bytes) {
     return false;
   }
 
+  std::lock_guard lock(mtx_);
+
   pub_->release(const_cast<uint8_t*>(bytes.data()) - ShmFactory::get_loaned_offset());
 
   return true;
@@ -1219,25 +1223,29 @@ bool ShmPublisher::publish(uint64_t channel, const Bytes& bytes) {
     }
   }
 
-  if (bytes.is_loaned()) {
-    pub_->publish(const_cast<uint8_t*>(bytes.data()) - ShmFactory::get_loaned_offset());
-  } else {
-    auto write_msg_result =
-        pub_->loan(bytes.size() + ShmFactory::get_loaned_offset(), ShmFactory::get_loaned_alignment());
+  {
+    std::lock_guard lock(mtx_);
 
-    seq_.fetch_add(1, std::memory_order_relaxed);
+    if (bytes.is_loaned()) {
+      pub_->publish(const_cast<uint8_t*>(bytes.data()) - ShmFactory::get_loaned_offset());
+    } else {
+      auto write_msg_result =
+          pub_->loan(bytes.size() + ShmFactory::get_loaned_offset(), ShmFactory::get_loaned_alignment());
 
-    if VUNLIKELY (write_msg_result.has_error()) {
-      VLOG_E("ShmFactory: Failed to loan buffer, size: ", bytes.size() + ShmFactory::get_loaned_offset(),
-             ", error: ", write_msg_result.get_error(), ".");
-      return false;
+      seq_.fetch_add(1, std::memory_order_relaxed);
+
+      if VUNLIKELY (write_msg_result.has_error()) {
+        VLOG_E("ShmFactory: Failed to loan buffer, size: ", bytes.size() + ShmFactory::get_loaned_offset(),
+               ", error: ", write_msg_result.get_error(), ".");
+        return false;
+      }
+
+      auto* write_msg = static_cast<uint8_t*>(write_msg_result.value());
+
+      ShmFactory::write_data(write_msg, channel, seq_.load(std::memory_order_relaxed), bytes);
+
+      pub_->publish(write_msg);
     }
-
-    auto* write_msg = static_cast<uint8_t*>(write_msg_result.value());
-
-    ShmFactory::write_data(write_msg, channel, seq_.load(std::memory_order_relaxed), bytes);
-
-    pub_->publish(write_msg);
   }
 
   if VUNLIKELY (wait_ > 0) {

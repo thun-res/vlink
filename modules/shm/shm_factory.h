@@ -328,6 +328,7 @@ class ShmPublisher final : public AbstractObject<ShmID>, public std::enable_shar
   int32_t wait_{0};
   std::optional<shm::popo::UntypedPublisher> pub_;
   std::optional<SysSemaphore> sem_;
+  std::mutex mtx_;
 };
 
 // ShmSubscriber
