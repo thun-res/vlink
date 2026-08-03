@@ -27,6 +27,7 @@
 
 #include <doctest/doctest.h>
 
+#include <array>
 #include <cstring>
 #include <limits>
 #include <string>
@@ -411,7 +412,7 @@ TEST_SUITE("zerocopy-PointCloud") {
 
   TEST_CASE("clear false resets size but retains buffer and schema") {
     zerocopy::PointCloud pc;
-    REQUIRE(pc.create_v3f<>(10, {}));
+    REQUIRE(pc.create_v3f<>(10, {}, 0, true, true));
     pc.push_value_v3f(1.0f, 2.0f, 3.0f);
 
     pc.clear(false);
@@ -420,11 +421,12 @@ TEST_SUITE("zerocopy-PointCloud") {
     CHECK_GT(pc.pack_size(), 0u);
     CHECK(pc.is_owner());
     CHECK_GT(pc.get_reserved_size(), 0u);
+    CHECK(pc.get_sort());
   }
 
   TEST_CASE("clear true fully resets to default state") {
     zerocopy::PointCloud pc;
-    REQUIRE(pc.create_v3f<>(10, {}));
+    REQUIRE(pc.create_v3f<>(10, {}, 0, true, true));
     pc.push_value_v3f(1.0f, 2.0f, 3.0f);
 
     pc.clear(true);
@@ -434,11 +436,12 @@ TEST_SUITE("zerocopy-PointCloud") {
     CHECK_EQ(pc.size(), 0u);
     CHECK_EQ(pc.pack_size(), 0u);
     CHECK_EQ(pc.get_reserved_size(), 0u);
+    CHECK_FALSE(pc.get_sort());
   }
 
   TEST_CASE("shallow_copy aliases the buffer without ownership") {
     zerocopy::PointCloud src;
-    REQUIRE(src.create_v3f<>(5, {}));
+    REQUIRE(src.create_v3f<>(5, {}, 0, true, true));
     src.push_value_v3f(1.0f, 2.0f, 3.0f);
 
     zerocopy::PointCloud dst;
@@ -447,6 +450,7 @@ TEST_SUITE("zerocopy-PointCloud") {
     CHECK_FALSE(dst.is_owner());
     CHECK_EQ(dst.size(), 1u);
     CHECK_EQ(dst.get_internal_data(), src.get_internal_data());
+    CHECK(dst.get_sort());
   }
 
   TEST_CASE("shallow_copy releases a previous owned buffer before aliasing") {
@@ -486,7 +490,7 @@ TEST_SUITE("zerocopy-PointCloud") {
 
   TEST_CASE("deep_copy creates owned independent copy") {
     zerocopy::PointCloud src;
-    REQUIRE(src.create_v3f<>(5, {}));
+    REQUIRE(src.create_v3f<>(5, {}, 0, true, true));
     src.push_value_v3f(1.0f, 2.0f, 3.0f);
     src.push_value_v3f(4.0f, 5.0f, 6.0f);
 
@@ -497,6 +501,7 @@ TEST_SUITE("zerocopy-PointCloud") {
     CHECK_EQ(dst.size(), 2u);
     CHECK_EQ(dst.pack_size(), 12u);
     CHECK_NE(dst.get_internal_data(), src.get_internal_data());
+    CHECK(dst.get_sort());
   }
 
   TEST_CASE("deep_copy self returns false") {
@@ -509,7 +514,7 @@ TEST_SUITE("zerocopy-PointCloud") {
 
   TEST_CASE("move_copy transfers ownership and invalidates source") {
     zerocopy::PointCloud src;
-    REQUIRE(src.create_v3f<>(10, {}));
+    REQUIRE(src.create_v3f<>(10, {}, 0, true, true));
     src.push_value_v3f(0.0f, 0.0f, 0.0f);
     const uint8_t* ptr = src.get_internal_data();
 
@@ -520,10 +525,12 @@ TEST_SUITE("zerocopy-PointCloud") {
     CHECK_EQ(dst.get_internal_data(), ptr);
     CHECK_EQ(dst.size(), 1u);
     CHECK_EQ(dst.get_reserved_size(), 10u);
+    CHECK(dst.get_sort());
     CHECK(dst.push_value_v3f(1.0f, 2.0f, 3.0f));
     CHECK_EQ(dst.size(), 2u);
     CHECK_FALSE(src.is_valid());
     CHECK_FALSE(src.is_owner());
+    CHECK_FALSE(src.get_sort());
   }
 
   TEST_CASE("move_copy self returns false") {
@@ -966,14 +973,110 @@ TEST_SUITE("zerocopy-PointCloud") {
     CHECK_EQ(dst.get_value<float>(1u, key_map, "intensity"), doctest::Approx(0.75f));
   }
 
+  TEST_CASE("spatial ordering is applied during vertical serialization without changing source order") {
+    zerocopy::PointCloud src;
+    REQUIRE(src.create_v3f<float>(8, {"intensity"}, 10, true, true));
+    CHECK(src.get_sort());
+
+    REQUIRE(src.push_value_v3f(0.0f, 0.0f, 1.0f, 30.0f));
+    REQUIRE(src.push_value_v3f(-1.0f, 0.0f, 0.0f, -10.0f));
+    REQUIRE(src.push_value_v3f(0.0f, 1.0f, 0.0f, 20.0f));
+    REQUIRE(src.push_value_v3f(1.0f, 0.0f, 0.0f, 10.0f));
+    REQUIRE(src.push_value_v3f(1.0f, 0.0f, 0.0f, 11.0f));
+
+    Bytes wire;
+    REQUIRE((src >> wire));
+    CHECK_EQ(src.get_value_v3f(0u).z, doctest::Approx(1.0f).epsilon(0.001));
+
+    zerocopy::PointCloud dst;
+    REQUIRE((dst << wire));
+    CHECK(dst.get_sort());
+
+    auto key_map = dst.get_key_map();
+    const std::array<float, 5> expected_x{-1.0f, 1.0f, 1.0f, 0.0f, 0.0f};
+    const std::array<float, 5> expected_y{0.0f, 0.0f, 0.0f, 1.0f, 0.0f};
+    const std::array<float, 5> expected_z{0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+    const std::array<float, 5> expected_intensity{-10.0f, 10.0f, 11.0f, 20.0f, 30.0f};
+
+    for (size_t i = 0; i < expected_x.size(); ++i) {
+      const auto point = dst.get_value_v3f(i);
+      CHECK_EQ(point.x, doctest::Approx(expected_x[i]).epsilon(0.001));
+      CHECK_EQ(point.y, doctest::Approx(expected_y[i]).epsilon(0.001));
+      CHECK_EQ(point.z, doctest::Approx(expected_z[i]).epsilon(0.001));
+      CHECK_EQ(dst.get_value<float>(i, key_map, "intensity"), doctest::Approx(expected_intensity[i]));
+    }
+  }
+
+  TEST_CASE("spatial sort option defaults off and supports unquantised XYZ") {
+    zerocopy::PointCloud legacy;
+    zerocopy::PointCloud explicit_default;
+    REQUIRE(legacy.create_v3f<>(4, {}, 10, true));
+    REQUIRE(explicit_default.create_v3f<>(4, {}, 10, true, false));
+    REQUIRE(legacy.push_value_v3f(1.0f, 2.0f, 3.0f));
+    REQUIRE(explicit_default.push_value_v3f(1.0f, 2.0f, 3.0f));
+    CHECK_FALSE(legacy.get_sort());
+    CHECK_FALSE(explicit_default.get_sort());
+
+    Bytes legacy_wire;
+    Bytes explicit_wire;
+    REQUIRE((legacy >> legacy_wire));
+    REQUIRE((explicit_default >> explicit_wire));
+    REQUIRE_EQ(legacy_wire.size(), explicit_wire.size());
+    CHECK_EQ(std::memcmp(legacy_wire.data(), explicit_wire.data(), legacy_wire.size()), 0);
+
+    zerocopy::PointCloud unquantised;
+    REQUIRE(unquantised.create_v3f<>(2, {}, 0, true, true));
+    REQUIRE(unquantised.push_value_v3f(2.0f, 0.0f, 0.0f));
+    REQUIRE(unquantised.push_value_v3f(-1.0f, 0.0f, 0.0f));
+
+    Bytes unquantised_wire;
+    REQUIRE((unquantised >> unquantised_wire));
+
+    zerocopy::PointCloud unquantised_dst;
+    REQUIRE((unquantised_dst << unquantised_wire));
+    CHECK_EQ(unquantised_dst.get_value_v3f(0u).x, doctest::Approx(-1.0f));
+
+    zerocopy::PointCloud double_src;
+    REQUIRE(double_src.create_v3d<int32_t>(4, {"id"}, 0, true, true));
+    REQUIRE(double_src.push_value_v3d(0.0, 0.0, 1.0, 30));
+    REQUIRE(double_src.push_value_v3d(-1.0, 0.0, 0.0, -10));
+    REQUIRE(double_src.push_value_v3d(0.0, 1.0, 0.0, 20));
+    REQUIRE(double_src.push_value_v3d(1.0, 0.0, 0.0, 10));
+
+    Bytes double_wire;
+    REQUIRE((double_src >> double_wire));
+
+    zerocopy::PointCloud double_dst;
+    REQUIRE((double_dst << double_wire));
+    auto double_keys = double_dst.get_key_map();
+    const std::array<int32_t, 4> expected_id{-10, 10, 20, 30};
+
+    for (size_t i = 0; i < expected_id.size(); ++i) {
+      CHECK_EQ(double_dst.get_value<int32_t>(i, double_keys, "id"), expected_id[i]);
+    }
+
+    zerocopy::PointCloud horizontal;
+    REQUIRE(horizontal.create_v3f<>(2, {}, 0, false, true));
+    CHECK_FALSE(horizontal.get_sort());
+
+    zerocopy::PointCloud unsupported;
+    const std::vector<std::string> xyz{"x", "y", "z"};
+    CHECK_FALSE(unsupported.create<int32_t, int32_t, int32_t>(1, xyz, 0, true, true));
+    CHECK_FALSE(unsupported.create<int32_t, int32_t, int32_t>(2, xyz, 0, true, true));
+    CHECK_FALSE(unsupported.create<float, double, float>(2, xyz, 0, true, true));
+    CHECK_FALSE(unsupported.create(2, 0x111, 0xAAA, "x,y,z", 0, true, true));
+  }
+
   TEST_CASE("set_vertical disables vertical serialization without changing data") {
     zerocopy::PointCloud src;
-    REQUIRE(src.create_v3f<>(8, {}, 0, true));
+    REQUIRE(src.create_v3f<>(8, {}, 0, true, true));
     CHECK(src.get_vertical());
+    CHECK(src.get_sort());
 
     REQUIRE(src.push_value_v3f(7.0f, 8.0f, 9.0f));
     src.set_vertical(false);
     CHECK_FALSE(src.get_vertical());
+    CHECK_FALSE(src.get_sort());
 
     Bytes wire;
     REQUIRE((src >> wire));
@@ -989,6 +1092,10 @@ TEST_SUITE("zerocopy-PointCloud") {
     CHECK_EQ(v.x, doctest::Approx(7.0f));
     CHECK_EQ(v.y, doctest::Approx(8.0f));
     CHECK_EQ(v.z, doctest::Approx(9.0f));
+
+    src.set_vertical(true);
+    CHECK(src.get_vertical());
+    CHECK_FALSE(src.get_sort());
   }
 
   TEST_CASE("extent and vertical combined round-trip") {
@@ -1439,22 +1546,32 @@ TEST_SUITE("zerocopy-PointCloud") {
 
     SUBCASE("zero point capacity is accepted without allocating a data buffer") {
       zerocopy::PointCloud pc;
-      CHECK(pc.create(0, size_num, type_num, "a,b,c"));
+      REQUIRE(pc.create(0, size_num, type_num, "a,b,c", 0, true, true));
       CHECK_FALSE(pc.is_valid());
       CHECK_FALSE(pc.is_owner());
       CHECK_EQ(pc.get_reserved_size(), 0u);
       CHECK_EQ(pc.pack_size(), 12u);
+      CHECK(pc.get_vertical());
+      CHECK(pc.get_sort());
+
+      Bytes wire;
+      REQUIRE((pc >> wire));
+
+      zerocopy::PointCloud dst;
+      REQUIRE((dst << wire));
+      CHECK_EQ(dst.size(), 0u);
+      CHECK(dst.get_vertical());
+      CHECK(dst.get_sort());
     }
   }
 
   TEST_CASE("reserved fields travel through serialization") {
     zerocopy::PointCloud pc;
-    REQUIRE(pc.create_v3f<float>(4, {"intensity"}));
+    REQUIRE(pc.create_v3f<float>(4, {"intensity"}, 10, true));
     pc.push_value_v3f(1.0f, 2.0f, 3.0f, 0.5f);
 
     pc.get_reserved() = 0x11223344u;
     pc.get_reserved2() = 0x55667788u;
-    pc.get_reserved3() = static_cast<uint8_t>(0x9A);
 
     Bytes wire;
     CHECK((pc >> wire));
@@ -1463,7 +1580,59 @@ TEST_SUITE("zerocopy-PointCloud") {
     CHECK((dst << wire));
     CHECK_EQ(dst.get_reserved(), 0x11223344u);
     CHECK_EQ(dst.get_reserved2(), 0x55667788u);
-    CHECK_EQ(dst.get_reserved3(), static_cast<uint8_t>(0x9A));
+
+    wire[8u + 245u] = static_cast<uint8_t>(0x9A);
+    CHECK((dst << wire));
+    CHECK_FALSE(dst.get_sort());
+  }
+
+  TEST_CASE("legacy reserved byte one enables sorting for unquantised XYZ") {
+    zerocopy::PointCloud src;
+    REQUIRE(src.create_v3f<>(2, {}, 0, true));
+    REQUIRE(src.push_value_v3f(2.0f, 0.0f, 0.0f));
+    REQUIRE(src.push_value_v3f(1.0f, 0.0f, 0.0f));
+
+    Bytes wire;
+    REQUIRE((src >> wire));
+    wire[8u + 245u] = 1;
+
+    zerocopy::PointCloud dst;
+    REQUIRE((dst << wire));
+    CHECK(dst.get_sort());
+    CHECK_EQ(dst.get_value_v3f(0u).x, doctest::Approx(2.0f));
+
+    Bytes sorted_wire;
+    REQUIRE((dst >> sorted_wire));
+
+    zerocopy::PointCloud sorted;
+    REQUIRE((sorted << sorted_wire));
+    CHECK_EQ(sorted.get_value_v3f(0u).x, doctest::Approx(1.0f));
+
+    zerocopy::PointCloud unsupported;
+    REQUIRE(unsupported.create<int32_t, int32_t, int32_t>(2, {"x", "y", "z"}, 0, true));
+    REQUIRE(unsupported.push_value<int32_t, int32_t, int32_t>(2, 0, 0));
+    REQUIRE(unsupported.push_value<int32_t, int32_t, int32_t>(1, 0, 0));
+
+    Bytes unsupported_wire;
+    REQUIRE((unsupported >> unsupported_wire));
+    unsupported_wire[8u + 245u] = 1;
+
+    zerocopy::PointCloud unsupported_dst;
+    REQUIRE((unsupported_dst << unsupported_wire));
+    CHECK_FALSE(unsupported_dst.get_sort());
+
+    zerocopy::PointCloud mismatched;
+    REQUIRE(mismatched.create(2, 0x111, 0xAAA, "x,y,z", 0, true, false));
+    const std::array<uint8_t, 6> packed{};
+    REQUIRE(mismatched.fill_packed_data(packed.data(), 2));
+
+    Bytes mismatched_wire;
+    REQUIRE((mismatched >> mismatched_wire));
+    mismatched_wire[8u + 245u] = 1;
+
+    zerocopy::PointCloud mismatched_dst;
+    REQUIRE((mismatched_dst << mismatched_wire));
+    CHECK_FALSE(mismatched_dst.get_sort());
   }
 
   TEST_CASE("get_key_map key list exposes type and size for each field") {
@@ -1506,7 +1675,7 @@ TEST_SUITE("zerocopy-PointCloud") {
 
   TEST_CASE("deep_copy reuses an owned buffer of matching capacity in place") {
     zerocopy::PointCloud src;
-    REQUIRE(src.create_v3f<float>(4, {"i"}));
+    REQUIRE(src.create_v3f<float>(4, {"i"}, 0, true, true));
     src.push_value_v3f(1.0f, 2.0f, 3.0f, 0.5f);
     src.push_value_v3f(4.0f, 5.0f, 6.0f, 0.6f);
 
@@ -1520,6 +1689,7 @@ TEST_SUITE("zerocopy-PointCloud") {
 
     CHECK_EQ(dst.get_internal_data(), before);
     CHECK_EQ(dst.size(), 2u);
+    CHECK(dst.get_sort());
 
     zerocopy::PointCloud::Vector3f v = dst.get_value_v3f(0u);
     CHECK_EQ(v.x, doctest::Approx(1.0f));

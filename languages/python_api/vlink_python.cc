@@ -2451,9 +2451,9 @@ NB_MODULE(_vlink_nanobind, m) {
       .def(
           "create",
           [](nb::object instance, size_t size, uint64_t size_num, uint64_t type_num, const std::string& key_str,
-             uint16_t extent, bool vertical) {
-            const bool result = nb::cast<vlink::zerocopy::PointCloud&>(instance).create(size, size_num, type_num,
-                                                                                        key_str, extent, vertical);
+             uint16_t extent, bool vertical, bool sort) {
+            const bool result = nb::cast<vlink::zerocopy::PointCloud&>(instance).create(
+                size, size_num, type_num, key_str, extent, vertical, sort);
 
             if (result) {
               unbind_python_instance_owner(instance);
@@ -2462,7 +2462,7 @@ NB_MODULE(_vlink_nanobind, m) {
             return result;
           },
           "size"_a, "size_num"_a, "type_num"_a, "key_str"_a, "extent"_a = static_cast<uint16_t>(0),
-          "vertical"_a = false)
+          "vertical"_a = false, "sort"_a = false)
       .def(
           "fill_packed_data",
           [](vlink::zerocopy::PointCloud& self, nb::handle data, size_t count) {
@@ -2524,6 +2524,7 @@ NB_MODULE(_vlink_nanobind, m) {
       .def("downsample", &vlink::zerocopy::PointCloud::downsample, "level"_a)
       .def("get_extent", &vlink::zerocopy::PointCloud::get_extent)
       .def("get_vertical", &vlink::zerocopy::PointCloud::get_vertical)
+      .def("get_sort", &vlink::zerocopy::PointCloud::get_sort)
       .def("set_vertical", &vlink::zerocopy::PointCloud::set_vertical, "vertical"_a)
       .def("get_downsample", &vlink::zerocopy::PointCloud::get_downsample)
       .def_prop_rw(
@@ -2532,9 +2533,6 @@ NB_MODULE(_vlink_nanobind, m) {
       .def_prop_rw(
           "reserved2", [](vlink::zerocopy::PointCloud& self) { return self.get_reserved2(); },
           [](vlink::zerocopy::PointCloud& self, uint32_t v) { self.get_reserved2() = v; })
-      .def_prop_rw(
-          "reserved3", [](vlink::zerocopy::PointCloud& self) { return self.get_reserved3(); },
-          [](vlink::zerocopy::PointCloud& self, uint8_t v) { self.get_reserved3() = v; })
       .def("size", &vlink::zerocopy::PointCloud::size)
       .def("pack_size", &vlink::zerocopy::PointCloud::pack_size)
       .def("get_reserved_size", &vlink::zerocopy::PointCloud::get_reserved_size)

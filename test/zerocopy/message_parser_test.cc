@@ -438,11 +438,28 @@ TEST_SUITE("zerocopy-MessageParser") {
     }
 
     zerocopy::PointCloud compressed;
-    REQUIRE(compressed.create_v3f<>(1, {}, 100));
+    REQUIRE(compressed.create_v3f<>(1, {}, 100, true, true));
     REQUIRE(compressed.push_value_v3f(1.25F, -2.5F, 3.75F));
     const bool compressed_serialized = compressed >> wire;
     REQUIRE(compressed_serialized);
     REQUIRE(parser.parse(zerocopy::MessageParser::Type::kPointCloud, wire));
+
+    zerocopy::MessageParser::Value sort;
+    REQUIRE(parser.value("sort", sort));
+    CHECK_EQ(std::get<uint64_t>(sort), 1U);
+
+    const auto root_fields = parser.fields();
+    const auto sort_field =
+        std::find_if(root_fields.begin(), root_fields.end(), [](const auto& field) { return field.name == "sort"; });
+    REQUIRE(sort_field != root_fields.end());
+    CHECK(sort_field->is_bool);
+    CHECK(std::none_of(root_fields.begin(), root_fields.end(),
+                       [](const auto& field) { return field.name == "reserved3"; }));
+    CHECK_FALSE(parser.value("reserved3", value));
+
+    zerocopy::MessageFormatOptions format_options;
+    const std::string formatted = zerocopy::format_message(parser, format_options);
+    CHECK(formatted.find("sort: true\n") != std::string::npos);
 
     CHECK_FALSE(parser.value("points", 0, fields[0], value));
     CHECK_FALSE(parser.value("points", 0, "u1", value));

@@ -385,7 +385,6 @@ bool MessageParser::parse(Type type, const Bytes& bytes) {
     case Type::kPointCloud:
       reserved_[0] = std::get<PointCloud>(message_).get_reserved();
       reserved_[1] = std::get<PointCloud>(message_).get_reserved2();
-      reserved_[2] = std::get<PointCloud>(message_).get_reserved3();
       break;
     case Type::kProxyData:
       reserved_[0] = std::get<ProxyData>(message_).get_reserved();
@@ -639,10 +638,10 @@ std::vector<MessageParser::Field> MessageParser::fields() const {
       add_number("extent", ValueType::kUInt64);
       add_number("downsample", ValueType::kUInt64);
       add_bool("vertical");
+      add_bool("sort");
       add_reserved("reserved_size");
       add_reserved("reserved");
       add_reserved("reserved2");
-      add_reserved("reserved3");
       add_bytes("data");
       break;
 
@@ -1195,6 +1194,10 @@ bool MessageParser::root_value(std::string_view path, Value& out) const {
         return true;
       }
 
+      if (read_number(path, "sort", message.get_sort(), out)) {
+        return true;
+      }
+
       if (read_number(path, "reserved_size", message.get_reserved_size(), out)) {
         return true;
       }
@@ -1208,10 +1211,6 @@ bool MessageParser::root_value(std::string_view path, Value& out) const {
       }
 
       if (read_number(path, "reserved2", reserved_[1], out)) {
-        return true;
-      }
-
-      if (read_number(path, "reserved3", reserved_[2], out)) {
         return true;
       }
 
