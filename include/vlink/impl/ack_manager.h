@@ -77,6 +77,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -153,17 +154,17 @@ class VLINK_EXPORT AckManager final {
    *
    * @details
    * The method performs four steps:
-   * -# Registers @p request in the pending set; returns @c false straight away
-   *    if @c clear() has been called and not yet reset.
+   * -# Assigns an absolute deadline and registers @p request in the pending set;
+   *    returns @c false straight away if @c clear() has been called and not yet reset.
    * -# Invokes @p process_callback to dispatch the request.  When the callback
    *    returns @c false the entry is removed and @c process() also returns @c false.
    * -# Sleeps on a per-request condition variable until @c notify() or cancellation
-   *    resolves the request, or @p ms expires.  A negative @p ms blocks forever.
+   *    resolves the request, or the deadline expires.  A negative @p ms blocks forever.
    * -# Returns @c true on a successful @c notify(); @c false on timeout, abort or
    *    @c clear() interruption.
    *
    * @param request           Token obtained from @c create_request().
-   * @param ms                Wait budget in milliseconds; negative for unlimited.
+   * @param ms                Maximum interval from process entry to acknowledgement; negative for unlimited.
    * @param process_callback  Send callback; returning @c false aborts the wait.
    * @return @c true on acknowledgement, @c false otherwise.
    */
@@ -173,9 +174,10 @@ class VLINK_EXPORT AckManager final {
    * @brief Resolves @p request and, if supplied, runs @p notify_callback before waking the caller.
    *
    * @details
-   * Erases the entry from the pending set, executes @p notify_callback while
-   * holding the request lock so the caller observes the side effects before
-   * resuming, and signals the condition variable.
+   * Rejects acknowledgements that reach the request after its deadline.  Otherwise
+   * erases the entry from the pending set, executes @p notify_callback while holding
+   * the request lock so the caller observes the side effects before resuming, and
+   * signals the condition variable.
    *
    * @param request          Token to acknowledge.
    * @param notify_callback  Optional callable executed before notification.
@@ -221,6 +223,7 @@ class VLINK_EXPORT AckManager final {
     int64_t seq{0};
     int64_t generation{0};
     Status status{Status::kPending};
+    std::chrono::steady_clock::time_point deadline{std::chrono::steady_clock::time_point::max()};
     std::mutex mtx;
     ConditionVariable cv;
 

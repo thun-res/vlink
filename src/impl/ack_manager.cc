@@ -45,13 +45,21 @@ AckManager::RequestPtr AckManager::create_request() noexcept {
 }
 
 bool AckManager::process(RequestPtr request, int ms, ProcessCallback&& process_callback) noexcept {
+  auto deadline = std::chrono::steady_clock::time_point::max();
+
+  if VLIKELY (ms >= 0) {
+    deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+  }
+
   {
+    std::lock_guard lock(request->mtx);
     std::lock_guard manager_lock(mtx_);
 
     if VUNLIKELY (is_interrupted_ || request->generation != generation_) {
       return false;
     }
 
+    request->deadline = deadline;
     request_set_.emplace(request);
   }
 
@@ -72,7 +80,7 @@ bool AckManager::process(RequestPtr request, int ms, ProcessCallback&& process_c
   if VUNLIKELY (ms < 0) {
     request->cv.wait(lock, predicate);
   } else {
-    request->cv.wait_for(lock, std::chrono::milliseconds(ms), predicate);
+    request->cv.wait_until(lock, request->deadline, predicate);
   }
 
   if (request->status == Request::Status::kPending) {
@@ -90,6 +98,7 @@ bool AckManager::notify(RequestPtr request, NotifyCallback&& notify_callback) no
   }
 
   std::lock_guard lock(request->mtx);
+  const auto acknowledged_at = std::chrono::steady_clock::now();
 
   {
     std::lock_guard manager_lock(mtx_);
@@ -97,6 +106,12 @@ bool AckManager::notify(RequestPtr request, NotifyCallback&& notify_callback) no
     if VUNLIKELY (request_set_.erase(request) == 0) {
       return false;
     }
+  }
+
+  if VUNLIKELY (acknowledged_at >= request->deadline) {
+    request->status = Request::Status::kCancelled;
+    request->cv.notify_one();
+    return false;
   }
 
   if VLIKELY (notify_callback) {

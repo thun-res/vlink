@@ -72,6 +72,48 @@ TEST_SUITE("impl-AckManager") {
     CHECK(result == false);
   }
 
+  TEST_CASE("process accepts a synchronous notify before the deadline") {
+    AckManager mgr;
+    auto req = mgr.create_request();
+    bool result = mgr.process(req, 2000, [&]() { return mgr.notify(req); });
+    CHECK(result == true);
+  }
+
+  TEST_CASE("process keeps a notify received before the deadline when its callback finishes later") {
+    AckManager mgr;
+    auto req = mgr.create_request();
+    bool notify_result = false;
+    bool callback_finished = false;
+
+    bool result = mgr.process(req, 500, [&]() {
+      notify_result = mgr.notify(req, [&]() {
+        std::this_thread::sleep_for(550ms);
+        callback_finished = true;
+      });
+      return true;
+    });
+
+    CHECK(result);
+    CHECK(notify_result);
+    CHECK(callback_finished);
+  }
+
+  TEST_CASE("process rejects a synchronous notify after the deadline") {
+    AckManager mgr;
+    auto req = mgr.create_request();
+    bool notify_result = true;
+    bool callback_called = false;
+
+    bool result = mgr.process(req, 0, [&]() {
+      notify_result = mgr.notify(req, [&]() { callback_called = true; });
+      return true;
+    });
+
+    CHECK_FALSE(result);
+    CHECK_FALSE(notify_result);
+    CHECK_FALSE(callback_called);
+  }
+
   TEST_CASE("process returns false when send callback returns false") {
     AckManager mgr;
     auto req = mgr.create_request();
