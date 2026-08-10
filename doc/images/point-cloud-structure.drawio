@@ -81,7 +81,7 @@
         <mxCell id="d4" value="pack_size_ : uint16_t   |   extent_ : uint16_t" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1;fontFamily=Courier New;fontSize=11;fontColor=#e65100;align=left;spacingLeft=10;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="80" y="672" width="380" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="d5" value="downsample_ : uint8_t   |   sort_ : uint8_t" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1;fontFamily=Courier New;fontSize=11;fontColor=#e65100;align=left;spacingLeft=10;shadow=0;" vertex="1" parent="1">
+        <mxCell id="d5" value="downsample_ : uint8_t   |   reserved_buf3_ : uint8_t" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1;fontFamily=Courier New;fontSize=11;fontColor=#e65100;align=left;spacingLeft=10;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="80" y="696" width="380" height="22" as="geometry" />
         </mxCell>
         <mxCell id="d6" value="vertical_ : bool   |   is_owner_ : bool" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1;fontFamily=Courier New;fontSize=11;fontColor=#e65100;align=left;spacingLeft=10;shadow=0;" vertex="1" parent="1">

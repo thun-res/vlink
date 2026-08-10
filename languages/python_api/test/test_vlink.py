@@ -678,18 +678,6 @@ def test_zerocopy_point_cloud_compress():
     v3 = rx2.get_value_v3f(0)
     assert abs(v3.x - 1.234) < 1e-3 and abs(v3.y + 5.678) < 1e-3 and abs(v3.z - 9.012) < 1e-3
 
-    sorted_pc = _vlink.PointCloud()
-    assert sorted_pc.create(4, size_num, type_num, "x,y,z", 10, True, True)
-    assert sorted_pc.get_sort() is True
-    for x in (3.0, -2.0, 1.0, -4.0):
-        assert sorted_pc.push_value_v3f(x, 0.0, 0.0)
-    sorted_wire = sorted_pc.to_bytes()
-    assert round(sorted_pc.get_value_v3f(0).x) == 3
-
-    sorted_rx = _vlink.PointCloud()
-    assert sorted_rx.from_bytes(sorted_wire)
-    assert [round(sorted_rx.get_value_v3f(i).x) for i in range(4)] == [-4, -2, 1, 3]
-
     print("[PASS] PointCloud compression")
 
 

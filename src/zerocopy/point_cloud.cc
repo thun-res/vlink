@@ -25,10 +25,8 @@
 
 #include <tsl/robin_set.h>
 
-#include <algorithm>
 #include <array>
 #include <limits>
-#include <new>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -38,20 +36,20 @@ namespace vlink {
 
 namespace zerocopy {
 
-struct SortIndex final {
-  uint64_t key{0};
-  size_t index{0};
-};
+static void pc_pack_to_vertical(uint8_t* dst, const uint8_t* src, size_t count, uint16_t pack, const uint16_t* offsets,
+                                const uint8_t* sizes, size_t field_count) noexcept {
+  size_t out_pos = 0;
 
-static uint64_t sort_part(uint32_t value) noexcept {
-  uint64_t part = value & 0x1FFFFFU;
-  part = (part | (part << 32)) & 0x1F00000000FFFFULL;
-  part = (part | (part << 16)) & 0x1F0000FF0000FFULL;
-  part = (part | (part << 8)) & 0x100F00F00F00F00FULL;
-  part = (part | (part << 4)) & 0x10C30C30C30C30C3ULL;
-  part = (part | (part << 2)) & 0x1249249249249249ULL;
+  for (size_t f = 0; f < field_count; ++f) {
+    uint16_t field_offset = offsets[f];
+    uint8_t field_size = sizes[f];
 
-  return part;
+    for (size_t p = 0; p < count; ++p) {
+      std::memcpy(dst + out_pos, src + (p * pack) + field_offset, field_size);
+
+      out_pos += field_size;
+    }
+  }
 }
 
 static void pc_unpack_from_vertical(uint8_t* dst, const uint8_t* src, size_t count, uint16_t pack,
@@ -240,11 +238,6 @@ bool PointCloud::operator<<(const Bytes& bytes) noexcept {
   }
 
   vertical_ = (vertical_raw != 0);
-  if VUNLIKELY (sort_ != 0) {
-    if (sort_ != 1 || !vertical_ || sort_protocol_type(protocol_) == kUnknownType) {
-      sort_ = 0;
-    }
-  }
 
   if (extent_ == 0) {
     downsample_ = 0;
@@ -364,86 +357,7 @@ bool PointCloud::operator>>(Bytes& bytes) const noexcept {
         field_offset += field_size;
       }
 
-      std::vector<SortIndex> order;
-
-      if VUNLIKELY (sort_ == 1 && size_ > 1) {
-        const uint8_t xyz_type = sort_protocol_type(protocol_);
-
-        if VUNLIKELY (xyz_type == kUnknownType) {
-          return false;
-        }
-
-        if VUNLIKELY (size_ > order.max_size()) {
-          return false;
-        }
-
-        try {
-          order.reserve(size_);
-        } catch (const std::bad_alloc&) {
-          return false;
-        }
-
-        for (size_t i = 0; i < size_; ++i) {
-          const uint8_t* point = data_ + (i * pack_size_);
-          uint32_t ux = 0;
-          uint32_t uy = 0;
-          uint32_t uz = 0;
-
-          if (xyz_type == kInt16Type) {
-            int16_t x = 0;
-            int16_t y = 0;
-            int16_t z = 0;
-            std::memcpy(&x, point, sizeof(x));
-            std::memcpy(&y, point + sizeof(x), sizeof(y));
-            std::memcpy(&z, point + sizeof(x) + sizeof(y), sizeof(z));
-            ux = (static_cast<uint16_t>(x) ^ 0x8000U) << 5;
-            uy = (static_cast<uint16_t>(y) ^ 0x8000U) << 5;
-            uz = (static_cast<uint16_t>(z) ^ 0x8000U) << 5;
-          } else if (xyz_type == kFloatType) {
-            std::memcpy(&ux, point, sizeof(ux));
-            std::memcpy(&uy, point + sizeof(ux), sizeof(uy));
-            std::memcpy(&uz, point + sizeof(ux) + sizeof(uy), sizeof(uz));
-            ux = ((ux & 0x80000000U) != 0 ? ~ux : ux ^ 0x80000000U) >> 11;
-            uy = ((uy & 0x80000000U) != 0 ? ~uy : uy ^ 0x80000000U) >> 11;
-            uz = ((uz & 0x80000000U) != 0 ? ~uz : uz ^ 0x80000000U) >> 11;
-          } else {
-            uint64_t x = 0;
-            uint64_t y = 0;
-            uint64_t z = 0;
-            std::memcpy(&x, point, sizeof(x));
-            std::memcpy(&y, point + sizeof(x), sizeof(y));
-            std::memcpy(&z, point + sizeof(x) + sizeof(y), sizeof(z));
-            ux = static_cast<uint32_t>(((x & 0x8000000000000000ULL) != 0 ? ~x : x ^ 0x8000000000000000ULL) >> 43);
-            uy = static_cast<uint32_t>(((y & 0x8000000000000000ULL) != 0 ? ~y : y ^ 0x8000000000000000ULL) >> 43);
-            uz = static_cast<uint32_t>(((z & 0x8000000000000000ULL) != 0 ? ~z : z ^ 0x8000000000000000ULL) >> 43);
-          }
-
-          order.push_back({sort_part(ux) | (sort_part(uy) << 1) | (sort_part(uz) << 2), i});
-        }
-
-        std::sort(order.begin(), order.end(), [](const SortIndex& lhs, const SortIndex& rhs) noexcept {
-          return lhs.key < rhs.key || (lhs.key == rhs.key && lhs.index < rhs.index);
-        });
-      }
-
-      size_t out_pos = 0;
-
-      for (size_t f = 0; f < field_count; ++f) {
-        const uint16_t offset = field_offsets[f];
-        const uint8_t field_size = field_sizes[f];
-
-        if VUNLIKELY (!order.empty()) {
-          for (size_t p = 0; p < size_; ++p) {
-            std::memcpy(payload + out_pos, data_ + (order[p].index * pack_size_) + offset, field_size);
-            out_pos += field_size;
-          }
-        } else {
-          for (size_t p = 0; p < size_; ++p) {
-            std::memcpy(payload + out_pos, data_ + (p * pack_size_) + offset, field_size);
-            out_pos += field_size;
-          }
-        }
-      }
+      pc_pack_to_vertical(payload, data_, size_, pack_size_, field_offsets.data(), field_sizes.data(), field_count);
     } else {
       std::memcpy(payload, data_, size_ * pack_size_);
     }
@@ -511,7 +425,7 @@ bool PointCloud::shallow_copy(const PointCloud& target) noexcept {
   size_ = target.size_;
   reserved_buf_ = target.reserved_buf_;
   reserved_buf2_ = target.reserved_buf2_;
-  sort_ = target.sort_;
+  reserved_buf3_ = target.reserved_buf3_;
   downsample_ = target.downsample_;
   extent_ = target.extent_;
   vertical_ = target.vertical_;
@@ -546,7 +460,7 @@ bool PointCloud::deep_copy(const PointCloud& target) noexcept {
     size_ = target.size_;
     reserved_buf_ = target.reserved_buf_;
     reserved_buf2_ = target.reserved_buf2_;
-    sort_ = target.sort_;
+    reserved_buf3_ = target.reserved_buf3_;
     downsample_ = target.downsample_;
     extent_ = target.extent_;
     vertical_ = target.vertical_;
@@ -597,7 +511,7 @@ bool PointCloud::move_copy(PointCloud& target) noexcept {
   target.size_ = 0;
   target.reserved_buf_ = 0;
   target.reserved_buf2_ = 0;
-  target.sort_ = 0;
+  target.reserved_buf3_ = 0;
   target.downsample_ = 0;
   target.extent_ = 0;
   target.vertical_ = false;
@@ -687,15 +601,7 @@ uint16_t PointCloud::get_extent() const noexcept { return extent_; }
 
 bool PointCloud::get_vertical() const noexcept { return vertical_; }
 
-bool PointCloud::get_sort() const noexcept { return sort_ == 1; }
-
-void PointCloud::set_vertical(bool vertical) noexcept {
-  vertical_ = vertical;
-
-  if (!vertical_) {
-    sort_ = 0;
-  }
-}
+void PointCloud::set_vertical(bool vertical) noexcept { vertical_ = vertical; }
 
 uint8_t PointCloud::get_downsample() const noexcept { return downsample_; }
 
@@ -1106,11 +1012,6 @@ std::string PointCloud::get_value_for_print(size_t loop_index, KeyMap& key_map, 
 
 bool PointCloud::create(size_t size, uint64_t size_num, uint64_t type_num, std::string_view key_str, uint16_t extent,
                         bool vertical) noexcept {
-  return create(size, size_num, type_num, key_str, extent, vertical, false);
-}
-
-bool PointCloud::create(size_t size, uint64_t size_num, uint64_t type_num, std::string_view key_str, uint16_t extent,
-                        bool vertical, bool sort) noexcept {
   if VUNLIKELY (!Protocol::check_valid(size_num, key_str)) {
     return false;
   }
@@ -1132,10 +1033,6 @@ bool PointCloud::create(size_t size, uint64_t size_num, uint64_t type_num, std::
     new_protocol = protocol_probe.protocol_;
   }
 
-  if VUNLIKELY (vertical && sort && sort_protocol_type(new_protocol) == kUnknownType) {
-    return false;
-  }
-
   const size_t new_pack_size = new_protocol.get_pack_size();
 
   if VUNLIKELY (new_pack_size != 0 && size > std::numeric_limits<size_t>::max() / new_pack_size) {
@@ -1155,7 +1052,6 @@ bool PointCloud::create(size_t size, uint64_t size_num, uint64_t type_num, std::
   protocol_ = new_protocol;
   extent_ = extent;
   vertical_ = vertical;
-  sort_ = static_cast<uint8_t>(vertical && sort);
   downsample_ = 0;
 
   pack_size_ = new_pack_size;
@@ -1186,7 +1082,7 @@ void PointCloud::clear(bool force) noexcept {
     data_ = nullptr;
     reserved_buf_ = 0;
     reserved_buf2_ = 0;
-    sort_ = 0;
+    reserved_buf3_ = 0;
     extent_ = 0;
     vertical_ = false;
     is_owner_ = false;
@@ -1387,46 +1283,6 @@ std::string PointCloud::Protocol::get_type_for_print() const noexcept {
   }
 
   return print_str;
-}
-
-uint8_t PointCloud::sort_protocol_type(const Protocol& protocol) noexcept {
-  uint16_t num_fields = 0;
-  uint64_t temp_size_num = protocol.size_num;
-
-  do {
-    ++num_fields;
-    temp_size_num >>= 4;
-  } while (temp_size_num != 0);
-
-  if VUNLIKELY (num_fields < 3) {
-    return kUnknownType;
-  }
-
-  const uint64_t first_shift = static_cast<uint64_t>(num_fields - 1) * 4;
-  const uint8_t xyz_type = (protocol.type_num >> first_shift) & 0xF;
-
-  if VUNLIKELY (xyz_type != kInt16Type && xyz_type != kFloatType && xyz_type != kDoubleType) {
-    return kUnknownType;
-  }
-
-  uint8_t xyz_size = sizeof(double);
-
-  if (xyz_type == kInt16Type) {
-    xyz_size = sizeof(int16_t);
-  } else if (xyz_type == kFloatType) {
-    xyz_size = sizeof(float);
-  }
-
-  for (uint16_t i = 0; i < 3; ++i) {
-    const uint64_t shift = static_cast<uint64_t>(num_fields - 1 - i) * 4;
-
-    if VUNLIKELY (((protocol.type_num >> shift) & 0xF) != xyz_type ||
-                  ((protocol.size_num >> shift) & 0xF) != xyz_size) {
-      return kUnknownType;
-    }
-  }
-
-  return xyz_type;
 }
 
 bool PointCloud::compress_protocol_xyz() noexcept {

@@ -204,18 +204,13 @@ sub.listen([](const vlink::zerocopy::PointCloud& pc) {
 });
 ```
 
-海量点云可按需启用四种带宽优化：
+海量点云可按需启用三种带宽优化，三者互不依赖：
 
 | 优化 | 接口 | 效果 |
 | --- | --- | --- |
 | 精度量化 | `create_v3f(count, names, extent)` | 传入坐标绝对值上界 `extent`，XYZ 按 `int16_t` 量化存储（约省一半带宽），`get_value_v3f` 读取时自动反量化；坐标落在 `(-extent, +extent)` 之外的点在 `push_value_v3f` 时被直接丢弃（非饱和） |
 | 垂直排布 | `set_vertical(true)` | 序列化负载按字段成列（SoA），更利于下游熵编码；内存布局不变 |
-| 空间排序 | `create_v3f(count, names, extent, true, true)` | 仅在 vertical 序列化中按 XYZ 空间键重排完整点记录，支持量化 `int16` 及未量化 `float` / `double` 坐标；`vertical=false` 时排序强制关闭；发送端内存点序不变，接收端看到排序后的点序；缺省关闭 |
 | 体素降采样 | `downsample(level)`（`level` 取 `1..255`） | 在已量化（`extent>0`）且拥有缓冲区（owned）的点云上将空间相近点折叠为每体素一个，原地缩减点数；借用/反序列化得到的点云无法降采样 |
-
-空间排序发生在每次 vertical 序列化时，时间复杂度为 `O(N log N)`，临时索引在 64 位平台通常约占每点 16 字节。默认关闭时仍走原有无排序分支，不增加逐点判断。推荐顺序为：量化 → `downsample()` → vertical + 空间排序 → 下游熵编码。
-
-线格式大小与字段偏移保持不变。offset 245 原为应用可写的保留字节；旧数据仅在该字节恰为 `1`、`vertical=true` 且前三个 XYZ 字段为大小匹配的同类型 `int16_t` / `float` / `double` 时会被新版本解释为启用排序，其他情况按关闭处理。旧版本接收新数据时则把该状态视为保留字节，点字段仍可正常解码。
 
 ---
 

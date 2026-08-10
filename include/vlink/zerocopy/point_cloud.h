@@ -98,7 +98,7 @@
  *    240     2  uint16_t pack_size_
  *    242     2  uint16_t extent_
  *    244     1  uint8_t  downsample_
- *    245     1  uint8_t  sort_
+ *    245     1  uint8_t  reserved_buf3_
  *    246     1  bool     vertical_
  *    247     1  bool     is_owner_
  *    248     8  uint64_t index_
@@ -110,16 +110,16 @@
  * @endcode
  *
  * @par Reserved bytes
- * @c reserved_buf_ (offset 232) and @c reserved_buf2_ (offset 236) are wire-locked
- * padding bytes.  They travel through the wire format unchanged but MUST NOT be
- * repurposed by application code because future library revisions may bind them to
- * real fields.  The @c uint8_t @c downsample_ at
+ * @c reserved_buf_ (offset 232), @c reserved_buf2_ (offset 236) and @c reserved_buf3_
+ * (offset 245) are wire-locked padding bytes.  They travel through the wire format
+ * unchanged but MUST NOT be repurposed by application code because future library
+ * revisions may bind them to real fields.  The @c uint8_t @c downsample_ at
  * offset 244 records the voxel-grid downsampling level applied to the payload (see
  * @c downsample()): @c 0 disables downsampling, @c 255 is the most aggressive.
  *
  * @par Optional storage compression
- * The @c extent, @c vertical, and @c sort create options trade fidelity and CPU time for footprint.
- * When @c extent_ > 0 the three leading XYZ
+ * The @c extent and @c vertical create options trade fidelity for footprint along
+ * two independent axes.  When @c extent_ > 0 the three leading XYZ
  * coordinates are linearly quantised with @c Quantize::encode<int16_t>(extent, value)
  * and restored with @c Quantize::decode<float/double>(extent, stored), halving
  * (or better) their in-memory footprint; the
@@ -130,10 +130,9 @@
  * @c v3f / @c v3d).  Points whose XYZ fall outside @c (-extent, +extent) cannot be represented and are
  * discarded on insert rather than saturated.  When @c vertical_ is @c true the serialised wire
  * payload is emitted in structure-of-arrays order (@c xx..x @c yy..y @c zz..z, one field column after
- * another) which packs better under a downstream entropy coder.  When both @c vertical_ and @c sort_ are enabled,
- * serialisation first orders complete point records by their XYZ spatial key without changing the in-memory order.
- * The in-memory buffer stays interleaved (row-major) and @c operator<< restores that layout, so the field accessors
- * are unaffected.
+ * another) which packs better under a downstream entropy coder; the in-memory
+ * buffer stays interleaved (row-major) and @c operator<< restores that layout, so
+ * the field accessors are unaffected.
  *
  * @par Optional voxel-grid downsampling
  * @c downsample() collapses spatially-close points by mapping each point's quantised
@@ -453,20 +452,12 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
   [[nodiscard]] bool get_vertical() const noexcept;
 
   /**
-   * @brief Whether vertical serialisation applies spatial ordering to points.
-   *
-   * @return @c true when spatial ordering is enabled.
-   */
-  [[nodiscard]] bool get_sort() const noexcept;
-
-  /**
    * @brief Sets whether serialisation emits the payload in vertical (structure-of-arrays) column order.
    *
    * @details
-   * This changes the wire payload layout used by @c operator>>.  Setting @p vertical to @c false
-   * also clears the spatial ordering option; enabling vertical layout again does not restore it.
-   * The owned or borrowed in-memory point buffer remains in row-major order, and the schema,
-   * extent, downsample marker, logical size, and point data are left unchanged.
+   * This toggles only the wire payload layout used by @c operator>>.  The owned or borrowed
+   * in-memory point buffer remains in row-major order, and the schema, extent, downsample marker,
+   * logical size, and point data are left unchanged.
    *
    * @param vertical @c true to serialise field columns contiguously; @c false for row-major payloads.
    */
@@ -697,7 +688,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
    * @details
    * Low-level entry point used when @p size_num and @p type_num are already
    * known (e.g. reconstructed from a wire buffer).  Prefer the type-safe
-   * @c create<T...>() template for new producers.  Spatial ordering defaults to disabled.
+   * @c create<T...>() template for new producers.
    *
    * @param size Maximum number of points to pre-allocate.
    * @param size_num Protocol size encoding.
@@ -710,22 +701,6 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
    */
   bool create(size_t size, uint64_t size_num, uint64_t type_num, std::string_view key_str, uint16_t extent = 0,
               bool vertical = false) noexcept;
-
-  /**
-   * @brief Creates a cloud with optional spatial ordering during vertical serialisation.
-   *
-   * @param size Maximum number of points to pre-allocate.
-   * @param size_num Protocol size encoding.
-   * @param type_num Protocol type encoding.
-   * @param key_str Comma-separated field names (3..16 fields, up to 152 bytes).
-   * @param extent Optional XYZ quantisation extent; @c 0 disables quantisation.
-   * @param vertical When @c true the serialised payload uses structure-of-arrays column order.
-   * @param sort Whether vertical serialisation orders points by their XYZ spatial key; ignored unless
-   *             @p vertical is @c true.
-   * @return @c false on invalid arguments, size overflow, or allocation failure.
-   */
-  bool create(size_t size, uint64_t size_num, uint64_t type_num, std::string_view key_str, uint16_t extent,
-              bool vertical, bool sort) noexcept;
 
   /**
    * @brief Creates a cloud with a type-safe variadic field schema.
@@ -742,14 +717,6 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
               bool vertical = false) noexcept;
 
   /**
-   * @overload
-   * @param sort Whether vertical serialisation orders points by their XYZ spatial key; ignored unless
-   *             @p vertical is @c true.
-   */
-  template <typename... T>
-  bool create(size_t _size, const std::vector<std::string>& keys, uint16_t extent, bool vertical, bool sort) noexcept;
-
-  /**
    * @brief Creates a cloud with @c float XYZ followed by additional variadic fields.
    *
    * @tparam T Types for additional fields beyond XYZ.
@@ -764,15 +731,6 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
                   bool vertical = false) noexcept;
 
   /**
-   * @overload
-   * @param sort Whether vertical serialisation orders points by their XYZ spatial key; ignored unless
-   *             @p vertical is @c true.
-   */
-  template <typename... T>
-  bool create_v3f(size_t _size, const std::vector<std::string>& keys, uint16_t extent, bool vertical,
-                  bool sort) noexcept;
-
-  /**
    * @brief Creates a cloud with @c double XYZ followed by additional variadic fields.
    *
    * @tparam T Types for additional fields beyond XYZ.
@@ -785,15 +743,6 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
   template <typename... T>
   bool create_v3d(size_t _size, const std::vector<std::string>& keys = {}, uint16_t extent = 0,
                   bool vertical = false) noexcept;
-
-  /**
-   * @overload
-   * @param sort Whether vertical serialisation orders points by their XYZ spatial key; ignored unless
-   *             @p vertical is @c true.
-   */
-  template <typename... T>
-  bool create_v3d(size_t _size, const std::vector<std::string>& keys, uint16_t extent, bool vertical,
-                  bool sort) noexcept;
 
   /**
    * @brief Bulk-fills the cloud from a pre-packed external buffer.
@@ -986,6 +935,18 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
    */
   uint32_t& get_reserved2() noexcept { return reserved_buf2_; }
 
+  /**
+   * @brief Mutable reference to the third wire-locked reserved field (@c uint8_t at offset 245).
+   *
+   * @details
+   * Lets application code stash a small flag or minor sub-type id that travels through the
+   * wire format unchanged.  It is part of the binary contract and MUST NOT be repurposed once
+   * a future library revision binds it to a real field.
+   *
+   * @return Reference to @c reserved_buf3_.
+   */
+  uint8_t& get_reserved3() noexcept { return reserved_buf3_; }
+
   Header header;  ///< Sequencing and timestamp metadata prefix.
 
   static constexpr bool kZerocopyTypes{true};  ///< Marker probed by the VLink type-trait machinery.
@@ -1023,8 +984,6 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
   template <typename T>
   static bool xyz_in_extent(T x, T y, T z, uint16_t extent) noexcept;
 
-  static uint8_t sort_protocol_type(const Protocol& protocol) noexcept;
-
   bool compress_protocol_xyz() noexcept;
 
   Protocol protocol_;
@@ -1036,7 +995,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
   uint16_t pack_size_{0};
   uint16_t extent_{0};
   uint8_t downsample_{0};
-  uint8_t sort_{0};
+  uint8_t reserved_buf3_{0};
   bool vertical_{false};
   bool is_owner_{false};
   uint64_t index_{0};
@@ -1126,12 +1085,6 @@ inline T PointCloud::get_value(size_t loop_index, KeyMap& key_map, std::string_v
 template <typename... T>
 inline bool PointCloud::create(size_t size, const std::vector<std::string>& keys, uint16_t extent,
                                bool vertical) noexcept {
-  return create<T...>(size, keys, extent, vertical, false);
-}
-
-template <typename... T>
-inline bool PointCloud::create(size_t size, const std::vector<std::string>& keys, uint16_t extent, bool vertical,
-                               bool sort) noexcept {
   static_assert((std::is_fundamental_v<T> && ...), "All types must be fundamental.");
 
   static_assert(sizeof...(T) >= 3 && sizeof...(T) <= 16, "The number of keys ranges is [3 ~ 16].");
@@ -1174,10 +1127,6 @@ inline bool PointCloud::create(size_t size, const std::vector<std::string>& keys
     new_protocol = protocol_probe.protocol_;
   }
 
-  if VUNLIKELY (vertical && sort && sort_protocol_type(new_protocol) == kUnknownType) {
-    return false;
-  }
-
   const size_t new_pack_size = new_protocol.get_pack_size();
 
   if VUNLIKELY (new_pack_size != 0 && size > std::numeric_limits<size_t>::max() / new_pack_size) {
@@ -1197,7 +1146,6 @@ inline bool PointCloud::create(size_t size, const std::vector<std::string>& keys
   protocol_ = new_protocol;
   extent_ = extent;
   vertical_ = vertical;
-  sort_ = static_cast<uint8_t>(vertical && sort);
   downsample_ = 0;
 
   pack_size_ = new_pack_size;
@@ -1220,33 +1168,21 @@ inline bool PointCloud::create(size_t size, const std::vector<std::string>& keys
 template <typename... T>
 inline bool PointCloud::create_v3f(size_t _size, const std::vector<std::string>& keys, uint16_t extent,
                                    bool vertical) noexcept {
-  return create_v3f<T...>(_size, keys, extent, vertical, false);
-}
-
-template <typename... T>
-inline bool PointCloud::create_v3f(size_t _size, const std::vector<std::string>& keys, uint16_t extent, bool vertical,
-                                   bool sort) noexcept {
   std::vector<std::string> target_keys{"x", "y", "z"};
 
   target_keys.insert(target_keys.end(), keys.begin(), keys.end());
 
-  return create<float, float, float, T...>(_size, target_keys, extent, vertical, sort);
+  return create<float, float, float, T...>(_size, target_keys, extent, vertical);
 }
 
 template <typename... T>
 inline bool PointCloud::create_v3d(size_t _size, const std::vector<std::string>& keys, uint16_t extent,
                                    bool vertical) noexcept {
-  return create_v3d<T...>(_size, keys, extent, vertical, false);
-}
-
-template <typename... T>
-inline bool PointCloud::create_v3d(size_t _size, const std::vector<std::string>& keys, uint16_t extent, bool vertical,
-                                   bool sort) noexcept {
   std::vector<std::string> target_keys{"x", "y", "z"};
 
   target_keys.insert(target_keys.end(), keys.begin(), keys.end());
 
-  return create<double, double, double, T...>(_size, target_keys, extent, vertical, sort);
+  return create<double, double, double, T...>(_size, target_keys, extent, vertical);
 }
 
 inline bool PointCloud::fill_packed_data(const uint8_t* src_data, size_t _size) noexcept {

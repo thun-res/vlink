@@ -4,7 +4,6 @@
 
 ### 新增功能
 
-- **PointCloud 空间排序**：新增缺省关闭的 `sort` 选项，仅在 vertical 序列化时按 XYZ 空间重排完整点记录；复用原保留字节，线格式不变。
 - **自研日志后端**：新增公开的 `LoggerBackend`，支持异步写入、队列背压、周期刷新、固定/时间戳轮转、UTC 和 backtrace。
 - **格式化修饰符**：`vlink::format` 与 `MLOG_*` 支持完整的 std::format 风格 spec，含动态宽度/精度、`long double`、`nullptr`、`format_as` 扩展点、`{:?}` 和返回 `std::string` 的 `format()`；无效 spec 宽容忽略，不抛异常。
 
