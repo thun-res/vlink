@@ -36,12 +36,23 @@
 #include "./modules/shm_conf.h"
 
 static bool ensure_shm_ready() {
-  if (!ShmConf::auto_init_roudi(true)) {
+  static bool is_shm_ready = []() {
+    const bool roudi_running = ShmConf::has_roudi_running();
+
+    if (!roudi_running) {
+      ShmConf::init_roudi({}, 1);
+    }
+
+    ShmConf::init_runtime({}, !roudi_running);
+
+    return ShmConf::has_roudi_running() && ShmConf::has_runtime_inited();
+  }();
+
+  if (!is_shm_ready) {
     VLOG_W("RouDi is not running, skipping.");
-    return false;
   }
 
-  return true;
+  return is_shm_ready;
 }
 
 TEST_SUITE("shm-init") {
