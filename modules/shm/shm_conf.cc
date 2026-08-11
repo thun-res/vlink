@@ -51,8 +51,8 @@ bool ShmConf::has_runtime_inited() { return ShmFactory::has_runtime_inited(); }
 
 bool ShmConf::has_roudi_running() { return ShmFactory::has_roudi_running(); }
 
-bool ShmConf::auto_init_roudi(bool same_process_from_roudi) {
-  return ShmFactory::auto_init_roudi(same_process_from_roudi);
+bool ShmConf::auto_init_roudi(bool same_process_from_roudi, int memory_strategy) {
+  return ShmFactory::auto_init_roudi(same_process_from_roudi, memory_strategy);
 }
 
 void ShmConf::init_roudi(const std::string& config_path, int memory_strategy, bool monitoring_enable) {

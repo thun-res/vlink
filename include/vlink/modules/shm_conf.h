@@ -218,11 +218,13 @@ struct VLINK_EXPORT ShmConf final : public Conf {
    *
    * @param same_process_from_roudi  @c true when RouDi runs in this same process
    *                                 (see @c init_roudi()).
+   * @param memory_strategy          Memory pooling strategy passed to @c init_roudi()
+   *                                 when an embedded RouDi must be started.
    * @return @c true when RouDi is ready for use, @c false otherwise.
    *
    * @see ShmFactory::auto_init_roudi()
    */
-  [[nodiscard]] static bool auto_init_roudi(bool same_process_from_roudi = false);
+  [[nodiscard]] static bool auto_init_roudi(bool same_process_from_roudi = false, int memory_strategy = 0);
 
   /**
    * @brief Starts an embedded Iceoryx RouDi daemon inside the current process.

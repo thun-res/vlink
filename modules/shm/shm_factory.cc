@@ -218,11 +218,11 @@ bool ShmFactory::has_roudi_running() {
 #endif
 }
 
-bool ShmFactory::auto_init_roudi(bool same_process_from_roudi) {
+bool ShmFactory::auto_init_roudi(bool same_process_from_roudi, int memory_strategy) {
   Bytes::init_memory_pool();
 
   struct RoudiManager final {
-    explicit RoudiManager(bool same_process_from_roudi) {
+    RoudiManager(bool same_process_from_roudi, int memory_strategy) {
       bool roudi_running = ShmFactory::has_roudi_running();
 
       if (!roudi_running) {
@@ -233,7 +233,7 @@ bool ShmFactory::auto_init_roudi(bool same_process_from_roudi) {
           return;
         }
 #else
-        ShmFactory::init_roudi();
+        ShmFactory::init_roudi({}, memory_strategy);
 #endif
       }
 
@@ -260,7 +260,7 @@ bool ShmFactory::auto_init_roudi(bool same_process_from_roudi) {
     bool status_{true};
   };
 
-  static RoudiManager manager(same_process_from_roudi);
+  static RoudiManager manager(same_process_from_roudi, memory_strategy);
 
   return manager.status();
 }

@@ -155,7 +155,7 @@ class ShmFactory final : public AbstractFactory<ShmID> {
 
   static bool has_roudi_running();
 
-  static bool auto_init_roudi(bool same_process_from_roudi = false);
+  static bool auto_init_roudi(bool same_process_from_roudi, int memory_strategy);
 
   static shm::capro::ServiceDescription get_description(const std::string& service, const std::string& instance,
                                                         const std::string& event);
