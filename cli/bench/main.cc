@@ -210,10 +210,28 @@ std::string transport_unavailable_reason(const std::string& url) {
 #ifndef VLINK_SUPPORT_SHM
     return "shm:// is not compiled in this build";
 #else
+#ifdef _WIN32
 
     if (!vlink::ShmConf::auto_init_roudi(true)) {
       return "iox-roudi not running";
     }
+#else
+    static const bool shm_ready = []() {
+      const bool roudi_running = vlink::ShmConf::has_roudi_running();
+
+      if (!roudi_running) {
+        vlink::ShmConf::init_roudi({}, 1);
+      }
+
+      vlink::ShmConf::init_runtime({}, !roudi_running);
+
+      return vlink::ShmConf::has_roudi_running() && vlink::ShmConf::has_runtime_inited();
+    }();
+
+    if (!shm_ready) {
+      return "iox-roudi not running";
+    }
+#endif
 
     return {};
 #endif
