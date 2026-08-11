@@ -32,11 +32,11 @@
 #include <cstring>
 #include <ctime>
 #include <deque>
+#include <exception>
 #include <filesystem>
 #include <limits>
 #include <mutex>
 #include <new>
-#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <thread>
@@ -87,27 +87,31 @@ struct LoggerBackend::LoggerRecord final {
 
   LoggerRecord& operator=(const LoggerRecord&) = delete;
 
-  static void* operator new(size_t object_size, size_t message_size) {
+  static void* operator new(size_t object_size, size_t message_size) noexcept {
     constexpr size_t kHeaderSize = sizeof(LoggerRecordHeader);
 
     if VUNLIKELY (message_size > std::numeric_limits<size_t>::max() - object_size ||
                   object_size + message_size > std::numeric_limits<size_t>::max() - kHeaderSize) {
-      throw std::bad_array_new_length();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      return nullptr;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
     const size_t allocation_size = kHeaderSize + object_size + message_size;
     const bool pooled = allocation_size <= kMaxPooledRecordSize;
     std::byte* allocation = nullptr;
 
-    if VLIKELY (pooled) {
-      allocation =
-          static_cast<std::byte*>(MemoryPool::global_instance().allocate(allocation_size, alignof(LoggerRecordHeader)));
-    } else {
-      allocation = static_cast<std::byte*>(::operator new(allocation_size));
+    try {
+      if VLIKELY (pooled) {
+        allocation = static_cast<std::byte*>(
+            MemoryPool::global_instance().allocate(allocation_size, alignof(LoggerRecordHeader)));
+      } else {
+        allocation = static_cast<std::byte*>(::operator new(allocation_size, std::nothrow));
+      }
+    } catch (...) {
+      return nullptr;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
     if VUNLIKELY (allocation == nullptr) {
-      throw std::bad_alloc();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      return nullptr;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
     auto* header = ::new (allocation) LoggerRecordHeader{allocation_size};
@@ -336,35 +340,46 @@ struct LoggerBackend::Impl final {
 
 LoggerBackend::LoggerBackend(Config&& config, ErrorHandler&& error_handler, ConsoleWriter&& console_writer)
     : impl_(std::make_unique<Impl>()) {
-  (void)MemoryPool::global_instance();
-
-  impl_->config = std::move(config);
-  impl_->config.queue_size = std::max(impl_->config.queue_size, size_t{1});
   impl_->error_handler = std::move(error_handler);
   impl_->console_writer = std::move(console_writer);
-  impl_->base_path = impl_->config.log_path;
-  impl_->format_buffer.reserve(4096U);
+  try {
+    (void)MemoryPool::global_instance();
 
-  if (impl_->config.flush_interval_ms > 0U) {
-    if (!impl_->flush_timer.attach(this)) {
-      throw std::runtime_error("logger backend: failed to attach flush timer");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    impl_->config = std::move(config);
+    impl_->config.queue_size = std::max(impl_->config.queue_size, size_t{1});
+    impl_->base_path = impl_->config.log_path;
+    impl_->format_buffer.reserve(4096U);
+
+    if (impl_->config.flush_interval_ms > 0U) {
+      if (!impl_->flush_timer.attach(this)) {
+        fail("logger backend: failed to attach flush timer");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
+
+      if (!impl_->has_error.load(std::memory_order_acquire)) {
+        impl_->flush_timer.set_interval(impl_->config.flush_interval_ms);
+        impl_->flush_timer.set_loop_count(Timer::kInfinite);
+        impl_->flush_timer.set_callback([this] { flush_file(); });
+      }
     }
 
-    impl_->flush_timer.set_interval(impl_->config.flush_interval_ms);
-    impl_->flush_timer.set_loop_count(Timer::kInfinite);
-    impl_->flush_timer.set_callback([this] { flush_file(); });
+    if (!impl_->has_error.load(std::memory_order_acquire)) {
+      start_backend();
+    }
+  } catch (const std::exception& error) {
+    fail(error.what());
+  } catch (...) {
+    fail("logger backend: failed to initialize");
   }
 
-  try {
-    start_backend();
-  } catch (...) {
+  if (impl_->has_error.load(std::memory_order_acquire)) {
+    impl_->flush_timer.stop();
+
     if (is_running()) {
       quit();
       wait_for_quit(Timer::kInfinite, false);
     }
 
     close_current();
-    throw;
   }
 }
 
@@ -409,6 +424,11 @@ bool LoggerBackend::log(Logger::Level level, std::string_view message) noexcept 
 
     auto record = std::unique_ptr<LoggerRecord>(
         new (message.size()) LoggerRecord(level, std::chrono::system_clock::now(), kThreadId, message));
+
+    if VUNLIKELY (!record) {
+      fail("logger backend: failed to allocate a log record");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      return false;
+    }
 
     if VUNLIKELY (is_in_same_thread()) {
       write(std::move(record));
@@ -480,9 +500,14 @@ void LoggerBackend::dump_backtrace(const ConsoleWriter& console_writer) noexcept
     try {
       auto dump_record = [this, &console_writer](const LoggerRecord& record) {
         const auto formatted = format(record);
+
+        if VUNLIKELY (impl_->has_error.load(std::memory_order_relaxed)) {
+          return;
+        }
+
         write_output(formatted);
 
-        if (console_writer) {
+        if (!impl_->has_error.load(std::memory_order_relaxed) && console_writer) {
           console_writer(record.level, formatted.substr(0U, formatted.size() - 1U));
         }
       };
@@ -490,16 +515,42 @@ void LoggerBackend::dump_backtrace(const ConsoleWriter& console_writer) noexcept
       const uint64_t thread_id = Utils::get_native_thread_id();
       auto marker = std::unique_ptr<LoggerRecord>(new (kBacktraceStart.size()) LoggerRecord(
           Logger::kInfo, std::chrono::system_clock::now(), thread_id, kBacktraceStart));
+
+      if VUNLIKELY (!marker) {
+        fail("logger backend: failed to allocate a log record");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        return;
+      }
+
       dump_record(*marker);
+
+      if VUNLIKELY (impl_->has_error.load(std::memory_order_relaxed)) {
+        return;
+      }
 
       while (!impl_->backtrace.empty()) {
         dump_record(*impl_->backtrace.front());
+
+        if VUNLIKELY (impl_->has_error.load(std::memory_order_relaxed)) {
+          return;
+        }
+
         impl_->backtrace.pop_front();
       }
 
       marker = std::unique_ptr<LoggerRecord>(new (kBacktraceEnd.size()) LoggerRecord(
           Logger::kInfo, std::chrono::system_clock::now(), thread_id, kBacktraceEnd));
+
+      if VUNLIKELY (!marker) {
+        fail("logger backend: failed to allocate a log record");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        return;
+      }
+
       dump_record(*marker);
+
+      if VUNLIKELY (impl_->has_error.load(std::memory_order_relaxed)) {
+        return;
+      }
+
       flush_output();
     } catch (const std::exception& error) {
       fail(error.what());
@@ -515,17 +566,20 @@ size_t LoggerBackend::get_max_task_count() const { return impl_->config.queue_si
 
 void LoggerBackend::start_backend() {
   if (impl_->config.max_file_size == 0U) {
-    throw std::invalid_argument("logger backend: max_file_size cannot be zero");
+    fail("logger backend: max_file_size cannot be zero");
+    return;
   }
 
   const size_t max_supported_files = impl_->config.fixed_filename ? kMaxFixedFiles : kMaxTimestampFiles;
 
   if (impl_->config.max_files > max_supported_files) {
-    throw std::invalid_argument("logger backend: max_files exceeds the supported limit");
+    fail("logger backend: max_files exceeds the supported limit");
+    return;
   }
 
   if (!impl_->config.fixed_filename && impl_->config.max_files == 0U) {
-    throw std::invalid_argument("logger backend: max_files cannot be zero for timestamp rotation");
+    fail("logger backend: max_files cannot be zero for timestamp rotation");
+    return;
   }
 
   if (impl_->config.fixed_filename) {
@@ -534,11 +588,16 @@ void LoggerBackend::start_backend() {
     initialize_timestamped();
   }
 
+  if VUNLIKELY (impl_->has_error.load(std::memory_order_relaxed)) {
+    return;
+  }
+
   set_name("VLinkLogger");
   set_strategy(impl_->config.block_when_full ? MessageLoop::kBlockStrategy : MessageLoop::kPopStrategy);
 
   if (!async_run()) {
-    throw std::runtime_error("logger backend: failed to start message loop");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    fail("logger backend: failed to start message loop");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return;
   }
 
   PostTaskOptions options;
@@ -549,7 +608,8 @@ void LoggerBackend::start_backend() {
   (void)handle.wait();
 
   if VUNLIKELY (handle.state() != TaskExecutionState::kCompleted) {
-    throw std::runtime_error("logger backend: failed to start message loop");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    fail("logger backend: failed to start message loop");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return;
   }
 
   if (impl_->config.flush_interval_ms > 0U) {
@@ -562,6 +622,10 @@ void LoggerBackend::initialize_fixed() {
   impl_->current_path = impl_->base_path;
 
   open_current(true);
+
+  if VUNLIKELY (impl_->has_error.load(std::memory_order_acquire)) {
+    return;
+  }
 
   if (!impl_->config.append && impl_->current_size > 0U) {
     rotate_fixed();
@@ -614,34 +678,44 @@ void LoggerBackend::initialize_timestamped() {
   impl_->current_path = impl_->timestamp_files.back().path;
 
   if (impl_->config.append) {
-    try {
-      open_current(true);
-      // LCOV_EXCL_START GCOVR_EXCL_START
-    } catch (const std::exception&) {
+    open_current(true, false);
+
+    if (!impl_->file) {
       rotate_timestamped();
     }
-    // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   } else {
     rotate_timestamped();
   }
 }
 
-void LoggerBackend::open_current(bool append) {
+void LoggerBackend::open_current(bool append, bool report_error) {
   close_current();
 
   int error_number = 0;
   impl_->file = open_log_file(impl_->current_path, append, error_number);
 
   if (!impl_->file) {
-    throw std::runtime_error("logger backend: failed to open log file " + impl_->current_path.string() + ": " +
-                             std::error_code(error_number, std::generic_category()).message());
+    if (report_error) {
+      std::string error_message{"logger backend: failed to open log file "};
+      error_message.append(impl_->current_path.string());
+      error_message.append(": ").append(std::error_code(error_number, std::generic_category()).message());
+      fail(error_message);
+    }
+
+    return;
   }
 
   if (!get_log_file_size(impl_->file, impl_->current_size, error_number)) {
     // LCOV_EXCL_START GCOVR_EXCL_START
     close_current();
-    throw std::runtime_error("logger backend: failed to query log file size " + impl_->current_path.string() + ": " +
-                             std::error_code(error_number, std::generic_category()).message());
+
+    if (report_error) {
+      std::string error_message{"logger backend: failed to query log file size "};
+      error_message.append(impl_->current_path.string());
+      error_message.append(": ").append(std::error_code(error_number, std::generic_category()).message());
+      fail(error_message);
+    }
+
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 }
@@ -663,9 +737,11 @@ void LoggerBackend::rotate_fixed() {
 
     if (exists_error) {
       // LCOV_EXCL_START GCOVR_EXCL_START
-      impl_->current_path = impl_->base_path;
-      open_current(true);
-      throw std::runtime_error("logger backend: failed to inspect " + source.string() + ": " + exists_error.message());
+      std::string error_message{"logger backend: failed to inspect "};
+      error_message.append(source.string());
+      error_message.append(": ").append(exists_error.message());
+      fail(error_message);
+      return;
       // LCOV_EXCL_STOP GCOVR_EXCL_STOP
     }
 
@@ -688,10 +764,11 @@ void LoggerBackend::rotate_fixed() {
     }
 
     if (error) {
-      impl_->current_path = impl_->base_path;
-      open_current(true);
-      throw std::runtime_error("logger backend: failed to rotate " + source.string() + " to " + target.string() + ": " +
-                               error.message());
+      std::string error_message{"logger backend: failed to rotate "};
+      error_message.append(source.string()).append(" to ").append(target.string());
+      error_message.append(": ").append(error.message());
+      fail(error_message);
+      return;
     }
   }
 
@@ -719,23 +796,24 @@ void LoggerBackend::rotate_timestamped() {
 #endif
 
   if VUNLIKELY (!converted) {
-    throw std::runtime_error(  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        "logger backend: failed to convert timestamped log filename time");
+    fail("logger backend: failed to convert timestamped log filename time");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return;
   }
 
   char timestamp[32];
   const size_t size = std::strftime(timestamp, sizeof(timestamp), "%Y-%m-%d_%H-%M-%S", &time_info);
 
   if (size == 0U) {
-    throw std::runtime_error(  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        "logger backend: failed to generate timestamped log filename");
+    fail("logger backend: failed to generate timestamped log filename");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return;
   }
 
   LoggerFileInfo new_file;
   new_file.timestamp.assign(timestamp, size);
 
   if (impl_->current_index == std::numeric_limits<size_t>::max()) {
-    throw std::runtime_error("logger backend: timestamped log file index overflow");
+    fail("logger backend: timestamped log file index overflow");
+    return;
   }
 
   new_file.index = impl_->current_index + 1U;
@@ -745,6 +823,11 @@ void LoggerBackend::rotate_timestamped() {
   impl_->current_path = new_file.path;
 
   open_current(false);
+
+  if VUNLIKELY (impl_->has_error.load(std::memory_order_acquire)) {
+    return;
+  }
+
   impl_->timestamp_files.emplace_back(std::move(new_file));
 
   while (impl_->timestamp_files.size() > impl_->config.max_files) {
@@ -770,8 +853,10 @@ void LoggerBackend::flush_output() {
 
   if VUNLIKELY (flush_result != 0) {
     const int error_number = errno;
-    throw std::runtime_error("logger backend: failed to flush log file " + impl_->current_path.string() + ": " +
-                             std::error_code(error_number, std::generic_category()).message());
+    std::string error_message{"logger backend: failed to flush log file "};
+    error_message.append(impl_->current_path.string());
+    error_message.append(": ").append(std::error_code(error_number, std::generic_category()).message());
+    fail(error_message);
   }
 }
 
@@ -786,13 +871,20 @@ void LoggerBackend::write_output(std::string_view data) {
   if VUNLIKELY (needs_rotation) {
     flush_output();
 
+    if VUNLIKELY (impl_->has_error.load(std::memory_order_relaxed)) {
+      return;
+    }
+
     size_t real_size = 0U;
     int error_number = 0;
 
     if (!get_log_file_size(impl_->file, real_size, error_number)) {
       // LCOV_EXCL_START GCOVR_EXCL_START
-      throw std::runtime_error("logger backend: failed to query active log file size " + impl_->current_path.string() +
-                               ": " + std::error_code(error_number, std::generic_category()).message());
+      std::string error_message{"logger backend: failed to query active log file size "};
+      error_message.append(impl_->current_path.string());
+      error_message.append(": ").append(std::error_code(error_number, std::generic_category()).message());
+      fail(error_message);
+      return;
       // LCOV_EXCL_STOP GCOVR_EXCL_STOP
     }
 
@@ -801,6 +893,10 @@ void LoggerBackend::write_output(std::string_view data) {
         rotate_fixed();
       } else {
         rotate_timestamped();
+      }
+
+      if VUNLIKELY (impl_->has_error.load(std::memory_order_relaxed)) {
+        return;
       }
 
       new_size = data.size();
@@ -821,8 +917,11 @@ void LoggerBackend::write_output(std::string_view data) {
 
   if VUNLIKELY (written != data.size()) {
     const int error_number = errno;
-    throw std::runtime_error("logger backend: failed to write log file " + impl_->current_path.string() + ": " +
-                             std::error_code(error_number, std::generic_category()).message());
+    std::string error_message{"logger backend: failed to write log file "};
+    error_message.append(impl_->current_path.string());
+    error_message.append(": ").append(std::error_code(error_number, std::generic_category()).message());
+    fail(error_message);
+    return;
   }
 
   impl_->current_size = new_size;
@@ -831,7 +930,8 @@ void LoggerBackend::write_output(std::string_view data) {
 void LoggerBackend::update_timestamp(int64_t seconds) {
   if constexpr (!std::numeric_limits<std::time_t>::is_signed) {
     if VUNLIKELY (seconds < 0) {
-      throw std::runtime_error("logger backend: timestamp is outside time_t range");
+      fail("logger backend: timestamp is outside time_t range");
+      return;
     }
   }
 
@@ -839,7 +939,8 @@ void LoggerBackend::update_timestamp(int64_t seconds) {
 
   if constexpr (sizeof(std::time_t) < sizeof(int64_t)) {
     if VUNLIKELY (static_cast<int64_t>(time) != seconds) {
-      throw std::runtime_error("logger backend: timestamp is outside time_t range");
+      fail("logger backend: timestamp is outside time_t range");
+      return;
     }
   }
 
@@ -861,14 +962,16 @@ void LoggerBackend::update_timestamp(int64_t seconds) {
 #endif
 
   if VUNLIKELY (!converted) {
-    throw std::runtime_error("logger backend: failed to convert log timestamp");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    fail("logger backend: failed to convert log timestamp");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return;
   }
 
   impl_->timestamp_size =
       std::strftime(impl_->timestamp_prefix, sizeof(impl_->timestamp_prefix), "%m-%d %H:%M:%S.", &time_info);
 
   if (impl_->timestamp_size == 0U) {
-    throw std::runtime_error("logger backend: failed to format timestamp");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    fail("logger backend: failed to format timestamp");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return;
   }
 
   impl_->cached_seconds = seconds;
@@ -889,6 +992,10 @@ std::string_view LoggerBackend::format(const LoggerRecord& record) {
 
   if VUNLIKELY (seconds != impl_->cached_seconds) {
     update_timestamp(seconds);
+
+    if VUNLIKELY (impl_->has_error.load(std::memory_order_relaxed)) {
+      return {};
+    }
   }
 
   impl_->format_buffer.clear();
@@ -899,7 +1006,8 @@ std::string_view LoggerBackend::format(const LoggerRecord& record) {
       std::to_chars(number_buffer, number_buffer + sizeof(number_buffer), millisecond);
 
   if VUNLIKELY (millisecond_error != std::errc()) {
-    throw std::runtime_error("logger backend: failed to format milliseconds");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    fail("logger backend: failed to format milliseconds");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return {};
   }
 
   const auto millisecond_size = static_cast<size_t>(millisecond_end - number_buffer);
@@ -915,7 +1023,8 @@ std::string_view LoggerBackend::format(const LoggerRecord& record) {
       std::to_chars(number_buffer, number_buffer + sizeof(number_buffer), record.thread_id);
 
   if VUNLIKELY (thread_error != std::errc()) {
-    throw std::runtime_error("logger backend: failed to format thread id");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    fail("logger backend: failed to format thread id");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return {};
   }
 
   impl_->format_buffer.append(number_buffer, static_cast<size_t>(thread_end - number_buffer));
@@ -929,6 +1038,7 @@ std::string_view LoggerBackend::format(const LoggerRecord& record) {
 }
 
 void LoggerBackend::fail(std::string_view message) noexcept {
+  impl_->accepting.store(false, std::memory_order_release);
   bool expected = false;
 
   if (impl_->has_error.compare_exchange_strong(expected, true, std::memory_order_acq_rel, std::memory_order_acquire) &&
@@ -973,7 +1083,16 @@ void LoggerBackend::write(std::unique_ptr<LoggerRecord>&& record) noexcept {
     if VUNLIKELY (impl_->backtrace_enabled) {
       if VUNLIKELY (level >= Logger::kWarn) {
         const auto formatted = format(*record);
+
+        if VUNLIKELY (impl_->has_error.load(std::memory_order_relaxed)) {
+          return;
+        }
+
         write_output(formatted);
+
+        if VUNLIKELY (impl_->has_error.load(std::memory_order_relaxed)) {
+          return;
+        }
 
         if (impl_->console_writer) {
           impl_->console_writer(level, formatted.substr(0U, formatted.size() - 1U));
@@ -990,7 +1109,18 @@ void LoggerBackend::write(std::unique_ptr<LoggerRecord>&& record) noexcept {
         }
       }
     } else {
-      write_output(format(*record));
+      const auto formatted = format(*record);
+
+      if VUNLIKELY (impl_->has_error.load(std::memory_order_relaxed)) {
+        return;
+      }
+
+      write_output(formatted);
+
+      if VUNLIKELY (impl_->has_error.load(std::memory_order_relaxed)) {
+        return;
+      }
+
       wrote = true;
     }
 

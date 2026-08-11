@@ -113,11 +113,8 @@ class VLINK_EXPORT LoggerBackend final : public MessageLoop {
    * @param error_handler   Optional permanent-error notification.
    * @param console_writer  Optional backtrace console receiver.
    *
-   * @throws std::invalid_argument for invalid size/count settings.
-   * @throws std::runtime_error when the file or worker cannot be initialised.
-   * @throws std::filesystem::filesystem_error when directory operations fail.
-   * @throws std::system_error when a system resource cannot be created.
-   * @throws std::bad_alloc when backend storage cannot be allocated.
+   * @note Backend initialisation failures enter the permanent error state and notify
+   *       @p error_handler instead of throwing.  Use @c has_error to inspect that state.
    */
   explicit LoggerBackend(Config&& config, ErrorHandler&& error_handler, ConsoleWriter&& console_writer = nullptr);
 
@@ -186,7 +183,7 @@ class VLINK_EXPORT LoggerBackend final : public MessageLoop {
 
   void initialize_timestamped();
 
-  void open_current(bool append);
+  void open_current(bool append, bool report_error = true);
 
   void close_current() noexcept;
 

@@ -102,7 +102,9 @@ Info 不用于逐帧热路径；Fatal 只用于状态已无法安全继续的错
 需要脱离全局 Logger 管理文件后端时，可包含 `vlink/base/logger_backend.h` 并直接构造
 `LoggerBackend`。构造函数会立即创建文件并启动继承的 `MessageLoop` worker；
 析构前必须先停止所有生产者，正常析构会排空仍在等待的记录并 flush。不要手动停止后
-再次启动 backend；直接停止 worker 可能丢弃尚未进入处理批次的记录。
+再次启动 backend；直接停止 worker 可能丢弃尚未进入处理批次的记录。配置、文件或
+worker 初始化失败不会抛出后端异常，而是调用 `ErrorHandler` 并使 backend 进入永久
+错误状态。
 
 `LoggerBackend::Config` 在构造时固定：`log_path` 是生成日志文件的基础目录，
 `max_file_size` 是单文件轮转阈值，`max_files` 在时间戳策略下表示文件保留目标、在

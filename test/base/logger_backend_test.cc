@@ -102,24 +102,34 @@ TEST_SUITE("base-LoggerBackend") {
     CHECK(backend.is_running());
   }
 
-  TEST_CASE("constructor rejects invalid timestamp rotation limits") {
+  TEST_CASE("constructor reports invalid rotation limits without throwing") {
+    const auto check_error = [](vlink::LoggerBackend::Config&& config, std::string_view expected_error) {
+      std::string error;
+      vlink::LoggerBackend backend(std::move(config), [&error](std::string_view message) { error = message; });
+
+      CHECK(backend.has_error());
+      CHECK_FALSE(backend.is_running());
+      CHECK_FALSE(backend.log(vlink::Logger::kInfo, "record after initialization failure"));
+      CHECK_EQ(error, expected_error);
+    };
+
     auto config = backend_config(backend_test_dir("invalid-size"));
     config.max_file_size = 0U;
-    CHECK_THROWS_AS(vlink::LoggerBackend(std::move(config), nullptr), std::invalid_argument);
+    check_error(std::move(config), "logger backend: max_file_size cannot be zero");
 
     config = backend_config(backend_test_dir("invalid-count"));
     config.fixed_filename = false;
     config.max_files = 0U;
-    CHECK_THROWS_AS(vlink::LoggerBackend(std::move(config), nullptr), std::invalid_argument);
+    check_error(std::move(config), "logger backend: max_files cannot be zero for timestamp rotation");
 
     config = backend_config(backend_test_dir("invalid-fixed-count-limit"));
     config.max_files = std::numeric_limits<size_t>::max();
-    CHECK_THROWS_AS(vlink::LoggerBackend(std::move(config), nullptr), std::invalid_argument);
+    check_error(std::move(config), "logger backend: max_files exceeds the supported limit");
 
     config = backend_config(backend_test_dir("invalid-timestamp-count-limit"));
     config.fixed_filename = false;
     config.max_files = std::numeric_limits<size_t>::max();
-    CHECK_THROWS_AS(vlink::LoggerBackend(std::move(config), nullptr), std::invalid_argument);
+    check_error(std::move(config), "logger backend: max_files exceeds the supported limit");
   }
 
   TEST_CASE("zero dispatcher capacity is clamped to one") {
@@ -801,7 +811,12 @@ TEST_SUITE("base-LoggerBackend") {
     }
 
     auto config = backend_config(regular_file);
-    CHECK_THROWS_AS(vlink::LoggerBackend(std::move(config), nullptr), std::filesystem::filesystem_error);
+    std::string error;
+    vlink::LoggerBackend backend(std::move(config), [&error](std::string_view message) { error = message; });
+
+    CHECK(backend.has_error());
+    CHECK_FALSE(backend.is_running());
+    CHECK_FALSE(error.empty());
   }
 
   TEST_CASE("fixed rotation failure preserves the active file") {
@@ -1006,7 +1021,7 @@ TEST_SUITE("base-LoggerBackend") {
     CHECK(found_next_index);
   }
 
-  TEST_CASE("timestamp rotation rejects an exhausted file index") {
+  TEST_CASE("timestamp rotation reports an exhausted file index") {
     const auto directory = backend_test_dir("timestamp-index-overflow");
     const auto filename = "2099-12-31_23-59-59." + std::to_string(std::numeric_limits<size_t>::max()) + ".log";
     {
@@ -1016,7 +1031,12 @@ TEST_SUITE("base-LoggerBackend") {
 
     auto config = backend_config(directory);
     config.fixed_filename = false;
-    CHECK_THROWS_AS(vlink::LoggerBackend(std::move(config), nullptr), std::runtime_error);
+    std::string error;
+    vlink::LoggerBackend backend(std::move(config), [&error](std::string_view message) { error = message; });
+
+    CHECK(backend.has_error());
+    CHECK_FALSE(backend.is_running());
+    CHECK_EQ(error, "logger backend: timestamped log file index overflow");
   }
 
   TEST_CASE("flush remains valid after the inherited loop is stopped") {
