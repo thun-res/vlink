@@ -26,7 +26,13 @@
 #define DOCTEST_CONFIG_IMPLEMENT
 #include <doctest/doctest.h>
 
+#include "./base/utils.h"
+
 int main(int argc, char** argv) {
+  if (vlink::Utils::get_env("VLINK_SCHEMA_MANAGER_CHILD_CASE").empty()) {
+    vlink::Utils::unset_env("VLINK_SCHEMA_PLUGIN");
+  }
+
   doctest::Context ctx;
 
   ctx.setOption("no-introductory-string", true);
