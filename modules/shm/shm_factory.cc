@@ -227,6 +227,7 @@ bool ShmFactory::auto_init_roudi(bool same_process_from_roudi, int memory_strate
 
       if (!roudi_running) {
 #ifdef _WIN32
+        (void)memory_strategy;
 
         if (same_process_from_roudi) {
           status_ = false;
