@@ -564,7 +564,7 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
 #ifdef __QNX__
       CLOG_F(
           "DiscoveryViewer: Failed to set multicast, please add address [%s] to target device. "
-          "\nExamples(QNX): route add -net %s -interface eth0.",
+          "\nExamples(QNX): route add -host %s -interface eth0.",
           kBroadcastAddress, kBroadcastAddress);
 #elif defined(__APPLE__)
       CLOG_F(

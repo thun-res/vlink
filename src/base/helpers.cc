@@ -115,9 +115,17 @@ struct HasFloatToChars<FloatT,
                                                           std::declval<FloatT>(), std::chars_format::general, 6))>>
     final : std::true_type {};
 
+#ifdef __QNX__
+template <typename FloatT>
+constexpr bool kUseFloatToChars = HasFloatToChars<FloatT>::value && !std::is_same_v<FloatT, long double>;
+#else
+template <typename FloatT>
+constexpr bool kUseFloatToChars = HasFloatToChars<FloatT>::value;
+#endif
+
 template <typename FloatT>
 size_t format_floating_to_impl(char* buf, size_t buflen, FloatT value) noexcept {
-  if constexpr (HasFloatToChars<FloatT>::value) {
+  if constexpr (kUseFloatToChars<FloatT>) {
     auto result = std::to_chars(buf, buf + buflen, value, std::chars_format::general, 6);
 
     if VLIKELY (result.ec == std::errc()) {
@@ -155,7 +163,7 @@ size_t format_floating_spec_impl(char* buf, size_t buflen, FloatT value, char ty
     return 0U;
   }
 
-  if constexpr (HasFloatToChars<FloatT>::value) {
+  if constexpr (kUseFloatToChars<FloatT>) {
     if VLIKELY (!alt || (type != 'g' && type != 'G')) {
       auto chars_fmt = std::chars_format::general;
       bool upper = false;

@@ -53,6 +53,37 @@
 
 namespace vlink {
 
+// TerminalProbeBuffer
+class TerminalProbeBuffer final : public std::streambuf {
+ public:
+  [[nodiscard]] bool wrote() const noexcept { return wrote_; }
+
+  [[nodiscard]] bool flushed() const noexcept { return flushed_; }
+
+ protected:
+  int_type overflow(int_type value) override {
+    if (!traits_type::eq_int_type(value, traits_type::eof())) {
+      wrote_ = true;
+    }
+
+    return traits_type::not_eof(value);
+  }
+
+  std::streamsize xsputn(const char*, std::streamsize count) override {
+    wrote_ = wrote_ || count > 0;
+    return count;
+  }
+
+  int sync() override {
+    flushed_ = true;
+    return 0;
+  }
+
+ private:
+  bool wrote_{false};
+  bool flushed_{false};
+};
+
 // TerminalStream
 TerminalStream& TerminalStream::get() noexcept {
   static TerminalStream instance;
@@ -225,11 +256,15 @@ TerminalStream& TerminalStream::operator<<(const void* ptr) noexcept {
 TerminalStream& TerminalStream::operator<<(ManipType manip) noexcept { return manip(*this); }
 
 TerminalStream& TerminalStream::operator<<(std::ostream& (*manip)(std::ostream&)) noexcept {
+  TerminalProbeBuffer probe_buffer;
+
+  std::ostream probe_stream(&probe_buffer);
+
+  manip(probe_stream);
+
   std::lock_guard lock(mutex_);
 
-  const auto std_flush = static_cast<std::ostream& (*)(std::ostream&)>(&std::flush<char, std::char_traits<char>>);
-
-  if (manip != std_flush) {
+  if (!probe_buffer.flushed() || probe_buffer.wrote()) {
     write_to_buffer("\n", 1);
   }
 

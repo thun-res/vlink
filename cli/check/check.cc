@@ -130,6 +130,8 @@ enum class DiagType : uint8_t {
   return out;
 #elif defined(__APPLE__)
   return run_cmd_output("netstat -rn");
+#elif defined(__QNX__)
+  return run_cmd_output("netstat -rn");
 #else
   return run_cmd_output("route -n");
 #endif
@@ -637,7 +639,7 @@ void check_flag(DiagContext& ctx, const std::string& title, const std::string& n
 void check_vlink_version(DiagContext& ctx) { end_diag(ctx, DiagType::kPass, VLINK_VERSION); }
 
 void check_platform_info(DiagContext& ctx) {
-#if defined(__linux__) || defined(__ANDROID__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__ANDROID__) || defined(__APPLE__) || defined(__QNX__)
   const auto kernel = vlink::Helpers::trim_string(run_cmd_output("uname -sr"));
 
   if VUNLIKELY (kernel.empty()) {
