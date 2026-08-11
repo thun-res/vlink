@@ -586,6 +586,8 @@ def test_qos_profile_constants():
         assert hasattr(_vlink.QosProfile, name)
         qos = getattr(_vlink.QosProfile, name)
         assert isinstance(qos, _vlink.Qos)
+        assert qos.deadline.period == -1
+        assert qos.lifespan.duration == -1
 
     # The runtime lookup map must expose every preset by its string name.
     qos_map = _vlink.QosProfile.get_available_qos_map()

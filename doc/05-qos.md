@@ -58,7 +58,9 @@ auto pub = vlink::Publisher<MyMsg>::create_unique("dds://lidar/points?qos=sensor
 | 高吞吐尽力传输 | `kPoor` / `kBetter` | BestEffort | KeepLast(5/50) | Volatile | ASync/Sync |
 | 高吞吐可靠传输 | `kBest` | Reliable | KeepLast(200) | Volatile | Sync |
 
-各 profile 的逐项策略（含 Liveliness 租约、Deadline、Lifespan 与优先级，部分以 `is_express` 直发）以源码 `include/vlink/extension/qos_profile.h` 的每条 `@brief` 为权威；QoS 速查另见 [参考](14-reference.md#-146-qos-配置)。
+各 profile 的逐项策略（含 Liveliness 租约、Deadline、Lifespan 与优先级，部分以 `is_express` 直发）以源码 `include/vlink/extension/qos_profile.h` 中各 profile 的完整 Doxygen 注释为权威；QoS 速查另见 [参考](14-reference.md#-146-qos-配置)。
+
+所有内置 profile 均默认构造 Deadline 与 Lifespan，因此 `deadline.period` 和 `lifespan.duration` 都为 `-1`，分别表示不施加发布周期约束和样本永久有效。业务需要监测周期数据断流时，应复制 profile 后显式配置 Deadline；需要有限 Lifespan 时，还须确保通信主机之间具有满足业务误差要求的时钟同步。
 
 ---
 
@@ -72,8 +74,8 @@ auto pub = vlink::Publisher<MyMsg>::create_unique("dds://lidar/points?qos=sensor
 | 历史 | `history.kind` + `history.depth` | `kKeepLast(depth)` / `kKeepAll` | 仅留最近 N 条用 `kKeepLast`；每条都须处理（如 RPC）用 `kKeepAll` |
 | 持久化 | `durability.kind` | `kVolatile` / `kTransientLocal` / `kTransient` / `kPersistent` | 迟到订阅者需补历史用 `kTransientLocal`，否则 `kVolatile`；`kTransient`（依赖外部 durability 服务，DDS only）与 `kPersistent`（落稳定存储）按需启用 |
 | 发布模式 | `publish_mode.kind` | `kSync` / `kASync` | 控制/RPC 用 `kSync`；高频大流量用 `kASync` 换取吞吐 |
-| Deadline | `deadline.period` | 毫秒，`-1` 不约束 | 监测周期数据断流：设为预期周期的 2~3 倍 |
-| Lifespan | `lifespan.duration` | 毫秒，`-1` 永久 | 时效数据（如实时位置）超时自动丢弃 |
+| Deadline | `deadline.period` | 毫秒，`-1` 不约束 | 内置 profile 均使用 `-1`；自定义周期流可设为预期周期的 2~3 倍 |
+| Lifespan | `lifespan.duration` | 毫秒，`-1` 永久 | 内置 profile 均使用 `-1`；仅在跨机时钟可靠同步时为自定义 profile 设置有限值 |
 | 优先级 | `additions.priority` | `kPriorityRealTime` … `kPriorityBackground` | 当前映射为 Zenoh 传输优先级；与 MessageLoop 任务优先级无关 |
 
 其余子策略（Liveliness、DestinationOrder、Ownership、LatencyBudget、ResourceLimits）属低频进阶项，默认值适用于绝大多数场景，完整字段说明见 [参考](14-reference.md)。

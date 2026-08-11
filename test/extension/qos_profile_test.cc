@@ -61,7 +61,7 @@ TEST_SUITE("extension-QosProfile") {
     CHECK_EQ(q.liveliness.kind, vlink::Qos::Liveliness::kAutomatic);
     CHECK_EQ(q.liveliness.duration, 1000);
     CHECK_EQ(q.deadline.period, -1);
-    CHECK_EQ(q.lifespan.duration, 2000);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "event");
   }
 
@@ -74,7 +74,7 @@ TEST_SUITE("extension-QosProfile") {
     CHECK_EQ(q.additions.priority, vlink::Qos::Additions::kPriorityHigh);
     CHECK_EQ(q.liveliness.duration, 2000);
     CHECK_EQ(q.deadline.period, -1);
-    CHECK_EQ(q.lifespan.duration, 5000);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "method");
   }
 
@@ -102,8 +102,8 @@ TEST_SUITE("extension-QosProfile") {
     CHECK_EQ(q.additions.priority, vlink::Qos::Additions::kPriorityNormal);
     CHECK(q.additions.is_express);
     CHECK_EQ(q.liveliness.duration, 500);
-    CHECK_EQ(q.deadline.period, 200);
-    CHECK_EQ(q.lifespan.duration, 500);
+    CHECK_EQ(q.deadline.period, -1);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "sensor");
   }
 
@@ -145,8 +145,8 @@ TEST_SUITE("extension-QosProfile") {
     CHECK_EQ(q.additions.priority, vlink::Qos::Additions::kPriorityLow);
     CHECK(q.additions.is_express);
     CHECK_EQ(q.liveliness.duration, 1000);
-    CHECK_EQ(q.deadline.period, 1500);
-    CHECK_EQ(q.lifespan.duration, 1000);
+    CHECK_EQ(q.deadline.period, -1);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "clock");
   }
 
@@ -172,7 +172,7 @@ TEST_SUITE("extension-QosProfile") {
     CHECK_EQ(q.additions.priority, vlink::Qos::Additions::kPriorityHigh);
     CHECK_EQ(q.liveliness.duration, 1000);
     CHECK_EQ(q.deadline.period, -1);
-    CHECK_EQ(q.lifespan.duration, 1000);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "light");
   }
 
@@ -186,7 +186,7 @@ TEST_SUITE("extension-QosProfile") {
     CHECK_EQ(q.additions.priority, vlink::Qos::Additions::kPriorityBackground);
     CHECK_EQ(q.liveliness.duration, 5000);
     CHECK_EQ(q.deadline.period, -1);
-    CHECK_EQ(q.lifespan.duration, 3000);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "poor");
   }
 
@@ -199,7 +199,7 @@ TEST_SUITE("extension-QosProfile") {
     CHECK_EQ(q.additions.priority, vlink::Qos::Additions::kPriorityRealTime);
     CHECK_EQ(q.liveliness.duration, 1000);
     CHECK_EQ(q.deadline.period, -1);
-    CHECK_EQ(q.lifespan.duration, 1000);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "better");
   }
 
@@ -212,7 +212,7 @@ TEST_SUITE("extension-QosProfile") {
     CHECK_EQ(q.additions.priority, vlink::Qos::Additions::kPriorityRealTime);
     CHECK_EQ(q.liveliness.duration, 1000);
     CHECK_EQ(q.deadline.period, -1);
-    CHECK_EQ(q.lifespan.duration, 2000);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "best");
   }
 
@@ -227,7 +227,7 @@ TEST_SUITE("extension-QosProfile") {
     CHECK_EQ(q.additions.priority, vlink::Qos::Additions::kPriorityLow);
     CHECK_EQ(q.liveliness.duration, 3000);
     CHECK_EQ(q.deadline.period, -1);
-    CHECK_EQ(q.lifespan.duration, 10000);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "large");
   }
 
@@ -256,7 +256,7 @@ TEST_SUITE("extension-QosProfile") {
     CHECK_FALSE(q.additions.is_express);
     CHECK_EQ(q.liveliness.duration, 500);
     CHECK_EQ(q.deadline.period, -1);
-    CHECK_EQ(q.lifespan.duration, 1000);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "command");
   }
 
@@ -271,7 +271,7 @@ TEST_SUITE("extension-QosProfile") {
     CHECK_EQ(q.additions.priority, vlink::Qos::Additions::kPriorityBackground);
     CHECK_EQ(q.liveliness.duration, 5000);
     CHECK_EQ(q.deadline.period, -1);
-    CHECK_EQ(q.lifespan.duration, 5000);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "log");
   }
 

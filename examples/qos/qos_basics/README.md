@@ -9,6 +9,7 @@
 - `vlink::Qos` 聚合若干正交子策略：reliability / history / durability / publish_mode / deadline / lifespan / resource_limits。
 - 默认构造的 `Qos` 是 `valid=false`，注册时会被忽略；必须先 `valid=true` 才生效。
 - 子策略字段都有默认值，只填要改的几项即可；profile 按后端注册、按名引用，名字表互相独立。
+- 内置 profile 均默认构造 Deadline 与 Lifespan，两者的时长字段都为 `-1`；自定义有限 Lifespan 前须保证通信主机时钟同步。
 
 ## 📋 核心 API
 

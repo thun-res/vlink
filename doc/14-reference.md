@@ -164,6 +164,8 @@ URL 语法：`<scheme>://[<host>[:<port>]]/<path>[?<query>][#<frag>]`。`scheme`
 | `command` / `alarm` / `log` | 控制指令 / 故障报警 / 日志流 |
 | `parameter` / `service` / `clock` / `static` 等 | 配置 / 发现 / 时钟 / 地图，见 [QoS 配置](05-qos.md) |
 
+所有内置 profile 均默认构造 Deadline 与 Lifespan，使 `deadline.period` 和 `lifespan.duration` 都为 `-1`。有限 Deadline 仅用于自定义周期流；有限 Lifespan 还要求通信主机之间具有可靠的时钟同步。
+
 ```cpp
 vlink::Publisher<Imu> pub("dds://sensor/imu?qos=sensor");
 
