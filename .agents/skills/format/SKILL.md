@@ -33,9 +33,9 @@ PATH="$FORMAT_PATH" bash "$REPO_ROOT/tools/format.sh" "$REPO_ROOT"
 ```
 
 三个阶段共用 `tools/format.sh` 中同一组目录排除条件:
-`thirdparty/`、`build/`、`build-*/`、`builtin/`、`prebuilt/` 与
-`android-bp/`。这是 `/format` 的唯一执行范围基准,语言分册不另行复制
-维护路径集合。
+根 `tools/`、`thirdparty/`、`build/`、`build-*/`、`builtin/`、
+`prebuilt/` 与 `android-bp/`。这是 `/format` 的唯一执行范围基准,
+语言分册不另行复制维护路径集合。
 
 脚本行为:
 

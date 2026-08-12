@@ -5,7 +5,7 @@
 command -v clang-format &> /dev/null || pip install clang-format --user
 command -v cmake-format &> /dev/null || pip install cmake-format --user
 
-PRUNE=(-not -path "*/thirdparty/*" -not -path "*/build/*" -not -path "*/build-*/*" -not -path "*/builtin/*" -not -path "*/prebuilt/*" -not -path "*/android-bp/*")
+PRUNE=(-not -path "$1/tools/*" -not -path "*/thirdparty/*" -not -path "*/build/*" -not -path "*/build-*/*" -not -path "*/builtin/*" -not -path "*/prebuilt/*" -not -path "*/android-bp/*")
 
 SRCS=$(find "$1" -type f "${PRUNE[@]}" \
     \( -name "*.h" -o -name "*.hpp" -o -name "*.cc" -o -name "*.cpp" \))

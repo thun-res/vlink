@@ -27,8 +27,8 @@ bash "$REPO_ROOT/tools/check.sh" "$REPO_ROOT"
 
 脚本行为:
 
-- 扫描所有 `.h/.hpp/.cc/.cpp`(自动排除 `thirdparty/`、`build/`、
-  `build-*/`、`builtin/`、`prebuilt/`、`android-bp/`)。
+- 扫描所有 `.h/.hpp/.cc/.cpp`(自动排除根 `tools/`、`thirdparty/`、
+  `build/`、`build-*/`、`builtin/`、`prebuilt/`、`android-bp/`)。
 - `cpplint --counting=detailed --linelength=120`,过滤集已禁用:
   `build/c++17`、`build/include*`、`runtime/references`、
   `readability/check`、`readability/braces`、`readability/nolint`、
