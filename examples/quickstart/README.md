@@ -31,6 +31,6 @@ quickstart 给出 VLink 三种通信模型（Event / Method / Field）的最小�
 ## 🔗 参考
 
 - `../communication/` — 同三种模型的进阶示例，覆盖定时器、连接检测、延迟统计、强制发布、异步 reply 等用法。
-- `../serialization/` — VLink 自动选择序列化策略的机制（Bytes / POD / string / 自定义 operator）。
+- `../serialization/` — VLink 自动选择序列化策略的机制（Bytes / POD / string / SOME/IP 宏结构 / 自定义 operator）。
 - `../url_guide/` — URL 各字段含义与跨后端切换。
 - 顶层 `doc/02-communication.md` — 三种通信模型的完整规范。

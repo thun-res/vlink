@@ -55,6 +55,7 @@
  * | Category          | Example C++ Type                  | @c Serializer::Type | Notes                          |
  * | ----------------- | --------------------------------- | ------------------- | ------------------------------ |
  * | Raw bytes         | @c Bytes                          | @c kBytesType       | Pass-through, no codec call.   |
+ * | SOME/IP struct    | @c VLINK_SOMEIP_FIELDS structure | @c kSomeipType      | Field-wise SOME/IP payload.    |
  * | Protobuf value    | @c MyProto                        | @c kProtoType       | Uses SerializeToArray.         |
  * | Protobuf pointer  | @c MyProto*                       | @c kProtoPtrType    | Caller owns lifetime.          |
  * | FlatBuffers obj   | @c MyTableT (NativeTable)         | @c kFlatTableType   | Object API.                    |
@@ -62,7 +63,7 @@
  * | FlatBuffers build | @c MyBuilder (@c fbb_ + Finish)   | @c kFlatBuilderType | Finishes builder on publish.   |
  * | DDS CDR           | FastDDS IDL or ROS2 message type  | @c kCdrType         | Encapsulated CDR bytes.        |
  * | POD struct        | trivial standard-layout type      | @c kStandardType    | @c sizeof(T) byte copy.        |
- * | UTF-8 text        | @c std::string                    | @c kStringType      | Length-prefixed.               |
+ * | Byte string       | @c std::string                    | @c kStringType      | Payload bytes, no validation.  |
  * | Custom            | type with @c operator>>/<<        | @c kCustomType      | User-supplied codec.           |
  *
  * @par Subscriber Detection

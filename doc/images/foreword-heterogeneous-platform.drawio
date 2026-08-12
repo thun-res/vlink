@@ -61,7 +61,7 @@
         <mxCell id="bar" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;fontFamily=Helvetica;shadow=0;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="40" y="220" width="920" height="62" as="geometry" />
         </mxCell>
-        <mxCell id="barlabel" value="&lt;b&gt;VLink Middleware&lt;/b&gt;&#160;&#160;&#8212;&#160;&#160;unified URL addressing &#183; 10 pluggable transports &#183; 14 serializers &#183; 3 communication models &#183; shared API" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
+        <mxCell id="barlabel" value="&lt;b&gt;VLink Middleware&lt;/b&gt;&#160;&#160;&#8212;&#160;&#160;unified URL addressing &#183; 10 pluggable transports &#183; 15 serializers &#183; 3 communication models &#183; shared API" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="1">
           <mxGeometry x="50" y="220" width="900" height="62" as="geometry" />
         </mxCell>
 

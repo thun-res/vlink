@@ -455,19 +455,20 @@ VLink 通过 URL 前缀选择传输后端，同一套业务代码可以在不同
 
 ### 7.4 序列化体系
 
-序列化是通信中间件性能的关键瓶颈之一。VLink 通过编译期静态分派实现了对 14 种序列化类型的统一支持，而无需运行时类型判断的开销：
+序列化是通信中间件性能的关键瓶颈之一。VLink 通过编译期静态分派实现了对 15 种序列化类型的统一支持，而无需运行时类型判断的开销：
 
 | 类型常量             | 对应 C++ 类型                                   | 适用场景                            |
 | -------------------- | ----------------------------------------------- | ----------------------------------- |
 | `kBytesType`         | `Bytes`（轻量字节缓冲，含小对象内联存储）        | 原始字节传递，自定义序列化          |
 | `kDynamicType`       | 动态类型容器                                    | 运行时确定类型的场景                |
+| `kCustomType`        | 实现 `operator>>(Bytes&) const` / `operator<<(const Bytes&)` 的类型 | 自定义序列化协议   |
+| `kSomeipType`        | 使用 `VLINK_SOMEIP_FIELDS(...)` 声明的结构体   | AUTOSAR SOME/IP non-TLV payload      |
 | `kCdrType`           | FastDDS CDR 消息                                | DDS 原生 CDR 序列化                 |
 | `kProtoType`         | `google::protobuf::MessageLite`                 | Protobuf 编码                       |
 | `kProtoPtrType`      | `MyProto*`（原始指针，Arena 管理）              | Protobuf Arena 减少拷贝             |
 | `kFlatTableType`     | `MyTableT`（NativeTable 派生）                  | FlatBuffers Object API              |
 | `kFlatPtrType`       | `const MyTable*`（指向 Table 子类的指针）       | FlatBuffers 零拷贝只读访问          |
 | `kFlatBuilderType`   | 含 `fbb_` 成员 + `Finish()` 的结构体           | FlatBuffers Builder 模式（结构体走常规 `publish()`；裸 `flatbuffers::FlatBufferBuilder*` 需用 `Publisher::publish_fbb()` 重载） |
-| `kCustomType`        | 实现 `operator>>(Bytes&) const` / `operator<<(const Bytes&)` 的类型 | 自定义序列化协议   |
 | `kStringType`        | `std::string`                                   | 字符串消息                          |
 | `kCharsType`         | `char[]` / `const char*`                        | 仅序列化；反序列化使用 `std::string` |
 | `kStreamType`        | 支持 `std::stringstream` 输入/输出运算符的类型  | 兜底序列化路径（无更优编解码时回退）|
@@ -835,7 +836,7 @@ ROS2 要求使用 `rclcpp::Node` 基类，节点必须在 ROS 执行器（Execut
 
 **序列化支持**
 
-ROS2 使用 `.msg` 格式定义消息类型，序列化为 CDR，与 Protobuf/FlatBuffers 的集成需要手动封装。VLink 原生支持 14 种序列化格式，无需格式转换。
+ROS2 使用 `.msg` 格式定义消息类型，序列化为 CDR，与 Protobuf/FlatBuffers 的集成需要手动封装。VLink 原生支持 15 种序列化格式，无需格式转换。
 
 **传输灵活性**
 
@@ -890,7 +891,7 @@ Zenoh 是新兴的云边一体通信协议，VLink 在 zenoh:// 后端下兼容 
 | 多传输后端支持     | 支持（10 种 scheme）   | 部分（以 DDS 为主）      | 不支持（仅 DDS）  | 不支持（仅 SOME/IP）| 部分                 |
 | 极简 API           | 支持                   | 部分（需继承 Node）      | 不支持（API 复杂）| 不支持（协议复杂）  | 支持                 |
 | 零拷贝支持         | 条件支持（SHM loan / Intra 共享指针直达路径） | 部分（intra-process） | 部分 | 不支持 | 部分（实验性） |
-| 多序列化格式支持   | 支持（14 种）          | 部分（CDR 为主）         | 部分（CDR）       | 不支持              | 不支持（raw bytes）  |
+| 多序列化格式支持   | 支持（15 种）          | 部分（CDR 为主）         | 部分（CDR）       | 不支持              | 不支持（raw bytes）  |
 | 实时性保障         | 支持                   | 部分                     | 支持              | 支持                | 支持                 |
 | 调试工具链         | 支持                   | 支持（生态丰富）         | 部分              | 部分                | 部分                 |
 | Web 可视化集成     | 支持（Foxglove+Rerun） | 部分（foxglove_bridge）  | 不支持            | 不支持              | 不支持               |
@@ -931,6 +932,7 @@ VLink 在 `shm://` 传输上依托 Iceoryx 实现共享内存零拷贝。Iceoryx
 | kFlatTableType | 中（Pack） | 中（UnPack） | 中 | FlatBuffers Object API（需打包/解包） |
 | kFlatPtrType | 低 | 极低（零解码） | 低 | 随机访问场景（Zero-copy view） |
 | kProtoType   | 中       | 中       | 中       | 通用结构化数据              |
+| kSomeipType  | 取决于字段、容器及 UTF-8 校验 | 同左 | 取决于目标容量复用 | 车载服务 payload、跨大小端结构 |
 | kCdrType     | 低       | 低       | 中       | DDS 原生场景               |
 | kCustomType  | 取决于实现 | 取决于实现 | 取决于实现 | 特殊需求                 |
 
@@ -1654,7 +1656,7 @@ VLink 的长期价值需要依托健康的开源生态来实现。生态建设�
 
 **第二，在类型安全与运行时开销之间取得工程折中**。借助 `if constexpr`、模板特化和 `static_assert`，VLink 在编译期完成大量类型检查，保证序列化类型匹配的静态安全性，并通过模板展开减少不必要的运行时分支。抽象层额外开销需要在目标后端与目标消息类型上通过 benchmark 验证。
 
-**第三，将零拷贝、安全加密、多序列化等高级特性封装到统一 API 中**。零拷贝 SHM 传输通过框架 API 封装借贷细节，安全加密可通过模板参数 `SecurityType::kWithSecurity` 开启，多格式序列化（Protobuf/FlatBuffers/CDR/POD/自定义）通过统一的序列化 traits 自动推导。这些特性在现有方案中往往需要额外配置，VLink 将其收敛为编译期选项或 URL 参数，降低了工程实现难度。
+**第三，将零拷贝、安全加密、多序列化等高级特性封装到统一 API 中**。零拷贝 SHM 传输通过框架 API 封装借贷细节，安全加密可通过模板参数 `SecurityType::kWithSecurity` 开启，多格式序列化（SOME/IP/Protobuf/FlatBuffers/CDR/POD/自定义）通过统一的序列化 traits 自动推导。这些特性在现有方案中往往需要额外配置，VLink 将其收敛为编译期选项或 URL 参数，降低了工程实现难度。
 
 **第四，构建了完整的工程工具链**。10 个 CLI 工具（vlink-info、vlink-check、vlink-list、vlink-monitor、vlink-bag、vlink-trigger、vlink-parse、vlink-eproto、vlink-efbs、vlink-bench）覆盖了从环境诊断、拓扑发现、实时监控、数据管理到性能基准测试的全链路调试需求；BagWriter、DiscoveryViewer、CpuProfiler、Logger 等基础组件内建于框架，使系统可观测性成为默认能力。这使 VLink 从单纯的通信库升级为具备完整运维支撑的通信基础设施平台。
 
@@ -1686,7 +1688,7 @@ VLink 仍有以下工作需要持续补齐：
 
 [4] Object Management Group. "Data Distribution Service (DDS) Specification v1.4." OMG Standard, 2015.
 
-[5] AUTOSAR Consortium. "AUTOSAR Adaptive Platform - SOME/IP Protocol Specification." Release 22-11, 2022.
+[5] AUTOSAR Consortium. "SOME/IP Protocol Specification." Foundation R25-11, 2025.
 
 [6] Eclipse Foundation. "Zenoh: Zero Overhead Publish/Subscribe, Store/Query and Compute." 2024. https://zenoh.io/
 

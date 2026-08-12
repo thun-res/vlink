@@ -4,6 +4,7 @@
 
 ### 新增功能
 
+- **SOME/IP payload 序列化**：新增 `Serializer::kSomeipType` 与 `VLINK_SOMEIP_FIELDS(...)`，按字段自动生成 `Bytes` 编解码，支持嵌套结构与容器，并采用固定的 AUTOSAR non-TLV payload 部署。
 - **自研日志后端**：新增公开的 `LoggerBackend`，支持异步写入、队列背压、周期刷新、固定/时间戳轮转、UTC 和 backtrace。
 - **格式化修饰符**：`vlink::format` 与 `MLOG_*` 支持完整的 std::format 风格 spec，含动态宽度/精度、`long double`、`nullptr`、`format_as` 扩展点、`{:?}` 和返回 `std::string` 的 `format()`；无效 spec 宽容忽略，不抛异常。
 

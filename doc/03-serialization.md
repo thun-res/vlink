@@ -20,7 +20,7 @@
 
 值类型可由 `std::shared_ptr<T>` 包裹传入，框架自动解包后按 `T` 推导编码（仅值族探测器解包，指针/builder/字符指针族不解包）。
 
-类型识别在编译期完成：框架按固定优先级依次探测各类型族的特征，**命中第一个即停止**（precedence chain, first-match-wins）。优先级自高至低为 `Bytes → DynamicData → CDR → Protobuf → Protobuf 指针 → FlatBuffers 对象 → FlatBuffers 表指针 → FlatBuffers builder → 自定义 → string → const char* → POD → POD 指针 → 流式兜底`，全部未命中则为不支持类型。因此一个类型若同时满足多条特征，将归入更靠前的那一族。
+类型识别在编译期完成：框架按固定优先级依次探测各类型族的特征，**命中第一个即停止**（precedence chain, first-match-wins）。优先级自高至低为 `Bytes → DynamicData → SOME/IP → CDR → Protobuf → Protobuf 指针 → FlatBuffers 对象 → FlatBuffers 表指针 → FlatBuffers builder → 自定义 → string → const char* → POD → POD 指针 → 流式兜底`，全部未命中则为不支持类型。因此一个类型若同时满足多条特征，将归入更靠前的那一族。
 
 ![类型识别](images/serialization-type-detection.png)
 
@@ -39,10 +39,11 @@
 | FlatBuffers builder（含 `fbb_` + `Finish()`） | FlatBuffers | 直接发布手工构建的 builder，序列化时完成构建并按最终大小申请目标缓冲 | 自管缓冲区的高性能写入路径 |
 | Protobuf 消息（`MyMsg`） | Protobuf 二进制 | 需由 `.proto` 生成代码 | 跨语言、字段随版本演进 |
 | Protobuf 指针（`MyMsg*`） | Protobuf 二进制 | 调用方管理发送指针；框架创建接收或响应对象前须先 `bind_proto_arena()`，每次投递在 Arena 中分配独立对象 | 高频收发大量消息 |
+| SOME/IP 结构（`VLINK_SOMEIP_FIELDS(...)`） | AUTOSAR SOME/IP payload | 宏按声明顺序展开字段；支持嵌套结构和结构体数组，部署边界见 [3.5](#-35-someip-与自定义序列化器) | 车载服务 payload、跨大小端结构化消息 |
+| DDS IDL 类型（`MyMsg`） | CDR | 基础无 key 传输可直接使用；完整类型元数据见 [3.6](#-36-dds-cdr-与-dynamicdata) | 与外部 DDS 系统互操作 |
 | `vlink::Bytes` | 原始字节直传 | 框架不解释其结构 | 透明代理、私有二进制协议、原始帧 |
 | `std::string` / `const char*` | 文本直传 | `std::string` 支持收发；`const char*` / `char[]` 仅支持发送 | 日志、命令字符串 |
-| 自定义类型（重载 `operator>>`/`<<`） | 用户编解码 | 字段顺序须严格对应，见 [3.5](#-35-自定义序列化器) | 自有紧凑布局、带外信息 |
-| DDS IDL 类型（`MyMsg`） | CDR | 基础无 key 传输可直接使用；完整类型元数据见 [3.6](#-36-dds-cdr-与-dynamicdata) | 与外部 DDS 系统互操作 |
+| 自定义类型（重载 `operator>>`/`<<`） | 用户编解码 | 字段顺序须严格对应，见 [3.5](#-35-someip-与自定义序列化器) | 自有紧凑布局、带外信息 |
 | `vlink::DynamicData` | 类型名标签 + 已序列化负载 | 运行期按类型名标签选择编解码，无需编译期固定消息类型，见 [3.6](#-36-dds-cdr-与-dynamicdata) | 监控、协议桥接 |
 
 判据的取舍要点：POD 提供最低开销，但不携带版本信息且不跨字节序；FlatBuffers 与 Protobuf 以编码开销换取结构演进能力；`Bytes` 不解释内容，适合协议透传。后端选择与 URL 写法见 [传输后端](04-transport.md)；面向感知的零拷贝容器见 [零拷贝](06-zerocopy.md)。
@@ -166,7 +167,65 @@ sub.listen([](const vlink::Bytes& msg) {
 
 ---
 
-## 🧬 3.5 自定义序列化器
+## 🧬 3.5 SOME/IP 与自定义序列化器
+
+### 🚗 3.5.1 SOME/IP payload
+
+在结构体内用 `VLINK_SOMEIP_FIELDS(...)` 按线格式顺序列出字段，框架即将该类型推导为
+`Serializer::kSomeipType`。宏同时生成精确大小查询以及面向 `vlink::Bytes` 的 `operator>>` 编码和
+`operator<<` 解码方法，不需要逐字段手写编解码：
+
+```cpp
+#include "vlink/vlink.h"
+
+#include <array>
+#include <cstdint>
+#include <string>
+#include <vector>
+
+struct SomeipChild {
+  int16_t delta{0};
+  std::string label;
+
+  VLINK_SOMEIP_FIELDS(delta, label)
+};
+
+struct SomeipMessage {
+  uint8_t state{0};
+  std::string name;
+  std::vector<uint16_t> samples;
+  std::array<uint32_t, 2> limits{};
+  std::vector<SomeipChild> children;
+  vlink::Bytes payload;
+
+  VLINK_SOMEIP_FIELDS(state, name, samples, limits, children, payload)
+};
+
+static_assert(vlink::Serializer::get_type_of<SomeipMessage>() == vlink::Serializer::kSomeipType);
+```
+
+支持的字段包括 `bool`、定宽整数、`float`、`double`、底层类型为无符号定宽整数的枚举、
+`std::string`、`vlink::Bytes`、`std::vector`、`std::array`，以及使用同一宏声明的嵌套结构；容器可递归组合，
+因此 `std::vector<SomeipChild>`、`std::array<SomeipChild, N>` 和多维数组均受支持。
+
+VLink 选择的 AUTOSAR R25-11 non-TLV payload 部署固定为：标量大端、1 字节对齐、字符串和动态数组使用
+4 字节长度字段、固定数组使用可选的 4 字节长度字段、结构体不带长度字段；动态 UTF-8 字符串由 BOM、
+内容和结尾 NUL 组成，长度包含这三部分。`vlink::Bytes` 按动态 `uint8` 数组编码。16 字节 SOME/IP
+消息头由传输层处理，不属于本 codec；受消息头 32 位 `Length` 字段约束，payload 总长最多为
+`UINT32_MAX - 8` 字节。该字符串部署保留内容中的内嵌 NUL，仅把声明长度内的最后一个字节作为终止符；
+对端若配置为遇首个 NUL 截断，双方须统一该部署选择。
+
+该部署不表达可配置端序、对齐或长度字段宽度，也不支持结构体长度字段、TLV、union、C++ bit-field、
+UTF-16、定长字符串及服务接口声明的最大长度约束。宏至少列出一个字段，字段顺序就是线格式；解码失败时
+已经成功读取的字段可能保留新值。直接调用生成运算符或 `Serializer` 时，输入和输出缓冲不得与源或目标
+结构可达的任何存储重叠。由于结构体不带长度字段，只有顶层 payload 末尾的未知新增字段可以忽略；嵌套
+结构及数组元素必须由通信双方部署相同的字段布局。
+
+`kSomeipType` 是 payload codec，与 `someip://` 传输后端相互独立：任意后端都可承载这段 payload，
+`someip://` 也不会把普通 C++ 或 Python 对象自动转换成 SOME/IP 字段。Python 节点的消息类型仍是
+`vlink.Bytes`；Python 只能收发已经编码好的 SOME/IP payload，宏驱动的结构体推导仅供 C++ 使用。
+
+### 🧱 3.5.2 自定义编解码
 
 为任意类型重载下列两个运算符，框架即自动用其编解码，无需注册：
 
@@ -263,7 +322,7 @@ msg.value(42);
 pub.publish(msg);
 ```
 
-`vlink::DynamicData` 在运行期承载类型名与已序列化负载，无需在编译期固定消息结构，适用于调试工具、监控与协议桥接。写入用 `load(type, value)`，读取用 `as<T>()` 或 `convert(out)`：
+`vlink::DynamicData` 在运行期承载类型名与已序列化负载，无需在编译期固定消息结构，适用于调试工具、监控与协议桥接。写入用 `load(type, value)`，读取用 `as<T>()` 或 `convert(out)`；宏声明的 SOME/IP 结构也可装入并按 `SchemaType::kRaw` 保存 payload：
 
 ```cpp
 #include "vlink/extension/dynamic_data.h"
@@ -280,7 +339,10 @@ sub.listen([](const vlink::DynamicData& d) {
 });
 ```
 
-边界条件：类型名连同结尾 `\0` 须短于 20 字节（`load()` 在编译期 `static_assert` 校验）；负载类型须为 `Serializer` 支持的类型族，但**不得**为 CDR 类型或嵌套的 `DynamicData`（二者被 `static_assert` 拒绝）。完整字段操作见 `include/vlink/extension/dynamic_data.h`。
+边界条件：类型名连同结尾 `\0` 须短于 20 字节（`load()` 在编译期 `static_assert` 校验）；负载类型须为
+`Serializer` 支持的类型族。CDR 与裸/`shared_ptr` 包装的嵌套 `DynamicData` 在两个方向都被拒绝；
+`load()` 还会拒绝不能预留 20 字节类型名前缀的 FlatBuffers 表指针和 POD 指针。完整字段操作见
+`include/vlink/extension/dynamic_data.h`。
 
 ---
 
@@ -297,7 +359,8 @@ struct BadMsg {
 vlink::Publisher<BadMsg> pub("shm://bad");  // 编译失败：<MsgT> is not a supported Serializer type.
 ```
 
-修复方式：改用 Protobuf 或 FlatBuffers，或为该类型实现 [3.5](#-35-自定义序列化器) 的自定义序列化器。
+修复方式：若字段满足已支持的 SOME/IP 类型，可用 [3.5](#-35-someip-与自定义序列化器) 的
+`VLINK_SOMEIP_FIELDS(...)` 声明；否则改用 Protobuf、FlatBuffers 或手写自定义序列化器。
 
 其余高频边界条件汇总如下：
 
@@ -306,8 +369,9 @@ vlink::Publisher<BadMsg> pub("shm://bad");  // 编译失败：<MsgT> is not a su
 | POD 跨架构字节序 | 内存直拷不做字节序转换；大小端不同的机器间通信应改用 Protobuf / FlatBuffers / CDR，或在自定义序列化器内显式处理字节序 |
 | FlatBuffers 零拷贝指针生命期 | `const MyMsg*` 指向接收缓冲区，回调返回后即失效；需在回调外保留时先 `s->UnPack()` 拷成 Object |
 | C 字符串方向性 | `const char*` / `char[]` 只支持序列化；反序列化为字符指针会失败，接收端应声明为 `std::string` |
+| SOME/IP 部署范围 | 宏使用固定的 non-TLV payload 部署；服务接口需要其他端序、对齐、长度宽度、TLV 或最大长度约束时不能直接使用 |
 | 自定义序列化器字段对齐 | 写入与读取的字段顺序必须严格对应，`operator<<` 读取前须校验 `in.size()` 合法性 |
-| 流式回退编码 | 若类型对 `std::stringstream` 同时重载了 `<<`/`>>`（且非上述任一类型族），框架会以文本流作为兜底编码，而非编译失败；需要紧凑二进制时应改用 [3.5](#-35-自定义序列化器) 的 `operator>>`/`<<(Bytes&)` |
+| 流式回退编码 | 若类型对 `std::stringstream` 同时重载了 `<<`/`>>`（且非上述任一类型族），框架会以文本流作为兜底编码，而非编译失败；需要紧凑二进制时应改用 [3.5](#-35-someip-与自定义序列化器) 的 `operator>>`/`<<(Bytes&)` |
 
 ---
 

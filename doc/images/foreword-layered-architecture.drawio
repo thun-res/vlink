@@ -105,33 +105,36 @@
         <mxCell id="l3t" value="L3 &#160;&#183;&#160; Serialization" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="60" y="388" width="320" height="26" as="geometry" />
         </mxCell>
-        <mxCell id="l3badge" value="14 formats &#160;&#183;&#160; auto-detected by type traits" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
+        <mxCell id="l3badge" value="15 formats &#160;&#183;&#160; auto-detected by type traits" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1976d2;" vertex="1" parent="1">
           <mxGeometry x="500" y="390" width="444" height="22" as="geometry" />
         </mxCell>
 
         <mxCell id="l3n1" value="Proto" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#e65100;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="60" y="424" width="100" height="40" as="geometry" />
+          <mxGeometry x="60" y="424" width="90" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l3n2" value="FlatBuffers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#e65100;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="170" y="424" width="100" height="40" as="geometry" />
+          <mxGeometry x="160" y="424" width="90" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l3n3" value="CDR" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#e65100;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="280" y="424" width="100" height="40" as="geometry" />
+          <mxGeometry x="260" y="424" width="90" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l3n4" value="POD" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#e65100;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="390" y="424" width="100" height="40" as="geometry" />
+          <mxGeometry x="360" y="424" width="90" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l3n5" value="String" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#e65100;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="500" y="424" width="100" height="40" as="geometry" />
+          <mxGeometry x="460" y="424" width="90" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l3n6" value="Chars" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#e65100;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="610" y="424" width="100" height="40" as="geometry" />
+          <mxGeometry x="560" y="424" width="90" height="40" as="geometry" />
         </mxCell>
         <mxCell id="l3n7" value="Bytes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#e65100;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="720" y="424" width="100" height="40" as="geometry" />
+          <mxGeometry x="660" y="424" width="90" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="l3n8" value="Custom" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#e65100;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="830" y="424" width="120" height="40" as="geometry" />
+        <mxCell id="l3n8" value="SOME/IP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#e65100;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="760" y="424" width="90" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="l3n9" value="Custom" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;fontFamily=Helvetica;fontSize=12;fontColor=#e65100;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="860" y="424" width="90" height="40" as="geometry" />
         </mxCell>
 
         <mxCell id="arr34" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=2.2;strokeColor=#1976d2;" edge="1" parent="1">

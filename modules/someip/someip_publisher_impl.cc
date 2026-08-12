@@ -26,6 +26,8 @@
 #include <memory>
 #include <set>
 
+#include "./impl/someip_serializer.h"
+
 #ifdef VSOMEIP_DEPRECATED_UID_GID
 #define VSOMEIP_SUB_HANDLE_ARG const vsomeip_sec_client_t*, const std::string&
 #else
@@ -130,7 +132,14 @@ bool SomeipPublisherImpl::has_subscribers() const {
 }
 
 bool SomeipPublisherImpl::write(const Bytes& msg_data) {
-  auto payload = someip::runtime::get()->create_payload(msg_data.data(), msg_data.size());
+  if VUNLIKELY (msg_data.size() > SomeipSerializer::kMaxPayloadSize) {
+    VLOG_E("SomeipPublisherImpl: Payload exceeds the protocol limit.");
+    return false;
+  }
+
+  auto payload = msg_data.empty()
+                     ? someip::runtime::get()->create_payload()
+                     : someip::runtime::get()->create_payload(msg_data.data(), static_cast<uint32_t>(msg_data.size()));
 
   object_->app()->notify(conf_.service, conf_.instance, conf_.event, payload);
 

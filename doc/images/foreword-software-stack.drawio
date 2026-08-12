@@ -46,7 +46,7 @@
         <mxCell id="L2d" value="Event &#160;&#183;&#160; Method &#160;&#183;&#160; Field &#160;&#183;&#160; Node core &#160;&#183;&#160; QoS &#160;&#183;&#160; Security" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="320" y="200" width="426" height="20" as="geometry" />
         </mxCell>
-        <mxCell id="L2d2" value="6 primitives: Publisher / Subscriber &#160;&#183;&#160; Client / Server &#160;&#183;&#160; Setter / Getter &#160;&#160;&#8226;&#160;&#160; 14 serialization formats" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=0;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
+        <mxCell id="L2d2" value="6 primitives: Publisher / Subscriber &#160;&#183;&#160; Client / Server &#160;&#183;&#160; Setter / Getter &#160;&#160;&#8226;&#160;&#160; 15 serialization formats" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=0;fontColor=#37474f;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="200" y="226" width="546" height="18" as="geometry" />
         </mxCell>
 

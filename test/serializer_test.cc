@@ -27,8 +27,10 @@
 
 #include <array>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "./common_test.h"
 #include "./impl/intra_data.h"
@@ -117,6 +119,122 @@ struct SizedCustom {
   }
 };
 
+enum class SomeipMode : uint16_t {
+  kManual = 0x1234,
+  kAutomatic = 0xABCD,
+};
+
+struct SomeipScalars {
+  uint8_t byte{0};
+  uint16_t word{0};
+  int32_t signed_value{0};
+  float ratio{0.0F};
+  bool enabled{false};
+  SomeipMode mode{SomeipMode::kManual};
+
+  VLINK_SOMEIP_FIELDS(byte, word, signed_value, ratio, enabled, mode)
+};
+
+struct SomeipChild {
+  int16_t delta{0};
+  std::string label;
+
+  VLINK_SOMEIP_FIELDS(delta, label)
+};
+
+struct SomeipMessage {
+  uint8_t state{0};
+  std::string name;
+  std::vector<uint16_t> samples;
+  std::array<uint32_t, 2> limits{};
+  SomeipChild child;
+  vlink::Bytes payload;
+
+  VLINK_SOMEIP_FIELDS(state, name, samples, limits, child, payload)
+};
+
+struct SomeipWideScalars {
+  uint32_t unsigned32{0};
+  uint64_t unsigned64{0};
+  int8_t signed8{0};
+  int16_t signed16{0};
+  int64_t signed64{0};
+  double ratio{0.0};
+
+  VLINK_SOMEIP_FIELDS(unsigned32, unsigned64, signed8, signed16, signed64, ratio)
+};
+
+struct SomeipContainers {
+  std::vector<bool> flags;
+  std::string text;
+  std::vector<uint8_t> values;
+  std::array<uint16_t, 2> fixed{};
+
+  VLINK_SOMEIP_FIELDS(flags, text, values, fixed)
+};
+
+struct SomeipFixedWithTail {
+  std::array<uint16_t, 2> fixed{};
+  uint8_t tail{0};
+
+  VLINK_SOMEIP_FIELDS(fixed, tail)
+};
+
+struct SomeipNestedContainers {
+  std::array<std::array<uint16_t, 2>, 2> matrix{};
+  std::vector<SomeipChild> children;
+
+  VLINK_SOMEIP_FIELDS(matrix, children)
+};
+
+struct SomeipChildArray {
+  std::array<SomeipChild, 2> children;
+
+  VLINK_SOMEIP_FIELDS(children)
+};
+
+struct SomeipVectorOnly {
+  std::vector<uint16_t> values;
+
+  VLINK_SOMEIP_FIELDS(values)
+};
+
+struct SomeipDynamicMatrix {
+  std::vector<std::vector<uint16_t>> values;
+
+  VLINK_SOMEIP_FIELDS(values)
+};
+
+struct SomeipBytesItem {
+  vlink::Bytes value;
+
+  VLINK_SOMEIP_FIELDS(value)
+};
+
+struct SomeipBytesItems {
+  std::vector<SomeipBytesItem> values;
+
+  VLINK_SOMEIP_FIELDS(values)
+};
+
+struct SomeipText {
+  std::string value;
+
+  VLINK_SOMEIP_FIELDS(value)
+};
+
+#ifdef VLINK_HAS_CDR
+struct SomeipCdrHybrid {
+  uint8_t value{0};
+
+  VLINK_SOMEIP_FIELDS(value)
+
+  void serialize(eprosima::fastcdr::Cdr& cdr);
+
+  void deserialize(eprosima::fastcdr::Cdr& cdr);
+};
+#endif
+
 VLINK_INTRA_DATA_DECLARE(vlink::zerocopy::RawData, WrappedRawData)
 
 TEST_SUITE("ser-types") {
@@ -144,6 +262,27 @@ TEST_SUITE("ser-types") {
     CHECK(Serializer::is_supported(t));
   }
 
+  TEST_CASE("someip fields map to kSomeipType") {
+    static constexpr auto t = Serializer::get_type_of<SomeipMessage>();
+    CHECK(t == Serializer::kSomeipType);
+    CHECK(Serializer::is_someip_type<SomeipMessage>());
+    CHECK(Serializer::is_custom_type<SomeipMessage>());
+    CHECK(Serializer::is_supported(t));
+  }
+
+  TEST_CASE("someip shared ptr maps to kSomeipType") {
+    static constexpr auto t = Serializer::get_type_of<std::shared_ptr<SomeipMessage>>();
+    CHECK(t == Serializer::kSomeipType);
+  }
+
+#ifdef VLINK_HAS_CDR
+  TEST_CASE("someip marker takes precedence over CDR members") {
+    CHECK(Serializer::is_someip_type<SomeipCdrHybrid>());
+    CHECK(Serializer::is_cdr_type<SomeipCdrHybrid>());
+    CHECK(Serializer::get_type_of<SomeipCdrHybrid>() == Serializer::kSomeipType);
+  }
+#endif
+
   TEST_CASE("another custom type also maps to kCustomType") {
     static constexpr auto t = Serializer::get_type_of<AnotherCustom>();
     CHECK(t == Serializer::kCustomType);
@@ -158,6 +297,7 @@ TEST_SUITE("ser-types") {
     CHECK(Serializer::is_supported(Serializer::kBytesType));
     CHECK(Serializer::is_supported(Serializer::kDynamicType));
     CHECK(Serializer::is_supported(Serializer::kCustomType));
+    CHECK(Serializer::is_supported(Serializer::kSomeipType));
     CHECK(Serializer::is_supported(Serializer::kCdrType));
     CHECK(Serializer::is_supported(Serializer::kProtoType));
     CHECK(Serializer::is_supported(Serializer::kProtoPtrType));
@@ -191,6 +331,11 @@ TEST_SUITE("ser-types") {
     CHECK(schema_type == vlink::SchemaType::kRaw);
   }
 
+  TEST_CASE("someip codec infers raw schema family") {
+    static constexpr auto schema_type = Serializer::get_schema_type<SomeipMessage>();
+    CHECK(schema_type == vlink::SchemaType::kRaw);
+  }
+
   TEST_CASE("stream codec infers raw schema family") {
     static constexpr auto schema_type = Serializer::get_schema_type<StreamMsg>();
     CHECK(schema_type == vlink::SchemaType::kRaw);
@@ -206,22 +351,547 @@ TEST_SUITE("ser-types") {
     CHECK(schema_type == vlink::SchemaType::kZeroCopy);
   }
 
-  TEST_CASE("all type enum values are distinct") {
-    CHECK(Serializer::kBytesType != Serializer::kDynamicType);
-    CHECK(Serializer::kCustomType != Serializer::kCdrType);
-    CHECK(Serializer::kProtoType != Serializer::kProtoPtrType);
-    CHECK(Serializer::kFlatTableType != Serializer::kFlatPtrType);
-    CHECK(Serializer::kStringType != Serializer::kCharsType);
-    CHECK(Serializer::kStreamType != Serializer::kStandardType);
-    CHECK(Serializer::kStandardType != Serializer::kStandardPtrType);
+  TEST_CASE("serializer type ordinal values follow the public order") {
+    CHECK(static_cast<uint8_t>(Serializer::kUnknownType) == 0U);
+    CHECK(static_cast<uint8_t>(Serializer::kBytesType) == 1U);
+    CHECK(static_cast<uint8_t>(Serializer::kDynamicType) == 2U);
+    CHECK(static_cast<uint8_t>(Serializer::kCustomType) == 3U);
+    CHECK(static_cast<uint8_t>(Serializer::kSomeipType) == 4U);
+    CHECK(static_cast<uint8_t>(Serializer::kCdrType) == 5U);
+    CHECK(static_cast<uint8_t>(Serializer::kProtoType) == 6U);
+    CHECK(static_cast<uint8_t>(Serializer::kProtoPtrType) == 7U);
+    CHECK(static_cast<uint8_t>(Serializer::kFlatTableType) == 8U);
+    CHECK(static_cast<uint8_t>(Serializer::kFlatPtrType) == 9U);
+    CHECK(static_cast<uint8_t>(Serializer::kFlatBuilderType) == 10U);
+    CHECK(static_cast<uint8_t>(Serializer::kStringType) == 11U);
+    CHECK(static_cast<uint8_t>(Serializer::kCharsType) == 12U);
+    CHECK(static_cast<uint8_t>(Serializer::kStreamType) == 13U);
+    CHECK(static_cast<uint8_t>(Serializer::kStandardType) == 14U);
+    CHECK(static_cast<uint8_t>(Serializer::kStandardPtrType) == 15U);
+  }
+}
+
+TEST_SUITE("ser-someip") {
+  TEST_CASE("serializes scalars and enums in big endian order") {
+    SomeipScalars source;
+    source.byte = 0x12;
+    source.word = 0x3456;
+    source.signed_value = -2;
+    source.ratio = 1.0F;
+    source.enabled = true;
+    source.mode = SomeipMode::kAutomatic;
+
+    vlink::Bytes data;
+    REQUIRE(Serializer::serialize(source, data));
+
+    const std::array<uint8_t, 14> expected = {0x12, 0x34, 0x56, 0xFF, 0xFF, 0xFF, 0xFE,
+                                              0x3F, 0x80, 0x00, 0x00, 0x01, 0xAB, 0xCD};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    const auto golden = vlink::Bytes::shallow_copy(expected.data(), expected.size());
+    SomeipScalars target;
+    REQUIRE(Serializer::deserialize(golden, target));
+    CHECK(target.byte == source.byte);
+    CHECK(target.word == source.word);
+    CHECK(target.signed_value == source.signed_value);
+    CHECK(target.ratio == source.ratio);
+    CHECK(target.enabled == source.enabled);
+    CHECK(target.mode == source.mode);
   }
 
-  TEST_CASE("kUnknownType has ordinal value 0") { CHECK(static_cast<uint8_t>(Serializer::kUnknownType) == 0); }
+  TEST_CASE("macro generated bytes operators serialize and deserialize") {
+    SomeipChild source;
+    source.delta = -9;
+    source.label = "operator";
 
-  TEST_CASE("kBytesType has ordinal value 1") { CHECK(static_cast<uint8_t>(Serializer::kBytesType) == 1); }
+    vlink::Bytes data;
+    REQUIRE((source >> data));
 
-  TEST_CASE("kStandardPtrType has ordinal value 14") {
-    CHECK(static_cast<uint8_t>(Serializer::kStandardPtrType) == 14);
+    SomeipChild target;
+    REQUIRE((target << data));
+    CHECK(target.delta == source.delta);
+    CHECK(target.label == source.label);
+  }
+
+  TEST_CASE("serializes wide scalar values") {
+    SomeipWideScalars source;
+    source.unsigned32 = 0x01234567U;
+    source.unsigned64 = 0x0123456789ABCDEFULL;
+    source.signed8 = -2;
+    source.signed16 = -3;
+    source.signed64 = -4;
+    source.ratio = 1.0;
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    const std::array<uint8_t, 31> expected = {0x01, 0x23, 0x45, 0x67, 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD,
+                                              0xEF, 0xFE, 0xFF, 0xFD, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                                              0xFC, 0x3F, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    const auto golden = vlink::Bytes::shallow_copy(expected.data(), expected.size());
+    SomeipWideScalars target;
+    REQUIRE((target << golden));
+    CHECK(target.unsigned32 == source.unsigned32);
+    CHECK(target.unsigned64 == source.unsigned64);
+    CHECK(target.signed8 == source.signed8);
+    CHECK(target.signed16 == source.signed16);
+    CHECK(target.signed64 == source.signed64);
+    CHECK(target.ratio == source.ratio);
+  }
+
+  TEST_CASE("serializes bool vectors empty values and fixed arrays") {
+    SomeipContainers source;
+    source.flags = {true, false, true};
+    source.fixed = {0x1234, 0xABCD};
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    const std::array<uint8_t, 27> expected = {0x00, 0x00, 0x00, 0x03, 0x01, 0x00, 0x01, 0x00, 0x00,
+                                              0x00, 0x04, 0xEF, 0xBB, 0xBF, 0x00, 0x00, 0x00, 0x00,
+                                              0x00, 0x00, 0x00, 0x00, 0x04, 0x12, 0x34, 0xAB, 0xCD};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    const auto golden = vlink::Bytes::shallow_copy(expected.data(), expected.size());
+    SomeipContainers target;
+    REQUIRE((target << golden));
+    CHECK(target.flags == source.flags);
+    CHECK(target.text.empty());
+    CHECK(target.values.empty());
+    CHECK(target.fixed == source.fixed);
+
+    target.flags.assign(5U, false);
+    target.values = {0xAAU, 0xBBU};
+    const size_t flag_capacity = target.flags.capacity();
+    REQUIRE((target << golden));
+    CHECK(target.flags == source.flags);
+    CHECK(target.flags.capacity() == flag_capacity);
+    CHECK(target.values.empty());
+  }
+
+  TEST_CASE("deserializes bool from the lowest bit") {
+    SomeipScalars source;
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    data.data()[11] = 0x02;
+    SomeipScalars target;
+    REQUIRE((target << data));
+    CHECK_FALSE(target.enabled);
+
+    data.data()[11] = 0x03;
+    REQUIRE((target << data));
+    CHECK(target.enabled);
+  }
+
+  TEST_CASE("serializes strings arrays nested structs and bytes") {
+    SomeipMessage source;
+    source.state = 0x7F;
+    source.name = "abc";
+    source.samples = {0x1234, 0xABCD};
+    source.limits = {0x01020304, 0xA0B0C0D0};
+    source.child.delta = -2;
+    source.child.label = "x";
+    source.payload = vlink::Bytes{0xDE, 0xAD};
+
+    vlink::Bytes data;
+    REQUIRE(Serializer::serialize(source, data));
+    CHECK(Serializer::get_serialized_size(source) == 49);
+
+    const std::array<uint8_t, 49> expected = {
+        0x7F, 0x00, 0x00, 0x00, 0x07, 0xEF, 0xBB, 0xBF, 'a',  'b',  'c',  0x00, 0x00, 0x00, 0x00, 0x04, 0x12,
+        0x34, 0xAB, 0xCD, 0x00, 0x00, 0x00, 0x08, 0x01, 0x02, 0x03, 0x04, 0xA0, 0xB0, 0xC0, 0xD0, 0xFF, 0xFE,
+        0x00, 0x00, 0x00, 0x05, 0xEF, 0xBB, 0xBF, 'x',  0x00, 0x00, 0x00, 0x00, 0x02, 0xDE, 0xAD};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    const auto golden = vlink::Bytes::shallow_copy(expected.data(), expected.size());
+    SomeipMessage target;
+    REQUIRE(Serializer::deserialize(golden, target));
+    CHECK(target.state == source.state);
+    CHECK(target.name == source.name);
+    CHECK(target.samples == source.samples);
+    CHECK(target.limits == source.limits);
+    CHECK(target.child.delta == source.child.delta);
+    CHECK(target.child.label == source.child.label);
+    CHECK(target.payload == source.payload);
+  }
+
+  TEST_CASE("writes into an exact transport loan through serializer dispatch") {
+    SomeipScalars source;
+    source.word = 0x1234;
+
+    std::array<uint8_t, 14> storage{};
+    vlink::Bytes data;
+    bool loan_called = false;
+    size_t requested_size = 0;
+
+    REQUIRE(Serializer::serialize_to_transport<Serializer::kSomeipType>(
+        source, data, TransportType::kShm2, true, [&storage, &loan_called, &requested_size](size_t size) {
+          loan_called = true;
+          requested_size = size;
+
+          if (size != storage.size()) {
+            return vlink::Bytes{};
+          }
+
+          return vlink::Bytes::loan_internal(storage.data(), size);
+        }));
+    CHECK(loan_called);
+    CHECK(requested_size == storage.size());
+    CHECK(data.is_loaned());
+    CHECK(data.data() == storage.data());
+
+    const std::array<uint8_t, 14> expected = {0x00, 0x12, 0x34, 0x00, 0x00, 0x00, 0x00,
+                                              0x00, 0x00, 0x00, 0x00, 0x00, 0x12, 0x34};
+    CHECK(std::memcmp(storage.data(), expected.data(), expected.size()) == 0);
+  }
+
+  TEST_CASE("does not overwrite a shallow destination alias") {
+    SomeipScalars source;
+    source.word = 0x1234;
+
+    std::array<uint8_t, 14> storage{};
+    storage.fill(0xCC);
+    const auto original = storage;
+    auto data = vlink::Bytes::shallow_copy(storage.data(), storage.size());
+
+    REQUIRE(vlink::SomeipSerializer::serialize(source, data));
+    CHECK(data.is_owner());
+    CHECK(data.data() != storage.data());
+    CHECK(storage == original);
+  }
+
+  TEST_CASE("writes directly after a requested payload offset") {
+    SomeipScalars source;
+    source.byte = 0x42;
+
+    vlink::Bytes data;
+    REQUIRE(Serializer::serialize<Serializer::kSomeipType>(source, data, TransportType::kUnknown, 4U));
+    CHECK(data.is_owner());
+    CHECK(data.offset() == 4U);
+    CHECK(data.size() == 14U);
+    CHECK(data.data()[0] == source.byte);
+  }
+
+  TEST_CASE("rejects a nonzero offset for zero-offset loaned storage") {
+    SomeipScalars source;
+    std::array<uint8_t, 14> storage{};
+    auto data = vlink::Bytes::loan_internal(storage.data(), storage.size());
+
+    CHECK_FALSE(Serializer::serialize<Serializer::kSomeipType>(source, data, TransportType::kUnknown, 4U));
+    CHECK(data.is_loaned());
+    CHECK(data.data() == storage.data());
+  }
+
+  TEST_CASE("supports shared ptr round trip") {
+    auto source = std::make_shared<SomeipChild>();
+    source->delta = -8;
+    source->label = "shared";
+
+    vlink::Bytes data;
+    REQUIRE(Serializer::serialize(source, data));
+
+    auto target = std::make_shared<SomeipChild>();
+    REQUIRE(Serializer::deserialize(data, target));
+    CHECK(target->delta == source->delta);
+    CHECK(target->label == source->label);
+  }
+
+  TEST_CASE("rejects null shared ptr sources and destinations") {
+    const std::shared_ptr<SomeipChild> source;
+    vlink::Bytes data;
+
+    CHECK(Serializer::get_serialized_size(source) == 0U);
+    CHECK_FALSE(Serializer::serialize(source, data));
+
+    const vlink::Bytes encoded{0x00, 0x00, 0x00, 0x00, 0x04, 0xEF, 0xBB, 0xBF, 0x00};
+    std::shared_ptr<SomeipChild> target;
+    CHECK_FALSE(Serializer::deserialize(encoded, target));
+  }
+
+  TEST_CASE("reuses pool backed output and bytes field capacity") {
+    SomeipMessage source;
+    source.payload = vlink::Bytes::create(256U);
+    REQUIRE_FALSE(source.payload.empty());
+    std::memset(source.payload.data(), 0xA5, source.payload.size());
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+    auto* output_storage = data.real_data();
+    REQUIRE(output_storage != nullptr);
+
+    REQUIRE(source.payload.shrink_to(128U));
+    const size_t expected_size = Serializer::get_serialized_size(source);
+    REQUIRE((source >> data));
+    CHECK(data.real_data() == output_storage);
+    CHECK(data.size() == expected_size);
+
+    SomeipMessage target;
+    target.payload = vlink::Bytes::create(512U);
+    auto* field_storage = target.payload.real_data();
+    REQUIRE(field_storage != nullptr);
+
+    REQUIRE((target << data));
+    CHECK(target.payload.real_data() == field_storage);
+    CHECK(target.payload == source.payload);
+  }
+
+  TEST_CASE("rejects a truncated payload") {
+    SomeipMessage target;
+
+    const vlink::Bytes truncated{0x01, 0x00, 0x00, 0x00, 0x04, 0xEF, 0xBB};
+    CHECK_FALSE(Serializer::deserialize(truncated, target));
+  }
+
+  TEST_CASE("accepts compatible fields appended to a top level structure") {
+    SomeipScalars source;
+    source.byte = 0x42;
+
+    vlink::Bytes valid;
+    REQUIRE(Serializer::serialize(source, valid));
+
+    auto extended = vlink::Bytes::create(valid.size() + 1U);
+    std::memcpy(extended.data(), valid.data(), valid.size());
+    extended.data()[valid.size()] = 0xAA;
+
+    SomeipScalars target;
+    REQUIRE(Serializer::deserialize(extended, target));
+    CHECK(target.byte == source.byte);
+  }
+
+  TEST_CASE("rejects invalid utf8 strings") {
+    SomeipChild source;
+    source.label = std::string{"\xC0\xAF", 2};
+
+    vlink::Bytes data;
+    CHECK_FALSE((source >> data));
+
+    const vlink::Bytes invalid_bom{0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0xBB, 0xBF, 'x', 0x00};
+    SomeipChild target;
+    target.label = "unchanged";
+    CHECK_FALSE((target << invalid_bom));
+    CHECK(target.label == "unchanged");
+
+    const vlink::Bytes invalid_content{0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0xEF, 0xBB, 0xBF, 0xC0, 0xAF, 0x00};
+    CHECK_FALSE((target << invalid_content));
+  }
+
+  TEST_CASE("accepts valid multibyte utf8 and rejects incomplete framing") {
+    SomeipText source;
+    source.value = std::string{"\xC2\xA2\xE4\xB8\xAD\xF0\x9F\x98\x80", 9};
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    const std::array<uint8_t, 17> expected = {0x00, 0x00, 0x00, 0x0D, 0xEF, 0xBB, 0xBF, 0xC2, 0xA2,
+                                              0xE4, 0xB8, 0xAD, 0xF0, 0x9F, 0x98, 0x80, 0x00};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    const auto golden = vlink::Bytes::shallow_copy(expected.data(), expected.size());
+    SomeipText target;
+    REQUIRE((target << golden));
+    CHECK(target.value == source.value);
+
+    source.value = std::string{"\xE4\xB8", 2};
+    CHECK_FALSE((source >> data));
+
+    const vlink::Bytes missing_terminator{0x00, 0x00, 0x00, 0x04, 0xEF, 0xBB, 0xBF, 'a'};
+    CHECK_FALSE((target << missing_terminator));
+
+    source.value = std::string{"a\0b", 3};
+    REQUIRE((source >> data));
+
+    const std::array<uint8_t, 11> embedded_null = {0x00, 0x00, 0x00, 0x07, 0xEF, 0xBB, 0xBF, 'a', 0x00, 'b', 0x00};
+    REQUIRE(data.size() == embedded_null.size());
+    CHECK(std::memcmp(data.data(), embedded_null.data(), embedded_null.size()) == 0);
+
+    REQUIRE((target << data));
+    CHECK(target.value == source.value);
+  }
+
+  TEST_CASE("enforces UTF-8 scalar boundary sequences") {
+    SomeipText source;
+    vlink::Bytes data;
+
+    const std::array<std::string, 4> valid = {std::string{"\xE0\xA0\x80", 3}, std::string{"\xED\x9F\xBF", 3},
+                                              std::string{"\xF0\x90\x80\x80", 4}, std::string{"\xF4\x8F\xBF\xBF", 4}};
+    for (const auto& value : valid) {
+      source.value = value;
+      REQUIRE((source >> data));
+
+      SomeipText target;
+      REQUIRE((target << data));
+      CHECK(target.value == value);
+    }
+
+    const std::array<std::string, 5> invalid = {std::string{"\xE0\x9F\x80", 3}, std::string{"\xED\xA0\x80", 3},
+                                                std::string{"\xF0\x8F\xBF\xBF", 4}, std::string{"\xF4\x90\x80\x80", 4},
+                                                std::string{"\xE1\x80\x41", 3}};
+    for (const auto& value : invalid) {
+      source.value = value;
+      CHECK_FALSE((source >> data));
+
+      data = vlink::Bytes::create(value.size() + 8U);
+      REQUIRE_FALSE(data.empty());
+      const uint32_t length = static_cast<uint32_t>(value.size() + 4U);
+      data.data()[0] = static_cast<uint8_t>(length >> 24U);
+      data.data()[1] = static_cast<uint8_t>(length >> 16U);
+      data.data()[2] = static_cast<uint8_t>(length >> 8U);
+      data.data()[3] = static_cast<uint8_t>(length);
+      data.data()[4] = 0xEF;
+      data.data()[5] = 0xBB;
+      data.data()[6] = 0xBF;
+      std::memcpy(data.data() + 7U, value.data(), value.size());
+      data.data()[data.size() - 1U] = 0x00;
+
+      SomeipText target;
+      CHECK_FALSE((target << data));
+    }
+  }
+
+  TEST_CASE("rejects a fixed array with too few serialized elements") {
+    const vlink::Bytes malformed{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0xEF, 0xBB, 0xBF,
+                                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x12, 0x34};
+
+    SomeipContainers target;
+    CHECK_FALSE((target << malformed));
+  }
+
+  TEST_CASE("skips unknown fixed array elements before decoding the next field") {
+    const vlink::Bytes extended{0x00, 0x00, 0x00, 0x06, 0x12, 0x34, 0xAB, 0xCD, 0x56, 0x78, 0x9A};
+
+    SomeipFixedWithTail target;
+    REQUIRE((target << extended));
+    CHECK(target.fixed == std::array<uint16_t, 2>{0x1234, 0xABCD});
+    CHECK(target.tail == 0x9A);
+  }
+
+  TEST_CASE("serializes nested arrays and variable length structure elements") {
+    SomeipNestedContainers source;
+    source.matrix = {{{0x0001, 0x0002}, {0x0003, 0x0004}}};
+    source.children = {{0x0001, "a"}, {-2, "bc"}};
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    const std::array<uint8_t, 47> expected = {0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x04, 0x00, 0x01, 0x00, 0x02,
+                                              0x00, 0x00, 0x00, 0x04, 0x00, 0x03, 0x00, 0x04, 0x00, 0x00, 0x00, 0x17,
+                                              0x00, 0x01, 0x00, 0x00, 0x00, 0x05, 0xEF, 0xBB, 0xBF, 'a',  0x00, 0xFF,
+                                              0xFE, 0x00, 0x00, 0x00, 0x06, 0xEF, 0xBB, 0xBF, 'b',  'c',  0x00};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    const auto golden = vlink::Bytes::shallow_copy(expected.data(), expected.size());
+    SomeipNestedContainers target;
+    REQUIRE((target << golden));
+    CHECK(target.matrix == source.matrix);
+    REQUIRE(target.children.size() == source.children.size());
+    CHECK(target.children[0].delta == source.children[0].delta);
+    CHECK(target.children[0].label == source.children[0].label);
+    CHECK(target.children[1].delta == source.children[1].delta);
+    CHECK(target.children[1].label == source.children[1].label);
+  }
+
+  TEST_CASE("serializes a fixed array of nested structures") {
+    SomeipChildArray source;
+    source.children = {{{1, "a"}, {-2, "bc"}}};
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    const std::array<uint8_t, 27> expected = {0x00, 0x00, 0x00, 0x17, 0x00, 0x01, 0x00, 0x00, 0x00,
+                                              0x05, 0xEF, 0xBB, 0xBF, 'a',  0x00, 0xFF, 0xFE, 0x00,
+                                              0x00, 0x00, 0x06, 0xEF, 0xBB, 0xBF, 'b',  'c',  0x00};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    const auto golden = vlink::Bytes::shallow_copy(expected.data(), expected.size());
+    SomeipChildArray target;
+    REQUIRE((target << golden));
+    CHECK(target.children[0].delta == source.children[0].delta);
+    CHECK(target.children[0].label == source.children[0].label);
+    CHECK(target.children[1].delta == source.children[1].delta);
+    CHECK(target.children[1].label == source.children[1].label);
+  }
+
+  TEST_CASE("serializes every dimension of a dynamic array with its own byte length") {
+    SomeipDynamicMatrix source;
+    source.values = {{0x0001, 0x0002}, {0x0003}};
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    const std::array<uint8_t, 18> expected = {0x00, 0x00, 0x00, 0x0E, 0x00, 0x00, 0x00, 0x04, 0x00,
+                                              0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02, 0x00, 0x03};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    SomeipDynamicMatrix target;
+    REQUIRE((target << data));
+    CHECK(target.values == source.values);
+  }
+
+  TEST_CASE("reuses storage inside existing dynamic array elements") {
+    SomeipBytesItems source;
+    source.values.resize(1U);
+    source.values[0].value = vlink::Bytes::create(128U);
+    REQUIRE_FALSE(source.values[0].value.empty());
+    std::memset(source.values[0].value.data(), 0xA5, source.values[0].value.size());
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    SomeipBytesItems target;
+    target.values.resize(1U);
+    target.values[0].value = vlink::Bytes::create(512U);
+    auto* storage = target.values[0].value.real_data();
+    REQUIRE(storage != nullptr);
+
+    REQUIRE((target << data));
+    CHECK(target.values.size() == 1U);
+    CHECK(target.values[0].value.real_data() == storage);
+    CHECK(target.values[0].value == source.values[0].value);
+
+    REQUIRE((target << data));
+    CHECK(target.values[0].value.real_data() == storage);
+  }
+
+  TEST_CASE("rejects a dynamic array ending inside an element") {
+    const vlink::Bytes malformed{0x00, 0x00, 0x00, 0x03, 0x12, 0x34, 0x56};
+
+    SomeipVectorOnly target;
+    CHECK_FALSE((target << malformed));
+  }
+
+  TEST_CASE("normalizes a reused bytes field decoded from an empty array") {
+    SomeipMessage source;
+    source.payload.clear();
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    SomeipMessage target;
+    target.payload = vlink::Bytes::create(256U);
+    REQUIRE_FALSE(target.payload.empty());
+
+    REQUIRE((target << data));
+    CHECK(target.payload.empty());
+    CHECK(target.payload.size() == 0U);
+  }
+
+  TEST_CASE("rejects payloads that cannot be represented by the SOME/IP message length") {
+    const uint8_t byte = 0U;
+    const auto oversized = vlink::Bytes::shallow_copy(&byte, vlink::SomeipSerializer::kMaxPayloadSize + 1U);
+
+    SomeipText target;
+    CHECK_FALSE((target << oversized));
   }
 }
 

@@ -671,7 +671,7 @@ ls build/output/bin/
 | `quickstart/` | 三种通信模型的最小示例 | 无（`intra://`） |
 | `base/` | Bytes / Logger / Timer / MessageLoop 等基础库 | 无 |
 | `communication/` | Event / Method / Field 完整用法 | quickstart |
-| `serialization/` | Bytes / POD / `std::string` 等类型的自动序列化 | quickstart |
+| `serialization/` | Bytes / POD / `std::string` / SOME/IP 宏结构的自动序列化 | quickstart |
 | `url_guide/` | URL 结构与重映射 | communication |
 | `qos/` | QoS 基础与预设 profile | url_guide |
 | `security/` | 应用层加密 | communication |
@@ -703,7 +703,7 @@ ls build/output/bin/
 
 | 分类 | 示例 | 主题 | 详解 |
 | --- | --- | --- | --- |
-| serialization | `basic_types` | POD 结构体与基本类型，无编码转换、直接内存复制 | [消息序列化](03-serialization.md) |
+| serialization | `basic_types` | Bytes、string、直接内存复制的 POD，以及按字段编码的 SOME/IP 宏结构 | [消息序列化](03-serialization.md) |
 | url_guide | `url_basics` | URL 结构、参数与话题重映射 | [传输后端与 URL](04-transport.md) |
 | qos | `qos_basics` | QoS 基础参数与预设 profile（事件 / 方法 / 字段 / 传感器） | [QoS 配置](05-qos.md) |
 

@@ -27,13 +27,31 @@
 
 #ifdef VLINK_SUPPORT_SOMEIP
 
+#include <array>
 #include <atomic>
+#include <cstdint>
 #include <future>
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "./modules/someip_conf.h"
+
+struct SomeipTransportChild {
+  int16_t delta{0};
+  std::string label;
+
+  VLINK_SOMEIP_FIELDS(delta, label)
+};
+
+struct SomeipTransportMessage {
+  uint8_t state{0};
+  std::array<uint32_t, 2> limits{};
+  std::vector<SomeipTransportChild> children;
+
+  VLINK_SOMEIP_FIELDS(state, limits, children)
+};
 
 TEST_SUITE("someip-init") {
   TEST_CASE("rpc conf defaults are set correctly") {
@@ -291,6 +309,40 @@ TEST_SUITE("someip-pubsub") {
 
     std::this_thread::sleep_for(500ms);
     CHECK(!pub.has_subscribers());
+  }
+}
+
+TEST_SUITE("someip-serializer") {
+  TEST_CASE("macro declared nested structure round trips through someip transport") {
+    MESSAGE("[someip-serializer] macro declared nested structure round trips through someip transport");
+
+    std::atomic<bool> received{false};
+    std::atomic<bool> matches{false};
+
+    SomeipTransportMessage source;
+    source.state = 0x7FU;
+    source.limits = {0x12345678U, 0xABCDEF01U};
+    source.children = {{-2, "left"}, {3, "right"}};
+
+    Publisher<SomeipTransportMessage> pub(SomeipConf(0x1023, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+    Subscriber<SomeipTransportMessage> sub("someip://4131/1?groups=1&event=1");
+
+    sub.listen([&](const SomeipTransportMessage& value) {
+      const bool equal =
+          value.state == source.state && value.limits == source.limits &&
+          value.children.size() == source.children.size() && value.children[0].delta == source.children[0].delta &&
+          value.children[0].label == source.children[0].label && value.children[1].delta == source.children[1].delta &&
+          value.children[1].label == source.children[1].label;
+      matches.store(equal, std::memory_order_release);
+      received.store(true, std::memory_order_release);
+    });
+
+    CHECK(pub.wait_for_subscribers(1s));
+    std::this_thread::sleep_for(10ms);
+    CHECK(pub.publish(source));
+
+    REQUIRE(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 5s));
+    CHECK(matches.load(std::memory_order_acquire));
   }
 }
 

@@ -1,6 +1,6 @@
 <mxfile host="app.diagrams.net" modified="2026-06-25T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
   <diagram id="type-chain" name="Serialization Type Detection Chain">
-    <mxGraphModel dx="1400" dy="920" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="920" math="0" shadow="0">
+    <mxGraphModel dx="1400" dy="944" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="944" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -25,22 +25,22 @@
         <mxCell id="t2" value="&lt;b&gt;2&lt;/b&gt;&lt;br&gt;Dynamic&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kDynamicType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;fontColor=#ffffff;fontStyle=1;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="226" y="150" width="148" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="t3" value="&lt;b&gt;3&lt;/b&gt;&lt;br&gt;CDR&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kCdrType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontColor=#0d47a1;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
+        <mxCell id="t3" value="&lt;b&gt;3&lt;/b&gt;&lt;br&gt;SOME/IP&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kSomeipType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;fontColor=#e65100;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="392" y="150" width="148" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="t4" value="&lt;b&gt;4&lt;/b&gt;&lt;br&gt;Proto&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kProtoType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontColor=#0d47a1;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
+        <mxCell id="t4" value="&lt;b&gt;4&lt;/b&gt;&lt;br&gt;CDR&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kCdrType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontColor=#0d47a1;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="558" y="150" width="148" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="t5" value="&lt;b&gt;5&lt;/b&gt;&lt;br&gt;ProtoPtr&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kProtoPtrType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontColor=#0d47a1;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
+        <mxCell id="t5" value="&lt;b&gt;5&lt;/b&gt;&lt;br&gt;Proto&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kProtoType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontColor=#0d47a1;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="724" y="150" width="148" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="t6" value="&lt;b&gt;6&lt;/b&gt;&lt;br&gt;FlatTable&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kFlatTableType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontColor=#0d47a1;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
+        <mxCell id="t6" value="&lt;b&gt;6&lt;/b&gt;&lt;br&gt;ProtoPtr&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kProtoPtrType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontColor=#0d47a1;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="890" y="150" width="148" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="t7" value="&lt;b&gt;7&lt;/b&gt;&lt;br&gt;FlatPtr&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kFlatPtrType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontColor=#0d47a1;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
+        <mxCell id="t7" value="&lt;b&gt;7&lt;/b&gt;&lt;br&gt;FlatTable&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kFlatTableType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontColor=#0d47a1;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="1056" y="150" width="148" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="t8" value="&lt;b&gt;8&lt;/b&gt;&lt;br&gt;FlatBuilder&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kFlatBuilderType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontColor=#0d47a1;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
+        <mxCell id="t8" value="&lt;b&gt;8&lt;/b&gt;&lt;br&gt;FlatPtr&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kFlatPtrType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontColor=#0d47a1;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="1222" y="150" width="118" height="70" as="geometry" />
         </mxCell>
 
@@ -68,7 +68,7 @@
 
         <mxCell id="wrapArrow" value="continue" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;fontSize=10;fontStyle=2;fontColor=#0d47a1;fontFamily=Helvetica;edgeStyle=orthogonalEdgeStyle;rounded=1;labelBackgroundColor=#ffffff;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="1281" y="185" as="sourcePoint" />
+            <mxPoint x="1340" y="185" as="sourcePoint" />
             <mxPoint x="134" y="290" as="targetPoint" />
             <Array as="points">
               <mxPoint x="1346" y="185" />
@@ -82,27 +82,30 @@
         <mxCell id="row2Bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;fontColor=#0d47a1;fontFamily=Helvetica;arcSize=6;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="40" y="275" width="1320" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="row2T" value="User-Defined &amp;amp; Fallback Types  -  priority 9 to 14" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="row2T" value="User-Defined &amp;amp; Fallback Types  -  priority 9 to 15" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="40" y="287" width="1320" height="24" as="geometry" />
         </mxCell>
 
-        <mxCell id="t9" value="&lt;b&gt;9&lt;/b&gt;&lt;br&gt;Custom&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kCustomType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;fontColor=#e65100;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="60" y="325" width="200" height="70" as="geometry" />
+        <mxCell id="t9" value="&lt;b&gt;9&lt;/b&gt;&lt;br&gt;FlatBuilder&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kFlatBuilderType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontColor=#0d47a1;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="325" width="170" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="t10" value="&lt;b&gt;10&lt;/b&gt;&lt;br&gt;String&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kStringType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontColor=#0d47a1;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="278" y="325" width="200" height="70" as="geometry" />
+        <mxCell id="t10" value="&lt;b&gt;10&lt;/b&gt;&lt;br&gt;Custom&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kCustomType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;fontColor=#e65100;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="245" y="325" width="170" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="t11" value="&lt;b&gt;11&lt;/b&gt;&lt;br&gt;Chars&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kCharsType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontColor=#0d47a1;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="496" y="325" width="200" height="70" as="geometry" />
+        <mxCell id="t11" value="&lt;b&gt;11&lt;/b&gt;&lt;br&gt;String&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kStringType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontColor=#0d47a1;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="430" y="325" width="170" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="t12" value="&lt;b&gt;12&lt;/b&gt;&lt;br&gt;Standard&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kStandardType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;fontColor=#37474f;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="714" y="325" width="200" height="70" as="geometry" />
+        <mxCell id="t12" value="&lt;b&gt;12&lt;/b&gt;&lt;br&gt;Chars&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kCharsType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontColor=#0d47a1;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="615" y="325" width="170" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="t13" value="&lt;b&gt;13&lt;/b&gt;&lt;br&gt;StandardPtr&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kStandardPtrType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;fontColor=#37474f;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="932" y="325" width="200" height="70" as="geometry" />
+        <mxCell id="t13" value="&lt;b&gt;13&lt;/b&gt;&lt;br&gt;Standard&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kStandardType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;fontColor=#37474f;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="800" y="325" width="170" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="t14" value="&lt;b&gt;14&lt;/b&gt;&lt;br&gt;Stream&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kStreamType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontColor=#4a148c;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="1150" y="325" width="190" height="70" as="geometry" />
+        <mxCell id="t14" value="&lt;b&gt;14&lt;/b&gt;&lt;br&gt;StandardPtr&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kStandardPtrType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;fontColor=#37474f;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="985" y="325" width="170" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t15" value="&lt;b&gt;15&lt;/b&gt;&lt;br&gt;Stream&lt;br&gt;&lt;span style=&quot;font-size:9px;font-family:Courier New&quot;&gt;kStreamType&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontColor=#4a148c;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="1170" y="325" width="170" height="70" as="geometry" />
         </mxCell>
 
         <mxCell id="r2a910" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;" edge="1" parent="1" source="t9" target="t10">
@@ -120,9 +123,12 @@
         <mxCell id="r2a1314" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;" edge="1" parent="1" source="t13" target="t14">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
+        <mxCell id="r2a1415" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;rounded=1;" edge="1" parent="1" source="t14" target="t15">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
 
         <mxCell id="condBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;fontColor=#37474f;fontFamily=Helvetica;arcSize=4;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="40" y="440" width="660" height="356" as="geometry" />
+          <mxGeometry x="40" y="440" width="660" height="378" as="geometry" />
         </mxCell>
         <mxCell id="condT" value="Detection Conditions  (in priority order)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="40" y="452" width="660" height="24" as="geometry" />
@@ -134,45 +140,48 @@
         <mxCell id="c2" value="&lt;b&gt;2 Dynamic:&lt;/b&gt;  T is vlink dynamic typed data" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="70" y="510" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="c3" value="&lt;b&gt;3 CDR:&lt;/b&gt;  has serialize(Cdr&amp;amp;) / deserialize(Cdr&amp;amp;)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="c3" value="&lt;b&gt;3 SOME/IP:&lt;/b&gt;  has is_vlink_someip_type() marker" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#e65100;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="70" y="532" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="c4" value="&lt;b&gt;4 Proto:&lt;/b&gt;  has SerializeToArray / ParseFromArray" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="c4" value="&lt;b&gt;4 CDR:&lt;/b&gt;  has serialize(Cdr&amp;amp;) / deserialize(Cdr&amp;amp;)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="70" y="554" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="c5" value="&lt;b&gt;5 ProtoPtr:&lt;/b&gt;  raw pointer to a Proto-like value (caller-owned)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="c5" value="&lt;b&gt;5 Proto:&lt;/b&gt;  has SerializeToArray / ParseFromArray" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="70" y="576" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="c6" value="&lt;b&gt;6 FlatTable:&lt;/b&gt;  derives from FlatBuffers NativeTable (object API)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="c6" value="&lt;b&gt;6 ProtoPtr:&lt;/b&gt;  raw pointer to a Proto-like value (caller-owned)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="70" y="598" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="c7" value="&lt;b&gt;7 FlatPtr:&lt;/b&gt;  pointer to flatbuffers::Table (zero-copy view)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="c7" value="&lt;b&gt;7 FlatTable:&lt;/b&gt;  derives from FlatBuffers NativeTable (object API)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="70" y="620" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="c8" value="&lt;b&gt;8 FlatBuilder:&lt;/b&gt;  has fbb_ member and Finish()" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="c8" value="&lt;b&gt;8 FlatPtr:&lt;/b&gt;  pointer to flatbuffers::Table (zero-copy view)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="70" y="642" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="c9" value="&lt;b&gt;9 Custom:&lt;/b&gt;  has operator&gt;&gt;(Bytes&amp;amp;) and operator&lt;&lt;(const Bytes&amp;amp;)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#e65100;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="c9" value="&lt;b&gt;9 FlatBuilder:&lt;/b&gt;  has fbb_ member and Finish()" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="70" y="664" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="c10" value="&lt;b&gt;10 String:&lt;/b&gt;  T == std::string" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="c10" value="&lt;b&gt;10 Custom:&lt;/b&gt;  has operator&gt;&gt;(Bytes&amp;amp;) and operator&lt;&lt;(const Bytes&amp;amp;)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#e65100;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="70" y="686" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="c11" value="&lt;b&gt;11 Chars:&lt;/b&gt;  string-constructible (const char* / char[]), not std::string" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="c11" value="&lt;b&gt;11 String:&lt;/b&gt;  T == std::string" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="70" y="708" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="c12" value="&lt;b&gt;12 Standard:&lt;/b&gt;  is_trivial &amp;amp;&amp;amp; is_standard_layout &amp;amp;&amp;amp; !is_pointer" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="c12" value="&lt;b&gt;12 Chars:&lt;/b&gt;  non-volatile char pointer or char array" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="70" y="730" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="c13" value="&lt;b&gt;13 StandardPtr:&lt;/b&gt;  pointer to a trivial standard-layout (POD) value" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="c13" value="&lt;b&gt;13 Standard:&lt;/b&gt;  is_trivial &amp;amp;&amp;amp; is_standard_layout &amp;amp;&amp;amp; !is_pointer" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="70" y="752" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="c14" value="&lt;b&gt;14 Stream:&lt;/b&gt;  streamable via std::stringstream &lt;&lt; / &gt;&gt;  (last-resort fallback)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#4a148c;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="c14" value="&lt;b&gt;14 StandardPtr:&lt;/b&gt;  pointer to a trivial standard-layout (POD) value" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="70" y="774" width="620" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="c15" value="&lt;b&gt;15 Stream:&lt;/b&gt;  streamable via std::stringstream &lt;&lt; / &gt;&gt;  (last-resort fallback)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#4a148c;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="70" y="796" width="620" height="22" as="geometry" />
         </mxCell>
 
         <mxCell id="exBg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;fontColor=#37474f;fontFamily=Helvetica;arcSize=4;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="720" y="440" width="640" height="356" as="geometry" />
+          <mxGeometry x="720" y="440" width="640" height="378" as="geometry" />
         </mxCell>
         <mxCell id="exT" value="Example Types  (in priority order)" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="720" y="452" width="640" height="24" as="geometry" />
@@ -184,74 +193,77 @@
         <mxCell id="ex2" value="&lt;b&gt;Dynamic&lt;/b&gt;  -  type-erased container with runtime type tag" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="750" y="510" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="ex3" value="&lt;b&gt;CDR&lt;/b&gt;  -  DDS / ROS 2 standard encoding (generated from IDL)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="ex3" value="&lt;b&gt;SOME/IP&lt;/b&gt;  -  macro-declared field-wise payload structure" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="750" y="532" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="ex4" value="&lt;b&gt;Proto&lt;/b&gt;  -  Google Protocol Buffers messages" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="ex4" value="&lt;b&gt;CDR&lt;/b&gt;  -  DDS / ROS 2 standard encoding (generated from IDL)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="750" y="554" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="ex5" value="&lt;b&gt;ProtoPtr&lt;/b&gt;  -  MyProto* (caller owns the pointee lifetime)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="ex5" value="&lt;b&gt;Proto&lt;/b&gt;  -  Google Protocol Buffers messages" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="750" y="576" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="ex6" value="&lt;b&gt;FlatTable&lt;/b&gt;  -  Google FlatBuffers NativeTable (object API)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="ex6" value="&lt;b&gt;ProtoPtr&lt;/b&gt;  -  MyProto* (caller owns the pointee lifetime)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="750" y="598" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="ex7" value="&lt;b&gt;FlatPtr&lt;/b&gt;  -  MyTable* zero-copy view over a FlatBuffers buffer" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="ex7" value="&lt;b&gt;FlatTable&lt;/b&gt;  -  Google FlatBuffers NativeTable (object API)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="750" y="620" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="ex8" value="&lt;b&gt;FlatBuilder&lt;/b&gt;  -  MyBuilder (fbb_ + Finish() called on publish)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="ex8" value="&lt;b&gt;FlatPtr&lt;/b&gt;  -  MyTable* zero-copy view over a FlatBuffers buffer" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="750" y="642" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="ex9" value="&lt;b&gt;Custom&lt;/b&gt;  -  Vec3, NamedValue (user-defined Bytes operators)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="ex9" value="&lt;b&gt;FlatBuilder&lt;/b&gt;  -  MyBuilder (fbb_ + Finish() called on publish)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="750" y="664" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="ex10" value="&lt;b&gt;String&lt;/b&gt;  -  std::string (content bytes copied without a length prefix)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="ex10" value="&lt;b&gt;Custom&lt;/b&gt;  -  Vec3, NamedValue (user-defined Bytes operators)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="750" y="686" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="ex11" value="&lt;b&gt;Chars&lt;/b&gt;  -  const char* literals and char[] arrays" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="ex11" value="&lt;b&gt;String&lt;/b&gt;  -  std::string (content bytes copied without a length prefix)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="750" y="708" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="ex12" value="&lt;b&gt;Standard&lt;/b&gt;  -  Point2D, SensorReading (memcpy, sizeof(T) bytes)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="ex12" value="&lt;b&gt;Chars&lt;/b&gt;  -  const char* literals and char[] arrays" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="750" y="730" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="ex13" value="&lt;b&gt;StandardPtr&lt;/b&gt;  -  pointer to a POD value, zero-copy access" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="ex13" value="&lt;b&gt;Standard&lt;/b&gt;  -  Point2D, SensorReading (memcpy, sizeof(T) bytes)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="750" y="752" width="600" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="ex14" value="&lt;b&gt;Stream&lt;/b&gt;  -  Color, Size2D (text via std::stringstream)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="ex14" value="&lt;b&gt;StandardPtr&lt;/b&gt;  -  pointer to a POD value, zero-copy access" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="750" y="774" width="600" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="ex15" value="&lt;b&gt;Stream&lt;/b&gt;  -  Color, Size2D (text via std::stringstream)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="750" y="796" width="600" height="22" as="geometry" />
         </mxCell>
 
         <mxCell id="perfT" value="Performance profile" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#0d47a1;fontFamily=Helvetica;" vertex="1" parent="1">
-          <mxGeometry x="40" y="814" width="300" height="24" as="geometry" />
+          <mxGeometry x="40" y="838" width="300" height="24" as="geometry" />
         </mxCell>
 
         <mxCell id="perf1" value="Highest (zero-copy)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1976d2;strokeColor=#0d47a1;fontColor=#ffffff;fontStyle=1;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="40" y="844" width="220" height="34" as="geometry" />
+          <mxGeometry x="40" y="868" width="220" height="34" as="geometry" />
         </mxCell>
         <mxCell id="perf2" value="Schema-based (CDR/Proto/Flat)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontColor=#0d47a1;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="270" y="844" width="260" height="34" as="geometry" />
+          <mxGeometry x="270" y="868" width="260" height="34" as="geometry" />
         </mxCell>
         <mxCell id="perf3" value="Custom binary" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;fontColor=#e65100;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="540" y="844" width="160" height="34" as="geometry" />
+          <mxGeometry x="540" y="868" width="160" height="34" as="geometry" />
         </mxCell>
         <mxCell id="perf4" value="memcpy (Standard)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;fontColor=#37474f;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="710" y="844" width="170" height="34" as="geometry" />
+          <mxGeometry x="710" y="868" width="170" height="34" as="geometry" />
         </mxCell>
         <mxCell id="perf5" value="Text-based (Stream)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontColor=#4a148c;fontSize=12;fontFamily=Helvetica;arcSize=10;shadow=0;" vertex="1" parent="1">
-          <mxGeometry x="890" y="844" width="170" height="34" as="geometry" />
+          <mxGeometry x="890" y="868" width="170" height="34" as="geometry" />
         </mxCell>
 
         <mxCell id="perfArrow" value="" style="endArrow=block;endFill=1;html=1;strokeWidth=2;strokeColor=#1976d2;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="40" y="894" as="sourcePoint" />
-            <mxPoint x="1360" y="894" as="targetPoint" />
+            <mxPoint x="40" y="918" as="sourcePoint" />
+            <mxPoint x="1360" y="918" as="targetPoint" />
           </mxGeometry>
         </mxCell>
         <mxCell id="perfL" value="highest priority" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
-          <mxGeometry x="40" y="899" width="160" height="20" as="geometry" />
+          <mxGeometry x="40" y="923" width="160" height="20" as="geometry" />
         </mxCell>
         <mxCell id="perfR" value="lowest priority (fallback)" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;fontStyle=2;fontColor=#37474f;fontFamily=Helvetica;" vertex="1" parent="1">
-          <mxGeometry x="1160" y="899" width="200" height="20" as="geometry" />
+          <mxGeometry x="1160" y="923" width="200" height="20" as="geometry" />
         </mxCell>
 
       </root>

@@ -20,10 +20,11 @@ agent 渐进式披露:先在本表定位功能 → 再读对应 doc 小节 → �
 | 功能 | 代码入口 | 文档小节 |
 | ---- | ---- | ---- |
 | 机制:编译期按消息类型自动推导 | `include/vlink/serializer.h` | `doc/03` §3.1 |
-| 类型族选型:Bytes/Dynamic/CDR/Proto/ProtoPtr/FlatTable/FlatPtr/FlatBuilder/Custom/String/Chars/Standard(POD)/StandardPtr/Stream | 同上 | `doc/03` §3.2;速查 `doc/14` §14.7 |
+| 类型族选型:Bytes/Dynamic/SOMEIP/CDR/Proto/ProtoPtr/FlatTable/FlatPtr/FlatBuilder/Custom/String/Chars/Standard(POD)/StandardPtr/Stream | 同上 | `doc/03` §3.2;速查 `doc/14` §14.7 |
 | Protobuf 接入 | 同上 | `doc/03` §3.3 |
 | FlatBuffers 与 POD | 同上 | `doc/03` §3.4 |
-| 自定义序列化器 | 同上 | `doc/03` §3.5 |
+| SOME/IP 宏结构与固定部署边界 | `include/vlink/impl/someip_serializer.h` | `doc/03` §3.5.1 |
+| 自定义序列化器 | `include/vlink/serializer.h` | `doc/03` §3.5.2 |
 | DDS CDR 与 DynamicData | 同上 + `modules/dds*` | `doc/03` §3.6 |
 | 边界条件与常见错误 | — | `doc/03` §3.7 |
 | IDL 代码生成 `vlink_generate_cpp()` | `cmake/` | `doc/01` §1.6 |

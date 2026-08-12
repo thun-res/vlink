@@ -29,6 +29,7 @@
 #include <utility>
 
 #include "./impl/server_impl.h"
+#include "./impl/someip_serializer.h"
 
 namespace vlink {
 
@@ -100,8 +101,15 @@ SomeipServer::SomeipServer(const SomeipID& id) {
 
             callback(0, req_data, &resp_data);
 
+            if VUNLIKELY (resp_data.size() > SomeipSerializer::kMaxPayloadSize) {
+              VLOG_E(*conf_ptr, "SOME/IP response payload exceeds the protocol limit.");
+              return;
+            }
+
             auto response = runtime_->create_response(request);
-            auto payload = runtime_->create_payload(resp_data.data(), resp_data.size());
+            auto payload = resp_data.empty()
+                               ? runtime_->create_payload()
+                               : runtime_->create_payload(resp_data.data(), static_cast<uint32_t>(resp_data.size()));
 
             response->set_payload(payload);
 
@@ -235,6 +243,11 @@ void SomeipClient::start() {
 
 bool SomeipClient::call(vsomeip_v3::method_t method, const Bytes& req_data, NodeImpl::MsgCallback&& callback,
                         uint64_t* seq_out) {
+  if VUNLIKELY (req_data.size() > SomeipSerializer::kMaxPayloadSize) {
+    VLOG_E("SomeipClient: Request payload exceeds the protocol limit.");
+    return false;
+  }
+
   auto request = someip::runtime::get()->create_request();
 
   request->set_service(service_id_);
@@ -244,7 +257,9 @@ bool SomeipClient::call(vsomeip_v3::method_t method, const Bytes& req_data, Node
   request->set_message_type(callback ? someip::message_type_e::MT_REQUEST
                                      : someip::message_type_e::MT_REQUEST_NO_RETURN);
 
-  auto payload = someip::runtime::get()->create_payload(req_data.data(), req_data.size());
+  auto payload = req_data.empty()
+                     ? someip::runtime::get()->create_payload()
+                     : someip::runtime::get()->create_payload(req_data.data(), static_cast<uint32_t>(req_data.size()));
   request->set_payload(payload);
 
   if VLIKELY (callback) {

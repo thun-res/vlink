@@ -1,6 +1,6 @@
 # 🧩 basic_types — 开箱即用的消息类型
 
-`Publisher<T>` / `Subscriber<T>` 的模板参数 `T` 即消息类型，VLink 按 `T` 在编译期自动选择序列化方式，应用层无需编写任何编解码代码。本示例演示三种最常用、无需代码生成工具的类型：`vlink::Bytes`（原始字节）、`std::string`（文本/JSON）、POD 结构体（平凡可拷贝结构）。
+`Publisher<T>` / `Subscriber<T>` 的模板参数 `T` 即消息类型，VLink 按 `T` 在编译期自动选择序列化方式，应用层无需注册编解码器。本示例演示四种无需代码生成工具的类型：`vlink::Bytes`（原始字节）、`std::string`（文本/JSON）、POD 结构体（平凡可拷贝结构）和宏声明的 SOME/IP 结构。
 
 ![类型到序列化策略](./images/serialization-type-chain.png)
 
@@ -16,6 +16,7 @@
 | `vlink::Bytes::create(n)` | 分配 n 字节、未初始化的 Bytes |
 | `vlink::Bytes::encode_to_base64 / decode_from_base64` | Base64 互转 |
 | `vlink::Bytes::get_crc_32(b)` | 计算 CRC32 |
+| `VLINK_SOMEIP_FIELDS(...)` | 按声明顺序生成 SOME/IP payload 编解码 |
 
 ## 🚀 最小可运行片段
 
@@ -37,7 +38,8 @@ POD 结构体（平凡 + 标准布局）可直接作为 `T`：`vlink::Publisher<
 - **`vlink::Bytes`**：应用层已有自定义二进制协议，零编解码开销。
 - **`std::string`**：文本、JSON 或格式未知的载体。
 - **POD 结构体**：同机同 ABI 的简单结构，最快路径；跨平台/跨语言请改用 Protobuf / FlatBuffers / CDR。
-- **含 `std::string` / `std::vector` 等的复杂结构**：跨语言场景改用 Protobuf（见 [`../../samples/helloworld/`](../../samples/helloworld/)）或 FlatBuffers（见 [`../../samples/someip_flat/`](../../samples/someip_flat/)）。
+- **SOME/IP 结构**：用 `VLINK_SOMEIP_FIELDS(...)` 声明字段顺序，支持嵌套结构、`std::string`、`std::vector`、`std::array` 和 `vlink::Bytes`；固定部署范围见[消息序列化](../../../doc/03-serialization.md#-35-someip-与自定义序列化器)。
+- **其他复杂结构**：跨语言场景改用 Protobuf（见 [`../../samples/helloworld/`](../../samples/helloworld/)）或 FlatBuffers（见 [`../../samples/someip_flat/`](../../samples/someip_flat/)）。
 
 ## ▶️ 运行
 

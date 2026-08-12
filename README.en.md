@@ -10,7 +10,7 @@ English | [中文](README.md) · [Website](https://vlink.work) · [Documentation
 
 VLink is high-performance communication middleware for autonomous driving and embodied intelligence, positioned as a full-scenario alternative to ROS 2. A single type-safe API covers intra-process, shared-memory, automotive-Ethernet, and cross-machine communication. The URL selects the backend; switching may require backend-specific addressing and parameters, while the communication primitives and main application logic remain unchanged.
 
-The current release supports 10 transport backends, 14 serialization formats, 3 communication models with 6 core primitives, plus security, recording/playback, service discovery, 10 CLI tools, and Foxglove / Rerun visualization bridges.
+The current source supports 10 transport backends, 15 serialization formats, 3 communication models with 6 core primitives, plus security, recording/playback, service discovery, 10 CLI tools, and Foxglove / Rerun visualization bridges.
 
 ![VLink architecture](doc/images/readme-architecture.png)
 

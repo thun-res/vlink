@@ -24,7 +24,7 @@ cmake --build build -j
 | --- | --- | --- |
 | [quickstart](quickstart) | `hello_pubsub` · `hello_rpc` · `hello_field` | 三种通信模型的最小可运行示例（`intra://`，无外部依赖） |
 | [base](base) | `bytes_basic` · `logger_basic` · `message_loop_basic` · `timer` | Bytes、Logger、MessageLoop、Timer 等基础组件 |
-| [serialization](serialization) | `basic_types` | Bytes / POD / `std::string` 等类型的自动序列化 |
+| [serialization](serialization) | `basic_types` | Bytes / POD / `std::string` / SOME/IP 宏结构的自动序列化 |
 | [communication](communication) | `event_advanced` · `field_advanced` · `method_sync` | 三模型的进阶用法：多订阅扇出、change 回调、同步 RPC |
 | [url_guide](url_guide) | `url_basics` | URL 结构与运行时重映射 |
 | [qos](qos) | `qos_basics` | QoS 基本配置与预定义 profile |

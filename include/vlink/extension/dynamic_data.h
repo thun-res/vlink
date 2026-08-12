@@ -38,17 +38,18 @@
  * | Category   | Examples                          | Notes                                      |
  * | ---------- | --------------------------------- | ------------------------------------------ |
  * | Protobuf   | @c MyProto, @c std::shared_ptr<P> | Encoded with the message's wire format     |
- * | FlatBuffer | @c MyTable, @c FlatPtr<T>         | Encoded via @c FlatBuilder                 |
+ * | FlatBuffer | @c MyTable, builder types         | Native table or completed builder payload  |
  * | POD/Std    | @c int, @c struct Foo (trivial)   | Standard layout copy                       |
  * | Bytes      | @c vlink::Bytes                   | Stored verbatim                            |
- * | String     | @c std::string                    | Length-prefixed                            |
- * | Chars      | @c char[N], @c const char*        | NUL-terminated                             |
+ * | String     | @c std::string                    | Stored as raw string bytes                 |
+ * | Chars      | @c char[N], @c const char*        | Stored without the trailing NUL            |
+ * | SOME/IP    | Macro-declared structures         | Stored as raw SOME/IP payload              |
  * | Custom     | Types with explicit @c Serializer | User-provided serialise/deserialise hooks  |
  *
- * Two categories are forbidden and rejected by @c static_assert: nested @c DynamicData
- * (avoids recursive type-name layout) and CDR types (their wire format does not allow
- * the in-place prefix used here).  The type-name literal (including its trailing NUL)
- * must fit in fewer than @c kOffset bytes.
+ * Nested @c DynamicData and CDR are rejected for both directions.  @c load() also rejects
+ * non-owning FlatBuffers table pointers and POD pointers because those serialization paths
+ * cannot reserve the inline type-name prefix.  The type-name literal (including its trailing
+ * NUL) must fit in fewer than @c kOffset bytes.
  *
  * Buffer layout:
  *
@@ -242,12 +243,16 @@ class VLINK_EXPORT DynamicData final {
 
 template <uint8_t SizeT, typename T>
 inline DynamicData& DynamicData::load(const char (&type)[SizeT], const T& t) {
+  constexpr Serializer::Type kSerializerType = Serializer::get_type_of<T>();
+
   static_assert(SizeT < get_offset(), "DynamicData name out of size.");
-  static_assert(!std::is_same_v<DynamicData, T>, "DynamicData can not serialize self.");
+  static_assert(!Serializer::is_dynamic_type<T>(), "DynamicData can not serialize self.");
   static_assert(!Serializer::is_cdr_type<T>(), "DynamicData can not serialize cdr data.");
+  static_assert(kSerializerType != Serializer::kFlatPtrType && kSerializerType != Serializer::kStandardPtrType,
+                "DynamicData can not serialize non-owning pointer views.");
 
   Bytes next_data;
-  bool ret = Serializer::serialize<Serializer::get_type_of<T>()>(t, next_data, TransportType::kUnknown, get_offset());
+  bool ret = Serializer::serialize<kSerializerType>(t, next_data, TransportType::kUnknown, get_offset());
 
   if VUNLIKELY (!ret || next_data.real_data() == nullptr) {
     data_ = Bytes();
@@ -282,7 +287,7 @@ inline DynamicData& DynamicData::load(const char (&type)[SizeT], const T& t) {
 
 template <typename T>
 inline bool DynamicData::convert(T& t) const {
-  static_assert(!std::is_same_v<DynamicData, T>, "DynamicData can not deserialize self.");
+  static_assert(!Serializer::is_dynamic_type<T>(), "DynamicData can not deserialize self.");
   static_assert(!Serializer::is_cdr_type<T>(), "DynamicData can not deserialize cdr data.");
 
   if VUNLIKELY (data_.empty()) {
