@@ -6,7 +6,9 @@ SHELL_DIR=$(cd "$(dirname "${BASH_SOURCE:-$0}")" && pwd)
 
 command -v cpplint &> /dev/null || pip install cpplint --user
 
-SRCS=$(find "$1" -type f -not -path "$1/tools/*" -not -path "*/thirdparty/*" -not -path "*/build/*" -not -path "*/build-*" -not -path "*/builtin/*" -not -path "*/prebuilt/*" -not -path "*/android-bp/*" \
+VLINK_ROOT=$(cd "$1" && pwd)
+
+SRCS=$(find "$VLINK_ROOT" -type f -not -path "$VLINK_ROOT/tools/*" -not -path "*/thirdparty/*" -not -path "*/build/*" -not -path "*/build-*" -not -path "*/builtin/*" -not -path "*/prebuilt/*" -not -path "*/android-bp/*" \
     \( -name "*.h" -o -name "*.hpp" -o -name "*.cc" -o -name "*.cpp" \))
 
 FILTER=\
