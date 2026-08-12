@@ -48,9 +48,10 @@ python3 tools/autosar/arxml_to_vlink_someip.py input.arxml --list-prototypes
 - Application 到 Implementation 类型映射和跨文件引用。
 - 标量、枚举、结构体、别名、固定/变长/多维数组、vector、UTF-8 字符串和 `vlink::Bytes`。
 - event、field、method call/return 及细粒度 data-prototype deployment。
-- prototype `INIT-VALUE` factory。
+- prototype `INIT-VALUE`；结构体生成静态 `make_default()`，其他类型保留独立 factory。
 - `VLINK_SOMEIP_ENDIAN_BIG/LITTLE`。
 - `VLINK_SOMEIP_LENGTH` 的 `0/1/2/4` 字节长度字段。
+- `VLINK_SOMEIP_ARRAY_LENGTH` 的多维数组长度字段。
 - `VLINK_SOMEIP_STRUCT_LENGTH` 的 `0/1/2/4` 字节结构长度字段。
 
 当前 VLink serializer 不支持 TLV、optional、union、variant、bitfield、固定长度字符串、

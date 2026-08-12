@@ -32,6 +32,7 @@
 #include <string_view>
 #include <vector>
 
+#include "../tools/autosar/test/generated_someip_types.h"
 #include "./common_test.h"
 #include "./impl/intra_data.h"
 
@@ -204,6 +205,37 @@ struct SomeipDynamicMatrix {
   std::vector<std::vector<uint16_t>> values;
 
   VLINK_SOMEIP_FIELDS(values)
+};
+
+struct SomeipArrayLengthChild {
+  std::vector<uint8_t> values;
+
+  VLINK_SOMEIP_FIELDS(VLINK_SOMEIP_LENGTH(values, 2U))
+};
+
+struct SomeipArrayLengths {
+  std::vector<std::vector<uint16_t>> dynamic;
+  std::array<std::array<uint8_t, 2>, 2> fixed{};
+  std::vector<std::vector<uint8_t>> partial;
+  std::vector<SomeipArrayLengthChild> children;
+
+  VLINK_SOMEIP_FIELDS(VLINK_SOMEIP_ARRAY_LENGTH(dynamic, 1U, 2U), VLINK_SOMEIP_ARRAY_LENGTH(fixed, 0U, 1U),
+                      VLINK_SOMEIP_ARRAY_LENGTH(partial, 1U), VLINK_SOMEIP_ARRAY_LENGTH(children, 1U))
+};
+
+struct SomeipAlignedArrayLengths {
+  uint8_t prefix{0};
+  std::vector<std::vector<uint8_t>> values;
+  uint8_t suffix{0};
+
+  VLINK_SOMEIP_ALIGNMENT(4U)
+  VLINK_SOMEIP_FIELDS(prefix, VLINK_SOMEIP_ARRAY_LENGTH(values, 1U, 1U), suffix)
+};
+
+struct SomeipZeroByteArrayElements {
+  std::vector<std::array<uint8_t, 0>> values;
+
+  VLINK_SOMEIP_FIELDS(VLINK_SOMEIP_ARRAY_LENGTH(values, 1U, 0U))
 };
 
 struct SomeipBytesItem {
@@ -426,6 +458,67 @@ TEST_SUITE("ser-types") {
 }
 
 TEST_SUITE("ser-someip") {
+  TEST_CASE("generated AUTOSAR default and wire format remain executable") {
+    auto source = vlink::autosar::VehicleState::make_default();
+
+    CHECK(source.sequence == 7U);
+    CHECK(source.valid);
+    CHECK(source.mode == vlink::autosar::GearMode::kDrive);
+    CHECK(source.temperature == doctest::Approx(20.5F));
+    CHECK(source.name == "parked");
+    CHECK(source.position.x == -5);
+    CHECK(source.position.y == 8);
+    CHECK(source.samples == vlink::autosar::SampleWindow{10U, 20U, 30U, 40U});
+    REQUIRE(source.objects.size() == 2U);
+    CHECK(source.objects[0].x == 1);
+    CHECK(source.objects[0].y == 2);
+    CHECK(source.objects[1].x == -3);
+    CHECK(source.objects[1].y == 4);
+    REQUIRE(source.payload.size() == 4U);
+    CHECK(source.payload.data()[0] == 0xDEU);
+    CHECK(source.payload.data()[1] == 0xADU);
+    CHECK(source.payload.data()[2] == 0xBEU);
+    CHECK(source.payload.data()[3] == 0xEFU);
+    CHECK(source.matrix == std::array<std::array<uint16_t, 3>, 2>{{{1U, 2U, 3U}, {4U, 5U, 6U}}});
+
+    source.sequence = 0x01020304U;
+    source.temperature = 36.5F;
+    source.name = "vehicle";
+    source.position = {-120, 450};
+
+    vlink::Bytes encoded;
+    REQUIRE(Serializer::serialize(source, encoded));
+    const std::array<uint8_t, 94> expected = {
+        0x00U, 0x5CU, 0x04U, 0x03U, 0x02U, 0x01U, 0x01U, 0x01U, 0x00U, 0x00U, 0x12U, 0x42U, 0x00U, 0x0BU, 0xEFU, 0xBBU,
+        0xBFU, 0x76U, 0x65U, 0x68U, 0x69U, 0x63U, 0x6CU, 0x65U, 0x00U, 0x00U, 0x08U, 0x88U, 0xFFU, 0xFFU, 0xFFU, 0xC2U,
+        0x01U, 0x00U, 0x00U, 0x0AU, 0x00U, 0x14U, 0x00U, 0x1EU, 0x00U, 0x28U, 0x00U, 0x00U, 0x14U, 0x00U, 0x08U, 0x01U,
+        0x00U, 0x00U, 0x00U, 0x02U, 0x00U, 0x00U, 0x00U, 0x00U, 0x08U, 0xFDU, 0xFFU, 0xFFU, 0xFFU, 0x04U, 0x00U, 0x00U,
+        0x00U, 0x04U, 0xDEU, 0xADU, 0xBEU, 0xEFU, 0x00U, 0x00U, 0x00U, 0x14U, 0x00U, 0x00U, 0x00U, 0x06U, 0x01U, 0x00U,
+        0x02U, 0x00U, 0x03U, 0x00U, 0x00U, 0x00U, 0x00U, 0x06U, 0x04U, 0x00U, 0x05U, 0x00U, 0x06U, 0x00U,
+    };
+    REQUIRE(encoded.size() == expected.size());
+    CHECK(std::memcmp(encoded.data(), expected.data(), expected.size()) == 0);
+
+    const auto golden = vlink::Bytes::shallow_copy(expected.data(), expected.size());
+    vlink::autosar::VehicleState target;
+    REQUIRE(Serializer::deserialize(golden, target));
+    CHECK(target.sequence == source.sequence);
+    CHECK(target.valid == source.valid);
+    CHECK(target.mode == source.mode);
+    CHECK(target.temperature == doctest::Approx(source.temperature));
+    CHECK(target.name == source.name);
+    CHECK(target.position.x == source.position.x);
+    CHECK(target.position.y == source.position.y);
+    CHECK(target.samples == source.samples);
+    REQUIRE(target.objects.size() == source.objects.size());
+    CHECK(target.objects[0].x == source.objects[0].x);
+    CHECK(target.objects[0].y == source.objects[0].y);
+    CHECK(target.objects[1].x == source.objects[1].x);
+    CHECK(target.objects[1].y == source.objects[1].y);
+    CHECK(target.payload == source.payload);
+    CHECK(target.matrix == source.matrix);
+  }
+
   TEST_CASE("serializes scalars and enums in big endian order") {
     SomeipScalars source;
     source.byte = 0x12;
@@ -1015,6 +1108,59 @@ TEST_SUITE("ser-someip") {
     SomeipDynamicMatrix target;
     REQUIRE((target << data));
     CHECK(target.values == source.values);
+  }
+
+  TEST_CASE("uses configured length widths for nested array dimensions") {
+    SomeipArrayLengths source;
+    source.dynamic = {{0x0001, 0x0002}, {0x0003}};
+    source.fixed = {{{0x04, 0x05}, {0x06, 0x07}}};
+    source.partial = {{0x08, 0x09}};
+    source.children = {{{0x0A, 0x0B, 0x0C}}};
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    const std::array<uint8_t, 30> expected = {0x0A, 0x00, 0x04, 0x00, 0x01, 0x00, 0x02, 0x00, 0x02, 0x00,
+                                              0x03, 0x02, 0x04, 0x05, 0x02, 0x06, 0x07, 0x06, 0x00, 0x00,
+                                              0x00, 0x02, 0x08, 0x09, 0x05, 0x00, 0x03, 0x0A, 0x0B, 0x0C};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    SomeipArrayLengths target;
+    REQUIRE((target << data));
+    CHECK(target.dynamic == source.dynamic);
+    CHECK(target.fixed == source.fixed);
+    CHECK(target.partial == source.partial);
+    REQUIRE(target.children.size() == source.children.size());
+    CHECK(target.children[0].values == source.children[0].values);
+  }
+
+  TEST_CASE("aligns after a configured multidimensional array") {
+    SomeipAlignedArrayLengths source;
+    source.prefix = 0xAAU;
+    source.values = {{0x01U, 0x02U}};
+    source.suffix = 0xBBU;
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    const std::array<uint8_t, 9> expected = {0xAA, 0x03, 0x02, 0x01, 0x02, 0x00, 0x00, 0x00, 0xBB};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    SomeipAlignedArrayLengths target;
+    REQUIRE((target << data));
+    CHECK(target.prefix == source.prefix);
+    CHECK(target.values == source.values);
+    CHECK(target.suffix == source.suffix);
+  }
+
+  TEST_CASE("rejects dynamic arrays whose elements encode to zero bytes") {
+    SomeipZeroByteArrayElements source;
+    source.values.resize(1U);
+
+    vlink::Bytes data;
+    CHECK_FALSE((source >> data));
   }
 
   TEST_CASE("reuses storage inside existing dynamic array elements") {

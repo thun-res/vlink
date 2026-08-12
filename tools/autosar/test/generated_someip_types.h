@@ -58,61 +58,39 @@ struct VehicleState final {
       VLINK_SOMEIP_LENGTH(payload, 1U),
       matrix
   )
+
+  [[nodiscard]] static VehicleState make_default() {
+    return VehicleState{
+      static_cast<uint32_t>(7U),
+      true,
+      GearMode::kDrive,
+      20.5F,
+      "parked",
+      Position{static_cast<int32_t>(-5), static_cast<int32_t>(8)},
+      std::array<uint16_t, 4>{
+        static_cast<uint16_t>(10U),
+        static_cast<uint16_t>(20U),
+        static_cast<uint16_t>(30U),
+        static_cast<uint16_t>(40U),
+      },
+      std::vector<Position>{
+        Position{static_cast<int32_t>(1), static_cast<int32_t>(2)},
+        Position{static_cast<int32_t>(-3), static_cast<int32_t>(4)},
+      },
+      vlink::Bytes{
+        static_cast<uint8_t>(222U),
+        static_cast<uint8_t>(173U),
+        static_cast<uint8_t>(190U),
+        static_cast<uint8_t>(239U),
+      },
+      std::array<std::array<uint16_t, 3>, 2>{
+        std::array<uint16_t, 3>{static_cast<uint16_t>(1U), static_cast<uint16_t>(2U), static_cast<uint16_t>(3U)},
+        std::array<uint16_t, 3>{static_cast<uint16_t>(4U), static_cast<uint16_t>(5U), static_cast<uint16_t>(6U)},
+      },
+    };
+  }
 };
 
 using VehicleStateApplication = VehicleState;
-
-inline VehicleStateApplication make_vehicle_state_event_initial_value() {
-  return VehicleState{
-    static_cast<uint32_t>(7U),
-    true,
-    GearMode::kDrive,
-    20.5F,
-    "parked",
-    Position{
-      static_cast<int32_t>(-5),
-      static_cast<int32_t>(8)
-    },
-    std::array<uint16_t, 4>{
-      static_cast<uint16_t>(10U),
-      static_cast<uint16_t>(20U),
-      static_cast<uint16_t>(30U),
-      static_cast<uint16_t>(40U)
-    },
-    std::vector<Position>{
-      Position{
-        static_cast<int32_t>(1),
-        static_cast<int32_t>(2)
-      },
-      Position{
-        static_cast<int32_t>(-3),
-        static_cast<int32_t>(4)
-      }
-    },
-    []() {
-      auto bytes = vlink::Bytes::create(4U);
-      if (bytes.size() != 4U) {
-        return bytes;
-      }
-      bytes.data()[0] = static_cast<uint8_t>(222U);
-      bytes.data()[1] = static_cast<uint8_t>(173U);
-      bytes.data()[2] = static_cast<uint8_t>(190U);
-      bytes.data()[3] = static_cast<uint8_t>(239U);
-      return bytes;
-    }(),
-    std::array<std::array<uint16_t, 3>, 2>{
-      std::array<uint16_t, 3>{
-        static_cast<uint16_t>(1U),
-        static_cast<uint16_t>(2U),
-        static_cast<uint16_t>(3U)
-      },
-      std::array<uint16_t, 3>{
-        static_cast<uint16_t>(4U),
-        static_cast<uint16_t>(5U),
-        static_cast<uint16_t>(6U)
-      }
-    }
-  };
-}
 
 }  // namespace vlink::autosar

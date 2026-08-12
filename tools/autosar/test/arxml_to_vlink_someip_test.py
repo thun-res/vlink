@@ -161,6 +161,64 @@ def service_element_deployment_xml(service_elements: str, mapping_refs: str) -> 
     )
 
 
+def nested_alias_deployment_xml(array_width: int = 2) -> str:
+    return package_xml(
+        "Alias",
+        UINT8_BASE
+        + f"""
+        <IMPLEMENTATION-DATA-TYPE>
+          <SHORT-NAME>Leaf</SHORT-NAME><CATEGORY>ARRAY</CATEGORY><SUB-ELEMENTS>
+            <IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              <SHORT-NAME>element</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+              <ARRAY-SIZE>8</ARRAY-SIZE><ARRAY-SIZE-SEMANTICS>VARIABLE-SIZE</ARRAY-SIZE-SEMANTICS>
+              <BASE-TYPE-REF>/Alias/uint8</BASE-TYPE-REF>
+            </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+          </SUB-ELEMENTS>
+        </IMPLEMENTATION-DATA-TYPE>
+        <IMPLEMENTATION-DATA-TYPE>
+          <SHORT-NAME>Plane</SHORT-NAME><CATEGORY>ARRAY</CATEGORY><SUB-ELEMENTS>
+            <IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              <SHORT-NAME>element</SHORT-NAME><CATEGORY>TYPE-REFERENCE</CATEGORY>
+              <ARRAY-SIZE>2</ARRAY-SIZE><ARRAY-SIZE-SEMANTICS>FIXED-SIZE</ARRAY-SIZE-SEMANTICS>
+              <IMPLEMENTATION-DATA-TYPE-REF>/Alias/Leaf</IMPLEMENTATION-DATA-TYPE-REF>
+            </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+          </SUB-ELEMENTS>
+        </IMPLEMENTATION-DATA-TYPE>
+        <IMPLEMENTATION-DATA-TYPE>
+          <SHORT-NAME>Cube</SHORT-NAME><CATEGORY>ARRAY</CATEGORY><SUB-ELEMENTS>
+            <IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              <SHORT-NAME>element</SHORT-NAME><CATEGORY>TYPE-REFERENCE</CATEGORY>
+              <ARRAY-SIZE>2</ARRAY-SIZE><ARRAY-SIZE-SEMANTICS>FIXED-SIZE</ARRAY-SIZE-SEMANTICS>
+              <IMPLEMENTATION-DATA-TYPE-REF>/Alias/Plane</IMPLEMENTATION-DATA-TYPE-REF>
+            </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+          </SUB-ELEMENTS>
+        </IMPLEMENTATION-DATA-TYPE>
+        <IMPLEMENTATION-DATA-TYPE>
+          <SHORT-NAME>Payload</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY><SUB-ELEMENTS>
+            <IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              <SHORT-NAME>values</SHORT-NAME><CATEGORY>TYPE-REFERENCE</CATEGORY>
+              <IMPLEMENTATION-DATA-TYPE-REF>/Alias/Cube</IMPLEMENTATION-DATA-TYPE-REF>
+            </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+          </SUB-ELEMENTS>
+        </IMPLEMENTATION-DATA-TYPE>
+        <SERVICE-INTERFACE><SHORT-NAME>Service</SHORT-NAME><EVENTS>
+          <VARIABLE-DATA-PROTOTYPE>
+            <SHORT-NAME>Event</SHORT-NAME><TYPE-TREF>/Alias/Payload</TYPE-TREF>
+          </VARIABLE-DATA-PROTOTYPE>
+        </EVENTS></SERVICE-INTERFACE>
+        <AP-SOMEIP-TRANSFORMATION-PROPS>
+          <SHORT-NAME>Deployment</SHORT-NAME>
+          <SIZE-OF-ARRAY-LENGTH-FIELD>{array_width}</SIZE-OF-ARRAY-LENGTH-FIELD>
+        </AP-SOMEIP-TRANSFORMATION-PROPS>
+        <TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>
+          <SHORT-NAME>Mapping</SHORT-NAME>
+          <EVENT-REFS><EVENT-REF>/Alias/Service/Event</EVENT-REF></EVENT-REFS>
+          <TRANSFORMATION-PROPS-REF>/Alias/Deployment</TRANSFORMATION-PROPS-REF>
+        </TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>
+        """,
+    )
+
+
 class ArxmlToVlinkSomeipTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -331,6 +389,33 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertIn("using AppMessage = ImplMessage;", result.stdout)
         self.assertNotIn("unusedModelField", result.stdout)
 
+    def test_indexes_ar_packages_and_fragment_roots(self) -> None:
+        wrapped = package_xml(
+            "Roots",
+            """
+            <APPLICATION-PRIMITIVE-DATA-TYPE>
+              <SHORT-NAME>Counter</SHORT-NAME><CATEGORY>UINT32</CATEGORY>
+            </APPLICATION-PRIMITIVE-DATA-TYPE>
+            """,
+        )
+        packages_start = wrapped.index("<AR-PACKAGES>")
+        packages_end = wrapped.index("</AR-PACKAGES>") + len("</AR-PACKAGES>")
+        fragment = """
+        <APPLICATION-PRIMITIVE-DATA-TYPE>
+          <SHORT-NAME>FragmentValue</SHORT-NAME><CATEGORY>SINT16</CATEGORY>
+        </APPLICATION-PRIMITIVE-DATA-TYPE>
+        """
+        cases = (
+            ("packages.arxml", wrapped[packages_start:packages_end], "/Roots/Counter", "uint32_t"),
+            ("fragment.arxml", textwrap.dedent(fragment), "/FragmentValue", "int16_t"),
+        )
+
+        for name, arxml, reference, cpp_type in cases:
+            with self.subTest(root=name):
+                result, _ = self.run_tool({name: arxml}, "--type", reference)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(f"using {reference.rsplit('/', 1)[-1]} = {cpp_type};", result.stdout)
+
     def test_generates_adaptive_cpp_implementation_types(self) -> None:
         arxml = package_xml(
             "Adaptive",
@@ -449,6 +534,42 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(compiled.returncode, 0, compiled.stderr)
+
+    def test_generates_application_value_custom_cpp_and_parameter_prototype(self) -> None:
+        arxml = package_xml(
+            "Formats",
+            UINT8_BASE
+            + """
+            <APPLICATION-VALUE-DATA-TYPE>
+              <SHORT-NAME>ApplicationValue</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+              <BASE-TYPE-REF>/Formats/uint8</BASE-TYPE-REF>
+            </APPLICATION-VALUE-DATA-TYPE>
+            <CUSTOM-CPP-IMPLEMENTATION-DATA-TYPE>
+              <SHORT-NAME>CustomPayload</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY><SUB-ELEMENTS>
+                <CPP-IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                  <SHORT-NAME>value</SHORT-NAME>
+                  <TYPE-REFERENCE-REF>/Formats/ApplicationValue</TYPE-REFERENCE-REF>
+                </CPP-IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              </SUB-ELEMENTS>
+            </CUSTOM-CPP-IMPLEMENTATION-DATA-TYPE>
+            <PARAMETER-DATA-PROTOTYPE>
+              <SHORT-NAME>DefaultParameter</SHORT-NAME><TYPE-TREF>/Formats/CustomPayload</TYPE-TREF>
+              <INIT-VALUE><RECORD-VALUE-SPECIFICATION><FIELDS>
+                <NUMERICAL-VALUE-SPECIFICATION><VALUE>9</VALUE></NUMERICAL-VALUE-SPECIFICATION>
+              </FIELDS></RECORD-VALUE-SPECIFICATION></INIT-VALUE>
+            </PARAMETER-DATA-PROTOTYPE>
+            """,
+        )
+        result, _ = self.run_tool(
+            {"formats.arxml": arxml}, "--prototype", "/Formats/DefaultParameter"
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("using ApplicationValue = uint8_t;", result.stdout)
+        self.assertIn("struct CustomPayload final {", result.stdout)
+        self.assertIn("ApplicationValue value{};", result.stdout)
+        self.assertIn("[[nodiscard]] static CustomPayload make_default()", result.stdout)
+        self.assertIn("static_cast<uint8_t>(9U)", result.stdout)
 
     def test_rejects_optional_adaptive_member_that_requires_tlv(self) -> None:
         arxml = package_xml(
@@ -599,8 +720,92 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
 
         self.assertEqual(accepted.returncode, 0, accepted.stderr)
         self.assertIn("std::vector<uint8_t>{", accepted.stdout)
+        self.assertIn("inline History make_history_value_initial_value()", accepted.stdout)
+        self.assertNotIn("make_default", accepted.stdout)
         self.assertEqual(rejected.returncode, 2)
         self.assertIn("maximum is 3", rejected.stderr)
+
+    def test_struct_initial_value_uses_static_make_default_and_rejects_ambiguity(self) -> None:
+        arxml = package_xml(
+            "Init",
+            UINT8_BASE
+            + """
+            <IMPLEMENTATION-DATA-TYPE>
+              <SHORT-NAME>Payload</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY><SUB-ELEMENTS>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                  <SHORT-NAME>value</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+                  <BASE-TYPE-REF>/Init/uint8</BASE-TYPE-REF>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              </SUB-ELEMENTS>
+            </IMPLEMENTATION-DATA-TYPE>
+            <VARIABLE-DATA-PROTOTYPE>
+              <SHORT-NAME>Defaults</SHORT-NAME><TYPE-TREF>/Init/Payload</TYPE-TREF>
+              <INIT-VALUE><RECORD-VALUE-SPECIFICATION><FIELDS>
+                <NUMERICAL-VALUE-SPECIFICATION><VALUE>7</VALUE></NUMERICAL-VALUE-SPECIFICATION>
+              </FIELDS></RECORD-VALUE-SPECIFICATION></INIT-VALUE>
+            </VARIABLE-DATA-PROTOTYPE>
+            """,
+        )
+        generated, directory = self.run_tool({"default.arxml": arxml}, "--prototype", "Defaults")
+
+        self.assertEqual(generated.returncode, 0, generated.stderr)
+        self.assertIn("uint8_t value{};", generated.stdout)
+        self.assertIn("[[nodiscard]] static Payload make_default()", generated.stdout)
+        self.assertIn("return Payload{static_cast<uint8_t>(7U)};", generated.stdout)
+        self.assertNotIn("inline Payload make_", generated.stdout)
+
+        compiler = os.environ.get("CXX") or shutil.which("c++")
+        if compiler:
+            header = directory / "default.h"
+            source = directory / "default.cc"
+            header.write_text(generated.stdout, encoding="utf-8")
+            source.write_text(
+                '#include "default.h"\n'
+                "void use_default() {\n"
+                "  Payload plain{};\n"
+                "  auto configured = Payload::make_default();\n"
+                "  (void)plain;\n"
+                "  (void)configured;\n"
+                "}\n",
+                encoding="utf-8",
+            )
+            compiled = subprocess.run(
+                [
+                    compiler,
+                    "-std=c++17",
+                    "-fsyntax-only",
+                    "-I",
+                    str(directory),
+                    "-I",
+                    str(self.repo_root / "include"),
+                    str(source),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+
+        second = arxml.replace(
+            "</VARIABLE-DATA-PROTOTYPE>",
+            """</VARIABLE-DATA-PROTOTYPE>
+            <VARIABLE-DATA-PROTOTYPE>
+              <SHORT-NAME>OtherDefaults</SHORT-NAME><TYPE-TREF>/Init/Payload</TYPE-TREF>
+              <INIT-VALUE><RECORD-VALUE-SPECIFICATION><FIELDS>
+                <NUMERICAL-VALUE-SPECIFICATION><VALUE>8</VALUE></NUMERICAL-VALUE-SPECIFICATION>
+              </FIELDS></RECORD-VALUE-SPECIFICATION></INIT-VALUE>
+            </VARIABLE-DATA-PROTOTYPE>""",
+            1,
+        )
+        ambiguous, _ = self.run_tool(
+            {"ambiguous.arxml": second},
+            "--prototype",
+            "Defaults",
+            "--prototype",
+            "OtherDefaults",
+        )
+        self.assertEqual(ambiguous.returncode, 2)
+        self.assertIn("multiple prototype initial values cannot share make_default()", ambiguous.stderr)
 
     def test_text_initial_values_preserve_whitespace_and_empty_strings(self) -> None:
         arxml = package_xml(
@@ -666,14 +871,28 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
                 </IMPLEMENTATION-DATA-TYPE-ELEMENT>
               </SUB-ELEMENTS>
             </IMPLEMENTATION-DATA-TYPE>
+            <SERVICE-INTERFACE>
+              <SHORT-NAME>Service</SHORT-NAME><EVENTS><VARIABLE-DATA-PROTOTYPE>
+                <SHORT-NAME>Event</SHORT-NAME><TYPE-TREF>/Nested/Container</TYPE-TREF>
+              </VARIABLE-DATA-PROTOTYPE></EVENTS>
+            </SERVICE-INTERFACE>
+            <AP-SOMEIP-TRANSFORMATION-PROPS>
+              <SHORT-NAME>Defaults</SHORT-NAME><SIZE-OF-ARRAY-LENGTH-FIELD>2</SIZE-OF-ARRAY-LENGTH-FIELD>
+            </AP-SOMEIP-TRANSFORMATION-PROPS>
+            <TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>
+              <SHORT-NAME>EventDefaults</SHORT-NAME>
+              <EVENT-REFS><EVENT-REF>/Nested/Service/Event</EVENT-REF></EVENT-REFS>
+              <TRANSFORMATION-PROPS-REF>/Nested/Defaults</TRANSFORMATION-PROPS-REF>
+            </TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>
             """,
         )
-        result, _ = self.run_tool({"nested.arxml": arxml}, "--type", "Container")
+        result, _ = self.run_tool({"nested.arxml": arxml}, "--prototype", "Event")
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("struct Container_child final {", result.stdout)
         self.assertIn("VLINK_SOMEIP_FIELDS(state)", result.stdout)
         self.assertIn("std::array<std::array<uint8_t, 3>, 2> matrix{};", result.stdout)
+        self.assertIn("VLINK_SOMEIP_ARRAY_LENGTH(matrix, 2U, 2U)", result.stdout)
         self.assertLess(
             result.stdout.index("struct Container_child final {"),
             result.stdout.index("struct Container final {"),
@@ -701,10 +920,15 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
             """,
         )
         result, _ = self.run_tool({"first.arxml": first, "second.arxml": second})
+        ambiguous, _ = self.run_tool(
+            {"first.arxml": first, "second.arxml": second}, "--type", "Status"
+        )
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("using First_Status = uint8_t;", result.stdout)
         self.assertIn("using Second_Status = uint16_t;", result.stdout)
+        self.assertEqual(ambiguous.returncode, 2)
+        self.assertIn("ambiguous short reference 'Status'", ambiguous.stderr)
 
     def test_generated_symbols_are_globally_unique(self) -> None:
         first = package_xml(
@@ -750,6 +974,14 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
                   <SHORT-NAME>vlink_someip_struct_length</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
                   <BASE-TYPE-REF>/Members/uint8</BASE-TYPE-REF>
                 </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                  <SHORT-NAME>get_vlink_someip_fields</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+                  <BASE-TYPE-REF>/Members/uint8</BASE-TYPE-REF>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                  <SHORT-NAME>make_default</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+                  <BASE-TYPE-REF>/Members/uint8</BASE-TYPE-REF>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
               </SUB-ELEMENTS>
             </IMPLEMENTATION-DATA-TYPE>
             <SERVICE-INTERFACE><SHORT-NAME>Service</SHORT-NAME><EVENTS>
@@ -776,6 +1008,8 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("uint8_t vlink_someip_endian_2{};", result.stdout)
         self.assertIn("uint8_t vlink_someip_struct_length_2{};", result.stdout)
+        self.assertIn("uint8_t get_vlink_someip_fields_2{};", result.stdout)
+        self.assertIn("uint8_t make_default_2{};", result.stdout)
         compiler = os.environ.get("CXX") or shutil.which("c++")
         if compiler:
             header = directory / "members_generated.h"
@@ -890,7 +1124,7 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertIn("VLINK_SOMEIP_LENGTH(name, 1U)", result.stdout)
         self.assertIn("VLINK_SOMEIP_LENGTH(title, 1U)", result.stdout)
         self.assertIn("VLINK_SOMEIP_LENGTH(history, 2U)", result.stdout)
-        self.assertNotIn("make_event_initial_value", result.stdout)
+        self.assertNotIn("make_default", result.stdout)
 
         compiler = os.environ.get("CXX") or shutil.which("c++")
         if not compiler:
@@ -915,6 +1149,24 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
             text=True,
         )
         self.assertEqual(compiled.returncode, 0, compiled.stderr)
+
+    def test_accepts_all_supported_someip_transformation_props_tags(self) -> None:
+        base = someip_length_deployment_xml()
+        tags = (
+            "AP-SOMEIP-TRANSFORMATION-PROPS",
+            "SOMEIP-TRANSFORMATION-PROPS",
+            "SOMEIP-TRANSFORMATION-DESCRIPTION",
+        )
+
+        for tag in tags:
+            with self.subTest(tag=tag):
+                arxml = base.replace("AP-SOMEIP-TRANSFORMATION-PROPS", tag)
+                result, _ = self.run_tool(
+                    {f"{tag.lower()}.arxml": arxml}, "--prototype", "Event", "--strict"
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("VLINK_SOMEIP_LENGTH(dynamic, 2U)", result.stdout)
+                self.assertIn("VLINK_SOMEIP_LENGTH(name, 1U)", result.stdout)
 
     def test_default_someip_lengths_do_not_emit_redundant_macros(self) -> None:
         result, _ = self.run_tool(
@@ -1043,6 +1295,167 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 2)
                 self.assertIn(expected, result.stderr)
 
+    def test_generates_multidimensional_array_length_matrix(self) -> None:
+        template = someip_length_deployment_xml(override_target="/Deploy/Payload/matrix")
+        matrix = """
+            <IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              <SHORT-NAME>matrix</SHORT-NAME><CATEGORY>ARRAY</CATEGORY>
+              <ARRAY-SIZE>2</ARRAY-SIZE><ARRAY-SIZE-SEMANTICS>FIXED-SIZE</ARRAY-SIZE-SEMANTICS>
+              <SUB-ELEMENTS><IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                <SHORT-NAME>row</SHORT-NAME><CATEGORY>ARRAY</CATEGORY>
+                <ARRAY-SIZE>4</ARRAY-SIZE><ARRAY-SIZE-SEMANTICS>VARIABLE-SIZE</ARRAY-SIZE-SEMANTICS>
+                <TYPE-REFERENCE-REF>/Deploy/Child</TYPE-REFERENCE-REF>
+              </IMPLEMENTATION-DATA-TYPE-ELEMENT></SUB-ELEMENTS>
+            </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+        """
+        arxml = template.replace(
+            "          </SUB-ELEMENTS>\n        </IMPLEMENTATION-DATA-TYPE>\n        <SERVICE-INTERFACE>",
+            textwrap.indent(textwrap.dedent(matrix).strip(), "          ")
+            + "\n          </SUB-ELEMENTS>\n        </IMPLEMENTATION-DATA-TYPE>\n        <SERVICE-INTERFACE>",
+            1,
+        )
+
+        for width in (1, 2, 4):
+            with self.subTest(width=width):
+                deployed = arxml.replace(
+                    "<SIZE-OF-ARRAY-LENGTH-FIELD>2</SIZE-OF-ARRAY-LENGTH-FIELD>",
+                    f"<SIZE-OF-ARRAY-LENGTH-FIELD>{width}</SIZE-OF-ARRAY-LENGTH-FIELD>",
+                    1,
+                ).replace(
+                    "<SIZE-OF-ARRAY-LENGTH-FIELD>0</SIZE-OF-ARRAY-LENGTH-FIELD>",
+                    f"<SIZE-OF-ARRAY-LENGTH-FIELD>{width}</SIZE-OF-ARRAY-LENGTH-FIELD>",
+                    1,
+                )
+                result, _ = self.run_tool(
+                    {f"matrix_{width}.arxml": deployed}, "--prototype", "Event", "--strict"
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                if width == 4:
+                    self.assertNotIn("VLINK_SOMEIP_ARRAY_LENGTH(matrix", result.stdout)
+                else:
+                    self.assertIn(
+                        f"VLINK_SOMEIP_ARRAY_LENGTH(matrix, {width}U, {width}U)", result.stdout
+                    )
+                self.assertIn("VLINK_SOMEIP_LENGTH(title, 1U)", result.stdout)
+                if width == 4:
+                    self.assertNotIn("VLINK_SOMEIP_LENGTH(history", result.stdout)
+                else:
+                    self.assertIn(f"VLINK_SOMEIP_LENGTH(history, {width}U)", result.stdout)
+
+        rejected, _ = self.run_tool({"matrix_zero.arxml": arxml}, "--prototype", "Event")
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("/Deploy/Payload/matrix", rejected.stderr)
+        self.assertIn("zero length-field width is only valid for fixed-size arrays", rejected.stderr)
+
+        fixed = arxml.replace(
+            "<ARRAY-SIZE>4</ARRAY-SIZE><ARRAY-SIZE-SEMANTICS>VARIABLE-SIZE</ARRAY-SIZE-SEMANTICS>",
+            "<ARRAY-SIZE>4</ARRAY-SIZE><ARRAY-SIZE-SEMANTICS>FIXED-SIZE</ARRAY-SIZE-SEMANTICS>",
+            1,
+        ).replace(
+            "<TYPE-REFERENCE-REF>/Deploy/Child</TYPE-REFERENCE-REF>",
+            "<BASE-TYPE-REF>/Deploy/uint8</BASE-TYPE-REF>",
+            1,
+        )
+        accepted, _ = self.run_tool({"matrix_fixed_zero.arxml": fixed}, "--prototype", "Event")
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        self.assertIn("VLINK_SOMEIP_ARRAY_LENGTH(matrix, 0U, 0U)", accepted.stdout)
+
+        nested_string = arxml.replace(
+            "<TYPE-REFERENCE-REF>/Deploy/Child</TYPE-REFERENCE-REF>",
+            """<SUB-ELEMENTS><IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                  <SHORT-NAME>cell</SHORT-NAME><CATEGORY>STRING</CATEGORY>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT></SUB-ELEMENTS>""",
+            1,
+        )
+        supported_string = nested_string.replace(
+            "<SIZE-OF-ARRAY-LENGTH-FIELD>0</SIZE-OF-ARRAY-LENGTH-FIELD>",
+            "<SIZE-OF-ARRAY-LENGTH-FIELD>2</SIZE-OF-ARRAY-LENGTH-FIELD>",
+            1,
+        ).replace(
+            "<SIZE-OF-STRING-LENGTH-FIELD>1</SIZE-OF-STRING-LENGTH-FIELD>",
+            "<SIZE-OF-STRING-LENGTH-FIELD>4</SIZE-OF-STRING-LENGTH-FIELD>",
+            1,
+        )
+        supported, _ = self.run_tool(
+            {"matrix_string_default.arxml": supported_string}, "--prototype", "Event", "--strict"
+        )
+        self.assertEqual(supported.returncode, 0, supported.stderr)
+        self.assertIn("VLINK_SOMEIP_ARRAY_LENGTH(matrix, 2U, 2U)", supported.stdout)
+
+        unsupported_string = nested_string.replace(
+            "<SIZE-OF-ARRAY-LENGTH-FIELD>2</SIZE-OF-ARRAY-LENGTH-FIELD>",
+            "<SIZE-OF-ARRAY-LENGTH-FIELD>4</SIZE-OF-ARRAY-LENGTH-FIELD>",
+            1,
+        ).replace(
+            "<SIZE-OF-ARRAY-LENGTH-FIELD>0</SIZE-OF-ARRAY-LENGTH-FIELD>",
+            "<SIZE-OF-ARRAY-LENGTH-FIELD>4</SIZE-OF-ARRAY-LENGTH-FIELD>",
+            1,
+        )
+        unsupported, _ = self.run_tool(
+            {"matrix_string.arxml": unsupported_string}, "--prototype", "Event"
+        )
+        self.assertEqual(unsupported.returncode, 2)
+        self.assertIn("nested string cannot be expressed", unsupported.stderr)
+
+    def test_generates_three_dimensional_array_lengths_through_aliases(self) -> None:
+        result, directory = self.run_tool(
+            {"alias_cube.arxml": nested_alias_deployment_xml()},
+            "--prototype",
+            "Event",
+            "--strict",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("using Leaf = std::vector<uint8_t>;", result.stdout)
+        self.assertIn("using Plane = std::array<Leaf, 2>;", result.stdout)
+        self.assertIn("using Cube = std::array<Plane, 2>;", result.stdout)
+        self.assertIn("VLINK_SOMEIP_ARRAY_LENGTH(values, 2U, 2U, 2U)", result.stdout)
+
+        compiler = os.environ.get("CXX") or shutil.which("c++")
+        if not compiler:
+            return
+        header = directory / "alias_cube.h"
+        source = directory / "alias_cube.cc"
+        header.write_text(result.stdout, encoding="utf-8")
+        source.write_text('#include "alias_cube.h"\n', encoding="utf-8")
+        compiled = subprocess.run(
+            [
+                compiler,
+                "-std=c++17",
+                "-fsyntax-only",
+                "-I",
+                str(directory),
+                "-I",
+                str(self.repo_root / "include"),
+                str(source),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(compiled.returncode, 0, compiled.stderr)
+
+    def test_validates_nested_bytes_array_length_boundary(self) -> None:
+        supported, _ = self.run_tool(
+            {"nested_bytes_default.arxml": nested_alias_deployment_xml(4)},
+            "--prototype",
+            "Event",
+            "--byte-arrays-as-bytes",
+            "--strict",
+        )
+        rejected, _ = self.run_tool(
+            {"nested_bytes_nondefault.arxml": nested_alias_deployment_xml(2)},
+            "--prototype",
+            "Event",
+            "--byte-arrays-as-bytes",
+        )
+
+        self.assertEqual(supported.returncode, 0, supported.stderr)
+        self.assertIn("using Leaf = vlink::Bytes;", supported.stdout)
+        self.assertNotIn("VLINK_SOMEIP_ARRAY_LENGTH(values", supported.stdout)
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("nested bytes cannot be expressed", rejected.stderr)
+
     def test_rejects_unmatched_fine_grained_someip_target(self) -> None:
         result, _ = self.run_tool(
             {
@@ -1068,66 +1481,78 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
 
     def test_applies_field_and_method_direction_deployment_mappings(self) -> None:
         cases = {
-            "field": service_element_deployment_xml(
-                """
+            "field": (
+                service_element_deployment_xml(
+                    """
                 <FIELDS><FIELD>
                   <SHORT-NAME>State</SHORT-NAME><TYPE-TREF>/ServiceDeploy/Payload</TYPE-TREF>
                 </FIELD></FIELDS>
-                """,
-                """
+                    """,
+                    """
                 <FIELD-REFS><FIELD-REF>/ServiceDeploy/Service/State</FIELD-REF></FIELD-REFS>
-                """,
+                    """,
+                ),
+                "/ServiceDeploy/Service/State",
             ),
-            "method_call": service_element_deployment_xml(
-                """
+            "method_call": (
+                service_element_deployment_xml(
+                    """
                 <METHODS><CLIENT-SERVER-OPERATION>
                   <SHORT-NAME>SetState</SHORT-NAME><ARGUMENTS><ARGUMENT-DATA-PROTOTYPE>
                     <SHORT-NAME>request</SHORT-NAME><TYPE-TREF>/ServiceDeploy/Payload</TYPE-TREF>
                     <DIRECTION>IN</DIRECTION>
                   </ARGUMENT-DATA-PROTOTYPE></ARGUMENTS>
                 </CLIENT-SERVER-OPERATION></METHODS>
-                """,
-                """
+                    """,
+                    """
                 <METHOD-CALL-REFS>
                   <METHOD-CALL-REF>/ServiceDeploy/Service/SetState</METHOD-CALL-REF>
                 </METHOD-CALL-REFS>
-                """,
+                    """,
+                ),
+                "/ServiceDeploy/Service/SetState/request",
             ),
-            "method_return": service_element_deployment_xml(
-                """
+            "method_return": (
+                service_element_deployment_xml(
+                    """
                 <METHODS><CLIENT-SERVER-OPERATION>
                   <SHORT-NAME>GetState</SHORT-NAME><ARGUMENTS><ARGUMENT-DATA-PROTOTYPE>
                     <SHORT-NAME>response</SHORT-NAME><TYPE-TREF>/ServiceDeploy/Payload</TYPE-TREF>
                     <DIRECTION>OUT</DIRECTION>
                   </ARGUMENT-DATA-PROTOTYPE></ARGUMENTS>
                 </CLIENT-SERVER-OPERATION></METHODS>
-                """,
-                """
+                    """,
+                    """
                 <METHOD-RETURN-REFS>
                   <METHOD-RETURN-REF>/ServiceDeploy/Service/GetState</METHOD-RETURN-REF>
                 </METHOD-RETURN-REFS>
-                """,
+                    """,
+                ),
+                "/ServiceDeploy/Service/GetState/response",
             ),
-            "method_inout": service_element_deployment_xml(
-                """
+            "method_inout": (
+                service_element_deployment_xml(
+                    """
                 <METHODS><CLIENT-SERVER-OPERATION>
                   <SHORT-NAME>ExchangeState</SHORT-NAME><ARGUMENTS><ARGUMENT-DATA-PROTOTYPE>
                     <SHORT-NAME>state</SHORT-NAME><TYPE-TREF>/ServiceDeploy/Payload</TYPE-TREF>
                     <DIRECTION>INOUT</DIRECTION>
                   </ARGUMENT-DATA-PROTOTYPE></ARGUMENTS>
                 </CLIENT-SERVER-OPERATION></METHODS>
-                """,
-                """
+                    """,
+                    """
                 <METHOD-REFS>
                   <METHOD-REF>/ServiceDeploy/Service/ExchangeState</METHOD-REF>
                 </METHOD-REFS>
-                """,
+                    """,
+                ),
+                "/ServiceDeploy/Service/ExchangeState/state",
             ),
         }
-        for name, arxml in cases.items():
+        for name, (arxml, prototype) in cases.items():
             with self.subTest(name=name):
                 result, _ = self.run_tool(
-                    {f"{name}.arxml": arxml}, "--type", "Payload", "--strict"
+                    {f"{name}.arxml": arxml}, "--prototype", prototype, "--strict"
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("VLINK_SOMEIP_STRUCT_LENGTH(2U)", result.stdout)
@@ -1274,8 +1699,43 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         )
         listed, directory = self.run_tool({"list.arxml": arxml}, "--list-types")
         input_path = directory / "list.arxml"
+        expected = subprocess.run(
+            [sys.executable, str(self.tool), str(input_path)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        output_path = directory / "generated.h"
+        output_path.write_text("old\n", encoding="utf-8")
+        if os.name != "nt":
+            output_path.chmod(0o600)
+        written = subprocess.run(
+            [sys.executable, str(self.tool), str(input_path), "--output", str(output_path)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        new_output_path = directory / "new_generated.h"
+        new_written = subprocess.run(
+            [sys.executable, str(self.tool), str(input_path), "--output", str(new_output_path)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
         overwrite = subprocess.run(
             [sys.executable, str(self.tool), str(input_path), "--output", str(input_path)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        missing_parent = subprocess.run(
+            [
+                sys.executable,
+                str(self.tool),
+                str(input_path),
+                "--output",
+                str(directory / "missing" / "generated.h"),
+            ],
             check=False,
             capture_output=True,
             text=True,
@@ -1283,8 +1743,20 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
 
         self.assertEqual(listed.returncode, 0, listed.stderr)
         self.assertIn("/List/Counter\tAPPLICATION-PRIMITIVE-DATA-TYPE", listed.stdout)
+        self.assertEqual(expected.returncode, 0, expected.stderr)
+        self.assertEqual(written.returncode, 0, written.stderr)
+        self.assertEqual(written.stdout, "")
+        self.assertEqual(output_path.read_text(encoding="utf-8"), expected.stdout)
+        self.assertEqual(new_written.returncode, 0, new_written.stderr)
+        self.assertEqual(new_written.stdout, "")
+        self.assertEqual(new_output_path.read_text(encoding="utf-8"), expected.stdout)
+        if os.name != "nt":
+            self.assertEqual(output_path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(new_output_path.stat().st_mode & 0o777, 0o644)
         self.assertEqual(overwrite.returncode, 2)
         self.assertIn("must not overwrite", overwrite.stderr)
+        self.assertEqual(missing_parent.returncode, 2)
+        self.assertIn("output directory does not exist", missing_parent.stderr)
 
     def test_lists_nested_data_prototypes(self) -> None:
         listed = subprocess.run(
@@ -1315,6 +1787,210 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 2)
         self.assertIn("does not fit uint32_t", result.stderr)
+
+    def test_rejects_invalid_composite_initial_values(self) -> None:
+        base = self.fixture.read_text(encoding="utf-8")
+        wrong_spec = base.replace(
+            "<INIT-VALUE>\n                    <RECORD-VALUE-SPECIFICATION>",
+            "<INIT-VALUE>\n                    <ARRAY-VALUE-SPECIFICATION>",
+            1,
+        ).replace(
+            "                    </RECORD-VALUE-SPECIFICATION>\n                  </INIT-VALUE>",
+            "                    </ARRAY-VALUE-SPECIFICATION>\n                  </INIT-VALUE>",
+            1,
+        )
+        extra_record_field = base.replace(
+            "<RECORD-VALUE-SPECIFICATION>\n                      <FIELDS>",
+            """<RECORD-VALUE-SPECIFICATION>
+                      <FIELDS>
+                        <NUMERICAL-VALUE-SPECIFICATION><VALUE>0</VALUE></NUMERICAL-VALUE-SPECIFICATION>""",
+            1,
+        )
+        short_fixed_array = base.replace(
+            "                            <NUMERICAL-VALUE-SPECIFICATION><VALUE>40</VALUE>"
+            "</NUMERICAL-VALUE-SPECIFICATION>\n",
+            "",
+            1,
+        )
+        cases = (
+            (wrong_spec, "expected RECORD-VALUE-SPECIFICATION, got ARRAY-VALUE-SPECIFICATION"),
+            (extra_record_field, "record initial value has 11 field(s), expected 10"),
+            (short_fixed_array, "array initial value has 3 element(s), expected 4"),
+        )
+
+        for index, (arxml, expected) in enumerate(cases):
+            with self.subTest(expected=expected):
+                result, _ = self.run_tool(
+                    {f"composite_{index}.arxml": arxml},
+                    "--prototype",
+                    "VehicleStateEvent",
+                    "--byte-arrays-as-bytes",
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(expected, result.stderr)
+
+    def test_rejects_invalid_constant_initial_values(self) -> None:
+        base = self.fixture.read_text(encoding="utf-8")
+        constant_ref = (
+            '<CONSTANT-REF DEST="CONSTANT-SPECIFICATION">'
+            "/VLink/ServiceInterfaces/InitialSequence</CONSTANT-REF>"
+        )
+        missing_ref = base.replace(constant_ref, "<SHORT-LABEL>missing</SHORT-LABEL>", 1)
+        wrong_target = base.replace(
+            "/VLink/ServiceInterfaces/InitialSequence</CONSTANT-REF>",
+            "/VLink/ImplementationTypes/VehicleState</CONSTANT-REF>",
+            1,
+        )
+        missing_value = base.replace(
+            """<VALUE-SPEC>
+                <NUMERICAL-VALUE-SPECIFICATION><VALUE>7</VALUE></NUMERICAL-VALUE-SPECIFICATION>
+              </VALUE-SPEC>""",
+            "<VALUE-SPEC/>",
+            1,
+        )
+        cyclic = base.replace(
+            "<NUMERICAL-VALUE-SPECIFICATION><VALUE>7</VALUE></NUMERICAL-VALUE-SPECIFICATION>",
+            f"<CONSTANT-REFERENCE>{constant_ref}</CONSTANT-REFERENCE>",
+            1,
+        )
+        cases = (
+            (missing_ref, "CONSTANT-REFERENCE has no CONSTANT-REF"),
+            (wrong_target, "is not a CONSTANT-SPECIFICATION"),
+            (missing_value, "constant has no VALUE-SPEC"),
+            (cyclic, "cyclic CONSTANT-REFERENCE"),
+        )
+
+        for index, (arxml, expected) in enumerate(cases):
+            with self.subTest(expected=expected):
+                result, _ = self.run_tool(
+                    {f"constant_{index}.arxml": arxml},
+                    "--prototype",
+                    "VehicleStateEvent",
+                    "--byte-arrays-as-bytes",
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(expected, result.stderr)
+
+    def test_rejects_invalid_scalar_initial_values(self) -> None:
+        base = self.fixture.read_text(encoding="utf-8")
+        boolean = (
+            "<NUMERICAL-VALUE-SPECIFICATION><VALUE>true</VALUE>"
+            "</NUMERICAL-VALUE-SPECIFICATION>"
+        )
+        application_value = "<SW-VALUES-PHYS><VT>drive</VT></SW-VALUES-PHYS>"
+        cases = (
+            (base.replace(boolean, "<NUMERICAL-VALUE-SPECIFICATION/>", 1), "has no VALUE"),
+            (
+                base.replace(
+                    boolean,
+                    "<NUMERICAL-VALUE-SPECIFICATION><VALUE/></NUMERICAL-VALUE-SPECIFICATION>",
+                    1,
+                ),
+                "scalar initial value is empty",
+            ),
+            (
+                base.replace(
+                    boolean,
+                    "<ARRAY-VALUE-SPECIFICATION><ELEMENTS/></ARRAY-VALUE-SPECIFICATION>",
+                    1,
+                ),
+                "unsupported scalar initial value specification",
+            ),
+            (base.replace(application_value, "<SW-VALUES-PHYS/>", 1), "exactly one V or VT"),
+            (
+                base.replace(
+                    application_value,
+                    "<SW-VALUES-PHYS><VT>drive</VT><V>1</V></SW-VALUES-PHYS>",
+                    1,
+                ),
+                "exactly one V or VT",
+            ),
+            (base.replace(">drive<", ">flying<", 1), "unknown GearMode enumeration label"),
+            (base.replace(">true<", ">maybe<", 1), "invalid boolean initial value"),
+            (base.replace(">20.5<", ">invalid<", 1), "invalid floating-point initial value"),
+            (base.replace(">20.5<", ">nan<", 1), "non-finite floating-point"),
+            (base.replace(">7<", ">invalid<", 1), "invalid integer initial value"),
+        )
+
+        for index, (arxml, expected) in enumerate(cases):
+            with self.subTest(expected=expected):
+                result, _ = self.run_tool(
+                    {f"scalar_{index}.arxml": arxml},
+                    "--prototype",
+                    "VehicleStateEvent",
+                    "--byte-arrays-as-bytes",
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(expected, result.stderr)
+
+    def test_renders_64_bit_initial_value_boundaries(self) -> None:
+        arxml = package_xml(
+            "Boundary",
+            """
+            <SW-BASE-TYPE>
+              <SHORT-NAME>uint64</SHORT-NAME><BASE-TYPE-SIZE>64</BASE-TYPE-SIZE>
+              <NATIVE-DECLARATION>uint64</NATIVE-DECLARATION>
+            </SW-BASE-TYPE>
+            <SW-BASE-TYPE>
+              <SHORT-NAME>sint64</SHORT-NAME><BASE-TYPE-SIZE>64</BASE-TYPE-SIZE>
+              <BASE-TYPE-ENCODING>2C</BASE-TYPE-ENCODING>
+            </SW-BASE-TYPE>
+            <IMPLEMENTATION-DATA-TYPE>
+              <SHORT-NAME>Limits</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY><SUB-ELEMENTS>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                  <SHORT-NAME>maximum</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+                  <BASE-TYPE-REF>/Boundary/uint64</BASE-TYPE-REF>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                  <SHORT-NAME>minimum</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+                  <BASE-TYPE-REF>/Boundary/sint64</BASE-TYPE-REF>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              </SUB-ELEMENTS>
+            </IMPLEMENTATION-DATA-TYPE>
+            <VARIABLE-DATA-PROTOTYPE>
+              <SHORT-NAME>Defaults</SHORT-NAME><TYPE-TREF>/Boundary/Limits</TYPE-TREF>
+              <INIT-VALUE><RECORD-VALUE-SPECIFICATION><FIELDS>
+                <NUMERICAL-VALUE-SPECIFICATION>
+                  <VALUE>18446744073709551615</VALUE>
+                </NUMERICAL-VALUE-SPECIFICATION>
+                <NUMERICAL-VALUE-SPECIFICATION>
+                  <VALUE>-9223372036854775808</VALUE>
+                </NUMERICAL-VALUE-SPECIFICATION>
+              </FIELDS></RECORD-VALUE-SPECIFICATION></INIT-VALUE>
+            </VARIABLE-DATA-PROTOTYPE>
+            """,
+        )
+        result, directory = self.run_tool(
+            {"boundaries.arxml": arxml}, "--prototype", "Defaults"
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("static_cast<uint64_t>(18446744073709551615ULL)", result.stdout)
+        self.assertIn("static_cast<int64_t>((-9223372036854775807LL - 1LL))", result.stdout)
+
+        compiler = os.environ.get("CXX") or shutil.which("c++")
+        if not compiler:
+            return
+        header = directory / "boundaries.h"
+        source = directory / "boundaries.cc"
+        header.write_text(result.stdout, encoding="utf-8")
+        source.write_text('#include "boundaries.h"\n', encoding="utf-8")
+        compiled = subprocess.run(
+            [
+                compiler,
+                "-std=c++17",
+                "-fsyntax-only",
+                "-I",
+                str(directory),
+                "-I",
+                str(self.repo_root / "include"),
+                str(source),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(compiled.returncode, 0, compiled.stderr)
 
     def test_parses_autosar_octal_float_and_rejects_recursive_or_fixed_string(self) -> None:
         arxml = package_xml(
@@ -1444,6 +2120,38 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         )
         self.assertEqual(standalone.returncode, 0, standalone.stderr)
 
+    def test_rejects_conflicting_split_type_definitions(self) -> None:
+        first = package_xml(
+            "Split",
+            """
+            <IMPLEMENTATION-DATA-TYPE>
+              <SHORT-NAME>Value</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+              <BASE-TYPE-REF>/AUTOSAR/PlatformTypes/uint8</BASE-TYPE-REF>
+            </IMPLEMENTATION-DATA-TYPE>
+            """,
+        )
+        different_tag = package_xml(
+            "Split",
+            """
+            <APPLICATION-PRIMITIVE-DATA-TYPE>
+              <SHORT-NAME>Value</SHORT-NAME><CATEGORY>UINT8</CATEGORY>
+            </APPLICATION-PRIMITIVE-DATA-TYPE>
+            """,
+        )
+        conflicting_leaf = first.replace("<CATEGORY>VALUE</CATEGORY>", "<CATEGORY>BOOLEAN</CATEGORY>")
+        cases = (
+            (different_tag, "different element types"),
+            (conflicting_leaf, "conflicting 'CATEGORY' values"),
+        )
+
+        for index, (second, expected) in enumerate(cases):
+            with self.subTest(expected=expected):
+                result, _ = self.run_tool(
+                    {"first.arxml": first, f"second_{index}.arxml": second}
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(expected, result.stderr)
+
     def test_rejects_unsupported_someip_deployments(self) -> None:
         base = someip_length_deployment_xml()
         legacy = base.replace(
@@ -1458,6 +2166,18 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 2)
         self.assertIn("legacy SOME/IP string serialization", result.stderr)
+
+        non_utf8 = base.replace(
+            "<SHORT-NAME>Defaults</SHORT-NAME><ALIGNMENT>8</ALIGNMENT>",
+            "<SHORT-NAME>Defaults</SHORT-NAME><ALIGNMENT>8</ALIGNMENT>"
+            "<STRING-ENCODING>UTF-16</STRING-ENCODING>",
+            1,
+        )
+        encoding_result, _ = self.run_tool(
+            {"encoding.arxml": non_utf8}, "--prototype", "/Deploy/Service/Event"
+        )
+        self.assertEqual(encoding_result.returncode, 2)
+        self.assertIn("SOME/IP string encoding 'UTF-16' is not supported", encoding_result.stderr)
 
         tlv = base.replace(
             "<SHORT-NAME>EventDefaults</SHORT-NAME>",
@@ -1589,6 +2309,39 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
 
         self.assertEqual(generated.returncode, 0, generated.stderr)
         self.assertEqual(generated.stdout, self.golden.read_text(encoding="utf-8"))
+        self.assertIn("[[nodiscard]] static VehicleState make_default()", generated.stdout)
+        self.assertNotIn("make_vehicle_state_event_initial_value", generated.stdout)
+
+        compiler = os.environ.get("CXX") or shutil.which("c++")
+        if not compiler:
+            return
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        directory = Path(temporary.name)
+        header = directory / "generated.h"
+        source = directory / "make_default.cc"
+        header.write_text(generated.stdout, encoding="utf-8")
+        source.write_text(
+            '#include "generated.h"\n'
+            "auto make_state() { return vlink::autosar::VehicleState::make_default(); }\n",
+            encoding="utf-8",
+        )
+        compiled = subprocess.run(
+            [
+                compiler,
+                "-std=c++17",
+                "-fsyntax-only",
+                "-I",
+                str(directory),
+                "-I",
+                str(self.repo_root / "include"),
+                str(source),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(compiled.returncode, 0, compiled.stderr)
 
     def test_r25_11_fixture_generates_all_types_in_strict_mode(self) -> None:
         generated = subprocess.run(

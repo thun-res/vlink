@@ -21,6 +21,7 @@
 | `VLINK_SOMEIP_ENDIAN(endian)` | 配置顶层 payload 标量的大小端 |
 | `VLINK_SOMEIP_ENDIAN_BIG` / `VLINK_SOMEIP_ENDIAN_LITTLE` | 显式配置大端或小端 payload 标量 |
 | `VLINK_SOMEIP_LENGTH(field, n)` | 配置单个字段的长度宽度 |
+| `VLINK_SOMEIP_ARRAY_LENGTH(field, ...)` | 从外到内配置多维数组的长度宽度 |
 | `VLINK_SOMEIP_STRUCT_LENGTH(n)` | 配置结构体的长度宽度 |
 
 ## 🚀 最小可运行片段

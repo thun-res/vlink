@@ -83,6 +83,8 @@
 #include <flatbuffers/flatbuffers.h>
 #endif
 
+#include "../impl/someip_serializer.h"
+
 namespace vlink {
 
 namespace Serializer {  // NOLINT(readability-identifier-naming)

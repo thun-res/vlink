@@ -55,10 +55,11 @@ DATA_TYPE_REF_TAGS = {
 
 VLINK_SOMEIP_MEMBER_NAMES = {
     "get_serialized_size",
+    "make_default",
     "is_vlink_someip_type",
     "vlink_someip_alignment",
     "vlink_someip_endian",
-    "vlink_someip_fields",
+    "get_vlink_someip_fields",
     "vlink_someip_struct_length",
 }
 
@@ -110,6 +111,7 @@ class StructField:
     type_expr: TypeExpr
     source_ref: str
     length_width: Optional[int] = None
+    array_dimensions: int = 1
 
 
 @dataclass
@@ -982,6 +984,7 @@ class SomeipGenerator:
                     if override is not None:
                         matched_overrides.add(member.source_ref)
                     width = self._width_for_expression(member.type_expr, props, member.source_ref)
+                    dimensions = self._array_dimensions(member.type_expr, props, width, member.source_ref)
                     if self._length_kind(member.type_expr) in {"array", "bytes", "string", "vector"}:
                         self._record_field_width(
                             member.source_ref, 4 if width is None else width, prototype_ref
@@ -992,6 +995,7 @@ class SomeipGenerator:
                             member.type_expr,
                             member.source_ref,
                             width if width != 4 else None,
+                            dimensions,
                         )
                     )
                     visit(member.type_expr, props, member.source_ref)
@@ -1125,11 +1129,6 @@ class SomeipGenerator:
             raise GeneratorError(f"{context}: unsupported SOME/IP {kind} length width {width}; expected 0, 1, 2, or 4")
         if width == 0 and kind != "array":
             raise GeneratorError(f"{context}: zero length-field width is only valid for fixed-size arrays")
-        if width != 4 and self._contains_nested_length_delimited(expression):
-            raise GeneratorError(
-                f"{context}: non-default length width for nested containers cannot be expressed by "
-                "VLINK_SOMEIP_LENGTH"
-            )
         return width
 
     def _resolve_alias(self, expression: TypeExpr) -> TypeExpr:
@@ -1150,11 +1149,29 @@ class SomeipGenerator:
         declaration = self.declarations.get(resolved.value)
         return declaration.kind if declaration is not None else "ref"
 
-    def _contains_nested_length_delimited(self, expression: TypeExpr) -> bool:
+    def _array_dimensions(
+        self, expression: TypeExpr, props: Optional[SomeipProps], width: Optional[int], context: str
+    ) -> int:
         resolved = self._resolve_alias(expression)
-        if resolved.kind not in {"array", "vector"} or resolved.element is None:
-            return False
-        return self._length_kind(resolved.element) in {"array", "bytes", "string", "vector"}
+        dimensions = 0
+        while resolved.kind in {"array", "vector"} and resolved.element is not None:
+            if width == 0 and resolved.kind == "vector":
+                raise GeneratorError(f"{context}: zero length-field width is only valid for fixed-size arrays")
+            dimensions += 1
+            resolved = self._resolve_alias(resolved.element)
+        if dimensions > 0 and resolved.kind == "bytes" and width not in {None, 4}:
+            raise GeneratorError(
+                f"{context}: non-default length width for nested bytes cannot be expressed by "
+                "VLINK_SOMEIP_ARRAY_LENGTH"
+            )
+        if dimensions > 0 and resolved.kind == "string" and props is not None and props.string_width not in {None, 4}:
+            raise GeneratorError(
+                f"{context}: non-default length width for nested string cannot be expressed by "
+                "VLINK_SOMEIP_ARRAY_LENGTH"
+            )
+        if width in {None, 4}:
+            return 1
+        return max(dimensions, 1)
 
     def _record_field_width(self, field_ref: str, width: int, prototype_ref: str) -> None:
         previous = self._field_deployment_widths.get(field_ref)
@@ -1700,8 +1717,11 @@ class SomeipGenerator:
     def _render_braced_initial(cpp_type: str, values: Sequence[str]) -> str:
         if not values:
             return f"{cpp_type}{{}}"
+        single_line = f"{cpp_type}{{{', '.join(values)}}}"
+        if all("\n" not in value for value in values) and len(single_line) <= 110:
+            return single_line
         body = ",\n".join("  " + value.replace("\n", "\n  ") for value in values)
-        return f"{cpp_type}{{\n{body}\n}}"
+        return f"{cpp_type}{{\n{body},\n}}"
 
     def _resolve_constant_value(
         self, value_spec: ET.Element, context: str, seen: Optional[Set[str]] = None
@@ -1833,16 +1853,7 @@ class SomeipGenerator:
             )
             for index, element in enumerate(elements)
         ]
-        lines = [
-            "[]() {",
-            f"  auto bytes = vlink::Bytes::create({len(values)}U);",
-            f"  if (bytes.size() != {len(values)}U) {{",
-            "    return bytes;",
-            "  }",
-        ]
-        lines.extend(f"  bytes.data()[{index}] = {value};" for index, value in enumerate(values))
-        lines.extend(["  return bytes;", "}()"])
-        return "\n".join(lines)
+        return self._render_braced_initial("vlink::Bytes", values)
 
     @staticmethod
     def _dependencies(declaration: TypeDecl) -> Set[str]:
@@ -1920,15 +1931,29 @@ class SomeipGenerator:
             lines.append(f"namespace {'::'.join(namespace_parts)} {{")
             lines.append("")
 
-        for ref in ordered:
-            declaration = self.declarations[ref]
-            lines.extend(self._render_decl(declaration))
-            lines.append("")
-
-        used_factory_names: Set[str] = {self.declarations[ref].name for ref in ordered}
+        struct_defaults: Dict[str, InitialValue] = {}
+        standalone_initials: List[InitialValue] = []
         for initial in self.initial_values:
             if initial.value_spec is None:
                 continue
+            resolved = self._resolve_alias(TypeExpr("ref", initial.type_ref))
+            declaration = self.declarations.get(resolved.value) if resolved.kind == "ref" else None
+            if declaration is None or declaration.kind != "struct":
+                standalone_initials.append(initial)
+                continue
+            if resolved.value in struct_defaults:
+                raise GeneratorError(
+                    f"{declaration.ref}: multiple prototype initial values cannot share make_default()"
+                )
+            struct_defaults[resolved.value] = initial
+
+        for ref in ordered:
+            declaration = self.declarations[ref]
+            lines.extend(self._render_decl(declaration, struct_defaults.get(ref)))
+            lines.append("")
+
+        used_factory_names: Set[str] = {self.declarations[ref].name for ref in ordered}
+        for initial in standalone_initials:
             base_name = f"make_{snake_case(initial.name)}_initial_value"
             function_name = unique_name(base_name, used_factory_names)
             lines.extend(self._render_initial_factory(initial, function_name))
@@ -1939,7 +1964,7 @@ class SomeipGenerator:
             lines.append("")
         return "\n".join(lines)
 
-    def _render_decl(self, declaration: TypeDecl) -> List[str]:
+    def _render_decl(self, declaration: TypeDecl, initial: Optional[InitialValue] = None) -> List[str]:
         if declaration.kind == "alias":
             return [f"using {declaration.name} = {self._render_expr(declaration.alias)};"]
         if declaration.kind == "enum":
@@ -1972,6 +1997,12 @@ class SomeipGenerator:
                 comma = "," if index + 1 < len(declaration.fields) else ""
                 lines.append(f"      {self._render_field(member)}{comma}")
             lines.append("  )")
+        if initial is not None:
+            initializer = self._render_initial_expr(TypeExpr("ref", initial.type_ref), initial.value_spec, initial.ref)
+            lines.append("")
+            lines.append(f"  [[nodiscard]] static {declaration.name} make_default() {{")
+            lines.extend("    " + line for line in ("return " + initializer + ";").splitlines())
+            lines.append("  }")
         lines.append("};")
         return lines
 
@@ -1994,6 +2025,9 @@ class SomeipGenerator:
     def _render_field(member: StructField) -> str:
         if member.length_width is None:
             return member.name
+        if member.array_dimensions > 1:
+            widths = ", ".join(f"{member.length_width}U" for _ in range(member.array_dimensions))
+            return f"VLINK_SOMEIP_ARRAY_LENGTH({member.name}, {widths})"
         return f"VLINK_SOMEIP_LENGTH({member.name}, {member.length_width}U)"
 
     def _render_expr(self, expression: Optional[TypeExpr]) -> str:
@@ -2071,7 +2105,7 @@ def create_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="REF",
-        help="generate a data prototype type and, when INIT-VALUE exists, its factory; repeatable",
+        help="generate a data prototype type and, when INIT-VALUE exists, its default initializer; repeatable",
     )
     parser.add_argument("--list-types", action="store_true", help="list indexed data types and exit")
     parser.add_argument(

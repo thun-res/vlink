@@ -60,9 +60,9 @@
  * | @c bool                         | One byte; the encoder emits @c 0 or @c 1.              |
  * | Fixed-width integer or enum     | Natural width in the configured payload byte order.    |
  * | @c float / @c double            | IEEE 754 binary32 / binary64 in configured byte order. |
- * | @c std::string                  | Byte length, UTF-8 BOM, content, null terminator.       |
+ * | @c std::string                  | Byte length, UTF-8 BOM, content, null terminator.      |
  * | @c Bytes / @c vector            | Byte length followed by encoded content.               |
- * | @c array                        | Optional byte length followed by encoded content.       |
+ * | @c array                        | Optional byte length followed by encoded content.      |
  * | Macro-declared nested structure | Optional byte length followed by declared fields.      |
  *
  * Lengths count encoded bytes; string lengths include the UTF-8 BOM and null
@@ -88,9 +88,8 @@
  *
  * This codec targets non-TLV payloads and preserves embedded null bytes in
  * dynamic UTF-8 strings.  It does not support mixed or opaque field byte
- * order, per-dimension nested-array length widths, UTF-16 or fixed-length
- * strings, unions, C++ bit-fields, optional TLV members, or deployment
- * maximum-length constraints.
+ * order, UTF-16 or fixed-length strings, unions, C++ bit-fields, optional TLV
+ * members, or deployment maximum-length constraints.
  */
 
 #pragma once
@@ -120,7 +119,7 @@ namespace SomeipSerializer {  // NOLINT(readability-identifier-naming)
  * The 32-bit SOME/IP Length field includes the eight bytes from Request ID
  * through Return Code, leaving this many bytes for the payload.
  */
-inline constexpr size_t kMaxPayloadSize = std::numeric_limits<uint32_t>::max() - 8U;
+static constexpr size_t kMaxPayloadSize = std::numeric_limits<uint32_t>::max() - 8U;
 
 /**
  * @enum Endian
@@ -397,6 +396,8 @@ inline bool write_value(Writer& writer, const T& value) noexcept;
  * @details
  * The prefix counts encoded bytes, not elements.  The @c vector<bool>
  * specialization is traversed by value to avoid proxy-reference dispatch.
+ * An element that encodes to zero bytes is rejected because its count cannot
+ * be represented by the byte-length prefix.
  *
  * @tparam T           Element type supported by @c write_value().
  * @tparam AllocatorT  Vector allocator type.
@@ -405,9 +406,9 @@ inline bool write_value(Writer& writer, const T& value) noexcept;
  * @param len          Length field width in bytes.
  * @return @c true on success; @c false on overflow or element encoding failure.
  */
-template <typename T, typename AllocatorT>
-inline bool write_value(Writer& writer, const std::vector<T, AllocatorT>& value,
-                        size_t len = sizeof(uint32_t)) noexcept;
+template <typename T, typename AllocatorT, size_t... InnerLenT>
+inline bool write_value(Writer& writer, const std::vector<T, AllocatorT>& value, size_t len = sizeof(uint32_t),
+                        std::index_sequence<InnerLenT...> = {}) noexcept;
 
 /**
  * @brief Encodes a fixed-size array with an optional byte-length prefix.
@@ -419,8 +420,9 @@ inline bool write_value(Writer& writer, const std::vector<T, AllocatorT>& value,
  * @param len     Length field width in bytes, or zero to omit it.
  * @return @c true on success; @c false on overflow or element encoding failure.
  */
-template <typename T, size_t SizeT>
-inline bool write_value(Writer& writer, const std::array<T, SizeT>& value, size_t len = sizeof(uint32_t)) noexcept;
+template <typename T, size_t SizeT, size_t... InnerLenT>
+inline bool write_value(Writer& writer, const std::array<T, SizeT>& value, size_t len = sizeof(uint32_t),
+                        std::index_sequence<InnerLenT...> = {}) noexcept;
 
 /**
  * @name Primitive SOME/IP decoders
@@ -489,8 +491,9 @@ inline bool read_value(Reader& reader, T& value, size_t end);
  * @param len          Length field width in bytes.
  * @return @c true on success; @c false for an invalid length or element encoding.
  */
-template <typename T, typename AllocatorT>
-inline bool read_value(Reader& reader, std::vector<T, AllocatorT>& value, size_t end, size_t len = sizeof(uint32_t));
+template <typename T, typename AllocatorT, size_t... InnerLenT>
+inline bool read_value(Reader& reader, std::vector<T, AllocatorT>& value, size_t end, size_t len = sizeof(uint32_t),
+                       std::index_sequence<InnerLenT...> = {});
 
 /**
  * @brief Decodes a byte-length-delimited fixed-size array.
@@ -508,8 +511,9 @@ inline bool read_value(Reader& reader, std::vector<T, AllocatorT>& value, size_t
  * @param len     Length field width in bytes, or zero when omitted.
  * @return @c true on success; @c false when the length cannot contain all elements.
  */
-template <typename T, size_t SizeT>
-inline bool read_value(Reader& reader, std::array<T, SizeT>& value, size_t end, size_t len = sizeof(uint32_t));
+template <typename T, size_t SizeT, size_t... InnerLenT>
+inline bool read_value(Reader& reader, std::array<T, SizeT>& value, size_t end, size_t len = sizeof(uint32_t),
+                       std::index_sequence<InnerLenT...> = {});
 
 /**
  * @brief Returns the exact SOME/IP payload size for @p src.
@@ -655,6 +659,25 @@ template <size_t LenT, typename T>
   return LengthField<LenT, T>{value};
 }
 
+template <typename T, size_t LenT, size_t... InnerLenT>
+struct ArrayLengthField final {
+  using ValueType = std::remove_cv_t<T>;
+
+  static_assert((LenT == 0U || LenT == 1U || LenT == 2U || LenT == 4U) &&
+                    ((InnerLenT == 0U || InnerLenT == 1U || InnerLenT == 2U || InnerLenT == 4U) && ...),
+                "SOME/IP array length field width must be 0, 1, 2, or 4 bytes.");
+  static_assert(!std::is_same_v<ValueType, std::string> && !std::is_same_v<ValueType, Bytes> &&
+                    supports_length_field<LenT>(static_cast<const ValueType*>(nullptr)),
+                "VLINK_SOMEIP_ARRAY_LENGTH supports vector widths 1/2/4 and array widths 0/1/2/4.");
+
+  T& value;
+};
+
+template <size_t LenT, size_t... InnerLenT, typename T>
+[[nodiscard]] inline auto array_length_field(T& value) noexcept {
+  return ArrayLengthField<T, LenT, InnerLenT...>{value};
+}
+
 template <typename T>
 [[nodiscard]] constexpr bool is_variable_size() noexcept;
 
@@ -678,12 +701,17 @@ template <size_t LenT, typename T>
   return is_variable_size<T>();
 }
 
+template <typename T, size_t LenT, size_t... InnerLenT>
+[[nodiscard]] constexpr bool is_variable_size(const ArrayLengthField<T, LenT, InnerLenT...>*) noexcept {
+  return is_variable_size<T>();
+}
+
 template <typename T>
 [[nodiscard]] constexpr bool is_variable_size(const T*) noexcept {
   if constexpr (std::is_same_v<T, std::string> || std::is_same_v<T, Bytes>) {
     return true;
   } else if constexpr (VLINK_HAS_MEMBER(T, is_vlink_someip_type())) {
-    using FieldsType = decltype(std::declval<T&>().vlink_someip_fields());
+    using FieldsType = decltype(std::declval<T&>().get_vlink_someip_fields());
 
     return fields_are_variable<FieldsType>(std::make_index_sequence<std::tuple_size_v<FieldsType>>{});
   }
@@ -708,9 +736,19 @@ inline bool read_value(Reader& reader, LengthField<LenT, T>& field, size_t end) 
   return read_value(reader, field.value, end, LenT);
 }
 
+template <typename T, size_t LenT, size_t... InnerLenT>
+inline bool write_value(Writer& writer, const ArrayLengthField<T, LenT, InnerLenT...>& field) noexcept {
+  return write_value(writer, field.value, LenT, std::index_sequence<InnerLenT...>{});
+}
+
+template <typename T, size_t LenT, size_t... InnerLenT>
+inline bool read_value(Reader& reader, ArrayLengthField<T, LenT, InnerLenT...>& field, size_t end) {
+  return read_value(reader, field.value, end, LenT, std::index_sequence<InnerLenT...>{});
+}
+
 template <typename TupleT, size_t... IndexT>
 inline bool write_fields(Writer& writer, const TupleT& fields, std::index_sequence<IndexT...>) noexcept {
-  constexpr size_t kFieldCount = std::tuple_size_v<TupleT>;
+  static constexpr size_t kFieldCount = std::tuple_size_v<TupleT>;
 
   return ([&writer, &fields]() noexcept {
     if VUNLIKELY (!write_value(writer, std::get<IndexT>(fields))) {
@@ -725,7 +763,7 @@ inline bool write_fields(Writer& writer, const TupleT& fields, std::index_sequen
 
 template <typename TupleT, size_t... IndexT>
 inline bool read_fields(Reader& reader, TupleT& fields, size_t end, std::index_sequence<IndexT...>) {
-  constexpr size_t kFieldCount = std::tuple_size_v<TupleT>;
+  static constexpr size_t kFieldCount = std::tuple_size_v<TupleT>;
 
   return ([&reader, &fields, end]() {
     if VUNLIKELY (!read_value(reader, std::get<IndexT>(fields), end)) {
@@ -738,8 +776,9 @@ inline bool read_fields(Reader& reader, TupleT& fields, size_t end, std::index_s
   }() && ...);
 }
 
-template <typename T, typename AllocatorT>
-inline bool write_value(Writer& writer, const std::vector<T, AllocatorT>& value, size_t len) noexcept {
+template <typename T, typename AllocatorT, size_t... InnerLenT>
+inline bool write_value(Writer& writer, const std::vector<T, AllocatorT>& value, size_t len,
+                        std::index_sequence<InnerLenT...>) noexcept {
   size_t length_position = 0;
   size_t data_position = 0;
 
@@ -748,11 +787,23 @@ inline bool write_value(Writer& writer, const std::vector<T, AllocatorT>& value,
   }
 
   for (size_t index = 0U; index < value.size(); ++index) {
-    if constexpr (std::is_same_v<T, bool>) {
+    const size_t element_position = writer.position();
+
+    if constexpr (sizeof...(InnerLenT) > 0U) {
+      const ArrayLengthField<const T, InnerLenT...> field{value[index]};
+
+      if VUNLIKELY (!write_value(writer, field)) {
+        return false;
+      }
+    } else if constexpr (std::is_same_v<T, bool>) {
       if VUNLIKELY (!write_value(writer, static_cast<bool>(value[index]))) {
         return false;
       }
     } else if VUNLIKELY (!write_value(writer, value[index])) {
+      return false;
+    }
+
+    if VUNLIKELY (writer.position() == element_position) {
       return false;
     }
 
@@ -766,8 +817,9 @@ inline bool write_value(Writer& writer, const std::vector<T, AllocatorT>& value,
   return writer.end_length_delimited(length_position, data_position, len);
 }
 
-template <typename T, size_t SizeT>
-inline bool write_value(Writer& writer, const std::array<T, SizeT>& value, size_t len) noexcept {
+template <typename T, size_t SizeT, size_t... InnerLenT>
+inline bool write_value(Writer& writer, const std::array<T, SizeT>& value, size_t len,
+                        std::index_sequence<InnerLenT...>) noexcept {
   size_t length_position = 0;
   size_t data_position = 0;
 
@@ -776,8 +828,16 @@ inline bool write_value(Writer& writer, const std::array<T, SizeT>& value, size_
   }
 
   for (size_t index = 0U; index < SizeT; ++index) {
-    if VUNLIKELY (!write_value(writer, value[index])) {
-      return false;
+    if constexpr (sizeof...(InnerLenT) > 0U) {
+      const ArrayLengthField<const T, InnerLenT...> field{value[index]};
+
+      if VUNLIKELY (!write_value(writer, field)) {
+        return false;
+      }
+    } else {
+      if VUNLIKELY (!write_value(writer, value[index])) {
+        return false;
+      }
     }
 
     if constexpr (is_variable_size<T>()) {
@@ -799,11 +859,12 @@ inline bool write_value(Writer& writer, const T& value) noexcept {
                   "SOME/IP enums must use uint8_t, uint16_t, uint32_t, or uint64_t storage.");
     return write_value(writer, static_cast<UnderlyingType>(value));
   } else if constexpr (VLINK_HAS_MEMBER(T, is_vlink_someip_type())) {
-    using FieldsType = decltype(value.vlink_someip_fields());
+    using FieldsType = decltype(value.get_vlink_someip_fields());
 
     static_assert(std::tuple_size_v<FieldsType> > 0U, "SOME/IP structures must declare at least one field.");
 
-    constexpr size_t kStructLength = get_struct_length<T>();
+    static constexpr size_t kStructLength = get_struct_length<T>();
+
     size_t length_position = 0U;
     size_t data_position = 0U;
 
@@ -813,7 +874,7 @@ inline bool write_value(Writer& writer, const T& value) noexcept {
       }
     }
 
-    const auto fields = value.vlink_someip_fields();
+    const auto fields = value.get_vlink_someip_fields();
 
     if VUNLIKELY (!write_fields(writer, fields, std::make_index_sequence<std::tuple_size_v<FieldsType>>{})) {
       return false;
@@ -827,8 +888,9 @@ inline bool write_value(Writer& writer, const T& value) noexcept {
   }
 }
 
-template <typename T, typename AllocatorT>
-inline bool read_value(Reader& reader, std::vector<T, AllocatorT>& value, size_t end, size_t len) {
+template <typename T, typename AllocatorT, size_t... InnerLenT>
+inline bool read_value(Reader& reader, std::vector<T, AllocatorT>& value, size_t end, size_t len,
+                       std::index_sequence<InnerLenT...>) {
   size_t array_end = 0;
 
   if VUNLIKELY (!reader.begin_length_delimited(end, array_end, len)) {
@@ -836,7 +898,8 @@ inline bool read_value(Reader& reader, std::vector<T, AllocatorT>& value, size_t
   }
 
   if constexpr (std::is_arithmetic_v<T> || std::is_enum_v<T>) {
-    constexpr size_t kElementSize = sizeof(T);
+    static constexpr size_t kElementSize = sizeof(T);
+
     const size_t byte_length = array_end - reader.position();
 
     if VUNLIKELY (byte_length % kElementSize != 0U) {
@@ -851,7 +914,17 @@ inline bool read_value(Reader& reader, std::vector<T, AllocatorT>& value, size_t
   while (reader.position() < array_end) {
     const size_t element_position = reader.position();
 
-    if constexpr (std::is_same_v<T, bool>) {
+    if constexpr (sizeof...(InnerLenT) > 0U) {
+      if (index == value.size()) {
+        value.emplace_back();
+      }
+
+      ArrayLengthField<T, InnerLenT...> field{value[index]};
+
+      if VUNLIKELY (!read_value(reader, field, array_end) || reader.position() == element_position) {
+        return false;
+      }
+    } else if constexpr (std::is_same_v<T, bool>) {
       bool element = false;
 
       if VUNLIKELY (!read_value(reader, element, array_end) || reader.position() == element_position) {
@@ -887,8 +960,9 @@ inline bool read_value(Reader& reader, std::vector<T, AllocatorT>& value, size_t
   return true;
 }
 
-template <typename T, size_t SizeT>
-inline bool read_value(Reader& reader, std::array<T, SizeT>& value, size_t end, size_t len) {
+template <typename T, size_t SizeT, size_t... InnerLenT>
+inline bool read_value(Reader& reader, std::array<T, SizeT>& value, size_t end, size_t len,
+                       std::index_sequence<InnerLenT...>) {
   size_t array_end = end;
 
   if VUNLIKELY (len > 0U && !reader.begin_length_delimited(end, array_end, len)) {
@@ -896,8 +970,16 @@ inline bool read_value(Reader& reader, std::array<T, SizeT>& value, size_t end, 
   }
 
   for (size_t index = 0U; index < SizeT; ++index) {
-    if VUNLIKELY (!read_value(reader, value[index], array_end)) {
-      return false;
+    if constexpr (sizeof...(InnerLenT) > 0U) {
+      ArrayLengthField<T, InnerLenT...> field{value[index]};
+
+      if VUNLIKELY (!read_value(reader, field, array_end)) {
+        return false;
+      }
+    } else {
+      if VUNLIKELY (!read_value(reader, value[index], array_end)) {
+        return false;
+      }
     }
 
     if constexpr (is_variable_size<T>()) {
@@ -927,11 +1009,12 @@ inline bool read_value(Reader& reader, T& value, size_t end) {
 
     return true;
   } else if constexpr (VLINK_HAS_MEMBER(T, is_vlink_someip_type())) {
-    using FieldsType = decltype(value.vlink_someip_fields());
+    using FieldsType = decltype(value.get_vlink_someip_fields());
 
     static_assert(std::tuple_size_v<FieldsType> > 0U, "SOME/IP structures must declare at least one field.");
 
-    constexpr size_t kStructLength = get_struct_length<T>();
+    static constexpr size_t kStructLength = get_struct_length<T>();
+
     size_t struct_end = end;
 
     if constexpr (kStructLength > 0U) {
@@ -940,7 +1023,7 @@ inline bool read_value(Reader& reader, T& value, size_t end) {
       }
     }
 
-    auto fields = value.vlink_someip_fields();
+    auto fields = value.get_vlink_someip_fields();
 
     if VUNLIKELY (!read_fields(reader, fields, struct_end, std::make_index_sequence<std::tuple_size_v<FieldsType>>{})) {
       return false;
@@ -1109,6 +1192,23 @@ inline bool deserialize(const Bytes& src, T& des) {
 #define VLINK_SOMEIP_LENGTH(field, width) vlink::SomeipSerializer::length_field<width>(field)
 
 /**
+ * @def VLINK_SOMEIP_ARRAY_LENGTH
+ * @brief Selects length field widths for every dimension of one SOME/IP array field.
+ *
+ * @details
+ * Use this macro around a nested @c std::vector or @c std::array entry in
+ * @c VLINK_SOMEIP_FIELDS.  List widths for consecutive array dimensions from
+ * outermost to innermost; dimensions not listed retain the four-byte default.
+ * Dynamic arrays support 1, 2, and 4 bytes; fixed arrays also support zero to
+ * omit that dimension's length field.  A nested structure is a boundary and
+ * uses its own field declarations.
+ *
+ * @param field  Structure field to configure.
+ * @param ...    Length field widths from outermost to innermost.
+ */
+#define VLINK_SOMEIP_ARRAY_LENGTH(field, ...) vlink::SomeipSerializer::array_length_field<__VA_ARGS__>(field)
+
+/**
  * @def VLINK_SOMEIP_FIELDS
  * @brief Declares a structure as a SOME/IP payload and lists its fields.
  *
@@ -1124,8 +1224,9 @@ inline bool deserialize(const Bytes& src, T& des) {
  * reachable from the source structure.  Use @c VLINK_SOMEIP_ALIGNMENT to
  * select a non-default alignment, @c VLINK_SOMEIP_ENDIAN to select payload
  * byte order for a top-level payload, @c VLINK_SOMEIP_STRUCT_LENGTH to add a
- * length field to a structure type, and
- * @c VLINK_SOMEIP_LENGTH to configure an individual length-delimited field.
+ * length field to a structure type, @c VLINK_SOMEIP_LENGTH to configure an
+ * individual length-delimited field, and @c VLINK_SOMEIP_ARRAY_LENGTH to
+ * configure every dimension of a nested array field.
  */
 // clang-format off
 #define VLINK_SOMEIP_FIELDS(...)                                                                      \
@@ -1133,11 +1234,11 @@ inline bool deserialize(const Bytes& src, T& des) {
     return true;                                                                                      \
   }                                                                                                   \
                                                                                                       \
-  [[nodiscard]] auto vlink_someip_fields() noexcept {                                                 \
+  [[nodiscard]] auto get_vlink_someip_fields() noexcept {                                             \
     return vlink::SomeipSerializer::make_fields(__VA_ARGS__);                                         \
   }                                                                                                   \
                                                                                                       \
-  [[nodiscard]] auto vlink_someip_fields() const noexcept {                                           \
+  [[nodiscard]] auto get_vlink_someip_fields() const noexcept {                                       \
     return vlink::SomeipSerializer::make_fields(__VA_ARGS__);                                         \
   }                                                                                                   \
                                                                                                       \

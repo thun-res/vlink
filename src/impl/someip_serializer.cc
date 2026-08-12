@@ -33,6 +33,7 @@ namespace vlink {
 namespace SomeipSerializer {  // NOLINT(readability-identifier-naming)
 
 static constexpr uint8_t kUtf8Bom[] = {0xEF, 0xBB, 0xBF};
+static constexpr size_t kHeaderSize = 16U;
 
 static bool is_valid_utf8(const uint8_t* data, size_t size) noexcept {
   size_t position = 0;
@@ -168,9 +169,8 @@ bool Writer::align() noexcept {
     return true;
   }
 
-  constexpr size_t kSomeipHeaderSize = 16U;
   const size_t mask = alignment_ - 1U;
-  const size_t remainder = ((position_ & mask) + (kSomeipHeaderSize & mask)) & mask;
+  const size_t remainder = ((position_ & mask) + (kHeaderSize & mask)) & mask;
   const size_t padding = (alignment_ - remainder) & mask;
 
   if VUNLIKELY (position_ > capacity_ || padding > capacity_ - position_) {
@@ -264,9 +264,8 @@ bool Reader::align(size_t end) noexcept {
     return true;
   }
 
-  constexpr size_t kSomeipHeaderSize = 16U;
   const size_t mask = alignment_ - 1U;
-  const size_t remainder = ((position_ & mask) + (kSomeipHeaderSize & mask)) & mask;
+  const size_t remainder = ((position_ & mask) + (kHeaderSize & mask)) & mask;
   const size_t padding = (alignment_ - remainder) & mask;
 
   return skip(padding, end);

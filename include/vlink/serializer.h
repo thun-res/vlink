@@ -72,9 +72,9 @@
  *     FlatPtr  --(no)-->  FlatBuilder  --(no)-->  Custom  --(no)-->  String
  *                                                                    |
  *                                                                    v (no)
- *     Stream  <--(no)--  StandardPtr  <--(no)--  Standard  <--(no)--  Chars
- *                                                                      |
- *                                                                      v (no)
+ *     Stream   <--(no)--  StandardPtr  <--(no)-- Standard <--(no)--  Chars
+ *                                                                    |
+ *                                                                    v (no)
  *                                                                kUnknownType
  * @endverbatim
  *
@@ -128,7 +128,6 @@
 #include <string>
 
 #include "./base/bytes.h"
-#include "./impl/someip_serializer.h"
 #include "./impl/types.h"
 
 namespace vlink {
