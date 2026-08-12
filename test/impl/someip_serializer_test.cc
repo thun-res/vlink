@@ -66,10 +66,23 @@ TEST_SUITE("impl-SomeipSerializer") {
     CHECK(storage == expected);
     CHECK(writer.position() == expected.size());
 
-    CHECK_FALSE(writer.patch_uint32(5U, 1U));
     CHECK_FALSE(writer.append_unsigned(0U, 0U));
     CHECK_FALSE(writer.append_unsigned(0U, sizeof(uint64_t) + 1U));
     CHECK(writer.position() == expected.size());
+  }
+
+  TEST_CASE("writer rejects a byte count that exceeds its length field") {
+    vlink::SomeipSerializer::Writer accepted(nullptr, 256U);
+    size_t length_position = 0U;
+    size_t data_position = 0U;
+    REQUIRE(accepted.begin_length_delimited(length_position, data_position, 1U));
+    REQUIRE(accepted.append(nullptr, 255U));
+    CHECK(accepted.end_length_delimited(length_position, data_position, 1U));
+
+    vlink::SomeipSerializer::Writer rejected(nullptr, 257U);
+    REQUIRE(rejected.begin_length_delimited(length_position, data_position, 1U));
+    REQUIRE(rejected.append(nullptr, 256U));
+    CHECK_FALSE(rejected.end_length_delimited(length_position, data_position, 1U));
   }
 
   TEST_CASE("size-only writer enforces the SOME/IP message payload limit") {

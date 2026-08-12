@@ -27,10 +27,9 @@
  *
  * @details
  * Implements the AUTOSAR R25-11 non-TLV payload deployment selected by
- * @c VLINK_SOMEIP_FIELDS: big-endian scalar values, one-byte alignment,
- * four-byte string, dynamic-array, and fixed-array length fields, no structure
- * length field, and UTF-8 strings framed by a BOM and null terminator.  The
- * SOME/IP message header is outside this codec.
+ * @c VLINK_SOMEIP_FIELDS: configurable payload byte order, AUTOSAR alignment,
+ * field and structure length widths, and UTF-8 strings framed by a BOM and
+ * null terminator.  The SOME/IP message header is outside this codec.
  *
  * Non-template cursor and primitive operations are implemented once in
  * @c src/impl/someip_serializer.cc.  Only container traversal and user-defined
@@ -59,23 +58,23 @@
  * | C++ field                       | SOME/IP payload representation                         |
  * | ------------------------------- | ------------------------------------------------------ |
  * | @c bool                         | One byte; the encoder emits @c 0 or @c 1.              |
- * | Fixed-width integer or enum     | Natural width, most-significant byte first.            |
- * | @c float / @c double            | IEEE 754 binary32 / binary64 in big-endian order.      |
- * | @c std::string                  | 32-bit length, UTF-8 BOM, content, null terminator.    |
- * | @c Bytes / @c vector / @c array | 32-bit byte length followed by encoded content.        |
- * | Macro-declared nested structure | Declared fields in order, without a structure length.  |
+ * | Fixed-width integer or enum     | Natural width in the configured payload byte order.    |
+ * | @c float / @c double            | IEEE 754 binary32 / binary64 in configured byte order. |
+ * | @c std::string                  | Byte length, UTF-8 BOM, content, null terminator.       |
+ * | @c Bytes / @c vector            | Byte length followed by encoded content.               |
+ * | @c array                        | Optional byte length followed by encoded content.       |
+ * | Macro-declared nested structure | Optional byte length followed by declared fields.      |
  *
- * String lengths include the three-byte UTF-8 BOM and trailing null byte.
- * Container lengths count encoded bytes rather than elements.  No implicit
- * alignment padding is inserted between fields.  The complete payload is
- * limited to @c UINT32_MAX-8 bytes by the SOME/IP message Length field.
+ * Lengths count encoded bytes; string lengths include the UTF-8 BOM and null
+ * terminator.  Length fields remain in network byte order.  The complete
+ * payload is limited to @c UINT32_MAX-8 bytes by the SOME/IP message Length
+ * field.
  *
  * @par Length-delimited field
  * @verbatim
- *  byte:   0       1       2       3       4                     4 + N
- *        +-------+-------+-------+-------+-----------------------------+
- *        |          payload length N (big-endian)       | N-byte body |
- *        +-------+-------+-------+-------+-----------------------------+
+ *        +----------------------+-------------+
+ *        | W-byte length N (BE) | N-byte body |
+ *        +----------------------+-------------+
  * @endverbatim
  *
  * @par Failure model
@@ -87,16 +86,11 @@
  *
  * @par Supported profile
  *
- * This helper intentionally implements the selected non-TLV deployment only.
- * Fixed arrays use the optional four-byte length field for compatible growth.
- * Dynamic UTF-8 strings preserve embedded null bytes; only the final byte is
- * interpreted as the configured terminator.
- * Because structures have no length field, unknown trailing structure fields
- * can be ignored only at the top-level payload boundary; nested structures and
- * array elements require the same deployed field layout on both endpoints.
- * The helper does not provide configurable byte order, alignment, length-field
- * widths, structure length fields, UTF-16 or fixed-length strings, unions, C++
- * bit-fields, optional TLV members, or deployment maximum-length constraints.
+ * This codec targets non-TLV payloads and preserves embedded null bytes in
+ * dynamic UTF-8 strings.  It does not support mixed or opaque field byte
+ * order, per-dimension nested-array length widths, UTF-16 or fixed-length
+ * strings, unions, C++ bit-fields, optional TLV members, or deployment
+ * maximum-length constraints.
  */
 
 #pragma once
@@ -129,8 +123,17 @@ namespace SomeipSerializer {  // NOLINT(readability-identifier-naming)
 inline constexpr size_t kMaxPayloadSize = std::numeric_limits<uint32_t>::max() - 8U;
 
 /**
+ * @enum Endian
+ * @brief Byte order used for SOME/IP payload scalar values.
+ */
+enum class Endian : uint8_t {
+  kBig = 0,
+  kLittle = 1,
+};
+
+/**
  * @class Writer
- * @brief Bounds-checked big-endian SOME/IP payload writer.
+ * @brief Bounds-checked SOME/IP payload writer.
  *
  * @details
  * A null destination performs a size-only pass.  A non-null destination never
@@ -150,10 +153,12 @@ class VLINK_EXPORT Writer final {
    * @c kMaxPayloadSize are clamped to that wire-format limit.  The writer does
    * not own or initialize the destination storage.
    *
-   * @param data      Destination buffer, or @c nullptr for size-only mode.
-   * @param capacity  Number of writable bytes, or the maximum size to measure.
+   * @param data       Destination buffer, or @c nullptr for size-only mode.
+   * @param capacity   Number of writable bytes, or the maximum size to measure.
+   * @param alignment  AUTOSAR payload alignment: 1, 2, 4, 8, 16, or 32 bytes.
+   * @param endian     Byte order for payload scalar values.
    */
-  Writer(uint8_t* data, size_t capacity) noexcept;
+  Writer(uint8_t* data, size_t capacity, size_t alignment = 1U, Endian endian = Endian::kBig) noexcept;
 
   /**
    * @brief Returns the number of bytes consumed by this writer.
@@ -177,7 +182,7 @@ class VLINK_EXPORT Writer final {
   [[nodiscard]] bool append(const uint8_t* data, size_t size) noexcept;
 
   /**
-   * @brief Appends the low @p width bytes of @p value in big-endian order.
+   * @brief Appends the low @p width bytes of @p value in the configured byte order.
    *
    * @param value  Unsigned value containing the bits to encode.
    * @param width  Encoded width in bytes; must be in the range @c [1,8].
@@ -186,49 +191,49 @@ class VLINK_EXPORT Writer final {
   [[nodiscard]] bool append_unsigned(uint64_t value, size_t width) noexcept;
 
   /**
-   * @brief Rewrites a previously reserved four-byte length field.
-   *
-   * @details
-   * The size-only pass performs no write and returns success.  This operation
-   * does not change the current writer position.
-   *
-   * @param position  Offset of the reserved length field.
-   * @param value     Length value encoded in big-endian order.
-   * @return @c true on success; @c false when the field lies outside the buffer.
-   */
-  [[nodiscard]] bool patch_uint32(size_t position, uint32_t value) noexcept;
-
-  /**
-   * @brief Reserves a four-byte length field and records its payload start.
+   * @brief Reserves a length field and records its payload start.
    *
    * @param length_position  Output offset of the reserved length field.
    * @param data_position    Output offset of the first length-delimited byte.
-   * @return @c true on success; @c false when four bytes cannot be reserved.
+   * @param width            Encoded width in bytes; must be 1, 2, or 4.
+   * @return @c true on success; @c false when the field cannot be reserved.
    */
-  [[nodiscard]] bool begin_length_delimited(size_t& length_position, size_t& data_position) noexcept;
+  [[nodiscard]] bool begin_length_delimited(size_t& length_position, size_t& data_position,
+                                            size_t width = sizeof(uint32_t)) noexcept;
 
   /**
    * @brief Finalizes a reserved length field from the current position.
    *
    * @details
-   * Stores @c position()-@p data_position as an unsigned 32-bit byte count at
+   * Stores @c position()-@p data_position as an unsigned byte count at
    * @p length_position.  The current position is not changed.
    *
    * @param length_position  Offset returned by @c begin_length_delimited().
    * @param data_position    Payload start returned by @c begin_length_delimited().
-   * @return @c true on success; @c false on an invalid range or 32-bit length overflow.
+   * @param width            Encoded width in bytes; must be 1, 2, or 4.
+   * @return @c true on success; @c false on an invalid range or length overflow.
    */
-  [[nodiscard]] bool end_length_delimited(size_t length_position, size_t data_position) noexcept;
+  [[nodiscard]] bool end_length_delimited(size_t length_position, size_t data_position,
+                                          size_t width = sizeof(uint32_t)) noexcept;
+
+  /**
+   * @brief Pads the current position to the configured AUTOSAR alignment.
+   *
+   * @return @c true on success; @c false when the destination is too small.
+   */
+  [[nodiscard]] bool align() noexcept;
 
  private:
   uint8_t* data_{nullptr};
   size_t capacity_{0};
   size_t position_{0};
+  size_t alignment_{1U};
+  Endian endian_{Endian::kBig};
 };
 
 /**
  * @class Reader
- * @brief Bounds-checked big-endian SOME/IP payload reader.
+ * @brief Bounds-checked SOME/IP payload reader.
  *
  * @details
  * Every operation accepts an enclosing end position, so nested arrays cannot
@@ -246,10 +251,12 @@ class VLINK_EXPORT Reader final {
    * The reader does not own the source storage.  When @p size is non-zero,
    * @p data must remain valid throughout the reader lifetime.
    *
-   * @param data  Source payload.
-   * @param size  Total source size in bytes.
+   * @param data       Source payload.
+   * @param size       Total source size in bytes.
+   * @param alignment  AUTOSAR payload alignment: 1, 2, 4, 8, 16, or 32 bytes.
+   * @param endian     Byte order for payload scalar values.
    */
-  Reader(const uint8_t* data, size_t size) noexcept;
+  Reader(const uint8_t* data, size_t size, size_t alignment = 1U, Endian endian = Endian::kBig) noexcept;
 
   /**
    * @brief Returns the current read position.
@@ -296,7 +303,7 @@ class VLINK_EXPORT Reader final {
   [[nodiscard]] bool skip(size_t size, size_t end) noexcept;
 
   /**
-   * @brief Reads a @p width-byte unsigned integer in big-endian order.
+   * @brief Reads a @p width-byte unsigned integer in the configured byte order.
    *
    * @param value  Output value; modified only after the range is validated.
    * @param width  Encoded width in bytes; must be in the range @c [1,8].
@@ -306,7 +313,7 @@ class VLINK_EXPORT Reader final {
   [[nodiscard]] bool read_unsigned(uint64_t& value, size_t width, size_t end) noexcept;
 
   /**
-   * @brief Reads a four-byte length and returns its validated end position.
+   * @brief Reads a length field and returns its validated end position.
    *
    * @details
    * The prefix is a big-endian byte count.  On success, @p value_end is the
@@ -314,14 +321,25 @@ class VLINK_EXPORT Reader final {
    *
    * @param end        Exclusive enclosing boundary.
    * @param value_end  Output exclusive boundary of the length-delimited body.
+   * @param width      Encoded width in bytes; must be 1, 2, or 4.
    * @return @c true on success; @c false when the prefix or declared body exceeds @p end.
    */
-  [[nodiscard]] bool begin_length_delimited(size_t end, size_t& value_end) noexcept;
+  [[nodiscard]] bool begin_length_delimited(size_t end, size_t& value_end, size_t width = sizeof(uint32_t)) noexcept;
+
+  /**
+   * @brief Skips bytes up to the configured AUTOSAR alignment.
+   *
+   * @param end  Exclusive enclosing boundary.
+   * @return @c true on success; @c false when the padding exceeds @p end.
+   */
+  [[nodiscard]] bool align(size_t end) noexcept;
 
  private:
   const uint8_t* data_{nullptr};
   size_t size_{0};
   size_t position_{0};
+  size_t alignment_{1U};
+  Endian endian_{Endian::kBig};
 };
 
 /**
@@ -329,13 +347,14 @@ class VLINK_EXPORT Reader final {
  * @brief Encodes scalar, string, and byte-buffer fields into @p writer.
  *
  * @details
- * Integer overloads preserve the source bit pattern and use big-endian byte
- * order.  Floating-point overloads require IEEE 754 storage.  Strings include
- * a 32-bit byte length, UTF-8 BOM, and null terminator; invalid UTF-8 is
- * rejected.  @c Bytes uses a 32-bit byte length followed by its payload.
+ * Integer overloads preserve the source bit pattern and use the configured
+ * byte order.  Floating-point overloads require IEEE 754 storage.  Strings include
+ * a configurable byte length, UTF-8 BOM, and null terminator; invalid UTF-8 is
+ * rejected.  @c Bytes uses the same configurable length prefix.
  *
  * @param writer  Destination cursor.
  * @param value   Field value to encode.
+ * @param len     Length field width for string and @c Bytes overloads.
  * @return @c true on success; @c false on invalid data, overflow, or insufficient storage.
  * @{
  */
@@ -350,8 +369,8 @@ VLINK_EXPORT bool write_value(Writer& writer, int32_t value) noexcept;
 VLINK_EXPORT bool write_value(Writer& writer, int64_t value) noexcept;
 VLINK_EXPORT bool write_value(Writer& writer, float value) noexcept;
 VLINK_EXPORT bool write_value(Writer& writer, double value) noexcept;
-VLINK_EXPORT bool write_value(Writer& writer, const std::string& value) noexcept;
-VLINK_EXPORT bool write_value(Writer& writer, const Bytes& value) noexcept;
+VLINK_EXPORT bool write_value(Writer& writer, const std::string& value, size_t len = sizeof(uint32_t)) noexcept;
+VLINK_EXPORT bool write_value(Writer& writer, const Bytes& value, size_t len = sizeof(uint32_t)) noexcept;
 /**
  * @}
  */
@@ -373,7 +392,7 @@ template <typename T>
 inline bool write_value(Writer& writer, const T& value) noexcept;
 
 /**
- * @brief Encodes a dynamic array with a 32-bit byte-length prefix.
+ * @brief Encodes a dynamic array with a configurable byte-length prefix.
  *
  * @details
  * The prefix counts encoded bytes, not elements.  The @c vector<bool>
@@ -383,22 +402,25 @@ inline bool write_value(Writer& writer, const T& value) noexcept;
  * @tparam AllocatorT  Vector allocator type.
  * @param writer       Destination cursor.
  * @param value        Array elements to encode in order.
+ * @param len          Length field width in bytes.
  * @return @c true on success; @c false on overflow or element encoding failure.
  */
 template <typename T, typename AllocatorT>
-inline bool write_value(Writer& writer, const std::vector<T, AllocatorT>& value) noexcept;
+inline bool write_value(Writer& writer, const std::vector<T, AllocatorT>& value,
+                        size_t len = sizeof(uint32_t)) noexcept;
 
 /**
- * @brief Encodes a fixed-size array with a 32-bit byte-length prefix.
+ * @brief Encodes a fixed-size array with an optional byte-length prefix.
  *
  * @tparam T      Element type supported by @c write_value().
  * @tparam SizeT  Compile-time element count.
  * @param writer  Destination cursor.
  * @param value   Array elements to encode in order.
+ * @param len     Length field width in bytes, or zero to omit it.
  * @return @c true on success; @c false on overflow or element encoding failure.
  */
 template <typename T, size_t SizeT>
-inline bool write_value(Writer& writer, const std::array<T, SizeT>& value) noexcept;
+inline bool write_value(Writer& writer, const std::array<T, SizeT>& value, size_t len = sizeof(uint32_t)) noexcept;
 
 /**
  * @name Primitive SOME/IP decoders
@@ -407,13 +429,14 @@ inline bool write_value(Writer& writer, const std::array<T, SizeT>& value) noexc
  * @details
  * Integer and floating-point overloads reverse the encoder wire format.
  * Boolean values use the low bit of the encoded byte.  String input must have
- * a valid 32-bit byte length, UTF-8 BOM, null terminator, and UTF-8 content.
+ * a valid configured byte length, UTF-8 BOM, null terminator, and UTF-8 content.
  * @c Bytes reuses sufficient owning capacity or allocates owned storage for
  * its declared payload.
  *
  * @param reader  Source cursor.
  * @param value   Destination field, updated on success.
  * @param end     Exclusive boundary of the enclosing field or payload.
+ * @param len     Length field width for string and @c Bytes overloads.
  * @return @c true on success; @c false when the encoded field is malformed or truncated.
  * @{
  */
@@ -428,8 +451,8 @@ VLINK_EXPORT bool read_value(Reader& reader, int32_t& value, size_t end) noexcep
 VLINK_EXPORT bool read_value(Reader& reader, int64_t& value, size_t end) noexcept;
 VLINK_EXPORT bool read_value(Reader& reader, float& value, size_t end) noexcept;
 VLINK_EXPORT bool read_value(Reader& reader, double& value, size_t end) noexcept;
-VLINK_EXPORT bool read_value(Reader& reader, std::string& value, size_t end);
-VLINK_EXPORT bool read_value(Reader& reader, Bytes& value, size_t end) noexcept;
+VLINK_EXPORT bool read_value(Reader& reader, std::string& value, size_t end, size_t len = sizeof(uint32_t));
+VLINK_EXPORT bool read_value(Reader& reader, Bytes& value, size_t end, size_t len = sizeof(uint32_t)) noexcept;
 /**
  * @}
  */
@@ -463,10 +486,11 @@ inline bool read_value(Reader& reader, T& value, size_t end);
  * @param reader       Source cursor.
  * @param value        Destination vector whose existing elements are reused when possible.
  * @param end          Exclusive boundary of the enclosing field or payload.
+ * @param len          Length field width in bytes.
  * @return @c true on success; @c false for an invalid length or element encoding.
  */
 template <typename T, typename AllocatorT>
-inline bool read_value(Reader& reader, std::vector<T, AllocatorT>& value, size_t end);
+inline bool read_value(Reader& reader, std::vector<T, AllocatorT>& value, size_t end, size_t len = sizeof(uint32_t));
 
 /**
  * @brief Decodes a byte-length-delimited fixed-size array.
@@ -481,10 +505,11 @@ inline bool read_value(Reader& reader, std::vector<T, AllocatorT>& value, size_t
  * @param reader  Source cursor.
  * @param value   Destination array.
  * @param end     Exclusive boundary of the enclosing field or payload.
+ * @param len     Length field width in bytes, or zero when omitted.
  * @return @c true on success; @c false when the length cannot contain all elements.
  */
 template <typename T, size_t SizeT>
-inline bool read_value(Reader& reader, std::array<T, SizeT>& value, size_t end);
+inline bool read_value(Reader& reader, std::array<T, SizeT>& value, size_t end, size_t len = sizeof(uint32_t));
 
 /**
  * @brief Returns the exact SOME/IP payload size for @p src.
@@ -557,48 +582,212 @@ inline bool deserialize(const Bytes& src, T& des);
 /// Details
 ////////////////////////////////////////////////////////////////
 
+template <typename T>
+[[nodiscard]] constexpr size_t get_alignment() noexcept {
+  if constexpr (VLINK_HAS_MEMBER(T, vlink_someip_alignment())) {
+    constexpr size_t kAlignment = T::vlink_someip_alignment();
+
+    static_assert(kAlignment == 1U || kAlignment == 2U || kAlignment == 4U || kAlignment == 8U || kAlignment == 16U ||
+                      kAlignment == 32U,
+                  "SOME/IP alignment must be 1, 2, 4, 8, 16, or 32 bytes.");
+    return kAlignment;
+  }
+
+  return 1U;
+}
+
+template <typename T>
+[[nodiscard]] constexpr Endian get_endian() noexcept {
+  if constexpr (VLINK_HAS_MEMBER(T, vlink_someip_endian())) {
+    return T::vlink_someip_endian();
+  }
+
+  return Endian::kBig;
+}
+
+template <typename T>
+[[nodiscard]] constexpr size_t get_struct_length() noexcept {
+  if constexpr (VLINK_HAS_MEMBER(T, vlink_someip_struct_length())) {
+    constexpr size_t kLength = T::vlink_someip_struct_length();
+
+    static_assert(kLength == 0U || kLength == 1U || kLength == 2U || kLength == 4U,
+                  "SOME/IP structure length field width must be 0, 1, 2, or 4 bytes.");
+    return kLength;
+  }
+
+  return 0U;
+}
+
+template <size_t LenT, typename T>
+struct LengthField final {
+  T& value;
+};
+
+template <typename... FieldT>
+[[nodiscard]] inline auto make_fields(FieldT&&... field) noexcept {
+  return std::tuple<FieldT...>(std::forward<FieldT>(field)...);
+}
+
+template <size_t LenT, typename T>
+[[nodiscard]] constexpr bool supports_length_field(const T*) noexcept {
+  return LenT > 0U && (std::is_same_v<T, std::string> || std::is_same_v<T, Bytes>);
+}
+
+template <size_t LenT, typename T, typename AllocatorT>
+[[nodiscard]] constexpr bool supports_length_field(const std::vector<T, AllocatorT>*) noexcept {
+  return LenT > 0U;
+}
+
+template <size_t LenT, typename T, size_t SizeT>
+[[nodiscard]] constexpr bool supports_length_field(const std::array<T, SizeT>*) noexcept {
+  return true;
+}
+
+template <size_t LenT, typename T>
+[[nodiscard]] inline auto length_field(T& value) noexcept {
+  using ValueType = std::remove_cv_t<T>;
+
+  static_assert(LenT == 0U || LenT == 1U || LenT == 2U || LenT == 4U,
+                "SOME/IP length field width must be 0, 1, 2, or 4 bytes.");
+  static_assert(supports_length_field<LenT>(static_cast<const ValueType*>(nullptr)),
+                "VLINK_SOMEIP_LENGTH supports string, Bytes, and vector widths 1/2/4 or array widths 0/1/2/4.");
+
+  return LengthField<LenT, T>{value};
+}
+
+template <typename T>
+[[nodiscard]] constexpr bool is_variable_size() noexcept;
+
+template <typename TupleT, size_t... IndexT>
+[[nodiscard]] constexpr bool fields_are_variable(std::index_sequence<IndexT...>) noexcept {
+  return (is_variable_size<std::remove_reference_t<std::tuple_element_t<IndexT, TupleT>>>() || ...);
+}
+
 template <typename T, typename AllocatorT>
-inline bool write_value(Writer& writer, const std::vector<T, AllocatorT>& value) noexcept {
-  size_t length_position = 0;
-  size_t data_position = 0;
-
-  if VUNLIKELY (!writer.begin_length_delimited(length_position, data_position)) {
-    return false;
-  }
-
-  if constexpr (std::is_same_v<T, bool>) {
-    for (bool element : value) {
-      if VUNLIKELY (!write_value(writer, element)) {
-        return false;
-      }
-    }
-  } else {
-    for (const auto& element : value) {
-      if VUNLIKELY (!write_value(writer, element)) {
-        return false;
-      }
-    }
-  }
-
-  return writer.end_length_delimited(length_position, data_position);
+[[nodiscard]] constexpr bool is_variable_size(const std::vector<T, AllocatorT>*) noexcept {
+  return true;
 }
 
 template <typename T, size_t SizeT>
-inline bool write_value(Writer& writer, const std::array<T, SizeT>& value) noexcept {
+[[nodiscard]] constexpr bool is_variable_size(const std::array<T, SizeT>*) noexcept {
+  return is_variable_size<T>();
+}
+
+template <size_t LenT, typename T>
+[[nodiscard]] constexpr bool is_variable_size(const LengthField<LenT, T>*) noexcept {
+  return is_variable_size<T>();
+}
+
+template <typename T>
+[[nodiscard]] constexpr bool is_variable_size(const T*) noexcept {
+  if constexpr (std::is_same_v<T, std::string> || std::is_same_v<T, Bytes>) {
+    return true;
+  } else if constexpr (VLINK_HAS_MEMBER(T, is_vlink_someip_type())) {
+    using FieldsType = decltype(std::declval<T&>().vlink_someip_fields());
+
+    return fields_are_variable<FieldsType>(std::make_index_sequence<std::tuple_size_v<FieldsType>>{});
+  }
+
+  return false;
+}
+
+template <typename T>
+[[nodiscard]] constexpr bool is_variable_size() noexcept {
+  using ValueType = std::remove_cv_t<std::remove_reference_t<T>>;
+
+  return is_variable_size(static_cast<const ValueType*>(nullptr));
+}
+
+template <size_t LenT, typename T>
+inline bool write_value(Writer& writer, const LengthField<LenT, T>& field) noexcept {
+  return write_value(writer, field.value, LenT);
+}
+
+template <size_t LenT, typename T>
+inline bool read_value(Reader& reader, LengthField<LenT, T>& field, size_t end) {
+  return read_value(reader, field.value, end, LenT);
+}
+
+template <typename TupleT, size_t... IndexT>
+inline bool write_fields(Writer& writer, const TupleT& fields, std::index_sequence<IndexT...>) noexcept {
+  constexpr size_t kFieldCount = std::tuple_size_v<TupleT>;
+
+  return ([&writer, &fields]() noexcept {
+    if VUNLIKELY (!write_value(writer, std::get<IndexT>(fields))) {
+      return false;
+    }
+
+    using FieldType = std::remove_reference_t<std::tuple_element_t<IndexT, TupleT>>;
+
+    return IndexT + 1U == kFieldCount || !is_variable_size<FieldType>() || writer.align();
+  }() && ...);
+}
+
+template <typename TupleT, size_t... IndexT>
+inline bool read_fields(Reader& reader, TupleT& fields, size_t end, std::index_sequence<IndexT...>) {
+  constexpr size_t kFieldCount = std::tuple_size_v<TupleT>;
+
+  return ([&reader, &fields, end]() {
+    if VUNLIKELY (!read_value(reader, std::get<IndexT>(fields), end)) {
+      return false;
+    }
+
+    using FieldType = std::remove_reference_t<std::tuple_element_t<IndexT, TupleT>>;
+
+    return IndexT + 1U == kFieldCount || !is_variable_size<FieldType>() || reader.align(end);
+  }() && ...);
+}
+
+template <typename T, typename AllocatorT>
+inline bool write_value(Writer& writer, const std::vector<T, AllocatorT>& value, size_t len) noexcept {
   size_t length_position = 0;
   size_t data_position = 0;
 
-  if VUNLIKELY (!writer.begin_length_delimited(length_position, data_position)) {
+  if VUNLIKELY (!writer.begin_length_delimited(length_position, data_position, len)) {
     return false;
   }
 
-  for (const auto& element : value) {
-    if VUNLIKELY (!write_value(writer, element)) {
+  for (size_t index = 0U; index < value.size(); ++index) {
+    if constexpr (std::is_same_v<T, bool>) {
+      if VUNLIKELY (!write_value(writer, static_cast<bool>(value[index]))) {
+        return false;
+      }
+    } else if VUNLIKELY (!write_value(writer, value[index])) {
       return false;
+    }
+
+    if constexpr (is_variable_size<T>()) {
+      if VUNLIKELY (index + 1U < value.size() && !writer.align()) {
+        return false;
+      }
     }
   }
 
-  return writer.end_length_delimited(length_position, data_position);
+  return writer.end_length_delimited(length_position, data_position, len);
+}
+
+template <typename T, size_t SizeT>
+inline bool write_value(Writer& writer, const std::array<T, SizeT>& value, size_t len) noexcept {
+  size_t length_position = 0;
+  size_t data_position = 0;
+
+  if VUNLIKELY (len > 0U && !writer.begin_length_delimited(length_position, data_position, len)) {
+    return false;
+  }
+
+  for (size_t index = 0U; index < SizeT; ++index) {
+    if VUNLIKELY (!write_value(writer, value[index])) {
+      return false;
+    }
+
+    if constexpr (is_variable_size<T>()) {
+      if VUNLIKELY (index + 1U < SizeT && !writer.align()) {
+        return false;
+      }
+    }
+  }
+
+  return len == 0U || writer.end_length_delimited(length_position, data_position, len);
 }
 
 template <typename T>
@@ -614,8 +803,23 @@ inline bool write_value(Writer& writer, const T& value) noexcept {
 
     static_assert(std::tuple_size_v<FieldsType> > 0U, "SOME/IP structures must declare at least one field.");
 
-    return std::apply([&writer](const auto&... field) noexcept { return (write_value(writer, field) && ...); },
-                      value.vlink_someip_fields());
+    constexpr size_t kStructLength = get_struct_length<T>();
+    size_t length_position = 0U;
+    size_t data_position = 0U;
+
+    if constexpr (kStructLength > 0U) {
+      if VUNLIKELY (!writer.begin_length_delimited(length_position, data_position, kStructLength)) {
+        return false;
+      }
+    }
+
+    const auto fields = value.vlink_someip_fields();
+
+    if VUNLIKELY (!write_fields(writer, fields, std::make_index_sequence<std::tuple_size_v<FieldsType>>{})) {
+      return false;
+    }
+
+    return kStructLength == 0U || writer.end_length_delimited(length_position, data_position, kStructLength);
   } else {
     static_assert(Traits::ExpectFalse<T>(), "Unsupported SOME/IP field type.");
 
@@ -624,10 +828,10 @@ inline bool write_value(Writer& writer, const T& value) noexcept {
 }
 
 template <typename T, typename AllocatorT>
-inline bool read_value(Reader& reader, std::vector<T, AllocatorT>& value, size_t end) {
+inline bool read_value(Reader& reader, std::vector<T, AllocatorT>& value, size_t end, size_t len) {
   size_t array_end = 0;
 
-  if VUNLIKELY (!reader.begin_length_delimited(end, array_end)) {
+  if VUNLIKELY (!reader.begin_length_delimited(end, array_end, len)) {
     return false;
   }
 
@@ -670,6 +874,12 @@ inline bool read_value(Reader& reader, std::vector<T, AllocatorT>& value, size_t
     }
 
     ++index;
+
+    if constexpr (is_variable_size<T>()) {
+      if VUNLIKELY (reader.position() < array_end && !reader.align(array_end)) {
+        return false;
+      }
+    }
   }
 
   value.resize(index);
@@ -678,20 +888,26 @@ inline bool read_value(Reader& reader, std::vector<T, AllocatorT>& value, size_t
 }
 
 template <typename T, size_t SizeT>
-inline bool read_value(Reader& reader, std::array<T, SizeT>& value, size_t end) {
-  size_t array_end = 0;
+inline bool read_value(Reader& reader, std::array<T, SizeT>& value, size_t end, size_t len) {
+  size_t array_end = end;
 
-  if VUNLIKELY (!reader.begin_length_delimited(end, array_end)) {
+  if VUNLIKELY (len > 0U && !reader.begin_length_delimited(end, array_end, len)) {
     return false;
   }
 
-  for (auto& element : value) {
-    if VUNLIKELY (!read_value(reader, element, array_end)) {
+  for (size_t index = 0U; index < SizeT; ++index) {
+    if VUNLIKELY (!read_value(reader, value[index], array_end)) {
       return false;
+    }
+
+    if constexpr (is_variable_size<T>()) {
+      if VUNLIKELY (index + 1U < SizeT && !reader.align(array_end)) {
+        return false;
+      }
     }
   }
 
-  return reader.skip(array_end - reader.position(), array_end);
+  return len == 0U || reader.skip(array_end - reader.position(), array_end);
 }
 
 template <typename T>
@@ -715,8 +931,22 @@ inline bool read_value(Reader& reader, T& value, size_t end) {
 
     static_assert(std::tuple_size_v<FieldsType> > 0U, "SOME/IP structures must declare at least one field.");
 
-    return std::apply([&reader, end](auto&... field) { return (read_value(reader, field, end) && ...); },
-                      value.vlink_someip_fields());
+    constexpr size_t kStructLength = get_struct_length<T>();
+    size_t struct_end = end;
+
+    if constexpr (kStructLength > 0U) {
+      if VUNLIKELY (!reader.begin_length_delimited(end, struct_end, kStructLength)) {
+        return false;
+      }
+    }
+
+    auto fields = value.vlink_someip_fields();
+
+    if VUNLIKELY (!read_fields(reader, fields, struct_end, std::make_index_sequence<std::tuple_size_v<FieldsType>>{})) {
+      return false;
+    }
+
+    return kStructLength == 0U || reader.skip(struct_end - reader.position(), struct_end);
   } else {
     static_assert(Traits::ExpectFalse<T>(), "Unsupported SOME/IP field type.");
 
@@ -726,7 +956,7 @@ inline bool read_value(Reader& reader, T& value, size_t end) {
 
 template <typename T>
 inline size_t get_serialized_size(const T& src) noexcept {
-  Writer writer(nullptr, std::numeric_limits<size_t>::max());
+  Writer writer(nullptr, std::numeric_limits<size_t>::max(), get_alignment<T>(), get_endian<T>());
 
   return write_value(writer, src) ? writer.position() : 0U;
 }
@@ -743,7 +973,7 @@ inline bool serialize(const T& src, Bytes& des, uint8_t offset) noexcept {
       return false;
     }
 
-    Writer writer(des.data(), des.size());
+    Writer writer(des.data(), des.size(), get_alignment<T>(), get_endian<T>());
 
     if VUNLIKELY (!write_value(writer, src) || writer.position() != des.size()) {
       return false;
@@ -752,7 +982,7 @@ inline bool serialize(const T& src, Bytes& des, uint8_t offset) noexcept {
     return true;
   }
 
-  Writer size_writer(nullptr, std::numeric_limits<size_t>::max());
+  Writer size_writer(nullptr, std::numeric_limits<size_t>::max(), get_alignment<T>(), get_endian<T>());
 
   if VUNLIKELY (!write_value(size_writer, src)) {
     return false;
@@ -772,7 +1002,7 @@ inline bool serialize(const T& src, Bytes& des, uint8_t offset) noexcept {
     return false;
   }
 
-  Writer writer(des.data(), des.size());
+  Writer writer(des.data(), des.size(), get_alignment<T>(), get_endian<T>());
 
   if VUNLIKELY (!write_value(writer, src) || writer.position() != size) {
     return false;
@@ -787,7 +1017,7 @@ inline bool deserialize(const Bytes& src, T& des) {
     return false;
   }
 
-  Reader reader(src.data(), src.size());
+  Reader reader(src.data(), src.size(), get_alignment<T>(), get_endian<T>());
 
   return read_value(reader, des, reader.size());
 }
@@ -799,6 +1029,84 @@ inline bool deserialize(const Bytes& src, T& des) {
 ////////////////////////////////////////////////////////////////
 /// Macro Definitions
 ////////////////////////////////////////////////////////////////
+
+/**
+ * @def VLINK_SOMEIP_ALIGNMENT
+ * @brief Selects the AUTOSAR alignment for a SOME/IP payload structure.
+ *
+ * @details
+ * Place this optional macro in the public section of a top-level structure
+ * together with @c VLINK_SOMEIP_FIELDS.  The default alignment is one byte.
+ *
+ * @param alignment  Alignment in bytes: 1, 2, 4, 8, 16, or 32.
+ */
+#define VLINK_SOMEIP_ALIGNMENT(alignment) \
+  [[nodiscard]] static constexpr size_t vlink_someip_alignment() noexcept { return alignment; }
+
+/**
+ * @def VLINK_SOMEIP_ENDIAN
+ * @brief Selects the byte order for SOME/IP payload scalar values.
+ *
+ * @details
+ * Place this optional macro in the public section of a top-level structure
+ * together with @c VLINK_SOMEIP_FIELDS.  The default is @c Endian::kBig.
+ * Length fields remain in network byte order.
+ *
+ * @param endian  @c vlink::SomeipSerializer::Endian::kBig or
+ *                @c vlink::SomeipSerializer::Endian::kLittle.
+ */
+#define VLINK_SOMEIP_ENDIAN(endian) \
+  [[nodiscard]] static constexpr vlink::SomeipSerializer::Endian vlink_someip_endian() noexcept { return endian; }
+
+/**
+ * @def VLINK_SOMEIP_ENDIAN_BIG
+ * @brief Selects big-endian SOME/IP payload scalar values.
+ *
+ * @details
+ * Equivalent to
+ * @c VLINK_SOMEIP_ENDIAN(vlink::SomeipSerializer::Endian::kBig).
+ */
+#define VLINK_SOMEIP_ENDIAN_BIG VLINK_SOMEIP_ENDIAN(vlink::SomeipSerializer::Endian::kBig)
+
+/**
+ * @def VLINK_SOMEIP_ENDIAN_LITTLE
+ * @brief Selects little-endian SOME/IP payload scalar values.
+ *
+ * @details
+ * Equivalent to
+ * @c VLINK_SOMEIP_ENDIAN(vlink::SomeipSerializer::Endian::kLittle).
+ */
+#define VLINK_SOMEIP_ENDIAN_LITTLE VLINK_SOMEIP_ENDIAN(vlink::SomeipSerializer::Endian::kLittle)
+
+/**
+ * @def VLINK_SOMEIP_STRUCT_LENGTH
+ * @brief Selects the length field width for one SOME/IP structure type.
+ *
+ * @details
+ * Place this optional macro in the public section together with
+ * @c VLINK_SOMEIP_FIELDS.  Supported widths are 0, 1, 2, and 4 bytes; the
+ * default is zero, which omits the structure length field.  The length field
+ * remains in network byte order.
+ *
+ * @param width  Structure length field width in bytes.
+ */
+#define VLINK_SOMEIP_STRUCT_LENGTH(width) \
+  [[nodiscard]] static constexpr size_t vlink_someip_struct_length() noexcept { return width; }
+
+/**
+ * @def VLINK_SOMEIP_LENGTH
+ * @brief Selects the length field width for one SOME/IP field.
+ *
+ * @details
+ * Use this macro around a @c std::string, @c Bytes, @c std::vector, or
+ * @c std::array entry in @c VLINK_SOMEIP_FIELDS.  Supported widths are 1, 2,
+ * and 4 bytes.  A fixed array may also use zero to omit its length field.
+ * Unwrapped length-delimited fields use four bytes.
+ *
+ * @param field  Structure field to configure.
+ * @param width  Length field width in bytes.
+ */
+#define VLINK_SOMEIP_LENGTH(field, width) vlink::SomeipSerializer::length_field<width>(field)
 
 /**
  * @def VLINK_SOMEIP_FIELDS
@@ -813,7 +1121,11 @@ inline bool deserialize(const Bytes& src, T& des) {
  * field must be listed.  The generated deserializer requires its input storage
  * not to overlap any storage reachable from the destination structure.  Its
  * serializer likewise requires output storage not to overlap any storage
- * reachable from the source structure.
+ * reachable from the source structure.  Use @c VLINK_SOMEIP_ALIGNMENT to
+ * select a non-default alignment, @c VLINK_SOMEIP_ENDIAN to select payload
+ * byte order for a top-level payload, @c VLINK_SOMEIP_STRUCT_LENGTH to add a
+ * length field to a structure type, and
+ * @c VLINK_SOMEIP_LENGTH to configure an individual length-delimited field.
  */
 // clang-format off
 #define VLINK_SOMEIP_FIELDS(...)                                                                      \
@@ -822,11 +1134,11 @@ inline bool deserialize(const Bytes& src, T& des) {
   }                                                                                                   \
                                                                                                       \
   [[nodiscard]] auto vlink_someip_fields() noexcept {                                                 \
-    return std::tie(__VA_ARGS__);                                                                     \
+    return vlink::SomeipSerializer::make_fields(__VA_ARGS__);                                         \
   }                                                                                                   \
                                                                                                       \
   [[nodiscard]] auto vlink_someip_fields() const noexcept {                                           \
-    return std::tie(__VA_ARGS__);                                                                     \
+    return vlink::SomeipSerializer::make_fields(__VA_ARGS__);                                         \
   }                                                                                                   \
                                                                                                       \
   [[nodiscard]] size_t get_serialized_size() const noexcept {                                         \

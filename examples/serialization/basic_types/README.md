@@ -17,6 +17,11 @@
 | `vlink::Bytes::encode_to_base64 / decode_from_base64` | Base64 互转 |
 | `vlink::Bytes::get_crc_32(b)` | 计算 CRC32 |
 | `VLINK_SOMEIP_FIELDS(...)` | 按声明顺序生成 SOME/IP payload 编解码 |
+| `VLINK_SOMEIP_ALIGNMENT(n)` | 配置顶层 payload 的 AUTOSAR alignment |
+| `VLINK_SOMEIP_ENDIAN(endian)` | 配置顶层 payload 标量的大小端 |
+| `VLINK_SOMEIP_ENDIAN_BIG` / `VLINK_SOMEIP_ENDIAN_LITTLE` | 显式配置大端或小端 payload 标量 |
+| `VLINK_SOMEIP_LENGTH(field, n)` | 配置单个字段的长度宽度 |
+| `VLINK_SOMEIP_STRUCT_LENGTH(n)` | 配置结构体的长度宽度 |
 
 ## 🚀 最小可运行片段
 
@@ -38,7 +43,7 @@ POD 结构体（平凡 + 标准布局）可直接作为 `T`：`vlink::Publisher<
 - **`vlink::Bytes`**：应用层已有自定义二进制协议，零编解码开销。
 - **`std::string`**：文本、JSON 或格式未知的载体。
 - **POD 结构体**：同机同 ABI 的简单结构，最快路径；跨平台/跨语言请改用 Protobuf / FlatBuffers / CDR。
-- **SOME/IP 结构**：用 `VLINK_SOMEIP_FIELDS(...)` 声明字段顺序，支持嵌套结构、`std::string`、`std::vector`、`std::array` 和 `vlink::Bytes`；固定部署范围见[消息序列化](../../../doc/03-serialization.md#-35-someip-与自定义序列化器)。
+- **SOME/IP 结构**：用 `VLINK_SOMEIP_FIELDS(...)` 声明字段顺序，支持嵌套结构、`std::string`、`std::vector`、`std::array` 和 `vlink::Bytes`；大小端、alignment 与长度宽度的部署范围见[消息序列化](../../../doc/03-serialization.md#-35-someip-与自定义序列化器)。
 - **其他复杂结构**：跨语言场景改用 Protobuf（见 [`../../samples/helloworld/`](../../samples/helloworld/)）或 FlatBuffers（见 [`../../samples/someip_flat/`](../../samples/someip_flat/)）。
 
 ## ▶️ 运行

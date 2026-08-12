@@ -132,6 +132,7 @@ struct SomeipScalars {
   bool enabled{false};
   SomeipMode mode{SomeipMode::kManual};
 
+  VLINK_SOMEIP_ENDIAN_BIG
   VLINK_SOMEIP_FIELDS(byte, word, signed_value, ratio, enabled, mode)
 };
 
@@ -221,6 +222,59 @@ struct SomeipText {
   std::string value;
 
   VLINK_SOMEIP_FIELDS(value)
+};
+
+struct SomeipAlignedText {
+  uint16_t prefix{0};
+  std::string value;
+  uint32_t suffix{0};
+
+  VLINK_SOMEIP_ALIGNMENT(32U)
+  VLINK_SOMEIP_FIELDS(prefix, VLINK_SOMEIP_LENGTH(value, 1U), suffix)
+};
+
+struct SomeipAlignedChildren {
+  std::vector<SomeipChild> values;
+  uint8_t suffix{0};
+
+  VLINK_SOMEIP_ALIGNMENT(8U)
+  VLINK_SOMEIP_FIELDS(values, suffix)
+};
+
+struct SomeipLengthFields {
+  std::string short_name;
+  std::string name;
+  std::vector<uint16_t> values;
+  std::array<uint8_t, 2> fixed{};
+  uint8_t counter{0};
+
+  VLINK_SOMEIP_FIELDS(VLINK_SOMEIP_LENGTH(short_name, 1U), VLINK_SOMEIP_LENGTH(name, 2U),
+                      VLINK_SOMEIP_LENGTH(values, 4U), VLINK_SOMEIP_LENGTH(fixed, 0U), counter)
+};
+
+struct SomeipLittleEndian {
+  uint16_t word{0};
+  std::vector<uint16_t> values;
+  uint32_t suffix{0};
+
+  VLINK_SOMEIP_ENDIAN_LITTLE
+  VLINK_SOMEIP_FIELDS(word, VLINK_SOMEIP_LENGTH(values, 2U), suffix)
+};
+
+struct SomeipSizedChild {
+  int16_t delta{0};
+  std::string label;
+
+  VLINK_SOMEIP_STRUCT_LENGTH(1U)
+  VLINK_SOMEIP_FIELDS(delta, label)
+};
+
+struct SomeipSizedMessage {
+  SomeipSizedChild child;
+  uint8_t suffix{0};
+
+  VLINK_SOMEIP_STRUCT_LENGTH(2U)
+  VLINK_SOMEIP_FIELDS(child, suffix)
 };
 
 #ifdef VLINK_HAS_CDR
@@ -412,6 +466,131 @@ TEST_SUITE("ser-someip") {
     REQUIRE((target << data));
     CHECK(target.delta == source.delta);
     CHECK(target.label == source.label);
+  }
+
+  TEST_CASE("aligns fields after variable size data from the SOME/IP message start") {
+    SomeipAlignedText source;
+    source.prefix = 0x1234U;
+    source.value = "x";
+    source.suffix = 0xAABBCCDDU;
+
+    vlink::Bytes data;
+    REQUIRE(Serializer::serialize(source, data));
+
+    const std::array<uint8_t, 20> expected = {0x12, 0x34, 0x05, 0xEF, 0xBB, 0xBF, 'x',  0x00, 0x00, 0x00,
+                                              0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xAA, 0xBB, 0xCC, 0xDD};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    SomeipAlignedText target;
+    REQUIRE(Serializer::deserialize(data, target));
+    CHECK(target.prefix == source.prefix);
+    CHECK(target.value == source.value);
+    CHECK(target.suffix == source.suffix);
+  }
+
+  TEST_CASE("aligns variable size array elements") {
+    SomeipAlignedChildren source;
+    source.values.resize(2U);
+    source.values[0].delta = 0x0102;
+    source.values[0].label = "a";
+    source.values[1].delta = 0x0304;
+    source.values[1].label = "bc";
+    source.suffix = 0x7FU;
+
+    vlink::Bytes data;
+    REQUIRE(Serializer::serialize(source, data));
+
+    const std::array<uint8_t, 33> expected = {0x00, 0x00, 0x00, 0x18, 0x01, 0x02, 0x00, 0x00, 0x00, 0x05, 0xEF,
+                                              0xBB, 0xBF, 'a',  0x00, 0x00, 0x03, 0x04, 0x00, 0x00, 0x00, 0x06,
+                                              0xEF, 0xBB, 0xBF, 'b',  'c',  0x00, 0x00, 0x00, 0x00, 0x00, 0x7F};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    SomeipAlignedChildren target;
+    REQUIRE(Serializer::deserialize(data, target));
+    REQUIRE(target.values.size() == source.values.size());
+    CHECK(target.values[0].delta == source.values[0].delta);
+    CHECK(target.values[0].label == source.values[0].label);
+    CHECK(target.values[1].delta == source.values[1].delta);
+    CHECK(target.values[1].label == source.values[1].label);
+    CHECK(target.suffix == source.suffix);
+  }
+
+  TEST_CASE("uses configured length field widths") {
+    SomeipLengthFields source;
+    source.short_name = "a";
+    source.name = "bc";
+    source.values = {0x1234U, 0xABCDU};
+    source.fixed = {0x56U, 0x78U};
+    source.counter = 0x9AU;
+
+    vlink::Bytes data;
+    REQUIRE(Serializer::serialize(source, data));
+
+    const std::array<uint8_t, 25> expected = {0x05, 0xEF, 0xBB, 0xBF, 'a',  0x00, 0x00, 0x06, 0xEF,
+                                              0xBB, 0xBF, 'b',  'c',  0x00, 0x00, 0x00, 0x00, 0x04,
+                                              0x12, 0x34, 0xAB, 0xCD, 0x56, 0x78, 0x9A};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    SomeipLengthFields target;
+    REQUIRE(Serializer::deserialize(data, target));
+    CHECK(target.short_name == source.short_name);
+    CHECK(target.name == source.name);
+    CHECK(target.values == source.values);
+    CHECK(target.fixed == source.fixed);
+    CHECK(target.counter == source.counter);
+  }
+
+  TEST_CASE("uses little endian payload values and big endian length fields") {
+    SomeipLittleEndian source;
+    source.word = 0x1234U;
+    source.values = {0x0102U, 0x0304U};
+    source.suffix = 0xAABBCCDDU;
+
+    vlink::Bytes data;
+    REQUIRE(Serializer::serialize(source, data));
+
+    const std::array<uint8_t, 12> expected = {0x34, 0x12, 0x00, 0x04, 0x02, 0x01, 0x04, 0x03, 0xDD, 0xCC, 0xBB, 0xAA};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    SomeipLittleEndian target;
+    REQUIRE(Serializer::deserialize(data, target));
+    CHECK(target.word == source.word);
+    CHECK(target.values == source.values);
+    CHECK(target.suffix == source.suffix);
+  }
+
+  TEST_CASE("uses configured structure length fields") {
+    SomeipSizedMessage source;
+    source.child.delta = 0x0102;
+    source.child.label = "a";
+    source.suffix = 0x7FU;
+
+    vlink::Bytes data;
+    REQUIRE(Serializer::serialize(source, data));
+
+    const std::array<uint8_t, 15> expected = {0x00, 0x0D, 0x0B, 0x01, 0x02, 0x00, 0x00, 0x00,
+                                              0x05, 0xEF, 0xBB, 0xBF, 'a',  0x00, 0x7F};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    SomeipSizedMessage target;
+    REQUIRE(Serializer::deserialize(data, target));
+    CHECK(target.child.delta == source.child.delta);
+    CHECK(target.child.label == source.child.label);
+    CHECK(target.suffix == source.suffix);
+
+    const std::array<uint8_t, 19> extended = {0x00, 0x11, 0x0D, 0x01, 0x02, 0x00, 0x00, 0x00, 0x05, 0xEF,
+                                              0xBB, 0xBF, 'a',  0x00, 0xDE, 0xAD, 0x7F, 0xBE, 0xEF};
+    const auto extended_data = vlink::Bytes::shallow_copy(extended.data(), extended.size());
+    SomeipSizedMessage extended_target;
+    REQUIRE(Serializer::deserialize(extended_data, extended_target));
+    CHECK(extended_target.child.delta == source.child.delta);
+    CHECK(extended_target.child.label == source.child.label);
+    CHECK(extended_target.suffix == source.suffix);
   }
 
   TEST_CASE("serializes wide scalar values") {

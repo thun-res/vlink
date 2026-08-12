@@ -187,6 +187,7 @@ struct SomeipChild {
   int16_t delta{0};
   std::string label;
 
+  VLINK_SOMEIP_STRUCT_LENGTH(1U)
   VLINK_SOMEIP_FIELDS(delta, label)
 };
 
@@ -198,7 +199,11 @@ struct SomeipMessage {
   std::vector<SomeipChild> children;
   vlink::Bytes payload;
 
-  VLINK_SOMEIP_FIELDS(state, name, samples, limits, children, payload)
+  VLINK_SOMEIP_ALIGNMENT(8U)
+  VLINK_SOMEIP_ENDIAN_LITTLE
+  VLINK_SOMEIP_FIELDS(state, VLINK_SOMEIP_LENGTH(name, 2U),
+                      VLINK_SOMEIP_LENGTH(samples, 4U), VLINK_SOMEIP_LENGTH(limits, 0U),
+                      children, payload)
 };
 
 static_assert(vlink::Serializer::get_type_of<SomeipMessage>() == vlink::Serializer::kSomeipType);
@@ -208,18 +213,27 @@ static_assert(vlink::Serializer::get_type_of<SomeipMessage>() == vlink::Serializ
 `std::string`、`vlink::Bytes`、`std::vector`、`std::array`，以及使用同一宏声明的嵌套结构；容器可递归组合，
 因此 `std::vector<SomeipChild>`、`std::array<SomeipChild, N>` 和多维数组均受支持。
 
-VLink 选择的 AUTOSAR R25-11 non-TLV payload 部署固定为：标量大端、1 字节对齐、字符串和动态数组使用
-4 字节长度字段、固定数组使用可选的 4 字节长度字段、结构体不带长度字段；动态 UTF-8 字符串由 BOM、
-内容和结尾 NUL 组成，长度包含这三部分。`vlink::Bytes` 按动态 `uint8` 数组编码。16 字节 SOME/IP
+VLink 选择的 AUTOSAR R25-11 non-TLV payload 部署为：payload 标量默认大端，可在顶层消息结构体中用
+`VLINK_SOMEIP_ENDIAN_BIG` 或 `VLINK_SOMEIP_ENDIAN_LITTLE` 显式选择；也可使用
+`VLINK_SOMEIP_ENDIAN(endian)`。长度字段按 AUTOSAR 要求始终保持网络字节序。字符串及动态数组的长度字段
+默认为 4 字节，固定数组默认带 4 字节长度字段，结构体默认不带长度字段；可在结构体中用
+`VLINK_SOMEIP_STRUCT_LENGTH(width)` 指定 0、1、2 或 4。在
+`VLINK_SOMEIP_FIELDS(...)` 中可用
+`VLINK_SOMEIP_LENGTH(field, width)` 将单个字符串、`vlink::Bytes`、动态数组或固定数组的宽度指定为 1、
+2 或 4；固定数组还可指定 0 以省略长度字段。该配置只作用于被包装字段本身，嵌套数组的内层维度仍使用
+默认 4 字节。alignment 默认为 1，也可在顶层消息结构体中用 `VLINK_SOMEIP_ALIGNMENT(alignment)`
+指定 1、2、4、8、16 或 32。序列化器只在后面还有数据的可变长度字段后插入 padding，并从普通 16 字节
+SOME/IP 消息起点计算对齐。动态 UTF-8 字符串由 BOM、内容和结尾 NUL 组成，长度包含这三部分。
+`vlink::Bytes` 按动态 `uint8` 数组编码。16 字节 SOME/IP
 消息头由传输层处理，不属于本 codec；受消息头 32 位 `Length` 字段约束，payload 总长最多为
 `UINT32_MAX - 8` 字节。该字符串部署保留内容中的内嵌 NUL，仅把声明长度内的最后一个字节作为终止符；
 对端若配置为遇首个 NUL 截断，双方须统一该部署选择。
 
-该部署不表达可配置端序、对齐或长度字段宽度，也不支持结构体长度字段、TLV、union、C++ bit-field、
+该部署不支持字段级混合或 opaque 端序、嵌套数组逐维独立长度宽度、TLV、union、C++ bit-field、
 UTF-16、定长字符串及服务接口声明的最大长度约束。宏至少列出一个字段，字段顺序就是线格式；解码失败时
 已经成功读取的字段可能保留新值。直接调用生成运算符或 `Serializer` 时，输入和输出缓冲不得与源或目标
-结构可达的任何存储重叠。由于结构体不带长度字段，只有顶层 payload 末尾的未知新增字段可以忽略；嵌套
-结构及数组元素必须由通信双方部署相同的字段布局。
+结构可达的任何存储重叠。未配置结构体长度时，只有顶层 payload 末尾的未知新增字段可以忽略；配置长度
+后可跳过该结构体边界内的未知尾部数据，但没有 TLV 时仍不能识别插入或乱序的未知字段。
 
 `kSomeipType` 是 payload codec，与 `someip://` 传输后端相互独立：任意后端都可承载这段 payload，
 `someip://` 也不会把普通 C++ 或 Python 对象自动转换成 SOME/IP 字段。Python 节点的消息类型仍是
@@ -369,7 +383,7 @@ vlink::Publisher<BadMsg> pub("shm://bad");  // 编译失败：<MsgT> is not a su
 | POD 跨架构字节序 | 内存直拷不做字节序转换；大小端不同的机器间通信应改用 Protobuf / FlatBuffers / CDR，或在自定义序列化器内显式处理字节序 |
 | FlatBuffers 零拷贝指针生命期 | `const MyMsg*` 指向接收缓冲区，回调返回后即失效；需在回调外保留时先 `s->UnPack()` 拷成 Object |
 | C 字符串方向性 | `const char*` / `char[]` 只支持序列化；反序列化为字符指针会失败，接收端应声明为 `std::string` |
-| SOME/IP 部署范围 | 宏使用固定的 non-TLV payload 部署；服务接口需要其他端序、对齐、长度宽度、TLV 或最大长度约束时不能直接使用 |
+| SOME/IP 部署范围 | 宏使用 non-TLV payload 部署，支持 payload 大/小端、1/2/4/8/16/32 字节 alignment，以及字段和结构体的 0/1/2/4 字节长度宽度；服务接口需要嵌套数组逐维配置、TLV 或最大长度约束时不能直接使用 |
 | 自定义序列化器字段对齐 | 写入与读取的字段顺序必须严格对应，`operator<<` 读取前须校验 `in.size()` 合法性 |
 | 流式回退编码 | 若类型对 `std::stringstream` 同时重载了 `<<`/`>>`（且非上述任一类型族），框架会以文本流作为兜底编码，而非编译失败；需要紧凑二进制时应改用 [3.5](#-35-someip-与自定义序列化器) 的 `operator>>`/`<<(Bytes&)` |
 

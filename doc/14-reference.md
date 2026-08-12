@@ -185,7 +185,7 @@ vlink::Publisher<Imu> pub2("dds://sensor/imu?qos=my_sensor");
 
 ![序列化类型自动推导](images/serialization-type-detection.png)
 
-开箱即用的类型族：POD 结构体（二进制直存，无编码转换但会内存复制）、Protobuf、FlatBuffers、DDS CDR（实现 `serialize/deserialize(Cdr&)`，生成含 encapsulation header 的字节负载）、由 `VLINK_SOMEIP_FIELDS(...)` 声明的 SOME/IP 结构、`std::string`、仅用于发送的 `const char*` / `char[]`、`vlink::Bytes`，以及实现一对编解码运算符的自定义类型。接收文本必须使用 `std::string`；SOME/IP 宏用法、固定部署边界及其他机制见 [消息序列化](03-serialization.md#-35-someip-与自定义序列化器)。
+开箱即用的类型族：POD 结构体（二进制直存，无编码转换但会内存复制）、Protobuf、FlatBuffers、DDS CDR（实现 `serialize/deserialize(Cdr&)`，生成含 encapsulation header 的字节负载）、由 `VLINK_SOMEIP_FIELDS(...)` 声明的 SOME/IP 结构、`std::string`、仅用于发送的 `const char*` / `char[]`、`vlink::Bytes`，以及实现一对编解码运算符的自定义类型。接收文本必须使用 `std::string`；SOME/IP 宏用法、部署边界及其他机制见 [消息序列化](03-serialization.md#-35-someip-与自定义序列化器)。
 
 ---
 
