@@ -142,7 +142,7 @@ if (pub.has_subscribers()) {  // 非阻塞查询
 
 ### 🧵 4.6.1 intra:// — 进程内通信
 
-同一进程内各模块间通信，无内核通信与外部依赖。`shared_ptr<IntraDataType>` 走共享对象直传；普通消息仍序列化为 `Bytes` 并在订阅端反序列化。默认 `#queue` 由 intra pipeline 异步派发，`#direct` 才在调用线程内同步执行回调。
+同一进程内各模块间通信，无内核通信与外部依赖。`shared_ptr<IntraDataType>` 走共享对象直传；普通消息仍序列化为 `Bytes` 并在订阅端反序列化。未绑定 `MessageLoop` 时，默认 `#queue` 由 intra pipeline 异步派发，`#direct` 在调用线程内同步执行回调；绑定后直接投递到目标 loop。
 
 ```
 intra://<address>[?event=<name>&pipeline=<N>][#queue|#direct]
@@ -164,7 +164,7 @@ sub.listen([](const int& v) { VLOG_I("recv: ", v); });
 pub.publish(42);
 ```
 
-边界条件：`#direct` 模式下回调在 `publish()` 的调用线程内执行，需避免在回调中重入或持锁等待；仅限同进程，跨进程无效。
+边界条件：未绑定 `MessageLoop` 时，`#direct` 回调在 `publish()` 的调用线程内执行，需避免在回调中重入或持锁等待；仅限同进程，跨进程无效。
 
 ### 🗄️ 4.6.2 shm:// — 共享内存零拷贝
 

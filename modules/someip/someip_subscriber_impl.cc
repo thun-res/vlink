@@ -89,16 +89,6 @@ const Conf* SomeipSubscriberImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* SomeipSubscriberImpl::get_abstract_node() const { return object_.get(); }
 
-bool SomeipSubscriberImpl::attach(class MessageLoop*) {
-  VLOG_W("Function [attach] is not supported.");
-  return false;
-}
-
-bool SomeipSubscriberImpl::detach() {
-  VLOG_W("Function [detach] is not supported.");
-  return false;
-}
-
 bool SomeipSubscriberImpl::listen(MsgCallback&& callback) {
   object_->register_msg_callback(this, std::move(callback));
 

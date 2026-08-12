@@ -168,14 +168,21 @@ TEST_SUITE("fdbus-pubsub") {
       return;
     }
 
+    MessageLoop loop;
+    REQUIRE(loop.async_run());
+
     std::atomic<bool> received{false};
+    std::atomic<bool> callback_on_loop{false};
     Bytes captured;
 
     Publisher<Bytes> pub(FdbusConf("fdbus_evt_pubsub1", "data"));
     Subscriber<Bytes> sub("fdbus://fdbus_evt_pubsub1?event=data");
 
+    REQUIRE(sub.attach(&loop));
+
     sub.listen([&](const Bytes& data) {
       captured = data;
+      callback_on_loop.store(loop.is_in_same_thread(), std::memory_order_release);
       received.store(true, std::memory_order_release);
     });
 
@@ -189,6 +196,11 @@ TEST_SUITE("fdbus-pubsub") {
     REQUIRE(captured.size() == 3u);
     CHECK(captured[0] == 0xAB);
     CHECK(captured[2] == 0xEF);
+    CHECK(callback_on_loop.load(std::memory_order_acquire));
+
+    CHECK(sub.detach());
+    loop.quit();
+    loop.wait_for_quit();
   }
 
   TEST_CASE("string payload is received with correct value") {
@@ -387,17 +399,29 @@ TEST_SUITE("fdbus-method") {
       return;
     }
 
+    MessageLoop loop;
+    REQUIRE(loop.async_run());
+
+    std::atomic<bool> server_on_loop{false};
+
     Server<std::string, std::string> server(FdbusConf("fdbus_mth_cb1"));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "fdbus_cb"; });
+    REQUIRE(server.attach(&loop));
+    server.listen([&](const std::string& /*req*/, std::string& resp) {
+      server_on_loop.store(loop.is_in_same_thread(), std::memory_order_release);
+      resp = "fdbus_cb";
+    });
 
     Client<std::string, std::string> client("fdbus://fdbus_mth_cb1");
+    REQUIRE(client.attach(&loop));
     CHECK(client.wait_for_connected(1s));
 
     std::atomic<bool> got{false};
+    std::atomic<bool> client_on_loop{false};
     std::string resp_val;
 
     bool ok = client.invoke("msg", [&](const std::string& resp) {
       resp_val = resp;
+      client_on_loop.store(loop.is_in_same_thread(), std::memory_order_release);
       got.store(true, std::memory_order_release);
     });
 
@@ -405,6 +429,13 @@ TEST_SUITE("fdbus-method") {
 
     CHECK(common_test::wait_until([&got] { return got.load(std::memory_order_acquire); }, 5s));
     CHECK(resp_val == "fdbus_cb");
+    CHECK(server_on_loop.load(std::memory_order_acquire));
+    CHECK(client_on_loop.load(std::memory_order_acquire));
+
+    CHECK(client.detach());
+    CHECK(server.detach());
+    loop.quit();
+    loop.wait_for_quit();
   }
 
   TEST_CASE("detect connected callback fires when client connects to server") {

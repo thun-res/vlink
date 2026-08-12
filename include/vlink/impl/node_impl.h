@@ -350,8 +350,7 @@ class VLINK_EXPORT NodeImpl {
    * @details
    * Records @p message_loop atomically; subsequent @c call_status() posts onto
    * the loop thread.  When another non-null loop is already attached the call
-   * is rejected.  Passing @c nullptr does not establish a usable binding even
-   * though it may succeed when the node was already detached.
+   * is rejected.  Passing @c nullptr is rejected.
    *
    * @param message_loop  Loop to bind to.
    * @return @c true when the pointer was stored; @c false on conflict.

@@ -50,16 +50,6 @@ const Conf* IntraSetterImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* IntraSetterImpl::get_abstract_node() const { return object_.get(); }
 
-bool IntraSetterImpl::attach(class MessageLoop*) {
-  VLOG_W("Function [attach] is not supported.");
-  return false;
-}
-
-bool IntraSetterImpl::detach() {
-  VLOG_W("Function [detach] is not supported.");
-  return false;
-}
-
 void IntraSetterImpl::write(const Bytes& value_data) { object_->publish(type_, conf_.hash_code, value_data); }
 
 void IntraSetterImpl::sync(SyncCallback&& callback) {

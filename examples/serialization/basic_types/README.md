@@ -29,7 +29,7 @@ vlink::Publisher<std::string> pub("intra://example/basic/string#direct");
 pub.publish(std::string("Hello, VLink!"));
 ```
 
-`intra://` 六种原语不支持 `Node::attach()`；本示例用 `#direct` 让回调在发布线程内同步完成。默认 `#queue` 则由 intra 自身的 pipeline 派发。
+本示例用 `#direct` 让回调在发布线程内同步完成。默认 `#queue` 则由 intra 自身的 pipeline 派发。
 
 POD 结构体（平凡 + 标准布局）可直接作为 `T`：`vlink::Publisher<SensorReading>`，发布前用 `SensorReading r{}` 零初始化以避免填充字节不确定。`vlink::Bytes` 用法相同，并附带 Base64 / CRC32 等工具方法。
 

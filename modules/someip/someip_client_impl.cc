@@ -60,16 +60,6 @@ const Conf* SomeipClientImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* SomeipClientImpl::get_abstract_node() const { return object_.get(); }
 
-bool SomeipClientImpl::attach(class MessageLoop*) {
-  VLOG_W("Function [attach] is not supported.");
-  return false;
-}
-
-bool SomeipClientImpl::detach() {
-  VLOG_W("Function [detach] is not supported.");
-  return false;
-}
-
 bool SomeipClientImpl::is_connected() const { return object_->is_connected(); }
 
 bool SomeipClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::chrono::milliseconds timeout) {

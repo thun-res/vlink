@@ -62,16 +62,6 @@ const Conf* FdbusServerImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* FdbusServerImpl::get_abstract_node() const { return object_.get(); }
 
-bool FdbusServerImpl::attach(class MessageLoop*) {
-  VLOG_W("Function [attach] is not supported.");
-  return false;
-}
-
-bool FdbusServerImpl::detach() {
-  VLOG_W("Function [detach] is not supported.");
-  return false;
-}
-
 bool FdbusServerImpl::has_clients() const { return object_->getSessionCount() > 0; }
 
 bool FdbusServerImpl::listen(ReqRespCallback&& callback) {

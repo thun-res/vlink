@@ -112,7 +112,7 @@ auto sp = vlink::Publisher<T>::create_shared(url_str);             // shared_ptr
 | --- | --- |
 | `bool init()` / `bool deinit()` | 显式生命周期；构造默认 `kWithInit` 即自动 `init()` |
 | `void interrupt()` | 中断阻塞中的 `wait_for_*` 调用 |
-| `bool attach(MessageLoop*)` / `bool detach()` | 后端支持时将回调投递到指定 MessageLoop；intra/fdbus/someip 当前不支持 |
+| `bool attach(MessageLoop*)` / `bool detach()` | 将入站回调投递到指定 MessageLoop / 解除绑定 |
 | `bool suspend()` / `bool resume()` / `bool is_suspend() const` | 暂停 / 恢复 / 查询收发 |
 | `bool is_support_loan() const` | 当前后端是否支持零拷贝借贷 |
 | `Bytes loan(int64_t size)` / `bool return_loan(const Bytes&)` | 借用 / 归还共享内存（见 [§14.10](#-1410-零拷贝)） |

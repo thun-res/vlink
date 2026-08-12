@@ -87,6 +87,37 @@ IntraNode::~IntraNode() = default;
 std::any IntraNode::get_native_handle() const { return this; }
 
 bool IntraNode::publish(IntraType type, uint32_t channel, const Bytes& msg_data) {
+  auto* impl = get_first_impl();
+  auto* message_loop = impl ? impl->get_message_loop() : nullptr;
+
+  if (message_loop) {
+    std::weak_ptr<IntraNode> weak_self = shared_from_this();
+
+    return message_loop->post_task([weak_self, channel, msg_data]() {
+      auto self = weak_self.lock();
+
+      if VUNLIKELY (!self) {
+        return;
+      }
+
+      auto* impl = self->get_first_impl();
+
+      if VUNLIKELY (!impl || !impl->get_message_loop()) {
+        return;
+      }
+
+      self->traverse_msg_callback([channel, &msg_data](NodeImpl* impl, const auto& callback) {
+        const auto* conf_ptr = impl->get_target_conf<IntraConf>();
+
+        if VUNLIKELY (conf_ptr->hash_code != channel || impl->has_suspend) {
+          return;
+        }
+
+        callback(msg_data);
+      });
+    });
+  }
+
   if (type == IntraType::kQueue && pipeline_) {
     std::weak_ptr<IntraNode> weak_self = shared_from_this();
 
@@ -100,21 +131,20 @@ bool IntraNode::publish(IntraType type, uint32_t channel, const Bytes& msg_data)
       self->traverse_msg_callback([channel, &msg_data](NodeImpl* impl, const auto& callback) {
         const auto* conf_ptr = impl->get_target_conf<IntraConf>();
 
-        if (conf_ptr->hash_code != channel || impl->has_suspend) {
+        if VUNLIKELY (conf_ptr->hash_code != channel || impl->has_suspend) {
           return;
         }
 
         callback(msg_data);
       });
     });
-
   } else {
     bool ok = false;
 
     traverse_msg_callback([channel, &msg_data, &ok](NodeImpl* impl, const auto& callback) {
       const auto* conf_ptr = impl->get_target_conf<IntraConf>();
 
-      if (conf_ptr->hash_code != channel || impl->has_suspend) {
+      if VUNLIKELY (conf_ptr->hash_code != channel || impl->has_suspend) {
         return;
       }
 
@@ -128,6 +158,37 @@ bool IntraNode::publish(IntraType type, uint32_t channel, const Bytes& msg_data)
 }
 
 bool IntraNode::publish(IntraType type, uint32_t channel, const IntraData& intra_data) {
+  auto* impl = get_first_impl();
+  auto* message_loop = impl ? impl->get_message_loop() : nullptr;
+
+  if (message_loop) {
+    std::weak_ptr<IntraNode> weak_self = shared_from_this();
+
+    return message_loop->post_task([weak_self, channel, intra_data]() {
+      auto self = weak_self.lock();
+
+      if VUNLIKELY (!self) {
+        return;
+      }
+
+      auto* impl = self->get_first_impl();
+
+      if VUNLIKELY (!impl || !impl->get_message_loop()) {
+        return;
+      }
+
+      self->traverse_intra_msg_callback([channel, &intra_data](NodeImpl* impl, const auto& callback) {
+        const auto* conf_ptr = impl->get_target_conf<IntraConf>();
+
+        if VUNLIKELY (conf_ptr->hash_code != channel || impl->has_suspend) {
+          return;
+        }
+
+        callback(intra_data);
+      });
+    });
+  }
+
   if (type == IntraType::kQueue && pipeline_) {
     std::weak_ptr<IntraNode> weak_self = shared_from_this();
 
@@ -141,21 +202,20 @@ bool IntraNode::publish(IntraType type, uint32_t channel, const IntraData& intra
       self->traverse_intra_msg_callback([channel, &intra_data](NodeImpl* impl, const auto& callback) {
         const auto* conf_ptr = impl->get_target_conf<IntraConf>();
 
-        if (conf_ptr->hash_code != channel || impl->has_suspend) {
+        if VUNLIKELY (conf_ptr->hash_code != channel || impl->has_suspend) {
           return;
         }
 
         callback(intra_data);
       });
     });
-
   } else {
     bool ok = false;
 
     traverse_intra_msg_callback([channel, &intra_data, &ok](NodeImpl* impl, const auto& callback) {
       const auto* conf_ptr = impl->get_target_conf<IntraConf>();
 
-      if (conf_ptr->hash_code != channel || impl->has_suspend) {
+      if VUNLIKELY (conf_ptr->hash_code != channel || impl->has_suspend) {
         return;
       }
 
@@ -170,9 +230,86 @@ bool IntraNode::publish(IntraType type, uint32_t channel, const IntraData& intra
 
 bool IntraNode::call(NodeImpl* requester, IntraType type, uint32_t channel, const Bytes& req_data,
                      NodeImpl::MsgCallback&& callback, bool inline_if_same_thread) {
-  if VLIKELY (type == IntraType::kQueue && pipeline_ && !(inline_if_same_thread && pipeline_->is_in_same_thread())) {
-    std::weak_ptr<IntraNode> weak_self = shared_from_this();
+  std::weak_ptr<IntraNode> weak_self = shared_from_this();
 
+  if (callback) {
+    auto response_callback = std::move(callback);
+
+    callback = [weak_self, requester,
+                response_callback = std::move(response_callback)](const Bytes& resp_data) mutable {
+      auto self = weak_self.lock();
+
+      if VUNLIKELY (!self || !self->is_contains_impl(requester)) {
+        return;
+      }
+
+      auto* message_loop = requester->get_message_loop();
+
+      if (message_loop) {
+        message_loop->post_task(
+            [weak_self, requester, response_callback = std::move(response_callback), resp_data]() mutable {
+              auto self = weak_self.lock();
+
+              if VUNLIKELY (!self || !self->is_contains_impl(requester) || !requester->get_message_loop()) {
+                return;
+              }
+
+              response_callback(resp_data);
+            });
+      } else {
+        response_callback(resp_data);
+      }
+    };
+  }
+
+  auto* impl = get_first_impl();
+  auto* message_loop = impl ? impl->get_message_loop() : nullptr;
+
+  if (message_loop) {
+    return message_loop->post_task([weak_self, requester, channel, req_data, callback = std::move(callback)]() {
+      auto self = weak_self.lock();
+
+      if VUNLIKELY (!self) {
+        return;
+      }
+
+      auto* impl = self->get_first_impl();
+
+      if VUNLIKELY (!impl || !impl->get_message_loop()) {
+        return;
+      }
+
+      self->traverse_req_resp_callback(
+          [&self, requester, channel, &req_data, &callback](NodeImpl* impl, const auto& callback2) {
+            if VUNLIKELY (!self->is_contains_impl(requester)) {
+              self->ignore_called();
+              return;
+            }
+
+            const auto* conf_ptr = impl->get_target_conf<IntraConf>();
+
+            if VUNLIKELY (conf_ptr->hash_code != channel || impl->has_suspend) {
+              self->ignore_called();
+              return;
+            }
+
+            if VUNLIKELY (self->has_called()) {
+              VLOG_F(*conf_ptr, "Two identical service requests.");
+              return;
+            }
+
+            if (callback) {
+              Bytes bytes;
+              callback2(0, req_data, &bytes);
+              callback(bytes);
+            } else {
+              callback2(0, req_data, nullptr);
+            }
+          });
+    });
+  }
+
+  if VLIKELY (type == IntraType::kQueue && pipeline_ && !(inline_if_same_thread && pipeline_->is_in_same_thread())) {
     return pipeline_->post_task([weak_self, requester, channel, req_data, callback = std::move(callback)]() {
       auto self = weak_self.lock();
 
@@ -189,7 +326,7 @@ bool IntraNode::call(NodeImpl* requester, IntraType type, uint32_t channel, cons
 
             const auto* conf_ptr = impl->get_target_conf<IntraConf>();
 
-            if (conf_ptr->hash_code != channel || impl->has_suspend) {
+            if VUNLIKELY (conf_ptr->hash_code != channel || impl->has_suspend) {
               self->ignore_called();
               return;
             }
@@ -214,7 +351,7 @@ bool IntraNode::call(NodeImpl* requester, IntraType type, uint32_t channel, cons
     traverse_req_resp_callback([this, channel, &req_data, &callback, &ok](NodeImpl* impl, const auto& callback2) {
       const auto* conf_ptr = impl->get_target_conf<IntraConf>();
 
-      if (conf_ptr->hash_code != channel || impl->has_suspend) {
+      if VUNLIKELY (conf_ptr->hash_code != channel || impl->has_suspend) {
         ignore_called();
         return;
       }
@@ -234,6 +371,7 @@ bool IntraNode::call(NodeImpl* requester, IntraType type, uint32_t channel, cons
 
       ok = true;
     });
+
     return ok;
   }
 }

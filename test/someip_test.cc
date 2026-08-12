@@ -173,14 +173,21 @@ TEST_SUITE("someip-pubsub") {
   TEST_CASE("bytes payload is delivered to subscriber") {
     MESSAGE("[someip-pubsub] bytes payload is delivered to subscriber");
 
+    MessageLoop loop;
+    REQUIRE(loop.async_run());
+
     std::atomic<bool> received{false};
+    std::atomic<bool> callback_on_loop{false};
     Bytes captured;
 
     Publisher<Bytes> pub(SomeipConf(0x1001, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
     Subscriber<Bytes> sub("someip://4097/1?groups=1&event=1");
 
+    REQUIRE(sub.attach(&loop));
+
     sub.listen([&](const Bytes& data) {
       captured = data;
+      callback_on_loop.store(loop.is_in_same_thread(), std::memory_order_release);
       received.store(true, std::memory_order_release);
     });
 
@@ -196,6 +203,11 @@ TEST_SUITE("someip-pubsub") {
     REQUIRE(captured.size() == 3u);
     CHECK(captured[0] == 0xAB);
     CHECK(captured[2] == 0xEF);
+    CHECK(callback_on_loop.load(std::memory_order_acquire));
+
+    CHECK(sub.detach());
+    loop.quit();
+    loop.wait_for_quit();
   }
 
   TEST_CASE("string payload round trips correctly") {
@@ -399,17 +411,29 @@ TEST_SUITE("someip-method") {
   TEST_CASE("async callback receives the response") {
     MESSAGE("[someip-method] async callback receives the response");
 
+    MessageLoop loop;
+    REQUIRE(loop.async_run());
+
+    std::atomic<bool> server_on_loop{false};
+
     Server<std::string, std::string> server(SomeipConf(0x2004, 0x0001, 0x0001));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "someip_cb"; });
+    REQUIRE(server.attach(&loop));
+    server.listen([&](const std::string& /*req*/, std::string& resp) {
+      server_on_loop.store(loop.is_in_same_thread(), std::memory_order_release);
+      resp = "someip_cb";
+    });
 
     Client<std::string, std::string> client("someip://8196/1?method=1");
+    REQUIRE(client.attach(&loop));
     CHECK(client.wait_for_connected(1s));
 
     std::atomic<bool> got{false};
+    std::atomic<bool> client_on_loop{false};
     std::string resp_val;
 
     bool ok = client.invoke("msg", [&](const std::string& resp) {
       resp_val = resp;
+      client_on_loop.store(loop.is_in_same_thread(), std::memory_order_release);
       got.store(true, std::memory_order_release);
     });
 
@@ -417,6 +441,13 @@ TEST_SUITE("someip-method") {
 
     CHECK(common_test::wait_until([&got] { return got.load(std::memory_order_acquire); }, 5s));
     CHECK(resp_val == "someip_cb");
+    CHECK(server_on_loop.load(std::memory_order_acquire));
+    CHECK(client_on_loop.load(std::memory_order_acquire));
+
+    CHECK(client.detach());
+    CHECK(server.detach());
+    loop.quit();
+    loop.wait_for_quit();
   }
 
   TEST_CASE("client connection is reported via detect callback") {

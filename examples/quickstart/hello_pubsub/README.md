@@ -25,7 +25,7 @@ pub.wait_for_subscribers();              // 握手，避免首条丢失
 pub.publish(SensorReading{1, 22.8F});
 ```
 
-完整代码见 [`hello_pubsub.cc`](hello_pubsub.cc)，已含详尽注释。`SensorReading` 是 POD 结构体，框架按类型自动选择编解码，无需 IDL。运行 `./build/output/bin/example_hello_pubsub`，`#direct` 使每次 `[sub] seq=N` 在对应 `publish()` 返回前打印，末尾为 `published=5 received=5`；`intra://` 无需任何环境变量，也不支持 `Node::attach()`。
+完整代码见 [`hello_pubsub.cc`](hello_pubsub.cc)，已含详尽注释。`SensorReading` 是 POD 结构体，框架按类型自动选择编解码，无需 IDL。运行 `./build/output/bin/example_hello_pubsub`，`#direct` 使每次 `[sub] seq=N` 在对应 `publish()` 返回前打印，末尾为 `published=5 received=5`；`intra://` 无需任何环境变量。
 
 ## 🔀 何时用 / 换哪个模型
 

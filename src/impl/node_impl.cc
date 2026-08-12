@@ -196,6 +196,10 @@ bool NodeImpl::check_version(const Version& version) {
 }
 
 bool NodeImpl::attach(class MessageLoop* message_loop) {
+  if VUNLIKELY (!message_loop) {
+    return false;
+  }
+
   MessageLoop* expected = nullptr;
   return helper_->message_loop.compare_exchange_strong(expected, message_loop, std::memory_order_release,
                                                        std::memory_order_relaxed);

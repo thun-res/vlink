@@ -53,16 +53,6 @@ const Conf* SomeipSetterImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* SomeipSetterImpl::get_abstract_node() const { return object_.get(); }
 
-bool SomeipSetterImpl::attach(class MessageLoop*) {
-  VLOG_W("Function [attach] is not supported.");
-  return false;
-}
-
-bool SomeipSetterImpl::detach() {
-  VLOG_W("Function [detach] is not supported.");
-  return false;
-}
-
 void SomeipSetterImpl::write(const Bytes& msg_data) {
   if VUNLIKELY (msg_data.size() > SomeipSerializer::kMaxPayloadSize) {
     VLOG_E("SomeipSetterImpl: Payload exceeds the protocol limit.");

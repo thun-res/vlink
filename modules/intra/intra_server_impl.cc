@@ -72,16 +72,6 @@ const Conf* IntraServerImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* IntraServerImpl::get_abstract_node() const { return object_.get(); }
 
-bool IntraServerImpl::attach(class MessageLoop*) {
-  VLOG_W("Function [attach] is not supported.");
-  return false;
-}
-
-bool IntraServerImpl::detach() {
-  VLOG_W("Function [detach] is not supported.");
-  return false;
-}
-
 bool IntraServerImpl::has_clients() const { return !object_->server_connect_map_is_empty(); }
 
 bool IntraServerImpl::listen(ReqRespCallback&& callback) {

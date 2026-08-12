@@ -63,16 +63,6 @@ const Conf* IntraClientImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* IntraClientImpl::get_abstract_node() const { return object_.get(); }
 
-bool IntraClientImpl::attach(class MessageLoop*) {
-  VLOG_W("Function [attach] is not supported.");
-  return false;
-}
-
-bool IntraClientImpl::detach() {
-  VLOG_W("Function [detach] is not supported.");
-  return false;
-}
-
 bool IntraClientImpl::is_connected() const { return !object_->req_resp_map_is_empty(); }
 
 bool IntraClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::chrono::milliseconds timeout) {

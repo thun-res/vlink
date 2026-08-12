@@ -28,6 +28,7 @@
 #include <unordered_set>
 #include <utility>
 
+#include "./base/message_loop.h"
 #include "./impl/server_impl.h"
 #include "./impl/someip_serializer.h"
 
@@ -81,6 +82,65 @@ SomeipServer::SomeipServer(const SomeipID& id) {
 
         auto payload = request->get_payload();
         Bytes req_data = Bytes::shallow_copy(payload->get_data(), payload->get_length());
+        auto* impl = get_first_impl();
+        auto* message_loop = impl ? impl->get_message_loop() : nullptr;
+
+        if (message_loop) {
+          auto weak_self = weak_from_this();
+
+          message_loop->post_task([weak_self, request, req_data]() {
+            auto self = weak_self.lock();
+
+            if VUNLIKELY (!self) {
+              return;
+            }
+
+            auto* impl = self->get_first_impl();
+
+            if VUNLIKELY (!impl || !impl->get_message_loop()) {
+              return;
+            }
+
+            self->traverse_req_resp_callback([&self, &request, &req_data](NodeImpl* impl, const auto& callback) {
+              const auto* conf_ptr = impl->get_target_conf<SomeipConf>();
+
+              if VUNLIKELY (conf_ptr->method != request->get_method() || impl->has_suspend) {
+                self->ignore_called();
+                return;
+              }
+
+              if VUNLIKELY (self->has_called()) {
+                VLOG_F(*conf_ptr, "Two identical service requests.");
+                return;
+              }
+
+              if (static_cast<ServerImpl*>(impl)->is_resp_type &&
+                  request->get_message_type() == someip::message_type_e::MT_REQUEST) {
+                Bytes resp_data;
+
+                callback(0, req_data, &resp_data);
+
+                if VUNLIKELY (resp_data.size() > SomeipSerializer::kMaxPayloadSize) {
+                  VLOG_E(*conf_ptr, "SOME/IP response payload exceeds the protocol limit.");
+                  return;
+                }
+
+                auto response = self->runtime_->create_response(request);
+                auto payload = resp_data.empty() ? self->runtime_->create_payload()
+                                                 : self->runtime_->create_payload(
+                                                       resp_data.data(), static_cast<uint32_t>(resp_data.size()));
+
+                response->set_payload(payload);
+
+                self->app_->send(response);
+              } else {
+                callback(0, req_data, nullptr);
+              }
+            });
+          });
+
+          return;
+        }
 
         traverse_req_resp_callback([this, &request, &req_data](NodeImpl* impl, const auto& callback) {
           const auto* conf_ptr = impl->get_target_conf<SomeipConf>();
@@ -163,43 +223,73 @@ SomeipClient::SomeipClient(const SomeipID& id) {
   }
 
   // connected_ = app()->is_available(service_id_, instance_id_);
-  app_->register_message_handler(service_id_, instance_id_, someip::ANY_EVENT,
-                                 [this](const std::shared_ptr<someip::message>& message) {
-                                   if (message->get_message_type() == someip::message_type_e::MT_NOTIFICATION) {
-                                     auto payload = message->get_payload();
-                                     Bytes msg_data = Bytes::shallow_copy(payload->get_data(), payload->get_length());
+  app_->register_message_handler(
+      service_id_, instance_id_, someip::ANY_EVENT, [this](const std::shared_ptr<someip::message>& message) {
+        if (message->get_message_type() == someip::message_type_e::MT_NOTIFICATION) {
+          auto payload = message->get_payload();
+          Bytes msg_data = Bytes::shallow_copy(payload->get_data(), payload->get_length());
+          auto* impl = get_first_impl();
+          auto* message_loop = impl ? impl->get_message_loop() : nullptr;
 
-                                     traverse_msg_callback([&message, &msg_data](NodeImpl* impl, const auto& callback) {
-                                       const auto* conf_ptr = impl->get_target_conf<SomeipConf>();
+          if (message_loop) {
+            auto weak_self = weak_from_this();
 
-                                       if VUNLIKELY (conf_ptr->event != message->get_method() || impl->has_suspend) {
-                                         return;
-                                       }
+            message_loop->post_task([weak_self, message, msg_data]() {
+              auto self = weak_self.lock();
 
-                                       callback(msg_data);
-                                     });
-                                   } else if (message->get_message_type() == someip::message_type_e::MT_RESPONSE) {
-                                     auto payload = message->get_payload();
-                                     Bytes resp_data = Bytes::shallow_copy(payload->get_data(), payload->get_length());
+              if VUNLIKELY (!self) {
+                return;
+              }
 
-                                     NodeImpl::MsgCallback cb;
-                                     {
-                                       std::lock_guard lock(mtx_);
-                                       auto iter = resp_callbacks_.find(message->get_request());
+              auto* impl = self->get_first_impl();
 
-                                       if VUNLIKELY (iter == resp_callbacks_.end()) {
-                                         return;
-                                       }
+              if VUNLIKELY (!impl || !impl->get_message_loop()) {
+                return;
+              }
 
-                                       cb = std::move(iter->second);
-                                       resp_callbacks_.erase(iter);
-                                     }
+              self->traverse_msg_callback([&message, &msg_data](NodeImpl* impl, const auto& callback) {
+                const auto* conf_ptr = impl->get_target_conf<SomeipConf>();
 
-                                     if VLIKELY (cb) {
-                                       cb(resp_data);
-                                     }
-                                   }
-                                 });
+                if VUNLIKELY (conf_ptr->event != message->get_method() || impl->has_suspend) {
+                  return;
+                }
+
+                callback(msg_data);
+              });
+            });
+          } else {
+            traverse_msg_callback([&message, &msg_data](NodeImpl* impl, const auto& callback) {
+              const auto* conf_ptr = impl->get_target_conf<SomeipConf>();
+
+              if VUNLIKELY (conf_ptr->event != message->get_method() || impl->has_suspend) {
+                return;
+              }
+
+              callback(msg_data);
+            });
+          }
+        } else if (message->get_message_type() == someip::message_type_e::MT_RESPONSE) {
+          auto payload = message->get_payload();
+          Bytes resp_data = Bytes::shallow_copy(payload->get_data(), payload->get_length());
+
+          NodeImpl::MsgCallback cb;
+          {
+            std::lock_guard lock(mtx_);
+            auto iter = resp_callbacks_.find(message->get_request());
+
+            if VUNLIKELY (iter == resp_callbacks_.end()) {
+              return;
+            }
+
+            cb = std::move(iter->second);
+            resp_callbacks_.erase(iter);
+          }
+
+          if VLIKELY (cb) {
+            cb(resp_data);
+          }
+        }
+      });
 
   app_->register_availability_handler(
       service_id_, instance_id_, [this](someip::service_t service, someip::instance_t instance, bool is_available) {
@@ -263,6 +353,27 @@ bool SomeipClient::call(vsomeip_v3::method_t method, const Bytes& req_data, Node
   request->set_payload(payload);
 
   if VLIKELY (callback) {
+    auto weak_self = weak_from_this();
+    auto response_callback = std::move(callback);
+
+    callback = [weak_self, response_callback = std::move(response_callback)](const Bytes& resp_data) mutable {
+      auto self = weak_self.lock();
+
+      if VUNLIKELY (!self) {
+        return;
+      }
+
+      auto* impl = self->get_first_impl();
+      auto* message_loop = impl ? impl->get_message_loop() : nullptr;
+
+      if (message_loop) {
+        message_loop->post_task(
+            [response_callback = std::move(response_callback), resp_data]() mutable { response_callback(resp_data); });
+      } else {
+        response_callback(resp_data);
+      }
+    };
+
     std::lock_guard lock(mtx_);
     app_->send(request);
 

@@ -115,16 +115,6 @@ const Conf* SomeipPublisherImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* SomeipPublisherImpl::get_abstract_node() const { return object_.get(); }
 
-bool SomeipPublisherImpl::attach(class MessageLoop*) {
-  VLOG_W("Function [attach] is not supported.");
-  return false;
-}
-
-bool SomeipPublisherImpl::detach() {
-  VLOG_W("Function [detach] is not supported.");
-  return false;
-}
-
 bool SomeipPublisherImpl::has_subscribers() const {
   std::lock_guard lock(object_->get_client_mtx());
 

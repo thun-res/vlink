@@ -1093,12 +1093,12 @@ def test_node_common_apis():
 
     pub.init()
 
-    # Unsupported attach must not retain a MessageLoop merely because it was
-    # passed to the binding.
-    unsupported_loop = _vlink.MessageLoop()
-    unsupported_refs = sys.getrefcount(unsupported_loop)
-    assert not pub.attach(unsupported_loop)
-    assert sys.getrefcount(unsupported_loop) == unsupported_refs
+    node_loop = _vlink.MessageLoop()
+    node_loop_refs = sys.getrefcount(node_loop)
+    assert pub.attach(node_loop)
+    assert sys.getrefcount(node_loop) == node_loop_refs + 1
+    assert pub.detach()
+    assert sys.getrefcount(node_loop) == node_loop_refs
 
     # DDS nodes support MessageLoop attachment. Releasing the node's retained
     # loop from the loop thread must be deferred until the current task exits;

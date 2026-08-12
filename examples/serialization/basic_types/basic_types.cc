@@ -217,8 +217,8 @@ static void demo_someip() {
 }
 
 int main() {
-  // intra:// does not support attach(). #direct keeps each demo synchronous,
-  // so its local endpoints remain alive until every callback has completed.
+  // #direct keeps each demo synchronous, so its local endpoints remain alive
+  // until every callback has completed.
   demo_bytes();
   demo_string();
   demo_pod();

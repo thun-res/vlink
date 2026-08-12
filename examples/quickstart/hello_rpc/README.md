@@ -33,7 +33,7 @@ if (resp.has_value()) { VLOG_I("10 + 3 = ", resp->result); }
 ./build/output/bin/example_hello_rpc   # 预期输出 [server]/[client] 10 + 3 = 13
 ```
 
-`intra://` 无需环境变量且不支持 `Node::attach()`；`#direct` 让本示例的 Server handler 在 `invoke()` 调用线程内执行。若输出 `invoke failed`，应检查 Server 是否已构造并完成 `listen()`。
+`intra://` 无需环境变量；`#direct` 让本示例的 Server handler 在 `invoke()` 调用线程内执行。若输出 `invoke failed`，应检查 Server 是否已构造并完成 `listen()`。
 
 ## 🔀 何时用 / 换哪个模型
 
