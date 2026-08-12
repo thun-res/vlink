@@ -60,7 +60,7 @@ client.invoke(req, resp, 3s);  // resp.sum() 即结果
 |------|----------|----------|
 | `ddsc` | `METHOD_TRANSPORT=ddsc EVENT_TRANSPORT=ddsc` | — |
 | `shm` | `METHOD_TRANSPORT=shm EVENT_TRANSPORT=shm` | `iox-roudi &` |
-| `someip` | `METHOD_TRANSPORT=someip EVENT_TRANSPORT=someip` | vsomeip routing manager |
+| `someip` | `METHOD_TRANSPORT=someip EVENT_TRANSPORT=someip` | OpenSOMEIP 与正确的 IP/端口配置 |
 | `fdbus` | `METHOD_TRANSPORT=fdbus EVENT_TRANSPORT=fdbus` | `name_server &` |
 
 或用 `METHOD_URL` / `EVENT_URL` 直接传入完整 URL，覆盖 `*_TRANSPORT`。

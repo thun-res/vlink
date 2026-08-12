@@ -58,7 +58,6 @@ class SomeipSetterImpl final : public SetterImpl {
 
   SomeipConf conf_;
   std::shared_ptr<Object> object_;
-  SyncCallback callback_;
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(SomeipSetterImpl)
 };

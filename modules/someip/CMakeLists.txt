@@ -16,11 +16,9 @@ if(SKIP_SOMEIP)
 endif()
 
 # requires
-if(NOT TARGET vsomeip3)
-  find_package(vsomeip3 CONFIG QUIET)
-endif()
+find_package(OpenSOMEIP QUIET)
 
-if(NOT TARGET vsomeip3)
+if(NOT TARGET OpenSOMEIP::OpenSOMEIP)
   message(STATUS "Ignore someip module")
   return()
 endif()
@@ -39,10 +37,10 @@ add_library(${PROJECT_NAME} ${PROJECT_HDRS} ${PROJECT_SRCS})
 add_library(${PROJECT_NAMESPACE}${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 add_library(${PROJECT_NAMESPACE}${VLINK_MODULE_NAME} ALIAS ${PROJECT_NAME})
 target_link_libraries(${PROJECT_NAME} PUBLIC vlink::vlink)
-target_link_libraries(${PROJECT_NAME} PRIVATE vsomeip3)
+target_link_libraries(${PROJECT_NAME} PRIVATE OpenSOMEIP::OpenSOMEIP)
 target_compile_definitions(
   ${PROJECT_NAME}
-  PRIVATE "${VLINK_LIB_DEFINES}" "VSOMEIP_INTERNAL_SUPPRESS_DEPRECATED"
+  PRIVATE "${VLINK_LIB_DEFINES}"
   PUBLIC "VLINK_SUPPORT_SOMEIP"
 )
 

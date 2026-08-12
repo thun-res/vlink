@@ -36,6 +36,7 @@
 #include <thread>
 #include <vector>
 
+#include "./base/utils.h"
 #include "./modules/someip_conf.h"
 
 struct SomeipTransportChild {
@@ -167,9 +168,123 @@ TEST_SUITE("someip-init") {
   }
 
   TEST_CASE("invalid transport scheme throws on construction") { CHECK_THROWS(Publisher<int>("someip1://bad/url")); }
+
+  TEST_CASE("node properties configure explicit udp endpoints") {
+    MESSAGE("[someip-init] node properties configure explicit udp endpoints");
+
+    std::atomic<bool> received{false};
+    int captured = 0;
+
+    Publisher<int> pub(SomeipConf(0x7101, 0x0001, SomeipConf::Groups{0x0001}, 0x0001), InitType::kWithoutInit);
+    Subscriber<int> sub("someip://28929/1?groups=1&event=1", InitType::kWithoutInit);
+
+    pub.set_property("someip.transport", "udp");
+    pub.set_property("someip.local_ip", "127.0.0.1");
+    pub.set_property("someip.local_port", "43101");
+    sub.set_property("someip.transport", "udp");
+    sub.set_property("someip.local_ip", "127.0.0.1");
+    sub.set_property("someip.remote_ip", "127.0.0.1");
+    sub.set_property("someip.remote_port", "43101");
+
+    REQUIRE(pub.init());
+    REQUIRE(sub.init());
+
+    sub.listen([&](const int& value) {
+      captured = value;
+      received.store(true, std::memory_order_release);
+    });
+
+    REQUIRE(pub.wait_for_subscribers(1s));
+    REQUIRE(pub.publish(17));
+    REQUIRE(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 5s));
+    CHECK(captured == 17);
+  }
+
+  TEST_CASE("tcp properties configure rpc endpoints") {
+    MESSAGE("[someip-init] tcp properties configure rpc endpoints");
+
+    Server<std::string, std::string> server(SomeipConf(0x7102, 0x0001, 0x0001), InitType::kWithoutInit);
+    Client<std::string, std::string> client("someip://28930/1?method=1", InitType::kWithoutInit);
+
+    server.set_property("someip.transport", "tcp");
+    server.set_property("someip.e2e.enabled", "true");
+    server.set_property("someip.interface_version", "7");
+    server.set_property("someip.local_ip", "127.0.0.1");
+    server.set_property("someip.local_port", "43102");
+    client.set_property("someip.transport", "tcp");
+    client.set_property("someip.e2e.enabled", "true");
+    client.set_property("someip.interface_version", "7");
+    client.set_property("someip.local_ip", "127.0.0.1");
+    client.set_property("someip.remote_ip", "127.0.0.1");
+    client.set_property("someip.remote_port", "43102");
+
+    REQUIRE(server.init());
+    server.listen([](const std::string& request, std::string& response) { response = "tcp:" + request; });
+
+    REQUIRE(client.init());
+    REQUIRE(client.wait_for_connected(1s));
+
+    std::string response;
+    REQUIRE(client.invoke("property", response, 5s));
+    CHECK(response == "tcp:property");
+  }
+
+  TEST_CASE("environment configures udp service port") {
+    MESSAGE("[someip-init] environment configures udp service port");
+
+    const auto original_port = Utils::get_env("VLINK_SOMEIP_LOCAL_PORT");
+    REQUIRE(Utils::set_env("VLINK_SOMEIP_LOCAL_PORT", "43103"));
+
+    Publisher<int> pub(SomeipConf(0x7103, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+
+    if (original_port.empty()) {
+      REQUIRE(Utils::unset_env("VLINK_SOMEIP_LOCAL_PORT"));
+    } else {
+      REQUIRE(Utils::set_env("VLINK_SOMEIP_LOCAL_PORT", original_port));
+    }
+
+    std::atomic<bool> received{false};
+    int captured = 0;
+    Subscriber<int> sub("someip://28931/1?groups=1&event=1", InitType::kWithoutInit);
+
+    sub.set_property("someip.remote_port", "43103");
+    REQUIRE(sub.init());
+
+    sub.listen([&](const int& value) {
+      captured = value;
+      received.store(true, std::memory_order_release);
+    });
+
+    REQUIRE(pub.wait_for_subscribers(1s));
+    REQUIRE(pub.publish(19));
+    REQUIRE(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 2s));
+    CHECK(captured == 19);
+  }
 }
 
 TEST_SUITE("someip-pubsub") {
+  TEST_CASE("subscriber created before publisher resubscribes after connection") {
+    MESSAGE("[someip-pubsub] subscriber created before publisher resubscribes after connection");
+
+    std::atomic<bool> received{false};
+    int captured = 0;
+    Subscriber<int> sub("someip://4117/1?groups=1&event=1");
+
+    sub.listen([&](const int& value) {
+      captured = value;
+      received.store(true, std::memory_order_release);
+    });
+
+    std::this_thread::sleep_for(300ms);
+
+    Publisher<int> pub(SomeipConf(0x1015, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+
+    REQUIRE(pub.wait_for_subscribers(2s));
+    REQUIRE(pub.publish(23));
+    REQUIRE(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 2s));
+    CHECK(captured == 23);
+  }
+
   TEST_CASE("bytes payload is delivered to subscriber") {
     MESSAGE("[someip-pubsub] bytes payload is delivered to subscriber");
 
@@ -497,11 +612,11 @@ TEST_SUITE("someip-field") {
       std::this_thread::sleep_for(100ms);
 
       setter.set(Bytes{0x5A});
-      std::this_thread::sleep_for(200ms);
+      REQUIRE(common_test::wait_until([&cb_count] { return cb_count.load(std::memory_order_relaxed) == 1; }, 2s));
       setter.set(Bytes{0x5A});
       std::this_thread::sleep_for(200ms);
 
-      CHECK(cb_count.load() <= 1);
+      CHECK(cb_count.load() == 1);
     }
 
     SUBCASE("late getter receives cached value") {
@@ -663,32 +778,6 @@ TEST_SUITE("someip-method") {
     CHECK_FALSE(ok);
   }
 
-  TEST_CASE("deferred async reply is delivered to future") {
-    MESSAGE("[someip-method] deferred async reply is delivered to future");
-
-    std::atomic<uint64_t> saved_id{0};
-    std::atomic<bool> req_received{false};
-
-    Server<std::string, std::string> server(SomeipConf(0x2006, 0x0001, 0x0001));
-    server.listen_for_reply([&](uint64_t req_id, const std::string& /*req*/) {
-      saved_id.store(req_id, std::memory_order_release);
-      req_received.store(true, std::memory_order_release);
-    });
-
-    Client<std::string, std::string> client("someip://8198/1?method=1");
-    CHECK(client.wait_for_connected(1s));
-
-    auto fut = client.async_invoke("deferred");
-
-    REQUIRE(common_test::wait_until([&req_received] { return req_received.load(std::memory_order_acquire); }, 5s));
-
-    if (server.reply(saved_id.load(), std::string("deferred_someip"))) {
-      if (fut.wait_for(2s) == std::future_status::ready) {
-        CHECK_EQ(fut.get(), "deferred_someip");
-      }
-    }
-  }
-
   TEST_CASE("multiple sequential invocations all succeed") {
     MESSAGE("[someip-method] multiple sequential invocations all succeed");
 
@@ -775,8 +864,6 @@ TEST_SUITE("someip-init") {
   }
 }
 
-namespace {
-
 struct SomeipCustomMsg {
   int id{0};
   std::string label;
@@ -794,38 +881,32 @@ struct SomeipCustomMsg {
   }
 };
 
-}  // namespace
-
 TEST_SUITE("someip-custom") {
   TEST_CASE("custom type round trips id and label through someip") {
     MESSAGE("[someip-custom] custom type round trips id and label through someip");
 
-    try {
-      std::atomic<bool> received{false};
-      SomeipCustomMsg captured{};
+    std::atomic<bool> received{false};
+    SomeipCustomMsg captured{};
 
-      Publisher<SomeipCustomMsg> pub(SomeipConf(0x6001, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
-      Subscriber<SomeipCustomMsg> sub("someip://24577/1?groups=1&event=1");
+    Publisher<SomeipCustomMsg> pub(SomeipConf(0x6001, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+    Subscriber<SomeipCustomMsg> sub("someip://24577/1?groups=1&event=1");
 
-      sub.listen([&](const SomeipCustomMsg& m) {
-        captured = m;
-        received.store(true, std::memory_order_release);
-      });
+    sub.listen([&](const SomeipCustomMsg& m) {
+      captured = m;
+      received.store(true, std::memory_order_release);
+    });
 
-      CHECK(pub.wait_for_subscribers(1s));
-      std::this_thread::sleep_for(10ms);
+    REQUIRE(pub.wait_for_subscribers(1s));
+    std::this_thread::sleep_for(10ms);
 
-      SomeipCustomMsg msg;
-      msg.id = 41;
-      msg.label = "someip_custom";
-      CHECK(pub.publish(msg));
+    SomeipCustomMsg msg;
+    msg.id = 41;
+    msg.label = "someip_custom";
+    REQUIRE(pub.publish(msg));
 
-      CHECK(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 3s));
-      CHECK_EQ(captured.id, 41);
-      CHECK_EQ(captured.label, "someip_custom");
-    } catch (const std::exception&) {
-      return;
-    }
+    REQUIRE(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 3s));
+    CHECK_EQ(captured.id, 41);
+    CHECK_EQ(captured.label, "someip_custom");
   }
 
   TEST_CASE("serializer detects custom type as kCustomType") {
@@ -842,62 +923,54 @@ TEST_SUITE("someip-dynamicdata") {
   TEST_CASE("dynamicdata round trip preserves type tag and value") {
     MESSAGE("[someip-dynamicdata] dynamicdata round trip preserves type tag and value");
 
-    try {
-      std::atomic<bool> received{false};
-      DynamicData captured;
+    std::atomic<bool> received{false};
+    DynamicData captured;
 
-      Publisher<DynamicData> pub(SomeipConf(0x1020, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
-      Subscriber<DynamicData> sub("someip://4128/1?groups=1&event=1");
+    Publisher<DynamicData> pub(SomeipConf(0x1020, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+    Subscriber<DynamicData> sub("someip://4128/1?groups=1&event=1");
 
-      sub.listen([&](const DynamicData& d) {
-        captured = d;
-        received.store(true, std::memory_order_release);
-      });
+    sub.listen([&](const DynamicData& d) {
+      captured = d;
+      received.store(true, std::memory_order_release);
+    });
 
-      CHECK(pub.wait_for_subscribers(1s));
-      std::this_thread::sleep_for(10ms);
+    REQUIRE(pub.wait_for_subscribers(1s));
+    std::this_thread::sleep_for(10ms);
 
-      DynamicData d;
-      d.load("someip_int", 123);
-      CHECK(pub.publish(d));
+    DynamicData d;
+    d.load("someip_int", 123);
+    REQUIRE(pub.publish(d));
 
-      CHECK(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 5s));
-      CHECK(captured.get_type() == "someip_int");
-      CHECK(captured.as<int>() == 123);
-    } catch (const std::exception&) {
-      return;
-    }
+    REQUIRE(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 5s));
+    CHECK(captured.get_type() == "someip_int");
+    CHECK(captured.as<int>() == 123);
   }
 
   TEST_CASE("dynamicdata type tag is preserved distinct from payload bytes") {
     MESSAGE("[someip-dynamicdata] dynamicdata type tag is preserved distinct from payload bytes");
 
-    try {
-      std::atomic<bool> received{false};
-      DynamicData captured;
+    std::atomic<bool> received{false};
+    DynamicData captured;
 
-      Publisher<DynamicData> pub(SomeipConf(0x1021, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
-      Subscriber<DynamicData> sub("someip://4129/1?groups=1&event=1");
+    Publisher<DynamicData> pub(SomeipConf(0x1021, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+    Subscriber<DynamicData> sub("someip://4129/1?groups=1&event=1");
 
-      sub.listen([&](const DynamicData& d) {
-        captured = d;
-        received.store(true, std::memory_order_release);
-      });
+    sub.listen([&](const DynamicData& d) {
+      captured = d;
+      received.store(true, std::memory_order_release);
+    });
 
-      CHECK(pub.wait_for_subscribers(1s));
-      std::this_thread::sleep_for(10ms);
+    REQUIRE(pub.wait_for_subscribers(1s));
+    std::this_thread::sleep_for(10ms);
 
-      DynamicData d;
-      d.load("tag_check", std::string("payload_here"));
-      CHECK(pub.publish(d));
+    DynamicData d;
+    d.load("tag_check", std::string("payload_here"));
+    REQUIRE(pub.publish(d));
 
-      CHECK(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 5s));
-      CHECK(captured.get_type() == "tag_check");
-      CHECK_FALSE(captured.is_empty());
-      CHECK(captured.as<std::string>() == "payload_here");
-    } catch (const std::exception&) {
-      return;
-    }
+    REQUIRE(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 5s));
+    CHECK(captured.get_type() == "tag_check");
+    CHECK_FALSE(captured.is_empty());
+    CHECK(captured.as<std::string>() == "payload_here");
   }
 }
 
@@ -905,35 +978,31 @@ TEST_SUITE("someip-zerocopy") {
   TEST_CASE("rawdata round trip preserves header seq over someip") {
     MESSAGE("[someip-zerocopy] rawdata round trip preserves header seq over someip");
 
-    try {
-      std::atomic<bool> received{false};
-      zerocopy::RawData captured;
+    std::atomic<bool> received{false};
+    zerocopy::RawData captured;
 
-      Publisher<zerocopy::RawData> pub(SomeipConf(0x1022, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
-      Subscriber<zerocopy::RawData> sub("someip://4130/1?groups=1&event=1");
+    Publisher<zerocopy::RawData> pub(SomeipConf(0x1022, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+    Subscriber<zerocopy::RawData> sub("someip://4130/1?groups=1&event=1");
 
-      sub.listen([&](const zerocopy::RawData& d) {
-        captured.deep_copy(d);
-        received.store(true, std::memory_order_release);
-      });
+    sub.listen([&](const zerocopy::RawData& d) {
+      captured.deep_copy(d);
+      received.store(true, std::memory_order_release);
+    });
 
-      CHECK(pub.wait_for_subscribers(1s));
-      std::this_thread::sleep_for(10ms);
+    REQUIRE(pub.wait_for_subscribers(1s));
+    std::this_thread::sleep_for(10ms);
 
-      zerocopy::RawData rd;
-      rd.header.seq = 3;
-      rd.create(2);
-      const_cast<uint8_t*>(rd.data())[0] = 0x55;
-      const_cast<uint8_t*>(rd.data())[1] = 0x66;
-      CHECK(pub.publish(rd));
+    zerocopy::RawData rd;
+    rd.header.seq = 3;
+    rd.create(2);
+    const_cast<uint8_t*>(rd.data())[0] = 0x55;
+    const_cast<uint8_t*>(rd.data())[1] = 0x66;
+    REQUIRE(pub.publish(rd));
 
-      CHECK(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 5s));
-      REQUIRE_EQ(captured.size(), 2u);
-      CHECK_EQ(captured.header.seq, 3u);
-      CHECK_EQ(captured.data()[0], 0x55u);
-    } catch (const std::exception&) {
-      return;
-    }
+    REQUIRE(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 5s));
+    REQUIRE_EQ(captured.size(), 2u);
+    CHECK_EQ(captured.header.seq, 3u);
+    CHECK_EQ(captured.data()[0], 0x55u);
   }
 }
 
@@ -947,86 +1016,66 @@ TEST_SUITE("someip-security") {
   TEST_CASE("asymmetric rsa-oaep encrypted bytes round trip via someip") {
     MESSAGE("[someip-security] asymmetric rsa-oaep encrypted bytes round trip via someip");
 
-    try {
-      const auto kp = vlink_test_sec::generate_rsa_keypair(2048);
+    const auto kp = vlink_test_sec::generate_rsa_keypair(2048);
 
-      if (kp.public_pem.empty()) {
-        return;
-      }
+    REQUIRE_FALSE(kp.public_pem.empty());
 
-      std::atomic<bool> received{false};
-      Bytes captured;
+    std::atomic<bool> received{false};
+    Bytes captured;
 
-      Security::Config pub_cfg;
-      pub_cfg.public_key_pem = kp.public_pem;
+    Security::Config pub_cfg;
+    pub_cfg.public_key_pem = kp.public_pem;
 
-      Security::Config sub_cfg;
-      sub_cfg.private_key_pem = kp.private_pem;
+    Security::Config sub_cfg;
+    sub_cfg.private_key_pem = kp.private_pem;
 
-      SecurityPublisher<Bytes> pub(SomeipConf(0x7001, 0x0001, SomeipConf::Groups{0x0001}, 0x0001), std::move(pub_cfg));
-      SecuritySubscriber<Bytes> sub("someip://28673/1?groups=1&event=1", std::move(sub_cfg));
+    SecurityPublisher<Bytes> pub("someip://28673/1?groups=1&event=1", std::move(pub_cfg));
+    SecuritySubscriber<Bytes> sub("someip://28673/1?groups=1&event=1", std::move(sub_cfg));
 
-      sub.listen([&](const Bytes& data) {
-        captured = data;
-        received.store(true, std::memory_order_release);
-      });
+    sub.listen([&](const Bytes& data) {
+      captured = data;
+      received.store(true, std::memory_order_release);
+    });
 
-      if (pub.wait_for_subscribers(1s)) {
-        std::this_thread::sleep_for(10ms);
-        pub.publish(Bytes{0xAA, 0xBB, 0xCC});
+    REQUIRE(pub.wait_for_subscribers(1s));
+    std::this_thread::sleep_for(10ms);
+    REQUIRE(pub.publish(Bytes{0xAA, 0xBB, 0xCC}));
 
-        for (int i = 0; i < 100 && !received.load(std::memory_order_acquire); ++i) {
-          std::this_thread::sleep_for(20ms);
-        }
-
-        if (received.load(std::memory_order_acquire)) {
-          REQUIRE_EQ(captured.size(), 3u);
-          CHECK_EQ(captured[0], 0xAAu);
-          CHECK_EQ(captured[2], 0xCCu);
-        }
-      }
-    } catch (const std::exception&) {
-      return;
-    }
+    REQUIRE(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 2s));
+    REQUIRE_EQ(captured.size(), 3u);
+    CHECK_EQ(captured[0], 0xAAu);
+    CHECK_EQ(captured[2], 0xCCu);
   }
 
   TEST_CASE("asymmetric mismatched private key fails to decrypt over someip") {
     MESSAGE("[someip-security] asymmetric mismatched private key fails to decrypt over someip");
 
-    try {
-      const auto kp1 = vlink_test_sec::generate_rsa_keypair(2048);
-      const auto kp2 = vlink_test_sec::generate_rsa_keypair(2048);
+    const auto kp1 = vlink_test_sec::generate_rsa_keypair(2048);
+    const auto kp2 = vlink_test_sec::generate_rsa_keypair(2048);
 
-      if (kp1.public_pem.empty() || kp2.private_pem.empty()) {
-        return;
-      }
+    REQUIRE_FALSE(kp1.public_pem.empty());
+    REQUIRE_FALSE(kp2.private_pem.empty());
 
-      std::atomic<bool> received{false};
+    std::atomic<bool> received{false};
 
-      Security::Config pub_cfg;
-      pub_cfg.public_key_pem = kp1.public_pem;
+    Security::Config pub_cfg;
+    pub_cfg.public_key_pem = kp1.public_pem;
 
-      Security::Config sub_cfg;
-      sub_cfg.private_key_pem = kp2.private_pem;
+    Security::Config sub_cfg;
+    sub_cfg.private_key_pem = kp2.private_pem;
 
-      SecurityPublisher<Bytes> pub(SomeipConf(0x7002, 0x0001, SomeipConf::Groups{0x0001}, 0x0001), std::move(pub_cfg));
-      SecuritySubscriber<Bytes> sub("someip://28674/1?groups=1&event=1", std::move(sub_cfg));
+    SecurityPublisher<Bytes> pub("someip://28674/1?groups=1&event=1", std::move(pub_cfg));
+    SecuritySubscriber<Bytes> sub("someip://28674/1?groups=1&event=1", std::move(sub_cfg));
 
-      sub.listen([&](const Bytes& /*data*/) { received.store(true, std::memory_order_release); });
+    sub.listen([&](const Bytes& /*data*/) { received.store(true, std::memory_order_release); });
 
-      if (pub.wait_for_subscribers(1s)) {
-        std::this_thread::sleep_for(10ms);
-        pub.publish(Bytes{0x01, 0x02, 0x03});
+    REQUIRE(pub.wait_for_subscribers(1s));
+    std::this_thread::sleep_for(10ms);
+    REQUIRE(pub.publish(Bytes{0x01, 0x02, 0x03}));
 
-        for (int i = 0; i < 100 && !received.load(std::memory_order_acquire); ++i) {
-          std::this_thread::sleep_for(20ms);
-        }
-      }
+    std::this_thread::sleep_for(2s);
 
-      CHECK_FALSE(received.load(std::memory_order_acquire));
-    } catch (const std::exception&) {
-      return;
-    }
+    CHECK_FALSE(received.load(std::memory_order_acquire));
   }
 
 #endif

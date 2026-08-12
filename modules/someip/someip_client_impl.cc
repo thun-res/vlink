@@ -23,8 +23,8 @@
 
 #include "./someip_client_impl.h"
 
+#include <limits>
 #include <memory>
-#include <string>
 #include <utility>
 
 #include "./base/elapsed_timer.h"
@@ -37,7 +37,11 @@ SomeipClientImpl::SomeipClientImpl(const SomeipConf& conf) : conf_(conf) {}
 void SomeipClientImpl::init() {
   static auto& factory = SomeipFactory::get();
 
-  object_ = factory.get_object<Object>({kImplType, conf_.service, conf_.instance});
+  auto properties = factory.resolve_properties(conf_, get_all_properties());
+
+  callback_state_ = std::make_shared<CallbackState>();
+
+  object_ = factory.get_object<Object>({kImplType, conf_.service, conf_.instance, std::move(properties)});
 
   object_->add_impl(this);
 
@@ -48,7 +52,14 @@ void SomeipClientImpl::init() {
   ClientImpl::update_connected();
 }
 
-void SomeipClientImpl::deinit() { object_->remove_impl(this); }
+void SomeipClientImpl::deinit() {
+  {
+    std::lock_guard lock(callback_state_->mtx);
+    callback_state_->active = false;
+  }
+
+  object_->remove_impl(this);
+}
 
 void SomeipClientImpl::interrupt() {
   ClientImpl::interrupt();
@@ -80,6 +91,11 @@ bool SomeipClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::
   if (timeout.count() != 0) {
     ack_manager_.reset_interrupted();
 
+    if VUNLIKELY (object_->is_receive_thread()) {
+      VLOG_W("Blocking call is not allowed on the OpenSOMEIP receive thread.");
+      return false;
+    }
+
     ElapsedTimer timer;
     timer.start();
 
@@ -93,16 +109,32 @@ bool SomeipClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::
       return false;
     }
 
+    int remaining_timeout = -1;
+
+    if (timeout.count() > 0) {
+      const auto remaining = timeout.count() - elapsed;
+      remaining_timeout =
+          remaining > std::numeric_limits<int>::max() ? std::numeric_limits<int>::max() : static_cast<int>(remaining);
+    }
+
     auto ack_request = ack_manager_.create_request();
+    auto callback_state = callback_state_;
     uint64_t seq = 0;
     bool has_seq = false;
 
-    auto ack_function = [this, ack_request, callback = std::move(callback)](const Bytes& resp_data) mutable {
+    auto ack_function = [this, callback_state = std::move(callback_state), ack_request,
+                         callback = std::move(callback)](const Bytes& resp_data) mutable {
+      std::lock_guard lock(callback_state->mtx);
+
+      if VUNLIKELY (!callback_state->active) {
+        return;
+      }
+
       ack_manager_.notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
     };
 
     bool ret =
-        ack_manager_.process(ack_request, timeout.count() - elapsed,
+        ack_manager_.process(ack_request, remaining_timeout,
                              [this, &req_data, &seq, &has_seq, ack_function = std::move(ack_function)]() mutable {
                                has_seq = object_->call(conf_.method, req_data, std::move(ack_function), &seq);
                                return has_seq;
@@ -115,7 +147,20 @@ bool SomeipClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::
     return ret;
   }
 
-  return object_->call(conf_.method, req_data, std::move(callback));
+  auto callback_state = callback_state_;
+
+  auto response_callback = [callback_state = std::move(callback_state),
+                            callback = std::move(callback)](const Bytes& resp_data) mutable {
+    std::lock_guard lock(callback_state->mtx);
+
+    if VUNLIKELY (!callback_state->active) {
+      return;
+    }
+
+    callback(resp_data);
+  };
+
+  return object_->call(conf_.method, req_data, std::move(response_callback));
 }
 
 }  // namespace vlink

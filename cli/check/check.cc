@@ -1379,7 +1379,16 @@ int check_env(bool available_case, const std::string& prefix) {
 #endif
 
 #ifdef VLINK_SUPPORT_SOMEIP
-      {"VLINK_SOMEIP_CFG", "", "Path to the vSomeIP JSON configuration file.", false},
+      {"VLINK_SOMEIP_CFG", "", "Path to the VLink SOME/IP JSON configuration file.", false},
+      {"VLINK_SOMEIP_TRANSPORT", "", "SOME/IP transport: udp or tcp (default udp).", false},
+      {"VLINK_SOMEIP_LOCAL_IP", "", "SOME/IP local IPv4 address (default 127.0.0.1).", false},
+      {"VLINK_SOMEIP_LOCAL_PORT", "", "SOME/IP local port; clients default to an ephemeral port.", false},
+      {"VLINK_SOMEIP_REMOTE_IP", "", "SOME/IP remote IPv4 address (default 127.0.0.1).", false},
+      {"VLINK_SOMEIP_REMOTE_PORT", "", "SOME/IP remote service port.", false},
+      {"VLINK_SOMEIP_CLIENT_ID", "", "Non-zero SOME/IP client id; defaults to a PID-derived value.", false},
+      {"VLINK_SOMEIP_INTERFACE_VERSION", "", "SOME/IP interface version (default 0).", false},
+      {"VLINK_SOMEIP_SD", "", "Enable OpenSOMEIP UDP service discovery.", false},
+      {"VLINK_SOMEIP_E2E", "", "Enable the OpenSOMEIP Basic E2E profile.", false},
 #endif
 
       {"VLINK_SSL_VERIFY", "", "Enable TLS certificate verification.", false},

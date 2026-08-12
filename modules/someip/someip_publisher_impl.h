@@ -24,7 +24,6 @@
 #pragma once
 
 #include <memory>
-#include <set>
 #include <utility>
 
 #include "./impl/publisher_impl.h"
@@ -59,7 +58,6 @@ class SomeipPublisherImpl final : public PublisherImpl {
 
   SomeipConf conf_;
   std::shared_ptr<Object> object_;
-  static std::mutex mtx_;
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(SomeipPublisherImpl)
 };

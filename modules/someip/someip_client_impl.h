@@ -60,7 +60,13 @@ class SomeipClientImpl final : public ClientImpl {
 
   bool call(const Bytes& req_data, MsgCallback&& callback, std::chrono::milliseconds timeout) override;
 
+  struct CallbackState final {
+    std::recursive_mutex mtx;
+    bool active{true};
+  };
+
   SomeipConf conf_;
+  std::shared_ptr<CallbackState> callback_state_;
   std::shared_ptr<Object> object_;
   AckManager ack_manager_;
 

@@ -91,7 +91,7 @@ getter.listen([](const Status& s) { use(s); });
 | `shm2://` | Iceoryx2 | 同机跨进程 | 是 | Beta |
 | `ddsr://` | RTI Connext | 跨机网络 | 否 | Beta |
 | `zenoh://` | Zenoh | 跨机 / 云边 | 条件 | Beta |
-| `someip://` | vsomeip | 车载以太网 | 否 | Beta |
+| `someip://` | OpenSOMEIP | 车载以太网 | 否 | Beta |
 | `mqtt://` | Paho MQTT | 云端 | 否 | Beta |
 | `fdbus://` | FDBus | 同机 | 否 | Beta |
 

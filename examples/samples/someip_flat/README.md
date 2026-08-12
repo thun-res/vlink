@@ -1,6 +1,6 @@
 # 🚗 someip_flat —— SOME/IP + FlatBuffers 三模型示例
 
-用 `someip://`（vsomeip 后端）搭配 FlatBuffers 零拷贝序列化，在单进程内跑通 Method / Event / Field 三种通信模型。典型场景：AUTOSAR Adaptive / 车载以太网服务栈，SOME/IP 为强制协议，FlatBuffers 只读零拷贝降低单帧 CPU 开销。
+用 `someip://`（OpenSOMEIP 后端）搭配 FlatBuffers 零拷贝序列化，在单进程内跑通 Method / Event / Field 三种通信模型。典型场景：AUTOSAR Adaptive / 车载以太网服务栈，SOME/IP 为强制协议，FlatBuffers 只读零拷贝降低单帧 CPU 开销。
 
 ## 🧩 核心 API
 
@@ -8,7 +8,7 @@
 |-----|------|
 | `Client<ReqT>::send(req)` | 单向发送请求（Client 无 Resp 模板参数即为发送模式） |
 | `Server<Req*>::listen(cb)` | 注册回调接收请求，回调入参仅回调内有效 |
-| `client.wait_for_connected()` | 阻塞直到 SOME/IP 服务发现匹配到 Server |
+| `client.wait_for_connected(timeout)` | 限时等待服务端点响应连接探测 |
 | `Publisher<MsgT>::publish(msg)` | 发布事件 |
 | `Subscriber<Msg*>::listen(cb)` | 订阅事件 |
 | `Setter<T>::set(v)` / `Getter<T>::get()` | 设置 / 读取最新字段值 |
@@ -25,7 +25,7 @@ server.listen([](const fbs::Request* req) { VLOG_I("type:", req->type()); });
 vlink::Client<fbs::RequestT> client("someip://0x1/0x2?method=0x3");
 fbs::RequestT req;
 req.type = 100;
-client.wait_for_connected();   // 等待服务发现匹配
+client.wait_for_connected(5s); // 限时等待服务端响应探测
 client.send(req);              // 单向发送
 
 // Event —— Pub/Sub
@@ -63,10 +63,10 @@ someip://服务ID/实例ID?groups=组ID&event=事件ID&field=1  —— Field
 ```bash
 cmake -B build -S . -DCMAKE_PREFIX_PATH=<vlink安装路径>
 cmake --build build
-./build/output/bin/sample_someip_flat   # 需先启动 vsomeip 路由管理器（vsomeipd）
+./build/output/bin/sample_someip_flat   # OpenSOMEIP 直接管理端点，无需守护进程
 ```
 
-无 vsomeip 环境时程序会阻塞等待连接。
+OpenSOMEIP 是构建期依赖；未找到依赖时不会生成该示例。运行期 IP/端口不匹配时，程序在连接或回调等待超时后返回失败。
 
 ## 📚 相关文档
 

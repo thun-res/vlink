@@ -24,7 +24,7 @@
 // SOME/IP + FlatBuffers sample.
 //
 // Exercises all three VLink models (Method / Event / Field) over the
-// someip:// transport (vsomeip backend) with FlatBuffers payloads. SOME/IP
+// someip:// transport (OpenSOMEIP backend) with FlatBuffers payloads. SOME/IP
 // URL format:
 //   someip://ServiceID/InstanceID?method=MethodID        -- method model
 //   someip://ServiceID/InstanceID?groups=GID&event=EID   -- event/field model
@@ -38,7 +38,7 @@
 // stack where SOME/IP is mandated and FlatBuffers' zero-copy read minimises
 // per-frame CPU cost.
 //
-// Prerequisite: the vsomeip daemon must be running.
+// Prerequisite: OpenSOMEIP must be installed and the endpoints must be reachable.
 
 // VLink core communication API
 #include <vlink/base/logger.h>
@@ -66,7 +66,7 @@ int main() {
   // callback reads directly from the wire buffer with no copy.
   vlink::Server<fbs::Request*> server("someip://0x1/0x2?method=0x3");
 
-  // Callback fires on a vsomeip worker thread; the req pointer is only valid
+  // Callback fires on an OpenSOMEIP receive thread; the req pointer is only valid
   // inside the callback (lifetime tied to the incoming SOME/IP frame).
   server.listen([&flag](const fbs::Request* req) {
     VLOG_I("type:", req->type());
@@ -79,15 +79,26 @@ int main() {
   fbs::RequestT req;
   req.type = 100;
 
-  // Block until SOME/IP service discovery sees the Server.
-  client.wait_for_connected();
+  // Block until the SOME/IP server responds to the connection probe.
+  if (!client.wait_for_connected(5s)) {
+    VLOG_E("SOME/IP server is not reachable.");
+    return 1;
+  }
 
   // Fire-and-forget send (Client<ReqT> with no RespT -> send-mode).
-  client.send(req);
+  if (!client.send(req)) {
+    VLOG_E("Failed to send the SOME/IP request.");
+    return 1;
+  }
 
   // Wait for the Server callback to flip the flag.
-  while (!flag) {
-    std::this_thread::sleep_for(1s);
+  for (size_t retry = 0; retry < 50 && !flag; ++retry) {
+    std::this_thread::sleep_for(100ms);
+  }
+
+  if (!flag) {
+    VLOG_E("Timed out waiting for the SOME/IP request callback.");
+    return 1;
   }
 
   // ======== Event model (Pub/Sub) ========

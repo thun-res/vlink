@@ -104,6 +104,10 @@ bool SomeipConf::is_valid() const {
     return false;
   }
 
+  if VUNLIKELY (method == 0xFFFE && (get_impl_type() == kServer || get_impl_type() == kClient)) {
+    return false;
+  }
+
   if VUNLIKELY ((groups.empty() || event == 0) && (get_impl_type() == kPublisher || get_impl_type() == kSubscriber ||
                                                    get_impl_type() == kSetter || get_impl_type() == kGetter)) {
     return false;

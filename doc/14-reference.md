@@ -139,7 +139,7 @@ URL 语法：`<scheme>://[<host>[:<port>]]/<path>[?<query>][#<frag>]`。`scheme`
 | `ddsc://` | CycloneDDS | 跨机 | 否 | 轻量跨机 | 稳定 |
 | `ddsr://` | RTI Connext | 跨机 | 否 | 工业高可靠 | Beta |
 | `zenoh://` | Zenoh | 跨机 / 云边 | 条件 | IoT 边缘 | Beta |
-| `someip://` | vsomeip | 车载以太网 | 否 | ECU 服务化 | Beta |
+| `someip://` | OpenSOMEIP | 车载以太网 | 否 | ECU 服务化 | Beta |
 | `mqtt://` | Paho MQTT | 跨机 / 云 | 否 | IoT 云端 | Beta |
 | `fdbus://` | FDBus | 同机 | 否 | Android/Linux 混合 | Beta |
 

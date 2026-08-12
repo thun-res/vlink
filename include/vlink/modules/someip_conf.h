@@ -26,9 +26,9 @@
  * @brief Transport configuration for the @c someip:// AUTOSAR SOME/IP transport.
  *
  * @details
- * @c SomeipConf binds the @c someip:// URL scheme to vsomeip, the reference
- * open-source implementation of the AUTOSAR SOME/IP (Scalable service-Oriented
- * MiddlewarE over IP) protocol.  SOME/IP is the standard service-oriented
+ * @c SomeipConf binds the @c someip:// URL scheme to OpenSOMEIP, an open-source
+ * implementation of the AUTOSAR SOME/IP (Scalable service-Oriented MiddlewarE
+ * over IP) protocol.  SOME/IP is the standard service-oriented
  * communication protocol used in modern automotive Ethernet backbones; it carries
  * RPC method calls, event broadcasts and notifiable field updates between ECUs.
  * Unlike string-named transports, SOME/IP identifies endpoints purely through
@@ -80,12 +80,14 @@
  *   auto pub2 = vlink::Publisher<MyMsg>::create_unique(conf);
  * @endcode
  *
- * @par vsomeip Configuration
- * A vsomeip JSON configuration file can be loaded process-wide before any
+ * @par VLink SOME/IP Configuration
+ * A VLink SOME/IP JSON configuration file can be loaded process-wide before any
  * endpoint is created:
  * @code
- *   vlink::SomeipConf::load_global_config_file("/etc/vsomeip/vsomeip.json");
+ *   vlink::SomeipConf::load_global_config_file("/etc/vlink/opensomeip.json");
  * @endcode
+ * Node-local @c someip.* properties set before explicit initialisation override
+ * file, environment and global-property values.
  *
  * @note Compiled only when @c VLINK_SUPPORT_SOMEIP is defined.
  * @note @c service and @c instance must both be non-zero; otherwise @c is_valid()
@@ -93,6 +95,7 @@
  * @note For @c kPublisher / @c kSubscriber / @c kSetter / @c kGetter, both
  *       @c groups and @c event must be set.
  * @note For @c kSetter / @c kGetter, @c field must be @c true.
+ * @note Method ID @c 0xFFFE is reserved by the VLink peer-control extension.
  */
 
 #pragma once
@@ -172,16 +175,16 @@ struct VLINK_EXPORT SomeipConf final : public Conf {
   [[nodiscard]] TransportType get_transport_type() const override;
 
   /**
-   * @brief Sets a vsomeip JSON configuration file as the process-wide default.
+   * @brief Loads a VLink SOME/IP JSON configuration file as the process-wide default.
    *
    * @details
-   * Delegates to @c SomeipFactory::load_global_config_file(), which exports the
-   * @c VSOMEIP_CONFIGURATION environment variable so vsomeip can read the file
-   * during application initialisation.  Must be called before any @c someip://
-   * endpoint is created.
+   * Delegates to @c SomeipFactory::load_global_config_file().  The loader accepts
+   * an @c opensomeip object containing nested @c someip.* settings and the common
+   * unicast, service-discovery and services fields used by existing SOME/IP JSON
+   * deployments.  Call before creating any @c someip:// endpoint.
    *
-   * @param filepath  Path to the vsomeip JSON configuration file.
-   * @return          @c true when the environment variable was successfully set, @c false otherwise.
+   * @param filepath  Path to the JSON configuration file.
+   * @return          @c true when the file was parsed and installed, @c false otherwise.
    */
   static bool load_global_config_file(const std::string& filepath);
 

@@ -1108,9 +1108,22 @@ export VLINK_ZENOH_SHM=1
 
 #### 13.25.3 someip://
 
+SOME/IP 只保留十个部署期高频环境变量；UDP/TCP、SD 和 E2E 的底层参数使用 OpenSOMEIP 默认值。
+
+OpenSOMEIP 后端默认发送 interface version `0`，与原 VLink/vSomeIP Method 端点保持兼容；可按服务通过属性或环境变量改为其他版本。
+
 | 变量 | 类型 | 说明 |
 | --- | --- | --- |
-| `VLINK_SOMEIP_CFG` | 文件路径 | SOME/IP（vsomeip）配置文件路径 |
+| `VLINK_SOMEIP_CFG` | 文件路径 | VLink SOME/IP JSON 配置文件路径 |
+| `VLINK_SOMEIP_TRANSPORT` | `udp` / `tcp` | 传输协议，默认 `udp` |
+| `VLINK_SOMEIP_LOCAL_IP` | IPv4 地址 | 本地绑定地址，默认 `127.0.0.1` |
+| `VLINK_SOMEIP_LOCAL_PORT` | 端口 | 本地端口；客户端默认自动分配 |
+| `VLINK_SOMEIP_REMOTE_IP` | IPv4 地址 | 客户端目标地址，默认 `127.0.0.1` |
+| `VLINK_SOMEIP_REMOTE_PORT` | 端口 | 客户端目标端口 |
+| `VLINK_SOMEIP_CLIENT_ID` | 非零整数 | SOME/IP Client ID；默认由进程 ID 派生 |
+| `VLINK_SOMEIP_INTERFACE_VERSION` | `0`–`255` | SOME/IP 接口版本，默认 `0` |
+| `VLINK_SOMEIP_SD` | `1` / `0` | 启用 OpenSOMEIP 服务发现 |
+| `VLINK_SOMEIP_E2E` | `1` / `0` | 启用 OpenSOMEIP E2E Basic Profile |
 
 #### 13.25.4 SSL / TLS
 
@@ -1128,7 +1141,7 @@ export VLINK_ZENOH_SHM=1
 
 ### 🧬 13.26 第三方与外部变量
 
-底层 DDS、SOME/IP 等中间件仍尊重各自原生环境变量，VLink 不予拦截。常见者包括 `FASTDDS_DEFAULT_PROFILES_FILE`、`FASTDDS_BUILTIN_TRANSPORTS`、`FASTDDS_STATISTICS`、`CYCLONEDDS_URI`、`VSOMEIP_CONFIGURATION`、`VSOMEIP_APPLICATION_NAME`，以及 Iceoryx 的 `IOX_ROUDI_CONFIG`、`IOX_RUNTIME_PATH`、`IOX_LOG_LEVEL`。其语义与默认值以各上游中间件文档为准。
+底层 DDS、Iceoryx 等中间件仍尊重各自原生环境变量，VLink 不予拦截。常见者包括 `FASTDDS_DEFAULT_PROFILES_FILE`、`FASTDDS_BUILTIN_TRANSPORTS`、`FASTDDS_STATISTICS`、`CYCLONEDDS_URI`，以及 Iceoryx 的 `IOX_ROUDI_CONFIG`、`IOX_RUNTIME_PATH`、`IOX_LOG_LEVEL`。其语义与默认值以各上游中间件文档为准。OpenSOMEIP 的运行时配置统一使用上一节列出的 VLink 变量、JSON 或属性。
 
 **Bag 录制**（API 见 [录制与回放](09-recording.md)）：`VLINK_BAG_PATH`（文件路径，设置后启用全局录制，按后缀选择写入器——`.vdb`/`.vdbx` 数据库或 `.vcap`/`.vcapx` MCAP，后缀不支持则不启用）、`VLINK_BAG_TAG`（录制会话标签名）。
 

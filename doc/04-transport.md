@@ -88,7 +88,7 @@ pub.publish(25.6f);
 | `shm2://` | 同机跨进程 | 是 | iceoryx2-c | Beta |
 | `ddsr://` | 跨机 / 局域网 | 否 | RTI Connext DDS | Beta |
 | `zenoh://` | 跨机 / 云边 | 条件支持 | zenoh-c / zenoh-pico | Beta |
-| `someip://` | 车载以太网 | 否 | vsomeip | Beta |
+| `someip://` | 车载以太网 | 否 | OpenSOMEIP | Beta |
 | `mqtt://` | 跨机 / 物联网 | 否 | Paho MQTT C | Beta |
 | `fdbus://` | 同机 | 否 | fdbus | Beta |
 
@@ -344,7 +344,38 @@ vlink::Subscriber<float> sub("someip://0x1234/0x5678?groups=0x1&event=0x10");
 sub.listen([](const float& v) { VLOG_I("recv: ", v); });
 ```
 
-边界条件：依赖 vsomeip JSON 配置文件，路径由环境变量 `VSOMEIP_CONFIGURATION` 指定；事件与字段节点须同时设 `groups` 与 `event`，字段还需 `field=1`；vsomeip 可能要求网络权限（root 或 `CAP_NET_RAW`）。建议进程启动时调用 `SomeipConf::load_global_config_file()` 预加载配置。
+OpenSOMEIP 后端直接管理 UDP/TCP 端点，不需要路由守护进程。默认使用 UDP、`127.0.0.1` 和按 Service/Instance 稳定派生的服务端口；可通过 `SomeipConf::load_global_config_file()`、`VLINK_SOMEIP_*` 环境变量或初始化前的 `set_property("someip.*", value)` 覆盖。配置优先级从低到高为 JSON、环境变量、全局属性、节点属性。
+
+VLink 只保留以下 10 个高频属性，UDP/TCP、SD 和 E2E 的其余底层参数使用 OpenSOMEIP 默认值：
+
+| 属性 | 说明 |
+| --- | --- |
+| `someip.transport` | `udp`（默认）或 `tcp` |
+| `someip.local_ip` | 本地绑定地址，默认 `127.0.0.1` |
+| `someip.local_port` | 本地绑定端口；客户端默认自动分配 |
+| `someip.remote_ip` | 客户端目标地址，默认 `127.0.0.1` |
+| `someip.remote_port` | 客户端目标端口；默认按 Service/Instance 稳定派生 |
+| `someip.client_id` | 非零 SOME/IP Client ID；默认由进程 ID 派生 |
+| `someip.interface_version` | SOME/IP 接口版本，默认 `0`，兼容原 vSomeIP 后端 |
+| `someip.sd.enabled` | 是否启用服务发现 |
+| `someip.sd.multicast_ip` | SD 组播地址 |
+| `someip.e2e.enabled` | 是否启用 OpenSOMEIP 基础 E2E Profile |
+
+节点属性必须在显式初始化前设置：
+
+```cpp
+vlink::Publisher<float> pub(
+    vlink::SomeipConf(0x1234, 0x5678, {0x0001}, 0x0010),
+    vlink::InitType::kWithoutInit);
+pub.set_property("someip.transport", "udp");
+pub.set_property("someip.local_ip", "192.168.10.2");
+pub.set_property("someip.local_port", "30501");
+pub.init();
+```
+
+构建时模块调用 `find_package(OpenSOMEIP)` 并只链接 `OpenSOMEIP::OpenSOMEIP`。自定义查找模块支持通过 `OpenSOMEIP_ROOT` 指定安装前缀或已构建源码树；父工程已提供 `opensomeip` target 时直接复用其编译和链接要求。手工查找路径只适配 OpenSOMEIP 的主机默认动态内存后端，不允许消费方重新选择已构建库的 PAL 后端。
+
+事件与字段节点须同时设置 `groups` 与 `event`，字段还需 `field=1`。Method ID `0xFFFE` 由 VLink peer-control 扩展保留，不能用于用户 RPC。当前 Method 使用标准 SOME/IP 报文，默认 interface version `0` 可与原 VLink/vSomeIP Method 端点互通；Event/Field 的订阅控制仅支持 VLink OpenSOMEIP peer，SD 只用于发现 UDP 服务端点，尚不提供与原 vSomeIP 后端或标准 ECU 的 EventGroup 互操作。OpenSOMEIP 当前 TCP transport 只接受一个客户端且不会自动重连，SD 的 TCP 广播和 TP 分段也不能为 VLink 提供完整透明收发契约，因此 TCP 使用显式地址端口。基础 E2E Profile 来自 OpenSOMEIP 的测试/开发实现，不等同于生产 AUTOSAR E2E Profile。
 
 ### 📦 4.6.7 mqtt:// / fdbus://（Beta）
 

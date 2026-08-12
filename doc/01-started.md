@@ -157,9 +157,10 @@ output/
 | CycloneDDS | DDS 传输（`ddsc://`） | 模块依赖 | 见 [CycloneDDS 官方文档](https://github.com/eclipse-cyclonedds/cyclonedds) |
 | Iceoryx | 共享内存（`shm://`） | 模块依赖 | 见 [Iceoryx 官方文档](https://iceoryx.io/) |
 | zenoh-c | Zenoh（`zenoh://`） | 模块依赖 | 见 [Zenoh 官方文档](https://zenoh.io/) |
+| OpenSOMEIP | SOME/IP（`someip://`） | 模块依赖 | 见 [OpenSOMEIP 仓库](https://github.com/vtz/opensomeip) |
 | Paho MQTT C | MQTT（`mqtt://`） | 模块依赖 | 见 [Eclipse Paho](https://github.com/eclipse/paho.mqtt.c) |
 
-> 其余传输后端（someip / fdbus / shm2 / ddsr 等）依赖见 [传输后端与 URL](04-transport.md)。无系统库时可让 CMake 自动下载，见 [§1.4.5 CPM 选项](#-145-用-cpm-自动下载依赖)。
+> 其余传输后端（fdbus / shm2 / ddsr 等）依赖见 [传输后端与 URL](04-transport.md)。支持 CPM 的依赖可让 CMake 自动下载，见 [§1.4.5 CPM 选项](#-145-用-cpm-自动下载依赖)。
 
 ### 🖥️ 1.3.3 各平台编译器要求
 
@@ -750,7 +751,7 @@ ls build/output/bin/
 | 后端 | 运行前置 |
 | --- | --- |
 | `shm://` | 启动 SHM 守护进程（`iox-roudi`，或用 VLink 内置代理 `vlink-proxy -c <iox 配置>` 内嵌拉起） |
-| `someip://` | 启动 vsomeip routing manager（Beta） |
+| `someip://` | 安装 OpenSOMEIP；按部署设置本地/远端 IP 与端口（Beta，无守护进程） |
 | `fdbus://` | 启动 FDBus name server（Beta） |
 | `mqtt://` | 运行 MQTT Broker（Beta） |
 

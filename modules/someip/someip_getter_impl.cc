@@ -33,18 +33,15 @@ SomeipGetterImpl::SomeipGetterImpl(const SomeipConf& conf) : conf_(conf) {}
 void SomeipGetterImpl::init() {
   static auto& factory = SomeipFactory::get();
 
-  object_ = factory.get_object<Object>({kImplType, conf_.service, conf_.instance});
+  auto properties = factory.resolve_properties(conf_, get_all_properties());
+
+  object_ = factory.get_object<Object>({kImplType, conf_.service, conf_.instance, std::move(properties)});
 
   object_->add_impl(this);
 }
 
 void SomeipGetterImpl::deinit() {
-  for (auto g : conf_.groups) {
-    object_->app()->unsubscribe(conf_.service, conf_.instance, g);
-  }
-
-  object_->app()->release_event(conf_.service, conf_.instance, conf_.event);
-
+  object_->unsubscribe(conf_.groups);
   object_->remove_impl(this);
 }
 
@@ -78,28 +75,7 @@ bool SomeipGetterImpl::detach() {
 
 bool SomeipGetterImpl::listen(MsgCallback&& callback) {
   object_->register_msg_callback(this, std::move(callback));
-
-  object_->app()->request_event(conf_.service, conf_.instance, conf_.event, conf_.groups,
-                                conf_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
-
-  if (object_->is_connected()) {
-    for (auto g : conf_.groups) {
-      object_->app()->subscribe(conf_.service, conf_.instance, g);
-    }
-
-    has_subscribed_ = true;
-  }
-
-  object_->register_server_connect_callback(this, [this](bool connected) {
-    if (!has_subscribed_ && connected) {
-      for (auto g : conf_.groups) {
-        object_->app()->subscribe(conf_.service, conf_.instance, g);
-      }
-    }
-
-    has_subscribed_ = connected;
-  });
-
+  object_->subscribe(conf_.groups);
   object_->start();
 
   return true;

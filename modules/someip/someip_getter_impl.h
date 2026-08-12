@@ -62,7 +62,6 @@ class SomeipGetterImpl final : public GetterImpl {
 
   SomeipConf conf_;
   std::shared_ptr<Object> object_;
-  bool has_subscribed_{false};
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(SomeipGetterImpl)
 };

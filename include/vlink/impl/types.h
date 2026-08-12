@@ -59,7 +59,7 @@
  * | @c kDds      | @c dds://     | Fast-DDS RTPS.                       |
  * | @c kDdsc     | @c ddsc://    | CycloneDDS.                          |
  * | @c kDdsr     | @c ddsr://    | RTI DDS.                             |
- * | @c kSomeip   | @c someip://  | SOME/IP through vsomeip.             |
+ * | @c kSomeip   | @c someip://  | SOME/IP through OpenSOMEIP.          |
  * | @c kMqtt     | @c mqtt://    | MQTT publish / subscribe.            |
  * | @c kFdbus    | @c fdbus://   | FDBus IPC.                           |
  *
@@ -132,7 +132,7 @@ enum class TransportType : uint8_t {
   kDds = 5,      ///< Fast-DDS RTPS (@c dds://).
   kDdsc = 6,     ///< CycloneDDS (@c ddsc://).
   kDdsr = 7,     ///< RTI DDS (@c ddsr://).
-  kSomeip = 9,   ///< SOME/IP through vsomeip (@c someip://).
+  kSomeip = 9,   ///< SOME/IP through OpenSOMEIP (@c someip://).
   kMqtt = 10,    ///< MQTT (@c mqtt://).
   kFdbus = 11,   ///< FDBus IPC (@c fdbus://).
 };

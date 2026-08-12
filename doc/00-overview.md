@@ -15,7 +15,7 @@ VLink 是面向自动驾驶与具身智能的高性能通信中间件，定位�
 
 智能系统的通信存在结构性矛盾：单机内部追求零拷贝与纳秒级延迟，车载域控依赖 SOME/IP 等服务化协议，跨机协同依赖 DDS，而云边链路又需要 MQTT/Zenoh。传统做法是为每种后端引入一套独立 API，导致业务代码与传输实现强耦合——更换后端意味着重写通信层，单元测试难以脱离真实中间件，部署拓扑被固化在源码中。
 
-VLink 的设计立场是以**统一抽象消解后端碎片化**。它不自研传输协议，而是在成熟后端（Iceoryx、Fast-DDS、CycloneDDS、vsomeip、Zenoh 等）之上建立一致的编程模型，使应用只面对三类语义清晰的通信原语，后端选择被收敛为一个可配置参数。
+VLink 的设计立场是以**统一抽象消解后端碎片化**。它不自研传输协议，而是在成熟后端（Iceoryx、Fast-DDS、CycloneDDS、OpenSOMEIP、Zenoh 等）之上建立一致的编程模型，使应用只面对三类语义清晰的通信原语，后端选择被收敛为一个可配置参数。
 
 | 维度     | 传统多栈方案           | VLink                     |
 | -------- | ---------------------- | ------------------------- |
@@ -107,7 +107,7 @@ VLink 采用严格分层，每层只依赖其下一层，后端差异被隔离�
 | 原语层     | Publisher/Subscriber/Client/Server/Setter/Getter，提供统一 API 与生命周期 |
 | 序列化层   | 按消息类型编译期推导编解码策略                                   |
 | 传输抽象层 | URL 解析、后端选择、QoS 映射、零拷贝借贷                         |
-| 后端实现层 | Iceoryx、Fast-DDS、CycloneDDS、vsomeip、Zenoh 等                |
+| 后端实现层 | Iceoryx、Fast-DDS、CycloneDDS、OpenSOMEIP、Zenoh 等             |
 
 六个原语共享统一的节点基类，具有一致的构造、初始化、绑定事件循环与析构语义：
 
@@ -153,7 +153,7 @@ VLink 将消息类型作为原语的模板参数，序列化策略由该类型�
 | `shm2://`                         | Iceoryx2           | 同机跨进程        | 是     | Beta |
 | `ddsr://`                         | RTI Connext DDS    | 跨机网络          | 否     | Beta |
 | `zenoh://`                        | Zenoh              | 跨机 / 云边       | 条件   | Beta |
-| `someip://`                       | vsomeip            | 车载以太网        | 否     | Beta |
+| `someip://`                       | OpenSOMEIP         | 车载以太网        | 否     | Beta |
 | `fdbus://` / `mqtt://`            | FDBus / MQTT       | 同机 / 云端       | 否     | Beta |
 
 详见 [传输后端与 URL](04-transport.md)。

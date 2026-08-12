@@ -23,8 +23,6 @@
 
 #include "./someip_setter_impl.h"
 
-#include "./impl/someip_serializer.h"
-
 namespace vlink {
 
 // SomeipSetterImpl
@@ -33,19 +31,18 @@ SomeipSetterImpl::SomeipSetterImpl(const SomeipConf& conf) : conf_(conf) {}
 void SomeipSetterImpl::init() {
   static auto& factory = SomeipFactory::get();
 
-  object_ = factory.get_object<Object>({kImplType, conf_.service, conf_.instance});
+  auto properties = factory.resolve_properties(conf_, get_all_properties());
+
+  object_ = factory.get_object<Object>({kImplType, conf_.service, conf_.instance, std::move(properties)});
 
   object_->add_impl(this);
 
-  object_->app()->offer_event(conf_.service, conf_.instance, conf_.event, conf_.groups,
-                              conf_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
-
+  object_->offer_event(conf_.event, conf_.groups, true);
   object_->start();
 }
 
 void SomeipSetterImpl::deinit() {
-  object_->app()->stop_offer_event(conf_.service, conf_.instance, conf_.event);
-
+  object_->stop_offer_event(conf_.event, conf_.groups, true);
   object_->remove_impl(this);
 }
 
@@ -64,16 +61,7 @@ bool SomeipSetterImpl::detach() {
 }
 
 void SomeipSetterImpl::write(const Bytes& msg_data) {
-  if VUNLIKELY (msg_data.size() > SomeipSerializer::kMaxPayloadSize) {
-    VLOG_E("SomeipSetterImpl: Payload exceeds the protocol limit.");
-    return;
-  }
-
-  auto payload = msg_data.empty()
-                     ? someip::runtime::get()->create_payload()
-                     : someip::runtime::get()->create_payload(msg_data.data(), static_cast<uint32_t>(msg_data.size()));
-
-  object_->app()->notify(conf_.service, conf_.instance, conf_.event, payload);
+  static_cast<void>(object_->publish(conf_.event, msg_data, true));
 }
 
 void SomeipSetterImpl::sync(SyncCallback&& callback) { (void)callback; }

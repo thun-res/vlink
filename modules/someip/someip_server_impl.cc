@@ -33,7 +33,9 @@ SomeipServerImpl::SomeipServerImpl(const SomeipConf& conf) : conf_(conf) {}
 void SomeipServerImpl::init() {
   static auto& factory = SomeipFactory::get();
 
-  object_ = factory.get_object<Object>({kImplType, conf_.service, conf_.instance});
+  auto properties = factory.resolve_properties(conf_, get_all_properties());
+
+  object_ = factory.get_object<Object>({kImplType, conf_.service, conf_.instance, std::move(properties)});
 
   object_->add_impl(this);
 

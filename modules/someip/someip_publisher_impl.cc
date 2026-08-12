@@ -23,20 +23,7 @@
 
 #include "./someip_publisher_impl.h"
 
-#include <memory>
-#include <set>
-
-#include "./impl/someip_serializer.h"
-
-#ifdef VSOMEIP_DEPRECATED_UID_GID
-#define VSOMEIP_SUB_HANDLE_ARG const vsomeip_sec_client_t*, const std::string&
-#else
-#define VSOMEIP_SUB_HANDLE_ARG someip::uid_t, someip::gid_t
-#endif
-
 namespace vlink {
-
-std::mutex SomeipPublisherImpl::mtx_;
 
 // SomeipPublisherImpl
 SomeipPublisherImpl::SomeipPublisherImpl(const SomeipConf& conf) : conf_(conf) {}
@@ -44,70 +31,20 @@ SomeipPublisherImpl::SomeipPublisherImpl(const SomeipConf& conf) : conf_(conf) {
 void SomeipPublisherImpl::init() {
   static auto& factory = SomeipFactory::get();
 
-  object_ = factory.get_object<Object>({kImplType, conf_.service, conf_.instance});
+  auto properties = factory.resolve_properties(conf_, get_all_properties());
+
+  object_ = factory.get_object<Object>({kImplType, conf_.service, conf_.instance, std::move(properties)});
 
   object_->add_impl(this);
-
-  {
-    std::weak_ptr<Object> weak(object_);
-
-    std::lock_guard lock(object_->get_client_mtx());
-
-    object_->app()->offer_event(conf_.service, conf_.instance, conf_.event,
-                                std::set<someip::eventgroup_t>(conf_.groups.begin(), conf_.groups.end()),
-                                conf_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
-    for (auto g : conf_.groups) {
-      object_->app()->register_subscription_handler(
-          conf_.service, conf_.instance, g,
-          [weak, this](someip::client_t client_id, VSOMEIP_SUB_HANDLE_ARG, bool is_reg) {
-            std::lock_guard g_lock(mtx_);
-
-            auto strong = weak.lock();
-
-            if VUNLIKELY (!strong || !strong->is_contains_impl(this)) {
-              return false;  // To solve lambda invoke when object destroyed
-            }
-
-            if (is_reg) {
-              {
-                std::lock_guard lock(object_->get_client_mtx());
-                object_->get_clients().emplace(client_id);
-              }
-
-              PublisherImpl::update_subscribers();
-
-              return true;
-            } else {
-              {
-                std::lock_guard lock(object_->get_client_mtx());
-                object_->get_clients().erase(client_id);
-              }
-
-              PublisherImpl::update_subscribers();
-
-              return false;
-            }
-          });
-    }
-  }
+  object_->offer_event(conf_.event, conf_.groups, conf_.field);
+  object_->register_sub_connect_callback(this, [this](bool) { PublisherImpl::update_subscribers(); });
   object_->start();
 
   PublisherImpl::update_subscribers();
 }
 
 void SomeipPublisherImpl::deinit() {
-  std::lock_guard g_lock(mtx_);
-
-  {
-    std::lock_guard lock(object_->get_client_mtx());
-
-    for (auto g : conf_.groups) {
-      object_->app()->unregister_subscription_handler(conf_.service, conf_.instance, g);
-    }
-
-    object_->app()->stop_offer_event(conf_.service, conf_.instance, conf_.event);
-  }
-
+  object_->stop_offer_event(conf_.event, conf_.groups, conf_.field);
   object_->remove_impl(this);
 }
 
@@ -125,25 +62,8 @@ bool SomeipPublisherImpl::detach() {
   return false;
 }
 
-bool SomeipPublisherImpl::has_subscribers() const {
-  std::lock_guard lock(object_->get_client_mtx());
+bool SomeipPublisherImpl::has_subscribers() const { return object_->has_subscribers(conf_.groups); }
 
-  return !object_->get_clients().empty();
-}
-
-bool SomeipPublisherImpl::write(const Bytes& msg_data) {
-  if VUNLIKELY (msg_data.size() > SomeipSerializer::kMaxPayloadSize) {
-    VLOG_E("SomeipPublisherImpl: Payload exceeds the protocol limit.");
-    return false;
-  }
-
-  auto payload = msg_data.empty()
-                     ? someip::runtime::get()->create_payload()
-                     : someip::runtime::get()->create_payload(msg_data.data(), static_cast<uint32_t>(msg_data.size()));
-
-  object_->app()->notify(conf_.service, conf_.instance, conf_.event, payload);
-
-  return true;
-}
+bool SomeipPublisherImpl::write(const Bytes& msg_data) { return object_->publish(conf_.event, msg_data, conf_.field); }
 
 }  // namespace vlink

@@ -41,7 +41,7 @@
 |------|----------|
 | `dds://` / `ddsc://` | 无 |
 | `shm://` | `iox-roudi`（Iceoryx RouDi） |
-| `someip://` | `vsomeipd`（vsomeip routing manager） |
+| `someip://` | 无守护进程；需安装 OpenSOMEIP 并正确配置 IP/端口 |
 | `fdbus://` | `name_server` |
 | `mqtt://` | MQTT broker（如 Mosquitto） |
 

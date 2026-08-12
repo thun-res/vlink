@@ -112,7 +112,7 @@ const DICT = {
     'mdl.field.d':  '状态值的 set / get / listen 模型。晚加入 Getter 能否取得历史最新值取决于后端及其历史、持久性 QoS。',
 
     /* ---- matrix ---- */
-    'mx.foot':     '※ <code>intra</code> 与 <code>dds</code>(CDR) 不支持消息级加密 · <code>someip</code> 需 vsomeip 配置 · 详见 <a href="https://thun-res.github.io/vlink/zh_cn/" target="_blank" rel="noopener">开发者文档</a>',
+    'mx.foot':     '※ <code>intra</code> 与 <code>dds</code>(CDR) 不支持消息级加密 · <code>someip</code> 跨机部署需配置 IP/端口 · 详见 <a href="https://thun-res.github.io/vlink/zh_cn/" target="_blank" rel="noopener">开发者文档</a>',
 
     /* ---- quickstart ---- */
     'qs.eyebrow':  '快速上手',
@@ -258,7 +258,7 @@ const DICT = {
     'mx.c.ddsr.m': 'RTI Connext 商用 DDS 传输后端',
     'mx.c.zenoh.n': 'Eclipse Zenoh',
     'mx.c.zenoh.m': '云-边-端统一数据,pub/sub + query',
-    'mx.c.someip.n': 'SOME/IP · vsomeip',
+    'mx.c.someip.n': 'SOME/IP · OpenSOMEIP',
     'mx.c.someip.m': 'AUTOSAR 车载以太网标准',
     'mx.c.fdbus.n': 'FDBus',
     'mx.c.fdbus.m': 'Android/Linux 轻量级 D-Bus 替代',
@@ -452,7 +452,7 @@ const DICT = {
     'mdl.field.h':  'Field Model',
     'mdl.field.d':  'A set / get / listen model for state. Whether a late-joining Getter receives the latest historical value depends on backend history and durability QoS.',
 
-    'mx.foot':     '※ <code>intra</code> and <code>dds</code>(CDR) do not support message-level encryption · <code>someip</code> needs vsomeip config · see the <a href="https://thun-res.github.io/vlink/en_us/" target="_blank" rel="noopener">Developer Docs</a>',
+    'mx.foot':     '※ <code>intra</code> and <code>dds</code>(CDR) do not support message-level encryption · cross-host <code>someip</code> requires IP/port configuration · see the <a href="https://thun-res.github.io/vlink/en_us/" target="_blank" rel="noopener">Developer Docs</a>',
 
     'qs.eyebrow':  'Quickstart',
     'qs.title':    'Example Code',
@@ -587,7 +587,7 @@ const DICT = {
     'mx.c.ddsr.m': 'Commercial RTI Connext DDS transport backend',
     'mx.c.zenoh.n': 'Eclipse Zenoh',
     'mx.c.zenoh.m': 'Unified cloud-edge data — pub/sub + query',
-    'mx.c.someip.n': 'SOME/IP · vsomeip',
+    'mx.c.someip.n': 'SOME/IP · OpenSOMEIP',
     'mx.c.someip.m': 'AUTOSAR automotive-Ethernet standard',
     'mx.c.fdbus.n': 'FDBus',
     'mx.c.fdbus.m': 'Lightweight D-Bus alternative for Android / Linux',
@@ -781,7 +781,7 @@ const DICT = {
     'mdl.field.h':  'Field モデル',
     'mdl.field.d':  '状態の set / get / listen モデル。遅れて参加した Getter が履歴最新値を得られるかは、バックエンドの履歴・永続性 QoS に依存します。',
 
-    'mx.foot':     '※ <code>intra</code> と <code>dds</code>(CDR) はメッセージ暗号化非対応 · <code>someip</code> は vsomeip 設定が必要 · 詳細は <a href="https://thun-res.github.io/vlink/en_us/" target="_blank" rel="noopener">開発者ドキュメント</a> を参照',
+    'mx.foot':     '※ <code>intra</code> と <code>dds</code>(CDR) はメッセージ暗号化非対応 · ホスト間の <code>someip</code> には IP/ポート設定が必要 · 詳細は <a href="https://thun-res.github.io/vlink/en_us/" target="_blank" rel="noopener">開発者ドキュメント</a> を参照',
 
     'qs.eyebrow':  'クイックスタート',
     'qs.title':    'サンプルコード',
@@ -916,7 +916,7 @@ const DICT = {
     'mx.c.ddsr.m': '商用 RTI Connext DDS トランスポートバックエンド',
     'mx.c.zenoh.n': 'Eclipse Zenoh',
     'mx.c.zenoh.m': 'クラウド-エッジ統合データ — pub/sub + query',
-    'mx.c.someip.n': 'SOME/IP · vsomeip',
+    'mx.c.someip.n': 'SOME/IP · OpenSOMEIP',
     'mx.c.someip.m': 'AUTOSAR 車載イーサネット標準',
     'mx.c.fdbus.n': 'FDBus',
     'mx.c.fdbus.m': 'Android / Linux 向け軽量 D-Bus 代替',

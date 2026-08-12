@@ -91,7 +91,7 @@ getter.listen([](const Status& s) { use(s); });
 | `shm2://` | Iceoryx2 | same-host | yes | beta |
 | `ddsr://` | RTI Connext | cross-machine | no | beta |
 | `zenoh://` | Zenoh | cross-machine / edge | conditional | beta |
-| `someip://` | vsomeip | automotive Ethernet | no | beta |
+| `someip://` | OpenSOMEIP | automotive Ethernet | no | beta |
 | `mqtt://` | Paho MQTT | cloud | no | beta |
 | `fdbus://` | FDBus | same-host | no | beta |
 
