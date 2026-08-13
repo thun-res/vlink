@@ -23,7 +23,7 @@
 | ---- | ---- | -------- |
 | `include/vlink/*.h` | 六大通信原语 + `node.h`、`serializer.h`、`version.h` 与总入口 `vlink.h` | `doc/01-started.md`、`doc/02-communication.md`、`doc/03-serialization.md` |
 | `include/vlink/base/` | 基础库:Logger、MessageLoop、Timer、ThreadPool、Bytes、宏(`macros.h`,含 `VLIKELY`) | `doc/08-base-library.md` |
-| `include/vlink/extension/` | QoS、Security、Bag、发现/状态、动态数据与插件接口等扩展 | `doc/05-qos.md`、`doc/07-security.md`、`doc/09-recording.md`、`doc/12-observability.md`、`doc/13-integration.md` |
+| `include/vlink/extension/` | QoS、Security、Bag、发现/状态、动态数据、SOME/IP 序列化 codec 与插件接口等扩展 | `doc/03-serialization.md`、`doc/05-qos.md`、`doc/07-security.md`、`doc/09-recording.md`、`doc/12-observability.md`、`doc/13-integration.md` |
 | `include/vlink/modules/` | 各后端 Conf(DdsConf、ShmConf、ZenohConf 等) | `doc/04-transport.md` |
 | `include/vlink/zerocopy/` | CameraFrame、PointCloud、Tensor 等零拷贝容器;**线格式冻结,见 languages/CPP.md §9.3** | `doc/06-zerocopy.md` |
 | `include/vlink/external/` | 纯 C API、代理监控/嵌入式代理 API、表达式引擎 API | `doc/13-integration.md`、`doc/12-observability.md`;表达式用法见 `doc/01-started.md`、`doc/10-cli-tools.md` |

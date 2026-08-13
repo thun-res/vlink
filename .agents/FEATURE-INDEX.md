@@ -23,7 +23,8 @@ agent 渐进式披露:先在本表定位功能 → 再读对应 doc 小节 → �
 | 类型族选型:Bytes/Dynamic/SOMEIP/CDR/Proto/ProtoPtr/FlatTable/FlatPtr/FlatBuilder/Custom/String/Chars/Standard(POD)/StandardPtr/Stream | 同上 | `doc/03` §3.2;速查 `doc/14` §14.7 |
 | Protobuf 接入 | 同上 | `doc/03` §3.3 |
 | FlatBuffers 与 POD | 同上 | `doc/03` §3.4 |
-| SOME/IP 宏结构与 AUTOSAR non-TLV 部署边界 | `include/vlink/impl/someip_serializer.h` | `doc/03` §3.5.1 |
+| SOME/IP 宏结构与 AUTOSAR 部署边界（含 TLV/union/map/UTF-16） | `include/vlink/extension/someip_serializer.h` | `doc/03` §3.5.1 |
+| AUTOSAR ARXML → SOME/IP C++ 生成器 | `tools/autosar/arxml_to_vlink_someip.py` | `tools/autosar/README.md` |
 | 自定义序列化器 | `include/vlink/serializer.h` | `doc/03` §3.5.2 |
 | DDS CDR 与 DynamicData | 同上 + `modules/dds*` | `doc/03` §3.6 |
 | 边界条件与常见错误 | — | `doc/03` §3.7 |
