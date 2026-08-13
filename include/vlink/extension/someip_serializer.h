@@ -1303,8 +1303,10 @@ inline bool write_value(Writer& writer, const std::variant<AlternativeT...>& val
     return false;
   }
 
-  if (kHasNull && value.index() == 0U) {
-    return writer.end_length_delimited(length_position, content_position, len);
+  if constexpr (kHasNull) {
+    if (value.index() == 0U) {
+      return writer.end_length_delimited(length_position, content_position, len);
+    }
   }
 
   return writer.align() && writer.end_length_delimited(length_position, content_position, len);
