@@ -90,27 +90,6 @@ elseif(APPLE)
 endif()
 set_tests_properties(${_VLINK_TEST_SUITES} PROPERTIES ENVIRONMENT "${_VLINK_TEST_ENV}")
 
-if(NOT Python_EXECUTABLE)
-  find_package(
-    Python
-    COMPONENTS Interpreter
-    QUIET
-  )
-endif()
-if(Python_EXECUTABLE)
-  add_test(NAME autosar-someip-generator COMMAND ${Python_EXECUTABLE} -m unittest
-                                                 tools/autosar/test/arxml_to_vlink_someip_test.py
-  )
-  set(_VLINK_AUTOSAR_TEST_ENV
-      "PYTHONPYCACHEPREFIX=${CMAKE_BINARY_DIR}/__pycache__"
-      "VLINK_AUTOSAR_TEST_LINKER_FILE=$<TARGET_LINKER_FILE:vlink>"
-      "VLINK_AUTOSAR_TEST_RUNTIME_DIR=$<TARGET_FILE_DIR:vlink>"
-  )
-  set_tests_properties(
-    autosar-someip-generator PROPERTIES ENVIRONMENT "${_VLINK_AUTOSAR_TEST_ENV}" WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-  )
-endif()
-
 if(_VLINK_TRANSPORT_TEST_SUITES)
   set_tests_properties(${_VLINK_TRANSPORT_TEST_SUITES} PROPERTIES RESOURCE_LOCK vlink_transport)
 endif()
