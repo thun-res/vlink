@@ -80,6 +80,12 @@
               <BASE-TYPE-ENCODING>NONE</BASE-TYPE-ENCODING>
               <NATIVE-DECLARATION>uint32</NATIVE-DECLARATION>
             </SW-BASE-TYPE>
+            <SW-BASE-TYPE>
+              <SHORT-NAME>Utf8</SHORT-NAME>
+              <CATEGORY>VARIABLE_LENGTH</CATEGORY>
+              <BASE-TYPE-SIZE>8</BASE-TYPE-SIZE>
+              <BASE-TYPE-ENCODING>UTF-8</BASE-TYPE-ENCODING>
+            </SW-BASE-TYPE>
             <COMPU-METHOD>
               <SHORT-NAME>GearModeCompuMethod</SHORT-NAME>
               <CATEGORY>TEXTTABLE</CATEGORY>
@@ -262,6 +268,16 @@
                 <IMPLEMENTATION-DATA-TYPE-ELEMENT>
                   <SHORT-NAME>name</SHORT-NAME>
                   <CATEGORY>STRING</CATEGORY>
+                  <SW-DATA-DEF-PROPS>
+                    <SW-DATA-DEF-PROPS-VARIANTS>
+                      <SW-DATA-DEF-PROPS-CONDITIONAL>
+                        <SW-TEXT-PROPS>
+                          <SW-MAX-TEXT-SIZE>7</SW-MAX-TEXT-SIZE>
+                          <BASE-TYPE-REF DEST="SW-BASE-TYPE">/VLink/PlatformTypes/Utf8</BASE-TYPE-REF>
+                        </SW-TEXT-PROPS>
+                      </SW-DATA-DEF-PROPS-CONDITIONAL>
+                    </SW-DATA-DEF-PROPS-VARIANTS>
+                  </SW-DATA-DEF-PROPS>
                 </IMPLEMENTATION-DATA-TYPE-ELEMENT>
                 <IMPLEMENTATION-DATA-TYPE-ELEMENT>
                   <SHORT-NAME>position</SHORT-NAME>

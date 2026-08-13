@@ -2,14 +2,16 @@
 """Tests for tools/autosar/arxml_to_vlink_someip.py."""
 
 import os
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 import textwrap
 import unittest
+from itertools import product
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 AUTOSAR_NAMESPACE = "http://autosar.org/schema/r4.0"
@@ -161,7 +163,8 @@ def service_element_deployment_xml(service_elements: str, mapping_refs: str) -> 
     )
 
 
-def nested_alias_deployment_xml(array_width: int = 2) -> str:
+def nested_alias_deployment_xml(array_width: int = 2, maximum: Optional[int] = None) -> str:
+    maximum_xml = f"<ARRAY-SIZE>{maximum}</ARRAY-SIZE>" if maximum is not None else ""
     return package_xml(
         "Alias",
         UINT8_BASE
@@ -170,7 +173,7 @@ def nested_alias_deployment_xml(array_width: int = 2) -> str:
           <SHORT-NAME>Leaf</SHORT-NAME><CATEGORY>ARRAY</CATEGORY><SUB-ELEMENTS>
             <IMPLEMENTATION-DATA-TYPE-ELEMENT>
               <SHORT-NAME>element</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
-              <ARRAY-SIZE>8</ARRAY-SIZE><ARRAY-SIZE-SEMANTICS>VARIABLE-SIZE</ARRAY-SIZE-SEMANTICS>
+              {maximum_xml}<ARRAY-SIZE-SEMANTICS>VARIABLE-SIZE</ARRAY-SIZE-SEMANTICS>
               <BASE-TYPE-REF>/Alias/uint8</BASE-TYPE-REF>
             </IMPLEMENTATION-DATA-TYPE-ELEMENT>
           </SUB-ELEMENTS>
@@ -227,7 +230,13 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         cls.repo_root = autosar_dir.parents[1]
         cls.tool = autosar_dir / "arxml_to_vlink_someip.py"
         cls.fixture = test_dir / "autosar_r25_11_someip_types.arxml"
+        cls.features_fixture = test_dir / "autosar_r25_11_someip_features.arxml"
+        cls.matrix_fixture = test_dir / "autosar_r25_11_someip_matrix.arxml"
+        cls.advanced_fixture = test_dir / "autosar_r25_11_someip_advanced.arxml"
         cls.golden = test_dir / "generated_someip_types.h"
+        cls.features_golden = test_dir / "generated_someip_features.h"
+        cls.matrix_golden = test_dir / "generated_someip_matrix.h"
+        cls.advanced_golden = test_dir / "generated_someip_advanced.h"
 
     def run_tool(self, files: Dict[str, str], *arguments: str) -> Tuple[subprocess.CompletedProcess, Path]:
         temporary = tempfile.TemporaryDirectory()
@@ -242,6 +251,89 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         command = [sys.executable, str(self.tool), *(str(path) for path in paths), *arguments]
         result = subprocess.run(command, check=False, capture_output=True, text=True)
         return result, directory
+
+    @staticmethod
+    def find_cpp_compiler() -> Optional[str]:
+        return (
+            os.environ.get("CXX")
+            or shutil.which("c++")
+            or shutil.which("cl")
+            or shutil.which("clang-cl")
+        )
+
+    def find_autosar_schema(self) -> Optional[Path]:
+        schema_value = os.environ.get("AUTOSAR_R25_11_XSD")
+        if schema_value:
+            schema = Path(schema_value)
+            self.assertTrue(schema.is_file(), f"AUTOSAR_R25_11_XSD does not exist: {schema}")
+            return schema
+        candidate = (
+            self.repo_root
+            / "build-ai"
+            / "arxml_someip_length"
+            / "schema"
+            / "extracted"
+            / "AUTOSAR_00054.xsd"
+        )
+        return candidate if candidate.is_file() else None
+
+    def compile_cpp(self, compiler: str, source: Path, *includes: Path) -> subprocess.CompletedProcess:
+        compiler_path = compiler.strip('"')
+        command = (
+            [compiler_path]
+            if Path(compiler_path).is_file()
+            else shlex.split(compiler, posix=os.name != "nt")
+        )
+        command[0] = command[0].strip('"')
+        executable = Path(command[0]).name.lower()
+        if executable in {"cl", "cl.exe", "clang-cl", "clang-cl.exe"}:
+            command.extend(("/nologo", "/std:c++17", "/Zs"))
+            command.extend(f"/I{include}" for include in includes)
+        else:
+            command.extend(("-std=c++17", "-fsyntax-only"))
+            for include in includes:
+                command.extend(("-I", str(include)))
+        command.append(str(source))
+        return subprocess.run(command, check=False, capture_output=True, text=True)
+
+    def compile_and_run_cpp(
+        self, compiler: str, source: Path, linker_file: Path, runtime_dir: Path, *includes: Path
+    ) -> Tuple[subprocess.CompletedProcess, Optional[subprocess.CompletedProcess]]:
+        compiler_path = compiler.strip('"')
+        command = (
+            [compiler_path]
+            if Path(compiler_path).is_file()
+            else shlex.split(compiler, posix=os.name != "nt")
+        )
+        command[0] = command[0].strip('"')
+        executable_name = Path(command[0]).name.lower()
+        output = source.with_suffix(".exe" if os.name == "nt" else "")
+        if executable_name in {"cl", "cl.exe", "clang-cl", "clang-cl.exe"}:
+            command.extend(("/nologo", "/std:c++17", "/EHsc"))
+            command.extend(f"/I{include}" for include in includes)
+            command.extend((str(source), str(linker_file), f"/Fe:{output}"))
+        else:
+            command.append("-std=c++17")
+            for include in includes:
+                command.extend(("-I", str(include)))
+            command.extend((str(source), str(linker_file), f"-Wl,-rpath,{runtime_dir}", "-o", str(output)))
+
+        compiled = subprocess.run(command, check=False, capture_output=True, text=True)
+        if compiled.returncode != 0:
+            return compiled, None
+
+        environment = os.environ.copy()
+        if os.name == "nt":
+            library_path = "PATH"
+        elif sys.platform == "darwin":
+            library_path = "DYLD_LIBRARY_PATH"
+        else:
+            library_path = "LD_LIBRARY_PATH"
+        environment[library_path] = str(runtime_dir) + os.pathsep + environment.get(library_path, "")
+        executed = subprocess.run(
+            [str(output)], check=False, capture_output=True, text=True, env=environment
+        )
+        return compiled, executed
 
     def test_generates_scalars_enum_arrays_nested_types_and_bytes(self) -> None:
         arxml = package_xml(
@@ -336,13 +428,16 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("namespace vehicle::someip {", result.stdout)
+        self.assertIn("// AUTOSAR type: /Types/Mode.", result.stdout)
         self.assertIn("enum class Mode : uint16_t {", result.stdout)
         self.assertIn("kOff = 0,", result.stdout)
         self.assertIn("kActive = 1,\n};", result.stdout)
+        self.assertIn("// AUTOSAR type: /Types/FixedSamples.", result.stdout)
         self.assertIn("using FixedSamples = std::array<uint16_t, 3>;", result.stdout)
+        self.assertIn("// AUTOSAR type: /Types/Message.", result.stdout)
         self.assertIn("vlink::Bytes payload{};", result.stdout)
         self.assertIn("std::string label{};", result.stdout)
-        self.assertIn("VLINK_SOMEIP_FIELDS(mode, samples, payload, label)", result.stdout)
+        self.assertIn("VLINK_SOMEIP_LENGTH_MAX(payload, 4U, 4096U)", result.stdout)
 
     def test_resolves_cross_file_application_mapping(self) -> None:
         implementation = package_xml(
@@ -385,9 +480,60 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("// Sources: application.arxml, implementation.arxml", result.stdout)
         self.assertIn("struct ImplMessage final {", result.stdout)
         self.assertIn("using AppMessage = ImplMessage;", result.stdout)
         self.assertNotIn("unusedModelField", result.stdout)
+
+    def test_rejects_non_struct_top_level_prototype_without_deployment(self) -> None:
+        arxml = package_xml(
+            "Scalar",
+            """
+            <IMPLEMENTATION-DATA-TYPE>
+              <SHORT-NAME>Counter</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+              <BASE-TYPE-REF>/AUTOSAR/PlatformTypes/uint32</BASE-TYPE-REF>
+            </IMPLEMENTATION-DATA-TYPE>
+            <SERVICE-INTERFACE><SHORT-NAME>Service</SHORT-NAME><EVENTS>
+              <VARIABLE-DATA-PROTOTYPE>
+                <SHORT-NAME>Event</SHORT-NAME><TYPE-TREF>/Scalar/Counter</TYPE-TREF>
+              </VARIABLE-DATA-PROTOTYPE>
+            </EVENTS></SERVICE-INTERFACE>
+            """,
+        )
+        result, _ = self.run_tool(
+            {"scalar.arxml": arxml}, "--prototype", "/Scalar/Service/Event"
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("top-level SOME/IP payload must resolve to a structure", result.stderr)
+
+    def test_rejects_port_interface_scoped_type_mapping(self) -> None:
+        mappings = package_xml(
+            "Scoped",
+            """
+            <DATA-TYPE-MAPPING-SET>
+              <SHORT-NAME>Mappings</SHORT-NAME>
+            </DATA-TYPE-MAPPING-SET>
+            """,
+        )
+        scoped = textwrap.dedent(
+            f"""\
+            <?xml version="1.0" encoding="UTF-8"?>
+            <PORT-INTERFACE-TO-DATA-TYPE-MAPPING xmlns="{AUTOSAR_NAMESPACE}">
+              <SHORT-NAME>ServiceMappings</SHORT-NAME>
+              <DATA-TYPE-MAPPING-SET-REFS>
+                <DATA-TYPE-MAPPING-SET-REF>/Scoped/Mappings</DATA-TYPE-MAPPING-SET-REF>
+              </DATA-TYPE-MAPPING-SET-REFS>
+              <PORT-INTERFACE-REF>/Scoped/Service</PORT-INTERFACE-REF>
+            </PORT-INTERFACE-TO-DATA-TYPE-MAPPING>
+            """
+        ).lstrip()
+        result, _ = self.run_tool(
+            {"mappings.arxml": mappings, "scoped_mapping.arxml": scoped}
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("PORT-INTERFACE-TO-DATA-TYPE-MAPPING scope is not supported", result.stderr)
 
     def test_indexes_ar_packages_and_fragment_roots(self) -> None:
         wrapped = package_xml(
@@ -494,20 +640,16 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertIn("using Samples = std::array<uint16_t, 3>;", result.stdout)
         self.assertIn("using History = std::vector<uint16_t>;", result.stdout)
         self.assertIn("using String = std::string;", result.stdout)
-        self.assertIn("VLINK_SOMEIP_ALIGNMENT(4U)", result.stdout)
+        self.assertNotIn("VLINK_SOMEIP_ALIGNMENT", result.stdout)
         self.assertIn("bool valid{};", result.stdout)
         self.assertIn("float temperature{};", result.stdout)
         self.assertIn("VLINK_SOMEIP_FIELDS(samples, history, name, valid, temperature)", result.stdout)
         self.assertLess(
             result.stdout.index("float temperature{};"),
-            result.stdout.index("VLINK_SOMEIP_ALIGNMENT(4U)"),
-        )
-        self.assertLess(
-            result.stdout.index("VLINK_SOMEIP_ALIGNMENT(4U)"),
             result.stdout.index("VLINK_SOMEIP_FIELDS(samples, history, name, valid, temperature)"),
         )
 
-        compiler = os.environ.get("CXX") or shutil.which("c++")
+        compiler = self.find_cpp_compiler()
         if compiler:
             header = directory / "adaptive_generated.h"
             source = directory / "adaptive_generated.cc"
@@ -518,21 +660,7 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
                 "vlink::Serializer::kSomeipType);\n",
                 encoding="utf-8",
             )
-            compiled = subprocess.run(
-                [
-                    compiler,
-                    "-std=c++17",
-                    "-fsyntax-only",
-                    "-I",
-                    str(directory),
-                    "-I",
-                    str(self.repo_root / "include"),
-                    str(source),
-                ],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
+            compiled = self.compile_cpp(compiler, source, directory, self.repo_root / "include")
             self.assertEqual(compiled.returncode, 0, compiled.stderr)
 
     def test_generates_application_value_custom_cpp_and_parameter_prototype(self) -> None:
@@ -571,7 +699,7 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertIn("[[nodiscard]] static CustomPayload make_default()", result.stdout)
         self.assertIn("static_cast<uint8_t>(9U)", result.stdout)
 
-    def test_rejects_optional_adaptive_member_that_requires_tlv(self) -> None:
+    def test_rejects_optional_adaptive_member_without_tlv_deployment(self) -> None:
         arxml = package_xml(
             "Adaptive",
             """
@@ -591,7 +719,226 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         result, _ = self.run_tool({"optional.arxml": arxml}, "--type", "OptionalState")
 
         self.assertEqual(result.returncode, 2)
-        self.assertIn("optional members require TLV", result.stderr)
+        self.assertIn("optional members require a TLV data-ID deployment", result.stderr)
+
+    def test_generates_dynamic_and_static_tlv_optional_members(self) -> None:
+        arxml = package_xml(
+            "Adaptive",
+            UINT8_BASE
+            + """
+            <STD-CPP-IMPLEMENTATION-DATA-TYPE>
+              <SHORT-NAME>uint16_t</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+            </STD-CPP-IMPLEMENTATION-DATA-TYPE>
+            <STD-CPP-IMPLEMENTATION-DATA-TYPE>
+              <SHORT-NAME>uint32_t</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+            </STD-CPP-IMPLEMENTATION-DATA-TYPE>
+            <STD-CPP-IMPLEMENTATION-DATA-TYPE>
+              <SHORT-NAME>Lookup</SHORT-NAME><CATEGORY>ASSOCIATIVE_MAP</CATEGORY>
+              <TEMPLATE-ARGUMENTS>
+                <CPP-TEMPLATE-ARGUMENT>
+                  <CATEGORY>ASSOC_MAP_VALUE</CATEGORY><TEMPLATE-TYPE-REF>/Adaptive/uint16_t</TEMPLATE-TYPE-REF>
+                </CPP-TEMPLATE-ARGUMENT>
+                <CPP-TEMPLATE-ARGUMENT>
+                  <CATEGORY>ASSOC_MAP_KEY</CATEGORY><TEMPLATE-TYPE-REF>/Adaptive/uint32_t</TEMPLATE-TYPE-REF>
+                </CPP-TEMPLATE-ARGUMENT>
+              </TEMPLATE-ARGUMENTS>
+            </STD-CPP-IMPLEMENTATION-DATA-TYPE>
+            <STD-CPP-IMPLEMENTATION-DATA-TYPE>
+              <SHORT-NAME>OptionalState</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY><SUB-ELEMENTS>
+                <CPP-IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                  <SHORT-NAME>label</SHORT-NAME><CATEGORY>STRING</CATEGORY><IS-OPTIONAL>true</IS-OPTIONAL>
+                </CPP-IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                <CPP-IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                  <SHORT-NAME>code</SHORT-NAME><BASE-TYPE-REF>/Adaptive/uint8</BASE-TYPE-REF>
+                </CPP-IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                <CPP-IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                  <SHORT-NAME>lookup</SHORT-NAME><CATEGORY>TYPE-REFERENCE</CATEGORY><IS-OPTIONAL>true</IS-OPTIONAL>
+                  <TYPE-REFERENCE-REF>/Adaptive/Lookup</TYPE-REFERENCE-REF>
+                </CPP-IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              </SUB-ELEMENTS>
+            </STD-CPP-IMPLEMENTATION-DATA-TYPE>
+            <SERVICE-INTERFACE><SHORT-NAME>Service</SHORT-NAME><EVENTS>
+              <VARIABLE-DATA-PROTOTYPE>
+                <SHORT-NAME>Event</SHORT-NAME><TYPE-TREF>/Adaptive/OptionalState</TYPE-TREF>
+              </VARIABLE-DATA-PROTOTYPE>
+            </EVENTS></SERVICE-INTERFACE>
+            <AP-SOMEIP-TRANSFORMATION-PROPS>
+              <SHORT-NAME>Defaults</SHORT-NAME>
+              <SIZE-OF-ARRAY-LENGTH-FIELD>2</SIZE-OF-ARRAY-LENGTH-FIELD>
+              <SIZE-OF-STRING-LENGTH-FIELD>2</SIZE-OF-STRING-LENGTH-FIELD>
+              <SIZE-OF-STRUCT-LENGTH-FIELD>2</SIZE-OF-STRUCT-LENGTH-FIELD>
+              <SIZE-OF-UNION-LENGTH-FIELD>2</SIZE-OF-UNION-LENGTH-FIELD>
+            </AP-SOMEIP-TRANSFORMATION-PROPS>
+            <TLV-DATA-ID-DEFINITION-SET>
+              <SHORT-NAME>DataIds</SHORT-NAME><TLV-DATA-ID-DEFINITIONS>
+                <TLV-DATA-ID-DEFINITION>
+                  <ID>1</ID><TLV-IMPLEMENTATION-DATA-TYPE-ELEMENT-REF>/Adaptive/OptionalState/label</TLV-IMPLEMENTATION-DATA-TYPE-ELEMENT-REF>
+                </TLV-DATA-ID-DEFINITION>
+                <TLV-DATA-ID-DEFINITION>
+                  <ID>2</ID><TLV-IMPLEMENTATION-DATA-TYPE-ELEMENT-REF>/Adaptive/OptionalState/code</TLV-IMPLEMENTATION-DATA-TYPE-ELEMENT-REF>
+                </TLV-DATA-ID-DEFINITION>
+                <TLV-DATA-ID-DEFINITION>
+                  <ID>3</ID><TLV-IMPLEMENTATION-DATA-TYPE-ELEMENT-REF>/Adaptive/OptionalState/lookup</TLV-IMPLEMENTATION-DATA-TYPE-ELEMENT-REF>
+                </TLV-DATA-ID-DEFINITION>
+              </TLV-DATA-ID-DEFINITIONS>
+            </TLV-DATA-ID-DEFINITION-SET>
+            <TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>
+              <SHORT-NAME>Mapping</SHORT-NAME>
+              <EVENT-REFS><EVENT-REF>/Adaptive/Service/Event</EVENT-REF></EVENT-REFS>
+              <TLV-DATA-ID-DEFINITION-REFS>
+                <TLV-DATA-ID-DEFINITION-REF>/Adaptive/DataIds</TLV-DATA-ID-DEFINITION-REF>
+              </TLV-DATA-ID-DEFINITION-REFS>
+              <TRANSFORMATION-PROPS-REF>/Adaptive/Defaults</TRANSFORMATION-PROPS-REF>
+            </TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>
+            """,
+        )
+        result, directory = self.run_tool(
+            {"optional.arxml": arxml}, "--prototype", "/Adaptive/Service/Event", "--strict"
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("std::optional<std::string> label{};", result.stdout)
+        self.assertIn("std::optional<Lookup> lookup{};", result.stdout)
+        self.assertIn("SOME/IP deployment: TLV data ID 1, optional, dynamic length", result.stdout)
+        self.assertIn("SOME/IP deployment: TLV data ID 2, fixed-width wire type", result.stdout)
+        self.assertIn("VLINK_SOMEIP_STRUCT_LENGTH(2U)", result.stdout)
+        self.assertIn("VLINK_SOMEIP_TLV_LENGTH(1, label, 2U)", result.stdout)
+        self.assertIn("VLINK_SOMEIP_TLV_LENGTH(2, code, 2U)", result.stdout)
+        self.assertIn("VLINK_SOMEIP_TLV_LENGTH(3, lookup, 2U)", result.stdout)
+        compiler = self.find_cpp_compiler()
+        if compiler:
+            header = directory / "tlv_generated.h"
+            source = directory / "tlv_generated.cc"
+            header.write_text(result.stdout, encoding="utf-8")
+            source.write_text('#include "tlv_generated.h"\n', encoding="utf-8")
+            compiled = self.compile_cpp(compiler, source, directory, self.repo_root / "include")
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+
+        static = arxml.replace(
+            "<SHORT-NAME>Defaults</SHORT-NAME>",
+            "<SHORT-NAME>Defaults</SHORT-NAME>"
+            "<IS-DYNAMIC-LENGTH-FIELD-SIZE>false</IS-DYNAMIC-LENGTH-FIELD-SIZE>",
+            1,
+        )
+        static_result, _ = self.run_tool(
+            {"static.arxml": static}, "--prototype", "/Adaptive/Service/Event"
+        )
+        self.assertEqual(static_result.returncode, 0, static_result.stderr)
+        self.assertIn("VLINK_SOMEIP_TLV_STATIC_LENGTH(1, label, 2U)", static_result.stdout)
+
+        mixed = arxml.replace(
+            "</VARIABLE-DATA-PROTOTYPE>\n            </EVENTS>",
+            "</VARIABLE-DATA-PROTOTYPE>"
+            "<VARIABLE-DATA-PROTOTYPE><SHORT-NAME>StaticEvent</SHORT-NAME>"
+            "<TYPE-TREF>/Adaptive/OptionalState</TYPE-TREF></VARIABLE-DATA-PROTOTYPE>\n            </EVENTS>",
+            1,
+        ).replace(
+            "</AP-SOMEIP-TRANSFORMATION-PROPS>",
+            "</AP-SOMEIP-TRANSFORMATION-PROPS>"
+            "<AP-SOMEIP-TRANSFORMATION-PROPS><SHORT-NAME>StaticDefaults</SHORT-NAME>"
+            "<IS-DYNAMIC-LENGTH-FIELD-SIZE>false</IS-DYNAMIC-LENGTH-FIELD-SIZE>"
+            "<SIZE-OF-ARRAY-LENGTH-FIELD>2</SIZE-OF-ARRAY-LENGTH-FIELD>"
+            "<SIZE-OF-STRING-LENGTH-FIELD>2</SIZE-OF-STRING-LENGTH-FIELD>"
+            "<SIZE-OF-STRUCT-LENGTH-FIELD>2</SIZE-OF-STRUCT-LENGTH-FIELD>"
+            "<SIZE-OF-UNION-LENGTH-FIELD>2</SIZE-OF-UNION-LENGTH-FIELD>"
+            "</AP-SOMEIP-TRANSFORMATION-PROPS>",
+            1,
+        ).replace(
+            "</TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>",
+            "</TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>"
+            "<TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>"
+            "<SHORT-NAME>StaticMapping</SHORT-NAME><EVENT-REFS>"
+            "<EVENT-REF>/Adaptive/Service/StaticEvent</EVENT-REF></EVENT-REFS>"
+            "<TLV-DATA-ID-DEFINITION-REFS><TLV-DATA-ID-DEFINITION-REF>/Adaptive/DataIds"
+            "</TLV-DATA-ID-DEFINITION-REF></TLV-DATA-ID-DEFINITION-REFS>"
+            "<TRANSFORMATION-PROPS-REF>/Adaptive/StaticDefaults</TRANSFORMATION-PROPS-REF>"
+            "</TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>",
+            1,
+        )
+        for prototypes in (
+            ("/Adaptive/Service/Event", "/Adaptive/Service/StaticEvent"),
+            ("/Adaptive/Service/StaticEvent", "/Adaptive/Service/Event"),
+        ):
+            with self.subTest(prototypes=prototypes):
+                conflict, _ = self.run_tool(
+                    {"mixed.arxml": mixed},
+                    "--prototype",
+                    prototypes[0],
+                    "--prototype",
+                    prototypes[1],
+                )
+                self.assertEqual(conflict.returncode, 2)
+                self.assertIn("conflicting TLV modes across service elements", conflict.stderr)
+
+    def test_generates_nested_tlv_structures_with_scoped_reused_ids(self) -> None:
+        arxml = package_xml(
+            "NestedTlv",
+            UINT8_BASE
+            + """
+            <IMPLEMENTATION-DATA-TYPE>
+              <SHORT-NAME>Child</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY><SUB-ELEMENTS>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT><SHORT-NAME>code</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+                  <BASE-TYPE-REF>/NestedTlv/uint8</BASE-TYPE-REF>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              </SUB-ELEMENTS>
+            </IMPLEMENTATION-DATA-TYPE>
+            <IMPLEMENTATION-DATA-TYPE>
+              <SHORT-NAME>Root</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY><SUB-ELEMENTS>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT><SHORT-NAME>child</SHORT-NAME><CATEGORY>TYPE-REFERENCE</CATEGORY>
+                  <TYPE-REFERENCE-REF>/NestedTlv/Child</TYPE-REFERENCE-REF>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT><SHORT-NAME>inline</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY>
+                  <SUB-ELEMENTS><IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                    <SHORT-NAME>code</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+                    <BASE-TYPE-REF>/NestedTlv/uint8</BASE-TYPE-REF>
+                  </IMPLEMENTATION-DATA-TYPE-ELEMENT></SUB-ELEMENTS>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              </SUB-ELEMENTS>
+            </IMPLEMENTATION-DATA-TYPE>
+            <IMPLEMENTATION-DATA-TYPE><SHORT-NAME>RootAlias</SHORT-NAME><CATEGORY>TYPE-REFERENCE</CATEGORY>
+              <IMPLEMENTATION-DATA-TYPE-REF>/NestedTlv/Root</IMPLEMENTATION-DATA-TYPE-REF>
+            </IMPLEMENTATION-DATA-TYPE>
+            <SERVICE-INTERFACE><SHORT-NAME>Service</SHORT-NAME><EVENTS>
+              <VARIABLE-DATA-PROTOTYPE><SHORT-NAME>Event</SHORT-NAME>
+                <TYPE-TREF>/NestedTlv/RootAlias</TYPE-TREF>
+              </VARIABLE-DATA-PROTOTYPE>
+            </EVENTS></SERVICE-INTERFACE>
+            <AP-SOMEIP-TRANSFORMATION-PROPS><SHORT-NAME>Deployment</SHORT-NAME>
+              <SIZE-OF-ARRAY-LENGTH-FIELD>1</SIZE-OF-ARRAY-LENGTH-FIELD>
+              <SIZE-OF-STRING-LENGTH-FIELD>1</SIZE-OF-STRING-LENGTH-FIELD>
+              <SIZE-OF-STRUCT-LENGTH-FIELD>1</SIZE-OF-STRUCT-LENGTH-FIELD>
+              <SIZE-OF-UNION-LENGTH-FIELD>1</SIZE-OF-UNION-LENGTH-FIELD>
+            </AP-SOMEIP-TRANSFORMATION-PROPS>
+            <TLV-DATA-ID-DEFINITION-SET><SHORT-NAME>DataIds</SHORT-NAME><TLV-DATA-ID-DEFINITIONS>
+              <TLV-DATA-ID-DEFINITION><ID>1</ID>
+                <TLV-IMPLEMENTATION-DATA-TYPE-ELEMENT-REF>/NestedTlv/Root/child</TLV-IMPLEMENTATION-DATA-TYPE-ELEMENT-REF>
+              </TLV-DATA-ID-DEFINITION>
+              <TLV-DATA-ID-DEFINITION><ID>1</ID>
+                <TLV-IMPLEMENTATION-DATA-TYPE-ELEMENT-REF>/NestedTlv/Child/code</TLV-IMPLEMENTATION-DATA-TYPE-ELEMENT-REF>
+              </TLV-DATA-ID-DEFINITION>
+              <TLV-DATA-ID-DEFINITION><ID>2</ID>
+                <TLV-IMPLEMENTATION-DATA-TYPE-ELEMENT-REF>/NestedTlv/Root/inline</TLV-IMPLEMENTATION-DATA-TYPE-ELEMENT-REF>
+              </TLV-DATA-ID-DEFINITION>
+              <TLV-DATA-ID-DEFINITION><ID>1</ID>
+                <TLV-IMPLEMENTATION-DATA-TYPE-ELEMENT-REF>/NestedTlv/Root/inline/code</TLV-IMPLEMENTATION-DATA-TYPE-ELEMENT-REF>
+              </TLV-DATA-ID-DEFINITION>
+            </TLV-DATA-ID-DEFINITIONS></TLV-DATA-ID-DEFINITION-SET>
+            <TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>
+              <SHORT-NAME>Mapping</SHORT-NAME><EVENT-REFS>
+                <EVENT-REF>/NestedTlv/Service/Event</EVENT-REF>
+              </EVENT-REFS>
+              <TLV-DATA-ID-DEFINITION-REFS><TLV-DATA-ID-DEFINITION-REF>/NestedTlv/DataIds</TLV-DATA-ID-DEFINITION-REF>
+              </TLV-DATA-ID-DEFINITION-REFS>
+              <TRANSFORMATION-PROPS-REF>/NestedTlv/Deployment</TRANSFORMATION-PROPS-REF>
+            </TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>
+            """,
+        )
+        result, _ = self.run_tool(
+            {"nested_tlv.arxml": arxml}, "--prototype", "/NestedTlv/Service/Event", "--strict"
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.count("VLINK_SOMEIP_TLV_LENGTH("), 4)
 
     def test_infers_standard_scalar_matrix_and_generates_application_record(self) -> None:
         scalar_types = {
@@ -720,6 +1067,7 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
 
         self.assertEqual(accepted.returncode, 0, accepted.stderr)
         self.assertIn("std::vector<uint8_t>{", accepted.stdout)
+        self.assertIn("// AUTOSAR INIT-VALUE source: /Init/HistoryValue.", accepted.stdout)
         self.assertIn("inline History make_history_value_initial_value()", accepted.stdout)
         self.assertNotIn("make_default", accepted.stdout)
         self.assertEqual(rejected.returncode, 2)
@@ -750,11 +1098,12 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
 
         self.assertEqual(generated.returncode, 0, generated.stderr)
         self.assertIn("uint8_t value{};", generated.stdout)
+        self.assertIn("// AUTOSAR INIT-VALUE source: /Init/Defaults.", generated.stdout)
         self.assertIn("[[nodiscard]] static Payload make_default()", generated.stdout)
         self.assertIn("return Payload{static_cast<uint8_t>(7U)};", generated.stdout)
         self.assertNotIn("inline Payload make_", generated.stdout)
 
-        compiler = os.environ.get("CXX") or shutil.which("c++")
+        compiler = self.find_cpp_compiler()
         if compiler:
             header = directory / "default.h"
             source = directory / "default.cc"
@@ -769,21 +1118,7 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
                 "}\n",
                 encoding="utf-8",
             )
-            compiled = subprocess.run(
-                [
-                    compiler,
-                    "-std=c++17",
-                    "-fsyntax-only",
-                    "-I",
-                    str(directory),
-                    "-I",
-                    str(self.repo_root / "include"),
-                    str(source),
-                ],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
+            compiled = self.compile_cpp(compiler, source, directory, self.repo_root / "include")
             self.assertEqual(compiled.returncode, 0, compiled.stderr)
 
         second = arxml.replace(
@@ -837,6 +1172,18 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('return "  a\\\"b\\\\c  ";', result.stdout)
         self.assertIn('return "";', result.stdout)
+
+        bounded = arxml.replace(
+            "<SHORT-NAME>Name</SHORT-NAME><CATEGORY>STRING</CATEGORY>",
+            "<SHORT-NAME>Name</SHORT-NAME><CATEGORY>STRING</CATEGORY>"
+            "<SW-DATA-DEF-PROPS><SW-DATA-DEF-PROPS-VARIANTS><SW-DATA-DEF-PROPS-CONDITIONAL>"
+            "<SW-TEXT-PROPS><SW-MAX-TEXT-SIZE>3</SW-MAX-TEXT-SIZE></SW-TEXT-PROPS>"
+            "</SW-DATA-DEF-PROPS-CONDITIONAL></SW-DATA-DEF-PROPS-VARIANTS></SW-DATA-DEF-PROPS>",
+            1,
+        )
+        rejected, _ = self.run_tool({"bounded_string.arxml": bounded}, "--prototype", "Label")
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("string initial value has 9 code point(s), maximum is 3", rejected.stderr)
 
     def test_generates_inline_structure_and_multidimensional_array(self) -> None:
         arxml = package_xml(
@@ -982,6 +1329,14 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
                   <SHORT-NAME>make_default</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
                   <BASE-TYPE-REF>/Members/uint8</BASE-TYPE-REF>
                 </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                  <SHORT-NAME>serialize</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+                  <BASE-TYPE-REF>/Members/uint8</BASE-TYPE-REF>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                  <SHORT-NAME>deserialize</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+                  <BASE-TYPE-REF>/Members/uint8</BASE-TYPE-REF>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
               </SUB-ELEMENTS>
             </IMPLEMENTATION-DATA-TYPE>
             <SERVICE-INTERFACE><SHORT-NAME>Service</SHORT-NAME><EVENTS>
@@ -1010,27 +1365,15 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertIn("uint8_t vlink_someip_struct_length_2{};", result.stdout)
         self.assertIn("uint8_t get_vlink_someip_fields_2{};", result.stdout)
         self.assertIn("uint8_t make_default_2{};", result.stdout)
-        compiler = os.environ.get("CXX") or shutil.which("c++")
+        self.assertIn("uint8_t serialize_2{};", result.stdout)
+        self.assertIn("uint8_t deserialize_2{};", result.stdout)
+        compiler = self.find_cpp_compiler()
         if compiler:
             header = directory / "members_generated.h"
             source = directory / "members_generated.cc"
             header.write_text(result.stdout, encoding="utf-8")
             source.write_text('#include "members_generated.h"\n', encoding="utf-8")
-            compiled = subprocess.run(
-                [
-                    compiler,
-                    "-std=c++17",
-                    "-fsyntax-only",
-                    "-I",
-                    str(directory),
-                    "-I",
-                    str(self.repo_root / "include"),
-                    str(source),
-                ],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
+            compiled = self.compile_cpp(compiler, source, directory, self.repo_root / "include")
             self.assertEqual(compiled.returncode, 0, compiled.stderr)
 
     def test_absolute_reference_does_not_fall_back_to_matching_short_name(self) -> None:
@@ -1052,7 +1395,7 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("unresolved AUTOSAR reference '/Wrong/Counter'", result.stderr)
 
-    def test_default_mode_skips_union_but_strict_mode_rejects_warning(self) -> None:
+    def test_default_mode_skips_malformed_union_but_strict_mode_rejects_warning(self) -> None:
         arxml = package_xml(
             "Mixed",
             UINT8_BASE
@@ -1077,11 +1420,11 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("struct Good final {", result.stdout)
         self.assertNotIn("struct Choice", result.stdout)
-        self.assertIn("does not support union", result.stderr)
+        self.assertIn("union requires value alternatives", result.stderr)
         self.assertEqual(strict.returncode, 2)
         self.assertIn("strict mode rejected", strict.stderr)
 
-    def test_explicit_union_and_incompatible_deployment_fail(self) -> None:
+    def test_explicit_malformed_union_and_incompatible_deployment_fail(self) -> None:
         arxml = package_xml(
             "Deploy",
             UINT8_BASE
@@ -1095,7 +1438,7 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
               </SW-DATA-DEF-PROPS-CONDITIONAL></SW-DATA-DEF-PROPS-VARIANTS></SW-DATA-DEF-PROPS>
             </IMPLEMENTATION-DATA-TYPE>
             <SOMEIP-ARRAY-DEPLOYMENT>
-              <SHORT-NAME>ArrayDeployment</SHORT-NAME><ARRAY-LENGTH-FIELD-SIZE>16</ARRAY-LENGTH-FIELD-SIZE>
+              <SHORT-NAME>ArrayDeployment</SHORT-NAME><ARRAY-LENGTH-FIELD-SIZE>64</ARRAY-LENGTH-FIELD-SIZE>
             </SOMEIP-ARRAY-DEPLOYMENT>
             """,
         )
@@ -1103,9 +1446,156 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         strict_result, _ = self.run_tool({"deploy.arxml": arxml}, "--type", "Value", "--strict")
 
         self.assertEqual(union_result.returncode, 2)
-        self.assertIn("does not support union", union_result.stderr)
+        self.assertIn("union requires value alternatives", union_result.stderr)
         self.assertEqual(strict_result.returncode, 2)
-        self.assertIn("ARRAY-LENGTH-FIELD-SIZE=16", strict_result.stderr)
+        self.assertIn("ARRAY-LENGTH-FIELD-SIZE=64", strict_result.stderr)
+
+    def test_generates_union_deployment(self) -> None:
+        arxml = package_xml(
+            "Union",
+            UINT8_BASE
+            + """
+            <IMPLEMENTATION-DATA-TYPE>
+              <SHORT-NAME>Choice</SHORT-NAME><CATEGORY>UNION</CATEGORY><SUB-ELEMENTS>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                  <SHORT-NAME>small</SHORT-NAME><CATEGORY>VALUE</CATEGORY><BASE-TYPE-REF>/Union/uint8</BASE-TYPE-REF>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                  <SHORT-NAME>large</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+                  <BASE-TYPE-REF>/AUTOSAR/PlatformTypes/uint32</BASE-TYPE-REF>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              </SUB-ELEMENTS>
+            </IMPLEMENTATION-DATA-TYPE>
+            <IMPLEMENTATION-DATA-TYPE>
+              <SHORT-NAME>Payload</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY><SUB-ELEMENTS>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                  <SHORT-NAME>choice</SHORT-NAME><CATEGORY>TYPE-REFERENCE</CATEGORY>
+                  <IMPLEMENTATION-DATA-TYPE-REF>/Union/Choice</IMPLEMENTATION-DATA-TYPE-REF>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              </SUB-ELEMENTS>
+            </IMPLEMENTATION-DATA-TYPE>
+            <SERVICE-INTERFACE><SHORT-NAME>Service</SHORT-NAME><EVENTS>
+              <VARIABLE-DATA-PROTOTYPE><SHORT-NAME>Event</SHORT-NAME><TYPE-TREF>/Union/Payload</TYPE-TREF>
+              </VARIABLE-DATA-PROTOTYPE>
+            </EVENTS></SERVICE-INTERFACE>
+            <AP-SOMEIP-TRANSFORMATION-PROPS>
+              <SHORT-NAME>Defaults</SHORT-NAME>
+              <SIZE-OF-UNION-LENGTH-FIELD>2</SIZE-OF-UNION-LENGTH-FIELD>
+              <SIZE-OF-UNION-TYPE-SELECTOR-FIELD>1</SIZE-OF-UNION-TYPE-SELECTOR-FIELD>
+            </AP-SOMEIP-TRANSFORMATION-PROPS>
+            <TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>
+              <SHORT-NAME>Mapping</SHORT-NAME>
+              <EVENT-REFS><EVENT-REF>/Union/Service/Event</EVENT-REF></EVENT-REFS>
+              <TRANSFORMATION-PROPS-REF>/Union/Defaults</TRANSFORMATION-PROPS-REF>
+            </TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>
+            """,
+        )
+        result, _ = self.run_tool({"union.arxml": arxml}, "--prototype", "/Union/Service/Event")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("using Choice = std::variant<uint8_t, uint32_t>;", result.stdout)
+        self.assertIn("VLINK_SOMEIP_UNION(choice, 2U, 1U)", result.stdout)
+
+        unframed = arxml.replace(
+            "<SIZE-OF-UNION-LENGTH-FIELD>2</SIZE-OF-UNION-LENGTH-FIELD>",
+            "<SIZE-OF-UNION-LENGTH-FIELD>0</SIZE-OF-UNION-LENGTH-FIELD>",
+        )
+        rejected, _ = self.run_tool(
+            {"unframed.arxml": unframed}, "--prototype", "/Union/Service/Event"
+        )
+        equal_size, _ = self.run_tool(
+            {"unframed.arxml": unframed.replace(
+                "/AUTOSAR/PlatformTypes/uint32", "/Union/uint8"
+            )},
+            "--prototype",
+            "/Union/Service/Event",
+        )
+
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("requires equal-size scalar or enum alternatives", rejected.stderr)
+        self.assertEqual(equal_size.returncode, 0, equal_size.stderr)
+        self.assertIn("VLINK_SOMEIP_UNION(choice, 0U, 1U)", equal_size.stdout)
+
+        tlv = arxml.replace(
+            "<AP-SOMEIP-TRANSFORMATION-PROPS>",
+            "<TLV-DATA-ID-DEFINITION-SET><SHORT-NAME>DataIds</SHORT-NAME><TLV-DATA-ID-DEFINITIONS>"
+            "<TLV-DATA-ID-DEFINITION><ID>1</ID><TLV-IMPLEMENTATION-DATA-TYPE-ELEMENT-REF>"
+            "/Union/Payload/choice</TLV-IMPLEMENTATION-DATA-TYPE-ELEMENT-REF>"
+            "</TLV-DATA-ID-DEFINITION></TLV-DATA-ID-DEFINITIONS></TLV-DATA-ID-DEFINITION-SET>"
+            "<AP-SOMEIP-TRANSFORMATION-PROPS>",
+            1,
+        ).replace(
+            "<SHORT-NAME>Defaults</SHORT-NAME>",
+            "<SHORT-NAME>Defaults</SHORT-NAME><SIZE-OF-STRUCT-LENGTH-FIELD>2</SIZE-OF-STRUCT-LENGTH-FIELD>",
+            1,
+        ).replace(
+            "<TRANSFORMATION-PROPS-REF>/Union/Defaults</TRANSFORMATION-PROPS-REF>",
+            "<TLV-DATA-ID-DEFINITION-REFS><TLV-DATA-ID-DEFINITION-REF>/Union/DataIds"
+            "</TLV-DATA-ID-DEFINITION-REF></TLV-DATA-ID-DEFINITION-REFS>"
+            "<TRANSFORMATION-PROPS-REF>/Union/Defaults</TRANSFORMATION-PROPS-REF>",
+            1,
+        )
+        tlv_rejected, _ = self.run_tool(
+            {"tlv_union_1.arxml": tlv}, "--prototype", "/Union/Service/Event"
+        )
+        tlv_default, _ = self.run_tool(
+            {"tlv_union_4.arxml": tlv.replace(
+                "<SIZE-OF-UNION-TYPE-SELECTOR-FIELD>1</SIZE-OF-UNION-TYPE-SELECTOR-FIELD>",
+                "<SIZE-OF-UNION-TYPE-SELECTOR-FIELD>4</SIZE-OF-UNION-TYPE-SELECTOR-FIELD>",
+            )},
+            "--prototype",
+            "/Union/Service/Event",
+        )
+
+        self.assertEqual(tlv_rejected.returncode, 2)
+        self.assertIn(
+            "non-default union type selector width cannot be expressed inside a TLV member",
+            tlv_rejected.stderr,
+        )
+        self.assertEqual(tlv_default.returncode, 0, tlv_default.stderr)
+        self.assertIn("VLINK_SOMEIP_TLV_LENGTH(1, choice, 2U)", tlv_default.stdout)
+
+    def test_generates_application_and_cpp_associative_maps(self) -> None:
+        arxml = package_xml(
+            "Maps",
+            """
+            <APPLICATION-PRIMITIVE-DATA-TYPE>
+              <SHORT-NAME>Key</SHORT-NAME><CATEGORY>UINT16</CATEGORY>
+            </APPLICATION-PRIMITIVE-DATA-TYPE>
+            <APPLICATION-PRIMITIVE-DATA-TYPE>
+              <SHORT-NAME>Text</SHORT-NAME><CATEGORY>STRING</CATEGORY>
+            </APPLICATION-PRIMITIVE-DATA-TYPE>
+            <APPLICATION-ASSOC-MAP-DATA-TYPE>
+              <SHORT-NAME>ApplicationLookup</SHORT-NAME><CATEGORY>ASSOCIATIVE_MAP</CATEGORY>
+              <KEY><TYPE-TREF>/Maps/Key</TYPE-TREF></KEY>
+              <VALUE><TYPE-TREF>/Maps/Text</TYPE-TREF></VALUE>
+            </APPLICATION-ASSOC-MAP-DATA-TYPE>
+            <STD-CPP-IMPLEMENTATION-DATA-TYPE>
+              <SHORT-NAME>uint32_t</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+            </STD-CPP-IMPLEMENTATION-DATA-TYPE>
+            <STD-CPP-IMPLEMENTATION-DATA-TYPE>
+              <SHORT-NAME>string</SHORT-NAME><CATEGORY>STRING</CATEGORY>
+            </STD-CPP-IMPLEMENTATION-DATA-TYPE>
+            <STD-CPP-IMPLEMENTATION-DATA-TYPE>
+              <SHORT-NAME>CppLookup</SHORT-NAME><CATEGORY>ASSOCIATIVE_MAP</CATEGORY>
+              <TEMPLATE-ARGUMENTS>
+                <CPP-TEMPLATE-ARGUMENT>
+                  <CATEGORY>ASSOC_MAP_VALUE</CATEGORY><TEMPLATE-TYPE-REF>/Maps/string</TEMPLATE-TYPE-REF>
+                </CPP-TEMPLATE-ARGUMENT>
+                <CPP-TEMPLATE-ARGUMENT>
+                  <CATEGORY>ASSOC_MAP_KEY</CATEGORY><TEMPLATE-TYPE-REF>/Maps/uint32_t</TEMPLATE-TYPE-REF>
+                </CPP-TEMPLATE-ARGUMENT>
+              </TEMPLATE-ARGUMENTS>
+            </STD-CPP-IMPLEMENTATION-DATA-TYPE>
+            """,
+        )
+        result, _ = self.run_tool(
+            {"maps.arxml": arxml}, "--type", "ApplicationLookup", "--type", "CppLookup"
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("using ApplicationLookup = std::map<Key, Text>;", result.stdout)
+        self.assertIn("using CppLookup = std::map<uint32_t, string>;", result.stdout)
 
     def test_generates_official_someip_length_and_struct_length_deployments(self) -> None:
         result, directory = self.run_tool(
@@ -1120,34 +1610,20 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertEqual(result.stderr, "")
         self.assertEqual(result.stdout.count("VLINK_SOMEIP_STRUCT_LENGTH(2U)"), 2)
         self.assertIn("VLINK_SOMEIP_LENGTH(fixed, 0U)", result.stdout)
-        self.assertIn("VLINK_SOMEIP_LENGTH(dynamic, 2U)", result.stdout)
+        self.assertIn("VLINK_SOMEIP_LENGTH_MAX(dynamic, 2U, 8U)", result.stdout)
         self.assertIn("VLINK_SOMEIP_LENGTH(name, 1U)", result.stdout)
         self.assertIn("VLINK_SOMEIP_LENGTH(title, 1U)", result.stdout)
-        self.assertIn("VLINK_SOMEIP_LENGTH(history, 2U)", result.stdout)
+        self.assertIn("VLINK_SOMEIP_LENGTH_MAX(history, 2U, 8U)", result.stdout)
         self.assertNotIn("make_default", result.stdout)
 
-        compiler = os.environ.get("CXX") or shutil.which("c++")
+        compiler = self.find_cpp_compiler()
         if not compiler:
             return
         header = directory / "deployment_generated.h"
         source = directory / "deployment_generated.cc"
         header.write_text(result.stdout, encoding="utf-8")
         source.write_text('#include "deployment_generated.h"\n', encoding="utf-8")
-        compiled = subprocess.run(
-            [
-                compiler,
-                "-std=c++17",
-                "-fsyntax-only",
-                "-I",
-                str(directory),
-                "-I",
-                str(self.repo_root / "include"),
-                str(source),
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        compiled = self.compile_cpp(compiler, source, directory, self.repo_root / "include")
         self.assertEqual(compiled.returncode, 0, compiled.stderr)
 
     def test_accepts_all_supported_someip_transformation_props_tags(self) -> None:
@@ -1155,7 +1631,6 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         tags = (
             "AP-SOMEIP-TRANSFORMATION-PROPS",
             "SOMEIP-TRANSFORMATION-PROPS",
-            "SOMEIP-TRANSFORMATION-DESCRIPTION",
         )
 
         for tag in tags:
@@ -1165,7 +1640,7 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
                     {f"{tag.lower()}.arxml": arxml}, "--prototype", "Event", "--strict"
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn("VLINK_SOMEIP_LENGTH(dynamic, 2U)", result.stdout)
+                self.assertIn("VLINK_SOMEIP_LENGTH_MAX(dynamic, 2U, 8U)", result.stdout)
                 self.assertIn("VLINK_SOMEIP_LENGTH(name, 1U)", result.stdout)
 
     def test_default_someip_lengths_do_not_emit_redundant_macros(self) -> None:
@@ -1281,6 +1756,17 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("per-field SOME/IP BYTE-ORDER cannot be expressed", result.stderr)
 
+    def test_rejects_per_field_someip_alignment(self) -> None:
+        arxml = someip_length_deployment_xml().replace(
+            "<SHORT-NAME>NoArrayLength</SHORT-NAME>",
+            "<SHORT-NAME>NoArrayLength</SHORT-NAME><ALIGNMENT>16</ALIGNMENT>",
+            1,
+        )
+        result, _ = self.run_tool({"field_alignment.arxml": arxml}, "--prototype", "Event")
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("per-field SOME/IP ALIGNMENT cannot be expressed", result.stderr)
+
     def test_rejects_invalid_someip_length_widths(self) -> None:
         cases = (
             (someip_length_deployment_xml(array_width=3), "length width 3"),
@@ -1303,7 +1789,7 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
               <ARRAY-SIZE>2</ARRAY-SIZE><ARRAY-SIZE-SEMANTICS>FIXED-SIZE</ARRAY-SIZE-SEMANTICS>
               <SUB-ELEMENTS><IMPLEMENTATION-DATA-TYPE-ELEMENT>
                 <SHORT-NAME>row</SHORT-NAME><CATEGORY>ARRAY</CATEGORY>
-                <ARRAY-SIZE>4</ARRAY-SIZE><ARRAY-SIZE-SEMANTICS>VARIABLE-SIZE</ARRAY-SIZE-SEMANTICS>
+                <ARRAY-SIZE-SEMANTICS>VARIABLE-SIZE</ARRAY-SIZE-SEMANTICS>
                 <TYPE-REFERENCE-REF>/Deploy/Child</TYPE-REFERENCE-REF>
               </IMPLEMENTATION-DATA-TYPE-ELEMENT></SUB-ELEMENTS>
             </IMPLEMENTATION-DATA-TYPE-ELEMENT>
@@ -1340,7 +1826,7 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
                 if width == 4:
                     self.assertNotIn("VLINK_SOMEIP_LENGTH(history", result.stdout)
                 else:
-                    self.assertIn(f"VLINK_SOMEIP_LENGTH(history, {width}U)", result.stdout)
+                    self.assertIn(f"VLINK_SOMEIP_LENGTH_MAX(history, {width}U, 8U)", result.stdout)
 
         rejected, _ = self.run_tool({"matrix_zero.arxml": arxml}, "--prototype", "Event")
         self.assertEqual(rejected.returncode, 2)
@@ -1348,8 +1834,11 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertIn("zero length-field width is only valid for fixed-size arrays", rejected.stderr)
 
         fixed = arxml.replace(
-            "<ARRAY-SIZE>4</ARRAY-SIZE><ARRAY-SIZE-SEMANTICS>VARIABLE-SIZE</ARRAY-SIZE-SEMANTICS>",
-            "<ARRAY-SIZE>4</ARRAY-SIZE><ARRAY-SIZE-SEMANTICS>FIXED-SIZE</ARRAY-SIZE-SEMANTICS>",
+            "<SHORT-NAME>row</SHORT-NAME><CATEGORY>ARRAY</CATEGORY>\n"
+            "              <ARRAY-SIZE-SEMANTICS>VARIABLE-SIZE</ARRAY-SIZE-SEMANTICS>",
+            "<SHORT-NAME>row</SHORT-NAME><CATEGORY>ARRAY</CATEGORY>\n"
+            "              <ARRAY-SIZE>4</ARRAY-SIZE>"
+            "<ARRAY-SIZE-SEMANTICS>FIXED-SIZE</ARRAY-SIZE-SEMANTICS>",
             1,
         ).replace(
             "<TYPE-REFERENCE-REF>/Deploy/Child</TYPE-REFERENCE-REF>",
@@ -1359,6 +1848,21 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         accepted, _ = self.run_tool({"matrix_fixed_zero.arxml": fixed}, "--prototype", "Event")
         self.assertEqual(accepted.returncode, 0, accepted.stderr)
         self.assertIn("VLINK_SOMEIP_ARRAY_LENGTH(matrix, 0U, 0U)", accepted.stdout)
+
+        bounded = arxml.replace(
+            "<SHORT-NAME>row</SHORT-NAME><CATEGORY>ARRAY</CATEGORY>",
+            "<SHORT-NAME>row</SHORT-NAME><CATEGORY>ARRAY</CATEGORY><ARRAY-SIZE>4</ARRAY-SIZE>",
+            1,
+        ).replace(
+            "<SIZE-OF-ARRAY-LENGTH-FIELD>0</SIZE-OF-ARRAY-LENGTH-FIELD>",
+            "<SIZE-OF-ARRAY-LENGTH-FIELD>2</SIZE-OF-ARRAY-LENGTH-FIELD>",
+            1,
+        )
+        rejected_maximum, _ = self.run_tool(
+            {"matrix_bounded.arxml": bounded}, "--prototype", "Event", "--strict"
+        )
+        self.assertEqual(rejected_maximum.returncode, 2)
+        self.assertIn("maximum-size multidimensional arrays cannot be expressed", rejected_maximum.stderr)
 
         nested_string = arxml.replace(
             "<TYPE-REFERENCE-REF>/Deploy/Child</TYPE-REFERENCE-REF>",
@@ -1411,29 +1915,67 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertIn("using Cube = std::array<Plane, 2>;", result.stdout)
         self.assertIn("VLINK_SOMEIP_ARRAY_LENGTH(values, 2U, 2U, 2U)", result.stdout)
 
-        compiler = os.environ.get("CXX") or shutil.which("c++")
+        bounded, _ = self.run_tool(
+            {"bounded_alias_cube.arxml": nested_alias_deployment_xml(maximum=8)},
+            "--prototype",
+            "Event",
+            "--strict",
+        )
+        self.assertEqual(bounded.returncode, 2)
+        self.assertIn("maximum-size multidimensional arrays cannot be expressed", bounded.stderr)
+
+        compiler = self.find_cpp_compiler()
         if not compiler:
             return
         header = directory / "alias_cube.h"
         source = directory / "alias_cube.cc"
         header.write_text(result.stdout, encoding="utf-8")
         source.write_text('#include "alias_cube.h"\n', encoding="utf-8")
-        compiled = subprocess.run(
-            [
-                compiler,
-                "-std=c++17",
-                "-fsyntax-only",
-                "-I",
-                str(directory),
-                "-I",
-                str(self.repo_root / "include"),
-                str(source),
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        compiled = self.compile_cpp(compiler, source, directory, self.repo_root / "include")
         self.assertEqual(compiled.returncode, 0, compiled.stderr)
+
+    def test_generates_dynamic_and_static_tlv_multidimensional_arrays(self) -> None:
+        arxml = nested_alias_deployment_xml().replace(
+            "<SHORT-NAME>values</SHORT-NAME><CATEGORY>TYPE-REFERENCE</CATEGORY>",
+            "<SHORT-NAME>values</SHORT-NAME><CATEGORY>TYPE-REFERENCE</CATEGORY><IS-OPTIONAL>true</IS-OPTIONAL>",
+            1,
+        ).replace(
+            "<SIZE-OF-ARRAY-LENGTH-FIELD>2</SIZE-OF-ARRAY-LENGTH-FIELD>",
+            "<SIZE-OF-ARRAY-LENGTH-FIELD>2</SIZE-OF-ARRAY-LENGTH-FIELD>"
+            "<SIZE-OF-STRUCT-LENGTH-FIELD>2</SIZE-OF-STRUCT-LENGTH-FIELD>",
+            1,
+        ).replace(
+            "<TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>",
+            "<TLV-DATA-ID-DEFINITION-SET><SHORT-NAME>DataIds</SHORT-NAME><TLV-DATA-ID-DEFINITIONS>"
+            "<TLV-DATA-ID-DEFINITION><ID>1</ID><TLV-IMPLEMENTATION-DATA-TYPE-ELEMENT-REF>"
+            "/Alias/Payload/values</TLV-IMPLEMENTATION-DATA-TYPE-ELEMENT-REF>"
+            "</TLV-DATA-ID-DEFINITION></TLV-DATA-ID-DEFINITIONS></TLV-DATA-ID-DEFINITION-SET>"
+            "<TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>",
+            1,
+        ).replace(
+            "<TRANSFORMATION-PROPS-REF>/Alias/Deployment</TRANSFORMATION-PROPS-REF>",
+            "<TLV-DATA-ID-DEFINITION-REFS><TLV-DATA-ID-DEFINITION-REF>/Alias/DataIds"
+            "</TLV-DATA-ID-DEFINITION-REF></TLV-DATA-ID-DEFINITION-REFS>"
+            "<TRANSFORMATION-PROPS-REF>/Alias/Deployment</TRANSFORMATION-PROPS-REF>",
+            1,
+        )
+        dynamic, _ = self.run_tool({"dynamic.arxml": arxml}, "--prototype", "Event", "--strict")
+        static, _ = self.run_tool(
+            {"static.arxml": arxml.replace(
+                "<SHORT-NAME>Deployment</SHORT-NAME>",
+                "<SHORT-NAME>Deployment</SHORT-NAME>"
+                "<IS-DYNAMIC-LENGTH-FIELD-SIZE>false</IS-DYNAMIC-LENGTH-FIELD-SIZE>",
+                1,
+            )},
+            "--prototype",
+            "Event",
+            "--strict",
+        )
+
+        self.assertEqual(dynamic.returncode, 0, dynamic.stderr)
+        self.assertIn("VLINK_SOMEIP_TLV_ARRAY_LENGTH(1, values, 2U, 2U, 2U)", dynamic.stdout)
+        self.assertEqual(static.returncode, 0, static.stderr)
+        self.assertIn("VLINK_SOMEIP_TLV_STATIC_ARRAY_LENGTH(1, values, 2U, 2U, 2U)", static.stdout)
 
     def test_validates_nested_bytes_array_length_boundary(self) -> None:
         supported, _ = self.run_tool(
@@ -1477,7 +2019,7 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("VLINK_SOMEIP_STRUCT_LENGTH(2U)", result.stdout)
-        self.assertIn("VLINK_SOMEIP_LENGTH(dynamic, 2U)", result.stdout)
+        self.assertIn("VLINK_SOMEIP_LENGTH_MAX(dynamic, 2U, 8U)", result.stdout)
 
     def test_applies_field_and_method_direction_deployment_mappings(self) -> None:
         cases = {
@@ -1655,7 +2197,72 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("conflicting SOME/IP length widths 4 and 2", result.stderr)
 
-    def test_requires_alignment_override_for_multiple_someip_deployments(self) -> None:
+    def test_rejects_conflicting_encoding_and_alignment_for_shared_cpp_type(self) -> None:
+        arxml = package_xml(
+            "Shared",
+            """
+            <IMPLEMENTATION-DATA-TYPE>
+              <SHORT-NAME>Payload</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY><SUB-ELEMENTS>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                  <SHORT-NAME>name</SHORT-NAME><CATEGORY>STRING</CATEGORY>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              </SUB-ELEMENTS>
+            </IMPLEMENTATION-DATA-TYPE>
+            <SERVICE-INTERFACE><SHORT-NAME>Service</SHORT-NAME><FIELDS>
+              <FIELD><SHORT-NAME>First</SHORT-NAME><TYPE-TREF>/Shared/Payload</TYPE-TREF></FIELD>
+              <FIELD><SHORT-NAME>Second</SHORT-NAME><TYPE-TREF>/Shared/Payload</TYPE-TREF></FIELD>
+            </FIELDS></SERVICE-INTERFACE>
+            <AP-SOMEIP-TRANSFORMATION-PROPS>
+              <SHORT-NAME>FirstProps</SHORT-NAME><ALIGNMENT>8</ALIGNMENT>
+              <STRING-ENCODING>UTF-8</STRING-ENCODING>
+            </AP-SOMEIP-TRANSFORMATION-PROPS>
+            <AP-SOMEIP-TRANSFORMATION-PROPS>
+              <SHORT-NAME>SecondProps</SHORT-NAME><ALIGNMENT>8</ALIGNMENT>
+              <STRING-ENCODING>UTF-16BE</STRING-ENCODING>
+            </AP-SOMEIP-TRANSFORMATION-PROPS>
+            <TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>
+              <SHORT-NAME>FirstMapping</SHORT-NAME>
+              <FIELD-REFS><FIELD-REF>/Shared/Service/First</FIELD-REF></FIELD-REFS>
+              <TRANSFORMATION-PROPS-REF>/Shared/FirstProps</TRANSFORMATION-PROPS-REF>
+            </TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>
+            <TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>
+              <SHORT-NAME>SecondMapping</SHORT-NAME>
+              <FIELD-REFS><FIELD-REF>/Shared/Service/Second</FIELD-REF></FIELD-REFS>
+              <TRANSFORMATION-PROPS-REF>/Shared/SecondProps</TRANSFORMATION-PROPS-REF>
+            </TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>
+            """,
+        )
+        for prototypes in (
+            ("/Shared/Service/First", "/Shared/Service/Second"),
+            ("/Shared/Service/Second", "/Shared/Service/First"),
+        ):
+            with self.subTest(prototypes=prototypes):
+                conflict, _ = self.run_tool(
+                    {"encoding.arxml": arxml},
+                    "--prototype",
+                    prototypes[0],
+                    "--prototype",
+                    prototypes[1],
+                )
+                self.assertEqual(conflict.returncode, 2)
+                self.assertIn("conflicting SOME/IP type deployments", conflict.stderr)
+
+        alignment = arxml.replace("<STRING-ENCODING>UTF-16BE</STRING-ENCODING>",
+                                  "<STRING-ENCODING>UTF-8</STRING-ENCODING>").replace(
+            "<SHORT-NAME>SecondProps</SHORT-NAME><ALIGNMENT>8</ALIGNMENT>",
+            "<SHORT-NAME>SecondProps</SHORT-NAME><ALIGNMENT>16</ALIGNMENT>",
+        )
+        conflict, _ = self.run_tool(
+            {"alignment.arxml": alignment},
+            "--prototype",
+            "/Shared/Service/First",
+            "--prototype",
+            "/Shared/Service/Second",
+        )
+        self.assertEqual(conflict.returncode, 2)
+        self.assertIn("conflicting SOME/IP alignments 1 and 2 bytes", conflict.stderr)
+
+    def test_ignores_unreferenced_someip_descriptions_and_accepts_alignment_override(self) -> None:
         arxml = package_xml(
             "Deploy",
             UINT8_BASE
@@ -1683,8 +2290,8 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
             {"deploy.arxml": arxml}, "--type", "Message", "--alignment-bits", "16"
         )
 
-        self.assertEqual(ambiguous.returncode, 2)
-        self.assertIn("multiple SOME/IP alignments", ambiguous.stderr)
+        self.assertEqual(ambiguous.returncode, 0, ambiguous.stderr)
+        self.assertNotIn("VLINK_SOMEIP_ALIGNMENT", ambiguous.stdout)
         self.assertEqual(selected.returncode, 0, selected.stderr)
         self.assertIn("VLINK_SOMEIP_ALIGNMENT(2U)", selected.stdout)
 
@@ -1909,7 +2516,7 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
             (base.replace(">true<", ">maybe<", 1), "invalid boolean initial value"),
             (base.replace(">20.5<", ">invalid<", 1), "invalid floating-point initial value"),
             (base.replace(">20.5<", ">nan<", 1), "non-finite floating-point"),
-            (base.replace(">7<", ">invalid<", 1), "invalid integer initial value"),
+            (base.replace("<VALUE>7</VALUE>", "<VALUE>invalid</VALUE>", 1), "invalid integer initial value"),
         )
 
         for index, (arxml, expected) in enumerate(cases):
@@ -1968,31 +2575,17 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertIn("static_cast<uint64_t>(18446744073709551615ULL)", result.stdout)
         self.assertIn("static_cast<int64_t>((-9223372036854775807LL - 1LL))", result.stdout)
 
-        compiler = os.environ.get("CXX") or shutil.which("c++")
+        compiler = self.find_cpp_compiler()
         if not compiler:
             return
         header = directory / "boundaries.h"
         source = directory / "boundaries.cc"
         header.write_text(result.stdout, encoding="utf-8")
         source.write_text('#include "boundaries.h"\n', encoding="utf-8")
-        compiled = subprocess.run(
-            [
-                compiler,
-                "-std=c++17",
-                "-fsyntax-only",
-                "-I",
-                str(directory),
-                "-I",
-                str(self.repo_root / "include"),
-                str(source),
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        compiled = self.compile_cpp(compiler, source, directory, self.repo_root / "include")
         self.assertEqual(compiled.returncode, 0, compiled.stderr)
 
-    def test_parses_autosar_octal_float_and_rejects_recursive_or_fixed_string(self) -> None:
+    def test_parses_autosar_octal_float_and_rejects_recursive_or_unmapped_fixed_string(self) -> None:
         arxml = package_xml(
             "Compat",
             UINT8_BASE
@@ -2001,6 +2594,8 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
               <SHORT-NAME>MyReal</SHORT-NAME><BASE-TYPE-SIZE>64</BASE-TYPE-SIZE>
               <BASE-TYPE-ENCODING>FLOAT</BASE-TYPE-ENCODING>
             </SW-BASE-TYPE>
+            <SW-BASE-TYPE><SHORT-NAME>Utf8</SHORT-NAME><BASE-TYPE-SIZE>8</BASE-TYPE-SIZE>
+              <BASE-TYPE-ENCODING>UTF-8</BASE-TYPE-ENCODING></SW-BASE-TYPE>
             <IMPLEMENTATION-DATA-TYPE>
               <SHORT-NAME>RealValue</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
               <BASE-TYPE-REF>/Compat/MyReal</BASE-TYPE-REF>
@@ -2022,12 +2617,14 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
                 </IMPLEMENTATION-DATA-TYPE-ELEMENT>
               </SUB-ELEMENTS>
             </IMPLEMENTATION-DATA-TYPE>
-            <IMPLEMENTATION-DATA-TYPE>
+            <APPLICATION-PRIMITIVE-DATA-TYPE>
               <SHORT-NAME>FixedText</SHORT-NAME><CATEGORY>STRING</CATEGORY>
-              <SW-TEXT-PROPS><ENCODING>UTF-8</ENCODING>
-                <ARRAY-SIZE-SEMANTICS>FIXED-SIZE</ARRAY-SIZE-SEMANTICS>
-              </SW-TEXT-PROPS>
-            </IMPLEMENTATION-DATA-TYPE>
+              <SW-DATA-DEF-PROPS><SW-DATA-DEF-PROPS-VARIANTS><SW-DATA-DEF-PROPS-CONDITIONAL>
+                <SW-TEXT-PROPS><ARRAY-SIZE-SEMANTICS>FIXED-SIZE</ARRAY-SIZE-SEMANTICS>
+                  <SW-MAX-TEXT-SIZE>4</SW-MAX-TEXT-SIZE><BASE-TYPE-REF>/Compat/Utf8</BASE-TYPE-REF>
+                </SW-TEXT-PROPS>
+              </SW-DATA-DEF-PROPS-CONDITIONAL></SW-DATA-DEF-PROPS-VARIANTS></SW-DATA-DEF-PROPS>
+            </APPLICATION-PRIMITIVE-DATA-TYPE>
             """,
         )
         generated, _ = self.run_tool(
@@ -2042,7 +2639,227 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertEqual(recursive.returncode, 2)
         self.assertIn("recursive by-value", recursive.stderr)
         self.assertEqual(fixed_string.returncode, 2)
-        self.assertIn("fixed-length strings", fixed_string.stderr)
+        self.assertIn("fixed string requires an Application-to-Implementation mapping", fixed_string.stderr)
+
+    def test_generates_mapped_fixed_utf8_string(self) -> None:
+        arxml = package_xml(
+            "Fixed",
+            UINT8_BASE
+            + """
+            <SW-BASE-TYPE><SHORT-NAME>Utf8</SHORT-NAME><BASE-TYPE-SIZE>8</BASE-TYPE-SIZE>
+              <BASE-TYPE-ENCODING>UTF-8</BASE-TYPE-ENCODING></SW-BASE-TYPE>
+            <SW-BASE-TYPE><SHORT-NAME>uint16</SHORT-NAME><BASE-TYPE-SIZE>16</BASE-TYPE-SIZE>
+              <BASE-TYPE-ENCODING>NONE</BASE-TYPE-ENCODING></SW-BASE-TYPE>
+            <SW-BASE-TYPE><SHORT-NAME>Utf16</SHORT-NAME><BASE-TYPE-SIZE>16</BASE-TYPE-SIZE>
+              <BASE-TYPE-ENCODING>UTF-16</BASE-TYPE-ENCODING></SW-BASE-TYPE>
+            <APPLICATION-PRIMITIVE-DATA-TYPE>
+              <SHORT-NAME>Name</SHORT-NAME><CATEGORY>STRING</CATEGORY>
+              <SW-DATA-DEF-PROPS><SW-DATA-DEF-PROPS-VARIANTS><SW-DATA-DEF-PROPS-CONDITIONAL>
+                <SW-TEXT-PROPS><ARRAY-SIZE-SEMANTICS>FIXED-SIZE</ARRAY-SIZE-SEMANTICS>
+                  <SW-MAX-TEXT-SIZE>4</SW-MAX-TEXT-SIZE>
+                  <BASE-TYPE-REF DEST="SW-BASE-TYPE">/Fixed/Utf8</BASE-TYPE-REF>
+                </SW-TEXT-PROPS>
+              </SW-DATA-DEF-PROPS-CONDITIONAL></SW-DATA-DEF-PROPS-VARIANTS></SW-DATA-DEF-PROPS>
+            </APPLICATION-PRIMITIVE-DATA-TYPE>
+            <APPLICATION-PRIMITIVE-DATA-TYPE>
+              <SHORT-NAME>Name16</SHORT-NAME><CATEGORY>STRING</CATEGORY>
+              <SW-DATA-DEF-PROPS><SW-DATA-DEF-PROPS-VARIANTS><SW-DATA-DEF-PROPS-CONDITIONAL>
+                <SW-TEXT-PROPS><ARRAY-SIZE-SEMANTICS>FIXED-SIZE</ARRAY-SIZE-SEMANTICS>
+                  <SW-MAX-TEXT-SIZE>3</SW-MAX-TEXT-SIZE>
+                  <BASE-TYPE-REF DEST="SW-BASE-TYPE">/Fixed/Utf16</BASE-TYPE-REF>
+                </SW-TEXT-PROPS>
+              </SW-DATA-DEF-PROPS-CONDITIONAL></SW-DATA-DEF-PROPS-VARIANTS></SW-DATA-DEF-PROPS>
+            </APPLICATION-PRIMITIVE-DATA-TYPE>
+            <IMPLEMENTATION-DATA-TYPE>
+              <SHORT-NAME>NameStorage</SHORT-NAME><CATEGORY>ARRAY</CATEGORY><SUB-ELEMENTS>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT><SHORT-NAME>element</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+                  <ARRAY-SIZE>8</ARRAY-SIZE><ARRAY-SIZE-SEMANTICS>FIXED-SIZE</ARRAY-SIZE-SEMANTICS>
+                  <SW-DATA-DEF-PROPS><SW-DATA-DEF-PROPS-VARIANTS><SW-DATA-DEF-PROPS-CONDITIONAL>
+                    <BASE-TYPE-REF DEST="SW-BASE-TYPE">/Fixed/uint8</BASE-TYPE-REF>
+                  </SW-DATA-DEF-PROPS-CONDITIONAL></SW-DATA-DEF-PROPS-VARIANTS></SW-DATA-DEF-PROPS>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              </SUB-ELEMENTS>
+            </IMPLEMENTATION-DATA-TYPE>
+            <IMPLEMENTATION-DATA-TYPE>
+              <SHORT-NAME>Name16Storage</SHORT-NAME><CATEGORY>ARRAY</CATEGORY><SUB-ELEMENTS>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT><SHORT-NAME>element</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+                  <ARRAY-SIZE>4</ARRAY-SIZE><ARRAY-SIZE-SEMANTICS>FIXED-SIZE</ARRAY-SIZE-SEMANTICS>
+                  <SW-DATA-DEF-PROPS><SW-DATA-DEF-PROPS-VARIANTS><SW-DATA-DEF-PROPS-CONDITIONAL>
+                    <BASE-TYPE-REF DEST="SW-BASE-TYPE">/Fixed/uint16</BASE-TYPE-REF>
+                  </SW-DATA-DEF-PROPS-CONDITIONAL></SW-DATA-DEF-PROPS-VARIANTS></SW-DATA-DEF-PROPS>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              </SUB-ELEMENTS>
+            </IMPLEMENTATION-DATA-TYPE>
+            <APPLICATION-RECORD-DATA-TYPE><SHORT-NAME>Payload</SHORT-NAME><ELEMENTS>
+              <APPLICATION-RECORD-ELEMENT><SHORT-NAME>name</SHORT-NAME>
+                <TYPE-TREF DEST="APPLICATION-PRIMITIVE-DATA-TYPE">/Fixed/Name</TYPE-TREF>
+              </APPLICATION-RECORD-ELEMENT>
+              <APPLICATION-RECORD-ELEMENT><SHORT-NAME>name16</SHORT-NAME>
+                <TYPE-TREF DEST="APPLICATION-PRIMITIVE-DATA-TYPE">/Fixed/Name16</TYPE-TREF>
+              </APPLICATION-RECORD-ELEMENT>
+            </ELEMENTS></APPLICATION-RECORD-DATA-TYPE>
+            <DATA-TYPE-MAPPING-SET><SHORT-NAME>Mappings</SHORT-NAME><DATA-TYPE-MAPS><DATA-TYPE-MAP>
+              <APPLICATION-DATA-TYPE-REF DEST="APPLICATION-PRIMITIVE-DATA-TYPE">/Fixed/Name</APPLICATION-DATA-TYPE-REF>
+              <IMPLEMENTATION-DATA-TYPE-REF DEST="IMPLEMENTATION-DATA-TYPE">/Fixed/NameStorage</IMPLEMENTATION-DATA-TYPE-REF>
+            </DATA-TYPE-MAP></DATA-TYPE-MAPS></DATA-TYPE-MAPPING-SET>
+            <DATA-TYPE-MAPPING-SET><SHORT-NAME>Mappings16</SHORT-NAME><DATA-TYPE-MAPS><DATA-TYPE-MAP>
+              <APPLICATION-DATA-TYPE-REF DEST="APPLICATION-PRIMITIVE-DATA-TYPE">/Fixed/Name16</APPLICATION-DATA-TYPE-REF>
+              <IMPLEMENTATION-DATA-TYPE-REF DEST="IMPLEMENTATION-DATA-TYPE">/Fixed/Name16Storage</IMPLEMENTATION-DATA-TYPE-REF>
+            </DATA-TYPE-MAP></DATA-TYPE-MAPS></DATA-TYPE-MAPPING-SET>
+            <SERVICE-INTERFACE><SHORT-NAME>Service</SHORT-NAME><EVENTS><VARIABLE-DATA-PROTOTYPE>
+              <SHORT-NAME>Event</SHORT-NAME>
+              <TYPE-TREF DEST="APPLICATION-RECORD-DATA-TYPE">/Fixed/Payload</TYPE-TREF>
+            </VARIABLE-DATA-PROTOTYPE></EVENTS></SERVICE-INTERFACE>
+            <TRANSFORMATION-PROPS-SET><SHORT-NAME>Props</SHORT-NAME><TRANSFORMATION-PROPSS>
+              <AP-SOMEIP-TRANSFORMATION-PROPS><SHORT-NAME>Deployment</SHORT-NAME>
+                <SIZE-OF-STRING-LENGTH-FIELD>0</SIZE-OF-STRING-LENGTH-FIELD>
+              </AP-SOMEIP-TRANSFORMATION-PROPS>
+            </TRANSFORMATION-PROPSS></TRANSFORMATION-PROPS-SET>
+            <TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING><SHORT-NAME>Mapping</SHORT-NAME>
+              <EVENT-REFS><EVENT-REF DEST="VARIABLE-DATA-PROTOTYPE">/Fixed/Service/Event</EVENT-REF></EVENT-REFS>
+              <TRANSFORMATION-PROPS-REF DEST="AP-SOMEIP-TRANSFORMATION-PROPS">/Fixed/Props/Deployment</TRANSFORMATION-PROPS-REF>
+            </TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>
+            """,
+        )
+        result, directory = self.run_tool({"fixed.arxml": arxml}, "--prototype", "Event", "--strict")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("// AUTOSAR fixed wire size: 11 bytes.", result.stdout)
+        self.assertIn("// AUTOSAR maximum text size: 4 code points.", result.stdout)
+        self.assertIn("using Name = std::string;", result.stdout)
+        self.assertIn("Name name{};", result.stdout)
+        self.assertIn("VLINK_SOMEIP_FIXED_STRING_MAX(name, 11U, 0U, 4U)", result.stdout)
+        self.assertIn("// AUTOSAR fixed wire size: 10 bytes.", result.stdout)
+        self.assertIn("// AUTOSAR maximum text size: 3 code points.", result.stdout)
+        self.assertIn("using Name16 = std::u16string;", result.stdout)
+        self.assertIn("Name16 name16{};", result.stdout)
+        self.assertIn("VLINK_SOMEIP_FIXED_UTF16_BE_MAX(name16, 10U, 0U, 3U)", result.stdout)
+        compiler = self.find_cpp_compiler()
+        if compiler:
+            header = directory / "fixed_generated.h"
+            source = directory / "fixed_generated.cc"
+            header.write_text(result.stdout, encoding="utf-8")
+            source.write_text('#include "fixed_generated.h"\n', encoding="utf-8")
+            compiled = self.compile_cpp(compiler, source, directory, self.repo_root / "include")
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+
+        definitions = """
+            <TLV-DATA-ID-DEFINITION-SET><SHORT-NAME>DataIds</SHORT-NAME><TLV-DATA-ID-DEFINITIONS>
+              <TLV-DATA-ID-DEFINITION><ID>1</ID>
+                <TLV-RECORD-ELEMENT-REF>/Fixed/Payload/name</TLV-RECORD-ELEMENT-REF>
+              </TLV-DATA-ID-DEFINITION>
+              <TLV-DATA-ID-DEFINITION><ID>2</ID>
+                <TLV-RECORD-ELEMENT-REF>/Fixed/Payload/name16</TLV-RECORD-ELEMENT-REF>
+              </TLV-DATA-ID-DEFINITION>
+            </TLV-DATA-ID-DEFINITIONS></TLV-DATA-ID-DEFINITION-SET>
+        """
+        tlv = arxml.replace(
+            "<TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING><SHORT-NAME>Mapping</SHORT-NAME>",
+            definitions
+            + "<TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING><SHORT-NAME>Mapping</SHORT-NAME>",
+        ).replace(
+            "<SIZE-OF-STRING-LENGTH-FIELD>0</SIZE-OF-STRING-LENGTH-FIELD>",
+            "<SIZE-OF-STRING-LENGTH-FIELD>1</SIZE-OF-STRING-LENGTH-FIELD>"
+            "<SIZE-OF-STRUCT-LENGTH-FIELD>1</SIZE-OF-STRUCT-LENGTH-FIELD>",
+        ).replace(
+            "<TRANSFORMATION-PROPS-REF DEST=\"AP-SOMEIP-TRANSFORMATION-PROPS\">",
+            "<TLV-DATA-ID-DEFINITION-REFS><TLV-DATA-ID-DEFINITION-REF>/Fixed/DataIds"
+            "</TLV-DATA-ID-DEFINITION-REF></TLV-DATA-ID-DEFINITION-REFS>"
+            "<TRANSFORMATION-PROPS-REF DEST=\"AP-SOMEIP-TRANSFORMATION-PROPS\">",
+        )
+        dynamic, _ = self.run_tool({"fixed_tlv.arxml": tlv}, "--prototype", "Event", "--strict")
+        static, _ = self.run_tool(
+            {"fixed_static_tlv.arxml": tlv.replace(
+                "<SHORT-NAME>Deployment</SHORT-NAME>",
+                "<SHORT-NAME>Deployment</SHORT-NAME><IS-DYNAMIC-LENGTH-FIELD-SIZE>false</IS-DYNAMIC-LENGTH-FIELD-SIZE>",
+            )},
+            "--prototype",
+            "Event",
+            "--strict",
+        )
+
+        self.assertEqual(dynamic.returncode, 0, dynamic.stderr)
+        self.assertIn("VLINK_SOMEIP_TLV_FIXED_STRING_MAX(1, name, 11U, 1U", dynamic.stdout)
+        self.assertIn("VLINK_SOMEIP_TLV_FIXED_STRING_MAX(2, name16, 10U, 1U", dynamic.stdout)
+        self.assertEqual(static.returncode, 0, static.stderr)
+        self.assertIn("VLINK_SOMEIP_TLV_STATIC_FIXED_STRING_MAX(1, name, 11U, 1U", static.stdout)
+        self.assertIn("VLINK_SOMEIP_TLV_STATIC_FIXED_STRING_MAX(2, name16, 10U, 1U", static.stdout)
+
+    def test_rejects_cp_wire_models_that_cannot_be_expressed(self) -> None:
+        cases = {
+            "profile": """
+              <IMPLEMENTATION-DATA-TYPE><SHORT-NAME>Payload</SHORT-NAME>
+                <CATEGORY>STRUCTURE</CATEGORY><DYNAMIC-ARRAY-SIZE-PROFILE>VSA_LINEAR</DYNAMIC-ARRAY-SIZE-PROFILE>
+              </IMPLEMENTATION-DATA-TYPE>
+            """,
+            "availability": """
+              <IMPLEMENTATION-DATA-TYPE><SHORT-NAME>Payload</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY>
+                <IS-STRUCT-WITH-OPTIONAL-ELEMENT>true</IS-STRUCT-WITH-OPTIONAL-ELEMENT>
+              </IMPLEMENTATION-DATA-TYPE>
+            """,
+            "wrapper": UINT8_BASE + """
+              <IMPLEMENTATION-DATA-TYPE><SHORT-NAME>Payload</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY><SUB-ELEMENTS>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT><SHORT-NAME>size</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+                  <BASE-TYPE-REF>/CP/uint8</BASE-TYPE-REF>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT><SHORT-NAME>data</SHORT-NAME><CATEGORY>ARRAY</CATEGORY>
+                  <ARRAY-SIZE>4</ARRAY-SIZE><ARRAY-SIZE-SEMANTICS>VARIABLE-SIZE</ARRAY-SIZE-SEMANTICS>
+                  <BASE-TYPE-REF>/CP/uint8</BASE-TYPE-REF>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              </SUB-ELEMENTS></IMPLEMENTATION-DATA-TYPE>
+            """,
+        }
+        expected = {
+            "profile": "variable-array size profiles are not supported",
+            "availability": "availability-bitfield structures are not supported",
+            "wrapper": "variable-array wrappers are not supported",
+        }
+
+        for name, body in cases.items():
+            with self.subTest(model=name):
+                result, _ = self.run_tool({f"{name}.arxml": package_xml("CP", body)}, "--type", "Payload")
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(expected[name], result.stderr)
+
+        isignal = """
+        <SOMEIP-TRANSFORMATION-I-SIGNAL-PROPS xmlns="http://autosar.org/schema/r4.0">
+          <SHORT-NAME>Deployment</SHORT-NAME>
+        </SOMEIP-TRANSFORMATION-I-SIGNAL-PROPS>
+        """
+        rejected, _ = self.run_tool({"isignal.arxml": textwrap.dedent(isignal)})
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("CP SOMEIP-TRANSFORMATION-I-SIGNAL-PROPS are not supported", rejected.stderr)
+
+    def test_preserves_mapped_dynamic_string_maximum(self) -> None:
+        arxml = package_xml(
+            "Text",
+            """
+            <APPLICATION-PRIMITIVE-DATA-TYPE><SHORT-NAME>Name</SHORT-NAME><CATEGORY>STRING</CATEGORY>
+              <SW-DATA-DEF-PROPS><SW-DATA-DEF-PROPS-VARIANTS><SW-DATA-DEF-PROPS-CONDITIONAL>
+                <SW-TEXT-PROPS><ARRAY-SIZE-SEMANTICS>VARIABLE-SIZE</ARRAY-SIZE-SEMANTICS>
+                  <SW-MAX-TEXT-SIZE>12</SW-MAX-TEXT-SIZE>
+                </SW-TEXT-PROPS>
+              </SW-DATA-DEF-PROPS-CONDITIONAL></SW-DATA-DEF-PROPS-VARIANTS></SW-DATA-DEF-PROPS>
+            </APPLICATION-PRIMITIVE-DATA-TYPE>
+            <STD-CPP-IMPLEMENTATION-DATA-TYPE><SHORT-NAME>NameImpl</SHORT-NAME><CATEGORY>STRING</CATEGORY>
+              <HEADER-FILE>ara/core/string.h</HEADER-FILE>
+            </STD-CPP-IMPLEMENTATION-DATA-TYPE>
+            <APPLICATION-RECORD-DATA-TYPE><SHORT-NAME>Payload</SHORT-NAME><ELEMENTS>
+              <APPLICATION-RECORD-ELEMENT><SHORT-NAME>name</SHORT-NAME><TYPE-TREF>/Text/Name</TYPE-TREF>
+              </APPLICATION-RECORD-ELEMENT>
+            </ELEMENTS></APPLICATION-RECORD-DATA-TYPE>
+            <DATA-TYPE-MAPPING-SET><SHORT-NAME>Mappings</SHORT-NAME><DATA-TYPE-MAPS><DATA-TYPE-MAP>
+              <APPLICATION-DATA-TYPE-REF>/Text/Name</APPLICATION-DATA-TYPE-REF>
+              <IMPLEMENTATION-DATA-TYPE-REF>/Text/NameImpl</IMPLEMENTATION-DATA-TYPE-REF>
+            </DATA-TYPE-MAP></DATA-TYPE-MAPS></DATA-TYPE-MAPPING-SET>
+            """,
+        )
+        result, _ = self.run_tool({"text.arxml": arxml}, "--type", "Payload")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("// AUTOSAR maximum text size: 12 code points.", result.stdout)
+        self.assertIn("Name name{};", result.stdout)
+        self.assertIn("VLINK_SOMEIP_LENGTH_MAX(name, 4U, 12U)", result.stdout)
 
     def test_rejects_conflicting_mappings_and_ignores_unreferenced_ap_alignment(self) -> None:
         first = package_xml(
@@ -2092,7 +2909,7 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertEqual(generated.returncode, 0, generated.stderr)
         self.assertNotIn("VLINK_SOMEIP_ALIGNMENT", generated.stdout)
 
-    def test_merges_split_types_and_indexes_standalone_package(self) -> None:
+    def test_rejects_ordered_type_members_split_across_files(self) -> None:
         member_template = """
         <IMPLEMENTATION-DATA-TYPE>
           <SHORT-NAME>Payload</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY><SUB-ELEMENTS>
@@ -2105,13 +2922,52 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         """
         first = package_xml("Split", UINT8_BASE + member_template.format(name="first"))
         second = package_xml("Split", member_template.format(name="second"))
-        split, _ = self.run_tool(
-            {"first.arxml": first, "second.arxml": second}, "--type", "/Split/Payload"
-        )
+        for files in (
+            {"first.arxml": first, "second.arxml": second},
+            {"second.arxml": second, "first.arxml": first},
+        ):
+            split, _ = self.run_tool(files, "--type", "/Split/Payload")
+            self.assertEqual(split.returncode, 2)
+            self.assertIn("cannot merge ordered 'SUB-ELEMENTS' members", split.stderr)
 
-        self.assertEqual(split.returncode, 0, split.stderr)
-        self.assertIn("uint8_t first{};", split.stdout)
-        self.assertIn("uint8_t second{};", split.stdout)
+        members = """
+            <IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              <SHORT-NAME>{first}</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+              <BASE-TYPE-REF>/Split/uint8</BASE-TYPE-REF>
+            </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+            <IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              <SHORT-NAME>{second}</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+              <BASE-TYPE-REF>/Split/uint8</BASE-TYPE-REF>
+            </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+        """
+        structure = """
+        <IMPLEMENTATION-DATA-TYPE>
+          <SHORT-NAME>Payload</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY>
+          <SUB-ELEMENTS>{members}</SUB-ELEMENTS>
+        </IMPLEMENTATION-DATA-TYPE>
+        """
+        ordered = package_xml(
+            "Split", UINT8_BASE + structure.format(members=members.format(first="first", second="second"))
+        )
+        reversed_order = package_xml(
+            "Split", structure.format(members=members.format(first="second", second="first"))
+        )
+        for files in (
+            {"ordered.arxml": ordered, "reversed.arxml": reversed_order},
+            {"reversed.arxml": reversed_order, "ordered.arxml": ordered},
+        ):
+            split, _ = self.run_tool(files, "--type", "/Split/Payload")
+            self.assertEqual(split.returncode, 2)
+            self.assertIn("cannot merge ordered 'SUB-ELEMENTS' members", split.stderr)
+
+        subset = package_xml("Split", member_template.format(name="first"))
+        for files in (
+            {"ordered.arxml": ordered, "subset.arxml": subset},
+            {"subset.arxml": subset, "ordered.arxml": ordered},
+        ):
+            split, _ = self.run_tool(files, "--type", "/Split/Payload")
+            self.assertEqual(split.returncode, 2)
+            self.assertIn("cannot merge ordered 'SUB-ELEMENTS' members", split.stderr)
 
         package_start = first.index("<AR-PACKAGE>")
         package_end = first.index("</AR-PACKAGE>") + len("</AR-PACKAGE>")
@@ -2119,6 +2975,400 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
             {"standalone.arxml": first[package_start:package_end]}, "--type", "/Split/Payload"
         )
         self.assertEqual(standalone.returncode, 0, standalone.stderr)
+
+    def test_generates_cross_file_service_deployment(self) -> None:
+        types = package_xml(
+            "MultiTypes",
+            UINT8_BASE
+            + """
+            <IMPLEMENTATION-DATA-TYPE>
+              <SHORT-NAME>Payload</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY><SUB-ELEMENTS>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                  <SHORT-NAME>values</SHORT-NAME><CATEGORY>ARRAY</CATEGORY>
+                  <ARRAY-SIZE>4</ARRAY-SIZE><ARRAY-SIZE-SEMANTICS>VARIABLE-SIZE</ARRAY-SIZE-SEMANTICS>
+                  <SW-DATA-DEF-PROPS><SW-DATA-DEF-PROPS-VARIANTS><SW-DATA-DEF-PROPS-CONDITIONAL>
+                    <BASE-TYPE-REF DEST="SW-BASE-TYPE">/MultiTypes/uint8</BASE-TYPE-REF>
+                  </SW-DATA-DEF-PROPS-CONDITIONAL></SW-DATA-DEF-PROPS-VARIANTS></SW-DATA-DEF-PROPS>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                  <SHORT-NAME>label</SHORT-NAME><CATEGORY>STRING</CATEGORY>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              </SUB-ELEMENTS>
+            </IMPLEMENTATION-DATA-TYPE>
+            """,
+        )
+        service = package_xml(
+            "MultiService",
+            """
+            <SERVICE-INTERFACE><SHORT-NAME>Service</SHORT-NAME><EVENTS>
+              <VARIABLE-DATA-PROTOTYPE><SHORT-NAME>Event</SHORT-NAME>
+                <TYPE-TREF DEST="IMPLEMENTATION-DATA-TYPE">/MultiTypes/Payload</TYPE-TREF>
+              </VARIABLE-DATA-PROTOTYPE>
+            </EVENTS></SERVICE-INTERFACE>
+            """,
+        )
+        deployment = package_xml(
+            "MultiDeploy",
+            """
+            <TRANSFORMATION-PROPS-SET><SHORT-NAME>Props</SHORT-NAME><TRANSFORMATION-PROPSS>
+              <AP-SOMEIP-TRANSFORMATION-PROPS><SHORT-NAME>PayloadDeployment</SHORT-NAME>
+                <SIZE-OF-ARRAY-LENGTH-FIELD>1</SIZE-OF-ARRAY-LENGTH-FIELD>
+                <SIZE-OF-STRING-LENGTH-FIELD>2</SIZE-OF-STRING-LENGTH-FIELD>
+                <SIZE-OF-STRUCT-LENGTH-FIELD>2</SIZE-OF-STRUCT-LENGTH-FIELD>
+              </AP-SOMEIP-TRANSFORMATION-PROPS>
+            </TRANSFORMATION-PROPSS></TRANSFORMATION-PROPS-SET>
+            <TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>
+              <SHORT-NAME>EventMapping</SHORT-NAME>
+              <EVENT-REFS><EVENT-REF DEST="VARIABLE-DATA-PROTOTYPE">
+                /MultiService/Service/Event
+              </EVENT-REF></EVENT-REFS>
+              <TRANSFORMATION-PROPS-REF DEST="AP-SOMEIP-TRANSFORMATION-PROPS">
+                /MultiDeploy/Props/PayloadDeployment
+              </TRANSFORMATION-PROPS-REF>
+            </TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>
+            """,
+        )
+        files = {
+            "types.arxml": types,
+            "service.arxml": service,
+            "deployment.arxml": deployment,
+        }
+        generated, directory = self.run_tool(
+            files, "--prototype", "/MultiService/Service/Event", "--strict"
+        )
+        reversed_generated, _ = self.run_tool(
+            dict(reversed(tuple(files.items()))),
+            "--prototype",
+            "/MultiService/Service/Event",
+            "--strict",
+        )
+
+        self.assertEqual(generated.returncode, 0, generated.stderr)
+        self.assertEqual(reversed_generated.returncode, 0, reversed_generated.stderr)
+        self.assertIn(
+            "// SOME/IP structure deployment: 2-byte length field; 1-byte alignment; big-endian.",
+            generated.stdout,
+        )
+        self.assertIn("// AUTOSAR source: /MultiTypes/Payload/values.", generated.stdout)
+        self.assertIn("// AUTOSAR source: /MultiTypes/Payload/label.", generated.stdout)
+        self.assertIn("std::vector<uint8_t> values{};", generated.stdout)
+        self.assertIn("VLINK_SOMEIP_LENGTH_MAX(values, 1U, 4U)", generated.stdout)
+        self.assertIn("VLINK_SOMEIP_LENGTH(label, 2U)", generated.stdout)
+        self.assertIn("// AUTOSAR maximum elements: 4.", generated.stdout)
+        self.assertIn("// SOME/IP deployment: 1-byte length field.", generated.stdout)
+        self.assertEqual(generated.stdout, reversed_generated.stdout)
+
+        compiler = self.find_cpp_compiler()
+        if compiler:
+            header = directory / "multi_file_generated.h"
+            source = directory / "multi_file_generated.cc"
+            header.write_text(generated.stdout, encoding="utf-8")
+            source.write_text('#include "multi_file_generated.h"\n', encoding="utf-8")
+            compiled = self.compile_cpp(compiler, source, directory, self.repo_root / "include")
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+
+    def test_splits_cross_file_dependencies_into_headers(self) -> None:
+        leaf = package_xml(
+            "Base",
+            UINT8_BASE
+            + """
+            <IMPLEMENTATION-DATA-TYPE><SHORT-NAME>Counter</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+              <BASE-TYPE-REF>/Base/uint8</BASE-TYPE-REF>
+            </IMPLEMENTATION-DATA-TYPE>
+            <IMPLEMENTATION-DATA-TYPE><SHORT-NAME>Leaf</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY>
+              <SUB-ELEMENTS><IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                <SHORT-NAME>value</SHORT-NAME><CATEGORY>TYPE-REFERENCE</CATEGORY>
+                <IMPLEMENTATION-DATA-TYPE-REF>/Base/Counter</IMPLEMENTATION-DATA-TYPE-REF>
+              </IMPLEMENTATION-DATA-TYPE-ELEMENT></SUB-ELEMENTS>
+            </IMPLEMENTATION-DATA-TYPE>
+            """,
+        )
+
+        def holder(package: str, name: str, member: str, target: str) -> str:
+            return package_xml(
+                package,
+                f"""
+                <IMPLEMENTATION-DATA-TYPE><SHORT-NAME>{name}</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY>
+                  <SUB-ELEMENTS><IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                    <SHORT-NAME>{member}</SHORT-NAME><CATEGORY>TYPE-REFERENCE</CATEGORY>
+                    <IMPLEMENTATION-DATA-TYPE-REF>{target}</IMPLEMENTATION-DATA-TYPE-REF>
+                  </IMPLEMENTATION-DATA-TYPE-ELEMENT></SUB-ELEMENTS>
+                </IMPLEMENTATION-DATA-TYPE>
+                """,
+            )
+
+        left = holder("Left", "LeftNode", "leaf", "/Base/Leaf")
+        right = holder("Right", "RightNode", "leaf", "/Base/Leaf")
+        root = package_xml(
+            "Api",
+            """
+            <IMPLEMENTATION-DATA-TYPE><SHORT-NAME>Root</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY>
+              <SUB-ELEMENTS>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT><SHORT-NAME>left</SHORT-NAME><CATEGORY>TYPE-REFERENCE</CATEGORY>
+                  <IMPLEMENTATION-DATA-TYPE-REF>/Left/LeftNode</IMPLEMENTATION-DATA-TYPE-REF>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                <IMPLEMENTATION-DATA-TYPE-ELEMENT><SHORT-NAME>right</SHORT-NAME><CATEGORY>TYPE-REFERENCE</CATEGORY>
+                  <IMPLEMENTATION-DATA-TYPE-REF>/Right/RightNode</IMPLEMENTATION-DATA-TYPE-REF>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+              </SUB-ELEMENTS>
+            </IMPLEMENTATION-DATA-TYPE>
+            """,
+        )
+        files = {
+            "leaf.arxml": leaf,
+            "left.arxml": left,
+            "right.arxml": right,
+            "root.arxml": root,
+        }
+        missing_output, _ = self.run_tool(
+            files, "--type", "/Api/Root", "--split-by", "type"
+        )
+        self.assertEqual(missing_output.returncode, 2)
+        self.assertIn("split output requires --output", missing_output.stderr)
+
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        directory = Path(temporary.name)
+        for name, content in files.items():
+            (directory / name).write_text(content, encoding="utf-8")
+        for split_by, expected in (
+            ("type", {"counter.h", "leaf.h", "left_node.h", "right_node.h", "root.h"}),
+            ("package", {"base.h", "left.h", "right.h", "api.h"}),
+        ):
+            with self.subTest(split_by=split_by):
+                output = directory / f"generated_{split_by}"
+                output.mkdir()
+                command = [
+                    sys.executable,
+                    str(self.tool),
+                    *(str(directory / name) for name in files),
+                    "--type",
+                    "/Api/Root",
+                    "--namespace",
+                    "multi",
+                    "--split-by",
+                    split_by,
+                    "--output",
+                    str(output),
+                ]
+                generated = subprocess.run(command, check=False, capture_output=True, text=True)
+                self.assertEqual(generated.returncode, 0, generated.stderr)
+                self.assertEqual(
+                    {path.name for path in output.glob("*.h")},
+                    expected | {"vlink_someip_types.h"},
+                )
+                left_header = output / ("left_node.h" if split_by == "type" else "left.h")
+                dependency = "leaf.h" if split_by == "type" else "base.h"
+                self.assertIn(f'#include "{dependency}"', left_header.read_text(encoding="utf-8"))
+                base_header = output / ("leaf.h" if split_by == "type" else "base.h")
+                base_content = base_header.read_text(encoding="utf-8")
+                if split_by == "type":
+                    self.assertIn('#include "counter.h"', base_content)
+                else:
+                    self.assertIn("using Counter = uint8_t;", base_content)
+                    self.assertIn("struct Leaf final {", base_content)
+                aggregate = output / "vlink_someip_types.h"
+                compiler = self.find_cpp_compiler()
+                if compiler:
+                    for header in sorted(output.glob("*.h")):
+                        source = output / f"compile_{header.stem}.cc"
+                        source.write_text(f'#include "{header.name}"\n', encoding="utf-8")
+                        compiled = self.compile_cpp(
+                            compiler, source, output, self.repo_root / "include"
+                        )
+                        self.assertEqual(compiled.returncode, 0, compiled.stderr)
+                self.assertTrue(aggregate.is_file())
+
+    def test_rejects_cross_file_recursive_types_in_split_mode(self) -> None:
+        first = package_xml(
+            "First",
+            """
+            <IMPLEMENTATION-DATA-TYPE><SHORT-NAME>A</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY><SUB-ELEMENTS>
+              <IMPLEMENTATION-DATA-TYPE-ELEMENT><SHORT-NAME>b</SHORT-NAME><CATEGORY>TYPE-REFERENCE</CATEGORY>
+                <IMPLEMENTATION-DATA-TYPE-REF>/Second/B</IMPLEMENTATION-DATA-TYPE-REF>
+              </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+            </SUB-ELEMENTS></IMPLEMENTATION-DATA-TYPE>
+            """,
+        )
+        second = package_xml(
+            "Second",
+            """
+            <IMPLEMENTATION-DATA-TYPE><SHORT-NAME>B</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY><SUB-ELEMENTS>
+              <IMPLEMENTATION-DATA-TYPE-ELEMENT><SHORT-NAME>a</SHORT-NAME><CATEGORY>TYPE-REFERENCE</CATEGORY>
+                <IMPLEMENTATION-DATA-TYPE-REF>/First/A</IMPLEMENTATION-DATA-TYPE-REF>
+              </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+            </SUB-ELEMENTS></IMPLEMENTATION-DATA-TYPE>
+            """,
+        )
+        result, _ = self.run_tool(
+            {"first.arxml": first, "second.arxml": second},
+            "--type",
+            "/First/A",
+            "--split-by",
+            "type",
+            "--output",
+            ".",
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("recursive by-value", result.stderr)
+
+    def test_rejects_package_level_header_cycle(self) -> None:
+        first = package_xml(
+            "First",
+            UINT8_BASE
+            + """
+            <IMPLEMENTATION-DATA-TYPE><SHORT-NAME>FirstValue</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+              <BASE-TYPE-REF>/First/uint8</BASE-TYPE-REF>
+            </IMPLEMENTATION-DATA-TYPE>
+            <IMPLEMENTATION-DATA-TYPE><SHORT-NAME>UsesSecond</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY><SUB-ELEMENTS>
+              <IMPLEMENTATION-DATA-TYPE-ELEMENT><SHORT-NAME>value</SHORT-NAME><CATEGORY>TYPE-REFERENCE</CATEGORY>
+                <IMPLEMENTATION-DATA-TYPE-REF>/Second/SecondValue</IMPLEMENTATION-DATA-TYPE-REF>
+              </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+            </SUB-ELEMENTS></IMPLEMENTATION-DATA-TYPE>
+            """,
+        )
+        second = package_xml(
+            "Second",
+            UINT8_BASE.replace("uint8", "byte")
+            + """
+            <IMPLEMENTATION-DATA-TYPE><SHORT-NAME>SecondValue</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+              <BASE-TYPE-REF>/Second/byte</BASE-TYPE-REF>
+            </IMPLEMENTATION-DATA-TYPE>
+            <IMPLEMENTATION-DATA-TYPE><SHORT-NAME>UsesFirst</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY><SUB-ELEMENTS>
+              <IMPLEMENTATION-DATA-TYPE-ELEMENT><SHORT-NAME>value</SHORT-NAME><CATEGORY>TYPE-REFERENCE</CATEGORY>
+                <IMPLEMENTATION-DATA-TYPE-REF>/First/FirstValue</IMPLEMENTATION-DATA-TYPE-REF>
+              </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+            </SUB-ELEMENTS></IMPLEMENTATION-DATA-TYPE>
+            """,
+        )
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        directory = Path(temporary.name)
+        (directory / "first.arxml").write_text(first, encoding="utf-8")
+        (directory / "second.arxml").write_text(second, encoding="utf-8")
+        command = [
+            sys.executable,
+            str(self.tool),
+            str(directory / "first.arxml"),
+            str(directory / "second.arxml"),
+            "--type",
+            "/First/UsesSecond",
+            "--type",
+            "/Second/UsesFirst",
+        ]
+        type_output = directory / "generated_type"
+        type_output.mkdir()
+        type_result = subprocess.run(
+            [*command, "--split-by", "type", "--output", str(type_output)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(type_result.returncode, 0, type_result.stderr)
+
+        output = directory / "generated_package"
+        output.mkdir()
+        result = subprocess.run(
+            [
+                *command,
+                "--split-by",
+                "package",
+                "--output",
+                str(output),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("package split creates cyclic header dependencies", result.stderr)
+
+    def test_keeps_inline_structures_in_their_autosar_package_header(self) -> None:
+        arxml = package_xml(
+            "Inline",
+            UINT8_BASE
+            + """
+            <IMPLEMENTATION-DATA-TYPE><SHORT-NAME>Value</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+              <BASE-TYPE-REF>/Inline/uint8</BASE-TYPE-REF>
+            </IMPLEMENTATION-DATA-TYPE>
+            <IMPLEMENTATION-DATA-TYPE><SHORT-NAME>Outer</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY><SUB-ELEMENTS>
+              <IMPLEMENTATION-DATA-TYPE-ELEMENT><SHORT-NAME>inner</SHORT-NAME><CATEGORY>STRUCTURE</CATEGORY>
+                <SUB-ELEMENTS><IMPLEMENTATION-DATA-TYPE-ELEMENT>
+                  <SHORT-NAME>value</SHORT-NAME><CATEGORY>TYPE-REFERENCE</CATEGORY>
+                  <IMPLEMENTATION-DATA-TYPE-REF>/Inline/Value</IMPLEMENTATION-DATA-TYPE-REF>
+                </IMPLEMENTATION-DATA-TYPE-ELEMENT></SUB-ELEMENTS>
+              </IMPLEMENTATION-DATA-TYPE-ELEMENT>
+            </SUB-ELEMENTS></IMPLEMENTATION-DATA-TYPE>
+            """,
+        )
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        directory = Path(temporary.name)
+        source = directory / "inline.arxml"
+        source.write_text(arxml, encoding="utf-8")
+        output = directory / "generated"
+        output.mkdir()
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(self.tool),
+                str(source),
+                "--type",
+                "/Inline/Outer",
+                "--split-by",
+                "package",
+                "--output",
+                str(output),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            {path.name for path in output.glob("*.h")},
+            {"inline_.h", "vlink_someip_types.h"},
+        )
+        content = (output / "inline_.h").read_text(encoding="utf-8")
+        self.assertIn("using Value = uint8_t;", content)
+        self.assertIn("struct Outer_inner final {", content)
+        self.assertIn("struct Outer final {", content)
+
+    def test_avoids_windows_reserved_split_header_names(self) -> None:
+        arxml = package_xml(
+            "CON",
+            """
+            <IMPLEMENTATION-DATA-TYPE><SHORT-NAME>AUX</SHORT-NAME><CATEGORY>VALUE</CATEGORY>
+              <BASE-TYPE-REF>/AUTOSAR/PlatformTypes/uint8</BASE-TYPE-REF>
+            </IMPLEMENTATION-DATA-TYPE>
+            """,
+        )
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        directory = Path(temporary.name)
+        source = directory / "reserved.arxml"
+        source.write_text(arxml, encoding="utf-8")
+        for split_by, header in (("type", "aux_.h"), ("package", "con_.h")):
+            output = directory / split_by
+            output.mkdir()
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(self.tool),
+                    str(source),
+                    "--type",
+                    "/CON/AUX",
+                    "--split-by",
+                    split_by,
+                    "--output",
+                    str(output),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((output / header).is_file())
 
     def test_rejects_conflicting_split_type_definitions(self) -> None:
         first = package_xml(
@@ -2167,36 +3417,12 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("legacy SOME/IP string serialization", result.stderr)
 
-        non_utf8 = base.replace(
-            "<SHORT-NAME>Defaults</SHORT-NAME><ALIGNMENT>8</ALIGNMENT>",
-            "<SHORT-NAME>Defaults</SHORT-NAME><ALIGNMENT>8</ALIGNMENT>"
-            "<STRING-ENCODING>UTF-16</STRING-ENCODING>",
-            1,
-        )
-        encoding_result, _ = self.run_tool(
-            {"encoding.arxml": non_utf8}, "--prototype", "/Deploy/Service/Event"
-        )
-        self.assertEqual(encoding_result.returncode, 2)
-        self.assertIn("SOME/IP string encoding 'UTF-16' is not supported", encoding_result.stderr)
-
-        tlv = base.replace(
-            "<SHORT-NAME>EventDefaults</SHORT-NAME>",
-            "<SHORT-NAME>EventDefaults</SHORT-NAME>"
-            "<TLV-DATA-ID-DEFINITION-REFS><TLV-DATA-ID-DEFINITION-REF>/Deploy/Tlv</TLV-DATA-ID-DEFINITION-REF>"
-            "</TLV-DATA-ID-DEFINITION-REFS>",
-            1,
-        )
-        tlv_result, _ = self.run_tool(
-            {"tlv.arxml": tlv}, "--prototype", "/Deploy/Service/Event"
-        )
-        self.assertEqual(tlv_result.returncode, 2)
-        self.assertIn("TLV data-ID deployment", tlv_result.stderr)
-
         network = base.replace(
-            "<SHORT-NAME>FixedOverride</SHORT-NAME>",
-            "<SHORT-NAME>FixedOverride</SHORT-NAME>"
+            "</DATA-PROTOTYPES>\n          <SOMEIP-TRANSFORMATION-PROPS-REF>/Deploy/NoArrayLength",
+            "</DATA-PROTOTYPES>"
             "<NETWORK-REPRESENTATION><BASE-TYPE-REF>/Deploy/uint8</BASE-TYPE-REF>"
-            "</NETWORK-REPRESENTATION>",
+            "</NETWORK-REPRESENTATION>"
+            "<SOMEIP-TRANSFORMATION-PROPS-REF>/Deploy/NoArrayLength",
             1,
         )
         network_result, _ = self.run_tool(
@@ -2204,6 +3430,61 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         )
         self.assertEqual(network_result.returncode, 2)
         self.assertIn("NETWORK-REPRESENTATION", network_result.stderr)
+
+        network_only = base.replace(
+            """
+        <TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>
+          <SHORT-NAME>EventDefaults</SHORT-NAME>
+          <EVENT-REFS><EVENT-REF>/Deploy/Service/Event</EVENT-REF></EVENT-REFS>
+          <TRANSFORMATION-PROPS-REF>/Deploy/Defaults</TRANSFORMATION-PROPS-REF>
+        </TRANSFORMATION-PROPS-TO-SERVICE-INTERFACE-ELEMENT-MAPPING>""",
+            "",
+        ).replace(
+            "<SOMEIP-TRANSFORMATION-PROPS-REF>/Deploy/NoArrayLength"
+            "</SOMEIP-TRANSFORMATION-PROPS-REF>",
+            "<NETWORK-REPRESENTATION><BASE-TYPE-REF>/Deploy/uint8</BASE-TYPE-REF>"
+            "</NETWORK-REPRESENTATION>",
+        )
+        network_type, _ = self.run_tool(
+            {"network_type.arxml": network_only}, "--type", "/Deploy/Payload", "--strict"
+        )
+        self.assertEqual(network_type.returncode, 2)
+        self.assertIn("NETWORK-REPRESENTATION", network_type.stderr)
+
+        contextual = base.replace(
+            "<PORT-INTERFACE-REF>/Deploy/Service</PORT-INTERFACE-REF>",
+            "<CONTEXT-DATA-PROTOTYPE-REFS><CONTEXT-DATA-PROTOTYPE-REF>"
+            "/Deploy/Payload/child</CONTEXT-DATA-PROTOTYPE-REF>"
+            "</CONTEXT-DATA-PROTOTYPE-REFS>"
+            "<PORT-INTERFACE-REF>/Deploy/Service</PORT-INTERFACE-REF>",
+            1,
+        )
+        contextual_result, _ = self.run_tool(
+            {"context.arxml": contextual}, "--prototype", "/Deploy/Service/Event", "--strict"
+        )
+        self.assertEqual(contextual_result.returncode, 2)
+        self.assertIn("CONTEXT-DATA-PROTOTYPE-REFS", contextual_result.stderr)
+
+    def test_generates_utf16_deployment(self) -> None:
+        for encoding, suffix in (("UTF-16BE", "BE"), ("UTF-16LE", "LE")):
+            with self.subTest(encoding=encoding):
+                arxml = someip_length_deployment_xml().replace(
+                    "<SIZE-OF-STRUCT-LENGTH-FIELD>2</SIZE-OF-STRUCT-LENGTH-FIELD>\n"
+                    "        </AP-SOMEIP-TRANSFORMATION-PROPS>",
+                    "<SIZE-OF-STRUCT-LENGTH-FIELD>2</SIZE-OF-STRUCT-LENGTH-FIELD>"
+                    f"<STRING-ENCODING>{encoding}</STRING-ENCODING>\n"
+                    "        </AP-SOMEIP-TRANSFORMATION-PROPS>",
+                    1,
+                )
+                result, _ = self.run_tool(
+                    {"encoding.arxml": arxml}, "--prototype", "/Deploy/Service/Event", "--strict"
+                )
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("std::u16string name{};", result.stdout)
+                self.assertIn(f"VLINK_SOMEIP_UTF16_{suffix}(name, 1U)", result.stdout)
+                self.assertIn("std::u16string title{};", result.stdout)
+                self.assertIn(f"VLINK_SOMEIP_UTF16_{suffix}(title, 1U)", result.stdout)
 
     def test_reports_malformed_xml_without_traceback(self) -> None:
         result, _ = self.run_tool({"broken.arxml": "<AUTOSAR><AR-PACKAGES>"})
@@ -2213,7 +3494,7 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertNotIn("Traceback", result.stderr)
 
     def test_generated_header_is_valid_cpp17_someip_type(self) -> None:
-        compiler = os.environ.get("CXX") or shutil.which("c++")
+        compiler = self.find_cpp_compiler()
         if not compiler:
             self.skipTest("no C++ compiler is available")
 
@@ -2235,6 +3516,7 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         )
         generated, directory = self.run_tool({"smoke.arxml": arxml})
         self.assertEqual(generated.returncode, 0, generated.stderr)
+        self.assertIn("#include <vlink/extension/someip_serializer.h>", generated.stdout)
         self.assertIn("#include <vlink/serializer.h>", generated.stdout)
         self.assertNotIn("vlink/impl/someip_serializer.h", generated.stdout)
         self.assertNotIn("vlink/vlink.h", generated.stdout)
@@ -2253,21 +3535,7 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        compiled = subprocess.run(
-            [
-                compiler,
-                "-std=c++17",
-                "-fsyntax-only",
-                "-I",
-                str(directory),
-                "-I",
-                str(self.repo_root / "include"),
-                str(source),
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        compiled = self.compile_cpp(compiler, source, directory, self.repo_root / "include")
         self.assertEqual(compiled.returncode, 0, compiled.stderr)
 
     def test_tool_runs_in_isolated_python_without_third_party_packages(self) -> None:
@@ -2289,6 +3557,436 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertEqual(generated.returncode, 0, generated.stderr)
         self.assertIn("struct VehicleState final {", generated.stdout)
 
+    def test_committed_r25_11_fixtures_validate_against_the_official_schema(self) -> None:
+        schema = self.find_autosar_schema()
+        if schema is None:
+            self.skipTest("AUTOSAR_R25_11_XSD is not available")
+        xmllint = shutil.which("xmllint")
+        if not xmllint:
+            self.skipTest("xmllint is not available")
+
+        for fixture in (
+            self.fixture,
+            self.features_fixture,
+            self.matrix_fixture,
+            self.advanced_fixture,
+        ):
+            with self.subTest(fixture=fixture.name):
+                validated = subprocess.run(
+                    [xmllint, "--noout", "--schema", str(schema), str(fixture)],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(validated.returncode, 0, validated.stderr)
+
+    def test_r25_11_deployment_matrix_generates_compiles_and_round_trips_108_samples(self) -> None:
+        baseline = subprocess.run(
+            [
+                sys.executable,
+                str(self.tool),
+                str(self.matrix_fixture),
+                "--prototype",
+                "/Matrix/ServiceInterfaces/MatrixService/SimpleEvent",
+                "--namespace",
+                "vlink::autosar::matrix",
+                "--strict",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(baseline.returncode, 0, baseline.stderr)
+        self.assertEqual(baseline.stdout, self.matrix_golden.read_text(encoding="utf-8"))
+
+        compiler = self.find_cpp_compiler()
+        if not compiler:
+            self.skipTest("no C++ compiler is available")
+
+        schema = self.find_autosar_schema()
+        xmllint = shutil.which("xmllint")
+        if schema is not None:
+            self.assertIsNotNone(xmllint, "xmllint is required when an AUTOSAR R25-11 XSD is available")
+
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        directory = Path(temporary.name)
+        fixture = self.matrix_fixture.read_text(encoding="utf-8")
+        source_lines = [
+            "#include <array>",
+            "#include <cstdint>",
+            "#include <cstring>",
+            "#include <string>",
+            "#include <vector>",
+            "",
+        ]
+        checks: List[str] = []
+        schema_validated = 0
+
+        widths = (1, 2, 4)
+        endian_modes = (
+            ("big", "MOST-SIGNIFICANT-BYTE-FIRST"),
+            ("little", "MOST-SIGNIFICANT-BYTE-LAST"),
+        )
+        for index, (array_width, string_width, struct_width, endian_mode, alignment) in enumerate(
+            product(widths, widths, widths, endian_modes, (1, 2))
+        ):
+            endian_name, byte_order = endian_mode
+            sample = (
+                fixture.replace("<ALIGNMENT>8</ALIGNMENT>", f"<ALIGNMENT>{alignment * 8}</ALIGNMENT>")
+                .replace(
+                    "<BYTE-ORDER>MOST-SIGNIFICANT-BYTE-FIRST</BYTE-ORDER>",
+                    f"<BYTE-ORDER>{byte_order}</BYTE-ORDER>",
+                )
+                .replace(
+                    "<SIZE-OF-ARRAY-LENGTH-FIELD>1</SIZE-OF-ARRAY-LENGTH-FIELD>",
+                    f"<SIZE-OF-ARRAY-LENGTH-FIELD>{array_width}</SIZE-OF-ARRAY-LENGTH-FIELD>",
+                )
+                .replace(
+                    "<SIZE-OF-STRING-LENGTH-FIELD>1</SIZE-OF-STRING-LENGTH-FIELD>",
+                    f"<SIZE-OF-STRING-LENGTH-FIELD>{string_width}</SIZE-OF-STRING-LENGTH-FIELD>",
+                )
+                .replace(
+                    "<SIZE-OF-STRUCT-LENGTH-FIELD>1</SIZE-OF-STRUCT-LENGTH-FIELD>",
+                    f"<SIZE-OF-STRUCT-LENGTH-FIELD>{struct_width}</SIZE-OF-STRUCT-LENGTH-FIELD>",
+                )
+            )
+            sample_name = f"sample_{index:03d}"
+            arxml = directory / f"{sample_name}.arxml"
+            header = directory / f"{sample_name}.h"
+            arxml.write_text(sample, encoding="utf-8")
+
+            if schema is not None:
+                validated = subprocess.run(
+                    [xmllint, "--noout", "--schema", str(schema), str(arxml)],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(validated.returncode, 0, validated.stderr)
+                schema_validated += 1
+
+            namespace = f"vlink::autosar::matrix::{sample_name}"
+            generated = subprocess.run(
+                [
+                    sys.executable,
+                    str(self.tool),
+                    str(arxml),
+                    "--prototype",
+                    "/Matrix/ServiceInterfaces/MatrixService/SimpleEvent",
+                    "--namespace",
+                    namespace,
+                    "--strict",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(generated.returncode, 0, generated.stderr)
+            header.write_text(generated.stdout, encoding="utf-8")
+            source_lines.append(f'#include "{sample_name}.h"')
+
+            body = bytearray()
+            scalar_order = "big" if endian_name == "big" else "little"
+            body.extend((0x1234).to_bytes(2, scalar_order))
+            string_body = b"\xEF\xBB\xBFA\x00"
+            body.extend(len(string_body).to_bytes(string_width, "big"))
+            body.extend(string_body)
+            body.extend(b"\x00" * (-(16 + struct_width + len(body)) % alignment))
+            array_body = b"\x56\x78"
+            body.extend(len(array_body).to_bytes(array_width, "big"))
+            body.extend(array_body)
+            body.extend(b"\x00" * (-(16 + struct_width + len(body)) % alignment))
+            body.extend((0x9ABC).to_bytes(2, scalar_order))
+            expected = len(body).to_bytes(struct_width, "big") + body
+            expected_values = ", ".join(f"0x{value:02X}U" for value in expected)
+            source_lines.extend(
+                [
+                    "",
+                    f"static bool check_{sample_name}() {{",
+                    f"  using Payload = {namespace}::SimplePayload;",
+                    "  Payload source;",
+                    "  source.sequence = 0x1234U;",
+                    '  source.name = "A";',
+                    "  source.values = {0x56U, 0x78U};",
+                    "  source.tail = 0x9ABCU;",
+                    "  vlink::Bytes encoded;",
+                    "  if (!vlink::Serializer::serialize(source, encoded)) {",
+                    "    return false;",
+                    "  }",
+                    f"  const std::array<uint8_t, {len(expected)}> expected = {{{expected_values}}};",
+                    "  if (encoded.size() != expected.size() ||",
+                    "      std::memcmp(encoded.data(), expected.data(), expected.size()) != 0) {",
+                    "    return false;",
+                    "  }",
+                    "  Payload target;",
+                    "  if (!vlink::Serializer::deserialize(encoded, target)) {",
+                    "    return false;",
+                    "  }",
+                    "  if (target.sequence != source.sequence || target.name != source.name ||",
+                    "      target.values != source.values || target.tail != source.tail) {",
+                    "    return false;",
+                    "  }",
+                    "  const auto truncated = vlink::Bytes::shallow_copy(expected.data(), expected.size() - 1U);",
+                    "  return !vlink::Serializer::deserialize(truncated, target);",
+                    "}",
+                ]
+            )
+            checks.append(f"  if (!check_{sample_name}()) {{ return {index + 1}; }}")
+
+        self.assertEqual(len(checks), 108)
+        if schema is not None:
+            self.assertEqual(schema_validated, 108)
+        source_lines.extend(["", "int main() {", *checks, "  return 0;", "}"])
+        source = directory / "someip_matrix.cc"
+        source.write_text("\n".join(source_lines) + "\n", encoding="utf-8")
+
+        linker_value = os.environ.get("VLINK_AUTOSAR_TEST_LINKER_FILE")
+        runtime_value = os.environ.get("VLINK_AUTOSAR_TEST_RUNTIME_DIR")
+        if linker_value and runtime_value:
+            compiled, executed = self.compile_and_run_cpp(
+                compiler,
+                source,
+                Path(linker_value),
+                Path(runtime_value),
+                directory,
+                self.repo_root / "include",
+            )
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+            self.assertIsNotNone(executed)
+            self.assertEqual(executed.returncode, 0, executed.stderr)
+        else:
+            compiled = self.compile_cpp(compiler, source, directory, self.repo_root / "include")
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+
+    def test_r25_11_advanced_features_generate_compile_and_round_trip(self) -> None:
+        generated = subprocess.run(
+            [
+                sys.executable,
+                str(self.tool),
+                str(self.advanced_fixture),
+                "--prototype",
+                "/Advanced/ServiceInterfaces/AdvancedService/Event",
+                "--prototype",
+                "/Advanced/ServiceInterfaces/AdvancedService/TlvEvent",
+                "--namespace",
+                "vlink::autosar::advanced",
+                "--strict",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(generated.returncode, 0, generated.stderr)
+        self.assertEqual(generated.stdout, self.advanced_golden.read_text(encoding="utf-8"))
+        self.assertIn("using RecordArray = std::array<RecordArray_element, 2>;", generated.stdout)
+
+        compiler = self.find_cpp_compiler()
+        if not compiler:
+            self.skipTest("no C++ compiler is available")
+
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        directory = Path(temporary.name)
+        source = directory / "someip_advanced.cc"
+        source.write_text(
+            textwrap.dedent(
+                """\
+                #include <array>
+                #include <cstdint>
+                #include <cstring>
+                #include <variant>
+
+                #include "generated_someip_advanced.h"
+
+                namespace {
+
+                template <size_t SizeT>
+                bool matches(const vlink::Bytes& value, const std::array<uint8_t, SizeT>& expected) {
+                  return value.size() == expected.size() &&
+                         std::memcmp(value.data(), expected.data(), expected.size()) == 0;
+                }
+
+                bool check_advanced_payload() {
+                  using vlink::autosar::advanced::AdvancedPayload;
+
+                  AdvancedPayload source;
+                  source.title = u"A";
+                  source.lookup.emplace(0x1234U, 0x01020304U);
+                  source.samples = {0x1111U, 0x2222U};
+                  source.choice = uint16_t{0x5678U};
+
+                  vlink::Bytes encoded;
+                  const std::array<uint8_t, 29> expected = {
+                      0x00U, 0x1BU, 0x00U, 0x06U, 0xFEU, 0xFFU, 0x00U, 0x41U,
+                      0x00U, 0x00U, 0x00U, 0x06U, 0x12U, 0x34U, 0x01U, 0x02U,
+                      0x03U, 0x04U, 0x00U, 0x04U, 0x11U, 0x11U, 0x22U, 0x22U,
+                      0x00U, 0x02U, 0x01U, 0x56U, 0x78U,
+                  };
+                  if (!vlink::Serializer::serialize(source, encoded) || !matches(encoded, expected)) {
+                    return false;
+                  }
+
+                  AdvancedPayload target;
+                  if (!vlink::Serializer::deserialize(encoded, target) || target.title != source.title ||
+                      target.lookup != source.lookup || target.samples != source.samples ||
+                      !std::holds_alternative<uint16_t>(target.choice) ||
+                      std::get<uint16_t>(target.choice) != 0x5678U) {
+                    return false;
+                  }
+
+                  const std::array<uint8_t, 30> excess = {
+                      0x00U, 0x1CU, 0x00U, 0x06U, 0xFEU, 0xFFU, 0x00U, 0x41U,
+                      0x00U, 0x00U, 0x00U, 0x06U, 0x12U, 0x34U, 0x01U, 0x02U,
+                      0x03U, 0x04U, 0x00U, 0x05U, 0x11U, 0x11U, 0x22U, 0x22U,
+                      0xAAU, 0x00U, 0x02U, 0x01U, 0x56U, 0x78U,
+                  };
+                  const auto excess_data = vlink::Bytes::shallow_copy(excess.data(), excess.size());
+                  if (!vlink::Serializer::deserialize(excess_data, target) || target.samples != source.samples ||
+                      !std::holds_alternative<uint16_t>(target.choice) ||
+                      std::get<uint16_t>(target.choice) != 0x5678U) {
+                    return false;
+                  }
+
+                  source.title = u"ABCDE";
+                  if (vlink::Serializer::serialize(source, encoded)) {
+                    return false;
+                  }
+
+                  const auto truncated = vlink::Bytes::shallow_copy(expected.data(), expected.size() - 1U);
+                  return !vlink::Serializer::deserialize(truncated, target);
+                }
+
+                bool check_tlv_payload() {
+                  using vlink::autosar::advanced::Cube;
+                  using vlink::autosar::advanced::RecordArray;
+                  using vlink::autosar::advanced::TlvPayload;
+
+                  TlvPayload source;
+                  source.label = "A";
+                  source.code = 0x7FU;
+                  source.lookup.emplace().emplace(0x1234U, 0x01020304U);
+                  Cube cube{};
+                  cube[0][0] = {0x01U, 0x02U};
+                  cube[0][1] = {0x03U, 0x04U};
+                  cube[1][0] = {0x05U, 0x06U};
+                  cube[1][1] = {0x07U, 0x08U};
+                  source.values = cube;
+                  RecordArray records{};
+                  records[0].value = 0x09U;
+                  records[1].value = 0x0AU;
+                  source.records = records;
+
+                  vlink::Bytes encoded;
+                  const std::array<uint8_t, 54> expected = {
+                      0x00U, 0x34U, 0x50U, 0x01U, 0x05U, 0xEFU, 0xBBU, 0xBFU,
+                      0x41U, 0x00U, 0x00U, 0x02U, 0x7FU, 0x50U, 0x03U, 0x06U,
+                      0x12U, 0x34U, 0x01U, 0x02U, 0x03U, 0x04U, 0x50U, 0x04U,
+                      0x14U, 0x00U, 0x08U, 0x00U, 0x02U, 0x01U, 0x02U, 0x00U,
+                      0x02U, 0x03U, 0x04U, 0x00U, 0x08U, 0x00U, 0x02U, 0x05U,
+                      0x06U, 0x00U, 0x02U, 0x07U, 0x08U, 0x50U, 0x05U, 0x06U,
+                      0x00U, 0x01U, 0x09U, 0x00U, 0x01U, 0x0AU,
+                  };
+                  if (!vlink::Serializer::serialize(source, encoded) || !matches(encoded, expected)) {
+                    return false;
+                  }
+
+                  TlvPayload target;
+                  if (!vlink::Serializer::deserialize(encoded, target) || target.label != source.label ||
+                      target.code != source.code || target.lookup != source.lookup || target.values != source.values ||
+                      !target.records || (*target.records)[0].value != records[0].value ||
+                      (*target.records)[1].value != records[1].value) {
+                    return false;
+                  }
+
+                  TlvPayload required_only;
+                  required_only.code = 0x7FU;
+                  const std::array<uint8_t, 5> absent = {0x00U, 0x03U, 0x00U, 0x02U, 0x7FU};
+                  target = source;
+                  if (!vlink::Serializer::serialize(required_only, encoded) || !matches(encoded, absent) ||
+                      !vlink::Serializer::deserialize(encoded, target) || target.label || target.lookup ||
+                      target.values || target.records || target.code != required_only.code) {
+                    return false;
+                  }
+
+                  const auto truncated = vlink::Bytes::shallow_copy(expected.data(), expected.size() - 1U);
+                  return !vlink::Serializer::deserialize(truncated, target);
+                }
+
+                }  // namespace
+
+                int main() { return check_advanced_payload() && check_tlv_payload() ? 0 : 1; }
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        linker_value = os.environ.get("VLINK_AUTOSAR_TEST_LINKER_FILE")
+        runtime_value = os.environ.get("VLINK_AUTOSAR_TEST_RUNTIME_DIR")
+        if linker_value and runtime_value:
+            compiled, executed = self.compile_and_run_cpp(
+                compiler,
+                source,
+                Path(linker_value),
+                Path(runtime_value),
+                self.advanced_golden.parent,
+                self.repo_root / "include",
+            )
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+            self.assertIsNotNone(executed)
+            self.assertEqual(executed.returncode, 0, executed.stderr)
+        else:
+            compiled = self.compile_cpp(
+                compiler, source, self.advanced_golden.parent, self.repo_root / "include"
+            )
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+
+    def test_r25_11_feature_fixture_generates_fixed_strings_with_deployment_comments(self) -> None:
+        generated = subprocess.run(
+            [
+                sys.executable,
+                str(self.tool),
+                str(self.features_fixture),
+                "--prototype",
+                "/Features/Service/Event",
+                "--prototype",
+                "/Features/Service/TlvEvent",
+                "--prototype",
+                "/Features/Service/StaticTlvEvent",
+                "--namespace",
+                "vlink::autosar::features",
+                "--strict",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(generated.returncode, 0, generated.stderr)
+        self.assertIn("// AUTOSAR fixed wire size: 11 bytes.", generated.stdout)
+        self.assertIn("// AUTOSAR maximum text size: 4 code points.", generated.stdout)
+        self.assertIn("// SOME/IP deployment: 1-byte length field.", generated.stdout)
+        self.assertIn("// SOME/IP deployment: 1-byte length field; UTF-16BE.", generated.stdout)
+        self.assertIn("VLINK_SOMEIP_FIXED_STRING_MAX(text8, 11U, 1U, 4U)", generated.stdout)
+        self.assertIn("VLINK_SOMEIP_FIXED_UTF16_BE_MAX(text16, 10U, 1U, 3U)", generated.stdout)
+        self.assertIn("VLINK_SOMEIP_TLV_FIXED_STRING_MAX(1, text8, 11U, 1U", generated.stdout)
+        self.assertIn("VLINK_SOMEIP_TLV_FIXED_STRING_MAX(2, text16, 10U, 1U", generated.stdout)
+        self.assertIn("VLINK_SOMEIP_TLV_STATIC_FIXED_STRING_MAX(1, text8, 11U, 1U", generated.stdout)
+        self.assertEqual(generated.stdout, self.features_golden.read_text(encoding="utf-8"))
+
+        compiler = self.find_cpp_compiler()
+        if not compiler:
+            return
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        directory = Path(temporary.name)
+        header = directory / "someip_features_generated.h"
+        source = directory / "features.cc"
+        header.write_text(generated.stdout, encoding="utf-8")
+        source.write_text('#include "someip_features_generated.h"\n', encoding="utf-8")
+        compiled = self.compile_cpp(compiler, source, directory, self.repo_root / "include")
+        self.assertEqual(compiled.returncode, 0, compiled.stderr)
+
     def test_r25_11_fixture_reproduces_committed_header(self) -> None:
         generated = subprocess.run(
             [
@@ -2309,10 +4007,18 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
 
         self.assertEqual(generated.returncode, 0, generated.stderr)
         self.assertEqual(generated.stdout, self.golden.read_text(encoding="utf-8"))
+        self.assertIn("// AUTOSAR maximum text size: 7 code points.", generated.stdout)
+        self.assertIn("VLINK_SOMEIP_LENGTH_MAX(name, 2U, 7U)", generated.stdout)
+        self.assertIn("VLINK_SOMEIP_LENGTH_MAX(objects, 2U, 2U)", generated.stdout)
+        self.assertIn("VLINK_SOMEIP_LENGTH_MAX(payload, 1U, 4U)", generated.stdout)
+        self.assertIn(
+            "// AUTOSAR INIT-VALUE source: /VLink/ServiceInterfaces/VehicleStateService/VehicleStateEvent.",
+            generated.stdout,
+        )
         self.assertIn("[[nodiscard]] static VehicleState make_default()", generated.stdout)
         self.assertNotIn("make_vehicle_state_event_initial_value", generated.stdout)
 
-        compiler = os.environ.get("CXX") or shutil.which("c++")
+        compiler = self.find_cpp_compiler()
         if not compiler:
             return
         temporary = tempfile.TemporaryDirectory()
@@ -2326,22 +4032,42 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
             "auto make_state() { return vlink::autosar::VehicleState::make_default(); }\n",
             encoding="utf-8",
         )
-        compiled = subprocess.run(
+        compiled = self.compile_cpp(compiler, source, directory, self.repo_root / "include")
+        self.assertEqual(compiled.returncode, 0, compiled.stderr)
+
+        split_directory = directory / "split"
+        split_directory.mkdir()
+        split = subprocess.run(
             [
-                compiler,
-                "-std=c++17",
-                "-fsyntax-only",
-                "-I",
-                str(directory),
-                "-I",
-                str(self.repo_root / "include"),
-                str(source),
+                sys.executable,
+                str(self.tool),
+                str(self.fixture),
+                "--prototype",
+                "/VLink/ServiceInterfaces/VehicleStateService/VehicleStateEvent",
+                "--namespace",
+                "vlink::autosar",
+                "--byte-arrays-as-bytes",
+                "--strict",
+                "--split-by",
+                "type",
+                "--output",
+                str(split_directory),
             ],
             check=False,
             capture_output=True,
             text=True,
         )
-        self.assertEqual(compiled.returncode, 0, compiled.stderr)
+        self.assertEqual(split.returncode, 0, split.stderr)
+        split_source = split_directory / "make_default.cc"
+        split_source.write_text(
+            '#include "vlink_someip_types.h"\n'
+            "auto make_state() { return vlink::autosar::VehicleState::make_default(); }\n",
+            encoding="utf-8",
+        )
+        split_compiled = self.compile_cpp(
+            compiler, split_source, split_directory, self.repo_root / "include"
+        )
+        self.assertEqual(split_compiled.returncode, 0, split_compiled.stderr)
 
     def test_r25_11_fixture_generates_all_types_in_strict_mode(self) -> None:
         generated = subprocess.run(
@@ -2363,7 +4089,7 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         self.assertEqual(generated.stderr, "")
         self.assertIn("using PayloadBytesApplication = vlink::Bytes;", generated.stdout)
 
-        compiler = os.environ.get("CXX") or shutil.which("c++")
+        compiler = self.find_cpp_compiler()
         if not compiler:
             return
         temporary = tempfile.TemporaryDirectory()
@@ -2373,21 +4099,7 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         source = directory / "all_types.cc"
         header.write_text(generated.stdout, encoding="utf-8")
         source.write_text('#include "all_types.h"\n', encoding="utf-8")
-        compiled = subprocess.run(
-            [
-                compiler,
-                "-std=c++17",
-                "-fsyntax-only",
-                "-I",
-                str(directory),
-                "-I",
-                str(self.repo_root / "include"),
-                str(source),
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        compiled = self.compile_cpp(compiler, source, directory, self.repo_root / "include")
         self.assertEqual(compiled.returncode, 0, compiled.stderr)
 
 

@@ -23,7 +23,7 @@
 
 #include "./someip_setter_impl.h"
 
-#include "./impl/someip_serializer.h"
+#include "./extension/someip_serializer.h"
 
 namespace vlink {
 

@@ -35,6 +35,7 @@
 #include <vector>
 
 #include "../common_test.h"
+#include "./extension/someip_serializer.h"
 
 struct DynamicSomeipChild {
   int16_t delta{0};

@@ -5,7 +5,8 @@
 ### 新增功能
 
 - **MessageLoop 回调分发**：intra、FDBUS 与 SOME/IP 节点支持 `attach()` / `detach()`；intra queue 绑定后直接投递目标 loop。
-- **SOME/IP payload 序列化**：新增 `Serializer::kSomeipType`、`VLINK_SOMEIP_FIELDS(...)`、`VLINK_SOMEIP_ENDIAN(...)`、`VLINK_SOMEIP_ENDIAN_BIG`、`VLINK_SOMEIP_ENDIAN_LITTLE`、`VLINK_SOMEIP_ALIGNMENT(...)`、`VLINK_SOMEIP_LENGTH(...)`、`VLINK_SOMEIP_ARRAY_LENGTH(...)` 与 `VLINK_SOMEIP_STRUCT_LENGTH(...)`，按字段自动生成 `Bytes` 编解码，支持嵌套结构、容器、payload 大小端、AUTOSAR alignment，以及字段、结构体与多维数组长度宽度配置，并采用 non-TLV payload 部署。
+- **SOME/IP payload 序列化**：新增 `Serializer::kSomeipType`、`VLINK_SOMEIP_FIELDS(...)`、`VLINK_SOMEIP_ENDIAN(...)`、`VLINK_SOMEIP_ENDIAN_BIG`、`VLINK_SOMEIP_ENDIAN_LITTLE`、`VLINK_SOMEIP_ALIGNMENT(...)`、`VLINK_SOMEIP_LENGTH(...)` 及 maximum 变体、`VLINK_SOMEIP_ARRAY_LENGTH(...)`、`VLINK_SOMEIP_STRUCT_LENGTH(...)`、定长/变长 UTF-8/UTF-16、`VLINK_SOMEIP_UNION(...)` 与 dynamic/static length TLV 宏（含多维数组和 maximum 变体），按字段自动生成 `Bytes` 编解码、带显式 offset 参数的 `serialize()` 和读取 `Bytes` payload 区域的 `deserialize()` 成员，支持嵌套结构、容器、关联 map、union NULL，以及带 `std::optional` 成员的 TLV 结构（编译期强制非零结构长度、未知 data ID 按 wire type 与统一长度宽度跳过），并支持 payload 大小端、AUTOSAR alignment 与字段、结构体、多维数组长度宽度配置；头文件位于 `include/vlink/extension/someip_serializer.h`，使用宏需显式包含。
+- **AUTOSAR SOME/IP 生成器**：支持合并多个 ARXML，并可按类型或 package 生成带依赖关系和汇总入口的多个头文件；生成注释保留类型、字段、上限、`INIT-VALUE` 来源及实际 deployment 信息，直接字段的 maximum 同步用于接收校验或截断。
 - **自研日志后端**：新增公开的 `LoggerBackend`，支持异步写入、队列背压、周期刷新、固定/时间戳轮转、UTC 和 backtrace。
 - **格式化修饰符**：`vlink::format` 与 `MLOG_*` 支持完整的 std::format 风格 spec，含动态宽度/精度、`long double`、`nullptr`、`format_as` 扩展点、`{:?}` 和返回 `std::string` 的 `format()`；无效 spec 宽容忽略，不抛异常。
 

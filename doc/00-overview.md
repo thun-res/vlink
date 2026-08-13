@@ -132,6 +132,7 @@ VLink 将消息类型作为原语的模板参数，序列化策略由该类型�
 | Protobuf               | 跨语言、字段可扩展的通用消息                                |
 | FlatBuffers            | 大型结构化消息，支持零拷贝读取                              |
 | CDR                    | 与原生 DDS 类型互操作                                       |
+| SOME/IP 结构           | `VLINK_SOMEIP_FIELDS(...)` 声明的车载服务 payload           |
 | `std::string` / 自定义 | 文本消息；通过重载 `operator>>`/`operator<<` 接入私有协议   |
 
 序列化机制、自定义编解码与选型见 [消息序列化](03-serialization.md)。

@@ -44,7 +44,7 @@ POD 结构体（平凡 + 标准布局）可直接作为 `T`：`vlink::Publisher<
 - **`vlink::Bytes`**：应用层已有自定义二进制协议，零编解码开销。
 - **`std::string`**：文本、JSON 或格式未知的载体。
 - **POD 结构体**：同机同 ABI 的简单结构，最快路径；跨平台/跨语言请改用 Protobuf / FlatBuffers / CDR。
-- **SOME/IP 结构**：用 `VLINK_SOMEIP_FIELDS(...)` 声明字段顺序，支持嵌套结构、`std::string`、`std::vector`、`std::array` 和 `vlink::Bytes`；大小端、alignment 与长度宽度的部署范围见[消息序列化](../../../doc/03-serialization.md#-35-someip-与自定义序列化器)。
+- **SOME/IP 结构**：用 `VLINK_SOMEIP_FIELDS(...)` 声明字段顺序，支持嵌套结构、UTF-8/UTF-16 字符串、`std::vector`、`std::array`、`std::map`、`std::variant`、`vlink::Bytes` 与 TLV 可选成员；大小端、alignment、长度宽度与 TLV 的部署范围见[消息序列化](../../../doc/03-serialization.md#-35-someip-与自定义序列化器)。
 - **其他复杂结构**：跨语言场景改用 Protobuf（见 [`../../samples/helloworld/`](../../samples/helloworld/)）或 FlatBuffers（见 [`../../samples/someip_flat/`](../../samples/someip_flat/)）。
 
 ## ▶️ 运行

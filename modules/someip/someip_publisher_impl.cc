@@ -26,7 +26,7 @@
 #include <memory>
 #include <set>
 
-#include "./impl/someip_serializer.h"
+#include "./extension/someip_serializer.h"
 
 #ifdef VSOMEIP_DEPRECATED_UID_GID
 #define VSOMEIP_SUB_HANDLE_ARG const vsomeip_sec_client_t*, const std::string&

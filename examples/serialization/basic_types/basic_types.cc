@@ -22,6 +22,7 @@
  */
 
 #include <vlink/base/logger.h>
+#include <vlink/extension/someip_serializer.h>
 #include <vlink/vlink.h>
 
 #include <array>

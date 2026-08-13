@@ -23,7 +23,7 @@
 
 // NOLINTBEGIN
 
-#include "./impl/someip_serializer.h"
+#include "./extension/someip_serializer.h"
 
 #include <doctest/doctest.h>
 
@@ -31,7 +31,7 @@
 #include <cstdint>
 #include <limits>
 
-TEST_SUITE("impl-SomeipSerializer") {
+TEST_SUITE("extension-SomeipSerializer") {
   TEST_CASE("size-only writer advances without reading source storage") {
     vlink::SomeipSerializer::Writer writer(nullptr, 8U);
 
@@ -55,12 +55,12 @@ TEST_SUITE("impl-SomeipSerializer") {
     size_t length_position = 0U;
     size_t data_position = 0U;
     REQUIRE(writer.begin_length_delimited(length_position, data_position));
-    REQUIRE(vlink::SomeipSerializer::write_value(writer, uint16_t{0x1234U}));
-    REQUIRE(vlink::SomeipSerializer::write_value(writer, true));
+    REQUIRE(vlink::SomeipSerializer::detail::write_value(writer, uint16_t{0x1234U}));
+    REQUIRE(vlink::SomeipSerializer::detail::write_value(writer, true));
     REQUIRE(writer.end_length_delimited(length_position, data_position));
     CHECK(writer.position() == 7U);
 
-    REQUIRE(vlink::SomeipSerializer::write_value(writer, uint8_t{0xAAU}));
+    REQUIRE(vlink::SomeipSerializer::detail::write_value(writer, uint8_t{0xAAU}));
 
     const std::array<uint8_t, 8> expected = {0x00, 0x00, 0x00, 0x03, 0x12, 0x34, 0x01, 0xAA};
     CHECK(storage == expected);
@@ -106,17 +106,17 @@ TEST_SUITE("impl-SomeipSerializer") {
 
     uint16_t word = 0U;
     bool flag = false;
-    REQUIRE(vlink::SomeipSerializer::read_value(reader, word, field_end));
-    REQUIRE(vlink::SomeipSerializer::read_value(reader, flag, field_end));
+    REQUIRE(vlink::SomeipSerializer::detail::read_value(reader, word, field_end));
+    REQUIRE(vlink::SomeipSerializer::detail::read_value(reader, flag, field_end));
     CHECK(word == 0x1234U);
     CHECK(flag);
     CHECK(reader.position() == field_end);
 
     uint8_t tail = 0U;
-    CHECK_FALSE(vlink::SomeipSerializer::read_value(reader, tail, field_end));
+    CHECK_FALSE(vlink::SomeipSerializer::detail::read_value(reader, tail, field_end));
     CHECK(reader.position() == field_end);
 
-    REQUIRE(vlink::SomeipSerializer::read_value(reader, tail, reader.size()));
+    REQUIRE(vlink::SomeipSerializer::detail::read_value(reader, tail, reader.size()));
     CHECK(tail == 0xAAU);
     CHECK(reader.current_data() == nullptr);
   }
@@ -173,11 +173,11 @@ TEST_SUITE("impl-SomeipSerializer") {
     vlink::SomeipSerializer::Reader reader(storage.data(), storage.size());
 
     uint32_t value = 0xAABBCCDDU;
-    CHECK_FALSE(vlink::SomeipSerializer::read_value(reader, value, 3U));
+    CHECK_FALSE(vlink::SomeipSerializer::detail::read_value(reader, value, 3U));
     CHECK(value == 0xAABBCCDDU);
     CHECK(reader.position() == 0U);
 
-    REQUIRE(vlink::SomeipSerializer::read_value(reader, value, reader.size()));
+    REQUIRE(vlink::SomeipSerializer::detail::read_value(reader, value, reader.size()));
     CHECK(value == 0x12345678U);
     CHECK(reader.position() == reader.size());
   }

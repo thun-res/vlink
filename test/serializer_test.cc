@@ -27,13 +27,19 @@
 
 #include <array>
 #include <cstring>
+#include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <variant>
 #include <vector>
 
+#include "../tools/autosar/test/generated_someip_features.h"
 #include "../tools/autosar/test/generated_someip_types.h"
 #include "./common_test.h"
+#include "./extension/someip_serializer.h"
 #include "./impl/intra_data.h"
 
 struct PodMsg {
@@ -201,6 +207,13 @@ struct SomeipVectorOnly {
   VLINK_SOMEIP_FIELDS(values)
 };
 
+struct SomeipBoundedVectorWithTail {
+  std::vector<uint16_t> values;
+  uint8_t tail{0};
+
+  VLINK_SOMEIP_FIELDS(VLINK_SOMEIP_LENGTH_MAX(values, 1U, 2U), tail)
+};
+
 struct SomeipDynamicMatrix {
   std::vector<std::vector<uint16_t>> values;
 
@@ -307,6 +320,142 @@ struct SomeipSizedMessage {
 
   VLINK_SOMEIP_STRUCT_LENGTH(2U)
   VLINK_SOMEIP_FIELDS(child, suffix)
+};
+
+struct SomeipMapMessage {
+  std::map<uint16_t, std::string> table;
+  uint8_t suffix{0};
+
+  VLINK_SOMEIP_ALIGNMENT(4U)
+  VLINK_SOMEIP_FIELDS(VLINK_SOMEIP_LENGTH(table, 2U), suffix)
+};
+
+struct SomeipHashedMap {
+  std::unordered_map<uint32_t, uint16_t> index;
+
+  VLINK_SOMEIP_FIELDS(index)
+};
+
+struct SomeipWideText {
+  std::u16string name;
+  std::u16string label;
+
+  VLINK_SOMEIP_FIELDS(VLINK_SOMEIP_UTF16_MAX(name, 2U, vlink::SomeipSerializer::Endian::kBig, 2U),
+                      VLINK_SOMEIP_UTF16_MAX(label, 1U, vlink::SomeipSerializer::Endian::kLittle, 1U))
+};
+
+struct SomeipWideDefault {
+  std::u16string name;
+
+  VLINK_SOMEIP_FIELDS(name)
+};
+
+struct SomeipUnionMessage {
+  std::variant<uint16_t, std::string> choice;
+  uint8_t tail{0};
+
+  VLINK_SOMEIP_FIELDS(VLINK_SOMEIP_UNION(choice, 4U, 2U), tail)
+};
+
+struct SomeipPlainUnion {
+  std::variant<uint8_t, uint32_t> value;
+
+  VLINK_SOMEIP_FIELDS(value)
+};
+
+struct SomeipAlignedUnion {
+  std::variant<uint16_t> value;
+  uint8_t suffix{0};
+
+  VLINK_SOMEIP_ALIGNMENT(4U)
+  VLINK_SOMEIP_FIELDS(value, suffix)
+};
+
+struct SomeipNullableUnion {
+  std::variant<std::monostate, uint16_t, std::string> value;
+  uint8_t suffix{0};
+
+  VLINK_SOMEIP_ALIGNMENT(4U)
+  VLINK_SOMEIP_FIELDS(VLINK_SOMEIP_UNION(value, 2U, 1U), suffix)
+};
+
+struct SomeipUnframedUnion {
+  std::variant<uint16_t, int16_t> value;
+  uint8_t suffix{0};
+
+  VLINK_SOMEIP_ALIGNMENT(4U)
+  VLINK_SOMEIP_FIELDS(VLINK_SOMEIP_UNION(value, 0U, 1U), suffix)
+};
+
+struct SomeipFixedStrings {
+  std::string name;
+  std::u16string title;
+
+  VLINK_SOMEIP_FIELDS(VLINK_SOMEIP_FIXED_STRING(name, 8U, 0U), VLINK_SOMEIP_FIXED_UTF16_LE(title, 8U, 1U))
+};
+
+struct SomeipTlvFixedStrings {
+  std::optional<std::string> name;
+  std::u16string title;
+
+  VLINK_SOMEIP_STRUCT_LENGTH(1U)
+  VLINK_SOMEIP_FIELDS(VLINK_SOMEIP_TLV_FIXED_STRING(1, name, 8U, 1U, vlink::SomeipSerializer::Endian::kBig),
+                      VLINK_SOMEIP_TLV_STATIC_FIXED_STRING(2, title, 8U, 1U, vlink::SomeipSerializer::Endian::kBig))
+};
+
+struct SomeipTlvMessage {
+  uint16_t id{0};
+  std::optional<std::string> label;
+  std::vector<uint8_t> data;
+
+  VLINK_SOMEIP_STRUCT_LENGTH(2U)
+  VLINK_SOMEIP_FIELDS(VLINK_SOMEIP_TLV_LENGTH(1, id, 2U), VLINK_SOMEIP_TLV_LENGTH_MAX(2, label, 2U, 1U),
+                      VLINK_SOMEIP_TLV_LENGTH_MAX(3, data, 2U, 2U))
+};
+
+struct SomeipTlvChild {
+  uint8_t code{0};
+
+  VLINK_SOMEIP_STRUCT_LENGTH(1U)
+  VLINK_SOMEIP_FIELDS(VLINK_SOMEIP_TLV_LENGTH(1, code, 1U))
+};
+
+struct SomeipTlvNested {
+  std::optional<SomeipTlvChild> child;
+  uint8_t tail{0};
+
+  VLINK_SOMEIP_STRUCT_LENGTH(1U)
+  VLINK_SOMEIP_FIELDS(VLINK_SOMEIP_TLV_LENGTH(1, child, 1U), VLINK_SOMEIP_TLV_LENGTH(2, tail, 1U))
+};
+
+struct SomeipTlvLengthMode {
+  std::vector<uint8_t> data;
+
+  VLINK_SOMEIP_STRUCT_LENGTH(4U)
+  VLINK_SOMEIP_FIELDS(VLINK_SOMEIP_TLV_LENGTH(1, data, 4U))
+};
+
+struct SomeipTlvStaticLength {
+  std::vector<uint8_t> data;
+
+  VLINK_SOMEIP_STRUCT_LENGTH(2U)
+  VLINK_SOMEIP_FIELDS(VLINK_SOMEIP_TLV_STATIC_LENGTH(1, data, 2U))
+};
+
+struct SomeipTlvDefaults {
+  uint16_t id{0};
+  std::vector<uint8_t> data;
+
+  VLINK_SOMEIP_STRUCT_LENGTH(4U)
+  VLINK_SOMEIP_FIELDS(VLINK_SOMEIP_TLV(1, id), VLINK_SOMEIP_TLV(2, data))
+};
+
+struct SomeipTlvMatrix {
+  std::vector<std::vector<uint8_t>> values;
+  std::optional<std::vector<std::vector<uint8_t>>> extra;
+
+  VLINK_SOMEIP_STRUCT_LENGTH(1U)
+  VLINK_SOMEIP_FIELDS(VLINK_SOMEIP_TLV_ARRAY_LENGTH(1, values, 1U, 1U), VLINK_SOMEIP_TLV_ARRAY_LENGTH(2, extra, 1U, 1U))
 };
 
 #ifdef VLINK_HAS_CDR
@@ -458,6 +607,85 @@ TEST_SUITE("ser-types") {
 }
 
 TEST_SUITE("ser-someip") {
+  TEST_CASE("generated AUTOSAR fixed strings remain wire compatible") {
+    vlink::autosar::features::Payload source;
+    source.text8 = "A";
+    source.text16 = u"B";
+
+    vlink::Bytes encoded;
+    REQUIRE(Serializer::serialize(source, encoded));
+    const std::array<uint8_t, 23> expected = {
+        0x0BU, 0xEFU, 0xBBU, 0xBFU, 0x41U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
+        0x0AU, 0xFEU, 0xFFU, 0x00U, 0x42U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
+    };
+    REQUIRE(encoded.size() == expected.size());
+    CHECK(std::memcmp(encoded.data(), expected.data(), expected.size()) == 0);
+
+    vlink::autosar::features::Payload target;
+    REQUIRE(Serializer::deserialize(encoded, target));
+    CHECK(target.text8 == source.text8);
+    CHECK(target.text16 == source.text16);
+
+    source.text8 = "ABCDE";
+    CHECK_FALSE(Serializer::serialize(source, encoded));
+    source.text8 = "A";
+    source.text16 = u"ABC";
+    REQUIRE(Serializer::serialize(source, encoded));
+    source.text16.push_back(u'D');
+    CHECK_FALSE(Serializer::serialize(source, encoded));
+
+    const vlink::Bytes oversized{0x0B, 0xEF, 0xBB, 0xBF, 'A',  'B',  'C',  'D',  'E',  0x00, 0x00, 0x00,
+                                 0x0A, 0xFE, 0xFF, 0x00, 0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    CHECK_FALSE(Serializer::deserialize(oversized, target));
+  }
+
+  TEST_CASE("generated AUTOSAR TLV fixed strings remain wire compatible") {
+    vlink::autosar::features::TlvPayload source;
+    source.text8 = "A";
+    source.text16 = u"B";
+
+    vlink::Bytes encoded;
+    REQUIRE(Serializer::serialize(source, encoded));
+    const std::array<uint8_t, 28> expected = {
+        0x1BU, 0x50U, 0x01U, 0x0BU, 0xEFU, 0xBBU, 0xBFU, 0x41U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
+        0x00U, 0x50U, 0x02U, 0x0AU, 0xFEU, 0xFFU, 0x00U, 0x42U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
+    };
+    REQUIRE(encoded.size() == expected.size());
+    CHECK(std::memcmp(encoded.data(), expected.data(), expected.size()) == 0);
+
+    vlink::autosar::features::TlvPayload target;
+    REQUIRE(Serializer::deserialize(encoded, target));
+    CHECK(target.text8 == source.text8);
+    CHECK(target.text16 == source.text16);
+
+    source.text8 = "ABCDE";
+    CHECK_FALSE(Serializer::serialize(source, encoded));
+
+    const vlink::Bytes oversized{0x1B, 0x50, 0x01, 0x0B, 0xEF, 0xBB, 0xBF, 'A',  'B',  'C',  'D',  'E',  0x00, 0x00,
+                                 0x00, 0x50, 0x02, 0x0A, 0xFE, 0xFF, 0x00, 0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    CHECK_FALSE(Serializer::deserialize(oversized, target));
+  }
+
+  TEST_CASE("generated AUTOSAR static TLV fixed strings remain wire compatible") {
+    vlink::autosar::features::StaticTlvPayload source;
+    source.text8 = "A";
+
+    vlink::Bytes encoded;
+    REQUIRE(Serializer::serialize(source, encoded));
+    const std::array<uint8_t, 15> expected = {
+        0x0EU, 0x40U, 0x01U, 0x0BU, 0xEFU, 0xBBU, 0xBFU, 0x41U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
+    };
+    REQUIRE(encoded.size() == expected.size());
+    CHECK(std::memcmp(encoded.data(), expected.data(), expected.size()) == 0);
+
+    vlink::autosar::features::StaticTlvPayload target;
+    REQUIRE(Serializer::deserialize(encoded, target));
+    CHECK(target.text8 == source.text8);
+
+    source.text8 = "ABCDE";
+    CHECK_FALSE(Serializer::serialize(source, encoded));
+  }
+
   TEST_CASE("generated AUTOSAR default and wire format remain executable") {
     auto source = vlink::autosar::VehicleState::make_default();
 
@@ -517,6 +745,44 @@ TEST_SUITE("ser-someip") {
     CHECK(target.objects[1].y == source.objects[1].y);
     CHECK(target.payload == source.payload);
     CHECK(target.matrix == source.matrix);
+
+    source.name = std::string{"v\xC3\xA9hicle", 8U};
+    REQUIRE(Serializer::serialize(source, encoded));
+    REQUIRE(Serializer::deserialize(encoded, target));
+    CHECK(target.name == source.name);
+
+    source.name = "vehicleX";
+    CHECK(source.get_serialized_size() == 0U);
+    CHECK_FALSE(Serializer::serialize(source, encoded));
+    source.name = "vehicle";
+
+    std::vector<uint8_t> oversized(expected.begin(), expected.end());
+    oversized[1] = 0x67U;
+    oversized[44] = 0x1EU;
+    oversized.insert(oversized.begin() + 65, {0x00U, 0x08U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U});
+    oversized[75] = 0x05U;
+    oversized.insert(oversized.begin() + 80, 0xAAU);
+    const auto oversized_data = vlink::Bytes::shallow_copy(oversized.data(), oversized.size());
+    REQUIRE(Serializer::deserialize(oversized_data, target));
+    REQUIRE(target.objects.size() == 2U);
+    CHECK(target.payload == source.payload);
+    CHECK(target.matrix == source.matrix);
+
+    std::vector<uint8_t> long_name(expected.begin(), expected.end());
+    long_name[1] = 0x5DU;
+    long_name[13] = 0x0CU;
+    long_name.insert(long_name.begin() + 24, static_cast<uint8_t>('X'));
+    const auto long_name_data = vlink::Bytes::shallow_copy(long_name.data(), long_name.size());
+    CHECK_FALSE(Serializer::deserialize(long_name_data, target));
+
+    source.objects.emplace_back();
+    CHECK(source.get_serialized_size() == 0U);
+    CHECK_FALSE(Serializer::serialize(source, encoded));
+    source.objects.pop_back();
+
+    REQUIRE(source.payload.resize(5U));
+    CHECK(source.get_serialized_size() == 0U);
+    CHECK_FALSE(Serializer::serialize(source, encoded));
   }
 
   TEST_CASE("serializes scalars and enums in big endian order") {
@@ -988,6 +1254,41 @@ TEST_SUITE("ser-someip") {
     CHECK(target.value == source.value);
   }
 
+  TEST_CASE("does not duplicate a leading byte order mark in a dynamic string") {
+    SomeipText utf8_source;
+    utf8_source.value = std::string{
+        "\xEF\xBB\xBF"
+        "A",
+        4};
+
+    vlink::Bytes utf8_data;
+    REQUIRE((utf8_source >> utf8_data));
+    const std::array<uint8_t, 9> utf8_expected = {
+        0x00, 0x00, 0x00, 0x05, 0xEF, 0xBB, 0xBF, 'A', 0x00,
+    };
+    REQUIRE(utf8_data.size() == utf8_expected.size());
+    CHECK(std::memcmp(utf8_data.data(), utf8_expected.data(), utf8_expected.size()) == 0);
+
+    SomeipText utf8_target;
+    REQUIRE((utf8_target << utf8_data));
+    CHECK(utf8_target.value == "A");
+
+    SomeipWideDefault utf16_source;
+    utf16_source.name = u"\uFEFFA";
+
+    vlink::Bytes utf16_data;
+    REQUIRE((utf16_source >> utf16_data));
+    const std::array<uint8_t, 10> utf16_expected = {
+        0x00, 0x00, 0x00, 0x06, 0xFE, 0xFF, 0x00, 0x41, 0x00, 0x00,
+    };
+    REQUIRE(utf16_data.size() == utf16_expected.size());
+    CHECK(std::memcmp(utf16_data.data(), utf16_expected.data(), utf16_expected.size()) == 0);
+
+    SomeipWideDefault utf16_target;
+    REQUIRE((utf16_target << utf16_data));
+    CHECK(utf16_target.name == u"A");
+  }
+
   TEST_CASE("enforces UTF-8 scalar boundary sequences") {
     SomeipText source;
     vlink::Bytes data;
@@ -1195,6 +1496,18 @@ TEST_SUITE("ser-someip") {
     CHECK_FALSE((target << malformed));
   }
 
+  TEST_CASE("skips a partial excess dynamic array element after reaching the maximum") {
+    const vlink::Bytes compatible{0x05, 0x00, 0x01, 0x00, 0x02, 0xAA, 0x7F};
+
+    SomeipBoundedVectorWithTail target;
+    REQUIRE((target << compatible));
+    CHECK(target.values == std::vector<uint16_t>{0x0001U, 0x0002U});
+    CHECK(target.tail == 0x7FU);
+
+    const vlink::Bytes malformed{0x03, 0x00, 0x01, 0xAA, 0x7F};
+    CHECK_FALSE((target << malformed));
+  }
+
   TEST_CASE("normalizes a reused bytes field decoded from an empty array") {
     SomeipMessage source;
     source.payload.clear();
@@ -1217,6 +1530,514 @@ TEST_SUITE("ser-someip") {
 
     SomeipText target;
     CHECK_FALSE((target << oversized));
+  }
+
+  TEST_CASE("serializes map entries with a configured length width") {
+    SomeipMapMessage source;
+    source.table = {{0x0102U, "a"}, {0x0304U, "bc"}};
+    source.suffix = 0x7FU;
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+    CHECK(source.get_serialized_size() == data.size());
+
+    const std::array<uint8_t, 29> expected = {0x00, 0x17, 0x01, 0x02, 0x00, 0x00, 0x00, 0x05, 0xEF, 0xBB,
+                                              0xBF, 'a',  0x00, 0x03, 0x04, 0x00, 0x00, 0x00, 0x06, 0xEF,
+                                              0xBB, 0xBF, 'b',  'c',  0x00, 0x00, 0x00, 0x00, 0x7F};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    SomeipMapMessage target;
+    target.table = {{0xFFFFU, "stale"}};
+    REQUIRE((target << data));
+    CHECK(target.table == source.table);
+    CHECK(target.suffix == source.suffix);
+  }
+
+  TEST_CASE("round trips an unordered map and rejects duplicate keys") {
+    SomeipHashedMap source;
+    source.index = {{0x01020304U, 0x0506U}, {0x0A0B0C0DU, 0x0E0FU}};
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    SomeipHashedMap target;
+    REQUIRE((target << data));
+    CHECK(target.index == source.index);
+
+    const vlink::Bytes duplicate{0x00, 0x00, 0x00, 0x0C, 0x00, 0x00, 0x00, 0x01,
+                                 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00, 0x03};
+    CHECK_FALSE((target << duplicate));
+  }
+
+  TEST_CASE("serializes utf16 strings in both byte orders") {
+    SomeipWideText source;
+    source.name = u"AB";
+    source.label = u"€";
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+    CHECK(source.get_serialized_size() == data.size());
+
+    const std::array<uint8_t, 17> expected = {0x00, 0x08, 0xFE, 0xFF, 0x00, 0x41, 0x00, 0x42, 0x00,
+                                              0x00, 0x06, 0xFF, 0xFE, 0xAC, 0x20, 0x00, 0x00};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    SomeipWideText target;
+    REQUIRE((target << data));
+    CHECK(target.name == source.name);
+    CHECK(target.label == source.label);
+
+    source.name = u"\U0001D11E";
+    source.name.push_back(u'A');
+    REQUIRE((source >> data));
+    source.name.push_back(u'B');
+    CHECK_FALSE((source >> data));
+  }
+
+  TEST_CASE("round trips utf16 surrogate pairs and rejects malformed input") {
+    SomeipWideDefault source;
+    source.name = u"\U0001d11e";
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    SomeipWideDefault target;
+    REQUIRE((target << data));
+    CHECK(target.name == source.name);
+
+    source.name.assign(1U, static_cast<char16_t>(0xD800U));
+    CHECK_FALSE((source >> data));
+
+    SomeipWideDefault malformed_target;
+    const vlink::Bytes wrong_bom{0x00, 0x00, 0x00, 0x06, 0xFF, 0xFE, 0x00, 0x41, 0x00, 0x00};
+    CHECK_FALSE((malformed_target << wrong_bom));
+
+    const vlink::Bytes odd_length{0x00, 0x00, 0x00, 0x07, 0xFE, 0xFF, 0x00, 0x41, 0x00, 0x00, 0xAA};
+    REQUIRE((malformed_target << odd_length));
+    CHECK(malformed_target.name == u"A");
+
+    const vlink::Bytes odd_without_terminator{0x00, 0x00, 0x00, 0x05, 0xFE, 0xFF, 0x41, 0x00, 0x00};
+    CHECK_FALSE((malformed_target << odd_without_terminator));
+
+    const vlink::Bytes no_terminator{0x00, 0x00, 0x00, 0x06, 0xFE, 0xFF, 0x00, 0x41, 0x00, 0x41};
+    CHECK_FALSE((malformed_target << no_terminator));
+  }
+
+  TEST_CASE("serializes union alternatives with selector values") {
+    SomeipUnionMessage source;
+    source.choice = static_cast<uint16_t>(0x1234U);
+    source.tail = 0x7FU;
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+    CHECK(source.get_serialized_size() == data.size());
+
+    const std::array<uint8_t, 9> value_wire = {0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x12, 0x34, 0x7F};
+    REQUIRE(data.size() == value_wire.size());
+    CHECK(std::memcmp(data.data(), value_wire.data(), value_wire.size()) == 0);
+
+    source.choice = std::string("a");
+    REQUIRE((source >> data));
+
+    const std::array<uint8_t, 16> string_wire = {0x00, 0x00, 0x00, 0x09, 0x00, 0x02, 0x00, 0x00,
+                                                 0x00, 0x05, 0xEF, 0xBB, 0xBF, 'a',  0x00, 0x7F};
+    REQUIRE(data.size() == string_wire.size());
+    CHECK(std::memcmp(data.data(), string_wire.data(), string_wire.size()) == 0);
+
+    SomeipUnionMessage target;
+    REQUIRE((target << data));
+    CHECK(target.choice == source.choice);
+    CHECK(target.tail == source.tail);
+
+    const vlink::Bytes unknown_selector{0x00, 0x00, 0x00, 0x02, 0x00, 0x03, 0x12, 0x34, 0x7F};
+    CHECK_FALSE((target << unknown_selector));
+
+    const vlink::Bytes null_selector{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7F};
+    CHECK_FALSE((target << null_selector));
+
+    const vlink::Bytes padded{0x00, 0x00, 0x00, 0x03, 0x00, 0x01, 0x12, 0x34, 0x00, 0x7F};
+    REQUIRE((target << padded));
+    REQUIRE(std::holds_alternative<uint16_t>(target.choice));
+    CHECK(std::get<uint16_t>(target.choice) == 0x1234U);
+    CHECK(target.tail == 0x7FU);
+  }
+
+  TEST_CASE("encodes plain unions without monostate from selector one") {
+    SomeipPlainUnion source;
+    source.value = static_cast<uint8_t>(0x05U);
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    const std::array<uint8_t, 9> first_wire = {0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x05};
+    REQUIRE(data.size() == first_wire.size());
+    CHECK(std::memcmp(data.data(), first_wire.data(), first_wire.size()) == 0);
+
+    source.value = 0xAABBCCDDU;
+    REQUIRE((source >> data));
+
+    const std::array<uint8_t, 12> second_wire = {0x00, 0x00, 0x00, 0x04, 0x00, 0x00,
+                                                 0x00, 0x02, 0xAA, 0xBB, 0xCC, 0xDD};
+    REQUIRE(data.size() == second_wire.size());
+    CHECK(std::memcmp(data.data(), second_wire.data(), second_wire.size()) == 0);
+
+    SomeipPlainUnion target;
+    REQUIRE((target << data));
+    CHECK(target.value == source.value);
+
+    const vlink::Bytes null_selector{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    CHECK_FALSE((target << null_selector));
+  }
+
+  TEST_CASE("includes union element padding in its length") {
+    SomeipAlignedUnion source;
+    source.value = static_cast<uint16_t>(0x1234U);
+    source.suffix = 0x7FU;
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    const std::array<uint8_t, 13> expected = {0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00,
+                                              0x01, 0x12, 0x34, 0x00, 0x00, 0x7F};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    SomeipAlignedUnion target;
+    REQUIRE((target << data));
+    CHECK(target.value == source.value);
+    CHECK(target.suffix == source.suffix);
+  }
+
+  TEST_CASE("supports an explicit null union alternative") {
+    SomeipNullableUnion source;
+    source.suffix = 0x7FU;
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    const std::array<uint8_t, 5> null_expected = {0x00, 0x00, 0x00, 0x00, 0x7F};
+    REQUIRE(data.size() == null_expected.size());
+    CHECK(std::memcmp(data.data(), null_expected.data(), null_expected.size()) == 0);
+
+    SomeipNullableUnion target;
+    target.value = uint16_t{0x1234U};
+    REQUIRE((target << data));
+    CHECK(std::holds_alternative<std::monostate>(target.value));
+    CHECK(target.suffix == source.suffix);
+
+    source.value = uint16_t{0x1234U};
+    REQUIRE((source >> data));
+    const std::array<uint8_t, 9> value_expected = {0x00, 0x05, 0x01, 0x12, 0x34, 0x00, 0x00, 0x00, 0x7F};
+    REQUIRE(data.size() == value_expected.size());
+    CHECK(std::memcmp(data.data(), value_expected.data(), value_expected.size()) == 0);
+    REQUIRE((target << data));
+    CHECK(std::get<uint16_t>(target.value) == 0x1234U);
+
+    const vlink::Bytes null_with_payload{0x00, 0x01, 0x00, 0x00, 0x7F};
+    CHECK_FALSE((target << null_with_payload));
+  }
+
+  TEST_CASE("supports equal-size union alternatives without a length field") {
+    SomeipUnframedUnion source;
+    source.value = uint16_t{0x1234U};
+    source.suffix = 0x7FU;
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+    const std::array<uint8_t, 4> expected = {0x01, 0x12, 0x34, 0x7F};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    SomeipUnframedUnion target;
+    REQUIRE((target << data));
+    CHECK(std::get<uint16_t>(target.value) == 0x1234U);
+    CHECK(target.suffix == source.suffix);
+  }
+
+  TEST_CASE("serializes fixed UTF-8 and UTF-16 strings") {
+    SomeipFixedStrings source;
+    source.name = "A";
+    source.title = u"A";
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    const std::array<uint8_t, 17> expected = {0xEF, 0xBB, 0xBF, 0x41, 0x00, 0x00, 0x00, 0x00, 0x08,
+                                              0xFF, 0xFE, 0x41, 0x00, 0x00, 0x00, 0x00, 0x00};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    SomeipFixedStrings target;
+    REQUIRE((target << data));
+    CHECK(target.name == source.name);
+    CHECK(target.title == source.title);
+
+    source.name = "ABCDE";
+    CHECK_FALSE((source >> data));
+
+    const vlink::Bytes short_compatible{0xEF, 0xBB, 0xBF, 0x41, 0x00, 0x00, 0x00, 0x00,
+                                        0x06, 0xFF, 0xFE, 0x41, 0x00, 0x00, 0x00};
+    REQUIRE((target << short_compatible));
+    CHECK(target.name == "A");
+    CHECK(target.title == u"A");
+
+    const vlink::Bytes truncated{0xEF, 0xBB, 0xBF, 0x41, 0x00};
+    CHECK_FALSE((target << truncated));
+  }
+
+  TEST_CASE("serializes dynamic and static TLV fixed strings") {
+    SomeipTlvFixedStrings source;
+    source.name = "A";
+    source.title = u"B";
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    const std::array<uint8_t, 23> expected = {
+        0x16, 0x50, 0x01, 0x08, 0xEF, 0xBB, 0xBF, 0x41, 0x00, 0x00, 0x00, 0x00,
+        0x40, 0x02, 0x08, 0xFE, 0xFF, 0x00, 0x42, 0x00, 0x00, 0x00, 0x00,
+    };
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    SomeipTlvFixedStrings target;
+    REQUIRE((target << data));
+    CHECK(target.name == source.name);
+    CHECK(target.title == source.title);
+
+    const vlink::Bytes overlong{0x0C, 0x40, 0x02, 0x09, 0xFE, 0xFF, 0x00, 0x42, 0x00, 0x00, 0x00, 0x00, 0xAA};
+    CHECK_FALSE((target << overlong));
+
+    source.name.reset();
+    REQUIRE((source >> data));
+    const std::array<uint8_t, 12> absent = {0x0B, 0x40, 0x02, 0x08, 0xFE, 0xFF, 0x00, 0x42, 0x00, 0x00, 0x00, 0x00};
+    REQUIRE(data.size() == absent.size());
+    CHECK(std::memcmp(data.data(), absent.data(), absent.size()) == 0);
+    REQUIRE((target << data));
+    CHECK_FALSE(target.name.has_value());
+
+    source.title = u"ABC";
+    CHECK_FALSE((source >> data));
+  }
+
+  TEST_CASE("serializes tlv members with tags and optional omission") {
+    SomeipTlvMessage source;
+    source.id = 0x0102U;
+    source.label = "a";
+    source.data = {0xAAU, 0xBBU};
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+    CHECK(source.get_serialized_size() == data.size());
+
+    const std::array<uint8_t, 19> expected = {0x00, 0x11, 0x10, 0x01, 0x01, 0x02, 0x50, 0x02, 0x05, 0xEF,
+                                              0xBB, 0xBF, 'a',  0x00, 0x50, 0x03, 0x02, 0xAA, 0xBB};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    source.label.reset();
+    REQUIRE((source >> data));
+    CHECK(source.get_serialized_size() == data.size());
+
+    const std::array<uint8_t, 11> omitted = {0x00, 0x09, 0x10, 0x01, 0x01, 0x02, 0x50, 0x03, 0x02, 0xAA, 0xBB};
+    REQUIRE(data.size() == omitted.size());
+    CHECK(std::memcmp(data.data(), omitted.data(), omitted.size()) == 0);
+
+    SomeipTlvMessage target;
+    target.label = "stale";
+    REQUIRE((target << data));
+    CHECK(target.id == source.id);
+    CHECK_FALSE(target.label.has_value());
+    CHECK(target.data == source.data);
+
+    source.label = "ab";
+    CHECK_FALSE((source >> data));
+    source.label.reset();
+    source.data.push_back(0xCCU);
+    CHECK_FALSE((source >> data));
+
+    const vlink::Bytes oversized_data{0x00, 0x0A, 0x10, 0x01, 0x01, 0x02, 0x50, 0x03, 0x03, 0xAA, 0xBB, 0xCC};
+    REQUIRE((target << oversized_data));
+    CHECK((target.data == std::vector<uint8_t>{0xAAU, 0xBBU}));
+
+    const vlink::Bytes oversized_label{0x00, 0x12, 0x10, 0x01, 0x01, 0x02, 0x50, 0x02, 0x06, 0xEF,
+                                       0xBB, 0xBF, 'a',  'b',  0x00, 0x50, 0x03, 0x02, 0xAA, 0xBB};
+    CHECK_FALSE((target << oversized_label));
+  }
+
+  TEST_CASE("skips unknown tlv members and validates required ones") {
+    SomeipTlvMessage target;
+
+    const vlink::Bytes with_unknown{0x00, 0x11, 0x10, 0x01, 0x01, 0x02, 0x50, 0x07, 0x02, 0xDE,
+                                    0xAD, 0x00, 0x08, 0x55, 0x50, 0x03, 0x02, 0xAA, 0xBB};
+    REQUIRE((target << with_unknown));
+    CHECK(target.id == 0x0102U);
+    CHECK_FALSE(target.label.has_value());
+    CHECK((target.data == std::vector<uint8_t>{0xAAU, 0xBBU}));
+
+    const vlink::Bytes known_wire_four{0x00, 0x0A, 0x10, 0x01, 0x01, 0x02, 0x40, 0x03, 0x00, 0x02, 0xCC, 0xDD};
+    REQUIRE((target << known_wire_four));
+    CHECK((target.data == std::vector<uint8_t>{0xCCU, 0xDDU}));
+
+    const vlink::Bytes unknown_wire_four{0x00, 0x0F, 0x10, 0x01, 0x01, 0x02, 0x40, 0x09, 0x00,
+                                         0x02, 0xAA, 0xBB, 0x50, 0x03, 0x02, 0xAA, 0xBB};
+    REQUIRE((target << unknown_wire_four));
+    CHECK(target.id == 0x0102U);
+    CHECK((target.data == std::vector<uint8_t>{0xAAU, 0xBBU}));
+
+    const vlink::Bytes unknown_wire_four_at_edges{0x00, 0x15, 0x40, 0x09, 0x00, 0x02, 0xAA, 0xBB,
+                                                  0x10, 0x01, 0x01, 0x02, 0x50, 0x03, 0x02, 0xCC,
+                                                  0xDD, 0x40, 0x0A, 0x00, 0x02, 0xEE, 0xFF};
+    REQUIRE((target << unknown_wire_four_at_edges));
+    CHECK(target.id == 0x0102U);
+    CHECK((target.data == std::vector<uint8_t>{0xCCU, 0xDDU}));
+
+    const vlink::Bytes missing_required{0x00, 0x05, 0x50, 0x03, 0x02, 0xAA, 0xBB};
+    CHECK_FALSE((target << missing_required));
+
+    const vlink::Bytes duplicate_member{0x00, 0x0D, 0x10, 0x01, 0x01, 0x02, 0x10, 0x01,
+                                        0x0A, 0x0B, 0x50, 0x03, 0x02, 0xAA, 0xBB};
+    CHECK_FALSE((target << duplicate_member));
+
+    const vlink::Bytes duplicate_optional{0x00, 0x19, 0x10, 0x01, 0x01, 0x02, 0x50, 0x02, 0x05,
+                                          0xEF, 0xBB, 0xBF, 'a',  0x00, 0x50, 0x02, 0x05, 0xEF,
+                                          0xBB, 0xBF, 'b',  0x00, 0x50, 0x03, 0x02, 0xAA, 0xBB};
+    CHECK_FALSE((target << duplicate_optional));
+
+    const vlink::Bytes wrong_wire_type{0x00, 0x08, 0x00, 0x01, 0x01, 0x50, 0x03, 0x02, 0xAA, 0xBB};
+    CHECK_FALSE((target << wrong_wire_type));
+  }
+
+  TEST_CASE("round trips nested tlv structures") {
+    SomeipTlvNested source;
+    source.child.emplace();
+    source.child->code = 0x5AU;
+    source.tail = 0x7FU;
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+    CHECK(source.get_serialized_size() == data.size());
+
+    const std::array<uint8_t, 10> expected = {0x09, 0x50, 0x01, 0x03, 0x00, 0x01, 0x5A, 0x00, 0x02, 0x7F};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    SomeipTlvNested target;
+    REQUIRE((target << data));
+    REQUIRE(target.child.has_value());
+    CHECK(target.child->code == source.child->code);
+    CHECK(target.tail == source.tail);
+
+    const vlink::Bytes without_child{0x03, 0x00, 0x02, 0x7F};
+    REQUIRE((target << without_child));
+    CHECK_FALSE(target.child.has_value());
+    CHECK(target.tail == 0x7FU);
+
+    SomeipTlvChild top_level;
+    top_level.code = 0x5AU;
+
+    vlink::Bytes child_data;
+    REQUIRE((top_level >> child_data));
+
+    const std::array<uint8_t, 4> child_wire = {0x03, 0x00, 0x01, 0x5A};
+    REQUIRE(child_data.size() == child_wire.size());
+    CHECK(std::memcmp(child_data.data(), child_wire.data(), child_wire.size()) == 0);
+
+    const vlink::Bytes reserved_tag{0x03, 0x80, 0x01, 0x5A};
+    CHECK_FALSE((top_level << reserved_tag));
+  }
+
+  TEST_CASE("selects dynamic tlv length widths from the encoded body size") {
+    SomeipTlvLengthMode source;
+    source.data.resize(255U, 0xAAU);
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+    CHECK(data.data()[4] == 0x50U);
+    CHECK(data.data()[6] == 0xFFU);
+
+    source.data.resize(256U, 0xBBU);
+    REQUIRE((source >> data));
+    CHECK(data.data()[4] == 0x60U);
+    CHECK(data.data()[6] == 0x01U);
+    CHECK(data.data()[7] == 0x00U);
+
+    source.data.resize(65535U, 0xCCU);
+    REQUIRE((source >> data));
+    CHECK(data.data()[4] == 0x60U);
+    CHECK(data.data()[6] == 0xFFU);
+    CHECK(data.data()[7] == 0xFFU);
+
+    source.data.resize(65536U, 0xDDU);
+    REQUIRE((source >> data));
+    CHECK(data.data()[4] == 0x70U);
+    CHECK(data.data()[6] == 0x00U);
+    CHECK(data.data()[7] == 0x01U);
+    CHECK(data.data()[8] == 0x00U);
+    CHECK(data.data()[9] == 0x00U);
+
+    SomeipTlvLengthMode target;
+    REQUIRE((target << data));
+    CHECK(target.data == source.data);
+  }
+
+  TEST_CASE("emits wire type four for static tlv lengths") {
+    SomeipTlvStaticLength source;
+    source.data = {0xAAU, 0xBBU};
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    const std::array<uint8_t, 8> expected = {0x00, 0x06, 0x40, 0x01, 0x00, 0x02, 0xAA, 0xBB};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    SomeipTlvStaticLength target;
+    REQUIRE((target << data));
+    CHECK(target.data == source.data);
+  }
+
+  TEST_CASE("uses default widths for bare tlv fields") {
+    SomeipTlvDefaults source;
+    source.id = 0x0102U;
+    source.data = {0xAAU, 0xBBU};
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    const std::array<uint8_t, 13> expected = {0x00, 0x00, 0x00, 0x09, 0x10, 0x01, 0x01,
+                                              0x02, 0x50, 0x02, 0x02, 0xAA, 0xBB};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    SomeipTlvDefaults target;
+    REQUIRE((target << data));
+    CHECK(target.id == source.id);
+    CHECK(target.data == source.data);
+  }
+
+  TEST_CASE("inherits tlv length width in multidimensional arrays") {
+    SomeipTlvMatrix source;
+    source.values = {{0xAAU}, {0xBBU, 0xCCU}};
+
+    vlink::Bytes data;
+    REQUIRE((source >> data));
+
+    const std::array<uint8_t, 9> expected = {0x08, 0x50, 0x01, 0x05, 0x01, 0xAA, 0x02, 0xBB, 0xCC};
+    REQUIRE(data.size() == expected.size());
+    CHECK(std::memcmp(data.data(), expected.data(), expected.size()) == 0);
+
+    SomeipTlvMatrix target;
+    REQUIRE((target << data));
+    CHECK(target.values == source.values);
+    CHECK_FALSE(target.extra.has_value());
+
+    source.extra = std::vector<std::vector<uint8_t>>{{0xDDU}};
+    REQUIRE((source >> data));
+    REQUIRE((target << data));
+    CHECK(target.extra == source.extra);
   }
 }
 

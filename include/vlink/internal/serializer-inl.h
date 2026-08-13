@@ -83,8 +83,6 @@
 #include <flatbuffers/flatbuffers.h>
 #endif
 
-#include "../impl/someip_serializer.h"
-
 namespace vlink {
 
 namespace Serializer {  // NOLINT(readability-identifier-naming)
@@ -498,7 +496,7 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
     static_assert(Traits::ExpectFalse<T>(), "Not support flat ptr type.");
 #endif
   } else if constexpr (TypeT == kSomeipType) {
-    if VUNLIKELY (!SomeipSerializer::serialize(deref(src), des, offset)) {
+    if VUNLIKELY (!deref(src).serialize(des, offset)) {
       VLOG_T("Serializer: SOME/IP serialize failed.");
       return false;
     }
@@ -753,7 +751,7 @@ inline bool deserialize(const Bytes& src, T& des, [[maybe_unused]] TransportType
     }
 #endif
   } else if constexpr (TypeT == kSomeipType) {
-    if VUNLIKELY (!(deref(des) << src)) {
+    if VUNLIKELY (!deref(des).deserialize(src)) {
       VLOG_T("Serializer: SOME/IP deserialize failed.");
       return false;
     }

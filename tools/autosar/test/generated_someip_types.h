@@ -5,44 +5,87 @@
 
 #include <array>
 #include <cstdint>
+#include <map>
+#include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
+#include <vlink/extension/someip_serializer.h>
 #include <vlink/serializer.h>
 
 namespace vlink::autosar {
 
+// AUTOSAR type: /VLink/ImplementationTypes/GearMode.
 enum class GearMode : uint8_t {
   kPark = 0,
   kDrive = 1,
   kReverse = 2,
 };
 
+// AUTOSAR type: /VLink/ImplementationTypes/Position.
+// SOME/IP structure deployment: 2-byte length field; 1-byte alignment; inherits top-level payload endian.
 struct Position final {
+  // AUTOSAR source: /VLink/ImplementationTypes/Position/x.
   int32_t x{};
+
+  // AUTOSAR source: /VLink/ImplementationTypes/Position/y.
   int32_t y{};
 
   VLINK_SOMEIP_STRUCT_LENGTH(2U)
   VLINK_SOMEIP_FIELDS(x, y)
 };
 
+// AUTOSAR type: /VLink/ImplementationTypes/ObjectList.
 using ObjectList = std::vector<Position>;
 
+// AUTOSAR type: /VLink/ImplementationTypes/PayloadBytes.
 using PayloadBytes = vlink::Bytes;
 
+// AUTOSAR type: /VLink/ImplementationTypes/SampleWindow.
 using SampleWindow = std::array<uint16_t, 4>;
 
+// AUTOSAR type: /VLink/ImplementationTypes/VehicleState.
+// SOME/IP structure deployment: 2-byte length field; 1-byte alignment; little-endian.
 struct VehicleState final {
+  // AUTOSAR source: /VLink/ImplementationTypes/VehicleState/sequence.
   uint32_t sequence{};
+
+  // AUTOSAR source: /VLink/ImplementationTypes/VehicleState/valid.
   bool valid{};
+
+  // AUTOSAR source: /VLink/ImplementationTypes/VehicleState/mode.
   GearMode mode{};
+
+  // AUTOSAR source: /VLink/ImplementationTypes/VehicleState/temperature.
   float temperature{};
+
+  // AUTOSAR source: /VLink/ImplementationTypes/VehicleState/name.
+  // AUTOSAR maximum text size: 7 code points.
+  // SOME/IP deployment: 2-byte length field.
   std::string name{};
+
+  // AUTOSAR source: /VLink/ImplementationTypes/VehicleState/position.
   Position position{};
+
+  // AUTOSAR source: /VLink/ImplementationTypes/VehicleState/samples.
+  // SOME/IP deployment: 0-byte length field.
   SampleWindow samples{};
+
+  // AUTOSAR source: /VLink/ImplementationTypes/VehicleState/objects.
+  // AUTOSAR maximum elements: 2.
+  // SOME/IP deployment: 2-byte length field.
   ObjectList objects{};
+
+  // AUTOSAR source: /VLink/ImplementationTypes/VehicleState/payload.
+  // AUTOSAR maximum elements: 4.
+  // SOME/IP deployment: 1-byte length field.
   PayloadBytes payload{};
+
+  // AUTOSAR source: /VLink/ImplementationTypes/VehicleState/matrix.
   std::array<std::array<uint16_t, 3>, 2> matrix{};
+
+  [[nodiscard]] bool check_available() const noexcept { return objects.size() <= 2U && payload.size() <= 4U; }
 
   VLINK_SOMEIP_ENDIAN_LITTLE
   VLINK_SOMEIP_STRUCT_LENGTH(2U)
@@ -51,14 +94,15 @@ struct VehicleState final {
       valid,
       mode,
       temperature,
-      VLINK_SOMEIP_LENGTH(name, 2U),
+      VLINK_SOMEIP_LENGTH_MAX(name, 2U, 7U),
       position,
       VLINK_SOMEIP_LENGTH(samples, 0U),
-      VLINK_SOMEIP_LENGTH(objects, 2U),
-      VLINK_SOMEIP_LENGTH(payload, 1U),
+      VLINK_SOMEIP_LENGTH_MAX(objects, 2U, 2U),
+      VLINK_SOMEIP_LENGTH_MAX(payload, 1U, 4U),
       matrix
   )
 
+  // AUTOSAR INIT-VALUE source: /VLink/ServiceInterfaces/VehicleStateService/VehicleStateEvent.
   [[nodiscard]] static VehicleState make_default() {
     return VehicleState{
       static_cast<uint32_t>(7U),
@@ -91,6 +135,7 @@ struct VehicleState final {
   }
 };
 
+// AUTOSAR type: /VLink/ApplicationTypes/VehicleStateApplication.
 using VehicleStateApplication = VehicleState;
 
 }  // namespace vlink::autosar

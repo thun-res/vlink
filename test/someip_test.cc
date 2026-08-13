@@ -36,6 +36,7 @@
 #include <thread>
 #include <vector>
 
+#include "./extension/someip_serializer.h"
 #include "./modules/someip_conf.h"
 
 struct SomeipTransportChild {

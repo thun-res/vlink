@@ -462,7 +462,7 @@ VLink 通过 URL 前缀选择传输后端，同一套业务代码可以在不同
 | `kBytesType`         | `Bytes`（轻量字节缓冲，含小对象内联存储）        | 原始字节传递，自定义序列化          |
 | `kDynamicType`       | 动态类型容器                                    | 运行时确定类型的场景                |
 | `kCustomType`        | 实现 `operator>>(Bytes&) const` / `operator<<(const Bytes&)` 的类型 | 自定义序列化协议   |
-| `kSomeipType`        | 使用 `VLINK_SOMEIP_FIELDS(...)` 声明的结构体   | AUTOSAR SOME/IP non-TLV payload      |
+| `kSomeipType`        | 使用 `VLINK_SOMEIP_FIELDS(...)` 声明的结构体   | AUTOSAR SOME/IP payload（可选 TLV）  |
 | `kCdrType`           | FastDDS CDR 消息                                | DDS 原生 CDR 序列化                 |
 | `kProtoType`         | `google::protobuf::MessageLite`                 | Protobuf 编码                       |
 | `kProtoPtrType`      | `MyProto*`（原始指针，Arena 管理）              | Protobuf Arena 减少拷贝             |
@@ -932,7 +932,7 @@ VLink 在 `shm://` 传输上依托 Iceoryx 实现共享内存零拷贝。Iceoryx
 | kFlatTableType | 中（Pack） | 中（UnPack） | 中 | FlatBuffers Object API（需打包/解包） |
 | kFlatPtrType | 低 | 极低（零解码） | 低 | 随机访问场景（Zero-copy view） |
 | kProtoType   | 中       | 中       | 中       | 通用结构化数据              |
-| kSomeipType  | 取决于字段、容器及 UTF-8 校验 | 同左 | 取决于目标容量复用 | 车载服务 payload、跨大小端结构 |
+| kSomeipType  | 取决于字段、容器、字符串校验与 TLV 扫描 | 同左 | 取决于目标容量复用 | 车载服务 payload、跨大小端结构 |
 | kCdrType     | 低       | 低       | 中       | DDS 原生场景               |
 | kCustomType  | 取决于实现 | 取决于实现 | 取决于实现 | 特殊需求                 |
 
@@ -1517,7 +1517,7 @@ vlink-bench run \
 | 同网段多机器分布式通信            | `dds://` / `ddsc://`   | 标准 RTPS 协议，互联互通性强                      | **稳定** |
 | 同机多进程，无 RouDi 依赖         | `shm2://`              | Iceoryx2 无需中心守护进程，部署更简单              | Beta     |
 | 跨 NAT / 云边协同                 | `zenoh://`             | 可经可达的 Zenoh router / 显式 endpoint 连接；VLink 不自动穿透 NAT | Beta     |
-| 车载以太网，AUTOSAR 兼容          | `someip://`            | 符合 AUTOSAR AP 规范，与车载 ECU 互联              | Beta     |
+| 面向 AUTOSAR 的车载以太网集成     | `someip://`            | 基于 vsomeip 的传输适配与 SOME/IP payload 子集     | Beta     |
 
 综合延迟、吞吐、资源消耗、API 复杂度、工具链完整性等维度，对 VLink 与主流竞品的综合能力矩阵如下：
 
