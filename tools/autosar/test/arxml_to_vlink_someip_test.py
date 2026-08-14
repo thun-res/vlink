@@ -480,7 +480,7 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("// Sources: application.arxml, implementation.arxml", result.stdout)
+        self.assertIn(" * Sources: application.arxml, implementation.arxml", result.stdout)
         self.assertIn("struct ImplMessage final {", result.stdout)
         self.assertIn("using AppMessage = ImplMessage;", result.stdout)
         self.assertNotIn("unusedModelField", result.stdout)
@@ -655,6 +655,7 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
             source = directory / "adaptive_generated.cc"
             header.write_text(all_types.stdout, encoding="utf-8")
             source.write_text(
+                "#include <vlink/serializer.h>\n"
                 '#include "adaptive_generated.h"\n'
                 "static_assert(vlink::Serializer::get_type_of<AdaptiveState>() == "
                 "vlink::Serializer::kSomeipType);\n",
@@ -3517,7 +3518,14 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         generated, directory = self.run_tool({"smoke.arxml": arxml})
         self.assertEqual(generated.returncode, 0, generated.stderr)
         self.assertIn("#include <vlink/extension/someip_serializer.h>", generated.stdout)
-        self.assertIn("#include <vlink/serializer.h>", generated.stdout)
+        self.assertNotIn("#include <vlink/serializer.h>", generated.stdout)
+        self.assertNotIn("#include <array>", generated.stdout)
+        self.assertNotIn("#include <cstdint>", generated.stdout)
+        self.assertNotIn("#include <map>", generated.stdout)
+        self.assertNotIn("#include <optional>", generated.stdout)
+        self.assertNotIn("#include <string>", generated.stdout)
+        self.assertNotIn("#include <variant>", generated.stdout)
+        self.assertNotIn("#include <vector>", generated.stdout)
         self.assertNotIn("vlink/impl/someip_serializer.h", generated.stdout)
         self.assertNotIn("vlink/vlink.h", generated.stdout)
 
@@ -3527,6 +3535,8 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
         source.write_text(
             textwrap.dedent(
                 """\
+                #include <vlink/serializer.h>
+
                 #include "generated.h"
 
                 static_assert(vlink::Serializer::get_type_of<SmokeMessage>() ==
@@ -3618,6 +3628,8 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
             "#include <cstring>",
             "#include <string>",
             "#include <vector>",
+            "",
+            "#include <vlink/serializer.h>",
             "",
         ]
         checks: List[str] = []
@@ -3796,6 +3808,8 @@ class ArxmlToVlinkSomeipTest(unittest.TestCase):
                 #include <cstdint>
                 #include <cstring>
                 #include <variant>
+
+                #include <vlink/serializer.h>
 
                 #include "generated_someip_advanced.h"
 
