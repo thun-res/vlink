@@ -610,7 +610,7 @@ TEST_SUITE("ser-someip") {
   TEST_CASE("generated AUTOSAR fixed strings remain wire compatible") {
     vlink::autosar::features::Payload source;
     source.text8 = "A";
-    source.text16 = u"B";
+    source.text16 = std::u16string{u"B"};
 
     vlink::Bytes encoded;
     REQUIRE(Serializer::serialize(source, encoded));
@@ -629,9 +629,9 @@ TEST_SUITE("ser-someip") {
     source.text8 = "ABCDE";
     CHECK_FALSE(Serializer::serialize(source, encoded));
     source.text8 = "A";
-    source.text16 = u"ABC";
+    source.text16 = std::u16string{u"ABC"};
     REQUIRE(Serializer::serialize(source, encoded));
-    source.text16.push_back(u'D');
+    source.text16 = std::u16string{u"ABCD"};
     CHECK_FALSE(Serializer::serialize(source, encoded));
 
     const vlink::Bytes oversized{0x0B, 0xEF, 0xBB, 0xBF, 'A',  'B',  'C',  'D',  'E',  0x00, 0x00, 0x00,
@@ -642,7 +642,7 @@ TEST_SUITE("ser-someip") {
   TEST_CASE("generated AUTOSAR TLV fixed strings remain wire compatible") {
     vlink::autosar::features::TlvPayload source;
     source.text8 = "A";
-    source.text16 = u"B";
+    source.text16 = std::u16string{u"B"};
 
     vlink::Bytes encoded;
     REQUIRE(Serializer::serialize(source, encoded));
@@ -1274,7 +1274,7 @@ TEST_SUITE("ser-someip") {
     CHECK(utf8_target.value == "A");
 
     SomeipWideDefault utf16_source;
-    utf16_source.name = u"\uFEFFA";
+    utf16_source.name = std::u16string{u"\uFEFFA"};
 
     vlink::Bytes utf16_data;
     REQUIRE((utf16_source >> utf16_data));
@@ -1572,8 +1572,8 @@ TEST_SUITE("ser-someip") {
 
   TEST_CASE("serializes utf16 strings in both byte orders") {
     SomeipWideText source;
-    source.name = u"AB";
-    source.label = u"€";
+    source.name = std::u16string{u"AB"};
+    source.label = std::u16string{u"€"};
 
     vlink::Bytes data;
     REQUIRE((source >> data));
@@ -1589,16 +1589,19 @@ TEST_SUITE("ser-someip") {
     CHECK(target.name == source.name);
     CHECK(target.label == source.label);
 
-    source.name = u"\U0001D11E";
-    source.name.push_back(u'A');
+    source.name = std::u16string{
+        u"\U0001D11E"
+        u"A"};
     REQUIRE((source >> data));
-    source.name.push_back(u'B');
+    source.name = std::u16string{
+        u"\U0001D11E"
+        u"AB"};
     CHECK_FALSE((source >> data));
   }
 
   TEST_CASE("round trips utf16 surrogate pairs and rejects malformed input") {
     SomeipWideDefault source;
-    source.name = u"\U0001d11e";
+    source.name = std::u16string{u"\U0001d11e"};
 
     vlink::Bytes data;
     REQUIRE((source >> data));
@@ -1607,7 +1610,7 @@ TEST_SUITE("ser-someip") {
     REQUIRE((target << data));
     CHECK(target.name == source.name);
 
-    source.name.assign(1U, static_cast<char16_t>(0xD800U));
+    source.name = std::u16string(1U, static_cast<char16_t>(0xD800U));
     CHECK_FALSE((source >> data));
 
     SomeipWideDefault malformed_target;
@@ -1759,7 +1762,7 @@ TEST_SUITE("ser-someip") {
   TEST_CASE("serializes fixed UTF-8 and UTF-16 strings") {
     SomeipFixedStrings source;
     source.name = "A";
-    source.title = u"A";
+    source.title = std::u16string{u"A"};
 
     vlink::Bytes data;
     REQUIRE((source >> data));
@@ -1790,7 +1793,7 @@ TEST_SUITE("ser-someip") {
   TEST_CASE("serializes dynamic and static TLV fixed strings") {
     SomeipTlvFixedStrings source;
     source.name = "A";
-    source.title = u"B";
+    source.title = std::u16string{u"B"};
 
     vlink::Bytes data;
     REQUIRE((source >> data));
@@ -1818,7 +1821,7 @@ TEST_SUITE("ser-someip") {
     REQUIRE((target << data));
     CHECK_FALSE(target.name.has_value());
 
-    source.title = u"ABC";
+    source.title = std::u16string{u"ABC"};
     CHECK_FALSE((source >> data));
   }
 

@@ -769,7 +769,7 @@ bool read_value_body(Reader& reader, std::u16string& value, size_t end, Endian e
   const size_t length = end - reader.position();
   const size_t encoded_length = length & ~size_t{1U};
 
-  if VUNLIKELY (encoded_length < kUtf16UnitSize * 2U) {
+  if VUNLIKELY (encoded_length < kUtf16UnitSize * 2U || encoded_length > kMaxPayloadSize) {
     return false;
   }
 
@@ -818,6 +818,7 @@ bool read_value_body(Reader& reader, std::u16string& value, size_t end, Endian e
     }
   }
 
+  value.clear();
   value.resize(unit_count);
 
   for (size_t index = 0U; index < unit_count; ++index) {
