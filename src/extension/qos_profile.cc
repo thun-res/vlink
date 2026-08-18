@@ -51,7 +51,7 @@ struct GlobalQosProfile final {
     available_qos_map.emplace(QosProfile::kPoor.name, QosProfile::kPoor);
     available_qos_map.emplace(QosProfile::kBetter.name, QosProfile::kBetter);
     available_qos_map.emplace(QosProfile::kBest.name, QosProfile::kBest);
-    available_qos_map.emplace(QosProfile::kLarge.name, QosProfile::kLarge);
+    available_qos_map.emplace(QosProfile::kStream.name, QosProfile::kStream);
     available_qos_map.emplace(QosProfile::kAlarm.name, QosProfile::kAlarm);
     available_qos_map.emplace(QosProfile::kCommand.name, QosProfile::kCommand);
     available_qos_map.emplace(QosProfile::kLog.name, QosProfile::kLog);

@@ -48,7 +48,7 @@ auto pub = vlink::Publisher<MyMsg>::create_unique("dds://lidar/points?qos=sensor
 | 高频传感器流（雷达/相机/IMU） | `kSensor` | BestEffort | KeepLast(10) | Volatile | ASync |
 | 执行器/控制指令 | `kCommand` | Reliable | KeepLast(1) | Volatile | Sync |
 | 安全报警/故障事件 | `kAlarm` | Reliable | KeepAll | TransientLocal | Sync |
-| 大负载传输（点云/地图） | `kLarge` | Reliable | KeepLast(500) | Volatile | Sync |
+| 大负载连续流（点云/地图） | `kStream` | Reliable | KeepLast(100) | Volatile | Sync |
 | 配置参数 | `kParameter` | Reliable | KeepLast(500) | TransientLocal | Sync |
 | 服务注册与发现 | `kService` | Reliable | KeepLast(10) | TransientLocal | Sync |
 | 静态数据（标定/地图） | `kStatic` | Reliable | KeepAll | TransientLocal | Sync |
@@ -56,7 +56,9 @@ auto pub = vlink::Publisher<MyMsg>::create_unique("dds://lidar/points?qos=sensor
 | 日志/事件流 | `kLog` | Reliable | KeepLast(100) | Volatile | ASync |
 | 轻量高频小消息 | `kLight` | Reliable | KeepLast(1) | Volatile | ASync |
 | 高吞吐尽力传输 | `kPoor` / `kBetter` | BestEffort | KeepLast(5/50) | Volatile | ASync/Sync |
-| 高吞吐可靠传输 | `kBest` | Reliable | KeepLast(200) | Volatile | Sync |
+| 高吞吐可靠传输（相对 `kEvent`：面向持续流，积压略深） | `kBest` | Reliable | KeepLast(10) | Volatile | Sync |
+
+`kPoor` / `kBetter` / `kBest` 的命名递进指的是**投递保证**（尽力 → 尽力加深缓冲 → 可靠重传），不是历史深度：可靠档刻意保持浅缓冲，因为链路饱和时过深的写者历史只会不断重传消费端已追不上的样本，延迟与投递率双输；需要更深积压且消费端仍能排空时用 `kStream`。
 
 各 profile 的逐项策略（含 Liveliness 租约、Deadline、Lifespan 与优先级，部分以 `is_express` 直发）以源码 `include/vlink/extension/qos_profile.h` 中各 profile 的完整 Doxygen 注释为权威；QoS 速查另见 [参考](14-reference.md#-146-qos-配置)。
 

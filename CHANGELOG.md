@@ -12,6 +12,7 @@
 
 ### 改进
 
+- **QoS 预设调整**：`kLarge` 更名为 `kStream`（URL 名 `stream`），history 由 KeepLast(500) 调整为 KeepLast(100)；`kBest` 的 history 由 KeepLast(200) 调整为 KeepLast(10)，避免饱和链路上过深的写者历史持续重传消费端已追不上的样本。
 - **日志后端配置**：CMake `ENABLE_LOG_BACKEND` / Conan `enable_log_backend` 取代原后端选择项；Android/QNX CMake 与 Android.bp 默认使用平台日志，其余构建默认启用自研后端；移除 spdlog、Quill、DLT 及其开关和依赖。
 - **日志后端迁移**：原 CMake `SELECT_LOG_BACKEND` / Conan `select_log_backend` 已删除；改用 `LoggerBackend` 时设置新开关为 `ON`，在 Android、QNX、Linux 上改用平台日志时设置为 `OFF`；旧 `VLINK_ENABLE_LOG_{SPD,QUI,DLT,NAT}` 特性宏不再提供。
 - **日志插件与热路径**：`LoggerPluginInterface` 新增 `flush()`，钩子改为 `noexcept`，修复初始化递归与卸载排空；日志宏通过运行期级别过滤后才求值参数。现有插件需适配并重新编译。

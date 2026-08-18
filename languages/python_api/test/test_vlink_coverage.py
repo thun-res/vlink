@@ -581,7 +581,7 @@ def test_status_helpers():
 
 def test_qos_profile_constants():
     for name in ("Event", "Method", "Field", "Sensor", "Parameter", "Service",
-                 "Clock", "Static", "Light", "Poor", "Better", "Best", "Large",
+                 "Clock", "Static", "Light", "Poor", "Better", "Best", "Stream",
                  "Alarm", "Command", "Log"):
         assert hasattr(_vlink.QosProfile, name)
         qos = getattr(_vlink.QosProfile, name)
@@ -592,7 +592,7 @@ def test_qos_profile_constants():
     # The runtime lookup map must expose every preset by its string name.
     qos_map = _vlink.QosProfile.get_available_qos_map()
     for key in ("event", "method", "field", "sensor", "parameter", "service",
-                "clock", "static", "light", "poor", "better", "best", "large",
+                "clock", "static", "light", "poor", "better", "best", "stream",
                 "alarm", "command", "log"):
         assert key in qos_map, f"missing preset: {key}"
     assert len(qos_map) >= 16

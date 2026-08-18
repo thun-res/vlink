@@ -49,8 +49,8 @@
  * | @c kLight      | Reliable         | KeepLast(1)    | Volatile        | ASync       | High       |
  * | @c kPoor       | BestEffort       | KeepLast(5)    | Volatile        | ASync       | Background |
  * | @c kBetter     | BestEffort       | KeepLast(50)   | Volatile        | Sync        | RealTime   |
- * | @c kBest       | Reliable         | KeepLast(200)  | Volatile        | Sync        | RealTime   |
- * | @c kLarge      | Reliable (HB500) | KeepLast(500)  | Volatile        | Sync        | Low        |
+ * | @c kBest       | Reliable         | KeepLast(10)   | Volatile        | Sync        | RealTime   |
+ * | @c kStream     | Reliable (HB500) | KeepLast(100)  | Volatile        | Sync        | Low        |
  * | @c kAlarm      | Reliable         | KeepAll        | TransientLocal  | Sync        | RealTime*  |
  * | @c kCommand    | Reliable         | KeepLast(1)    | Volatile        | Sync        | RealTime   |
  * | @c kLog        | Reliable         | KeepLast(100)  | Volatile        | ASync       | Background |
@@ -61,7 +61,7 @@
  * @c kSensor = high-rate sensors, @c kParameter = slow config, @c kService = discovery,
  * @c kClock = time sync, @c kStatic = maps / calibration, @c kLight = small frequent traffic,
  * @c kPoor = low-priority telemetry, @c kBetter = best-effort throughput,
- * @c kBest = reliable throughput, @c kLarge = large payload (heartbeat 500 ms),
+ * @c kBest = reliable throughput, @c kStream = continuous large-payload streams (heartbeat 500 ms),
  * @c kAlarm = safety-critical alarms, @c kCommand = actuator commands, @c kLog = log streams.
  *
  * @par Looking profiles up by name
@@ -390,18 +390,25 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
 };
 
 /**
- * @brief Reliable, KeepLast(200), Volatile, Sync, RealTime priority.
+ * @brief Reliable, KeepLast(10), Volatile, Sync, RealTime priority.
  *
- * @details Designed for high-throughput reliable streams that require predictable
- * latency, pairing reliability with synchronous publishing and a deep buffer.  A 1000 ms
- * liveliness lease guards the writer and Lifespan is infinite (-1); no Deadline is imposed
- * so the profile suits variable-rate throughput.
+ * @details Designed for continuous high-throughput reliable traffic that requires
+ * predictable latency, pairing reliability with synchronous publishing and a shallow
+ * buffer that bounds queue build-up: on a saturated link a deep writer history keeps
+ * retransmitting samples the reader can no longer catch up with, which costs both latency
+ * and delivery.  A 1000 ms liveliness lease guards the writer and Lifespan is infinite
+ * (-1); no Deadline is imposed so the profile suits variable-rate throughput.  It differs
+ * from @c kEvent only in backlog depth: prefer @c kEvent for aperiodic control events
+ * where a five-sample backlog is enough, and this profile for sustained streams that
+ * benefit from a slightly deeper one.  Switching to @c kStream also lowers the dispatch
+ * priority and changes the heartbeat and liveliness leases -- it is a different profile,
+ * not a deeper variant of this one.
  */
 [[maybe_unused]] static inline constexpr Qos kBest{
     "best",
     true,
     Qos::Reliability{Qos::Reliability::kReliable},
-    Qos::History{Qos::History::kKeepLast, 200},
+    Qos::History{Qos::History::kKeepLast, 10},
     Qos::Durability{Qos::Durability::kVolatile},
     Qos::PublishMode{Qos::PublishMode::kSync},
     Qos::Liveliness{Qos::Liveliness::kAutomatic, 1000},
@@ -415,19 +422,23 @@ namespace QosProfile {  // NOLINT(readability-identifier-naming)
 };
 
 /**
- * @brief Reliable, KeepLast(500), Volatile, Sync, Low priority with a shorter 500 ms heartbeat.
+ * @brief Reliable, KeepLast(100), Volatile, Sync, Low priority with a shorter 500 ms heartbeat.
  *
- * @details Designed for large payload transfers (maps, point clouds, images) where a
- * large buffer and a tighter 500 ms heartbeat (vs the 3000 ms default) trigger faster
- * NACK-driven recovery of lost fragments over slower transport pipelines.
- * A 3000 ms liveliness lease suits the slower cadence and Lifespan is infinite (-1); no
- * Deadline is imposed because large transfers are not periodic.
+ * @details Designed for continuous large-payload streams (maps, point clouds, images)
+ * carried at low dispatch priority, where a tighter 500 ms heartbeat (vs the 3000 ms
+ * default) triggers faster NACK-driven recovery of lost fragments over slower transport
+ * pipelines.  A 3000 ms liveliness lease suits the slower cadence and Lifespan is
+ * infinite (-1); no Deadline is imposed because such streams are not necessarily
+ * periodic.  The hundred-sample backlog only helps while the consumer can still drain
+ * it; on a saturated link it degenerates into retransmitting samples the reader has
+ * already fallen behind on, so prefer @c kBest (shallow backlog, real-time dispatch)
+ * whenever the producer can outrun the consumer.
  */
-[[maybe_unused]] static inline constexpr Qos kLarge{
-    "large",
+[[maybe_unused]] static inline constexpr Qos kStream{
+    "stream",
     true,
     Qos::Reliability{Qos::Reliability::kReliable, 100, 500},
-    Qos::History{Qos::History::kKeepLast, 500},
+    Qos::History{Qos::History::kKeepLast, 100},
     Qos::Durability{Qos::Durability::kVolatile},
     Qos::PublishMode{Qos::PublishMode::kSync},
     Qos::Liveliness{Qos::Liveliness::kAutomatic, 3000},

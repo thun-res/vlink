@@ -4462,7 +4462,7 @@ NB_MODULE(_vlink_nanobind, m) {
   qos_profile.attr("Poor") = vlink::QosProfile::kPoor;
   qos_profile.attr("Better") = vlink::QosProfile::kBetter;
   qos_profile.attr("Best") = vlink::QosProfile::kBest;
-  qos_profile.attr("Large") = vlink::QosProfile::kLarge;
+  qos_profile.attr("Stream") = vlink::QosProfile::kStream;
   qos_profile.attr("Alarm") = vlink::QosProfile::kAlarm;
   qos_profile.attr("Command") = vlink::QosProfile::kCommand;
   qos_profile.attr("Log") = vlink::QosProfile::kLog;

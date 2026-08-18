@@ -7,7 +7,7 @@ typeset -ga _vlink_bench_modes=(local-direct direct local-loop local loop proces
 typeset -ga _vlink_bench_topologies=(1:1 1x1 one-to-one 1:n 1xn fanout one-to-many n:1 nx1 many-to-one n:n nxn many-to-many)
 typeset -ga _vlink_bench_patterns=(max unlimited fixed rate burst)
 typeset -ga _vlink_bench_payloads=(bytes raw string text rawdata zerocopy)
-typeset -ga _vlink_bench_qos_profiles=(default event method field sensor parameter service clock static light poor better best large)
+typeset -ga _vlink_bench_qos_profiles=(default event method field sensor parameter service clock static light poor better best stream)
 typeset -ga _vlink_bench_reports=(html terminal term tty csv json both)
 
 _vlink-bench_suites() {
@@ -201,7 +201,7 @@ _vlink-bench_pub() {
 
     _arguments -s \
         '(-k --payload)'{-k,--payload}'=[Payload kind]:payload:(bytes raw string text rawdata zerocopy)' \
-        '(-q --qos)'{-q,--qos}'=[QoS profile]:qos:(default event method field sensor parameter service clock static light poor better best large)' \
+        '(-q --qos)'{-q,--qos}'=[QoS profile]:qos:(default event method field sensor parameter service clock static light poor better best stream)' \
         '--pattern=[Rate pattern]:pattern:(max unlimited fixed rate burst)' \
         '*--property=[Node property]:property:' \
         '*--pub-property=[Publisher property]:property:' \
@@ -239,7 +239,7 @@ _vlink-bench_sub() {
 
     _arguments -s \
         '(-k --payload)'{-k,--payload}'=[Payload kind]:payload:(bytes raw string text rawdata zerocopy)' \
-        '(-q --qos)'{-q,--qos}'=[QoS profile]:qos:(default event method field sensor parameter service clock static light poor better best large)' \
+        '(-q --qos)'{-q,--qos}'=[QoS profile]:qos:(default event method field sensor parameter service clock static light poor better best stream)' \
         '--pattern=[Rate pattern]:pattern:(max unlimited fixed rate burst)' \
         '*--property=[Node property]:property:' \
         '*--pub-property=[Publisher property]:property:' \
