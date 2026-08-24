@@ -369,7 +369,7 @@ WebViz 经代理桥接接入 VLink 网络，`vlink-foxglove` 与 `vlink-rerun` �
 | `--proxy_max_packet_size` | `proxy_server` 下转发的最大 payload（MiB），`0` 不限制 | `0` |
 | `--proxy_use_iox` | `proxy_server` 模式启动内置 Iceoryx RouDi | `false` |
 | `--proxy_iox_config` | `proxy_server` 模式 Iceoryx TOML 配置路径 | 空 |
-| `--proxy_iox_strategy` | `proxy_server` 模式 Iceoryx 内存策略 | `1` |
+| `--proxy_iox_strategy` | `proxy_server` 模式 Iceoryx 内存策略（1 mini / 2 低 / 3 中 / 4 高） | `3` |
 | `--proxy_iox_monitoring` | `proxy_server` 模式 Iceoryx monitoring：`on` 或 `off` | `on` |
 
 ```bash
@@ -377,7 +377,7 @@ vlink-foxglove --proxy_interface proxy_api --proxy_key "my_secret_key"  # 连接
 vlink-rerun --proxy_interface proxy_server                              # 进程内直连，减少中转
 ```
 
-约束：`proxy_server` 模式仅支持 `--proxy_role=controller`；`--proxy_reliable` / `--proxy_direct` 仅 `proxy_api` 模式有效；`--proxy_domain_id` 取值范围 `[0, 255]`；`--proxy_iox_strategy` 取值 `1`/`2`/`3`。
+约束：`proxy_server` 模式仅支持 `--proxy_role=controller`；`--proxy_reliable` / `--proxy_direct` 仅 `proxy_api` 模式有效；`--proxy_domain_id` 取值范围 `[0, 255]`；`--proxy_iox_strategy` 取值 `1`/`2`/`3`/`4`。
 
 握手、token 校验、断线自愈与转发策略由代理层统一处理，WebViz 一侧仅需选模式、按需配密钥。代理机制见 [代理监控与服务发现](12-observability.md)。
 

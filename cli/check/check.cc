@@ -1724,7 +1724,7 @@ int check_test() {
 
 #ifdef VLINK_SUPPORT_SHM
   {
-    const bool roudi_ok = vlink::ShmConf::auto_init_roudi(true, 1);
+    const bool roudi_ok = vlink::ShmConf::auto_init_roudi(true, 2);
     account(run_module_event_test("EVENT  shm://", "shm://check/module/shm/event", 2000, true, roudi_ok,
                                   "iox-roudi not running"));
     account(run_module_method_test("METHOD shm://", "shm://check/module/shm/method", 2000, true, roudi_ok,

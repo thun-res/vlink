@@ -74,7 +74,7 @@ class ProxyBridge {
     double max_packet_size{0.0};
     bool use_iox{false};
     bool iox_monitoring{true};
-    int iox_strategy{1};
+    int iox_strategy{3};
     std::string iox_config;
   };
 

@@ -140,7 +140,7 @@ function Start-VLinkProxy {
 
   $script:ProxyOut = Join-Path $PWD "$BuildDir\vlink-proxy.out.log"
   $script:ProxyErr = Join-Path $PWD "$BuildDir\vlink-proxy.err.log"
-  $script:Proxy = Start-Process -FilePath $ProxyExe -ArgumentList @("-c", "-n", "-m", "off") `
+  $script:Proxy = Start-Process -FilePath $ProxyExe -ArgumentList @("-l", "3", "-n", "-m", "off") `
     -PassThru -RedirectStandardOutput $script:ProxyOut -RedirectStandardError $script:ProxyErr
 
   Start-Sleep -Seconds 2

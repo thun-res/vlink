@@ -353,14 +353,19 @@ void ShmFactory::init_roudi(const std::string& config_path, int memory_strategy,
   } else {
     shm::mepoo::MePooConfig poo_config;
 
-    if (memory_strategy == 1) {  // low
+    if (memory_strategy == 1) {
+      poo_config.addMemPool({1024, 1000});
+      poo_config.addMemPool({16384, 500});
+      poo_config.addMemPool({131072, 100});
+      poo_config.addMemPool({1048576, 10});
+    } else if (memory_strategy == 2) {
       poo_config.addMemPool({1024, 5000});
       poo_config.addMemPool({16384, 1000});
       poo_config.addMemPool({131072, 100});
       poo_config.addMemPool({1048576, 20});
       poo_config.addMemPool({4194304, 10});
       poo_config.addMemPool({8388608, 5});
-    } else if (memory_strategy == 3) {  // high
+    } else if (memory_strategy == 4) {
       poo_config.addMemPool({1024, 10000});
       poo_config.addMemPool({16384, 1000});
       poo_config.addMemPool({131072, 500});

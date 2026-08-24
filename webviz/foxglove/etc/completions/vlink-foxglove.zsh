@@ -60,7 +60,7 @@ _vlink-foxglove() {
         '--proxy_max_packet_size=[Proxy max packet size (MiB)]:n:' \
         '--proxy_use_iox[Proxy use iceoryx]' \
         '--proxy_iox_config=[Proxy iox config]:file:_files -g "*.toml"' \
-        '--proxy_iox_strategy=[Proxy iox strategy]:n:(1 2 3)' \
+        '--proxy_iox_strategy=[Proxy iox strategy]:n:(1 2 3 4)' \
         '--proxy_iox_monitoring=[Proxy iox monitoring]:mode:(on off)' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '(-v --version)'{-v,--version}'[Show version]'

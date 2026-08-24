@@ -188,7 +188,7 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
    * | @c dds_impl                | "dds"   | DDS implementation: "dds", "ddsc", "ddsr", etc.                   |
    * | @c use_iox                 | false   | Launch an embedded Iceoryx RouDi daemon at startup.               |
    * | @c iox_monitoring          | true    | Enable Iceoryx introspection/monitoring.                          |
-   * | @c iox_strategy            | 1       | Iceoryx memory strategy index passed to @c ShmConf::init_roudi(). |
+   * | @c iox_strategy            | 3       | Iceoryx memory strategy index passed to @c ShmConf::init_roudi(). |
    * | @c iox_config              | ""      | Path to a custom Iceoryx TOML; empty = default.                   |
    * | @c runnable_version_major  | 1       | Required major ABI version for runnable plugins.                  |
    * | @c runnable_version_minor  | 0       | Required minor ABI version for runnable plugins.                  |
@@ -215,7 +215,7 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
     std::string dds_impl{"dds"};             ///< DDS implementation transport identifier.
     bool use_iox{false};                     ///< Launch an embedded Iceoryx RouDi.
     bool iox_monitoring{true};               ///< Enable Iceoryx introspection.
-    int iox_strategy{1};                     ///< Iceoryx memory allocation strategy index.
+    int iox_strategy{3};                     ///< Iceoryx memory strategy: 1 mini, 2 low, 3 middle, 4 high.
     std::string iox_config;                  ///< Iceoryx TOML config path; empty = default.
     uint16_t runnable_version_major{1};      ///< Required major ABI version for plugins.
     uint16_t runnable_version_minor{0};      ///< Required minor ABI version for plugins.

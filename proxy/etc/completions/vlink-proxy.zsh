@@ -35,7 +35,7 @@ _vlink-proxy() {
         '(-n --native)'{-n,--native}'[Native mode]' \
         '(-x --max_packet_size)'{-x,--max_packet_size}'=[Max packet size (MB)]:size:' \
         '(-c --iox_config)'{-c,--iox_config}'=[Iceoryx config]:file:_files -g "*.toml"' \
-        '(-l --iox_strategy)'{-l,--iox_strategy}'=[Iceoryx memory strategy]:level:(1 2 3)' \
+        '(-l --iox_strategy)'{-l,--iox_strategy}'=[Iceoryx memory strategy]:level:(1 2 3 4)' \
         '(-m --iox_monitoring)'{-m,--iox_monitoring}'=[Iceoryx monitoring]:mode:(on off)' \
         '--dds_impl=[DDS implementation transport]:impl:(dds ddsc ddsr)' \
         '*--runnable=[Load runnable plugins]:plugin:' \

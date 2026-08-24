@@ -110,7 +110,7 @@ void ProxyConfigHelper::add_arguments(argparse::ArgumentParser& program) {
 
   program.add_argument("--proxy_iox_strategy")
       .help("Iceoryx memory strategy for proxy_server mode")
-      .default_value(1)
+      .default_value(3)
       .scan<'i', int>();
 
   program.add_argument("--proxy_iox_monitoring")
@@ -495,8 +495,8 @@ bool ProxyConfigHelper::validate(const ProxyBridge::Config& config, std::string&
     return false;
   }
 
-  if VUNLIKELY (config.server.iox_strategy < 1 || config.server.iox_strategy > 3) {
-    error = "proxy_iox_strategy must be 1, 2, or 3";
+  if VUNLIKELY (config.server.iox_strategy < 1 || config.server.iox_strategy > 4) {
+    error = "proxy_iox_strategy must be 1, 2, 3, or 4";
     return false;
   }
 

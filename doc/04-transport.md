@@ -187,8 +187,10 @@ shm://<address>[?event=<name>&domain=<N>&depth=<N>&history=<N>&wait=<ms>]
 
 ```bash
 vlink-proxy -c /etc/vlink/iox.toml          # -c <PATH> 拉起内嵌 RouDi（兼远程监控）
-vlink-proxy -c /etc/vlink/iox.toml -l 3     # -l 选内存策略（1 低 / 2 中(默认) / 3 高），点云等重载用 3
+vlink-proxy -l 4                            # 按内置高内存策略拉起 RouDi，点云等重载使用
 ```
+
+指定 `-c` 时以内存池 TOML 为准，`-l` 仅用于未指定自定义配置的内置策略。
 
 > 内置代理仅同机一个实例；完整参数与服务发现/监控见 [可观测性](12-observability.md) §12.12。
 

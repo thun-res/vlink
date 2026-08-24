@@ -78,10 +78,10 @@ int main(int argc, char* argv[]) {
       .default_value(static_cast<double>(4.0));
   program.add_argument("-c", "--iox_config").help("IOX config path").default_value(std::string());
   program.add_argument("-l", "--iox_strategy")
-      .help("IOX Memory Strategy (1: Low memory, 2: Middle memory 3: High memory)")
+      .help("IOX Memory Strategy (1: Mini, 2: Low, 3: Middle, 4: High)")
       .scan<'d', int>()
       // NOLINTNEXTLINE(readability-redundant-casting)
-      .default_value(static_cast<int>(2));
+      .default_value(static_cast<int>(3));
   program.add_argument("-m", "--iox_monitoring")
       .help("IOX enable monitoring mode('on'/'off'), default is 'on'")
       .default_value(std::string("on"));
@@ -99,7 +99,7 @@ int main(int argc, char* argv[]) {
       .default_value(std::vector<std::string>())
       .nargs(argparse::nargs_pattern::any);
 
-  program.add_epilog("Example:\n  vlink-proxy -c");
+  program.add_epilog("Example:\n  vlink-proxy -l 3");
 
   try {
     program.parse_args(argc, argv);
@@ -131,7 +131,7 @@ int main(int argc, char* argv[]) {
   proxy_config.max_packet_size = program.get<double>("-x");
   proxy_config.dds_impl = program.get<std::string>("--dds_impl");
 
-  proxy_config.use_iox = program.is_used("-c");
+  proxy_config.use_iox = program.is_used("-c") || program.is_used("-l");
   proxy_config.iox_config = program.get<std::string>("-c");
   proxy_config.iox_strategy = program.get<int>("-l");
   auto iox_monitoring = program.get<std::string>("-m");
@@ -140,6 +140,12 @@ int main(int argc, char* argv[]) {
 
   if VUNLIKELY (proxy_config.domain_id < 0 || proxy_config.domain_id > 255) {
     std::cerr << "Invalid domain id." << std::endl;
+    std::cerr << program << std::endl;
+    return 1;
+  }
+
+  if VUNLIKELY (proxy_config.iox_strategy < 1 || proxy_config.iox_strategy > 4) {
+    std::cerr << "Invalid IOX memory strategy." << std::endl;
     std::cerr << program << std::endl;
     return 1;
   }

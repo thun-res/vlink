@@ -504,11 +504,11 @@ export VLINK_DDS_PEER=10.0.0.1,10.0.0.2
 
 ![共享内存零拷贝数据流](images/shm-zerocopy-flow.png)
 
-首选处置是启动 `vlink-proxy -c`：它在自身进程内内嵌共享内存守护并预分配适配 VLink 载荷的内存池，无需额外配置。
+首选处置是启动 `vlink-proxy -l 3`：它在自身进程内内嵌共享内存守护并预分配适配 VLink 载荷的内存池，无需额外配置。
 
 ```bash
-vlink-proxy -c                   # 默认内存策略
-vlink-proxy -c -l 3              # 点云等大消息场景,使用最大档内存池
+vlink-proxy -l 3                 # 默认中档内存策略
+vlink-proxy -l 4                 # 点云等大消息场景，使用高档内存池
 ls /dev/shm | grep iox           # 验证共享内存段是否存在
 ```
 
@@ -615,7 +615,7 @@ if (!pub.init()) {
 | `Topic ... has no CDR type name.` | CDR 节点未提供 DDS 类型名；为 Bytes 节点调用 `set_ser_type(type, SchemaType::kCdr)`，或使用可自动推导类型名的 IDL/ROS 2 消息 |
 | `DDS raw/CDR mode and CDR type name cannot be changed while initialised` | 先调用 `deinit()`，修改序列化元数据后再调用 `init()` |
 | `Failed to loan buffer, size: ...` | 共享内存池不足或借出未归还，见 §14.19 |
-| `Shm roudi is not supported.` | 确认 `vlink-proxy -c` 已启动，业务进程不应自行启动 RouDi，见 §14.19 |
+| `Shm roudi is not supported.` | 确认 `vlink-proxy -l 3` 已启动，业务进程不应自行启动 RouDi，见 §14.19 |
 | `ShmConf: Input string length is too long.` | 共享内存 runtime name 超过 80 字符，缩短后重试，见 §14.19 |
 | `Database version is incompatible.` / `Mcap version is incompatible.` | Bag 与读取端版本错位，升级读取端，见 §14.23 |
 | `Must set proto dir [-d], ...` | 动态 proto 未设 schema 目录，以 `-d` 指定或设 `VLINK_PROTO_DIR` |

@@ -134,7 +134,7 @@ _vlink_bash_complete_webviz_proxy_prev() {
         --proxy_dds_impl) _vlink_bash_complete_words "dds ddsc ddsr" "$2"; return 0 ;;
         --proxy_data_callback_mode) _vlink_bash_complete_words "direct queued" "$2"; return 0 ;;
         --proxy_iox_monitoring) _vlink_bash_complete_words "on off" "$2"; return 0 ;;
-        --proxy_iox_strategy) _vlink_bash_complete_words "1 2 3" "$2"; return 0 ;;
+        --proxy_iox_strategy) _vlink_bash_complete_words "1 2 3 4" "$2"; return 0 ;;
         --proxy_iox_config) _vlink_bash_complete_files_ext "$2" "toml"; return 0 ;;
         --proxy_domain_id|--proxy_bind_ip|--proxy_peer_ip|--proxy_buf_size|--proxy_mtu_size|\
         --proxy_key|--proxy_max_packet_size) return 0 ;;
