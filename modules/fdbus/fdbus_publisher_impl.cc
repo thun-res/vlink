@@ -50,16 +50,6 @@ const Conf* FdbusPublisherImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* FdbusPublisherImpl::get_abstract_node() const { return object_.get(); }
 
-bool FdbusPublisherImpl::attach(class MessageLoop*) {
-  VLOG_W("Function [attach] is not supported.");
-  return false;
-}
-
-bool FdbusPublisherImpl::detach() {
-  VLOG_W("Function [detach] is not supported.");
-  return false;
-}
-
 bool FdbusPublisherImpl::has_subscribers() const { return object_->getSessionCount() > 0; }
 
 bool FdbusPublisherImpl::write(const Bytes& msg_data) {

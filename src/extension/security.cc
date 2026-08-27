@@ -1148,8 +1148,6 @@ struct Security::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddin
 };
 
 // Security
-Security::Security() : Security(Config{}) {}
-
 Security::Config Security::from_private_key_path(const std::string& private_key_path) {
   Config config;
   std::ifstream file(private_key_path, std::ios::binary);
@@ -1231,6 +1229,8 @@ Security::Config Security::from_key_paths(const std::string& public_key_path, co
 
   return config;
 }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+
+Security::Security() : Security(Config{}) {}
 
 Security::Security(const Config& cfg) : Security(Config{cfg}) {}
 
@@ -1349,79 +1349,6 @@ Security& Security::operator=(Security&& other) noexcept {
   other.impl_ = std::make_unique<Impl>();
 
   return *this;
-}
-
-bool Security::is_configured() const noexcept {
-  std::lock_guard lock(impl_->mtx);
-
-#ifdef VLINK_ENABLE_SECURITY
-
-  if (impl_->aad_context_valid) {
-    if (impl_->symmetric_key.key.size() >= kAesKeySize && impl_->symmetric_key.key.data() != nullptr) {
-      return true;
-    }
-
-    if (impl_->public_key || impl_->private_key) {
-      return true;
-    }
-  }
-#endif
-
-  if (impl_->config.encrypt_callback && impl_->config.decrypt_callback) {
-    return true;
-  }
-
-  return false;
-}
-
-bool Security::can_encrypt() const noexcept {
-  std::lock_guard lock(impl_->mtx);
-
-  if (impl_->config.encrypt_callback && impl_->config.decrypt_callback) {
-    return true;
-  }
-
-#ifdef VLINK_ENABLE_SECURITY
-
-  if VUNLIKELY (!impl_->aad_context_valid) {
-    return false;
-  }
-
-  if (impl_->symmetric_key.key.size() >= kAesKeySize && impl_->symmetric_key.key.data() != nullptr) {
-    return true;
-  }
-
-  if (impl_->public_key) {
-    return true;
-  }
-#endif
-
-  return false;
-}
-
-bool Security::can_decrypt() const noexcept {
-  std::lock_guard lock(impl_->mtx);
-
-  if (impl_->config.encrypt_callback && impl_->config.decrypt_callback) {
-    return true;
-  }
-
-#ifdef VLINK_ENABLE_SECURITY
-
-  if VUNLIKELY (!impl_->aad_context_valid) {
-    return false;
-  }
-
-  if (impl_->symmetric_key.key.size() >= kAesKeySize && impl_->symmetric_key.key.data() != nullptr) {
-    return true;
-  }
-
-  if (impl_->private_key) {
-    return true;
-  }
-#endif
-
-  return false;
 }
 
 bool Security::encrypt(const Bytes& in, Bytes& out) {
@@ -1804,6 +1731,79 @@ bool Security::decrypt(const Bytes& in, Bytes& out) {
 
   return false;
 #endif
+}
+
+bool Security::is_configured() const noexcept {
+  std::lock_guard lock(impl_->mtx);
+
+#ifdef VLINK_ENABLE_SECURITY
+
+  if (impl_->aad_context_valid) {
+    if (impl_->symmetric_key.key.size() >= kAesKeySize && impl_->symmetric_key.key.data() != nullptr) {
+      return true;
+    }
+
+    if (impl_->public_key || impl_->private_key) {
+      return true;
+    }
+  }
+#endif
+
+  if (impl_->config.encrypt_callback && impl_->config.decrypt_callback) {
+    return true;
+  }
+
+  return false;
+}
+
+bool Security::can_encrypt() const noexcept {
+  std::lock_guard lock(impl_->mtx);
+
+  if (impl_->config.encrypt_callback && impl_->config.decrypt_callback) {
+    return true;
+  }
+
+#ifdef VLINK_ENABLE_SECURITY
+
+  if VUNLIKELY (!impl_->aad_context_valid) {
+    return false;
+  }
+
+  if (impl_->symmetric_key.key.size() >= kAesKeySize && impl_->symmetric_key.key.data() != nullptr) {
+    return true;
+  }
+
+  if (impl_->public_key) {
+    return true;
+  }
+#endif
+
+  return false;
+}
+
+bool Security::can_decrypt() const noexcept {
+  std::lock_guard lock(impl_->mtx);
+
+  if (impl_->config.encrypt_callback && impl_->config.decrypt_callback) {
+    return true;
+  }
+
+#ifdef VLINK_ENABLE_SECURITY
+
+  if VUNLIKELY (!impl_->aad_context_valid) {
+    return false;
+  }
+
+  if (impl_->symmetric_key.key.size() >= kAesKeySize && impl_->symmetric_key.key.data() != nullptr) {
+    return true;
+  }
+
+  if (impl_->private_key) {
+    return true;
+  }
+#endif
+
+  return false;
 }
 
 }  // namespace vlink

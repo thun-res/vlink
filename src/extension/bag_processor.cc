@@ -220,17 +220,6 @@ void BagProcessor::reset() {
   });  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 }
 
-void BagProcessor::reset_timeline() {
-  impl_->last_data_timestamp = 0;
-  impl_->last_timestamp = 0;
-  impl_->data_timestamp_anchor = 0;
-  impl_->timestamp_anchor = 0;
-  impl_->last_output_timestamp = 0;
-  impl_->last_resolved_data_timestamp_valid = false;
-  impl_->timestamp_anchor_valid = false;
-  impl_->output_timestamp_valid = false;
-}
-
 bool BagProcessor::on_check() {
   if (impl_->data_queue.empty()) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -362,6 +351,17 @@ void BagProcessor::on_exec(bool at_end) {
   if VLIKELY (!at_end) {
     impl_->cv.notify_all();
   }
+}
+
+void BagProcessor::reset_timeline() {
+  impl_->last_data_timestamp = 0;
+  impl_->last_timestamp = 0;
+  impl_->data_timestamp_anchor = 0;
+  impl_->timestamp_anchor = 0;
+  impl_->last_output_timestamp = 0;
+  impl_->last_resolved_data_timestamp_valid = false;
+  impl_->timestamp_anchor_valid = false;
+  impl_->output_timestamp_valid = false;
 }
 
 }  // namespace vlink

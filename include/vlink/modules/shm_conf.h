@@ -218,11 +218,13 @@ struct VLINK_EXPORT ShmConf final : public Conf {
    *
    * @param same_process_from_roudi  @c true when RouDi runs in this same process
    *                                 (see @c init_roudi()).
+   * @param memory_strategy          Memory pooling strategy passed to @c init_roudi():
+   *                                 1 mini, 2 low, 3 middle, 4 high; 0 selects middle.
    * @return @c true when RouDi is ready for use, @c false otherwise.
    *
    * @see ShmFactory::auto_init_roudi()
    */
-  [[nodiscard]] static bool auto_init_roudi(bool same_process_from_roudi = false);
+  [[nodiscard]] static bool auto_init_roudi(bool same_process_from_roudi = false, int memory_strategy = 0);
 
   /**
    * @brief Starts an embedded Iceoryx RouDi daemon inside the current process.
@@ -230,10 +232,10 @@ struct VLINK_EXPORT ShmConf final : public Conf {
    * @details
    * Use this when no external RouDi process is running and a single process must
    * act as both the memory manager and a participant.  Must be invoked before any
-   * @c shm:// endpoint is created.
+   * @c shm:// endpoint is created.  A non-empty @p config_path overrides @p memory_strategy.
    *
-   * @param config_path        Path to a RouDi XML configuration file; empty selects defaults.
-   * @param memory_strategy    Memory pooling strategy; @c 0 selects the default strategy.
+   * @param config_path        Path to a RouDi TOML configuration file; empty selects defaults.
+   * @param memory_strategy    Memory pooling strategy: 1 mini, 2 low, 3 middle, 4 high; 0 selects middle.
    * @param monitoring_enable  @c true to enable process-monitoring inside RouDi.
    */
   static void init_roudi(const std::string& config_path = "", int memory_strategy = 0, bool monitoring_enable = true);

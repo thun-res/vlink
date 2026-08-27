@@ -29,14 +29,34 @@
 
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "../common_test.h"
+#include "./extension/someip_serializer.h"
 
-namespace {}  // namespace
+struct DynamicSomeipChild {
+  int16_t delta{0};
+  std::string label;
+
+  VLINK_SOMEIP_FIELDS(delta, label)
+};
+
+struct DynamicSomeipMessage {
+  uint8_t state{0};
+  std::vector<DynamicSomeipChild> children;
+
+  VLINK_SOMEIP_FIELDS(state, children)
+};
 
 TEST_SUITE("extension-DynamicData") {
+  TEST_CASE("shared ptr dynamic data remains a forbidden nested dynamic category") {
+    CHECK(Serializer::is_dynamic_type<std::shared_ptr<DynamicData>>());
+    CHECK(Serializer::get_type_of<std::shared_ptr<DynamicData>>() == Serializer::kDynamicType);
+  }
+
   TEST_CASE("static constexpr traits") {
     static constexpr bool kIsDd = DynamicData::is_vlink_dynamic_data();
     static constexpr uint8_t kOffset = DynamicData::get_offset();
@@ -114,6 +134,47 @@ TEST_SUITE("extension-DynamicData") {
       dd.load("str", s);
       CHECK_EQ(dd.as<std::string>(), s);
     }
+  }
+
+  TEST_CASE("load accepts a character pointer through the chars codec") {
+    const char* source = "hello chars";
+
+    DynamicData data;
+    data.load("chars", source);
+
+    REQUIRE_FALSE(data.is_empty());
+    CHECK_EQ(data.as<std::string>(), source);
+  }
+
+  TEST_CASE("load and convert preserve a nested SOME/IP payload") {
+    DynamicSomeipMessage source;
+    source.state = 0x7FU;
+    source.children = {{-2, "x"}};
+
+    DynamicData data;
+    data.load("SomeipMessage", source);
+
+    REQUIRE_FALSE(data.is_empty());
+    CHECK(data.get_type() == "SomeipMessage");
+    CHECK(Serializer::get_schema_type<DynamicSomeipMessage>() == SchemaType::kRaw);
+
+    const std::array<uint8_t, 16> expected = {0x7F, 0x00, 0x00, 0x00, 0x0B, 0xFF, 0xFE, 0x00,
+                                              0x00, 0x00, 0x05, 0xEF, 0xBB, 0xBF, 'x',  0x00};
+    REQUIRE(data.get_data().size() == expected.size());
+    CHECK(std::memcmp(data.get_data().data(), expected.data(), expected.size()) == 0);
+
+    Bytes wire;
+    REQUIRE((data >> wire));
+
+    DynamicData received;
+    REQUIRE((received << wire));
+
+    DynamicSomeipMessage target;
+    REQUIRE(received.convert(target));
+    CHECK(target.state == source.state);
+    REQUIRE(target.children.size() == source.children.size());
+    CHECK(target.children[0].delta == source.children[0].delta);
+    CHECK(target.children[0].label == source.children[0].label);
   }
 
   TEST_CASE("convert populates output on success") {

@@ -27,7 +27,6 @@
 
 #include <cstring>
 #include <filesystem>
-#include <fstream>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -78,29 +77,27 @@ VLINK_REGISTER_FLATBUFFERS("invalid.Schema", InvalidBinarySchema)
 VLINK_REGISTER_FLATBUFFERS("invalid.Schema.second", InvalidBinarySchema)
 #endif
 
-[[maybe_unused]] static std::filesystem::path test_idl_dir() {
-#ifdef VLINK_TEST_IDL_DIR
-  return std::filesystem::path(VLINK_TEST_IDL_DIR);
-#else
-  return std::filesystem::path(__FILE__).parent_path().parent_path() / "idl";
-#endif
-}
-
 #ifdef VLINK_HAS_SCHEMA_PLUGIN_FLATBUFFERS
 std::vector<uint8_t> build_test_bfbs(const char* root_type = "fbs.Message") {
-  auto fbs_path = test_idl_dir() / "test.fbs";
-  REQUIRE(std::filesystem::exists(fbs_path));
+  static constexpr char kSchemaText[] = R"(
+namespace fbs;
 
-  std::ifstream input(fbs_path, std::ios::binary);
-  REQUIRE(input.is_open());
+table Request {
+  type:uint32;
+}
 
-  std::string schema_text((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-  REQUIRE_FALSE(schema_text.empty());
+table Response {
+  value:string;
+}
+
+table Message {
+  type:uint32;
+  value:string;
+}
+)";
 
   flatbuffers::Parser bfbs_builder;
-  const auto include_dir = fbs_path.parent_path().string();
-  const char* include_dirs[] = {include_dir.c_str(), nullptr};
-  REQUIRE(bfbs_builder.Parse(schema_text.c_str(), include_dirs));
+  REQUIRE(bfbs_builder.Parse(kSchemaText));
   REQUIRE(bfbs_builder.SetRootType(root_type));
   bfbs_builder.Serialize();
 

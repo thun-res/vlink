@@ -42,13 +42,14 @@
  * | -------------------- | -------------------------------- | ----------------------- | ------------------ |
  * | @c kBytesType        | @c T is @c Bytes                 | @c is_bytes_type        | Pass-through.      |
  * | @c kDynamicType      | Has @c is_vlink_dynamic_data()   | @c is_dynamic_type      | Dynamic data.      |
+ * | @c kCustomType       | Has @c operator>>/<<(Bytes&)     | @c is_custom_type       | Custom codec.      |
+ * | @c kSomeipType       | Has @c is_vlink_someip_type()    | @c is_someip_type       | SOME/IP codec.     |
  * | @c kCdrType          | FastDDS IDL or ROS 2 type        | @c is_cdr_type          | CDR bytes.         |
  * | @c kProtoType        | Protobuf-like value              | @c is_proto_type        | Protobuf value.    |
  * | @c kProtoPtrType     | Protobuf-like pointer            | @c is_proto_ptr_type    | Caller-owned.      |
  * | @c kFlatTableType    | FlatBuffers NativeTable          | @c is_flat_table_type   | Object API.        |
  * | @c kFlatPtrType      | Pointer to @c flatbuffers::Table | @c is_flat_ptr_type     | Zero-copy view.    |
  * | @c kFlatBuilderType  | Has @c fbb_ and @c Finish()      | @c is_flat_builder_type | Builder.           |
- * | @c kCustomType       | Has @c operator>>/<<(Bytes&)     | @c is_custom_type       | Custom codec.      |
  * | @c kStringType       | @c T is @c std::string           | @c is_string_type       | Byte string.       |
  * | @c kCharsType        | Character pointer or array       | @c is_chars_type        | Serialise only.    |
  * | @c kStreamType       | Supports @c std::stringstream    | @c is_stream_type       | Fallback.          |
@@ -62,18 +63,18 @@
  * @verbatim
  *   get_type_of<T>() probes traits in this fixed order; first match wins:
  *
- *     Bytes  --(no)-->  Dynamic  --(no)-->  CDR  --(no)-->  Proto
- *                                                              |
- *                                                              v (no)
- *     FlatPtr  <--(no)--  FlatTable  <--(no)--  ProtoPtr  <--(no)--+
+ *     Bytes  --(no)-->  Dynamic  --(no)-->  SOME/IP  --(no)-->  CDR
+ *                                                                |
+ *                                                                v (no)
+ *     FlatTable  <--(no)--  ProtoPtr  <--(no)--  Proto  <----(no)--+
  *         |
  *         v (no)
- *     FlatBuilder  --(no)-->  Custom  --(no)-->  String  --(no)-->  Chars
- *                                                                      |
- *                                                                      v (no)
- *     Stream  <--(no)--  StandardPtr  <--(no)--  Standard  <--(no)----+
- *                                                                      |
- *                                                                      v (no)
+ *     FlatPtr  --(no)-->  FlatBuilder  --(no)-->  Custom  --(no)-->  String
+ *                                                                    |
+ *                                                                    v (no)
+ *     Stream   <--(no)--  StandardPtr  <--(no)-- Standard <--(no)--  Chars
+ *                                                                    |
+ *                                                                    v (no)
  *                                                                kUnknownType
  * @endverbatim
  *
@@ -82,7 +83,7 @@
  * constexpr auto t = vlink::Serializer::get_type_of<MyProto>();   // -> kProtoType
  * static_assert(vlink::Serializer::is_supported(t));
  *
- * constexpr auto u = vlink::Serializer::get_type_of<int>();       // -> kStandardType (POD)
+ * constexpr auto u = vlink::Serializer::get_type_of<int>();         // -> kStandardType (POD)
  * constexpr auto v = vlink::Serializer::get_type_of<std::string>(); // -> kStringType
  * constexpr auto w = vlink::Serializer::get_type_of<const char*>(); // -> kCharsType
  * @endcode
@@ -123,6 +124,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <string>
 
 #include "./base/bytes.h"
@@ -156,17 +158,18 @@ enum Type : uint8_t {
   kBytesType = 1,         ///< @c Bytes -- raw byte pass-through.
   kDynamicType = 2,       ///< VLink dynamic typed data.
   kCustomType = 3,        ///< User-defined codec via @c operator>>/<<.
-  kCdrType = 4,           ///< FastDDS CDR via @c serialize(Cdr&) / @c deserialize(Cdr&).
-  kProtoType = 5,         ///< Protobuf-like value.
-  kProtoPtrType = 6,      ///< Protobuf-like raw pointer; caller-owned.
-  kFlatTableType = 7,     ///< FlatBuffers NativeTable (object API).
-  kFlatPtrType = 8,       ///< Pointer to @c flatbuffers::Table (zero-copy view).
-  kFlatBuilderType = 9,   ///< FlatBuffers builder (@c fbb_ + @c Finish()).
-  kStringType = 10,       ///< @c std::string payload bytes; no text-encoding validation.
-  kCharsType = 11,        ///< C string serialisation; deserialise as @c std::string.
-  kStreamType = 12,       ///< Stream-serialisable via @c std::stringstream.
-  kStandardType = 13,     ///< Trivial standard-layout struct (POD value).
-  kStandardPtrType = 14,  ///< Pointer to trivial standard-layout struct (POD pointer).
+  kSomeipType = 4,        ///< Macro-declared SOME/IP structure via @c operator>>/<<.
+  kCdrType = 5,           ///< FastDDS CDR via @c serialize(Cdr&) / @c deserialize(Cdr&).
+  kProtoType = 6,         ///< Protobuf-like value.
+  kProtoPtrType = 7,      ///< Protobuf-like raw pointer; caller-owned.
+  kFlatTableType = 8,     ///< FlatBuffers NativeTable (object API).
+  kFlatPtrType = 9,       ///< Pointer to @c flatbuffers::Table (zero-copy view).
+  kFlatBuilderType = 10,  ///< FlatBuffers builder (@c fbb_ + @c Finish()).
+  kStringType = 11,       ///< @c std::string payload bytes; no text-encoding validation.
+  kCharsType = 12,        ///< C string serialisation; deserialise as @c std::string.
+  kStreamType = 13,       ///< Stream-serialisable via @c std::stringstream.
+  kStandardType = 14,     ///< Trivial standard-layout struct (POD value).
+  kStandardPtrType = 15,  ///< Pointer to trivial standard-layout struct (POD pointer).
 };
 
 /**
@@ -272,15 +275,18 @@ template <typename T>
  *
  * @details
  * @p transport identifies the active transport. CDR output is the same
- * encapsulated byte representation for every transport. @p offset prepends
- * that many zero bytes before the payload (used internally by some transports
- * for framing).
+ * encapsulated byte representation for every transport. @p offset reserves
+ * that many bytes before the payload for transport framing; their initial
+ * contents are unspecified.
  *
  * For @c kFlatBuilderType, serialisation calls the builder's @c Finish()
  * path so @p src may be mutated.  Because the final size is unavailable
  * before @c Finish(), its size hint is @c 0 and a loaned destination is
  * rejected without changing either the loan or the builder.  Successful
  * serialisation returns an owning copy.
+ *
+ * When @c TypeT is @c kSomeipType, destination storage must not overlap
+ * any storage reachable from @p src.
  *
  * @tparam TypeT       Codec kind.
  * @tparam T           C++ message type.
@@ -295,6 +301,10 @@ static bool serialize(const T& src, Bytes& des, TransportType transport = Transp
 
 /**
  * @brief Serialises @p src into @p des (codec and transport auto-detected).
+ *
+ * @details
+ * When @c T is inferred as @c kSomeipType, destination storage must not
+ * overlap any storage reachable from @p src.
  *
  * @tparam T   C++ message type.
  * @param src  Source value.
@@ -315,6 +325,8 @@ static bool serialize(const T& src, Bytes& des);
  * subsequently fails.  Other codecs use @c get_serialized_size() followed by
  * the normal @c serialize() path.  A non-zero size hint requires storage of
  * exactly that size.  A codec must not replace transport-loaned storage.
+ * For @c kSomeipType, storage returned by @p loan must not overlap any
+ * storage reachable from @p src.
  *
  * @tparam TypeT  Codec kind.
  * @tparam T       C++ message type.
@@ -337,7 +349,10 @@ static bool serialize_to_transport(const T& src, Bytes& des, TransportType trans
  * CDR input must contain its DDS encapsulation header and is decoded
  * identically for every transport. @c kCharsType destinations are rejected
  * because a raw pointer cannot carry ownership of the required null-terminated
- * storage. Use @c std::string for deserialisation.
+ * storage. Use @c std::string for deserialisation.  When @c TypeT is
+ * @c kSomeipType, source storage must not overlap any storage reachable from
+ * @p des.  Exceptions raised by Dynamic or Custom decoding operators retain
+ * the operator's own exception contract.
  *
  * @tparam TypeT       Codec kind.
  * @tparam T           C++ message type.
@@ -351,6 +366,11 @@ static bool deserialize(const Bytes& src, T& des, TransportType transport = Tran
 
 /**
  * @brief Deserialises @p src into @p des (codec and transport auto-detected).
+ *
+ * @details
+ * When @c T is inferred as @c kSomeipType, source storage must not overlap
+ * any storage reachable from @p des.  Exceptions raised by inferred Dynamic
+ * or Custom decoding operators retain the operator's own exception contract.
  *
  * @tparam T   C++ message type.
  * @param src  Source @c Bytes buffer.
@@ -490,6 +510,19 @@ template <typename T>
  */
 template <typename T>
 [[nodiscard]] static constexpr bool is_flat_ptr_type() noexcept;
+
+/**
+ * @brief Reports whether @c T is a macro-declared SOME/IP structure.
+ *
+ * @details
+ * Detects the static @c is_vlink_someip_type() marker generated by
+ * @c VLINK_SOMEIP_FIELDS after unwrapping @c std::shared_ptr.
+ *
+ * @tparam T  Type to test.
+ * @return    @c true for macro-declared SOME/IP structures.
+ */
+template <typename T>
+[[nodiscard]] static constexpr bool is_someip_type() noexcept;
 
 /**
  * @brief Reports whether @c T provides a custom @c operator>>/<< codec.

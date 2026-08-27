@@ -108,6 +108,66 @@ namespace Helpers {  // NOLINT(readability-identifier-naming)
 [[nodiscard]] VLINK_EXPORT std::string double_to_string(double value, int precision = 2) noexcept;
 
 /**
+ * @brief Formats a @c float into a caller-provided buffer using default @c "%g" precision.
+ *
+ * @param buf     Destination buffer.
+ * @param buflen  Destination capacity in bytes.
+ * @param value   Source value.
+ * @return Number of bytes written, or @c 0 when conversion fails.
+ */
+[[nodiscard]] VLINK_EXPORT size_t format_floating_to(char* buf, size_t buflen, float value) noexcept;
+
+/**
+ * @brief Formats a @c double into a caller-provided buffer using default @c "%g" precision.
+ *
+ * @param buf     Destination buffer.
+ * @param buflen  Destination capacity in bytes.
+ * @param value   Source value.
+ * @return Number of bytes written, or @c 0 when conversion fails.
+ */
+[[nodiscard]] VLINK_EXPORT size_t format_floating_to(char* buf, size_t buflen, double value) noexcept;
+
+/**
+ * @brief Formats a @c long @c double into a caller-provided buffer using default @c "%g" precision.
+ *
+ * @param buf     Destination buffer.
+ * @param buflen  Destination capacity in bytes.
+ * @param value   Source value.
+ * @return Number of bytes written, or @c 0 when conversion fails.
+ */
+[[nodiscard]] VLINK_EXPORT size_t format_floating_to(char* buf, size_t buflen,
+                                                     long double value) noexcept;  // NOLINT(google-runtime-float)
+
+/**
+ * @brief Formats a @c double using a std::format style floating-point presentation.
+ *
+ * @param buf        Destination buffer.
+ * @param buflen     Destination capacity in bytes.
+ * @param value      Source value.
+ * @param type       Presentation type: @c e @c E @c f @c F @c g @c G @c a @c A.
+ * @param precision  Digits per the presentation type, or negative for its default.
+ * @param alt        Alternate form; guarantees a decimal point in the output.
+ * @return Number of bytes written, or @c 0 when conversion fails.
+ */
+[[nodiscard]] VLINK_EXPORT size_t format_floating_spec_to(char* buf, size_t buflen, double value, char type,
+                                                          int precision, bool alt) noexcept;
+
+/**
+ * @brief Formats a @c long @c double using a std::format style floating-point presentation.
+ *
+ * @param buf        Destination buffer.
+ * @param buflen     Destination capacity in bytes.
+ * @param value      Source value.
+ * @param type       Presentation type: @c e @c E @c f @c F @c g @c G @c a @c A.
+ * @param precision  Digits per the presentation type, or negative for its default.
+ * @param alt        Alternate form; guarantees a decimal point in the output.
+ * @return Number of bytes written, or @c 0 when conversion fails.
+ */
+// NOLINTNEXTLINE(google-runtime-float)
+[[nodiscard]] VLINK_EXPORT size_t format_floating_spec_to(char* buf, size_t buflen, long double value, char type,
+                                                          int precision, bool alt) noexcept;
+
+/**
  * @brief Combines two 64-bit hash values into one via a Murmur-style mix.
  *
  * @param a  First hash value.

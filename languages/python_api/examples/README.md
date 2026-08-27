@@ -51,6 +51,13 @@
 5. publisher.deinit() / subscriber.deinit()
 ```
 
+### SOME/IP payload 边界
+
+`VLINK_SOMEIP_FIELDS(...)` 是 C++ 结构体宏，不会映射为 Python 字典或类的自动编解码器。Python
+通信节点统一以 `vlink.Bytes` 承载原始负载；需要经 `someip://` 发送结构化 SOME/IP 数据时，应先由
+C++ codec 或外部编码器生成 payload，再用 `vlink.Bytes.from_bytes()` 交给节点。`someip://` 只选择
+传输后端，不会自动把 Python 对象编码为 SOME/IP 字段。
+
 ---
 
 ## `demo_vlink_bag.py` 章节速查

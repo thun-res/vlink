@@ -1,6 +1,6 @@
 # 🧩 basic_types — 开箱即用的消息类型
 
-`Publisher<T>` / `Subscriber<T>` 的模板参数 `T` 即消息类型，VLink 按 `T` 在编译期自动选择序列化方式，应用层无需编写任何编解码代码。本示例演示三种最常用、无需代码生成工具的类型：`vlink::Bytes`（原始字节）、`std::string`（文本/JSON）、POD 结构体（平凡可拷贝结构）。
+`Publisher<T>` / `Subscriber<T>` 的模板参数 `T` 即消息类型，VLink 按 `T` 在编译期自动选择序列化方式，应用层无需注册编解码器。本示例演示四种无需代码生成工具的类型：`vlink::Bytes`（原始字节）、`std::string`（文本/JSON）、POD 结构体（平凡可拷贝结构）和宏声明的 SOME/IP 结构。
 
 ![类型到序列化策略](./images/serialization-type-chain.png)
 
@@ -16,6 +16,13 @@
 | `vlink::Bytes::create(n)` | 分配 n 字节、未初始化的 Bytes |
 | `vlink::Bytes::encode_to_base64 / decode_from_base64` | Base64 互转 |
 | `vlink::Bytes::get_crc_32(b)` | 计算 CRC32 |
+| `VLINK_SOMEIP_FIELDS(...)` | 按声明顺序生成 SOME/IP payload 编解码 |
+| `VLINK_SOMEIP_ALIGNMENT(n)` | 配置顶层 payload 的 AUTOSAR alignment |
+| `VLINK_SOMEIP_ENDIAN(endian)` | 配置顶层 payload 标量的大小端 |
+| `VLINK_SOMEIP_ENDIAN_BIG` / `VLINK_SOMEIP_ENDIAN_LITTLE` | 显式配置大端或小端 payload 标量 |
+| `VLINK_SOMEIP_LENGTH(field, n)` | 配置单个字段的长度宽度 |
+| `VLINK_SOMEIP_ARRAY_LENGTH(field, ...)` | 从外到内配置多维数组的长度宽度 |
+| `VLINK_SOMEIP_STRUCT_LENGTH(n)` | 配置结构体的长度宽度 |
 
 ## 🚀 最小可运行片段
 
@@ -28,7 +35,7 @@ vlink::Publisher<std::string> pub("intra://example/basic/string#direct");
 pub.publish(std::string("Hello, VLink!"));
 ```
 
-`intra://` 六种原语不支持 `Node::attach()`；本示例用 `#direct` 让回调在发布线程内同步完成。默认 `#queue` 则由 intra 自身的 pipeline 派发。
+本示例用 `#direct` 让回调在发布线程内同步完成。默认 `#queue` 则由 intra 自身的 pipeline 派发。
 
 POD 结构体（平凡 + 标准布局）可直接作为 `T`：`vlink::Publisher<SensorReading>`，发布前用 `SensorReading r{}` 零初始化以避免填充字节不确定。`vlink::Bytes` 用法相同，并附带 Base64 / CRC32 等工具方法。
 
@@ -37,7 +44,8 @@ POD 结构体（平凡 + 标准布局）可直接作为 `T`：`vlink::Publisher<
 - **`vlink::Bytes`**：应用层已有自定义二进制协议，零编解码开销。
 - **`std::string`**：文本、JSON 或格式未知的载体。
 - **POD 结构体**：同机同 ABI 的简单结构，最快路径；跨平台/跨语言请改用 Protobuf / FlatBuffers / CDR。
-- **含 `std::string` / `std::vector` 等的复杂结构**：跨语言场景改用 Protobuf（见 [`../../samples/helloworld/`](../../samples/helloworld/)）或 FlatBuffers（见 [`../../samples/someip_flat/`](../../samples/someip_flat/)）。
+- **SOME/IP 结构**：用 `VLINK_SOMEIP_FIELDS(...)` 声明字段顺序，支持嵌套结构、UTF-8/UTF-16 字符串、`std::vector`、`std::array`、`std::map`、`std::variant`、`vlink::Bytes` 与 TLV 可选成员；大小端、alignment、长度宽度与 TLV 的部署范围见[消息序列化](../../../doc/03-serialization.md#-35-someip-与自定义序列化器)。
+- **其他复杂结构**：跨语言场景改用 Protobuf（见 [`../../samples/helloworld/`](../../samples/helloworld/)）或 FlatBuffers（见 [`../../samples/someip_flat/`](../../samples/someip_flat/)）。
 
 ## ▶️ 运行
 

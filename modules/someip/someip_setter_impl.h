@@ -48,10 +48,6 @@ class SomeipSetterImpl final : public SetterImpl {
 
   const AbstractNode* get_abstract_node() const override;
 
-  bool attach(class MessageLoop* message_loop) override;
-
-  bool detach() override;
-
   void write(const Bytes& msg_data) override;
 
   void sync(SyncCallback&& callback) override;

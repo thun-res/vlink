@@ -7,7 +7,7 @@ _vlink_bench_topologies="1:1 1x1 one-to-one 1:n 1xn fanout one-to-many n:1 nx1 m
 _vlink_bench_patterns="max unlimited fixed rate burst"
 _vlink_bench_payloads="bytes raw string text rawdata zerocopy"
 _vlink_bench_reports="html terminal term tty csv json both"
-_vlink_bench_qos="default event method field sensor parameter service clock static light poor better best large"
+_vlink_bench_qos="default event method field sensor parameter service clock static light poor better best stream"
 
 _vlink_bench_compgen_csv() {
     local values="$1"

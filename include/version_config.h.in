@@ -43,12 +43,16 @@
 #cmakedefine VLINK_ENABLE_SECURITY
 #endif
 
+#ifndef VLINK_ENABLE_SQLITE
+#cmakedefine VLINK_ENABLE_SQLITE
+#endif
+
 #ifndef VLINK_ENABLE_ZSTD
 #cmakedefine VLINK_ENABLE_ZSTD
 #endif
 
-#ifndef VLINK_ENABLE_SQLITE
-#cmakedefine VLINK_ENABLE_SQLITE
+#ifndef VLINK_ENABLE_LOG_BACKEND
+#cmakedefine VLINK_ENABLE_LOG_BACKEND
 #endif
 
 #ifndef VLINK_ENABLE_CLI_INFO
@@ -89,22 +93,6 @@
 
 #ifndef VLINK_ENABLE_CLI_TRIGGER
 #cmakedefine VLINK_ENABLE_CLI_TRIGGER
-#endif
-
-#ifndef VLINK_ENABLE_LOG_QUI
-#cmakedefine VLINK_ENABLE_LOG_QUI
-#endif
-
-#ifndef VLINK_ENABLE_LOG_SPD
-#cmakedefine VLINK_ENABLE_LOG_SPD
-#endif
-
-#ifndef VLINK_ENABLE_LOG_DLT
-#cmakedefine VLINK_ENABLE_LOG_DLT
-#endif
-
-#ifndef VLINK_ENABLE_LOG_NAT
-#cmakedefine VLINK_ENABLE_LOG_NAT
 #endif
 
 #ifndef VLINK_ENABLE_EXPRTK

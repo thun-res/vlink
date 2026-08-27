@@ -68,6 +68,10 @@
  *  - @c VLINK_LOG_DETAIL_LEVEL @c =N changes the level at which file/line is appended.
  *  - @c VLINK_LOG_DISABLE_SHORT removes the @c VLOG_* / @c MLOG_* / @c CLOG_* / @c SLOG_* aliases.
  *
+ * @par Runtime gating
+ * The four macro families test the active sink levels before evaluating their message arguments.
+ * Use @c VLINK_LOG_IF_x only when expensive preparation happens outside the macro arguments.
+ *
  * @par Periodic call-site limiting
  * @c VLOG_x_EVERY_MS(interval_ms, ...) emits immediately, then at most once per interval at that
  * macro call site.  The state is shared by concurrent callers, and suppressed log arguments are
@@ -85,7 +89,7 @@
  *
  * @par Example
  * @code
- *   vlink::Logger::init("my_app", "/var/log/my_app.log");
+ *   vlink::Logger::init("my_app", "/var/log/my_app");
  *   vlink::Logger::set_console_level(vlink::Logger::kInfo);
  *
  *   VLOG_I("node started, id=", node_id);
@@ -95,8 +99,8 @@
  * @endcode
  *
  * @note @c kFatal messages call @c Logger::flush and then throw @c Exception::RuntimeError so
- *       the application can perform a controlled shutdown.  Backends include spdlog, quill,
- *       DLT, Android logcat, QNX slog2 and kmsg depending on build options.
+ *       the application can perform a controlled shutdown.  Build-time backends include
+ *       @c LoggerBackend, Android logcat, QNX slog2 and kmsg.
  */
 
 #pragma once
@@ -125,10 +129,12 @@ namespace vlink {
  * @brief Global singleton logger with four formatting styles and independently configurable sinks.
  *
  * @details
- * Construct exactly once via @c Logger::init; subsequent calls reconfigure the existing instance.
- * The console sink is always enabled; the file sink activates when @c log_path is non-empty.
- * Logging entry points are macros that wrap the public @c print_* templates and forward a
- * compile-time @c Level so the bodies disappear when the level is below @c kMinimumLevel.
+ * Configure exactly once via @c Logger::init before the first @c get or logging call.  Calls after
+ * singleton construction do not rebuild the active backend and must not be used for reconfiguration.
+ * Console and file output are independently enabled by their level thresholds; an empty
+ * @c log_path selects the configured or temporary default directory.  Logging entry points are
+ * macros that wrap the public @c print_* templates and forward a compile-time @c Level so the
+ * bodies disappear when the level is below @c kMinimumLevel.
  */
 class VLINK_EXPORT Logger final {
  public:
@@ -199,7 +205,9 @@ class VLINK_EXPORT Logger final {
    *
    * @details
    * Invoked synchronously from the logging thread; the @c std::string_view is valid only for
-   * the duration of the call.
+   * the duration of the call.  Do not register or unregister handlers during invocation.
+   * Exceptions are reported to standard error and do not escape the logging boundary.  Nested
+   * logging on the same thread is suppressed before its message arguments are evaluated.
    */
   using Callback = MoveFunction<void(Level, std::string_view)>;
 
@@ -218,17 +226,20 @@ class VLINK_EXPORT Logger final {
    * @details
    * Used to avoid capturing @c __FILE__ / @c __LINE__ for messages below @c kDetailLevel.
    */
-  struct NoDetail {};
+  struct NoDetail final {};
 
   /**
    * @brief Initialises the logger singleton.
    *
    * @details
-   * Must be invoked before any logging macros.  Subsequent calls reconfigure the singleton.
-   * Provide a non-empty @p log_path to activate the file sink.
+   * Must be invoked before @c get or any logging macro.  Only values supplied before singleton
+   * construction configure the backend; later calls do not rebuild active sinks.  File output is
+   * controlled by the file level.  An empty @p log_path selects @c VLINK_LOG_DIR or a temporary
+   * default directory.
    *
-   * @param app_name  Application name embedded in log output.  Default: empty.
-   * @param log_path  Absolute path for the file sink.  Default: empty (no file sink).
+   * @param app_name  Application name embedded in log output.  Default: empty (detect automatically).
+   * @param log_path  Base directory for generated log files when @p app_name is non-empty.
+   *                  Default: empty (select automatically).
    */
   static void init(const std::string& app_name = "", const std::string& log_path = "") noexcept;
 
@@ -245,6 +256,8 @@ class VLINK_EXPORT Logger final {
    * @details
    * Useful before abnormal termination.  Invoked automatically before a @c kFatal message
    * throws.
+   *
+   * @warning Call during application runtime, before static object destruction begins.
    */
   static void flush() noexcept;
 
@@ -277,9 +290,13 @@ class VLINK_EXPORT Logger final {
   static void set_file_level(Level level) noexcept;
 
   /**
-   * @brief Enables or disables ANSI colour / formatting on the console sink.
+   * @brief Enables or disables the extended prefix on the console sink.
    *
-   * @param enable  @c true to keep ANSI escapes (default), @c false for plain text.
+   * @details
+   * The extended prefix contains the timestamp, thread ID and severity.  ANSI level colours are
+   * independent of this setting.
+   *
+   * @param enable  @c true to prepend the extended fields, @c false to omit them.
    */
   static void set_console_fmt_enable(bool enable) noexcept;
 
@@ -298,9 +315,9 @@ class VLINK_EXPORT Logger final {
   [[nodiscard]] static Level get_file_level() noexcept;
 
   /**
-   * @brief Returns whether ANSI colour codes are enabled on the console sink.
+   * @brief Returns whether the extended console prefix is enabled.
    *
-   * @return @c true when ANSI escapes are emitted.
+   * @return @c true when timestamp, thread ID and severity fields are prepended.
    */
   [[nodiscard]] static bool get_console_fmt_enable() noexcept;
 
@@ -350,23 +367,29 @@ class VLINK_EXPORT Logger final {
    * @brief Enables a ring-buffer backtrace of the most recent @p size records.
    *
    * @param size  Capacity of the backtrace ring buffer.
+   *
+   * @warning Call during application runtime, before static object destruction begins.
    */
   static void enable_backtrace(size_t size) noexcept;
 
   /**
    * @brief Disables backtrace capture and discards the ring buffer.
+   *
+   * @warning Call during application runtime, before static object destruction begins.
    */
   static void disable_backtrace() noexcept;
 
   /**
    * @brief Flushes the backtrace ring buffer to the active sinks.
+   *
+   * @warning Call during application runtime, before static object destruction begins.
    */
   static void dump_backtrace() noexcept;
 
   /**
-   * @brief Reports whether the logger is currently writing a record.
+   * @brief Reports whether the logger backend is being initialised.
    *
-   * @return @c true while a write is in progress.
+   * @return @c true while backend initialisation is in progress.
    */
   [[nodiscard]] static bool is_busy() noexcept;
 
@@ -374,10 +397,12 @@ class VLINK_EXPORT Logger final {
    * @brief Reports whether a record at @p level would currently be emitted.
    *
    * @details
-   * Use the result to gate expensive argument computation before a macro call.
+   * Ordinary logging macros already use this gate before evaluating their arguments.  Call it
+   * directly only to guard preparation performed outside a macro call.
    *
    * @param level  Severity level under test.
-   * @return @c true when the level passes either sink threshold.
+   * @return @c true when the logger is active and the level passes a sink threshold, or when
+   *         @p level is @c kFatal.
    */
   [[nodiscard]] static bool is_writable(Level level) noexcept;
 
@@ -454,7 +479,7 @@ class VLINK_EXPORT Logger final {
   static void print(ArgsT&&... args);
 
   /**
-   * @class WrapperStream
+   * @struct WrapperStream
    * @brief RAII helper backing @c SLOG_*; collects tokens and flushes on destruction.
    *
    * @details
@@ -464,16 +489,12 @@ class VLINK_EXPORT Logger final {
    * @tparam LevelT  Compile-time severity level.
    */
   template <Logger::Level LevelT>
-  class WrapperStream final {
-   public:
-    /**
-     * @brief Static gate indicating whether the wrapper emits at the chosen level.
-     */
+  struct WrapperStream final {
     static constexpr bool kIsEnabled = (LevelT >= kMinimumLevel && LevelT < Logger::kOff);
 
     explicit WrapperStream(Logger::NoDetail) noexcept {
       if constexpr (kIsEnabled) {
-        if (should_log<LevelT>()) {
+        if VLIKELY (should_log<LevelT>()) {
           enabled_ = true;
           stream_ = &Logger::get_local_stream();
         }
@@ -482,7 +503,7 @@ class VLINK_EXPORT Logger final {
 
     explicit WrapperStream(DetailInfo&& detail) noexcept {
       if constexpr (kIsEnabled) {
-        if (should_log<LevelT>()) {
+        if VLIKELY (should_log<LevelT>()) {
           enabled_ = true;
           stream_ = &Logger::get_local_stream();
 
@@ -500,7 +521,7 @@ class VLINK_EXPORT Logger final {
 
     ~WrapperStream() noexcept(LevelT != Level::kFatal) {
       if constexpr (kIsEnabled) {
-        if (enabled_) {
+        if VLIKELY (enabled_) {
           finalize_log<LevelT>(stream_->take_view());
         }
       }
@@ -509,13 +530,20 @@ class VLINK_EXPORT Logger final {
     template <typename T>
     WrapperStream& operator<<(T&& t) noexcept {
       if constexpr (kIsEnabled) {
-        if (enabled_) {
-          *stream_ << std::forward<T>(t);
+        if VLIKELY (enabled_) {
+          stream_->push(std::forward<T>(t));
         }
       }
 
       return *this;
     }
+
+    /**
+     * @brief Reports whether this stream accepted the record.
+     *
+     * @return @c true when the runtime level gate passed.
+     */
+    explicit operator bool() const noexcept { return enabled_; }
 
    private:
     VLINK_DISALLOW_COPY_AND_ASSIGN(WrapperStream)
@@ -532,6 +560,10 @@ class VLINK_EXPORT Logger final {
   template <Level LevelT>
   static bool should_log() noexcept;
 
+  static bool can_log(Level level) noexcept;
+
+  static void write(Level level, std::string_view log) noexcept;
+
   template <Level LevelT>
   static void finalize_log(std::string_view log_view);
 
@@ -547,13 +579,15 @@ class VLINK_EXPORT Logger final {
 
   void write_to_console(Level level, std::string_view log) noexcept;
 
+  static void write_to_console_line(Level level, std::string_view log) noexcept;
+
   void write_to_file(Level level, std::string_view log) noexcept;
 
   struct Impl;
   std::unique_ptr<Impl> impl_;
 
   template <Logger::Level LevelT>
-  friend class WrapperStream;
+  friend struct WrapperStream;
 
   VLINK_SINGLETON_CHECK(Logger)
 
@@ -571,7 +605,7 @@ inline constexpr std::string_view Logger::extract_filename(std::string_view path
 
 template <Logger::Level LevelT, typename DetailT, typename... ArgsT>
 inline void Logger::print_stream_style([[maybe_unused]] DetailT&& detail, [[maybe_unused]] ArgsT&&... args) {
-  if (!should_log<LevelT>()) {
+  if VUNLIKELY (!should_log<LevelT>()) {
     return;
   }
 
@@ -581,7 +615,7 @@ inline void Logger::print_stream_style([[maybe_unused]] DetailT&& detail, [[mayb
     push_detail_to_stream(detail, stream);
   }
 
-  (void)(stream << ... << args);
+  (stream.push(args), ...);
 
   finalize_log<LevelT>(stream.take_view());
 }
@@ -590,7 +624,7 @@ template <Logger::Level LevelT, typename DetailT, typename... ArgsT>
 inline void Logger::print_format_style([[maybe_unused]] DetailT&& detail,
                                        [[maybe_unused]] format::format_string<ArgsT...> format,
                                        [[maybe_unused]] ArgsT&&... args) {
-  if (!should_log<LevelT>()) {
+  if VUNLIKELY (!should_log<LevelT>()) {
     return;
   }
 
@@ -610,7 +644,7 @@ inline void Logger::print_format_style([[maybe_unused]] DetailT&& detail,
 template <Logger::Level LevelT, typename DetailT, typename FormatT, typename... ArgsT>
 inline void Logger::print_c_style([[maybe_unused]] DetailT&& detail, [[maybe_unused]] FormatT&& format,
                                   [[maybe_unused]] ArgsT&&... args) {
-  if (!should_log<LevelT>()) {
+  if VUNLIKELY (!should_log<LevelT>()) {
     return;
   }
 
@@ -623,15 +657,15 @@ inline void Logger::print_c_style([[maybe_unused]] DetailT&& detail, [[maybe_unu
       push_detail_to_stream(detail, stream);
     }
 
-    stream << format;
+    stream.push(format);
     log_view = stream.take_view();
   } else {
     auto* local_buffer = get_local_buffer();
-    auto written = std::snprintf(local_buffer, kLocalBufferSize - 1, format, args...);
+    auto written = std::snprintf(local_buffer, kLocalBufferSize, format, args...);
 
     if VUNLIKELY (written < 0) {
       written = 0;
-    } else if VUNLIKELY (written > kLocalBufferSize - 1) {
+    } else if VUNLIKELY (written >= kLocalBufferSize) {
       written = kLocalBufferSize - 1;
     }
 
@@ -650,19 +684,14 @@ template <Logger::Level LevelT>
 inline bool Logger::should_log() noexcept {
   if constexpr (LevelT < Logger::kMinimumLevel || LevelT >= Logger::kOff) {
     return false;
-  } else if constexpr (LevelT == Logger::kFatal) {
-    return true;
   } else {
-    return Logger::is_writable(LevelT);
+    return Logger::can_log(LevelT);
   }
 }
 
 template <Logger::Level LevelT>
 inline void Logger::finalize_log(std::string_view log_view) {
-  Logger& instance = Logger::get();
-
-  instance.write_to_console(LevelT, log_view);
-  instance.write_to_file(LevelT, log_view);
+  Logger::write(LevelT, log_view);
 
   if constexpr (LevelT == Logger::kFatal) {
     Logger::flush();
@@ -673,7 +702,11 @@ inline void Logger::finalize_log(std::string_view log_view) {
 template <typename DetailT>
 inline void Logger::push_detail_to_stream(DetailT&& detail, FastStream& stream) noexcept {
   auto& [file, line] = detail;
-  stream << "{" << file << ":" << line << "} ";
+  stream.push("{");
+  stream.push(file);
+  stream.push(":");
+  stream.push(line);
+  stream.push("} ");
 }
 
 template <typename DetailT>
@@ -730,71 +763,63 @@ using VLinkLogger = vlink::Logger;
 
 #define VLINK_LOG_IF_F VLinkLogger::is_writable(VLinkLogger::kFatal)
 
-#define VLINK_LOG_T(...) \
-  VLinkLogger::print_stream_style<VLinkLogger::kTrace>(VLINK_LOG_GET_DETAIL(VLinkLogger::kTrace), __VA_ARGS__)
+#define VLINK_LOG_IS_WRITABLE(level) \
+  ((level) >= VLinkLogger::kMinimumLevel && (level) < VLinkLogger::kOff && VLinkLogger::is_writable(level))
 
-#define VLINK_LOG_D(...) \
-  VLinkLogger::print_stream_style<VLinkLogger::kDebug>(VLINK_LOG_GET_DETAIL(VLinkLogger::kDebug), __VA_ARGS__)
+#define VLINK_LOG_CALL(level, function, ...)                                                             \
+  (VLINK_LOG_IS_WRITABLE(level) ? VLinkLogger::function<level>(VLINK_LOG_GET_DETAIL(level), __VA_ARGS__) \
+                                : static_cast<void>(0))
 
-#define VLINK_LOG_I(...) \
-  VLinkLogger::print_stream_style<VLinkLogger::kInfo>(VLINK_LOG_GET_DETAIL(VLinkLogger::kInfo), __VA_ARGS__)
+#define VLINK_LOG_T(...) VLINK_LOG_CALL(VLinkLogger::kTrace, print_stream_style, __VA_ARGS__)
 
-#define VLINK_LOG_W(...) \
-  VLinkLogger::print_stream_style<VLinkLogger::kWarn>(VLINK_LOG_GET_DETAIL(VLinkLogger::kWarn), __VA_ARGS__)
+#define VLINK_LOG_D(...) VLINK_LOG_CALL(VLinkLogger::kDebug, print_stream_style, __VA_ARGS__)
 
-#define VLINK_LOG_E(...) \
-  VLinkLogger::print_stream_style<VLinkLogger::kError>(VLINK_LOG_GET_DETAIL(VLinkLogger::kError), __VA_ARGS__)
+#define VLINK_LOG_I(...) VLINK_LOG_CALL(VLinkLogger::kInfo, print_stream_style, __VA_ARGS__)
 
-#define VLINK_LOG_F(...) \
-  VLinkLogger::print_stream_style<VLinkLogger::kFatal>(VLINK_LOG_GET_DETAIL(VLinkLogger::kFatal), __VA_ARGS__)
+#define VLINK_LOG_W(...) VLINK_LOG_CALL(VLinkLogger::kWarn, print_stream_style, __VA_ARGS__)
 
-#define VLINK_MLOG_T(...) \
-  VLinkLogger::print_format_style<VLinkLogger::kTrace>(VLINK_LOG_GET_DETAIL(VLinkLogger::kTrace), __VA_ARGS__)
+#define VLINK_LOG_E(...) VLINK_LOG_CALL(VLinkLogger::kError, print_stream_style, __VA_ARGS__)
 
-#define VLINK_MLOG_D(...) \
-  VLinkLogger::print_format_style<VLinkLogger::kDebug>(VLINK_LOG_GET_DETAIL(VLinkLogger::kDebug), __VA_ARGS__)
+#define VLINK_LOG_F(...) VLINK_LOG_CALL(VLinkLogger::kFatal, print_stream_style, __VA_ARGS__)
 
-#define VLINK_MLOG_I(...) \
-  VLinkLogger::print_format_style<VLinkLogger::kInfo>(VLINK_LOG_GET_DETAIL(VLinkLogger::kInfo), __VA_ARGS__)
+#define VLINK_MLOG_T(...) VLINK_LOG_CALL(VLinkLogger::kTrace, print_format_style, __VA_ARGS__)
 
-#define VLINK_MLOG_W(...) \
-  VLinkLogger::print_format_style<VLinkLogger::kWarn>(VLINK_LOG_GET_DETAIL(VLinkLogger::kWarn), __VA_ARGS__)
+#define VLINK_MLOG_D(...) VLINK_LOG_CALL(VLinkLogger::kDebug, print_format_style, __VA_ARGS__)
 
-#define VLINK_MLOG_E(...) \
-  VLinkLogger::print_format_style<VLinkLogger::kError>(VLINK_LOG_GET_DETAIL(VLinkLogger::kError), __VA_ARGS__)
+#define VLINK_MLOG_I(...) VLINK_LOG_CALL(VLinkLogger::kInfo, print_format_style, __VA_ARGS__)
 
-#define VLINK_MLOG_F(...) \
-  VLinkLogger::print_format_style<VLinkLogger::kFatal>(VLINK_LOG_GET_DETAIL(VLinkLogger::kFatal), __VA_ARGS__)
+#define VLINK_MLOG_W(...) VLINK_LOG_CALL(VLinkLogger::kWarn, print_format_style, __VA_ARGS__)
 
-#define VLINK_CLOG_T(...) \
-  VLinkLogger::print_c_style<VLinkLogger::kTrace>(VLINK_LOG_GET_DETAIL(VLinkLogger::kTrace), __VA_ARGS__)
+#define VLINK_MLOG_E(...) VLINK_LOG_CALL(VLinkLogger::kError, print_format_style, __VA_ARGS__)
 
-#define VLINK_CLOG_D(...) \
-  VLinkLogger::print_c_style<VLinkLogger::kDebug>(VLINK_LOG_GET_DETAIL(VLinkLogger::kDebug), __VA_ARGS__)
+#define VLINK_MLOG_F(...) VLINK_LOG_CALL(VLinkLogger::kFatal, print_format_style, __VA_ARGS__)
 
-#define VLINK_CLOG_I(...) \
-  VLinkLogger::print_c_style<VLinkLogger::kInfo>(VLINK_LOG_GET_DETAIL(VLinkLogger::kInfo), __VA_ARGS__)
+#define VLINK_CLOG_T(...) VLINK_LOG_CALL(VLinkLogger::kTrace, print_c_style, __VA_ARGS__)
 
-#define VLINK_CLOG_W(...) \
-  VLinkLogger::print_c_style<VLinkLogger::kWarn>(VLINK_LOG_GET_DETAIL(VLinkLogger::kWarn), __VA_ARGS__)
+#define VLINK_CLOG_D(...) VLINK_LOG_CALL(VLinkLogger::kDebug, print_c_style, __VA_ARGS__)
 
-#define VLINK_CLOG_E(...) \
-  VLinkLogger::print_c_style<VLinkLogger::kError>(VLINK_LOG_GET_DETAIL(VLinkLogger::kError), __VA_ARGS__)
+#define VLINK_CLOG_I(...) VLINK_LOG_CALL(VLinkLogger::kInfo, print_c_style, __VA_ARGS__)
 
-#define VLINK_CLOG_F(...) \
-  VLinkLogger::print_c_style<VLinkLogger::kFatal>(VLINK_LOG_GET_DETAIL(VLinkLogger::kFatal), __VA_ARGS__)
+#define VLINK_CLOG_W(...) VLINK_LOG_CALL(VLinkLogger::kWarn, print_c_style, __VA_ARGS__)
 
-#define VLINK_SLOG_T VLinkLogger::WrapperStream<VLinkLogger::kTrace>(VLINK_LOG_GET_DETAIL(VLinkLogger::kTrace))
+#define VLINK_CLOG_E(...) VLINK_LOG_CALL(VLinkLogger::kError, print_c_style, __VA_ARGS__)
 
-#define VLINK_SLOG_D VLinkLogger::WrapperStream<VLinkLogger::kDebug>(VLINK_LOG_GET_DETAIL(VLinkLogger::kDebug))
+#define VLINK_CLOG_F(...) VLINK_LOG_CALL(VLinkLogger::kFatal, print_c_style, __VA_ARGS__)
 
-#define VLINK_SLOG_I VLinkLogger::WrapperStream<VLinkLogger::kInfo>(VLINK_LOG_GET_DETAIL(VLinkLogger::kInfo))
+#define VLINK_SLOG_IMPL(level) \
+  VLINK_LOG_IS_WRITABLE(level) && VLinkLogger::WrapperStream<level>(VLINK_LOG_GET_DETAIL(level))
 
-#define VLINK_SLOG_W VLinkLogger::WrapperStream<VLinkLogger::kWarn>(VLINK_LOG_GET_DETAIL(VLinkLogger::kWarn))
+#define VLINK_SLOG_T VLINK_SLOG_IMPL(VLinkLogger::kTrace)
 
-#define VLINK_SLOG_E VLinkLogger::WrapperStream<VLinkLogger::kError>(VLINK_LOG_GET_DETAIL(VLinkLogger::kError))
+#define VLINK_SLOG_D VLINK_SLOG_IMPL(VLinkLogger::kDebug)
 
-#define VLINK_SLOG_F VLinkLogger::WrapperStream<VLinkLogger::kFatal>(VLINK_LOG_GET_DETAIL(VLinkLogger::kFatal))
+#define VLINK_SLOG_I VLINK_SLOG_IMPL(VLinkLogger::kInfo)
+
+#define VLINK_SLOG_W VLINK_SLOG_IMPL(VLinkLogger::kWarn)
+
+#define VLINK_SLOG_E VLINK_SLOG_IMPL(VLinkLogger::kError)
+
+#define VLINK_SLOG_F VLINK_SLOG_IMPL(VLinkLogger::kFatal)
 
 #define VLINK_LOG_EVERY_MS_IMPL(level, interval_ms, ...)                                                              \
   do {                                                                                                                \

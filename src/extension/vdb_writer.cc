@@ -41,6 +41,7 @@
 #include "./base/elapsed_timer.h"
 #include "./base/helpers.h"
 #include "./base/logger.h"
+#include "./base/utils.h"
 #include "./version.h"
 
 // json
@@ -434,6 +435,13 @@ VDBWriter::VDBWriter(const std::string& path, const Config& config)
 }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
 VDBWriter::~VDBWriter() {
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    (void)impl_.release();
+    return;
+  }
+#endif
+
   detach_plugin();
 
   impl_->quit_flag.store(true, std::memory_order_release);
@@ -477,197 +485,6 @@ void VDBWriter::register_schema_callback(SchemaCallback&& callback) {
   impl_->schema_callback = std::move(callback);
 }
 
-bool VDBWriter::merge_schema(SchemaData& schema_data) {
-  const auto resolved_schema_type =
-      SchemaData::resolve_type(schema_data.schema_type, schema_data.name, schema_data.encoding);
-  schema_data.schema_type = resolved_schema_type;
-
-  if VUNLIKELY (schema_data.name.empty()) {
-    return true;
-  }
-
-  if (schema_data.encoding.empty() && SchemaData::is_real_type(resolved_schema_type)) {
-    schema_data.encoding = std::string(SchemaData::convert_type(resolved_schema_type));
-  }
-
-  std::string schema_key = schema_data.name;
-  schema_key.push_back('\x1F');
-  schema_key.append(SchemaData::convert_type(resolved_schema_type));
-
-  std::string unknown_schema_key;
-  auto schema_iter = impl_->total_schema_map.find(schema_key);
-
-  if (schema_iter == impl_->total_schema_map.end() && SchemaData::is_real_type(resolved_schema_type)) {
-    unknown_schema_key = schema_data.name;
-    unknown_schema_key.push_back('\x1F');
-    schema_iter = impl_->total_schema_map.find(unknown_schema_key);
-  }
-
-  if (schema_iter == impl_->total_schema_map.end()) {
-    if (!schema_data.encoding.empty() && !schema_data.data.empty() &&
-        impl_->ser_map.find(schema_key) == impl_->ser_map.end()) {
-      if VUNLIKELY (!insert_schema(schema_data)) {
-        return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
-
-      impl_->ser_map.emplace(schema_key);
-    }
-
-    impl_->total_schema_map.emplace(schema_key, schema_data);
-
-    return true;
-  }
-
-  const auto& current = schema_iter->second;
-
-  if VUNLIKELY ((!schema_data.encoding.empty() && !current.encoding.empty() &&
-                 current.encoding != schema_data.encoding) ||
-                (!schema_data.data.empty() && !current.data.empty() && current.data != schema_data.data) ||
-                (SchemaData::is_real_type(resolved_schema_type) && SchemaData::is_real_type(current.schema_type) &&
-                 current.schema_type != resolved_schema_type)) {
-    CLOG_E("VDBWriter: Conflicting schema pushed for [%s].", schema_data.name.c_str());
-    return false;
-  }
-
-  SchemaData merged_schema = current;
-
-  if (merged_schema.encoding.empty() && !schema_data.encoding.empty()) {
-    merged_schema.encoding = schema_data.encoding;
-  }
-
-  if (merged_schema.data.empty() && !schema_data.data.empty()) {
-    merged_schema.data = schema_data.data;
-  }
-
-  if (!SchemaData::is_real_type(merged_schema.schema_type) && SchemaData::is_real_type(resolved_schema_type)) {
-    merged_schema.schema_type = resolved_schema_type;
-  }
-
-  if (!merged_schema.encoding.empty() && !merged_schema.data.empty() &&
-      impl_->ser_map.find(schema_key) == impl_->ser_map.end()) {
-    if VUNLIKELY (!insert_schema(merged_schema)) {
-      return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    impl_->ser_map.emplace(schema_key);
-  }
-
-  schema_data = merged_schema;
-
-  if (schema_iter->first != schema_key && merged_schema.schema_type == resolved_schema_type) {
-    impl_->total_schema_map.erase(schema_iter);
-    impl_->total_schema_map.emplace(schema_key, schema_data);
-  } else {
-    schema_iter->second = schema_data;
-  }
-
-  return true;
-}
-
-bool VDBWriter::load_schema(const std::string& ser_type, SchemaType& schema_type, SchemaData& schema_data) {
-#ifdef VLINK_ENABLE_SQLITE
-  schema_data = SchemaData{};
-
-  if VUNLIKELY (ser_type.empty()) {
-    return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  std::string schema_key = ser_type;
-  schema_key.push_back('\x1F');
-  schema_key.append(SchemaData::convert_type(schema_type));
-
-  std::string unknown_schema_key;
-  auto schema_iter = impl_->total_schema_map.end();
-
-  if (schema_type != SchemaType::kUnknown) {
-    schema_iter = impl_->total_schema_map.find(schema_key);
-
-    if (schema_iter == impl_->total_schema_map.end()) {
-      unknown_schema_key = ser_type;
-      unknown_schema_key.push_back('\x1F');
-      schema_iter = impl_->total_schema_map.find(unknown_schema_key);
-    }
-  } else {
-    const auto prefix = ser_type + std::string("\x1F");
-
-    for (auto iter = impl_->total_schema_map.begin(); iter != impl_->total_schema_map.end(); ++iter) {
-      if (!Helpers::has_startwith(iter->first, prefix)) {
-        continue;
-      }
-
-      if (schema_iter != impl_->total_schema_map.end()) {
-        schema_iter = impl_->total_schema_map.end();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        break;                                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
-
-      schema_iter = iter;
-    }
-  }
-
-  if VLIKELY (schema_iter != impl_->total_schema_map.end()) {
-    schema_data.name = schema_iter->second.name;
-    schema_data.encoding = schema_iter->second.encoding;
-    schema_data.schema_type = schema_iter->second.schema_type;
-    schema_data.data.shallow_copy(schema_iter->second.data);
-  } else if (impl_->schema_plugin_interface) {
-    schema_data =
-        impl_->schema_plugin_interface->search_schema(ser_type, schema_type);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  } else if (impl_->schema_callback) {
-    schema_data = impl_->schema_callback(ser_type, schema_type);
-  }
-
-  schema_type = SchemaData::resolve_type(schema_type, ser_type, schema_data.encoding);
-  schema_data.schema_type = SchemaData::resolve_type(schema_data.schema_type, ser_type, schema_data.encoding);
-
-  if (schema_type != SchemaType::kUnknown && schema_data.schema_type != SchemaType::kUnknown &&
-      schema_type != schema_data.schema_type) {
-    CLOG_E("VDBWriter: Schema family mismatch for [%s], requested = %d, resolved = %d.", ser_type.c_str(),
-           static_cast<int>(schema_type), static_cast<int>(schema_data.schema_type));
-    return false;
-  }
-
-  if (schema_type != SchemaType::kUnknown && schema_data.encoding.empty()) {
-    schema_data.encoding = std::string(SchemaData::convert_type(schema_type));
-  }
-
-  if (schema_data.schema_type == SchemaType::kUnknown && schema_type != SchemaType::kUnknown) {
-    schema_data.schema_type = schema_type;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  if (!schema_data.name.empty()) {
-    std::string resolved_schema_key = ser_type;
-    resolved_schema_key.push_back('\x1F');
-    resolved_schema_key.append(SchemaData::convert_type(schema_data.schema_type));
-
-    if VLIKELY (schema_iter != impl_->total_schema_map.end() && schema_iter->first == resolved_schema_key) {
-      if (schema_iter->second.encoding.empty() && !schema_data.encoding.empty()) {
-        schema_iter->second.encoding = schema_data.encoding;
-      }
-
-      schema_iter->second.schema_type = schema_data.schema_type;
-    } else {
-      SchemaData stored_schema = schema_data;
-
-      if (schema_iter != impl_->total_schema_map.end() && schema_iter->second.schema_type == SchemaType::kUnknown &&
-          schema_data.schema_type != SchemaType::kUnknown) {
-        impl_->total_schema_map.erase(schema_iter);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
-
-      const auto stored_iter =
-          impl_->total_schema_map.insert_or_assign(resolved_schema_key, std::move(stored_schema)).first;
-      schema_data.data.shallow_copy(stored_iter->second.data);
-    }
-  }
-
-  return true;
-#else
-  (void)ser_type;
-  (void)schema_type;
-  (void)schema_data;
-  return false;
-#endif
-}
-
 bool VDBWriter::push_schema(const SchemaData& schema_data) {
   SchemaData stored_schema = schema_data;
 
@@ -687,6 +504,12 @@ bool VDBWriter::push_schema(const SchemaData& schema_data) {
 
   return posted;
 }
+
+bool VDBWriter::is_dumping() const { return impl_->is_dumping.load(std::memory_order_relaxed); }
+
+bool VDBWriter::is_split_mode() const { return impl_->is_split_mode.load(std::memory_order_acquire); }
+
+int VDBWriter::get_split_index() const { return impl_->split_index.load(std::memory_order_relaxed); }
 
 int64_t VDBWriter::record(const Frame& frame, int64_t timestamp) {
 #ifdef VLINK_ENABLE_SQLITE
@@ -753,12 +576,6 @@ int64_t VDBWriter::record(const Frame& frame, int64_t timestamp) {
 }
 
 int64_t VDBWriter::get_record_timestamp() const { return impl_->elapsed_timer.get(); }
-
-bool VDBWriter::is_dumping() const { return impl_->is_dumping.load(std::memory_order_relaxed); }
-
-bool VDBWriter::is_split_mode() const { return impl_->is_split_mode.load(std::memory_order_acquire); }
-
-int VDBWriter::get_split_index() const { return impl_->split_index.load(std::memory_order_relaxed); }
 
 size_t VDBWriter::get_max_task_count() const { return impl_->config.max_task_depth; }
 
@@ -2309,6 +2126,197 @@ bool VDBWriter::rollback_cache() {
 
   return true;
 #else
+  return false;
+#endif
+}
+
+bool VDBWriter::merge_schema(SchemaData& schema_data) {
+  const auto resolved_schema_type =
+      SchemaData::resolve_type(schema_data.schema_type, schema_data.name, schema_data.encoding);
+  schema_data.schema_type = resolved_schema_type;
+
+  if VUNLIKELY (schema_data.name.empty()) {
+    return true;
+  }
+
+  if (schema_data.encoding.empty() && SchemaData::is_real_type(resolved_schema_type)) {
+    schema_data.encoding = std::string(SchemaData::convert_type(resolved_schema_type));
+  }
+
+  std::string schema_key = schema_data.name;
+  schema_key.push_back('\x1F');
+  schema_key.append(SchemaData::convert_type(resolved_schema_type));
+
+  std::string unknown_schema_key;
+  auto schema_iter = impl_->total_schema_map.find(schema_key);
+
+  if (schema_iter == impl_->total_schema_map.end() && SchemaData::is_real_type(resolved_schema_type)) {
+    unknown_schema_key = schema_data.name;
+    unknown_schema_key.push_back('\x1F');
+    schema_iter = impl_->total_schema_map.find(unknown_schema_key);
+  }
+
+  if (schema_iter == impl_->total_schema_map.end()) {
+    if (!schema_data.encoding.empty() && !schema_data.data.empty() &&
+        impl_->ser_map.find(schema_key) == impl_->ser_map.end()) {
+      if VUNLIKELY (!insert_schema(schema_data)) {
+        return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
+
+      impl_->ser_map.emplace(schema_key);
+    }
+
+    impl_->total_schema_map.emplace(schema_key, schema_data);
+
+    return true;
+  }
+
+  const auto& current = schema_iter->second;
+
+  if VUNLIKELY ((!schema_data.encoding.empty() && !current.encoding.empty() &&
+                 current.encoding != schema_data.encoding) ||
+                (!schema_data.data.empty() && !current.data.empty() && current.data != schema_data.data) ||
+                (SchemaData::is_real_type(resolved_schema_type) && SchemaData::is_real_type(current.schema_type) &&
+                 current.schema_type != resolved_schema_type)) {
+    CLOG_E("VDBWriter: Conflicting schema pushed for [%s].", schema_data.name.c_str());
+    return false;
+  }
+
+  SchemaData merged_schema = current;
+
+  if (merged_schema.encoding.empty() && !schema_data.encoding.empty()) {
+    merged_schema.encoding = schema_data.encoding;
+  }
+
+  if (merged_schema.data.empty() && !schema_data.data.empty()) {
+    merged_schema.data = schema_data.data;
+  }
+
+  if (!SchemaData::is_real_type(merged_schema.schema_type) && SchemaData::is_real_type(resolved_schema_type)) {
+    merged_schema.schema_type = resolved_schema_type;
+  }
+
+  if (!merged_schema.encoding.empty() && !merged_schema.data.empty() &&
+      impl_->ser_map.find(schema_key) == impl_->ser_map.end()) {
+    if VUNLIKELY (!insert_schema(merged_schema)) {
+      return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    impl_->ser_map.emplace(schema_key);
+  }
+
+  schema_data = merged_schema;
+
+  if (schema_iter->first != schema_key && merged_schema.schema_type == resolved_schema_type) {
+    impl_->total_schema_map.erase(schema_iter);
+    impl_->total_schema_map.emplace(schema_key, schema_data);
+  } else {
+    schema_iter->second = schema_data;
+  }
+
+  return true;
+}
+
+bool VDBWriter::load_schema(const std::string& ser_type, SchemaType& schema_type, SchemaData& schema_data) {
+#ifdef VLINK_ENABLE_SQLITE
+  schema_data = SchemaData{};
+
+  if VUNLIKELY (ser_type.empty()) {
+    return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  std::string schema_key = ser_type;
+  schema_key.push_back('\x1F');
+  schema_key.append(SchemaData::convert_type(schema_type));
+
+  std::string unknown_schema_key;
+  auto schema_iter = impl_->total_schema_map.end();
+
+  if (schema_type != SchemaType::kUnknown) {
+    schema_iter = impl_->total_schema_map.find(schema_key);
+
+    if (schema_iter == impl_->total_schema_map.end()) {
+      unknown_schema_key = ser_type;
+      unknown_schema_key.push_back('\x1F');
+      schema_iter = impl_->total_schema_map.find(unknown_schema_key);
+    }
+  } else {
+    const auto prefix = ser_type + std::string("\x1F");
+
+    for (auto iter = impl_->total_schema_map.begin(); iter != impl_->total_schema_map.end(); ++iter) {
+      if (!Helpers::has_startwith(iter->first, prefix)) {
+        continue;
+      }
+
+      if (schema_iter != impl_->total_schema_map.end()) {
+        schema_iter = impl_->total_schema_map.end();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        break;                                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
+
+      schema_iter = iter;
+    }
+  }
+
+  if VLIKELY (schema_iter != impl_->total_schema_map.end()) {
+    schema_data.name = schema_iter->second.name;
+    schema_data.encoding = schema_iter->second.encoding;
+    schema_data.schema_type = schema_iter->second.schema_type;
+    schema_data.data.shallow_copy(schema_iter->second.data);
+  } else if (impl_->schema_plugin_interface) {
+    schema_data =
+        impl_->schema_plugin_interface->search_schema(ser_type, schema_type);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  } else if (impl_->schema_callback) {
+    schema_data = impl_->schema_callback(ser_type, schema_type);
+  }
+
+  schema_type = SchemaData::resolve_type(schema_type, ser_type, schema_data.encoding);
+  schema_data.schema_type = SchemaData::resolve_type(schema_data.schema_type, ser_type, schema_data.encoding);
+
+  if (schema_type != SchemaType::kUnknown && schema_data.schema_type != SchemaType::kUnknown &&
+      schema_type != schema_data.schema_type) {
+    CLOG_E("VDBWriter: Schema family mismatch for [%s], requested = %d, resolved = %d.", ser_type.c_str(),
+           static_cast<int>(schema_type), static_cast<int>(schema_data.schema_type));
+    return false;
+  }
+
+  if (schema_type != SchemaType::kUnknown && schema_data.encoding.empty()) {
+    schema_data.encoding = std::string(SchemaData::convert_type(schema_type));
+  }
+
+  if (schema_data.schema_type == SchemaType::kUnknown && schema_type != SchemaType::kUnknown) {
+    schema_data.schema_type = schema_type;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  if (!schema_data.name.empty()) {
+    std::string resolved_schema_key = ser_type;
+    resolved_schema_key.push_back('\x1F');
+    resolved_schema_key.append(SchemaData::convert_type(schema_data.schema_type));
+
+    if VLIKELY (schema_iter != impl_->total_schema_map.end() && schema_iter->first == resolved_schema_key) {
+      if (schema_iter->second.encoding.empty() && !schema_data.encoding.empty()) {
+        schema_iter->second.encoding = schema_data.encoding;
+      }
+
+      schema_iter->second.schema_type = schema_data.schema_type;
+    } else {
+      SchemaData stored_schema = schema_data;
+
+      if (schema_iter != impl_->total_schema_map.end() && schema_iter->second.schema_type == SchemaType::kUnknown &&
+          schema_data.schema_type != SchemaType::kUnknown) {
+        impl_->total_schema_map.erase(schema_iter);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
+
+      const auto stored_iter =
+          impl_->total_schema_map.insert_or_assign(resolved_schema_key, std::move(stored_schema)).first;
+      schema_data.data.shallow_copy(stored_iter->second.data);
+    }
+  }
+
+  return true;
+#else
+  (void)ser_type;
+  (void)schema_type;
+  (void)schema_data;
   return false;
 #endif
 }

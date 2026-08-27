@@ -26,7 +26,7 @@
 |------|------|
 | `../quickstart/` | 三种模型的最小可运行骨架，先看 |
 | `../url_guide/url_basics/` | URL 各字段语义与跨后端切换 |
-| `../serialization/basic_types/` | 默认序列化规则（POD / string / Bytes） |
+| `../serialization/basic_types/` | 默认序列化规则（POD / string / Bytes / SOME/IP 宏结构） |
 | `include/vlink/publisher.h`、`subscriber.h`、`client.h`、`server.h`、`setter.h`、`getter.h` | 各模型完整公开 API |
 
 ## 🔗 参考

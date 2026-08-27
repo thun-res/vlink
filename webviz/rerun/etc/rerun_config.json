@@ -31,7 +31,7 @@
       "max_packet_size": 4.0,
       "use_iox": false,
       "iox_config": "",
-      "iox_strategy": 2,
+      "iox_strategy": 3,
       "iox_monitoring": true
     }
   },

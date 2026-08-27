@@ -27,6 +27,7 @@
 
 #include <chrono>
 #include <mutex>
+#include <new>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -37,6 +38,7 @@
 #include "./base/memory_pool.h"
 #include "./base/memory_resource.h"
 #include "./base/message_loop.h"
+#include "./base/utils.h"
 
 namespace vlink {
 
@@ -139,6 +141,17 @@ class FutureWaitLoop final {
   FutureWaitLoop() : thread_([this]() { poll_loop(); }) {}
 
   ~FutureWaitLoop() {
+#ifdef _WIN32
+    if (Utils::is_terminating()) {
+      if (thread_.joinable()) {
+        thread_.detach();
+      }
+
+      (void)::new (std::nothrow) auto(std::move(pending_));
+      return;
+    }
+#endif
+
     {
       std::lock_guard lock(mtx_);
       stopping_ = true;

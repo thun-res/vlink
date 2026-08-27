@@ -470,79 +470,6 @@ void load_parser_field_paths(const Json& object, QHash<QString, QString>& fields
 
 }  // namespace point3d_config_detail
 
-QString Point3DConfig::render_type_to_string(Point3DRenderType type) {
-  switch (type) {
-    case Point3DRenderType::kPointCloud:
-      return "point_cloud";
-    case Point3DRenderType::kObjectDetection:
-      return "object_detection";
-    case Point3DRenderType::kLaneLine:
-      return "lane_line";
-    case Point3DRenderType::kPrediction:
-      return "prediction";
-    case Point3DRenderType::kTrafficLight:
-      return "traffic_light";
-    case Point3DRenderType::kStopLine:
-      return "stop_line";
-    case Point3DRenderType::kTrafficSign:
-      return "traffic_sign";
-    case Point3DRenderType::kFreespace:
-      return "freespace";
-    case Point3DRenderType::kOccupancyGrid:
-      return "occupancy_grid";
-    case Point3DRenderType::kParkingSlot:
-      return "parking_slot";
-    case Point3DRenderType::kEgoTrajectory:
-      return "ego_trajectory";
-    case Point3DRenderType::kHdMap:
-      return "hdmap";
-    case Point3DRenderType::kCameraFrustum:
-      return "camera_frustum";
-    case Point3DRenderType::kCovarianceEllipse:
-      return "covariance_ellipse";
-    default:
-      return "point_cloud";
-  }
-}
-
-bool Point3DConfig::render_type_from_string(QString value, Point3DRenderType& type) {
-  value = point3d_config_detail::normalized_serializer(value);
-
-  if (value == "pointcloud" || value == "pcl") {
-    type = Point3DRenderType::kPointCloud;
-  } else if (value == "objectdetection" || value == "object" || value == "objects" || value == "od") {
-    type = Point3DRenderType::kObjectDetection;
-  } else if (value == "laneline" || value == "lane" || value == "lanes" || value == "polyline") {
-    type = Point3DRenderType::kLaneLine;
-  } else if (value == "prediction" || value == "trajectory" || value == "predictedpath") {
-    type = Point3DRenderType::kPrediction;
-  } else if (value == "trafficlight" || value == "light") {
-    type = Point3DRenderType::kTrafficLight;
-  } else if (value == "stopline" || value == "crosswalk") {
-    type = Point3DRenderType::kStopLine;
-  } else if (value == "trafficsign" || value == "sign") {
-    type = Point3DRenderType::kTrafficSign;
-  } else if (value == "freespace" || value == "drivablearea") {
-    type = Point3DRenderType::kFreespace;
-  } else if (value == "occupancygrid" || value == "grid" || value == "costmap") {
-    type = Point3DRenderType::kOccupancyGrid;
-  } else if (value == "parkingslot" || value == "slot") {
-    type = Point3DRenderType::kParkingSlot;
-  } else if (value == "egotrajectory" || value == "egopath" || value == "motionplan") {
-    type = Point3DRenderType::kEgoTrajectory;
-  } else if (value == "hdmap" || value == "map") {
-    type = Point3DRenderType::kHdMap;
-  } else if (value == "camerafrustum" || value == "camerainfo" || value == "cameracalib") {
-    type = Point3DRenderType::kCameraFrustum;
-  } else if (value == "covarianceellipse" || value == "covariance") {
-    type = Point3DRenderType::kCovarianceEllipse;
-  } else {
-    return false;
-  }
-
-  return true;
-}
-
 Point3DConfig Point3DConfig::default_config() {
   Point3DConfig config;
 
@@ -734,6 +661,79 @@ Point3DConfig Point3DConfig::default_config() {
   config.add_collection_hint(Point3DRenderType::kHdMap, {"lanelets", "primitives", "routesegments"});
 
   return config;
+}
+
+QString Point3DConfig::render_type_to_string(Point3DRenderType type) {
+  switch (type) {
+    case Point3DRenderType::kPointCloud:
+      return "point_cloud";
+    case Point3DRenderType::kObjectDetection:
+      return "object_detection";
+    case Point3DRenderType::kLaneLine:
+      return "lane_line";
+    case Point3DRenderType::kPrediction:
+      return "prediction";
+    case Point3DRenderType::kTrafficLight:
+      return "traffic_light";
+    case Point3DRenderType::kStopLine:
+      return "stop_line";
+    case Point3DRenderType::kTrafficSign:
+      return "traffic_sign";
+    case Point3DRenderType::kFreespace:
+      return "freespace";
+    case Point3DRenderType::kOccupancyGrid:
+      return "occupancy_grid";
+    case Point3DRenderType::kParkingSlot:
+      return "parking_slot";
+    case Point3DRenderType::kEgoTrajectory:
+      return "ego_trajectory";
+    case Point3DRenderType::kHdMap:
+      return "hdmap";
+    case Point3DRenderType::kCameraFrustum:
+      return "camera_frustum";
+    case Point3DRenderType::kCovarianceEllipse:
+      return "covariance_ellipse";
+    default:
+      return "point_cloud";
+  }
+}
+
+bool Point3DConfig::render_type_from_string(QString value, Point3DRenderType& type) {
+  value = point3d_config_detail::normalized_serializer(value);
+
+  if (value == "pointcloud" || value == "pcl") {
+    type = Point3DRenderType::kPointCloud;
+  } else if (value == "objectdetection" || value == "object" || value == "objects" || value == "od") {
+    type = Point3DRenderType::kObjectDetection;
+  } else if (value == "laneline" || value == "lane" || value == "lanes" || value == "polyline") {
+    type = Point3DRenderType::kLaneLine;
+  } else if (value == "prediction" || value == "trajectory" || value == "predictedpath") {
+    type = Point3DRenderType::kPrediction;
+  } else if (value == "trafficlight" || value == "light") {
+    type = Point3DRenderType::kTrafficLight;
+  } else if (value == "stopline" || value == "crosswalk") {
+    type = Point3DRenderType::kStopLine;
+  } else if (value == "trafficsign" || value == "sign") {
+    type = Point3DRenderType::kTrafficSign;
+  } else if (value == "freespace" || value == "drivablearea") {
+    type = Point3DRenderType::kFreespace;
+  } else if (value == "occupancygrid" || value == "grid" || value == "costmap") {
+    type = Point3DRenderType::kOccupancyGrid;
+  } else if (value == "parkingslot" || value == "slot") {
+    type = Point3DRenderType::kParkingSlot;
+  } else if (value == "egotrajectory" || value == "egopath" || value == "motionplan") {
+    type = Point3DRenderType::kEgoTrajectory;
+  } else if (value == "hdmap" || value == "map") {
+    type = Point3DRenderType::kHdMap;
+  } else if (value == "camerafrustum" || value == "camerainfo" || value == "cameracalib") {
+    type = Point3DRenderType::kCameraFrustum;
+  } else if (value == "covarianceellipse" || value == "covariance") {
+    type = Point3DRenderType::kCovarianceEllipse;
+  } else {
+    return false;
+  }
+
+  return true;
 }
 
 bool Point3DConfig::load_from_file(const QString& path, QString* error) {

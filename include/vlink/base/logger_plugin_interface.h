@@ -28,8 +28,8 @@
  * @details
  * A logger plugin is a shared library that exports a factory through @c VLINK_PLUGIN_DECLARE and
  * embeds @c VLINK_PLUGIN_REGISTER inside its concrete subclass.  At runtime the host application
- * uses @c vlink::Plugin::load<LoggerPluginInterface> to construct an instance and forwards every
- * log record to its @c log method.
+ * uses @c vlink::Plugin::load<LoggerPluginInterface> to construct an instance and forwards records
+ * accepted by the Logger file-channel level to its @c log method.
  *
  * @par Plugin contract
  *
@@ -39,17 +39,19 @@
  * | @c VLINK_PLUGIN_DECLARE  | translation unit | Exposes the factory and the version metadata     |
  * | @c init                  | host -> plugin   | Called once after construction with the app name |
  * | @c log                   | host -> plugin   | Called per record after passing level filters    |
+ * | @c flush                 | host -> plugin   | Drains records accepted before the call          |
  * | Destructor               | host -> plugin   | Called when the host releases the plugin handle  |
  *
  * @par Lifecycle
  *
  * @verbatim
- *  host                          plugin
- *  ----                          ------
- *  Plugin::load<...> ----------> factory creates instance
- *  init(app_name)    ---------->  initialise backend
- *  log(level, msg)   ---------->  forward to backend     (repeated)
- *  Plugin destroy    ---------->  destroy instance
+ *  host                            plugin
+ *  ----                            ------
+ *  Plugin::load<...>  ---------->  factory creates instance
+ *  init(app_name)     ---------->  initialise backend
+ *  log(level, msg)    ---------->  forward to backend     (repeated)
+ *  flush()            ---------->  drain accepted records
+ *  Plugin destroy     ---------->  destroy instance
  * @endverbatim
  *
  * @par Loading example
@@ -60,6 +62,7 @@
  *   if (backend) {
  *     backend->init("my_app");
  *     backend->log(vlink::Logger::kInfo, "Hello from plugin!");
+ *     backend->flush();
  *   }
  * @endcode
  *
@@ -67,14 +70,15 @@
  * @code
  *   class MyLogger : public vlink::LoggerPluginInterface {
  *    public:
- *     bool init(std::string_view app_name) override { return true; }
- *     bool log(int level, std::string_view str)  override { return write_to_backend(level, str); }
+ *     bool init(std::string_view app_name) noexcept override { return true; }
+ *     bool log(int level, std::string_view str) noexcept override { return write_to_backend(level, str); }
+ *     void flush() noexcept override { flush_backend(); }
  *   };
  *   VLINK_PLUGIN_DECLARE(MyLogger, 1, 0)
  * @endcode
  *
- * @note @p level mirrors @c vlink::Logger::Level values.  Both methods must avoid throwing
- *       across the plugin boundary; thrown exceptions there cause undefined behaviour.
+ * @note @p level mirrors @c vlink::Logger::Level values.  All hooks are non-throwing plugin
+ *       boundaries.
  *
  * @see Plugin, Logger
  */
@@ -94,7 +98,10 @@ namespace vlink {
  * @details
  * Concrete subclasses use @c VLINK_PLUGIN_REGISTER internally to expose their factory and
  * destructor functions to the @c Plugin loader.  Instances are owned by the host application
- * for the duration of the plugin handle.
+ * for the duration of the plugin handle.  When selected through @c VLINK_LOG_PLUGIN, @c init runs
+ * after the host Logger is constructed and supports same-thread Logger re-entry, so implementations
+ * may create VLink communication nodes there.  Other threads can continue logging to the console
+ * while initialisation is in progress, but their records are not sent to the plugin.
  */
 class LoggerPluginInterface {
   VLINK_PLUGIN_REGISTER(LoggerPluginInterface)
@@ -111,20 +118,31 @@ class LoggerPluginInterface {
    * @param app_name  Calling application name; may inform log labels or file paths.
    * @return @c true on success; @c false to indicate the plugin must not be used further.
    */
-  virtual bool init(std::string_view app_name) = 0;
+  virtual bool init(std::string_view app_name) noexcept = 0;
 
   /**
    * @brief Writes a single record to the backend.
    *
    * @details
    * Implementations should be non-blocking; @p str remains valid only for the duration of the
-   * call.
+   * call.  The host may call this method concurrently.  Logs emitted synchronously by this method
+   * or its dependencies are not forwarded back into the same plugin.
    *
    * @param level  Severity using @c vlink::Logger::Level values.
    * @param str    Fully formatted record.
-   * @return @c true on success; @c false to indicate a write error.
+   * @return @c true on success; @c false to indicate a write error.  The global Logger does not
+   *         retry or redirect a failed plugin write.
    */
-  virtual bool log(int level, std::string_view str) = 0;
+  virtual bool log(int level, std::string_view str) noexcept = 0;
+
+  /**
+   * @brief Drains records accepted by @c log before this call.
+   *
+   * @details
+   * Returns only after plugin-owned asynchronous work for earlier records has completed.  A
+   * synchronous implementation can use the default no-op.
+   */
+  virtual void flush() noexcept {}
 
  private:
   VLINK_DISALLOW_COPY_AND_ASSIGN(LoggerPluginInterface)

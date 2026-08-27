@@ -17,7 +17,7 @@ _vlink_proxy() {
             return
             ;;
         -l|--iox_strategy)
-            _vlink_bash_complete_words "1 2 3" "$cur"
+            _vlink_bash_complete_words "1 2 3 4" "$cur"
             return
             ;;
         -c|--iox_config)

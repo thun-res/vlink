@@ -50,7 +50,7 @@
         <mxCell id="L2t" value="Utilities  -  Shared Core Capabilities" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;fillColor=#1976d2;strokeColor=#0d47a1;fontFamily=Helvetica;fontSize=14;fontStyle=1;fontColor=#ffffff;spacingLeft=14;arcSize=14;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="52" y="220" width="420" height="28" as="geometry" />
         </mxCell>
-        <mxCell id="L2badge" value="14 serialization formats auto-detected by type" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1565c0;" vertex="1" parent="1">
+        <mxCell id="L2badge" value="15 serialization formats auto-detected by type" style="text;html=1;align=right;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#1565c0;" vertex="1" parent="1">
           <mxGeometry x="528" y="222" width="420" height="24" as="geometry" />
         </mxCell>
 

@@ -22,24 +22,29 @@
  */
 
 #include <vlink/base/logger.h>
+#include <vlink/extension/someip_serializer.h>
 #include <vlink/vlink.h>
 
+#include <array>
 #include <chrono>
+#include <cstdint>
 #include <cstring>
 #include <string>
+#include <vector>
 
 using namespace std::chrono_literals;  // NOLINT(build/namespaces, google-build-using-namespace)
 
 // ---------------------------------------------------------------------------
 // basic_types.cc
 //
-// Demonstrates VLink's compile-time serialization dispatch for the three
-// built-in "trivial" wire shapes:
+// Demonstrates VLink's compile-time serialization dispatch for the four
+// built-in and macro-declared wire shapes:
 //   * vlink::Bytes  -> kBytesType    (raw payload bytes)
 //   * std::string   -> kStringType   (string bytes, no terminator)
 //   * POD struct    -> kStandardType (sizeof(T) raw memcpy, host endian)
-// The Serializer<T> template picks the correct strategy at compile time via
-// trait probing (is_bytes / is_string / is_trivial_standard_layout / etc.),
+//   * SOME/IP struct -> kSomeipType  (field-wise portable payload)
+// Serializer::get_type_of<T>() picks the correct strategy at compile time via
+// trait probing (is_bytes_type / is_string_type / is_standard_type / etc.),
 // so user code never specifies a wire format manually. Each helper below
 // runs a publish-subscribe round trip on the intra-process backend so the
 // listen() callback exercises the deserialization path end to end.
@@ -58,6 +63,21 @@ struct SensorReading {
   uint8_t reserved[7];
 };
 
+struct SomeipChild {
+  int16_t delta{0};
+  std::string label;
+
+  VLINK_SOMEIP_FIELDS(delta, label)
+};
+
+struct SomeipMessage {
+  uint8_t state{0};
+  std::vector<uint16_t> samples;
+  std::array<SomeipChild, 2> children;
+
+  VLINK_SOMEIP_FIELDS(state, samples, children)
+};
+
 static_assert(std::is_trivial_v<SensorReading>, "SensorReading must be trivial");
 static_assert(std::is_standard_layout_v<SensorReading>, "SensorReading must be standard-layout");
 
@@ -67,6 +87,7 @@ static_assert(std::is_standard_layout_v<SensorReading>, "SensorReading must be s
 static_assert(vlink::Serializer::get_type_of<vlink::Bytes>() == vlink::Serializer::kBytesType);
 static_assert(vlink::Serializer::get_type_of<std::string>() == vlink::Serializer::kStringType);
 static_assert(vlink::Serializer::get_type_of<SensorReading>() == vlink::Serializer::kStandardType);
+static_assert(vlink::Serializer::get_type_of<SomeipMessage>() == vlink::Serializer::kSomeipType);
 static_assert(vlink::Serializer::get_type_of<int>() == vlink::Serializer::kStandardType);
 
 // Wire format for Bytes is the raw payload with no framework length prefix.
@@ -177,12 +198,32 @@ static void demo_pod() {
   VLOG_I("[POD] sizeof(SensorReading)=", sizeof(SensorReading),
          " serialized_size=", vlink::Serializer::get_serialized_size(reading));
 }
+
+static void demo_someip() {
+  VLOG_I("--- SOME/IP struct (kSomeipType) ---");
+
+  vlink::Subscriber<SomeipMessage> sub("intra://example/basic/someip#direct");
+  sub.listen([](const SomeipMessage& msg) {
+    VLOG_I("[SOME/IP] state=", static_cast<int>(msg.state), " samples=", msg.samples.size(),
+           " first child=", msg.children[0].label);
+  });
+
+  vlink::Publisher<SomeipMessage> pub("intra://example/basic/someip#direct");
+
+  SomeipMessage msg;
+  msg.state = 1U;
+  msg.samples = {0x1234U, 0xABCDU};
+  msg.children = {{{-2, "left"}, {3, "right"}}};
+  pub.publish(msg);
+}
+
 int main() {
-  // intra:// does not support attach(). #direct keeps each demo synchronous,
-  // so its local endpoints remain alive until every callback has completed.
+  // #direct keeps each demo synchronous, so its local endpoints remain alive
+  // until every callback has completed.
   demo_bytes();
   demo_string();
   demo_pod();
+  demo_someip();
 
   VLOG_I("=== Basic types demo complete ===");
   return 0;

@@ -74,16 +74,6 @@ const Conf* IntraSubscriberImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* IntraSubscriberImpl::get_abstract_node() const { return object_.get(); }
 
-bool IntraSubscriberImpl::attach(class MessageLoop*) {
-  VLOG_W("Function [attach] is not supported.");
-  return false;
-}
-
-bool IntraSubscriberImpl::detach() {
-  VLOG_W("Function [detach] is not supported.");
-  return false;
-}
-
 bool IntraSubscriberImpl::listen(MsgCallback&& callback) {
   const bool was_empty = object_->msg_map_is_empty() && object_->intra_msg_map_is_empty();
 

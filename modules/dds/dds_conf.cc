@@ -137,18 +137,6 @@ bool DdsConf::parse_protocol(struct Protocol* protocol) {
   return true;
 }
 
-bool DdsConf::is_valid() const {
-  if VUNLIKELY (domain < 0 || topic.empty()) {
-    return false;
-  }
-
-  if VUNLIKELY (!qos.empty() && !qos_ext.empty()) {
-    return false;
-  }
-
-  return true;
-}
-
 std::unique_ptr<ServerImpl> DdsConf::create_server() const { return std::make_unique<DdsServerImpl>(*this); }
 
 std::unique_ptr<ClientImpl> DdsConf::create_client() const { return std::make_unique<DdsClientImpl>(*this); }
@@ -162,6 +150,18 @@ std::unique_ptr<SubscriberImpl> DdsConf::create_subscriber() const {
 std::unique_ptr<SetterImpl> DdsConf::create_setter() const { return std::make_unique<DdsSetterImpl>(*this); }
 
 std::unique_ptr<GetterImpl> DdsConf::create_getter() const { return std::make_unique<DdsGetterImpl>(*this); }
+
+bool DdsConf::is_valid() const {
+  if VUNLIKELY (domain < 0 || topic.empty()) {
+    return false;
+  }
+
+  if VUNLIKELY (!qos.empty() && !qos_ext.empty()) {
+    return false;
+  }
+
+  return true;
+}
 
 std::ostream& operator<<(std::ostream& ostream, const Conf::PropertiesMap& qos) noexcept {
   std::ios_base::fmtflags f = ostream.flags();

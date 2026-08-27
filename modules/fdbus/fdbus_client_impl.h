@@ -52,10 +52,6 @@ class FdbusClientImpl final : public ClientImpl {
 
   const AbstractNode* get_abstract_node() const override;
 
-  bool attach(class MessageLoop*) override;
-
-  bool detach() override;
-
   bool is_connected() const override;
 
   bool call(const Bytes& req_data, MsgCallback&& callback, std::chrono::milliseconds timeout) override;

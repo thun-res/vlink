@@ -161,14 +161,14 @@ sub.listen([](MyProto* msg) { /* ... */ });
 
 ### 2.2.6 🧵 绑定 MessageLoop
 
-默认情况下，节点回调由后端自身的 delivery context 执行。后端实现支持时，`attach()` 可将节点绑定到一个 `MessageLoop`，此后回调改投递到该 loop 所在线程；`detach()` 解除绑定。当前 `intra://`、`fdbus://`、`someip://` 的六种原语均不支持 attach/detach，会告警并返回 `false`；其中 intra 默认由自身 queue pipeline 派发，`#direct` 则在发布 / 调用线程内同步回调。
+默认情况下，节点回调由后端自身的 delivery context 执行。`attach()` 可将节点绑定到一个 `MessageLoop`，此后入站回调改投递到该 loop；`detach()` 解除绑定。
 
 ![MessageLoop 概念](images/message-loop-concept.png)
 
 | 方法 | 语义 |
 | --- | --- |
-| `bool attach(MessageLoop* loop)` | 后端支持时绑定到 loop；不支持或已绑定其他 loop 时返回 `false` |
-| `bool detach()` | 后端支持时解除绑定；不支持或未绑定时返回 `false` |
+| `bool attach(MessageLoop* loop)` | 绑定到 loop；已绑定其他 loop 时返回 `false` |
+| `bool detach()` | 解除绑定；未绑定时返回 `false` |
 | `MessageLoop* get_message_loop() const` | 返回当前绑定的 loop，未绑定时返回 `nullptr` |
 
 ```cpp

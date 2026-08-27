@@ -455,19 +455,20 @@ VLink 通过 URL 前缀选择传输后端，同一套业务代码可以在不同
 
 ### 7.4 序列化体系
 
-序列化是通信中间件性能的关键瓶颈之一。VLink 通过编译期静态分派实现了对 14 种序列化类型的统一支持，而无需运行时类型判断的开销：
+序列化是通信中间件性能的关键瓶颈之一。VLink 通过编译期静态分派实现了对 15 种序列化类型的统一支持，而无需运行时类型判断的开销：
 
 | 类型常量             | 对应 C++ 类型                                   | 适用场景                            |
 | -------------------- | ----------------------------------------------- | ----------------------------------- |
 | `kBytesType`         | `Bytes`（轻量字节缓冲，含小对象内联存储）        | 原始字节传递，自定义序列化          |
 | `kDynamicType`       | 动态类型容器                                    | 运行时确定类型的场景                |
+| `kCustomType`        | 实现 `operator>>(Bytes&) const` / `operator<<(const Bytes&)` 的类型 | 自定义序列化协议   |
+| `kSomeipType`        | 使用 `VLINK_SOMEIP_FIELDS(...)` 声明的结构体   | AUTOSAR SOME/IP payload（可选 TLV）  |
 | `kCdrType`           | FastDDS CDR 消息                                | DDS 原生 CDR 序列化                 |
 | `kProtoType`         | `google::protobuf::MessageLite`                 | Protobuf 编码                       |
 | `kProtoPtrType`      | `MyProto*`（原始指针，Arena 管理）              | Protobuf Arena 减少拷贝             |
 | `kFlatTableType`     | `MyTableT`（NativeTable 派生）                  | FlatBuffers Object API              |
 | `kFlatPtrType`       | `const MyTable*`（指向 Table 子类的指针）       | FlatBuffers 零拷贝只读访问          |
 | `kFlatBuilderType`   | 含 `fbb_` 成员 + `Finish()` 的结构体           | FlatBuffers Builder 模式（结构体走常规 `publish()`；裸 `flatbuffers::FlatBufferBuilder*` 需用 `Publisher::publish_fbb()` 重载） |
-| `kCustomType`        | 实现 `operator>>(Bytes&) const` / `operator<<(const Bytes&)` 的类型 | 自定义序列化协议   |
 | `kStringType`        | `std::string`                                   | 字符串消息                          |
 | `kCharsType`         | `char[]` / `const char*`                        | 仅序列化；反序列化使用 `std::string` |
 | `kStreamType`        | 支持 `std::stringstream` 输入/输出运算符的类型  | 兜底序列化路径（无更优编解码时回退）|
@@ -574,17 +575,15 @@ VLink 的 `Logger` 是全局单例日志系统，支持四种日志书写风格�
 | 宏 | 风格 |
 | --- | --- |
 | `VLOG_I` | 流式（variadic stream，推荐） |
-| `MLOG_I` | 格式化（fmt/std::format 风格） |
+| `MLOG_I` | `vlink::format` 的 `{}` 占位风格 |
 | `CLOG_I` | C 风格（printf 风格） |
 | `SLOG_I` | RAII 流式 |
 
 日志级别：`kTrace / kDebug / kInfo / kWarn / kError / kFatal / kOff`（共 7 级，其中 `kOff` 表示关闭对应 sink）。编译期可通过宏 `VLINK_LOG_LEVEL=N` 剥离低于 `N` 的级别（零开销）；运行时可通过 `Logger::set_console_level()` / `set_file_level()` 分别调整控制台与文件 sink 的级别
 
-后端适配器（通过编译选项 `SELECT_LOG_BACKEND` 切换）：
-- `spdlog`（桌面/Linux 默认，高性能异步日志；Android/QNX 默认 native）
-- `quill`（超低延迟日志，适合实时线程）
-- `dlt`（AUTOSAR DLT 日志格式，适配车载诊断系统）
-- `native`（平台原生日志：Android logcat / QNX slog2 / Linux kmsg，自动适配）
+后端适配器（通过编译选项 `ENABLE_LOG_BACKEND` 切换）：
+- 自研 `LoggerBackend`（桌面/Linux 默认启用，使用 `MessageLoop` 异步队列与文件轮转）
+- 平台日志（关闭自研后端后使用，提供 Android logcat、QNX slog2 与 Linux kmsg）
 
 所有后端实现完全透明切换，业务代码中的日志调用不需要任何修改。
 
@@ -837,7 +836,7 @@ ROS2 要求使用 `rclcpp::Node` 基类，节点必须在 ROS 执行器（Execut
 
 **序列化支持**
 
-ROS2 使用 `.msg` 格式定义消息类型，序列化为 CDR，与 Protobuf/FlatBuffers 的集成需要手动封装。VLink 原生支持 14 种序列化格式，无需格式转换。
+ROS2 使用 `.msg` 格式定义消息类型，序列化为 CDR，与 Protobuf/FlatBuffers 的集成需要手动封装。VLink 原生支持 15 种序列化格式，无需格式转换。
 
 **传输灵活性**
 
@@ -892,7 +891,7 @@ Zenoh 是新兴的云边一体通信协议，VLink 在 zenoh:// 后端下兼容 
 | 多传输后端支持     | 支持（10 种 scheme）   | 部分（以 DDS 为主）      | 不支持（仅 DDS）  | 不支持（仅 SOME/IP）| 部分                 |
 | 极简 API           | 支持                   | 部分（需继承 Node）      | 不支持（API 复杂）| 不支持（协议复杂）  | 支持                 |
 | 零拷贝支持         | 条件支持（SHM loan / Intra 共享指针直达路径） | 部分（intra-process） | 部分 | 不支持 | 部分（实验性） |
-| 多序列化格式支持   | 支持（14 种）          | 部分（CDR 为主）         | 部分（CDR）       | 不支持              | 不支持（raw bytes）  |
+| 多序列化格式支持   | 支持（15 种）          | 部分（CDR 为主）         | 部分（CDR）       | 不支持              | 不支持（raw bytes）  |
 | 实时性保障         | 支持                   | 部分                     | 支持              | 支持                | 支持                 |
 | 调试工具链         | 支持                   | 支持（生态丰富）         | 部分              | 部分                | 部分                 |
 | Web 可视化集成     | 支持（Foxglove+Rerun） | 部分（foxglove_bridge）  | 不支持            | 不支持              | 不支持               |
@@ -933,6 +932,7 @@ VLink 在 `shm://` 传输上依托 Iceoryx 实现共享内存零拷贝。Iceoryx
 | kFlatTableType | 中（Pack） | 中（UnPack） | 中 | FlatBuffers Object API（需打包/解包） |
 | kFlatPtrType | 低 | 极低（零解码） | 低 | 随机访问场景（Zero-copy view） |
 | kProtoType   | 中       | 中       | 中       | 通用结构化数据              |
+| kSomeipType  | 取决于字段、容器、字符串校验与 TLV 扫描 | 同左 | 取决于目标容量复用 | 车载服务 payload、跨大小端结构 |
 | kCdrType     | 低       | 低       | 中       | DDS 原生场景               |
 | kCustomType  | 取决于实现 | 取决于实现 | 取决于实现 | 特殊需求                 |
 
@@ -1290,11 +1290,14 @@ VLOG_D("frame count=", frame_count);    // Release 下被编译器完全消除
 VLOG_W("buffer overflow detected");     // 保留
 ```
 
-**多后端适配。** 日志后端通过编译选项可配置为 spdlog（桌面/Linux 默认，高性能异步；Android/QNX 默认 native）、quill（低延迟异步）、dlt（AUTOSAR DLT 协议）或 native（平台原生日志：Android logcat / QNX slog2 / Linux kmsg，自动适配），同一份业务代码即可适应从开发桌面到车规嵌入式的不同部署环境。
+**多后端适配。** 日志后端通过编译选项可配置为 `LoggerBackend`（Android/QNX 以外的
+CMake 与 Conan 默认，使用 `MessageLoop` 异步队列与文件轮转）或平台日志（Android.bp
+与 Android/QNX 的 CMake 默认，使用 Android logcat / QNX slog2；Linux 可选 kmsg），
+同一份业务代码即可适应从开发桌面到车规嵌入式的不同部署环境。
 
 **回溯日志（backtrace）。** 通过 `Logger::enable_backtrace(n)` 维护最近 n 条日志的环形缓冲区，发生错误时调用 `Logger::dump_backtrace()` 即可输出错误前的上下文，帮助定位仅在低日志级别下才暴露的问题。
 
-此外，日志宏提供流式（`VLOG_I`）、格式化（`MLOG_I`，`vlink::format` 的 `{}` 占位）、C 风格（`CLOG_I`，printf）与 RAII 流式（`SLOG_I`）四种写法，底层共享同一套过滤与后端机制。新代码默认优先 `VLOG_*`；多段嵌入值、宽度或精度等复杂格式控制推荐 `CLOG_*`；`MLOG_*` 沿用已采用 `{}` 占位格式的模块：
+此外，日志宏提供流式（`VLOG_I`）、格式化（`MLOG_I`，`vlink::format` 的 `{}` 占位，支持 std::format 风格的宽度/精度/进制修饰）、C 风格（`CLOG_I`，printf）与 RAII 流式（`SLOG_I`）四种写法，底层共享同一套过滤与后端机制。新代码默认优先 `VLOG_*`；宽度或精度等格式控制可直接用 `MLOG_*` 的 `{:spec}` 修饰（如 `{:8.3f}`）或沿用 `CLOG_*`：
 
 ```cpp
 VLOG_I("frame_id=", frame_id, " latency=", latency_ms, "ms");
@@ -1514,7 +1517,7 @@ vlink-bench run \
 | 同网段多机器分布式通信            | `dds://` / `ddsc://`   | 标准 RTPS 协议，互联互通性强                      | **稳定** |
 | 同机多进程，无 RouDi 依赖         | `shm2://`              | Iceoryx2 无需中心守护进程，部署更简单              | Beta     |
 | 跨 NAT / 云边协同                 | `zenoh://`             | 可经可达的 Zenoh router / 显式 endpoint 连接；VLink 不自动穿透 NAT | Beta     |
-| 车载以太网，AUTOSAR 兼容          | `someip://`            | 符合 AUTOSAR AP 规范，与车载 ECU 互联              | Beta     |
+| 面向 AUTOSAR 的车载以太网集成     | `someip://`            | 基于 vsomeip 的传输适配与 SOME/IP payload 子集     | Beta     |
 
 综合延迟、吞吐、资源消耗、API 复杂度、工具链完整性等维度，对 VLink 与主流竞品的综合能力矩阵如下：
 
@@ -1653,7 +1656,7 @@ VLink 的长期价值需要依托健康的开源生态来实现。生态建设�
 
 **第二，在类型安全与运行时开销之间取得工程折中**。借助 `if constexpr`、模板特化和 `static_assert`，VLink 在编译期完成大量类型检查，保证序列化类型匹配的静态安全性，并通过模板展开减少不必要的运行时分支。抽象层额外开销需要在目标后端与目标消息类型上通过 benchmark 验证。
 
-**第三，将零拷贝、安全加密、多序列化等高级特性封装到统一 API 中**。零拷贝 SHM 传输通过框架 API 封装借贷细节，安全加密可通过模板参数 `SecurityType::kWithSecurity` 开启，多格式序列化（Protobuf/FlatBuffers/CDR/POD/自定义）通过统一的序列化 traits 自动推导。这些特性在现有方案中往往需要额外配置，VLink 将其收敛为编译期选项或 URL 参数，降低了工程实现难度。
+**第三，将零拷贝、安全加密、多序列化等高级特性封装到统一 API 中**。零拷贝 SHM 传输通过框架 API 封装借贷细节，安全加密可通过模板参数 `SecurityType::kWithSecurity` 开启，多格式序列化（SOME/IP/Protobuf/FlatBuffers/CDR/POD/自定义）通过统一的序列化 traits 自动推导。这些特性在现有方案中往往需要额外配置，VLink 将其收敛为编译期选项或 URL 参数，降低了工程实现难度。
 
 **第四，构建了完整的工程工具链**。10 个 CLI 工具（vlink-info、vlink-check、vlink-list、vlink-monitor、vlink-bag、vlink-trigger、vlink-parse、vlink-eproto、vlink-efbs、vlink-bench）覆盖了从环境诊断、拓扑发现、实时监控、数据管理到性能基准测试的全链路调试需求；BagWriter、DiscoveryViewer、CpuProfiler、Logger 等基础组件内建于框架，使系统可观测性成为默认能力。这使 VLink 从单纯的通信库升级为具备完整运维支撑的通信基础设施平台。
 
@@ -1685,7 +1688,7 @@ VLink 仍有以下工作需要持续补齐：
 
 [4] Object Management Group. "Data Distribution Service (DDS) Specification v1.4." OMG Standard, 2015.
 
-[5] AUTOSAR Consortium. "AUTOSAR Adaptive Platform - SOME/IP Protocol Specification." Release 22-11, 2022.
+[5] AUTOSAR Consortium. "SOME/IP Protocol Specification." Foundation R25-11, 2025.
 
 [6] Eclipse Foundation. "Zenoh: Zero Overhead Publish/Subscribe, Store/Query and Compute." 2024. https://zenoh.io/
 

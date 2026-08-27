@@ -78,15 +78,21 @@ jobs:
           key: cpm-ci-linux-x86_64-${{ hashFiles('cmake/cpm.cmake', 'cmake/cpm_thirdparty.cmake', 'packup/patch/*.patch') }}
           restore-keys: cpm-ci-linux-x86_64-
 
+      - name: Set ccache epoch
+        id: ccache-epoch
+        run: echo "value=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+
       - name: Restore ccache
         uses: actions/cache@v5
         with:
           path: ~/.ccache
-          key: ccache-ci-linux-x86_64-tidy-v3-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'conanfile.py', 'packup/patch/*.patch') }}
-          restore-keys: ccache-ci-linux-x86_64-tidy-
+          key: ccache-ci-linux-x86_64-tidy-v4-${{ steps.ccache-epoch.outputs.value }}-${{ hashFiles('.clang-tidy', '.github/scripts/ccache-clang-tidy.sh', '.github/scripts/ci-tidy.sh', '.github/docker/Dockerfile', '.github/workflows/docker-images.yml', 'CMakeLists.txt', 'cmake/**/*.cmake', 'conanfile.py', 'packup/patch/*.patch') }}
+          restore-keys: ccache-ci-linux-x86_64-tidy-v4-
 
       - name: Run lint gates
         run: bash .github/scripts/docker-run.sh "${VLINK_UBUNTU22_IMAGE}" bash .github/scripts/ci-lint.sh
 
       - name: Configure and run clang-tidy
-        run: bash .github/scripts/docker-run.sh "${VLINK_UBUNTU22_IMAGE}" bash .github/scripts/ci-tidy.sh
+        run: >-
+          bash .github/scripts/docker-run.sh "${VLINK_UBUNTU22_IMAGE}"
+          env VLINK_CI_TIDY_CCACHE=1 bash .github/scripts/ci-tidy.sh

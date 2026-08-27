@@ -26,6 +26,7 @@
 #ifdef VLINK_SUPPORT_DDS
 
 #include <atomic>
+#include <charconv>
 #include <filesystem>
 #include <fstream>
 #include <future>
@@ -113,10 +114,12 @@ struct DdsFailingCustomMsg {
   bool operator<<(const Bytes&) { return false; }
 };
 
+#ifdef VLINK_HAS_CDR
 struct DdsUnregisteredCdrMsg {
   void serialize(eprosima::fastcdr::Cdr&) const {}
   void deserialize(eprosima::fastcdr::Cdr&) {}
 };
+#endif
 
 }  // namespace
 
@@ -350,6 +353,7 @@ TEST_SUITE("dds-init") {
     }
   }
 
+#ifdef VLINK_HAS_CDR
   TEST_CASE("unregistered CDR topic init is either rejected or cleaned up") {
     Publisher<DdsUnregisteredCdrMsg> pub(DdsConf("dds/init/unregistered_cdr_pub"), InitType::kWithoutInit);
     bool pub_init = false;
@@ -377,6 +381,7 @@ TEST_SUITE("dds-init") {
       CHECK(sub.deinit());
     }
   }
+#endif
 
   TEST_CASE("deferred nodes cover every role without runtime init") {
     Publisher<int> pub(DdsConf("dds/init/deferred_roles_pub"), InitType::kWithoutInit);
@@ -2492,11 +2497,24 @@ struct DdsCustomMsg {
     out = vlink::Bytes::deep_copy(reinterpret_cast<const uint8_t*>(s.data()), s.size());
   }
 
-  void operator<<(const vlink::Bytes& in) {
+  bool operator<<(const vlink::Bytes& in) {
     std::string s(reinterpret_cast<const char*>(in.data()), in.size());
-    auto p = s.find('|');
-    id = std::stoi(s.substr(0, p));
-    label = s.substr(p + 1);
+    const auto separator = s.find('|');
+
+    if (separator == std::string::npos) {
+      return false;
+    }
+
+    int parsed_id = 0;
+    const auto result = std::from_chars(s.data(), s.data() + separator, parsed_id);
+
+    if (result.ec != std::errc{} || result.ptr != s.data() + separator) {
+      return false;
+    }
+
+    id = parsed_id;
+    label = s.substr(separator + 1U);
+    return true;
   }
 };
 

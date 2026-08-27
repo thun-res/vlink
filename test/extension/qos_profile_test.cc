@@ -43,7 +43,7 @@ TEST_SUITE("extension-QosProfile") {
     SUBCASE("kPoor") { CHECK(vlink::QosProfile::kPoor.valid); }
     SUBCASE("kBetter") { CHECK(vlink::QosProfile::kBetter.valid); }
     SUBCASE("kBest") { CHECK(vlink::QosProfile::kBest.valid); }
-    SUBCASE("kLarge") { CHECK(vlink::QosProfile::kLarge.valid); }
+    SUBCASE("kStream") { CHECK(vlink::QosProfile::kStream.valid); }
     SUBCASE("kAlarm") { CHECK(vlink::QosProfile::kAlarm.valid); }
     SUBCASE("kCommand") { CHECK(vlink::QosProfile::kCommand.valid); }
     SUBCASE("kLog") { CHECK(vlink::QosProfile::kLog.valid); }
@@ -61,7 +61,7 @@ TEST_SUITE("extension-QosProfile") {
     CHECK_EQ(q.liveliness.kind, vlink::Qos::Liveliness::kAutomatic);
     CHECK_EQ(q.liveliness.duration, 1000);
     CHECK_EQ(q.deadline.period, -1);
-    CHECK_EQ(q.lifespan.duration, 2000);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "event");
   }
 
@@ -74,7 +74,7 @@ TEST_SUITE("extension-QosProfile") {
     CHECK_EQ(q.additions.priority, vlink::Qos::Additions::kPriorityHigh);
     CHECK_EQ(q.liveliness.duration, 2000);
     CHECK_EQ(q.deadline.period, -1);
-    CHECK_EQ(q.lifespan.duration, 5000);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "method");
   }
 
@@ -102,8 +102,8 @@ TEST_SUITE("extension-QosProfile") {
     CHECK_EQ(q.additions.priority, vlink::Qos::Additions::kPriorityNormal);
     CHECK(q.additions.is_express);
     CHECK_EQ(q.liveliness.duration, 500);
-    CHECK_EQ(q.deadline.period, 200);
-    CHECK_EQ(q.lifespan.duration, 500);
+    CHECK_EQ(q.deadline.period, -1);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "sensor");
   }
 
@@ -145,8 +145,8 @@ TEST_SUITE("extension-QosProfile") {
     CHECK_EQ(q.additions.priority, vlink::Qos::Additions::kPriorityLow);
     CHECK(q.additions.is_express);
     CHECK_EQ(q.liveliness.duration, 1000);
-    CHECK_EQ(q.deadline.period, 1500);
-    CHECK_EQ(q.lifespan.duration, 1000);
+    CHECK_EQ(q.deadline.period, -1);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "clock");
   }
 
@@ -172,7 +172,7 @@ TEST_SUITE("extension-QosProfile") {
     CHECK_EQ(q.additions.priority, vlink::Qos::Additions::kPriorityHigh);
     CHECK_EQ(q.liveliness.duration, 1000);
     CHECK_EQ(q.deadline.period, -1);
-    CHECK_EQ(q.lifespan.duration, 1000);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "light");
   }
 
@@ -186,7 +186,7 @@ TEST_SUITE("extension-QosProfile") {
     CHECK_EQ(q.additions.priority, vlink::Qos::Additions::kPriorityBackground);
     CHECK_EQ(q.liveliness.duration, 5000);
     CHECK_EQ(q.deadline.period, -1);
-    CHECK_EQ(q.lifespan.duration, 3000);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "poor");
   }
 
@@ -199,36 +199,38 @@ TEST_SUITE("extension-QosProfile") {
     CHECK_EQ(q.additions.priority, vlink::Qos::Additions::kPriorityRealTime);
     CHECK_EQ(q.liveliness.duration, 1000);
     CHECK_EQ(q.deadline.period, -1);
-    CHECK_EQ(q.lifespan.duration, 1000);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "better");
   }
 
-  TEST_CASE("kBest is reliable keep-last-200 volatile sync realtime priority") {
+  TEST_CASE("kBest is reliable keep-last-10 volatile sync realtime priority") {
     const vlink::Qos& q = vlink::QosProfile::kBest;
     CHECK_EQ(q.reliability.kind, vlink::Qos::Reliability::kReliable);
     CHECK_EQ(q.history.kind, vlink::Qos::History::kKeepLast);
-    CHECK_EQ(q.history.depth, 200);
+    CHECK_EQ(q.history.depth, 10);
+    CHECK_EQ(q.durability.kind, vlink::Qos::Durability::kVolatile);
     CHECK_EQ(q.publish_mode.kind, vlink::Qos::PublishMode::kSync);
     CHECK_EQ(q.additions.priority, vlink::Qos::Additions::kPriorityRealTime);
     CHECK_EQ(q.liveliness.duration, 1000);
     CHECK_EQ(q.deadline.period, -1);
-    CHECK_EQ(q.lifespan.duration, 2000);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "best");
   }
 
-  TEST_CASE("kLarge is reliable keep-last-500 shorter-heartbeat volatile sync low priority") {
-    const vlink::Qos& q = vlink::QosProfile::kLarge;
+  TEST_CASE("kStream is reliable keep-last-100 shorter-heartbeat volatile sync low priority") {
+    const vlink::Qos& q = vlink::QosProfile::kStream;
     CHECK_EQ(q.reliability.kind, vlink::Qos::Reliability::kReliable);
     CHECK_EQ(q.history.kind, vlink::Qos::History::kKeepLast);
-    CHECK_EQ(q.history.depth, 500);
+    CHECK_EQ(q.history.depth, 100);
+    CHECK_EQ(q.reliability.block_time, 100);
     CHECK_EQ(q.reliability.heartbeat_time, 500);
     CHECK_EQ(q.durability.kind, vlink::Qos::Durability::kVolatile);
     CHECK_EQ(q.publish_mode.kind, vlink::Qos::PublishMode::kSync);
     CHECK_EQ(q.additions.priority, vlink::Qos::Additions::kPriorityLow);
     CHECK_EQ(q.liveliness.duration, 3000);
     CHECK_EQ(q.deadline.period, -1);
-    CHECK_EQ(q.lifespan.duration, 10000);
-    CHECK_EQ(std::string(q.name), "large");
+    CHECK_EQ(q.lifespan.duration, -1);
+    CHECK_EQ(std::string(q.name), "stream");
   }
 
   TEST_CASE("kAlarm is reliable keep-all transient-local sync realtime express") {
@@ -256,7 +258,7 @@ TEST_SUITE("extension-QosProfile") {
     CHECK_FALSE(q.additions.is_express);
     CHECK_EQ(q.liveliness.duration, 500);
     CHECK_EQ(q.deadline.period, -1);
-    CHECK_EQ(q.lifespan.duration, 1000);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "command");
   }
 
@@ -271,7 +273,7 @@ TEST_SUITE("extension-QosProfile") {
     CHECK_EQ(q.additions.priority, vlink::Qos::Additions::kPriorityBackground);
     CHECK_EQ(q.liveliness.duration, 5000);
     CHECK_EQ(q.deadline.period, -1);
-    CHECK_EQ(q.lifespan.duration, 5000);
+    CHECK_EQ(q.lifespan.duration, -1);
     CHECK_EQ(std::string(q.name), "log");
   }
 
@@ -290,7 +292,7 @@ TEST_SUITE("extension-QosProfile") {
     CHECK(m.count("poor") == 1u);
     CHECK(m.count("better") == 1u);
     CHECK(m.count("best") == 1u);
-    CHECK(m.count("large") == 1u);
+    CHECK(m.count("stream") == 1u);
     CHECK(m.count("alarm") == 1u);
     CHECK(m.count("command") == 1u);
     CHECK(m.count("log") == 1u);

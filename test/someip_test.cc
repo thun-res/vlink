@@ -27,13 +27,32 @@
 
 #ifdef VLINK_SUPPORT_SOMEIP
 
+#include <array>
 #include <atomic>
+#include <cstdint>
 #include <future>
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 
+#include "./extension/someip_serializer.h"
 #include "./modules/someip_conf.h"
+
+struct SomeipTransportChild {
+  int16_t delta{0};
+  std::string label;
+
+  VLINK_SOMEIP_FIELDS(delta, label)
+};
+
+struct SomeipTransportMessage {
+  uint8_t state{0};
+  std::array<uint32_t, 2> limits{};
+  std::vector<SomeipTransportChild> children;
+
+  VLINK_SOMEIP_FIELDS(state, limits, children)
+};
 
 TEST_SUITE("someip-init") {
   TEST_CASE("rpc conf defaults are set correctly") {
@@ -155,14 +174,21 @@ TEST_SUITE("someip-pubsub") {
   TEST_CASE("bytes payload is delivered to subscriber") {
     MESSAGE("[someip-pubsub] bytes payload is delivered to subscriber");
 
+    MessageLoop loop;
+    REQUIRE(loop.async_run());
+
     std::atomic<bool> received{false};
+    std::atomic<bool> callback_on_loop{false};
     Bytes captured;
 
     Publisher<Bytes> pub(SomeipConf(0x1001, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
     Subscriber<Bytes> sub("someip://4097/1?groups=1&event=1");
 
+    REQUIRE(sub.attach(&loop));
+
     sub.listen([&](const Bytes& data) {
       captured = data;
+      callback_on_loop.store(loop.is_in_same_thread(), std::memory_order_release);
       received.store(true, std::memory_order_release);
     });
 
@@ -178,6 +204,11 @@ TEST_SUITE("someip-pubsub") {
     REQUIRE(captured.size() == 3u);
     CHECK(captured[0] == 0xAB);
     CHECK(captured[2] == 0xEF);
+    CHECK(callback_on_loop.load(std::memory_order_acquire));
+
+    CHECK(sub.detach());
+    loop.quit();
+    loop.wait_for_quit();
   }
 
   TEST_CASE("string payload round trips correctly") {
@@ -294,6 +325,40 @@ TEST_SUITE("someip-pubsub") {
   }
 }
 
+TEST_SUITE("someip-serializer") {
+  TEST_CASE("macro declared nested structure round trips through someip transport") {
+    MESSAGE("[someip-serializer] macro declared nested structure round trips through someip transport");
+
+    std::atomic<bool> received{false};
+    std::atomic<bool> matches{false};
+
+    SomeipTransportMessage source;
+    source.state = 0x7FU;
+    source.limits = {0x12345678U, 0xABCDEF01U};
+    source.children = {{-2, "left"}, {3, "right"}};
+
+    Publisher<SomeipTransportMessage> pub(SomeipConf(0x1023, 0x0001, SomeipConf::Groups{0x0001}, 0x0001));
+    Subscriber<SomeipTransportMessage> sub("someip://4131/1?groups=1&event=1");
+
+    sub.listen([&](const SomeipTransportMessage& value) {
+      const bool equal =
+          value.state == source.state && value.limits == source.limits &&
+          value.children.size() == source.children.size() && value.children[0].delta == source.children[0].delta &&
+          value.children[0].label == source.children[0].label && value.children[1].delta == source.children[1].delta &&
+          value.children[1].label == source.children[1].label;
+      matches.store(equal, std::memory_order_release);
+      received.store(true, std::memory_order_release);
+    });
+
+    CHECK(pub.wait_for_subscribers(1s));
+    std::this_thread::sleep_for(10ms);
+    CHECK(pub.publish(source));
+
+    REQUIRE(common_test::wait_until([&received] { return received.load(std::memory_order_acquire); }, 5s));
+    CHECK(matches.load(std::memory_order_acquire));
+  }
+}
+
 TEST_SUITE("someip-method") {
   TEST_CASE("fire and forget send increments server counter") {
     MESSAGE("[someip-method] fire and forget send increments server counter");
@@ -347,17 +412,29 @@ TEST_SUITE("someip-method") {
   TEST_CASE("async callback receives the response") {
     MESSAGE("[someip-method] async callback receives the response");
 
+    MessageLoop loop;
+    REQUIRE(loop.async_run());
+
+    std::atomic<bool> server_on_loop{false};
+
     Server<std::string, std::string> server(SomeipConf(0x2004, 0x0001, 0x0001));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "someip_cb"; });
+    REQUIRE(server.attach(&loop));
+    server.listen([&](const std::string& /*req*/, std::string& resp) {
+      server_on_loop.store(loop.is_in_same_thread(), std::memory_order_release);
+      resp = "someip_cb";
+    });
 
     Client<std::string, std::string> client("someip://8196/1?method=1");
+    REQUIRE(client.attach(&loop));
     CHECK(client.wait_for_connected(1s));
 
     std::atomic<bool> got{false};
+    std::atomic<bool> client_on_loop{false};
     std::string resp_val;
 
     bool ok = client.invoke("msg", [&](const std::string& resp) {
       resp_val = resp;
+      client_on_loop.store(loop.is_in_same_thread(), std::memory_order_release);
       got.store(true, std::memory_order_release);
     });
 
@@ -365,6 +442,13 @@ TEST_SUITE("someip-method") {
 
     CHECK(common_test::wait_until([&got] { return got.load(std::memory_order_acquire); }, 5s));
     CHECK(resp_val == "someip_cb");
+    CHECK(server_on_loop.load(std::memory_order_acquire));
+    CHECK(client_on_loop.load(std::memory_order_acquire));
+
+    CHECK(client.detach());
+    CHECK(server.detach());
+    loop.quit();
+    loop.wait_for_quit();
   }
 
   TEST_CASE("client connection is reported via detect callback") {

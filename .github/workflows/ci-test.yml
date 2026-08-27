@@ -57,6 +57,7 @@ jobs:
     timeout-minutes: 120
     env:
       VLINK_CI_EXTRA_CMAKE_ARGS: >-
+        -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
         -DENABLE_VIEWER=ON
         -DENABLE_WEBVIZ=ON
         -DENABLE_VIEWER_FFMPEG=ON
@@ -101,6 +102,7 @@ jobs:
     timeout-minutes: 120
     env:
       VLINK_CI_EXTRA_CMAKE_ARGS: >-
+        -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
         -DENABLE_VIEWER=OFF
         -DENABLE_WEBVIZ=OFF
         -DENABLE_TEST_SANITIZE=OFF

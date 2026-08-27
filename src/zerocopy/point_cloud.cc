@@ -123,8 +123,6 @@ std::ostream& operator<<(std::ostream& ostream, const PointCloud::Vector3f& v3f)
   return ostream;
 }
 
-PointCloud::Vector3d::Vector3d(double _x, double _y, double _z) noexcept : x(_x), y(_y), z(_z) {}
-
 // PointCloud::Vector3d
 PointCloud::Vector3d::Vector3d() noexcept {
 #if defined(__arm__) || defined(__x86__) || defined(__i386__)
@@ -135,6 +133,8 @@ PointCloud::Vector3d::Vector3d() noexcept {
   static_assert(sizeof(Vector3d) == 24, "Sizeof must be 24 bytes.");
 #endif
 }
+
+PointCloud::Vector3d::Vector3d(double _x, double _y, double _z) noexcept : x(_x), y(_y), z(_z) {}
 
 std::ostream& operator<<(std::ostream& ostream, const PointCloud::Vector3d& v3d) noexcept {
   ostream << "(" << v3d.x << ", " << v3d.y << ", " << v3d.z << ")";
@@ -1010,40 +1010,6 @@ std::string PointCloud::get_value_for_print(size_t loop_index, KeyMap& key_map, 
   }
 }
 
-bool PointCloud::compress_protocol_xyz() noexcept {
-  uint16_t num_fields = 0;
-  uint64_t temp_size_num = protocol_.size_num;
-
-  do {
-    ++num_fields;
-    temp_size_num >>= 4;
-  } while (temp_size_num != 0);
-
-  if VUNLIKELY (num_fields < 3) {
-    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  for (uint16_t i = 0; i < 3; ++i) {
-    uint64_t shift = static_cast<uint64_t>(num_fields - 1 - i) * 4;
-    uint8_t cur_type = (protocol_.type_num >> shift) & 0xF;
-
-    if VUNLIKELY (cur_type != kFloatType && cur_type != kDoubleType && cur_type != kInt16Type) {
-      return false;
-    }
-  }
-
-  for (uint16_t i = 0; i < 3; ++i) {
-    uint64_t shift = static_cast<uint64_t>(num_fields - 1 - i) * 4;
-
-    protocol_.size_num &= ~(static_cast<uint64_t>(0xF) << shift);
-    protocol_.size_num |= (static_cast<uint64_t>(sizeof(int16_t)) << shift);
-    protocol_.type_num &= ~(static_cast<uint64_t>(0xF) << shift);
-    protocol_.type_num |= (static_cast<uint64_t>(kInt16Type) << shift);
-  }
-
-  return true;
-}
-
 bool PointCloud::create(size_t size, uint64_t size_num, uint64_t type_num, std::string_view key_str, uint16_t extent,
                         bool vertical) noexcept {
   if VUNLIKELY (!Protocol::check_valid(size_num, key_str)) {
@@ -1317,6 +1283,40 @@ std::string PointCloud::Protocol::get_type_for_print() const noexcept {
   }
 
   return print_str;
+}
+
+bool PointCloud::compress_protocol_xyz() noexcept {
+  uint16_t num_fields = 0;
+  uint64_t temp_size_num = protocol_.size_num;
+
+  do {
+    ++num_fields;
+    temp_size_num >>= 4;
+  } while (temp_size_num != 0);
+
+  if VUNLIKELY (num_fields < 3) {
+    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  for (uint16_t i = 0; i < 3; ++i) {
+    uint64_t shift = static_cast<uint64_t>(num_fields - 1 - i) * 4;
+    uint8_t cur_type = (protocol_.type_num >> shift) & 0xF;
+
+    if VUNLIKELY (cur_type != kFloatType && cur_type != kDoubleType && cur_type != kInt16Type) {
+      return false;
+    }
+  }
+
+  for (uint16_t i = 0; i < 3; ++i) {
+    uint64_t shift = static_cast<uint64_t>(num_fields - 1 - i) * 4;
+
+    protocol_.size_num &= ~(static_cast<uint64_t>(0xF) << shift);
+    protocol_.size_num |= (static_cast<uint64_t>(sizeof(int16_t)) << shift);
+    protocol_.type_num &= ~(static_cast<uint64_t>(0xF) << shift);
+    protocol_.type_num |= (static_cast<uint64_t>(kInt16Type) << shift);
+  }
+
+  return true;
 }
 
 }  // namespace zerocopy

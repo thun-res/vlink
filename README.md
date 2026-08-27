@@ -2,7 +2,7 @@
 
 ![](doc/images/vlink.svg)
 
-![](https://img.shields.io/badge/version-v2.1.0-informational.svg) ![](https://img.shields.io/badge/language-C++17-informational.svg) ![](https://img.shields.io/badge/license-Apache%202.0-informational.svg) ![](https://img.shields.io/badge/platform-Linux%20|%20QNX%20|%20Android%20|%20macOS%20|%20Windows-informational.svg)
+![](https://img.shields.io/badge/version-v2.2.0-informational.svg) ![](https://img.shields.io/badge/language-C++17-informational.svg) ![](https://img.shields.io/badge/license-Apache%202.0-informational.svg) ![](https://img.shields.io/badge/platform-Linux%20|%20QNX%20|%20Android%20|%20macOS%20|%20Windows-informational.svg)
 
 [![CI Lint](https://img.shields.io/github/actions/workflow/status/thun-res/vlink/ci-lint.yml?branch=master&label=CI%20Lint)](https://github.com/thun-res/vlink/actions/workflows/ci-lint.yml) [![CI Test](https://img.shields.io/github/actions/workflow/status/thun-res/vlink/ci-test.yml?branch=master&label=CI%20Test)](https://github.com/thun-res/vlink/actions/workflows/ci-test.yml) [![coverage](https://img.shields.io/endpoint?url=https://thun-res.github.io/vlink/coverage/badge.json)](https://thun-res.github.io/vlink/coverage/) [![benchmark](https://img.shields.io/endpoint?url=https://thun-res.github.io/vlink/bench/badge.json)](https://thun-res.github.io/vlink/bench/)
 
@@ -10,7 +10,7 @@
 
 VLink 是面向自动驾驶与具身智能的高性能通信中间件，定位为 ROS 2 的全场景替代方案。它以一套类型安全的统一 API 覆盖进程内、共享内存、车载以太网与跨机网络的全部通信需求；通信后端由 URL 选择，切换时按目标后端调整 URL 及必要参数，而通信原语和主要业务逻辑保持不变。
 
-当前版本支持 10 种传输后端、14 种序列化格式、3 种通信模型与 6 个核心原语，并提供安全加密、录制回放、服务发现、10 个 CLI 工具及 Foxglove / Rerun 可视化桥接。
+当前源码支持 10 种传输后端、15 种序列化格式、3 种通信模型与 6 个核心原语，并提供安全加密、录制回放、服务发现、10 个 CLI 工具及 Foxglove / Rerun 可视化桥接。
 
 ![VLink 架构](doc/images/readme-architecture.png)
 

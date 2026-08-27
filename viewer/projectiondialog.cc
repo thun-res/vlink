@@ -214,16 +214,16 @@ ProjectionDialog::~ProjectionDialog() {
   delete ui;
 }
 
-void ProjectionDialog::invalid_args(int step) {
-  QMessageBox::warning(this, tr("Warning"), tr("Invalid args (step:%1)").arg(QString::number(step)));
-}
-
 ProjectionDialog::Params ProjectionDialog::process() {
   if (this->exec() == QDialog::Accepted) {
     return params_;
   }
 
   return Params();
+}
+
+void ProjectionDialog::invalid_args(int step) {
+  QMessageBox::warning(this, tr("Warning"), tr("Invalid args (step:%1)").arg(QString::number(step)));
 }
 
 void ProjectionDialog::on_toolButton_inversion_clicked(bool checked) {

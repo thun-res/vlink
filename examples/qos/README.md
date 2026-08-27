@@ -24,6 +24,8 @@
 
 默认构造的 `Qos` 为 `valid=false`，注册时被忽略；须先置 `valid=true` 方才生效。
 
+所有内置 `QosProfile::*` 均默认构造 Deadline 与 Lifespan，使两者的时长字段都为 `-1`。自定义有限 Lifespan 依赖通信主机之间可靠的时钟同步，否则接收端可能提前丢弃样本。
+
 ## 🧭 常见组合
 
 | 组合 | 用途 |

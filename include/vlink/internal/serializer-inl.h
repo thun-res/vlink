@@ -109,6 +109,8 @@ inline constexpr Type get_type_of() noexcept {
     return kBytesType;
   } else if constexpr (is_dynamic_type<T>()) {
     return kDynamicType;
+  } else if constexpr (is_someip_type<T>()) {
+    return kSomeipType;
 #ifdef VLINK_HAS_CDR
   } else if constexpr (is_cdr_type<T>()) {
     return kCdrType;
@@ -263,6 +265,12 @@ template <Type TypeT, typename T>
 inline size_t get_serialized_size(const T& src) noexcept {
   using RealType = typename Traits::RemoveSharedPtr<T>::Type;
 
+  if constexpr (Traits::IsSharedPtr<T>()) {
+    if VUNLIKELY (!src) {
+      return 0U;
+    }
+  }
+
   if constexpr (TypeT == kBytesType) {
     return 0;
   } else if constexpr (TypeT == kDynamicType) {
@@ -299,6 +307,8 @@ inline size_t get_serialized_size(const T& src) noexcept {
 #ifdef VLINK_HAS_ROS2
       }
 #endif
+    } catch (const eprosima::fastcdr::exception::Exception&) {
+      return 0;
     } catch (const std::exception&) {
       return 0;
     }
@@ -317,7 +327,7 @@ inline size_t get_serialized_size(const T& src) noexcept {
       return src->ByteSize();
     }
 #endif
-  } else if constexpr (TypeT == kCustomType) {
+  } else if constexpr (TypeT == kCustomType || TypeT == kSomeipType) {
     if constexpr (VLINK_HAS_MEMBER(RealType, get_serialized_size())) {
       return deref(src).get_serialized_size();
     } else {
@@ -339,6 +349,12 @@ template <Type TypeT, typename T>
 inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType transport,
                       [[maybe_unused]] uint8_t offset) {
   using RealType = typename Traits::RemoveSharedPtr<T>::Type;
+
+  if constexpr (Traits::IsSharedPtr<T>()) {
+    if VUNLIKELY (!src) {
+      return false;
+    }
+  }
 
   if constexpr (TypeT == kBytesType) {
     des = Bytes::deep_copy(src.data(), src.size(), offset);
@@ -479,6 +495,11 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
   } else if constexpr (TypeT == kFlatPtrType) {
     static_assert(Traits::ExpectFalse<T>(), "Not support flat ptr type.");
 #endif
+  } else if constexpr (TypeT == kSomeipType) {
+    if VUNLIKELY (!deref(src).serialize(des, offset)) {
+      VLOG_T("Serializer: SOME/IP serialize failed.");
+      return false;
+    }
   } else if constexpr (TypeT == kCustomType) {
     using ReturnT = decltype(const_cast<RealType&>(deref(src)) >> des);
 
@@ -491,7 +512,7 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
       const_cast<RealType&>(deref(src)) >> des;
     }
 
-    if (offset > 0) {
+    if VUNLIKELY (offset > 0) {
       des = Bytes::deep_copy(des.data(), des.size(), offset);
     }
   } else if constexpr (TypeT == kStringType) {
@@ -615,24 +636,25 @@ template <Type TypeT, typename T>
 inline bool deserialize(const Bytes& src, T& des, [[maybe_unused]] TransportType transport) {
   using RealType = typename Traits::RemoveSharedPtr<T>::Type;
 
+  if constexpr (Traits::IsSharedPtr<T>()) {
+    if VUNLIKELY (!des) {
+      return false;
+    }
+  }
+
   if constexpr (TypeT == kBytesType) {
     des = src;
     return true;
   } else if constexpr (TypeT == kDynamicType) {
-    try {
-      using ReturnT = decltype(deref(des) << src);
+    using ReturnT = decltype(deref(des) << src);
 
-      if constexpr (std::is_convertible_v<ReturnT, bool>) {
-        if VUNLIKELY (!(deref(des) << src)) {
-          VLOG_T("Serializer: Dynamic deserialize failed.");
-          return false;
-        }
-      } else {
-        deref(des) << src;
+    if constexpr (std::is_convertible_v<ReturnT, bool>) {
+      if VUNLIKELY (!(deref(des) << src)) {
+        VLOG_T("Serializer: Dynamic deserialize failed.");
+        return false;
       }
-    } catch (const std::exception& e) {                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      VLOG_T("Serializer: Dynamic deserialize threw: ", e.what(), ".");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      return false;                                                      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    } else {
+      deref(des) << src;
     }
 #ifdef VLINK_HAS_CDR
   } else if constexpr (TypeT == kCdrType) {
@@ -728,21 +750,21 @@ inline bool deserialize(const Bytes& src, T& des, [[maybe_unused]] TransportType
       return false;
     }
 #endif
-  } else if constexpr (TypeT == kCustomType) {
-    try {
-      using ReturnT = decltype(deref(des) << src);
-
-      if constexpr (std::is_convertible_v<ReturnT, bool>) {
-        if VUNLIKELY (!(deref(des) << src)) {
-          VLOG_T("Serializer: Custom deserialize failed.");
-          return false;
-        }
-      } else {
-        deref(des) << src;
-      }
-    } catch (const std::exception& e) {
-      VLOG_T("Serializer: Custom deserialize threw: ", e.what(), ".");
+  } else if constexpr (TypeT == kSomeipType) {
+    if VUNLIKELY (!deref(des).deserialize(src)) {
+      VLOG_T("Serializer: SOME/IP deserialize failed.");
       return false;
+    }
+  } else if constexpr (TypeT == kCustomType) {
+    using ReturnT = decltype(deref(des) << src);
+
+    if constexpr (std::is_convertible_v<ReturnT, bool>) {
+      if VUNLIKELY (!(deref(des) << src)) {
+        VLOG_T("Serializer: Custom deserialize failed.");
+        return false;
+      }
+    } else {
+      deref(des) << src;
     }
   } else if constexpr (TypeT == kStringType) {
     if VLIKELY (!src.empty()) {
@@ -891,6 +913,12 @@ inline constexpr bool is_flat_ptr_type() noexcept {
 #else
   return false;
 #endif
+}
+
+template <typename T>
+inline constexpr bool is_someip_type() noexcept {
+  using RealType = typename Traits::RemoveSharedPtr<T>::Type;
+  return VLINK_HAS_MEMBER(RealType, is_vlink_someip_type());
 }
 
 template <typename T>

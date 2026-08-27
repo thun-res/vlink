@@ -25,10 +25,12 @@
 
 #include <charconv>
 #include <chrono>
+#include <new>
 #include <string>
 #include <thread>
 #include <utility>
 
+#include "./base/utils.h"
 #include "./impl/server_impl.h"
 
 #ifndef VLINK_SHM2_NO_FD_LISTENER
@@ -202,6 +204,17 @@ Shm2Factory::Shm2Factory() {
 }
 
 Shm2Factory::~Shm2Factory() {
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    if (poll_thread_.joinable()) {
+      poll_thread_.detach();
+    }
+
+    (void)::new (std::nothrow) auto(std::move(blocking_waiters_));
+    return;
+  }
+#endif
+
   poll_quit_.store(true, std::memory_order_release);
 
   if (wakeup_notifier_) {
@@ -433,6 +446,51 @@ void Shm2Factory::poll_thread_func() {
   }
 }
 
+iox2_callback_progression_e Shm2Factory::on_process(iox2_waitset_attachment_id_h attachment_id, void* context) {
+  auto& factory = *static_cast<Shm2Factory*>(context);
+
+  if VUNLIKELY (factory.poll_quit_.load(std::memory_order_acquire)) {
+    iox2_waitset_attachment_id_drop(attachment_id);
+    return iox2_callback_progression_e_STOP;
+  }
+
+  if (factory.wakeup_guard_ && iox2_waitset_attachment_id_has_event_from(&attachment_id, &factory.wakeup_guard_)) {
+    bool has_received_event = false;
+    iox2_event_id_t event_id;
+
+    do {
+      int drain_ret = iox2_listener_try_wait_one(&factory.wakeup_listener_, &event_id, &has_received_event);
+
+      if VUNLIKELY (drain_ret != IOX2_OK) {
+        VLOG_E("Shm2Factory: Failed to drain wakeup listener, error: ", drain_ret, ".");
+        break;
+      }
+    } while (has_received_event);
+
+    iox2_waitset_attachment_id_drop(attachment_id);
+    return iox2_callback_progression_e_STOP;
+  }
+
+  {
+    std::shared_lock lock(factory.sub_list_mtx_);
+
+    for (auto& [handle, entry] : factory.poll_map_) {
+      if (entry.guard == nullptr) {
+        continue;
+      }
+
+      if (iox2_waitset_attachment_id_has_event_from(&attachment_id, &entry.guard)) {
+        entry.callback();
+        break;
+      }
+    }
+  }
+
+  iox2_waitset_attachment_id_drop(attachment_id);
+
+  return iox2_callback_progression_e_CONTINUE;
+}
+
 void Shm2Factory::blocking_wait_func(BlockingWaiter* waiter) {
   const bool can_block = waiter->wake_notifier != nullptr;
 
@@ -486,51 +544,6 @@ void Shm2Factory::stop_blocking_waiter(BlockingWaiter* waiter) {
     iox2_notifier_drop(waiter->wake_notifier);
     waiter->wake_notifier = nullptr;
   }
-}
-
-iox2_callback_progression_e Shm2Factory::on_process(iox2_waitset_attachment_id_h attachment_id, void* context) {
-  auto& factory = *static_cast<Shm2Factory*>(context);
-
-  if VUNLIKELY (factory.poll_quit_.load(std::memory_order_acquire)) {
-    iox2_waitset_attachment_id_drop(attachment_id);
-    return iox2_callback_progression_e_STOP;
-  }
-
-  if (factory.wakeup_guard_ && iox2_waitset_attachment_id_has_event_from(&attachment_id, &factory.wakeup_guard_)) {
-    bool has_received_event = false;
-    iox2_event_id_t event_id;
-
-    do {
-      int drain_ret = iox2_listener_try_wait_one(&factory.wakeup_listener_, &event_id, &has_received_event);
-
-      if VUNLIKELY (drain_ret != IOX2_OK) {
-        VLOG_E("Shm2Factory: Failed to drain wakeup listener, error: ", drain_ret, ".");
-        break;
-      }
-    } while (has_received_event);
-
-    iox2_waitset_attachment_id_drop(attachment_id);
-    return iox2_callback_progression_e_STOP;
-  }
-
-  {
-    std::shared_lock lock(factory.sub_list_mtx_);
-
-    for (auto& [handle, entry] : factory.poll_map_) {
-      if (entry.guard == nullptr) {
-        continue;
-      }
-
-      if (iox2_waitset_attachment_id_has_event_from(&attachment_id, &entry.guard)) {
-        entry.callback();
-        break;
-      }
-    }
-  }
-
-  iox2_waitset_attachment_id_drop(attachment_id);
-
-  return iox2_callback_progression_e_CONTINUE;
 }
 
 // Shm2Server
@@ -1782,21 +1795,6 @@ bool Shm2Publisher::release(const Bytes& bytes) {
   return true;
 }
 
-void Shm2Publisher::notify_and_wait(size_t recipients) {
-  if (notifier_ && recipients > 0) {
-    auto notify_count = notify_counter_.fetch_add(1, std::memory_order_relaxed) + 1;
-
-    if (notify_count >= notify_every_) {
-      notify_counter_.store(0, std::memory_order_relaxed);
-      iox2_notifier_notify(&notifier_, nullptr);
-    }
-  }
-
-  if VUNLIKELY (wait_ > 0) {
-    sem_->acquire(recipients, wait_);
-  }
-}
-
 bool Shm2Publisher::publish(uint64_t channel, const Bytes& bytes) {
   if VUNLIKELY (!publisher_) {
     return false;
@@ -2000,6 +1998,21 @@ void Shm2Publisher::discovery_subscribers(bool has_subs) {
     if (notifier_) {
       iox2_notifier_notify(&notifier_, nullptr);
     }
+  }
+}
+
+void Shm2Publisher::notify_and_wait(size_t recipients) {
+  if (notifier_ && recipients > 0) {
+    auto notify_count = notify_counter_.fetch_add(1, std::memory_order_relaxed) + 1;
+
+    if (notify_count >= notify_every_) {
+      notify_counter_.store(0, std::memory_order_relaxed);
+      iox2_notifier_notify(&notifier_, nullptr);
+    }
+  }
+
+  if VUNLIKELY (wait_ > 0) {
+    sem_->acquire(recipients, wait_);
   }
 }
 

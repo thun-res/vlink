@@ -67,9 +67,12 @@
 
 #pragma once
 
+#include <cstdint>
 #include <ostream>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 
 #include "./macros.h"
 
@@ -164,7 +167,27 @@ class VLINK_EXPORT FastStream : public std::ostream {
    */
   FastStream& write_raw(const char* data, size_t len);
 
+  /**
+   * @brief Appends a value using the logger's fast formatting paths when applicable.
+   *
+   * @note Integer fast formatting is locale-independent.
+   *
+   * @tparam T Value type.
+   * @param value Value to append.
+   * @return Reference to @c *this for chaining.
+   */
+  template <typename T>
+  FastStream& push(T&& value);
+
  private:
+  FastStream& push_floating(float value);
+
+  FastStream& push_floating(double value);
+
+  bool push_integer(int64_t value);
+
+  bool push_integer(uint64_t value);
+
   static constexpr size_t kDefaultCapacity{256};
   static constexpr size_t kMinCapacity{64};
   static constexpr size_t kMaxExpandSize{8192};
@@ -203,5 +226,52 @@ class VLINK_EXPORT FastStream : public std::ostream {
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(FastStream)
 };
+
+////////////////////////////////////////////////////////////////
+/// Details
+////////////////////////////////////////////////////////////////
+
+template <typename T>
+inline FastStream& FastStream::push(T&& value) {
+  using ValueT = std::remove_cv_t<std::remove_reference_t<T>>;
+
+  if constexpr (std::is_array_v<ValueT> && std::is_same_v<std::remove_extent_t<ValueT>, char>) {
+    if VLIKELY (width() == 0) {
+      return write_raw(value, std::char_traits<char>::length(value));
+    }
+  } else if constexpr (std::is_same_v<ValueT, char*> || std::is_same_v<ValueT, const char*>) {
+    if VLIKELY (value && width() == 0) {
+      return write_raw(value, std::char_traits<char>::length(value));
+    }
+  } else if constexpr (std::is_same_v<ValueT, std::string>) {
+    if VLIKELY (width() == 0) {
+      return write_raw(value.data(), value.size());
+    }
+  } else if constexpr (std::is_same_v<ValueT, std::string_view>) {
+    if VLIKELY (width() == 0) {
+      return write_raw(value.data(), value.size());
+    }
+  } else if constexpr (std::is_same_v<ValueT, float> || std::is_same_v<ValueT, double>) {
+    return push_floating(value);
+  } else if constexpr (std::is_integral_v<ValueT> && sizeof(ValueT) <= sizeof(uint64_t) &&
+                       !std::is_same_v<ValueT, bool> && !std::is_same_v<ValueT, char> &&
+                       !std::is_same_v<ValueT, signed char> && !std::is_same_v<ValueT, unsigned char> &&
+                       !std::is_same_v<ValueT, wchar_t> && !std::is_same_v<ValueT, char16_t> &&
+                       !std::is_same_v<ValueT, char32_t>) {
+    if constexpr (std::is_signed_v<ValueT>) {
+      if VLIKELY (push_integer(static_cast<int64_t>(value))) {
+        return *this;
+      }
+    } else {
+      if VLIKELY (push_integer(static_cast<uint64_t>(value))) {
+        return *this;
+      }
+    }
+  }
+
+  // NOLINTNEXTLINE(bugprone-unintended-char-ostream-output)
+  static_cast<std::ostream&>(*this) << std::forward<T>(value);
+  return *this;
+}
 
 }  // namespace vlink

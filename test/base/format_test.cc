@@ -27,12 +27,25 @@
 
 #include <doctest/doctest.h>
 
+#include <charconv>
 #include <iterator>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "../common_test.h"
+
+template <typename FloatT, typename = void>
+struct TestHasFloatToChars final : std::false_type {};
+
+template <typename FloatT>
+struct TestHasFloatToChars<FloatT,
+                           std::void_t<decltype(std::to_chars(std::declval<char*>(), std::declval<char*>(),
+                                                              std::declval<FloatT>(), std::chars_format::general, 6))>>
+    final : std::true_type {};
+
+static constexpr bool kTestHasFloatToChars = TestHasFloatToChars<double>::value;
 
 namespace {
 
@@ -45,6 +58,26 @@ std::string fmt(const char* fmt_str, const ArgsT&... args) {
 }
 
 }  // namespace
+
+namespace format_as_test {
+
+struct Meters final {
+  double value{0.0};
+};
+
+constexpr double format_as(const Meters& meters) noexcept { return meters.value; }
+
+enum class Level : int { kInfo = 1 };
+
+constexpr int format_as(Level level) noexcept { return static_cast<int>(level) * 10; }
+
+struct Tag final {
+  std::string name;
+};
+
+inline const std::string& format_as(const Tag& tag) noexcept { return tag.name; }
+
+}  // namespace format_as_test
 
 TEST_SUITE("base-Format") {
   TEST_CASE("plain text with no placeholders") {
@@ -349,6 +382,461 @@ TEST_SUITE("base-Format") {
   TEST_CASE("make_format_args captures argument count") {
     auto store = vlink::format::make_format_args(1, 2, 3);
     CHECK_EQ(store.kNumArgs, 3u);
+  }
+
+  TEST_CASE("spec width pads with default alignment per type") {
+    CHECK_EQ(fmt("{:5}", 42), "   42");
+    CHECK_EQ(fmt("{:8}", 3.14), "    3.14");
+    CHECK_EQ(fmt("{:8}", "abc"), "abc     ");
+    CHECK_EQ(fmt("{:3}", 'x'), "x  ");
+    CHECK_EQ(fmt("{:6}", true), "true  ");
+  }
+
+  TEST_CASE("spec width smaller than or equal to content is a no-op") {
+    CHECK_EQ(fmt("{:2}", 12345), "12345");
+    CHECK_EQ(fmt("{:5}", 12345), "12345");
+  }
+
+  TEST_CASE("spec explicit alignment with default fill") {
+    CHECK_EQ(fmt("{:<5}", 42), "42   ");
+    CHECK_EQ(fmt("{:>5}", 42), "   42");
+    CHECK_EQ(fmt("{:^5}", 42), " 42  ");
+    CHECK_EQ(fmt("{:>8}", "abc"), "     abc");
+  }
+
+  TEST_CASE("spec custom fill characters") {
+    CHECK_EQ(fmt("{:*<6}", 42), "42****");
+    CHECK_EQ(fmt("{:*>6}", 42), "****42");
+    CHECK_EQ(fmt("{:*^6}", 42), "**42**");
+    CHECK_EQ(fmt("{:*^7}", "ab"), "**ab***");
+    CHECK_EQ(fmt("{:0<5}", 42), "42000");
+  }
+
+  TEST_CASE("spec sign handling for integers") {
+    CHECK_EQ(fmt("{:+}", 42), "+42");
+    CHECK_EQ(fmt("{:+}", -42), "-42");
+    CHECK_EQ(fmt("{: }", 42), " 42");
+    CHECK_EQ(fmt("{: }", -42), "-42");
+    CHECK_EQ(fmt("{:-}", 42), "42");
+    CHECK_EQ(fmt("{:+}", 0), "+0");
+    CHECK_EQ(fmt("{:+}", 42u), "+42");
+  }
+
+  TEST_CASE("spec binary octal and hex presentations") {
+    CHECK_EQ(fmt("{:b}", 10), "1010");
+    CHECK_EQ(fmt("{:o}", 64), "100");
+    CHECK_EQ(fmt("{:x}", 255), "ff");
+    CHECK_EQ(fmt("{:X}", 255), "FF");
+    CHECK_EQ(fmt("{:d}", 42), "42");
+    CHECK_EQ(fmt("{:x}", -26), "-1a");
+  }
+
+  TEST_CASE("spec alternate form prefixes") {
+    CHECK_EQ(fmt("{:#b}", 5), "0b101");
+    CHECK_EQ(fmt("{:#B}", 5), "0B101");
+    CHECK_EQ(fmt("{:#o}", 8), "010");
+    CHECK_EQ(fmt("{:#x}", 255), "0xff");
+    CHECK_EQ(fmt("{:#X}", 255), "0XFF");
+    CHECK_EQ(fmt("{:#x}", -26), "-0x1a");
+  }
+
+  TEST_CASE("spec alternate form of zero values") {
+    CHECK_EQ(fmt("{:#b}", 0), "0b0");
+    CHECK_EQ(fmt("{:#o}", 0), "0");
+    CHECK_EQ(fmt("{:#x}", 0), "0x0");
+  }
+
+  TEST_CASE("spec zero padding for integers") {
+    CHECK_EQ(fmt("{:05}", 42), "00042");
+    CHECK_EQ(fmt("{:05}", -42), "-0042");
+    CHECK_EQ(fmt("{:+06}", 42), "+00042");
+    CHECK_EQ(fmt("{:#06x}", 255), "0x00ff");
+    CHECK_EQ(fmt("{:#010x}", 255), "0x000000ff");
+  }
+
+  TEST_CASE("spec explicit alignment cancels zero padding") { CHECK_EQ(fmt("{:<05}", 42), "42   "); }
+
+  TEST_CASE("spec zero padding is ignored for strings") { CHECK_EQ(fmt("{:05}", "ab"), "ab   "); }
+
+  TEST_CASE("spec integer boundary values in every base") {
+    const auto min64 = std::numeric_limits<long long>::min();           // NOLINT(runtime/int)
+    const auto max64 = std::numeric_limits<unsigned long long>::max();  // NOLINT(runtime/int)
+    CHECK_EQ(fmt("{:d}", min64), "-9223372036854775808");
+    CHECK_EQ(fmt("{:x}", min64), "-8000000000000000");
+    CHECK_EQ(fmt("{:x}", max64), "ffffffffffffffff");
+    CHECK_EQ(fmt("{:b}", 255ull), "11111111");
+  }
+
+  TEST_CASE("spec char presentation of integers") {
+    CHECK_EQ(fmt("{:c}", 65), "A");
+    CHECK_EQ(fmt("{:c}", 97), "a");
+    CHECK_EQ(fmt("{:^3c}", 65), " A ");
+  }
+
+  TEST_CASE("spec integer presentations of char") {
+    CHECK_EQ(fmt("{:d}", 'A'), "65");
+    CHECK_EQ(fmt("{:x}", 'A'), "41");
+    CHECK_EQ(fmt("{:#x}", 'A'), "0x41");
+    CHECK_EQ(fmt("{:c}", 'z'), "z");
+    CHECK_EQ(fmt("{:f}", 'A'), "A");
+  }
+
+  TEST_CASE("spec presentations of bool") {
+    CHECK_EQ(fmt("{:d}", true), "1");
+    CHECK_EQ(fmt("{:d}", false), "0");
+    CHECK_EQ(fmt("{:#x}", true), "0x1");
+    CHECK_EQ(fmt("{:s}", true), "true");
+    CHECK_EQ(fmt("{:>7}", false), "  false");
+    CHECK_EQ(fmt("{:05d}", true), "00001");
+    CHECK_EQ(fmt("{:f}", true), "true");
+    CHECK_EQ(fmt("{:>7f}", false), "  false");
+  }
+
+  TEST_CASE("spec fixed float precision") {
+    CHECK_EQ(fmt("{:.2f}", 3.14159), "3.14");
+    CHECK_EQ(fmt("{:.2f}", -3.14159), "-3.14");
+    CHECK_EQ(fmt("{:.0f}", 2.6), "3");
+    CHECK_EQ(fmt("{:f}", 1.5), "1.500000");
+    CHECK_EQ(fmt("{:F}", 1.5), "1.500000");
+    CHECK_EQ(fmt("{:+.1f}", 4.26), "+4.3");
+  }
+
+  TEST_CASE("spec scientific float presentation") {
+    CHECK_EQ(fmt("{:e}", 314.15), "3.141500e+02");
+    CHECK_EQ(fmt("{:.1e}", 314.15), "3.1e+02");
+    CHECK_EQ(fmt("{:E}", 314.15), "3.141500E+02");
+  }
+
+  TEST_CASE("spec general float presentation") {
+    CHECK_EQ(fmt("{:g}", 0.00001), "1e-05");
+    CHECK_EQ(fmt("{:G}", 0.00001), "1E-05");
+    CHECK_EQ(fmt("{:g}", 100000.0), "100000");
+    CHECK_EQ(fmt("{:g}", 1000000.0), "1e+06");
+    CHECK_EQ(fmt("{:.3}", 3.14159), "3.14");
+    CHECK_EQ(fmt("{:.3g}", 3.14159), "3.14");
+  }
+
+  TEST_CASE("spec hex float presentation") {
+    if constexpr (kTestHasFloatToChars) {
+      CHECK_EQ(fmt("{:a}", 255.0), "1.fep+7");
+      CHECK_EQ(fmt("{:a}", 1.0), "1p+0");
+      CHECK_EQ(fmt("{:A}", 255.0), "1.FEP+7");
+      CHECK_EQ(fmt("{:.2a}", 1.0), "1.00p+0");
+    }
+  }
+
+  TEST_CASE("spec alternate float forms guarantee the decimal point") {
+    CHECK_EQ(fmt("{:#.0f}", 3.0), "3.");
+    CHECK_EQ(fmt("{:#g}", 1.0), "1.00000");
+    CHECK_EQ(fmt("{:#.0e}", 3.0), "3.e+00");
+
+    if constexpr (kTestHasFloatToChars) {
+      CHECK_EQ(fmt("{:#.2}", 0.5), "0.5");
+      CHECK_EQ(fmt("{:#.2}", 6.02e23), "6.e+23");
+      CHECK_EQ(fmt("{:#}", 1.0), "1.");
+    }
+  }
+
+  TEST_CASE("spec additional edge coverage") {
+    CHECK_EQ(fmt("{:+<5}", 42), "42+++");
+    CHECK_EQ(fmt("{:#d}", 42), "42");
+    CHECK_EQ(fmt("{9:x}", 1), "");
+    CHECK_EQ(fmt("{:.2f}", -0.0), "-0.00");
+    CHECK_EQ(fmt("{:08}", -42LL), "-0000042");
+    CHECK_EQ(fmt("{:5}", ""), "     ");
+  }
+
+  TEST_CASE("spec float width zero padding and alignment") {
+    CHECK_EQ(fmt("{:10.2f}", 3.14159), "      3.14");
+    CHECK_EQ(fmt("{:<10.2f}", 3.14159), "3.14      ");
+    CHECK_EQ(fmt("{:08.2f}", -3.14159), "-0003.14");
+    CHECK_EQ(fmt("{:06}", 3.5), "0003.5");
+  }
+
+  TEST_CASE("spec infinity and nan are never zero padded") {
+    const double inf = std::numeric_limits<double>::infinity();
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    CHECK_EQ(fmt("{:f}", inf), "inf");
+    CHECK_EQ(fmt("{:f}", -inf), "-inf");
+    CHECK_EQ(fmt("{:F}", inf), "INF");
+    CHECK_EQ(fmt("{:+f}", inf), "+inf");
+    CHECK_EQ(fmt("{:f}", nan), "nan");
+    CHECK_EQ(fmt("{:E}", nan), "NAN");
+    CHECK_EQ(fmt("{:06f}", inf), "   inf");
+    CHECK_EQ(fmt("{:10f}", inf), "       inf");
+  }
+
+  TEST_CASE("spec float argument uses float precision semantics") {
+    CHECK_EQ(fmt("{:.2f}", 3.14f), "3.14");
+    CHECK_EQ(fmt("{:}", 3.14f), "3.14");
+  }
+
+  TEST_CASE("spec string precision truncates") {
+    CHECK_EQ(fmt("{:.3}", "hello"), "hel");
+    CHECK_EQ(fmt("{:.10}", "hi"), "hi");
+    CHECK_EQ(fmt("{:.0}", "hello"), "");
+    CHECK_EQ(fmt("{:8.3}", "hello"), "hel     ");
+    CHECK_EQ(fmt("{:>8.3}", "hello"), "     hel");
+    CHECK_EQ(fmt("{:^9.5}", "abcdefgh"), "  abcde  ");
+    CHECK_EQ(fmt("{:.3}", std::string("hello")), "hel");
+    CHECK_EQ(fmt("{:.3}", std::string_view("hello")), "hel");
+  }
+
+  TEST_CASE("spec null cstring is padded as (null)") {
+    const char* null_str = nullptr;
+    CHECK_EQ(fmt("{:>8}", null_str), "  (null)");
+  }
+
+  TEST_CASE("spec pointer presentation and padding") {
+    const auto* ptr = reinterpret_cast<const void*>(0x1f);
+    CHECK_EQ(fmt("{:p}", ptr), "0x1f");
+    CHECK_EQ(fmt("{:12}", ptr), "        0x1f");
+    CHECK_EQ(fmt("{:012}", ptr), "0x000000001f");
+    CHECK_EQ(fmt("{:<8}", reinterpret_cast<const void*>(0x1)), "0x1     ");
+    CHECK_EQ(fmt("{:6}", static_cast<const void*>(nullptr)), "   0x0");
+  }
+
+  TEST_CASE("spec enum uses the underlying integer presentation") {
+    enum class SpecColor : int { kBlue = 26 };
+    CHECK_EQ(fmt("{:#x}", SpecColor::kBlue), "0x1a");
+    CHECK_EQ(fmt("{:04}", SpecColor::kBlue), "0026");
+  }
+
+  TEST_CASE("spec with positional indexes") {
+    CHECK_EQ(fmt("{0:>4}|{1:<4}", 1, 2), "   1|2   ");
+    CHECK_EQ(fmt("{0:x} {0:d} {0:#o}", 26), "1a 26 032");
+  }
+
+  TEST_CASE("empty spec matches default formatting") {
+    CHECK_EQ(fmt("{:}", 42), "42");
+    CHECK_EQ(fmt("{:}", true), "true");
+    CHECK_EQ(fmt("{:}", "x"), "x");
+    CHECK_EQ(fmt("{:}", 2.5), "2.5");
+  }
+
+  TEST_CASE("escaped braces are not parsed as specs") {
+    CHECK_EQ(fmt("{{:d}}"), "{:d}");
+    CHECK_EQ(fmt("{{{:d}}}", 7), "{7}");
+  }
+
+  TEST_CASE("plain and spec placeholders mix in one format string") {
+    CHECK_EQ(fmt("a={} b={:04}", 1, 2), "a=1 b=0002");
+  }
+
+  TEST_CASE("spec lenient handling of inapplicable fields") {
+    CHECK_EQ(fmt("{:q}", 42), "42");
+    CHECK_EQ(fmt("{:5q}", 42), "   42");
+    CHECK_EQ(fmt("{:.3}", 12345), "12345");
+    CHECK_EQ(fmt("{:s}", 42), "42");
+    CHECK_EQ(fmt("{:.f}", 2.6), "3");
+    CHECK_EQ(fmt("{:>}", 42), "42");
+  }
+
+  TEST_CASE("unterminated spec placeholder is dropped") { CHECK_EQ(fmt("x{:>5", 42), "x"); }
+
+  TEST_CASE("spec output truncation keeps size and flag") {
+    char buf[6];
+    auto r = format::format_to_n(buf, 5, "{:08}", 42);
+    CHECK_EQ(r.size, 8u);
+    CHECK(r.truncated);
+    CHECK_EQ(std::string(buf, 5), "00000");
+  }
+
+  TEST_CASE("spec huge width remains bounded for a fixed output buffer") {
+    char out[1];
+    auto r = format::format_to_n(out, sizeof(out), "{:999999999}", 1);
+    CHECK_EQ(r.size, 999999999U);
+    CHECK(r.truncated);
+    CHECK_EQ(out[0], ' ');
+  }
+
+  TEST_CASE("spec works through format_to array and iterator overloads") {
+    char out[8];
+    auto r = format::format_to(out, "{:03}", 7);
+    CHECK_EQ(std::string(out, r.size), "007");
+
+    std::string s;
+    format::format_to(std::back_inserter(s), "{:^5}", 7);
+    CHECK_EQ(s, "  7  ");
+  }
+
+  TEST_CASE("spec combined fill sign width and precision") {
+    CHECK_EQ(fmt("{:*>+10.2f}", 3.14159), "*****+3.14");
+    CHECK_EQ(fmt("{:+#012.3e}", 271.828), "+002.718e+02");
+    CHECK_EQ(fmt("{:12}", 1), "           1");
+  }
+
+  TEST_CASE("spec small integer types") {
+    CHECK_EQ(fmt("{:#x}", static_cast<unsigned char>(255)), "0xff");
+    CHECK_EQ(fmt("{:04}", static_cast<short>(-3)), "-003");  // NOLINT(runtime/int)
+  }
+
+  TEST_CASE("spec char presentation respects the char range") {
+    if (std::numeric_limits<char>::is_signed) {
+      CHECK_EQ(fmt("{:c}", -5), std::string(1, static_cast<char>(-5)));
+    } else {
+      CHECK_EQ(fmt("{:c}", -5), "-5");
+    }
+
+    CHECK_EQ(fmt("{:c}", 300), "300");
+    CHECK_EQ(fmt("{:c}", -300), "-300");
+    CHECK_EQ(fmt("{:c}", true), "1");
+    CHECK_EQ(fmt("{:c}", false), "0");
+    CHECK_EQ(fmt("{:s}", 'z'), "z");
+  }
+
+  TEST_CASE("spec lenient float with integral presentation types") {
+    CHECK_EQ(fmt("{:x}", 2.5), "2.5");
+    CHECK_EQ(fmt("{:d}", 2.5), "2.5");
+    CHECK_EQ(fmt("{:s}", 2.5), "2.5");
+  }
+
+  TEST_CASE("spec negative alternate binary and octal") {
+    CHECK_EQ(fmt("{:#b}", -5), "-0b101");
+    CHECK_EQ(fmt("{:#o}", -8), "-010");
+    CHECK_EQ(fmt("{:b}", std::numeric_limits<long long>::min()),  // NOLINT(runtime/int)
+             "-1" + std::string(63, '0'));
+    CHECK_EQ(fmt("{:o}", std::numeric_limits<long long>::min()),  // NOLINT(runtime/int)
+             "-1000000000000000000000");
+  }
+
+  TEST_CASE("spec float precision is clamped to 340 digits") {
+    char big[1024];
+    auto r = format::format_to_n(big, sizeof(big), "{:.400f}", 1.5);
+    CHECK_EQ(r.size, 342u);
+  }
+
+  TEST_CASE("spec float through the iterator overload") {
+    std::string s;
+    format::format_to(std::back_inserter(s), "{:>8.2f}", 3.14159);
+    CHECK_EQ(s, "    3.14");
+  }
+
+  TEST_CASE("spec integer presentations of char use the code unit value") {
+    CHECK_EQ(fmt("{:x}", '\x80'), "80");
+    CHECK_EQ(fmt("{:d}", '\x80'), "128");
+    CHECK_EQ(fmt("{:#x}", '\xff'), "0xff");
+  }
+
+  TEST_CASE("spec empty string_view is padded") { CHECK_EQ(fmt("{:5}", std::string_view{}), "     "); }
+
+  TEST_CASE("spec bool char presentation keeps the remaining fields") {
+    CHECK_EQ(fmt("{:*>6c}", true), "*****1");
+    CHECK_EQ(fmt("{:05c}", false), "00000");
+    CHECK_EQ(fmt("{:+c}", true), "+1");
+  }
+
+  TEST_CASE("spec char presentation of values above the signed char range") {
+    if (std::numeric_limits<char>::is_signed) {
+      CHECK_EQ(fmt("{:c}", 200), "200");
+    } else {
+      CHECK_EQ(fmt("{:c}", 200), std::string(1, static_cast<char>(200)));
+    }
+  }
+
+  TEST_CASE("dynamic width consumes the next argument") {
+    CHECK_EQ(fmt("{:{}}", 42, 5), "   42");
+    CHECK_EQ(fmt("{:{}}", 42, 0), "42");
+    CHECK_EQ(fmt("{:<{}}", "ab", 5), "ab   ");
+    CHECK_EQ(fmt("{:0{}}", 42, 6), "000042");
+    CHECK_EQ(fmt("{:{}x}", 255, 6), "    ff");
+  }
+
+  TEST_CASE("dynamic precision consumes the next argument") {
+    CHECK_EQ(fmt("{:.{}f}", 3.14159, 2), "3.14");
+    CHECK_EQ(fmt("{:.{}}", "hello", 3), "hel");
+  }
+
+  TEST_CASE("dynamic width and precision combine in order") {
+    CHECK_EQ(fmt("{:{}.{}f}", 3.14159, 10, 3), "     3.142");
+    CHECK_EQ(fmt("{:{}} {}", 1, 3, 9), "  1 9");
+  }
+
+  TEST_CASE("dynamic references support positional indexes") {
+    CHECK_EQ(fmt("{0:{1}}", 7, 4), "   7");
+    CHECK_EQ(fmt("{1:{0}}", 4, 7), "   7");
+  }
+
+  TEST_CASE("dynamic references degrade leniently") {
+    CHECK_EQ(fmt("{:{}}", 42, -5), "42");
+    CHECK_EQ(fmt("{:{}}", 42, "x"), "42");
+    CHECK_EQ(fmt("{:{}}", 42), "42");
+    CHECK_EQ(fmt("{:.{}f}", 2.5, -1), "2.500000");
+  }
+
+  TEST_CASE("format long double end to end") {
+    CHECK_EQ(fmt("{}", 2.5L), "2.5");
+    CHECK_EQ(fmt("{:.2f}", 3.14159L), "3.14");
+    CHECK_EQ(fmt("{:e}", 1.5L), "1.500000e+00");
+    CHECK_EQ(fmt("{:8.3f}", -2.5L), "  -2.500");
+  }
+
+  TEST_CASE("format nullptr renders as 0x0") {
+    CHECK_EQ(fmt("{}", nullptr), "0x0");
+    CHECK_EQ(fmt("{:>6}", nullptr), "   0x0");
+  }
+
+  TEST_CASE("format returns an allocated string") {
+    CHECK_EQ(format::format("x={} y={:.1f}", 3, 4.5), "x=3 y=4.5");
+    CHECK_EQ(format::format("{:>6}", "ab"), "    ab");
+    CHECK_EQ(format::format("{:{}}", 42, 5), "   42");
+    CHECK(format::format("").empty());
+  }
+
+  TEST_CASE("format string crosses the stack buffer boundary") {
+    const std::string exact = format::format("{:>256}", "x");
+    CHECK_EQ(exact.size(), 256u);
+    CHECK_EQ(exact.back(), 'x');
+
+    const std::string beyond = format::format("{:>257}", "x");
+    CHECK_EQ(beyond.size(), 257u);
+    CHECK_EQ(beyond.back(), 'x');
+    CHECK_EQ(beyond[0], ' ');
+  }
+
+  TEST_CASE("long double fixed output covers the full exponent range") {
+    char big[6000];
+    auto r = format::format_to_n(big, sizeof(big), "{:.0f}", std::numeric_limits<long double>::max());
+    CHECK_EQ(r.size, static_cast<size_t>(std::numeric_limits<long double>::max_exponent10) + 1u);
+    CHECK_FALSE(r.truncated);
+
+    r = format::format_to_n(big, sizeof(big), "{:.340f}", -std::numeric_limits<long double>::max());
+    CHECK_EQ(r.size, static_cast<size_t>(std::numeric_limits<long double>::max_exponent10) + 343u);
+    CHECK_FALSE(r.truncated);
+  }
+
+  TEST_CASE("malformed nested references do not fail") {
+    CHECK_EQ(fmt("{:{x}}", 26), "1a}");
+    CHECK_EQ(fmt("{:{:{}}}", 42), "42}");
+    CHECK_EQ(fmt("{:{0}}", 5), "    5");
+  }
+
+  TEST_CASE("format_as maps custom types to formattable values") {
+    CHECK_EQ(fmt("{}", format_as_test::Meters{2.5}), "2.5");
+    CHECK_EQ(fmt("{:.1f}", format_as_test::Meters{2.5}), "2.5");
+    CHECK_EQ(fmt("{}", format_as_test::Level::kInfo), "10");
+    CHECK_EQ(fmt("{:04}", format_as_test::Level::kInfo), "0010");
+
+    const format_as_test::Tag tag{"core"};
+    CHECK_EQ(fmt("{}/{:>6}", tag, tag), "core/  core");
+    CHECK_EQ(format::format("{}", format_as_test::Meters{1.5}), "1.5");
+  }
+
+  TEST_CASE("debug presentation escapes strings") {
+    CHECK_EQ(fmt("{:?}", "ab"), "\"ab\"");
+    CHECK_EQ(fmt("{:?}", "a\"b\\"), "\"a\\\"b\\\\\"");
+    CHECK_EQ(fmt("{:?}", "a\tb\n"), "\"a\\tb\\n\"");
+    CHECK_EQ(fmt("{:?}", "\x01\x1f\x7f"), "\"\\u{1}\\u{1f}\\u{7f}\"");
+    CHECK_EQ(fmt("{:>10?}", "ab"), "      \"ab\"");
+    CHECK_EQ(fmt("{:.0?}", "ab"), "\"\"");
+    CHECK_EQ(fmt("{:.2?}", "a\nb"), "\"a\\n\"");
+  }
+
+  TEST_CASE("debug presentation escapes chars") {
+    CHECK_EQ(fmt("{:?}", 'q'), "'q'");
+    CHECK_EQ(fmt("{:?}", '\''), "'\\''");
+    CHECK_EQ(fmt("{:?}", '\n'), "'\\n'");
+    CHECK_EQ(fmt("{:.1?}", 'q'), "'q'");
   }
 }
 

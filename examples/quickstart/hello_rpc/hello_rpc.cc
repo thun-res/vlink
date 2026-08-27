@@ -52,10 +52,9 @@ int main() {
   static constexpr char kUrl[] = "intra://hello/rpc#direct";
 
   vlink::Server<CalcRequest, CalcResponse> server(kUrl);
-  // intra:// does not support Node::attach(); #direct invokes the handler
-  // inline on the client calling thread. Filling
-  // `resp` in-place auto-sends the response when the callback returns --
-  // this is the synchronous "listen" mode (vs. listen_for_reply / async).
+  // #direct invokes the handler inline on the client calling thread. Filling
+  // `resp` in-place auto-sends the response when the callback returns -- this
+  // is the synchronous "listen" mode (vs. listen_for_reply / async).
   server.listen([](const CalcRequest& req, CalcResponse& resp) {
     switch (req.op) {
       case '+':

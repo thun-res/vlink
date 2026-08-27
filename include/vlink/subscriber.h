@@ -55,6 +55,7 @@
  * | Category          | Example C++ Type                 | @c Serializer::Type | Notes                          |
  * | ----------------- | -------------------------------- | ------------------- | ------------------------------ |
  * | Raw bytes         | @c Bytes                         | @c kBytesType       | Pass-through to callback.      |
+ * | SOME/IP struct    | @c VLINK_SOMEIP_FIELDS structure | @c kSomeipType      | Field-wise SOME/IP payload.    |
  * | Protobuf value    | @c MyProto                       | @c kProtoType       | ParseFromArray path.           |
  * | Protobuf pointer  | @c MyProto*                      | @c kProtoPtrType    | Needs @c bind_proto_arena.     |
  * | FlatBuffers obj   | @c MyTableT (NativeTable)        | @c kFlatTableType   | Object API.                    |

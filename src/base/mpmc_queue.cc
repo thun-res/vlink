@@ -33,16 +33,6 @@
 namespace vlink {
 
 // MpmcQueueBase
-MpmcQueueBase::MpmcQueueBase(size_t capacity) : capacity_(capacity) {
-  if VUNLIKELY (capacity_ < 1U) {
-    throw_mpmc_invalid_capacity();
-  }
-}
-
-void MpmcQueueBase::throw_mpmc_invalid_capacity() { throw std::invalid_argument("capacity < 1U"); }
-
-void MpmcQueueBase::throw_mpmc_alignment_failure() { throw std::bad_alloc(); }
-
 size_t MpmcQueueBase::capacity() const noexcept { return capacity_; }
 
 size_t MpmcQueueBase::size(bool real) const noexcept {
@@ -143,5 +133,15 @@ void MpmcQueueBase::notify_to_quit() noexcept {
   cv_not_empty_.notify_all();
   cv_not_full_.notify_all();
 }
+
+MpmcQueueBase::MpmcQueueBase(size_t capacity) : capacity_(capacity) {
+  if VUNLIKELY (capacity_ < 1U) {
+    throw_mpmc_invalid_capacity();
+  }
+}
+
+void MpmcQueueBase::throw_mpmc_invalid_capacity() { throw std::invalid_argument("capacity < 1U"); }
+
+void MpmcQueueBase::throw_mpmc_alignment_failure() { throw std::bad_alloc(); }
 
 }  // namespace vlink

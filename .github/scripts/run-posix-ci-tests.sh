@@ -78,7 +78,7 @@ function stop_proxy() {
 function start_proxy() {
     stop_proxy
     proxy_log="$build_dir/vlink-proxy.log"
-    "$proxy" -c -n -m off > "$proxy_log" 2>&1 &
+    "$proxy" -l 3 -n -m off > "$proxy_log" 2>&1 &
     proxy_pid=$!
     sleep 2
 

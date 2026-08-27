@@ -78,16 +78,6 @@ const Conf* FdbusSubscriberImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* FdbusSubscriberImpl::get_abstract_node() const { return object_.get(); }
 
-bool FdbusSubscriberImpl::attach(class MessageLoop*) {
-  VLOG_W("Function [attach] is not supported.");
-  return false;
-}
-
-bool FdbusSubscriberImpl::detach() {
-  VLOG_W("Function [detach] is not supported.");
-  return false;
-}
-
 bool FdbusSubscriberImpl::listen(MsgCallback&& callback) {
   object_->register_msg_callback(this, std::move(callback));
 

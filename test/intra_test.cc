@@ -342,6 +342,60 @@ TEST_SUITE("intra-pubsub") {
     CHECK(count.load() == 3);
   }
 
+  TEST_CASE("attached queue subscriber bypasses the intra pipeline") {
+    MESSAGE("[intra-pubsub] attached queue subscriber bypasses the intra pipeline");
+
+    MessageLoop loop;
+    REQUIRE(loop.async_run());
+
+    std::promise<void> release_blocker;
+    auto release_future = release_blocker.get_future().share();
+    std::promise<void> blocker_started;
+    auto blocker_started_future = blocker_started.get_future();
+    std::promise<void> blocker_done;
+    auto blocker_done_future = blocker_done.get_future();
+
+    Publisher<int> blocker_pub(IntraConf("event_attached_bypass_blocker", "", 17, "queue"));
+    Subscriber<int> blocker_sub(IntraConf("event_attached_bypass_blocker", "", 17, "queue"));
+
+    REQUIRE(blocker_sub.listen([&](const int&) {
+      blocker_started.set_value();
+      release_future.wait();
+      blocker_done.set_value();
+    }));
+
+    Publisher<int> target_pub(IntraConf("event_attached_bypass_target", "", 17, "queue"));
+    Subscriber<int> target_sub(IntraConf("event_attached_bypass_target", "", 17, "queue"), InitType::kWithoutInit);
+
+    REQUIRE(target_sub.attach(&loop));
+    REQUIRE(target_sub.init());
+
+    std::promise<void> target_received;
+    auto target_received_future = target_received.get_future();
+    std::atomic<bool> callback_on_loop{false};
+
+    REQUIRE(target_sub.listen([&](const int&) {
+      callback_on_loop.store(loop.is_in_same_thread(), std::memory_order_release);
+      target_received.set_value();
+    }));
+
+    REQUIRE(blocker_pub.publish(1));
+    CHECK(blocker_started_future.wait_for(1s) == std::future_status::ready);
+
+    REQUIRE(target_pub.publish(2));
+    const bool target_ready = target_received_future.wait_for(1s) == std::future_status::ready;
+
+    release_blocker.set_value();
+
+    CHECK(blocker_done_future.wait_for(1s) == std::future_status::ready);
+    CHECK(target_ready);
+    CHECK(callback_on_loop.load(std::memory_order_acquire));
+
+    CHECK(target_sub.detach());
+    loop.quit();
+    loop.wait_for_quit();
+  }
+
   TEST_CASE("direct mode delivers message to subscriber") {
     MESSAGE("[intra-pubsub] direct mode delivers message to subscriber");
 
@@ -959,17 +1013,29 @@ TEST_SUITE("intra-method") {
   TEST_CASE("async callback invoke delivers response") {
     MESSAGE("[intra-method] async callback invoke delivers response");
 
+    MessageLoop loop;
+    REQUIRE(loop.async_run());
+
+    std::atomic<bool> server_on_loop{false};
+
     Server<std::string, std::string> server(IntraConf("test_async_cb4", "null"));
-    server.listen([](const std::string& /*req*/, std::string& resp) { resp = "cb_response"; });
+    REQUIRE(server.attach(&loop));
+    server.listen([&](const std::string& /*req*/, std::string& resp) {
+      server_on_loop.store(loop.is_in_same_thread(), std::memory_order_release);
+      resp = "cb_response";
+    });
 
     Client<std::string, std::string> client("intra://test_async_cb4?event=null");
+    REQUIRE(client.attach(&loop));
     CHECK(client.wait_for_connected(1s));
 
     std::atomic<bool> got_response{false};
+    std::atomic<bool> client_on_loop{false};
     std::string received_resp;
 
     bool ok = client.invoke("msg", [&](const std::string& resp) {
       received_resp = resp;
+      client_on_loop.store(loop.is_in_same_thread(), std::memory_order_release);
       got_response.store(true, std::memory_order_release);
     });
 
@@ -977,6 +1043,13 @@ TEST_SUITE("intra-method") {
 
     CHECK(common_test::wait_until([&got_response] { return got_response.load(std::memory_order_acquire); }, 1s));
     CHECK(received_resp == "cb_response");
+    CHECK(server_on_loop.load(std::memory_order_acquire));
+    CHECK(client_on_loop.load(std::memory_order_acquire));
+
+    CHECK(client.detach());
+    CHECK(server.detach());
+    loop.quit();
+    loop.wait_for_quit();
   }
 
   TEST_CASE("detect connected callback fires when client connects to server") {

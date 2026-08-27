@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#070b18">
 <title>VLink · 一套 API，10 种传输后端 — C++ 通信中间件</title>
-<meta name="description" content="VLink 是一款 C++ 通信中间件，提供 Event、Method、Field 三种模型、10 种传输后端、14 类序列化支持以及配套 CLI、录制回放和可视化工具。Apache 2.0 开源。">
+<meta name="description" content="VLink 是一款 C++ 通信中间件，提供 Event、Method、Field 三种模型、10 种传输后端、15 类序列化支持以及配套 CLI、录制回放和可视化工具。Apache 2.0 开源。">
 <meta name="author" content="Thun Lu">
 <meta name="robots" content="index,follow">
 <meta property="og:title" content="VLink — One API, 10 Transport Backends">
@@ -111,7 +111,7 @@
       </div>
       <div class="hero-meta">
         <div><strong>10</strong> <span data-i18n="hero.meta.tr">传输后端</span></div>
-        <div><strong>14</strong> <span data-i18n="hero.meta.ser">序列化格式</span></div>
+        <div><strong>15</strong> <span data-i18n="hero.meta.ser">序列化格式</span></div>
         <div><strong>6</strong> <span data-i18n="hero.meta.nt">节点类型</span></div>
         <div><strong>10</strong> <span data-i18n="hero.meta.cli">CLI 工具</span></div>
         <div><strong>5</strong> <span data-i18n="hero.meta.os">支持平台</span></div>
@@ -182,8 +182,8 @@
       <div class="why-card reveal d3">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M4 4h16v4H4zM4 10h16v4H4zM4 16h16v4H4z"/></svg></div>
         <h3 data-i18n="pos.c3.h">序列化自动推导</h3>
-        <p data-i18n="pos.c3.p">Protobuf / FlatBuffers / CDR / POD / 自定义 —— 编译期根据类型签名自动选择，不用手写编解码。</p>
-        <div class="vs"><span class="strike" data-i18n="pos.c3.vs1">Msg/IDL/CDR 分裂</span><span data-i18n="pos.c3.vs2"><strong>14 种统一</strong></span></div>
+        <p data-i18n="pos.c3.p">SOME/IP / CDR / Protobuf / FlatBuffers / POD / 自定义 —— 编译期根据类型签名自动选择。</p>
+        <div class="vs"><span class="strike" data-i18n="pos.c3.vs1">Msg/IDL/CDR 分裂</span><span data-i18n="pos.c3.vs2"><strong>15 种统一</strong></span></div>
       </div>
       <div class="why-card reveal d4">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="22" height="22"><rect x="2.5" y="2.5" width="8.5" height="8.5" rx="1.5"/><rect x="13" y="2.5" width="8.5" height="8.5" rx="1.5"/><rect x="2.5" y="13" width="8.5" height="8.5" rx="1.5"/><rect x="13" y="13" width="8.5" height="8.5" rx="1.5"/></svg></div>
@@ -195,7 +195,7 @@
 
     <div class="numbers reveal">
       <div class="num-item"><div class="big count-plus" data-count-target="10">10</div><div class="label" data-i18n="num.tr">传输后端</div></div>
-      <div class="num-item"><div class="big" data-count-target="14">14</div><div class="label" data-i18n="num.ser">序列化格式</div></div>
+      <div class="num-item"><div class="big" data-count-target="15">15</div><div class="label" data-i18n="num.ser">序列化格式</div></div>
       <div class="num-item"><div class="big" data-count-target="10">10</div><div class="label" data-i18n="num.cli">CLI 工具</div></div>
       <div class="num-item"><div class="big" data-count-target="4">4</div><div class="label" data-i18n="num.viz">GUI / Web 可视化</div></div>
     </div>
@@ -712,7 +712,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M6 8v3h12V8M12 11v5"/></svg>
         </div>
         <h4 data-i18n="pl.c.core.h">通信核心</h4>
-        <p data-i18n="pl.c.core.p">Event / Method / Field 三模型 + 10 种传输矩阵 + 14 种序列化。</p>
+        <p data-i18n="pl.c.core.p">Event / Method / Field 三模型 + 10 种传输矩阵 + 15 种序列化。</p>
       </div>
       <div class="plat reveal d1">
         <div class="plat-ico" style="background:linear-gradient(135deg,#4faafd,#00e5b0)">
@@ -800,7 +800,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
       <div class="viz-card reveal d3">
         <div class="viz-meta">
           <div class="tag" data-i18n="sc.soa.tag">车载集成</div>
-          <h3 data-i18n="sc.soa.h">车载以太网与 AUTOSAR 兼容</h3>
+          <h3 data-i18n="sc.soa.h">面向 AUTOSAR 的车载以太网集成</h3>
           <p data-i18n="sc.soa.p">文档明确给出 <code>someip://</code> 作为面向车载以太网与 AUTOSAR 场景的 Beta 后端，并提供 <code>someip_flat</code> 示例。开发阶段可先用 <code>dds://</code> / <code>intra://</code> 联调，再按 URL 切换到目标部署形态。</p>
         </div>
         <div class="viz-mock"><img src="assets/svg/scene-soa.svg" alt="Automotive Ethernet and SOME/IP integration" loading="lazy" data-i18n-attr="alt:sc.alt.soa"></div>
@@ -836,7 +836,7 @@ getter.<span class="fn">set_change_reporting</span>(<span class="kw">true</span>
       <div class="vs-row"><div data-i18n="vs.r.arch.k">架构与扩展</div><div class="vs-col-ros2" data-i18n="vs.r.arch.a">rclcpp + rmw 分层，但扩展依赖 pluginlib 与 ament 包管理</div><div class="vs-col-vlink" data-i18n="vs.r.arch.b">传输 / 序列化 / CLI / 可视化均为独立 CMake 组件，按需裁剪；<br><strong>七类插件接口</strong> (Logger · Runable · Convert · Schema · Bag · Trigger · Conf) 运行期 dlopen 加载</div></div>
       <div class="vs-row"><div data-i18n="vs.r.perf.k">性能验证</div><div class="vs-col-ros2" data-i18n="vs.r.perf.a">结果受 RMW、QoS、消息大小、拓扑与硬件影响，应在目标配置上测量</div><div class="vs-col-vlink" data-i18n="vs.r.perf.b">同样需按目标配置测量；<code>intra://</code> 直接/共享指针路径与 <code>shm://</code> 显式 loan 路径可减少载荷复制</div></div>
       <div class="vs-row"><div data-i18n="vs.r.trans.k">传输与零拷贝</div><div class="vs-col-ros2" data-i18n="vs.r.trans.a">传输和 loan 能力由所选 RMW、消息类型及配置决定</div><div class="vs-col-vlink" data-i18n="vs.r.trans.b">提供 10 种 URL scheme；迁移时必须满足各后端的 URL 结构、依赖、QoS 与运行时配置</div></div>
-      <div class="vs-row"><div data-i18n="vs.r.ser.k">序列化</div><div class="vs-col-ros2" data-i18n="vs.r.ser.a">rosidl (ROS Msg IDL) 为主；Type Adaptation 允许回调用 Eigen 等自定义类型</div><div class="vs-col-vlink" data-i18n="vs.r.ser.b"><strong>14 类编译期派发</strong>：Bytes · DynamicData · CDR · Protobuf · Protobuf 指针 · FlatBuffers 对象 · FlatBuffers 表指针 · FlatBuffers builder · 自定义 · string · const char*（仅发送） · POD · POD 指针 · 流式兜底</div></div>
+      <div class="vs-row"><div data-i18n="vs.r.ser.k">序列化</div><div class="vs-col-ros2" data-i18n="vs.r.ser.a">rosidl (ROS Msg IDL) 为主；Type Adaptation 允许回调用 Eigen 等自定义类型</div><div class="vs-col-vlink" data-i18n="vs.r.ser.b"><strong>15 类编译期派发</strong>：Bytes · DynamicData · SOME/IP payload · CDR · Protobuf · Protobuf 指针 · FlatBuffers 对象 · FlatBuffers 表指针 · FlatBuffers builder · 自定义 · string · const char*（仅发送） · POD · POD 指针 · 流式兜底</div></div>
       <div class="vs-row"><div data-i18n="vs.r.debug.k">调试与观测</div><div class="vs-col-ros2" data-i18n="vs.r.debug.a">rqt · rosbag2 · Foxglove Bridge / Rerun 为独立社区包</div><div class="vs-col-vlink" data-i18n="vs.r.debug.b">Viewer · Player · Analyzer 桌面 GUI + Foxglove / Rerun Web 桥 <strong>原生同构</strong>；<strong>.vdb (SQLite+LZAV) / .vcap (MCAP+Zstd)</strong> · 分片 · 倍速回放</div></div>
       <div class="vs-row"><div data-i18n="vs.r.sec.k">安全机制</div><div class="vs-col-ros2" data-i18n="vs.r.sec.a">可使用 SROS2 / DDS Security；部署模型与证书配置取决于所选中间件</div><div class="vs-col-vlink" data-i18n="vs.r.sec.b">提供消息级 AES-128-GCM 与自定义加密回调；并非所有传输和序列化路径都支持消息级加密</div></div>
       <div class="vs-row"><div data-i18n="vs.r.build.k">构建与工程</div><div class="vs-col-ros2" data-i18n="vs.r.build.a">colcon + ament + rosdep + DDS vendor 包；工具链与 Python 深度绑定</div><div class="vs-col-vlink" data-i18n="vs.r.build.b">标准 <strong>CMake / Conan</strong>，支持静态链接；配套 <a href="https://github.com/thun-res/vkit" target="_blank" rel="noopener"><strong>vkit</strong></a> 统一拉取 / 编译 / 打包</div></div>

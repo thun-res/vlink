@@ -701,60 +701,81 @@ monitor->shutdown();
 
 ### 📝 13.14 LoggerPluginInterface：自定义日志后端
 
-实现 `LoggerPluginInterface` 可将 VLink 日志转发至任意第三方框架（spdlog、log4cxx、自定义滚动日志等）。接口仅含两个纯虚函数。
+实现 `LoggerPluginInterface` 可将 VLink 文件通道转发至自定义滚动日志、远程日志服务等外部系统。接口包含三个钩子。
 
 | 方法 | 语义 |
 | --- | --- |
-| `bool init(app_name)` | 初始化后端 |
-| `bool log(int level, str)` | 输出一条日志，`level` 为级别整数 |
+| `bool init(app_name) noexcept` | 初始化后端 |
+| `bool log(int level, str) noexcept` | 输出一条日志，`level` 为级别整数 |
+| `void flush() noexcept` | 排空此前由 `log()` 接受的插件内部异步任务 |
 
 `level` 与 `Logger::Level` 的对照：`0` Trace、`1` Debug、`2` Info、`3` Warn、`4` Error、`5` Fatal。
 
-```cpp
-#include <vlink/base/logger_plugin_interface.h>
-#include <spdlog/spdlog.h>
-#include <spdlog/sinks/rotating_file_sink.h>
+通过 `VLINK_LOG_PLUGIN` 加载时，插件的 `init()` 在 Logger 单例完成构造后执行并支持同线程 Logger
+重入，因此可在其中创建 `Publisher` 等 VLink 通信节点。初始化期间其他线程不会等待，可继续向
+控制台输出，但日志不会进入尚未就绪的插件。`log()` 可能被多个日志线程并发调用；其同线程调用链
+产生的 VLink 日志仍按控制台配置处理，但不会再次进入同一插件。
 
-class SpdlogPlugin : public vlink::LoggerPluginInterface {
+```cpp
+#include <cstdio>
+#include <mutex>
+#include <string>
+#include <vlink/base/logger_plugin_interface.h>
+
+class CustomLoggerPlugin : public vlink::LoggerPluginInterface {
     VLINK_PLUGIN_REGISTER(vlink::LoggerPluginInterface)
+
 public:
-    bool init(std::string_view app_name) override {
-        logger_ = spdlog::rotating_logger_mt(
-            std::string(app_name),
-            "/var/log/" + std::string(app_name) + ".log",
-            1024 * 1024 * 10, 3);
-        return true;
+    ~CustomLoggerPlugin() override {
+        if (file_ != nullptr) {
+            (void)std::fclose(file_);
+        }
     }
 
-    bool log(int level, std::string_view str) override {
-        if (!logger_) {
+    bool init(std::string_view app_name) noexcept override {
+        const auto path = "/var/log/" + std::string(app_name) + ".log";
+        file_ = std::fopen(path.c_str(), "ab");
+        return file_ != nullptr;
+    }
+
+    bool log(int level, std::string_view str) noexcept override {
+        (void)level;
+        std::lock_guard lock(mtx_);
+
+        if (file_ == nullptr) {
             return false;
         }
 
-        switch (level) {
-        case 1: logger_->debug(str); break;
-        case 2: logger_->info(str); break;
-        case 3: logger_->warn(str); break;
-        case 4: logger_->error(str); break;
-        default: logger_->trace(str); break;
+        return std::fwrite(str.data(), 1U, str.size(), file_) == str.size() &&
+               std::fputc('\n', file_) != EOF;
+    }
+
+    void flush() noexcept override {
+        std::lock_guard lock(mtx_);
+
+        if (file_ != nullptr) {
+            (void)std::fflush(file_);
         }
-        return true;
     }
 
 private:
-    std::shared_ptr<spdlog::logger> logger_;
+    std::mutex mtx_;
+    std::FILE* file_{nullptr};
 };
 
-VLINK_PLUGIN_DECLARE(SpdlogPlugin, 1, 0)
+VLINK_PLUGIN_DECLARE(CustomLoggerPlugin, 1, 0)
 ```
 
-加载后即接管全局日志输出（日志后端总览见 [基础库](08-base-library.md)），亦可经环境变量 `VLINK_LOG_PLUGIN` 注入（见 13.21）：
+手工加载后可直接调用插件接口；要替换 Logger 文件通道，需在 Logger 首次使用前通过环境变量
+`VLINK_LOG_PLUGIN` 注入。控制台通道仍独立按自身级别与回调处理（日志后端总览见
+[基础库](08-base-library.md)，环境变量见 13.21）：
 
 ```cpp
 vlink::Plugin plugin;
-auto backend = plugin.load<vlink::LoggerPluginInterface>("spdlog_plugin", 1, 0);
+auto backend = plugin.load<vlink::LoggerPluginInterface>("custom_logger_plugin", 1, 0);
 if (backend) {
     backend->init("my_app");
+    backend->flush();
 }
 ```
 
@@ -954,23 +975,40 @@ export VLINK_FBS_DIR=/opt/vlink/fbs
 
 内置日志系统 `vlink::Logger` 的级别、目录与轮转策略均可经环境变量调整。日志级别取值：`0`=TRACE、`1`=DEBUG、`2`=INFO、`3`=WARN、`4`=ERROR、`5`=FATAL、`6`=OFF；也可填写 `Trace`、`Debug`、`Info`、`Warn`、`Error`、`Fatal`、`Off`，并支持全大写或全小写。控制台与文件级别可分别覆盖全局级别。
 
+CMake 在桌面/Linux 默认启用自研后端，在 Android/QNX 默认关闭；Conan 默认启用
+自研后端，Android.bp 使用平台日志。CMake 可通过 `ENABLE_LOG_BACKEND=ON|OFF` 显式切换；
+关闭时在 Android、QNX 或 Linux 上使用平台日志。
+
 | 变量 | 类型 | 说明 |
 | --- | --- | --- |
 | `VLINK_LOG_LEVEL` | 数字或英文名称 | 全局日志级别（`0`..`6` 或对应英文名称） |
 | `VLINK_LOG_CONSOLE_LEVEL` | 数字或英文名称 | 控制台级别，覆盖全局 |
-| `VLINK_LOG_FILE_LEVEL` | 数字或英文名称 | 文件级别，覆盖全局 |
+| `VLINK_LOG_FILE_LEVEL` | 数字或英文名称 | 文件与自定义日志插件级别，覆盖全局；`Off` 不加载插件 |
 | `VLINK_LOG_DIR` | 目录路径 | 日志文件目录 |
 | `VLINK_LOG_CONSOLE_UNORDER` | `1`/`0` | 非同步控制台输出，吞吐更高 |
 | `VLINK_LOG_CONSOLE_FMT` | `1`/`0` | 启用扩展控制台格式 |
 | `VLINK_LOG_ENABLE_UTC` | `1`/`0` | 使用 UTC 时间戳 |
 | `VLINK_LOG_MAX_SIZE` | 数字 | 单文件最大字节数，超过后轮转（默认 10 MiB） |
-| `VLINK_LOG_MAX_COUNT` | 数字 | 日志文件最大保留数量 |
-| `VLINK_LOG_FLUSH_DELAY` | 数字 | 刷新延迟，毫秒（默认 500） |
-| `VLINK_LOG_PLUGIN` | 插件名 | 自定义日志插件基础名，对应 13.14 的 `LoggerPluginInterface` |
-| `VLINK_LOG_STORE_STRATEGY` | `1`/`0` | 启用备用文件存储策略 |
-| `VLINK_LOG_OPEN_APPEND` | `1`/`0` | 启动时追加既有日志 |
-| `VLINK_LOG_BLOCK_SYNC` | `1`/`0` | 写入繁忙时阻塞调用线程，保证不丢日志，牺牲实时性 |
-| `VLINK_LOG_WRITE_DEPTH` | 数字 | 日志写入队列深度 |
+| `VLINK_LOG_MAX_COUNT` | 数字 | 时间戳策略文件保留目标（1..10000）；固定文件名策略备份数（0..200000，另有一个活动文件） |
+| `VLINK_LOG_FLUSH_DELAY` | 数字 | 异步 Sink 刷新间隔，毫秒（默认 500）；后端细节见下文 |
+| `VLINK_LOG_PLUGIN` | 插件名 | 首次使用 Logger 前设置的文件通道插件基础名；仅在文件级别低于 `Off` 时加载 |
+| `VLINK_LOG_STORE_STRATEGY` | `1`/`0` | `1`：固定文件名大小轮转；`0`：时间戳文件大小轮转 |
+| `VLINK_LOG_OPEN_APPEND` | `1`/`0` | `1`：启动时继续活动/最新文件；`0`：启动新文件或轮转既有活动文件 |
+| `VLINK_LOG_BLOCK_SYNC` | `1`/`0` | `1`：队列满时阻塞生产线程；`0`：普通记录非阻塞并允许丢弃（默认）；Error/Fatal 仍阻塞保护 |
+| `VLINK_LOG_WRITE_DEPTH` | 数字 | `LoggerBackend` 的 MessageLoop dispatcher 队列槽数（默认 8192 条） |
+
+`VLINK_LOG_WRITE_DEPTH` 是 `LoggerBackend` 的 `MessageLoop` dispatcher 待处理槽数，
+worker 交换出的当前处理批次不再占用这些槽。
+`VLINK_LOG_BLOCK_SYNC=0` 时，自研后端淘汰 dispatcher 队列中的较旧普通记录，
+Error/Fatal 始终受保护并等待容量。设为 `1` 时生产线程等待队列腾出空间。
+
+`VLINK_LOG_FLUSH_DELAY` 在自研后端中驱动周期 flush，Error 及以上另触发 flush；
+周期任务与文件写入在同一 `MessageLoop` 串行执行。设为 `0` 时每条记录都触发
+flush。
+
+自研后端的轮转文件集按单写入者设计。多个进程应使用不同日志目录或包含 PID
+的基础目录，不能共享同一组 fixed/timestamp 文件。flush 不承诺断电持久性；需要
+系统级持久化或多进程汇聚时，应使用专用日志服务。
 
 ```bash
 export VLINK_LOG_CONSOLE_LEVEL=4
@@ -1024,7 +1062,7 @@ export VLINK_DDS_IP="192.168.1.100,192.168.1.101"
 | `VLINK_SHM2_NOTIFY_EVERY` | 数字 | 每 N 条消息通知一次消费者（默认 `1`）；调大可批量唤醒、降低系统调用次数 |
 | `VLINK_SHM2_LOAN_MIN` | 字节数 | `shm2://` 非 loaned `Bytes` 使用 loan/write/send 的最小 payload 大小（默认 `65536`） |
 
-共享内存后端依赖共享内存守护进程，推荐经 `vlink-proxy -c` 内嵌启动，详见 [可观测性](12-observability.md)。
+共享内存后端依赖共享内存守护进程，推荐经 `vlink-proxy -l 3` 按默认内存策略内嵌启动，详见 [可观测性](12-observability.md)。
 
 ### 🚌 13.25 其他后端
 

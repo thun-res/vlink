@@ -26,6 +26,7 @@
 #include <charconv>
 #include <filesystem>
 #include <memory>
+#include <new>
 #include <string>
 #include <utility>
 #include <vector>
@@ -35,6 +36,7 @@
 #define SHM_QNX_LOCK_DIR "/var/lock"
 #endif
 
+#include "./base/utils.h"
 #include "./impl/server_impl.h"
 
 #define SHM_USE_RUNTIME_IMPL 1
@@ -66,8 +68,13 @@ struct ShmGlobal final {
 #endif
 
   static ShmGlobal& get() {
+#ifdef _WIN32
+    static ShmGlobal* instance = new ShmGlobal();
+    return *instance;
+#else
     static ShmGlobal instance;
     return instance;
+#endif
   }
 
  private:
@@ -175,6 +182,13 @@ ShmFactory::ShmFactory() {
 }
 
 ShmFactory::~ShmFactory() {
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    (void)::new (std::nothrow) auto(std::move(listener_map_));
+    return;
+  }
+#endif
+
   detect_timer_.stop();
   detect_timer_.detach();
 
@@ -204,22 +218,23 @@ bool ShmFactory::has_roudi_running() {
 #endif
 }
 
-bool ShmFactory::auto_init_roudi(bool same_process_from_roudi) {
+bool ShmFactory::auto_init_roudi(bool same_process_from_roudi, int memory_strategy) {
   Bytes::init_memory_pool();
 
   struct RoudiManager final {
-    explicit RoudiManager(bool same_process_from_roudi) {
+    RoudiManager(bool same_process_from_roudi, int memory_strategy) {
       bool roudi_running = ShmFactory::has_roudi_running();
 
       if (!roudi_running) {
 #ifdef _WIN32
+        (void)memory_strategy;
 
         if (same_process_from_roudi) {
           status_ = false;
           return;
         }
 #else
-        ShmFactory::init_roudi();
+        ShmFactory::init_roudi({}, memory_strategy);
 #endif
       }
 
@@ -228,6 +243,12 @@ bool ShmFactory::auto_init_roudi(bool same_process_from_roudi) {
     }
 
     ~RoudiManager() {
+#ifdef _WIN32
+      if (Utils::is_terminating()) {
+        return;
+      }
+#endif
+
       if (status_) {
         ShmFactory::deinit_runtime();
         ShmFactory::deinit_roudi();
@@ -240,7 +261,7 @@ bool ShmFactory::auto_init_roudi(bool same_process_from_roudi) {
     bool status_{true};
   };
 
-  static RoudiManager manager(same_process_from_roudi);
+  static RoudiManager manager(same_process_from_roudi, memory_strategy);
 
   return manager.status();
 }
@@ -332,14 +353,19 @@ void ShmFactory::init_roudi(const std::string& config_path, int memory_strategy,
   } else {
     shm::mepoo::MePooConfig poo_config;
 
-    if (memory_strategy == 1) {  // low
+    if (memory_strategy == 1) {
+      poo_config.addMemPool({1024, 1000});
+      poo_config.addMemPool({16384, 500});
+      poo_config.addMemPool({131072, 100});
+      poo_config.addMemPool({1048576, 10});
+    } else if (memory_strategy == 2) {
       poo_config.addMemPool({1024, 5000});
       poo_config.addMemPool({16384, 1000});
       poo_config.addMemPool({131072, 100});
       poo_config.addMemPool({1048576, 20});
       poo_config.addMemPool({4194304, 10});
       poo_config.addMemPool({8388608, 5});
-    } else if (memory_strategy == 3) {  // high
+    } else if (memory_strategy == 4) {
       poo_config.addMemPool({1024, 10000});
       poo_config.addMemPool({16384, 1000});
       poo_config.addMemPool({131072, 500});
@@ -1163,6 +1189,8 @@ Bytes ShmPublisher::loan(uint64_t channel, int64_t size) {
     return Bytes();
   }
 
+  std::lock_guard lock(mtx_);
+
   auto write_msg_result = pub_->loan(size + ShmFactory::get_loaned_offset(), ShmFactory::get_loaned_alignment());
 
   seq_.fetch_add(1, std::memory_order_relaxed);
@@ -1185,6 +1213,8 @@ bool ShmPublisher::release(const Bytes& bytes) {
     return false;
   }
 
+  std::lock_guard lock(mtx_);
+
   pub_->release(const_cast<uint8_t*>(bytes.data()) - ShmFactory::get_loaned_offset());
 
   return true;
@@ -1199,25 +1229,29 @@ bool ShmPublisher::publish(uint64_t channel, const Bytes& bytes) {
     }
   }
 
-  if (bytes.is_loaned()) {
-    pub_->publish(const_cast<uint8_t*>(bytes.data()) - ShmFactory::get_loaned_offset());
-  } else {
-    auto write_msg_result =
-        pub_->loan(bytes.size() + ShmFactory::get_loaned_offset(), ShmFactory::get_loaned_alignment());
+  {
+    std::lock_guard lock(mtx_);
 
-    seq_.fetch_add(1, std::memory_order_relaxed);
+    if (bytes.is_loaned()) {
+      pub_->publish(const_cast<uint8_t*>(bytes.data()) - ShmFactory::get_loaned_offset());
+    } else {
+      auto write_msg_result =
+          pub_->loan(bytes.size() + ShmFactory::get_loaned_offset(), ShmFactory::get_loaned_alignment());
 
-    if VUNLIKELY (write_msg_result.has_error()) {
-      VLOG_E("ShmFactory: Failed to loan buffer, size: ", bytes.size() + ShmFactory::get_loaned_offset(),
-             ", error: ", write_msg_result.get_error(), ".");
-      return false;
+      seq_.fetch_add(1, std::memory_order_relaxed);
+
+      if VUNLIKELY (write_msg_result.has_error()) {
+        VLOG_E("ShmFactory: Failed to loan buffer, size: ", bytes.size() + ShmFactory::get_loaned_offset(),
+               ", error: ", write_msg_result.get_error(), ".");
+        return false;
+      }
+
+      auto* write_msg = static_cast<uint8_t*>(write_msg_result.value());
+
+      ShmFactory::write_data(write_msg, channel, seq_.load(std::memory_order_relaxed), bytes);
+
+      pub_->publish(write_msg);
     }
-
-    auto* write_msg = static_cast<uint8_t*>(write_msg_result.value());
-
-    ShmFactory::write_data(write_msg, channel, seq_.load(std::memory_order_relaxed), bytes);
-
-    pub_->publish(write_msg);
   }
 
   if VUNLIKELY (wait_ > 0) {

@@ -54,16 +54,6 @@ const Conf* IntraPublisherImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* IntraPublisherImpl::get_abstract_node() const { return object_.get(); }
 
-bool IntraPublisherImpl::attach(class MessageLoop*) {
-  VLOG_W("Function [attach] is not supported.");
-  return false;
-}
-
-bool IntraPublisherImpl::detach() {
-  VLOG_W("Function [detach] is not supported.");
-  return false;
-}
-
 bool IntraPublisherImpl::has_subscribers() const {
   return !object_->msg_map_is_empty() || !object_->intra_msg_map_is_empty();
 }

@@ -55,7 +55,8 @@ using namespace std::chrono_literals;  // NOLINT(build/namespaces, google-build-
 //                   command paths; ASync is the default.
 //   deadline     -- period (ms) a writer must publish within; misses are
 //                   reported as a violation event.
-//   lifespan     -- max age (ms) of a sample before the reader discards it.
+//   lifespan     -- max age (ms) of a sample before the reader discards it;
+//                   finite values require synchronised clocks across hosts.
 //   resource_limits -- caps on samples/instances/sample-per-instance.
 //
 // Profiles are registered per-backend (DdsConf / DdscConf / ...). The URL
@@ -93,7 +94,7 @@ int main() {
   sensor_qos.durability.kind = vlink::Qos::Durability::kVolatile;
   sensor_qos.publish_mode.kind = vlink::Qos::PublishMode::kASync;
   sensor_qos.deadline.period = 100;
-  sensor_qos.lifespan.duration = 500;
+  sensor_qos.lifespan.duration = -1;
   print_qos(sensor_qos);
 
 #ifdef VLINK_SUPPORT_DDS

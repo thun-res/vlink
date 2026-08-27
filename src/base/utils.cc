@@ -24,6 +24,7 @@
 #include "./base/utils.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cctype>
 #include <csignal>
@@ -33,6 +34,7 @@
 #include <functional>
 #include <iostream>
 #include <mutex>
+#include <new>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -101,7 +103,10 @@
 #include <mach/mach.h>
 #include <sys/sysctl.h>
 #elif defined(__QNX__)
+#include <net/if_dl.h>
 #include <process.h>
+#include <sys/neutrino.h>
+#include <sys/syspage.h>
 #endif
 
 #endif
@@ -1325,6 +1330,25 @@ uint64_t get_native_thread_id() noexcept {
 #endif
 }
 
+bool is_terminating() noexcept {
+#if defined(_WIN32)
+  using RtlDllShutdownInProgressT = BOOLEAN(NTAPI*)();
+
+  static std::atomic<RtlDllShutdownInProgressT> rtl_dll_shutdown_in_progress{nullptr};
+  auto proc = rtl_dll_shutdown_in_progress.load(std::memory_order_relaxed);
+
+  if VUNLIKELY (proc == nullptr) {
+    proc = reinterpret_cast<RtlDllShutdownInProgressT>(
+        ::GetProcAddress(::GetModuleHandleW(L"ntdll.dll"), "RtlDllShutdownInProgress"));
+    rtl_dll_shutdown_in_progress.store(proc, std::memory_order_relaxed);
+  }
+
+  return proc != nullptr && proc() != FALSE;
+#else
+  return false;
+#endif
+}
+
 // SignalHelper
 struct SignalHelper final {
   bool is_async{false};
@@ -1461,6 +1485,30 @@ struct KeyboardHelper final {
 
  private:
   KeyboardHelper() = default;
+
+  ~KeyboardHelper() {
+#ifdef _WIN32
+    if (is_terminating()) {
+      if (thread.joinable()) {
+        thread.detach();
+      }
+
+      (void)::new (std::nothrow) auto(std::move(callback));
+      return;
+    }
+#endif
+
+    {
+      std::lock_guard lock(mtx);
+      quit_flag.store(true, std::memory_order_release);
+    }
+
+    cv.notify_all();
+
+    if (thread.joinable()) {
+      thread.join();
+    }
+  }
 };
 
 void start_detect_keyboard(MoveFunction<void(const std::string& key)>&& callback, int poll_ms) noexcept {
@@ -1954,6 +2002,54 @@ double get_cpu_usage() noexcept {
   }
 
   return (1.0 - static_cast<double>(idle_diff) / total) * 100.0;
+#elif defined(__QNX__)
+  uint64_t current_time = 0;
+
+  if VUNLIKELY (::ClockTime(CLOCK_MONOTONIC, nullptr, &current_time) != 0) {
+    return -1;
+  }
+
+  const uint16_t cpu_count = _syspage_ptr->num_cpu;
+
+  if VUNLIKELY (cpu_count == 0) {
+    return -1;
+  }
+
+  uint64_t idle_time = 0;
+
+  for (uint16_t cpu = 0; cpu < cpu_count; ++cpu) {
+    const int clock_id = ::ClockId(1, static_cast<int>(cpu + 1));
+    uint64_t cpu_idle_time = 0;
+
+    if VUNLIKELY (clock_id < 0 || ::ClockTime(clock_id, nullptr, &cpu_idle_time) != 0) {
+      return -1;
+    }
+
+    idle_time += cpu_idle_time;
+  }
+
+  static uint64_t last_time = 0;
+  static uint64_t last_idle_time = 0;
+
+  if VUNLIKELY (current_time < last_time || idle_time < last_idle_time) {
+    last_time = current_time;
+    last_idle_time = idle_time;
+    return -1;
+  }
+
+  const uint64_t time_diff = current_time - last_time;
+  const uint64_t idle_diff = idle_time - last_idle_time;
+
+  last_time = current_time;
+  last_idle_time = idle_time;
+
+  const double total_time = static_cast<double>(time_diff) * cpu_count;
+
+  if VUNLIKELY (total_time == 0 || static_cast<double>(idle_diff) > total_time) {
+    return -1;
+  }
+
+  return (1.0 - static_cast<double>(idle_diff) / total_time) * 100.0;
 #else
   return -1;
 #endif
@@ -2036,6 +2132,32 @@ double get_memory_usage() noexcept {
   }
 
   return (static_cast<double>(active_memory + inactive_memory + wired_memory) / total_memory) * 100.0;
+#elif defined(__QNX__)
+  struct stat proc_status{};
+
+  if VUNLIKELY (::stat("/proc", &proc_status) != 0 || proc_status.st_size < 0) {
+    return -1;
+  }
+
+  const auto* strings = SYSPAGE_ENTRY(strings)->data;
+  const size_t entry_count = SYSPAGE_ENTRY_SIZE(asinfo) / SYSPAGE_ELEMENT_SIZE(asinfo);
+  uint64_t total_memory = 0;
+
+  for (size_t index = 0; index < entry_count; ++index) {
+    const auto* entry = SYSPAGE_ARRAY_IDX(asinfo, index);
+
+    if (std::strcmp(strings + entry->name, "ram") == 0) {
+      total_memory += entry->end - entry->start + 1;
+    }
+  }
+
+  const uint64_t available_memory = static_cast<uint64_t>(proc_status.st_size);
+
+  if VUNLIKELY (total_memory == 0 || available_memory > total_memory) {
+    return -1;
+  }
+
+  return static_cast<double>(total_memory - available_memory) / total_memory * 100.0;
 #else
   return -1;
 #endif
@@ -2194,6 +2316,55 @@ std::string get_machine_id() noexcept {
       }
     }
   }
+#elif defined(__QNX__)
+  struct ifaddrs* interfaces = nullptr;
+
+  if VUNLIKELY (::getifaddrs(&interfaces) != 0) {
+    return {};
+  }
+
+  std::array<uint8_t, 6> machine_address{};
+  bool found = false;
+
+  for (auto* interface = interfaces; interface != nullptr; interface = interface->ifa_next) {
+    if (interface->ifa_addr == nullptr || interface->ifa_addr->sa_family != AF_LINK ||
+        (interface->ifa_flags & IFF_LOOPBACK) != 0) {
+      continue;
+    }
+
+    const auto* link_address = reinterpret_cast<const struct sockaddr_dl*>(interface->ifa_addr);
+
+    if (link_address->sdl_alen != machine_address.size()) {
+      continue;
+    }
+
+    const auto* address = reinterpret_cast<const uint8_t*>(LLADDR(link_address));
+    const bool valid = (address[0] & 0x01U) == 0 &&
+                       std::any_of(address, address + machine_address.size(), [](uint8_t value) { return value != 0; });
+
+    if (valid && (!found || std::lexicographical_compare(address, address + machine_address.size(),
+                                                         machine_address.begin(), machine_address.end()))) {
+      std::copy_n(address, machine_address.size(), machine_address.begin());
+      found = true;
+    }
+  }
+
+  ::freeifaddrs(interfaces);
+
+  if VUNLIKELY (!found) {
+    return {};
+  }
+
+  static constexpr char kHexDigits[] = "0123456789abcdef";
+  std::string id;
+  id.reserve(machine_address.size() * 2);
+
+  for (uint8_t value : machine_address) {
+    id.push_back(kHexDigits[value >> 4U]);
+    id.push_back(kHexDigits[value & 0x0fU]);
+  }
+
+  return id;
 #endif
 
   return std::string();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE

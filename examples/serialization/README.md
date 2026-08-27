@@ -6,17 +6,18 @@ VLink 的通信原语 `Publisher<T>` / `Subscriber<T>` / `Client<Req,Resp>` / `S
 
 | 示例 | 主题 | 关键 API |
 |------|------|---------|
-| [`basic_types/`](basic_types/) | `Bytes`、`std::string`、POD 结构三种无需代码生成的基础路径 | `Publisher<T>`、`Subscriber<T>`、`Bytes` |
+| [`basic_types/`](basic_types/) | `Bytes`、`std::string`、POD 与宏声明 SOME/IP 结构四种无需代码生成的路径 | `Publisher<T>`、`Subscriber<T>`、`VLINK_SOMEIP_FIELDS` |
 
 ## ⚙️ 序列化路径对照
 
-下表汇总框架支持的序列化路径及其工程权衡，便于按场景选型。`basic_types/` 覆盖前三类；Protobuf、FlatBuffers、CDR 等需要外部工具链的路径见各样例。
+下表汇总框架支持的序列化路径及其工程权衡，便于按场景选型。`basic_types/` 覆盖前四类；Protobuf、FlatBuffers、CDR 等需要外部工具链的路径见各样例。
 
 | 路径 | 编码开销 | 跨语言 | 适用场景 | 示例 |
 |------|---------|--------|---------|------|
 | `Bytes` | 零 | 不直接（自定义协议） | 自定义二进制协议、性能极致路径 | [`basic_types/`](basic_types/) |
-| `std::string` | 直接复制 payload | 强（UTF-8 文本） | JSON、命令、日志 | [`basic_types/`](basic_types/) |
+| `std::string` | 直接复制 payload | 内容约定为 UTF-8 时可跨语言 | JSON、命令、日志 | [`basic_types/`](basic_types/) |
 | POD struct | 一次 `memcpy`（含 padding），无格式转换 | 弱（ABI 依赖） | 同机同 ABI、高性能 | [`basic_types/`](basic_types/) |
+| SOME/IP struct | 按字段编码 | 可跨 C++ ABI | 车载服务 payload、嵌套结构与容器 | [`basic_types/`](basic_types/) |
 | Protobuf | 中等 | 强 | 跨语言、向后兼容 | [`../samples/helloworld/`](../samples/helloworld/) |
 | FlatBuffers | 低 | 强 | 大对象、零拷贝读取 | [`../samples/someip_flat/`](../samples/someip_flat/) |
 | CDR | 中等 | 强（DDS 标配） | DDS 互通 | 见 `doc/03-serialization.md` |

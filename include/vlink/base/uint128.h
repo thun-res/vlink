@@ -44,7 +44,8 @@
  * @par Implicit construction from integral types
  * The single-argument constructor is intentionally non-explicit so integral literals can
  * flow into @c Uint128 transparently.  Signed source values are sign-extended, unsigned
- * values are zero-extended, and @c __uint128_t source values are split into halves.
+ * values are zero-extended, and native @c __uint128_t / @c __int128_t values are split into
+ * halves.
  *
  * @par Conversion back to @c __uint128_t
  * An explicit @c operator @c __uint128_t() is provided on platforms that expose the type.
@@ -96,14 +97,15 @@ class Uint128 final {
    * @brief Constructs from an integral-like type @p T (implicit on purpose).
    *
    * @details
-   * - When @c T is @c __uint128_t (where available) the source is split into halves.
+   * - When @c T is @c __uint128_t or @c __int128_t (where available), the source is split into
+   *   halves.
    * - When @c T is signed the source is sign-extended: a negative value yields
    *   @c high_ @c = @c ~uint64_t{0} and @c low_ @c = the two's-complement bit pattern.
    * - When @c T is unsigned the source is zero-extended into @c low_ with @c high_ @c = @c 0.
    * - For any other @p T both halves keep their default value of @c 0; no diagnostic is
    *   emitted because integrality is intentionally not asserted here.
    *
-   * @tparam T  Source type (integral or @c __uint128_t).
+   * @tparam T  Source type (integral, @c __uint128_t or @c __int128_t).
    * @param v   Source value.
    *
    * @note Non-explicit by design so integral literals interoperate naturally.
@@ -446,6 +448,31 @@ using uint128_t = Uint128;
 /// Details
 ////////////////////////////////////////////////////////////////
 
+template <typename T>
+inline constexpr Uint128::Uint128(T v) noexcept {
+  // static_assert(std::is_integral_v<T>, "Uint128(T): T must be an integral type");
+
+#if defined(__SIZEOF_INT128__)
+  if constexpr (std::is_same_v<__uint128_t, T> || std::is_same_v<__int128_t, T>) {
+    const auto value = static_cast<__uint128_t>(v);
+    high_ = static_cast<uint64_t>(value >> 64);
+    low_ = static_cast<uint64_t>(value);
+
+    return;
+  }
+#endif
+
+  if constexpr (std::is_constructible_v<uint64_t, T>) {
+    if constexpr (std::is_signed_v<T>) {
+      high_ = (v < 0) ? ~uint64_t{0} : uint64_t{0};
+      low_ = static_cast<uint64_t>(static_cast<int64_t>(v));
+    } else {
+      high_ = 0;
+      low_ = v;
+    }
+  }
+}
+
 inline Uint128::Uint128(uint64_t high, uint64_t low) noexcept : high_(high), low_(low) {}
 
 #if defined(__SIZEOF_INT128__)
@@ -715,30 +742,6 @@ inline Uint128 Uint128::operator--(int) noexcept {
 inline uint64_t Uint128::get_high() const noexcept { return high_; }
 
 inline uint64_t Uint128::get_low() const noexcept { return low_; }
-
-template <typename T>
-inline constexpr Uint128::Uint128(T v) noexcept {
-  // static_assert(std::is_integral_v<T>, "Uint128(T): T must be an integral type");
-
-#if defined(__SIZEOF_INT128__)
-  if constexpr (std::is_same_v<__uint128_t, T>) {
-    high_ = static_cast<uint64_t>(v >> 64);
-    low_ = static_cast<uint64_t>(v);
-
-    return;
-  }
-#endif
-
-  if constexpr (std::is_constructible_v<uint64_t, T>) {
-    if constexpr (std::is_signed_v<T>) {
-      high_ = (v < 0) ? ~uint64_t{0} : uint64_t{0};
-      low_ = static_cast<uint64_t>(static_cast<int64_t>(v));
-    } else {
-      high_ = 0;
-      low_ = v;
-    }
-  }
-}
 
 }  // namespace vlink
 

@@ -444,6 +444,8 @@ TEST_SUITE("base-Utils") {
     CHECK(tid > 0);
   }
 
+  TEST_CASE("is_terminating is false during normal execution") { CHECK_FALSE(Utils::is_terminating()); }
+
   TEST_CASE("get_native_thread_id is consistent on the same thread") {
     uint64_t t1 = Utils::get_native_thread_id();
     uint64_t t2 = Utils::get_native_thread_id();

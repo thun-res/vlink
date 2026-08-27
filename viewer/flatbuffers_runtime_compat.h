@@ -82,8 +82,11 @@ inline bool is_bytes_field(const reflection::Field& field) {
   return api.is_bytes_field(field);
 }
 
-std::optional<double> get_vector_numeric(const FlatbuffersObjectView& parent, const reflection::Field& field,
-                                         size_t index);
+inline std::optional<double> get_vector_numeric(const FlatbuffersObjectView& parent, const reflection::Field& field,
+                                                size_t index) {
+  FlatbuffersObjectView api;
+  return api.get_vector_numeric(parent, field, index);
+}
 
 inline std::string get_vector_string(const FlatbuffersObjectView& parent, const reflection::Field& field,
                                      size_t index) {

@@ -9,7 +9,7 @@ import shutil
 
 class VLinkConan(ConanFile):
     name = "vlink"
-    version = "2.1.0"
+    version = "2.2.0"
     author = "Thun Lu <thun.lu@zohomail.cn>"
     license = "Apache-2.0"
     url = "https://github.com/thun-res/vlink"
@@ -30,8 +30,9 @@ class VLinkConan(ConanFile):
         "enable_c_api": [True, False],
         "enable_python_api": [True, False],
         "enable_security": [True, False],
-        "enable_zstd": [True, False],
         "enable_sqlite": [True, False],
+        "enable_zstd": [True, False],
+        "enable_log_backend": [True, False],
         "enable_cli_info": [True, False],
         "enable_cli_bag": [True, False],
         "enable_cli_trigger": [True, False],
@@ -57,7 +58,6 @@ class VLinkConan(ConanFile):
         "enable_test_warn": [True, False],
         "enable_test_sanitize": [True, False],
         "enable_test_coverage": [True, False],
-        "select_log_backend": ["spdlog", "quill", "dlt", "native"],
         "install_config_dir": ["etc/vlink", "share/vlink"],
     }
     default_options = {
@@ -70,8 +70,9 @@ class VLinkConan(ConanFile):
         "enable_c_api": True,
         "enable_python_api": False,
         "enable_security": True,
-        "enable_zstd": True,
         "enable_sqlite": True,
+        "enable_zstd": True,
+        "enable_log_backend": True,
         "enable_cli_info": True,
         "enable_cli_bag": True,
         "enable_cli_trigger": True,
@@ -97,7 +98,6 @@ class VLinkConan(ConanFile):
         "enable_test_warn": False,
         "enable_test_sanitize": False,
         "enable_test_coverage": False,
-        "select_log_backend": "spdlog",
         "install_config_dir": "etc/vlink",
     }
 
@@ -119,7 +119,7 @@ class VLinkConan(ConanFile):
         if not self.options.enable_cpm and not self.options.enable_cpm_all:
             self.requires("zlib/1.3.2")
             self.requires("zstd/1.5.7")
-            self.requires("sqlite3/3.53.3")
+            self.requires("sqlite3/3.53.4")
             self.requires("openssl/3.0.21")
             self.requires("protobuf/3.21.12")
             self.requires("flatbuffers/25.12.19")
@@ -129,7 +129,7 @@ class VLinkConan(ConanFile):
         elif not self.options.enable_cpm_all:
             self.requires("zlib/1.3.2")
             self.requires("zstd/1.5.7")
-            self.requires("sqlite3/3.53.3")
+            self.requires("sqlite3/3.53.4")
             self.requires("openssl/3.0.21")
             self.requires("protobuf/3.21.12")
             self.requires("flatbuffers/25.12.19")
@@ -217,8 +217,9 @@ class VLinkConan(ConanFile):
         tc.variables["ENABLE_C_API"]           = "ON" if self.options.enable_c_api else "OFF"
         tc.variables["ENABLE_PYTHON_API"]      = "ON" if self.options.enable_python_api else "OFF"
         tc.variables["ENABLE_SECURITY"]        = "ON" if self.options.enable_security else "OFF"
-        tc.variables["ENABLE_ZSTD"]            = "ON" if self.options.enable_zstd else "OFF"
         tc.variables["ENABLE_SQLITE"]          = "ON" if self.options.enable_sqlite else "OFF"
+        tc.variables["ENABLE_ZSTD"]            = "ON" if self.options.enable_zstd else "OFF"
+        tc.variables["ENABLE_LOG_BACKEND"]     = "ON" if self.options.enable_log_backend else "OFF"
         tc.variables["ENABLE_CLI_INFO"]        = "ON" if self.options.enable_cli_info else "OFF"
         tc.variables["ENABLE_CLI_BAG"]         = "ON" if self.options.enable_cli_bag else "OFF"
         tc.variables["ENABLE_CLI_TRIGGER"]     = "ON" if self.options.enable_cli_trigger else "OFF"
@@ -244,7 +245,6 @@ class VLinkConan(ConanFile):
         tc.variables["ENABLE_TEST_WARN"]       = "ON" if self.options.enable_test_warn else "OFF"
         tc.variables["ENABLE_TEST_SANITIZE"]   = "ON" if self.options.enable_test_sanitize else "OFF"
         tc.variables["ENABLE_TEST_COVERAGE"]   = "ON" if self.options.enable_test_coverage else "OFF"
-        tc.variables["SELECT_LOG_BACKEND"]     = str(self.options.select_log_backend)
         tc.variables["INSTALL_CONFIG_DIR"]     = str(self.options.install_config_dir)
         tc.generate()
 

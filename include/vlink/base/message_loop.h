@@ -40,8 +40,9 @@
  *
  * Back-pressure on a full queue is selected by @c Strategy: @c kOptimizationStrategy retries
  * up to ten times with 1 ms sleeps before dropping an eligible task, @c kPopStrategy drops
- * immediately, @c kBlockStrategy retries indefinitely.  Idle dispatch is always condition-variable
- * driven and independent of @c Strategy.
+ * immediately, and @c kBlockStrategy waits for capacity on lock-based queues or retries indefinitely
+ * on the lock-free queue.  Idle dispatch is always condition-variable driven and independent of
+ * @c Strategy.
  *
  * @par Lifecycle diagram
  *
@@ -152,7 +153,7 @@ class VLINK_EXPORT MessageLoop {
   enum Strategy : uint8_t {
     kOptimizationStrategy = 0,  ///< Retry up to ten times, then drop one eligible task and push.
     kPopStrategy = 1,           ///< Drop one eligible task immediately and push.
-    kBlockStrategy = 2,         ///< Retry indefinitely until space appears.
+    kBlockStrategy = 2,         ///< Wait for capacity on lock-based queues; retry on lock-free.
   };
 
   /**
@@ -172,7 +173,9 @@ class VLINK_EXPORT MessageLoop {
    * @details
    * The destructor of @c MessageLoop flips @c alive to @c false under @c mtx as its very first
    * step, so a caller that holds @c mtx and observes @c alive @c == @c true is guaranteed the
-   * loop is still safe to touch.  Obtain via @c get_alive_state.
+   * loop is still safe to touch.  During Windows process termination, when all other threads
+   * have already stopped, the destructor performs only the atomic store.  Obtain via
+   * @c get_alive_state.
    */
   struct AliveState final {
     std::mutex mtx;
@@ -193,6 +196,9 @@ class VLINK_EXPORT MessageLoop {
 
   /**
    * @brief Destructor; requests quit and joins the dispatcher thread if needed.
+   *
+   * @details During Windows process termination it skips cross-thread cleanup and releases its
+   * private state without destroying it because the owning threads have already stopped.
    */
   virtual ~MessageLoop();
 
@@ -227,7 +233,12 @@ class VLINK_EXPORT MessageLoop {
   /**
    * @brief Replaces the back-pressure strategy.
    *
-   * @param strategy  New strategy; takes effect on the next full-queue push.
+   * @details
+   * Wakes producers already waiting under the dispatcher-wide @c kBlockStrategy so they can
+   * observe the new strategy.  A producer using an explicit @c TaskOverflowPolicy::kBlock
+   * remains blocked until it is cancelled, queue capacity becomes available, or the loop quits.
+   *
+   * @param strategy  New dispatcher-wide strategy.
    */
   void set_strategy(Strategy strategy);
 
@@ -602,7 +613,7 @@ class VLINK_EXPORT MessageLoop {
 
   bool push_task(Callback&& callback, uint16_t priority, bool droppable = true,
                  TaskOverflowPolicy overflow_policy = TaskOverflowPolicy::kUseDispatcherStrategy,
-                 const TaskHandle* submit_handle = nullptr);
+                 const TaskHandle* submit_handle = nullptr, bool poll_cancellation = false);
 
   bool drop_one_normal_task();
 
@@ -642,38 +653,6 @@ class VLINK_EXPORT MessageLoop {
 ////////////////////////////////////////////////////////////////
 /// Details
 ////////////////////////////////////////////////////////////////
-
-inline Schedule::Callback MessageLoop::make_launcher(const Schedule::Config& config, Schedule::Callback&& wrapper,
-                                                     std::shared_ptr<Schedule::Status::Impl> impl) {
-  auto alive_state = get_alive_state();
-
-  return [this, alive_state = std::move(alive_state), config, impl = std::move(impl),
-          wrapper = std::move(wrapper)]() mutable {
-    std::lock_guard alive_lock(alive_state->mtx);
-
-    if VUNLIKELY (!alive_state->alive.load(std::memory_order_acquire)) {
-      impl->is_valid.store(false, std::memory_order_relaxed);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      return;                                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    bool post_ret = false;
-
-    {
-      std::lock_guard lock(impl->mtx);
-      impl->submit_time = std::chrono::steady_clock::now();
-    }
-
-    if (config.delay_ms > 0) {
-      post_ret = Timer::call_once(this, config.delay_ms, std::move(wrapper), config.priority);
-    } else if (get_type() == kPriorityType && config.priority != kNoPriority) {
-      post_ret = post_task_with_priority(std::move(wrapper), config.priority);
-    } else {
-      post_ret = post_task(std::move(wrapper));
-    }
-
-    impl->is_valid.store(post_ret, std::memory_order_relaxed);
-  };
-}
 
 template <typename CallbackT, typename>
 Schedule::Status MessageLoop::exec_task(const Schedule::Config& config, CallbackT&& callback) {
@@ -760,6 +739,38 @@ inline std::future<ResultT> MessageLoop::invoke_task_with_priority(FunctionT&& f
 
     return res;
   }
+}
+
+inline Schedule::Callback MessageLoop::make_launcher(const Schedule::Config& config, Schedule::Callback&& wrapper,
+                                                     std::shared_ptr<Schedule::Status::Impl> impl) {
+  auto alive_state = get_alive_state();
+
+  return [this, alive_state = std::move(alive_state), config, impl = std::move(impl),
+          wrapper = std::move(wrapper)]() mutable {
+    std::lock_guard alive_lock(alive_state->mtx);
+
+    if VUNLIKELY (!alive_state->alive.load(std::memory_order_acquire)) {
+      impl->is_valid.store(false, std::memory_order_relaxed);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      return;                                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    bool post_ret = false;
+
+    {
+      std::lock_guard lock(impl->mtx);
+      impl->submit_time = std::chrono::steady_clock::now();
+    }
+
+    if (config.delay_ms > 0) {
+      post_ret = Timer::call_once(this, config.delay_ms, std::move(wrapper), config.priority);
+    } else if (get_type() == kPriorityType && config.priority != kNoPriority) {
+      post_ret = post_task_with_priority(std::move(wrapper), config.priority);
+    } else {
+      post_ret = post_task(std::move(wrapper));
+    }
+
+    impl->is_valid.store(post_ret, std::memory_order_relaxed);
+  };
 }
 
 }  // namespace vlink

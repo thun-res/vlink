@@ -26,7 +26,7 @@
         <mxCell id="step2" value="&lt;b&gt;Serializer::get_type_of&amp;lt;T&amp;gt;()&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;arcSize=10;fontFamily=Helvetica;fontSize=13;fontColor=#0d47a1;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="210" y="200" width="300" height="54" as="geometry" />
         </mxCell>
-        <mxCell id="step2note" value="Compile-time template SFINAE deduction" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+        <mxCell id="step2note" value="Compile-time if constexpr / trait deduction" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=10;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
           <mxGeometry x="210" y="254" width="300" height="20" as="geometry" />
         </mxCell>
 

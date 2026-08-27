@@ -54,10 +54,6 @@ class IntraServerImpl final : public ServerImpl {
 
   const AbstractNode* get_abstract_node() const override;
 
-  bool attach(class MessageLoop* message_loop) override;
-
-  bool detach() override;
-
   bool has_clients() const override;
 
   bool listen(ReqRespCallback&& callback) override;

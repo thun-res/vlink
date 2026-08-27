@@ -45,24 +45,6 @@ DdsCdrPubSubType::DdsCdrPubSubType(const std::string& type_name, dds::TypeSuppor
 }
 
 #ifdef VLINK_SUPPORT_DDS_V3
-bool DdsCdrPubSubType::is_compatible_data_representation(const Bytes& bytes,
-                                                         dds::DataRepresentationId_t data_representation) {
-  if VUNLIKELY (!bytes.data() || bytes.size() < 4U) {
-    return false;
-  }
-
-  const auto encapsulation = static_cast<uint16_t>((static_cast<uint16_t>(bytes.data()[0]) << 8U) | bytes.data()[1]);
-
-  if (data_representation == dds::XCDR_DATA_REPRESENTATION) {
-    return encapsulation <= 3U;
-  }
-  if (data_representation == dds::XCDR2_DATA_REPRESENTATION) {
-    return encapsulation >= 6U && encapsulation <= 11U;
-  }
-
-  return false;
-}
-
 bool DdsCdrPubSubType::serialize(const void* const data, rtps::SerializedPayload_t& payload,
                                  dds::DataRepresentationId_t data_representation) {
   const auto& bytes = *static_cast<const Bytes*>(data);
@@ -105,6 +87,24 @@ void DdsCdrPubSubType::register_type_object_representation() {
     native_type_->register_type_object_representation();
     type_identifiers_ = native_type_->type_identifiers();
   }
+}
+
+bool DdsCdrPubSubType::is_compatible_data_representation(const Bytes& bytes,
+                                                         dds::DataRepresentationId_t data_representation) {
+  if VUNLIKELY (!bytes.data() || bytes.size() < 4U) {
+    return false;
+  }
+
+  const auto encapsulation = static_cast<uint16_t>((static_cast<uint16_t>(bytes.data()[0]) << 8U) | bytes.data()[1]);
+
+  if (data_representation == dds::XCDR_DATA_REPRESENTATION) {
+    return encapsulation <= 3U;
+  }
+  if (data_representation == dds::XCDR2_DATA_REPRESENTATION) {
+    return encapsulation >= 6U && encapsulation <= 11U;
+  }
+
+  return false;
 }
 #else
 bool DdsCdrPubSubType::serialize(void* data, rtps::SerializedPayload_t* payload) {

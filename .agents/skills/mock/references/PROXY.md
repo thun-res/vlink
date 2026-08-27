@@ -6,9 +6,9 @@
 ## 1. 参数与边界
 
 - 执行 `--help`、`--version`。
-- 对 `domain_id` 的负值和大于 255、非法 `max_packet_size` 等实现中
-  已验证的边界分别检查非零退出和错误文本;仅在构建启用
-  `VLINK_SUPPORT_SHM` 时检查非法 `iox_monitoring`。
+- 对 `domain_id` 的负值和大于 255、非法 `max_packet_size`、
+  `iox_strategy` 等实现中已验证的边界分别检查非零退出和错误文本;仅在
+  构建启用 `VLINK_SUPPORT_SHM` 时检查非法 `iox_monitoring`。
 - 不臆造源码未实现的严格校验;边界集合以当前 `proxy.cc` 为准。
 
 ## 2. 生命周期
@@ -16,7 +16,7 @@
 使用与单元测试 runner 相同的最小本机入口:
 
 ```bash
-vlink-proxy -c -n -m off
+vlink-proxy -l 3 -n -m off
 ```
 
 将 stdout/stderr 写入临时日志,记录 PID,确认进程未提前退出。随后启动

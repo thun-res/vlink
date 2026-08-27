@@ -6,10 +6,10 @@ vlink Logger 是线程安全、双 sink（控制台 + 文件）的日志库，�
 
 | API | 用途 |
 |-----|------|
-| `Logger::init(app_name, log_path = "")` | 初始化；空路径会从 `VLINK_LOG_DIR` 或临时目录选择默认日志目录，是否写文件由 file level 控制 |
+| `Logger::init(app_name, log_path = "")` | 首次使用前配置；`log_path` 是日志基础目录，空路径会从 `VLINK_LOG_DIR` 或临时目录自动选择，是否写文件由 file level 控制 |
 | `Logger::set_console_level(Level)` | 设置控制台输出级别 |
 | `Logger::set_file_level(Level)` | 设置文件输出级别（与控制台独立） |
-| `Logger::flush()` | 强制刷盘；退出/abort 前调用避免丢日志 |
+| `Logger::flush()` | 排空并刷新活跃 Sink；不等同 `fsync`，可在退出/abort 前调用 |
 | `VLOG_T/D/I/W/E/F` | variadic 参数拼接：`VLOG_I("x=", x)` |
 | `VLOG_{T,D,I,W,E}_EVERY_MS` | 调用点级周期限频；首次立即输出，抑制时不求值日志参数 |
 | `MLOG_T/D/I/W/E/F` | format：`{}` 占位符 |
@@ -17,11 +17,12 @@ vlink Logger 是线程安全、双 sink（控制台 + 文件）的日志库，�
 | `SLOG_T/D/I/W/E/F` | RAII iostream：链式 `<<` 到分号为止 |
 
 级别由低到高：`kTrace / kDebug / kInfo / kWarn / kError / kFatal`，只有不低于所设级别的消息才输出到对应 sink。
+四种普通宏都会在运行期级别检查通过后才求值消息参数；被控制台和文件同时过滤时，参数中的函数调用或自增不会执行。
 
 ## 🚀 最小可运行片段
 
 ```cpp
-vlink::Logger::init("demo", "/tmp/vlink_logger_basic.log");
+vlink::Logger::init("demo", "/tmp/vlink_logger_basic");
 vlink::Logger::set_console_level(vlink::Logger::kTrace);  // 控制台全量
 vlink::Logger::set_file_level(vlink::Logger::kInfo);      // 文件只记 Info+
 
@@ -34,7 +35,7 @@ vlink::Logger::set_console_level(vlink::Logger::kWarn);   // 运行期热切
 VLOG_I("info 被控制台过滤");                                // 不再上控制台
 VLOG_W("warn 仍然显示");
 
-vlink::Logger::flush();                                   // 退出前刷盘
+vlink::Logger::flush();                                   // 退出前排空并刷新
 ```
 
 四种宏只是写法不同，走同一后端，按调用处可读性自由选用，同进程可混用。

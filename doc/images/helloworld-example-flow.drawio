@@ -61,7 +61,7 @@
           <mxGeometry x="80" y="368" width="740" height="44" as="geometry" />
         </mxCell>
 
-        <mxCell id="footnote" value="VLink &#8212; full-scenario ROS 2 replacement &#160;&#183;&#160; 3 communication models / 6 primitives &#160;&#183;&#160; 10 transports &#160;&#183;&#160; 14 serialization formats" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#607d8b;rounded=1;shadow=0;" vertex="1" parent="1">
+        <mxCell id="footnote" value="VLink &#8212; full-scenario ROS 2 replacement &#160;&#183;&#160; 3 communication models / 6 primitives &#160;&#183;&#160; 10 transports &#160;&#183;&#160; 15 serialization formats" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontStyle=0;fontColor=#607d8b;rounded=1;shadow=0;" vertex="1" parent="1">
           <mxGeometry x="40" y="424" width="820" height="22" as="geometry" />
         </mxCell>
 

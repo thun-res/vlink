@@ -25,9 +25,11 @@
 
 #include <charconv>
 #include <memory>
+#include <new>
 #include <string>
 #include <utility>
 
+#include "./base/utils.h"
 #include "./impl/server_impl.h"
 
 namespace vlink {
@@ -57,6 +59,13 @@ FdbusFactory::FdbusFactory() {
 }
 
 FdbusFactory::~FdbusFactory() {
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    (void)::new (std::nothrow) auto(std::move(workers_));
+    return;
+  }
+#endif
+
   message_loop_.quit();
   message_loop_.wait_for_quit();
 
@@ -144,6 +153,54 @@ void FdbusServer::onOffline(const fdbus::CFdbOnlineInfo& info) {
 void FdbusServer::onInvoke(fdbus::CBaseJob::Ptr& msg_ref) {
   auto* msg = fdbus::castToMessage<fdbus::CBaseMessage*>(msg_ref);
   Bytes req_data = Bytes::shallow_copy(msg->getPayloadBuffer(), msg->getPayloadSize());
+  auto* impl = get_first_impl();
+  auto* message_loop = impl ? impl->get_message_loop() : nullptr;
+
+  if (message_loop) {
+    auto weak_self = weak_from_this();
+    auto request_ref = msg_ref;
+
+    message_loop->post_task([weak_self, request_ref, req_data]() mutable {
+      auto self = weak_self.lock();
+
+      if VUNLIKELY (!self) {
+        return;
+      }
+
+      auto* impl = self->get_first_impl();
+
+      if VUNLIKELY (!impl || !impl->get_message_loop()) {
+        return;
+      }
+
+      auto* msg = fdbus::castToMessage<fdbus::CBaseMessage*>(request_ref);
+
+      self->traverse_req_resp_callback([&self, &msg, &request_ref, &req_data](NodeImpl* impl, const auto& callback) {
+        const auto* conf_ptr = impl->get_target_conf<FdbusConf>();
+
+        if VUNLIKELY (static_cast<int32_t>(conf_ptr->hash_code) != msg->code() || impl->has_suspend) {
+          self->ignore_called();
+          return;
+        }
+
+        if VUNLIKELY (self->has_called()) {
+          VLOG_F(*conf_ptr, "Two identical service requests.");
+          return;
+        }
+
+        if (static_cast<ServerImpl*>(impl)->is_resp_type && msg->needReply()) {
+          Bytes resp_data;
+
+          callback(0, req_data, &resp_data);
+          fdbus::CBaseMessage::reply(request_ref, resp_data.data(), resp_data.size());
+        } else {
+          callback(0, req_data, nullptr);
+        }
+      });
+    });
+
+    return;
+  }
 
   traverse_req_resp_callback([this, &msg, &msg_ref, &req_data](NodeImpl* impl, const auto& callback) {
     const auto* conf_ptr = impl->get_target_conf<FdbusConf>();
@@ -204,27 +261,6 @@ FdbusClient::~FdbusClient() {
   timer_.detach();
 }
 
-bool FdbusClient::call(uint32_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback, int32_t timeout_ms) {
-  if VUNLIKELY (!callback) {
-    return send(channel, req_data.data(), req_data.size(), FDB_QOS_RELIABLE);
-  }
-
-  return invoke(
-      channel,
-      [channel, callback = std::move(callback)](fdbus::CBaseJob::Ptr& msg_ref, fdbus::CFdbBaseObject*) {
-        auto* msg = fdbus::castToMessage<fdbus::CBaseMessage*>(msg_ref);
-
-        if VUNLIKELY (msg->isStatus() || msg->code() != static_cast<int32_t>(channel)) {
-          return;
-        }
-
-        Bytes resp_data = Bytes::shallow_copy(msg->getPayloadBuffer(), msg->getPayloadSize());
-
-        callback(resp_data);
-      },
-      req_data.data(), req_data.size(), nullptr, timeout_ms, FDB_QOS_RELIABLE);
-}
-
 std::any FdbusClient::get_native_handle() const { return this; }
 
 void FdbusClient::start_timer() {
@@ -260,6 +296,42 @@ void FdbusClient::start_timer() {
   });
 }
 
+bool FdbusClient::call(uint32_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback, int32_t timeout_ms) {
+  if VUNLIKELY (!callback) {
+    return send(channel, req_data.data(), req_data.size(), FDB_QOS_RELIABLE);
+  }
+
+  auto weak_self = weak_from_this();
+
+  return invoke(
+      channel,
+      [weak_self, channel, callback = std::move(callback)](fdbus::CBaseJob::Ptr& msg_ref,
+                                                           fdbus::CFdbBaseObject*) mutable {
+        auto* msg = fdbus::castToMessage<fdbus::CBaseMessage*>(msg_ref);
+
+        if VUNLIKELY (msg->isStatus() || msg->code() != static_cast<int32_t>(channel)) {
+          return;
+        }
+
+        Bytes resp_data = Bytes::shallow_copy(msg->getPayloadBuffer(), msg->getPayloadSize());
+        auto self = weak_self.lock();
+
+        if VUNLIKELY (!self) {
+          return;
+        }
+
+        auto* impl = self->get_first_impl();
+        auto* message_loop = impl ? impl->get_message_loop() : nullptr;
+
+        if (message_loop) {
+          message_loop->post_task([callback = std::move(callback), resp_data]() mutable { callback(resp_data); });
+        } else {
+          callback(resp_data);
+        }
+      },
+      req_data.data(), req_data.size(), nullptr, timeout_ms, FDB_QOS_RELIABLE);
+}
+
 void FdbusClient::onOnline(const fdbus::CFdbOnlineInfo& info) {
   (void)info;
 
@@ -285,6 +357,42 @@ void FdbusClient::onOffline(const fdbus::CFdbOnlineInfo& info) {
 void FdbusClient::onBroadcast(fdbus::CBaseJob::Ptr& msg_ref) {
   auto* msg = fdbus::castToMessage<fdbus::CBaseMessage*>(msg_ref);
   Bytes msg_data = Bytes::shallow_copy(msg->getPayloadBuffer(), msg->getPayloadSize());
+  auto* impl = get_first_impl();
+  auto* message_loop = impl ? impl->get_message_loop() : nullptr;
+
+  if (message_loop) {
+    auto weak_self = weak_from_this();
+    auto message_ref = msg_ref;
+
+    message_loop->post_task([weak_self, message_ref, msg_data]() mutable {
+      auto self = weak_self.lock();
+
+      if VUNLIKELY (!self) {
+        return;
+      }
+
+      auto* impl = self->get_first_impl();
+
+      if VUNLIKELY (!impl || !impl->get_message_loop()) {
+        return;
+      }
+
+      auto* msg = fdbus::castToMessage<fdbus::CBaseMessage*>(message_ref);
+
+      self->traverse_msg_callback([msg, &msg_data](NodeImpl* impl, const auto& callback) {
+        const auto* conf_ptr = impl->get_target_conf<FdbusConf>();
+
+        if VUNLIKELY (static_cast<int32_t>(conf_ptr->hash_code) != msg->code() || impl->has_suspend ||
+                      conf_ptr->event != msg->topic()) {
+          return;
+        }
+
+        callback(msg_data);
+      });
+    });
+
+    return;
+  }
 
   traverse_msg_callback([msg, &msg_data](NodeImpl* impl, const auto& callback) {
     const auto* conf_ptr = impl->get_target_conf<FdbusConf>();

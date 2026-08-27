@@ -23,6 +23,8 @@
 
 #include "./someip_setter_impl.h"
 
+#include "./extension/someip_serializer.h"
+
 namespace vlink {
 
 // SomeipSetterImpl
@@ -51,18 +53,15 @@ const Conf* SomeipSetterImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* SomeipSetterImpl::get_abstract_node() const { return object_.get(); }
 
-bool SomeipSetterImpl::attach(class MessageLoop*) {
-  VLOG_W("Function [attach] is not supported.");
-  return false;
-}
-
-bool SomeipSetterImpl::detach() {
-  VLOG_W("Function [detach] is not supported.");
-  return false;
-}
-
 void SomeipSetterImpl::write(const Bytes& msg_data) {
-  auto payload = someip::runtime::get()->create_payload(msg_data.data(), msg_data.size());
+  if VUNLIKELY (msg_data.size() > SomeipSerializer::kMaxPayloadSize) {
+    VLOG_E("SomeipSetterImpl: Payload exceeds the protocol limit.");
+    return;
+  }
+
+  auto payload = msg_data.empty()
+                     ? someip::runtime::get()->create_payload()
+                     : someip::runtime::get()->create_payload(msg_data.data(), static_cast<uint32_t>(msg_data.size()));
 
   object_->app()->notify(conf_.service, conf_.instance, conf_.event, payload);
 }

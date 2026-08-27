@@ -461,11 +461,6 @@ static int create_secure_publisher_impl(const char* url, const vlink_schema_info
   }
 }
 
-int vlink_create_secure_publisher(const char* url, const vlink_schema_info_t* schema_info,
-                                  vlink_publisher_handle_t* handle, const vlink_security_config_t* security_cfg) {
-  return create_secure_publisher_impl(url, schema_info, handle, security_cfg, nullptr);
-}
-
 int vlink_destroy_publisher(vlink_publisher_handle_t* handle) {
   if VUNLIKELY (!handle || !handle->native_handle) {
     return VLINK_RET_INVALID_ERROR;
@@ -1178,11 +1173,6 @@ static int create_secure_client_impl(const char* url, const vlink_schema_info_t*
   }
 }
 
-int vlink_create_secure_client(const char* url, const vlink_schema_info_t* schema_info, vlink_client_handle_t* handle,
-                               const vlink_security_config_t* security_cfg) {
-  return create_secure_client_impl(url, schema_info, handle, security_cfg, nullptr);
-}
-
 int vlink_destroy_client(vlink_client_handle_t* handle) {
   if VUNLIKELY (!handle || !handle->native_handle) {
     return VLINK_RET_INVALID_ERROR;
@@ -1469,11 +1459,6 @@ static int create_secure_setter_impl(const char* url, const vlink_schema_info_t*
     std::memset(static_cast<void*>(handle->reserved), 0, sizeof(handle->reserved));
     return VLINK_RET_RUNTIME_ERROR;
   }
-}
-
-int vlink_create_secure_setter(const char* url, const vlink_schema_info_t* schema_info, vlink_setter_handle_t* handle,
-                               const vlink_security_config_t* security_cfg) {
-  return create_secure_setter_impl(url, schema_info, handle, security_cfg, nullptr);
 }
 
 int vlink_destroy_setter(vlink_setter_handle_t* handle) {
@@ -1874,6 +1859,21 @@ int vlink_security_decrypt(vlink_security_handle_t sec, const uint8_t* in, const
 }
 
 void vlink_security_free_buffer(uint8_t* buf) { pool_free_buffer(buf); }
+
+int vlink_create_secure_publisher(const char* url, const vlink_schema_info_t* schema_info,
+                                  vlink_publisher_handle_t* handle, const vlink_security_config_t* security_cfg) {
+  return create_secure_publisher_impl(url, schema_info, handle, security_cfg, nullptr);
+}
+
+int vlink_create_secure_client(const char* url, const vlink_schema_info_t* schema_info, vlink_client_handle_t* handle,
+                               const vlink_security_config_t* security_cfg) {
+  return create_secure_client_impl(url, schema_info, handle, security_cfg, nullptr);
+}
+
+int vlink_create_secure_setter(const char* url, const vlink_schema_info_t* schema_info, vlink_setter_handle_t* handle,
+                               const vlink_security_config_t* security_cfg) {
+  return create_secure_setter_impl(url, schema_info, handle, security_cfg, nullptr);
+}
 
 ////////////////////////////////////////////////////////////////
 /// SslOptions

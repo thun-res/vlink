@@ -54,10 +54,6 @@ class FdbusGetterImpl final : public GetterImpl {
 
   const AbstractNode* get_abstract_node() const override;
 
-  bool attach(class MessageLoop* message_loop) override;
-
-  bool detach() override;
-
   bool listen(MsgCallback&& callback) override;
 
   void subscribe();

@@ -51,8 +51,14 @@ bool ShmConf::has_runtime_inited() { return ShmFactory::has_runtime_inited(); }
 
 bool ShmConf::has_roudi_running() { return ShmFactory::has_roudi_running(); }
 
-bool ShmConf::auto_init_roudi(bool same_process_from_roudi) {
-  return ShmFactory::auto_init_roudi(same_process_from_roudi);
+bool ShmConf::auto_init_roudi(bool same_process_from_roudi, int memory_strategy) {
+  return ShmFactory::auto_init_roudi(same_process_from_roudi, memory_strategy);
+}
+
+void ShmConf::init_roudi(const std::string& config_path, int memory_strategy, bool monitoring_enable) {
+  Bytes::init_memory_pool();
+
+  ShmFactory::init_roudi(config_path, memory_strategy, monitoring_enable);
 }
 
 void ShmConf::init_runtime(const std::string& name, bool same_process_from_roudi) {
@@ -68,12 +74,6 @@ void ShmConf::init_runtime(const std::string& name, bool same_process_from_roudi
 }
 
 void ShmConf::deinit_runtime() { ShmFactory::deinit_runtime(); }
-
-void ShmConf::init_roudi(const std::string& config_path, int memory_strategy, bool monitoring_enable) {
-  Bytes::init_memory_pool();
-
-  ShmFactory::init_roudi(config_path, memory_strategy, monitoring_enable);
-}
 
 void ShmConf::global_init() {
   Bytes::init_memory_pool();
@@ -121,6 +121,20 @@ bool ShmConf::parse_protocol(struct Protocol* protocol) {
   return true;
 }
 
+std::unique_ptr<ServerImpl> ShmConf::create_server() const { return std::make_unique<ShmServerImpl>(*this); }
+
+std::unique_ptr<ClientImpl> ShmConf::create_client() const { return std::make_unique<ShmClientImpl>(*this); }
+
+std::unique_ptr<PublisherImpl> ShmConf::create_publisher() const { return std::make_unique<ShmPublisherImpl>(*this); }
+
+std::unique_ptr<SubscriberImpl> ShmConf::create_subscriber() const {
+  return std::make_unique<ShmSubscriberImpl>(*this);
+}
+
+std::unique_ptr<SetterImpl> ShmConf::create_setter() const { return std::make_unique<ShmSetterImpl>(*this); }
+
+std::unique_ptr<GetterImpl> ShmConf::create_getter() const { return std::make_unique<ShmGetterImpl>(*this); }
+
 bool ShmConf::is_valid() const {
   if VUNLIKELY (address.empty()) {
     return false;
@@ -136,20 +150,6 @@ bool ShmConf::is_valid() const {
 
   return true;
 }
-
-std::unique_ptr<ServerImpl> ShmConf::create_server() const { return std::make_unique<ShmServerImpl>(*this); }
-
-std::unique_ptr<ClientImpl> ShmConf::create_client() const { return std::make_unique<ShmClientImpl>(*this); }
-
-std::unique_ptr<PublisherImpl> ShmConf::create_publisher() const { return std::make_unique<ShmPublisherImpl>(*this); }
-
-std::unique_ptr<SubscriberImpl> ShmConf::create_subscriber() const {
-  return std::make_unique<ShmSubscriberImpl>(*this);
-}
-
-std::unique_ptr<SetterImpl> ShmConf::create_setter() const { return std::make_unique<ShmSetterImpl>(*this); }
-
-std::unique_ptr<GetterImpl> ShmConf::create_getter() const { return std::make_unique<ShmGetterImpl>(*this); }
 
 std::ostream& operator<<(std::ostream& ostream, const ShmConf& conf) noexcept {
   std::ios_base::fmtflags f = ostream.flags();

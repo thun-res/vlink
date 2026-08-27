@@ -36,7 +36,7 @@
 #include "./modules/shm_conf.h"
 
 static bool ensure_shm_ready() {
-  if (!ShmConf::auto_init_roudi(true)) {
+  if (!ShmConf::auto_init_roudi(true, 2)) {
     VLOG_W("RouDi is not running, skipping.");
     return false;
   }
@@ -1156,6 +1156,60 @@ TEST_SUITE("shm-pubsub") {
     for (int s = 0; s < kSubs; ++s) {
       CHECK(counts[s].load() >= kPubs * kMsgsPerPub);
     }
+  }
+
+  TEST_CASE("concurrent publishers sharing one address do not corrupt publisher state") {
+    MESSAGE("[shm-pubsub] concurrent publishers sharing one address do not corrupt publisher state");
+
+    if (!ensure_shm_ready()) {
+      return;
+    }
+
+    static constexpr int kPubs = 4;
+    static constexpr int kMsgsPerPub = 1000;
+    ShmConf conf("shm/cc/shared_address", "data", 0, 128);
+    std::atomic<int> received{0};
+    Subscriber<int> sub(conf);
+    sub.listen([&received](const int& /*v*/) { received.fetch_add(1, std::memory_order_relaxed); });
+
+    std::vector<std::unique_ptr<Publisher<int>>> pubs;
+    pubs.reserve(kPubs);
+
+    for (int i = 0; i < kPubs; ++i) {
+      pubs.emplace_back(std::make_unique<Publisher<int>>(conf));
+      REQUIRE(pubs.back()->wait_for_subscribers(1s));
+      CHECK(pubs.back()->get_abstract_node() == pubs.front()->get_abstract_node());
+    }
+
+    std::atomic_bool start{false};
+    std::atomic<int> published{0};
+    std::vector<std::thread> writers;
+    writers.reserve(kPubs);
+
+    for (int p = 0; p < kPubs; ++p) {
+      writers.emplace_back([&pubs, &start, &published, p]() {
+        while (!start.load(std::memory_order_acquire)) {
+          std::this_thread::yield();
+        }
+
+        for (int i = 0; i < kMsgsPerPub; ++i) {
+          if (pubs[p]->publish(i)) {
+            published.fetch_add(1, std::memory_order_relaxed);
+          }
+        }
+      });
+    }
+
+    start.store(true, std::memory_order_release);
+
+    for (auto& writer : writers) {
+      writer.join();
+    }
+
+    std::this_thread::sleep_for(300ms);
+
+    CHECK(published.load(std::memory_order_relaxed) == kPubs * kMsgsPerPub);
+    CHECK(received.load(std::memory_order_relaxed) > 0);
   }
 
   TEST_CASE("subscriber created before publisher receives messages") {

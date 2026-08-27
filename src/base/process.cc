@@ -2700,27 +2700,6 @@ bool Process::start_program(const std::string& program, const std::vector<std::s
 #endif
 }
 
-void Process::start_monitor_thread() {
-  impl_->monitor_running.store(true, std::memory_order_release);
-  impl_->monitor_should_stop.store(false, std::memory_order_release);
-  impl_->monitor_thread = std::make_unique<std::thread>([this]() { monitor_thread(); });
-}
-
-void Process::stop_monitor_thread() {
-  impl_->monitor_should_stop.store(true, std::memory_order_release);
-  impl_->monitor_running.store(false, std::memory_order_release);
-
-  if VLIKELY (impl_->monitor_thread && impl_->monitor_thread->joinable()) {
-    if (impl_->monitor_thread->get_id() == std::this_thread::get_id()) {
-      return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    impl_->monitor_thread->join();
-  }
-
-  impl_->monitor_thread.reset();
-}
-
 void Process::monitor_thread() {
 #ifdef _WIN32
   while (impl_->monitor_running.load(std::memory_order_acquire) &&
@@ -2816,6 +2795,27 @@ void Process::monitor_thread() {
     read_from_pipes_with_lock();
   }
 #endif
+}
+
+void Process::start_monitor_thread() {
+  impl_->monitor_running.store(true, std::memory_order_release);
+  impl_->monitor_should_stop.store(false, std::memory_order_release);
+  impl_->monitor_thread = std::make_unique<std::thread>([this]() { monitor_thread(); });
+}
+
+void Process::stop_monitor_thread() {
+  impl_->monitor_should_stop.store(true, std::memory_order_release);
+  impl_->monitor_running.store(false, std::memory_order_release);
+
+  if VLIKELY (impl_->monitor_thread && impl_->monitor_thread->joinable()) {
+    if (impl_->monitor_thread->get_id() == std::this_thread::get_id()) {
+      return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    impl_->monitor_thread->join();
+  }
+
+  impl_->monitor_thread.reset();
 }
 
 void Process::handle_process_exit(int exit_code, ExitStatus status) {

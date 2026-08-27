@@ -48,10 +48,6 @@ class IntraPublisherImpl final : public PublisherImpl {
 
   const AbstractNode* get_abstract_node() const override;
 
-  bool attach(class MessageLoop* message_loop) override;
-
-  bool detach() override;
-
   bool has_subscribers() const override;
 
   bool write(const Bytes& msg_data) override;

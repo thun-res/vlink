@@ -102,15 +102,15 @@ static auto& bytes_compress_cache() noexcept {
 }
 
 // Bytes
+void Bytes::init_memory_pool() noexcept { (void)MemoryPool::global_instance(); }
+
+void Bytes::release_memory_pool() noexcept { MemoryPool::global_instance().clear(); }
+
 uint8_t* Bytes::bytes_malloc(size_t size) noexcept {
   return static_cast<uint8_t*>(MemoryPool::global_instance().allocate(size));
 }
 
 void Bytes::bytes_free(uint8_t* ptr, size_t size) noexcept { MemoryPool::global_instance().deallocate(ptr, size); }
-
-void Bytes::init_memory_pool() noexcept { (void)MemoryPool::global_instance(); }
-
-void Bytes::release_memory_pool() noexcept { MemoryPool::global_instance().clear(); }
 
 Bytes Bytes::create(size_t size, uint8_t offset) noexcept {
 #if defined(__arm__) || defined(__x86__) || defined(__i386__)

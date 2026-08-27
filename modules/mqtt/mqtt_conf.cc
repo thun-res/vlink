@@ -66,18 +66,6 @@ bool MqttConf::parse_protocol(struct Protocol* protocol) {
   return true;
 }
 
-bool MqttConf::is_valid() const {
-  if VUNLIKELY (domain < 0 || address.empty()) {
-    return false;
-  }
-
-  if VUNLIKELY (qos < 0 || qos > 2) {
-    return false;
-  }
-
-  return true;
-}
-
 std::unique_ptr<ServerImpl> MqttConf::create_server() const { return std::make_unique<MqttServerImpl>(*this); }
 
 std::unique_ptr<ClientImpl> MqttConf::create_client() const { return std::make_unique<MqttClientImpl>(*this); }
@@ -91,6 +79,18 @@ std::unique_ptr<SubscriberImpl> MqttConf::create_subscriber() const {
 std::unique_ptr<SetterImpl> MqttConf::create_setter() const { return std::make_unique<MqttSetterImpl>(*this); }
 
 std::unique_ptr<GetterImpl> MqttConf::create_getter() const { return std::make_unique<MqttGetterImpl>(*this); }
+
+bool MqttConf::is_valid() const {
+  if VUNLIKELY (domain < 0 || address.empty()) {
+    return false;
+  }
+
+  if VUNLIKELY (qos < 0 || qos > 2) {
+    return false;
+  }
+
+  return true;
+}
 
 std::ostream& operator<<(std::ostream& ostream, const MqttConf& conf) noexcept {
   std::ios_base::fmtflags f = ostream.flags();

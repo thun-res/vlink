@@ -295,7 +295,153 @@ PerceptionEditorDialog::PerceptionEditorDialog(const PerceptionConfig& config, Q
 
 PerceptionEditorDialog::~PerceptionEditorDialog() = default;
 
-bool PerceptionEditorDialog::current_is_hud() const { return type_combo_->currentData().toInt() == kHudComboData; }
+void PerceptionEditorDialog::on_mapping_selection_changed() {
+  commit_form_to_mapping(current_index_);
+
+  current_index_ = mapping_list_->currentRow();
+  load_mapping_to_form(current_index_);
+}
+
+void PerceptionEditorDialog::on_add_mapping() {
+  commit_form_to_mapping(current_index_);
+
+  Entry entry;
+  entry.rule.name = "new_rule";
+  entry.rule.type = perception::RenderType::kObjectDetection;
+  entry.rule.priority = 100;
+  entry.is_hud = false;
+  entries_.push_back(std::move(entry));
+
+  current_index_ = -1;
+  rebuild_mapping_list();
+  mapping_list_->setCurrentRow(static_cast<int>(entries_.size()) - 1);
+}
+
+void PerceptionEditorDialog::on_remove_mapping() {
+  const int row = mapping_list_->currentRow();
+
+  if (row < 0 || row >= static_cast<int>(entries_.size())) {
+    return;
+  }
+
+  entries_.erase(entries_.begin() + row);
+  current_index_ = -1;
+
+  rebuild_mapping_list();
+
+  if (!entries_.empty()) {
+    mapping_list_->setCurrentRow(std::min(row, static_cast<int>(entries_.size()) - 1));
+  } else {
+    name_edit_->clear();
+    ser_edit_->clear();
+    collection_edit_->clear();
+    inner_collection_edit_->clear();
+    rebuild_target_table({}, nullptr);
+    field_tree_->clear();
+  }
+}
+
+void PerceptionEditorDialog::on_type_changed(int index) {
+  (void)index;
+
+  commit_form_to_mapping(current_index_);
+
+  const bool is_hud = current_is_hud();
+
+  collection_edit_->setEnabled(!is_hud);
+  inner_collection_edit_->setEnabled(!is_hud);
+
+  const PerceptionConfig::MappingRule* rule =
+      (current_index_ >= 0 && current_index_ < static_cast<int>(entries_.size())) ? &entries_[current_index_].rule
+                                                                                  : nullptr;
+
+  if (is_hud) {
+    rebuild_target_table(PerceptionConfig::hud_target_slots(), rule);
+  } else {
+    const auto type = static_cast<perception::RenderType>(type_combo_->currentData().toInt());
+    rebuild_target_table(PerceptionConfig::target_slots_for(type), rule);
+  }
+}
+
+void PerceptionEditorDialog::on_import_clicked() {
+  const auto path = QFileDialog::getOpenFileName(this, "Import perception config", config_path_, "JSON (*.json)");
+
+  if (path.isEmpty()) {
+    return;
+  }
+
+  PerceptionConfig loaded;
+  QString error;
+
+  if (!loaded.load_from_file(path, &error)) {
+    QMessageBox::warning(this, "Import failed", error);
+    return;
+  }
+
+  config_ = std::move(loaded);
+  config_path_ = path;
+  load_entries_from_config();
+  current_index_ = -1;
+  update_path_label();
+  rebuild_mapping_list();
+
+  if (mapping_list_->count() > 0) {
+    mapping_list_->setCurrentRow(0);
+  }
+}
+
+void PerceptionEditorDialog::on_save_clicked() {
+  if (config_path_.isEmpty()) {
+    on_export_clicked();
+    return;
+  }
+
+  save_config_to(config_path_);
+}
+
+void PerceptionEditorDialog::on_export_clicked() {
+  const auto path = QFileDialog::getSaveFileName(
+      this, "Export perception config",
+      config_path_.isEmpty() ? QStringLiteral("perception_config.json") : config_path_, "JSON (*.json)");
+
+  if (path.isEmpty()) {
+    return;
+  }
+
+  save_config_to(path);
+}
+
+void PerceptionEditorDialog::on_field_double_clicked(QTreeWidgetItem* item, int column) {
+  (void)column;
+
+  if (!item) {
+    return;
+  }
+
+  const auto path = item->data(0, kPathRole).toString();
+
+  if (path.isEmpty()) {
+    return;
+  }
+
+  const int row = target_table_->currentRow();
+
+  if (row < 0) {
+    return;
+  }
+
+  if (!target_table_->item(row, 1)) {
+    target_table_->setItem(row, 1, new QTableWidgetItem);
+  }
+
+  target_table_->item(row, 1)->setText(path);
+}
+
+void PerceptionEditorDialog::accept() {
+  commit_form_to_mapping(current_index_);
+  apply_entries_to_config();
+  QDialog::accept();
+}
 
 void PerceptionEditorDialog::load_entries_from_config() {
   entries_.clear();
@@ -350,6 +496,8 @@ void PerceptionEditorDialog::update_path_label() {
   path_label_->setText(config_path_.isEmpty() ? QStringLiteral("(unsaved — use Save / Export As)") : config_path_);
 }
 
+bool PerceptionEditorDialog::current_is_hud() const { return type_combo_->currentData().toInt() == kHudComboData; }
+
 void PerceptionEditorDialog::rebuild_mapping_list() {
   mapping_list_->blockSignals(true);
   mapping_list_->clear();
@@ -363,13 +511,6 @@ void PerceptionEditorDialog::rebuild_mapping_list() {
   }
 
   mapping_list_->blockSignals(false);
-}
-
-void PerceptionEditorDialog::on_mapping_selection_changed() {
-  commit_form_to_mapping(current_index_);
-
-  current_index_ = mapping_list_->currentRow();
-  load_mapping_to_form(current_index_);
 }
 
 void PerceptionEditorDialog::load_mapping_to_form(int index) {
@@ -674,147 +815,6 @@ void PerceptionEditorDialog::add_fbs_fields(QTreeWidgetItem* parent, const refle
       add_fbs_fields(item, sub_obj, schema, path, depth + 1);
     }
   }
-}
-
-void PerceptionEditorDialog::on_field_double_clicked(QTreeWidgetItem* item, int column) {
-  (void)column;
-
-  if (!item) {
-    return;
-  }
-
-  const auto path = item->data(0, kPathRole).toString();
-
-  if (path.isEmpty()) {
-    return;
-  }
-
-  const int row = target_table_->currentRow();
-
-  if (row < 0) {
-    return;
-  }
-
-  if (!target_table_->item(row, 1)) {
-    target_table_->setItem(row, 1, new QTableWidgetItem);
-  }
-
-  target_table_->item(row, 1)->setText(path);
-}
-
-void PerceptionEditorDialog::on_type_changed(int index) {
-  (void)index;
-
-  commit_form_to_mapping(current_index_);
-
-  const bool is_hud = current_is_hud();
-
-  collection_edit_->setEnabled(!is_hud);
-  inner_collection_edit_->setEnabled(!is_hud);
-
-  const PerceptionConfig::MappingRule* rule =
-      (current_index_ >= 0 && current_index_ < static_cast<int>(entries_.size())) ? &entries_[current_index_].rule
-                                                                                  : nullptr;
-
-  if (is_hud) {
-    rebuild_target_table(PerceptionConfig::hud_target_slots(), rule);
-  } else {
-    const auto type = static_cast<perception::RenderType>(type_combo_->currentData().toInt());
-    rebuild_target_table(PerceptionConfig::target_slots_for(type), rule);
-  }
-}
-
-void PerceptionEditorDialog::on_add_mapping() {
-  commit_form_to_mapping(current_index_);
-
-  Entry entry;
-  entry.rule.name = "new_rule";
-  entry.rule.type = perception::RenderType::kObjectDetection;
-  entry.rule.priority = 100;
-  entry.is_hud = false;
-  entries_.push_back(std::move(entry));
-
-  current_index_ = -1;
-  rebuild_mapping_list();
-  mapping_list_->setCurrentRow(static_cast<int>(entries_.size()) - 1);
-}
-
-void PerceptionEditorDialog::on_remove_mapping() {
-  const int row = mapping_list_->currentRow();
-
-  if (row < 0 || row >= static_cast<int>(entries_.size())) {
-    return;
-  }
-
-  entries_.erase(entries_.begin() + row);
-  current_index_ = -1;
-
-  rebuild_mapping_list();
-
-  if (!entries_.empty()) {
-    mapping_list_->setCurrentRow(std::min(row, static_cast<int>(entries_.size()) - 1));
-  } else {
-    name_edit_->clear();
-    ser_edit_->clear();
-    collection_edit_->clear();
-    inner_collection_edit_->clear();
-    rebuild_target_table({}, nullptr);
-    field_tree_->clear();
-  }
-}
-
-void PerceptionEditorDialog::on_import_clicked() {
-  const auto path = QFileDialog::getOpenFileName(this, "Import perception config", config_path_, "JSON (*.json)");
-
-  if (path.isEmpty()) {
-    return;
-  }
-
-  PerceptionConfig loaded;
-  QString error;
-
-  if (!loaded.load_from_file(path, &error)) {
-    QMessageBox::warning(this, "Import failed", error);
-    return;
-  }
-
-  config_ = std::move(loaded);
-  config_path_ = path;
-  load_entries_from_config();
-  current_index_ = -1;
-  update_path_label();
-  rebuild_mapping_list();
-
-  if (mapping_list_->count() > 0) {
-    mapping_list_->setCurrentRow(0);
-  }
-}
-
-void PerceptionEditorDialog::on_save_clicked() {
-  if (config_path_.isEmpty()) {
-    on_export_clicked();
-    return;
-  }
-
-  save_config_to(config_path_);
-}
-
-void PerceptionEditorDialog::on_export_clicked() {
-  const auto path = QFileDialog::getSaveFileName(
-      this, "Export perception config",
-      config_path_.isEmpty() ? QStringLiteral("perception_config.json") : config_path_, "JSON (*.json)");
-
-  if (path.isEmpty()) {
-    return;
-  }
-
-  save_config_to(path);
-}
-
-void PerceptionEditorDialog::accept() {
-  commit_form_to_mapping(current_index_);
-  apply_entries_to_config();
-  QDialog::accept();
 }
 
 // NOLINTEND

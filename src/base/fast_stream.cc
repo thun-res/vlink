@@ -24,10 +24,14 @@
 #include "./base/fast_stream.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cstring>
 #include <limits>
+#include <locale>
 #include <string>
 #include <string_view>
+
+#include "./base/helpers.h"
 
 namespace vlink {
 
@@ -54,6 +58,72 @@ void FastStream::shrink_to_fit() noexcept { buf_.shrink_to_fit(); }
 FastStream& FastStream::write_raw(const char* data, size_t len) {
   buf_.xsputn(data, static_cast<std::streamsize>(len));
   return *this;
+}
+
+FastStream& FastStream::push_floating(float value) {
+  if VLIKELY (width() == 0 && precision() == 6 && flags() == (std::ios_base::dec | std::ios_base::skipws) &&
+              getloc() == std::locale::classic()) {
+    char buffer[32];
+    auto size = Helpers::format_floating_to(buffer, sizeof(buffer), value);
+
+    return write_raw(buffer, size);
+  }
+
+  static_cast<std::ostream&>(*this) << value;
+
+  return *this;
+}
+
+FastStream& FastStream::push_floating(double value) {
+  if VLIKELY (width() == 0 && precision() == 6 && flags() == (std::ios_base::dec | std::ios_base::skipws) &&
+              getloc() == std::locale::classic()) {
+    char buffer[32];
+    auto size = Helpers::format_floating_to(buffer, sizeof(buffer), value);
+
+    return write_raw(buffer, size);
+  }
+
+  static_cast<std::ostream&>(*this) << value;
+
+  return *this;
+}
+
+bool FastStream::push_integer(int64_t value) {
+  if VUNLIKELY (width() != 0 || flags() != (std::ios_base::dec | std::ios_base::skipws)) {
+    return false;
+  }
+
+  static constexpr size_t kBufferSize{std::numeric_limits<int64_t>::digits10 + 3};
+
+  char buffer[kBufferSize];
+  auto result = std::to_chars(buffer, buffer + sizeof(buffer), value);
+
+  if VUNLIKELY (result.ec != std::errc{}) {
+    return false;
+  }
+
+  write_raw(buffer, static_cast<size_t>(result.ptr - buffer));
+
+  return true;
+}
+
+bool FastStream::push_integer(uint64_t value) {
+  if VUNLIKELY (width() != 0 || flags() != (std::ios_base::dec | std::ios_base::skipws)) {
+    return false;
+  }
+
+  static constexpr size_t kBufferSize{std::numeric_limits<uint64_t>::digits10 + 3};
+
+  char buffer[kBufferSize];
+  auto result = std::to_chars(buffer, buffer + sizeof(buffer), value);
+
+  if VUNLIKELY (result.ec != std::errc{}) {
+    return false;
+  }
+
+  write_raw(buffer, static_cast<size_t>(result.ptr - buffer));
+
+  return true;
 }
 
 // FastStream::StringBuf
@@ -91,34 +161,6 @@ size_t FastStream::StringBuf::size() const noexcept { return static_cast<size_t>
 
 size_t FastStream::StringBuf::capacity() const noexcept { return buffer_.size(); }
 
-void FastStream::StringBuf::grow_buffer(size_t required_size) {
-  auto pos = static_cast<size_t>(pptr() - pbase());
-  auto new_size = buffer_.size();
-
-  if VUNLIKELY (new_size > kMaxExpandSize) {
-    new_size = required_size + kMaxExpandSize;
-  } else {
-    while (new_size < required_size) {
-      new_size *= 2;
-    }
-  }
-
-  buffer_.resize(new_size);
-  setp(buffer_.data(), buffer_.data() + buffer_.size());
-  advance_pptr(pos);
-}
-
-void FastStream::StringBuf::advance_pptr(size_t count) noexcept {
-  static constexpr auto kMaxBump = static_cast<size_t>(std::numeric_limits<int>::max());
-
-  while (count > kMaxBump) {
-    pbump(std::numeric_limits<int>::max());  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    count -= kMaxBump;                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  pbump(static_cast<int>(count));
-}
-
 std::ostream::int_type FastStream::StringBuf::overflow(int_type ch) {
   if VUNLIKELY (traits_type::eq_int_type(ch, traits_type::eof())) {
     return traits_type::eof();
@@ -155,6 +197,34 @@ std::streamsize FastStream::StringBuf::xsputn(const char* s, std::streamsize n) 
   advance_pptr(count);
 
   return n;
+}
+
+void FastStream::StringBuf::grow_buffer(size_t required_size) {
+  auto pos = static_cast<size_t>(pptr() - pbase());
+  auto new_size = buffer_.size();
+
+  if VUNLIKELY (new_size > kMaxExpandSize) {
+    new_size = required_size + kMaxExpandSize;
+  } else {
+    while (new_size < required_size) {
+      new_size *= 2;
+    }
+  }
+
+  buffer_.resize(new_size);
+  setp(buffer_.data(), buffer_.data() + buffer_.size());
+  advance_pptr(pos);
+}
+
+void FastStream::StringBuf::advance_pptr(size_t count) noexcept {
+  static constexpr auto kMaxBump = static_cast<size_t>(std::numeric_limits<int>::max());
+
+  while (count > kMaxBump) {
+    pbump(std::numeric_limits<int>::max());  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    count -= kMaxBump;                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  pbump(static_cast<int>(count));
 }
 
 }  // namespace vlink

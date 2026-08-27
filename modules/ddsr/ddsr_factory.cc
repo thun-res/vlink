@@ -85,6 +85,12 @@ DdsrFactory::DdsrFactory() {
 }
 
 DdsrFactory::~DdsrFactory() {
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    return;
+  }
+#endif
+
   DDS_DomainParticipantFactory_finalize_instance();
 
   dds_factory_ = nullptr;

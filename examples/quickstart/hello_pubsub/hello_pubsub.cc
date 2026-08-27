@@ -49,8 +49,7 @@ int main() {
   static constexpr char kUrl[] = "intra://hello/pubsub#direct";
   static constexpr int kMessageCount = 5;
 
-  // intra:// owns its queue pipeline and does not support Node::attach(). The
-  // #direct fragment selects inline dispatch, so each publish completes its
+  // The #direct fragment selects inline dispatch, so each publish completes its
   // subscriber callbacks before returning.
   vlink::Subscriber<SensorReading> sub(kUrl);
 

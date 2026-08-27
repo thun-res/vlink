@@ -49,30 +49,6 @@
 namespace vlink {
 namespace webviz {
 
-void RerunConverter::apply_message_timestamp(::rerun::RecordingStream& rec, int64_t timestamp_ns) const {
-  if VUNLIKELY (timestamp_ns < 0) {
-    return;
-  }
-
-  if VUNLIKELY (!config_.use_timestamp_timeline || config_.timestamp_timeline.empty()) {
-    return;
-  }
-
-  rec.set_time_timestamp_nanos_since_epoch(config_.timestamp_timeline, timestamp_ns);
-}
-
-int64_t RerunConverter::clamp_header_timestamp_ns(uint64_t timestamp_ns) {
-  if VUNLIKELY (timestamp_ns == 0) {
-    return -1;
-  }
-
-  if VUNLIKELY (timestamp_ns > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
-    return std::numeric_limits<int64_t>::max();
-  }
-
-  return static_cast<int64_t>(timestamp_ns);
-}
-
 static uint64_t zerocopy_timestamp(const zerocopy::MessageParser& parser) {
   zerocopy::MessageParser::Value value;
 
@@ -496,186 +472,37 @@ static bool log_camera_frame_tensor(::rerun::RecordingStream& rec, const std::st
   return true;
 }
 
-Bytes RerunConverter::decode_plugin_binary(const Json& j, std::string_view base64_key, std::string_view array_key) {
-  if (j.contains(base64_key) && j[base64_key].is_string()) {
-    return Bytes::decode_from_base64(j[base64_key].get<std::string>());
-  }
+template <typename T>
+static bool read_parser_collection(const zerocopy::MessageParser& parser, size_t count, std::vector<T>& output) {
+  output.resize(count);
 
-  if (j.contains(array_key) && j[array_key].is_array()) {
-    const auto& data = j[array_key];
-    auto bytes = Bytes::create(data.size());
+  for (size_t index = 0; index < count; ++index) {
+    zerocopy::MessageParser::Value value;
 
-    for (size_t i = 0; i < data.size(); ++i) {
-      if (!data[i].is_number_integer() && !data[i].is_number_unsigned()) {
-        return {};
-      }
-
-      if (data[i].is_number_unsigned()) {
-        auto value = data[i].get<uint64_t>();
-
-        if VUNLIKELY (value > std::numeric_limits<uint8_t>::max()) {
-          return {};
-        }
-
-        bytes[i] = static_cast<uint8_t>(value);
-      } else {
-        auto value = data[i].get<int64_t>();
-
-        if VUNLIKELY (value < 0 || value > std::numeric_limits<uint8_t>::max()) {
-          return {};
-        }
-
-        bytes[i] = static_cast<uint8_t>(value);
-      }
+    if VUNLIKELY (!parser.value("data", index, "value", value)) {
+      return false;
     }
 
-    return bytes;
+    if (const auto* integer = std::get_if<int64_t>(&value)) {
+      output[index] = static_cast<T>(*integer);
+      continue;
+    }
+
+    if (const auto* integer = std::get_if<uint64_t>(&value)) {
+      output[index] = static_cast<T>(*integer);
+      continue;
+    }
+
+    if (const auto* number = std::get_if<double>(&value)) {
+      output[index] = static_cast<T>(*number);
+      continue;
+    }
+
+    return false;
   }
 
-  return {};
+  return true;
 }
-
-std::string RerunConverter::normalize_plugin_text(std::string text) {
-  std::transform(text.begin(), text.end(), text.begin(),
-                 [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-  return text;
-}
-
-std::string RerunConverter::infer_media_type(const Json& j) {
-  auto media_type = j.value("media_type", std::string{});
-
-  if (!media_type.empty()) {
-    return media_type;
-  }
-
-  auto format = normalize_plugin_text(j.value("format", std::string{}));
-
-  if (format == "jpeg" || format == "jpg") {
-    return "image/jpeg";
-  }
-
-  if (format == "png") {
-    return "image/png";
-  }
-
-  if (format == "webp") {
-    return "image/webp";
-  }
-
-  if (format == "bmp") {
-    return "image/bmp";
-  }
-
-  return {};
-}
-
-bool RerunConverter::resolve_plugin_image_size(const Json& j, uint32_t& width, uint32_t& height) {
-  width = j.value("width", static_cast<uint32_t>(0));
-  height = j.value("height", static_cast<uint32_t>(0));
-
-  if ((width == 0 || height == 0) && j.contains("resolution") && j["resolution"].is_array() &&
-      j["resolution"].size() >= 2) {
-    width = j["resolution"][0].get<uint32_t>();
-    height = j["resolution"][1].get<uint32_t>();
-  }
-
-  return width > 0 && height > 0;
-}
-
-void RerunConverter::log_view_coordinates_value(::rerun::RecordingStream& rec, const std::string& entity_path,
-                                                std::string system) {
-  std::transform(system.begin(), system.end(), system.begin(),
-                 [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
-
-  if (system == "RUB" || system == "RIGHT_HAND_Y_UP") {
-    rec.log_static(entity_path, ::rerun::archetypes::ViewCoordinates::RIGHT_HAND_Y_UP);
-  } else if (system == "RDF" || system == "RIGHT_HAND_Z_UP") {
-    rec.log_static(entity_path, system == "RDF" ? ::rerun::archetypes::ViewCoordinates::RDF
-                                                : ::rerun::archetypes::ViewCoordinates::RIGHT_HAND_Z_UP);
-  } else if (system == "RIGHT_HAND_Z_DOWN") {
-    rec.log_static(entity_path, ::rerun::archetypes::ViewCoordinates::RIGHT_HAND_Z_DOWN);
-  } else if (system == "LEFT_HAND_Y_UP") {
-    rec.log_static(entity_path, ::rerun::archetypes::ViewCoordinates::LEFT_HAND_Y_UP);
-  } else if (system == "LEFT_HAND_Z_UP") {
-    rec.log_static(entity_path, ::rerun::archetypes::ViewCoordinates::LEFT_HAND_Z_UP);
-  } else if (system == "FLU") {
-    rec.log_static(entity_path, ::rerun::archetypes::ViewCoordinates::FLU);
-  } else if (system == "FRD") {
-    rec.log_static(entity_path, ::rerun::archetypes::ViewCoordinates::FRD);
-  } else {
-    rec.log_static(entity_path, ::rerun::archetypes::ViewCoordinates::RIGHT_HAND_Z_UP);
-    MLOG_W("ViewCoordinates: unknown system '{}', defaulting to RIGHT_HAND_Z_UP", system);
-  }
-}
-
-#ifdef VLINK_HAS_FBS_COMPILER  // NOLINT(readability-redundant-preprocessor)
-
-double RerunConverter::get_fbs_double(const flatbuffers::Table& table, const reflection::Object& obj,
-                                      const std::string& field_name) {
-  return get_fbs_double(FbsObjectView{&obj, &table, nullptr}, field_name);
-}
-
-double RerunConverter::get_fbs_double(const FbsObjectView& view, const std::string& field_name) {
-  const auto* field = view && view.object ? find_fbs_field(*view.object, field_name) : nullptr;
-
-  if VLIKELY (field && is_fbs_numeric_type(field->type()->base_type())) {
-    return get_fbs_field_as_double(view, *field);
-  }
-
-  return 0.0;
-}
-
-double RerunConverter::get_fbs_double(const flatbuffers::Table& table, const reflection::Object& obj,
-                                      const std::string& field_name, const FieldMapping& mapping) {
-  return get_fbs_double(FbsObjectView{&obj, &table, nullptr}, field_name, mapping);
-}
-
-double RerunConverter::get_fbs_double(const FbsObjectView& view, const std::string& field_name,
-                                      const FieldMapping& mapping) {
-  const auto* field = view && view.object ? find_fbs_field(*view.object, field_name) : nullptr;
-
-  if VLIKELY (field && is_fbs_numeric_type(field->type()->base_type()) && is_fbs_field_present(view, *field)) {
-    return get_fbs_field_as_double(view, *field);
-  }
-
-  double default_value = 0.0;
-  return try_parse_numeric_default(mapping, default_value) ? default_value : 0.0;
-}
-
-std::string RerunConverter::get_fbs_string(const flatbuffers::Table& table, const reflection::Object& obj,
-                                           const std::string& field_name, const reflection::Schema* schema) {
-  return get_fbs_string(FbsObjectView{&obj, &table, nullptr}, field_name, schema);
-}
-
-std::string RerunConverter::get_fbs_string(const FbsObjectView& view, const std::string& field_name,
-                                           const reflection::Schema* schema) {
-  const auto* field = view && view.object ? find_fbs_field(*view.object, field_name) : nullptr;
-
-  if VLIKELY (field && field->type()->base_type() == reflection::String) {
-    return get_fbs_field_as_string(view, *field, schema);
-  }
-
-  return {};
-}
-
-std::string RerunConverter::get_fbs_string(const flatbuffers::Table& table, const reflection::Object& obj,
-                                           const std::string& field_name, const FieldMapping& mapping,
-                                           const reflection::Schema* schema) {
-  return get_fbs_string(FbsObjectView{&obj, &table, nullptr}, field_name, mapping, schema);
-}
-
-std::string RerunConverter::get_fbs_string(const FbsObjectView& view, const std::string& field_name,
-                                           const FieldMapping& mapping, const reflection::Schema* schema) {
-  const auto* field = view && view.object ? find_fbs_field(*view.object, field_name) : nullptr;
-
-  if VLIKELY (field && field->type()->base_type() == reflection::String && is_fbs_field_present(view, *field)) {
-    return get_fbs_field_as_string(view, *field, schema);
-  }
-
-  return mapping.has_default_value ? mapping.default_value : std::string{};
-}
-
-#endif
 
 RerunConverter::RerunConverter(const Config& config) : config_(config) {
   Bytes::init_memory_pool();
@@ -690,476 +517,6 @@ RerunConverter::RerunConverter(const Config& config) : config_(config) {
 }
 
 RerunConverter::~RerunConverter() = default;
-
-bool RerunConverter::init_proto_resolver() {
-  bool has_resolver = false;
-
-  auto& mgr = SchemaPluginManager::get(config_.schema_plugin_path);
-
-  if (mgr.is_valid()) {
-    schema_interface_ = mgr.get_interface();
-    has_resolver = true;
-  }
-
-#ifdef VLINK_HAS_PROTO_COMPILER
-
-  if VLIKELY (!config_.proto_dir.empty()) {
-    auto proto_path = std::filesystem::path(config_.proto_dir);
-    std::error_code ec;
-
-    if VUNLIKELY (!std::filesystem::exists(proto_path, ec) || ec) {
-      MLOG_W("Proto directory does not exist: {}", config_.proto_dir);
-    } else {
-      source_tree_ = std::make_shared<google::protobuf::compiler::DiskSourceTree>();
-      source_tree_->MapPath("", Helpers::path_to_string(proto_path));
-
-      importer_ = std::make_shared<google::protobuf::compiler::Importer>(source_tree_.get(), nullptr);
-
-      bool has_import = false;
-      imported_proto_descriptors_.clear();
-      import_protos(importer_.get(), proto_path, proto_path, has_import, 0, &imported_proto_descriptors_);
-
-      if VLIKELY (has_import) {
-        disk_factory_ = std::make_shared<google::protobuf::DynamicMessageFactory>();
-        has_resolver = true;
-      } else {
-        MLOG_W("No .proto files found in: {}", config_.proto_dir);
-      }
-    }
-  }
-#endif
-
-  // if VUNLIKELY (!has_resolver) {
-  //   MLOG_W("No proto resolver available (no plugin, no proto_dir)");
-  // }
-
-  return has_resolver;
-}
-
-bool RerunConverter::init_convert_plugin() {
-  return load_convert_plugin(config_.convert_plugin_path, config_.convert_plugin_config, convert_plugin_loader_,
-                             convert_plugin_);
-}
-
-#ifdef VLINK_HAS_FBS_COMPILER  // NOLINT(readability-redundant-preprocessor)
-bool RerunConverter::init_fbs_resolver() {
-  bool has_resolver = schema_interface_ != nullptr;
-
-  if (config_.fbs_dir.empty()) {
-    return has_resolver;
-  }
-
-  auto fbs_path = std::filesystem::path(config_.fbs_dir);
-  std::error_code ec;
-
-  if VUNLIKELY (!std::filesystem::exists(fbs_path, ec) || ec) {
-    MLOG_W("FBS directory does not exist: {}", config_.fbs_dir);
-    return has_resolver;
-  }
-
-  std::vector<std::filesystem::path> fbs_files;
-  scan_fbs_files(fbs_path, fbs_files);
-
-  if VUNLIKELY (fbs_files.empty()) {
-    MLOG_W("No .fbs files found in: {}", config_.fbs_dir);
-    return has_resolver;
-  }
-
-  std::string root_dir_str = Helpers::path_to_string(fbs_path);
-  const char* include_dirs[] = {root_dir_str.c_str(), nullptr};
-  fbs_parser_vec_.reserve(fbs_parser_vec_.size() + fbs_files.size());
-
-  for (const auto& fbs_file : fbs_files) {
-    std::string schema_file;
-
-    if VUNLIKELY (!flatbuffers::LoadFile(Helpers::path_to_string(fbs_file).c_str(), false, &schema_file)) {
-      continue;
-    }
-
-    auto parser = std::make_unique<flatbuffers::Parser>();
-
-    std::string sub_dir_str = Helpers::path_to_string(fbs_file.parent_path());
-
-    if (sub_dir_str == root_dir_str) {
-      if VUNLIKELY (!parser->Parse(schema_file.c_str(), include_dirs)) {
-        MLOG_W("Failed to parse FBS: {}: {}", Helpers::path_to_string(fbs_file), parser->error_);
-        continue;
-      }
-    } else {
-      const char* full_dirs[] = {root_dir_str.c_str(), sub_dir_str.c_str(), nullptr};
-
-      if VUNLIKELY (!parser->Parse(schema_file.c_str(), full_dirs)) {
-        MLOG_W("Failed to parse FBS: {}: {}", Helpers::path_to_string(fbs_file), parser->error_);
-        continue;
-      }
-    }
-
-    std::vector<std::string> type_names;
-
-    for (auto* def : parser->structs_.vec) {
-      if VUNLIKELY (!def || def->generated) {
-        continue;
-      }
-
-      auto type_name = def->name;
-
-      if (fbs_parsers_.find(type_name) == fbs_parsers_.end()) {
-        type_names.emplace_back(type_name);
-      }
-    }
-
-    if VUNLIKELY (type_names.empty()) {
-      continue;
-    }
-
-    const size_t parser_index = fbs_parser_vec_.size();
-    fbs_parser_vec_.emplace_back(std::move(parser));
-
-    for (const auto& type_name : type_names) {
-      fbs_parsers_[type_name] = parser_index;
-    }
-  }
-
-  return has_resolver || !fbs_parsers_.empty();
-}
-
-bool RerunConverter::resolve_fbs_schema(const std::string& fbs_ser, std::string& schema_data) {
-  std::lock_guard lock(mtx_);
-  auto cache_iter = fbs_schema_cache_.find(fbs_ser);
-
-  if VLIKELY (cache_iter != fbs_schema_cache_.end()) {
-    schema_data = cache_iter->second;
-    return true;
-  }
-
-  auto parser_iter = fbs_parsers_.find(fbs_ser);
-
-  if (parser_iter == fbs_parsers_.end()) {
-    if (fbs_not_found_.find(fbs_ser) != fbs_not_found_.end()) {
-      return false;
-    }
-
-    if (schema_interface_) {
-      auto schema = schema_interface_->search_schema(fbs_ser, SchemaType::kFlatbuffers);
-      if (!schema.data.empty() && schema.schema_type == SchemaType::kFlatbuffers) {
-        auto& cached = fbs_schema_cache_[fbs_ser];
-        cached.assign(reinterpret_cast<const char*>(schema.data.data()), schema.data.size());
-        schema_data = cached;
-        return true;
-      }
-    }
-
-    if (config_.fbs_dir.empty()) {
-      fbs_not_found_.insert(fbs_ser);
-      return false;
-    }
-
-    auto fbs_path = std::filesystem::path(config_.fbs_dir);
-    std::error_code ec;
-
-    if VUNLIKELY (!std::filesystem::exists(fbs_path, ec) || ec) {
-      fbs_not_found_.insert(fbs_ser);
-      return false;
-    }
-
-    std::vector<std::filesystem::path> fbs_files;
-    scan_fbs_files(fbs_path, fbs_files);
-
-    std::string root_dir_str = Helpers::path_to_string(fbs_path);
-    const char* include_dirs[] = {root_dir_str.c_str(), nullptr};
-
-    bool found = false;
-
-    for (const auto& fbs_file : fbs_files) {
-      std::string schema_file;
-
-      if VUNLIKELY (!flatbuffers::LoadFile(Helpers::path_to_string(fbs_file).c_str(), false, &schema_file)) {
-        continue;
-      }
-
-      auto parser = std::make_unique<flatbuffers::Parser>();
-      std::string sub_dir_str = Helpers::path_to_string(fbs_file.parent_path());
-
-      if (sub_dir_str == root_dir_str) {
-        if VUNLIKELY (!parser->Parse(schema_file.c_str(), include_dirs)) {
-          continue;
-        }
-      } else {
-        const char* full_dirs[] = {root_dir_str.c_str(), sub_dir_str.c_str(), nullptr};
-
-        if VUNLIKELY (!parser->Parse(schema_file.c_str(), full_dirs)) {
-          continue;
-        }
-      }
-
-      if (parser->LookupStruct(fbs_ser)) {
-        parser->SetRootType(fbs_ser.c_str());
-        const size_t parser_index = fbs_parser_vec_.size();
-        fbs_parser_vec_.emplace_back(std::move(parser));
-        fbs_parsers_[fbs_ser] = parser_index;
-        found = true;
-        break;
-      }
-    }
-
-    if VLIKELY (!found) {
-      fbs_not_found_.insert(fbs_ser);
-      return false;
-    }
-
-    parser_iter = fbs_parsers_.find(fbs_ser);
-  }
-
-  if VUNLIKELY (parser_iter->second >= fbs_parser_vec_.size()) {
-    return false;
-  }
-
-  auto& parser = *fbs_parser_vec_[parser_iter->second];
-  parser.SetRootType(fbs_ser.c_str());
-  parser.Serialize();
-
-  auto* buf_ptr = parser.builder_.GetBufferPointer();
-  auto buf_size = parser.builder_.GetSize();
-
-  if VUNLIKELY (!buf_ptr || buf_size == 0) {
-    MLOG_W("Failed to serialize BFBS for: {}", fbs_ser);
-    return false;
-  }
-
-  auto& cached = fbs_schema_cache_[fbs_ser];
-  cached.assign(reinterpret_cast<const char*>(buf_ptr), buf_size);
-  schema_data = cached;
-  return true;
-}
-#endif
-
-const google::protobuf::Descriptor* RerunConverter::find_proto_descriptor(const std::string& proto_name) {
-  if VLIKELY (schema_interface_) {
-    auto* desc_ptr = schema_interface_->search_protobuf_descriptor(proto_name);
-
-    if VLIKELY (desc_ptr) {
-      return reinterpret_cast<const google::protobuf::Descriptor*>(desc_ptr);
-    }
-  }
-
-#ifdef VLINK_HAS_PROTO_COMPILER
-  auto iter = imported_proto_descriptors_.find(proto_name);
-
-  if VLIKELY (iter != imported_proto_descriptors_.end()) {
-    return iter->second;
-  }
-#endif
-
-  return nullptr;
-}
-
-std::unique_ptr<google::protobuf::Message> RerunConverter::deserialize_proto_message(const std::string& ser,
-                                                                                     const Bytes& raw) {
-  const auto* desc = find_proto_descriptor(ser);
-
-  if VUNLIKELY (!desc) {
-    MLOG_W("Descriptor not found: {}", ser);
-    return nullptr;
-  }
-
-  const google::protobuf::Message* prototype = nullptr;
-
-#ifdef VLINK_HAS_PROTO_COMPILER
-
-  if (disk_factory_ && imported_proto_descriptors_.find(ser) != imported_proto_descriptors_.end()) {
-    prototype = disk_factory_->GetPrototype(desc);
-  }
-#endif
-
-  if VUNLIKELY (!prototype && schema_interface_) {
-    prototype = proto_factory_.GetPrototype(desc);
-  }
-
-  if VUNLIKELY (!prototype) {
-    MLOG_W("Failed to get prototype for: {}", ser);
-    return nullptr;
-  }
-
-  std::unique_ptr<google::protobuf::Message> msg(prototype->New());
-
-  if VUNLIKELY (raw.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
-    MLOG_W("Protobuf too large: {} bytes", raw.size());
-    return nullptr;
-  }
-
-  if VUNLIKELY (!msg->ParseFromArray(raw.data(), static_cast<int>(raw.size()))) {
-    MLOG_W("Failed to parse protobuf message: {}", ser);
-    return nullptr;
-  }
-
-  return msg;
-}
-
-void RerunConverter::load_mappings() {
-  mappings_.clear();
-  mapping_multi_index_.clear();
-
-  for (const auto& file : config_.vlink_msgs) {
-    if VUNLIKELY (!load_mapping_file(file)) {
-      MLOG_W("Failed to load mapping: {}", file);
-    }
-  }
-
-  for (const auto& m : mappings_) {
-    mapping_multi_index_[m.ser].emplace_back(&m);
-  }
-}
-
-bool RerunConverter::load_mapping_file(const std::string& path) {
-  std::vector<RerunMap> loaded_mappings;
-
-  auto ok = load_json_entries(
-      path, "Mapping file not found", "Failed to parse mapping", [&loaded_mappings, &path](const Json& obj) -> bool {
-        try {
-          if VUNLIKELY (!obj.is_object()) {
-            return false;
-          }
-
-          RerunMap mapping;
-          mapping.ser = obj.value("ser", std::string());
-
-          if VUNLIKELY (!parse_url_selector(obj, path, "mapping", mapping.url_selector)) {
-            return false;
-          }
-
-          mapping.archetype = obj.value("archetype", std::string());
-          mapping.encoding = obj.value("encoding", std::string("protobuf"));
-          mapping.converter = obj.value("converter", std::string());
-          mapping.timestamp_field = obj.value("timestamp_field", std::string());
-
-          if VUNLIKELY (!parse_timestamp_unit(obj, "timestamp_unit", path, "mapping", mapping.timestamp_unit)) {
-            return false;
-          }
-
-          if (obj.contains("topic")) {
-            MLOG_W("vlink_msgs mapping in {} ignores topic; Rerun entity path always follows the runtime VLink URL",
-                   path);
-          }
-
-          if VUNLIKELY (!parse_field_mappings(obj, path, "mapping", mapping.field_mappings)) {
-            return false;
-          }
-
-          if VUNLIKELY (mapping.ser.empty()) {
-            MLOG_W("Invalid mapping in {}: missing ser", path);
-            return false;
-          }
-
-          if VUNLIKELY (mapping.encoding != "protobuf" && mapping.encoding != "flatbuffers" &&
-                        mapping.encoding != "zerocopy") {
-            MLOG_W("Invalid mapping in {}: unsupported source encoding {}", path, mapping.encoding);
-            return false;
-          }
-
-          if VUNLIKELY (mapping.archetype.empty() && mapping.converter.empty()) {
-            MLOG_W("Invalid mapping in {}: missing archetype or converter", path);
-            return false;
-          }
-
-          if VUNLIKELY (mapping.converter == "send_time" && mapping.timestamp_field.empty()) {
-            MLOG_W("Invalid mapping in {}: converter 'send_time' requires timestamp_field", path);
-            return false;
-          }
-
-          loaded_mappings.emplace_back(std::move(mapping));
-          return true;
-        } catch (const std::exception& e) {
-          MLOG_W("Invalid mapping entry in {}: {}", path, e.what());
-          return false;
-        }
-      });
-
-  if VLIKELY (ok) {
-    mappings_.insert(mappings_.end(), std::make_move_iterator(loaded_mappings.begin()),
-                     std::make_move_iterator(loaded_mappings.end()));
-  }
-
-  return ok;
-}
-
-const std::vector<const RerunMap*>& RerunConverter::find_all_mappings(std::string_view url,
-                                                                      const std::string& ser) const {
-  struct MappingCache final {
-    uint64_t owner_id{0};
-    std::string url;
-    std::string ser;
-    std::vector<const RerunMap*> matches;
-  };
-
-  thread_local MappingCache cache;
-
-  if (cache.owner_id == cache_owner_id_ && cache.url == url && cache.ser == ser) {
-    return cache.matches;
-  }
-
-  cache.owner_id = cache_owner_id_;
-  cache.url.assign(url.data(), url.size());
-  cache.ser = ser;
-  cache.matches.clear();
-
-  auto mapping_iter = mapping_multi_index_.find(ser);
-
-  if VLIKELY (mapping_iter != mapping_multi_index_.end()) {
-    struct BestMatch final {
-      int score{-1};
-      const RerunMap* mapping{nullptr};
-      bool ambiguous{false};
-    };
-
-    std::unordered_map<std::string, BestMatch> best_matches;
-
-    for (const auto* mapping : mapping_iter->second) {
-      auto score = score_url_selector(url, mapping->url_selector);
-
-      if VUNLIKELY (score < 0) {
-        continue;
-      }
-
-      const auto& key = mapping->converter.empty() ? mapping->archetype : mapping->converter;
-      auto& match = best_matches[key];
-
-      if VLIKELY (score > match.score) {
-        match.score = score;
-        match.mapping = mapping;
-        match.ambiguous = false;
-        continue;
-      }
-
-      if VUNLIKELY (score == match.score) {
-        match.ambiguous = true;
-      }
-    }
-
-    cache.matches.reserve(best_matches.size());
-
-    for (const auto* mapping : mapping_iter->second) {
-      const auto& key = mapping->converter.empty() ? mapping->archetype : mapping->converter;
-      auto best_iter = best_matches.find(key);
-
-      if VUNLIKELY (best_iter == best_matches.end()) {
-        continue;
-      }
-
-      if VUNLIKELY (best_iter->second.ambiguous) {
-        MLOG_W("Ambiguous rerun mapping: url={} ser={} target={}", url, ser, key);
-        best_matches.erase(best_iter);
-        continue;
-      }
-
-      if VLIKELY (best_iter->second.mapping == mapping) {
-        cache.matches.emplace_back(mapping);
-        best_matches.erase(best_iter);
-      }
-    }
-  }
-
-  return cache.matches;
-}
 
 void RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::string& entity_path,
                                      std::string_view url, SchemaType schema_type, const std::string& ser,
@@ -1645,6 +1002,296 @@ void RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::s
 
   apply_primary_timestamp(-1);
   rec.log(entity_path, ::rerun::TextLog("[" + ser + "] raw " + std::to_string(raw.size()) + " bytes"));
+}
+
+void RerunConverter::apply_message_timestamp(::rerun::RecordingStream& rec, int64_t timestamp_ns) const {
+  if VUNLIKELY (timestamp_ns < 0) {
+    return;
+  }
+
+  if VUNLIKELY (!config_.use_timestamp_timeline || config_.timestamp_timeline.empty()) {
+    return;
+  }
+
+  rec.set_time_timestamp_nanos_since_epoch(config_.timestamp_timeline, timestamp_ns);
+}
+
+bool RerunConverter::init_proto_resolver() {
+  bool has_resolver = false;
+
+  auto& mgr = SchemaPluginManager::get(config_.schema_plugin_path);
+
+  if (mgr.is_valid()) {
+    schema_interface_ = mgr.get_interface();
+    has_resolver = true;
+  }
+
+#ifdef VLINK_HAS_PROTO_COMPILER
+
+  if VLIKELY (!config_.proto_dir.empty()) {
+    auto proto_path = std::filesystem::path(config_.proto_dir);
+    std::error_code ec;
+
+    if VUNLIKELY (!std::filesystem::exists(proto_path, ec) || ec) {
+      MLOG_W("Proto directory does not exist: {}", config_.proto_dir);
+    } else {
+      source_tree_ = std::make_shared<google::protobuf::compiler::DiskSourceTree>();
+      source_tree_->MapPath("", Helpers::path_to_string(proto_path));
+
+      importer_ = std::make_shared<google::protobuf::compiler::Importer>(source_tree_.get(), nullptr);
+
+      bool has_import = false;
+      imported_proto_descriptors_.clear();
+      import_protos(importer_.get(), proto_path, proto_path, has_import, 0, &imported_proto_descriptors_);
+
+      if VLIKELY (has_import) {
+        disk_factory_ = std::make_shared<google::protobuf::DynamicMessageFactory>();
+        has_resolver = true;
+      } else {
+        MLOG_W("No .proto files found in: {}", config_.proto_dir);
+      }
+    }
+  }
+#endif
+
+  // if VUNLIKELY (!has_resolver) {
+  //   MLOG_W("No proto resolver available (no plugin, no proto_dir)");
+  // }
+
+  return has_resolver;
+}
+
+bool RerunConverter::init_convert_plugin() {
+  return load_convert_plugin(config_.convert_plugin_path, config_.convert_plugin_config, convert_plugin_loader_,
+                             convert_plugin_);
+}
+
+void RerunConverter::load_mappings() {
+  mappings_.clear();
+  mapping_multi_index_.clear();
+
+  for (const auto& file : config_.vlink_msgs) {
+    if VUNLIKELY (!load_mapping_file(file)) {
+      MLOG_W("Failed to load mapping: {}", file);
+    }
+  }
+
+  for (const auto& m : mappings_) {
+    mapping_multi_index_[m.ser].emplace_back(&m);
+  }
+}
+
+bool RerunConverter::load_mapping_file(const std::string& path) {
+  std::vector<RerunMap> loaded_mappings;
+
+  auto ok = load_json_entries(
+      path, "Mapping file not found", "Failed to parse mapping", [&loaded_mappings, &path](const Json& obj) -> bool {
+        try {
+          if VUNLIKELY (!obj.is_object()) {
+            return false;
+          }
+
+          RerunMap mapping;
+          mapping.ser = obj.value("ser", std::string());
+
+          if VUNLIKELY (!parse_url_selector(obj, path, "mapping", mapping.url_selector)) {
+            return false;
+          }
+
+          mapping.archetype = obj.value("archetype", std::string());
+          mapping.encoding = obj.value("encoding", std::string("protobuf"));
+          mapping.converter = obj.value("converter", std::string());
+          mapping.timestamp_field = obj.value("timestamp_field", std::string());
+
+          if VUNLIKELY (!parse_timestamp_unit(obj, "timestamp_unit", path, "mapping", mapping.timestamp_unit)) {
+            return false;
+          }
+
+          if (obj.contains("topic")) {
+            MLOG_W("vlink_msgs mapping in {} ignores topic; Rerun entity path always follows the runtime VLink URL",
+                   path);
+          }
+
+          if VUNLIKELY (!parse_field_mappings(obj, path, "mapping", mapping.field_mappings)) {
+            return false;
+          }
+
+          if VUNLIKELY (mapping.ser.empty()) {
+            MLOG_W("Invalid mapping in {}: missing ser", path);
+            return false;
+          }
+
+          if VUNLIKELY (mapping.encoding != "protobuf" && mapping.encoding != "flatbuffers" &&
+                        mapping.encoding != "zerocopy") {
+            MLOG_W("Invalid mapping in {}: unsupported source encoding {}", path, mapping.encoding);
+            return false;
+          }
+
+          if VUNLIKELY (mapping.archetype.empty() && mapping.converter.empty()) {
+            MLOG_W("Invalid mapping in {}: missing archetype or converter", path);
+            return false;
+          }
+
+          if VUNLIKELY (mapping.converter == "send_time" && mapping.timestamp_field.empty()) {
+            MLOG_W("Invalid mapping in {}: converter 'send_time' requires timestamp_field", path);
+            return false;
+          }
+
+          loaded_mappings.emplace_back(std::move(mapping));
+          return true;
+        } catch (const std::exception& e) {
+          MLOG_W("Invalid mapping entry in {}: {}", path, e.what());
+          return false;
+        }
+      });
+
+  if VLIKELY (ok) {
+    mappings_.insert(mappings_.end(), std::make_move_iterator(loaded_mappings.begin()),
+                     std::make_move_iterator(loaded_mappings.end()));
+  }
+
+  return ok;
+}
+
+const google::protobuf::Descriptor* RerunConverter::find_proto_descriptor(const std::string& proto_name) {
+  if VLIKELY (schema_interface_) {
+    auto* desc_ptr = schema_interface_->search_protobuf_descriptor(proto_name);
+
+    if VLIKELY (desc_ptr) {
+      return reinterpret_cast<const google::protobuf::Descriptor*>(desc_ptr);
+    }
+  }
+
+#ifdef VLINK_HAS_PROTO_COMPILER
+  auto iter = imported_proto_descriptors_.find(proto_name);
+
+  if VLIKELY (iter != imported_proto_descriptors_.end()) {
+    return iter->second;
+  }
+#endif
+
+  return nullptr;
+}
+
+std::unique_ptr<google::protobuf::Message> RerunConverter::deserialize_proto_message(const std::string& ser,
+                                                                                     const Bytes& raw) {
+  const auto* desc = find_proto_descriptor(ser);
+
+  if VUNLIKELY (!desc) {
+    MLOG_W("Descriptor not found: {}", ser);
+    return nullptr;
+  }
+
+  const google::protobuf::Message* prototype = nullptr;
+
+#ifdef VLINK_HAS_PROTO_COMPILER
+
+  if (disk_factory_ && imported_proto_descriptors_.find(ser) != imported_proto_descriptors_.end()) {
+    prototype = disk_factory_->GetPrototype(desc);
+  }
+#endif
+
+  if VUNLIKELY (!prototype && schema_interface_) {
+    prototype = proto_factory_.GetPrototype(desc);
+  }
+
+  if VUNLIKELY (!prototype) {
+    MLOG_W("Failed to get prototype for: {}", ser);
+    return nullptr;
+  }
+
+  std::unique_ptr<google::protobuf::Message> msg(prototype->New());
+
+  if VUNLIKELY (raw.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    MLOG_W("Protobuf too large: {} bytes", raw.size());
+    return nullptr;
+  }
+
+  if VUNLIKELY (!msg->ParseFromArray(raw.data(), static_cast<int>(raw.size()))) {
+    MLOG_W("Failed to parse protobuf message: {}", ser);
+    return nullptr;
+  }
+
+  return msg;
+}
+
+const std::vector<const RerunMap*>& RerunConverter::find_all_mappings(std::string_view url,
+                                                                      const std::string& ser) const {
+  struct MappingCache final {
+    uint64_t owner_id{0};
+    std::string url;
+    std::string ser;
+    std::vector<const RerunMap*> matches;
+  };
+
+  thread_local MappingCache cache;
+
+  if (cache.owner_id == cache_owner_id_ && cache.url == url && cache.ser == ser) {
+    return cache.matches;
+  }
+
+  cache.owner_id = cache_owner_id_;
+  cache.url.assign(url.data(), url.size());
+  cache.ser = ser;
+  cache.matches.clear();
+
+  auto mapping_iter = mapping_multi_index_.find(ser);
+
+  if VLIKELY (mapping_iter != mapping_multi_index_.end()) {
+    struct BestMatch final {
+      int score{-1};
+      const RerunMap* mapping{nullptr};
+      bool ambiguous{false};
+    };
+
+    std::unordered_map<std::string, BestMatch> best_matches;
+
+    for (const auto* mapping : mapping_iter->second) {
+      auto score = score_url_selector(url, mapping->url_selector);
+
+      if VUNLIKELY (score < 0) {
+        continue;
+      }
+
+      const auto& key = mapping->converter.empty() ? mapping->archetype : mapping->converter;
+      auto& match = best_matches[key];
+
+      if VLIKELY (score > match.score) {
+        match.score = score;
+        match.mapping = mapping;
+        match.ambiguous = false;
+        continue;
+      }
+
+      if VUNLIKELY (score == match.score) {
+        match.ambiguous = true;
+      }
+    }
+
+    cache.matches.reserve(best_matches.size());
+
+    for (const auto* mapping : mapping_iter->second) {
+      const auto& key = mapping->converter.empty() ? mapping->archetype : mapping->converter;
+      auto best_iter = best_matches.find(key);
+
+      if VUNLIKELY (best_iter == best_matches.end()) {
+        continue;
+      }
+
+      if VUNLIKELY (best_iter->second.ambiguous) {
+        MLOG_W("Ambiguous rerun mapping: url={} ser={} target={}", url, ser, key);
+        best_matches.erase(best_iter);
+        continue;
+      }
+
+      if VLIKELY (best_iter->second.mapping == mapping) {
+        cache.matches.emplace_back(mapping);
+        best_matches.erase(best_iter);
+      }
+    }
+  }
+
+  return cache.matches;
 }
 
 bool RerunConverter::log_camera_frame(::rerun::RecordingStream& rec, const std::string& entity_path,
@@ -2391,38 +2038,6 @@ bool RerunConverter::log_occupancy_grid(::rerun::RecordingStream& rec, const std
   }
 
   return log_occupancy_grid(rec, entity_path, parser);
-}
-
-template <typename T>
-static bool read_parser_collection(const zerocopy::MessageParser& parser, size_t count, std::vector<T>& output) {
-  output.resize(count);
-
-  for (size_t index = 0; index < count; ++index) {
-    zerocopy::MessageParser::Value value;
-
-    if VUNLIKELY (!parser.value("data", index, "value", value)) {
-      return false;
-    }
-
-    if (const auto* integer = std::get_if<int64_t>(&value)) {
-      output[index] = static_cast<T>(*integer);
-      continue;
-    }
-
-    if (const auto* integer = std::get_if<uint64_t>(&value)) {
-      output[index] = static_cast<T>(*integer);
-      continue;
-    }
-
-    if (const auto* number = std::get_if<double>(&value)) {
-      output[index] = static_cast<T>(*number);
-      continue;
-    }
-
-    return false;
-  }
-
-  return true;
 }
 
 bool RerunConverter::log_tensor(::rerun::RecordingStream& rec, const std::string& entity_path,
@@ -6763,8 +6378,320 @@ bool RerunConverter::log_plugin_json(::rerun::RecordingStream& rec, const std::s
   return false;
 }
 
-#ifdef VLINK_HAS_FBS_COMPILER  // NOLINT(readability-redundant-preprocessor)
+int64_t RerunConverter::clamp_header_timestamp_ns(uint64_t timestamp_ns) {
+  if VUNLIKELY (timestamp_ns == 0) {
+    return -1;
+  }
 
+  if VUNLIKELY (timestamp_ns > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+    return std::numeric_limits<int64_t>::max();
+  }
+
+  return static_cast<int64_t>(timestamp_ns);
+}
+
+Bytes RerunConverter::decode_plugin_binary(const Json& j, std::string_view base64_key, std::string_view array_key) {
+  if (j.contains(base64_key) && j[base64_key].is_string()) {
+    return Bytes::decode_from_base64(j[base64_key].get<std::string>());
+  }
+
+  if (j.contains(array_key) && j[array_key].is_array()) {
+    const auto& data = j[array_key];
+    auto bytes = Bytes::create(data.size());
+
+    for (size_t i = 0; i < data.size(); ++i) {
+      if (!data[i].is_number_integer() && !data[i].is_number_unsigned()) {
+        return {};
+      }
+
+      if (data[i].is_number_unsigned()) {
+        auto value = data[i].get<uint64_t>();
+
+        if VUNLIKELY (value > std::numeric_limits<uint8_t>::max()) {
+          return {};
+        }
+
+        bytes[i] = static_cast<uint8_t>(value);
+      } else {
+        auto value = data[i].get<int64_t>();
+
+        if VUNLIKELY (value < 0 || value > std::numeric_limits<uint8_t>::max()) {
+          return {};
+        }
+
+        bytes[i] = static_cast<uint8_t>(value);
+      }
+    }
+
+    return bytes;
+  }
+
+  return {};
+}
+
+std::string RerunConverter::normalize_plugin_text(std::string text) {
+  std::transform(text.begin(), text.end(), text.begin(),
+                 [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+  return text;
+}
+
+std::string RerunConverter::infer_media_type(const Json& j) {
+  auto media_type = j.value("media_type", std::string{});
+
+  if (!media_type.empty()) {
+    return media_type;
+  }
+
+  auto format = normalize_plugin_text(j.value("format", std::string{}));
+
+  if (format == "jpeg" || format == "jpg") {
+    return "image/jpeg";
+  }
+
+  if (format == "png") {
+    return "image/png";
+  }
+
+  if (format == "webp") {
+    return "image/webp";
+  }
+
+  if (format == "bmp") {
+    return "image/bmp";
+  }
+
+  return {};
+}
+
+bool RerunConverter::resolve_plugin_image_size(const Json& j, uint32_t& width, uint32_t& height) {
+  width = j.value("width", static_cast<uint32_t>(0));
+  height = j.value("height", static_cast<uint32_t>(0));
+
+  if ((width == 0 || height == 0) && j.contains("resolution") && j["resolution"].is_array() &&
+      j["resolution"].size() >= 2) {
+    width = j["resolution"][0].get<uint32_t>();
+    height = j["resolution"][1].get<uint32_t>();
+  }
+
+  return width > 0 && height > 0;
+}
+
+void RerunConverter::log_view_coordinates_value(::rerun::RecordingStream& rec, const std::string& entity_path,
+                                                std::string system) {
+  std::transform(system.begin(), system.end(), system.begin(),
+                 [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+
+  if (system == "RUB" || system == "RIGHT_HAND_Y_UP") {
+    rec.log_static(entity_path, ::rerun::archetypes::ViewCoordinates::RIGHT_HAND_Y_UP);
+  } else if (system == "RDF" || system == "RIGHT_HAND_Z_UP") {
+    rec.log_static(entity_path, system == "RDF" ? ::rerun::archetypes::ViewCoordinates::RDF
+                                                : ::rerun::archetypes::ViewCoordinates::RIGHT_HAND_Z_UP);
+  } else if (system == "RIGHT_HAND_Z_DOWN") {
+    rec.log_static(entity_path, ::rerun::archetypes::ViewCoordinates::RIGHT_HAND_Z_DOWN);
+  } else if (system == "LEFT_HAND_Y_UP") {
+    rec.log_static(entity_path, ::rerun::archetypes::ViewCoordinates::LEFT_HAND_Y_UP);
+  } else if (system == "LEFT_HAND_Z_UP") {
+    rec.log_static(entity_path, ::rerun::archetypes::ViewCoordinates::LEFT_HAND_Z_UP);
+  } else if (system == "FLU") {
+    rec.log_static(entity_path, ::rerun::archetypes::ViewCoordinates::FLU);
+  } else if (system == "FRD") {
+    rec.log_static(entity_path, ::rerun::archetypes::ViewCoordinates::FRD);
+  } else {
+    rec.log_static(entity_path, ::rerun::archetypes::ViewCoordinates::RIGHT_HAND_Z_UP);
+    MLOG_W("ViewCoordinates: unknown system '{}', defaulting to RIGHT_HAND_Z_UP", system);
+  }
+}
+
+#ifdef VLINK_HAS_FBS_COMPILER  // NOLINT(readability-redundant-preprocessor)
+bool RerunConverter::init_fbs_resolver() {
+  bool has_resolver = schema_interface_ != nullptr;
+
+  if (config_.fbs_dir.empty()) {
+    return has_resolver;
+  }
+
+  auto fbs_path = std::filesystem::path(config_.fbs_dir);
+  std::error_code ec;
+
+  if VUNLIKELY (!std::filesystem::exists(fbs_path, ec) || ec) {
+    MLOG_W("FBS directory does not exist: {}", config_.fbs_dir);
+    return has_resolver;
+  }
+
+  std::vector<std::filesystem::path> fbs_files;
+  scan_fbs_files(fbs_path, fbs_files);
+
+  if VUNLIKELY (fbs_files.empty()) {
+    MLOG_W("No .fbs files found in: {}", config_.fbs_dir);
+    return has_resolver;
+  }
+
+  std::string root_dir_str = Helpers::path_to_string(fbs_path);
+  const char* include_dirs[] = {root_dir_str.c_str(), nullptr};
+  fbs_parser_vec_.reserve(fbs_parser_vec_.size() + fbs_files.size());
+
+  for (const auto& fbs_file : fbs_files) {
+    std::string schema_file;
+
+    if VUNLIKELY (!flatbuffers::LoadFile(Helpers::path_to_string(fbs_file).c_str(), false, &schema_file)) {
+      continue;
+    }
+
+    auto parser = std::make_unique<flatbuffers::Parser>();
+
+    std::string sub_dir_str = Helpers::path_to_string(fbs_file.parent_path());
+
+    if (sub_dir_str == root_dir_str) {
+      if VUNLIKELY (!parser->Parse(schema_file.c_str(), include_dirs)) {
+        MLOG_W("Failed to parse FBS: {}: {}", Helpers::path_to_string(fbs_file), parser->error_);
+        continue;
+      }
+    } else {
+      const char* full_dirs[] = {root_dir_str.c_str(), sub_dir_str.c_str(), nullptr};
+
+      if VUNLIKELY (!parser->Parse(schema_file.c_str(), full_dirs)) {
+        MLOG_W("Failed to parse FBS: {}: {}", Helpers::path_to_string(fbs_file), parser->error_);
+        continue;
+      }
+    }
+
+    std::vector<std::string> type_names;
+
+    for (auto* def : parser->structs_.vec) {
+      if VUNLIKELY (!def || def->generated) {
+        continue;
+      }
+
+      auto type_name = def->name;
+
+      if (fbs_parsers_.find(type_name) == fbs_parsers_.end()) {
+        type_names.emplace_back(type_name);
+      }
+    }
+
+    if VUNLIKELY (type_names.empty()) {
+      continue;
+    }
+
+    const size_t parser_index = fbs_parser_vec_.size();
+    fbs_parser_vec_.emplace_back(std::move(parser));
+
+    for (const auto& type_name : type_names) {
+      fbs_parsers_[type_name] = parser_index;
+    }
+  }
+
+  return has_resolver || !fbs_parsers_.empty();
+}
+
+bool RerunConverter::resolve_fbs_schema(const std::string& fbs_ser, std::string& schema_data) {
+  std::lock_guard lock(mtx_);
+  auto cache_iter = fbs_schema_cache_.find(fbs_ser);
+
+  if VLIKELY (cache_iter != fbs_schema_cache_.end()) {
+    schema_data = cache_iter->second;
+    return true;
+  }
+
+  auto parser_iter = fbs_parsers_.find(fbs_ser);
+
+  if (parser_iter == fbs_parsers_.end()) {
+    if (fbs_not_found_.find(fbs_ser) != fbs_not_found_.end()) {
+      return false;
+    }
+
+    if (schema_interface_) {
+      auto schema = schema_interface_->search_schema(fbs_ser, SchemaType::kFlatbuffers);
+      if (!schema.data.empty() && schema.schema_type == SchemaType::kFlatbuffers) {
+        auto& cached = fbs_schema_cache_[fbs_ser];
+        cached.assign(reinterpret_cast<const char*>(schema.data.data()), schema.data.size());
+        schema_data = cached;
+        return true;
+      }
+    }
+
+    if (config_.fbs_dir.empty()) {
+      fbs_not_found_.insert(fbs_ser);
+      return false;
+    }
+
+    auto fbs_path = std::filesystem::path(config_.fbs_dir);
+    std::error_code ec;
+
+    if VUNLIKELY (!std::filesystem::exists(fbs_path, ec) || ec) {
+      fbs_not_found_.insert(fbs_ser);
+      return false;
+    }
+
+    std::vector<std::filesystem::path> fbs_files;
+    scan_fbs_files(fbs_path, fbs_files);
+
+    std::string root_dir_str = Helpers::path_to_string(fbs_path);
+    const char* include_dirs[] = {root_dir_str.c_str(), nullptr};
+
+    bool found = false;
+
+    for (const auto& fbs_file : fbs_files) {
+      std::string schema_file;
+
+      if VUNLIKELY (!flatbuffers::LoadFile(Helpers::path_to_string(fbs_file).c_str(), false, &schema_file)) {
+        continue;
+      }
+
+      auto parser = std::make_unique<flatbuffers::Parser>();
+      std::string sub_dir_str = Helpers::path_to_string(fbs_file.parent_path());
+
+      if (sub_dir_str == root_dir_str) {
+        if VUNLIKELY (!parser->Parse(schema_file.c_str(), include_dirs)) {
+          continue;
+        }
+      } else {
+        const char* full_dirs[] = {root_dir_str.c_str(), sub_dir_str.c_str(), nullptr};
+
+        if VUNLIKELY (!parser->Parse(schema_file.c_str(), full_dirs)) {
+          continue;
+        }
+      }
+
+      if (parser->LookupStruct(fbs_ser)) {
+        parser->SetRootType(fbs_ser.c_str());
+        const size_t parser_index = fbs_parser_vec_.size();
+        fbs_parser_vec_.emplace_back(std::move(parser));
+        fbs_parsers_[fbs_ser] = parser_index;
+        found = true;
+        break;
+      }
+    }
+
+    if VLIKELY (!found) {
+      fbs_not_found_.insert(fbs_ser);
+      return false;
+    }
+
+    parser_iter = fbs_parsers_.find(fbs_ser);
+  }
+
+  if VUNLIKELY (parser_iter->second >= fbs_parser_vec_.size()) {
+    return false;
+  }
+
+  auto& parser = *fbs_parser_vec_[parser_iter->second];
+  parser.SetRootType(fbs_ser.c_str());
+  parser.Serialize();
+
+  auto* buf_ptr = parser.builder_.GetBufferPointer();
+  auto buf_size = parser.builder_.GetSize();
+
+  if VUNLIKELY (!buf_ptr || buf_size == 0) {
+    MLOG_W("Failed to serialize BFBS for: {}", fbs_ser);
+    return false;
+  }
+
+  auto& cached = fbs_schema_cache_[fbs_ser];
+  cached.assign(reinterpret_cast<const char*>(buf_ptr), buf_size);
+  schema_data = cached;
+  return true;
+}
 // NOLINTNEXTLINE(google-readability-function-size)
 bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const std::string& entity_path,
                                           const RerunMap& mapping, const std::string& ser, const Bytes& raw) {
@@ -8500,6 +8427,71 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
 
   rec.log(entity_path, ::rerun::TextLog("[FBS] " + ser + " (no specific converter)"));
   return true;
+}
+
+double RerunConverter::get_fbs_double(const flatbuffers::Table& table, const reflection::Object& obj,
+                                      const std::string& field_name) {
+  return get_fbs_double(FbsObjectView{&obj, &table, nullptr}, field_name);
+}
+
+double RerunConverter::get_fbs_double(const FbsObjectView& view, const std::string& field_name) {
+  const auto* field = view && view.object ? find_fbs_field(*view.object, field_name) : nullptr;
+
+  if VLIKELY (field && is_fbs_numeric_type(field->type()->base_type())) {
+    return get_fbs_field_as_double(view, *field);
+  }
+
+  return 0.0;
+}
+
+double RerunConverter::get_fbs_double(const flatbuffers::Table& table, const reflection::Object& obj,
+                                      const std::string& field_name, const FieldMapping& mapping) {
+  return get_fbs_double(FbsObjectView{&obj, &table, nullptr}, field_name, mapping);
+}
+
+double RerunConverter::get_fbs_double(const FbsObjectView& view, const std::string& field_name,
+                                      const FieldMapping& mapping) {
+  const auto* field = view && view.object ? find_fbs_field(*view.object, field_name) : nullptr;
+
+  if VLIKELY (field && is_fbs_numeric_type(field->type()->base_type()) && is_fbs_field_present(view, *field)) {
+    return get_fbs_field_as_double(view, *field);
+  }
+
+  double default_value = 0.0;
+  return try_parse_numeric_default(mapping, default_value) ? default_value : 0.0;
+}
+
+std::string RerunConverter::get_fbs_string(const flatbuffers::Table& table, const reflection::Object& obj,
+                                           const std::string& field_name, const reflection::Schema* schema) {
+  return get_fbs_string(FbsObjectView{&obj, &table, nullptr}, field_name, schema);
+}
+
+std::string RerunConverter::get_fbs_string(const FbsObjectView& view, const std::string& field_name,
+                                           const reflection::Schema* schema) {
+  const auto* field = view && view.object ? find_fbs_field(*view.object, field_name) : nullptr;
+
+  if VLIKELY (field && field->type()->base_type() == reflection::String) {
+    return get_fbs_field_as_string(view, *field, schema);
+  }
+
+  return {};
+}
+
+std::string RerunConverter::get_fbs_string(const flatbuffers::Table& table, const reflection::Object& obj,
+                                           const std::string& field_name, const FieldMapping& mapping,
+                                           const reflection::Schema* schema) {
+  return get_fbs_string(FbsObjectView{&obj, &table, nullptr}, field_name, mapping, schema);
+}
+
+std::string RerunConverter::get_fbs_string(const FbsObjectView& view, const std::string& field_name,
+                                           const FieldMapping& mapping, const reflection::Schema* schema) {
+  const auto* field = view && view.object ? find_fbs_field(*view.object, field_name) : nullptr;
+
+  if VLIKELY (field && field->type()->base_type() == reflection::String && is_fbs_field_present(view, *field)) {
+    return get_fbs_field_as_string(view, *field, schema);
+  }
+
+  return mapping.has_default_value ? mapping.default_value : std::string{};
 }
 
 #endif

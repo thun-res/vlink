@@ -29,6 +29,7 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <exception>
 #include <mutex>
 #include <new>
@@ -37,11 +38,16 @@
 #include <utility>
 #include <vector>
 
-#include "./base/logger.h"
 #include "./base/spin_lock.h"
 #include "./base/utils.h"
 
 #define MEMORY_POOL_NEVER_DELETE 0
+
+#define MEMORY_POOL_LOG(format, ...)                \
+  do {                                              \
+    std::fprintf(stderr, format "\n", __VA_ARGS__); \
+    std::fflush(stderr);                            \
+  } while (false)
 
 namespace vlink {
 
@@ -53,6 +59,7 @@ static constexpr size_t kMaxLevelCount = 10U;
 static constexpr size_t kInitialBlocksPerChunk = 1U;
 static constexpr size_t kInitialChunksReserve = 16U;
 static constexpr size_t kInitialChunkBytesTarget = 64U * 1024U;
+static constexpr size_t kMaxLazyChunkBytes = 64U * 1024U;
 static constexpr size_t kTierShardCount = 8U;
 static constexpr size_t kDefaultBatchSize = 16U;
 static constexpr uint32_t kShardingContentionThreshold = 8U;
@@ -466,6 +473,14 @@ static bool grow_tier_chunk(MemoryTierState& state, size_t shard_index, MemoryFr
     blocks = state.blocks_per_chunk;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
+  if (allocated != nullptr) {
+    const size_t lazy_cap = std::max(kMaxLazyChunkBytes / state.block_size, size_t{1});
+
+    if (blocks > lazy_cap) {
+      blocks = lazy_cap;
+    }
+  }
+
   const size_t block_size = state.block_size;
   const size_t chunk_bytes = block_size * blocks;
 
@@ -559,17 +574,19 @@ static void* tier_allocate(MemoryTierState& state, size_t& shard_index) noexcept
     shard_index = current_tier_shard();
   }
 
-  if (MemoryFreeNode* node = try_allocate_from_shards(state, shard_index)) {
+  MemoryFreeNode* node = try_allocate_from_shards(state, shard_index);
+
+  if VLIKELY (node != nullptr) {
     return node;
   }
 
   std::lock_guard grow_lock(state.grow_mtx);
 
-  if (MemoryFreeNode* node = try_allocate_from_shards(state, shard_index)) {
+  node = try_allocate_from_shards(state, shard_index);
+
+  if VLIKELY (node != nullptr) {
     return node;
   }
-
-  MemoryFreeNode* node = nullptr;
 
   if VUNLIKELY (!grow_tier_chunk(state, shard_index, &node)) {
     return nullptr;
@@ -623,8 +640,12 @@ static void prealloc_full_quota(MemoryTierState& state) noexcept {
   }
 
   if VUNLIKELY (!ok) {
-    CLOG_W("MemoryPool: prealloc failed for tier (max_size=%zu, blocks_per_chunk=%zu); tier reverts to lazy growth.",
-           state.max_size, state.blocks_per_chunk);
+    // LCOV_EXCL_START GCOVR_EXCL_START
+    MEMORY_POOL_LOG(
+        "MemoryPool: prealloc failed for tier (max_size=%zu, blocks_per_chunk=%zu); "
+        "tier reverts to lazy growth.",
+        state.max_size, state.blocks_per_chunk);
+    // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 }
 
@@ -632,31 +653,37 @@ static bool validate_tiers_log(const std::vector<MemoryPool::Tier>& tiers) noexc
   static constexpr size_t kMaxTierSize = SIZE_MAX - MemoryPool::kBlockAlignment + 1U;
 
   if VUNLIKELY (tiers.size() > kMaxTierCount) {
-    CLOG_E("MemoryPool: tier count %zu exceeds max %zu; falling back to default pyramid.", tiers.size(), kMaxTierCount);
+    MEMORY_POOL_LOG("MemoryPool: tier count %zu exceeds max %zu; falling back to default pyramid.", tiers.size(),
+                    kMaxTierCount);
+
     return false;
   }
 
   for (size_t i = 0; i < tiers.size(); ++i) {
     if VUNLIKELY (tiers[i].max_size == 0) {
-      CLOG_E("MemoryPool: tier %zu has max_size == 0; falling back to default pyramid.", i);
+      MEMORY_POOL_LOG("MemoryPool: tier %zu has max_size == 0; falling back to default pyramid.", i);
+
       return false;
     }
 
     if VUNLIKELY (tiers[i].max_size < sizeof(MemoryFreeNode)) {
-      CLOG_E(
+      MEMORY_POOL_LOG(
           "MemoryPool: tier %zu max_size (%zu) is below the minimum block size %zu; "
           "falling back to default pyramid.",
           i, tiers[i].max_size, sizeof(MemoryFreeNode));
+
       return false;
     }
 
     if VUNLIKELY (tiers[i].max_size > kMaxTierSize) {
-      CLOG_E("MemoryPool: tier %zu max_size overflows after alignment rounding; falling back.", i);
+      MEMORY_POOL_LOG("MemoryPool: tier %zu max_size overflows after alignment rounding; falling back.", i);
+
       return false;
     }
 
     if VUNLIKELY (i > 0 && tiers[i].max_size <= tiers[i - 1].max_size) {
-      CLOG_E("MemoryPool: tier %zu max_size is not strictly increasing; falling back to default pyramid.", i);
+      MEMORY_POOL_LOG("MemoryPool: tier %zu max_size is not strictly increasing; falling back to default pyramid.", i);
+
       return false;
     }
   }
@@ -666,7 +693,8 @@ static bool validate_tiers_log(const std::vector<MemoryPool::Tier>& tiers) noexc
 
 static MemoryPool::Config create_memory_config(int level, bool prealloc) {
   if VUNLIKELY (level < kMinMemoryLevel || level > kMaxMemoryLevel) {
-    CLOG_W("MemoryPool: level %d out of range [%d, %d], clamped.", level, kMinMemoryLevel, kMaxMemoryLevel);
+    MEMORY_POOL_LOG("MemoryPool: level %d out of range [%d, %d], clamped.", level, kMinMemoryLevel, kMaxMemoryLevel);
+
     level = (level < kMinMemoryLevel) ? kMinMemoryLevel : kMaxMemoryLevel;
   }
 
@@ -719,7 +747,7 @@ MemoryPool::MemoryPool(const Config& config) : impl_(std::make_unique<Impl>()) {
   const size_t batch_size = config.batch_size == 0U ? kDefaultBatchSize : config.batch_size;
 
   if VUNLIKELY (config.batch_size == 0U) {
-    CLOG_W("MemoryPool: batch_size is 0; fallback to %zu.", kDefaultBatchSize);
+    MEMORY_POOL_LOG("MemoryPool: batch_size is 0; fallback to %zu.", kDefaultBatchSize);
   }
 
   impl_->owned_states.reserve(source.size());
@@ -779,6 +807,13 @@ MemoryPool::MemoryPool(const Config& config) : impl_(std::make_unique<Impl>()) {
 }
 
 MemoryPool::~MemoryPool() {
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    (void)impl_.release();
+    return;
+  }
+#endif
+
   for (auto& state : impl_->owned_states) {
     for (const MemoryChunk& chunk : state->chunks) {
       ::operator delete(chunk.ptr, chunk.bytes, std::align_val_t{kBlockAlignment});
@@ -794,7 +829,8 @@ MemoryPool::~MemoryPool() {
 
 void* MemoryPool::allocate(size_t bytes, size_t alignment) noexcept {
   if VUNLIKELY (!is_power_of_two(alignment)) {
-    CLOG_E("MemoryPool::allocate: alignment %zu is not a power of two; returning nullptr.", alignment);
+    MEMORY_POOL_LOG("MemoryPool::allocate: alignment %zu is not a power of two; returning nullptr.", alignment);
+
     return nullptr;
   }
 
@@ -828,7 +864,8 @@ void* MemoryPool::allocate(size_t bytes, size_t alignment) noexcept {
 
 void MemoryPool::deallocate(void* p, size_t bytes, size_t alignment) noexcept {
   if VUNLIKELY (!is_power_of_two(alignment)) {
-    CLOG_E("MemoryPool::deallocate: alignment %zu is not a power of two; leaking %p.", alignment, p);
+    MEMORY_POOL_LOG("MemoryPool::deallocate: alignment %zu is not a power of two; leaking %p.", alignment, p);
+
     return;
   }
 
@@ -1098,8 +1135,8 @@ MemoryPool::Config MemoryPool::get_default_config() {
 
     if VUNLIKELY (ec != std::errc() || ptr != last) {
       // LCOV_EXCL_START GCOVR_EXCL_START
-      CLOG_W("MemoryPool: VLINK_MEMORY_LEVEL=\"%s\" is not a valid integer, fallback to %d.", env_value.c_str(),
-             kDefaultMemoryLevel);
+      MEMORY_POOL_LOG("MemoryPool: VLINK_MEMORY_LEVEL=\"%s\" is not a valid integer, fallback to %d.",
+                      env_value.c_str(), kDefaultMemoryLevel);
 
       return kDefaultMemoryLevel;
       // LCOV_EXCL_STOP GCOVR_EXCL_STOP
@@ -1107,8 +1144,8 @@ MemoryPool::Config MemoryPool::get_default_config() {
 
     if VUNLIKELY (parsed < kMinMemoryLevel || parsed > kMaxMemoryLevel) {
       // LCOV_EXCL_START GCOVR_EXCL_START
-      CLOG_W("MemoryPool: VLINK_MEMORY_LEVEL=%d out of range [%d, %d], clamped.", parsed, kMinMemoryLevel,
-             kMaxMemoryLevel);
+      MEMORY_POOL_LOG("MemoryPool: VLINK_MEMORY_LEVEL=%d out of range [%d, %d], clamped.", parsed, kMinMemoryLevel,
+                      kMaxMemoryLevel);
 
       return parsed < kMinMemoryLevel ? kMinMemoryLevel : kMaxMemoryLevel;
       // LCOV_EXCL_STOP GCOVR_EXCL_STOP
@@ -1129,8 +1166,9 @@ MemoryPool::Config MemoryPool::get_default_config() {
 
     if VUNLIKELY (ec != std::errc() || ptr != last || parsed == 0U) {
       // LCOV_EXCL_START GCOVR_EXCL_START
-      CLOG_W("MemoryPool: VLINK_MEMORY_BATCH_SIZE=\"%s\" is not a positive integer, fallback to %zu.",
-             env_value.c_str(), kDefaultBatchSize);
+      MEMORY_POOL_LOG("MemoryPool: VLINK_MEMORY_BATCH_SIZE=\"%s\" is not a positive integer, fallback to %zu.",
+                      env_value.c_str(), kDefaultBatchSize);
+
       return kDefaultBatchSize;
       // LCOV_EXCL_STOP GCOVR_EXCL_STOP
     }

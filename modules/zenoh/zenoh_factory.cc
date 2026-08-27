@@ -34,6 +34,7 @@
 
 #include "./base/elapsed_timer.h"
 #include "./base/helpers.h"
+#include "./base/utils.h"
 #include "./extension/qos_profile.h"
 #include "./impl/server_impl.h"
 #include "./impl/ssl_options.h"
@@ -402,67 +403,6 @@ bool ZenohShmSupport::is_support_loan(const ZenohSessionPtr& session) {
   return enabled_ && init_locked(session);
 }
 
-bool ZenohShmSupport::init_locked(const ZenohSessionPtr& session) {
-  if (!enabled_) {
-    return false;
-  }
-
-  if (ready_ && z_internal_check(provider_)) {
-    return true;
-  }
-
-  if VUNLIKELY (!session || !z_internal_check(*session)) {
-    return false;
-  }
-
-  z_owned_shared_shm_provider_t provider;
-  z_internal_null(&provider);
-
-  z_shm_provider_state state = Z_SHM_PROVIDER_STATE_DISABLED;
-  z_result_t ret = z_obtain_shm_provider(z_loan(*session), &provider, &state);
-
-  if (ret == Z_OK && z_internal_check(provider)) {
-    if (z_internal_check(provider_)) {
-      z_drop(z_move(provider_));
-    }
-
-    z_take(&provider_, z_move(provider));
-    ready_ = true;
-    return true;
-  }
-
-  if (z_internal_check(provider)) {
-    z_drop(z_move(provider));
-  }
-
-  ready_ = false;
-
-  if (state == Z_SHM_PROVIDER_STATE_INITIALIZING) {
-    return false;
-  }
-
-  VLOG_W("ZenohFactory: Zenoh SHM provider is not ready, state=", static_cast<int>(state), ", ret=", +ret, ".");
-  return false;
-}
-
-void ZenohShmSupport::clear_locked() {
-  for (auto& [data, shm] : loan_map_) {
-    (void)data;
-
-    if (z_internal_check(shm)) {
-      z_drop(z_move(shm));
-    }
-  }
-
-  loan_map_.clear();
-
-  if (z_internal_check(provider_)) {
-    z_drop(z_move(provider_));
-  }
-
-  ready_ = false;
-}
-
 Bytes ZenohShmSupport::loan(const ZenohSessionPtr& session, int64_t size) {
   if VUNLIKELY (size <= 0) {
     return Bytes();
@@ -609,6 +549,67 @@ bool ZenohShmSupport::build_payload(z_owned_bytes_t* payload, const Bytes& bytes
 
   return z_bytes_copy_from_buf(payload, bytes.data(), bytes.size()) == Z_OK;
 }
+
+bool ZenohShmSupport::init_locked(const ZenohSessionPtr& session) {
+  if (!enabled_) {
+    return false;
+  }
+
+  if (ready_ && z_internal_check(provider_)) {
+    return true;
+  }
+
+  if VUNLIKELY (!session || !z_internal_check(*session)) {
+    return false;
+  }
+
+  z_owned_shared_shm_provider_t provider;
+  z_internal_null(&provider);
+
+  z_shm_provider_state state = Z_SHM_PROVIDER_STATE_DISABLED;
+  z_result_t ret = z_obtain_shm_provider(z_loan(*session), &provider, &state);
+
+  if (ret == Z_OK && z_internal_check(provider)) {
+    if (z_internal_check(provider_)) {
+      z_drop(z_move(provider_));
+    }
+
+    z_take(&provider_, z_move(provider));
+    ready_ = true;
+    return true;
+  }
+
+  if (z_internal_check(provider)) {
+    z_drop(z_move(provider));
+  }
+
+  ready_ = false;
+
+  if (state == Z_SHM_PROVIDER_STATE_INITIALIZING) {
+    return false;
+  }
+
+  VLOG_W("ZenohFactory: Zenoh SHM provider is not ready, state=", static_cast<int>(state), ", ret=", +ret, ".");
+  return false;
+}
+
+void ZenohShmSupport::clear_locked() {
+  for (auto& [data, shm] : loan_map_) {
+    (void)data;
+
+    if (z_internal_check(shm)) {
+      z_drop(z_move(shm));
+    }
+  }
+
+  loan_map_.clear();
+
+  if (z_internal_check(provider_)) {
+    z_drop(z_move(provider_));
+  }
+
+  ready_ = false;
+}
 #endif
 
 // ZenohFactory
@@ -626,7 +627,15 @@ ZenohFactory::ZenohFactory() {
   init();
 }
 
-ZenohFactory::~ZenohFactory() { deinit(); }
+ZenohFactory::~ZenohFactory() {
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    return;
+  }
+#endif
+
+  deinit();
+}
 
 void ZenohFactory::init() {
   bool expected = false;
@@ -791,6 +800,85 @@ bool ZenohFactory::read_header(ZenohHeader& header, const z_loaned_bytes_t* atta
 int ZenohFactory::get_default_domain_id() {
   const std::string& domain_str = Utils::get_env("VLINK_ZENOH_DOMAIN");
   return Helpers::to_int(domain_str, 0);
+}
+
+uint32_t ZenohFactory::get_channel(const std::string& event) noexcept {
+  if (event.empty()) {
+    return 0;
+  }
+
+  uint32_t numeric = 0;
+  const auto* begin = event.data();
+  const auto* end = begin + event.size();
+  auto [ptr, error] = std::from_chars(begin, end, numeric);
+
+  if (error == std::errc() && ptr == end) {
+    return numeric;
+  }
+
+  uint32_t hash = 2166136261U;
+  for (const unsigned char ch : event) {
+    hash ^= ch;
+    hash *= 16777619U;
+  }
+  return hash;
+}
+
+std::string ZenohFactory::get_topic(const std::string& address, const std::string& event, int32_t domain) {
+  static constexpr char kHex[] = "0123456789abcdef";
+  std::string event_hex;
+  event_hex.reserve(std::max<size_t>(1, event.size() * 2));
+
+  if (event.empty()) {
+    event_hex.push_back('_');
+  } else {
+    for (const unsigned char ch : event) {
+      event_hex.push_back(kHex[ch >> 4U]);
+      event_hex.push_back(kHex[ch & 0x0FU]);
+    }
+  }
+
+  std::string topic = address;
+  if (topic.empty() || topic.back() != '/') {
+    topic.push_back('/');
+  }
+  topic += "@vlink/v1/";
+  topic += std::to_string(domain);
+  topic.push_back('/');
+  topic += event_hex;
+  return topic;
+}
+
+Conf::PropertiesMap ZenohFactory::resolve_properties(ZenohConf& conf, const Conf::PropertiesMap& node_properties) {
+  auto properties = ZenohConf::get_global_all_properties();
+
+  if (!conf.qos.empty()) {
+    properties["qos"] = conf.qos;
+  }
+  if (conf.depth > 0) {
+    properties["depth"] = std::to_string(conf.depth);
+  }
+
+  conf.append_properties(properties);
+  for (const auto& [key, value] : node_properties) {
+    properties[key] = value;
+  }
+
+  if (auto iter = properties.find("qos"); iter != properties.end()) {
+    conf.qos = iter->second;
+  }
+  if (auto iter = properties.find("depth"); iter != properties.end()) {
+    int32_t parsed = 0;
+    const auto* begin = iter->second.data();
+    const auto* end = begin + iter->second.size();
+    auto [ptr, error] = std::from_chars(begin, end, parsed);
+    if (error == std::errc() && ptr == end && parsed >= 0) {
+      conf.depth = parsed;
+    } else {
+      VLOG_W("ZenohFactory: Invalid depth property='", iter->second, "', keeping configured depth=", conf.depth, ".");
+    }
+  }
+  return properties;
 }
 
 z_priority_t ZenohFactory::convert_priority(Qos::Additions::Priority priority) {
@@ -1465,85 +1553,6 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
   return session;
 }
 
-uint32_t ZenohFactory::get_channel(const std::string& event) noexcept {
-  if (event.empty()) {
-    return 0;
-  }
-
-  uint32_t numeric = 0;
-  const auto* begin = event.data();
-  const auto* end = begin + event.size();
-  auto [ptr, error] = std::from_chars(begin, end, numeric);
-
-  if (error == std::errc() && ptr == end) {
-    return numeric;
-  }
-
-  uint32_t hash = 2166136261U;
-  for (const unsigned char ch : event) {
-    hash ^= ch;
-    hash *= 16777619U;
-  }
-  return hash;
-}
-
-std::string ZenohFactory::get_topic(const std::string& address, const std::string& event, int32_t domain) {
-  static constexpr char kHex[] = "0123456789abcdef";
-  std::string event_hex;
-  event_hex.reserve(std::max<size_t>(1, event.size() * 2));
-
-  if (event.empty()) {
-    event_hex.push_back('_');
-  } else {
-    for (const unsigned char ch : event) {
-      event_hex.push_back(kHex[ch >> 4U]);
-      event_hex.push_back(kHex[ch & 0x0FU]);
-    }
-  }
-
-  std::string topic = address;
-  if (topic.empty() || topic.back() != '/') {
-    topic.push_back('/');
-  }
-  topic += "@vlink/v1/";
-  topic += std::to_string(domain);
-  topic.push_back('/');
-  topic += event_hex;
-  return topic;
-}
-
-Conf::PropertiesMap ZenohFactory::resolve_properties(ZenohConf& conf, const Conf::PropertiesMap& node_properties) {
-  auto properties = ZenohConf::get_global_all_properties();
-
-  if (!conf.qos.empty()) {
-    properties["qos"] = conf.qos;
-  }
-  if (conf.depth > 0) {
-    properties["depth"] = std::to_string(conf.depth);
-  }
-
-  conf.append_properties(properties);
-  for (const auto& [key, value] : node_properties) {
-    properties[key] = value;
-  }
-
-  if (auto iter = properties.find("qos"); iter != properties.end()) {
-    conf.qos = iter->second;
-  }
-  if (auto iter = properties.find("depth"); iter != properties.end()) {
-    int32_t parsed = 0;
-    const auto* begin = iter->second.data();
-    const auto* end = begin + iter->second.size();
-    auto [ptr, error] = std::from_chars(begin, end, parsed);
-    if (error == std::errc() && ptr == end && parsed >= 0) {
-      conf.depth = parsed;
-    } else {
-      VLOG_W("ZenohFactory: Invalid depth property='", iter->second, "', keeping configured depth=", conf.depth, ".");
-    }
-  }
-  return properties;
-}
-
 const Qos& ZenohFactory::find_qos(uint8_t impl_type, const std::string& name) {
   if (name.empty()) {
     if ((impl_type & kPublisher) || (impl_type & kSubscriber)) {
@@ -1832,45 +1841,6 @@ bool ZenohServer::release(const Bytes& bytes) {
 #endif
 }
 
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-bool ZenohServer::build_payload(z_owned_bytes_t* payload, const Bytes& bytes) {
-#if VLINK_ZENOH_SHM_AVAILABLE
-  return shm_.build_payload(payload, bytes);
-#else
-  return z_bytes_copy_from_buf(payload, bytes.data(), bytes.size()) == Z_OK;
-#endif
-}
-
-void ZenohServer::drop_query(uint64_t req_id) {
-  std::lock_guard lock(query_mtx_);
-  auto iter = query_map_.find(req_id);
-
-  if VLIKELY (iter != query_map_.end()) {
-    z_drop(z_move(iter->second));
-    query_map_.erase(iter);
-  }
-  query_deadlines_.erase(req_id);
-}
-
-void ZenohServer::cleanup_expired_queries() {
-  const auto now = std::chrono::steady_clock::now();
-  std::lock_guard lock(query_mtx_);
-
-  for (auto iter = query_deadlines_.begin(); iter != query_deadlines_.end();) {
-    if (iter->second > now) {
-      ++iter;
-      continue;
-    }
-
-    auto query_iter = query_map_.find(iter->first);
-    if (query_iter != query_map_.end()) {
-      z_drop(z_move(query_iter->second));
-      query_map_.erase(query_iter);
-    }
-    iter = query_deadlines_.erase(iter);
-  }
-}
-
 bool ZenohServer::reply(uint64_t channel, uint64_t req_id, const Bytes& resp_data) {
   ZenohHeader header{guid_, 0, channel, req_id};
   z_owned_bytes_t attachment;
@@ -2071,6 +2041,45 @@ void ZenohServer::on_data_callback(z_loaned_query_t* query, void* context) {
   instance->process_message(header.channel, header.seq, message_loop, Bytes::shallow_copy(payload.data, payload.size));
 }
 
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+bool ZenohServer::build_payload(z_owned_bytes_t* payload, const Bytes& bytes) {
+#if VLINK_ZENOH_SHM_AVAILABLE
+  return shm_.build_payload(payload, bytes);
+#else
+  return z_bytes_copy_from_buf(payload, bytes.data(), bytes.size()) == Z_OK;
+#endif
+}
+
+void ZenohServer::drop_query(uint64_t req_id) {
+  std::lock_guard lock(query_mtx_);
+  auto iter = query_map_.find(req_id);
+
+  if VLIKELY (iter != query_map_.end()) {
+    z_drop(z_move(iter->second));
+    query_map_.erase(iter);
+  }
+  query_deadlines_.erase(req_id);
+}
+
+void ZenohServer::cleanup_expired_queries() {
+  const auto now = std::chrono::steady_clock::now();
+  std::lock_guard lock(query_mtx_);
+
+  for (auto iter = query_deadlines_.begin(); iter != query_deadlines_.end();) {
+    if (iter->second > now) {
+      ++iter;
+      continue;
+    }
+
+    auto query_iter = query_map_.find(iter->first);
+    if (query_iter != query_map_.end()) {
+      z_drop(z_move(query_iter->second));
+      query_map_.erase(query_iter);
+    }
+    iter = query_deadlines_.erase(iter);
+  }
+}
+
 // ZenohClient
 ZenohClient::ZenohClient(const ZenohID& id) {
   z_internal_null(&liveliness_sub_);
@@ -2170,6 +2179,13 @@ void ZenohClient::start_liveliness() {
 #endif
 }
 
+#ifdef VLINK_ENABLE_ZENOH_PICO
+void ZenohClient::update_local_server_count(uint32_t count) {
+  local_server_count_.store(count, std::memory_order_release);
+  update_connection_state();
+}
+#endif
+
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 bool ZenohClient::is_support_loan() const {
 #if VLINK_ZENOH_SHM_AVAILABLE
@@ -2198,15 +2214,6 @@ bool ZenohClient::release(const Bytes& bytes) {
 #else
   (void)bytes;
   return false;
-#endif
-}
-
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-bool ZenohClient::build_payload(z_owned_bytes_t* payload, const Bytes& bytes) {
-#if VLINK_ZENOH_SHM_AVAILABLE
-  return shm_.build_payload(payload, bytes);
-#else
-  return z_bytes_copy_from_buf(payload, bytes.data(), bytes.size()) == Z_OK;
 #endif
 }
 
@@ -2408,6 +2415,15 @@ void ZenohClient::on_liveliness_change(z_loaned_sample_t* sample, void* context)
   instance->update_connection_state();
 }
 
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+bool ZenohClient::build_payload(z_owned_bytes_t* payload, const Bytes& bytes) {
+#if VLINK_ZENOH_SHM_AVAILABLE
+  return shm_.build_payload(payload, bytes);
+#else
+  return z_bytes_copy_from_buf(payload, bytes.data(), bytes.size()) == Z_OK;
+#endif
+}
+
 void ZenohClient::update_connection_state() {
   bool connected = server_count_.load(std::memory_order_acquire) > 0;
 #ifdef VLINK_ENABLE_ZENOH_PICO
@@ -2419,13 +2435,6 @@ void ZenohClient::update_connection_state() {
     traverse_server_connect_callback([connected](NodeImpl*, const auto& callback) { callback(connected); });
   }
 }
-
-#ifdef VLINK_ENABLE_ZENOH_PICO
-void ZenohClient::update_local_server_count(uint32_t count) {
-  local_server_count_.store(count, std::memory_order_release);
-  update_connection_state();
-}
-#endif
 
 // ZenohPublisher
 ZenohPublisher::ZenohPublisher(const ZenohID& id) {
@@ -2613,15 +2622,6 @@ bool ZenohPublisher::release(const Bytes& bytes) {
 #endif
 }
 
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-bool ZenohPublisher::build_payload(z_owned_bytes_t* payload, const Bytes& bytes) {
-#if VLINK_ZENOH_SHM_AVAILABLE
-  return shm_.build_payload(payload, bytes);
-#else
-  return z_bytes_copy_from_buf(payload, bytes.data(), bytes.size()) == Z_OK;
-#endif
-}
-
 bool ZenohPublisher::publish(uint64_t channel, const Bytes& bytes) {
   if VUNLIKELY (!z_internal_check(pub_)) {
     return false;
@@ -2692,6 +2692,15 @@ void ZenohPublisher::on_subscriber_liveliness(z_loaned_sample_t* sample, void* c
   instance->check_matching();
 }
 #endif
+
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+bool ZenohPublisher::build_payload(z_owned_bytes_t* payload, const Bytes& bytes) {
+#if VLINK_ZENOH_SHM_AVAILABLE
+  return shm_.build_payload(payload, bytes);
+#else
+  return z_bytes_copy_from_buf(payload, bytes.data(), bytes.size()) == Z_OK;
+#endif
+}
 
 // ZenohSubscriber
 ZenohSubscriber::ZenohSubscriber(const ZenohID& id) {

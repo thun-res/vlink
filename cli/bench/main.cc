@@ -211,7 +211,7 @@ std::string transport_unavailable_reason(const std::string& url) {
     return "shm:// is not compiled in this build";
 #else
 
-    if (!vlink::ShmConf::auto_init_roudi(true)) {
+    if (!vlink::ShmConf::auto_init_roudi(true, 2)) {
       return "iox-roudi not running";
     }
 

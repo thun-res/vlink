@@ -44,7 +44,7 @@ extern "C" {
 }
 #endif
 
-[[maybe_unused]] static constexpr size_t kMaxTaskSize = 3U;
+[[maybe_unused]] static constexpr size_t kMaxTaskSize = 500U;
 
 #ifdef VLINK_ENABLE_VIEWER_FFMPEG
 static void free_frame_image_buffer(AVFrame* frame) {

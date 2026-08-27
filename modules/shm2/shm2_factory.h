@@ -242,8 +242,6 @@ class Shm2Server final : public AbstractObject<ShmID2>, public std::enable_share
   bool reply(uint64_t channel, const Bytes& resp_data);
 
  private:
-  static void poll_requests(Shm2Server* target);
-
   alignas(64) std::atomic<uint64_t> seq_{0};
   std::atomic_bool is_suspend_{false};
   std::atomic_bool is_offering_{false};

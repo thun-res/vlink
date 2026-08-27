@@ -12,7 +12,7 @@ VLink 的 `base` 基础库是一套轻量、高性能、无第三方强制依赖
 
 | 任务 | 组件 | 头文件 | 小节 |
 | --- | --- | --- | --- |
-| 日志输出 | `Logger`（`VLOG_*` 宏） | `base/logger.h` | [8.2](#-82-logger-日志系统) |
+| 日志输出与自研文件后端 | `Logger` / `LoggerBackend` | `base/logger.h` / `base/logger_backend.h` | [8.2](#-82-logger-日志系统) |
 | 承载/传递原始字节 | `Bytes` | `base/bytes.h` | [8.3](#-83-bytes-字节载体) |
 | 对象与 PMR 容器复用内存池 | `MemoryPool` / `MemoryResource` | `base/memory_pool.h` | [8.4](#-84-内存池与-pmr-接入) |
 | 类型擦除的可调用包装 | `Function` / `MoveFunction` | `base/functional.h` | [8.5](#-85-function-与-movefunction) |
@@ -32,14 +32,17 @@ VLink 的 `base` 基础库是一套轻量、高性能、无第三方强制依赖
 
 ## 📝 8.2 Logger 日志系统
 
-`vlink::Logger` 是全局单例日志器：`Logger::init()` 初始化一次后，可在任意位置经宏写日志。输出同时面向控制台与文件两个 Sink，二者最低输出级别独立设置。
+`vlink::Logger` 是全局单例日志器：在首次日志调用前用 `Logger::init()` 配置一次，
+即可在任意位置经宏写日志；Logger 构造完成后的重复 `init()` 不会重建或重配置后端。
+输出同时面向控制台与文件两个 Sink，二者最低输出级别独立设置。第二个参数是生成
+日志文件的基础目录，不是具体文件名；传空时从 `VLINK_LOG_DIR` 或临时目录自动选择。
 
 ### 8.2.1 快速开始
 
 ```cpp
 #include <vlink/base/logger.h>
 
-vlink::Logger::init("my_app", "/var/log/my_app.log");
+vlink::Logger::init("my_app", "/var/log/my_app");
 vlink::Logger::set_console_level(vlink::Logger::kInfo);
 vlink::Logger::set_file_level(vlink::Logger::kDebug);
 
@@ -68,18 +71,54 @@ SLOG_D << "values: " << 42 << " temp=" << 78.5;
 | 写法 | 宏前缀 | 示例 | 特点 |
 | --- | --- | --- | --- |
 | 流式拼接 | `VLOG_*` | `VLOG_I("x=", x)` | 拼接式，零堆分配 |
-| 占位格式化 | `MLOG_*` | `MLOG_I("x={}", x)` | `{}` 占位符 |
+| 占位格式化 | `MLOG_*` | `MLOG_I("x={:04}", x)` | `{}` 占位符与 std::format 风格修饰 |
 | C 风格 | `CLOG_*` | `CLOG_I("x=%d", x)` | `printf` 风格 |
 | RAII 流 | `SLOG_*` | `SLOG_I << "x=" << x` | 析构时提交 |
 
-新代码默认优先 `VLOG_*`。多段嵌入值、宽度/精度等复杂格式控制推荐
-`CLOG_*`，格式符必须与实参类型一致；`MLOG_*` 主要沿用已经采用 `{}`
-占位和 formatter 的模块。Info 不用于逐帧热路径；Fatal 只用于状态已
-无法安全继续的错误，不用于普通参数校验或可恢复失败。
+四种普通宏都会先检查编译期与运行期级别，再求值消息参数；当控制台和文件
+Sink 都过滤该级别时，函数调用、自增等参数副作用不会发生。若昂贵计算在
+宏调用之前完成，仍应使用 `VLINK_LOG_IF_T/D/I/W/E/F` 包住整段准备逻辑。
+
+新代码默认优先 `VLOG_*`。宽度/精度/进制等格式控制用 `MLOG_*` 的
+std::format 风格修饰（`[[fill]align][sign][#][0][width][.precision][type]`，
+如 `{:08.2f}`、`{:#x}`；宽度/精度也可写作 `{}`/`{n}` 从实参动态取值，
+如 `{:>{}}`）或 `CLOG_*`，后者格式符必须与实参类型一致。
+Info 不用于逐帧热路径；Fatal 只用于状态已无法安全继续的错误，不用于
+普通参数校验或可恢复失败。
 
 `kFatal` 级别在写日志后抛出异常，`e.what()` 携带日志消息，可经 try/catch 捕获。编译期级别过滤、自定义日志后端、崩溃回溯环形缓冲等进阶能力见头文件。完整示例见 [`examples/base/logger_basic/`](../examples/base/logger_basic/)。
 
-### 8.2.3 调用点限频
+`ENABLE_LOG_BACKEND=ON` 使用自研 `LoggerBackend`，由 `MessageLoop` 串行处理异步文件
+写入，并用 `Timer` 执行周期 flush。关闭时在 Android、QNX 或 Linux 上使用平台日志；
+桌面与 Linux 默认开启，Android/QNX 默认关闭。自研后端支持队列背压、错误级
+即时刷新、固定文件/时间戳文件轮转、UTC 格式和 backtrace；切换后端不改变 Logger API
+与日志宏。
+
+每个轮转文件集只允许一个 backend 实例独占；多进程应使用不同目录或包含 PID 的
+基础目录。flush 仅把 C 运行库缓冲提交给操作系统，不等同于断电持久化所需的 `fsync`。
+
+### 8.2.3 直接使用 LoggerBackend
+
+需要脱离全局 Logger 管理文件后端时，可包含 `vlink/base/logger_backend.h` 并直接构造
+`LoggerBackend`。构造函数会立即创建文件并启动继承的 `MessageLoop` worker；
+析构前必须先停止所有生产者，正常析构会排空仍在等待的记录并 flush。不要手动停止后
+再次启动 backend；直接停止 worker 可能丢弃尚未进入处理批次的记录。配置、文件或
+worker 初始化失败不会抛出后端异常，而是调用 `ErrorHandler` 并使 backend 进入永久
+错误状态。
+
+`LoggerBackend::Config` 在构造时固定：`log_path` 是生成日志文件的基础目录，
+`max_file_size` 是单文件轮转阈值，`max_files` 在时间戳策略下表示文件保留目标、在
+固定文件名策略下表示备份数（另有一个活动文件）；旧时间戳文件删除失败时继续写活动
+文件，并在后续轮转重试裁剪。`queue_size` 是 dispatcher 队列槽数，
+`flush_interval_ms=0` 表示逐条 flush。`fixed_filename` 选择
+`<app_name>.log` 与数字备份，否则生成时间戳文件；`append` 选择继续活动/最新文件；
+`block_when_full` 控制普通记录是否等待，Error/Fatal 始终阻塞并受保护。
+
+`log()` 返回 `true` 仅表示记录已被接受处理，不承诺之后一定写入文件。`kOff`、后端
+停止或进入永久错误、分配/入队失败，以及非阻塞满队列中没有可淘汰普通记录时返回
+`false`。首次永久错误会调用 `ErrorHandler`；此后不再接受记录。
+
+### 8.2.4 调用点限频
 
 高频路径可使用 `VLOG_{T,D,I,W,E}_EVERY_MS(interval_ms, ...)`，在同一源码调用点按周期限制重复日志：
 
@@ -315,9 +354,12 @@ sub.listen([&](const MyMsg& msg) {
 | --- | --- |
 | `kOptimizationStrategy` | 默认，重试至多 10 次（每次间隔 1ms）后丢弃一个可丢弃任务再入队 |
 | `kPopStrategy` | 立即丢弃一个可丢弃任务并入队新任务 |
-| `kBlockStrategy` | 持续重试直至有空闲槽位 |
+| `kBlockStrategy` | 普通/优先级队列等待容量、策略切换或退出通知；无锁队列持续重试 |
 
 优先级循环用 `post_task_with_priority(cb, priority)`，priority 为必填参数（无默认值），取值自 `kLowestPriority` 至 `kHighestPriority`，常规任务约定使用优先级常量 `kNormalPriority`；其他队列类型忽略优先级。QoS 扩展中的 `Qos::Additions::Priority` 是独立于 MessageLoop 优先级的另一套配置，见 [QoS 配置](05-qos.md)。
+
+单次提交显式指定 `TaskOverflowPolicy::kBlock` 时不响应 dispatcher 策略切换，仅在容量
+释放、任务取消或 loop 退出时结束等待。
 
 ### 8.6.5 链式调度 exec_task
 
@@ -385,8 +427,9 @@ loop.run();
 
 | 方法 | 语义 |
 | --- | --- |
-| `start()` / `stop()` / `restart()` | 启动 / 停止 / 重置后重启 |
+| `start()` / `stop()` / `restart()` | 启动 / 停止 / 重置后重启；活跃时 `start(cb)` 仅按 `set_callback(cb)` 的语义替换回调 |
 | `set_interval(ms)` / `set_loop_count(n)` | 修改间隔 / 触发次数，对活跃定时器立即生效 |
+| `set_callback(cb)` | 替换回调 |
 | `set_strict(true)` | 严格模式：错过的 tick 立即补发 |
 | `is_active()` / `get_invoke_count()` | 是否运行 / 已触发次数 |
 | `Timer::call_once(loop, ms, cb)` | 静态方法，单次触发 |
@@ -1104,7 +1147,7 @@ vlink::Co::Task<void> orchestrate(vlink::MessageLoop& loop) {
 | 组件 | 头文件 | 功能 |
 | --- | --- | --- |
 | `Format` | `base/format.h` | 轻量 `{}` 占位符格式化器（`MLOG_*` 内部使用） |
-| `FastStream` | `base/fast_stream.h` | 高性能输出流（Logger 内部引擎） |
+| `FastStream` | `base/fast_stream.h` | 高性能输出流；`push()` 提供 Logger 使用的无 locale 快速拼接 |
 | `TerminalStream` | `base/terminal_stream.h` | CLI 使用的线程安全、TTY 感知带缓冲 stdout 单例 |
 | `Utils` | `base/utils.h` | 进程/线程/网络/信号等跨平台工具函数 |
 | `Helpers` | `base/helpers.h` | 字符串/数字/哈希/转义等无状态工具 |

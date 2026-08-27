@@ -28,9 +28,11 @@
 #include <doctest/doctest.h>
 
 #include <cstdint>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <sstream>
+#include <stdexcept>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
@@ -80,6 +82,18 @@ TEST_SUITE("base-Uint128") {
     CHECK_EQ(v.get_high(), 0x12u);
     CHECK_EQ(v.get_low(), 0x34u);
     CHECK_EQ(static_cast<__uint128_t>(v), native);
+  }
+
+  TEST_CASE("native signed uint128 construction preserves all bits") {
+    const auto positive = static_cast<__int128_t>((static_cast<__uint128_t>(0x12u) << 64) | 0x34u);
+    const Uint128 positive_value(positive);
+
+    CHECK_EQ(positive_value.get_high(), 0x12u);
+    CHECK_EQ(positive_value.get_low(), 0x34u);
+
+    const Uint128 negative_value(static_cast<__int128_t>(-2));
+    CHECK_EQ(negative_value.get_high(), UINT64_MAX);
+    CHECK_EQ(negative_value.get_low(), UINT64_MAX - 1U);
   }
 #endif
 
@@ -262,6 +276,9 @@ TEST_SUITE("base-Uint128") {
 
     CHECK_EQ(result.get_high(), 1u);
     CHECK_EQ(result.get_low(), UINT64_MAX - 1u);
+
+    CHECK_EQ(Uint128(0u, UINT64_MAX) * Uint128(0u, UINT64_MAX), Uint128(UINT64_MAX - 1u, 1u));
+    CHECK_EQ(Uint128(0u, 3u) * Uint128(2u, 0u), Uint128(6u, 0u));
   }
 
   TEST_CASE("operator*= modifies value in place") {
@@ -291,16 +308,32 @@ TEST_SUITE("base-Uint128") {
       Uint128 b(0u, 2u);
       CHECK_EQ(a / b, Uint128(0u, static_cast<uint64_t>(1u) << 63));
     }
+
+    SUBCASE("high-word quotient") {
+      const Uint128 dividend(3u, 1u);
+      const Uint128 divisor(0u, 3u);
+
+      CHECK_EQ(dividend / divisor, Uint128(1u, 0u));
+      CHECK_EQ(dividend % divisor, Uint128(0u, 1u));
+    }
+
+    SUBCASE("high-word remainder") {
+      const Uint128 dividend(3u, 1u);
+      const Uint128 divisor(2u, 0u);
+
+      CHECK_EQ(dividend / divisor, Uint128(0u, 1u));
+      CHECK_EQ(dividend % divisor, Uint128(1u, 1u));
+    }
   }
 
   TEST_CASE("division and modulo by zero throw") {
     Uint128 a(0u, 10u);
     Uint128 zero;
 
-    CHECK_THROWS(a / zero);
-    CHECK_THROWS(a % zero);
-    CHECK_THROWS(a /= zero);
-    CHECK_THROWS(a %= zero);
+    CHECK_THROWS_AS(a / zero, std::domain_error);
+    CHECK_THROWS_AS(a % zero, std::domain_error);
+    CHECK_THROWS_AS(a /= zero, std::domain_error);
+    CHECK_THROWS_AS(a %= zero, std::domain_error);
   }
 
   TEST_CASE("in-place division and modulo modify value correctly") {
@@ -324,6 +357,15 @@ TEST_SUITE("base-Uint128") {
       Uint128 all_ones = ~Uint128(0u, 0u);
       CHECK_EQ(all_ones.get_high(), UINT64_MAX);
       CHECK_EQ(all_ones.get_low(), UINT64_MAX);
+    }
+
+    SUBCASE("high words") {
+      const Uint128 lhs(0xA5u, 0x3Cu);
+      const Uint128 rhs(0x3Fu, 0x5Au);
+
+      CHECK_EQ(lhs | rhs, Uint128(0xBFu, 0x7Eu));
+      CHECK_EQ(lhs & rhs, Uint128(0x25u, 0x18u));
+      CHECK_EQ(lhs ^ rhs, Uint128(0x9Au, 0x66u));
     }
   }
 
@@ -363,6 +405,11 @@ TEST_SUITE("base-Uint128") {
   }
 
   TEST_CASE("right shift by various amounts is correct") {
+    SUBCASE("shift by less than one word carries high bits into low word") {
+      const Uint128 value(0x1u, 0x20u);
+      CHECK_EQ(value >> 4, Uint128(0x0u, 0x1000000000000002ULL));
+    }
+
     SUBCASE("shift crossing 64-bit boundary") {
       Uint128 a(1u, 0u);
       Uint128 b = a >> 64;

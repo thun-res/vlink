@@ -470,12 +470,12 @@ api.register_time_callback([](uint64_t sys_time, uint64_t boot_time) {
 | `-s, --buf_size INT` / `-e, --mtu_size INT` | DDS 收发缓冲区 / MTU 字节数（默认 0 = 内置默认） |
 | `-n, --native` | 限制 DDS 流量到 127.0.0.1（本机测试） |
 | `-c, --iox_config PATH` | 指定 Iceoryx TOML 配置；提供此项即拉起内嵌 RouDi（direct/SHM 所需） |
-| `-l, --iox_strategy INT` | Iceoryx 内存策略（1 低 / 2 中 / 3 高，默认 2） |
+| `-l, --iox_strategy INT` | Iceoryx 内存策略（1 mini / 2 低 / 3 中 / 4 高，默认 3）；提供此项即按内置策略拉起 RouDi |
 | `-m, --iox_monitoring on\|off` | Iceoryx 监控开关（默认 `on`） |
 | `--dds_impl STRING` | DDS 实现选择（`dds` / `ddsc`） |
 | `--runnable [NAME...]` | 加载 RunablePluginInterface 插件 |
 
-> SHM 直连（`-g`）需 Iceoryx RouDi 在运行：可由 `-c` 让代理内嵌拉起，或外部预先启动 `iox-roudi`。
+> SHM 直连（`-g`）需 Iceoryx RouDi 在运行：可由 `-c` / `-l` 让代理内嵌拉起，或外部预先启动 `iox-roudi`。
 
 ```bash
 # 最简启动

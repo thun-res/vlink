@@ -46,16 +46,6 @@ const Conf* FdbusSetterImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* FdbusSetterImpl::get_abstract_node() const { return object_.get(); }
 
-bool FdbusSetterImpl::attach(class MessageLoop*) {
-  VLOG_W("Function [attach] is not supported.");
-  return false;
-}
-
-bool FdbusSetterImpl::detach() {
-  VLOG_W("Function [detach] is not supported.");
-  return false;
-}
-
 void FdbusSetterImpl::write(const Bytes& value_data) {
   if VUNLIKELY (object_->getSessionCount() == 0) {
     return;

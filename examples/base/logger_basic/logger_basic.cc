@@ -30,7 +30,7 @@
 // Scenario: Walk every public logging entry-point shipped with VLink. Four
 //           macro families are exercised:
 //             VLOG_*   stream-concat style: VLOG_I("x=", x, " y=", y);
-//             MLOG_*   {fmt}-style format:   MLOG_I("x={} y={}", x, y);
+//             MLOG_*   vlink::format style:  MLOG_I("x={} y={}", x, y);
 //             CLOG_*   printf-style:         CLOG_I("x=%d y=%d", x, y);
 //             SLOG_*   RAII ostream:         SLOG_I << "x=" << x;
 //           All four route through the same backend; pick whichever reads
@@ -38,7 +38,7 @@
 //           set_console_level / set_file_level demote-or-promote at runtime.
 // -----------------------------------------------------------------------------
 int main() {
-  vlink::Logger::init("logger_basic_demo", "/tmp/vlink_logger_basic.log");
+  vlink::Logger::init("logger_basic_demo", "/tmp/vlink_logger_basic");
   vlink::Logger::set_console_level(vlink::Logger::kTrace);
   vlink::Logger::set_file_level(vlink::Logger::kInfo);
 
@@ -56,8 +56,7 @@ int main() {
     VLOG_W_EVERY_MS(1000, "periodic [W]: retry=", retry);
   }
 
-  // MLOG_* -- {fmt}-style. Compile-time format string checking when fmt is
-  // built with FMT_ENFORCE_COMPILE_STRING; preferred for typed formatting.
+  // MLOG_* -- vlink::format-style {} placeholders.
   MLOG_T("format [T]: value={}, label={}", 42, "beta");
   MLOG_D("format [D]: elapsed={}ms", 150);
   MLOG_I("format [I]: connected to host={}, port={}", "192.168.1.1", 8080);

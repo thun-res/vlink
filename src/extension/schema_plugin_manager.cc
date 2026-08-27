@@ -74,6 +74,13 @@ SchemaPluginManager::SchemaPluginManager(std::string schema_plugin_path) : impl_
 // LCOV_EXCL_STOP GCOVR_EXCL_STOP
 
 SchemaPluginManager::~SchemaPluginManager() {
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    (void)impl_.release();
+    return;
+  }
+#endif
+
   impl_->interface.reset();
   impl_->plugin.clear();
 }

@@ -2197,6 +2197,20 @@ void CameraDialog::process_image(const QString& url, int width, int height, int 
   process_qimage(url, image, true);
 }
 
+void CameraDialog::process_error(const QString& url, int decoder_seq) {
+  auto it = camera_detail_map_.find(url.toStdString());
+  if (it == camera_detail_map_.end() || it->second.decoder_seq != decoder_seq || !it->second.label) {
+    return;
+  }
+
+  auto& detail = it->second;
+  detail.label->set_error(true);
+  detail.label->setPixmap(QPixmap());
+  detail.label->setText(tr("Load failed"));
+  detail.img = QImage();
+  detail.state = kLoadFailed;
+}
+
 void CameraDialog::process_qimage(const QString& url, const QImage& image, bool scaled_by_decoder) {
   if (quit_flag_) {
     return;
@@ -2273,20 +2287,6 @@ void CameraDialog::process_qimage(const QString& url, const QImage& image, bool 
   detail.state = kLoadSucceed;
 
   detail.frame_count += 1;
-}
-
-void CameraDialog::process_error(const QString& url, int decoder_seq) {
-  auto it = camera_detail_map_.find(url.toStdString());
-  if (it == camera_detail_map_.end() || it->second.decoder_seq != decoder_seq || !it->second.label) {
-    return;
-  }
-
-  auto& detail = it->second;
-  detail.label->set_error(true);
-  detail.label->setPixmap(QPixmap());
-  detail.label->setText(tr("Load failed"));
-  detail.img = QImage();
-  detail.state = kLoadFailed;
 }
 
 void CameraDialog::process_frame(const std::string& url, Detail& detail, const vlink::zerocopy::CameraFrame& frame) {

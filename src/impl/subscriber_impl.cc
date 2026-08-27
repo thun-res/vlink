@@ -36,8 +36,6 @@ bool SubscriberImpl::listen(IntraMsgCallback&& callback) {
   return false;
 }
 
-SubscriberImpl::SubscriberImpl() : NodeImpl(kSubscriber) {}
-
 void SubscriberImpl::set_latency_and_lost_enabled(bool enable) { (void)enable; }
 
 bool SubscriberImpl::is_latency_and_lost_enabled() const { return false; }
@@ -45,5 +43,7 @@ bool SubscriberImpl::is_latency_and_lost_enabled() const { return false; }
 int64_t SubscriberImpl::get_latency() const { return 0; }
 
 SampleLostInfo SubscriberImpl::get_lost() const { return SampleLostInfo(); }
+
+SubscriberImpl::SubscriberImpl() : NodeImpl(kSubscriber) {}
 
 }  // namespace vlink

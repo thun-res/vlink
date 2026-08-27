@@ -112,7 +112,7 @@ auto sp = vlink::Publisher<T>::create_shared(url_str);             // shared_ptr
 | --- | --- |
 | `bool init()` / `bool deinit()` | 显式生命周期；构造默认 `kWithInit` 即自动 `init()` |
 | `void interrupt()` | 中断阻塞中的 `wait_for_*` 调用 |
-| `bool attach(MessageLoop*)` / `bool detach()` | 后端支持时将回调投递到指定 MessageLoop；intra/fdbus/someip 当前不支持 |
+| `bool attach(MessageLoop*)` / `bool detach()` | 将入站回调投递到指定 MessageLoop / 解除绑定 |
 | `bool suspend()` / `bool resume()` / `bool is_suspend() const` | 暂停 / 恢复 / 查询收发 |
 | `bool is_support_loan() const` | 当前后端是否支持零拷贝借贷 |
 | `Bytes loan(int64_t size)` / `bool return_loan(const Bytes&)` | 借用 / 归还共享内存（见 [§14.10](#-1410-零拷贝)） |
@@ -164,6 +164,8 @@ URL 语法：`<scheme>://[<host>[:<port>]]/<path>[?<query>][#<frag>]`。`scheme`
 | `command` / `alarm` / `log` | 控制指令 / 故障报警 / 日志流 |
 | `parameter` / `service` / `clock` / `static` 等 | 配置 / 发现 / 时钟 / 地图，见 [QoS 配置](05-qos.md) |
 
+所有内置 profile 均默认构造 Deadline 与 Lifespan，使 `deadline.period` 和 `lifespan.duration` 都为 `-1`。有限 Deadline 仅用于自定义周期流；有限 Lifespan 还要求通信主机之间具有可靠的时钟同步。
+
 ```cpp
 vlink::Publisher<Imu> pub("dds://sensor/imu?qos=sensor");
 
@@ -183,7 +185,7 @@ vlink::Publisher<Imu> pub2("dds://sensor/imu?qos=my_sensor");
 
 ![序列化类型自动推导](images/serialization-type-detection.png)
 
-开箱即用的类型族：POD 结构体（二进制直存，无编码转换但会内存复制）、Protobuf、FlatBuffers、DDS CDR（实现 `serialize/deserialize(Cdr&)`，生成含 encapsulation header 的字节负载）、`std::string`、仅用于发送的 `const char*` / `char[]`、`vlink::Bytes`，以及实现一对编解码运算符的自定义类型。接收文本必须使用 `std::string`；机制与自定义序列化见 [消息序列化](03-serialization.md)。
+开箱即用的类型族：POD 结构体（二进制直存，无编码转换但会内存复制）、Protobuf、FlatBuffers、DDS CDR（实现 `serialize/deserialize(Cdr&)`，生成含 encapsulation header 的字节负载）、由 `VLINK_SOMEIP_FIELDS(...)` 声明的 SOME/IP 结构、`std::string`、仅用于发送的 `const char*` / `char[]`、`vlink::Bytes`，以及实现一对编解码运算符的自定义类型。接收文本必须使用 `std::string`；SOME/IP 宏用法、部署边界及其他机制见 [消息序列化](03-serialization.md#-35-someip-与自定义序列化器)。
 
 ---
 
@@ -194,12 +196,12 @@ vlink::Publisher<Imu> pub2("dds://sensor/imu?qos=my_sensor");
 | 风格 | 示例 | 适用 |
 | --- | --- | --- |
 | 流式 `VLOG_X` | `VLOG_I("frame=", id, " lat=", ms, "ms");` | 默认；多变量、零分配 |
-| 格式化 `MLOG_X` | `MLOG_W("t={} C", temp);` | fmt 风格占位 |
+| 格式化 `MLOG_X` | `MLOG_W("t={:.1f} C", temp);` | `vlink::format` 的 `{}` 占位与 std::format 风格修饰 |
 | printf 风格 `CLOG_X` | `CLOG_E("errno=%d", errno);` | 兼容既有 C 代码 |
 | RAII 流 `SLOG_X` | `SLOG_D << "a=" << a;` | 链式 `<<` |
 
-新代码默认优先 `VLOG_X`；多段嵌入值或复杂格式控制推荐 `CLOG_X`；
-`MLOG_X` 只在相邻模块已采用 `{}` 占位格式时沿用。Info 只记录低频
+新代码默认优先 `VLOG_X`；宽度/精度/进制等格式控制用 `MLOG_X` 的
+std::format 风格修饰（如 `{:08.2f}`、`{:#x}`）或 `CLOG_X`。Info 只记录低频
 正常状态，Warn 表示可恢复异常或降级，Error 表示当前操作失败，
 Fatal 只用于无法安全继续的错误。
 
@@ -322,6 +324,7 @@ target_link_libraries(app PRIVATE gen)
 | `ENABLE_SECURITY` | ON | OpenSSL 加密 |
 | `ENABLE_SQLITE` | ON | VDB bag 支持 |
 | `ENABLE_ZSTD` | ON | bag Zstd 压缩 |
+| `ENABLE_LOG_BACKEND` | ON（Android/QNX 为 OFF） | 自研日志后端；Android/QNX/Linux 可设为 OFF 使用平台日志 |
 | `ENABLE_C_API` | ON | C ABI 库 |
 | `ENABLE_PROXY` | ON | proxy / vlink-proxy |
 | `ENABLE_VIEWER` / `ENABLE_WEBVIZ` | OFF | Qt GUI / Foxglove · Rerun 桥接 |
@@ -501,11 +504,11 @@ export VLINK_DDS_PEER=10.0.0.1,10.0.0.2
 
 ![共享内存零拷贝数据流](images/shm-zerocopy-flow.png)
 
-首选处置是启动 `vlink-proxy -c`：它在自身进程内内嵌共享内存守护并预分配适配 VLink 载荷的内存池，无需额外配置。
+首选处置是启动 `vlink-proxy -l 3`：它在自身进程内内嵌共享内存守护并预分配适配 VLink 载荷的内存池，无需额外配置。
 
 ```bash
-vlink-proxy -c                   # 默认内存策略
-vlink-proxy -c -l 3              # 点云等大消息场景,使用最大档内存池
+vlink-proxy -l 3                 # 默认中档内存策略
+vlink-proxy -l 4                 # 点云等大消息场景，使用高档内存池
 ls /dev/shm | grep iox           # 验证共享内存段是否存在
 ```
 
@@ -612,7 +615,7 @@ if (!pub.init()) {
 | `Topic ... has no CDR type name.` | CDR 节点未提供 DDS 类型名；为 Bytes 节点调用 `set_ser_type(type, SchemaType::kCdr)`，或使用可自动推导类型名的 IDL/ROS 2 消息 |
 | `DDS raw/CDR mode and CDR type name cannot be changed while initialised` | 先调用 `deinit()`，修改序列化元数据后再调用 `init()` |
 | `Failed to loan buffer, size: ...` | 共享内存池不足或借出未归还，见 §14.19 |
-| `Shm roudi is not supported.` | 确认 `vlink-proxy -c` 已启动，业务进程不应自行启动 RouDi，见 §14.19 |
+| `Shm roudi is not supported.` | 确认 `vlink-proxy -l 3` 已启动，业务进程不应自行启动 RouDi，见 §14.19 |
 | `ShmConf: Input string length is too long.` | 共享内存 runtime name 超过 80 字符，缩短后重试，见 §14.19 |
 | `Database version is incompatible.` / `Mcap version is incompatible.` | Bag 与读取端版本错位，升级读取端，见 §14.23 |
 | `Must set proto dir [-d], ...` | 动态 proto 未设 schema 目录，以 `-d` 指定或设 `VLINK_PROTO_DIR` |

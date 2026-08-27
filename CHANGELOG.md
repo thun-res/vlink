@@ -1,5 +1,33 @@
 # 🗒️ 更新日志
 
+## v2.2.0 (2026/08/30)
+
+### 新增功能
+
+- **MessageLoop 回调分发**：intra、FDBUS 与 SOME/IP 节点支持 `attach()` / `detach()`；intra queue 绑定后直接投递目标 loop。
+- **SOME/IP payload 序列化**：新增 `Serializer::kSomeipType` 与一组 `VLINK_SOMEIP_*` 宏，按字段自动生成 `Bytes` 编解码，覆盖嵌套结构、容器、map、union 与 TLV，并可配置大小端、AUTOSAR alignment 和长度宽度；头文件 `include/vlink/extension/someip_serializer.h` 需显式包含。
+- **AUTOSAR SOME/IP 生成器**：支持合并多个 ARXML，并可按类型或 package 生成带依赖关系和汇总入口的多个头文件；生成注释保留类型、字段、上限、`INIT-VALUE` 来源及实际 deployment 信息，直接字段的 maximum 同步用于接收校验或截断。
+- **自研日志后端**：新增公开的 `LoggerBackend`，支持异步写入、队列背压、周期刷新、固定/时间戳轮转、UTC 和 backtrace。
+- **格式化修饰符**：`vlink::format` 与 `MLOG_*` 支持完整的 std::format 风格 spec，含动态宽度/精度、`long double`、`nullptr`、`format_as` 扩展点、`{:?}` 和返回 `std::string` 的 `format()`；无效 spec 宽容忽略，不抛异常。
+
+### 改进
+
+- **QoS 预设调整**：`kLarge` 更名为 `kStream`（URL 名 `stream`），history 由 KeepLast(500) 调整为 KeepLast(100)；`kBest` 的 history 由 KeepLast(200) 调整为 KeepLast(10)，避免饱和链路上过深的写者历史持续重传消费端已追不上的样本。
+- **日志后端配置**：CMake `ENABLE_LOG_BACKEND` / Conan `enable_log_backend` 取代原后端选择项；Android/QNX CMake 与 Android.bp 默认使用平台日志，其余构建默认启用自研后端；移除 spdlog、Quill、DLT 及其开关和依赖。
+- **日志后端迁移**：原 CMake `SELECT_LOG_BACKEND` / Conan `select_log_backend` 已删除；改用 `LoggerBackend` 时设置新开关为 `ON`，在 Android、QNX、Linux 上改用平台日志时设置为 `OFF`；旧 `VLINK_ENABLE_LOG_{SPD,QUI,DLT,NAT}` 特性宏不再提供。
+- **日志插件与热路径**：`LoggerPluginInterface` 新增 `flush()`，钩子改为 `noexcept`，修复初始化递归与卸载排空；日志宏通过运行期级别过滤后才求值参数。现有插件需适配并重新编译。
+- **MessageLoop 背压**：普通与优先级满队列阻塞改为在容量释放或退出时唤醒；全局阻塞策略也会响应策略切换，避免固定 1 ms 轮询。
+- **内存池增长粒度**：惰性增长改为按最多 64 KiB（且不小于单块）的小 chunk 安装，限定触发增长线程的单次缺页突发；预分配与分配/释放热路径不变，惰性层 chunk 数量相应增多。
+- **SHM 初始化**：内置内存策略调整为 1 mini / 2 低 / 3 中 / 4 高，默认使用 3；原 1 / 2 / 3 档调用方需对应迁移为 2 / 3 / 4。`vlink-check`、`vlink-bench` 与 SHM 单元测试自启 RouDi 时使用 2。
+
+### 修复
+
+- **QoS 时间约束默认值**：所有内置 `QosProfile` 均默认构造 Deadline 与 Lifespan，使其时长字段统一为 `-1`，避免预设额外施加发布周期约束，并防止跨机时钟偏差导致样本被过早丢弃；自定义 QoS 仍可显式配置有限值。
+- **边界正确性**：自定义日志 handler 异常不再越过 `noexcept` 边界，C 风格超长日志不再写入截断 NUL；修复 signed `__int128_t` 构造丢失高 64 位。
+- **RPC 超时判定**：请求按绝对截止时间等待并拒绝截止时间之后到达的响应，避免调度延迟导致超时响应被误判为成功。
+- **SHM 并发发布**：序列化共享同一地址的 Publisher 对底层发布端口的 loan、归还和发送操作，避免多发布者并发破坏端口状态。
+- **Windows 退出挂死**：新增 `Utils::is_terminating()` 探测进程终止阶段；终止期间各模块单例改为泄漏式释放、析构跳过跨线程清理，避免 `ExitProcess` 后 DLL 卸载回调中的锁死锁。
+
 ## v2.1.0 (2026/07/26)
 
 ### 新增功能

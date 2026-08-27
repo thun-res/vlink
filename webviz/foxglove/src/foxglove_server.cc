@@ -66,167 +66,6 @@ static void close_slow_client(const ConnectionPtr& conn, const websocketpp::lib:
   conn->close(websocketpp::close::status::policy_violation, "outgoing send buffer limit exceeded", close_ec);
 }
 
-Json FoxgloveServer::make_advertise_channel_json(const ChannelInfo& channel_info) {
-  Json channel;
-  channel["id"] = channel_info.id;
-  channel["topic"] = channel_info.topic;
-  channel["encoding"] = channel_info.encoding;
-  channel["schemaName"] = channel_info.schema_name;
-  channel["schemaEncoding"] = channel_info.schema_encoding;
-  channel["schema"] = channel_info.schema_base64.empty() ? channel_info.schema : channel_info.schema_base64;
-  return channel;
-}
-
-void FoxgloveServer::update_channel_schema_payload(ChannelInfo& channel_info) {
-  if VLIKELY (channel_info.schema_encoding == "protobuf" || is_flatbuffers_encoding(channel_info.schema_encoding)) {
-    channel_info.schema_base64 = encode_base64(channel_info.schema.data(), channel_info.schema.size());
-  } else {
-    channel_info.schema_base64.clear();
-  }
-}
-
-bool FoxgloveServer::is_binary_schema_encoding(std::string_view schema_encoding) {
-  return schema_encoding == "protobuf" || is_flatbuffers_encoding(schema_encoding);
-}
-
-bool FoxgloveServer::schemas_match(std::string_view provided_schema, std::string_view expected_schema,
-                                   std::string_view schema_encoding) {
-  if VUNLIKELY (is_binary_schema_encoding(schema_encoding)) {
-    return provided_schema == encode_base64(expected_schema.data(), expected_schema.size());
-  }
-
-  if VUNLIKELY (schema_encoding == "jsonschema" || schema_encoding == "json") {
-    try {
-      return Json::parse(provided_schema) == Json::parse(expected_schema);
-    } catch (const std::exception&) {
-    }
-  }
-
-  return provided_schema == expected_schema;
-}
-
-bool FoxgloveServer::parse_parameter_names(const Json& msg, std::vector<std::string>& out, std::string& error) {
-  out.clear();
-
-  if VUNLIKELY (!msg.contains("parameterNames") || !msg["parameterNames"].is_array()) {
-    error = "parameterNames must be an array";
-    return false;
-  }
-
-  std::unordered_set<std::string> seen;
-
-  for (const auto& item : msg["parameterNames"]) {
-    if VUNLIKELY (!item.is_string()) {
-      error = "parameterNames entries must be strings";
-      return false;
-    }
-
-    auto name = item.get<std::string>();
-
-    if VUNLIKELY (name.empty()) {
-      error = "parameterNames entries must not be empty";
-      return false;
-    }
-
-    if VLIKELY (seen.insert(name).second) {
-      out.emplace_back(std::move(name));
-    }
-  }
-
-  return true;
-}
-
-bool FoxgloveServer::get_json_u32(const Json& value, uint32_t& out) {
-  if VUNLIKELY (!value.is_number_unsigned() && !value.is_number_integer()) {
-    return false;
-  }
-
-  if VLIKELY (value.is_number_unsigned()) {
-    auto raw = value.get<uint64_t>();
-
-    if VUNLIKELY (raw > std::numeric_limits<uint32_t>::max()) {
-      return false;
-    }
-
-    out = static_cast<uint32_t>(raw);
-    return true;
-  }
-
-  auto raw = value.get<int64_t>();
-
-  if VUNLIKELY (raw < 0 || raw > static_cast<int64_t>(std::numeric_limits<uint32_t>::max())) {
-    return false;
-  }
-
-  out = static_cast<uint32_t>(raw);
-  return true;
-}
-
-Json FoxgloveServer::build_sorted_connection_entries(std::unordered_map<std::string, std::vector<std::string>>& groups,
-                                                     const char* value_key) {
-  std::vector<std::pair<std::string, std::vector<std::string>>> ordered_entries;
-  ordered_entries.reserve(groups.size());
-
-  for (auto& [name, values] : groups) {
-    std::sort(values.begin(), values.end());
-    values.erase(std::unique(values.begin(), values.end()), values.end());
-    ordered_entries.emplace_back(name, std::move(values));
-  }
-
-  std::sort(ordered_entries.begin(), ordered_entries.end(),
-            [](const auto& lhs, const auto& rhs) { return lhs.first < rhs.first; });
-
-  Json entries = Json::array();
-
-  for (auto& [name, values] : ordered_entries) {
-    Json entry;
-    entry["name"] = std::move(name);
-    entry[value_key] = std::move(values);
-    entries.emplace_back(std::move(entry));
-  }
-
-  return entries;
-}
-
-std::vector<std::string> FoxgloveServer::get_connect_endpoints() const {
-  std::vector<std::string> endpoints;
-
-  auto append_endpoint = [this, &endpoints](const std::string& host) {
-    if VUNLIKELY (host.empty()) {
-      return;
-    }
-
-    auto display_host = host;
-
-    if VUNLIKELY (display_host.find(':') != std::string::npos && display_host.front() != '[' &&
-                  display_host.back() != ']') {
-      display_host = "[" + display_host + "]";
-    }
-
-    const auto endpoint = "ws://" + display_host + ":" + std::to_string(config_.port);
-
-    if VLIKELY (std::find(endpoints.begin(), endpoints.end(), endpoint) == endpoints.end()) {
-      endpoints.emplace_back(endpoint);
-    }
-  };
-
-  if VUNLIKELY (config_.address.empty() || config_.address == "0.0.0.0") {
-    append_endpoint("127.0.0.1");
-
-    for (const auto& ip : Utils::get_all_ipv4_address(true)) {
-      if VUNLIKELY (ip == "0.0.0.0") {
-        continue;
-      }
-
-      append_endpoint(ip);
-    }
-  } else {
-    append_endpoint(config_.address);
-  }
-
-  return endpoints;
-}
-
 FoxgloveServer::FoxgloveServer(const Config& config)
     : MessageLoop(MessageLoop::kNormalType),
       config_(config),
@@ -268,23 +107,6 @@ FoxgloveServer::FoxgloveServer(const Config& config)
   if VLIKELY (config_.capabilities.publish && vlink_convert_) {
     install_publish_channels();
   }
-}
-
-void FoxgloveServer::log_connect_hint() const {
-  const auto endpoints = get_connect_endpoints();
-
-  MLOG_I("*****************************************************");
-  MLOG_I("* Open [https://app.foxglove.dev/] in your browser.");
-
-  if VLIKELY (!endpoints.empty()) {
-    MLOG_I("* Available endpoints:");
-
-    for (const auto& endpoint : endpoints) {
-      MLOG_I("* - {}", endpoint);
-    }
-  }
-
-  MLOG_I("*****************************************************");
 }
 
 FoxgloveServer::~FoxgloveServer() {
@@ -555,48 +377,126 @@ bool FoxgloveServer::init_bridge() {
   return true;
 }
 
-void FoxgloveServer::install_publish_channels() {
-  if VUNLIKELY (!vlink_convert_) {
-    return;
+bool FoxgloveServer::get_json_u32(const Json& value, uint32_t& out) {
+  if VUNLIKELY (!value.is_number_unsigned() && !value.is_number_integer()) {
+    return false;
   }
 
-  auto publish_channels = vlink_convert_->get_publish_channels();
+  if VLIKELY (value.is_number_unsigned()) {
+    auto raw = value.get<uint64_t>();
 
-  if VUNLIKELY (publish_channels.empty()) {
-    return;
-  }
-
-  std::unique_lock lock(channels_mtx_);
-
-  for (const auto& publish_channel : publish_channels) {
-    CommandRoute route;
-
-    if VUNLIKELY (!vlink_convert_->resolve_route(publish_channel, route) || route.url.empty() || route.ser.empty()) {
-      MLOG_W("Skip invalid configured Foxglove publish route: {}", publish_channel.topic);
-      continue;
+    if VUNLIKELY (raw > std::numeric_limits<uint32_t>::max()) {
+      return false;
     }
 
-    if VUNLIKELY (!is_url_allowed(route.url)) {
-      MLOG_W("Skip filtered Foxglove publish route: {} -> {}", publish_channel.topic, route.url);
-      continue;
+    out = static_cast<uint32_t>(raw);
+    return true;
+  }
+
+  auto raw = value.get<int64_t>();
+
+  if VUNLIKELY (raw < 0 || raw > static_cast<int64_t>(std::numeric_limits<uint32_t>::max())) {
+    return false;
+  }
+
+  out = static_cast<uint32_t>(raw);
+  return true;
+}
+
+Json FoxgloveServer::make_advertise_channel_json(const ChannelInfo& channel_info) {
+  Json channel;
+  channel["id"] = channel_info.id;
+  channel["topic"] = channel_info.topic;
+  channel["encoding"] = channel_info.encoding;
+  channel["schemaName"] = channel_info.schema_name;
+  channel["schemaEncoding"] = channel_info.schema_encoding;
+  channel["schema"] = channel_info.schema_base64.empty() ? channel_info.schema : channel_info.schema_base64;
+  return channel;
+}
+
+void FoxgloveServer::update_channel_schema_payload(ChannelInfo& channel_info) {
+  if VLIKELY (channel_info.schema_encoding == "protobuf" || is_flatbuffers_encoding(channel_info.schema_encoding)) {
+    channel_info.schema_base64 = encode_base64(channel_info.schema.data(), channel_info.schema.size());
+  } else {
+    channel_info.schema_base64.clear();
+  }
+}
+
+bool FoxgloveServer::is_binary_schema_encoding(std::string_view schema_encoding) {
+  return schema_encoding == "protobuf" || is_flatbuffers_encoding(schema_encoding);
+}
+
+bool FoxgloveServer::schemas_match(std::string_view provided_schema, std::string_view expected_schema,
+                                   std::string_view schema_encoding) {
+  if VUNLIKELY (is_binary_schema_encoding(schema_encoding)) {
+    return provided_schema == encode_base64(expected_schema.data(), expected_schema.size());
+  }
+
+  if VUNLIKELY (schema_encoding == "jsonschema" || schema_encoding == "json") {
+    try {
+      return Json::parse(provided_schema) == Json::parse(expected_schema);
+    } catch (const std::exception&) {
+    }
+  }
+
+  return provided_schema == expected_schema;
+}
+
+bool FoxgloveServer::parse_parameter_names(const Json& msg, std::vector<std::string>& out, std::string& error) {
+  out.clear();
+
+  if VUNLIKELY (!msg.contains("parameterNames") || !msg["parameterNames"].is_array()) {
+    error = "parameterNames must be an array";
+    return false;
+  }
+
+  std::unordered_set<std::string> seen;
+
+  for (const auto& item : msg["parameterNames"]) {
+    if VUNLIKELY (!item.is_string()) {
+      error = "parameterNames entries must be strings";
+      return false;
     }
 
-    const auto channel_id = allocate_channel_id();
-    ChannelInfo info;
-    info.id = channel_id;
-    info.is_control_only = true;
-    info.topic = publish_channel.topic;
-    info.encoding = publish_channel.encoding;
-    info.schema_name = publish_channel.schema_name;
-    info.schema_encoding = publish_channel.schema_encoding;
-    info.schema = publish_channel.schema;
-    info.schema_type = SchemaData::resolve_type(
-        SchemaData::is_valid_type(route.schema_type) ? route.schema_type : SchemaType::kUnknown, route.ser);
-    info.url = route.url;
-    info.ser = route.ser;
-    update_channel_schema_payload(info);
-    channels_[channel_id] = std::move(info);
+    auto name = item.get<std::string>();
+
+    if VUNLIKELY (name.empty()) {
+      error = "parameterNames entries must not be empty";
+      return false;
+    }
+
+    if VLIKELY (seen.insert(name).second) {
+      out.emplace_back(std::move(name));
+    }
   }
+
+  return true;
+}
+
+Json FoxgloveServer::build_sorted_connection_entries(std::unordered_map<std::string, std::vector<std::string>>& groups,
+                                                     const char* value_key) {
+  std::vector<std::pair<std::string, std::vector<std::string>>> ordered_entries;
+  ordered_entries.reserve(groups.size());
+
+  for (auto& [name, values] : groups) {
+    std::sort(values.begin(), values.end());
+    values.erase(std::unique(values.begin(), values.end()), values.end());
+    ordered_entries.emplace_back(name, std::move(values));
+  }
+
+  std::sort(ordered_entries.begin(), ordered_entries.end(),
+            [](const auto& lhs, const auto& rhs) { return lhs.first < rhs.first; });
+
+  Json entries = Json::array();
+
+  for (auto& [name, values] : ordered_entries) {
+    Json entry;
+    entry["name"] = std::move(name);
+    entry[value_key] = std::move(values);
+    entries.emplace_back(std::move(entry));
+  }
+
+  return entries;
 }
 
 void FoxgloveServer::on_ws_open(ConnectionHdl hdl) {
@@ -1626,48 +1526,6 @@ void FoxgloveServer::handle_unsubscribe_parameter_updates(ConnectionHdl hdl, con
   }
 }
 
-Json FoxgloveServer::build_connection_graph() const {
-  auto build_process_id = [](const ProxyAPI::Process& process) {
-    if VUNLIKELY (process.host.empty()) {
-      return process.name + "(" + std::to_string(process.pid) + ")";
-    }
-
-    return process.name + "(" + std::to_string(process.pid) + "@" + process.host + ")";
-  };
-
-  std::unordered_map<std::string, std::vector<std::string>> published_topics;
-  std::unordered_map<std::string, std::vector<std::string>> subscribed_topics;
-  std::unordered_map<std::string, std::vector<std::string>> advertised_rpcs;
-
-  for (const auto& [url, info] : last_info_map_) {
-    for (const auto& proc : info.process_list) {
-      auto process_id = build_process_id(proc);
-
-      if VLIKELY ((proc.type & kPublisher) != 0U) {
-        published_topics[url].emplace_back(process_id);
-      }
-
-      if VLIKELY ((proc.type & kSubscriber) != 0U) {
-        subscribed_topics[url].emplace_back(process_id);
-      }
-
-      if VLIKELY ((proc.type & kServer) != 0U) {
-        advertised_rpcs[url].emplace_back(process_id);
-      }
-    }
-  }
-
-  Json msg;
-  msg["op"] = "connectionGraphUpdate";
-  msg["publishedTopics"] = build_sorted_connection_entries(published_topics, "publisherIds");
-  msg["subscribedTopics"] = build_sorted_connection_entries(subscribed_topics, "subscriberIds");
-  msg["advertisedServices"] = build_sorted_connection_entries(advertised_rpcs, "providerIds");
-  msg["removedTopics"] = Json::array();
-  msg["removedServices"] = Json::array();
-
-  return msg;
-}
-
 void FoxgloveServer::broadcast_connection_graph_update() {
   {
     std::shared_lock lock(clients_mtx_);
@@ -1800,6 +1658,48 @@ void FoxgloveServer::broadcast_connection_graph_update() {
       }
     }
   }
+}
+
+Json FoxgloveServer::build_connection_graph() const {
+  auto build_process_id = [](const ProxyAPI::Process& process) {
+    if VUNLIKELY (process.host.empty()) {
+      return process.name + "(" + std::to_string(process.pid) + ")";
+    }
+
+    return process.name + "(" + std::to_string(process.pid) + "@" + process.host + ")";
+  };
+
+  std::unordered_map<std::string, std::vector<std::string>> published_topics;
+  std::unordered_map<std::string, std::vector<std::string>> subscribed_topics;
+  std::unordered_map<std::string, std::vector<std::string>> advertised_rpcs;
+
+  for (const auto& [url, info] : last_info_map_) {
+    for (const auto& proc : info.process_list) {
+      auto process_id = build_process_id(proc);
+
+      if VLIKELY ((proc.type & kPublisher) != 0U) {
+        published_topics[url].emplace_back(process_id);
+      }
+
+      if VLIKELY ((proc.type & kSubscriber) != 0U) {
+        subscribed_topics[url].emplace_back(process_id);
+      }
+
+      if VLIKELY ((proc.type & kServer) != 0U) {
+        advertised_rpcs[url].emplace_back(process_id);
+      }
+    }
+  }
+
+  Json msg;
+  msg["op"] = "connectionGraphUpdate";
+  msg["publishedTopics"] = build_sorted_connection_entries(published_topics, "publisherIds");
+  msg["subscribedTopics"] = build_sorted_connection_entries(subscribed_topics, "subscriberIds");
+  msg["advertisedServices"] = build_sorted_connection_entries(advertised_rpcs, "providerIds");
+  msg["removedTopics"] = Json::array();
+  msg["removedServices"] = Json::array();
+
+  return msg;
 }
 
 void FoxgloveServer::handle_fetch_asset(ConnectionHdl hdl, const Json& msg) {
@@ -2289,6 +2189,69 @@ void FoxgloveServer::broadcast_json(const Json& msg) {
       }
     }
   }
+}
+
+bool FoxgloveServer::should_process_bridge_data(const std::string& url) {
+  struct ActiveBridgeUrlCacheEntry final {
+    uint64_t owner_id{0};
+    uint64_t generation{0};
+    std::string url;
+    bool active{false};
+  };
+
+  thread_local std::array<ActiveBridgeUrlCacheEntry, 8> cache_entries;
+
+  if VUNLIKELY (client_count_.load() == 0U) {
+    return false;
+  }
+
+  const auto generation = active_bridge_urls_generation_.load();
+  const auto cache_index = std::hash<std::string_view>{}(url) % cache_entries.size();
+  auto& cache_entry = cache_entries[cache_index];
+
+  if VLIKELY (cache_entry.owner_id == cache_owner_id_ && cache_entry.generation == generation &&
+              cache_entry.url == url) {
+    return cache_entry.active;
+  }
+
+  std::shared_lock lock(active_bridge_urls_mtx_);
+  const auto active = active_bridge_urls_.find(url) != active_bridge_urls_.end();
+  cache_entry.owner_id = cache_owner_id_;
+  cache_entry.generation = generation;
+  cache_entry.url = url;
+  cache_entry.active = active;
+  return active;
+}
+
+void FoxgloveServer::rebuild_active_bridge_urls() {
+  std::scoped_lock state_lock(channels_mtx_, sub_counts_mtx_);
+  rebuild_active_bridge_urls_locked();
+}
+
+void FoxgloveServer::rebuild_active_bridge_urls_locked() {
+  std::unordered_set<std::string> next_active_bridge_urls;
+  next_active_bridge_urls.reserve(url_sub_counts_.size() + channels_.size());
+
+  for (const auto& [url, count] : url_sub_counts_) {
+    if VLIKELY (count > 0U) {
+      next_active_bridge_urls.emplace(url);
+    }
+  }
+
+  for (const auto& channel_entry : channels_) {
+    const auto& channel = channel_entry.second;
+
+    if VLIKELY (channel.is_send_time && !channel.url.empty()) {
+      next_active_bridge_urls.emplace(channel.url);
+    }
+  }
+
+  {
+    std::unique_lock lock(active_bridge_urls_mtx_);
+    active_bridge_urls_.swap(next_active_bridge_urls);
+  }
+
+  active_bridge_urls_generation_.fetch_add(1);
 }
 
 void FoxgloveServer::on_parameters_changed(const std::vector<FoxgloveParameters::ParameterEntry>& delta) {
@@ -2945,175 +2908,48 @@ void FoxgloveServer::update_channels(const std::vector<ProxyAPI::Info>& info_lis
   rebuild_active_bridge_urls();
 }
 
-bool FoxgloveServer::should_process_bridge_data(const std::string& url) {
-  struct ActiveBridgeUrlCacheEntry final {
-    uint64_t owner_id{0};
-    uint64_t generation{0};
-    std::string url;
-    bool active{false};
-  };
-
-  thread_local std::array<ActiveBridgeUrlCacheEntry, 8> cache_entries;
-
-  if VUNLIKELY (client_count_.load() == 0U) {
-    return false;
+void FoxgloveServer::install_publish_channels() {
+  if VUNLIKELY (!vlink_convert_) {
+    return;
   }
 
-  const auto generation = active_bridge_urls_generation_.load();
-  const auto cache_index = std::hash<std::string_view>{}(url) % cache_entries.size();
-  auto& cache_entry = cache_entries[cache_index];
+  auto publish_channels = vlink_convert_->get_publish_channels();
 
-  if VLIKELY (cache_entry.owner_id == cache_owner_id_ && cache_entry.generation == generation &&
-              cache_entry.url == url) {
-    return cache_entry.active;
+  if VUNLIKELY (publish_channels.empty()) {
+    return;
   }
 
-  std::shared_lock lock(active_bridge_urls_mtx_);
-  const auto active = active_bridge_urls_.find(url) != active_bridge_urls_.end();
-  cache_entry.owner_id = cache_owner_id_;
-  cache_entry.generation = generation;
-  cache_entry.url = url;
-  cache_entry.active = active;
-  return active;
-}
+  std::unique_lock lock(channels_mtx_);
 
-void FoxgloveServer::rebuild_active_bridge_urls() {
-  std::scoped_lock state_lock(channels_mtx_, sub_counts_mtx_);
-  rebuild_active_bridge_urls_locked();
-}
+  for (const auto& publish_channel : publish_channels) {
+    CommandRoute route;
 
-void FoxgloveServer::rebuild_active_bridge_urls_locked() {
-  std::unordered_set<std::string> next_active_bridge_urls;
-  next_active_bridge_urls.reserve(url_sub_counts_.size() + channels_.size());
-
-  for (const auto& [url, count] : url_sub_counts_) {
-    if VLIKELY (count > 0U) {
-      next_active_bridge_urls.emplace(url);
-    }
-  }
-
-  for (const auto& channel_entry : channels_) {
-    const auto& channel = channel_entry.second;
-
-    if VLIKELY (channel.is_send_time && !channel.url.empty()) {
-      next_active_bridge_urls.emplace(channel.url);
-    }
-  }
-
-  {
-    std::unique_lock lock(active_bridge_urls_mtx_);
-    active_bridge_urls_.swap(next_active_bridge_urls);
-  }
-
-  active_bridge_urls_generation_.fetch_add(1);
-}
-
-uint32_t FoxgloveServer::allocate_channel_id() { return next_channel_id_.fetch_add(1); }
-
-ClientInfo* FoxgloveServer::find_client_unlocked(ConnectionHdl hdl, void** out_raw_ptr) {
-  if VUNLIKELY (!ws_server_) {
-    if VLIKELY (out_raw_ptr) {
-      *out_raw_ptr = nullptr;
+    if VUNLIKELY (!vlink_convert_->resolve_route(publish_channel, route) || route.url.empty() || route.ser.empty()) {
+      MLOG_W("Skip invalid configured Foxglove publish route: {}", publish_channel.topic);
+      continue;
     }
 
-    return nullptr;
-  }
-
-  websocketpp::lib::error_code ec;
-  auto conn = ws_server_->get_con_from_hdl(hdl, ec);
-
-  if VUNLIKELY (ec) {
-    if VLIKELY (out_raw_ptr) {
-      *out_raw_ptr = nullptr;
+    if VUNLIKELY (!is_url_allowed(route.url)) {
+      MLOG_W("Skip filtered Foxglove publish route: {} -> {}", publish_channel.topic, route.url);
+      continue;
     }
 
-    return nullptr;
+    const auto channel_id = allocate_channel_id();
+    ChannelInfo info;
+    info.id = channel_id;
+    info.is_control_only = true;
+    info.topic = publish_channel.topic;
+    info.encoding = publish_channel.encoding;
+    info.schema_name = publish_channel.schema_name;
+    info.schema_encoding = publish_channel.schema_encoding;
+    info.schema = publish_channel.schema;
+    info.schema_type = SchemaData::resolve_type(
+        SchemaData::is_valid_type(route.schema_type) ? route.schema_type : SchemaType::kUnknown, route.ser);
+    info.url = route.url;
+    info.ser = route.ser;
+    update_channel_schema_payload(info);
+    channels_[channel_id] = std::move(info);
   }
-
-  auto* raw_ptr = conn.get();
-
-  if VLIKELY (out_raw_ptr) {
-    *out_raw_ptr = raw_ptr;
-  }
-
-  auto client_iter = clients_.find(raw_ptr);
-
-  if VLIKELY (client_iter != clients_.end()) {
-    return &client_iter->second;
-  }
-
-  return nullptr;
-}
-
-bool FoxgloveServer::validate_publish_route_unlocked(void* raw_ptr, uint32_t channel_id, const std::string& topic,
-                                                     const std::string& schema_name, const std::string& schema_encoding,
-                                                     const std::string& schema, const CommandRoute& route,
-                                                     std::string& error) const {
-  if VUNLIKELY (route.url.empty() || route.ser.empty()) {
-    error = "Client publish route is missing target URL or serialization";
-    return false;
-  }
-
-  if VUNLIKELY (!is_url_allowed(route.url)) {
-    error = "Client publish route is blocked by filter: " + route.url;
-    return false;
-  }
-
-  for (const auto& [client_ptr, channel_map] : publish_channels_) {
-    for (const auto& [existing_channel_id, existing_channel] : channel_map) {
-      if VUNLIKELY (client_ptr == raw_ptr && existing_channel_id == channel_id) {
-        continue;
-      }
-
-      if VUNLIKELY (!existing_channel.has_route) {
-        continue;
-      }
-
-      if VLIKELY (existing_channel.route.url == route.url && existing_channel.route.ser != route.ser) {
-        error = "Client publish route conflicts with an existing channel for URL: " + route.url;
-        return false;
-      }
-    }
-  }
-
-  if VLIKELY (!route.web_channel.encoding.empty() && !route.web_channel.schema_name.empty() &&
-              !route.web_channel.schema_encoding.empty() && !route.web_channel.schema.empty()) {
-    if VUNLIKELY (!schema_name.empty() && schema_name != route.web_channel.schema_name) {
-      error = "Client publish schema name does not match local schema for topic " + topic + ": " + schema_name;
-      return false;
-    }
-
-    if VUNLIKELY (!schema_encoding.empty() && schema_encoding != route.web_channel.schema_encoding) {
-      error = "Client publish schema encoding does not match local schema for topic " + topic + ": " + schema_encoding;
-      return false;
-    }
-
-    if VUNLIKELY (!schema.empty() &&
-                  !schemas_match(schema, route.web_channel.schema, route.web_channel.schema_encoding)) {
-      error =
-          "Client publish schema does not match local schema for topic " + topic + ": " + route.web_channel.schema_name;
-      return false;
-    }
-
-    return true;
-  }
-
-  if VUNLIKELY (schema.empty() || schema_name.empty() || schema_encoding.empty() || !foxglove_converter_) {
-    return true;
-  }
-
-  std::string expected_schema;
-
-  if VUNLIKELY (!foxglove_converter_->resolve_schema_by_name(schema_name, schema_encoding, expected_schema)) {
-    return true;
-  }
-
-  if VLIKELY (schemas_match(schema, expected_schema, schema_encoding)) {
-    return true;
-  }
-
-  error = "Client publish schema does not match local schema for topic " + topic + ": " + schema_name;
-  return false;
 }
 
 ProxyAPI::Control FoxgloveServer::build_bridge_control() const {
@@ -3266,6 +3102,170 @@ bool FoxgloveServer::update_bridge_control() {
 
   bridge_control_signature_ = std::move(signature);
   return true;
+}
+
+std::vector<std::string> FoxgloveServer::get_connect_endpoints() const {
+  std::vector<std::string> endpoints;
+
+  auto append_endpoint = [this, &endpoints](const std::string& host) {
+    if VUNLIKELY (host.empty()) {
+      return;
+    }
+
+    auto display_host = host;
+
+    if VUNLIKELY (display_host.find(':') != std::string::npos && display_host.front() != '[' &&
+                  display_host.back() != ']') {
+      display_host = "[" + display_host + "]";
+    }
+
+    const auto endpoint = "ws://" + display_host + ":" + std::to_string(config_.port);
+
+    if VLIKELY (std::find(endpoints.begin(), endpoints.end(), endpoint) == endpoints.end()) {
+      endpoints.emplace_back(endpoint);
+    }
+  };
+
+  if VUNLIKELY (config_.address.empty() || config_.address == "0.0.0.0") {
+    append_endpoint("127.0.0.1");
+
+    for (const auto& ip : Utils::get_all_ipv4_address(true)) {
+      if VUNLIKELY (ip == "0.0.0.0") {
+        continue;
+      }
+
+      append_endpoint(ip);
+    }
+  } else {
+    append_endpoint(config_.address);
+  }
+
+  return endpoints;
+}
+
+void FoxgloveServer::log_connect_hint() const {
+  const auto endpoints = get_connect_endpoints();
+
+  MLOG_I("*****************************************************");
+  MLOG_I("* Open [https://app.foxglove.dev/] in your browser.");
+
+  if VLIKELY (!endpoints.empty()) {
+    MLOG_I("* Available endpoints:");
+
+    for (const auto& endpoint : endpoints) {
+      MLOG_I("* - {}", endpoint);
+    }
+  }
+
+  MLOG_I("*****************************************************");
+}
+
+uint32_t FoxgloveServer::allocate_channel_id() { return next_channel_id_.fetch_add(1); }
+
+ClientInfo* FoxgloveServer::find_client_unlocked(ConnectionHdl hdl, void** out_raw_ptr) {
+  if VUNLIKELY (!ws_server_) {
+    if VLIKELY (out_raw_ptr) {
+      *out_raw_ptr = nullptr;
+    }
+
+    return nullptr;
+  }
+
+  websocketpp::lib::error_code ec;
+  auto conn = ws_server_->get_con_from_hdl(hdl, ec);
+
+  if VUNLIKELY (ec) {
+    if VLIKELY (out_raw_ptr) {
+      *out_raw_ptr = nullptr;
+    }
+
+    return nullptr;
+  }
+
+  auto* raw_ptr = conn.get();
+
+  if VLIKELY (out_raw_ptr) {
+    *out_raw_ptr = raw_ptr;
+  }
+
+  auto client_iter = clients_.find(raw_ptr);
+
+  if VLIKELY (client_iter != clients_.end()) {
+    return &client_iter->second;
+  }
+
+  return nullptr;
+}
+
+bool FoxgloveServer::validate_publish_route_unlocked(void* raw_ptr, uint32_t channel_id, const std::string& topic,
+                                                     const std::string& schema_name, const std::string& schema_encoding,
+                                                     const std::string& schema, const CommandRoute& route,
+                                                     std::string& error) const {
+  if VUNLIKELY (route.url.empty() || route.ser.empty()) {
+    error = "Client publish route is missing target URL or serialization";
+    return false;
+  }
+
+  if VUNLIKELY (!is_url_allowed(route.url)) {
+    error = "Client publish route is blocked by filter: " + route.url;
+    return false;
+  }
+
+  for (const auto& [client_ptr, channel_map] : publish_channels_) {
+    for (const auto& [existing_channel_id, existing_channel] : channel_map) {
+      if VUNLIKELY (client_ptr == raw_ptr && existing_channel_id == channel_id) {
+        continue;
+      }
+
+      if VUNLIKELY (!existing_channel.has_route) {
+        continue;
+      }
+
+      if VLIKELY (existing_channel.route.url == route.url && existing_channel.route.ser != route.ser) {
+        error = "Client publish route conflicts with an existing channel for URL: " + route.url;
+        return false;
+      }
+    }
+  }
+
+  if VLIKELY (!route.web_channel.encoding.empty() && !route.web_channel.schema_name.empty() &&
+              !route.web_channel.schema_encoding.empty() && !route.web_channel.schema.empty()) {
+    if VUNLIKELY (!schema_name.empty() && schema_name != route.web_channel.schema_name) {
+      error = "Client publish schema name does not match local schema for topic " + topic + ": " + schema_name;
+      return false;
+    }
+
+    if VUNLIKELY (!schema_encoding.empty() && schema_encoding != route.web_channel.schema_encoding) {
+      error = "Client publish schema encoding does not match local schema for topic " + topic + ": " + schema_encoding;
+      return false;
+    }
+
+    if VUNLIKELY (!schema.empty() &&
+                  !schemas_match(schema, route.web_channel.schema, route.web_channel.schema_encoding)) {
+      error =
+          "Client publish schema does not match local schema for topic " + topic + ": " + route.web_channel.schema_name;
+      return false;
+    }
+
+    return true;
+  }
+
+  if VUNLIKELY (schema.empty() || schema_name.empty() || schema_encoding.empty() || !foxglove_converter_) {
+    return true;
+  }
+
+  std::string expected_schema;
+
+  if VUNLIKELY (!foxglove_converter_->resolve_schema_by_name(schema_name, schema_encoding, expected_schema)) {
+    return true;
+  }
+
+  if VLIKELY (schemas_match(schema, expected_schema, schema_encoding)) {
+    return true;
+  }
+
+  error = "Client publish schema does not match local schema for topic " + topic + ": " + schema_name;
+  return false;
 }
 
 bool FoxgloveServer::is_url_allowed(std::string_view url) const {

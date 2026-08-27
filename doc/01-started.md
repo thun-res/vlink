@@ -108,8 +108,8 @@ ctest --test-dir build --output-on-failure
 
 # 嵌入式精简：关闭安全/压缩/SQLite/Proxy/测试，仅留核心库与传输模块
 cmake -B build-min -DCMAKE_BUILD_TYPE=MinSizeRel \
-    -DENABLE_SECURITY=OFF -DENABLE_SQLITE=OFF -DENABLE_ZSTD=OFF \
-    -DENABLE_PROXY=OFF -DENABLE_TEST=OFF -DSELECT_LOG_BACKEND=native
+    -DENABLE_SECURITY=OFF -DENABLE_SQLITE=OFF -DENABLE_ZSTD=OFF -DENABLE_LOG_BACKEND=OFF \
+    -DENABLE_PROXY=OFF -DENABLE_TEST=OFF
 
 # Ninja 加速
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && ninja -C build
@@ -158,7 +158,6 @@ output/
 | Iceoryx | 共享内存（`shm://`） | 模块依赖 | 见 [Iceoryx 官方文档](https://iceoryx.io/) |
 | zenoh-c | Zenoh（`zenoh://`） | 模块依赖 | 见 [Zenoh 官方文档](https://zenoh.io/) |
 | Paho MQTT C | MQTT（`mqtt://`） | 模块依赖 | 见 [Eclipse Paho](https://github.com/eclipse/paho.mqtt.c) |
-| quill / DLT | 可选日志后端 | `SELECT_LOG_BACKEND=` | quill 已内嵌；DLT 用 `sudo apt install libdlt-dev` |
 
 > 其余传输后端（someip / fdbus / shm2 / ddsr 等）依赖见 [传输后端与 URL](04-transport.md)。无系统库时可让 CMake 自动下载，见 [§1.4.5 CPM 选项](#-145-用-cpm-自动下载依赖)。
 
@@ -191,6 +190,7 @@ output/
 | `ENABLE_SECURITY` | `ON` | 消息加密（AES，需 OpenSSL）；缺失时自动关闭 |
 | `ENABLE_SQLITE` | `ON` | SQLite 录制/存储；缺失时自动关闭 |
 | `ENABLE_ZSTD` | `ON` | Zstandard 压缩；缺失时自动关闭 |
+| `ENABLE_LOG_BACKEND` | `ON`（Android/QNX 为 `OFF`） | 自研日志后端；Android/QNX/Linux 可设为 `OFF` 使用平台日志 |
 | `ENABLE_C_API` | `ON` | 编译纯 C API 封装层 |
 | `ENABLE_PYTHON_API` | `OFF` | 编译 Python 绑定（需 Python + nanobind） |
 | `ENABLE_PROXY` | `ON` | 编译代理层（需至少一种 DDS 后端） |
@@ -217,7 +217,11 @@ Viewer / WebViz 子开关：`ENABLE_VIEWER_FFMPEG`、`ENABLE_VIEWER_OSG`、`ENAB
 
 - **CLI 工具**：`ENABLE_CLI_INFO` / `BAG` / `TRIGGER` / `LIST` / `MONITOR` / `CHECK` / `BENCH` / `EPROTO` / `EFBS` / `PARSE`，默认全 `ON`。其中 `EPROTO` 依赖 Protobuf、`EFBS` 依赖 FlatBuffers、`PARSE` 两者皆需，对应依赖缺失时自动关闭。`ENABLE_EXPRTK`（默认 `ON`）提供 `PARSE` / Viewer / WebViz 的表达式引擎。
 - **测试**：`ENABLE_TEST`（doctest）、`ENABLE_TEST_SANITIZE`（ASan）、`ENABLE_TEST_COVERAGE`（gcov/lcov）、`ENABLE_TEST_WARN`。
-- **日志后端**：`SELECT_LOG_BACKEND=spdlog|quill|dlt|native`，Android/QNX 平台默认 `native`，其余平台默认 `spdlog`；`quill` 提供更低延迟，`dlt` 面向车载 GENIVI，`native` 用于 Android/QNX 平台原生日志。
+- **日志后端**：`ENABLE_LOG_BACKEND=ON|OFF`；Android/QNX CMake 与 Android.bp 默认使用
+  平台日志，其他构建默认启用自研后端。
+  启用时使用 `LoggerBackend`，通过 `MessageLoop` 与 `Timer` 提供异步写入、队列背压、
+  周期刷新、两种文件轮转和 backtrace 环形缓冲；关闭时在 Android、QNX 或 Linux 上使用
+  logcat、slog2 或 kmsg。其他平台不支持平台日志路径，配置时会保持启用自研后端。
 
 ### 📋 1.4.4 选项组合参考
 
@@ -228,7 +232,7 @@ Viewer / WebViz 子开关：`ENABLE_VIEWER_FFMPEG`、`ENABLE_VIEWER_OSG`、`ENAB
 | 内存检测（ASan） | `-DENABLE_TEST=ON -DENABLE_TEST_SANITIZE=ON` |
 | 仅静态库 | `-DBUILD_SHARED_LIBS=OFF` |
 | C++20 | `-DENABLE_CXX_STD_20=ON` |
-| 低延迟日志 | `-DSELECT_LOG_BACKEND=quill` |
+| 平台原生日志（Android/QNX/Linux） | `-DENABLE_LOG_BACKEND=OFF` |
 
 ASan 构建下运行测试需指向 `output/lib`：
 
@@ -472,7 +476,7 @@ conan install . --build=missing -s build_type=Release \
     -o "vlink/*:shared=True" \
     -o "vlink/*:enable_security=False" \
     -o "vlink/*:enable_test=True" \
-    -o "vlink/*:select_log_backend=quill" \
+    -o "vlink/*:enable_log_backend=True" \
     -o "vlink/*:enable_cpm_all=True"      # 全新系统：依赖全部交给 CPM
 ```
 
@@ -537,7 +541,7 @@ cmake --build build_cross -j$(nproc)
 | 平台 | 工具链文件 | 必设环境变量 | 关键注意 |
 | --- | --- | --- | --- |
 | ARM Linux | `linux/linux.toolchain.aarch64.cmake` | `CROSS_COMPILE_PREFIX`（如 `aarch64-linux-gnu-`），sysroot 设 `LINUX_INSTALL_PREFIX` | 先装 `gcc-aarch64-linux-gnu g++-aarch64-linux-gnu` |
-| Android | `android/android.toolchain.aarch64.cmake` | `ANDROID_NDK`（NDK 根目录） | 必须 `c++_shared`；`shm://` 不可用，改用 `dds://`/`intra://`；日志走 native；API 21+ |
+| Android | `android/android.toolchain.aarch64.cmake` | `ANDROID_NDK`（NDK 根目录） | 必须 `c++_shared`；`shm://` 不可用，改用 `dds://`/`intra://`；日志默认走平台日志；API 21+ |
 | QNX | `qnx/qnx.toolchain.aarch64.cmake` | `QNX_HOST` / `QNX_TARGET`（source `qnxsdp-env.sh` 后自动设） | `shm://` 需构建 Iceoryx 模块并运行 RouDi |
 | macOS | 本机直接编；交叉用 `darwin/darwin.toolchain.aarch64.cmake` | 交叉时 `VLINK_HOST_PLATFORM=darwin-x86_64` | Universal 包用 `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`；`shm://` 需构建 Iceoryx 模块并运行 RouDi |
 | Yocto | `linux/linux.toolchain.aarch64.cmake` | source SDK 后自动有 `SYSROOT` / `OE_CMAKE_TOOLCHAIN_FILE` | 工具链文件自动 include OE 配置 |
@@ -667,7 +671,7 @@ ls build/output/bin/
 | `quickstart/` | 三种通信模型的最小示例 | 无（`intra://`） |
 | `base/` | Bytes / Logger / Timer / MessageLoop 等基础库 | 无 |
 | `communication/` | Event / Method / Field 完整用法 | quickstart |
-| `serialization/` | Bytes / POD / `std::string` 等类型的自动序列化 | quickstart |
+| `serialization/` | Bytes / POD / `std::string` / SOME/IP 宏结构的自动序列化 | quickstart |
 | `url_guide/` | URL 结构与重映射 | communication |
 | `qos/` | QoS 基础与预设 profile | url_guide |
 | `security/` | 应用层加密 | communication |
@@ -699,7 +703,7 @@ ls build/output/bin/
 
 | 分类 | 示例 | 主题 | 详解 |
 | --- | --- | --- | --- |
-| serialization | `basic_types` | POD 结构体与基本类型，无编码转换、直接内存复制 | [消息序列化](03-serialization.md) |
+| serialization | `basic_types` | Bytes、string、直接内存复制的 POD，以及按字段编码的 SOME/IP 宏结构 | [消息序列化](03-serialization.md) |
 | url_guide | `url_basics` | URL 结构、参数与话题重映射 | [传输后端与 URL](04-transport.md) |
 | qos | `qos_basics` | QoS 基础参数与预设 profile（事件 / 方法 / 字段 / 传感器） | [QoS 配置](05-qos.md) |
 

@@ -65,18 +65,6 @@ bool IntraConf::parse_protocol(struct Protocol* protocol) {
   return true;
 }
 
-bool IntraConf::is_valid() const {
-  if VUNLIKELY (address.empty()) {
-    return false;
-  }
-
-  if VUNLIKELY (type != "queue" && type != "direct") {
-    return false;
-  }
-
-  return true;
-}
-
 std::unique_ptr<ServerImpl> IntraConf::create_server() const { return std::make_unique<IntraServerImpl>(*this); }
 
 std::unique_ptr<ClientImpl> IntraConf::create_client() const { return std::make_unique<IntraClientImpl>(*this); }
@@ -92,6 +80,18 @@ std::unique_ptr<SubscriberImpl> IntraConf::create_subscriber() const {
 std::unique_ptr<SetterImpl> IntraConf::create_setter() const { return std::make_unique<IntraSetterImpl>(*this); }
 
 std::unique_ptr<GetterImpl> IntraConf::create_getter() const { return std::make_unique<IntraGetterImpl>(*this); }
+
+bool IntraConf::is_valid() const {
+  if VUNLIKELY (address.empty()) {
+    return false;
+  }
+
+  if VUNLIKELY (type != "queue" && type != "direct") {
+    return false;
+  }
+
+  return true;
+}
 
 std::ostream& operator<<(std::ostream& ostream, const IntraConf& conf) noexcept {
   std::ios_base::fmtflags f = ostream.flags();

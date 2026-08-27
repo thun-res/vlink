@@ -142,7 +142,7 @@ if (pub.has_subscribers()) {  // 非阻塞查询
 
 ### 🧵 4.6.1 intra:// — 进程内通信
 
-同一进程内各模块间通信，无内核通信与外部依赖。`shared_ptr<IntraDataType>` 走共享对象直传；普通消息仍序列化为 `Bytes` 并在订阅端反序列化。默认 `#queue` 由 intra pipeline 异步派发，`#direct` 才在调用线程内同步执行回调。
+同一进程内各模块间通信，无内核通信与外部依赖。`shared_ptr<IntraDataType>` 走共享对象直传；普通消息仍序列化为 `Bytes` 并在订阅端反序列化。未绑定 `MessageLoop` 时，默认 `#queue` 由 intra pipeline 异步派发，`#direct` 在调用线程内同步执行回调；绑定后直接投递到目标 loop。
 
 ```
 intra://<address>[?event=<name>&pipeline=<N>][#queue|#direct]
@@ -164,7 +164,7 @@ sub.listen([](const int& v) { VLOG_I("recv: ", v); });
 pub.publish(42);
 ```
 
-边界条件：`#direct` 模式下回调在 `publish()` 的调用线程内执行，需避免在回调中重入或持锁等待；仅限同进程，跨进程无效。
+边界条件：未绑定 `MessageLoop` 时，`#direct` 回调在 `publish()` 的调用线程内执行，需避免在回调中重入或持锁等待；仅限同进程，跨进程无效。
 
 ### 🗄️ 4.6.2 shm:// — 共享内存零拷贝
 
@@ -187,8 +187,10 @@ shm://<address>[?event=<name>&domain=<N>&depth=<N>&history=<N>&wait=<ms>]
 
 ```bash
 vlink-proxy -c /etc/vlink/iox.toml          # -c <PATH> 拉起内嵌 RouDi（兼远程监控）
-vlink-proxy -c /etc/vlink/iox.toml -l 3     # -l 选内存策略（1 低 / 2 中(默认) / 3 高），点云等重载用 3
+vlink-proxy -l 4                            # 按内置高内存策略拉起 RouDi，点云等重载使用
 ```
+
+指定 `-c` 时以内存池 TOML 为准，`-l` 仅用于未指定自定义配置的内置策略。
 
 > 内置代理仅同机一个实例；完整参数与服务发现/监控见 [可观测性](12-observability.md) §12.12。
 

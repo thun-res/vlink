@@ -3856,6 +3856,12 @@ bool Bench::run(const RunOptions& options, Result& result, std::string& error) {
       ProgressTicker ticker(color, scenario.warmup_ms, scenario.duration_ms, scenario.drain_ms);
       bool ok = run_scenario(options, scenario, scenario_result, scenario_error);
 
+      if VUNLIKELY (ok && scenario.suite != kSerializationSuite &&
+                    (scenario_result.sent == 0 || scenario_result.received == 0)) {
+        scenario_error = scenario_result.sent == 0 ? "benchmark sent no messages" : "benchmark received no messages";
+        ok = false;
+      }
+
       if VUNLIKELY (!ok) {
         scenario_result.scenario = scenario;
         scenario_result.transport = get_transport_from_url(scenario.url);

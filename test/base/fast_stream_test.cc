@@ -28,6 +28,7 @@
 #include <doctest/doctest.h>
 
 #include <iomanip>
+#include <limits>
 #include <string>
 #include <string_view>
 
@@ -55,6 +56,19 @@ TEST_SUITE("base-FastStream") {
     s << 42 << " " << -7;
 
     CHECK_EQ(s.take_view(), "42 -7");
+  }
+
+  TEST_CASE("push formats integer extremes and preserves stream flags") {
+    FastStream s;
+    s.push(std::numeric_limits<int64_t>::min()).push("/").push(std::numeric_limits<uint64_t>::max());
+
+    CHECK_EQ(s.take_view(), "-9223372036854775808/18446744073709551615");
+
+    s.reset();
+    s.setf(std::ios_base::hex, std::ios_base::basefield);
+    s.push(255);
+
+    CHECK_EQ(s.take_view(), "ff");
   }
 
   TEST_CASE("operator<< formats floating point via stream locale") {

@@ -97,14 +97,8 @@ foreach(_pkg IN LISTS _vlink_core_thirdparty)
   vlink_install_thirdparty_license(${_pkg})
 endforeach()
 
-set(_vlink_optional_thirdparty
-    spdlog:ENABLE_LOG_SPD
-    quill:ENABLE_LOG_QUI
-    argparse:_VLINK_USE_ARGPARSE
-    bitsery:ENABLE_PROXY
-    exprtk:_VLINK_USE_EXPRTK
-    websocketpp:_VLINK_USE_WEBVIZ_FOXGLOVE
-    asio:_VLINK_USE_WEBVIZ_FOXGLOVE
+set(_vlink_optional_thirdparty argparse:_VLINK_USE_ARGPARSE bitsery:ENABLE_PROXY exprtk:_VLINK_USE_EXPRTK
+                               websocketpp:_VLINK_USE_WEBVIZ_FOXGLOVE asio:_VLINK_USE_WEBVIZ_FOXGLOVE
 )
 foreach(_entry IN LISTS _vlink_optional_thirdparty)
   string(REPLACE ":" ";" _pair "${_entry}")

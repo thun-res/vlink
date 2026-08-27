@@ -114,14 +114,14 @@ namespace proxy {
 [[maybe_unused]] static constexpr std::string_view kViewerDataUrlCtx = "://proxy/viewer_data/v3?qos=better&domain=";
 
 [[maybe_unused]] static constexpr std::string_view kDataReliableUrlCtx =
-    "://proxy/proxy_data/reliable/v3?qos=large&domain=";
+    "://proxy/proxy_data/reliable/v3?qos=stream&domain=";
 [[maybe_unused]] static constexpr std::string_view kViewerDataReliableUrlCtx =
-    "://proxy/viewer_data/reliable/v3?qos=large&domain=";
+    "://proxy/viewer_data/reliable/v3?qos=stream&domain=";
 
 [[maybe_unused]] static constexpr std::string_view kTimeUrlCtx = "://proxy/time/v3?qos=clock&domain=";
 [[maybe_unused]] static constexpr std::string_view kInfoListUrlCtx = "://proxy/info_list/v3?qos=poor&domain=";
 [[maybe_unused]] static constexpr std::string_view kControlUrlCtx = "://proxy/control/v3?qos=best&domain=";
-[[maybe_unused]] static constexpr std::string_view kHandshakeUrlCtx = "://proxy/handshake/v3?qos=best&domain=";
+[[maybe_unused]] static constexpr std::string_view kHandshakeUrlCtx = "://proxy/handshake/v3?qos=method&domain=";
 
 [[maybe_unused]] static constexpr std::string_view kDataShmUrlCtx = "://proxy/proxy_data/v3?domain=";
 [[maybe_unused]] static constexpr std::string_view kViewerDataShmUrlCtx = "://proxy/viewer_data/v3?domain=";

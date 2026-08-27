@@ -29,12 +29,15 @@
 #include <clocale>
 #include <codecvt>
 #include <cstdio>
+#include <cstring>
 #include <cwchar>
 #include <filesystem>
 #include <iomanip>
 #include <locale>
 #include <sstream>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -101,6 +104,215 @@ std::string double_to_string(double value, int precision) noexcept {
   ss << std::fixed << std::setprecision(precision) << value;
 
   return ss.str();
+}
+
+template <typename FloatT, typename = void>
+struct HasFloatToChars final : std::false_type {};
+
+template <typename FloatT>
+struct HasFloatToChars<FloatT,
+                       std::void_t<decltype(std::to_chars(std::declval<char*>(), std::declval<char*>(),
+                                                          std::declval<FloatT>(), std::chars_format::general, 6))>>
+    final : std::true_type {};
+
+#ifdef __QNX__
+template <typename FloatT>
+constexpr bool kUseFloatToChars = HasFloatToChars<FloatT>::value && !std::is_same_v<FloatT, long double>;
+#else
+template <typename FloatT>
+constexpr bool kUseFloatToChars = HasFloatToChars<FloatT>::value;
+#endif
+
+template <typename FloatT>
+size_t format_floating_to_impl(char* buf, size_t buflen, FloatT value) noexcept {
+  if constexpr (kUseFloatToChars<FloatT>) {
+    auto result = std::to_chars(buf, buf + buflen, value, std::chars_format::general, 6);
+
+    if VLIKELY (result.ec == std::errc()) {
+      return static_cast<size_t>(result.ptr - buf);
+    }
+
+    return 0;
+  } else {
+    const char* spec = std::is_same_v<FloatT, long double> ? "%Lg" : "%g";  // NOLINT(google-runtime-float)
+    int len = std::snprintf(buf, buflen, spec, value);
+
+    if VLIKELY (len > 0 && static_cast<size_t>(len) < buflen) {
+      return static_cast<size_t>(len);
+    }
+
+    return 0;
+  }
+}
+
+size_t format_floating_to(char* buf, size_t buflen, float value) noexcept {
+  return format_floating_to_impl(buf, buflen, value);
+}
+
+size_t format_floating_to(char* buf, size_t buflen, double value) noexcept {
+  return format_floating_to_impl(buf, buflen, value);
+}
+
+size_t format_floating_to(char* buf, size_t buflen, long double value) noexcept {  // NOLINT(google-runtime-float)
+  return format_floating_to_impl(buf, buflen, value);
+}
+
+template <typename FloatT>
+size_t format_floating_spec_impl(char* buf, size_t buflen, FloatT value, char type, int precision, bool alt) noexcept {
+  if VUNLIKELY (buflen == 0U) {
+    return 0U;
+  }
+
+  if constexpr (kUseFloatToChars<FloatT>) {
+    if VLIKELY (!alt || (type != 'g' && type != 'G')) {
+      auto chars_fmt = std::chars_format::general;
+      bool upper = false;
+
+      switch (type) {
+        case 'F':
+          upper = true;
+          [[fallthrough]];
+        case 'f':
+          chars_fmt = std::chars_format::fixed;
+
+          if (precision < 0) {
+            precision = 6;
+          }
+
+          break;
+        case 'E':
+          upper = true;
+          [[fallthrough]];
+        case 'e':
+          chars_fmt = std::chars_format::scientific;
+
+          if (precision < 0) {
+            precision = 6;
+          }
+
+          break;
+        case 'A':
+          upper = true;
+          [[fallthrough]];
+        case 'a':
+          chars_fmt = std::chars_format::hex;
+          break;
+        case 'G':
+          upper = true;
+          [[fallthrough]];
+        default:
+          if (precision < 0) {
+            precision = 6;
+          }
+
+          break;
+      }
+
+      const auto result = precision >= 0 ? std::to_chars(buf, buf + buflen, value, chars_fmt, precision)
+                                         : std::to_chars(buf, buf + buflen, value, chars_fmt);
+
+      if VUNLIKELY (result.ec != std::errc()) {
+        return 0U;
+      }
+
+      auto size = static_cast<size_t>(result.ptr - buf);
+
+      if VUNLIKELY (alt) {
+        const char exponent = chars_fmt == std::chars_format::hex ? 'p' : 'e';
+        const size_t start = size > 0U && buf[0] == '-' ? 1U : 0U;
+
+        if (start < size && buf[start] >= '0' && buf[start] <= '9') {
+          size_t point = size;
+
+          for (size_t i = start; i < size; ++i) {
+            if (buf[i] == '.') {
+              point = 0U;
+              break;
+            }
+
+            if (buf[i] == exponent) {
+              point = i;
+              break;
+            }
+          }
+
+          if (point != 0U) {
+            if VUNLIKELY (size == buflen) {
+              return 0U;
+            }
+
+            std::memmove(buf + point + 1U, buf + point, size - point);
+            buf[point] = '.';
+            ++size;
+          }
+        }
+      }
+
+      if VUNLIKELY (upper) {
+        for (size_t i = 0U; i < size; ++i) {
+          if (buf[i] >= 'a' && buf[i] <= 'z') {
+            buf[i] = static_cast<char>(buf[i] - ('a' - 'A'));
+          }
+        }
+      }
+
+      return size;
+    }
+  }
+
+  char spec[16];
+  char print_type = 'g';
+
+  switch (type) {
+    case 'a':
+    case 'A':
+    case 'e':
+    case 'E':
+    case 'f':
+    case 'F':
+    case 'G':
+      print_type = type;
+      break;
+    default:
+      break;
+  }
+
+  const char* length_mod = std::is_same_v<FloatT, long double> ? "L" : "";  // NOLINT(google-runtime-float)
+
+  if (precision >= 0) {
+    std::snprintf(spec, sizeof(spec), alt ? "%%#.%d%s%c" : "%%.%d%s%c", precision, length_mod, print_type);
+  } else {
+    std::snprintf(spec, sizeof(spec), alt ? "%%#%s%c" : "%%%s%c", length_mod, print_type);
+  }
+
+  const int written = std::snprintf(buf, buflen, spec, value);
+
+  if VUNLIKELY (written < 0 || static_cast<size_t>(written) >= buflen) {
+    return 0U;
+  }
+
+  auto size = static_cast<size_t>(written);
+
+  if (type == 'a' || type == 'A') {
+    const size_t start = size > 0U && buf[0] == '-' ? 1U : 0U;
+
+    if (size >= start + 2U && buf[start] == '0' && (buf[start + 1U] == 'x' || buf[start + 1U] == 'X')) {
+      std::memmove(buf + start, buf + start + 2U, size - start - 2U);
+      size -= 2U;
+    }
+  }
+
+  return size;
+}
+
+size_t format_floating_spec_to(char* buf, size_t buflen, double value, char type, int precision, bool alt) noexcept {
+  return format_floating_spec_impl(buf, buflen, value, type, precision, alt);
+}
+
+// NOLINTNEXTLINE(google-runtime-float)
+size_t format_floating_spec_to(char* buf, size_t buflen, long double value, char type, int precision,
+                               bool alt) noexcept {
+  return format_floating_spec_impl(buf, buflen, value, type, precision, alt);
 }
 
 uint64_t hash_combine(uint64_t a, uint64_t b) noexcept {

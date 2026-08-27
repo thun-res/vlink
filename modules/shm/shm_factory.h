@@ -155,7 +155,7 @@ class ShmFactory final : public AbstractFactory<ShmID> {
 
   static bool has_roudi_running();
 
-  static bool auto_init_roudi(bool same_process_from_roudi = false);
+  static bool auto_init_roudi(bool same_process_from_roudi, int memory_strategy);
 
   static shm::capro::ServiceDescription get_description(const std::string& service, const std::string& instance,
                                                         const std::string& event);
@@ -328,6 +328,7 @@ class ShmPublisher final : public AbstractObject<ShmID>, public std::enable_shar
   int32_t wait_{0};
   std::optional<shm::popo::UntypedPublisher> pub_;
   std::optional<SysSemaphore> sem_;
+  std::mutex mtx_;
 };
 
 // ShmSubscriber

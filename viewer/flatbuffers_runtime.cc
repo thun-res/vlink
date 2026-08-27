@@ -549,8 +549,8 @@ bool FlatbuffersObjectView::is_bytes_field(const reflection::Field& field) {
           (field.type()->element() == reflection::Byte || field.type()->element() == reflection::UByte));
 }
 
-std::optional<double> get_vector_numeric(const FlatbuffersObjectView& parent, const reflection::Field& field,
-                                         size_t index) {
+std::optional<double> FlatbuffersObjectView::get_vector_numeric(const FlatbuffersObjectView& parent,
+                                                                const reflection::Field& field, size_t index) {
   if (!parent.valid() || parent.kind != FlatbuffersViewKind::kTable ||
       (field.type()->base_type() != reflection::Vector && field.type()->base_type() != reflection::Vector64) ||
       !is_numeric_type(field.type()->element())) {
@@ -583,6 +583,29 @@ std::string FlatbuffersObjectView::get_vector_string(const FlatbuffersObjectView
   return flatbuffers::GetAnyVectorElemS(vec, field.type()->element(), index);
 }
 
+bool FlatbuffersObjectView::split_indexed_token(const std::string& token, std::string& name, int& index) {
+  name = token;
+  index = -1;
+
+  const auto pos_left = token.find('[');
+  const auto pos_right = token.find(']');
+
+  if (pos_left == std::string::npos || pos_right == std::string::npos || pos_right <= pos_left) {
+    return false;
+  }
+
+  name = token.substr(0, pos_left);
+
+  try {
+    index = std::stoi(token.substr(pos_left + 1, pos_right - pos_left - 1));
+  } catch (const std::exception&) {
+    index = -1;
+    return false;
+  }
+
+  return true;
+}
+
 bool FlatbuffersObjectView::is_enum_field(const reflection::Field& field, const reflection::Schema& schema) {
   const auto base_type = field.type()->base_type();
 
@@ -597,29 +620,6 @@ bool FlatbuffersObjectView::is_enum_field(const reflection::Field& field, const 
 
   return field.type()->index() >= 0 && schema.enums() &&
          static_cast<flatbuffers::uoffset_t>(field.type()->index()) < schema.enums()->size();
-}
-
-std::string FlatbuffersObjectView::get_enum_value_name(const reflection::Field& field, const reflection::Schema& schema,
-                                                       int64_t value) {
-  if (!is_enum_field(field, schema)) {
-    return {};
-  }
-
-  const auto* enum_def = schema.enums()->Get(static_cast<flatbuffers::uoffset_t>(field.type()->index()));
-
-  if (!enum_def || !enum_def->values()) {
-    return {};
-  }
-
-  for (flatbuffers::uoffset_t i = 0; i < enum_def->values()->size(); ++i) {
-    const auto* ev = enum_def->values()->Get(i);
-
-    if (ev && ev->value() == value && ev->name()) {
-      return ev->name()->str();
-    }
-  }
-
-  return {};
 }
 
 int FlatbuffersObjectView::get_fbs_edit_type(reflection::BaseType base_type) {
@@ -649,27 +649,27 @@ int FlatbuffersObjectView::get_fbs_edit_type(reflection::BaseType base_type) {
   }
 }
 
-bool FlatbuffersObjectView::split_indexed_token(const std::string& token, std::string& name, int& index) {
-  name = token;
-  index = -1;
-
-  const auto pos_left = token.find('[');
-  const auto pos_right = token.find(']');
-
-  if (pos_left == std::string::npos || pos_right == std::string::npos || pos_right <= pos_left) {
-    return false;
+std::string FlatbuffersObjectView::get_enum_value_name(const reflection::Field& field, const reflection::Schema& schema,
+                                                       int64_t value) {
+  if (!is_enum_field(field, schema)) {
+    return {};
   }
 
-  name = token.substr(0, pos_left);
+  const auto* enum_def = schema.enums()->Get(static_cast<flatbuffers::uoffset_t>(field.type()->index()));
 
-  try {
-    index = std::stoi(token.substr(pos_left + 1, pos_right - pos_left - 1));
-  } catch (const std::exception&) {
-    index = -1;
-    return false;
+  if (!enum_def || !enum_def->values()) {
+    return {};
   }
 
-  return true;
+  for (flatbuffers::uoffset_t i = 0; i < enum_def->values()->size(); ++i) {
+    const auto* ev = enum_def->values()->Get(i);
+
+    if (ev && ev->value() == value && ev->name()) {
+      return ev->name()->str();
+    }
+  }
+
+  return {};
 }
 
 #endif

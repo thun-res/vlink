@@ -34,6 +34,7 @@
 #include "./base/memory_pool.h"
 #include "./base/memory_resource.h"
 #include "./base/message_loop.h"
+#include "./base/utils.h"
 
 namespace vlink {
 
@@ -53,8 +54,10 @@ struct Timer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding)
   std::atomic_bool is_strict{false};
 
   bool is_once_type{false};
+  bool has_pending_callback{false};
 
   Timer::Callback callback{nullptr};
+  Timer::Callback pending_callback{nullptr};
 
   std::mutex mtx;
   std::recursive_mutex recursive_mtx;
@@ -94,6 +97,13 @@ Timer::Timer(uint32_t interval_ms, int32_t loop_count, Callback&& callback) : im
 
 Timer::~Timer() {
   impl_->alive_flag->store(false, std::memory_order_release);
+
+#ifdef _WIN32
+  if (Utils::is_terminating()) {
+    (void)impl_.release();
+    return;
+  }
+#endif
 
   MessageLoop* message_loop = impl_->message_loop.load(std::memory_order_acquire);
 
@@ -204,8 +214,7 @@ bool Timer::detach() {
 
 void Timer::start(Callback&& callback) {
   if (callback) {
-    std::lock_guard lock(impl_->recursive_mtx);
-    impl_->callback = std::move(callback);
+    set_callback(std::move(callback));
   }
 
   if (!is_active() && impl_->remain_loop_count.load(std::memory_order_relaxed) != 0) {
@@ -219,15 +228,6 @@ void Timer::restart() {
 }
 
 void Timer::stop() { stop(true); }
-
-void Timer::stop(bool invalidate_pending) {
-  impl_->start_time.store(0, std::memory_order_release);
-  impl_->invoke_count.store(0, std::memory_order_relaxed);
-
-  if (invalidate_pending) {
-    impl_->generation.fetch_add(1, std::memory_order_acq_rel);
-  }
-}
 
 void Timer::set_strict(bool strict) { impl_->is_strict.store(strict, std::memory_order_relaxed); }
 
@@ -277,21 +277,41 @@ void Timer::set_loop_count(int32_t loop_count) {
 
 void Timer::set_callback(Callback&& callback) {
   std::lock_guard lock(impl_->recursive_mtx);
+
+  if VUNLIKELY (impl_->is_busy.load(std::memory_order_acquire)) {
+    impl_->pending_callback = std::move(callback);
+    impl_->has_pending_callback = true;
+    return;
+  }
+
   impl_->callback = std::move(callback);
 }
 
+void Timer::set_priority(uint16_t priority) { impl_->priority.store(priority, std::memory_order_relaxed); }
+
 void Timer::run_callback() {
   {
-    std::lock_guard recursive_lock(impl_->recursive_mtx);
     std::lock_guard lock(impl_->mtx);
 
-    impl_->is_busy.store(true, std::memory_order_release);
+    {
+      std::lock_guard callback_lock(impl_->recursive_mtx);
+      impl_->is_busy.store(true, std::memory_order_release);
+    }
 
     if VLIKELY (impl_->callback) {
       impl_->callback();
     }
 
-    impl_->is_busy.store(false, std::memory_order_release);
+    {
+      std::lock_guard callback_lock(impl_->recursive_mtx);
+
+      if VUNLIKELY (impl_->has_pending_callback) {
+        impl_->callback = std::move(impl_->pending_callback);
+        impl_->has_pending_callback = false;
+      }
+
+      impl_->is_busy.store(false, std::memory_order_release);
+    }
   }
 
   impl_->cv.notify_all();
@@ -312,6 +332,15 @@ void Timer::wait_for_idle() {
     return !impl_->is_busy.load(std::memory_order_acquire) &&
            impl_->in_flight_count.load(std::memory_order_acquire) == 0;
   });
+}
+
+void Timer::stop(bool invalidate_pending) {
+  impl_->start_time.store(0, std::memory_order_release);
+  impl_->invoke_count.store(0, std::memory_order_relaxed);
+
+  if (invalidate_pending) {
+    impl_->generation.fetch_add(1, std::memory_order_acq_rel);
+  }
 }
 
 void Timer::clear() { impl_->message_loop.store(nullptr, std::memory_order_release); }
@@ -350,8 +379,6 @@ void Timer::sub_remain_loop_count() const {
 void Timer::set_invoke_count(uint64_t invoke_count) const {
   impl_->invoke_count.store(invoke_count, std::memory_order_relaxed);
 }
-
-void Timer::set_priority(uint16_t priority) { impl_->priority.store(priority, std::memory_order_relaxed); }
 
 uint64_t Timer::get_start_time() const { return impl_->start_time.load(std::memory_order_acquire); }
 

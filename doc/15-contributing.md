@@ -536,7 +536,7 @@ PR 门槛为两条硬规则；测试框架细节（doctest、断言宏、`TEST_C
 |---|---|
 | CLI 工具数量 | 根 README（中文 + `README.en.md`）/ [白皮书](00-whitepaper.md) / [概述](00-overview.md) / [快速开始](01-started.md) `ENABLE_CLI_*` 列表 / [CLI 工具](10-cli-tools.md) / [速查参考](14-reference.md) / `cli-tools-overview.drawio`、`overview-architecture.drawio`、`foreword-*.drawio` + PNG / `.github/wiki/`（`index.html` + `assets/js/i18n.js` 三语）/ `CHANGELOG.md` |
 | transport 模块数量 | 同上 + [传输后端与 URL](04-transport.md) |
-| 序列化类型数量 | [消息序列化](03-serialization.md) / 根 README / [速查参考](14-reference.md) |
+| 序列化类型数量 | [消息序列化](03-serialization.md) / 根 README / [白皮书](00-whitepaper.md) / [速查参考](14-reference.md) / `serialization-*.drawio`、`overview-architecture.drawio`、`foreword-*.drawio`、`helloworld-example-flow.drawio` + PNG / `.github/wiki/`（`index.html` + `assets/js/i18n.js` 三语）/ `.github/scripts/publish-doxygen-wiki.sh` / `CHANGELOG.md` |
 | QoS 预设数量 | [QoS 配置](05-qos.md) / [速查参考](14-reference.md) / `CHANGELOG.md` |
 | base 库组件数量 | [基础库](08-base-library.md) 表格 / 概述相应表 |
 | 示例数量 / 类别 | [快速开始](01-started.md) / 各 `examples/CATEGORY/README.md` |

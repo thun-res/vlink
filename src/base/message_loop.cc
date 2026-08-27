@@ -121,6 +121,7 @@ struct MessageLoop::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
 
 #ifdef _WIN32
   std::atomic<HANDLE> thread_handle{nullptr};
+  std::mutex thread_handle_mtx;
 #endif
 
   std::string name;
@@ -128,6 +129,7 @@ struct MessageLoop::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
   std::atomic<MessageLoop::Strategy> strategy{MessageLoop::kOptimizationStrategy};
 
   uint32_t task_seq{0};
+  size_t block_waiter_count{0U};
   std::optional<NormalQueue> normal_queue;
   std::optional<NormalQueue> normal_staging_queue;
   std::optional<LockfreeQueue> lockfree_queue;
@@ -143,6 +145,7 @@ struct MessageLoop::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
   std::mutex spin_once_mtx;
   std::mutex mtx;
   ConditionVariable cv;
+  ConditionVariable capacity_cv;
 };
 
 // MessageLoop
@@ -188,10 +191,24 @@ MessageLoop::MessageLoop(Type type) : impl_(std::make_unique<Impl>()) {
 
 MessageLoop::~MessageLoop() {
   // NOLINTBEGIN
+#ifdef _WIN32
+  if VUNLIKELY (Utils::is_terminating()) {
+    impl_->alive_state->alive.store(false, std::memory_order_release);
+    (void)impl_.release();
+    return;
+  }
+#endif
+
   {
     std::lock_guard lock(impl_->alive_state->mtx);
     impl_->alive_state->alive.store(false, std::memory_order_release);
   }
+
+#ifdef _WIN32
+  if VUNLIKELY (impl_->is_running.load(std::memory_order_acquire)) {
+    (void)wait_for_quit(0, false);
+  }
+#endif
 
   if VUNLIKELY (impl_->is_running.load(std::memory_order_acquire)) {
     CLOG_W("MessageLoop is still running(%s).", impl_->name.c_str());
@@ -205,7 +222,7 @@ MessageLoop::~MessageLoop() {
 
 #ifdef _WIN32
   {
-    std::unique_lock lock(impl_->mtx);
+    std::lock_guard lock(impl_->thread_handle_mtx);
     HANDLE thread_handle = impl_->thread_handle.exchange(nullptr, std::memory_order_acq_rel);
 
     if (thread_handle != nullptr) {
@@ -239,15 +256,22 @@ MessageLoop::~MessageLoop() {
   // NOLINTEND
 }
 
-MessageLoop::Type MessageLoop::get_type() const { return impl_->type; }
-
 void MessageLoop::set_name(const std::string& name) { impl_->name = name; }
 
 const std::string& MessageLoop::get_name() const { return impl_->name; }
 
+MessageLoop::Type MessageLoop::get_type() const { return impl_->type; }
+
 MessageLoop::Strategy MessageLoop::get_strategy() const { return impl_->strategy.load(std::memory_order_acquire); }
 
-void MessageLoop::set_strategy(Strategy strategy) { impl_->strategy.store(strategy, std::memory_order_release); }
+void MessageLoop::set_strategy(Strategy strategy) {
+  {
+    std::lock_guard lock(impl_->mtx);
+    impl_->strategy.store(strategy, std::memory_order_release);
+  }
+
+  impl_->capacity_cv.notify_all();
+}
 
 void MessageLoop::register_begin_handler(Callback&& callback) {
   if VUNLIKELY (impl_->is_running.load(std::memory_order_acquire)) {
@@ -277,6 +301,10 @@ void MessageLoop::register_idle_handler(Callback&& callback) {
 }
 
 bool MessageLoop::run() {
+#ifdef _WIN32
+  std::unique_lock thread_handle_lock(impl_->thread_handle_mtx);
+#endif
+
   bool expected = false;
 
   if VUNLIKELY (!impl_->is_running.compare_exchange_strong(expected, true, std::memory_order_acq_rel,
@@ -286,14 +314,20 @@ bool MessageLoop::run() {
   }
 
 #ifdef _WIN32
-  {
-    std::unique_lock lock(impl_->mtx);
-    HANDLE thread_handle = impl_->thread_handle.exchange(nullptr, std::memory_order_acq_rel);
+  HANDLE old_thread_handle = impl_->thread_handle.exchange(nullptr, std::memory_order_acq_rel);
 
-    if (thread_handle != nullptr) {
-      ::CloseHandle(thread_handle);
-    }
+  if (old_thread_handle != nullptr) {
+    ::CloseHandle(old_thread_handle);
   }
+
+  HANDLE thread_handle = nullptr;
+
+  if (::DuplicateHandle(::GetCurrentProcess(), ::GetCurrentThread(), ::GetCurrentProcess(), &thread_handle, SYNCHRONIZE,
+                        FALSE, 0) != FALSE) {
+    impl_->thread_handle.store(thread_handle, std::memory_order_release);
+  }
+
+  thread_handle_lock.unlock();
 #endif
 
   if (impl_->type == kLockfreeType && impl_->lockfree_needs_reset.exchange(false, std::memory_order_acq_rel)) {
@@ -314,6 +348,10 @@ bool MessageLoop::run() {
 }
 
 bool MessageLoop::async_run() {
+#ifdef _WIN32
+  std::unique_lock thread_handle_lock(impl_->thread_handle_mtx);
+#endif
+
   bool expected = false;
 
   if VUNLIKELY (!impl_->is_running.compare_exchange_strong(expected, true, std::memory_order_acq_rel,
@@ -327,13 +365,10 @@ bool MessageLoop::async_run() {
   }
 
 #ifdef _WIN32
-  {
-    std::unique_lock lock(impl_->mtx);
-    HANDLE thread_handle = impl_->thread_handle.exchange(nullptr, std::memory_order_acq_rel);
+  HANDLE old_thread_handle = impl_->thread_handle.exchange(nullptr, std::memory_order_acq_rel);
 
-    if (thread_handle != nullptr) {
-      ::CloseHandle(thread_handle);
-    }
+  if (old_thread_handle != nullptr) {
+    ::CloseHandle(old_thread_handle);
   }
 #endif
 
@@ -347,7 +382,35 @@ bool MessageLoop::async_run() {
   impl_->quit_flag.store(false, std::memory_order_release);
   impl_->force_quit_flag.store(false, std::memory_order_release);
 
-  impl_->thread = std::thread([this]() { do_consume(); });
+  try {
+    impl_->thread = std::thread([this]() { do_consume(); });
+  } catch (...) {
+    {
+      std::lock_guard lock(impl_->mtx);
+      impl_->quit_flag.store(true, std::memory_order_release);
+      impl_->is_running.store(false, std::memory_order_release);
+    }
+
+    impl_->cv.notify_all();
+    impl_->capacity_cv.notify_all();
+    throw;
+  }
+
+#ifdef _WIN32
+  HANDLE thread_handle = nullptr;
+
+  if (::DuplicateHandle(::GetCurrentProcess(), reinterpret_cast<HANDLE>(impl_->thread.native_handle()),
+                        ::GetCurrentProcess(), &thread_handle, SYNCHRONIZE, FALSE, 0) != FALSE) {
+    HANDLE expected_thread_handle = nullptr;
+
+    if (!impl_->thread_handle.compare_exchange_strong(expected_thread_handle, thread_handle, std::memory_order_acq_rel,
+                                                      std::memory_order_acquire)) {
+      ::CloseHandle(thread_handle);
+    }
+  }
+
+  thread_handle_lock.unlock();
+#endif
 
   if (!impl_->name.empty()) {
     Utils::set_thread_name(impl_->name, &impl_->thread);
@@ -406,26 +469,27 @@ bool MessageLoop::quit(bool force) {
   }
 
   impl_->cv.notify_all();
+  impl_->capacity_cv.notify_all();
 
   return true;
 }
 
 bool MessageLoop::wait_for_quit(int ms, bool check) {
-  std::unique_lock lock(impl_->mtx);
-
 #ifdef _WIN32
-  HANDLE thread_handle = impl_->thread_handle.load(std::memory_order_acquire);
+  {
+    std::lock_guard lock(impl_->thread_handle_mtx);
+    HANDLE thread_handle = impl_->thread_handle.load(std::memory_order_acquire);
 
-  if (thread_handle != nullptr) {
-    DWORD thread_status = STILL_ACTIVE;
-
-    if (::GetExitCodeThread(thread_handle, &thread_status) && thread_status != STILL_ACTIVE) {
+    if (thread_handle != nullptr && ::WaitForSingleObject(thread_handle, 0) == WAIT_OBJECT_0) {
       impl_->is_running.store(false, std::memory_order_release);
       impl_->is_busy.store(false, std::memory_order_release);
+      impl_->cv.notify_all();
       return true;
     }
   }
 #endif
+
+  std::unique_lock lock(impl_->mtx);
 
   if VUNLIKELY (check && is_in_same_thread()) {
     CLOG_E("MessageLoop wait_for_quit in work thread(%s).", impl_->name.c_str());
@@ -444,15 +508,6 @@ bool MessageLoop::wait_for_quit(int ms, bool check) {
 
 bool MessageLoop::post_task(Callback&& callback) { return push_task(std::move(callback), kNoPriority); }
 
-bool MessageLoop::post_untracked_task(Callback&& callback, TaskOverflowPolicy overflow_policy,
-                                      TaskDropPolicy drop_policy) {
-  if VUNLIKELY (impl_->type == kLockfreeType && drop_policy == TaskDropPolicy::kProtected) {
-    CLOG_W("MessageLoop: TaskDropPolicy::kProtected is ignored by lock-free queues (%s).", impl_->name.c_str());
-  }
-
-  return push_task(std::move(callback), kNoPriority, drop_policy == TaskDropPolicy::kDroppable, overflow_policy);
-}
-
 TaskHandle MessageLoop::post_task_handle(Callback&& callback, const PostTaskOptions& options) {
   auto handle = TaskHandle::make_task_handle(options.cancellation_token);
 
@@ -467,7 +522,8 @@ TaskHandle MessageLoop::post_task_handle(Callback&& callback, const PostTaskOpti
   auto tracked = TaskHandle::make_tracked_task(handle, std::move(callback));
   const bool droppable = options.drop_policy == TaskDropPolicy::kDroppable;
 
-  if VUNLIKELY (!push_task(std::move(tracked), kNoPriority, droppable, options.overflow_policy, &handle) &&
+  if VUNLIKELY (!push_task(std::move(tracked), kNoPriority, droppable, options.overflow_policy, &handle,
+                           options.cancellation_token.valid()) &&
                 !handle.is_done()) {
     TaskHandle::mark_task_rejected(handle);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
@@ -512,7 +568,8 @@ TaskHandle MessageLoop::post_task_with_priority_handle(Callback&& callback, uint
   auto tracked = TaskHandle::make_tracked_task(handle, std::move(callback));
   const bool droppable = options.drop_policy == TaskDropPolicy::kDroppable;
 
-  if VUNLIKELY (!push_task(std::move(tracked), priority, droppable, options.overflow_policy, &handle) &&
+  if VUNLIKELY (!push_task(std::move(tracked), priority, droppable, options.overflow_policy, &handle,
+                           options.cancellation_token.valid()) &&
                 !handle.is_done()) {
     TaskHandle::mark_task_rejected(handle);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
@@ -581,20 +638,21 @@ size_t MessageLoop::get_task_count() const {
 }
 
 bool MessageLoop::wait_for_idle(int ms, bool check) {
-  std::unique_lock lock(impl_->mtx);
-
 #ifdef _WIN32
-  HANDLE thread_handle = impl_->thread_handle.load(std::memory_order_acquire);
+  {
+    std::lock_guard lock(impl_->thread_handle_mtx);
+    HANDLE thread_handle = impl_->thread_handle.load(std::memory_order_acquire);
 
-  if (thread_handle != nullptr) {
-    DWORD thread_status = STILL_ACTIVE;
-    if (::GetExitCodeThread(thread_handle, &thread_status) && thread_status != STILL_ACTIVE) {
+    if (thread_handle != nullptr && ::WaitForSingleObject(thread_handle, 0) == WAIT_OBJECT_0) {
       impl_->is_running.store(false, std::memory_order_release);
       impl_->is_busy.store(false, std::memory_order_release);
+      impl_->cv.notify_all();
       return true;
     }
   }
 #endif
+
+  std::unique_lock lock(impl_->mtx);
 
   if VUNLIKELY (check && is_in_same_thread()) {
     CLOG_E("MessageLoop wait_for_idle in work thread(%s).", impl_->name.c_str());
@@ -634,6 +692,15 @@ bool MessageLoop::is_in_same_thread() const {
 }
 
 std::shared_ptr<MessageLoop::AliveState> MessageLoop::get_alive_state() const { return impl_->alive_state; }
+
+bool MessageLoop::post_untracked_task(Callback&& callback, TaskOverflowPolicy overflow_policy,
+                                      TaskDropPolicy drop_policy) {
+  if VUNLIKELY (impl_->type == kLockfreeType && drop_policy == TaskDropPolicy::kProtected) {
+    CLOG_W("MessageLoop: TaskDropPolicy::kProtected is ignored by lock-free queues (%s).", impl_->name.c_str());
+  }
+
+  return push_task(std::move(callback), kNoPriority, drop_policy == TaskDropPolicy::kDroppable, overflow_policy);
+}
 
 void MessageLoop::on_begin() {
   if (impl_->begin_callback) {
@@ -700,60 +767,8 @@ bool MessageLoop::remove_timer(Timer* timer) {
   return impl_->timer_set.erase(timer) != 0;
 }
 
-bool MessageLoop::drop_one_normal_task() {
-  for (auto iter = impl_->normal_queue->begin(); iter != impl_->normal_queue->end(); ++iter) {
-    if (std::get<1>(*iter)) {
-      impl_->normal_queue->erase(iter);
-
-      return true;
-    }
-  }
-
-  return false;
-}
-
-bool MessageLoop::drop_one_lockfree_task(bool keep_reserved) {
-  Impl::LockfreeTaskTuple task;
-
-  if (!impl_->lockfree_queue->try_pop<Impl::LockfreeQueue::kNoBehavior>(task)) {
-    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  if (!keep_reserved) {
-    release_lockfree_task();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  return true;
-}
-
-bool MessageLoop::drop_one_priority_task() {
-  if (impl_->priority_droppable_queue->empty()) {
-    return false;
-  }
-
-  impl_->priority_droppable_queue->pop();
-
-  return true;
-}
-
-bool MessageLoop::reserve_lockfree_task() {
-  auto count = impl_->lockfree_task_count.load(std::memory_order_acquire);
-  const auto max_count = get_max_task_count();
-
-  while (count < max_count) {
-    if (impl_->lockfree_task_count.compare_exchange_weak(count, count + 1U, std::memory_order_acq_rel,
-                                                         std::memory_order_acquire)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-void MessageLoop::release_lockfree_task() { impl_->lockfree_task_count.fetch_sub(1U, std::memory_order_acq_rel); }
-
 bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppable, TaskOverflowPolicy overflow_policy,
-                            const TaskHandle* submit_handle) {
+                            const TaskHandle* submit_handle, bool poll_cancellation) {
   auto is_cancelled = [submit_handle]() -> bool {
     return submit_handle != nullptr && submit_handle->state() == TaskExecutionState::kCancelled;
   };
@@ -764,6 +779,33 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
     }
 
     return false;
+  };
+
+  auto block_for_capacity = [this, &is_cancelled, overflow_policy, poll_cancellation](auto&& has_capacity) -> bool {
+    if (overflow_policy != TaskOverflowPolicy::kBlock &&
+        impl_->strategy.load(std::memory_order_acquire) != kBlockStrategy) {
+      return false;
+    }
+
+    std::unique_lock wait_lock(impl_->mtx);
+    ++impl_->block_waiter_count;
+
+    auto capacity_available = [this, &is_cancelled, overflow_policy, &has_capacity] {
+      return impl_->quit_flag.load(std::memory_order_acquire) || is_cancelled() ||
+             (overflow_policy != TaskOverflowPolicy::kBlock &&
+              impl_->strategy.load(std::memory_order_acquire) != kBlockStrategy) ||
+             has_capacity();
+    };
+
+    if (poll_cancellation) {
+      (void)impl_->capacity_cv.wait_for(wait_lock, std::chrono::milliseconds(1), capacity_available);
+    } else {
+      impl_->capacity_cv.wait(wait_lock, capacity_available);
+    }
+
+    --impl_->block_waiter_count;
+
+    return true;
   };
 
   if VUNLIKELY (impl_->quit_flag.load(std::memory_order_acquire)) {
@@ -814,6 +856,10 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
       }
 
       if VUNLIKELY (is_full) {
+        if (block_for_capacity([this] { return impl_->normal_queue->size() < get_max_task_count(); })) {
+          continue;
+        }
+
         if (impl_->strategy.load(std::memory_order_acquire) == kOptimizationStrategy &&
             overflow_policy != TaskOverflowPolicy::kBlock) {
           if (++retry_cnt > 10) {
@@ -1014,6 +1060,13 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
       }
 
       if VUNLIKELY (is_full) {
+        if (block_for_capacity([this] {
+              return impl_->priority_droppable_queue->size() + impl_->priority_protected_queue->size() <
+                     get_max_task_count();
+            })) {
+          continue;
+        }
+
         if (impl_->strategy.load(std::memory_order_acquire) == kOptimizationStrategy &&
             overflow_policy != TaskOverflowPolicy::kBlock) {
           if (++retry_cnt > 10) {
@@ -1065,6 +1118,58 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
 
   return reject();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 }
+
+bool MessageLoop::drop_one_normal_task() {
+  for (auto iter = impl_->normal_queue->begin(); iter != impl_->normal_queue->end(); ++iter) {
+    if (std::get<1>(*iter)) {
+      impl_->normal_queue->erase(iter);
+
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool MessageLoop::drop_one_lockfree_task(bool keep_reserved) {
+  Impl::LockfreeTaskTuple task;
+
+  if (!impl_->lockfree_queue->try_pop<Impl::LockfreeQueue::kNoBehavior>(task)) {
+    return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  if (!keep_reserved) {
+    release_lockfree_task();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  return true;
+}
+
+bool MessageLoop::drop_one_priority_task() {
+  if (impl_->priority_droppable_queue->empty()) {
+    return false;
+  }
+
+  impl_->priority_droppable_queue->pop();
+
+  return true;
+}
+
+bool MessageLoop::reserve_lockfree_task() {
+  auto count = impl_->lockfree_task_count.load(std::memory_order_acquire);
+  const auto max_count = get_max_task_count();
+
+  while (count < max_count) {
+    if (impl_->lockfree_task_count.compare_exchange_weak(count, count + 1U, std::memory_order_acq_rel,
+                                                         std::memory_order_acquire)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void MessageLoop::release_lockfree_task() { impl_->lockfree_task_count.fetch_sub(1U, std::memory_order_acq_rel); }
 
 void MessageLoop::push_normal_task(Callback&& callback, bool droppable) {
   uint32_t start_time = 0;
@@ -1125,7 +1230,14 @@ void MessageLoop::do_consume() {
   impl_->thread_id.store(std::this_thread::get_id(), std::memory_order_release);
 
 #ifdef _WIN32
-  impl_->thread_handle.store(::OpenThread(THREAD_ALL_ACCESS, FALSE, ::GetCurrentThreadId()), std::memory_order_release);
+  HANDLE thread_handle = ::OpenThread(SYNCHRONIZE, FALSE, ::GetCurrentThreadId());
+  HANDLE expected_thread_handle = nullptr;
+
+  if (thread_handle != nullptr &&
+      !impl_->thread_handle.compare_exchange_strong(expected_thread_handle, thread_handle, std::memory_order_acq_rel,
+                                                    std::memory_order_acquire)) {
+    ::CloseHandle(thread_handle);
+  }
 #endif
 
   lock.unlock();
@@ -1158,10 +1270,9 @@ void MessageLoop::do_consume() {
   impl_->thread_id.store(std::thread::id(), std::memory_order_release);
   impl_->is_running.store(false, std::memory_order_release);
   impl_->is_busy.store(false, std::memory_order_release);
+  impl_->cv.notify_all();
 
   lock.unlock();
-
-  impl_->cv.notify_all();
 }
 
 bool MessageLoop::process_normal_task(bool block, bool reuse_queue) {
@@ -1186,8 +1297,13 @@ bool MessageLoop::process_normal_task(bool block, bool reuse_queue) {
 
   impl_->task_seq = 0;
   temp_queue.swap(impl_->normal_queue.value());
+  const bool notify_producers = impl_->block_waiter_count > 0U;
 
   lock.unlock();
+
+  if VUNLIKELY (notify_producers) {
+    impl_->capacity_cv.notify_all();
+  }
 
   while (!temp_queue.empty() && !impl_->force_quit_flag.load(std::memory_order_acquire)) {
     auto&& [start_time, droppable, task] = std::move(const_cast<Impl::NormalTaskTuple&>(temp_queue.front()));
@@ -1319,8 +1435,13 @@ bool MessageLoop::process_priority_task(bool block) {
   impl_->task_seq = 0;
   temp_queue.swap(impl_->priority_droppable_queue.value());
   temp_protected_queue.swap(impl_->priority_protected_queue.value());
+  const bool notify_producers = impl_->block_waiter_count > 0U;
 
   lock.unlock();
+
+  if VUNLIKELY (notify_producers) {
+    impl_->capacity_cv.notify_all();
+  }
 
   while ((!temp_queue.empty() || !temp_protected_queue.empty()) &&
          !impl_->force_quit_flag.load(std::memory_order_acquire)) {

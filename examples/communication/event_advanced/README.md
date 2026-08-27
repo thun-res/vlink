@@ -51,7 +51,7 @@ vlink::SampleLostInfo lost = sub.get_lost();
 VLOG_I("total=", lost.total, " lost=", lost.lost);
 ```
 
-同一 URL 上可挂多个 Subscriber，每个匹配端点获得一次投递；底层存储是否复制随后端与消息类型。FastDDS 支持 attach 到同一 loop 后串行派发；本示例依赖该能力，不能直接把 URL 改成不支持 attach 的 `intra://` 而仍用 `loop.wait_for_idle()` 判断完成。
+同一 URL 上可挂多个 Subscriber，每个匹配端点获得一次投递；底层存储是否复制随后端与消息类型。FastDDS 支持 attach 到同一 loop 后串行派发。
 
 ## 🔀 模型选择
 

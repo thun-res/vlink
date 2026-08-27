@@ -14,7 +14,7 @@ quickstart 给出 VLink 三种通信模型（Event / Method / Field）的最小�
 
 ## 📖 推荐阅读顺序
 
-1. **`hello_pubsub/`**。Publisher/Subscriber 是 VLink 中最基础、覆盖面最广的通信模型，其余两种模型可视为它的特化。该示例使用 `intra://...#direct` 演示同步回调与 `Publisher::wait_for_subscribers()`；intra 不支持 `Node::attach()`。
+1. **`hello_pubsub/`**。Publisher/Subscriber 是 VLink 中最基础、覆盖面最广的通信模型，其余两种模型可视为它的特化。该示例使用 `intra://...#direct` 演示同步回调与 `Publisher::wait_for_subscribers()`。
 
 2. **`hello_rpc/`**。Method 模型的关键区别在于：Server 端通过 `listen()` 的 `(req, resp)` 双参数回调原地填充响应；Client 端通过 `invoke()` 同步等待返回。该示例展示最常用的 `std::optional<Resp>` 形式。
 
@@ -31,6 +31,6 @@ quickstart 给出 VLink 三种通信模型（Event / Method / Field）的最小�
 ## 🔗 参考
 
 - `../communication/` — 同三种模型的进阶示例，覆盖定时器、连接检测、延迟统计、强制发布、异步 reply 等用法。
-- `../serialization/` — VLink 自动选择序列化策略的机制（Bytes / POD / string / 自定义 operator）。
+- `../serialization/` — VLink 自动选择序列化策略的机制（Bytes / POD / string / SOME/IP 宏结构 / 自定义 operator）。
 - `../url_guide/` — URL 各字段含义与跨后端切换。
 - 顶层 `doc/02-communication.md` — 三种通信模型的完整规范。

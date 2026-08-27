@@ -26,6 +26,8 @@
 #include <memory>
 #include <set>
 
+#include "./extension/someip_serializer.h"
+
 #ifdef VSOMEIP_DEPRECATED_UID_GID
 #define VSOMEIP_SUB_HANDLE_ARG const vsomeip_sec_client_t*, const std::string&
 #else
@@ -113,16 +115,6 @@ const Conf* SomeipPublisherImpl::get_conf() const { return &conf_; }
 
 const AbstractNode* SomeipPublisherImpl::get_abstract_node() const { return object_.get(); }
 
-bool SomeipPublisherImpl::attach(class MessageLoop*) {
-  VLOG_W("Function [attach] is not supported.");
-  return false;
-}
-
-bool SomeipPublisherImpl::detach() {
-  VLOG_W("Function [detach] is not supported.");
-  return false;
-}
-
 bool SomeipPublisherImpl::has_subscribers() const {
   std::lock_guard lock(object_->get_client_mtx());
 
@@ -130,7 +122,14 @@ bool SomeipPublisherImpl::has_subscribers() const {
 }
 
 bool SomeipPublisherImpl::write(const Bytes& msg_data) {
-  auto payload = someip::runtime::get()->create_payload(msg_data.data(), msg_data.size());
+  if VUNLIKELY (msg_data.size() > SomeipSerializer::kMaxPayloadSize) {
+    VLOG_E("SomeipPublisherImpl: Payload exceeds the protocol limit.");
+    return false;
+  }
+
+  auto payload = msg_data.empty()
+                     ? someip::runtime::get()->create_payload()
+                     : someip::runtime::get()->create_payload(msg_data.data(), static_cast<uint32_t>(msg_data.size()));
 
   object_->app()->notify(conf_.service, conf_.instance, conf_.event, payload);
 

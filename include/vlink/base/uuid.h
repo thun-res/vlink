@@ -357,6 +357,16 @@ class VLINK_EXPORT Uuid final {
 /// Details
 ////////////////////////////////////////////////////////////////
 
+inline constexpr Uuid::Uuid() noexcept = default;
+
+inline constexpr Uuid::Uuid(const std::array<value_type, kByteSize>& data) noexcept : data_{data} {}
+
+inline constexpr Uuid::Uuid(const value_type (&arr)[kByteSize]) noexcept {
+  for (size_t i = 0U; i < kByteSize; ++i) {
+    data_[i] = arr[i];
+  }
+}
+
 template <typename ForwardIteratorT>
 inline Uuid::Uuid(ForwardIteratorT first, ForwardIteratorT last) {
   static_assert(
@@ -365,16 +375,6 @@ inline Uuid::Uuid(ForwardIteratorT first, ForwardIteratorT last) {
 
   if (std::distance(first, last) == static_cast<std::ptrdiff_t>(kByteSize)) {
     std::copy(first, last, data_.begin());
-  }
-}
-
-inline constexpr Uuid::Uuid() noexcept = default;
-
-inline constexpr Uuid::Uuid(const std::array<value_type, kByteSize>& data) noexcept : data_{data} {}
-
-inline constexpr Uuid::Uuid(const value_type (&arr)[kByteSize]) noexcept {
-  for (size_t i = 0U; i < kByteSize; ++i) {
-    data_[i] = arr[i];
   }
 }
 

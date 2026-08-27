@@ -523,6 +523,8 @@ std::shared_ptr<dds::Subscriber> DdsFactory::create_subscriber(uint8_t type, con
 std::shared_ptr<dds::DataWriter> DdsFactory::create_datawriter(uint8_t type, const DdsConf& conf,
                                                                dds::Publisher* publisher, dds::Topic* topic,
                                                                dds::DataWriterListener* listener, bool is_cdr_type) {
+  (void)is_cdr_type;
+
   static auto& factory = DdsFactory::get();
 
   const auto& dds_qos_ext = get_qos_ext(conf.qos_ext, "writer");
@@ -549,12 +551,10 @@ std::shared_ptr<dds::DataWriter> DdsFactory::create_datawriter(uint8_t type, con
       convert_qos(dds_qos, DdsConf::find_qos(conf.qos), conf.depth);
     }
 
-    if VUNLIKELY (is_cdr_type) {
-      dds_qos.endpoint().history_memory_policy = rtps::PREALLOCATED_WITH_REALLOC_MEMORY_MODE;
-    }
+    dds_qos.endpoint().history_memory_policy = rtps::PREALLOCATED_WITH_REALLOC_MEMORY_MODE;
 
     ptr = publisher->create_datawriter(topic, dds_qos, listener);
-  } else if VUNLIKELY (is_cdr_type) {
+  } else {
     auto dds_qos = dds::DATAWRITER_QOS_DEFAULT;
     const auto ret = publisher->get_datawriter_qos_from_profile(dds_qos_ext, dds_qos);
 
@@ -566,8 +566,6 @@ std::shared_ptr<dds::DataWriter> DdsFactory::create_datawriter(uint8_t type, con
       dds_qos.endpoint().history_memory_policy = rtps::PREALLOCATED_WITH_REALLOC_MEMORY_MODE;
       ptr = publisher->create_datawriter(topic, dds_qos, listener);
     }
-  } else {
-    ptr = publisher->create_datawriter_with_profile(topic, dds_qos_ext, listener);
   }
 
   if VUNLIKELY (!ptr) {
@@ -585,6 +583,8 @@ std::shared_ptr<dds::DataWriter> DdsFactory::create_datawriter(uint8_t type, con
 std::shared_ptr<dds::DataReader> DdsFactory::create_datareader(uint8_t type, const DdsConf& conf,
                                                                dds::Subscriber* subscriber, dds::Topic* topic,
                                                                dds::DataReaderListener* listener, bool is_cdr_type) {
+  (void)is_cdr_type;
+
   static auto& factory = DdsFactory::get();
 
   const auto& dds_qos_ext = get_qos_ext(conf.qos_ext, "reader");
@@ -611,12 +611,10 @@ std::shared_ptr<dds::DataReader> DdsFactory::create_datareader(uint8_t type, con
       convert_qos(dds_qos, DdsConf::find_qos(conf.qos), conf.depth);
     }
 
-    if VUNLIKELY (is_cdr_type) {
-      dds_qos.endpoint().history_memory_policy = rtps::PREALLOCATED_WITH_REALLOC_MEMORY_MODE;
-    }
+    dds_qos.endpoint().history_memory_policy = rtps::PREALLOCATED_WITH_REALLOC_MEMORY_MODE;
 
     ptr = subscriber->create_datareader(topic, dds_qos, listener);
-  } else if VUNLIKELY (is_cdr_type) {
+  } else {
     auto dds_qos = dds::DATAREADER_QOS_DEFAULT;
     const auto ret = subscriber->get_datareader_qos_from_profile(dds_qos_ext, dds_qos);
 
@@ -628,8 +626,6 @@ std::shared_ptr<dds::DataReader> DdsFactory::create_datareader(uint8_t type, con
       dds_qos.endpoint().history_memory_policy = rtps::PREALLOCATED_WITH_REALLOC_MEMORY_MODE;
       ptr = subscriber->create_datareader(topic, dds_qos, listener);
     }
-  } else {
-    ptr = subscriber->create_datareader_with_profile(topic, dds_qos_ext, listener);
   }
 
   if VUNLIKELY (!ptr) {
