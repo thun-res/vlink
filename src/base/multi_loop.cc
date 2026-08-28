@@ -60,6 +60,35 @@ struct MultiLoop::Impl final {
   size_t thread_num{0};
 };
 
+struct MultiLoop::PendingTask final {
+  MultiLoop* loop;
+  MultiLoop::Impl* impl;
+  MultiLoop::Callback callback;
+  uint32_t start_time;
+
+  PendingTask(MultiLoop* target_loop, MultiLoop::Impl* target_impl, MultiLoop::Callback&& target_callback,
+              uint32_t target_start_time) noexcept
+      : loop(target_loop), impl(target_impl), callback(std::move(target_callback)), start_time(target_start_time) {
+    impl->pending_tasks.fetch_add(1U, std::memory_order_acq_rel);
+  }
+
+  PendingTask(const PendingTask&) = delete;
+
+  PendingTask& operator=(const PendingTask&) = delete;
+
+  ~PendingTask() {
+    if VLIKELY (impl->pending_tasks.fetch_sub(1U, std::memory_order_acq_rel) != 1U) {
+      return;
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(impl->idle_mtx);
+    }
+
+    impl->idle_cv.notify_all();
+  }
+};
+
 // MultiLoop
 MultiLoop::MultiLoop(size_t thread_num) : impl_(std::make_unique<Impl>()) {
   impl_->thread_num = thread_num;
@@ -191,44 +220,31 @@ void MultiLoop::on_end() {
 }
 
 void MultiLoop::on_task_changed(Callback&& callback, uint32_t start_time) {
-  auto task = std::make_shared<Callback>(std::move(callback));
-
+  std::shared_ptr<PendingTask> task;
   bool posted = false;
 
   {
     std::lock_guard lock(impl_->pool_mtx);
 
     if VLIKELY (impl_->thread_pool) {
-      impl_->pending_tasks.fetch_add(1U, std::memory_order_acq_rel);
+      task = std::make_shared<PendingTask>(this, impl_.get(), std::move(callback), start_time);
 
-      auto release_pending = [](Impl* impl) noexcept {
-        bool should_notify = false;
-
-        {
-          std::lock_guard<std::mutex> lock(impl->idle_mtx);
-          should_notify = impl->pending_tasks.fetch_sub(1U, std::memory_order_acq_rel) == 1U;
+      posted = impl_->thread_pool->post_task([task]() mutable {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        if VLIKELY (task->callback) {
+          task->loop->MessageLoop::on_task_changed(std::move(task->callback), task->start_time);
         }
-
-        if (should_notify) {
-          impl->idle_cv.notify_all();
-        }
-      };
-
-      std::unique_ptr<Impl, decltype(release_pending)> pending_token(impl_.get(), release_pending);
-
-      posted = impl_->thread_pool->post_task([this, task, pending_token = std::move(pending_token),
-                                              start_time]() mutable {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        if VLIKELY (*task) {
-          MessageLoop::on_task_changed(std::move(*task), start_time);
-        }
-
-        (void)pending_token;
       });
     }
   }
 
-  if VUNLIKELY (!posted && *task) {
-    MessageLoop::on_task_changed(std::move(*task), start_time);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  if VUNLIKELY (!posted) {
+    if (task) {
+      if (task->callback) {
+        MessageLoop::on_task_changed(std::move(task->callback), task->start_time);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
+    } else if (callback) {
+      MessageLoop::on_task_changed(std::move(callback), start_time);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
   }
 }
 

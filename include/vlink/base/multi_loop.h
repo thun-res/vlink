@@ -168,6 +168,8 @@ class VLINK_EXPORT MultiLoop : public MessageLoop {
 
  private:
   struct Impl;
+
+  struct PendingTask;
   std::unique_ptr<Impl> impl_;
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(MultiLoop)
