@@ -39,6 +39,7 @@
 
 #include "./base/cached_timestamp.h"
 #include "./base/logger_plugin_interface.h"
+#include "./base/memory_pool.h"
 #include "./base/utils.h"
 #include "./vlink/version.h"
 
@@ -250,7 +251,7 @@ struct LoggerGlobal final {  // NOLINT(clang-analyzer-optin.performance.Padding)
   }
 
  private:
-  LoggerGlobal() = default;
+  LoggerGlobal() { MemoryPool::global_instance(); }
 };
 
 // Logger::Impl
