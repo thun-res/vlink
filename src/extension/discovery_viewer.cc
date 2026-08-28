@@ -138,7 +138,6 @@ struct DiscoveryViewer::Impl final {
   std::string native_hostname;
 
   std::map<DiscoveryViewer::Info, ElapsedTimer, Comparator> info_map;
-  std::map<std::pair<int, uint32_t>, std::string> process_map;
   std::unordered_map<std::string, std::string> ser_map;
   std::unordered_map<std::string, SchemaType> schema_type_map;
   std::vector<DiscoveryViewer::Info> info_list;
