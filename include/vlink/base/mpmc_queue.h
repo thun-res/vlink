@@ -577,6 +577,10 @@ inline void MpmcQueue<T>::pop(T& v) noexcept {
 template <typename T>
 template <typename MpmcQueue<T>::Behavior BehaviorT>
 inline bool MpmcQueue<T>::try_pop(T& v) noexcept {
+  if VUNLIKELY (quit_flag_.value.load(kMemoryOrderAcquire)) {
+    return false;
+  }
+
   auto tail = tail_.load(kMemoryOrderAcquire);
 
   for (;;) {
