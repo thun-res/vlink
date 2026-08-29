@@ -75,6 +75,8 @@ static constexpr SocketHandle kInvalidSocket = -1;
 #endif
 
 [[maybe_unused]] static constexpr int kCollectInterval = 500;
+[[maybe_unused]] static constexpr int kReportInterval = 500;
+[[maybe_unused]] static constexpr int kReportTimeout = kReportInterval * 4;
 [[maybe_unused]] static constexpr size_t kMaxTaskSize = 50000U;
 [[maybe_unused]] static constexpr uint32_t kMaxElapsedTime = 1000;
 [[maybe_unused]] static constexpr int kBroadcastBindPort = 51694;
@@ -136,7 +138,6 @@ struct DiscoveryViewer::Impl final {
   std::string native_hostname;
 
   std::map<DiscoveryViewer::Info, ElapsedTimer, Comparator> info_map;
-  std::map<std::pair<int, uint32_t>, std::string> process_map;
   std::unordered_map<std::string, std::string> ser_map;
   std::unordered_map<std::string, SchemaType> schema_type_map;
   std::vector<DiscoveryViewer::Info> info_list;
@@ -938,7 +939,7 @@ void DiscoveryViewer::process_timeout() {
     std::lock_guard lock(impl_->mtx);
 
     for (const auto& [info, elapsed] : impl_->info_map) {
-      if (elapsed.get() > kCollectInterval * 4 || !elapsed.is_active()) {
+      if (elapsed.get() > kReportTimeout || !elapsed.is_active()) {
         erase_list.emplace_back(info);
       }
     }

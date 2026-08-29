@@ -39,6 +39,7 @@
 
 #include "./base/cached_timestamp.h"
 #include "./base/logger_plugin_interface.h"
+#include "./base/memory_pool.h"
 #include "./base/utils.h"
 #include "./vlink/version.h"
 
@@ -250,7 +251,7 @@ struct LoggerGlobal final {  // NOLINT(clang-analyzer-optin.performance.Padding)
   }
 
  private:
-  LoggerGlobal() = default;
+  LoggerGlobal() { MemoryPool::global_instance(); }
 };
 
 // Logger::Impl
@@ -365,6 +366,13 @@ Logger& Logger::get() noexcept {
 }
 
 void Logger::flush() noexcept {
+  auto& global_instance = LoggerGlobal::get();
+
+  if VUNLIKELY (is_logging_on_current_thread() || global_instance.is_initializing.load(std::memory_order_acquire) ||
+                global_instance.is_stopping.load(std::memory_order_acquire)) {
+    return;
+  }
+
   static Logger& instance = Logger::get();
 
   if (!instance.impl_->is_enable_file_channel.load(std::memory_order_acquire)) {
@@ -559,6 +567,10 @@ bool Logger::is_busy() noexcept { return LoggerGlobal::get().is_busy.load(std::m
 bool Logger::is_writable(Level level) noexcept {
   if VUNLIKELY (level >= kOff) {
     return false;
+  }
+
+  if VUNLIKELY (level == kFatal) {
+    return true;
   }
 
   return can_log(level);
@@ -877,8 +889,14 @@ bool Logger::can_log(Level level) noexcept {
 }
 
 void Logger::write(Level level, std::string_view log) noexcept {
-  Logger& instance = Logger::get();
   auto& global_instance = LoggerGlobal::get();
+
+  if VUNLIKELY (is_logging_on_current_thread() || global_instance.is_initializing.load(std::memory_order_acquire) ||
+                global_instance.is_stopping.load(std::memory_order_acquire)) {
+    return;
+  }
+
+  Logger& instance = Logger::get();
 
   if (level >= global_instance.console_level.load(std::memory_order_acquire)) {
     instance.write_to_console(level, log);

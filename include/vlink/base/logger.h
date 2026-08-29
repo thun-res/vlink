@@ -684,6 +684,8 @@ template <Logger::Level LevelT>
 inline bool Logger::should_log() noexcept {
   if constexpr (LevelT < Logger::kMinimumLevel || LevelT >= Logger::kOff) {
     return false;
+  } else if constexpr (LevelT == Logger::kFatal) {
+    return true;
   } else {
     return Logger::can_log(LevelT);
   }
