@@ -37,13 +37,19 @@
 
 #include "../common_test.h"
 
+#if defined(_GLIBCXX_RELEASE) && _GLIBCXX_RELEASE < 11
+enum class TestCharsFormat : uint8_t { scientific = 1U, fixed = 2U, hex = 4U, general = 3U };
+#else
+using TestCharsFormat = std::chars_format;
+#endif
+
 template <typename FloatT, typename = void>
 struct TestHasFloatToChars final : std::false_type {};
 
 template <typename FloatT>
 struct TestHasFloatToChars<FloatT,
                            std::void_t<decltype(std::to_chars(std::declval<char*>(), std::declval<char*>(),
-                                                              std::declval<FloatT>(), std::chars_format::general, 6))>>
+                                                              std::declval<FloatT>(), TestCharsFormat::general, 6))>>
     final : std::true_type {};
 
 static constexpr bool kTestHasFloatToChars = TestHasFloatToChars<double>::value;
