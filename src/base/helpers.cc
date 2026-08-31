@@ -106,13 +106,18 @@ std::string double_to_string(double value, int precision) noexcept {
   return ss.str();
 }
 
+#if defined(_GLIBCXX_RELEASE) && _GLIBCXX_RELEASE < 11
+enum class CharsFormat : uint8_t { scientific = 1U, fixed = 2U, hex = 4U, general = 3U };
+#else
+using CharsFormat = std::chars_format;
+#endif
+
 template <typename FloatT, typename = void>
 struct HasFloatToChars final : std::false_type {};
 
 template <typename FloatT>
-struct HasFloatToChars<FloatT,
-                       std::void_t<decltype(std::to_chars(std::declval<char*>(), std::declval<char*>(),
-                                                          std::declval<FloatT>(), std::chars_format::general, 6))>>
+struct HasFloatToChars<FloatT, std::void_t<decltype(std::to_chars(std::declval<char*>(), std::declval<char*>(),
+                                                                  std::declval<FloatT>(), CharsFormat::general, 6))>>
     final : std::true_type {};
 
 #ifdef __QNX__
@@ -126,7 +131,7 @@ constexpr bool kUseFloatToChars = HasFloatToChars<FloatT>::value;
 template <typename FloatT>
 size_t format_floating_to_impl(char* buf, size_t buflen, FloatT value) noexcept {
   if constexpr (kUseFloatToChars<FloatT>) {
-    auto result = std::to_chars(buf, buf + buflen, value, std::chars_format::general, 6);
+    auto result = std::to_chars(buf, buf + buflen, value, CharsFormat::general, 6);
 
     if VLIKELY (result.ec == std::errc()) {
       return static_cast<size_t>(result.ptr - buf);
@@ -165,7 +170,7 @@ size_t format_floating_spec_impl(char* buf, size_t buflen, FloatT value, char ty
 
   if constexpr (kUseFloatToChars<FloatT>) {
     if VLIKELY (!alt || (type != 'g' && type != 'G')) {
-      auto chars_fmt = std::chars_format::general;
+      auto chars_fmt = CharsFormat::general;
       bool upper = false;
 
       switch (type) {
@@ -173,7 +178,7 @@ size_t format_floating_spec_impl(char* buf, size_t buflen, FloatT value, char ty
           upper = true;
           [[fallthrough]];
         case 'f':
-          chars_fmt = std::chars_format::fixed;
+          chars_fmt = CharsFormat::fixed;
 
           if (precision < 0) {
             precision = 6;
@@ -184,7 +189,7 @@ size_t format_floating_spec_impl(char* buf, size_t buflen, FloatT value, char ty
           upper = true;
           [[fallthrough]];
         case 'e':
-          chars_fmt = std::chars_format::scientific;
+          chars_fmt = CharsFormat::scientific;
 
           if (precision < 0) {
             precision = 6;
@@ -195,7 +200,7 @@ size_t format_floating_spec_impl(char* buf, size_t buflen, FloatT value, char ty
           upper = true;
           [[fallthrough]];
         case 'a':
-          chars_fmt = std::chars_format::hex;
+          chars_fmt = CharsFormat::hex;
           break;
         case 'G':
           upper = true;
@@ -218,7 +223,7 @@ size_t format_floating_spec_impl(char* buf, size_t buflen, FloatT value, char ty
       auto size = static_cast<size_t>(result.ptr - buf);
 
       if VUNLIKELY (alt) {
-        const char exponent = chars_fmt == std::chars_format::hex ? 'p' : 'e';
+        const char exponent = chars_fmt == CharsFormat::hex ? 'p' : 'e';
         const size_t start = size > 0U && buf[0] == '-' ? 1U : 0U;
 
         if (start < size && buf[start] >= '0' && buf[start] <= '9') {
