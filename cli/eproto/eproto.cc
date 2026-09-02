@@ -159,6 +159,72 @@ using RawGetter = vlink::Getter<vlink::Bytes>;
   return size;
 }
 
+[[maybe_unused]] static void decode_terminal_utf8(std::string_view text, size_t index, uint32_t& code_point,
+                                                  size_t& bytes) {
+  const auto lead = static_cast<unsigned char>(text[index]);
+
+  if (lead < 0x80) {
+    code_point = lead;
+    bytes = 1;
+    return;
+  }
+
+  if ((lead & 0xE0) == 0xC0 && index + 1 < text.size() &&
+      (static_cast<unsigned char>(text[index + 1]) & 0xC0) == 0x80) {
+    code_point = (static_cast<uint32_t>(lead & 0x1F) << 6) | (static_cast<unsigned char>(text[index + 1]) & 0x3F);
+    bytes = 2;
+    return;
+  }
+
+  if ((lead & 0xF0) == 0xE0 && index + 2 < text.size() &&
+      (static_cast<unsigned char>(text[index + 1]) & 0xC0) == 0x80 &&
+      (static_cast<unsigned char>(text[index + 2]) & 0xC0) == 0x80) {
+    code_point = (static_cast<uint32_t>(lead & 0x0F) << 12) |
+                 (static_cast<uint32_t>(static_cast<unsigned char>(text[index + 1]) & 0x3F) << 6) |
+                 (static_cast<unsigned char>(text[index + 2]) & 0x3F);
+    bytes = 3;
+    return;
+  }
+
+  if ((lead & 0xF8) == 0xF0 && index + 3 < text.size() &&
+      (static_cast<unsigned char>(text[index + 1]) & 0xC0) == 0x80 &&
+      (static_cast<unsigned char>(text[index + 2]) & 0xC0) == 0x80 &&
+      (static_cast<unsigned char>(text[index + 3]) & 0xC0) == 0x80) {
+    code_point = (static_cast<uint32_t>(lead & 0x07) << 18) |
+                 (static_cast<uint32_t>(static_cast<unsigned char>(text[index + 1]) & 0x3F) << 12) |
+                 (static_cast<uint32_t>(static_cast<unsigned char>(text[index + 2]) & 0x3F) << 6) |
+                 (static_cast<unsigned char>(text[index + 3]) & 0x3F);
+    bytes = 4;
+    return;
+  }
+
+  code_point = lead;
+  bytes = 1;
+}
+
+[[maybe_unused]] static int terminal_codepoint_width(uint32_t code_point) {
+  if (code_point < 0x20 || code_point == 0x7F) {
+    return 0;
+  }
+
+  if ((code_point >= 0x0300 && code_point <= 0x036F) || (code_point >= 0x200B && code_point <= 0x200D) ||
+      code_point == 0xFEFF) {
+    return 0;
+  }
+
+  if ((code_point >= 0x1100 && code_point <= 0x115F) || (code_point >= 0x2E80 && code_point <= 0x303E) ||
+      (code_point >= 0x3041 && code_point <= 0x33FF) || (code_point >= 0x3400 && code_point <= 0x4DBF) ||
+      (code_point >= 0x4E00 && code_point <= 0x9FFF) || (code_point >= 0xA000 && code_point <= 0xA4CF) ||
+      (code_point >= 0xAC00 && code_point <= 0xD7A3) || (code_point >= 0xF900 && code_point <= 0xFAFF) ||
+      (code_point >= 0xFE30 && code_point <= 0xFE4F) || (code_point >= 0xFF00 && code_point <= 0xFF60) ||
+      (code_point >= 0xFFE0 && code_point <= 0xFFE6) || (code_point >= 0x20000 && code_point <= 0x2FFFD) ||
+      (code_point >= 0x30000 && code_point <= 0x3FFFD)) {
+    return 2;
+  }
+
+  return 1;
+}
+
 [[maybe_unused]] static bool is_text_ser_type(std::string_view ser_type) {
   std::string lower_ser{ser_type};
   std::transform(lower_ser.begin(), lower_ser.end(), lower_ser.begin(),
@@ -1771,8 +1837,9 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
                                    is_blob_type, use_json_format, root_msg]() {
     auto target_terminal_size = get_terminal_size();
     bool show_data_dot = has_new_data.exchange(false);
+    const bool terminal_size_changed = terminal_size != target_terminal_size;
 
-    if (terminal_size != target_terminal_size) {
+    if (terminal_size_changed) {
       terminal_size = target_terminal_size;
       is_changed = true;
     }
@@ -2018,7 +2085,7 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
       return;
     }
 
-    if (is_paused && !force_update) {
+    if (is_paused && !force_update && !terminal_size_changed) {
       VLINK_TERM_OUT << "\033[H";
       VLINK_TERM_OUT.flush();
 
@@ -2133,23 +2200,62 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
       print_list.reserve(split_str_list.size() + 5);
       line_list.reserve(split_str_list.size() + 5);
 
-      for (auto& str : split_str_list) {
-        if (static_cast<int64_t>(str.size()) > terminal_size.first) {
-          str = str.substr(0, terminal_size.first);
-        }
+      const auto line_width = static_cast<size_t>(terminal_size.first);
 
-        page_str += (str + "\n");
-        ++line_count;
+      for (const auto& str : split_str_list) {
+        size_t offset = 0;
+        size_t display_width = 0;
 
-        if (line_count >= terminal_size.second - 3) {
-          if (!page_str.empty()) {
+        auto complete_line = [&page_str, &line_count, &print_list, &line_list]() {
+          page_str += "\n";
+          ++line_count;
+
+          if (line_count >= terminal_size.second - 3) {
             page_str.pop_back();
+            print_list.emplace_back(page_str);
+            line_list.emplace_back(line_count);
+            page_str.clear();
+            line_count = 0;
           }
-          print_list.emplace_back(page_str);
-          line_list.emplace_back(line_count);
-          page_str.clear();
-          line_count = 0;
+        };
+
+        while (offset < str.size()) {
+          uint32_t code_point = 0;
+          size_t bytes = 0;
+          decode_terminal_utf8(str, offset, code_point, bytes);
+
+          if (code_point == '\t') {
+            size_t spaces = 8U - display_width % 8U;
+            offset += bytes;
+
+            while (spaces > 0) {
+              if (display_width >= line_width) {
+                complete_line();
+                display_width = 0;
+              }
+
+              const size_t count = std::min(spaces, line_width - display_width);
+              page_str.append(count, ' ');
+              display_width += count;
+              spaces -= count;
+            }
+
+            continue;
+          }
+
+          const auto width = static_cast<size_t>(terminal_codepoint_width(code_point));
+
+          if (width > 0 && display_width > 0 && display_width + width > line_width) {
+            complete_line();
+            display_width = 0;
+          }
+
+          page_str.append(str, offset, bytes);
+          display_width += width;
+          offset += bytes;
         }
+
+        complete_line();
       }
 
       if (!page_str.empty()) {

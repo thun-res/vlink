@@ -1278,7 +1278,13 @@ int main() {
       : Math.max(10.00 + noise(4, sampleStep, 0.12, 2.6), 0);
     const rateClass = sampleStep < 2 ? 'warn' : 'ok';
     const bodyLines = (variant === 'pointcloud' ? buildPointCloudLines(fastStep) : buildGnssLines(fastStep))
-      .map((line) => `<span class="ok">${escapeTerminalText(clip(line, cols))}</span>`);
+      .flatMap((line) => {
+        const wrapped = [];
+        for (let offset = 0; offset < line.length; offset += cols) {
+          wrapped.push(`<span class="ok">${escapeTerminalText(line.slice(offset, offset + cols))}</span>`);
+        }
+        return wrapped;
+      });
     const pages = chunkPages(bodyLines, bodyRows);
     const totalPages = pages.length;
     const page = totalPages <= 1 ? 0 : Math.min(totalPages - 1, Math.floor(liveMs / 2200));
