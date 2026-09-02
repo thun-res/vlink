@@ -1060,8 +1060,20 @@ class CustomDiscoveryViewer : public vlink::DiscoveryViewer {
  public:
   using DiscoveryViewer::DiscoveryViewer;
 
+  bool post_keyboard_task(vlink::MessageLoop::Callback&& callback) {
+    is_posting_keyboard_task_ = true;
+    const bool ret = post_untracked_task(std::move(callback), vlink::TaskOverflowPolicy::kUseDispatcherStrategy,
+                                         vlink::TaskDropPolicy::kProtected);
+    is_posting_keyboard_task_ = false;
+
+    return ret;
+  }
+
  protected:
-  uint32_t get_max_elapsed_time() const override { return kMaxElapsedTime; }
+  uint32_t get_max_elapsed_time() const override { return is_posting_keyboard_task_ ? 0U : kMaxElapsedTime; }
+
+ private:
+  inline static thread_local bool is_posting_keyboard_task_{false};
 };
 
 // NOLINTNEXTLINE(google-readability-function-size)
@@ -1857,7 +1869,14 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
     active_cnt = 0;
     total_rate = 0;
 
+    const int selected_line_snapshot = selected_line;
+    std::string selected_url;
+
     if (!is_paused) {
+      if (selected_line_snapshot >= 0 && static_cast<size_t>(selected_line_snapshot) < current_info_list.size()) {
+        selected_url = current_info_list[selected_line_snapshot].url;
+      }
+
       current_info_list.clear();
       print_lines.clear();
     }
@@ -2105,8 +2124,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
 
       if ((!(info.type & vlink::kPublisher) && !(info.type & vlink::kSetter)) ||
           (!has_intra_bind && vlink::Url::is_intra_type(info.url)) ||
-          (!observe_all_mode &&
-           (selected_line != static_cast<int>(print_lines.size()) || key_elapsed_timer.get() < 250))) {
+          (!observe_all_mode && (selected_url != info.url || key_elapsed_timer.get() < 250))) {
         sub_ptr_map.erase(info.url);
         sub_seq_map.erase(info.url);
         sub_size_map.erase(info.url);
@@ -2480,6 +2498,21 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
       lat = 0;
     }
 
+    if (!is_paused && !selected_url.empty()) {
+      auto selected_info = std::find_if(current_info_list.begin(), current_info_list.end(),
+                                        [&selected_url](const auto& info) { return info.url == selected_url; });
+
+      if (selected_info == current_info_list.end()) {
+        selected_line = -1;
+      } else {
+        selected_line = static_cast<int>(std::distance(current_info_list.begin(), selected_info));
+
+        if (target_row > 0) {
+          current_page = selected_line / target_row;
+        }
+      }
+    }
+
     print_lines_count.store(print_lines.size(), std::memory_order_release);
   };
 
@@ -2688,9 +2721,9 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
       if (key == "enter" || key == "esc") {
         filter_input_mode = false;
 
-        discovery_viewer->post_task([&print_function]() { print_function(false); });
+        discovery_viewer->post_keyboard_task([&print_function]() { print_function(false); });
       } else if (key == "backspace") {
-        discovery_viewer->post_task([&apply_filter_input_function]() {
+        discovery_viewer->post_keyboard_task([&apply_filter_input_function]() {
           while (!filter_input_text.empty() && (static_cast<unsigned char>(filter_input_text.back()) & 0xC0) == 0x80) {
             filter_input_text.pop_back();
           }
@@ -2702,7 +2735,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
           apply_filter_input_function();
         });
       } else if (key.size() == 1) {
-        discovery_viewer->post_task([key, &apply_filter_input_function]() {
+        discovery_viewer->post_keyboard_task([key, &apply_filter_input_function]() {
           filter_input_text += key;
 
           apply_filter_input_function();
@@ -2712,203 +2745,207 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
       return;
     }
 
-    if (key == "esc" || key == "q") {
-      if (is_jumped) {
-        return;
-      }
+    if (is_jumped) {
+      return;
+    }
 
+    if (key == "esc" || key == "q") {
       quit_function(0);
     } else if (key == " ") {
-      if (is_paused) {
-        is_paused = false;
-      } else {
-        is_paused = true;
-      }
-
-      discovery_viewer->post_task([&print_function]() { print_function(false); });
+      discovery_viewer->post_keyboard_task([&print_function]() {
+        is_paused = !is_paused;
+        print_function(false);
+      });
     } else if (key == "left") {
-      if (current_page >= 1) {
-        --current_page;
-        selected_line = -1;
-      }
+      discovery_viewer->post_keyboard_task([&update_meta_function, &print_function]() {
+        if (current_page >= 1) {
+          --current_page;
+          selected_line = -1;
+        }
 
-      discovery_viewer->post_task([&update_meta_function, &print_function]() {
         print_function(false);
         update_meta_function();
       });
     } else if (key == "right") {
-      if (current_page < total_pages - 1) {
-        ++current_page;
-        selected_line = -1;
-      }
+      discovery_viewer->post_keyboard_task([&update_meta_function, &print_function]() {
+        if (current_page < total_pages - 1) {
+          ++current_page;
+          selected_line = -1;
+        }
 
-      discovery_viewer->post_task([&update_meta_function, &print_function]() {
         print_function(false);
         update_meta_function();
       });
     } else if (key == "up") {
-      if (selected_line < 0) {
-        selected_line = ((current_page + 1) * target_row) - 1;
-
+      discovery_viewer->post_keyboard_task([&update_meta_function, &print_function]() {
         if (selected_line < 0) {
-          selected_line = 0;
-        } else if (selected_line > row_count - 1) {
-          selected_line = row_count - 1;
-        }
+          selected_line = ((current_page + 1) * target_row) - 1;
 
-        discovery_viewer->post_task([&print_function]() { print_function(false); });
-      } else if (selected_line == current_page * target_row && current_page > 0) {
-        --current_page;
+          if (selected_line < 0) {
+            selected_line = 0;
+          } else if (selected_line > row_count - 1) {
+            selected_line = row_count - 1;
+          }
+
+          print_function(false);
+        } else if (selected_line == current_page * target_row && current_page > 0) {
+          --current_page;
+          int start_index = current_page * target_row;
+          int end_index =
+              std::min(start_index + target_row, static_cast<int>(print_lines_count.load(std::memory_order_acquire)));
+          selected_line = end_index - 1;
+
+          print_function(false);
+        } else {
+          selected_line = std::max(selected_line - 1, 0);
+          print_function(false);
+          update_meta_function();
+        }
+      });
+    } else if (key == "down") {
+      discovery_viewer->post_keyboard_task([&update_meta_function, &print_function]() {
         int start_index = current_page * target_row;
         int end_index =
             std::min(start_index + target_row, static_cast<int>(print_lines_count.load(std::memory_order_acquire)));
-        selected_line = end_index - 1;
 
-        discovery_viewer->post_task([&print_function]() { print_function(false); });
-      } else {
-        selected_line = std::max(selected_line - 1, 0);
+        if (selected_line < 0) {
+          selected_line = current_page * target_row;
 
-        discovery_viewer->post_task([&update_meta_function, &print_function]() {
+          print_function(false);
+        } else if (selected_line == end_index - 1 && current_page < total_pages - 1) {
+          ++current_page;
+          start_index = current_page * target_row;
+          selected_line = start_index;
+
+          print_function(false);
+        } else {
+          selected_line =
+              std::min(selected_line + 1, static_cast<int>(print_lines_count.load(std::memory_order_acquire)) - 1);
           print_function(false);
           update_meta_function();
-        });
-      }
-    } else if (key == "down") {
-      int start_index = current_page * target_row;
-      int end_index =
-          std::min(start_index + target_row, static_cast<int>(print_lines_count.load(std::memory_order_acquire)));
-
-      if (selected_line < 0) {
-        selected_line = current_page * target_row;
-
-        discovery_viewer->post_task([&print_function]() { print_function(false); });
-      } else if (selected_line == end_index - 1 && current_page < total_pages - 1) {
-        ++current_page;
-        start_index = current_page * target_row;
-        selected_line = start_index;
-
-        discovery_viewer->post_task([&print_function]() { print_function(false); });
-      } else {
-        selected_line =
-            std::min(selected_line + 1, static_cast<int>(print_lines_count.load(std::memory_order_acquire)) - 1);
-
-        discovery_viewer->post_task([&update_meta_function, &print_function]() {
-          print_function(false);
-          update_meta_function();
-        });
-      }
+        }
+      });
     } else if (key == "enter") {
-      if (selected_line >= 0 && selected_line < static_cast<int>(print_lines_count.load(std::memory_order_acquire))) {
-        discovery_viewer->post_task([&discovery_viewer, &update_timer, &terminal_timer, &print_function,
-                                     &update_function, &update_meta_function, &clear_function,
-                                     &sub_command_function]() {
-          // update_function();
+      is_jumped = true;
 
-          update_meta_function();
+      if (!discovery_viewer->post_keyboard_task([&discovery_viewer, &update_timer, &terminal_timer, &print_function,
+                                                 &update_function, &update_meta_function, &clear_function,
+                                                 &sub_command_function]() {
+            if (selected_line < 0 ||
+                selected_line >= static_cast<int>(print_lines_count.load(std::memory_order_acquire))) {
+              is_jumped = false;
+              return;
+            }
 
-          is_jumped = true;
-          update_timer.stop();
-          terminal_timer.stop();
-          vlink::Utils::stop_detect_keyboard();
+            // update_function();
 
-          clear_function();
+            update_meta_function();
 
-          VLINK_TERM_OUT << "\033[H\033[J";
-          VLINK_TERM_OUT.flush();
+            update_timer.stop();
+            terminal_timer.stop();
+            vlink::Utils::stop_detect_keyboard();
 
-          int ret = 0;
-          std::string executable;
-          std::vector<std::string> command_args;
+            clear_function();
 
-          if VLIKELY (sub_command_function(executable, command_args)) {
-            ret = run_decoder_process(executable, command_args);
-          } else {
-            ret = -1;
-          }
+            VLINK_TERM_OUT << "\033[H\033[J";
+            VLINK_TERM_OUT.flush();
 
-          VLINK_TERM_OUT << "\033[?25l";
-          VLINK_TERM_OUT.flush();
+            int ret = 0;
+            std::string executable;
+            std::vector<std::string> command_args;
 
-          if (ret == 0) {
-            is_jumped = false;
-            update_function();
-            print_function(false);
-          } else {
-            vlink::Timer::call_once(discovery_viewer.get(), 2000, [&print_function, &update_function]() {
+            if VLIKELY (sub_command_function(executable, command_args)) {
+              ret = run_decoder_process(executable, command_args);
+            } else {
+              ret = -1;
+            }
+
+            VLINK_TERM_OUT << "\033[?25l";
+            VLINK_TERM_OUT.flush();
+
+            if (ret == 0) {
               is_jumped = false;
               update_function();
               print_function(false);
-            });
-          }
+            } else {
+              vlink::Timer::call_once(discovery_viewer.get(), 2000, [&print_function, &update_function]() {
+                is_jumped = false;
+                update_function();
+                print_function(false);
+              });
+            }
 
-          update_timer.start();
-          terminal_timer.start();
-          vlink::Utils::start_detect_keyboard();
-        });
+            update_timer.start();
+            terminal_timer.start();
+            vlink::Utils::start_detect_keyboard();
+          })) {
+        is_jumped = false;
       }
     } else if (key == "z") {
-      if (selected_line >= 0) {
-        selected_line = -1;
-        discovery_viewer->post_task([&print_function]() { print_function(false); });
-      }
+      discovery_viewer->post_keyboard_task([&print_function]() {
+        if (selected_line >= 0) {
+          selected_line = -1;
+          print_function(false);
+        }
+      });
     } else if (key == "t") {
-      count_mode = !count_mode;
-      discovery_viewer->post_task([&print_function, &update_function]() {
+      discovery_viewer->post_keyboard_task([&print_function, &update_function]() {
+        count_mode = !count_mode;
         update_function();
         print_function(false);
       });
     } else if (key == "l") {
-      detail_mode = !detail_mode;
-      discovery_viewer->post_task([&print_function, &update_function]() {
+      discovery_viewer->post_keyboard_task([&print_function, &update_function]() {
+        detail_mode = !detail_mode;
         update_function();
         print_function(false);
       });
     } else if (key == "o") {
-      observe_all_mode = !observe_all_mode;
-      discovery_viewer->post_task([&print_function, &update_function]() {
+      discovery_viewer->post_keyboard_task([&print_function, &update_function]() {
+        observe_all_mode = !observe_all_mode;
         update_function();
         print_function(false);
       });
     } else if (key == "e") {
-      profiler_mode = !profiler_mode;
-      discovery_viewer->post_task([&print_function, &update_function]() {
+      discovery_viewer->post_keyboard_task([&print_function, &update_function]() {
+        profiler_mode = !profiler_mode;
         update_function();
         print_function(false);
       });
     } else if (key == "s") {
-      ser_mode = !ser_mode;
-      discovery_viewer->post_task([&print_function, &update_function]() {
+      discovery_viewer->post_keyboard_task([&print_function, &update_function]() {
+        ser_mode = !ser_mode;
         update_function();
         print_function(false);
       });
     } else if (key == "a") {
-      active_mode = !active_mode;
-      discovery_viewer->post_task([&print_function, &update_function]() {
+      discovery_viewer->post_keyboard_task([&print_function, &update_function]() {
+        active_mode = !active_mode;
         update_function();
         print_function(false);
       });
     } else if (key == "y") {
-      pubsub_mode = !pubsub_mode;
-      discovery_viewer->post_task([&print_function, &update_function]() {
+      discovery_viewer->post_keyboard_task([&print_function, &update_function]() {
+        pubsub_mode = !pubsub_mode;
         update_function();
         print_function(false);
       });
     } else if (key == "p") {
-      process_mode = !process_mode;
-      discovery_viewer->post_task([&print_function, &update_function]() {
+      discovery_viewer->post_keyboard_task([&print_function, &update_function]() {
+        process_mode = !process_mode;
         update_function();
         print_function(false);
       });
     } else if (key == "c") {
-      chart_mode = !chart_mode;
-      discovery_viewer->post_task([&print_function, &update_function]() {
+      discovery_viewer->post_keyboard_task([&print_function, &update_function]() {
+        chart_mode = !chart_mode;
         update_function();
         print_function(false);
       });
     } else if (key == "i") {
       filter_input_mode = true;
 
-      discovery_viewer->post_task([&print_function]() { print_function(false); });
+      discovery_viewer->post_keyboard_task([&print_function]() { print_function(false); });
     }
   };
 
