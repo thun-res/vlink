@@ -930,6 +930,7 @@ domain/QoS/depth 等后端参数可由三处声明，遵循就近覆盖原则。
 | `VLINK_INTRA_BIND` | 将所有 `intra://` 重定向到其他 scheme（`shm`/`dds` 等） |
 | `VLINK_LOG_LEVEL` | 全局日志级别（`0`=TRACE … `6`=OFF，也接受对应英文名称） |
 | `VLINK_DDS_IP` | 指定 DDS 单播 IP，多网卡主机通常必设 |
+| `VLINK_DDS_NATIVE_IP` | native 模式使用的 DDS IP（未设置时为 `127.0.0.1`） |
 
 ```bash
 export VLINK_DDS_BIND=ddsc
@@ -1032,6 +1033,7 @@ export VLINK_LOG_DIR=/var/log/vlink
 | --- | --- | --- |
 | `VLINK_DDS_DOMAIN` | 数字 | DDS Domain ID |
 | `VLINK_DDS_IP` | IP 列表 | DDS 单播 IP，多网卡时通常必设 |
+| `VLINK_DDS_NATIVE_IP` | IP | CLI、Proxy、Viewer 与 WebViz 的 native 模式为 DDS 节点显式设置的 IP；未设置时使用 `127.0.0.1`，并覆盖该节点的 `VLINK_DDS_IP` 缺省值 |
 | `VLINK_DDS_IP_FILTER` | `1`/`0` | 仅使用当前可用地址 |
 | `VLINK_DDS_MULTICAST_IP` | IP 列表 | DDS 组播 IP |
 | `VLINK_DDS_PEER` | 字符串 | DDS 对等端配置 |

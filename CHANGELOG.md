@@ -5,6 +5,7 @@
 ### 改进
 
 - **eproto / efbs 终端显示**：各类订阅内容超过终端显示宽度时主动换行，并在终端尺寸变化时重新分页，暂停状态下同步重排。
+- **Native DDS 地址**：CLI、Proxy、Viewer 与 WebViz 在 native 模式下创建的 DDS 节点从 `VLINK_DDS_NATIVE_IP` 读取 IP；未设置时仍使用 `127.0.0.1`。
 
 ## v2.2.0 (2026/08/30)
 

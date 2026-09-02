@@ -446,6 +446,7 @@ api.register_time_callback([](uint64_t sys_time, uint64_t boot_time) {
 | `role` | `kController` | 客户端角色（见 12.10.1） |
 | `domain_id` | `0` | DDS 域 ID，须与服务端一致 |
 | `security_key` | `""` | 控制面对称密钥；空串使用内置默认槽位，显式设置时须与服务端一致 |
+| `native` | `false` | 将 DDS 节点绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
 | `reliable` / `enable_tcp` / `direct` | `false` | 数据通道选项，三者均须与服务端完全一致 |
 | `match_version` | `true` | 是否校验 VLink 版本字符串一致 |
 
@@ -468,7 +469,7 @@ api.register_time_callback([](uint64_t sys_time, uint64_t boot_time) {
 | `-x, --max_packet_size FLOAT` | 单条消息最大转发大小（MiB，默认 4.0） |
 | `-b, --bind_ip` / `-p, --peer_ip` | 本地绑定 IP / 单播对端 IP（跨子网用） |
 | `-s, --buf_size INT` / `-e, --mtu_size INT` | DDS 收发缓冲区 / MTU 字节数（默认 0 = 内置默认） |
-| `-n, --native` | 限制 DDS 流量到 127.0.0.1（本机测试） |
+| `-n, --native` | 仅发现本机节点，并将 DDS 节点绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
 | `-c, --iox_config PATH` | 指定 Iceoryx TOML 配置；提供此项即拉起内嵌 RouDi（direct/SHM 所需） |
 | `-l, --iox_strategy INT` | Iceoryx 内存策略（1 mini / 2 低 / 3 中 / 4 高，默认 3）；提供此项即按内置策略拉起 RouDi |
 | `-m, --iox_monitoring on\|off` | Iceoryx 监控开关（默认 `on`） |

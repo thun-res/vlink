@@ -1069,6 +1069,8 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
                   const std::string& fbs_dir) {
   using RawSub = vlink::Subscriber<vlink::Bytes>;
 
+  const std::string native_ip = native_mode ? vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1") : std::string();
+
   std::shared_ptr<CustomDiscoveryViewer> discovery_viewer;
 
   try {
@@ -1846,10 +1848,11 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
     sub_retry_after_map.clear();
   };
 
-  auto update_function = [&target_urls_set, &filter_list, &discovery_viewer, &sub_ptr_map, &sub_seq_map, &sub_size_map,
-                          &sub_lost_map, &sub_lat_map, &sub_elapsed_map, &sub_seq_buffer_map, &sub_size_buffer_map,
-                          &sub_lost_buffer_map, &sub_lat_buffer_map, &sub_last_sample_map, &sparkline_history_map,
-                          &sub_retry_after_map, &clear_function, &active_cnt, &total_rate, &key_elapsed_timer]() {
+  auto update_function = [&target_urls_set, &filter_list, &discovery_viewer, &native_ip, &sub_ptr_map, &sub_seq_map,
+                          &sub_size_map, &sub_lost_map, &sub_lat_map, &sub_elapsed_map, &sub_seq_buffer_map,
+                          &sub_size_buffer_map, &sub_lost_buffer_map, &sub_lat_buffer_map, &sub_last_sample_map,
+                          &sparkline_history_map, &sub_retry_after_map, &clear_function, &active_cnt, &total_rate,
+                          &key_elapsed_timer]() {
     total_profiler = -1;
     active_cnt = 0;
     total_rate = 0;
@@ -2214,7 +2217,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
           sub->set_latency_and_lost_enabled(true);
 
           if (native_mode) {
-            sub->set_property("dds.ip", "127.0.0.1");
+            sub->set_property("dds.ip", native_ip);
           }
 
           sub->set_discovery_enabled(false);

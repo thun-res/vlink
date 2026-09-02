@@ -55,6 +55,7 @@ class ProxyBridge {
     ProxyAPI::Role role{ProxyAPI::kController};
     int domain_id{0};
     std::string dds_impl{"dds"};
+    std::string native_ip;
     bool native{false};
     bool enable_tcp{false};
     std::string bind_ip;
@@ -119,7 +120,7 @@ class ProxyBridge {
     }
 
     if VUNLIKELY (config.native) {
-      node.set_property("dds.ip", "127.0.0.1");
+      node.set_property("dds.ip", config.native_ip);
     } else if VLIKELY (!config.bind_ip.empty()) {
       node.set_property("dds.ip", config.bind_ip);
     }

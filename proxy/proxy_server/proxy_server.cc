@@ -112,6 +112,7 @@ struct ProxyServer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
 
   std::string current_host_name;
   std::string current_machine_id;
+  std::string native_ip;
   std::string token;
 
   size_t real_max_packet_size{0};
@@ -169,6 +170,10 @@ ProxyServer::ProxyServer(const Config& config) : impl_(std::make_unique<Impl>())
   set_name("ProxyServer");
 
   impl_->config = config;
+
+  if (impl_->config.native_mode) {
+    impl_->native_ip = Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1");
+  }
 
   impl_->current_host_name = Utils::get_host_name();
   impl_->current_machine_id = Utils::get_machine_id();
@@ -425,13 +430,13 @@ void ProxyServer::init_server() {
   }
 
   if (impl_->config.native_mode) {
-    impl_->data_pub->set_property("dds.ip", "127.0.0.1");
-    impl_->data_sub->set_property("dds.ip", "127.0.0.1");
-    impl_->time_pub->set_property("dds.ip", "127.0.0.1");
-    impl_->info_pub->set_property("dds.ip", "127.0.0.1");
-    impl_->control_sub->set_property("dds.ip", "127.0.0.1");
+    impl_->data_pub->set_property("dds.ip", impl_->native_ip);
+    impl_->data_sub->set_property("dds.ip", impl_->native_ip);
+    impl_->time_pub->set_property("dds.ip", impl_->native_ip);
+    impl_->info_pub->set_property("dds.ip", impl_->native_ip);
+    impl_->control_sub->set_property("dds.ip", impl_->native_ip);
 #if VLINK_PROXY_ENABLE_HANDSHAKE
-    impl_->handshake_srv->set_property("dds.ip", "127.0.0.1");
+    impl_->handshake_srv->set_property("dds.ip", impl_->native_ip);
 #endif
   }
 
@@ -744,7 +749,7 @@ void ProxyServer::send_control(const void* control_data) {
             auto pub = std::make_shared<RawPub>(url, InitType::kWithoutInit);
 
             if (impl_->config.native_mode) {
-              pub->set_property("dds.ip", "127.0.0.1");
+              pub->set_property("dds.ip", impl_->native_ip);
             }
 
             pub->set_ser_type(meta.ser, meta.schema);
@@ -1151,7 +1156,7 @@ void ProxyServer::update_all() {
         sub->set_latency_and_lost_enabled(true);
 
         if (impl_->config.native_mode) {
-          sub->set_property("dds.ip", "127.0.0.1");
+          sub->set_property("dds.ip", impl_->native_ip);
         }
 
         sub->set_discovery_enabled(false);

@@ -1048,6 +1048,8 @@ int start_eproto_pub(const std::string& url, const std::string& proto_dir, const
                      bool use_blob_encoding, bool native_mode, int times, int interval, bool use_json_format) {
   GOOGLE_PROTOBUF_VERIFY_VERSION;
 
+  const std::string native_ip = native_mode ? vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1") : std::string();
+
   if VUNLIKELY (!has_intra_bind && vlink::Url::is_intra_type(url)) {
     std::cerr << "Cannot pub intra url." << std::endl;
     has_quit = true;
@@ -1390,7 +1392,7 @@ int start_eproto_pub(const std::string& url, const std::string& proto_dir, const
   }
 
   if (native_mode) {
-    raw_pub->set_property("dds.ip", "127.0.0.1");
+    raw_pub->set_property("dds.ip", native_ip);
   }
 
   raw_pub->set_ser_type(target_ser, target_schema_type);
@@ -1511,6 +1513,8 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
                      vlink::SchemaType schema_type, bool use_blob_encoding, bool native_mode, const std::string& filter,
                      bool use_getter, bool use_json_format) {
   GOOGLE_PROTOBUF_VERIFY_VERSION;
+
+  const std::string native_ip = native_mode ? vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1") : std::string();
 
   if VUNLIKELY (!has_intra_bind && vlink::Url::is_intra_type(url)) {
     std::cerr << "Cannot sub intra url." << std::endl;
@@ -2427,7 +2431,7 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
       raw_getter.emplace(std::make_shared<RawGetter>(url, vlink::InitType::kWithoutInit));
 
       if (native_mode) {
-        (*raw_getter)->set_property("dds.ip", "127.0.0.1");
+        (*raw_getter)->set_property("dds.ip", native_ip);
       }
 
       (*raw_getter)->set_ser_type(target_ser, target_schema_type);
@@ -2437,7 +2441,7 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
       raw_sub.emplace(std::make_shared<RawSub>(url, vlink::InitType::kWithoutInit));
 
       if (native_mode) {
-        (*raw_sub)->set_property("dds.ip", "127.0.0.1");
+        (*raw_sub)->set_property("dds.ip", native_ip);
       }
 
       (*raw_sub)->set_ser_type(target_ser, target_schema_type);

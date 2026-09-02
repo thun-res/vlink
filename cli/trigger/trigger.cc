@@ -47,6 +47,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 static constexpr char kDefaultMethodUrl[] = "dds://trigger/method";
@@ -472,15 +473,22 @@ static int run_daemon(const DaemonArguments& arguments) {
     }
   }
 
+  std::string native_ip;
+
+  if (arguments.native_mode) {
+    native_ip = vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1");
+  }
+
   std::unique_ptr<vlink::TriggerRecorder> recorder;
 
   try {
     recorder = std::make_unique<vlink::TriggerRecorder>(
-        config, [native_mode = arguments.native_mode](const std::string& url, vlink::InitType type) {
+        config, [native_mode = arguments.native_mode, native_ip = std::move(native_ip)](const std::string& url,
+                                                                                        vlink::InitType type) {
           auto sub = vlink::TriggerRecorder::RawSub::create_shared(url, type);
 
           if (native_mode && sub) {
-            sub->set_property("dds.ip", "127.0.0.1");
+            sub->set_property("dds.ip", native_ip);
           }
 
           return sub;
@@ -726,7 +734,7 @@ int main(int argc, char* argv[]) {
   argparse::ArgumentParser daemon_command("daemon", VLINK_VERSION, argparse::default_arguments::help);
   daemon_command.add_argument("-c", "--config").help("Optional config json path").default_value(std::string());
   daemon_command.add_argument("-n", "--native")
-      .help("Native mode: local-host discovery + dds.ip=127.0.0.1")
+      .help("Native mode: local-host discovery + dds.ip from VLINK_DDS_NATIVE_IP (default 127.0.0.1)")
       .default_value(false)
       .implicit_value(true);
   daemon_command.add_argument("--bag_plugin")

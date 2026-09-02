@@ -740,6 +740,8 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
                const std::string& plugin_name) {
   using RawSub = vlink::Subscriber<vlink::Bytes>;
 
+  const std::string native_ip = native_mode ? vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1") : std::string();
+
   is_play_mode = false;
 
   std::atomic<int> status = 0;
@@ -923,8 +925,8 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
       },
       true);
 
-  auto update_urls_function = [&target_urls_set, &filter_list, &recorder, &sub_map, &subs_mtx, &status, black_mode,
-                               native_mode,
+  auto update_urls_function = [&target_urls_set, &filter_list, &recorder, &sub_map, &subs_mtx, &status, &native_ip,
+                               black_mode, native_mode,
                                real_max_packet_size](const std::vector<vlink::DiscoveryViewer::Info>& info_list) {
     {
       std::unordered_set<std::string> current_urls;
@@ -1022,7 +1024,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
         sub->set_latency_and_lost_enabled(true);
 
         if (native_mode) {
-          sub->set_property("dds.ip", "127.0.0.1");
+          sub->set_property("dds.ip", native_ip);
         }
 
         sub->set_ser_type(info.ser_type, info.schema_type);
@@ -1214,6 +1216,8 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
              int times, double rate, const std::string& plugin_name) {
   using RawPub = vlink::Publisher<vlink::Bytes>;
 
+  const std::string native_ip = native_mode ? vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1") : std::string();
+
   is_play_mode = true;
 
   play_rate = rate;
@@ -1382,7 +1386,7 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
       }
 
       if (native_mode) {
-        pub->set_property("dds.ip", "127.0.0.1");
+        pub->set_property("dds.ip", native_ip);
       }
 
       pub->set_ser_type(ser, meta.schema_type);
@@ -1406,7 +1410,7 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
         }
 
         if (native_mode) {
-          pub->set_property("dds.ip", "127.0.0.1");
+          pub->set_property("dds.ip", native_ip);
         }
 
         pub->set_ser_type(ser, meta.schema_type);

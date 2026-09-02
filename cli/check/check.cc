@@ -1281,6 +1281,8 @@ int check_env(bool available_case, const std::string& prefix) {
       {"VLINK_DDS_FIELD_QOS", "", "Default QoS profile name for DDS Setter/Getter nodes.", false},
       {"VLINK_DDS_DOMAIN", "", "DDS domain id for this process (valid range 0-232).", false},
       {"VLINK_DDS_IP", "", "Unicast IPv4 list advertised by DDS discovery (comma or space separated).", false},
+      {"VLINK_DDS_NATIVE_IP", "",
+       "DDS IP applied by native-mode CLI, Proxy, Viewer, and WebViz; defaults to 127.0.0.1 when unset.", false},
       {"VLINK_DDS_IP_FILTER", "", "When set to 1 filters VLINK_DDS_IP down to addresses currently present on the host.",
        false},
       {"VLINK_DDS_MULTICAST_IP", "",

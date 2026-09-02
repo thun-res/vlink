@@ -314,6 +314,11 @@ static int stop_bag_play() {
 
 static int start_viewer(bool native_mode) {
   auto& ctx = vlink::parse::ParseContext::get();
+  std::string native_ip;
+
+  if (native_mode) {
+    native_ip = vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1");
+  }
 
   try {
     auto filter_type = native_mode ? vlink::DiscoveryViewer::kFilterNative : vlink::DiscoveryViewer::kFilterNone;
@@ -334,7 +339,8 @@ static int start_viewer(bool native_mode) {
 
   ctx.main_elapsed_timer.restart();
 
-  auto sync_subs = [native_mode](const std::vector<vlink::DiscoveryViewer::Info>& info_list) {
+  auto sync_subs = [native_mode,
+                    native_ip = std::move(native_ip)](const std::vector<vlink::DiscoveryViewer::Info>& info_list) {
     auto& sync_ctx = vlink::parse::ParseContext::get();
     std::unordered_set<std::string> current_urls;
     current_urls.reserve(info_list.size());
@@ -370,7 +376,7 @@ static int start_viewer(bool native_mode) {
           raw_sub = std::make_shared<RawSub>(info.url, vlink::InitType::kWithoutInit);
 
           if (native_mode) {
-            raw_sub->set_property("dds.ip", "127.0.0.1");
+            raw_sub->set_property("dds.ip", native_ip);
           }
 
           raw_sub->set_ser_type(info.ser_type, info.schema_type);
@@ -1185,7 +1191,10 @@ int main(int argc, char* argv[]) {
       .default_value(0.0)
       .nargs(1);
 
-  program.add_argument("--native").help("Use native/loopback mode").default_value(false).implicit_value(true);
+  program.add_argument("--native")
+      .help("Use native mode (DDS IP from VLINK_DDS_NATIVE_IP; default 127.0.0.1)")
+      .default_value(false)
+      .implicit_value(true);
 
   program.add_argument("-d", "--proto_dir").help("Protobuf .proto directory").default_value(std::string()).nargs(1);
 

@@ -290,6 +290,7 @@ if (pub.is_support_loan()) {
 | `VLINK_LOG_LEVEL` | 日志总级别（`0=Trace` .. `5=Fatal`，`6=Off`；也接受对应英文名称） |
 | `VLINK_LOG_DIR` | 日志输出目录 |
 | `VLINK_DDS_IP` | DDS 发现对外通告的本机单播 IP 列表（多值以逗号或空格分隔） |
+| `VLINK_DDS_NATIVE_IP` | native 模式绑定的 DDS IP（未设置时为 `127.0.0.1`） |
 | `VLINK_DDS_PEER` | DDS 静态单播对端列表，绕开多播发现（多值以逗号或空格分隔，见 [§14.18](#-1418-跨机或容器不连通)） |
 | `VLINK_DDS_DOMAIN` | DDS domain id |
 | `VLINK_DISCOVER_DISABLE` | 置 `1` 关闭运行时发现上报 |

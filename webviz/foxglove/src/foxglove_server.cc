@@ -100,8 +100,9 @@ FoxgloveServer::FoxgloveServer(const Config& config)
     rpc_ = std::make_unique<FoxgloveRpc>(rpc_config, vlink_convert_.get(), this);
   }
 
-  if VLIKELY (!config.parameters.url.empty() || !config.parameters.values.empty()) {
-    parameters_ = std::make_unique<FoxgloveParameters>(config.parameters);
+  if VLIKELY (!config_.parameters.url.empty() || !config_.parameters.values.empty()) {
+    config_.parameters.transport = config_.proxy_config.transport;
+    parameters_ = std::make_unique<FoxgloveParameters>(config_.parameters);
   }
 
   if VLIKELY (config_.capabilities.publish && vlink_convert_) {

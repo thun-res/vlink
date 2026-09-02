@@ -720,6 +720,7 @@ int main() {
     ['VLINK_DDS_FIELD_QOS', '', 'Quality of Service (QoS) settings for DDS fields.', false],
     ['VLINK_DDS_DOMAIN', '', 'Specifies the DDS domain ID for communication.', false],
     ['VLINK_DDS_IP', '192.168.1.10', 'Sets the unicast IP address for DDS communication.', true],
+    ['VLINK_DDS_NATIVE_IP', '', 'DDS IP applied by native-mode CLI, Proxy, Viewer, and WebViz; defaults to 127.0.0.1 when unset.', false],
     ['VLINK_DDS_IP_FILTER', '', 'Enables filtering to include only currently available addresses for DDS.', false],
     ['VLINK_DDS_MULTICAST_IP', '', 'Sets the multicast IP address for DDS communication.', false],
     ['VLINK_DDS_PEER', '', 'Configures the DDS peer-to-peer communication settings.', false],

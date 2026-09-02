@@ -362,7 +362,7 @@ class VLINK_PROXY_API_EXPORT ProxyAPI : public MessageLoop {
     int domain_id{0};             ///< DDS domain ID; must match the server's @c domain_id.
     std::string dds_impl{"dds"};  ///< DDS implementation: "dds", "ddsc", "ddsr", etc.
     std::string security_key;     ///< Optional security key; empty selects the default slot.
-    bool native{false};           ///< When true, restrict all DDS traffic to 127.0.0.1.
+    bool native{false};           ///< Bind all DDS endpoints to @c VLINK_DDS_NATIVE_IP (default @c 127.0.0.1).
     bool reliable{false};         ///< Use reliable DDS QoS; must match the server.
     bool direct{false};           ///< Use direct SHM channels for data; must match the server.
     bool enable_tcp{false};       ///< Use TCP transport for data channels; must match the server.

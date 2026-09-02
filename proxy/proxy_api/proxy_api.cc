@@ -86,6 +86,7 @@ struct ProxyAPI::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddin
   std::atomic_bool resetting{false};
 
   ProxyAPI::Config config;
+  std::string native_ip;
   uint32_t control_id{0};
 #if VLINK_PROXY_ENABLE_HANDSHAKE
   std::string token;
@@ -145,6 +146,11 @@ ProxyAPI::ProxyAPI(const Config& config) : impl_(std::make_unique<Impl>()) {
   set_name("ProxyAPI");
 
   impl_->config = config;
+
+  if (impl_->config.native) {
+    impl_->native_ip = Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1");
+  }
+
   impl_->control_id = static_cast<uint32_t>(ElapsedTimer::get_cpu_timestamp());
 
   if VUNLIKELY (impl_->control_id == 0) {
@@ -710,7 +716,7 @@ void ProxyAPI::sync_direct_maps(const Control& control) {
       auto pub = std::make_shared<RawPub>(meta.url, InitType::kWithoutInit);
 
       if (impl_->config.native) {
-        pub->set_property("dds.ip", "127.0.0.1");
+        pub->set_property("dds.ip", impl_->native_ip);
       }
 
       pub->set_ser_type(meta.ser, meta.schema);
@@ -750,7 +756,7 @@ void ProxyAPI::sync_direct_maps(const Control& control) {
       }
 
       if (impl_->config.native) {
-        sub->set_property("dds.ip", "127.0.0.1");
+        sub->set_property("dds.ip", impl_->native_ip);
       }
 
       sub->set_discovery_enabled(false);
@@ -911,13 +917,13 @@ void ProxyAPI::reset_handle() {
 #endif
 
   if (impl_->config.native) {
-    impl_->data_sub->set_property("dds.ip", "127.0.0.1");
-    impl_->data_pub->set_property("dds.ip", "127.0.0.1");
-    impl_->time_sub->set_property("dds.ip", "127.0.0.1");
-    impl_->info_sub->set_property("dds.ip", "127.0.0.1");
-    impl_->control_pub->set_property("dds.ip", "127.0.0.1");
+    impl_->data_sub->set_property("dds.ip", impl_->native_ip);
+    impl_->data_pub->set_property("dds.ip", impl_->native_ip);
+    impl_->time_sub->set_property("dds.ip", impl_->native_ip);
+    impl_->info_sub->set_property("dds.ip", impl_->native_ip);
+    impl_->control_pub->set_property("dds.ip", impl_->native_ip);
 #if VLINK_PROXY_ENABLE_HANDSHAKE
-    impl_->handshake_cli->set_property("dds.ip", "127.0.0.1");
+    impl_->handshake_cli->set_property("dds.ip", impl_->native_ip);
 #endif
   } else {
     if (!impl_->config.allow_ip.empty()) {

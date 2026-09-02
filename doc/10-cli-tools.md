@@ -230,7 +230,7 @@ vlink-monitor --plain > monitor_output.txt
 | `-x` / `--preset` | 常用组合预设，等价 `-l -o -p -c` |
 | `-p` / `--process` | 进程面板（热键 `P`） |
 | `-c` / `--chart` | Sparkline 图表面板（热键 `C`） |
-| `-n` / `--native` | 本地模式 |
+| `-n` / `--native` | 本地模式：仅发现本机节点，DDS 订阅绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
 | `-b` / `--blob` | Enter 跳转时强制以十六进制显示 |
 | `-g` / `--proto_args <str>` | Enter 跳转检视时追加的 eproto/efbs 参数 |
 | `-d` / `--proto_dir <dir>` | Proto 目录（默认取环境变量 `VLINK_PROTO_DIR`） |
@@ -278,6 +278,7 @@ vlink-bag info /tmp/test.vdb
 | `-f` / `--force` | 覆盖已有文件 |
 | `-t` / `--tag <name>` | 录制标签名 |
 | `-z` / `--split_by_size <GB>` / `-y` / `--split_by_time <s>` | 按大小/时间分割文件 |
+| `-n` / `--native` | 本地模式：仅发现本机节点，DDS 订阅绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
 
 录制时 `Space` 暂停/恢复，`q` / `Esc` 停止。
 
@@ -291,6 +292,7 @@ vlink-bag info /tmp/test.vdb
 | `-t` / `--times <n>` | 回放次数，≤0 无限循环 |
 | `-b` / `--begin_time <s>` / `-e` / `--end_time <s>` | 回放起止相对时间（秒） |
 | `-m` / `--skip_blank` | 跳过空白段 |
+| `-n` / `--native` | 将回放创建的 DDS 发布节点绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
 
 回放时 `Space` 暂停/恢复，方向键前后跳转（`Left` / `Right` 1 秒、`Up` / `Down` 5 秒），暂停态下 `p` 单步前进一帧。
 
@@ -349,7 +351,7 @@ vlink-trigger daemon -c /etc/vlink/trigger/trigger.json \
 | 参数 | 说明 |
 | --- | --- |
 | `-c` / `--config <path>` | 可选配置文件路径（JSON）；省略时全部使用内置默认值 |
-| `-n` / `--native` | 本地模式：本机发现，并将数据面订阅绑定到 `127.0.0.1`（不影响 `method_url` 控制面） |
+| `-n` / `--native` | 本地模式：本机发现，并将数据面订阅绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`；不影响 `method_url` 控制面） |
 | `--bag_plugin <name>` | 覆盖配置文件中的 `bag_plugin`；由 CLI 宿主加载并绑定，不传入 `TriggerRecorder::Config` |
 | `--trigger_plugin <name>` | 覆盖配置文件中的 `trigger_plugin` |
 | `--trigger_plugin_config <str>` | 覆盖配置文件中的 `trigger_plugin_config`；字符串内容由插件解释 |
@@ -493,6 +495,7 @@ vlink-parse dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /t
 | `-f` / `--bag_file <path>` | 从 bag 提取（缺省则从实时通信） |
 | `-b` / `--begin_time` / `-e` / `--end_time` | 时间范围（秒，仅对 `-f` 有效） |
 | `-n` / `--count <n>` / `--hz <hz>` | 最大样本数 / 最大输出频率 |
+| `--native` | 实时模式仅发现本机节点，DDS 订阅绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
 | `-o` / `--out_dir` / `-m` / `--base_name` | 输出目录 / 文件基础名 |
 | `-d` / `--proto_dir` / `--fbs_dir` | schema 目录 |
 | `-x` / `--expression <expr>` | 表达式，可重复（配合 `-c`，需 exprtk） |
@@ -559,7 +562,7 @@ vlink-eproto sub dds://sensor/imu -d /home/protos/ -s pb.ImuData -j
 | `-i` / `--filter <str>` / `-k` / `--black` | 字段名过滤 / 黑名单 |
 | `-j` / `--json` | 以 JSON 格式输出 |
 | `-g` / `--getter` | 强制以 Getter 接收（字段模型） |
-| `-n` / `--native` | 本地模式 |
+| `-n` / `--native` | 本地模式：仅发现本机节点，DDS 节点绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
 
 未指定 `-s` 时，工具等待一轮服务发现自动推断类型，并在话题属于字段模型时自动切到 Getter 接收。标题行实时显示 URL、活动指示点与帧率，颜色策略与 `vlink-monitor` 一致。各类订阅内容按终端显示宽度主动换行；终端尺寸变化后会重新分页，暂停状态下也同步重排。交互热键：`q` / `Esc` 退出、`Space` 暂停、方向键翻页，以及 `E` / `R` / `T` / `Y` / `U` / `O` / `P` 切换枚举/数组/字符串/时间/十六进制/默认值/repeated 等显示选项。
 
@@ -576,7 +579,7 @@ vlink-eproto pub dds://test/msg -d /home/protos/ -s pb.TestMsg \
   -f /tmp/test.prototxt -t 0 -l 500
 ```
 
-`pub` 常用参数：`-s` 消息名（省略时经服务发现自动推断）、`-c` / `-f` 消息内容/文件（二者必择其一）、`-j` 按 JSON 解析、`-t` 发布次数（≤0 无限）、`-l` 发布间隔（毫秒，默认 100）。
+`pub` 常用参数：`-s` 消息名（省略时经服务发现自动推断）、`-c` / `-f` 消息内容/文件（二者必择其一）、`-j` 按 JSON 解析、`-t` 发布次数（≤0 无限）、`-l` 发布间隔（毫秒，默认 100）。`-n` / `--native` 将 DDS 发布节点绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`）。
 
 `import <dir>` 将 schema 目录持久化，之后任意 shell 中无需再传 `-d` 或设环境变量：
 

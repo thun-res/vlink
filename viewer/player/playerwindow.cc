@@ -977,6 +977,11 @@ void PlayerWindow::on_toolButton_play_clicked() {
 
   bool is_black_mode = ui->checkBox_black->isChecked();
   bool is_native_mode = ui->checkBox_native->isChecked();
+  std::string native_ip;
+
+  if (is_native_mode) {
+    native_ip = vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1");
+  }
 
   std::string filter_str = ui->lineEdit_filter->text().toStdString();
   std::vector<std::string> filter_list;
@@ -992,7 +997,7 @@ void PlayerWindow::on_toolButton_play_clicked() {
 
   wait_widget_->start_wait();
 
-  player_->post_task([is_black_mode, is_native_mode, filter_list, this]() {
+  player_->post_task([is_black_mode, is_native_mode, filter_list, native_ip = std::move(native_ip), this]() {
     has_played_ = false;
 
     {
@@ -1079,7 +1084,7 @@ void PlayerWindow::on_toolButton_play_clicked() {
         ptr->set_ser_type(url_meta.ser_type, url_meta.schema_type);
 
         if (is_native_mode) {
-          ptr->set_property("dds.ip", "127.0.0.1");
+          ptr->set_property("dds.ip", native_ip);
         }
 
         ptr->init();
