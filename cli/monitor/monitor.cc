@@ -1873,11 +1873,11 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
     const int selected_line_snapshot = selected_line;
     std::string selected_url;
 
-    if (!is_paused) {
-      if (selected_line_snapshot >= 0 && static_cast<size_t>(selected_line_snapshot) < current_info_list.size()) {
-        selected_url = current_info_list[selected_line_snapshot].url;
-      }
+    if (selected_line_snapshot >= 0 && static_cast<size_t>(selected_line_snapshot) < current_info_list.size()) {
+      selected_url = current_info_list[selected_line_snapshot].url;
+    }
 
+    if (!is_paused) {
       current_info_list.clear();
       print_lines.clear();
     }
@@ -2149,7 +2149,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
 
       if ((!(info.type & vlink::kPublisher) && !(info.type & vlink::kSetter)) ||
           (!has_intra_bind && vlink::Url::is_intra_type(info.url)) ||
-          (!observe_all_mode && (selected_url != info.url || key_elapsed_timer.get() < 250))) {
+          (!observe_all_mode && (selected_url != info.url || (!is_paused && key_elapsed_timer.get() < 250)))) {
         sub_ptr_map.erase(info.url);
         sub_seq_map.erase(info.url);
         sub_size_map.erase(info.url);
