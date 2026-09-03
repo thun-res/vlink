@@ -1077,8 +1077,8 @@ class CustomDiscoveryViewer : public vlink::DiscoveryViewer {
 };
 
 // NOLINTNEXTLINE(google-readability-function-size)
-int start_monitor(const std::vector<std::string>& urls, const std::string& filter, const std::string& proto_dir,
-                  const std::string& fbs_dir) {
+int start_monitor(const std::vector<std::string>& urls, const std::string& filter, const std::string& hostname_filter,
+                  const std::string& proto_dir, const std::string& fbs_dir) {
   using RawSub = vlink::Subscriber<vlink::Bytes>;
 
   const std::string native_ip = native_mode ? vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1") : std::string();
@@ -1124,6 +1124,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
   vlink::ElapsedTimer key_elapsed_timer;
 
   std::vector<std::string> filter_list = vlink::Helpers::split_any(filter);
+  const std::vector<std::string> hostname_filter_list = vlink::Helpers::split_any(hostname_filter);
 
   filter_input_text = filter;
 
@@ -1860,11 +1861,11 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
     sub_retry_after_map.clear();
   };
 
-  auto update_function = [&target_urls_set, &filter_list, &discovery_viewer, &native_ip, &sub_ptr_map, &sub_seq_map,
-                          &sub_size_map, &sub_lost_map, &sub_lat_map, &sub_elapsed_map, &sub_seq_buffer_map,
-                          &sub_size_buffer_map, &sub_lost_buffer_map, &sub_lat_buffer_map, &sub_last_sample_map,
-                          &sparkline_history_map, &sub_retry_after_map, &clear_function, &active_cnt, &total_rate,
-                          &key_elapsed_timer]() {
+  auto update_function = [&target_urls_set, &filter_list, &hostname_filter_list, &discovery_viewer, &native_ip,
+                          &sub_ptr_map, &sub_seq_map, &sub_size_map, &sub_lost_map, &sub_lat_map, &sub_elapsed_map,
+                          &sub_seq_buffer_map, &sub_size_buffer_map, &sub_lost_buffer_map, &sub_lat_buffer_map,
+                          &sub_last_sample_map, &sparkline_history_map, &sub_retry_after_map, &clear_function,
+                          &active_cnt, &total_rate, &key_elapsed_timer]() {
     total_profiler = -1;
     active_cnt = 0;
     total_rate = 0;
@@ -1965,6 +1966,30 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         }
 
         if (skip) {
+          continue;
+        }
+      }
+
+      if (!hostname_filter_list.empty()) {
+        bool found = false;
+
+        for (const auto& process : info.process_list) {
+          for (const auto& hostname : hostname_filter_list) {
+            if (std::search(process.host.begin(), process.host.end(), hostname.begin(), hostname.end(),
+                            [](unsigned char left, unsigned char right) {
+                              return std::tolower(left) == std::tolower(right);
+                            }) != process.host.end()) {
+              found = true;
+              break;
+            }
+          }
+
+          if (found) {
+            break;
+          }
+        }
+
+        if (!found) {
           continue;
         }
       }
@@ -3005,6 +3030,9 @@ int main(int argc, char* argv[]) {
   program.add_argument("-i", "--filter")
       .help("URL keyword filter, comma-separated or quoted space-separated")
       .default_value(std::string());
+  program.add_argument("--hostname")
+      .help("Hostname keyword filter (not affected by --black), comma-separated or quoted space-separated")
+      .default_value(std::string());
   program.add_argument("-b", "--blob")
       .help("Force blob output for Enter jump")
       .default_value(false)
@@ -3079,6 +3107,7 @@ int main(int argc, char* argv[]) {
 
   const auto& urls = program.get<std::vector<std::string>>("-u");
   const auto& filter = program.get<std::string>("-i");
+  const auto& hostname_filter = program.get<std::string>("--hostname");
 
   black_mode = program.is_used("-k");
   blob_mode = program.is_used("-b");
@@ -3172,7 +3201,7 @@ int main(int argc, char* argv[]) {
   VLINK_TERM_OUT << "\033[?25l";
   VLINK_TERM_OUT.flush();
 
-  int ret = start_monitor(urls, filter, proto_dir, fbs_dir);
+  int ret = start_monitor(urls, filter, hostname_filter, proto_dir, fbs_dir);
 
   VLINK_TERM_OUT << "\033[?25h";
   VLINK_TERM_OUT.flush();

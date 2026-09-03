@@ -208,6 +208,8 @@ vlink-monitor -lo
 
 vlink-monitor -i camera
 
+vlink-monitor --hostname vehicle
+
 vlink-monitor -i debug -k
 
 vlink-monitor -u dds://camera/image dds://lidar/points
@@ -225,6 +227,7 @@ vlink-monitor --plain > monitor_output.txt
 | `-a` / `--active` | 仅显示活跃行（配合 `-l`，热键 `A`） |
 | `-y` / `--pubsub` | 仅显示 pub/sub（热键 `Y`） |
 | `-i` / `--filter <str>` | URL 关键字过滤（运行时可按 `I` 编辑） |
+| `--hostname <str>` | 按进程 hostname 关键字过滤 URL；支持逗号或空格分隔多个关键字 |
 | `-k` / `--black` | 黑名单模式，剔除命中的 URL |
 | `-u` / `--urls <url...>` | 仅监控指定 URL |
 | `-x` / `--preset` | 常用组合预设，等价 `-l -o -p -c` |
@@ -241,6 +244,10 @@ vlink-monitor --plain > monitor_output.txt
 | `--chart_width <n>` | 图表宽度（默认 `30`，范围 10 - 100） |
 | `--process_width <n>` | 进程列宽度（默认 `40`，范围 20 - 100） |
 | `--plain` | 纯文本输出，禁用交互（用于重定向） |
+
+`--hostname` 对一个 URL 的全部进程 hostname 做不区分大小写的子串匹配，任一进程命中即视为该 URL
+命中。它始终执行正向过滤，不受 `--black` 影响；与 `--urls`、`--filter` 同时使用时，URL 还必须命中
+hostname，原有两项仍按 `--black` 决定黑白名单语义。
 
 常用热键：`q` / `Esc` 退出，`Space` 暂停/恢复，`I` 过滤框，`Enter` 跳转检视，`Z` 清除选中行，`L` / `O` / `T` / `E` / `S` / `A` / `Y` / `P` / `C` 切换各显示模式，方向键翻页与移动选中行。
 

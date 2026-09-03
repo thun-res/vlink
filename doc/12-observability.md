@@ -228,7 +228,7 @@ sub->register_status_handler([](const vlink::Status::BasePtr& status) {
 | 入口 | 形态 | 用途 |
 | ---- | ---- | ---- |
 | `vlink-list` | 一次性查询 | 打印当前全网拓扑表格后退出 |
-| `vlink-monitor` | 持续监控（类 `top`） | 实时刷新，支持按 URL 子串过滤（`-i`） |
+| `vlink-monitor` | 持续监控（类 `top`） | 实时刷新，支持按 URL 子串（`-i`）或进程 hostname（`--hostname`）过滤 |
 | 应用内嵌 | 库调用 | 在应用内构造 `DiscoveryViewer`，无需单独进程 |
 | 代理聚合 | 代理层 | 代理内部运行 viewer 聚合多进程拓扑，供远程监控 |
 
