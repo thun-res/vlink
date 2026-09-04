@@ -735,9 +735,9 @@ static int load_and_bind_bag_plugin(vlink::Plugin& plugin, const std::string& pl
 int bag_record(const std::string& path, const std::vector<std::string>& urls, const std::string& tag_name,
                const std::string& filter, bool black_mode, bool native_mode, double duration, double wait_time,
                bool compress, bool force, int64_t max_row_count, double max_bytes_size, bool enable_limit,
-               bool split_name_by_time, double split_by_size, int64_t split_by_time, bool deft, double max_packet_size,
-               bool wal_mode, double cache_size, bool sync_mode, const std::vector<std::string>& ignore_compress,
-               const std::string& plugin_name) {
+               bool split_name_by_time, double split_by_size, int64_t split_by_time, int64_t max_split_count, bool deft,
+               double max_packet_size, bool wal_mode, double cache_size, bool sync_mode,
+               const std::vector<std::string>& ignore_compress, const std::string& plugin_name) {
   using RawSub = vlink::Subscriber<vlink::Bytes>;
 
   const std::string native_ip = native_mode ? vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1") : std::string();
@@ -873,6 +873,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
   config.split_name_by_time = split_name_by_time;
   config.split_by_size = 1024LL * 1024LL * 1024LL * split_by_size;
   config.split_by_time = split_by_time;
+  config.max_split_count = max_split_count;
   config.begin_time = 0;
   config.compress_level = compress_level.load();
   config.max_task_depth = max_task_depth;
@@ -2540,6 +2541,10 @@ int main(int argc, char* argv[]) {
       .scan<'g', double>()
       // NOLINTNEXTLINE(readability-redundant-casting)
       .default_value(static_cast<double>(vlink::BagWriter::Config().split_by_time));
+  record_command.add_argument("--max_split_count")
+      .help("Max retained split file count (0 means unlimited)")
+      .scan<'d', int64_t>()
+      .default_value(vlink::BagWriter::Config().max_split_count);
   record_command.add_argument("-g", "--deft")
       .help("No collect serialization infomation")
       .default_value(false)
@@ -2943,6 +2948,7 @@ int main(int argc, char* argv[]) {
     auto split_name_by_time = record_command.is_used("-o");
     auto split_by_size = record_command.get<double>("-z");
     auto split_by_time = record_command.get<double>("-y");
+    auto max_split_count = record_command.get<int64_t>("--max_split_count");
 
     auto deft = record_command.is_used("-g");
     auto max_packet_size = record_command.get<double>("-x");
@@ -3040,6 +3046,11 @@ int main(int argc, char* argv[]) {
       return -1;
     }
 
+    if VUNLIKELY (max_split_count < 0) {
+      std::cerr << "Invalid max_split_count [--max_split_count]" << std::endl;
+      return -1;
+    }
+
     compress_level = record_command.get<int>("--compress_level");
 
     if VUNLIKELY (compress_level < 0 || compress_level > 5) {
@@ -3059,8 +3070,8 @@ int main(int argc, char* argv[]) {
 
     return bag_record(path, urls, tag_name, filter, black_mode, native_mode, duration, wait_time, compress, force,
                       max_row_count, max_bytes_size, enable_limit, split_name_by_time, split_by_size,
-                      split_by_time * 1000, deft, max_packet_size, wal_mode, cache_size, sync_mode, ignore_compress,
-                      record_plugin_name);
+                      split_by_time * 1000, max_split_count, deft, max_packet_size, wal_mode, cache_size, sync_mode,
+                      ignore_compress, record_plugin_name);
   } else if (program.is_subcommand_used("play")) {
     auto path = play_command.get<std::string>("path");
 

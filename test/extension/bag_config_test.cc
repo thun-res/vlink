@@ -60,6 +60,7 @@ TEST_SUITE("extension-BagWriter") {
     CHECK_EQ(cfg.max_bytes_size, 1024LL * 1024LL * 1024LL * 512LL);
     CHECK_EQ(cfg.split_by_size, 1024LL * 1024LL * 1024LL * 1LL);
     CHECK_EQ(cfg.split_by_time, 0);
+    CHECK_EQ(cfg.max_split_count, 0);
     CHECK_EQ(cfg.begin_time, 0);
     CHECK_EQ(cfg.cache_size, 1024LL * 1024LL * 4);
     CHECK_EQ(cfg.compress_start_size, 128);
@@ -79,6 +80,7 @@ TEST_SUITE("extension-BagWriter") {
     cfg.sync_mode = true;
     cfg.split_by_size = 512LL * 1024 * 1024;
     cfg.split_by_time = 60'000;
+    cfg.max_split_count = 8;
     cfg.ignore_compress_urls.insert("dds://sensor/lidar");
     cfg.ignore_compress_urls.insert("dds://sensor/camera");
 
@@ -88,6 +90,7 @@ TEST_SUITE("extension-BagWriter") {
     CHECK(cfg.sync_mode);
     CHECK_EQ(cfg.split_by_size, 512LL * 1024 * 1024);
     CHECK_EQ(cfg.split_by_time, 60'000);
+    CHECK_EQ(cfg.max_split_count, 8);
     CHECK_EQ(cfg.ignore_compress_urls.size(), 2u);
     CHECK_EQ(cfg.ignore_compress_urls.count("dds://sensor/lidar"), 1u);
     CHECK_EQ(cfg.ignore_compress_urls.count("dds://sensor/camera"), 1u);

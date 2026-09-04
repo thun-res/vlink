@@ -40,7 +40,7 @@ _vlink_bag_positional_count() {
                 ;;
             -t|--tag|-i|--filter|-d|--duration|-w|--wait|-z|--split_by_size|-y|--split_by_time|\
             -x|--max_packet_size|-c|--cache_size|--max_task_depth|--max_memory_size|--max_row_count|\
-            --max_bytes_size|--compress_level|--plugin|-b|--begin_time|-e|--end_time|--rel_begin_time|\
+            --max_bytes_size|--max_split_count|--compress_level|--plugin|-b|--begin_time|-e|--end_time|--rel_begin_time|\
             --rel_end_time|--local_begin_time|--local_end_time|--utc_begin_time|--utc_end_time|-r|--rate|\
             --times)
                 expect="single"
@@ -80,7 +80,7 @@ _vlink_bag() {
             ;;
         -t|--tag|-i|--filter|-d|--duration|-w|--wait|-z|--split_by_size|-y|--split_by_time|\
         -x|--max_packet_size|-c|--cache_size|--max_task_depth|--max_memory_size|--max_row_count|\
-        --max_bytes_size|--compress_level|--plugin|-b|--begin_time|-e|--end_time|--rel_begin_time|\
+        --max_bytes_size|--max_split_count|--compress_level|--plugin|-b|--begin_time|-e|--end_time|--rel_begin_time|\
         --rel_end_time|--local_begin_time|--local_end_time|--utc_begin_time|--utc_end_time|-r|--rate|\
         --times)
             return
@@ -128,7 +128,7 @@ _vlink_bag() {
 -d --duration -w --wait -p --compress -f --force -q --quiet -l --detail \
 -o --split_name_by_time -z --split_by_size -y --split_by_time -g --deft \
 -x --max_packet_size -j --wal_mode -c --cache_size -s --sync_mode \
---max_task_depth --max_memory_size --max_row_count --max_bytes_size \
+--max_task_depth --max_memory_size --max_row_count --max_bytes_size --max_split_count \
 --enable_limit --compress_level --ignore_compress --plugin -h --help" "$cur"
                 return
             fi

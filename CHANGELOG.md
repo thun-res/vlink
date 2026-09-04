@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### 新增功能
+
+- **Bag 分包轮转**：`BagWriter::Config` 新增 `max_split_count`，`vlink-bag record` 新增同名参数；可限制 `.vdbx` / `.vcapx` 保留的分包数量并在超限时删除最旧分包。使用该配置结构的外部 C++ 二进制需重新编译。
+
 ### 改进
 
 - **Monitor hostname 过滤**：新增 `--hostname`，按 URL 关联进程的 hostname 关键字筛选。

@@ -177,7 +177,7 @@ class VLINK_EXPORT VCAPWriter final : public BagWriter {
  private:
   void open(const std::string& path);
 
-  void open_split(const std::string& path);
+  bool open_split(const std::string& path);
 
   void close_segment();
 

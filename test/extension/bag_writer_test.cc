@@ -1430,11 +1430,7 @@ void verify_split_by_size_writer_paths(const char* suffix) {
 
   std::vector<std::string> split_files;
   writer->register_split_callback(
-      [&split_files](int split_index, const std::string& split_filename) {
-        CHECK_GE(split_index, 0);
-        split_files.emplace_back(split_filename);
-      },
-      false);
+      [&split_files](int, const std::string& split_filename) { split_files.emplace_back(split_filename); }, false);
 
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/split_size", "raw", SchemaType::kRaw, ActionType::kPublish,
                                       Bytes::from_string("first"), 1'000)),
@@ -1449,6 +1445,117 @@ void verify_split_by_size_writer_paths(const char* suffix) {
   REQUIRE_EQ(frames.size(), 2u);
   CHECK_EQ(frames[0].data.to_string(), "first");
   CHECK_EQ(frames[1].data.to_string(), "second");
+}
+
+void verify_split_count_limit_removes_oldest_file(const char* suffix) {
+  ScopedWriterPath bag(suffix);
+
+  BagWriter::Config config;
+  config.sync_mode = true;
+  config.compress = BagWriter::kCompressNone;
+  config.split_by_size = 0;
+  config.split_by_time = 1;
+  config.max_split_count = 2;
+
+  auto writer = BagWriter::create(bag.path.string(), config);
+  REQUIRE(writer != nullptr);
+
+  std::vector<std::string> split_files;
+  writer->register_split_callback(
+      [&split_files](int split_index, const std::string& split_filename) {
+        CHECK_GE(split_index, 0);
+        split_files.emplace_back(split_filename);
+      },
+      false);
+
+  REQUIRE_EQ(writer->push(write_frame("dds://coverage/split_limit", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("first"), 0)),
+             0);
+  REQUIRE_EQ(writer->push(write_frame("dds://coverage/split_limit", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("second"), 1'001)),
+             1'001);
+  REQUIRE_EQ(writer->push(write_frame("dds://coverage/split_limit", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("third"), 2'001)),
+             2'001);
+  REQUIRE_EQ(writer->push(write_frame("dds://coverage/split_limit", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("fourth"), 2'002)),
+             2'002);
+  writer.reset();
+
+  REQUIRE_EQ(split_files.size(), 3u);
+  CHECK_FALSE(std::filesystem::exists(split_files[0]));
+  CHECK(std::filesystem::exists(split_files[1]));
+  CHECK(std::filesystem::exists(split_files[2]));
+
+  auto reader = BagReader::create(bag.path.string());
+  REQUIRE(reader != nullptr);
+  CHECK_EQ(reader->get_info().split_count, 2);
+  CHECK_EQ(reader->get_info().message_count, 3);
+  REQUIRE_EQ(reader->get_info().url_metas.size(), 1u);
+  CHECK_EQ(reader->get_info().url_metas.front().count, 3u);
+  CHECK_EQ(reader->get_info().url_metas.front().size, 17u);
+  reader.reset();
+
+  auto frames = read_writer_frames(bag.path);
+  REQUIRE_EQ(frames.size(), 3u);
+  CHECK_EQ(frames[0].data.to_string(), "second");
+  CHECK_EQ(frames[1].data.to_string(), "third");
+  CHECK_EQ(frames[2].data.to_string(), "fourth");
+}
+
+void verify_split_count_limit_rolls_back_on_delete_failure(const char* suffix) {
+  ScopedWriterPath bag(suffix);
+
+  BagWriter::Config config;
+  config.sync_mode = true;
+  config.compress = BagWriter::kCompressNone;
+  config.split_by_size = 0;
+  config.split_by_time = 1;
+  config.max_split_count = 2;
+
+  auto writer = BagWriter::create(bag.path.string(), config);
+  REQUIRE(writer != nullptr);
+
+  std::vector<std::string> split_files;
+  writer->register_split_callback(
+      [&split_files](int, const std::string& split_filename) { split_files.emplace_back(split_filename); }, false);
+
+  REQUIRE_EQ(writer->push(write_frame("dds://coverage/split_rollback", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("first"), 0)),
+             0);
+  REQUIRE_EQ(writer->push(write_frame("dds://coverage/split_rollback", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("second"), 1'001)),
+             1'001);
+  REQUIRE_EQ(split_files.size(), 2u);
+
+  const std::filesystem::path oldest_path(split_files.front());
+  REQUIRE(std::filesystem::remove(oldest_path));
+  REQUIRE(std::filesystem::create_directory(oldest_path));
+  {
+    std::ofstream blocker(oldest_path / "blocker");
+    REQUIRE(blocker.is_open());
+    blocker << "block deletion";
+  }
+
+  CHECK_EQ(writer->push(write_frame("dds://coverage/split_rollback", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                    Bytes::from_string("third"), 2'001)),
+           -1);
+  CHECK(writer->fail());
+  writer.reset();
+
+  nlohmann::ordered_json manifest;
+  {
+    std::ifstream manifest_file(bag.path);
+    REQUIRE(manifest_file.is_open());
+    manifest_file >> manifest;
+  }
+
+  const auto& files = manifest["VLinkFiles"];
+  REQUIRE_EQ(files.size(), 2u);
+  CHECK_EQ(files[0].get<std::string>(), oldest_path.filename().string());
+  CHECK_EQ(files[1].get<std::string>(), std::filesystem::path(split_files[1]).filename().string());
+  CHECK(std::filesystem::is_directory(oldest_path));
+  CHECK(std::filesystem::exists(split_files[1]));
 }
 
 void verify_method_schema_split_and_field_metadata(const char* suffix) {
@@ -2130,6 +2237,16 @@ TEST_SUITE("extension-BagWriter") {
   TEST_CASE("split writers rotate by size and keep manifests readable") {
     verify_split_by_size_writer_paths(".vdbx");
     verify_split_by_size_writer_paths(".vcapx");
+  }
+
+  TEST_CASE("split writers enforce the retained file count") {
+    verify_split_count_limit_removes_oldest_file(".vdbx");
+    verify_split_count_limit_removes_oldest_file(".vcapx");
+  }
+
+  TEST_CASE("split writers roll back the manifest when oldest-file deletion fails") {
+    verify_split_count_limit_rolls_back_on_delete_failure(".vdbx");
+    verify_split_count_limit_rolls_back_on_delete_failure(".vcapx");
   }
 
   TEST_CASE("explicit close finalizes split manifests before destruction") {

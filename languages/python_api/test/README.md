@@ -92,7 +92,8 @@ python3 test_vlink_coverage.py
 回归用 attribute / method 列表，确保下列 API surface 不被删除：
 
 - `Node` 类方法集合（init / deinit / set_ser_type / set_property / ...）
-- `BagWriter.Config` 的 19 个可写字段（含 writer 生命周期级 `sync_mode` 同步写入开关）
+- `BagWriter.Config` 的 20 个可写字段（含 writer 生命周期级 `sync_mode` 同步写入开关与
+  `max_split_count` 分包保留上限）
 - `BagWriter` 的方法集合
 - `BagReader.detect_schema` 与 status / info 字段
 - `SchemaData.is_valid_type` / `is_real_type` / `convert_type`

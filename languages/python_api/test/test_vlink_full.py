@@ -1976,6 +1976,7 @@ def test_api_surface():
 
     assert hasattr(_vlink.BagWriter.Config, "ignore_compress_urls")
     assert hasattr(_vlink.BagWriter.Config, "sync_mode")
+    assert hasattr(_vlink.BagWriter.Config, "max_split_count")
     for method in (
         "register_schema_callback", "push_schema", "close", "fail", "clear", "__lshift__", "wait_for_idle",
     ):

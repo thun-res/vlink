@@ -115,12 +115,13 @@ writer->push_schema(schema);
 
 ```cpp
 vlink::BagWriter::Config config;
-config.compress      = vlink::BagWriter::kCompressAuto;
-config.split_by_size = 1024LL * 1024 * 1024;
-config.split_by_time = 60LL * 1000;
-config.tag_name      = "test_run_001";
+config.compress        = vlink::BagWriter::kCompressAuto;
+config.split_by_size   = 1024LL * 1024 * 1024;
+config.split_by_time   = 60LL * 1000;
+config.max_split_count = 10;
+config.tag_name        = "test_run_001";
 
-auto writer = vlink::BagWriter::create("/data/recording.vdb", config);
+auto writer = vlink::BagWriter::create("/data/recording.vdbx", config);
 ```
 
 | 字段 | 默认 | 语义 |
@@ -128,10 +129,14 @@ auto writer = vlink::BagWriter::create("/data/recording.vdb", config);
 | `compress` | `kCompressNone` | `kCompressAuto` 由后端选压缩（VDB 用 LZAV、MCAP 用 Zstd）；`kCompressNone` 关闭 |
 | `split_by_size` | 1 GiB | 按文件大小分割阈值（字节），`0` 关闭 |
 | `split_by_time` | `0` | 按时间分割间隔（毫秒），`0` 关闭 |
+| `max_split_count` | `0` | 分包文件保留上限；`0` 不限制，超限后删除 manifest 中最旧的分包 |
 | `tag_name` | 空 | 录制标签，写入文件头供检索 |
 | `sync_mode` | `false` | `true` 全程同步直写且不启动 VDB 周期 cache flush；`false` 全程经后台队列并启用周期 flush |
 
 `cache_size` 始终只表示 VDB 的事务提交字节阈值或 VCAP 的 chunk 大小，不承担模式开关语义。
+
+`max_split_count` 仅对 `.vdbx` / `.vcapx` 分包容器生效。轮转时优先保留新分包；达到上限后从 manifest
+移除并删除最旧分包。若上限清理所需的 manifest 更新或文件删除失败，本次轮转失败；删除失败时会恢复原清单，不会继续写入新分包。
 
 分割产生新文件时可注册回调获知文件名。第二参数 `before` 决定回调在新文件打开前还是后触发：
 

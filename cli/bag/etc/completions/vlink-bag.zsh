@@ -70,6 +70,7 @@ _vlink-bag_record() {
         '--max_memory_size=[Max memory size in the queue (GB)]:size:' \
         '--max_row_count=[Max row count]:count:' \
         '--max_bytes_size=[Max bytes size (GB)]:size:' \
+        '--max_split_count=[Max retained split file count (0 means unlimited)]:count:' \
         '--enable_limit[Enable limits]' \
         '--compress_level=[Compress level (1-5)]:level:(0 1 2 3 4 5)' \
         '*--ignore_compress=[Ignore compress urls (repeatable)]:url:_vlink_zsh_complete_url' \

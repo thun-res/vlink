@@ -285,6 +285,7 @@ vlink-bag info /tmp/test.vdb
 | `-f` / `--force` | 覆盖已有文件 |
 | `-t` / `--tag <name>` | 录制标签名 |
 | `-z` / `--split_by_size <GB>` / `-y` / `--split_by_time <s>` | 按大小/时间分割文件 |
+| `--max_split_count <n>` | 分包文件保留上限；`0` 不限制，超限后删除最旧分包（仅 `.vdbx` / `.vcapx`） |
 | `-n` / `--native` | 本地模式：仅发现本机节点，DDS 订阅绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
 
 录制时 `Space` 暂停/恢复，`q` / `Esc` 停止。

@@ -4711,6 +4711,7 @@ NB_MODULE(_vlink_nanobind, m) {
       .def_rw("max_bytes_size", &vlink::BagWriter::Config::max_bytes_size)
       .def_rw("split_by_size", &vlink::BagWriter::Config::split_by_size)
       .def_rw("split_by_time", &vlink::BagWriter::Config::split_by_time)
+      .def_rw("max_split_count", &vlink::BagWriter::Config::max_split_count)
       .def_rw("begin_time", &vlink::BagWriter::Config::begin_time)
       .def_rw("cache_size", &vlink::BagWriter::Config::cache_size)
       .def_rw("compress_start_size", &vlink::BagWriter::Config::compress_start_size)
