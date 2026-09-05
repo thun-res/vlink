@@ -5,7 +5,7 @@
 project(vlink-trigger LANGUAGES CXX)
 
 # src
-add_executable(${PROJECT_NAME} trigger.cc)
+add_executable(${PROJECT_NAME} trigger.cc trigger_daemon.cc trigger_dump.cc trigger_common.cc)
 target_link_libraries(${PROJECT_NAME} PRIVATE vlink::vlink ${VLINK_NO_INTRA_LIBRARIES})
 target_link_libraries(${PROJECT_NAME} PRIVATE thirdparty::argparse thirdparty::json)
 

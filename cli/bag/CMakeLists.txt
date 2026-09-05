@@ -5,7 +5,20 @@
 project(vlink-bag LANGUAGES CXX)
 
 # src
-add_executable(${PROJECT_NAME} bag.cc)
+add_executable(
+  ${PROJECT_NAME}
+  bag.cc
+  bag_common.cc
+  bag_info.cc
+  bag_record.cc
+  bag_play.cc
+  bag_clone.cc
+  bag_merge.cc
+  bag_check.cc
+  bag_reindex.cc
+  bag_fix.cc
+  bag_tag.cc
+)
 target_link_libraries(${PROJECT_NAME} PRIVATE vlink::vlink ${VLINK_NO_INTRA_LIBRARIES})
 target_link_libraries(${PROJECT_NAME} PRIVATE thirdparty::argparse thirdparty::json)
 
