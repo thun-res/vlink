@@ -453,7 +453,9 @@ bool clone_paths_overlap(const std::filesystem::path& source, const std::filesys
       if (dot != std::string::npos && dot + 1 < name.size()) {
         const auto begin = name.begin() + static_cast<std::string::difference_type>(dot + 1);
         matches = *begin != '0' && std::all_of(begin, name.end(), [](char c) { return c >= '0' && c <= '9'; });
-        output_name = target_stem + name.substr(dot) + suffix;
+        output_name = target_stem;
+        output_name.append(name, dot);
+        output_name += suffix;
       }
     }
 
