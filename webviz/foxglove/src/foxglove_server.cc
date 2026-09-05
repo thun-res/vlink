@@ -2158,10 +2158,6 @@ void FoxgloveServer::on_parameters_changed(const std::vector<FoxgloveParameters:
       matched_delta.clear();
 
       for (const auto& entry : delta) {
-        if VUNLIKELY (!entry.has_value) {
-          continue;
-        }
-
         if VLIKELY (client.subscribed_all_parameters) {
           if VLIKELY (client.parameter_exclusions.count(entry.name) == 0U) {
             matched_delta.emplace_back(&entry);
