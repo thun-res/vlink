@@ -111,6 +111,11 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
+  if VUNLIKELY (std::filesystem::equivalent(input_path, output_path, input_ec)) {
+    std::cerr << "Input and output refer to the same file: " << output_path << std::endl;
+    return 1;
+  }
+
   auto proto_dir = vlink::webviz::resolve_arg_or_env(program.get<std::string>("--proto_dir"), "VLINK_PROTO_DIR");
   auto fbs_dir = vlink::webviz::resolve_arg_or_env(program.get<std::string>("--fbs_dir"), "VLINK_FBS_DIR");
   auto schema_plugin_path =

@@ -561,7 +561,7 @@ vlink-bag2rrd recording.vdb -o recording.rrd --proto_dir ./protos
 | 参数 | 说明 | 默认值 |
 | --- | --- | --- |
 | `input` | 输入 Bag 文件（`.vdb` / `.vdbx` / `.vcap` / `.vcapx`） | 必填 |
-| `-o`, `--output` | 输出文件路径 | 必填 |
+| `-o`, `--output` | 输出文件路径，不能与输入指向同一文件（含软链接、硬链接） | 必填 |
 | `--proto_dir` / `--fbs_dir` | Proto / FlatBuffers 定义目录 | 空 |
 | `--vlink_msgs` | 自定义消息映射文件，可多次指定 | 空 |
 | `--compression` | 压缩算法 `none` / `lz4` / `zstd`，仅 `vlink-bag2mcap` | `zstd` |
