@@ -48,7 +48,9 @@ void ZenohServerImpl::init() {
 void ZenohServerImpl::deinit() {
   detach();
 
-  object_->remove_impl(this);
+  if (object_) {
+    object_->remove_impl(this);
+  }
 }
 
 bool ZenohServerImpl::suspend() { return object_->suspend(); }

@@ -50,7 +50,9 @@ void ZenohSubscriberImpl::init() {
 void ZenohSubscriberImpl::deinit() {
   detach();
 
-  object_->remove_impl(this);
+  if (object_) {
+    object_->remove_impl(this);
+  }
 }
 
 bool ZenohSubscriberImpl::suspend() { return object_->suspend(); }

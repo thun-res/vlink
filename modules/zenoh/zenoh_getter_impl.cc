@@ -50,7 +50,9 @@ void ZenohGetterImpl::init() {
 void ZenohGetterImpl::deinit() {
   detach();
 
-  object_->remove_impl(this);
+  if (object_) {
+    object_->remove_impl(this);
+  }
 }
 
 bool ZenohGetterImpl::suspend() { return object_->suspend(); }

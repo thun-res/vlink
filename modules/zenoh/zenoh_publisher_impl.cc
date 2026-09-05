@@ -70,7 +70,9 @@ void ZenohPublisherImpl::init() {
 void ZenohPublisherImpl::deinit() {
   detach();
 
-  object_->remove_impl(this);
+  if (object_) {
+    object_->remove_impl(this);
+  }
 }
 
 const Conf* ZenohPublisherImpl::get_conf() const { return &conf_; }

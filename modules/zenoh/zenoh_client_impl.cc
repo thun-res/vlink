@@ -71,9 +71,15 @@ void ZenohClientImpl::init() {
 void ZenohClientImpl::deinit() {
   detach();
 
-  object_->cancel_calls(this);
+  if (object_) {
+    object_->cancel_calls(this);
+  }
+
   ack_manager_.clear();
-  object_->remove_impl(this);
+
+  if (object_) {
+    object_->remove_impl(this);
+  }
 }
 
 void ZenohClientImpl::interrupt() {

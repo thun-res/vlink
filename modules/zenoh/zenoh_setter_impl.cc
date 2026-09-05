@@ -48,7 +48,9 @@ void ZenohSetterImpl::init() {
 void ZenohSetterImpl::deinit() {
   detach();
 
-  object_->remove_impl(this);
+  if (object_) {
+    object_->remove_impl(this);
+  }
 }
 
 const Conf* ZenohSetterImpl::get_conf() const { return &conf_; }
