@@ -48,7 +48,9 @@ void Shm2GetterImpl::init() {
 void Shm2GetterImpl::deinit() {
   detach();
 
-  object_->remove_impl(this);
+  if (object_) {
+    object_->remove_impl(this);
+  }
 }
 
 bool Shm2GetterImpl::suspend() { return object_->suspend(); }

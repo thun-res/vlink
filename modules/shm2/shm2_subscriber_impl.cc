@@ -48,7 +48,9 @@ void Shm2SubscriberImpl::init() {
 void Shm2SubscriberImpl::deinit() {
   detach();
 
-  object_->remove_impl(this);
+  if (object_) {
+    object_->remove_impl(this);
+  }
 }
 
 bool Shm2SubscriberImpl::suspend() { return object_->suspend(); }

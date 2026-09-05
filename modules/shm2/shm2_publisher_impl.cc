@@ -56,7 +56,9 @@ void Shm2PublisherImpl::init() {
 }
 
 void Shm2PublisherImpl::deinit() {
-  object_->remove_impl(this);
+  if (object_) {
+    object_->remove_impl(this);
+  }
 
   detach();
 }

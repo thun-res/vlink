@@ -44,7 +44,9 @@ void Shm2SetterImpl::init() {
 void Shm2SetterImpl::deinit() {
   detach();
 
-  object_->remove_impl(this);
+  if (object_) {
+    object_->remove_impl(this);
+  }
 }
 
 bool Shm2SetterImpl::is_support_loan() const { return true; }
