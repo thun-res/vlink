@@ -14,6 +14,7 @@
 
 ### 修复
 
+- **日志格式化**：修复 `VLOG_*` 传入 `std::hex` 等标准操纵符时的编译错误。
 - **WebViz 离线导出**：`vlink-bag2mcap` 与 `vlink-bag2rrd` 拒绝输出到输入文件及其链接别名，避免截断原始 Bag。
 - **WebViz 障碍物快照**：Foxglove 场景映射在目标减少时替换整帧方框；Rerun 在空快照时清除旧方框。
 - **Foxglove 发布路由**：客户端发布 ID 与服务端展示通道 ID 独立，防止 ID 冲突导致消息回写到错误 URL。

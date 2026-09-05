@@ -253,7 +253,7 @@ inline FastStream& FastStream::push(T&& value) {
     }
   } else if constexpr (std::is_same_v<ValueT, float> || std::is_same_v<ValueT, double>) {
     return push_floating(value);
-  } else if constexpr (std::is_integral_v<ValueT> && sizeof(ValueT) <= sizeof(uint64_t) &&
+  } else if constexpr (std::is_integral_v<ValueT> && sizeof(std::decay_t<ValueT>) <= sizeof(uint64_t) &&
                        !std::is_same_v<ValueT, bool> && !std::is_same_v<ValueT, char> &&
                        !std::is_same_v<ValueT, signed char> && !std::is_same_v<ValueT, unsigned char> &&
                        !std::is_same_v<ValueT, wchar_t> && !std::is_same_v<ValueT, char16_t> &&

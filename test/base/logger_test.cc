@@ -744,6 +744,12 @@ TEST_SUITE("base-Logger") {
     VLOG_I(static_cast<unsigned char>('A'));
     CHECK_EQ(received, "A");
 
+    VLOG_I(std::hex, 255);
+    CHECK_EQ(received, "ff");
+
+    VLOG_I(255);
+    CHECK_EQ(received, "255");
+
     Logger::set_stream_flag(std::ios_base::hex);
     VLOG_I(255);
     CHECK_EQ(received, "ff");

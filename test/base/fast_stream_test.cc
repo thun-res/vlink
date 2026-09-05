@@ -71,6 +71,21 @@ TEST_SUITE("base-FastStream") {
     CHECK_EQ(s.take_view(), "ff");
   }
 
+  TEST_CASE("push preserves function manipulators and formatting state") {
+    FastStream s;
+    s.push(std::hex).push(255).push('/').push(std::dec).push(255);
+    s.push('/').push(&std::boolalpha).push(true);
+    s.push('/').push(std::setfill('0')).push(std::setw(5)).push(42);
+    s.push(std::endl<char, std::char_traits<char>>);
+
+    CHECK_EQ(s.take_view(), "ff/255/true/00042\n");
+
+    s.reset();
+    s.push(255).push('/').push(false);
+
+    CHECK_EQ(s.take_view(), "255/false");
+  }
+
   TEST_CASE("operator<< formats floating point via stream locale") {
     FastStream s;
     s << 3.14;
