@@ -999,8 +999,13 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
 #endif
 
 #ifdef VLINK_SUPPORT_DDSC
-  run_check(ctx, "* Check VLINK_CYCLONEDDS_URI...", 100,
-            [&ctx]() { check_file_env(ctx, "VLINK_CYCLONEDDS_URI", false); });
+  run_check(ctx, "* Check VLINK_CYCLONEDDS_URI...", 100, [&ctx]() {
+    if (vlink::Utils::get_env("VLINK_CYCLONEDDS_URI").empty()) {
+      end_diag(ctx, DiagType::kPass, "VLINK_CYCLONEDDS_URI is empty");
+    } else {
+      end_diag(ctx, DiagType::kWarning, "URI configured; validation is performed by Cyclone DDS at startup");
+    }
+  });
 #endif
 
   run_check(ctx, "* Check VLINK_LOG_LEVEL value...", 50, [&ctx]() { check_log_level_range(ctx); });
@@ -1413,7 +1418,7 @@ int check_env(bool available_case, const std::string& prefix) {
     if (info.has_set) {
       std::cout << kColorPass;
       std::cout << "[" << info.env_key << "]: ";
-      std::cout << info.env_value;
+      std::cout << (info.env_key == "VLINK_SSL_KEY_PASS" ? "<redacted>" : info.env_value.c_str());
       std::cout << kColorReset << std::endl;
 
       std::cout << info.description << std::endl << std::endl;

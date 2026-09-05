@@ -122,6 +122,8 @@ vlink-info -l
 
 `diag` 遍历一组诊断项（VLink 版本、可用 IP、组播路由、内核网络缓冲、文件描述符上限、`/dev/shm` 空间、时间同步、CPU/内存占用、相关工具是否在运行等），以彩色状态栏汇报，并将退出码置为失败项数量，全部通过返回 0，因而可直接用于脚本判定。
 
+`VLINK_CYCLONEDDS_URI` 可包含 URI 或内联 XML；配置非空时诊断标为 WARNING，实际内容由 Cyclone DDS 启动时校验。
+
 ```bash
 vlink-check diag
 
@@ -137,6 +139,8 @@ vlink-check diag -f dds
 | `-f` / `--filter <substring>` | 仅执行标题包含指定子串的诊断项 |
 
 `env` 列出常用环境变量子集（路径/插件、日志、bag/发现、各传输后端、TLS 等），已设置项以绿色、未设置项以红色标识，用于快速核对配置一致性；它仅覆盖常用子集，完整清单以 [集成与环境变量](13-integration.md) 为准。
+
+已设置的 `VLINK_SSL_KEY_PASS` 仅显示 `<redacted>`，不输出密码内容。
 
 ```bash
 vlink-check env

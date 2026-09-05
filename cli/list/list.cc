@@ -123,7 +123,7 @@ int list_process(const std::string& name, uint32_t pid, bool check_process_count
     bool has_getter{false};
   };
 
-  std::set<std::string> process_set;
+  std::set<std::tuple<std::string, std::string, std::string, uint32_t>> process_set;
 
   std::map<std::tuple<std::string, std::string, std::string, uint32_t>,
            std::vector<std::tuple<uint32_t, std::string, std::string>>>
@@ -171,7 +171,11 @@ int list_process(const std::string& name, uint32_t pid, bool check_process_count
 
     for (const auto& process : info.process_list) {
       if (check_process_count) {
-        process_set.emplace(process.name);
+        if ((pid != 0 && process.pid != pid) || (pid == 0 && !name.empty() && process.name != name)) {
+          continue;
+        }
+
+        process_set.emplace(process.host, process.ip, process.name, process.pid);
       } else {
         if (name.empty() && pid == 0) {
           emplace_function(info, process);

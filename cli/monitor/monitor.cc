@@ -44,6 +44,7 @@
 #include <mutex>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -1865,7 +1866,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
                           &sub_ptr_map, &sub_seq_map, &sub_size_map, &sub_lost_map, &sub_lat_map, &sub_elapsed_map,
                           &sub_seq_buffer_map, &sub_size_buffer_map, &sub_lost_buffer_map, &sub_lat_buffer_map,
                           &sub_last_sample_map, &sparkline_history_map, &sub_retry_after_map, &clear_function,
-                          &active_cnt, &total_rate, &key_elapsed_timer]() {
+                          &active_cnt, &total_rate, &key_elapsed_timer](bool collect_sample = false) {
     total_profiler = -1;
     active_cnt = 0;
     total_rate = 0;
@@ -1949,7 +1950,8 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         bool skip = black_mode ? false : true;
 
         std::string left_str = info.url;
-        std::transform(left_str.begin(), left_str.end(), left_str.begin(), [](char& c) { return std::tolower(c); });
+        std::transform(left_str.begin(), left_str.end(), left_str.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         for (const auto& f : filter_list) {
           if (f.empty()) {
             continue;
@@ -1957,7 +1959,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
 
           std::string right_str = f;
           std::transform(right_str.begin(), right_str.end(), right_str.begin(),
-                         [](char& c) { return std::tolower(c); });
+                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
           if (left_str.find(right_str) != std::string::npos) {
             skip = black_mode ? true : false;
@@ -2284,7 +2286,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
           });
 
           sub_ptr_map.emplace(info.url, std::move(sub));
-        } catch (vlink::Exception::RuntimeError&) {
+        } catch (const std::runtime_error&) {
           sub_retry_after_map[info.url] =
               vlink::ElapsedTimer::get_cpu_timestamp(vlink::ElapsedTimer::kNano) + kSubscriberRetryDelayNs;
           seq = 0;
@@ -2301,7 +2303,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
 
           continue;
         }
-      } else {
+      } else if (collect_sample) {
         auto& last_sample = sub_last_sample_map[info.url];
 
         const auto& sample_info = ptr_iter->second->get_lost();
@@ -2318,15 +2320,25 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         last_sample = sample_info;
       }
 
-      if (seq > 0 && seq_buffer.size() >= kCounterCache && size_buffer.size() >= kCounterCache) {
+      int64_t sample_seq = seq_buffer.empty() ? 0 : seq_buffer.back();
+      size_t sample_size = 0;
+      int64_t sample_latency = 0;
+
+      if (collect_sample) {
+        sample_seq = seq.exchange(0, std::memory_order_relaxed);
+        sample_size = size.exchange(0, std::memory_order_relaxed);
+        sample_latency = lat.exchange(0, std::memory_order_relaxed);
+      }
+
+      if (sample_seq > 0 && seq_buffer.size() >= kCounterCache && size_buffer.size() >= kCounterCache) {
         line << "\033[32m";  // green
         ++active_cnt;
       } else {
         if (elapsed.get() > kCollectInterval * kCounterCache) {
-          seq = 0;
-          size = 0;
+          sample_seq = 0;
+          sample_size = 0;
           lost = 0;
-          lat = 0;
+          sample_latency = 0;
           seq_buffer.clear();
           size_buffer.clear();
           lost_buffer.clear();
@@ -2377,29 +2389,31 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         int weight = 1;
         int total_weight = 0;
 
-        seq_buffer.emplace_back(seq);
-        while (seq_buffer.size() > kCounterCache) {
-          seq_buffer.pop_front();
-        }
+        if (collect_sample) {
+          seq_buffer.emplace_back(sample_seq);
+          while (seq_buffer.size() > kCounterCache) {
+            seq_buffer.pop_front();
+          }
 
-        size_buffer.emplace_back(size);
-        while (size_buffer.size() > kCounterCache) {
-          size_buffer.pop_front();
-        }
+          size_buffer.emplace_back(sample_size);
+          while (size_buffer.size() > kCounterCache) {
+            size_buffer.pop_front();
+          }
 
-        lost_buffer.emplace_back(lost);
-        while (lost_buffer.size() > kCounterCache) {
-          lost_buffer.pop_front();
-        }
+          lost_buffer.emplace_back(lost);
+          while (lost_buffer.size() > kCounterCache) {
+            lost_buffer.pop_front();
+          }
 
-        if (seq <= 0) {
-          lat_buffer.emplace_back(lat);
-        } else {
-          lat_buffer.emplace_back(static_cast<double>(lat) / seq);
-        }
+          if (sample_seq <= 0) {
+            lat_buffer.emplace_back(sample_latency);
+          } else {
+            lat_buffer.emplace_back(static_cast<double>(sample_latency) / sample_seq);
+          }
 
-        while (lat_buffer.size() > kCounterCache) {
-          lat_buffer.pop_front();
+          while (lat_buffer.size() > kCounterCache) {
+            lat_buffer.pop_front();
+          }
         }
 
         if VLIKELY (seq_buffer.size() == size_buffer.size()) {
@@ -2435,7 +2449,9 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
           latency_ms = 0;
         }
 
-        spark_history.add_sample(freq, rate, latency_ms, loss * 100);
+        if (collect_sample) {
+          spark_history.add_sample(freq, rate, latency_ms, loss * 100);
+        }
 
         std::string seq_str = vlink::Helpers::double_to_string(freq) + "Hz";
 
@@ -2477,7 +2493,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
 
         std::string latency_str;
 
-        if (seq == 0) {
+        if (sample_seq == 0) {
           latency_str = "---";
         } else if (latency > 5000'000'000 || latency < -500'000) {
           latency_str = "N/A";
@@ -2517,10 +2533,6 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         current_info_list.emplace_back(info);
         print_lines.emplace_back(line.str());
       }
-
-      seq = 0;
-      size = 0;
-      lat = 0;
     }
 
     if (!is_paused && !selected_url.empty()) {
@@ -2546,7 +2558,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
   update_timer.set_loop_count(vlink::Timer::kInfinite);
   update_timer.attach(discovery_viewer.get());
   update_timer.set_callback([&update_function, &print_function, &update_meta_function]() {
-    update_function();
+    update_function(true);
     print_function(true);
     update_meta_function();
   });
@@ -2713,11 +2725,12 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
     }
   };
 
-  auto apply_filter_input_function = [&filter_list, &update_function, &print_function]() {
+  auto apply_filter_input_function = [&filter_list, &update_function, &print_function, &clear_function]() {
     filter_list = vlink::Helpers::split_any(filter_input_text);
     selected_line = -1;
     current_page = 0;
 
+    clear_function();
     update_function();
     print_function(false);
   };
