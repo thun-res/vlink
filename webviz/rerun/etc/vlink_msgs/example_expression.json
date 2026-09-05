@@ -138,8 +138,8 @@
       {
         "source": "heading",
         "target": "entity_heading",
-        "_comment": "Radians to degrees; fallback to velocity heading if heading near zero",
-        "expression": "if(abs(heading) > 0.001, heading * 180.0 / pi, atan2(velocity.y, velocity.x) * 180.0 / pi)"
+        "_comment": "Use radians; fallback to velocity heading if heading near zero",
+        "expression": "if(abs(heading) > 0.001, heading, atan2(velocity.y, velocity.x))"
       }
     ]
   },
