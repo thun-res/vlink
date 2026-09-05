@@ -54,6 +54,6 @@ bool extract_zerocopy_value(const vlink::zerocopy::MessageParser& parser, const 
 
 std::string format_zerocopy_message(const std::string& ser, const vlink::Bytes& bytes);
 
-vlink::Bytes extract_zerocopy_binary(const std::string& ser, const vlink::Bytes& bytes, const std::string& field);
+vlink::Bytes extract_zerocopy_binary(const vlink::zerocopy::MessageParser& parser, const std::string& field);
 
 bool write_pcd_file(const std::string& file_path, const vlink::zerocopy::PointCloud& point_cloud);

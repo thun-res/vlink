@@ -528,11 +528,15 @@ vlink-parse dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /t
 
 输出类型语义：`console` 在终端打印消息内容；`csv` / `json` 输出选定字段；`bin` 将每条消息的原始字节存为独立文件；`jpg` / `h264` / `h265` / `raw` 适用于 CameraFrame 或含 bytes 字段的消息；`pcd` 将零拷贝 PointCloud 每帧存为 PCD 文件。`slice` / `scan` 为离线 bag 的高级用法（按窗口/事件切片、按事件或质量扫描），参数较多，详见 `vlink-parse --help`。
 
+离线导出在打开输出文件前检查其是否指向输入 bag、分包入口或成员，以及已有的 SQLite WAL/SHM 文件；软链接和硬链接指向这些输入时同样拒绝写入，避免截断源数据。指向其他普通输出文件的链接仍可使用。
+
 所有带值的标量参数都必须显式提供值；空 URL、空字段列表以及空白的 `--event` / `--filter` / `--url_filter` 会直接报错。URL 的首尾空白在解析后统一移除；parse/导出模式必须指定具体 URL，`*` 只用于 `slice` / `scan`。`-n` 精确限制通过 URL 与限频门控的样本数，`--hz` 是严格的最大输出频率；限频间隔只在参数解析时换算，数据热路径使用整数微秒比较。
 
 `slice` / `scan` 只接受已完整结束且包含消息的 bag，时间区间按毫秒解释为半开区间 `[begin, end)`；未指定结束时间时会覆盖最后一个不足整毫秒的消息。切片输出只支持 `.vdb` 或 `.vcap`，分片输入的 `.vdbx` / `.vcapx` 会映射到对应的单文件格式。URL 筛选包含 Event、Method 与 Field，实际帧再由 `--actions` 过滤（默认 `6=Subscribe`）；显式 URL 与 `-u` / `--urls`、`-i` / `--url_filter` 不可混用。未使用 `-k` 时，两种过滤同时出现取交集；使用 `-k` 时剔除任一过滤命中的 URL，与 `vlink-monitor` 的处理一致。单独使用 `-k` 不改变选集；黑名单中不存在于 bag 的 URL 会被忽略，白名单中的 URL 不存在时仍会报错。
 
-内容过滤、事件表达式和切片 CSV 导出只支持零拷贝类型与 Protobuf；Protobuf 必须能从 `-d`、`--schema_config` 或 `VLINK_SCHEMA_PLUGIN` 找到目标消息的真实 descriptor。`--schema_plugin` 与 `VLINK_SCHEMA_PLUGIN` 均可使用插件 stem 或共享库直接路径，显式配置但加载失败会终止命令。Method、FlatBuffers、Raw 或未知 schema 参与这些字段操作时会在写文件前拒绝；这项预检验证解码能力，但不会假定每个 selector 都存在于异构 topic 的每一种消息中。不做 `--filter` / `--event` / `--export_csv` 时，单独的 `-c` 不会触发无用解码。`--force` 仍拒绝覆盖符号链接、输入 bag 及其分片成员，也不会覆盖本次命令读取的 `--segments` / `--schema_config` 文件。
+未使用 bag 插件时，实际执行切片或扫描会完整读取输入并检查时间戳非递减，再按所选时间、话题和动作处理数据，避免逆序帧被静默丢弃。因此裁剪很短的时间区间也需要扫描整个输入；仅生成窗口计划的 `--dry_run` 不检查帧顺序。发现逆序时返回失败；切片可能已留下部分输出，扫描不会写出成功结果。使用 bag 插件时继续按所选输入范围读取，并要求参与处理的插件输出时间戳非递减。
+
+内容过滤、事件表达式和切片 CSV 导出只支持零拷贝类型与 Protobuf；Protobuf 必须能从 `-d`、`--schema_config` 或 `VLINK_SCHEMA_PLUGIN` 找到目标消息的真实 descriptor。`--schema_plugin` 与 `VLINK_SCHEMA_PLUGIN` 均可使用插件 stem 或共享库直接路径，显式配置但加载失败会终止命令。Method、FlatBuffers、Raw 或未知 schema 参与这些字段操作时会在写文件前拒绝；这项预检验证解码能力，但不会假定每个 selector 都存在于异构 topic 的每一种消息中。不做 `--filter` / `--event` / `--export_csv` 时，单独的 `-c` 不会触发无用解码。`--force` 仍拒绝覆盖符号链接、输入 bag、分片成员及其已有的 SQLite WAL/SHM 文件，也不会覆盖本次命令读取的 `--segments` / `--schema_config` 文件。
 
 字段路径写法：Protobuf 使用点路径（`header.seq`、`status.velocity.x`），repeated 字段使用完整的非负整数下标（如 `chunks[1].data`）；空路径分量、尾随字符、负数或用于非 repeated 字段的下标不会被宽松解释。八种零拷贝类型统一经 `MessageParser` 读取，根字段使用 `header.seq`、`width` 等点路径，集合使用 `data[N].field`、`shape[N].value` 或 `strides[N].value`。完整清单与边界规则见 [零拷贝](06-zerocopy.md)。整数在字段导出时保持原始 64 位值；只有送入 ExprTk 表达式、必须转换为 `double` 时，工具才会对超出精确表示范围的整数给出精度提示。
 
