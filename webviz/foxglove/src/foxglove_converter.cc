@@ -568,7 +568,7 @@ FoxgloveMessage FoxgloveConverter::convert(std::string_view url, SchemaType sche
   else if (schema_type == SchemaType::kFlatbuffers) {
     std::lock_guard lock(mtx_);
 
-    if VLIKELY (fbs_parsers_.find(ser) != fbs_parsers_.end()) {
+    if VLIKELY (find_fbs_parser_locked(ser)) {
       result = FoxgloveMessage();
       result.payload = Bytes::shallow_copy(raw.data(), raw.size());
       result.success = true;
