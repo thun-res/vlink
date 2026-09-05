@@ -82,19 +82,7 @@ inline std::string format_expression_string(double value) {
   oss.str({});
   oss.clear();
   oss << std::setprecision(15) << value;
-  auto text = oss.str();
-
-  if VLIKELY (text.find('.') != std::string::npos) {
-    while (!text.empty() && text.back() == '0') {
-      text.pop_back();
-    }
-
-    if VUNLIKELY (!text.empty() && text.back() == '.') {
-      text.pop_back();
-    }
-  }
-
-  return text;
+  return oss.str();
 }
 
 template <typename Integer>
