@@ -62,7 +62,6 @@ class RerunServer final : public MessageLoop {
     std::string save_path;
     std::string name{"vlink-rerun"};
     std::string recording_id;
-    std::string config_file;
     std::string proto_dir;
     std::string fbs_dir;
     std::string schema_plugin_path;
@@ -128,25 +127,26 @@ class RerunServer final : public MessageLoop {
   static std::string url_to_entity_path(const std::string& url);
 
   Config config_;
-  const uint64_t cache_owner_id_{allocate_cache_owner_id()};
+  std::mutex lifecycle_mtx_;
   std::unique_ptr<ProxyBridge> bridge_;
   mutable std::shared_mutex rec_mtx_;
   std::shared_ptr<::rerun::RecordingStream> rec_;
-  std::atomic<::rerun::RecordingStream*> rec_raw_{nullptr};
   std::unique_ptr<RerunConverter> rerun_converter_;
   Timer probe_timer_;
 
   mutable std::shared_mutex info_mtx_;
-  std::unordered_map<std::string, ProxyAPI::Info> last_info_map_;
-  std::unordered_set<std::string> subscribed_urls_;
-  std::atomic<uint64_t> subscribed_urls_generation_{0};
+  struct Stream final {
+    RerunRoute route;
+    std::string path;
+  };
+  std::unordered_map<std::string, std::shared_ptr<const Stream>> streams_;
 
   std::atomic_bool running_{false};
   std::atomic<uint64_t> last_sys_time_ns_{0};
   std::atomic<uint64_t> session_start_sys_time_ns_{0};
   ElapsedTimer bridge_time_elapsed_{ElapsedTimer::kCpuTimestamp, ElapsedTimer::kNano};
   mutable std::mutex bridge_control_mtx_;
-  std::string bridge_control_signature_;
+  bool bridge_control_sent_{false};
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(RerunServer)
 };

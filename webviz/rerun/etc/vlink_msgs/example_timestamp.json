@@ -9,11 +9,11 @@
     "field_mappings": [
       {
         "source": "latitude",
-        "target": "latitude"
+        "target": "positions[0][0]"
       },
       {
         "source": "longitude",
-        "target": "longitude"
+        "target": "positions[0][1]"
       }
     ]
   },
@@ -27,19 +27,35 @@
     "field_mappings": [
       {
         "source": "pose.position.x",
-        "target": "position_x"
+        "target": "translation[0]"
       },
       {
         "source": "pose.position.y",
-        "target": "position_y"
+        "target": "translation[1]"
       },
       {
         "source": "pose.position.z",
-        "target": "position_z"
+        "target": "translation[2]"
       },
       {
-        "source": "pose.orientation",
-        "target": "pose"
+        "target": "quaternion[0]",
+        "source": "pose.orientation.x",
+        "default_value": 0
+      },
+      {
+        "target": "quaternion[1]",
+        "source": "pose.orientation.y",
+        "default_value": 0
+      },
+      {
+        "target": "quaternion[2]",
+        "source": "pose.orientation.z",
+        "default_value": 0
+      },
+      {
+        "target": "quaternion[3]",
+        "source": "pose.orientation.w",
+        "default_value": 1
       }
     ]
   },
@@ -52,20 +68,20 @@
     "timestamp_unit": "ns",
     "field_mappings": [
       {
-        "source": "ranges",
-        "target": "ranges"
+        "target": "positions",
+        "source": "ranges"
       },
       {
-        "source": "angle_min",
-        "target": "angle_min"
+        "target": "positions[][0]",
+        "expression": "_value * cos(_root.angle_min + _index * if(_root.angle_increment != 0, _root.angle_increment, (_root.angle_max - _root.angle_min) / max(1, _root.ranges._size - 1)))"
       },
       {
-        "source": "angle_max",
-        "target": "angle_max"
+        "target": "positions[][1]",
+        "expression": "_value * sin(_root.angle_min + _index * if(_root.angle_increment != 0, _root.angle_increment, (_root.angle_max - _root.angle_min) / max(1, _root.ranges._size - 1)))"
       },
       {
-        "source": "angle_increment",
-        "target": "angle_increment"
+        "target": "positions[][2]",
+        "default_value": 0
       }
     ]
   },
@@ -78,36 +94,62 @@
     "timestamp_unit": "ns",
     "field_mappings": [
       {
-        "source": "obstacles",
-        "target": "entities"
+        "target": "centers",
+        "source": "obstacles"
       },
       {
+        "target": "half_sizes",
+        "source": "obstacles"
+      },
+      {
+        "target": "quaternions",
+        "source": "obstacles"
+      },
+      {
+        "target": "centers[][0]",
         "source": "center.x",
-        "target": "entity_x"
+        "default_value": 0
       },
       {
+        "target": "centers[][1]",
         "source": "center.y",
-        "target": "entity_y"
+        "default_value": 0
       },
       {
+        "target": "centers[][2]",
         "source": "center.z",
-        "target": "entity_z"
+        "default_value": 0
       },
       {
+        "target": "half_sizes[][0]",
         "source": "width",
-        "target": "entity_width"
+        "expression": "(width) / 2"
       },
       {
+        "target": "half_sizes[][1]",
         "source": "length",
-        "target": "entity_length"
+        "expression": "(length) / 2"
       },
       {
+        "target": "half_sizes[][2]",
         "source": "height",
-        "target": "entity_height"
+        "expression": "(height) / 2"
       },
       {
-        "source": "heading",
-        "target": "entity_heading"
+        "target": "quaternions[][0]",
+        "default_value": 0
+      },
+      {
+        "target": "quaternions[][1]",
+        "default_value": 0
+      },
+      {
+        "target": "quaternions[][2]",
+        "expression": "sin((heading) / 2)"
+      },
+      {
+        "target": "quaternions[][3]",
+        "expression": "cos((heading) / 2)"
       }
     ]
   },
@@ -121,11 +163,11 @@
     "field_mappings": [
       {
         "source": "latitude",
-        "target": "latitude"
+        "target": "positions[0][0]"
       },
       {
         "source": "longitude",
-        "target": "longitude"
+        "target": "positions[0][1]"
       }
     ]
   },
@@ -139,19 +181,35 @@
     "field_mappings": [
       {
         "source": "pose.position.x",
-        "target": "position_x"
+        "target": "translation[0]"
       },
       {
         "source": "pose.position.y",
-        "target": "position_y"
+        "target": "translation[1]"
       },
       {
         "source": "pose.position.z",
-        "target": "position_z"
+        "target": "translation[2]"
       },
       {
-        "source": "pose.orientation",
-        "target": "pose"
+        "target": "quaternion[0]",
+        "source": "pose.orientation.x",
+        "default_value": 0
+      },
+      {
+        "target": "quaternion[1]",
+        "source": "pose.orientation.y",
+        "default_value": 0
+      },
+      {
+        "target": "quaternion[2]",
+        "source": "pose.orientation.z",
+        "default_value": 0
+      },
+      {
+        "target": "quaternion[3]",
+        "source": "pose.orientation.w",
+        "default_value": 1
       }
     ]
   }

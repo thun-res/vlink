@@ -60,9 +60,21 @@ RerunServer::RerunServer(const Config& config) : MessageLoop(MessageLoop::kNorma
   rerun_converter_ = std::make_unique<RerunConverter>(conv_config);
 }
 
-RerunServer::~RerunServer() { stop(); }
+RerunServer::~RerunServer() {
+  stop();
+  {
+    std::lock_guard lifecycle_lock(lifecycle_mtx_);
+  }
+  wait_for_quit();
+}
 
 bool RerunServer::start() {
+  std::unique_lock lifecycle_lock(lifecycle_mtx_);
+  if VUNLIKELY (!rerun_converter_->valid()) {
+    MLOG_E("Invalid Rerun mapping configuration");
+    return false;
+  }
+
   if VUNLIKELY (running_.exchange(true)) {
     return true;
   }
@@ -73,25 +85,15 @@ bool RerunServer::start() {
   }
 
   if VUNLIKELY (!init_bridge()) {
-    running_.store(false);
-    flush_recording();
-    {
-      std::unique_lock lock(rec_mtx_);
-      rec_.reset();
-    }
-    rec_raw_.store(nullptr);
-    reset_bridge_wall_time_state(last_sys_time_ns_, bridge_time_elapsed_);
-    reset_bridge_session_time_anchor(session_start_sys_time_ns_);
-    {
-      std::lock_guard lock(bridge_control_mtx_);
-      bridge_control_signature_.clear();
-    }
+    lifecycle_lock.unlock();
+    stop();
     return false;
   }
 
   if VLIKELY (config_.mode == RerunServer::kSpawn || config_.mode == RerunServer::kConnect) {
     if VUNLIKELY (!probe_timer_.attach(this)) {
       MLOG_E("Failed to attach Rerun probe timer");
+      lifecycle_lock.unlock();
       stop();
       return false;
     }
@@ -123,7 +125,13 @@ bool RerunServer::start() {
   }
 
   MLOG_I("Rerun server started (name={}, mode={})", config_.name, mode_name);
-  run();
+  if VUNLIKELY (!async_run()) {
+    lifecycle_lock.unlock();
+    stop();
+    return false;
+  }
+  lifecycle_lock.unlock();
+  wait_for_quit();
   flush_recording();
   MLOG_I("Rerun server stopped");
   return true;
@@ -133,13 +141,13 @@ void RerunServer::stop() {
   if VUNLIKELY (!running_.exchange(false)) {
     return;
   }
+  std::lock_guard lifecycle_lock(lifecycle_mtx_);
 
-  rec_raw_.store(nullptr);
   reset_bridge_wall_time_state(last_sys_time_ns_, bridge_time_elapsed_);
   reset_bridge_session_time_anchor(session_start_sys_time_ns_);
   {
     std::lock_guard lock(bridge_control_mtx_);
-    bridge_control_signature_.clear();
+    bridge_control_sent_ = false;
   }
   probe_timer_.stop();
   probe_timer_.detach();
@@ -156,11 +164,8 @@ void RerunServer::stop() {
 
   {
     std::unique_lock lock(info_mtx_);
-    last_info_map_.clear();
-    subscribed_urls_.clear();
+    streams_.clear();
   }
-
-  subscribed_urls_generation_.fetch_add(1);
 
   flush_recording();
 
@@ -184,7 +189,6 @@ bool RerunServer::init_rerun() {
       {
         std::unique_lock lock(rec_mtx_);
         rec_.reset();
-        rec_raw_.store(nullptr);
       }
 
       MLOG_W("Rerun viewer is not available yet, start in reconnect-wait mode");
@@ -194,7 +198,6 @@ bool RerunServer::init_rerun() {
     {
       std::unique_lock lock(rec_mtx_);
       rec_ = std::move(rec);
-      rec_raw_.store(rec_.get());
     }
 
     return true;
@@ -205,7 +208,10 @@ bool RerunServer::init_rerun() {
 }
 
 bool RerunServer::open_recording(std::shared_ptr<::rerun::RecordingStream>& rec) {
-  rec = std::make_shared<::rerun::RecordingStream>(config_.name, config_.recording_id);
+  if (!rec) {
+    rec = std::make_shared<::rerun::RecordingStream>(config_.name, config_.recording_id, ::rerun::StoreKind::Recording,
+                                                     config_.recording_id.empty());
+  }
 
   switch (config_.mode) {
     case RerunServer::kSpawn: {
@@ -297,6 +303,11 @@ bool RerunServer::reconnect_recording() {
 
   std::shared_ptr<::rerun::RecordingStream> rec;
 
+  {
+    std::shared_lock lock(rec_mtx_);
+    rec = rec_;
+  }
+
   if VUNLIKELY (!open_recording(rec)) {
     return false;
   }
@@ -304,7 +315,6 @@ bool RerunServer::reconnect_recording() {
   {
     std::unique_lock lock(rec_mtx_);
     rec_ = std::move(rec);
-    rec_raw_.store(rec_.get());
   }
 
   return true;
@@ -341,10 +351,6 @@ bool RerunServer::init_bridge() {
       return;
     }
 
-    if VUNLIKELY (rec_raw_.load() == nullptr) {
-      return;
-    }
-
     on_bridge_data(data);
   });
 
@@ -378,7 +384,7 @@ void RerunServer::flush_recording() {
     return;
   }
 
-  auto err = rec->flush_blocking();
+  auto err = rec->flush_blocking(5.0F);
 
   if VUNLIKELY (err.is_err()) {
     MLOG_W("Failed to flush: {}", err.description);
@@ -403,13 +409,13 @@ void RerunServer::probe_recording() {
 
   if VUNLIKELY (!rec) {
     if VLIKELY (reconnect_recording()) {
-      MLOG_I("Rerun reconnect succeeded");
+      MLOG_I("Rerun connection sink recreated");
     }
 
     return;
   }
 
-  auto err = rec->flush_blocking();
+  auto err = rec->flush_blocking(5.0F);
 
   if VLIKELY (!err.is_err()) {
     return;
@@ -418,7 +424,7 @@ void RerunServer::probe_recording() {
   MLOG_W("Rerun probe failed: {}; reconnecting", err.description);
 
   if VLIKELY (reconnect_recording()) {
-    MLOG_I("Rerun reconnect succeeded");
+    MLOG_I("Rerun connection sink recreated");
   } else {
     MLOG_W("Rerun reconnect failed");
   }
@@ -444,9 +450,7 @@ bool RerunServer::update_bridge_control() {
   ProxyAPI::Control control;
   control.mode = ProxyAPI::kAutoAndObserveAll;
 
-  auto signature = build_bridge_control_signature(control);
-
-  if VLIKELY (signature == bridge_control_signature_) {
+  if VLIKELY (bridge_control_sent_) {
     return true;
   }
 
@@ -457,7 +461,7 @@ bool RerunServer::update_bridge_control() {
     return false;
   }
 
-  bridge_control_signature_ = std::move(signature);
+  bridge_control_sent_ = true;
   return true;
 }
 
@@ -472,120 +476,45 @@ void RerunServer::on_bridge_connected(bool connected) {
   } else {
     MLOG_W("Disconnected from proxy bridge");
 
-    std::vector<std::string> urls_to_clear;
-    bool subscribed_urls_changed = false;
-
     {
       std::unique_lock lock(info_mtx_);
-
-      for (const auto& url : subscribed_urls_) {
-        urls_to_clear.emplace_back(url);
-      }
-
-      subscribed_urls_changed = !subscribed_urls_.empty();
-      subscribed_urls_.clear();
-      last_info_map_.clear();
-    }
-
-    if VUNLIKELY (subscribed_urls_changed) {
-      subscribed_urls_generation_.fetch_add(1);
-    }
-
-    if VLIKELY (!urls_to_clear.empty()) {
-      std::shared_ptr<::rerun::RecordingStream> rec;
-
-      {
-        std::shared_lock lock(rec_mtx_);
-        rec = rec_;
-      }
-
-      if VLIKELY (rec) {
-        rec->reset_time();
-
-        for (const auto& url : urls_to_clear) {
-          rec->log(url_to_entity_path(url), ::rerun::archetypes::Clear(true));
-        }
-      }
+      streams_.clear();
     }
 
     reset_bridge_wall_time_state(last_sys_time_ns_, bridge_time_elapsed_);
     reset_bridge_session_time_anchor(session_start_sys_time_ns_);
     {
       std::lock_guard lock(bridge_control_mtx_);
-      bridge_control_signature_.clear();
+      bridge_control_sent_ = false;
     }
   }
 }
 
 void RerunServer::on_bridge_info(const std::vector<ProxyAPI::Info>& info_list) {
-  std::vector<std::string> urls_to_clear;
-  bool subscribed_urls_changed = false;
-
   {
     std::unique_lock lock(info_mtx_);
-
-    std::unordered_set<std::string> current_valid_urls;
-
+    std::unordered_set<std::string> current;
     for (const auto& info : info_list) {
-      if VLIKELY (info.status != ProxyAPI::kInvalid && is_publisher_info(info) && is_url_allowed(info.url)) {
-        current_valid_urls.insert(info.url);
+      if (info.status == ProxyAPI::kInvalid || !is_publisher_info(info) || !is_url_allowed(info.url)) {
+        continue;
+      }
+      current.insert(info.url);
+      const auto found = streams_.find(info.url);
+      if (found == streams_.end() || found->second->route.type != info.schema || found->second->route.ser != info.ser) {
+        auto stream = std::make_shared<Stream>();
+        stream->route = rerun_converter_->resolve(info.url, info.schema, info.ser);
+        stream->path = url_to_entity_path(info.url);
+        streams_[info.url] = std::move(stream);
       }
     }
-
-    for (auto url_iter = subscribed_urls_.begin(); url_iter != subscribed_urls_.end();) {
-      if VUNLIKELY (current_valid_urls.find(*url_iter) == current_valid_urls.end()) {
-        urls_to_clear.emplace_back(*url_iter);
-        last_info_map_.erase(*url_iter);
-        url_iter = subscribed_urls_.erase(url_iter);
-        subscribed_urls_changed = true;
+    for (auto iter = streams_.begin(); iter != streams_.end();) {
+      if (current.find(iter->first) == current.end()) {
+        iter = streams_.erase(iter);
       } else {
-        ++url_iter;
-      }
-    }
-
-    for (const auto& info : info_list) {
-      if VUNLIKELY (info.status == ProxyAPI::kInvalid) {
-        continue;
-      }
-
-      if VUNLIKELY (!is_publisher_info(info)) {
-        continue;
-      }
-
-      if VUNLIKELY (!is_url_allowed(info.url)) {
-        continue;
-      }
-
-      last_info_map_[info.url] = info;
-
-      if VUNLIKELY (subscribed_urls_.find(info.url) == subscribed_urls_.end()) {
-        subscribed_urls_.insert(info.url);
-        subscribed_urls_changed = true;
+        ++iter;
       }
     }
   }
-
-  if VUNLIKELY (subscribed_urls_changed) {
-    subscribed_urls_generation_.fetch_add(1);
-  }
-
-  if VUNLIKELY (!urls_to_clear.empty()) {
-    std::shared_ptr<::rerun::RecordingStream> rec;
-
-    {
-      std::shared_lock lock(rec_mtx_);
-      rec = rec_;
-    }
-
-    if VLIKELY (rec) {
-      rec->reset_time();
-
-      for (const auto& url : urls_to_clear) {
-        rec->log(url_to_entity_path(url), ::rerun::archetypes::Clear(true));
-      }
-    }
-  }
-
   update_bridge_control();
 }
 
@@ -594,48 +523,23 @@ void RerunServer::on_bridge_data(const ProxyAPI::Data& data) {
     return;
   }
 
-  struct SubscribedUrlCache final {
-    uint64_t owner_id{0};
-    uint64_t generation{0};
-    std::string url;
-    bool known{false};
-  };
-
-  thread_local SubscribedUrlCache cache;
-  auto generation = subscribed_urls_generation_.load();
-  bool known_url =
-      cache.owner_id == cache_owner_id_ && cache.generation == generation && cache.known && cache.url == data.url;
-
-  if VUNLIKELY (!known_url) {
-    {
-      std::shared_lock lock(info_mtx_);
-
-      if VLIKELY (subscribed_urls_.find(data.url) != subscribed_urls_.end()) {
-        cache.owner_id = cache_owner_id_;
-        cache.generation = generation;
-        cache.url.assign(data.url);
-        cache.known = true;
-        known_url = true;
-      }
+  std::shared_ptr<const Stream> stream;
+  {
+    std::shared_lock lock(info_mtx_);
+    const auto found = streams_.find(data.url);
+    if (found != streams_.end()) {
+      stream = found->second;
     }
   }
-
-  if VUNLIKELY (!known_url) {
-    std::unique_lock lock(info_mtx_);
-
-    if VUNLIKELY (subscribed_urls_.find(data.url) == subscribed_urls_.end()) {
-      if VUNLIKELY (!is_url_allowed(data.url)) {
-        return;
-      }
-
-      subscribed_urls_.insert(data.url);
-      generation = subscribed_urls_generation_.fetch_add(1) + 1;
+  if VUNLIKELY (!stream || stream->route.type != data.schema || stream->route.ser != data.ser) {
+    if (!is_url_allowed(data.url)) {
+      return;
     }
-
-    cache.owner_id = cache_owner_id_;
-    cache.generation = generation;
-    cache.url.assign(data.url);
-    cache.known = true;
+    auto next = std::make_shared<Stream>();
+    next->route = rerun_converter_->resolve(data.url, data.schema, data.ser);
+    next->path = url_to_entity_path(data.url);
+    std::unique_lock lock(info_mtx_);
+    stream = streams_[data.url] = std::move(next);
   }
 
   std::shared_ptr<::rerun::RecordingStream> rec;
@@ -670,48 +574,28 @@ void RerunServer::on_bridge_data(const ProxyAPI::Data& data) {
     }
   }
 
-  rerun_converter_->convert_and_log(*rec, url_to_entity_path(data.url), data.url, data.schema, data.ser, data.raw,
-                                    fallback_timestamp_ns);
+  if VUNLIKELY (!rerun_converter_->convert_and_log(*rec, stream->path, stream->route, data.raw,
+                                                   fallback_timestamp_ns)) {
+    MLOG_W("Failed to convert Rerun message: {} ({})", data.url, data.ser);
+  }
 }
 
-void RerunServer::on_bridge_time(uint64_t sys_time, uint64_t boot_time) {
-  update_bridge_wall_time_state(sys_time, boot_time, last_sys_time_ns_, bridge_time_elapsed_,
-                                &session_start_sys_time_ns_);
+void RerunServer::on_bridge_time(uint64_t sys_time, uint64_t) {
+  update_bridge_wall_time_state(sys_time, last_sys_time_ns_, bridge_time_elapsed_, session_start_sys_time_ns_);
 }
 
 bool RerunServer::is_url_allowed(std::string_view url) const {
-  return is_allowed_by_filters_cached(cache_owner_id_, url, config_.whitelist_exact, config_.whitelist_patterns,
-                                      config_.blacklist_exact, config_.blacklist_patterns);
+  return is_allowed_by_filters(url, config_.whitelist_exact, config_.whitelist_patterns, config_.blacklist_exact,
+                               config_.blacklist_patterns);
 }
 
 std::string RerunServer::url_to_entity_path(const std::string& url) {
-  struct EntityPathCache final {
-    std::string url;
-    std::string entity_path;
-  };
-
-  thread_local EntityPathCache cache;
-
-  if VLIKELY (cache.url == url) {
-    return cache.entity_path;
+  auto path = url;
+  const auto pos = path.find("://");
+  if (pos != std::string::npos) {
+    path.replace(pos, 3, "/");
   }
-
-  // Convert transport: "dds://camera/front" -> "dds/camera/front"
-  auto pos = url.find("://");
-
-  if VLIKELY (pos != std::string::npos) {
-    cache.url = url;
-    cache.entity_path.clear();
-    cache.entity_path.reserve(url.size() - 2);
-    cache.entity_path.append(url, 0, pos);
-    cache.entity_path.push_back('/');
-    cache.entity_path.append(url, pos + 3);
-    return cache.entity_path;
-  }
-
-  cache.url = url;
-  cache.entity_path = url;
-  return cache.entity_path;
+  return path;
 }
 
 }  // namespace webviz

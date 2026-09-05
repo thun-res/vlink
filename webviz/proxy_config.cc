@@ -31,6 +31,8 @@
 #include <cmath>
 #include <limits>
 
+#include "./webviz_app_utils.h"
+
 namespace vlink {
 namespace webviz {
 
@@ -171,12 +173,10 @@ bool ProxyConfigHelper::apply_config(const Json& root, const std::filesystem::pa
   }
 
   if VLIKELY (!program.is_used("--proxy_domain_id") && proxy.contains("domain_id")) {
-    if VUNLIKELY (!proxy["domain_id"].is_number_integer()) {
-      error = "proxy.domain_id must be an integer";
+    if VUNLIKELY (!read_config_integer(proxy["domain_id"], config.transport.domain_id)) {
+      error = "proxy.domain_id must be a representable integer";
       return false;
     }
-
-    config.transport.domain_id = proxy["domain_id"].get<int>();
   }
 
   if VLIKELY (!program.is_used("--proxy_dds_impl") && proxy.contains("dds_impl")) {
@@ -225,21 +225,17 @@ bool ProxyConfigHelper::apply_config(const Json& root, const std::filesystem::pa
   }
 
   if VLIKELY (!program.is_used("--proxy_buf_size") && proxy.contains("buf_size")) {
-    if VUNLIKELY (!proxy["buf_size"].is_number_integer()) {
-      error = "proxy.buf_size must be an integer";
+    if VUNLIKELY (!read_config_integer(proxy["buf_size"], config.transport.buf_size)) {
+      error = "proxy.buf_size must be a representable integer";
       return false;
     }
-
-    config.transport.buf_size = proxy["buf_size"].get<int>();
   }
 
   if VLIKELY (!program.is_used("--proxy_mtu_size") && proxy.contains("mtu_size")) {
-    if VUNLIKELY (!proxy["mtu_size"].is_number_integer()) {
-      error = "proxy.mtu_size must be an integer";
+    if VUNLIKELY (!read_config_integer(proxy["mtu_size"], config.transport.mtu_size)) {
+      error = "proxy.mtu_size must be a representable integer";
       return false;
     }
-
-    config.transport.mtu_size = proxy["mtu_size"].get<int>();
   }
 
   if VLIKELY (proxy.contains("api")) {
@@ -329,12 +325,10 @@ bool ProxyConfigHelper::apply_config(const Json& root, const std::filesystem::pa
     }
 
     if VLIKELY (!program.is_used("--proxy_iox_strategy") && server.contains("iox_strategy")) {
-      if VUNLIKELY (!server["iox_strategy"].is_number_integer()) {
-        error = "proxy.server.iox_strategy must be an integer";
+      if VUNLIKELY (!read_config_integer(server["iox_strategy"], config.server.iox_strategy)) {
+        error = "proxy.server.iox_strategy must be a representable integer";
         return false;
       }
-
-      config.server.iox_strategy = server["iox_strategy"].get<int>();
     }
 
     if VLIKELY (!program.is_used("--proxy_iox_monitoring") && server.contains("iox_monitoring")) {

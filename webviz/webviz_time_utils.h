@@ -49,18 +49,6 @@ inline uint64_t add_nanos_saturated(uint64_t lhs_ns, uint64_t rhs_ns) {
   return std::numeric_limits<uint64_t>::max();
 }
 
-struct BridgeWallTimeState final {
-  uint64_t last_sys_time_ns{0};
-  uint64_t last_boot_time_ns{0};
-};
-
-inline BridgeWallTimeState make_bridge_wall_time_state(uint64_t sys_time_us, uint64_t boot_time_us) {
-  BridgeWallTimeState state;
-  state.last_sys_time_ns = micros_to_nanos_saturated(sys_time_us);
-  state.last_boot_time_ns = micros_to_nanos_saturated(boot_time_us);
-  return state;
-}
-
 inline void reset_bridge_wall_time_state(std::atomic<uint64_t>& last_sys_time_ns, ElapsedTimer& bridge_time_elapsed) {
   last_sys_time_ns.store(0);
   bridge_time_elapsed.stop();
@@ -70,18 +58,15 @@ inline void reset_bridge_session_time_anchor(std::atomic<uint64_t>& session_star
   session_start_sys_time_ns.store(0);
 }
 
-inline void update_bridge_wall_time_state(uint64_t sys_time_us, uint64_t boot_time_us,
-                                          std::atomic<uint64_t>& last_sys_time_ns, ElapsedTimer& bridge_time_elapsed,
-                                          std::atomic<uint64_t>* session_start_sys_time_ns = nullptr) {
-  auto state = make_bridge_wall_time_state(sys_time_us, boot_time_us);
-  last_sys_time_ns.store(state.last_sys_time_ns);
-
-  if VLIKELY (session_start_sys_time_ns != nullptr) {
-    auto expected = static_cast<uint64_t>(0);
-    session_start_sys_time_ns->compare_exchange_strong(expected, state.last_sys_time_ns);
-  }
-
+inline uint64_t update_bridge_wall_time_state(uint64_t sys_time_us, std::atomic<uint64_t>& last_sys_time_ns,
+                                              ElapsedTimer& bridge_time_elapsed,
+                                              std::atomic<uint64_t>& session_start_sys_time_ns) {
+  const auto time = micros_to_nanos_saturated(sys_time_us);
+  last_sys_time_ns.store(time);
+  uint64_t expected = 0;
+  session_start_sys_time_ns.compare_exchange_strong(expected, time);
   bridge_time_elapsed.restart();
+  return time;
 }
 
 inline uint64_t estimate_bridge_wall_time_ns(uint64_t last_sys_time_ns, const ElapsedTimer& bridge_time_elapsed) {

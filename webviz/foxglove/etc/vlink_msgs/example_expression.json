@@ -8,7 +8,8 @@
     "field_mappings": [
       {
         "source": "header.time_meas",
-        "target": "timestamp_ns"
+        "target": "timestamp",
+        "time_unit": "ns"
       },
       {
         "source": "latitude_deg",
@@ -36,7 +37,8 @@
     "field_mappings": [
       {
         "source": "header.time_meas",
-        "target": "timestamp_ns"
+        "target": "timestamp",
+        "time_unit": "ns"
       },
       {
         "source": "header.frame_id",
@@ -45,15 +47,15 @@
       },
       {
         "source": "pose.position.x",
-        "target": "position_x"
+        "target": "pose.position.x"
       },
       {
         "source": "pose.position.y",
-        "target": "position_y"
+        "target": "pose.position.y"
       },
       {
         "source": "pose.orientation.w",
-        "target": "position_z",
+        "target": "pose.position.z",
         "_comment": "Quaternion yaw = atan2(2*(w*z + x*y), 1 - 2*(y*y + z*z)), use nested fields with dot notation",
         "expression": "atan2(2 * (pose.orientation.w * pose.orientation.z + pose.orientation.x * pose.orientation.y), 1 - 2 * (pose.orientation.y * pose.orientation.y + pose.orientation.z * pose.orientation.z))"
       }
@@ -68,7 +70,8 @@
     "field_mappings": [
       {
         "source": "header.time_meas",
-        "target": "timestamp_ns"
+        "target": "timestamp",
+        "time_unit": "ns"
       },
       {
         "source": "position.x",
@@ -99,7 +102,8 @@
     "field_mappings": [
       {
         "source": "header.time_meas",
-        "target": "timestamp_ns"
+        "target": "timestamp",
+        "time_unit": "ns"
       },
       {
         "source": "steering_angle_rad",
@@ -130,7 +134,8 @@
     "field_mappings": [
       {
         "source": "header.time_meas",
-        "target": "timestamp_ns"
+        "target": "timestamp",
+        "time_unit": "ns"
       },
       {
         "source": "header.frame_id",
@@ -139,19 +144,19 @@
       },
       {
         "source": "roll_rad",
-        "target": "position_x",
+        "target": "pose.position.x",
         "_comment": "Roll in degrees, normalized to [-180, 180] using atan2(sin, cos)",
         "expression": "atan2(sin(roll_rad), cos(roll_rad)) * 180.0 / pi"
       },
       {
         "source": "pitch_rad",
-        "target": "position_y",
+        "target": "pose.position.y",
         "_comment": "Pitch in degrees, clamped to [-90, 90]",
         "expression": "clamp(-90.0, pitch_rad * 180.0 / pi, 90.0)"
       },
       {
         "source": "yaw_rad",
-        "target": "position_z",
+        "target": "pose.position.z",
         "_comment": "Yaw in degrees [0, 360)",
         "expression": "((atan2(sin(yaw_rad), cos(yaw_rad)) * 180.0 / pi) + 360) % 360"
       }
@@ -165,53 +170,60 @@
     "schema_encoding": "flatbuffers",
     "field_mappings": [
       {
+        "target": "entities[0].id",
+        "default_value": "objects"
+      },
+      {
         "source": "header.time_meas",
-        "target": "timestamp_ns"
+        "target": "entities[0].timestamp",
+        "time_unit": "ns"
       },
       {
         "source": "header.frame_id",
-        "target": "frame_id",
+        "target": "entities[0].frame_id",
         "default_value": "base_link"
       },
       {
         "source": "obstacles",
-        "target": "entities"
+        "target": "entities[0].cubes"
       },
       {
         "source": "center.x",
-        "target": "entity_x"
+        "target": "entities[0].cubes[].pose.position.x"
       },
       {
         "source": "center.y",
-        "target": "entity_y"
+        "target": "entities[0].cubes[].pose.position.y"
       },
       {
         "source": "center.z",
-        "target": "entity_z",
+        "target": "entities[0].cubes[].pose.position.z",
         "_comment": "Lift box center to half-height above ground",
         "expression": "center.z + height / 2.0"
       },
       {
         "source": "width",
-        "target": "entity_width",
+        "target": "entities[0].cubes[].size.x",
         "_comment": "Ensure minimum bounding box size of 0.5m",
         "expression": "max(width, 0.5)"
       },
       {
         "source": "length",
-        "target": "entity_length",
+        "target": "entities[0].cubes[].size.y",
         "expression": "max(length, 0.5)"
       },
       {
         "source": "height",
-        "target": "entity_height",
+        "target": "entities[0].cubes[].size.z",
         "expression": "max(height, 0.3)"
       },
       {
-        "source": "heading",
-        "target": "entity_heading",
-        "_comment": "Use radians; fallback to velocity heading if heading near zero",
-        "expression": "if(abs(heading) > 0.001, heading, atan2(velocity.y, velocity.x))"
+        "target": "entities[0].cubes[].pose.orientation.z",
+        "expression": "sin((if(abs(heading) > 0.001, heading, atan2(velocity.y, velocity.x))) * 0.5)"
+      },
+      {
+        "target": "entities[0].cubes[].pose.orientation.w",
+        "expression": "cos((if(abs(heading) > 0.001, heading, atan2(velocity.y, velocity.x))) * 0.5)"
       }
     ]
   },
@@ -224,7 +236,8 @@
     "field_mappings": [
       {
         "source": "header.time_meas",
-        "target": "timestamp_ns"
+        "target": "timestamp",
+        "time_unit": "ns"
       },
       {
         "source": "latitude",

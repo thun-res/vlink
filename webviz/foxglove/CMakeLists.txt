@@ -22,7 +22,16 @@ vlink_generate_cpp(
 file(GLOB PROJECT_HDRS CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/src/*.h)
 file(GLOB PROJECT_SRCS CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/src/*.cc)
 
+set(CONVERSION_SRCS ${PROJECT_SOURCE_DIR}/src/foxglove_converter.cc ${PROJECT_SOURCE_DIR}/src/foxglove_writer.cc
+                    ${PROJECT_SOURCE_DIR}/src/foxglove_schemas.cc ${PROJECT_SOURCE_DIR}/src/vlink_convert.cc
+)
+list(REMOVE_ITEM PROJECT_SRCS ${CONVERSION_SRCS})
+add_library(vlink-foxglove-conversion STATIC ${CONVERSION_SRCS})
+target_include_directories(vlink-foxglove-conversion PUBLIC ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(vlink-foxglove-conversion PUBLIC vlink-webviz-common $<BUILD_INTERFACE:foxglove_fbs_gen>)
+
 add_executable(${PROJECT_NAME} ${PROJECT_HDRS} ${PROJECT_SRCS})
+target_link_libraries(${PROJECT_NAME} PRIVATE vlink-foxglove-conversion)
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src ${CMAKE_CURRENT_BINARY_DIR})
 

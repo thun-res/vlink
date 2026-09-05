@@ -846,7 +846,7 @@ if (instance) {
 | --- | --- |
 | `init(config)` | 加载后调用，返回 `false` 则卸载 |
 | `can_convert(ser_type, target)` | 是否处理某序列化类型与目标的组合 |
-| `get_schema(ser_type, target, info)` | 注册通道时返回 schema 元数据 |
+| `get_schema(ser_type, target, info)` | 注册通道并在转换后更新动态 schema 元数据 |
 | `convert(ser_type, raw, target, payload)` | 将每条消息的 `raw` 转为目标格式 |
 
 Rerun 目标的 JSON payload 约定（节选）：
@@ -856,10 +856,12 @@ Rerun 目标的 JSON payload 约定（节选）：
 ```
 
 ```json
-{ "media_type": "image/jpeg", "data_base64": "<base64>" }
+{ "media_type": "image/jpeg", "blob": {"base64": "<base64>"} }
 ```
 
-**边界条件**：当 JSON 映射配置与本插件同时存在时优先使用插件；`can_convert` 返回 `false` 时回退至 JSON 映射管道，因此插件只需覆盖需自定义逻辑的类型。`convert()` 可能被多个回调线程并发调用，实现须自行保证线程安全。该插件可经环境变量 `VLINK_CONVERT_PLUGIN` 注入（见 13.20），可视化对接整体见 [数据可视化](11-visualization.md)。
+JSON 字段采用所链接 SDK 的官方组件结构，完整表示规则见 [§11.2.7](11-visualization.md#🗂️-1127-自定义消息映射)。字节数据放在对应组件字段内；例如 `EncodedImage.blob` 接受 `{"base64":"..."}`，Tensor 使用 `data.shape` 和 `data.buffer` 的带类型 union。
+
+**边界条件**：匹配的显式映射优先，其次是已识别的原生零拷贝转换，再由插件处理其声明支持的类型。显式映射或插件转换失败均报告失败。`get_timestamp()` 在 `convert()` 成功后读取，动态输出 Schema 也在转换后刷新。`convert()` 可能被多个回调线程并发调用，实现须自行保证线程安全。该插件可经环境变量 `VLINK_CONVERT_PLUGIN` 注入（见 13.20），可视化对接整体见 [数据可视化](11-visualization.md)。
 
 ### 🔬 13.17 SchemaPluginInterface：schema 反射注册
 

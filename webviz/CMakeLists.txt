@@ -52,13 +52,18 @@ endif()
 add_library(
   vlink-webviz-common OBJECT
   ${CMAKE_CURRENT_SOURCE_DIR}/webviz_types.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/webviz_common.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/message_view.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/message_view.cc
+  ${CMAKE_CURRENT_SOURCE_DIR}/mapping.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mapping.cc
+  ${CMAKE_CURRENT_SOURCE_DIR}/flatbuffer_writer.cc
+  ${CMAKE_CURRENT_SOURCE_DIR}/schema_registry.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/schema_registry.cc
+  ${CMAKE_CURRENT_SOURCE_DIR}/json_schema.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/webviz_app_utils.h
   ${CMAKE_CURRENT_SOURCE_DIR}/webviz_bridge_utils.h
   ${CMAKE_CURRENT_SOURCE_DIR}/webviz_loader_utils.h
   ${CMAKE_CURRENT_SOURCE_DIR}/webviz_time_utils.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/zerocopy_message.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/zerocopy_message.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/proxy_bridge.h
   ${CMAKE_CURRENT_SOURCE_DIR}/proxy_bridge.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/proxy_config.h
@@ -67,17 +72,19 @@ add_library(
 
 target_include_directories(vlink-webviz-common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-if(NOT TARGET vlink-exprtk_api)
-  find_package(vlink-exprtk_api QUIET)
-endif()
-
 target_link_libraries(
-  vlink-webviz-common PUBLIC vlink::all vlink::proxy_api ${protobuf_libs} thirdparty::json thirdparty::argparse
+  vlink-webviz-common PUBLIC vlink::all vlink::proxy_api ${protobuf_libs} ${flatbuffers_libs} thirdparty::json
+                             thirdparty::argparse
 )
 vlink_target_system_includes_from(vlink-webviz-common ${protobuf_libs})
 
-if(TARGET vlink::exprtk_api)
-  target_link_libraries(vlink-webviz-common PUBLIC vlink::exprtk_api)
+if(NOT DEFINED ENABLE_EXPRTK OR ENABLE_EXPRTK)
+  if(NOT TARGET vlink::exprtk_api)
+    find_package(vlink-exprtk_api QUIET)
+  endif()
+  if(TARGET vlink::exprtk_api)
+    target_link_libraries(vlink-webviz-common PUBLIC vlink::exprtk_api)
+  endif()
 endif()
 
 if(ENABLE_WEBVIZ_FOXGLOVE)

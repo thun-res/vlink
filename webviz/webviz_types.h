@@ -23,21 +23,11 @@
 
 #pragma once
 
-#include <vlink/base/macros.h>
-
-#include <atomic>
-#include <cstdint>
-#include <exception>
 #include <string>
 #include <vector>
 
 namespace vlink {
 namespace webviz {
-
-inline uint64_t allocate_cache_owner_id() noexcept {
-  static std::atomic<uint64_t> next_id{1};
-  return next_id.fetch_add(1, std::memory_order_relaxed);
-}
 
 struct UrlSelector final {
   bool configured{false};
@@ -46,40 +36,6 @@ struct UrlSelector final {
   std::vector<std::string> blacklist_exact;
   std::vector<std::string> blacklist_patterns;
 };
-
-struct FieldMapping final {
-  std::string source;
-  std::string target;
-  std::string expression;
-  std::string default_value;
-  bool has_default_value{false};
-  bool default_value_is_string{false};
-};
-
-inline bool try_parse_numeric_default(const FieldMapping& mapping, double& value) {
-  if VUNLIKELY (!mapping.has_default_value) {
-    return false;
-  }
-
-  if VUNLIKELY (!mapping.default_value_is_string) {
-    if VUNLIKELY (mapping.default_value == "true") {
-      value = 1.0;
-      return true;
-    }
-
-    if VUNLIKELY (mapping.default_value == "false" || mapping.default_value == "null") {
-      value = 0.0;
-      return true;
-    }
-  }
-
-  try {
-    value = std::stod(mapping.default_value);
-    return true;
-  } catch (const std::exception&) {
-    return false;
-  }
-}
 
 }  // namespace webviz
 }  // namespace vlink

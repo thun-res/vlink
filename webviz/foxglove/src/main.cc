@@ -28,6 +28,7 @@
 #include <vlink/version.h>
 
 #include <argparse/argparse.hpp>
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -80,16 +81,19 @@ int main(int argc, char* argv[]) {
 
   program.add_argument("--vlink_msgs")
       .help("Path(s) to vlink_msgs mapping files")
+      .append()
       .nargs(argparse::nargs_pattern::any)
       .default_value(std::vector<std::string>{});
 
   program.add_argument("--foxglove_msgs")
       .help("Path(s) to foxglove_msgs publish route config files")
+      .append()
       .nargs(argparse::nargs_pattern::any)
       .default_value(std::vector<std::string>{});
 
   program.add_argument("--rpc_msgs")
       .help("Path(s) to Foxglove rpc service config files")
+      .append()
       .nargs(argparse::nargs_pattern::any)
       .default_value(std::vector<std::string>{});
 
@@ -155,19 +159,11 @@ int main(int argc, char* argv[]) {
   }
 
 #ifdef _WIN32
-  vlink::webviz::normalize_path(proto_dir);
-  vlink::webviz::normalize_path(fbs_dir);
-  vlink::webviz::normalize_path(schema_plugin_path);
-  vlink::webviz::normalize_path(convert_plugin_path);
   vlink::webviz::normalize_path(config_file);
-  vlink::webviz::normalize_paths(vlink_msgs);
-  vlink::webviz::normalize_paths(foxglove_msgs);
-  vlink::webviz::normalize_paths(rpc_msgs);
 #endif
 
   vlink::webviz::FoxgloveServer::Config config;
   config.address = program.get<std::string>("--address");
-  config.config_file = config_file;
   config.name = program.get<std::string>("--name");
   config.proto_dir = proto_dir;
   config.fbs_dir = fbs_dir;
@@ -207,7 +203,10 @@ int main(int argc, char* argv[]) {
       }
 
       if VUNLIKELY (!program.is_used("--port") && root.contains("port")) {
-        config_port = root["port"].get<int>();
+        if (!vlink::webviz::read_config_integer(root["port"], config_port)) {
+          std::cerr << "Invalid config: port must be a representable integer" << std::endl;
+          return 1;
+        }
       }
 
       if VUNLIKELY (!program.is_used("--address") && root.contains("address")) {
@@ -225,10 +224,6 @@ int main(int argc, char* argv[]) {
 
       if VLIKELY (root.contains("filter") && root["filter"].is_object()) {
         const auto& filter = root["filter"];
-        config.whitelist_exact.clear();
-        config.whitelist_patterns.clear();
-        config.blacklist_exact.clear();
-        config.blacklist_patterns.clear();
         if VUNLIKELY (!vlink::webviz::append_json_filter_value(filter, "whitelist", config.whitelist_exact,
                                                                config.whitelist_patterns) ||
                       !vlink::webviz::append_json_filter_value(filter, "blacklist", config.blacklist_exact,
@@ -469,11 +464,22 @@ int main(int argc, char* argv[]) {
   }
 
   vlink::Utils::unset_env("VLINK_BAG_PATH");
+  vlink::Utils::set_env("VLINK_DDS_DOMAIN", std::to_string(config.proxy_config.transport.domain_id));
 
   vlink::webviz::FoxgloveServer server(config);
-  vlink::Utils::register_terminate_signal([&server](int) { server.stop(); });
+  static std::atomic_bool stop_requested{false};
+  static_assert(std::atomic_bool::is_always_lock_free);
+  vlink::Utils::register_terminate_signal([](int) { stop_requested.store(true); });
+  vlink::Timer stop_timer(&server, 100, vlink::Timer::kInfinite, [&]() {
+    if (stop_requested.load()) {
+      server.stop();
+    }
+  });
+  stop_timer.start();
+  const auto started = server.start();
+  stop_timer.stop();
 
-  if VUNLIKELY (!server.start()) {
+  if VUNLIKELY (!started) {
     return 1;
   }
 

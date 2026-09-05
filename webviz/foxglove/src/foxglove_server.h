@@ -106,7 +106,6 @@ class FoxgloveServer final : public MessageLoop {
     uint16_t port{8765};
     std::string address{"0.0.0.0"};
     std::string name{"vlink-foxglove"};
-    std::string config_file;
     std::string proto_dir;
     std::string fbs_dir;
     std::string schema_plugin_path;
@@ -231,10 +230,6 @@ class FoxgloveServer final : public MessageLoop {
 
   void broadcast_json(const Json& msg);
 
-  bool should_process_bridge_data(const std::string& url);
-  void rebuild_active_bridge_urls();
-  void rebuild_active_bridge_urls_locked();
-
   void on_parameters_changed(const std::vector<FoxgloveParameters::ParameterEntry>& delta);
 
   void on_bridge_connected(bool connected);
@@ -270,7 +265,7 @@ class FoxgloveServer final : public MessageLoop {
   bool is_url_allowed(std::string_view url) const;
 
   Config config_;
-  const uint64_t cache_owner_id_{allocate_cache_owner_id()};
+  std::mutex lifecycle_mtx_;
   std::unique_ptr<WsServer> ws_server_;
   std::unique_ptr<ProxyBridge> bridge_;
   std::unique_ptr<FoxgloveConverter> foxglove_converter_;
@@ -292,9 +287,14 @@ class FoxgloveServer final : public MessageLoop {
     CommandRoute route;
   };
 
+  std::mutex channel_lifecycle_mtx_;
   mutable std::shared_mutex channels_mtx_;
   std::unordered_map<uint32_t, ChannelInfo> channels_;
-  std::unordered_map<std::string, uint32_t> url_to_channel_id_;
+  struct Stream final {
+    FoxgloveRoute route;
+    std::vector<uint32_t> channel_ids;
+  };
+  std::unordered_map<std::string, std::shared_ptr<Stream>> streams_;
   std::unordered_map<void*, std::unordered_map<uint32_t, PublishChannel>> publish_channels_;
 
   struct ChannelSubscriber final {
@@ -306,9 +306,6 @@ class FoxgloveServer final : public MessageLoop {
   std::unordered_map<std::string, uint32_t> url_sub_counts_;
 
   std::unordered_map<uint32_t, std::vector<ChannelSubscriber>> channel_subscribers_;
-  mutable std::shared_mutex active_bridge_urls_mtx_;
-  std::unordered_set<std::string> active_bridge_urls_;
-  std::atomic<uint64_t> active_bridge_urls_generation_{0};
 
   mutable std::shared_mutex info_mtx_;
   std::unordered_map<std::string, ProxyAPI::Info> last_info_map_;
@@ -323,7 +320,6 @@ class FoxgloveServer final : public MessageLoop {
 
   std::atomic<uint32_t> next_channel_id_{1};
   std::atomic<uint64_t> next_client_id_{1};
-  std::atomic<uint32_t> client_count_{0};
   std::atomic_bool running_{false};
   std::atomic<uint64_t> last_sys_time_ns_{0};
   std::atomic<uint64_t> session_start_sys_time_ns_{0};

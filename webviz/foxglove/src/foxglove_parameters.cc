@@ -151,7 +151,8 @@ bool FoxgloveParameters::parse_config_values(const nlohmann::json& parameters_ro
   return true;
 }
 
-Json FoxgloveParameters::build_parameter_values(const std::vector<std::string>& names, std::string_view id) const {
+Json FoxgloveParameters::build_parameter_values(const std::vector<std::string>& names,
+                                                std::optional<std::string_view> id) const {
   Json msg;
   msg["op"] = "parameterValues";
   msg["parameters"] = Json::array();
@@ -174,8 +175,8 @@ Json FoxgloveParameters::build_parameter_values(const std::vector<std::string>& 
     }
   }
 
-  if VLIKELY (!id.empty()) {
-    msg["id"] = std::string(id);
+  if (id) {
+    msg["id"] = std::string(*id);
   }
 
   return msg;
@@ -255,10 +256,10 @@ bool FoxgloveParameters::apply_set_parameters(const Json& request, Json& respons
 
   delta = diff_states(old_state, new_state);
 
-  std::string response_id;
+  std::optional<std::string_view> response_id;
 
   if VLIKELY (request.contains("id") && request["id"].is_string()) {
-    response_id = request["id"].get<std::string>();
+    response_id = request["id"].get_ref<const std::string&>();
   }
 
   response = build_parameter_values(requested_names, response_id);
@@ -315,8 +316,11 @@ bool FoxgloveParameters::validate_parameter_value(const Json& value, std::string
   }
 
   if VUNLIKELY (type == "byte_array") {
-    if VLIKELY (value.is_string()) {
-      return true;
+    if (value.is_string()) {
+      const auto& text = value.get_ref<const std::string&>();
+      if (Bytes::encode_to_base64(Bytes::decode_from_base64(text)) == text) {
+        return true;
+      }
     }
 
     error = "byte_array parameter requires a base64 string value";
@@ -346,6 +350,15 @@ bool FoxgloveParameters::validate_parameter_value(const Json& value, std::string
     }
 
     return true;
+  }
+
+  if (value.is_array()) {
+    for (const auto& item : value) {
+      if (item.is_number() != value.front().is_number()) {
+        error = "parameter array cannot mix numeric and non-numeric values";
+        return false;
+      }
+    }
   }
 
   if VLIKELY (is_supported_parameter_value(value)) {

@@ -174,8 +174,7 @@ class ProxyServerBridge final : public ProxyBridge {
 
   ProxyServerBridge(const Config& config, MessageLoop* data_callback_loop)
       : ProxyBridge(config, data_callback_loop), config_(config) {
-    current_hostname_ = Utils::get_host_name();
-    proxy_hostnames_.emplace(current_hostname_);
+    proxy_hostnames_.emplace(Utils::get_host_name());
     has_intra_bind_ = !Utils::get_env("VLINK_INTRA_BIND").empty();
 
     if VLIKELY (config_.server.max_packet_size > 0.0) {
@@ -902,11 +901,8 @@ class ProxyServerBridge final : public ProxyBridge {
           auto& state = entry.second;
           std::unique_lock state_lock(state.state_mtx);
           state.sub.reset();
-          state.ser.clear();
-          state.schema = SchemaType::kUnknown;
-          state.sub_error = false;
-          state.next_subscribe_retry_us.store(0);
         }
+        url_states_.clear();
       }
 
       dispatch_info({});
@@ -932,18 +928,13 @@ class ProxyServerBridge final : public ProxyBridge {
     {
       std::unique_lock lock(url_state_mtx_);
 
-      for (auto& entry : url_states_) {
-        if VLIKELY (current_urls.count(entry.first) != 0) {
-          continue;
+      for (auto iter = url_states_.begin(); iter != url_states_.end();) {
+        if VLIKELY (current_urls.count(iter->first) != 0) {
+          ++iter;
+        } else {
+          iter->second.sub.reset();
+          iter = url_states_.erase(iter);
         }
-
-        auto& state = entry.second;
-        std::unique_lock state_lock(state.state_mtx);
-        state.sub.reset();
-        state.ser.clear();
-        state.schema = SchemaType::kUnknown;
-        state.sub_error = false;
-        state.next_subscribe_retry_us.store(0);
       }
 
       for (const auto* info : visible_info_list) {
@@ -1094,7 +1085,6 @@ class ProxyServerBridge final : public ProxyBridge {
   std::atomic_bool connected_{false};
   std::atomic_bool refresh_pending_{false};
   std::atomic<ProxyAPI::Mode> mode_{ProxyAPI::kOffline};
-  std::string current_hostname_;
   std::unordered_set<std::string> proxy_hostnames_;
   size_t max_packet_size_bytes_{0};
   bool has_intra_bind_{false};

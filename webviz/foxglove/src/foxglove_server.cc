@@ -112,10 +112,20 @@ FoxgloveServer::FoxgloveServer(const Config& config)
 
 FoxgloveServer::~FoxgloveServer() {
   stop();
+  {
+    std::lock_guard lifecycle_lock(lifecycle_mtx_);
+  }
+  wait_for_quit();
   rpc_.reset();
 }
 
 bool FoxgloveServer::start() {
+  std::unique_lock lifecycle_lock(lifecycle_mtx_);
+  if VUNLIKELY (!foxglove_converter_->valid()) {
+    MLOG_E("Invalid Foxglove mapping configuration");
+    return false;
+  }
+
   if VUNLIKELY (running_.exchange(true)) {
     return true;
   }
@@ -125,36 +135,19 @@ bool FoxgloveServer::start() {
     return false;
   }
 
-  if VUNLIKELY (!init_bridge()) {
-    quit(false);
-    wait_for_quit();
-    running_.store(false);
+  if (config_.proxy_config.interface_mode == ProxyBridge::kProxyApi) {
+    set_global_status("proxy-bridge-disconnected", 1,
+                      "Waiting for VLink proxy " VLINK_VERSION " on DDS domain " +
+                          std::to_string(config_.proxy_config.transport.domain_id));
+  }
+
+  if VUNLIKELY (!init_bridge() || (parameters_ && !parameters_->start()) || !init_websocket()) {
+    lifecycle_lock.unlock();
+    stop();
     return false;
   }
 
-  if VUNLIKELY (parameters_ && !parameters_->start()) {
-    running_.store(false);
-    if VLIKELY (bridge_) {
-      bridge_->stop();
-    }
-    quit(false);
-    wait_for_quit();
-    return false;
-  }
-
-  if VUNLIKELY (!init_websocket()) {
-    running_.store(false);
-    if VLIKELY (bridge_) {
-      bridge_->stop();
-    }
-    if VLIKELY (parameters_) {
-      parameters_->stop();
-    }
-    quit(false);
-    wait_for_quit();
-    return false;
-  }
-
+  lifecycle_lock.unlock();
   MLOG_I("Foxglove server started on {}:{}", config_.address, config_.port);
   log_connect_hint();
   ws_server_->run();
@@ -166,8 +159,8 @@ void FoxgloveServer::stop() {
   if VUNLIKELY (!running_.exchange(false)) {
     return;
   }
+  std::lock_guard lifecycle_lock(lifecycle_mtx_);
 
-  client_count_.store(0);
   reset_bridge_wall_time_state(last_sys_time_ns_, bridge_time_elapsed_);
   reset_bridge_session_time_anchor(session_start_sys_time_ns_);
   {
@@ -191,7 +184,6 @@ void FoxgloveServer::stop() {
 
     {
       std::unique_lock lock(clients_mtx_);
-      client_count_.store(0);
 
       for (auto& [ptr, client] : clients_) {
         client_hdls.emplace_back(client.hdl);
@@ -210,6 +202,7 @@ void FoxgloveServer::stop() {
   }
 
   {
+    std::lock_guard lifecycle_lock(channel_lifecycle_mtx_);
     std::scoped_lock state_lock(clients_mtx_, channels_mtx_, sub_counts_mtx_);
 
     clients_.clear();
@@ -224,19 +217,12 @@ void FoxgloveServer::stop() {
       }
 
       if VLIKELY (!channel_iter->second.url.empty()) {
-        url_to_channel_id_.erase(channel_iter->second.url);
+        streams_.erase(channel_iter->second.url);
       }
 
       channel_iter = channels_.erase(channel_iter);
     }
   }
-
-  {
-    std::unique_lock lock(active_bridge_urls_mtx_);
-    active_bridge_urls_.clear();
-  }
-
-  active_bridge_urls_generation_.fetch_add(1);
 
   {
     std::unique_lock lock(info_mtx_);
@@ -333,10 +319,6 @@ bool FoxgloveServer::init_bridge() {
 
   bridge_->register_data_callback([this](const ProxyAPI::Data& data) {
     if VUNLIKELY (!running_.load()) {
-      return;
-    }
-
-    if VUNLIKELY (!should_process_bridge_data(data.url)) {
       return;
     }
 
@@ -501,6 +483,10 @@ Json FoxgloveServer::build_sorted_connection_entries(std::unordered_map<std::str
 }
 
 void FoxgloveServer::on_ws_open(ConnectionHdl hdl) {
+  std::lock_guard lifecycle_lock(channel_lifecycle_mtx_);
+  if (!running_.load()) {
+    return;
+  }
   auto conn = ws_server_->get_con_from_hdl(hdl);
   conn->set_max_send_queue_size(kMaxClientSendQueueSize);
   conn->set_max_send_buffer_size(kMaxClientSendBufferSize);
@@ -514,7 +500,6 @@ void FoxgloveServer::on_ws_open(ConnectionHdl hdl) {
     client.conn = conn;
     client.name = conn->get_remote_endpoint();
     clients_[raw_ptr] = std::move(client);
-    client_count_.store(static_cast<uint32_t>(clients_.size()));
   }
 
   send_server_info(hdl);
@@ -595,7 +580,6 @@ void FoxgloveServer::on_ws_close(ConnectionHdl hdl) {
       }
 
       clients_.erase(client_iter);
-      client_count_.store(static_cast<uint32_t>(clients_.size()));
     }
   }
 
@@ -617,7 +601,6 @@ void FoxgloveServer::on_ws_close(ConnectionHdl hdl) {
   }
 
   if VUNLIKELY (need_update) {
-    rebuild_active_bridge_urls();
     update_bridge_control();
   }
 }
@@ -752,7 +735,8 @@ void FoxgloveServer::handle_subscribe(ConnectionHdl hdl, const Json& msg) {
 
       auto channel_iter = channels_.find(channel_id);
 
-      if VUNLIKELY (channel_iter == channels_.end()) {
+      if VUNLIKELY (channel_iter == channels_.end() || channel_iter->second.schema_name.empty() ||
+                    channel_iter->second.is_time_only) {
         MLOG_W("Subscribe to unknown channel_id: {}", channel_id);
         continue;
       }
@@ -777,7 +761,6 @@ void FoxgloveServer::handle_subscribe(ConnectionHdl hdl, const Json& msg) {
   }
 
   if VLIKELY (need_update) {
-    rebuild_active_bridge_urls();
     update_bridge_control();
   }
 
@@ -853,7 +836,6 @@ void FoxgloveServer::handle_unsubscribe(ConnectionHdl hdl, const Json& msg) {
   }
 
   if VLIKELY (need_update) {
-    rebuild_active_bridge_urls();
     update_bridge_control();
   }
 }
@@ -992,7 +974,6 @@ void FoxgloveServer::handle_publish_advertise(ConnectionHdl hdl, const Json& msg
   }
 
   if VLIKELY (need_update) {
-    rebuild_active_bridge_urls();
     update_bridge_control();
   }
 }
@@ -1272,7 +1253,7 @@ void FoxgloveServer::handle_get_parameters(ConnectionHdl hdl, const Json& msg) {
     return;
   }
 
-  std::string request_id;
+  std::optional<std::string_view> request_id;
 
   if VUNLIKELY (msg.contains("id") && !msg["id"].is_string()) {
     send_status(hdl, 2, "getParameters id must be a string");
@@ -1280,7 +1261,7 @@ void FoxgloveServer::handle_get_parameters(ConnectionHdl hdl, const Json& msg) {
   }
 
   if VLIKELY (msg.contains("id")) {
-    request_id = msg["id"].get<std::string>();
+    request_id = msg["id"].get_ref<const std::string&>();
   }
 
   send_json(hdl, parameters_->build_parameter_values(names, request_id));
@@ -1409,22 +1390,8 @@ void FoxgloveServer::handle_unsubscribe_parameter_updates(ConnectionHdl hdl, con
 }
 
 void FoxgloveServer::broadcast_connection_graph_update() {
-  {
-    std::shared_lock lock(clients_mtx_);
-    bool has_subscribers = false;
-
-    for (const auto& client_entry : clients_) {
-      const auto& client = client_entry.second;
-
-      if VLIKELY (client.subscribed_connection_graph) {
-        has_subscribers = true;
-        break;
-      }
-    }
-
-    if VUNLIKELY (!has_subscribers) {
-      return;
-    }
+  if (!config_.capabilities.connection_graph) {
+    return;
   }
 
   Json graph;
@@ -1505,8 +1472,7 @@ void FoxgloveServer::broadcast_connection_graph_update() {
     return;
   }
 
-  thread_local std::vector<ConnectionPtr> targets;
-  targets.clear();
+  std::vector<ConnectionPtr> targets;
 
   {
     std::shared_lock lock(clients_mtx_);
@@ -1738,7 +1704,7 @@ void FoxgloveServer::send_advertise(ConnectionHdl hdl) {
     }
 
     for (const auto& [id, ch] : channels_) {
-      if VUNLIKELY (ch.is_time_only) {
+      if VUNLIKELY (ch.is_time_only || ch.schema_name.empty()) {
         continue;
       }
 
@@ -1993,8 +1959,7 @@ bool FoxgloveServer::has_time_capability() {
 bool FoxgloveServer::has_parameters_capability() const { return parameters_ && parameters_->active(); }
 
 void FoxgloveServer::send_time(uint64_t timestamp_ns) {
-  thread_local std::vector<ConnectionPtr> targets;
-  targets.clear();
+  std::vector<ConnectionPtr> targets;
 
   {
     std::shared_lock lock(clients_mtx_);
@@ -2038,8 +2003,7 @@ void FoxgloveServer::broadcast_json(const Json& msg) {
     return;
   }
 
-  thread_local std::vector<ConnectionPtr> targets;
-  targets.clear();
+  std::vector<ConnectionPtr> targets;
 
   {
     std::shared_lock lock(clients_mtx_);
@@ -2071,69 +2035,6 @@ void FoxgloveServer::broadcast_json(const Json& msg) {
       }
     }
   }
-}
-
-bool FoxgloveServer::should_process_bridge_data(const std::string& url) {
-  struct ActiveBridgeUrlCacheEntry final {
-    uint64_t owner_id{0};
-    uint64_t generation{0};
-    std::string url;
-    bool active{false};
-  };
-
-  thread_local std::array<ActiveBridgeUrlCacheEntry, 8> cache_entries;
-
-  if VUNLIKELY (client_count_.load() == 0U) {
-    return false;
-  }
-
-  const auto generation = active_bridge_urls_generation_.load();
-  const auto cache_index = std::hash<std::string_view>{}(url) % cache_entries.size();
-  auto& cache_entry = cache_entries[cache_index];
-
-  if VLIKELY (cache_entry.owner_id == cache_owner_id_ && cache_entry.generation == generation &&
-              cache_entry.url == url) {
-    return cache_entry.active;
-  }
-
-  std::shared_lock lock(active_bridge_urls_mtx_);
-  const auto active = active_bridge_urls_.find(url) != active_bridge_urls_.end();
-  cache_entry.owner_id = cache_owner_id_;
-  cache_entry.generation = generation;
-  cache_entry.url = url;
-  cache_entry.active = active;
-  return active;
-}
-
-void FoxgloveServer::rebuild_active_bridge_urls() {
-  std::scoped_lock state_lock(channels_mtx_, sub_counts_mtx_);
-  rebuild_active_bridge_urls_locked();
-}
-
-void FoxgloveServer::rebuild_active_bridge_urls_locked() {
-  std::unordered_set<std::string> next_active_bridge_urls;
-  next_active_bridge_urls.reserve(url_sub_counts_.size() + channels_.size());
-
-  for (const auto& [url, count] : url_sub_counts_) {
-    if VLIKELY (count > 0U) {
-      next_active_bridge_urls.emplace(url);
-    }
-  }
-
-  for (const auto& channel_entry : channels_) {
-    const auto& channel = channel_entry.second;
-
-    if VLIKELY (channel.is_send_time && !channel.url.empty()) {
-      next_active_bridge_urls.emplace(channel.url);
-    }
-  }
-
-  {
-    std::unique_lock lock(active_bridge_urls_mtx_);
-    active_bridge_urls_.swap(next_active_bridge_urls);
-  }
-
-  active_bridge_urls_generation_.fetch_add(1);
 }
 
 void FoxgloveServer::on_parameters_changed(const std::vector<FoxgloveParameters::ParameterEntry>& delta) {
@@ -2188,6 +2089,10 @@ void FoxgloveServer::on_bridge_connected(bool connected) {
     clear_global_status("proxy-bridge-disconnected");
     update_bridge_control();
   } else {
+    std::unique_lock lifecycle_lock(channel_lifecycle_mtx_);
+    if (!running_.load()) {
+      return;
+    }
     MLOG_W("Disconnected from proxy bridge");
     set_global_status("proxy-bridge-disconnected", 2, "Proxy bridge disconnected");
 
@@ -2209,7 +2114,7 @@ void FoxgloveServer::on_bridge_connected(bool connected) {
             continue;
           }
 
-          if VLIKELY (!ch.is_time_only) {
+          if VLIKELY (!ch.is_time_only && !ch.schema_name.empty()) {
             has_channels = true;
             unadv_msg["channelIds"].emplace_back(id);
           }
@@ -2225,7 +2130,7 @@ void FoxgloveServer::on_bridge_connected(bool connected) {
           }
 
           if VLIKELY (!channel_iter->second.url.empty()) {
-            url_to_channel_id_.erase(channel_iter->second.url);
+            streams_.erase(channel_iter->second.url);
           }
 
           channels_.erase(channel_iter);
@@ -2247,11 +2152,13 @@ void FoxgloveServer::on_bridge_connected(bool connected) {
     {
       std::unique_lock lock(info_mtx_);
       last_info_map_.clear();
-      prev_connection_graph_ = Json{};
     }
+
+    broadcast_connection_graph_update();
 
     reset_bridge_wall_time_state(last_sys_time_ns_, bridge_time_elapsed_);
     reset_bridge_session_time_anchor(session_start_sys_time_ns_);
+    lifecycle_lock.unlock();
     {
       std::lock_guard lock(bridge_control_mtx_);
       bridge_control_signature_.clear();
@@ -2286,226 +2193,138 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
   if VUNLIKELY (!running_.load()) {
     return;
   }
-
-  uint32_t channel_id = 0;
-  bool is_send_time_ch = false;
-  bool is_time_only_ch = false;
-  ChannelSubscriber single_target;
-  bool has_single_target = false;
-  thread_local std::vector<ChannelSubscriber> targets;
-  targets.clear();
-
+  std::shared_ptr<Stream> stream;
+  std::vector<uint32_t> channel_ids;
+  bool needed = false;
   {
     std::shared_lock lock(channels_mtx_);
-    auto url_iter = url_to_channel_id_.find(data.url);
-
-    if VUNLIKELY (url_iter == url_to_channel_id_.end()) {
+    const auto found = streams_.find(data.url);
+    if (found == streams_.end()) {
       return;
     }
-
-    channel_id = url_iter->second;
-
-    auto channel_iter = channels_.find(channel_id);
-
-    if VLIKELY (channel_iter != channels_.end()) {
-      is_send_time_ch = channel_iter->second.is_send_time;
-      is_time_only_ch = channel_iter->second.is_time_only;
+    stream = found->second;
+    channel_ids = stream->channel_ids;
+    for (const auto id : channel_ids) {
+      const auto channel = channels_.find(id);
+      needed |= channel != channels_.end() && (channel->second.is_send_time || channel->second.schema_name.empty());
     }
   }
-
-  FoxgloveMessage result;
-  bool has_result = false;
-
-  if VUNLIKELY (is_send_time_ch) {
-    result = foxglove_converter_->convert(data.url, data.schema, data.ser, data.raw);
-    has_result = true;
-
-    if VLIKELY (result.timestamp_ns >= 0) {
+  if (stream->route.ser != data.ser || stream->route.type != SchemaData::resolve_type(data.schema, data.ser)) {
+    return;
+  }
+  {
+    std::shared_lock lock(sub_counts_mtx_);
+    for (const auto channel_id : channel_ids) {
+      const auto found = channel_subscribers_.find(channel_id);
+      needed |= found != channel_subscribers_.end() && !found->second.empty();
+    }
+  }
+  if (!needed) {
+    return;
+  }
+  auto results = foxglove_converter_->convert(stream->route, data.raw);
+  for (const auto& result : results) {
+    if (!result.success) {
+      continue;
+    }
+    if (result.is_send_time && result.timestamp_ns >= 0) {
       send_time(static_cast<uint64_t>(result.timestamp_ns));
     }
-
-    if VUNLIKELY (is_time_only_ch) {
+    const auto channel_id = channel_ids[result.output];
+    std::unique_lock lifecycle_lock(channel_lifecycle_mtx_);
+    if (!running_.load()) {
       return;
     }
-  }
-
-  {
-    std::shared_lock sc_lock(sub_counts_mtx_);
-    auto subscriber_iter = channel_subscribers_.find(channel_id);
-
-    if VUNLIKELY (subscriber_iter == channel_subscribers_.end() || subscriber_iter->second.empty()) {
-      return;
-    }
-
-    if VLIKELY (subscriber_iter->second.size() == 1U) {
-      single_target = subscriber_iter->second.front();
-      has_single_target = true;
-    } else {
-      targets.reserve(subscriber_iter->second.size());
-      targets.assign(subscriber_iter->second.begin(), subscriber_iter->second.end());
-    }
-  }
-
-  if VUNLIKELY (!has_result) {
-    result = foxglove_converter_->convert(data.url, data.schema, data.ser, data.raw);
-  }
-
-  if VUNLIKELY (!result.success) {
-    return;
-  }
-
-  bool schema_changed = false;
-  Json remove_msg;
-  Json add_msg;
-  uint32_t old_channel_id = 0;
-  bool drop_message = false;
-
-  if VUNLIKELY (!result.schema_name.empty()) {
-    std::unique_lock lock(channels_mtx_);
-    auto channel_iter = channels_.find(channel_id);
-
-    if VLIKELY (channel_iter != channels_.end()) {
-      auto& ch = channel_iter->second;
-      const bool schema_identity_changed = ch.schema_name != result.schema_name || ch.encoding != result.encoding ||
-                                           ch.schema_encoding != result.schema_encoding;
-
-      if VUNLIKELY (schema_identity_changed || ch.schema.empty()) {
-        std::string schema_data = result.schema_data;
-
-        if VLIKELY (!schema_data.empty() || foxglove_converter_->resolve_schema_by_name(
-                                                result.schema_name, result.schema_encoding, schema_data)) {
-          const bool advertise_changed = schema_identity_changed || ch.schema != schema_data;
-
-          if VUNLIKELY (advertise_changed) {
-            auto old_id = ch.id;
-            auto new_id = allocate_channel_id();
-            auto updated = ch;
-            updated.id = new_id;
-            updated.schema_name = result.schema_name;
-            updated.encoding = result.encoding;
-            updated.schema_encoding = result.schema_encoding;
-            updated.schema = schema_data;
-
-            update_channel_schema_payload(updated);
-
-            channels_.erase(channel_iter);
-            channels_[new_id] = updated;
-            url_to_channel_id_[data.url] = new_id;
-            schema_changed = true;
-            old_channel_id = old_id;
-
-            remove_msg["op"] = "unadvertise";
-            remove_msg["channelIds"] = Json::array({old_id});
-
-            add_msg["op"] = "advertise";
-            add_msg["channels"] = Json::array();
-
-            add_msg["channels"].emplace_back(make_advertise_channel_json(updated));
-          }
-        } else {
-          drop_message = true;
-        }
-      }
-    } else {
-      drop_message = true;
-    }
-  }
-
-  if VUNLIKELY (drop_message) {
-    return;
-  }
-
-  if VUNLIKELY (schema_changed) {
-    clear_channel_runtime_state(old_channel_id, data.url);
-    broadcast_json(remove_msg);
-    broadcast_json(add_msg);
-    update_bridge_control();
-    return;
-  }
-
-  auto fallback_timestamp_ns = estimate_bridge_wall_time_ns(last_sys_time_ns_.load(), bridge_time_elapsed_);
-  fallback_timestamp_ns =
-      resolve_bridge_data_timestamp_ns(session_start_sys_time_ns_.load(), data.timestamp, fallback_timestamp_ns);
-  auto timestamp_ns = resolve_message_timestamp_ns(result.timestamp_ns, fallback_timestamp_ns);
-
-  if VLIKELY (has_single_target) {
-    ConnectionPtr conn;
-
+    Json added;
+    bool changed = false;
+    bool was_visible = false;
     {
-      std::shared_lock lock(clients_mtx_);
-      auto client_iter = clients_.find(single_target.client_ptr);
-
-      if VLIKELY (client_iter != clients_.end()) {
-        conn = client_iter->second.conn;
+      std::unique_lock lock(channels_mtx_);
+      const auto found = channels_.find(channel_id);
+      if (found == channels_.end()) {
+        continue;
       }
-    }
-
-    if VUNLIKELY (!conn) {
-      return;
-    }
-
-    auto payload =
-        build_message_data(single_target.subscription_id, timestamp_ns, result.payload.data(), result.payload.size());
-    send_binary(conn, payload);
-  } else {
-    auto payload_size = result.payload.size();
-    auto buf = Bytes::create(1 + 4 + 8 + payload_size);
-    auto* ptr = buf.data();
-
-    ptr[0] = static_cast<uint8_t>(ServerBinaryOpcode::kMessageData);
-    std::memcpy(ptr + 5, &timestamp_ns, 8);
-
-    if VLIKELY (payload_size > 0) {
-      std::memcpy(ptr + 13, result.payload.data(), payload_size);
-    }
-
-    thread_local std::vector<std::pair<ConnectionPtr, uint32_t>> send_targets;
-    send_targets.clear();
-    send_targets.reserve(targets.size());
-
-    {
-      std::shared_lock lock(clients_mtx_);
-
-      for (const auto& target : targets) {
-        auto client_iter = clients_.find(target.client_ptr);
-
-        if VUNLIKELY (client_iter == clients_.end() || !client_iter->second.conn) {
+      auto& channel = found->second;
+      const bool plugin = stream->route.outputs[result.output].plugin;
+      if (channel.schema_name != result.schema_name || channel.encoding != result.encoding ||
+          channel.schema_encoding != result.schema_encoding || channel.is_send_time != result.is_send_time ||
+          (plugin && channel.schema != result.schema_data)) {
+        std::string schema = result.schema_data;
+        if (!plugin &&
+            !foxglove_converter_->resolve_schema_by_name(result.schema_name, result.schema_encoding, schema)) {
           continue;
         }
-
-        send_targets.emplace_back(client_iter->second.conn, target.subscription_id);
+        auto next = std::move(channel);
+        was_visible = !next.is_time_only && !next.schema_name.empty();
+        channels_.erase(found);
+        next.id = allocate_channel_id();
+        next.schema_name = result.schema_name;
+        next.encoding = result.encoding;
+        next.schema_encoding = result.schema_encoding;
+        next.schema = std::move(schema);
+        next.is_send_time = result.is_send_time;
+        next.is_time_only = result.encoding == "send_time";
+        update_channel_schema_payload(next);
+        stream->channel_ids[result.output] = next.id;
+        if (!next.is_time_only) {
+          added = make_advertise_channel_json(next);
+        }
+        channels_.emplace(next.id, std::move(next));
+        changed = true;
       }
     }
-
-    for (const auto& target : send_targets) {
-      try {
-        std::memcpy(ptr + 1, &target.second, 4);
-        auto ec = target.first->send(buf.data(), buf.size(), websocketpp::frame::opcode::binary);
-
-        if VUNLIKELY (ec) {
-          close_slow_client(target.first, ec);
-
-          if VLIKELY (running_.load()) {
-            MLOG_W("Failed to send binary: {}", ec.message());
-          }
-        }
-      } catch (const std::exception& e) {
-        if VLIKELY (running_.load()) {
-          MLOG_W("Failed to send binary: {}", e.what());
+    if (changed) {
+      clear_channel_runtime_state(channel_id, data.url);
+      if (was_visible) {
+        broadcast_json(Json{{"op", "unadvertise"}, {"channelIds", Json::array({channel_id})}});
+      }
+      if (!added.is_null()) {
+        broadcast_json(Json{{"op", "advertise"}, {"channels", Json::array({std::move(added)})}});
+      }
+      lifecycle_lock.unlock();
+      update_bridge_control();
+      continue;
+    }
+    lifecycle_lock.unlock();
+    if (result.encoding == "send_time") {
+      continue;
+    }
+    std::vector<std::pair<ConnectionPtr, uint32_t>> targets;
+    {
+      std::scoped_lock lock(clients_mtx_, sub_counts_mtx_);
+      const auto found = channel_subscribers_.find(channel_id);
+      if (found == channel_subscribers_.end()) {
+        continue;
+      }
+      targets.reserve(found->second.size());
+      for (const auto& subscriber : found->second) {
+        const auto client = clients_.find(subscriber.client_ptr);
+        if (client != clients_.end() && client->second.conn) {
+          targets.emplace_back(client->second.conn, subscriber.subscription_id);
         }
       }
+    }
+    if (targets.empty()) {
+      continue;
+    }
+    auto fallback = estimate_bridge_wall_time_ns(last_sys_time_ns_.load(), bridge_time_elapsed_);
+    fallback = resolve_bridge_data_timestamp_ns(session_start_sys_time_ns_.load(), data.timestamp, fallback);
+    auto payload = build_message_data(0, resolve_message_timestamp_ns(result.timestamp_ns, fallback),
+                                      result.payload.data(), result.payload.size());
+    for (const auto& target : targets) {
+      write_little_endian(payload.data() + 1, target.second);
+      send_binary(target.first, payload);
     }
   }
 }
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-void FoxgloveServer::on_bridge_time(uint64_t sys_time, uint64_t boot_time) {
-  auto state = make_bridge_wall_time_state(sys_time, boot_time);
-  update_bridge_wall_time_state(sys_time, boot_time, last_sys_time_ns_, bridge_time_elapsed_,
-                                &session_start_sys_time_ns_);
+void FoxgloveServer::on_bridge_time(uint64_t sys_time, uint64_t) {
+  const auto time =
+      update_bridge_wall_time_state(sys_time, last_sys_time_ns_, bridge_time_elapsed_, session_start_sys_time_ns_);
 
   if VLIKELY (config_.send_time) {
-    send_time(state.last_sys_time_ns);
+    send_time(time);
   }
 }
 
@@ -2542,252 +2361,94 @@ void FoxgloveServer::clear_channel_runtime_state(uint32_t channel_id, std::strin
   } else {
     url_sub_counts_.erase(std::string(url));
   }
-
-  rebuild_active_bridge_urls_locked();
 }
 
 void FoxgloveServer::update_channels(const std::vector<ProxyAPI::Info>& info_list) {
-  struct RemovedChannelState final {
-    uint32_t id{0};
-    std::string url;
-  };
-
-  std::vector<ChannelInfo> new_channels;
-  std::vector<ChannelInfo> updated_channels;
-  std::vector<RemovedChannelState> removed_channel_states;
-  std::vector<uint32_t> removed_advertised_ids;
-  bool need_rpc_refresh = false;
-  bool need_subscription_refresh = false;
-
+  std::unique_lock lifecycle_lock(channel_lifecycle_mtx_);
+  if (!running_.load()) {
+    return;
+  }
+  std::vector<std::pair<uint32_t, std::string>> removed;
+  Json removed_ids = Json::array();
+  Json added = Json::array();
   {
     std::unique_lock lock(channels_mtx_);
-
-    std::unordered_set<std::string> active_urls;
-
+    const auto remove_stream = [&](const Stream& stream) {
+      for (const auto id : stream.channel_ids) {
+        const auto channel = channels_.find(id);
+        if (channel == channels_.end()) {
+          continue;
+        }
+        removed.emplace_back(id, channel->second.url);
+        if (!channel->second.is_time_only && !channel->second.schema_name.empty()) {
+          removed_ids.push_back(id);
+        }
+        channels_.erase(channel);
+      }
+    };
+    std::unordered_set<std::string> active;
     for (const auto& info : info_list) {
-      if VUNLIKELY (info.status == ProxyAPI::kInvalid) {
+      if (info.status == ProxyAPI::kInvalid || !is_publisher_info(info) || !is_url_allowed(info.url)) {
         continue;
       }
-
-      if VUNLIKELY (!is_url_allowed(info.url)) {
-        continue;
-      }
-
-      if VUNLIKELY (!is_publisher_info(info)) {
-        continue;
-      }
-
-      active_urls.insert(info.url);
-
-      auto existing_url_iter = url_to_channel_id_.find(info.url);
-
-      if VLIKELY (existing_url_iter != url_to_channel_id_.end()) {
-        auto channel_iter = channels_.find(existing_url_iter->second);
-
-        if VUNLIKELY (channel_iter == channels_.end()) {
-          url_to_channel_id_.erase(existing_url_iter);
+      active.insert(info.url);
+      const auto type = SchemaData::resolve_type(info.schema, info.ser);
+      const auto found = streams_.find(info.url);
+      if (found != streams_.end()) {
+        if (found->second->route.ser == info.ser && found->second->route.type == type) {
           continue;
         }
-
-        auto& ch = channel_iter->second;
-        const bool ser_changed = ch.ser != info.ser;
-        const auto reported_schema_type = SchemaData::is_valid_type(info.schema) ? info.schema : SchemaType::kUnknown;
-        const auto effective_schema_type = SchemaData::resolve_type(reported_schema_type, info.ser);
-
-        const bool schema_type_changed = ch.schema_type != effective_schema_type;
-
-        if VLIKELY (!ser_changed && !schema_type_changed && !ch.schema.empty()) {
-          continue;
-        }
-
-        if VUNLIKELY (ser_changed) {
-          ch.ser = info.ser;
-          need_subscription_refresh = true;
-        }
-
-        std::string schema_name;
-        std::string encoding;
-        std::string schema_encoding;
-        std::string schema_data;
-        bool is_send_time = false;
-
-        if VLIKELY (foxglove_converter_->get_schema_info(info.url, effective_schema_type, info.ser, schema_name,
-                                                         encoding, schema_encoding, schema_data, &is_send_time)) {
-          const bool was_send_time = ch.is_send_time;
-          const bool was_time_only = ch.is_time_only;
-          const bool is_time_only = (encoding == "send_time");
-          const bool advertise_changed = ch.encoding != encoding || ch.schema_name != schema_name ||
-                                         ch.schema_encoding != schema_encoding || ch.schema != schema_data ||
-                                         was_time_only != is_time_only;
-          const bool metadata_changed =
-              advertise_changed || was_send_time != is_send_time || ser_changed || schema_type_changed;
-
-          if VUNLIKELY (metadata_changed) {
-            ch.encoding = encoding;
-            ch.schema_name = schema_name;
-            ch.schema = schema_data;
-            ch.schema_encoding = schema_encoding;
-            ch.schema_type = effective_schema_type;
-            ch.is_send_time = is_send_time;
-            ch.is_time_only = is_time_only;
-
-            update_channel_schema_payload(ch);
-          }
-
-          if VUNLIKELY (was_send_time != is_send_time) {
-            need_subscription_refresh = true;
-          }
-
-          if VUNLIKELY (schema_type_changed) {
-            need_subscription_refresh = true;
-          }
-
-          if VUNLIKELY (advertise_changed) {
-            auto old_id = ch.id;
-            auto new_id = allocate_channel_id();
-            auto updated = ch;
-            updated.id = new_id;
-
-            update_channel_schema_payload(updated);
-
-            channels_.erase(channel_iter);
-            channels_[new_id] = updated;
-            url_to_channel_id_[info.url] = new_id;
-            removed_channel_states.push_back({old_id, info.url});
-
-            if VUNLIKELY (!was_time_only) {
-              removed_advertised_ids.emplace_back(old_id);
-            }
-
-            if VLIKELY (!is_time_only) {
-              updated_channels.emplace_back(updated);
-            }
-
-            need_subscription_refresh = true;
-          }
-        } else {
-          active_urls.erase(info.url);
-          removed_channel_states.push_back({ch.id, info.url});
-
-          if VUNLIKELY (!ch.is_time_only) {
-            removed_advertised_ids.emplace_back(ch.id);
-          } else {
-            need_rpc_refresh = true;
-          }
-
-          channels_.erase(channel_iter);
-          url_to_channel_id_.erase(existing_url_iter);
-        }
-
+        remove_stream(*found->second);
+        streams_.erase(found);
+      }
+      auto stream = std::make_shared<Stream>();
+      stream->route = foxglove_converter_->resolve(info.url, type, info.ser);
+      if (!stream->route.valid || stream->route.outputs.empty()) {
         continue;
       }
-
-      std::string schema_name;
-      std::string encoding;
-      std::string schema_encoding;
-      std::string schema_data;
-      bool is_send_time = false;
-      const auto reported_schema_type = SchemaData::is_valid_type(info.schema) ? info.schema : SchemaType::kUnknown;
-      const auto effective_schema_type = SchemaData::resolve_type(reported_schema_type, info.ser);
-
-      if VUNLIKELY (!foxglove_converter_->get_schema_info(info.url, effective_schema_type, info.ser, schema_name,
-                                                          encoding, schema_encoding, schema_data, &is_send_time)) {
-        continue;
+      for (const auto& output : stream->route.outputs) {
+        const auto& schema = output.schema;
+        ChannelInfo channel;
+        channel.id = allocate_channel_id();
+        channel.topic = info.url;
+        channel.url = info.url;
+        channel.ser = info.ser;
+        channel.schema_type = type;
+        channel.schema_name = output.schema_from_payload ? std::string{} : schema.schema_name;
+        channel.encoding = schema.encoding;
+        channel.schema_encoding = schema.schema_encoding;
+        channel.schema = schema.schema_data;
+        channel.is_send_time = schema.is_send_time;
+        channel.is_time_only = schema.encoding == "send_time";
+        if (!channel.is_time_only && !channel.schema_name.empty()) {
+          update_channel_schema_payload(channel);
+          added.push_back(make_advertise_channel_json(channel));
+        }
+        stream->channel_ids.push_back(channel.id);
+        channels_.emplace(channel.id, std::move(channel));
       }
-
-      auto id = allocate_channel_id();
-
-      ChannelInfo ch;
-      ch.id = id;
-      ch.topic = info.url;
-      ch.encoding = encoding;
-      ch.schema_name = schema_name;
-      ch.schema = schema_data;
-      ch.schema_encoding = schema_encoding;
-      ch.schema_type = effective_schema_type;
-      ch.is_send_time = is_send_time;
-      ch.is_time_only = (encoding == "send_time");
-
-      update_channel_schema_payload(ch);
-
-      ch.url = info.url;
-      ch.ser = info.ser;
-
-      channels_[id] = ch;
-      url_to_channel_id_[info.url] = id;
-
-      if VUNLIKELY (ch.is_send_time) {
-        need_subscription_refresh = true;
-      }
-
-      if VLIKELY (!ch.is_time_only) {
-        new_channels.emplace_back(ch);
-      }
+      streams_[info.url] = std::move(stream);
     }
-
-    for (auto url_iter = url_to_channel_id_.begin(); url_iter != url_to_channel_id_.end();) {
-      if VUNLIKELY (active_urls.find(url_iter->first) == active_urls.end()) {
-        auto channel_iter = channels_.find(url_iter->second);
-
-        if VLIKELY (channel_iter != channels_.end()) {
-          removed_channel_states.push_back({url_iter->second, url_iter->first});
-
-          if VUNLIKELY (!channel_iter->second.is_time_only) {
-            removed_advertised_ids.emplace_back(url_iter->second);
-          }
-
-          channels_.erase(channel_iter);
-        }
-
-        url_iter = url_to_channel_id_.erase(url_iter);
+    for (auto iter = streams_.begin(); iter != streams_.end();) {
+      if (active.find(iter->first) == active.end()) {
+        remove_stream(*iter->second);
+        iter = streams_.erase(iter);
       } else {
-        ++url_iter;
+        ++iter;
       }
     }
   }
-
-  if VUNLIKELY (!removed_advertised_ids.empty()) {
-    Json msg;
-    msg["op"] = "unadvertise";
-    msg["channelIds"] = removed_advertised_ids;
-    broadcast_json(msg);
+  for (const auto& entry : removed) {
+    clear_channel_runtime_state(entry.first, entry.second);
   }
-
-  if VUNLIKELY (!removed_channel_states.empty()) {
-    for (const auto& state : removed_channel_states) {
-      clear_channel_runtime_state(state.id, state.url);
-    }
+  if (!removed_ids.empty()) {
+    broadcast_json(Json{{"op", "unadvertise"}, {"channelIds", std::move(removed_ids)}});
   }
-
-  if VLIKELY (!new_channels.empty()) {
-    Json msg;
-    msg["op"] = "advertise";
-    msg["channels"] = Json::array();
-
-    for (const auto& ch : new_channels) {
-      msg["channels"].emplace_back(make_advertise_channel_json(ch));
-    }
-
-    broadcast_json(msg);
+  if (!added.empty()) {
+    broadcast_json(Json{{"op", "advertise"}, {"channels", std::move(added)}});
   }
-
-  if VLIKELY (!updated_channels.empty()) {
-    Json msg;
-    msg["op"] = "advertise";
-    msg["channels"] = Json::array();
-
-    for (const auto& ch : updated_channels) {
-      msg["channels"].emplace_back(make_advertise_channel_json(ch));
-    }
-
-    broadcast_json(msg);
-  }
-
-  if VLIKELY (need_subscription_refresh || !removed_channel_states.empty() || need_rpc_refresh) {
-    update_bridge_control();
-  }
-
-  rebuild_active_bridge_urls();
+  lifecycle_lock.unlock();
+  update_bridge_control();
 }
 
 void FoxgloveServer::install_publish_channels() {
@@ -2863,32 +2524,23 @@ ProxyAPI::Control FoxgloveServer::build_bridge_control() const {
         continue;
       }
 
-      auto channel_id_iter = url_to_channel_id_.find(url);
-
-      if VUNLIKELY (channel_id_iter == url_to_channel_id_.end()) {
+      const auto stream = streams_.find(url);
+      if (stream == streams_.end() || stream->second->route.type == SchemaType::kUnknown) {
         continue;
       }
-
-      auto channel_iter = channels_.find(channel_id_iter->second);
-
-      if VLIKELY (channel_iter != channels_.end()) {
-        const auto subscribe_schema_type = channel_iter->second.schema_type;
-
-        if VUNLIKELY (subscribe_schema_type == SchemaType::kUnknown) {
-          continue;
-        }
-
-        if VLIKELY (subscribed_urls.insert(channel_iter->second.url).second) {
-          ctrl.url_meta_list.push_back(
-              {channel_iter->second.url, channel_iter->second.ser, subscribe_schema_type, kSubscriber});
-        }
+      if (subscribed_urls.insert(url).second) {
+        ctrl.url_meta_list.push_back({url, stream->second->route.ser, stream->second->route.type, kSubscriber});
       }
     }
 
     for (const auto& channel_entry : channels_) {
       const auto& ch = channel_entry.second;
 
-      if VUNLIKELY (ch.is_send_time) {
+      if (ch.is_control_only && ch.schema_type != SchemaType::kUnknown && publish_urls.insert(ch.url).second) {
+        ctrl.url_meta_list.push_back({ch.url, ch.ser, ch.schema_type, kPublisher});
+      }
+
+      if VUNLIKELY (ch.is_send_time || ch.schema_name.empty()) {
         const auto subscribe_schema_type = ch.schema_type;
 
         if VUNLIKELY (subscribe_schema_type == SchemaType::kUnknown) {
@@ -3093,6 +2745,15 @@ bool FoxgloveServer::validate_publish_route_unlocked(void* raw_ptr, uint32_t cha
     return false;
   }
 
+  const auto schema_type = SchemaData::resolve_type(route.schema_type, route.ser);
+  for (const auto& [id, channel] : channels_) {
+    if (channel.is_control_only && channel.url == route.url &&
+        (channel.ser != route.ser || channel.schema_type != schema_type)) {
+      error = "Client publish route conflicts with configured route for URL: " + route.url;
+      return false;
+    }
+  }
+
   for (const auto& [client_ptr, channel_map] : publish_channels_) {
     for (const auto& [existing_channel_id, existing_channel] : channel_map) {
       if VUNLIKELY (client_ptr == raw_ptr && existing_channel_id == channel_id) {
@@ -3103,7 +2764,8 @@ bool FoxgloveServer::validate_publish_route_unlocked(void* raw_ptr, uint32_t cha
         continue;
       }
 
-      if VLIKELY (existing_channel.route.url == route.url && existing_channel.route.ser != route.ser) {
+      if VLIKELY (existing_channel.route.url == route.url &&
+                  (existing_channel.route.ser != route.ser || existing_channel.schema_type != schema_type)) {
         error = "Client publish route conflicts with an existing channel for URL: " + route.url;
         return false;
       }
@@ -3151,8 +2813,8 @@ bool FoxgloveServer::validate_publish_route_unlocked(void* raw_ptr, uint32_t cha
 }
 
 bool FoxgloveServer::is_url_allowed(std::string_view url) const {
-  return is_allowed_by_filters_cached(cache_owner_id_, url, config_.whitelist_exact, config_.whitelist_patterns,
-                                      config_.blacklist_exact, config_.blacklist_patterns);
+  return is_allowed_by_filters(url, config_.whitelist_exact, config_.whitelist_patterns, config_.blacklist_exact,
+                               config_.blacklist_patterns);
 }
 
 }  // namespace webviz

@@ -9,6 +9,7 @@
 
 ### 改进
 
+- **WebViz 重构**：统一消息解析、字段映射与实时/离线转换，支持 Foxglove 全部官方 FBS 类型及 Rerun 数据 Archetype。
 - **Monitor hostname 过滤**：新增 `--hostname`，按 URL 关联进程的 hostname 关键字筛选。
 - **eproto / efbs 终端显示**：各类订阅内容超过终端显示宽度时主动换行，并在终端尺寸变化时重新分页，暂停状态下同步重排。
 - **Native DDS 地址**：CLI、Proxy、Viewer 与 WebViz 在 native 模式下创建的 DDS 节点从 `VLINK_DDS_NATIVE_IP` 读取 IP；未设置时仍使用 `127.0.0.1`。
@@ -22,10 +23,8 @@
 - **消息调试**：修复 eproto/efbs 刷新丢失、根路径和资源释放问题，支持显式空文本输入，并完善后端初始化失败处理。
 - **Monitor / List / Check**：修正监控采样与过滤统计、同名进程计数和 Cyclone DDS URI 诊断；隐藏 TLS 密码，处理监控重复初始化异常。
 - **Bench 正确性**：修正测量窗口、统计与图表，修复参数校验、取消响应和初始化/JSON 异常处理，保留已有输出目录权限。
-- **WebViz 离线导出**：`vlink-bag2mcap` 与 `vlink-bag2rrd` 拒绝输出到输入文件及其链接别名，避免截断原始 Bag。
-- **WebViz 障碍物快照**：Foxglove 场景映射在目标减少时替换整帧方框；Rerun 在空快照时清除旧方框。
-- **Foxglove 发布路由**：客户端发布 ID 与服务端展示通道 ID 独立，防止 ID 冲突导致消息回写到错误 URL。
-- **Foxglove 参数订阅**：参数删除后向已订阅客户端发送不含 value 的更新。
+- **Foxglove 协议与路由**：完善多输出路由和动态 Schema 同步，修复发布 ID 冲突、连接图、参数订阅及 RPC 调用状态。
+- **WebViz 数据与退出**：修复退出崩溃、障碍物快照残留及 Rerun 共享实体清理、重连和 YUV 色彩问题；离线导出禁止覆盖源 Bag 及其链接别名。
 - **Monitor 动态刷新**：URL 上下线导致列表排序变化时保持当前选中的 URL 与详情面板；选中 URL 下线时清除选择，避免跳转到其他 URL。
 
 ## v2.2.0 (2026/08/30)

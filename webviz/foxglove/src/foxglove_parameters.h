@@ -31,6 +31,7 @@
 #include <map>
 #include <mutex>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <shared_mutex>
 #include <string>
 #include <string_view>
@@ -73,7 +74,8 @@ class FoxgloveParameters final {
   static bool parse_config_values(const nlohmann::json& parameters_root, std::vector<ParameterEntry>& out,
                                   std::string& error);
 
-  [[nodiscard]] nlohmann::json build_parameter_values(const std::vector<std::string>& names, std::string_view id) const;
+  [[nodiscard]] nlohmann::json build_parameter_values(const std::vector<std::string>& names,
+                                                      std::optional<std::string_view> id) const;
 
   [[nodiscard]] static nlohmann::json build_parameter_delta(const std::vector<const ParameterEntry*>& entries);
 

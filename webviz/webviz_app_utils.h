@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
+#include <limits>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <string_view>
@@ -41,6 +42,24 @@
 
 namespace vlink {
 namespace webviz {
+
+inline bool read_config_integer(const nlohmann::json& value, int& output) {
+  if (!value.is_number_integer()) {
+    return false;
+  }
+  if (value.is_number_unsigned()) {
+    if (value.get<uint64_t>() > static_cast<uint64_t>(std::numeric_limits<int>::max())) {
+      return false;
+    }
+  } else {
+    const auto number = value.get<int64_t>();
+    if (number < std::numeric_limits<int>::min() || number > std::numeric_limits<int>::max()) {
+      return false;
+    }
+  }
+  output = value.get<int>();
+  return true;
+}
 
 inline std::string resolve_relative_path(const std::filesystem::path& config_dir, const std::string& path) {
   if VUNLIKELY (path.empty()) {
@@ -170,28 +189,14 @@ inline bool match_filter_patterns(std::string_view value, const std::vector<std:
     return false;
   }
 
-  struct NormalizeCache final {
-    std::string value;
-    std::string normalized;
-  };
-
-  thread_local NormalizeCache cache;
-  const std::string* normalized = nullptr;
-
-  if VLIKELY (cache.value == value) {
-    normalized = &cache.normalized;
-  } else {
-    cache.value.assign(value.data(), value.size());
-    cache.normalized = normalize_token(value);
-    normalized = &cache.normalized;
-  }
-
   for (const auto& filter : filters) {
     if VUNLIKELY (filter.empty()) {
       continue;
     }
 
-    if VLIKELY (normalized->find(filter) != std::string::npos) {
+    if VLIKELY (std::search(value.begin(), value.end(), filter.begin(), filter.end(),
+                            [](unsigned char left, char right) { return std::tolower(left) == right; }) !=
+                value.end()) {
       return true;
     }
   }
@@ -256,34 +261,6 @@ inline bool is_allowed_by_filters(std::string_view value, const std::vector<std:
   return !matches_any_filter(value, blacklist_exact, blacklist_patterns);
 }
 
-inline bool is_allowed_by_filters_cached(uint64_t owner_id, std::string_view value,
-                                         const std::vector<std::string>& whitelist_exact,
-                                         const std::vector<std::string>& whitelist_patterns,
-                                         const std::vector<std::string>& blacklist_exact,
-                                         const std::vector<std::string>& blacklist_patterns) {
-  struct FilterCacheEntry final {
-    uint64_t owner_id{0};
-    size_t hash{0};
-    std::string value;
-    bool allowed{false};
-  };
-
-  thread_local std::array<FilterCacheEntry, 8> cache_entries;
-  const auto hash = std::hash<std::string_view>{}(value);
-  auto& cache_entry = cache_entries[hash % cache_entries.size()];
-
-  if VLIKELY (cache_entry.owner_id == owner_id && cache_entry.hash == hash && cache_entry.value == value) {
-    return cache_entry.allowed;
-  }
-
-  cache_entry.owner_id = owner_id;
-  cache_entry.hash = hash;
-  cache_entry.value.assign(value.data(), value.size());
-  cache_entry.allowed = is_allowed_by_filters(cache_entry.value, whitelist_exact, whitelist_patterns, blacklist_exact,
-                                              blacklist_patterns);
-  return cache_entry.allowed;
-}
-
 inline void normalize_url_selector(UrlSelector& selector) {
   normalize_exact_filters(selector.whitelist_exact);
   normalize_filter_patterns(selector.whitelist_patterns);
@@ -294,15 +271,6 @@ inline void normalize_url_selector(UrlSelector& selector) {
 inline bool is_static_url_selector(const UrlSelector& selector) {
   return selector.configured && selector.whitelist_patterns.empty() && selector.blacklist_exact.empty() &&
          selector.blacklist_patterns.empty() && !selector.whitelist_exact.empty();
-}
-
-inline bool matches_url_selector(std::string_view url, const UrlSelector& selector) {
-  if VUNLIKELY (!selector.configured) {
-    return true;
-  }
-
-  return is_allowed_by_filters(url, selector.whitelist_exact, selector.whitelist_patterns, selector.blacklist_exact,
-                               selector.blacklist_patterns);
 }
 
 inline int score_url_selector(std::string_view url, const UrlSelector& selector) {

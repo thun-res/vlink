@@ -221,12 +221,14 @@ WebViz 支持两个可视化后端，并各自配套一个离线转换工具。�
 
 1. VLink 应用经任意后端（`dds://`、`shm://`、`intra://`、`zenoh://` 等）发布消息。
 2. WebViz 通过代理桥接收可见 URL 的发现信息；Foxglove 以 `kAuto` 随前端通道订阅按需控制数据转发，Rerun 则以 `kAutoAndObserveAll` 订阅每个发现的 URL，再由白名单与黑名单决定是否处理。
-3. 转换层依次尝试显式 zerocopy 字段映射、内置 zerocopy 转换、其余 JSON / 专用映射与转换插件；仍未命中时，Foxglove 可按消息类型走通用透传，Rerun 则降级为文本日志。ExprTk 表达式属于字段映射内部处理。
+3. 转换层在发现 URL 时选择映射与源 Schema。显式字段映射和专用 `converter` 决定输出；原生 zerocopy 未指定字段时使用内置转换。其余类型可由转换插件处理，未命中时 Foxglove 按源 Schema 透传，Rerun 输出文本日志。ExprTk 表达式属于字段映射内部处理。
 4. 经 WebSocket（Foxglove）或 gRPC（Rerun）推送至前端可视化器。
 
 下图展开 `proxy_api` 部署下的发现、订阅、转换与前端数据链路；底部同时标出复用相同转换器的离线 MCAP / RRD 路径。若选择 `proxy_server` 模式，发现与订阅逻辑改为嵌入桥接进程。
 
 ![WebViz 的 ProxyAPI 数据链路与离线转换路径](images/webviz-datalink.png)
+
+转换实现由三个部分组成：`SchemaRegistry` 持有源 Schema，`MessageView` 统一读取 Protobuf、FlatBuffers、JSON 和 zerocopy 字段，两个后端 writer 分别构造 FlatBuffers 与 Rerun 组件。字段路径和表达式随配置解析，URL 到输出的路由随发现信息建立；同一条消息的多个映射共享一次源解析。实时服务与离线工具复用同一转换库，不再各自实现序列化分支。Schema 插件、转换插件、反向发布及 RPC 接口保持原契约；转换插件返回的动态 Schema 同步到实时通道与离线输出。
 
 ### 🚀 11.2.2 快速开始
 
@@ -384,9 +386,7 @@ vlink-rerun --proxy_interface proxy_server                              # 进程
 
 ### 🗂️ 11.2.7 自定义消息映射
 
-WebViz 内置对 Foxglove 标准 Schema 与 Rerun Archetype 的支持。对于非内置类型，可经一个 JSON 文件将任意 VLink 消息（Protobuf / FlatBuffers）映射至目标可视化类型，无需改动 C++ 代码。两个后端共用同一格式，仅目标字段不同：Foxglove 用 `schema`，Rerun 用 `archetype`。
-
-**最小映射**　由源类型 `ser`、目标 `schema`/`archetype`、若干 `field_mappings` 三部分构成：
+实时 WebViz 和离线转换共用字段读取与编码实现。源消息可为 Protobuf、FlatBuffers、零拷贝消息或 `ser=json` 的 JSON。Foxglove 目标直接采用官方 FBS 字段，Rerun 目标直接采用所链接 SDK 的 Archetype 组件字段；两者共享映射语法，但目标结构不同，应分别配置。
 
 ```json
 {
@@ -394,146 +394,115 @@ WebViz 内置对 Foxglove 标准 Schema 与 Rerun Archetype 的支持。对于�
   "schema": "foxglove.LocationFix",
   "encoding": "protobuf",
   "field_mappings": [
-    { "source": "latitude",  "target": "latitude" },
-    { "source": "longitude", "target": "longitude" }
+    {"source": "latitude", "target": "latitude"},
+    {"source": "longitude", "target": "longitude"},
+    {"source": "timestamp_us", "target": "timestamp", "time_unit": "us"}
   ]
 }
 ```
 
-经 `--vlink_msgs` 加载：
+通过 `--vlink_msgs ./my_gps.json` 加载，可重复指定多个文件。文件可包含一条映射或映射数组。无效表达式、未知目标类型、拼错的目标字段、重复目标字段会使配置校验失败，服务或离线转换在处理消息前退出。
 
-```bash
-vlink-foxglove --vlink_msgs ./my_gps.json
-```
+| 顶层字段 | 说明 |
+| --- | --- |
+| `ser` | 必填，源序列化类型名 |
+| `schema` / `archetype` | Foxglove 完整 Schema 名 / Rerun Archetype 名；使用 `converter` 时可省略 |
+| `encoding` | 源编码：`protobuf`、`flatbuffer`、`zerocopy`、`json`；建议显式指定，Foxglove 默认 `flatbuffer`，Rerun 默认 `protobuf` |
+| `field_mappings` | 字段绑定；省略时按官方目标字段结构读取源消息 |
+| `timestamp_field` / `timestamp_unit` | 源消息时间戳路径与单位，单位为 `s`、`ms`、`us`、`ns`，默认 `us` |
+| `converter` | 内置转换器，见 §11.2.8；不能同时配置字段绑定 |
+| `url` | 可选 URL 字符串或数组；省略时按 `ser` 匹配 |
+| `entity_path` | Rerun 输出实体路径；可让样式、静态标定和动态数据写入同一实体 |
+| `static` | Rerun 字段映射是否写为静态数据，默认 `false`；静态数据不带时间轴 |
 
-**顶层字段参考**
+同一源消息可以输出多个目标。Rerun 多输出默认追加目标名作为子路径，也可逐条指定 `entity_path`；同一 Archetype 写到不同实体路径不会互相覆盖配置。相同选择优先级且目标、转换器和实体路径相同的映射存在歧义时，拒绝该路由。显式映射失败会返回失败，不回退为原始文本。
 
-| 字段 | 必填 | 说明 |
-| --- | :--: | --- |
-| `ser` | 是 | VLink 序列化类型名（Protobuf 全限定名或 FlatBuffers 类型名） |
-| `schema` | 是* | 目标 Foxglove Schema 名（Foxglove 后端使用） |
-| `archetype` | 是* | 目标 Rerun Archetype 名（Rerun 后端使用） |
-| `encoding` | 否 | 源消息编码，决定反序列化路径：`protobuf`、`flatbuffers` 或 `zerocopy`；缺省时 Foxglove 默认 `flatbuffer`、Rerun 默认 `protobuf`，故建议显式写明 |
-| `timestamp_field` | 否 | 源消息中的时间戳字段路径（如 `header.timestamp_us`），用于提取消息级时间戳 |
-| `timestamp_unit` | 否 | 时间戳单位：`s` / `ms` / `us` / `ns`，默认 `us` |
-| `converter` | 否 | 内置转换器名，零拷贝类型用，见 §11.2.8 |
-| `field_mappings` | 否 | 字段映射数组；内置转换器或纯透传可为空 |
-| `url` | 否 | URL 选择器：缺省按 `ser` 命中；填字符串或数组则仅对指定 URL 生效 |
+Rerun 的发布端撤流或桥接断连只更新发现状态，保留实体的最后数据与历史，不自动清空可能由多个源共享的实体。对象失效由业务消息在对应时间轴输出 `Clear` 或组件空数组；静态标定和样式不因发布端断连而撤销。
 
-\* 同一 JSON 可同时写 `schema` 与 `archetype` 以兼容两个后端；使用内置 `converter` 时两者皆可省略。`encoding` 必须与源消息真实编码一致，否则反序列化失败。
+Rerun 连接恢复沿用同一个 RecordingStream 和 recording ID。SDK 切换连接不会重放已经发送的组件；接收端进程重启后，业务需要重新发布静态标定和样式，断连期间的数据也不保证补发。
 
-`field_mappings` 每项的字段：
+| 字段绑定项 | 说明 |
+| --- | --- |
+| `target` | 官方目标字段路径，如 `pose.position.x`、`positions[][0]`；必填 |
+| `source` | 当前源作用域下的字段路径，支持嵌套对象和多层数组下标 |
+| `default_value` | 源字段缺失时使用的 JSON 常量，可为标量、对象或数组；显式零、空数组或 `null` 不触发默认值 |
+| `expression` | exprtk 数值表达式；与 `source`、`default_value` 至少提供一项 |
+| `time_unit` | Foxglove `Time` / `Duration` 的整数源单位，自动拆分 `sec` 和 `nsec`；与消息级 `timestamp_unit` 分开配置 |
 
-| 字段 | 必填 | 说明 |
-| --- | :--: | --- |
-| `source` | 条件 | 源字段路径，支持点分嵌套与数组下标（如 `pose.position.x`、`waypoints[0].x`）；`source` / `expression` / `default_value` 三者至少填其一 |
-| `target` | 是 | 目标字段名；各 Schema/Archetype 的可用 `target` 见仓库内置示例 |
-| `expression` | 否 | exprtk 数学表达式，可引用源消息任意数值字段，见 §11.2.10 |
-| `default_value` | 否 | 源字段缺失时的默认值（字符串/数字/布尔/`null`）；亦可单独用于注入常量 |
+数组通过 `[]` 逐元素绑定，`[0]` 等固定下标用于构造数组或覆盖指定元素。固定构造下标必须连续。映射整个对象或数组元素后，其子字段相对于该源对象读取；`_root` 引用原消息，`_value` 引用当前源元素，`_index` 是当前源数组下标。构造目标坐标数组不会改变 `_index`。表达式中的 `ranges._size` 读取数组长度，例如雷达极坐标可写成 `_value * cos(_root.angle_min + _index * _root.angle_increment)`。
 
-对 FlatBuffers table 的直接字段映射会区分“字段未写入”和“字段写入了 schema 默认值”：未写入时使用映射的 `default_value`；内联 struct 没有字段存在位，始终视为存在。表达式求值遵循 FlatBuffers 反射读取语义，可读取 schema 中声明的默认值。
+对 FlatBuffers table 的直接绑定区分“未写入字段”和“已写入的零值”：未写入时使用绑定的 `default_value`；内联 struct 字段始终存在。表达式按反射语义读取普通 FBS 标量的 schema 默认值；可选标量缺失仍为缺失。整数直接映射保留 64 位精度；表达式采用 double，超出其精确整数范围会警告。
 
-**进阶映射**　障碍物到 3D 包围盒（数组多映射 + 时间戳，目标 Rerun `Boxes3D`）：
+Rerun 包围盒将位置、半尺寸和四元数写到独立组件，例如：
 
 ```json
 {
-  "ser": "proto.PerceptionObstaclesStamped",
+  "ser": "proto.Obstacles",
   "archetype": "Boxes3D",
   "encoding": "protobuf",
-  "timestamp_field": "header.timestamp_us",
-  "timestamp_unit": "us",
   "field_mappings": [
-    { "source": "obstacles",      "target": "entities" },
-    { "source": "position.x",     "target": "entity_x" },
-    { "source": "position.y",     "target": "entity_y" },
-    { "source": "position.z",     "target": "entity_z" },
-    { "source": "width",          "target": "entity_width" },
-    { "source": "length",         "target": "entity_length" },
-    { "source": "height",         "target": "entity_height" },
-    { "source": "heading_angle",  "target": "entity_heading" }
+    {"source": "objects", "target": "centers"},
+    {"source": "center.x", "target": "centers[][0]"},
+    {"source": "center.y", "target": "centers[][1]"},
+    {"source": "center.z", "target": "centers[][2]"},
+    {"source": "objects", "target": "half_sizes"},
+    {"expression": "width / 2", "target": "half_sizes[][0]"},
+    {"expression": "length / 2", "target": "half_sizes[][1]"},
+    {"expression": "height / 2", "target": "half_sizes[][2]"}
   ]
 }
 ```
 
-速度标量时序图（表达式做单位换算 m/s → km/h，目标 Rerun `Scalars`）：
+完整示例见 `webviz/foxglove/etc/vlink_msgs/` 与 `webviz/rerun/etc/vlink_msgs/`。Foxglove 障碍物示例将立方体写到固定 ID 的 `entities[0].cubes`，每条消息替换完整快照；空立方体数组清除旧方框。Rerun 空组件批次同样可清除旧值，亦支持只更新颜色、标签等组件，不要求每次重复发送几何数据。
 
-```json
-{
-  "ser": "proto.ChassisInfo",
-  "archetype": "Scalars",
-  "encoding": "protobuf",
-  "field_mappings": [
-    { "source": "speed_mps", "target": "value", "expression": "speed_mps * 3.6" }
-  ]
-}
-```
+**官方类型覆盖与数据表示**
 
-编写顺序建议：确认源消息真实编码并写对 `encoding` → 选定目标 `schema`/`archetype` → 先映射 2-3 个核心字段确认可显示 → 再补 `timestamp_field`、默认值与表达式。字段繁多、层级很深或需条件组装时，改用转换插件（见 §11.2.10）。
+Foxglove 以全部 51 个官方 FBS 定义生成反射 Schema：49 个根 table 均可映射，`Time`、`Duration` 是嵌套 struct。嵌套对象、所有标量、枚举、向量和可选字段都由同一编码器处理。`timestamp.sec` / `timestamp.nsec` 可以直接绑定，或用 `time_unit` 从整数时间戳生成。枚举字符串采用官方名称，如 Log 的 `INFO`。
 
-同一 `ser` 可注册多条映射（数组格式或多个文件），一条消息可同时输出至多个目标，例如车辆位姿同时映射为 `GeoPoints`（地图）与 `Transform3D`（3D 场景）。各 Schema/Archetype 的完整 `target` 清单与端到端示例见随包部署的 `vlink_msgs/example_*.json`。
+Rerun 注册表在构建时从 SDK 声明生成，0.37.1 包含 51 个 Archetype、271 个组件字段，覆盖几何、图像、视频、Tensor、地图、曲线、状态、体素、高斯和录制属性。组件使用 SDK 的 Arrow 类型与描述符：向量为数组，矩阵为扁平列主序数组，结构体为对象，union 为单键对象，例如 Tensor 的 `data.buffer` 为 `{"F32":[1,2]}`。四元数顺序为 `[x,y,z,w]`。`RecordingInfo` 自动静态写入录制属性路径。
 
-Foxglove 另有两类专用映射：`foxglove_msgs`（前端 Publish panel 下发消息回写 VLink）与 `rpc_msgs`（前端 Service Call panel 发起 RPC），格式与 `vlink_msgs` 类似，示例见仓库 `foxglove_msgs/` 与 `rpc_msgs/` 目录。
+字节字段接受原生 bytes、JSON 整数数组或 `{"base64":"..."}`；多字节数值缓冲按目标数值类型的小端编码读取。RGB/RGBA 颜色数组可直接用于 Rerun `Color`，也可提供官方打包整数。Rerun `ViewCoordinates.xyz` 可写方向数组或 `RDF` 等三字符方向值。枚举字符串区分大小写，采用 SDK 名称。浮点映射保留源格式可表达的 NaN/Infinity，整数映射拒绝小数和溢出。
 
-前端发布前须用客户端 `advertise` 声明发布通道；客户端发布 ID 与服务端展示通道 ID 相互独立，消息按该客户端声明的路由回写。
+Rerun `send_time` 只为同一消息实际写入的普通 Archetype 数据行附加 `vlink_time` 时间轴，须与同一 `ser` 的 Archetype 映射配对；单独设置时间不会产生数据行。静态数据忽略时间轴。
 
-**常用 Foxglove Schema 的 target 字段**　下列为几个高频 Foxglove Schema 期望的 `target` 字段，供编写 `field_mappings` 参考；完整 Schema 清单见仓库内置示例。
-
-foxglove.LocationFix（GPS/GNSS 定位）：
-
-| target | 类型 | 说明 |
-| --- | --- | --- |
-| `timestamp` / `timestamp_ns` | uint64 | 时间戳（微秒 / 纳秒，二选一） |
-| `frame_id` | string | 坐标系 ID |
-| `latitude` / `longitude` / `altitude` | double | 纬度、经度（度），海拔（米） |
-
-foxglove.SceneUpdate（3D 场景：障碍物、检测框）：
-
-| target | 类型 | 说明 |
-| --- | --- | --- |
-| `frame_id` | string | 坐标系 ID，默认 `base_link` |
-| `entities` | repeated | 源重复消息数组（如 `obstacles`），每元素生成一个立方体 |
-| `entity_x` / `entity_y` / `entity_z` | double | 实体中心坐标 |
-| `entity_width` / `entity_length` / `entity_height` | double | 实体尺寸 |
-| `entity_heading` | double | 航向角（弧度），自动转四元数 |
-
-该 `SceneUpdate` 字段映射将每条消息视为完整快照，所有立方体放在同一个实体中逐帧替换；目标减少或数组为空时不会保留旧方框。Rerun 的 `Boxes3D` 映射和内置 `ObjectArray` 转换也会写入空快照以清除旧方框。
-
-foxglove.RawImage（原始图像）：
-
-| target | 类型 | 说明 |
-| --- | --- | --- |
-| `width` / `height` | uint32 | 图像宽 / 高 |
-| `encoding` | string | 像素编码（如 `rgb8`） |
-| `step` | uint32 | 行步长（字节） |
-| `data` | bytes | 像素数据 |
-
-Rerun Archetype（`GeoPoints` / `Transform3D` / `Boxes3D` / `Points3D` / `Scalars` / `Pinhole` 等）的 `target` 字段结构类似，按 `archetype` 选用对应字段，示例见仓库 `vlink_msgs/example_*.json`。
-
-Rerun 的 `send_time` converter 只为同一消息实际写入的 Archetype 数据行附加 `vlink_time` 时间轴，必须与同一 `ser` 的普通 Archetype 映射配对；单独设置时间而不写数据不会在 Rerun 中产生时间事件。
+Foxglove 的反向发布配置 `foxglove_msgs` 与服务配置 `rpc_msgs` 分别用于前端消息回写和 RPC。前端发布前须通过客户端 `advertise` 声明通道，客户端发布 ID 与服务端展示通道 ID 相互独立。
 
 ### ⚡ 11.2.8 内置零拷贝转换
 
-VLink 零拷贝类型无需编写 `field_mappings`，转换层自动选择内置路径。只要消息 `ser` 为下表类型，不写任何映射即可可视化。
+VLink 零拷贝类型无需编写 `field_mappings`，转换层按下表选择默认输出；载荷须满足目标类型的格式要求。
 
 | VLink 零拷贝类型 | Foxglove 目标 | Rerun 目标 | 可选 `converter` |
 | --- | --- | --- | --- |
 | `CameraFrame` | `foxglove.RawImage` / `foxglove.CompressedImage` / `foxglove.CompressedVideo` | `EncodedImage` / `Image` / `VideoStream` | `camera_frame` |
 | `PointCloud` | `foxglove.PointCloud` | `Points3D` | `point_cloud` |
-| `OccupancyGrid` | `foxglove.Grid` | `Image`（灰度） | `occupancy_grid`† |
-| `ObjectArray` | `foxglove.SceneUpdate` | `Boxes3D` | `object_array`† |
-| `Tensor` | `foxglove.Log`（JSON 元数据） | `Tensor` | `tensor`† |
-| `AudioFrame` | `foxglove.RawAudio` | `Tensor`（2D，sample × channel） | `audio_frame`† |
-| `RawData` | `foxglove.Log` | `Asset3D` | `raw_data`† |
+| `OccupancyGrid` | `foxglove.Grid` | `Image`（灰度） | `occupancy_grid` |
+| `ObjectArray` | `foxglove.SceneUpdate` | `Boxes3D` | `object_array` |
+| `Tensor` | `foxglove.Log`（JSON 元数据） | `Tensor` | `tensor` |
+| `AudioFrame` | `foxglove.RawAudio` | `Tensor`（2D，sample × channel） | `audio_frame` |
+| `RawData` | `foxglove.Log` | `Asset3D` | `raw_data` |
 
-> 表中类型只要 `ser` 命中即自动转换，无需写 `converter`。`converter` 列用于将自定义消息显式接到内置路径：Foxglove 仅接受 `camera_frame` / `point_cloud` 作为显式 `converter`；Rerun 接受全部 7 个（标 † 者仅 Rerun 支持显式指定）。
+> 表中类型只要 `ser` 命中即自动转换，无需写 `converter`。两个后端均接受全部 7 个显式 `converter`，用于将具有对应原生二进制布局的自定义消息接到内置路径。
 
-若需要对零拷贝字段进行单位换算、坐标变换或派生计算，可显式配置 `field_mappings` 并将 `encoding` 设为 `zerocopy`。此时转换器会优先执行映射和 ExprTk 表达式；未配置映射时仍走上表中的内置快速路径。`ObjectArray.data`、`PointCloud.data`、`OccupancyGrid.data`、`Tensor.shape` / `strides` / `data` 均支持数组下标访问。
+若需要对零拷贝字段进行单位换算、坐标变换或派生计算，可显式配置 `field_mappings` 并将 `encoding` 设为 `zerocopy`。选中的映射始终执行指定目标；空字段列表表示读取同名字段，不会改成原生输出。只有未选择映射时才自动使用上表中的内置路径；需要显式选择原生转换或为其设置时间戳时，使用表中的 `converter`。`converter` 与非空 `field_mappings` 不能同时声明。`ObjectArray.data`、`PointCloud.data`、`OccupancyGrid.data`、`Tensor.shape` / `strides` / `data` 均支持数组下标访问。
+
+一对多映射逐项执行；任一输出失败均报告转换失败，已经产生的其他输出保留，不以默认文本替代失败目标。默认值只用于缺失字段；显式零值、空字符串、空数组和 `null` 不会被默认值覆盖。通用映射按官方目标字段组装姿态，Euler 角转四元数可使用表达式，参见包内障碍物示例。
 
 通用字段映射使用 `vlink::zerocopy::MessageParser` 完成类型识别、边界检查和标量读取；性能敏感的 CameraFrame / PointCloud 专用快速路径直接调用对应容器 codec，不经过通用字段映射。字段映射中的 `int64` / `uint64` 值在进入表达式前保持整数类型，ExprTk 计算需要转成 `double` 且整数超出精确范围时会记录精度警告。
 
 压缩视频 `CameraFrame` 必须按目标协议提供单帧样本：H.264 / H.265 使用 Annex B，AV1 使用 low-overhead bitstream，并且不能包含 B 帧。转换器会拒绝显式标记为 `kStreamB` 的帧，但不会为避免热路径开销而深度重解析码流。
 
-Rerun C++ SDK 0.31 与 0.34 的 `ImageFormat` 对三平面 I444 返回 4 bytes/pixel，与 VLink YUV444 的 3 bytes/pixel 不一致；该格式在 Rerun 路径中因此以零拷贝方式显示 Y 平面灰度图，不会把不一致的彩色载荷伪装为成功。
+VLink 三平面 YUV444 在 Rerun 路径中转换为 RGB；NV21 重排为 NV12，YVYU、UYVY、VYUY 重排为 YUY2，保留亮度和色度。与 SDK 布局一致的格式直接借用原始载荷。
+
+`RawData` 不携带媒体类型，默认 `Asset3D` 依赖 SDK 识别载荷。OBJ 等无法仅凭字节识别的资产，应显式映射 `blob` 并提供 `media_type`，例如：
+
+```json
+{"ser":"RawData","encoding":"zerocopy","archetype":"Asset3D","field_mappings":[
+  {"source":"data","target":"blob"},
+  {"default_value":"model/obj","target":"media_type"}
+]}
+```
+
+Foxglove 原生相机频道在第一帧到达后公布实际 Schema，避免先显示 `RawImage` 再发现载荷是压缩图像。运行中图像格式改变时，旧频道撤销并以新 ID 公布实际类型，客户端需要重新订阅。频道修改和通告按同一顺序执行，覆盖发现更新、断连与客户端初始频道列表。
 
 零拷贝类型的定义见 [零拷贝](06-zerocopy.md)。
 
@@ -551,7 +520,7 @@ vlink-bag2mcap recording.vdb -o recording.mcap
 vlink-bag2mcap recording.vdb -o recording.mcap \
   --proto_dir ./protos \
   --vlink_msgs ./obstacle.json \
-  --compression lz4
+  --compression zstd
 ```
 
 `vlink-bag2rrd` 将 Bag 转为 RRD，可在 Rerun Viewer 打开：
@@ -568,7 +537,7 @@ vlink-bag2rrd recording.vdb -o recording.rrd --proto_dir ./protos
 | `-o`, `--output` | 输出文件路径，不能与输入指向同一文件（含软链接、硬链接） | 必填 |
 | `--proto_dir` / `--fbs_dir` | Proto / FlatBuffers 定义目录 | 空 |
 | `--vlink_msgs` | 自定义消息映射文件，可多次指定 | 空 |
-| `--compression` | 压缩算法 `none` / `lz4` / `zstd`，仅 `vlink-bag2mcap` | `zstd` |
+| `--compression` | `none` / `zstd`，仅 `vlink-bag2mcap`；保留的 `lz4` 参数因 VLink 未启用 LZ4 而提示并写出无压缩文件 | `zstd` |
 
 两工具均支持 `--schema_plugin` / `--convert_plugin` / `--convert_plugin_config` 插件参数（见 §11.2.10）。`vlink-bag2rrd` 另有 `--name`（Rerun 应用 ID，默认 `vlink-bag2rrd`）。
 
@@ -592,7 +561,7 @@ vlink-bag2rrd recording.vdb -o recording.rrd --proto_dir ./protos
 | 速度分量合成 | `sqrt(velocity.x^2 + velocity.y^2 + velocity.z^2)` |
 | 条件取值 | `if(speed_mps > 0, 0.5 * 1500.0 * speed_mps^2, 0)` |
 
-表达式引擎由 `ENABLE_EXPRTK=ON`（默认）启用；关闭后桥接仍正常运行，但 `expression` 字段一律求值为 `0`。
+表达式引擎由 `ENABLE_EXPRTK=ON`（默认）启用；关闭后不含表达式的桥接和字段映射仍可使用，含 `expression` 的配置在启动时校验失败，不会将表达式结果替换为 `0`，也不会自动加载系统中已安装的表达式库。
 
 插件扩展　当 JSON 映射不足以表达需求（复杂组装、动态 Schema、条件分支）时，WebViz 支持两类插件，两个后端共用：`SchemaPlugin` 运行期动态注册自定义 Schema；`ConvertPlugin` 以 C++ 实现自定义转换逻辑。经 `--schema_plugin` / `--convert_plugin` 加载共享库。插件接口与编写见 [C API、扩展与环境变量](13-integration.md)。
 
@@ -622,9 +591,13 @@ cmake --install build
 | nlohmann/json | JSON 配置解析 | 两者共用 |
 | exprtk | 数学表达式引擎 | 两者共用 |
 | websocketpp + asio | WebSocket 服务端 | Foxglove |
+| Python 3 | 构建时从 SDK 生成完整组件注册表 | Rerun |
+| Arrow | 官方组件的数组编码，沿用 SDK 的 Arrow target | Rerun |
 | rerun_sdk | Rerun C++ SDK | Rerun（`vlink-rerun` / `vlink-bag2rrd` 须本机可定位 `rerun_sdk`） |
 
-VLink 的 CMake 基线保持为 3.15。CMake 3.15 下应提供已安装的 `rerun_sdk` 包或预先定义的 `rerun_sdk` target；官方 Rerun C++ SDK 源码包自身要求 CMake 3.16+，因此仅在使用源码包构建时需要更高版本。`RERUN_SDK_DIR` 可指向安装前缀、CMake package 目录或官方源码包。
+VLink 的 CMake 基线保持为 3.15。CMake 3.15 下应提供已安装的 `rerun_sdk` 包或预先定义的 `rerun_sdk` target；官方 Rerun C++ SDK 源码包自身要求 CMake 3.16+，因此仅在使用源码包构建时需要更高版本。CMake 参数 `-DRERUN_SDK_DIR=...` 可指向安装前缀、CMake package 目录或官方源码包，缺省值取同名环境变量。Arrow 24 要求 C++20，该要求仅沿 Rerun 依赖链传播，VLink 核心与 Foxglove 保持 C++17。运行时 Viewer 应与 SDK 使用相同版本；当前验证版本为 [Rerun 0.37.1](https://github.com/rerun-io/rerun/releases/tag/0.37.1)。
+
+Foxglove WebSocket 使用 `foxglove.websocket.v1`；二进制头按协议显式读写小端整数。内置 51 个 `.fbs` 已核对 [foxglove-sdk 的 Schema 源目录](https://github.com/foxglove/foxglove-sdk/tree/3e59568654f1245ebbc3be120c61ec02069ca703/schemas/flatbuffer)：截至 2026-09-05，与该提交逐字节一致，保留上游版权与定义，不重写生成协议。
 
 常用环境变量（命令行参数优先级更高）：`VLINK_PROTO_DIR` / `VLINK_FBS_DIR`（对应 `--proto_dir` / `--fbs_dir`）、`VLINK_SCHEMA_PLUGIN` / `VLINK_CONVERT_PLUGIN`（对应 `--schema_plugin` / `--convert_plugin`）。完整环境变量清单见 [C API、扩展与环境变量](13-integration.md)。
 

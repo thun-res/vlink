@@ -214,6 +214,11 @@ int main(int argc, char* argv[]) {
 
   vlink::webviz::RerunConverter converter(conv_config);
 
+  if VUNLIKELY (!converter.valid()) {
+    std::cerr << "Invalid Rerun mapping configuration" << std::endl;
+    return 1;
+  }
+
   auto rec = rerun::RecordingStream(name);
   auto save_err = rec.save(output_path);
 
@@ -224,44 +229,36 @@ int main(int argc, char* argv[]) {
 
   std::cerr << "Output: " << output_path << std::endl;
 
-  std::unordered_map<std::string, std::string> url_ser_map;
-  std::unordered_map<std::string, vlink::SchemaType> url_schema_map;
-  std::unordered_map<std::string, int64_t> url_seq_map;
-
+  struct Stream final {
+    vlink::webviz::RerunRoute route;
+    std::string path;
+    int64_t sequence{0};
+  };
+  std::unordered_map<std::string, Stream> streams;
+  const auto add_stream = [&](const std::string& url, vlink::SchemaType type, const std::string& ser) -> Stream& {
+    Stream stream;
+    stream.route = converter.resolve(url, type, ser);
+    stream.path = url;
+    const auto pos = stream.path.find("://");
+    if (pos != std::string::npos) {
+      stream.path.replace(pos, 3, "/");
+    }
+    return streams.insert_or_assign(url, std::move(stream)).first->second;
+  };
   for (const auto& meta : info.url_metas) {
-    if VLIKELY (meta.valid) {
-      url_ser_map[meta.url] = meta.ser_type;
-      url_schema_map[meta.url] = meta.schema_type;
+    if (meta.valid) {
+      add_stream(meta.url, meta.schema_type, meta.ser_type);
     }
   }
-
   std::atomic<uint64_t> msg_processed{0};
+  std::atomic<uint64_t> msg_failed{0};
 
-  reader->register_output_callback([&converter, &msg_processed, &rec, &sequence_timeline, &time_timeline, &url_seq_map,
-                                    &url_schema_map, &url_ser_map, use_sequence_timeline, &info,
-                                    use_time_timeline](const vlink::Frame& frame) {
+  reader->register_output_callback([&](const vlink::Frame& frame) {
     const int64_t timestamp_us = frame.timestamp;
     const std::string& url = frame.url;
     const vlink::Bytes& data = frame.data;
-
-    std::string ser_type;
-    auto schema_type = vlink::SchemaType::kUnknown;
-    auto ser_iter = url_ser_map.find(url);
-    auto schema_iter = url_schema_map.find(url);
-
-    if VLIKELY (ser_iter != url_ser_map.end()) {
-      ser_type = ser_iter->second;
-    } else {
-      ser_type = frame.ser_type;
-      url_ser_map[url] = ser_type;
-    }
-
-    if VLIKELY (schema_iter != url_schema_map.end()) {
-      schema_type = schema_iter->second;
-    } else {
-      schema_type = frame.schema_type;
-      url_schema_map[url] = schema_type;
-    }
+    const auto found = streams.find(url);
+    auto& stream = found == streams.end() ? add_stream(url, frame.schema_type, frame.ser_type) : found->second;
 
     uint64_t relative_timestamp_us = 0;
 
@@ -276,8 +273,7 @@ int main(int argc, char* argv[]) {
       timestamp_ns = static_cast<int64_t>(relative_timestamp_ns);
     }
 
-    auto seq_iter = url_seq_map.try_emplace(url, 0).first;
-    auto local_sequence = seq_iter->second++;
+    auto local_sequence = stream.sequence++;
 
     // Rerun keeps timeline state on the current thread until reset/disable.
     // Clear any previous message state before applying this sample's own time.
@@ -291,14 +287,10 @@ int main(int argc, char* argv[]) {
       rec.set_time_sequence(sequence_timeline, local_sequence);
     }
 
-    std::string entity_path = url;
-    auto transport_pos = url.find("://");
-
-    if VLIKELY (transport_pos != std::string::npos) {
-      entity_path = url.substr(0, transport_pos) + "/" + url.substr(transport_pos + 3);
+    if VUNLIKELY (!converter.convert_and_log(rec, stream.path, stream.route, data)) {
+      ++msg_failed;
+      std::cerr << "Failed to convert message: " << url << " (" << stream.route.ser << ")" << std::endl;
     }
-
-    converter.convert_and_log(rec, entity_path, url, schema_type, ser_type, data);
 
     auto total = ++msg_processed;
 
@@ -343,5 +335,6 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  return 0;
+  std::cerr << "  Failed messages: " << msg_failed.load() << std::endl;
+  return msg_failed.load() == 0 ? 0 : 1;
 }

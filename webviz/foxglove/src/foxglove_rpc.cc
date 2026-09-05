@@ -278,6 +278,7 @@ bool FoxgloveRpc::call_rpc(uint64_t client_key, uint32_t rpc_id, uint32_t call_i
   const auto deadline_ms =
       ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kMilli, false) + static_cast<uint64_t>(state.timeout_ms);
   bool duplicate_call = false;
+  uint64_t instance = 0;
 
   {
     std::lock_guard lock(pending_rpc_mtx_);
@@ -286,6 +287,7 @@ bool FoxgloveRpc::call_rpc(uint64_t client_key, uint32_t rpc_id, uint32_t call_i
       duplicate_call = true;
     } else {
       PendingRpcCall pending;
+      pending.instance = instance = ++next_call_instance_;
       pending.deadline_ms = deadline_ms;
       pending.rpc_id = rpc_id;
       pending.call_id = call_id;
@@ -308,7 +310,7 @@ bool FoxgloveRpc::call_rpc(uint64_t client_key, uint32_t rpc_id, uint32_t call_i
   options.overflow_policy = TaskOverflowPolicy::kReject;
   options.drop_policy = TaskDropPolicy::kProtected;
   auto task = rpc_workers_->post_task_handle(
-      [this, pending_key, rpc_id, call_id, deadline_ms, client = std::move(state.client),
+      [this, pending_key, instance, rpc_id, call_id, deadline_ms, client = std::move(state.client),
        response_ser = std::move(state.response_ser), response_type = state.response_type,
        request_payload = std::move(converted.payload), response_callback = std::move(response_callback)]() mutable {
         if VUNLIKELY (stopping_.load()) {
@@ -318,7 +320,8 @@ bool FoxgloveRpc::call_rpc(uint64_t client_key, uint32_t rpc_id, uint32_t call_i
         {
           std::lock_guard lock(pending_rpc_mtx_);
 
-          if VUNLIKELY (pending_rpc_calls_.find(pending_key) == pending_rpc_calls_.end()) {
+          const auto found = pending_rpc_calls_.find(pending_key);
+          if VUNLIKELY (found == pending_rpc_calls_.end() || found->second.instance != instance) {
             return;
           }
         }
@@ -328,7 +331,7 @@ bool FoxgloveRpc::call_rpc(uint64_t client_key, uint32_t rpc_id, uint32_t call_i
         if VUNLIKELY (now_ms >= deadline_ms) {
           PendingRpcCall pending;
 
-          if VLIKELY (take_pending_rpc(pending_key, pending) && pending.error_callback) {
+          if VLIKELY (take_pending_rpc(pending_key, instance, pending) && pending.error_callback) {
             pending.error_callback(rpc_id, call_id, "RPC call timed out");
           }
 
@@ -340,7 +343,7 @@ bool FoxgloveRpc::call_rpc(uint64_t client_key, uint32_t rpc_id, uint32_t call_i
         const bool invoke_success = client->invoke(request_payload, response_raw, remaining_timeout);
         PendingRpcCall pending;
 
-        if VUNLIKELY (!take_pending_rpc(pending_key, pending) || stopping_.load()) {
+        if VUNLIKELY (!take_pending_rpc(pending_key, instance, pending) || stopping_.load()) {
           return;
         }
 
@@ -381,7 +384,7 @@ bool FoxgloveRpc::call_rpc(uint64_t client_key, uint32_t rpc_id, uint32_t call_i
 
   if VUNLIKELY (!task.valid() || task.state() == TaskExecutionState::kRejected) {
     PendingRpcCall pending;
-    take_pending_rpc(pending_key, pending);
+    take_pending_rpc(pending_key, instance, pending);
 
     if VLIKELY (pending.error_callback) {
       pending.error_callback(rpc_id, call_id, "Failed to dispatch RPC request");
@@ -888,11 +891,11 @@ void FoxgloveRpc::process_rpc_timeout() {
   }
 }
 
-bool FoxgloveRpc::take_pending_rpc(const PendingRpcKey& key, PendingRpcCall& pending) {
+bool FoxgloveRpc::take_pending_rpc(const PendingRpcKey& key, uint64_t instance, PendingRpcCall& pending) {
   std::lock_guard lock(pending_rpc_mtx_);
   auto pending_iter = pending_rpc_calls_.find(key);
 
-  if VUNLIKELY (pending_iter == pending_rpc_calls_.end()) {
+  if VUNLIKELY (pending_iter == pending_rpc_calls_.end() || pending_iter->second.instance != instance) {
     return false;
   }
 

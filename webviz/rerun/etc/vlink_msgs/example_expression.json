@@ -7,12 +7,12 @@
     "field_mappings": [
       {
         "source": "latitude_deg",
-        "target": "latitude",
+        "target": "positions[0][0]",
         "expression": "latitude_deg + latitude_min / 60.0 + latitude_sec / 3600.0"
       },
       {
         "source": "longitude_deg",
-        "target": "longitude",
+        "target": "positions[0][1]",
         "expression": "longitude_deg + longitude_min / 60.0 + longitude_sec / 3600.0"
       }
     ]
@@ -25,19 +25,35 @@
     "field_mappings": [
       {
         "source": "pose.position.x",
-        "target": "position_x"
+        "target": "translation[0]"
       },
       {
         "source": "pose.position.y",
-        "target": "position_y"
+        "target": "translation[1]"
       },
       {
         "source": "pose.position.z",
-        "target": "position_z"
+        "target": "translation[2]"
       },
       {
-        "source": "pose.orientation",
-        "target": "pose"
+        "target": "quaternion[0]",
+        "source": "pose.orientation.x",
+        "default_value": 0
+      },
+      {
+        "target": "quaternion[1]",
+        "source": "pose.orientation.y",
+        "default_value": 0
+      },
+      {
+        "target": "quaternion[2]",
+        "source": "pose.orientation.z",
+        "default_value": 0
+      },
+      {
+        "target": "quaternion[3]",
+        "source": "pose.orientation.w",
+        "default_value": 1
       }
     ]
   },
@@ -49,7 +65,7 @@
     "field_mappings": [
       {
         "source": "position.x",
-        "target": "value",
+        "target": "scalars",
         "_comment": "2D distance from origin",
         "expression": "sqrt(position.x^2 + position.y^2)"
       }
@@ -63,7 +79,7 @@
     "field_mappings": [
       {
         "source": "steering_angle_rad",
-        "target": "value",
+        "target": "scalars",
         "_comment": "Radians to degrees, clamped to [-45, 45]",
         "expression": "clamp(-45.0, steering_angle_rad * 180.0 / pi, 45.0)"
       }
@@ -77,19 +93,19 @@
     "field_mappings": [
       {
         "source": "roll_rad",
-        "target": "position_x",
+        "target": "translation[0]",
         "_comment": "Roll normalized to [-180, 180] degrees",
         "expression": "atan2(sin(roll_rad), cos(roll_rad)) * 180.0 / pi"
       },
       {
         "source": "pitch_rad",
-        "target": "position_y",
+        "target": "translation[1]",
         "_comment": "Pitch clamped to [-90, 90] degrees",
         "expression": "clamp(-90.0, pitch_rad * 180.0 / pi, 90.0)"
       },
       {
         "source": "yaw_rad",
-        "target": "position_z",
+        "target": "translation[2]",
         "_comment": "Yaw in [0, 360) degrees",
         "expression": "((atan2(sin(yaw_rad), cos(yaw_rad)) * 180.0 / pi) + 360) % 360"
       }
@@ -102,44 +118,63 @@
     "encoding": "protobuf",
     "field_mappings": [
       {
-        "source": "obstacles",
-        "target": "entities"
+        "target": "centers",
+        "source": "obstacles"
       },
       {
+        "target": "half_sizes",
+        "source": "obstacles"
+      },
+      {
+        "target": "quaternions",
+        "source": "obstacles"
+      },
+      {
+        "target": "centers[][0]",
         "source": "center.x",
-        "target": "entity_x"
+        "default_value": 0
       },
       {
+        "target": "centers[][1]",
         "source": "center.y",
-        "target": "entity_y"
+        "default_value": 0
       },
       {
+        "target": "centers[][2]",
         "source": "center.z",
-        "target": "entity_z",
-        "_comment": "Lift center to half-height above ground plane",
+        "default_value": 0,
         "expression": "center.z + height / 2.0"
       },
       {
+        "target": "half_sizes[][0]",
         "source": "width",
-        "target": "entity_width",
-        "_comment": "Enforce minimum bounding box dimension",
-        "expression": "max(width, 0.5)"
+        "expression": "(max(width, 0.5)) / 2"
       },
       {
+        "target": "half_sizes[][1]",
         "source": "length",
-        "target": "entity_length",
-        "expression": "max(length, 0.5)"
+        "expression": "(max(length, 0.5)) / 2"
       },
       {
+        "target": "half_sizes[][2]",
         "source": "height",
-        "target": "entity_height",
-        "expression": "max(height, 0.3)"
+        "expression": "(max(height, 0.3)) / 2"
       },
       {
-        "source": "heading",
-        "target": "entity_heading",
-        "_comment": "Use radians; fallback to velocity heading if heading near zero",
-        "expression": "if(abs(heading) > 0.001, heading, atan2(velocity.y, velocity.x))"
+        "target": "quaternions[][0]",
+        "default_value": 0
+      },
+      {
+        "target": "quaternions[][1]",
+        "default_value": 0
+      },
+      {
+        "target": "quaternions[][2]",
+        "expression": "sin((if(abs(heading) > 0.001, heading, atan2(velocity.y, velocity.x))) / 2)"
+      },
+      {
+        "target": "quaternions[][3]",
+        "expression": "cos((if(abs(heading) > 0.001, heading, atan2(velocity.y, velocity.x))) / 2)"
       }
     ]
   },
@@ -151,11 +186,11 @@
     "field_mappings": [
       {
         "source": "latitude",
-        "target": "latitude"
+        "target": "positions[0][0]"
       },
       {
         "source": "longitude",
-        "target": "longitude"
+        "target": "positions[0][1]"
       }
     ]
   }

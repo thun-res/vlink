@@ -13,7 +13,7 @@
     "encoding": "protobuf",
     "field_mappings": [
       {
-        "target": "message",
+        "target": "text",
         "default_value": "time sync"
       }
     ]
@@ -32,7 +32,7 @@
     "encoding": "flatbuffers",
     "field_mappings": [
       {
-        "target": "message",
+        "target": "text",
         "default_value": "time sync"
       }
     ]

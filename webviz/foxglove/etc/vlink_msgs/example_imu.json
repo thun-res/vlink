@@ -6,7 +6,8 @@
   "field_mappings": [
     {
       "source": "timestamp_us",
-      "target": "timestamp"
+      "target": "timestamp",
+      "time_unit": "us"
     },
     {
       "source": "frame_id",
@@ -15,7 +16,7 @@
     },
     {
       "source": "orientation",
-      "target": "pose"
+      "target": "pose.orientation"
     }
   ]
 }

@@ -3,8 +3,17 @@
   "archetype": "Tensor",
   "encoding": "protobuf",
   "field_mappings": [
-    { "source": "shape", "target": "shape" },
-    { "source": "dim_names", "target": "dim_names" },
-    { "source": "data", "target": "data" }
+    {
+      "source": "shape",
+      "target": "data.shape"
+    },
+    {
+      "source": "dim_names",
+      "target": "data.names"
+    },
+    {
+      "source": "data",
+      "target": "data.buffer.F32"
+    }
   ]
 }

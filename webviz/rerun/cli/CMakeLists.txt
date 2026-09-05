@@ -7,14 +7,9 @@ project(vlink-bag2rrd LANGUAGES CXX)
 # src
 add_executable(${PROJECT_NAME} bag2rrd.cc)
 target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/../src ${PROJECT_SOURCE_DIR}/../..)
-target_sources(
-  ${PROJECT_NAME}
-  PRIVATE ${PROJECT_SOURCE_DIR}/../src/rerun_converter.cc ${PROJECT_SOURCE_DIR}/../src/rerun_converter.h
-          ${PROJECT_SOURCE_DIR}/../../zerocopy_message.cc ${PROJECT_SOURCE_DIR}/../../zerocopy_message.h
-)
 target_link_libraries(
   ${PROJECT_NAME}
-  PRIVATE vlink::vlink
+  PRIVATE vlink-rerun-conversion
           vlink::proxy_api
           ${protobuf_libs}
           ${flatbuffers_libs}
@@ -25,13 +20,6 @@ target_link_libraries(
 vlink_target_system_includes_from(${PROJECT_NAME} ${protobuf_libs})
 vlink_target_system_includes_from(${PROJECT_NAME} ${flatbuffers_libs})
 
-if(NOT TARGET vlink-exprtk_api)
-  find_package(vlink-exprtk_api QUIET)
-endif()
-
-if(TARGET vlink::exprtk_api)
-  target_link_libraries(${PROJECT_NAME} PRIVATE vlink::exprtk_api)
-endif()
 if(WIN32)
   if(EXISTS ${CMAKE_SOURCE_DIR}/packup/ico/vlink-cmd.rc)
     target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/packup/ico/vlink-cmd.rc)

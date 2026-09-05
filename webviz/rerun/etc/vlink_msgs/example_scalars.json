@@ -7,7 +7,7 @@
   "field_mappings": [
     {
       "source": "speed_mps",
-      "target": "value",
+      "target": "scalars",
       "expression": "speed_mps * 3.6"
     }
   ]

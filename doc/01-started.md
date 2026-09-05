@@ -201,6 +201,8 @@ output/
 
 Viewer / WebViz 子开关：`ENABLE_VIEWER_FFMPEG`、`ENABLE_VIEWER_OSG`、`ENABLE_WEBVIZ_FOXGLOVE`、`ENABLE_WEBVIZ_RERUN`，按需启用对应渲染/导出能力。
 
+Rerun 后端需要 `rerun_sdk` 0.37.1 或更新版本；`RERUN_SDK_DIR` CMake cache 参数指定 SDK 源码或安装路径，默认读取同名环境变量，见 [WebViz 编译说明](11-visualization.md#️-11211-编译与环境变量)。
+
 ### 🚌 1.4.2 传输模块开关
 
 模块默认按依赖可用性自动构建，用 `SKIP_*` 显式跳过：

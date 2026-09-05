@@ -7,15 +7,10 @@ project(vlink-bag2mcap LANGUAGES CXX)
 # src
 add_executable(${PROJECT_NAME} bag2mcap.cc)
 target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/../src ${PROJECT_SOURCE_DIR}/../..)
-target_sources(
-  ${PROJECT_NAME}
-  PRIVATE ${PROJECT_SOURCE_DIR}/../src/foxglove_converter.cc ${PROJECT_SOURCE_DIR}/../src/foxglove_converter.h
-          ${PROJECT_SOURCE_DIR}/../../zerocopy_message.cc ${PROJECT_SOURCE_DIR}/../../zerocopy_message.h
-          ${CMAKE_SOURCE_DIR}/src/private/mcap_import.cc
-)
+target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/src/private/mcap_import.cc)
 target_link_libraries(
   ${PROJECT_NAME}
-  PRIVATE vlink::vlink
+  PRIVATE vlink-foxglove-conversion
           vlink::proxy_api
           ${protobuf_libs}
           ${flatbuffers_libs}
@@ -36,13 +31,6 @@ if(ENABLE_ZSTD)
   endif()
 endif()
 
-if(NOT TARGET vlink-exprtk_api)
-  find_package(vlink-exprtk_api QUIET)
-endif()
-
-if(TARGET vlink::exprtk_api)
-  target_link_libraries(${PROJECT_NAME} PRIVATE vlink::exprtk_api)
-endif()
 if(WIN32)
   if(EXISTS ${CMAKE_SOURCE_DIR}/packup/ico/vlink-cmd.rc)
     target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/packup/ico/vlink-cmd.rc)

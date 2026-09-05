@@ -7,11 +7,11 @@
   "field_mappings": [
     {
       "source": "latitude",
-      "target": "latitude"
+      "target": "positions[0][0]"
     },
     {
       "source": "longitude",
-      "target": "longitude"
+      "target": "positions[0][1]"
     }
   ]
 }

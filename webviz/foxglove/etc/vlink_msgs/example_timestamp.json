@@ -10,7 +10,8 @@
     "field_mappings": [
       {
         "source": "header.timestamp_ns",
-        "target": "timestamp_ns"
+        "target": "timestamp",
+        "time_unit": "ns"
       },
       {
         "source": "header.frame_id",
@@ -42,7 +43,8 @@
     "field_mappings": [
       {
         "source": "header.timestamp_ns",
-        "target": "timestamp_ns"
+        "target": "timestamp",
+        "time_unit": "ns"
       },
       {
         "source": "header.frame_id",
@@ -51,19 +53,19 @@
       },
       {
         "source": "pose.position.x",
-        "target": "position_x"
+        "target": "pose.position.x"
       },
       {
         "source": "pose.position.y",
-        "target": "position_y"
+        "target": "pose.position.y"
       },
       {
         "source": "pose.position.z",
-        "target": "position_z"
+        "target": "pose.position.z"
       },
       {
         "source": "pose.orientation",
-        "target": "pose"
+        "target": "pose.orientation"
       }
     ]
   },
@@ -78,7 +80,8 @@
     "field_mappings": [
       {
         "source": "timestamp_ns",
-        "target": "timestamp_ns"
+        "target": "timestamp",
+        "time_unit": "ns"
       },
       {
         "source": "frame_id",
@@ -113,45 +116,54 @@
     "timestamp_unit": "ns",
     "field_mappings": [
       {
+        "target": "entities[0].id",
+        "default_value": "objects"
+      },
+      {
         "source": "header.timestamp_ns",
-        "target": "timestamp_ns"
+        "target": "entities[0].timestamp",
+        "time_unit": "ns"
       },
       {
         "source": "header.frame_id",
-        "target": "frame_id",
+        "target": "entities[0].frame_id",
         "default_value": "base_link"
       },
       {
         "source": "obstacles",
-        "target": "entities"
+        "target": "entities[0].cubes"
       },
       {
         "source": "center.x",
-        "target": "entity_x"
+        "target": "entities[0].cubes[].pose.position.x"
       },
       {
         "source": "center.y",
-        "target": "entity_y"
+        "target": "entities[0].cubes[].pose.position.y"
       },
       {
         "source": "center.z",
-        "target": "entity_z"
+        "target": "entities[0].cubes[].pose.position.z"
       },
       {
         "source": "width",
-        "target": "entity_width"
+        "target": "entities[0].cubes[].size.x"
       },
       {
         "source": "length",
-        "target": "entity_length"
+        "target": "entities[0].cubes[].size.y"
       },
       {
         "source": "height",
-        "target": "entity_height"
+        "target": "entities[0].cubes[].size.z"
       },
       {
-        "source": "heading",
-        "target": "entity_heading"
+        "target": "entities[0].cubes[].pose.orientation.z",
+        "expression": "sin((heading) * 0.5)"
+      },
+      {
+        "target": "entities[0].cubes[].pose.orientation.w",
+        "expression": "cos((heading) * 0.5)"
       }
     ]
   }

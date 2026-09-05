@@ -56,6 +56,22 @@ enum class ClientBinaryOpcode : uint8_t {
   kServiceCallRequest = 0x02,
 };
 
+template <typename T>
+inline void write_little_endian(uint8_t* data, T value) {
+  for (size_t i = 0; i < sizeof(T); ++i) {
+    data[i] = static_cast<uint8_t>(value >> (8 * i));
+  }
+}
+
+template <typename T>
+inline T read_little_endian(const uint8_t* data) {
+  T value = 0;
+  for (size_t i = 0; i < sizeof(T); ++i) {
+    value |= static_cast<T>(data[i]) << (8 * i);
+  }
+  return value;
+}
+
 inline std::string encode_base64(const void* data, size_t len) {
   auto bytes = Bytes::shallow_copy(static_cast<const uint8_t*>(data), len);
   return Bytes::encode_to_base64(bytes);
@@ -71,8 +87,8 @@ inline Bytes build_message_data(uint32_t subscription_id, uint64_t timestamp_ns,
   auto* ptr = buf.data();
 
   ptr[0] = static_cast<uint8_t>(ServerBinaryOpcode::kMessageData);
-  std::memcpy(ptr + 1, &subscription_id, 4);
-  std::memcpy(ptr + 5, &timestamp_ns, 8);
+  write_little_endian(ptr + 1, subscription_id);
+  write_little_endian(ptr + 5, timestamp_ns);
 
   if VLIKELY (payload_len > 0) {
     std::memcpy(ptr + 13, payload, payload_len);
@@ -86,7 +102,7 @@ inline Bytes build_time_message(uint64_t timestamp_ns) {
   auto* ptr = buf.data();
 
   ptr[0] = static_cast<uint8_t>(ServerBinaryOpcode::kTime);
-  std::memcpy(ptr + 1, &timestamp_ns, 8);
+  write_little_endian(ptr + 1, timestamp_ns);
 
   return buf;
 }
@@ -105,13 +121,13 @@ inline Bytes build_service_call_response(uint32_t service_id, uint32_t call_id, 
 
   ptr[offset++] = static_cast<uint8_t>(ServerBinaryOpcode::kServiceCallResponse);
 
-  std::memcpy(ptr + offset, &service_id, 4);
+  write_little_endian(ptr + offset, service_id);
   offset += 4;
 
-  std::memcpy(ptr + offset, &call_id, 4);
+  write_little_endian(ptr + offset, call_id);
   offset += 4;
 
-  std::memcpy(ptr + offset, &enc_len, 4);
+  write_little_endian(ptr + offset, enc_len);
   offset += 4;
 
   std::memcpy(ptr + offset, encoding.data(), enc_len);
@@ -138,12 +154,12 @@ inline Bytes build_fetch_asset_response(uint32_t request_id, uint8_t status, std
 
   ptr[offset++] = static_cast<uint8_t>(ServerBinaryOpcode::kFetchAssetResponse);
 
-  std::memcpy(ptr + offset, &request_id, 4);
+  write_little_endian(ptr + offset, request_id);
   offset += 4;
 
   ptr[offset++] = status;
 
-  std::memcpy(ptr + offset, &err_len, 4);
+  write_little_endian(ptr + offset, err_len);
   offset += 4;
 
   if VUNLIKELY (err_len > 0) {
@@ -179,7 +195,7 @@ inline bool parse_client_binary(const uint8_t* data, size_t len, ClientBinaryMes
       return false;
     }
 
-    std::memcpy(&out.channel_or_service_id, data + 1, 4);
+    out.channel_or_service_id = read_little_endian<uint32_t>(data + 1);
     out.payload = data + 5;
     out.payload_len = len - 5;
     return true;
@@ -190,11 +206,11 @@ inline bool parse_client_binary(const uint8_t* data, size_t len, ClientBinaryMes
       return false;
     }
 
-    std::memcpy(&out.channel_or_service_id, data + 1, 4);
-    std::memcpy(&out.call_id, data + 5, 4);
+    out.channel_or_service_id = read_little_endian<uint32_t>(data + 1);
+    out.call_id = read_little_endian<uint32_t>(data + 5);
 
     uint32_t enc_len = 0;
-    std::memcpy(&enc_len, data + 9, 4);
+    enc_len = read_little_endian<uint32_t>(data + 9);
 
     if VUNLIKELY (len < 13 || (len - 13) < enc_len) {
       return false;

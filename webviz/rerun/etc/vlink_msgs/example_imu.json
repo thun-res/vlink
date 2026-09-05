@@ -4,8 +4,24 @@
   "encoding": "flatbuffers",
   "field_mappings": [
     {
-      "source": "orientation",
-      "target": "pose"
+      "target": "quaternion[0]",
+      "source": "orientation.x",
+      "default_value": 0
+    },
+    {
+      "target": "quaternion[1]",
+      "source": "orientation.y",
+      "default_value": 0
+    },
+    {
+      "target": "quaternion[2]",
+      "source": "orientation.z",
+      "default_value": 0
+    },
+    {
+      "target": "quaternion[3]",
+      "source": "orientation.w",
+      "default_value": 1
     }
   ]
 }
