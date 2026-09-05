@@ -304,20 +304,31 @@ vlink-bag info /tmp/test.vdb
 
 回放时 `Space` 暂停/恢复，方向键前后跳转（`Left` / `Right` 1 秒、`Up` / `Down` 5 秒），暂停态下 `p` 单步前进一帧。
 
+本地时间或 UTC 起止参数按输入时制换算，包含午夜 `00:00:00`；显式时钟结束时间必须晚于录制开始时间，未指定结束时间仍表示不限制。显示时制参数只影响显示，不改变数字 `-b` / `-e` 的相对秒数含义。
+
 运维子命令：
 
 | 子命令 | 作用 |
 | --- | --- |
 | `vlink-bag clone <src> <dst>` | 克隆/转换：支持格式转换、话题过滤、时间裁剪、压缩转换 |
+| `vlink-bag merge <src...> -o <dst>` | 将至少两个包按原始绝对时间合并，支持混合格式与分包输入/输出 |
 | `vlink-bag check <path>` | 校验文件完整性（0 正常，-1 异常） |
 | `vlink-bag reindex <path>` | 重建时间索引 |
 | `vlink-bag fix <path>` | 修复未完整写入的文件（如录制中途断电） |
-| `vlink-bag tag <path> <name>` | 设置/修改标签名 |
+| `vlink-bag tag <path> <name>` | 设置/修改 `.vdb`、`.vdbx`、`.vcapx` 的标签名；单个 `.vcap` 不支持 |
+
+`clone` 会拒绝覆盖源入口、源分包及其已有的 SQLite WAL/SHM 文件，包括链接别名、目标旧分包清理和新分包命名造成的重叠；`--force` 不绕过此保护。按时间命名的分包发生重叠时，改用其他输出目录或关闭 `--split_name_by_time`。
+
+`merge` 以最早输入包的开始时间为输出基准，将各帧的相对时间换算到该基准，保留原始绝对时间和消息载荷；同一时间戳按输入包顺序排列，同一包内保持原顺序，不去重。支持 `-t/--tag`、`-p/--compress`、`-f/--force` 和 `-q/--quiet`，输出格式由后缀决定；分包输出沿用默认的 1 GB 大小轮转。
+
+各输入包的帧时间必须非递减；同名 URL 类型不一致、同名同类型 Schema 内容冲突、时间超出输出格式范围或读写失败时返回失败，运行中失败或取消可能留下部分输出。输出覆盖任一输入入口、分包或链接别名时始终拒绝；覆盖其他已有目标需要 `--force`。
 
 ```bash
 vlink-bag clone /tmp/test.vdb /tmp/clipped.vdb -b 10 -e 60 -p
 
 vlink-bag clone /tmp/capture.vcap /tmp/result.vdb
+
+vlink-bag merge /tmp/a.vdb /tmp/b.vcap -o /tmp/merged.vdb -p
 
 vlink-bag fix /tmp/broken.vdb
 

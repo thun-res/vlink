@@ -61,7 +61,7 @@ _vlink_bag_positional_count() {
 _vlink_bag() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     local prev="${COMP_WORDS[COMP_CWORD-1]}"
-    local subcommands="info record play clone check reindex fix tag"
+    local subcommands="info record play clone merge check reindex fix tag"
     local subcommand
     local last_option=""
 
@@ -70,6 +70,11 @@ _vlink_bag() {
 
     if [[ -z "$subcommand" ]]; then
         _vlink_bash_complete_words "$subcommands -h --help -v --version" "$cur"
+        return
+    fi
+
+    if [[ "$subcommand" == "merge" && ( "$prev" == "-o" || "$prev" == "--output" ) ]]; then
+        _vlink_bash_complete_files "$cur"
         return
     fi
 
@@ -165,6 +170,13 @@ _vlink_bag() {
             else
                 _vlink_bash_complete_files "$cur"
             fi
+            ;;
+        merge)
+            if [[ "$cur" == -* ]]; then
+                _vlink_bash_complete_words "-o --output -t --tag -p --compress -f --force -q --quiet -h --help" "$cur"
+                return
+            fi
+            _vlink_bash_complete_files_ext "$cur" "$_vlink_bash_bag_ext"
             ;;
         check|reindex)
             if [[ "$cur" == -* ]]; then

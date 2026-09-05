@@ -269,7 +269,7 @@ if (pub.is_support_loan()) {
 | `vlink-check` | 系统诊断 | `diag` / `env` / `test` |
 | `vlink-list` | 列出活跃节点 | — |
 | `vlink-monitor` | 实时 TUI 监控 | — |
-| `vlink-bag` | 录制 / 回放 / bag 管理 | `record` / `play` / `info` / `clone` / `check` / `reindex` / `fix` / `tag` |
+| `vlink-bag` | 录制 / 回放 / bag 管理 | `record` / `play` / `info` / `clone` / `merge` / `check` / `reindex` / `fix` / `tag` |
 | `vlink-trigger` | 内存触发录制（EDR）：滚动缓冲 + 触发落盘 | `daemon` / `dump` |
 | `vlink-parse` | 从 URL / bag 抽取数据 | — |
 | `vlink-eproto` | Protobuf 动态 pub/sub | `pub` / `sub` / `import` |

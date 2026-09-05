@@ -7,7 +7,7 @@
 ## 1. 公共入口
 
 对每个已构建工具执行 `--help`、`--version` 和一个明确的非法参数。
-再覆盖 23 个子命令的 `<tool> <subcommand> --help`:bag 8 个、bench
+再覆盖 24 个子命令的 `<tool> <subcommand> --help`:bag 9 个、bench
 4 个、check 3 个、eproto 3 个、efbs 3 个、trigger 2 个。构建树只测试
 完整 `vlink-*` 名称,安装阶段生成的短别名不在此冒充已覆盖。
 
@@ -17,7 +17,7 @@
 | `vlink-check` | `diag`、`env`、`test` |
 | `vlink-list` | 默认、`-n`、名称/PID 过滤、进程计数 |
 | `vlink-monitor` | `--plain`、URL/关键字过滤、节点/详情模式 |
-| `vlink-bag` | `info`、`record`、`play`、`clone`、`check`、`reindex`、`fix`、`tag` |
+| `vlink-bag` | `info`、`record`、`play`、`clone`、`merge`、`check`、`reindex`、`fix`、`tag` |
 | `vlink-trigger` | `daemon`、`dump` |
 | `vlink-parse` | 实时解析、bag 导出、`slice`、`scan` |
 | `vlink-eproto` | `pub`、`sub`、`import` |
@@ -52,6 +52,8 @@
 - 原始数据仅执行 `vlink-bag info` 与 `check`。
 - `clone` 的目标、`parse` 的 CSV/JSON/bin/图像/点云输出、`slice`/`scan`
   产物全部写临时目录,并验证文件存在且内容非空。
+- `merge` 核对逐帧绝对时间、同戳稳定顺序、混合格式、分包、类型/Schema
+  冲突和源文件保护;逆序或取消须返回失败,不能只检查输出文件存在。
 - `reindex`、`fix`、`tag` 只对专门的临时副本执行,完成后再次
   `info`/`check`;不得拿健康原件冒充损坏数据验证 `fix`。
 - `play` 与 `parse` 的 URL 必须来自 `vlink-bag info` 实际元数据,

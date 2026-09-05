@@ -610,7 +610,7 @@ int main(int argc, char* argv[]) {
 
 ## 📚 相关文档
 
-- 命令行录制 / 回放工具 `vlink-bag`（record/play/info/clone/check/reindex/fix/tag）：[10-cli-tools.md](10-cli-tools.md)
+- 命令行录制 / 回放工具 `vlink-bag`（record/play/info/clone/merge/check/reindex/fix/tag）：[10-cli-tools.md](10-cli-tools.md)
 - 命令行触发录制工具 `vlink-trigger`（daemon/dump）：[10-cli-tools.md](10-cli-tools.md)（引擎 `TriggerRecorder` 见本章 [§9.13](#-913-触发录制与内存打点)）
 - 图形化回放器 `vlink-player`：[11-visualization.md](11-visualization.md)
 - 序列化类型与 schema：[03-serialization.md](03-serialization.md)

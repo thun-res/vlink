@@ -281,6 +281,7 @@ cc_binary {
         "cli/bag",
         "include/vlink",
         "thirdparty/argparse/include",
+        "thirdparty/json/include",
     ],
     cppflags: [
         "-DVLINK_ENABLE_SQLITE",

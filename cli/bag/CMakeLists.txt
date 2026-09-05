@@ -7,7 +7,7 @@ project(vlink-bag LANGUAGES CXX)
 # src
 add_executable(${PROJECT_NAME} bag.cc)
 target_link_libraries(${PROJECT_NAME} PRIVATE vlink::vlink ${VLINK_NO_INTRA_LIBRARIES})
-target_link_libraries(${PROJECT_NAME} PRIVATE thirdparty::argparse)
+target_link_libraries(${PROJECT_NAME} PRIVATE thirdparty::argparse thirdparty::json)
 
 if(WIN32)
   if(EXISTS ${CMAKE_SOURCE_DIR}/packup/ico/vlink-cmd.rc)

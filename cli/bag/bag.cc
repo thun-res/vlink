@@ -39,11 +39,17 @@
 #include <chrono>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <memory>
+#include <nlohmann/json.hpp>
+#include <queue>
 #include <sstream>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -129,7 +135,7 @@ vlink::ElapsedTimer total_size_timer;
       return -1;
     }
 
-    return (hours * 3600) + (minutes * 60) + seconds + (milliseconds / 1000.0);
+    return (hours * 3600.0) + (minutes * 60) + seconds + (milliseconds / 1000.0);
   }
 
   return -1;
@@ -420,22 +426,20 @@ int bag_info(const std::string& path) {
       std::cout << std::fixed << std::setprecision(6) << timestamp / 1000000.0 << "s " << url << std::endl;
     });
 
-    auto quit_function = [&player](int) {
-      if VUNLIKELY (has_quit) {
+    auto quit_function = [player](int) {
+      if VUNLIKELY (has_quit.exchange(true, std::memory_order_acq_rel)) {
         return;
       }
 
-      has_quit = true;
+      is_broken = true;
 
       if VLIKELY (player) {
         player->stop();
         player->quit(true);
       }
-
-      is_broken = true;
     };
 
-    vlink::Utils::register_terminate_signal(quit_function);
+    vlink::Utils::register_terminate_signal(quit_function, true);
 
     vlink::BagReader::Config config;
     config.begin_time = 0;
@@ -1030,7 +1034,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
 
         sub->set_ser_type(info.ser_type, info.schema_type);
         sub->init();
-      } catch (vlink::Exception::RuntimeError&) {
+      } catch (const std::runtime_error&) {
         continue;
       }
 
@@ -1214,7 +1218,8 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
 // NOLINTNEXTLINE(google-readability-function-size)
 int bag_play(const std::string& path, const std::vector<std::string>& urls, const std::string& filter, bool black_mode,
              bool native_mode, bool auto_pause, const std::vector<int>& actions, int64_t begin_time, int64_t end_time,
-             int times, double rate, const std::string& plugin_name) {
+             uint8_t input_time_method, bool has_clock_begin_time, bool has_clock_end_time, int times, double rate,
+             const std::string& plugin_name) {
   using RawPub = vlink::Publisher<vlink::Bytes>;
 
   const std::string native_ip = native_mode ? vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1") : std::string();
@@ -1274,50 +1279,38 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
     return -1;
   }
 
-  if (time_method == kUseLocalTime) {
-    if (begin_time > 0) {
-      begin_time -= (date_time + player->get_info().timezone * 60 * 1000);
+  if (input_time_method == kUseLocalTime || input_time_method == kUseUtcTime) {
+    int64_t clock_start = date_time;
+
+    if (input_time_method == kUseLocalTime) {
+      clock_start = (clock_start + static_cast<int64_t>(player->get_info().timezone) * 60 * 1000) % kDayMilliseconds;
+
+      if (clock_start < 0) {
+        clock_start += kDayMilliseconds;
+      }
     }
 
-    if (end_time > 0) {
-      end_time -= (date_time + player->get_info().timezone * 60 * 1000);
+    if (has_clock_begin_time) {
+      begin_time -= clock_start;
+
+      if (begin_time < 0) {
+        begin_time += kDayMilliseconds;
+      }
     }
 
-    if (begin_time < 0) {
-      begin_time += 86400000;
-    }
+    if (has_clock_end_time) {
+      end_time -= clock_start;
 
-    if (end_time < 0) {
-      end_time += 86400000;
+      if (end_time < 0) {
+        end_time += kDayMilliseconds;
+      }
     }
+  }
 
-    if VUNLIKELY (begin_time < 0 || end_time < 0) {
-      std::cerr << "Invalid systime." << std::endl;
-      has_quit = true;
-      return -1;
-    }
-  } else if (time_method == kUseUtcTime) {
-    if (begin_time > 0) {
-      begin_time -= date_time;
-    }
-
-    if (end_time > 0) {
-      end_time -= date_time;
-    }
-
-    if (begin_time < 0) {
-      begin_time += 86400000;
-    }
-
-    if (end_time < 0) {
-      end_time += 86400000;
-    }
-
-    if VUNLIKELY (begin_time < 0 || end_time < 0) {
-      std::cerr << "Invalid systime." << std::endl;
-      has_quit = true;
-      return -1;
-    }
+  if VUNLIKELY (has_clock_end_time && end_time == 0) {
+    std::cerr << "Clock end time equals the recording start and cannot represent a bounded range." << std::endl;
+    has_quit = true;
+    return -1;
   }
 
   if VUNLIKELY (begin_time > 0 && end_time > 0 && begin_time > end_time) {
@@ -1391,7 +1384,15 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
       }
 
       pub->set_ser_type(ser, meta.schema_type);
-      pub->init();
+
+      try {
+        pub->init();
+      } catch (const vlink::Exception::RuntimeError& e) {
+        std::cerr << e.what() << std::endl;
+        has_quit = true;
+        return -1;
+      }
+
       pub_map.emplace(url, std::move(pub));
       filter_urls.emplace(url);
     } else {
@@ -1415,7 +1416,15 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
         }
 
         pub->set_ser_type(ser, meta.schema_type);
-        pub->init();
+
+        try {
+          pub->init();
+        } catch (const vlink::Exception::RuntimeError& e) {
+          std::cerr << e.what() << std::endl;
+          has_quit = true;
+          return -1;
+        }
+
         pub_map.emplace(url, std::move(pub));
         filter_urls.emplace(url);
       }
@@ -1537,15 +1546,14 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
         update_print();
       });
 
-  auto quit_function = [&player](int) {
-    if VUNLIKELY (has_quit) {
+  auto quit_function = [player](int) {
+    if VUNLIKELY (has_quit.exchange(true, std::memory_order_acq_rel)) {
       return;
     }
 
-    has_quit = true;
+    is_broken = true;
 
     if VLIKELY (player) {
-      player->clear_bag_interface();
       player->stop();
       player->quit(true);
     }
@@ -1553,11 +1561,9 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
     // if (!quiet_flag && !detail_flag) {
     //   stop_print();
     // }
-
-    is_broken = true;
   };
 
-  vlink::Utils::register_terminate_signal(quit_function);
+  vlink::Utils::register_terminate_signal(quit_function, true);
 
   if (!quiet_flag) {
     vlink::Utils::start_detect_keyboard([&quit_function, &player, rate, times](const std::string& key) {
@@ -1642,12 +1648,344 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
   return 0;
 }
 
+static std::vector<std::filesystem::path> clone_bag_files(const std::filesystem::path& path, bool cleanup) {
+  std::vector<std::filesystem::path> files{path};
+  std::string suffix = path.extension().string();
+  std::transform(suffix.begin(), suffix.end(), suffix.begin(), [](unsigned char c) { return std::tolower(c); });
+
+  if ((suffix != ".vdbx" && suffix != ".vcapx") || !std::filesystem::exists(path)) {
+    return files;
+  }
+
+  try {
+    nlohmann::json manifest;
+    std::ifstream file(path);
+    file >> manifest;
+
+    for (const auto& item : manifest["VLinkFiles"]) {
+      if (cleanup && !item.is_string()) {
+        continue;
+      }
+
+      const auto name = item.get<std::string>();
+#ifdef _WIN32
+      const auto member = std::filesystem::path(vlink::Helpers::string_to_wstring(name));
+#else
+      const auto member = std::filesystem::path(name);
+#endif
+
+      if (cleanup && (member.empty() || member == "." || member == ".." || member != member.filename())) {
+        continue;
+      }
+
+      files.emplace_back(path.parent_path() / member);
+    }
+  } catch (const nlohmann::json::exception& e) {
+    if (!cleanup) {
+      throw;
+    }
+
+    std::cerr << "Cannot parse existing split manifest: " << e.what() << std::endl;
+  }
+
+  return files;
+}
+
+static bool clone_paths_overlap(const std::filesystem::path& source, const std::filesystem::path& target,
+                                bool split_name_by_time) {
+  auto source_files = clone_bag_files(source, false);
+  const auto target_files = clone_bag_files(target, true);
+
+  std::string source_suffix = source.extension().string();
+  std::transform(source_suffix.begin(), source_suffix.end(), source_suffix.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+
+  if (source_suffix == ".vdb" || source_suffix == ".vdbx") {
+    const size_t source_count = source_files.size();
+    for (size_t i = source_suffix == ".vdbx" ? 1 : 0; i < source_count; ++i) {
+      const auto database_path = std::filesystem::weakly_canonical(source_files[i]);
+      for (const auto* suffix : {"-wal", "-shm"}) {
+        auto sidecar = database_path;
+        sidecar += suffix;
+        if (std::filesystem::exists(sidecar)) {
+          source_files.emplace_back(std::move(sidecar));
+        }
+      }
+    }
+  }
+
+  auto overlaps_source = [&source_files](const std::filesystem::path& candidate) {
+    for (const auto& input : source_files) {
+      if (std::filesystem::weakly_canonical(input) == std::filesystem::weakly_canonical(candidate) ||
+          (std::filesystem::exists(input) && std::filesystem::exists(candidate) &&
+           std::filesystem::equivalent(input, candidate))) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  for (const auto& output : target_files) {
+    if (overlaps_source(output)) {
+      return true;
+    }
+  }
+
+  std::string suffix = target.extension().string();
+  std::transform(suffix.begin(), suffix.end(), suffix.begin(), [](unsigned char c) { return std::tolower(c); });
+
+  if (suffix != ".vdbx" && suffix != ".vcapx") {
+    return false;
+  }
+
+  suffix.pop_back();
+  const std::string target_stem = vlink::Helpers::path_to_string(target.stem());
+  const auto output_dir = std::filesystem::absolute(target).parent_path();
+
+  if (!std::filesystem::exists(output_dir)) {
+    return false;
+  }
+
+  for (const auto& entry : std::filesystem::directory_iterator(output_dir)) {
+    std::string extension = entry.path().extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+
+    if (extension != suffix) {
+      continue;
+    }
+
+    const std::string name = vlink::Helpers::path_to_string(entry.path().stem());
+    std::string output_name;
+    bool matches = false;
+
+    if (split_name_by_time) {
+      static constexpr std::string_view kTimePattern = "0000-00-00_00-00-00-000";
+      matches = name.size() == kTimePattern.size();
+
+      for (size_t i = 0; matches && i < name.size(); ++i) {
+        matches = kTimePattern[i] == '0' ? name[i] >= '0' && name[i] <= '9' : name[i] == kTimePattern[i];
+      }
+
+      output_name = name + suffix;
+    } else {
+      const auto dot = name.find_last_of('.');
+
+      if (dot != std::string::npos && dot + 1 < name.size()) {
+        const auto begin = name.begin() + static_cast<std::string::difference_type>(dot + 1);
+        matches = *begin != '0' && std::all_of(begin, name.end(), [](char c) { return c >= '0' && c <= '9'; });
+        output_name = target_stem + name.substr(dot) + suffix;
+      }
+    }
+
+#ifdef _WIN32
+    const auto output_file = std::filesystem::path(vlink::Helpers::string_to_wstring(output_name));
+#else
+    const auto output_file = std::filesystem::path(output_name);
+#endif
+
+    if (matches && overlaps_source(output_dir / output_file)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// NOLINTNEXTLINE(google-readability-function-size)
+int bag_merge(const std::vector<std::string>& source_paths, const std::string& target_path, const std::string& tag_name,
+              bool compress, bool force) {
+  vlink::Utils::register_terminate_signal([](int) { has_quit = true; });
+
+  try {
+#ifdef _WIN32
+    const auto target = std::filesystem::path(vlink::Helpers::string_to_wstring(target_path));
+#else
+    const auto target = std::filesystem::path(target_path);
+#endif
+    std::vector<std::shared_ptr<vlink::BagReader>> readers;
+    readers.reserve(source_paths.size());
+    std::unordered_map<std::string, std::pair<std::string, vlink::SchemaType>> url_types;
+    std::map<std::pair<vlink::SchemaType, std::string>, vlink::SchemaData> schemas;
+    int64_t start_timestamp = std::numeric_limits<int64_t>::max();
+
+    for (const auto& path : source_paths) {
+#ifdef _WIN32
+      const auto source = std::filesystem::path(vlink::Helpers::string_to_wstring(path));
+#else
+      const auto source = std::filesystem::path(path);
+#endif
+      if VUNLIKELY (clone_paths_overlap(source, target, false)) {
+        std::cerr << "The merge output overlaps a source bag file: " << path << std::endl;
+        return -1;
+      }
+
+      auto reader = vlink::BagReader::create(path);
+      if VUNLIKELY (!reader) {
+        return -1;
+      }
+
+      const auto& info = reader->get_info();
+      if VUNLIKELY (info.start_timestamp <= 0 || info.start_timestamp > std::numeric_limits<int64_t>::max() / 1000) {
+        std::cerr << "Invalid recording start timestamp: " << path << std::endl;
+        return -1;
+      }
+      start_timestamp = std::min(start_timestamp, info.start_timestamp);
+
+      for (const auto& meta : info.url_metas) {
+        const auto [iter, inserted] = url_types.try_emplace(meta.url, meta.ser_type, meta.schema_type);
+        if VUNLIKELY (!inserted && (iter->second.first != meta.ser_type || iter->second.second != meta.schema_type)) {
+          std::cerr << "Conflicting serialization types for URL: " << meta.url << std::endl;
+          return -1;
+        }
+      }
+
+      for (auto& schema : reader->detect_schema()) {
+        auto key = std::make_pair(schema.schema_type, schema.name);
+        const auto iter = schemas.find(key);
+        if (iter != schemas.end()) {
+          if VUNLIKELY (iter->second.encoding != schema.encoding || iter->second.data != schema.data) {
+            std::cerr << "Conflicting embedded schema: " << schema.name << std::endl;
+            return -1;
+          }
+        } else {
+          schemas.emplace(std::move(key), std::move(schema));
+        }
+      }
+
+      readers.emplace_back(std::move(reader));
+      if VUNLIKELY (has_quit) {
+        return -1;
+      }
+    }
+
+    if VUNLIKELY (!force && std::filesystem::exists(target)) {
+      std::cerr << "The target file already exists. Use --force to overwrite it." << std::endl;
+      return -1;
+    }
+
+    std::vector<vlink::Frame> frames(readers.size());
+    std::vector<int64_t> previous_timestamps(readers.size(), -1);
+    int64_t max_timestamp = std::numeric_limits<int64_t>::max();
+    std::string suffix = target.extension().string();
+    std::transform(suffix.begin(), suffix.end(), suffix.begin(), [](unsigned char c) { return std::tolower(c); });
+    if (suffix == ".vcap" || suffix == ".vcapx") {
+      if VUNLIKELY (start_timestamp > std::numeric_limits<int64_t>::max() / 1000000) {
+        std::cerr << "Recording start timestamp exceeds the VCAP range." << std::endl;
+        return -1;
+      }
+      max_timestamp = (std::numeric_limits<int64_t>::max() - start_timestamp * 1000000) / 1000;
+    }
+
+    auto later = [&frames](size_t left, size_t right) {
+      if (frames[left].timestamp != frames[right].timestamp) {
+        return frames[left].timestamp > frames[right].timestamp;
+      }
+      return left > right;
+    };
+    std::priority_queue<size_t, std::vector<size_t>, decltype(later)> pending(later);
+    bool read_failed = false;
+
+    auto read_frame = [&](size_t index) {
+      auto& reader = readers[index];
+      auto& frame = frames[index];
+      if (!reader->read_next(frame)) {
+        if VUNLIKELY (reader->fail()) {
+          std::cerr << "Failed to read bag: " << source_paths[index] << std::endl;
+          read_failed = true;
+        }
+        return false;
+      }
+
+      const int64_t offset = (reader->get_info().start_timestamp - start_timestamp) * 1000;
+      if VUNLIKELY (frame.timestamp < 0 || frame.timestamp < previous_timestamps[index] || offset > max_timestamp ||
+                    frame.timestamp > max_timestamp - offset) {
+        std::cerr << "Invalid or decreasing frame timestamp in bag: " << source_paths[index] << std::endl;
+        read_failed = true;
+        return false;
+      }
+      previous_timestamps[index] = frame.timestamp;
+      frame.timestamp += offset;
+      return true;
+    };
+
+    for (size_t i = 0; i < readers.size(); ++i) {
+      if (read_frame(i)) {
+        pending.push(i);
+      }
+    }
+    if VUNLIKELY (read_failed || has_quit) {
+      return -1;
+    }
+
+    vlink::BagWriter::Config config;
+    config.start_timestamp = start_timestamp;
+    config.tag_name = tag_name;
+    config.compress = compress ? vlink::BagWriter::kCompressAuto : vlink::BagWriter::kCompressNone;
+    config.sync_mode = true;
+    config.optimize_on_exit = true;
+    auto writer = vlink::BagWriter::create(target_path, config);
+    if VUNLIKELY (!writer) {
+      return -1;
+    }
+
+    for (const auto& [key, schema] : schemas) {
+      if VUNLIKELY (!writer->push_schema(schema)) {
+        std::cerr << "Failed to write schema: " << schema.name << std::endl;
+        return -1;
+      }
+    }
+
+    int64_t count = 0;
+    bool write_failed = false;
+    while (!pending.empty() && !has_quit) {
+      const size_t index = pending.top();
+      pending.pop();
+
+      // The cursor owns the payload until its next read; synchronous push consumes it here.
+      if VUNLIKELY (writer->push(frames[index]) < 0) {
+        write_failed = true;
+        break;
+      }
+      ++count;
+
+      if (read_frame(index)) {
+        pending.push(index);
+      } else if (read_failed) {
+        break;
+      }
+    }
+
+    writer->close();
+    if VUNLIKELY (read_failed || write_failed || writer->fail() || has_quit) {
+      std::cerr << "Merge did not complete; the output may be partial." << std::endl;
+      return -1;
+    }
+
+    if (!quiet_flag) {
+      std::cout << "Merged " << count << " frames from " << readers.size() << " bags." << std::endl;
+    }
+    has_quit = true;
+    return 0;
+  } catch (const std::filesystem::filesystem_error& e) {
+    std::cerr << e.what() << std::endl;
+  } catch (const nlohmann::json::exception& e) {
+    std::cerr << e.what() << std::endl;
+  } catch (const vlink::Exception::RuntimeError& e) {
+    std::cerr << e.what() << std::endl;
+  }
+
+  has_quit = true;
+  return -1;
+}
+
 // NOLINTNEXTLINE(google-readability-function-size)
 int bag_clone(const std::string& source_path, const std::string& target_path, const std::vector<std::string>& urls,
               const std::string& tag_name, const std::string& filter, bool black_mode, const std::vector<int>& actions,
-              int64_t begin_time, int64_t end_time, bool compress, bool split_name_by_time, double split_by_size,
-              int64_t split_by_time, bool force, bool wal_mode, double cache_size,
-              const std::vector<std::string>& ignore_compress, const std::string& plugin_name) {
+              int64_t begin_time, int64_t end_time, bool has_clock_begin_time, bool has_clock_end_time, bool compress,
+              bool split_name_by_time, double split_by_size, int64_t split_by_time, bool force, bool wal_mode,
+              double cache_size, const std::vector<std::string>& ignore_compress, const std::string& plugin_name) {
   is_play_mode = true;
   play_rate = 1.0;
 
@@ -1666,13 +2004,17 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
       return -1;
     }
 
-    if VUNLIKELY (filesys_source_path.lexically_normal() == filesys_target_path.lexically_normal() ||
-                  (std::filesystem::exists(filesys_target_path) &&
-                   std::filesystem::equivalent(filesys_source_path, filesys_target_path))) {
-      std::cerr << "The source file is same as target file." << std::endl;
+    if VUNLIKELY (clone_paths_overlap(filesys_source_path, filesys_target_path, split_name_by_time)) {
+      std::cerr << "The clone output overlaps a source bag file. Use another output path or directory; "
+                   "for timestamped splits, use another directory or disable --split_name_by_time."
+                << std::endl;
       has_quit = true;
       return -1;
     }
+  } catch (const nlohmann::json::exception& e) {
+    std::cerr << "Cannot parse source split manifest: " << e.what() << std::endl;
+    has_quit = true;
+    return -1;
   } catch (std::filesystem::filesystem_error& e) {
     std::cerr << e.what() << std::endl;
     has_quit = true;
@@ -1751,50 +2093,38 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
     return -1;
   }
 
-  if (time_method == kUseLocalTime) {
-    if (begin_time > 0) {
-      begin_time -= (date_time + player->get_info().timezone * 60 * 1000);
+  if (time_method == kUseLocalTime || time_method == kUseUtcTime) {
+    int64_t clock_start = date_time;
+
+    if (time_method == kUseLocalTime) {
+      clock_start = (clock_start + static_cast<int64_t>(player->get_info().timezone) * 60 * 1000) % kDayMilliseconds;
+
+      if (clock_start < 0) {
+        clock_start += kDayMilliseconds;
+      }
     }
 
-    if (end_time > 0) {
-      end_time -= (date_time + player->get_info().timezone * 60 * 1000);
+    if (has_clock_begin_time) {
+      begin_time -= clock_start;
+
+      if (begin_time < 0) {
+        begin_time += kDayMilliseconds;
+      }
     }
 
-    if (begin_time < 0) {
-      begin_time += 86400000;
-    }
+    if (has_clock_end_time) {
+      end_time -= clock_start;
 
-    if (end_time < 0) {
-      end_time += 86400000;
+      if (end_time < 0) {
+        end_time += kDayMilliseconds;
+      }
     }
+  }
 
-    if VUNLIKELY (begin_time < 0 || end_time < 0) {
-      std::cerr << "Invalid systime." << std::endl;
-      has_quit = true;
-      return -1;
-    }
-  } else if (time_method == kUseUtcTime) {
-    if (begin_time > 0) {
-      begin_time -= date_time;
-    }
-
-    if (end_time > 0) {
-      end_time -= date_time;
-    }
-
-    if (begin_time < 0) {
-      begin_time += 86400000;
-    }
-
-    if (end_time < 0) {
-      end_time += 86400000;
-    }
-
-    if VUNLIKELY (begin_time < 0 || end_time < 0) {
-      std::cerr << "Invalid systime." << std::endl;
-      has_quit = true;
-      return -1;
-    }
+  if VUNLIKELY (has_clock_end_time && end_time == 0) {
+    std::cerr << "Clock end time equals the recording start and cannot represent a bounded range." << std::endl;
+    has_quit = true;
+    return -1;
   }
 
   if VUNLIKELY (begin_time > 0 && end_time > 0 && begin_time > end_time) {
@@ -1843,10 +2173,6 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
   is_split_mode = player->is_split_mode();
 
   for (const auto& meta : player->get_info().url_metas) {
-    if (meta.url_type == "Method") {
-      continue;
-    }
-
     const std::string& url = meta.url;
 
     if (!filter_list.empty()) {
@@ -1902,23 +2228,20 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
     recorder->set_url_loss(url_meta.url, url_meta.loss);
   }
 
-  auto quit_function = [&player](int) {
-    if VUNLIKELY (has_quit) {
+  auto quit_function = [player](int) {
+    if VUNLIKELY (has_quit.exchange(true, std::memory_order_acq_rel)) {
       return;
     }
 
-    has_quit = true;
+    is_broken = true;
 
     if VLIKELY (player) {
-      player->clear_bag_interface();
       player->stop();
       player->quit(true);
     }
-
-    is_broken = true;
   };
 
-  vlink::Utils::register_terminate_signal(quit_function);
+  vlink::Utils::register_terminate_signal(quit_function, true);
 
   player->register_begin_handler([player_ptr = player.get(), recorder_ptr = recorder.get(), &clone_write_failed]() {
     auto schema_list = player_ptr->detect_schema();
@@ -2107,22 +2430,20 @@ int bag_check(const std::string& path) {
 
   is_split_mode = player->is_split_mode();
 
-  auto quit_function = [&player](int) {
-    if VUNLIKELY (has_quit) {
+  auto quit_function = [player](int) {
+    if VUNLIKELY (has_quit.exchange(true, std::memory_order_acq_rel)) {
       return;
     }
 
-    has_quit = true;
+    is_broken = true;
 
     if VLIKELY (player) {
       player->stop();
       player->quit(true);
     }
-
-    is_broken = true;
   };
 
-  vlink::Utils::register_terminate_signal(quit_function);
+  vlink::Utils::register_terminate_signal(quit_function, true);
 
   if (!quiet_flag) {
     std::cout << "Please Wait...";
@@ -2212,22 +2533,20 @@ int bag_reindex(const std::string& path) {
 
   is_split_mode = player->is_split_mode();
 
-  auto quit_function = [&player](int) {
-    if VUNLIKELY (has_quit) {
+  auto quit_function = [player](int) {
+    if VUNLIKELY (has_quit.exchange(true, std::memory_order_acq_rel)) {
       return;
     }
 
-    has_quit = true;
+    is_broken = true;
 
     if VLIKELY (player) {
       player->stop();
       player->quit(true);
     }
-
-    is_broken = true;
   };
 
-  vlink::Utils::register_terminate_signal(quit_function);
+  vlink::Utils::register_terminate_signal(quit_function, true);
 
   if (!quiet_flag) {
     std::cout << "Please Wait...";
@@ -2317,22 +2636,20 @@ int bag_fix(const std::string& path, bool rebuild_mode) {
 
   is_split_mode = player->is_split_mode();
 
-  auto quit_function = [&player](int) {
-    if VUNLIKELY (has_quit) {
+  auto quit_function = [player](int) {
+    if VUNLIKELY (has_quit.exchange(true, std::memory_order_acq_rel)) {
       return;
     }
 
-    has_quit = true;
+    is_broken = true;
 
     if VLIKELY (player) {
       player->stop();
       player->quit(true);
     }
-
-    is_broken = true;
   };
 
-  vlink::Utils::register_terminate_signal(quit_function);
+  vlink::Utils::register_terminate_signal(quit_function, true);
 
   if (!quiet_flag) {
     std::cout << "Please Wait...";
@@ -2405,6 +2722,15 @@ int bag_tag(const std::string& path, const std::string& tag_name) {
       has_quit = true;
       return -1;
     }
+
+    std::string suffix = filesys_path.extension().string();
+    std::transform(suffix.begin(), suffix.end(), suffix.begin(), [](unsigned char c) { return std::tolower(c); });
+
+    if VUNLIKELY (suffix == ".vcap") {
+      std::cerr << "Tag is not supported for single vcap." << std::endl;
+      has_quit = true;
+      return -1;
+    }
   } catch (std::filesystem::filesystem_error& e) {
     std::cerr << e.what() << std::endl;
     has_quit = true;
@@ -2428,22 +2754,20 @@ int bag_tag(const std::string& path, const std::string& tag_name) {
 
   is_split_mode = player->is_split_mode();
 
-  auto quit_function = [&player](int) {
-    if VUNLIKELY (has_quit) {
+  auto quit_function = [player](int) {
+    if VUNLIKELY (has_quit.exchange(true, std::memory_order_acq_rel)) {
       return;
     }
 
-    has_quit = true;
+    is_broken = true;
 
     if VLIKELY (player) {
       player->stop();
       player->quit(true);
     }
-
-    is_broken = true;
   };
 
-  vlink::Utils::register_terminate_signal(quit_function);
+  vlink::Utils::register_terminate_signal(quit_function, true);
 
   player->register_idle_handler([player_ptr = player.get()]() { player_ptr->quit(); });
 
@@ -2790,6 +3114,19 @@ int main(int argc, char* argv[]) {
   clone_example_str += "vlink-bag clone /tmp/old_bag.vcap /tmp/new_bag.vdb";
   clone_command.add_epilog(clone_example_str);
 
+  // merge command
+  argparse::ArgumentParser merge_command("merge", VLINK_VERSION, argparse::default_arguments::help);
+  merge_command.add_argument("source_paths")
+      .help("Input bags (frames within each bag must have nondecreasing timestamps)")
+      .nargs(2, std::numeric_limits<size_t>::max());
+  merge_command.add_argument("-o", "--output").help("Output bag path").required();
+  merge_command.add_argument("-t", "--tag").help("Tag name").default_value(std::string());
+  merge_command.add_argument("-p", "--compress").help("Compress data").default_value(false).implicit_value(true);
+  merge_command.add_argument("-f", "--force").help("Overwriting").default_value(false).implicit_value(true);
+  merge_command.add_argument("-q", "--quiet").help("Quiet mode").default_value(false).implicit_value(true);
+  merge_command.add_description("Merge bags by original absolute timestamps; equal timestamps keep input order");
+  merge_command.add_epilog("Example:\n  vlink-bag merge /tmp/a.vdb /tmp/b.vcap -o /tmp/merged.vdb");
+
   // check command
   argparse::ArgumentParser check_command("check", VLINK_VERSION, argparse::default_arguments::help);
   check_command.add_argument("path").help("Database path").required();
@@ -2843,8 +3180,6 @@ int main(int argc, char* argv[]) {
   tag_example_str += "\n  ";
   tag_example_str += "vlink-bag tag /tmp/bag.vdbx 'tag_name'";
   tag_example_str += "\n  ";
-  tag_example_str += "vlink-bag tag /tmp/bag.vcap 'tag_name'";
-  tag_example_str += "\n  ";
   tag_example_str += "vlink-bag tag /tmp/bag.vcapx 'tag_name'";
   tag_command.add_epilog(tag_example_str);
 
@@ -2852,6 +3187,7 @@ int main(int argc, char* argv[]) {
   program.add_subparser(record_command);
   program.add_subparser(play_command);
   program.add_subparser(clone_command);
+  program.add_subparser(merge_command);
   program.add_subparser(check_command);
   program.add_subparser(reindex_command);
   program.add_subparser(fix_command);
@@ -2870,6 +3206,8 @@ int main(int argc, char* argv[]) {
       std::cerr << play_command << std::endl;
     } else if (program.is_subcommand_used("clone")) {
       std::cerr << clone_command << std::endl;
+    } else if (program.is_subcommand_used("merge")) {
+      std::cerr << merge_command << std::endl;
     } else if (program.is_subcommand_used("check")) {
       std::cerr << check_command << std::endl;
     } else if (program.is_subcommand_used("reindex")) {
@@ -3181,15 +3519,7 @@ int main(int argc, char* argv[]) {
         break;
     }
 
-    if VUNLIKELY (show_local_time && time_method != kUseUnknown && time_method != kUseLocalTime) {
-      std::cerr << "You cannot use diff time formats at the same time" << std::endl;
-      return -1;
-    }
-
-    if VUNLIKELY (show_utc_time && time_method != kUseUnknown && time_method != kUseUtcTime) {
-      std::cerr << "You cannot use diff time formats at the same time" << std::endl;
-      return -1;
-    }
+    const auto input_time_method = time_method.load();
 
     if VUNLIKELY (show_local_time && show_utc_time) {
       std::cerr << "You cannot use diff time formats at the same time" << std::endl;
@@ -3223,7 +3553,37 @@ int main(int argc, char* argv[]) {
     }
 
     return bag_play(path, urls, filter, black_mode, native_mode, auto_pause, actions, begin_time * 1000,
-                    end_time * 1000, times, rate, plugin_name);
+                    end_time * 1000, input_time_method, !local_begin_time.empty() || !utc_begin_time.empty(),
+                    !local_end_time.empty() || !utc_end_time.empty(), times, rate, plugin_name);
+  } else if (program.is_subcommand_used("merge")) {
+    auto source_paths = merge_command.get<std::vector<std::string>>("source_paths");
+    auto target_path = merge_command.get<std::string>("-o");
+    auto tag_name = merge_command.get<std::string>("-t");
+
+#ifdef _WIN32
+    try {
+      for (auto& path : source_paths) {
+        path = vlink::Helpers::path_to_string(std::filesystem::path(path));
+      }
+      target_path = vlink::Helpers::path_to_string(std::filesystem::path(target_path));
+    } catch (std::filesystem::filesystem_error& e) {
+      std::cerr << e.what() << std::endl;
+      return -1;
+    }
+    tag_name = vlink::Helpers::string_local_to_utf8(tag_name);
+#endif
+
+    for (const auto& path : source_paths) {
+      if VUNLIKELY (!check_bag_path(path, "input path")) {
+        return -1;
+      }
+    }
+    if VUNLIKELY (!check_bag_path(target_path, "output path")) {
+      return -1;
+    }
+
+    quiet_flag = merge_command.is_used("-q");
+    return bag_merge(source_paths, target_path, tag_name, merge_command.is_used("-p"), merge_command.is_used("-f"));
   } else if (program.is_subcommand_used("clone")) {
     auto source_path = clone_command.get<std::string>("source_path");
 
@@ -3399,8 +3759,9 @@ int main(int argc, char* argv[]) {
     auto clone_plugin_name = clone_command.get<std::string>("--plugin");
 
     return bag_clone(source_path, target_path, urls, tag_name, filter, black_mode, actions, begin_time * 1000,
-                     end_time * 1000, compress, split_name_by_time, split_by_size, split_by_time * 1000, force,
-                     wal_mode, cache_size, ignore_compress, clone_plugin_name);
+                     end_time * 1000, !local_begin_time.empty() || !utc_begin_time.empty(),
+                     !local_end_time.empty() || !utc_end_time.empty(), compress, split_name_by_time, split_by_size,
+                     split_by_time * 1000, force, wal_mode, cache_size, ignore_compress, clone_plugin_name);
   } else if (program.is_subcommand_used("check")) {
     auto path = check_command.get<std::string>("path");
 

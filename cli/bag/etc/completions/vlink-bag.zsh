@@ -164,6 +164,17 @@ _vlink-bag_clone() {
         ':target bag:_files'
 }
 
+_vlink-bag_merge() {
+    _arguments -s \
+        '(-o --output)'{-o,--output}'=[Output bag path]:output:_files' \
+        '(-t --tag)'{-t,--tag}'=[Tag name]:tag:' \
+        '(-p --compress)'{-p,--compress}'[Compress data]' \
+        '(-f --force)'{-f,--force}'[Overwriting]' \
+        '(-q --quiet)'{-q,--quiet}'[Quiet mode]' \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '*:source bag:_vlink-bag_bag_file'
+}
+
 _vlink-bag_fix() {
     _arguments -s \
         '(-y --rebuild)'{-y,--rebuild}'[Rebuild]' \
@@ -191,6 +202,7 @@ _vlink-bag() {
         'record:Record bag from live topics'
         'play:Replay bag'
         'clone:Clone bag to another bag'
+        'merge:Merge bags by original absolute timestamps'
         'check:Check bag integrity'
         'reindex:Rebuild bag index'
         'fix:Fix bag'
@@ -213,6 +225,7 @@ _vlink-bag() {
                 record) _vlink-bag_record ;;
                 play) _vlink-bag_play ;;
                 clone) _vlink-bag_clone ;;
+                merge) _vlink-bag_merge ;;
                 check) _vlink-bag_simple ;;
                 reindex) _vlink-bag_simple ;;
                 fix) _vlink-bag_fix ;;
