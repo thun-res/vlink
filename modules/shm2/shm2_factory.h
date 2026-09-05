@@ -255,7 +255,6 @@ class Shm2Server final : public AbstractObject<ShmID2>, public std::enable_share
   iox2_server_t server_storage_{};
   iox2_server_h server_{nullptr};
 
-  iox2_active_request_t active_req_storage_{};
   iox2_active_request_h active_req_{nullptr};
 
   iox2_port_factory_event_t event_pf_storage_{};
