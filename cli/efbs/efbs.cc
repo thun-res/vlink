@@ -700,10 +700,16 @@ int start_efbs_pub(const std::string& url, const std::string& fbs_dir, const std
   }
 
   raw_pub->set_ser_type(target_ser, target_schema_type);
-  raw_pub->init();
+  try {
+    raw_pub->init();
+  } catch (vlink::Exception::RuntimeError& e) {
+    std::cerr << e.what() << std::endl;
+    has_quit = true;
+    return -1;
+  }
 
   if (!is_text_type && !is_blob_type) {
-    if (!fbs_json.empty()) {
+    if (fbstxt_file.empty()) {
       if VUNLIKELY (!parser->ParseJson(fbs_json.c_str())) {
         std::cerr << "Parse flatbuffers json failed: " << parser->error_ << std::endl;
         has_quit = true;
@@ -1125,7 +1131,6 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
 
     if VUNLIKELY (!has_printed) {
       if VLIKELY (!force_update) {
-        is_changed = false;
         return;
       }
 
@@ -1142,12 +1147,11 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
       VLINK_TERM_OUT << "\033[34;1;4m" << url << "\033[0m" << std::endl;
       VLINK_TERM_OUT.flush();
 
-      is_changed = false;
       force_update = false;
       return;
     }
 
-    if VLIKELY (!is_changed) {
+    if VLIKELY (!is_changed.exchange(false, std::memory_order_acq_rel)) {
       if (!is_paused && should_redraw_url_title(show_data_dot)) {
         redraw_url_title(show_data_dot, true);
         mark_url_title_rendered(show_data_dot);
@@ -1613,7 +1617,6 @@ int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std
 
     VLINK_TERM_OUT.flush();
 
-    is_changed = false;
     is_out_of_range = false;
     force_update = false;
   };
@@ -2098,11 +2101,11 @@ int main(int argc, char* argv[]) {
     int times = pub_command.get<int>("-t");
     int interval = pub_command.get<int>("-l");
 
-    if VUNLIKELY (fbstxt_file.empty() && fbstxt_content.empty()) {
+    if VUNLIKELY (pub_command.is_used("-f") == pub_command.is_used("-c")) {
       std::cerr << "One of fbstxt_file and fbstxt_content must be specified." << std::endl;
       return -1;
-    } else if VUNLIKELY (!fbstxt_file.empty() && !fbstxt_content.empty()) {
-      std::cerr << "One of fbstxt_file and fbstxt_content must be specified." << std::endl;
+    } else if VUNLIKELY (pub_command.is_used("-f") && fbstxt_file.empty()) {
+      std::cerr << "Fbs txt file path cannot be empty." << std::endl;
       return -1;
     } else if VUNLIKELY (schema_type == vlink::SchemaType::kUnknown && !encoding.empty() && encoding != "unknown") {
       std::cerr << "Invalid encoding." << std::endl;
@@ -2118,18 +2121,8 @@ int main(int argc, char* argv[]) {
     }
 #endif
 
-    if (!fbs_dir.empty() && fbs_dir.back() == '/') {
-      fbs_dir.pop_back();
-    }
-
     if (!schema_plugin_path.empty() && schema_plugin_path.back() == '/') {
       schema_plugin_path.pop_back();
-    }
-
-    if (!fbstxt_file.empty()) {
-      if (fbstxt_file.back() == '/') {
-        fbstxt_file.pop_back();
-      }
     }
 
     (void)vlink::SchemaPluginManager::get(schema_plugin_path);
@@ -2208,10 +2201,6 @@ int main(int argc, char* argv[]) {
     std::replace(schema_plugin_path.begin(), schema_plugin_path.end(), '\\', '/');
 #endif
 
-    if (!fbs_dir.empty() && fbs_dir.back() == '/') {
-      fbs_dir.pop_back();
-    }
-
     if (!schema_plugin_path.empty() && schema_plugin_path.back() == '/') {
       schema_plugin_path.pop_back();
     }
@@ -2239,10 +2228,6 @@ int main(int argc, char* argv[]) {
 
     std::replace(dir.begin(), dir.end(), '\\', '/');
 #endif
-
-    while (!dir.empty() && dir.back() == '/') {
-      dir.pop_back();
-    }
 
     if VUNLIKELY (dir.empty()) {
       std::cerr << "Fbs dir cannot be empty." << std::endl;
@@ -2279,10 +2264,6 @@ int main(int argc, char* argv[]) {
 #ifdef _WIN32
     std::replace(saved.begin(), saved.end(), '\\', '/');
 #endif
-
-    while (saved.size() > 1 && saved.back() == '/') {
-      saved.pop_back();
-    }
 
     if VUNLIKELY (saved.empty()) {
       std::cerr << "Failed to resolve absolute path for: " << dir << "." << std::endl;

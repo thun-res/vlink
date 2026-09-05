@@ -1223,7 +1223,7 @@ int start_eproto_pub(const std::string& url, const std::string& proto_dir, const
   factory = std::make_shared<google::protobuf::DynamicMessageFactory>();
   source_tree = std::make_shared<google::protobuf::compiler::DiskSourceTree>();
   importer = std::make_shared<google::protobuf::compiler::Importer>(source_tree.get(), nullptr);
-  google::protobuf::Message* root_msg = nullptr;
+  std::unique_ptr<google::protobuf::Message> root_msg;
   vlink::Bytes raw_data;
 
   if (is_blob_type) {
@@ -1332,7 +1332,7 @@ int start_eproto_pub(const std::string& url, const std::string& proto_dir, const
       return -1;
     }
 
-    root_msg = factory->GetPrototype(descriptor)->New();
+    root_msg.reset(factory->GetPrototype(descriptor)->New());
 
     if VUNLIKELY (!root_msg) {
       std::cerr << "Create root msg failed." << std::endl;
@@ -1345,7 +1345,7 @@ int start_eproto_pub(const std::string& url, const std::string& proto_dir, const
       std::string json_error;
 
       if (prototxt_file.empty()) {
-        if VUNLIKELY (!load_proto_for_json_string(prototxt_content, root_msg, &json_error)) {
+        if VUNLIKELY (!load_proto_for_json_string(prototxt_content, root_msg.get(), &json_error)) {
           std::cerr << "load_proto_for_json_string failed.";
           if (!json_error.empty()) {
             std::cerr << " " << json_error;
@@ -1355,7 +1355,7 @@ int start_eproto_pub(const std::string& url, const std::string& proto_dir, const
           return -1;
         }
       } else {
-        if VUNLIKELY (!load_proto_for_json_file(prototxt_file, root_msg, &json_error)) {
+        if VUNLIKELY (!load_proto_for_json_file(prototxt_file, root_msg.get(), &json_error)) {
           std::cerr << "load_proto_for_json_file failed.";
           if (!json_error.empty()) {
             std::cerr << " " << json_error;
@@ -1368,13 +1368,13 @@ int start_eproto_pub(const std::string& url, const std::string& proto_dir, const
 #endif
     } else {
       if (prototxt_file.empty()) {
-        if VUNLIKELY (!load_proto_for_string(prototxt_content, root_msg)) {
+        if VUNLIKELY (!load_proto_for_string(prototxt_content, root_msg.get())) {
           std::cerr << "load_proto_for_string failed." << std::endl;
           has_quit = true;
           return -1;
         }
       } else {
-        if VUNLIKELY (!load_proto_for_file(prototxt_file, root_msg)) {
+        if VUNLIKELY (!load_proto_for_file(prototxt_file, root_msg.get())) {
           std::cerr << "load_proto_for_file failed." << std::endl;
           has_quit = true;
           return -1;
@@ -1396,7 +1396,13 @@ int start_eproto_pub(const std::string& url, const std::string& proto_dir, const
   }
 
   raw_pub->set_ser_type(target_ser, target_schema_type);
-  raw_pub->init();
+  try {
+    raw_pub->init();
+  } catch (vlink::Exception::RuntimeError& e) {
+    std::cerr << e.what() << std::endl;
+    has_quit = true;
+    return -1;
+  }
 
   vlink::Utils::start_detect_keyboard([&quit_function](const std::string& key) {
     if (key == "q" || key == "esc") {
@@ -1483,8 +1489,7 @@ int start_eproto_pub(const std::string& url, const std::string& proto_dir, const
   // VLINK_TERM_OUT << std::endl;
   VLINK_TERM_OUT.flush();
 
-  delete root_msg;
-  root_msg = nullptr;
+  root_msg.reset();
 
   raw_pub.reset();
   factory.reset();
@@ -1646,7 +1651,7 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
 
   filter_list = vlink::Helpers::split_any(filter);
 
-  google::protobuf::Message* root_msg = nullptr;
+  std::unique_ptr<google::protobuf::Message> root_msg;
   const bool is_blob_type = target_schema_type == vlink::SchemaType::kRaw && use_blob_encoding;
   const bool is_text_type =
       !is_blob_type && (target_schema_type == vlink::SchemaType::kRaw || is_text_ser_type(target_ser));
@@ -1749,7 +1754,7 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
       return -1;
     }
 
-    root_msg = factory->GetPrototype(descriptor)->New();
+    root_msg.reset(factory->GetPrototype(descriptor)->New());
 
     if VUNLIKELY (!root_msg) {
       std::cerr << "Create root msg failed." << std::endl;
@@ -1838,7 +1843,7 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
                                    &current_str, &current_line, &has_new_data, &is_url_title_with_dot,
                                    &redraw_url_title, &mark_url_title_rendered, &should_redraw_url_title,
                                    &discovery_viewer, &parser_loop, &quit_function, &parse_ret, is_text_type,
-                                   is_blob_type, use_json_format, root_msg]() {
+                                   is_blob_type, use_json_format, root_msg = root_msg.get()]() {
     auto target_terminal_size = get_terminal_size();
     bool show_data_dot = has_new_data.exchange(false);
     const bool terminal_size_changed = terminal_size != target_terminal_size;
@@ -1854,7 +1859,6 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
 
     if VUNLIKELY (!has_printed) {
       if VLIKELY (!force_update) {
-        is_changed = false;
         return;
       }
 
@@ -1871,12 +1875,11 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
       VLINK_TERM_OUT << "\033[34;1;4m" << url << "\033[0m" << std::endl;
       VLINK_TERM_OUT.flush();
 
-      is_changed = false;
       force_update = false;
       return;
     }
 
-    if VLIKELY (!is_changed) {
+    if VLIKELY (!is_changed.exchange(false, std::memory_order_acq_rel)) {
       if (!is_paused && should_redraw_url_title(show_data_dot)) {
         redraw_url_title(show_data_dot, true);
         mark_url_title_rendered(show_data_dot);
@@ -2398,7 +2401,6 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
 
     VLINK_TERM_OUT.flush();
 
-    is_changed = false;
     is_out_of_range = false;
     force_update = false;
   };
@@ -2671,8 +2673,7 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
     VLINK_TERM_OUT.flush();
   }
 
-  delete root_msg;
-  root_msg = nullptr;
+  root_msg.reset();
 
   raw_sub.reset();
   raw_getter.reset();
@@ -2903,11 +2904,11 @@ int main(int argc, char* argv[]) {
     int times = pub_command.get<int>("-t");
     int interval = pub_command.get<int>("-l");
 
-    if VUNLIKELY (prototxt_file.empty() && prototxt_content.empty()) {
+    if VUNLIKELY (pub_command.is_used("-f") == pub_command.is_used("-c")) {
       std::cerr << "One of prototxt_file and prototxt_content must be specified." << std::endl;
       return -1;
-    } else if VUNLIKELY (!prototxt_file.empty() && !prototxt_content.empty()) {
-      std::cerr << "One of prototxt_file and prototxt_content must be specified." << std::endl;
+    } else if VUNLIKELY (pub_command.is_used("-f") && prototxt_file.empty()) {
+      std::cerr << "Proto txt file path cannot be empty." << std::endl;
       return -1;
     } else if VUNLIKELY (schema_type == vlink::SchemaType::kUnknown && !encoding.empty() && encoding != "unknown") {
       std::cerr << "Invalid encoding." << std::endl;
@@ -2923,18 +2924,8 @@ int main(int argc, char* argv[]) {
     }
 #endif
 
-    if (!proto_dir.empty() && proto_dir.back() == '/') {
-      proto_dir.pop_back();
-    }
-
     if (!schema_plugin_path.empty() && schema_plugin_path.back() == '/') {
       schema_plugin_path.pop_back();
-    }
-
-    if (!prototxt_file.empty()) {
-      if (prototxt_file.back() == '/') {
-        prototxt_file.pop_back();
-      }
     }
 
     (void)vlink::SchemaPluginManager::get(schema_plugin_path);
@@ -3014,10 +3005,6 @@ int main(int argc, char* argv[]) {
     std::replace(schema_plugin_path.begin(), schema_plugin_path.end(), '\\', '/');
 #endif
 
-    if (!proto_dir.empty() && proto_dir.back() == '/') {
-      proto_dir.pop_back();
-    }
-
     if (!schema_plugin_path.empty() && schema_plugin_path.back() == '/') {
       schema_plugin_path.pop_back();
     }
@@ -3046,10 +3033,6 @@ int main(int argc, char* argv[]) {
 
     std::replace(dir.begin(), dir.end(), '\\', '/');
 #endif
-
-    while (!dir.empty() && dir.back() == '/') {
-      dir.pop_back();
-    }
 
     if VUNLIKELY (dir.empty()) {
       std::cerr << "Proto dir cannot be empty." << std::endl;
@@ -3087,10 +3070,6 @@ int main(int argc, char* argv[]) {
 #ifdef _WIN32
     std::replace(saved.begin(), saved.end(), '\\', '/');
 #endif
-
-    while (saved.size() > 1 && saved.back() == '/') {
-      saved.pop_back();
-    }
 
     if VUNLIKELY (saved.empty()) {
       std::cerr << "Failed to resolve absolute path for: " << dir << "." << std::endl;
