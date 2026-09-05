@@ -505,7 +505,6 @@ void FoxgloveServer::on_ws_open(ConnectionHdl hdl) {
   conn->set_max_send_queue_size(kMaxClientSendQueueSize);
   conn->set_max_send_buffer_size(kMaxClientSendBufferSize);
   auto* raw_ptr = conn.get();
-  bool need_update = false;
 
   {
     std::unique_lock lock(clients_mtx_);
@@ -518,62 +517,10 @@ void FoxgloveServer::on_ws_open(ConnectionHdl hdl) {
     client_count_.store(static_cast<uint32_t>(clients_.size()));
   }
 
-  if VLIKELY (config_.capabilities.publish && bridge_ && bridge_->can_inject() && vlink_convert_) {
-    std::unique_lock lock(channels_mtx_);
-    auto& client_channels = publish_channels_[raw_ptr];
-
-    for (const auto& [channel_id, channel] : channels_) {
-      if VUNLIKELY (!channel.is_control_only || !is_url_allowed(channel.url)) {
-        continue;
-      }
-
-      CommandChannel route_channel;
-      route_channel.topic = channel.topic;
-      route_channel.encoding = channel.encoding;
-      route_channel.schema_name = channel.schema_name;
-      route_channel.schema_encoding = channel.schema_encoding;
-      route_channel.schema = channel.schema;
-
-      CommandRoute route;
-
-      if VUNLIKELY (!vlink_convert_->resolve_route(route_channel, route) || route.url.empty() || route.ser.empty()) {
-        MLOG_W("Failed to initialize control publish route for {}", channel.topic);
-        continue;
-      }
-
-      PublishChannel publish_channel;
-      publish_channel.topic = channel.topic;
-      publish_channel.encoding = channel.encoding;
-      publish_channel.schema_name = channel.schema_name;
-      publish_channel.schema_encoding = channel.schema_encoding;
-      publish_channel.schema = channel.schema;
-      publish_channel.schema_type = SchemaData::resolve_type(
-          SchemaData::is_valid_type(route.schema_type) ? route.schema_type : SchemaType::kUnknown, route.ser);
-
-      if VUNLIKELY (publish_channel.schema_type == SchemaType::kUnknown) {
-        publish_channel.schema_type = SchemaData::resolve_type(channel.schema_type, channel.ser);
-      }
-
-      publish_channel.has_route = true;
-      publish_channel.route = std::move(route);
-      client_channels[channel_id] = std::move(publish_channel);
-    }
-
-    if VUNLIKELY (client_channels.empty()) {
-      publish_channels_.erase(raw_ptr);
-    } else {
-      need_update = true;
-    }
-  }
-
   send_server_info(hdl);
   send_active_statuses(hdl);
   send_advertise(hdl);
   send_advertise_rpcs(hdl);
-
-  if VUNLIKELY (need_update) {
-    update_bridge_control();
-  }
 }
 
 void FoxgloveServer::on_ws_close(ConnectionHdl hdl) {
@@ -981,21 +928,6 @@ void FoxgloveServer::handle_publish_advertise(ConnectionHdl hdl, const Json& msg
         continue;
       }
 
-      if VUNLIKELY (id == 0) {
-        MLOG_W("Frontend publish channel advertised without valid id for topic: {}", publish_channel.topic);
-        continue;
-      }
-
-      auto control_channel_iter = channels_.find(id);
-
-      if VUNLIKELY (control_channel_iter != channels_.end() && control_channel_iter->second.is_control_only) {
-        MLOG_W("Frontend publish channel id {} conflicts with server-advertised control channel {}", id,
-               control_channel_iter->second.topic);
-        pending_statuses.emplace_back(2,
-                                      "Client publish channel id conflicts with a server-advertised control channel");
-        continue;
-      }
-
       CommandChannel route_channel;
       route_channel.topic = publish_channel.topic;
       route_channel.encoding = publish_channel.encoding;
@@ -1099,14 +1031,6 @@ void FoxgloveServer::handle_publish_unadvertise(ConnectionHdl hdl, const Json& m
       auto channel_iter = channel_map.find(id);
 
       if VLIKELY (channel_iter != channel_map.end()) {
-        auto control_channel_iter = channels_.find(id);
-
-        if VUNLIKELY (control_channel_iter != channels_.end() && control_channel_iter->second.is_control_only) {
-          MLOG_W("Ignoring unadvertise for server-owned control channel {}: {}", id,
-                 control_channel_iter->second.topic);
-          continue;
-        }
-
         if VLIKELY (channel_iter->second.has_route) {
           need_update = true;
         }
@@ -1172,52 +1096,9 @@ void FoxgloveServer::handle_publish_message(ConnectionHdl hdl, const std::string
     }
 
     if VUNLIKELY (!lookup_failed && (route.url.empty() || route.ser.empty())) {
-      auto channel_iter = channels_.find(bin_msg.channel_or_service_id);
-
-      if VUNLIKELY (channel_iter == channels_.end() || !channel_iter->second.is_control_only) {
-        MLOG_W("Client message for unknown channel: {}", bin_msg.channel_or_service_id);
-        status_message = "Client message references an unknown publish channel";
-        lookup_failed = true;
-      }
-
-      if VLIKELY (!lookup_failed) {
-        CommandChannel route_channel;
-        route_channel.topic = channel_iter->second.topic;
-        route_channel.encoding = channel_iter->second.encoding;
-        route_channel.schema_name = channel_iter->second.schema_name;
-        route_channel.schema_encoding = channel_iter->second.schema_encoding;
-        route_channel.schema = channel_iter->second.schema;
-        route_schema_type = channel_iter->second.schema_type;
-
-        if VUNLIKELY (!vlink_convert_ || !vlink_convert_->resolve_route(route_channel, route)) {
-          MLOG_W("Failed to resolve control publish route: {}", route_channel.topic);
-          status_message = "Client channel has no active publish route: " + route_channel.topic;
-          lookup_failed = true;
-        }
-
-        if VLIKELY (!lookup_failed) {
-          const auto resolved_route_schema_type =
-              SchemaData::is_valid_type(route.schema_type) ? route.schema_type : SchemaType::kUnknown;
-
-          if VLIKELY (resolved_route_schema_type != SchemaType::kUnknown) {
-            route_schema_type = resolved_route_schema_type;
-          }
-        }
-
-        if VLIKELY (!lookup_failed) {
-          std::string route_error;
-          if VUNLIKELY (!validate_publish_route_unlocked(raw_ptr, bin_msg.channel_or_service_id, route_channel.topic,
-                                                         route_channel.schema_name, route_channel.schema_encoding,
-                                                         route_channel.schema, route, route_error)) {
-            if VLIKELY (!route_error.empty()) {
-              status_message = std::move(route_error);
-            } else {
-              status_message = "Client channel has no active publish route: " + route_channel.topic;
-            }
-            lookup_failed = true;
-          }
-        }
-      }
+      MLOG_W("Client message for unknown channel: {}", bin_msg.channel_or_service_id);
+      status_message = "Client message references an unknown publish channel";
+      lookup_failed = true;
     }
   }
 

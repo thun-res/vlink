@@ -474,6 +474,8 @@ vlink-foxglove --vlink_msgs ./my_gps.json
 
 Foxglove 另有两类专用映射：`foxglove_msgs`（前端 Publish panel 下发消息回写 VLink）与 `rpc_msgs`（前端 Service Call panel 发起 RPC），格式与 `vlink_msgs` 类似，示例见仓库 `foxglove_msgs/` 与 `rpc_msgs/` 目录。
 
+前端发布前须用客户端 `advertise` 声明发布通道；客户端发布 ID 与服务端展示通道 ID 相互独立，消息按该客户端声明的路由回写。
+
 **常用 Foxglove Schema 的 target 字段**　下列为几个高频 Foxglove Schema 期望的 `target` 字段，供编写 `field_mappings` 参考；完整 Schema 清单见仓库内置示例。
 
 foxglove.LocationFix（GPS/GNSS 定位）：
