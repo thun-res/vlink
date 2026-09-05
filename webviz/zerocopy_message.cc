@@ -769,11 +769,13 @@ static void add_repeated_value(Message& message, std::string_view name, const ze
   reflection->AddDouble(&message, target, numeric_value(value));
 }
 
-static void fill_root_fields(Message& message, const zerocopy::MessageParser& parser) {
+static void fill_root_fields(Message& message, const zerocopy::MessageParser& parser, bool include_data) {
   zerocopy::MessageParser::Value value;
+  const auto* data_field = field(message, "data");
 
   for (const auto& source : parser.fields()) {
-    if (Helpers::has_startwith(source.name, "header.") || source.name == "data") {
+    if (Helpers::has_startwith(source.name, "header.") ||
+        (source.name == "data" && (!include_data || (data_field && data_field->is_repeated())))) {
       continue;
     }
 
@@ -947,9 +949,8 @@ std::unique_ptr<google::protobuf::Message> make_zerocopy_message(const zerocopy:
     fill_header(*message, parser);
   }
 
-  fill_root_fields(*message, parser);
-
   const size_t data_limit = referenced_collection_limit(sources);
+  fill_root_fields(*message, parser, data_limit != 0);
 
   switch (parser.type()) {
     case zerocopy::MessageParser::Type::kObjectArray:

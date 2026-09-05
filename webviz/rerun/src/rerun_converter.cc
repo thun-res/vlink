@@ -599,10 +599,23 @@ void RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::s
         }
 
         mapping_sources.push_back(mapping->timestamp_field);
+        bool has_data_source = false;
 
         for (const auto& field_mapping : mapping->field_mappings) {
           mapping_sources.push_back(field_mapping.source);
           mapping_sources.push_back(field_mapping.expression);
+
+          if (field_mapping.target == "data") {
+            has_data_source = !field_mapping.source.empty();
+          }
+        }
+
+        const auto& archetype = mapping->archetype;
+
+        if (archetype == "EncodedImage" ||
+            (!has_data_source && (archetype == "DepthImage" || archetype == "EncodedDepthImage" ||
+                                  archetype == "Asset3D" || archetype == "AssetVideo" || archetype == "Tensor"))) {
+          mapping_sources.emplace_back("data");
         }
       }
 
