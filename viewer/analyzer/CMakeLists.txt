@@ -47,12 +47,13 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR} ${PROJE
 target_link_libraries(${PROJECT_NAME} PRIVATE vlink::vlink vlink::all Qt${QT_VERSION_MAJOR}::Widgets)
 target_link_libraries(${PROJECT_NAME} PRIVATE thirdparty::json protobuf::libprotobuf QCustomPlot::QCustomPlot)
 
-if(NOT TARGET vlink-exprtk_api)
-  find_package(vlink-exprtk_api QUIET)
-endif()
-
-if(TARGET vlink::exprtk_api)
-  target_link_libraries(${PROJECT_NAME} PRIVATE vlink::exprtk_api)
+if(NOT DEFINED ENABLE_EXPRTK OR ENABLE_EXPRTK)
+  if(NOT TARGET vlink::exprtk_api)
+    find_package(vlink-exprtk_api QUIET)
+  endif()
+  if(TARGET vlink::exprtk_api)
+    target_link_libraries(${PROJECT_NAME} PRIVATE vlink::exprtk_api)
+  endif()
 endif()
 
 if(TARGET flatbuffers::flatbuffers_shared)
