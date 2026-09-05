@@ -1274,7 +1274,7 @@ TEST_SUITE("ser-someip") {
     CHECK(utf8_target.value == "A");
 
     SomeipWideDefault utf16_source;
-    utf16_source.name = std::u16string{u"\uFEFFA"};
+    utf16_source.name.assign(u"\uFEFFA", 2);
 
     vlink::Bytes utf16_data;
     REQUIRE((utf16_source >> utf16_data));
@@ -1572,7 +1572,7 @@ TEST_SUITE("ser-someip") {
 
   TEST_CASE("serializes utf16 strings in both byte orders") {
     SomeipWideText source;
-    source.name = std::u16string{u"AB"};
+    source.name.assign(u"AB", 2);
     source.label = std::u16string{u"€"};
 
     vlink::Bytes data;
@@ -1601,7 +1601,7 @@ TEST_SUITE("ser-someip") {
 
   TEST_CASE("round trips utf16 surrogate pairs and rejects malformed input") {
     SomeipWideDefault source;
-    source.name = std::u16string{u"\U0001d11e"};
+    source.name.assign(u"\U0001d11e", 2);
 
     vlink::Bytes data;
     REQUIRE((source >> data));
