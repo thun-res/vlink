@@ -57,7 +57,9 @@ void ShmClientImpl::init() {
 }
 
 void ShmClientImpl::deinit() {
-  object_->remove_impl(this);
+  if (object_) {
+    object_->remove_impl(this);
+  }
 
   detach();
 }

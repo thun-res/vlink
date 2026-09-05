@@ -46,7 +46,9 @@ void ShmServerImpl::init() {
 void ShmServerImpl::deinit() {
   detach();
 
-  object_->remove_impl(this);
+  if (object_) {
+    object_->remove_impl(this);
+  }
 }
 
 bool ShmServerImpl::suspend() { return object_->suspend(); }

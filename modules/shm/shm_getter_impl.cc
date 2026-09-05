@@ -48,7 +48,9 @@ void ShmGetterImpl::init() {
 void ShmGetterImpl::deinit() {
   detach();
 
-  object_->remove_impl(this);
+  if (object_) {
+    object_->remove_impl(this);
+  }
 }
 
 bool ShmGetterImpl::suspend() { return object_->suspend(); }

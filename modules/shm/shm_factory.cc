@@ -613,10 +613,12 @@ ShmServer::ShmServer(const ShmID& id) {
 
   listener_ = factory.get_listener(domain_);
 
-  listener_
-      ->attachEvent(server_.value(), shm::popo::ServerEvent::REQUEST_RECEIVED,
-                    shm::popo::createNotificationCallback(ShmServer::on_request_received, *this))
-      .or_else([](auto&) { VLOG_F("ShmFactory: Failed to attach REQUEST_RECEIVED event to listener."); });
+  if VUNLIKELY (listener_
+                    ->attachEvent(server_.value(), shm::popo::ServerEvent::REQUEST_RECEIVED,
+                                  shm::popo::createNotificationCallback(ShmServer::on_request_received, *this))
+                    .has_error()) {
+    VLOG_F("ShmFactory: Failed to attach REQUEST_RECEIVED event to listener.");
+  }
 }
 
 ShmServer::~ShmServer() {
@@ -853,10 +855,12 @@ ShmClient::ShmClient(const ShmID& id) {
 
   listener_ = factory.get_listener(domain_);
 
-  listener_
-      ->attachEvent(client_.value(), shm::popo::ClientEvent::RESPONSE_RECEIVED,
-                    shm::popo::createNotificationCallback(ShmClient::on_response_received, *this))
-      .or_else([](auto&) { VLOG_F("ShmFactory: Failed to attach RESPONSE_RECEIVED event to listener."); });
+  if VUNLIKELY (listener_
+                    ->attachEvent(client_.value(), shm::popo::ClientEvent::RESPONSE_RECEIVED,
+                                  shm::popo::createNotificationCallback(ShmClient::on_response_received, *this))
+                    .has_error()) {
+    VLOG_F("ShmFactory: Failed to attach RESPONSE_RECEIVED event to listener.");
+  }
 }
 
 ShmClient::~ShmClient() {
@@ -1333,10 +1337,12 @@ ShmSubscriber::ShmSubscriber(const ShmID& id) {
 
   listener_ = factory.get_listener(domain_);
 
-  listener_
-      ->attachEvent(sub_.value(), shm::popo::SubscriberEvent::DATA_RECEIVED,
-                    shm::popo::createNotificationCallback(ShmSubscriber::on_msg_received, *this))
-      .or_else([](auto&) { VLOG_F("ShmFactory: Failed to attach DATA_RECEIVED event to listener."); });
+  if VUNLIKELY (listener_
+                    ->attachEvent(sub_.value(), shm::popo::SubscriberEvent::DATA_RECEIVED,
+                                  shm::popo::createNotificationCallback(ShmSubscriber::on_msg_received, *this))
+                    .has_error()) {
+    VLOG_F("ShmFactory: Failed to attach DATA_RECEIVED event to listener.");
+  }
 
   if (wait_ > 0) {
     sem_.emplace();
