@@ -965,7 +965,7 @@ TEST_SUITE("mqtt-security") {
     std::atomic<bool> received{false};
     Bytes captured;
 
-    SecurityPublisher<Bytes> pub(MqttConf("mqtt/sec/enc1", "data"));
+    SecurityPublisher<Bytes> pub("mqtt://mqtt/sec/enc1?event=data");
 
     SecuritySubscriber<Bytes> sub("mqtt://mqtt/sec/enc1?event=data");
 
@@ -1004,7 +1004,7 @@ TEST_SUITE("mqtt-security") {
       Security::Config sub_cfg;
       sub_cfg.private_key_pem = kp.private_pem;
 
-      SecurityPublisher<Bytes> pub(MqttConf("mqtt/sec/rsa1", "data"), std::move(pub_cfg));
+      SecurityPublisher<Bytes> pub("mqtt://mqtt/sec/rsa1?event=data", std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("mqtt://mqtt/sec/rsa1?event=data", std::move(sub_cfg));
 
       sub.listen([&](const Bytes& data) {
@@ -1047,7 +1047,7 @@ TEST_SUITE("mqtt-security") {
       Security::Config sub_cfg;
       sub_cfg.private_key_pem = kp2.private_pem;
 
-      SecurityPublisher<Bytes> pub(MqttConf("mqtt/sec/rsa_mm1", "data"), std::move(pub_cfg));
+      SecurityPublisher<Bytes> pub("mqtt://mqtt/sec/rsa_mm1?event=data", std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("mqtt://mqtt/sec/rsa_mm1?event=data", std::move(sub_cfg));
 
       sub.listen([&](const Bytes& /*data*/) { received.store(true, std::memory_order_release); });
