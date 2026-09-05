@@ -44,10 +44,10 @@
     ]
   },
   {
-    "_comment": "Example 3: FlatBuffers lidar scan with nanosecond sensor timestamp",
-    "ser": "lidar.LidarScanStamped",
+    "_comment": "Example 3: Protobuf lidar scan with nanosecond sensor timestamp",
+    "ser": "lidar.proto.LidarScanStamped",
     "archetype": "Points3D",
-    "encoding": "flatbuffers",
+    "encoding": "protobuf",
     "timestamp_field": "timestamp_ns",
     "timestamp_unit": "ns",
     "field_mappings": [
