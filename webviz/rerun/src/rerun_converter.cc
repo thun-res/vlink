@@ -2306,10 +2306,6 @@ bool RerunConverter::log_object_array(::rerun::RecordingStream& rec, const std::
                                       const zerocopy::MessageParser& parser) {
   const size_t count = parser.collection_size("objects");
 
-  if VUNLIKELY (count == 0) {
-    return false;
-  }
-
   std::vector<::rerun::Position3D> centers;
   std::vector<::rerun::HalfSize3D> half_sizes;
   std::vector<::rerun::components::RotationQuat> rotations;
@@ -2391,7 +2387,7 @@ bool RerunConverter::log_object_array(::rerun::RecordingStream& rec, const std::
     labels.emplace_back(label);
   }
 
-  if VUNLIKELY (centers.empty()) {
+  if VUNLIKELY (count != 0 && centers.empty()) {
     return false;
   }
 
@@ -2969,19 +2965,17 @@ bool RerunConverter::log_boxes3d(::rerun::RecordingStream& rec, const std::strin
     }
   }
 
-  if (!centers.empty()) {
-    auto boxes = ::rerun::archetypes::Boxes3D::from_centers_and_half_sizes(centers, half_sizes);
+  auto boxes = ::rerun::archetypes::Boxes3D::from_centers_and_half_sizes(centers, half_sizes);
 
-    if (!rotations.empty()) {
-      boxes = std::move(boxes).with_quaternions(std::move(rotations));
-    }
-
-    if (!box_colors.empty()) {
-      boxes = std::move(boxes).with_colors(std::move(box_colors));
-    }
-
-    rec.log(entity_path, boxes);
+  if (!rotations.empty()) {
+    boxes = std::move(boxes).with_quaternions(std::move(rotations));
   }
+
+  if (!box_colors.empty()) {
+    boxes = std::move(boxes).with_colors(std::move(box_colors));
+  }
+
+  rec.log(entity_path, boxes);
 
   return true;
 }
@@ -7127,19 +7121,17 @@ bool RerunConverter::log_fbs_with_mapping(::rerun::RecordingStream& rec, const s
       }
     }
 
-    if (!centers.empty()) {
-      auto boxes = ::rerun::archetypes::Boxes3D::from_centers_and_half_sizes(centers, half_sizes);
+    auto boxes = ::rerun::archetypes::Boxes3D::from_centers_and_half_sizes(centers, half_sizes);
 
-      if (!rotations.empty()) {
-        boxes = std::move(boxes).with_quaternions(std::move(rotations));
-      }
-
-      if (!box_colors.empty()) {
-        boxes = std::move(boxes).with_colors(std::move(box_colors));
-      }
-
-      rec.log(entity_path, boxes);
+    if (!rotations.empty()) {
+      boxes = std::move(boxes).with_quaternions(std::move(rotations));
     }
+
+    if (!box_colors.empty()) {
+      boxes = std::move(boxes).with_colors(std::move(box_colors));
+    }
+
+    rec.log(entity_path, boxes);
 
     return true;
   }

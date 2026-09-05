@@ -494,6 +494,8 @@ foxglove.SceneUpdate（3D 场景：障碍物、检测框）：
 | `entity_width` / `entity_length` / `entity_height` | double | 实体尺寸 |
 | `entity_heading` | double | 航向角（弧度），自动转四元数 |
 
+该 `SceneUpdate` 字段映射将每条消息视为完整快照，所有立方体放在同一个实体中逐帧替换；目标减少或数组为空时不会保留旧方框。Rerun 的 `Boxes3D` 映射和内置 `ObjectArray` 转换也会写入空快照以清除旧方框。
+
 foxglove.RawImage（原始图像）：
 
 | target | 类型 | 说明 |

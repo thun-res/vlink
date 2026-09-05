@@ -2215,11 +2215,10 @@ FoxgloveMessage FoxgloveConverter::convert_scene_update(const FoxgloveMapping& m
 
   auto ts = (timestamp_ns > 0) ? make_timestamp_from_ns(timestamp_ns) : make_timestamp_from_us(timestamp_us);
 
-  std::vector<flatbuffers::Offset<::foxglove::SceneEntity>> entity_offsets;
+  std::vector<flatbuffers::Offset<::foxglove::CubePrimitive>> cube_offsets;
 
-  auto build_cube = [&entity_h_fm, &entity_heading_fm, &entity_l_fm, &entity_offsets, &entity_w_fm, &entity_x_fm,
-                     &entity_y_fm, &entity_z_fm, &frame_id, &has_entity_fields,
-                     &ts](const google::protobuf::Message& sub, int idx, const std::string& parent_id) {
+  auto build_cube = [&entity_h_fm, &entity_heading_fm, &entity_l_fm, &cube_offsets, &entity_w_fm, &entity_x_fm,
+                     &entity_y_fm, &entity_z_fm, &has_entity_fields](const google::protobuf::Message& sub) {
     double px = 0.0;
     double py = 0.0;
     double pz = 0.0;
@@ -2341,21 +2340,13 @@ FoxgloveMessage FoxgloveConverter::convert_scene_update(const FoxgloveMapping& m
     double qz = std::sin(heading * 0.5);
     double qw = std::cos(heading * 0.5);
 
-    auto entity_fid = builder.CreateString(frame_id);
-    auto entity_id = builder.CreateString(parent_id + "_" + std::to_string(idx));
-
     auto position = ::foxglove::CreateVector3(builder, px, py, pz);
     auto orientation = ::foxglove::CreateQuaternion(builder, qx, qy, qz, qw);
     auto pose = ::foxglove::CreatePose(builder, position, orientation);
     auto size = ::foxglove::CreateVector3(builder, sx, sy, sz);
     auto color_offset = ::foxglove::CreateColor(builder, 0.2, 0.8, 0.2, 0.8);
 
-    auto cube = ::foxglove::CreateCubePrimitive(builder, pose, size, color_offset);
-    std::vector<flatbuffers::Offset<::foxglove::CubePrimitive>> cubes_vec_data = {cube};
-    auto cubes_vec = builder.CreateVector(cubes_vec_data);
-
-    auto entity = ::foxglove::CreateSceneEntity(builder, &ts, entity_fid, entity_id, nullptr, false, 0, 0, cubes_vec);
-    entity_offsets.emplace_back(entity);
+    cube_offsets.emplace_back(::foxglove::CreateCubePrimitive(builder, pose, size, color_offset));
   };
 
   for (const auto& fm : mapping.field_mappings) {
@@ -2399,16 +2390,20 @@ FoxgloveMessage FoxgloveConverter::convert_scene_update(const FoxgloveMapping& m
 
           for (int j = 0; j < sub_count; ++j) {
             const auto& sub_item = item_ref->GetRepeatedMessage(item, sub_field, j);
-            build_cube(sub_item, j, std::to_string(i));
+            build_cube(sub_item);
           }
         }
       } else {
-        build_cube(item, i, "e");
+        build_cube(item);
       }
     }
   }
 
-  auto entities_vec = builder.CreateVector(entity_offsets);
+  auto entity_fid = builder.CreateString(frame_id);
+  auto entity_id = builder.CreateString("e");
+  auto cubes_vec = builder.CreateVector(cube_offsets);
+  auto entity = ::foxglove::CreateSceneEntity(builder, &ts, entity_fid, entity_id, nullptr, false, 0, 0, cubes_vec);
+  auto entities_vec = builder.CreateVector(&entity, 1);
   auto scene = ::foxglove::CreateSceneUpdate(builder, 0, entities_vec);
   builder.Finish(scene);
 
@@ -4531,11 +4526,11 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
                              entity_heading_fm != nullptr;
 
     auto ts = (timestamp_ns > 0) ? make_timestamp_from_ns(timestamp_ns) : make_timestamp_from_us(timestamp_us);
-    std::vector<flatbuffers::Offset<::foxglove::SceneEntity>> entity_offsets;
+    std::vector<flatbuffers::Offset<::foxglove::CubePrimitive>> cube_offsets;
 
-    auto build_fbs_cube = [&entity_h_fm, &entity_heading_fm, &entity_l_fm, &entity_offsets, &entity_w_fm, &entity_x_fm,
-                           &entity_y_fm, &entity_z_fm, &fbs_get_object_mapped_double, &frame_id, &has_entity_fields,
-                           &schema, &ts](const FbsObjectView& item, int idx, const std::string& parent_id) {
+    auto build_fbs_cube = [&entity_h_fm, &entity_heading_fm, &entity_l_fm, &cube_offsets, &entity_w_fm, &entity_x_fm,
+                           &entity_y_fm, &entity_z_fm, &fbs_get_object_mapped_double, &has_entity_fields,
+                           &schema](const FbsObjectView& item) {
       double px = 0.0;
       double py = 0.0;
       double pz = 0.0;
@@ -4638,21 +4633,13 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
       double qz_val = std::sin(heading * 0.5);
       double qw_val = std::cos(heading * 0.5);
 
-      auto entity_fid = builder.CreateString(frame_id);
-      auto entity_id = builder.CreateString(parent_id + "_" + std::to_string(idx));
-
       auto pos = ::foxglove::CreateVector3(builder, px, py, pz);
       auto orient = ::foxglove::CreateQuaternion(builder, 0.0, 0.0, qz_val, qw_val);
       auto pose = ::foxglove::CreatePose(builder, pos, orient);
       auto size = ::foxglove::CreateVector3(builder, sx, sy, sz);
       auto color = ::foxglove::CreateColor(builder, 0.2, 0.8, 0.2, 0.8);
 
-      auto cube = ::foxglove::CreateCubePrimitive(builder, pose, size, color);
-      std::vector<flatbuffers::Offset<::foxglove::CubePrimitive>> cubes_data = {cube};
-      auto cubes_vec = builder.CreateVector(cubes_data);
-
-      auto entity = ::foxglove::CreateSceneEntity(builder, &ts, entity_fid, entity_id, nullptr, false, 0, 0, cubes_vec);
-      entity_offsets.emplace_back(entity);
+      cube_offsets.emplace_back(::foxglove::CreateCubePrimitive(builder, pose, size, color));
     };
 
     for (const auto& fm : mapping.field_mappings) {
@@ -4712,19 +4699,23 @@ FoxgloveMessage FoxgloveConverter::convert_fbs_mapping(const FoxgloveMapping& ma
                   FbsObjectView sub_item;
 
                   if (resolve_fbs_vector_object_unchecked(*sub_vec, j, *sub_sub_obj, sub_item)) {
-                    build_fbs_cube(sub_item, static_cast<int>(j), std::to_string(i));
+                    build_fbs_cube(sub_item);
                   }
                 }
               }
             }
           }
         } else {
-          build_fbs_cube(item, static_cast<int>(i), "e");
+          build_fbs_cube(item);
         }
       }
     }
 
-    auto entities_vec = builder.CreateVector(entity_offsets);
+    auto entity_fid = builder.CreateString(frame_id);
+    auto entity_id = builder.CreateString("e");
+    auto cubes_vec = builder.CreateVector(cube_offsets);
+    auto entity = ::foxglove::CreateSceneEntity(builder, &ts, entity_fid, entity_id, nullptr, false, 0, 0, cubes_vec);
+    auto entities_vec = builder.CreateVector(&entity, 1);
     auto scene = ::foxglove::CreateSceneUpdate(builder, 0, entities_vec);
     builder.Finish(scene);
 
