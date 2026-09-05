@@ -774,7 +774,8 @@ inline void import_protos(
 }
 #endif
 
-inline double resolve_nested_double(const google::protobuf::Message& msg, std::string_view path) {
+inline double resolve_nested_double(const google::protobuf::Message& msg, std::string_view path,
+                                    bool require_presence = false) {
   constexpr double kNotFound = std::numeric_limits<double>::quiet_NaN();
   const auto* current_msg = &msg;
   const auto* tokens = get_tokenized_field_path(path);
@@ -841,6 +842,10 @@ inline double resolve_nested_double(const google::protobuf::Message& msg, std::s
         default:
           return kNotFound;
       }
+    }
+
+    if VUNLIKELY (require_presence && field->has_presence() && !ref->HasField(*current_msg, field)) {
+      return kNotFound;
     }
 
     if VLIKELY (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
@@ -2602,7 +2607,7 @@ inline double get_proto_double(const google::protobuf::Message& msg, std::string
   }
 
   if VUNLIKELY (has_nested_field_path(field_name)) {
-    auto val = resolve_nested_double(msg, field_name);
+    auto val = resolve_nested_double(msg, field_name, true);
 
     if VLIKELY (!std::isnan(val)) {
       return val;
