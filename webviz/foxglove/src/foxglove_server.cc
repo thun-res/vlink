@@ -2719,6 +2719,10 @@ void FoxgloveServer::update_channels(const std::vector<ProxyAPI::Info>& info_lis
 
         const bool schema_type_changed = ch.schema_type != effective_schema_type;
 
+        if VLIKELY (!ser_changed && !schema_type_changed && !ch.schema.empty()) {
+          continue;
+        }
+
         if VUNLIKELY (ser_changed) {
           ch.ser = info.ser;
           need_subscription_refresh = true;
