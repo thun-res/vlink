@@ -27,8 +27,10 @@
 #include <vlink/base/utils.h>
 #include <vlink/extension/qos_profile.h>
 #include <vlink/version.h>
-#ifdef VLINK_SUPPORT_SHM
+#ifdef VLINK_SUPPORT_FDBUS
 #include <vlink/modules/fdbus_conf.h>
+#endif
+#ifdef VLINK_SUPPORT_SHM
 #include <vlink/modules/shm_conf.h>
 #endif
 
@@ -616,10 +618,6 @@ void apply_preset(const std::string& preset, vlink::bench::Bench::RunOptions& op
   if (!drain_used && options.drain_ms == 0) {
     options.drain_ms = 300;
   }
-
-  if (options.repeat_count <= 0) {
-    options.repeat_count = (preset == "full") ? 3 : 1;
-  }
 }
 
 bool apply_report_token(const std::string& token, bool allow_json, OutputOptions& options, std::string& error) {
@@ -819,10 +817,12 @@ bool build_run_options(const argparse::ArgumentParser& command, vlink::bench::Be
     return false;
   }
 
-  if (std::find_if(options.rate_patterns.begin(), options.rate_patterns.end(),
-                   [](vlink::bench::Bench::RatePattern pattern) {
-                     return pattern != vlink::bench::Bench::kMaxRatePattern;
-                   }) != options.rate_patterns.end() &&
+  if ((std::find(options.suites.begin(), options.suites.end(), vlink::bench::Bench::kLatencySuite) !=
+           options.suites.end() ||
+       std::find_if(options.rate_patterns.begin(), options.rate_patterns.end(),
+                    [](vlink::bench::Bench::RatePattern pattern) {
+                      return pattern != vlink::bench::Bench::kMaxRatePattern;
+                    }) != options.rate_patterns.end()) &&
       !validate_positive_list(options.latency_rates, "rate", error)) {
     return false;
   }

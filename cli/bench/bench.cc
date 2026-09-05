@@ -1114,8 +1114,13 @@ bool init_node_with_properties(NodeT& node, const std::string& qos_profile, cons
     node.set_property(key, value);
   }
 
-  if (!node.init()) {
-    error = "node init failed";
+  try {
+    if (!node.init()) {
+      error = "node init failed";
+      return false;
+    }
+  } catch (std::runtime_error& e) {
+    error = e.what();
     return false;
   }
 
@@ -1546,14 +1551,6 @@ bool ensure_parent_dir(const std::string& file_path, std::string& error) {
     return false;
   }
 
-#ifndef _WIN32
-  std::filesystem::permissions(parent,
-                               std::filesystem::perms::owner_all | std::filesystem::perms::group_read |
-                                   std::filesystem::perms::group_exec | std::filesystem::perms::others_read |
-                                   std::filesystem::perms::others_exec,
-                               std::filesystem::perm_options::replace, ec);
-#endif
-
   return true;
 }
 
@@ -1715,8 +1712,6 @@ bool result_from_json(const json& obj, Bench::ScenarioResult& result, std::strin
 
 template <typename MsgT>
 bool run_serialization_case(const Bench::Scenario& scenario, Bench::ScenarioResult& result, std::string& error) {
-  (void)error;
-
   result.transport = "cpu";
   result.wire_size = BenchCodec<MsgT>::wire_size(scenario.payload_size);
 
@@ -1732,6 +1727,10 @@ bool run_serialization_case(const Bench::Scenario& scenario, Bench::ScenarioResu
     uint64_t deadline_ns = begin_ns + static_cast<uint64_t>(duration_ms) * 1000000ULL;
 
     while (steady_time_ns() < deadline_ns) {
+      if VUNLIKELY (check_stop_requested(error)) {
+        return false;
+      }
+
       Serializer::serialize(sample, wire);
       ++count;
     }
@@ -1754,6 +1753,10 @@ bool run_serialization_case(const Bench::Scenario& scenario, Bench::ScenarioResu
     uint64_t deadline_ns = begin_ns + static_cast<uint64_t>(duration_ms) * 1000000ULL;
 
     while (steady_time_ns() < deadline_ns) {
+      if VUNLIKELY (check_stop_requested(error)) {
+        return false;
+      }
+
       Serializer::deserialize(wire, out);
       ++count;
     }
@@ -2302,10 +2305,8 @@ bool run_sub_worker_impl(const Bench::WorkerOptions& options, Bench::ScenarioRes
 
   collector.start_ns = subscribe_begin_ns;
 
-  if (options.warmup_ms <= 0) {
-    collector.measure_begin_ns.store(measure_begin_ns, std::memory_order_relaxed);
-    collector.measure_end_ns.store(measure_end_ns, std::memory_order_relaxed);
-  }
+  collector.measure_begin_ns.store(measure_begin_ns, std::memory_order_relaxed);
+  collector.measure_end_ns.store(measure_end_ns, std::memory_order_relaxed);
 
   ResourceSampler resource_sampler;
   bool sampler_started = false;
@@ -2328,8 +2329,6 @@ bool run_sub_worker_impl(const Bench::WorkerOptions& options, Bench::ScenarioRes
       return false;
     }
 
-    collector.measure_begin_ns.store(measure_begin_ns, std::memory_order_relaxed);
-    collector.measure_end_ns.store(measure_end_ns, std::memory_order_relaxed);
     resource_sampler.start();
     sampler_started = true;
   }
@@ -2423,34 +2422,24 @@ bool load_worker_result(const std::string& file_path, Bench::ScenarioResult& res
 
   try {
     stream >> obj;
+
+    latency_samples.clear();
+    send_block_samples.clear();
+
+    if (!result_from_json(obj, result, error)) {
+      return false;
+    }
+
+    if (obj.contains("send_block_samples_us")) {
+      send_block_samples = obj.at("send_block_samples_us").get<std::vector<double>>();
+    }
+
+    if (obj.contains("latency_samples_us")) {
+      latency_samples = obj.at("latency_samples_us").get<std::vector<double>>();
+    }
   } catch (const json::exception& e) {
     error = e.what();
     return false;
-  }
-
-  latency_samples.clear();
-  send_block_samples.clear();
-
-  if (!result_from_json(obj, result, error)) {
-    return false;
-  }
-
-  if (obj.contains("send_block_samples_us")) {
-    try {
-      send_block_samples = obj.at("send_block_samples_us").get<std::vector<double>>();
-    } catch (const json::exception& e) {
-      error = e.what();
-      return false;
-    }
-  }
-
-  if (obj.contains("latency_samples_us")) {
-    try {
-      latency_samples = obj.at("latency_samples_us").get<std::vector<double>>();
-    } catch (const json::exception& e) {
-      error = e.what();
-      return false;
-    }
   }
 
   return true;
@@ -3856,6 +3845,10 @@ bool Bench::run(const RunOptions& options, Result& result, std::string& error) {
       ProgressTicker ticker(color, scenario.warmup_ms, scenario.duration_ms, scenario.drain_ms);
       bool ok = run_scenario(options, scenario, scenario_result, scenario_error);
 
+      if VUNLIKELY (check_stop_requested(error)) {
+        return false;
+      }
+
       if VUNLIKELY (ok && scenario.suite != kSerializationSuite &&
                     (scenario_result.sent == 0 || scenario_result.received == 0)) {
         scenario_error = scenario_result.sent == 0 ? "benchmark sent no messages" : "benchmark received no messages";
@@ -3965,34 +3958,34 @@ bool Bench::load_json(const std::string& file_path, Result& result, std::string&
 
   try {
     stream >> root;
-  } catch (const json::exception& e) {
-    error = e.what();
-    return false;
-  }
 
-  result.version = root.value("version", std::string());
-  result.created_at = root.value("created_at", std::string());
-  result.host_name = root.value("host_name", std::string());
-  result.platform = root.value("platform", std::string());
-  result.command_line = root.value("command_line", std::string());
-  result.planned_case_count = root.value("planned_case_count", size_t{0});
-  result.skipped_case_count = root.value("skipped_case_count", size_t{0});
-  result.skip_messages = root.value("skip_messages", std::vector<std::string>());
-  result.scenarios.clear();
+    result.version = root.value("version", std::string());
+    result.created_at = root.value("created_at", std::string());
+    result.host_name = root.value("host_name", std::string());
+    result.platform = root.value("platform", std::string());
+    result.command_line = root.value("command_line", std::string());
+    result.planned_case_count = root.value("planned_case_count", size_t{0});
+    result.skipped_case_count = root.value("skipped_case_count", size_t{0});
+    result.skip_messages = root.value("skip_messages", std::vector<std::string>());
+    result.scenarios.clear();
 
-  if (!root.contains("scenarios") || !root["scenarios"].is_array()) {
-    error = "invalid json scenarios";
-    return false;
-  }
-
-  for (const auto& item : root["scenarios"]) {
-    ScenarioResult scenario;
-
-    if (!result_from_json(item, scenario, error)) {
+    if (!root.contains("scenarios") || !root["scenarios"].is_array()) {
+      error = "invalid json scenarios";
       return false;
     }
 
-    result.scenarios.emplace_back(std::move(scenario));
+    for (const auto& item : root["scenarios"]) {
+      ScenarioResult scenario;
+
+      if (!result_from_json(item, scenario, error)) {
+        return false;
+      }
+
+      result.scenarios.emplace_back(std::move(scenario));
+    }
+  } catch (const json::exception& e) {
+    error = e.what();
+    return false;
   }
 
   return true;

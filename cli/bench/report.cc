@@ -1192,22 +1192,23 @@ bool save_csv(const Bench::Result& result, const std::string& file_path, std::st
            << ',' << item.sample_count << ',' << item.success_count << ',' << item.failure_count << ','
            << format_metric_cell(item.sent) << ',' << format_metric_cell(item.received) << ','
            << format_metric_cell(item.expected) << ',' << format_metric_cell(item.lost) << ','
-           << format_loss_ratio_cell(item) << ',' << format_metric_cell(item.discovery_ms) << ','
-           << format_metric_cell(item.first_message_ms) << ',' << format_metric_cell(item.send_msgs_per_sec) << ','
-           << format_metric_cell(item.recv_msgs_per_sec) << ',' << format_metric_cell(item.send_mb_per_sec) << ','
-           << format_metric_cell(item.recv_mb_per_sec) << ',' << format_metric_cell(item.avg_latency_us) << ','
-           << format_metric_cell(item.p50_latency_us) << ',' << format_metric_cell(item.p95_latency_us) << ','
-           << format_metric_cell(item.p99_latency_us) << ',' << format_metric_cell(item.p999_latency_us) << ','
-           << format_metric_cell(item.p9999_latency_us) << ',' << format_metric_cell(item.max_latency_us) << ','
-           << format_metric_cell(item.latency_stddev_us) << ',' << format_metric_cell(item.avg_send_block_us) << ','
-           << format_metric_cell(item.p50_send_block_us) << ',' << format_metric_cell(item.p95_send_block_us) << ','
-           << format_metric_cell(item.p99_send_block_us) << ',' << format_metric_cell(item.max_send_block_us) << ','
-           << format_metric_cell(item.send_block_samples) << ',' << format_metric_cell(item.serialize_msgs_per_sec)
-           << ',' << format_metric_cell(item.deserialize_msgs_per_sec) << ','
-           << format_metric_cell(item.serialize_mb_per_sec) << ',' << format_metric_cell(item.deserialize_mb_per_sec)
-           << ',' << format_metric_cell(item.pub_cpu_ms) << ',' << format_metric_cell(item.sub_cpu_ms) << ','
-           << format_metric_cell(item.cpu_usage) << ',' << format_memory_cell(item.memory_usage) << ','
-           << quote_csv(make_case_status_text(item)) << ',' << quote_csv(join_strings(item.errors, " | ")) << '\n';
+           << (item.expected.sum > 0.0 ? format_decimal(item.lost.sum * 100.0 / item.expected.sum) : "-") << ','
+           << format_metric_cell(item.discovery_ms) << ',' << format_metric_cell(item.first_message_ms) << ','
+           << format_metric_cell(item.send_msgs_per_sec) << ',' << format_metric_cell(item.recv_msgs_per_sec) << ','
+           << format_metric_cell(item.send_mb_per_sec) << ',' << format_metric_cell(item.recv_mb_per_sec) << ','
+           << format_metric_cell(item.avg_latency_us) << ',' << format_metric_cell(item.p50_latency_us) << ','
+           << format_metric_cell(item.p95_latency_us) << ',' << format_metric_cell(item.p99_latency_us) << ','
+           << format_metric_cell(item.p999_latency_us) << ',' << format_metric_cell(item.p9999_latency_us) << ','
+           << format_metric_cell(item.max_latency_us) << ',' << format_metric_cell(item.latency_stddev_us) << ','
+           << format_metric_cell(item.avg_send_block_us) << ',' << format_metric_cell(item.p50_send_block_us) << ','
+           << format_metric_cell(item.p95_send_block_us) << ',' << format_metric_cell(item.p99_send_block_us) << ','
+           << format_metric_cell(item.max_send_block_us) << ',' << format_metric_cell(item.send_block_samples) << ','
+           << format_metric_cell(item.serialize_msgs_per_sec) << ','
+           << format_metric_cell(item.deserialize_msgs_per_sec) << ',' << format_metric_cell(item.serialize_mb_per_sec)
+           << ',' << format_metric_cell(item.deserialize_mb_per_sec) << ',' << format_metric_cell(item.pub_cpu_ms)
+           << ',' << format_metric_cell(item.sub_cpu_ms) << ',' << format_metric_cell(item.cpu_usage) << ','
+           << format_memory_cell(item.memory_usage) << ',' << quote_csv(make_case_status_text(item)) << ','
+           << quote_csv(join_strings(item.errors, " | ")) << '\n';
   }
 
   return write_text_file_atomic(file_path, stream.str(), error);
