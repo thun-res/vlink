@@ -79,6 +79,9 @@ class SomeipServer final : public AbstractObject<SomeipID>, public std::enable_s
   std::mutex& get_client_mtx();
 
  private:
+  void process_request(NodeImpl* impl, const std::shared_ptr<someip::message>& request,
+                       const NodeImpl::ReqRespCallback& callback);
+
   std::atomic_bool has_started_{false};
 
   uint16_t service_id_{0};
@@ -103,10 +106,12 @@ class SomeipClient final : public AbstractObject<SomeipID>, public std::enable_s
 
   void start();
 
-  bool call(someip::method_t method, const Bytes& req_data, NodeImpl::MsgCallback&& callback = nullptr,
-            uint64_t* seq_out = nullptr);
+  bool call(NodeImpl* owner, someip::method_t method, const Bytes& req_data, NodeImpl::MsgCallback&& callback = nullptr,
+            uint64_t* seq_out = nullptr, bool dispatch = true);
 
   void remove_response_callback(uint64_t seq);
+
+  void cancel_calls(NodeImpl* owner);
 
   bool is_connected() const;
 
@@ -120,7 +125,12 @@ class SomeipClient final : public AbstractObject<SomeipID>, public std::enable_s
   std::shared_ptr<someip::application> app_;
   std::thread thread_;
   std::recursive_mutex mtx_;
-  std::unordered_map<uint64_t, NodeImpl::MsgCallback> resp_callbacks_;
+  struct ResponseCallback final {
+    NodeImpl* owner{nullptr};
+    bool dispatch{true};
+    NodeImpl::MsgCallback callback;
+  };
+  std::unordered_map<uint64_t, ResponseCallback> resp_callbacks_;
 };
 
 }  // namespace vlink

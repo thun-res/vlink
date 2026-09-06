@@ -55,7 +55,6 @@ class SomeipPublisherImpl final : public PublisherImpl {
 
   SomeipConf conf_;
   std::shared_ptr<Object> object_;
-  static std::mutex mtx_;
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(SomeipPublisherImpl)
 };

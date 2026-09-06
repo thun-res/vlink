@@ -48,10 +48,18 @@ void SomeipClientImpl::init() {
   ClientImpl::update_connected();
 }
 
-void SomeipClientImpl::deinit() { object_->remove_impl(this); }
+void SomeipClientImpl::deinit() {
+  detach();
+  object_->cancel_calls(this);
+  object_->remove_impl(this);
+}
 
 void SomeipClientImpl::interrupt() {
   ClientImpl::interrupt();
+
+  if (object_) {
+    object_->cancel_calls(this);
+  }
 
   ack_manager_.clear();
 }
@@ -64,7 +72,7 @@ bool SomeipClientImpl::is_connected() const { return object_->is_connected(); }
 
 bool SomeipClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::chrono::milliseconds timeout) {
   if VUNLIKELY (!callback) {
-    return object_->call(conf_.method, req_data);
+    return object_->call(this, conf_.method, req_data);
   }
 
   if (timeout.count() != 0) {
@@ -87,16 +95,16 @@ bool SomeipClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::
     uint64_t seq = 0;
     bool has_seq = false;
 
-    auto ack_function = [this, ack_request, callback = std::move(callback)](const Bytes& resp_data) mutable {
-      ack_manager_.notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
+    auto ack_function = [ack_request, callback = std::move(callback)](const Bytes& resp_data) mutable {
+      AckManager::notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
     };
 
-    bool ret =
-        ack_manager_.process(ack_request, timeout.count() - elapsed,
-                             [this, &req_data, &seq, &has_seq, ack_function = std::move(ack_function)]() mutable {
-                               has_seq = object_->call(conf_.method, req_data, std::move(ack_function), &seq);
-                               return has_seq;
-                             });
+    bool ret = ack_manager_.process(
+        ack_request, timeout.count() - elapsed,
+        [this, &req_data, &seq, &has_seq, ack_function = std::move(ack_function)]() mutable {
+          has_seq = object_->call(this, conf_.method, req_data, std::move(ack_function), &seq, false);
+          return has_seq;
+        });
 
     if VUNLIKELY (!ret && has_seq) {
       object_->remove_response_callback(seq);
@@ -105,7 +113,7 @@ bool SomeipClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::
     return ret;
   }
 
-  return object_->call(conf_.method, req_data, std::move(callback));
+  return object_->call(this, conf_.method, req_data, std::move(callback));
 }
 
 }  // namespace vlink

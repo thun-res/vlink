@@ -36,8 +36,6 @@
 
 namespace vlink {
 
-std::mutex SomeipPublisherImpl::mtx_;
-
 // SomeipPublisherImpl
 SomeipPublisherImpl::SomeipPublisherImpl(const SomeipConf& conf) : conf_(conf) {}
 
@@ -47,6 +45,7 @@ void SomeipPublisherImpl::init() {
   object_ = factory.get_object<Object>({kImplType, conf_.service, conf_.instance});
 
   object_->add_impl(this);
+  object_->register_sub_connect_callback(this, [this](bool) { PublisherImpl::update_subscribers(); });
 
   {
     std::weak_ptr<Object> weak(object_);
@@ -58,35 +57,26 @@ void SomeipPublisherImpl::init() {
                                 conf_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
     for (auto g : conf_.groups) {
       object_->app()->register_subscription_handler(
-          conf_.service, conf_.instance, g,
-          [weak, this](someip::client_t client_id, VSOMEIP_SUB_HANDLE_ARG, bool is_reg) {
-            std::lock_guard g_lock(mtx_);
-
+          conf_.service, conf_.instance, g, [weak](someip::client_t client_id, VSOMEIP_SUB_HANDLE_ARG, bool is_reg) {
             auto strong = weak.lock();
 
-            if VUNLIKELY (!strong || !strong->is_contains_impl(this)) {
-              return false;  // To solve lambda invoke when object destroyed
-            }
-
-            if (is_reg) {
-              {
-                std::lock_guard lock(object_->get_client_mtx());
-                object_->get_clients().emplace(client_id);
-              }
-
-              PublisherImpl::update_subscribers();
-
-              return true;
-            } else {
-              {
-                std::lock_guard lock(object_->get_client_mtx());
-                object_->get_clients().erase(client_id);
-              }
-
-              PublisherImpl::update_subscribers();
-
+            if VUNLIKELY (!strong) {
               return false;
             }
+
+            {
+              std::lock_guard lock(strong->get_client_mtx());
+
+              if (is_reg) {
+                strong->get_clients().emplace(client_id);
+              } else {
+                strong->get_clients().erase(client_id);
+              }
+            }
+
+            strong->traverse_sub_connect_callback([is_reg](NodeImpl*, const auto& callback) { callback(is_reg); });
+
+            return is_reg;
           });
     }
   }
@@ -96,19 +86,23 @@ void SomeipPublisherImpl::init() {
 }
 
 void SomeipPublisherImpl::deinit() {
-  std::lock_guard g_lock(mtx_);
+  object_->remove_impl(this);
 
-  {
-    std::lock_guard lock(object_->get_client_mtx());
+  for (auto g : conf_.groups) {
+    bool in_use = false;
 
-    for (auto g : conf_.groups) {
+    object_->traverse_sub_connect_callback([&](NodeImpl* impl, const auto&) {
+      if (impl->get_target_conf<SomeipConf>()->groups.count(g) != 0) {
+        in_use = true;
+      }
+    });
+
+    if (!in_use) {
       object_->app()->unregister_subscription_handler(conf_.service, conf_.instance, g);
     }
-
-    object_->app()->stop_offer_event(conf_.service, conf_.instance, conf_.event);
   }
 
-  object_->remove_impl(this);
+  object_->app()->stop_offer_event(conf_.service, conf_.instance, conf_.event);
 }
 
 const Conf* SomeipPublisherImpl::get_conf() const { return &conf_; }

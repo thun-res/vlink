@@ -171,6 +171,114 @@ TEST_SUITE("someip-init") {
 }
 
 TEST_SUITE("someip-pubsub") {
+  TEST_CASE("shared publishers both detect subscribers and preserve the remaining handler") {
+    const SomeipConf first_conf(0x1404, 1, SomeipConf::Groups{1}, 0x8001);
+    const SomeipConf second_conf(0x1404, 1, SomeipConf::Groups{1}, 0x8002);
+    std::atomic<bool> first_connected{false};
+    std::atomic<bool> second_connected{false};
+    std::atomic<int> received{0};
+    auto first = std::make_unique<Publisher<int>>(first_conf);
+    Publisher<int> second(second_conf);
+    first->detect_subscribers([&](bool connected) { first_connected.store(connected, std::memory_order_release); });
+    second.detect_subscribers([&](bool connected) { second_connected.store(connected, std::memory_order_release); });
+    auto subscriber = std::make_unique<Subscriber<int>>(second_conf);
+    REQUIRE(subscriber->listen([&](const int& value) { received.store(value, std::memory_order_release); }));
+    REQUIRE(common_test::wait_until(
+        [&] {
+          return first_connected.load(std::memory_order_acquire) && second_connected.load(std::memory_order_acquire);
+        },
+        3s));
+    REQUIRE(second.publish(1));
+    REQUIRE(common_test::wait_until([&] { return received.load(std::memory_order_acquire) == 1; }, 3s));
+
+    subscriber.reset();
+    REQUIRE(common_test::wait_until(
+        [&] {
+          return !first_connected.load(std::memory_order_acquire) && !second_connected.load(std::memory_order_acquire);
+        },
+        3s));
+    first.reset();
+    subscriber = std::make_unique<Subscriber<int>>(second_conf);
+    REQUIRE(subscriber->listen([&](const int& value) { received.store(value, std::memory_order_release); }));
+    REQUIRE(common_test::wait_until([&] { return second_connected.load(std::memory_order_acquire); }, 3s));
+    REQUIRE(second.publish(2));
+    REQUIRE(common_test::wait_until([&] { return received.load(std::memory_order_acquire) == 2; }, 3s));
+  }
+
+  TEST_CASE("destroying a subscriber preserves other readers of its eventgroup") {
+    bool different_event = false;
+    SUBCASE("same event") {}
+    SUBCASE("different event") { different_event = true; }
+    const uint16_t service = different_event ? 0x1403 : 0x1402;
+    const SomeipConf first_conf(service, 1, SomeipConf::Groups{1}, 0x8001);
+    const SomeipConf second_conf(service, 1, SomeipConf::Groups{1}, different_event ? 0x8002 : 0x8001);
+    std::atomic<int> first_value{0};
+    std::atomic<int> second_value{0};
+    Publisher<int> first_publisher(first_conf);
+    std::unique_ptr<Publisher<int>> second_publisher;
+    if (different_event) {
+      second_publisher = std::make_unique<Publisher<int>>(second_conf);
+    }
+    auto& publisher = different_event ? *second_publisher : first_publisher;
+    auto first = std::make_unique<Subscriber<int>>(first_conf);
+    REQUIRE(first->listen([&](const int& value) { first_value.store(value, std::memory_order_release); }));
+    Subscriber<int> second(second_conf);
+    REQUIRE(second.listen([&](const int& value) { second_value.store(value, std::memory_order_release); }));
+    REQUIRE(common_test::wait_until(
+        [&] {
+          first_publisher.publish(1, true);
+          publisher.publish(1, true);
+          return first_value.load(std::memory_order_acquire) == 1 && second_value.load(std::memory_order_acquire) == 1;
+        },
+        3s));
+
+    first.reset();
+    REQUIRE(publisher.publish(2, true));
+    REQUIRE(common_test::wait_until([&] { return second_value.load(std::memory_order_acquire) == 2; }, 3s));
+  }
+
+  TEST_CASE("shared subscribers keep their own loops after a client joins") {
+    MessageLoop first_loop;
+    MessageLoop second_loop;
+    REQUIRE(first_loop.async_run());
+    REQUIRE(second_loop.async_run());
+    const auto first_thread = first_loop.invoke_task([] { return std::this_thread::get_id(); }).get();
+    const auto second_thread = second_loop.invoke_task([] { return std::this_thread::get_id(); }).get();
+    std::atomic<bool> first_seen{false};
+    std::atomic<bool> second_seen{false};
+    std::promise<std::thread::id> first_received;
+    std::promise<std::thread::id> second_received;
+    auto first_result = first_received.get_future();
+    auto second_result = second_received.get_future();
+    const SomeipConf conf(0x1401, 1, SomeipConf::Groups{1}, 0x8001);
+    Publisher<Bytes> publisher(conf);
+    Subscriber<Bytes> first(conf);
+    REQUIRE(first.attach(&first_loop));
+    REQUIRE(first.listen([&](const Bytes&) {
+      if (!first_seen.exchange(true, std::memory_order_relaxed)) {
+        first_received.set_value(std::this_thread::get_id());
+      }
+    }));
+    Subscriber<Bytes> second(conf);
+    REQUIRE(second.attach(&second_loop));
+    REQUIRE(second.listen([&](const Bytes&) {
+      if (!second_seen.exchange(true, std::memory_order_relaxed)) {
+        second_received.set_value(std::this_thread::get_id());
+      }
+    }));
+    Client<Bytes, Bytes> unrelated(SomeipConf(0x1401, 1, 1));
+    REQUIRE(publisher.wait_for_subscribers(3s));
+    REQUIRE(common_test::wait_until(
+        [&] {
+          publisher.publish(Bytes{1, 2, 3}, true);
+          return first_result.wait_for(0s) == std::future_status::ready &&
+                 second_result.wait_for(0s) == std::future_status::ready;
+        },
+        3s));
+    CHECK(first_result.get() == first_thread);
+    CHECK(second_result.get() == second_thread);
+  }
+
   TEST_CASE("bytes payload is delivered to subscriber") {
     MESSAGE("[someip-pubsub] bytes payload is delivered to subscriber");
 
@@ -360,6 +468,128 @@ TEST_SUITE("someip-serializer") {
 }
 
 TEST_SUITE("someip-method") {
+  TEST_CASE("shared methods keep owner loops and acknowledge synchronous calls directly") {
+    MessageLoop first_loop;
+    MessageLoop second_loop;
+    REQUIRE(first_loop.async_run());
+    REQUIRE(second_loop.async_run());
+    const auto first_thread = first_loop.invoke_task([] { return std::this_thread::get_id(); }).get();
+    const auto second_thread = second_loop.invoke_task([] { return std::this_thread::get_id(); }).get();
+    const SomeipConf first_conf(0x2403, 1, 1);
+    const SomeipConf second_conf(0x2403, 1, 2);
+    std::atomic<bool> first_on_loop{true};
+    std::atomic<bool> second_on_loop{true};
+    std::promise<std::thread::id> first_received;
+    std::promise<std::thread::id> second_received;
+    auto first_result = first_received.get_future();
+    auto second_result = second_received.get_future();
+    Server<int, int> first_server(first_conf);
+    REQUIRE(first_server.attach(&first_loop));
+    REQUIRE(first_server.listen([&](const int& req, int& resp) {
+      if (std::this_thread::get_id() != first_thread) {
+        first_on_loop.store(false, std::memory_order_relaxed);
+      }
+      resp = req + 1;
+    }));
+    Server<int, int> second_server(second_conf);
+    REQUIRE(second_server.attach(&second_loop));
+    REQUIRE(second_server.listen([&](const int& req, int& resp) {
+      if (std::this_thread::get_id() != second_thread) {
+        second_on_loop.store(false, std::memory_order_relaxed);
+      }
+      resp = req + 2;
+    }));
+    Publisher<int> unrelated(SomeipConf(0x2403, 1, SomeipConf::Groups{1}, 0x8001));
+    Client<int, int> first(first_conf);
+    REQUIRE(first.attach(&second_loop));
+    Client<int, int> second(second_conf);
+    REQUIRE(second.attach(&first_loop));
+    REQUIRE(first.wait_for_connected(3s));
+    auto first_sync = second_loop.invoke_task([&] { return first.invoke(10, 2s); });
+    REQUIRE(first_sync.wait_for(3s) == std::future_status::ready);
+    CHECK(first_sync.get() == std::optional<int>(11));
+    auto second_sync = first_loop.invoke_task([&] { return second.invoke(20, 2s); });
+    REQUIRE(second_sync.wait_for(3s) == std::future_status::ready);
+    CHECK(second_sync.get() == std::optional<int>(22));
+    REQUIRE(first.invoke(1, [&](const int&) { first_received.set_value(std::this_thread::get_id()); }));
+    REQUIRE(second.invoke(2, [&](const int&) { second_received.set_value(std::this_thread::get_id()); }));
+    REQUIRE(first_result.wait_for(3s) == std::future_status::ready);
+    REQUIRE(second_result.wait_for(3s) == std::future_status::ready);
+    CHECK(first_result.get() == second_thread);
+    CHECK(second_result.get() == first_thread);
+    CHECK(first_on_loop.load(std::memory_order_relaxed));
+    CHECK(second_on_loop.load(std::memory_order_relaxed));
+  }
+
+  TEST_CASE("destroyed client rejects a response already queued on its loop") {
+    MessageLoop loop;
+    REQUIRE(loop.async_run());
+    std::promise<void> entered;
+    auto entered_result = entered.get_future();
+    std::promise<void> release;
+    auto released = release.get_future();
+    const SomeipConf conf(0x2402, 0x0001, 0x0001);
+    Server<std::string, std::string> server(conf);
+    REQUIRE(server.listen([](const std::string& req, std::string& resp) { resp = req; }));
+    auto first = std::make_unique<Client<std::string, std::string>>(conf);
+    REQUIRE(first->attach(&loop));
+    Client<std::string, std::string> second(conf);
+    REQUIRE(first->wait_for_connected(2s));
+    loop.wait_for_idle();
+
+    loop.post_task([&]() {
+      entered.set_value();
+      released.wait_for(5s);
+    });
+    REQUIRE(entered_result.wait_for(2s) == std::future_status::ready);
+    loop.post_task([&]() { first.reset(); });
+    auto cancelled = first->async_invoke("first");
+    const bool queued = common_test::wait_until([&]() { return loop.get_task_count() >= 2; }, 2s);
+    release.set_value();
+    loop.wait_for_idle();
+    CHECK(queued);
+    CHECK_FALSE(first);
+    REQUIRE(cancelled.wait_for(2s) == std::future_status::ready);
+    CHECK_THROWS_AS(cancelled.get(), std::future_error);
+    auto response = second.invoke("second", 2s);
+    REQUIRE(response.has_value());
+    CHECK(*response == "second");
+  }
+
+  TEST_CASE("destroying one shared client releases its pending future") {
+    MessageLoop server_loop;
+    REQUIRE(server_loop.async_run());
+    std::promise<void> entered;
+    auto entered_result = entered.get_future();
+    std::promise<void> release;
+    auto released = release.get_future();
+    const SomeipConf conf(0x2401, 0x0001, 0x0001);
+    Server<std::string, std::string> server(conf);
+    REQUIRE(server.attach(&server_loop));
+    REQUIRE(server.listen([&](const std::string& req, std::string& resp) {
+      if (req == "first") {
+        entered.set_value();
+        released.wait_for(5s);
+      }
+      resp = req;
+    }));
+    auto first = std::make_unique<Client<std::string, std::string>>(conf);
+    Client<std::string, std::string> second(conf);
+    REQUIRE(first->wait_for_connected(2s));
+    auto cancelled = first->async_invoke("first");
+    REQUIRE(entered_result.wait_for(2s) == std::future_status::ready);
+    first.reset();
+    const bool ready = cancelled.wait_for(100ms) == std::future_status::ready;
+    release.set_value();
+    CHECK(ready);
+    if (ready) {
+      CHECK_THROWS_AS(cancelled.get(), std::future_error);
+    }
+    auto response = second.invoke("second", 2s);
+    REQUIRE(response.has_value());
+    CHECK(*response == "second");
+  }
+
   TEST_CASE("fire and forget send increments server counter") {
     MESSAGE("[someip-method] fire and forget send increments server counter");
 
@@ -469,6 +699,31 @@ TEST_SUITE("someip-method") {
 }
 
 TEST_SUITE("someip-field") {
+  TEST_CASE("destroying a getter preserves other readers of its eventgroup") {
+    bool different_event = false;
+    SUBCASE("same event") {}
+    SUBCASE("different event") { different_event = true; }
+    const uint16_t service = different_event ? 0x3402 : 0x3401;
+    const SomeipConf first_conf(service, 1, SomeipConf::Groups{1}, 0x8001, true);
+    const SomeipConf second_conf(service, 1, SomeipConf::Groups{1}, different_event ? 0x8002 : 0x8001, true);
+    Setter<int> first_setter(first_conf);
+    std::unique_ptr<Setter<int>> second_setter;
+    if (different_event) {
+      second_setter = std::make_unique<Setter<int>>(second_conf);
+    }
+    auto& setter = different_event ? *second_setter : first_setter;
+    auto first = std::make_unique<Getter<int>>(first_conf);
+    Getter<int> second(second_conf);
+    first_setter.set(1);
+    setter.set(1);
+    REQUIRE(first->wait_for_value(3s));
+    REQUIRE(second.wait_for_value(3s));
+
+    first.reset();
+    setter.set(2);
+    REQUIRE(common_test::wait_until([&] { return second.get() == std::optional<int>(2); }, 3s));
+  }
+
   TEST_CASE("setter and getter exchange values") {
     MESSAGE("[someip-field] setter and getter exchange values");
 

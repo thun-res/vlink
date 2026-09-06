@@ -66,6 +66,6 @@ void SomeipSetterImpl::write(const Bytes& msg_data) {
   object_->app()->notify(conf_.service, conf_.instance, conf_.event, payload);
 }
 
-void SomeipSetterImpl::sync(SyncCallback&& callback) { (void)callback; }
+void SomeipSetterImpl::sync(SyncCallback&& callback) { callback(); }
 
 }  // namespace vlink

@@ -62,13 +62,23 @@ void SomeipSubscriberImpl::init() {
 }
 
 void SomeipSubscriberImpl::deinit() {
+  object_->remove_impl(this);
+
   for (auto g : conf_.groups) {
-    object_->app()->unsubscribe(conf_.service, conf_.instance, g);
+    bool in_use = false;
+
+    object_->traverse_server_connect_callback([&](NodeImpl* impl, const auto&) {
+      if (impl->get_target_conf<SomeipConf>()->groups.count(g) != 0) {
+        in_use = true;
+      }
+    });
+
+    if (!in_use) {
+      object_->app()->unsubscribe(conf_.service, conf_.instance, g);
+    }
   }
 
   object_->app()->release_event(conf_.service, conf_.instance, conf_.event);
-
-  object_->remove_impl(this);
 }
 
 bool SomeipSubscriberImpl::suspend() {
