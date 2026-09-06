@@ -85,6 +85,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <unordered_set>
@@ -165,7 +166,7 @@ class VLINK_EXPORT GraphTask final : public std::enable_shared_from_this<GraphTa
    * @brief Creates a regular work node.
    *
    * @param callback          Work function.
-   * @param condition_number  Number of outgoing branches (@c 0 disables branching).
+   * @param condition_number  Incoming branch value required to activate this node.
    * @return Shared pointer to the new task.
    */
   [[nodiscard]] static std::shared_ptr<GraphTask> create(Callback&& callback, int condition_number = 0);
@@ -175,7 +176,7 @@ class VLINK_EXPORT GraphTask final : public std::enable_shared_from_this<GraphTa
    *
    * @param name              Node name used in DOT output and status callbacks.
    * @param callback          Work function.
-   * @param condition_number  Number of outgoing branches.
+   * @param condition_number  Incoming branch value required to activate this node.
    * @return Shared pointer to the new task.
    */
   [[nodiscard]] static std::shared_ptr<GraphTask> create(const std::string& name, Callback&& callback,
@@ -185,7 +186,7 @@ class VLINK_EXPORT GraphTask final : public std::enable_shared_from_this<GraphTa
    * @brief Creates a condition node whose return value selects a successor branch.
    *
    * @param callback          Predicate returning the branch index.
-   * @param condition_number  Number of branches accepted; out-of-range returns skip all successors.
+   * @param condition_number  Incoming branch value required to activate this node.
    * @return Shared pointer to the new condition task.
    */
   [[nodiscard]] static std::shared_ptr<GraphTask> create_condition(ConditionCallback&& callback,
@@ -196,7 +197,7 @@ class VLINK_EXPORT GraphTask final : public std::enable_shared_from_this<GraphTa
    *
    * @param name              Node name.
    * @param callback          Predicate returning the branch index.
-   * @param condition_number  Branch count.
+   * @param condition_number  Incoming branch value required to activate this node.
    * @return Shared pointer to the new condition task.
    */
   [[nodiscard]] static std::shared_ptr<GraphTask> create_condition(const std::string& name,
@@ -340,9 +341,9 @@ class VLINK_EXPORT GraphTask final : public std::enable_shared_from_this<GraphTa
   void set_group_name(const std::string& name);
 
   /**
-   * @brief Sets the number of outgoing condition branches.
+   * @brief Sets the incoming branch value required to activate this node.
    *
-   * @param condition_number  Branch count.
+   * @param condition_number  Incoming branch value required to activate this node.
    */
   void set_condition_number(int condition_number);
 
@@ -385,9 +386,9 @@ class VLINK_EXPORT GraphTask final : public std::enable_shared_from_this<GraphTa
   [[nodiscard]] std::string get_group_name() const;
 
   /**
-   * @brief Returns the configured branch count.
+   * @brief Returns the incoming branch value required to activate this node.
    *
-   * @return Branch count.
+   * @return Incoming branch value required to activate this node.
    */
   [[nodiscard]] int get_condition_number() const;
 
@@ -477,26 +478,23 @@ class VLINK_EXPORT GraphTask final : public std::enable_shared_from_this<GraphTa
    */
   [[nodiscard]] std::string export_to_dot() const;
 
- protected:
-  using FindTaskCallback = MoveFunction<void(const std::shared_ptr<GraphTask>&)>;
-
-  void process_and_traverse(FindTaskCallback&& callback);
-
  private:
   template <typename TypeT>
   struct SharedAllocator;
 
-  int invoke(bool once);
+  std::vector<std::shared_ptr<GraphTask>> prepare_execution();
 
-  void wait();
+  std::optional<int> invoke(bool once);
 
-  void notify(int condition_number);
+  void set_ready_callback(Callback&& callback);
+
+  void notify(int condition_number, bool first_invocation = true);
 
   void notify_skip();
 
-  bool mark_predecessor_satisfied(bool active, bool* has_active);
+  bool mark_predecessor_satisfied(bool active, bool* has_active, bool first_invocation = true);
 
-  void mark_ready(bool enable);
+  bool mark_ready(bool enable);
 
   void update_status(Status status);
 
@@ -528,70 +526,78 @@ using GraphTaskPtr = std::shared_ptr<GraphTask>;
 template <class GraphEngineT>
 inline void GraphTask::execute(GraphEngineT* graph_engine) {
   auto self = shared_from_this();
+  auto tasks = std::make_shared<std::vector<std::shared_ptr<GraphTask>>>(prepare_execution());
 
-  process_and_traverse([self, graph_engine](const std::shared_ptr<GraphTask>& task) {
-    constexpr bool kHaspriority = VLINK_HAS_MEMBER(GraphEngineT, post_task_with_priority);
-    [[maybe_unused]] constexpr uint8_t kPriorityType = 2;
+  for (const auto& task : *tasks) {
+    task->set_ready_callback([weak_tasks = std::weak_ptr(tasks), node = task.get(), graph_engine]() {
+      auto tasks = weak_tasks.lock();
 
-    if VUNLIKELY (task->get_status() == kStatusInActive) {
-      return;
-    }
-
-    auto task_func = [self, task]() {
-      if VLIKELY (task.get() != self.get()) {
-        task->wait();
+      if VUNLIKELY (!tasks) {
+        return;
       }
 
-      int ret = task->invoke(true);
+      constexpr bool kHaspriority =
+          VLINK_HAS_MEMBER(GraphEngineT, post_task_with_priority(std::declval<Callback>(), std::declval<uint16_t>()));
+      [[maybe_unused]] constexpr uint8_t kPriorityType = 2;
 
-      if VLIKELY (ret >= 0) {
-        task->notify(ret);
+      if VUNLIKELY (node->get_status() == kStatusInActive) {
+        return;
       }
-    };
 
-    auto post_task = [graph_engine](auto&& func) -> bool {
-      using Ret = decltype(graph_engine->post_task(std::forward<decltype(func)>(func)));
+      auto task_func = [tasks, node]() {
+        auto ret = node->invoke(true);
 
-      if constexpr (std::is_same_v<Ret, bool>) {
-        return graph_engine->post_task(std::forward<decltype(func)>(func));
-      } else {
-        graph_engine->post_task(std::forward<decltype(func)>(func));
-        return true;
-      }
-    };
+        if VLIKELY (ret.has_value()) {
+          node->notify(*ret);
+        }
+      };
 
-    bool posted = false;
-
-    if constexpr (kHaspriority) {
-      auto post_task_with_priority = [graph_engine, task](auto&& func) -> bool {
-        using Ret =
-            decltype(graph_engine->post_task_with_priority(std::forward<decltype(func)>(func), task->get_priority()));
+      auto post_task = [graph_engine](auto&& func) -> bool {
+        using Ret = decltype(graph_engine->post_task(std::forward<decltype(func)>(func)));
 
         if constexpr (std::is_same_v<Ret, bool>) {
-          return graph_engine->post_task_with_priority(std::forward<decltype(func)>(func), task->get_priority());
+          return graph_engine->post_task(std::forward<decltype(func)>(func));
         } else {
-          graph_engine->post_task_with_priority(std::forward<decltype(func)>(func), task->get_priority());
+          graph_engine->post_task(std::forward<decltype(func)>(func));
           return true;
         }
       };
 
-      if constexpr (VLINK_HAS_MEMBER(GraphEngineT, get_type)) {
-        if (graph_engine->get_type() == kPriorityType) {
-          posted = post_task_with_priority(std::move(task_func));
+      bool posted = false;
+
+      if constexpr (kHaspriority) {
+        auto post_task_with_priority = [graph_engine, node](auto&& func) -> bool {
+          using Ret =
+              decltype(graph_engine->post_task_with_priority(std::forward<decltype(func)>(func), node->get_priority()));
+
+          if constexpr (std::is_same_v<Ret, bool>) {
+            return graph_engine->post_task_with_priority(std::forward<decltype(func)>(func), node->get_priority());
+          } else {
+            graph_engine->post_task_with_priority(std::forward<decltype(func)>(func), node->get_priority());
+            return true;
+          }
+        };
+
+        if constexpr (VLINK_HAS_MEMBER(GraphEngineT, get_type())) {
+          if (graph_engine->get_type() == kPriorityType) {
+            posted = post_task_with_priority(std::move(task_func));
+          } else {
+            posted = post_task(std::move(task_func));
+          }
         } else {
-          posted = post_task(std::move(task_func));
+          posted = post_task_with_priority(std::move(task_func));
         }
       } else {
         posted = post_task(std::move(task_func));
       }
-    } else {
-      posted = post_task(std::move(task_func));
-    }
 
-    if VUNLIKELY (!posted) {
-      task->cancel();
-    }
-  });
+      if VUNLIKELY (!posted) {
+        node->cancel();
+      }
+    });
+  }
+
+  self->mark_ready(true);
 }
 
 [[maybe_unused]] static inline GraphTaskPtr& operator--(GraphTaskPtr& task, int) { return task; }

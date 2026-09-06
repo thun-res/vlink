@@ -30,6 +30,7 @@
 #include <atomic>
 #include <chrono>
 #include <future>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -71,6 +72,44 @@ bool wait_until(PredicateT&& predicate, std::chrono::milliseconds timeout = std:
 }  // namespace
 
 TEST_SUITE("base-ThreadPool") {
+  TEST_CASE("invoke_task consumes move-only arguments and preserves explicit references") {
+    for (auto type : {ThreadPool::kNormalType, ThreadPool::kLockfreeType}) {
+      ThreadPool pool(1, type);
+      auto value = std::make_unique<int>(42);
+      auto result = pool.invoke_task([](std::unique_ptr<int> input) { return *input; }, std::move(value));
+      int reference = 1;
+      auto mutation = pool.invoke_task([](int& input) { input = 7; }, std::ref(reference));
+      CHECK(result.get() == 42);
+      mutation.get();
+      CHECK(reference == 7);
+      CHECK_FALSE(value);
+      pool.shutdown();
+    }
+  }
+
+  TEST_CASE("invoke_task deduces results from owned arguments and explicit references") {
+    struct Overloaded {
+      size_t operator()(const std::string& value) const { return value.size(); }
+      std::string operator()(std::string&& value) const { return std::move(value); }
+    };
+
+    for (auto type : {ThreadPool::kNormalType, ThreadPool::kLockfreeType}) {
+      ThreadPool pool(1, type);
+      std::string input = "owned argument";
+      std::future<std::string> overloaded = pool.invoke_task(Overloaded{}, input);
+      std::future<size_t> borrowed = pool.invoke_task(Overloaded{}, std::ref(input));
+      auto consumed = pool.invoke_task([](std::string&& value) { return std::move(value); }, input);
+      std::future<std::string&> reference =
+          pool.invoke_task([](std::string& value) -> std::string& { return value; }, std::ref(input));
+      CHECK(overloaded.get() == "owned argument");
+      CHECK(borrowed.get() == input.size());
+      CHECK(consumed.get() == "owned argument");
+      CHECK(&reference.get() == &input);
+      CHECK(input == "owned argument");
+      pool.shutdown();
+    }
+  }
+
   TEST_CASE("default constructor creates normal-type pool that executes tasks") {
     ThreadPool pool;
 

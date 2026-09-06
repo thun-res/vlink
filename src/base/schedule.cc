@@ -246,9 +246,8 @@ Schedule::RetStatus Schedule::internal_process_with_ret(const Config& config, Re
       impl->dispatched.store(true, std::memory_order_release);
     }
 
-    auto now = std::chrono::steady_clock::now();
-
     if (config.schedule_timeout_ms > 0) {
+      auto now = std::chrono::steady_clock::now();
       auto wait_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - submit_time).count();
       auto timeout_ms = static_cast<uint64_t>(config.schedule_timeout_ms) + config.delay_ms;
 
@@ -267,7 +266,11 @@ Schedule::RetStatus Schedule::internal_process_with_ret(const Config& config, Re
         return std::nullopt;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
 
-      auto exec_start = std::chrono::steady_clock::now();
+      std::chrono::steady_clock::time_point exec_start;
+
+      if (config.execution_timeout_ms > 0) {
+        exec_start = std::chrono::steady_clock::now();
+      }
 
       bool result = false;
 
@@ -281,9 +284,8 @@ Schedule::RetStatus Schedule::internal_process_with_ret(const Config& config, Re
         }
       }
 
-      auto exec_end = std::chrono::steady_clock::now();
-
       if (config.execution_timeout_ms > 0) {
+        auto exec_end = std::chrono::steady_clock::now();
         auto exec_ms = std::chrono::duration_cast<std::chrono::milliseconds>(exec_end - exec_start).count();
 
         if (static_cast<uint32_t>(exec_ms) > config.execution_timeout_ms) {

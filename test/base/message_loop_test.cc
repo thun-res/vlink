@@ -30,6 +30,7 @@
 #include <atomic>
 #include <future>
 #include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -112,6 +113,77 @@ class HookLoop final : public MessageLoop {
 }  // namespace
 
 TEST_SUITE("base-MessageLoop") {
+  TEST_CASE("invoke_task consumes move-only arguments and preserves explicit references") {
+    for (auto type : {MessageLoop::kNormalType, MessageLoop::kPriorityType, MessageLoop::kLockfreeType}) {
+      MessageLoop loop(type);
+      loop.async_run();
+      auto value = std::make_unique<int>(42);
+      auto result = loop.invoke_task([](std::unique_ptr<int> input) { return *input; }, std::move(value));
+      int reference = 1;
+      auto mutation = loop.invoke_task([](int& input) { input = 7; }, std::ref(reference));
+      CHECK(result.get() == 42);
+      mutation.get();
+      CHECK(reference == 7);
+      CHECK_FALSE(value);
+
+      Bytes payload = Bytes::create(128);
+      const auto* data = payload.data();
+      auto transferred = loop.invoke_task([data](Bytes bytes) { return bytes.data() == data; }, std::move(payload));
+      CHECK(transferred.get());
+
+      if (type == MessageLoop::kPriorityType) {
+        auto priority_result = loop.invoke_task_with_priority([](std::unique_ptr<int> input) { return *input; },
+                                                              MessageLoop::kHighestPriority, std::make_unique<int>(9));
+        CHECK(priority_result.get() == 9);
+      }
+
+      loop.quit();
+      loop.wait_for_quit();
+    }
+  }
+
+  TEST_CASE("invoke_task deduces results from owned arguments and explicit references") {
+    struct Overloaded {
+      size_t operator()(const std::string& value) const { return value.size(); }
+      std::string operator()(std::string&& value) const { return std::move(value); }
+    };
+
+    for (auto type : {MessageLoop::kNormalType, MessageLoop::kPriorityType, MessageLoop::kLockfreeType}) {
+      MessageLoop loop(type);
+      loop.async_run();
+      std::string input = "owned argument";
+      std::future<std::string> overloaded = loop.invoke_task(Overloaded{}, input);
+      std::future<size_t> borrowed = loop.invoke_task(Overloaded{}, std::ref(input));
+      auto consumed = loop.invoke_task([](std::string&& value) { return std::move(value); }, input);
+      std::future<std::string&> reference =
+          loop.invoke_task([](std::string& value) -> std::string& { return value; }, std::ref(input));
+      CHECK(overloaded.get() == "owned argument");
+      CHECK(borrowed.get() == input.size());
+      CHECK(consumed.get() == "owned argument");
+      CHECK(&reference.get() == &input);
+      CHECK(input == "owned argument");
+
+      if (type == MessageLoop::kPriorityType) {
+        std::future<std::string> priority_overloaded =
+            loop.invoke_task_with_priority(Overloaded{}, MessageLoop::kHighestPriority, input);
+        std::future<size_t> priority_borrowed =
+            loop.invoke_task_with_priority(Overloaded{}, MessageLoop::kHighestPriority, std::ref(input));
+        auto priority_consumed = loop.invoke_task_with_priority([](std::string&& value) { return std::move(value); },
+                                                                MessageLoop::kHighestPriority, input);
+        std::future<std::string&> priority_reference = loop.invoke_task_with_priority(
+            [](std::string& value) -> std::string& { return value; }, MessageLoop::kHighestPriority, std::ref(input));
+        CHECK(priority_overloaded.get() == "owned argument");
+        CHECK(priority_borrowed.get() == input.size());
+        CHECK(priority_consumed.get() == "owned argument");
+        CHECK(&priority_reference.get() == &input);
+        CHECK(input == "owned argument");
+      }
+
+      loop.quit();
+      loop.wait_for_quit();
+    }
+  }
+
   TEST_CASE("default construction has kNormalType") {
     MessageLoop loop;
     CHECK_EQ(loop.get_type(), MessageLoop::kNormalType);
@@ -1130,6 +1202,34 @@ TEST_SUITE("base-MessageLoop") {
     }
     REQUIRE(state != nullptr);
     CHECK_FALSE(state->alive.load(std::memory_order_acquire));
+  }
+
+  TEST_CASE("destruction releases a capacity-blocked producer holding the lifetime gate") {
+    for (auto type : {MessageLoop::kNormalType, MessageLoop::kPriorityType, MessageLoop::kLockfreeType}) {
+      auto loop = std::make_unique<MessageLoop>(type);
+      loop->set_strategy(MessageLoop::kBlockStrategy);
+
+      for (size_t i = 0; i < loop->get_max_task_count(); ++i) {
+        REQUIRE(loop->post_task([] {}));
+      }
+
+      auto alive = loop->get_alive_state();
+      std::promise<void> locked;
+      auto locked_future = locked.get_future();
+      bool accepted = true;
+      std::thread producer([target = loop.get(), alive, &locked, &accepted] {
+        std::shared_lock lock(alive->mtx);
+        locked.set_value();
+        accepted = target->post_task([] {});
+      });
+
+      locked_future.wait();
+      loop.reset();
+      producer.join();
+
+      CHECK_FALSE(accepted);
+      CHECK_FALSE(alive->alive.load(std::memory_order_acquire));
+    }
   }
 
   TEST_CASE("once timer queued on a stopped loop is cleaned by loop destruction") {

@@ -277,14 +277,14 @@ class VLINK_EXPORT ThreadPool {
    *          workers are busy; doing so deadlocks the pool.
    *
    * @tparam FunctionT  Callable type.
-   * @tparam ArgsT      Argument types forwarded to the callable.
-   * @tparam ResultT    Deduced result type.
+   * @tparam ArgsT      Argument types.
    * @param function  Callable to dispatch.
-   * @param args      Arguments to forward.
+   * @param args      Arguments copied or moved into owned storage and then moved into the call.
+   *                  Use @c std::ref to borrow an argument explicitly.
    * @return Future resolved with the callable's result.
    */
-  template <class FunctionT, class... ArgsT, typename ResultT = std::invoke_result_t<FunctionT, ArgsT...>>
-  [[nodiscard]] std::future<ResultT> invoke_task(FunctionT&& function, ArgsT&&... args);
+  template <class FunctionT, class... ArgsT>
+  [[nodiscard]] auto invoke_task(FunctionT&& function, ArgsT&&... args);
 
  private:
   void init();
@@ -313,16 +313,18 @@ class VLINK_EXPORT ThreadPool {
 /// Details
 ////////////////////////////////////////////////////////////////
 
-template <class FunctionT, class... ArgsT, typename ResultT>
-inline std::future<ResultT> ThreadPool::invoke_task(FunctionT&& function, ArgsT&&... args) {
+template <class FunctionT, class... ArgsT>
+inline auto ThreadPool::invoke_task(FunctionT&& function, ArgsT&&... args) {
   auto bound = [function = std::forward<FunctionT>(function),
-                args = std::make_tuple(std::forward<ArgsT>(args)...)]() mutable -> ResultT {
+                args = std::make_tuple(std::forward<ArgsT>(args)...)]() mutable -> decltype(auto) {
     return std::apply(
-        [&function](auto&&... unpacked_args) -> ResultT {
+        [&function](auto&&... unpacked_args) -> decltype(auto) {
           return std::invoke(function, std::forward<decltype(unpacked_args)>(unpacked_args)...);
         },
-        args);
+        std::move(args));
   };
+
+  using ResultT = std::invoke_result_t<decltype(bound)&>;
 
   if constexpr (kIsSupportMoveFunction) {
     std::packaged_task<ResultT()> task(std::move(bound));

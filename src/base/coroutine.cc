@@ -38,6 +38,7 @@
 #include "./base/memory_pool.h"
 #include "./base/memory_resource.h"
 #include "./base/message_loop.h"
+#include "./base/thread_pool.h"
 #include "./base/utils.h"
 
 namespace vlink {
@@ -186,9 +187,9 @@ class FutureWaitLoop final {
   }
 
   void poll_loop() {
-    for (;;) {
-      std::vector<MoveFunction<bool()>> snapshot;
+    std::vector<MoveFunction<bool()>> snapshot;
 
+    for (;;) {
       {
         std::unique_lock lock(mtx_);
 
@@ -201,13 +202,12 @@ class FutureWaitLoop final {
         snapshot.swap(pending_);
       }
 
-      poll_snapshot(std::move(snapshot));
+      poll_snapshot(snapshot);
     }
   }
 
-  void poll_snapshot(std::vector<MoveFunction<bool()>>&& snapshot) {
-    std::vector<MoveFunction<bool()>> not_done;
-    not_done.reserve(snapshot.size());
+  void poll_snapshot(std::vector<MoveFunction<bool()>>& snapshot) {
+    size_t remaining = 0;
 
     for (auto& poll : snapshot) {
       bool done = false;
@@ -225,17 +225,27 @@ class FutureWaitLoop final {
       // LCOV_EXCL_STOP GCOVR_EXCL_STOP
 
       if (!done) {
-        not_done.push_back(std::move(poll));
+        snapshot[remaining] = std::move(poll);
+
+        ++remaining;
       }
     }
+
+    snapshot.resize(remaining);
 
     {
       std::unique_lock lock(mtx_);
 
       const bool has_new_polls = !pending_.empty();
 
-      for (auto& poll : not_done) {
-        pending_.push_back(std::move(poll));
+      if (has_new_polls) {
+        for (auto& poll : snapshot) {
+          pending_.push_back(std::move(poll));
+        }
+
+        snapshot.clear();
+      } else {
+        pending_.swap(snapshot);
       }
 
       if VUNLIKELY (stopping_ || pending_.empty() || has_new_polls) {
@@ -542,7 +552,7 @@ static void retry_detached_resume(MessageLoop* loop, std::shared_ptr<MessageLoop
                                   detail::DetachedTask::Handle handle, uint16_t priority) {
   detail::register_future_wait(MoveFunction<bool()>(
       [loop, alive_state = std::move(alive_state), handle, priority, retry_count = 0U]() mutable -> bool {
-        std::lock_guard lock(alive_state->mtx);
+        std::shared_lock lock(alive_state->mtx);
 
         if VUNLIKELY (!alive_state->alive.load(std::memory_order_acquire) || loop->is_ready_to_quit()) {
           handle.destroy();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -688,7 +698,7 @@ detail::ResumePostResult detail::post_callback_if_alive(MessageLoop* loop,
   }
 
   {
-    std::lock_guard lock(alive_state->mtx);
+    std::shared_lock lock(alive_state->mtx);
 
     if VLIKELY (alive_state->alive.load(std::memory_order_acquire) && !loop->is_ready_to_quit()) {
       return post_callback(*loop, std::move(resume_callback), std::move(drop_callback), priority)
@@ -708,7 +718,7 @@ void detail::co_spawn_detached_handle(MessageLoop& loop, DetachedTask::Handle ha
   auto alive_state = loop.get_alive_state();
 
   {
-    std::lock_guard lock(alive_state->mtx);
+    std::shared_lock lock(alive_state->mtx);
 
     if VUNLIKELY (!alive_state->alive.load(std::memory_order_acquire) || loop.is_ready_to_quit()) {
       handle.destroy();
@@ -725,6 +735,16 @@ void detail::co_spawn_detached_handle(MessageLoop& loop, DetachedTask::Handle ha
 }
 
 void detail::register_future_wait(MoveFunction<bool()>&& poll) { FutureWaitLoop::register_poll(std::move(poll)); }
+
+bool detail::run_deferred_future(MoveFunction<void()>&& callback) {
+  (void)FutureWaitLoop::instance();
+  static ThreadPool pool;
+  PostTaskOptions options;
+  options.drop_policy = TaskDropPolicy::kProtected;
+  options.overflow_policy = TaskOverflowPolicy::kReject;
+
+  return pool.post_task_handle(std::move(callback), options).state() != TaskExecutionState::kRejected;
+}
 
 // ScheduleAwaiter
 ScheduleAwaiter::ScheduleAwaiter() noexcept = default;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE

@@ -600,6 +600,14 @@ VLINK_EXPORT void co_spawn_detached_handle(MessageLoop& loop, DetachedTask::Hand
  */
 VLINK_EXPORT void register_future_wait(MoveFunction<bool()>&& poll);
 
+/**
+ * @brief Submits deferred future execution to the shared worker pool.
+ *
+ * @param callback  Calls @c wait() on the owned deferred future.
+ * @return @c false if the worker pool cannot accept the task.
+ */
+[[nodiscard]] VLINK_EXPORT bool run_deferred_future(MoveFunction<void()>&& callback);
+
 }  // namespace detail
 
 /**
@@ -965,6 +973,9 @@ struct VLINK_EXPORT DelayAwaiter final {
  * waiter state so a destroyed awaiter can retire the pending poll without
  * leaving a dangling frame pointer in the helper thread.
  *
+ * Deferred futures execute on a shared worker pool before their completion is
+ * posted back to the target loop.
+ *
  * @note No per-await thread is spawned.  Resume latency is bounded by the
  *       helper's ~1 ms cadence plus the target loop's task dispatch delay.
  *
@@ -1012,6 +1023,7 @@ class FutureAwaiter final {
    * @brief Registers a poll closure on the shared @c FutureWaitLoop helper.
    *
    * @param handle  Coroutine handle to resume once the future is ready.
+   * @throws std::runtime_error if deferred execution cannot be submitted to the worker pool.
    */
   void await_suspend(std::coroutine_handle<> handle);
 
@@ -1270,16 +1282,18 @@ VLINK_EXPORT GraphAwaiter await_graph(MessageLoop& loop, GraphTaskPtr graph);
  * an internal @c std::promise and rethrown from the awaiting @c co_await.  If
  * the underlying @c exec_task post fails (queue full or loop closed), the
  * coroutine resumes with an @c std::runtime_error carrying a descriptive
- * message.
+ * message.  If an accepted task is discarded, releasing its promise completes
+ * the future with @c std::future_error; a closed target loop instead reports
+ * @c OperationCancelled through the future awaiter.
  *
  * @tparam CallbackT  Callable returning @c void.
  * @param loop      Loop on which the callback is scheduled.
- * @param config    Schedule envelope (delay, priority, timeouts).
- * @param callback  Callable to execute on the loop thread.
+ * @param config    Schedule envelope copied into the coroutine frame.
+ * @param callback  Callable owned by the coroutine frame until dispatch.
  * @return @c Task<void> that completes after @p callback returns.
  */
 template <typename CallbackT>
-Task<void> exec(MessageLoop& loop, const Schedule::Config& config, CallbackT&& callback);
+Task<void> exec(MessageLoop& loop, Schedule::Config config, CallbackT callback);
 
 /**
  * @brief Awaits every @c Task<TypeT> in @p tasks and returns their results.
@@ -1598,49 +1612,61 @@ inline void FutureAwaiter<TypeT>::await_suspend(std::coroutine_handle<> handle) 
   auto state = state_;
   state->set_handle(handle);
 
-  detail::register_future_wait(
-      MoveFunction<bool()>([loop_ptr, loop_alive, state = std::move(state),
-                            retry_count = 0U]() mutable -> bool {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-        if VUNLIKELY (state->abandoned.load(std::memory_order_acquire)) {
-          return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        }
+  const bool deferred = state->fut.wait_for(std::chrono::nanoseconds::zero()) == std::future_status::deferred;
 
-        if (state->fut.valid() && state->fut.wait_for(std::chrono::nanoseconds::zero()) != std::future_status::ready) {
-          return false;
-        }
+  auto poll = MoveFunction<bool()>([loop_ptr, loop_alive, state = std::move(state),
+                                    retry_count = 0U]() mutable -> bool {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+    if VUNLIKELY (state->abandoned.load(std::memory_order_acquire)) {
+      return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
 
-        const auto result = detail::post_callback_if_alive(
-            loop_ptr, loop_alive, MoveFunction<void()>([state]() { state->resume_ready(); }),
-            MoveFunction<void()>([state]() {
-              detail::register_future_wait(MoveFunction<bool()>([state]() {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-                if (!state->abandoned.load(std::memory_order_acquire)) {     // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-                  state->cancel_and_resume();
-                }
+    if (state->fut.valid() && state->fut.wait_for(std::chrono::nanoseconds::zero()) != std::future_status::ready) {
+      return false;
+    }
 
-                return true;
-              }));
-            }));
+    const auto result = detail::post_callback_if_alive(
+        loop_ptr, loop_alive, MoveFunction<void()>([state]() { state->resume_ready(); }),
+        MoveFunction<void()>([state]() {
+          detail::register_future_wait(MoveFunction<bool()>([state]() {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+            if (!state->abandoned.load(std::memory_order_acquire)) {     // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+              state->cancel_and_resume();
+            }
 
-        if (result == detail::ResumePostResult::kPosted) {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-          return true;
-        }
+            return true;
+          }));
+        }));
 
-        if (result == detail::ResumePostResult::kRetry) {                  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-          if (++retry_count >= detail::kMaxResumePostRetry) {              // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-            detail::register_future_wait(MoveFunction<bool()>([state]() {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-              if (!state->abandoned.load(std::memory_order_acquire)) {     // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-                state->cancel_and_resume();                                // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-              }
-              return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-            }));
-            return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    if (result == detail::ResumePostResult::kPosted) {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+      return true;
+    }
+
+    if (result == detail::ResumePostResult::kRetry) {                  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+      if (++retry_count >= detail::kMaxResumePostRetry) {              // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+        detail::register_future_wait(MoveFunction<bool()>([state]() {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+          if (!state->abandoned.load(std::memory_order_acquire)) {     // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+            state->cancel_and_resume();                                // LCOV_EXCL_LINE GCOVR_EXCL_LINE
           }
+          return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        }));
+        return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
 
-          return false;
-        }
+      return false;
+    }
 
-        return true;
-      }));
+    return true;
+  });
+
+  if (deferred) {
+    if VUNLIKELY (!detail::run_deferred_future([state = state_, poll = std::move(poll)]() mutable {
+                    state->fut.wait();
+                    detail::register_future_wait(std::move(poll));
+                  })) {
+      throw std::runtime_error("Coroutine::await_future: deferred task post failed");
+    }
+  } else {
+    detail::register_future_wait(std::move(poll));
+  }
 }
 
 template <typename TypeT>
@@ -1687,27 +1713,31 @@ inline void co_spawn_with_priority(MessageLoop& loop, Task<TypeT>&& task, Callba
 }
 
 template <typename CallbackT>
-inline Task<void> exec(MessageLoop& loop, const Schedule::Config& config, CallbackT&& callback) {
-  auto promise_ptr = MemoryResource::make_shared<std::promise<void>>();
-  auto fut = promise_ptr->get_future();
+inline Task<void> exec(MessageLoop& loop, Schedule::Config config, CallbackT callback) {
+  std::future<void> fut;
 
-  auto status = loop.exec_task(config, [cb = std::forward<CallbackT>(callback), promise_ptr]() mutable {
-    try {
-      cb();
-      promise_ptr->set_value();
-    } catch (...) {
-      promise_ptr->set_exception(std::current_exception());
-    }
-  });
+  {
+    auto promise_ptr = MemoryResource::make_shared<std::promise<void>>();
+    fut = promise_ptr->get_future();
 
-  if (config.schedule_timeout_ms > 0) {
-    status.on_schedule_timeout([promise_ptr]() {
-      promise_ptr->set_exception(std::make_exception_ptr(std::runtime_error("Coroutine::exec: schedule timeout")));
+    auto status = loop.exec_task(config, [cb = std::move(callback), promise_ptr]() mutable {
+      try {
+        cb();
+        promise_ptr->set_value();
+      } catch (...) {
+        promise_ptr->set_exception(std::current_exception());
+      }
     });
-  }
 
-  if VUNLIKELY (!status.dispatch()) {
-    promise_ptr->set_exception(std::make_exception_ptr(std::runtime_error("Coroutine::exec: exec_task post failed")));
+    if (config.schedule_timeout_ms > 0) {
+      status.on_schedule_timeout([promise_ptr]() {
+        promise_ptr->set_exception(std::make_exception_ptr(std::runtime_error("Coroutine::exec: schedule timeout")));
+      });
+    }
+
+    if VUNLIKELY (!status.dispatch()) {
+      promise_ptr->set_exception(std::make_exception_ptr(std::runtime_error("Coroutine::exec: exec_task post failed")));
+    }
   }
 
   co_await await_future(loop, std::move(fut));

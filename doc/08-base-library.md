@@ -294,7 +294,7 @@ loop.wait_for_quit();
 
 完整示例见 [`examples/base/message_loop_basic/`](../examples/base/message_loop_basic/)。
 
-`invoke_task` 经 `std::future` 取回结果。约束：不可在 loop 自身线程上对其返回的 future 调用 `.get()`——任务等待被执行，线程却等待任务完成，构成死锁。用 `is_in_same_thread()` 防护：
+`MessageLoop` 和 `ThreadPool` 的 `invoke_task` 将实参复制或移动到任务存储，执行时移动这些实参；用 `std::ref` 显式借用。返回的 `std::future` 类型按实际调用推导。约束：不可在 loop 自身线程上对其返回的 future 调用 `.get()`——任务等待被执行，线程却等待任务完成，构成死锁。用 `is_in_same_thread()` 防护：
 
 ```cpp
 if (!loop.is_in_same_thread()) {
@@ -1023,7 +1023,7 @@ load->execute(&engine);
 std::string dot = load->export_to_dot();
 ```
 
-执行必须从根节点（无前驱）发起。执行策略：`kPolicyOnce`（默认，每次 execute 最多执行一次）、`kPolicyMultiple`、`kPolicyWaitAll`（等待所有前驱完成）。
+执行必须从根节点（无前驱）发起。执行策略：`kPolicyOnce`（默认，每次 execute 最多执行一次）、`kPolicyMultiple`、`kPolicyWaitAll`（等待所有前驱完成）。依赖满足时才投递就绪节点；支持优先级的引擎按节点优先级调度就绪任务，工作线程不会占位等待前驱。`kPolicyMultiple` 后继在前驱完成的线程内直接执行并继续向下游传播，不经引擎投递。条件返回值没有匹配分支时，包括负数，传播跳过状态。
 
 ---
 
@@ -1136,7 +1136,11 @@ vlink::Co::Task<void> orchestrate(vlink::MessageLoop& loop) {
 }
 ```
 
-协程内异常沿 `co_await` 链向外传播，`co_spawn` 在顶层捕获并记日志。`MessageLoop` 析构时挂起的协程进入失败分支而非崩溃。
+`await_future` 接收 `std::launch::deferred` 产生的 future 时，由共享工作线程池启动延迟计算，目标 loop 与 future 轮询线程继续处理其他任务。计算完成后按通常路径恢复协程；工作队列拒绝接收时抛出 `std::runtime_error`。
+
+`Co::exec` 按值持有配置和回调，可保存返回的 Task 后再启动。已接受的任务在执行前被丢弃时，其 promise 随任务释放，等待不会因协程自身保留生产者而悬挂。
+
+协程内异常沿 `co_await` 链向外传播，`co_spawn` 在顶层捕获并记日志。future 已就绪但目标 `MessageLoop` 已关闭时，恢复进入取消分支；外部提供的未就绪 future 仍须由其生产者完成。
 
 ---
 

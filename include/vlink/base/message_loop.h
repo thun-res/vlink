@@ -101,6 +101,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -171,14 +172,14 @@ class VLINK_EXPORT MessageLoop {
    * @brief Lifetime gate shared with cross-thread observers.
    *
    * @details
-   * The destructor of @c MessageLoop flips @c alive to @c false under @c mtx as its very first
-   * step, so a caller that holds @c mtx and observes @c alive @c == @c true is guaranteed the
-   * loop is still safe to touch.  During Windows process termination, when all other threads
+   * Callers hold a shared lock on @c mtx while accessing the loop.  Destruction first
+   * wakes blocked producers, then takes the exclusive lock and clears @c alive before
+   * releasing resources.  During Windows process termination, when all other threads
    * have already stopped, the destructor performs only the atomic store.  Obtain via
    * @c get_alive_state.
    */
   struct AliveState final {
-    std::mutex mtx;
+    std::shared_mutex mtx;
     std::atomic_bool alive{true};
   };
 
@@ -504,7 +505,7 @@ class VLINK_EXPORT MessageLoop {
    *
    * @details
    * The returned @c AliveState outlives this loop.  Adapters that need to post continuations
-   * back to this loop should lock @c mtx, re-check @c alive, and only call back while still
+   * back to this loop should shared-lock @c mtx, re-check @c alive, and only call back while still
    * holding the lock.
    *
    * @return Shared handle; never null while the loop object is alive.
@@ -522,28 +523,27 @@ class VLINK_EXPORT MessageLoop {
    *
    * @tparam FunctionT  Callable type.
    * @tparam ArgsT      Argument types.
-   * @tparam ResultT    Return type (deduced).
    * @param function  Callable to dispatch.
-   * @param args      Arguments forwarded to @p function.
+   * @param args      Arguments copied or moved into owned storage and then moved into the call.
+   *                  Use @c std::ref to borrow an argument explicitly.
    * @return Future that becomes ready after the callable completes.
    */
-  template <class FunctionT, class... ArgsT, typename ResultT = std::invoke_result_t<FunctionT, ArgsT...>>
-  [[nodiscard]] std::future<ResultT> invoke_task(FunctionT&& function, ArgsT&&... args);
+  template <class FunctionT, class... ArgsT>
+  [[nodiscard]] auto invoke_task(FunctionT&& function, ArgsT&&... args);
 
   /**
    * @brief Priority variant of @c invoke_task; requires a @c kPriorityType loop.
    *
    * @tparam FunctionT  Callable type.
    * @tparam ArgsT      Argument types.
-   * @tparam ResultT    Return type (deduced).
    * @param function  Callable to dispatch.
    * @param priority  Dispatch priority.
-   * @param args      Arguments forwarded to @p function.
+   * @param args      Arguments copied or moved into owned storage and then moved into the call.
+   *                  Use @c std::ref to borrow an argument explicitly.
    * @return Future that becomes ready after the callable completes.
    */
-  template <class FunctionT, class... ArgsT, typename ResultT = std::invoke_result_t<FunctionT, ArgsT...>>
-  [[nodiscard]] std::future<ResultT> invoke_task_with_priority(FunctionT&& function, uint16_t priority,
-                                                               ArgsT&&... args);
+  template <class FunctionT, class... ArgsT>
+  [[nodiscard]] auto invoke_task_with_priority(FunctionT&& function, uint16_t priority, ArgsT&&... args);
 
  protected:
   /**
@@ -678,16 +678,18 @@ Schedule::RetStatus MessageLoop::exec_task(const Schedule::Config& config, Callb
   return status;
 }
 
-template <class FunctionT, class... ArgsT, typename ResultT>
-inline std::future<ResultT> MessageLoop::invoke_task(FunctionT&& function, ArgsT&&... args) {
+template <class FunctionT, class... ArgsT>
+inline auto MessageLoop::invoke_task(FunctionT&& function, ArgsT&&... args) {
   auto bound = [function = std::forward<FunctionT>(function),
-                args = std::make_tuple(std::forward<ArgsT>(args)...)]() mutable -> ResultT {
+                args = std::make_tuple(std::forward<ArgsT>(args)...)]() mutable -> decltype(auto) {
     return std::apply(
-        [&function](auto&&... unpacked_args) -> ResultT {
+        [&function](auto&&... unpacked_args) -> decltype(auto) {
           return std::invoke(function, std::forward<decltype(unpacked_args)>(unpacked_args)...);
         },
-        args);
+        std::move(args));
   };
+
+  using ResultT = std::invoke_result_t<decltype(bound)&>;
 
   if constexpr (kIsSupportMoveFunction) {
     std::packaged_task<ResultT()> task(std::move(bound));
@@ -709,17 +711,18 @@ inline std::future<ResultT> MessageLoop::invoke_task(FunctionT&& function, ArgsT
   }
 }
 
-template <class FunctionT, class... ArgsT, typename ResultT>
-inline std::future<ResultT> MessageLoop::invoke_task_with_priority(FunctionT&& function, uint16_t priority,
-                                                                   ArgsT&&... args) {
+template <class FunctionT, class... ArgsT>
+inline auto MessageLoop::invoke_task_with_priority(FunctionT&& function, uint16_t priority, ArgsT&&... args) {
   auto bound = [function = std::forward<FunctionT>(function),
-                args = std::make_tuple(std::forward<ArgsT>(args)...)]() mutable -> ResultT {
+                args = std::make_tuple(std::forward<ArgsT>(args)...)]() mutable -> decltype(auto) {
     return std::apply(
-        [&function](auto&&... unpacked_args) -> ResultT {
+        [&function](auto&&... unpacked_args) -> decltype(auto) {
           return std::invoke(function, std::forward<decltype(unpacked_args)>(unpacked_args)...);
         },
-        args);
+        std::move(args));
   };
+
+  using ResultT = std::invoke_result_t<decltype(bound)&>;
 
   if constexpr (kIsSupportMoveFunction) {
     std::packaged_task<ResultT()> task(std::move(bound));
@@ -747,7 +750,7 @@ inline Schedule::Callback MessageLoop::make_launcher(const Schedule::Config& con
 
   return [this, alive_state = std::move(alive_state), config, impl = std::move(impl),
           wrapper = std::move(wrapper)]() mutable {
-    std::lock_guard alive_lock(alive_state->mtx);
+    std::shared_lock alive_lock(alive_state->mtx);
 
     if VUNLIKELY (!alive_state->alive.load(std::memory_order_acquire)) {
       impl->is_valid.store(false, std::memory_order_relaxed);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE

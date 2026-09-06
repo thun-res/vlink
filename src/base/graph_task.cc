@@ -39,7 +39,6 @@
 #include <utility>
 #include <vector>
 
-#include "./base/condition_variable.h"
 #include "./base/helpers.h"
 #include "./base/logger.h"
 #include "./base/memory_resource.h"
@@ -58,7 +57,6 @@ struct GraphTask::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddi
   alignas(64) std::atomic<size_t> pending_index{0};
   alignas(64) std::atomic<size_t> active_index{0};
   alignas(64) std::atomic<bool> is_ready{false};
-  std::atomic<bool> is_enable{false};
   std::atomic<GraphTask::Status> status{GraphTask::kStatusInActive};
 
   std::atomic<uint32_t> max_recursion_depth{10'000};
@@ -70,7 +68,7 @@ struct GraphTask::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddi
   std::vector<std::weak_ptr<GraphTask>> succeed_task_list;
 
   mutable std::mutex mtx;
-  vlink::ConditionVariable cv;
+  GraphTask::Callback ready_callback;
 
   std::shared_mutex shared_mtx;
 
@@ -550,7 +548,7 @@ std::string GraphTask::export_to_dot() const {
   return dot_stream.str();
 }
 
-void GraphTask::process_and_traverse(FindTaskCallback&& callback) {
+std::vector<std::shared_ptr<GraphTask>> GraphTask::prepare_execution() {
   uint32_t recursion_count = 0;
 
   std::stack<std::shared_ptr<GraphTask>> task_stack;
@@ -558,8 +556,6 @@ void GraphTask::process_and_traverse(FindTaskCallback&& callback) {
   task_stack.emplace(shared_from_this());
 
   std::unordered_map<GraphTask*, int> pending_count_map;
-  std::unordered_map<GraphTask*, std::vector<std::shared_ptr<GraphTask>>> successor_map;
-  std::unordered_set<GraphTask*> processed;
 
   std::vector<std::shared_ptr<GraphTask>> top_task_list;
 
@@ -567,18 +563,13 @@ void GraphTask::process_and_traverse(FindTaskCallback&& callback) {
     auto current_task = task_stack.top();
     task_stack.pop();
 
-    if (!processed.insert(current_task.get()).second) {
-      continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
     {
       std::lock_guard lock(current_task->impl_->mtx);
 
       clear_invalid_task(current_task);
 
       if (recursion_count == 0) {
-        current_task->impl_->is_ready.store(true, std::memory_order_release);
-        current_task->impl_->is_enable.store(true, std::memory_order_release);
+        current_task->impl_->is_ready.store(false, std::memory_order_release);
         current_task->impl_->active_index.store(0U, std::memory_order_release);
 
         auto& sub_pending_count = pending_count_map[current_task.get()];
@@ -594,8 +585,6 @@ void GraphTask::process_and_traverse(FindTaskCallback&& callback) {
           continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
-        successor_map[current_task.get()].emplace_back(task_ptr);
-
         bool first_seen = (pending_count_map.find(task_ptr.get()) == pending_count_map.end());
 
         auto& sub_pending_count = pending_count_map[task_ptr.get()];
@@ -603,7 +592,6 @@ void GraphTask::process_and_traverse(FindTaskCallback&& callback) {
 
         if (first_seen) {
           task_ptr->impl_->is_ready.store(false, std::memory_order_release);
-          task_ptr->impl_->is_enable.store(false, std::memory_order_release);
           task_ptr->impl_->active_index.store(0U, std::memory_order_release);
 
           top_task_list.emplace_back(task_ptr);
@@ -613,71 +601,35 @@ void GraphTask::process_and_traverse(FindTaskCallback&& callback) {
         if VUNLIKELY (recursion_count++ >= impl_->max_recursion_depth.load(std::memory_order_relaxed)) {
           CLOG_F("GraphTask: Recursion detection exceeds the upper limit (%d).",  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
                  impl_->max_recursion_depth.load(std::memory_order_relaxed));
-          return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          return {};  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
       }
     }
   }
 
-  std::vector<std::shared_ptr<GraphTask>> ready_task_list;
-  std::vector<std::shared_ptr<GraphTask>> sorted_task_list;
-  ready_task_list.reserve(top_task_list.size());
-  sorted_task_list.reserve(top_task_list.size());
-  ready_task_list.emplace_back(top_task_list.front());
-
-  for (size_t index = 0; index < ready_task_list.size(); ++index) {
-    const auto& current_task = ready_task_list[index];
-    sorted_task_list.emplace_back(current_task);
-
-    for (const auto& successor : successor_map[current_task.get()]) {
-      auto pending_iter = pending_count_map.find(successor.get());
-      if (pending_iter != pending_count_map.end() && --pending_iter->second == 0) {
-        ready_task_list.emplace_back(successor);
-      }
-    }
-  }
-
-  if VUNLIKELY (sorted_task_list.size() != top_task_list.size()) {
-    CLOG_E("GraphTask: Failed to produce a topological task order.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return;                                                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  top_task_list = std::move(sorted_task_list);
-
   for (const auto& top_task : top_task_list) {
     top_task->update_status(kStatusPending);
   }
 
-  for (const auto& top_task : top_task_list) {
-    callback(top_task);
-  }
+  return top_task_list;
 }
 
-int GraphTask::invoke(bool once) {
-  if (once) {
-    if (!impl_->is_enable.load(std::memory_order_acquire) ||
-        impl_->status.load(std::memory_order_acquire) != kStatusPending) {
-      return -1;
-    }
+std::optional<int> GraphTask::invoke(bool once) {
+  const auto status = impl_->status.load(std::memory_order_acquire);
+
+  if (status == kStatusInActive || (once && status != kStatusPending)) {
+    return std::nullopt;
   }
 
   update_status(kStatusRunning);
-
-  std::string name_copy;
-
-  {
-    std::shared_lock lock(impl_->shared_mtx);
-
-    name_copy = impl_->name;
-  }
 
   if (!impl_->is_condition_task && impl_->callback) {
     try {
       impl_->callback();
     } catch (const std::exception& e) {
-      CLOG_E("GraphTask: callback (%s) threw an exception: %s.", name_copy.c_str(), e.what());
+      CLOG_E("GraphTask: callback (%s) threw an exception: %s.", get_name().c_str(), e.what());
     } catch (...) {
-      CLOG_E("GraphTask: callback (%s) threw a non-std exception.", name_copy.c_str());
+      CLOG_E("GraphTask: callback (%s) threw a non-std exception.", get_name().c_str());
     }
 
     update_status(kStatusDone);
@@ -693,10 +645,10 @@ int GraphTask::invoke(bool once) {
       ret = impl_->condition_callback();
     } catch (const std::exception& e) {
       failed = true;
-      CLOG_E("GraphTask: condition_callback (%s) threw an exception: %s.", name_copy.c_str(), e.what());
+      CLOG_E("GraphTask: condition_callback (%s) threw an exception: %s.", get_name().c_str(), e.what());
     } catch (...) {
       failed = true;
-      CLOG_E("GraphTask: condition_callback (%s) threw a non-std exception.", name_copy.c_str());
+      CLOG_E("GraphTask: condition_callback (%s) threw a non-std exception.", get_name().c_str());
     }
 
     update_status(kStatusDone);
@@ -710,68 +662,59 @@ int GraphTask::invoke(bool once) {
 
   update_status(kStatusDone);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
-  return -1;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  return std::nullopt;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 }
 
-void GraphTask::wait() {
-  std::unique_lock lock(impl_->mtx);
-
-  impl_->cv.wait(lock, [this]() -> bool {
-    return impl_->is_ready.load(std::memory_order_acquire) ||
-           impl_->status.load(std::memory_order_acquire) == kStatusInActive;
-  });
+void GraphTask::set_ready_callback(Callback&& callback) {
+  std::lock_guard lock(impl_->mtx);
+  impl_->ready_callback = std::move(callback);
 }
 
-void GraphTask::notify(int condition_number) {
-  std::vector<std::weak_ptr<GraphTask>> invoke_list;
+void GraphTask::notify(int condition_number, bool first_invocation) {
+  std::vector<std::pair<std::weak_ptr<GraphTask>, bool>> invoke_list;
   std::vector<std::shared_ptr<GraphTask>> skip_list;
+  std::vector<std::weak_ptr<GraphTask>> successors;
 
   {
     std::lock_guard lock(impl_->mtx);
+    successors = impl_->succeed_task_list;
+  }
 
-    for (const auto& task : impl_->succeed_task_list) {
-      auto task_ptr = task.lock();
+  for (const auto& task : successors) {
+    auto task_ptr = task.lock();
 
-      if VUNLIKELY (!task_ptr) {
-        continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    if VUNLIKELY (!task_ptr) {
+      continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    const bool matches = condition_number == task_ptr->impl_->condition_number.load(std::memory_order_relaxed);
+    bool has_active = false;
+    const bool ready = (matches || impl_->is_condition_task) &&
+                       task_ptr->mark_predecessor_satisfied(matches, &has_active, first_invocation);
+
+    if (!matches) {
+      if (ready && !has_active) {
+        if (task_ptr->mark_ready(false)) {
+          skip_list.emplace_back(task_ptr);
+        }
+      } else if (ready && task_ptr->impl_->policy.load(std::memory_order_relaxed) == kPolicyWaitAll) {
+        task_ptr->mark_ready(true);
       }
 
-      if (condition_number != task_ptr->impl_->condition_number.load(std::memory_order_relaxed)) {
-        if (impl_->is_condition_task) {
-          bool has_active = false;
-          const bool ready = task_ptr->mark_predecessor_satisfied(false, &has_active);
+      continue;
+    }
 
-          if (ready && !has_active) {
-            task_ptr->mark_ready(false);
-            skip_list.emplace_back(task_ptr);
-            // LCOV_EXCL_START GCOVR_EXCL_START
-          } else if (ready && task_ptr->impl_->policy.load(std::memory_order_relaxed) == kPolicyWaitAll) {
-            task_ptr->mark_ready(true);
-          }
-          // LCOV_EXCL_STOP GCOVR_EXCL_STOP
-        }
-
+    if (task_ptr->impl_->policy.load(std::memory_order_relaxed) == kPolicyOnce) {
+      task_ptr->mark_ready(true);
+    } else if (task_ptr->impl_->policy.load(std::memory_order_relaxed) == kPolicyMultiple) {
+      invoke_list.emplace_back(task, task_ptr->mark_ready(false));
+    } else if (task_ptr->impl_->policy.load(std::memory_order_relaxed) ==
+               kPolicyWaitAll) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      if (!ready || !has_active) {
         continue;
       }
 
-      if (task_ptr->impl_->policy.load(std::memory_order_relaxed) == kPolicyOnce) {
-        task_ptr->mark_predecessor_satisfied(true, nullptr);
-        task_ptr->mark_ready(true);
-      } else if (task_ptr->impl_->policy.load(std::memory_order_relaxed) == kPolicyMultiple) {
-        task_ptr->mark_predecessor_satisfied(true, nullptr);
-        task_ptr->mark_ready(false);
-
-        invoke_list.emplace_back(task);
-      } else if (task_ptr->impl_->policy.load(std::memory_order_relaxed) ==
-                 kPolicyWaitAll) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        bool has_active = false;
-
-        if (!task_ptr->mark_predecessor_satisfied(true, &has_active) || !has_active) {
-          continue;
-        }
-
-        task_ptr->mark_ready(true);
-      }
+      task_ptr->mark_ready(true);
     }
   }
 
@@ -780,14 +723,18 @@ void GraphTask::notify(int condition_number) {
     task_ptr->notify_skip();
   }
 
-  for (const auto& task : invoke_list) {
+  for (const auto& [task, first] : invoke_list) {
     auto task_ptr = task.lock();
 
     if VUNLIKELY (!task_ptr) {
       continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
-    task_ptr->invoke(false);
+    auto result = task_ptr->invoke(false);
+
+    if (result.has_value()) {
+      task_ptr->notify(*result, first);
+    }
   }
 }
 
@@ -815,8 +762,9 @@ void GraphTask::notify_skip() {
     }
 
     if (!has_active) {
-      task_ptr->mark_ready(false);
-      skip_list.emplace_back(task_ptr);
+      if (task_ptr->mark_ready(false)) {
+        skip_list.emplace_back(task_ptr);
+      }
       // LCOV_EXCL_START GCOVR_EXCL_START
     } else if (task_ptr->impl_->policy.load(std::memory_order_relaxed) == kPolicyWaitAll) {
       task_ptr->mark_ready(true);
@@ -830,14 +778,14 @@ void GraphTask::notify_skip() {
   }
 }
 
-bool GraphTask::mark_predecessor_satisfied(bool active, bool* has_active) {
+bool GraphTask::mark_predecessor_satisfied(bool active, bool* has_active, bool first_invocation) {
   if (active) {
     impl_->active_index.fetch_add(1U, std::memory_order_acq_rel);
   }
 
   size_t expected = impl_->pending_index.load(std::memory_order_acquire);
 
-  while (expected > 0U) {
+  while (first_invocation && expected > 0U) {
     const size_t desired = expected - 1U;
 
     if (impl_->pending_index.compare_exchange_weak(expected, desired,
@@ -851,21 +799,32 @@ bool GraphTask::mark_predecessor_satisfied(bool active, bool* has_active) {
     }
   }
 
-  if (has_active != nullptr) {                                               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    *has_active = impl_->active_index.load(std::memory_order_acquire) > 0U;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  if (has_active != nullptr) {
+    *has_active = impl_->active_index.load(std::memory_order_acquire) > 0U;
   }
 
-  return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  return expected == 0U;
 }
 
-void GraphTask::mark_ready(bool enable) {
+bool GraphTask::mark_ready(bool enable) {
+  Callback callback;
+  bool first;
+
   {
     std::lock_guard lock(impl_->mtx);
-    impl_->is_ready.store(true, std::memory_order_release);
-    impl_->is_enable.store(enable, std::memory_order_release);
+
+    first = !impl_->is_ready.exchange(true, std::memory_order_acq_rel);
+
+    if (first && enable) {
+      callback = std::move(impl_->ready_callback);
+    }
   }
 
-  impl_->cv.notify_all();
+  if (callback) {
+    callback();
+  }
+
+  return first;
 }
 
 void GraphTask::update_status(Status status) {
@@ -874,14 +833,6 @@ void GraphTask::update_status(Status status) {
   }
 
   impl_->status.store(status, std::memory_order_release);
-
-  std::string name_copy;
-
-  {
-    std::shared_lock lock(impl_->shared_mtx);
-
-    name_copy = impl_->name;
-  }
 
 #ifdef VLINK_ENABLE_BASE_MEMORY_RESOURCE
   std::pmr::vector<std::shared_ptr<StatusCallback>> callbacks(&MemoryResource::global_instance());
@@ -901,11 +852,13 @@ void GraphTask::update_status(Status status) {
     }
   }
 
-  for (auto& cb : callbacks) {
-    if VUNLIKELY (!cb || !(*cb)) {
-      continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
+  if (callbacks.empty()) {
+    return;
+  }
 
+  const auto name_copy = get_name();
+
+  for (auto& cb : callbacks) {
     try {
       (*cb)(name_copy, status);
     } catch (const std::exception& e) {

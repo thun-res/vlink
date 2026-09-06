@@ -57,9 +57,274 @@ struct RejectEngine {
   bool post_task(GraphTask::Callback&&) { return false; }
 };
 
+struct ManualGraphEngine {
+  std::vector<std::pair<uint16_t, GraphTask::Callback>> pending;
+  bool reject{false};
+
+  int get_type() const { return 2; }
+
+  bool post_task(GraphTask::Callback&& callback) { return post_task_with_priority(std::move(callback), 100); }
+
+  bool post_task_with_priority(GraphTask::Callback&& callback, uint16_t priority) {
+    if (reject) {
+      return false;
+    }
+    pending.emplace_back(priority, std::move(callback));
+    return true;
+  }
+
+  void run_one() {
+    REQUIRE_FALSE(pending.empty());
+    auto iter = std::max_element(pending.begin(), pending.end(),
+                                 [](const auto& left, const auto& right) { return left.first < right.first; });
+    auto callback = std::move(iter->second);
+    pending.erase(iter);
+    callback();
+  }
+
+  void drain() {
+    for (size_t count = 0; !pending.empty() && count < 100; ++count) {
+      run_one();
+    }
+    CHECK(pending.empty());
+  }
+};
+
 }  // namespace
 
 TEST_SUITE("base-GraphTask") {
+  TEST_CASE("negative condition results skip descendants without occupying workers") {
+    ManualGraphEngine engine;
+    auto root = GraphTask::create_condition([] { return -1; }, 2);
+    auto child = GraphTask::create([] { FAIL("unselected branch ran"); });
+    auto leaf = GraphTask::create([] { FAIL("unselected descendant ran"); });
+    root->precede(child);
+    child->precede(leaf);
+    root->execute(&engine);
+    engine.run_one();
+    CHECK_EQ(child->get_status(), GraphTask::kStatusInActive);
+    CHECK_EQ(leaf->get_status(), GraphTask::kStatusInActive);
+    CHECK(engine.pending.empty());
+  }
+
+  TEST_CASE("multiple intermediate nodes propagate every invocation downstream") {
+    ManualGraphEngine engine;
+    int middle_count = 0;
+    int leaf_count = 0;
+    auto root = GraphTask::create([] {});
+    auto left = GraphTask::create([] {});
+    auto right = GraphTask::create([] {});
+    auto middle = GraphTask::create([&] { ++middle_count; });
+    auto leaf = GraphTask::create([&] { ++leaf_count; });
+    middle->set_policy(GraphTask::kPolicyMultiple);
+    leaf->set_policy(GraphTask::kPolicyMultiple);
+    root->precede(left);
+    root->precede(right);
+    left->precede(middle);
+    right->precede(middle);
+    middle->precede(leaf);
+    root->execute(&engine);
+    engine.run_one();
+    REQUIRE_EQ(engine.pending.size(), 2U);
+    engine.drain();
+    CHECK_EQ(middle_count, 2);
+    CHECK_EQ(leaf_count, 2);
+  }
+
+  TEST_CASE("priority orders ready siblings while high priority successors await predecessors") {
+    ManualGraphEngine engine;
+    std::vector<int> order;
+    auto root = GraphTask::create([&] { order.push_back(0); });
+    auto low = GraphTask::create([&] { order.push_back(2); });
+    auto high = GraphTask::create([&] { order.push_back(1); });
+    auto join = GraphTask::create([&] { order.push_back(3); });
+    root->set_priority(1);
+    low->set_priority(10);
+    high->set_priority(200);
+    join->set_priority(250);
+    join->set_policy(GraphTask::kPolicyWaitAll);
+    root->precede(low);
+    root->precede(high);
+    low->precede(join);
+    high->precede(join);
+
+    for (int pass = 0; pass < 2; ++pass) {
+      order.clear();
+      root->execute(&engine);
+      REQUIRE_EQ(engine.pending.size(), 1U);
+      engine.drain();
+      CHECK((order == std::vector<int>{0, 1, 2, 3}));
+    }
+  }
+
+  TEST_CASE("WaitAll counts each Multiple predecessor once while Multiple successors keep every invocation") {
+    ManualGraphEngine engine;
+    int middle_count = 0;
+    int leaf_count = 0;
+    int join_count = 0;
+    bool last_done = false;
+    auto root = GraphTask::create([] {});
+    auto left = GraphTask::create([] {});
+    auto right = GraphTask::create([] {});
+    auto last = GraphTask::create([&] { last_done = true; });
+    auto middle = GraphTask::create([&] { ++middle_count; });
+    auto leaf = GraphTask::create([&] { ++leaf_count; });
+    auto join = GraphTask::create([&] {
+      CHECK(last_done);
+      ++join_count;
+    });
+    left->set_priority(200);
+    right->set_priority(100);
+    last->set_priority(1);
+    join->set_priority(250);
+    middle->set_policy(GraphTask::kPolicyMultiple);
+    leaf->set_policy(GraphTask::kPolicyMultiple);
+    join->set_policy(GraphTask::kPolicyWaitAll);
+    root->precede(left);
+    root->precede(right);
+    root->precede(last);
+    left->precede(middle);
+    right->precede(middle);
+    middle->precede(leaf);
+    middle->precede(join);
+    last->precede(join);
+
+    for (int pass = 1; pass <= 2; ++pass) {
+      last_done = false;
+      root->execute(&engine);
+      engine.run_one();
+      engine.run_one();
+      engine.run_one();
+      CHECK_EQ(middle_count, pass * 2);
+      CHECK_EQ(leaf_count, pass * 2);
+      CHECK_EQ(join_count, pass - 1);
+      CHECK_FALSE(last_done);
+      REQUIRE_EQ(engine.pending.size(), 1U);
+      engine.drain();
+      CHECK_EQ(join_count, pass);
+    }
+  }
+
+  TEST_CASE("WaitAll preserves a later selected branch from a Multiple condition predecessor") {
+    ManualGraphEngine engine;
+    int condition_count = 0;
+    int join_count = 0;
+    bool last_done = false;
+    auto root = GraphTask::create([] {});
+    auto left = GraphTask::create([] {});
+    auto right = GraphTask::create([] {});
+    auto middle = GraphTask::create_condition([&] { return condition_count++; });
+    auto last = GraphTask::create_condition([&] {
+      last_done = true;
+      return 0;
+    });
+    auto join = GraphTask::create([&] {
+      CHECK(last_done);
+      ++join_count;
+    });
+    left->set_priority(200);
+    right->set_priority(100);
+    last->set_priority(1);
+    middle->set_policy(GraphTask::kPolicyMultiple);
+    join->set_policy(GraphTask::kPolicyWaitAll);
+    join->set_condition_number(1);
+    root->precede(left);
+    root->precede(right);
+    root->precede(last);
+    left->precede(middle);
+    right->precede(middle);
+    middle->precede(join);
+    last->precede(join);
+
+    for (int pass = 1; pass <= 2; ++pass) {
+      condition_count = 0;
+      last_done = false;
+      root->execute(&engine);
+      engine.run_one();
+      engine.run_one();
+      engine.run_one();
+      CHECK_EQ(condition_count, 2);
+      CHECK_EQ(join_count, pass - 1);
+      CHECK_FALSE(last_done);
+      REQUIRE_EQ(engine.pending.size(), 1U);
+      engine.drain();
+      CHECK_EQ(join_count, pass);
+      CHECK_EQ(join->get_status(), GraphTask::kStatusDone);
+    }
+  }
+
+  TEST_CASE("repeated unselected Multiple branches satisfy each downstream dependency once") {
+    ManualGraphEngine engine;
+    bool last_done = false;
+    int join_count = 0;
+    auto root = GraphTask::create([] {});
+    auto left = GraphTask::create([] {});
+    auto right = GraphTask::create([] {});
+    auto middle = GraphTask::create_condition([] { return 0; });
+    auto skipped = GraphTask::create([] { FAIL("unselected branch ran"); });
+    auto last = GraphTask::create([&] { last_done = true; });
+    auto join = GraphTask::create([&] {
+      CHECK(last_done);
+      ++join_count;
+    });
+    left->set_priority(200);
+    right->set_priority(100);
+    last->set_priority(1);
+    middle->set_policy(GraphTask::kPolicyMultiple);
+    skipped->set_condition_number(1);
+    join->set_policy(GraphTask::kPolicyWaitAll);
+    root->precede(left);
+    root->precede(right);
+    root->precede(last);
+    left->precede(middle);
+    right->precede(middle);
+    middle->precede(skipped);
+    skipped->precede(join);
+    last->precede(join);
+    root->execute(&engine);
+    engine.run_one();
+    engine.run_one();
+    engine.run_one();
+    CHECK_EQ(join->get_status(), GraphTask::kStatusPending);
+    CHECK_FALSE(last_done);
+    REQUIRE_EQ(engine.pending.size(), 1U);
+    engine.drain();
+    CHECK_EQ(join_count, 1);
+  }
+
+  TEST_CASE("ready dispatch owns the whole graph until completion without ownership cycles") {
+    ManualGraphEngine engine;
+    int count = 0;
+    auto root = GraphTask::create([&] { ++count; });
+    auto child = GraphTask::create([&] { ++count; });
+    root->precede(child);
+    std::weak_ptr<GraphTask> weak_root = root;
+    std::weak_ptr<GraphTask> weak_child = child;
+    root->execute(&engine);
+    root.reset();
+    child.reset();
+    CHECK_FALSE(weak_child.expired());
+    engine.drain();
+    CHECK_EQ(count, 2);
+    CHECK(weak_root.expired());
+    CHECK(weak_child.expired());
+  }
+
+  TEST_CASE("rejected ready successor cancels its descendants") {
+    ManualGraphEngine engine;
+    auto root = GraphTask::create([] {});
+    auto child = GraphTask::create([] {});
+    auto leaf = GraphTask::create([] {});
+    root->precede(child);
+    child->precede(leaf);
+    root->execute(&engine);
+    engine.reject = true;
+    engine.run_one();
+    CHECK_EQ(child->get_status(), GraphTask::kStatusInActive);
+    CHECK_EQ(leaf->get_status(), GraphTask::kStatusInActive);
+    CHECK(engine.pending.empty());
+  }
+
   TEST_CASE("get_name and set_name") {
     auto task = GraphTask::create("my_task", [] {});
 
@@ -637,6 +902,30 @@ TEST_SUITE("base-GraphTask") {
 
     CHECK(subA->load() >= 1);
     CHECK_EQ(subA->load(), subB->load());
+  }
+
+  TEST_CASE("status callback snapshots survive reentrant subscription changes") {
+    ManualGraphEngine engine;
+    auto task = GraphTask::create("snapshot", [] {});
+    int removed_calls = 0;
+    int original_calls = 0;
+    std::vector<GraphTask::Status> added_statuses;
+    uint32_t id = task->register_status_callback([&](const std::string&, GraphTask::Status status) {
+      CHECK(status == GraphTask::kStatusPending);
+      ++removed_calls;
+      CHECK(task->unregister_status_callback(id));
+      task->clear_status_callbacks();
+      task->register_status_callback(
+          [&](const std::string&, GraphTask::Status next) { added_statuses.push_back(next); });
+    });
+    task->register_status_callback([&](const std::string&, GraphTask::Status) { ++original_calls; });
+
+    task->execute(&engine);
+    engine.drain();
+
+    CHECK(removed_calls == 1);
+    CHECK(original_calls == 1);
+    CHECK(added_statuses == std::vector<GraphTask::Status>{GraphTask::kStatusRunning, GraphTask::kStatusDone});
   }
 
   TEST_CASE("throwing task callback does not block downstream task") {

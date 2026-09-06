@@ -634,9 +634,109 @@ Task<> body_nested_when_all(MessageLoop* loop, std::atomic<int>* counter, std::p
   co_return;
 }
 
+Task<> body_exec_dropped(MessageLoop* loop, std::shared_ptr<std::promise<bool>> done) {
+  loop->post_task([loop] { loop->quit(); });
+
+  try {
+    co_await exec(*loop, vlink::Schedule::Config(1000), [] {});
+    done->set_value(false);
+  } catch (const Exception::OperationCancelled&) {
+    done->set_value(true);
+  }
+}
+
 }  // namespace
 
 TEST_SUITE("base-Coroutine") {
+  TEST_CASE("exec owns temporary arguments before its lazy start") {
+    MessageLoop loop;
+    std::promise<int> result;
+    auto future = result.get_future();
+    std::weak_ptr<int> retained;
+    auto task = [&] {
+      auto value = std::make_shared<int>(42);
+      retained = value;
+      return exec(loop, vlink::Schedule::Config(0), [value = std::move(value), &result] { result.set_value(*value); });
+    }();
+
+    REQUIRE_FALSE(retained.expired());
+    loop.async_run();
+    co_spawn(loop, std::move(task));
+    const bool ready = future.wait_for(2s) == std::future_status::ready;
+    loop.quit();
+    loop.wait_for_quit();
+
+    REQUIRE(ready);
+    CHECK(future.get() == 42);
+    CHECK(wait_until([&] { return retained.expired(); }));
+  }
+
+  TEST_CASE("exec releases its waiter when an accepted delayed task is destroyed") {
+    auto loop = std::make_unique<MessageLoop>();
+    auto done = std::make_shared<std::promise<bool>>();
+    auto future = done->get_future();
+    std::weak_ptr<std::promise<bool>> retained = done;
+    co_spawn(*loop, body_exec_dropped(loop.get(), std::move(done)));
+    loop->async_run();
+    loop->wait_for_quit();
+    loop.reset();
+
+    REQUIRE(future.wait_for(2s) == std::future_status::ready);
+    CHECK(future.get());
+    CHECK(wait_until([&] { return retained.expired(); }));
+  }
+
+  TEST_CASE("await_future executes deferred work without blocking the loop or other futures") {
+    MessageLoop loop;
+    loop.async_run();
+    std::promise<void> entered;
+    auto entered_future = entered.get_future();
+    std::promise<void> release;
+    auto release_future = release.get_future().share();
+    std::promise<int> result;
+    auto result_future = result.get_future();
+    auto deferred = std::async(std::launch::deferred, [&entered, release_future] {
+      entered.set_value();
+      release_future.wait();
+      return 41;
+    });
+    co_spawn(loop, body_await_future(&loop, std::move(deferred), &result));
+    const bool started = entered_future.wait_for(2s) == std::future_status::ready;
+
+    std::promise<int> other;
+    std::promise<int> other_result;
+    auto other_future = other_result.get_future();
+    co_spawn(loop, body_await_future(&loop, other.get_future(), &other_result));
+    other.set_value(6);
+    const bool other_ready = other_future.wait_for(2s) == std::future_status::ready;
+    release.set_value();
+    const bool ready = result_future.wait_for(2s) == std::future_status::ready;
+    loop.quit();
+    loop.wait_for_quit();
+
+    REQUIRE(started);
+    REQUIRE(other_ready);
+    CHECK(other_future.get() == 7);
+    REQUIRE(ready);
+    CHECK(result_future.get() == 42);
+  }
+
+  TEST_CASE("await_future propagates exceptions from deferred work") {
+    MessageLoop loop;
+    loop.async_run();
+    std::promise<void> done;
+    auto future = done.get_future();
+    std::atomic<bool> caught{false};
+    auto deferred = std::async(std::launch::deferred, []() -> int { throw std::runtime_error("deferred failure"); });
+    co_spawn(loop, body_await_future_catch(&loop, std::move(deferred), &caught, &done));
+    const bool ready = future.wait_for(2s) == std::future_status::ready;
+    loop.quit();
+    loop.wait_for_quit();
+
+    REQUIRE(ready);
+    CHECK(caught.load(std::memory_order_acquire));
+  }
+
   TEST_CASE("Task<void> spawn runs body once") {
     MessageLoop loop;
     loop.async_run();

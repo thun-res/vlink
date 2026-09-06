@@ -116,7 +116,23 @@ ThreadPool::ThreadPool(size_t thread_count, Type type) : impl_(MemoryResource::m
   init();
 }
 
-ThreadPool::~ThreadPool() { shutdown(); }
+ThreadPool::~ThreadPool() {
+#ifdef _WIN32
+  if VUNLIKELY (Utils::is_terminating()) {
+    impl_->quit_flag.store(true, std::memory_order_release);
+
+    for (auto& thread : impl_->threads) {
+      if (thread.joinable()) {
+        thread.detach();
+      }
+    }
+
+    return;
+  }
+#endif
+
+  shutdown();
+}
 
 void ThreadPool::set_name(const std::string& name) { impl_->name = name; }
 

@@ -199,6 +199,8 @@ MessageLoop::~MessageLoop() {
   }
 #endif
 
+  quit(!impl_->is_running.load(std::memory_order_acquire));
+
   {
     std::lock_guard lock(impl_->alive_state->mtx);
     impl_->alive_state->alive.store(false, std::memory_order_release);
@@ -212,7 +214,6 @@ MessageLoop::~MessageLoop() {
 
   if VUNLIKELY (impl_->is_running.load(std::memory_order_acquire)) {
     CLOG_W("MessageLoop is still running(%s).", impl_->name.c_str());
-    quit();
     wait_for_quit(1000, false);
   }
 
