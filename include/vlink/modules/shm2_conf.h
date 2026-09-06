@@ -37,7 +37,7 @@
  * @code
  *   Iceoryx2 service (file-backed POSIX SHM segment)
  *     +-----------------------------------------------+
- *     |  Per-publisher slot pool of fixed-size chunks |
+ *     |  Per-publisher pool of dynamic payload slots  |
  *     |  +------+ +------+ +------+ +------+ +------+ |
  *     |  | slot | | slot | | slot | | slot | | ...  | |
  *     |  +------+ +------+ +------+ +------+ +------+ |
@@ -76,23 +76,24 @@
  * | @c depth   | Queue / loan capacity override; @c 0 uses the Iceoryx2 default         |
  * | @c history | History count; URL default @c 0, or @c 1 for field nodes               |
  * | @c wait    | Blocking-wait timeout in ms; pub/sub only                              |
- * | @c size    | Per-message memory size from URL fragment (see size syntax below)      |
+ * | @c size    | Initial payload capacity from URL fragment (see size syntax below)    |
  *
  * @par Size Fragment Syntax
- * The URL fragment selects the per-message shared-memory chunk size.  Supported
+ * The URL fragment selects the initial payload capacity. Dynamic allocation can
+ * accommodate larger messages; this is not a message-size limit. Supported
  * suffixes are case-insensitive: @c B, @c K/@c KB, @c M/@c MB, @c G/@c GB.  The
  * value must fall in @c (0, @c kMaxMemSize].
  * @code
- *   shm2://my_topic#1M     // 1 MiB per message
- *   shm2://my_topic#512K   // 512 KiB per message
- *   shm2://my_topic        // default: 4 KiB per message
+ *   shm2://my_topic#1M     // initial payload capacity: 1 MiB
+ *   shm2://my_topic#512K   // initial payload capacity: 512 KiB
+ *   shm2://my_topic        // initial payload capacity: 4 KiB
  * @endcode
  *
  * @par Backend-Specific Options
  *
  * | Option              | Purpose                                            | Default         |
  * | ------------------- | -------------------------------------------------- | --------------- |
- * | @c size             | Per-message chunk size                             | @c 4 KiB        |
+ * | @c size             | Initial payload capacity                           | @c 4 KiB        |
  * | @c kMaxMemSize      | Hard upper bound on @c size                        | @c 32 MiB       |
  * | @c depth            | Slot pool capacity                                 | backend default |
  * | @c history          | Late-joining replay count                          | @c 0 / @c 1     |
@@ -122,7 +123,7 @@ namespace vlink {
  *
  * @details
  * Extends the @c ShmConf field set with a @c size parameter that controls the
- * per-message shared-memory chunk size negotiated with the Iceoryx2 service.
+ * initial payload capacity used by the Iceoryx2 dynamic allocator.
  */
 struct VLINK_EXPORT Shm2Conf final : public Conf {
   std::string address;             ///< Iceoryx2 service/topic address (URL host plus path); maximum 80 characters.
@@ -131,7 +132,7 @@ struct VLINK_EXPORT Shm2Conf final : public Conf {
   int32_t depth{0};                ///< Queue / loan capacity override; @c 0 keeps the Iceoryx2 default.
   int32_t history{0};              ///< History count; URL parsing defaults to @c 0, or @c 1 for setter / getter nodes.
   int32_t wait{0};                 ///< Blocking-wait timeout in milliseconds; positive values enable pub/sub wait mode.
-  uint64_t size{kDefaultMemSize};  ///< Per-message shared-memory chunk size in bytes.
+  uint64_t size{kDefaultMemSize};  ///< Initial shared-memory payload capacity in bytes.
 
   /**
    * @brief Builds a @c Shm2Conf from its seven logical fields.
@@ -142,7 +143,7 @@ struct VLINK_EXPORT Shm2Conf final : public Conf {
    * @param _depth    Queue / loan capacity override; defaults to @c 0.
    * @param _history  History count; defaults to @c 0.
    * @param _wait     Blocking-wait timeout in ms; defaults to @c 0 (disabled).
-   * @param _size     Per-message chunk size in bytes; defaults to @c kDefaultMemSize (4 KiB).
+   * @param _size     Initial payload capacity in bytes; defaults to @c kDefaultMemSize (4 KiB).
    */
   explicit Shm2Conf(const std::string& _address, const std::string& _event = "", int32_t _domain = 0,
                     int32_t _depth = 0, int32_t _history = 0, int32_t _wait = 0, uint64_t _size = kDefaultMemSize);
@@ -170,8 +171,8 @@ struct VLINK_EXPORT Shm2Conf final : public Conf {
    */
   [[nodiscard]] TransportType get_transport_type() const override;
 
-  static constexpr size_t kDefaultMemSize = 4096U;             ///< Default per-message chunk size: 4 KiB.
-  static constexpr size_t kMaxMemSize = 1024UL * 1024UL * 32;  ///< Upper bound on per-message chunk size: 32 MiB.
+  static constexpr size_t kDefaultMemSize = 4096U;             ///< Default initial payload capacity: 4 KiB.
+  static constexpr size_t kMaxMemSize = 1024UL * 1024UL * 32;  ///< Upper bound on configured initial capacity: 32 MiB.
 
 #ifndef VLINK_ENABLE_C_INTERFACE
   VLINK_DECLARE_GLOBAL_PROPERTY()

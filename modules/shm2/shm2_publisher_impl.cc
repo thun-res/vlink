@@ -37,20 +37,12 @@ void Shm2PublisherImpl::init() {
 
   conf_.hash_code = Helpers::get_hash_code(conf_.event);
 
-  object_ = factory.get_object<Object>(
-      {kImplType, conf_.address, conf_.domain, conf_.depth, conf_.history, conf_.wait, conf_.size});
+  object_ = factory.get_object<Object>({kImplType, conf_.address, conf_.domain, conf_.depth, conf_.history, conf_.wait,
+                                        conf_.size, std::string{}, nullptr});
 
   object_->add_impl(this);
 
-  object_->register_sub_connect_callback(this, [this](bool) {
-    auto* message_loop = get_message_loop();
-
-    if (message_loop) {
-      message_loop->post_task([this]() { PublisherImpl::update_subscribers(); });
-    } else {
-      PublisherImpl::update_subscribers();
-    }
-  });
+  object_->register_sub_connect_callback(this, [this](bool) { PublisherImpl::update_subscribers(); });
 
   PublisherImpl::update_subscribers();
 }

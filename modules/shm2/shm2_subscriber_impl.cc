@@ -37,8 +37,17 @@ void Shm2SubscriberImpl::init() {
 
   conf_.hash_code = Helpers::get_hash_code(conf_.event);
 
-  object_ = factory.get_object<Object>(
-      {kImplType, conf_.address, conf_.domain, conf_.depth, conf_.history, conf_.wait, conf_.size});
+  if (impl_type == kGetter) {
+    if (conf_.history == 0) {
+      conf_.history = 1;
+    }
+
+    object_ = factory.get_object<Object>(
+        {kGetter, conf_.address, conf_.domain, conf_.depth, conf_.history, conf_.wait, conf_.size, conf_.event, this});
+  } else {
+    object_ = factory.get_object<Object>({kImplType, conf_.address, conf_.domain, conf_.depth, conf_.history,
+                                          conf_.wait, conf_.size, std::string{}, nullptr});
+  }
 
   object_->add_impl(this);
 

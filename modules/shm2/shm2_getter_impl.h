@@ -35,7 +35,7 @@ namespace vlink {
 class Shm2GetterImpl final : public GetterImpl {
  public:
   using Object = Shm2Subscriber;
-  static constexpr uint8_t kImplType = kSubscriber | kGetter;
+  static constexpr uint8_t kImplType = kGetter;
 
   explicit Shm2GetterImpl(const Shm2Conf& conf);
 

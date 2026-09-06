@@ -23,6 +23,7 @@
 
 #include "./shm2_factory.h"
 
+#include <algorithm>
 #include <charconv>
 #include <chrono>
 #include <new>
@@ -94,12 +95,23 @@ Shm2Factory::Shm2Factory() {
   detect_timer_.set_callback([this]() {
     detect_timer_.set_interval(50);
 
-    std::shared_lock lock(detect_mtx_);
+    std::vector<DetectCallback> callbacks;
 
-    for (const auto& [node_ptr, callback] : detect_event_map_) {
-      callback();
+    {
+      std::shared_lock lock(detect_mtx_);
+
+      callbacks.reserve(detect_event_map_.size() + detect_method_map_.size());
+
+      for (const auto& [handle, callback] : detect_event_map_) {
+        callbacks.push_back(callback);
+      }
+
+      for (const auto& [handle, callback] : detect_method_map_) {
+        callbacks.push_back(callback);
+      }
     }
-    for (const auto& [node_ptr, callback] : detect_method_map_) {
+
+    for (const auto& callback : callbacks) {
       callback();
     }
   });
@@ -291,11 +303,16 @@ Shm2Factory::~Shm2Factory() {
   }
 }
 
-std::string Shm2Factory::make_service_name(const std::string& address, const std::string& suffix, int32_t domain) {
+std::string Shm2Factory::make_service_name(const std::string& address, const std::string& suffix, int32_t domain,
+                                           const std::string& event) {
   std::string n = "vlink/" + address + "/" + suffix;
 
   if (domain != 0) {
     n += "_" + std::to_string(domain);
+  }
+
+  if (!event.empty()) {
+    n += '@' + event;
   }
 
   return n;
@@ -550,12 +567,11 @@ void Shm2Factory::stop_blocking_waiter(BlockingWaiter* waiter) {
 Shm2Server::Shm2Server(const ShmID2& id) {
   static auto& factory = Shm2Factory::get();
 
-  const auto& [impl_type, address, domain, depth, history, wait, size] = id;
+  const auto& [impl_type, address, domain, depth, history, wait, size, event, owner] = id;
 
-  domain_ = domain;
   payload_size_ = size;
 
-  service_name_ = Shm2Factory::make_service_name(address, "method", domain);
+  service_name_ = Shm2Factory::make_service_name(address, "method", domain, event);
 
   iox2_service_name_t sn_storage{};
   iox2_service_name_h sn_handle{nullptr};
@@ -601,7 +617,7 @@ Shm2Server::Shm2Server(const ShmID2& id) {
     return;
   }
 
-  const std::string notify_svc = Shm2Factory::make_service_name(address, "method_notify", domain);
+  const std::string notify_svc = service_name_ + "/response";
 
   if VUNLIKELY (!open_or_create_event_service(factory.get_node(), notify_svc, event_pf_storage_, event_pf_handle_)) {
     VLOG_F("Shm2Factory: Failed to open server event service: ", notify_svc, ".");
@@ -617,7 +633,7 @@ Shm2Server::Shm2Server(const ShmID2& id) {
     return;
   }
 
-  const std::string req_notify_svc = Shm2Factory::make_service_name(address, "method_req_notify", domain);
+  const std::string req_notify_svc = service_name_ + "/request";
 
   struct ReqListenerCtx final {
     iox2_port_factory_event_t pf_storage;
@@ -706,12 +722,13 @@ Shm2Server::Shm2Server(const ShmID2& id) {
           return;
         }
 
-        auto* ml = impl->get_message_loop();
+        MessageLoop* loop = nullptr;
 
-        if (ml) {
-          std::weak_ptr<Shm2Server> weak_self = weak_from_this();
-          ml->post_task([weak_self]() {
-            auto self = weak_self.lock();
+        invoke_callback(impl, [&] { loop = impl->get_message_loop(); });
+
+        if (loop) {
+          loop->post_task([weak = weak_from_this(), loop]() {
+            auto self = weak.lock();
 
             if VUNLIKELY (!self) {
               return;
@@ -719,7 +736,10 @@ Shm2Server::Shm2Server(const ShmID2& id) {
 
             auto* impl = self->get_first_impl();
 
-            if VUNLIKELY (!impl || !impl->get_message_loop()) {
+            bool attached = false;
+            self->invoke_callback(impl, [&] { attached = impl->get_message_loop() == loop; });
+
+            if VUNLIKELY (!attached) {
               return;
             }
 
@@ -1043,12 +1063,11 @@ bool Shm2Server::reply(uint64_t channel, const Bytes& resp_data) {
 Shm2Client::Shm2Client(const ShmID2& id) {
   static auto& factory = Shm2Factory::get();
 
-  const auto& [impl_type, address, domain, depth, history, wait, size] = id;
+  const auto& [impl_type, address, domain, depth, history, wait, size, event, owner] = id;
 
-  domain_ = domain;
   payload_size_ = size;
 
-  service_name_ = Shm2Factory::make_service_name(address, "method", domain);
+  service_name_ = Shm2Factory::make_service_name(address, "method", domain, event);
 
   iox2_service_name_t sn_storage{};
   iox2_service_name_h sn_handle{nullptr};
@@ -1094,7 +1113,7 @@ Shm2Client::Shm2Client(const ShmID2& id) {
     return;
   }
 
-  const std::string req_notify_svc = Shm2Factory::make_service_name(address, "method_req_notify", domain);
+  const std::string req_notify_svc = service_name_ + "/request";
 
   struct ReqNotifierCtx final {
     iox2_port_factory_event_t pf_storage;
@@ -1139,7 +1158,7 @@ Shm2Client::Shm2Client(const ShmID2& id) {
     return;
   }
 
-  const std::string resp_notify_svc = Shm2Factory::make_service_name(address, "method_notify", domain);
+  const std::string resp_notify_svc = service_name_ + "/response";
 
   if VUNLIKELY (!open_or_create_event_service(factory.get_node(), resp_notify_svc, event_pf_storage_,
                                               event_pf_handle_)) {
@@ -1190,34 +1209,7 @@ Shm2Client::Shm2Client(const ShmID2& id) {
           }
         } while (has_received_event);
 
-        auto* impl = get_first_impl();
-
-        if VUNLIKELY (!impl) {
-          return;
-        }
-
-        auto* ml = impl->get_message_loop();
-
-        if (ml) {
-          std::weak_ptr<Shm2Client> weak_self = weak_from_this();
-          ml->post_task([weak_self]() {
-            auto self = weak_self.lock();
-
-            if VUNLIKELY (!self) {
-              return;
-            }
-
-            auto* impl = self->get_first_impl();
-
-            if VUNLIKELY (!impl || !impl->get_message_loop()) {
-              return;
-            }
-
-            self->process_message();
-          });
-        } else {
-          process_message();
-        }
+        process_message();
       },
       guard_, listener_poll, false, &event_pf_handle_);
 
@@ -1293,18 +1285,19 @@ void Shm2Client::process_message() {
     for (auto iter = pending_map_.begin(); iter != pending_map_.end();) {
       auto seq = iter->first;
       auto& handle = iter->second;
+      auto cb_iter = callbacks_.find(seq);
+      const bool retain = cb_iter != callbacks_.end() && cb_iter->second.dispatch;
 
       iox2_response_t resp_storage{};
       iox2_response_h resp_handle{nullptr};
 
-      auto ret = iox2_pending_response_receive(&handle, &resp_storage, &resp_handle);
+      auto ret = iox2_pending_response_receive(&handle, retain ? nullptr : &resp_storage, &resp_handle);
 
       if (ret == IOX2_OK && resp_handle) {
+        std::unique_ptr<iox2_response_h_t, decltype(&iox2_response_drop)> response(resp_handle, &iox2_response_drop);
         const void* payload_ptr = nullptr;
         size_t num_elements = 0;
         iox2_response_payload(&resp_handle, &payload_ptr, &num_elements);
-
-        auto cb_iter = callbacks_.find(seq);
 
         if (cb_iter != callbacks_.end()) {
           auto callback = std::move(cb_iter->second);
@@ -1323,16 +1316,46 @@ void Shm2Client::process_message() {
           Shm2Factory::read_data(read_resp, static_cast<uint64_t>(num_elements), channel, resp_seq, resp_bytes);
           (void)resp_seq;
 
-          callback(channel, resp_bytes);
-          iox2_response_drop(resp_handle);
+          MessageLoop* message_loop = nullptr;
+
+          if (!callback.dispatch) {
+            callback.callback(resp_bytes);
+          } else {
+            invoke_callback(callback.owner, [&]() {
+              message_loop = callback.owner->get_message_loop();
+
+              if (!message_loop) {
+                callback.callback(resp_bytes);
+              }
+            });
+          }
+
+          if (message_loop) {
+            auto drop_response = [self = shared_from_this()](iox2_response_h_t* handle_ptr) {
+              std::lock_guard drop_lock(self->mtx_);
+
+              iox2_response_drop(handle_ptr);
+            };
+            std::unique_ptr<iox2_response_h_t, decltype(drop_response)> retained(response.release(),
+                                                                                 std::move(drop_response));
+
+            message_loop->post_task([this, owner = callback.owner, message_loop, response = std::move(retained),
+                                     bytes = std::move(resp_bytes), cb = std::move(callback.callback)]() {
+              if (is_contains_impl(owner) && owner->get_message_loop() == message_loop) {
+                cb(bytes);
+              }
+            });
+          }
 
           lock.lock();
+
+          response.reset();
 
           progressed = true;
           break;
         }
 
-        iox2_response_drop(resp_handle);
+        response.reset();
         iox2_pending_response_drop(handle);
         iter = pending_map_.erase(iter);
         pending_storage_map_.erase(seq);
@@ -1423,8 +1446,10 @@ bool Shm2Client::release(const Bytes& bytes) {
   return true;
 }
 
-bool Shm2Client::call(uint64_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback, uint64_t* seq_out) {
+bool Shm2Client::call(NodeImpl* owner, uint64_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback,
+                      uint64_t* seq_out, bool dispatch) {
   if VUNLIKELY (!is_connected()) {
+    release(req_data);
     return false;
   }
 
@@ -1479,13 +1504,7 @@ bool Shm2Client::call(uint64_t channel, const Bytes& req_data, NodeImpl::MsgCall
 
   if (callback) {
     const auto response_seq = seq;
-    callbacks_[response_seq] = [cb = std::move(callback), channel](uint64_t target_channel, const Bytes& bytes) {
-      if (channel != target_channel) {
-        return;
-      }
-
-      cb(bytes);
-    };
+    callbacks_[response_seq] = ResponseCallback{owner, dispatch, std::move(callback)};
 
     if (seq_out) {
       *seq_out = response_seq;
@@ -1541,6 +1560,28 @@ void Shm2Client::remove_response_callback(uint64_t seq) {
   pending_storage_map_.erase(seq);
 }
 
+void Shm2Client::cancel_calls(NodeImpl* owner) {
+  std::lock_guard lock(mtx_);
+
+  for (auto iter = callbacks_.begin(); iter != callbacks_.end();) {
+    if (iter->second.owner != owner) {
+      ++iter;
+      continue;
+    }
+
+    const auto seq = iter->first;
+    auto pending = pending_map_.find(seq);
+
+    if (pending != pending_map_.end()) {
+      iox2_pending_response_drop(pending->second);
+      pending_map_.erase(pending);
+    }
+
+    pending_storage_map_.erase(seq);
+    iter = callbacks_.erase(iter);
+  }
+}
+
 void Shm2Client::detect_server() {
   if VUNLIKELY (quit_flag_.load(std::memory_order_acquire)) {
     return;
@@ -1562,9 +1603,8 @@ void Shm2Client::discovery_server(bool connect) {
 Shm2Publisher::Shm2Publisher(const ShmID2& id) {
   static auto& factory = Shm2Factory::get();
 
-  const auto& [impl_type, address, domain, depth, history, wait, size] = id;
+  const auto& [impl_type, address, domain, depth, history, wait, size, event, owner] = id;
 
-  domain_ = domain;
   wait_ = wait;
   payload_size_ = size;
   history_ = history;
@@ -1590,7 +1630,7 @@ Shm2Publisher::Shm2Publisher(const ShmID2& id) {
     }
   }
 
-  service_name_ = Shm2Factory::make_service_name(address, "event", domain);
+  service_name_ = Shm2Factory::make_service_name(address, impl_type == kSetter ? "field" : "event", domain, event);
 
   iox2_service_name_t sn_storage{};
   iox2_service_name_h sn_handle{nullptr};
@@ -1646,7 +1686,7 @@ Shm2Publisher::Shm2Publisher(const ShmID2& id) {
     return;
   }
 
-  const std::string notify_svc = Shm2Factory::make_service_name(address, "event_notify", domain);
+  const std::string notify_svc = service_name_ + "/notify";
 
   if VUNLIKELY (!open_or_create_event_service(factory.get_node(), notify_svc, event_pf_storage_, event_pf_handle_)) {
     VLOG_F("Shm2Factory: Failed to open publisher event service: ", notify_svc, ".");
@@ -1664,7 +1704,7 @@ Shm2Publisher::Shm2Publisher(const ShmID2& id) {
 
   if (wait > 0) {
     sem_.emplace();
-    std::string sem_address = address;
+    std::string sem_address = service_name_;
     std::replace(sem_address.begin(), sem_address.end(), '/', '@');
 #ifdef __FreeBSD__
     sem_->attach("/vlink@shm2@" + sem_address);
@@ -1981,23 +2021,24 @@ void Shm2Publisher::detect_subscribers() {
     return;
   }
 
-  discovery_subscribers(has_subscribers());
+  discovery_subscribers(iox2_port_factory_pub_sub_dynamic_config_number_of_subscribers(&pf_handle_));
 }
 
-void Shm2Publisher::discovery_subscribers(bool has_subs) {
-  if VLIKELY (last_has_subscribers_.load(std::memory_order_relaxed) == has_subs) {
-    return;
-  }
+void Shm2Publisher::discovery_subscribers(size_t count) {
+  const bool has_subs = count > 0;
 
-  traverse_sub_connect_callback([has_subs](NodeImpl*, const auto& callback) { callback(has_subs); });
-  last_has_subscribers_.store(has_subs, std::memory_order_relaxed);
-
-  if (has_subs && history_ > 0) {
+  if (count != last_subscriber_count_ && has_subs && history_ > 0) {
     update_connections();
 
     if (notifier_) {
       iox2_notifier_notify(&notifier_, nullptr);
     }
+  }
+
+  last_subscriber_count_ = count;
+
+  if (last_has_subscribers_.exchange(has_subs, std::memory_order_relaxed) != has_subs) {
+    traverse_sub_connect_callback([has_subs](NodeImpl*, const auto& callback) { callback(has_subs); });
   }
 }
 
@@ -2020,15 +2061,14 @@ void Shm2Publisher::notify_and_wait(size_t recipients) {
 Shm2Subscriber::Shm2Subscriber(const ShmID2& id) {
   static auto& factory = Shm2Factory::get();
 
-  const auto& [impl_type, address, domain, depth, history, wait, size] = id;
+  const auto& [impl_type, address, domain, depth, history, wait, size, event, owner] = id;
 
-  domain_ = domain;
   wait_ = wait;
   payload_size_ = size;
   history_ = history;
   depth_ = depth;
 
-  service_name_ = Shm2Factory::make_service_name(address, "event", domain);
+  service_name_ = Shm2Factory::make_service_name(address, impl_type == kGetter ? "field" : "event", domain, event);
 
   iox2_service_name_t sn_storage{};
   iox2_service_name_h sn_handle{nullptr};
@@ -2070,7 +2110,7 @@ Shm2Subscriber::Shm2Subscriber(const ShmID2& id) {
 
   if (wait_ > 0) {
     sem_.emplace();
-    std::string sem_address = address;
+    std::string sem_address = service_name_;
     std::replace(sem_address.begin(), sem_address.end(), '/', '@');
 #ifdef __FreeBSD__
     sem_->attach("/vlink@shm2@" + sem_address);
@@ -2105,18 +2145,18 @@ bool Shm2Subscriber::resume() {
 }
 bool Shm2Subscriber::is_suspend() const { return is_suspend_.load(std::memory_order_relaxed); }
 
-void Shm2Subscriber::process_message() {
-  if VUNLIKELY (!subscriber_) {
-    return;
-  }
+void Shm2Subscriber::process_message(MessageLoop* message_loop) {
+  while (true) {
+    std::unique_lock lock(receive_mtx_);
 
-  bool has_samples = false;
+    bool has_samples = false;
 
-  while (iox2_subscriber_has_samples(&subscriber_, &has_samples) == IOX2_OK && has_samples) {
-    iox2_sample_t stack_storage{};
+    if VUNLIKELY (!subscriber_ || iox2_subscriber_has_samples(&subscriber_, &has_samples) != IOX2_OK || !has_samples) {
+      break;
+    }
 
     iox2_sample_h sample_handle{nullptr};
-    auto ret = iox2_subscriber_receive(&subscriber_, &stack_storage, &sample_handle);
+    auto ret = iox2_subscriber_receive(&subscriber_, nullptr, &sample_handle);
 
     if VUNLIKELY (ret != IOX2_OK || !sample_handle) {
       break;
@@ -2144,23 +2184,74 @@ void Shm2Subscriber::process_message() {
     Shm2Factory::read_data(read_msg, static_cast<uint64_t>(num_elements), channel, seq, msg_bytes);
 
     if VUNLIKELY (is_latency_and_lost_enabled_.load(std::memory_order_acquire) && seq > 0) {
-      calc_sample_.update(seq, 0);
+      iox2_publish_subscribe_header_t header_storage{};
+      iox2_publish_subscribe_header_h header{nullptr};
+      iox2_sample_header(&sample_handle, &header_storage, &header);
+      iox2_unique_publisher_id_t id_storage{};
+      iox2_unique_publisher_id_h id{nullptr};
+      iox2_publish_subscribe_header_publisher_id(&header, &id_storage, &id);
+      uint64_t value[2]{};
+      iox2_unique_publisher_id_value(id, reinterpret_cast<uint8_t*>(value), sizeof(value));
+      calc_sample_.update(seq, Helpers::hash_combine(value[0], value[1]));
+      iox2_unique_publisher_id_drop(id);
+      iox2_publish_subscribe_header_drop(header);
     }
 
-    traverse_msg_callback([channel, &msg_bytes](NodeImpl* impl, const auto& callback) {
+    lock.unlock();
+
+    std::vector<MessageLoop*> routes;
+
+    traverse_msg_callback([channel, message_loop, &msg_bytes, &routes](NodeImpl* impl, const auto& callback) {
       const auto* conf_ptr = impl->get_target_conf<Shm2Conf>();
 
-      if (static_cast<uint64_t>(conf_ptr->hash_code) != channel) {
+      if VUNLIKELY (static_cast<uint64_t>(conf_ptr->hash_code) != channel) {
         return;
       }
 
-      callback(msg_bytes);
+      auto* loop = impl->get_message_loop();
+
+      if VLIKELY (!loop || loop == message_loop) {
+        callback(msg_bytes);
+      } else if (std::find(routes.begin(), routes.end(), loop) == routes.end()) {
+        routes.push_back(loop);
+      }
     });
 
-    iox2_sample_drop(sample_handle);
+    if VLIKELY (routes.empty()) {
+      lock.lock();
+      iox2_sample_drop(sample_handle);
+      lock.unlock();
 
-    if (sem_) {
-      sem_->release();
+      if (sem_) {
+        sem_->release();
+      }
+
+      continue;
+    }
+
+    std::shared_ptr<iox2_sample_h_t> retained(sample_handle, [self = shared_from_this()](iox2_sample_h handle) {
+      {
+        std::lock_guard drop_lock(self->receive_mtx_);
+
+        iox2_sample_drop(handle);
+      }
+
+      if (self->sem_) {
+        self->sem_->release();
+      }
+    });
+
+    for (auto* loop : routes) {
+      loop->post_task([this, loop, channel, retained, data = msg_bytes.data(), size = msg_bytes.size()]() {
+        auto bytes = Bytes::shallow_copy(data, size);
+
+        traverse_msg_callback([loop, channel, &bytes](NodeImpl* impl, const auto& callback) {
+          if (impl->get_message_loop() == loop &&
+              static_cast<uint64_t>(impl->get_target_conf<Shm2Conf>()->hash_code) == channel) {
+            callback(bytes);
+          }
+        });
+      });
     }
   }
 }
@@ -2189,16 +2280,7 @@ void Shm2Subscriber::subscribe() {
     return;
   }
 
-  const std::string notify_svc = [this]() {
-    auto slash = service_name_.rfind('/');
-    std::string base = (slash != std::string::npos) ? service_name_.substr(0, slash + 1) : "";
-
-    if (domain_ != 0) {
-      return base + "event_notify_" + std::to_string(domain_);
-    }
-
-    return base + "event_notify";
-  }();
+  const std::string notify_svc = service_name_ + "/notify";
 
   if VUNLIKELY (!open_or_create_event_service(factory.get_node(), notify_svc, event_pf_storage_, event_pf_handle_)) {
     VLOG_F("Shm2Factory: Failed to open subscriber event service: ", notify_svc, ".");
@@ -2285,36 +2367,37 @@ void Shm2Subscriber::subscribe() {
           return;
         }
 
-        auto* impl = get_first_impl();
+        MessageLoop* ml = nullptr;
+        NodeImpl* owner = nullptr;
 
-        if VUNLIKELY (!impl) {
-          return;
-        }
-
-        auto* ml = impl->get_message_loop();
+        traverse_msg_callback([&ml, &owner](NodeImpl* target, const auto&) {
+          if (!owner) {
+            ml = target->get_message_loop();
+            owner = target;
+          } else if (target->get_message_loop() != ml) {
+            ml = nullptr;
+          }
+        });
 
         if (ml) {
-          std::weak_ptr<Shm2Subscriber> weak_self = weak_from_this();
-          ml->post_task([weak_self]() {
-            auto self = weak_self.lock();
+          ml->post_task([weak = weak_from_this(), ml]() {
+            auto self = weak.lock();
 
             if VUNLIKELY (!self) {
               return;
             }
 
-            auto* impl = self->get_first_impl();
-
-            if VUNLIKELY (!impl || !impl->get_message_loop()) {
-              return;
-            }
-
-            self->process_message();
+            self->process_message(ml);
           });
         } else {
           process_message();
         }
       },
       guard_, listener_poll, listener_poll != nullptr, &event_pf_handle_);
+
+  if (history_ > 0) {
+    process_message();
+  }
 }
 
 void Shm2Subscriber::unsubscribe() {
@@ -2336,6 +2419,8 @@ void Shm2Subscriber::unsubscribe() {
     iox2_port_factory_event_drop(event_pf_handle_);
     event_pf_handle_ = nullptr;
   }
+
+  std::lock_guard lock(receive_mtx_);
 
   if (subscriber_) {
     iox2_subscriber_drop(subscriber_);

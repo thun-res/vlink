@@ -59,7 +59,7 @@
 
 namespace vlink {
 
-using ShmID2 = std::tuple<uint8_t, std::string, int32_t, int32_t, int32_t, int32_t, int64_t>;
+using ShmID2 = std::tuple<uint8_t, std::string, int32_t, int32_t, int32_t, int32_t, uint64_t, std::string, const void*>;
 
 [[maybe_unused]] static constexpr int kDefaultReqDepth2 = 50;
 [[maybe_unused]] static constexpr int kDefaultRespDepth2 = 10;
@@ -137,7 +137,8 @@ class Shm2Factory final : public AbstractFactory<ShmID2> {
 #endif
   }
 
-  static std::string make_service_name(const std::string& address, const std::string& suffix, int32_t domain);
+  static std::string make_service_name(const std::string& address, const std::string& suffix, int32_t domain,
+                                       const std::string& event = {});
 
   iox2_node_h_ref get_node() const;
 
@@ -249,7 +250,6 @@ class Shm2Server final : public AbstractObject<ShmID2>, public std::enable_share
   iox2_port_factory_request_response_t pf_storage_{};
   iox2_port_factory_request_response_h pf_handle_{nullptr};
   std::string service_name_;
-  int32_t domain_{0};
   int64_t payload_size_{0};
 
   iox2_server_t server_storage_{};
@@ -295,10 +295,12 @@ class Shm2Client final : public AbstractObject<ShmID2>, public std::enable_share
 
   bool release(const Bytes& bytes);
 
-  bool call(uint64_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback = nullptr,
-            uint64_t* seq_out = nullptr);
+  bool call(NodeImpl* owner, uint64_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback = nullptr,
+            uint64_t* seq_out = nullptr, bool dispatch = true);
 
   void remove_response_callback(uint64_t seq);
+
+  void cancel_calls(NodeImpl* owner);
 
  private:
   void detect_server();
@@ -313,7 +315,6 @@ class Shm2Client final : public AbstractObject<ShmID2>, public std::enable_share
   iox2_port_factory_request_response_t pf_storage_{};
   iox2_port_factory_request_response_h pf_handle_{nullptr};
   std::string service_name_;
-  int32_t domain_{0};
   int64_t payload_size_{0};
 
   iox2_client_t client_storage_{};
@@ -327,7 +328,12 @@ class Shm2Client final : public AbstractObject<ShmID2>, public std::enable_share
   iox2_waitset_guard_h guard_{nullptr};
 
   std::mutex mtx_;
-  std::unordered_map<uint64_t, Function<void(uint64_t, const Bytes&)>> callbacks_;
+  struct ResponseCallback final {
+    NodeImpl* owner{nullptr};
+    bool dispatch{true};
+    NodeImpl::MsgCallback callback;
+  };
+  std::unordered_map<uint64_t, ResponseCallback> callbacks_;
 
   std::unordered_map<uint64_t, iox2_pending_response_t> pending_storage_map_;
   std::unordered_map<uint64_t, iox2_pending_response_h> pending_map_;
@@ -368,19 +374,19 @@ class Shm2Publisher final : public AbstractObject<ShmID2>, public std::enable_sh
  private:
   void detect_subscribers();
 
-  void discovery_subscribers(bool has_subscribers);
+  void discovery_subscribers(size_t count);
 
   void notify_and_wait(size_t recipients);
 
   alignas(64) std::atomic<uint64_t> seq_{0};
   std::atomic_bool has_detect_timer_{false};
   std::atomic_bool last_has_subscribers_{false};
+  size_t last_subscriber_count_{0};
   std::atomic_bool quit_flag_{false};
 
   iox2_port_factory_pub_sub_t pf_storage_{};
   iox2_port_factory_pub_sub_h pf_handle_{nullptr};
   std::string service_name_;
-  int32_t domain_{0};
   int32_t wait_{0};
   int64_t payload_size_{0};
   int32_t history_{0};
@@ -424,7 +430,7 @@ class Shm2Subscriber final : public AbstractObject<ShmID2>, public std::enable_s
 
   bool is_suspend() const;
 
-  void process_message();
+  void process_message(MessageLoop* message_loop = nullptr);
 
   void subscribe();
 
@@ -444,12 +450,12 @@ class Shm2Subscriber final : public AbstractObject<ShmID2>, public std::enable_s
   iox2_port_factory_pub_sub_h pf_handle_{nullptr};
   iox2_port_factory_subscriber_builder_h sub_builder_{nullptr};
   std::string service_name_;
-  int32_t domain_{0};
   int32_t wait_{0};
   int64_t payload_size_{0};
   int32_t history_{0};
   int32_t depth_{0};
 
+  std::mutex receive_mtx_;
   iox2_subscriber_t subscriber_storage_{};
   iox2_subscriber_h subscriber_{nullptr};
   [[maybe_unused]] iox2_waitset_guard_t guard_storage_{};
