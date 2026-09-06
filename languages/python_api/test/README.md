@@ -10,11 +10,11 @@
 
 ## 文件清单
 
-| 文件 | 角色 | 大小 |
+| 文件 | 角色 | 测试数 |
 |---|---|---|
-| `test_vlink.py`           | 基础烟雾测试，每条 API 一个 happy-path 用例 | ~930 行 / 22 个测试 |
-| `test_vlink_full.py`      | 完整覆盖测试，含错误路径 / 复杂场景       | ~2190 行 / 45 个测试 |
-| `test_vlink_coverage.py`  | 绑定覆盖率回归，确保关键 attr / method 仍可见 | ~750 行 / 27 个测试 |
+| `test_vlink.py`           | 基础烟雾测试，每条 API 一个 happy-path 用例 | 24 |
+| `test_vlink_full.py`      | 完整覆盖测试，含错误路径 / 复杂场景       | 49 |
+| `test_vlink_coverage.py`  | 绑定覆盖率回归，确保关键 attr / method 仍可见 | 27 |
 
 三个文件相互独立，可以单独运行。三层覆盖的设计意图：
 
@@ -25,6 +25,8 @@
 ---
 
 ## 运行
+
+先开启 `ENABLE_PYTHON_API=ON`，构建 `_vlink_nanobind`，并将其输出目录加入 `PYTHONPATH`。
 
 ```bash
 # 烟雾测试（最常用）
@@ -61,8 +63,10 @@ python3 test_vlink_coverage.py
 | `test_zerocopy_camera_frame` | `CameraFrame` |
 | `test_zerocopy_point_cloud` | `PointCloud` schema 协议与 `set_vertical` |
 | `test_zerocopy_python_ownership_guards` | Python buffer/NumPy 视图的所有权与生命周期保护 |
+| `test_zerocopy_owned_copy` | 点云与对象数组深拷贝、空数据的所有权 |
 | `test_zerocopy_point_cloud_compress` | `PointCloud` 压缩与解压往返 |
 | `test_zerocopy_proxy_data` | `ProxyData` |
+| `test_proxy_raw_storage_lifetime` | raw 浅视图存活时禁止替换父存储 |
 | `test_zerocopy_occupancy_grid` | `OccupancyGrid` |
 | `test_zerocopy_tensor` | `Tensor`（含 set_dtype/set_shape 顺序） |
 | `test_zerocopy_object_array` | `ObjectArray` + nested `Object` POD |
@@ -79,6 +83,8 @@ python3 test_vlink_coverage.py
 - `BagWriter.create` / `BagWriter.filter_get` / `push_schema` / split callback / 显式 `close()`
 - `BagReader.detect_schema` / `check` / `reindex` / `play` / status callback
 - `DiscoveryViewer` 显式实例与过滤
+- `DiscoveryViewer` 消息循环与发现回调、`MessageLoop` 满队列阻塞投递
+- Logger 回调重置、并发替换与析构重入
 - `TriggerRecorder` 启停、触发落盘与超时等待，以及宿主加载并绑定 `BagPluginInterface` / `TriggerPluginInterface`
 - `UrlRemap`
 - Security 模型

@@ -58,6 +58,41 @@
 C++ codec 或外部编码器生成 payload，再用 `vlink.Bytes.from_bytes()` 交给节点。`someip://` 只选择
 传输后端，不会自动把 Python 对象编码为 SOME/IP 字段。
 
+### 接收后独立修改载荷
+
+需要修改已解析的点云时，显式复制后再改写；`ObjectArray` 同样支持 `deep_copy(source)`：
+
+```python
+editable = vlink.PointCloud()
+if not editable.deep_copy(received_cloud):
+    raise RuntimeError("failed to copy point cloud")
+if editable.size():
+    editable.resize(editable.size())
+    editable.set_value_v3f(0, 1.0, 2.0, 3.0)
+```
+
+`ProxyData.raw()` 的结果是浅视图。使用后释放 raw、对应的 `memoryview` 和借用它的消息，
+再调用父对象的 `clear()` / `create()` / `from_bytes()`；存储仍被借用时这些方法抛出 `BufferError`。
+
+发现与临时日志接管的生命周期示例：
+
+```python
+viewer = vlink.DiscoveryViewer()
+viewer.register_callback(lambda infos: print(infos))
+viewer.async_run()
+try:
+    input("按回车结束发现监听：")
+finally:
+    viewer.quit()
+    viewer.wait_for_quit(2000)
+
+vlink.Logger.register_console_handler(lambda level, message: print(message))
+try:
+    vlink.log_info("使用 Python 日志回调")
+finally:
+    vlink.Logger.register_console_handler(None)
+```
+
 ---
 
 ## `demo_vlink_bag.py` 章节速查
@@ -88,7 +123,7 @@ C++ codec 或外部编码器生成 payload，再用 `vlink.Bytes.from_bytes()` �
 
 `BagWriter.Config.sync_mode=True` 时无需 `async_run()`、`wait_for_idle()` 或 `quit()`；创建后直接 `push()`，最后 `close()` 并检查 `fail()`。
 
-`TriggerRecorder` 的 bag 插件由宿主显式加载并绑定，插件库名不再放进
+`BagWriter`、`BagReader` 和 `TriggerRecorder` 的 bag 插件均由宿主显式加载并绑定，插件库名不再放进
 `TriggerRecorder.Config`：
 
 ```python
@@ -101,6 +136,11 @@ config = vlink.TriggerRecorder.Config()
 recorder = vlink.TriggerRecorder(config)
 recorder.bind_bag_interface(bag_plugin)
 ```
+
+普通读写器在 `create()` 后、开始 `push()` / `play()` 前同样调用
+`writer.bind_bag_interface(bag_plugin)` 或 `reader.bind_bag_interface(bag_plugin)`。
+一个插件实例同一时刻只绑定一个读写器；读写停止后通过 `clear_bag_interface()` 排空并解绑，
+再复用该实例。不得在读写器自己的 Python 回调中切换插件，该调用会抛出 `RuntimeError`。
 
 `load_bag_plugin()` 按 `BagPluginInterface` 接口版本 2.0 加载；返回对象可直接交给
 `bind_bag_interface()`，`clear_bag_interface()` 用于恢复默认的采集时间顺序。`on_reset()` / `flush()`

@@ -314,7 +314,7 @@ vlink_create_publisher_with_ssl_options("mqtt://sensor/data", &schema, &pub, &op
 
 vlink 为 Python 提供两条路径，**首选原生绑定**：
 
-- **原生 nanobind 绑定（首选）**：源码位于 `languages/python_api/`（`vlink_python.cc` + `vlink.py`），编译产出名为 `_vlink_nanobind` 的扩展模块，由 `vlink.py` 再导出（`from _vlink_nanobind import *`）。它是一等公民的面向对象 API，无需手写 ABI 声明，并自动管理生命周期。需在配置时开启构建开关 `ENABLE_PYTHON_API`（`CMakeLists.txt` 中默认 `OFF`），即 `cmake -DENABLE_PYTHON_API=ON ...`；该开关依赖系统已安装 `nanobind`。导出的主要类/接口如下，完整清单以 `languages/python_api/vlink.py` 的 `__all__` 为准：
+- **原生 nanobind 绑定（首选）**：源码位于 `languages/python_api/`（`vlink_python.cc` 负责初始化，各功能由独立 `.cc` 注册，`vlink.py` 负责导出），编译产出名为 `_vlink_nanobind` 的扩展模块，由 `vlink.py` 再导出（`from _vlink_nanobind import *`）。它是一等公民的面向对象 API，无需手写 ABI 声明，并自动管理生命周期。需在配置时开启构建开关 `ENABLE_PYTHON_API`（`CMakeLists.txt` 中默认 `OFF`），即 `cmake -DENABLE_PYTHON_API=ON ...`；该开关依赖系统已安装 `nanobind`。导出的主要类/接口如下，完整清单以 `languages/python_api/vlink.py` 的 `__all__` 为准：
   - 收发端点：`Publisher`、`Subscriber`、`Server`、`Client`、`Setter`、`Getter`、`FireForgetServer`、`FireForgetClient`；
   - 安全版端点：`Security`、`SecurityConfig`、`SecurityConfigAdvanced`、`SecurityPublisher`、`SecuritySubscriber`、`SecurityServer`、`SecurityClient`、`SecuritySetter`、`SecurityGetter`、`SecurityFireForgetServer`、`SecurityFireForgetClient`、`SslOptions`；
   - 录制/回放与发现：`BagWriter`、`BagReader`、`TriggerRecorder`、`DiscoveryViewer`；
@@ -322,7 +322,31 @@ vlink 为 Python 提供两条路径，**首选原生绑定**：
   - 基础类型与工具：`Bytes`、`Frame`、`Uuid`、`Version`、`SchemaData`、`SampleLostInfo`、`ElapsedTimer`、`DeadlineTimer`、`Timer`、`WheelTimer`、`MessageLoop`、`MultiLoop`、`ThreadPool`、`SpinLock`、`CpuProfiler`、`CpuProfilerGuard`、`MemoryPool`、`Process`、`utils`、`helpers`、`quantize`；
   - 各类枚举：`ImplType`、`TransportType`、`InitType`、`SecurityType`、`ActionType`、`SchemaType`、`LogLevel`、`StatusType` 等。
 
-  具体方法签名以源码 `languages/python_api/vlink_python.cc` 为准，示例可参考 `languages/python_api/examples/`。
+  具体方法签名以 `languages/python_api/` 下各功能绑定文件为准，注册入口见 `vlink_python.cc`，示例可参考 `languages/python_api/examples/`。
+
+  | 文件 | 职责 |
+  | --- | --- |
+  | `types.cc`、`buffer.cc` | 基础枚举、Frame、Version、SchemaData、Uuid 与 Bytes buffer 协议 |
+  | `zerocopy.cc` | 零拷贝容器、统一消息解析器与输入所有权保护 |
+  | `logging.cc` | Logger 与日志函数 |
+  | `runtime.cc` | 消息循环、线程池、定时器、锁、性能计时与内存池 |
+  | `process.cc`、`utils.cc` | 子进程、系统工具、字符串辅助与量化 |
+  | `qos.cc`、`security.cc` | QoS、状态类型与安全配置 |
+  | `communication.cc` | 六种通信原语及安全版本 |
+  | `discovery.cc`、`bag.cc` | 发现与 URL 重映射、录制回放与插件 |
+  | `callbacks.h/.cc`、`ownership.h/.cc` | 共用 GIL、回调生命周期与 Python 对象所有权管理 |
+  | `bindings.h`、`buffer.h`、`strings.h` | 注册声明、buffer 转换与 UTF-8 辅助 |
+
+  所有功能文件共同编译为同一个 `_vlink_nanobind` 扩展，Python 导入方式和安装布局不变。
+
+  Python 生命周期与可修改数据的约定：
+
+  - `DiscoveryViewer` 继承 `MessageLoop`：注册发现回调后调用 `async_run()`，结束时调用 `quit()` 和 `wait_for_quit(timeout_ms)`；构造本身不启动发现消息处理。
+  - `MessageLoop` 的投递接口在等待队列容量时释放 GIL，使 `Block` 策略下的 Python 消费回调可以继续执行。
+  - `ProxyData.raw()` 返回浅 `Bytes`；该对象及由它派生的 `memoryview`、借用消息仍存活时，父对象的 `clear()`、`create()`、`from_bytes()` 抛出 `BufferError`。释放这些视图后才能替换父存储。
+  - `PointCloud.deep_copy(source)`、`ObjectArray.deep_copy(source)` 显式复制元数据与载荷，非空结果拥有独立存储；空结果保留元数据但不借用源指针。自复制返回 `False`。点云逐点改写前仍需按原生契约调用 `resize(size())`。
+  - `Logger.register_console_handler(None)`、`register_file_handler(None)` 释放 Python 回调并恢复对应默认输出；并发注册与清除按安装顺序串行执行，旧回调在释放注册锁后销毁。不能从日志回调内部替换或清除 handler。
+  - `BagReader`、`BagWriter` 均提供 `bind_bag_interface(plugin)` 和 `clear_bag_interface()`，接收 `Plugin.load_bag_plugin()` 返回的接口并持有共享所有权。替换或解绑会排空旧插件，须在读写停止后执行；从该对象的 Python 回调内部调用会抛出 `RuntimeError`。
 
 - **ctypes-over-C-API（轻量替代）**：当不便编译原生绑定时，可直接用 `ctypes` 调用 C API 共享库，无需额外构建步骤，但需手写与 `vlink_schema_info_t`、句柄结构体匹配的 ABI 布局并自行管理生命周期：
 

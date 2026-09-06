@@ -305,8 +305,7 @@ def test_logger_levels_and_file_handler():
             break
 
         time.sleep(0.01)
-    # Restore default null-ish handler
-    _vlink.Logger.register_file_handler(lambda lv, msg: None)
+    _vlink.Logger.register_file_handler(None)
 
     inst = _vlink.Logger.get()
     assert inst is not None

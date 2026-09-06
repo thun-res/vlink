@@ -14,7 +14,7 @@
 ## C API 与 Python API
 
 - C API 的声明、实现、ABI、错误码、所有权说明、C 示例和测试同步。
-- `vlink_python.cc` 绑定与 C++ 签名一致;`vlink.py` 包装、docstring、
+- `languages/python_api/` 各功能 `.cc` 的绑定与 C++ 签名一致;`vlink.py` 包装、docstring、
   默认参数和导出列表同步。
 - 新公开 C++ API 是否需要暴露到 C/Python 必须有明确结论;不暴露时说明
   产品或兼容性理由。

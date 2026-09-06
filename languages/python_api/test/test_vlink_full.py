@@ -188,8 +188,7 @@ def test_logger_extended():
     assert level == _vlink.LogLevel.Info
     assert type(level) is type(_vlink.LogLevel.Info)
     assert "custom handler test" in message
-    # Restore default by registering None-like handler
-    _vlink.Logger.register_console_handler(lambda lv, msg: None)
+    _vlink.Logger.register_console_handler(None)
 
     replacement_check = r'''
 import ctypes
@@ -237,6 +236,137 @@ vlink.Logger.register_console_handler(lambda level, message: None)
     )
 
     print("[PASS] Logger extended")
+
+
+def test_logger_handler_reset():
+    """Removing handlers restores native output and releases Python captures."""
+    code = r'''
+import gc
+import pathlib
+import sys
+import weakref
+import vlink
+
+class Handler:
+    def __call__(self, level, message):
+        pass
+
+directory = sys.argv[1]
+vlink.Logger.init("handler_reset", directory)
+vlink.Logger.set_console_level(vlink.LogLevel.Info)
+vlink.Logger.set_file_level(vlink.LogLevel.Info)
+vlink.log_info("native-handler-baseline")
+vlink.Logger.flush()
+log_files = [path for path in pathlib.Path(directory).rglob("*")
+             if path.is_file() and b"native-handler-baseline" in path.read_bytes()]
+for register in (vlink.Logger.register_console_handler, vlink.Logger.register_file_handler):
+    handler = Handler()
+    ref = weakref.ref(handler)
+    register(handler)
+    del handler
+    assert ref() is not None
+    register(None)
+    gc.collect()
+    assert ref() is None
+    try:
+        register(42)
+        assert False, "non-callable handlers must be rejected"
+    except TypeError:
+        pass
+vlink.log_info("native-handler-restored")
+vlink.Logger.flush()
+assert all(b"native-handler-restored" in path.read_bytes() for path in log_files)
+'''
+    with tempfile.TemporaryDirectory() as directory:
+        result = subprocess.run(
+            [sys.executable, "-c", code, directory], check=True, capture_output=True, text=True, timeout=10.0,
+        )
+    assert "native-handler-restored" in result.stdout + result.stderr
+    print("[PASS] Logger handler reset")
+
+
+def test_logger_concurrent_handler_replacement():
+    """Concurrent registrations retain only the installed handler."""
+    code = r'''
+import gc
+import sys
+import threading
+import weakref
+import vlink
+
+vlink.Logger.init("concurrent_handlers", sys.argv[1])
+sys.setswitchinterval(0.00001)
+unraisable = []
+sys.unraisablehook = unraisable.append
+for register, level in (
+    (vlink.Logger.register_console_handler, vlink.Logger.set_console_level),
+    (vlink.Logger.register_file_handler, vlink.Logger.set_file_level),
+):
+    vlink.Logger.set_console_level(vlink.LogLevel.Off)
+    vlink.Logger.set_file_level(vlink.LogLevel.Off)
+    level(vlink.LogLevel.Info)
+    refs = [None] * 4
+    received = []
+    barrier = threading.Barrier(5, timeout=10.0)
+
+    class Handler:
+        def __init__(self, index):
+            self.index = index
+            refs[index] = weakref.ref(self)
+
+        def __call__(self, log_level, message):
+            received.append(self.index)
+
+    def replace(index):
+        for iteration in range(500):
+            barrier.wait()
+            if iteration % 2 and index % 2:
+                refs[index] = None
+                register(None)
+            else:
+                register(Handler(index))
+            barrier.wait()
+
+    workers = [threading.Thread(target=replace, args=(index,), daemon=True)
+               for index in range(4)]
+    for worker in workers:
+        worker.start()
+    for iteration in range(500):
+        barrier.wait()
+        barrier.wait()
+        received.clear()
+        vlink.log_info("installed-handler")
+        assert len(received) <= 1, received
+        live = [index for index, ref in enumerate(refs) if ref is not None and ref() is not None]
+        assert live == received, (iteration, live, received)
+        register(None)
+        assert all(ref is None or ref() is None for ref in refs)
+    for worker in workers:
+        worker.join(2.0)
+        assert not worker.is_alive()
+
+    class ReentrantFinalizer:
+        def __call__(self, log_level, message):
+            pass
+
+        def __del__(self):
+            register(None)
+
+    handler = ReentrantFinalizer()
+    ref = weakref.ref(handler)
+    register(handler)
+    del handler
+    register(None)
+    gc.collect()
+    assert ref() is None
+assert not unraisable, unraisable
+'''
+    with tempfile.TemporaryDirectory() as directory:
+        subprocess.run(
+            [sys.executable, "-c", code, directory], check=True,
+            capture_output=True, text=True, timeout=30.0,
+        )
+    print("[PASS] Logger concurrent handler replacement")
 
 
 def test_memory_resource_export():
@@ -344,6 +474,54 @@ def test_message_loop_extended():
     loop.quit()
     loop.wait_for_quit(2000)
     print("[PASS] MessageLoop extended")
+
+
+def test_message_loop_blocking_submission():
+    """A full Block queue must leave the GIL available to Python consumers."""
+    code = r'''
+import sys
+import threading
+import vlink
+
+mode = sys.argv[1]
+loop_type = vlink.MessageLoopType.Priority if mode == "priority" else vlink.MessageLoopType.Normal
+loop = vlink.MessageLoop(loop_type)
+loop.set_strategy(vlink.MessageLoopStrategy.Block)
+entered = threading.Event()
+gate = threading.Event()
+finished = threading.Event()
+
+def hold_consumer():
+    entered.set()
+    assert gate.wait(5.0)
+
+if mode == "priority":
+    submit = lambda callback: loop.post_task_with_priority(callback, vlink.TaskPriority.Highest)
+elif mode == "exec":
+    submit = lambda callback: loop.exec_task(0, callback)
+else:
+    submit = loop.post_task
+
+assert loop.async_run()
+assert submit(hold_consumer)
+assert entered.wait(2.0)
+capacity = loop.get_max_task_count()
+for _ in range(capacity):
+    assert submit(lambda: None)
+assert loop.get_task_count() == capacity
+timer = threading.Timer(0.1, gate.set)
+timer.start()
+assert submit(finished.set)
+assert finished.wait(5.0)
+timer.join()
+loop.quit()
+assert loop.wait_for_quit(2000)
+'''
+    for mode in ("normal", "priority", "exec"):
+        subprocess.run(
+            [sys.executable, "-c", code, mode], check=True, capture_output=True, text=True, timeout=10.0,
+        )
+    print("[PASS] MessageLoop blocking submission")
 
 
 def test_timer_extended():
@@ -1797,6 +1975,40 @@ def test_discovery_viewer_fields():
     print("[PASS] DiscoveryViewer fields")
 
 
+def test_discovery_viewer_lifecycle():
+    """A running Python viewer receives real endpoint announcements."""
+    code = r'''
+import os
+import threading
+import vlink
+
+url = "intra://python/discovery/" + str(os.getpid())
+viewer = vlink.DiscoveryViewer()
+assert isinstance(viewer, vlink.MessageLoop)
+seen = threading.Event()
+viewer.register_callback(lambda infos: seen.set() if any(info.url == url for info in infos) else None)
+assert viewer.async_run()
+assert viewer.is_running()
+publisher = vlink.Publisher(url, ser_type="raw", auto_init=False)
+publisher.set_discovery_enabled(True)
+publisher.init()
+try:
+    assert seen.wait(8.0), "viewer did not receive the endpoint announcement"
+    assert any(info.url == url and info.process_list for info in viewer.get_info_list())
+    assert viewer.get_ser_type(url) == "raw"
+finally:
+    publisher.deinit()
+    viewer.quit()
+    assert viewer.wait_for_quit(2000)
+assert not viewer.is_running()
+'''
+    env = dict(os.environ, VLINK_DISCOVER_DISABLE="0")
+    subprocess.run(
+        [sys.executable, "-c", code], env=env, check=True, capture_output=True, text=True, timeout=15.0,
+    )
+    print("[PASS] DiscoveryViewer lifecycle")
+
+
 def test_plugin_host_binding_contract():
     config = _vlink.TriggerRecorder.Config()
     assert config.default_pre_ms == 15000
@@ -2162,10 +2374,13 @@ if __name__ == "__main__":
 
     test_bytes_extended()
     test_logger_extended()
+    test_logger_handler_reset()
+    test_logger_concurrent_handler_replacement()
     test_memory_resource_export()
     test_elapsed_timer_extended()
     test_deadline_timer_extended()
     test_message_loop_extended()
+    test_message_loop_blocking_submission()
     test_timer_extended()
     test_wheel_timer_extended()
     test_thread_pool_extended()
@@ -2193,6 +2408,7 @@ if __name__ == "__main__":
     test_exec_task()
     test_timer_constructors()
     test_discovery_viewer_fields()
+    test_discovery_viewer_lifecycle()
     test_plugin_host_binding_contract()
     test_trigger_recorder_lifecycle()
     test_utils_terminal()

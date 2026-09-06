@@ -29,7 +29,25 @@ set(nanobind_DIR
 )
 find_package(nanobind CONFIG REQUIRED PATHS "${nanobind_DIR}" NO_DEFAULT_PATH)
 
-nanobind_add_module(_vlink_nanobind NB_SUPPRESS_WARNINGS vlink_python.cc)
+nanobind_add_module(
+  _vlink_nanobind
+  NB_SUPPRESS_WARNINGS
+  vlink_python.cc
+  buffer.cc
+  ownership.cc
+  callbacks.cc
+  types.cc
+  zerocopy.cc
+  logging.cc
+  runtime.cc
+  process.cc
+  utils.cc
+  qos.cc
+  security.cc
+  communication.cc
+  discovery.cc
+  bag.cc
+)
 
 target_link_libraries(_vlink_nanobind PRIVATE vlink::vlink vlink::all)
 set_target_properties(

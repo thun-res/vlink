@@ -122,7 +122,7 @@ agent 渐进式披露:先在本表定位功能 → 再读对应 doc 小节 → �
 | 功能 | 代码入口 | 文档小节 |
 | ---- | ---- | ---- |
 | 纯 C API(多语言集成,`ENABLE_C_API`) | `languages/c_api/` + `include/vlink/external/c_api.h` | `doc/13` §13.1–§13.8 |
-| Python API(`ENABLE_PYTHON_API`) | `languages/python_api/vlink_python.cc` + `languages/python_api/vlink.py` | `doc/13` §13.7.1/§13.8.3 |
+| Python API(`ENABLE_PYTHON_API`) | `languages/python_api/vlink_python.cc` → 同目录功能 `.cc`；`vlink.py` 导出 | `doc/13` §13.7.1/§13.8.3 |
 | UrlRemap 与 DynamicData | `include/vlink/extension/url_remap.h`、`include/vlink/extension/dynamic_data.h` | `doc/13` §13.10/§13.11 |
 | 动态库 Plugin 加载器 | `include/vlink/base/plugin.h` | `doc/13` §13.12/§13.13 |
 | Logger 插件接口 | `include/vlink/base/logger_plugin_interface.h` | `doc/13` §13.14 |
