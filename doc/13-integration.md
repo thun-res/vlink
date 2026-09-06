@@ -1049,6 +1049,8 @@ export VLINK_LOG_DIR=/var/log/vlink
 | `VLINK_FASTDDS_QOS_FILE` | 文件路径 | Fast-DDS QoS XML 路径 |
 | `VLINK_CYCLONEDDS_URI` | URI | CycloneDDS 配置 URI |
 
+`ddsc://` 的 `VLINK_DDS_MULTICAST_IP`（或节点属性 `dds.multicast.ip`）只控制组播范围：空值仅允许 SPDP 发现组播，非空允许全部组播，不采用填写的地址或列表。
+
 ```bash
 export VLINK_DDS_BIND=ddsc
 export VLINK_DDS_IP="192.168.1.100,192.168.1.101"

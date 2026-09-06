@@ -91,6 +91,6 @@ void DdsSetterImpl::write(const Bytes& msg_data) {
   DdsFactory::write_data(writer_.get(), msg_data, seq_.fetch_add(1, std::memory_order_relaxed));
 }
 
-void DdsSetterImpl::sync(SyncCallback&& callback) { (void)callback; }
+void DdsSetterImpl::sync(SyncCallback&& callback) { callback(); }
 
 }  // namespace vlink

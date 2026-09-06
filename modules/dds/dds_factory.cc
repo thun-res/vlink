@@ -946,8 +946,8 @@ void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
   }
 
   if (!prop_ip_multicast_str.empty()) {
-    ip_str_list = Helpers::split_any(prop_ip_multicast_str);
-    rtps::LocatorList_t multicast_ip_locators = get_locators(ip_str_list);
+    const auto multicast_ip_list = Helpers::split_any(prop_ip_multicast_str);
+    rtps::LocatorList_t multicast_ip_locators = get_locators(multicast_ip_list);
 
     if (!multicast_ip_locators.empty()) {
       dds_qos.wire_protocol().default_multicast_locator_list.push_back(std::move(multicast_ip_locators));

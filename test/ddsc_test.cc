@@ -1187,20 +1187,27 @@ TEST_SUITE("ddsc-field") {
     }
   }
 
-  TEST_CASE("setter set before init is cached without breaking later writes") {
-    MESSAGE("[ddsc-field] setter set before init is cached without breaking later writes");
+  TEST_CASE("setter seeds cached values into native history after init and reinit") {
+    MESSAGE("[ddsc-field] setter seeds cached values into native history after init and reinit");
 
     Setter<int> setter(DdscConf("ddsc/fld/deferred_snapshot"), InitType::kWithoutInit);
     Getter<int> getter("ddsc://ddsc/fld/deferred_snapshot");
 
     setter.set(1234);
     REQUIRE(setter.init());
-    setter.set(5678);
 
-    CHECK(getter.wait_for_value(kDdscDiscoveryTimeout));
-    auto val = getter.get();
-    REQUIRE(val.has_value());
-    CHECK_EQ(*val, 5678);
+    REQUIRE(getter.wait_for_value(kDdscDiscoveryTimeout));
+    CHECK_EQ(getter.get(), std::optional<int>(1234));
+
+    REQUIRE(setter.deinit());
+    setter.set(5678);
+    REQUIRE(setter.init());
+
+    REQUIRE(common_test::wait_until([&] { return getter.get() == std::optional<int>(5678); }, kDdscDiscoveryTimeout));
+
+    Getter<int> late_getter("ddsc://ddsc/fld/deferred_snapshot");
+    REQUIRE(late_getter.wait_for_value(kDdscDiscoveryTimeout));
+    CHECK_EQ(late_getter.get(), std::optional<int>(5678));
   }
 
   TEST_CASE("invalid raw bytes are dropped before typed getter state updates") {

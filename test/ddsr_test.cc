@@ -375,6 +375,29 @@ TEST_SUITE("ddsr-method") {
 }
 
 TEST_SUITE("ddsr-field") {
+  TEST_CASE("setter seeds cached values into native history after init and reinit") {
+    MESSAGE("[ddsr-field] setter seeds cached values into native history after init and reinit");
+
+    Setter<int> setter(DdsrConf("ddsr/fld/deferred_snapshot"), InitType::kWithoutInit);
+    Getter<int> getter("ddsr://ddsr/fld/deferred_snapshot");
+
+    setter.set(1234);
+    REQUIRE(setter.init());
+
+    REQUIRE(getter.wait_for_value(kDdsrDiscoveryTimeout));
+    CHECK_EQ(getter.get(), std::optional<int>(1234));
+
+    REQUIRE(setter.deinit());
+    setter.set(5678);
+    REQUIRE(setter.init());
+
+    REQUIRE(common_test::wait_until([&] { return getter.get() == std::optional<int>(5678); }, kDdsrDiscoveryTimeout));
+
+    Getter<int> late_getter("ddsr://ddsr/fld/deferred_snapshot");
+    REQUIRE(late_getter.wait_for_value(kDdsrDiscoveryTimeout));
+    CHECK_EQ(late_getter.get(), std::optional<int>(5678));
+  }
+
   TEST_CASE("setter and getter exchange values via all access patterns") {
     MESSAGE("[ddsr-field] setter and getter exchange values via all access patterns");
 

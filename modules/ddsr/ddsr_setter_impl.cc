@@ -77,6 +77,6 @@ void DdsrSetterImpl::write(const Bytes& msg_data) {
   DdsrFactory::write_data(writer_->entity, msg_data, seq_.fetch_add(1, std::memory_order_relaxed));
 }
 
-void DdsrSetterImpl::sync(SyncCallback&& callback) { (void)callback; }
+void DdsrSetterImpl::sync(SyncCallback&& callback) { callback(); }
 
 }  // namespace vlink
