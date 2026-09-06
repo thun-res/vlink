@@ -24,6 +24,7 @@
 #pragma once
 
 #include <vlink/base/condition_variable.h>
+#include <vlink/base/macros.h>
 
 #include <memory>
 #include <mutex>
