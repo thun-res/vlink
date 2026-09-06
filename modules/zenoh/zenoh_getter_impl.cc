@@ -30,7 +30,7 @@
 namespace vlink {
 
 // ZenohGetterImpl
-ZenohGetterImpl::ZenohGetterImpl(const ZenohConf& conf) : conf_(conf) {}
+ZenohGetterImpl::ZenohGetterImpl(const ZenohConf& conf) : conf_(conf) { z_internal_null(&token_); }
 
 void ZenohGetterImpl::init() {
   static auto& factory = ZenohFactory::get();
@@ -48,6 +48,10 @@ void ZenohGetterImpl::init() {
 }
 
 void ZenohGetterImpl::deinit() {
+  if (object_) {
+    object_->undeclare_getter(&token_);
+  }
+
   detach();
 
   if (object_) {
@@ -70,7 +74,7 @@ bool ZenohGetterImpl::listen(MsgCallback&& callback) {
 
   object_->subscribe();
 
-  return true;
+  return object_->declare_getter(&token_);
 }
 
 void ZenohGetterImpl::set_latency_and_lost_enabled(bool enable) {

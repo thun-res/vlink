@@ -227,7 +227,9 @@ class Node {
    * @brief Allocates a loaned buffer from the transport memory pool.
    *
    * @details
-   * Returns a @c Bytes backed by transport-managed memory of @p size bytes.
+   * Returns storage of @p size bytes. Zenoh may return owning @c Bytes for
+   * small payloads or while its lazy SHM provider is starting; use
+   * @c Bytes::is_loaned() to distinguish an actual transport loan.
    * The caller must either pass it to a publish/write call (which returns
    * the loan automatically) or call @c return_loan() explicitly.  Returns
    * an empty @c Bytes on failure or when the transport has no loan pool.

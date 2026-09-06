@@ -30,7 +30,7 @@
 namespace vlink {
 
 // ZenohSubscriberImpl
-ZenohSubscriberImpl::ZenohSubscriberImpl(const ZenohConf& conf) : conf_(conf) {}
+ZenohSubscriberImpl::ZenohSubscriberImpl(const ZenohConf& conf) : conf_(conf) { z_internal_null(&getter_token_); }
 
 void ZenohSubscriberImpl::init() {
   static auto& factory = ZenohFactory::get();
@@ -40,7 +40,7 @@ void ZenohSubscriberImpl::init() {
   auto properties = ZenohFactory::resolve_properties(conf_, get_all_properties());
 
   object_ = factory.get_object<Object>(
-      {kImplType, conf_.address, conf_.event, conf_.domain, conf_.depth, conf_.qos, conf_.fragment, properties});
+      {impl_type, conf_.address, conf_.event, conf_.domain, conf_.depth, conf_.qos, conf_.fragment, properties});
 
   object_->add_impl(this);
 
@@ -48,6 +48,10 @@ void ZenohSubscriberImpl::init() {
 }
 
 void ZenohSubscriberImpl::deinit() {
+  if (object_) {
+    object_->undeclare_getter(&getter_token_);
+  }
+
   detach();
 
   if (object_) {
@@ -68,6 +72,10 @@ const AbstractNode* ZenohSubscriberImpl::get_abstract_node() const { return obje
 bool ZenohSubscriberImpl::listen(MsgCallback&& callback) {
   object_->register_msg_callback(this, std::move(callback));
   object_->subscribe();
+
+  if (impl_type == kGetter) {
+    return object_->declare_getter(&getter_token_);
+  }
 
   return true;
 }

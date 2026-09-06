@@ -36,6 +36,22 @@
 
 #include "./modules/zenoh_conf.h"
 
+namespace {
+class BlockingZenohLoop final : public MessageLoop {
+ public:
+  mutable std::atomic_bool observe_post{false};
+  mutable std::promise<void> post_started;
+
+  [[nodiscard]] size_t get_max_task_count() const override {
+    if (observe_post.exchange(false, std::memory_order_acq_rel)) {
+      post_started.set_value();
+    }
+    return 1;
+  }
+};
+
+}  // namespace
+
 TEST_SUITE("zenoh-init") {
   TEST_CASE("conf defaults are set correctly") {
     MESSAGE("[zenoh-init] conf defaults are set correctly");
@@ -140,6 +156,141 @@ TEST_SUITE("zenoh-init") {
 }
 
 TEST_SUITE("zenoh-pubsub") {
+  TEST_CASE("attached publisher wait observes a subscriber that joins later") {
+    MessageLoop loop;
+    REQUIRE(loop.async_run());
+    const auto topic = "zenoh://zenoh/attach/wait_for_subscriber";
+    Publisher<int> publisher(topic);
+    REQUIRE(publisher.attach(&loop));
+    auto started = std::make_shared<std::promise<void>>();
+    auto entered = started->get_future();
+    auto waiting = loop.invoke_task([&publisher, started]() {
+      started->set_value();
+      return publisher.wait_for_subscribers(3s);
+    });
+    REQUIRE(entered.wait_for(3s) == std::future_status::ready);
+    CHECK(waiting.wait_for(20ms) == std::future_status::timeout);
+
+    Subscriber<int> subscriber(topic);
+    REQUIRE(subscriber.listen([](const int&) {}));
+    REQUIRE(waiting.wait_for(4s) == std::future_status::ready);
+    CHECK(waiting.get());
+  }
+
+  TEST_CASE("subscriber deinitializes on a loop while an incoming message waits for queue capacity") {
+    BlockingZenohLoop loop;
+    loop.set_strategy(MessageLoop::kBlockStrategy);
+    REQUIRE(loop.async_run());
+    const auto topic = "zenoh://zenoh/lifecycle/blocked_subscriber";
+    Publisher<int> publisher(topic);
+    Subscriber<int> subscriber(topic);
+    REQUIRE(subscriber.attach(&loop));
+    std::atomic<int> received{0};
+    REQUIRE(subscriber.listen([&](const int&) { received.fetch_add(1, std::memory_order_relaxed); }));
+    REQUIRE(publisher.wait_for_subscribers(3s));
+
+    std::promise<void> active;
+    auto active_future = active.get_future();
+    std::promise<void> release;
+    auto release_future = release.get_future();
+    std::promise<bool> stopped;
+    auto stopped_future = stopped.get_future();
+    REQUIRE(loop.post_task([&]() {
+      active.set_value();
+      release_future.wait();
+      stopped.set_value(subscriber.deinit());
+    }));
+    const bool running = active_future.wait_for(3s) == std::future_status::ready;
+    CHECK(running);
+    if (!running) {
+      release.set_value();
+      loop.set_strategy(MessageLoop::kPopStrategy);
+      loop.wait_for_idle();
+      return;
+    }
+    CHECK(loop.post_task([]() {}));
+    auto post_started = loop.post_started.get_future();
+    loop.observe_post.store(true, std::memory_order_release);
+    auto publishing = std::async(std::launch::async, [&]() { return publisher.publish(42); });
+    const bool posting = post_started.wait_for(3s) == std::future_status::ready;
+    release.set_value();
+    const bool deinitialized = stopped_future.wait_for(3s) == std::future_status::ready;
+    loop.set_strategy(MessageLoop::kPopStrategy);
+
+    CHECK(posting);
+    CHECK(deinitialized);
+    REQUIRE(stopped_future.wait_for(3s) == std::future_status::ready);
+    CHECK(stopped_future.get());
+    REQUIRE(publishing.wait_for(3s) == std::future_status::ready);
+    CHECK(publishing.get());
+    CHECK(loop.wait_for_idle(3000));
+    CHECK(received.load(std::memory_order_acquire) == 0);
+  }
+
+  TEST_CASE("subscriber can listen again after reinitialization") {
+    const auto topic = "zenoh://zenoh/lifecycle/subscriber";
+    Publisher<int> publisher(topic);
+    Subscriber<int> subscriber(topic);
+    std::atomic<int> received{0};
+    REQUIRE(subscriber.listen([&](const int& value) { received.store(value, std::memory_order_release); }));
+    REQUIRE(subscriber.deinit());
+    REQUIRE(subscriber.init());
+    REQUIRE(subscriber.listen([&](const int& value) { received.store(value, std::memory_order_release); }));
+    REQUIRE(publisher.wait_for_subscribers(3s));
+    REQUIRE(publisher.publish(42));
+    CHECK(common_test::wait_until([&]() { return received.load(std::memory_order_acquire) == 42; }, 3s));
+  }
+
+  TEST_CASE("lazy shared memory keeps automatic serialization available during provider startup") {
+    Publisher<std::string> publisher("zenoh://zenoh/shm/lazy_startup?shm=1&shm_mode=lazy&shm_size=1m");
+    if (!publisher.is_support_loan()) {
+      return;
+    }
+    const std::string message(128 * 1024, 's');
+    REQUIRE(publisher.publish(message, true));
+    CHECK(common_test::wait_until(
+        [&]() {
+          auto loan = publisher.loan(message.size());
+          if (!loan.is_loaned()) {
+            return false;
+          }
+          return publisher.return_loan(loan);
+        },
+        3s));
+    CHECK(publisher.publish(message, true));
+  }
+
+  TEST_CASE("shared subscribers deliver on their own message loops") {
+    MessageLoop first_loop;
+    MessageLoop second_loop;
+    REQUIRE(first_loop.async_run());
+    REQUIRE(second_loop.async_run());
+
+    const auto topic = "zenoh://zenoh/attach/subscribers";
+    Publisher<std::string> publisher(topic);
+    Subscriber<std::string> first(topic);
+    Subscriber<std::string> second(topic);
+    REQUIRE(first.attach(&first_loop));
+    REQUIRE(second.attach(&second_loop));
+
+    const std::string message(32768, 'z');
+    std::atomic<bool> first_received{false};
+    std::atomic<bool> second_received{false};
+    first.listen([&](const std::string& value) {
+      first_received.store(first_loop.is_in_same_thread() && value == message, std::memory_order_release);
+    });
+    second.listen([&](const std::string& value) {
+      second_received.store(second_loop.is_in_same_thread() && value == message, std::memory_order_release);
+    });
+    REQUIRE(publisher.wait_for_subscribers(3s));
+    REQUIRE(publisher.publish(message));
+    CHECK(common_test::wait_until(
+        [&]() {
+          return first_received.load(std::memory_order_acquire) && second_received.load(std::memory_order_acquire);
+        },
+        3s));
+  }
+
   TEST_CASE("matching and delivery are isolated by event and domain") {
     MESSAGE("[zenoh-pubsub] matching and delivery are isolated by event and domain");
 
@@ -341,6 +492,139 @@ TEST_SUITE("zenoh-pubsub") {
 }
 
 TEST_SUITE("zenoh-method") {
+  TEST_CASE("attached client invocation observes a server that joins later") {
+    MessageLoop loop;
+    REQUIRE(loop.async_run());
+    const auto topic = "zenoh://zenoh/attach/wait_for_server";
+    Client<int, int> client(topic);
+    REQUIRE(client.attach(&loop));
+    auto started = std::make_shared<std::promise<void>>();
+    auto entered = started->get_future();
+    auto response = loop.invoke_task([&client, started]() {
+      started->set_value();
+      return client.invoke(41, 3s);
+    });
+    REQUIRE(entered.wait_for(3s) == std::future_status::ready);
+    CHECK(response.wait_for(20ms) == std::future_status::timeout);
+
+    Server<int, int> server(topic);
+    REQUIRE(server.listen([](const int& request, int& result) { result = request + 1; }));
+    REQUIRE(response.wait_for(4s) == std::future_status::ready);
+    CHECK(response.get() == 42);
+  }
+
+  TEST_CASE("server can listen again after reinitialization") {
+    const auto topic = "zenoh://zenoh/lifecycle/server";
+    Server<int, int> server(topic);
+    REQUIRE(server.listen([](const int& request, int& response) { response = request + 1; }));
+    REQUIRE(server.deinit());
+    REQUIRE(server.init());
+    REQUIRE(server.listen([](const int& request, int& response) { response = request + 2; }));
+    Client<int, int> client(topic);
+    REQUIRE(client.wait_for_connected(3s));
+    CHECK(client.invoke(40, 3s) == 42);
+  }
+
+  TEST_CASE("requests between different sessions use the remote server") {
+    const auto topic = "zenoh://zenoh/method/separate_sessions";
+    Server<int, int> server(topic);
+    server.listen([](const int& request, int& response) { response = request + 1; });
+    Client<int, int> client(topic, InitType::kWithoutInit);
+    client.set_property("zenoh.timestamps", "true");
+    REQUIRE(client.init());
+    REQUIRE(client.wait_for_connected(3s));
+    CHECK(client.invoke(41, 3s) == std::optional<int>(42));
+  }
+
+  TEST_CASE("unconnected client returns every automatic loan to the pool") {
+    Client<std::string, std::string> client("zenoh://zenoh/method/unconnected_loans?shm=1&shm_mode=init&shm_size=1m");
+    if (!client.is_support_loan()) {
+      return;
+    }
+    const std::string request(128 * 1024, 'q');
+    for (int i = 0; i < 16; ++i) {
+      CHECK_FALSE(client.invoke(request, 1ms).has_value());
+      auto loan = client.loan(request.size());
+      REQUIRE(loan.size() == request.size());
+      if (loan.is_loaned()) {
+        CHECK(client.return_loan(loan));
+      }
+    }
+  }
+
+  TEST_CASE("shared clients dispatch asynchronous responses to their own loops") {
+    MessageLoop first_loop;
+    MessageLoop second_loop;
+    MessageLoop server_loop;
+    REQUIRE(first_loop.async_run());
+    REQUIRE(second_loop.async_run());
+    REQUIRE(server_loop.async_run());
+
+    const auto topic = "zenoh://zenoh/attach/clients";
+    Server<int, int> server(topic);
+    REQUIRE(server.attach(&server_loop));
+    std::atomic<bool> server_received{false};
+    server.listen([&](const int& request, int& response) {
+      server_received.store(server_loop.is_in_same_thread(), std::memory_order_release);
+      response = request + 1;
+    });
+    Client<int, int> first(topic);
+    Client<int, int> second(topic);
+    REQUIRE(first.attach(&first_loop));
+    REQUIRE(second.attach(&second_loop));
+    REQUIRE(first.wait_for_connected(3s));
+    REQUIRE(second.wait_for_connected(3s));
+
+    std::atomic<bool> first_received{false};
+    std::atomic<bool> second_received{false};
+    REQUIRE(first.invoke(10, [&](const int& response) {
+      const auto nested_response = first.invoke(30, 3s);
+      first_received.store(first_loop.is_in_same_thread() && response == 11 && nested_response == 31,
+                           std::memory_order_release);
+    }));
+    REQUIRE(second.invoke(20, [&](const int& response) {
+      second_received.store(second_loop.is_in_same_thread() && response == 21, std::memory_order_release);
+    }));
+    CHECK(common_test::wait_until(
+        [&]() {
+          return first_received.load(std::memory_order_acquire) && second_received.load(std::memory_order_acquire);
+        },
+        5s));
+    CHECK(server_received.load(std::memory_order_acquire));
+
+    auto synchronous = first_loop.invoke_task([&]() { return first.invoke(30, 3s); });
+    REQUIRE(synchronous.wait_for(5s) == std::future_status::ready);
+    CHECK(synchronous.get() == std::optional<int>(31));
+  }
+
+  TEST_CASE("destroying one client releases its pending future without interrupting another") {
+    const auto topic = "zenoh://zenoh/method/cancel_owner";
+    Server<int, int> server(topic);
+    std::atomic<uint64_t> first_request{0};
+    std::atomic<uint64_t> second_request{0};
+    server.listen_for_reply([&](uint64_t id, const int& request) {
+      (request == 1 ? first_request : second_request).store(id, std::memory_order_release);
+    });
+    auto first = std::make_unique<Client<int, int>>(topic);
+    Client<int, int> second(topic);
+    REQUIRE(first->wait_for_connected(3s));
+    REQUIRE(second.wait_for_connected(3s));
+    auto first_response = first->async_invoke(1);
+    auto second_response = second.async_invoke(2);
+    REQUIRE(common_test::wait_until(
+        [&]() {
+          return first_request.load(std::memory_order_acquire) != 0 &&
+                 second_request.load(std::memory_order_acquire) != 0;
+        },
+        3s));
+    first.reset();
+    REQUIRE(first_response.wait_for(1s) == std::future_status::ready);
+    CHECK_THROWS_AS(first_response.get(), std::future_error);
+    REQUIRE(server.reply(second_request.load(std::memory_order_acquire), 22));
+    REQUIRE(second_response.wait_for(3s) == std::future_status::ready);
+    CHECK(second_response.get() == 22);
+  }
+
   TEST_CASE("client and server presence is isolated by event") {
     MESSAGE("[zenoh-method] client and server presence is isolated by event");
 
@@ -609,6 +893,88 @@ TEST_SUITE("zenoh-method") {
 }
 
 TEST_SUITE("zenoh-field") {
+  TEST_CASE("a subscriber marked as a getter receives the cached field") {
+    const auto topic = "zenoh://zenoh/field/marked_subscriber";
+    Setter<int> setter(topic);
+    setter.set(42);
+    Subscriber<int> subscriber(topic, InitType::kWithoutInit);
+    subscriber.mark_as_getter();
+    REQUIRE(subscriber.init());
+    std::atomic<int> received{0};
+    REQUIRE(subscriber.listen([&](const int& value) { received.store(value, std::memory_order_release); }));
+    CHECK(common_test::wait_until([&]() { return received.load(std::memory_order_acquire) == 42; }, 3s));
+  }
+
+  TEST_CASE("reenabling change reporting compares against the current value") {
+    const auto topic = "zenoh://zenoh/field/change_reporting_toggle";
+    Setter<int> setter(topic);
+    Getter<int> getter(topic);
+    getter.set_change_reporting(true);
+    setter.set(1);
+    REQUIRE(common_test::wait_until([&]() { return getter.get() == 1; }, 3s));
+
+    getter.set_change_reporting(false);
+    setter.set(2);
+    REQUIRE(common_test::wait_until([&]() { return getter.get() == 2; }, 3s));
+
+    getter.set_change_reporting(true);
+    setter.set(1);
+    CHECK(common_test::wait_until([&]() { return getter.get() == 1; }, 3s));
+  }
+
+  TEST_CASE("setter reinitialization publishes the value cached while stopped") {
+    const auto topic = "zenoh://zenoh/field/setter_reinit";
+    Setter<int> setter(topic);
+    Getter<int> getter(topic);
+    setter.set(1);
+    REQUIRE(common_test::wait_until([&]() { return getter.get() == std::optional<int>(1); }, 3s));
+
+    REQUIRE(setter.deinit());
+    setter.set(2);
+    REQUIRE(setter.init());
+    CHECK(common_test::wait_until([&]() { return getter.get() == std::optional<int>(2); }, 3s));
+  }
+
+  TEST_CASE("getter created before a cached setter receives its initial value") {
+    const auto topic = "zenoh://zenoh/field/getter_first";
+    Getter<int> getter(topic);
+    Setter<int> setter(topic, InitType::kWithoutInit);
+    SUBCASE("shared session") {}
+    SUBCASE("separate session") { setter.set_property("zenoh.timestamps", "true"); }
+    setter.set(17);
+    REQUIRE(setter.init());
+    REQUIRE(getter.wait_for_value(3s));
+    CHECK(getter.get() == std::optional<int>(17));
+  }
+
+  TEST_CASE("every late getter receives the current value on its own loop") {
+    MessageLoop first_loop;
+    MessageLoop second_loop;
+    REQUIRE(first_loop.async_run());
+    REQUIRE(second_loop.async_run());
+    const auto topic = "zenoh://zenoh/field/every_getter";
+    Setter<int> setter(topic);
+    setter.set(42);
+    Getter<int> first(topic, InitType::kWithoutInit);
+    REQUIRE(first.attach(&first_loop));
+    REQUIRE(first.init());
+    REQUIRE(first.wait_for_value(3s));
+    CHECK(first.get() == std::optional<int>(42));
+
+    Getter<int> second(topic, InitType::kWithoutInit);
+    SUBCASE("shared subscriber") {}
+    SUBCASE("separate session") { second.set_property("zenoh.timestamps", "true"); }
+    REQUIRE(second.attach(&second_loop));
+    std::atomic<bool> received_on_loop{false};
+    second.listen([&](const int& value) {
+      received_on_loop.store(second_loop.is_in_same_thread() && value == 42, std::memory_order_release);
+    });
+    REQUIRE(second.init());
+    REQUIRE(second.wait_for_value(3s));
+    CHECK(second.get() == std::optional<int>(42));
+    CHECK(received_on_loop.load(std::memory_order_acquire));
+  }
+
   TEST_CASE("late getter sync is isolated from other events") {
     MESSAGE("[zenoh-field] late getter sync is isolated from other events");
 
@@ -782,8 +1148,16 @@ TEST_SUITE("zenoh-init") {
   TEST_CASE("session is reusable after benign fragment value") {
     MESSAGE("[zenoh-init] session is reusable after benign fragment value");
 
-    CHECK_NOTHROW(Publisher<int>(ZenohConf("zenoh/audit/ses-good", "", 0, "", "tcp")));
-    CHECK_NOTHROW(Publisher<int>(ZenohConf("zenoh/audit/ses-good2", "", 0, "", "tcp")));
+    Publisher<int> first(ZenohConf("zenoh/audit/ses-good", "", 0, "", "tcp"), InitType::kWithoutInit);
+#ifdef VLINK_ENABLE_ZENOH_PICO
+    first.set_property("zenoh.listen", "tcp/127.0.0.1:27447");
+#endif
+    REQUIRE(first.init());
+    Publisher<int> second(ZenohConf("zenoh/audit/ses-good2", "", 0, "", "tcp"), InitType::kWithoutInit);
+#ifdef VLINK_ENABLE_ZENOH_PICO
+    second.set_property("zenoh.listen", "tcp/127.0.0.1:27447");
+#endif
+    REQUIRE(second.init());
   }
 
   TEST_CASE("shm environment variables are absent or well formed") {

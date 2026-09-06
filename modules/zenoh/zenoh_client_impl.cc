@@ -47,23 +47,7 @@ void ZenohClientImpl::init() {
   object_->add_impl(this);
   object_->start_liveliness();
 
-  std::weak_ptr<Object> weak_object = object_;
-
-  object_->register_server_connect_callback(this, [this, weak_object](bool) {
-    auto* message_loop = get_message_loop();
-
-    if (message_loop) {
-      message_loop->post_task([this, weak_object]() {
-        auto object = weak_object.lock();
-
-        if VLIKELY (object && object->is_contains_impl(this)) {
-          ClientImpl::update_connected();
-        }
-      });
-    } else {
-      ClientImpl::update_connected();
-    }
-  });
+  object_->register_server_connect_callback(this, [this](bool) { ClientImpl::update_connected(); });
 
   ClientImpl::update_connected();
 }
@@ -116,12 +100,16 @@ bool ZenohClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::c
     timer.start();
 
     if (!wait_for_connected(timeout)) {
+      object_->release(req_data);
+
       return false;
     }
 
     auto elapsed = timer.get();
 
     if (timeout.count() > 0 && elapsed >= timeout.count()) {
+      object_->release(req_data);
+
       return false;
     }
 
@@ -141,15 +129,25 @@ bool ZenohClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::c
 
     auto ack_request = ack_manager_.create_request();
 
-    auto ack_function = [this, ack_request, callback = std::move(callback)](const Bytes& resp_data) mutable {
-      ack_manager_.notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
+    auto ack_function = [ack_request, callback = std::move(callback)](const Bytes& resp_data) mutable {
+      AckManager::notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
     };
 
-    return ack_manager_.process(ack_request, remaining_timeout,
-                                [this, &req_data, ack_function = std::move(ack_function), remaining_timeout]() mutable {
-                                  return object_->call(this, static_cast<uint64_t>(conf_.hash_code), req_data,
-                                                       std::move(ack_function), remaining_timeout);
-                                });
+    bool submitted = false;
+    const bool result = ack_manager_.process(
+        ack_request, remaining_timeout,
+        [this, &req_data, &submitted, ack_function = std::move(ack_function), remaining_timeout]() mutable {
+          submitted = true;
+
+          return object_->call(this, static_cast<uint64_t>(conf_.hash_code), req_data, std::move(ack_function),
+                               remaining_timeout, false);
+        });
+
+    if (!submitted) {
+      object_->release(req_data);
+    }
+
+    return result;
   }
 
   return object_->call(this, static_cast<uint64_t>(conf_.hash_code), req_data, std::move(callback), timeout.count());

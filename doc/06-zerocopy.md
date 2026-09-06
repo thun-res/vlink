@@ -413,6 +413,8 @@ loan 作用于跨进程搬运阶段：发布端从共享内存池借出缓冲区
 | `loan(size)` | 从共享内存池借出 `size` 字节缓冲区，失败返回空 `Bytes` |
 | `return_loan(bytes)` | 归还借出但未发布的缓冲区 |
 
+Zenoh 的 `is_support_loan()` 表示配置已启用借用能力，不要求 lazy provider 此刻已经就绪。小于 loan 阈值或 provider 尚在初始化时，`loan()` 可以返回普通拥有型 `Bytes`；provider 就绪后的大消息自动使用 SHM，无需重新初始化节点。可用 `Bytes::is_loaned()` 区分实际借用与普通缓冲。
+
 ```cpp
 vlink::Publisher<vlink::Bytes> pub("shm://camera/raw");
 pub.wait_for_subscribers();
@@ -432,6 +434,8 @@ if (pub.is_support_loan()) {
 边界条件：借出后若未 `publish()`，必须显式 `pub.return_loan(buf)`，否则共享内存池会耗尽；`publish()` 返回 `false` 时同样应调用 `return_loan()`——对已被后端消费的缓冲区该调用是无害空操作。
 
 订阅端在回调返回后自动归还 loan；若需在回调外继续使用数据，应在回调内完成拷贝（如容器的 `deep_copy`）。
+
+SHM、SHM2、Zenoh 的 Client 将请求交给后端后，由后端消费借用；未连接、等待超时或请求未提交时由 Client 归还。自动序列化在交付后端之前失败时，仍由公共序列化调用方归还。
 
 > 安全端点（`SecT == kWithSecurity` / `SecurityPublisher`）发布时会跳过传输层 loan——密文长度在加密前未知，框架退回常规序列化路径。`is_support_loan()` 反映的是传输能力、不感知安全配置，因此安全端点不应使用显式 `loan()` 路径（借出的缓冲不会被发布消费）。容器层借用不受影响，加密管线见 [安全加密](07-security.md)。
 

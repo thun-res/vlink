@@ -1080,7 +1080,9 @@ export VLINK_DDS_IP="192.168.1.100,192.168.1.101"
 | `VLINK_ZENOH_DEBUG` | `1`/`0` | 启用 Zenoh runtime 调试日志（默认 `0`，仅 zenoh-c 构建生效） |
 | `VLINK_ZENOH_DOMAIN` | 数字 | Zenoh Domain ID |
 | `VLINK_ZENOH_MODE` | 字符串 | 运行模式；未设置时沿用后端配置（zenoh-c 默认 `peer`，pico 默认 `client`）；pico 仅支持 `peer`/`client` |
-| `VLINK_ZENOH_IP` / `_PEER` / `_LISTEN` | 列表或字符串 | 连接 / 对等 / 监听端点 |
+| `VLINK_ZENOH_IP` | IP 列表 | 连接地址简写，自动补传输协议和端口 7447；与 DDS 的本地网卡配置含义不同 |
+| `VLINK_ZENOH_PEER` | 端点列表 | 完整连接端点，例如 `tcp/192.168.1.100:7447`；可明确指定协议和端口 |
+| `VLINK_ZENOH_LISTEN` | 端点列表 | 本地监听端点，例如 `tcp/0.0.0.0:7447` |
 | `VLINK_ZENOH_MULTICAST` / `_MULTICAST_IF` / `_MULTICAST_TTL` | 地址 / 字符串 / 数字 | 组播地址 / 网卡 / TTL；pico 的 peer 组播需要网卡且不支持 TTL |
 | `VLINK_ZENOH_GOSSIP` | `1`/`0` | Gossip 发现；未设置时沿用配置（仅 zenoh-c） |
 | `VLINK_ZENOH_ALLOWED_LOCALITY` | 字符串 | 允许通信来源：`local`（仅会话内）/ `remote`（仅远端）/ 其它视作 `any`（默认 `any`），仅带 `Z_FEATURE_UNSTABLE_API` 的 zenoh-c |
@@ -1099,6 +1101,20 @@ export VLINK_ZENOH_CONFIG=/etc/vlink/zenoh.json5
 export VLINK_ZENOH_PEER="tcp/192.168.1.100:7447"
 export VLINK_ZENOH_SHM=1
 ```
+
+常见部署可直接选择以下配置，应用继续使用原有 `zenoh://业务地址`：
+
+```bash
+# 同一局域网自动发现：选择本地组播网卡，无需同时指定组播地址
+export VLINK_ZENOH_MODE=peer
+export VLINK_ZENOH_MULTICAST_IF=eth0
+
+# 连接指定 router：在另一部署配置中使用完整端点
+export VLINK_ZENOH_MODE=client
+export VLINK_ZENOH_PEER="tcp/192.168.1.100:7447"
+```
+
+环境变量应在进程启动前设置，后端会缓存读取结果。zenoh-c 可单独设置组播网卡或 TTL，未指定的组播地址沿用原配置；URL 的 `#tcp`、`#udp` 等显式传输片段会关闭组播发现。pico 的 `#tcp`/`#tls` 须配合 `_PEER`、`_IP` 或 `_LISTEN`，不会自动开启监听；`_LISTEN` 必须使用非零端口，同主机不同 TCP session 应配置不同监听端口。需要跨 zenoh-c/pico 复用部署配置时，连接地址优先使用完整 `_PEER` 端点。
 
 #### 13.25.2 mqtt://
 

@@ -317,7 +317,7 @@ sub.listen([](const std::string& data) { VLOG_I("recv: ", data); });
 
 两个 local 特性用于维持 VLink 复用 session 时的同进程语义。P2P 模式下的远端匹配检测由 liveliness 补齐，不要求开启 multicast declarations。
 
-pico 路径不支持 Zenoh SHM、JSON5 配置文件和 unstable locality 过滤。TLS 仅在 zenoh-pico 以 `Z_FEATURE_LINK_TLS=1` 构建时生效。zenoh-c 的 SHM/locality 同样取决于对应编译特性。
+pico 路径不支持 Zenoh SHM、JSON5 配置文件和 unstable locality 过滤。TLS 仅在 zenoh-pico 以 `Z_FEATURE_LINK_TLS=1` 构建时生效。pico 的 `#tcp`/`#tls` 需显式配置连接端点或 `zenoh.listen`；监听端口必须非零，不自动分配或占用默认端口。zenoh-c 的 SHM/locality 同样取决于对应编译特性。
 
 ### 🚗 4.6.6 someip:// — SOME/IP 车载以太网（Beta）
 
