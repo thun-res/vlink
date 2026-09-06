@@ -6,7 +6,7 @@
 
 - **Python 接口补齐**：补齐发现消息循环、Bag 插件、点云与对象数组深拷贝、日志回调重置接口。
 - **Bag 拼包**：新增 `vlink-bag merge`，保留原始时间戳并按时间合并多个包，支持混合格式、分包、压缩与标签。
-- **Bag 分包轮转**：`BagWriter::Config` 新增 `max_split_count`，`vlink-bag record` 新增同名参数；可限制 `.vdbx` / `.vcapx` 保留的分包数量并在超限时删除最旧分包。使用该配置结构的外部 C++ 二进制需重新编译。
+- **Bag 分包轮转**：`BagWriter::Config` 与 `vlink-bag record` 新增 `max_split_count`，超限时删除最旧分包。
 
 ### 改进
 
