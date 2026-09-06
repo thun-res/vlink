@@ -256,13 +256,16 @@ class Subscriber : public Node<SubscriberImpl, SecT> {
   [[nodiscard]] SampleLostInfo get_lost() const;
 
   /**
-   * @brief Promotes this subscriber to behave as a @c Getter (field-reader) at the transport layer.
+   * @brief Marks this subscriber as a field reader.
    *
    * @details
-   * Switches @c impl_type from @c kSubscriber to @c kGetter so that
-   * latest-value delivery semantics are activated.  Reinitialises the
-   * transport extension if called post-@c init().  Used internally by
-   * @c Getter.
+   * Call before @c init() to request field reception on backends that
+   * distinguish field endpoints (SHM, SHM2, Zenoh and SOME/IP), including
+   * late-join synchronisation. Used by @c TriggerRecorder and
+   * @c vlink-bag record.
+   * This subscriber still delivers callbacks without a public value cache.
+   * After @c init(), only the discovery role changes; the existing transport
+   * endpoint is not migrated. Use @c Getter for a cached @c get() interface.
    */
   void mark_as_getter();
 

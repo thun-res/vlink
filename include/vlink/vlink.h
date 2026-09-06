@@ -73,7 +73,7 @@
  * | -------------- | --------------------------------- | -------------------------------------- |
  * | @c intra://    | In-process pub/sub                | Same-process zero-copy fan-out         |
  * | @c shm://      | Iceoryx shared memory             | Inter-process zero-copy on one host    |
- * | @c shm2://     | Native VLink shared memory        | Lightweight inter-process IPC          |
+ * | @c shm2://     | Iceoryx2 shared memory            | Lightweight inter-process IPC          |
  * | @c dds://      | FastDDS (CDR)                     | Standards-compliant DDS distribution   |
  * | @c ddsc://     | CycloneDDS                        | CycloneDDS-based deployments           |
  * | @c ddsr://     | RTI Connext DDS                   | RTI-licensed deployments               |

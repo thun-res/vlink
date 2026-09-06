@@ -57,7 +57,7 @@ void ClientImpl::detect_connected(ConnectCallback&& callback) {
   std::unique_lock lock(helper_->callback_mtx);
   helper_->connected_callback = std::move(callback);
 
-  if (helper_->connected.load(std::memory_order_acquire)) {
+  if (helper_->connected_callback && helper_->connected.load(std::memory_order_acquire)) {
     auto callback_copy = helper_->connected_callback;
     lock.unlock();
     callback_copy(true);

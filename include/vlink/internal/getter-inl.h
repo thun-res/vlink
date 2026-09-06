@@ -144,6 +144,11 @@ inline bool Getter<ValueT, SecT>::listen(MsgCallback&& callback) {
 template <typename ValueT, SecurityType SecT>
 inline void Getter<ValueT, SecT>::set_change_reporting(bool enable) {
   std::lock_guard lock(mtx_);
+
+  if (change_reporting_ != enable) {
+    last_cache_.reset();
+  }
+
   change_reporting_ = enable;
 }
 

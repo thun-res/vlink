@@ -315,7 +315,8 @@ inline bool Server<ReqT, RespT, SecT>::reply_bytes(uint64_t req_id, const Bytes&
     }
 
     if constexpr (HasPtrT) {
-      *resp_data_ptr = sec_resp_data;
+      *resp_data_ptr = std::move(sec_resp_data);
+      return this->impl_->reply(req_id, *resp_data_ptr, is_sync);
     }
 
     return this->impl_->reply(req_id, sec_resp_data, is_sync);

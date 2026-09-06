@@ -29,6 +29,7 @@
 #include <utility>
 
 #include "../base/logger.h"
+#include "../base/traits.h"
 #include "../impl/types.h"
 #include "../node.h"
 #include "../version.h"
@@ -78,6 +79,10 @@ inline bool Node<ImplT, SecT>::deinit() {
   } else {
     impl_->deinit();
     impl_->deinit_ext();
+  }
+
+  if constexpr (VLINK_HAS_MEMBER(ImplT, is_listened)) {
+    impl_->is_listened = false;
   }
 
   return true;

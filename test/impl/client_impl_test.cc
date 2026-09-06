@@ -109,6 +109,49 @@ TEST_SUITE("impl-ClientImpl") {
     CHECK(received == true);
   }
 
+  TEST_CASE("detect_connected keeps the active callback alive while replacing it") {
+    TestClientImpl client;
+    int old_count = 0;
+    int new_count = 0;
+    client.detect_connected([&client, &old_count, &new_count](bool connected) {
+      if (!connected) {
+        client.detect_connected([&new_count](bool) { ++new_count; });
+      }
+      ++old_count;
+    });
+
+    client.set_connected(true);
+    client.update_connected();
+    client.set_connected(false);
+    client.update_connected();
+    CHECK(old_count == 2);
+    CHECK(new_count == 0);
+
+    client.set_connected(true);
+    client.update_connected();
+    client.set_connected(false);
+    client.update_connected();
+    CHECK(old_count == 2);
+    CHECK(new_count == 2);
+  }
+
+  TEST_CASE("detect_connected can clear a callback while already connected") {
+    TestClientImpl client;
+    client.set_connected(true);
+    client.update_connected();
+
+    int count = 0;
+    client.detect_connected([&](bool) { ++count; });
+    CHECK(count == 1);
+    client.detect_connected(nullptr);
+
+    client.set_connected(false);
+    client.update_connected();
+    client.set_connected(true);
+    client.update_connected();
+    CHECK(count == 1);
+  }
+
   TEST_CASE("detect_connected callback fires when server appears after registration") {
     TestClientImpl client;
     std::atomic_bool called{false};

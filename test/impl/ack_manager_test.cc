@@ -34,6 +34,56 @@
 #include "../common_test.h"
 
 TEST_SUITE("impl-AckManager") {
+  TEST_CASE("completed acknowledgement survives clear before send returns") {
+    AckManager manager;
+    auto request = manager.create_request();
+    CHECK(manager.process(request, 2000, [&] {
+      CHECK(AckManager::notify(request));
+      CHECK_FALSE(manager.remove(request));
+      manager.clear();
+      return true;
+    }));
+    CHECK_FALSE(AckManager::notify(request));
+  }
+
+  TEST_CASE("cancelled request can reject notification after its manager is destroyed") {
+    AckManager::RequestPtr request;
+    {
+      AckManager manager;
+      request = manager.create_request();
+      CHECK_FALSE(manager.process(request, 2000, [&] {
+        manager.clear();
+        return true;
+      }));
+    }
+    bool filled = false;
+    CHECK_FALSE(AckManager::notify(request, [&] { filled = true; }));
+    CHECK_FALSE(filled);
+  }
+
+  TEST_CASE("concurrent notifications fill a pending request only once") {
+    AckManager manager;
+    auto request = manager.create_request();
+    std::atomic<int> fills{0};
+    std::atomic<int> acknowledgements{0};
+    std::thread first;
+    std::thread second;
+    CHECK(manager.process(request, 2000, [&] {
+      auto notify = [&] {
+        if (AckManager::notify(request, [&] { fills.fetch_add(1, std::memory_order_relaxed); })) {
+          acknowledgements.fetch_add(1, std::memory_order_relaxed);
+        }
+      };
+      first = std::thread(notify);
+      second = std::thread(notify);
+      return true;
+    }));
+    first.join();
+    second.join();
+    CHECK(fills.load(std::memory_order_relaxed) == 1);
+    CHECK(acknowledgements.load(std::memory_order_relaxed) == 1);
+  }
+
   TEST_CASE("create_request returns non-null token") {
     AckManager mgr;
     auto req = mgr.create_request();

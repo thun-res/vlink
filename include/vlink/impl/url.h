@@ -785,13 +785,10 @@ inline void Url::init_target_internal(const Protocol& protocol, std::unique_ptr<
 #endif
 
     default:
+      target = Url::load_for_plugin(protocol.transport);
       break;
   }
   // NOLINTEND
-
-  if VUNLIKELY (!target) {
-    target = Url::load_for_plugin(protocol.transport);
-  }
 
   if VUNLIKELY (!target) {
     CLOG_F("Unsupported url[%s].", protocol.str.c_str());

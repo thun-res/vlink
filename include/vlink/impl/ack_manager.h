@@ -49,7 +49,7 @@
  * | ----------------------- | --------------------- | ------------------------------------------------------- |
  * | @c create_request()     | RPC caller            | Allocates a unique request token.                       |
  * | @c process()            | RPC caller            | Sends, blocks, returns @c true on @c notify().          |
- * | @c notify()             | Transport callback    | Removes pending entry and wakes the waiting caller.     |
+ * | @c notify()             | Transport callback    | Resolves the request and wakes the waiting caller.      |
  * | @c remove()             | RPC caller / cleanup  | Cancels an entry and wakes its waiter.                  |
  * | @c clear()              | Node shutdown         | Aborts all waits and refuses new @c process() calls.    |
  * | @c reset_interrupted()  | Node resume           | Re-enables new @c process() calls after @c clear().     |
@@ -64,7 +64,7 @@
  * });
  *
  * // Transport thread, upon receiving a matching reply:
- * mgr.notify(req, [&]() {
+ * vlink::AckManager::notify(req, [&]() {
  *   response_bytes = std::move(reply_payload);
  * });
  * @endcode
@@ -175,15 +175,16 @@ class VLINK_EXPORT AckManager final {
    *
    * @details
    * Rejects acknowledgements that reach the request after its deadline.  Otherwise
-   * erases the entry from the pending set, executes @p notify_callback while holding
-   * the request lock so the caller observes the side effects before resuming, and
-   * signals the condition variable.
+   * executes @p notify_callback while holding the request lock so the caller
+   * observes the side effects before resuming, and signals the condition variable.
+   * The request owns its completion state; no manager instance is needed here.
+   * @c process() removes the completed request from its manager's pending set.
    *
    * @param request          Token to acknowledge.
    * @param notify_callback  Optional callable executed before notification.
    * @return @c true if the request was still pending and was resolved; @c false otherwise.
    */
-  bool notify(RequestPtr request, NotifyCallback&& notify_callback = nullptr) noexcept;
+  static bool notify(RequestPtr request, NotifyCallback&& notify_callback = nullptr) noexcept;
 
   /**
    * @brief Cancels @p request and wakes its waiter.
@@ -215,6 +216,7 @@ class VLINK_EXPORT AckManager final {
  private:
   struct Request final {
     enum class Status : uint8_t {
+      kCreated,
       kPending,
       kAcknowledged,
       kCancelled,
@@ -222,7 +224,7 @@ class VLINK_EXPORT AckManager final {
 
     int64_t seq{0};
     int64_t generation{0};
-    Status status{Status::kPending};
+    Status status{Status::kCreated};
     std::chrono::steady_clock::time_point deadline{std::chrono::steady_clock::time_point::max()};
     std::mutex mtx;
     ConditionVariable cv;

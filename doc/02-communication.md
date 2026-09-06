@@ -189,9 +189,12 @@ loop.run();
 | --- | --- | --- |
 | `Subscriber` / `Getter` / `Server::listen()` | 后端 delivery context | MessageLoop 线程 |
 | `register_status_handler` | 后端 delivery context | MessageLoop 线程 |
+| Client 异步响应回调（DDS 系列以外的后端） | 后端 delivery context | Client 自己绑定的 MessageLoop 线程 |
 | `Publisher::publish()` / `Client::invoke()` | 调用者线程 | 调用者线程 |
 
 边界条件：仅在后端支持 attach 时，`attach()` 须在 `listen()` 之前调用——`listen()` 一旦激活回调分发，节点需先绑定 loop 才能确定回调投递到哪个线程。从与 loop 不同的线程调用 `detach()` 时，会等待 loop 处理完当前任务后再解绑，确保解绑过程不与回调执行竞争。调用方必须检查 attach 的布尔返回值；`MessageLoop` 完整接口见 [基础库](08-base-library.md)。
+
+DDS 系列以外的后端，其同步 RPC ACK 直接完成等待，不排入 Client 的回调 loop。DDS 系列仍在绑定 loop 中接收响应，不应在该 loop 内阻塞等待自身完成的请求。连接检测回调的执行线程随后端而异。
 
 ### 2.2.7 🎛️ 控制方法
 
@@ -686,7 +689,7 @@ client.detect_connected([](bool connected) {
 | 响应反序列化失败 | 返回字节流无法解析为 `RespT` |
 | 服务端断开 | 请求发出后服务端下线 |
 
-`async_invoke()` 不返回失败标志，而是将异常存入 future，由 `get()` 抛出 `vlink::Exception::RuntimeError`：
+`async_invoke()` 不返回失败标志。序列化、立即发送或反序列化失败时，`get()` 抛出 `vlink::Exception::RuntimeError`。Client 析构时，未完成的 future 以 `std::future_errc::broken_promise` 就绪，`get()` 抛出 `std::future_error`。`wait_for()` 只限制调用方等待，不取消后端请求。
 
 ```cpp
 auto fut = client.async_invoke(req);
@@ -696,6 +699,8 @@ try {
   process(resp);
 } catch (const vlink::Exception::RuntimeError& e) {
   VLOG_E("async_invoke failed: ", e.what());
+} catch (const std::future_error& e) {
+  VLOG_E("async_invoke ended without a response: ", e.what());
 }
 ```
 
@@ -804,6 +809,8 @@ setter.set(2);
 
 **轮询**　`get()` 返回缓存当前值的副本，可在任意线程安全调用。
 
+内置零拷贝对象、POD 裸指针和 FlatBuffers 裸视图反序列化后仍借用接收缓冲，`get()` 返回的副本不会使借用型载荷拥有存储。需要长期保留结果时，使用 `Bytes`、POD 值或 FlatBuffers NativeTable；零拷贝数据应在回调内显式复制后保存，借用规则见 [零拷贝通信](06-zerocopy.md)。
+
 ```cpp
 vlink::Getter<int> getter("shm://config/max_speed");
 
@@ -825,6 +832,8 @@ if (getter.wait_for_value(std::chrono::seconds(5))) {
 ```
 
 **回调与变化过滤**　仅在值更新时执行逻辑时，回调比轮询更省。配合 `set_change_reporting(true)`，序列化字节与上次相同的样本在入口即被丢弃（既不更新缓存也不触发回调），进一步降低 CPU 占用。
+
+切换变化过滤开关会使旧的去重依据失效；重新启用后，首个成功解码的值正常投递。Getter 仍先调用用户回调，再提交本地值缓存。
 
 ```cpp
 vlink::Getter<int> getter("dds://config/max_retry");

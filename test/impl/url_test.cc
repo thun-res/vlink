@@ -116,11 +116,14 @@ TEST_SUITE("impl-Url") {
   TEST_CASE("copy assignment replaces destination with copy of source") {
     Url a("intra://topic_a");
     Url b("intra://topic_b");
+    REQUIRE(a.parse(kPublisher));
+    REQUIRE(b.parse(kSubscriber));
 
     b = a;
 
     CHECK_EQ(b.get_str(), a.get_str());
     CHECK_NE(b.get_target(), a.get_target());
+    CHECK_EQ(b.get_impl_type(), kUnknownImplType);
   }
 
   TEST_CASE("move assignment transfers source to destination") {
