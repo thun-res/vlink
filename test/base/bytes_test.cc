@@ -426,6 +426,21 @@ TEST_SUITE("base-Bytes") {
     CHECK(Bytes::decode_from_base64("T===").empty());
   }
 
+  TEST_CASE("base64 decoding fills owned buffers across SBO and padding boundaries") {
+    for (size_t size : {95u, 96u, 97u, 4095u, 4096u, 4097u}) {
+      Bytes original = Bytes::create(size);
+      fill_pattern(original);
+
+      auto encoded = Bytes::encode_to_base64(original);
+      Bytes decoded = Bytes::decode_from_base64(encoded);
+
+      CHECK(decoded.is_owner());
+      CHECK_EQ(decoded.size(), size);
+      CHECK(decoded == original);
+      CHECK(decoded.data() != original.data());
+    }
+  }
+
   TEST_CASE("base64 handles one two and three byte padding cases") {
     Bytes one{0x4Du};
     std::string one_encoded = Bytes::encode_to_base64(one);

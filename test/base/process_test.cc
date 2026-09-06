@@ -40,6 +40,14 @@
 #include "../common_test.h"
 #include "./base/utils.h"
 
+#ifdef __linux__
+#include <fcntl.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include <cerrno>
+#endif
+
 #if defined(__SANITIZE_ADDRESS__)
 #define VLINK_TEST_ADDRESS_SANITIZER 1
 #elif defined(__has_feature)
@@ -253,6 +261,165 @@ TEST_SUITE("base-Process") {
     proc.start_command("");
     CHECK_EQ(proc.get_error(), Process::kStartError);
     CHECK_FALSE(proc.is_running());
+  }
+
+  TEST_CASE("start_command preserves quoted empty positional arguments") {
+    Process proc;
+    proc.start_command(
+        "/bin/sh -c 'printf \"%s|%s|%s|%s|%s\" \"$#\" \"$1\" \"$2\" \"$3\" \"$4\"' sh \"\" middle '' \"\"");
+    REQUIRE(proc.wait_for_finished(3000));
+
+    std::string output;
+    REQUIRE(proc.read_all_output(output));
+    CHECK_EQ(output, "4||middle||");
+  }
+
+  TEST_CASE("active reads report truncation and invoke the error callback outside the buffer lock") {
+    for (int reader = 0; reader < 10; ++reader) {
+      Process proc;
+      proc.set_max_buffer_size(4);
+      int error_count = 0;
+      Process::Error reported_error = Process::kNoError;
+      proc.register_error_callback([&](Process::Error error) {
+        reported_error = error;
+        ++error_count;
+        CHECK(proc.bytes_available_stdout() <= 4u);
+        CHECK(proc.bytes_available_stderr() <= 4u);
+      });
+      proc.register_state_changed_callback([&](Process::State state) {
+        if (state != Process::kRunningState) {
+          return;
+        }
+
+        siginfo_t info{};
+        int ret;
+        do {
+          ret = ::waitid(P_PID, static_cast<id_t>(proc.get_process_id()), &info, WEXITED | WNOWAIT);
+        } while (ret < 0 && errno == EINTR);
+        REQUIRE_EQ(ret, 0);
+
+        std::string text;
+        std::vector<uint8_t> bytes;
+        switch (reader) {
+          case 0:
+            CHECK(proc.read_line_stdout(text));
+            break;
+          case 1:
+            CHECK(proc.read_line_stderr(text));
+            break;
+          case 2:
+            CHECK_EQ(proc.read_stdout(bytes, 4), 4u);
+            break;
+          case 3:
+            CHECK_EQ(proc.read_stderr(bytes, 4), 4u);
+            break;
+          case 4:
+            CHECK(proc.read_all_output(bytes));
+            break;
+          case 5:
+            CHECK(proc.read_all_error(bytes));
+            break;
+          case 6:
+            CHECK(proc.read_all(bytes));
+            break;
+          case 7:
+            CHECK(proc.read_all_output(text));
+            break;
+          case 8:
+            CHECK(proc.read_all_error(text));
+            break;
+          case 9:
+            CHECK(proc.read_all(text));
+            break;
+        }
+        CHECK_EQ(proc.get_error(), Process::kBufferOverflowError);
+        CHECK_EQ(reported_error, Process::kBufferOverflowError);
+        CHECK_EQ(error_count, 1);
+      });
+      proc.start("/bin/sh", {"-c", "printf abcdefgh; printf 12345678 >&2"});
+      REQUIRE(proc.wait_for_finished(3000));
+      proc.close();
+      CHECK_EQ(error_count, 1);
+    }
+  }
+
+  TEST_CASE("partial output reads preserve unread prefixes across string and vector drains") {
+    Process proc;
+    proc.start("/bin/sh", {"-c", "printf 'a\\nb\\nc\\n'; printf '1\\n2\\n3\\n' >&2"});
+    REQUIRE(proc.wait_for_finished(3000));
+    std::string line;
+    REQUIRE(proc.read_line_stdout(line));
+    CHECK_EQ(line, "a\n");
+    REQUIRE(proc.read_line_stderr(line));
+    CHECK_EQ(line, "1\n");
+    CHECK_EQ(proc.bytes_available_stdout(), 4u);
+    CHECK_EQ(proc.bytes_available_stderr(), 4u);
+    CHECK(proc.can_read_line_stdout());
+    CHECK(proc.can_read_line_stderr());
+
+    std::vector<uint8_t> part;
+    CHECK_EQ(proc.read_stdout(part, 1), 1u);
+    CHECK_EQ(part, std::vector<uint8_t>{'b'});
+    CHECK_EQ(proc.read_stderr(part, 1), 1u);
+    CHECK_EQ(part, std::vector<uint8_t>{'2'});
+
+    SUBCASE("combined vector") {
+      REQUIRE(proc.read_all(part));
+      CHECK_EQ(std::string(part.begin(), part.end()), "\nc\n\n3\n");
+    }
+    SUBCASE("combined string") {
+      REQUIRE(proc.read_all(line));
+      CHECK_EQ(line, "\nc\n\n3\n");
+    }
+    SUBCASE("separate vectors") {
+      REQUIRE(proc.read_all_output(part));
+      CHECK_EQ(std::string(part.begin(), part.end()), "\nc\n");
+      REQUIRE(proc.read_all_error(part));
+      CHECK_EQ(std::string(part.begin(), part.end()), "\n3\n");
+    }
+    SUBCASE("separate strings") {
+      REQUIRE(proc.read_all_output(line));
+      CHECK_EQ(line, "\nc\n");
+      REQUIRE(proc.read_all_error(line));
+      CHECK_EQ(line, "\n3\n");
+    }
+    CHECK_EQ(proc.bytes_available_stdout(), 0u);
+    CHECK_EQ(proc.bytes_available_stderr(), 0u);
+  }
+
+  TEST_CASE("consumed output capacity can hold later data without false truncation") {
+    Process proc;
+    proc.set_max_buffer_size(8);
+    proc.start("/bin/cat");
+    REQUIRE_EQ(proc.write("abcdef"), 6u);
+    REQUIRE(common_test::wait_until([&] { return proc.bytes_available_stdout() == 6u; }, 1000ms));
+
+    std::vector<uint8_t> part;
+    REQUIRE_EQ(proc.read_stdout(part, 4), 4u);
+    CHECK_EQ(std::string(part.begin(), part.end()), "abcd");
+    REQUIRE_EQ(proc.write("ghijkl"), 6u);
+    REQUIRE(common_test::wait_until([&] { return proc.bytes_available_stdout() == 8u; }, 1000ms));
+    proc.close_write_channel();
+    REQUIRE(proc.wait_for_finished(3000));
+
+    std::string output;
+    REQUIRE(proc.read_all_output(output));
+    CHECK_EQ(output, "efghijkl");
+    CHECK_EQ(proc.get_error(), Process::kNoError);
+  }
+
+  TEST_CASE("child descriptor cleanup closes unrelated inherited descriptors") {
+    int original = ::open("/dev/null", O_RDONLY);
+    REQUIRE(original >= 0);
+    const int inherited = ::fcntl(original, F_DUPFD, 100);
+    ::close(original);
+    REQUIRE(inherited >= 100);
+
+    Process proc;
+    proc.start("/bin/sh", {"-c", "test ! -e /proc/self/fd/" + std::to_string(inherited)});
+    ::close(inherited);
+    REQUIRE(proc.wait_for_finished(3000));
+    CHECK_EQ(proc.get_exit_code(), 0);
   }
 
   TEST_CASE("wait helpers return immediately for a process that was never started") {

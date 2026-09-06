@@ -31,6 +31,7 @@
 #include <mutex>
 #include <shared_mutex>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -57,24 +58,14 @@
 #include <cstring>
 #endif
 
-#if defined(__APPLE__)
-#include <crt_externs.h>
-[[maybe_unused]] static inline char**& vlink_get_process_environ() { return *_NSGetEnviron(); }
-#elif defined(_WIN32)
-[[maybe_unused]] static inline char** vlink_get_process_environ() { return _environ; }
-#else
-extern "C" {
-extern char** environ;
-}
-[[maybe_unused]] static inline char**& vlink_get_process_environ() { return environ; }
+#ifdef __linux__
+#include <sys/syscall.h>
 #endif
 
 namespace vlink {
 
 [[maybe_unused]] static constexpr int kExecFailedExitCode{127};
 [[maybe_unused]] static constexpr size_t kDefaultMaxBufferSize{16 * 1024 * 1024};
-[[maybe_unused]] static constexpr size_t kPipeBufferSize{8192};
-[[maybe_unused]] static constexpr int kPollTimeoutMs{50};
 [[maybe_unused]] static constexpr int kMonitorLoopDelayMs{10};
 
 #ifdef _WIN32
@@ -284,6 +275,32 @@ static void run_windows_write(WindowsWriteContext* context) {
 #endif
 
 #ifndef _WIN32
+static void close_child_descriptors(int keep_fd) {
+#if defined(__linux__) && defined(SYS_close_range)
+  const bool closed_before =
+      keep_fd <= STDERR_FILENO + 1 || ::syscall(SYS_close_range, static_cast<unsigned int>(STDERR_FILENO + 1),
+                                                static_cast<unsigned int>(keep_fd - 1), 0U) == 0;
+  const bool closed_after = ::syscall(SYS_close_range, static_cast<unsigned int>(keep_fd + 1),
+                                      std::numeric_limits<unsigned int>::max(), 0U) == 0;
+
+  if (closed_before && closed_after) {
+    return;
+  }
+#endif
+
+  int max_fd = static_cast<int>(sysconf(_SC_OPEN_MAX));
+
+  if VUNLIKELY (max_fd < 0) {
+    max_fd = 1024;
+  }
+
+  for (int fd = STDERR_FILENO + 1; fd < max_fd; ++fd) {
+    if (fd != keep_fd) {
+      ::close(fd);
+    }
+  }
+}
+
 [[maybe_unused]] static std::string resolve_program_path(const std::string& program,
                                                          const Process::EnvironmentMap& env_map) {
   if VUNLIKELY (program.empty() || program.find('/') != std::string::npos) {
@@ -394,14 +411,34 @@ static void run_windows_write(WindowsWriteContext* context) {
 }
 #endif
 
-[[maybe_unused]] static size_t find_newline(const std::vector<uint8_t>& buffer) {
-  for (size_t i = 0; i < buffer.size(); ++i) {
+static size_t find_newline(const std::vector<uint8_t>& buffer, size_t offset) {
+  for (size_t i = offset; i < buffer.size(); ++i) {
     if (buffer[i] == '\n') {
-      return i;
+      return i - offset;
     }
   }
 
   return std::string::npos;
+}
+
+static void consume_buffer(std::vector<uint8_t>& buffer, size_t& offset, size_t count) {
+  offset += count;
+
+  if (offset == buffer.size()) {
+    buffer.clear();
+    offset = 0;
+  }
+}
+
+static void compact_buffer(std::vector<uint8_t>& buffer, size_t& offset) {
+  if (offset > 0) {
+    buffer.erase(buffer.begin(), buffer.begin() + offset);
+    offset = 0;
+  }
+}
+
+static std::string_view buffer_view(const std::vector<uint8_t>& buffer, size_t offset) {
+  return {reinterpret_cast<const char*>(buffer.data() + offset), buffer.size() - offset};
 }
 
 // Process::Impl
@@ -442,6 +479,8 @@ struct Process::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding
 
   std::vector<uint8_t> stdout_buffer;
   std::vector<uint8_t> stderr_buffer;
+  size_t stdout_offset{0};
+  size_t stderr_offset{0};
   std::mutex buffer_mtx;
 
   std::mutex state_mtx;
@@ -528,7 +567,8 @@ void Process::set_max_buffer_size(size_t size) {
   impl_->max_buffer_size.store(max_size, std::memory_order_release);
 
   std::lock_guard lock(impl_->buffer_mtx);
-  if VUNLIKELY (impl_->stdout_buffer.size() > max_size || impl_->stderr_buffer.size() > max_size) {
+  if VUNLIKELY (impl_->stdout_buffer.size() - impl_->stdout_offset > max_size ||
+                impl_->stderr_buffer.size() - impl_->stderr_offset > max_size) {
     set_error(kBufferOverflowError);
   }
 }
@@ -611,6 +651,8 @@ void Process::start(const std::string& program, const std::vector<std::string>& 
     std::lock_guard lock(impl_->buffer_mtx);
     impl_->stdout_buffer.clear();
     impl_->stderr_buffer.clear();
+    impl_->stdout_offset = 0;
+    impl_->stderr_offset = 0;
   }
 
   impl_->state_cv.notify_all();
@@ -678,6 +720,7 @@ void Process::start_command(const std::string& command) {
   bool in_dquotes = false;
   bool in_squotes = false;
   bool escape = false;
+  bool token_started = false;
 
   for (auto c : command) {
     if (escape) {
@@ -713,26 +756,31 @@ void Process::start_command(const std::string& command) {
     }
 
     if (!in_squotes && c == '\\') {
+      token_started = true;
       escape = true;
       continue;
     }
 
     if (!in_squotes && c == '"') {
+      token_started = true;
       in_dquotes = !in_dquotes;
       continue;
     }
 
     if (!in_dquotes && c == '\'') {
+      token_started = true;
       in_squotes = !in_squotes;
       continue;
     }
 
     if ((c == ' ' || c == '\t') && !in_dquotes && !in_squotes) {
-      if (!current.empty()) {
-        parts.emplace_back(current);
+      if (token_started) {
+        parts.emplace_back(std::move(current));
         current.clear();
+        token_started = false;
       }
     } else {
+      token_started = true;
       current += c;
     }
   }
@@ -741,8 +789,8 @@ void Process::start_command(const std::string& command) {
     current += '\\';
   }
 
-  if (!current.empty()) {
-    parts.emplace_back(current);
+  if (token_started) {
+    parts.emplace_back(std::move(current));
   }
 
   if VUNLIKELY (parts.empty()) {
@@ -883,7 +931,8 @@ bool Process::wait_for_ready_read(int msecs) {
 
   {
     std::lock_guard lock(impl_->buffer_mtx);
-    initial_size = impl_->stdout_buffer.size() + impl_->stderr_buffer.size();
+    initial_size =
+        impl_->stdout_buffer.size() - impl_->stdout_offset + impl_->stderr_buffer.size() - impl_->stderr_offset;
   }
 
 #ifdef _WIN32
@@ -892,7 +941,8 @@ bool Process::wait_for_ready_read(int msecs) {
 
     {
       std::lock_guard lock(impl_->buffer_mtx);
-      size_t current_size = impl_->stdout_buffer.size() + impl_->stderr_buffer.size();
+      size_t current_size =
+          impl_->stdout_buffer.size() - impl_->stdout_offset + impl_->stderr_buffer.size() - impl_->stderr_offset;
 
       if VLIKELY (current_size > initial_size) {
         return true;
@@ -908,7 +958,8 @@ bool Process::wait_for_ready_read(int msecs) {
 
     if VUNLIKELY (impl_->state.load(std::memory_order_acquire) == kNotRunningState) {
       std::lock_guard lock2(impl_->buffer_mtx);
-      return (impl_->stdout_buffer.size() + impl_->stderr_buffer.size()) > initial_size;
+      return (impl_->stdout_buffer.size() - impl_->stdout_offset + impl_->stderr_buffer.size() - impl_->stderr_offset) >
+             initial_size;
     }
 
     DWORD wait_slice = 50;
@@ -961,7 +1012,8 @@ bool Process::wait_for_ready_read(int msecs) {
 
       if (elapsed >= msecs) {
         std::lock_guard lock(impl_->buffer_mtx);
-        return (impl_->stdout_buffer.size() + impl_->stderr_buffer.size()) > initial_size;
+        return (impl_->stdout_buffer.size() - impl_->stdout_offset + impl_->stderr_buffer.size() -
+                impl_->stderr_offset) > initial_size;
       }
 
       timeout_ms = static_cast<int>(msecs - elapsed);
@@ -985,7 +1037,8 @@ bool Process::wait_for_ready_read(int msecs) {
 
     {
       std::lock_guard lock(impl_->buffer_mtx);
-      size_t cur = impl_->stdout_buffer.size() + impl_->stderr_buffer.size();
+      size_t cur =
+          impl_->stdout_buffer.size() - impl_->stdout_offset + impl_->stderr_buffer.size() - impl_->stderr_offset;
 
       if (cur > initial_size) {
         return true;
@@ -1173,178 +1226,185 @@ void Process::close(bool force_kill_on_timeout) {
 
 size_t Process::bytes_available_stdout() const {
   std::lock_guard lock(impl_->buffer_mtx);
-  return impl_->stdout_buffer.size();
+  return impl_->stdout_buffer.size() - impl_->stdout_offset;
 }
 
 size_t Process::bytes_available_stderr() const {
   std::lock_guard lock(impl_->buffer_mtx);
-  return impl_->stderr_buffer.size();
+  return impl_->stderr_buffer.size() - impl_->stderr_offset;
 }
 
 bool Process::can_read_line_stdout() const {
   std::lock_guard lock(impl_->buffer_mtx);
-  return find_newline(impl_->stdout_buffer) != std::string::npos;
+  return find_newline(impl_->stdout_buffer, impl_->stdout_offset) != std::string::npos;
 }
 
 bool Process::can_read_line_stderr() const {
   std::lock_guard lock(impl_->buffer_mtx);
-  return find_newline(impl_->stderr_buffer) != std::string::npos;
+  return find_newline(impl_->stderr_buffer, impl_->stderr_offset) != std::string::npos;
 }
 
 bool Process::read_line_stdout(std::string& line) {
-  std::lock_guard lock(impl_->buffer_mtx);
-
-  read_from_pipes();
+  std::unique_lock lock(impl_->buffer_mtx);
+  const auto result = read_from_pipes();
 
   if (impl_->stdout_buffer.empty()) {
     line.clear();
-    return false;
-  }
-
-  size_t newline_pos = find_newline(impl_->stdout_buffer);
-
-  if (newline_pos != std::string::npos) {
-    line.assign(reinterpret_cast<const char*>(impl_->stdout_buffer.data()), newline_pos + 1);
-    impl_->stdout_buffer.erase(impl_->stdout_buffer.begin(), impl_->stdout_buffer.begin() + newline_pos + 1);
   } else {
-    line.assign(reinterpret_cast<const char*>(impl_->stdout_buffer.data()), impl_->stdout_buffer.size());
-    impl_->stdout_buffer.clear();
+    const size_t newline_pos = find_newline(impl_->stdout_buffer, impl_->stdout_offset);
+    const size_t count =
+        newline_pos != std::string::npos ? newline_pos + 1 : impl_->stdout_buffer.size() - impl_->stdout_offset;
+    line.assign(reinterpret_cast<const char*>(impl_->stdout_buffer.data() + impl_->stdout_offset), count);
+    consume_buffer(impl_->stdout_buffer, impl_->stdout_offset, count);
   }
 
-  return !line.empty();
+  const bool has_data = !line.empty();
+  lock.unlock();
+  report_read_result(result, false);
+  return has_data;
 }
 
 bool Process::read_line_stderr(std::string& line) {
-  std::lock_guard lock(impl_->buffer_mtx);
-
-  read_from_pipes();
+  std::unique_lock lock(impl_->buffer_mtx);
+  const auto result = read_from_pipes();
 
   if (impl_->stderr_buffer.empty()) {
     line.clear();
-    return false;
-  }
-
-  size_t newline_pos = find_newline(impl_->stderr_buffer);
-
-  if (newline_pos != std::string::npos) {
-    line.assign(reinterpret_cast<const char*>(impl_->stderr_buffer.data()), newline_pos + 1);
-    impl_->stderr_buffer.erase(impl_->stderr_buffer.begin(), impl_->stderr_buffer.begin() + newline_pos + 1);
   } else {
-    line.assign(reinterpret_cast<const char*>(impl_->stderr_buffer.data()), impl_->stderr_buffer.size());
-    impl_->stderr_buffer.clear();
+    const size_t newline_pos = find_newline(impl_->stderr_buffer, impl_->stderr_offset);
+    const size_t count =
+        newline_pos != std::string::npos ? newline_pos + 1 : impl_->stderr_buffer.size() - impl_->stderr_offset;
+    line.assign(reinterpret_cast<const char*>(impl_->stderr_buffer.data() + impl_->stderr_offset), count);
+    consume_buffer(impl_->stderr_buffer, impl_->stderr_offset, count);
   }
 
-  return !line.empty();
+  const bool has_data = !line.empty();
+  lock.unlock();
+  report_read_result(result, false);
+  return has_data;
 }
 
 size_t Process::read_stdout(std::vector<uint8_t>& buffer, size_t max_size) {
-  std::lock_guard lock(impl_->buffer_mtx);
+  std::unique_lock lock(impl_->buffer_mtx);
+  const auto result = read_from_pipes();
+  const size_t to_read = std::min(max_size, impl_->stdout_buffer.size() - impl_->stdout_offset);
+  const auto begin = impl_->stdout_buffer.begin() + impl_->stdout_offset;
+  buffer.assign(begin, begin + to_read);
+  consume_buffer(impl_->stdout_buffer, impl_->stdout_offset, to_read);
 
-  read_from_pipes();
-
-  size_t to_read = std::min(max_size, impl_->stdout_buffer.size());
-
-  if (to_read == 0) {
-    buffer.clear();
-    return 0;
-  }
-
-  buffer.assign(impl_->stdout_buffer.begin(), impl_->stdout_buffer.begin() + to_read);
-  impl_->stdout_buffer.erase(impl_->stdout_buffer.begin(), impl_->stdout_buffer.begin() + to_read);
-
+  lock.unlock();
+  report_read_result(result, false);
   return to_read;
 }
 
 size_t Process::read_stderr(std::vector<uint8_t>& buffer, size_t max_size) {
-  std::lock_guard lock(impl_->buffer_mtx);
+  std::unique_lock lock(impl_->buffer_mtx);
+  const auto result = read_from_pipes();
+  const size_t to_read = std::min(max_size, impl_->stderr_buffer.size() - impl_->stderr_offset);
+  const auto begin = impl_->stderr_buffer.begin() + impl_->stderr_offset;
+  buffer.assign(begin, begin + to_read);
+  consume_buffer(impl_->stderr_buffer, impl_->stderr_offset, to_read);
 
-  read_from_pipes();
-
-  size_t to_read = std::min(max_size, impl_->stderr_buffer.size());
-
-  if (to_read == 0) {
-    buffer.clear();
-    return 0;
-  }
-
-  buffer.assign(impl_->stderr_buffer.begin(), impl_->stderr_buffer.begin() + to_read);
-  impl_->stderr_buffer.erase(impl_->stderr_buffer.begin(), impl_->stderr_buffer.begin() + to_read);
-
+  lock.unlock();
+  report_read_result(result, false);
   return to_read;
 }
 
 bool Process::read_all_output(std::vector<uint8_t>& buffer) {
-  std::lock_guard lock(impl_->buffer_mtx);
-  read_from_pipes();
+  std::unique_lock lock(impl_->buffer_mtx);
+  const auto result = read_from_pipes();
 
+  compact_buffer(impl_->stdout_buffer, impl_->stdout_offset);
   buffer = std::move(impl_->stdout_buffer);
   impl_->stdout_buffer.clear();
 
-  return !buffer.empty();
+  const bool has_data = !buffer.empty();
+  lock.unlock();
+  report_read_result(result, false);
+  return has_data;
 }
 
 bool Process::read_all_error(std::vector<uint8_t>& buffer) {
-  std::lock_guard lock(impl_->buffer_mtx);
-  read_from_pipes();
+  std::unique_lock lock(impl_->buffer_mtx);
+  const auto result = read_from_pipes();
 
+  compact_buffer(impl_->stderr_buffer, impl_->stderr_offset);
   buffer = std::move(impl_->stderr_buffer);
   impl_->stderr_buffer.clear();
 
-  return !buffer.empty();
+  const bool has_data = !buffer.empty();
+  lock.unlock();
+  report_read_result(result, false);
+  return has_data;
 }
 
 bool Process::read_all(std::vector<uint8_t>& buffer) {
-  std::lock_guard lock(impl_->buffer_mtx);
-  read_from_pipes();
+  std::unique_lock lock(impl_->buffer_mtx);
+  const auto result = read_from_pipes();
 
-  buffer = impl_->stdout_buffer;
-  buffer.insert(buffer.end(), impl_->stderr_buffer.begin(), impl_->stderr_buffer.end());
+  compact_buffer(impl_->stdout_buffer, impl_->stdout_offset);
+  buffer = std::move(impl_->stdout_buffer);
+  buffer.insert(buffer.end(), impl_->stderr_buffer.begin() + impl_->stderr_offset, impl_->stderr_buffer.end());
 
   impl_->stdout_buffer.clear();
   impl_->stderr_buffer.clear();
+  impl_->stderr_offset = 0;
 
-  return !buffer.empty();
+  const bool has_data = !buffer.empty();
+  lock.unlock();
+  report_read_result(result, false);
+  return has_data;
 }
 
 bool Process::read_all_output(std::string& str) {
-  std::lock_guard lock(impl_->buffer_mtx);
-  read_from_pipes();
+  std::unique_lock lock(impl_->buffer_mtx);
+  const auto result = read_from_pipes();
 
-  str.assign(reinterpret_cast<const char*>(impl_->stdout_buffer.data()), impl_->stdout_buffer.size());
+  str.assign(buffer_view(impl_->stdout_buffer, impl_->stdout_offset));
 
   bool has_data = !impl_->stdout_buffer.empty();
   impl_->stdout_buffer.clear();
+  impl_->stdout_offset = 0;
 
+  lock.unlock();
+  report_read_result(result, false);
   return has_data;
 }
 
 bool Process::read_all_error(std::string& str) {
-  std::lock_guard lock(impl_->buffer_mtx);
-  read_from_pipes();
+  std::unique_lock lock(impl_->buffer_mtx);
+  const auto result = read_from_pipes();
 
-  str.assign(reinterpret_cast<const char*>(impl_->stderr_buffer.data()), impl_->stderr_buffer.size());
+  str.assign(buffer_view(impl_->stderr_buffer, impl_->stderr_offset));
 
   bool has_data = !impl_->stderr_buffer.empty();
   impl_->stderr_buffer.clear();
+  impl_->stderr_offset = 0;
 
+  lock.unlock();
+  report_read_result(result, false);
   return has_data;
 }
 
 bool Process::read_all(std::string& str) {
-  std::lock_guard lock(impl_->buffer_mtx);
-  read_from_pipes();
+  std::unique_lock lock(impl_->buffer_mtx);
+  const auto result = read_from_pipes();
 
   str.clear();
-  str.reserve(impl_->stdout_buffer.size() + impl_->stderr_buffer.size());
+  str.reserve(impl_->stdout_buffer.size() - impl_->stdout_offset + impl_->stderr_buffer.size() - impl_->stderr_offset);
 
-  str.append(reinterpret_cast<const char*>(impl_->stdout_buffer.data()), impl_->stdout_buffer.size());
-  str.append(reinterpret_cast<const char*>(impl_->stderr_buffer.data()), impl_->stderr_buffer.size());
+  str.append(buffer_view(impl_->stdout_buffer, impl_->stdout_offset));
+  str.append(buffer_view(impl_->stderr_buffer, impl_->stderr_offset));
 
   bool has_data = !str.empty();
 
   impl_->stdout_buffer.clear();
   impl_->stderr_buffer.clear();
+  impl_->stdout_offset = 0;
+  impl_->stderr_offset = 0;
 
+  lock.unlock();
+  report_read_result(result, false);
   return has_data;
 }
 
@@ -1677,17 +1737,7 @@ bool Process::start_detached(const std::string& program, const std::vector<std::
       }
     }
 
-    int max_fd = static_cast<int>(sysconf(_SC_OPEN_MAX));
-
-    if VUNLIKELY (max_fd < 0) {
-      max_fd = 1024;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    for (int fd = STDERR_FILENO + 1; fd < max_fd; ++fd) {
-      if (fd != exec_status_pipe[1]) {
-        ::close(fd);
-      }
-    }
+    close_child_descriptors(exec_status_pipe[1]);
 
     std::vector<std::string> args_storage;
     args_storage.reserve(arguments.size() + 2);
@@ -1875,9 +1925,11 @@ Process::ReadResult Process::read_from_pipes() {
   ReadResult result;
   size_t max_buffer_size = impl_->max_buffer_size.load(std::memory_order_acquire);
 
-  auto append_to_buffer = [&result, &max_buffer_size](std::vector<uint8_t>& target, const char* data, size_t bytes,
-                                                      bool& has_data) {
-    if VUNLIKELY (target.size() >= max_buffer_size) {
+  auto append_to_buffer = [&result, max_buffer_size](std::vector<uint8_t>& target, size_t& offset, const char* data,
+                                                     size_t bytes, bool& has_data) {
+    const size_t unread = target.size() - offset;
+
+    if VUNLIKELY (unread >= max_buffer_size) {
       if (bytes > 0U) {
         result.truncated = true;
       }
@@ -1885,10 +1937,15 @@ Process::ReadResult Process::read_from_pipes() {
       return;
     }
 
-    const size_t remaining = max_buffer_size - target.size();
+    const size_t remaining = max_buffer_size - unread;
     const size_t bytes_to_store = std::min(remaining, bytes);
 
     if (bytes_to_store > 0U) {
+      if (offset > 0 &&
+          (bytes_to_store > target.capacity() - target.size() || target.size() > max_buffer_size - bytes_to_store)) {
+        compact_buffer(target, offset);
+      }
+
       target.insert(target.end(), data, data + bytes_to_store);
       has_data = true;
     }
@@ -1898,17 +1955,10 @@ Process::ReadResult Process::read_from_pipes() {
     }
   };
 
-  if (impl_->stdout_buffer.capacity() < max_buffer_size) {
-    impl_->stdout_buffer.reserve(std::min(max_buffer_size, impl_->stdout_buffer.size() + 8192));
-  }
-
-  if (impl_->stderr_buffer.capacity() < max_buffer_size) {
-    impl_->stderr_buffer.reserve(std::min(max_buffer_size, impl_->stderr_buffer.size() + 8192));
-  }
-
 #ifdef _WIN32
   char buffer[8192];
-  auto drain_pipe = [&](HANDLE handle, std::vector<uint8_t>& target, std::atomic<bool>& closed, bool& has_data) {
+  auto drain_pipe = [&](HANDLE handle, std::vector<uint8_t>& target, size_t& offset, std::atomic<bool>& closed,
+                        bool& has_data) {
     while (handle != INVALID_HANDLE_VALUE && !closed.load(std::memory_order_acquire)) {
       DWORD available = 0;
 
@@ -1950,12 +2000,14 @@ Process::ReadResult Process::read_from_pipes() {
         break;
       }
 
-      append_to_buffer(target, buffer, bytes_read, has_data);
+      append_to_buffer(target, offset, buffer, bytes_read, has_data);
     }
   };
 
-  drain_pipe(impl_->stdout_read, impl_->stdout_buffer, impl_->stdout_closed, result.has_stdout_data);
-  drain_pipe(impl_->stderr_read, impl_->stderr_buffer, impl_->stderr_closed, result.has_stderr_data);
+  drain_pipe(impl_->stdout_read, impl_->stdout_buffer, impl_->stdout_offset, impl_->stdout_closed,
+             result.has_stdout_data);
+  drain_pipe(impl_->stderr_read, impl_->stderr_buffer, impl_->stderr_offset, impl_->stderr_closed,
+             result.has_stderr_data);
 #else
   char buffer[8192];
   ssize_t bytes_read;
@@ -1966,7 +2018,8 @@ Process::ReadResult Process::read_from_pipes() {
           ::read(impl_->stdout_pipe[0], buffer, sizeof(buffer));  // NOLINT(clang-analyzer-unix.BlockInCriticalSection)
 
       if VLIKELY (bytes_read > 0) {
-        append_to_buffer(impl_->stdout_buffer, buffer, static_cast<size_t>(bytes_read), result.has_stdout_data);
+        append_to_buffer(impl_->stdout_buffer, impl_->stdout_offset, buffer, static_cast<size_t>(bytes_read),
+                         result.has_stdout_data);
       } else if (bytes_read == 0) {
         impl_->stdout_closed.store(true, std::memory_order_release);
         break;
@@ -1990,7 +2043,8 @@ Process::ReadResult Process::read_from_pipes() {
           ::read(impl_->stderr_pipe[0], buffer, sizeof(buffer));  // NOLINT(clang-analyzer-unix.BlockInCriticalSection)
 
       if VLIKELY (bytes_read > 0) {
-        append_to_buffer(impl_->stderr_buffer, buffer, static_cast<size_t>(bytes_read), result.has_stderr_data);
+        append_to_buffer(impl_->stderr_buffer, impl_->stderr_offset, buffer, static_cast<size_t>(bytes_read),
+                         result.has_stderr_data);
       } else if (bytes_read == 0) {
         impl_->stderr_closed.store(true, std::memory_order_release);
         break;
@@ -2012,8 +2066,8 @@ Process::ReadResult Process::read_from_pipes() {
   return result;
 }
 
-void Process::report_read_result(const ReadResult& result) {
-  if VLIKELY (result.has_stdout_data || result.has_stderr_data) {
+void Process::report_read_result(const ReadResult& result, bool notify_data) {
+  if (notify_data && (result.has_stdout_data || result.has_stderr_data)) {
     invoke_callbacks_outside_lock(kNoError, false, -1, kNormalExitStatus, impl_->state.load(std::memory_order_acquire),
                                   false, result.has_stdout_data, result.has_stderr_data);
   }
@@ -2570,17 +2624,7 @@ bool Process::start_program(const std::string& program, const std::vector<std::s
       dup2(impl_->stderr_pipe[1], STDERR_FILENO);
     }
 
-    int max_fd = static_cast<int>(sysconf(_SC_OPEN_MAX));
-
-    if VUNLIKELY (max_fd < 0) {
-      max_fd = 1024;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    for (int fd = 0; fd < max_fd; ++fd) {
-      if (fd != STDIN_FILENO && fd != STDOUT_FILENO && fd != STDERR_FILENO && fd != exec_failure_pipe[1]) {
-        ::close(fd);
-      }
-    }
+    close_child_descriptors(exec_failure_pipe[1]);
 
     if (inherit_env) {
       for (const auto& [key, value] : env_map_copy) {

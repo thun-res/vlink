@@ -323,7 +323,7 @@ class VLINK_EXPORT Bytes final {  // size == 128 bytes
    * @brief Decodes a Base-64 ASCII string back into a binary payload.
    *
    * @param target  Base-64 source string.
-   * @return Decoded @c Bytes, or an empty value on invalid input.
+   * @return Decoded @c Bytes, or an empty value on invalid input or allocation failure.
    */
   [[nodiscard]] static Bytes decode_from_base64(const std::string& target) noexcept;
 

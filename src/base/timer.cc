@@ -107,8 +107,8 @@ Timer::~Timer() {
 
   MessageLoop* message_loop = impl_->message_loop.load(std::memory_order_acquire);
 
-  if (message_loop && !impl_->is_once_type) {
-    const bool should_wait = message_loop->is_running() && !message_loop->is_in_same_thread();
+  if (!impl_->is_once_type) {
+    const bool should_wait = message_loop == nullptr || !message_loop->is_in_same_thread();
 
     detach();
 
@@ -320,8 +320,9 @@ void Timer::run_callback() {
 void Timer::begin_in_flight() { impl_->in_flight_count.fetch_add(1, std::memory_order_acq_rel); }
 
 void Timer::end_in_flight() {
+  std::lock_guard lock(impl_->mtx);
+
   if (impl_->in_flight_count.fetch_sub(1, std::memory_order_acq_rel) == 1U) {
-    std::lock_guard lock(impl_->mtx);
     impl_->cv.notify_all();
   }
 }
@@ -336,9 +337,9 @@ void Timer::wait_for_idle() {
 
 void Timer::stop(bool invalidate_pending) {
   impl_->start_time.store(0, std::memory_order_release);
-  impl_->invoke_count.store(0, std::memory_order_relaxed);
 
   if (invalidate_pending) {
+    impl_->invoke_count.store(0, std::memory_order_relaxed);
     impl_->generation.fetch_add(1, std::memory_order_acq_rel);
   }
 }

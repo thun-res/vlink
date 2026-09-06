@@ -370,6 +370,10 @@ VLINK_EXPORT void start_detect_keyboard(MoveFunction<void(const std::string& key
 
 /**
  * @brief Stops the keyboard poller started by @c start_detect_keyboard().
+ *
+ * @details
+ * May be called from its keyboard callback to request exit.  Calls from other threads
+ * wait for the poller to finish; starting it again also joins any previously stopped poller.
  */
 VLINK_EXPORT void stop_detect_keyboard() noexcept;
 

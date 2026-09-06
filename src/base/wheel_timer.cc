@@ -51,14 +51,6 @@ struct WheelTimer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
 
     Handler(WheelTimer::Key _key, uint32_t _rounds, WheelTimer::Callback&& _callback, uint32_t _repeat_ms = 0)
         : key(_key), remaining_rounds(_rounds), callback(std::move(_callback)), repeat_interval_ms(_repeat_ms) {}
-
-    Handler(const Handler&) = default;
-
-    Handler(Handler&&) = default;
-
-    Handler& operator=(const Handler&) = default;
-
-    Handler& operator=(Handler&&) = default;
   };
 
   std::atomic_bool stop_flag{false};
@@ -380,41 +372,22 @@ void WheelTimer::Impl::run() {
           ++it;
         } else {
           if (it->repeat_interval_ms > 0) {
-            callbacks_to_execute.emplace_back(it->key, it->callback);
+            callbacks_to_execute.emplace_back(it->key, Callback{});
 
             uint64_t repeat_ticks = (static_cast<uint64_t>(it->repeat_interval_ms) + interval_ms - 1) / interval_ms;
 
-            if VUNLIKELY (repeat_ticks == 0) {
-              repeat_ticks = 1;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-            }
-
-            uint64_t rounds64 = repeat_ticks / slots;
-
-            if VUNLIKELY (rounds64 > std::numeric_limits<uint32_t>::max()) {
-              // LCOV_EXCL_START GCOVR_EXCL_START
-              VLOG_E("WheelTimer: Repeat interval too large.");
-
-              timer_index.erase(it->key);
-              it = timers.erase(it);
-
-              continue;
-              // LCOV_EXCL_STOP GCOVR_EXCL_STOP
-            }
-
             auto repeat_ticks_mod = static_cast<uint32_t>(repeat_ticks % slots);
-            auto new_rounds = static_cast<uint32_t>(rounds64);
+            auto new_rounds = static_cast<uint32_t>((repeat_ticks - 1U) / slots);
             auto new_slot = (current_slot + repeat_ticks_mod) % slots;
 
-            Handler new_handler(it->key, new_rounds, std::move(it->callback), it->repeat_interval_ms);
-            auto& new_list = (*wheels)[new_slot];
+            it->remaining_rounds = new_rounds;
+            timer_index[it->key].first = new_slot;
+            auto due = it++;
 
-            new_list.emplace_back(std::move(new_handler));
-
-            auto new_it = std::prev(new_list.end());
-
-            timer_index[it->key] = {new_slot, new_it};
-
-            it = timers.erase(it);
+            if (new_slot != current_slot) {
+              auto& new_list = (*wheels)[new_slot];
+              new_list.splice(new_list.end(), timers, due);
+            }
           } else {
             callbacks_to_execute.emplace_back(it->key, std::move(it->callback));
             timer_index.erase(it->key);
@@ -440,19 +413,39 @@ void WheelTimer::Impl::run() {
       next_tick = now + interval;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
-#ifdef VLINK_ENABLE_BASE_MEMORY_RESOURCE
-    decltype(callbacks_to_execute) pending_callbacks(&MemoryResource::global_instance());
-#else
-    decltype(callbacks_to_execute) pending_callbacks;
-#endif
-
-    pending_callbacks.swap(callbacks_to_execute);
-
     lock.unlock();
 
-    for (const auto& [key, callback] : pending_callbacks) {
+    for (auto& [key, callback] : callbacks_to_execute) {
+      const bool repeating = !callback;
+
+      if (repeating) {
+        std::lock_guard callback_lock(mtx);
+        auto entry = timer_index.find(key);
+
+        if (entry == timer_index.end()) {
+          continue;
+        }
+
+        callback = std::move(entry->second.second->callback);
+      }
+
       callback(key);
+
+      if VUNLIKELY (stop_flag.load(std::memory_order_acquire)) {
+        break;
+      }
+
+      if (repeating) {
+        std::lock_guard callback_lock(mtx);
+        auto entry = timer_index.find(key);
+
+        if (entry != timer_index.end()) {
+          entry->second.second->callback = std::move(callback);
+        }
+      }
     }
+
+    callbacks_to_execute.clear();
   }
 
   {

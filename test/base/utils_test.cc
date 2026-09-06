@@ -30,9 +30,13 @@
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
+#include <csignal>
+#include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <limits>
 #include <mutex>
 #include <string>
@@ -122,6 +126,152 @@ bool write_all_to_fd(int fd, const char* data, size_t size) {
 }  // namespace
 
 TEST_SUITE("base-Utils") {
+  TEST_CASE("terminate signal pass through runs the callback before default termination") {
+    const auto mode = Utils::get_env("VLINK_UTILS_SIGNAL_CHILD");
+
+    if (!mode.empty()) {
+      const bool async_consume = mode == "async-consume";
+      const bool pass_through = mode != "consume" && !async_consume;
+      std::atomic<int> calls{0};
+      std::promise<void> release;
+      auto release_future = release.get_future();
+      std::promise<void> completed;
+      auto completed_future = completed.get_future();
+      Utils::register_terminate_signal(
+          [&](int signal) {
+            CHECK_EQ(signal, SIGTERM);
+            std::fputs("terminate-callback\n", stdout);
+            std::fflush(stdout);
+            calls.fetch_add(1, std::memory_order_release);
+            if (async_consume) {
+              release_future.wait();
+            }
+            completed.set_value();
+          },
+          mode == "async" || async_consume, pass_through);
+      std::raise(SIGTERM);
+
+      if (pass_through) {
+        std::this_thread::sleep_for(2s);
+      } else {
+        if (async_consume) {
+#ifdef __unix__
+          struct sigaction disposition{};
+          CHECK_EQ(::sigaction(SIGTERM, nullptr, &disposition), 0);
+          CHECK(disposition.sa_handler == SIG_IGN);
+#endif
+          release.set_value();
+          CHECK(completed_future.wait_for(2s) == std::future_status::ready);
+        }
+        CHECK_EQ(calls.load(std::memory_order_acquire), 1);
+#ifdef __unix__
+        std::raise(SIGTERM);
+        CHECK_EQ(calls.load(std::memory_order_acquire), 1);
+#endif
+      }
+      return;
+    }
+
+    for (const auto* child_mode : {"sync", "async", "consume", "async-consume"}) {
+      Process child;
+      child.set_inherit_environment(true);
+      child.set_environment({{"VLINK_UTILS_SIGNAL_CHILD", child_mode}});
+      child.start(
+          Utils::get_app_path(),
+          {"--test-suite=base-Utils",
+           "--test-case=terminate signal pass through runs the callback before default termination", "--no-version"});
+      REQUIRE(child.wait_for_finished(5000));
+      std::string output;
+      child.read_all_output(output);
+      CHECK(output.find("terminate-callback") != std::string::npos);
+      INFO(output);
+      if (std::string(child_mode) == "consume" || std::string(child_mode) == "async-consume") {
+        CHECK_EQ(child.get_exit_code(), 0);
+      } else {
+        CHECK_NE(child.get_exit_code(), 0);
+      }
+    }
+  }
+
+#ifndef _WIN32
+  TEST_CASE("timezone offset includes daylight saving in an isolated process") {
+    if (Utils::get_env("VLINK_UTILS_TIMEZONE_CHILD") == "1") {
+      const auto now = std::time(nullptr);
+      const bool first_half = std::gmtime(&now)->tm_mon < 6;
+      REQUIRE(Utils::set_env("TZ", first_half ? "XST5XDT4,M10.1.0,M9.1.0" : "XST5XDT4,M3.1.0,M2.1.0"));
+      ::tzset();
+      REQUIRE(std::localtime(&now)->tm_isdst > 0);
+      CHECK_EQ(Utils::get_timezone_diff(), -240);
+      REQUIRE(Utils::set_env("TZ", "XST-5:30"));
+      ::tzset();
+      CHECK_EQ(Utils::get_timezone_diff(), 330);
+      return;
+    }
+
+    Process child;
+    child.set_process_mode(Process::kForwardedMode);
+    child.set_inherit_environment(true);
+    child.set_environment({{"VLINK_UTILS_TIMEZONE_CHILD", "1"}});
+    child.start(Utils::get_app_path(),
+                {"--test-suite=base-Utils",
+                 "--test-case=timezone offset includes daylight saving in an isolated process", "--no-version"});
+    REQUIRE(child.wait_for_finished(5000));
+    CHECK_EQ(child.get_exit_code(), 0);
+  }
+#endif
+
+#if defined(__linux__) || defined(__APPLE__)
+  TEST_CASE("keyboard callback can stop and the detector can restart in an isolated process") {
+    if (Utils::get_env("VLINK_UTILS_KEYBOARD_CHILD") == "1") {
+      const int saved_stdin = ::dup(STDIN_FILENO);
+      REQUIRE(saved_stdin >= 0);
+      const int master_fd = ::posix_openpt(O_RDWR | O_NOCTTY);
+      REQUIRE(master_fd >= 0);
+      REQUIRE_EQ(::grantpt(master_fd), 0);
+      REQUIRE_EQ(::unlockpt(master_fd), 0);
+      const auto* slave_name = ::ptsname(master_fd);
+      REQUIRE(slave_name != nullptr);
+      const int slave_fd = ::open(slave_name, O_RDWR | O_NOCTTY);
+      REQUIRE(slave_fd >= 0);
+      REQUIRE(::dup2(slave_fd, STDIN_FILENO) >= 0);
+      const int initial_flags = ::fcntl(STDIN_FILENO, F_GETFL, 0);
+      std::atomic<int> stopped{0};
+
+      for (int pass = 1; pass <= 2; ++pass) {
+        Utils::start_detect_keyboard(
+            [&](const std::string& key) {
+              if (key == "q") {
+                Utils::stop_detect_keyboard();
+                stopped.fetch_add(1, std::memory_order_release);
+              }
+            },
+            1);
+        REQUIRE(write_all_to_fd(master_fd, "q", 1));
+        REQUIRE(common_test::wait_until([&] { return stopped.load(std::memory_order_acquire) == pass; }, 2000ms));
+      }
+
+      Utils::stop_detect_keyboard();
+      CHECK_EQ(::fcntl(STDIN_FILENO, F_GETFL, 0), initial_flags);
+      REQUIRE(::dup2(saved_stdin, STDIN_FILENO) >= 0);
+      ::close(saved_stdin);
+      ::close(slave_fd);
+      ::close(master_fd);
+      return;
+    }
+
+    Process child;
+    child.set_process_mode(Process::kForwardedMode);
+    child.set_inherit_environment(true);
+    child.set_environment({{"VLINK_UTILS_KEYBOARD_CHILD", "1"}});
+    child.start(
+        Utils::get_app_path(),
+        {"--test-suite=base-Utils",
+         "--test-case=keyboard callback can stop and the detector can restart in an isolated process", "--no-version"});
+    REQUIRE(child.wait_for_finished(5000));
+    CHECK_EQ(child.get_exit_code(), 0);
+  }
+#endif
+
   TEST_CASE("child process covers environment driven singleton helpers") {
     const auto child_case = Utils::get_env("VLINK_UTILS_CHILD_CASE");
 
@@ -276,6 +426,12 @@ TEST_SUITE("base-Utils") {
     Utils::unset_env("VLINK_TEST_ROUNDTRIP");
   }
 
+  TEST_CASE("environment values preserve literal backslashes") {
+    const std::string value = R"(domain\user\literal\n)";
+    ScopedUtilsEnv environment("VLINK_TEST_LITERAL_ENV", value);
+    CHECK_EQ(Utils::get_env("VLINK_TEST_LITERAL_ENV"), value);
+  }
+
   TEST_CASE("unset_env removes a previously set variable") {
     Utils::set_env("VLINK_TEST_UNSET", "to_be_removed");
     CHECK(Utils::get_env("VLINK_TEST_UNSET") == "to_be_removed");
@@ -418,6 +574,23 @@ TEST_SUITE("base-Utils") {
     std::vector<std::string> addrs = Utils::get_dds_default_address(false, kMax);
 
     CHECK(addrs.size() <= static_cast<size_t>(kMax));
+  }
+
+  TEST_CASE("DDS locator count includes loopback and each request honors its availability filter") {
+    for (const bool filter_available : {false, true, false}) {
+      const auto available = Utils::get_all_ipv4_address(filter_available);
+      for (const int limit : {1, 2}) {
+        const auto addresses = Utils::get_dds_default_address(filter_available, limit);
+        CHECK(addresses.size() <= static_cast<size_t>(limit));
+        for (const auto& address : addresses) {
+          CHECK(std::find(available.begin(), available.end(), address) != available.end());
+        }
+        if (std::find(available.begin(), available.end(), "127.0.0.1") != available.end()) {
+          REQUIRE_FALSE(addresses.empty());
+          CHECK_EQ(addresses.front(), "127.0.0.1");
+        }
+      }
+    }
   }
 
   TEST_CASE("get_dds_default_address entries are non-empty dotted-decimal") {

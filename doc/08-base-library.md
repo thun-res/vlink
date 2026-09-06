@@ -79,6 +79,8 @@ SLOG_D << "values: " << 42 << " temp=" << 78.5;
 Sink 都过滤该级别时，函数调用、自增等参数副作用不会发生。若昂贵计算在
 宏调用之前完成，仍应使用 `VLINK_LOG_IF_T/D/I/W/E/F` 包住整段准备逻辑。
 
+流式消息构造期间调用的函数或插入运算符可以继续记录日志，嵌套记录使用独立的线程局部缓冲，不覆盖外层消息。每个嵌套深度的缓冲在首次使用时分配，后续复用。
+
 新代码默认优先 `VLOG_*`。宽度/精度/进制等格式控制用 `MLOG_*` 的
 std::format 风格修饰（`[[fill]align][sign][#][0][width][.precision][type]`，
 如 `{:08.2f}`、`{:#x}`；宽度/精度也可写作 `{}`/`{n}` 从实参动态取值，
@@ -436,9 +438,11 @@ loop.run();
 
 `kInfinite`(-1) 表示无限重复。`interval_ms` 为 0 时被钳至最小保护间隔，避免空转。完整示例见 [`examples/base/timer/`](../examples/base/timer/)。
 
+`Timer` 有限次数自动结束后保留自上次启动的派发计数。外部线程先 `detach()` 再销毁时，析构仍等待正在执行的回调结束。
+
 ### 8.7.2 其余定时器
 
-- **`WheelTimer`**（`base/wheel_timer.h`）：哈希时间轮，插入/删除均摊 O(1)，适合数十万级并发超时（连接保活、会话超时）。回调在内部工作线程触发，通常投递回 `MessageLoop` 处理。
+- **`WheelTimer`**（`base/wheel_timer.h`）：哈希时间轮，插入/删除均摊 O(1)，适合数十万级并发超时（连接保活、会话超时）。回调在内部工作线程触发，通常投递回 `MessageLoop` 处理；周期回调通过移动保留可变状态。在回调内调用 `stop()` 后，同一 tick 中尚未执行的到期回调不再触发。
 
 ```cpp
 vlink::WheelTimer wheel(256, 10);
@@ -659,7 +663,7 @@ if (some_global_failure) {
 | 方法 | 语义 |
 | --- | --- |
 | `start(program, args)` | 异步启动子进程 |
-| `start_command(cmdline)` | 用完整命令行字符串启动 |
+| `start_command(cmdline)` | 解析命令行并启动，保留空引号参数 |
 | `wait_for_started/finished/ready_read(ms)` | 阻塞等待（默认 3000ms，`kInfinite` 为无限） |
 | `read_all_output(str)` / `read_all_error(str)` | 读取全部 stdout / stderr |
 | `read_line_stdout(line)` / `can_read_line_stdout()` | 按行读取 stdout |
@@ -670,7 +674,7 @@ if (some_global_failure) {
 | `Process::execute(prog, args, ms)` | 静态：同步执行并返回退出码 |
 | `Process::start_detached(prog, args)` | 静态：启动完全分离的子进程 |
 
-I/O 通道模式（`set_process_mode`）共五种：默认 `kSeparateMode`（stdout/stderr 各自缓冲）、`kMergedMode`（stderr 并入 stdout 管道）、`kForwardedMode`（stdout/stderr 均继承父进程，不捕获）、`kForwardedOutputMode`（stdout 继承父进程、stderr 捕获）、`kForwardedErrorMode`（stdout 捕获、stderr 继承父进程）。回调在内部监控线程触发，访问共享数据须注意线程安全。`Process` 不可拷贝、不可移动。
+I/O 通道模式（`set_process_mode`）共五种：默认 `kSeparateMode`（stdout/stderr 各自缓冲）、`kMergedMode`（stderr 并入 stdout 管道）、`kForwardedMode`（stdout/stderr 均继承父进程，不捕获）、`kForwardedOutputMode`（stdout 继承父进程、stderr 捕获）、`kForwardedErrorMode`（stdout 捕获、stderr 继承父进程）。回调由内部监控线程或当前操作同步触发，访问共享数据须注意线程安全。`Process` 不可拷贝、不可移动。
 
 ### 8.10.2 捕获子进程输出
 

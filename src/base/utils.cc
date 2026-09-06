@@ -356,8 +356,6 @@ std::string get_env(const std::string& key, const std::string& default_value) no
     value.pop_back();
   }
 
-  std::replace(value.begin(), value.end(), '\\', '/');
-
   return value;
 #else
   const char* value = std::getenv(key.c_str());
@@ -1029,8 +1027,7 @@ std::string get_interface_name_by_ipv6(const std::string& ipv6) noexcept {
 }
 
 std::vector<std::string> get_dds_default_address(bool filter_available, int max_count) noexcept {
-  static std::vector<std::string> all = get_all_ipv4_address(filter_available);
-
+  const auto all = get_all_ipv4_address(filter_available);
   std::vector<std::string> list;
 
   list.reserve(max_count);
@@ -1043,6 +1040,10 @@ std::vector<std::string> get_dds_default_address(bool filter_available, int max_
   }
 
   for (const auto& ip : all) {
+    if (list.size() >= static_cast<size_t>(max_count)) {
+      break;
+    }
+
     if (ip == "127.0.0.1") {
       continue;
     } else if (ip == "0.0.0.0") {
@@ -1052,10 +1053,6 @@ std::vector<std::string> get_dds_default_address(bool filter_available, int max_
     }
 
     list.emplace_back(ip);
-
-    if (list.size() >= static_cast<size_t>(max_count)) {
-      break;
-    }
   }
 
   return list;
@@ -1364,21 +1361,33 @@ struct SignalHelper final {
   static void on_terminate(int signal) {
     static auto& instance = SignalHelper::get();
 
-    if (instance.terminate_callback) {
-      if (instance.is_async) {
-        std::thread thread([signal]() { instance.terminate_callback(signal); });  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        thread.detach();                                                          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      } else {                                                                    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    auto invoke = [signal]() {
+      if (instance.terminate_callback) {
         instance.terminate_callback(signal);
       }
 
-#ifdef __unix__
-
-      if (!instance.pass_through) {
-        ::signal(signal, SIG_IGN);
-      }
+      if (instance.pass_through) {
+        ::signal(signal, SIG_DFL);
+#ifdef _WIN32
+        ::raise(signal);
+#else
+        ::kill(::getpid(), signal);
 #endif
+      }
+    };
+
+    if (instance.is_async) {
+      std::thread thread(std::move(invoke));
+      thread.detach();
+    } else {
+      invoke();
     }
+
+#ifdef __unix__
+    if (instance.terminate_callback && !instance.pass_through) {
+      ::signal(signal, SIG_IGN);
+    }
+#endif
   }
 
   // LCOV_EXCL_START GCOVR_EXCL_START
@@ -1515,7 +1524,11 @@ void start_detect_keyboard(MoveFunction<void(const std::string& key)>&& callback
   static auto& instance = KeyboardHelper::get();
 
   if (instance.has_detect.load(std::memory_order_acquire)) {
-    return;
+    if (!instance.quit_flag.load(std::memory_order_acquire) || instance.thread.get_id() == std::this_thread::get_id()) {
+      return;
+    }
+
+    stop_detect_keyboard();
   }
 
   if (callback) {
@@ -1820,6 +1833,11 @@ void start_detect_keyboard(MoveFunction<void(const std::string& key)>&& callback
 
 void stop_detect_keyboard() noexcept {
   static auto& instance = KeyboardHelper::get();
+
+  if (instance.thread.get_id() == std::this_thread::get_id()) {
+    instance.quit_flag.store(true, std::memory_order_release);
+    return;
+  }
 
   bool expected = true;
 
@@ -2250,6 +2268,7 @@ int32_t get_timezone_diff() noexcept {
   return local_tm.tm_gmtoff / 60;
 #else
   std::tm gm_tm = *std::gmtime(&now);
+  gm_tm.tm_isdst = local_tm.tm_isdst;
   int diff_seconds = std::mktime(&local_tm) - std::mktime(&gm_tm);
 
   return diff_seconds / 60;

@@ -36,6 +36,7 @@
 #include <shared_mutex>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "./base/cached_timestamp.h"
 #include "./base/logger_plugin_interface.h"
@@ -179,6 +180,17 @@ namespace vlink {
 static bool& is_logging_on_current_thread() noexcept {
   static thread_local bool is_logging{false};
   return is_logging;
+}
+
+struct LoggerStreamState final {
+  FastStream stream;
+  std::vector<std::unique_ptr<FastStream>> nested_streams;
+  size_t depth{0};
+};
+
+static LoggerStreamState& get_logger_stream_state() noexcept {
+  thread_local LoggerStreamState state;
+  return state;
 }
 
 static bool& is_plugin_logging_on_current_thread() noexcept {
@@ -913,10 +925,19 @@ char* Logger::get_local_buffer() noexcept {
   return buffer;
 }
 
-FastStream& Logger::get_local_stream() noexcept {
+FastStream& Logger::get_local_stream(bool acquire) noexcept {
   static auto& global_instance = LoggerGlobal::get();
+  auto& state = get_logger_stream_state();
 
-  thread_local FastStream stream;
+  if VUNLIKELY (state.depth > state.nested_streams.size()) {
+    state.nested_streams.emplace_back(std::make_unique<FastStream>());
+  }
+
+  auto& stream = state.depth == 0 ? state.stream : *state.nested_streams[state.depth - 1];
+
+  if (acquire) {
+    ++state.depth;
+  }
 
   stream.reset();
 
@@ -940,6 +961,8 @@ FastStream& Logger::get_local_stream() noexcept {
 
   return stream;
 }
+
+void Logger::release_local_stream() noexcept { --get_logger_stream_state().depth; }
 
 void Logger::write_to_console(Level level, std::string_view log) noexcept {
   static auto& global_instance = LoggerGlobal::get();

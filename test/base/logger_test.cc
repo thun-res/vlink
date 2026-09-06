@@ -303,6 +303,13 @@ void run_logger_child(const std::string& child_case, Process::EnvironmentMap env
   CHECK_EQ(child.get_exit_code(), 0);
 }
 
+struct NestedLogValue final {};
+
+std::ostream& operator<<(std::ostream& stream, const NestedLogValue&) {
+  VLOG_I("nested formatter record");
+  return stream << "value";
+}
+
 }  // namespace
 
 TEST_SUITE("base-Logger") {
@@ -623,6 +630,51 @@ TEST_SUITE("base-Logger") {
     CHECK_EQ(evaluations, 0);
 
     Logger::register_console_handler(nullptr);
+  }
+
+  TEST_CASE("SLOG preserves its prefix while an argument logs nested records") {
+    Logger::init("test");
+    Logger::set_console_level(Logger::kInfo);
+    Logger::set_file_level(Logger::kOff);
+
+    std::vector<std::string> records;
+    Logger::register_console_handler(
+        [&records](Logger::Level, std::string_view record) { records.emplace_back(record); });
+
+    auto evaluate = [] {
+      VLOG_I("inner stream record");
+      SLOG_I << "inner RAII record";
+      return 7;
+    };
+
+    SLOG_I << "outer=" << evaluate() << "/done";
+    Logger::register_console_handler(nullptr);
+
+    REQUIRE_EQ(records.size(), 3u);
+    CHECK(records[0].find("inner stream record") != std::string::npos);
+    CHECK(records[1].find("inner RAII record") != std::string::npos);
+    CHECK(records[2].find("outer=7/done") != std::string::npos);
+    CHECK(records[2].find("inner") == std::string::npos);
+  }
+
+  TEST_CASE("stream logging preserves its buffer across a logging insertion operator") {
+    Logger::init("test");
+    Logger::set_console_level(Logger::kInfo);
+    Logger::set_file_level(Logger::kOff);
+
+    std::vector<std::string> records;
+    Logger::register_console_handler(
+        [&records](Logger::Level, std::string_view record) { records.emplace_back(record); });
+
+    SLOG_I << "RAII=" << NestedLogValue{} << "/done";
+    VLOG_I("stream=", NestedLogValue{}, "/done");
+    Logger::register_console_handler(nullptr);
+
+    REQUIRE_EQ(records.size(), 4u);
+    CHECK(records[0].find("nested formatter record") != std::string::npos);
+    CHECK(records[1].find("RAII=value/done") != std::string::npos);
+    CHECK(records[2].find("nested formatter record") != std::string::npos);
+    CHECK(records[3].find("stream=value/done") != std::string::npos);
   }
 
   TEST_CASE("register_console_handler receives the correct level") {

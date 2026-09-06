@@ -290,4 +290,32 @@ TEST_SUITE("base-SysSemaphore") {
 
 #endif  // __linux__
 
+#ifdef __APPLE__
+#include <doctest/doctest.h>
+
+#include "../common_test.h"
+
+TEST_SUITE("base-SysSemaphore") {
+  TEST_CASE("macOS semaphore can detach and recreate after balanced use") {
+    SysSemaphore sem(0);
+    for (int i = 0; i < 64; ++i) {
+      REQUIRE(sem.attach("vlink_sem_lifecycle"));
+      sem.release();
+      REQUIRE(sem.acquire(1, 0));
+      REQUIRE(sem.detach());
+      CHECK_FALSE(sem.is_attached());
+    }
+  }
+
+  TEST_CASE("macOS semaphore destructor handles a balanced lifecycle") {
+    for (int i = 0; i < 64; ++i) {
+      SysSemaphore sem(0);
+      REQUIRE(sem.attach("vlink_sem_destructor"));
+      sem.release();
+      CHECK(sem.acquire(1, 0));
+    }
+  }
+}
+#endif
+
 // NOLINTEND

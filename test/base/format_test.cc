@@ -83,6 +83,12 @@ struct Tag final {
 
 inline const std::string& format_as(const Tag& tag) noexcept { return tag.name; }
 
+struct Counted final {
+  int* calls;
+};
+
+inline int format_as(const Counted& value) noexcept { return ++*value.calls; }
+
 }  // namespace format_as_test
 
 TEST_SUITE("base-Format") {
@@ -627,6 +633,24 @@ TEST_SUITE("base-Format") {
 
   TEST_CASE("plain and spec placeholders mix in one format string") {
     CHECK_EQ(fmt("a={} b={:04}", 1, 2), "a=1 b=0002");
+  }
+
+  TEST_CASE("mixed formatting preserves argument indexes and truncation after the plain prefix") {
+    CHECK_EQ(fmt("{} {} {0:04} {:{}}", 7, 8, 9, 3), "7 8 0007   9");
+    CHECK_EQ(fmt("{} {{}} {}", 7, 8), "7 {} 8");
+
+    char output[5];
+    auto result = format::format_to_n(output, sizeof(output), "{}:{:04}", 123, 7);
+    CHECK_EQ(std::string(output, sizeof(output)), "123:0");
+    CHECK_EQ(result.size, 8u);
+    CHECK(result.truncated);
+    CHECK_EQ(result.out, output + sizeof(output));
+  }
+
+  TEST_CASE("mixed formatting invokes each custom format conversion once") {
+    int calls = 0;
+    CHECK_EQ(fmt("{} {:04}", format_as_test::Counted{&calls}, 2), "1 0002");
+    CHECK_EQ(calls, 1);
   }
 
   TEST_CASE("spec lenient handling of inapplicable fields") {

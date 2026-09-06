@@ -478,6 +478,26 @@ class VLINK_EXPORT Logger final {
   template <Level LevelT, typename... ArgsT>
   static void print(ArgsT&&... args);
 
+ private:
+  struct StreamGuard final {
+    StreamGuard() noexcept = default;
+
+    StreamGuard(StreamGuard&& other) noexcept : ptr(std::exchange(other.ptr, nullptr)) {}
+
+    ~StreamGuard() noexcept {
+      if (ptr) {
+        release_local_stream();
+      }
+    }
+
+    void acquire() noexcept { ptr = &get_local_stream(true); }
+
+    FastStream* ptr{nullptr};
+
+    VLINK_DISALLOW_COPY_AND_ASSIGN(StreamGuard)
+  };
+
+ public:
   /**
    * @struct WrapperStream
    * @brief RAII helper backing @c SLOG_*; collects tokens and flushes on destruction.
@@ -495,8 +515,7 @@ class VLINK_EXPORT Logger final {
     explicit WrapperStream(Logger::NoDetail) noexcept {
       if constexpr (kIsEnabled) {
         if VLIKELY (should_log<LevelT>()) {
-          enabled_ = true;
-          stream_ = &Logger::get_local_stream();
+          stream_.acquire();
         }
       }
     }
@@ -504,25 +523,21 @@ class VLINK_EXPORT Logger final {
     explicit WrapperStream(DetailInfo&& detail) noexcept {
       if constexpr (kIsEnabled) {
         if VLIKELY (should_log<LevelT>()) {
-          enabled_ = true;
-          stream_ = &Logger::get_local_stream();
+          stream_.acquire();
 
-          push_detail_to_stream(detail, *stream_);
+          push_detail_to_stream(detail, *stream_.ptr);
         }
       }
     }
 
-    WrapperStream(WrapperStream&& other) noexcept : stream_(other.stream_), enabled_(other.enabled_) {
-      other.stream_ = nullptr;
-      other.enabled_ = false;
-    }
+    WrapperStream(WrapperStream&& other) noexcept = default;
 
     WrapperStream& operator=(WrapperStream&&) = delete;
 
     ~WrapperStream() noexcept(LevelT != Level::kFatal) {
       if constexpr (kIsEnabled) {
-        if VLIKELY (enabled_) {
-          finalize_log<LevelT>(stream_->take_view());
+        if VLIKELY (stream_.ptr) {
+          finalize_log<LevelT>(stream_.ptr->take_view());
         }
       }
     }
@@ -530,8 +545,8 @@ class VLINK_EXPORT Logger final {
     template <typename T>
     WrapperStream& operator<<(T&& t) noexcept {
       if constexpr (kIsEnabled) {
-        if VLIKELY (enabled_) {
-          stream_->push(std::forward<T>(t));
+        if VLIKELY (stream_.ptr) {
+          stream_.ptr->push(std::forward<T>(t));
         }
       }
 
@@ -543,13 +558,12 @@ class VLINK_EXPORT Logger final {
      *
      * @return @c true when the runtime level gate passed.
      */
-    explicit operator bool() const noexcept { return enabled_; }
+    explicit operator bool() const noexcept { return stream_.ptr != nullptr; }
 
    private:
     VLINK_DISALLOW_COPY_AND_ASSIGN(WrapperStream)
 
-    FastStream* stream_{nullptr};
-    bool enabled_{false};
+    StreamGuard stream_;
   };
 
  private:
@@ -575,7 +589,9 @@ class VLINK_EXPORT Logger final {
 
   static char* get_local_buffer() noexcept;
 
-  static FastStream& get_local_stream() noexcept;
+  static FastStream& get_local_stream(bool acquire = false) noexcept;
+
+  static void release_local_stream() noexcept;
 
   void write_to_console(Level level, std::string_view log) noexcept;
 
@@ -609,7 +625,9 @@ inline void Logger::print_stream_style([[maybe_unused]] DetailT&& detail, [[mayb
     return;
   }
 
-  auto& stream = get_local_stream();
+  StreamGuard guard;
+  guard.acquire();
+  auto& stream = *guard.ptr;
 
   if constexpr (std::is_same_v<std::decay_t<DetailT>, DetailInfo>) {
     push_detail_to_stream(detail, stream);

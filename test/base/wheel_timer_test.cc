@@ -31,6 +31,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <future>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -114,6 +116,62 @@ TEST_SUITE("base-WheelTimer") {
     wheel.stop();
 
     CHECK(fire_count.load() >= 2);
+  }
+
+  TEST_CASE("repeating timer preserves mutable callback state across wheel revolutions") {
+    for (uint32_t repeat_ms : {5u, 20u, 40u}) {
+      WheelTimer wheel(4, 5);
+      std::vector<int> values;
+      std::atomic_bool done{false};
+
+      wheel.add(
+          5,
+          [n = 0, &wheel, &values, &done](WheelTimer::Key key) mutable {
+            values.push_back(++n);
+
+            if (n == 4) {
+              wheel.remove(key);
+              done.store(true, std::memory_order_release);
+            }
+          },
+          repeat_ms);
+      wheel.start();
+
+      const bool completed = common_test::wait_until([&] { return done.load(std::memory_order_acquire); }, 2s);
+      wheel.stop();
+
+      CHECK(completed);
+      CHECK((values == std::vector<int>{1, 2, 3, 4}));
+    }
+  }
+
+  TEST_CASE("removing an executing periodic timer preserves its callback until return") {
+    WheelTimer wheel(4, 5);
+    std::promise<void> entered;
+    auto entered_future = entered.get_future();
+    std::promise<void> release;
+    auto release_future = release.get_future();
+    auto payload = std::make_shared<int>(42);
+    std::weak_ptr<int> weak_payload = payload;
+    int fire_count = 0;
+    auto key = wheel.add(
+        5,
+        [&, payload = std::move(payload)](WheelTimer::Key) {
+          ++fire_count;
+          entered.set_value();
+          release_future.wait();
+          CHECK(*payload == 42);
+        },
+        5);
+    wheel.start();
+
+    CHECK(entered_future.wait_for(2s) == std::future_status::ready);
+    CHECK(wheel.remove(key));
+    CHECK_FALSE(weak_payload.expired());
+    release.set_value();
+    wheel.stop();
+    CHECK(fire_count == 1);
+    CHECK(weak_payload.expired());
   }
 
   TEST_CASE("repeating timer callback receives the same key on every firing") {
@@ -535,6 +593,25 @@ TEST_SUITE("base-WheelTimer") {
       fired.store(true, std::memory_order_release);
       wheel.stop();
     });
+
+    CHECK(common_test::wait_until([&fired] { return fired.load(std::memory_order_acquire); }, 500ms));
+
+    wheel.stop();
+  }
+
+  TEST_CASE("stop can be requested from within a repeating callback") {
+    WheelTimer wheel(10, 10);
+    wheel.start();
+
+    std::atomic<bool> fired{false};
+
+    wheel.add(
+        10,
+        [&](WheelTimer::Key) {
+          fired.store(true, std::memory_order_release);
+          wheel.stop();
+        },
+        10);
 
     CHECK(common_test::wait_until([&fired] { return fired.load(std::memory_order_acquire); }, 500ms));
 

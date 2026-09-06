@@ -1680,6 +1680,7 @@ bool MessageLoop::process_timer_task(int64_t& next_sleep_time) {
       }
 
       if (timer->get_remain_loop_count() == 0) {
+        timer->set_invoke_count(processed_invoke_count);
         timer->stop(false);
       } else {
         timer->set_invoke_count(capacity_blocked

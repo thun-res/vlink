@@ -514,8 +514,7 @@ class FormatWriter {
  public:
   inline explicit FormatWriter(WriterT writer) : writer_(writer) {}
 
-  void format(std::string_view fmt, BasicFormatArgs<CharT> args) {
-    size_t arg_id = 0;
+  void format(std::string_view fmt, BasicFormatArgs<CharT> args, size_t arg_id = 0) {
     const char* p = fmt.data();
     const char* end = p + fmt.size();
 
@@ -610,8 +609,8 @@ class FormatWriter {
   }
 
   template <typename... ArgsT>
-  bool try_format(std::string_view fmt, const ArgsT&... args) {
-    return try_format_args(fmt, args...);
+  bool try_format(std::string_view& fmt, size_t& arg_id, const ArgsT&... args) {
+    return try_format_args(fmt, arg_id, args...);
   }
 
   inline auto out() const { return writer_.out(); }
@@ -625,7 +624,7 @@ class FormatWriter {
 
  private:
   // NOLINTBEGIN
-  bool try_format_args(std::string_view fmt) {
+  bool try_format_args(std::string_view& fmt, size_t&) {
     for (char c : fmt) {
       if VUNLIKELY (c == '{' || c == '}') {
         return false;
@@ -637,7 +636,7 @@ class FormatWriter {
   }
 
   template <typename ArgT, typename... ArgsT>
-  bool try_format_args(std::string_view fmt, const ArgT& arg, const ArgsT&... args) {
+  bool try_format_args(std::string_view& fmt, size_t& arg_id, const ArgT& arg, const ArgsT&... args) {
     size_t pos = 0;
 
     while (pos < fmt.size() && fmt[pos] != '{' && fmt[pos] != '}') {
@@ -653,19 +652,23 @@ class FormatWriter {
       return false;
     }
 
-    writer_.write(fmt.data(), pos);
-    write_value(arg);
+    if constexpr (HasFormatAs<RemoveCvref<ArgT>>::value) {
+      return false;
+    } else {
+      writer_.write(fmt.data(), pos);
+      write_value(arg);
+      ++arg_id;
+      fmt.remove_prefix(pos + 2);
 
-    return try_format_args(fmt.substr(pos + 2), args...);
+      return try_format_args(fmt, arg_id, args...);
+    }
   }
 
   template <typename TypeT>
   void write_value(const TypeT& value) {
     using ValueT = RemoveCvref<TypeT>;
 
-    if constexpr (HasFormatAs<ValueT>::value) {
-      write_value(format_as(value));
-    } else if constexpr (std::is_enum_v<ValueT>) {
+    if constexpr (std::is_enum_v<ValueT>) {
       write_value(static_cast<std::underlying_type_t<ValueT>>(value));
     } else if constexpr (TypeConstant<ValueT>::value == Type::kInt) {
       write_int(static_cast<int>(value));
@@ -1475,8 +1478,10 @@ inline format::FormatToNResult<char*> format::format_to_n(char* out, size_t n, f
                                                           const ArgsT&... args) {
   format::detail::StringWriter sw(out, n);
   format::detail::FormatWriter<char, format::detail::StringWriter> writer(sw);
+  std::string_view remaining = fmt.get();
+  size_t arg_id = 0;
 
-  if VLIKELY (writer.try_format(fmt.get(), args...)) {
+  if VLIKELY (writer.try_format(remaining, arg_id, args...)) {
     size_t total = writer.total_size();
 
     return {writer.out(), total, total > n};
@@ -1484,14 +1489,11 @@ inline format::FormatToNResult<char*> format::format_to_n(char* out, size_t n, f
 
   format::detail::FormatArgStore<char, format::detail::RemoveCvref<ArgsT>...> arg_store{args...};
   format::detail::FormatArgs fargs(arg_store);
-  format::detail::StringWriter fallback_sw(out, n);
-  format::detail::FormatWriter<char, format::detail::StringWriter> fallback_writer(fallback_sw);
+  writer.format(remaining, fargs, arg_id);
 
-  fallback_writer.format(fmt.get(), fargs);
+  size_t total = writer.total_size();
 
-  size_t total = fallback_writer.total_size();
-
-  return {fallback_writer.out(), total, total > n};
+  return {writer.out(), total, total > n};
 }
 
 template <size_t NumT, typename... ArgsT>

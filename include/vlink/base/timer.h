@@ -130,6 +130,10 @@ class VLINK_EXPORT Timer final {
 
   /**
    * @brief Destructor.  Calls @c stop() and detaches the timer.
+   *
+   * @details
+   * Waits for a callback that is still executing on another thread.  Destroying the
+   * timer from inside its own callback is not supported.
    */
   ~Timer();
 

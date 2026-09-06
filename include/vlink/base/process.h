@@ -56,7 +56,7 @@
  * | @c kForwardedErrorMode  | Buffered pipe       | Inherits parent     |
  *
  * @note
- * - Every callback fires from the monitor thread; protect shared caller state accordingly.
+ * - Callbacks run on the monitor thread or synchronously in the calling operation; protect shared state accordingly.
  * - The destructor first sends @c SIGTERM, drains pending I/O, then optionally escalates to
  *   @c SIGKILL after @c kDestructorWaitTimeoutMs (5000 ms) before joining.
  * - The class is non-copyable and non-movable.
@@ -346,7 +346,7 @@ class VLINK_EXPORT Process {
   /**
    * @brief Installs a callback fired when the @c Error state changes.
    *
-   * @param callback  Callback invoked from the monitor thread.
+   * @param callback  Callback invoked on the monitor thread or by the calling operation.
    */
   void register_error_callback(ErrorCallback&& callback);
 
@@ -360,21 +360,21 @@ class VLINK_EXPORT Process {
   /**
    * @brief Installs a callback fired when stdout has new data buffered.
    *
-   * @param callback  Callback invoked from the monitor thread.
+   * @param callback  Callback invoked on the monitor thread or by the calling operation.
    */
   void register_ready_read_stdout_callback(ReadyReadCallback&& callback);
 
   /**
    * @brief Installs a callback fired when stderr has new data buffered.
    *
-   * @param callback  Callback invoked from the monitor thread.
+   * @param callback  Callback invoked on the monitor thread or by the calling operation.
    */
   void register_ready_read_stderr_callback(ReadyReadCallback&& callback);
 
   /**
    * @brief Installs a callback fired on every @c State transition.
    *
-   * @param callback  Callback invoked from the monitor thread with the new @c State.
+   * @param callback  Callback invoked on the monitor thread or by the calling operation with the new @c State.
    */
   void register_state_changed_callback(StateChangedCallback&& callback);
 
@@ -395,8 +395,8 @@ class VLINK_EXPORT Process {
    * @brief Parses a shell-style command line and launches it.
    *
    * @details
-   * Splits @p command on whitespace with quote and backslash handling, then delegates to
-   * @c start().
+   * Splits @p command on whitespace with quote and backslash handling, preserves quoted
+   * empty arguments, then delegates to @c start().
    *
    * @param command  Shell-style command string.
    */
@@ -628,7 +628,7 @@ class VLINK_EXPORT Process {
 
   ReadResult read_from_pipes();
 
-  void report_read_result(const ReadResult& result);
+  void report_read_result(const ReadResult& result, bool notify_data = true);
 
   void read_from_pipes_with_lock();
 

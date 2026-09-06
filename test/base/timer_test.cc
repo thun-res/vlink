@@ -29,6 +29,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <future>
+#include <memory>
 #include <thread>
 
 #include "../common_test.h"
@@ -225,6 +227,7 @@ TEST_SUITE("base-Timer") {
 
     CHECK_EQ(fire_count.load(), 3);
     CHECK_FALSE(t.is_active());
+    CHECK(t.get_invoke_count() >= 3u);
 
     loop.quit();
     loop.wait_for_quit();
@@ -640,6 +643,48 @@ TEST_SUITE("base-Timer") {
     std::this_thread::sleep_for(50ms);
 
     CHECK_EQ(count.load(), count_at_destroy);
+
+    loop.quit();
+    loop.wait_for_quit();
+  }
+
+  TEST_CASE("destroying a detached timer waits for its running callback") {
+    MessageLoop loop;
+    loop.async_run();
+
+    std::promise<void> entered;
+    auto entered_future = entered.get_future();
+    std::promise<void> release;
+    auto release_future = release.get_future();
+    auto timer = std::make_unique<Timer>(&loop, 1, 1, [&] {
+      entered.set_value();
+      release_future.wait();
+    });
+    timer->start();
+
+    const bool started = entered_future.wait_for(2s) == std::future_status::ready;
+
+    if (!started) {
+      release.set_value();
+      timer.reset();
+      loop.quit();
+      loop.wait_for_quit();
+      FAIL("timer callback did not start");
+    }
+
+    CHECK(timer->detach());
+    std::promise<void> destroying;
+    auto destroying_future = destroying.get_future();
+    auto destroyed = std::async(std::launch::async, [&] {
+      destroying.set_value();
+      timer.reset();
+    });
+    destroying_future.wait();
+
+    CHECK(destroyed.wait_for(30ms) == std::future_status::timeout);
+    release.set_value();
+    CHECK(destroyed.wait_for(2s) == std::future_status::ready);
+    destroyed.get();
 
     loop.quit();
     loop.wait_for_quit();

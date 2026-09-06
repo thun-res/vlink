@@ -359,8 +359,14 @@ Bytes Bytes::decode_from_base64(const std::string& target) noexcept {
     }
   }
 
-  std::vector<uint8_t> buffer;
-  buffer.reserve((target.size() * 3) / 4);
+  Bytes buffer = Bytes::create((target.size() / 4) * 3 - padding);
+
+  if VUNLIKELY (buffer.empty()) {
+    return buffer;
+  }
+
+  size_t output_index = 0;
+  uint8_t* output = buffer.data();
 
   static const auto kTable = [] {
     std::array<int, 256> tbl{};
@@ -391,12 +397,12 @@ Bytes Bytes::decode_from_base64(const std::string& target) noexcept {
     valb += 6;
 
     if (valb >= 0) {
-      buffer.emplace_back(static_cast<uint8_t>((val >> valb) & 0xFF));
+      output[output_index++] = static_cast<uint8_t>((val >> valb) & 0xFF);
       valb -= 8;
     }
   }
 
-  return Bytes(buffer);
+  return buffer;
 }
 
 uint32_t Bytes::get_crc_32(const Bytes& target) noexcept {
