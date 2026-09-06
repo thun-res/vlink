@@ -43,13 +43,7 @@ void IntraGetterImpl::init() {
 
   object_ = factory.get_object<Object>({kImplType, conf_.address, conf_.pipeline, type_, conf_.hash_code});
 
-  if (object_->msg_map_is_empty()) {
-    object_->add_impl(this);
-
-    object_->traverse_sub_connect_callback([](NodeImpl*, const auto& callback) { callback(true); });
-  } else {
-    object_->add_impl(this);
-  }
+  object_->add_impl(this);
 }
 
 void IntraGetterImpl::deinit() {
@@ -80,6 +74,8 @@ const AbstractNode* IntraGetterImpl::get_abstract_node() const { return object_.
 
 bool IntraGetterImpl::listen(MsgCallback&& callback) {
   object_->register_msg_callback(this, std::move(callback));
+
+  object_->traverse_sub_connect_callback([](NodeImpl*, const auto& callback) { callback(true); });
 
   return true;
 }

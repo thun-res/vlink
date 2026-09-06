@@ -51,7 +51,10 @@ void IntraClientImpl::init() {
   ClientImpl::update_connected();
 }
 
-void IntraClientImpl::deinit() { object_->remove_impl(this); }
+void IntraClientImpl::deinit() {
+  detach();
+  object_->remove_impl(this);
+}
 
 void IntraClientImpl::interrupt() {
   ClientImpl::interrupt();
@@ -88,8 +91,8 @@ bool IntraClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::c
 
     auto ack_request = ack_manager_.create_request();
 
-    auto ack_function = [this, ack_request, callback = std::move(callback)](const Bytes& resp_data) mutable {
-      ack_manager_.notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
+    auto ack_function = [ack_request, callback = std::move(callback)](const Bytes& resp_data) mutable {
+      AckManager::notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
     };
 
     return ack_manager_.process(

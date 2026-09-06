@@ -23,8 +23,11 @@
 
 #include "./intra_factory.h"
 
+#include <algorithm>
+#include <type_traits>
 #include <utility>
 
+#include "./base/memory_resource.h"
 #include "./base/utils.h"
 
 namespace vlink {
@@ -86,294 +89,262 @@ IntraNode::~IntraNode() = default;
 
 std::any IntraNode::get_native_handle() const { return this; }
 
-bool IntraNode::publish(IntraType type, uint32_t channel, const Bytes& msg_data) {
-  auto* impl = get_first_impl();
-  auto* message_loop = impl ? impl->get_message_loop() : nullptr;
+template <typename DataT>
+void IntraNode::deliver_data(MessageLoop* target_loop, uint32_t channel, const DataT& data) {
+  auto deliver = [this, target_loop, channel, &data](NodeImpl* impl, const auto& callback) {
+    const auto* conf = impl->get_target_conf<IntraConf>();
+    auto* loop = impl->get_message_loop();
 
-  if (message_loop) {
-    std::weak_ptr<IntraNode> weak_self = shared_from_this();
+    if (!loop) {
+      loop = pipeline_;
+    }
 
-    return message_loop->post_task([weak_self, channel, msg_data]() {
-      auto self = weak_self.lock();
+    if VUNLIKELY (conf->hash_code != channel || impl->has_suspend || loop != target_loop) {
+      return;
+    }
 
-      if VUNLIKELY (!self) {
-        return;
-      }
+    callback(data);
+  };
 
-      auto* impl = self->get_first_impl();
-
-      if VUNLIKELY (!impl || !impl->get_message_loop()) {
-        return;
-      }
-
-      self->traverse_msg_callback([channel, &msg_data](NodeImpl* impl, const auto& callback) {
-        const auto* conf_ptr = impl->get_target_conf<IntraConf>();
-
-        if VUNLIKELY (conf_ptr->hash_code != channel || impl->has_suspend) {
-          return;
-        }
-
-        callback(msg_data);
-      });
-    });
-  }
-
-  if (type == IntraType::kQueue && pipeline_) {
-    std::weak_ptr<IntraNode> weak_self = shared_from_this();
-
-    return pipeline_->post_task([weak_self, channel, msg_data]() {
-      auto self = weak_self.lock();
-
-      if VUNLIKELY (!self) {
-        return;
-      }
-
-      self->traverse_msg_callback([channel, &msg_data](NodeImpl* impl, const auto& callback) {
-        const auto* conf_ptr = impl->get_target_conf<IntraConf>();
-
-        if VUNLIKELY (conf_ptr->hash_code != channel || impl->has_suspend) {
-          return;
-        }
-
-        callback(msg_data);
-      });
-    });
+  if constexpr (std::is_same_v<DataT, Bytes>) {
+    traverse_msg_callback(deliver);
   } else {
-    bool ok = false;
-
-    traverse_msg_callback([channel, &msg_data, &ok](NodeImpl* impl, const auto& callback) {
-      const auto* conf_ptr = impl->get_target_conf<IntraConf>();
-
-      if VUNLIKELY (conf_ptr->hash_code != channel || impl->has_suspend) {
-        return;
-      }
-
-      callback(msg_data);
-
-      ok = true;
-    });
-
-    return ok;
+    traverse_intra_msg_callback(deliver);
   }
 }
 
-bool IntraNode::publish(IntraType type, uint32_t channel, const IntraData& intra_data) {
-  auto* impl = get_first_impl();
-  auto* message_loop = impl ? impl->get_message_loop() : nullptr;
+template <typename DataT>
+bool IntraNode::publish_data(IntraType type, uint32_t channel, const DataT& data) {
+  MessageLoop* first_loop = nullptr;
+  std::vector<MessageLoop*> other_loops;
+  bool delivered = false;
 
-  if (message_loop) {
-    std::weak_ptr<IntraNode> weak_self = shared_from_this();
+  auto route = [this, channel, &data, &first_loop, &other_loops, &delivered](NodeImpl* impl, const auto& callback) {
+    const auto* conf = impl->get_target_conf<IntraConf>();
 
-    return message_loop->post_task([weak_self, channel, intra_data]() {
+    if VUNLIKELY (conf->hash_code != channel || impl->has_suspend) {
+      return;
+    }
+
+    auto* loop = impl->get_message_loop();
+
+    if (!loop) {
+      loop = pipeline_;
+    }
+
+    if (!loop) {
+      callback(data);
+      delivered = true;
+    } else if (!first_loop) {
+      first_loop = loop;
+    } else if (loop != first_loop && std::find(other_loops.begin(), other_loops.end(), loop) == other_loops.end()) {
+      other_loops.push_back(loop);
+    }
+  };
+
+  if constexpr (std::is_same_v<DataT, Bytes>) {
+    traverse_msg_callback(route);
+  } else {
+    traverse_intra_msg_callback(route);
+  }
+
+  if (!first_loop) {
+    if (delivered || type != IntraType::kQueue) {
+      return delivered;
+    }
+
+    first_loop = pipeline_;
+  }
+
+  auto weak_self = weak_from_this();
+
+  if (other_loops.empty()) {
+    return first_loop->post_task([weak_self, first_loop, channel, data]() {
       auto self = weak_self.lock();
 
       if VUNLIKELY (!self) {
         return;
       }
 
-      auto* impl = self->get_first_impl();
-
-      if VUNLIKELY (!impl || !impl->get_message_loop()) {
-        return;
-      }
-
-      self->traverse_intra_msg_callback([channel, &intra_data](NodeImpl* impl, const auto& callback) {
-        const auto* conf_ptr = impl->get_target_conf<IntraConf>();
-
-        if VUNLIKELY (conf_ptr->hash_code != channel || impl->has_suspend) {
-          return;
-        }
-
-        callback(intra_data);
-      });
+      self->deliver_data(first_loop, channel, data);
     });
   }
 
-  if (type == IntraType::kQueue && pipeline_) {
-    std::weak_ptr<IntraNode> weak_self = shared_from_this();
+  if constexpr (std::is_same_v<DataT, Bytes>) {
+    auto shared_data = MemoryResource::make_shared<Bytes>(data);
+    auto post = [&weak_self, channel, &shared_data](MessageLoop* loop) {
+      return loop->post_task([weak_self, loop, channel, shared_data]() {
+        auto self = weak_self.lock();
 
-    return pipeline_->post_task([weak_self, channel, intra_data]() {
-      auto self = weak_self.lock();
-
-      if VUNLIKELY (!self) {
-        return;
-      }
-
-      self->traverse_intra_msg_callback([channel, &intra_data](NodeImpl* impl, const auto& callback) {
-        const auto* conf_ptr = impl->get_target_conf<IntraConf>();
-
-        if VUNLIKELY (conf_ptr->hash_code != channel || impl->has_suspend) {
+        if VUNLIKELY (!self) {
           return;
         }
 
-        callback(intra_data);
+        self->deliver_data(loop, channel, *shared_data);
       });
-    });
+    };
+
+    bool result = post(first_loop);
+
+    for (auto* loop : other_loops) {
+      result = post(loop) && result;
+    }
+
+    return result;
   } else {
-    bool ok = false;
+    auto post = [&weak_self, channel, &data](MessageLoop* loop) {
+      return loop->post_task([weak_self, loop, channel, data]() {
+        auto self = weak_self.lock();
 
-    traverse_intra_msg_callback([channel, &intra_data, &ok](NodeImpl* impl, const auto& callback) {
-      const auto* conf_ptr = impl->get_target_conf<IntraConf>();
+        if VUNLIKELY (!self) {
+          return;
+        }
 
-      if VUNLIKELY (conf_ptr->hash_code != channel || impl->has_suspend) {
-        return;
-      }
+        self->deliver_data(loop, channel, data);
+      });
+    };
 
-      callback(intra_data);
+    bool result = post(first_loop);
 
-      ok = true;
-    });
+    for (auto* loop : other_loops) {
+      result = post(loop) && result;
+    }
 
-    return ok;
+    return result;
+  }
+}
+
+bool IntraNode::publish(IntraType type, uint32_t channel, const Bytes& msg_data) {
+  return publish_data(type, channel, msg_data);
+}
+
+bool IntraNode::publish(IntraType type, uint32_t channel, const IntraData& intra_data) {
+  return publish_data(type, channel, intra_data);
+}
+
+void IntraNode::deliver_request(NodeImpl* server, NodeImpl* requester, MessageLoop* target_loop, const Bytes& request,
+                                const NodeImpl::MsgCallback& callback) {
+  Bytes response;
+  bool replied = false;
+
+  invoke_req_resp_callback(server, [&, this](NodeImpl* impl, const auto& handler) {
+    auto* loop = impl->get_message_loop();
+
+    if (!loop) {
+      loop = pipeline_;
+    }
+
+    if VUNLIKELY (!is_contains_impl(requester) || impl->has_suspend || loop != target_loop) {
+      return;
+    }
+
+    if (callback) {
+      handler(0, request, &response);
+      replied = true;
+    } else {
+      handler(0, request, nullptr);
+    }
+  });
+
+  if (replied) {
+    callback(response);
   }
 }
 
 bool IntraNode::call(NodeImpl* requester, IntraType type, uint32_t channel, const Bytes& req_data,
                      NodeImpl::MsgCallback&& callback, bool inline_if_same_thread) {
-  std::weak_ptr<IntraNode> weak_self = shared_from_this();
+  auto weak_self = weak_from_this();
 
   if (callback) {
     auto response_callback = std::move(callback);
 
-    callback = [weak_self, requester,
-                response_callback = std::move(response_callback)](const Bytes& resp_data) mutable {
+    callback = [weak_self, requester, inline_if_same_thread,
+                response_callback = std::move(response_callback)](const Bytes& response) mutable {
       auto self = weak_self.lock();
 
-      if VUNLIKELY (!self || !self->is_contains_impl(requester)) {
+      if VUNLIKELY (!self) {
         return;
       }
 
-      auto* message_loop = requester->get_message_loop();
+      MessageLoop* loop = nullptr;
 
-      if (message_loop) {
-        message_loop->post_task(
-            [weak_self, requester, response_callback = std::move(response_callback), resp_data]() mutable {
-              auto self = weak_self.lock();
+      self->invoke_callback(requester, [&]() {
+        loop = requester->get_message_loop();
 
-              if VUNLIKELY (!self || !self->is_contains_impl(requester) || !requester->get_message_loop()) {
-                return;
-              }
+        if (!loop || inline_if_same_thread) {
+          response_callback(response);
+        }
+      });
 
-              response_callback(resp_data);
-            });
-      } else {
-        response_callback(resp_data);
+      if (loop && !inline_if_same_thread) {
+        loop->post_task([weak_self, requester, loop, response, response_callback = std::move(response_callback)]() {
+          auto self = weak_self.lock();
+
+          if VUNLIKELY (!self) {
+            return;
+          }
+
+          if (self->is_contains_impl(requester) && requester->get_message_loop() == loop) {
+            response_callback(response);
+          }
+        });
       }
     };
   }
 
-  auto* impl = get_first_impl();
-  auto* message_loop = impl ? impl->get_message_loop() : nullptr;
+  bool found = false;
+  bool result = false;
+  NodeImpl* server = nullptr;
+  MessageLoop* target_loop = nullptr;
 
-  if (message_loop) {
-    return message_loop->post_task([weak_self, requester, channel, req_data, callback = std::move(callback)]() {
-      auto self = weak_self.lock();
+  traverse_req_resp_callback([&](NodeImpl* impl, const auto&) {
+    const auto* conf = impl->get_target_conf<IntraConf>();
 
-      if VUNLIKELY (!self) {
-        return;
-      }
+    if VUNLIKELY (conf->hash_code != channel || impl->has_suspend) {
+      return;
+    }
 
-      auto* impl = self->get_first_impl();
+    if VUNLIKELY (found) {
+      VLOG_F(*conf, "Two identical service requests.");
+      return;
+    }
 
-      if VUNLIKELY (!impl || !impl->get_message_loop()) {
-        return;
-      }
+    found = true;
+    server = impl;
+    target_loop = impl->get_message_loop();
 
-      self->traverse_req_resp_callback(
-          [&self, requester, channel, &req_data, &callback](NodeImpl* impl, const auto& callback2) {
-            if VUNLIKELY (!self->is_contains_impl(requester)) {
-              self->ignore_called();
+    if (!target_loop) {
+      target_loop = pipeline_;
+    }
+  });
+
+  if (server) {
+    if (!target_loop || (inline_if_same_thread && target_loop->is_in_same_thread())) {
+      deliver_request(server, requester, target_loop, req_data, callback);
+      result = true;
+    } else {
+      result = target_loop->post_task(
+          [weak_self, server, requester, target_loop, req_data, callback = std::move(callback)]() {
+            auto self = weak_self.lock();
+
+            if VUNLIKELY (!self) {
               return;
             }
 
-            const auto* conf_ptr = impl->get_target_conf<IntraConf>();
-
-            if VUNLIKELY (conf_ptr->hash_code != channel || impl->has_suspend) {
-              self->ignore_called();
-              return;
-            }
-
-            if VUNLIKELY (self->has_called()) {
-              VLOG_F(*conf_ptr, "Two identical service requests.");
-              return;
-            }
-
-            if (callback) {
-              Bytes bytes;
-              callback2(0, req_data, &bytes);
-              callback(bytes);
-            } else {
-              callback2(0, req_data, nullptr);
-            }
+            self->deliver_request(server, requester, target_loop, req_data, callback);
           });
+    }
+  }
+
+  if (!found && type == IntraType::kQueue) {
+    return pipeline_->post_task([weak_self, requester, channel, req_data, callback = std::move(callback)]() mutable {
+      if (auto self = weak_self.lock(); self && self->is_contains_impl(requester)) {
+        self->call(requester, IntraType::kDirect, channel, req_data, std::move(callback), true);
+      }
     });
   }
 
-  if VLIKELY (type == IntraType::kQueue && pipeline_ && !(inline_if_same_thread && pipeline_->is_in_same_thread())) {
-    return pipeline_->post_task([weak_self, requester, channel, req_data, callback = std::move(callback)]() {
-      auto self = weak_self.lock();
-
-      if VUNLIKELY (!self) {
-        return;
-      }
-
-      self->traverse_req_resp_callback(
-          [&self, requester, channel, &req_data, &callback](NodeImpl* impl, const auto& callback2) {
-            if VUNLIKELY (!self->is_contains_impl(requester)) {
-              self->ignore_called();
-              return;
-            }
-
-            const auto* conf_ptr = impl->get_target_conf<IntraConf>();
-
-            if VUNLIKELY (conf_ptr->hash_code != channel || impl->has_suspend) {
-              self->ignore_called();
-              return;
-            }
-
-            if VUNLIKELY (self->has_called()) {
-              VLOG_F(*conf_ptr, "Two identical service requests.");
-              return;
-            }
-
-            if (callback) {
-              Bytes bytes;
-              callback2(0, req_data, &bytes);
-              callback(bytes);
-            } else {
-              callback2(0, req_data, nullptr);
-            }
-          });
-    });
-  } else {
-    bool ok = false;
-
-    traverse_req_resp_callback([this, channel, &req_data, &callback, &ok](NodeImpl* impl, const auto& callback2) {
-      const auto* conf_ptr = impl->get_target_conf<IntraConf>();
-
-      if VUNLIKELY (conf_ptr->hash_code != channel || impl->has_suspend) {
-        ignore_called();
-        return;
-      }
-
-      if VUNLIKELY (has_called()) {
-        VLOG_F(*conf_ptr, "Two identical service requests.");
-        return;
-      }
-
-      if (callback) {
-        Bytes bytes;
-        callback2(0, req_data, &bytes);
-        callback(bytes);
-      } else {
-        callback2(0, req_data, nullptr);
-      }
-
-      ok = true;
-    });
-
-    return ok;
-  }
+  return result;
 }
 
 }  // namespace vlink

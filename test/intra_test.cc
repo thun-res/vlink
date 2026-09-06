@@ -318,6 +318,44 @@ TEST_SUITE("intra-init") {
 }
 
 TEST_SUITE("intra-pubsub") {
+  TEST_CASE("subscribers keep their own loops when another role joins the topic") {
+    MESSAGE("[intra-pubsub] subscribers keep their own loops when another role joins the topic");
+
+    MessageLoop first_loop;
+    MessageLoop second_loop;
+    REQUIRE(first_loop.async_run());
+    REQUIRE(second_loop.async_run());
+
+    std::atomic<int> received{0};
+    std::atomic<bool> first_on_loop{false};
+    std::atomic<bool> second_on_loop{false};
+    Subscriber<int> first("intra://event_distinct_loops#direct");
+    Subscriber<int> second("intra://event_distinct_loops#direct");
+    REQUIRE(first.attach(&first_loop));
+    REQUIRE(second.attach(&second_loop));
+    REQUIRE(first.listen([&](const int& value) {
+      first_on_loop.store(first_loop.is_in_same_thread() && value == 42, std::memory_order_relaxed);
+      received.fetch_add(1, std::memory_order_release);
+    }));
+    REQUIRE(second.listen([&](const int& value) {
+      second_on_loop.store(second_loop.is_in_same_thread() && value == 42, std::memory_order_relaxed);
+      received.fetch_add(1, std::memory_order_release);
+    }));
+
+    Publisher<int> pub("intra://event_distinct_loops#direct");
+    CHECK(pub.publish(42));
+    CHECK(common_test::wait_until([&] { return received.load(std::memory_order_acquire) == 2; }, 1s));
+    CHECK(first_on_loop.load(std::memory_order_relaxed));
+    CHECK(second_on_loop.load(std::memory_order_relaxed));
+
+    first.detach();
+    second.detach();
+    first_loop.quit();
+    second_loop.quit();
+    first_loop.wait_for_quit();
+    second_loop.wait_for_quit();
+  }
+
   TEST_CASE("queue mode delivers message to single subscriber") {
     MESSAGE("[intra-pubsub] queue mode delivers message to single subscriber");
 
@@ -912,6 +950,94 @@ TEST_SUITE("intra-pubsub") {
 }
 
 TEST_SUITE("intra-method") {
+  TEST_CASE("attached response callbacks can invoke the same client synchronously") {
+    MessageLoop client_loop;
+    MessageLoop server_loop;
+    REQUIRE(client_loop.async_run());
+    REQUIRE(server_loop.async_run());
+    Server<std::string, std::string> server("intra://method_nested_response#queue");
+    Client<std::string, std::string> client("intra://method_nested_response#queue");
+    REQUIRE(server.attach(&server_loop));
+    REQUIRE(client.attach(&client_loop));
+    REQUIRE(server.listen([](const std::string& req, std::string& resp) { resp = req; }));
+    REQUIRE(client.wait_for_connected(1s));
+    std::promise<std::optional<std::string>> response;
+    auto result = response.get_future();
+    REQUIRE(client.invoke("outer", [&](const std::string&) { response.set_value(client.invoke("inner", 2s)); }));
+    REQUIRE(result.wait_for(3s) == std::future_status::ready);
+    CHECK(result.get() == std::optional<std::string>("inner"));
+  }
+
+  TEST_CASE("server and asynchronous client retain different attached loops") {
+    MESSAGE("[intra-method] server and asynchronous client retain different attached loops");
+
+    MessageLoop server_loop;
+    MessageLoop client_loop;
+    REQUIRE(server_loop.async_run());
+    REQUIRE(client_loop.async_run());
+    std::atomic<bool> server_on_loop{false};
+    std::atomic<bool> client_on_loop{false};
+    std::atomic<bool> received{false};
+
+    Server<int, int> server("intra://method_distinct_loops");
+    REQUIRE(server.attach(&server_loop));
+    REQUIRE(server.listen([&](const int& request, int& response) {
+      server_on_loop.store(server_loop.is_in_same_thread(), std::memory_order_relaxed);
+      response = request + 1;
+    }));
+    Client<int, int> client("intra://method_distinct_loops");
+    REQUIRE(client.attach(&client_loop));
+    CHECK(client.invoke(41, [&](const int& response) {
+      client_on_loop.store(client_loop.is_in_same_thread() && response == 42, std::memory_order_relaxed);
+      received.store(true, std::memory_order_release);
+    }));
+    CHECK(common_test::wait_until([&] { return received.load(std::memory_order_acquire); }, 1s));
+    server.detach();
+    client.detach();
+    server_loop.quit();
+    client_loop.quit();
+    server_loop.wait_for_quit();
+    client_loop.wait_for_quit();
+    CHECK(server_on_loop.load(std::memory_order_relaxed));
+    CHECK(client_on_loop.load(std::memory_order_relaxed));
+  }
+
+  TEST_CASE("synchronous calls complete from either attached endpoint loop") {
+    MESSAGE("[intra-method] synchronous calls complete from either attached endpoint loop");
+
+    MessageLoop server_loop;
+    MessageLoop client_loop;
+    REQUIRE(server_loop.async_run());
+    REQUIRE(client_loop.async_run());
+    Server<int, int> server("intra://method_sync_attached_loops");
+    Client<int, int> client("intra://method_sync_attached_loops");
+    REQUIRE(server.attach(&server_loop));
+    REQUIRE(client.attach(&client_loop));
+    REQUIRE(server.listen([](const int& request, int& response) { response = request + 1; }));
+
+    MessageLoop* caller_loop = &client_loop;
+    SUBCASE("client loop receives the synchronous acknowledgement while blocked") {}
+    SUBCASE("server loop executes its own synchronous request inline") { caller_loop = &server_loop; }
+
+    std::promise<bool> completed;
+    auto future = completed.get_future();
+    CHECK(caller_loop->post_task([&] {
+      int response = 0;
+      completed.set_value(client.invoke(41, response, 1s) && response == 42);
+    }));
+    const bool ready = future.wait_for(2s) == std::future_status::ready;
+    server.detach();
+    client.detach();
+    server_loop.quit();
+    client_loop.quit();
+    server_loop.wait_for_quit();
+    client_loop.wait_for_quit();
+    CHECK(ready);
+    if (ready) {
+      CHECK(future.get());
+    }
+  }
+
   TEST_CASE("fire and forget send increments server receive counter") {
     MESSAGE("[intra-method] fire and forget send increments server receive counter");
 
@@ -2131,11 +2257,25 @@ TEST_SUITE("intra-field") {
     std::this_thread::sleep_for(100ms);
 
     Getter<int> getter("intra://field_late_getter");
-    if (getter.wait_for_value(2s)) {
-      auto val = getter.get();
-      REQUIRE(val.has_value());
-      CHECK_EQ(*val, 99);
-    }
+    REQUIRE(getter.wait_for_value(2s));
+    auto val = getter.get();
+    REQUIRE(val.has_value());
+    CHECK_EQ(*val, 99);
+  }
+
+  TEST_CASE("direct field synchronizes every late getter after registering its receiver") {
+    MESSAGE("[intra-field] direct field synchronizes every late getter after registering its receiver");
+
+    Setter<int> setter("intra://field_direct_late_getters#direct");
+    setter.set(99);
+
+    Getter<int> first("intra://field_direct_late_getters#direct");
+    REQUIRE(first.get().has_value());
+    CHECK_EQ(first.get().value(), 99);
+
+    Getter<int> second("intra://field_direct_late_getters#direct");
+    REQUIRE(second.get().has_value());
+    CHECK_EQ(second.get().value(), 99);
   }
 
   TEST_CASE("multiple sets deliver only latest value to getter") {
@@ -2311,6 +2451,54 @@ VLINK_INTRA_DATA_DECLARE(std::string, IntraStringData)
 VLINK_INTRA_DATA_DECLARE(IntraSensorReading, IntraSensorData)
 
 TEST_SUITE("intra-intradata") {
+  TEST_CASE("typed fanout keeps one payload alive across distinct subscriber loops") {
+    MESSAGE("[intra-intradata] typed fanout keeps one payload alive across distinct subscriber loops");
+
+    MessageLoop first_loop;
+    MessageLoop second_loop;
+    REQUIRE(first_loop.async_run());
+    REQUIRE(second_loop.async_run());
+
+    auto data = IntraStringData::create();
+    data->value.assign(65536, 'x');
+    const auto* original = data.get();
+    IntraStringData first_value;
+    IntraStringData second_value;
+    std::atomic<int> received{0};
+    std::atomic<bool> first_on_loop{false};
+    std::atomic<bool> second_on_loop{false};
+    Subscriber<IntraStringData> first("intra://typed_distinct_loops");
+    Subscriber<IntraStringData> second("intra://typed_distinct_loops");
+    REQUIRE(first.attach(&first_loop));
+    REQUIRE(second.attach(&second_loop));
+    REQUIRE(first.listen([&](const IntraStringData& value) {
+      first_value = value;
+      first_on_loop.store(first_loop.is_in_same_thread(), std::memory_order_relaxed);
+      received.fetch_add(1, std::memory_order_release);
+    }));
+    REQUIRE(second.listen([&](const IntraStringData& value) {
+      second_value = value;
+      second_on_loop.store(second_loop.is_in_same_thread(), std::memory_order_relaxed);
+      received.fetch_add(1, std::memory_order_release);
+    }));
+
+    Publisher<IntraStringData> publisher("intra://typed_distinct_loops");
+    CHECK(publisher.publish(data));
+    data.reset();
+    CHECK(common_test::wait_until([&] { return received.load(std::memory_order_acquire) == 2; }, 1s));
+    first.detach();
+    second.detach();
+    first_loop.quit();
+    second_loop.quit();
+    first_loop.wait_for_quit();
+    second_loop.wait_for_quit();
+
+    CHECK(first_value.get() == original);
+    CHECK(second_value.get() == original);
+    CHECK(first_on_loop.load(std::memory_order_relaxed));
+    CHECK(second_on_loop.load(std::memory_order_relaxed));
+  }
+
   TEST_CASE("basic round trip via VLINK_INTRA_DATA_DECLARE") {
     MESSAGE("[intra-intradata] basic round trip via VLINK_INTRA_DATA_DECLARE");
 

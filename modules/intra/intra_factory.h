@@ -88,6 +88,15 @@ class IntraNode final : public AbstractObject<IntraID>, public std::enable_share
             NodeImpl::MsgCallback&& callback = nullptr, bool inline_if_same_thread = false);
 
  private:
+  template <typename DataT>
+  bool publish_data(IntraType type, uint32_t channel, const DataT& data);
+
+  template <typename DataT>
+  void deliver_data(MessageLoop* target_loop, uint32_t channel, const DataT& data);
+
+  void deliver_request(NodeImpl* server, NodeImpl* requester, MessageLoop* target_loop, const Bytes& request,
+                       const NodeImpl::MsgCallback& callback);
+
   IntraPipeline* pipeline_{nullptr};
 };
 
