@@ -52,6 +52,24 @@ TEST_SUITE("zerocopy-ObjectArray") {
 
   TEST_CASE("sizeof container is exactly 112 bytes") { CHECK_EQ(sizeof(zerocopy::ObjectArray), 112u); }
 
+  TEST_CASE("deep_copy of empty allocated array retains metadata without borrowing storage") {
+    zerocopy::ObjectArray source;
+    REQUIRE(source.create(2));
+    source.header.seq = 42;
+    source.set_source_id("fusion");
+    REQUIRE(source.data() != nullptr);
+    REQUIRE_EQ(source.count(), 0u);
+
+    zerocopy::ObjectArray copy;
+    REQUIRE(copy.deep_copy(source));
+    CHECK_EQ(copy.data(), nullptr);
+    CHECK_EQ(copy.header.seq, 42u);
+    CHECK_EQ(copy.source_id(), "fusion");
+    CHECK_EQ(copy.pack_size(), source.pack_size());
+    source.clear();
+    CHECK_EQ(copy.count(), 0u);
+  }
+
   TEST_CASE("sizeof Object is exactly 144 bytes") { CHECK_EQ(sizeof(zerocopy::ObjectArray::Object), 144u); }
 
   TEST_CASE("alignof Object is exactly 4 bytes") {

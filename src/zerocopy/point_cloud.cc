@@ -494,6 +494,8 @@ bool PointCloud::deep_copy(const PointCloud& target) noexcept {
 
     std::memcpy(data_, target_data, capacity_);
     is_owner_ = true;
+  } else {
+    data_ = nullptr;
   }
 
   return true;

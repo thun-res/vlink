@@ -58,6 +58,25 @@ TEST_SUITE("zerocopy-PointCloud") {
 
   TEST_CASE("sizeof is exactly 256 bytes") { CHECK_EQ(sizeof(zerocopy::PointCloud), 256u); }
 
+  TEST_CASE("deep_copy of empty allocated cloud retains metadata without borrowing storage") {
+    zerocopy::PointCloud source;
+    REQUIRE(source.create(2, 0x444, 0xAAA, "x,y,z"));
+    source.header.seq = 42;
+    source.get_reserved() = 17;
+    REQUIRE(source.get_internal_data() != nullptr);
+    REQUIRE_EQ(source.size(), 0u);
+
+    zerocopy::PointCloud copy;
+    REQUIRE(copy.deep_copy(source));
+    CHECK_EQ(copy.get_internal_data(), nullptr);
+    CHECK_EQ(copy.header.seq, 42u);
+    CHECK_EQ(copy.get_reserved(), 17u);
+    CHECK_EQ(copy.get_protocol_name_str(), source.get_protocol_name_str());
+    CHECK_EQ(copy.pack_size(), source.pack_size());
+    source.clear(true);
+    CHECK_EQ(copy.size(), 0u);
+  }
+
   TEST_CASE("Vector3f default constructs to zero") {
     zerocopy::PointCloud::Vector3f v;
 

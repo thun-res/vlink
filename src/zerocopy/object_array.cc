@@ -309,6 +309,8 @@ bool ObjectArray::deep_copy(const ObjectArray& target) noexcept {
 
     std::memcpy(data_, target_data, target_size);
     is_owner_ = true;
+  } else {
+    data_ = nullptr;
   }
 
   return true;
