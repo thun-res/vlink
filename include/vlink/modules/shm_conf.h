@@ -72,7 +72,7 @@
  * | ---------- | ---------------------------------------------------------------------- |
  * | @c address | Iceoryx service/topic name (URL host concatenated with path)           |
  * | @c event   | Optional secondary event name (@c ?event=)                             |
- * | @c domain  | Iceoryx domain ID (@c ?domain=); defaults to @c 0                      |
+ * | @c domain  | Logical service domain ID (@c ?domain=); defaults to @c 0              |
  * | @c depth   | Queue capacity override; @c 0 uses the Iceoryx default                 |
  * | @c history | History count (@c ?history=); @c 0 from URL, or @c 1 for field nodes   |
  * | @c wait    | Blocking-wait timeout in ms for pub/sub; not valid for RPC or fields   |
@@ -117,7 +117,7 @@ namespace vlink {
  * @brief Concrete @c Conf describing an Iceoryx shared-memory endpoint addressed by a @c shm:// URL.
  *
  * @details
- * Captures the service/topic address, optional event filter, Iceoryx domain ID,
+ * Captures the service/topic address, optional event filter, logical service domain ID,
  * queue capacity override, history count, and blocking-wait timeout.  Both
  * @c address and @c event are limited to 80 characters by Iceoryx naming
  * constraints.
@@ -125,7 +125,7 @@ namespace vlink {
 struct VLINK_EXPORT ShmConf final : public Conf {
   std::string address;  ///< Iceoryx service/topic address (URL host plus path); maximum 80 characters.
   std::string event;    ///< Optional secondary event name; maximum 80 characters.
-  int32_t domain{0};    ///< Iceoryx domain identifier (non-negative).
+  int32_t domain{0};    ///< Logical service domain identifier (non-negative).
   int32_t depth{0};     ///< Queue capacity override; @c 0 keeps the Iceoryx default.
   int32_t history{0};   ///< History count; URL parsing defaults to @c 0, or @c 1 for setter / getter nodes.
   int32_t wait{0};      ///< Blocking-wait timeout in milliseconds; positive values enable pub/sub wait mode.
@@ -135,7 +135,7 @@ struct VLINK_EXPORT ShmConf final : public Conf {
    *
    * @param _address  Service/topic address string; maximum 80 characters.
    * @param _event    Optional event name; maximum 80 characters; empty by default.
-   * @param _domain   Iceoryx domain identifier; defaults to @c 0.
+   * @param _domain   Logical service domain identifier; defaults to @c 0.
    * @param _depth    Queue capacity override; defaults to @c 0.
    * @param _history  History count; defaults to @c 0.
    * @param _wait     Blocking-wait timeout in milliseconds; defaults to @c 0 (disabled).

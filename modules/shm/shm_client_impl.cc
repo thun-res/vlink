@@ -38,34 +38,31 @@ void ShmClientImpl::init() {
 
   conf_.hash_code = Helpers::get_hash_code(conf_.event);
 
-  object_ =
-      factory.get_object<Object>({kImplType, conf_.address, conf_.domain, conf_.depth, conf_.history, conf_.wait});
+  object_ = factory.get_object<Object>(
+      {kImplType, conf_.address, conf_.domain, conf_.depth, conf_.history, conf_.wait, conf_.event, nullptr});
 
   object_->add_impl(this);
 
-  object_->register_server_connect_callback(this, [this](bool) {
-    auto* message_loop = get_message_loop();
-
-    if (message_loop) {
-      message_loop->post_task([this]() { ClientImpl::update_connected(); });
-    } else {
-      ClientImpl::update_connected();
-    }
-  });
+  object_->register_server_connect_callback(this, [this](bool) { ClientImpl::update_connected(); });
 
   ClientImpl::update_connected();
 }
 
 void ShmClientImpl::deinit() {
+  detach();
+
   if (object_) {
+    object_->cancel_calls(this);
     object_->remove_impl(this);
   }
-
-  detach();
 }
 
 void ShmClientImpl::interrupt() {
   ClientImpl::interrupt();
+
+  if (object_) {
+    object_->cancel_calls(this);
+  }
 
   ack_manager_.clear();
 }
@@ -96,7 +93,7 @@ bool ShmClientImpl::wait_for_connected(std::chrono::milliseconds timeout) {
 
 bool ShmClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::chrono::milliseconds timeout) {
   if VUNLIKELY (!callback) {
-    return object_->call(static_cast<uint64_t>(conf_.hash_code), req_data);
+    return object_->call(this, static_cast<uint64_t>(conf_.hash_code), req_data);
   }
 
   if (timeout.count() != 0) {
@@ -106,31 +103,43 @@ bool ShmClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::chr
     timer.start();
 
     if (!wait_for_connected(timeout)) {
+      object_->release(req_data);
+
       return false;
     }
 
     auto elapsed = timer.get();
 
     if (timeout.count() > 0 && elapsed >= timeout.count()) {
+      object_->release(req_data);
+
       return false;
     }
 
     auto ack_request = ack_manager_.create_request();
 
-    auto ack_function = [this, ack_request, callback = std::move(callback)](const Bytes& resp_data) mutable {
-      ack_manager_.notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
+    auto ack_function = [ack_request, callback = std::move(callback)](const Bytes& resp_data) mutable {
+      AckManager::notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
     };
 
     uint64_t response_seq = 0;
     bool has_response_seq = false;
+    bool submitted = false;
 
-    bool ret = ack_manager_.process(
-        ack_request, timeout.count() - elapsed,
-        [this, &req_data, &response_seq, &has_response_seq, ack_function = std::move(ack_function)]() mutable {
-          has_response_seq =
-              object_->call(static_cast<uint64_t>(conf_.hash_code), req_data, std::move(ack_function), &response_seq);
-          return has_response_seq;
-        });
+    bool ret = ack_manager_.process(ack_request, timeout.count() - elapsed,
+                                    [this, &req_data, &response_seq, &has_response_seq, &submitted,
+                                     ack_function = std::move(ack_function)]() mutable {
+                                      submitted = true;
+                                      has_response_seq =
+                                          object_->call(this, static_cast<uint64_t>(conf_.hash_code), req_data,
+                                                        std::move(ack_function), &response_seq, false);
+
+                                      return has_response_seq;
+                                    });
+
+    if (!submitted) {
+      object_->release(req_data);
+    }
 
     if VUNLIKELY (!ret && has_response_seq) {
       object_->remove_response_callback(response_seq);
@@ -139,7 +148,7 @@ bool ShmClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::chr
     return ret;
   }
 
-  return object_->call(static_cast<uint64_t>(conf_.hash_code), req_data, std::move(callback));
+  return object_->call(this, static_cast<uint64_t>(conf_.hash_code), req_data, std::move(callback));
 }
 
 }  // namespace vlink

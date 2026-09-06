@@ -74,7 +74,7 @@ namespace vlink {
 
 namespace shm = iox;
 
-using ShmID = std::tuple<uint8_t, std::string, int32_t, int32_t, int32_t, int32_t>;
+using ShmID = std::tuple<uint8_t, std::string, int32_t, int32_t, int32_t, int32_t, std::string, const void*>;
 
 [[maybe_unused]] static constexpr int kDefaultReqDepth = 50;
 [[maybe_unused]] static constexpr int kDefaultRespDepth = 10;
@@ -268,10 +268,12 @@ class ShmClient final : public AbstractObject<ShmID>, public std::enable_shared_
 
   bool release(const Bytes& bytes);
 
-  bool call(uint64_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback = nullptr,
-            uint64_t* seq_out = nullptr);
+  bool call(NodeImpl* owner, uint64_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback = nullptr,
+            uint64_t* seq_out = nullptr, bool dispatch = true);
 
   void remove_response_callback(uint64_t seq);
+
+  void cancel_calls(NodeImpl* owner);
 
  private:
   void detect_server();
@@ -290,7 +292,12 @@ class ShmClient final : public AbstractObject<ShmID>, public std::enable_shared_
   std::optional<shm::popo::UntypedClient> client_;
   std::mutex mtx_;
   std::mutex callback_mtx_;
-  std::unordered_map<uint64_t, Function<void(uint64_t, const Bytes&)>> callbacks_;
+  struct ResponseCallback final {
+    NodeImpl* owner{nullptr};
+    bool dispatch{true};
+    NodeImpl::MsgCallback callback;
+  };
+  std::unordered_map<uint64_t, ResponseCallback> callbacks_;
 };
 
 // ShmPublisher
@@ -346,7 +353,7 @@ class ShmSubscriber final : public AbstractObject<ShmID>, public std::enable_sha
 
   bool is_suspend() const;
 
-  void process_message();
+  void process_message(MessageLoop* dispatched_loop = nullptr);
 
   void subscribe();
 
@@ -379,6 +386,7 @@ class ShmSubscriber final : public AbstractObject<ShmID>, public std::enable_sha
   std::atomic_bool quit_flag_{false};
 
   std::mutex callback_mtx_;
+  std::mutex receive_mtx_;
 };
 
 }  // namespace vlink

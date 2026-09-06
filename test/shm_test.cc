@@ -28,12 +28,38 @@
 #ifdef VLINK_SUPPORT_SHM
 
 #include <atomic>
+#include <cstring>
 #include <future>
 #include <memory>
 #include <string>
 #include <thread>
 
 #include "./modules/shm_conf.h"
+
+struct ShmLoanMessage {
+  uint64_t value{42};
+
+  size_t get_serialized_size() const { return sizeof(value); }
+
+  bool operator>>(Bytes& bytes) const {
+    if (bytes.empty()) {
+      bytes = Bytes::create(sizeof(value));
+    }
+    if (bytes.size() != sizeof(value)) {
+      return false;
+    }
+    std::memcpy(bytes.data(), &value, sizeof(value));
+    return true;
+  }
+
+  bool operator<<(const Bytes& bytes) {
+    if (bytes.size() != sizeof(value)) {
+      return false;
+    }
+    std::memcpy(&value, bytes.data(), sizeof(value));
+    return true;
+  }
+};
 
 static bool ensure_shm_ready() {
   if (!ShmConf::auto_init_roudi(true, 2)) {
@@ -658,6 +684,44 @@ TEST_SUITE("shm-pubsub") {
 }
 
 TEST_SUITE("shm-method") {
+  TEST_CASE("destroying one shared client releases its pending future") {
+    if (!ensure_shm_ready()) {
+      return;
+    }
+
+    MessageLoop server_loop;
+    REQUIRE(server_loop.async_run());
+    std::promise<void> entered;
+    auto entered_result = entered.get_future();
+    std::promise<void> release;
+    auto released = release.get_future();
+    const ShmConf conf("shm/review/client_owner", "call", 0, 8);
+    Server<std::string, std::string> server(conf);
+    REQUIRE(server.attach(&server_loop));
+    REQUIRE(server.listen([&](const std::string& req, std::string& resp) {
+      if (req == "first") {
+        entered.set_value();
+        released.wait_for(5s);
+      }
+      resp = req;
+    }));
+    auto first = std::make_unique<Client<std::string, std::string>>(conf);
+    Client<std::string, std::string> second(conf);
+    REQUIRE(first->wait_for_connected(2s));
+    auto cancelled = first->async_invoke("first");
+    REQUIRE(entered_result.wait_for(2s) == std::future_status::ready);
+    first.reset();
+    const bool ready = cancelled.wait_for(100ms) == std::future_status::ready;
+    release.set_value();
+    CHECK(ready);
+    if (ready) {
+      CHECK_THROWS_AS(cancelled.get(), std::future_error);
+    }
+    auto response = second.invoke("second", 2s);
+    REQUIRE(response.has_value());
+    CHECK(*response == "second");
+  }
+
   TEST_CASE("fire and forget send increments server counter") {
     MESSAGE("[shm-method] fire and forget send increments server counter");
 
@@ -1984,6 +2048,152 @@ TEST_SUITE("shm-zerocopy") {
 }
 
 TEST_SUITE("shm-loop") {
+  TEST_CASE("shared subscribers retain native payloads on their own loops") {
+    if (!ensure_shm_ready()) {
+      return;
+    }
+    MessageLoop first_loop;
+    MessageLoop second_loop;
+    REQUIRE(first_loop.async_run());
+    REQUIRE(second_loop.async_run());
+    const ShmConf conf("shm/review/shared_subscriber_loops", "data");
+    Publisher<Bytes> publisher(conf);
+    Subscriber<Bytes> first(conf);
+    Subscriber<Bytes> second(conf);
+    REQUIRE(first.attach(&first_loop));
+    REQUIRE(second.attach(&second_loop));
+    auto payload = Bytes::create(65536);
+    std::memset(payload.data(), 0x5a, payload.size());
+    std::promise<const uint8_t*> first_received;
+    std::promise<const uint8_t*> second_received;
+    auto first_result = first_received.get_future();
+    auto second_result = second_received.get_future();
+    REQUIRE(first.listen([&](const Bytes& bytes) {
+      first_received.set_value(first_loop.is_in_same_thread() && !bytes.is_owner() && bytes == payload ? bytes.data()
+                                                                                                       : nullptr);
+    }));
+    REQUIRE(second.listen([&](const Bytes& bytes) {
+      second_received.set_value(second_loop.is_in_same_thread() && !bytes.is_owner() && bytes == payload ? bytes.data()
+                                                                                                         : nullptr);
+    }));
+    REQUIRE(publisher.wait_for_subscribers(2s));
+    REQUIRE(publisher.publish(payload));
+    REQUIRE(first_result.wait_for(2s) == std::future_status::ready);
+    REQUIRE(second_result.wait_for(2s) == std::future_status::ready);
+    const auto* first_data = first_result.get();
+    const auto* second_data = second_result.get();
+    REQUIRE(first_data != nullptr);
+    CHECK(first_data == second_data);
+  }
+
+  TEST_CASE("shared client responses use owner loops and permit nested synchronous calls") {
+    if (!ensure_shm_ready()) {
+      return;
+    }
+    MessageLoop first_loop;
+    MessageLoop second_loop;
+    MessageLoop server_loop;
+    REQUIRE(first_loop.async_run());
+    REQUIRE(second_loop.async_run());
+    REQUIRE(server_loop.async_run());
+    const ShmConf conf("shm/review/client_loops", "call");
+    Server<Bytes, Bytes> server(conf);
+    REQUIRE(server.attach(&server_loop));
+    REQUIRE(server.listen([](const Bytes& request, Bytes& response) { response = request; }));
+    Client<Bytes, Bytes> first(conf);
+    Client<Bytes, Bytes> second(conf);
+    REQUIRE(first.attach(&first_loop));
+    REQUIRE(second.attach(&second_loop));
+    REQUIRE(first.wait_for_connected(2s));
+    REQUIRE(second.wait_for_connected(2s));
+    const Bytes payload{1, 2, 3, 4};
+    std::promise<bool> first_received;
+    std::promise<bool> second_received;
+    auto first_result = first_received.get_future();
+    auto second_result = second_received.get_future();
+    REQUIRE(first.invoke(payload, [&](const Bytes& response) {
+      Bytes nested_response;
+      first_received.set_value(first_loop.is_in_same_thread() && !response.is_owner() && response == payload &&
+                               first.invoke(payload, nested_response, 1s) && nested_response == payload);
+    }));
+    REQUIRE(second.invoke(payload, [&](const Bytes& response) {
+      second_received.set_value(second_loop.is_in_same_thread() && !response.is_owner() && response == payload);
+    }));
+    REQUIRE(first_result.wait_for(3s) == std::future_status::ready);
+    REQUIRE(second_result.wait_for(3s) == std::future_status::ready);
+    CHECK(first_result.get());
+    CHECK(second_result.get());
+  }
+
+  TEST_CASE("methods sharing an address execute on their respective server loops") {
+    if (!ensure_shm_ready()) {
+      return;
+    }
+    MessageLoop first_loop;
+    MessageLoop second_loop;
+    REQUIRE(first_loop.async_run());
+    REQUIRE(second_loop.async_run());
+    const ShmConf first_conf("shm/review/method_loops", "first");
+    const ShmConf second_conf("shm/review/method_loops", "second");
+    Server<int, int> first(first_conf);
+    Server<int, int> second(second_conf);
+    REQUIRE(first.attach(&first_loop));
+    REQUIRE(second.attach(&second_loop));
+    REQUIRE(first.listen(
+        [&](const int& request, int& response) { response = first_loop.is_in_same_thread() ? request + 1 : -1; }));
+    REQUIRE(second.listen(
+        [&](const int& request, int& response) { response = second_loop.is_in_same_thread() ? request + 2 : -1; }));
+    Client<int, int> first_client(first_conf);
+    Client<int, int> second_client(second_conf);
+    CHECK(first_client.invoke(40, 2s) == 41);
+    CHECK(second_client.invoke(40, 2s) == 42);
+  }
+
+  TEST_CASE("unconnected typed requests return their automatic loans") {
+    if (!ensure_shm_ready()) {
+      return;
+    }
+    Client<ShmLoanMessage, ShmLoanMessage> client(ShmConf("shm/review/unconnected_loan", "call", 0, 4));
+    const ShmLoanMessage request;
+    for (int i = 0; i < 32; ++i) {
+      ShmLoanMessage response;
+      CHECK_FALSE(client.invoke(request, response, 1ms));
+      CHECK_FALSE(client.invoke(request, [](const ShmLoanMessage&) {}));
+      auto loan = client.loan(sizeof(uint64_t));
+      REQUIRE(loan.is_loaned());
+      REQUIRE(client.return_loan(loan));
+    }
+  }
+
+  TEST_CASE("each late getter receives its event history including marked subscribers") {
+    if (!ensure_shm_ready()) {
+      return;
+    }
+    const ShmConf first_conf("shm/review/field_history", "first");
+    const ShmConf second_conf("shm/review/field_history", "second");
+    Setter<int> first(first_conf);
+    Setter<int> second(second_conf);
+    first.set(41);
+    second.set(42);
+    Getter<int> first_getter(first_conf);
+    Getter<int> second_getter(second_conf);
+    REQUIRE(first_getter.wait_for_value(2s));
+    REQUIRE(second_getter.wait_for_value(2s));
+    CHECK(first_getter.get() == 41);
+    CHECK(second_getter.get() == 42);
+    Getter<int> late(first_conf);
+    REQUIRE(late.wait_for_value(2s));
+    CHECK(late.get() == 41);
+    Subscriber<int> recorder(first_conf, InitType::kWithoutInit);
+    recorder.mark_as_getter();
+    REQUIRE(recorder.init());
+    std::promise<int> recorded;
+    auto result = recorded.get_future();
+    REQUIRE(recorder.listen([&](const int& value) { recorded.set_value(value); }));
+    REQUIRE(result.wait_for(2s) == std::future_status::ready);
+    CHECK(result.get() == 41);
+  }
+
   TEST_CASE("attached message loop dispatches pubsub and field callbacks") {
     MESSAGE("[shm-loop] attached message loop dispatches pubsub and field callbacks");
 

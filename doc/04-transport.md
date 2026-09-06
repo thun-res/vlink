@@ -178,7 +178,7 @@ shm://<address>[?event=<name>&domain=<N>&depth=<N>&history=<N>&wait=<ms>]
 | --- | --- | --- |
 | `address` | `<host>/<path>` | 服务 / 主题名，必填，≤80 字符 |
 | `event` | `?event=` | 次级事件名，≤80 字符 |
-| `domain` | `?domain=` | 域 ID，默认 0 |
+| `domain` | `?domain=` | 服务命名隔离域，默认 0，不切换 RouDi 实例 |
 | `depth` | `?depth=` | 队列容量覆写，默认 0（用 Iceoryx 默认值） |
 | `history` | `?history=` | 历史重放计数，默认 0；字段节点默认 1 |
 | `wait` | `?wait=<ms>` | 阻塞等待超时，`>0` 启用，仅 Pub/Sub 有效 |
@@ -215,6 +215,8 @@ int main() {
 边界条件：`wait>0` 阻塞模式仅对 Publisher/Subscriber 有效，用于 RPC 或字段节点会导致构造失败。`ShmConf` 另提供 `init_roudi()`（单进程内嵌 RouDi）、`auto_init_roudi()`（自动择优）、`has_roudi_running()` 等运行时入口；零拷贝容器见 [零拷贝](06-zerocopy.md)。
 
 ![共享内存零拷贝数据流](images/shm-zerocopy-flow.png)
+
+RPC 与 Field 按 event 隔离原生服务；每个 Getter 使用独立接收端获取当前字段历史，字段至少保留一个历史值。普通 Publisher/Subscriber 仍复用同地址端点。该命名与旧版本不互通，同一 RouDi 下的进程需同批升级。`wait>0` 时，订阅者分布在多个 loop 上的样本要等所有 loop 完成回调后才释放发布端。
 
 ### 🆕 4.6.3 shm2:// — Iceoryx2 共享内存（Beta）
 

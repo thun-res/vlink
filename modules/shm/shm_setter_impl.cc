@@ -35,8 +35,12 @@ void ShmSetterImpl::init() {
 
   conf_.hash_code = Helpers::get_hash_code(conf_.event);
 
-  object_ =
-      factory.get_object<Object>({kImplType, conf_.address, conf_.domain, conf_.depth, conf_.history, conf_.wait});
+  if (conf_.history == 0) {
+    conf_.history = 1;
+  }
+
+  object_ = factory.get_object<Object>(
+      {kImplType, conf_.address, conf_.domain, conf_.depth, conf_.history, conf_.wait, conf_.event, nullptr});
 
   object_->add_impl(this);
 }
@@ -59,16 +63,6 @@ const AbstractNode* ShmSetterImpl::get_abstract_node() const { return object_.ge
 
 void ShmSetterImpl::write(const Bytes& msg_data) { object_->publish(static_cast<uint64_t>(conf_.hash_code), msg_data); }
 
-void ShmSetterImpl::sync(SyncCallback&& callback) {
-  // object_->register_sub_connect_callback(this, [callback = std::move(callback)](bool connected) {
-  //   if (connected) {
-  //     callback();
-  //   }
-  // });
-
-  (void)callback;
-
-  object_->enable_detect_timer();
-}
+void ShmSetterImpl::sync(SyncCallback&& callback) { callback(); }
 
 }  // namespace vlink
