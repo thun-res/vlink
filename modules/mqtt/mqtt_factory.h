@@ -180,12 +180,6 @@ class MqttSubscriber final : public AbstractObject<MqttID>, public std::enable_s
 
   std::any get_native_handle() const override;
 
-  bool suspend();
-
-  bool resume();
-
-  bool is_suspend() const;
-
   void subscribe();
 
   void unsubscribe();
@@ -201,8 +195,9 @@ class MqttSubscriber final : public AbstractObject<MqttID>, public std::enable_s
   void process_message(uint64_t channel, uint64_t seq, uint64_t guid, uint64_t timestamp, const Bytes& bytes);
 
  private:
+  void deliver_message(MessageLoop* loop, uint64_t channel, const Bytes& bytes);
+
   std::atomic<int64_t> last_latency_{0};
-  std::atomic_bool is_suspend_{false};
   std::atomic_bool has_subscribe_{false};
 
   uint64_t guid_{0};
@@ -249,7 +244,6 @@ class MqttServer final : public AbstractObject<MqttID>, public std::enable_share
   int32_t qos_{1};
   std::string fragment_;
   Conf::PropertiesMap properties_;
-  std::mutex mtx_;
 };
 
 // MqttClient
@@ -270,13 +264,14 @@ class MqttClient final : public AbstractObject<MqttID>, public std::enable_share
   bool is_connected() const;
 
   bool call(NodeImpl* owner, uint64_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback = nullptr,
-            int timeout_ms = 0);
+            int timeout_ms = 0, bool dispatch = true);
 
   void cancel_calls(NodeImpl* owner);
 
  private:
   struct ResponseCallback final {
     NodeImpl* owner{nullptr};
+    bool dispatch{true};
     Function<void(uint64_t, const Bytes&)> callback;
   };
 

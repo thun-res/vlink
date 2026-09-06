@@ -154,6 +154,33 @@ TEST_SUITE("mqtt-init") {
 }
 
 TEST_SUITE("mqtt-pubsub") {
+  TEST_CASE("shared subscribers deliver on their own loops") {
+    MQTT_REQUIRE_BROKER();
+    MessageLoop first_loop;
+    MessageLoop second_loop;
+    REQUIRE(first_loop.async_run());
+    REQUIRE(second_loop.async_run());
+    const auto first_thread = first_loop.invoke_task([] { return std::this_thread::get_id(); }).get();
+    const auto second_thread = second_loop.invoke_task([] { return std::this_thread::get_id(); }).get();
+    std::promise<std::thread::id> first_received;
+    std::promise<std::thread::id> second_received;
+    auto first_result = first_received.get_future();
+    auto second_result = second_received.get_future();
+    const MqttConf conf("mqtt/evt/owner_loops", "data");
+    Subscriber<Bytes> first(conf);
+    REQUIRE(first.attach(&first_loop));
+    REQUIRE(first.listen([&](const Bytes&) { first_received.set_value(std::this_thread::get_id()); }));
+    Subscriber<Bytes> second(conf);
+    REQUIRE(second.attach(&second_loop));
+    REQUIRE(second.listen([&](const Bytes&) { second_received.set_value(std::this_thread::get_id()); }));
+    Publisher<Bytes> publisher(conf);
+    REQUIRE(publisher.publish(Bytes{1, 2, 3}, true));
+    REQUIRE(first_result.wait_for(3s) == std::future_status::ready);
+    REQUIRE(second_result.wait_for(3s) == std::future_status::ready);
+    CHECK(first_result.get() == first_thread);
+    CHECK(second_result.get() == second_thread);
+  }
+
   TEST_CASE("bytes payload is delivered to subscriber") {
     MESSAGE("[mqtt-pubsub] bytes payload is delivered to subscriber");
 
@@ -294,6 +321,53 @@ TEST_SUITE("mqtt-pubsub") {
 }
 
 TEST_SUITE("mqtt-method") {
+  TEST_CASE("shared methods preserve server and client callback loops") {
+    MQTT_REQUIRE_BROKER();
+    MessageLoop first_loop;
+    MessageLoop second_loop;
+    REQUIRE(first_loop.async_run());
+    REQUIRE(second_loop.async_run());
+    const auto first_thread = first_loop.invoke_task([] { return std::this_thread::get_id(); }).get();
+    const auto second_thread = second_loop.invoke_task([] { return std::this_thread::get_id(); }).get();
+    const MqttConf first_conf("mqtt/rpc/owner_loops", "first");
+    const MqttConf second_conf("mqtt/rpc/owner_loops", "second");
+    std::atomic<bool> first_on_loop{true};
+    std::atomic<bool> second_on_loop{true};
+    std::promise<std::thread::id> received;
+    auto result = received.get_future();
+    Server<int, int> first_server(first_conf);
+    REQUIRE(first_server.attach(&first_loop));
+    REQUIRE(first_server.listen([&](const int& req, int& resp) {
+      if (std::this_thread::get_id() != first_thread) {
+        first_on_loop.store(false, std::memory_order_relaxed);
+      }
+      resp = req + 1;
+    }));
+    Server<int, int> second_server(second_conf);
+    REQUIRE(second_server.attach(&second_loop));
+    REQUIRE(second_server.listen([&](const int& req, int& resp) {
+      if (std::this_thread::get_id() != second_thread) {
+        second_on_loop.store(false, std::memory_order_relaxed);
+      }
+      resp = req + 2;
+    }));
+    Client<int, int> first(first_conf);
+    REQUIRE(first.attach(&second_loop));
+    Client<int, int> second(second_conf);
+    REQUIRE(second.attach(&first_loop));
+    auto first_sync = second_loop.invoke_task([&] { return first.invoke(10, 2s); });
+    REQUIRE(first_sync.wait_for(3s) == std::future_status::ready);
+    CHECK(first_sync.get() == std::optional<int>(11));
+    auto second_sync = first_loop.invoke_task([&] { return second.invoke(20, 2s); });
+    REQUIRE(second_sync.wait_for(3s) == std::future_status::ready);
+    CHECK(second_sync.get() == std::optional<int>(22));
+    REQUIRE(first.invoke(1, [&](const int&) { received.set_value(std::this_thread::get_id()); }));
+    REQUIRE(result.wait_for(3s) == std::future_status::ready);
+    CHECK(result.get() == second_thread);
+    CHECK(first_on_loop.load(std::memory_order_relaxed));
+    CHECK(second_on_loop.load(std::memory_order_relaxed));
+  }
+
   TEST_CASE("fire and forget send increments server counter") {
     MESSAGE("[mqtt-method] fire and forget send increments server counter");
 
@@ -408,6 +482,26 @@ TEST_SUITE("mqtt-method") {
 }
 
 TEST_SUITE("mqtt-field") {
+  TEST_CASE("suspending one getter leaves shared readers running") {
+    MQTT_REQUIRE_BROKER();
+    const MqttConf conf("mqtt/fld/owner_suspend", "value");
+    Getter<int> first(conf);
+    Getter<int> second(conf);
+    Setter<int> setter(conf);
+    setter.set(1);
+    REQUIRE(first.wait_for_value(3s));
+    REQUIRE(second.wait_for_value(3s));
+    REQUIRE(first.suspend());
+    CHECK(first.is_suspend());
+    setter.set(2);
+    REQUIRE(common_test::wait_until([&] { return second.get() == std::optional<int>(2); }, 3s));
+    CHECK(first.get() == std::optional<int>(1));
+    REQUIRE(first.resume());
+    CHECK_FALSE(first.is_suspend());
+    setter.set(3);
+    REQUIRE(common_test::wait_until([&] { return first.get() == std::optional<int>(3); }, 3s));
+  }
+
   TEST_CASE("setter and getter exchange values") {
     MESSAGE("[mqtt-field] setter and getter exchange values");
 

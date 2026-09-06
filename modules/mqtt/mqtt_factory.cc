@@ -822,18 +822,6 @@ MqttSubscriber::~MqttSubscriber() { unsubscribe(); }
 
 std::any MqttSubscriber::get_native_handle() const { return this; }
 
-bool MqttSubscriber::suspend() {
-  is_suspend_.store(true, std::memory_order_relaxed);
-  return true;
-}
-
-bool MqttSubscriber::resume() {
-  is_suspend_.store(false, std::memory_order_relaxed);
-  return true;
-}
-
-bool MqttSubscriber::is_suspend() const { return is_suspend_.load(std::memory_order_relaxed); }
-
 void MqttSubscriber::subscribe() {
   bool expected = false;
 
@@ -850,10 +838,6 @@ void MqttSubscriber::subscribe() {
         auto self = weak_self.lock();
 
         if VUNLIKELY (!self) {
-          return;
-        }
-
-        if VUNLIKELY (self->is_suspend_.load(std::memory_order_relaxed)) {
           return;
         }
 
@@ -908,51 +892,74 @@ void MqttSubscriber::process_message(uint64_t channel, uint64_t seq, uint64_t gu
                         std::memory_order_relaxed);
   }
 
-  auto* impl = get_first_impl();
+  MessageLoop* first_loop = nullptr;
+  std::vector<MessageLoop*> other_loops;
 
-  if VUNLIKELY (!impl) {
+  traverse_msg_callback([&](NodeImpl* impl, const auto& callback) {
+    const auto* conf = impl->get_target_conf<MqttConf>();
+
+    if VUNLIKELY (static_cast<uint64_t>(conf->hash_code) != channel || impl->has_suspend) {
+      return;
+    }
+
+    auto* loop = impl->get_message_loop();
+
+    if (!loop) {
+      callback(bytes);
+    } else if (!first_loop) {
+      first_loop = loop;
+    } else if (loop != first_loop && std::find(other_loops.begin(), other_loops.end(), loop) == other_loops.end()) {
+      other_loops.emplace_back(loop);
+    }
+  });
+
+  if (!first_loop) {
     return;
   }
 
-  auto* message_loop = impl->get_message_loop();
-
-  if (message_loop) {
-    auto weak_self = weak_from_this();
-
-    message_loop->post_task([weak_self, channel, bytes]() {
-      auto self = weak_self.lock();
+  if (other_loops.empty()) {
+    first_loop->post_task([weak = weak_from_this(), first_loop, channel, bytes]() {
+      auto self = weak.lock();
 
       if VUNLIKELY (!self) {
         return;
       }
 
-      auto* impl = self->get_first_impl();
-
-      if VUNLIKELY (!impl || !impl->get_message_loop()) {
-        return;
-      }
-
-      self->traverse_msg_callback([channel, &bytes](NodeImpl* impl, const auto& callback) {
-        const auto* conf_ptr = impl->get_target_conf<MqttConf>();
-
-        if (static_cast<uint64_t>(conf_ptr->hash_code) != channel) {
-          return;
-        }
-
-        callback(bytes);
-      });
+      self->deliver_message(first_loop, channel, bytes);
     });
-  } else {
-    traverse_msg_callback([channel, &bytes](NodeImpl* impl, const auto& callback) {
-      const auto* conf_ptr = impl->get_target_conf<MqttConf>();
 
-      if (static_cast<uint64_t>(conf_ptr->hash_code) != channel) {
-        return;
-      }
-
-      callback(bytes);
-    });
+    return;
   }
+
+  auto data = std::make_shared<Bytes>(bytes);
+
+  auto post = [&](MessageLoop* loop) {
+    loop->post_task([weak = weak_from_this(), loop, channel, data]() {
+      auto self = weak.lock();
+
+      if VUNLIKELY (!self) {
+        return;
+      }
+
+      self->deliver_message(loop, channel, *data);
+    });
+  };
+
+  post(first_loop);
+
+  for (auto* loop : other_loops) {
+    post(loop);
+  }
+}
+
+void MqttSubscriber::deliver_message(MessageLoop* loop, uint64_t channel, const Bytes& bytes) {
+  traverse_msg_callback([&](NodeImpl* impl, const auto& callback) {
+    const auto* conf = impl->get_target_conf<MqttConf>();
+
+    if (impl->get_message_loop() == loop && !impl->has_suspend && static_cast<uint64_t>(conf->hash_code) == channel) {
+      callback(bytes);
+    }
+  });
 }
 
 // MqttServer
@@ -1051,84 +1058,47 @@ bool MqttServer::reply(uint64_t channel, uint64_t req_id, const Bytes& resp_data
 }
 
 void MqttServer::process_message(uint64_t channel, uint64_t seq, const Bytes& req_bytes) {
-  auto* impl = get_first_impl();
+  NodeImpl* owner = nullptr;
+  MessageLoop* message_loop = nullptr;
 
-  if VUNLIKELY (!impl) {
-    return;
-  }
+  traverse_req_resp_callback([&](NodeImpl* impl, const auto& callback) {
+    const auto* conf = impl->get_target_conf<MqttConf>();
 
-  auto* message_loop = impl->get_message_loop();
+    if VUNLIKELY (static_cast<uint64_t>(conf->hash_code) != channel) {
+      ignore_called();
+      return;
+    }
+
+    if VUNLIKELY (has_called()) {
+      VLOG_F(*conf, "Two identical service requests.");
+      return;
+    }
+
+    owner = impl;
+    message_loop = impl->get_message_loop();
+
+    if (!message_loop) {
+      Bytes resp_bytes;
+
+      callback(seq, req_bytes, static_cast<ServerImpl*>(impl)->is_resp_type ? &resp_bytes : nullptr);
+    }
+  });
 
   if (message_loop) {
-    auto weak_self = weak_from_this();
-
-    message_loop->post_task([weak_self, channel, seq, req_bytes]() {
-      auto self = weak_self.lock();
+    message_loop->post_task([weak = weak_from_this(), owner, message_loop, seq, req_bytes]() {
+      auto self = weak.lock();
 
       if VUNLIKELY (!self) {
         return;
       }
 
-      auto* impl = self->get_first_impl();
+      self->invoke_req_resp_callback(owner, [&](NodeImpl* impl, const auto& callback) {
+        if (impl->get_message_loop() == message_loop) {
+          Bytes resp_bytes;
 
-      if VUNLIKELY (!impl || !impl->get_message_loop()) {
-        return;
-      }
-
-      bool is_deferred = false;
-
-      self->traverse_req_resp_callback(
-          [self, channel, seq, &req_bytes, &is_deferred](NodeImpl* impl, const auto& callback) {
-            const auto* conf_ptr = impl->get_target_conf<MqttConf>();
-
-            if (static_cast<uint64_t>(conf_ptr->hash_code) != channel) {
-              self->ignore_called();
-              return;
-            }
-
-            if VUNLIKELY (self->has_called()) {
-              VLOG_F(*conf_ptr, "Two identical service requests.");
-              return;
-            }
-
-            if (static_cast<ServerImpl*>(impl)->is_resp_type) {
-              Bytes resp_bytes;
-
-              callback(seq, req_bytes, &resp_bytes);
-              is_deferred = !static_cast<ServerImpl*>(impl)->is_sync_type;
-            } else {
-              callback(seq, req_bytes, nullptr);
-              is_deferred = false;
-            }
-          });
-    });
-  } else {
-    bool is_deferred = false;
-
-    traverse_req_resp_callback([this, channel, seq, &req_bytes, &is_deferred](NodeImpl* impl, const auto& callback) {
-      const auto* conf_ptr = impl->get_target_conf<MqttConf>();
-
-      if (static_cast<uint64_t>(conf_ptr->hash_code) != channel) {
-        ignore_called();
-        return;
-      }
-
-      if VUNLIKELY (has_called()) {
-        VLOG_F(*conf_ptr, "Two identical service requests.");
-        return;
-      }
-
-      std::lock_guard lock(mtx_);
-
-      if (static_cast<ServerImpl*>(impl)->is_resp_type) {
-        Bytes resp_bytes;
-
-        callback(seq, req_bytes, &resp_bytes);
-        is_deferred = !static_cast<ServerImpl*>(impl)->is_sync_type;
-      } else {
-        callback(seq, req_bytes, nullptr);
-        is_deferred = false;
-      }
+          callback(seq, req_bytes, static_cast<ServerImpl*>(impl)->is_resp_type ? &resp_bytes : nullptr);
+        }
+      });
     });
   }
 }
@@ -1185,43 +1155,74 @@ void MqttClient::start_listening() {
 
   auto weak_self = weak_from_this();
 
-  MqttFactory::get().subscribe_topic(this, domain_, fragment_, properties_, resp_topic_, qos_,
-                                     [weak_self](const std::string& /*topic*/, const uint8_t* data, size_t size) {
-                                       auto self = weak_self.lock();
+  MqttFactory::get().subscribe_topic(
+      this, domain_, fragment_, properties_, resp_topic_, qos_,
+      [weak_self](const std::string& /*topic*/, const uint8_t* data, size_t size) {
+        auto self = weak_self.lock();
 
-                                       if VUNLIKELY (!self) {
-                                         return;
-                                       }
+        if VUNLIKELY (!self) {
+          return;
+        }
 
-                                       MqttHeader header;
+        MqttHeader header;
 
-                                       if VUNLIKELY (!MqttFactory::decode_header(header, data, size)) {
-                                         VLOG_E("MqttFactory: Failed to decode client response header.");
-                                         return;
-                                       }
+        if VUNLIKELY (!MqttFactory::decode_header(header, data, size)) {
+          VLOG_E("MqttFactory: Failed to decode client response header.");
+          return;
+        }
 
-                                       Bytes resp_bytes =
-                                           Bytes::shallow_copy(data + kMqttHeaderSize, size - kMqttHeaderSize);
+        Bytes resp_bytes = Bytes::shallow_copy(data + kMqttHeaderSize, size - kMqttHeaderSize);
 
-                                       Function<void(uint64_t, const Bytes&)> callback;
-                                       NodeImpl* owner = nullptr;
+        ResponseCallback response;
 
-                                       {
-                                         std::lock_guard lock(self->mtx_);
+        {
+          std::lock_guard lock(self->mtx_);
 
-                                         auto iter = self->callbacks_.find(header.seq);
+          auto iter = self->callbacks_.find(header.seq);
 
-                                         if (iter != self->callbacks_.end()) {
-                                           owner = iter->second.owner;
-                                           callback = std::move(iter->second.callback);
-                                           self->callbacks_.erase(iter);
-                                         }
-                                       }
+          if (iter != self->callbacks_.end()) {
+            response = std::move(iter->second);
+            self->callbacks_.erase(iter);
+          }
+        }
 
-                                       if (callback && self->is_contains_impl(owner)) {
-                                         callback(header.channel, resp_bytes);
-                                       }
-                                     });
+        if VUNLIKELY (!response.callback) {
+          return;
+        }
+
+        if (!response.dispatch) {
+          response.callback(header.channel, resp_bytes);
+
+          return;
+        }
+
+        MessageLoop* loop = nullptr;
+
+        self->invoke_callback(response.owner, [&] {
+          loop = response.owner->get_message_loop();
+
+          if (!loop) {
+            response.callback(header.channel, resp_bytes);
+          }
+        });
+
+        if (loop) {
+          loop->post_task([weak_self, owner = response.owner, loop, callback = std::move(response.callback),
+                           channel = header.channel, resp_bytes]() {
+            auto self = weak_self.lock();
+
+            if VUNLIKELY (!self) {
+              return;
+            }
+
+            self->invoke_callback(owner, [&] {
+              if (owner->get_message_loop() == loop) {
+                callback(channel, resp_bytes);
+              }
+            });
+          });
+        }
+      });
 }
 
 void MqttClient::stop_listening() {
@@ -1255,7 +1256,7 @@ bool MqttClient::is_connected() const {
 }
 
 bool MqttClient::call(NodeImpl* owner, uint64_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback,
-                      int timeout_ms) {
+                      int timeout_ms, bool dispatch) {
   auto& factory = MqttFactory::get();
 
   if VUNLIKELY (req_data.size() > static_cast<size_t>(std::numeric_limits<int>::max()) - kMqttHeaderSize) {
@@ -1280,14 +1281,14 @@ bool MqttClient::call(NodeImpl* owner, uint64_t channel, const Bytes& req_data, 
   if VLIKELY (has_callback) {
     std::lock_guard lock(mtx_);
 
-    callbacks_[seq_guid] =
-        ResponseCallback{owner, [callback = std::move(callback), channel](uint64_t target_channel, const Bytes& bytes) {
-                           if (channel != target_channel) {
-                             return;
-                           }
+    callbacks_[seq_guid] = ResponseCallback{
+        owner, dispatch, [callback = std::move(callback), channel](uint64_t target_channel, const Bytes& bytes) {
+          if (channel != target_channel) {
+            return;
+          }
 
-                           callback(bytes);
-                         }};
+          callback(bytes);
+        }};
   }
 
   bool published = factory.publish_topic(domain_, fragment_, properties_, topic_, payload.data(), payload.size(), qos_);

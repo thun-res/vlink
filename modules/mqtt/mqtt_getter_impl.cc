@@ -55,9 +55,19 @@ void MqttGetterImpl::deinit() {
   }
 }
 
-bool MqttGetterImpl::suspend() { return object_->suspend(); }
+bool MqttGetterImpl::suspend() {
+  has_suspend = true;
 
-bool MqttGetterImpl::resume() { return object_->resume(); }
+  return true;
+}
+
+bool MqttGetterImpl::resume() {
+  has_suspend = false;
+
+  return true;
+}
+
+bool MqttGetterImpl::is_suspend() const { return has_suspend; }
 
 const Conf* MqttGetterImpl::get_conf() const { return &conf_; }
 

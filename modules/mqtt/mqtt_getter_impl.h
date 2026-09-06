@@ -48,6 +48,8 @@ class MqttGetterImpl final : public GetterImpl {
 
   bool resume() override;
 
+  bool is_suspend() const override;
+
   const Conf* get_conf() const override;
 
   const AbstractNode* get_abstract_node() const override;
