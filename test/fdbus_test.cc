@@ -161,6 +161,46 @@ TEST_SUITE("fdbus-init") {
 }
 
 TEST_SUITE("fdbus-pubsub") {
+  TEST_CASE("shared subscribers keep their own loops when a client joins the endpoint") {
+    if (!fdbus_available()) {
+      return;
+    }
+
+    MessageLoop first_loop;
+    MessageLoop second_loop;
+    REQUIRE(first_loop.async_run());
+    REQUIRE(second_loop.async_run());
+    const auto first_thread = first_loop.invoke_task([] { return std::this_thread::get_id(); }).get();
+    const auto second_thread = second_loop.invoke_task([] { return std::this_thread::get_id(); }).get();
+    const FdbusConf conf("fdbus_subscriber_loops", "data");
+    Publisher<Bytes> publisher(conf);
+    std::promise<void> subscribed;
+    auto subscribed_result = subscribed.get_future();
+    publisher.detect_subscribers([&](bool present) {
+      if (present) {
+        subscribed.set_value();
+      }
+    });
+    std::promise<std::thread::id> first_received;
+    std::promise<std::thread::id> second_received;
+    auto first_result = first_received.get_future();
+    auto second_result = second_received.get_future();
+    Subscriber<Bytes> first(conf);
+    REQUIRE(first.attach(&first_loop));
+    REQUIRE(first.listen([&](const Bytes&) { first_received.set_value(std::this_thread::get_id()); }));
+    Subscriber<Bytes> second(conf);
+    REQUIRE(second.attach(&second_loop));
+    REQUIRE(second.listen([&](const Bytes&) { second_received.set_value(std::this_thread::get_id()); }));
+    Client<Bytes, Bytes> unrelated(FdbusConf(conf.address, "call"));
+    REQUIRE(subscribed_result.wait_for(3s) == std::future_status::ready);
+    publisher.detect_subscribers(nullptr);
+    REQUIRE(publisher.publish(Bytes{1, 2, 3}, true));
+    REQUIRE(first_result.wait_for(3s) == std::future_status::ready);
+    REQUIRE(second_result.wait_for(3s) == std::future_status::ready);
+    CHECK(first_result.get() == first_thread);
+    CHECK(second_result.get() == second_thread);
+  }
+
   TEST_CASE("bytes payload is received intact") {
     MESSAGE("[fdbus-pubsub] bytes payload is received intact");
 
@@ -327,6 +367,102 @@ TEST_SUITE("fdbus-pubsub") {
 }
 
 TEST_SUITE("fdbus-method") {
+  TEST_CASE("shared method endpoints route each owner and complete synchronous acknowledgements directly") {
+    if (!fdbus_available()) {
+      return;
+    }
+
+    MessageLoop first_loop;
+    MessageLoop second_loop;
+    REQUIRE(first_loop.async_run());
+    REQUIRE(second_loop.async_run());
+    const auto first_thread = first_loop.invoke_task([] { return std::this_thread::get_id(); }).get();
+    const auto second_thread = second_loop.invoke_task([] { return std::this_thread::get_id(); }).get();
+    const FdbusConf first_conf("fdbus_method_loops", "first");
+    const FdbusConf second_conf("fdbus_method_loops", "second");
+    std::atomic<bool> first_server_thread{true};
+    std::atomic<bool> second_server_thread{true};
+    std::promise<std::thread::id> first_received;
+    std::promise<std::thread::id> second_received;
+    auto first_result = first_received.get_future();
+    auto second_result = second_received.get_future();
+    Server<int, int> first_server(first_conf);
+    REQUIRE(first_server.attach(&first_loop));
+    REQUIRE(first_server.listen([&](const int& req, int& resp) {
+      if (std::this_thread::get_id() != first_thread) {
+        first_server_thread.store(false, std::memory_order_relaxed);
+      }
+      resp = req + 1;
+    }));
+    Server<int, int> second_server(second_conf);
+    REQUIRE(second_server.attach(&second_loop));
+    REQUIRE(second_server.listen([&](const int& req, int& resp) {
+      if (std::this_thread::get_id() != second_thread) {
+        second_server_thread.store(false, std::memory_order_relaxed);
+      }
+      resp = req + 2;
+    }));
+    Publisher<int> unrelated(FdbusConf(first_conf.address, "data"));
+    Client<int, int> first(first_conf);
+    REQUIRE(first.attach(&second_loop));
+    Client<int, int> second(second_conf);
+    REQUIRE(second.attach(&first_loop));
+    REQUIRE(first.wait_for_connected(3s));
+    auto first_sync = second_loop.invoke_task([&] { return first.invoke(10, 2s); });
+    REQUIRE(first_sync.wait_for(3s) == std::future_status::ready);
+    CHECK(first_sync.get() == std::optional<int>(11));
+    auto second_sync = first_loop.invoke_task([&] { return second.invoke(20, 2s); });
+    REQUIRE(second_sync.wait_for(3s) == std::future_status::ready);
+    CHECK(second_sync.get() == std::optional<int>(22));
+
+    REQUIRE(first.invoke(1, [&](const int&) { first_received.set_value(std::this_thread::get_id()); }));
+    REQUIRE(second.invoke(2, [&](const int&) { second_received.set_value(std::this_thread::get_id()); }));
+    REQUIRE(first_result.wait_for(3s) == std::future_status::ready);
+    REQUIRE(second_result.wait_for(3s) == std::future_status::ready);
+    CHECK(first_result.get() == second_thread);
+    CHECK(second_result.get() == first_thread);
+    CHECK(first_server_thread.load(std::memory_order_relaxed));
+    CHECK(second_server_thread.load(std::memory_order_relaxed));
+  }
+
+  TEST_CASE("destroying one shared client releases its pending future") {
+    if (!fdbus_available()) {
+      return;
+    }
+
+    MessageLoop server_loop;
+    REQUIRE(server_loop.async_run());
+    std::promise<void> entered;
+    auto entered_result = entered.get_future();
+    std::promise<void> release;
+    auto released = release.get_future();
+    const FdbusConf conf("fdbus_client_owner", "call");
+    Server<std::string, std::string> server(conf);
+    REQUIRE(server.attach(&server_loop));
+    REQUIRE(server.listen([&](const std::string& req, std::string& resp) {
+      if (req == "first") {
+        entered.set_value();
+        released.wait_for(5s);
+      }
+      resp = req;
+    }));
+    auto first = std::make_unique<Client<std::string, std::string>>(conf);
+    Client<std::string, std::string> second(conf);
+    REQUIRE(first->wait_for_connected(2s));
+    auto cancelled = first->async_invoke("first");
+    REQUIRE(entered_result.wait_for(2s) == std::future_status::ready);
+    first.reset();
+    const bool ready = cancelled.wait_for(100ms) == std::future_status::ready;
+    release.set_value();
+    CHECK(ready);
+    if (ready) {
+      CHECK_THROWS_AS(cancelled.get(), std::future_error);
+    }
+    auto response = second.invoke("second", 2s);
+    REQUIRE(response.has_value());
+    CHECK(*response == "second");
+  }
+
   TEST_CASE("fire and forget send increments server receive counter") {
     MESSAGE("[fdbus-method] fire and forget send increments server receive counter");
 

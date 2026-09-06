@@ -74,7 +74,7 @@ bool FdbusClientImpl::is_connected() const { return object_->getSessionCount() >
 
 bool FdbusClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::chrono::milliseconds timeout) {
   if VUNLIKELY (!callback) {
-    return object_->call(conf_.hash_code, req_data);
+    return object_->call(this, conf_.hash_code, req_data);
   }
 
   if (timeout.count() != 0) {
@@ -99,17 +99,9 @@ bool FdbusClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::c
     }
 
     auto ack_request = ack_manager_.create_request();
-    auto callback_state = callback_state_;
 
-    auto ack_function = [this, callback_state = std::move(callback_state), ack_request,
-                         callback = std::move(callback)](const Bytes& resp_data) mutable {
-      std::lock_guard lock(callback_state->mtx);
-
-      if VUNLIKELY (!callback_state->active) {
-        return;
-      }
-
-      ack_manager_.notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
+    auto ack_function = [ack_request, callback = std::move(callback)](const Bytes& resp_data) mutable {
+      AckManager::notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
     };
 
     int32_t remaining_timeout = -1;
@@ -129,8 +121,8 @@ bool FdbusClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::c
 
     return ack_manager_.process(ack_request, remaining_timeout,
                                 [this, &req_data, ack_function = std::move(ack_function), object_timeout]() mutable {
-                                  return object_->call(conf_.hash_code, req_data, std::move(ack_function),
-                                                       object_timeout);
+                                  return object_->call(this, conf_.hash_code, req_data, std::move(ack_function),
+                                                       object_timeout, false);
                                 });
   }
 
@@ -147,7 +139,7 @@ bool FdbusClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::c
     callback(resp_data);
   };
 
-  return object_->call(conf_.hash_code, req_data, std::move(response_callback));
+  return object_->call(this, conf_.hash_code, req_data, std::move(response_callback));
 }
 
 }  // namespace vlink
