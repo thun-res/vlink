@@ -558,6 +558,7 @@ void DdsrFactory::set_participant_qos(DDS_DomainParticipantQos& dds_qos, const C
   static bool enable_udp = Helpers::to_int(Utils::get_env("VLINK_DDS_UDP"), 1) != 0;
   static bool enable_tcp = Helpers::to_int(Utils::get_env("VLINK_DDS_TCP"), 0) != 0;
   static bool enable_shm = Helpers::to_int(Utils::get_env("VLINK_DDS_SHM"), 0) != 0;
+  static bool enable_noblock = Helpers::to_int(Utils::get_env("VLINK_DDS_NOBLOCK"), 0) != 0;
 
   static bool enable_less_memory = Helpers::to_int(Utils::get_env("VLINK_DDS_LESS_MEMORY"), 0) != 0;
 
@@ -573,6 +574,7 @@ void DdsrFactory::set_participant_qos(DDS_DomainParticipantQos& dds_qos, const C
   bool prop_enable_udp = enable_udp;
   bool prop_enable_tcp = enable_tcp;
   [[maybe_unused]] bool prop_enable_shm = enable_shm;
+  bool prop_enable_noblock = enable_noblock;
   [[maybe_unused]] bool prop_enable_less_memory = enable_less_memory;
 
   if (!buf_str.empty()) {
@@ -604,6 +606,8 @@ void DdsrFactory::set_participant_qos(DDS_DomainParticipantQos& dds_qos, const C
       prop_enable_tcp = (value == "1");
     } else if (prop == "dds.shm") {
       prop_enable_shm = (value == "1");
+    } else if (prop == "dds.noblock") {
+      prop_enable_noblock = (value == "1");
     } else if (prop == "dds.less_memory") {
       prop_enable_less_memory = (value == "1");
     } else {
@@ -666,6 +670,11 @@ void DdsrFactory::set_participant_qos(DDS_DomainParticipantQos& dds_qos, const C
 
     DDS_PropertyQosPolicyHelper_assert_property(
         &dds_qos.property, "dds.transport.UDPv4.builtin.parent.message_size_max", mtu_value.c_str(), DDS_BOOLEAN_FALSE);
+  }
+
+  if (prop_enable_noblock) {
+    DDS_PropertyQosPolicyHelper_assert_property(&dds_qos.property, "dds.transport.UDPv4.builtin.send_blocking", "0",
+                                                DDS_BOOLEAN_FALSE);
   }
 
   if (!prop_peer_str.empty()) {

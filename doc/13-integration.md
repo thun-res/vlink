@@ -1066,6 +1066,7 @@ export VLINK_LOG_DIR=/var/log/vlink
 | `VLINK_DDS_BUF` | 数字 | DDS 缓冲区大小 |
 | `VLINK_DDS_MTU` | 数字 | 传输层最大消息大小（MTU） |
 | `VLINK_DDS_UDP` / `_TCP` / `_SHM` | 字符串 | 对应传输层配置 |
+| `VLINK_DDS_NOBLOCK` | `1`/`0` | 发送套接字非阻塞：缓冲区满时丢弃报文而不等待（`ddsc://` 忽略） |
 | `VLINK_DDS_LESS_MEMORY` | `1`/`0` | 低内存使用模式 |
 | `VLINK_DDS_DEBUG` | `1`/`0` | 启用 DDS 调试日志 |
 | `VLINK_DDS_BIND` | 字符串 | 将所有 `dds://` 整体重定向到某实现：`dds`（Fast-DDS）、`ddsf`（`dds` 的别名）、`ddsc`（CycloneDDS）、`ddsr`（RTI Connext） |

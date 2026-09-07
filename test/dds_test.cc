@@ -1829,6 +1829,7 @@ TEST_SUITE("dds-qos") {
     pub.set_property("dds.udp", "1");
     pub.set_property("dds.tcp", "0");
     pub.set_property("dds.shm", "0");
+    pub.set_property("dds.noblock", "1");
     pub.set_property("dds.less_memory", "1");
     pub.set_property("dds.user.test", "value");
 

@@ -729,6 +729,7 @@ int main() {
     ['VLINK_DDS_UDP', '', 'Enables or configures UDP transport for DDS.', false],
     ['VLINK_DDS_TCP', '', 'Enables or configures TCP transport for DDS.', false],
     ['VLINK_DDS_SHM', '', 'Enables or configures shared memory transport for DDS.', false],
+    ['VLINK_DDS_NOBLOCK', '', 'Sends DDS datagrams without blocking when the socket buffer is full (ddsc ignores it).', false],
     ['VLINK_DDS_LESS_MEMORY', '', 'Enable DDS low memory usage mode.', false],
     ['VLINK_SHM_DEBUG', '', 'Enables debug information for shared memory transport.', false],
     ['VLINK_SHM_DEPTH', '', 'Configures the depth (queue size) of the shared memory transport buffer.', false],
