@@ -141,10 +141,7 @@ int check_env(bool available_case, const std::string& prefix) {
       {"VLINK_DDS_TCP", "", "Toggles TCP transport for DDS (default 0; set 1 to enable).", false},
       {"VLINK_DDS_SHM", "", "Toggles same-host shared-memory transport inside DDS (default 0; set 1 to enable).",
        false},
-      {"VLINK_DDS_NOBLOCK", "",
-       "When set to 1 makes DDS socket sends non-blocking, dropping datagrams instead of stalling the writer "
-       "(default 0; ddsc ignores it).",
-       false},
+      {"VLINK_DDS_NOBLOCK", "", "Enables non-blocking DDS sends (default 0).", false},
       {"VLINK_DDS_LESS_MEMORY", "",
        "When set to 1 trims DDS participant memory footprint at the cost of throughput; default 0.", false},
 #endif

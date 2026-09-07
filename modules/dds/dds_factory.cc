@@ -1019,7 +1019,9 @@ void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
 
     tcp_descriptor->keep_alive_frequency_ms = 1000;
     tcp_descriptor->keep_alive_timeout_ms = 3000;
+#if defined(VLINK_SUPPORT_DDS_V3) || FASTRTPS_VERSION_MINOR >= 14
     tcp_descriptor->non_blocking_send = prop_enable_noblock;
+#endif
 
     if (ssl_cfg_valid) {
       tcp_descriptor->apply_security = true;
