@@ -202,7 +202,7 @@ _vlink-bag() {
         'record:Record bag from live topics'
         'play:Replay bag'
         'clone:Clone bag to another bag'
-        'merge:Merge bags by original absolute timestamps'
+        'merge:Merge bags'
         'check:Check bag integrity'
         'reindex:Rebuild bag index'
         'fix:Fix bag'

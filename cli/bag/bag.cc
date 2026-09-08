@@ -423,7 +423,7 @@ int main(int argc, char* argv[]) {
   merge_command.add_argument("-p", "--compress").help("Compress data").default_value(false).implicit_value(true);
   merge_command.add_argument("-f", "--force").help("Overwriting").default_value(false).implicit_value(true);
   merge_command.add_argument("-q", "--quiet").help("Quiet mode").default_value(false).implicit_value(true);
-  merge_command.add_description("Merge bags by original absolute timestamps; equal timestamps keep input order");
+  merge_command.add_description("Merge data");
   merge_command.add_epilog("Example:\n  vlink-bag merge /tmp/a.vdb /tmp/b.vcap -o /tmp/merged.vdb");
 
   // check command
