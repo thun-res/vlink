@@ -436,13 +436,13 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
       if constexpr (VLINK_HAS_MEMBER(RealType, ByteSizeLong())) {
         size_t target_size = deref(src).ByteSizeLong();
 
-        if VUNLIKELY (des.size() != target_size) {
+        if VUNLIKELY (des.size() != target_size || des.offset() != offset) {
           des = Bytes::create(target_size, offset);
         }
       } else {
         size_t target_size = deref(src).ByteSize();
 
-        if VUNLIKELY (des.size() != target_size) {
+        if VUNLIKELY (des.size() != target_size || des.offset() != offset) {
           des = Bytes::create(target_size, offset);
         }
       }
@@ -457,13 +457,13 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
       if constexpr (VLINK_HAS_MEMBER(std::remove_pointer_t<T>, ByteSizeLong())) {
         size_t target_size = src->ByteSizeLong();
 
-        if VUNLIKELY (des.size() != target_size) {
+        if VUNLIKELY (des.size() != target_size || des.offset() != offset) {
           des = Bytes::create(target_size, offset);
         }
       } else {
         size_t target_size = src->ByteSize();
 
-        if VUNLIKELY (des.size() != target_size) {
+        if VUNLIKELY (des.size() != target_size || des.offset() != offset) {
           des = Bytes::create(target_size, offset);
         }
       }
