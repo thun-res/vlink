@@ -188,7 +188,7 @@ const SourceSchema* SchemaRegistry::find(const std::string& name, SchemaType typ
   auto& entries = type == SchemaType::kProtobuf ? proto_schemas_ : fbs_schemas_;
   auto found = entries.find(name);
 
-  if (found != entries.end()) {
+  if VLIKELY (found != entries.end()) {
     return found->second.get();
   }
 
@@ -244,7 +244,7 @@ const SourceSchema* SchemaRegistry::find(const std::string& name, SchemaType typ
 bool SchemaRegistry::encode_json(const std::string& name, SchemaType type, const Bytes& json, Bytes& output) {
   const auto* schema = find(name, type);
 
-  if (!schema) {
+  if VUNLIKELY (!schema) {
     return false;
   }
 
@@ -254,14 +254,14 @@ bool SchemaRegistry::encode_json(const std::string& name, SchemaType type, const
     std::unique_ptr<google::protobuf::Message> message(schema->prototype->New());
     const auto result = google::protobuf::util::JsonStringToMessage(text, message.get());
 
-    if (!result.ok()) {
+    if VUNLIKELY (!result.ok()) {
       MLOG_W("Invalid protobuf JSON for {}: {}", name, result.ToString());
       return false;
     }
 
     const auto size = message->ByteSizeLong();
 
-    if (size > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    if VUNLIKELY (size > static_cast<size_t>(std::numeric_limits<int>::max())) {
       return false;
     }
 
@@ -272,8 +272,8 @@ bool SchemaRegistry::encode_json(const std::string& name, SchemaType type, const
   flatbuffers::Parser parser;
   parser.opts.strict_json = true;
 
-  if (!parser.Deserialize(reinterpret_cast<const uint8_t*>(schema->data.data()), schema->data.size()) ||
-      !parser.ParseJson(text.c_str())) {
+  if VUNLIKELY (!parser.Deserialize(reinterpret_cast<const uint8_t*>(schema->data.data()), schema->data.size()) ||
+                !parser.ParseJson(text.c_str())) {
     MLOG_W("Invalid FlatBuffers JSON for {}: {}", name, parser.error_);
     return false;
   }
@@ -286,7 +286,7 @@ bool SchemaRegistry::encode_json(const std::string& name, SchemaType type, const
 bool SchemaRegistry::decode_json(const std::string& name, SchemaType type, const Bytes& raw, Bytes& output) {
   const auto* schema = find(name, type);
 
-  if (!schema) {
+  if VUNLIKELY (!schema) {
     return false;
   }
 
@@ -295,27 +295,28 @@ bool SchemaRegistry::decode_json(const std::string& name, SchemaType type, const
   if (type == SchemaType::kProtobuf) {
     std::unique_ptr<google::protobuf::Message> message(schema->prototype->New());
 
-    if (raw.size() > INT_MAX || !message->ParseFromArray(raw.data(), static_cast<int>(raw.size())) ||
-        !google::protobuf::util::MessageToJsonString(*message, &text).ok()) {
+    if VUNLIKELY (raw.size() > INT_MAX || !message->ParseFromArray(raw.data(), static_cast<int>(raw.size())) ||
+                  !google::protobuf::util::MessageToJsonString(*message, &text).ok()) {
       return false;
     }
   } else {
-    if (!schema->flatbuffer->root_table() ||
-        !flatbuffers::Verify(*schema->flatbuffer, *schema->flatbuffer->root_table(), raw.data(), raw.size())) {
+    if VUNLIKELY (!schema->flatbuffer->root_table() ||
+                  !flatbuffers::Verify(*schema->flatbuffer, *schema->flatbuffer->root_table(), raw.data(),
+                                       raw.size())) {
       return false;
     }
 
     flatbuffers::Parser parser;
     parser.opts.strict_json = true;
 
-    if (!parser.Deserialize(reinterpret_cast<const uint8_t*>(schema->data.data()), schema->data.size()) ||
-        flatbuffers::GenText(parser, raw.data(), &text)) {
+    if VUNLIKELY (!parser.Deserialize(reinterpret_cast<const uint8_t*>(schema->data.data()), schema->data.size()) ||
+                  flatbuffers::GenText(parser, raw.data(), &text)) {
       return false;
     }
 
     const auto json = nlohmann::json::parse(text, nullptr, false);
 
-    if (json.is_discarded()) {
+    if VUNLIKELY (json.is_discarded()) {
       return false;
     }
 
@@ -331,7 +332,7 @@ bool DecodedMessage::decode(const SourceSchema* schema, SchemaType type, const s
   view_ = MessageView{};
 
   if (type == SchemaType::kZeroCopy) {
-    if (!zero_.parse(ser, raw)) {
+    if VUNLIKELY (!zero_.parse(ser, raw)) {
       return false;
     }
 
@@ -342,8 +343,8 @@ bool DecodedMessage::decode(const SourceSchema* schema, SchemaType type, const s
   if (schema && type == SchemaType::kProtobuf && schema->prototype) {
     proto_.reset(schema->prototype->New());
 
-    if (raw.size() > static_cast<size_t>(std::numeric_limits<int>::max()) ||
-        !proto_->ParseFromArray(raw.data(), static_cast<int>(raw.size()))) {
+    if VUNLIKELY (raw.size() > static_cast<size_t>(std::numeric_limits<int>::max()) ||
+                  !proto_->ParseFromArray(raw.data(), static_cast<int>(raw.size()))) {
       return false;
     }
 
@@ -352,7 +353,8 @@ bool DecodedMessage::decode(const SourceSchema* schema, SchemaType type, const s
   }
 
   if (schema && type == SchemaType::kFlatbuffers && schema->flatbuffer && schema->flatbuffer->root_table()) {
-    if (!flatbuffers::Verify(*schema->flatbuffer, *schema->flatbuffer->root_table(), raw.data(), raw.size())) {
+    if VUNLIKELY (!flatbuffers::Verify(*schema->flatbuffer, *schema->flatbuffer->root_table(), raw.data(),
+                                       raw.size())) {
       return false;
     }
 
@@ -363,7 +365,7 @@ bool DecodedMessage::decode(const SourceSchema* schema, SchemaType type, const s
   if (ser == "json") {
     json_ = nlohmann::json::parse(raw.data(), raw.data() + raw.size(), nullptr, false);
 
-    if (json_.is_discarded()) {
+    if VUNLIKELY (json_.is_discarded()) {
       return false;
     }
 

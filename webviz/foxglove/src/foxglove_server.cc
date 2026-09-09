@@ -490,7 +490,7 @@ Json FoxgloveServer::build_sorted_connection_entries(std::unordered_map<std::str
 void FoxgloveServer::on_ws_open(ConnectionHdl hdl) {
   std::lock_guard lifecycle_lock(channel_lifecycle_mtx_);
 
-  if (!running_.load()) {
+  if VUNLIKELY (!running_.load()) {
     return;
   }
 
@@ -2099,7 +2099,7 @@ void FoxgloveServer::on_bridge_connected(bool connected) {
   } else {
     std::unique_lock lifecycle_lock(channel_lifecycle_mtx_);
 
-    if (!running_.load()) {
+    if VUNLIKELY (!running_.load()) {
       return;
     }
 
@@ -2213,7 +2213,7 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
     std::shared_lock lock(channels_mtx_);
     const auto found = streams_.find(data.url);
 
-    if (found == streams_.end()) {
+    if VUNLIKELY (found == streams_.end()) {
       return;
     }
 
@@ -2226,7 +2226,8 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
     }
   }
 
-  if (stream->route.ser != data.ser || stream->route.type != SchemaData::resolve_type(data.schema, data.ser)) {
+  if VUNLIKELY (stream->route.ser != data.ser ||
+                stream->route.type != SchemaData::resolve_type(data.schema, data.ser)) {
     return;
   }
 
@@ -2246,7 +2247,7 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
   auto results = foxglove_converter_->convert(stream->route, data.raw);
 
   for (const auto& result : results) {
-    if (!result.success) {
+    if VUNLIKELY (!result.success) {
       continue;
     }
 
@@ -2257,7 +2258,7 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
     const auto channel_id = channel_ids[result.output];
     std::unique_lock lifecycle_lock(channel_lifecycle_mtx_);
 
-    if (!running_.load()) {
+    if VUNLIKELY (!running_.load()) {
       return;
     }
 
@@ -2269,20 +2270,20 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
       std::unique_lock lock(channels_mtx_);
       const auto found = channels_.find(channel_id);
 
-      if (found == channels_.end()) {
+      if VUNLIKELY (found == channels_.end()) {
         continue;
       }
 
       auto& channel = found->second;
       const bool plugin = stream->route.outputs[result.output].plugin;
 
-      if (channel.schema_name != result.schema_name || channel.encoding != result.encoding ||
-          channel.schema_encoding != result.schema_encoding || channel.is_send_time != result.is_send_time ||
-          (plugin && channel.schema != result.schema_data)) {
+      if VUNLIKELY (channel.schema_name != result.schema_name || channel.encoding != result.encoding ||
+                    channel.schema_encoding != result.schema_encoding || channel.is_send_time != result.is_send_time ||
+                    (plugin && channel.schema != result.schema_data)) {
         std::string schema = result.schema_data;
 
-        if (!plugin &&
-            !foxglove_converter_->resolve_schema_by_name(result.schema_name, result.schema_encoding, schema)) {
+        if VUNLIKELY (!plugin && !foxglove_converter_->resolve_schema_by_name(result.schema_name,
+                                                                              result.schema_encoding, schema)) {
           continue;
         }
 
@@ -2308,7 +2309,7 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
       }
     }
 
-    if (changed) {
+    if VUNLIKELY (changed) {
       clear_channel_runtime_state(channel_id, data.url);
 
       if (was_visible) {
@@ -2345,7 +2346,7 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
       for (const auto& subscriber : found->second) {
         const auto client = clients_.find(subscriber.client_ptr);
 
-        if (client != clients_.end() && client->second.conn) {
+        if VLIKELY (client != clients_.end() && client->second.conn) {
           targets.emplace_back(client->second.conn, subscriber.subscription_id);
         }
       }
@@ -2415,7 +2416,7 @@ void FoxgloveServer::clear_channel_runtime_state(uint32_t channel_id, std::strin
 void FoxgloveServer::update_channels(const std::vector<ProxyAPI::Info>& info_list) {
   std::unique_lock lifecycle_lock(channel_lifecycle_mtx_);
 
-  if (!running_.load()) {
+  if VUNLIKELY (!running_.load()) {
     return;
   }
 
@@ -2429,7 +2430,7 @@ void FoxgloveServer::update_channels(const std::vector<ProxyAPI::Info>& info_lis
       for (const auto id : stream.channel_ids) {
         const auto channel = channels_.find(id);
 
-        if (channel == channels_.end()) {
+        if VUNLIKELY (channel == channels_.end()) {
           continue;
         }
 
@@ -2454,8 +2455,8 @@ void FoxgloveServer::update_channels(const std::vector<ProxyAPI::Info>& info_lis
       const auto type = SchemaData::resolve_type(info.schema, info.ser);
       const auto found = streams_.find(info.url);
 
-      if (found != streams_.end()) {
-        if (found->second->route.ser == info.ser && found->second->route.type == type) {
+      if VLIKELY (found != streams_.end()) {
+        if VLIKELY (found->second->route.ser == info.ser && found->second->route.type == type) {
           continue;
         }
 
@@ -2498,7 +2499,7 @@ void FoxgloveServer::update_channels(const std::vector<ProxyAPI::Info>& info_lis
     }
 
     for (auto iter = streams_.begin(); iter != streams_.end();) {
-      if (active.find(iter->first) == active.end()) {
+      if VUNLIKELY (active.find(iter->first) == active.end()) {
         remove_stream(*iter->second);
         iter = streams_.erase(iter);
       } else {
@@ -2511,11 +2512,11 @@ void FoxgloveServer::update_channels(const std::vector<ProxyAPI::Info>& info_lis
     clear_channel_runtime_state(entry.first, entry.second);
   }
 
-  if (!removed_ids.empty()) {
+  if VUNLIKELY (!removed_ids.empty()) {
     broadcast_json(Json{{"op", "unadvertise"}, {"channelIds", std::move(removed_ids)}});
   }
 
-  if (!added.empty()) {
+  if VUNLIKELY (!added.empty()) {
     broadcast_json(Json{{"op", "advertise"}, {"channels", std::move(added)}});
   }
 
@@ -2599,7 +2600,7 @@ ProxyAPI::Control FoxgloveServer::build_bridge_control() const {
 
       const auto stream = streams_.find(url);
 
-      if (stream == streams_.end() || stream->second->route.type == SchemaType::kUnknown) {
+      if VUNLIKELY (stream == streams_.end() || stream->second->route.type == SchemaType::kUnknown) {
         continue;
       }
 
@@ -2823,8 +2824,8 @@ bool FoxgloveServer::validate_publish_route_unlocked(void* raw_ptr, uint32_t cha
   const auto schema_type = SchemaData::resolve_type(route.schema_type, route.ser);
 
   for (const auto& [id, channel] : channels_) {
-    if (channel.is_control_only && channel.url == route.url &&
-        (channel.ser != route.ser || channel.schema_type != schema_type)) {
+    if VUNLIKELY (channel.is_control_only && channel.url == route.url &&
+                  (channel.ser != route.ser || channel.schema_type != schema_type)) {
       error = "Client publish route conflicts with configured route for URL: " + route.url;
       return false;
     }

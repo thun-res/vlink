@@ -276,7 +276,7 @@ int main(int argc, char* argv[]) {
     message.data = reinterpret_cast<const std::byte*>(payload.data());
     const auto status = mcap_writer.write(message);
 
-    if (!status.ok()) {
+    if VUNLIKELY (!status.ok()) {
       MLOG_E("Failed to write MCAP message: {}", status.message);
     }
 
@@ -293,17 +293,17 @@ int main(int argc, char* argv[]) {
           recording_start_ns, vlink::webviz::micros_to_nanos_saturated(static_cast<uint64_t>(frame.timestamp)));
     }
 
-    if (!stream.route.valid) {
+    if VUNLIKELY (!stream.route.valid) {
       ++msg_failed;
       return;
     }
 
     if (stream.route.outputs.empty()) {
-      if (stream.raw_channel == 0) {
+      if VUNLIKELY (stream.raw_channel == 0) {
         stream.raw_channel = ensure_channel(frame.url, "raw", {}, {}, {});
       }
 
-      if (write_message(stream.raw_channel, timestamp, frame.data)) {
+      if VLIKELY (write_message(stream.raw_channel, timestamp, frame.data)) {
         ++msg_skipped;
       } else {
         ++msg_failed;
@@ -317,7 +317,7 @@ int main(int argc, char* argv[]) {
     bool written = false;
 
     for (const auto& result : results) {
-      if (!result.success) {
+      if VUNLIKELY (!result.success) {
         failed = true;
         continue;
       }
@@ -329,15 +329,16 @@ int main(int argc, char* argv[]) {
       auto& output = stream.outputs[result.output];
       const bool plugin = stream.route.outputs[result.output].plugin;
 
-      if (output.channel == 0 || output.name != result.schema_name || output.encoding != result.encoding ||
-          output.schema_encoding != result.schema_encoding || (plugin && output.plugin_schema != result.schema_data)) {
+      if VUNLIKELY (output.channel == 0 || output.name != result.schema_name || output.encoding != result.encoding ||
+                    output.schema_encoding != result.schema_encoding ||
+                    (plugin && output.plugin_schema != result.schema_data)) {
         const auto& advertised = stream.route.outputs[result.output].schema;
         std::string schema = result.schema_data;
         const bool original =
             advertised.schema_name == result.schema_name && advertised.schema_encoding == result.schema_encoding;
 
-        if (!plugin && !original &&
-            !converter.resolve_schema_by_name(result.schema_name, result.schema_encoding, schema)) {
+        if VUNLIKELY (!plugin && !original &&
+                      !converter.resolve_schema_by_name(result.schema_name, result.schema_encoding, schema)) {
           failed = true;
           continue;
         }
@@ -355,14 +356,14 @@ int main(int argc, char* argv[]) {
 
       const auto sample_time = result.timestamp_ns < 0 ? timestamp : static_cast<uint64_t>(result.timestamp_ns);
 
-      if (write_message(output.channel, sample_time, result.payload)) {
+      if VLIKELY (write_message(output.channel, sample_time, result.payload)) {
         written = true;
       } else {
         failed = true;
       }
     }
 
-    if (failed) {
+    if VUNLIKELY (failed) {
       ++msg_failed;
       MLOG_W("Failed to convert message: {} ({})", frame.url, stream.route.ser);
     } else if (written) {
@@ -373,7 +374,7 @@ int main(int argc, char* argv[]) {
 
     const auto total = msg_converted.load() + msg_failed.load() + msg_skipped.load();
 
-    if (total % 1000 == 0 && info.message_count > 0) {
+    if VUNLIKELY (total % 1000 == 0 && info.message_count > 0) {
       std::cerr << "\rProgress: " << total << "/" << info.message_count << " messages" << std::flush;
     }
   });

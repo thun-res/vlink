@@ -43,7 +43,7 @@ bool parse_field_path(std::string_view text, FieldPath& path, bool allow_wildcar
     const auto end = text.find_first_of(".[");
     step.name.assign(text.substr(0, end));
 
-    if (step.name.empty() && text.front() != '[') {
+    if VUNLIKELY (step.name.empty() && text.front() != '[') {
       return false;
     }
 
@@ -52,18 +52,18 @@ bool parse_field_path(std::string_view text, FieldPath& path, bool allow_wildcar
     if (!text.empty() && text.front() == '[') {
       const auto close = text.find(']');
 
-      if (close == std::string_view::npos) {
+      if VUNLIKELY (close == std::string_view::npos) {
         return false;
       }
 
-      if (allow_wildcard && close > 2 && text[1] == '0') {
+      if VUNLIKELY (allow_wildcard && close > 2 && text[1] == '0') {
         return false;
       }
 
       if (close != 1 || !allow_wildcard) {
         const auto result = std::from_chars(text.data() + 1, text.data() + close, step.index);
 
-        if (result.ec != std::errc() || result.ptr != text.data() + close) {
+        if VUNLIKELY (result.ec != std::errc() || result.ptr != text.data() + close) {
           return false;
         }
       }
@@ -79,7 +79,7 @@ bool parse_field_path(std::string_view text, FieldPath& path, bool allow_wildcar
         continue;
       }
 
-      if (text.front() != '.' || text.size() == 1 || (allow_wildcard && text[1] == '[')) {
+      if VUNLIKELY (text.front() != '.' || text.size() == 1 || (allow_wildcard && text[1] == '[')) {
         return false;
       }
 
@@ -146,7 +146,7 @@ std::string field_text(const FieldValue& value) {
         } else if constexpr (std::is_integral_v<T>) {
           return std::to_string(item);
         } else if constexpr (std::is_same_v<T, double>) {
-          if (!std::isfinite(item)) {
+          if VUNLIKELY (!std::isfinite(item)) {
             return {};
           }
 
@@ -207,7 +207,7 @@ bool MessageView::valid() const {
       const auto parsed = std::from_chars(zero_path_.data() + bracket + 1, zero_path_.data() + end, index);
       const std::string_view collection(zero_path_.data(), bracket);
 
-      if (parsed.ec != std::errc() || index >= zero_->collection_size(collection)) {
+      if VUNLIKELY (parsed.ec != std::errc() || index >= zero_->collection_size(collection)) {
         return false;
       }
 
@@ -599,7 +599,7 @@ bool MessageView::read_bytes(Bytes& output) const {
   if (kind_ == kJson && json_->is_object() && json_->contains("base64")) {
     const auto& value = json_->at("base64");
 
-    if (!value.is_string()) {
+    if VUNLIKELY (!value.is_string()) {
       return false;
     }
 
@@ -665,8 +665,9 @@ Bytes MessageView::bytes() const {
   for (size_t i = 0; i < size(); ++i) {
     const auto value = at(i).value();
 
-    if (kind_ == kJson && ((!std::holds_alternative<int64_t>(value) && !std::holds_alternative<uint64_t>(value)) ||
-                           field_integer(value, -1) < 0 || field_unsigned(value) > 255)) {
+    if VUNLIKELY (kind_ == kJson &&
+                  ((!std::holds_alternative<int64_t>(value) && !std::holds_alternative<uint64_t>(value)) ||
+                   field_integer(value, -1) < 0 || field_unsigned(value) > 255)) {
       return {};
     }
 

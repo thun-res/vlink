@@ -388,7 +388,7 @@ std::vector<const MessageMapping*> MappingSet::select(std::string_view url, cons
   std::vector<const MessageMapping*> result;
 
   for (const auto& item : selected) {
-    if (item.tied) {
+    if VUNLIKELY (item.tied) {
       if (ambiguous) {
         *ambiguous = true;
       }
@@ -652,7 +652,7 @@ int64_t FieldReader::timestamp() const {
   if (std::holds_alternative<double>(value)) {
     const auto nanos = field_number(value) * static_cast<double>(mapping_->timestamp_scale);
 
-    if (!std::isfinite(field_number(value)) || nanos < 0) {
+    if VUNLIKELY (!std::isfinite(field_number(value)) || nanos < 0) {
       return -1;
     }
 
@@ -660,14 +660,14 @@ int64_t FieldReader::timestamp() const {
   }
 
   if (const auto* number = std::get_if<int64_t>(&value)) {
-    if (*number < 0) {
+    if VUNLIKELY (*number < 0) {
       return -1;
     }
   }
 
   const auto integer = field_unsigned(value);
 
-  if (integer > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) / mapping_->timestamp_scale) {
+  if VUNLIKELY (integer > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) / mapping_->timestamp_scale) {
     return std::numeric_limits<int64_t>::max();
   }
 

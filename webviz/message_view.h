@@ -67,8 +67,8 @@ template <typename T>
           if constexpr (std::is_floating_point_v<V>) {
             const auto bound = std::ldexp(1.0, std::numeric_limits<T>::digits);
 
-            if (!std::isfinite(input) || std::trunc(input) != input || input >= bound ||
-                input < (std::is_signed_v<T> ? -bound : 0)) {
+            if VUNLIKELY (!std::isfinite(input) || std::trunc(input) != input || input >= bound ||
+                          input < (std::is_signed_v<T> ? -bound : 0)) {
               return false;
             }
           } else {
@@ -76,13 +76,14 @@ template <typename T>
               if (input < 0) {
                 if constexpr (!std::is_signed_v<T>) {
                   return false;
-                } else if (input < std::numeric_limits<T>::lowest()) {
+                } else if VUNLIKELY (input < std::numeric_limits<T>::lowest()) {
                   return false;
                 }
-              } else if (static_cast<uint64_t>(input) > static_cast<uint64_t>(std::numeric_limits<T>::max())) {
+              } else if VUNLIKELY (static_cast<uint64_t>(input) >
+                                   static_cast<uint64_t>(std::numeric_limits<T>::max())) {
                 return false;
               }
-            } else if (static_cast<uint64_t>(input) > static_cast<uint64_t>(std::numeric_limits<T>::max())) {
+            } else if VUNLIKELY (static_cast<uint64_t>(input) > static_cast<uint64_t>(std::numeric_limits<T>::max())) {
               return false;
             }
           }
@@ -90,8 +91,8 @@ template <typename T>
           result = static_cast<T>(input);
           return true;
         } else {
-          if (std::isfinite(static_cast<double>(input)) &&
-              std::abs(static_cast<double>(input)) > std::numeric_limits<T>::max()) {
+          if VUNLIKELY (std::isfinite(static_cast<double>(input)) &&
+                        std::abs(static_cast<double>(input)) > std::numeric_limits<T>::max()) {
             return false;
           }
 

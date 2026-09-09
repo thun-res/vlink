@@ -512,7 +512,8 @@ void RerunServer::on_bridge_info(const std::vector<ProxyAPI::Info>& info_list) {
       current.insert(info.url);
       const auto found = streams_.find(info.url);
 
-      if (found == streams_.end() || found->second->route.type != info.schema || found->second->route.ser != info.ser) {
+      if VUNLIKELY (found == streams_.end() || found->second->route.type != info.schema ||
+                    found->second->route.ser != info.ser) {
         auto stream = std::make_shared<Stream>();
         stream->route = rerun_converter_->resolve(info.url, info.schema, info.ser);
         stream->path = url_to_entity_path(info.url);
@@ -521,7 +522,7 @@ void RerunServer::on_bridge_info(const std::vector<ProxyAPI::Info>& info_list) {
     }
 
     for (auto iter = streams_.begin(); iter != streams_.end();) {
-      if (current.find(iter->first) == current.end()) {
+      if VUNLIKELY (current.find(iter->first) == current.end()) {
         iter = streams_.erase(iter);
       } else {
         ++iter;
@@ -543,7 +544,7 @@ void RerunServer::on_bridge_data(const ProxyAPI::Data& data) {
     std::shared_lock lock(info_mtx_);
     const auto found = streams_.find(data.url);
 
-    if (found != streams_.end()) {
+    if VLIKELY (found != streams_.end()) {
       stream = found->second;
     }
   }

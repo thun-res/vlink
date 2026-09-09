@@ -69,7 +69,7 @@ bool valid_tensor(const arrow::Array& array) {
     const auto rank = shapes.value_length(row);
     const auto& buffer = buffers.field(buffers.child_id(row));
 
-    if (buffer->type_id() != arrow::Type::LIST || (!names.IsNull(row) && names.value_length(row) != rank)) {
+    if VUNLIKELY (buffer->type_id() != arrow::Type::LIST || (!names.IsNull(row) && names.value_length(row) != rank)) {
       return false;
     }
 
@@ -77,7 +77,7 @@ bool valid_tensor(const arrow::Array& array) {
         static_cast<uint64_t>(static_cast<const arrow::ListArray&>(*buffer).value_length(buffers.value_offset(row)));
 
     if (rank == 0) {
-      if (count > 1) {
+      if VUNLIKELY (count > 1) {
         return false;
       }
 
@@ -97,14 +97,14 @@ bool valid_tensor(const arrow::Array& array) {
     for (int64_t i = 0; i < rank && product != 0; ++i) {
       const auto dimension = dimensions.Value(offset + i);
 
-      if (dimension > count / product) {
+      if VUNLIKELY (dimension > count / product) {
         return false;
       }
 
       product *= dimension;
     }
 
-    if (product != count) {
+    if VUNLIKELY (product != count) {
       return false;
     }
   }
@@ -123,7 +123,7 @@ bool valid_image(const arrow::Array& format_array, const arrow::Array& buffer_ar
   const auto count = static_cast<uint64_t>(static_cast<const arrow::ListArray&>(buffer_array).value_length(0));
   const uint64_t pixels = uint64_t{width} * height;
 
-  if (pixels > count) {
+  if VUNLIKELY (pixels > count) {
     return false;
   }
 
@@ -186,14 +186,14 @@ template <typename BuilderT>
 bool append_binary(arrow::ArrayBuilder& builder, const Bytes& bytes) {
   using Value = typename BuilderT::value_type;
 
-  if (bytes.size() % sizeof(Value) != 0) {
+  if VUNLIKELY (bytes.size() % sizeof(Value) != 0) {
     return false;
   }
 
   auto& values = static_cast<BuilderT&>(builder);
 
   for (size_t offset = 0; offset < bytes.size(); offset += sizeof(Value)) {
-    if (!values.Append(flatbuffers::ReadScalar<Value>(bytes.data() + offset)).ok()) {
+    if VUNLIKELY (!values.Append(flatbuffers::ReadScalar<Value>(bytes.data() + offset)).ok()) {
       return false;
     }
   }
@@ -249,7 +249,7 @@ bool append_value(arrow::ArrayBuilder& builder, const FieldReader& fields, const
   }
 
   if (type->id() == arrow::Type::STRUCT) {
-    if (source.is_array() || source.is_bytes() || !std::holds_alternative<std::monostate>(source.value())) {
+    if VUNLIKELY (source.is_array() || source.is_bytes() || !std::holds_alternative<std::monostate>(source.value())) {
       return false;
     }
 
@@ -272,7 +272,8 @@ bool append_value(arrow::ArrayBuilder& builder, const FieldReader& fields, const
         }
       }
 
-      if (!append_value(*structure.field_builder(i), fields, child, target, child_component, field->nullable())) {
+      if VUNLIKELY (!append_value(*structure.field_builder(i), fields, child, target, child_component,
+                                  field->nullable())) {
         return false;
       }
     }
@@ -288,7 +289,7 @@ bool append_value(arrow::ArrayBuilder& builder, const FieldReader& fields, const
     if (component == "ViewCoordinates" && std::holds_alternative<std::string>(value)) {
       const auto& text = std::get<std::string>(value);
 
-      if (text.size() != 3 || !static_cast<arrow::FixedSizeListBuilder&>(builder).Append().ok()) {
+      if VUNLIKELY (text.size() != 3 || !static_cast<arrow::FixedSizeListBuilder&>(builder).Append().ok()) {
         return false;
       }
 
@@ -297,8 +298,8 @@ bool append_value(arrow::ArrayBuilder& builder, const FieldReader& fields, const
           return value.type == "ViewDir" && value.name.front() == direction;
         });
 
-        if (entry == rerun_enums().end() ||
-            !static_cast<arrow::UInt8Builder*>(values)->Append(static_cast<uint8_t>(entry->value)).ok()) {
+        if VUNLIKELY (entry == rerun_enums().end() ||
+                      !static_cast<arrow::UInt8Builder*>(values)->Append(static_cast<uint8_t>(entry->value)).ok()) {
           return false;
         }
       }
@@ -315,25 +316,25 @@ bool append_value(arrow::ArrayBuilder& builder, const FieldReader& fields, const
     if (binary) {
       const auto width = values->type()->byte_width();
 
-      if (width <= 0 || !source.read_bytes(bytes) || bytes.size() % width != 0) {
+      if VUNLIKELY (width <= 0 || !source.read_bytes(bytes) || bytes.size() % width != 0) {
         return false;
       }
 
       count = bytes.size() / width;
     }
 
-    if ((!source.is_array() && !generated && !binary) || (!indices.empty() && indices.back() >= count)) {
+    if VUNLIKELY ((!source.is_array() && !generated && !binary) || (!indices.empty() && indices.back() >= count)) {
       return false;
     }
 
-    if (type->id() == arrow::Type::FIXED_SIZE_LIST &&
-        count != static_cast<size_t>(static_cast<const arrow::FixedSizeListType&>(*type).list_size())) {
+    if VUNLIKELY (type->id() == arrow::Type::FIXED_SIZE_LIST &&
+                  count != static_cast<size_t>(static_cast<const arrow::FixedSizeListType&>(*type).list_size())) {
       return false;
     }
 
-    if (!(type->id() == arrow::Type::LIST ? static_cast<arrow::ListBuilder&>(builder).Append()
-                                          : static_cast<arrow::FixedSizeListBuilder&>(builder).Append())
-             .ok()) {
+    if VUNLIKELY (!(type->id() == arrow::Type::LIST ? static_cast<arrow::ListBuilder&>(builder).Append()
+                                                    : static_cast<arrow::FixedSizeListBuilder&>(builder).Append())
+                       .ok()) {
       return false;
     }
 
@@ -356,7 +357,7 @@ bool append_value(arrow::ArrayBuilder& builder, const FieldReader& fields, const
         const auto width = values->type()->byte_width();
         const auto element = Bytes::shallow_copy(bytes.data() + i * width, width);
 
-        if (!append_binary_values(*values, element)) {
+        if VUNLIKELY (!append_binary_values(*values, element)) {
           return false;
         }
 
@@ -374,8 +375,8 @@ bool append_value(arrow::ArrayBuilder& builder, const FieldReader& fields, const
         child = scope.view(wildcard);
       }
 
-      if (!append_value(*values, scope, child, target, component == "ViewCoordinates" ? "ViewDir" : component,
-                        schema.value_field()->nullable())) {
+      if VUNLIKELY (!append_value(*values, scope, child, target, component == "ViewCoordinates" ? "ViewDir" : component,
+                                  schema.value_field()->nullable())) {
         return false;
       }
     }
@@ -395,7 +396,7 @@ bool append_value(arrow::ArrayBuilder& builder, const FieldReader& fields, const
       const auto child = fields.field(field_path) ? fields.view(field_path) : source.member(schema.field(i)->name());
 
       if (child.valid() || fields.has_descendant(field_path)) {
-        if (selected >= 0) {
+        if VUNLIKELY (selected >= 0) {
           return false;
         }
 
@@ -416,7 +417,7 @@ bool append_value(arrow::ArrayBuilder& builder, const FieldReader& fields, const
   }
 
   if (component == "Color" && source.is_array()) {
-    if (source.size() != 3 && source.size() != 4) {
+    if VUNLIKELY (source.size() != 3 && source.size() != 4) {
       return false;
     }
 
@@ -425,7 +426,7 @@ bool append_value(arrow::ArrayBuilder& builder, const FieldReader& fields, const
     for (size_t i = 0; i < 4; ++i) {
       uint8_t channel = 255;
 
-      if (i < source.size() && !field_numeric(source.at(i).value(true), channel)) {
+      if VUNLIKELY (i < source.size() && !field_numeric(source.at(i).value(true), channel)) {
         return false;
       }
 
@@ -435,7 +436,7 @@ bool append_value(arrow::ArrayBuilder& builder, const FieldReader& fields, const
     value = uint64_t{color};
   }
 
-  if (!enum_value(component, value)) {
+  if VUNLIKELY (!enum_value(component, value)) {
     return false;
   }
 
@@ -571,7 +572,7 @@ bool write_rerun(::rerun::RecordingStream& recording, const std::string& path, s
 
     std::unique_ptr<arrow::ArrayBuilder> builder;
 
-    if (!arrow::MakeBuilder(arrow::default_memory_pool(), field.type(), &builder).ok()) {
+    if VUNLIKELY (!arrow::MakeBuilder(arrow::default_memory_pool(), field.type(), &builder).ok()) {
       return false;
     }
 
@@ -620,8 +621,8 @@ bool write_rerun(::rerun::RecordingStream& recording, const std::string& path, s
 
     std::shared_ptr<arrow::Array> array;
 
-    if (!success || !builder->Finish(&array).ok() || !array->ValidateFull().ok() ||
-        (field.component == "TensorData" && !valid_tensor(*array))) {
+    if VUNLIKELY (!success || !builder->Finish(&array).ok() || !array->ValidateFull().ok() ||
+                  (field.component == "TensorData" && !valid_tensor(*array))) {
       MLOG_W("Invalid Rerun field: archetype={} field={}", archetype, field.name);
       return false;
     }
@@ -634,14 +635,14 @@ bool write_rerun(::rerun::RecordingStream& recording, const std::string& path, s
 
     auto batch = ::rerun::ComponentBatch::from_arrow_array(std::move(array), *field.descriptor);
 
-    if (!batch.is_ok()) {
+    if VUNLIKELY (!batch.is_ok()) {
       return false;
     }
 
     batches.push_back(std::move(batch.value));
   }
 
-  if (image_format && image_buffer && !valid_image(*image_format, *image_buffer)) {
+  if VUNLIKELY (image_format && image_buffer && !valid_image(*image_format, *image_buffer)) {
     MLOG_W("Rerun image format does not match its buffer: archetype={}", archetype);
     return false;
   }

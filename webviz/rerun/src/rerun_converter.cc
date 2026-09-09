@@ -49,7 +49,7 @@ RerunRoute RerunConverter::resolve(std::string_view url, SchemaType type, const 
   route.mappings = mappings_.select(url, ser, &ambiguous);
   route.valid = !ambiguous && mappings_.valid();
 
-  if (!route.valid) {
+  if VUNLIKELY (!route.valid) {
     return route;
   }
 
@@ -59,7 +59,7 @@ RerunRoute RerunConverter::resolve(std::string_view url, SchemaType type, const 
 
 bool RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::string& path, const RerunRoute& route,
                                      const Bytes& raw, int64_t fallback_timestamp_ns) {
-  if (!route.valid) {
+  if VUNLIKELY (!route.valid) {
     return false;
   }
 
@@ -146,7 +146,7 @@ bool RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::s
   if (route.plugin) {
     ConvertPluginInterface::SchemaInfo schema;
 
-    if (!plugin_->get_schema(route.ser, ConvertPluginInterface::Target::kRerun, schema)) {
+    if VUNLIKELY (!plugin_->get_schema(route.ser, ConvertPluginInterface::Target::kRerun, schema)) {
       return false;
     }
 
@@ -156,17 +156,18 @@ bool RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::s
 
     Bytes payload;
 
-    if (!plugin_->convert(route.ser, raw, ConvertPluginInterface::Target::kRerun, payload)) {
+    if VUNLIKELY (!plugin_->convert(route.ser, raw, ConvertPluginInterface::Target::kRerun, payload)) {
       return false;
     }
 
-    if (!plugin_->get_schema(route.ser, ConvertPluginInterface::Target::kRerun, schema) || schema.encoding != "json") {
+    if VUNLIKELY (!plugin_->get_schema(route.ser, ConvertPluginInterface::Target::kRerun, schema) ||
+                  schema.encoding != "json") {
       return false;
     }
 
     const auto json = nlohmann::json::parse(payload.data(), payload.data() + payload.size(), nullptr, false);
 
-    if (!json.is_object()) {
+    if VUNLIKELY (!json.is_object()) {
       return false;
     }
 
@@ -184,7 +185,7 @@ bool RerunConverter::convert_and_log(::rerun::RecordingStream& rec, const std::s
   if (route.type == SchemaType::kProtobuf && route.schema) {
     DecodedMessage source;
 
-    if (!source.decode(route.schema, route.type, route.ser, raw)) {
+    if VUNLIKELY (!source.decode(route.schema, route.type, route.ser, raw)) {
       return false;
     }
 

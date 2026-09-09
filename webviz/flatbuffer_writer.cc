@@ -67,8 +67,8 @@ class FlatbufferWriter final {
 
   bool table(const reflection::Object& object, const FieldReader& fields, const MessageView& source,
              const std::string& prefix, flatbuffers::uoffset_t& output) {
-    if ((source.is_null() && !fields.has_descendant(prefix)) || source.is_array() ||
-        !std::holds_alternative<std::monostate>(source.value())) {
+    if VUNLIKELY ((source.is_null() && !fields.has_descendant(prefix)) || source.is_array() ||
+                  !std::holds_alternative<std::monostate>(source.value())) {
       return false;
     }
 
@@ -100,7 +100,8 @@ class FlatbufferWriter final {
       auto& entry = entries.back();
       const auto type = field->type()->base_type();
 
-      if (mapped && mapped->time_scale && (type != reflection::Obj || !object_type(*field->type()).is_struct())) {
+      if VUNLIKELY (mapped && mapped->time_scale &&
+                    (type != reflection::Obj || !object_type(*field->type()).is_struct())) {
         return false;
       }
 
@@ -112,7 +113,7 @@ class FlatbufferWriter final {
         continue;
       }
 
-      if (!offset(*field->type(), fields, entry.source, entry.path, entry.offset)) {
+      if VUNLIKELY (!offset(*field->type(), fields, entry.source, entry.path, entry.offset)) {
         return false;
       }
     }
@@ -130,22 +131,22 @@ class FlatbufferWriter final {
           continue;
         }
 
-        if (!enum_value(*field.type(), value) || !scalar_type(type, [&](auto scalar) {
-              if (!field_numeric(value, scalar)) {
-                return false;
-              }
+        if VUNLIKELY (!enum_value(*field.type(), value) || !scalar_type(type, [&](auto scalar) {
+                        if VUNLIKELY (!field_numeric(value, scalar)) {
+                          return false;
+                        }
 
-              if (field.optional()) {
-                builder_.AddElement(field.offset(), scalar);
-              } else {
-                const auto fallback = std::is_floating_point_v<decltype(scalar)>
-                                          ? static_cast<decltype(scalar)>(field.default_real())
-                                          : static_cast<decltype(scalar)>(field.default_integer());
-                builder_.AddElement(field.offset(), scalar, fallback);
-              }
+                        if (field.optional()) {
+                          builder_.AddElement(field.offset(), scalar);
+                        } else {
+                          const auto fallback = std::is_floating_point_v<decltype(scalar)>
+                                                    ? static_cast<decltype(scalar)>(field.default_real())
+                                                    : static_cast<decltype(scalar)>(field.default_integer());
+                          builder_.AddElement(field.offset(), scalar, fallback);
+                        }
 
-              return true;
-            })) {
+                        return true;
+                      })) {
           return false;
         }
       } else if (type == reflection::Obj && object_type(*field.type()).is_struct()) {
@@ -160,7 +161,7 @@ class FlatbufferWriter final {
         builder_.Pad(structure.bytesize());
         const auto scope = mapped && !mapped->time_scale ? fields.child(entry.source) : fields;
 
-        if (!write_struct(structure, scope, entry.source, entry.path, builder_.GetCurrentBufferPointer())) {
+        if VUNLIKELY (!write_struct(structure, scope, entry.source, entry.path, builder_.GetCurrentBufferPointer())) {
           return false;
         }
 
@@ -209,7 +210,7 @@ class FlatbufferWriter final {
       if (object.name()->string_view() == "foxglove.Time") {
         uint64_t ticks = 0;
 
-        if (!field_numeric(fields.value(prefix), ticks)) {
+        if VUNLIKELY (!field_numeric(fields.value(prefix), ticks)) {
           return false;
         }
 
@@ -218,7 +219,7 @@ class FlatbufferWriter final {
       } else if (object.name()->string_view() == "foxglove.Duration") {
         int64_t ticks = 0;
 
-        if (!field_numeric(fields.value(prefix), ticks)) {
+        if VUNLIKELY (!field_numeric(fields.value(prefix), ticks)) {
           return false;
         }
 
@@ -227,7 +228,7 @@ class FlatbufferWriter final {
       } else {
         return false;
       }
-    } else if (source.is_array() || !std::holds_alternative<std::monostate>(source.value())) {
+    } else if VUNLIKELY (source.is_array() || !std::holds_alternative<std::monostate>(source.value())) {
       return false;
     }
 
@@ -243,14 +244,14 @@ class FlatbufferWriter final {
                                                                  : FieldValue(field->default_integer());
       }
 
-      if (!scalar_type(field->type()->base_type(), [&](auto scalar) {
-            if (!field_numeric(value, scalar)) {
-              return false;
-            }
+      if VUNLIKELY (!scalar_type(field->type()->base_type(), [&](auto scalar) {
+                      if VUNLIKELY (!field_numeric(value, scalar)) {
+                        return false;
+                      }
 
-            flatbuffers::WriteScalar(output + field->offset(), scalar);
-            return true;
-          })) {
+                      flatbuffers::WriteScalar(output + field->offset(), scalar);
+                      return true;
+                    })) {
         return false;
       }
     }
@@ -264,7 +265,7 @@ class FlatbufferWriter final {
       const auto value = source.value();
       const auto* text = std::get_if<std::string>(&value);
 
-      if (!text) {
+      if VUNLIKELY (!text) {
         return false;
       }
 
@@ -277,7 +278,7 @@ class FlatbufferWriter final {
       return table(object_type(type), scope, source, path, output);
     }
 
-    if (type.base_type() != reflection::Vector) {
+    if VUNLIKELY (type.base_type() != reflection::Vector) {
       return false;
     }
 
@@ -286,7 +287,7 @@ class FlatbufferWriter final {
     Bytes bytes;
 
     if (binary) {
-      if (!source.read_bytes(bytes)) {
+      if VUNLIKELY (!source.read_bytes(bytes)) {
         return false;
       }
 
@@ -305,7 +306,7 @@ class FlatbufferWriter final {
       size = indices.size();
     }
 
-    if ((!source.is_array() && !generated && !binary) || (!indices.empty() && indices.back() >= size)) {
+    if VUNLIKELY ((!source.is_array() && !generated && !binary) || (!indices.empty() && indices.back() >= size)) {
       return false;
     }
 
@@ -321,7 +322,7 @@ class FlatbufferWriter final {
           const auto scope = generated ? fields : fields.child(element, i - 1);
           auto value = fields.field(target) ? scope.value(target) : element.value(true);
 
-          if (!enum_value(type, value) || !field_numeric(value, scalar)) {
+          if VUNLIKELY (!enum_value(type, value) || !field_numeric(value, scalar)) {
             return false;
           }
 
@@ -361,14 +362,14 @@ class FlatbufferWriter final {
       flatbuffers::uoffset_t child = 0;
 
       if (type.element() == reflection::Obj) {
-        if (!table(object_type(type), scope, item, target, child)) {
+        if VUNLIKELY (!table(object_type(type), scope, item, target, child)) {
           return false;
         }
       } else if (type.element() == reflection::String) {
         const auto value = item.value();
         const auto* text = std::get_if<std::string>(&value);
 
-        if (!text) {
+        if VUNLIKELY (!text) {
           return false;
         }
 
@@ -392,13 +393,13 @@ class FlatbufferWriter final {
 
 bool write_flatbuffer_mapping(const reflection::Schema& schema, const FieldReader& fields,
                               flatbuffers::FlatBufferBuilder& builder) {
-  if (!schema.root_table()) {
+  if VUNLIKELY (!schema.root_table()) {
     return false;
   }
 
   flatbuffers::uoffset_t root = 0;
 
-  if (!FlatbufferWriter(schema, builder).table(*schema.root_table(), fields, fields.view(""), {}, root)) {
+  if VUNLIKELY (!FlatbufferWriter(schema, builder).table(*schema.root_table(), fields, fields.view(""), {}, root)) {
     return false;
   }
 

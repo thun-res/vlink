@@ -331,7 +331,7 @@ CommandMessage VlinkConvert::encode_frontend_message(const CommandRoute& route, 
   if (route.via_plugin) {
     result.success = plugin_ && plugin_->convert_publish(route.web_channel, raw,
                                                          ConvertPluginInterface::Target::kFoxglove, result.payload);
-  } else if (!route.mapping) {
+  } else if VUNLIKELY (!route.mapping) {
     return result;
   } else if (route.payload_encoding == "json") {
     result.payload = Bytes::shallow_copy(raw.data(), raw.size());
@@ -339,7 +339,7 @@ CommandMessage VlinkConvert::encode_frontend_message(const CommandRoute& route, 
   } else if (route.payload_encoding == "text") {
     const auto json = Json::parse(raw.data(), raw.data() + raw.size(), nullptr, false);
 
-    if (json.is_discarded()) {
+    if VUNLIKELY (json.is_discarded()) {
       return result;
     }
 

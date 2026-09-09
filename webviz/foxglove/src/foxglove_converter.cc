@@ -108,7 +108,7 @@ bool FoxgloveConverter::describe(SchemaType type, const std::string& ser, Foxglo
       plugin_->can_convert(ser, ConvertPluginInterface::Target::kFoxglove)) {
     ConvertPluginInterface::SchemaInfo schema;
 
-    if (!plugin_->get_schema(ser, ConvertPluginInterface::Target::kFoxglove, schema)) {
+    if VUNLIKELY (!plugin_->get_schema(ser, ConvertPluginInterface::Target::kFoxglove, schema)) {
       return false;
     }
 
@@ -148,7 +148,7 @@ FoxgloveRoute FoxgloveConverter::resolve(std::string_view url, SchemaType type, 
   bool ambiguous = false;
   auto mappings = mappings_.select(url, ser, &ambiguous);
 
-  if (ambiguous || !mappings_.valid()) {
+  if VUNLIKELY (ambiguous || !mappings_.valid()) {
     route.valid = false;
     return route;
   }
@@ -172,7 +172,7 @@ FoxgloveRoute FoxgloveConverter::resolve(std::string_view url, SchemaType type, 
 }
 
 std::vector<FoxgloveMessage> FoxgloveConverter::convert(const FoxgloveRoute& route, const Bytes& raw) {
-  if (!route.valid) {
+  if VUNLIKELY (!route.valid) {
     return {};
   }
 
@@ -221,7 +221,7 @@ std::vector<FoxgloveMessage> FoxgloveConverter::convert(const FoxgloveRoute& rou
                            (encoding == "zerocopy" && route.type == SchemaType::kZeroCopy) ||
                            (encoding == "json" && route.ser == "json");
 
-      if (matches && decode()) {
+      if VLIKELY (matches && decode()) {
         const FieldReader fields(source.view(), mapping);
         result.timestamp_ns = fields.timestamp();
         written = write_foxglove_mapping(result.schema_name, fields, builder);
@@ -246,7 +246,7 @@ std::vector<FoxgloveMessage> FoxgloveConverter::convert(const FoxgloveRoute& rou
                          plugin_->get_schema(route.ser, ConvertPluginInterface::Target::kFoxglove, schema);
       }
 
-      if (result.success) {
+      if VLIKELY (result.success) {
         result.timestamp_ns = plugin_->get_timestamp(route.ser, raw, ConvertPluginInterface::Target::kFoxglove);
         result.schema_name = std::move(schema.type_name);
         result.encoding = wire_encoding(schema.encoding);
@@ -303,7 +303,7 @@ bool FoxgloveConverter::resolve_schema_by_name(const std::string& name, const st
 
   const auto* schema = registry_.find(name, type);
 
-  if (!schema) {
+  if VUNLIKELY (!schema) {
     return false;
   }
 

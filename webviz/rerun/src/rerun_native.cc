@@ -43,7 +43,7 @@ namespace rr = ::rerun;
 namespace re = ::rerun::encodings;
 
 static bool product(size_t left, size_t right, size_t& result) {
-  if (right && left > SIZE_MAX / right) {
+  if VUNLIKELY (right && left > SIZE_MAX / right) {
     return false;
   }
 
@@ -69,19 +69,19 @@ static bool tensor(rr::RecordingStream& rec, const std::string& path, const Byte
   using Tensor = zerocopy::Tensor;
   const size_t widths[] = {0, 1, 1, 1, 2, 2, 4, 4, 8, 8, 2, 2, 4, 8};
 
-  if (type >= std::size(widths) || !widths[type] || shape.empty()) {
+  if VUNLIKELY (type >= std::size(widths) || !widths[type] || shape.empty()) {
     return false;
   }
 
   size_t expected = widths[type];
 
   for (const auto dimension : shape) {
-    if (!dimension || dimension > SIZE_MAX || !product(expected, static_cast<size_t>(dimension), expected)) {
+    if VUNLIKELY (!dimension || dimension > SIZE_MAX || !product(expected, static_cast<size_t>(dimension), expected)) {
       return false;
     }
   }
 
-  if (expected != data.size()) {
+  if VUNLIKELY (expected != data.size()) {
     return false;
   }
 
@@ -169,7 +169,7 @@ static bool camera(rr::RecordingStream& rec, const std::string& path, const Byte
   using Camera = zerocopy::CameraFrame;
   Camera frame;
 
-  if (!(frame << raw) || frame.size() == 0) {
+  if VUNLIKELY (!(frame << raw) || frame.size() == 0) {
     return false;
   }
 
@@ -183,7 +183,7 @@ static bool camera(rr::RecordingStream& rec, const std::string& path, const Byte
   auto blob = rr::Collection<uint8_t>::borrow(data.data(), data.size());
 
   if (format == Camera::kFormatH264 || format == Camera::kFormatH265 || format == Camera::kFormatAv1) {
-    if (frame.stream() == Camera::kStreamB) {
+    if VUNLIKELY (frame.stream() == Camera::kStreamB) {
       return false;
     }
 
@@ -215,7 +215,7 @@ static bool camera(rr::RecordingStream& rec, const std::string& path, const Byte
   const auto height = frame.height();
   size_t pixels;
 
-  if (!width || !height || !product(width, height, pixels)) {
+  if VUNLIKELY (!width || !height || !product(width, height, pixels)) {
     return false;
   }
 
@@ -271,7 +271,7 @@ static bool camera(rr::RecordingStream& rec, const std::string& path, const Byte
   size_t expected;
 
   if (format == Camera::kFormatRgb888Planar) {
-    if (!product(pixels, 3, expected) || expected != data.size()) {
+    if VUNLIKELY (!product(pixels, 3, expected) || expected != data.size()) {
       return false;
     }
 
@@ -288,7 +288,7 @@ static bool camera(rr::RecordingStream& rec, const std::string& path, const Byte
   }
 
   if (format == Camera::kFormatNv21) {
-    if ((width % 2) || (height % 2) || !product(pixels, 3, expected) || expected / 2 != data.size()) {
+    if VUNLIKELY ((width % 2) || (height % 2) || !product(pixels, 3, expected) || expected / 2 != data.size()) {
       return false;
     }
 
@@ -307,7 +307,7 @@ static bool camera(rr::RecordingStream& rec, const std::string& path, const Byte
   }
 
   if (format == Camera::kFormatYvyu || format == Camera::kFormatUyvy || format == Camera::kFormatVyuy) {
-    if ((width % 2) || !product(pixels, 2, expected) || expected != data.size()) {
+    if VUNLIKELY ((width % 2) || !product(pixels, 2, expected) || expected != data.size()) {
       return false;
     }
 
@@ -337,7 +337,7 @@ static bool camera(rr::RecordingStream& rec, const std::string& path, const Byte
   }
 
   if (format == Camera::kFormatYuv444) {
-    if (!product(pixels, 3, expected) || expected != data.size()) {
+    if VUNLIKELY (!product(pixels, 3, expected) || expected != data.size()) {
       return false;
     }
 
@@ -379,13 +379,13 @@ static bool camera(rr::RecordingStream& rec, const std::string& path, const Byte
 
   const bool subsampled = format == Camera::kFormatYuv420 || format == Camera::kFormatNv12;
 
-  if ((width % 2) || (subsampled && (height % 2))) {
+  if VUNLIKELY ((width % 2) || (subsampled && (height % 2))) {
     return false;
   }
 
   const size_t multiplier = subsampled ? 3 : 2;
 
-  if (!product(pixels, multiplier, expected) || expected / (subsampled ? 2 : 1) != data.size()) {
+  if VUNLIKELY (!product(pixels, multiplier, expected) || expected / (subsampled ? 2 : 1) != data.size()) {
     return false;
   }
 
@@ -408,7 +408,7 @@ static bool points(rr::RecordingStream& rec, const std::string& path, const zero
   const auto* y = find("y");
   const auto* z = find("z");
 
-  if (!x || !y || !z) {
+  if VUNLIKELY (!x || !y || !z) {
     return false;
   }
 
@@ -429,7 +429,7 @@ static bool points(rr::RecordingStream& rec, const std::string& path, const zero
     for (size_t i = 0; i < count; ++i) {
       double value;
 
-      if (!parser.numeric("data", i, *intensity, value) || !std::isfinite(value)) {
+      if VUNLIKELY (!parser.numeric("data", i, *intensity, value) || !std::isfinite(value)) {
         return false;
       }
 
@@ -471,7 +471,7 @@ static bool points(rr::RecordingStream& rec, const std::string& path, const zero
     const auto value = [&](const zerocopy::MessageParser::Field* field, double fallback = 0) {
       double number = fallback;
 
-      if (field && (!parser.numeric("data", i, *field, number) || !std::isfinite(number))) {
+      if VUNLIKELY (field && (!parser.numeric("data", i, *field, number) || !std::isfinite(number))) {
         valid = false;
       }
 
@@ -483,7 +483,7 @@ static bool points(rr::RecordingStream& rec, const std::string& path, const zero
     const double pz = value(z);
     constexpr double kLimit = std::numeric_limits<float>::max();
 
-    if (!valid || std::abs(px) > kLimit || std::abs(py) > kLimit || std::abs(pz) > kLimit) {
+    if VUNLIKELY (!valid || std::abs(px) > kLimit || std::abs(py) > kLimit || std::abs(pz) > kLimit) {
       return false;
     }
 
@@ -513,7 +513,7 @@ static bool points(rr::RecordingStream& rec, const std::string& path, const zero
     if (radius) {
       const auto number = value(radius);
 
-      if (std::abs(number) > kLimit) {
+      if VUNLIKELY (std::abs(number) > kLimit) {
         return false;
       }
 
@@ -527,7 +527,7 @@ static bool points(rr::RecordingStream& rec, const std::string& path, const zero
     if (label) {
       zerocopy::MessageParser::Value value;
 
-      if (!parser.value("data", i, *label, value)) {
+      if VUNLIKELY (!parser.value("data", i, *label, value)) {
         return false;
       }
 
@@ -536,7 +536,7 @@ static bool points(rr::RecordingStream& rec, const std::string& path, const zero
       } else if (const auto* integer = std::get_if<uint64_t>(&value)) {
         labels.emplace_back(std::to_string(*integer));
       } else if (const auto* number = std::get_if<double>(&value)) {
-        if (!std::isfinite(*number) || *number < -0x1p63 || *number >= 0x1p63) {
+        if VUNLIKELY (!std::isfinite(*number) || *number < -0x1p63 || *number >= 0x1p63) {
           return false;
         }
 
@@ -546,7 +546,7 @@ static bool points(rr::RecordingStream& rec, const std::string& path, const zero
       }
     }
 
-    if (!valid) {
+    if VUNLIKELY (!valid) {
       return false;
     }
   }
@@ -572,7 +572,7 @@ bool write_rerun_native(rr::RecordingStream& rec, const std::string& path, const
 
   Parser parser;
 
-  if (!parser.parse(ser, raw)) {
+  if VUNLIKELY (!parser.parse(ser, raw)) {
     return false;
   }
 
@@ -606,15 +606,15 @@ bool write_rerun_native(rr::RecordingStream& rec, const std::string& path, const
     for (size_t i = source.size(); i-- > 0;) {
       shape[i] = field_unsigned(source.at(i).value());
 
-      if (field_unsigned(strides.at(i).value()) != elements || shape[i] == 0U || shape[i] > SIZE_MAX ||
-          !product(elements, static_cast<size_t>(shape[i]), elements)) {
+      if VUNLIKELY (field_unsigned(strides.at(i).value()) != elements || shape[i] == 0U || shape[i] > SIZE_MAX ||
+                    !product(elements, static_cast<size_t>(shape[i]), elements)) {
         return false;
       }
 
       names[i] = i < layout.size() ? layout.substr(i, 1) : "dim" + std::to_string(i);
     }
 
-    if (elements != f.integer("num_elements")) {
+    if VUNLIKELY (elements != f.integer("num_elements")) {
       return false;
     }
 
@@ -647,7 +647,8 @@ bool write_rerun_native(rr::RecordingStream& rec, const std::string& path, const
     const auto channels = f.integer("num_channels");
     const auto samples = f.integer("num_samples");
 
-    if (channels == 0 || samples > SIZE_MAX / channels || parser.collection_size("data") != channels * samples) {
+    if VUNLIKELY (channels == 0 || samples > SIZE_MAX / channels ||
+                  parser.collection_size("data") != channels * samples) {
       return false;
     }
 
@@ -669,14 +670,14 @@ bool write_rerun_native(rr::RecordingStream& rec, const std::string& path, const
     size_t count;
     size_t expected;
 
-    if (!width || !height || width > UINT32_MAX || height > UINT32_MAX || !product(width, height, count) ||
-        !product(count, f.integer("cell_size"), expected)) {
+    if VUNLIKELY (!width || !height || width > UINT32_MAX || height > UINT32_MAX || !product(width, height, count) ||
+                  !product(count, f.integer("cell_size"), expected)) {
       return false;
     }
 
     auto data = f.bytes("data");
 
-    if (data.size() != expected) {
+    if VUNLIKELY (data.size() != expected) {
       return false;
     }
 
@@ -695,7 +696,7 @@ bool write_rerun_native(rr::RecordingStream& rec, const std::string& path, const
       for (size_t i = 0; i < count; ++i) {
         double value;
 
-        if (!parser.numeric("data", i, "value", value) || !std::isfinite(value)) {
+        if VUNLIKELY (!parser.numeric("data", i, "value", value) || !std::isfinite(value)) {
           return false;
         }
 

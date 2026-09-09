@@ -50,7 +50,7 @@ namespace fg = ::foxglove;
 static fg::Time time_value(uint64_t nanoseconds) {
   const auto seconds = nanoseconds / 1000000000;
 
-  if (seconds > std::numeric_limits<uint32_t>::max()) {
+  if VUNLIKELY (seconds > std::numeric_limits<uint32_t>::max()) {
     return {std::numeric_limits<uint32_t>::max(), 999999999};
   }
 
@@ -145,7 +145,7 @@ bool validate_foxglove_mapping(const MessageMapping& mapping) {
 bool write_foxglove_mapping(std::string_view schema, const FieldReader& fields, Builder& builder) {
   const auto bfbs = foxglove_schema(schema);
 
-  if (bfbs.empty()) {
+  if VUNLIKELY (bfbs.empty()) {
     return false;
   }
 
@@ -200,7 +200,7 @@ static bool write_camera(const Bytes& raw, Builder& b, std::string& schema, int6
 
   switch (format) {
     case Camera::kFormatNv12:
-      if ((camera.width() & 1U) != 0 || (camera.height() & 1U) != 0) {
+      if VUNLIKELY ((camera.width() & 1U) != 0 || (camera.height() & 1U) != 0) {
         return false;
       }
 
@@ -208,7 +208,7 @@ static bool write_camera(const Bytes& raw, Builder& b, std::string& schema, int6
       break;
     case Camera::kFormatYuyv:
     case Camera::kFormatUyvy:
-      if ((camera.width() & 1U) != 0) {
+      if VUNLIKELY ((camera.width() & 1U) != 0) {
         return false;
       }
 
@@ -249,7 +249,7 @@ static bool write_camera(const Bytes& raw, Builder& b, std::string& schema, int6
 
   const uint64_t step = static_cast<uint64_t>(camera.width()) * pixel_size;
 
-  if (step > std::numeric_limits<uint32_t>::max()) {
+  if VUNLIKELY (step > std::numeric_limits<uint32_t>::max()) {
     return false;
   }
 
@@ -354,15 +354,15 @@ static bool write_points(const Bytes& raw, Builder& b, int64_t& timestamp) {
     }
 
     if (extent > 0 && i < 3) {
-      if (key.name != std::string(1, "xyz"[i]) || key.size != 2 || key.type == zerocopy::PointCloud::kInt64Type ||
-          key.type == zerocopy::PointCloud::kUint64Type) {
+      if VUNLIKELY (key.name != std::string(1, "xyz"[i]) || key.size != 2 ||
+                    key.type == zerocopy::PointCloud::kInt64Type || key.type == zerocopy::PointCloud::kUint64Type) {
         return false;
       }
 
       type = fg::NumericType::FLOAT32;
     }
 
-    if (type == fg::NumericType::UNKNOWN) {
+    if VUNLIKELY (type == fg::NumericType::UNKNOWN) {
       return false;
     }
 
