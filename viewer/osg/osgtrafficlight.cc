@@ -36,6 +36,7 @@
 #include <osg/Geometry>
 #include <osg/LineWidth>
 #include <osg/Point>
+#include <osgText/Text>
 
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop
@@ -196,6 +197,9 @@ void update(osg::Geode* geode, const std::vector<TrafficLightData>& lights, floa
   static constexpr double kSlotGreen = 0.3;
   static const osg::Vec4d kDarkSlot(0.3, 0.3, 0.3, 0.5);
 
+  static constexpr size_t kTextStart = 4;
+  size_t text_count = 0;
+
   for (const auto& light : lights) {
     uint32_t c = get_state_color(light.color_state);
     double alpha = static_cast<double>(light.confidence);
@@ -252,6 +256,34 @@ void update(osg::Geode* geode, const std::vector<TrafficLightData>& lights, floa
 
     glow_verts->push_back(active_pos);
     glow_colors->push_back(glow_color);
+
+    if (light.countdown >= 0) {
+      osgText::Text* text;
+
+      if (kTextStart + text_count < geode->getNumDrawables()) {
+        text = static_cast<osgText::Text*>(geode->getDrawable(kTextStart + text_count));
+      } else {
+        text = new osgText::Text;
+        text->setCharacterSize(0.4f);
+        text->setAxisAlignment(osgText::Text::SCREEN);
+        text->setAlignment(osgText::Text::CENTER_BOTTOM);
+        text->setBackdropType(osgText::Text::OUTLINE);
+        text->setBackdropColor(osg::Vec4(0, 0, 0, 0.7f));
+        text->getOrCreateStateSet()->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
+
+        geode->addDrawable(text);
+      }
+
+      text->setPosition(osg::Vec3d(px, py, pz + kSlotRed + 0.3));
+      text->setText(std::to_string(light.countdown));
+      text->setColor(osg::Vec4(indicator_color));
+
+      ++text_count;
+    }
+  }
+
+  while (geode->getNumDrawables() > kTextStart + text_count) {
+    geode->removeDrawable(geode->getDrawable(geode->getNumDrawables() - 1));
   }
 
   housing_verts->dirty();
