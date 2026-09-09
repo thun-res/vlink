@@ -1076,9 +1076,11 @@ bool VDBWriter::open_split(const std::string& path) {
   open(split_path.string());
 #endif
 
+#ifdef VLINK_ENABLE_SQLITE
   if VLIKELY (impl_->db) {
     return true;
   }
+#endif
 
   impl_->split_file_list.resize(split_file_count);
   std::error_code remove_ec;
@@ -2178,9 +2180,11 @@ bool VDBWriter::write_filex(bool complete) {
     nlohmann::ordered_json files_json;
     auto split_file_count = impl_->split_file_list.size();
 
+#ifdef VLINK_ENABLE_SQLITE
     if (!complete && impl_->db && split_file_count > 0) {
       --split_file_count;
     }
+#endif
 
     for (size_t i = 0; i < split_file_count; ++i) {
       files_json.push_back(impl_->split_file_list[i]);
