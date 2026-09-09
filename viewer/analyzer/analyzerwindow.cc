@@ -2881,7 +2881,9 @@ void AnalyzerWindow::create_plot() {
       if (y_min_value_ == QCPRange::maxRange || y_max_value_ == -QCPRange::maxRange) {
         y_range_ = {-1.0, 61.0};
       } else {
-        double p = std::abs(y_max_value_ - y_min_value_) * 0.05;
+        double p = y_max_value_ == y_min_value_ ? std::max(std::abs(y_min_value_) * 0.05, 1.0)
+                                                : std::abs(y_max_value_ - y_min_value_) * 0.05;
+
         y_range_ = {y_min_value_ - p, y_max_value_ + p};
       }
 
@@ -3037,7 +3039,9 @@ void AnalyzerWindow::create_plot() {
       if (x_min_value_ == QCPRange::maxRange || x_max_value_ == -QCPRange::maxRange) {
         x_range_ = {-1.0, 61.0};
       } else {
-        double p = std::abs(x_max_value_ - x_min_value_) * 0.05;
+        double p = x_max_value_ == x_min_value_ ? std::max(std::abs(x_min_value_) * 0.05, 1.0)
+                                                : std::abs(x_max_value_ - x_min_value_) * 0.05;
+
         x_range_ = {x_min_value_ - p, x_max_value_ + p};
       }
 
@@ -3046,7 +3050,9 @@ void AnalyzerWindow::create_plot() {
       if (y_min_value_ == QCPRange::maxRange || y_max_value_ == -QCPRange::maxRange) {
         y_range_ = {-1.0, 61.0};
       } else {
-        double p = std::abs(y_max_value_ - y_min_value_) * 0.05;
+        double p = y_max_value_ == y_min_value_ ? std::max(std::abs(y_min_value_) * 0.05, 1.0)
+                                                : std::abs(y_max_value_ - y_min_value_) * 0.05;
+
         y_range_ = {y_min_value_ - p, y_max_value_ + p};
       }
 
