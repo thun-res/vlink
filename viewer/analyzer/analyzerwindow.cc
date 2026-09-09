@@ -983,6 +983,7 @@ AnalyzerWindow::~AnalyzerWindow() {
   }
 
   player_.reset();
+  unit_map_.clear();
 
   delete ui;
 }
@@ -1252,11 +1253,32 @@ void AnalyzerWindow::on_pushButton_gen_clicked() {
     return;
   }
 
-  if (!load_proto(proto_dir_)) {
+  bool needs_proto = false;
+  bool needs_fbs = false;
+
+  if (type_ != kFrequencyType) {
+    for (const auto& meta : player_->get_info().url_metas) {
+      const auto units = unit_map_.find(meta.url);
+
+      if (units == unit_map_.end()) {
+        continue;
+      }
+
+      for (const auto& unit : units->second) {
+        const auto schema_type =
+            vlink::SchemaData::resolve_type(unit.schema_type_override.value_or(meta.schema_type), meta.ser_type);
+
+        needs_proto |= schema_type == vlink::SchemaType::kProtobuf;
+        needs_fbs |= schema_type == vlink::SchemaType::kFlatbuffers;
+      }
+    }
+  }
+
+  if (needs_proto && !load_proto(proto_dir_)) {
     return;
   }
 
-  if (!load_fbs(fbs_dir_)) {
+  if (needs_fbs && !load_fbs(fbs_dir_)) {
     return;
   }
 
