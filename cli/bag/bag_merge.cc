@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <limits>
@@ -47,7 +48,9 @@
 // NOLINTNEXTLINE(google-readability-function-size)
 int bag_merge(const std::vector<std::string>& source_paths, const std::string& target_path, const std::string& tag_name,
               bool compress, bool force) {
-  vlink::Utils::register_terminate_signal([](int) { has_quit = true; });
+  auto quit_function = [](int) { has_quit = true; };
+
+  vlink::Utils::register_terminate_signal(quit_function);
 
   try {
 #ifdef _WIN32
@@ -112,8 +115,25 @@ int bag_merge(const std::vector<std::string>& source_paths, const std::string& t
     }
 
     if VUNLIKELY (!force && std::filesystem::exists(target)) {
-      std::cerr << "The target file already exists. Use --force to overwrite it." << std::endl;
-      return -1;
+      vlink::Utils::register_terminate_signal(
+          [](int) {
+            has_quit = true;
+            std::exit(1);
+          },
+          true);
+
+      std::cout << "The target file already exists, force overwriting? (Y/N):" << std::endl;
+
+      std::string input;
+      std::cin >> input;
+
+      if (input != "y" && input != "Y" && input != "yes" && input != "Yes" && input != "YES") {
+        std::cout << "Exit." << std::endl;
+        has_quit = true;
+        return 0;
+      }
+
+      vlink::Utils::register_terminate_signal(quit_function);
     }
 
     std::vector<vlink::Frame> frames(readers.size());
