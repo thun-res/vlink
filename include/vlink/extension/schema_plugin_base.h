@@ -322,7 +322,7 @@ inline SchemaData SchemaPluginBase::search_schema(const std::string& name, Schem
     }
 
     if (matches.size() == 1) {
-      return matches.front();
+      return std::move(matches.front());
     }
 
     return {};
