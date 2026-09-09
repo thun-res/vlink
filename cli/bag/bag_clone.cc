@@ -447,6 +447,11 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
   player.reset();
   recorder.reset();
 
+  if VUNLIKELY (clone_write_failed) {
+    std::cerr << "Clone did not complete; the output may be partial." << std::endl;
+    return -1;
+  }
+
   if (!quiet_flag) {
     if (is_broken) {
       std::cout << std::endl;
@@ -458,5 +463,5 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
     }
   }
 
-  return clone_write_failed ? -1 : 0;
+  return 0;
 }

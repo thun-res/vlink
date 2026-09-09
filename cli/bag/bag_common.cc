@@ -364,6 +364,8 @@ static std::vector<std::filesystem::path> clone_bag_files(const std::filesystem:
     }
 
     std::cerr << "Cannot parse existing split manifest: " << e.what() << std::endl;
+  } catch (const std::ios_base::failure& e) {
+    throw std::filesystem::filesystem_error(e.what(), path, e.code());
   }
 
   return files;
