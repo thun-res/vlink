@@ -1252,7 +1252,7 @@ void verify_vdb_limit_mode_variants() {
     BagWriter::Config config;
     config.sync_mode = true;
     config.compress = BagWriter::kCompressNone;
-    config.cache_size = 1;
+    config.wal_mode = true;
     config.max_row_count = 0;
     config.enable_limit = false;
     config.tag_name = "limit-reject";

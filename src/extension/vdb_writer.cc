@@ -1336,7 +1336,6 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
     }
 
     if (!impl_->config.enable_limit) {
-      rollback_cache();
       return false;
     }
 
