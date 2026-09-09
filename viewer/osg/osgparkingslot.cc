@@ -326,17 +326,23 @@ void update(osg::Geode* geode, const std::vector<SlotData>& slots, float line_wi
   entry_verts->dirty();
   entry_colors->dirty();
 
+  outline_geo->dirtyBound();
+
   auto* outline_da = static_cast<osg::DrawArrays*>(outline_geo->getPrimitiveSet(0));
 
   if (outline_da) {
     outline_da->setCount(outline_verts->size());
   }
 
+  fill_geo->dirtyBound();
+
   auto* fill_da = static_cast<osg::DrawArrays*>(fill_geo->getPrimitiveSet(0));
 
   if (fill_da) {
     fill_da->setCount(fill_verts->size());
   }
+
+  entry_geo->dirtyBound();
 
   auto* entry_da = static_cast<osg::DrawArrays*>(entry_geo->getPrimitiveSet(0));
 

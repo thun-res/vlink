@@ -263,11 +263,15 @@ void update(osg::Geode* geode, const std::vector<TrafficLightData>& lights, floa
   glow_verts->dirty();
   glow_colors->dirty();
 
+  housing_geo->dirtyBound();
+
   auto* housing_da = static_cast<osg::DrawArrays*>(housing_geo->getPrimitiveSet(0));
 
   if (housing_da) {
     housing_da->setCount(housing_verts->size());
   }
+
+  bg_geo->dirtyBound();
 
   auto* bg_da = static_cast<osg::DrawArrays*>(bg_geo->getPrimitiveSet(0));
 
@@ -275,11 +279,15 @@ void update(osg::Geode* geode, const std::vector<TrafficLightData>& lights, floa
     bg_da->setCount(bg_verts->size());
   }
 
+  active_geo->dirtyBound();
+
   auto* active_da = static_cast<osg::DrawArrays*>(active_geo->getPrimitiveSet(0));
 
   if (active_da) {
     active_da->setCount(active_verts->size());
   }
+
+  glow_geo->dirtyBound();
 
   auto* glow_da = static_cast<osg::DrawArrays*>(glow_geo->getPrimitiveSet(0));
 

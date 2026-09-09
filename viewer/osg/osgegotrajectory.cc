@@ -440,17 +440,23 @@ void update(osg::Geode* geode, const std::vector<TrajectoryData>& trajectories, 
   ribbon_verts->dirty();
   ribbon_colors->dirty();
 
+  line_geo->dirtyBound();
+
   auto* line_da = static_cast<osg::DrawArrays*>(line_geo->getPrimitiveSet(0));
 
   if (line_da) {
     line_da->setCount(line_verts->size());
   }
 
+  arrow_geo->dirtyBound();
+
   auto* arrow_da = static_cast<osg::DrawArrays*>(arrow_geo->getPrimitiveSet(0));
 
   if (arrow_da) {
     arrow_da->setCount(arrow_verts->size());
   }
+
+  ribbon_geo->dirtyBound();
 
   auto* ribbon_da = static_cast<osg::DrawArrays*>(ribbon_geo->getPrimitiveSet(0));
 

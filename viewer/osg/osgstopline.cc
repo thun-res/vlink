@@ -308,17 +308,23 @@ void update(osg::Geode* geode, const std::vector<StopLineData>& lines, float lin
   zebra_verts->dirty();
   zebra_colors->dirty();
 
+  main_geo->dirtyBound();
+
   auto* main_da = static_cast<osg::DrawArrays*>(main_geo->getPrimitiveSet(0));
 
   if (main_da) {
     main_da->setCount(main_verts->size());
   }
 
+  edge_geo->dirtyBound();
+
   auto* edge_da = static_cast<osg::DrawArrays*>(edge_geo->getPrimitiveSet(0));
 
   if (edge_da) {
     edge_da->setCount(edge_verts->size());
   }
+
+  zebra_geo->dirtyBound();
 
   auto* zebra_da = static_cast<osg::DrawArrays*>(zebra_geo->getPrimitiveSet(0));
 

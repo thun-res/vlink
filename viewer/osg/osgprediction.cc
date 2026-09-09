@@ -321,11 +321,15 @@ void update(osg::Geode* geode, const std::vector<PredictionData>& predictions, f
   end_point_verts->dirty();
   end_point_colors->dirty();
 
+  line_geo->dirtyBound();
+
   auto* line_da = static_cast<osg::DrawArrays*>(line_geo->getPrimitiveSet(0));
 
   if (line_da) {
     line_da->setCount(line_verts->size());
   }
+
+  ribbon_geo->dirtyBound();
 
   auto* ribbon_da = static_cast<osg::DrawArrays*>(ribbon_geo->getPrimitiveSet(0));
 
@@ -333,11 +337,15 @@ void update(osg::Geode* geode, const std::vector<PredictionData>& predictions, f
     ribbon_da->setCount(ribbon_verts->size());
   }
 
+  point_geo->dirtyBound();
+
   auto* point_da = static_cast<osg::DrawArrays*>(point_geo->getPrimitiveSet(0));
 
   if (point_da) {
     point_da->setCount(point_verts->size());
   }
+
+  end_point_geo->dirtyBound();
 
   auto* end_point_da = static_cast<osg::DrawArrays*>(end_point_geo->getPrimitiveSet(0));
 

@@ -306,11 +306,15 @@ void update(osg::Geode* geode, const std::vector<FrustumData>& frustums, float l
   face_verts->dirty();
   face_colors->dirty();
 
+  wire_geo->dirtyBound();
+
   auto* wire_da = static_cast<osg::DrawArrays*>(wire_geo->getPrimitiveSet(0));
 
   if (wire_da) {
     wire_da->setCount(wire_verts->size());
   }
+
+  face_geo->dirtyBound();
 
   auto* face_da = static_cast<osg::DrawArrays*>(face_geo->getPrimitiveSet(0));
 

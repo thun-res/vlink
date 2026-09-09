@@ -259,17 +259,23 @@ void update(osg::Geode* geode, const std::vector<TrafficSignData>& signs, float 
   fill_verts->dirty();
   fill_colors->dirty();
 
+  pole_geo->dirtyBound();
+
   auto* pole_da = static_cast<osg::DrawArrays*>(pole_geo->getPrimitiveSet(0));
 
   if (pole_da) {
     pole_da->setCount(pole_verts->size());
   }
 
+  outline_geo->dirtyBound();
+
   auto* outline_da = static_cast<osg::DrawArrays*>(outline_geo->getPrimitiveSet(0));
 
   if (outline_da) {
     outline_da->setCount(outline_verts->size());
   }
+
+  fill_geo->dirtyBound();
 
   auto* fill_da = static_cast<osg::DrawArrays*>(fill_geo->getPrimitiveSet(0));
 

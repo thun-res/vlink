@@ -523,17 +523,23 @@ void update(osg::Geode* geode, const std::vector<MapElement>& elements, float li
   hatch_verts->dirty();
   hatch_colors->dirty();
 
+  line_geo->dirtyBound();
+
   auto* line_da = static_cast<osg::DrawArrays*>(line_geo->getPrimitiveSet(0));
 
   if (line_da) {
     line_da->setCount(line_verts->size());
   }
 
+  fill_geo->dirtyBound();
+
   auto* fill_da = static_cast<osg::DrawArrays*>(fill_geo->getPrimitiveSet(0));
 
   if (fill_da) {
     fill_da->setCount(fill_verts->size());
   }
+
+  hatch_geo->dirtyBound();
 
   auto* hatch_da = static_cast<osg::DrawArrays*>(hatch_geo->getPrimitiveSet(0));
 
