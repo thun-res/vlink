@@ -47,16 +47,19 @@ inline bool read_config_integer(const nlohmann::json& value, int& output) {
   if (!value.is_number_integer()) {
     return false;
   }
+
   if (value.is_number_unsigned()) {
     if (value.get<uint64_t>() > static_cast<uint64_t>(std::numeric_limits<int>::max())) {
       return false;
     }
   } else {
     const auto number = value.get<int64_t>();
+
     if (number < std::numeric_limits<int>::min() || number > std::numeric_limits<int>::max()) {
       return false;
     }
   }
+
   output = value.get<int>();
   return true;
 }

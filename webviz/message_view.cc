@@ -55,12 +55,14 @@ bool parse_field_path(std::string_view text, FieldPath& path, bool allow_wildcar
       if (close == std::string_view::npos) {
         return false;
       }
+
       if (allow_wildcard && close > 2 && text[1] == '0') {
         return false;
       }
 
       if (close != 1 || !allow_wildcard) {
         const auto result = std::from_chars(text.data() + 1, text.data() + close, step.index);
+
         if (result.ec != std::errc() || result.ptr != text.data() + close) {
           return false;
         }
@@ -76,6 +78,7 @@ bool parse_field_path(std::string_view text, FieldPath& path, bool allow_wildcar
       if (text.front() == '[') {
         continue;
       }
+
       if (text.front() != '.' || text.size() == 1 || (allow_wildcard && text[1] == '[')) {
         return false;
       }
@@ -175,6 +178,7 @@ std::string MessageView::text() const {
     const auto* message = proto_object();
     return message ? message->ShortDebugString() : std::string{};
   }
+
   return kind_ == kJson ? json_->dump() : std::string{};
 }
 
@@ -187,24 +191,32 @@ bool MessageView::valid() const {
     if (zero_path_.empty()) {
       return zero_->valid();
     }
+
     zerocopy::MessageParser::Value value;
+
     if (zero_->value(zero_path_, value) || zero_->collection_size(zero_path_) > 0 ||
         !zero_->element_fields(zero_path_).empty()) {
       return true;
     }
+
     const auto bracket = zero_path_.find('[');
     const auto end = zero_path_.find(']');
+
     if (bracket != std::string::npos && end != std::string::npos) {
       size_t index = 0;
       const auto parsed = std::from_chars(zero_path_.data() + bracket + 1, zero_path_.data() + end, index);
       const std::string_view collection(zero_path_.data(), bracket);
+
       if (parsed.ec != std::errc() || index >= zero_->collection_size(collection)) {
         return false;
       }
+
       if (end + 1 == zero_path_.size()) {
         return true;
       }
+
       const auto suffix = zero_path_.substr(end + 2);
+
       for (const auto& field : zero_->element_fields(collection)) {
         if (field.name.size() > suffix.size() && field.name.compare(0, suffix.size(), suffix) == 0 &&
             (field.name[suffix.size()] == '.' || field.name[suffix.size()] == '[')) {
@@ -212,14 +224,17 @@ bool MessageView::valid() const {
         }
       }
     }
+
     for (const auto& field : zero_->fields()) {
       if (field.name.size() > zero_path_.size() && field.name.compare(0, zero_path_.size(), zero_path_) == 0 &&
           (field.name[zero_path_.size()] == '.' || field.name[zero_path_.size()] == '[')) {
         return true;
       }
     }
+
     return false;
   }
+
   return kind_ != kEmpty && (kind_ != kFlatbuffer || data_ != nullptr);
 }
 
@@ -299,6 +314,7 @@ MessageView MessageView::member(std::string_view name) const {
       result.kind_ = kFlatbuffer;
       result.schema_ = schema_;
       result.fbs_field_ = field;
+
       const auto* type = field->type();
       result.base_ = type->base_type();
       result.element_ = type->element();
@@ -341,6 +357,7 @@ bool MessageView::is_bytes() const {
     case kEmpty:
       return false;
   }
+
   return false;
 }
 
@@ -357,6 +374,7 @@ bool MessageView::is_array() const {
     case kEmpty:
       return false;
   }
+
   return false;
 }
 
@@ -413,6 +431,7 @@ MessageView MessageView::at(size_t index) const {
       result.schema_ = schema_;
       result.object_ = object_;
       result.base_ = element_;
+
       const auto stride = element_ == reflection::Obj && object_->is_struct() ? static_cast<size_t>(object_->bytesize())
                                                                               : flatbuffers::GetTypeSize(element_);
       result.data_ = data_ + (base_ == reflection::Vector ? sizeof(flatbuffers::uoffset_t) : 0) + index * stride;
@@ -514,18 +533,23 @@ FieldValue MessageView::value(bool schema_default) const {
     if (json_->is_number_unsigned()) {
       return json_->get<uint64_t>();
     }
+
     if (json_->is_number_integer()) {
       return json_->get<int64_t>();
     }
+
     if (json_->is_number_float()) {
       return json_->get<double>();
     }
+
     if (json_->is_boolean()) {
       return json_->get<bool>();
     }
+
     if (json_->is_string()) {
       return json_->get<std::string>();
     }
+
     return {};
   }
 
@@ -574,16 +598,20 @@ FieldValue MessageView::value(bool schema_default) const {
 bool MessageView::read_bytes(Bytes& output) const {
   if (kind_ == kJson && json_->is_object() && json_->contains("base64")) {
     const auto& value = json_->at("base64");
+
     if (!value.is_string()) {
       return false;
     }
+
     const auto& text = value.get_ref<const std::string&>();
     output = Bytes::decode_from_base64(text);
     return text.empty() || !output.empty();
   }
+
   if (!is_bytes()) {
     return false;
   }
+
   output = bytes();
   return true;
 }

@@ -207,11 +207,13 @@ int main(int argc, char* argv[]) {
     std::string schema_encoding;
     std::string plugin_schema;
   };
+
   struct Stream final {
     vlink::webviz::FoxgloveRoute route;
     std::vector<Output> outputs;
     mcap::ChannelId raw_channel{0};
   };
+
   std::unordered_map<std::string, Stream> streams;
   std::unordered_map<std::string, mcap::SchemaId> schemas;
   std::unordered_map<std::string, mcap::ChannelId> channels;
@@ -221,17 +223,21 @@ int main(int argc, char* argv[]) {
     stream.outputs.resize(stream.route.outputs.size());
     return streams.insert_or_assign(url, std::move(stream)).first->second;
   };
+
   for (const auto& meta : info.url_metas) {
     if (meta.valid) {
       add_stream(meta.url, meta.schema_type, meta.ser_type);
     }
   }
+
   const auto ensure_channel = [&](const std::string& url, const std::string& encoding, const std::string& name,
                                   const std::string& schema_encoding, const std::string& schema_data) {
     mcap::SchemaId schema_id = 0;
+
     if (!name.empty()) {
       const auto key = name + "|" + schema_encoding + "|" + schema_data;
       const auto found = schemas.find(key);
+
       if (found == schemas.end()) {
         mcap::Schema schema;
         schema.name = name;
@@ -244,15 +250,19 @@ int main(int argc, char* argv[]) {
         schema_id = found->second;
       }
     }
+
     const auto key = url + "|" + encoding + "|" + std::to_string(schema_id);
     const auto found = channels.find(key);
+
     if (found != channels.end()) {
       return found->second;
     }
+
     mcap::Channel channel(url, encoding, schema_id);
     mcap_writer.addChannel(channel);
     return channels.emplace(key, channel.id).first->second;
   };
+
   std::atomic<uint64_t> msg_converted{0};
   std::atomic<uint64_t> msg_failed{0};
   std::atomic<uint64_t> msg_skipped{0};
@@ -265,74 +275,93 @@ int main(int argc, char* argv[]) {
     message.dataSize = payload.size();
     message.data = reinterpret_cast<const std::byte*>(payload.data());
     const auto status = mcap_writer.write(message);
+
     if (!status.ok()) {
       MLOG_E("Failed to write MCAP message: {}", status.message);
     }
+
     return status.ok();
   };
+
   reader->register_output_callback([&](const vlink::Frame& frame) {
     const auto found = streams.find(frame.url);
     auto& stream = found == streams.end() ? add_stream(frame.url, frame.schema_type, frame.ser_type) : found->second;
     uint64_t timestamp = 0;
+
     if (frame.timestamp >= 0) {
       timestamp = vlink::webviz::add_nanos_saturated(
           recording_start_ns, vlink::webviz::micros_to_nanos_saturated(static_cast<uint64_t>(frame.timestamp)));
     }
+
     if (!stream.route.valid) {
       ++msg_failed;
       return;
     }
+
     if (stream.route.outputs.empty()) {
       if (stream.raw_channel == 0) {
         stream.raw_channel = ensure_channel(frame.url, "raw", {}, {}, {});
       }
+
       if (write_message(stream.raw_channel, timestamp, frame.data)) {
         ++msg_skipped;
       } else {
         ++msg_failed;
       }
+
       return;
     }
+
     auto results = converter.convert(stream.route, frame.data);
     bool failed = false;
     bool written = false;
+
     for (const auto& result : results) {
       if (!result.success) {
         failed = true;
         continue;
       }
+
       if (result.encoding == "send_time") {
         continue;
       }
+
       auto& output = stream.outputs[result.output];
       const bool plugin = stream.route.outputs[result.output].plugin;
+
       if (output.channel == 0 || output.name != result.schema_name || output.encoding != result.encoding ||
           output.schema_encoding != result.schema_encoding || (plugin && output.plugin_schema != result.schema_data)) {
         const auto& advertised = stream.route.outputs[result.output].schema;
         std::string schema = result.schema_data;
         const bool original =
             advertised.schema_name == result.schema_name && advertised.schema_encoding == result.schema_encoding;
+
         if (!plugin && !original &&
             !converter.resolve_schema_by_name(result.schema_name, result.schema_encoding, schema)) {
           failed = true;
           continue;
         }
+
         output.channel = ensure_channel(frame.url, result.encoding, result.schema_name, result.schema_encoding,
                                         !plugin && original ? advertised.schema_data : schema);
         output.name = result.schema_name;
         output.encoding = result.encoding;
         output.schema_encoding = result.schema_encoding;
+
         if (plugin) {
           output.plugin_schema = std::move(schema);
         }
       }
+
       const auto sample_time = result.timestamp_ns < 0 ? timestamp : static_cast<uint64_t>(result.timestamp_ns);
+
       if (write_message(output.channel, sample_time, result.payload)) {
         written = true;
       } else {
         failed = true;
       }
     }
+
     if (failed) {
       ++msg_failed;
       MLOG_W("Failed to convert message: {} ({})", frame.url, stream.route.ser);
@@ -341,7 +370,9 @@ int main(int argc, char* argv[]) {
     } else {
       ++msg_skipped;
     }
+
     const auto total = msg_converted.load() + msg_failed.load() + msg_skipped.load();
+
     if (total % 1000 == 0 && info.message_count > 0) {
       std::cerr << "\rProgress: " << total << "/" << info.message_count << " messages" << std::flush;
     }

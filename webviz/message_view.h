@@ -60,11 +60,13 @@ template <typename T>
   return std::visit(
       [&](const auto& input) {
         using V = std::decay_t<decltype(input)>;
+
         if constexpr (!std::is_arithmetic_v<V>) {
           return false;
         } else if constexpr (std::is_integral_v<T>) {
           if constexpr (std::is_floating_point_v<V>) {
             const auto bound = std::ldexp(1.0, std::numeric_limits<T>::digits);
+
             if (!std::isfinite(input) || std::trunc(input) != input || input >= bound ||
                 input < (std::is_signed_v<T> ? -bound : 0)) {
               return false;
@@ -84,6 +86,7 @@ template <typename T>
               return false;
             }
           }
+
           result = static_cast<T>(input);
           return true;
         } else {
@@ -91,6 +94,7 @@ template <typename T>
               std::abs(static_cast<double>(input)) > std::numeric_limits<T>::max()) {
             return false;
           }
+
           result = static_cast<T>(input);
           return true;
         }
@@ -130,12 +134,16 @@ class MessageView final {
   [[nodiscard]] FieldValue fbs_value() const;
 
   Kind kind_{kEmpty};
+
   const google::protobuf::Message* proto_{nullptr};
   const google::protobuf::FieldDescriptor* proto_field_{nullptr};
   int proto_index_{-1};
+
   const nlohmann::json* json_{nullptr};
+
   const zerocopy::MessageParser* zero_{nullptr};
   std::string zero_path_;
+
   const reflection::Schema* schema_{nullptr};
   const reflection::Object* object_{nullptr};
   const reflection::Field* fbs_field_{nullptr};

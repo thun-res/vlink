@@ -23,6 +23,7 @@ endif()
 
 if(NOT TARGET protobuf::libprotobuf)
   find_package(Protobuf CONFIG QUIET)
+
   if(NOT TARGET protobuf::libprotobuf)
     find_package(Protobuf REQUIRED)
   endif()
@@ -76,12 +77,14 @@ target_link_libraries(
   vlink-webviz-common PUBLIC vlink::all vlink::proxy_api ${protobuf_libs} ${flatbuffers_libs} thirdparty::json
                              thirdparty::argparse
 )
+
 vlink_target_system_includes_from(vlink-webviz-common ${protobuf_libs})
 
 if(NOT DEFINED ENABLE_EXPRTK OR ENABLE_EXPRTK)
   if(NOT TARGET vlink::exprtk_api)
     find_package(vlink-exprtk_api QUIET)
   endif()
+
   if(TARGET vlink::exprtk_api)
     target_link_libraries(vlink-webviz-common PUBLIC vlink::exprtk_api)
   endif()

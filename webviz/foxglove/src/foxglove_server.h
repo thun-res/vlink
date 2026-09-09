@@ -294,6 +294,7 @@ class FoxgloveServer final : public MessageLoop {
     FoxgloveRoute route;
     std::vector<uint32_t> channel_ids;
   };
+
   std::unordered_map<std::string, std::shared_ptr<Stream>> streams_;
   std::unordered_map<void*, std::unordered_map<uint32_t, PublishChannel>> publish_channels_;
 
@@ -315,6 +316,7 @@ class FoxgloveServer final : public MessageLoop {
     int level{0};
     std::string message;
   };
+
   mutable std::shared_mutex status_mtx_;
   std::unordered_map<std::string, StatusInfo> global_statuses_;
 

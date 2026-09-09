@@ -902,6 +902,7 @@ class ProxyServerBridge final : public ProxyBridge {
           std::unique_lock state_lock(state.state_mtx);
           state.sub.reset();
         }
+
         url_states_.clear();
       }
 
@@ -991,6 +992,7 @@ class ProxyServerBridge final : public ProxyBridge {
         proxy_process.ip = process.ip;
         proxy_info.process_list.emplace_back(std::move(proxy_process));
       }
+
       proxy_info.status = ProxyAPI::kInvalid;
       proxy_info.freq = 0.0F;
       proxy_info.rate = 0;

@@ -61,13 +61,17 @@ get_target_property(RERUN_INCLUDE_HINTS rerun_sdk INTERFACE_INCLUDE_DIRECTORIES)
 find_path(VLINK_RERUN_INCLUDE_DIR rerun/archetypes/points3d.hpp HINTS "${RERUN_SDK_DIR}/src" "${RERUN_SDK_DIR}/include"
                                                                       ${RERUN_INCLUDE_HINTS}
 )
+
 if(NOT VLINK_RERUN_INCLUDE_DIR)
   message(FATAL_ERROR "Cannot locate Rerun SDK archetype declarations")
 endif()
+
 file(GLOB RERUN_SCHEMA_HEADERS CONFIGURE_DEPENDS "${VLINK_RERUN_INCLUDE_DIR}/rerun/archetypes/*.hpp"
      "${VLINK_RERUN_INCLUDE_DIR}/rerun/components/*.hpp" "${VLINK_RERUN_INCLUDE_DIR}/rerun/encodings/*.hpp"
 )
+
 set(RERUN_SCHEMA_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/rerun_schema.cc")
+
 add_custom_command(
   OUTPUT "${RERUN_SCHEMA_SOURCE}"
   COMMAND Python3::Interpreter "${PROJECT_SOURCE_DIR}/generate_registry.py" "${VLINK_RERUN_INCLUDE_DIR}/rerun"
@@ -75,6 +79,7 @@ add_custom_command(
   DEPENDS "${PROJECT_SOURCE_DIR}/generate_registry.py" ${RERUN_SCHEMA_HEADERS}
   VERBATIM
 )
+
 file(GLOB PROJECT_HDRS CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/src/*.h)
 file(GLOB PROJECT_SRCS CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/src/*.cc)
 
@@ -82,19 +87,23 @@ set(CONVERSION_SRCS ${PROJECT_SOURCE_DIR}/src/rerun_converter.cc ${PROJECT_SOURC
                     ${PROJECT_SOURCE_DIR}/src/rerun_native.cc
 )
 list(REMOVE_ITEM PROJECT_SRCS ${CONVERSION_SRCS})
+
 add_library(vlink-rerun-conversion STATIC ${CONVERSION_SRCS} ${RERUN_SCHEMA_SOURCE})
 target_include_directories(vlink-rerun-conversion PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(vlink-rerun-conversion PUBLIC vlink-webviz-common rerun_sdk)
+
 if(TARGET rerun_arrow_target)
   set(VLINK_RERUN_ARROW_TARGET rerun_arrow_target)
 else()
   find_package(Arrow REQUIRED)
+
   if(RERUN_ARROW_LINK_SHARED)
     set(VLINK_RERUN_ARROW_TARGET Arrow::arrow_shared)
   else()
     set(VLINK_RERUN_ARROW_TARGET Arrow::arrow_static)
   endif()
 endif()
+
 target_link_libraries(vlink-rerun-conversion PUBLIC ${VLINK_RERUN_ARROW_TARGET})
 
 add_executable(${PROJECT_NAME} ${PROJECT_HDRS} ${PROJECT_SRCS})
@@ -106,14 +115,17 @@ target_link_libraries(
   ${PROJECT_NAME} PRIVATE vlink-webviz-common ${protobuf_libs} ${flatbuffers_libs} thirdparty::json
                           thirdparty::argparse rerun_sdk
 )
+
 vlink_target_system_includes_from(${PROJECT_NAME} ${protobuf_libs})
 vlink_target_system_includes_from(${PROJECT_NAME} ${flatbuffers_libs})
 
 if(WIN32)
   target_compile_definitions(${PROJECT_NAME} PRIVATE "WIN32_LEAN_AND_MEAN" "NOMINMAX")
+
   if(EXISTS ${CMAKE_SOURCE_DIR}/packup/ico/vlink-cmd.rc)
     target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/packup/ico/vlink-cmd.rc)
   endif()
+
   if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /wd4127)
   endif()
@@ -147,6 +159,7 @@ if(EXISTS ${PROJECT_SOURCE_DIR}/etc)
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_SOURCE_DIR}/etc/
             ${CMAKE_BINARY_DIR}/output/${BUILD_CONFIG_DIR}/vlink-rerun/
   )
+
   install(
     DIRECTORY ${PROJECT_SOURCE_DIR}/etc/
     DESTINATION ${INSTALL_CONFIG_DIR}/vlink-rerun/

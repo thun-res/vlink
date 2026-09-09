@@ -75,10 +75,12 @@ FieldExpression::FieldExpression(const std::string& expression) {
     }
 
     const auto name = expression.substr(start, i - start);
+
     if (name == "e") {
       compiled += "exp(1)";
       continue;
     }
+
     const auto next = expression.find_first_not_of(" \t", i);
     static const std::vector<std::string> kKeywords = {"pi",  "epsilon", "inf",  "true", "false", "and", "or",
                                                        "not", "xor",     "nand", "nor",  "xnor",  "mod"};
@@ -101,9 +103,11 @@ FieldExpression::FieldExpression(const std::string& expression) {
       }
 
       const bool size = path.back().name == "_size" && !path.back().indexed;
+
       if (size) {
         path.pop_back();
       }
+
       paths_.push_back({std::move(path), size});
       names.push_back(name);
     }
@@ -143,6 +147,7 @@ double FieldExpression::evaluate(const FieldReader& fields) const {
   for (size_t i = 0; i < paths_.size(); ++i) {
     const auto& path = paths_[i].path;
     FieldValue value;
+
     if (paths_[i].size) {
       value = uint64_t{fields.source(path).size()};
     } else if (path.size() == 1 && path[0].name == "_index") {
@@ -177,9 +182,11 @@ static int64_t time_scale(std::string_view unit) {
   if (unit == "s") {
     return 1000000000;
   }
+
   if (unit == "ms") {
     return 1000000;
   }
+
   return unit == "us" ? 1000 : 1;
 }
 
@@ -217,6 +224,7 @@ MappingSet::MappingSet(const std::vector<std::string>& files, std::string_view t
         mapping.schema_encoding =
             entry.value("schema_encoding",
                         target_key == "schema" && mapping.converter != "passthrough" ? "flatbuffer" : mapping.encoding);
+
         for (auto* encoding : {&mapping.encoding, &mapping.schema_encoding}) {
           if (*encoding == "flatbuffers" || *encoding == "fbs" || *encoding == "bfbs") {
             *encoding = "flatbuffer";
@@ -257,12 +265,15 @@ MappingSet::MappingSet(const std::vector<std::string>& files, std::string_view t
             MappedField mapped;
             mapped.target = field.at("target").get<std::string>();
             mapped.has_default = field.contains("default_value");
+
             if (field.contains("time_unit")) {
               const auto time_unit = field.at("time_unit").get<std::string>();
+
               if (!is_valid_timestamp_unit(time_unit)) {
                 valid = false;
                 break;
               }
+
               mapped.time_scale = time_scale(time_unit);
             }
 
@@ -338,25 +349,33 @@ std::vector<const MessageMapping*> MappingSet::select(std::string_view url, cons
   if (ambiguous) {
     *ambiguous = false;
   }
+
   const auto found = mappings_.find(ser);
+
   if (found == mappings_.end()) {
     return {};
   }
+
   struct Selection final {
     const MessageMapping* mapping;
     int score;
     bool tied;
   };
+
   std::vector<Selection> selected;
+
   for (const auto& candidate : found->second) {
     const auto score = score_url_selector(url, candidate.urls);
+
     if (score < 0) {
       continue;
     }
+
     auto slot = std::find_if(selected.begin(), selected.end(), [&](const Selection& item) {
       return item.mapping->target == candidate.target && item.mapping->converter == candidate.converter &&
              item.mapping->entity_path == candidate.entity_path;
     });
+
     if (slot == selected.end()) {
       selected.push_back({&candidate, score, false});
     } else if (score > slot->score) {
@@ -365,17 +384,22 @@ std::vector<const MessageMapping*> MappingSet::select(std::string_view url, cons
       slot->tied = true;
     }
   }
+
   std::vector<const MessageMapping*> result;
+
   for (const auto& item : selected) {
     if (item.tied) {
       if (ambiguous) {
         *ambiguous = true;
       }
+
       MLOG_W("Ambiguous mapping: url={} ser={} target={}", url, ser, item.mapping->target);
       return {};
     }
+
     result.push_back(item.mapping);
   }
+
   return result;
 }
 
@@ -395,24 +419,31 @@ std::string native_ser(std::string_view converter) {
   if (converter == "camera_frame") {
     return "CameraFrame";
   }
+
   if (converter == "point_cloud") {
     return "PointCloud";
   }
+
   if (converter == "occupancy_grid") {
     return "OccupancyGrid";
   }
+
   if (converter == "object_array") {
     return "ObjectArray";
   }
+
   if (converter == "audio_frame") {
     return "AudioFrame";
   }
+
   if (converter == "tensor") {
     return "Tensor";
   }
+
   if (converter == "raw_data") {
     return "RawData";
   }
+
   return {};
 }
 
@@ -423,29 +454,37 @@ MessageView FieldReader::source(const FieldPath& path) const {
   if (path.empty() || path.front().name != "_root") {
     return source_.find(path);
   }
+
   auto result = root_;
+
   if (path.front().indexed) {
     result = result.at(path.front().index);
   }
+
   for (size_t i = 1; i < path.size(); ++i) {
     if (!path[i].name.empty()) {
       result = result.member(path[i].name);
     }
+
     if (path[i].indexed) {
       result = result.at(path[i].index);
     }
   }
+
   return result;
 }
 
 static bool target_prefix(std::string_view pattern, std::string_view target, size_t& offset) {
   offset = 0;
+
   for (size_t i = 0; i < target.size();) {
     if (pattern.substr(offset, 2) == "[]" && target[i] == '[') {
       const auto end = target.find(']', i + 1);
+
       if (end == std::string_view::npos) {
         return false;
       }
+
       i = end + 1;
       offset += 2;
     } else if (offset < pattern.size() && pattern[offset] == target[i]) {
@@ -455,18 +494,22 @@ static bool target_prefix(std::string_view pattern, std::string_view target, siz
       return false;
     }
   }
+
   return true;
 }
 
 const MappedField* FieldReader::field(std::string_view target) const {
   const MappedField* result = nullptr;
   size_t specificity = 0;
+
   if (mapping_) {
     for (const auto& field : mapping_->fields) {
       if (field.target == target) {
         return &field;
       }
+
       size_t offset = 0;
+
       if (target_prefix(field.target, target, offset) && offset == field.target.size() &&
           (!result || field.target.size() > specificity)) {
         result = &field;
@@ -474,6 +517,7 @@ const MappedField* FieldReader::field(std::string_view target) const {
       }
     }
   }
+
   return result;
 }
 
@@ -483,6 +527,7 @@ FieldValue FieldReader::value(std::string_view target) const {
   if (mapped && mapped->expression) {
     return mapped->expression->evaluate(*this);
   }
+
   return view(target).value();
 }
 
@@ -490,37 +535,46 @@ bool FieldReader::has_descendant(std::string_view target) const {
   if (!mapping_) {
     return false;
   }
+
   if (target.empty()) {
     return !mapping_->fields.empty();
   }
+
   for (const auto& field : mapping_->fields) {
     size_t offset = 0;
+
     if (target_prefix(field.target, target, offset) && offset < field.target.size() &&
         (field.target[offset] == '.' || field.target[offset] == '[')) {
       return true;
     }
   }
+
   return false;
 }
 
 std::vector<size_t> FieldReader::indices(std::string_view target) const {
   std::vector<size_t> result;
+
   if (mapping_) {
     for (const auto& field : mapping_->fields) {
       size_t offset = 0;
+
       if (!target_prefix(field.target, target, offset) || offset >= field.target.size() ||
           field.target[offset] != '[') {
         continue;
       }
+
       const auto* begin = field.target.data() + offset + 1;
       const auto* end = field.target.data() + field.target.size();
       size_t index = 0;
       const auto parsed = std::from_chars(begin, end, index);
+
       if (parsed.ec == std::errc() && parsed.ptr != end && *parsed.ptr == ']') {
         result.push_back(index);
       }
     }
   }
+
   std::sort(result.begin(), result.end());
   result.erase(std::unique(result.begin(), result.end()), result.end());
   return result;
@@ -536,9 +590,11 @@ uint64_t FieldReader::integer(std::string_view target, uint64_t fallback) const 
 
 std::string FieldReader::text(std::string_view target, std::string_view fallback) const {
   auto result = value(target);
+
   if (auto* text = std::get_if<std::string>(&result)) {
     return std::move(*text);
   }
+
   return std::holds_alternative<std::monostate>(result) ? std::string(fallback) : field_text(result);
 }
 
@@ -547,6 +603,7 @@ MessageView FieldReader::view(std::string_view target, std::string_view default_
     if (mapped->expression) {
       return {};
     }
+
     if (!mapped->source.empty()) {
       auto source = this->source(mapped->source);
 

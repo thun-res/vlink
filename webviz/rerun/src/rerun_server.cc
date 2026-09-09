@@ -62,14 +62,17 @@ RerunServer::RerunServer(const Config& config) : MessageLoop(MessageLoop::kNorma
 
 RerunServer::~RerunServer() {
   stop();
+
   {
     std::lock_guard lifecycle_lock(lifecycle_mtx_);
   }
+
   wait_for_quit();
 }
 
 bool RerunServer::start() {
   std::unique_lock lifecycle_lock(lifecycle_mtx_);
+
   if VUNLIKELY (!rerun_converter_->valid()) {
     MLOG_E("Invalid Rerun mapping configuration");
     return false;
@@ -125,11 +128,13 @@ bool RerunServer::start() {
   }
 
   MLOG_I("Rerun server started (name={}, mode={})", config_.name, mode_name);
+
   if VUNLIKELY (!async_run()) {
     lifecycle_lock.unlock();
     stop();
     return false;
   }
+
   lifecycle_lock.unlock();
   wait_for_quit();
   flush_recording();
@@ -141,14 +146,17 @@ void RerunServer::stop() {
   if VUNLIKELY (!running_.exchange(false)) {
     return;
   }
+
   std::lock_guard lifecycle_lock(lifecycle_mtx_);
 
   reset_bridge_wall_time_state(last_sys_time_ns_, bridge_time_elapsed_);
   reset_bridge_session_time_anchor(session_start_sys_time_ns_);
+
   {
     std::lock_guard lock(bridge_control_mtx_);
     bridge_control_sent_ = false;
   }
+
   probe_timer_.stop();
   probe_timer_.detach();
 
@@ -483,6 +491,7 @@ void RerunServer::on_bridge_connected(bool connected) {
 
     reset_bridge_wall_time_state(last_sys_time_ns_, bridge_time_elapsed_);
     reset_bridge_session_time_anchor(session_start_sys_time_ns_);
+
     {
       std::lock_guard lock(bridge_control_mtx_);
       bridge_control_sent_ = false;
@@ -494,12 +503,15 @@ void RerunServer::on_bridge_info(const std::vector<ProxyAPI::Info>& info_list) {
   {
     std::unique_lock lock(info_mtx_);
     std::unordered_set<std::string> current;
+
     for (const auto& info : info_list) {
       if (info.status == ProxyAPI::kInvalid || !is_publisher_info(info) || !is_url_allowed(info.url)) {
         continue;
       }
+
       current.insert(info.url);
       const auto found = streams_.find(info.url);
+
       if (found == streams_.end() || found->second->route.type != info.schema || found->second->route.ser != info.ser) {
         auto stream = std::make_shared<Stream>();
         stream->route = rerun_converter_->resolve(info.url, info.schema, info.ser);
@@ -507,6 +519,7 @@ void RerunServer::on_bridge_info(const std::vector<ProxyAPI::Info>& info_list) {
         streams_[info.url] = std::move(stream);
       }
     }
+
     for (auto iter = streams_.begin(); iter != streams_.end();) {
       if (current.find(iter->first) == current.end()) {
         iter = streams_.erase(iter);
@@ -515,6 +528,7 @@ void RerunServer::on_bridge_info(const std::vector<ProxyAPI::Info>& info_list) {
       }
     }
   }
+
   update_bridge_control();
 }
 
@@ -524,17 +538,21 @@ void RerunServer::on_bridge_data(const ProxyAPI::Data& data) {
   }
 
   std::shared_ptr<const Stream> stream;
+
   {
     std::shared_lock lock(info_mtx_);
     const auto found = streams_.find(data.url);
+
     if (found != streams_.end()) {
       stream = found->second;
     }
   }
+
   if VUNLIKELY (!stream || stream->route.type != data.schema || stream->route.ser != data.ser) {
     if (!is_url_allowed(data.url)) {
       return;
     }
+
     auto next = std::make_shared<Stream>();
     next->route = rerun_converter_->resolve(data.url, data.schema, data.ser);
     next->path = url_to_entity_path(data.url);
@@ -592,9 +610,11 @@ bool RerunServer::is_url_allowed(std::string_view url) const {
 std::string RerunServer::url_to_entity_path(const std::string& url) {
   auto path = url;
   const auto pos = path.find("://");
+
   if (pos != std::string::npos) {
     path.replace(pos, 3, "/");
   }
+
   return path;
 }
 

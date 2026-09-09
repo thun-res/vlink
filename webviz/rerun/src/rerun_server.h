@@ -139,6 +139,7 @@ class RerunServer final : public MessageLoop {
     RerunRoute route;
     std::string path;
   };
+
   std::unordered_map<std::string, std::shared_ptr<const Stream>> streams_;
 
   std::atomic_bool running_{false};

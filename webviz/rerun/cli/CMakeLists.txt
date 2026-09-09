@@ -17,6 +17,7 @@ target_link_libraries(
           thirdparty::argparse
           rerun_sdk
 )
+
 vlink_target_system_includes_from(${PROJECT_NAME} ${protobuf_libs})
 vlink_target_system_includes_from(${PROJECT_NAME} ${flatbuffers_libs})
 

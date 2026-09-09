@@ -113,6 +113,7 @@ void SchemaRegistry::add_proto(const google::protobuf::Descriptor& fallback) {
                                         plugin_->search_protobuf_descriptor(std::string(fallback.full_name())))
                                   : nullptr;
   const auto& descriptor = preferred ? *preferred : fallback;
+
   if (proto_schemas_.count(std::string(descriptor.full_name())) != 0U) {
     return;
   }
@@ -120,13 +121,16 @@ void SchemaRegistry::add_proto(const google::protobuf::Descriptor& fallback) {
   auto entry = std::make_unique<SourceSchema>();
   entry->name = std::string(descriptor.full_name());
   entry->prototype = factory_.GetPrototype(&descriptor);
+
   google::protobuf::FileDescriptorSet files;
   std::unordered_set<const google::protobuf::FileDescriptor*> seen;
   append_proto_dependencies(*descriptor.file(), files, seen);
+
   if (!files.SerializeToString(&entry->data)) {
     MLOG_E("Cannot serialize protobuf schema: {}", entry->name);
     return;
   }
+
   proto_schemas_[entry->name] = std::move(entry);
 
   for (int i = 0; i < descriptor.nested_type_count(); ++i) {
@@ -165,6 +169,7 @@ void SchemaRegistry::load_flatbuffers(const std::string& directory) {
       }
 
       parser.Serialize();
+
       auto entry = std::make_unique<SourceSchema>();
       entry->name = name;
       entry->data.assign(reinterpret_cast<const char*>(parser.builder_.GetBufferPointer()), parser.builder_.GetSize());
@@ -218,15 +223,19 @@ const SourceSchema* SchemaRegistry::find(const std::string& name, SchemaType typ
   }
 
   flatbuffers::Parser parser;
+
   if (!parser.Deserialize(schema.data.data(), schema.data.size()) || !parser.SetRootType(name.c_str())) {
     MLOG_E("BFBS plugin schema has no root table: {}", name);
     return nullptr;
   }
+
   parser.Serialize();
+
   auto entry = std::make_unique<SourceSchema>();
   entry->name = name;
   entry->data.assign(reinterpret_cast<const char*>(parser.builder_.GetBufferPointer()), parser.builder_.GetSize());
   entry->flatbuffer = reflection::GetSchema(entry->data.data());
+
   const auto* result = entry.get();
   entries.emplace(name, std::move(entry));
   return result;
@@ -276,12 +285,16 @@ bool SchemaRegistry::encode_json(const std::string& name, SchemaType type, const
 
 bool SchemaRegistry::decode_json(const std::string& name, SchemaType type, const Bytes& raw, Bytes& output) {
   const auto* schema = find(name, type);
+
   if (!schema) {
     return false;
   }
+
   std::string text;
+
   if (type == SchemaType::kProtobuf) {
     std::unique_ptr<google::protobuf::Message> message(schema->prototype->New());
+
     if (raw.size() > INT_MAX || !message->ParseFromArray(raw.data(), static_cast<int>(raw.size())) ||
         !google::protobuf::util::MessageToJsonString(*message, &text).ok()) {
       return false;
@@ -291,18 +304,24 @@ bool SchemaRegistry::decode_json(const std::string& name, SchemaType type, const
         !flatbuffers::Verify(*schema->flatbuffer, *schema->flatbuffer->root_table(), raw.data(), raw.size())) {
       return false;
     }
+
     flatbuffers::Parser parser;
     parser.opts.strict_json = true;
+
     if (!parser.Deserialize(reinterpret_cast<const uint8_t*>(schema->data.data()), schema->data.size()) ||
         flatbuffers::GenText(parser, raw.data(), &text)) {
       return false;
     }
+
     const auto json = nlohmann::json::parse(text, nullptr, false);
+
     if (json.is_discarded()) {
       return false;
     }
+
     text = json.dump();
   }
+
   output = Bytes::create(text.size());
   std::memcpy(output.data(), text.data(), text.size());
   return true;

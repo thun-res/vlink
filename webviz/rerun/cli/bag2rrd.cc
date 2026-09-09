@@ -234,22 +234,27 @@ int main(int argc, char* argv[]) {
     std::string path;
     int64_t sequence{0};
   };
+
   std::unordered_map<std::string, Stream> streams;
   const auto add_stream = [&](const std::string& url, vlink::SchemaType type, const std::string& ser) -> Stream& {
     Stream stream;
     stream.route = converter.resolve(url, type, ser);
     stream.path = url;
     const auto pos = stream.path.find("://");
+
     if (pos != std::string::npos) {
       stream.path.replace(pos, 3, "/");
     }
+
     return streams.insert_or_assign(url, std::move(stream)).first->second;
   };
+
   for (const auto& meta : info.url_metas) {
     if (meta.valid) {
       add_stream(meta.url, meta.schema_type, meta.ser_type);
     }
   }
+
   std::atomic<uint64_t> msg_processed{0};
   std::atomic<uint64_t> msg_failed{0};
 

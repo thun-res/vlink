@@ -201,6 +201,7 @@ int main(int argc, char* argv[]) {
 #endif
 
   vlink::webviz::RerunServer::Config config;
+
   {
     const auto normalized_mode = vlink::webviz::normalize_token(program.get<std::string>("--mode"));
 
@@ -217,25 +218,30 @@ int main(int argc, char* argv[]) {
       return 1;
     }
   }
+
   config.address = program.get<std::string>("--address");
   config.bind_ip = program.get<std::string>("--bind_ip");
   config.save_path = program.get<std::string>("--save_path");
   config.name = program.get<std::string>("--name");
   config.recording_id = program.get<std::string>("--recording_id");
+
   config.proto_dir = proto_dir;
   config.fbs_dir = fbs_dir;
   config.schema_plugin_path = schema_plugin_path;
   config.convert_plugin_path = convert_plugin_path;
   config.convert_plugin_config = convert_plugin_config;
   config.vlink_msgs = std::move(vlink_msgs);
+
   config.spawn_memory_limit = program.get<std::string>("--spawn_memory_limit");
   config.spawn_server_memory_limit = program.get<std::string>("--spawn_server_memory_limit");
   config.spawn_hide_welcome_screen = program.get<bool>("--spawn_hide_welcome_screen");
   config.spawn_detach_process = !program.get<bool>("--spawn_no_detach");
   config.spawn_executable_name = program.get<std::string>("--spawn_executable_name");
   config.spawn_executable_path = program.get<std::string>("--spawn_executable_path");
+
   config.serve_memory_limit = program.get<std::string>("--serve_memory_limit");
   config.playback_behavior = program.get<std::string>("--playback_behavior");
+
   config.sequence_timeline = program.get<std::string>("--sequence_timeline");
   config.timestamp_timeline = program.get<std::string>("--timestamp_timeline");
   config.use_sequence_timeline = !program.get<bool>("--disable_sequence_timeline");
@@ -309,6 +315,7 @@ int main(int argc, char* argv[]) {
 
       if VLIKELY (root.contains("filter") && root["filter"].is_object()) {
         const auto& filter = root["filter"];
+
         if VUNLIKELY (!vlink::webviz::append_json_filter_value(filter, "whitelist", config.whitelist_exact,
                                                                config.whitelist_patterns) ||
                       !vlink::webviz::append_json_filter_value(filter, "blacklist", config.blacklist_exact,
@@ -352,6 +359,7 @@ int main(int argc, char* argv[]) {
 
       if VLIKELY (!program.is_used("--vlink_msgs")) {
         config.vlink_msgs.clear();
+
         if VUNLIKELY (!vlink::webviz::append_config_paths(root, "vlink_msgs", config_dir, config.vlink_msgs)) {
           std::cerr << "Invalid config file " << config_file << ": vlink_msgs must be an array of strings" << std::endl;
           return 1;

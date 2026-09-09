@@ -206,6 +206,7 @@ bool FoxgloveRpc::call_rpc(uint64_t client_key, uint32_t rpc_id, uint32_t call_i
       if VLIKELY (error_callback) {
         error_callback(rpc_id, call_id, "Unknown RPC id");
       }
+
       return false;
     }
 
@@ -217,6 +218,7 @@ bool FoxgloveRpc::call_rpc(uint64_t client_key, uint32_t rpc_id, uint32_t call_i
     if VLIKELY (error_callback) {
       error_callback(rpc_id, call_id, "RPC client not initialized");
     }
+
     return false;
   }
 
@@ -226,6 +228,7 @@ bool FoxgloveRpc::call_rpc(uint64_t client_key, uint32_t rpc_id, uint32_t call_i
     if VLIKELY (error_callback) {
       error_callback(rpc_id, call_id, "RPC request encoding mismatch");
     }
+
     return false;
   }
 
@@ -235,6 +238,7 @@ bool FoxgloveRpc::call_rpc(uint64_t client_key, uint32_t rpc_id, uint32_t call_i
     if VLIKELY (error_callback) {
       error_callback(rpc_id, call_id, "Failed to build RPC request route");
     }
+
     return false;
   }
 
@@ -251,6 +255,7 @@ bool FoxgloveRpc::call_rpc(uint64_t client_key, uint32_t rpc_id, uint32_t call_i
     if VLIKELY (error_callback) {
       error_callback(rpc_id, call_id, "Failed to resolve RPC request route");
     }
+
     return false;
   }
 
@@ -260,6 +265,7 @@ bool FoxgloveRpc::call_rpc(uint64_t client_key, uint32_t rpc_id, uint32_t call_i
     if VLIKELY (error_callback) {
       error_callback(rpc_id, call_id, "Failed to convert RPC request");
     }
+
     return false;
   }
 
@@ -321,6 +327,7 @@ bool FoxgloveRpc::call_rpc(uint64_t client_key, uint32_t rpc_id, uint32_t call_i
           std::lock_guard lock(pending_rpc_mtx_);
 
           const auto found = pending_rpc_calls_.find(pending_key);
+
           if VUNLIKELY (found == pending_rpc_calls_.end() || found->second.instance != instance) {
             return;
           }

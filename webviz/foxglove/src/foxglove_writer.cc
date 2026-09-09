@@ -72,63 +72,83 @@ bool validate_foxglove_mapping(const MessageMapping& mapping) {
   if (!mapping.entity_path.empty() || mapping.is_static) {
     return false;
   }
+
   if (!mapping.converter.empty()) {
     return mapping.fields.empty() && (mapping.converter == "send_time" || mapping.converter == "passthrough" ||
                                       !native_ser(mapping.converter).empty());
   }
+
   const auto bfbs = foxglove_schema(mapping.target);
+
   if (bfbs.empty() || mapping.schema_encoding != "flatbuffer") {
     return false;
   }
+
   const auto* schema = reflection::GetSchema(bfbs.data());
+
   for (const auto& field : mapping.fields) {
     FieldPath path;
+
     if (!parse_field_path(field.target, path, true) || path.empty()) {
       return false;
     }
+
     const auto* object = schema->root_table();
     const reflection::Type* type = nullptr;
     auto base = reflection::Obj;
+
     for (const auto& step : path) {
       if (!step.name.empty()) {
         if (base != reflection::Obj || !object) {
           return false;
         }
+
         const auto* member = object->fields()->LookupByKey(step.name.c_str());
+
         if (!member) {
           return false;
         }
+
         type = member->type();
         base = type->base_type();
       }
+
       if (step.indexed) {
         if (!type || base != reflection::Vector) {
           return false;
         }
+
         base = type->element();
       }
+
       object = type && base == reflection::Obj ? schema->objects()->Get(type->index()) : nullptr;
     }
+
     if (field.time_scale &&
         (!object || !object->is_struct() ||
          (object->name()->string_view() != "foxglove.Time" && object->name()->string_view() != "foxglove.Duration"))) {
       return false;
     }
+
     if (field.expression && !flatbuffers::IsScalar(base) && !field.time_scale) {
       return false;
     }
+
     if (field.time_scale != 0U && FieldReader({}, &mapping).has_descendant(field.target)) {
       return false;
     }
   }
+
   return true;
 }
 
 bool write_foxglove_mapping(std::string_view schema, const FieldReader& fields, Builder& builder) {
   const auto bfbs = foxglove_schema(schema);
+
   if (bfbs.empty()) {
     return false;
   }
+
   builder.Clear();
   return write_flatbuffer_mapping(*reflection::GetSchema(bfbs.data()), fields, builder);
 }
@@ -183,6 +203,7 @@ static bool write_camera(const Bytes& raw, Builder& b, std::string& schema, int6
       if ((camera.width() & 1U) != 0 || (camera.height() & 1U) != 0) {
         return false;
       }
+
       pixel_size = 1;
       break;
     case Camera::kFormatYuyv:
@@ -190,6 +211,7 @@ static bool write_camera(const Bytes& raw, Builder& b, std::string& schema, int6
       if ((camera.width() & 1U) != 0) {
         return false;
       }
+
       encoding = format == Camera::kFormatYuyv ? "yuv422_yuy2" : "yuv422";
       pixel_size = 2;
       break;
@@ -198,9 +220,11 @@ static bool write_camera(const Bytes& raw, Builder& b, std::string& schema, int6
     case Camera::kFormatRgb888Planar:
     case Camera::kFormatUint8C3:
       pixel_size = 3;
+
       if (format == Camera::kFormatRgb888Planar) {
         encoding = "rgb8";
       }
+
       break;
     case Camera::kFormatMono8:
     case Camera::kFormatUint8C1:
@@ -224,9 +248,11 @@ static bool write_camera(const Bytes& raw, Builder& b, std::string& schema, int6
   }
 
   const uint64_t step = static_cast<uint64_t>(camera.width()) * pixel_size;
+
   if (step > std::numeric_limits<uint32_t>::max()) {
     return false;
   }
+
   const uint64_t size = step * camera.height();
   const uint64_t expected = format == Camera::kFormatNv12 ? size + size / 2 : size;
 
@@ -259,6 +285,7 @@ static bool write_camera(const Bytes& raw, Builder& b, std::string& schema, int6
 
 static fg::NumericType point_type(uint16_t type, uint16_t size) {
   using PC = zerocopy::PointCloud;
+
   switch (type) {
     case PC::kBoolType:
     case PC::kUint8Type:
@@ -317,9 +344,11 @@ static bool write_points(const Bytes& raw, Builder& b, int64_t& timestamp) {
     if (key.name == "x") {
       coordinates |= 1;
     }
+
     if (key.name == "y") {
       coordinates |= 2;
     }
+
     if (key.name == "z") {
       coordinates |= 4;
     }
@@ -383,6 +412,7 @@ static bool write_points(const Bytes& raw, Builder& b, int64_t& timestamp) {
 bool write_foxglove_native(const std::string& ser, const Bytes& raw, Builder& b, std::string& schema,
                            int64_t& timestamp) {
   b.Clear();
+
   const auto type = zerocopy::MessageParser::detect_type(ser);
 
   if (type == zerocopy::MessageParser::kCameraFrame) {
@@ -423,6 +453,7 @@ bool write_foxglove_native(const std::string& ser, const Bytes& raw, Builder& b,
 
     const auto cell_type = fields.integer("cell_type");
     auto numeric_type = fg::NumericType::FLOAT32;
+
     if (cell_type == zerocopy::OccupancyGrid::kCellInt8) {
       numeric_type = fg::NumericType::INT8;
     } else if (cell_type == zerocopy::OccupancyGrid::kCellUint8) {
@@ -430,12 +461,14 @@ bool write_foxglove_native(const std::string& ser, const Bytes& raw, Builder& b,
     } else if (cell_type == zerocopy::OccupancyGrid::kCellUint16) {
       numeric_type = fg::NumericType::UINT16;
     }
+
     const auto pose = fg::CreatePose(
         b, fg::CreateVector3(b, fields.number("origin_x"), fields.number("origin_y"), fields.number("origin_z")),
         euler_quaternion(b, 0, 0, fields.number("origin_yaw")));
     const std::vector<flatbuffers::Offset<fg::PackedElementField>> packed = {
         fg::CreatePackedElementField(b, b.CreateString("value"), 0, numeric_type)};
     const auto resolution = fields.number("resolution");
+
     b.Finish(fg::CreateGrid(b, &time, frame, pose, static_cast<uint32_t>(width),
                             fg::CreateVector2(b, resolution, resolution), static_cast<uint32_t>(width * cell_size),
                             static_cast<uint32_t>(cell_size), b.CreateVector(packed),
@@ -445,6 +478,7 @@ bool write_foxglove_native(const std::string& ser, const Bytes& raw, Builder& b,
     std::vector<flatbuffers::Offset<fg::CubePrimitive>> cubes;
     const auto count = parser.collection_size("objects");
     cubes.reserve(count);
+
     static constexpr double kColors[][4] = {
         {0.5, 0.5, 0.5, 0.8}, {0.2, 0.6, 1.0, 0.8}, {0.2, 0.9, 0.2, 0.8}, {1.0, 0.8, 0.0, 0.8}, {0.8, 0.2, 0.8, 0.8}};
 
@@ -454,10 +488,12 @@ bool write_foxglove_native(const std::string& ser, const Bytes& raw, Builder& b,
         parser.numeric("objects", i, name, value);
         return value;
       };
+
       const auto size = [&](std::string_view name) {
         const auto v = get(name);
         return v > 0 ? v : 1.0;
       };
+
       const auto pose =
           fg::CreatePose(b, fg::CreateVector3(b, get("position[0]"), get("position[1]"), get("position[2]")),
                          euler_quaternion(b, 0, 0, get("yaw")));

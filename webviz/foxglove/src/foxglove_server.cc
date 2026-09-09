@@ -112,15 +112,18 @@ FoxgloveServer::FoxgloveServer(const Config& config)
 
 FoxgloveServer::~FoxgloveServer() {
   stop();
+
   {
     std::lock_guard lifecycle_lock(lifecycle_mtx_);
   }
+
   wait_for_quit();
   rpc_.reset();
 }
 
 bool FoxgloveServer::start() {
   std::unique_lock lifecycle_lock(lifecycle_mtx_);
+
   if VUNLIKELY (!foxglove_converter_->valid()) {
     MLOG_E("Invalid Foxglove mapping configuration");
     return false;
@@ -159,10 +162,12 @@ void FoxgloveServer::stop() {
   if VUNLIKELY (!running_.exchange(false)) {
     return;
   }
+
   std::lock_guard lifecycle_lock(lifecycle_mtx_);
 
   reset_bridge_wall_time_state(last_sys_time_ns_, bridge_time_elapsed_);
   reset_bridge_session_time_anchor(session_start_sys_time_ns_);
+
   {
     std::lock_guard lock(bridge_control_mtx_);
     bridge_control_signature_.clear();
@@ -484,9 +489,11 @@ Json FoxgloveServer::build_sorted_connection_entries(std::unordered_map<std::str
 
 void FoxgloveServer::on_ws_open(ConnectionHdl hdl) {
   std::lock_guard lifecycle_lock(channel_lifecycle_mtx_);
+
   if (!running_.load()) {
     return;
   }
+
   auto conn = ws_server_->get_con_from_hdl(hdl);
   conn->set_max_send_queue_size(kMaxClientSendQueueSize);
   conn->set_max_send_buffer_size(kMaxClientSendBufferSize);
@@ -1198,6 +1205,7 @@ void FoxgloveServer::handle_rpc_call_request(ConnectionHdl hdl, const std::strin
         failure["serviceId"] = rpc_id;
         failure["callId"] = call_id;
         failure["message"] = message;
+
         send_json(hdl, failure);
       });
 }
@@ -2090,9 +2098,11 @@ void FoxgloveServer::on_bridge_connected(bool connected) {
     update_bridge_control();
   } else {
     std::unique_lock lifecycle_lock(channel_lifecycle_mtx_);
+
     if (!running_.load()) {
       return;
     }
+
     MLOG_W("Disconnected from proxy bridge");
     set_global_status("proxy-bridge-disconnected", 2, "Proxy bridge disconnected");
 
@@ -2159,6 +2169,7 @@ void FoxgloveServer::on_bridge_connected(bool connected) {
     reset_bridge_wall_time_state(last_sys_time_ns_, bridge_time_elapsed_);
     reset_bridge_session_time_anchor(session_start_sys_time_ns_);
     lifecycle_lock.unlock();
+
     {
       std::lock_guard lock(bridge_control_mtx_);
       bridge_control_signature_.clear();
@@ -2193,67 +2204,88 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
   if VUNLIKELY (!running_.load()) {
     return;
   }
+
   std::shared_ptr<Stream> stream;
   std::vector<uint32_t> channel_ids;
   bool needed = false;
+
   {
     std::shared_lock lock(channels_mtx_);
     const auto found = streams_.find(data.url);
+
     if (found == streams_.end()) {
       return;
     }
+
     stream = found->second;
     channel_ids = stream->channel_ids;
+
     for (const auto id : channel_ids) {
       const auto channel = channels_.find(id);
       needed |= channel != channels_.end() && (channel->second.is_send_time || channel->second.schema_name.empty());
     }
   }
+
   if (stream->route.ser != data.ser || stream->route.type != SchemaData::resolve_type(data.schema, data.ser)) {
     return;
   }
+
   {
     std::shared_lock lock(sub_counts_mtx_);
+
     for (const auto channel_id : channel_ids) {
       const auto found = channel_subscribers_.find(channel_id);
       needed |= found != channel_subscribers_.end() && !found->second.empty();
     }
   }
+
   if (!needed) {
     return;
   }
+
   auto results = foxglove_converter_->convert(stream->route, data.raw);
+
   for (const auto& result : results) {
     if (!result.success) {
       continue;
     }
+
     if (result.is_send_time && result.timestamp_ns >= 0) {
       send_time(static_cast<uint64_t>(result.timestamp_ns));
     }
+
     const auto channel_id = channel_ids[result.output];
     std::unique_lock lifecycle_lock(channel_lifecycle_mtx_);
+
     if (!running_.load()) {
       return;
     }
+
     Json added;
     bool changed = false;
     bool was_visible = false;
+
     {
       std::unique_lock lock(channels_mtx_);
       const auto found = channels_.find(channel_id);
+
       if (found == channels_.end()) {
         continue;
       }
+
       auto& channel = found->second;
       const bool plugin = stream->route.outputs[result.output].plugin;
+
       if (channel.schema_name != result.schema_name || channel.encoding != result.encoding ||
           channel.schema_encoding != result.schema_encoding || channel.is_send_time != result.is_send_time ||
           (plugin && channel.schema != result.schema_data)) {
         std::string schema = result.schema_data;
+
         if (!plugin &&
             !foxglove_converter_->resolve_schema_by_name(result.schema_name, result.schema_encoding, schema)) {
           continue;
         }
+
         auto next = std::move(channel);
         was_visible = !next.is_time_only && !next.schema_name.empty();
         channels_.erase(found);
@@ -2266,51 +2298,68 @@ void FoxgloveServer::on_bridge_data(const ProxyAPI::Data& data) {
         next.is_time_only = result.encoding == "send_time";
         update_channel_schema_payload(next);
         stream->channel_ids[result.output] = next.id;
+
         if (!next.is_time_only) {
           added = make_advertise_channel_json(next);
         }
+
         channels_.emplace(next.id, std::move(next));
         changed = true;
       }
     }
+
     if (changed) {
       clear_channel_runtime_state(channel_id, data.url);
+
       if (was_visible) {
         broadcast_json(Json{{"op", "unadvertise"}, {"channelIds", Json::array({channel_id})}});
       }
+
       if (!added.is_null()) {
         broadcast_json(Json{{"op", "advertise"}, {"channels", Json::array({std::move(added)})}});
       }
+
       lifecycle_lock.unlock();
       update_bridge_control();
       continue;
     }
+
     lifecycle_lock.unlock();
+
     if (result.encoding == "send_time") {
       continue;
     }
+
     std::vector<std::pair<ConnectionPtr, uint32_t>> targets;
+
     {
       std::scoped_lock lock(clients_mtx_, sub_counts_mtx_);
       const auto found = channel_subscribers_.find(channel_id);
+
       if (found == channel_subscribers_.end()) {
         continue;
       }
+
       targets.reserve(found->second.size());
+
       for (const auto& subscriber : found->second) {
         const auto client = clients_.find(subscriber.client_ptr);
+
         if (client != clients_.end() && client->second.conn) {
           targets.emplace_back(client->second.conn, subscriber.subscription_id);
         }
       }
     }
+
     if (targets.empty()) {
       continue;
     }
+
     auto fallback = estimate_bridge_wall_time_ns(last_sys_time_ns_.load(), bridge_time_elapsed_);
     fallback = resolve_bridge_data_timestamp_ns(session_start_sys_time_ns_.load(), data.timestamp, fallback);
     auto payload = build_message_data(0, resolve_message_timestamp_ns(result.timestamp_ns, fallback),
                                       result.payload.data(), result.payload.size());
+
     for (const auto& target : targets) {
       write_little_endian(payload.data() + 1, target.second);
       send_binary(target.first, payload);
@@ -2365,47 +2414,62 @@ void FoxgloveServer::clear_channel_runtime_state(uint32_t channel_id, std::strin
 
 void FoxgloveServer::update_channels(const std::vector<ProxyAPI::Info>& info_list) {
   std::unique_lock lifecycle_lock(channel_lifecycle_mtx_);
+
   if (!running_.load()) {
     return;
   }
+
   std::vector<std::pair<uint32_t, std::string>> removed;
   Json removed_ids = Json::array();
   Json added = Json::array();
+
   {
     std::unique_lock lock(channels_mtx_);
     const auto remove_stream = [&](const Stream& stream) {
       for (const auto id : stream.channel_ids) {
         const auto channel = channels_.find(id);
+
         if (channel == channels_.end()) {
           continue;
         }
+
         removed.emplace_back(id, channel->second.url);
+
         if (!channel->second.is_time_only && !channel->second.schema_name.empty()) {
           removed_ids.push_back(id);
         }
+
         channels_.erase(channel);
       }
     };
+
     std::unordered_set<std::string> active;
+
     for (const auto& info : info_list) {
       if (info.status == ProxyAPI::kInvalid || !is_publisher_info(info) || !is_url_allowed(info.url)) {
         continue;
       }
+
       active.insert(info.url);
       const auto type = SchemaData::resolve_type(info.schema, info.ser);
       const auto found = streams_.find(info.url);
+
       if (found != streams_.end()) {
         if (found->second->route.ser == info.ser && found->second->route.type == type) {
           continue;
         }
+
         remove_stream(*found->second);
         streams_.erase(found);
       }
+
       auto stream = std::make_shared<Stream>();
       stream->route = foxglove_converter_->resolve(info.url, type, info.ser);
+
       if (!stream->route.valid || stream->route.outputs.empty()) {
         continue;
       }
+
       for (const auto& output : stream->route.outputs) {
         const auto& schema = output.schema;
         ChannelInfo channel;
@@ -2420,15 +2484,19 @@ void FoxgloveServer::update_channels(const std::vector<ProxyAPI::Info>& info_lis
         channel.schema = schema.schema_data;
         channel.is_send_time = schema.is_send_time;
         channel.is_time_only = schema.encoding == "send_time";
+
         if (!channel.is_time_only && !channel.schema_name.empty()) {
           update_channel_schema_payload(channel);
           added.push_back(make_advertise_channel_json(channel));
         }
+
         stream->channel_ids.push_back(channel.id);
         channels_.emplace(channel.id, std::move(channel));
       }
+
       streams_[info.url] = std::move(stream);
     }
+
     for (auto iter = streams_.begin(); iter != streams_.end();) {
       if (active.find(iter->first) == active.end()) {
         remove_stream(*iter->second);
@@ -2438,15 +2506,19 @@ void FoxgloveServer::update_channels(const std::vector<ProxyAPI::Info>& info_lis
       }
     }
   }
+
   for (const auto& entry : removed) {
     clear_channel_runtime_state(entry.first, entry.second);
   }
+
   if (!removed_ids.empty()) {
     broadcast_json(Json{{"op", "unadvertise"}, {"channelIds", std::move(removed_ids)}});
   }
+
   if (!added.empty()) {
     broadcast_json(Json{{"op", "advertise"}, {"channels", std::move(added)}});
   }
+
   lifecycle_lock.unlock();
   update_bridge_control();
 }
@@ -2490,6 +2562,7 @@ void FoxgloveServer::install_publish_channels() {
         SchemaData::is_valid_type(route.schema_type) ? route.schema_type : SchemaType::kUnknown, route.ser);
     info.url = route.url;
     info.ser = route.ser;
+
     update_channel_schema_payload(info);
     channels_[channel_id] = std::move(info);
   }
@@ -2525,9 +2598,11 @@ ProxyAPI::Control FoxgloveServer::build_bridge_control() const {
       }
 
       const auto stream = streams_.find(url);
+
       if (stream == streams_.end() || stream->second->route.type == SchemaType::kUnknown) {
         continue;
       }
+
       if (subscribed_urls.insert(url).second) {
         ctrl.url_meta_list.push_back({url, stream->second->route.ser, stream->second->route.type, kSubscriber});
       }
@@ -2746,6 +2821,7 @@ bool FoxgloveServer::validate_publish_route_unlocked(void* raw_ptr, uint32_t cha
   }
 
   const auto schema_type = SchemaData::resolve_type(route.schema_type, route.ser);
+
   for (const auto& [id, channel] : channels_) {
     if (channel.is_control_only && channel.url == route.url &&
         (channel.ser != route.ser || channel.schema_type != schema_type)) {

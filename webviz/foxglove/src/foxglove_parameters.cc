@@ -318,6 +318,7 @@ bool FoxgloveParameters::validate_parameter_value(const Json& value, std::string
   if VUNLIKELY (type == "byte_array") {
     if (value.is_string()) {
       const auto& text = value.get_ref<const std::string&>();
+
       if (Bytes::encode_to_base64(Bytes::decode_from_base64(text)) == text) {
         return true;
       }

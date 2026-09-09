@@ -19,11 +19,13 @@ target_link_libraries(
           thirdparty::argparse
           $<BUILD_INTERFACE:foxglove_fbs_gen>
 )
+
 vlink_target_system_includes_from(${PROJECT_NAME} ${protobuf_libs})
 vlink_target_system_includes_from(${PROJECT_NAME} ${flatbuffers_libs})
 
 if(ENABLE_ZSTD)
   target_compile_definitions(${PROJECT_NAME} PRIVATE "VLINK_ENABLE_ZSTD")
+
   if(TARGET zstd::libzstd_shared)
     target_link_libraries(${PROJECT_NAME} PRIVATE zstd::libzstd_shared)
   elseif(TARGET zstd::libzstd_static)

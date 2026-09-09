@@ -53,6 +53,7 @@ class FieldExpression final {
     FieldPath path;
     bool size{false};
   };
+
   std::vector<Binding> paths_;
   mutable std::vector<double> values_;
   ExprtkSymbolTable symbols_;

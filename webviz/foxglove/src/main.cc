@@ -224,6 +224,7 @@ int main(int argc, char* argv[]) {
 
       if VLIKELY (root.contains("filter") && root["filter"].is_object()) {
         const auto& filter = root["filter"];
+
         if VUNLIKELY (!vlink::webviz::append_json_filter_value(filter, "whitelist", config.whitelist_exact,
                                                                config.whitelist_patterns) ||
                       !vlink::webviz::append_json_filter_value(filter, "blacklist", config.blacklist_exact,
@@ -320,6 +321,7 @@ int main(int argc, char* argv[]) {
 
       if VLIKELY (!program.is_used("--vlink_msgs")) {
         config.vlink_msgs.clear();
+
         if VUNLIKELY (!vlink::webviz::append_config_paths(root, "vlink_msgs", config_dir, config.vlink_msgs)) {
           std::cerr << "Invalid config file " << config_file << ": vlink_msgs must be an array of strings" << std::endl;
           return 1;
@@ -328,6 +330,7 @@ int main(int argc, char* argv[]) {
 
       if VLIKELY (!program.is_used("--foxglove_msgs")) {
         config.foxglove_msgs.clear();
+
         if VUNLIKELY (!vlink::webviz::append_config_paths(root, "foxglove_msgs", config_dir, config.foxglove_msgs)) {
           std::cerr << "Invalid config file " << config_file << ": foxglove_msgs must be an array of strings"
                     << std::endl;
@@ -337,6 +340,7 @@ int main(int argc, char* argv[]) {
 
       if VLIKELY (!program.is_used("--rpc_msgs")) {
         config.rpc_msgs.clear();
+
         if VUNLIKELY (!vlink::webviz::append_config_paths(root, "rpc_msgs", config_dir, config.rpc_msgs)) {
           std::cerr << "Invalid config file " << config_file << ": rpc_msgs must be an array of strings" << std::endl;
           return 1;
@@ -350,6 +354,7 @@ int main(int argc, char* argv[]) {
 
       if VLIKELY (root.contains("asset_dirs") && root["asset_dirs"].is_array()) {
         config.asset_dirs.clear();
+
         if VUNLIKELY (!vlink::webviz::append_config_paths(root, "asset_dirs", config_dir, config.asset_dirs)) {
           std::cerr << "Invalid config file " << config_file << ": asset_dirs must be an array of strings" << std::endl;
           return 1;

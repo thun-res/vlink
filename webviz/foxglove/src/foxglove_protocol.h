@@ -66,9 +66,11 @@ inline void write_little_endian(uint8_t* data, T value) {
 template <typename T>
 inline T read_little_endian(const uint8_t* data) {
   T value = 0;
+
   for (size_t i = 0; i < sizeof(T); ++i) {
     value |= static_cast<T>(data[i]) << (8 * i);
   }
+
   return value;
 }
 
