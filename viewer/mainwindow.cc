@@ -60,6 +60,7 @@
 #include <QResizeEvent>
 #include <QSettings>
 #include <QShowEvent>
+#include <QSignalBlocker>
 #include <QStandardPaths>
 #include <QTime>
 #include <QTimeZone>
@@ -99,6 +100,26 @@
 
 QString global_proto_dir_config = QStandardPaths::writableLocation(QStandardPaths::HomeLocation) + "/.vlink_proto_dir";
 QString global_fbs_dir_config = QStandardPaths::writableLocation(QStandardPaths::HomeLocation) + "/.vlink_fbs_dir";
+
+template <typename T>
+class SignedIntegerValidator : public QRegularExpressionValidator {
+ public:
+  using QRegularExpressionValidator::QRegularExpressionValidator;
+
+  State validate(QString& input, int& pos) const override {
+    const auto state = QRegularExpressionValidator::validate(input, pos);
+
+    if (state != Acceptable) {
+      return state;
+    }
+
+    bool ok = false;
+    const auto value = input.toLongLong(&ok, input.contains("0x", Qt::CaseInsensitive) ? 16 : 10);
+
+    return ok && value >= std::numeric_limits<T>::min() && value <= std::numeric_limits<T>::max() ? Acceptable
+                                                                                                  : Intermediate;
+  }
+};
 
 class CustomSqlQueryModel : public QSqlQueryModel {
  public:
@@ -207,8 +228,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
   }
 
   validator_normal_int_ = new QRegularExpressionValidator(QRegularExpression("^\\d+$"));
-  validator_int32_ = new QRegularExpressionValidator(QRegularExpression("^-?(0[xX][0-9a-fA-F]{1,8}|[0-9]{1,9})$"));
-  validator_int64_ = new QRegularExpressionValidator(QRegularExpression("^-?(0[xX][0-9a-fA-F]{1,16}|[0-9]{1,18})$"));
+  validator_int32_ = new SignedIntegerValidator<int32_t>(QRegularExpression("^-?(0[xX][0-9a-fA-F]{1,8}|[0-9]{1,10})$"));
+  validator_int64_ =
+      new SignedIntegerValidator<int64_t>(QRegularExpression("^-?(0[xX][0-9a-fA-F]{1,16}|[0-9]{1,19})$"));
   validator_uint32_ = new QRegularExpressionValidator(QRegularExpression("^(0[xX][0-9a-fA-F]{1,8}|[0-9]{1,10})$"));
   validator_uint64_ = new QRegularExpressionValidator(QRegularExpression("^(0[xX][0-9a-fA-F]{1,16}|[0-9]{1,20})$"));
   validator_double_ = new QRegularExpressionValidator(QRegularExpression("^-?[0-9]+([.][0-9]*)?$"));
@@ -3732,7 +3754,21 @@ bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& paren
           }
         } break;
         case google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE: {
-          get_property_list(widget, current_id, &ref->GetMessage(*msg, field));
+          bool recursive = false;
+
+          if (!ref->HasField(*msg, field)) {
+            recursive = field->message_type() == msg->GetDescriptor();
+
+            for (auto* parent = item->parent(); parent && !recursive; parent = parent->parent()) {
+              const auto iter = item_to_msg_map_.find(parent);
+
+              recursive = iter != item_to_msg_map_.end() && iter->second->GetDescriptor() == field->message_type();
+            }
+          }
+
+          if (!recursive) {
+            get_property_list(widget, current_id, &ref->GetMessage(*msg, field));
+          }
         } break;
         default:
           break;
@@ -3999,7 +4035,10 @@ bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& paren
 }
 
 bool MainWindow::set_property_list(QTreeWidget* widget, const std::string& parent_id, google::protobuf::Message* msg) {
+  const QSignalBlocker blocker(widget);
+
   auto* ref = msg->GetReflection();
+
   for (int i = 0; i < msg->GetDescriptor()->field_count(); ++i) {
     std::string current_id = parent_id + "." + std::to_string(i);
     const auto* field = msg->GetDescriptor()->field(i);
@@ -4044,6 +4083,40 @@ bool MainWindow::set_property_list(QTreeWidget* widget, const std::string& paren
                         : static_cast<int>(EditDialog::EditValueKind::kUnknown));
       item->setText(2, field->name().c_str());
 #endif
+
+      bool recursive = false;
+
+      if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE && !field->is_required()) {
+        recursive = field->message_type() == msg->GetDescriptor();
+
+        for (auto* parent = item->parent(); parent && !recursive; parent = parent->parent()) {
+          const auto iter = item_to_msg_map_.find(parent);
+
+          recursive = iter != item_to_msg_map_.end() && iter->second->GetDescriptor() == field->message_type();
+        }
+      }
+
+#if GOOGLE_PROTOBUF_VERSION >= 3012000
+      const auto* oneof = field->real_containing_oneof();
+#else
+      const auto* oneof = field->containing_oneof();
+#endif
+
+      if (oneof || recursive) {
+        if (!item->data(0, Qt::CheckStateRole).isValid()) {
+          item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+          item->setCheckState(0, ref->HasField(*msg, field) ? Qt::Checked : Qt::Unchecked);
+        }
+
+        if (item->checkState(0) != Qt::Checked) {
+          for (int j = 0; j < item->childCount(); ++j) {
+            item->child(j)->setHidden(true);
+          }
+
+          ref->ClearField(msg, field);
+          continue;
+        }
+      }
 
       switch (field->cpp_type()) {
         case google::protobuf::FieldDescriptor::CPPTYPE_INT32: {
@@ -4452,8 +4525,15 @@ bool MainWindow::get_flatbuffers_property_list(QTreeWidget* widget, const std::s
             update_scalar_item(item, *field, get_str_for_enum(enum_name, value), AnalyzeDialog::kNumberType,
                                [this, value]() { analyze_dialog_->add_number(value); });
           } else {
-            update_scalar_item(item, *field, get_str_for_number(value), AnalyzeDialog::kNumberType,
-                               [this, value]() { analyze_dialog_->add_number(value); });
+            const bool is_unsigned = element_type == reflection::ULong;
+
+            update_scalar_item(
+                item, *field,
+                is_unsigned ? get_str_for_unsigned_number(static_cast<uint64_t>(value)) : get_str_for_number(value),
+                AnalyzeDialog::kNumberType, [this, value, is_unsigned]() {
+                  analyze_dialog_->add_number(is_unsigned ? static_cast<double>(static_cast<uint64_t>(value))
+                                                          : static_cast<double>(value));
+                });
           }
           continue;
         }
@@ -4510,13 +4590,8 @@ bool MainWindow::get_flatbuffers_property_list(QTreeWidget* widget, const std::s
     if (base_type == reflection::Bool || base_type == reflection::Byte || base_type == reflection::UByte ||
         base_type == reflection::Short || base_type == reflection::UShort || base_type == reflection::Int ||
         base_type == reflection::UInt || base_type == reflection::Long || base_type == reflection::ULong) {
-      auto value = get_numeric(view, *field);
-      if (!value.has_value()) {
-        item->setText(3, "");
-        continue;
-      }
+      const auto int_value = get_integer(view, *field);
 
-      qlonglong int_value = static_cast<qlonglong>(value.value());
       if (ui->checkBox_time->isChecked() && field_name.find("time") != std::string::npos) {
         update_scalar_item(item, *field, QString::fromStdString(vlink::Helpers::format_date(int_value)),
                            AnalyzeDialog::kNumberType, [this, int_value]() { analyze_dialog_->add_number(int_value); });
@@ -4529,8 +4604,16 @@ bool MainWindow::get_flatbuffers_property_list(QTreeWidget* widget, const std::s
           update_scalar_item(item, *field, get_str_for_enum(enum_name, int_value), AnalyzeDialog::kNumberType,
                              [this, int_value]() { analyze_dialog_->add_number(int_value); });
         } else {
-          update_scalar_item(item, *field, get_str_for_number(int_value), AnalyzeDialog::kNumberType,
-                             [this, int_value]() { analyze_dialog_->add_number(int_value); });
+          const bool is_unsigned = base_type == reflection::ULong;
+
+          update_scalar_item(item, *field,
+                             is_unsigned ? get_str_for_unsigned_number(static_cast<uint64_t>(int_value))
+                                         : get_str_for_number(int_value),
+                             AnalyzeDialog::kNumberType, [this, int_value, is_unsigned]() {
+                               analyze_dialog_->add_number(is_unsigned
+                                                               ? static_cast<double>(static_cast<uint64_t>(int_value))
+                                                               : static_cast<double>(int_value));
+                             });
         }
       }
       continue;
