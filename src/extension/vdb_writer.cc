@@ -1795,9 +1795,9 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
           rollback_cache();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
           return false;      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
-      }
 
-      impl_->ser_map.emplace(schema_key);
+        impl_->ser_map.emplace(schema_key);
+      }
     }
   }
 

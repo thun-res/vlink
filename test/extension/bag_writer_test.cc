@@ -2284,6 +2284,40 @@ TEST_SUITE("extension-BagWriter") {
     verify_async_writer_path_remains_readable(".vcap");
   }
 
+  TEST_CASE("vdb persists schemas supplied after their first frame") {
+    ScopedWriterPath bag(".vdb");
+    BagWriter::Config config;
+    config.sync_mode = true;
+    SUBCASE("synchronous") {}
+    SUBCASE("asynchronous") { config.sync_mode = false; }
+
+    auto writer = BagWriter::create(bag.path.string(), config);
+    REQUIRE(writer != nullptr);
+    REQUIRE(writer->async_run());
+    REQUIRE_EQ(writer->push(write_frame("dds://coverage/late_schema", "demo.Late", SchemaType::kProtobuf,
+                                        ActionType::kPublish, Bytes::from_string("payload"), 1'000)),
+               1'000);
+    const auto schema = writer_schema_data("demo.Late", SchemaType::kProtobuf, "late schema");
+    REQUIRE(writer->push_schema(schema));
+    REQUIRE(writer->push_schema(schema));
+    REQUIRE(writer->wait_for_idle(3000));
+    CHECK_FALSE(writer->fail());
+    writer.reset();
+
+    auto reader = BagReader::create(bag.path.string());
+    REQUIRE(reader != nullptr);
+    const auto schemas = reader->detect_schema();
+    REQUIRE_EQ(schemas.size(), 1u);
+    CHECK_EQ(schemas.front().name, schema.name);
+    CHECK_EQ(schemas.front().schema_type, schema.schema_type);
+    CHECK_EQ(schemas.front().data, schema.data);
+    REQUIRE(reader->open_cursor());
+    Frame frame;
+    REQUIRE(reader->read_next(frame));
+    CHECK_EQ(frame.data.to_string(), "payload");
+    CHECK_FALSE(reader->read_next(frame));
+  }
+
   TEST_CASE("vdb limit modes reject or evict deterministically") { verify_vdb_limit_mode_variants(); }
 
   TEST_CASE("vdb compressed byte limits evict using raw payload sizes") {
