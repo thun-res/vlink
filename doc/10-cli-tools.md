@@ -318,7 +318,7 @@ vlink-bag info /tmp/test.vdb
 | `vlink-bag merge <src...> -o <dst>` | 将至少两个包按原始绝对时间合并，支持混合格式与分包输入/输出 |
 | `vlink-bag check <path>` | 校验文件完整性（0 正常，-1 异常） |
 | `vlink-bag reindex <path>` | 重建时间索引 |
-| `vlink-bag fix <path>` | 修复未完整写入的文件（如录制中途断电） |
+| `vlink-bag fix <path>` | 修复未完整写入的文件（如录制中途断电）；按实际数据重算头部与话题计数，分包 `.vdbx` 跳过重算 |
 | `vlink-bag tag <path> <name>` | 设置/修改 `.vdb`、`.vdbx`、`.vcapx` 的标签名；单个 `.vcap` 不支持 |
 
 `clone` 会拒绝覆盖源入口、源分包及其已有的 SQLite WAL/SHM 文件，包括链接别名、目标旧分包清理和新分包命名造成的重叠；`--force` 不绕过此保护。按时间命名的分包发生重叠时，改用其他输出目录或关闭 `--split_name_by_time`。
@@ -412,7 +412,7 @@ daemon 在指定 `-c` 时先读取 JSON，再按字段应用命令行中**显式
 | `trigger_plugin_config` | 空 | 原样传给 trigger 插件 `init()` 的不透明字符串，可由插件解释为 JSON、文件路径或其他格式；`init()` 返回 `false` 时 daemon 拒绝启动 |
 | `url_overrides` | `{}` | 按 URL 覆盖窗口与限额，见下 |
 
-所有 MB 容量字段必须是有限、非负且换算后不超过 `int64` 字节范围的数值；非法值会使 daemon 在启动时拒绝配置。
+所有 MB 容量字段必须是有限、非负且换算后不超过 `int64` 字节范围的数值；`default_pre_ms`、`default_post_ms`、`retention_guard_ms` 与 `sleep_time_ms` 同样必须非负。非法值会使 daemon 在启动时拒绝配置。`url_overrides` 内的 `pre_ms`、`post_ms`、`max_packet_size`、`max_size` 是例外：负值表示沿用对应的全局默认值。注意该校验只作用于配置文件；`TriggerRecorder::Config` 的 C++ 与 Python 接口对负窗口沿用静默取 0 的既有行为。
 
 `url_overrides` 为每个 URL 独立配置窗口与限额，缺省字段回退到对应的全局默认：`pre_ms` / `post_ms`（触发前/后窗口）、`max_packet_size`（单包上限 MB）、`max_size`（该 URL 缓冲上限 MB）、`only_front`（仅录触发前）、`only_back`（仅录触发后）。
 
@@ -530,7 +530,7 @@ vlink-parse dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /t
 
 离线导出在打开输出文件前检查其是否指向输入 bag、分包入口或成员，以及已有的 SQLite WAL/SHM 文件；软链接和硬链接指向这些输入时同样拒绝写入，避免截断源数据。指向其他普通输出文件的链接仍可使用。
 
-所有带值的标量参数都必须显式提供值；空 URL、空字段列表以及空白的 `--event` / `--filter` / `--url_filter` 会直接报错。URL 的首尾空白在解析后统一移除；parse/导出模式必须指定具体 URL，`*` 只用于 `slice` / `scan`。`-n` 精确限制通过 URL 与限频门控的样本数，`--hz` 是严格的最大输出频率；限频间隔只在参数解析时换算，数据热路径使用整数微秒比较。
+所有带值的标量参数都必须显式提供值；空 URL、空字段列表以及空白的 `--event` / `--filter` / `--url_filter` 会直接报错。URL 的首尾空白在解析后统一移除；parse/导出模式必须指定具体 URL，`*` 只用于 `slice` / `scan`。`-n` 精确限制通过 URL 与限频门控的样本数，`--hz` 是严格的最大输出频率：实时订阅按墙钟计时，指定 `-f` 的 bag 导出按帧时间戳计时，因此同一个 bag 的抽稀结果可复现；时间戳回退的帧按已覆盖窗口跳过。限频间隔只在参数解析时换算，数据热路径使用整数微秒比较。
 
 `slice` / `scan` 只接受已完整结束且包含消息的 bag，时间区间按毫秒解释为半开区间 `[begin, end)`；未指定结束时间时会覆盖最后一个不足整毫秒的消息。切片输出只支持 `.vdb` 或 `.vcap`，分片输入的 `.vdbx` / `.vcapx` 会映射到对应的单文件格式。URL 筛选包含 Event、Method 与 Field，实际帧再由 `--actions` 过滤（默认 `6=Subscribe`）；显式 URL 与 `-u` / `--urls`、`-i` / `--url_filter` 不可混用。未使用 `-k` 时，两种过滤同时出现取交集；使用 `-k` 时剔除任一过滤命中的 URL，与 `vlink-monitor` 的处理一致。单独使用 `-k` 不改变选集；黑名单中不存在于 bag 的 URL 会被忽略，白名单中的 URL 不存在时仍会报错。
 

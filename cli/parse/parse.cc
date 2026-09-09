@@ -133,14 +133,14 @@ static constexpr int64_t kReaderTimestampMarginUs = 10000 + 999;
 static constexpr int64_t kMaxPlaybackTimeMs = (std::numeric_limits<int64_t>::max() - kReaderTimestampMarginUs) / 1000;
 static constexpr int64_t kMaxVcapStartTimestampMs = std::numeric_limits<int64_t>::max() / 1000000;
 
-static bool check_rate_limit() {
+static bool check_rate_limit(int64_t timestamp) {
   auto& ctx = vlink::parse::ParseContext::get();
 
   if VUNLIKELY (ctx.min_output_interval_us > 0) {
-    const int64_t now = ctx.main_elapsed_timer.get();
-    const auto elapsed_us = static_cast<uint64_t>(now) - static_cast<uint64_t>(ctx.last_output_us);
+    const int64_t now = ctx.parse_for_bag ? timestamp : ctx.main_elapsed_timer.get();
 
-    if (elapsed_us < static_cast<uint64_t>(ctx.min_output_interval_us)) {
+    if (ctx.last_output_us != std::numeric_limits<int64_t>::min() &&
+        now - ctx.last_output_us < ctx.min_output_interval_us) {
       return false;
     }
 
@@ -835,7 +835,7 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
         return;
       }
 
-      if VUNLIKELY (!check_rate_limit()) {
+      if VUNLIKELY (!check_rate_limit(timestamp)) {
         return;
       }
 
@@ -1272,7 +1272,7 @@ int main(int argc, char* argv[]) {
       .nargs(1);
 
   program.add_argument("--hz")
-      .help("Maximum output rate in Hz (0 = unlimited)")
+      .help("Maximum output rate in Hz (0 = unlimited); paced by bag time with -f, otherwise by wall clock")
       .scan<'g', double>()
       .default_value(0.0)
       .nargs(1);
@@ -1396,7 +1396,7 @@ int main(int argc, char* argv[]) {
 
   program.add_argument("--filter")
       .help(
-          "Content filter expression (requires -c fields).\n"
+          "Content filter expression for -t slice (requires -c fields).\n"
           "Messages where expression evaluates to 0 are excluded.\n"
           "E.g. --filter 'speed > 60' with -c 'speed'")
       .default_value(std::string())
