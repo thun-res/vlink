@@ -17,7 +17,7 @@
 - **WebViz 重构**：统一消息解析、字段映射与实时/离线转换，支持 Foxglove 全部官方 FBS 类型及 Rerun 数据 Archetype。
 - **Monitor hostname 过滤**：新增 `--hostname`，按 URL 关联进程的 hostname 关键字筛选。
 - **eproto / efbs 终端显示**：各类订阅内容超过终端显示宽度时主动换行，并在终端尺寸变化时重新分页，暂停状态下同步重排。
-- **Native DDS 地址**：CLI、Proxy、Viewer 与 WebViz 在 native 模式下创建的 DDS 节点从 `VLINK_DDS_NATIVE_IP` 读取 IP；未设置时仍使用 `127.0.0.1`。
+- **Native DDS 地址**：CLI、Proxy、Viewer 与 WebViz 在 native 模式下创建的 DDS 节点从 `VLINK_DDS_NATIVE_IP` 读取 IP。
 
 ### 修复
 
@@ -35,7 +35,7 @@
 - **后端初始化清理**：修复 SHM 监听器满载时的异常终止，以及 SHM、SHM2、Zenoh 部分初始化失败后的空对象清理崩溃。
 - **日志格式化**：修复 `VLOG_*` 传入 `std::hex` 等标准操纵符时的编译错误。
 - **Bag 克隆与退出**：防止克隆覆盖源包及关联文件，修复 RPC 过滤、时间换算和初始化/退出异常；明确单 `.vcap` 不支持修改标签。
-- **Parse 导出与切片**：修复二进制导出缓冲生命周期和 JSON 错误处理；保护源包及关联文件，切片/扫描拒绝逆序输入，实时订阅处理重复初始化异常。
+- **Parse 导出与切片**：修复二进制导出缓冲生命周期和 JSON 错误处理；保护源包及关联文件。
 - **消息调试**：修复 eproto/efbs 刷新丢失、根路径和资源释放问题，支持显式空文本输入，并完善后端初始化失败处理。
 - **Monitor / List / Check**：修正监控采样与过滤统计、同名进程计数和 Cyclone DDS URI 诊断；隐藏 TLS 密码，处理监控重复初始化异常。
 - **Bench 正确性**：修正测量窗口、统计与图表，修复参数校验、取消响应和初始化/JSON 异常处理，保留已有输出目录权限。
