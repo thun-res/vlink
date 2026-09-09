@@ -587,12 +587,10 @@ void RecordDialog::update_status() {
     }
   }
 
-  if (!has_url) {
-    status_ = kDisable;
-  } else if (ui->lineEdit_save->text().isEmpty()) {
-    status_ = kDisable;
-  } else if (status_ == kDisable) {
-    status_ = kStopped;
+  const auto status = status_.load(std::memory_order_relaxed);
+
+  if (status == kDisable || status == kStopped) {
+    status_.store(!has_url || ui->lineEdit_save->text().isEmpty() ? kDisable : kStopped, std::memory_order_relaxed);
   }
 
   switch (status_) {
