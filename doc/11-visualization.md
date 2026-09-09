@@ -595,6 +595,8 @@ cmake --install build
 | Arrow | 官方组件的数组编码，沿用 SDK 的 Arrow target | Rerun |
 | rerun_sdk | Rerun C++ SDK | Rerun（`vlink-rerun` / `vlink-bag2rrd` 须本机可定位 `rerun_sdk`） |
 
+Rerun 接口按 `RERUN_VERSION_GE` 适配：0.37 起使用 `encodings` 和录制属性发送开关，旧版使用 `datatypes` 与原构造接口；0.36 之前的半精度转换使用 Arrow。注册表读取对应 SDK 的类型目录，可用 Archetype 与枚举以该版本声明为准。旧版 SDK 无法关闭新建录制流时自动发送的录制属性。
+
 VLink 的 CMake 基线保持为 3.15。CMake 3.15 下应提供已安装的 `rerun_sdk` 包或预先定义的 `rerun_sdk` target；官方 Rerun C++ SDK 源码包自身要求 CMake 3.16+，因此仅在使用源码包构建时需要更高版本。CMake 参数 `-DRERUN_SDK_DIR=...` 可指向安装前缀、CMake package 目录或官方源码包，缺省值取同名环境变量。Arrow 24 要求 C++20，该要求仅沿 Rerun 依赖链传播，VLink 核心与 Foxglove 保持 C++17。运行时 Viewer 应与 SDK 使用相同版本；当前验证版本为 [Rerun 0.37.1](https://github.com/rerun-io/rerun/releases/tag/0.37.1)。
 
 Foxglove WebSocket 使用 `foxglove.websocket.v1`；二进制头按协议显式读写小端整数。内置 51 个 `.fbs` 已核对 [foxglove-sdk 的 Schema 源目录](https://github.com/foxglove/foxglove-sdk/tree/3e59568654f1245ebbc3be120c61ec02069ca703/schemas/flatbuffer)：截至 2026-09-05，与该提交逐字节一致，保留上游版权与定义，不重写生成协议。

@@ -127,7 +127,12 @@ bool valid_image(const arrow::Array& format_array, const arrow::Array& buffer_ar
     return false;
   }
 
+#if RERUN_VERSION_GE(0, 37, 0)
   ::rerun::encodings::ImageFormat sample;
+#else
+  ::rerun::datatypes::ImageFormat sample;
+#endif
+
   sample.width = 2;
   sample.height = 1;
   const auto set_enum = [&](const char* name, auto& target) {
@@ -465,8 +470,13 @@ bool append_value(arrow::ArrayBuilder& builder, const FieldReader& fields, const
       return append_number<arrow::DoubleBuilder>(builder, value);
     case arrow::Type::HALF_FLOAT: {
       float number = 0;
+#if RERUN_VERSION_GE(0, 36, 0)
       return field_numeric(value, number) &&
              static_cast<arrow::HalfFloatBuilder&>(builder).Append(::rerun::half::from_float(number).f16).ok();
+#else
+      return field_numeric(value, number) &&
+             static_cast<arrow::HalfFloatBuilder&>(builder).Append(arrow::util::Float16::FromFloat(number).bits()).ok();
+#endif
     }
     case arrow::Type::NA:
       return false;

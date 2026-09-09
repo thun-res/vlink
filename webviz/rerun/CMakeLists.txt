@@ -66,8 +66,14 @@ if(NOT VLINK_RERUN_INCLUDE_DIR)
   message(FATAL_ERROR "Cannot locate Rerun SDK archetype declarations")
 endif()
 
-file(GLOB RERUN_SCHEMA_HEADERS CONFIGURE_DEPENDS "${VLINK_RERUN_INCLUDE_DIR}/rerun/archetypes/*.hpp"
-     "${VLINK_RERUN_INCLUDE_DIR}/rerun/components/*.hpp" "${VLINK_RERUN_INCLUDE_DIR}/rerun/encodings/*.hpp"
+file(
+  GLOB
+  RERUN_SCHEMA_HEADERS
+  CONFIGURE_DEPENDS
+  "${VLINK_RERUN_INCLUDE_DIR}/rerun/archetypes/*.hpp"
+  "${VLINK_RERUN_INCLUDE_DIR}/rerun/components/*.hpp"
+  "${VLINK_RERUN_INCLUDE_DIR}/rerun/encodings/*.hpp"
+  "${VLINK_RERUN_INCLUDE_DIR}/rerun/datatypes/*.hpp"
 )
 
 set(RERUN_SCHEMA_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/rerun_schema.cc")

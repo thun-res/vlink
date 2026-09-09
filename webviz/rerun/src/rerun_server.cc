@@ -217,8 +217,12 @@ bool RerunServer::init_rerun() {
 
 bool RerunServer::open_recording(std::shared_ptr<::rerun::RecordingStream>& rec) {
   if (!rec) {
+#if RERUN_VERSION_GE(0, 37, 0)
     rec = std::make_shared<::rerun::RecordingStream>(config_.name, config_.recording_id, ::rerun::StoreKind::Recording,
                                                      config_.recording_id.empty());
+#else
+    rec = std::make_shared<::rerun::RecordingStream>(config_.name, config_.recording_id);
+#endif
   }
 
   switch (config_.mode) {

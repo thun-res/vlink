@@ -40,7 +40,11 @@ namespace vlink {
 namespace webviz {
 
 namespace rr = ::rerun;
+#if RERUN_VERSION_GE(0, 37, 0)
 namespace re = ::rerun::encodings;
+#else
+namespace re = ::rerun::datatypes;
+#endif
 
 static bool product(size_t left, size_t right, size_t& result) {
   if VUNLIKELY (right && left > SIZE_MAX / right) {

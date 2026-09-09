@@ -43,7 +43,8 @@ def generate(sdk, output):
                 f'     &::rerun::Loggable<::rerun::components::{component}>::arrow_data_type, '
                 f'{str(setters[field]).lower()}}},')
 
-    for folder in ("components", "encodings"):
+    encoding_folder = "encodings" if (sdk / "encodings").is_dir() else "datatypes"
+    for folder in ("components", encoding_folder):
         for path in sorted((sdk / folder).glob("*.hpp")):
             source = declarations(path)
             for name, body in re.findall(r"enum class (\w+)\s*:\s*\w+\s*\{([^}]+)\}", source):
@@ -53,7 +54,7 @@ def generate(sdk, output):
                 enums[name] = (folder, [re.match(r"\s*(\w+)", item)[1]
                                        for item in body.split(",") if item.strip()])
             wrapper = re.search(r"struct (\w+)\s*\{", source)
-            underlying = re.search(r"return Loggable<rerun::encodings::(\w+)>::arrow_data_type\(\)", source)
+            underlying = re.search(rf"return Loggable<rerun::{encoding_folder}::(\w+)>::arrow_data_type\(\)", source)
             if folder == "components" and wrapper and underlying:
                 aliases[wrapper[1]] = underlying[1]
 
