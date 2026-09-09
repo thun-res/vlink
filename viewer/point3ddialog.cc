@@ -1481,6 +1481,7 @@ Point3DDialog::~Point3DDialog() {
   //   camera_dialog_ = nullptr;
   // }
 
+  delete target_msg_;
   delete ui;
 }
 
