@@ -162,6 +162,7 @@ struct VCAPWriter::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
   std::string write_channel_key;
 
   // mcap
+  std::ofstream output;
   std::optional<mcap::McapWriter> writer;
   mcap::McapWriterOptions writer_options{"vlink"};
 
@@ -583,15 +584,19 @@ void VCAPWriter::open(const std::string& path) {
 
   mcap::Status status;
 
-  impl_->writer.emplace();
+#ifdef _WIN32
+  impl_->output.open(std::filesystem::path(Helpers::string_to_wstring(path)), std::ios::binary | std::ios::trunc);
+#else
+  impl_->output.open(path, std::ios::binary | std::ios::trunc);
+#endif
 
-  status = impl_->writer->open(path, impl_->writer_options);
-
-  if VUNLIKELY (!status.ok()) {
-    CLOG_F("VCAPWriter: Failed to open vcap, error = %s.", status.message.c_str());  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    impl_->writer.reset();                                                           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return;                                                                          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  if VUNLIKELY (!impl_->output) {
+    VLOG_F("Failed to open output: ", path);
+    return;
   }
+
+  impl_->writer.emplace();
+  impl_->writer->open(impl_->output, impl_->writer_options);
 
   mcap::Metadata header_meta_data;
   header_meta_data.name = "VLinkHeader";
@@ -610,8 +615,9 @@ void VCAPWriter::open(const std::string& path) {
            status.message.c_str());                                      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     impl_->writer->close();                                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     impl_->writer->terminate();                                          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    impl_->writer.reset();                                               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return;                                                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    impl_->writer.reset();
+    impl_->output.close();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return;                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
   impl_->last_timestamp = 0;
@@ -689,6 +695,11 @@ void VCAPWriter::close_segment() {
   impl_->writer->close();
   impl_->writer->terminate();
   impl_->writer.reset();
+  impl_->output.close();
+
+  if VUNLIKELY (impl_->output.fail()) {
+    set_fail();
+  }
 
   std::error_code footer_ec;
   const auto file_size = std::filesystem::file_size(impl_->active_path, footer_ec);
@@ -1291,7 +1302,7 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
 
   status = impl_->writer->write(message);
 
-  if VUNLIKELY (!status.ok()) {
+  if VUNLIKELY (!status.ok() || !impl_->output) {
     CLOG_W("VCAPWriter: Failed to write message data, error = %s.",  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
            status.message.c_str());                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     return false;                                                    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
