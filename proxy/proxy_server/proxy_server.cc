@@ -925,83 +925,55 @@ void ProxyServer::update_all() {
         }
       }
 
+      bool matches_type = true;
+
       switch (impl_->filter_type) {
         case 0:
           break;
         case 1:
-          if (!(info.type & kPublisher && info.type & kSubscriber)) {
-            continue;
-          }
-
+          matches_type = (info.type & kPublisher && info.type & kSubscriber);
           break;
         case 2:
-          if (!(info.type & kServer && info.type & kClient)) {
-            continue;
-          }
-
+          matches_type = (info.type & kServer && info.type & kClient);
           break;
         case 3:
-          if (!(info.type & kSetter && info.type & kGetter)) {
-            continue;
-          }
-
+          matches_type = (info.type & kSetter && info.type & kGetter);
           break;
         case 4:
-          if (!((info.type & kPublisher) || (info.type & kSubscriber))) {
-            continue;
-          }
-
+          matches_type = ((info.type & kPublisher) || (info.type & kSubscriber));
           break;
         case 5:
-          if (!((info.type & kServer) || (info.type & kClient))) {
-            continue;
-          }
-
+          matches_type = ((info.type & kServer) || (info.type & kClient));
           break;
         case 6:
-          if (!((info.type & kSetter) || (info.type & kGetter))) {
-            continue;
-          }
-
+          matches_type = ((info.type & kSetter) || (info.type & kGetter));
           break;
         case 7:
-          if (!(info.type & kPublisher)) {
-            continue;
-          }
-
+          matches_type = (info.type & kPublisher);
           break;
         case 8:
-          if (!(info.type & kSubscriber)) {
-            continue;
-          }
-
+          matches_type = (info.type & kSubscriber);
           break;
         case 9:
-          if (!(info.type & kServer)) {
-            continue;
-          }
-
+          matches_type = (info.type & kServer);
           break;
         case 10:
-          if (!(info.type & kClient)) {
-            continue;
-          }
-
+          matches_type = (info.type & kClient);
           break;
         case 11:
-          if (!(info.type & kSetter)) {
-            continue;
-          }
-
+          matches_type = (info.type & kSetter);
           break;
         case 12:
-          if (!(info.type & kGetter)) {
-            continue;
-          }
-
+          matches_type = (info.type & kGetter);
           break;
         default:
           break;
+      }
+
+      if (!matches_type) {
+        std::lock_guard subs_lock(impl_->subs_mtx);
+        impl_->sub_ptr_map.erase(info.url);
+        continue;
       }
     }
 #endif
