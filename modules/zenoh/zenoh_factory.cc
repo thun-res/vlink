@@ -3104,7 +3104,7 @@ void ZenohSubscriber::process_message(uint64_t channel, uint64_t seq, uint64_t g
   MessageLoop* first_loop = nullptr;
   std::vector<MessageLoop*> other_loops;
 
-  traverse_msg_callback([&, this](NodeImpl* impl, const auto& callback) {
+  traverse_msg_callback([&](NodeImpl* impl, const auto& callback) {
     const auto* conf_ptr = impl->get_target_conf<ZenohConf>();
 
     if (static_cast<uint64_t>(conf_ptr->hash_code) != channel) {
