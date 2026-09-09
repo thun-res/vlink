@@ -4938,11 +4938,16 @@ static void set_property_number(QTreeWidgetItem* item, ValueT value, bool hex, A
   }
 }
 
-static void set_property_text(QTreeWidgetItem* item, const QString& value) {
+static void set_property_text(QTreeWidgetItem* item, const QString& value, AnalyzeDialog* analyze_dialog,
+                              QTreeWidget* tree) {
   item->setText(3, value);
   item->setHidden(false);
   item->setData(3, Qt::ToolTipRole, item->text(3));
   item->setData(1, Qt::UserRole, AnalyzeDialog::kStringType);
+
+  if (analyze_dialog->is_string_type() && tree->currentItem() == item) {
+    analyze_dialog->add_string(value.toStdString());
+  }
 }
 
 static uint64_t parser_uint64(const vlink::zerocopy::MessageParser& parser, std::string_view path) {
@@ -5071,11 +5076,16 @@ static std::string_view zerocopy_enum_label(vlink::zerocopy::MessageParser::Enum
   }
 }
 
-static void set_property_double(QTreeWidgetItem* item, double value, int precision) {
+static void set_property_double(QTreeWidgetItem* item, double value, int precision, AnalyzeDialog* analyze_dialog,
+                                QTreeWidget* tree) {
   item->setText(3, QString::number(value, 'g', precision));
   item->setHidden(false);
   item->setData(3, Qt::ToolTipRole, item->text(3));
   item->setData(1, Qt::UserRole, AnalyzeDialog::kNumberType);
+
+  if (analyze_dialog->is_number_type() && tree->currentItem() == item) {
+    analyze_dialog->add_number(value);
+  }
 }
 
 static void set_property_bool(QTreeWidgetItem* item, bool value, AnalyzeDialog* analyze_dialog, QTreeWidget* tree) {
@@ -5093,7 +5103,7 @@ static void populate_root_scalar(QTreeWidgetItem* item, const vlink::zerocopy::M
                                  const vlink::zerocopy::MessageParser::Field& field, bool hex, bool show_time,
                                  bool show_enum, AnalyzeDialog* analyze_dialog, QTreeWidget* tree) {
   if (field.type == vlink::zerocopy::MessageParser::ValueType::kString) {
-    set_property_text(item, QString::fromStdString(parser_string(parser, field.name)));
+    set_property_text(item, QString::fromStdString(parser_string(parser, field.name)), analyze_dialog, tree);
     return;
   }
 
@@ -5134,7 +5144,7 @@ static void populate_root_scalar(QTreeWidgetItem* item, const vlink::zerocopy::M
       set_property_number(item, parser_uint64(parser, field.name), hex, analyze_dialog, tree);
       break;
     case vlink::zerocopy::MessageParser::ValueType::kDouble:
-      set_property_double(item, parser_double(parser, field.name), 8);
+      set_property_double(item, parser_double(parser, field.name), 8, analyze_dialog, tree);
       break;
     default:
       break;
@@ -5164,11 +5174,8 @@ static void populate_element_leaf(QTreeWidgetItem* item, const vlink::zerocopy::
   if (compressed) {
     double value = 0.0;
     read_numeric(value);
-    set_property_double(item, value, 8);
 
-    if (analyze_dialog->is_number_type() && tree->currentItem() == item) {
-      analyze_dialog->add_number(value);
-    }
+    set_property_double(item, value, 8, analyze_dialog, tree);
 
     return;
   }
@@ -5193,7 +5200,8 @@ static void populate_element_leaf(QTreeWidgetItem* item, const vlink::zerocopy::
     case vlink::zerocopy::MessageParser::ValueType::kString: {
       std::string text;
       parser.text(collection, index, field.name, text);
-      set_property_text(item, QString::fromStdString(text));
+
+      set_property_text(item, QString::fromStdString(text), analyze_dialog, tree);
     } break;
     case vlink::zerocopy::MessageParser::ValueType::kInt64: {
       vlink::zerocopy::MessageParser::Value value;
@@ -5210,11 +5218,8 @@ static void populate_element_leaf(QTreeWidgetItem* item, const vlink::zerocopy::
     case vlink::zerocopy::MessageParser::ValueType::kDouble: {
       double value = 0.0;
       read_numeric(value);
-      set_property_double(item, value, field.storage_size >= 8 ? 16 : 8);
 
-      if (analyze_dialog->is_number_type() && tree->currentItem() == item) {
-        analyze_dialog->add_number(value);
-      }
+      set_property_double(item, value, field.storage_size >= 8 ? 16 : 8, analyze_dialog, tree);
     } break;
     default:
       break;
@@ -5325,15 +5330,15 @@ void MainWindow::update_zero_copy_item_property(const vlink::Bytes& bytes) {
 
     QTreeWidgetItem* size_list_item =
         ensure_node(protocol_group, make_key("protocol.size_list"), "string", "size_list", false);
-    set_property_text(size_list_item, QString::fromStdString(size_list));
+    set_property_text(size_list_item, QString::fromStdString(size_list), analyze_dialog_, property_tree);
 
     QTreeWidgetItem* name_list_item =
         ensure_node(protocol_group, make_key("protocol.name_list"), "string", "name_list", false);
-    set_property_text(name_list_item, QString::fromStdString(name_list));
+    set_property_text(name_list_item, QString::fromStdString(name_list), analyze_dialog_, property_tree);
 
     QTreeWidgetItem* type_list_item =
         ensure_node(protocol_group, make_key("protocol.type_list"), "string", "type_list", false);
-    set_property_text(type_list_item, QString::fromStdString(type_list));
+    set_property_text(type_list_item, QString::fromStdString(type_list), analyze_dialog_, property_tree);
   }
 
   for (; index < fields.size(); ++index) {
