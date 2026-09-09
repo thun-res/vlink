@@ -269,8 +269,8 @@ uint32_t ProxyServer::get_max_elapsed_time() const { return kMaxTaskElapsed; }
 
 void ProxyServer::on_begin() {
   for (const auto& runnable : impl_->runnable_interface_list) {
-    runnable->on_init();
     runnable->async_run();
+    runnable->on_init();
   }
 }
 
