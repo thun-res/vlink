@@ -1972,7 +1972,7 @@ void Point3DDialog::update_ui_for_proto(const QVariant& variant, bool cache, con
     return;
   }
 
-  const auto& proxy_data = variant.value<vlink::ProxyAPI::Data>();
+  const auto& proxy_data = *static_cast<const vlink::ProxyAPI::Data*>(variant.constData());
 
   if (ui->comboBox_proto->currentIndex() < 0 ||
       static_cast<size_t>(ui->comboBox_proto->currentIndex()) >= msg_list_.size()) {
@@ -2173,7 +2173,7 @@ void Point3DDialog::update_ui_for_flatbuffers(const QVariant& variant, bool cach
     return;
   }
 
-  const auto& proxy_data = variant.value<vlink::ProxyAPI::Data>();
+  const auto& proxy_data = *static_cast<const vlink::ProxyAPI::Data*>(variant.constData());
 
   if (ui->comboBox_proto->currentIndex() < 0 ||
       static_cast<size_t>(ui->comboBox_proto->currentIndex()) >= fbs_msg_list_.size()) {
@@ -2379,7 +2379,7 @@ void Point3DDialog::update_ui_for_zero_copy_types(const QVariant& variant, bool 
     return;
   }
 
-  const auto& proxy_data = variant.value<vlink::ProxyAPI::Data>();
+  const auto& proxy_data = *static_cast<const vlink::ProxyAPI::Data*>(variant.constData());
 
   vlink::zerocopy::PointCloud pcl;
   pcl << proxy_data.raw;

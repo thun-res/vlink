@@ -1793,7 +1793,7 @@ void CameraDialog::update_ui_for_proto(const QVariant& variant, const QElapsedTi
     return;
   }
 
-  const auto& proxy_data = variant.value<vlink::ProxyAPI::Data>();
+  const auto& proxy_data = *static_cast<const vlink::ProxyAPI::Data*>(variant.constData());
   auto decoder_type = get_decoder_type();
 
   auto& detail = camera_detail_map_[proxy_data.url];
@@ -1845,7 +1845,8 @@ void CameraDialog::update_ui_for_proto(const QVariant& variant, const QElapsedTi
     msg = &target_msg_->GetReflection()->GetMessage(*target_msg_, outer_field);
   }
 
-  const std::string& raw_str = msg->GetReflection()->GetString(*msg, field);
+  std::string scratch;
+  const std::string& raw_str = msg->GetReflection()->GetStringReference(*msg, field, &scratch);
 
   const auto& raw_data = vlink::Bytes::shallow_copy(reinterpret_cast<const uint8_t*>(raw_str.c_str()), raw_str.size());
 
@@ -1881,7 +1882,7 @@ void CameraDialog::update_ui_for_flatbuffers(const QVariant& variant, const QEla
     return;
   }
 
-  const auto& proxy_data = variant.value<vlink::ProxyAPI::Data>();
+  const auto& proxy_data = *static_cast<const vlink::ProxyAPI::Data*>(variant.constData());
   auto decoder_type = get_decoder_type();
 
   auto& detail = camera_detail_map_[proxy_data.url];
@@ -1972,7 +1973,7 @@ void CameraDialog::update_ui_for_zero_copy_types(const QVariant& variant, const 
     return;
   }
 
-  const auto& proxy_data = variant.value<vlink::ProxyAPI::Data>();
+  const auto& proxy_data = *static_cast<const vlink::ProxyAPI::Data*>(variant.constData());
 
   auto& detail = camera_detail_map_[proxy_data.url];
 
@@ -2031,7 +2032,7 @@ void CameraDialog::update_ui_for_unknown_types(const QVariant& variant, const QE
     return;
   }
 
-  const auto& proxy_data = variant.value<vlink::ProxyAPI::Data>();
+  const auto& proxy_data = *static_cast<const vlink::ProxyAPI::Data*>(variant.constData());
   auto decoder_type = get_decoder_type();
 
   auto& detail = camera_detail_map_[proxy_data.url];

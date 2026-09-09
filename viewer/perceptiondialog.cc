@@ -739,7 +739,7 @@ void PerceptionDialog::render_url(const QString& url) {
       }
 
       for (size_t i = 0; i < layers.size(); ++i) {
-        render_layer(url_str + "#" + std::to_string(i), url_str, layers[i]);
+        render_layer(url_str + "#" + std::to_string(i), url_str, std::move(layers[i]));
       }
 
       for (auto& fields : hud_fields) {
@@ -772,7 +772,7 @@ void PerceptionDialog::render_url(const QString& url) {
         break;
     }
 
-    render_layer(url_str, url_str, layer);
+    render_layer(url_str, url_str, std::move(layer));
     return;
   }
 
@@ -788,7 +788,8 @@ void PerceptionDialog::render_url(const QString& url) {
     for (size_t i = 0; i < context->mappings.size(); ++i) {
       perception::Layer layer;
       perception::decode::decode_proto(*context->proto_prototype, context->mappings[i], layer);
-      render_layer(url_str + "#" + std::to_string(i), url_str, layer);
+
+      render_layer(url_str + "#" + std::to_string(i), url_str, std::move(layer));
     }
 
     for (const auto& binding : context->hud_bindings) {
@@ -824,7 +825,8 @@ void PerceptionDialog::render_url(const QString& url) {
       perception::Layer layer;
       perception::decode::decode_fbs(*root_table, *context->fbs_context->schema, *context->fbs_context->root_object,
                                      context->mappings[i], layer);
-      render_layer(url_str + "#" + std::to_string(i), url_str, layer);
+
+      render_layer(url_str + "#" + std::to_string(i), url_str, std::move(layer));
     }
 
     for (const auto& binding : context->hud_bindings) {
@@ -1031,7 +1033,7 @@ void PerceptionDialog::rebuild_url_controls() {
 }
 
 void PerceptionDialog::render_layer(const std::string& geode_key, const std::string& base_url,
-                                    const perception::Layer& layer) {
+                                    perception::Layer&& layer) {
   if (!osg_inited_) {
     return;
   }
@@ -1338,7 +1340,7 @@ void PerceptionDialog::render_layer(const std::string& geode_key, const std::str
         grid.resolution = layer.grid.resolution;
         grid.width = layer.grid.width;
         grid.height = layer.grid.height;
-        grid.cells = layer.grid.cells;
+        grid.cells = std::move(layer.grid.cells);
       }
 
       OsgOccupancyGrid::update(geode, grid, 0.6f);

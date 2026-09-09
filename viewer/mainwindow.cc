@@ -44,6 +44,7 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QFontDatabase>
+#include <QHash>
 #include <QHideEvent>
 #include <QItemDelegate>
 #include <QJsonDocument>
@@ -2002,21 +2003,26 @@ void MainWindow::update_url_widget(const QVariant& variant) {
     return;
   }
 
-  const auto& info_list = variant.value<std::vector<vlink::ProxyAPI::Info>>();
+  const auto& info_list = *static_cast<const std::vector<vlink::ProxyAPI::Info>*>(variant.constData());
 
   const auto& selected_items = ui->treeWidget_url->selectedItems();
 
+  QHash<QString, QTreeWidgetItem*> url_items;
+  url_items.reserve(static_cast<int>(info_list.size()));
+
+  for (const auto& info : info_list) {
+    url_items.insert(QString::fromStdString(info.url), nullptr);
+  }
+
   for (int i = 0; i < ui->treeWidget_url->topLevelItemCount(); ++i) {
     auto* p = ui->treeWidget_url->topLevelItem(i);
-    bool find = false;
-    for (const auto& info : info_list) {
-      if (p->text(1) == QString::fromStdString(info.url)) {
-        find = true;
-        break;
-      }
+    auto iter = url_items.find(p->text(1));
+
+    if (iter != url_items.end()) {
+      iter.value() = p;
     }
 
-    if (!find) {
+    if (iter == url_items.end()) {
       QTreeWidgetItem* current_item = ui->treeWidget_url->currentItem();
       // ui->treeWidget_url->blockSignals(true);
       QTreeWidgetItem* item = ui->treeWidget_url->takeTopLevelItem(i);
@@ -2052,15 +2058,7 @@ void MainWindow::update_url_widget(const QVariant& variant) {
   int agg_count = 0;
 
   for (size_t m = 0; m < info_list.size(); ++m) {
-    QTreeWidgetItem* item = nullptr;
-
-    for (int n = 0; n < ui->treeWidget_url->topLevelItemCount(); ++n) {
-      auto* p = ui->treeWidget_url->topLevelItem(n);
-
-      if (p->text(1) == QString::fromStdString(info_list[m].url)) {
-        item = p;
-      }
-    }
+    QTreeWidgetItem* item = url_items.value(QString::fromStdString(info_list[m].url));
 
     if (!item) {
       item = new QTreeWidgetItem;
@@ -2697,7 +2695,7 @@ void MainWindow::update_property_widget(const QVariant& variant, const QElapsedT
     return;
   }
 
-  const auto& proxy_data = variant.value<vlink::ProxyAPI::Data>();
+  const auto& proxy_data = *static_cast<const vlink::ProxyAPI::Data*>(variant.constData());
   const auto schema_type = proxy_data.schema;
 
   if (ui->stackedWidget_main->currentIndex() == 0) {
@@ -2783,6 +2781,7 @@ void MainWindow::update_property_widget(const QVariant& variant, const QElapsedT
     to_hide_item_list_ = all_item_list_;
 
     ui->treeWidget_property->setUpdatesEnabled(false);
+
     if (ui->checkBox_perf->isChecked()) {
       property_timer_.restart();
       qApp->processEvents();

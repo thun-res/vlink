@@ -127,7 +127,7 @@ class PerceptionDialog : public QDialog {
 #ifdef VLINK_ENABLE_VIEWER_OSG
   void rebuild_url_controls();
 
-  void render_layer(const std::string& geode_key, const std::string& base_url, const perception::Layer& layer);
+  void render_layer(const std::string& geode_key, const std::string& base_url, perception::Layer&& layer);
 
   osg::Geode* ensure_geode(const std::string& geode_key, perception::RenderType type);
 
