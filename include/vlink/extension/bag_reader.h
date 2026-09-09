@@ -209,7 +209,7 @@ class VLINK_EXPORT BagReader : public MessageLoop {
     double rate{1.0};                             ///< Speed multiplier relative to the recorded clock.
     bool skip_blank{false};                       ///< When true, collapses long silent gaps between frames.
     int64_t force_delay{-1};                      ///< >0 fixed delay (ms), 0 no delay, <0 use recorded timing.
-    bool auto_pause{false};                       ///< When true, pauses automatically after every emitted frame.
+    bool auto_pause{false};                       ///< When true, starts playback paused until resumed or stepped.
     bool auto_quit{false};                        ///< When true, stops the loop thread at the end of playback.
     std::unordered_set<std::string> filter_urls;  ///< Whitelist of playback URLs; empty means all URLs pass.
   };

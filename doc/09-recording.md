@@ -201,6 +201,7 @@ reader->wait_for_quit();
 | `times` | `1` | 循环次数；`<= 0`（含 `vlink::BagReader::kInfinite`，其值为 `-1`）表示无限循环 |
 | `begin_time` / `end_time` | `0` / `0` | 回放时间窗（毫秒，相对录制起点），`0` 表示从头 / 到尾 |
 | `filter_urls` | 空 | URL 白名单，空集合表示回放全部 |
+| `auto_pause` | `false` | `play()` 启动时暂停 |
 | `auto_quit` | `false` | 播完后停止后台循环线程 |
 
 ```cpp
@@ -220,7 +221,7 @@ reader->play(cfg);
 | --- | --- |
 | `pause()` / `resume()` | 暂停 / 继续 |
 | `pause_to_next()` | 单步：发一帧后再次暂停 |
-| `jump(begin_time, rate, times, force_to_play)` | 跳转到指定时间戳（毫秒）并应用新参数 |
+| `jump(begin_time, rate, times, force_to_play)` | 跳转并应用新参数；保留原播放状态，`force_to_play=true` 时强制继续 |
 | `stop()` | 中止会话并回退到起点 |
 | `get_status()` / `get_timestamp()` | 查询当前状态 / 当前时间戳 |
 

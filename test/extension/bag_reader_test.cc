@@ -511,6 +511,130 @@ std::vector<ObservedFrame> read_all_frames(BagReader& reader) {
   return frames;
 }
 
+void verify_reader_window_with_unordered_timestamps(const char* suffix) {
+  ScopedBagPath bag(suffix);
+  BagWriter::Config writer_config;
+  writer_config.sync_mode = true;
+  writer_config.compress = BagWriter::kCompressNone;
+  writer_config.split_by_size = 1;
+  writer_config.split_by_time = 0;
+  writer_config.start_timestamp = 1'700'000'000'000LL;
+
+  auto writer = BagWriter::create(bag.path.string(), writer_config);
+  REQUIRE(writer != nullptr);
+  for (const int64_t timestamp : {0LL, 2'000LL, 1'000LL}) {
+    REQUIRE_EQ(
+        writer->push(bag_frame(timestamp, "dds://coverage/window", "raw", SchemaType::kRaw, ActionType::kPublish, "x")),
+        timestamp);
+  }
+  writer.reset();
+
+  std::vector<int64_t> played;
+  std::atomic<bool> finished{false};
+  std::atomic<size_t> output_count{0};
+  auto reader = BagReader::create(bag.path.string());
+  REQUIRE(reader != nullptr);
+  if (std::string_view(suffix).back() == 'x') {
+    REQUIRE_GE(reader->get_info().split_count, 3);
+  }
+  REQUIRE(reader->open_cursor());
+  CHECK_EQ(read_all_frames(*reader).size(), 3u);
+  reader->register_output_callback([&](const Frame& frame) {
+    played.push_back(frame.timestamp);
+    output_count.fetch_add(1, std::memory_order_release);
+  });
+  reader->register_finish_callback([&](bool interrupted) {
+    CHECK_FALSE(interrupted);
+    finished.store(true, std::memory_order_release);
+  });
+  REQUIRE(reader->async_run());
+
+  for (const int64_t begin_time : {0LL, 1LL}) {
+    BagReader::Config config;
+    config.begin_time = begin_time;
+    config.end_time = 1;
+    config.force_delay = 0;
+    const std::vector<int64_t> expected =
+        begin_time == 0 ? std::vector<int64_t>{0, 1'000} : std::vector<int64_t>{1'000};
+
+    REQUIRE(reader->open_cursor(config));
+    std::vector<int64_t> actual;
+    for (const auto& frame : read_all_frames(*reader)) {
+      actual.push_back(frame.timestamp);
+    }
+    CHECK(actual == expected);
+    CHECK(reader->eof());
+    CHECK_FALSE(reader->fail());
+
+    played.clear();
+    finished.store(false, std::memory_order_relaxed);
+    reader->play(config);
+    REQUIRE(common_test::wait_until([&] { return finished.load(std::memory_order_acquire); }, 3s));
+    REQUIRE(reader->wait_for_idle(3000));
+    CHECK(played == expected);
+
+    played.clear();
+    finished.store(false, std::memory_order_relaxed);
+    output_count.store(0, std::memory_order_relaxed);
+    config.auto_pause = true;
+    reader->play(config);
+    for (size_t count = 0; count < expected.size(); ++count) {
+      REQUIRE(common_test::wait_until([&] { return reader->get_status() == BagReader::kPaused; }, 3s));
+      reader->pause_to_next();
+      REQUIRE(common_test::wait_until([&] { return output_count.load(std::memory_order_acquire) == count + 1; }, 3s));
+    }
+    REQUIRE(common_test::wait_until([&] { return finished.load(std::memory_order_acquire); }, 3s));
+    REQUIRE(reader->wait_for_idle(3000));
+    CHECK(played == expected);
+  }
+
+  reader->quit();
+  REQUIRE(reader->wait_for_quit(3000));
+}
+
+void verify_split_reader_skips_only_initial_blank(const char* suffix) {
+  ScopedBagPath bag(suffix);
+  BagWriter::Config writer_config;
+  writer_config.sync_mode = true;
+  writer_config.compress = BagWriter::kCompressNone;
+  writer_config.split_by_size = 1;
+  writer_config.split_by_time = 0;
+  writer_config.start_timestamp = 1'700'000'000'000LL;
+
+  const std::vector<int64_t> expected{2'000, 1'000};
+  auto writer = BagWriter::create(bag.path.string(), writer_config);
+  REQUIRE(writer != nullptr);
+  for (const int64_t timestamp : expected) {
+    REQUIRE_EQ(
+        writer->push(bag_frame(timestamp, "dds://coverage/blank", "raw", SchemaType::kRaw, ActionType::kPublish, "x")),
+        timestamp);
+  }
+  writer.reset();
+
+  std::vector<int64_t> played;
+  std::atomic<bool> finished{false};
+  auto reader = BagReader::create(bag.path.string());
+  REQUIRE(reader != nullptr);
+  REQUIRE_EQ(reader->get_info().split_count, 2);
+  CHECK_EQ(reader->get_info().blank_duration, 1);
+  reader->register_output_callback([&](const Frame& frame) { played.push_back(frame.timestamp); });
+  reader->register_finish_callback([&](bool interrupted) {
+    CHECK_FALSE(interrupted);
+    finished.store(true, std::memory_order_release);
+  });
+  REQUIRE(reader->async_run());
+
+  BagReader::Config config;
+  config.skip_blank = true;
+  config.force_delay = 0;
+  reader->play(config);
+  REQUIRE(common_test::wait_until([&] { return finished.load(std::memory_order_acquire); }, 3s));
+  REQUIRE(reader->wait_for_idle(3000));
+  CHECK(played == expected);
+  reader->quit();
+  REQUIRE(reader->wait_for_quit(3000));
+}
+
 void write_roundtrip_bag(const std::filesystem::path& path) {
   BagWriter::Config config;
   config.sync_mode = true;
@@ -1988,6 +2112,11 @@ void exercise_reader_playback_controls(const char* suffix, bool expect_reindex) 
   CHECK_GE(ready_count.load(std::memory_order_relaxed), 1);
   CHECK_GE(stopped_count.load(std::memory_order_relaxed), 1);
 
+  const int finish_before_jump = finish_count.load(std::memory_order_relaxed);
+  reader->jump(0, 1.0, 1, true);
+  REQUIRE(
+      common_test::wait_until([&] { return finish_count.load(std::memory_order_relaxed) > finish_before_jump; }, 1s));
+
   const int output_before_realtime = output_count.load(std::memory_order_relaxed);
   const int finish_before_realtime = finish_count.load(std::memory_order_relaxed);
   BagReader::Config realtime;
@@ -2787,6 +2916,9 @@ void verify_vdb_split_schema_detection_merges_duplicate_schemas() {
   REQUIRE_EQ(writer->push(bag_frame(2'000, "dds://coverage/vdb_dup_schema", "demo.VdbSplitSchema",
                                     SchemaType::kProtobuf, ActionType::kPublish, repeated_payload(512, 'w'))),
              2'000);
+  REQUIRE_EQ(writer->push(bag_frame(3'000, "dds://coverage/vdb_raw", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                    repeated_payload(512, 'r'))),
+             3'000);
   writer.reset();
 
   auto reader = BagReader::create(bag.path.string(), false);
@@ -2794,7 +2926,8 @@ void verify_vdb_split_schema_detection_merges_duplicate_schemas() {
   REQUIRE(reader->async_run());
 
   REQUIRE(reader->is_split_mode());
-  REQUIRE_GE(reader->get_info().split_count, 2);
+  REQUIRE_GE(reader->get_info().split_count, 3);
+  CHECK(reader->get_info().has_schema);
   auto schemas = reader->detect_schema();
   REQUIRE_EQ(schemas.size(), 1u);
   CHECK_EQ(schemas.front().name, "demo.VdbSplitSchema");
@@ -3544,10 +3677,26 @@ TEST_SUITE("extension-BagReader") {
   }
 
   TEST_CASE("real readers exercise playback controls and maintenance APIs") {
-    exercise_reader_playback_controls(".vdb", true);
-    exercise_reader_playback_controls(".vcap", false);
-    verify_reader_playback_loops_and_auto_quit(".vdb");
-    verify_reader_playback_loops_and_auto_quit(".vcap");
+    SUBCASE("vdb") {
+      exercise_reader_playback_controls(".vdb", true);
+      verify_reader_playback_loops_and_auto_quit(".vdb");
+    }
+    SUBCASE("vcap") {
+      exercise_reader_playback_controls(".vcap", false);
+      verify_reader_playback_loops_and_auto_quit(".vcap");
+    }
+  }
+
+  TEST_CASE("time windows retain unordered frames within and across bag segments") {
+    SUBCASE("vdb") { verify_reader_window_with_unordered_timestamps(".vdb"); }
+    SUBCASE("vdbx") { verify_reader_window_with_unordered_timestamps(".vdbx"); }
+    SUBCASE("vcap") { verify_reader_window_with_unordered_timestamps(".vcap"); }
+    SUBCASE("vcapx") { verify_reader_window_with_unordered_timestamps(".vcapx"); }
+  }
+
+  TEST_CASE("split readers preserve earlier frames when skipping initial blank") {
+    SUBCASE("vdbx") { verify_split_reader_skips_only_initial_blank(".vdbx"); }
+    SUBCASE("vcapx") { verify_split_reader_skips_only_initial_blank(".vcapx"); }
   }
 
   TEST_CASE("buffered read plugins reset their data-time axis between playback loops") {

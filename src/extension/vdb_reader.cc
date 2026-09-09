@@ -366,6 +366,7 @@ void VDBReader::jump(int64_t begin_time, double rate, int times, bool force_to_p
     config_copy = impl_->config;
   }
 
+  config_copy.auto_pause = false;
   post_task([this, config_copy = std::move(config_copy)]() { read(config_copy); });
 #else
   (void)begin_time;
@@ -1283,10 +1284,6 @@ bool VDBReader::do_read_next(Frame& out, bool& is_error) {
     if (step == SQLITE_ROW) {
       const int64_t timestamp = ::sqlite3_column_int64(impl_->cursor_stmt.get(), get_column(0));
 
-      if (impl_->cursor_end_us > 0 && timestamp > impl_->cursor_end_us) {
-        return false;
-      }
-
       const int url_id = ::sqlite3_column_int(impl_->cursor_stmt.get(), get_column(1));
       auto& wrapper_file = impl_->file_list.at(impl_->cursor_file_index);
       auto iter = wrapper_file.id_to_url_map.find(url_id);
@@ -1408,6 +1405,15 @@ bool VDBReader::prepare_cursor_stmt(int file_index) {
 
     where.append("elapsed >= ");
     where.append(std::to_string(impl_->cursor_begin_us));
+  }
+
+  if (impl_->cursor_end_us > 0) {
+    if (!where.empty()) {
+      where.append(" AND ");
+    }
+
+    where.append("elapsed <= ");
+    where.append(std::to_string(impl_->cursor_end_us));
   }
 
   std::string select_sql = "SELECT elapsed, url, action, data FROM VLinkDatas";
@@ -2387,6 +2393,7 @@ void VDBReader::open(const std::string& path) {
 
         std::filesystem::path file_db;
         std::string file_db_str;
+        bool has_schema = false;
 
         for (const auto& file_info : files_json) {
 #ifdef _WIN32
@@ -2432,7 +2439,7 @@ void VDBReader::open(const std::string& path) {
           }
 
           if (wrapper_file.has_schema) {
-            impl_->info.has_schema = true;
+            has_schema = true;
           }
 
           std::error_code db_size_ec;
@@ -2458,7 +2465,7 @@ void VDBReader::open(const std::string& path) {
             impl_->total_has_completed = false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
           }
 
-          if (blank_duration < 0) {
+          if (blank_duration < 0 || impl_->info.blank_duration < blank_duration) {
             blank_duration = impl_->info.blank_duration;
           }
 
@@ -2466,6 +2473,7 @@ void VDBReader::open(const std::string& path) {
           ++file_index;
         }
 
+        impl_->info.has_schema = has_schema;
         impl_->info.split_count = impl_->file_list.size();
 
         if VUNLIKELY (impl_->file_list.empty()) {
@@ -2789,8 +2797,6 @@ void VDBReader::read(const Config& config) {
   bool is_interrupted = false;
 
   do {
-    bool is_end = false;
-
     // prepare
     int start_index = get_reset_index(config);
 
@@ -2886,8 +2892,9 @@ void VDBReader::read(const Config& config) {
         }
 
         if (config.end_time > 0 && timestamp > config.end_time * 1000U) {
-          timestamp = config.end_time * 1000U;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-          is_end = true;                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          is_interrupted = impl_->stop_flag.load(std::memory_order_relaxed) ||
+                           impl_->jump_flag.load(std::memory_order_relaxed) || is_ready_to_quit();
+          break;
         }
 
         url_id = ::sqlite3_column_int(wrapper_file.stmt, get_column(1));
@@ -2986,10 +2993,6 @@ void VDBReader::read(const Config& config) {
           impl_->real_elapsed.store(timestamp, std::memory_order_relaxed);
         }
 
-        if (is_end) {
-          break;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        }
-
         Frame frame;
         frame.timestamp = timestamp;
         frame.url = url;
@@ -2999,7 +3002,7 @@ void VDBReader::read(const Config& config) {
         BagReader::process_output(frame);
       }
 
-      if (is_interrupted || is_end) {
+      if (is_interrupted) {
         break;
       }
     }
