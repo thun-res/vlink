@@ -1551,14 +1551,20 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
       std::lock_guard split_lock(impl_->split_mtx);
 
       impl_->split_index.fetch_add(1, std::memory_order_relaxed);
-      impl_->time_current = impl_->time_start + std::chrono::milliseconds(microseconds_timestamp / 1000U);
+      const auto time_current = impl_->time_start + std::chrono::milliseconds(microseconds_timestamp / 1000U);
+      const bool same_millisecond = time_current == impl_->time_current;
+      impl_->time_current = time_current;
 
       if (impl_->config.split_name_by_time) {
-        if (impl_->base_dir.empty()) {
-          impl_->split_filename = get_format_date(&impl_->time_current, true) + ".vdb";
-        } else {
-          impl_->split_filename = impl_->base_dir + "/" + get_format_date(&impl_->time_current, true) + ".vdb";
+        std::string filename = get_format_date(&impl_->time_current, true) + ".vdb";
+
+        if VUNLIKELY (same_millisecond || std::find(impl_->split_file_list.begin(), impl_->split_file_list.end(),
+                                                    filename) != impl_->split_file_list.end()) {
+          filename.insert(filename.find_last_of('.'),
+                          "." + std::to_string(impl_->split_index.load(std::memory_order_relaxed) + 1));
         }
+
+        impl_->split_filename = impl_->base_dir.empty() ? filename : impl_->base_dir + "/" + filename;
       } else {
         impl_->split_filename =
             impl_->base_name + "." + std::to_string(impl_->split_index.load(std::memory_order_relaxed) + 1) + ".vdb";

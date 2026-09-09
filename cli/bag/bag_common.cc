@@ -440,10 +440,16 @@ bool clone_paths_overlap(const std::filesystem::path& source, const std::filesys
 
     if (split_name_by_time) {
       static constexpr std::string_view kTimePattern = "0000-00-00_00-00-00-000";
-      matches = name.size() == kTimePattern.size();
+      matches = name.size() >= kTimePattern.size();
 
-      for (size_t i = 0; matches && i < name.size(); ++i) {
+      for (size_t i = 0; matches && i < kTimePattern.size(); ++i) {
         matches = kTimePattern[i] == '0' ? name[i] >= '0' && name[i] <= '9' : name[i] == kTimePattern[i];
+      }
+
+      if (matches && name.size() > kTimePattern.size()) {
+        const auto begin = name.begin() + static_cast<std::string::difference_type>(kTimePattern.size() + 1);
+        matches = name[kTimePattern.size()] == '.' && begin != name.end() && *begin != '0' &&
+                  std::all_of(begin, name.end(), [](char c) { return c >= '0' && c <= '9'; });
       }
 
       output_name = name + suffix;

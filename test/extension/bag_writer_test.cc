@@ -1645,6 +1645,68 @@ void verify_ignore_compress_url_remains_readable(const char* suffix) {
 }
 
 TEST_SUITE("extension-BagWriter") {
+  TEST_CASE("max_split_count retains exact frame tails across split modes") {
+    for (const auto* suffix : {".vdbx", ".vcapx"}) {
+      for (const int64_t limit : {0, 1, 2, 4, 12, 20}) {
+        for (const bool by_time : {false, true}) {
+          for (const bool time_name : {false, true}) {
+            for (const bool sync : {false, true}) {
+              INFO(std::string(suffix), " limit=", limit, " time=", by_time, " naming=", time_name, " sync=", sync);
+              ScopedWriterPath bag(suffix);
+              BagWriter::Config config;
+              config.sync_mode = sync;
+              config.compress = BagWriter::kCompressNone;
+              config.cache_size = 0;
+              config.split_by_size = by_time ? 0 : 1;
+              config.split_by_time = by_time ? 1 : 0;
+              config.split_name_by_time = time_name;
+              config.max_split_count = limit;
+              auto writer = BagWriter::create(bag.path.string(), config);
+              REQUIRE(writer != nullptr);
+              std::vector<std::string> files;
+              writer->register_split_callback(
+                  [&files](int, const std::string& filename) { files.emplace_back(filename); }, false);
+              if (!sync) {
+                REQUIRE(writer->async_run());
+              }
+              for (int64_t i = 0; i < 12; ++i) {
+                const auto data = Bytes::from_string("frame-" + std::to_string(i));
+                int64_t timestamp = i * (by_time ? 1'001 : 10);
+                REQUIRE_GE(writer->push(write_frame("dds://test/retention", "raw", SchemaType::kRaw,
+                                                    ActionType::kPublish, data, timestamp)),
+                           0);
+              }
+              if (!sync) {
+                writer->wait_for_idle();
+                writer->quit(true);
+              }
+              writer->close();
+              REQUIRE_FALSE(writer->fail());
+              writer.reset();
+              REQUIRE_EQ(files.size(), 12U);
+              const auto retained = limit == 0 || limit > 12 ? 12 : limit;
+              for (int64_t i = 0; i < 12; ++i) {
+                CHECK_EQ(std::filesystem::exists(files[i]), i >= 12 - retained);
+              }
+              auto reader = BagReader::create(bag.path.string());
+              REQUIRE(reader != nullptr);
+              CHECK_EQ(reader->get_info().split_count, retained);
+              CHECK_EQ(reader->get_info().message_count, retained);
+              REQUIRE_EQ(reader->get_info().url_metas.size(), 1U);
+              CHECK_EQ(reader->get_info().url_metas.front().count, retained);
+              reader.reset();
+              const auto frames = read_writer_frames(bag.path);
+              REQUIRE_EQ(frames.size(), retained);
+              for (int64_t i = 0; i < retained; ++i) {
+                CHECK_EQ(frames[i].data.to_string(), "frame-" + std::to_string(12 - retained + i));
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   TEST_CASE("bind_bag_interface marks the plugin as write direction") {
     StubBagWriter writer;
     auto plugin = std::make_shared<RewriteWritePlugin>();
