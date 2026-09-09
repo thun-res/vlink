@@ -62,12 +62,18 @@
       return -1;
     }
 
-    if (ss >> delimiter3 >> milliseconds) {
-      if (delimiter3 != ':') {
+    ss >> std::ws;
+
+    if (!ss.eof()) {
+      if (!(ss >> delimiter3 >> milliseconds) || delimiter3 != ':') {
         return -1;
       }
-    } else {
-      milliseconds = 0;
+
+      ss >> std::ws;
+
+      if (!ss.eof()) {
+        return -1;
+      }
     }
 
     if (hours < 0 || minutes < 0 || minutes >= 60 || seconds < 0 || seconds >= 60 || milliseconds < 0 ||
@@ -167,7 +173,8 @@ int main(int argc, char* argv[]) {
   record_command.add_argument("--max_split_count")
       .help("Max retained split file count (0 means unlimited)")
       .scan<'d', int64_t>()
-      .default_value(vlink::BagWriter::Config().max_split_count);
+      .default_value(vlink::BagWriter::Config().max_split_count)
+      .nargs(1);
   record_command.add_argument("-g", "--deft")
       .help("No collect serialization infomation")
       .default_value(false)
@@ -316,10 +323,11 @@ int main(int argc, char* argv[]) {
       .help("Bind urls, empty is all")
       .default_value(std::vector<std::string>())
       .nargs(argparse::nargs_pattern::any);
-  clone_command.add_argument("-t", "--tag").help("Set tag name").default_value(std::string());
+  clone_command.add_argument("-t", "--tag").help("Set tag name").default_value(std::string()).nargs(1);
   clone_command.add_argument("-i", "--filter")
       .help("URL keyword filter, comma-separated or quoted space-separated")
-      .default_value(std::string());
+      .default_value(std::string())
+      .nargs(1);
   clone_command.add_argument("-k", "--black").help("Blacklist mode").default_value(false).implicit_value(true);
   clone_command.add_argument("-s", "--actions")
       .help(
@@ -334,59 +342,67 @@ int main(int argc, char* argv[]) {
       .help("Begin time(s)")
       .scan<'g', double>()
       // NOLINTNEXTLINE(readability-redundant-casting)
-      .default_value(static_cast<double>(0));
+      .default_value(static_cast<double>(0))
+      .nargs(1);
   clone_command.add_argument("-e", "--end_time")
       .help("End time(s)")
       .scan<'g', double>()
       // NOLINTNEXTLINE(readability-redundant-casting)
-      .default_value(static_cast<double>(0));
+      .default_value(static_cast<double>(0))
+      .nargs(1);
   clone_command.add_argument("-q", "--quiet").help("Quiet mode").default_value(false).implicit_value(true);
   clone_command.add_argument("-l", "--detail").help("Detail mode").default_value(false).implicit_value(true);
   clone_command.add_argument("-p", "--compress").help("Compress data").default_value(false).implicit_value(true);
-  clone_command.add_argument("-o", "--split_name_by_time")
-      .help("Split name by time")
-      .default_value(false)
-      .implicit_value(true);
   clone_command.add_argument("-z", "--split_by_size")
       .help("Split size(GB)")
       .scan<'g', double>()
       // NOLINTNEXTLINE(readability-redundant-casting)
-      .default_value(static_cast<double>(vlink::BagWriter::Config().split_by_size / 1024.0 / 1024.0 / 1024.0));
+      .default_value(static_cast<double>(vlink::BagWriter::Config().split_by_size / 1024.0 / 1024.0 / 1024.0))
+      .nargs(1);
   clone_command.add_argument("-y", "--split_by_time")
       .help("Split time(s)")
       .scan<'g', double>()
       // NOLINTNEXTLINE(readability-redundant-casting)
-      .default_value(static_cast<double>(vlink::BagWriter::Config().split_by_time));
+      .default_value(static_cast<double>(vlink::BagWriter::Config().split_by_time))
+      .nargs(1);
   clone_command.add_argument("-f", "--force").help("Overwriting").default_value(false).implicit_value(true);
   clone_command.add_argument("-j", "--wal_mode").help("Enable wal mode").default_value(false).implicit_value(true);
   clone_command.add_argument("-c", "--cache_size")
       .help("Cache size(MB)")
       .scan<'g', double>()
       // NOLINTNEXTLINE(readability-redundant-casting)
-      .default_value(static_cast<double>(vlink::BagWriter::Config().cache_size / 1024.0 / 1024.0));
+      .default_value(static_cast<double>(vlink::BagWriter::Config().cache_size / 1024.0 / 1024.0))
+      .nargs(1);
 
   clone_command.add_argument("--rel_begin_time")
       .help("Relative Begin time(format: '00:00:00' or 00:00:00:000)")
-      .default_value(std::string());
+      .default_value(std::string())
+      .nargs(1);
   clone_command.add_argument("--rel_end_time")
       .help("Relative End time(format: '00:00:00' or 00:00:00:000)")
-      .default_value(std::string());
+      .default_value(std::string())
+      .nargs(1);
   clone_command.add_argument("--local_begin_time")
       .help("Local Begin time(format: '00:00:00' or 00:00:00:000)")
-      .default_value(std::string());
+      .default_value(std::string())
+      .nargs(1);
   clone_command.add_argument("--local_end_time")
       .help("Local End time(format: '00:00:00' or 00:00:00:000)")
-      .default_value(std::string());
+      .default_value(std::string())
+      .nargs(1);
   clone_command.add_argument("--utc_begin_time")
       .help("UTC Begin time(format: '00:00:00' or 00:00:00:000)")
-      .default_value(std::string());
+      .default_value(std::string())
+      .nargs(1);
   clone_command.add_argument("--utc_end_time")
       .help("UTC End time(format: '00:00:00' or 00:00:00:000)")
-      .default_value(std::string());
+      .default_value(std::string())
+      .nargs(1);
   clone_command.add_argument("--compress_level")
       .help("Compress level (range: 1 ~ 5, 0 means default)")
       .scan<'d', int>()
-      .default_value(static_cast<int>(vlink::BagWriter::Config().compress_level));
+      .default_value(static_cast<int>(vlink::BagWriter::Config().compress_level))
+      .nargs(1);
   clone_command.add_argument("--ignore_compress")
       .help("Ignore compress urls")
       .default_value(std::vector<std::string>())
@@ -396,7 +412,12 @@ int main(int argc, char* argv[]) {
       .default_value(false)
       .implicit_value(true);
 
-  clone_command.add_argument("--plugin").help("Plugin name").default_value(std::string());
+  clone_command.add_argument("--plugin").help("Plugin name").default_value(std::string()).nargs(1);
+
+  clone_command.add_argument("-o", "--split_name_by_time")
+      .help("Split name by time")
+      .default_value(false)
+      .implicit_value(true);
 
   clone_command.add_description("Clone data");
 
@@ -962,11 +983,11 @@ int main(int argc, char* argv[]) {
       case kUseUnknown:
         break;
       case kUseRelTime:
-        if (!rel_begin_time.empty()) {
+        if (clone_command.is_used("--rel_begin_time")) {
           begin_time = convert_time_to_seconds(rel_begin_time);
         }
 
-        if (!rel_end_time.empty()) {
+        if (clone_command.is_used("--rel_end_time")) {
           end_time = convert_time_to_seconds(rel_end_time);
         }
 
@@ -977,21 +998,21 @@ int main(int argc, char* argv[]) {
 
         break;
       case kUseLocalTime:
-        if (!local_begin_time.empty()) {
+        if (clone_command.is_used("--local_begin_time")) {
           begin_time = convert_time_to_seconds(local_begin_time);
         }
 
-        if (!local_end_time.empty()) {
+        if (clone_command.is_used("--local_end_time")) {
           end_time = convert_time_to_seconds(local_end_time);
         }
 
         break;
       case kUseUtcTime:
-        if (!utc_begin_time.empty()) {
+        if (clone_command.is_used("--utc_begin_time")) {
           begin_time = convert_time_to_seconds(utc_begin_time);
         }
 
-        if (!utc_end_time.empty()) {
+        if (clone_command.is_used("--utc_end_time")) {
           end_time = convert_time_to_seconds(utc_end_time);
         }
 
