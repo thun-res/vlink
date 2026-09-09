@@ -1797,51 +1797,49 @@ void MainWindow::on_pushButton_datadetails_clicked() {
 
 void MainWindow::on_pushButton_jump_clicked() {
   QString value = ui->lineEdit_jump->text();
+  int row = -1;
+
   switch (ui->comboBox_jump->currentIndex()) {
     case 0: {
-      int row = value.toInt() - 1;
+      row = value.toInt() - 1;
 
-      if (row >= 0 && row < local_info_.message_count) {
-        ui->tableView_data->scrollTo(ui->tableView_data->model()->index(row, 0), QAbstractItemView::PositionAtCenter);
-        ui->tableView_data->selectRow(row);
-      } else {
+      if (row < 0 || row >= local_info_.message_count) {
         QMessageBox::warning(this, tr("Warning"), tr("Invalid row index."));
         return;
       }
     } break;
     case 1: {
-      int left = 0;
-      int right = local_info_.message_count - 1;
-      int row_index = -1;
       uint64_t target_elapsed = value.toDouble() * 1000'000;
-      while (left <= right) {
-        uint64_t mid = left + (right - left) / 2;
-        uint64_t current_elapsed =
-            ui->tableView_data->model()->data(ui->tableView_data->model()->index(mid, 0), Qt::UserRole).toULongLong();
+      QSqlQuery query(local_database_);
+      query.prepare("SELECT COUNT(*) FROM VLinkDatas WHERE elapsed < :elapsed");
+      query.bindValue(":elapsed", static_cast<qulonglong>(target_elapsed));
 
-        if (current_elapsed >= target_elapsed) {
-          row_index = mid;
-          right = mid - 1;
-        } else {
-          left = mid + 1;
-        }
+      if (!query.exec() || !query.next()) {
+        QMessageBox::warning(this, tr("Warning"), query.lastError().text());
+        return;
       }
 
-      if (row_index > 0) {
-        --row_index;
-      }
+      row = query.value(0).toInt();
 
-      if (row_index != -1) {
-        ui->tableView_data->scrollTo(ui->tableView_data->model()->index(row_index, 0),
-                                     QAbstractItemView::PositionAtCenter);
-        ui->tableView_data->selectRow(row_index);
-      } else {
+      if (row >= local_info_.message_count) {
         QMessageBox::warning(this, tr("Warning"), tr("Invalid seconds."));
+        return;
       }
+
+      row = std::max(row - 1, 0);
     } break;
     default:
-      break;
+      return;
   }
+
+  auto* model = ui->tableView_data->model();
+
+  while (row >= model->rowCount() && model->canFetchMore(QModelIndex())) {
+    model->fetchMore(QModelIndex());
+  }
+
+  ui->tableView_data->scrollTo(model->index(row, 0), QAbstractItemView::PositionAtCenter);
+  ui->tableView_data->selectRow(row);
 }
 
 void MainWindow::update_connected(bool connected) {
