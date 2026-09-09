@@ -1419,7 +1419,7 @@ bool VDBReader::prepare_cursor_stmt(int file_index) {
 
   const bool order_by_elapsed = wrapper_file.has_idx_elapsed;
 
-  select_sql.append(order_by_elapsed ? " ORDER BY elapsed;" : " ORDER BY rowid;");
+  select_sql.append(order_by_elapsed ? " ORDER BY elapsed, rowid;" : " ORDER BY rowid;");
 
   ::sqlite3_stmt* stmt = nullptr;
   const int ret = ::sqlite3_prepare_v2(wrapper_file.db, select_sql.c_str(), -1, &stmt, nullptr);
@@ -2684,11 +2684,11 @@ int VDBReader::get_reset_index(const Config& config) {
   for (auto& wrapper_file : impl_->file_list) {
     if (wrapper_file.has_idx_elapsed && wrapper_file.has_idx_url) {
       if (config.filter_urls.empty()) {
-        impl_->update_sql_default_str = "SELECT elapsed, url, action, data FROM VLinkDatas ORDER BY elapsed;";
+        impl_->update_sql_default_str = "SELECT elapsed, url, action, data FROM VLinkDatas ORDER BY elapsed, rowid;";
 
         impl_->update_sql_time_str = "SELECT elapsed, url, action, data FROM VLinkDatas WHERE elapsed >= ";
         impl_->update_sql_time_str.append(std::to_string(impl_->begin_time.load(std::memory_order_relaxed) * 1000));
-        impl_->update_sql_time_str.append(" ORDER BY elapsed;");
+        impl_->update_sql_time_str.append(" ORDER BY elapsed, rowid;");
       } else {
         std::string id_list_str = " url IN (";
         bool id_appended = false;
@@ -2713,7 +2713,7 @@ int VDBReader::get_reset_index(const Config& config) {
         impl_->update_sql_default_str = "SELECT elapsed, url, action, data FROM VLinkDatas WHERE";
         impl_->update_sql_default_str.append(id_list_str);
         impl_->update_sql_default_str.append(wrapper_file.has_idx_elapsed
-                                                 ? " ORDER BY elapsed;"
+                                                 ? " ORDER BY elapsed, rowid;"
                                                  : " ORDER BY rowid;");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
         impl_->update_sql_time_str = "SELECT elapsed, url, action, data FROM VLinkDatas WHERE";
@@ -2721,7 +2721,7 @@ int VDBReader::get_reset_index(const Config& config) {
         impl_->update_sql_time_str.append(" AND elapsed >= ");
         impl_->update_sql_time_str.append(std::to_string(impl_->begin_time.load(std::memory_order_relaxed) * 1000));
         impl_->update_sql_time_str.append(wrapper_file.has_idx_elapsed
-                                              ? " ORDER BY elapsed;"
+                                              ? " ORDER BY elapsed, rowid;"
                                               : " ORDER BY rowid;");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
     }
