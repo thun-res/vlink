@@ -348,6 +348,8 @@ vlink-proxy -d 0 -k "my_secret_key"
 | `kController` | 可调用 `send_control()` / `send_data()`，驱动服务端 |
 | `kListener` | 只读观察；`send_control()` / `send_data()` 立即返回 `false` |
 
+`direct` 模式的 Listener 通过每秒心跳同步当前订阅选择，支持晚加入，并跟随控制端切换选择或停止。
+
 工作模式由控制端通过 `Control::mode` 切换，决定服务端订阅哪些话题、是否转发数据、是否接受注入：
 
 | 模式 | 用途 |

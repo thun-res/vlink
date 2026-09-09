@@ -1134,10 +1134,6 @@ void ProxyAPI::reset_handle() {
       impl_->token.clear();
       return true;
     };
-#else
-    if VUNLIKELY (time.control_id == 0) {
-      return;
-    }
 #endif
 
     {
@@ -1206,11 +1202,11 @@ void ProxyAPI::reset_handle() {
 
       return;
     }
+#endif
 
-    if VUNLIKELY (time.control_id == 0) {
+    if VUNLIKELY (time.control_id == 0 && !(impl_->config.direct && impl_->config.role == kListener)) {
       return;
     }
-#endif
 
     if (impl_->config.role == kController) {
       if VUNLIKELY (time.control_id != impl_->control_id) {
@@ -1263,6 +1259,23 @@ void ProxyAPI::reset_handle() {
                     impl_->error_elapsed_timer.restart() >= 200) {
         process_error(kDirectCompError);
       }
+      return;
+    }
+
+    if (impl_->config.direct && impl_->config.role == kListener) {
+      Control control;
+      control.mode = time.mode;
+      control.url_meta_list = time.direct_sub_list;
+
+      {
+        std::lock_guard control_lock(impl_->control_mtx);
+        impl_->last_control = control;
+      }
+
+      sync_direct_maps(control);
+    }
+
+    if VUNLIKELY (time.control_id == 0) {
       return;
     }
 

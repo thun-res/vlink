@@ -256,7 +256,9 @@ class VLINK_PROXY_API_EXPORT ProxyAPI : public MessageLoop {
    *
    * @details
    * @c kController may call @c send_control() and @c send_data().  @c kListener is
-   * a passive observer; send calls return @c false immediately.
+   * a passive observer; send calls return @c false immediately.  In direct mode,
+   * it follows the server's current subscription selection through periodic heartbeats,
+   * including when it joins after the controller has sent its selection.
    */
   enum Role : uint8_t { kController = 0, kListener };
 

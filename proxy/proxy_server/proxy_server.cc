@@ -597,6 +597,15 @@ void ProxyServer::send_time() {
   time.token = impl_->token;
 #endif
 
+  if (impl_->config.direct) {
+    std::shared_lock control_lock(impl_->control_mtx);
+    time.direct_sub_list.reserve(impl_->requested_sub_meta_map.size());
+
+    for (const auto& [url, meta] : impl_->requested_sub_meta_map) {
+      time.direct_sub_list.push_back({url, meta.ser, meta.schema, kSubscriber});
+    }
+  }
+
   time.cpu_usage = Utils::get_cpu_usage();
   time.memory_usage = Utils::get_memory_usage();
 
