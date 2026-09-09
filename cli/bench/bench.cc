@@ -3143,17 +3143,24 @@ bool run_scenario(const Bench::RunOptions& options, const Bench::Scenario& scena
     return run_process_pubsub_case(options, scenario, result, error);
   }
 
-  switch (scenario.payload) {
-    case Bench::kBytesPayload:
-      return run_local_pubsub_case<Bytes>(scenario, result, error);
-    case Bench::kStringPayload:
-      return run_local_pubsub_case<std::string>(scenario, result, error);
-    case Bench::kRawDataPayload:
-      return run_local_pubsub_case<zerocopy::RawData>(scenario, result, error);
-    default:
-      error = "invalid payload kind";
-      return false;
+  try {
+    switch (scenario.payload) {
+      case Bench::kBytesPayload:
+        return run_local_pubsub_case<Bytes>(scenario, result, error);
+      case Bench::kStringPayload:
+        return run_local_pubsub_case<std::string>(scenario, result, error);
+      case Bench::kRawDataPayload:
+        return run_local_pubsub_case<zerocopy::RawData>(scenario, result, error);
+      default:
+        break;
+    }
+  } catch (const std::exception& e) {
+    error = e.what();
+    return false;
   }
+
+  error = "invalid payload kind";
+  return false;
 }
 
 std::vector<Bench::Scenario> expand_scenarios(const Bench::RunOptions& options) {
@@ -4008,19 +4015,24 @@ int Bench::run_pub_worker(const WorkerOptions& options) {
   std::string error;
   bool ok = false;
 
-  switch (options.payload) {
-    case kBytesPayload:
-      ok = run_pub_worker_impl<Bytes>(options, result, send_block_samples, error);
-      break;
-    case kStringPayload:
-      ok = run_pub_worker_impl<std::string>(options, result, send_block_samples, error);
-      break;
-    case kRawDataPayload:
-      ok = run_pub_worker_impl<zerocopy::RawData>(options, result, send_block_samples, error);
-      break;
-    default:
-      error = "invalid payload kind";
-      break;
+  try {
+    switch (options.payload) {
+      case kBytesPayload:
+        ok = run_pub_worker_impl<Bytes>(options, result, send_block_samples, error);
+        break;
+      case kStringPayload:
+        ok = run_pub_worker_impl<std::string>(options, result, send_block_samples, error);
+        break;
+      case kRawDataPayload:
+        ok = run_pub_worker_impl<zerocopy::RawData>(options, result, send_block_samples, error);
+        break;
+      default:
+        error = "invalid payload kind";
+        break;
+    }
+  } catch (const std::exception& e) {
+    error = e.what();
+    ok = false;
   }
 
   if VUNLIKELY (!ok) {
@@ -4056,19 +4068,24 @@ int Bench::run_sub_worker(const WorkerOptions& options) {
   std::string error;
   bool ok = false;
 
-  switch (options.payload) {
-    case kBytesPayload:
-      ok = run_sub_worker_impl<Bytes>(options, result, latency_samples, error);
-      break;
-    case kStringPayload:
-      ok = run_sub_worker_impl<std::string>(options, result, latency_samples, error);
-      break;
-    case kRawDataPayload:
-      ok = run_sub_worker_impl<zerocopy::RawData>(options, result, latency_samples, error);
-      break;
-    default:
-      error = "invalid payload kind";
-      break;
+  try {
+    switch (options.payload) {
+      case kBytesPayload:
+        ok = run_sub_worker_impl<Bytes>(options, result, latency_samples, error);
+        break;
+      case kStringPayload:
+        ok = run_sub_worker_impl<std::string>(options, result, latency_samples, error);
+        break;
+      case kRawDataPayload:
+        ok = run_sub_worker_impl<zerocopy::RawData>(options, result, latency_samples, error);
+        break;
+      default:
+        error = "invalid payload kind";
+        break;
+    }
+  } catch (const std::exception& e) {
+    error = e.what();
+    ok = false;
   }
 
   if VUNLIKELY (!ok) {
