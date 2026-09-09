@@ -51,6 +51,8 @@ struct Object;
 namespace perception {
 namespace mapping {
 
+[[nodiscard]] std::vector<std::string> split_paths(const std::string& spec);
+
 bool decode_zerocopy(const vlink::Bytes& raw, const std::string& ser, const PerceptionConfig::MappingRule& rule,
                      Layer& out);
 

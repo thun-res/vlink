@@ -47,6 +47,7 @@
 
 #include "../flatbuffers_runtime_compat.h"
 #include "../mainwindow.h"
+#include "./perception_mapping.h"
 
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic push
@@ -119,6 +120,41 @@ static const google::protobuf::Descriptor* resolve_collection_element(const goog
   }
 
   return descriptor;
+}
+
+static const reflection::Object* resolve_collection_element(const reflection::Object* object,
+                                                            const reflection::Schema& schema, const QString& path) {
+  const auto segments = path.trimmed().split('.');
+
+  for (const auto& raw_segment : segments) {
+    QString segment = raw_segment;
+    const int bracket = segment.indexOf('[');
+
+    if (bracket >= 0) {
+      segment = segment.left(bracket);
+    }
+
+    if (segment.isEmpty()) {
+      continue;
+    }
+
+    const auto* field = find_field(*object, segment.toStdString());
+
+    if (!field) {
+      return nullptr;
+    }
+
+    const auto* type = field->type();
+
+    if (type->base_type() != reflection::Obj &&
+        !(type->base_type() == reflection::Vector && type->element() == reflection::Obj)) {
+      return nullptr;
+    }
+
+    object = schema.objects()->Get(static_cast<uint32_t>(type->index()));
+  }
+
+  return object;
 }
 
 PerceptionEditorDialog::PerceptionEditorDialog(const PerceptionConfig& config, QString config_path, MainWindow* window,
@@ -740,31 +776,51 @@ void PerceptionEditorDialog::rebuild_field_tree(const QString& ser, vlink::Schem
     fbs_context = window_->flatbuffers_runtime_.find_context(ser.toStdString());
   }
 
-  if (descriptor) {
-    const auto* element = resolve_collection_element(descriptor, collection_edit_->text());
+  const auto collections = perception::mapping::split_paths(collection_edit_->text().toStdString());
+  const auto inners = perception::mapping::split_paths(inner_collection_edit_->text().toStdString());
 
-    if (!element) {
-      element = descriptor;
-    }
+  for (size_t i = 0; i < collections.size(); ++i) {
+    const auto collection = QString::fromStdString(collections[i]);
+    const auto inner_path = QString::fromStdString(i < inners.size() ? inners[i] : inners.back());
+    const auto prefix = collections.size() > 1 ? QString("$%1 ").arg(i + 1) : QString();
 
-    if (!inner_collection_edit_->text().trimmed().isEmpty()) {
-      const auto* inner = resolve_collection_element(element, inner_collection_edit_->text());
+    if (descriptor) {
+      const auto* element = resolve_collection_element(descriptor, collection);
+
+      if (!element) {
+        element = descriptor;
+      }
+
+      const auto* inner = resolve_collection_element(element, inner_path);
 
       if (inner) {
         element = inner;
       }
+
+      auto* root =
+          new QTreeWidgetItem(field_tree_, {prefix + QString::fromStdString(std::string(element->name())), "message"});
+      add_proto_fields(root, element, {}, 0);
+      root->setExpanded(true);
+      continue;
     }
 
-    auto* root = new QTreeWidgetItem(field_tree_, {QString::fromStdString(std::string(element->name())), "message"});
-    add_proto_fields(root, element, {}, 0);
-    root->setExpanded(true);
-    return;
-  }
+    if (fbs_context && fbs_context->valid() && fbs_context->schema && fbs_context->root_object) {
+      const auto* element = resolve_collection_element(fbs_context->root_object, *fbs_context->schema, collection);
 
-  if (fbs_context && fbs_context->valid() && fbs_context->schema && fbs_context->root_object) {
-    auto* root = new QTreeWidgetItem(field_tree_, {ser, "table"});
-    add_fbs_fields(root, fbs_context->root_object, fbs_context->schema, {}, 0);
-    root->setExpanded(true);
+      if (!element) {
+        element = fbs_context->root_object;
+      }
+
+      const auto* inner = resolve_collection_element(element, *fbs_context->schema, inner_path);
+
+      if (inner) {
+        element = inner;
+      }
+
+      auto* root = new QTreeWidgetItem(field_tree_, {prefix + QString::fromStdString(element->name()->str()), "table"});
+      add_fbs_fields(root, element, fbs_context->schema, {}, 0);
+      root->setExpanded(true);
+    }
   }
 }
 
