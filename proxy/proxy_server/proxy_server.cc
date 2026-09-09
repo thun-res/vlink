@@ -940,40 +940,40 @@ void ProxyServer::update_all() {
         case 0:
           break;
         case 1:
-          matches_type = (info.type & kPublisher && info.type & kSubscriber);
+          matches_type = (info.type & kPublisher) != 0 && (info.type & kSubscriber) != 0;
           break;
         case 2:
-          matches_type = (info.type & kServer && info.type & kClient);
+          matches_type = (info.type & kServer) != 0 && (info.type & kClient) != 0;
           break;
         case 3:
-          matches_type = (info.type & kSetter && info.type & kGetter);
+          matches_type = (info.type & kSetter) != 0 && (info.type & kGetter) != 0;
           break;
         case 4:
-          matches_type = ((info.type & kPublisher) || (info.type & kSubscriber));
+          matches_type = (info.type & kPublisher) != 0 || (info.type & kSubscriber) != 0;
           break;
         case 5:
-          matches_type = ((info.type & kServer) || (info.type & kClient));
+          matches_type = (info.type & kServer) != 0 || (info.type & kClient) != 0;
           break;
         case 6:
-          matches_type = ((info.type & kSetter) || (info.type & kGetter));
+          matches_type = (info.type & kSetter) != 0 || (info.type & kGetter) != 0;
           break;
         case 7:
-          matches_type = (info.type & kPublisher);
+          matches_type = (info.type & kPublisher) != 0;
           break;
         case 8:
-          matches_type = (info.type & kSubscriber);
+          matches_type = (info.type & kSubscriber) != 0;
           break;
         case 9:
-          matches_type = (info.type & kServer);
+          matches_type = (info.type & kServer) != 0;
           break;
         case 10:
-          matches_type = (info.type & kClient);
+          matches_type = (info.type & kClient) != 0;
           break;
         case 11:
-          matches_type = (info.type & kSetter);
+          matches_type = (info.type & kSetter) != 0;
           break;
         case 12:
-          matches_type = (info.type & kGetter);
+          matches_type = (info.type & kGetter) != 0;
           break;
         default:
           break;
