@@ -1838,6 +1838,94 @@ void verify_vdb_limit_policy(bool enable_limit) {
   REQUIRE(reader->wait_for_quit(3000));
 }
 
+void verify_vdb_fix_repairs_header_and_url_counters() {
+  ScopedBagPath bag(".vdb");
+  write_roundtrip_bag(bag.path);
+
+  const std::string sql =
+      "UPDATE VLinkHeader SET count=0, duration=0, complete=0; UPDATE VLinkUrls SET count=0, freq=0;";
+  if (!run_sqlite3_sql(bag.path, sql)) {
+    return;
+  }
+
+  {
+    auto broken = BagReader::create(bag.path.string(), true);
+    REQUIRE(broken != nullptr);
+    REQUIRE(broken->async_run());
+    CHECK_FALSE(broken->get_info().has_completed);
+    CHECK_EQ(broken->get_info().message_count, 0);
+    CHECK_FALSE(broken->check().get());
+    broken->quit();
+    REQUIRE(broken->wait_for_quit(3000));
+  }
+
+  {
+    auto reader = BagReader::create(bag.path.string(), false);
+    REQUIRE(reader != nullptr);
+    REQUIRE(reader->async_run());
+    CHECK(reader->fix(false).get());
+    reader->quit();
+    REQUIRE(reader->wait_for_quit(3000));
+  }
+
+  auto repaired = BagReader::create(bag.path.string(), true);
+  REQUIRE(repaired != nullptr);
+  REQUIRE(repaired->async_run());
+  CHECK(repaired->get_info().has_completed);
+  CHECK_EQ(repaired->get_info().message_count, 3);
+  CHECK(repaired->check().get());
+  repaired->quit();
+  REQUIRE(repaired->wait_for_quit(3000));
+}
+
+void verify_vdb_fix_keeps_a_bag_without_rows_incomplete() {
+  ScopedBagPath bag(".vdb");
+  write_empty_bag(bag.path);
+
+  if (!run_sqlite3_sql(bag.path, "UPDATE VLinkHeader SET complete=0;")) {
+    return;
+  }
+
+  {
+    auto reader = BagReader::create(bag.path.string(), false);
+    REQUIRE(reader != nullptr);
+    REQUIRE(reader->async_run());
+    CHECK(reader->fix(false).get());
+    reader->quit();
+    REQUIRE(reader->wait_for_quit(3000));
+  }
+
+  auto reader = BagReader::create(bag.path.string(), true);
+  REQUIRE(reader != nullptr);
+  REQUIRE(reader->async_run());
+  CHECK_FALSE(reader->get_info().has_completed);
+  CHECK_EQ(reader->get_info().message_count, 0);
+  reader->quit();
+  REQUIRE(reader->wait_for_quit(3000));
+}
+
+void verify_vdb_fix_skips_split_bag_metadata() {
+  ScopedBagPath bag(".vdbx");
+  write_split_bag(bag.path, false);
+  mutate_manifest_header_field(bag.path, "complete", false);
+
+  {
+    auto reader = BagReader::create(bag.path.string(), false);
+    REQUIRE(reader != nullptr);
+    REQUIRE(reader->async_run());
+    CHECK(reader->fix(false).get());
+    reader->quit();
+    REQUIRE(reader->wait_for_quit(3000));
+  }
+
+  auto reader = BagReader::create(bag.path.string(), true);
+  REQUIRE(reader != nullptr);
+  REQUIRE(reader->async_run());
+  CHECK_FALSE(reader->get_info().has_completed);
+  reader->quit();
+  REQUIRE(reader->wait_for_quit(3000));
+}
+
 void verify_vdb_reader_rebuild_maintenance(const char* suffix) {
   ScopedBagPath bag(suffix);
   if (std::string(suffix) == ".vdbx") {
@@ -3583,6 +3671,9 @@ TEST_SUITE("extension-BagReader") {
   TEST_CASE("vdb readers rebuild indexes and stay readable after maintenance") {
     verify_vdb_reader_rebuild_maintenance(".vdb");
     verify_vdb_reader_rebuild_maintenance(".vdbx");
+    verify_vdb_fix_repairs_header_and_url_counters();
+    verify_vdb_fix_keeps_a_bag_without_rows_incomplete();
+    verify_vdb_fix_skips_split_bag_metadata();
   }
 
   TEST_CASE("vdb and vcap writers reject conflicting schemas and url ser changes") {

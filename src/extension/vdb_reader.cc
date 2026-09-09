@@ -80,6 +80,62 @@ static std::string sqlite_column_text_or_empty(::sqlite3_stmt* stmt, int column)
 
   return {reinterpret_cast<const char*>(text), static_cast<size_t>(::sqlite3_column_bytes(stmt, column))};
 }
+
+static bool exec_repair_sql(::sqlite3* db, const char* sql, const char* what) {
+  char* err_msg = nullptr;
+  const int ret = ::sqlite3_exec(db, sql, nullptr, nullptr, &err_msg);
+
+  if VUNLIKELY (ret != SQLITE_OK) {
+    CLOG_W("VDBReader: Failed to %s: %s.", what, err_msg ? err_msg : ::sqlite3_errmsg(db));
+
+    if (err_msg) {
+      ::sqlite3_free(err_msg);
+    }
+
+    return false;
+  }
+
+  return true;
+}
+
+static bool repair_bag_metadata(::sqlite3* db) {
+  static constexpr const char* kCollectStats =
+      "CREATE TEMP TABLE _vlink_fix_stats AS SELECT url AS uid, COUNT(*) AS n, MIN(elapsed) AS mn, "
+      "MAX(elapsed) AS mx FROM VLinkDatas GROUP BY url;";
+  static constexpr const char* kRepairUrls =
+      "UPDATE VLinkUrls SET count = IFNULL((SELECT n FROM _vlink_fix_stats WHERE uid = VLinkUrls.id), 0), "
+      "freq = IFNULL((SELECT CASE WHEN mx > mn THEN n / ((mx - mn) / 1000000.0) ELSE 0 END FROM "
+      "_vlink_fix_stats WHERE uid = VLinkUrls.id), 0);";
+  static constexpr const char* kRepairHeader =
+      "UPDATE VLinkHeader SET count = IFNULL((SELECT SUM(n) FROM _vlink_fix_stats), 0), "
+      "duration = IFNULL((SELECT MAX(mx) FROM _vlink_fix_stats), 0), "
+      "complete = CASE WHEN (SELECT COUNT(*) FROM _vlink_fix_stats) > 0 THEN 1 ELSE complete END;";
+  static constexpr const char* kDropStats = "DROP TABLE IF EXISTS temp._vlink_fix_stats;";
+
+  if VUNLIKELY (!exec_repair_sql(db, kDropStats, "drop stale repair table")) {
+    return false;
+  }
+
+  if VUNLIKELY (!exec_repair_sql(db, "BEGIN IMMEDIATE;", "begin repair transaction")) {
+    return false;
+  }
+
+  if VUNLIKELY (!exec_repair_sql(db, kCollectStats, "collect repair statistics") ||
+                !exec_repair_sql(db, kRepairUrls, "repair url metadata") ||
+                !exec_repair_sql(db, kRepairHeader, "repair header metadata")) {
+    exec_repair_sql(db, "ROLLBACK;", "rollback repair transaction");
+    exec_repair_sql(db, kDropStats, "drop repair table");
+    return false;
+  }
+
+  if VUNLIKELY (!exec_repair_sql(db, "COMMIT;", "commit repair transaction")) {
+    exec_repair_sql(db, "ROLLBACK;", "rollback repair transaction");
+    exec_repair_sql(db, kDropStats, "drop repair table");
+    return false;
+  }
+
+  return exec_repair_sql(db, kDropStats, "drop repair table");
+}
 #endif
 
 // VDBReader::Impl
@@ -722,7 +778,15 @@ std::future<bool> VDBReader::fix(bool rebuild) {
     VLOG_W("VDBReader: Is busy.");
   }
 
-  return invoke_task([this, rebuild]() {
+  const bool can_repair_metadata = !impl_->read_only && !is_split_mode();
+
+  if (impl_->read_only) {
+    VLOG_W("VDBReader: Read-only reader, metadata repair skipped.");
+  } else if (is_split_mode()) {
+    VLOG_W("VDBReader: Split bag, metadata repair skipped; the index file is not rewritten.");
+  }
+
+  return invoke_task([this, rebuild, can_repair_metadata]() {
     int ret = 0;
     char* err_msg = nullptr;
 
@@ -734,6 +798,14 @@ std::future<bool> VDBReader::fix(bool rebuild) {
       if (wrapper_file.stmt) {
         ::sqlite3_finalize(wrapper_file.stmt);
         wrapper_file.stmt = nullptr;
+      }
+
+      if (can_repair_metadata && !repair_bag_metadata(wrapper_file.db)) {
+        return false;
+      }
+
+      if VUNLIKELY (is_ready_to_quit()) {
+        return false;
       }
 
       // opt

@@ -470,6 +470,10 @@ class VLINK_EXPORT BagReader : public MessageLoop {
   /**
    * @brief Attempts to recover a corrupted bag in the background where supported.
    *
+   * @details
+   * Rebuilds the header and per-url counters from the rows actually stored; recorded byte sizes and loss ratios
+   * stay untouched.  Skipped for a read-only reader and for a split bag, whose index file is not rewritten.
+   *
    * @param rebuild When true, also forces a full index rebuild.
    * @return Future resolving to @c true when recovery succeeded.
    */
