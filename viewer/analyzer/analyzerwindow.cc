@@ -1679,13 +1679,15 @@ bool AnalyzerWindow::load_bag(const QString& path) {
     double y_value = 0;
 
     auto& unit_list = unit_map_[url];
+    google::protobuf::Message* proto_msg = nullptr;
+    bool proto_parse_attempted = false;
 
     for (auto& unit : unit_list) {
       if (unit.index < 0) {
         continue;
       }
 
-      auto ser = frame.ser_type;
+      const auto& ser = frame.ser_type;
 
       if (type_ == kFrequencyType) {
         unit.x_values.append(x_value);
@@ -1739,33 +1741,41 @@ bool AnalyzerWindow::load_bag(const QString& path) {
               continue;
             }
 
-            if (unit.cached_ser != ser) {
-              unit.cached_ser = ser;
-              unit.root_msg.reset();
-              unit.fbs_context.reset();
-            }
+            if (!proto_parse_attempted) {
+              proto_parse_attempted = true;
 
-            if (!unit.root_msg) {
-              const auto* descriptor = des_pool_->FindMessageTypeByName(ser);
-
-              if (descriptor == nullptr) {
-                continue;
+              if (unit.cached_ser != ser) {
+                unit.cached_ser = ser;
+                unit.root_msg.reset();
+                unit.fbs_context.reset();
               }
 
-              const auto* prototype = factory_->GetPrototype(descriptor);
+              if (!unit.root_msg) {
+                const auto* descriptor = des_pool_->FindMessageTypeByName(ser);
 
-              if (prototype == nullptr) {
-                continue;
+                if (descriptor == nullptr) {
+                  continue;
+                }
+
+                const auto* prototype = factory_->GetPrototype(descriptor);
+
+                if (prototype == nullptr) {
+                  continue;
+                }
+
+                unit.root_msg.reset(prototype->New());
               }
 
-              unit.root_msg.reset(prototype->New());
+              if (unit.root_msg->ParseFromArray(raw_data.data(), static_cast<int>(raw_data.size()))) {
+                proto_msg = unit.root_msg.get();
+              }
             }
 
-            if (unit.root_msg && unit.root_msg->ParseFromArray(raw_data.data(), static_cast<int>(raw_data.size()))) {
+            if (proto_msg) {
               int depth = 0;
               VariantType value;
 
-              if (get_proto_value(*unit.root_msg, condition_list, depth, value)) {
+              if (get_proto_value(*proto_msg, condition_list, depth, value)) {
                 if (std::holds_alternative<int64_t>(value)) {
                   pvalue.emplace(std::get<int64_t>(value));
                 } else if (std::holds_alternative<double>(value)) {
@@ -1830,8 +1840,6 @@ bool AnalyzerWindow::load_bag(const QString& path) {
         }
 
         {
-          vlink::Exprtk::VariableList variable_list;
-
           y_value = 0;
           bool y_valid = false;
 
@@ -1843,10 +1851,6 @@ bool AnalyzerWindow::load_bag(const QString& path) {
 
             y_value = pvalue.value();
             y_valid = true;
-
-            if (unit.ext_operation_pro) {
-              variable_list.emplace_back(expression, pvalue.value());
-            }
           }
 
           if (!y_valid) {
@@ -1854,8 +1858,12 @@ bool AnalyzerWindow::load_bag(const QString& path) {
           }
 
           if (unit.ext_operation_pro) {
-            if (!unit.ext_operation_x.empty()) {
-              auto result = vlink::Exprtk::parse(unit.ext_operation_x, variable_list);
+            for (auto& [expression, value] : unit.variable_list) {
+              value = pvalue_map.at(expression).value();
+            }
+
+            if (unit.operation_x) {
+              auto result = unit.operation_x->value();
 
               if (!result.has_value()) {
                 continue;
@@ -1864,8 +1872,8 @@ bool AnalyzerWindow::load_bag(const QString& path) {
               x_value = result.value();
             }
 
-            if (!unit.ext_operation_y.empty()) {
-              auto result = vlink::Exprtk::parse(unit.ext_operation_y, variable_list);
+            if (unit.operation_y) {
+              auto result = unit.operation_y->value();
 
               if (!result.has_value()) {
                 continue;
@@ -2309,6 +2317,20 @@ bool AnalyzerWindow::load_config(const QString& path) {
           ui->label_type->setStyleSheet("QLabel { background-color: red; color: white; }");
 
           return false;
+        }
+
+        if (unit.ext_operation_pro) {
+          for (const auto& expression : unit.expressions) {
+            unit.variable_list.emplace_back(expression, 0.0);
+          }
+
+          if (!unit.ext_operation_x.empty()) {
+            unit.operation_x.emplace(unit.ext_operation_x, unit.variable_list);
+          }
+
+          if (!unit.ext_operation_y.empty()) {
+            unit.operation_y.emplace(unit.ext_operation_y, unit.variable_list);
+          }
         }
 
         auto& unit_list = unit_map_[unit.url];
