@@ -32,7 +32,7 @@ _vlink_bag_positional_count() {
                 ;;
             -s|--actions)
                 case "$subcommand" in
-                    play|clone)
+                    play|clone|merge)
                         expect="multi"
                         continue
                         ;;
@@ -94,7 +94,7 @@ _vlink_bag() {
 
     if [[ "$prev" == "-s" || "$prev" == "--actions" ]]; then
         case "$subcommand" in
-            play|clone)
+            play|clone|merge)
                 _vlink_bash_complete_words "1 2 3 4 5 6 7 8" "$cur"
                 return
                 ;;
@@ -110,7 +110,7 @@ _vlink_bag() {
                 ;;
             -s|--actions)
                 case "$subcommand" in
-                    play|clone)
+                    play|clone|merge)
                         _vlink_bash_complete_words "1 2 3 4 5 6 7 8" "$cur"
                         return
                         ;;
@@ -173,7 +173,13 @@ _vlink_bag() {
             ;;
         merge)
             if [[ "$cur" == -* ]]; then
-                _vlink_bash_complete_words "-o --output -t --tag -p --compress -f --force -q --quiet -h --help" "$cur"
+                _vlink_bash_complete_words "-u --urls -t --tag -i --filter -k --black -s --actions \
+-b --begin_time -e --end_time -q --quiet -l --detail -p --compress \
+-o --output --split_name_by_time -z --split_by_size -y --split_by_time \
+-f --force -j --wal_mode -c --cache_size \
+--rel_begin_time --rel_end_time --local_begin_time --local_end_time \
+--utc_begin_time --utc_end_time --compress_level --ignore_compress \
+--import_schema --plugin -h --help" "$cur"
                 return
             fi
             _vlink_bash_complete_files_ext "$cur" "$_vlink_bash_bag_ext"

@@ -47,8 +47,12 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
               bool split_name_by_time, double split_by_size, int64_t split_by_time, bool force, bool wal_mode,
               double cache_size, const std::vector<std::string>& ignore_compress, const std::string& plugin_name);
 
-int bag_merge(const std::vector<std::string>& source_paths, const std::string& target_path, const std::string& tag_name,
-              bool compress, bool force);
+int bag_merge(const std::vector<std::string>& source_paths, const std::string& target_path,
+              const std::vector<std::string>& urls, const std::string& tag_name, const std::string& filter,
+              bool black_mode, const std::vector<int>& actions, int64_t begin_time, int64_t end_time,
+              bool has_clock_begin_time, bool has_clock_end_time, bool compress, bool split_name_by_time,
+              double split_by_size, int64_t split_by_time, bool force, bool wal_mode, double cache_size,
+              const std::vector<std::string>& ignore_compress, const std::string& plugin_name);
 
 int bag_check(const std::string& path);
 

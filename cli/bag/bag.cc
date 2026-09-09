@@ -315,6 +315,114 @@ int main(int argc, char* argv[]) {
   play_example_str += "vlink-bag play /tmp/bag.vcapx";
   play_command.add_epilog(play_example_str);
 
+  // merge command
+  argparse::ArgumentParser merge_command("merge", VLINK_VERSION, argparse::default_arguments::help);
+  merge_command.add_argument("source_paths")
+      .help("Input bags (frames within each bag must have nondecreasing timestamps)")
+      .nargs(2, std::numeric_limits<size_t>::max());
+  merge_command.add_argument("-o", "--output").help("Output bag path").required();
+  merge_command.add_argument("-u", "--urls")
+      .help("Bind urls, empty is all")
+      .default_value(std::vector<std::string>())
+      .nargs(argparse::nargs_pattern::any);
+  merge_command.add_argument("-t", "--tag").help("Set tag name").default_value(std::string()).nargs(1);
+  merge_command.add_argument("-i", "--filter")
+      .help("URL keyword filter, comma-separated or quoted space-separated")
+      .default_value(std::string())
+      .nargs(1);
+  merge_command.add_argument("-k", "--black").help("Blacklist mode").default_value(false).implicit_value(true);
+  merge_command.add_argument("-s", "--actions")
+      .help(
+          "1: C/Req, 2: C/Resp, "
+          "3: S/Req, 4: S/Resp, "
+          "5: Pub, 6: Sub, "
+          "7: Set, 8: Get")
+      .scan<'d', int>()
+      .default_value(std::vector<int>{1, 2, 3, 4, 5, 6, 7, 8})
+      .nargs(argparse::nargs_pattern::any);
+  merge_command.add_argument("-b", "--begin_time")
+      .help("Begin time(s)")
+      .scan<'g', double>()
+      // NOLINTNEXTLINE(readability-redundant-casting)
+      .default_value(static_cast<double>(0))
+      .nargs(1);
+  merge_command.add_argument("-e", "--end_time")
+      .help("End time(s)")
+      .scan<'g', double>()
+      // NOLINTNEXTLINE(readability-redundant-casting)
+      .default_value(static_cast<double>(0))
+      .nargs(1);
+  merge_command.add_argument("-q", "--quiet").help("Quiet mode").default_value(false).implicit_value(true);
+  merge_command.add_argument("-l", "--detail").help("Detail mode").default_value(false).implicit_value(true);
+  merge_command.add_argument("-p", "--compress").help("Compress data").default_value(false).implicit_value(true);
+  merge_command.add_argument("-z", "--split_by_size")
+      .help("Split size(GB)")
+      .scan<'g', double>()
+      // NOLINTNEXTLINE(readability-redundant-casting)
+      .default_value(static_cast<double>(vlink::BagWriter::Config().split_by_size / 1024.0 / 1024.0 / 1024.0))
+      .nargs(1);
+  merge_command.add_argument("-y", "--split_by_time")
+      .help("Split time(s)")
+      .scan<'g', double>()
+      // NOLINTNEXTLINE(readability-redundant-casting)
+      .default_value(static_cast<double>(vlink::BagWriter::Config().split_by_time))
+      .nargs(1);
+  merge_command.add_argument("-f", "--force").help("Overwriting").default_value(false).implicit_value(true);
+  merge_command.add_argument("-j", "--wal_mode").help("Enable wal mode").default_value(false).implicit_value(true);
+  merge_command.add_argument("-c", "--cache_size")
+      .help("Cache size(MB)")
+      .scan<'g', double>()
+      // NOLINTNEXTLINE(readability-redundant-casting)
+      .default_value(static_cast<double>(vlink::BagWriter::Config().cache_size / 1024.0 / 1024.0))
+      .nargs(1);
+
+  merge_command.add_argument("--rel_begin_time")
+      .help("Relative Begin time(format: '00:00:00' or 00:00:00:000)")
+      .default_value(std::string())
+      .nargs(1);
+  merge_command.add_argument("--rel_end_time")
+      .help("Relative End time(format: '00:00:00' or 00:00:00:000)")
+      .default_value(std::string())
+      .nargs(1);
+  merge_command.add_argument("--local_begin_time")
+      .help("Local Begin time(format: '00:00:00' or 00:00:00:000)")
+      .default_value(std::string())
+      .nargs(1);
+  merge_command.add_argument("--local_end_time")
+      .help("Local End time(format: '00:00:00' or 00:00:00:000)")
+      .default_value(std::string())
+      .nargs(1);
+  merge_command.add_argument("--utc_begin_time")
+      .help("UTC Begin time(format: '00:00:00' or 00:00:00:000)")
+      .default_value(std::string())
+      .nargs(1);
+  merge_command.add_argument("--utc_end_time")
+      .help("UTC End time(format: '00:00:00' or 00:00:00:000)")
+      .default_value(std::string())
+      .nargs(1);
+  merge_command.add_argument("--compress_level")
+      .help("Compress level (range: 1 ~ 5, 0 means default)")
+      .scan<'d', int>()
+      .default_value(static_cast<int>(vlink::BagWriter::Config().compress_level))
+      .nargs(1);
+  merge_command.add_argument("--ignore_compress")
+      .help("Ignore compress urls")
+      .default_value(std::vector<std::string>())
+      .nargs(argparse::nargs_pattern::any);
+  merge_command.add_argument("--import_schema")
+      .help("Try import embedded schema data")
+      .default_value(false)
+      .implicit_value(true);
+
+  merge_command.add_argument("--plugin").help("Plugin name").default_value(std::string()).nargs(1);
+  merge_command.add_argument("--split_name_by_time")
+      .help("Split name by time")
+      .default_value(false)
+      .implicit_value(true);
+
+  merge_command.add_description("Merge data");
+  merge_command.add_epilog("Example:\n  vlink-bag merge /tmp/a.vdb /tmp/b.vcap -o /tmp/merged.vdb");
+
   // clone command
   argparse::ArgumentParser clone_command("clone", VLINK_VERSION, argparse::default_arguments::help);
   clone_command.add_argument("source_path").help("Source database path").required();
@@ -433,19 +541,6 @@ int main(int argc, char* argv[]) {
   clone_example_str += "\n  ";
   clone_example_str += "vlink-bag clone /tmp/old_bag.vcap /tmp/new_bag.vdb";
   clone_command.add_epilog(clone_example_str);
-
-  // merge command
-  argparse::ArgumentParser merge_command("merge", VLINK_VERSION, argparse::default_arguments::help);
-  merge_command.add_argument("source_paths")
-      .help("Input bags (frames within each bag must have nondecreasing timestamps)")
-      .nargs(2, std::numeric_limits<size_t>::max());
-  merge_command.add_argument("-o", "--output").help("Output bag path").required();
-  merge_command.add_argument("-t", "--tag").help("Tag name").default_value(std::string());
-  merge_command.add_argument("-p", "--compress").help("Compress data").default_value(false).implicit_value(true);
-  merge_command.add_argument("-f", "--force").help("Overwriting").default_value(false).implicit_value(true);
-  merge_command.add_argument("-q", "--quiet").help("Quiet mode").default_value(false).implicit_value(true);
-  merge_command.add_description("Merge data");
-  merge_command.add_epilog("Example:\n  vlink-bag merge /tmp/a.vdb /tmp/b.vcap -o /tmp/merged.vdb");
 
   // check command
   argparse::ArgumentParser check_command("check", VLINK_VERSION, argparse::default_arguments::help);
@@ -878,42 +973,199 @@ int main(int argc, char* argv[]) {
   } else if (program.is_subcommand_used("merge")) {
     auto source_paths = merge_command.get<std::vector<std::string>>("source_paths");
     auto target_path = merge_command.get<std::string>("-o");
-    auto tag_name = merge_command.get<std::string>("-t");
 
 #ifdef _WIN32
     try {
       for (auto& path : source_paths) {
         path = vlink::Helpers::path_to_string(std::filesystem::path(path));
       }
+
       target_path = vlink::Helpers::path_to_string(std::filesystem::path(target_path));
-    } catch (std::filesystem::filesystem_error& e) {
+    } catch (const std::filesystem::filesystem_error& e) {
       std::cerr << e.what() << std::endl;
       return -1;
     }
-    tag_name = vlink::Helpers::string_local_to_utf8(tag_name);
 #endif
+
+    const auto& urls = merge_command.get<std::vector<std::string>>("-u");
+    auto tag_name = merge_command.get<std::string>("-t");
+    const auto& filter = merge_command.get<std::string>("-i");
 
     for (const auto& path : source_paths) {
       if VUNLIKELY (!check_bag_path(path, "input path")) {
         return -1;
       }
     }
+
     if VUNLIKELY (!check_bag_path(target_path, "output path")) {
       return -1;
     }
 
+#ifdef _WIN32
+    tag_name = vlink::Helpers::string_local_to_utf8(tag_name);
+#endif
+
+    auto black_mode = merge_command.is_used("-k");
+    auto actions = merge_command.get<std::vector<int>>("-s");
+    auto begin_time = merge_command.get<double>("-b");
+    auto end_time = merge_command.get<double>("-e");
+
     quiet_flag = merge_command.is_used("-q");
-    return bag_merge(source_paths, target_path, tag_name, merge_command.is_used("-p"), merge_command.is_used("-f"));
+    detail_flag = merge_command.is_used("-l");
+
+    auto compress = merge_command.is_used("-p");
+    auto split_name_by_time = merge_command.is_used("--split_name_by_time");
+    auto split_by_size = merge_command.get<double>("-z");
+    auto split_by_time = merge_command.get<double>("-y");
+
+    auto force = merge_command.is_used("-f");
+    auto wal_mode = merge_command.is_used("-j");
+    auto cache_size = merge_command.get<double>("-c");
+
+    auto rel_begin_time = merge_command.get<std::string>("--rel_begin_time");
+    auto rel_end_time = merge_command.get<std::string>("--rel_end_time");
+
+    auto local_begin_time = merge_command.get<std::string>("--local_begin_time");
+    auto local_end_time = merge_command.get<std::string>("--local_end_time");
+
+    auto utc_begin_time = merge_command.get<std::string>("--utc_begin_time");
+    auto utc_end_time = merge_command.get<std::string>("--utc_end_time");
+
+    time_method = kUseUnknown;
+
+    if (merge_command.is_used("--rel_begin_time") || merge_command.is_used("--rel_end_time")) {
+      time_method |= kUseRelTime;
+    }
+
+    if (merge_command.is_used("--local_begin_time") || merge_command.is_used("--local_end_time")) {
+      time_method |= kUseLocalTime;
+    }
+
+    if (merge_command.is_used("--utc_begin_time") || merge_command.is_used("--utc_end_time")) {
+      time_method |= kUseUtcTime;
+    }
+
+    if VUNLIKELY (time_method != kUseUnknown && time_method != kUseRelTime && time_method != kUseLocalTime &&
+                  time_method != kUseUtcTime) {
+      std::cerr << "You cannot use diff time formats at the same time" << std::endl;
+      return -1;
+    }
+
+    switch (time_method) {
+      case kUseUnknown:
+        break;
+      case kUseRelTime:
+        if (merge_command.is_used("--rel_begin_time")) {
+          begin_time = convert_time_to_seconds(rel_begin_time);
+        }
+
+        if (merge_command.is_used("--rel_end_time")) {
+          end_time = convert_time_to_seconds(rel_end_time);
+        }
+
+        if VUNLIKELY (std::abs(begin_time) > 0.001 && std::abs(end_time) > 0.001 && begin_time >= end_time) {
+          std::cerr << "Invalid begin_time and end_time [-b] [-e]" << std::endl;
+          return -1;
+        }
+
+        break;
+      case kUseLocalTime:
+        if (merge_command.is_used("--local_begin_time")) {
+          begin_time = convert_time_to_seconds(local_begin_time);
+        }
+
+        if (merge_command.is_used("--local_end_time")) {
+          end_time = convert_time_to_seconds(local_end_time);
+        }
+
+        break;
+      case kUseUtcTime:
+        if (merge_command.is_used("--utc_begin_time")) {
+          begin_time = convert_time_to_seconds(utc_begin_time);
+        }
+
+        if (merge_command.is_used("--utc_end_time")) {
+          end_time = convert_time_to_seconds(utc_end_time);
+        }
+
+        break;
+      default:
+        break;
+    }
+
+    for (auto a : actions) {
+      if VUNLIKELY (a < 1 || a > 8) {
+        std::cerr << "Invalid actions [-s]" << std::endl;
+        return -1;
+      }
+    }
+
+    static constexpr auto kMaxCacheSizeMb = std::numeric_limits<int64_t>::max() / (1024LL * 1024LL);
+
+    static constexpr auto kMaxSizeGb = std::numeric_limits<int64_t>::max() / (1024ULL * 1024ULL * 1024ULL);
+
+    static constexpr auto kMaxTimeSeconds = static_cast<double>(std::numeric_limits<int64_t>::max()) / 1000.0;
+
+    static constexpr auto kMaxSplitTimeSeconds = std::numeric_limits<int64_t>::max() / 1000000ULL;
+
+    if VUNLIKELY (!std::isfinite(cache_size) || cache_size < 0 || cache_size > kMaxCacheSizeMb) {
+      std::cerr << "Invalid cache_size [-c]" << std::endl;
+      return -1;
+    }
+
+    if VUNLIKELY (!std::isfinite(begin_time) || !std::isfinite(end_time) || begin_time < 0 || end_time < 0 ||
+                  begin_time >= kMaxTimeSeconds || end_time >= kMaxTimeSeconds) {
+      std::cerr << "Invalid begin_time or end_time [-b] [-e]" << std::endl;
+      return -1;
+    }
+
+    if VUNLIKELY (!std::isfinite(split_by_size) || split_by_size < 0 || split_by_size > kMaxSizeGb) {
+      std::cerr << "Invalid split_by_size [-z]" << std::endl;
+      return -1;
+    }
+
+    if VUNLIKELY (!std::isfinite(split_by_time) || split_by_time < 0 || split_by_time >= kMaxSplitTimeSeconds) {
+      std::cerr << "Invalid split_by_time [-y]" << std::endl;
+      return -1;
+    }
+
+    compress_level = merge_command.get<int>("--compress_level");
+
+    if VUNLIKELY (compress_level < 0 || compress_level > 5) {
+      std::cerr << "Invalid compress_level [--compress_level]" << std::endl;
+      return -1;
+    }
+
+    auto ignore_compress = merge_command.get<std::vector<std::string>>("--ignore_compress");
+
+    if VUNLIKELY (!compress &&
+                  (merge_command.is_used("--compress_level") || merge_command.is_used("--ignore_compress"))) {
+      std::cerr << "Must set compress [-p]" << std::endl;
+      return -1;
+    }
+
+    if (!merge_command.is_used("--import_schema")) {
+      vlink::Utils::unset_env("VLINK_SCHEMA_PLUGIN");
+    }
+
+    auto plugin_name = merge_command.get<std::string>("--plugin");
+
+    return bag_merge(source_paths, target_path, urls, tag_name, filter, black_mode, actions, begin_time * 1000,
+                     end_time * 1000, !local_begin_time.empty() || !utc_begin_time.empty(),
+                     !local_end_time.empty() || !utc_end_time.empty(), compress, split_name_by_time, split_by_size,
+                     split_by_time * 1000, force, wal_mode, cache_size, ignore_compress, plugin_name);
   } else if (program.is_subcommand_used("clone")) {
     auto source_path = clone_command.get<std::string>("source_path");
-
     auto target_path = clone_command.get<std::string>("target_path");
 
 #ifdef _WIN32
     try {
       source_path = vlink::Helpers::path_to_string(std::filesystem::path(source_path));
+
       target_path = vlink::Helpers::path_to_string(std::filesystem::path(target_path));
-    } catch (std::filesystem::filesystem_error&) {
+    } catch (const std::filesystem::filesystem_error& e) {
+      std::cerr << e.what() << std::endl;
+      return -1;
     }
 #endif
 
@@ -942,7 +1194,7 @@ int main(int argc, char* argv[]) {
     detail_flag = clone_command.is_used("-l");
 
     auto compress = clone_command.is_used("-p");
-    auto split_name_by_time = clone_command.is_used("-o");
+    auto split_name_by_time = clone_command.is_used("--split_name_by_time");
     auto split_by_size = clone_command.get<double>("-z");
     auto split_by_time = clone_command.get<double>("-y");
 
@@ -1076,12 +1328,12 @@ int main(int argc, char* argv[]) {
       vlink::Utils::unset_env("VLINK_SCHEMA_PLUGIN");
     }
 
-    auto clone_plugin_name = clone_command.get<std::string>("--plugin");
+    auto plugin_name = clone_command.get<std::string>("--plugin");
 
     return bag_clone(source_path, target_path, urls, tag_name, filter, black_mode, actions, begin_time * 1000,
                      end_time * 1000, !local_begin_time.empty() || !utc_begin_time.empty(),
                      !local_end_time.empty() || !utc_end_time.empty(), compress, split_name_by_time, split_by_size,
-                     split_by_time * 1000, force, wal_mode, cache_size, ignore_compress, clone_plugin_name);
+                     split_by_time * 1000, force, wal_mode, cache_size, ignore_compress, plugin_name);
   } else if (program.is_subcommand_used("check")) {
     auto path = check_command.get<std::string>("path");
 

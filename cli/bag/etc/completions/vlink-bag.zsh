@@ -165,12 +165,46 @@ _vlink-bag_clone() {
 }
 
 _vlink-bag_merge() {
+    local cur="${words[CURRENT]}"
+    local last_option=""
+
+    _vlink-bag_complete_url_list "${words[CURRENT-1]}" && return
+    _vlink-bag_complete_actions_list "${words[CURRENT-1]}" && return
+
+    if [[ "$cur" != -* ]]; then
+        last_option=$(_vlink_zsh_last_option)
+        _vlink-bag_complete_url_list "$last_option" && return
+        _vlink-bag_complete_actions_list "$last_option" && return
+    fi
+
     _arguments -s \
-        '(-o --output)'{-o,--output}'=[Output bag path]:output:_files' \
+        '*'{-u,--urls}'=[Bind urls, empty is all]:url:_vlink_zsh_complete_url' \
         '(-t --tag)'{-t,--tag}'=[Tag name]:tag:' \
-        '(-p --compress)'{-p,--compress}'[Compress data]' \
-        '(-f --force)'{-f,--force}'[Overwriting]' \
+        '(-i --filter)'{-i,--filter}'=[Filter regex]:filter:' \
+        '(-k --black)'{-k,--black}'[Blacklist mode]' \
+        '*'{-s,--actions}'=[Action types 1\:C/Req 2\:C/Resp 3\:S/Req 4\:S/Resp 5\:Pub 6\:Sub 7\:Set 8\:Get (repeatable)]:action:(1 2 3 4 5 6 7 8)' \
+        '(-b --begin_time)'{-b,--begin_time}'=[Begin time (s)]:time:' \
+        '(-e --end_time)'{-e,--end_time}'=[End time (s)]:time:' \
         '(-q --quiet)'{-q,--quiet}'[Quiet mode]' \
+        '(-l --detail)'{-l,--detail}'[Detail mode]' \
+        '(-p --compress)'{-p,--compress}'[Compress data]' \
+        '(-o --output)'{-o,--output}'=[Output bag path]:output:_files' \
+        '--split_name_by_time[Split name by time]' \
+        '(-z --split_by_size)'{-z,--split_by_size}'=[Split by size]:size:' \
+        '(-y --split_by_time)'{-y,--split_by_time}'=[Split by time]:time:' \
+        '(-f --force)'{-f,--force}'[Overwriting]' \
+        '(-j --wal_mode)'{-j,--wal_mode}'[Enable WAL mode]' \
+        '(-c --cache_size)'{-c,--cache_size}'=[Cache size (MB)]:size:' \
+        '--rel_begin_time=[Rel begin HH:MM:SS]:time:' \
+        '--rel_end_time=[Rel end HH:MM:SS]:time:' \
+        '--local_begin_time=[Local begin HH:MM:SS]:time:' \
+        '--local_end_time=[Local end HH:MM:SS]:time:' \
+        '--utc_begin_time=[UTC begin HH:MM:SS]:time:' \
+        '--utc_end_time=[UTC end HH:MM:SS]:time:' \
+        '--compress_level=[Compress level]:level:(0 1 2 3 4 5)' \
+        '*--ignore_compress=[Ignore compress urls (repeatable)]:url:_vlink_zsh_complete_url' \
+        '--import_schema[Import schema]' \
+        '--plugin=[Merge plugin (rewrites frames on write)]:plugin:' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '*:source bag:_vlink-bag_bag_file'
 }
