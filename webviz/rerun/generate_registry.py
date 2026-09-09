@@ -40,7 +40,7 @@ def generate(sdk, output):
             fields.append(
                 f'    {{"{archetype}", "{field}", "{component}", '
                 f'&::rerun::archetypes::{archetype}::Descriptor_{field},\n'
-                f'     &::rerun::Loggable<::rerun::components::{component}>::arrow_data_type, '
+                f'     &::rerun::Loggable<::rerun::components::{component}>::VLINK_RERUN_ARROW_DATA_TYPE, '
                 f'{str(setters[field]).lower()}}},')
 
     encoding_folder = "encodings" if (sdk / "encodings").is_dir() else "datatypes"
@@ -54,7 +54,7 @@ def generate(sdk, output):
                 enums[name] = (folder, [re.match(r"\s*(\w+)", item)[1]
                                        for item in body.split(",") if item.strip()])
             wrapper = re.search(r"struct (\w+)\s*\{", source)
-            underlying = re.search(rf"return Loggable<rerun::{encoding_folder}::(\w+)>::arrow_data_type\(\)", source)
+            underlying = re.search(rf"return Loggable<rerun::{encoding_folder}::(\w+)>::arrow_data_?type\(\)", source)
             if folder == "components" and wrapper and underlying:
                 aliases[wrapper[1]] = underlying[1]
 
@@ -68,13 +68,18 @@ def generate(sdk, output):
         raise ValueError("No Rerun fields or enums found")
     text = '// Generated from Rerun SDK declarations by generate_registry.py.\n\n'
     text += '#include "rerun_schema.h"\n'
+    text += '#include <rerun/c/sdk_info.h>\n'
     text += ''.join(f'#include <{name}>\n' for name in sorted(includes))
+    text += '\n#if RERUN_VERSION_GE(0, 37, 0)\n'
+    text += '#define VLINK_RERUN_ARROW_DATA_TYPE arrow_data_type\n'
+    text += '#else\n#define VLINK_RERUN_ARROW_DATA_TYPE arrow_datatype\n#endif\n'
     text += '\nnamespace vlink {\nnamespace webviz {\n\n'
     for name, data_type, rows in (("fields", "RerunField", fields), ("enums", "RerunEnum", enum_rows)):
         text += f'const std::vector<{data_type}>& rerun_{name}() {{\n'
-        text += f'  static const std::vector<{data_type}> values = {{\n'
-        text += '\n'.join(rows) + '\n  };\n  return values;\n}\n\n'
+        text += f'  static const std::vector<{data_type}> kValues = {{\n'
+        text += '\n'.join(rows) + '\n  };\n  return kValues;\n}\n\n'
     text += '}  // namespace webviz\n}  // namespace vlink\n'
+    text += '\n#undef VLINK_RERUN_ARROW_DATA_TYPE\n'
     output.write_text(text, encoding="utf-8")
 
 
