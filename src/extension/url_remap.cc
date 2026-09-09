@@ -150,7 +150,7 @@ const std::string& UrlRemap::convert(const std::string& url) noexcept {
   }
 
   for (const auto& [key, value] : remap_list_) {
-    if (url != value && url.find(key) != std::string::npos) {
+    if (url.find(key) != std::string::npos) {
       if (is_enable_log_) {
         VLOG_I("UrlRemap: ", url, " -> ", value, ".");
       }
