@@ -128,6 +128,19 @@ struct ProxyAPI::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddin
   std::shared_ptr<HandshakeCli> handshake_cli;
 #endif
 
+  void clear_handles() {
+    std::unique_lock handle_lock(handle_mtx);
+    auto old_data_sub = std::move(data_sub);
+    auto old_data_pub = std::move(data_pub);
+    auto old_time_sub = std::move(time_sub);
+    auto old_info_sub = std::move(info_sub);
+    auto old_control_pub = std::move(control_pub);
+#if VLINK_PROXY_ENABLE_HANDSHAKE
+    auto old_handshake_cli = std::move(handshake_cli);
+#endif
+    handle_lock.unlock();
+  }
+
   std::vector<ProxyAPI::Info> direct_info_list;
 
   std::unordered_map<std::string, std::shared_ptr<RawPub>> pub_map;
@@ -231,15 +244,7 @@ ProxyAPI::~ProxyAPI() {
 
   this->wait_for_quit();
 
-  std::unique_lock handle_lock(impl_->handle_mtx);
-#if VLINK_PROXY_ENABLE_HANDSHAKE
-  impl_->handshake_cli.reset();
-#endif
-  impl_->data_sub.reset();
-  impl_->data_pub.reset();
-  impl_->time_sub.reset();
-  impl_->info_sub.reset();
-  impl_->control_pub.reset();
+  impl_->clear_handles();
 }
 
 void ProxyAPI::register_connect_callback(ConnectCallback&& callback) {
@@ -859,9 +864,10 @@ bool ProxyAPI::do_handshake(Error& out_err) {
 }
 
 void ProxyAPI::reset_handle() {
-  std::unique_lock handle_lock(impl_->handle_mtx);
-
   impl_->resetting.store(true, std::memory_order_relaxed);
+  impl_->clear_handles();
+
+  std::unique_lock handle_lock(impl_->handle_mtx);
 
   impl_->control_ret.store(false, std::memory_order_release);
 
