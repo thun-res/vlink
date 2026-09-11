@@ -8,7 +8,7 @@
         <mxCell id="title" value="examples/ Directory Layout" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="20" y="20" width="1520" height="34" as="geometry" />
         </mxCell>
-        <mxCell id="subtitle" value="14 categories  ·  29 standalone example projects  ·  each leaf is a self-contained CMake subproject  ·  see examples/README.md" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
+        <mxCell id="subtitle" value="15 categories  ·  32 standalone example projects  ·  each leaf is a self-contained CMake subproject  ·  see examples/README.md" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=13;fontStyle=2;fontColor=#546e7a;" vertex="1" parent="1">
           <mxGeometry x="20" y="56" width="1520" height="22" as="geometry" />
         </mxCell>
 
@@ -17,7 +17,7 @@
           <mxGeometry x="40" y="96" width="1480" height="44" as="geometry" />
         </mxCell>
 
-        <!-- 4 cols x 4 rows grid; 14 categories (12 + 2 wide).
+        <!-- 4 cols x 4 rows grid; 15 categories (14 + 1 wide).
              col width = (1480 - 3*20) / 4 = 355; cols x = 40, 415, 790, 1165
              row height = 80, gap 16; rows y = 164, 260, 356, 452 -->
 
@@ -65,7 +65,10 @@
 
         <!-- ROW 4 -->
         <mxCell id="cat_node" value="&lt;b&gt;node_features/&lt;/b&gt;  (1)&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;lifecycle&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.2;arcSize=8;shadow=0;fontFamily=Helvetica;fontSize=13;fontColor=#0d47a1;verticalAlign=middle;align=center;" vertex="1" parent="1">
-          <mxGeometry x="40" y="452" width="725" height="80" as="geometry" />
+          <mxGeometry x="40" y="452" width="355" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="cat_fastbuffer" value="&lt;b&gt;fastbuffer/&lt;/b&gt;  (3)&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;cuda · hip · hbmem&lt;br/&gt;SDK plugins (opt-in)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#d32f2f;strokeWidth=1.2;arcSize=8;shadow=0;fontFamily=Helvetica;fontSize=13;fontColor=#b71c1c;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="415" y="452" width="355" height="80" as="geometry" />
         </mxCell>
         <mxCell id="cat_samples" value="&lt;b&gt;samples/&lt;/b&gt;  (9; default build 8)&lt;br/&gt;&lt;span style=&quot;font-size:11px;&quot;&gt;helloworld · ping_pong · shm_raw · someip_flat · ddsc_proto&lt;br/&gt;dds_dynamic · fdbus_proto · pub_sub_fbs · dds_idl (disabled)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.2;arcSize=8;shadow=0;fontFamily=Helvetica;fontSize=13;fontColor=#e65100;verticalAlign=middle;align=center;" vertex="1" parent="1">
           <mxGeometry x="790" y="452" width="730" height="80" as="geometry" />

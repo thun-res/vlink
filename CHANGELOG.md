@@ -4,6 +4,7 @@
 
 ### 新增功能
 
+- **FastBuffer**：新增通用 CPU/GPU 缓冲区及 CUDA、HIP、hbmem 独立插件，支持动态解析和 Python。
 - **Python 接口补齐**：补齐发现消息循环、Bag 插件、点云与对象数组深拷贝、日志回调重置接口。
 - **Bag 拼包**：新增 `vlink-bag merge`，支持 `clone` 的选项、进度显示和覆盖确认。
 - **Bag 分包轮转**：`BagWriter::Config` 与 `vlink-bag record` 新增 `max_split_count`，超限时删除最旧分包。

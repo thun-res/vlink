@@ -35,6 +35,7 @@
 | | `demo_pubsub_tensor` | `Tensor`（NN 输入输出） |
 | | `demo_pubsub_object_array` | `ObjectArray` + 嵌套 `Object` POD |
 | | `demo_pubsub_audio_frame` | `AudioFrame`（PCM 音频帧） |
+| | `demo_pubsub_fast_buffer` | `FastBuffer`（插件缓冲区，显式 Host 读取） |
 | **4. Method · RPC** | `demo_rpc_sync` | `Client.invoke(req)` 同步调用 |
 | | `demo_rpc_async` | `Client.invoke_async(req, cb)` 异步回调 |
 | | `demo_rpc_with_zerocopy` | RPC 负载是 `Tensor`（模拟推理服务） |

@@ -23,6 +23,8 @@
 
 这里的两层组合表示 transport 提供 loan 且接收容器不做 payload 解码复制，不保证调用方本地 payload 到接收端全程零复制：普通 `Publisher<zerocopy容器>` 的 `operator>>` 仍可能把本地 payload 复制进 transport loan。发布端要直接就地写共享池，应使用 [6.10](#-610-传输层-loan) 的显式 `Publisher<Bytes>::loan()` 路径；完整后端参数见 [传输后端与 URL](04-transport.md)。
 
+`FastBuffer` 通过插件导入共享资源，机制与下面的 CPU 领域容器不同，见 [6.13](#-613-fastbuffer-插件缓冲区)。
+
 ### 6.1.1 容器选型概览
 
 每个领域容器都作为 `Publisher<T>` / `Subscriber<T>` 的消息类型 `T` 使用，按数据语义选择。选定容器后，收发即为常规的发布/订阅用法（见 [通信模型](02-communication.md)）。
@@ -37,6 +39,7 @@
 | `AudioFrame` | PCM / 编码音频帧 | 任意 | — |
 | `RawData` | 自定义二进制负载 | 任意 | — |
 | `ProxyData` | 代理层消息信封及原始载荷 | 任意 | — |
+| `FastBuffer` | GPU 图像、张量、点云及其他不透明缓冲区 | 同机、兼容插件 | fastbuffer-layout |
 
 ```cpp
 vlink::Publisher<vlink::zerocopy::CameraFrame> pub("shm://camera/front");
@@ -373,7 +376,7 @@ sub.listen([](const vlink::zerocopy::RawData& rd) {
 
 ### 6.9.1 统一只读解析 `MessageParser`
 
-需要在运行期按序列化类型读取消息的工具和扩展，应包含 `<vlink/zerocopy/message_parser.h>` 并使用 `vlink::zerocopy::MessageParser`。解析器统一识别 `RawData`、`CameraFrame`、`PointCloud`、`ProxyData`、`OccupancyGrid`、`Tensor`、`ObjectArray` 与 `AudioFrame` 八种类型；CLI、viewer、analyzer、Web 桥接和 Python 绑定的通用字段读取使用这一入口，避免各层重复维护类型识别、边界检查与字段类型转换。为避免热路径回退，viewer 和 Web 可视化中 CameraFrame / PointCloud 的专用实时渲染可以直接调用对应容器 codec，绕过通用字段解析器。各容器 codec 仍是底层序列化实现。
+需要在运行期按序列化类型读取消息的工具和扩展，应包含 `<vlink/zerocopy/message_parser.h>` 并使用 `vlink::zerocopy::MessageParser`。解析器统一识别 `RawData`、`CameraFrame`、`PointCloud`、`ProxyData`、`OccupancyGrid`、`Tensor`、`ObjectArray`、`AudioFrame` 与 `FastBuffer` 九种类型；CLI、viewer、analyzer、Web 桥接和 Python 绑定的通用字段读取使用这一入口，避免各层重复维护类型识别、边界检查与字段类型转换。为避免热路径回退，viewer 和 Web 可视化中 CameraFrame / PointCloud 的专用实时渲染可以直接调用对应容器 codec，绕过通用字段解析器。各容器 codec 仍是底层序列化实现。
 
 ```cpp
 vlink::zerocopy::MessageParser parser;
@@ -445,6 +448,8 @@ loan 的完整传输配置见 [传输后端与 URL](04-transport.md)。
 
 ## ⏳ 6.11 生命周期约束
 
+本节描述 CPU 领域容器的借用；FastBuffer 的资源引用见 [6.13](#-613-fastbuffer-插件缓冲区)。
+
 借用机制（`shallow_copy`、容器反序列化、loan）只持有指针，不复制数据。两条约束可避免悬空：
 
 **约束一：源缓冲区的生存期必须覆盖借用它的容器。** 容器反序列化后 `data()` 指向接收 `Bytes` 的内部存储，`Bytes` 必须在容器之后析构。
@@ -473,6 +478,47 @@ process(rd);
 | 适用场景 | 通用小消息 | 传感器 / 模型 / 地图 / 检测 / 音频大负载 |
 
 判据：小消息或已有自定义序列化时用 `Bytes`；传感器领域大负载可用对应领域容器取得结构化元数据与接收侧 payload 借用。普通容器发布仍可能复制进 transport buffer；发布端要直接写共享池须使用 `Publisher<Bytes>::loan()`。
+
+---
+
+## 🧩 6.13 FastBuffer 插件缓冲区
+
+`vlink::zerocopy::FastBuffer` 持有资源地址、Header、动态 CPU 元数据和预留字段，支持 GPU、普通内存及插件提供的共享、DMA 或虚拟内存。它不限定相机语义；张量、点云、深度图和模型中间结果都可以使用，格式、形状与步长由应用约定在 Metadata buffer 中。
+
+![FastBuffer 布局与数据路径](images/fastbuffer-layout.png)
+
+| 对象部分（64 位） | 字节数 | 含义 |
+| --- | ---: | --- |
+| Header | 40 | 序号、时间戳等 |
+| Buffer | 32 | 本进程地址、大小、资源句柄、设备及内存类型 |
+| Metadata 指针 | 8 | 独立分配的可变长 CPU Bytes |
+| reserved | 48 | 6 个 uint64_t，复制与序列化保留 |
+| 总计 | 128 | 64 位对象布局，不作为线格式契约 |
+
+包含 `<vlink/zerocopy/fast_buffer.h>` 即可使用。该头文件不依赖插件接口；`MemoryType`、`Config`、`Access` 和 `Storage` 均由 FastBuffer 定义，枚举底层类型为 `uint8_t`。插件接口和 Manager 分别位于同目录的 `fast_buffer_plugin_interface.h`、`fast_buffer_manager.h`。
+
+首次构造触发进程内 `vlink::FastBufferManager` 单例初始化。未设置或清空 `VLINK_FASTBUFFER_PLUGIN` 时使用普通 CPU 内存；非空时按 `Plugin` 规则加载指定插件，显式失败不会回退到 CPU。后续修改环境变量不切换插件。插件由 Manager 持有，FastBuffer 不保存插件指针。Manager 统一管理本地引用。插件的 `get_sharing_mode()` 默认返回 `kSystem`，由核心的系统信号量和共享内存协调跨进程引用；声明 `kCustom` 时，插件通过现有的导出、导入和释放接口承担跨进程生命周期。CUDA、HIP 使用默认模式，hbmem 使用 SDK 内建引用的自定义模式。
+
+| 操作 | 行为 |
+| --- | --- |
+| `create(size, config)` | 请求指定内存域；不支持则失败 |
+| `address()` | 返回本进程不透明地址；不能据此认定 CPU 可访问 |
+| `map(access)` / `unmap(access)` | 成对进行 CPU 访问与必要缓存维护；设备专用内存可不支持 |
+| `copy_to_host()` / `copy_from_host()` | 显式 CPU 数据传输 |
+| `shallow_copy()` | 保留同一资源与元数据，源对象释放后仍可使用 |
+| 拷贝 / `deep_copy()` | 复制实际数据与元数据，得到独立资源 |
+| `set_metadata()` / `get_metadata()` | 设置或读取可变长 CPU 元数据；拥有型右值可移动 |
+| `get_reserved()` | 访问 6 个预留槽 |
+
+线格式为 `magic(4) + version(4) + 固定元数据(120) + 动态元数据(M) + payload(N) + magic(4)`，固定开销 132 字节。系统共享模式的 payload 是核心控制块标识，控制块保存引用计数和插件原生描述符；自定义模式直接传递插件描述符；Host 模式保存实际字节。普通 CPU 默认实现没有跨进程共享描述符，序列化会复制数据。GPU 模式可以只传递描述符，GPU payload 留在原分配中。系统共享模式支持 Linux、Windows、QNX；macOS、Android 受现有 IPC 基础设施限制，该模式使用 Host 字节传递。自定义模式由插件提供平台共享能力。
+
+`MessageParser` 的解析与打印只读取元数据，不加载 GPU 插件，也不解引用设备地址；打印支持数值与枚举名称，6 个预留槽以隐藏根字段 `reserved`、`reserved2` 至 `reserved6` 暴露。类型化复制使用 `copy_to<FastBuffer::Metadata>()`。Python 提供 `FastBuffer`、配置、元数据、预留槽及显式 Host 复制；`address()` 同样不是可直接读取的 CPU 指针。
+
+FastBuffer 不内置录制转换。需要录制时，可通过已有的 `BagPluginInterface::on_write()` 在资源仍有效时调用 `copy_to_host()`，转换为 RawData、CameraFrame 等消息，并同步更新 `ser_type` 与 `schema_type`；共享描述符本身不适合离线回放。
+
+共享资源的生命周期契约见 [FastBufferPluginInterface](../include/vlink/zerocopy/fast_buffer_plugin_interface.h)。
+
+三个独立实现与构建入口见 [examples/fastbuffer](../examples/fastbuffer/README.md)。不支持的内存域或原生导入操作返回失败，不以 CPU 拷贝冒充 GPU 零拷贝。
 
 ---
 

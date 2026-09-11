@@ -5070,6 +5070,10 @@ static std::string_view zerocopy_enum_label(vlink::zerocopy::MessageParser::Enum
       return vlink::NameDetector::get_enum(static_cast<vlink::zerocopy::AudioFrame::Format>(value));
     case vlink::zerocopy::MessageParser::EnumKind::kEnumAudioLayout:
       return vlink::NameDetector::get_enum(static_cast<vlink::zerocopy::AudioFrame::Layout>(value));
+    case vlink::zerocopy::MessageParser::EnumKind::kEnumFastBufferStorage:
+      return vlink::NameDetector::get_enum(static_cast<vlink::zerocopy::FastBuffer::Storage>(value));
+    case vlink::zerocopy::MessageParser::EnumKind::kEnumFastBufferMemory:
+      return vlink::NameDetector::get_enum(static_cast<vlink::zerocopy::FastBuffer::MemoryType>(value));
     default:
       return {};
   }

@@ -21,6 +21,7 @@
  * limitations under the License.
  */
 
+#include <nanobind/stl/array.h>
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/string_view.h>
@@ -312,7 +313,8 @@ void bind_zerocopy(nb::module_& m) {
       .value("OccupancyGrid", ZerocopyMessageParser::Type::kOccupancyGrid)
       .value("Tensor", ZerocopyMessageParser::Type::kTensor)
       .value("ObjectArray", ZerocopyMessageParser::Type::kObjectArray)
-      .value("AudioFrame", ZerocopyMessageParser::Type::kAudioFrame);
+      .value("AudioFrame", ZerocopyMessageParser::Type::kAudioFrame)
+      .value("FastBuffer", ZerocopyMessageParser::Type::kFastBuffer);
   nb::enum_<ZerocopyMessageParser::ValueType>(message_parser_cls, "ValueType")
       .value("Unknown", ZerocopyMessageParser::ValueType::kValueUnknown)
       .value("Int64", ZerocopyMessageParser::ValueType::kInt64)
@@ -328,7 +330,9 @@ void bind_zerocopy(nb::module_& m) {
       .value("TensorDataType", ZerocopyMessageParser::EnumKind::kEnumTensorDataType)
       .value("TensorDevice", ZerocopyMessageParser::EnumKind::kEnumTensorDevice)
       .value("AudioFormat", ZerocopyMessageParser::EnumKind::kEnumAudioFormat)
-      .value("AudioLayout", ZerocopyMessageParser::EnumKind::kEnumAudioLayout);
+      .value("AudioLayout", ZerocopyMessageParser::EnumKind::kEnumAudioLayout)
+      .value("FastBufferStorage", ZerocopyMessageParser::EnumKind::kEnumFastBufferStorage)
+      .value("FastBufferMemory", ZerocopyMessageParser::EnumKind::kEnumFastBufferMemory);
   nb::class_<ZerocopyMessageParser::Field>(message_parser_cls, "Field")
       .def_ro("name", &ZerocopyMessageParser::Field::name)
       .def_ro("type", &ZerocopyMessageParser::Field::type)
@@ -411,6 +415,73 @@ void bind_zerocopy(nb::module_& m) {
           "type_name",
           [](ZerocopyMessageParser::Type type) { return std::string(ZerocopyMessageParser::type_name(type)); },
           "type"_a);
+
+  nb::class_<vlink::zerocopy::FastBuffer> fast_buffer_cls(m, "FastBuffer",
+                                                          "Provider-managed CPU, device or shared buffer");
+  nb::enum_<vlink::zerocopy::FastBuffer::MemoryType>(fast_buffer_cls, "MemoryType")
+      .value("Default", vlink::zerocopy::FastBuffer::kMemoryDefault)
+      .value("Host", vlink::zerocopy::FastBuffer::kMemoryHost)
+      .value("Device", vlink::zerocopy::FastBuffer::kMemoryDevice)
+      .value("Shared", vlink::zerocopy::FastBuffer::kMemoryShared)
+      .value("DmaBuf", vlink::zerocopy::FastBuffer::kMemoryDmaBuf)
+      .value("Virtual", vlink::zerocopy::FastBuffer::kMemoryVirtual);
+  nb::class_<vlink::zerocopy::FastBuffer::Config>(fast_buffer_cls, "Config")
+      .def(nb::init<>())
+      .def_rw("memory_type", &vlink::zerocopy::FastBuffer::Config::memory_type)
+      .def_rw("device", &vlink::zerocopy::FastBuffer::Config::device);
+  fast_buffer_cls.def(nb::init<>())
+      .def_rw("header", &vlink::zerocopy::FastBuffer::header)
+      .def("create", nb::overload_cast<size_t, int32_t>(&vlink::zerocopy::FastBuffer::create), "size"_a,
+           "device"_a = -1)
+      .def("create",
+           nb::overload_cast<size_t, const vlink::zerocopy::FastBuffer::Config&>(&vlink::zerocopy::FastBuffer::create),
+           "size"_a, "config"_a)
+      .def("clear", &vlink::zerocopy::FastBuffer::clear)
+      .def("size", &vlink::zerocopy::FastBuffer::size)
+      .def("address", &vlink::zerocopy::FastBuffer::address)
+      .def("device", &vlink::zerocopy::FastBuffer::device)
+      .def("memory_type", &vlink::zerocopy::FastBuffer::memory_type)
+      .def("is_valid", &vlink::zerocopy::FastBuffer::is_valid)
+      .def("is_owner", &vlink::zerocopy::FastBuffer::is_owner)
+      .def("get_serialized_size", &vlink::zerocopy::FastBuffer::get_serialized_size)
+      .def("shallow_copy", &vlink::zerocopy::FastBuffer::shallow_copy, "source"_a)
+      .def("deep_copy", &vlink::zerocopy::FastBuffer::deep_copy, "source"_a)
+      .def("synchronize", &vlink::zerocopy::FastBuffer::synchronize)
+      .def_static("check_valid", &vlink::zerocopy::FastBuffer::check_valid, "bytes"_a)
+      .def_prop_rw(
+          "reserved", [](const vlink::zerocopy::FastBuffer& self) { return self.get_reserved(); },
+          [](vlink::zerocopy::FastBuffer& self, const std::array<uint64_t, 6>& value) { self.get_reserved() = value; })
+      .def("set_metadata", nb::overload_cast<const vlink::Bytes&>(&vlink::zerocopy::FastBuffer::set_metadata),
+           "bytes"_a)
+      .def("get_metadata",
+           [](const vlink::zerocopy::FastBuffer& self) {
+             const auto& bytes = self.get_metadata();
+             return nb::bytes(bytes.data(), bytes.size());
+           })
+      .def("copy_from_host", &vlink::zerocopy::FastBuffer::copy_from_host, "bytes"_a)
+      .def(
+          "copy_to_host",
+          [](const vlink::zerocopy::FastBuffer& self, vlink::Bytes& bytes) {
+            ensure_bytes_not_exported(bytes);
+            return self.copy_to_host(bytes);
+          },
+          "bytes"_a)
+      .def("to_bytes",
+           [](const vlink::zerocopy::FastBuffer& self) {
+             vlink::Bytes bytes;
+             if (!(self >> bytes)) {
+               bytes.clear();
+             }
+             return bytes;
+           })
+      .def(
+          "from_bytes", [](vlink::zerocopy::FastBuffer& self, const vlink::Bytes& bytes) { return self << bytes; },
+          "bytes"_a)
+      .def("__repr__", [](const vlink::zerocopy::FastBuffer& self) {
+        return std::string("FastBuffer(size=") + std::to_string(self.size()) +
+               ", device=" + std::to_string(self.device()) + ", memory_type=" + std::to_string(self.memory_type()) +
+               ")";
+      });
 
   nb::class_<vlink::zerocopy::RawData>(m, "RawData", "Generic zero-copy raw-byte data container (64 bytes)")
       .def(nb::init<>())

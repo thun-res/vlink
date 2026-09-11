@@ -456,7 +456,7 @@ fn main() {
 
 #### 13.8.3 Python 零拷贝动态解析
 
-nanobind 模块提供 `ZeroCopyMessageParser`，用于按运行期序列化类型读取八种内置零拷贝消息。`parse(serialized_type, bytes)` 自动识别类型，`parse_type(type, bytes)` 可在类型已知时避免重复识别；解析成功后通过 `value(path)`、`value_at(collection, index, field)`、`collection_size()`、`fields()` 与 `element_fields()` 访问消息。字段不存在或下标越界时读取方法返回 `None`，不会越界访问。
+nanobind 模块提供 `ZeroCopyMessageParser`，用于按运行期序列化类型读取九种内置零拷贝消息。`parse(serialized_type, bytes)` 自动识别类型，`parse_type(type, bytes)` 可在类型已知时避免重复识别；解析成功后通过 `value(path)`、`value_at(collection, index, field)`、`collection_size()`、`fields()` 与 `element_fields()` 访问消息。字段不存在或下标越界时读取方法返回 `None`，不会越界访问。
 
 ```python
 parser = vlink.ZeroCopyMessageParser()
@@ -495,6 +495,7 @@ VLink 的扩展点按调用主体分为两类，决定其在文档中的展开�
 | `RunablePluginInterface` | `extension/runnable_plugin_interface.h` | 携带自身事件循环的自包含可运行组件 | 应用向·插件 |
 | `ConvertPluginInterface` | `extension/convert_plugin_interface.h` | Foxglove / Rerun 可视化消息转换 | 应用向·插件 |
 | `SchemaPluginInterface` | `extension/schema_plugin_interface.h` | Protobuf / FlatBuffers schema 反射注册 | 进阶·插件 |
+| `FastBufferPluginInterface` | `zerocopy/fast_buffer_plugin_interface.h` | 通用内存分配、CPU 访问及跨进程资源共享，见 [零拷贝 §6.13](06-zerocopy.md#-613-fastbuffer-插件缓冲区) | 框架内·插件 |
 | `BagPluginInterface` | `extension/bag_plugin_interface.h` | 录制 / 回放时改写 URL 与帧 | 框架内·插件 |
 | `TriggerPluginInterface` | `extension/trigger_plugin_interface.h` | 观察触发录制生命周期，dump 完成后上传 / 归档 | 框架内·插件 |
 | `DiscoveryReporter` | `extension/discovery_reporter.h` | 节点上线 / 下线上报 | 框架内 |
@@ -972,6 +973,7 @@ export VLINK_LOG_LEVEL=3
 | --- | --- | --- |
 | `VLINK_URL_PLUGINS` | 模式或名称列表 | 完整值为 `auto`（大小写不敏感）时，未链接的已知 transport 在 URL 首次使用时尝试加载固定的 `vlink-<module>`；为空或完整值为 `none`（大小写不敏感）时关闭插件加载；其他非空值是逗号或空格分隔的显式预加载基础名列表（可省略 `vlink-`，不含路径、平台库前缀与 `.so` / `.dylib` / `.dll` 后缀）。三种模式互斥，设置在进程级插件管理器首次初始化时读取一次；仅适用于共享模块，不加载静态归档（Unix `.a` / Windows 静态 `.lib`）；分包的运行时组件即包含所需加载名称；已链接后端优先，未知 scheme 不支持 |
 | `VLINK_SCHEMA_PLUGIN` | 路径或插件名 | Schema 插件共享库路径或基础名 |
+| `VLINK_FASTBUFFER_PLUGIN` | 路径或插件名 | 首次构造 FastBuffer 时加载一次；未设置或空值使用普通 CPU 内存，显式加载失败不回退 |
 | `VLINK_CONVERT_PLUGIN` | 路径或插件名 | 转换插件路径或基础名；WebViz 桥接及 `vlink-bag2mcap`/`vlink-bag2rrd` 在未传 `--convert_plugin` 时读取 |
 | `VLINK_PROTO_DIR` | 目录路径 | `.proto` 搜索目录，亦可经 `vlink-eproto import <dir>` 持久化 |
 | `VLINK_FBS_DIR` | 目录路径 | `.fbs` 搜索目录，亦可经 `vlink-efbs import <dir>` 持久化 |

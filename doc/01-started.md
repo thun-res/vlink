@@ -664,6 +664,8 @@ ls build/output/bin/
 
 亦可在已安装 VLink 的环境中单独构建 `examples/` 目录或某个子工程，方式见 [examples/README.md](../examples/README.md)。
 
+FastBuffer 插件还需按 SDK 单独开启 `ENABLE_FASTBUFFER_CUDA`、`ENABLE_FASTBUFFER_HIP` 或 `ENABLE_FASTBUFFER_HBMEM`，三个开关默认关闭。
+
 ### 🗃️ 1.12.2 分类与依赖关系
 
 目录按主题分类，依赖关系自上而下递进。`quickstart/` 与 `base/` 不依赖任何外部进程；`communication/` 之后的分类逐步引入序列化、QoS、安全与传输后端。
@@ -678,6 +680,7 @@ ls build/output/bin/
 | `qos/` | QoS 基础与预设 profile | url_guide |
 | `security/` | 应用层加密 | communication |
 | `zerocopy/` | 借贷型零拷贝与 `RawData` | base/bytes |
+| [`fastbuffer/`](../examples/fastbuffer/README.md) | CUDA、HIP、hbmem 独立缓冲区插件 | 对应厂商 SDK |
 | `recording/` | Bag 录制与回放 | communication |
 | `plugin/` | 插件加载与可运行插件 | base |
 | `proxy/` | ProxyAPI 客户端监控 | communication |

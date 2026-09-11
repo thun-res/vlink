@@ -27,7 +27,7 @@
  *
  * @details
  * @c MessageParser centralises type detection, deserialization, indexed field
- * access, collection bounds, and exact integer representation for all eight
+ * access, collection bounds, and exact integer representation for all nine
  * built-in VLink zero-copy wire types. Root paths use names such as
  * @c header.time_meas and @c width. Indexed payloads use @c data[N].field;
  * tensors additionally expose @c shape[N] and @c strides[N].
@@ -73,6 +73,7 @@
  * | @c Tensor          | @c data / @c elements, shape, strides   | Empty or @c value        |
  * | @c ObjectArray     | @c data / @c objects                    | Object member or alias   |
  * | @c AudioFrame      | @c data                                 | Empty or @c value        |
+ * | @c FastBuffer      | None (metadata only)                    | None                     |
  *
  * @par Example -- parse and read an exact integer field
  * @code
@@ -102,6 +103,7 @@
 #include "../base/macros.h"
 #include "./audio_frame.h"
 #include "./camera_frame.h"
+#include "./fast_buffer.h"
 #include "./object_array.h"
 #include "./occupancy_grid.h"
 #include "./point_cloud.h"
@@ -143,6 +145,7 @@ class VLINK_EXPORT MessageParser final {
     kTensor = 6,         ///< Typed multidimensional tensor payload.
     kObjectArray = 7,    ///< Detection or tracking object records.
     kAudioFrame = 8,     ///< PCM or encoded audio frame.
+    kFastBuffer = 9,     ///< Plugin-backed buffer; parsed as metadata without importing device memory.
   };
 
   /**
@@ -169,14 +172,16 @@ class VLINK_EXPORT MessageParser final {
    * per-type knowledge. @c kEnumNone marks a plain numeric field.
    */
   enum EnumKind : uint8_t {
-    kEnumNone = 0,            ///< Plain numeric field with no symbolic enumeration.
-    kEnumCameraFormat = 1,    ///< @c CameraFrame::Format image or codec format.
-    kEnumCameraStream = 2,    ///< @c CameraFrame::Stream stream role.
-    kEnumGridCellType = 3,    ///< @c OccupancyGrid::CellType cell storage type.
-    kEnumTensorDataType = 4,  ///< @c Tensor::DataType element data type.
-    kEnumTensorDevice = 5,    ///< @c Tensor::Device residency device.
-    kEnumAudioFormat = 6,     ///< @c AudioFrame::Format sample format.
-    kEnumAudioLayout = 7,     ///< @c AudioFrame::Layout channel layout.
+    kEnumNone = 0,               ///< Plain numeric field with no symbolic enumeration.
+    kEnumCameraFormat = 1,       ///< @c CameraFrame::Format image or codec format.
+    kEnumCameraStream = 2,       ///< @c CameraFrame::Stream stream role.
+    kEnumGridCellType = 3,       ///< @c OccupancyGrid::CellType cell storage type.
+    kEnumTensorDataType = 4,     ///< @c Tensor::DataType element data type.
+    kEnumTensorDevice = 5,       ///< @c Tensor::Device residency device.
+    kEnumAudioFormat = 6,        ///< @c AudioFrame::Format sample format.
+    kEnumAudioLayout = 7,        ///< @c AudioFrame::Layout channel layout.
+    kEnumFastBufferStorage = 8,  ///< @c FastBuffer::Storage wire payload kind.
+    kEnumFastBufferMemory = 9,   ///< @c zerocopy::FastBuffer::MemoryType allocation domain.
   };
 
   /**
@@ -365,12 +370,13 @@ class VLINK_EXPORT MessageParser final {
   /**
    * @brief Deep-copies the retained message into a matching typed container.
    *
-   * @tparam T One of the built-in zero-copy container types.
+   * @tparam T A built-in zero-copy container, or @c FastBuffer::Metadata for FastBuffer messages.
    * @param out Destination container replaced only when @p T matches the parsed type.
    * @return @c true when a matching retained message was copied.
    *
    * @note This compatibility operation is intended for typed container APIs. Dynamic
    *       readers should use @c value(), @c fields(), and collection access instead.
+   *       FastBuffer resource import is separate; this operation copies only its metadata.
    */
   template <typename T>
   bool copy_to(T& out) const;
@@ -393,7 +399,7 @@ class VLINK_EXPORT MessageParser final {
 
  private:
   using Message = std::variant<std::monostate, RawData, CameraFrame, PointCloud, ProxyData, OccupancyGrid, Tensor,
-                               ObjectArray, AudioFrame>;
+                               ObjectArray, AudioFrame, FastBuffer::Metadata>;
 
   template <typename T>
   [[nodiscard]] const T* get() const noexcept;

@@ -1048,6 +1048,44 @@ def test_zerocopy_audio_frame():
 
 
 
+def test_zerocopy_fast_buffer():
+    """Test owned metadata, host serialization and parser fields without a GPU plugin."""
+    source = _vlink.FastBuffer()
+    content = _vlink.Bytes.from_bytes(b"fast-buffer-data")
+    metadata = _vlink.Bytes.from_bytes(b"tensor:u8:16")
+    assert source.create(content.size())
+    assert source.copy_from_host(content)
+    assert source.set_metadata(metadata)
+    source.reserved = [1, 2, 3, 4, 5, 6]
+    assert source.memory_type() == _vlink.FastBuffer.MemoryType.Host
+
+    retained = _vlink.FastBuffer()
+    assert retained.shallow_copy(source)
+    source.clear()
+    assert retained.get_metadata() == b"tensor:u8:16"
+    wire = retained.to_bytes()
+    assert wire.size() == retained.get_serialized_size()
+    parser = _vlink.ZeroCopyMessageParser()
+    assert parser.parse("vlink::zerocopy::FastBuffer", wire)
+    assert parser.value("storage") == 2
+    assert parser.value("memory_type") == 1
+    assert parser.collection_size("reserved") == 0
+    assert parser.value("reserved6") == 6
+    assert parser.value("reserved[6]") is None
+
+    restored = _vlink.FastBuffer()
+    assert restored.from_bytes(wire)
+    retained.clear()
+    wire.clear()
+    result = _vlink.Bytes()
+    assert restored.copy_to_host(result)
+    assert result.to_bytes() == b"fast-buffer-data"
+    assert restored.get_metadata() == b"tensor:u8:16"
+    assert list(restored.reserved) == [1, 2, 3, 4, 5, 6]
+    assert "memory_type=1" in repr(restored)
+    print("[PASS] FastBuffer")
+
+
 if __name__ == "__main__":
     _vlink.Logger.init("py_test")
     print(f"VLink Python Bindings Test - v{_vlink.VERSION}")
@@ -1077,6 +1115,7 @@ if __name__ == "__main__":
     test_zerocopy_object_array()
     test_zerocopy_message_parser()
     test_zerocopy_audio_frame()
+    test_zerocopy_fast_buffer()
 
     print("=" * 50)
     print("ALL TESTS PASSED!")

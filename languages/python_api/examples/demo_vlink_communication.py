@@ -35,7 +35,7 @@ Outline of this file
   Section 2.  Event model with schema-typed payloads (Protobuf / FlatBuffers)
   Section 3.  Event model with zero-copy typed containers
               (RawData, CameraFrame, PointCloud, OccupancyGrid, Tensor,
-              ObjectArray, AudioFrame, ProxyData)
+              ObjectArray, AudioFrame, ProxyData, FastBuffer)
   Section 4.  Method model (Server / Client RPC)
   Section 5.  Field model (Setter / Getter latest-value sync)
 
@@ -806,6 +806,41 @@ def demo_pubsub_object_array():
     print("[OK] ObjectArray pub/sub")
 
 
+def demo_pubsub_fast_buffer():
+    """Share a provider buffer while retaining the source until the receiver finishes."""
+    done = threading.Event()
+    received = []
+    sub = _vlink.Subscriber("intra://demo/zerocopy/fast_buffer")
+    sub.set_ser_type("vlink::zerocopy::FastBuffer", _vlink.SchemaType.ZeroCopy)
+    sub.init()
+
+    def on_message(payload):
+        buffer = _vlink.FastBuffer()
+        assert buffer.from_bytes(_vlink.Bytes.from_bytes(payload))
+        output = _vlink.Bytes()
+        assert buffer.copy_to_host(output)
+        received.append(output.to_bytes())
+        buffer.clear()
+        done.set()
+
+    sub.listen(on_message)
+    pub = _vlink.Publisher("intra://demo/zerocopy/fast_buffer")
+    pub.set_ser_type("vlink::zerocopy::FastBuffer", _vlink.SchemaType.ZeroCopy)
+    pub.init()
+    pub.wait_for_subscribers(timeout_ms=2000)
+    source = _vlink.FastBuffer()
+    content = _vlink.Bytes.from_bytes(b"provider buffer")
+    assert source.create(content.size())
+    assert source.copy_from_host(content)
+    pub.publish(source.to_bytes())
+    assert done.wait(timeout=3.0)
+    assert received == [b"provider buffer"]
+    source.clear()
+    pub.deinit()
+    sub.deinit()
+    print("[OK] FastBuffer pub/sub")
+
+
 def demo_pubsub_audio_frame():
     """Tutorial: publish ``AudioFrame`` -- PCM or compressed audio.
 
@@ -1176,6 +1211,7 @@ def main():
     demo_pubsub_tensor()
     demo_pubsub_object_array()
     demo_pubsub_audio_frame()
+    demo_pubsub_fast_buffer()
 
     print("\n--- Section 4: Method model (Server / Client RPC) ---")
     demo_rpc_sync()
