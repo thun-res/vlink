@@ -377,6 +377,35 @@ TEST_SUITE("base-Utils") {
     CHECK(pid1 == pid2);
   }
 
+  TEST_CASE("get_process_start_time distinguishes live, invalid and finished processes") {
+    if (Utils::get_env("VLINK_UTILS_START_TIME_CHILD") == "1") {
+      return;
+    }
+
+    const uint64_t self_start = Utils::get_process_start_time(Utils::get_pid());
+    CHECK_NE(self_start, 0);
+    CHECK_NE(self_start, Utils::kUnknownProcessStartTime);
+    CHECK_EQ(Utils::get_process_start_time(Utils::get_pid()), self_start);
+    CHECK_EQ(Utils::get_process_start_time(0), 0);
+    CHECK_EQ(Utils::get_process_start_time(-1), 0);
+
+    Process child;
+    child.set_process_mode(Process::kForwardedMode);
+    child.set_inherit_environment(true);
+    child.set_environment({{"VLINK_UTILS_START_TIME_CHILD", "1"}});
+    child.start(
+        Utils::get_app_path(),
+        {"--test-suite=base-Utils",
+         "--test-case=get_process_start_time distinguishes live, invalid and finished processes", "--no-version"});
+    REQUIRE(child.wait_for_started(5000));
+    const auto child_pid = static_cast<int32_t>(child.get_process_id());
+    const uint64_t child_start = Utils::get_process_start_time(child_pid);
+    CHECK_NE(child_start, 0);
+    REQUIRE(child.wait_for_finished(5000));
+    CHECK_EQ(child.get_exit_code(), 0);
+    CHECK_EQ(Utils::get_process_start_time(child_pid), 0);
+  }
+
   TEST_CASE("get_host_name returns a non-empty string") {
     std::string host = Utils::get_host_name();
 

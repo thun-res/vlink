@@ -376,30 +376,28 @@ uint64_t get_process_start_time(int32_t pid) noexcept {
     return 0;
   }
 
-  if (*cursor == 'Z') {
-    std::snprintf(path, sizeof(path), "/proc/%d/task", static_cast<int>(pid));
-    std::error_code ec;
-    size_t threads = 0;
+  const bool zombie = *cursor == 'Z';
+  uint64_t threads = 0;
 
-    for (std::filesystem::directory_iterator iter(path, ec); !ec && iter != std::filesystem::directory_iterator();
-         iter.increment(ec)) {
-      ++threads;
-    }
-
-    if (threads <= 1) {
-      return 0;
-    }
-  }
-
-  for (int field = 3; field < 22 && cursor; ++field) {
+  for (int field = 3; field < 22; ++field) {
     cursor = std::strchr(cursor, ' ');
 
-    if (cursor) {
-      ++cursor;
+    if (!cursor) {
+      return kUnknownProcessStartTime;
+    }
+
+    ++cursor;
+
+    if (field == 19) {
+      threads = std::strtoull(cursor, nullptr, 10);
     }
   }
 
-  const uint64_t start_time = cursor ? std::strtoull(cursor, nullptr, 10) : 0;
+  if (zombie && threads <= 1) {
+    return 0;
+  }
+
+  const uint64_t start_time = std::strtoull(cursor, nullptr, 10);
   return start_time != 0 ? start_time : kUnknownProcessStartTime;
 #endif
 }
