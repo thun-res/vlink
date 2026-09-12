@@ -517,11 +517,11 @@ process(rd);
 核心为每个已导出的分配维护一个共享内存控制块，保存协议 ID、大小、所有者身份、generation 与最多 32 个读者进程的身份表，其后紧随插件原生描述符。生命周期规则：
 
 - 复用或退休分配前先递增 generation。携带旧 generation 的描述符导入失败，消息按队列溢出丢弃，发布方不需要导入确认；`depth` 应大于最慢订阅者的队列深度加其保留的帧数。
-- 进程身份为 PID 加内核启动时间；参与共享的进程须处于同一 PID 命名空间（Linux 记录 `/proc/self/ns/pid`），不同命名空间的导入失败、扫描跳过。`acquire()` 与最终释放遇到读者表非空时逐项检测存活，已崩溃的读者进程直接清除；导入时检测所有者存活，所有者已崩溃则导入失败，unlink 其控制块并调用插件 `destroy_handle()` 清理原生命名资源。Linux、QNX 上 Manager 构造时扫描 `/dev/shm`（QNX 为 `/dev/shmem`）中同协议、所有者已死的控制块并同样清理，其他协议的残留留给其自身 provider 的进程；内置 `shm` provider 的每个分配段自带所有者身份，未导出的分配同样在构造时回收。macOS 无法枚举 POSIX 共享内存，残留只能由后续导入清理。存活检测把"进程存在但不可检视"视为存活，不会误清跨用户的活进程。
+- 进程身份为 PID 加内核启动时间；参与共享的进程须处于同一 PID 与 time 命名空间（Linux 记录 `/proc/self/ns/pid`、`/proc/self/ns/time`，启动时间随读取方的 time 偏移变化），不同命名空间的导入失败、扫描跳过。`acquire()` 与最终释放遇到读者表非空时逐项检测存活，已崩溃的读者进程直接清除；导入时检测所有者存活，所有者已崩溃则导入失败，unlink 其控制块并调用插件 `destroy_handle()` 清理原生命名资源。Linux、QNX 上 Manager 构造时扫描 `/dev/shm`（QNX 为 `/dev/shmem`）中同协议、所有者已死的控制块并同样清理，其他协议的残留留给其自身 provider 的进程；内置 `shm` provider 的每个分配段自带所有者身份，未导出的分配同样在构造时回收。macOS 无法枚举 POSIX 共享内存，残留只能由后续导入清理。存活检测把"进程存在但不可检视"视为存活，不会误清跨用户的活进程。
 - 任何调用都不等待其他进程。最终释放时若仍有存活读者，分配进入 Manager 的退休列表，由后续创建或释放调用回收；Manager 析构时仍被引用的分配记录日志后照常释放，效果与进程退出一致，读者已建立的映射在平台允许时继续有效。
-- 每个读者进程对每个 generation 导入一次，即附加控制块并调用插件导入；同进程重复导入共享同一本地资源，只增加本地引用。
+- 读者进程首次导入某个 generation 时附加控制块并调用插件导入；本地引用仍存续期间的重复导入共享同一本地资源，只增加本地引用，全部释放后再导入需重新附加。导入方再导出时使用其导入时的 generation，owner 退休后的分配不会重新可导入。`acquire()` 交付前同步 provider，本地读者已释放但未完成的设备任务先于复用完成。
 
-线格式为 `magic(4) + version(4) + 固定元数据(120) + 动态元数据(M) + payload(N) + magic(4)`，固定开销 132 字节。共享模式的 payload 是 40 字节的控制块名称加 generation，插件原生描述符保存在控制块内；Host 模式保存实际字节。普通 CPU 默认实现没有跨进程共享描述符，序列化会复制数据；`shm` 与 GPU 插件只传递描述符，payload 留在原分配中。共享模式支持 Linux、macOS、Windows、QNX；Android 缺少命名共享内存，该模式使用 Host 字节传递。
+线格式为 `magic(4) + version(4) + 固定元数据(120) + 动态元数据(M) + payload(N) + magic(4)`，固定开销 132 字节。共享模式的 payload 是 40 字节的控制块名称加 generation，插件原生描述符保存在控制块内；Host 模式保存实际字节。普通 CPU 默认实现没有跨进程共享描述符，序列化会复制数据；`shm` 与 GPU 插件只传递描述符，payload 留在原分配中。共享模式支持 Linux、macOS、Windows、QNX；Android 缺少命名共享内存，该模式使用 Host 字节传递，内置 `shm` provider 在 Android 不可用。
 
 `MessageParser` 的解析与打印只读取元数据，不加载 GPU 插件，也不解引用设备地址；打印支持数值与枚举名称，6 个预留槽以隐藏根字段 `reserved`、`reserved2` 至 `reserved6` 暴露。类型化复制使用 `copy_to<FastBuffer::Metadata>()`。Python 提供 `FastBuffer`、`FastBufferPool`、配置、元数据、预留槽及显式 Host 复制；`address()` 同样不是可直接读取的 CPU 指针。
 

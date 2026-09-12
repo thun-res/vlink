@@ -750,9 +750,17 @@ TEST_SUITE("zerocopy-FastBuffer") {
       zerocopy::FastBuffer fourth;
       REQUIRE((fourth << wire_fourth));
       fast_buffer_expect(fourth, 0x11);
+      Bytes relay;
+      REQUIRE((fourth >> relay));
+      zerocopy::FastBuffer relayed;
+      REQUIRE((relayed << relay));
+      CHECK_EQ(relayed.address(), fourth.address());
+      relayed.clear();
       REQUIRE(fast_buffer_touch(dir, "held4"));
       REQUIRE(fast_buffer_wait(dir, "retired4"));
       fast_buffer_expect(fourth, 0x11);
+      REQUIRE((fourth >> relay));
+      CHECK_FALSE((relayed << relay));
       SysSharemem shared;
       REQUIRE(shared.attach(control_fourth));
       REQUIRE(shared.detach(false));

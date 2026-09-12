@@ -497,6 +497,7 @@ struct FastBufferShare final {
   }
 
   uint64_t id{0};
+  uint64_t generation{0};
   SysSharemem shared;
   FastBufferControl* control{nullptr};
   size_t reader{0};
@@ -548,12 +549,15 @@ struct FastBufferManager::Impl final {
 };
 
 static bool purge_readers(FastBufferControl& control) noexcept {
+  bool busy = false;
+
   for (auto& reader : control.readers) {
     uint64_t identity = reader.load(std::memory_order_seq_cst);
 
     while (identity != 0) {
       if (is_identity_alive(identity)) {
-        return false;
+        busy = true;
+        break;
       }
 
       if (reader.compare_exchange_strong(identity, 0, std::memory_order_seq_cst)) {
@@ -562,7 +566,7 @@ static bool purge_readers(FastBufferControl& control) noexcept {
     }
   }
 
-  return true;
+  return !busy;
 }
 
 void FastBufferManager::Impl::free_resource(FastBufferResource* resource) noexcept {
@@ -765,7 +769,7 @@ bool FastBufferManager::reclaim(const zerocopy::FastBuffer::Buffer& buffer) noex
   const auto* share = resource->share.load(std::memory_order_acquire);
 
   if (!share) {
-    return true;
+    return impl_->interface->synchronize(resource->native);
   }
 
   auto& control = *share->control;
@@ -790,7 +794,7 @@ bool FastBufferManager::reclaim(const zerocopy::FastBuffer::Buffer& buffer) noex
     }
   }
 
-  return true;
+  return impl_->interface->synchronize(resource->native);
 }
 
 bool FastBufferManager::import_native(const void* handle, zerocopy::FastBuffer::Buffer& buffer) noexcept {
@@ -877,7 +881,7 @@ bool FastBufferManager::export_handle(const zerocopy::FastBuffer::Buffer& buffer
 
   FastBufferSystemDescriptor exported;
   format_name(kFastBufferControlPrefix, share->id, exported.name);
-  exported.generation = share->control->generation.load(std::memory_order_acquire);
+  exported.generation = share->owner ? share->control->generation.load(std::memory_order_acquire) : share->generation;
   std::memcpy(descriptor.data(), &exported, sizeof(exported));
   return true;
 }
@@ -983,6 +987,7 @@ bool FastBufferManager::import_handle(const Bytes& descriptor, zerocopy::FastBuf
   }
 
   share->id = id;
+  share->generation = decoded.generation;
   share->reader = index;
   resource->share.store(share.release(), std::memory_order_release);
 

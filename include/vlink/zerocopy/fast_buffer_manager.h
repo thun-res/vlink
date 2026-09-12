@@ -99,8 +99,10 @@
  * least one observes the other: the owner sees the claim and reports the allocation busy, or the
  * importer sees the newer generation and fails as expired.  In-process importers instead compare
  * the generation and raise the local reference count under the registry mutex, which the owner also
- * holds while checking that count.  An expired import drops the message exactly like a queue
- * overflow, so a publisher never needs an import acknowledgement.
+ * holds while checking that count.  An importer that re-exports uses the generation it imported under,
+ * so a retired allocation never becomes importable again.  Reclaiming also synchronizes the provider so
+ * local device work of released readers completes before the slot is handed out.  An expired import
+ * drops the message exactly like a queue overflow, so a publisher never needs an import acknowledgement.
  *
  * @par Lifetime without waiting
  * Final owner release retires the allocation: the generation is incremented, dead readers are purged
