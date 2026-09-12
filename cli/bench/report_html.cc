@@ -369,7 +369,7 @@ std::string build_line_chart(const std::vector<AggregatedCase>& items, std::stri
     series_order.push_back(&series);
   }
   std::sort(series_order.begin(), series_order.end(), [](const ChartSeries* a, const ChartSeries* b) {
-    return std::tuple{a->url_order_index, a->detail} < std::tuple{b->url_order_index, b->detail};
+    return std::tie(a->url_order_index, a->detail) < std::tie(b->url_order_index, b->detail);
   });
 
   size_t series_index = 0;
@@ -1263,30 +1263,30 @@ std::vector<TransportScoreRow> build_transport_score_rows(const std::vector<Aggr
 
   for (const auto& [_, cohort] : cohorts) {
     const auto recv_peers = collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
-      return std::pair{row.recv_mb_per_sec.count != 0, row.recv_mb_per_sec.average()};
+      return std::make_pair(row.recv_mb_per_sec.count != 0, row.recv_mb_per_sec.average());
     });
     const auto transfer_efficiency_peers =
         collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
           const bool valid =
               row.recv_mb_per_sec.count != 0 && row.send_mb_per_sec.count != 0 && row.send_mb_per_sec.average() > 0.0;
-          return std::pair{
-              valid, compute_transfer_efficiency_score(row.recv_mb_per_sec.average(), row.send_mb_per_sec.average())};
+          return std::make_pair(
+              valid, compute_transfer_efficiency_score(row.recv_mb_per_sec.average(), row.send_mb_per_sec.average()));
         });
     const auto max_latency_peers = collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
-      return std::pair{row.max_latency_us.count != 0, row.max_latency_us.average()};
+      return std::make_pair(row.max_latency_us.count != 0, row.max_latency_us.average());
     });
     const auto jitter_peers = collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
-      return std::pair{row.latency_stddev_us.count != 0, row.latency_stddev_us.average()};
+      return std::make_pair(row.latency_stddev_us.count != 0, row.latency_stddev_us.average());
     });
     const auto latency_quality_peers = collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
-      return std::pair{row.latency_quality_score.count != 0, row.latency_quality_score.average()};
+      return std::make_pair(row.latency_quality_score.count != 0, row.latency_quality_score.average());
     });
     const auto send_block_peers = collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
-      return std::pair{row.p99_send_block_us.count != 0, row.p99_send_block_us.average()};
+      return std::make_pair(row.p99_send_block_us.count != 0, row.p99_send_block_us.average());
     });
     const auto scale_efficiency_peers =
         collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
-          return std::pair{row.scale_efficiency_mb_per_sec.count != 0, row.scale_efficiency_mb_per_sec.average()};
+          return std::make_pair(row.scale_efficiency_mb_per_sec.count != 0, row.scale_efficiency_mb_per_sec.average());
         });
 
     for (auto* row : cohort) {
@@ -1366,8 +1366,8 @@ std::vector<TransportScoreRow> build_transport_score_rows(const std::vector<Aggr
   }
 
   std::sort(rows.begin(), rows.end(), [](const TransportScoreRow& lhs, const TransportScoreRow& rhs) {
-    return std::tuple{lhs.mode, lhs.suite, lhs.url_order_index, lhs.transport, lhs.url} <
-           std::tuple{rhs.mode, rhs.suite, rhs.url_order_index, rhs.transport, rhs.url};
+    return std::tie(lhs.mode, lhs.suite, lhs.url_order_index, lhs.transport, lhs.url) <
+           std::tie(rhs.mode, rhs.suite, rhs.url_order_index, rhs.transport, rhs.url);
   });
   return rows;
 }
@@ -1441,46 +1441,46 @@ std::vector<SerializationScoreRow> build_serialization_score_rows(const std::vec
   for (const auto& [_, cohort] : cohorts) {
     const auto serialize_mb_peers =
         collect_peer_values<SerializationScoreRow>(cohort, [](const SerializationScoreRow& row) {
-          return std::pair{row.serialize_mb_per_sec.count != 0, row.serialize_mb_per_sec.average()};
+          return std::make_pair(row.serialize_mb_per_sec.count != 0, row.serialize_mb_per_sec.average());
         });
     const auto deserialize_mb_peers =
         collect_peer_values<SerializationScoreRow>(cohort, [](const SerializationScoreRow& row) {
-          return std::pair{row.deserialize_mb_per_sec.count != 0, row.deserialize_mb_per_sec.average()};
+          return std::make_pair(row.deserialize_mb_per_sec.count != 0, row.deserialize_mb_per_sec.average());
         });
     const auto serialize_msgs_peers =
         collect_peer_values<SerializationScoreRow>(cohort, [](const SerializationScoreRow& row) {
-          return std::pair{row.serialize_msgs_per_sec.count != 0, row.serialize_msgs_per_sec.average()};
+          return std::make_pair(row.serialize_msgs_per_sec.count != 0, row.serialize_msgs_per_sec.average());
         });
     const auto deserialize_msgs_peers =
         collect_peer_values<SerializationScoreRow>(cohort, [](const SerializationScoreRow& row) {
-          return std::pair{row.deserialize_msgs_per_sec.count != 0, row.deserialize_msgs_per_sec.average()};
+          return std::make_pair(row.deserialize_msgs_per_sec.count != 0, row.deserialize_msgs_per_sec.average());
         });
     const auto encode_efficiency_peers =
         collect_peer_values<SerializationScoreRow>(cohort, [](const SerializationScoreRow& row) {
           const bool valid =
               row.serialize_mb_per_sec.count != 0 && row.pub_cpu_ms.count != 0 && row.pub_cpu_ms.average() > 0.0;
-          return std::pair{valid,
-                           compute_resource_efficiency(row.serialize_mb_per_sec.average(), row.pub_cpu_ms.average())};
+          return std::make_pair(
+              valid, compute_resource_efficiency(row.serialize_mb_per_sec.average(), row.pub_cpu_ms.average()));
         });
     const auto decode_efficiency_peers =
         collect_peer_values<SerializationScoreRow>(cohort, [](const SerializationScoreRow& row) {
           const bool valid =
               row.deserialize_mb_per_sec.count != 0 && row.sub_cpu_ms.count != 0 && row.sub_cpu_ms.average() > 0.0;
-          return std::pair{valid,
-                           compute_resource_efficiency(row.deserialize_mb_per_sec.average(), row.sub_cpu_ms.average())};
+          return std::make_pair(
+              valid, compute_resource_efficiency(row.deserialize_mb_per_sec.average(), row.sub_cpu_ms.average()));
         });
     const auto balance_peers = collect_peer_values<SerializationScoreRow>(cohort, [](const SerializationScoreRow& row) {
       const bool valid = row.serialize_mb_per_sec.count != 0 && row.deserialize_mb_per_sec.count != 0;
-      return std::pair{valid, compute_serialization_balance(row.serialize_mb_per_sec.average(),
-                                                            row.deserialize_mb_per_sec.average())};
+      return std::make_pair(valid, compute_serialization_balance(row.serialize_mb_per_sec.average(),
+                                                                 row.deserialize_mb_per_sec.average()));
     });
     const auto cpu_total_peers =
         collect_peer_values<SerializationScoreRow>(cohort, [](const SerializationScoreRow& row) {
           const bool valid = row.pub_cpu_ms.count != 0 || row.sub_cpu_ms.count != 0;
-          return std::pair{valid, row.pub_cpu_ms.average() + row.sub_cpu_ms.average()};
+          return std::make_pair(valid, row.pub_cpu_ms.average() + row.sub_cpu_ms.average());
         });
     const auto memory_peers = collect_peer_values<SerializationScoreRow>(cohort, [](const SerializationScoreRow& row) {
-      return std::pair{row.memory_usage.count != 0, row.memory_usage.average()};
+      return std::make_pair(row.memory_usage.count != 0, row.memory_usage.average());
     });
 
     for (auto* row : cohort) {
@@ -1536,8 +1536,8 @@ std::vector<SerializationScoreRow> build_serialization_score_rows(const std::vec
   }
 
   std::sort(rows.begin(), rows.end(), [](const SerializationScoreRow& lhs, const SerializationScoreRow& rhs) {
-    return std::tuple{lhs.mode, lhs.payload, lhs.payload_size, -lhs.score, lhs.transport} <
-           std::tuple{rhs.mode, rhs.payload, rhs.payload_size, -rhs.score, rhs.transport};
+    return std::forward_as_tuple(lhs.mode, lhs.payload, lhs.payload_size, -lhs.score, lhs.transport) <
+           std::forward_as_tuple(rhs.mode, rhs.payload, rhs.payload_size, -rhs.score, rhs.transport);
   });
   return rows;
 }
@@ -1845,8 +1845,8 @@ std::string build_url_summary_table(const std::vector<AggregatedCase>& items) {
     ordered.emplace_back(std::move(entry));
   }
   std::sort(ordered.begin(), ordered.end(), [](const UrlEntry& lhs, const UrlEntry& rhs) {
-    return std::tuple{lhs.url_order_index, lhs.transport, lhs.url} <
-           std::tuple{rhs.url_order_index, rhs.transport, rhs.url};
+    return std::tie(lhs.url_order_index, lhs.transport, lhs.url) <
+           std::tie(rhs.url_order_index, rhs.transport, rhs.url);
   });
 
   std::ostringstream html;
@@ -1912,8 +1912,8 @@ std::string build_failure_panel(const std::vector<AggregatedCase>& items) {
     ordered.emplace_back(std::move(entry));
   }
   std::sort(ordered.begin(), ordered.end(), [](const FailureEntry& lhs, const FailureEntry& rhs) {
-    return std::tuple{lhs.url_order_index, lhs.transport, lhs.mode} <
-           std::tuple{rhs.url_order_index, rhs.transport, rhs.mode};
+    return std::tie(lhs.url_order_index, lhs.transport, lhs.mode) <
+           std::tie(rhs.url_order_index, rhs.transport, rhs.mode);
   });
 
   std::ostringstream html;

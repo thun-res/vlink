@@ -524,17 +524,12 @@ std::vector<const AggregatedCase*> build_terminal_view(const std::vector<Aggrega
                 }
               }
 
-              return std::tuple{static_cast<int>(lhs->scenario.suite),
-                                static_cast<int>(lhs->scenario.mode),
-                                lhs->url_order_index,
-                                lhs->transport,
-                                lhs->scenario.url,
-                                lhs->scenario.payload_size} < std::tuple{static_cast<int>(rhs->scenario.suite),
-                                                                         static_cast<int>(rhs->scenario.mode),
-                                                                         rhs->url_order_index,
-                                                                         rhs->transport,
-                                                                         rhs->scenario.url,
-                                                                         rhs->scenario.payload_size};
+              return std::forward_as_tuple(static_cast<int>(lhs->scenario.suite), static_cast<int>(lhs->scenario.mode),
+                                           lhs->url_order_index, lhs->transport, lhs->scenario.url,
+                                           lhs->scenario.payload_size) <
+                     std::forward_as_tuple(static_cast<int>(rhs->scenario.suite), static_cast<int>(rhs->scenario.mode),
+                                           rhs->url_order_index, rhs->transport, rhs->scenario.url,
+                                           rhs->scenario.payload_size);
             });
 
   return view;
