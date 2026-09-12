@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
+#include <chrono>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -45,7 +46,13 @@
 #include <utility>
 #include <vector>
 
+#if defined(__linux__)
+#include <sys/syscall.h>
+#include <unistd.h>
+#endif
+
 #include "../common_test.h"
+#include "./base/elapsed_timer.h"
 #include "./base/process.h"
 
 #if defined(__linux__) || defined(__APPLE__)
@@ -377,9 +384,51 @@ TEST_SUITE("base-Utils") {
     CHECK(pid1 == pid2);
   }
 
-  TEST_CASE("get_process_start_time distinguishes live, invalid and finished processes") {
-    if (Utils::get_env("VLINK_UTILS_START_TIME_CHILD") == "1") {
+  TEST_CASE("get_process_start_time distinguishes live invalid and finished processes") {
+    const std::string signal_dir = Utils::get_env("VLINK_UTILS_START_TIME_CHILD");
+
+    if (!signal_dir.empty()) {
+      const std::filesystem::path ready = std::filesystem::path(signal_dir) / "ready";
+      const std::filesystem::path checked = std::filesystem::path(signal_dir) / "checked";
+      const auto wait_checked = [checked]() {
+        ElapsedTimer timer;
+        timer.start();
+        std::error_code ec;
+
+        while (!std::filesystem::exists(checked, ec) && timer.get() < 10000) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+      };
+#if defined(__linux__)
+      std::thread worker([ready, wait_checked]() {
+        for (;;) {
+          std::ifstream stat("/proc/self/stat");
+          std::string line;
+          std::getline(stat, line);
+          const size_t end = line.rfind(')');
+
+          if (end != std::string::npos && end + 2 < line.size() && line[end + 2] == 'Z') {
+            break;
+          }
+
+          std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+
+        {
+          std::ofstream file(ready);
+        }
+        wait_checked();
+        ::_exit(0);
+      });
+      worker.detach();
+      ::syscall(SYS_exit, 0);
+#else
+      {
+        std::ofstream file(ready);
+      }
+      wait_checked();
       return;
+#endif
     }
 
     const uint64_t self_start = Utils::get_process_start_time(Utils::get_pid());
@@ -389,18 +438,32 @@ TEST_SUITE("base-Utils") {
     CHECK_EQ(Utils::get_process_start_time(0), 0);
     CHECK_EQ(Utils::get_process_start_time(-1), 0);
 
+    const ScopedUtilsTempPath dir("vlink_utils_start_time_" + Utils::get_pid_str(), true);
     Process child;
     child.set_process_mode(Process::kForwardedMode);
     child.set_inherit_environment(true);
-    child.set_environment({{"VLINK_UTILS_START_TIME_CHILD", "1"}});
+    child.set_environment({{"VLINK_UTILS_START_TIME_CHILD", dir.string()}});
     child.start(
         Utils::get_app_path(),
         {"--test-suite=base-Utils",
-         "--test-case=get_process_start_time distinguishes live, invalid and finished processes", "--no-version"});
+         "--test-case=get_process_start_time distinguishes live invalid and finished processes", "--no-version"});
     REQUIRE(child.wait_for_started(5000));
     const auto child_pid = static_cast<int32_t>(child.get_process_id());
+    ElapsedTimer timer;
+    timer.start();
+    std::error_code ec;
+
+    while (!std::filesystem::exists(dir.path() / "ready", ec) && timer.get() < 5000) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    REQUIRE(std::filesystem::exists(dir.path() / "ready", ec));
     const uint64_t child_start = Utils::get_process_start_time(child_pid);
     CHECK_NE(child_start, 0);
+    CHECK_NE(child_start, Utils::kUnknownProcessStartTime);
+    {
+      std::ofstream file(dir.path() / "checked");
+    }
     REQUIRE(child.wait_for_finished(5000));
     CHECK_EQ(child.get_exit_code(), 0);
     CHECK_EQ(Utils::get_process_start_time(child_pid), 0);
