@@ -18,7 +18,7 @@
 export VLINK_FASTBUFFER_PLUGIN=/path/to/libfastbuffer_hip.so
 ```
 
-未设置时使用普通 CPU 内存。插件默认采用核心的系统信号量＋共享内存模式；hbmem 声明自定义模式，复用 SDK 引用机制。共享生命周期见
+未设置时使用普通 CPU 内存，`shm` 使用可跨进程共享的 CPU 内存。三个插件都由核心的共享内存控制块协调跨进程生命周期：generation 加读者进程身份表，发布方通过 `FastBufferPool` 复用缓冲，任何调用都不等待其他进程；hbmem 的 SDK 引用只维持导入映射的存活。共享生命周期见
 [FastBufferPluginInterface](../../include/vlink/zerocopy/fast_buffer_plugin_interface.h)。
 
 FastBuffer 不内置录制转换；需要时由独立 bag 插件显式读取并转换为可持久化消息。

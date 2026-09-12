@@ -807,7 +807,7 @@ def demo_pubsub_object_array():
 
 
 def demo_pubsub_fast_buffer():
-    """Share a provider buffer while retaining the source until the receiver finishes."""
+    """Publish a provider buffer; shared providers send descriptors, the CPU provider sends bytes."""
     done = threading.Event()
     received = []
     sub = _vlink.Subscriber("intra://demo/zerocopy/fast_buffer")

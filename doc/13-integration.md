@@ -973,7 +973,7 @@ export VLINK_LOG_LEVEL=3
 | --- | --- | --- |
 | `VLINK_URL_PLUGINS` | 模式或名称列表 | 完整值为 `auto`（大小写不敏感）时，未链接的已知 transport 在 URL 首次使用时尝试加载固定的 `vlink-<module>`；为空或完整值为 `none`（大小写不敏感）时关闭插件加载；其他非空值是逗号或空格分隔的显式预加载基础名列表（可省略 `vlink-`，不含路径、平台库前缀与 `.so` / `.dylib` / `.dll` 后缀）。三种模式互斥，设置在进程级插件管理器首次初始化时读取一次；仅适用于共享模块，不加载静态归档（Unix `.a` / Windows 静态 `.lib`）；分包的运行时组件即包含所需加载名称；已链接后端优先，未知 scheme 不支持 |
 | `VLINK_SCHEMA_PLUGIN` | 路径或插件名 | Schema 插件共享库路径或基础名 |
-| `VLINK_FASTBUFFER_PLUGIN` | 路径或插件名 | 首次构造 FastBuffer 时加载一次；未设置或空值使用普通 CPU 内存，显式加载失败不回退 |
+| `VLINK_FASTBUFFER_PLUGIN` | 路径、插件名或 `shm` | 首次构造 FastBuffer 时解析一次；未设置或空值使用普通 CPU 内存，`shm` 使用可跨进程共享的 CPU 内存，显式加载失败不回退 |
 | `VLINK_CONVERT_PLUGIN` | 路径或插件名 | 转换插件路径或基础名；WebViz 桥接及 `vlink-bag2mcap`/`vlink-bag2rrd` 在未传 `--convert_plugin` 时读取 |
 | `VLINK_PROTO_DIR` | 目录路径 | `.proto` 搜索目录，亦可经 `vlink-eproto import <dir>` 持久化 |
 | `VLINK_FBS_DIR` | 目录路径 | `.fbs` 搜索目录，亦可经 `vlink-efbs import <dir>` 持久化 |

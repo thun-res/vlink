@@ -90,12 +90,14 @@
  * [ magic_begin (4) | version (4) | wire header (120) | metadata (M) | payload (N) | magic_end (4) ]
  * @endcode
  *
- * | Wire storage | Payload                     | Availability                        |
- * | ------------ | --------------------------- | ----------------------------------- |
- * | Shared       | System or custom descriptor | Compatible provider and live source |
- * | Host         | Complete CPU-readable bytes | No sharing descriptor required      |
+ * | Wire storage | Payload                           | Availability                        |
+ * | ------------ | --------------------------------- | ----------------------------------- |
+ * | Shared       | Control block name and generation | Compatible provider and live source |
+ * | Host         | Complete CPU-readable bytes       | No sharing descriptor required      |
  *
- * @c operator>> uses a sharing descriptor when supported, otherwise host bytes.
+ * @c operator>> uses a sharing descriptor when supported, otherwise host bytes.  A shared
+ * descriptor names the allocation and its generation; importing after the owner reused
+ * (@c FastBufferPool) or retired the allocation fails as expired, and the message is dropped.
  * @c MessageParser reads and prints metadata without importing the allocation.
  * Variable-length metadata is ordinary CPU storage, separate from the provider
  * payload.  @c set_metadata() copies input bytes or adopts an owned rvalue;
@@ -116,7 +118,8 @@
  *   }
  * }
  * @endcode
- * Sharing lifetime is defined by @ref vlink::FastBufferPluginInterface.
+ * Publishers recycle allocations through @ref vlink::zerocopy::FastBufferPool; the sharing contract is
+ * defined by @ref vlink::FastBufferPluginInterface and @ref vlink::FastBufferManager.
  */
 
 #pragma once
@@ -132,6 +135,8 @@ namespace vlink {
 
 namespace zerocopy {
 
+class FastBufferPool;
+
 /**
  * @struct FastBuffer
  * @brief Holds a local memory address and an owned provider reference.
@@ -144,10 +149,11 @@ namespace zerocopy {
  * Moving transfers the reference and leaves the source empty.
  *
  * The wire format is [magic (4), version (4), fixed header (120), metadata (M), payload (N), end magic (4)] in the same
- * native byte order as other zero-copy containers.  Shared payloads are system or custom descriptors, not local
+ * native byte order as other zero-copy containers.  Shared payloads name a control block, not local
  * addresses.  Host payloads contain actual bytes and are copied into provider storage on deserialization.
  * Local C++ object memory, plugin references and device indices are never serialized.
  *
+ * Releasing the last local reference of an exported allocation never waits for importers.
  * Sharing lifetime follows @ref vlink::FastBufferPluginInterface.
  */
 struct VLINK_EXPORT_AND_ALIGNED(8) FastBuffer final {
@@ -213,7 +219,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) FastBuffer final {
    * storage.  Keep that input alive while reading @c buffer.  This C++ view is
    * not copied directly to the wire.
    */
-  struct alignas(8) Metadata final {
+  struct Metadata final {
     Header header;                           ///< Sequencing and timestamps.
     uint64_t size{0};                        ///< Actual payload size in bytes, excluding any descriptor.
     uint64_t protocol{0};                    ///< Descriptor protocol ID; zero for host storage.
@@ -505,6 +511,8 @@ struct VLINK_EXPORT_AND_ALIGNED(8) FastBuffer final {
   static constexpr bool kZerocopyTypes{true};  ///< Serializer zero-copy schema marker.
 
  private:
+  friend class FastBufferPool;
+
   struct MetadataBuffer;
 
   static MetadataBuffer* copy_metadata(const Bytes& bytes) noexcept;

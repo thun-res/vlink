@@ -296,7 +296,7 @@ if (pub.is_support_loan()) {
 | `VLINK_DISCOVER_DISABLE` | 置 `1` 关闭运行时发现上报 |
 | `VLINK_DISCOVER_NATIVE` | 置 `1` 仅限本机发现 |
 | `VLINK_PROTO_DIR` / `VLINK_FBS_DIR` | 动态 schema 目录（`vlink-eproto`/`-efbs`） |
-| `VLINK_FASTBUFFER_PLUGIN` | 首次构造 FastBuffer 时加载的插件名或路径；未设置或空值使用普通 CPU 内存 |
+| `VLINK_FASTBUFFER_PLUGIN` | 首次构造 FastBuffer 时加载的插件名或路径；未设置或空值使用普通 CPU 内存，`shm` 使用可跨进程共享的 CPU 内存 |
 | `VLINK_URL_PLUGINS` | 首次 URL 初始化前设置：完整值 `auto` 按需加载未链接的已知共享 transport，`none` / 空值关闭插件加载，其他非空值为显式预加载列表；模式值大小写不敏感 |
 | `VLINK_BAG_PATH` | 进程级全局录制的 bag 文件路径（后缀须为 `.vdb`/`.vdbx`/`.vcap`/`.vcapx`），录制经过 Bytes 路径的普通六原语收发 action；限制见 [消息录制与回放](09-recording.md) |
 

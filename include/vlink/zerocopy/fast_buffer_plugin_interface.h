@@ -40,30 +40,25 @@
  * | Payload copy             | @c copy(), @c copy_to_host(), @c copy_from_host() | Synchronous completion         |
  * | Descriptor transport     | @c export_handle(), @c import_handle()            | No local pointer on the wire   |
  * | Descriptor size          | @c get_handle_size()                              | Per-allocation support         |
+ * | Dead-owner cleanup       | @c destroy_handle()                               | Named OS resources only        |
  *
- * | Sharing mode | Cross-process coordination       | Wire descriptor   |
- * | ------------ | -------------------------------- | ----------------- |
- * | @c kSystem   | Core shared memory and semaphore | Core resource ID  |
- * | @c kCustom   | Provider SDK or custom mechanism | Native descriptor |
- *
- * @par System sharing lifecycle
+ * @par Sharing lifecycle
  * @code
- *   Publishing process                     Subscribing process
- *   ------------------                     -------------------
- *   create() --> core Resource --> SDK Buffer
- *                  |
- *             device/CPU writes
- *                  |
- *       manager export -- core descriptor --> manager import
- *                  |                       SDK import_handle()
- *                  |                                |
- *            retain source                    local Buffer
- *            until import                           |
- *                  |                        device use or map/unmap
- *                  |                                |
- *              release()                        release()
- *                  \                                /
- *                   +-- free after all references -+
+ *   Publishing process                        Subscribing process
+ *   ------------------                        -------------------
+ *   pool acquire --> generation + 1
+ *        |
+ *   device/CPU writes
+ *        |
+ *   manager export -- name + generation --> manager import
+ *        |                                  claim reader slot, check generation
+ *        |                                  SDK import_handle()
+ *   drop reference (never waits)                     |
+ *        |                                  device use or map/unmap
+ *   next acquire: purge dead readers,                |
+ *   busy while live readers remain          release(): SDK close, clear slot
+ *        |
+ *   final release: retire, free when the reader table is empty
  * @endcode
  *
  * A @c zerocopy::FastBuffer::Buffer address belongs to its local process and address space.
@@ -104,22 +99,26 @@ namespace vlink {
  * output empty and release partial resources.  Successful calls return one reference, released exactly once by the
  * host.  Size and descriptor length remain constant for that reference.
  *
- * Export is idempotent and creates no unclaimed reference.  The exporter must retain the source until
- * receivers have imported it; publishing is not an import acknowledgement.  Expired descriptors fail import.
- * FastBufferManager always owns local references.  In the default kSystem mode it also coordinates
- * cross-process import/final-release races with shared memory and a system semaphore.  In kCustom mode,
- * the provider supplies its own cross-process ownership through export_handle/import_handle/release;
- * the core adds no IPC control block.  Mode is fixed and forms part of the descriptor protocol identity.
- * Descriptors identify the host, device, allocation generation and synchronization state as required
- * by the backend.  OS handles require real handle transfer; a numeric FD or device address is insufficient.
+ * Export is idempotent and creates no unclaimed reference.  Publishing is not an import acknowledgement:
+ * a descriptor stays importable until the owner reuses or retires the allocation, after which import
+ * fails as expired and the message is dropped like a queue overflow.  FastBufferManager owns local
+ * references and a shared-memory control block per exported allocation with a generation number and a
+ * reader table keyed by process identity; the native descriptor travels inside that block.  No operation
+ * waits for another process, and dead readers or owners are detected by PID plus start time.  Providers
+ * whose runtime keeps imported allocations alive independently of the exporter still rely on the reader
+ * table to know when an allocation may be overwritten.  Descriptors identify the host, device and
+ * synchronization state as required by the backend.  OS handles require real handle transfer; a numeric
+ * FD or device address is insufficient.
  *
  * Published contents are immutable until all readers finish.  The manager synchronizes before export;
  * descriptors identify resources and stay stable for each local reference.  The manager
- * synchronizes before final release; allocations cannot be reused while other references exist.  External device
+ * synchronizes before final release; an allocation is reused only through zerocopy::FastBufferPool once no
+ * local holder or live importer references it, and freed only once its reader table is empty.  External device
  * work must be completed by its owner before export, host access or release unless the provider explicitly
- * supports waiting for it.  CPU cache maintenance is not a device completion fence.  Peers must shut down
- * orderly; a crashed importer can leave the exporter waiting, and forced exporter termination
- * invalidates allocations whose SDK requires its survival.  Release buffers before manager shutdown.
+ * supports waiting for it.  CPU cache maintenance is not a device completion fence.  A crashed importer is
+ * purged on the owner's next reclaim; forced exporter termination invalidates allocations whose SDK requires
+ * its survival; imports that attach a new mapping detect the dead owner and call @c destroy_handle() for
+ * named resources the operating system would otherwise keep.  Release buffers before manager shutdown.
  *
  * Implementations use @c VLINK_PLUGIN_DECLARE(Implementation, 1, 0).  The descriptor protocol identity
  * is separate from this interface ABI.  Compatible providers may share a protocol; unrelated providers
@@ -134,22 +133,6 @@ class FastBufferPluginInterface {
   virtual ~FastBufferPluginInterface() = default;
 
  public:
-  /**
-   * @enum SharingMode
-   * @brief Selects who coordinates cross-process ownership.
-   */
-  enum SharingMode : uint8_t {
-    kSystem = 0,  ///< Core shared memory and system semaphore (default).
-    kCustom = 1,  ///< Provider-native sharing and lifetime management.
-  };
-
-  /**
-   * @brief Returns the sharing mode, fixed for this provider's lifetime.
-   *
-   * @return System coordination unless the provider explicitly implements custom sharing.
-   */
-  [[nodiscard]] virtual SharingMode get_sharing_mode() const noexcept { return kSystem; }
-
   /**
    * @brief Begins CPU access and invalidates stale host cache lines when reading.
    *
@@ -304,6 +287,20 @@ class FastBufferPluginInterface {
   [[nodiscard]] virtual bool import_handle(const Bytes& descriptor, zerocopy::FastBuffer::Buffer& buffer) noexcept {
     (void)descriptor;
     (void)buffer;
+    return false;
+  }
+
+  /**
+   * @brief Removes named operating-system resources of a descriptor whose exporting process has died.
+   *
+   * @param descriptor Native descriptor produced by @c export_handle() in the dead process.
+   *
+   * @return Whether resources were removed; providers whose runtime reclaims them on process exit return false.
+   *
+   * @note Several processes may call this for the same descriptor; tolerate resources that are already gone.
+   */
+  [[nodiscard]] virtual bool destroy_handle(const Bytes& descriptor) noexcept {
+    (void)descriptor;
     return false;
   }
 

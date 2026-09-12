@@ -495,9 +495,9 @@ process(rd);
 | reserved | 48 | 6 个 uint64_t，复制与序列化保留 |
 | 总计 | 128 | 64 位对象布局，不作为线格式契约 |
 
-包含 `<vlink/zerocopy/fast_buffer.h>` 即可使用。该头文件不依赖插件接口；`MemoryType`、`Config`、`Access` 和 `Storage` 均由 FastBuffer 定义，枚举底层类型为 `uint8_t`。插件接口和 Manager 分别位于同目录的 `fast_buffer_plugin_interface.h`、`fast_buffer_manager.h`。
+包含 `<vlink/zerocopy/fast_buffer.h>` 即可使用。该头文件不依赖插件接口；`MemoryType`、`Config`、`Access` 和 `Storage` 均由 FastBuffer 定义，枚举底层类型为 `uint8_t`。插件接口、Manager 与发布池分别位于同目录的 `fast_buffer_plugin_interface.h`、`fast_buffer_manager.h`、`fast_buffer_pool.h`。
 
-首次构造触发进程内 `vlink::FastBufferManager` 单例初始化。未设置或清空 `VLINK_FASTBUFFER_PLUGIN` 时使用普通 CPU 内存；非空时按 `Plugin` 规则加载指定插件，显式失败不会回退到 CPU。后续修改环境变量不切换插件。插件由 Manager 持有，FastBuffer 不保存插件指针。Manager 统一管理本地引用。插件的 `get_sharing_mode()` 默认返回 `kSystem`，由核心的系统信号量和共享内存协调跨进程引用；声明 `kCustom` 时，插件通过现有的导出、导入和释放接口承担跨进程生命周期。CUDA、HIP 使用默认模式，hbmem 使用 SDK 内建引用的自定义模式。
+首次构造触发进程内 `vlink::FastBufferManager` 单例初始化。`VLINK_FASTBUFFER_PLUGIN` 未设置或为空时使用普通 CPU 内存；为 `shm` 时使用命名共享内存分配的 CPU 内存，可跨进程共享；其余值按 `Plugin` 规则加载指定插件，显式失败不会回退到 CPU。后续修改环境变量不切换插件。插件由 Manager 持有，FastBuffer 不保存插件指针。Manager 统一管理本地引用。所有支持共享的插件都由核心的共享内存控制块协调跨进程生命周期，插件只负责导出、导入、释放和销毁原生资源；hbmem 的 SDK 引用只维持导入映射的存活，复用与释放同样以读者表为准。
 
 | 操作 | 行为 |
 | --- | --- |
@@ -510,9 +510,20 @@ process(rd);
 | `set_metadata()` / `get_metadata()` | 设置或读取可变长 CPU 元数据；拥有型右值可移动 |
 | `get_reserved()` | 访问 6 个预留槽 |
 
-线格式为 `magic(4) + version(4) + 固定元数据(120) + 动态元数据(M) + payload(N) + magic(4)`，固定开销 132 字节。系统共享模式的 payload 是核心控制块标识，控制块保存引用计数和插件原生描述符；自定义模式直接传递插件描述符；Host 模式保存实际字节。普通 CPU 默认实现没有跨进程共享描述符，序列化会复制数据。GPU 模式可以只传递描述符，GPU payload 留在原分配中。系统共享模式支持 Linux、Windows、QNX；macOS、Android 受现有 IPC 基础设施限制，该模式使用 Host 字节传递。自定义模式由插件提供平台共享能力。
+### 6.13.1 发布池与跨进程生命周期
 
-`MessageParser` 的解析与打印只读取元数据，不加载 GPU 插件，也不解引用设备地址；打印支持数值与枚举名称，6 个预留槽以隐藏根字段 `reserved`、`reserved2` 至 `reserved6` 暴露。类型化复制使用 `copy_to<FastBuffer::Metadata>()`。Python 提供 `FastBuffer`、配置、元数据、预留槽及显式 Host 复制；`address()` 同样不是可直接读取的 CPU 指针。
+发布方通过 `vlink::zerocopy::FastBufferPool` 复用分配：`create(size, depth, config)` 一次分配 `depth` 个等长缓冲；`acquire(buffer)` 先清空 `buffer`，再按轮转顺序取出既无本地持有者、也无存活导入进程引用的槽位，没有可用槽位时返回 `false`，由发布方决定丢帧或稍后重试；`clear()` 释放池的引用，已取出的缓冲继续有效。池由单线程驱动。
+
+核心为每个已导出的分配维护一个共享内存控制块，保存协议 ID、大小、所有者身份、generation 与最多 32 个读者进程的身份表，其后紧随插件原生描述符。生命周期规则：
+
+- 复用或退休分配前先递增 generation。携带旧 generation 的描述符导入失败，消息按队列溢出丢弃，发布方不需要导入确认；`depth` 应大于最慢订阅者的队列深度加其保留的帧数。
+- 进程身份为 PID 加内核启动时间；参与共享的进程须处于同一 PID 命名空间（Linux 记录 `/proc/self/ns/pid`），不同命名空间的导入失败、扫描跳过。`acquire()` 与最终释放遇到读者表非空时逐项检测存活，已崩溃的读者进程直接清除；导入时检测所有者存活，所有者已崩溃则导入失败，unlink 其控制块并调用插件 `destroy_handle()` 清理原生命名资源。Linux、QNX 上 Manager 构造时扫描 `/dev/shm`（QNX 为 `/dev/shmem`）中同协议、所有者已死的控制块并同样清理，其他协议的残留留给其自身 provider 的进程；内置 `shm` provider 的每个分配段自带所有者身份，未导出的分配同样在构造时回收。macOS 无法枚举 POSIX 共享内存，残留只能由后续导入清理。存活检测把"进程存在但不可检视"视为存活，不会误清跨用户的活进程。
+- 任何调用都不等待其他进程。最终释放时若仍有存活读者，分配进入 Manager 的退休列表，由后续创建或释放调用回收；Manager 析构时仍被引用的分配记录日志后照常释放，效果与进程退出一致，读者已建立的映射在平台允许时继续有效。
+- 每个读者进程对每个 generation 导入一次，即附加控制块并调用插件导入；同进程重复导入共享同一本地资源，只增加本地引用。
+
+线格式为 `magic(4) + version(4) + 固定元数据(120) + 动态元数据(M) + payload(N) + magic(4)`，固定开销 132 字节。共享模式的 payload 是 40 字节的控制块名称加 generation，插件原生描述符保存在控制块内；Host 模式保存实际字节。普通 CPU 默认实现没有跨进程共享描述符，序列化会复制数据；`shm` 与 GPU 插件只传递描述符，payload 留在原分配中。共享模式支持 Linux、macOS、Windows、QNX；Android 缺少命名共享内存，该模式使用 Host 字节传递。
+
+`MessageParser` 的解析与打印只读取元数据，不加载 GPU 插件，也不解引用设备地址；打印支持数值与枚举名称，6 个预留槽以隐藏根字段 `reserved`、`reserved2` 至 `reserved6` 暴露。类型化复制使用 `copy_to<FastBuffer::Metadata>()`。Python 提供 `FastBuffer`、`FastBufferPool`、配置、元数据、预留槽及显式 Host 复制；`address()` 同样不是可直接读取的 CPU 指针。
 
 FastBuffer 不内置录制转换。需要录制时，可通过已有的 `BagPluginInterface::on_write()` 在资源仍有效时调用 `copy_to_host()`，转换为 RawData、CameraFrame 等消息，并同步更新 `ser_type` 与 `schema_type`；共享描述符本身不适合离线回放。
 

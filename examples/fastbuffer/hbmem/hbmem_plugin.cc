@@ -53,8 +53,6 @@ class HbmemFastBufferPlugin final : public vlink::FastBufferPluginInterface {
 
   [[nodiscard]] uint64_t get_protocol_id() const noexcept override { return 0x564C48424D450001ULL; }
 
-  [[nodiscard]] SharingMode get_sharing_mode() const noexcept override { return kCustom; }
-
   [[nodiscard]] bool create(size_t size, const vlink::zerocopy::FastBuffer::Config& config,
                             vlink::zerocopy::FastBuffer::Buffer& buffer) noexcept override {
     if (!valid_ || size == 0 || config.device != -1 ||

@@ -31,10 +31,10 @@
         <mxCell id="row3" value="Reserved · 48 B&#10;Offset 80" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontColor=#0d47a1;align=center;verticalAlign=middle;" vertex="1" parent="1">
           <mxGeometry x="55" y="310" width="200" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="manager" value="FastBufferManager&#10;VLINK_FASTBUFFER_PLUGIN&#10;Local refs / default system IPC&#10;Read once on first construction" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontColor=#0d47a1;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
+        <mxCell id="manager" value="FastBufferManager&#10;VLINK_FASTBUFFER_PLUGIN&#10;Local refs / generation, readers&#10;Read once on first construction" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontColor=#0d47a1;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
           <mxGeometry x="330" y="110" width="270" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="plugin" value="Selected provider&#10;CPU default / CUDA / HIP / hbmem&#10;Custom mode: provider owns IPC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=14;fontColor=#0d47a1;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
+        <mxCell id="plugin" value="Selected provider&#10;CPU / shm / CUDA / HIP / hbmem&#10;Native descriptor in core control block" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1.5;fontFamily=Helvetica;fontSize=14;fontColor=#0d47a1;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
           <mxGeometry x="330" y="290" width="270" height="80" as="geometry" />
         </mxCell>
         <mxCell id="allocation" value="Payload allocation&#10;CPU / GPU&#10;shared / DMA / virtual" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=1.5;fontFamily=Helvetica;fontSize=14;fontColor=#0d47a1;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
@@ -49,7 +49,7 @@
         <mxCell id="host" value="CPU Bytes&#10;Explicit host access" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontFamily=Helvetica;fontSize=14;fontColor=#0d47a1;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
           <mxGeometry x="650" y="450" width="210" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="note" value="Shared wire: system / custom descriptor&#10;Host wire: inline payload bytes&#10;MessageParser reads metadata only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=none;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#0d47a1;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
+        <mxCell id="note" value="Shared wire: control block name + generation&#10;Host wire: inline payload bytes&#10;MessageParser reads metadata only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=none;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontColor=#0d47a1;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
           <mxGeometry x="315" y="450" width="300" height="60" as="geometry" />
         </mxCell>
         <mxCell id="wire" value="Wire envelope · 132 + M + N bytes&#10;Magic + version (8) | fixed header (120) | metadata (M) | descriptor or host payload (N) | end magic (4)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontColor=#0d47a1;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">

@@ -28,6 +28,7 @@
 #include <nanobind/stl/vector.h>
 #include <vlink/zerocopy/audio_frame.h>
 #include <vlink/zerocopy/camera_frame.h>
+#include <vlink/zerocopy/fast_buffer_pool.h>
 #include <vlink/zerocopy/header.h>
 #include <vlink/zerocopy/message_parser.h>
 #include <vlink/zerocopy/object_array.h>
@@ -482,6 +483,16 @@ void bind_zerocopy(nb::module_& m) {
                ", device=" + std::to_string(self.device()) + ", memory_type=" + std::to_string(self.memory_type()) +
                ")";
       });
+
+  nb::class_<vlink::zerocopy::FastBufferPool>(m, "FastBufferPool",
+                                              "Fixed-depth publisher pool recycling FastBuffer slots by generation")
+      .def(nb::init<>())
+      .def("create", &vlink::zerocopy::FastBufferPool::create, "size"_a, "depth"_a,
+           "config"_a = vlink::zerocopy::FastBuffer::Config{})
+      .def("acquire", &vlink::zerocopy::FastBufferPool::acquire, "buffer"_a)
+      .def("depth", &vlink::zerocopy::FastBufferPool::depth)
+      .def("size", &vlink::zerocopy::FastBufferPool::size)
+      .def("clear", &vlink::zerocopy::FastBufferPool::clear);
 
   nb::class_<vlink::zerocopy::RawData>(m, "RawData", "Generic zero-copy raw-byte data container (64 bytes)")
       .def(nb::init<>())

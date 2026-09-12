@@ -16,7 +16,7 @@ export VLINK_FASTBUFFER_PLUGIN=/path/to/libfastbuffer_hbmem.so
 ```
 
 Default/Shared/DmaBuf 使用 `hb_mem_alloc_com_buf`，共享通过 `hb_mem_import_com_buf` 导入。
-插件声明 `kCustom` 模式，通过 hbmem SDK 管理跨进程引用；Manager 仍统一管理本地浅拷贝引用。
+hbmem SDK 引用只维持导入映射的存活；跨进程复用与释放由核心控制块的 generation 与读者表决定，Manager 统一管理本地浅拷贝引用。
 `native_handle()` 返回借用的 `hb_mem_common_buf_t`；`import_native()` 导入独立引用。
 `map(Read)` 失效 CPU 缓存，`unmap(Write)` 刷新 CPU 写入。
 

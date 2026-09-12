@@ -1086,6 +1086,24 @@ def test_zerocopy_fast_buffer():
     assert restored.get_metadata() == b"tensor:u8:16"
     assert list(restored.reserved) == [1, 2, 3, 4, 5, 6]
     assert "memory_type=1" in repr(restored)
+
+    pool = _vlink.FastBufferPool()
+    assert not pool.create(0, 1)
+    assert pool.create(16, 2)
+    assert pool.depth() == 2 and pool.size() == 16
+    first = _vlink.FastBuffer()
+    second = _vlink.FastBuffer()
+    third = _vlink.FastBuffer()
+    assert pool.acquire(first) and pool.acquire(second)
+    assert first.address() != second.address()
+    assert not pool.acquire(third)
+    first_address = first.address()
+    first.clear()
+    assert pool.acquire(third)
+    assert third.address() == first_address
+    pool.clear()
+    assert pool.depth() == 0 and third.is_valid()
+    third.clear()
     print("[PASS] FastBuffer")
 
 
