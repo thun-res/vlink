@@ -33,11 +33,12 @@ namespace vlink {
 namespace zerocopy {
 
 bool FastBufferPool::create(size_t size, size_t depth, const FastBuffer::Config& config) noexcept {
-  if VUNLIKELY (size == 0 || depth == 0) {
+  std::vector<FastBuffer> slots;
+
+  if VUNLIKELY (size == 0 || depth == 0 || depth > slots.max_size()) {
     return false;
   }
 
-  std::vector<FastBuffer> slots;
   slots.reserve(depth);
 
   for (size_t index = 0; index < depth; ++index) {

@@ -529,6 +529,7 @@ TEST_SUITE("zerocopy-FastBuffer") {
     zerocopy::FastBufferPool pool;
     CHECK_FALSE(pool.create(0, 1));
     CHECK_FALSE(pool.create(16, 0));
+    CHECK_FALSE(pool.create(1, std::numeric_limits<size_t>::max()));
     CHECK_EQ(pool.depth(), 0);
     CHECK_EQ(pool.size(), 0);
 
