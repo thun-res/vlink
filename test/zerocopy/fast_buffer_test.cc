@@ -38,11 +38,11 @@
 
 TEST_SUITE("zerocopy-FastBuffer") {
   TEST_CASE("manager resolves the environment once without falling back after explicit failure") {
-    const auto mode = Utils::get_env("VLINK_FASTBUFFER_MANAGER_TEST");
+    const auto env_mode = Utils::get_env("VLINK_FASTBUFFER_MANAGER_TEST");
 
-    if (!mode.empty()) {
+    if (!env_mode.empty()) {
       zerocopy::FastBuffer buffer;
-      const bool expected = mode == "empty";
+      const bool expected = env_mode == "empty";
       CHECK_EQ(FastBufferManager::get().is_valid(), expected);
       CHECK_EQ(buffer.create(32), expected);
       REQUIRE(Utils::set_env("VLINK_FASTBUFFER_PLUGIN", expected ? "/vlink-missing-fastbuffer-plugin" : ""));
