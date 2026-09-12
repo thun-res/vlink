@@ -63,7 +63,7 @@ agent 渐进式披露:先在本表定位功能 → 再读对应 doc 小节 → �
 | ObjectArray(3D 检测/跟踪目标) | 同上 | `doc/06` §6.7 |
 | AudioFrame(PCM/编码音频) | 同上 | `doc/06` §6.8 |
 | RawData(自定义二进制) | 同上 | `doc/06` §6.9 |
-| FastBuffer(插件缓冲区) | `include/vlink/zerocopy/fast_buffer*.h`、`examples/fastbuffer/` | `doc/06` §6.13 |
+| FastBuffer(插件缓冲区、发布池) | `include/vlink/zerocopy/fast_buffer*.h`、`examples/fastbuffer/` | `doc/06` §6.13 |
 | ProxyData(跨进程代理数据) | `include/vlink/zerocopy/proxy_data.h` | `doc/06` §6.9 |
 | MessageParser(零拷贝消息解析) | `include/vlink/zerocopy/message_parser.h` | `doc/06` §6.9.1 |
 | 生命周期约束、与裸 Bytes 对照 | `include/vlink/zerocopy/` | `doc/06` §6.11/§6.12 |
