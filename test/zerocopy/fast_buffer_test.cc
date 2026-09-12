@@ -38,6 +38,7 @@
 
 #include "../common_test.h"
 #include "./base/elapsed_timer.h"
+#include "./base/logger.h"
 #include "./base/process.h"
 #include "./base/sys_sharemem.h"
 #include "./zerocopy/fast_buffer_manager.h"
@@ -648,6 +649,8 @@ TEST_SUITE("zerocopy-FastBuffer") {
     const auto mode = Utils::get_env("VLINK_FASTBUFFER_TEST_MODE");
 
     if (mode == "share-owner") {
+      Logger::get();
+
       const auto dir = fast_buffer_child_dir();
       zerocopy::FastBufferPool pool;
       REQUIRE(pool.create(4096, 2));
