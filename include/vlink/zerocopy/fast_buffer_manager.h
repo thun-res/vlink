@@ -81,8 +81,9 @@
  *   +-------------------------------+
  * @endcode
  * A process identity is its PID combined with the kernel start time, so a reused PID never
- * impersonates a dead process.  On Linux the block also records the owner's PID namespace: a process
- * in another namespace cannot judge liveness, so its imports fail and its sweeps skip the allocation.
+ * impersonates a dead process.  On Linux the block also records the owner's PID and time namespaces,
+ * because start times are reported relative to the reader's time namespace: a process in another
+ * namespace cannot judge liveness, so its imports fail and its sweeps skip the allocation.
  * Each importing process claims one @c readers slot per allocation;
  * further imports in that process share the local resource and only raise its local reference count.
  * An import that attaches a new mapping fails when the reader table is full or the owner process is

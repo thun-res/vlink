@@ -176,10 +176,10 @@ static uint64_t process_identity(int32_t pid) noexcept {
   return (static_cast<uint64_t>(static_cast<uint32_t>(pid)) << 32) | fold_start_time(start_time);
 }
 
-static uint64_t pid_namespace() noexcept {
+static uint64_t namespace_inode(const char* path) noexcept {
 #if defined(__linux__)
   char link[64];
-  const ssize_t length = ::readlink("/proc/self/ns/pid", link, sizeof(link) - 1);
+  const ssize_t length = ::readlink(path, link, sizeof(link) - 1);
 
   if (length <= 0) {
     return 0;
@@ -329,8 +329,8 @@ class HostBufferPlugin : public FastBufferPluginInterface {
 // SharedHostBufferPlugin
 class SharedHostBufferPlugin final : public HostBufferPlugin {
  public:
-  SharedHostBufferPlugin(uint64_t identity, uint64_t pid_namespace) noexcept
-      : identity_(identity), pid_namespace_(pid_namespace) {
+  SharedHostBufferPlugin(uint64_t identity, uint64_t pid_namespace, uint64_t time_namespace) noexcept
+      : identity_(identity), pid_namespace_(pid_namespace), time_namespace_(time_namespace) {
     sweep_segments(kFastBufferMemoryPrefix, [this](SysSharemem& shared) {
       if (shared.size() < kSegmentHeaderSize) {
         return;
@@ -339,7 +339,8 @@ class SharedHostBufferPlugin final : public HostBufferPlugin {
       const auto* header = static_cast<const std::atomic<uint64_t>*>(shared.data());
       const uint64_t owner = header[0].load(std::memory_order_acquire);
 
-      if (owner != 0 && header[1].load(std::memory_order_relaxed) == pid_namespace_ && !is_identity_alive(owner)) {
+      if (owner != 0 && header[1].load(std::memory_order_relaxed) == pid_namespace_ &&
+          header[2].load(std::memory_order_relaxed) == time_namespace_ && !is_identity_alive(owner)) {
         (void)shared.detach();
       }
     });
@@ -370,8 +371,9 @@ class SharedHostBufferPlugin final : public HostBufferPlugin {
 
     segment->owner = true;
     auto* base = static_cast<uint8_t*>(segment->shared.data());
-    auto* header = new (base) std::atomic<uint64_t>[2]{};
+    auto* header = new (base) std::atomic<uint64_t>[3]{};
     header[1].store(pid_namespace_, std::memory_order_relaxed);
+    header[2].store(time_namespace_, std::memory_order_relaxed);
     header[0].store(identity_, std::memory_order_release);
     buffer = {base + kSegmentHeaderSize, size, segment, -1, zerocopy::FastBuffer::kMemoryShared};
     return true;
@@ -461,6 +463,7 @@ class SharedHostBufferPlugin final : public HostBufferPlugin {
 
   uint64_t identity_{0};
   uint64_t pid_namespace_{0};
+  uint64_t time_namespace_{0};
 };
 
 // FastBufferControl
@@ -470,6 +473,7 @@ struct alignas(8) FastBufferControl final {
   uint64_t descriptor_size{0};
   std::atomic<uint64_t> owner{0};
   std::atomic<uint64_t> pid_namespace{0};
+  std::atomic<uint64_t> time_namespace{0};
   std::atomic<uint64_t> generation{0};
   std::atomic<uint64_t> readers[kFastBufferMaxReaders]{};
 };
@@ -534,6 +538,7 @@ struct FastBufferManager::Impl final {
   std::shared_ptr<FastBufferPluginInterface> interface;
   uint64_t identity{0};
   uint64_t pid_namespace{0};
+  uint64_t time_namespace{0};
   std::mutex mutex;
   std::unordered_map<uint64_t, FastBufferResource*, std::hash<uint64_t>, std::equal_to<>,
                      PoolAllocator<std::pair<const uint64_t, FastBufferResource*>>>
@@ -850,6 +855,7 @@ bool FastBufferManager::export_handle(const zerocopy::FastBuffer::Buffer& buffer
       created->control->size = resource->native.size;
       created->control->descriptor_size = size;
       created->control->pid_namespace.store(impl_->pid_namespace, std::memory_order_relaxed);
+      created->control->time_namespace.store(impl_->time_namespace, std::memory_order_relaxed);
       created->control->generation.store(1, std::memory_order_relaxed);
       created->control->owner.store(impl_->identity, std::memory_order_release);
       auto native_descriptor = Bytes::shallow_copy(reinterpret_cast<uint8_t*>(created->control + 1), size);
@@ -924,7 +930,8 @@ bool FastBufferManager::import_handle(const Bytes& descriptor, zerocopy::FastBuf
   const uint64_t owner = control.owner.load(std::memory_order_acquire);
 
   if VUNLIKELY (owner == 0 || control.protocol.load(std::memory_order_relaxed) != impl_->interface->get_protocol_id() ||
-                control.pid_namespace.load(std::memory_order_relaxed) != impl_->pid_namespace || control.size == 0 ||
+                control.pid_namespace.load(std::memory_order_relaxed) != impl_->pid_namespace ||
+                control.time_namespace.load(std::memory_order_relaxed) != impl_->time_namespace || control.size == 0 ||
                 control.descriptor_size == 0 ||
                 control.descriptor_size > share->shared.size() - sizeof(FastBufferControl)) {
     return false;
@@ -993,7 +1000,8 @@ bool FastBufferManager::import_handle(const Bytes& descriptor, zerocopy::FastBuf
 FastBufferManager::FastBufferManager() : impl_(std::make_unique<Impl>()) {
   (void)MemoryPool::global_instance();
   impl_->identity = process_identity(Utils::get_pid());
-  impl_->pid_namespace = pid_namespace();
+  impl_->pid_namespace = namespace_inode("/proc/self/ns/pid");
+  impl_->time_namespace = namespace_inode("/proc/self/ns/time");
 
   if VUNLIKELY (impl_->identity == 0) {
     VLOG_W("FastBufferManager: Process identity is unavailable; descriptor sharing is disabled.");
@@ -1004,7 +1012,8 @@ FastBufferManager::FastBufferManager() : impl_(std::make_unique<Impl>()) {
   if (plugin_name.empty()) {
     impl_->interface = std::make_shared<HostBufferPlugin>();
   } else if (plugin_name == "shm") {
-    impl_->interface = std::make_shared<SharedHostBufferPlugin>(impl_->identity, impl_->pid_namespace);
+    impl_->interface =
+        std::make_shared<SharedHostBufferPlugin>(impl_->identity, impl_->pid_namespace, impl_->time_namespace);
   } else {
     impl_->interface = impl_->plugin.load<FastBufferPluginInterface>(plugin_name, 1, 0);
 
@@ -1024,7 +1033,9 @@ FastBufferManager::FastBufferManager() : impl_(std::make_unique<Impl>()) {
       const uint64_t owner = control.owner.load(std::memory_order_acquire);
 
       if (owner != 0 && control.protocol.load(std::memory_order_relaxed) == impl_->interface->get_protocol_id() &&
-          control.pid_namespace.load(std::memory_order_relaxed) == impl_->pid_namespace && !is_identity_alive(owner)) {
+          control.pid_namespace.load(std::memory_order_relaxed) == impl_->pid_namespace &&
+          control.time_namespace.load(std::memory_order_relaxed) == impl_->time_namespace &&
+          !is_identity_alive(owner)) {
         impl_->destroy_dead_owner(control, shared);
       }
     });
