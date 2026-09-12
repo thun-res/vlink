@@ -53,7 +53,7 @@ int bag_merge(const std::vector<std::string>& source_paths, const std::string& t
               bool black_mode, const std::vector<int>& actions, int64_t begin_time, int64_t end_time,
               bool has_clock_begin_time, bool has_clock_end_time, bool compress, bool split_name_by_time,
               double split_by_size, int64_t split_by_time, bool force, bool wal_mode, double cache_size,
-              const std::vector<std::string>& ignore_compress, const std::string& plugin_name) {
+              const std::vector<std::string>& ignore_compress, const std::string& plugin_name, double check_gap) {
   vlink::Plugin plugin;
 
   auto quit_function = [](int) { has_quit = true; };
@@ -175,6 +175,7 @@ int bag_merge(const std::vector<std::string>& source_paths, const std::string& t
 
     int64_t total_duration = 0;
     int64_t blank_duration = std::numeric_limits<int64_t>::max();
+    int64_t max_start_offset = 0;
 
     for (const auto& reader : readers) {
       const auto& info = reader->get_info();
@@ -188,6 +189,7 @@ int bag_merge(const std::vector<std::string>& source_paths, const std::string& t
 
       total_duration = std::max(total_duration, offset + info.total_duration);
       blank_duration = std::min(blank_duration, offset + info.blank_duration);
+      max_start_offset = std::max(max_start_offset, offset);
     }
 
     if (time_method == kUseLocalTime || time_method == kUseUtcTime) {
@@ -226,6 +228,12 @@ int bag_merge(const std::vector<std::string>& source_paths, const std::string& t
     if VUNLIKELY (begin_time < 0 || end_time < 0 || (end_time > 0 && begin_time > end_time) ||
                   begin_time > total_duration || end_time > total_duration) {
       std::cerr << "Invalid time (merged duration error)." << std::endl;
+      return -1;
+    }
+
+    if VUNLIKELY (max_start_offset / 1000.0 > check_gap) {
+      std::cerr << "Input bag start times differ by " << max_start_offset << " ms, exceeding --check_gap (" << check_gap
+                << " s). Merge aborted." << std::endl;
       return -1;
     }
 

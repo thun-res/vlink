@@ -87,7 +87,7 @@ _vlink_bag() {
         -x|--max_packet_size|-c|--cache_size|--max_task_depth|--max_memory_size|--max_row_count|\
         --max_bytes_size|--max_split_count|--compress_level|--plugin|-b|--begin_time|-e|--end_time|--rel_begin_time|\
         --rel_end_time|--local_begin_time|--local_end_time|--utc_begin_time|--utc_end_time|-r|--rate|\
-        --times)
+        --times|--check_gap)
             return
             ;;
     esac
@@ -177,6 +177,7 @@ _vlink_bag() {
 -b --begin_time -e --end_time -q --quiet -l --detail -p --compress \
 -o --output --split_name_by_time -z --split_by_size -y --split_by_time \
 -f --force -j --wal_mode -c --cache_size \
+--check_gap \
 --rel_begin_time --rel_end_time --local_begin_time --local_end_time \
 --utc_begin_time --utc_end_time --compress_level --ignore_compress \
 --import_schema --plugin -h --help" "$cur"

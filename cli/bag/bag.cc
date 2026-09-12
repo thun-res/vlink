@@ -376,6 +376,12 @@ int main(int argc, char* argv[]) {
       .default_value(static_cast<double>(vlink::BagWriter::Config().cache_size / 1024.0 / 1024.0))
       .nargs(1);
 
+  merge_command.add_argument("--check_gap")
+      .help("Maximum input start time gap(s), >= 0; exceeding it aborts merge")
+      .scan<'g', double>()
+      // NOLINTNEXTLINE(readability-redundant-casting)
+      .default_value(static_cast<double>(3600))
+      .nargs(1);
   merge_command.add_argument("--rel_begin_time")
       .help("Relative Begin time(format: '00:00:00' or 00:00:00:000)")
       .default_value(std::string())
@@ -1009,6 +1015,7 @@ int main(int argc, char* argv[]) {
     auto actions = merge_command.get<std::vector<int>>("-s");
     auto begin_time = merge_command.get<double>("-b");
     auto end_time = merge_command.get<double>("-e");
+    auto check_gap = merge_command.get<double>("--check_gap");
 
     quiet_flag = merge_command.is_used("-q");
     detail_flag = merge_command.is_used("-l");
@@ -1129,6 +1136,11 @@ int main(int argc, char* argv[]) {
       return -1;
     }
 
+    if VUNLIKELY (!std::isfinite(check_gap) || check_gap < 0) {
+      std::cerr << "Invalid check_gap [--check_gap]" << std::endl;
+      return -1;
+    }
+
     compress_level = merge_command.get<int>("--compress_level");
 
     if VUNLIKELY (compress_level < 0 || compress_level > 5) {
@@ -1153,7 +1165,7 @@ int main(int argc, char* argv[]) {
     return bag_merge(source_paths, target_path, urls, tag_name, filter, black_mode, actions, begin_time * 1000,
                      end_time * 1000, !local_begin_time.empty() || !utc_begin_time.empty(),
                      !local_end_time.empty() || !utc_end_time.empty(), compress, split_name_by_time, split_by_size,
-                     split_by_time * 1000, force, wal_mode, cache_size, ignore_compress, plugin_name);
+                     split_by_time * 1000, force, wal_mode, cache_size, ignore_compress, plugin_name, check_gap);
   } else if (program.is_subcommand_used("clone")) {
     auto source_path = clone_command.get<std::string>("source_path");
     auto target_path = clone_command.get<std::string>("target_path");

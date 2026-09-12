@@ -189,6 +189,7 @@ _vlink-bag_merge() {
         '(-l --detail)'{-l,--detail}'[Detail mode]' \
         '(-p --compress)'{-p,--compress}'[Compress data]' \
         '(-o --output)'{-o,--output}'=[Output bag path]:output:_files' \
+        '--check_gap=[Maximum input start time gap (s, default 3600)]:time:' \
         '--split_name_by_time[Split name by time]' \
         '(-z --split_by_size)'{-z,--split_by_size}'=[Split by size]:size:' \
         '(-y --split_by_time)'{-y,--split_by_time}'=[Split by time]:time:' \
