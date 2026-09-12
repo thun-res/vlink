@@ -1792,7 +1792,7 @@ TEST_SUITE("ser-someip") {
 
   TEST_CASE("serializes dynamic and static TLV fixed strings") {
     SomeipTlvFixedStrings source;
-    source.name = "A";
+    source.name = std::string{"A"};
     source.title = std::u16string{u"B"};
 
     vlink::Bytes data;
