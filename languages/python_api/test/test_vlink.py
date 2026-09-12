@@ -209,6 +209,9 @@ def test_utils():
     """Test utility functions."""
     assert _vlink.utils.get_host_name()
     assert _vlink.utils.get_pid() > 0
+    start_time = _vlink.utils.get_process_start_time(_vlink.utils.get_pid())
+    assert start_time not in (0, _vlink.utils.UNKNOWN_PROCESS_START_TIME)
+    assert _vlink.utils.get_process_start_time(0) == 0
     assert _vlink.utils.get_tmp_dir()
     assert _vlink.helpers.has_startwith("hello", "hel")
     assert _vlink.helpers.has_endwith("hello", "llo")

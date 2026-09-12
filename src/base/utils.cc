@@ -103,9 +103,11 @@
 #include <mach/mach.h>
 #include <sys/sysctl.h>
 #elif defined(__QNX__)
+#include <devctl.h>
 #include <net/if_dl.h>
 #include <process.h>
 #include <sys/neutrino.h>
+#include <sys/procfs.h>
 #include <sys/syspage.h>
 #endif
 
@@ -282,6 +284,124 @@ std::string get_pid_str() noexcept {
   static auto pid_str = std::to_string(pid);
 
   return pid_str;
+}
+
+uint64_t get_process_start_time(int32_t pid) noexcept {
+  if VUNLIKELY (pid <= 0) {
+    return 0;
+  }
+
+#if defined(_WIN32)
+  HANDLE handle = ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, static_cast<DWORD>(pid));
+
+  if (!handle) {
+    return ::GetLastError() == ERROR_INVALID_PARAMETER ? 0 : kUnknownProcessStartTime;
+  }
+
+  FILETIME creation_time{};
+  FILETIME exit_time{};
+  FILETIME kernel_time{};
+  FILETIME user_time{};
+  const bool exited = ::WaitForSingleObject(handle, 0) == WAIT_OBJECT_0;
+  const bool timed = !exited && ::GetProcessTimes(handle, &creation_time, &exit_time, &kernel_time, &user_time);
+  ::CloseHandle(handle);
+
+  if (exited) {
+    return 0;
+  }
+
+  const uint64_t start_time = (static_cast<uint64_t>(creation_time.dwHighDateTime) << 32) | creation_time.dwLowDateTime;
+  return timed && start_time != 0 ? start_time : kUnknownProcessStartTime;
+#elif defined(__APPLE__)
+  struct kinfo_proc info{};
+  size_t length = sizeof(info);
+  int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, static_cast<int>(pid)};
+
+  if (::sysctl(mib, 4, &info, &length, nullptr, 0) != 0) {
+    return kUnknownProcessStartTime;
+  }
+
+  if (length == 0 || info.kp_proc.p_stat == SZOMB) {
+    return 0;
+  }
+
+  const uint64_t start_time = static_cast<uint64_t>(info.kp_proc.p_starttime.tv_sec) * 1000000ULL +
+                              static_cast<uint64_t>(info.kp_proc.p_starttime.tv_usec);
+  return start_time != 0 ? start_time : kUnknownProcessStartTime;
+#elif defined(__QNX__)
+  char path[64];
+  std::snprintf(path, sizeof(path), "/proc/%d/as", static_cast<int>(pid));
+  const int fd = ::open(path, O_RDONLY);
+
+  if (fd == -1) {
+    return errno == ENOENT ? 0 : kUnknownProcessStartTime;
+  }
+
+  procfs_info info{};
+  const int result = ::devctl(fd, DCMD_PROC_INFO, &info, sizeof(info), nullptr);
+  ::close(fd);
+
+  if (result != EOK || info.start_time == 0) {
+    return kUnknownProcessStartTime;
+  }
+
+  return (info.flags & _NTO_PF_ZOMBIE) != 0 ? 0 : static_cast<uint64_t>(info.start_time);
+#else
+  char path[64];
+  std::snprintf(path, sizeof(path), "/proc/%d/stat", static_cast<int>(pid));
+  const int fd = ::open(path, O_RDONLY | O_CLOEXEC);
+
+  if (fd == -1) {
+    return ::kill(static_cast<pid_t>(pid), 0) == -1 && errno == ESRCH ? 0 : kUnknownProcessStartTime;
+  }
+
+  char line[1024];
+  const ssize_t length = ::read(fd, line, sizeof(line) - 1);
+  ::close(fd);
+
+  if (length <= 0) {
+    return kUnknownProcessStartTime;
+  }
+
+  line[length] = '\0';
+  const char* cursor = std::strrchr(line, ')');
+
+  if (!cursor || cursor[1] != ' ') {
+    return kUnknownProcessStartTime;
+  }
+
+  cursor += 2;
+
+  if (*cursor == 'X') {
+    return 0;
+  }
+
+  if (*cursor == 'Z') {
+    std::snprintf(path, sizeof(path), "/proc/%d/task", static_cast<int>(pid));
+    std::error_code ec;
+    size_t threads = 0;
+
+    for (std::filesystem::directory_iterator iter(path, ec); !ec && iter != std::filesystem::directory_iterator();
+         iter.increment(ec)) {
+      ++threads;
+    }
+
+    if (threads <= 1) {
+      return 0;
+    }
+  }
+
+  for (int field = 3; field < 22 && cursor; ++field) {
+    cursor = std::strchr(cursor, ' ');
+
+    if (cursor) {
+      ++cursor;
+    }
+  }
+
+  const uint64_t start_time = cursor ? std::strtoull(cursor, nullptr, 10) : 0;
+  return start_time != 0 ? start_time : kUnknownProcessStartTime;
+#endif
 }
 
 std::string get_tmp_dir() noexcept {

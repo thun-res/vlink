@@ -117,6 +117,8 @@ void bind_utils(nb::module_& m) {
   utils.def("get_host_name", &vlink::Utils::get_host_name);
   utils.def("get_pid", &vlink::Utils::get_pid);
   utils.def("get_pid_str", &vlink::Utils::get_pid_str);
+  utils.def("get_process_start_time", &vlink::Utils::get_process_start_time, "pid"_a);
+  utils.attr("UNKNOWN_PROCESS_START_TIME") = vlink::Utils::kUnknownProcessStartTime;
   utils.def("get_tmp_dir", &vlink::Utils::get_tmp_dir);
   utils.def("get_machine_id", &vlink::Utils::get_machine_id);
   utils.def("get_env", &vlink::Utils::get_env, "key"_a, "default_value"_a = "");
