@@ -29,6 +29,7 @@
 #include <cstring>
 #include <filesystem>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -348,7 +349,7 @@ class SharedHostBufferPlugin final : public HostBufferPlugin {
 
   bool create(size_t size, const zerocopy::FastBuffer::Config& config,
               zerocopy::FastBuffer::Buffer& buffer) noexcept override {
-    if VUNLIKELY (size == 0 || config.device != -1 ||
+    if VUNLIKELY (size == 0 || size > std::numeric_limits<size_t>::max() - kSegmentHeaderSize || config.device != -1 ||
                   (config.memory_type != zerocopy::FastBuffer::kMemoryDefault &&
                    config.memory_type != zerocopy::FastBuffer::kMemoryShared)) {
       return false;
@@ -411,7 +412,8 @@ class SharedHostBufferPlugin final : public HostBufferPlugin {
       return false;
     }
 
-    if VUNLIKELY (!segment->shared.attach(decoded.name) || segment->shared.size() < kSegmentHeaderSize + decoded.size) {
+    if VUNLIKELY (!segment->shared.attach(decoded.name) || segment->shared.size() < kSegmentHeaderSize ||
+                  segment->shared.size() - kSegmentHeaderSize < decoded.size) {
       pool_delete(segment);
       return false;
     }
