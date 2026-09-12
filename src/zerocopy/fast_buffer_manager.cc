@@ -189,6 +189,7 @@ static uint64_t namespace_inode(const char* path) noexcept {
   const char* open = std::strchr(link, '[');
   return open ? std::strtoull(open + 1, nullptr, 10) : 0;
 #else
+  (void)path;
   return 0;
 #endif
 }
