@@ -45,7 +45,7 @@
 #include "./zerocopy/fast_buffer_pool.h"
 #include "./zerocopy/message_parser.h"
 
-static constexpr size_t kFastBufferEnvelope = 132;
+static constexpr size_t kFastBufferEnvelope = 100;
 static constexpr size_t kFastBufferSystemHandle = 40;
 static constexpr int64_t kFastBufferWaitMs = 20000;
 
@@ -213,7 +213,8 @@ TEST_SUITE("zerocopy-FastBuffer") {
     CHECK_EQ(buffer.device(), -1);
     CHECK_EQ(buffer.get_serialized_size(), 0);
     CHECK(buffer.get_metadata().empty());
-    CHECK_EQ(buffer.get_reserved().size(), 6);
+    CHECK_EQ(buffer.get_reserved(), 0);
+    CHECK_EQ(buffer.get_reserved2(), 0);
     CHECK_FALSE(buffer.synchronize());
     CHECK_FALSE(buffer.create(0));
     CHECK_FALSE(buffer.import_native(nullptr));
@@ -292,7 +293,8 @@ TEST_SUITE("zerocopy-FastBuffer") {
     zerocopy::FastBuffer source;
     REQUIRE(source.create(4096));
     source.header.seq = 19;
-    source.get_reserved() = {1, 2, 3, std::numeric_limits<uint64_t>::max(), 5, 6};
+    source.get_reserved() = 1;
+    source.get_reserved2() = std::numeric_limits<uint64_t>::max();
     auto input = Bytes::create(source.size());
     if (!input.empty()) {
       std::memset(input.data(), 0x5A, input.size());
@@ -319,6 +321,7 @@ TEST_SUITE("zerocopy-FastBuffer") {
     CHECK_NE(copied.get_metadata().data(), source.get_metadata().data());
     CHECK(copied.get_metadata() == source.get_metadata());
     CHECK(copied.get_reserved() == source.get_reserved());
+    CHECK(copied.get_reserved2() == source.get_reserved2());
 
     zerocopy::FastBuffer assigned;
     assigned = source;
@@ -339,16 +342,20 @@ TEST_SUITE("zerocopy-FastBuffer") {
     REQUIRE(shared.copy_to_host(output));
     CHECK(output == input);
     CHECK_EQ(shared.get_metadata()[0], 0x34);
-    CHECK_EQ(shared.get_reserved()[3], std::numeric_limits<uint64_t>::max());
+    CHECK_EQ(shared.get_reserved2(), std::numeric_limits<uint64_t>::max());
 
     zerocopy::FastBuffer moved(std::move(shared));
     CHECK_FALSE(shared.is_valid());
     CHECK(shared.get_metadata().empty());
+    CHECK_EQ(shared.get_reserved(), 0);
+    CHECK_EQ(shared.get_reserved2(), 0);
     CHECK_EQ(moved.header.seq, 19);
     CHECK_EQ(moved.get_metadata().data(), metadata_address);
     assigned = std::move(moved);
     CHECK_FALSE(moved.is_valid());
     CHECK_EQ(assigned.get_metadata().data(), metadata_address);
+    CHECK_EQ(assigned.get_reserved(), 1);
+    CHECK_EQ(assigned.get_reserved2(), std::numeric_limits<uint64_t>::max());
 
     auto borrowed = Bytes::shallow_copy(replacement.data(), replacement.size());
     REQUIRE(assigned.set_metadata(std::move(borrowed)));
@@ -368,7 +375,8 @@ TEST_SUITE("zerocopy-FastBuffer") {
     zerocopy::FastBuffer source;
     REQUIRE(source.create(257));
     source.header.seq = 123;
-    source.get_reserved() = {7, 9, 11, 13, 15, 17};
+    source.get_reserved() = 7;
+    source.get_reserved2() = 9;
     auto input = Bytes::create(source.size());
     if (!input.empty()) {
       std::memset(input.data(), 0x7B, input.size());
@@ -385,7 +393,7 @@ TEST_SUITE("zerocopy-FastBuffer") {
       Bytes wire;
       REQUIRE((source >> wire));
       CHECK_EQ(wire.size(), source.get_serialized_size());
-      CHECK_EQ(wire.size(), 132 + source.size() + metadata.size());
+      CHECK_EQ(wire.size(), kFastBufferEnvelope + source.size() + metadata.size());
       REQUIRE(zerocopy::FastBuffer::check_valid(wire));
 
       zerocopy::FastBuffer::Metadata decoded;
@@ -394,8 +402,8 @@ TEST_SUITE("zerocopy-FastBuffer") {
       CHECK_EQ(decoded.protocol, 0);
       CHECK_EQ(decoded.size, source.size());
       CHECK(decoded.buffer == metadata);
-      CHECK_EQ(decoded.reserved[3], 13);
-      CHECK_EQ(decoded.reserved[5], 17);
+      CHECK_EQ(decoded.reserved[0], 7);
+      CHECK_EQ(decoded.reserved[1], 9);
 
       zerocopy::FastBuffer received;
       REQUIRE((received << wire));
@@ -405,6 +413,7 @@ TEST_SUITE("zerocopy-FastBuffer") {
       CHECK(output == input);
       CHECK(received.get_metadata() == metadata);
       CHECK(received.get_reserved() == source.get_reserved());
+      CHECK(received.get_reserved2() == source.get_reserved2());
       CHECK_EQ(received.header.seq, 123);
     }
   }
@@ -420,7 +429,7 @@ TEST_SUITE("zerocopy-FastBuffer") {
     REQUIRE(destination.create(17));
     const uintptr_t original = destination.address();
 
-    for (const size_t length : {size_t{0}, size_t{1}, size_t{131}, wire.size() - 1}) {
+    for (const size_t length : {size_t{0}, size_t{1}, kFastBufferEnvelope - 1, wire.size() - 1}) {
       const auto truncated = Bytes::shallow_copy(wire.data(), length);
       CHECK_FALSE((destination << truncated));
       CHECK_EQ(destination.address(), original);
@@ -469,7 +478,8 @@ TEST_SUITE("zerocopy-FastBuffer") {
       std::memset(metadata.data(), 0x42, metadata.size());
     }
     REQUIRE(source.set_metadata(metadata));
-    source.get_reserved() = {20, 21, 22, 23, 24, 25};
+    source.get_reserved() = 20;
+    source.get_reserved2() = 21;
     Bytes wire;
     REQUIRE((source >> wire));
 
@@ -486,8 +496,7 @@ TEST_SUITE("zerocopy-FastBuffer") {
     CHECK(std::get<Bytes>(value) == metadata);
     REQUIRE(parser.value("metadata_size", value));
     CHECK_EQ(std::get<uint64_t>(value), 256);
-    const std::array<std::string_view, 6> reserved_names = {"reserved",  "reserved2", "reserved3",
-                                                            "reserved4", "reserved5", "reserved6"};
+    const std::array<std::string_view, 2> reserved_names = {"reserved", "reserved2"};
 
     for (size_t index = 0; index < reserved_names.size(); ++index) {
       REQUIRE(parser.value(reserved_names[index], value));
@@ -502,15 +511,16 @@ TEST_SUITE("zerocopy-FastBuffer") {
       }
     }
 
-    CHECK_EQ(reserved_count, 6);
-    CHECK_FALSE(parser.value("reserved[6]", value));
+    CHECK_EQ(reserved_count, 2);
+    CHECK_FALSE(parser.value("reserved3", value));
+    CHECK_FALSE(parser.value("reserved[2]", value));
     CHECK_FALSE(parser.value("reserved[0].invalid", value));
     CHECK_FALSE(parser.value("data", value));
     CHECK_FALSE(parser.value("unknown", value));
     const auto printed = zerocopy::format_message(parser, {});
     CHECK(printed.find("metadata") != std::string::npos);
     CHECK(printed.find("memory_type") != std::string::npos);
-    CHECK(printed.find("reserved4") == std::string::npos);
+    CHECK(printed.find("reserved2") == std::string::npos);
     zerocopy::MessageFormatOptions options;
     options.enum_name = true;
     const auto named = zerocopy::format_message(parser, options);
@@ -522,7 +532,7 @@ TEST_SUITE("zerocopy-FastBuffer") {
     wire.clear();
     source.clear();
     CHECK(copied.buffer == metadata);
-    CHECK_EQ(copied.reserved[5], 25);
+    CHECK_EQ(copied.reserved[1], 21);
     CHECK_FALSE(parser.valid());
   }
 
@@ -658,7 +668,7 @@ TEST_SUITE("zerocopy-FastBuffer") {
       zerocopy::FastBuffer first;
       REQUIRE(pool.acquire(first));
       first.header.seq = 7;
-      first.get_reserved()[5] = 99;
+      first.get_reserved2() = 99;
       REQUIRE(first.set_metadata(Bytes::create(16)));
       fast_buffer_fill(first, 0x5A);
       Bytes wire;
@@ -723,7 +733,7 @@ TEST_SUITE("zerocopy-FastBuffer") {
       REQUIRE((second << wire_second));
       CHECK_EQ(first.memory_type(), zerocopy::FastBuffer::kMemoryShared);
       CHECK_EQ(first.header.seq, 7);
-      CHECK_EQ(first.get_reserved()[5], 99);
+      CHECK_EQ(first.get_reserved2(), 99);
       CHECK_EQ(first.get_metadata().size(), 16);
       CHECK_NE(first.address(), second.address());
       fast_buffer_expect(first, 0x5A);

@@ -1059,7 +1059,8 @@ def test_zerocopy_fast_buffer():
     assert source.create(content.size())
     assert source.copy_from_host(content)
     assert source.set_metadata(metadata)
-    source.reserved = [1, 2, 3, 4, 5, 6]
+    source.reserved = 1
+    source.reserved2 = 2
     assert source.memory_type() == _vlink.FastBuffer.MemoryType.Host
 
     retained = _vlink.FastBuffer()
@@ -1068,13 +1069,15 @@ def test_zerocopy_fast_buffer():
     assert retained.get_metadata() == b"tensor:u8:16"
     wire = retained.to_bytes()
     assert wire.size() == retained.get_serialized_size()
+    assert wire.size() == 100 + content.size() + metadata.size()
     parser = _vlink.ZeroCopyMessageParser()
     assert parser.parse("vlink::zerocopy::FastBuffer", wire)
     assert parser.value("storage") == 2
     assert parser.value("memory_type") == 1
     assert parser.collection_size("reserved") == 0
-    assert parser.value("reserved6") == 6
-    assert parser.value("reserved[6]") is None
+    assert parser.value("reserved2") == 2
+    assert parser.value("reserved3") is None
+    assert parser.value("reserved[2]") is None
 
     restored = _vlink.FastBuffer()
     assert restored.from_bytes(wire)
@@ -1084,7 +1087,8 @@ def test_zerocopy_fast_buffer():
     assert restored.copy_to_host(result)
     assert result.to_bytes() == b"fast-buffer-data"
     assert restored.get_metadata() == b"tensor:u8:16"
-    assert list(restored.reserved) == [1, 2, 3, 4, 5, 6]
+    assert restored.reserved == 1
+    assert restored.reserved2 == 2
     assert "memory_type=1" in repr(restored)
 
     pool = _vlink.FastBufferPool()

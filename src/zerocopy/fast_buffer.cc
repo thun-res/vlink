@@ -44,7 +44,7 @@ struct FastBufferWireMetadata final {
   FastBuffer::MemoryType memory_type{FastBuffer::kMemoryDefault};
   uint8_t reserved1[6]{};
   uint64_t metadata_size{0};
-  uint64_t reserved[6]{};
+  uint64_t reserved[2]{};
 };
 
 // FastBuffer::MetadataBuffer
@@ -60,7 +60,8 @@ static constexpr size_t kFastBufferEnvelopeSize = kFastBufferPrefixSize + sizeof
 FastBuffer::FastBuffer() {
   (void)FastBufferManager::get();
 
-  static_assert(sizeof(FastBufferWireMetadata) == 120, "Sizeof must be 120 bytes.");
+  static_assert(sizeof(void*) != 8 || sizeof(FastBuffer) == 96, "Sizeof must be 96 bytes on 64-bit targets.");
+  static_assert(sizeof(FastBufferWireMetadata) == 88, "Sizeof must be 88 bytes.");
 }
 
 FastBuffer::~FastBuffer() noexcept { clear(); }
@@ -132,7 +133,8 @@ bool FastBuffer::operator<<(const Bytes& bytes) noexcept {
   metadata_ = copied_metadata.release();
   buffer_ = buffer;
   header = metadata.header;
-  std::memcpy(reserved_buf_.data(), metadata.reserved, sizeof(metadata.reserved));
+  reserved_buf_ = metadata.reserved[0];
+  reserved_buf2_ = metadata.reserved[1];
 
   return true;
 }
@@ -182,7 +184,8 @@ bool FastBuffer::operator>>(Bytes& bytes) const noexcept {
   metadata.storage = storage;
   metadata.memory_type = buffer_.memory_type;
   metadata.metadata_size = metadata_bytes.size();
-  std::memcpy(metadata.reserved, reserved_buf_.data(), sizeof(metadata.reserved));
+  metadata.reserved[0] = reserved_buf_;
+  metadata.reserved[1] = reserved_buf2_;
 
   std::memcpy(bytes.data(), &kMagicNumberBegin, sizeof(kMagicNumberBegin));
   std::memcpy(bytes.data() + sizeof(kMagicNumberBegin), &kWireVersion, sizeof(kWireVersion));
@@ -309,6 +312,7 @@ bool FastBuffer::shallow_copy(const FastBuffer& target) noexcept {
   buffer_ = buffer;
   header = target.header;
   reserved_buf_ = target.reserved_buf_;
+  reserved_buf2_ = target.reserved_buf2_;
 
   metadata_ = target.metadata_;
 
@@ -353,6 +357,7 @@ bool FastBuffer::deep_copy(const FastBuffer& target) noexcept {
   buffer_ = buffer;
   header = target.header;
   reserved_buf_ = target.reserved_buf_;
+  reserved_buf2_ = target.reserved_buf2_;
 
   return true;
 }
@@ -366,11 +371,13 @@ bool FastBuffer::move_copy(FastBuffer& target) noexcept {
   buffer_ = target.buffer_;
   header = target.header;
   reserved_buf_ = target.reserved_buf_;
+  reserved_buf2_ = target.reserved_buf2_;
 
   metadata_ = std::exchange(target.metadata_, nullptr);
   target.buffer_ = {};
   target.header = {};
-  target.reserved_buf_.fill(0);
+  target.reserved_buf_ = 0;
+  target.reserved_buf2_ = 0;
 
   return true;
 }
@@ -382,7 +389,8 @@ void FastBuffer::clear() noexcept {
 
   clear_metadata();
   header = {};
-  reserved_buf_.fill(0);
+  reserved_buf_ = 0;
+  reserved_buf2_ = 0;
 }
 
 bool FastBuffer::synchronize() const noexcept {

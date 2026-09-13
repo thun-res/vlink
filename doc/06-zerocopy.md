@@ -492,8 +492,8 @@ process(rd);
 | Header | 40 | 序号、时间戳等 |
 | Buffer | 32 | 本进程地址、大小、资源句柄、设备及内存类型 |
 | Metadata 指针 | 8 | 独立分配的可变长 CPU Bytes |
-| reserved | 48 | 6 个 uint64_t，复制与序列化保留 |
-| 总计 | 128 | 64 位对象布局，不作为线格式契约 |
+| reserved_buf_ / reserved_buf2_ | 16 | 2 个 uint64_t，复制与序列化保留 |
+| 总计 | 96 | 64 位对象布局，不作为线格式契约 |
 
 包含 `<vlink/zerocopy/fast_buffer.h>` 即可使用。该头文件不依赖插件接口；`MemoryType`、`Config`、`Access` 和 `Storage` 均由 FastBuffer 定义，枚举底层类型为 `uint8_t`。插件接口、Manager 与发布池分别位于同目录的 `fast_buffer_plugin_interface.h`、`fast_buffer_manager.h`、`fast_buffer_pool.h`。
 
@@ -508,7 +508,7 @@ process(rd);
 | `shallow_copy()` | 保留同一资源与元数据，源对象释放后仍可使用 |
 | 拷贝 / `deep_copy()` | 复制实际数据与元数据，得到独立资源 |
 | `set_metadata()` / `get_metadata()` | 设置或读取可变长 CPU 元数据；拥有型右值可移动 |
-| `get_reserved()` | 访问 6 个预留槽 |
+| `get_reserved()` / `get_reserved2()` | 分别访问两个 uint64_t 预留字段 |
 
 ### 6.13.1 发布池与跨进程生命周期
 
@@ -521,9 +521,9 @@ process(rd);
 - 任何调用都不等待其他进程。最终释放时若仍有存活读者，分配进入 Manager 的退休列表，由后续创建或释放调用回收；Manager 析构时仍被引用的分配记录日志后照常释放，效果与进程退出一致，读者已建立的映射在平台允许时继续有效。
 - 读者进程首次导入某个 generation 时附加控制块并调用插件导入；本地引用仍存续期间的重复导入共享同一本地资源，只增加本地引用，全部释放后再导入需重新附加。导入方再导出时使用其导入时的 generation，owner 退休后的分配不会重新可导入。`acquire()` 交付前同步 provider，本地读者已释放但未完成的设备任务先于复用完成。
 
-线格式为 `magic(4) + version(4) + 固定元数据(120) + 动态元数据(M) + payload(N) + magic(4)`，固定开销 132 字节。共享模式的 payload 是 40 字节的控制块名称加 generation，插件原生描述符保存在控制块内；Host 模式保存实际字节。普通 CPU 默认实现没有跨进程共享描述符，序列化会复制数据；`shm` 与 GPU 插件只传递描述符，payload 留在原分配中。共享模式支持 Linux、macOS、Windows、QNX；Android 缺少命名共享内存，该模式使用 Host 字节传递，内置 `shm` provider 在 Android 不可用。
+线格式为 `magic(4) + version(4) + 固定元数据(88) + 动态元数据(M) + payload(N) + magic(4)`，固定开销 100 字节。共享模式的 payload 是 40 字节的控制块名称加 generation，插件原生描述符保存在控制块内；Host 模式保存实际字节。普通 CPU 默认实现没有跨进程共享描述符，序列化会复制数据；`shm` 与 GPU 插件只传递描述符，payload 留在原分配中。共享模式支持 Linux、macOS、Windows、QNX；Android 缺少命名共享内存，该模式使用 Host 字节传递，内置 `shm` provider 在 Android 不可用。
 
-`MessageParser` 的解析与打印只读取元数据，不加载 GPU 插件，也不解引用设备地址；打印支持数值与枚举名称，6 个预留槽以隐藏根字段 `reserved`、`reserved2` 至 `reserved6` 暴露。类型化复制使用 `copy_to<FastBuffer::Metadata>()`。Python 提供 `FastBuffer`、`FastBufferPool`、配置、元数据、预留槽及显式 Host 复制；`address()` 同样不是可直接读取的 CPU 指针。
+`MessageParser` 的解析与打印只读取元数据，不加载 GPU 插件，也不解引用设备地址；打印支持数值与枚举名称，2 个预留槽以隐藏根字段 `reserved`、`reserved2` 暴露。类型化复制使用 `copy_to<FastBuffer::Metadata>()`。Python 提供 `FastBuffer`、`FastBufferPool`、配置、元数据、预留槽及显式 Host 复制；`address()` 同样不是可直接读取的 CPU 指针。
 
 FastBuffer 不内置录制转换。需要录制时，可通过已有的 `BagPluginInterface::on_write()` 在资源仍有效时调用 `copy_to_host()`，转换为 RawData、CameraFrame 等消息，并同步更新 `ser_type` 与 `schema_type`；共享描述符本身不适合离线回放。
 

@@ -633,10 +633,6 @@ std::vector<MessageParser::Field> MessageParser::fields() const {
       add_bytes("metadata");
       add_reserved("reserved");
       add_reserved("reserved2");
-      add_reserved("reserved3");
-      add_reserved("reserved4");
-      add_reserved("reserved5");
-      add_reserved("reserved6");
       break;
 
     case Type::kCameraFrame:
@@ -1169,11 +1165,7 @@ bool MessageParser::root_value(std::string_view path, Value& out) const {
              read_number(path, "memory_type", message.memory_type, out) ||
              read_number(path, "metadata_size", message.buffer.size(), out) ||
              read_number(path, "reserved", message.reserved[0], out) ||
-             read_number(path, "reserved2", message.reserved[1], out) ||
-             read_number(path, "reserved3", message.reserved[2], out) ||
-             read_number(path, "reserved4", message.reserved[3], out) ||
-             read_number(path, "reserved5", message.reserved[4], out) ||
-             read_number(path, "reserved6", message.reserved[5], out);
+             read_number(path, "reserved2", message.reserved[1], out);
     }
 
     case Type::kCameraFrame: {

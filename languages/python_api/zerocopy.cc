@@ -450,8 +450,11 @@ void bind_zerocopy(nb::module_& m) {
       .def("synchronize", &vlink::zerocopy::FastBuffer::synchronize)
       .def_static("check_valid", &vlink::zerocopy::FastBuffer::check_valid, "bytes"_a)
       .def_prop_rw(
-          "reserved", [](const vlink::zerocopy::FastBuffer& self) { return self.get_reserved(); },
-          [](vlink::zerocopy::FastBuffer& self, const std::array<uint64_t, 6>& value) { self.get_reserved() = value; })
+          "reserved", [](vlink::zerocopy::FastBuffer& self) { return self.get_reserved(); },
+          [](vlink::zerocopy::FastBuffer& self, uint64_t v) { self.get_reserved() = v; })
+      .def_prop_rw(
+          "reserved2", [](vlink::zerocopy::FastBuffer& self) { return self.get_reserved2(); },
+          [](vlink::zerocopy::FastBuffer& self, uint64_t v) { self.get_reserved2() = v; })
       .def("set_metadata", nb::overload_cast<const vlink::Bytes&>(&vlink::zerocopy::FastBuffer::set_metadata),
            "bytes"_a)
       .def("get_metadata",

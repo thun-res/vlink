@@ -64,9 +64,10 @@
  *      0    40  Header header
  *     40    32  Buffer buffer_
  *     72     8  MetadataBuffer* metadata_
- *     80    48  uint64_t reserved[6]
+ *     80     8  uint64_t reserved_buf_
+ *     88     8  uint64_t reserved_buf2_
  * ------  ----  ----------------------------------
- *  Total   128  bytes (alignas 8)
+ *  Total    96  bytes (alignas 8)
  * @endcode
  *
  * @par Wire format
@@ -83,11 +84,11 @@
  *              57     1  MemoryType memory_type
  *              58     6  uint8_t reserved1[6] (zero)
  *              64     8  uint64_t metadata_size
- *              72    48  uint64_t reserved[6]
+ *              72    16  uint64_t reserved[2]
  * ---------------  ----  ----------------------------------
- *           Total   120  bytes (alignas 8)
+ *           Total    88  bytes (alignas 8)
  *
- * [ magic_begin (4) | version (4) | wire header (120) | metadata (M) | payload (N) | magic_end (4) ]
+ * [ magic_begin (4) | version (4) | wire header (88) | metadata (M) | payload (N) | magic_end (4) ]
  * @endcode
  *
  * | Wire storage | Payload                           | Availability                        |
@@ -124,7 +125,6 @@
 
 #pragma once
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -148,7 +148,7 @@ class FastBufferPool;
  * copying.  A retained reference survives its source object.
  * Moving transfers the reference and leaves the source empty.
  *
- * The wire format is [magic (4), version (4), fixed header (120), metadata (M), payload (N), end magic (4)] in the same
+ * The wire format is [magic (4), version (4), fixed header (88), metadata (M), payload (N), end magic (4)] in the same
  * native byte order as other zero-copy containers.  Shared payloads name a control block, not local
  * addresses.  Host payloads contain actual bytes and are copied into provider storage on deserialization.
  * Local C++ object memory, plugin references and device indices are never serialized.
@@ -225,7 +225,7 @@ struct VLINK_EXPORT_AND_ALIGNED(8) FastBuffer final {
     uint64_t protocol{0};                    ///< Descriptor protocol ID; zero for host storage.
     Storage storage{kStorageShared};         ///< Shared descriptor or inline host data.
     MemoryType memory_type{kMemoryDefault};  ///< Producer allocation domain.
-    uint64_t reserved[6]{};                  ///< 48 reserved bytes, preserved across serialization and copies.
+    uint64_t reserved[2]{};                  ///< 16 reserved bytes, preserved across serialization and copies.
     Bytes buffer;                            ///< Variable-length CPU metadata, separate from the provider payload.
   };
 
@@ -493,18 +493,18 @@ struct VLINK_EXPORT_AND_ALIGNED(8) FastBuffer final {
   [[nodiscard]] const Bytes& get_metadata() const noexcept;
 
   /**
-   * @brief Returns the mutable 48-byte reserved area.
+   * @brief Returns the first reserved field.
    *
-   * @return Six 64-bit slots preserved by serialization, copying and moving.
+   * @return Reference to @c reserved_buf_.
    */
-  [[nodiscard]] std::array<uint64_t, 6>& get_reserved() noexcept { return reserved_buf_; }
+  uint64_t& get_reserved() noexcept { return reserved_buf_; }
 
   /**
-   * @brief Returns the reserved area for inspection.
+   * @brief Returns the second reserved field.
    *
-   * @return Read-only view of the six reserved slots.
+   * @return Reference to @c reserved_buf2_.
    */
-  [[nodiscard]] const std::array<uint64_t, 6>& get_reserved() const noexcept { return reserved_buf_; }
+  uint64_t& get_reserved2() noexcept { return reserved_buf2_; }
 
   Header header;  ///< Sequencing and timestamp metadata prefix.
 
@@ -521,7 +521,8 @@ struct VLINK_EXPORT_AND_ALIGNED(8) FastBuffer final {
 
   Buffer buffer_;
   MetadataBuffer* metadata_{nullptr};
-  std::array<uint64_t, 6> reserved_buf_{};
+  uint64_t reserved_buf_{0};
+  uint64_t reserved_buf2_{0};
 
   static constexpr uint32_t kMagicNumberBegin{0x98B7F1BA};
   static constexpr uint32_t kMagicNumberEnd{0x98B7F1BF};
