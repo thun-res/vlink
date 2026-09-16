@@ -22,6 +22,7 @@
  */
 
 #include <vlink/base/helpers.h>
+#include <vlink/base/message_loop.h>
 #include <vlink/base/utils.h>
 #include <vlink/extension/bag_writer.h>
 #include <vlink/extension/discovery_viewer.h>
@@ -99,6 +100,8 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
 
   vlink::Plugin plugin;
 
+  std::shared_ptr<vlink::MessageLoop> message_loop;
+
   std::shared_ptr<vlink::DiscoveryViewer> discovery_viewer;
 
   std::shared_ptr<vlink::BagWriter> recorder;
@@ -111,13 +114,13 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
 
   size_t real_max_memory_size = max_memory_size * 1024L * 1024L * 1024L;
 
-  auto quit_function = [&discovery_viewer, &recorder, wait_time, &status](int) {
+  auto quit_function = [&message_loop, &recorder, wait_time, &status](int) {
     if VUNLIKELY (has_quit.exchange(true)) {
       return;
     }
 
-    if VLIKELY (discovery_viewer) {
-      discovery_viewer->quit(true);
+    if VLIKELY (message_loop) {
+      message_loop->quit(true);
     }
 
     if VLIKELY (recorder) {
@@ -150,20 +153,26 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
 
   vlink::Utils::register_terminate_signal(quit_function, true);
 
-  try {
-    vlink::DiscoveryViewer::FilterType filter_type = vlink::DiscoveryViewer::kFilterAvailable;
+  if (deft) {
+    message_loop = std::make_shared<vlink::MessageLoop>();
+  } else {
+    try {
+      vlink::DiscoveryViewer::FilterType filter_type = vlink::DiscoveryViewer::kFilterAvailable;
 
-    if (native_mode) {
-      filter_type = vlink::DiscoveryViewer::kFilterNative;
+      if (native_mode) {
+        filter_type = vlink::DiscoveryViewer::kFilterNative;
+      }
+
+      discovery_viewer = std::make_shared<vlink::DiscoveryViewer>(filter_type);
+    } catch (vlink::Exception::RuntimeError&) {
+      has_quit = true;
+      return -1;
     }
 
-    discovery_viewer = std::make_shared<vlink::DiscoveryViewer>(filter_type);
-  } catch (vlink::Exception::RuntimeError&) {
-    has_quit = true;
-    return -1;
+    message_loop = discovery_viewer;
   }
 
-  discovery_viewer->async_run();
+  message_loop->async_run();
 
   if (!deft) {
     if (!quiet_flag) {
@@ -410,7 +419,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
   if (duration > 0) {
     duration_timer.set_interval(duration * 1000);
     duration_timer.set_loop_count(1);
-    duration_timer.attach(discovery_viewer.get());
+    duration_timer.attach(message_loop.get());
   }
 
   recorder->register_begin_handler([recorder_ptr = recorder.get(), &duration_timer, &quit_function, duration]() {
@@ -442,7 +451,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
     return recorder_ptr->get_split_index();
   };
 
-  if VLIKELY (!discovery_viewer->is_ready_to_quit()) {
+  if VLIKELY (!message_loop->is_ready_to_quit()) {
     if (!quiet_flag) {
       vlink::Utils::start_detect_keyboard([&quit_function](const std::string& key) {
         if (key == "q" || key == "esc") {
@@ -464,9 +473,26 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
     }
 
     main_elapsed_timer.start();
-    discovery_viewer->post_task(
-        [&discovery_viewer, &update_urls_function]() { update_urls_function(discovery_viewer->get_info_list()); });
-    discovery_viewer->register_callback(update_urls_function);
+
+    if (deft) {
+      std::vector<vlink::DiscoveryViewer::Info> forced_info_list;
+
+      forced_info_list.reserve(urls.size());
+
+      for (const auto& url : urls) {
+        auto& info = forced_info_list.emplace_back();
+        info.type = vlink::kPublisher;
+        info.url = url;
+      }
+
+      message_loop->post_task([forced_info_list = std::move(forced_info_list), &update_urls_function]() {
+        update_urls_function(forced_info_list);
+      });
+    } else {
+      discovery_viewer->post_task(
+          [&discovery_viewer, &update_urls_function]() { update_urls_function(discovery_viewer->get_info_list()); });
+      discovery_viewer->register_callback(update_urls_function);
+    }
 
     recorder->run();
 
@@ -483,8 +509,8 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
     }
   }
 
-  discovery_viewer->quit(true);
-  discovery_viewer->wait_for_quit();
+  message_loop->quit(true);
+  message_loop->wait_for_quit();
 
   {
     std::lock_guard lock(subs_mtx);
@@ -516,6 +542,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
   duration_timer.stop();
   duration_timer.detach();
   discovery_viewer.reset();
+  message_loop.reset();
 
   recorder->close();
 

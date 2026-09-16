@@ -291,6 +291,7 @@ vlink-bag info /tmp/test.vdb
 | `-z` / `--split_by_size <GB>` / `-y` / `--split_by_time <s>` | 按大小/时间分割文件 |
 | `--max_split_count <n>` | 分包文件保留上限；`0` 不限制，超限后删除最旧分包（仅 `.vdbx` / `.vcapx`） |
 | `-n` / `--native` | 本地模式：仅发现本机节点，DDS 订阅绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
+| `-g` / `--deft` | 跳过服务发现，直接以事件模型原始字节订阅 `-u` 指定的 URL（`ser_type` 为空）；须指定 `-u`，不可与 `-k` 同用 |
 
 录制时 `Space` 暂停/恢复，`q` / `Esc` 停止。
 

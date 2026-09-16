@@ -176,7 +176,7 @@ int main(int argc, char* argv[]) {
       .default_value(vlink::BagWriter::Config().max_split_count)
       .nargs(1);
   record_command.add_argument("-g", "--deft")
-      .help("No collect serialization infomation")
+      .help("Skip discovery, force record bind urls as raw bytes")
       .default_value(false)
       .implicit_value(true);
   record_command.add_argument("-x", "--max_packet_size")
@@ -738,6 +738,11 @@ int main(int argc, char* argv[]) {
 
     if VUNLIKELY (urls.empty() && deft) {
       std::cerr << "The deft must be turned off in the bind all urls mode" << std::endl;
+      return -1;
+    }
+
+    if VUNLIKELY (black_mode && deft) {
+      std::cerr << "The deft must be turned off in the blacklist mode" << std::endl;
       return -1;
     }
 

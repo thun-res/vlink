@@ -61,7 +61,7 @@ _vlink-bag_record() {
         '(-o --split_name_by_time)'{-o,--split_name_by_time}'[Split name by time]' \
         '(-z --split_by_size)'{-z,--split_by_size}'=[Split by size (GB)]:size:' \
         '(-y --split_by_time)'{-y,--split_by_time}'=[Split by time (s)]:time:' \
-        '(-g --deft)'{-g,--deft}'[No collect serialization infomation]' \
+        '(-g --deft)'{-g,--deft}'[Skip discovery, force record bind urls as raw bytes]' \
         '(-x --max_packet_size)'{-x,--max_packet_size}'=[Max packet size (MB)]:size:' \
         '(-j --wal_mode)'{-j,--wal_mode}'[Enable WAL mode]' \
         '(-c --cache_size)'{-c,--cache_size}'=[Cache size (MB)]:size:' \
