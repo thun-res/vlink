@@ -107,8 +107,7 @@ int check_env(bool available_case, const std::string& prefix) {
        "When set to 1 restricts discovery multicast to the loopback interface (same-host only).", false},
       {"VLINK_DISCOVER_IP", "",
        "Comma or space separated local IPv4 addresses used for discovery multicast: the reporter sends once per "
-       "address and the viewer joins the group on each. Empty sends on every UP non-loopback interface (loopback "
-       "when none) and joins on every UP address.",
+       "address and the viewer joins the group on each. Empty sends and joins through the system route.",
        false},
       {"VLINK_PROFILER_ENABLE", "",
        "Toggles the built-in CpuProfiler (1=enable, 0=disable). Default depends on the compile-time macro "

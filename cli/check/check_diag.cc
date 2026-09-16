@@ -257,46 +257,6 @@ void check_dds_interface(DiagContext& ctx) {
   end_diag(ctx, DiagType::kPass, first_ip + " on " + iface);
 }
 
-void check_discover_ip(DiagContext& ctx) {
-  const auto discover_ip = vlink::Utils::get_env("VLINK_DISCOVER_IP");
-  const auto discover_ip_list = vlink::Helpers::split_any_view(discover_ip);
-  const auto ipv4_address = vlink::Utils::get_all_ipv4_address(false);
-
-  if (discover_ip_list.empty()) {
-    const auto count = std::count_if(ipv4_address.begin(), ipv4_address.end(),
-                                     [](const std::string& ip) { return ip != "127.0.0.1"; });
-
-    if VUNLIKELY (count == 0) {
-      end_diag(ctx, DiagType::kWarning, "VLINK_DISCOVER_IP is empty, only find lo");
-      return;
-    }
-
-    end_diag(ctx, DiagType::kPass, "VLINK_DISCOVER_IP is empty, found " + std::to_string(count) + " IP Address");
-    return;
-  }
-
-  std::string missing;
-
-  for (const auto entry : discover_ip_list) {
-    const bool found = std::any_of(ipv4_address.begin(), ipv4_address.end(),
-                                   [entry](const std::string& ip) { return entry == std::string_view(ip); });
-
-    if (!found) {
-      if (!missing.empty()) {
-        missing.push_back(',');
-      }
-
-      missing.append(entry);
-    }
-  }
-
-  if VLIKELY (missing.empty()) {
-    end_diag(ctx, DiagType::kPass, discover_ip + " is valid");
-  } else {
-    end_diag(ctx, DiagType::kFailed, missing + " is invalid");
-  }
-}
-
 void check_multicast_address(DiagContext& ctx, const int (&octets)[4], bool warn_on_missing) {
   const std::string needle = std::to_string(octets[0]) + '.' + std::to_string(octets[1]) + '.' +
                              std::to_string(octets[2]) + '.' + std::to_string(octets[3]);
@@ -329,6 +289,39 @@ void check_multicast_address(DiagContext& ctx, const int (&octets)[4], bool warn
     end_diag(ctx, DiagType::kWarning, "Cannot find " + needle);
   } else {
     end_diag(ctx, DiagType::kFailed, "Cannot find " + needle);
+  }
+}
+
+void check_discover_ip(DiagContext& ctx) {
+  const auto discover_ip = vlink::Utils::get_env("VLINK_DISCOVER_IP");
+  const auto discover_ip_list = vlink::Helpers::split_any_view(discover_ip);
+
+  if (discover_ip_list.empty()) {
+    check_multicast_address(ctx, kMulticastDiscovery, true);
+    return;
+  }
+
+  const auto ipv4_address = vlink::Utils::get_all_ipv4_address(false);
+
+  std::string missing;
+
+  for (const auto entry : discover_ip_list) {
+    const bool found = std::any_of(ipv4_address.begin(), ipv4_address.end(),
+                                   [entry](const std::string& ip) { return entry == std::string_view(ip); });
+
+    if (!found) {
+      if (!missing.empty()) {
+        missing.push_back(',');
+      }
+
+      missing.append(entry);
+    }
+  }
+
+  if VLIKELY (missing.empty()) {
+    end_diag(ctx, DiagType::kPass, discover_ip + " is valid");
+  } else {
+    end_diag(ctx, DiagType::kFailed, missing + " is invalid");
   }
 }
 
@@ -941,7 +934,7 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
   run_check(ctx, "* Check VLink DDS interface MTU...", 100, [&ctx]() { check_interface_mtu(ctx); });
 #endif
 
-  run_check(ctx, "* Check VLink discover IP available...", 100, [&ctx]() { check_discover_ip(ctx); });
+  run_check(ctx, "* Check VLink discovery multicast...", 100, [&ctx]() { check_discover_ip(ctx); });
 
 #if defined(VLINK_SUPPORT_DDS) || defined(VLINK_SUPPORT_DDSC) || defined(VLINK_SUPPORT_DDSR)
   run_check(ctx, "* Check DDS multicast address...", 100,
