@@ -566,7 +566,7 @@ TEST_SUITE("base-Timer") {
 
     CHECK(ret);
 
-    std::this_thread::sleep_for(80ms);
+    CHECK(common_test::wait_until([&count] { return count.load() >= 1; }, 1s));
 
     CHECK_EQ(count.load(), 1);
 
