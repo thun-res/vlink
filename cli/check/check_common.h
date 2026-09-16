@@ -67,7 +67,6 @@
 [[maybe_unused]] static constexpr int kStatusPassPad = 50;
 [[maybe_unused]] static constexpr int kStatusWarnPad = 49;
 [[maybe_unused]] static constexpr int kStatusFailPad = 50;
-[[maybe_unused]] static constexpr int kMulticastDiscovery[] = {239, 255, 0, 100};
 [[maybe_unused]] static constexpr int kMulticastDds[] = {239, 255, 0, 1};
 
 [[maybe_unused]] static const char kColorReset[] = "\033[0m";
