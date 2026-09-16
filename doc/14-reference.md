@@ -295,6 +295,7 @@ if (pub.is_support_loan()) {
 | `VLINK_DDS_DOMAIN` | DDS domain id |
 | `VLINK_DISCOVER_DISABLE` | 置 `1` 关闭运行时发现上报 |
 | `VLINK_DISCOVER_NATIVE` | 置 `1` 仅限本机发现 |
+| `VLINK_DISCOVER_IP` | 发现组播使用的本机 IPv4 地址列表（多值以逗号或空格分隔；未设置时上报走全部已启用的非回环网卡，没有则回环） |
 | `VLINK_PROTO_DIR` / `VLINK_FBS_DIR` | 动态 schema 目录（`vlink-eproto`/`-efbs`） |
 | `VLINK_FASTBUFFER_PLUGIN` | 首次构造 FastBuffer 时加载的插件名或路径；未设置或空值使用普通 CPU 内存，`shm` 使用可跨进程共享的 CPU 内存 |
 | `VLINK_URL_PLUGINS` | 首次 URL 初始化前设置：完整值 `auto` 按需加载未链接的已知共享 transport，`none` / 空值关闭插件加载，其他非空值为显式预加载列表；模式值大小写不敏感 |
@@ -440,11 +441,7 @@ DiscoveryReporter 基于 `239.255.0.100` 的 UDP 多播上报节点与端点元�
 
 ![服务发现网络](images/discovery-network.png)
 
-`vlink-list` 列不出任何节点时，可检查多播路由、`set_discovery_enabled(false)` 以及 DiscoveryReporter 是否被禁用。Linux 上可临时补一条出口路由验证：
-
-```bash
-sudo ip route add 239.255.0.100/32 dev eth0
-```
+`vlink-list` 列不出任何节点时，可检查 `VLINK_DISCOVER_IP` 是否遗漏了目标网段的本机地址、`set_discovery_enabled(false)` 以及 DiscoveryReporter 是否被禁用。Reporter 与 Viewer 逐地址显式指定多播出口并加组，不依赖 `239.255.0.100` 的路由表项；未设置 `VLINK_DISCOVER_IP` 时上报覆盖全部已启用的非回环 IPv4 网卡，监听覆盖全部已启用地址。
 
 排除链路本身的最小验证：以下两段代码的 URL 逐字相同，构成一条最短的收发回路。
 

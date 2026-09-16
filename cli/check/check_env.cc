@@ -105,6 +105,11 @@ int check_env(bool available_case, const std::string& prefix) {
        "When set to 1 disables the runtime-owned discovery reporter (no cross-process visibility).", false},
       {"VLINK_DISCOVER_NATIVE", "",
        "When set to 1 restricts discovery multicast to the loopback interface (same-host only).", false},
+      {"VLINK_DISCOVER_IP", "",
+       "Comma or space separated local IPv4 addresses used for discovery multicast: the reporter sends once per "
+       "address and the viewer joins the group on each. Empty sends on every UP non-loopback interface (loopback "
+       "when none) and joins on every UP address.",
+       false},
       {"VLINK_PROFILER_ENABLE", "",
        "Toggles the built-in CpuProfiler (1=enable, 0=disable). Default depends on the compile-time macro "
        "VLINK_PROFILER_DEFAULT_STATE (0 in upstream).",

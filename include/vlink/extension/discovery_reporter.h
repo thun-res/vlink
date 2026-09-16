@@ -64,7 +64,10 @@
  *
  * @note Discovery rides on a dedicated UDP socket and is independent of any VLink
  * transport backend (intra/shm/dds/zenoh/...).  Set @c VLINK_DISCOVER_DISABLE=1 to
- * disable the runtime-owned reporter for a given process.
+ * disable the runtime-owned reporter for a given process.  Each report is multicast once
+ * per non-loopback local IPv4 address (loopback only when no other address is up);
+ * @c VLINK_DISCOVER_IP (comma or space separated addresses) replaces that set and
+ * @c VLINK_DISCOVER_NATIVE=1 limits it to loopback.
  */
 
 #pragma once

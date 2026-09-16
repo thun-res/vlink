@@ -544,42 +544,38 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
   }
 
 #if VLINK_DISCOVERY_MULTICAST
-  ip_mreq mreq;
-  std::memset(&mreq, 0, sizeof(mreq));
+  std::vector<std::string> ip_list;
 
   if (impl_->enable_native_discovery) {
-    mreq.imr_multiaddr.s_addr = inet_addr(kBroadcastAddress);
-    mreq.imr_interface.s_addr = inet_addr("127.0.0.1");
-
-    if VUNLIKELY (::setsockopt(impl_->sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, reinterpret_cast<const char*>(&mreq),
-                               sizeof(mreq)) < 0) {
-      VLOG_F("DiscoveryViewer: Failed to send multicast to 127.0.0.1.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      return;                                                             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
+    ip_list.emplace_back("127.0.0.1");
   } else {
+    ip_list = Helpers::split_any(Utils::get_env("VLINK_DISCOVER_IP"));
+
+    if (ip_list.empty()) {
+      ip_list = Utils::get_all_ipv4_address();
+    }
+  }
+
+  size_t joined_count = 0;
+
+  for (const auto& ip : ip_list) {
+    ip_mreq mreq;
+    std::memset(&mreq, 0, sizeof(mreq));
     mreq.imr_multiaddr.s_addr = inet_addr(kBroadcastAddress);
-    mreq.imr_interface.s_addr = htonl(INADDR_ANY);
+    mreq.imr_interface.s_addr = inet_addr(ip.c_str());
 
     if VUNLIKELY (::setsockopt(impl_->sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, reinterpret_cast<const char*>(&mreq),
                                sizeof(mreq)) < 0) {
-#ifdef __QNX__
-      CLOG_F(
-          "DiscoveryViewer: Failed to set multicast, please add address [%s] to target device. "
-          "\nExamples(QNX): route add -host %s -interface eth0.",
-          kBroadcastAddress, kBroadcastAddress);
-#elif defined(__APPLE__)
-      CLOG_F(
-          "DiscoveryViewer: Failed to set multicast, please add address [%s] to target device. "
-          "\nExamples(MACOS): route add -net %s -interface eth0.",
-          kBroadcastAddress, kBroadcastAddress);
-#else
-      CLOG_F(  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-          "DiscoveryViewer: Failed to set multicast, please add address [%s] to target device. "
-          "\nExamples(Linux): route add %s eth0.",
-          kBroadcastAddress, kBroadcastAddress);
-#endif
-      return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      VLOG_W("DiscoveryViewer: Failed to join multicast group on [", ip, "].");
+      continue;
     }
+
+    ++joined_count;
+  }
+
+  if VUNLIKELY (joined_count == 0) {
+    VLOG_F("DiscoveryViewer: Failed to join multicast group [", kBroadcastAddress, "] on any interface.");
+    return;
   }
 
 #else

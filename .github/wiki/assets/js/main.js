@@ -708,6 +708,7 @@ int main() {
     ['VLINK_BAG_TAG', '', 'A tag or identifier for the current data recording session.', false],
     ['VLINK_DISCOVER_DISABLE', '', 'Disables the system discovery feature when set to true.', false],
     ['VLINK_DISCOVER_NATIVE', '', 'Restricts discovery to localhost only.', false],
+    ['VLINK_DISCOVER_IP', '', 'Local IPv4 addresses for discovery multicast (comma or space separated); empty uses every UP non-loopback interface.', false],
     ['VLINK_PROFILER_ENABLE', '', 'Enables the system profiler feature when set to true.', false],
     ['VLINK_QOS_CONFIG', '', 'Path to the configuration file for Quality of Service (QoS) settings.', false],
     ['VLINK_URL_PLUGINS', '', 'Before first URL initialization: auto enables on-demand recognized shared transports; none or empty disables plugins; other non-empty values are explicit preload lists (auto/none are case-insensitive).', false],
