@@ -1051,7 +1051,7 @@ export VLINK_LOG_DIR=/var/log/vlink
 | --- | --- | --- | --- |
 | `VLINK_DISCOVER_DISABLE` | `1`/`0` | `0` | `=1` 关闭节点发现，减少 UDP 广播开销 |
 | `VLINK_DISCOVER_NATIVE` | `1`/`0` | `0` | `=1` 仅发现本机节点，组播绑定到 `127.0.0.1` |
-| `VLINK_DISCOVER_IP` | IP 列表 | 空 | 发现组播使用的本机 IPv4 地址列表（逗号或空格分隔）：Reporter 逐地址发送、Viewer 逐地址加组；空值时 Reporter 走全部已启用的非回环网卡（没有则回环），Viewer 在全部已启用地址上加组 |
+| `VLINK_DISCOVER_IP` | IP 列表 | 空 | 发现组播使用的本机 IPv4 地址列表（逗号或空格分隔）：Reporter 逐地址发送、Viewer 逐地址加组；空值时 Reporter 与 Viewer 都按系统路由走 |
 | `VLINK_PROFILER_ENABLE` | `1`/`0` | `0` | `=1` 启用内置 CPU 性能分析 |
 
 ### 🛰️ 13.23 DDS 传输

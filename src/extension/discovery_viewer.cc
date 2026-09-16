@@ -550,32 +550,42 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
     ip_list.emplace_back("127.0.0.1");
   } else {
     ip_list = Helpers::split_any(Utils::get_env("VLINK_DISCOVER_IP"));
-
-    if (ip_list.empty()) {
-      ip_list = Utils::get_all_ipv4_address();
-    }
   }
 
-  size_t joined_count = 0;
-
-  for (const auto& ip : ip_list) {
+  if (ip_list.empty()) {
     ip_mreq mreq;
     std::memset(&mreq, 0, sizeof(mreq));
     mreq.imr_multiaddr.s_addr = inet_addr(kBroadcastAddress);
-    mreq.imr_interface.s_addr = inet_addr(ip.c_str());
+    mreq.imr_interface.s_addr = htonl(INADDR_ANY);
 
     if VUNLIKELY (::setsockopt(impl_->sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, reinterpret_cast<const char*>(&mreq),
                                sizeof(mreq)) < 0) {
-      VLOG_W("DiscoveryViewer: Failed to join multicast group on [", ip, "].");
-      continue;
+      VLOG_F("DiscoveryViewer: Failed to join multicast group [", kBroadcastAddress,
+             "], please add the route entry to the target device.");
+      return;
+    }
+  } else {
+    size_t joined_count = 0;
+
+    for (const auto& ip : ip_list) {
+      ip_mreq mreq;
+      std::memset(&mreq, 0, sizeof(mreq));
+      mreq.imr_multiaddr.s_addr = inet_addr(kBroadcastAddress);
+      mreq.imr_interface.s_addr = inet_addr(ip.c_str());
+
+      if VUNLIKELY (::setsockopt(impl_->sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, reinterpret_cast<const char*>(&mreq),
+                                 sizeof(mreq)) < 0) {
+        VLOG_W("DiscoveryViewer: Failed to join multicast group on [", ip, "].");
+        continue;
+      }
+
+      ++joined_count;
     }
 
-    ++joined_count;
-  }
-
-  if VUNLIKELY (joined_count == 0) {
-    VLOG_F("DiscoveryViewer: Failed to join multicast group [", kBroadcastAddress, "] on any interface.");
-    return;
+    if VUNLIKELY (joined_count == 0) {
+      VLOG_F("DiscoveryViewer: Failed to join multicast group [", kBroadcastAddress, "] on any interface.");
+      return;
+    }
   }
 
 #else

@@ -23,7 +23,6 @@
 
 #include "./extension/discovery_reporter.h"
 
-#include <algorithm>
 #include <cstring>
 #include <map>
 #include <memory>
@@ -101,22 +100,6 @@ template <typename T>
     default:         // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       return "Unk";  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
-}
-
-[[maybe_unused]] static const std::vector<std::string>& get_send_ip_list(const std::vector<std::string>& ip_list,
-                                                                         std::vector<std::string>& auto_ip_list) {
-  if (!ip_list.empty()) {
-    return ip_list;
-  }
-
-  auto_ip_list = Utils::get_all_ipv4_address();
-  auto_ip_list.erase(std::remove(auto_ip_list.begin(), auto_ip_list.end(), "127.0.0.1"), auto_ip_list.end());
-
-  if (auto_ip_list.empty()) {
-    auto_ip_list.emplace_back("127.0.0.1");
-  }
-
-  return auto_ip_list;
 }
 
 static void send_message_list(SocketHandle sock, const sockaddr_in& address, const std::vector<std::string>& list) {
@@ -389,11 +372,6 @@ void DiscoveryReporter::rebuild_message() {
 }
 
 void DiscoveryReporter::send_report() {
-#if VLINK_DISCOVERY_MULTICAST
-  std::vector<std::string> auto_ip_list;
-  const auto& send_ip_list = get_send_ip_list(impl_->ip_list, auto_ip_list);
-#endif
-
   std::lock_guard lock(impl_->mtx);
 
   if (impl_->is_profiler_enabled) {
@@ -401,7 +379,11 @@ void DiscoveryReporter::send_report() {
   }
 
 #if VLINK_DISCOVERY_MULTICAST
-  send_multicast_list(impl_->sock, impl_->address, send_ip_list, impl_->message_list);
+  if (impl_->ip_list.empty()) {
+    send_message_list(impl_->sock, impl_->address, impl_->message_list);
+  } else {
+    send_multicast_list(impl_->sock, impl_->address, impl_->ip_list, impl_->message_list);
+  }
 #else
   send_message_list(impl_->sock, impl_->address, impl_->message_list);
 #endif
@@ -411,17 +393,16 @@ void DiscoveryReporter::send_report() {
 
 // LCOV_EXCL_START GCOVR_EXCL_START
 void DiscoveryReporter::send_offline() {
-#if VLINK_DISCOVERY_MULTICAST
-  std::vector<std::string> auto_ip_list;
-  const auto& send_ip_list = get_send_ip_list(impl_->ip_list, auto_ip_list);
-#endif
-
   std::lock_guard lock(impl_->mtx);
 
   const std::vector<std::string> offline_list{"offline\n" + impl_->local_message};
 
 #if VLINK_DISCOVERY_MULTICAST
-  send_multicast_list(impl_->sock, impl_->address, send_ip_list, offline_list);
+  if (impl_->ip_list.empty()) {
+    send_message_list(impl_->sock, impl_->address, offline_list);
+  } else {
+    send_multicast_list(impl_->sock, impl_->address, impl_->ip_list, offline_list);
+  }
 #else
   send_message_list(impl_->sock, impl_->address, offline_list);
 #endif
