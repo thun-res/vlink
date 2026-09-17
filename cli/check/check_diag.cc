@@ -208,7 +208,13 @@ void check_machine_id(DiagContext& ctx) {
 }
 
 void check_dds_ip(DiagContext& ctx) {
-  const auto dds_ip = vlink::Utils::get_env("VLINK_DDS_IP");
+  auto dds_ip = vlink::Utils::get_env("VLINK_DDS_IP");
+  std::string dds_ip_key = "VLINK_DDS_IP";
+
+  if (dds_ip.empty()) {
+    dds_ip = vlink::Utils::get_env("VLINK_DISCOVER_IP");
+    dds_ip_key = "VLINK_DISCOVER_IP";
+  }
 
   if (dds_ip.empty()) {
     end_diag(ctx, DiagType::kWarning, "VLINK_DDS_IP is empty");
@@ -224,14 +230,20 @@ void check_dds_ip(DiagContext& ctx) {
   });
 
   if VLIKELY (available) {
-    end_diag(ctx, DiagType::kPass, dds_ip + " is valid");
+    end_diag(ctx, DiagType::kPass, dds_ip_key + " " + dds_ip + " is valid");
   } else {
-    end_diag(ctx, DiagType::kFailed, dds_ip + " is invalid");
+    end_diag(ctx, DiagType::kFailed, dds_ip_key + " " + dds_ip + " is invalid");
   }
 }
 
 void check_dds_interface(DiagContext& ctx) {
-  const auto dds_ip = vlink::Utils::get_env("VLINK_DDS_IP");
+  auto dds_ip = vlink::Utils::get_env("VLINK_DDS_IP");
+  std::string dds_ip_key = "VLINK_DDS_IP";
+
+  if (dds_ip.empty()) {
+    dds_ip = vlink::Utils::get_env("VLINK_DISCOVER_IP");
+    dds_ip_key = "VLINK_DISCOVER_IP";
+  }
 
   if (dds_ip.empty()) {
     end_diag(ctx, DiagType::kWarning, "VLINK_DDS_IP is empty");
@@ -241,7 +253,7 @@ void check_dds_interface(DiagContext& ctx) {
   const auto split = vlink::Helpers::split_any_view(dds_ip);
 
   if VUNLIKELY (split.empty()) {
-    end_diag(ctx, DiagType::kFailed, "VLINK_DDS_IP=" + dds_ip + " has no IP entries");
+    end_diag(ctx, DiagType::kFailed, dds_ip_key + "=" + dds_ip + " has no IP entries");
     return;
   }
 
@@ -835,7 +847,11 @@ void check_mqtt_broker(DiagContext& ctx) {
 
 void check_interface_mtu(DiagContext& ctx) {
 #if defined(__linux__) || defined(__ANDROID__)
-  const auto dds_ip = vlink::Utils::get_env("VLINK_DDS_IP");
+  auto dds_ip = vlink::Utils::get_env("VLINK_DDS_IP");
+
+  if (dds_ip.empty()) {
+    dds_ip = vlink::Utils::get_env("VLINK_DISCOVER_IP");
+  }
 
   std::string ip;
 

@@ -240,7 +240,7 @@ sub->register_status_handler([](const vlink::Status::BasePtr& status) {
 | ---- | ---- |
 | `VLINK_DISCOVER_DISABLE=1` | 禁用本进程的发现上报 |
 | `VLINK_DISCOVER_NATIVE=1` | 仅限本机发现（组播绑定 loopback） |
-| `VLINK_DISCOVER_IP=<ip,...>` | 指定发现组播逐地址发送与加组的本机 IPv4 地址；未设置时收发按系统路由走 |
+| `VLINK_DISCOVER_IP=<ip,...>` | 指定发现组播逐地址发送与加组的本机 IPv4 地址；未设置时收发按系统路由走；同时是 `VLINK_DDS_IP` 的缺省值 |
 | `VLINK_PROFILER_ENABLE=1` | 启用 CPU Profiler，使 `Process::profiler` 有效 |
 
 若需让单个节点不出现在发现视图，可在 `init()` 之前关闭其上报。这要求节点以延迟初始化方式构造：

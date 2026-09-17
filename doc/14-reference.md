@@ -289,13 +289,13 @@ if (pub.is_support_loan()) {
 | --- | --- |
 | `VLINK_LOG_LEVEL` | 日志总级别（`0=Trace` .. `5=Fatal`，`6=Off`；也接受对应英文名称） |
 | `VLINK_LOG_DIR` | 日志输出目录 |
-| `VLINK_DDS_IP` | DDS 发现对外通告的本机单播 IP 列表（多值以逗号或空格分隔） |
+| `VLINK_DDS_IP` | DDS 发现对外通告的本机单播 IP 列表（多值以逗号或空格分隔；未设置时取 `VLINK_DISCOVER_IP`） |
 | `VLINK_DDS_NATIVE_IP` | native 模式绑定的 DDS IP（未设置时为 `127.0.0.1`） |
 | `VLINK_DDS_PEER` | DDS 静态单播对端列表，绕开多播发现（多值以逗号或空格分隔，见 [§14.18](#-1418-跨机或容器不连通)） |
 | `VLINK_DDS_DOMAIN` | DDS domain id |
 | `VLINK_DISCOVER_DISABLE` | 置 `1` 关闭运行时发现上报 |
 | `VLINK_DISCOVER_NATIVE` | 置 `1` 仅限本机发现 |
-| `VLINK_DISCOVER_IP` | 发现组播使用的本机 IPv4 地址列表（多值以逗号或空格分隔；未设置时收发按系统路由走） |
+| `VLINK_DISCOVER_IP` | 发现组播使用的本机 IPv4 地址列表（多值以逗号或空格分隔；未设置时收发按系统路由走），同时是 `VLINK_DDS_IP` 的缺省值 |
 | `VLINK_PROTO_DIR` / `VLINK_FBS_DIR` | 动态 schema 目录（`vlink-eproto`/`-efbs`） |
 | `VLINK_FASTBUFFER_PLUGIN` | 首次构造 FastBuffer 时加载的插件名或路径；未设置或空值使用普通 CPU 内存，`shm` 使用可跨进程共享的 CPU 内存 |
 | `VLINK_URL_PLUGINS` | 首次 URL 初始化前设置：完整值 `auto` 按需加载未链接的已知共享 transport，`none` / 空值关闭插件加载，其他非空值为显式预加载列表；模式值大小写不敏感 |

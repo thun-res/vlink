@@ -956,7 +956,7 @@ domain/QoS/depth 等后端参数可由三处声明，遵循就近覆盖原则。
 | `VLINK_DDS_BIND` | 将所有 `dds://` 整体绑定到指定 DDS 实现（`ddsc`/`ddsr`） |
 | `VLINK_INTRA_BIND` | 将所有 `intra://` 重定向到其他 scheme（`shm`/`dds` 等） |
 | `VLINK_LOG_LEVEL` | 全局日志级别（`0`=TRACE … `6`=OFF，也接受对应英文名称） |
-| `VLINK_DDS_IP` | 指定 DDS 单播 IP，多网卡主机通常必设 |
+| `VLINK_DDS_IP` | 指定 DDS 单播 IP，多网卡主机通常必设；未设置时取 `VLINK_DISCOVER_IP` |
 | `VLINK_DDS_NATIVE_IP` | native 模式使用的 DDS IP（未设置时为 `127.0.0.1`） |
 
 ```bash
@@ -1051,7 +1051,7 @@ export VLINK_LOG_DIR=/var/log/vlink
 | --- | --- | --- | --- |
 | `VLINK_DISCOVER_DISABLE` | `1`/`0` | `0` | `=1` 关闭节点发现，减少 UDP 广播开销 |
 | `VLINK_DISCOVER_NATIVE` | `1`/`0` | `0` | `=1` 仅发现本机节点，组播绑定到 `127.0.0.1` |
-| `VLINK_DISCOVER_IP` | IP 列表 | 空 | 发现组播使用的本机 IPv4 地址列表（逗号或空格分隔）：Reporter 逐地址发送、Viewer 逐地址加组；空值时 Reporter 与 Viewer 都按系统路由走 |
+| `VLINK_DISCOVER_IP` | IP 列表 | 空 | 发现组播使用的本机 IPv4 地址列表（逗号或空格分隔）：Reporter 逐地址发送、Viewer 逐地址加组；空值时 Reporter 与 Viewer 都按系统路由走；同时是 `VLINK_DDS_IP` 的缺省值，只限制发现请用 `VLINK_DISCOVER_NATIVE=1` |
 | `VLINK_PROFILER_ENABLE` | `1`/`0` | `0` | `=1` 启用内置 CPU 性能分析 |
 
 ### 🛰️ 13.23 DDS 传输
@@ -1061,7 +1061,7 @@ export VLINK_LOG_DIR=/var/log/vlink
 | 变量 | 类型 | 说明 |
 | --- | --- | --- |
 | `VLINK_DDS_DOMAIN` | 数字 | DDS Domain ID |
-| `VLINK_DDS_IP` | IP 列表 | DDS 单播 IP，多网卡时通常必设 |
+| `VLINK_DDS_IP` | IP 列表 | DDS 单播 IP，多网卡时通常必设；未设置时取 `VLINK_DISCOVER_IP` |
 | `VLINK_DDS_NATIVE_IP` | IP | CLI、Proxy、Viewer 与 WebViz 的 native 模式为 DDS 节点显式设置的 IP；未设置时使用 `127.0.0.1`，并覆盖该节点的 `VLINK_DDS_IP` 缺省值 |
 | `VLINK_DDS_IP_FILTER` | `1`/`0` | 仅使用当前可用地址 |
 | `VLINK_DDS_MULTICAST_IP` | IP 列表 | DDS 组播 IP |
