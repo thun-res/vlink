@@ -309,7 +309,7 @@ void check_discover_ip(DiagContext& ctx) {
   const auto discover_ip_list = vlink::Helpers::split_any_view(discover_ip);
 
   if (discover_ip_list.empty()) {
-    check_multicast_address(ctx, kMulticastDiscovery, true);
+    end_diag(ctx, DiagType::kWarning, "VLINK_DISCOVER_IP is empty");
     return;
   }
 
@@ -950,7 +950,9 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
   run_check(ctx, "* Check VLink DDS interface MTU...", 100, [&ctx]() { check_interface_mtu(ctx); });
 #endif
 
-  run_check(ctx, "* Check VLink discovery multicast...", 100, [&ctx]() { check_discover_ip(ctx); });
+  run_check(ctx, "* Check VLink discover IP available...", 100, [&ctx]() { check_discover_ip(ctx); });
+  run_check(ctx, "* Check VLink multicast address...", 100,
+            [&ctx]() { check_multicast_address(ctx, kMulticastDiscovery, true); });
 
 #if defined(VLINK_SUPPORT_DDS) || defined(VLINK_SUPPORT_DDSC) || defined(VLINK_SUPPORT_DDSR)
   run_check(ctx, "* Check DDS multicast address...", 100,

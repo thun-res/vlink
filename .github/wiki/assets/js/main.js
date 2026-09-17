@@ -667,7 +667,7 @@ int main() {
     ['* Website demo: representative diag excerpt...', 'warn', 'The current build may run additional checks', 100],
     ['* Check available IP addresses...', 'ok', 'Found 3 IP Address', 100],
     ['* Check VLink DDS IP available...', 'ok', '192.168.1.10 is valid', 100],
-    ['* Check VLink discovery multicast...', 'ok', 'Found 239.255.0.100', 100],
+    ['* Check VLink multicast address...', 'ok', 'Found 239.255.0.100', 100],
     ['* Check DDS multicast address...', 'warn', 'Cannot find 239.255.0.1', 100],
     ['* Check available space for log dir...', 'ok', 'Available: 48.25GB', 500],
     ['* Check cpu usage...', 'ok', 'Usage 18.42%', 100],
