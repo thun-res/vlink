@@ -27,9 +27,10 @@
  *
  * @details
  * @c MemoryPool dispatches each allocation request to one of a fixed pyramid of size classes.
- * Every tier owns a small fixed set of singly-linked free-list shards plus one shared vector of
- * upstream chunks.  A tier starts on its primary shard and enables sharded dispatch only after
- * repeated real lock contention is observed.  Empty local shards steal at most
+ * Every tier owns a set of singly-linked free-list shards (a power of two sized from the hardware
+ * concurrency, between 8 and 64) plus one shared vector of upstream chunks.  A tier starts on its
+ * primary shard and enables sharded dispatch only after repeated real lock contention is
+ * observed.  Empty local shards steal at most
  * @c Config::batch_size nodes at a time.  Lazy growth installs chunks of at most 64 KiB (or one
  * block when a single block is larger), so an allocating thread never pays more than a bounded
  * first-touch burst; the configured @c blocks_per_chunk still bounds every install, and
@@ -297,11 +298,13 @@ class VLINK_EXPORT MemoryPool final {
    * @brief Releases only fully-free chunks; preserves chunks still backing live allocations.
    *
    * @details
-   * For each tier the free list is grouped by owning chunk; chunks whose free-node count equals
-   * their block capacity are released, others stay intact.  @c chunk_count is decremented by
-   * the number of released chunks.  Safe to call concurrently with @c allocate and
-   * @c deallocate.  Per-tier work is @c O(C @c log @c C @c + @c F @c log @c C) while growth and
-   * all free-list shards are paused.
+   * For each tier the free lists are detached under their shard locks, grouped by owning chunk
+   * without holding any lock, and re-attached; chunks whose free-node count equals their block
+   * capacity are released, others stay intact.  @c chunk_count is decremented by the number of
+   * released chunks.  Safe to call concurrently with @c allocate and @c deallocate: locks are
+   * held only while the chunk list is snapshotted and sorted, the lists are detached and
+   * re-attached, and the chunk list is compacted, so allocations that arrive while the
+   * @c O(F @c log @c C) grouping runs may install new chunks instead of waiting.
    */
   void clear() noexcept;
 
