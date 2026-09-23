@@ -66,7 +66,11 @@ int check_env(bool available_case, const std::string& prefix) {
        "When set to 1 enables VLink's extended console formatting (timestamp / thread / level color); empty/0 = "
        "minimal format. Boolean toggle, not a template string.",
        false},
-      {"VLINK_LOG_DIR", "", "Directory where rotating log files are written.", false},
+      {"VLINK_LOG_DIR", "", "Default log root; files are written under an application-name subdirectory.", false},
+      {"VLINK_LOG_PID_DIR", "",
+       "When set to 1 isolates log files under application-name/PID so concurrent instances of one application do "
+       "not share a rotating file set.",
+       false},
       {"VLINK_LOG_ENABLE_UTC", "", "When set to 1 prints timestamps in UTC instead of local time.", false},
       {"VLINK_LOG_MAX_SIZE", "", "Maximum size in bytes per log file before rotation (default 10485760 = 10 MiB).",
        false},

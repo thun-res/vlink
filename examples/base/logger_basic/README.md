@@ -6,7 +6,7 @@ vlink Logger 是线程安全、双 sink（控制台 + 文件）的日志库，�
 
 | API | 用途 |
 |-----|------|
-| `Logger::init(app_name, log_path = "")` | 首次使用前配置；`log_path` 是日志基础目录，空路径会从 `VLINK_LOG_DIR` 或临时目录自动选择，是否写文件由 file level 控制 |
+| `Logger::init(app_name, log_path = "")` | 首次使用前配置；`log_path` 是日志基础目录，空路径使用 `$VLINK_LOG_DIR/<应用名>`（未设置根目录则用临时目录，`VLINK_LOG_PID_DIR=1` 时追加 `<PID>`），是否写文件由 file level 控制 |
 | `Logger::set_console_level(Level)` | 设置控制台输出级别 |
 | `Logger::set_file_level(Level)` | 设置文件输出级别（与控制台独立） |
 | `Logger::flush()` | 排空并刷新活跃 Sink；不等同 `fsync`，可在退出/abort 前调用 |

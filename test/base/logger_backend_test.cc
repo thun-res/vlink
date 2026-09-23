@@ -1098,4 +1098,70 @@ TEST_SUITE("base-LoggerBackend") {
   }
 }
 
+TEST_SUITE("base-LoggerBackend") {
+  TEST_CASE("backtrace callbacks can reconfigure and recursively dump") {
+    auto config = backend_config(backend_test_dir("reentrant-dump"));
+    LoggerBackend backend(std::move(config), nullptr);
+    backend.enable_backtrace(4);
+    REQUIRE(backend.log(Logger::kInfo, "retained-one"));
+    REQUIRE(backend.log(Logger::kInfo, "retained-two"));
+    std::vector<std::string> records;
+    LoggerBackend::ConsoleWriter writer;
+    writer = [&](Logger::Level, std::string_view text) {
+      const std::string original(text);
+      records.emplace_back(text);
+      backend.dump_backtrace(writer);
+      backend.disable_backtrace();
+      CHECK(backend.log(Logger::kWarn, "reentrant-new-record"));
+      CHECK(text == original);
+    };
+    backend.dump_backtrace(writer);
+    REQUIRE(records.size() == 4);
+    CHECK(records[1].find("retained-one") != std::string::npos);
+    CHECK(records[2].find("retained-two") != std::string::npos);
+    CHECK_FALSE(backend.has_error());
+  }
+
+  TEST_CASE("automatic console callback preserves its view across nested logging") {
+    auto config = backend_config(backend_test_dir("reentrant-console"));
+    LoggerBackend* active = nullptr;
+    int calls = 0;
+    LoggerBackend backend(std::move(config), nullptr, [&](Logger::Level, std::string_view text) {
+      ++calls;
+      const std::string original(text);
+      CHECK(active->log(Logger::kWarn, std::string(8192, 'x')));
+      CHECK(text == original);
+      active->disable_backtrace();
+    });
+    active = &backend;
+    backend.enable_backtrace(2);
+    REQUIRE(backend.log(Logger::kWarn, "outer-warn"));
+    backend.flush();
+    CHECK(calls == 1);
+    CHECK_FALSE(backend.has_error());
+  }
+
+#if defined(__linux__)
+  TEST_CASE("disk full permanently rejects writes but permits backtrace salvage") {
+    const auto path = backend_test_dir("disk-full");
+    std::filesystem::create_symlink("/dev/full", path / "logger_backend_test.log");
+    auto config = backend_config(path);
+    config.append = true;
+    std::atomic<int> errors{0};
+    LoggerBackend backend(std::move(config), [&](std::string_view) { errors.fetch_add(1, std::memory_order_relaxed); });
+    backend.enable_backtrace(4);
+    REQUIRE(backend.log(Logger::kInfo, "retained-before-full"));
+    REQUIRE(backend.log(Logger::kError, "disk-full-trigger"));
+    backend.flush();
+    CHECK(backend.has_error());
+    CHECK(errors.load(std::memory_order_relaxed) == 1);
+    CHECK_FALSE(backend.log(Logger::kError, "rejected-after-full"));
+    std::string salvaged;
+    backend.dump_backtrace([&](Logger::Level, std::string_view text) { salvaged.append(text); });
+    CHECK(salvaged.find("retained-before-full") != std::string::npos);
+    CHECK(errors.load(std::memory_order_relaxed) == 1);
+  }
+#endif
+}
+
 // NOLINTEND

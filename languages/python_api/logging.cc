@@ -25,8 +25,8 @@
 #include <nanobind/stl/string.h>
 #include <vlink/base/logger.h>
 
+#include <exception>
 #include <mutex>
-#include <stdexcept>
 
 #include "callbacks.h"
 
@@ -46,27 +46,15 @@ static std::shared_ptr<GilSafePyFunction>& logger_file_callback_owner() {
   return *owner;
 }
 
-static const void* python_logger_callback_owner() noexcept {
-  static const char kOwner{};
-  return &kOwner;
-}
-
 static void register_python_logger_handler(std::shared_ptr<GilSafePyFunction>& owner,
                                            void (*register_handler)(vlink::Logger::Callback&&),
                                            std::optional<nb::callable> callback, const char* context) {
-  if VUNLIKELY (is_in_python_owner_callback(python_logger_callback_owner())) {
-    throw std::runtime_error("Logger handlers cannot be replaced from an active logger callback");
-  }
-
   std::shared_ptr<GilSafePyFunction> cb;
   vlink::Logger::Callback handler;
 
   if (callback) {
-    auto activity = std::make_shared<PythonCallbackActivity>();
     cb = std::make_shared<GilSafePyFunction>(std::move(*callback));
-    handler = [activity, cb, context](vlink::Logger::Level level, std::string_view msg) {
-      PythonCallbackScope active(activity, python_logger_callback_owner());
-
+    handler = [cb, context](vlink::Logger::Level level, std::string_view msg) {
       if VUNLIKELY (!Py_IsInitialized()) {
         return;
       }
@@ -100,9 +88,10 @@ void bind_logging(nb::module_& m) {
       .value("Off", vlink::Logger::kOff);
 
   nb::class_<vlink::Logger>(m, "Logger")
-      .def_static("init", &vlink::Logger::init, "app_name"_a = "", "log_path"_a = "")
-      .def_static("get", &vlink::Logger::get, nb::rv_policy::reference)
-      .def_static("flush", &vlink::Logger::flush)
+      .def_static("init", &vlink::Logger::init, "app_name"_a = "", "log_path"_a = "",
+                  nb::call_guard<nb::gil_scoped_release>())
+      .def_static("get", &vlink::Logger::get, nb::rv_policy::reference, nb::call_guard<nb::gil_scoped_release>())
+      .def_static("flush", &vlink::Logger::flush, nb::call_guard<nb::gil_scoped_release>())
       .def_static("set_console_level", &vlink::Logger::set_console_level, "level"_a)
       .def_static("get_console_level", &vlink::Logger::get_console_level)
       .def_static("set_file_level", &vlink::Logger::set_file_level, "level"_a)
@@ -118,10 +107,11 @@ void bind_logging(nb::module_& m) {
       .def_static("set_stream_width", &vlink::Logger::set_stream_width, "width"_a)
       .def_static("get_stream_width", &vlink::Logger::get_stream_width)
       .def_static("is_busy", &vlink::Logger::is_busy)
-      .def_static("is_writable", &vlink::Logger::is_writable, "level"_a)
-      .def_static("enable_backtrace", &vlink::Logger::enable_backtrace, "size"_a)
-      .def_static("disable_backtrace", &vlink::Logger::disable_backtrace)
-      .def_static("dump_backtrace", &vlink::Logger::dump_backtrace)
+      .def_static("is_writable", &vlink::Logger::is_writable, "level"_a, nb::call_guard<nb::gil_scoped_release>())
+      .def_static("enable_backtrace", &vlink::Logger::enable_backtrace, "size"_a,
+                  nb::call_guard<nb::gil_scoped_release>())
+      .def_static("disable_backtrace", &vlink::Logger::disable_backtrace, nb::call_guard<nb::gil_scoped_release>())
+      .def_static("dump_backtrace", &vlink::Logger::dump_backtrace, nb::call_guard<nb::gil_scoped_release>())
       .def_static(
           "register_console_handler",
           [](std::optional<nb::callable> callback) {
@@ -137,12 +127,24 @@ void bind_logging(nb::module_& m) {
           },
           "callback"_a.none(), "Set a file handler, or pass None to restore default output.");
 
-  m.def("log_trace", [](const std::string& msg) { vlink::Logger::print<vlink::Logger::kTrace>(msg); }, "msg"_a);
-  m.def("log_debug", [](const std::string& msg) { vlink::Logger::print<vlink::Logger::kDebug>(msg); }, "msg"_a);
-  m.def("log_info", [](const std::string& msg) { vlink::Logger::print<vlink::Logger::kInfo>(msg); }, "msg"_a);
-  m.def("log_warn", [](const std::string& msg) { vlink::Logger::print<vlink::Logger::kWarn>(msg); }, "msg"_a);
-  m.def("log_error", [](const std::string& msg) { vlink::Logger::print<vlink::Logger::kError>(msg); }, "msg"_a);
-  m.def("log_fatal", [](const std::string& msg) { vlink::Logger::print<vlink::Logger::kFatal>(msg); }, "msg"_a);
+  m.def(
+      "log_trace", [](const std::string& msg) { vlink::Logger::print<vlink::Logger::kTrace>(msg); }, "msg"_a,
+      nb::call_guard<nb::gil_scoped_release>());
+  m.def(
+      "log_debug", [](const std::string& msg) { vlink::Logger::print<vlink::Logger::kDebug>(msg); }, "msg"_a,
+      nb::call_guard<nb::gil_scoped_release>());
+  m.def(
+      "log_info", [](const std::string& msg) { vlink::Logger::print<vlink::Logger::kInfo>(msg); }, "msg"_a,
+      nb::call_guard<nb::gil_scoped_release>());
+  m.def(
+      "log_warn", [](const std::string& msg) { vlink::Logger::print<vlink::Logger::kWarn>(msg); }, "msg"_a,
+      nb::call_guard<nb::gil_scoped_release>());
+  m.def(
+      "log_error", [](const std::string& msg) { vlink::Logger::print<vlink::Logger::kError>(msg); }, "msg"_a,
+      nb::call_guard<nb::gil_scoped_release>());
+  m.def(
+      "log_fatal", [](const std::string& msg) { vlink::Logger::print<vlink::Logger::kFatal>(msg); }, "msg"_a,
+      nb::call_guard<nb::gil_scoped_release>());
 }
 
 }  // namespace vlink::python

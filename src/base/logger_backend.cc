@@ -324,12 +324,16 @@ struct LoggerBackend::Impl final {
   std::string format_buffer;
 #endif
 
+  decltype(format_buffer) console_buffer{format_buffer.get_allocator()};
+
   Timer flush_timer;
   std::atomic_bool accepting{true};
   std::atomic_bool has_error{false};
-  std::mutex stopped_mtx;
+  std::recursive_mutex stopped_mtx;
 
   bool backtrace_enabled{false};
+  bool dumping_backtrace{false};
+  bool invoking_console{false};
   size_t backtrace_capacity{0};
 #ifdef VLINK_ENABLE_BASE_MEMORY_RESOURCE
   std::pmr::deque<std::unique_ptr<LoggerRecord>> backtrace{&MemoryResource::global_instance()};
@@ -349,6 +353,7 @@ LoggerBackend::LoggerBackend(Config&& config, ErrorHandler&& error_handler, Cons
     impl_->config.queue_size = std::max(impl_->config.queue_size, size_t{1});
     impl_->base_path = impl_->config.log_path;
     impl_->format_buffer.reserve(4096U);
+    impl_->console_buffer.reserve(4096U);
 
     if (impl_->config.flush_interval_ms > 0U) {
       if (!impl_->flush_timer.attach(this)) {
@@ -489,74 +494,74 @@ void LoggerBackend::disable_backtrace() noexcept {
 
 void LoggerBackend::dump_backtrace(const ConsoleWriter& console_writer) noexcept {
   barrier([this, &console_writer] {
-    if VUNLIKELY (impl_->has_error.load(std::memory_order_acquire)) {
+    if (impl_->dumping_backtrace || !impl_->backtrace_enabled || impl_->backtrace.empty()) {
       return;
     }
 
-    if (!impl_->backtrace_enabled || impl_->backtrace.empty()) {
-      return;
-    }
+    impl_->dumping_backtrace = true;
 
     try {
+      decltype(impl_->backtrace) records(impl_->backtrace.get_allocator());
+      records.swap(impl_->backtrace);
+
       auto dump_record = [this, &console_writer](const LoggerRecord& record) {
         const auto formatted = format(record);
 
-        if VUNLIKELY (impl_->has_error.load(std::memory_order_relaxed)) {
+        if (formatted.empty()) {
           return;
         }
 
-        write_output(formatted);
+        if (!impl_->has_error.load(std::memory_order_relaxed)) {
+          write_output(formatted);
+        }
 
-        if (!impl_->has_error.load(std::memory_order_relaxed) && console_writer) {
-          console_writer(record.level, formatted.substr(0U, formatted.size() - 1U));
+        if (console_writer && !impl_->invoking_console) {
+          impl_->console_buffer.swap(impl_->format_buffer);
+          impl_->invoking_console = true;
+
+          try {
+            const std::string_view console_log(impl_->console_buffer);
+            console_writer(record.level, console_log.substr(0U, console_log.size() - 1U));
+          } catch (...) {
+            impl_->invoking_console = false;
+            throw;
+          }
+
+          impl_->invoking_console = false;
         }
       };
 
       const uint64_t thread_id = Utils::get_native_thread_id();
-      auto marker = std::unique_ptr<LoggerRecord>(new (kBacktraceStart.size()) LoggerRecord(
-          Logger::kInfo, std::chrono::system_clock::now(), thread_id, kBacktraceStart));
 
-      if VUNLIKELY (!marker) {
-        fail("logger backend: failed to allocate a log record");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        return;
-      }
+      auto dump_marker = [&](std::string_view text) {
+        auto marker = std::unique_ptr<LoggerRecord>(
+            new (text.size()) LoggerRecord(Logger::kInfo, std::chrono::system_clock::now(), thread_id, text));
 
-      dump_record(*marker);
-
-      if VUNLIKELY (impl_->has_error.load(std::memory_order_relaxed)) {
-        return;
-      }
-
-      while (!impl_->backtrace.empty()) {
-        dump_record(*impl_->backtrace.front());
-
-        if VUNLIKELY (impl_->has_error.load(std::memory_order_relaxed)) {
-          return;
+        if (marker) {
+          dump_record(*marker);
+        } else {
+          fail("logger backend: failed to allocate a log record");
         }
+      };
 
-        impl_->backtrace.pop_front();
+      dump_marker(kBacktraceStart);
+
+      for (const auto& record : records) {
+        dump_record(*record);
       }
 
-      marker = std::unique_ptr<LoggerRecord>(new (kBacktraceEnd.size()) LoggerRecord(
-          Logger::kInfo, std::chrono::system_clock::now(), thread_id, kBacktraceEnd));
+      dump_marker(kBacktraceEnd);
 
-      if VUNLIKELY (!marker) {
-        fail("logger backend: failed to allocate a log record");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        return;
+      if (!impl_->has_error.load(std::memory_order_relaxed)) {
+        flush_output();
       }
-
-      dump_record(*marker);
-
-      if VUNLIKELY (impl_->has_error.load(std::memory_order_relaxed)) {
-        return;
-      }
-
-      flush_output();
     } catch (const std::exception& error) {
       fail(error.what());
     } catch (...) {
       fail("logger backend: failed to dump backtrace");
     }
+
+    impl_->dumping_backtrace = false;
   });
 }
 
@@ -978,8 +983,7 @@ void LoggerBackend::update_timestamp(int64_t seconds) {
 }
 
 std::string_view LoggerBackend::format(const LoggerRecord& record) {
-  const auto milliseconds =
-      std::chrono::duration_cast<std::chrono::milliseconds>(record.timestamp.time_since_epoch()).count();
+  const auto milliseconds = std::chrono::floor<std::chrono::milliseconds>(record.timestamp.time_since_epoch()).count();
   auto seconds = milliseconds / 1000;
   int millisecond = static_cast<int>(milliseconds % 1000);
 
@@ -993,7 +997,7 @@ std::string_view LoggerBackend::format(const LoggerRecord& record) {
   if VUNLIKELY (seconds != impl_->cached_seconds) {
     update_timestamp(seconds);
 
-    if VUNLIKELY (impl_->has_error.load(std::memory_order_relaxed)) {
+    if VUNLIKELY (impl_->cached_seconds != seconds) {
       return {};
     }
   }
@@ -1094,8 +1098,19 @@ void LoggerBackend::write(std::unique_ptr<LoggerRecord>&& record) noexcept {
           return;
         }
 
-        if (impl_->console_writer) {
-          impl_->console_writer(level, formatted.substr(0U, formatted.size() - 1U));
+        if (impl_->console_writer && !impl_->invoking_console) {
+          impl_->console_buffer.swap(impl_->format_buffer);
+          impl_->invoking_console = true;
+
+          try {
+            const std::string_view console_log(impl_->console_buffer);
+            impl_->console_writer(level, console_log.substr(0U, console_log.size() - 1U));
+          } catch (...) {
+            impl_->invoking_console = false;
+            throw;
+          }
+
+          impl_->invoking_console = false;
         }
 
         wrote = true;

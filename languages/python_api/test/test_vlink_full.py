@@ -214,18 +214,31 @@ vlink.Logger.register_console_handler(lambda level, message: None)
 worker.join(2.0)
 assert not worker.is_alive()
 
-self_error = []
+replaced = []
 
 def self_replacing_handler(level, message):
-    try:
-        vlink.Logger.register_console_handler(lambda inner_level, inner_message: None)
-    except RuntimeError as exc:
-        self_error.append(str(exc))
+    replaced.append(message)
+    vlink.Logger.register_console_handler(None)
 
 vlink.Logger.register_console_handler(self_replacing_handler)
 vlink.log_info("self replacement")
-assert self_error and "active logger callback" in self_error[0]
-vlink.Logger.register_console_handler(lambda level, message: None)
+assert replaced == ["self replacement"]
+vlink.Logger.set_console_level(vlink.LogLevel.Off)
+vlink.Logger.set_file_level(vlink.LogLevel.Info)
+vlink.Logger.enable_backtrace(4)
+vlink.log_info("python backtrace retained")
+vlink.Logger.flush()
+replayed = []
+
+def replay_handler(level, message):
+    replayed.append(message)
+    vlink.Logger.disable_backtrace()
+
+vlink.Logger.register_console_handler(replay_handler)
+vlink.Logger.set_console_level(vlink.LogLevel.Info)
+vlink.Logger.dump_backtrace()
+assert any("python backtrace retained" in message for message in replayed)
+vlink.Logger.register_console_handler(None)
 '''
     subprocess.run(
         [sys.executable, "-c", replacement_check],
