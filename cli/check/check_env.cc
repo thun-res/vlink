@@ -48,6 +48,10 @@ int check_env(bool available_case, const std::string& prefix) {
       {"VLINK_MEMORY_BATCH_SIZE", "",
        "Positive free-list shard transfer batch size used by the default MemoryPool configuration (default 16).",
        false},
+      {"VLINK_MEMORY_LAZY_SCALE", "",
+       "Set to 1 to scale lazy MemoryPool chunk installs with the tier quota (1/16, at least 32 KiB) instead of "
+       "the fixed 64 KiB cap.",
+       false},
       {"VLINK_PLUGIN_DIR", "", "Directory searched by vlink::Plugin when loading dynamic modules.", false},
       {"VLINK_URL_PLUGINS", "",
        "Set before the first URL initialization: auto enables first-use loading of recognized unlinked shared "

@@ -228,7 +228,7 @@ vlink::Bytes::init_memory_pool();       // 启动时调用一次
 vlink::Bytes::release_memory_pool();    // 运行期可选回收完全空闲的块
 ```
 
-- 池的容量分级由环境变量 `VLINK_MEMORY_LEVEL`（`0..9`，默认 `3`）选择；`VLINK_MEMORY_PREALLOC=1` 在启动时预分配。检测到重复并发争用后 free list 会自动分片，偶发单次锁冲突仍保留 primary 快路径。空分片每次跨分片转移的节点数由 `MemoryPool::Config::batch_size` 控制（默认 `16`）；全局默认配置可用 `VLINK_MEMORY_BATCH_SIZE` 覆盖。三者含义见 [环境变量](13-integration.md)。
+- 池的容量分级由环境变量 `VLINK_MEMORY_LEVEL`（`0..9`，默认 `3`）选择；`VLINK_MEMORY_PREALLOC=1` 在启动时预分配。检测到重复并发争用后 free list 会自动分片，偶发单次锁冲突仍保留 primary 快路径。空分片每次跨分片转移的节点数由 `MemoryPool::Config::batch_size` 控制（默认 `16`）；全局默认配置可用 `VLINK_MEMORY_BATCH_SIZE` 覆盖；`VLINK_MEMORY_LAZY_SCALE=1` 让懒增长单次安装的 chunk 随档位配额放大（默认关闭）。含义见 [环境变量](13-integration.md)。
 - 经 `vlink::MemoryResource` 让 `std::pmr` 容器复用同一池：
 
 ```cpp

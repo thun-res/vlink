@@ -280,11 +280,11 @@ void run_logger_child_case(const std::string& child_case) {
 
 void run_logger_child(const std::string& child_case, Process::EnvironmentMap environment) {
   static constexpr const char* kIsolatedEnvironmentVariables[]{
-      "VLINK_LOG_LEVEL",       "VLINK_LOG_CONSOLE_LEVEL", "VLINK_LOG_FILE_LEVEL",  "VLINK_LOG_CONSOLE_UNORDER",
-      "VLINK_LOG_ENABLE_UTC",  "VLINK_LOG_CONSOLE_FMT",   "VLINK_LOG_PLUGIN",      "VLINK_LOG_DIR",
-      "VLINK_LOG_MAX_SIZE",    "VLINK_LOG_MAX_COUNT",     "VLINK_LOG_FLUSH_DELAY", "VLINK_LOG_STORE_STRATEGY",
-      "VLINK_LOG_OPEN_APPEND", "VLINK_LOG_BLOCK_SYNC",    "VLINK_LOG_WRITE_DEPTH", "VLINK_MEMORY_LEVEL",
-      "VLINK_MEMORY_PREALLOC", "VLINK_MEMORY_BATCH_SIZE",
+      "VLINK_LOG_LEVEL",       "VLINK_LOG_CONSOLE_LEVEL", "VLINK_LOG_FILE_LEVEL",    "VLINK_LOG_CONSOLE_UNORDER",
+      "VLINK_LOG_ENABLE_UTC",  "VLINK_LOG_CONSOLE_FMT",   "VLINK_LOG_PLUGIN",        "VLINK_LOG_DIR",
+      "VLINK_LOG_MAX_SIZE",    "VLINK_LOG_MAX_COUNT",     "VLINK_LOG_FLUSH_DELAY",   "VLINK_LOG_STORE_STRATEGY",
+      "VLINK_LOG_OPEN_APPEND", "VLINK_LOG_BLOCK_SYNC",    "VLINK_LOG_WRITE_DEPTH",   "VLINK_MEMORY_LEVEL",
+      "VLINK_MEMORY_PREALLOC", "VLINK_MEMORY_BATCH_SIZE", "VLINK_MEMORY_LAZY_SCALE",
   };
 
   for (const char* name : kIsolatedEnvironmentVariables) {

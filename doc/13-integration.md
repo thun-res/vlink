@@ -983,9 +983,10 @@ export VLINK_LOG_LEVEL=3
 | `VLINK_URL_REMAP` | 文件路径 | URL 重映射 JSON 文件，按子串匹配，对应 13.10 的 `UrlRemap` |
 | `VLINK_INTRA_BIND` | 字符串 | 将所有 `intra://` 重定向到其他 scheme（`shm`、`dds` 等） |
 | `VLINK_QOS_CONFIG` | 文件路径 | 全局 QoS 配置文件路径，URL `?qos=profile` 优先级更高，见 [QoS 配置](05-qos.md) |
-| `VLINK_MEMORY_LEVEL` | 数字 | 内存池档位（`0`..`9`，默认 `3`）：`0` 为直通（每次直接向系统申请释放），`1`..`9` 选择内置金字塔，数值越大预留越多、常驻内存越多。仅在调用 `Bytes::init_memory_pool()` 构建全局内存池后生效 |
+| `VLINK_MEMORY_LEVEL` | 数字 | 内存池档位（`0`..`9`，默认 `3`）：`0` 为直通（每次直接向系统申请释放），`1`..`9` 选择内置金字塔，数值越大各档配额越大：预分配时常驻内存更多；开启 `VLINK_MEMORY_LAZY_SCALE` 后懒增长单次安装的 chunk 也随配额放大。仅在调用 `Bytes::init_memory_pool()` 构建全局内存池后生效 |
 | `VLINK_MEMORY_PREALLOC` | `1`/`0` | `1` 时构建全局内存池时按各档 `blocks_per_chunk` 配额预分配满（尽力而为），消除热路径首次分配延迟；否则按需懒加载 |
 | `VLINK_MEMORY_BATCH_SIZE` | 正整数 | 覆盖 `MemoryPool::get_default_config()` 的 `batch_size`（默认 `16`），限制空 free-list shard 一次从其他 shard 转移的节点数；仅影响默认/全局配置，显式传入的 `MemoryPool::Config` 不受影响；首次读取后固定 |
+| `VLINK_MEMORY_LAZY_SCALE` | `1`/`0` | `1` 时懒增长单次安装的 chunk 上限取该档配额的 1/16（不低于 32 KiB 或一个块），档位越高上游分配越少、首次触达突发越大；默认关闭，上限固定 64 KiB。仅影响默认/全局配置，显式 `Config` 用 `lazy_scale` 字段 |
 
 ```bash
 # 显式预加载

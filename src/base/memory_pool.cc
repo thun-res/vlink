@@ -60,6 +60,8 @@ static constexpr size_t kInitialBlocksPerChunk = 1U;
 static constexpr size_t kInitialChunksReserve = 16U;
 static constexpr size_t kInitialChunkBytesTarget = 64U * 1024U;
 static constexpr size_t kMaxLazyChunkBytes = 64U * 1024U;
+static constexpr size_t kMinLazyChunkBytes = 32U * 1024U;
+static constexpr size_t kLazyChunkQuotaDivisor = 16U;
 static constexpr size_t kMinTierShardCount = 8U;
 static constexpr size_t kMaxTierShardCount = 64U;
 static constexpr size_t kDefaultBatchSize = 16U;
@@ -318,6 +320,7 @@ struct alignas(64) MemoryTierState final {
   size_t blocks_per_chunk{0};
   size_t next_chunk_blocks{0};
   size_t initial_chunk_blocks{0};
+  size_t lazy_chunk_blocks{0};
   size_t batch_size{kDefaultBatchSize};
 
   MemoryTierShard* shards{nullptr};
@@ -499,12 +502,8 @@ static bool grow_tier_chunk(MemoryTierState& state, size_t shard_index, MemoryFr
     blocks = state.blocks_per_chunk;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  if (allocated != nullptr) {
-    const size_t lazy_cap = std::max(kMaxLazyChunkBytes / state.block_size, size_t{1});
-
-    if (blocks > lazy_cap) {
-      blocks = lazy_cap;
-    }
+  if (allocated != nullptr && blocks > state.lazy_chunk_blocks) {
+    blocks = state.lazy_chunk_blocks;
   }
 
   const size_t block_size = state.block_size;
@@ -836,6 +835,12 @@ MemoryPool::MemoryPool(const Config& config) : impl_(std::make_unique<Impl>()) {
 
     state->initial_chunk_blocks = initial;
     state->next_chunk_blocks = initial;
+
+    const size_t lazy_blocks = config.lazy_scale ? std::max(state->blocks_per_chunk / kLazyChunkQuotaDivisor,
+                                                            kMinLazyChunkBytes / state->block_size)
+                                                 : kMaxLazyChunkBytes / state->block_size;
+
+    state->lazy_chunk_blocks = std::clamp(lazy_blocks, size_t{1}, state->blocks_per_chunk);
 
     impl_->tier_states[live] = state.get();
     impl_->dispatch_states[dispatch] = state.get();
@@ -1186,6 +1191,7 @@ MemoryPool::Config MemoryPool::get_default_config() {
   }();
 
   static bool prealloc_env = (Utils::get_env("VLINK_MEMORY_PREALLOC") == "1");
+  static bool lazy_scale_env = (Utils::get_env("VLINK_MEMORY_LAZY_SCALE") == "1");
 
   static size_t batch_size = []() noexcept {
     const std::string env_value = Utils::get_env("VLINK_MEMORY_BATCH_SIZE", "16");
@@ -1209,6 +1215,7 @@ MemoryPool::Config MemoryPool::get_default_config() {
 
   Config config = create_memory_config(level, prealloc_env);
   config.batch_size = batch_size;
+  config.lazy_scale = lazy_scale_env;
 
   return config;
 }

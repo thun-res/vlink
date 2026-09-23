@@ -577,7 +577,9 @@ void bind_runtime(nb::module_& m) {
       .def_rw("tiers", &vlink::MemoryPool::Config::tiers)
       .def_rw("prealloc", &vlink::MemoryPool::Config::prealloc)
       .def_rw("batch_size", &vlink::MemoryPool::Config::batch_size,
-              "Maximum free-list nodes moved by one cross-shard steal; 0 falls back to 16");
+              "Maximum free-list nodes moved by one cross-shard steal; 0 falls back to 16")
+      .def_rw("lazy_scale", &vlink::MemoryPool::Config::lazy_scale,
+              "Scale lazy chunk installs with the tier quota instead of the fixed 64 KiB cap");
 
   nb::class_<vlink::MemoryPool::TierStats>(mp_cls, "TierStats")
       .def_ro("max_size", &vlink::MemoryPool::TierStats::max_size)
