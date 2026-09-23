@@ -171,11 +171,15 @@ TEST_SUITE("base-CachedTimestamp") {
     CachedTimestamp timestamp;
     const auto at = [](int64_t ms) { return Clock::time_point(std::chrono::milliseconds(ms)); };
     constexpr auto kFormat = "%02d-%02d %02d:%02d:%02d.%03d";
-    CachedTimestamp local_cold, local_warm;
+    CachedTimestamp local_cold;
+    CachedTimestamp local_warm;
+
     (void)local_warm.get_at(at(1500));
     CHECK(local_cold.get_at(at(500)) == local_warm.get_at(at(500)));
+
     CHECK(timestamp.get_at(at(500), kFormat, true) == "01-01 00:00:00.500");
     CHECK(timestamp.get_at(at(400), kFormat, true) == "01-01 00:00:00.400");
+
 #if !defined(_WIN32)
     CHECK(timestamp.get_at(at(-500), kFormat, true) == "12-31 23:59:59.500");
     CHECK(timestamp.get_at(at(-400), kFormat, true) == "12-31 23:59:59.600");
@@ -186,8 +190,10 @@ TEST_SUITE("base-CachedTimestamp") {
       CHECK_FALSE(timestamp.get_at(Clock::time_point::min(), kFormat, true).empty());
     }
 #endif
+
     CHECK(timestamp.get_at(at(3600500), kFormat, true) == "01-01 01:00:00.500");
     CHECK(timestamp.get_at(at(500), kFormat, true) == "01-01 00:00:00.500");
+
     CHECK(timestamp.get_at(at(500), "%d/%d %d:%d:%d ms=%d!", true) == "1/1 0:0:0 ms=500!");
     CHECK(timestamp.get_at(at(600), "%d/%d %d:%d:%d ms=%d!", true) == "1/1 0:0:0 ms=600!");
     CHECK(timestamp.get_at(at(700), kFormat, true) == "01-01 00:00:00.700");

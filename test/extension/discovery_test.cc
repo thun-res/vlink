@@ -46,7 +46,7 @@ TEST_SUITE("extension-DiscoveryViewer") {
   }
 
   TEST_CASE("get_listen_domain stays within the supported range") {
-    CHECK_LE(DiscoveryViewer::get_listen_domain(), 255u);
+    CHECK_LE(DiscoveryViewer::get_listen_domain(), 255U);
   }
 
   TEST_CASE("get_listen_port is shifted by the discovery domain") {

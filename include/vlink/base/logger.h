@@ -236,8 +236,8 @@ class VLINK_EXPORT Logger final {
    *
    * @details
    * Must be invoked before @c get or any logging macro.  Only values supplied before the file
-   * channel is initialised configure the backend; later calls do not rebuild active sinks.  File output is
-   * controlled by the file level.  An empty @p log_path selects @c VLINK_LOG_DIR or a temporary
+   * channel is initialised configure the backend; later calls do not rebuild active sinks.  File
+   * output is controlled by the file level.  An empty @p log_path selects @c VLINK_LOG_DIR or a temporary
    * default directory followed by @c app_name; @c VLINK_LOG_PID_DIR=1 appends the PID so concurrent
    * instances of one application never share a rotating file set.  An explicit directory must be
    * owned by one live process.
@@ -371,8 +371,9 @@ class VLINK_EXPORT Logger final {
   /**
    * @brief Enables a file-backend ring buffer of the most recent @p size eligible records.
    *
-   * @details Console output keeps its threshold and handler.  The file backend keeps every record
-   * in the ring and additionally writes Warn or higher immediately.  Calling again resets the ring to
+   * @details
+   * Console output keeps its threshold and handler.  The file backend keeps every record in the
+   * ring and additionally writes Warn or higher immediately.  Calling again resets the ring to
    * the supplied capacity.
    *
    * @param size  Capacity of the backtrace ring buffer.
@@ -391,7 +392,8 @@ class VLINK_EXPORT Logger final {
   /**
    * @brief Dumps a snapshot to the built-in file backend and configured console sink.
    *
-   * @details Console replay obeys its current threshold and handler, including Off.  Retained records
+   * @details
+   * Console replay obeys its current threshold and handler, including Off.  Retained records
    * remain available for console replay after a permanent file error.
    *
    * @warning Call during application runtime, before static object destruction begins.

@@ -1121,10 +1121,12 @@ void Logger::write_to_console(Level level, std::string_view log, bool formatted)
 
   if VUNLIKELY (!formatted && global_instance.console_format_enable.load(std::memory_order_acquire)) {
     std::string fallback_log;
-    auto& fmt_log = logger_stream_retired ? fallback_log : get_logger_stream_state().console_buffer;
-    fmt_log.clear();
     std::optional<CachedTimestamp> fallback_timestamp;
+
+    auto& fmt_log = logger_stream_retired ? fallback_log : get_logger_stream_state().console_buffer;
     auto& timestamp = logger_stream_retired ? fallback_timestamp.emplace() : get_logger_stream_state().timestamp;
+
+    fmt_log.clear();
 
     auto tid_str = get_thread_id_str();
 

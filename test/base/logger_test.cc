@@ -1082,23 +1082,31 @@ TEST_SUITE("base-Logger") {
   TEST_CASE("handlers can replace themselves and nested fatal still throws") {
     Logger::set_console_level(Logger::kInfo);
     Logger::set_file_level(Logger::kInfo);
+
     std::vector<std::string> received;
-    Logger::register_file_handler([&](Logger::Level, std::string_view message) { received.emplace_back(message); });
     int calls = 0;
+
+    Logger::register_file_handler([&](Logger::Level, std::string_view message) { received.emplace_back(message); });
     Logger::register_console_handler([&](Logger::Level, std::string_view) {
       ++calls;
       Logger::register_console_handler(nullptr);
       CHECK_THROWS_AS(CLOG_F("INNER %d", 7), std::runtime_error);
     });
+
     CLOG_I("OUTER %d", 1);
+
     REQUIRE(received.size() == 1);
     CHECK(received.front() == "OUTER 1");
     CHECK(calls == 1);
+
     Logger::register_console_handler(
         [&](Logger::Level, std::string_view) { CHECK_THROWS_AS(MLOG_F("INNER {}", 8), std::runtime_error); });
+
     MLOG_I("FORMAT {}", 2);
+
     REQUIRE(received.size() == 2);
     CHECK(received.back() == "FORMAT 2");
+
     Logger::register_console_handler(nullptr);
     Logger::set_console_level(Logger::kOff);
     Logger::register_file_handler([&](Logger::Level, std::string_view) {
@@ -1106,7 +1114,9 @@ TEST_SUITE("base-Logger") {
       Logger::register_file_handler(nullptr);
       Logger::register_console_handler(nullptr);
     });
+
     VLOG_I("self unregister");
+
     CHECK(calls == 2);
 
     Logger::set_console_level(Logger::kTrace);

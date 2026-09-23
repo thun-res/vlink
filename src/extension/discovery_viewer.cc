@@ -110,7 +110,7 @@ static constexpr SocketHandle kInvalidSocket = -1;
 #endif
 }
 
-static std::string& get_invalid_listen_domain() {
+[[maybe_unused]] static std::string& get_invalid_listen_domain() {
   static std::string invalid_domain;
   return invalid_domain;
 }

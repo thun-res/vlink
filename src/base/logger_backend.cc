@@ -511,7 +511,7 @@ void LoggerBackend::dump_backtrace(const ConsoleWriter& console_writer) noexcept
           return;
         }
 
-        if (!impl_->has_error.load(std::memory_order_relaxed)) {
+        if VLIKELY (!impl_->has_error.load(std::memory_order_relaxed)) {
           write_output(formatted);
         }
 
@@ -552,7 +552,7 @@ void LoggerBackend::dump_backtrace(const ConsoleWriter& console_writer) noexcept
 
       dump_marker(kBacktraceEnd);
 
-      if (!impl_->has_error.load(std::memory_order_relaxed)) {
+      if VLIKELY (!impl_->has_error.load(std::memory_order_relaxed)) {
         flush_output();
       }
     } catch (const std::exception& error) {
