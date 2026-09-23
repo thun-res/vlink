@@ -27,6 +27,8 @@
 
 #include <doctest/doctest.h>
 
+#include <cstdint>
+#include <ctime>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -160,6 +162,39 @@ TEST_SUITE("base-CachedTimestamp") {
     CHECK_EQ(second[2], '-');
     CHECK_EQ(second[5], ' ');
     CHECK_EQ(second[14], '.');
+  }
+}
+
+TEST_SUITE("base-CachedTimestamp") {
+  TEST_CASE("get_at handles epoch rollback and custom formats") {
+    using Clock = std::chrono::system_clock;
+    CachedTimestamp timestamp;
+    const auto at = [](int64_t ms) { return Clock::time_point(std::chrono::milliseconds(ms)); };
+    constexpr auto kFormat = "%02d-%02d %02d:%02d:%02d.%03d";
+    CachedTimestamp local_cold, local_warm;
+    (void)local_warm.get_at(at(1500));
+    CHECK(local_cold.get_at(at(500)) == local_warm.get_at(at(500)));
+    CHECK(timestamp.get_at(at(500), kFormat, true) == "01-01 00:00:00.500");
+    CHECK(timestamp.get_at(at(400), kFormat, true) == "01-01 00:00:00.400");
+#if !defined(_WIN32)
+    CHECK(timestamp.get_at(at(-500), kFormat, true) == "12-31 23:59:59.500");
+    CHECK(timestamp.get_at(at(-400), kFormat, true) == "12-31 23:59:59.600");
+    CHECK(timestamp.get_at(at(-1), kFormat, true) == "12-31 23:59:59.999");
+#endif
+#if defined(__linux__)
+    if (sizeof(std::time_t) == sizeof(int64_t)) {
+      CHECK_FALSE(timestamp.get_at(Clock::time_point::min(), kFormat, true).empty());
+    }
+#endif
+    CHECK(timestamp.get_at(at(3600500), kFormat, true) == "01-01 01:00:00.500");
+    CHECK(timestamp.get_at(at(500), kFormat, true) == "01-01 00:00:00.500");
+    CHECK(timestamp.get_at(at(500), "%d/%d %d:%d:%d ms=%d!", true) == "1/1 0:0:0 ms=500!");
+    CHECK(timestamp.get_at(at(600), "%d/%d %d:%d:%d ms=%d!", true) == "1/1 0:0:0 ms=600!");
+    CHECK(timestamp.get_at(at(700), kFormat, true) == "01-01 00:00:00.700");
+    CHECK(timestamp.get_at(at(800), "%d", true) == "1");
+    CHECK(timestamp.get_at(at(900), kFormat, true) == "01-01 00:00:00.900");
+    CHECK(timestamp.get_at(at(900), "%0100d", true).empty());
+    CHECK(timestamp.get_at(at(950), kFormat, true) == "01-01 00:00:00.950");
   }
 }
 

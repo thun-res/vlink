@@ -1161,7 +1161,7 @@ vlink::Co::Task<void> orchestrate(vlink::MessageLoop& loop) {
 | `Helpers` | `base/helpers.h` | 字符串/数字/哈希/转义等无状态工具 |
 | `Quantize` | `base/quantize.h` | 线性量化/反量化（紧凑容器复用） |
 | `Uint128` | `base/uint128.h` | 可移植 128 位无符号整数 |
-| `CachedTimestamp` | `base/cached_timestamp.h` | 低开销线程安全格式化时间戳（Logger 内部使用） |
+| `CachedTimestamp` | `base/cached_timestamp.h` | 缓存格式化时间戳；`get_at` 支持指定时间，返回视图有效至下次更新（Logger 内部使用） |
 | `Plugin` | `base/plugin.h` | 类型安全的动态插件加载器 |
 | `Exception` | `base/exception.h` | VLink 异常类型 |
 | `LoggerPluginInterface` | `base/logger_plugin_interface.h` | 自定义日志后端纯虚接口 |
