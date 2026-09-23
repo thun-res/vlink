@@ -156,10 +156,12 @@ namespace vlink {
  * @details
  * Owns the discovery layer, the handshake/control/time/info DDS channels, the data
  * relay path, and any embedded Iceoryx daemon or runnable plugins.  Construction
- * starts the @c DiscoveryViewer plus its 1-second heartbeat and statistics timers,
- * but it does @b not start the server's own inherited loop.  Call @c async_run()
- * (or @c run()) on the @c MessageLoop base to enable asynchronous relays and the
- * runnable-plugin lifecycle hooks.  Only one instance is allowed per process.
+ * starts the @c DiscoveryViewer and arms the 1-second heartbeat and statistics
+ * timers, but it does @b not start the server's own inherited loop.  Those timers
+ * now run on that loop, so @c async_run() (or @c run()) on the @c MessageLoop base
+ * is @b required: without it no heartbeat or @c InfoList is published and every
+ * @c ProxyAPI client reports a disconnect after five seconds.  Only one instance is
+ * allowed per process.
  */
 class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
  public:
@@ -236,12 +238,14 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
    * -# When @c config.use_iox is @c true, calls @c init_shm_roudi() to spin up an
    *    embedded Iceoryx RouDi process.
    * -# Calls @c init_server() to create the handshake, control, time, info, and data
-   *    channels, subscribe to @c Control, and start the heartbeat plus statistics
-   *    timers on the @c DiscoveryViewer's loop.
+   *    channels, subscribe to @c Control, and arm the heartbeat plus statistics
+   *    timers on the server's own inherited loop.
    * -# Calls @c init_runnable() to load every plugin listed in @c config.runnable_list.
    *
    * The inherited @c MessageLoop is @b not started here -- call @c async_run() or
-   * @c run() explicitly when asynchronous relays and plugin lifecycle hooks must run.
+   * @c run() explicitly.  It now drives the heartbeat and statistics timers as well as
+   * asynchronous relays and plugin lifecycle hooks, so leaving it stopped silently
+   * disables the heartbeat.
    *
    * @param config  Server configuration.  See @c Config for per-field semantics.
    *
@@ -289,6 +293,8 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
   void on_begin() override;
 
   void on_end() override;
+
+  void on_task_timeout(MessageLoop::Callback&& callback, uint32_t elapsed_time) override;
 
  private:
   void init_shm_roudi();

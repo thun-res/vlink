@@ -65,6 +65,8 @@ namespace vlink {
 
 [[maybe_unused]] static constexpr size_t kMaxTaskSize{100000U};
 [[maybe_unused]] static constexpr size_t kMaxTaskElapsed{10000U};
+[[maybe_unused]] static constexpr uint32_t kMaxSubMissCount{3U};
+[[maybe_unused]] static constexpr int kTimeoutWarnInterval{10000};
 
 using RawPub = Publisher<Bytes>;
 using RawSub = Subscriber<Bytes>;
@@ -105,6 +107,21 @@ struct ProxyServerGlobal final {
   ProxyServerGlobal() = default;
 };
 
+// ProxyForwardLoop
+class ProxyForwardLoop final : public MessageLoop {
+ protected:
+  size_t get_max_task_count() const override { return kMaxTaskSize; }
+
+  uint32_t get_max_elapsed_time() const override { return kMaxTaskElapsed; }
+
+  void on_task_timeout(MessageLoop::Callback&& callback, uint32_t elapsed_time) override {
+    (void)callback;
+
+    VLOG_W_EVERY_MS(kTimeoutWarnInterval, "ProxyForwardLoop: Task was dropped after ", elapsed_time,
+                    "ms, the forward loop is busy.");
+  }
+};
+
 // ProxyServer::Impl
 struct ProxyServer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding)
   std::atomic<uint32_t> control_id{0};
@@ -142,6 +159,7 @@ struct ProxyServer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
   std::unordered_map<std::string, std::atomic<int64_t>> sub_lat_map;
   std::unordered_map<std::string, ElapsedTimer> sub_elapsed_map;
   std::unordered_map<std::string, std::deque<int64_t>> sub_seq_buffer_map;
+  std::unordered_map<std::string, uint32_t> sub_miss_map;
   std::unordered_map<std::string, std::deque<size_t>> sub_size_buffer_map;
   std::unordered_map<std::string, std::deque<double>> sub_lost_buffer_map;
   std::unordered_map<std::string, std::deque<int64_t>> sub_lat_buffer_map;
@@ -158,6 +176,8 @@ struct ProxyServer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
 
   Timer time_timer;
   Timer info_timer;
+
+  ProxyForwardLoop forward_loop;
 
   Plugin runnable_plugin;
   std::vector<std::shared_ptr<RunablePluginInterface>> runnable_interface_list;
@@ -213,6 +233,9 @@ ProxyServer::~ProxyServer() {
   quit(true);
   wait_for_quit();
 
+  impl_->forward_loop.quit(true);
+  impl_->forward_loop.wait_for_quit();
+
   impl_->runnable_interface_list.clear();
 
   impl_->time_timer.stop();
@@ -243,6 +266,7 @@ ProxyServer::~ProxyServer() {
   impl_->sub_seq_map.clear();
   impl_->sub_size_map.clear();
   impl_->sub_elapsed_map.clear();
+  impl_->sub_miss_map.clear();
   impl_->sub_seq_buffer_map.clear();
   impl_->sub_size_buffer_map.clear();
 
@@ -279,6 +303,15 @@ void ProxyServer::on_end() {
     runnable->on_deinit();
     runnable->quit();
     runnable->wait_for_quit();
+  }
+}
+
+void ProxyServer::on_task_timeout(MessageLoop::Callback&& callback, uint32_t elapsed_time) {
+  VLOG_W_EVERY_MS(kTimeoutWarnInterval, "ProxyServer: Task was delayed for ", elapsed_time,
+                  "ms, the message loop is busy.");
+
+  if VLIKELY (callback) {
+    callback();
   }
 }
 
@@ -474,20 +507,20 @@ void ProxyServer::init_server() {
 
   impl_->time_timer.set_interval(kCollectInterval);
   impl_->time_timer.set_loop_count(Timer::kInfinite);
-  impl_->time_timer.attach(impl_->discovery_viewer.get());
+  impl_->time_timer.attach(this);
   impl_->time_timer.set_callback([this]() { send_time(); });
   impl_->time_timer.start();
 
   impl_->info_timer.set_interval(kCollectInterval);
   impl_->info_timer.set_loop_count(Timer::kInfinite);
-  impl_->info_timer.attach(impl_->discovery_viewer.get());
+  impl_->info_timer.attach(this);
   impl_->info_timer.set_callback([this]() { update_all(); });
   impl_->info_timer.start();
 
   impl_->info_pub->detect_subscribers([this](bool connected) {
     if VUNLIKELY (impl_->mode.load(std::memory_order_relaxed) != ProxyAPI::kOffline && !connected &&
                   !impl_->info_pub->has_subscribers()) {
-      impl_->discovery_viewer->post_task([this]() {
+      post_task([this]() {
         proxy::ControlPacket packet;
         packet.control_id = impl_->control_id.load(std::memory_order_relaxed);
         packet.body.mode = ProxyAPI::kOffline;
@@ -516,7 +549,11 @@ void ProxyServer::init_server() {
 
       if (!impl_->config.direct) {
         if (impl_->config.async) {
-          post_task([this, t_data]() {
+          impl_->forward_loop.post_task([this, t_data]() {
+            if VUNLIKELY (t_data.control_id() != impl_->control_id.load(std::memory_order_relaxed)) {
+              return;
+            }
+
             std::shared_lock lock(impl_->pubs_mtx);
             auto iter = impl_->pub_ptr_map.find(std::string(t_data.url()));
 
@@ -557,8 +594,16 @@ void ProxyServer::init_server() {
     }
 #endif
 
-    impl_->discovery_viewer->post_task([this, packet]() { send_control(&packet); });
+    post_task([this, packet]() { send_control(&packet); });
   });
+
+  if (impl_->config.async) {
+    impl_->forward_loop.set_name("ProxyForward");
+
+    if VUNLIKELY (!impl_->forward_loop.async_run()) {
+      VLOG_E("ProxyServer: Failed to start the forward loop, async forwarding will stall.");
+    }
+  }
 
   impl_->discovery_viewer->async_run();
 }
@@ -701,7 +746,7 @@ void ProxyServer::send_control(const void* control_data) {
     return;
   }
 
-  impl_->discovery_viewer->post_task([this]() { send_time(); });
+  post_task([this]() { send_time(); });
   impl_->time_timer.restart();
 
   {
@@ -721,7 +766,7 @@ void ProxyServer::send_control(const void* control_data) {
     }
 
     if (next_mode == ProxyAPI::kObserveOne && last_mode == ProxyAPI::kObserveOne && !to_update) {
-      impl_->discovery_viewer->post_task([this]() { update_all(); });
+      post_task([this]() { update_all(); });
       impl_->info_timer.restart();
     }
   } else if (next_mode == ProxyAPI::kPlay || next_mode == ProxyAPI::kEdit || next_mode == ProxyAPI::kAuto ||
@@ -787,7 +832,7 @@ void ProxyServer::send_control(const void* control_data) {
     }
 
     impl_->main_elapsed.restart();
-    impl_->discovery_viewer->post_task([this]() { update_all(); });
+    post_task([this]() { update_all(); });
     impl_->info_timer.restart();
   }
 }
@@ -840,6 +885,14 @@ void ProxyServer::update_all() {
 
     for (auto iter = impl_->sub_seq_buffer_map.begin(); iter != impl_->sub_seq_buffer_map.end();) {
       if (current_urls.count(iter->first) == 0) {
+        if (++impl_->sub_miss_map[iter->first] < kMaxSubMissCount) {
+          impl_->sub_seq_map[iter->first].store(0, std::memory_order_relaxed);
+          impl_->sub_size_map[iter->first].store(0, std::memory_order_relaxed);
+          impl_->sub_lat_map[iter->first].store(0, std::memory_order_relaxed);
+          ++iter;
+          continue;
+        }
+
         std::atomic<int64_t>& seq = impl_->sub_seq_map[iter->first];
         std::atomic<size_t>& size = impl_->sub_size_map[iter->first];
         std::atomic<double>& lost = impl_->sub_lost_map[iter->first];
@@ -858,9 +911,11 @@ void ProxyServer::update_all() {
         impl_->sub_lat_buffer_map.erase(iter->first);
 
         impl_->sub_ptr_map.erase(iter->first);
+        impl_->sub_miss_map.erase(iter->first);
 
         iter = impl_->sub_seq_buffer_map.erase(iter);
       } else {
+        impl_->sub_miss_map.erase(iter->first);
         ++iter;
       }
     }
@@ -1189,7 +1244,7 @@ void ProxyServer::update_all() {
 
               auto forward_task = [this, t_data = std::move(t_data)]() { impl_->data_pub->publish(t_data, true); };
 
-              if VUNLIKELY (!post_task(std::move(forward_task))) {
+              if VUNLIKELY (!impl_->forward_loop.post_task(std::move(forward_task))) {
                 VLOG_E("ProxyServer: Failed to post async forwarding task.");
                 return;
               }
