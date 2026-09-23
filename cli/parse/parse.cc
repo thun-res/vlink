@@ -1222,7 +1222,8 @@ int main(int argc, char* argv[]) {
       "Versatile data extraction and export tool for VLink topics.\n"
       "Modes: parse/export a topic, or slice/scan a bag.\n"
       "Note: You may need to add multicast/broadcast [" +
-      vlink::DiscoveryViewer::get_listen_address() + "]");
+      vlink::DiscoveryViewer::get_listen_address() + ":" + std::to_string(vlink::DiscoveryViewer::get_listen_port()) +
+      "]");
 
   program.add_argument("url")
       .help("Target topic URL; optional for slice/scan, defaults to '*'")

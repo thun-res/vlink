@@ -48,7 +48,8 @@ int main(int argc, char* argv[]) {
   argparse::ArgumentParser program("vlink-monitor", VLINK_VERSION, argparse::default_arguments::all);
 
   program.add_description("Note: You may need to add multicast/broadcast [" +
-                          vlink::DiscoveryViewer::get_listen_address() + "]");
+                          vlink::DiscoveryViewer::get_listen_address() + ":" +
+                          std::to_string(vlink::DiscoveryViewer::get_listen_port()) + "]");
 
   program.add_argument("-u", "--urls")
       .help("Bind urls")

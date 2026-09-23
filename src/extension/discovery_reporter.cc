@@ -37,6 +37,7 @@
 #include "./base/helpers.h"
 #include "./base/logger.h"
 #include "./base/utils.h"
+#include "./extension/discovery_viewer.h"
 #include "./impl/node_impl.h"
 #include "./impl/types.h"
 #include "./version.h"
@@ -71,7 +72,6 @@ static constexpr SocketHandle kInvalidSocket = -1;
 [[maybe_unused]] static constexpr int kReportInterval = 500;
 [[maybe_unused]] static constexpr size_t kMaxTaskSize = 10000U;
 [[maybe_unused]] static constexpr uint32_t kMaxElapsedTime = 1000;
-[[maybe_unused]] static constexpr int kBroadcastSendPort = 51694;
 [[maybe_unused]] static constexpr int kInterfaceWarnInterval = 60000;
 [[maybe_unused]] static constexpr int kSendTTL = 3;
 [[maybe_unused]] static constexpr int kMaxMtuSize = 1450;
@@ -202,11 +202,13 @@ DiscoveryReporter::DiscoveryReporter() : impl_(std::make_unique<Impl>()) {
   }
 #endif
 
+  DiscoveryViewer::warn_listen_domain();
+
   std::memset(&impl_->address, 0, sizeof(impl_->address));
 
   impl_->address.sin_family = AF_INET;
   impl_->address.sin_addr.s_addr = inet_addr(kBroadcastAddress);
-  impl_->address.sin_port = htons(kBroadcastSendPort);
+  impl_->address.sin_port = htons(DiscoveryViewer::get_listen_port());
 
   impl_->timer.set_interval(kReportFirstInterval);
   impl_->timer.set_loop_count(Timer::kInfinite);

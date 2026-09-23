@@ -45,6 +45,15 @@ TEST_SUITE("extension-DiscoveryViewer") {
     CHECK_FALSE(DiscoveryViewer::get_listen_address().empty());
   }
 
+  TEST_CASE("get_listen_domain stays within the supported range") {
+    CHECK_LE(DiscoveryViewer::get_listen_domain(), 255u);
+  }
+
+  TEST_CASE("get_listen_port is shifted by the discovery domain") {
+    CHECK_EQ(DiscoveryViewer::get_listen_port(),
+             static_cast<uint16_t>(51694 + static_cast<int>(DiscoveryViewer::get_listen_domain())));
+  }
+
   TEST_CASE("convert_type maps all known role tokens") {
     CHECK_EQ(DiscoveryViewer::convert_type("Ser"), kServer);
     CHECK_EQ(DiscoveryViewer::convert_type("Cli"), kClient);

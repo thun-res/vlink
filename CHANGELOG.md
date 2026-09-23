@@ -10,6 +10,7 @@
 - **Bag 分包轮转**：`BagWriter::Config` 与 `vlink-bag record` 新增 `max_split_count`，超限时删除最旧分包。
 - **DDS 非阻塞发送**：新增 `VLINK_DDS_NOBLOCK` 与节点属性 `dds.noblock`，支持发送缓冲区满时丢包而不阻塞。
 - **发现多网卡**：新增 `VLINK_DISCOVER_IP`，DiscoveryReporter 逐地址发送、DiscoveryViewer 逐地址加入发现组播；未设置时收发仍按系统路由走。
+- **发现域隔离**：新增 `VLINK_DISCOVER_DOMAIN`（0–255，默认 0），发现端口取 `51694 + domain`。
 - **日志 PID 隔离**：新增 `VLINK_LOG_PID_DIR`，置 `1` 时默认日志目录追加 `<PID>` 子目录，同名多实例不再共享轮转文件集；默认关闭，目录布局与旧版本一致。
 
 ### 改进

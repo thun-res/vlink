@@ -193,9 +193,32 @@ class VLINK_EXPORT DiscoveryViewer : public MessageLoop {
   [[nodiscard]] static std::string convert_type_to_view(uint32_t type, const std::vector<Process>& process_list);
 
   /**
+   * @brief Returns the discovery domain selected by @c VLINK_DISCOVER_DOMAIN.
+   *
+   * @details
+   * The domain isolates the discovery channel so that unrelated deployments sharing one
+   * network never parse each other's announcements.  It shifts the UDP port only; the
+   * multicast address and its route stay unchanged.  Values that are not a plain decimal
+   * number or fall outside @c [0,255] are rejected and fall back to @c 0, which keeps the
+   * historical port; the @c DiscoveryViewer and @c DiscoveryReporter constructors log the
+   * rejection once.  The variable is read once per process, so changing it at runtime has
+   * no effect.
+   *
+   * @return Discovery domain.
+   */
+  [[nodiscard]] static uint32_t get_listen_domain();
+
+  /**
    * @brief Returns the UDP multicast/broadcast address used by the discovery subsystem.
    */
   [[nodiscard]] static std::string get_listen_address();
+
+  /**
+   * @brief Returns the UDP port used by the discovery subsystem.
+   *
+   * @return Base port shifted by @c get_listen_domain().
+   */
+  [[nodiscard]] static uint16_t get_listen_port();
 
   /**
    * @brief Builds the viewer with the requested filter mode.
@@ -253,6 +276,8 @@ class VLINK_EXPORT DiscoveryViewer : public MessageLoop {
   void on_end() override;
 
  private:
+  static void warn_listen_domain();
+
   void process_timeout();
 
   void process_offline(std::string_view hostname, uint32_t pid, std::string_view process_name);
@@ -263,6 +288,8 @@ class VLINK_EXPORT DiscoveryViewer : public MessageLoop {
 
   struct Impl;
   std::unique_ptr<Impl> impl_;
+
+  friend class DiscoveryReporter;
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(DiscoveryViewer)
 };

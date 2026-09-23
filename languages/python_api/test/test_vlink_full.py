@@ -1985,6 +1985,12 @@ def test_discovery_viewer_fields():
     addr = _vlink.DiscoveryViewer.get_listen_address()
     assert isinstance(addr, str)
 
+    # Test get_listen_domain / get_listen_port
+    domain = _vlink.DiscoveryViewer.get_listen_domain()
+    assert isinstance(domain, int)
+    assert 0 <= domain <= 255
+    assert _vlink.DiscoveryViewer.get_listen_port() == 51694 + domain
+
     print("[PASS] DiscoveryViewer fields")
 
 
@@ -2020,6 +2026,34 @@ assert not viewer.is_running()
         [sys.executable, "-c", code], env=env, check=True, capture_output=True, text=True, timeout=15.0,
     )
     print("[PASS] DiscoveryViewer lifecycle")
+
+
+def test_discovery_domain_shifts_listen_port():
+    """VLINK_DISCOVER_DOMAIN shifts the listen port and falls back to 0 when invalid."""
+    code = r'''
+import sys
+import vlink
+
+expected = int(sys.argv[1])
+assert vlink.DiscoveryViewer.get_listen_domain() == expected, vlink.DiscoveryViewer.get_listen_domain()
+assert vlink.DiscoveryViewer.get_listen_port() == 51694 + expected, vlink.DiscoveryViewer.get_listen_port()
+assert vlink.DiscoveryViewer.get_listen_address() == "239.255.0.100"
+'''
+    cases = [("7", 7), ("0", 0), ("255", 255), ("256", 0), ("-1", 0), ("abc", 0), ("1 ", 0), ("", 0)]
+
+    for value, expected in cases:
+        env = dict(os.environ, VLINK_DISCOVER_DOMAIN=value, VLINK_DISCOVER_DISABLE="1")
+        try:
+            subprocess.run(
+                [sys.executable, "-c", code, str(expected)], env=env, check=True,
+                capture_output=True, text=True, timeout=15.0,
+            )
+        except subprocess.CalledProcessError as error:
+            raise AssertionError(
+                f"VLINK_DISCOVER_DOMAIN={value!r} expected domain {expected}: {error.stderr}"
+            ) from error
+
+    print("[PASS] DiscoveryViewer domain port shift")
 
 
 def test_plugin_host_binding_contract():
@@ -2422,6 +2456,7 @@ if __name__ == "__main__":
     test_timer_constructors()
     test_discovery_viewer_fields()
     test_discovery_viewer_lifecycle()
+    test_discovery_domain_shifts_listen_port()
     test_plugin_host_binding_contract()
     test_trigger_recorder_lifecycle()
     test_utils_terminal()

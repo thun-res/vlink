@@ -79,14 +79,20 @@ static constexpr SocketHandle kInvalidSocket = -1;
 [[maybe_unused]] static constexpr int kReportTimeout = kReportInterval * 4;
 [[maybe_unused]] static constexpr size_t kMaxTaskSize = 50000U;
 [[maybe_unused]] static constexpr uint32_t kMaxElapsedTime = 1000;
-[[maybe_unused]] static constexpr int kBroadcastBindPort = 51694;
+[[maybe_unused]] static constexpr int kBroadcastBasePort = 51694;
 [[maybe_unused]] static constexpr size_t kBufferSize = 1024 * 1024U;
+[[maybe_unused]] static constexpr uint32_t kMaxDiscoveryDomain = 255U;
 
 #if VLINK_DISCOVERY_MULTICAST
 [[maybe_unused]] static constexpr const char* kBroadcastAddress = "239.255.0.100";
 #else
 [[maybe_unused]] static constexpr const char* kBroadcastAddress = "255.255.255.255";
 #endif
+
+static std::string& get_invalid_listen_domain() {
+  static std::string invalid_domain;
+  return invalid_domain;
+}
 
 [[maybe_unused]] static std::string node_count_to_string(size_t node_count) {
   if (node_count > 9) {
@@ -451,7 +457,32 @@ std::string DiscoveryViewer::convert_type_to_view(uint32_t type, const std::vect
   }
 }
 
+uint32_t DiscoveryViewer::get_listen_domain() {
+  static uint32_t domain = []() -> uint32_t {
+    const std::string domain_str = Utils::get_env("VLINK_DISCOVER_DOMAIN");
+
+    if (domain_str.empty()) {
+      return 0U;
+    }
+
+    uint32_t value = 0U;
+
+    auto [ptr, error] = std::from_chars(domain_str.data(), domain_str.data() + domain_str.size(), value);
+
+    if VUNLIKELY (error != std::errc() || ptr != domain_str.data() + domain_str.size() || value > kMaxDiscoveryDomain) {
+      get_invalid_listen_domain() = domain_str;
+      return 0U;
+    }
+
+    return value;
+  }();
+
+  return domain;
+}
+
 std::string DiscoveryViewer::get_listen_address() { return kBroadcastAddress; }
+
+uint16_t DiscoveryViewer::get_listen_port() { return static_cast<uint16_t>(kBroadcastBasePort + get_listen_domain()); }
 
 DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>()) {
   set_name("DiscoveryViewer");
@@ -533,9 +564,11 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
   }
 #endif
 
+  warn_listen_domain();
+
   std::memset(&impl_->address, 0, sizeof(impl_->address));
   impl_->address.sin_family = AF_INET;
-  impl_->address.sin_port = htons(kBroadcastBindPort);
+  impl_->address.sin_port = htons(get_listen_port());
   impl_->address.sin_addr.s_addr = htonl(INADDR_ANY);
 
   if VUNLIKELY (::bind(impl_->sock, reinterpret_cast<sockaddr*>(&impl_->address), sizeof(impl_->address)) < 0) {
@@ -937,6 +970,22 @@ uint32_t DiscoveryViewer::get_max_elapsed_time() const { return kMaxElapsedTime;
 void DiscoveryViewer::on_begin() { MessageLoop::on_begin(); }
 
 void DiscoveryViewer::on_end() { MessageLoop::on_end(); }
+
+void DiscoveryViewer::warn_listen_domain() {
+  static const bool warned = []() {
+    (void)get_listen_domain();
+
+    const std::string& invalid_domain = get_invalid_listen_domain();
+
+    if VUNLIKELY (!invalid_domain.empty()) {
+      VLOG_W("DiscoveryViewer: Invalid VLINK_DISCOVER_DOMAIN [", invalid_domain, "], fallback to 0.");
+    }
+
+    return true;
+  }();
+
+  (void)warned;
+}
 
 void DiscoveryViewer::process_timeout() {
   std::vector<DiscoveryViewer::Info> erase_list;

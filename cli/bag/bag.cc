@@ -111,7 +111,8 @@ int main(int argc, char* argv[]) {
   argparse::ArgumentParser program("vlink-bag", VLINK_VERSION, argparse::default_arguments::all);
 
   program.add_description("Note: You may need to add multicast/broadcast [" +
-                          vlink::DiscoveryViewer::get_listen_address() + "]");
+                          vlink::DiscoveryViewer::get_listen_address() + ":" +
+                          std::to_string(vlink::DiscoveryViewer::get_listen_port()) + "]");
 
   // info command
   argparse::ArgumentParser info_command("info", VLINK_VERSION, argparse::default_arguments::help);

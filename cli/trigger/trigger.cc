@@ -33,7 +33,8 @@ int main(int argc, char* argv[]) {
 
   argparse::ArgumentParser program("vlink-trigger", VLINK_VERSION, argparse::default_arguments::all);
   program.add_description("VLink in-memory trigger recorder (event data recorder). Note: multicast/broadcast [" +
-                          vlink::DiscoveryViewer::get_listen_address() + "] may be required.");
+                          vlink::DiscoveryViewer::get_listen_address() + ":" +
+                          std::to_string(vlink::DiscoveryViewer::get_listen_port()) + "] may be required.");
 
   argparse::ArgumentParser daemon_command("daemon", VLINK_VERSION, argparse::default_arguments::help);
   daemon_command.add_argument("-c", "--config").help("Optional config json path").default_value(std::string());

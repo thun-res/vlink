@@ -337,6 +337,29 @@ void check_discover_ip(DiagContext& ctx) {
   }
 }
 
+void check_discover_domain(DiagContext& ctx) {
+  const uint32_t domain = vlink::DiscoveryViewer::get_listen_domain();
+  const std::string channel =
+      vlink::DiscoveryViewer::get_listen_address() + ":" + std::to_string(vlink::DiscoveryViewer::get_listen_port());
+  const auto value = vlink::Utils::get_env("VLINK_DISCOVER_DOMAIN");
+
+  if (value.empty()) {
+    end_diag(ctx, DiagType::kPass, "Domain 0 (default) on " + channel);
+    return;
+  }
+
+  uint32_t parsed = 0;
+  auto [ptr, error] = std::from_chars(value.data(), value.data() + value.size(), parsed);
+
+  if VUNLIKELY (error != std::errc() || ptr != value.data() + value.size() || parsed != domain) {
+    end_diag(ctx, DiagType::kFailed,
+             "VLINK_DISCOVER_DOMAIN=" + value + " is invalid, fallback to domain 0 on " + channel);
+    return;
+  }
+
+  end_diag(ctx, DiagType::kPass, "Domain " + std::to_string(domain) + " on " + channel);
+}
+
 void check_log_dir_space(DiagContext& ctx) {
   std::string log_dir = vlink::Utils::get_env("VLINK_LOG_DIR");
 
@@ -950,6 +973,7 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
   run_check(ctx, "* Check VLink DDS interface MTU...", 100, [&ctx]() { check_interface_mtu(ctx); });
 #endif
 
+  run_check(ctx, "* Check VLink discover domain...", 50, [&ctx]() { check_discover_domain(ctx); });
   run_check(ctx, "* Check VLink discover IP available...", 100, [&ctx]() { check_discover_ip(ctx); });
   run_check(ctx, "* Check VLink multicast address...", 100,
             [&ctx]() { check_multicast_address(ctx, kMulticastDiscovery, true); });

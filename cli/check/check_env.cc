@@ -113,6 +113,10 @@ int check_env(bool available_case, const std::string& prefix) {
        "Comma or space separated local IPv4 addresses used for discovery multicast: the reporter sends once per "
        "address and the viewer joins the group on each. Empty sends and joins through the system route.",
        false},
+      {"VLINK_DISCOVER_DOMAIN", "",
+       "Discovery domain (0 to 255, default 0) isolating the discovery channel: the UDP port becomes 51694 plus the "
+       "domain while the multicast address and its route stay unchanged. Must match on every process.",
+       false},
       {"VLINK_PROFILER_ENABLE", "",
        "Toggles the built-in CpuProfiler (1=enable, 0=disable). Default depends on the compile-time macro "
        "VLINK_PROFILER_DEFAULT_STATE (0 in upstream).",

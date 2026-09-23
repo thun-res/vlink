@@ -95,7 +95,9 @@ void bind_discovery(nb::module_& m) {
       .def("get_schema_type", &vlink::DiscoveryViewer::get_schema_type, "url"_a)
       .def_static(
           "convert_type", [](const std::string& type) { return vlink::DiscoveryViewer::convert_type(type); }, "type"_a)
+      .def_static("get_listen_domain", &vlink::DiscoveryViewer::get_listen_domain)
       .def_static("get_listen_address", &vlink::DiscoveryViewer::get_listen_address)
+      .def_static("get_listen_port", &vlink::DiscoveryViewer::get_listen_port)
       .def_static("convert_type_to_view", nb::overload_cast<uint32_t>(&vlink::DiscoveryViewer::convert_type_to_view),
                   "type"_a)
       .def_static("convert_type_to_view",

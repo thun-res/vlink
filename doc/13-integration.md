@@ -1053,6 +1053,7 @@ export VLINK_LOG_DIR=/var/log/vlink
 | `VLINK_DISCOVER_DISABLE` | `1`/`0` | `0` | `=1` 关闭节点发现，减少 UDP 广播开销 |
 | `VLINK_DISCOVER_NATIVE` | `1`/`0` | `0` | `=1` 仅发现本机节点，组播绑定到 `127.0.0.1` |
 | `VLINK_DISCOVER_IP` | IP 列表 | 空 | 发现组播使用的本机 IPv4 地址列表（逗号或空格分隔）：Reporter 逐地址发送、Viewer 逐地址加组；空值时 Reporter 与 Viewer 都按系统路由走；同时是 `VLINK_DDS_IP` 的缺省值，只限制发现请用 `VLINK_DISCOVER_NATIVE=1` |
+| `VLINK_DISCOVER_DOMAIN` | `0`–`255` | `0` | 发现域：UDP 端口取 `51694 + domain` 以隔离发现通道，组播地址与路由不变；须在所有进程上设为同一值；非十进制数字或超出 `[0,255]` 的值会告警并回落到 `0`；该值在进程内读取一次，此后修改无效 |
 | `VLINK_PROFILER_ENABLE` | `1`/`0` | `0` | `=1` 启用内置 CPU 性能分析 |
 
 ### 🛰️ 13.23 DDS 传输

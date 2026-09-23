@@ -66,8 +66,9 @@
  * transport backend (intra/shm/dds/zenoh/...).  Set @c VLINK_DISCOVER_DISABLE=1 to
  * disable the runtime-owned reporter for a given process.  Each report is multicast once
  * through the interface chosen by the system route; @c VLINK_DISCOVER_IP (comma or space
- * separated addresses) sends one report per listed address and
- * @c VLINK_DISCOVER_NATIVE=1 limits it to loopback.
+ * separated addresses) sends one report per listed address,
+ * @c VLINK_DISCOVER_NATIVE=1 limits it to loopback and @c VLINK_DISCOVER_DOMAIN shifts the
+ * discovery port to isolate the channel.
  */
 
 #pragma once

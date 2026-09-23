@@ -26,6 +26,7 @@
 #include <vlink/base/helpers.h>
 #include <vlink/base/message_loop.h>
 #include <vlink/base/utils.h>
+#include <vlink/extension/discovery_viewer.h>
 #include <vlink/version.h>
 #include <vlink/vlink.h>
 #ifdef VLINK_SUPPORT_SHM
@@ -38,6 +39,7 @@
 #include <array>
 #include <atomic>
 #include <cctype>
+#include <charconv>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
