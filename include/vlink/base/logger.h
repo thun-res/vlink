@@ -205,10 +205,12 @@ class VLINK_EXPORT Logger final {
    *
    * @details
    * Invoked synchronously from the logging thread, or the backend worker during backtrace replay.
-   * The view is valid only for the call.  Handlers may replace or unregister themselves and must
-   * support concurrent invocation.  Calls in progress retain ownership after unregistration returns.
-   * Exceptions are reported to standard error and do not escape the logging boundary.  Nested
-   * ordinary logging on the same thread is suppressed before arguments are evaluated; Fatal still throws.
+   * The view is valid only for the call.  Handlers must support concurrent invocation.  A handler
+   * may replace or unregister itself; such a registration takes effect once that handler returns,
+   * while registrations from other threads wait for handlers in progress and release the
+   * previous handler afterwards.  Exceptions are reported to standard error and do not escape
+   * the logging boundary.  Nested ordinary logging on the same thread is suppressed before
+   * arguments are evaluated; Fatal still throws.
    */
   using Callback = MoveFunction<void(Level, std::string_view)>;
 

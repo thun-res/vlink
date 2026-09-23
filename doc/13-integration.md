@@ -345,7 +345,7 @@ vlink 为 Python 提供两条路径，**首选原生绑定**：
   - `MessageLoop` 的投递接口在等待队列容量时释放 GIL，使 `Block` 策略下的 Python 消费回调可以继续执行。
   - `ProxyData.raw()` 返回浅 `Bytes`；该对象及由它派生的 `memoryview`、借用消息仍存活时，父对象的 `clear()`、`create()`、`from_bytes()` 抛出 `BufferError`。释放这些视图后才能替换父存储。
   - `PointCloud.deep_copy(source)`、`ObjectArray.deep_copy(source)` 显式复制元数据与载荷，非空结果拥有独立存储；空结果保留元数据但不借用源指针。自复制返回 `False`。点云逐点改写前仍需按原生契约调用 `resize(size())`。
-  - `Logger.register_console_handler(None)`、`register_file_handler(None)` 释放 Python 回调并恢复对应默认输出；并发注册与清除按安装顺序串行执行，旧回调在释放注册锁后销毁。允许从日志回调内部替换或清除 handler；已经开始的回调可在注销返回后完成。
+  - `Logger.register_console_handler(None)`、`register_file_handler(None)` 释放 Python 回调并恢复对应默认输出；并发注册与清除按安装顺序串行执行，旧回调在释放注册锁后销毁。允许从日志回调内部替换或清除 handler，该注册在本次回调返回后生效。
   - `BagReader`、`BagWriter` 均提供 `bind_bag_interface(plugin)` 和 `clear_bag_interface()`，接收 `Plugin.load_bag_plugin()` 返回的接口并持有共享所有权。替换或解绑会排空旧插件，须在读写停止后执行；从该对象的 Python 回调内部调用会抛出 `RuntimeError`。
 
 - **ctypes-over-C-API（轻量替代）**：当不便编译原生绑定时，可直接用 `ctypes` 调用 C API 共享库，无需额外构建步骤，但需手写与 `vlink_schema_info_t`、句柄结构体匹配的 ABI 布局并自行管理生命周期：

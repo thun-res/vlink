@@ -178,6 +178,11 @@ static bool& is_logging_on_current_thread() noexcept {
   return is_logging;
 }
 
+static bool& is_in_handler_on_current_thread() noexcept {
+  static thread_local bool is_in_handler{false};
+  return is_in_handler;
+}
+
 static thread_local bool logger_stream_retired = false;
 
 struct LoggerStreamState final {
@@ -257,9 +262,14 @@ struct LoggerGlobal final {  // NOLINT(clang-analyzer-optin.performance.Padding)
   std::mutex level_mtx;
   std::atomic_bool has_console_callback{false};
   std::atomic_bool has_file_callback{false};
-  std::shared_ptr<Logger::Callback> console_callback;
-  std::shared_ptr<Logger::Callback> file_callback;
+  Logger::Callback console_callback;
+  Logger::Callback file_callback;
   mutable std::shared_mutex callback_mtx;
+  std::atomic_bool has_pending_console_callback{false};
+  std::atomic_bool has_pending_file_callback{false};
+  Logger::Callback pending_console_callback;
+  Logger::Callback pending_file_callback;
+  std::mutex pending_mtx;
   std::atomic<std::ios_base::fmtflags> stream_flags{std::ios_base::dec | std::ios_base::skipws};
   std::atomic<int> stream_precision{6};
   std::atomic<int> stream_width{0};
@@ -275,6 +285,75 @@ struct LoggerGlobal final {  // NOLINT(clang-analyzer-optin.performance.Padding)
     get_print_mtx();
   }
 };
+
+static void install_console_handler(Logger::Callback&& callback) noexcept {
+  auto& global_instance = LoggerGlobal::get();
+  Logger::Callback retired;
+
+  {
+    std::unique_lock lock(global_instance.callback_mtx);
+
+    retired = std::move(global_instance.console_callback);
+    global_instance.console_callback = std::move(callback);
+    global_instance.has_console_callback.store(static_cast<bool>(global_instance.console_callback),
+                                               std::memory_order_release);
+  }
+}
+
+static void install_file_handler(Logger::Callback&& callback) noexcept {
+  auto& global_instance = LoggerGlobal::get();
+  Logger::Callback retired;
+
+  {
+    std::unique_lock lock(global_instance.callback_mtx);
+
+    retired = std::move(global_instance.file_callback);
+    global_instance.file_callback = std::move(callback);
+    global_instance.has_file_callback.store(static_cast<bool>(global_instance.file_callback),
+                                            std::memory_order_release);
+  }
+}
+
+static void install_pending_handlers() noexcept {
+  auto& global_instance = LoggerGlobal::get();
+
+  if VLIKELY (!global_instance.has_pending_console_callback.load(std::memory_order_acquire) &&
+              !global_instance.has_pending_file_callback.load(std::memory_order_acquire)) {
+    return;
+  }
+
+  if VUNLIKELY (is_in_handler_on_current_thread()) {
+    return;
+  }
+
+  Logger::Callback console_callback;
+  Logger::Callback file_callback;
+  bool install_console = false;
+  bool install_file = false;
+
+  {
+    std::lock_guard lock(global_instance.pending_mtx);
+
+    install_console = global_instance.has_pending_console_callback.exchange(false, std::memory_order_acq_rel);
+    install_file = global_instance.has_pending_file_callback.exchange(false, std::memory_order_acq_rel);
+
+    if (install_console) {
+      console_callback = std::move(global_instance.pending_console_callback);
+    }
+
+    if (install_file) {
+      file_callback = std::move(global_instance.pending_file_callback);
+    }
+  }
+
+  if (install_console) {
+    install_console_handler(std::move(console_callback));
+  }
+
+  if (install_file) {
+    install_file_handler(std::move(file_callback));
+  }
+}
 
 // Logger::Impl
 struct Logger::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding)
@@ -421,27 +500,31 @@ void Logger::flush() noexcept {
 void Logger::register_console_handler(Callback&& callback) noexcept {
   auto& global_instance = LoggerGlobal::get();
 
-  auto replacement = callback ? std::make_shared<Callback>(std::move(callback)) : nullptr;
+  if VUNLIKELY (is_in_handler_on_current_thread()) {
+    std::lock_guard lock(global_instance.pending_mtx);
 
-  {
-    std::unique_lock lock(global_instance.callback_mtx);
-    global_instance.console_callback.swap(replacement);
-    global_instance.has_console_callback.store(static_cast<bool>(global_instance.console_callback),
-                                               std::memory_order_release);
+    global_instance.pending_console_callback = std::move(callback);
+    global_instance.has_pending_console_callback.store(true, std::memory_order_release);
+
+    return;
   }
+
+  install_console_handler(std::move(callback));
 }
 
 void Logger::register_file_handler(Callback&& callback) noexcept {
   auto& global_instance = LoggerGlobal::get();
 
-  auto replacement = callback ? std::make_shared<Callback>(std::move(callback)) : nullptr;
+  if VUNLIKELY (is_in_handler_on_current_thread()) {
+    std::lock_guard lock(global_instance.pending_mtx);
 
-  {
-    std::unique_lock lock(global_instance.callback_mtx);
-    global_instance.file_callback.swap(replacement);
-    global_instance.has_file_callback.store(static_cast<bool>(global_instance.file_callback),
-                                            std::memory_order_release);
+    global_instance.pending_file_callback = std::move(callback);
+    global_instance.has_pending_file_callback.store(true, std::memory_order_release);
+
+    return;
   }
+
+  install_file_handler(std::move(callback));
 }
 
 void Logger::set_console_level(Level level) noexcept {
@@ -1007,28 +1090,30 @@ void Logger::write_to_console(Level level, std::string_view log, bool formatted)
   static auto& global_instance = LoggerGlobal::get();
 
   if VUNLIKELY (global_instance.has_console_callback.load(std::memory_order_acquire)) {
-    std::shared_ptr<Callback> callback;
+    std::shared_lock callback_lock(global_instance.callback_mtx);
 
-    {
-      std::shared_lock callback_lock(global_instance.callback_mtx);
-      callback = global_instance.console_callback;
-    }
-
-    if (callback) {
+    if (global_instance.console_callback) {
       auto& is_logging = is_logging_on_current_thread();
+      auto& is_in_handler = is_in_handler_on_current_thread();
       const bool was_logging = is_logging;
+      const bool was_in_handler = is_in_handler;
 
       is_logging = true;
+      is_in_handler = true;
 
       try {
-        (*callback)(level, log);
+        global_instance.console_callback(level, log);
       } catch (const std::exception& error) {
         std::cerr << "VLink console logger handler failed: " << error.what() << std::endl;
       } catch (...) {                                                     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         std::cerr << "VLink console logger handler failed" << std::endl;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
 
+      is_in_handler = was_in_handler;
       is_logging = was_logging;
+
+      callback_lock.unlock();
+      install_pending_handlers();
 
       return;
     }
@@ -1100,28 +1185,30 @@ void Logger::write_to_file(Level level, std::string_view log) noexcept {
   static auto& global_instance = LoggerGlobal::get();
 
   if VUNLIKELY (global_instance.has_file_callback.load(std::memory_order_acquire)) {
-    std::shared_ptr<Callback> callback;
+    std::shared_lock callback_lock(global_instance.callback_mtx);
 
-    {
-      std::shared_lock callback_lock(global_instance.callback_mtx);
-      callback = global_instance.file_callback;
-    }
-
-    if (callback) {
+    if (global_instance.file_callback) {
       auto& is_logging = is_logging_on_current_thread();
+      auto& is_in_handler = is_in_handler_on_current_thread();
       const bool was_logging = is_logging;
+      const bool was_in_handler = is_in_handler;
 
       is_logging = true;
+      is_in_handler = true;
 
       try {
-        (*callback)(level, log);
+        global_instance.file_callback(level, log);
       } catch (const std::exception& error) {
         std::cerr << "VLink file logger handler failed: " << error.what() << std::endl;
       } catch (...) {                                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         std::cerr << "VLink file logger handler failed" << std::endl;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
 
+      is_in_handler = was_in_handler;
       is_logging = was_logging;
+
+      callback_lock.unlock();
+      install_pending_handlers();
 
       return;
     }
