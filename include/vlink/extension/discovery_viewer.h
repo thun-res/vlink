@@ -86,8 +86,8 @@ namespace vlink {
  * @details
  * Construct with the desired filter and start with @c async_run().  Each viewer is
  * explicitly owned by the caller; no process-global viewer is exposed.  The viewer
- * continuously rebuilds an @c Info list and notifies the registered callback every time
- * the topology changes.
+ * rebuilds its @c Info list on demand and notifies the registered callback on its 500 ms
+ * tick whenever the snapshot changed since the previous notification.
  */
 class VLINK_EXPORT DiscoveryViewer : public MessageLoop {
  public:
@@ -160,10 +160,12 @@ class VLINK_EXPORT DiscoveryViewer : public MessageLoop {
   };
 
   /**
-   * @brief Callback signature delivered whenever the snapshot changes.
+   * @brief Callback signature delivered when the snapshot changed since the last tick.
    *
    * @details
-   * Invoked on the viewer's @c MessageLoop thread with the freshly built list.
+   * Invoked on the viewer's @c MessageLoop thread with the freshly built list; changes are
+   * coalesced per 500 ms tick, and a newly registered callback receives its first list on the
+   * next tick.
    */
   using Callback = Function<void(const std::vector<Info>& info_list)>;
 
@@ -275,6 +277,8 @@ class VLINK_EXPORT DiscoveryViewer : public MessageLoop {
 
   void on_end() override;
 
+  void on_task_timeout(MessageLoop::Callback&& callback, uint32_t elapsed_time) override;
+
  private:
   static void warn_listen_domain();
 
@@ -282,7 +286,9 @@ class VLINK_EXPORT DiscoveryViewer : public MessageLoop {
 
   void process_offline(std::string_view hostname, uint32_t pid, std::string_view process_name);
 
-  void sort_url();
+  void sort_url() const;
+
+  void refresh_list() const;
 
   void report_list();
 
