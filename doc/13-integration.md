@@ -1015,10 +1015,10 @@ CMake 在桌面/Linux 默认启用自研后端，在 Android/QNX 默认关闭；
 | `VLINK_LOG_CONSOLE_LEVEL` | 数字或英文名称 | 控制台级别，覆盖全局 |
 | `VLINK_LOG_FILE_LEVEL` | 数字或英文名称 | 文件与自定义日志插件级别，覆盖全局；`Off` 不加载插件 |
 | `VLINK_LOG_DIR` | 目录路径 | 默认日志根目录，其下按 `<应用名>` 分目录 |
-| `VLINK_LOG_PID_DIR` | `1`/`0` | `=1` 在应用名目录下再按 `<PID>` 隔离，供同名多实例并存 |
+| `VLINK_LOG_PID_ENABLE` | `1`/`0` | `=1` 在应用名目录下再按 `<PID>` 隔离，供同名多实例并存 |
 | `VLINK_LOG_CONSOLE_UNORDER` | `1`/`0` | 非同步控制台输出，吞吐更高 |
 | `VLINK_LOG_CONSOLE_FMT` | `1`/`0` | 启用扩展控制台格式 |
-| `VLINK_LOG_ENABLE_UTC` | `1`/`0` | 使用 UTC 时间戳 |
+| `VLINK_LOG_UTC_ENABLE` | `1`/`0` | 使用 UTC 时间戳 |
 | `VLINK_LOG_MAX_SIZE` | 数字 | 单文件最大字节数，超过后轮转（默认 10 MiB） |
 | `VLINK_LOG_MAX_COUNT` | 数字 | 时间戳策略文件保留目标（1..10000）；固定文件名策略备份数（0..200000，另有一个活动文件） |
 | `VLINK_LOG_FLUSH_DELAY` | 数字 | 异步 Sink 刷新间隔，毫秒（默认 500）；后端细节见下文 |
@@ -1037,7 +1037,7 @@ Error/Fatal 始终受保护并等待容量。设为 `1` 时生产线程等待队
 周期任务与文件写入在同一 `MessageLoop` 串行执行。设为 `0` 时每条记录都触发
 flush。
 
-自研后端的轮转文件集按单写入者设计。同名多实例并存时设置 `VLINK_LOG_PID_DIR=1`
+自研后端的轮转文件集按单写入者设计。同名多实例并存时设置 `VLINK_LOG_PID_ENABLE=1`
 按 PID 隔离默认目录；显式指定路径或直接使用 `LoggerBackend` 时，多个活动实例须独占不同的文件集。flush 不承诺断电持久性；需要
 系统级持久化或多进程汇聚时，应使用专用日志服务。
 

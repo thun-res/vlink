@@ -748,8 +748,8 @@ Logger::Logger() noexcept {
     std::string enable_console_unorder = Utils::get_env("VLINK_LOG_CONSOLE_UNORDER");
     global_instance.console_in_order.store(enable_console_unorder != "1", std::memory_order_release);
 
-    std::string enable_utc_str = Utils::get_env("VLINK_LOG_ENABLE_UTC");
-    global_instance.utc_enable.store(enable_utc_str == "1", std::memory_order_release);
+    std::string utc_enable_str = Utils::get_env("VLINK_LOG_UTC_ENABLE");
+    global_instance.utc_enable.store(utc_enable_str == "1", std::memory_order_release);
 
     if (global_instance.app_name.empty()) {
       global_instance.app_name = Utils::get_app_name();
@@ -944,11 +944,11 @@ void Logger::initialize_file_channel() noexcept {
       log_dir = Utils::get_tmp_dir();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
-    std::string log_pid_dir = Utils::get_env("VLINK_LOG_PID_DIR");
+    std::string log_pid_enable = Utils::get_env("VLINK_LOG_PID_ENABLE");
 
     global_instance.log_path = log_dir + "/" + global_instance.app_name;
 
-    if (log_pid_dir == "1") {
+    if (log_pid_enable == "1") {
       global_instance.log_path += "/" + Utils::get_pid_str();
     }
   }

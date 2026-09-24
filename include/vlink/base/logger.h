@@ -238,7 +238,7 @@ class VLINK_EXPORT Logger final {
    * Must be invoked before @c get or any logging macro.  Only values supplied before the file
    * channel is initialised configure the backend; later calls do not rebuild active sinks.  File
    * output is controlled by the file level.  An empty @p log_path selects @c VLINK_LOG_DIR or a temporary
-   * default directory followed by @c app_name; @c VLINK_LOG_PID_DIR=1 appends the PID so concurrent
+   * default directory followed by @c app_name; @c VLINK_LOG_PID_ENABLE=1 appends the PID so concurrent
    * instances of one application never share a rotating file set.  An explicit directory must be
    * owned by one live process.
    *
