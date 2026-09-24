@@ -1002,7 +1002,7 @@ void DiscoveryViewer::on_task_timeout(MessageLoop::Callback&& callback, uint32_t
 }
 
 void DiscoveryViewer::warn_listen_domain() {
-  static const bool warned = []() {
+  static const bool kWarned = []() {
     (void)get_listen_domain();
 
     const std::string& invalid_domain = get_invalid_listen_domain();
@@ -1014,7 +1014,7 @@ void DiscoveryViewer::warn_listen_domain() {
     return true;
   }();
 
-  (void)warned;
+  (void)kWarned;
 }
 
 void DiscoveryViewer::process_timeout() {
