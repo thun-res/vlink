@@ -91,7 +91,7 @@ auto snapshot = viewer.get_info_list();
 | `convert_type(std::string_view str)` | 将角色字符串（`"Pub"`、`"Sub"` 等）转回 `ImplType` 位 |
 | `get_listen_address()` | 返回发现子系统使用的 UDP 组播/广播地址（默认 `239.255.0.100`） |
 | `get_listen_domain()` | 返回 `VLINK_DISCOVER_DOMAIN` 选定的发现域（默认 `0`） |
-| `get_listen_port()` | 返回发现子系统使用的 UDP 端口（`51694 + domain`） |
+| `get_listen_port()` | 返回发现子系统使用的 UDP 端口（`51600 + domain`） |
 
 ---
 
@@ -243,7 +243,7 @@ sub->register_status_handler([](const vlink::Status::BasePtr& status) {
 | `VLINK_DISCOVER_DISABLE=1` | 禁用本进程的发现上报 |
 | `VLINK_DISCOVER_NATIVE=1` | 仅限本机发现（组播绑定 loopback） |
 | `VLINK_DISCOVER_IP=<ip,...>` | 指定发现组播逐地址发送与加组的本机 IPv4 地址；未设置时收发按系统路由走；同时是 `VLINK_DDS_IP` 的缺省值 |
-| `VLINK_DISCOVER_DOMAIN=<0-255>` | 发现域，默认 `0`：UDP 端口取 `51694 + domain`，组播地址与路由不变；须在所有进程上设为同一值；非十进制数字或超出 `[0,255]` 的值会告警并回落到 `0`，该值在进程内读取一次，此后修改无效 |
+| `VLINK_DISCOVER_DOMAIN=<0-255>` | 发现域，默认 `0`：UDP 端口取 `51600 + domain`，组播地址与路由不变；须在所有进程上设为同一值；非十进制数字或超出 `[0,255]` 的值会告警并回落到 `0`，该值在进程内读取一次，此后修改无效 |
 | `VLINK_PROFILER_ENABLE=1` | 启用 CPU Profiler，使 `Process::profiler` 有效 |
 
 若需让单个节点不出现在发现视图，可在 `init()` 之前关闭其上报。这要求节点以延迟初始化方式构造：

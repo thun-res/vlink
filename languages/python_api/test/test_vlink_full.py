@@ -1989,7 +1989,7 @@ def test_discovery_viewer_fields():
     domain = _vlink.DiscoveryViewer.get_listen_domain()
     assert isinstance(domain, int)
     assert 0 <= domain <= 255
-    assert _vlink.DiscoveryViewer.get_listen_port() == 51694 + domain
+    assert _vlink.DiscoveryViewer.get_listen_port() == 51600 + domain
 
     print("[PASS] DiscoveryViewer fields")
 
@@ -2036,7 +2036,7 @@ import vlink
 
 expected = int(sys.argv[1])
 assert vlink.DiscoveryViewer.get_listen_domain() == expected, vlink.DiscoveryViewer.get_listen_domain()
-assert vlink.DiscoveryViewer.get_listen_port() == 51694 + expected, vlink.DiscoveryViewer.get_listen_port()
+assert vlink.DiscoveryViewer.get_listen_port() == 51600 + expected, vlink.DiscoveryViewer.get_listen_port()
 assert vlink.DiscoveryViewer.get_listen_address() == "239.255.0.100"
 '''
     cases = [("7", 7), ("0", 0), ("255", 255), ("256", 0), ("-1", 0), ("abc", 0), ("1 ", 0), ("", 0)]

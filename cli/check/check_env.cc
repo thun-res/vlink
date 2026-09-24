@@ -118,7 +118,7 @@ int check_env(bool available_case, const std::string& prefix) {
        "address and the viewer joins the group on each. Empty sends and joins through the system route.",
        false},
       {"VLINK_DISCOVER_DOMAIN", "",
-       "Discovery domain (0 to 255, default 0) isolating the discovery channel: the UDP port becomes 51694 plus the "
+       "Discovery domain (0 to 255, default 0) isolating the discovery channel: the UDP port becomes 51600 plus the "
        "domain while the multicast address and its route stay unchanged. Must match on every process.",
        false},
       {"VLINK_PROFILER_ENABLE", "",
