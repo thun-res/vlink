@@ -67,6 +67,9 @@ static constexpr size_t kMaxTierShardCount = 64U;
 static constexpr size_t kDefaultBatchSize = 16U;
 static constexpr uint32_t kShardingContentionThreshold = 8U;
 
+static_assert(__STDCPP_DEFAULT_NEW_ALIGNMENT__ >= MemoryPool::kBlockAlignment,
+              "MemoryPool: plain operator new must satisfy kBlockAlignment");
+
 // clang-format off
 static constexpr MemoryPool::Tier kDefaultTierTable[kMaxLevelCount][kMaxTierCount] = {
     // L0 ~ 0 MiB. (bypass; all entries are sentinels)
@@ -624,7 +627,15 @@ static void* tier_allocate(MemoryTierState& state) noexcept {
 
   std::lock_guard clear_lock(state.clear_mtx);
 
-  return try_allocate_from_shards(state, shard_index);
+  node = try_allocate_from_shards(state, shard_index);
+
+  if (node != nullptr) {
+    return node;
+  }
+
+  std::lock_guard grow_lock(state.grow_mtx);
+
+  return grow_tier_chunk(state, shard_index, &node) ? node : nullptr;
 }
 
 static void tier_deallocate(MemoryTierState& state, void* p) noexcept {
