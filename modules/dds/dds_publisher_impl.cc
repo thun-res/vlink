@@ -78,8 +78,8 @@ void DdsPublisherImpl::init() {
 
   listener_.emplace(this);
 
-  writer_ =
-      DdsFactory::create_datawriter(kPublisher, conf_, publisher_.get(), topic_.get(), &listener_.value(), is_cdr_type);
+  writer_ = DdsFactory::create_datawriter(init_impl_type, conf_, publisher_.get(), topic_.get(), &listener_.value(),
+                                          is_cdr_type);
 }
 
 void DdsPublisherImpl::deinit() {

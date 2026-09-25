@@ -45,7 +45,7 @@ struct SliceOptions final {
   double event_min_interval{0.0};
   double dropout_threshold{1.0};
   std::vector<std::string> urls;
-  std::vector<int> actions{6};
+  std::vector<int> actions{6, 8};
   std::vector<std::string> ignore_compress;
   int64_t begin_time{0};
   int64_t end_time{0};

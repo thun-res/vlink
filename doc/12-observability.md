@@ -611,7 +611,7 @@ api.register_data_callback([&bag](const vlink::ProxyAPI::Data& data) {
 });
 ```
 
-**回放**：选 `kPlay` 模式，`url_meta_list` 中 `type` 设为 `vlink::kPublisher`（服务端充当发布者），再以 `send_data()` 逐条注入：
+**回放**：选 `kPlay` 模式，`url_meta_list` 中 Event 的 `type` 设为 `vlink::kPublisher`，Field 设为 `vlink::kSetter`，再以 `send_data()` 逐条注入。Field 路由要求客户端与服务端均支持 `kSetter`；旧服务端不能处理该路由。
 
 ```cpp
 vlink::ProxyAPI::Control ctrl;

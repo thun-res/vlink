@@ -70,7 +70,7 @@ void DdsrPublisherImpl::init() {
 
   listener_.emplace(this);
 
-  writer_ = DdsrFactory::create_datawriter(kPublisher, conf_, publisher_.get(), topic_.get(), listener_->get_ptr());
+  writer_ = DdsrFactory::create_datawriter(init_impl_type, conf_, publisher_.get(), topic_.get(), listener_->get_ptr());
 }
 
 void DdsrPublisherImpl::deinit() {

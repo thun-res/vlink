@@ -255,7 +255,7 @@ int main(int argc, char* argv[]) {
           "5: Pub, 6: Sub, "
           "7: Set, 8: Get")
       .scan<'d', int>()
-      .default_value(std::vector<int>{6})
+      .default_value(std::vector<int>{6, 8})
       .nargs(argparse::nargs_pattern::any);
   play_command.add_argument("-b", "--begin_time")
       .help("Begin time(s)")
@@ -451,7 +451,7 @@ int main(int argc, char* argv[]) {
           "5: Pub, 6: Sub, "
           "7: Set, 8: Get")
       .scan<'d', int>()
-      .default_value(std::vector<int>{6})
+      .default_value(std::vector<int>{6, 8})
       .nargs(argparse::nargs_pattern::any);
   clone_command.add_argument("-b", "--begin_time")
       .help("Begin time(s)")

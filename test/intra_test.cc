@@ -2276,6 +2276,13 @@ TEST_SUITE("intra-field") {
     Getter<int> second("intra://field_direct_late_getters#direct");
     REQUIRE(second.get().has_value());
     CHECK_EQ(second.get().value(), 99);
+
+    int received = 0;
+    Subscriber<int> subscriber("intra://field_direct_late_getters#direct", InitType::kWithoutInit);
+    subscriber.mark_as_getter();
+    REQUIRE(subscriber.init());
+    REQUIRE(subscriber.listen([&](const int& value) { received = value; }));
+    CHECK_EQ(received, 99);
   }
 
   TEST_CASE("multiple sets deliver only latest value to getter") {

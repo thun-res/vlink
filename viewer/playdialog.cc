@@ -272,6 +272,7 @@ void PlayDialog::on_pushButton_select_clicked() {
     QListWidgetItem* item = new QListWidgetItem;
     ui->listWidget->addItem(item);
     item->setData(Qt::UserRole, QString::fromStdString(meta.url));
+    item->setData(Qt::UserRole + 1, meta.url_type == "Field" ? vlink::kSetter : vlink::kPublisher);
     item->setData(Qt::ToolTipRole, QString::fromStdString(meta.url));
     QCheckBox* checkbox = new QCheckBox(ui->listWidget);
     checkbox->setChecked(true);
@@ -417,8 +418,8 @@ void PlayDialog::on_pushButton_start_clicked() {
 
           url_list_.emplace(url);
 
-          control.url_meta_list.emplace_back(
-              vlink::ProxyAPI::UrlMeta{url, ser_iter->second, schema_type, vlink::kPublisher});
+          control.url_meta_list.emplace_back(vlink::ProxyAPI::UrlMeta{
+              url, ser_iter->second, schema_type, static_cast<vlink::ImplType>(item->data(Qt::UserRole + 1).toUInt())});
         } else {
           has_unselected = true;
         }

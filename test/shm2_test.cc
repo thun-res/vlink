@@ -643,6 +643,18 @@ TEST_SUITE("shm2-method") {
 }
 
 TEST_SUITE("shm2-field") {
+  TEST_CASE("a publisher marked as a setter reaches late getters") {
+    const std::string topic = "shm2://shm2/review/marked_publisher?event=value#512";
+    Publisher<int> publisher(topic, InitType::kWithoutInit);
+    publisher.mark_as_setter();
+    REQUIRE(publisher.init());
+    REQUIRE(publisher.publish(42, true));
+
+    Getter<int> getter(topic);
+    REQUIRE(getter.wait_for_value(3s));
+    CHECK(getter.get() == std::optional<int>(42));
+  }
+
   TEST_CASE("a subscriber marked as a getter receives cached field updates") {
     const auto topic = "shm2://shm2/review/marked_subscriber?event=value#512";
     Setter<int> setter(topic);

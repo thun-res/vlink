@@ -43,6 +43,14 @@ void FdbusSubscriberImpl::init() {
 
   object_->start_timer();
 
+  if (init_impl_type != kGetter) {
+    start_subscription();
+  }
+}
+
+void FdbusSubscriberImpl::start_subscription() {
+  has_subscribed_ = false;
+
   if (object_->getSessionCount() > 0) {
     subscribe();
 
@@ -80,6 +88,10 @@ const AbstractNode* FdbusSubscriberImpl::get_abstract_node() const { return obje
 
 bool FdbusSubscriberImpl::listen(MsgCallback&& callback) {
   object_->register_msg_callback(this, std::move(callback));
+
+  if (init_impl_type == kGetter) {
+    start_subscription();
+  }
 
   return true;
 }

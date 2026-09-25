@@ -56,6 +56,8 @@ class SomeipSubscriberImpl final : public SubscriberImpl {
 
   bool listen(MsgCallback&& callback) override;
 
+  void start_subscription();
+
   SomeipConf conf_;
   std::shared_ptr<Object> object_;
   bool has_subscribed_{false};

@@ -105,7 +105,7 @@ class RecordDialog : public QDialog {
   int64_t last_timestamp_{0};
   std::atomic<int> progress_index_{0};
   std::unordered_map<std::string, vlink::CalculateSample> loss_map_;
-  std::unordered_set<std::string> select_urls_;
+  std::unordered_map<std::string, vlink::ActionType> select_urls_;
   std::shared_mutex select_mtx_;
   int64_t dx_timestamp_{-1};
 

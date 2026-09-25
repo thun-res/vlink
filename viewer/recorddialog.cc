@@ -81,14 +81,18 @@ RecordDialog::RecordDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Record
     window_->data_callback_ = [this](const vlink::ProxyAPI::Data& proxy_data) {
       std::shared_ptr<vlink::BagWriter> recorder;
       int64_t timestamp = 0;
+      vlink::ActionType action_type = vlink::ActionType::kSubscribe;
       bool should_push = false;
 
       {
         std::unique_lock select_lock(select_mtx_);
 
-        if (status_ != kRecording || select_urls_.count(proxy_data.url) == 0 || !recorder_) {
+        const auto selected = select_urls_.find(proxy_data.url);
+        if (status_ != kRecording || selected == select_urls_.end() || !recorder_) {
           return;
         }
+
+        action_type = selected->second;
 
         if (window_->proxy_->get_current_config().role == vlink::ProxyAPI::kController) {
           if (proxy_data.timestamp - record_timer_.get() * 1000U > 1000'000U) {
@@ -137,7 +141,7 @@ RecordDialog::RecordDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Record
         frame.url = proxy_data.url;
         frame.ser_type = proxy_data.ser;
         frame.schema_type = proxy_data.schema;
-        frame.action_type = vlink::ActionType::kSubscribe;
+        frame.action_type = action_type;
         frame.data = vlink::Bytes::shallow_copy(proxy_data.raw.data(), proxy_data.raw.size());
         *recorder << frame;
       }
@@ -433,7 +437,19 @@ void RecordDialog::on_pushButton_start_clicked() {
 
         control.url_meta_list.emplace_back(
             vlink::ProxyAPI::UrlMeta{url_str, ser_iter->second, schema_type, vlink::kSubscriber});
-        select_urls_.emplace(url_str);
+        auto action_type = vlink::ActionType::kSubscribe;
+        const auto processes = window_->process_map_.find(url_str);
+
+        if (processes != window_->process_map_.end()) {
+          for (const auto& process : processes->second) {
+            if ((process.type & vlink::kSetter) != 0) {
+              action_type = vlink::ActionType::kGet;
+              break;
+            }
+          }
+        }
+
+        select_urls_.emplace(url_str, action_type);
       }
     }
   }

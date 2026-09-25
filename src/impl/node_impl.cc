@@ -427,7 +427,15 @@ void NodeImpl::try_record(ActionType action_type, const Bytes& data) {
   frame.url = url;
   frame.ser_type = ser_type;
   frame.schema_type = schema_type;
-  frame.action_type = action_type;
+
+  if (action_type == ActionType::kPublish && init_impl_type == kSetter) {
+    frame.action_type = ActionType::kSet;
+  } else if (action_type == ActionType::kSubscribe && init_impl_type == kGetter) {
+    frame.action_type = ActionType::kGet;
+  } else {
+    frame.action_type = action_type;
+  }
+
   frame.data = Bytes::shallow_copy(data.data(), data.size());
 
   if VUNLIKELY (global_recorder) {
@@ -487,7 +495,9 @@ void NodeImpl::global_init() {
   GlobalDiscoveryReporter::get(false);
 }
 
-NodeImpl::NodeImpl(ImplType type) : impl_type(type), helper_(std::make_unique<NodeImplHelper>()) { global_init(); }
+NodeImpl::NodeImpl(ImplType type) : impl_type(type), init_impl_type(type), helper_(std::make_unique<NodeImplHelper>()) {
+  global_init();
+}
 
 NodeImpl::~NodeImpl() = default;
 

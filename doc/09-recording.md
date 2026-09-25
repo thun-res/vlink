@@ -19,7 +19,7 @@
 | `data` | `vlink::Bytes` | 序列化后的 payload | 浅视图，仅在回调内有效，需外带先复制 |
 | `ser_type` | `std::string` | 序列化类型名（如 `"demo.proto.PointCloud"`），原样存盘 | 由 reader 从元数据回填 |
 | `schema_type` | `vlink::SchemaType` | schema 家族：`kProtobuf` / `kFlatbuffers` / `kZeroCopy` / `kRaw` / `kCdr` | 由 reader 从元数据回填 |
-| `action_type` | `vlink::ActionType` | 消息动作，通常 `kPublish` | 原样回传 |
+| `action_type` | `vlink::ActionType` | Event 为 `kPublish` / `kSubscribe`，Field 为 `kSet` / `kGet` | 原样回传 |
 
 `ser_type` 标识 payload 的精确序列化类型，应用层据此选择解码器；`schema_type` 是供工具快速分派的粗粒度家族标签。两者关系与完整取值见 [03-serialization.md](03-serialization.md)。
 

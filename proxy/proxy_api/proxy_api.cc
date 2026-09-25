@@ -74,6 +74,11 @@ using HandshakeCli = SecurityClient<proxy::HandshakeReqPacket, proxy::HandshakeR
 
 // ProxyAPI::Impl
 struct ProxyAPI::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding)
+  struct PubEntry final {
+    std::shared_ptr<RawPub> node;
+    ImplType type{kPublisher};
+  };
+
   std::atomic<uint32_t> control_error_count{0};
   std::atomic<ProxyAPI::Mode> mode{ProxyAPI::kOffline};
   std::atomic<ProxyAPI::Error> error{ProxyAPI::kNoError};
@@ -143,7 +148,7 @@ struct ProxyAPI::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddin
 
   std::vector<ProxyAPI::Info> direct_info_list;
 
-  std::unordered_map<std::string, std::shared_ptr<RawPub>> pub_map;
+  std::unordered_map<std::string, PubEntry> pub_map;
   std::unordered_map<std::string, std::shared_ptr<RawSub>> sub_map;
   std::unordered_set<std::string> getter_sub_urls;
 
@@ -367,20 +372,20 @@ bool ProxyAPI::send_data(const Data& data) {
       return false;
     }
 
-    if VUNLIKELY (!pub_iter->second->has_subscribers()) {
+    if VUNLIKELY (pub_iter->second.type != kSetter && !pub_iter->second.node->has_subscribers()) {
       return false;
     }
 
-    const auto direct_schema_type = SchemaData::is_valid_type(pub_iter->second->get_schema_type())
-                                        ? pub_iter->second->get_schema_type()
+    const auto direct_schema_type = SchemaData::is_valid_type(pub_iter->second.node->get_schema_type())
+                                        ? pub_iter->second.node->get_schema_type()
                                         : SchemaType::kUnknown;
 
-    if VUNLIKELY (pub_iter->second->get_ser_type() != data.ser || direct_schema_type != schema_type) {
+    if VUNLIKELY (pub_iter->second.node->get_ser_type() != data.ser || direct_schema_type != schema_type) {
       VLOG_E("ProxyApi: send_data metadata does not match direct publisher.");
       return false;
     }
 
-    pub_iter->second->publish(data.raw, true);
+    pub_iter->second.node->publish(data.raw, true);
 
     return true;
   }
@@ -625,7 +630,7 @@ void ProxyAPI::sync_direct_maps(const Control& control) {
     pub_url_set.reserve(control.url_meta_list.size());
 
     for (const auto& meta : control.url_meta_list) {
-      if (meta.type != kSubscriber) {
+      if (meta.type == kPublisher || meta.type == kSetter) {
         pub_url_set.emplace(meta.url);
       }
     }
@@ -696,7 +701,7 @@ void ProxyAPI::sync_direct_maps(const Control& control) {
 #endif
 
   for (const auto& meta : control.url_meta_list) {
-    if (meta.type != kPublisher || meta.url.empty() || meta.ser.empty()) {
+    if ((meta.type != kPublisher && meta.type != kSetter) || meta.url.empty() || meta.ser.empty()) {
       continue;
     }
 
@@ -707,10 +712,11 @@ void ProxyAPI::sync_direct_maps(const Control& control) {
     auto pub_iter = impl_->pub_map.find(meta.url);
 
     if (pub_iter != impl_->pub_map.end()) {
-      auto* pub = pub_iter->second.get();
+      auto* pub = pub_iter->second.node.get();
       const auto schema_type = SchemaData::is_valid_type(meta.schema) ? meta.schema : SchemaType::kUnknown;
 
-      if (pub && pub->get_ser_type() == meta.ser && pub->get_schema_type() == schema_type) {
+      if (pub && pub_iter->second.type == meta.type && pub->get_ser_type() == meta.ser &&
+          pub->get_schema_type() == schema_type) {
         continue;
       }
 
@@ -720,13 +726,17 @@ void ProxyAPI::sync_direct_maps(const Control& control) {
     try {
       auto pub = std::make_shared<RawPub>(meta.url, InitType::kWithoutInit);
 
+      if (meta.type == kSetter) {
+        pub->mark_as_setter();
+      }
+
       if (impl_->config.native) {
         pub->set_property("dds.ip", impl_->native_ip);
       }
 
       pub->set_ser_type(meta.ser, meta.schema);
       pub->init();
-      impl_->pub_map.emplace(meta.url, std::move(pub));
+      impl_->pub_map.emplace(meta.url, Impl::PubEntry{std::move(pub), meta.type});
     } catch (const Exception::RuntimeError&) {
     }
   }

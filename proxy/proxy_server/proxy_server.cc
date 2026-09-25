@@ -91,6 +91,7 @@ struct ProxySubEntry final {
   std::shared_ptr<RawSub> node;
   std::string ser;
   SchemaType schema{SchemaType::kUnknown};
+  bool getter_semantics{false};
 };
 
 // ProxyServerGlobal
@@ -124,6 +125,11 @@ class ProxyForwardLoop final : public MessageLoop {
 
 // ProxyServer::Impl
 struct ProxyServer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding)
+  struct PubEntry final {
+    std::shared_ptr<RawPub> node;
+    ImplType type{kPublisher};
+  };
+
   std::atomic<uint32_t> control_id{0};
   std::atomic<ProxyAPI::Mode> mode{ProxyAPI::kOffline};
 
@@ -150,7 +156,7 @@ struct ProxyServer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
   std::vector<std::string> filter_list;
   uint32_t filter_type{0};
 
-  std::unordered_map<std::string, std::shared_ptr<RawPub>> pub_ptr_map;
+  std::unordered_map<std::string, PubEntry> pub_ptr_map;
   std::unordered_map<std::string, ProxySubEntry> sub_ptr_map;
   std::unordered_map<std::string, std::atomic<int64_t>> sub_total_seq_map;
   std::unordered_map<std::string, std::atomic<int64_t>> sub_seq_map;
@@ -561,8 +567,8 @@ void ProxyServer::init_server() {
               return;
             }
 
-            if VLIKELY (iter->second->has_subscribers()) {
-              iter->second->publish(t_data.raw(), true);
+            if VLIKELY (iter->second.type == kSetter || iter->second.node->has_subscribers()) {
+              iter->second.node->publish(t_data.raw(), true);
             }
           });
         } else {
@@ -573,8 +579,8 @@ void ProxyServer::init_server() {
             return;
           }
 
-          if VLIKELY (iter->second->has_subscribers()) {
-            iter->second->publish(t_data.raw(), true);
+          if VLIKELY (iter->second.type == kSetter || iter->second.node->has_subscribers()) {
+            iter->second.node->publish(t_data.raw(), true);
           }
         }
       }
@@ -682,7 +688,7 @@ void ProxyServer::send_control(const void* control_data) {
 
   std::unordered_set<std::string> next_sub_urls;
   std::unordered_map<std::string, ProxySubMeta> next_sub_meta_map;
-  std::unordered_map<std::string, ProxySubMeta> next_pub_meta_map;
+  std::unordered_map<std::string, ProxyAPI::UrlMeta> next_pub_meta_map;
 
   if VUNLIKELY (next_mode != ProxyAPI::kOffline) {
     next_sub_urls.reserve(body.url_meta_list.size());
@@ -704,12 +710,13 @@ void ProxyServer::send_control(const void* control_data) {
         }
 
         next_sub_meta_map.try_emplace(url_meta.url, ProxySubMeta{url_meta.ser, schema});
-      } else if (url_meta.type == kPublisher) {
+      } else if (url_meta.type == kPublisher || url_meta.type == kSetter) {
         if (url_meta.ser.empty()) {
           continue;
         }
 
-        next_pub_meta_map.try_emplace(url_meta.url, ProxySubMeta{url_meta.ser, schema});
+        next_pub_meta_map.try_emplace(url_meta.url,
+                                      ProxyAPI::UrlMeta{url_meta.url, url_meta.ser, schema, url_meta.type});
       }
     }
   }
@@ -790,9 +797,10 @@ void ProxyServer::send_control(const void* control_data) {
           auto pub_iter = impl_->pub_ptr_map.find(url);
 
           if (pub_iter != impl_->pub_ptr_map.end()) {
-            auto* pub = pub_iter->second.get();
+            auto* pub = pub_iter->second.node.get();
 
-            if (pub && pub->get_ser_type() == meta.ser && pub->get_schema_type() == meta.schema) {
+            if (pub && pub_iter->second.type == meta.type && pub->get_ser_type() == meta.ser &&
+                pub->get_schema_type() == meta.schema) {
               continue;
             }
 
@@ -802,6 +810,10 @@ void ProxyServer::send_control(const void* control_data) {
           try {
             auto pub = std::make_shared<RawPub>(url, InitType::kWithoutInit);
 
+            if (meta.type == kSetter) {
+              pub->mark_as_setter();
+            }
+
             if (impl_->config.native_mode) {
               pub->set_property("dds.ip", impl_->native_ip);
             }
@@ -810,7 +822,7 @@ void ProxyServer::send_control(const void* control_data) {
             pub->set_discovery_enabled(true);
             pub->init();
 
-            impl_->pub_ptr_map.emplace(url, std::move(pub));
+            impl_->pub_ptr_map.emplace(url, Impl::PubEntry{std::move(pub), meta.type});
           } catch (Exception::RuntimeError&) {
             impl_->pub_error_url_set.emplace(url);
             continue;
@@ -1163,8 +1175,11 @@ void ProxyServer::update_all() {
       continue;
     }
 
+    const bool getter_semantics = (info.type & kSetter) != 0;
+
     if (!create && ptr_iter != impl_->sub_ptr_map.end() &&
-        (ptr_iter->second.ser != stream_meta.ser || ptr_iter->second.schema != stream_meta.schema)) {
+        (ptr_iter->second.ser != stream_meta.ser || ptr_iter->second.schema != stream_meta.schema ||
+         ptr_iter->second.getter_semantics != getter_semantics)) {
       impl_->sub_ptr_map.erase(ptr_iter);
       ptr_iter = impl_->sub_ptr_map.end();
       create = true;
@@ -1183,9 +1198,7 @@ void ProxyServer::update_all() {
       try {
         sub = std::make_shared<RawSub>(info.url, InitType::kWithoutInit);
 
-        // A setter is the field data source; the proxy must observe it as a getter.
-
-        if (info.type & kSetter) {
+        if (getter_semantics) {
           sub->mark_as_getter();
         }
 
@@ -1266,7 +1279,8 @@ void ProxyServer::update_all() {
 
         subs_lock.lock();
 
-        impl_->sub_ptr_map.emplace(info.url, ProxySubEntry{std::move(sub), current_meta.ser, current_meta.schema});
+        impl_->sub_ptr_map.emplace(
+            info.url, ProxySubEntry{std::move(sub), current_meta.ser, current_meta.schema, getter_semantics});
       } catch (Exception::RuntimeError&) {
         impl_->sub_error_url_set.emplace(info.url);
         seq.store(0, std::memory_order_relaxed);

@@ -313,7 +313,7 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
 
     total_size += data.size();
 
-    iter->second->publish(data);
+    iter->second->publish(data, action_type == vlink::ActionType::kGet || action_type == vlink::ActionType::kSet);
 
     pause_to_next_flag = false;
 

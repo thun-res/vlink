@@ -53,6 +53,7 @@ inline bool Node<ImplT, SecT>::init() {
 
   impl_->check_version(Version{VLINK_VERSION_MAJOR, VLINK_VERSION_MINOR, VLINK_VERSION_PATCH});
 
+  impl_->init_impl_type = impl_->impl_type;
   impl_->init();
   impl_->init_ext();
 

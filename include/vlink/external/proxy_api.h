@@ -302,15 +302,16 @@ class VLINK_PROXY_API_EXPORT ProxyAPI : public MessageLoop {
    *
    * @details
    * Carried in @c Control::url_meta_list to tell the server which topics to
-   * subscribe to or publish on.  @c type describes the proxy route direction; for
-   * direct field relays, setter/getter peers may be mapped to the matching field
-   * reader/writer semantics internally.
+   * subscribe to or publish on.  Use @c kSubscriber to observe a topic (field
+   * reception is inferred from discovery), @c kPublisher to inject events, or
+   * @c kSetter to inject field updates.  Field injection requires both proxy
+   * peers to support @c kSetter routes.
    */
   struct UrlMeta final {
     std::string url;                          ///< Full topic URL.
     std::string ser;                          ///< Required serialisation type on this proxy route.
     SchemaType schema{SchemaType::kUnknown};  ///< Required coarse schema family on this proxy route.
-    ImplType type{kSubscriber};               ///< Whether the server should act as publisher or subscriber here.
+    ImplType type{kSubscriber};               ///< Observer (@c kSubscriber), event writer or field writer.
   };
 
   /**

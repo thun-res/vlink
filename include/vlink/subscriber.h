@@ -260,8 +260,9 @@ class Subscriber : public Node<SubscriberImpl, SecT> {
    *
    * @details
    * Call before @c init() to request field reception on backends that
-   * distinguish field endpoints (SHM, SHM2, Zenoh and SOME/IP), including
-   * late-join synchronisation. Used by @c TriggerRecorder and
+   * distinguish field endpoints, including backend-supported late-join
+   * synchronisation, and record received samples as @c ActionType::kGet.
+   * Used by @c TriggerRecorder and
    * @c vlink-bag record.
    * This subscriber still delivers callbacks without a public value cache.
    * After @c init(), only the discovery role changes; the existing transport

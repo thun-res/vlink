@@ -301,6 +301,7 @@ vlink-bag info /tmp/test.vdb
 | --- | --- |
 | `path` | bag 文件路径（必填） |
 | `-u` / `--urls <url...>` | 仅回放指定 URL |
+| `-s` / `--actions <id...>` | 动作过滤，默认 `6=Subscribe`、`8=Get`，分别回放 Event 与 Field 的接收记录 |
 | `-r` / `--rate <f>` | 回放速率（0.01~100） |
 | `-t` / `--times <n>` | 回放次数，≤0 无限循环 |
 | `-b` / `--begin_time <s>` / `-e` / `--end_time <s>` | 回放起止相对时间（秒） |
@@ -322,7 +323,7 @@ vlink-bag info /tmp/test.vdb
 | `vlink-bag fix <path>` | 修复未完整写入的文件（如录制中途断电）；按实际数据重算头部与话题计数，分包 `.vdbx` 跳过重算 |
 | `vlink-bag tag <path> <name>` | 设置/修改 `.vdb`、`.vdbx`、`.vcapx` 的标签名；单个 `.vcap` 不支持 |
 
-`clone` 会拒绝覆盖源入口、源分包及其已有的 SQLite WAL/SHM 文件，包括链接别名、目标旧分包清理和新分包命名造成的重叠；`--force` 不绕过此保护。按时间命名的分包发生重叠时，改用其他输出目录或关闭 `--split_name_by_time`。
+`clone` 默认保留 `6=Subscribe`、`8=Get` 动作，可用 `--actions` 指定其他动作。它会拒绝覆盖源入口、源分包及其已有的 SQLite WAL/SHM 文件，包括链接别名、目标旧分包清理和新分包命名造成的重叠；`--force` 不绕过此保护。按时间命名的分包发生重叠时，改用其他输出目录或关闭 `--split_name_by_time`。
 
 `merge` 按原始绝对时间合并，默认保留全部动作，同戳按输入顺序排列。支持 `clone` 的选项，裁剪时间以最早输入包为基准；`-o` 指定输出，时间命名分包使用 `--split_name_by_time`。其余参数见 `vlink-bag merge --help`。
 
@@ -535,7 +536,7 @@ vlink-parse dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /t
 
 所有带值的标量参数都必须显式提供值；空 URL、空字段列表以及空白的 `--event` / `--filter` / `--url_filter` 会直接报错。URL 的首尾空白在解析后统一移除；parse/导出模式必须指定具体 URL，`*` 只用于 `slice` / `scan`。`-n` 精确限制通过 URL 与限频门控的样本数，`--hz` 是严格的最大输出频率：实时订阅按墙钟计时，指定 `-f` 的 bag 导出按帧时间戳计时，因此同一个 bag 的抽稀结果可复现；时间戳回退的帧按已覆盖窗口跳过。限频间隔只在参数解析时换算，数据热路径使用整数微秒比较。
 
-`slice` / `scan` 只接受已完整结束且包含消息的 bag，时间区间按毫秒解释为半开区间 `[begin, end)`；未指定结束时间时会覆盖最后一个不足整毫秒的消息。切片输出只支持 `.vdb` 或 `.vcap`，分片输入的 `.vdbx` / `.vcapx` 会映射到对应的单文件格式。URL 筛选包含 Event、Method 与 Field，实际帧再由 `--actions` 过滤（默认 `6=Subscribe`）；显式 URL 与 `-u` / `--urls`、`-i` / `--url_filter` 不可混用。未使用 `-k` 时，两种过滤同时出现取交集；使用 `-k` 时剔除任一过滤命中的 URL，与 `vlink-monitor` 的处理一致。单独使用 `-k` 不改变选集；黑名单中不存在于 bag 的 URL 会被忽略，白名单中的 URL 不存在时仍会报错。
+`slice` / `scan` 只接受已完整结束且包含消息的 bag，时间区间按毫秒解释为半开区间 `[begin, end)`；未指定结束时间时会覆盖最后一个不足整毫秒的消息。切片输出只支持 `.vdb` 或 `.vcap`，分片输入的 `.vdbx` / `.vcapx` 会映射到对应的单文件格式。URL 筛选包含 Event、Method 与 Field，实际帧再由 `--actions` 过滤（默认 `6=Subscribe`、`8=Get`）；显式 URL 与 `-u` / `--urls`、`-i` / `--url_filter` 不可混用。未使用 `-k` 时，两种过滤同时出现取交集；使用 `-k` 时剔除任一过滤命中的 URL，与 `vlink-monitor` 的处理一致。单独使用 `-k` 不改变选集；黑名单中不存在于 bag 的 URL 会被忽略，白名单中的 URL 不存在时仍会报错。
 
 未使用 bag 插件时，实际执行切片或扫描会完整读取输入并检查时间戳非递减，再按所选时间、话题和动作处理数据，避免逆序帧被静默丢弃。因此裁剪很短的时间区间也需要扫描整个输入；仅生成窗口计划的 `--dry_run` 不检查帧顺序。发现逆序时返回失败；切片可能已留下部分输出，扫描不会写出成功结果。使用 bag 插件时继续按所选输入范围读取，并要求参与处理的插件输出时间戳非递减。
 

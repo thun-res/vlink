@@ -1426,9 +1426,9 @@ int main(int argc, char* argv[]) {
   program.add_argument("--actions")
       .help(
           "Action filter for slice/scan: 0=Unknown 1=ClientReq 2=ClientResp 3=ServerReq 4=ServerResp 5=Pub 6=Sub 7=Set "
-          "8=Get (default: 6)")
+          "8=Get (default: 6 8)")
       .scan<'d', int>()
-      .default_value(std::vector<int>{6})
+      .default_value(std::vector<int>{6, 8})
       .nargs(argparse::nargs_pattern::at_least_one);
 
   program.add_argument("--tag").help("Tag name for output bag (for -t slice)").default_value(std::string()).nargs(1);

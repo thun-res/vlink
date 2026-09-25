@@ -91,6 +91,7 @@ python3 test_vlink_coverage.py
 - Security 模型
 - Timer 直接替换、pending 替换及执行结束后的回调释放
 - `Setter.set` 变化通知与 `Getter.listen` 去重
+- SHM2 角色标记的初始化边界与 VDB / VCAP 隐式录制动作；未编入 SHM2 时跳过该用例
 - Bag 显式 `Frame.timestamp` 写入与读回
 
 ---

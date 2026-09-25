@@ -37,6 +37,14 @@ void SomeipSubscriberImpl::init() {
 
   object_->add_impl(this);
 
+  if (init_impl_type != kGetter) {
+    start_subscription();
+  }
+}
+
+void SomeipSubscriberImpl::start_subscription() {
+  has_subscribed_ = false;
+
   object_->app()->request_event(conf_.service, conf_.instance, conf_.event, conf_.groups,
                                 conf_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
 
@@ -63,6 +71,10 @@ void SomeipSubscriberImpl::init() {
 
 void SomeipSubscriberImpl::deinit() {
   object_->remove_impl(this);
+
+  if (init_impl_type == kGetter && !is_listened) {
+    return;
+  }
 
   for (auto g : conf_.groups) {
     bool in_use = false;
@@ -101,6 +113,10 @@ const AbstractNode* SomeipSubscriberImpl::get_abstract_node() const { return obj
 
 bool SomeipSubscriberImpl::listen(MsgCallback&& callback) {
   object_->register_msg_callback(this, std::move(callback));
+
+  if (init_impl_type == kGetter) {
+    start_subscription();
+  }
 
   return true;
 }

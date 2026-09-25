@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 import tempfile
+import uuid
 import weakref
 
 os.environ["VLINK_DISCOVER_DISABLE"] = "1"
@@ -2416,6 +2417,116 @@ def test_node_role_swaps():
     print("[PASS] Publisher/Subscriber/Setter/Getter role swaps")
 
 
+def test_implicit_recording_roles():
+    probe_url = f"shm2://py_role_{uuid.uuid4().hex}?event=value#512"
+    try:
+        probe = _vlink.Publisher(probe_url, auto_init=False)
+    except RuntimeError as exc:
+        if f"Unsupported url[{probe_url}]." not in str(exc):
+            raise
+        print("[SKIP] implicit recording roles (SHM2 unavailable)")
+        return
+    del probe
+
+    cases = (
+        ("plain", False),
+        ("before_init", True),
+        ("after_init", False),
+        ("duplicate_init", False),
+        ("reinit", True),
+        ("native_reverse", True),
+    )
+    for suffix in (".vdb", ".vcap"):
+        for mode, field in cases:
+            with tempfile.TemporaryDirectory() as directory:
+                path = os.path.join(directory, "roles" + suffix)
+                url = f"shm2://py_role_{uuid.uuid4().hex}?event=value#512"
+                native = mode == "native_reverse"
+                sender_type = _vlink.Setter if native else _vlink.Publisher
+                receiver_type = _vlink.Getter if native else _vlink.Subscriber
+                sender = sender_type(url, ser_type="raw", auto_init=False)
+                receiver = receiver_type(url, ser_type="raw", auto_init=False)
+                writer = None
+
+                def mark():
+                    if native:
+                        sender.mark_as_publisher()
+                        receiver.mark_as_subscriber()
+                    else:
+                        sender.mark_as_setter()
+                        receiver.mark_as_getter()
+
+                try:
+                    for node in (sender, receiver):
+                        node.set_discovery_enabled(False)
+                        node.set_safety_quit(True)
+
+                    if mode in ("before_init", "native_reverse"):
+                        mark()
+                    assert sender.init()
+                    assert receiver.init()
+
+                    if mode in ("after_init", "duplicate_init", "reinit"):
+                        mark()
+                    if mode == "duplicate_init":
+                        assert not sender.init()
+                        assert not receiver.init()
+                    elif mode == "reinit":
+                        assert sender.deinit()
+                        assert receiver.deinit()
+                        assert sender.init()
+                        assert receiver.init()
+
+                    writer = _vlink.BagWriter.filter_get(path)
+                    assert writer is not None
+                    sender.set_record_path(path)
+                    receiver.set_record_path(path)
+                    payload = b"role-regression"
+                    received = threading.Event()
+                    assert receiver.listen(lambda data: received.set() if data == payload else None)
+
+                    deadline = time.monotonic() + 5.0
+                    while not received.is_set() and time.monotonic() < deadline:
+                        if native:
+                            sender.set(payload)
+                        else:
+                            assert sender.publish(payload, force=True)
+                        received.wait(0.02)
+                    assert received.is_set(), (mode, suffix)
+                finally:
+                    sender.deinit()
+                    receiver.deinit()
+                    sender.set_record_path("")
+                    receiver.set_record_path("")
+                    if writer is not None:
+                        assert writer.wait_for_idle(5000)
+                        writer.quit()
+                        assert writer.wait_for_quit(5000)
+                        writer.close()
+                        assert not writer.fail()
+
+                reader = _vlink.BagReader.create(path, read_only=True)
+                assert reader is not None
+                assert reader.open_cursor()
+                frames = list(reader)
+                assert reader.eof()
+                assert not reader.fail()
+                assert frames
+                assert all(frame.data == payload for frame in frames)
+                expected = (
+                    {_vlink.ActionType.Set, _vlink.ActionType.Get} if field else
+                    {_vlink.ActionType.Publish, _vlink.ActionType.Subscribe}
+                )
+                assert {frame.action_type for frame in frames} == expected, (mode, suffix)
+                metas = reader.get_info().url_metas
+                assert metas
+                assert all(meta.url_type == ("Field" if field else "Event") for meta in metas)
+                if suffix == ".vcap":
+                    assert {meta.action_type for meta in metas} == expected
+                del metas, reader, writer, sender, receiver
+    print("[PASS] implicit recording roles (init boundaries / VDB / VCAP)")
+
+
 def test_security_node_bindings():
     def passthrough(data):
         return bytes(data)
@@ -2586,6 +2697,7 @@ if __name__ == "__main__":
     test_node_wire_meta_validation()
     test_node_extended()
     test_node_role_swaps()
+    test_implicit_recording_roles()
     test_security_node_bindings()
     test_schema_data_and_version()
     test_log_fatal()

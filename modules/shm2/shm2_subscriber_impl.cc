@@ -37,7 +37,7 @@ void Shm2SubscriberImpl::init() {
 
   conf_.hash_code = Helpers::get_hash_code(conf_.event);
 
-  if (impl_type == kGetter) {
+  if (init_impl_type == kGetter) {
     if (conf_.history == 0) {
       conf_.history = 1;
     }

@@ -40,7 +40,7 @@ void ZenohSubscriberImpl::init() {
   auto properties = ZenohFactory::resolve_properties(conf_, get_all_properties());
 
   object_ = factory.get_object<Object>(
-      {impl_type, conf_.address, conf_.event, conf_.domain, conf_.depth, conf_.qos, conf_.fragment, properties});
+      {init_impl_type, conf_.address, conf_.event, conf_.domain, conf_.depth, conf_.qos, conf_.fragment, properties});
 
   object_->add_impl(this);
 
@@ -73,7 +73,7 @@ bool ZenohSubscriberImpl::listen(MsgCallback&& callback) {
   object_->register_msg_callback(this, std::move(callback));
   object_->subscribe();
 
-  if (impl_type == kGetter) {
+  if (init_impl_type == kGetter) {
     return object_->declare_getter(&getter_token_);
   }
 

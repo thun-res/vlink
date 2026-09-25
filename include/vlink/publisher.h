@@ -259,11 +259,14 @@ class Publisher : public Node<PublisherImpl, SecT> {
   bool publish_fbb(const void* fbb, bool force = false);
 
   /**
-   * @brief Reports this publisher as a @c Setter in discovery metadata.
+   * @brief Marks this publisher as a field writer.
    *
    * @details
-   * Updates the role label and refreshes discovery when already initialised.
-   * Does not add a value cache or migrate an existing transport endpoint.
+   * Call before @c init() to request field transport settings where supported
+   * and record published samples as @c ActionType::kSet.
+   * After @c init(), only the discovery role changes; the endpoint is not migrated.
+   * Does not add a public value cache; transport history depends on the backend.
+   * Publishing without connected readers still requires @c force=true.
    * Use @c Setter when latest-value retention and late-getter replay are needed.
    */
   void mark_as_setter();

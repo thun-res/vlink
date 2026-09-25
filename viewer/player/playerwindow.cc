@@ -1964,7 +1964,7 @@ bool PlayerWindow::load_bag(const QString& path) {
         return;
       }
 
-      iter->second->publish(raw_data);
+      iter->second->publish(raw_data, action_type == vlink::ActionType::kGet || action_type == vlink::ActionType::kSet);
     }
 
     if (pause_to_next_flag_) {

@@ -228,7 +228,7 @@ bool DdsSubscriberImpl::listen(MsgCallback&& callback) {
 
   listener_.emplace(this);
 
-  reader_ = DdsFactory::create_datareader(kSubscriber, conf_, subscriber_.get(), topic_.get(), &listener_.value(),
+  reader_ = DdsFactory::create_datareader(init_impl_type, conf_, subscriber_.get(), topic_.get(), &listener_.value(),
                                           is_cdr_type);
 
   return true;

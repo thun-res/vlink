@@ -699,6 +699,39 @@ TEST_SUITE("someip-method") {
 }
 
 TEST_SUITE("someip-field") {
+  TEST_CASE("destroying an unlistened marked subscriber preserves a connected getter") {
+    const SomeipConf conf(0x3404, 1, SomeipConf::Groups{1}, 0x8001, true);
+    Setter<int> setter(conf);
+    Getter<int> getter(conf);
+    setter.set(1);
+    REQUIRE(getter.wait_for_value(3s));
+
+    {
+      Subscriber<int> subscriber(conf, InitType::kWithoutInit);
+      subscriber.mark_as_getter();
+      REQUIRE(subscriber.init());
+    }
+
+    setter.set(2);
+    CHECK(common_test::wait_until([&] { return getter.get() == 2; }, 3s));
+  }
+
+  TEST_CASE("a marked subscriber receives the cached value after delayed listen") {
+    const SomeipConf conf(0x3403, 1, SomeipConf::Groups{1}, 0x8001, true);
+    Setter<int> setter(conf);
+    setter.set(42);
+    Getter<int> connected(conf);
+    REQUIRE(connected.wait_for_value(3s));
+
+    std::atomic<int> received{0};
+    Subscriber<int> subscriber(conf, InitType::kWithoutInit);
+    subscriber.mark_as_getter();
+    REQUIRE(subscriber.init());
+    std::this_thread::sleep_for(200ms);
+    REQUIRE(subscriber.listen([&](const int& value) { received.store(value, std::memory_order_release); }));
+    CHECK(common_test::wait_until([&] { return received.load(std::memory_order_acquire) == 42; }, 3s));
+  }
+
   TEST_CASE("destroying a getter preserves other readers of its eventgroup") {
     bool different_event = false;
     SUBCASE("same event") {}

@@ -596,6 +596,26 @@ TEST_SUITE("fdbus-method") {
 }
 
 TEST_SUITE("fdbus-field") {
+  TEST_CASE("a marked subscriber receives the cached value after delayed listen") {
+    if (!fdbus_available()) {
+      return;
+    }
+
+    const FdbusConf conf("fdbus_fld_marked_sub", "value");
+    Setter<int> setter(conf);
+    setter.set(42);
+    Getter<int> connected(conf);
+    REQUIRE(connected.wait_for_value(3s));
+
+    std::atomic<int> received{0};
+    Subscriber<int> subscriber(conf, InitType::kWithoutInit);
+    subscriber.mark_as_getter();
+    REQUIRE(subscriber.init());
+    std::this_thread::sleep_for(200ms);
+    REQUIRE(subscriber.listen([&](const int& value) { received.store(value, std::memory_order_release); }));
+    CHECK(common_test::wait_until([&] { return received.load(std::memory_order_acquire) == 42; }, 3s));
+  }
+
   TEST_CASE("setter and getter exchange values via all access patterns") {
     MESSAGE("[fdbus-field] setter and getter exchange values via all access patterns");
 

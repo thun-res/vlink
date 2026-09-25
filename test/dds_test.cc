@@ -1288,6 +1288,44 @@ TEST_SUITE("dds-method") {
 }
 
 TEST_SUITE("dds-field") {
+  TEST_CASE("a publisher marked as a setter reaches late getters") {
+    const std::string topic = "dds://dds/review/marked_publisher";
+    Publisher<int> publisher(topic, InitType::kWithoutInit);
+    publisher.mark_as_setter();
+    REQUIRE(publisher.init());
+    REQUIRE(publisher.publish(42, true));
+
+    Getter<int> getter(topic);
+    REQUIRE(getter.wait_for_value(3s));
+    CHECK(getter.get() == std::optional<int>(42));
+  }
+
+  TEST_CASE("marked subscribers use the role captured at init") {
+    const std::string topic = "dds://dds/review/marked_subscriber";
+    std::atomic<int> received{0};
+    Subscriber<int> subscriber(topic, InitType::kWithoutInit);
+
+    SUBCASE("mark before init receives a cached field value") {
+      Setter<int> setter(topic);
+      setter.set(42);
+      subscriber.mark_as_getter();
+      REQUIRE(subscriber.init());
+      REQUIRE(subscriber.listen([&](const int& value) { received.store(value, std::memory_order_release); }));
+      CHECK(common_test::wait_until([&] { return received.load(std::memory_order_acquire) == 42; }, 3s));
+    }
+
+    SUBCASE("mark after init preserves event reception even before listen") {
+      Publisher<int> publisher(topic);
+      REQUIRE(subscriber.init());
+      subscriber.mark_as_getter();
+      CHECK_FALSE(subscriber.init());
+      REQUIRE(subscriber.listen([&](const int& value) { received.store(value, std::memory_order_release); }));
+      REQUIRE(publisher.wait_for_subscribers(3s));
+      REQUIRE(publisher.publish(43));
+      CHECK(common_test::wait_until([&] { return received.load(std::memory_order_acquire) == 43; }, 3s));
+    }
+  }
+
   TEST_CASE("setter and getter exchange values via all access patterns") {
     MESSAGE("[dds-field] setter and getter exchange values via all access patterns");
 

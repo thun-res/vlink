@@ -106,7 +106,12 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
 
   std::shared_ptr<vlink::BagWriter> recorder;
 
-  std::unordered_map<std::string, std::shared_ptr<RawSub>> sub_map;
+  struct SubEntry final {
+    std::shared_ptr<RawSub> node;
+    bool getter_semantics{false};
+  };
+
+  std::unordered_map<std::string, SubEntry> sub_map;
 
   std::mutex subs_mtx;
 
@@ -239,7 +244,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
 
         double loss = 0;
         for (const auto& [url, sub] : sub_map) {
-          const auto& sample_lost_info = sub->get_lost();
+          const auto& sample_lost_info = sub.node->get_lost();
 
           if (sample_lost_info.total > 0 && sample_lost_info.lost > 0) {
             loss = static_cast<double>(sample_lost_info.lost) / sample_lost_info.total;
@@ -281,12 +286,14 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
         continue;
       }
 
+      const bool getter_semantics = (info.type & vlink::kSetter) != 0;
+
       {
         std::lock_guard lock(subs_mtx);
         auto sub_iter = sub_map.find(info.url);
 
         if (sub_iter != sub_map.end()) {
-          auto* target_sub = sub_iter->second.get();
+          auto* target_sub = sub_iter->second.node.get();
 
           if VUNLIKELY (!target_sub) {
             continue;
@@ -296,7 +303,8 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
           const auto expected_schema_type =
               info.schema_type == vlink::SchemaType::kUnknown ? current_schema_type : info.schema_type;
 
-          if VUNLIKELY (target_sub->get_ser_type() != info.ser_type || current_schema_type != expected_schema_type) {
+          if VUNLIKELY (target_sub->get_ser_type() != info.ser_type || current_schema_type != expected_schema_type ||
+                        sub_iter->second.getter_semantics != getter_semantics) {
             sub_map.erase(sub_iter);
           } else {
             continue;
@@ -344,7 +352,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
       try {
         sub = std::make_shared<RawSub>(info.url, vlink::InitType::kWithoutInit);
 
-        if (info.type & vlink::kGetter) {
+        if (getter_semantics) {
           sub->mark_as_getter();
         }
 
@@ -361,7 +369,8 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
       }
 
       std::weak_ptr<RawSub> weak_sub = sub;
-      sub->listen([real_max_packet_size, weak_sub, url = info.url, &recorder, &status](const vlink::Bytes& data) {
+      sub->listen([real_max_packet_size, weak_sub, url = info.url, getter_semantics, &recorder,
+                   &status](const vlink::Bytes& data) {
         if VUNLIKELY (has_quit || recorder->is_ready_to_quit()) {
           return;
         }
@@ -389,7 +398,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
         frame.url = url;
         frame.ser_type = sub->get_ser_type();
         frame.schema_type = sub->get_schema_type();
-        frame.action_type = vlink::ActionType::kSubscribe;
+        frame.action_type = getter_semantics ? vlink::ActionType::kGet : vlink::ActionType::kSubscribe;
         frame.data = vlink::Bytes::shallow_copy(data.data(), data.size());
         if VUNLIKELY (recorder->push(frame) < 0) {
           status = 1;
@@ -410,7 +419,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
       });
 
       std::lock_guard lock(subs_mtx);
-      sub_map.emplace(info.url, std::move(sub));
+      sub_map.emplace(info.url, SubEntry{std::move(sub), getter_semantics});
     }
   };
 
@@ -517,7 +526,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
 
     double loss = 0;
     for (const auto& [url, sub] : sub_map) {
-      const auto& sample_lost_info = sub->get_lost();
+      const auto& sample_lost_info = sub.node->get_lost();
 
       if (sample_lost_info.total > 0 && sample_lost_info.lost > 0) {
         loss = static_cast<double>(sample_lost_info.lost) / sample_lost_info.total;

@@ -934,6 +934,22 @@ TEST_SUITE("shm-method") {
 }
 
 TEST_SUITE("shm-field") {
+  TEST_CASE("a publisher marked as a setter reaches late getters") {
+    if (!ensure_shm_ready()) {
+      return;
+    }
+
+    const std::string topic = "shm://shm/review/marked_publisher?event=value";
+    Publisher<int> publisher(topic, InitType::kWithoutInit);
+    publisher.mark_as_setter();
+    REQUIRE(publisher.init());
+    REQUIRE(publisher.publish(42, true));
+
+    Getter<int> getter(topic);
+    REQUIRE(getter.wait_for_value(3s));
+    CHECK(getter.get() == std::optional<int>(42));
+  }
+
   TEST_CASE("setter and getter exchange values") {
     MESSAGE("[shm-field] setter and getter exchange values");
 

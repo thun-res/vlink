@@ -58,6 +58,8 @@ class FdbusSubscriberImpl final : public SubscriberImpl {
 
   void subscribe();
 
+  void start_subscription();
+
   FdbusConf conf_;
   std::shared_ptr<Object> object_;
   bool has_subscribed_{false};
