@@ -47,8 +47,9 @@
 int bag_clone(const std::string& source_path, const std::string& target_path, const std::vector<std::string>& urls,
               const std::string& tag_name, const std::string& filter, bool black_mode, const std::vector<int>& actions,
               int64_t begin_time, int64_t end_time, bool has_clock_begin_time, bool has_clock_end_time, bool compress,
-              bool split_name_by_time, double split_by_size, int64_t split_by_time, bool force, bool wal_mode,
-              double cache_size, const std::vector<std::string>& ignore_compress, const std::string& plugin_name) {
+              bool enable_chunk_crc, bool split_name_by_time, double split_by_size, int64_t split_by_time, bool force,
+              bool wal_mode, double cache_size, const std::vector<std::string>& ignore_compress,
+              const std::string& plugin_name) {
   is_play_mode = true;
   play_rate = 1.0;
 
@@ -211,6 +212,7 @@ int bag_clone(const std::string& source_path, const std::string& target_path, co
   record_config.split_by_time = split_by_time;
   record_config.begin_time = std::max(begin_time, player->get_info().blank_duration);
   record_config.compress = compress ? vlink::BagWriter::kCompressAuto : vlink::BagWriter::kCompressNone;
+  record_config.enable_chunk_crc = enable_chunk_crc;
   record_config.compress_level = compress_level.load();
   // record_config.max_task_depth = max_task_depth;
   record_config.start_timestamp = player->get_info().start_timestamp;

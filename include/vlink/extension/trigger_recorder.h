@@ -225,6 +225,7 @@ class VLINK_EXPORT TriggerRecorder : public MessageLoop {
     int64_t retention_guard_ms{500};                     ///< Extra retention margin to absorb dump-timer jitter.
     int max_dump_file_count{10};                ///< Rotation cap; only auto-named dumps trigger dump_dir rotation.
     bool enable_compress{false};                ///< Compress the dumped bag.
+    bool enable_chunk_crc{false};               ///< Compute VCAP chunk CRC; ignored by VDB.
     bool busy_skip_data{false};                 ///< Drop incoming data while a bag is being written.
     bool destroy_on_offline{false};             ///< Destroy offline subscribers; an in-flight dump keeps their data.
     OverflowPolicy overflow{kDropNewest};       ///< Byte-cap overflow policy.

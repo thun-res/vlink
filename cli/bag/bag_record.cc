@@ -52,10 +52,10 @@
 // NOLINTNEXTLINE(google-readability-function-size)
 int bag_record(const std::string& path, const std::vector<std::string>& urls, const std::string& tag_name,
                const std::string& filter, bool black_mode, bool native_mode, double duration, double wait_time,
-               bool compress, bool force, int64_t max_row_count, double max_bytes_size, bool enable_limit,
-               bool split_name_by_time, double split_by_size, int64_t split_by_time, int64_t max_split_count, bool deft,
-               double max_packet_size, bool wal_mode, double cache_size, bool sync_mode,
-               const std::vector<std::string>& ignore_compress, const std::string& plugin_name) {
+               bool compress, bool enable_chunk_crc, bool force, int64_t max_row_count, double max_bytes_size,
+               bool enable_limit, bool split_name_by_time, double split_by_size, int64_t split_by_time,
+               int64_t max_split_count, bool deft, double max_packet_size, bool wal_mode, double cache_size,
+               bool sync_mode, const std::vector<std::string>& ignore_compress, const std::string& plugin_name) {
   using RawSub = vlink::Subscriber<vlink::Bytes>;
 
   const std::string native_ip = native_mode ? vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1") : std::string();
@@ -198,6 +198,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
   config.cache_size = 1024LL * 1024LL * cache_size;
   config.wal_mode = wal_mode;
   config.compress = compress ? vlink::BagWriter::kCompressAuto : vlink::BagWriter::kCompressNone;
+  config.enable_chunk_crc = enable_chunk_crc;
   config.max_row_count = max_row_count;
   config.max_bytes_size = 1024LL * 1024LL * 1024LL * max_bytes_size;
   config.enable_limit = enable_limit;

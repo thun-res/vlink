@@ -56,6 +56,7 @@ TEST_SUITE("extension-BagWriter") {
     CHECK_FALSE(cfg.split_name_by_time);
     CHECK_FALSE(cfg.sync_mode);
     CHECK_FALSE(cfg.optimize_on_exit);
+    CHECK_FALSE(cfg.enable_chunk_crc);
     CHECK_EQ(cfg.max_row_count, 5'000'000'000LL);
     CHECK_EQ(cfg.max_bytes_size, 1024LL * 1024LL * 1024LL * 512LL);
     CHECK_EQ(cfg.split_by_size, 1024LL * 1024LL * 1024LL * 1LL);
@@ -78,6 +79,7 @@ TEST_SUITE("extension-BagWriter") {
     cfg.compress = BagWriter::kCompressZstd;
     cfg.wal_mode = true;
     cfg.sync_mode = true;
+    cfg.enable_chunk_crc = true;
     cfg.split_by_size = 512LL * 1024 * 1024;
     cfg.split_by_time = 60'000;
     cfg.max_split_count = 8;
@@ -88,6 +90,7 @@ TEST_SUITE("extension-BagWriter") {
     CHECK_EQ(cfg.compress, BagWriter::kCompressZstd);
     CHECK(cfg.wal_mode);
     CHECK(cfg.sync_mode);
+    CHECK(cfg.enable_chunk_crc);
     CHECK_EQ(cfg.split_by_size, 512LL * 1024 * 1024);
     CHECK_EQ(cfg.split_by_time, 60'000);
     CHECK_EQ(cfg.max_split_count, 8);

@@ -51,9 +51,10 @@
 int bag_merge(const std::vector<std::string>& source_paths, const std::string& target_path,
               const std::vector<std::string>& urls, const std::string& tag_name, const std::string& filter,
               bool black_mode, const std::vector<int>& actions, int64_t begin_time, int64_t end_time,
-              bool has_clock_begin_time, bool has_clock_end_time, bool compress, bool split_name_by_time,
-              double split_by_size, int64_t split_by_time, bool force, bool wal_mode, double cache_size,
-              const std::vector<std::string>& ignore_compress, const std::string& plugin_name, double check_gap) {
+              bool has_clock_begin_time, bool has_clock_end_time, bool compress, bool enable_chunk_crc,
+              bool split_name_by_time, double split_by_size, int64_t split_by_time, bool force, bool wal_mode,
+              double cache_size, const std::vector<std::string>& ignore_compress, const std::string& plugin_name,
+              double check_gap) {
   vlink::Plugin plugin;
 
   auto quit_function = [](int) { has_quit = true; };
@@ -326,6 +327,7 @@ int bag_merge(const std::vector<std::string>& source_paths, const std::string& t
     config.ignore_compress_urls.insert(ignore_compress.begin(), ignore_compress.end());
     config.tag_name = tag_name;
     config.compress = compress ? vlink::BagWriter::kCompressAuto : vlink::BagWriter::kCompressNone;
+    config.enable_chunk_crc = enable_chunk_crc;
     config.sync_mode = true;
     config.optimize_on_exit = true;
 

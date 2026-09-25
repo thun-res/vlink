@@ -1725,6 +1725,7 @@ int start_slice(const vlink::parse::SliceOptions& opt) {
     config.start_timestamp = output_start_timestamp + stats.begin_time_ms;
     config.sync_mode = true;
     config.optimize_on_exit = true;
+    config.enable_chunk_crc = opt.enable_chunk_crc;
 
     if (!opt.ignore_compress.empty()) {
       config.ignore_compress_urls.insert(opt.ignore_compress.begin(), opt.ignore_compress.end());

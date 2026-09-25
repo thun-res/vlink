@@ -154,6 +154,10 @@ int main(int argc, char* argv[]) {
       // NOLINTNEXTLINE(readability-redundant-casting)
       .default_value(static_cast<double>(30));
   record_command.add_argument("-p", "--compress").help("Compress data").default_value(false).implicit_value(true);
+  record_command.add_argument("--enable_chunk_crc")
+      .help("Compute MCAP chunk CRC for VCAP output")
+      .default_value(false)
+      .implicit_value(true);
   record_command.add_argument("-f", "--force").help("Overwriting").default_value(false).implicit_value(true);
   record_command.add_argument("-q", "--quiet").help("Quiet mode").default_value(false).implicit_value(true);
   record_command.add_argument("-l", "--detail").help("Detail mode").default_value(false).implicit_value(true);
@@ -356,6 +360,10 @@ int main(int argc, char* argv[]) {
   merge_command.add_argument("-q", "--quiet").help("Quiet mode").default_value(false).implicit_value(true);
   merge_command.add_argument("-l", "--detail").help("Detail mode").default_value(false).implicit_value(true);
   merge_command.add_argument("-p", "--compress").help("Compress data").default_value(false).implicit_value(true);
+  merge_command.add_argument("--enable_chunk_crc")
+      .help("Compute MCAP chunk CRC for VCAP output")
+      .default_value(false)
+      .implicit_value(true);
   merge_command.add_argument("-z", "--split_by_size")
       .help("Split size(GB)")
       .scan<'g', double>()
@@ -468,6 +476,10 @@ int main(int argc, char* argv[]) {
   clone_command.add_argument("-q", "--quiet").help("Quiet mode").default_value(false).implicit_value(true);
   clone_command.add_argument("-l", "--detail").help("Detail mode").default_value(false).implicit_value(true);
   clone_command.add_argument("-p", "--compress").help("Compress data").default_value(false).implicit_value(true);
+  clone_command.add_argument("--enable_chunk_crc")
+      .help("Compute MCAP chunk CRC for VCAP output")
+      .default_value(false)
+      .implicit_value(true);
   clone_command.add_argument("-z", "--split_by_size")
       .help("Split size(GB)")
       .scan<'g', double>()
@@ -699,6 +711,7 @@ int main(int argc, char* argv[]) {
     auto duration = record_command.get<double>("-d");
     auto wait_time = record_command.get<double>("-w");
     auto compress = record_command.is_used("-p");
+    auto enable_chunk_crc = record_command.is_used("--enable_chunk_crc");
     auto force = record_command.is_used("-f");
 
     auto max_row_count = record_command.get<int64_t>("--max_row_count");
@@ -833,10 +846,10 @@ int main(int argc, char* argv[]) {
 
     auto record_plugin_name = record_command.get<std::string>("--plugin");
 
-    return bag_record(path, urls, tag_name, filter, black_mode, native_mode, duration, wait_time, compress, force,
-                      max_row_count, max_bytes_size, enable_limit, split_name_by_time, split_by_size,
-                      split_by_time * 1000, max_split_count, deft, max_packet_size, wal_mode, cache_size, sync_mode,
-                      ignore_compress, record_plugin_name);
+    return bag_record(path, urls, tag_name, filter, black_mode, native_mode, duration, wait_time, compress,
+                      enable_chunk_crc, force, max_row_count, max_bytes_size, enable_limit, split_name_by_time,
+                      split_by_size, split_by_time * 1000, max_split_count, deft, max_packet_size, wal_mode, cache_size,
+                      sync_mode, ignore_compress, record_plugin_name);
   } else if (program.is_subcommand_used("play")) {
     auto path = play_command.get<std::string>("path");
 
@@ -1027,6 +1040,7 @@ int main(int argc, char* argv[]) {
     detail_flag = merge_command.is_used("-l");
 
     auto compress = merge_command.is_used("-p");
+    auto enable_chunk_crc = merge_command.is_used("--enable_chunk_crc");
     auto split_name_by_time = merge_command.is_used("--split_name_by_time");
     auto split_by_size = merge_command.get<double>("-z");
     auto split_by_time = merge_command.get<double>("-y");
@@ -1170,8 +1184,9 @@ int main(int argc, char* argv[]) {
 
     return bag_merge(source_paths, target_path, urls, tag_name, filter, black_mode, actions, begin_time * 1000,
                      end_time * 1000, !local_begin_time.empty() || !utc_begin_time.empty(),
-                     !local_end_time.empty() || !utc_end_time.empty(), compress, split_name_by_time, split_by_size,
-                     split_by_time * 1000, force, wal_mode, cache_size, ignore_compress, plugin_name, check_gap);
+                     !local_end_time.empty() || !utc_end_time.empty(), compress, enable_chunk_crc, split_name_by_time,
+                     split_by_size, split_by_time * 1000, force, wal_mode, cache_size, ignore_compress, plugin_name,
+                     check_gap);
   } else if (program.is_subcommand_used("clone")) {
     auto source_path = clone_command.get<std::string>("source_path");
     auto target_path = clone_command.get<std::string>("target_path");
@@ -1212,6 +1227,7 @@ int main(int argc, char* argv[]) {
     detail_flag = clone_command.is_used("-l");
 
     auto compress = clone_command.is_used("-p");
+    auto enable_chunk_crc = clone_command.is_used("--enable_chunk_crc");
     auto split_name_by_time = clone_command.is_used("--split_name_by_time");
     auto split_by_size = clone_command.get<double>("-z");
     auto split_by_time = clone_command.get<double>("-y");
@@ -1350,8 +1366,8 @@ int main(int argc, char* argv[]) {
 
     return bag_clone(source_path, target_path, urls, tag_name, filter, black_mode, actions, begin_time * 1000,
                      end_time * 1000, !local_begin_time.empty() || !utc_begin_time.empty(),
-                     !local_end_time.empty() || !utc_end_time.empty(), compress, split_name_by_time, split_by_size,
-                     split_by_time * 1000, force, wal_mode, cache_size, ignore_compress, plugin_name);
+                     !local_end_time.empty() || !utc_end_time.empty(), compress, enable_chunk_crc, split_name_by_time,
+                     split_by_size, split_by_time * 1000, force, wal_mode, cache_size, ignore_compress, plugin_name);
   } else if (program.is_subcommand_used("check")) {
     auto path = check_command.get<std::string>("path");
 

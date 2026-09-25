@@ -124,6 +124,8 @@ finally:
 
 `BagWriter.Config.sync_mode=True` 时无需 `async_run()`、`wait_for_idle()` 或 `quit()`；创建后直接 `push()`，最后 `close()` 并检查 `fail()`。
 
+`BagWriter.Config.enable_chunk_crc` 和 `TriggerRecorder.Config.enable_chunk_crc` 默认均为 `False`；设为 `True` 时仅对 VCAP/MCAP 输出计算 chunk CRC，VDB 不受影响。
+
 `BagWriter`、`BagReader` 和 `TriggerRecorder` 的 bag 插件均由宿主显式加载并绑定，插件库名不再放进
 `TriggerRecorder.Config`：
 

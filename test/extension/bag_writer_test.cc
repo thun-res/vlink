@@ -28,7 +28,9 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -343,6 +345,39 @@ class FailingBagWriter final : public StubBagWriter {
 };
 
 std::vector<Frame> read_writer_frames(const std::filesystem::path& path);
+
+uint32_t read_first_vcap_chunk_crc(const std::filesystem::path& path) {
+  std::ifstream file(path, std::ios::binary);
+  REQUIRE(file.is_open());
+  file.seekg(8);
+
+  char opcode = 0;
+  while (file.read(&opcode, 1)) {
+    std::array<uint8_t, 8> length_bytes{};
+    file.read(reinterpret_cast<char*>(length_bytes.data()), length_bytes.size());
+    REQUIRE(static_cast<bool>(file));
+
+    uint64_t length = 0;
+    for (size_t index = 0; index < length_bytes.size(); ++index) {
+      length |= static_cast<uint64_t>(length_bytes[index]) << (index * 8);
+    }
+
+    if (static_cast<uint8_t>(opcode) == 0x06) {
+      REQUIRE_GE(length, 28);
+      file.seekg(24, std::ios::cur);
+      std::array<uint8_t, 4> crc_bytes{};
+      file.read(reinterpret_cast<char*>(crc_bytes.data()), crc_bytes.size());
+      REQUIRE(static_cast<bool>(file));
+      return static_cast<uint32_t>(crc_bytes[0]) | (static_cast<uint32_t>(crc_bytes[1]) << 8) |
+             (static_cast<uint32_t>(crc_bytes[2]) << 16) | (static_cast<uint32_t>(crc_bytes[3]) << 24);
+    }
+
+    file.seekg(static_cast<std::streamoff>(length), std::ios::cur);
+  }
+
+  REQUIRE(false);
+  return 0;
+}
 
 void verify_async_write_failure_latches(const char* suffix) {
   ScopedWriterPath bag(suffix);
@@ -2208,6 +2243,26 @@ TEST_SUITE("extension-BagWriter") {
 
     reader->quit();
     REQUIRE(reader->wait_for_quit(3000));
+  }
+
+  TEST_CASE("vcap chunk CRC defaults off and can be enabled without changing replay") {
+    ScopedWriterPath bag(".vcap");
+    BagWriter::Config config;
+    config.sync_mode = true;
+    SUBCASE("default") {}
+    SUBCASE("enabled") { config.enable_chunk_crc = true; }
+
+    auto writer = BagWriter::create(bag.path.string(), config);
+    REQUIRE(writer != nullptr);
+    REQUIRE_EQ(writer->push(write_frame("dds://coverage/chunk_crc", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                        Bytes::from_string(std::string(4096, 'x')))),
+               0);
+    writer.reset();
+
+    CHECK_EQ(read_first_vcap_chunk_crc(bag.path) == 0U, !config.enable_chunk_crc);
+    const auto frames = read_writer_frames(bag.path);
+    REQUIRE_EQ(frames.size(), 1u);
+    CHECK_EQ(frames.front().data.size(), 4096u);
   }
 
   TEST_CASE("async memory limit rejects oversized queued frames before enqueue") {

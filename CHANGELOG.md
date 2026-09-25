@@ -8,6 +8,7 @@
 - **Python 接口补齐**：补齐发现消息循环、Bag 插件、点云与对象数组深拷贝、日志回调重置接口。
 - **Bag 拼包**：新增 `vlink-bag merge`，支持 `clone` 的选项、进度显示和覆盖确认。
 - **Bag 分包轮转**：`BagWriter::Config` 与 `vlink-bag record` 新增 `max_split_count`，超限时删除最旧分包。
+- **VCAP 块校验开关**：`BagWriter::Config`、TriggerRecorder、Python API 与录制 CLI 可启用 MCAP chunk CRC；默认关闭，VDB 不受影响。
 - **DDS 非阻塞发送**：新增 `VLINK_DDS_NOBLOCK` 与节点属性 `dds.noblock`，支持发送缓冲区满时丢包而不阻塞。
 - **发现多网卡**：新增 `VLINK_DISCOVER_IP`，DiscoveryReporter 逐地址发送、DiscoveryViewer 逐地址加入发现组播；未设置时收发仍按系统路由走。
 - **发现域隔离**：新增 `VLINK_DISCOVER_DOMAIN`（0–255，默认 0），发现端口取 `51600 + domain`。

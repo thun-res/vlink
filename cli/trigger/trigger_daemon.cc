@@ -271,6 +271,10 @@ static bool parse_config(const std::string& path, vlink::TriggerRecorder::Config
       config.enable_compress = data.at("enable_compress").get<bool>();
     }
 
+    if (data.contains("enable_chunk_crc")) {
+      config.enable_chunk_crc = data.at("enable_chunk_crc").get<bool>();
+    }
+
     if (data.contains("busy_skip_data")) {
       config.busy_skip_data = data.at("busy_skip_data").get<bool>();
     }

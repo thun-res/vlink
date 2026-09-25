@@ -132,6 +132,7 @@ auto writer = vlink::BagWriter::create("/data/recording.vdbx", config);
 | `max_split_count` | `0` | 分包文件保留上限；`0` 不限制，超限后删除 manifest 中最旧的分包 |
 | `tag_name` | 空 | 录制标签，写入文件头供检索 |
 | `sync_mode` | `false` | `true` 全程同步直写且不启动 VDB 周期 cache flush；`false` 全程经后台队列并启用周期 flush |
+| `enable_chunk_crc` | `false` | `true` 计算 VCAP/MCAP chunk CRC；关闭后仍可回放，但不提供 chunk 内容校验；VDB 忽略 |
 
 `cache_size` 始终只表示 VDB 的事务提交字节阈值或 VCAP 的 chunk 大小，不承担模式开关语义。
 

@@ -278,6 +278,7 @@ TEST_SUITE("extension-TriggerRecorder") {
     CHECK_EQ(config.retention_guard_ms, 500);
     CHECK_EQ(config.max_dump_file_count, 10);
     CHECK_FALSE(config.enable_compress);
+    CHECK_FALSE(config.enable_chunk_crc);
     CHECK_FALSE(config.busy_skip_data);
     CHECK_FALSE(config.destroy_on_offline);
     CHECK_EQ(config.overflow, vlink::TriggerRecorder::kDropNewest);

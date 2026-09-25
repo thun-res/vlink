@@ -66,6 +66,7 @@ struct SliceOptions final {
   int compress_level{3};
   int sample_step{1};
   bool compress{false};
+  bool enable_chunk_crc{false};
   bool force{false};
   bool no_manifest{false};
   bool export_csv{false};

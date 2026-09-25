@@ -178,6 +178,7 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
     bool split_name_by_time{false};                      ///< Append a timestamp suffix to split filenames.
     bool sync_mode{false};                   ///< Write synchronously and disable the VDB periodic cache-flush timer.
     bool optimize_on_exit{false};            ///< Run VACUUM/OPTIMIZE while closing the file.
+    bool enable_chunk_crc{false};            ///< Compute VCAP chunk CRC; ignored by VDB.
     int64_t max_row_count{5'000'000'000LL};  ///< SQLite row cap; either evicts or fails new writes.
     int64_t max_bytes_size{1024LL * 1024LL * 1024LL * 512LL};  ///< SQLite byte cap; either evicts or fails new writes.
     int64_t split_by_size{1024LL * 1024LL * 1024LL * 1LL};     ///< Split threshold in bytes (0 disables).

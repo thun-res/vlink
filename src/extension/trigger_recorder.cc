@@ -946,6 +946,7 @@ void TriggerRecorder::do_dump(DumpJob& job) {
 
   BagWriter::Config writer_config;
   writer_config.compress = impl_->config.enable_compress ? BagWriter::kCompressAuto : BagWriter::kCompressNone;
+  writer_config.enable_chunk_crc = impl_->config.enable_chunk_crc;
   writer_config.tag_name = params.reason;
   writer_config.sync_mode = true;
   writer_config.optimize_on_exit = true;

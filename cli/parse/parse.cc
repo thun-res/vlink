@@ -1365,6 +1365,11 @@ int main(int argc, char* argv[]) {
       .default_value(false)
       .implicit_value(true);
 
+  program.add_argument("--enable_chunk_crc")
+      .help("Compute MCAP chunk CRC for VCAP output (for -t slice)")
+      .default_value(false)
+      .implicit_value(true);
+
   program.add_argument("--force")
       .help("Overwrite existing output files (for -t slice/scan)")
       .default_value(false)
@@ -1791,6 +1796,7 @@ int main(int argc, char* argv[]) {
     opt.window_seconds = window;
     opt.suffix = program.get<std::string>("--suffix");
     opt.compress = program.is_used("--compress");
+    opt.enable_chunk_crc = program.is_used("--enable_chunk_crc");
     opt.force = program.is_used("--force");
     opt.no_manifest = program.is_used("--no_manifest");
     opt.manifest_name = program.get<std::string>("--manifest");

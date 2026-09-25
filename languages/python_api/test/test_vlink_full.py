@@ -2243,6 +2243,9 @@ def test_plugin_host_binding_contract():
     assert config.max_dump_file_count == 10
     assert config.retention_guard_ms == 500
     assert config.enable_compress is False
+    assert config.enable_chunk_crc is False
+    config.enable_chunk_crc = True
+    assert config.enable_chunk_crc is True
     assert config.overflow == _vlink.TriggerRecorder.OverflowPolicy.DropNewest
     assert not hasattr(config, "dds_ip")
     assert not hasattr(config, "bag_plugin_lib")
@@ -2414,6 +2417,10 @@ def test_api_surface():
 
     assert hasattr(_vlink.BagWriter.Config, "ignore_compress_urls")
     assert hasattr(_vlink.BagWriter.Config, "sync_mode")
+    writer_config = _vlink.BagWriter.Config()
+    assert writer_config.enable_chunk_crc is False
+    writer_config.enable_chunk_crc = True
+    assert writer_config.enable_chunk_crc is True
     assert hasattr(_vlink.BagWriter.Config, "max_split_count")
     for method in (
         "register_schema_callback", "push_schema", "close", "fail", "clear", "__lshift__", "wait_for_idle",

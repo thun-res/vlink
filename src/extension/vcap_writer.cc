@@ -196,6 +196,7 @@ VCAPWriter::VCAPWriter(const std::string& path, const Config& config)
 
   impl_->path = path;
   impl_->config = config;
+  impl_->writer_options.noChunkCRC = !impl_->config.enable_chunk_crc;
 
   impl_->enable_compressed = impl_->config.compress == kCompressAuto || impl_->config.compress == kCompressZstd;
 
