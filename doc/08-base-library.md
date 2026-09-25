@@ -793,7 +793,7 @@ bool   e   = q.empty();
 q.notify_to_quit();
 ```
 
-容量须不小于 1（否则构造抛 `std::invalid_argument`），经验值取预期突发峰值的 2 至 4 倍。默认的 `push` / `pop` 以自旋方式阻塞；需要条件变量唤醒式的阻塞收发时，按 `kConditionBehavior` 行为调用（`push<vlink::MpmcQueue<int>::kConditionBehavior>(...)` 配合 `wait_not_empty()` / `wait_not_full()`），否则 cv 通知是纯开销。
+容量须在 `[1, SIZE_MAX)` 内（否则构造抛 `std::invalid_argument`），经验值取预期突发峰值的 2 至 4 倍。默认的 `push` / `pop` 以自旋方式阻塞；需要条件变量唤醒式的阻塞收发时，按 `kConditionBehavior` 行为调用（`push<vlink::MpmcQueue<int>::kConditionBehavior>(...)` 配合 `wait_not_empty()` / `wait_not_full()`），否则 cv 通知是纯开销。
 
 ### 8.11.3 SpinLock 自旋锁
 
@@ -1141,7 +1141,7 @@ vlink::Co::co_spawn(loop, std::move(t), [](int v) { VLOG_I("done v=", v); });
 | `vlink::Co::yield(loop)` | 协作让出（等价同 loop 的 schedule） |
 | `vlink::Co::delay_ms(loop, ms)` | 非阻塞睡眠 ms 毫秒 |
 | `vlink::Co::await_future(loop, fut)` | 等待 `std::future<T>`，不在 loop 线程阻塞 `.get()` |
-| `vlink::Co::await_graph(loop, graph)` | 等待 `GraphTask` DAG 全部完成 |
+| `vlink::Co::await_graph(loop, graph)` | 等待指定 `GraphTask` 节点完成 |
 
 ```cpp
 vlink::Co::Task<void> orchestrate(vlink::MessageLoop& loop) {

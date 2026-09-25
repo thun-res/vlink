@@ -29,6 +29,8 @@
 
 #include <atomic>
 #include <future>
+#include <memory>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -127,6 +129,168 @@ TEST_SUITE("base-MultiLoop") {
 
     loop.quit();
     loop.wait_for_quit(2000);
+  }
+
+  TEST_CASE("protected tasks survive a full worker queue") {
+    MessageLoop::Type type = MessageLoop::kNormalType;
+    bool protect_all = false;
+    bool nested = false;
+    bool throw_nested = false;
+    bool reenter_on_drop = false;
+
+    SUBCASE("normal dispatcher") {}
+    SUBCASE("priority dispatcher") { type = MessageLoop::kPriorityType; }
+    SUBCASE("all queued tasks are protected") { protect_all = true; }
+    SUBCASE("all queued priority tasks are protected") {
+      type = MessageLoop::kPriorityType;
+      protect_all = true;
+    }
+    SUBCASE("nested dispatch restores the outer policy") { nested = true; }
+    SUBCASE("throwing nested dispatch restores the outer policy") {
+      nested = true;
+      throw_nested = true;
+    }
+    SUBCASE("retired callback can query the pool from another thread") { reenter_on_drop = true; }
+
+    class CountingMultiLoop final : public MultiLoop {
+     public:
+      explicit CountingMultiLoop(Type type) : MultiLoop(1, type) {}
+
+      size_t get_max_task_count() const override { return 20000U; }
+
+      std::atomic<size_t> forwarded{0U};
+      std::atomic<bool> nest_next{false};
+      Callback nested_callback;
+      bool throw_nested{false};
+
+     protected:
+      void on_task_changed(Callback&& callback, uint32_t start_time) override {
+        if (in_nested_dispatch_ && throw_nested) {
+          throw std::runtime_error("nested dispatch");
+        }
+
+        if (nest_next.exchange(false, std::memory_order_acq_rel)) {
+          CHECK(post_task(std::move(nested_callback)));
+          in_nested_dispatch_ = true;
+
+          if (throw_nested) {
+            CHECK_THROWS_AS(spin_once(false), std::runtime_error);
+          } else {
+            CHECK(spin_once(false));
+          }
+
+          in_nested_dispatch_ = false;
+        }
+
+        MultiLoop::on_task_changed(std::move(callback), start_time);
+        forwarded.fetch_add(1U, std::memory_order_release);
+      }
+
+     private:
+      bool in_nested_dispatch_{false};
+    };
+
+    static constexpr size_t kWorkerCapacity = 10000U;
+    std::promise<void> release_worker;
+    auto gate = release_worker.get_future();
+    std::atomic<bool> worker_started{false};
+    std::atomic<size_t> executed{0U};
+    std::atomic<bool> extra_on_dispatcher{false};
+    std::atomic<bool> retired_without_pool_lock{false};
+    std::promise<void> queried;
+    auto queried_future = queried.get_future();
+    std::thread query_thread;
+    CountingMultiLoop loop(type);
+    loop.throw_nested = throw_nested;
+    loop.nested_callback = [&] { executed.fetch_add(1U, std::memory_order_relaxed); };
+
+    struct QueryOnDestroy final {
+      MultiLoop& loop;
+      std::promise<void>& queried;
+      std::future<void>& queried_future;
+      std::thread& query_thread;
+      std::atomic<bool>& without_pool_lock;
+
+      ~QueryOnDestroy() {
+        query_thread = std::thread([target = &loop, done = &queried] {
+          CHECK_FALSE(target->is_in_same_thread());
+          done->set_value();
+        });
+        without_pool_lock.store(queried_future.wait_for(2s) == std::future_status::ready, std::memory_order_release);
+      }
+    };
+
+    REQUIRE(loop.async_run());
+    CHECK(loop.post_task([&] {
+      worker_started.store(true, std::memory_order_release);
+      gate.wait();
+    }));
+
+    const bool started = common_test::wait_until([&] { return worker_started.load(std::memory_order_acquire); }, 5s);
+
+    if (!started) {
+      release_worker.set_value();
+      loop.quit(true);
+      loop.wait_for_quit(5000);
+      CHECK(started);
+      return;
+    }
+
+    PostTaskOptions options;
+    options.drop_policy = TaskDropPolicy::kProtected;
+    loop.nest_next.store(nested, std::memory_order_release);
+    auto protected_task = loop.post_task_handle([&] { executed.fetch_add(1U, std::memory_order_relaxed); }, options);
+    const size_t nested_count = nested && !throw_nested ? 1U : 0U;
+    CHECK(common_test::wait_until([&] { return loop.forwarded.load(std::memory_order_acquire) == 2U + nested_count; },
+                                  5s));
+
+    for (size_t i = 1U + nested_count; i < kWorkerCapacity; ++i) {
+      if (protect_all) {
+        (void)loop.post_task_handle([&] { executed.fetch_add(1U, std::memory_order_relaxed); }, options);
+      } else if (reenter_on_drop && i == 1U) {
+        auto probe = std::unique_ptr<QueryOnDestroy>(
+            new QueryOnDestroy{loop, queried, queried_future, query_thread, retired_without_pool_lock});
+        CHECK(loop.post_task([&, probe = std::move(probe)] { executed.fetch_add(1U, std::memory_order_relaxed); }));
+      } else {
+        CHECK(loop.post_task([&] { executed.fetch_add(1U, std::memory_order_relaxed); }));
+      }
+    }
+
+    const bool full = common_test::wait_until(
+        [&] { return loop.forwarded.load(std::memory_order_acquire) == kWorkerCapacity + 1U; }, 5s);
+    CHECK(full);
+
+    if (full) {
+      for (size_t i = 0U; i <= nested_count; ++i) {
+        CHECK(loop.post_task([&] {
+          extra_on_dispatcher.store(loop.MessageLoop::is_in_same_thread(), std::memory_order_relaxed);
+          executed.fetch_add(1U, std::memory_order_relaxed);
+        }));
+      }
+
+      CHECK(common_test::wait_until(
+          [&] { return loop.forwarded.load(std::memory_order_acquire) == kWorkerCapacity + 2U + nested_count; }, 5s));
+    }
+
+    release_worker.set_value();
+    CHECK(loop.wait_for_idle(5000));
+    CHECK_EQ(protected_task.state(), TaskExecutionState::kCompleted);
+    CHECK_EQ(executed.load(std::memory_order_relaxed), kWorkerCapacity + (full && protect_all ? 1U : 0U));
+
+    if (!protect_all) {
+      CHECK_FALSE(extra_on_dispatcher.load(std::memory_order_relaxed));
+    }
+
+    loop.quit();
+    CHECK(loop.wait_for_quit());
+
+    if (query_thread.joinable()) {
+      query_thread.join();
+    }
+
+    if (reenter_on_drop && full) {
+      CHECK(retired_without_pool_lock.load(std::memory_order_acquire));
+    }
   }
 
   TEST_CASE("wait_for_idle returns true after all tasks complete") {
@@ -452,6 +616,26 @@ TEST_SUITE("base-MultiLoop") {
     loop.wait_for_idle(2000);
     loop.quit();
     loop.wait_for_quit(2000);
+  }
+
+  TEST_CASE("destructor waits for a worker backlog longer than one second") {
+    std::atomic<int> done{0};
+
+    {
+      MultiLoop loop(1);
+      loop.async_run();
+
+      for (int i = 0; i < 2; ++i) {
+        loop.post_task([&done] {
+          std::this_thread::sleep_for(700ms);
+          done.fetch_add(1, std::memory_order_acq_rel);
+        });
+      }
+
+      REQUIRE(common_test::wait_until([&loop] { return loop.get_task_count() == 0U; }));
+    }
+
+    CHECK_EQ(done.load(std::memory_order_acquire), 2);
   }
 }
 

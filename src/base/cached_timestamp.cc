@@ -50,7 +50,13 @@ std::string_view CachedTimestamp::get_at(std::chrono::system_clock::time_point n
 
   int64_t cached_sec = last_sec_;
 
-  const bool canonical = std::string_view(format) == "%02d-%02d %02d:%02d:%02d.%03d";
+  static constexpr const char* kCanonicalFormat = "%02d-%02d %02d:%02d:%02d.%03d";
+
+  if VUNLIKELY (format == nullptr) {
+    format = kCanonicalFormat;
+  }
+
+  const bool canonical = (format == kCanonicalFormat) || (std::string_view(format) == kCanonicalFormat);
 
   if VLIKELY (cache_valid_ && canonical && sec == cached_sec && is_utc_ == use_utc) {
     update_milliseconds(ms);

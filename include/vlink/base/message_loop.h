@@ -42,7 +42,9 @@
  * up to ten times with 1 ms sleeps before dropping an eligible task, @c kPopStrategy drops
  * immediately, and @c kBlockStrategy waits for capacity on lock-based queues or retries indefinitely
  * on the lock-free queue.  Idle dispatch is always condition-variable driven and independent of
- * @c Strategy.
+ * @c Strategy.  A blocking post issued from the @c run() / @c async_run() thread into its own full
+ * queue is rejected instead of waiting on itself; a thread driving @c spin_once() is not
+ * recognised, so it must not issue such a post.
  *
  * @par Lifecycle diagram
  *
@@ -106,6 +108,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "./functional.h"
 #include "./memory_resource.h"
@@ -200,6 +203,12 @@ class VLINK_EXPORT MessageLoop {
    *
    * @details During Windows process termination it skips cross-thread cleanup and releases its
    * private state without destroying it because the owning threads have already stopped.
+   *
+   * @warning The loop must not be destroyed from its own dispatcher thread -- that is, from
+   *          inside a task, timer callback or event handler it is running.  A thread cannot
+   *          join itself, so the destructor logs the situation and the join then terminates
+   *          the process.  Destroy the loop from another thread, or post the deletion
+   *          elsewhere.
    */
   virtual ~MessageLoop();
 
@@ -311,6 +320,12 @@ class VLINK_EXPORT MessageLoop {
    * @p force @c == @c true the in-flight batch is also aborted.  Tasks queued after the request
    * are rejected.  Returns @c false when @c quit had already been called (only meaningful when
    * @p force is @c false).
+   *
+   * @warning This is not a drain.  Tasks still sitting in the queue when @c quit is called are
+   *          discarded, not executed, regardless of @p force; only the batch already claimed by
+   *          the dispatcher runs to completion.  A successful @c post_task therefore guarantees
+   *          admission, not delivery -- post through @c post_task_handle to observe the
+   *          @c TaskExecutionState::kDropped outcome.
    *
    * @param force  When @c true, also discards the in-flight batch.  Default: @c false.
    * @return @c true when the quit signal was accepted.
@@ -425,6 +440,10 @@ class VLINK_EXPORT MessageLoop {
    * @details
    * Applies only to @c kLockfreeType loops; on other types the call is a no-op.  Must be invoked
    * while the loop is stopped; calls made while it is running are logged and skipped.
+   *
+   * @note The caller must also ensure no other thread is posting concurrently.  Producers that
+   *       are already inside the queue are waited for, but the reset is logged and skipped if
+   *       they do not leave within one second rather than replacing a ring still in use.
    */
   void reset_lockfree_capacity();
 
@@ -604,6 +623,8 @@ class VLINK_EXPORT MessageLoop {
  private:
   static uint64_t get_current_nano_time();
 
+  bool is_current_task_droppable() const;
+
   Schedule::Callback make_launcher(const Schedule::Config& config, Schedule::Callback&& wrapper,
                                    std::shared_ptr<Schedule::Status::Impl> impl);
 
@@ -615,11 +636,11 @@ class VLINK_EXPORT MessageLoop {
                  TaskOverflowPolicy overflow_policy = TaskOverflowPolicy::kUseDispatcherStrategy,
                  const TaskHandle* submit_handle = nullptr, bool poll_cancellation = false);
 
-  bool drop_one_normal_task();
+  bool drop_one_normal_task(std::vector<Callback>& dropped);
 
-  bool drop_one_lockfree_task(bool keep_reserved = false);
+  bool drop_one_lockfree_task(std::vector<Callback>& dropped, bool keep_reserved = false);
 
-  bool drop_one_priority_task();
+  bool drop_one_priority_task(std::vector<Callback>& dropped);
 
   bool reserve_lockfree_task();
 
@@ -639,11 +660,14 @@ class VLINK_EXPORT MessageLoop {
 
   bool process_priority_task(bool block);
 
-  bool process_timer_task(int64_t& next_sleep_time);
+  bool process_timer_task(int64_t& next_sleep_time, std::vector<Callback>& dropped_tasks);
 
   void drop_pending_tasks();
 
+  std::unique_lock<std::mutex> lock_timers();
+
   friend Timer;
+  friend class MultiLoop;
   struct Impl;
   std::unique_ptr<Impl> impl_;
 

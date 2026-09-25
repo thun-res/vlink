@@ -23,8 +23,10 @@
 
 #include "./base/message_loop.h"
 
+#include <algorithm>
 #include <atomic>
 #include <deque>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -54,6 +56,7 @@ static constexpr size_t kMaxTaskSize = 10000U;
 static constexpr size_t kMaxTimerSize = 100U;
 static constexpr uint32_t kMaxElapsedTime = 0U;
 static constexpr int kMaxLockfreePushRetry = 32;
+static constexpr int kResetDrainTimeoutMs = 1000;
 
 template <typename TypeT, typename TimeT, typename ReturnT>
 static ReturnT get_current_time() noexcept {
@@ -82,6 +85,13 @@ struct MessageLoop::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
   using LockfreeTaskTuple = std::tuple<uint32_t, MessageLoop::Callback>;
   using PriorityTaskTuple = std::tuple<uint32_t, uint32_t, uint32_t, bool, MessageLoop::Callback>;
 
+  struct RestoreDropPolicy final {
+    bool& value;
+    bool previous;
+
+    ~RestoreDropPolicy() { value = previous; }
+  };
+
   struct PriorityCompare final {
     bool operator()(const PriorityTaskTuple& lhs, const PriorityTaskTuple& rhs) const {
       return priority_key(lhs) > priority_key(rhs);
@@ -91,12 +101,20 @@ struct MessageLoop::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
 #ifdef VLINK_ENABLE_BASE_MEMORY_RESOURCE
   using NormalQueue = std::pmr::deque<NormalTaskTuple>;
   using LockfreeQueue = MpmcQueue<LockfreeTaskTuple>;
-  using PriorityQueue = std::priority_queue<PriorityTaskTuple, std::pmr::vector<PriorityTaskTuple>, PriorityCompare>;
+  using PriorityContainer = std::pmr::vector<PriorityTaskTuple>;
 #else
   using NormalQueue = std::deque<NormalTaskTuple>;
   using LockfreeQueue = MpmcQueue<LockfreeTaskTuple>;
-  using PriorityQueue = std::priority_queue<PriorityTaskTuple, std::vector<PriorityTaskTuple>, PriorityCompare>;
+  using PriorityContainer = std::vector<PriorityTaskTuple>;
 #endif
+
+  struct PriorityQueue final : std::priority_queue<PriorityTaskTuple, PriorityContainer, PriorityCompare> {
+    using Base = std::priority_queue<PriorityTaskTuple, PriorityContainer, PriorityCompare>;
+
+    using Base::Base;
+
+    [[nodiscard]] PriorityContainer& container() noexcept { return this->c; }
+  };
 
   static uint64_t priority_key(const PriorityTaskTuple& task) {
     return (static_cast<uint64_t>(std::get<0>(task)) << 32) | std::get<1>(task);
@@ -146,6 +164,7 @@ struct MessageLoop::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
   std::mutex mtx;
   ConditionVariable cv;
   ConditionVariable capacity_cv;
+  bool current_task_droppable{true};
 };
 
 // MessageLoop
@@ -212,9 +231,21 @@ MessageLoop::~MessageLoop() {
   }
 #endif
 
+  const bool self_destruct = impl_->thread.joinable() && impl_->thread.get_id() == std::this_thread::get_id();
+
+  if VUNLIKELY (self_destruct) {
+    CLOG_E(
+        "MessageLoop destroyed from its own loop thread(%s); destroying a loop from one of its own tasks is not "
+        "supported.",
+        impl_->name.c_str());
+  }
+
   if VUNLIKELY (impl_->is_running.load(std::memory_order_acquire)) {
     CLOG_W("MessageLoop is still running(%s).", impl_->name.c_str());
-    wait_for_quit(1000, false);
+
+    if VLIKELY (!self_destruct) {
+      wait_for_quit(1000, false);
+    }
   }
 
   if (impl_->thread.joinable()) {
@@ -429,7 +460,8 @@ bool MessageLoop::spin_once(bool block) {
     return false;
   }
 
-  if VUNLIKELY (!is_in_same_thread() && impl_->thread_id.load(std::memory_order_acquire) != std::thread::id()) {
+  if VUNLIKELY (!MessageLoop::is_in_same_thread() &&
+                impl_->thread_id.load(std::memory_order_acquire) != std::thread::id()) {
     CLOG_E("MessageLoop spin_once called from different thread than run/async_run (%s).", impl_->name.c_str());
     return false;
   }
@@ -605,14 +637,31 @@ void MessageLoop::reset_lockfree_capacity() {
     return;
   }
 
-  std::lock_guard lock(impl_->mtx);
+  std::vector<Callback> dropped_tasks;
+  std::unique_lock lock(impl_->mtx);
 
   if VUNLIKELY (impl_->is_running.load(std::memory_order_acquire)) {
     CLOG_E("MessageLoop: reset_lockfree_capacity called while running (%s).", impl_->name.c_str());
     return;
   }
 
+  const bool drained = impl_->cv.wait_for(lock, std::chrono::milliseconds(kResetDrainTimeoutMs), [this] {
+    return impl_->lockfree_producer_count.load(std::memory_order_acquire) == 0U;
+  });
+
+  if VUNLIKELY (!drained) {
+    CLOG_E("MessageLoop: reset_lockfree_capacity skipped, producers still in flight (%s).", impl_->name.c_str());
+    return;
+  }
+
   size_t max_task_size = get_max_task_count();
+  dropped_tasks.reserve(impl_->lockfree_task_count.load(std::memory_order_acquire));
+  Impl::LockfreeTaskTuple task;
+
+  while (impl_->lockfree_queue->try_pop(task)) {
+    dropped_tasks.emplace_back(std::move(std::get<1>(task)));
+  }
+
   impl_->lockfree_queue.emplace(max_task_size);
   impl_->lockfree_task_count.store(0U, std::memory_order_release);
   impl_->lockfree_needs_reset.store(false, std::memory_order_release);
@@ -721,6 +770,8 @@ void MessageLoop::on_idle() {
   }
 }
 
+bool MessageLoop::is_current_task_droppable() const { return impl_->current_task_droppable; }
+
 void MessageLoop::on_task_changed(Callback&& callback, uint32_t start_time) {
   if (start_time > 0 && get_max_elapsed_time() > 0) {
     uint32_t elapsed_time =
@@ -762,6 +813,8 @@ bool MessageLoop::add_timer(Timer* timer) {
   return impl_->timer_set.emplace(timer).second;
 }
 
+std::unique_lock<std::mutex> MessageLoop::lock_timers() { return std::unique_lock(impl_->mtx); }
+
 bool MessageLoop::remove_timer(Timer* timer) {
   std::lock_guard lock(impl_->mtx);
 
@@ -770,6 +823,8 @@ bool MessageLoop::remove_timer(Timer* timer) {
 
 bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppable, TaskOverflowPolicy overflow_policy,
                             const TaskHandle* submit_handle, bool poll_cancellation) {
+  std::vector<Callback> dropped_tasks;
+
   auto is_cancelled = [submit_handle]() -> bool {
     return submit_handle != nullptr && submit_handle->state() == TaskExecutionState::kCancelled;
   };
@@ -777,6 +832,17 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
   auto reject = [submit_handle]() -> bool {
     if (submit_handle != nullptr && !submit_handle->is_done()) {
       TaskHandle::mark_task_rejected(*submit_handle);
+    }
+
+    return false;
+  };
+
+  auto blocks_loop_thread = [this, overflow_policy]() -> bool {
+    if ((overflow_policy == TaskOverflowPolicy::kBlock ||
+         impl_->strategy.load(std::memory_order_acquire) == kBlockStrategy) &&
+        MessageLoop::is_in_same_thread()) {
+      CLOG_E("MessageLoop: blocking post from the loop thread would deadlock (%s).", impl_->name.c_str());
+      return true;
     }
 
     return false;
@@ -838,7 +904,7 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
           return reject();
         } else if (impl_->strategy.load(std::memory_order_acquire) == kPopStrategy &&
                    overflow_policy != TaskOverflowPolicy::kBlock) {
-          if (!drop_one_normal_task()) {
+          if (!drop_one_normal_task(dropped_tasks)) {
             return reject();
           }
 
@@ -857,6 +923,10 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
       }
 
       if VUNLIKELY (is_full) {
+        if VUNLIKELY (blocks_loop_thread()) {
+          return reject();
+        }
+
         if (block_for_capacity([this] { return impl_->normal_queue->size() < get_max_task_count(); })) {
           continue;
         }
@@ -875,7 +945,7 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
                 return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
               }
 
-              if (!drop_one_normal_task()) {
+              if (!drop_one_normal_task(dropped_tasks)) {
                 return reject();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
               }
 
@@ -970,7 +1040,7 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
 
       if (impl_->strategy.load(std::memory_order_acquire) == kPopStrategy &&
           overflow_policy != TaskOverflowPolicy::kBlock) {
-        if (!drop_one_lockfree_task(true)) {
+        if (!drop_one_lockfree_task(dropped_tasks, true)) {
           return reject();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
@@ -984,6 +1054,10 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
       }
 
       if VUNLIKELY (is_full) {
+        if VUNLIKELY (blocks_loop_thread()) {
+          return reject();
+        }
+
         if (impl_->strategy.load(std::memory_order_acquire) == kOptimizationStrategy &&
             overflow_policy != TaskOverflowPolicy::kBlock) {
           if (++retry_cnt > 10) {
@@ -995,7 +1069,7 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
               return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             }
 
-            if (!drop_one_lockfree_task(true)) {
+            if (!drop_one_lockfree_task(dropped_tasks, true)) {
               return reject();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             }
 
@@ -1042,7 +1116,7 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
           return reject();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         } else if (impl_->strategy.load(std::memory_order_acquire) == kPopStrategy &&
                    overflow_policy != TaskOverflowPolicy::kBlock) {
-          if (!drop_one_priority_task()) {
+          if (!drop_one_priority_task(dropped_tasks)) {
             return reject();
           }
 
@@ -1061,6 +1135,10 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
       }
 
       if VUNLIKELY (is_full) {
+        if VUNLIKELY (blocks_loop_thread()) {
+          return reject();
+        }
+
         if (block_for_capacity([this] {
               return impl_->priority_droppable_queue->size() + impl_->priority_protected_queue->size() <
                      get_max_task_count();
@@ -1082,7 +1160,7 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
                 return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
               }
 
-              if (!drop_one_priority_task()) {
+              if (!drop_one_priority_task(dropped_tasks)) {
                 return reject();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
               }
 
@@ -1120,9 +1198,10 @@ bool MessageLoop::push_task(Callback&& callback, uint16_t priority, bool droppab
   return reject();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 }
 
-bool MessageLoop::drop_one_normal_task() {
+bool MessageLoop::drop_one_normal_task(std::vector<Callback>& dropped) {
   for (auto iter = impl_->normal_queue->begin(); iter != impl_->normal_queue->end(); ++iter) {
     if (std::get<1>(*iter)) {
+      dropped.emplace_back(std::move(std::get<2>(*iter)));
       impl_->normal_queue->erase(iter);
 
       return true;
@@ -1132,12 +1211,14 @@ bool MessageLoop::drop_one_normal_task() {
   return false;
 }
 
-bool MessageLoop::drop_one_lockfree_task(bool keep_reserved) {
+bool MessageLoop::drop_one_lockfree_task(std::vector<Callback>& dropped, bool keep_reserved) {
   Impl::LockfreeTaskTuple task;
 
   if (!impl_->lockfree_queue->try_pop<Impl::LockfreeQueue::kNoBehavior>(task)) {
     return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
+
+  dropped.emplace_back(std::move(std::get<1>(task)));
 
   if (!keep_reserved) {
     release_lockfree_task();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -1146,12 +1227,28 @@ bool MessageLoop::drop_one_lockfree_task(bool keep_reserved) {
   return true;
 }
 
-bool MessageLoop::drop_one_priority_task() {
-  if (impl_->priority_droppable_queue->empty()) {
+bool MessageLoop::drop_one_priority_task(std::vector<Callback>& dropped) {
+  auto& container = impl_->priority_droppable_queue->container();
+
+  if (container.empty()) {
     return false;
   }
 
-  impl_->priority_droppable_queue->pop();
+  auto victim = container.begin();
+
+  for (auto iter = std::next(container.begin()); iter != container.end(); ++iter) {
+    const uint32_t victim_rank = std::get<0>(*victim);
+    const uint32_t iter_rank = std::get<0>(*iter);
+
+    if (iter_rank > victim_rank || (iter_rank == victim_rank && std::get<1>(*iter) < std::get<1>(*victim))) {
+      victim = iter;
+    }
+  }
+
+  dropped.emplace_back(std::move(std::get<4>(*victim)));
+  container.erase(victim);
+
+  std::make_heap(container.begin(), container.end(), Impl::PriorityCompare{});
 
   return true;
 }
@@ -1282,6 +1379,8 @@ bool MessageLoop::process_normal_task(bool block, bool reuse_queue) {
   [[maybe_unused]] bool is_timeout = true;
   int64_t sleep_time = -1;
 
+  std::vector<Callback> dropped_tasks;
+
   std::optional<Impl::NormalQueue> local_queue;
 
   if (!reuse_queue) {
@@ -1308,8 +1407,13 @@ bool MessageLoop::process_normal_task(bool block, bool reuse_queue) {
 
   while (!temp_queue.empty() && !impl_->force_quit_flag.load(std::memory_order_acquire)) {
     auto&& [start_time, droppable, task] = std::move(const_cast<Impl::NormalTaskTuple&>(temp_queue.front()));
-    (void)droppable;
-    on_task_changed(std::move(task), start_time);
+
+    {
+      Impl::RestoreDropPolicy restore{impl_->current_task_droppable,
+                                      std::exchange(impl_->current_task_droppable, droppable)};
+      on_task_changed(std::move(task), start_time);
+    }
+
     temp_queue.pop_front();
   }
 
@@ -1324,17 +1428,18 @@ bool MessageLoop::process_normal_task(bool block, bool reuse_queue) {
     return false;
   }
 
+  if (block) {
+    impl_->manual_spin_waiting.store(!impl_->is_running.load(std::memory_order_acquire), std::memory_order_release);
+  }
+
   if (!impl_->timer_set.empty()) {
-    process_timer_task(sleep_time);
+    process_timer_task(sleep_time, dropped_tasks);
   }
 
   impl_->is_busy.store(false, std::memory_order_release);
   impl_->cv.notify_all();
 
   if (block) {
-    const bool manual_spin = !impl_->is_running.load(std::memory_order_acquire);
-    impl_->manual_spin_waiting.store(manual_spin, std::memory_order_release);
-
     auto predicate = [this]() -> bool {
       return impl_->quit_flag.load(std::memory_order_acquire) || impl_->is_busy.load(std::memory_order_acquire) ||
              !impl_->normal_queue->empty() || impl_->wakeup_pending.load(std::memory_order_acquire);
@@ -1358,6 +1463,8 @@ bool MessageLoop::process_lockfree_task(bool block) {
   impl_->is_busy.store(true, std::memory_order_release);
 
   [[maybe_unused]] bool is_timeout = true;
+
+  std::vector<Callback> dropped_tasks;
 
   while (!impl_->force_quit_flag.load(std::memory_order_acquire)) {
     Impl::LockfreeTaskTuple temp_task;
@@ -1385,17 +1492,18 @@ bool MessageLoop::process_lockfree_task(bool block) {
     return false;
   }
 
+  if (block) {
+    impl_->manual_spin_waiting.store(!impl_->is_running.load(std::memory_order_acquire), std::memory_order_release);
+  }
+
   if (!impl_->timer_set.empty()) {
-    process_timer_task(sleep_time);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    process_timer_task(sleep_time, dropped_tasks);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
   impl_->is_busy.store(false, std::memory_order_release);
   impl_->cv.notify_all();
 
   if (block) {
-    const bool manual_spin = !impl_->is_running.load(std::memory_order_acquire);
-    impl_->manual_spin_waiting.store(manual_spin, std::memory_order_release);
-
     auto predicate = [this]() -> bool {
       return impl_->quit_flag.load(std::memory_order_acquire) || impl_->is_busy.load(std::memory_order_acquire) ||
              impl_->lockfree_task_count.load(std::memory_order_acquire) != 0U ||
@@ -1422,6 +1530,8 @@ bool MessageLoop::process_priority_task(bool block) {
 
   [[maybe_unused]] bool is_timeout = true;
   int64_t sleep_time = -1;
+
+  std::vector<Callback> dropped_tasks;
 
 #ifdef VLINK_ENABLE_BASE_MEMORY_RESOURCE
   Impl::PriorityQueue temp_queue(&MemoryResource::global_instance());
@@ -1452,9 +1562,12 @@ bool MessageLoop::process_priority_task(bool block) {
     auto& selected_queue = drain_protected ? temp_protected_queue : temp_queue;
     auto&& [priority, seq, start_time, droppable, task] =
         std::move(const_cast<Impl::PriorityTaskTuple&>(selected_queue.top()));
-    (void)droppable;
 
-    on_task_changed(std::move(task), start_time);
+    {
+      Impl::RestoreDropPolicy restore{impl_->current_task_droppable,
+                                      std::exchange(impl_->current_task_droppable, droppable)};
+      on_task_changed(std::move(task), start_time);
+    }
 
     selected_queue.pop();
   }
@@ -1469,17 +1582,18 @@ bool MessageLoop::process_priority_task(bool block) {
     return false;
   }
 
+  if (block) {
+    impl_->manual_spin_waiting.store(!impl_->is_running.load(std::memory_order_acquire), std::memory_order_release);
+  }
+
   if (!impl_->timer_set.empty()) {
-    process_timer_task(sleep_time);
+    process_timer_task(sleep_time, dropped_tasks);
   }
 
   impl_->is_busy.store(false, std::memory_order_release);
   impl_->cv.notify_all();
 
   if (block) {
-    const bool manual_spin = !impl_->is_running.load(std::memory_order_acquire);
-    impl_->manual_spin_waiting.store(manual_spin, std::memory_order_release);
-
     auto predicate = [this]() -> bool {
       return impl_->quit_flag.load(std::memory_order_acquire) || impl_->is_busy.load(std::memory_order_acquire) ||
              !impl_->priority_droppable_queue->empty() || !impl_->priority_protected_queue->empty() ||
@@ -1500,7 +1614,7 @@ bool MessageLoop::process_priority_task(bool block) {
   return true;
 }
 
-bool MessageLoop::process_timer_task(int64_t& next_sleep_time) {
+bool MessageLoop::process_timer_task(int64_t& next_sleep_time, std::vector<Callback>& dropped_tasks) {
   int64_t invoke_count = 0;
   int64_t remain_loop_count = 0;
   int64_t interval_time = 0;
@@ -1527,8 +1641,8 @@ bool MessageLoop::process_timer_task(int64_t& next_sleep_time) {
 
     const uint64_t timer_generation = timer->get_generation();
 
-    interval_time =
-        timer->get_interval() == 0 ? Timer::kMinInterval : static_cast<uint64_t>(timer->get_interval()) * 1000'000U;
+    const uint32_t interval = timer->get_interval();
+    interval_time = interval == 0 ? Timer::kMinInterval : static_cast<uint64_t>(interval) * 1000'000U;
 
     uint64_t start_time = timer->get_start_time();
     uint64_t current_time = get_current_nano_time();
@@ -1585,7 +1699,7 @@ bool MessageLoop::process_timer_task(int64_t& next_sleep_time) {
         if (impl_->type == kNormalType) {
           if VUNLIKELY (impl_->normal_queue->size() >= get_max_task_count()) {
             // LCOV_EXCL_START GCOVR_EXCL_START
-            if (!drop_one_normal_task()) {
+            if (!drop_one_normal_task(dropped_tasks)) {
               CLOG_W("MessageLoop: Timer task is full and no task can be dropped (%s).", impl_->name.c_str());
               capacity_blocked = true;
               break;
@@ -1608,7 +1722,7 @@ bool MessageLoop::process_timer_task(int64_t& next_sleep_time) {
         } else if (impl_->type == kLockfreeType) {
           // LCOV_EXCL_START GCOVR_EXCL_START
           if VUNLIKELY (!reserve_lockfree_task()) {
-            if (!drop_one_lockfree_task(true)) {
+            if (!drop_one_lockfree_task(dropped_tasks, true)) {
               CLOG_W("MessageLoop: Timer task is full and no task can be dropped (%s).", impl_->name.c_str());
               capacity_blocked = true;
               break;
@@ -1638,7 +1752,7 @@ bool MessageLoop::process_timer_task(int64_t& next_sleep_time) {
           if VUNLIKELY (impl_->priority_droppable_queue->size() + impl_->priority_protected_queue->size() >=
                         get_max_task_count()) {
             // LCOV_EXCL_START GCOVR_EXCL_START
-            if (!drop_one_priority_task()) {
+            if (!drop_one_priority_task(dropped_tasks)) {
               CLOG_W("MessageLoop: Timer task is full and no droppable task exists (%s).", impl_->name.c_str());
               capacity_blocked = true;
               break;
@@ -1691,10 +1805,13 @@ bool MessageLoop::process_timer_task(int64_t& next_sleep_time) {
       next_sleep_time = 0;
 
     } else {
-      remain_time = interval_time - (current_time - start_time) % interval_time - Timer::kMinInterval;
+      const auto elapsed_in_period =
+          static_cast<int64_t>((current_time - start_time) % static_cast<uint64_t>(interval_time));
 
-      if (remain_time < 0) {
-        remain_time = 0;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      remain_time = interval_time - elapsed_in_period;
+
+      if (remain_time > static_cast<int64_t>(Timer::kMinInterval)) {
+        remain_time -= static_cast<int64_t>(Timer::kMinInterval);
       }
 
       if (next_sleep_time < 0 || next_sleep_time > remain_time) {

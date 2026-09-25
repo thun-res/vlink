@@ -65,7 +65,7 @@
  * | Entry point   | @c co_spawn(loop, task, on_done)  | Spawn with completion callback       |
  * | Entry point   | @c co_spawn_with_priority(...)    | Same overloads with priority         |
  * | Bridge        | @c exec(loop, config, fn)         | Wrap @c MessageLoop::exec_task       |
- * | Bridge        | @c await_graph(loop, graph)       | Wait on @c GraphTask DAG             |
+ * | Bridge        | @c await_graph(loop, graph)       | Wait on a @c GraphTask node          |
  * | Orchestration | @c when_all(loop, tasks)          | Join all, collect results            |
  * | Orchestration | @c when_any(loop, tasks)          | First success and its index          |
  * | Orchestration | @c sequence(loop, tasks)          | Run in order                         |
@@ -139,7 +139,7 @@
 #include "../version.h"
 
 #ifdef VLINK_ENABLE_CXX_STD_20
-#if __has_include(<coroutine>)
+#if defined(__cpp_impl_coroutine) && __has_include(<coroutine>)
 #include <coroutine>
 #endif
 #if defined(__cpp_lib_coroutine)
@@ -458,26 +458,37 @@ struct VLINK_EXPORT DetachedTask final {
   DetachedTask() noexcept;
 
   /**
-   * @brief Destroys the detached task.  Does not own the frame after release.
+   * @brief Destroys the wrapper only; the frame is never destroyed here.
+   *
+   * @details
+   * This type is a plain handle carrier, not an owning RAII wrapper.  The coroutine suspends
+   * initially and self-destructs at its final suspend point, so a resumed frame releases
+   * itself whenever it completes, possibly after the wrapper is gone; only a frame that was
+   * never resumed has to be released by the caller through @c handle.destroy().  Destroying
+   * it here would double-free the common case.
    */
   ~DetachedTask();
 
   /**
-   * @brief Constructs a detached task that owns @p h.
+   * @brief Constructs a detached task holding @p h.
    *
-   * @param h  Coroutine handle to take ownership of.
+   * @param h  Coroutine handle to carry.
    */
   explicit DetachedTask(Handle h) noexcept;
 
   /**
-   * @brief Move-constructs a detached task, transferring frame ownership.
+   * @brief Move-constructs a detached task, transferring the handle.
    *
    * @param other  Source task; left empty after the move.
    */
   DetachedTask(DetachedTask&& other) noexcept;
 
   /**
-   * @brief Move-assigns a detached task, transferring frame ownership.
+   * @brief Move-assigns a detached task, transferring the handle.
+   *
+   * @details
+   * The handle previously carried is overwritten, not destroyed, matching the non-owning
+   * contract above; release it beforehand when it names a frame that was never resumed.
    *
    * @param other  Source task; left empty after the move.
    * @return Reference to @c *this.
@@ -493,7 +504,7 @@ struct VLINK_EXPORT DetachedTask final {
  * @brief Bridges a @c Task<void> into a @c DetachedTask coroutine.
  *
  * @param task  Task to await inside the detached coroutine.
- * @return @c DetachedTask owning the new frame.
+ * @return @c DetachedTask carrying the handle of the new frame.
  */
 VLINK_EXPORT DetachedTask co_spawn_void_impl(Task<void> task);
 
@@ -504,7 +515,7 @@ VLINK_EXPORT DetachedTask co_spawn_void_impl(Task<void> task);
  * @tparam CallbackT  Callable invoked with the task's result on success.
  * @param task         Inner task to await.
  * @param on_complete  Callback invoked on the loop thread on successful completion.
- * @return @c DetachedTask owning the new frame.
+ * @return @c DetachedTask carrying the handle of the new frame.
  */
 template <typename TypeT, typename CallbackT>
 DetachedTask co_spawn_value_impl(Task<TypeT> task, CallbackT on_complete);
@@ -515,7 +526,7 @@ DetachedTask co_spawn_value_impl(Task<TypeT> task, CallbackT on_complete);
  * @tparam CallbackT  Callable invoked after the inner task completes.
  * @param task         Inner task to await.
  * @param on_complete  Callback invoked on the loop thread on successful completion.
- * @return @c DetachedTask owning the new frame.
+ * @return @c DetachedTask carrying the handle of the new frame.
  */
 template <typename CallbackT>
 DetachedTask co_spawn_void_with_cb_impl(Task<void> task, CallbackT on_complete);
@@ -1175,8 +1186,8 @@ FutureAwaiter<TypeT> await_future(MessageLoop& loop, std::future<TypeT> fut) noe
  *
  * @details
  * The coroutine begins executing on @p loop's thread.  Ownership of the task
- * frame is transferred to an internal @c DetachedTask which destroys the frame
- * once the body completes.  Exceptions thrown from the task are caught by
+ * frame is transferred to an internal detached coroutine, which destroys itself
+ * and the task frame once the body completes.  Exceptions thrown from the task are caught by
  * @c DetachedTask::unhandled_exception, logged at error level and swallowed:
  * the loop continues running.
  *
@@ -1304,7 +1315,8 @@ Task<void> exec(MessageLoop& loop, Schedule::Config config, CallbackT callback);
  * finish (success or failure) before completing.  If any sub-task throws, the
  * first exception observed is rethrown from the awaiting @c co_await with its
  * original type preserved; subsequent exceptions from sibling tasks are
- * dropped.
+ * dropped.  An invalid (moved-from or default-constructed) task fails with
+ * @c std::logic_error like a throwing sub-task.
  *
  * @note @p TypeT must be default-constructible; the results vector is
  *       pre-sized via @c std::vector<TypeT>(count).
@@ -1323,7 +1335,8 @@ Task<std::vector<TypeT>> when_all(MessageLoop& loop, std::vector<Task<TypeT>> ta
  * @details
  * Waits for every sub-task to finish.  If any sub-task throws, the first
  * exception observed is rethrown from the awaiting @c co_await with its
- * original type preserved; subsequent exceptions are dropped.
+ * original type preserved; subsequent exceptions are dropped.  An invalid
+ * task fails with @c std::logic_error like a throwing sub-task.
  *
  * @param loop   Loop on which sub-tasks are spawned and the caller resumes.
  * @param tasks  Sub-tasks to await; ownership is transferred into the call.
@@ -1342,7 +1355,8 @@ VLINK_EXPORT Task<void> when_all(MessageLoop& loop, std::vector<Task<void>> task
  * this layer offers no cross-coroutine cancellation.  If "abandon losers"
  * semantics with bounded latency are required, each sub-task itself must
  * respect a deadline.  If every sub-task throws, the first exception observed
- * is rethrown from the awaiting @c co_await.
+ * is rethrown from the awaiting @c co_await; an invalid task counts as one
+ * throwing @c std::logic_error.
  *
  * @tparam TypeT  Result type produced by every sub-task.
  * @param loop   Loop on which sub-tasks are spawned and the caller resumes.
@@ -1363,7 +1377,8 @@ Task<std::pair<size_t, TypeT>> when_any(MessageLoop& loop, std::vector<Task<Type
  * does not return until every sub-task has finished — this is required to
  * avoid leaking orphaned sub-task frames (no cross-coroutine cancellation is
  * provided).  If every sub-task throws, the first exception observed is
- * rethrown from the awaiting @c co_await.
+ * rethrown from the awaiting @c co_await; an invalid task counts as one
+ * throwing @c std::logic_error.
  *
  * @param loop   Loop on which sub-tasks are spawned and the caller resumes.
  * @param tasks  Sub-tasks to race; ownership is transferred into the call.
@@ -1382,7 +1397,8 @@ VLINK_EXPORT Task<size_t> when_any(MessageLoop& loop, std::vector<Task<void>> ta
  * and joined through @c await_future, so both the success path and any
  * exception thrown by a sub-task resume the caller on @p loop's thread.  If a
  * task throws, the exception is rethrown from the awaiting @c co_await with
- * its original type preserved and the remaining tasks are skipped.
+ * its original type preserved and the remaining tasks are skipped.  Invalid
+ * (moved-from or default-constructed) tasks are skipped.
  *
  * @param loop   Loop on which sub-tasks are spawned and the caller resumes.
  * @param tasks  Sub-tasks to run in order; ownership is transferred into the call.
@@ -1678,6 +1694,10 @@ inline TypeT FutureAwaiter<TypeT>::await_resume() {
     throw Exception::OperationCancelled{};
   }
 
+  if VUNLIKELY (!state_->fut.valid()) {
+    throw Exception::InvalidArgument{"await_future: the future has no shared state"};
+  }
+
   if constexpr (std::is_void_v<TypeT>) {
     state_->fut.get();
   } else {
@@ -1802,7 +1822,12 @@ template <typename TypeT>
 inline Task<void> when_all_runner(Task<TypeT> task, size_t i, WhenAllGuard<TypeT> guard) {
   try {
     auto value = co_await std::move(task);
-    guard.state->results[i] = std::move(value);
+    if constexpr (std::is_same_v<TypeT, bool>) {
+      std::lock_guard lock(guard.state->exc_mtx);
+      guard.state->results[i] = value;
+    } else {
+      guard.state->results[i] = std::move(value);
+    }
   } catch (...) {
     std::lock_guard lock(guard.state->exc_mtx);
 

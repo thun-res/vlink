@@ -86,11 +86,12 @@ void CancellationRegistration::reset() noexcept {
   }
 
   auto state = state_.lock();
+  decltype(State::callbacks)::node_type callback;
 
   if VLIKELY (state) {
     std::lock_guard lock(state->mtx);
 
-    state->callbacks.erase(id_);
+    callback = state->callbacks.extract(id_);
   }
 
   id_ = 0;
@@ -169,6 +170,10 @@ CancellationToken CancellationSource::token() const noexcept { return Cancellati
 bool CancellationSource::is_cancellation_requested() const noexcept { return token().is_cancellation_requested(); }
 
 bool CancellationSource::request_cancel() const {
+  if VUNLIKELY (!state_) {
+    return false;
+  }
+
 #ifdef VLINK_ENABLE_BASE_MEMORY_RESOURCE
   std::pmr::vector<MoveFunction<void()>> callbacks(&MemoryResource::global_instance());
 #else

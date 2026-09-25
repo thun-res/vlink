@@ -39,6 +39,30 @@
 #include "../common_test.h"
 
 TEST_SUITE("base-WheelTimer") {
+  TEST_CASE("removed callbacks can query the wheel during resource destruction") {
+    WheelTimer wheel(20, 10);
+    WheelTimer::Key key = -1;
+    uint32_t remaining = 1;
+    bool destroyed = false;
+    auto resource = std::shared_ptr<int>(new int(0), [&](int* ptr) {
+      delete ptr;
+      remaining = wheel.get_remaining_time(key);
+      destroyed = true;
+    });
+    key = wheel.add(60000, [resource = std::move(resource)](WheelTimer::Key) {});
+    REQUIRE(key > 0);
+
+    SUBCASE("explicit removal") { CHECK(wheel.remove(key)); }
+    SUBCASE("stop cleanup") {
+      wheel.pause();
+      wheel.start();
+      wheel.stop();
+    }
+
+    CHECK(destroyed);
+    CHECK_EQ(remaining, 0);
+  }
+
   TEST_CASE("is_running reflects start and stop transitions") {
     WheelTimer wheel(20, 10);
 
@@ -590,8 +614,9 @@ TEST_SUITE("base-WheelTimer") {
     std::atomic<bool> fired{false};
 
     wheel.add(10, [&](WheelTimer::Key) {
-      fired.store(true, std::memory_order_release);
       wheel.stop();
+      wheel.stop();
+      fired.store(true, std::memory_order_release);
     });
 
     CHECK(common_test::wait_until([&fired] { return fired.load(std::memory_order_acquire); }, 500ms));

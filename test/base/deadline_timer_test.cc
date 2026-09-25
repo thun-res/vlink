@@ -27,6 +27,7 @@
 
 #include <doctest/doctest.h>
 
+#include <limits>
 #include <thread>
 
 #include "../common_test.h"
@@ -107,6 +108,14 @@ TEST_SUITE("base-DeadlineTimer") {
 
     CHECK(t.is_valid());
     CHECK_EQ(t.deadline(), abs);
+  }
+
+  TEST_CASE("remaining_time saturates without changing a far future absolute deadline") {
+    DeadlineTimer t;
+    t.set_deadline_abs(std::numeric_limits<uint64_t>::max());
+    CHECK_EQ(t.deadline(), std::numeric_limits<uint64_t>::max());
+    CHECK_FALSE(t.has_expired());
+    CHECK_EQ(t.remaining_time(), std::numeric_limits<int64_t>::max());
   }
 
   TEST_CASE("set_deadline_abs with a future timestamp yields unexpired timer") {

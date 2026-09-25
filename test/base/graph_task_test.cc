@@ -517,6 +517,8 @@ TEST_SUITE("base-GraphTask") {
     CHECK_EQ(c->get_succeed_task_list().size(), 1u);
 
     CHECK_THROWS(a->remove_precede_task(c));
+    CHECK_THROWS(a->remove_precede_task(a));
+    CHECK_NOTHROW(a->remove_succeed_task(a));
     a->remove_succeed_task(b);
     CHECK_EQ(a->get_succeed_task_list().size(), 1u);
     CHECK_EQ(a->get_precede_task_list().size(), 1u);
@@ -565,6 +567,33 @@ TEST_SUITE("base-GraphTask") {
     task->cancel();
     CHECK_EQ(task->get_status(), GraphTask::kStatusInActive);
     CHECK_EQ(executed.load(), 0);
+  }
+
+  TEST_CASE("export_to_dot retains children while external owners release them") {
+    for (int round = 0; round < 32; ++round) {
+      auto root = GraphTask::create("root", [] {});
+      std::vector<std::shared_ptr<GraphTask>> children;
+      for (int i = 0; i < 256; ++i) {
+        auto child = GraphTask::create(std::to_string(i), [] {});
+        root->precede(child);
+        children.emplace_back(std::move(child));
+      }
+
+      std::atomic<bool> started{false};
+      std::thread release([&] {
+        while (!started.load()) {
+          std::this_thread::yield();
+        }
+        for (auto& child : children) {
+          child.reset();
+          std::this_thread::yield();
+        }
+      });
+      started.store(true);
+      const auto dot = root->export_to_dot();
+      release.join();
+      CHECK(dot.find("digraph TaskGraph") != std::string::npos);
+    }
   }
 
   TEST_CASE("export_to_dot is non-empty and contains digraph keyword") {

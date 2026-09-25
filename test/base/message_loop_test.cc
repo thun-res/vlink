@@ -29,13 +29,16 @@
 
 #include <atomic>
 #include <future>
+#include <memory>
 #include <mutex>
 #include <shared_mutex>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "../common_test.h"
+#include "./base/timer.h"
 
 namespace {
 
@@ -43,6 +46,12 @@ class SmallQueueLoop final : public MessageLoop {
  public:
   using MessageLoop::MessageLoop;
   [[nodiscard]] size_t get_max_task_count() const override { return 1U; }
+};
+
+class TwoSlotQueueLoop final : public MessageLoop {
+ public:
+  using MessageLoop::MessageLoop;
+  [[nodiscard]] size_t get_max_task_count() const override { return 2U; }
 };
 
 class ObservedSmallQueueLoop final : public MessageLoop {
@@ -863,6 +872,14 @@ TEST_SUITE("base-MessageLoop") {
     loop.wait_for_quit();
   }
 
+  TEST_CASE("reset_lockfree_capacity destroys queued timers outside the loop lock") {
+    MessageLoop loop(MessageLoop::kLockfreeType);
+    auto timer = std::make_unique<Timer>(&loop);
+    CHECK(loop.post_task([timer = std::move(timer)] {}));
+    loop.reset_lockfree_capacity();
+    CHECK_EQ(loop.get_task_count(), 0);
+  }
+
   TEST_CASE("reset_lockfree_capacity is ignored for non-lockfree loops") {
     MessageLoop normal_loop;
     MessageLoop priority_loop(MessageLoop::kPriorityType);
@@ -899,6 +916,49 @@ TEST_SUITE("base-MessageLoop") {
     CHECK(loop.post_task([] {}));
     CHECK(loop.post_task([] {}));
     CHECK_EQ(loop.get_task_count(), 1u);
+  }
+
+  TEST_CASE("kPopStrategy drops the least urgent task when a priority queue is full") {
+    TwoSlotQueueLoop loop(MessageLoop::kPriorityType);
+    loop.set_strategy(MessageLoop::kPopStrategy);
+
+    auto lowest = loop.post_task_with_priority_handle([] {}, MessageLoop::kLowestPriority);
+    auto highest = loop.post_task_with_priority_handle([] {}, MessageLoop::kHighestPriority);
+    auto normal = loop.post_task_with_priority_handle([] {}, MessageLoop::kNormalPriority);
+
+    CHECK(lowest.wait(100));
+    CHECK_EQ(lowest.state(), TaskExecutionState::kDropped);
+    CHECK_EQ(highest.state(), TaskExecutionState::kQueued);
+    CHECK_EQ(normal.state(), TaskExecutionState::kQueued);
+  }
+
+  TEST_CASE("blocking post from the loop thread is rejected instead of deadlocking") {
+    auto check_type = [](MessageLoop::Type type) {
+      SmallQueueLoop loop(type);
+      loop.set_strategy(MessageLoop::kBlockStrategy);
+      loop.async_run();
+
+      std::promise<std::pair<bool, bool>> result;
+      auto future = result.get_future();
+
+      loop.post_task([&loop, &result] {
+        const bool first = loop.post_task([] {});
+        const bool second = loop.post_task([] {});
+        result.set_value({first, second});
+      });
+
+      REQUIRE_EQ(future.wait_for(2s), std::future_status::ready);
+      const auto [first, second] = future.get();
+      CHECK(first);
+      CHECK_FALSE(second);
+
+      loop.quit();
+      loop.wait_for_quit();
+    };
+
+    SUBCASE("kNormalType") { check_type(MessageLoop::kNormalType); }
+    SUBCASE("kLockfreeType") { check_type(MessageLoop::kLockfreeType); }
+    SUBCASE("kPriorityType") { check_type(MessageLoop::kPriorityType); }
   }
 
   TEST_CASE("priority queue rejects overflow when only protected tasks are queued") {

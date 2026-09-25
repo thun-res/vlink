@@ -43,7 +43,8 @@
  *   the next iteration so the long-term cadence is preserved.
  * - Configurable dispatch priority for use with @c kPriorityType message loops.
  * - When @c interval_ms is @c 0 the internal interval clamps to @c kMinInterval
- *   (10000 ns = 10 us) to avoid pathological busy-spinning.
+ *   (10000 ns = 10 us) to avoid pathological busy-spinning; the effective rate is further
+ *   bounded by the platform's wait resolution, about 1 ms or coarser on Windows and QNX.
  * - The static @c call_once() helper posts a fire-and-forget one-shot without managing a
  *   @c Timer object.
  *
@@ -310,7 +311,7 @@ class VLINK_EXPORT Timer final {
 
   void clear();
 
-  void force_to_start();
+  void force_to_start(bool reset_loop_count = false);
 
   void set_remain_loop_count(int32_t loop_count) const;
 

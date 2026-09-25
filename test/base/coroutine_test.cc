@@ -272,6 +272,28 @@ Task<> body_exec_schedule_timeout(MessageLoop* loop, std::atomic<bool>* ran, std
 
 Task<int> body_int_const(int v) { co_return v; }
 
+Task<bool> body_bool_on_loop(MessageLoop* loop, std::atomic<int>* ready) {
+  co_await vlink::Co::schedule(*loop);
+  ready->fetch_add(1);
+  while (ready->load() < 2) {
+    std::this_thread::yield();
+  }
+  co_return true;
+}
+
+Task<> body_when_all_bool(MessageLoop* loop, MessageLoop* first, MessageLoop* second, std::promise<bool>* done) {
+  bool all_true = true;
+  for (int round = 0; round < 100; ++round) {
+    std::atomic<int> ready{0};
+    std::vector<Task<bool>> tasks;
+    tasks.emplace_back(body_bool_on_loop(first, &ready));
+    tasks.emplace_back(body_bool_on_loop(second, &ready));
+    auto results = co_await when_all<bool>(*loop, std::move(tasks));
+    all_true = all_true && results[0] && results[1];
+  }
+  done->set_value(all_true);
+}
+
 Task<int> body_delay_then(MessageLoop* loop, uint32_t ms, int v) {
   co_await delay_ms(*loop, ms);
   co_return v;
@@ -1252,6 +1274,27 @@ TEST_SUITE("base-Coroutine") {
 
     loop.quit();
     loop.wait_for_quit();
+  }
+
+  TEST_CASE("when_all<bool> collects concurrent results from different loops") {
+    MessageLoop loop;
+    MessageLoop first;
+    MessageLoop second;
+    loop.async_run();
+    first.async_run();
+    second.async_run();
+
+    std::promise<bool> done;
+    auto result = done.get_future();
+    co_spawn(loop, body_when_all_bool(&loop, &first, &second, &done));
+    CHECK(result.get());
+
+    loop.quit();
+    first.quit();
+    second.quit();
+    loop.wait_for_quit();
+    first.wait_for_quit();
+    second.wait_for_quit();
   }
 
   TEST_CASE("when_any<int> records the first completed sub-task as winner") {

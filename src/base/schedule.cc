@@ -279,9 +279,11 @@ Schedule::RetStatus Schedule::internal_process_with_ret(const Config& config, Re
       } catch (std::exception& e) {
         if (catch_cb) {
           catch_cb(e);
-
-          return std::nullopt;
+        } else {
+          CLOG_E("Schedule: Task threw an exception and no on_catch handler is registered: %s.", e.what());
         }
+
+        return std::nullopt;
       }
 
       if (config.execution_timeout_ms > 0) {

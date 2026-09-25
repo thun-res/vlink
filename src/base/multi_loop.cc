@@ -33,6 +33,7 @@
 #include "./base/condition_variable.h"
 #include "./base/logger.h"
 #include "./base/thread_pool.h"
+#include "./base/utils.h"
 
 namespace vlink {
 
@@ -108,7 +109,19 @@ MultiLoop::MultiLoop(size_t thread_num, Type type) : MessageLoop(type), impl_(st
   // }
 }
 
-MultiLoop::~MultiLoop() = default;
+MultiLoop::~MultiLoop() {
+#ifdef _WIN32
+  if VUNLIKELY (Utils::is_terminating()) {
+    return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+#endif
+
+  quit(!is_running());
+
+  if VLIKELY (!MultiLoop::is_in_same_thread()) {
+    wait_for_quit(Timer::kInfinite, false);
+  }
+}
 
 bool MultiLoop::is_in_same_thread() const {
   if (MessageLoop::is_in_same_thread()) {
@@ -221,6 +234,7 @@ void MultiLoop::on_end() {
 
 void MultiLoop::on_task_changed(Callback&& callback, uint32_t start_time) {
   std::shared_ptr<PendingTask> task;
+  Callback dropped_task;
   bool posted = false;
 
   {
@@ -229,11 +243,13 @@ void MultiLoop::on_task_changed(Callback&& callback, uint32_t start_time) {
     if VLIKELY (impl_->thread_pool) {
       task = std::make_shared<PendingTask>(this, impl_.get(), std::move(callback), start_time);
 
-      posted = impl_->thread_pool->post_task([task]() mutable {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        if VLIKELY (task->callback) {
-          task->loop->MessageLoop::on_task_changed(std::move(task->callback), task->start_time);
-        }
-      });
+      posted = impl_->thread_pool->push_task(
+          [task]() mutable {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+            if VLIKELY (task->callback) {
+              task->loop->MessageLoop::on_task_changed(std::move(task->callback), task->start_time);
+            }
+          },
+          is_current_task_droppable(), TaskOverflowPolicy::kUseDispatcherStrategy, nullptr, &dropped_task);
     }
   }
 

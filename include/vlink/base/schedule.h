@@ -255,7 +255,8 @@ struct VLINK_EXPORT Schedule final {
      *
      * @details
      * Only @c std::exception-derived failures are caught; other exception types are
-     * allowed to propagate.  Only one catch callback may be registered.
+     * allowed to propagate.  Only one catch callback may be registered.  Without one, the
+     * exception is logged; in both cases the run stops and @c on_else does not fire.
      *
      * @param callback  Hook receiving the caught exception.
      * @return Reference to @c *this for fluent chaining.

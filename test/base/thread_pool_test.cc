@@ -72,6 +72,35 @@ bool wait_until(PredicateT&& predicate, std::chrono::milliseconds timeout = std:
 }  // namespace
 
 TEST_SUITE("base-ThreadPool") {
+  TEST_CASE("dropped lockfree task can shut down the pool during resource destruction") {
+    SmallQueueThreadPool pool(1, ThreadPool::kLockfreeType);
+    pool.set_strategy(ThreadPool::kPopStrategy);
+    std::atomic<bool> release{false};
+    std::promise<void> entered;
+    auto started = entered.get_future();
+    REQUIRE(pool.post_task([&] {
+      entered.set_value();
+      while (!release.load()) {
+        std::this_thread::yield();
+      }
+    }));
+    started.wait();
+
+    bool stopped = false;
+    bool dropped_ran = false;
+    std::atomic<bool> replacement_ran{false};
+    auto resource = std::shared_ptr<int>(new int(0), [&](int* ptr) {
+      delete ptr;
+      release.store(true);
+      stopped = pool.shutdown();
+    });
+    REQUIRE(pool.post_task([resource = std::move(resource), &dropped_ran] { dropped_ran = true; }));
+    CHECK(pool.post_task([&] { replacement_ran.store(true); }));
+    CHECK(stopped);
+    CHECK_FALSE(dropped_ran);
+    CHECK(replacement_ran.load());
+  }
+
   TEST_CASE("invoke_task consumes move-only arguments and preserves explicit references") {
     for (auto type : {ThreadPool::kNormalType, ThreadPool::kLockfreeType}) {
       ThreadPool pool(1, type);

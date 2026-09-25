@@ -283,7 +283,13 @@ class VLINK_EXPORT GraphTask final : public std::enable_shared_from_this<GraphTa
    * every @c GraphTask instance, so concurrent writers are safe; read paths (@c execute,
    * @c has_cycle, @c export_to_dot) read per-node snapshots without taking that mutex.
    *
+   * A rejected cycle is only logged, because a cycle is a legitimate run-time topology the
+   * caller may probe for.  Misuse of the call itself -- a null or self @p task, or an edge that
+   * already exists -- is reported as a fatal log and therefore throws.
+   *
    * @param task  Successor node.
+   * @throws vlink::Exception::RuntimeError if @p task is null, is this node, or the edge
+   *         already exists.
    */
   void precede(const std::shared_ptr<GraphTask>& task);
 
@@ -292,9 +298,11 @@ class VLINK_EXPORT GraphTask final : public std::enable_shared_from_this<GraphTa
    *
    * @details
    * Mirror of @c precede; rejects edges that would form a cycle.  Shares the same single-writer
-   * topology mutex as @c precede.
+   * topology mutex as @c precede, and reports the same misuse cases as fatal.
    *
    * @param task  Predecessor node.
+   * @throws vlink::Exception::RuntimeError if @p task is null, is this node, or the edge
+   *         already exists.
    */
   void succeed(const std::shared_ptr<GraphTask>& task);
 
@@ -425,16 +433,22 @@ class VLINK_EXPORT GraphTask final : public std::enable_shared_from_this<GraphTa
    *
    * @details
    * Removes @p task from the successor list and removes this node from @p task 's predecessor
-   * list.  Logs an error when the edge does not exist.
+   * list.
    *
    * @param task  Previously attached successor.
+   * @throws vlink::Exception::RuntimeError if @p task is null or the edge does not exist.
    */
   void remove_precede_task(const std::shared_ptr<GraphTask>& task);
 
   /**
    * @brief Removes an incoming edge created by @c succeed.
    *
+   * @details
+   * Mirror of @c remove_precede_task.  A missing edge is tolerated here; only a null @p task
+   * is reported as fatal.
+   *
    * @param task  Previously attached predecessor.
+   * @throws vlink::Exception::RuntimeError if @p task is null.
    */
   void remove_succeed_task(const std::shared_ptr<GraphTask>& task);
 

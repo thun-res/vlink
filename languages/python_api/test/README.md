@@ -88,6 +88,7 @@ python3 test_vlink_coverage.py
 - `TriggerRecorder` 启停、触发落盘与超时等待，以及宿主加载并绑定 `BagPluginInterface` / `TriggerPluginInterface`
 - `UrlRemap`
 - Security 模型
+- Timer 直接替换、pending 替换及执行结束后的回调释放
 - `Setter.set` 变化通知与 `Getter.listen` 去重
 - Bag 显式 `Frame.timestamp` 写入与读回
 

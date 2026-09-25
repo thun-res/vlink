@@ -84,6 +84,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "./functional.h"
 #include "./macros.h"
@@ -287,17 +288,19 @@ class VLINK_EXPORT ThreadPool {
   [[nodiscard]] auto invoke_task(FunctionT&& function, ArgsT&&... args);
 
  private:
+  friend class MultiLoop;
+
   void init();
 
   bool push_task(Callback&& callback, bool droppable,
                  TaskOverflowPolicy overflow_policy = TaskOverflowPolicy::kUseDispatcherStrategy,
-                 const TaskHandle* submit_handle = nullptr);
+                 const TaskHandle* submit_handle = nullptr, Callback* dropped_out = nullptr);
 
-  bool drop_one_normal_task();
+  bool drop_one_normal_task(Callback& dropped);
 
-  bool drop_one_lockfree_task(bool keep_reserved = false);
+  bool drop_one_lockfree_task(Callback& dropped, bool keep_reserved = false);
 
-  bool reserve_lockfree_task(bool* was_empty = nullptr);
+  bool reserve_lockfree_task();
 
   void release_lockfree_task();
 

@@ -72,6 +72,7 @@ struct WheelTimer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
   uint32_t current_slot{0};
 
   std::thread worker_thread;
+  static thread_local const Impl* current_worker_;
 
   std::mutex mtx;
   std::mutex lifecycle_mtx;
@@ -81,6 +82,8 @@ struct WheelTimer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
 
   void run();
 };
+
+thread_local const WheelTimer::Impl* WheelTimer::Impl::current_worker_ = nullptr;
 
 // WheelTimer
 WheelTimer::WheelTimer(uint32_t slots, uint32_t interval_ms) : impl_(MemoryResource::make_shared<Impl>()) {
@@ -151,10 +154,7 @@ void WheelTimer::stop() {
 
   wakeup();
 
-  const bool called_from_worker =
-      impl_->worker_thread.joinable() && impl_->worker_thread.get_id() == std::this_thread::get_id();
-
-  if (called_from_worker) {
+  if (Impl::current_worker_ == impl_.get()) {
     if (impl_->lifecycle_mtx.try_lock()) {
       if (impl_->worker_thread.joinable()) {
         impl_->worker_thread.detach();
@@ -190,7 +190,7 @@ void WheelTimer::resume() {
   wakeup();
 }
 
-void WheelTimer::wakeup() { impl_->cv.notify_one(); }
+void WheelTimer::wakeup() { impl_->cv.notify_all(); }
 
 bool WheelTimer::is_running() const { return impl_->is_running.load(std::memory_order_acquire); }
 
@@ -268,6 +268,8 @@ WheelTimer::Key WheelTimer::add(uint32_t timeout_ms, Callback&& callback, uint32
 }
 
 bool WheelTimer::remove(WheelTimer::Key key) {
+  Callback removed_callback;
+
   {
     std::lock_guard lock(impl_->mtx);
 
@@ -278,6 +280,7 @@ bool WheelTimer::remove(WheelTimer::Key key) {
     }
 
     auto& slot_list = (*impl_->wheels)[it->second.first];
+    removed_callback = std::move(it->second.second->callback);
     slot_list.erase(it->second.second);
     impl_->timer_index.erase(it);
   }
@@ -313,6 +316,8 @@ void WheelTimer::set_catchup_limit(uint32_t max_slots_to_catch_up) {
 }
 
 void WheelTimer::Impl::run() {
+  current_worker_ = this;
+
 #ifdef VLINK_ENABLE_BASE_MEMORY_RESOURCE
   std::pmr::vector<std::pair<WheelTimer::Key, WheelTimer::Callback>> callbacks_to_execute(
       &MemoryResource::global_instance());
@@ -448,9 +453,11 @@ void WheelTimer::Impl::run() {
     callbacks_to_execute.clear();
   }
 
+  decltype(wheels) removed_wheels;
+
   {
     std::lock_guard lock(mtx);
-    is_running.store(false, std::memory_order_release);
+    removed_wheels = std::move(wheels);
     paused_flag.store(false, std::memory_order_release);
     current_slot = 0;
 
@@ -463,6 +470,14 @@ void WheelTimer::Impl::run() {
     wheels->resize(slots);
 
     timer_index.clear();
+  }
+
+  removed_wheels.reset();
+  current_worker_ = nullptr;
+
+  {
+    std::lock_guard lock(mtx);
+    is_running.store(false, std::memory_order_release);
   }
 
   cv.notify_all();

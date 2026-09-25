@@ -252,6 +252,7 @@ class VLINK_EXPORT ElapsedTimer final {
    * Performs a single atomic exchange.  When the timer was already active the returned value is
    * the elapsed time since the last start; when it was inactive the return is negative (the raw
    * sentinel) and the timer is left active starting from this call.
+   * Overlapping restarts whose clock samples arrive out of order return zero elapsed time.
    *
    * @return Elapsed time in the configured unit, or a negative value if the timer was inactive.
    */

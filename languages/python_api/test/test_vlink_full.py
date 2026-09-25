@@ -695,6 +695,8 @@ gc.collect()
 timer.start()
 assert done.wait(2.0)
 assert process.wait_for_finished(3000)
+process = None
+gc.collect()
 '''
     subprocess.run(
         [sys.executable, "-c", lifetime_check],
@@ -702,6 +704,68 @@ assert process.wait_for_finished(3000)
         capture_output=True,
         text=True,
         timeout=10.0,
+    )
+
+    replacement_check = r'''
+import threading
+import vlink
+
+for phase in ("idle", "pending", "completed"):
+    entered = threading.Event()
+    run_gate = threading.Event()
+    destroying = threading.Event()
+    destroy_gate = threading.Event()
+    destroyed = threading.Event()
+
+    class Callback:
+        def __call__(self):
+            entered.set()
+            assert run_gate.wait(5.0)
+
+        def __del__(self):
+            destroying.set()
+            destroy_gate.wait(5.0)
+            destroyed.set()
+
+    loop = vlink.MessageLoop()
+    timer = vlink.Timer(loop, 1, 1)
+    worker = None
+    if phase == "pending":
+        timer.set_callback(lambda: (entered.set(), run_gate.wait(5.0)))
+    else:
+        timer.set_callback(Callback())
+    if phase != "idle":
+        assert loop.async_run()
+        timer.start()
+        assert entered.wait(5.0)
+    if phase == "pending":
+        timer.set_callback(Callback())
+    if phase == "completed":
+        timer.set_callback(lambda: None)
+        run_gate.set()
+    else:
+        worker = threading.Thread(target=lambda: timer.set_callback(lambda: None))
+        worker.start()
+    assert destroying.wait(5.0)
+    timer.restart()
+    destroy_gate.set()
+    run_gate.set()
+    assert destroyed.wait(5.0)
+    if worker is not None:
+        worker.join(5.0)
+        assert not worker.is_alive()
+    timer.stop()
+    if phase != "idle":
+        assert loop.quit()
+        assert loop.wait_for_quit(5000)
+    del timer, loop
+'''
+    subprocess.run(
+        [sys.executable, "-c", replacement_check],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=20.0,
     )
 
     # TIMER_INFINITE constant
@@ -1373,7 +1437,16 @@ assert loop.wait_for_quit(2000)
 
 loop = vlink.MessageLoop()
 ended = threading.Event()
-loop.register_end_handler(ended.set)
+released = threading.Event()
+
+class EndHandler:
+    def __call__(self):
+        ended.set()
+
+    def __del__(self):
+        released.set()
+
+loop.register_end_handler(EndHandler())
 assert loop.async_run()
 holder = [vlink.Publisher("dds://python/node-loop-delete", auto_init=False)]
 assert holder[0].attach(loop)
@@ -1389,6 +1462,7 @@ loop = None
 gc.collect()
 assert done.wait(2.0)
 assert ended.wait(2.0)
+assert released.wait(2.0)
 '''
     subprocess.run(
         [sys.executable, "-c", node_loop_lifetime_check],

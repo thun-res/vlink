@@ -48,7 +48,7 @@
  * | Purpose           | Track a single deadline    | Schedule repeating callbacks        |
  * | Backing storage   | One @c atomic<uint64_t>    | Loop-managed timer list             |
  * | Owns a thread     | No                         | Owned by an attached @c MessageLoop |
- * | Cost per check    | One atomic load            | Insertion / removal on the loop     |
+ * | Cost per check    | One atomic load + clock    | Insertion / removal on the loop     |
  * | Cancellation      | @c reset()                 | @c detach() on the timer instance   |
  *
  * @par Example
@@ -187,6 +187,7 @@ class VLINK_EXPORT DeadlineTimer final {
    * @details
    * Computed as @c (deadline - current_cpu_timestamp); clamped to @c 0 once the deadline has
    * been reached or when the timer is invalid.
+   * Remaining durations above @c INT64_MAX saturate to @c INT64_MAX.
    *
    * @return Remaining time in the configured accuracy unit; @c 0 when invalid or expired.
    */

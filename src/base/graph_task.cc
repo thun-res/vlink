@@ -358,7 +358,7 @@ GraphTask::Policy GraphTask::get_policy() const { return impl_->policy.load(std:
 GraphTask::Status GraphTask::get_status() const { return impl_->status.load(std::memory_order_acquire); }
 
 void GraphTask::remove_precede_task(const std::shared_ptr<GraphTask>& task) {
-  if VUNLIKELY (!task) {
+  if VUNLIKELY (!task || task.get() == this) {
     VLOG_F("GraphTask: Invalid task provided to remove_precede_task.");
     return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
@@ -398,6 +398,10 @@ void GraphTask::remove_succeed_task(const std::shared_ptr<GraphTask>& task) {
   if VUNLIKELY (!task) {
     VLOG_F("GraphTask: Invalid task provided to remove_succeed_task.");
     return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  }
+
+  if (task.get() == this) {
+    return;
   }
 
   std::lock_guard topology_lock(topology_mutex());
@@ -449,7 +453,7 @@ std::string GraphTask::export_to_dot() const {
 
   dot_stream << "  node [fontname=\"Arial\"];\n";
 
-  std::unordered_map<std::string, std::vector<const GraphTask*>> groups;
+  std::unordered_map<std::string, std::vector<std::shared_ptr<const GraphTask>>> groups;
 
   std::unordered_set<const GraphTask*> visited;
 
@@ -462,24 +466,33 @@ std::string GraphTask::export_to_dot() const {
     visited.insert(task);
 
     {
-      groups[task->get_group_name()].emplace_back(task);
+      groups[task->get_group_name()].emplace_back(task->shared_from_this());
     }
+
+    std::vector<std::weak_ptr<GraphTask>> succ_copy;
 
     {
       std::lock_guard lock(task->impl_->mtx);
 
-      for (const auto& succeed_task_weak : task->impl_->succeed_task_list) {
+      succ_copy = task->impl_->succeed_task_list;
+    }
+
+    {
+      const std::string task_name = task->get_name();
+      const bool is_condition = task->is_condition_task();
+
+      for (const auto& succeed_task_weak : succ_copy) {
         auto succeed_task = succeed_task_weak.lock();
 
         if VUNLIKELY (!succeed_task) {
           continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
-        if (task->is_condition_task()) {
-          dot_stream << "  \"" << task->impl_->name << "\" -> \"" << succeed_task->impl_->name
+        if (is_condition) {
+          dot_stream << "  \"" << task_name << "\" -> \"" << succeed_task->get_name()
                      << "\" [style=dashed, arrowhead=vee];\n";
         } else {
-          dot_stream << "  \"" << task->impl_->name << "\" -> \"" << succeed_task->impl_->name << "\";\n";
+          dot_stream << "  \"" << task_name << "\" -> \"" << succeed_task->get_name() << "\";\n";
         }
 
         traverse(succeed_task.get());
@@ -501,7 +514,7 @@ std::string GraphTask::export_to_dot() const {
       dot_stream << "    color = lightgray;\n";
     }
 
-    for (const auto* task : tasks) {
+    for (const auto& task : tasks) {
       const std::string& name = task->get_name();
 
       if (task->impl_->policy.load(std::memory_order_relaxed) == kPolicyOnce) {

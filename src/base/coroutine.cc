@@ -248,7 +248,7 @@ class FutureWaitLoop final {
         pending_.swap(snapshot);
       }
 
-      if VUNLIKELY (stopping_ || pending_.empty() || has_new_polls) {
+      if (stopping_ || pending_.empty() || has_new_polls) {
         return;
       }
 
@@ -263,9 +263,9 @@ class FutureWaitLoop final {
   std::mutex mtx_;
   ConditionVariable cv_;
   std::vector<MoveFunction<bool()>> pending_;
-  std::thread thread_;
   size_t generation_{0};
   bool stopping_{false};
+  std::thread thread_;
 };
 
 // GraphAwaiter::State
@@ -530,7 +530,7 @@ static bool post_callback(MessageLoop& loop, MoveFunction<void()>&& resume_callb
   const auto task_state = task_handle.state();
 
   const bool posted = task_state == TaskExecutionState::kQueued || task_state == TaskExecutionState::kRunning ||
-                      task_state == TaskExecutionState::kCompleted;
+                      task_state == TaskExecutionState::kCompleted || task_state == TaskExecutionState::kFailed;
   const bool dropped =
       task_state == TaskExecutionState::kDropped || (posted && state->drop_requested.load(std::memory_order_acquire));
 
@@ -598,8 +598,8 @@ static Task<void> when_any_void_runner(Task<void> task, size_t i, WhenAnyVoidGua
 
     bool expected = false;
 
-    if VLIKELY (guard.state->fired.compare_exchange_strong(expected, true, std::memory_order_acq_rel,
-                                                           std::memory_order_relaxed)) {
+    if (guard.state->fired.compare_exchange_strong(expected, true, std::memory_order_acq_rel,
+                                                   std::memory_order_relaxed)) {
       guard.state->winner_idx = i;
       guard.state->has_winner = true;
     }
