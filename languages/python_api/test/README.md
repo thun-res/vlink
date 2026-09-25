@@ -49,7 +49,7 @@ python3 test_vlink_coverage.py
 | 函数 | 验证 |
 |---|---|
 | `test_bytes`             | `vlink.Bytes` 工厂方法与 buffer protocol |
-| `test_uuid`              | UUID 生成 |
+| `test_uuid`              | UUID 生成、bytes/list/tuple 构造 |
 | `test_pubsub`            | `Publisher` / `Subscriber` 基本流程 |
 | `test_rpc`               | `Server` / `Client` 同步 + 异步调用 |
 | `test_field`             | `Setter` / `Getter` push + pull |
@@ -88,7 +88,7 @@ python3 test_vlink_coverage.py
 - `Process.start` / `start_command` 等待上次退出回调时释放 GIL，使用子进程超时检测重启死锁
 - `TriggerRecorder` 启停、触发落盘与超时等待，以及宿主加载并绑定 `BagPluginInterface` / `TriggerPluginInterface`
 - `UrlRemap`
-- Security 模型
+- Security 模型、自定义回调并发与可修改输入快照
 - Timer 直接替换、pending 替换及执行结束后的回调释放
 - `Setter.set` 变化通知与 `Getter.listen` 去重
 - SHM2 角色标记的初始化边界与 VDB / VCAP 隐式录制动作；未编入 SHM2 时跳过该用例

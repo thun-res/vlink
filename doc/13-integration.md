@@ -345,6 +345,7 @@ vlink 为 Python 提供两条路径，**首选原生绑定**：
 
   - `DiscoveryViewer` 继承 `MessageLoop`：注册发现回调后调用 `async_run()`，结束时调用 `quit()` 和 `wait_for_quit(timeout_ms)`；构造本身不启动发现消息处理。
   - `MessageLoop` 的投递接口在等待队列容量时释放 GIL，使 `Block` 策略下的 Python 消费回调可以继续执行。
+  - `Security` 加解密及状态查询在原生调用期间释放 GIL；加解密保留不可变 `bytes` 输入，可修改缓冲区则先复制，以保证并发调用时的输入快照。
   - `ProxyData.raw()` 返回浅 `Bytes`；该对象及由它派生的 `memoryview`、借用消息仍存活时，父对象的 `clear()`、`create()`、`from_bytes()` 抛出 `BufferError`。释放这些视图后才能替换父存储。
   - `PointCloud.deep_copy(source)`、`ObjectArray.deep_copy(source)` 显式复制元数据与载荷，非空结果拥有独立存储；空结果保留元数据但不借用源指针。自复制返回 `False`。点云逐点改写前仍需按原生契约调用 `resize(size())`。
   - `Logger.register_console_handler(None)`、`register_file_handler(None)` 释放 Python 回调并恢复对应默认输出；并发注册与清除按安装顺序串行执行，旧回调在释放注册锁后销毁。允许从日志回调内部替换或清除 handler，该注册在本次回调返回后生效。

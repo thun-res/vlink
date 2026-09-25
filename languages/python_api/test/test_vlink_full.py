@@ -1920,7 +1920,61 @@ def test_security_set_callbacks():
     assert encrypted is not None and encrypted != plain
     decrypted = sec.decrypt(encrypted)
     assert decrypted == plain
-    print("[PASS] Security callbacks")
+
+    concurrent_check = r'''
+import sys
+import threading
+import vlink
+
+sys.setswitchinterval(60.0)
+for method in ("encrypt", "decrypt", "is_configured", "can_encrypt", "can_decrypt"):
+    entered = threading.Event()
+    release = threading.Event()
+    armed = threading.Event()
+    completed = []
+
+    def callback(data):
+        if data == b"first":
+            entered.set()
+            assert release.wait(5.0)
+        return data
+
+    cfg = vlink.SecurityConfig()
+    cfg.encrypt_callback = callback
+    cfg.decrypt_callback = callback
+    sec = vlink.Security(cfg)
+    worker = threading.Thread(target=lambda: completed.append(sec.encrypt(b"first")))
+    worker.start()
+    assert entered.wait(5.0)
+    payload = bytearray(b"second")
+
+    def unblock():
+        assert armed.wait(5.0)
+        payload[:] = b"change"
+        release.set()
+
+    unblocker = threading.Thread(target=unblock)
+    unblocker.start()
+    armed.set()
+    if method in ("encrypt", "decrypt"):
+        assert getattr(sec, method)(payload) == b"second"
+    else:
+        assert getattr(sec, method)()
+    worker.join(5.0)
+    unblocker.join(5.0)
+    assert not worker.is_alive()
+    assert completed == [b"first"]
+    sec = None
+    cfg = None
+'''
+    subprocess.run(
+        [sys.executable, "-c", concurrent_check],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=20.0,
+    )
+    print("[PASS] Security callbacks (concurrency / mutable input)")
 
 
 def test_server_async_reply():
@@ -2143,6 +2197,8 @@ finally:
     viewer.quit()
     assert viewer.wait_for_quit(2000)
 assert not viewer.is_running()
+viewer = None
+publisher = None
 '''
     env = dict(os.environ, VLINK_DISCOVER_DISABLE="0")
     subprocess.run(

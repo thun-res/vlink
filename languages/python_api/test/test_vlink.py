@@ -271,6 +271,8 @@ def test_uuid():
     # ---- construct from bytes (16-byte payload) ----
     raw = bytes.fromhex("47ac10b858cc4a3c8c5b0e778899aabb")
     fixed = _vlink.Uuid(raw)
+    assert _vlink.Uuid(list(raw)).bytes() == raw
+    assert _vlink.Uuid(tuple(raw)).bytes() == raw
     assert not fixed.is_nil()
     assert fixed.bytes() == raw
     assert fixed.to_string() == "47ac10b8-58cc-4a3c-8c5b-0e778899aabb"

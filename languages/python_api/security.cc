@@ -118,10 +118,17 @@ void bind_security(nb::module_& m) {
           "encrypt",
           [](vlink::Security& self, nb::handle data) -> nb::object {
             PythonBufferView view(data);
-            auto in_bytes = vlink::Bytes::shallow_copy(view.data(), view.size());
+            auto in_bytes = PyBytes_Check(data.ptr()) ? vlink::Bytes::shallow_copy(view.data(), view.size())
+                                                      : vlink::Bytes::deep_copy(view.data(), view.size());
             vlink::Bytes out;
+            bool result;
 
-            if VLIKELY (self.encrypt(in_bytes, out)) {
+            {
+              nb::gil_scoped_release release;
+              result = self.encrypt(in_bytes, out);
+            }
+
+            if VLIKELY (result) {
               return PythonCodec<vlink::Bytes>::to_python(out);
             }
 
@@ -132,23 +139,30 @@ void bind_security(nb::module_& m) {
           "decrypt",
           [](vlink::Security& self, nb::handle data) -> nb::object {
             PythonBufferView view(data);
-            auto in_bytes = vlink::Bytes::shallow_copy(view.data(), view.size());
+            auto in_bytes = PyBytes_Check(data.ptr()) ? vlink::Bytes::shallow_copy(view.data(), view.size())
+                                                      : vlink::Bytes::deep_copy(view.data(), view.size());
             vlink::Bytes out;
+            bool result;
 
-            if VLIKELY (self.decrypt(in_bytes, out)) {
+            {
+              nb::gil_scoped_release release;
+              result = self.decrypt(in_bytes, out);
+            }
+
+            if VLIKELY (result) {
               return PythonCodec<vlink::Bytes>::to_python(out);
             }
 
             return nb::none();
           },
           "data"_a)
-      .def("is_configured", &vlink::Security::is_configured,
+      .def("is_configured", &vlink::Security::is_configured, nb::call_guard<nb::gil_scoped_release>(),
            "Return True iff at least one cryptographic slot (symmetric key, RSA keypair, or "
            "encrypt+decrypt callback pair) is usable.")
-      .def("can_encrypt", &vlink::Security::can_encrypt,
+      .def("can_encrypt", &vlink::Security::can_encrypt, nb::call_guard<nb::gil_scoped_release>(),
            "Return True iff encrypt() will produce a ciphertext for at least one configured mode "
            "(custom callbacks > RSA public key > symmetric key).")
-      .def("can_decrypt", &vlink::Security::can_decrypt,
+      .def("can_decrypt", &vlink::Security::can_decrypt, nb::call_guard<nb::gil_scoped_release>(),
            "Return True iff decrypt() can recover a plaintext for at least one configured mode "
            "(custom callbacks > RSA private key > symmetric key).");
 }
