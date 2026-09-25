@@ -1123,19 +1123,28 @@ import threading
 import vlink
 
 done = threading.Event()
+destroyed = threading.Event()
+allow_delete = threading.Event()
 process = None
 
-def callback():
-    global process
-    process = None
-    gc.collect()
-    done.set()
+class Callback:
+    def __call__(self):
+        global process
+        assert allow_delete.wait(2.0)
+        process = None
+        gc.collect()
+        done.set()
+
+    def __del__(self):
+        destroyed.set()
 
 child_code = "import time\nprint('ready', flush=True)\ntime.sleep(60)"
 process = vlink.Process()
-process.register_ready_read_stdout_callback(callback)
+process.register_ready_read_stdout_callback(Callback())
 process.start(sys.executable, ["-u", "-c", child_code])
+allow_delete.set()
 assert done.wait(2.0)
+assert destroyed.wait(2.0)
 '''
     subprocess.run(
         [sys.executable, "-c", self_delete_check],
@@ -1144,6 +1153,45 @@ assert done.wait(2.0)
         text=True,
         timeout=4.0,
     )
+
+    restart_check = r'''
+import sys
+import threading
+import vlink
+
+entered = threading.Event()
+returned = threading.Event()
+allow_return = threading.Event()
+
+def finished(code, status):
+    entered.set()
+    allow_return.wait(5.0)
+    returned.set()
+
+process = vlink.Process()
+process.register_finished_callback(finished)
+process.start(sys.executable, ["-c", "pass"])
+assert entered.wait(5.0)
+threading.Timer(0.1, allow_return.set).start()
+if sys.argv[1] == "start":
+    process.start(sys.executable, ["-c", "pass"])
+else:
+    command = '"' + sys.executable.replace('\\', '\\\\').replace('"', '\\"') + '" -c pass'
+    process.start_command(command)
+assert returned.is_set()
+assert process.wait_for_finished(5000)
+process.close()
+assert process.get_exit_code() == 0
+process = None
+'''
+    for method in ("start", "start_command"):
+        subprocess.run(
+            [sys.executable, "-c", restart_check, method],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15.0,
+        )
 
     print("[PASS] Process")
 

@@ -662,6 +662,9 @@ TEST_SUITE("base-Utils") {
   }
 
   TEST_CASE("get_dds_default_address respects max_count") {
+    CHECK(Utils::get_dds_default_address(false, 0).empty());
+    CHECK(Utils::get_dds_default_address(true, -1).empty());
+
     static constexpr int kMax = 3;
     std::vector<std::string> addrs = Utils::get_dds_default_address(false, kMax);
 

@@ -185,6 +185,7 @@ void bind_process(nb::module_& m) {
             }
 
             PythonCallbackScope call(self.activity);
+            nb::gil_scoped_release release;
             self->start(program, arguments);
           },
           "program"_a, "arguments"_a = std::vector<std::string>{})
@@ -196,6 +197,7 @@ void bind_process(nb::module_& m) {
             }
 
             PythonCallbackScope call(self.activity);
+            nb::gil_scoped_release release;
             self->start_command(command);
           },
           "command"_a)

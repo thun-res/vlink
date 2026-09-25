@@ -42,6 +42,7 @@
 #include <vector>
 
 #include "./base/condition_variable.h"
+#include "./base/memory_pool.h"
 
 #if __has_include(<unistd.h>)
 #include <unistd.h>
@@ -261,9 +262,9 @@ std::string get_app_name() noexcept {
 }
 
 std::string get_host_name() noexcept {
-  char hostname[256];
+  char hostname[256] = {};
 
-  if VLIKELY (::gethostname(hostname, sizeof(hostname)) == 0) {
+  if VLIKELY (::gethostname(hostname, sizeof(hostname) - 1) == 0) {
     return hostname;
   } else {
     return "";  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -1145,6 +1146,10 @@ std::string get_interface_name_by_ipv6(const std::string& ipv6) noexcept {
 }
 
 std::vector<std::string> get_dds_default_address(bool filter_available, int max_count) noexcept {
+  if VUNLIKELY (max_count <= 0) {
+    return {};
+  }
+
   const auto all = get_all_ipv4_address(filter_available);
   std::vector<std::string> list;
 
@@ -1515,15 +1520,34 @@ struct SignalHelper final {
     if (instance.crash_callback) {
       instance.crash_callback(signal);
     }
+
+#ifndef _WIN32
+    ::signal(signal, SIG_DFL);
+    ::raise(signal);
+#endif
   }
   // LCOV_EXCL_STOP GCOVR_EXCL_STOP
 
  private:
+  SignalHelper() { MemoryPool::global_instance(); }
+
   ~SignalHelper() = default;
 };
 
 void register_terminate_signal(MoveFunction<void(int)>&& callback, bool is_async, bool pass_through) noexcept {
   static auto& instance = SignalHelper::get();
+
+  if VUNLIKELY (!callback) {
+    instance.terminate_callback = nullptr;
+
+    ::signal(SIGINT, SIG_DFL);
+    ::signal(SIGTERM, SIG_DFL);
+#ifndef _WIN32
+    ::signal(SIGHUP, SIG_DFL);
+#endif
+
+    return;
+  }
 
   instance.terminate_callback = std::move(callback);
   instance.is_async = is_async;
@@ -1556,7 +1580,6 @@ void register_terminate_signal(MoveFunction<void(int)>&& callback, bool is_async
 #endif
 
   for (auto signal : kTerminateSignals) {
-    ::sigaction(signal, nullptr, nullptr);
     ::sigaction(signal, &act, nullptr);
   }
 #endif
@@ -1579,7 +1602,7 @@ void register_crash_signal(MoveFunction<void(int)>&& callback) noexcept {
 
   struct sigaction act{};
 
-  act.sa_flags = 0;
+  act.sa_flags = SA_RESETHAND;
   act.sa_handler = SignalHelper::on_crash;
 
 #ifdef __APPLE__
@@ -1589,7 +1612,6 @@ void register_crash_signal(MoveFunction<void(int)>&& callback) noexcept {
 #endif
 
   for (auto signal : kCrashSignals) {
-    ::sigaction(signal, nullptr, nullptr);
     ::sigaction(signal, &act, nullptr);
   }
 #endif
@@ -1611,7 +1633,7 @@ struct KeyboardHelper final {
   }
 
  private:
-  KeyboardHelper() = default;
+  KeyboardHelper() { MemoryPool::global_instance(); }
 
   ~KeyboardHelper() {
 #ifdef _WIN32

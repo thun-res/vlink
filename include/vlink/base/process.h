@@ -60,6 +60,13 @@
  * - The destructor first sends @c SIGTERM, drains pending I/O, then optionally escalates to
  *   @c SIGKILL after @c kDestructorWaitTimeoutMs (5000 ms) before joining.
  * - The class is non-copyable and non-movable.
+ * - POSIX only: the host must leave @c SIGCHLD at its default disposition.  With
+ *   @c SIG_IGN, or with an application handler that itself calls @c waitpid(-1, ...), the
+ *   child is reaped elsewhere, every internal @c waitpid fails with @c ECHILD, and the loop
+ *   never observes the exit -- the finished callback does not fire and the state stays
+ *   @c kRunningState.
+ * - Stdin operations (@c write, @c close_write_channel) and @c close are not synchronised
+ *   against each other; serialise them in the caller.
  *
  * @par Example
  * @code
@@ -124,7 +131,12 @@ class VLINK_EXPORT Process {
 
   /**
    * @enum Error
-   * @brief Sticky error indicator set by failing operations.
+   * @brief Last error recorded by a failing operation.
+   *
+   * @details
+   * Each failure overwrites the previous value; the code is not sticky.  It is reset to
+   * @c kNoError by @c start().  @c kCrashedError and @c kUnknownError are never produced by
+   * this class -- a crash is reported through @c get_exit_status() instead.
    */
   enum Error : uint8_t {
     kNoError = 0,              ///< No error has been observed.
@@ -155,7 +167,11 @@ class VLINK_EXPORT Process {
   using EnvironmentMap = std::unordered_map<std::string, std::string>;
 
   /**
-   * @brief Callback signature invoked when the @c Error state changes.
+   * @brief Callback signature invoked on the first error of a run.
+   *
+   * @details
+   * Fires at most once per run; @c start() and @c close() re-arm it.  Later errors in the same
+   * run still update @c get_error() but do not re-notify.
    */
   using ErrorCallback = Function<void(Error)>;
 
@@ -585,6 +601,11 @@ class VLINK_EXPORT Process {
 
   /**
    * @brief Closes the stdin pipe, signalling EOF to the child.
+   *
+   * @warning Must not run concurrently with @c write() or @c close() on the same object: the
+   *          stdin descriptor is read and closed without synchronisation, so an overlapping
+   *          call can write to a descriptor number the operating system has already reused.
+   *          Serialise stdin operations in the caller.
    */
   void close_write_channel();
 
@@ -592,8 +613,10 @@ class VLINK_EXPORT Process {
    * @brief Synchronously executes a program and returns its exit code.
    *
    * @details
-   * Standard output and standard error are discarded.  Returns @c -1 when the launch
-   * fails or the timeout elapses.
+   * The child's output is not forwarded anywhere, but it is still drained into the internal
+   * stdout and stderr buffers, each capped at the default 16 MiB, so a very chatty command holds
+   * that much memory for the duration of the call.  Returns @c -1 when the launch fails or the timeout
+   * elapses.
    *
    * @param program     Path to the executable.
    * @param arguments   Argument vector.  Default: empty.

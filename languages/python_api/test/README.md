@@ -85,6 +85,7 @@ python3 test_vlink_coverage.py
 - `DiscoveryViewer` 显式实例与过滤
 - `DiscoveryViewer` 消息循环与发现回调、`MessageLoop` 满队列阻塞投递
 - Logger 回调重置、并发替换与析构重入
+- `Process.start` / `start_command` 等待上次退出回调时释放 GIL，使用子进程超时检测重启死锁
 - `TriggerRecorder` 启停、触发落盘与超时等待，以及宿主加载并绑定 `BagPluginInterface` / `TriggerPluginInterface`
 - `UrlRemap`
 - Security 模型

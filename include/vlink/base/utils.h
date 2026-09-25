@@ -237,7 +237,7 @@ VLINK_EXPORT bool unset_env(const std::string& key) noexcept;
  * Loopback is therefore included (as the leading entry) rather than filtered out.
  *
  * @param filter_available  When @c true, only includes UP interfaces.  Default: @c false.
- * @param max_count         Upper bound on the number of returned addresses.  Default: @c 5.
+ * @param max_count         Upper bound on the number of returned addresses. Nonpositive returns empty. Default: @c 5.
  * @return Vector of selected IPv4 strings.
  */
 [[nodiscard]] VLINK_EXPORT std::vector<std::string> get_dds_default_address(bool filter_available = false,
@@ -355,6 +355,7 @@ VLINK_EXPORT bool set_thread_stick(uint32_t core_mask, std::thread* thread = nul
  *
  * @details
  * Hooks @c SIGINT, @c SIGTERM and @c SIGHUP on POSIX, or @c SIGINT / @c SIGTERM on Windows.
+ * An empty @p callback restores the default disposition of these signals.
  *
  * @param callback      Callback receiving the signal number.
  * @param is_async      When @c true, runs the callback on a dedicated thread instead of the
@@ -370,7 +371,8 @@ VLINK_EXPORT void register_terminate_signal(MoveFunction<void(int)>&& callback, 
  *
  * @details
  * Useful for emitting crash diagnostics.  The callback should be async-signal-safe and
- * short.
+ * short.  It runs at most once; on POSIX the signal is then re-raised with its default
+ * disposition so the process terminates with the original cause.
  *
  * @param callback  Callback receiving the signal number.
  */

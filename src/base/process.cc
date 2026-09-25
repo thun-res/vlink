@@ -638,6 +638,8 @@ void Process::start(const std::string& program, const std::vector<std::string>& 
     return;
   }
 
+  cleanup();
+
   impl_->error.store(kNoError, std::memory_order_release);
   impl_->exit_processed.store(false, std::memory_order_release);
   impl_->error_reported.store(false, std::memory_order_release);
@@ -682,17 +684,26 @@ void Process::start(const std::string& program, const std::vector<std::string>& 
   success = start_program(program, arguments);
 
   if VLIKELY (success) {
+    bool running_published = false;
+
     {
       std::lock_guard lock(impl_->state_mtx);
-      impl_->state.store(kRunningState, std::memory_order_release);
+
+      if VLIKELY (!impl_->exit_processed.load(std::memory_order_acquire)) {
+        impl_->state.store(kRunningState, std::memory_order_release);
+        running_published = true;
+      }
     }
 
     impl_->state_cv.notify_all();
 
-    invoke_callbacks_outside_lock(kNoError, false, -1, kNormalExitStatus, kRunningState, true, false, false);
+    if VLIKELY (running_published) {
+      invoke_callbacks_outside_lock(kNoError, false, -1, kNormalExitStatus, kRunningState, true, false, false);
 
-    start_monitor_thread();
+      start_monitor_thread();
+    }
   } else {
+    cleanup();
     set_error(kStartError);
 
     {
@@ -704,8 +715,6 @@ void Process::start(const std::string& program, const std::vector<std::string>& 
 
     invoke_callbacks_outside_lock(kStartError, false, -1, kNormalExitStatus,
                                   impl_->state.load(std::memory_order_acquire), true, false, false);
-
-    cleanup();
   }
 }
 
@@ -1022,12 +1031,22 @@ bool Process::wait_for_ready_read(int msecs) {
     int pr = 0;
 
     if (nfds > 0) {
-      pr = ::poll(fds, nfds, timeout_ms);
+      pr = ::poll(fds, nfds, timeout_ms < 0 ? 50 : std::min(timeout_ms, 50));
     } else {
       pr = 0;
 
       if (timeout_ms > 0) {
+        {
+          std::lock_guard lock(impl_->buffer_mtx);
+          if (impl_->stdout_buffer.size() - impl_->stdout_offset + impl_->stderr_buffer.size() - impl_->stderr_offset >
+              initial_size) {
+            return true;
+          }
+        }
+
         std::this_thread::sleep_for(std::chrono::milliseconds(timeout_ms));
+      } else if (impl_->state.load(std::memory_order_acquire) != kNotRunningState) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
       }
     }
 
@@ -2012,7 +2031,7 @@ Process::ReadResult Process::read_from_pipes() {
   char buffer[8192];
   ssize_t bytes_read;
 
-  if (!impl_->stdout_closed.load(std::memory_order_acquire)) {
+  if (impl_->stdout_pipe[0] >= 0 && !impl_->stdout_closed.load(std::memory_order_acquire)) {
     while (true) {
       bytes_read =
           ::read(impl_->stdout_pipe[0], buffer, sizeof(buffer));  // NOLINT(clang-analyzer-unix.BlockInCriticalSection)
@@ -2037,7 +2056,7 @@ Process::ReadResult Process::read_from_pipes() {
     }
   }
 
-  if (!impl_->stderr_closed.load(std::memory_order_acquire)) {
+  if (impl_->stderr_pipe[0] >= 0 && !impl_->stderr_closed.load(std::memory_order_acquire)) {
     while (true) {
       bytes_read =
           ::read(impl_->stderr_pipe[0], buffer, sizeof(buffer));  // NOLINT(clang-analyzer-unix.BlockInCriticalSection)
@@ -2788,6 +2807,11 @@ void Process::monitor_thread() {
     int status;
 
     const auto pid = static_cast<pid_t>(impl_->process_id.load(std::memory_order_acquire));
+
+    if VUNLIKELY (pid <= 0) {
+      break;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
     auto result = waitpid(pid, &status, WNOHANG);
 
     if (result == pid) {
@@ -2842,6 +2866,15 @@ void Process::monitor_thread() {
 }
 
 void Process::start_monitor_thread() {
+  if (impl_->monitor_thread && impl_->monitor_thread->joinable()) {
+    if (impl_->monitor_thread->get_id() == std::this_thread::get_id()) {
+      impl_->monitor_thread->detach();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    } else {
+      impl_->monitor_should_stop.store(true, std::memory_order_release);
+      impl_->monitor_thread->join();
+    }
+  }
+
   impl_->monitor_running.store(true, std::memory_order_release);
   impl_->monitor_should_stop.store(false, std::memory_order_release);
   impl_->monitor_thread = std::make_unique<std::thread>([this]() { monitor_thread(); });
