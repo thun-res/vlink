@@ -522,9 +522,12 @@ class VLINK_EXPORT Bytes final {  // size == 128 bytes
    * @brief Returns the allocated capacity of the backing buffer.
    *
    * @details
-   * SBO buffers report @c kStackSize; pool-allocated buffers report the rounded allocation size.
+   * Reports the payload size an owning buffer was created or last grown for.  It is neither the
+   * SBO budget nor the pool tier size: an SBO buffer created for 32 bytes reports @c 32, not
+   * @c kStackSize.  The owned allocation spans @c capacity() @c + @c offset() bytes.  A
+   * non-owning view (shallow copy or loan) reports @c 0.
    *
-   * @return Capacity in bytes; always @c >= @c real_size().
+   * @return Capacity in bytes; for an owning buffer always @c >= @c size().
    */
   [[nodiscard]] size_t capacity() const noexcept;
 

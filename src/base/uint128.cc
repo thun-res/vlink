@@ -34,11 +34,11 @@
 
 namespace vlink {
 
-std::ostream& operator<<(std::ostream& os, const Uint128& value) noexcept {
+std::ostream& operator<<(std::ostream& os, const Uint128& value) {
   std::ios_base::fmtflags f(os.flags());
   char fill = os.fill();
 
-  os << "0x" << std::uppercase << std::hex << std::setfill('0');
+  os << "0x" << std::uppercase << std::hex << std::noshowbase << std::right << std::setfill('0');
 
   if (value.high_ != 0) {
     os << value.high_ << std::setw(16) << value.low_;
@@ -56,7 +56,7 @@ std::ostream& operator<<(std::ostream& os, const Uint128& value) noexcept {
 int Uint128::clz64(uint64_t x) noexcept {
 #if defined(__GNUG__) || defined(__clang__)
   return x ? __builtin_clzll(x) : 64;
-#elif defined(_MSC_VER)
+#elif defined(_MSC_VER) && (defined(_M_X64) || defined(_M_ARM64))
   unsigned long idx;  // NOLINT(runtime/int, google-runtime-int)
 
   if (_BitScanReverse64(&idx, x)) {

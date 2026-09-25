@@ -183,6 +183,16 @@ struct IsAtomic : std::false_type {};
 template <typename T>
 struct IsAtomic<std::atomic<T>> : std::true_type {};
 
+namespace detail {
+
+template <typename T, typename WeakT>
+struct IsSharedPtrBase : std::false_type {};
+
+template <typename T, typename ElementT>
+struct IsSharedPtrBase<T, std::weak_ptr<ElementT>> : std::is_base_of<std::shared_ptr<ElementT>, T> {};
+
+}  // namespace detail
+
 /**
  * @struct IsSharedPtr
  * @brief Detects whether @p T is (or derives from) a @c std::shared_ptr specialisation.
@@ -193,8 +203,7 @@ template <typename T, typename = void>
 struct IsSharedPtr : std::false_type {};
 
 template <typename T>
-struct IsSharedPtr<T, std::void_t<typename T::element_type>>
-    : std::is_base_of<std::shared_ptr<typename T::element_type>, T> {};
+struct IsSharedPtr<T, std::void_t<typename T::weak_type>> : detail::IsSharedPtrBase<T, typename T::weak_type> {};
 
 /**
  * @struct RemoveSharedPtr

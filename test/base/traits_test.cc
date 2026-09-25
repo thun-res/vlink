@@ -164,6 +164,25 @@ TEST_SUITE("base-Traits") {
     CHECK_FALSE(Traits::IsSharedPtr<std::string>::value);
   }
 
+  TEST_CASE("IsSharedPtr preserves array specializations and their derived types") {
+    struct Derived : std::shared_ptr<int> {};
+    struct DerivedArray : std::shared_ptr<int[]> {};
+    struct DerivedBoundedArray : std::shared_ptr<int[3]> {};
+    struct Unrelated {
+      using weak_type = std::weak_ptr<int[]>;
+    };
+
+    CHECK(Traits::IsSharedPtr<Derived>::value);
+    CHECK(Traits::IsSharedPtr<std::shared_ptr<int[]>>::value);
+    CHECK(Traits::IsSharedPtr<std::shared_ptr<int[3]>>::value);
+    CHECK(Traits::IsSharedPtr<const std::shared_ptr<int[]>>::value);
+    CHECK(Traits::IsSharedPtr<DerivedArray>::value);
+    CHECK(Traits::IsSharedPtr<DerivedBoundedArray>::value);
+    CHECK_FALSE(Traits::IsSharedPtr<Unrelated>::value);
+    CHECK((std::is_same_v<Traits::RemoveSharedPtr<std::shared_ptr<int[]>>::Type, int>));
+    CHECK((std::is_same_v<Traits::RemoveSharedPtr<DerivedBoundedArray>::Type, int>));
+  }
+
   TEST_CASE("RemoveSharedPtr unwraps element type from shared_ptr") {
     CHECK((std::is_same_v<Traits::RemoveSharedPtr<std::shared_ptr<int>>::Type, int>));
     CHECK((std::is_same_v<Traits::RemoveSharedPtr<std::shared_ptr<WithBar>>::Type, WithBar>));

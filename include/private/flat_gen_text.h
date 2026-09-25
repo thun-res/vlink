@@ -143,7 +143,13 @@ struct JsonPrinter {
         text += vlink::Helpers::format_date(val);
       } else {
         if (print_hex_string) {
-          text += vlink::Helpers::format_hex_number(static_cast<int64_t>(val));
+          auto bits = static_cast<uint64_t>(static_cast<int64_t>(val));
+
+          if constexpr (sizeof(T) < sizeof(uint64_t)) {
+            bits &= (uint64_t{1} << (sizeof(T) * 8U)) - 1U;
+          }
+
+          text += vlink::Helpers::format_hex_number(bits);
         } else {
           text += NumToString(val);
         }

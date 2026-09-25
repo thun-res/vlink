@@ -53,6 +53,14 @@ TEST_SUITE("base-ObjectPool") {
     CHECK_EQ(pool->max_size(), 0u);
   }
 
+  TEST_CASE("get and get_shared reject a pool that is not owned by shared_ptr") {
+    ObjectPool<Widget> pool;
+
+    CHECK_THROWS_AS((void)pool.get(), std::logic_error);
+    CHECK_THROWS_AS((void)pool.get_shared(), std::logic_error);
+    CHECK_EQ(pool.borrowed(), 0u);
+  }
+
   TEST_CASE("pre-fill with initial size populates pool") {
     auto pool = std::make_shared<ObjectPool<Widget>>([] { return std::make_unique<Widget>(); }, 4u);
     CHECK_EQ(pool->size(), 4u);

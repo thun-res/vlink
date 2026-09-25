@@ -854,9 +854,19 @@ std::vector<MessageParser::Field> MessageParser::element_fields(std::string_view
   return {};
 }
 
-static std::string format_integer(const MessageParser::Value& value, bool hex) {
+static std::string format_integer(const MessageParser::Value& value, bool hex, uint16_t storage_size) {
   if (const auto* number = std::get_if<int64_t>(&value)) {
-    return hex ? Helpers::format_hex_number(*number) : std::to_string(*number);
+    if (!hex) {
+      return std::to_string(*number);
+    }
+
+    auto bits = static_cast<uint64_t>(*number);
+
+    if (storage_size > 0U && storage_size < sizeof(uint64_t)) {
+      bits &= (uint64_t{1} << (storage_size * 8U)) - 1U;
+    }
+
+    return Helpers::format_hex_number(bits);
   }
 
   if (const auto* number = std::get_if<uint64_t>(&value)) {
@@ -929,7 +939,7 @@ static std::string format_scalar(const MessageParser& parser, const MessageParse
     return options.hex ? Helpers::format_hex_number(raw) : std::to_string(raw);
   }
 
-  return format_integer(value, options.hex);
+  return format_integer(value, options.hex, field.storage_size);
 }
 
 static std::string format_pointcloud_protocol(const MessageParser& parser) {
@@ -1026,7 +1036,7 @@ static std::string format_pointcloud_points(const MessageParser& parser, const M
           const auto* number = std::get_if<uint64_t>(&value);
           text = number != nullptr && *number != 0 ? "true" : "false";
         } else {
-          text = format_integer(value, options.hex);
+          text = format_integer(value, options.hex, field.storage_size);
         }
       }
 

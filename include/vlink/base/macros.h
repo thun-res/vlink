@@ -149,12 +149,12 @@
  */
 #define VLINK_UNLIKELY(x) (x) [[unlikely]]
 #else
-#ifdef _WIN32
-#define VLINK_LIKELY(x) (x)
-#define VLINK_UNLIKELY(x) (x)
-#else
+#if defined(__GNUC__) || defined(__clang__)
 #define VLINK_LIKELY(x) (__builtin_expect(!!(x), 1))
 #define VLINK_UNLIKELY(x) (__builtin_expect(!!(x), 0))
+#else
+#define VLINK_LIKELY(x) (x)
+#define VLINK_UNLIKELY(x) (x)
 #endif
 #endif
 #else
@@ -276,12 +276,15 @@
 #define VLINK_ASSERT_CONSTANT(msg)
 #endif
 
-#if !defined(VLIKELY) && !defined(VUNLIKELY)
+#ifndef VLIKELY
 /**
  * @def VLIKELY(...)
  * @brief Short alias for @c VLINK_LIKELY.
  */
 #define VLIKELY(...) VLINK_LIKELY(__VA_ARGS__)
+#endif
+
+#ifndef VUNLIKELY
 /**
  * @def VUNLIKELY(...)
  * @brief Short alias for @c VLINK_UNLIKELY.

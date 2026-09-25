@@ -473,6 +473,16 @@ struct SomeipCdrHybrid {
 VLINK_INTRA_DATA_DECLARE(vlink::zerocopy::RawData, WrappedRawData)
 
 TEST_SUITE("ser-types") {
+  TEST_CASE("shared arrays remain unsupported") {
+    struct DerivedArray : std::shared_ptr<int[]> {};
+
+    CHECK(Serializer::get_type_of<std::shared_ptr<int[]>>() == Serializer::kUnknownType);
+    CHECK(Serializer::get_type_of<std::shared_ptr<int[3]>>() == Serializer::kUnknownType);
+    CHECK(Serializer::get_type_of<DerivedArray>() == Serializer::kUnknownType);
+    CHECK(Serializer::get_type_of<std::shared_ptr<int>>() == Serializer::kStandardType);
+    CHECK(Serializer::get_type_of<std::shared_ptr<const int>>() == Serializer::kStandardType);
+  }
+
   TEST_CASE("bytes maps to kBytesType") {
     static constexpr auto t = Serializer::get_type_of<Bytes>();
     CHECK(t == Serializer::kBytesType);

@@ -84,13 +84,13 @@ class CustomFieldValuePrinter final : public google::protobuf::TextFormat::FastF
   void PrintInt32(int32_t val, google::protobuf::TextFormat::BaseTextGenerator* generator) const override {
     if (print_time_string && current_field_) {
       if (print_hex_string) {
-        generator->PrintString(vlink::Helpers::format_hex_number(static_cast<int64_t>(val)));
+        generator->PrintString(vlink::Helpers::format_hex_number(static_cast<uint64_t>(static_cast<uint32_t>(val))));
       } else {
         FastFieldValuePrinter::PrintInt32(val, generator);
       }
     } else {
       if (print_hex_string) {
-        generator->PrintString(vlink::Helpers::format_hex_number(static_cast<int64_t>(val)));
+        generator->PrintString(vlink::Helpers::format_hex_number(static_cast<uint64_t>(static_cast<uint32_t>(val))));
       } else {
         FastFieldValuePrinter::PrintInt32(val, generator);
       }
@@ -99,7 +99,7 @@ class CustomFieldValuePrinter final : public google::protobuf::TextFormat::FastF
 
   void PrintUInt32(uint32_t val, google::protobuf::TextFormat::BaseTextGenerator* generator) const override {
     if (print_hex_string) {
-      generator->PrintString(vlink::Helpers::format_hex_number(static_cast<int64_t>(val)));
+      generator->PrintString(vlink::Helpers::format_hex_number(static_cast<uint64_t>(val)));
     } else {
       FastFieldValuePrinter::PrintUInt32(val, generator);
     }

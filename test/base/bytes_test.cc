@@ -167,6 +167,18 @@ TEST_SUITE("base-Bytes") {
     CHECK_EQ(b.data()[2], 0x03u);
   }
 
+  TEST_CASE("copy-assigning an empty view of the owned storage leaves no dangling pointer") {
+    Bytes owner = Bytes::create(4096u);
+    REQUIRE(owner.is_owner());
+
+    Bytes view = Bytes::shallow_copy_ptr(owner.data() + 16);
+    owner = view;
+
+    CHECK(owner.empty());
+    CHECK_FALSE(owner.is_owner());
+    CHECK(owner.data() == nullptr);
+  }
+
   TEST_CASE("shallow_copy_ptr wraps opaque pointer with zero size") {
     int sentinel = 42;
     Bytes b = Bytes::shallow_copy_ptr(&sentinel);

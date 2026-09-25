@@ -512,6 +512,15 @@ TEST_SUITE("base-Uint128") {
       CHECK_EQ(oss.str(), "0xA 10");
     }
 
+    SUBCASE("showbase and left do not alter the value and are preserved") {
+      std::ostringstream oss;
+      oss << std::showbase << std::left;
+      const auto flags = oss.flags();
+      oss << Uint128(0x12u, 0x34u);
+      CHECK_EQ(oss.str(), "0x120000000000000034");
+      CHECK_EQ(oss.flags(), flags);
+    }
+
     SUBCASE("stream fill character is restored after output") {
       Uint128 v(0u, 10u);
       std::ostringstream oss;

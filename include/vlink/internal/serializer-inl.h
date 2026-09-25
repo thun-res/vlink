@@ -105,6 +105,12 @@ inline const message_type_support_callbacks_t* get_ros2_msg_callbacks() noexcept
 
 template <typename T>
 inline constexpr Type get_type_of() noexcept {
+  if constexpr (Traits::IsSharedPtr<T>::value) {
+    if constexpr (!std::is_same_v<typename T::weak_type, std::weak_ptr<typename T::element_type>>) {
+      return kUnknownType;
+    }
+  }
+
   if constexpr (is_bytes_type<T>()) {
     return kBytesType;
   } else if constexpr (is_dynamic_type<T>()) {

@@ -116,7 +116,7 @@ class VLINK_EXPORT FastStream : public std::ostream {
    *
    * @param target  Destination string; contents are appended in place.
    */
-  void append_to(std::string& target) const noexcept;
+  void append_to(std::string& target) const;
 
   /**
    * @brief Returns a non-owning view of the current buffer contents.
@@ -150,7 +150,7 @@ class VLINK_EXPORT FastStream : public std::ostream {
    * @brief Trims the underlying buffer to its current backing size.
    *
    * @details
-   * Does not shrink to the formatted message length; the put pointer is reset to the start.
+   * Does not shrink to the formatted message length; content already written is kept.
    */
   void shrink_to_fit() noexcept;
 
@@ -200,7 +200,7 @@ class VLINK_EXPORT FastStream : public std::ostream {
 
     void shrink_to_fit() noexcept;
 
-    void append_to(std::string& target) const noexcept;
+    void append_to(std::string& target) const;
 
     [[nodiscard]] std::string_view take_view();
 

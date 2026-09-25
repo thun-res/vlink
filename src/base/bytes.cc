@@ -36,7 +36,9 @@
 #include "./base/logger.h"
 #include "./base/memory_pool.h"
 
+#ifndef VLINK_BYTES_MEM_RESET
 #define VLINK_BYTES_MEM_RESET 0
+#endif
 
 namespace vlink {
 
@@ -102,12 +104,22 @@ static auto& bytes_compress_cache() noexcept {
 }
 
 // Bytes
-void Bytes::init_memory_pool() noexcept { (void)MemoryPool::global_instance(); }
+void Bytes::init_memory_pool() noexcept {
+  try {
+    (void)MemoryPool::global_instance();
+  } catch (const std::exception& e) {
+    CLOG_E("Bytes: Failed to initialize the memory pool: %s.", e.what());
+  }
+}
 
 void Bytes::release_memory_pool() noexcept { MemoryPool::global_instance().clear(); }
 
 uint8_t* Bytes::bytes_malloc(size_t size) noexcept {
-  return static_cast<uint8_t*>(MemoryPool::global_instance().allocate(size));
+  try {
+    return static_cast<uint8_t*>(MemoryPool::global_instance().allocate(size));
+  } catch (const std::exception&) {
+    return nullptr;
+  }
 }
 
 void Bytes::bytes_free(uint8_t* ptr, size_t size) noexcept { MemoryPool::global_instance().deallocate(ptr, size); }
@@ -999,6 +1011,16 @@ void Bytes::process_type(Type type, uint8_t* data, size_t size, uint8_t offset, 
       if (is_owner_ && data_) {
         if VUNLIKELY (data_ == data && size_ == size && offset_ == offset) {
           return;
+        }
+
+        if VUNLIKELY (total_size == 0) {
+          const auto owner_address = reinterpret_cast<uintptr_t>(data_);
+          const auto source_address = reinterpret_cast<uintptr_t>(data);
+
+          if VUNLIKELY (source_address >= owner_address && source_address - owner_address < capacity_ + offset_) {
+            clear();
+            return;
+          }
         }
 
         bool can_reuse =

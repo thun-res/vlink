@@ -265,6 +265,18 @@ TEST_SUITE("base-FastStream") {
     CHECK_EQ(s.take_view(), "ok");
   }
 
+  TEST_CASE("shrink_to_fit keeps content already written") {
+    FastStream s;
+    s << "abc";
+
+    s.shrink_to_fit();
+
+    CHECK_EQ(s.size(), 3u);
+
+    s << "d";
+    CHECK_EQ(s.take_view(), "abcd");
+  }
+
   TEST_CASE("consecutive resets and writes are correct") {
     FastStream s;
 

@@ -158,6 +158,11 @@ TEST_SUITE("base-Helpers") {
       Helpers::replace_string(s, "a", "xyz");
       CHECK_EQ(s, "xyzb");
     }
+    SUBCASE("replacement aliasing the target uses its original content") {
+      std::string s = "bab";
+      Helpers::replace_string(s, "b", s);
+      CHECK_EQ(s, "bababab");
+    }
     SUBCASE("replace with same string") {
       std::string s = "hello";
       Helpers::replace_string(s, "hello", "hello");
@@ -404,6 +409,9 @@ TEST_SUITE("base-Helpers") {
       std::string s = Helpers::format_milliseconds(1500LL, true);
       CHECK(s.find("500") != std::string::npos);
     }
+    SUBCASE("negative beyond one day wraps into a single day") {
+      CHECK_EQ(Helpers::format_milliseconds(-86400001LL, true), "23:59:59:999");
+    }
   }
 
   TEST_CASE("format_date: timestamp to readable string") {
@@ -438,9 +446,8 @@ TEST_SUITE("base-Helpers") {
   }
 
   TEST_CASE("format_hex_number: hexadecimal formatting") {
-    SUBCASE("signed 255 has 0x prefix") {
-      std::string s = Helpers::format_hex_number(static_cast<int64_t>(255));
-      CHECK_EQ(s.substr(0, 2), "0x");
+    SUBCASE("signed 255 matches the unsigned rendering") {
+      CHECK_EQ(Helpers::format_hex_number(static_cast<int64_t>(255)), "0xFF");
     }
     SUBCASE("unsigned 255 has 0x prefix") {
       std::string s = Helpers::format_hex_number(static_cast<uint64_t>(255u));
@@ -454,9 +461,8 @@ TEST_SUITE("base-Helpers") {
     SUBCASE("unsigned 0xFFFF produces 0xFFFF") {
       CHECK_EQ(Helpers::format_hex_number(static_cast<uint64_t>(0xFFFF)), "0xFFFF");
     }
-    SUBCASE("signed negative has 0x prefix") {
-      std::string s = Helpers::format_hex_number(static_cast<int64_t>(-1));
-      CHECK_EQ(s.substr(0, 2), "0x");
+    SUBCASE("signed negative prints the two's-complement pattern") {
+      CHECK_EQ(Helpers::format_hex_number(static_cast<int64_t>(-1)), "0xFFFFFFFFFFFFFFFF");
     }
   }
 
@@ -587,6 +593,13 @@ TEST_SUITE("base-Helpers") {
   }
 
   TEST_CASE("string_to_wstring and wstring_to_string: ASCII round-trip") {
+    SUBCASE("embedded null") {
+      const std::string narrow("a\0b", 3);
+      const std::wstring wide(L"a\0b", 3);
+      CHECK_EQ(Helpers::string_to_wstring(narrow), wide);
+      CHECK_EQ(Helpers::wstring_to_string(wide), narrow);
+    }
+
     SUBCASE("ASCII string") {
       std::string original = "hello";
       std::wstring wide = Helpers::string_to_wstring(original);
@@ -600,6 +613,20 @@ TEST_SUITE("base-Helpers") {
       CHECK_EQ(back, original);
     }
   }
+
+#ifndef _WIN32
+  TEST_CASE("string_to_wstring and wstring_to_string: invalid Unicode yields empty") {
+    SUBCASE("valid four-byte sequence converts") {
+      CHECK_EQ(Helpers::string_to_wstring("\xF0\x9F\x98\x80"), std::wstring(1, static_cast<wchar_t>(0x1F600)));
+    }
+    SUBCASE("overlong encoding") { CHECK(Helpers::string_to_wstring("\xC0\xAF").empty()); }
+    SUBCASE("surrogate") { CHECK(Helpers::string_to_wstring("\xED\xA0\x80").empty()); }
+    SUBCASE("above U+10FFFF") { CHECK(Helpers::string_to_wstring("\xF4\x90\x80\x80").empty()); }
+    SUBCASE("surrogate unit to UTF-8") {
+      CHECK(Helpers::wstring_to_string(std::wstring(1, static_cast<wchar_t>(0xD800))).empty());
+    }
+  }
+#endif
 
   TEST_CASE("string_local_to_utf8 and string_utf8_to_local: identity on POSIX") {
     SUBCASE("non-empty") { CHECK_EQ(Helpers::string_local_to_utf8("hello"), "hello"); }
