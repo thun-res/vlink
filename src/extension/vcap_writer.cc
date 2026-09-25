@@ -1066,32 +1066,22 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
 
   Impl::UrlMsgInfo& url_msg_info = url_iter_ret.first->second;
   auto resolved_schema_type = SchemaData::resolve_type(schema_type, ser_type);
-  std::string next_ser_type = total_url_msg_info.ser_type;
+  const std::string& next_ser_type = total_url_msg_info.ser_type.empty() ? ser_type : total_url_msg_info.ser_type;
   SchemaType next_schema_type = total_url_msg_info.schema_type;
 
   if (total_url_iter_ret.second) {
-    next_ser_type = ser_type;
     next_schema_type = resolved_schema_type;
-  } else {
-    if (!ser_type.empty()) {
-      if (next_ser_type.empty()) {
-        next_ser_type = ser_type;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      } else if VUNLIKELY (next_ser_type != ser_type) {
-        CLOG_E("VCAPWriter: URL [%s] ser changed from [%s] to [%s].", url.c_str(), next_ser_type.c_str(),
-               ser_type.c_str());
-        discard_new_url_entries();
-        return false;
-      }
-    }
+  } else if VUNLIKELY (!ser_type.empty() && next_ser_type != ser_type) {
+    CLOG_E("VCAPWriter: URL [%s] ser changed from [%s] to [%s].", url.c_str(), next_ser_type.c_str(), ser_type.c_str());
+    discard_new_url_entries();
+    return false;
   }
 
   SchemaData schema_data;
-  std::string schema_ser_type;
+  std::string split_ser_type;
   const auto schema_ser_source = ser_type.empty() ? std::string_view{next_ser_type} : std::string_view{ser_type};
   SchemaType schema_storage_type = SchemaData::resolve_type(schema_type, schema_ser_source);
   bool has_split_method_schema = false;
-
-  schema_ser_type.assign(schema_ser_source.begin(), schema_ser_source.end());
 
   if ((action_type == ActionType::kClientRequest || action_type == ActionType::kClientResponse ||
        action_type == ActionType::kServerRequest || action_type == ActionType::kServerResponse) &&
@@ -1106,12 +1096,14 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
       }
 
       if (!payload_ser_type.empty()) {
-        schema_ser_type.assign(payload_ser_type.begin(), payload_ser_type.end());
+        split_ser_type.assign(payload_ser_type.begin(), payload_ser_type.end());
         schema_storage_type = SchemaData::resolve_type(schema_type, payload_ser_type);
         has_split_method_schema = true;
       }
     }
   }
+
+  const std::string& schema_ser_type = has_split_method_schema ? split_ser_type : next_ser_type;
 
   if (!next_ser_type.empty()) {
     if VUNLIKELY (!load_schema(schema_ser_type, schema_storage_type, schema_data)) {
@@ -1167,11 +1159,7 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
 
   if (!schema_ser_type.empty() &&
       (schema_storage_type == SchemaType::kProtobuf || schema_storage_type == SchemaType::kFlatbuffers)) {
-    std::string schema_record_key = schema_ser_type;
-    schema_record_key.push_back('\x1F');
-    schema_record_key.append(SchemaData::convert_type(schema_storage_type));
-
-    if (impl_->ser_map.find(schema_record_key) == impl_->ser_map.end()) {
+    if (impl_->ser_map.find(storage_schema_key) == impl_->ser_map.end()) {
       if (!schema_data.name.empty() && !schema_data.encoding.empty() && !schema_data.data.empty()) {
         mcap::Schema schema;
         schema.id = static_cast<mcap::SchemaId>(impl_->ser_map.size() + 1);
@@ -1182,7 +1170,7 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
 
         impl_->writer->addSchema(schema);
 
-        impl_->ser_map.emplace(schema_record_key, schema.id);
+        impl_->ser_map.emplace(storage_schema_key, schema.id);
       }
     }
   }
@@ -1243,8 +1231,11 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
     url_msg_info.action_type = action_type;
     total_url_msg_info.action_type = action_type;
   } else {
-    total_url_msg_info.ser_type = next_ser_type;
-    url_msg_info.ser_type = next_ser_type;
+    if VUNLIKELY (total_url_msg_info.ser_type.empty() && !next_ser_type.empty()) {
+      total_url_msg_info.ser_type = next_ser_type;
+      url_msg_info.ser_type = next_ser_type;
+    }
+
     total_url_msg_info.schema_type = next_schema_type;
     url_msg_info.schema_type = next_schema_type;
   }

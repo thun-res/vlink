@@ -170,6 +170,7 @@ void bind_bag(nb::module_& m) {
       .def(
           "push",
           [](vlink::BagWriter& self, const vlink::Frame& frame) {
+            // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
             vlink::Frame owned = frame;
             nb::gil_scoped_release release;
             return self.push(owned);
@@ -259,6 +260,7 @@ void bind_bag(nb::module_& m) {
       .def(
           "__lshift__",
           [](vlink::BagWriter& self, const vlink::Frame& frame) -> vlink::BagWriter& {
+            // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
             vlink::Frame owned = frame;
             nb::gil_scoped_release release;
             self << owned;
@@ -299,11 +301,13 @@ void bind_bag(nb::module_& m) {
         return std::string("BagWriter(running=") + (self.is_running() ? "True" : "False") + ")";
       });
 
+  // NOLINTNEXTLINE(bugprone-unused-raii)
   nb::class_<vlink::BagPluginInterface>(
       m, "BagPluginInterface",
       "Opaque bag-plugin interface returned by Plugin.load_bag_plugin(); lifecycle hooks such as "
       "on_reset() and flush() are invoked by the C++ host");
 
+  // NOLINTNEXTLINE(bugprone-unused-raii)
   nb::class_<vlink::TriggerPluginInterface>(m, "TriggerPluginInterface",
                                             "Opaque trigger-plugin interface returned by Plugin.load_trigger_plugin()");
 

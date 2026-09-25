@@ -515,6 +515,7 @@ void verify_reader_window_with_unordered_timestamps(const char* suffix) {
   ScopedBagPath bag(suffix);
   BagWriter::Config writer_config;
   writer_config.sync_mode = true;
+  writer_config.cache_size = 1;
   writer_config.compress = BagWriter::kCompressNone;
   writer_config.split_by_size = 1;
   writer_config.split_by_time = 0;
@@ -522,7 +523,7 @@ void verify_reader_window_with_unordered_timestamps(const char* suffix) {
 
   auto writer = BagWriter::create(bag.path.string(), writer_config);
   REQUIRE(writer != nullptr);
-  for (const int64_t timestamp : {0LL, 2'000LL, 1'000LL}) {
+  for (const int64_t timestamp : {0LL, 2'000LL, 1'000LL, 1'001LL}) {
     REQUIRE_EQ(
         writer->push(bag_frame(timestamp, "dds://coverage/window", "raw", SchemaType::kRaw, ActionType::kPublish, "x")),
         timestamp);
@@ -535,10 +536,10 @@ void verify_reader_window_with_unordered_timestamps(const char* suffix) {
   auto reader = BagReader::create(bag.path.string());
   REQUIRE(reader != nullptr);
   if (std::string_view(suffix).back() == 'x') {
-    REQUIRE_GE(reader->get_info().split_count, 3);
+    REQUIRE_GE(reader->get_info().split_count, 4);
   }
   REQUIRE(reader->open_cursor());
-  CHECK_EQ(read_all_frames(*reader).size(), 3u);
+  CHECK_EQ(read_all_frames(*reader).size(), 4u);
   reader->register_output_callback([&](const Frame& frame) {
     played.push_back(frame.timestamp);
     output_count.fetch_add(1, std::memory_order_release);
@@ -979,6 +980,74 @@ size_t replace_file_bytes(const std::filesystem::path& path, const std::string& 
   out.write(content.data(), static_cast<std::streamsize>(content.size()));
 
   return count;
+}
+
+void verify_vcap_reader_end_time_preserves_submicrosecond_frames() {
+  ScopedBagPath bag(".vcap");
+  BagWriter::Config writer_config;
+  writer_config.sync_mode = true;
+  writer_config.cache_size = 0;
+  writer_config.compress = BagWriter::kCompressNone;
+  writer_config.start_timestamp = 1'700'000'000'000LL;
+
+  auto writer = BagWriter::create(bag.path.string(), writer_config);
+  REQUIRE(writer != nullptr);
+  for (const int64_t timestamp : {0LL, 2'000LL, 1'000LL, 1'001LL}) {
+    REQUIRE_EQ(
+        writer->push(bag_frame(timestamp, "dds://coverage/window", "raw", SchemaType::kRaw, ActionType::kPublish, "x")),
+        timestamp);
+  }
+  writer.reset();
+
+  const auto encode_timestamp = [](uint64_t timestamp) {
+    std::string bytes(8, '\0');
+    for (size_t i = 0; i < bytes.size(); ++i) {
+      bytes[i] = static_cast<char>((timestamp >> (8 * i)) & 0xff);
+    }
+    return bytes;
+  };
+  const uint64_t boundary_ns = writer_config.start_timestamp * 1000'000 + 1000'000;
+  const auto original = encode_timestamp(boundary_ns);
+  const auto updated = encode_timestamp(boundary_ns + 999);
+  REQUIRE_EQ(replace_file_bytes(bag.path, original + original, updated + updated, false), 1u);
+
+  std::vector<int64_t> played;
+  std::atomic<bool> finished{false};
+  auto reader = BagReader::create(bag.path.string());
+  REQUIRE(reader != nullptr);
+  reader->register_output_callback([&](const Frame& frame) { played.push_back(frame.timestamp); });
+  reader->register_finish_callback([&](bool interrupted) {
+    CHECK_FALSE(interrupted);
+    finished.store(true, std::memory_order_release);
+  });
+  REQUIRE(reader->async_run());
+
+  for (const int64_t end_time : {1LL, 0LL, 10'000'000'000'000LL}) {
+    BagReader::Config config;
+    config.end_time = end_time;
+    config.force_delay = 0;
+    const std::vector<int64_t> expected =
+        end_time == 1 ? std::vector<int64_t>{0, 1'000} : std::vector<int64_t>{0, 2'000, 1'000, 1'001};
+
+    REQUIRE(reader->open_cursor(config));
+    std::vector<int64_t> actual;
+    for (const auto& frame : read_all_frames(*reader)) {
+      actual.push_back(frame.timestamp);
+    }
+    CHECK(actual == expected);
+    CHECK(reader->eof());
+    CHECK_FALSE(reader->fail());
+
+    played.clear();
+    finished.store(false, std::memory_order_relaxed);
+    reader->play(config);
+    REQUIRE(common_test::wait_until([&] { return finished.load(std::memory_order_acquire); }, 3s));
+    REQUIRE(reader->wait_for_idle(3000));
+    CHECK(played == expected);
+  }
+
+  reader->quit();
+  REQUIRE(reader->wait_for_quit(3000));
 }
 
 void verify_invalid_single_bag_is_not_cursor_readable(const char* suffix) {
@@ -2395,8 +2464,8 @@ void verify_vdb_check_rejects_empty_ser_metadata() {
   REQUIRE(reader->wait_for_quit(3000));
 }
 
-void verify_vdb_writer_updates_empty_url_metadata_later() {
-  ScopedBagPath bag(".vdb");
+void verify_writer_updates_empty_url_metadata_later(const char* suffix) {
+  ScopedBagPath bag(suffix);
 
   BagWriter::Config config;
   config.sync_mode = true;
@@ -2410,6 +2479,8 @@ void verify_vdb_writer_updates_empty_url_metadata_later() {
   const std::string url = "dds://coverage/late_ser";
   REQUIRE_EQ(writer->push(bag_frame(1'000, url, "", SchemaType::kUnknown, ActionType::kPublish, "first")), 1'000);
   REQUIRE_EQ(writer->push(bag_frame(2'000, url, "raw", SchemaType::kRaw, ActionType::kPublish, "second")), 2'000);
+  REQUIRE_EQ(writer->push(bag_frame(3'000, url, "", SchemaType::kUnknown, ActionType::kPublish, "third")), 3'000);
+  REQUIRE_EQ(writer->push(bag_frame(4'000, url, "raw", SchemaType::kRaw, ActionType::kPublish, "fourth")), 4'000);
   writer.reset();
 
   auto reader = BagReader::create(bag.path.string(), false);
@@ -2422,9 +2493,15 @@ void verify_vdb_writer_updates_empty_url_metadata_later() {
 
   REQUIRE(reader->open_cursor());
   const auto frames = read_all_frames(*reader);
-  REQUIRE_EQ(frames.size(), 2u);
+  REQUIRE_EQ(frames.size(), 4u);
   CHECK_EQ(frames[0].payload, "first");
   CHECK_EQ(frames[1].payload, "second");
+  CHECK_EQ(frames[2].payload, "third");
+  CHECK_EQ(frames[3].payload, "fourth");
+  for (const auto& frame : frames) {
+    CHECK_EQ(frame.ser_type, "raw");
+    CHECK_EQ(frame.schema_type, SchemaType::kRaw);
+  }
 
   reader->quit();
   REQUIRE(reader->wait_for_quit(3000));
@@ -3655,8 +3732,9 @@ TEST_SUITE("extension-BagReader") {
     verify_vcap_check_uses_date_when_start_timestamp_is_not_numeric();
   }
 
-  TEST_CASE("vdb writer fills initially empty url metadata on later frames") {
-    verify_vdb_writer_updates_empty_url_metadata_later();
+  TEST_CASE("writers fill initially empty url metadata and retain it on later frames") {
+    verify_writer_updates_empty_url_metadata_later(".vdb");
+    verify_writer_updates_empty_url_metadata_later(".vcap");
   }
 
   TEST_CASE("vdb writer and reader cover index and split replacement maintenance") {
@@ -3783,6 +3861,10 @@ TEST_SUITE("extension-BagReader") {
     SUBCASE("vdbx") { verify_reader_window_with_unordered_timestamps(".vdbx"); }
     SUBCASE("vcap") { verify_reader_window_with_unordered_timestamps(".vcap"); }
     SUBCASE("vcapx") { verify_reader_window_with_unordered_timestamps(".vcapx"); }
+  }
+
+  TEST_CASE("unchunked vcap time windows include the full final microsecond") {
+    verify_vcap_reader_end_time_preserves_submicrosecond_frames();
   }
 
   TEST_CASE("split readers preserve earlier frames when skipping initial blank") {

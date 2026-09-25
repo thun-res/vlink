@@ -1697,32 +1697,22 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
   Impl::UrlMsgInfo& url_msg_info = url_iter_ret.first->second;
   auto resolved_schema_type = SchemaData::resolve_type(schema_type, ser_type);
 
-  std::string next_ser_type = total_url_msg_info.ser_type;
+  const std::string& next_ser_type = total_url_msg_info.ser_type.empty() ? ser_type : total_url_msg_info.ser_type;
   SchemaType next_schema_type = total_url_msg_info.schema_type;
 
   if (total_url_iter_ret.second) {
-    next_ser_type = ser_type;
     next_schema_type = resolved_schema_type;
-  } else {
-    if (!ser_type.empty()) {
-      if (next_ser_type.empty()) {
-        next_ser_type = ser_type;
-      } else if VUNLIKELY (next_ser_type != ser_type) {
-        CLOG_E("VDBWriter: URL [%s] ser changed from [%s] to [%s].", url.c_str(), next_ser_type.c_str(),
-               ser_type.c_str());
-        discard_new_url_entries();
-        return false;
-      }
-    }
+  } else if VUNLIKELY (!ser_type.empty() && next_ser_type != ser_type) {
+    CLOG_E("VDBWriter: URL [%s] ser changed from [%s] to [%s].", url.c_str(), next_ser_type.c_str(), ser_type.c_str());
+    discard_new_url_entries();
+    return false;
   }
 
   if (!next_ser_type.empty()) {
-    std::string schema_ser_type;
+    std::string split_ser_type;
     const auto schema_ser_source = ser_type.empty() ? std::string_view{next_ser_type} : std::string_view{ser_type};
     SchemaType schema_storage_type = SchemaData::resolve_type(schema_type, schema_ser_source);
     bool has_split_method_schema = false;
-
-    schema_ser_type.assign(schema_ser_source.begin(), schema_ser_source.end());
 
     if ((action_type == ActionType::kClientRequest || action_type == ActionType::kClientResponse ||
          action_type == ActionType::kServerRequest || action_type == ActionType::kServerResponse) &&
@@ -1737,12 +1727,14 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
         }
 
         if (!payload_ser_type.empty()) {
-          schema_ser_type.assign(payload_ser_type.begin(), payload_ser_type.end());
+          split_ser_type.assign(payload_ser_type.begin(), payload_ser_type.end());
           schema_storage_type = SchemaData::resolve_type(schema_type, payload_ser_type);
           has_split_method_schema = true;
         }
       }
     }
+
+    const std::string& schema_ser_type = has_split_method_schema ? split_ser_type : next_ser_type;
     SchemaData schema_data;
 
     if VUNLIKELY (!load_schema(schema_ser_type, schema_storage_type, schema_data)) {
@@ -1898,8 +1890,11 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
         // LCOV_EXCL_STOP GCOVR_EXCL_STOP
       }
 
-      total_url_msg_info.ser_type = next_ser_type;
-      url_msg_info.ser_type = next_ser_type;
+      if (ser_changed) {
+        total_url_msg_info.ser_type = next_ser_type;
+        url_msg_info.ser_type = next_ser_type;
+      }
+
       total_url_msg_info.schema_type = next_schema_type;
       url_msg_info.schema_type = next_schema_type;
     }
