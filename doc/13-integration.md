@@ -224,6 +224,8 @@ vlink_create_server("dds://echo", &schema, &server, on_request, &server);
 
 创建 Getter 时 `msg_callback` 的取值决定工作模式：传非 `NULL` 走推送模式，每次值更新触发回调；传 `NULL` 走轮询模式，由调用方用 `vlink_get` 主动读取最新值。
 
+安全 Getter 的推送回调与并发 `vlink_get` 共享鉴权结果；不同密文鉴权失败后，读取返回 `VLINK_RET_TRANSFER_ERROR`，直到收到合法更新，已鉴权当前值的重复投递不清除缓存。已有 Field 初值可能在创建返回前触发回调，`user_data` 须提前准备。轮询模式仍在读取时解密，重复读取复用已鉴权的当前值。
+
 #### 13.5.4 `vlink_get` 的缓冲区契约
 
 `vlink_get` 的 `*size` 是双向参数：入参为缓冲区容量，出参为实际数据大小。容量不足时返回 `VLINK_RET_MEMORY_ERROR` 并把所需大小写回 `*size`（`data` 不被修改），调用方据此扩容重试；尚无可用值时返回 `VLINK_RET_TRANSFER_ERROR`。
