@@ -168,7 +168,61 @@ class AnotherInterface {
   virtual void run() = 0;
 };
 
+static int interface_destroyed = 0;
+static int other_destroyed = 0;
+static int implementation_destroyed = 0;
+static void* expected_interface = nullptr;
+
+class OffsetInterface {
+  VLINK_PLUGIN_REGISTER(OffsetInterface)
+
+ public:
+  virtual int compute() const = 0;
+
+ protected:
+  virtual ~OffsetInterface() { ++interface_destroyed; }
+};
+
+struct OtherBase {
+  virtual ~OtherBase() { ++other_destroyed; }
+};
+
+class OffsetImplementation final : public OtherBase, public virtual OffsetInterface {
+  VLINK_PLUGIN_REGISTER(OffsetInterface)
+
+ public:
+  OffsetImplementation() { expected_interface = static_cast<OffsetInterface*>(this); }
+  ~OffsetImplementation() override { ++implementation_destroyed; }
+  int compute() const override { return 42; }
+};
+
+#undef VLINK_PLUGIN_CREATE_FUNC_NAME
+#undef VLINK_PLUGIN_DESTROY_FUNC_NAME
+#define VLINK_PLUGIN_CREATE_FUNC_NAME test_offset_plugin_create
+#define VLINK_PLUGIN_DESTROY_FUNC_NAME test_offset_plugin_destroy
+VLINK_PLUGIN_DECLARE(OffsetImplementation, 1, 0)
+#undef VLINK_PLUGIN_CREATE_FUNC_NAME
+#undef VLINK_PLUGIN_DESTROY_FUNC_NAME
+#define VLINK_PLUGIN_CREATE_FUNC_NAME vlink_plugin_create
+#define VLINK_PLUGIN_DESTROY_FUNC_NAME vlink_plugin_destroy
+
 TEST_SUITE("base-Plugin") {
+  TEST_CASE("plugin factory and destroy preserve a virtual interface at a nonzero offset") {
+    interface_destroyed = 0;
+    other_destroyed = 0;
+    implementation_destroyed = 0;
+    auto* handle = test_offset_plugin_create("offset", OffsetInterface::get_plugin_id().data(), 1, 0, Logger::kError);
+    REQUIRE(handle != nullptr);
+    CHECK_EQ(handle, expected_interface);
+    if (handle == expected_interface) {
+      CHECK_EQ(static_cast<OffsetInterface*>(handle)->compute(), 42);
+    }
+    CHECK(test_offset_plugin_destroy(handle));
+    CHECK_EQ(interface_destroyed, 1);
+    CHECK_EQ(other_destroyed, 1);
+    CHECK_EQ(implementation_destroyed, 1);
+  }
+
   TEST_CASE("plugin can be constructed and destroyed without crash") {
     Plugin plugin;
     (void)plugin;

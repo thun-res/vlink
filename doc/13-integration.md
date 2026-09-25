@@ -665,6 +665,8 @@ plugin.unload<vlink::LoggerPluginInterface>("my_logger");
 4. CMake 编译为 `SHARED` 库；
 5. 宿主以 `Plugin::load<Iface>()` 加载。
 
+构造入口返回注册接口的地址，析构入口通过该接口的虚析构释放实现对象，支持多重继承和虚继承。接口析构可为 `protected`。存在接口地址偏移的旧插件须用当前头文件重新构建。
+
 以一个自定义监控插件为例。
 
 **monitor_plugin.h（接口）**
