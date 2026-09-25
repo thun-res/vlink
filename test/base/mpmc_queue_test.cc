@@ -69,7 +69,7 @@ TEST_SUITE("base-MpmcQueue") {
   TEST_CASE("capacity zero throws std::invalid_argument") { CHECK_THROWS_AS(MpmcQueue<int>(0), std::invalid_argument); }
 
   TEST_CASE("capacity SIZE_MAX throws before the guard slot allocation overflows") {
-    CHECK_THROWS_AS(MpmcQueue<int>(std::numeric_limits<size_t>::max()), std::invalid_argument);
+    CHECK_THROWS_AS(MpmcQueue<int>{std::numeric_limits<size_t>::max()}, std::invalid_argument);
   }
 
   TEST_CASE("wait helpers return false after quit even when their condition is ready") {
