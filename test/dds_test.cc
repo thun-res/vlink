@@ -1132,6 +1132,30 @@ TEST_SUITE("dds-method") {
       CHECK_FALSE(client.invoke(7, resp, 300ms));
       CHECK_EQ(handled.load(std::memory_order_acquire), 1);
     }
+
+    {
+      std::atomic<int> decrypt_count{0};
+      auto cfg = client_decrypt_fail_cfg();
+      cfg.decrypt_callback = [&](const Bytes&, Bytes&) {
+        decrypt_count.fetch_add(1, std::memory_order_relaxed);
+        return false;
+      };
+
+      SecurityServer<Bytes, Bytes> server(DdsConf("dds/mth/sec_bad_bytes_resp"), identity_cfg());
+      REQUIRE(server.listen([](const Bytes& req, Bytes& resp) { resp = req; }));
+
+      SecurityClient<Bytes, Bytes> client("dds://dds/mth/sec_bad_bytes_resp", std::move(cfg));
+      REQUIRE(client.wait_for_connected(kDdsDiscoveryTimeout));
+
+      const Bytes request{0x11, 0x22};
+      Bytes response{0xAB};
+      CHECK_FALSE(client.invoke(request, response, 1s));
+      CHECK_EQ(decrypt_count.load(std::memory_order_relaxed), 1);
+      REQUIRE_EQ(response.size(), 1u);
+      CHECK_EQ(response[0], 0xABu);
+      CHECK_FALSE(client.invoke(request, 1s).has_value());
+      CHECK_EQ(decrypt_count.load(std::memory_order_relaxed), 2);
+    }
   }
 
   TEST_CASE("custom serialization failures stop client and server rpc paths") {

@@ -123,6 +123,15 @@ TEST_SUITE("zerocopy-ObjectArray") {
     CHECK_EQ(std::string(arr.source_id()), "fusion_v2");
   }
 
+  TEST_CASE("set_source_id accepts its own string view and substring") {
+    zerocopy::ObjectArray arr;
+    arr.set_source_id("fusion_v2");
+    arr.set_source_id(arr.source_id());
+    CHECK_EQ(arr.source_id(), "fusion_v2");
+    arr.set_source_id(arr.source_id().substr(1));
+    CHECK_EQ(arr.source_id(), "usion_v2");
+  }
+
   TEST_CASE("set_source_id truncates oversize input") {
     zerocopy::ObjectArray arr;
 

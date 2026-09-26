@@ -489,8 +489,6 @@ void AudioFrame::set_update_time_ns(uint64_t update_time_ns) noexcept { update_t
 void AudioFrame::set_duration_ns(uint64_t duration_ns) noexcept { duration_ns_ = duration_ns; }
 
 void AudioFrame::set_codec(std::string_view codec) noexcept {
-  std::memset(codec_, 0, sizeof(codec_));
-
   size_t copy_size = codec.size();
 
   if (copy_size >= sizeof(codec_)) {
@@ -498,13 +496,13 @@ void AudioFrame::set_codec(std::string_view codec) noexcept {
   }
 
   if VLIKELY (copy_size != 0) {
-    std::memcpy(codec_, codec.data(), copy_size);
+    std::memmove(codec_, codec.data(), copy_size);
   }
+
+  std::memset(codec_ + copy_size, 0, sizeof(codec_) - copy_size);
 }
 
 void AudioFrame::set_language(std::string_view language) noexcept {
-  std::memset(language_, 0, sizeof(language_));
-
   size_t copy_size = language.size();
 
   if (copy_size >= sizeof(language_)) {
@@ -512,8 +510,10 @@ void AudioFrame::set_language(std::string_view language) noexcept {
   }
 
   if VLIKELY (copy_size != 0) {
-    std::memcpy(language_, language.data(), copy_size);
+    std::memmove(language_, language.data(), copy_size);
   }
+
+  std::memset(language_ + copy_size, 0, sizeof(language_) - copy_size);
 }
 
 void AudioFrame::set_channel(uint32_t channel) noexcept { channel_ = channel; }

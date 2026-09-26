@@ -531,8 +531,6 @@ bool Tensor::is_owner() const noexcept { return is_owner_; }
 void Tensor::set_update_time_ns(uint64_t update_time_ns) noexcept { update_time_ns_ = update_time_ns; }
 
 void Tensor::set_name(std::string_view name) noexcept {
-  std::memset(name_, 0, sizeof(name_));
-
   size_t copy_size = name.size();
 
   if (copy_size >= sizeof(name_)) {
@@ -540,13 +538,13 @@ void Tensor::set_name(std::string_view name) noexcept {
   }
 
   if VLIKELY (copy_size != 0) {
-    std::memcpy(name_, name.data(), copy_size);
+    std::memmove(name_, name.data(), copy_size);
   }
+
+  std::memset(name_ + copy_size, 0, sizeof(name_) - copy_size);
 }
 
 void Tensor::set_model_id(std::string_view model_id) noexcept {
-  std::memset(model_id_, 0, sizeof(model_id_));
-
   size_t copy_size = model_id.size();
 
   if (copy_size >= sizeof(model_id_)) {
@@ -554,13 +552,13 @@ void Tensor::set_model_id(std::string_view model_id) noexcept {
   }
 
   if VLIKELY (copy_size != 0) {
-    std::memcpy(model_id_, model_id.data(), copy_size);
+    std::memmove(model_id_, model_id.data(), copy_size);
   }
+
+  std::memset(model_id_ + copy_size, 0, sizeof(model_id_) - copy_size);
 }
 
 void Tensor::set_layout(std::string_view layout) noexcept {
-  std::memset(layout_, 0, sizeof(layout_));
-
   size_t copy_size = layout.size();
 
   if (copy_size >= sizeof(layout_)) {
@@ -568,15 +566,16 @@ void Tensor::set_layout(std::string_view layout) noexcept {
   }
 
   if VLIKELY (copy_size != 0) {
-    std::memcpy(layout_, layout.data(), copy_size);
+    std::memmove(layout_, layout.data(), copy_size);
   }
+
+  std::memset(layout_ + copy_size, 0, sizeof(layout_) - copy_size);
 }
 
 void Tensor::set_shape(const uint32_t* shape, uint8_t rank) noexcept {
-  std::memset(shape_, 0, sizeof(shape_));
-  std::memset(strides_, 0, sizeof(strides_));
-
   if VUNLIKELY (rank == 0 || !shape) {
+    std::memset(shape_, 0, sizeof(shape_));
+    std::memset(strides_, 0, sizeof(strides_));
     rank_ = 0;
     num_elements_ = 0;
     batch_size_ = 0;
@@ -587,21 +586,23 @@ void Tensor::set_shape(const uint32_t* shape, uint8_t rank) noexcept {
     rank = kMaxRank;
   }
 
+  std::memmove(shape_, shape, rank * sizeof(shape_[0]));
+  std::memset(shape_ + rank, 0, (kMaxRank - rank) * sizeof(shape_[0]));
+  std::memset(strides_, 0, sizeof(strides_));
+
   uint64_t total = 1;
   bool has_zero = false;
   bool total_overflow = false;
 
   for (uint8_t i = 0; i < rank; ++i) {
-    shape_[i] = shape[i];
-
-    if (shape[i] == 0) {
+    if (shape_[i] == 0) {
       has_zero = true;
       total = 0;
     } else if (!has_zero && !total_overflow) {
-      if VUNLIKELY (total > std::numeric_limits<uint64_t>::max() / shape[i]) {
+      if VUNLIKELY (total > std::numeric_limits<uint64_t>::max() / shape_[i]) {
         total_overflow = true;
       } else {
-        total *= shape[i];
+        total *= shape_[i];
       }
     }
   }

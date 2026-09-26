@@ -343,6 +343,8 @@ vlink 为 Python 提供两条路径，**首选原生绑定**：
 
   Python 生命周期与可修改数据的约定：
 
+  - 普通通信端点发送真实 loan 时会移动其存储，原 Python `Bytes` 随即清空；发送返回失败也不恢复该对象。无订阅者而提前拒绝发布时保留原 loan，调用方仍须归还；未初始化的 Setter 只保存快照。发送前须释放该 loan 的 `memoryview` 等借用视图，否则抛出 `BufferError`。普通缓冲区继续按快照发送，安全端点仍不支持显式 loan。
+
   - `DiscoveryViewer` 继承 `MessageLoop`：注册发现回调后调用 `async_run()`，结束时调用 `quit()` 和 `wait_for_quit(timeout_ms)`；构造本身不启动发现消息处理。
   - `MessageLoop` 的投递接口在等待队列容量时释放 GIL，使 `Block` 策略下的 Python 消费回调可以继续执行。
   - `Security` 加解密及状态查询在原生调用期间释放 GIL；加解密保留不可变 `bytes` 输入，可修改缓冲区则先复制，以保证并发调用时的输入快照。

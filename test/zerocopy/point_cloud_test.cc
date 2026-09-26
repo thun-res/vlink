@@ -985,6 +985,62 @@ TEST_SUITE("zerocopy-PointCloud") {
     CHECK_EQ(dst.get_value<float>(1u, key_map, "intensity"), doctest::Approx(0.75f));
   }
 
+  TEST_CASE("vertical serialization rejects an output that owns the borrowed points") {
+    zerocopy::PointCloud src;
+    REQUIRE(src.create_v3f<>(2));
+    REQUIRE(src.push_value_v3f(1.0f, 2.0f, 3.0f));
+    REQUIRE(src.push_value_v3f(4.0f, 5.0f, 6.0f));
+    Bytes wire;
+    REQUIRE((src >> wire));
+    const Bytes original = wire;
+    zerocopy::PointCloud borrowed;
+    REQUIRE((borrowed << wire));
+    borrowed.set_vertical(true);
+
+    SUBCASE("unchanged output size") {}
+    SUBCASE("shortened output still owns the source") { REQUIRE(wire.shrink_to(0)); }
+
+    const size_t output_size = wire.size();
+    REQUIRE_FALSE((borrowed >> wire));
+    CHECK_EQ(wire.size(), output_size);
+    CHECK_EQ(std::memcmp(wire.data(), original.data(), original.size()), 0);
+
+    Bytes separate;
+    REQUIRE((borrowed >> separate));
+    zerocopy::PointCloud decoded;
+    REQUIRE((decoded << separate));
+    CHECK_EQ(decoded.get_value_v3f(0).x, 1.0f);
+    CHECK_EQ(decoded.get_value_v3f(1).z, 6.0f);
+
+    Bytes short_view = Bytes::shallow_copy(borrowed.get_internal_data() + 1, 1);
+    REQUIRE((borrowed >> short_view));
+    CHECK(short_view == separate);
+  }
+
+  TEST_CASE("vertical serialization can reuse a disjoint region of the source allocation") {
+    zerocopy::PointCloud source;
+    REQUIRE(source.create_v3f<>(2));
+    REQUIRE(source.push_value_v3f(1.0f, 2.0f, 3.0f));
+    REQUIRE(source.push_value_v3f(4.0f, 5.0f, 6.0f));
+    const size_t wire_size = source.get_serialized_size();
+    Bytes storage = Bytes::create(2 * wire_size);
+    REQUIRE_FALSE(storage.empty());
+    Bytes input = Bytes::shallow_copy(storage.data() + wire_size, wire_size);
+    REQUIRE((source >> input));
+    zerocopy::PointCloud borrowed;
+    REQUIRE((borrowed << input));
+    borrowed.set_vertical(true);
+    REQUIRE(storage.shrink_to(wire_size));
+
+    REQUIRE((borrowed >> storage));
+    CHECK_EQ(borrowed.get_value_v3f(0).x, 1.0f);
+    CHECK_EQ(borrowed.get_value_v3f(1).z, 6.0f);
+    zerocopy::PointCloud decoded;
+    REQUIRE((decoded << storage));
+    CHECK_EQ(decoded.get_value_v3f(0).x, 1.0f);
+    CHECK_EQ(decoded.get_value_v3f(1).z, 6.0f);
+  }
+
   TEST_CASE("set_vertical disables vertical serialization without changing data") {
     zerocopy::PointCloud src;
     REQUIRE(src.create_v3f<>(8, {}, 0, true));

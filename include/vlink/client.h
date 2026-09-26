@@ -233,11 +233,13 @@ class Client : public Node<ClientImpl, SecT> {
    * Only available when @c kHasResp is @c true.  Serialises @p req, blocks for
    * up to @p timeout, and deserialises the reply into @p resp.  A @p timeout
    * of @c 0 is treated as infinite.
+   * Built-in CPU zero-copy responses retain independent payload storage, including
+   * when @c RespT is a @c std::shared_ptr to such a container.
    *
    * @param req      Request value.
    * @param resp     Output parameter receiving the deserialised response.
    * @param timeout  Maximum wait for the response.
-   * @return         @c true if the response was received in time.
+   * @return         @c true if the response was received in time and decoded successfully.
    */
   [[nodiscard]] bool invoke(const ReqT& req, RespT& resp,
                             std::chrono::milliseconds timeout = Timeout::kDefaultInterval);
@@ -263,6 +265,7 @@ class Client : public Node<ClientImpl, SecT> {
    * Only available when @c kHasResp is @c true.  The method returns
    * immediately; @p callback runs on the transport delivery thread or on the
    * attached @c MessageLoop thread when the response arrives.
+   * Borrowed CPU zero-copy payloads must be copied inside the callback if retained.
    *
    * @param req       Request value.
    * @param callback  @c void(const RespT&) invoked once the response arrives.
@@ -278,6 +281,7 @@ class Client : public Node<ClientImpl, SecT> {
    * serialisation, transport, or deserialisation failure the future's
    * exception state is populated with @c Exception::RuntimeError.  Only
    * available when @c kHasResp is @c true.
+   * Built-in CPU zero-copy responses retain independent payload storage.
    *
    * @param req  Request value.
    * @return     @c std::future\<RespT\> resolved when the response is delivered.
@@ -297,6 +301,8 @@ class Client : public Node<ClientImpl, SecT> {
   bool send(const ReqT& req);
 
  private:
+  bool deserialize_response(const Bytes& data, RespT& response);
+
   bool call_bytes(const Bytes& req_data, NodeImpl::MsgCallback&& callback = nullptr,
                   std::chrono::milliseconds timeout = std::chrono::milliseconds(0));
 

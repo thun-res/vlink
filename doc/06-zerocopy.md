@@ -215,6 +215,8 @@ sub.listen([](const vlink::zerocopy::PointCloud& pc) {
 | 垂直排布 | `set_vertical(true)` | 序列化负载按字段成列（SoA），更利于下游熵编码；内存布局不变 |
 | 体素降采样 | `downsample(level)`（`level` 取 `1..255`） | 在已量化（`extent>0`）且拥有缓冲区（owned）的点云上将空间相近点折叠为每体素一个，原地缩减点数；借用/反序列化得到的点云无法降采样 |
 
+垂直序列化复用输出 `Bytes` 时，若会覆盖或释放源点数据，则返回 `false` 且不修改输出；可改用独立输出缓冲区。
+
 ---
 
 ## 🗺️ 6.5 OccupancyGrid：2D 占据与代价地图
@@ -440,6 +442,8 @@ if (pub.is_support_loan()) {
 
 SHM、SHM2、Zenoh 的 Client 将请求交给后端后，由后端消费借用；未连接、等待超时或请求未提交时由 Client 归还。自动序列化在交付后端之前失败时，仍由公共序列化调用方归还。
 
+显式借用也适用于混合类型 RPC：`Client<Bytes, T>` 直接发送借出的请求；`Server<T, Bytes>` 的同步回调可将 `loan()` 结果移动到响应出参，由后端消费。
+
 > 安全端点（`SecT == kWithSecurity` / `SecurityPublisher`）发布时会跳过传输层 loan——密文长度在加密前未知，框架退回常规序列化路径。`is_support_loan()` 反映的是传输能力、不感知安全配置，因此安全端点不应使用显式 `loan()` 路径（借出的缓冲不会被发布消费）。容器层借用不受影响，加密管线见 [安全加密](07-security.md)。
 
 loan 的完整传输配置见 [传输后端与 URL](04-transport.md)。
@@ -449,6 +453,8 @@ loan 的完整传输配置见 [传输后端与 URL](04-transport.md)。
 ## ⏳ 6.11 生命周期约束
 
 本节描述 CPU 领域容器的借用；FastBuffer 的资源引用见 [6.13](#-613-fastbuffer-插件缓冲区)。
+
+`Client` 的同步出参、optional 与 future 返回上述 CPU 容器时，框架会保存独立载荷；回调接收仍遵循下述借用约束。PointCloud 的 vertical 解码本身已有独立存储，直接转移即可。
 
 借用机制（`shallow_copy`、容器反序列化、loan）只持有指针，不复制数据。两条约束可避免悬空：
 

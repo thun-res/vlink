@@ -349,6 +349,16 @@ struct ZenohPayloadView final {
       size = z_slice_len(z_view_slice_loan(&view));
       return true;
     }
+#else
+    auto iter = z_bytes_get_slice_iterator(payload);
+    z_view_slice_t first;
+    z_view_slice_t next;
+
+    if (z_bytes_slice_iterator_next(&iter, &first) && !z_bytes_slice_iterator_next(&iter, &next)) {
+      data = z_slice_data(z_view_slice_loan(&first));
+      size = z_slice_len(z_view_slice_loan(&first));
+      return true;
+    }
 #endif
 
     if VUNLIKELY (z_bytes_to_slice(payload, &slice) != Z_OK) {

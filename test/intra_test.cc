@@ -26,11 +26,13 @@
 #ifdef VLINK_SUPPORT_INTRA
 
 #include <atomic>
+#include <cstring>
 #include <future>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include "./common_test.h"
@@ -2061,6 +2063,34 @@ TEST_SUITE("intra-method") {
     CHECK_EQ(fire_count.load(std::memory_order_relaxed), 1);
   }
 
+  TEST_CASE("mixed bytes requests reach the direct server without payload copies") {
+    const Bytes request = Bytes::create(4096);
+    int handled = 0;
+    Server<Bytes, int> server(IntraConf("ev_mixed_bytes_rpc_direct", "null", 0, "direct"));
+    REQUIRE(server.listen([&](const Bytes& req, int& resp) {
+      CHECK_EQ(req.data(), request.data());
+      CHECK_EQ(req.size(), request.size());
+      ++handled;
+      resp = static_cast<int>(req.size());
+    }));
+
+    Client<Bytes, int> client(IntraConf("ev_mixed_bytes_rpc_direct", "null", 0, "direct"));
+    REQUIRE(client.wait_for_connected(1s));
+
+    int response = 0;
+    REQUIRE(client.invoke(request, response, 1s));
+    CHECK_EQ(response, 4096);
+
+    response = 0;
+    REQUIRE(client.invoke(request, [&](const int& value) { response = value; }));
+    CHECK_EQ(response, 4096);
+
+    auto future = client.async_invoke(request);
+    REQUIRE(future.wait_for(1s) == std::future_status::ready);
+    CHECK_EQ(future.get(), 4096);
+    CHECK_EQ(handled, 3);
+  }
+
   TEST_CASE("fire-and-forget client does not enter request-response callback") {
     MESSAGE("[intra-method] fire-and-forget client does not enter request-response callback");
 
@@ -2959,6 +2989,114 @@ TEST_SUITE("intra-dynamicdata") {
 }
 
 TEST_SUITE("intra-zerocopy") {
+  TEST_CASE("mixed server snapshots a response borrowed from its decoded request") {
+    const std::string payload(4096, 'x');
+    Server<std::string, Bytes> server(IntraConf("zc_borrowed_response", "null", 0, "direct"));
+    REQUIRE(server.listen([](const std::string& request, Bytes& response) {
+      response = Bytes::shallow_copy(reinterpret_cast<const uint8_t*>(request.data()), request.size());
+    }));
+    Client<Bytes, Bytes> client(IntraConf("zc_borrowed_response", "null", 0, "direct"));
+    REQUIRE(client.wait_for_connected(1s));
+    bool received = false;
+    REQUIRE(client.invoke(Bytes::from_string(payload), [&](const Bytes& response) {
+      REQUIRE(response.is_owner());
+      CHECK_EQ(response.to_string(), payload);
+      received = true;
+    }));
+    REQUIRE(received);
+  }
+
+  TEST_CASE_TEMPLATE("retained CPU responses own their payload", T, zerocopy::RawData, zerocopy::CameraFrame,
+                     zerocopy::AudioFrame, zerocopy::Tensor, zerocopy::OccupancyGrid, zerocopy::ObjectArray,
+                     zerocopy::PointCloud, zerocopy::ProxyData) {
+    T source;
+    bool callback_owns = false;
+    if constexpr (std::is_same_v<T, zerocopy::PointCloud>) {
+      REQUIRE(source.template create_v3f<>(2));
+      REQUIRE(source.push_value_v3f(1.0f, 2.0f, 3.0f));
+      REQUIRE(source.push_value_v3f(4.0f, 5.0f, 6.0f));
+      SUBCASE("row layout") {}
+      SUBCASE("vertical layout already decodes into owned storage") {
+        source.set_vertical(true);
+        callback_owns = true;
+      }
+    } else if constexpr (std::is_same_v<T, zerocopy::ObjectArray>) {
+      REQUIRE(source.create(1));
+      zerocopy::ObjectArray::Object object{};
+      REQUIRE(source.push_value(object));
+    } else if constexpr (std::is_same_v<T, zerocopy::ProxyData>) {
+      source.create(Bytes{1, 2, 3}, "topic", "raw", 0, "host");
+    } else {
+      REQUIRE(source.create(16));
+      std::memset(const_cast<uint8_t*>(source.data()), 0x5a, source.size());
+    }
+    Bytes wire;
+    REQUIRE((source >> wire));
+    const Bytes expected = wire;
+    Server<int, Bytes> server(IntraConf("zc_retained_rpc", "null", 0, "direct"));
+    REQUIRE(server.listen([&](const int&, Bytes& response) { response.shallow_copy(wire); }));
+    Client<int, T> client(IntraConf("zc_retained_rpc", "null", 0, "direct"));
+    REQUIRE(client.wait_for_connected(1s));
+
+    T output;
+    REQUIRE(client.invoke(1, output, 1s));
+    REQUIRE(output.is_owner());
+    auto optional = client.invoke(1, 1s);
+    REQUIRE(optional.has_value());
+    REQUIRE(optional->is_owner());
+    auto future = client.async_invoke(1);
+    REQUIRE(future.wait_for(1s) == std::future_status::ready);
+    auto result = future.get();
+    REQUIRE(result.is_owner());
+    bool called = false;
+    REQUIRE(client.invoke(1, [&](const T& response) {
+      CHECK_EQ(response.is_owner(), callback_owns);
+      called = true;
+    }));
+    REQUIRE(called);
+
+    wire.clear();
+    const size_t payload_offset = 2 * sizeof(uint32_t) + sizeof(T);
+    for (const T* response : {&output, &*optional, &result}) {
+      Bytes actual;
+      REQUIRE((*response >> actual));
+      REQUIRE_EQ(actual.size(), expected.size());
+      CHECK_EQ(std::memcmp(actual.data() + payload_offset, expected.data() + payload_offset,
+                           expected.size() - payload_offset),
+               0);
+    }
+  }
+
+  TEST_CASE("shared CPU response preserves output identity and reuses owned storage") {
+    Bytes payload{1, 2, 3, 4};
+    Server<int, zerocopy::RawData> server(IntraConf("zc_shared_rpc", "null", 0, "direct"));
+    REQUIRE(server.listen(
+        [&](const int&, zerocopy::RawData& response) { REQUIRE(response.deep_copy(payload.data(), payload.size())); }));
+    Client<int, std::shared_ptr<zerocopy::RawData>> client(IntraConf("zc_shared_rpc", "null", 0, "direct"));
+    REQUIRE(client.wait_for_connected(1s));
+    auto response = std::make_shared<zerocopy::RawData>();
+    const auto* identity = response.get();
+    REQUIRE(client.invoke(1, response, 1s));
+    REQUIRE(response->is_owner());
+    const auto* storage = response->data();
+    REQUIRE(client.invoke(1, response, 1s));
+    CHECK_EQ(response.get(), identity);
+    CHECK_EQ(response->data(), storage);
+    REQUIRE_EQ(response->size(), payload.size());
+    CHECK_EQ(std::memcmp(response->data(), payload.data(), payload.size()), 0);
+
+    std::shared_ptr<zerocopy::RawData> empty;
+    CHECK_FALSE(client.invoke(1, empty, 1s));
+    CHECK_FALSE(empty);
+    auto future = client.async_invoke(1);
+    REQUIRE(future.wait_for(1s) == std::future_status::ready);
+    auto result = future.get();
+    REQUIRE(result);
+    REQUIRE(result->is_owner());
+    REQUIRE_EQ(result->size(), payload.size());
+    CHECK_EQ(std::memcmp(result->data(), payload.data(), payload.size()), 0);
+  }
+
   TEST_CASE("rawdata round trip preserves payload bytes and header seq") {
     MESSAGE("[intra-zerocopy] rawdata round trip preserves payload bytes and header seq");
 

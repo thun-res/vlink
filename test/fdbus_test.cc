@@ -367,6 +367,57 @@ TEST_SUITE("fdbus-pubsub") {
 }
 
 TEST_SUITE("fdbus-method") {
+  TEST_CASE("failed response encryption leaves no plaintext for automatic reply") {
+    if (!fdbus_available()) {
+      return;
+    }
+
+    bool attach_loop = false;
+    SUBCASE("direct") {}
+    SUBCASE("attached") { attach_loop = true; }
+
+    MessageLoop loop;
+    std::atomic_bool encrypt_success{true};
+    Security::Config config;
+    config.encrypt_callback = [&](const Bytes& input, Bytes& output) {
+      output = input;
+      return encrypt_success.load(std::memory_order_acquire);
+    };
+    config.decrypt_callback = [](const Bytes& input, Bytes& output) {
+      output = input;
+      return true;
+    };
+
+    SecurityServer<Bytes, Bytes> server(FdbusConf("fdbus_mth_encrypt_failure"), std::move(config));
+    if (attach_loop) {
+      loop.async_run();
+      REQUIRE(server.attach(&loop));
+    }
+    REQUIRE(server.listen([](const Bytes& request, Bytes& response) { response = request; }));
+
+    Client<Bytes, Bytes> client("fdbus://fdbus_mth_encrypt_failure");
+    REQUIRE(client.wait_for_connected(3s));
+
+    const Bytes request{0x11, 0x22, 0x33};
+    Bytes response;
+    REQUIRE(client.invoke(request, response, 3s));
+    CHECK(response == request);
+
+    encrypt_success.store(false, std::memory_order_release);
+    REQUIRE(client.invoke(request, response, 3s));
+    CHECK(response.empty());
+
+    encrypt_success.store(true, std::memory_order_release);
+    REQUIRE(client.invoke(request, response, 3s));
+    CHECK(response == request);
+
+    if (attach_loop) {
+      CHECK(server.detach());
+      loop.quit();
+      loop.wait_for_quit();
+    }
+  }
+
   TEST_CASE("shared method endpoints route each owner and complete synchronous acknowledgements directly") {
     if (!fdbus_available()) {
       return;

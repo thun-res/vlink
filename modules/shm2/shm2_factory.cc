@@ -1347,6 +1347,8 @@ void Shm2Client::process_message() {
             });
           }
 
+          callback.callback = {};
+
           lock.lock();
 
           response.reset();

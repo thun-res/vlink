@@ -2480,6 +2480,112 @@ def test_node_role_swaps():
     print("[PASS] Publisher/Subscriber/Setter/Getter role swaps")
 
 
+def test_explicit_loan_transfer():
+    url = f"shm2://py_loan_{uuid.uuid4().hex}?event=data#512"
+    try:
+        pub = _vlink.Publisher(url, auto_init=False)
+    except RuntimeError as exc:
+        if f"Unsupported url[{url}]." not in str(exc):
+            raise
+        print("[SKIP] explicit loan transfer (SHM2 unavailable)")
+        return
+
+    sub = _vlink.Subscriber(url, auto_init=False)
+    received = []
+    event = threading.Event()
+    try:
+        assert pub.init()
+        loan = pub.loan(1)
+        assert loan.is_loaned()
+        assert not pub.publish(loan)
+        assert loan.is_loaned() and loan.size() == 1
+        assert pub.return_loan(loan)
+        loan.clear()
+
+        assert sub.init()
+        assert sub.listen(lambda data: (received.append(bytes(data)), event.set()))
+        assert pub.wait_for_subscribers(2000)
+        loan = pub.loan(1)
+        assert loan.is_loaned()
+        view = memoryview(loan)
+        view[0] = 42
+        try:
+            try:
+                pub.publish(loan)
+                assert False, "sending an exported loan must fail"
+            except BufferError:
+                pass
+            assert loan.is_loaned() and loan.size() == 1
+        finally:
+            view.release()
+        assert pub.publish(loan)
+        assert loan.empty()
+        assert event.wait(2)
+        assert received == [b"*"]
+
+        event.clear()
+        loan = pub.loan(1)
+        assert loan.is_loaned()
+        with memoryview(loan) as view:
+            view[0] = 43
+        assert pub.publish_fbb(loan)
+        assert loan.empty()
+        assert event.wait(2)
+        assert received == [b"*", b"+"]
+    finally:
+        pub.deinit()
+        sub.deinit()
+
+    url = f"shm2://py_loan_{uuid.uuid4().hex}?event=call#512"
+    server = _vlink.Server(url, auto_init=False)
+    client = _vlink.Client(url, auto_init=False)
+    replies = []
+
+    def reply(data):
+        if not replies:
+            rejected = server.loan(1)
+            assert rejected.is_loaned()
+            try:
+                server.reply(0, rejected)
+                assert False, "explicit reply in synchronous mode must fail"
+            except RuntimeError:
+                pass
+            assert rejected.empty()
+        loan = server.loan(1)
+        assert loan.is_loaned()
+        with memoryview(loan) as view:
+            view[0] = data[0] + 1
+        replies.append(loan)
+        return loan
+
+    try:
+        assert server.init()
+        assert server.listen(reply)
+        assert client.init()
+        assert client.wait_for_connected(2000)
+        for mode in ("sync", "callback", "future") * 16:
+            request = client.loan(1)
+            assert request.is_loaned()
+            with memoryview(request) as view:
+                view[0] = 42
+            if mode == "sync":
+                assert client.invoke(request, timeout_ms=2000) == b"+"
+            elif mode == "callback":
+                received = []
+                event.clear()
+                assert client.invoke_async(request, lambda data: (received.append(bytes(data)), event.set()))
+                assert event.wait(2)
+                assert received == [b"+"]
+            else:
+                assert client.async_invoke(request).result(timeout=2) == b"+"
+            assert request.empty()
+            assert replies[-1].empty()
+    finally:
+        client.deinit()
+        server.deinit()
+    print("[PASS] explicit loan transfer and exported-view protection")
+
+
 def test_implicit_recording_roles():
     probe_url = f"shm2://py_role_{uuid.uuid4().hex}?event=value#512"
     try:
@@ -2760,6 +2866,7 @@ if __name__ == "__main__":
     test_node_wire_meta_validation()
     test_node_extended()
     test_node_role_swaps()
+    test_explicit_loan_transfer()
     test_implicit_recording_roles()
     test_security_node_bindings()
     test_schema_data_and_version()

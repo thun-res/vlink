@@ -33,6 +33,14 @@
 #include "../client.h"
 #include "../impl/url.h"
 #include "../serializer.h"
+#include "../zerocopy/audio_frame.h"
+#include "../zerocopy/camera_frame.h"
+#include "../zerocopy/object_array.h"
+#include "../zerocopy/occupancy_grid.h"
+#include "../zerocopy/point_cloud.h"
+#include "../zerocopy/proxy_data.h"
+#include "../zerocopy/raw_data.h"
+#include "../zerocopy/tensor.h"
 
 namespace vlink {
 
@@ -158,14 +166,25 @@ inline bool Client<ReqT, RespT, SecT>::invoke(const ReqT& req, RespT& resp, std:
   bool ret = false;
 
   if constexpr (std::is_same_v<ReqT, Bytes> && std::is_same_v<RespT, Bytes>) {
-    ret = call_bytes(req, [&resp](const Bytes& resp_data) { resp = resp_data; }, timeout);
+    bool received = false;
+    ret = call_bytes(
+        req,
+        [&resp, &received](const Bytes& resp_data) {
+          resp = resp_data;
+          received = true;
+        },
+        timeout);
+    ret = ret && received;
   } else {
     Bytes req_data;
     const bool use_loan = SecT != SecurityType::kWithSecurity && this->is_support_loan_;
 
-    if VUNLIKELY (!Serializer::serialize_to_transport<kReqType>(
-                      req, req_data, this->impl_->transport_type, use_loan,
-                      [this](size_t size) { return this->impl_->loan(size); })) {
+    if constexpr (std::is_same_v<ReqT, Bytes>) {
+      req_data =
+          req.is_loaned() ? Bytes::loan_internal(req.data(), req.size()) : Bytes::shallow_copy(req.data(), req.size());
+    } else if VUNLIKELY (!Serializer::serialize_to_transport<kReqType>(
+                             req, req_data, this->impl_->transport_type, use_loan,
+                             [this](size_t size) { return this->impl_->loan(size); })) {
       VLOG_T("Client serialize failed, url: ", this->impl_->url, ".");
 
       if constexpr (SecT != SecurityType::kWithSecurity) {
@@ -182,7 +201,7 @@ inline bool Client<ReqT, RespT, SecT>::invoke(const ReqT& req, RespT& resp, std:
     ret = call_bytes(
         req_data,
         [this, &resp, &deserialize_success](const Bytes& resp_data) {
-          if VLIKELY (Serializer::deserialize<kRespType>(resp_data, resp, this->impl_->transport_type)) {
+          if VLIKELY (deserialize_response(resp_data, resp)) {
             deserialize_success = true;
           } else {
             VLOG_T("Client deserialize failed, url: ", this->impl_->url, ".");
@@ -232,9 +251,12 @@ inline bool Client<ReqT, RespT, SecT>::invoke(const ReqT& req, RespCallback&& ca
     Bytes req_data;
     const bool use_loan = SecT != SecurityType::kWithSecurity && this->is_support_loan_;
 
-    if VUNLIKELY (!Serializer::serialize_to_transport<kReqType>(
-                      req, req_data, this->impl_->transport_type, use_loan,
-                      [this](size_t size) { return this->impl_->loan(size); })) {
+    if constexpr (std::is_same_v<ReqT, Bytes>) {
+      req_data =
+          req.is_loaned() ? Bytes::loan_internal(req.data(), req.size()) : Bytes::shallow_copy(req.data(), req.size());
+    } else if VUNLIKELY (!Serializer::serialize_to_transport<kReqType>(
+                             req, req_data, this->impl_->transport_type, use_loan,
+                             [this](size_t size) { return this->impl_->loan(size); })) {
       VLOG_T("Client serialize failed, url: ", this->impl_->url, ".");
 
       if constexpr (SecT != SecurityType::kWithSecurity) {
@@ -247,6 +269,7 @@ inline bool Client<ReqT, RespT, SecT>::invoke(const ReqT& req, RespCallback&& ca
     }
 
     ret = call_bytes(req_data, [this, callback = std::move(callback)](const Bytes& resp_data) {
+      // NOLINTNEXTLINE(readability-qualified-auto)
       auto resp = this->template get_default_value<RespT>();
 
       if VUNLIKELY (!Serializer::deserialize<kRespType>(resp_data, resp, this->impl_->transport_type)) {
@@ -306,9 +329,12 @@ inline std::future<RespT> Client<ReqT, RespT, SecT>::async_invoke(const ReqT& re
     Bytes req_data;
     const bool use_loan = SecT != SecurityType::kWithSecurity && this->is_support_loan_;
 
-    if VUNLIKELY (!Serializer::serialize_to_transport<kReqType>(
-                      req, req_data, this->impl_->transport_type, use_loan,
-                      [this](size_t size) { return this->impl_->loan(size); })) {
+    if constexpr (std::is_same_v<ReqT, Bytes>) {
+      req_data =
+          req.is_loaned() ? Bytes::loan_internal(req.data(), req.size()) : Bytes::shallow_copy(req.data(), req.size());
+    } else if VUNLIKELY (!Serializer::serialize_to_transport<kReqType>(
+                             req, req_data, this->impl_->transport_type, use_loan,
+                             [this](size_t size) { return this->impl_->loan(size); })) {
       VLOG_T("Client serialize failed, url: ", this->impl_->url, ".");
 
       if constexpr (SecT != SecurityType::kWithSecurity) {
@@ -326,7 +352,7 @@ inline std::future<RespT> Client<ReqT, RespT, SecT>::async_invoke(const ReqT& re
 
       auto resp = this->template get_default_value<RespT>();
 
-      if VLIKELY (Serializer::deserialize<kRespType>(resp_data, resp, this->impl_->transport_type)) {
+      if VLIKELY (deserialize_response(resp_data, resp)) {
         convert_success = true;
       } else {
         VLOG_T("Client deserialize failed, url: ", this->impl_->url, ".");
@@ -393,6 +419,39 @@ inline bool Client<ReqT, RespT, SecT>::send(const ReqT& req) {
   }
 
   return ret;
+}
+
+template <typename ReqT, typename RespT, SecurityType SecT>
+inline bool Client<ReqT, RespT, SecT>::deserialize_response(const Bytes& data, RespT& response) {
+  using RealType = typename Traits::RemoveSharedPtr<RespT>::Type;
+
+  if constexpr (std::is_same_v<RealType, zerocopy::RawData> || std::is_same_v<RealType, zerocopy::CameraFrame> ||
+                std::is_same_v<RealType, zerocopy::AudioFrame> || std::is_same_v<RealType, zerocopy::PointCloud> ||
+                std::is_same_v<RealType, zerocopy::Tensor> || std::is_same_v<RealType, zerocopy::OccupancyGrid> ||
+                std::is_same_v<RealType, zerocopy::ObjectArray> || std::is_same_v<RealType, zerocopy::ProxyData>) {
+    if constexpr (Traits::IsSharedPtr<RespT>()) {
+      if VUNLIKELY (!response) {
+        return false;
+      }
+    }
+
+    RealType decoded;
+
+    if VUNLIKELY (!Serializer::deserialize<kRespType>(data, decoded, this->impl_->transport_type)) {
+      return false;
+    }
+
+    auto& output = Serializer::deref(response);
+
+    if (decoded.is_owner()) {
+      output = std::move(decoded);
+      return true;
+    }
+
+    return output.deep_copy(decoded);
+  } else {
+    return Serializer::deserialize<kRespType>(data, response, this->impl_->transport_type);
+  }
 }
 
 template <typename ReqT, typename RespT, SecurityType SecT>

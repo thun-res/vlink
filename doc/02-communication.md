@@ -245,7 +245,7 @@ if (pub.is_support_loan()) {
 }
 ```
 
-边界条件：借贷路径要求使用 `Publisher<vlink::Bytes>`，`loan()` 返回的 `Bytes` 作为消息直接发送；`is_support_loan()` 为 `false` 时 `loan()` 返回空 `Bytes`。只有成功被后端接受的发布才消费 loan，发布返回 `false` 时仍须显式归还。订阅端接收缓冲在回调返回后自动归还；若需异步留用，须在回调内复制。完整用法见 [零拷贝](06-zerocopy.md)。
+边界条件：显式借贷发布使用 `Publisher<vlink::Bytes>`，`loan()` 返回的 `Bytes` 作为消息直接发送；`is_support_loan()` 为 `false` 时 `loan()` 返回空 `Bytes`。发布返回 `false` 时仍须按后端约定归还未消费的 loan。订阅端接收缓冲在回调返回后自动归还；若需异步留用，须在回调内复制。完整用法见 [零拷贝](06-zerocopy.md)。
 
 ### 2.2.9 🏭 工厂方法
 

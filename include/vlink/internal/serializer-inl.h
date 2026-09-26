@@ -774,9 +774,9 @@ inline bool deserialize(const Bytes& src, T& des, [[maybe_unused]] TransportType
     }
   } else if constexpr (TypeT == kStringType) {
     if VLIKELY (!src.empty()) {
-      deref(des) = std::string(reinterpret_cast<const char*>(src.data()), src.size());
+      deref(des).assign(reinterpret_cast<const char*>(src.data()), src.size());
     } else {
-      deref(des) = std::string();
+      deref(des).clear();
     }
   } else if constexpr (TypeT == kCharsType) {
     (void)src;

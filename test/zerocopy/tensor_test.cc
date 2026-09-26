@@ -145,6 +145,25 @@ TEST_SUITE("zerocopy-Tensor") {
     CHECK_EQ(t.stride_at(0), 3u * 224u * 224u);
   }
 
+  TEST_CASE("set_shape accepts its own shape and overlapping dimensions") {
+    zerocopy::Tensor t;
+    const uint32_t shape[] = {2u, 3u};
+    t.set_shape(shape, 2);
+    t.set_shape(t.shape(), t.rank());
+    CHECK_EQ(t.shape_at(0), 2u);
+    CHECK_EQ(t.shape_at(1), 3u);
+    CHECK_EQ(t.num_elements(), 6u);
+    CHECK_EQ(t.stride_at(0), 3u);
+    CHECK_EQ(t.stride_at(1), 1u);
+
+    t.set_shape(t.shape() + 1, 1);
+    CHECK_EQ(t.rank(), 1u);
+    CHECK_EQ(t.shape_at(0), 3u);
+    CHECK_EQ(t.shape()[1], 0u);
+    CHECK_EQ(t.num_elements(), 3u);
+    CHECK_EQ(t.stride_at(0), 1u);
+  }
+
   TEST_CASE("set_shape with rank 0 or null pointer zeros shape and num_elements") {
     zerocopy::Tensor t;
 
@@ -260,6 +279,21 @@ TEST_SUITE("zerocopy-Tensor") {
 
     t.set_layout("NCHW");
     CHECK_EQ(std::string(t.layout()), "NCHW");
+
+    SUBCASE("own string views and substrings") {
+      t.set_name(t.name());
+      t.set_model_id(t.model_id());
+      t.set_layout(t.layout());
+      CHECK_EQ(t.name(), "image");
+      CHECK_EQ(t.model_id(), "resnet50");
+      CHECK_EQ(t.layout(), "NCHW");
+      t.set_name(t.name().substr(1));
+      t.set_model_id(t.model_id().substr(1));
+      t.set_layout(t.layout().substr(1));
+      CHECK_EQ(t.name(), "mage");
+      CHECK_EQ(t.model_id(), "esnet50");
+      CHECK_EQ(t.layout(), "CHW");
+    }
 
     SUBCASE("oversize name is truncated") {
       t.set_name("this_name_is_definitely_longer_than_thirty_two_bytes_total");

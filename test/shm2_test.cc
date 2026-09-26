@@ -396,6 +396,58 @@ TEST_SUITE("shm2-pubsub") {
 }
 
 TEST_SUITE("shm2-method") {
+  TEST_CASE("mixed bytes requests consume explicit loans in every invocation form") {
+    const Shm2Conf conf("shm2/review/mixed_request_loan", "call", 0, 8, 0, 0, 512);
+    Server<Bytes, int> server(conf);
+    REQUIRE(server.listen([](const Bytes& req, int& resp) { resp = req[0]; }));
+    Client<Bytes, int> client(conf);
+    REQUIRE(client.wait_for_connected(2s));
+    auto request = client.loan(1);
+    REQUIRE(request.is_loaned());
+    request[0] = 42;
+
+    SUBCASE("output parameter") {
+      int response = 0;
+      REQUIRE(client.invoke(request, response, 2s));
+      CHECK_EQ(response, 42);
+    }
+    SUBCASE("callback") {
+      auto response = std::make_shared<std::promise<int>>();
+      auto result = response->get_future();
+      REQUIRE(client.invoke(request, [response](const int& value) { response->set_value(value); }));
+      REQUIRE(result.wait_for(2s) == std::future_status::ready);
+      CHECK_EQ(result.get(), 42);
+    }
+    SUBCASE("future") {
+      auto result = client.async_invoke(request);
+      REQUIRE(result.wait_for(2s) == std::future_status::ready);
+      CHECK_EQ(result.get(), 42);
+    }
+    CHECK_FALSE(client.return_loan(request));
+  }
+
+  TEST_CASE("mixed bytes responses consume the server explicit loan") {
+    const Shm2Conf conf("shm2/review/mixed_response_loan", "call", 0, 8, 0, 0, 512);
+    Bytes response_loan;
+    Server<int, Bytes> server(conf);
+    REQUIRE(server.listen([&](const int& req, Bytes& resp) {
+      resp = server.loan(1);
+      if (resp.empty()) {
+        return;
+      }
+      resp[0] = static_cast<uint8_t>(req);
+      response_loan = Bytes::loan_internal(resp.data(), resp.size());
+    }));
+    Client<int, Bytes> client(conf);
+    REQUIRE(client.wait_for_connected(2s));
+    Bytes response;
+    REQUIRE(client.invoke(42, response, 2s));
+    REQUIRE(response_loan.is_loaned());
+    REQUIRE_EQ(response.size(), 1u);
+    CHECK_EQ(response[0], 42);
+    CHECK_FALSE(server.return_loan(response_loan));
+  }
+
   TEST_CASE("attached raw response callbacks retain the native sample without copying") {
     MessageLoop loop;
     REQUIRE(loop.async_run());

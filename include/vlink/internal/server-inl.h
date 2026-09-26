@@ -163,7 +163,9 @@ inline bool Server<ReqT, RespT, SecT>::listen(ReqRespCallback&& callback) {
       auto req = this->template get_default_value<ReqT>();
       auto resp = this->template get_default_value<RespT>();
 
-      if VUNLIKELY (!Serializer::deserialize<kReqType>(req_data, req, this->impl_->transport_type)) {
+      if constexpr (std::is_same_v<ReqT, Bytes>) {
+        req.shallow_copy(req_data);
+      } else if VUNLIKELY (!Serializer::deserialize<kReqType>(req_data, req, this->impl_->transport_type)) {
         VLOG_T("Server deserialize failed, url: ", this->impl_->url, ".");
         return;
       }
@@ -171,9 +173,15 @@ inline bool Server<ReqT, RespT, SecT>::listen(ReqRespCallback&& callback) {
       callback(req, resp);
       const bool use_loan = SecT != SecurityType::kWithSecurity && this->is_support_loan_;
 
-      if VUNLIKELY (!Serializer::serialize_to_transport<kRespType>(
-                        resp, *resp_data, this->impl_->transport_type, use_loan,
-                        [this](size_t size) { return this->impl_->loan(size); })) {
+      if constexpr (std::is_same_v<RespT, Bytes>) {
+        if (resp.is_owner() || resp.is_loaned()) {
+          *resp_data = std::move(resp);
+        } else {
+          *resp_data = resp;
+        }
+      } else if VUNLIKELY (!Serializer::serialize_to_transport<kRespType>(
+                               resp, *resp_data, this->impl_->transport_type, use_loan,
+                               [this](size_t size) { return this->impl_->loan(size); })) {
         VLOG_T("Server serialize failed, url: ", this->impl_->url, ".");
 
         if constexpr (SecT != SecurityType::kWithSecurity) {
@@ -310,6 +318,10 @@ inline bool Server<ReqT, RespT, SecT>::reply_bytes(uint64_t req_id, const Bytes&
     Bytes sec_resp_data;
 
     if VUNLIKELY (!this->impl_->security || !this->impl_->security->encrypt(resp_data, sec_resp_data)) {
+      if constexpr (HasPtrT) {
+        resp_data_ptr->clear();
+      }
+
       VLOG_T("Server encrypt failed, url: ", this->impl_->url, ".");
       return false;
     }
