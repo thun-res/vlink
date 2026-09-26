@@ -265,6 +265,7 @@ struct LoggerGlobal final {  // NOLINT(clang-analyzer-optin.performance.Padding)
   Logger::Callback console_callback;
   Logger::Callback file_callback;
   mutable std::shared_mutex callback_mtx;
+  std::mutex handler_registration_mtx;
   std::atomic_bool has_pending_console_callback{false};
   std::atomic_bool has_pending_file_callback{false};
   Logger::Callback pending_console_callback;
@@ -286,7 +287,7 @@ struct LoggerGlobal final {  // NOLINT(clang-analyzer-optin.performance.Padding)
   }
 };
 
-static void install_console_handler(Logger::Callback&& callback) noexcept {
+static Logger::Callback install_console_handler(Logger::Callback&& callback) noexcept {
   auto& global_instance = LoggerGlobal::get();
   Logger::Callback retired;
 
@@ -298,9 +299,11 @@ static void install_console_handler(Logger::Callback&& callback) noexcept {
     global_instance.has_console_callback.store(static_cast<bool>(global_instance.console_callback),
                                                std::memory_order_release);
   }
+
+  return retired;
 }
 
-static void install_file_handler(Logger::Callback&& callback) noexcept {
+static Logger::Callback install_file_handler(Logger::Callback&& callback) noexcept {
   auto& global_instance = LoggerGlobal::get();
   Logger::Callback retired;
 
@@ -312,6 +315,8 @@ static void install_file_handler(Logger::Callback&& callback) noexcept {
     global_instance.has_file_callback.store(static_cast<bool>(global_instance.file_callback),
                                             std::memory_order_release);
   }
+
+  return retired;
 }
 
 static void install_pending_handlers() noexcept {
@@ -323,6 +328,15 @@ static void install_pending_handlers() noexcept {
   }
 
   if VUNLIKELY (is_in_handler_on_current_thread()) {
+    return;
+  }
+
+  Logger::Callback retired_console_callback;
+  Logger::Callback retired_file_callback;
+  std::lock_guard registration_lock(global_instance.handler_registration_mtx);
+
+  if VLIKELY (!global_instance.has_pending_console_callback.load(std::memory_order_acquire) &&
+              !global_instance.has_pending_file_callback.load(std::memory_order_acquire)) {
     return;
   }
 
@@ -347,11 +361,11 @@ static void install_pending_handlers() noexcept {
   }
 
   if (install_console) {
-    install_console_handler(std::move(console_callback));
+    retired_console_callback = install_console_handler(std::move(console_callback));
   }
 
   if (install_file) {
-    install_file_handler(std::move(file_callback));
+    retired_file_callback = install_file_handler(std::move(file_callback));
   }
 }
 
@@ -509,7 +523,19 @@ void Logger::register_console_handler(Callback&& callback) noexcept {
     return;
   }
 
-  install_console_handler(std::move(callback));
+  Logger::Callback retired_pending_callback;
+  Logger::Callback retired_callback;
+
+  {
+    std::lock_guard registration_lock(global_instance.handler_registration_mtx);
+    {
+      std::lock_guard pending_lock(global_instance.pending_mtx);
+      if (global_instance.has_pending_console_callback.exchange(false, std::memory_order_acq_rel)) {
+        retired_pending_callback = std::move(global_instance.pending_console_callback);
+      }
+    }
+    retired_callback = install_console_handler(std::move(callback));
+  }
 }
 
 void Logger::register_file_handler(Callback&& callback) noexcept {
@@ -524,7 +550,19 @@ void Logger::register_file_handler(Callback&& callback) noexcept {
     return;
   }
 
-  install_file_handler(std::move(callback));
+  Logger::Callback retired_pending_callback;
+  Logger::Callback retired_callback;
+
+  {
+    std::lock_guard registration_lock(global_instance.handler_registration_mtx);
+    {
+      std::lock_guard pending_lock(global_instance.pending_mtx);
+      if (global_instance.has_pending_file_callback.exchange(false, std::memory_order_acq_rel)) {
+        retired_pending_callback = std::move(global_instance.pending_file_callback);
+      }
+    }
+    retired_callback = install_file_handler(std::move(callback));
+  }
 }
 
 void Logger::set_console_level(Level level) noexcept {

@@ -1122,6 +1122,44 @@ TEST_SUITE("base-Logger") {
     Logger::set_console_level(Logger::kTrace);
     Logger::set_file_level(Logger::kOff);
   }
+
+  TEST_CASE("a later handler registration supersedes a pending replacement") {
+    Logger::init("test");
+    Logger::set_console_level(Logger::kInfo);
+    Logger::set_file_level(Logger::kOff);
+
+    for (int i = 0; i < 32; ++i) {
+      std::atomic<int> pending_calls{0};
+      std::atomic<int> later_calls{0};
+      std::atomic<bool> registration_started{false};
+      std::thread registration_thread;
+
+      Logger::register_console_handler([&](Logger::Level, std::string_view) {
+        Logger::register_console_handler([&pending_calls](Logger::Level, std::string_view) {
+          pending_calls.fetch_add(1, std::memory_order_relaxed);
+        });
+
+        registration_thread = std::thread([&] {
+          registration_started.store(true, std::memory_order_release);
+          Logger::register_console_handler(
+              [&later_calls](Logger::Level, std::string_view) { later_calls.fetch_add(1, std::memory_order_relaxed); });
+        });
+
+        while (!registration_started.load(std::memory_order_acquire)) {
+          std::this_thread::yield();
+        }
+      });
+
+      VLOG_I("race pending and direct handler registration");
+      registration_thread.join();
+      VLOG_I("verify latest handler registration");
+
+      CHECK_EQ(pending_calls.load(std::memory_order_relaxed), 0);
+      CHECK_EQ(later_calls.load(std::memory_order_relaxed), 1);
+
+      Logger::register_console_handler(nullptr);
+    }
+  }
 }
 
 // NOLINTEND
