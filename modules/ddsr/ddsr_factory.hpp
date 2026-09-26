@@ -59,8 +59,8 @@ class DdsrFactory final {
  public:
   struct ReadMessage final {
     Bytes bytes;
-    vlink_BuiltInRawSeq seq;
-    DDS_SampleInfoSeq info_seq;
+    vlink_BuiltInRawSeq seq = DDS_SEQUENCE_INITIALIZER;
+    DDS_SampleInfoSeq info_seq = DDS_SEQUENCE_INITIALIZER;
     DDS_SampleInfo* info{nullptr};
     uint64_t id{0};
     uint64_t guid{0};

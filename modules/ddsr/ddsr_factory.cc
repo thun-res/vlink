@@ -24,6 +24,7 @@
 #include "./ddsr_factory.hpp"
 
 #include <charconv>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -458,20 +459,24 @@ std::shared_ptr<ddsr::DataReader> DdsrFactory::create_datareader(uint8_t type, c
 }
 
 bool DdsrFactory::write_data(DDS_DataWriter* writer, const Bytes& bytes, uint64_t id) {
+  if VUNLIKELY (bytes.size() > static_cast<size_t>((std::numeric_limits<DDS_Long>::max)())) {
+    return false;
+  }
+
   auto* arrow = vlink_BuiltInRawDataWriter_narrow(writer);
 
   vlink_BuiltInRaw msg;
 
   msg.id = id;
   msg.data = DDS_SEQUENCE_INITIALIZER;
-  msg.data._contiguous_buffer = const_cast<uint8_t*>(bytes.data());
-  msg.data._length = bytes.size();
-  msg.data._maximum = bytes.size();
-  msg.data._owned = DDS_BOOLEAN_FALSE;
-  msg.data._elementAllocParams = {DDS_BOOLEAN_FALSE, DDS_BOOLEAN_FALSE, DDS_BOOLEAN_FALSE};
-  msg.data._elementDeallocParams = {DDS_BOOLEAN_FALSE, DDS_BOOLEAN_FALSE};
+  const auto size = static_cast<DDS_Long>(bytes.size());
+
+  if VUNLIKELY (!DDS_OctetSeq_loan_contiguous(&msg.data, const_cast<uint8_t*>(bytes.data()), size, size)) {
+    return false;
+  }
 
   auto ret = vlink_BuiltInRawDataWriter_write(arrow, &msg, &DDS_HANDLE_NIL);
+  DDS_OctetSeq_unloan(&msg.data);
 
   return ret == DDS_RETCODE_OK;
 }
