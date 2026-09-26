@@ -57,7 +57,7 @@ void SomeipPublisherImpl::init() {
                                 conf_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
     for (auto g : conf_.groups) {
       object_->app()->register_subscription_handler(
-          conf_.service, conf_.instance, g, [weak](someip::client_t client_id, VSOMEIP_SUB_HANDLE_ARG, bool is_reg) {
+          conf_.service, conf_.instance, g, [weak, g](someip::client_t client_id, VSOMEIP_SUB_HANDLE_ARG, bool is_reg) {
             auto strong = weak.lock();
 
             if VUNLIKELY (!strong) {
@@ -66,11 +66,12 @@ void SomeipPublisherImpl::init() {
 
             {
               std::lock_guard lock(strong->get_client_mtx());
+              auto& clients = strong->get_clients()[g];
 
               if (is_reg) {
-                strong->get_clients().emplace(client_id);
+                clients.emplace(client_id);
               } else {
-                strong->get_clients().erase(client_id);
+                clients.erase(client_id);
               }
             }
 
@@ -99,6 +100,9 @@ void SomeipPublisherImpl::deinit() {
 
     if (!in_use) {
       object_->app()->unregister_subscription_handler(conf_.service, conf_.instance, g);
+
+      std::lock_guard lock(object_->get_client_mtx());
+      object_->get_clients().erase(g);
     }
   }
 
@@ -112,7 +116,17 @@ const AbstractNode* SomeipPublisherImpl::get_abstract_node() const { return obje
 bool SomeipPublisherImpl::has_subscribers() const {
   std::lock_guard lock(object_->get_client_mtx());
 
-  return !object_->get_clients().empty();
+  const auto& clients = object_->get_clients();
+
+  for (auto g : conf_.groups) {
+    auto iter = clients.find(g);
+
+    if (iter != clients.end() && !iter->second.empty()) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 bool SomeipPublisherImpl::write(const Bytes& msg_data) {

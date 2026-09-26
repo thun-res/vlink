@@ -175,7 +175,9 @@ void SomeipServer::start() {
   }
 }
 
-std::unordered_set<vsomeip_v3::client_t>& SomeipServer::get_clients() { return clients_; }
+std::unordered_map<someip::eventgroup_t, std::unordered_set<someip::client_t>>& SomeipServer::get_clients() {
+  return clients_;
+}
 
 std::mutex& SomeipServer::get_client_mtx() { return client_mtx_; }
 
@@ -290,13 +292,14 @@ SomeipClient::SomeipClient(const SomeipID& id) {
                 return;
               }
 
-              self->invoke_callback(owner, [&]() {
-                if (owner->get_message_loop() == message_loop) {
-                  auto payload = message->get_payload();
+              bool attached = false;
+              self->invoke_callback(owner, [&]() { attached = owner->get_message_loop() == message_loop; });
 
-                  callback(Bytes::shallow_copy(payload->get_data(), payload->get_length()));
-                }
-              });
+              if (attached) {
+                auto payload = message->get_payload();
+
+                callback(Bytes::shallow_copy(payload->get_data(), payload->get_length()));
+              }
             });
           }
         }

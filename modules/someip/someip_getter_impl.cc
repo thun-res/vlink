@@ -82,22 +82,26 @@ bool SomeipGetterImpl::listen(MsgCallback&& callback) {
   object_->app()->request_event(conf_.service, conf_.instance, conf_.event, conf_.groups,
                                 conf_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
 
-  if (object_->is_connected()) {
-    for (auto g : conf_.groups) {
-      object_->app()->subscribe(conf_.service, conf_.instance, g);
-    }
+  object_->invoke_callback(this, [this]() {
+    has_subscribed_ = false;
 
-    has_subscribed_ = true;
-  }
-
-  object_->register_server_connect_callback(this, [this](bool connected) {
-    if (!has_subscribed_ && connected) {
+    if (object_->is_connected()) {
       for (auto g : conf_.groups) {
         object_->app()->subscribe(conf_.service, conf_.instance, g);
       }
+
+      has_subscribed_ = true;
     }
 
-    has_subscribed_ = connected;
+    object_->register_server_connect_callback(this, [this](bool connected) {
+      if (!has_subscribed_ && connected) {
+        for (auto g : conf_.groups) {
+          object_->app()->subscribe(conf_.service, conf_.instance, g);
+        }
+      }
+
+      has_subscribed_ = connected;
+    });
   });
 
   object_->start();

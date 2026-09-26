@@ -171,6 +171,27 @@ TEST_SUITE("someip-init") {
 }
 
 TEST_SUITE("someip-pubsub") {
+  TEST_CASE("unsubscribing one eventgroup preserves another group from the same client") {
+    const SomeipConf first_conf(0x1405, 1, SomeipConf::Groups{1}, 0x8001);
+    const SomeipConf second_conf(0x1405, 1, SomeipConf::Groups{2}, 0x8002);
+    std::atomic<int> received{0};
+    Publisher<int> first_publisher(first_conf);
+    Publisher<int> second_publisher(second_conf);
+    Subscriber<int> first(first_conf);
+    Subscriber<int> second(second_conf);
+    REQUIRE(first.get_abstract_node() == second.get_abstract_node());
+    REQUIRE(first.listen([](const int&) {}));
+    REQUIRE(second.listen([&](const int& value) { received.store(value, std::memory_order_release); }));
+    REQUIRE(first_publisher.wait_for_subscribers(3s));
+    REQUIRE(second_publisher.wait_for_subscribers(3s));
+
+    REQUIRE(first.deinit());
+    REQUIRE(common_test::wait_until([&] { return !first_publisher.has_subscribers(); }, 3s));
+    REQUIRE(second_publisher.has_subscribers());
+    REQUIRE(second_publisher.publish(42));
+    REQUIRE(common_test::wait_until([&] { return received.load(std::memory_order_acquire) == 42; }, 3s));
+  }
+
   TEST_CASE("shared publishers both detect subscribers and preserve the remaining handler") {
     const SomeipConf first_conf(0x1404, 1, SomeipConf::Groups{1}, 0x8001);
     const SomeipConf second_conf(0x1404, 1, SomeipConf::Groups{1}, 0x8002);
@@ -468,6 +489,34 @@ TEST_SUITE("someip-serializer") {
 }
 
 TEST_SUITE("someip-method") {
+  TEST_CASE("response callbacks can wait for another client on a different loop") {
+    MessageLoop first_loop;
+    MessageLoop second_loop;
+    REQUIRE(first_loop.async_run());
+    REQUIRE(second_loop.async_run());
+    const SomeipConf conf(0x2404, 1, 1);
+    std::promise<std::optional<int>> received;
+    auto result = received.get_future();
+    Server<int, int> server(conf);
+    REQUIRE(server.listen([](const int& req, int& resp) { resp = req + 1; }));
+    Client<int, int> second(conf);
+    Client<int, int> first(conf);
+    REQUIRE(first.attach(&first_loop));
+    REQUIRE(second.attach(&second_loop));
+    REQUIRE(first.wait_for_connected(3s));
+
+    REQUIRE(first.invoke(1, [&](const int&) {
+      auto response = second.async_invoke(2);
+      if (response.wait_for(2s) == std::future_status::ready) {
+        received.set_value(response.get());
+      } else {
+        received.set_value(std::nullopt);
+      }
+    }));
+    REQUIRE(result.wait_for(3s) == std::future_status::ready);
+    CHECK(result.get() == std::optional<int>(3));
+  }
+
   TEST_CASE("shared methods keep owner loops and acknowledge synchronous calls directly") {
     MessageLoop first_loop;
     MessageLoop second_loop;

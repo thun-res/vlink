@@ -75,12 +75,10 @@ inline bool Node<ImplT, SecT>::deinit() {
 
   if (quit_mtx_.has_value()) {
     std::lock_guard quit_lock(quit_mtx_.value());
-    impl_->deinit();
-    impl_->deinit_ext();
-  } else {
-    impl_->deinit();
-    impl_->deinit_ext();
   }
+
+  impl_->deinit();
+  impl_->deinit_ext();
 
   if constexpr (VLINK_HAS_MEMBER(ImplT, is_listened)) {
     impl_->is_listened = false;
@@ -357,6 +355,11 @@ template <typename CallbackT, typename... ArgsT>
 inline void Node<ImplT, SecT>::invoke_callback(const CallbackT& callback, ArgsT&&... args) {
   if VUNLIKELY (quit_mtx_.has_value()) {
     std::lock_guard quit_lock(quit_mtx_.value());
+
+    if VUNLIKELY (!has_inited_.load(std::memory_order_acquire)) {
+      return;
+    }
+
     std::invoke(callback, std::forward<ArgsT>(args)...);
   } else {
     std::invoke(callback, std::forward<ArgsT>(args)...);

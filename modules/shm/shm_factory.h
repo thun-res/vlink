@@ -170,9 +170,7 @@ class ShmFactory final : public AbstractFactory<ShmID> {
 
   static void deinit_roudi();
 
-  shm::popo::Listener* get_listener(int32_t domain = 0);
-
-  void try_to_destroy_listener(int32_t domain = 0, shm::popo::Listener* listener = nullptr);
+  [[nodiscard]] std::shared_ptr<shm::popo::Listener> get_listener(int32_t domain = 0);
 
   void add_detect_callback(void* node, DetectCallback&& callback);
 
@@ -187,7 +185,7 @@ class ShmFactory final : public AbstractFactory<ShmID> {
   int get_sub_depth() const;
 
  private:
-  std::unordered_map<int32_t, std::shared_ptr<shm::popo::Listener>> listener_map_;
+  std::unordered_map<int32_t, std::weak_ptr<shm::popo::Listener>> listener_map_;
   MessageLoop message_loop_{MessageLoop::kNormalType};
   Timer detect_timer_;
   std::unordered_map<void*, DetectCallback> detect_map_;
@@ -239,7 +237,7 @@ class ShmServer final : public AbstractObject<ShmID>, public std::enable_shared_
   std::atomic_bool is_suspend_{false};
 
   int32_t domain_{0};
-  shm::popo::Listener* listener_{nullptr};
+  std::shared_ptr<shm::popo::Listener> listener_;
   std::optional<shm::popo::UntypedServer> server_;
   const iox::popo::RequestHeader* last_req_header_{nullptr};
   std::mutex mtx_;
@@ -288,7 +286,7 @@ class ShmClient final : public AbstractObject<ShmID>, public std::enable_shared_
   alignas(64) std::atomic<uint64_t> seq_{0};
 
   int32_t domain_{0};
-  shm::popo::Listener* listener_{nullptr};
+  std::shared_ptr<shm::popo::Listener> listener_;
   std::optional<shm::popo::UntypedClient> client_;
   std::mutex mtx_;
   std::mutex callback_mtx_;
@@ -373,7 +371,7 @@ class ShmSubscriber final : public AbstractObject<ShmID>, public std::enable_sha
   int32_t domain_{0};
   int32_t wait_{0};
 
-  shm::popo::Listener* listener_{nullptr};
+  std::shared_ptr<shm::popo::Listener> listener_;
 
   std::optional<shm::popo::UntypedSubscriber> sub_;
 

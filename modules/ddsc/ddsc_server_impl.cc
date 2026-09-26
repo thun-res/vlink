@@ -174,7 +174,7 @@ const AbstractNode* DdscServerImpl::get_abstract_node() const { return this; }
 
 Status::BasePtr DdscServerImpl::get_status(Status::Type type) const {
   if (Status::is_for_writer(type)) {
-    if (writer_listener_) {
+    if (writer_) {
       return WriterListener::get_status(writer_->entity, type);
     }
 
@@ -193,7 +193,7 @@ std::any DdscServerImpl::get_native_handle() const { return subscriber_; }
 bool DdscServerImpl::has_clients() const { return read_session_count_.load(std::memory_order_relaxed) > 0; }
 
 bool DdscServerImpl::listen(ReqRespCallback&& callback) {
-  if VUNLIKELY (callback_) {
+  if VUNLIKELY (callback_ || (is_resp_type && !writer_)) {
     return false;
   }
 
@@ -204,10 +204,20 @@ bool DdscServerImpl::listen(ReqRespCallback&& callback) {
   reader_ =
       DdscFactory::create_datareader(kServer, conf_, subscriber_.get(), topic_req_.get(), reader_listener_->get_ptr());
 
+  if VUNLIKELY (!reader_) {
+    reader_listener_.reset();
+    callback_ = {};
+    return false;
+  }
+
   return true;
 }
 
 bool DdscServerImpl::reply(uint64_t req_id, const Bytes& resp_data, bool is_sync) {
+  if VUNLIKELY (!writer_) {
+    return false;
+  }
+
   (void)is_sync;
 
   bool ret = DdscFactory::write_data(writer_->entity, resp_data, req_id);

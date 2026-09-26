@@ -244,7 +244,7 @@ const AbstractNode* DdsServerImpl::get_abstract_node() const { return this; }
 
 Status::BasePtr DdsServerImpl::get_status(Status::Type type) const {
   if (Status::is_for_writer(type)) {
-    if (writer_listener_) {
+    if (writer_) {
       return WriterListener::get_status(writer_.get(), type);
     }
     return std::make_shared<Status::Unknown>();
@@ -262,7 +262,7 @@ std::any DdsServerImpl::get_native_handle() const { return subscriber_; }
 bool DdsServerImpl::has_clients() const { return read_session_count_.load(std::memory_order_relaxed) > 0; }
 
 bool DdsServerImpl::listen(ReqRespCallback&& callback) {
-  if VUNLIKELY (callback_) {
+  if VUNLIKELY (callback_ || (is_resp_type && !writer_)) {
     return false;
   }
 
@@ -273,10 +273,20 @@ bool DdsServerImpl::listen(ReqRespCallback&& callback) {
   reader_ = DdsFactory::create_datareader(kServer, conf_, subscriber_.get(), topic_req_.get(),
                                           &reader_listener_.value(), is_cdr_type);
 
+  if VUNLIKELY (!reader_) {
+    reader_listener_.reset();
+    callback_ = {};
+    return false;
+  }
+
   return true;
 }
 
 bool DdsServerImpl::reply(uint64_t req_id, const Bytes& resp_data, bool is_sync) {
+  if VUNLIKELY (!writer_) {
+    return false;
+  }
+
   (void)is_sync;
 
   bool ret = false;

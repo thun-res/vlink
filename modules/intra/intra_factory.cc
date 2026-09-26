@@ -284,7 +284,10 @@ bool IntraNode::call(NodeImpl* requester, IntraType type, uint32_t channel, cons
             return;
           }
 
-          if (self->is_contains_impl(requester) && requester->get_message_loop() == loop) {
+          bool attached = false;
+          self->invoke_callback(requester, [&]() { attached = requester->get_message_loop() == loop; });
+
+          if (attached) {
             response_callback(response);
           }
         });

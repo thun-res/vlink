@@ -230,6 +230,12 @@ bool DdsGetterImpl::listen(MsgCallback&& callback) {
   reader_ =
       DdsFactory::create_datareader(kGetter, conf_, subscriber_.get(), topic_.get(), &listener_.value(), is_cdr_type);
 
+  if VUNLIKELY (!reader_) {
+    listener_.reset();
+    callback_ = {};
+    return false;
+  }
+
   return true;
 }
 

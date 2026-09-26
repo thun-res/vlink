@@ -29,6 +29,7 @@
 
 #include <any>
 #include <atomic>
+#include <future>
 #include <memory>
 #include <string>
 #include <thread>
@@ -52,6 +53,29 @@ class TestNodeImpl : public NodeImpl {
   bool deinit_called{false};
 };
 
+class SafeQuitTestImpl final : public NodeImpl {
+ public:
+  SafeQuitTestImpl() : NodeImpl(kSubscriber) {}
+
+  void init() override {}
+  void deinit() override {
+    if (on_deinit) {
+      on_deinit();
+    }
+  }
+
+  Function<void()> on_deinit;
+};
+
+class SafeQuitTestNode final : public Node<SafeQuitTestImpl, SecurityType::kWithoutSecurity> {
+ public:
+  SafeQuitTestNode() { impl_ = std::make_unique<SafeQuitTestImpl>(); }
+
+  using Node::invoke_callback;
+
+  SafeQuitTestImpl& implementation() { return *impl_; }
+};
+
 }  // namespace
 
 TEST_SUITE("impl-AbstractNode") {
@@ -70,6 +94,63 @@ TEST_SUITE("impl-AbstractNode") {
 }
 
 TEST_SUITE("impl-NodeImpl") {
+  TEST_CASE("safe quit drains active callbacks before releasing backend resources") {
+    SafeQuitTestNode node;
+    node.set_safety_quit(true);
+    REQUIRE(node.init());
+
+    std::promise<void> entered;
+    std::promise<void> release;
+    auto released = release.get_future();
+    std::atomic_bool backend_started{false};
+    node.implementation().on_deinit = [&] { backend_started.store(true, std::memory_order_release); };
+
+    std::thread delivery([&] {
+      node.invoke_callback([&] {
+        entered.set_value();
+        released.wait();
+      });
+    });
+    entered.get_future().wait();
+
+    auto quitting = std::async(std::launch::async, [&] { return node.deinit(); });
+    CHECK(common_test::wait_until([&] { return !node.has_inited(); }, 3s));
+    CHECK_FALSE(backend_started.load(std::memory_order_acquire));
+
+    release.set_value();
+    delivery.join();
+    CHECK(quitting.get());
+    CHECK(backend_started.load(std::memory_order_acquire));
+  }
+
+  TEST_CASE("safe quit allows backend teardown to drain pending callback dispatch") {
+    SafeQuitTestNode node;
+    node.set_safety_quit(true);
+    REQUIRE(node.init());
+
+    std::promise<void> dispatched;
+    auto completed = dispatched.get_future();
+    std::thread delivery;
+    int calls = 0;
+    node.implementation().on_deinit = [&] {
+      delivery = std::thread([&] {
+        node.invoke_callback([&] { ++calls; });
+        dispatched.set_value();
+      });
+      CHECK(completed.wait_for(3s) == std::future_status::ready);
+    };
+
+    CHECK(node.deinit());
+    delivery.join();
+    CHECK_EQ(calls, 0);
+
+    node.implementation().on_deinit = nullptr;
+    REQUIRE(node.init());
+    node.invoke_callback([&] { ++calls; });
+    CHECK_EQ(calls, 1);
+    CHECK(node.deinit());
+  }
+
   TEST_CASE("constructor stores the given impl_type") {
     SUBCASE("kPublisher") {
       TestNodeImpl n(kPublisher);

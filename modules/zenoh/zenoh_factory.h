@@ -358,6 +358,8 @@ class ZenohPublisher final : public AbstractObject<ZenohID>, public std::enable_
 
   static void on_getter_joined(z_loaned_sample_t* sample, void* context);
 
+  static void on_callback_drop(void* context);
+
 #ifdef VLINK_ENABLE_ZENOH_PICO
   static void on_subscriber_liveliness(z_loaned_sample_t* sample, void* context);
 #endif
@@ -366,7 +368,6 @@ class ZenohPublisher final : public AbstractObject<ZenohID>, public std::enable_
   bool build_payload(z_owned_bytes_t* payload, const Bytes& bytes);
 
   std::atomic_bool has_subscribers_{false};
-  std::atomic_bool quit_flag_{false};
   alignas(64) std::atomic<uint64_t> seq_{0};
 
   uint64_t guid_{0};
@@ -381,11 +382,11 @@ class ZenohPublisher final : public AbstractObject<ZenohID>, public std::enable_
   z_owned_matching_listener_t matching_listener_;
   z_owned_subscriber_t getter_sub_;
   std::atomic_bool field_sync_started_{false};
+  std::atomic_bool matching_started_{false};
 #ifdef VLINK_ENABLE_ZENOH_PICO
   z_owned_subscriber_t matching_sub_;
   z_view_keyexpr_t matching_keyexpr_;
   std::optional<Timer> matching_timer_;
-  std::atomic_bool matching_started_{false};
   std::atomic_uint32_t remote_subscriber_count_{0};
 #endif
 #if VLINK_ZENOH_SHM_AVAILABLE
@@ -401,12 +402,6 @@ class ZenohSubscriber final : public AbstractObject<ZenohID>, public std::enable
   ~ZenohSubscriber() override;
 
   std::any get_native_handle() const override;
-
-  bool suspend();
-
-  bool resume();
-
-  bool is_suspend() const;
 
   void subscribe();
 
@@ -430,7 +425,6 @@ class ZenohSubscriber final : public AbstractObject<ZenohID>, public std::enable
 
  private:
   std::atomic<int64_t> last_latency_{0};
-  std::atomic_bool is_suspend_{false};
   std::atomic_bool has_subscribe_{false};
 
   uint64_t guid_{0};

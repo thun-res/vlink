@@ -418,6 +418,7 @@ void Shm2Factory::unregister_poll(void* handle) {
   }
 
   iox2_waitset_guard_h guard_to_drop = nullptr;
+  PollCallback callback;
 
   {
     std::unique_lock lock(sub_list_mtx_);
@@ -425,6 +426,7 @@ void Shm2Factory::unregister_poll(void* handle) {
 
     if (it != poll_map_.end()) {
       guard_to_drop = it->second.guard;
+      callback = std::move(it->second.callback);
       poll_map_.erase(it);
     }
   }
@@ -1341,7 +1343,10 @@ void Shm2Client::process_message() {
 
             message_loop->post_task([this, owner = callback.owner, message_loop, response = std::move(retained),
                                      bytes = std::move(resp_bytes), cb = std::move(callback.callback)]() {
-              if (is_contains_impl(owner) && owner->get_message_loop() == message_loop) {
+              bool attached = false;
+              invoke_callback(owner, [&]() { attached = owner->get_message_loop() == message_loop; });
+
+              if (attached) {
                 cb(bytes);
               }
             });
@@ -2206,7 +2211,8 @@ void Shm2Subscriber::process_message(MessageLoop* message_loop) {
     traverse_msg_callback([channel, message_loop, &msg_bytes, &routes](NodeImpl* impl, const auto& callback) {
       const auto* conf_ptr = impl->get_target_conf<Shm2Conf>();
 
-      if VUNLIKELY (static_cast<uint64_t>(conf_ptr->hash_code) != channel) {
+      if VUNLIKELY (static_cast<uint64_t>(conf_ptr->hash_code) != channel ||
+                    impl->has_suspend.load(std::memory_order_acquire)) {
         return;
       }
 
@@ -2248,7 +2254,7 @@ void Shm2Subscriber::process_message(MessageLoop* message_loop) {
         auto bytes = Bytes::shallow_copy(data, size);
 
         traverse_msg_callback([loop, channel, &bytes](NodeImpl* impl, const auto& callback) {
-          if (impl->get_message_loop() == loop &&
+          if (impl->get_message_loop() == loop && !impl->has_suspend.load(std::memory_order_acquire) &&
               static_cast<uint64_t>(impl->get_target_conf<Shm2Conf>()->hash_code) == channel) {
             callback(bytes);
           }

@@ -83,6 +83,10 @@ Status::BasePtr DdsSetterImpl::get_status(Status::Type type) const {
 std::any DdsSetterImpl::get_native_handle() const { return publisher_; }
 
 void DdsSetterImpl::write(const Bytes& msg_data) {
+  if VUNLIKELY (!writer_) {
+    return;
+  }
+
   if (is_cdr_type) {
     DdsFactory::write_cdr_data(writer_.get(), msg_data);
     return;

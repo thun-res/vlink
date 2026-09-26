@@ -184,9 +184,9 @@ class Node {
    * @details
    * Atomically guards against double-deinit, then runs @c interrupt(),
    * @c impl_->deinit(), and @c impl_->deinit_ext().  When safe-quit mode is
-   * active the sequence runs under the safe-quit mutex.  The destructor
-   * calls this automatically so explicit calls are only required for early
-   * shutdown.
+   * active, new data and RPC callbacks are skipped and active ones finish
+   * before transport resources are released.  The destructor calls this
+   * automatically so explicit calls are only required for early shutdown.
    *
    * @return @c true on first successful deinit; @c false if not initialised.
    */
@@ -493,9 +493,9 @@ class Node {
    * @brief Reports whether safe-quit mode is currently active.
    *
    * @details
-   * Safe-quit mode holds a @c std::mutex around user callbacks and around
-   * @c deinit() to prevent use-after-free races when a node is destroyed
-   * while a callback is in flight.
+   * Safe-quit mode holds a @c std::mutex around data and RPC callbacks.  During
+   * @c deinit(), new callbacks are skipped and active callbacks are drained
+   * before transport resources are released.
    *
    * @return @c true if the safe-quit mutex is engaged.
    */
@@ -506,7 +506,8 @@ class Node {
    *
    * @details
    * When enabled, an internal @c std::mutex is allocated and locked around
-   * every callback invocation and around @c deinit().  Enable when the
+   * data and RPC callback invocations.  Deinitialisation drains active callbacks
+   * before releasing transport resources.  Enable when the
    * node's lifetime is shorter than the callback scope.  There is a small
    * synchronisation overhead; avoid enabling it on hot paths.
    *

@@ -182,6 +182,44 @@ TEST_SUITE("shm2-init") {
 }
 
 TEST_SUITE("shm2-pubsub") {
+  TEST_CASE("suspending one shared subscriber leaves the other running") {
+    MessageLoop loop;
+    REQUIRE(loop.async_run());
+    const Shm2Conf conf("shm2/review/sub_suspend", "data", 0, 8, 0, 0, 512);
+    std::atomic<int> first_value{0};
+    std::atomic<int> second_value{0};
+    Publisher<int> publisher(conf);
+    Subscriber<int> first(conf);
+    Subscriber<int> second(conf);
+    REQUIRE(first.get_abstract_node() == second.get_abstract_node());
+
+    SUBCASE("direct callbacks") {}
+    SUBCASE("queued callbacks") {
+      REQUIRE(first.attach(&loop));
+      REQUIRE(second.attach(&loop));
+    }
+
+    REQUIRE(first.listen([&](const int& value) { first_value.store(value, std::memory_order_release); }));
+    REQUIRE(second.listen([&](const int& value) { second_value.store(value, std::memory_order_release); }));
+    REQUIRE(publisher.wait_for_subscribers(3s));
+    REQUIRE(first.suspend());
+    CHECK_FALSE(second.is_suspend());
+    REQUIRE(second.resume());
+    CHECK(first.is_suspend());
+    REQUIRE(publisher.publish(1));
+    REQUIRE(common_test::wait_until([&] { return second_value.load(std::memory_order_acquire) == 1; }, 3s));
+    REQUIRE(loop.wait_for_idle(3000));
+    CHECK(first_value.load(std::memory_order_acquire) == 0);
+
+    REQUIRE(first.resume());
+    REQUIRE(publisher.publish(2));
+    REQUIRE(common_test::wait_until(
+        [&] {
+          return first_value.load(std::memory_order_acquire) == 2 && second_value.load(std::memory_order_acquire) == 2;
+        },
+        3s));
+  }
+
   TEST_CASE("shared subscribers dispatch to their own message loops") {
     MessageLoop first_loop;
     MessageLoop second_loop;

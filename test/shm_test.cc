@@ -272,6 +272,54 @@ TEST_SUITE("shm-init") {
 }
 
 TEST_SUITE("shm-pubsub") {
+  TEST_CASE("suspending one shared subscriber leaves the other running") {
+    if (!ensure_shm_ready()) {
+      return;
+    }
+
+    MessageLoop first_loop;
+    MessageLoop second_loop;
+    REQUIRE(first_loop.async_run());
+    REQUIRE(second_loop.async_run());
+    int mode = 0;
+    SUBCASE("direct callbacks") {}
+    SUBCASE("common message loop") { mode = 1; }
+    SUBCASE("separate message loops") { mode = 2; }
+
+    const ShmConf conf("shm/review/sub_suspend_" + std::to_string(mode), "data", 0, 8);
+    std::atomic<int> first_value{0};
+    std::atomic<int> second_value{0};
+    Publisher<int> publisher(conf);
+    Subscriber<int> first(conf);
+    Subscriber<int> second(conf);
+    REQUIRE(first.get_abstract_node() == second.get_abstract_node());
+
+    if (mode != 0) {
+      REQUIRE(first.attach(&first_loop));
+      REQUIRE(second.attach(mode == 1 ? &first_loop : &second_loop));
+    }
+
+    REQUIRE(first.listen([&](const int& value) { first_value.store(value, std::memory_order_release); }));
+    REQUIRE(second.listen([&](const int& value) { second_value.store(value, std::memory_order_release); }));
+    REQUIRE(publisher.wait_for_subscribers(3s));
+    REQUIRE(first.suspend());
+    CHECK_FALSE(second.is_suspend());
+    REQUIRE(second.resume());
+    CHECK(first.is_suspend());
+    REQUIRE(publisher.publish(1));
+    REQUIRE(common_test::wait_until([&] { return second_value.load(std::memory_order_acquire) == 1; }, 3s));
+    REQUIRE(first_loop.wait_for_idle(3000));
+    CHECK(first_value.load(std::memory_order_acquire) == 0);
+
+    REQUIRE(first.resume());
+    REQUIRE(publisher.publish(2));
+    REQUIRE(common_test::wait_until(
+        [&] {
+          return first_value.load(std::memory_order_acquire) == 2 && second_value.load(std::memory_order_acquire) == 2;
+        },
+        3s));
+  }
+
   TEST_CASE("bytes payload is delivered to subscriber") {
     MESSAGE("[shm-pubsub] bytes payload is delivered to subscriber");
 

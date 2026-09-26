@@ -335,6 +335,9 @@ TEST_SUITE("mqtt-method") {
     std::atomic<bool> second_on_loop{true};
     std::promise<std::thread::id> received;
     auto result = received.get_future();
+    std::promise<int> pending_response;
+    auto pending_result = pending_response.get_future();
+    std::optional<int> nested_response;
     Server<int, int> first_server(first_conf);
     REQUIRE(first_server.attach(&first_loop));
     REQUIRE(first_server.listen([&](const int& req, int& resp) {
@@ -361,9 +364,16 @@ TEST_SUITE("mqtt-method") {
     auto second_sync = first_loop.invoke_task([&] { return second.invoke(20, 2s); });
     REQUIRE(second_sync.wait_for(3s) == std::future_status::ready);
     CHECK(second_sync.get() == std::optional<int>(22));
-    REQUIRE(first.invoke(1, [&](const int&) { received.set_value(std::this_thread::get_id()); }));
+    REQUIRE(first.invoke(1, [&](const int&) {
+      CHECK(first.invoke(2, [&](const int& resp) { pending_response.set_value(resp); }));
+      nested_response = first.invoke(3, 2s);
+      received.set_value(std::this_thread::get_id());
+    }));
     REQUIRE(result.wait_for(3s) == std::future_status::ready);
     CHECK(result.get() == second_thread);
+    CHECK(nested_response == std::optional<int>(4));
+    REQUIRE(pending_result.wait_for(3s) == std::future_status::ready);
+    CHECK_EQ(pending_result.get(), 3);
     CHECK(first_on_loop.load(std::memory_order_relaxed));
     CHECK(second_on_loop.load(std::memory_order_relaxed));
   }
@@ -421,8 +431,8 @@ TEST_SUITE("mqtt-method") {
     }
 
     SUBCASE("multiple sequential calls") {
-      for (int i = 0; i < 5; ++i) {
-        auto resp = client.invoke("r" + std::to_string(i));
+      for (int i = 0; i < 128; ++i) {
+        auto resp = client.invoke("r" + std::to_string(i), 10s);
         REQUIRE(resp.has_value());
         CHECK(*resp == "mqtt:r" + std::to_string(i));
       }

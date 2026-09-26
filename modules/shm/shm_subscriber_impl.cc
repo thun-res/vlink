@@ -62,11 +62,19 @@ void ShmSubscriberImpl::deinit() {
   }
 }
 
-bool ShmSubscriberImpl::suspend() { return object_->suspend(); }
+bool ShmSubscriberImpl::suspend() {
+  has_suspend.store(true, std::memory_order_release);
 
-bool ShmSubscriberImpl::resume() { return object_->resume(); }
+  return true;
+}
 
-bool ShmSubscriberImpl::is_suspend() const { return object_->is_suspend(); }
+bool ShmSubscriberImpl::resume() {
+  has_suspend.store(false, std::memory_order_release);
+
+  return true;
+}
+
+bool ShmSubscriberImpl::is_suspend() const { return has_suspend.load(std::memory_order_acquire); }
 
 bool ShmSubscriberImpl::is_support_loan() const { return true; }
 

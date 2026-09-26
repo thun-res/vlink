@@ -305,6 +305,55 @@ TEST_SUITE("dds-init") {
     CHECK_FALSE(mixed.is_valid());
   }
 
+  TEST_CASE("missing reader and writer profiles report operation failure") {
+    const std::string missing_profile = "__vlink_missing_fastdds_profile__";
+
+    SUBCASE("reader creation failure releases the callback") {
+      DdsConf::PropertiesMap ext{{"reader", missing_profile}};
+      Subscriber<Bytes> sub(DdsConf("dds/profile/failed_listen", 66, ext));
+      auto lifetime = std::make_shared<int>(0);
+      std::weak_ptr<int> weak_lifetime = lifetime;
+      CHECK_FALSE(sub.listen([lifetime](const Bytes&) {}));
+      lifetime.reset();
+      CHECK(weak_lifetime.expired());
+    }
+
+    SUBCASE("writer creation failure rejects publication") {
+      DdsConf::PropertiesMap ext{{"writer", missing_profile}};
+      Publisher<Bytes> pub(DdsConf("dds/profile/failed_publish", 65, ext));
+      CHECK_FALSE(pub.publish(Bytes{0x01}, true));
+    }
+
+    SUBCASE("getter reader failure rolls back initialization") {
+      DdsConf::PropertiesMap ext{{"reader", missing_profile}};
+      Getter<Bytes> getter(DdsConf("dds/profile/failed_getter", 67, ext), InitType::kWithoutInit);
+      CHECK(getter.listen([](const Bytes&) {}));
+      CHECK_FALSE(getter.init());
+      CHECK_FALSE(getter.has_inited());
+      CHECK_FALSE(getter.init());
+      CHECK_FALSE(getter.has_inited());
+      CHECK_FALSE(getter.deinit());
+    }
+
+    SUBCASE("response server requires a writer and releases rejected callbacks") {
+      DdsConf::PropertiesMap ext{{"writer", missing_profile}};
+      Server<Bytes, Bytes> server(DdsConf("dds/profile/failed_server", 68, ext));
+      auto lifetime = std::make_shared<int>(0);
+      std::weak_ptr<int> weak_lifetime = lifetime;
+      CHECK_FALSE(server.listen([lifetime](const Bytes&, Bytes&) {}));
+      lifetime.reset();
+      CHECK(weak_lifetime.expired());
+      CHECK_FALSE(server.listen([](const Bytes&, Bytes&) {}));
+      CHECK_FALSE(server.listen_for_reply([](uint64_t, const Bytes&) {}));
+    }
+
+    SUBCASE("fire and forget server does not require a writer") {
+      DdsConf::PropertiesMap ext{{"writer", missing_profile}};
+      Server<Bytes> server(DdsConf("dds/profile/no_response_writer", 69, ext));
+      CHECK(server.listen([](const Bytes&) {}));
+    }
+  }
+
   TEST_CASE("missing per-entity profiles keep wrapper lifecycle stable") {
     const std::string missing_profile = "__vlink_missing_fastdds_profile__";
     auto check_lifecycle = [](auto& node) {

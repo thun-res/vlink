@@ -2673,23 +2673,10 @@ ZenohPublisher::ZenohPublisher(const ZenohID& id) {
     VLOG_F("ZenohFactory: Failed to build publisher matching key expression.");
     return;
   }
-#else
-  if (impl_type == kSetter) {
-    return;
-  }
-
-  z_owned_closure_matching_status_t closure;
-  z_closure(&closure, on_matching_status, nullptr, this);
-
-  ret = z_publisher_declare_matching_listener(z_loan(pub_), &matching_listener_, z_move(closure));
-  if VUNLIKELY (ret != Z_OK) {
-    VLOG_F("ZenohFactory: Failed to declare publisher matching listener, error=", +ret, ".");
-  }
 #endif
 }
 
 ZenohPublisher::~ZenohPublisher() {
-  quit_flag_.store(true, std::memory_order_release);
   z_drop(z_move(getter_sub_));
 
 #ifdef VLINK_ENABLE_ZENOH_PICO
@@ -2716,7 +2703,7 @@ void ZenohPublisher::start_field_sync() {
   z_view_keyexpr_t keyexpr;
   z_view_keyexpr_from_str(&keyexpr, key.c_str());
   z_owned_closure_sample_t closure;
-  z_closure(&closure, on_getter_joined, nullptr, this);
+  z_closure(&closure, on_getter_joined, on_callback_drop, new std::weak_ptr<ZenohPublisher>(weak_from_this()));
   z_liveliness_subscriber_options_t options;
   z_liveliness_subscriber_options_default(&options);
   options.history = true;
@@ -2734,23 +2721,25 @@ void ZenohPublisher::start_field_sync() {
 }
 
 void ZenohPublisher::on_getter_joined(z_loaned_sample_t* sample, void* context) {
-  auto* instance = static_cast<ZenohPublisher*>(context);
-
-  if VUNLIKELY (!ZenohFactory::get().has_object(instance)) {
+  if (z_sample_kind(sample) != Z_SAMPLE_KIND_PUT) {
     return;
   }
 
-  if VUNLIKELY (instance->quit_flag_.load(std::memory_order_acquire)) {
-    return;
-  }
+  ZenohFactory::get().get_message_loop().post_task([weak = *static_cast<std::weak_ptr<ZenohPublisher>*>(context)]() {
+    auto instance = weak.lock();
 
-  if (z_sample_kind(sample) == Z_SAMPLE_KIND_PUT) {
+    if VUNLIKELY (!instance) {
+      return;
+    }
+
 #ifdef VLINK_ENABLE_ZENOH_PICO
     (void)zp_send_join(z_loan(*instance->session_), nullptr);
 #endif
     instance->traverse_sub_connect_callback([](NodeImpl*, const auto& callback) { callback(true); });
-  }
+  });
 }
+
+void ZenohPublisher::on_callback_drop(void* context) { delete static_cast<std::weak_ptr<ZenohPublisher>*>(context); }
 
 void ZenohPublisher::check_matching() {
   if VUNLIKELY (!z_internal_check(pub_)) {
@@ -2774,7 +2763,6 @@ void ZenohPublisher::check_matching() {
 }
 
 void ZenohPublisher::start_matching() {
-#ifdef VLINK_ENABLE_ZENOH_PICO
   if VUNLIKELY (!session_ || !z_internal_check(*session_) || !z_internal_check(pub_)) {
     return;
   }
@@ -2784,8 +2772,9 @@ void ZenohPublisher::start_matching() {
     return;
   }
 
+#ifdef VLINK_ENABLE_ZENOH_PICO
   z_owned_closure_sample_t closure;
-  z_closure(&closure, on_subscriber_liveliness, nullptr, this);
+  z_closure(&closure, on_subscriber_liveliness, on_callback_drop, new std::weak_ptr<ZenohPublisher>(weak_from_this()));
   z_liveliness_subscriber_options_t options;
   z_liveliness_subscriber_options_default(&options);
   options.history = true;
@@ -2801,6 +2790,16 @@ void ZenohPublisher::start_matching() {
   matching_timer_.emplace(&ZenohFactory::get().get_message_loop(), 20, Timer::kInfinite,
                           [this]() { check_matching(); });
   matching_timer_->start();
+#else
+  z_owned_closure_matching_status_t closure;
+  z_closure(&closure, on_matching_status, on_callback_drop, new std::weak_ptr<ZenohPublisher>(weak_from_this()));
+
+  const auto ret = z_publisher_declare_matching_listener(z_loan(pub_), &matching_listener_, z_move(closure));
+  if VUNLIKELY (ret != Z_OK) {
+    matching_started_.store(false, std::memory_order_release);
+    VLOG_F("ZenohFactory: Failed to declare publisher matching listener, error=", +ret, ".");
+    return;
+  }
 #endif
   check_matching();
 }
@@ -2881,38 +2880,39 @@ bool ZenohPublisher::publish(uint64_t channel, const Bytes& bytes) {
 }
 
 void ZenohPublisher::on_matching_status(const z_matching_status_t* status, void* context) {
-  auto* instance = static_cast<ZenohPublisher*>(context);
+  ZenohFactory::get().get_message_loop().post_task(
+      [weak = *static_cast<std::weak_ptr<ZenohPublisher>*>(context), connected = status->matching]() {
+        auto instance = weak.lock();
 
-  if VUNLIKELY (!ZenohFactory::get().has_object(instance)) {
-    return;
-  }
+        if VUNLIKELY (!instance) {
+          return;
+        }
 
-  if VUNLIKELY (instance->quit_flag_.load(std::memory_order_acquire)) {
-    return;
-  }
-
-  bool connected = status->matching;
-
-  instance->has_subscribers_.store(connected, std::memory_order_release);
-  instance->traverse_sub_connect_callback([connected](NodeImpl*, const auto& callback) { callback(connected); });
+        instance->has_subscribers_.store(connected, std::memory_order_release);
+        instance->traverse_sub_connect_callback([connected](NodeImpl*, const auto& callback) { callback(connected); });
+      });
 }
 
 #ifdef VLINK_ENABLE_ZENOH_PICO
 void ZenohPublisher::on_subscriber_liveliness(z_loaned_sample_t* sample, void* context) {
-  auto* instance = static_cast<ZenohPublisher*>(context);
-  if VUNLIKELY (!ZenohFactory::get().has_object(instance)) {
-    return;
-  }
+  ZenohFactory::get().get_message_loop().post_task([weak = *static_cast<std::weak_ptr<ZenohPublisher>*>(context),
+                                                    joined = z_sample_kind(sample) == Z_SAMPLE_KIND_PUT]() {
+    auto instance = weak.lock();
 
-  if (z_sample_kind(sample) == Z_SAMPLE_KIND_PUT) {
-    instance->remote_subscriber_count_.fetch_add(1, std::memory_order_acq_rel);
-  } else {
-    uint32_t count = instance->remote_subscriber_count_.load(std::memory_order_acquire);
-    while (count > 0 && !instance->remote_subscriber_count_.compare_exchange_weak(
-                            count, count - 1, std::memory_order_acq_rel, std::memory_order_acquire)) {
+    if VUNLIKELY (!instance) {
+      return;
     }
-  }
-  instance->check_matching();
+
+    if (joined) {
+      instance->remote_subscriber_count_.fetch_add(1, std::memory_order_acq_rel);
+    } else {
+      uint32_t count = instance->remote_subscriber_count_.load(std::memory_order_acquire);
+      while (count > 0 && !instance->remote_subscriber_count_.compare_exchange_weak(
+                              count, count - 1, std::memory_order_acq_rel, std::memory_order_acquire)) {
+      }
+    }
+    instance->check_matching();
+  });
 }
 #endif
 
@@ -2992,18 +2992,6 @@ ZenohSubscriber::ZenohSubscriber(const ZenohID& id) {
 ZenohSubscriber::~ZenohSubscriber() { unsubscribe(); }
 
 std::any ZenohSubscriber::get_native_handle() const { return this; }
-
-bool ZenohSubscriber::suspend() {
-  is_suspend_.store(true, std::memory_order_release);
-  return true;
-}
-
-bool ZenohSubscriber::resume() {
-  is_suspend_.store(false, std::memory_order_release);
-  return true;
-}
-
-bool ZenohSubscriber::is_suspend() const { return is_suspend_.load(std::memory_order_acquire); }
 
 void ZenohSubscriber::subscribe() {
   if VUNLIKELY (!session_ || !z_internal_check(*session_)) {
@@ -3117,7 +3105,8 @@ void ZenohSubscriber::process_message(uint64_t channel, uint64_t seq, uint64_t g
   traverse_msg_callback([&](NodeImpl* impl, const auto& callback) {
     const auto* conf_ptr = impl->get_target_conf<ZenohConf>();
 
-    if (static_cast<uint64_t>(conf_ptr->hash_code) != channel) {
+    if VUNLIKELY (static_cast<uint64_t>(conf_ptr->hash_code) != channel ||
+                  impl->has_suspend.load(std::memory_order_acquire)) {
       return;
     }
 
@@ -3152,7 +3141,7 @@ void ZenohSubscriber::process_message(uint64_t channel, uint64_t seq, uint64_t g
       const auto message = Bytes::shallow_copy(retained->data, retained->size);
 
       self->traverse_msg_callback([&](NodeImpl* target, const auto& target_callback) {
-        if (target->get_message_loop() == message_loop &&
+        if (target->get_message_loop() == message_loop && !target->has_suspend.load(std::memory_order_acquire) &&
             static_cast<uint64_t>(target->get_target_conf<ZenohConf>()->hash_code) == channel) {
           target_callback(message);
         }
@@ -3173,10 +3162,6 @@ void ZenohSubscriber::on_data_callback(z_loaned_sample_t* sample, void* context)
   auto* instance = static_cast<ZenohSubscriber*>(context);
 
   if VUNLIKELY (!ZenohFactory::get().has_object(instance)) {
-    return;
-  }
-
-  if VUNLIKELY (instance->is_suspend_.load(std::memory_order_acquire)) {
     return;
   }
 

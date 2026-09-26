@@ -488,35 +488,18 @@ void ShmFactory::deinit_roudi() {
 #endif
 }
 
-shm::popo::Listener* ShmFactory::get_listener(int32_t domain) {
+std::shared_ptr<shm::popo::Listener> ShmFactory::get_listener(int32_t domain) {
   std::lock_guard lock(listener_mtx_);
 
-  auto iter = listener_map_.find(domain);
+  auto& entry = listener_map_[domain];
+  auto listener = entry.lock();
 
-  if (iter == listener_map_.end()) {
-    auto listener = std::make_shared<shm::popo::Listener>();
-
-    return listener_map_.emplace(domain, std::move(listener)).first->second.get();
+  if (!listener) {
+    listener = std::make_shared<shm::popo::Listener>();
+    entry = listener;
   }
 
-  return iter->second.get();
-}
-
-void ShmFactory::try_to_destroy_listener(int32_t domain, shm::popo::Listener* listener) {
-  std::lock_guard lock(listener_mtx_);
-
-  if (listener) {
-    if (listener->size() == 0) {
-      listener_map_.erase(domain);
-    }
-  } else {
-    auto iter = listener_map_.find(domain);
-    if (iter != listener_map_.end()) {
-      if (iter->second->size() == 0) {
-        listener_map_.erase(iter);
-      }
-    }
-  }
+  return listener;
 }
 
 void ShmFactory::add_detect_callback(void* node, DetectCallback&& callback) {
@@ -616,8 +599,6 @@ ShmServer::ShmServer(const ShmID& id) {
 }
 
 ShmServer::~ShmServer() {
-  static auto& factory = ShmFactory::get();
-
   quit_flag_.store(true, std::memory_order_release);
 
   server_->stopOffer();
@@ -627,8 +608,6 @@ ShmServer::~ShmServer() {
   {
     std::lock_guard lock(callback_mtx_);
   }
-
-  factory.try_to_destroy_listener(domain_, listener_);
 
   server_->releaseQueuedRequests();
 }
@@ -858,8 +837,6 @@ ShmClient::ShmClient(const ShmID& id) {
 }
 
 ShmClient::~ShmClient() {
-  static auto& factory = ShmFactory::get();
-
   quit_flag_.store(true, std::memory_order_release);
 
   client_->disconnect();
@@ -871,8 +848,6 @@ ShmClient::~ShmClient() {
   {
     std::lock_guard lock(callback_mtx_);
   }
-
-  factory.try_to_destroy_listener(domain_, listener_);
 
   client_->releaseQueuedResponses();
 }
@@ -932,7 +907,10 @@ void ShmClient::process_message() {
 
       message_loop->post_task([this, message_loop, response = std::move(response), resp_bytes = std::move(resp_bytes),
                                callback = std::move(callback)]() {
-        if (is_contains_impl(callback.owner) && callback.owner->get_message_loop() == message_loop) {
+        bool attached = false;
+        invoke_callback(callback.owner, [&]() { attached = callback.owner->get_message_loop() == message_loop; });
+
+        if (attached) {
           callback.callback(resp_bytes);
         }
       });
@@ -1363,8 +1341,6 @@ ShmSubscriber::ShmSubscriber(const ShmID& id) {
 }
 
 ShmSubscriber::~ShmSubscriber() {
-  static auto& factory = ShmFactory::get();
-
   quit_flag_.store(true, std::memory_order_release);
 
   sub_->unsubscribe();
@@ -1374,8 +1350,6 @@ ShmSubscriber::~ShmSubscriber() {
   {
     std::lock_guard lock(callback_mtx_);
   }
-
-  factory.try_to_destroy_listener(domain_, listener_);
 
   sub_->releaseQueuedData();
 
@@ -1430,7 +1404,8 @@ void ShmSubscriber::process_message(MessageLoop* dispatched_loop) {
     traverse_msg_callback([channel, &msg_bytes, dispatched_loop, &routes](NodeImpl* impl, const auto& callback) {
       const auto* conf = impl->get_target_conf<ShmConf>();
 
-      if VUNLIKELY (static_cast<uint64_t>(conf->hash_code) != channel) {
+      if VUNLIKELY (static_cast<uint64_t>(conf->hash_code) != channel ||
+                    impl->has_suspend.load(std::memory_order_acquire)) {
         return;
       }
 
@@ -1475,7 +1450,8 @@ void ShmSubscriber::process_message(MessageLoop* dispatched_loop) {
         traverse_msg_callback([loop, channel, &bytes](NodeImpl* impl, const auto& callback) {
           const auto* conf = impl->get_target_conf<ShmConf>();
 
-          if (impl->get_message_loop() == loop && static_cast<uint64_t>(conf->hash_code) == channel) {
+          if (impl->get_message_loop() == loop && !impl->has_suspend.load(std::memory_order_acquire) &&
+              static_cast<uint64_t>(conf->hash_code) == channel) {
             callback(bytes);
           }
         });

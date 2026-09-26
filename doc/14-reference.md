@@ -117,7 +117,7 @@ auto sp = vlink::Publisher<T>::create_shared(url_str);             // shared_ptr
 | `bool is_support_loan() const` | 当前后端是否支持零拷贝借贷 |
 | `Bytes loan(int64_t size)` / `bool return_loan(const Bytes&)` | 借用 / 归还共享内存（见 [§14.10](#-1410-零拷贝)） |
 | `const std::string& get_url() const` | URL 构造时返回原串；typed `Conf` 构造时为空 |
-| `void set_safety_quit(bool)` | 销毁短于回调生命周期时启用，在回调与 `deinit()` 周围加锁防 use-after-free |
+| `void set_safety_quit(bool)` | 退出时拒绝新的数据与 RPC 回调，等待已进入的同类回调结束后再释放后端资源 |
 | `void set_ssl_options(const SslOptions&)` | TLS 配置，须在 `init()` 前设置；后端编译能力满足时适用 mqtt/dds/ddsc/ddsr/zenoh |
 
 生命周期状态机与各方法的并发语义见 [通信模型](02-communication.md)。

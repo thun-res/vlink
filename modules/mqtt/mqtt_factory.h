@@ -264,7 +264,9 @@ class MqttClient final : public AbstractObject<MqttID>, public std::enable_share
   bool is_connected() const;
 
   bool call(NodeImpl* owner, uint64_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback = nullptr,
-            int timeout_ms = 0, bool dispatch = true);
+            uint64_t* seq_out = nullptr, bool dispatch = true);
+
+  void remove_response_callback(uint64_t seq);
 
   void cancel_calls(NodeImpl* owner);
 

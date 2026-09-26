@@ -1215,11 +1215,12 @@ void MqttClient::start_listening() {
               return;
             }
 
-            self->invoke_callback(owner, [&] {
-              if (owner->get_message_loop() == loop) {
-                callback(channel, resp_bytes);
-              }
-            });
+            bool attached = false;
+            self->invoke_callback(owner, [&]() { attached = owner->get_message_loop() == loop; });
+
+            if (attached) {
+              callback(channel, resp_bytes);
+            }
           });
         }
       });
@@ -1256,7 +1257,7 @@ bool MqttClient::is_connected() const {
 }
 
 bool MqttClient::call(NodeImpl* owner, uint64_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback,
-                      int timeout_ms, bool dispatch) {
+                      uint64_t* seq_out, bool dispatch) {
   auto& factory = MqttFactory::get();
 
   if VUNLIKELY (req_data.size() > static_cast<size_t>(std::numeric_limits<int>::max()) - kMqttHeaderSize) {
@@ -1281,6 +1282,10 @@ bool MqttClient::call(NodeImpl* owner, uint64_t channel, const Bytes& req_data, 
   if VLIKELY (has_callback) {
     std::lock_guard lock(mtx_);
 
+    if (seq_out) {
+      *seq_out = seq_guid;
+    }
+
     callbacks_[seq_guid] = ResponseCallback{
         owner, dispatch, [callback = std::move(callback), channel](uint64_t target_channel, const Bytes& bytes) {
           if (channel != target_channel) {
@@ -1302,29 +1307,12 @@ bool MqttClient::call(NodeImpl* owner, uint64_t channel, const Bytes& req_data, 
     return false;
   }
 
-  if (has_callback && timeout_ms > 0) {
-    auto weak_self = weak_from_this();
-    auto& message_loop = MqttFactory::get().get_message_loop();
-
-    bool posted = Timer::call_once(&message_loop, static_cast<uint32_t>(timeout_ms), [weak_self, seq_guid]() {
-      auto self = weak_self.lock();
-
-      if VUNLIKELY (!self) {
-        return;
-      }
-
-      std::lock_guard lock(self->mtx_);
-      self->callbacks_.erase(seq_guid);
-    });
-
-    if VUNLIKELY (!posted) {
-      std::lock_guard lock(mtx_);
-      callbacks_.erase(seq_guid);
-      VLOG_W("MqttFactory: Failed to schedule MQTT call timeout cleanup.");
-    }
-  }
-
   return true;
+}
+
+void MqttClient::remove_response_callback(uint64_t seq) {
+  std::lock_guard lock(mtx_);
+  callbacks_.erase(seq);
 }
 
 void MqttClient::cancel_calls(NodeImpl* owner) {

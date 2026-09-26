@@ -59,11 +59,19 @@ void ZenohGetterImpl::deinit() {
   }
 }
 
-bool ZenohGetterImpl::suspend() { return object_->suspend(); }
+bool ZenohGetterImpl::suspend() {
+  has_suspend.store(true, std::memory_order_release);
 
-bool ZenohGetterImpl::resume() { return object_->resume(); }
+  return true;
+}
 
-bool ZenohGetterImpl::is_suspend() const { return object_->is_suspend(); }
+bool ZenohGetterImpl::resume() {
+  has_suspend.store(false, std::memory_order_release);
+
+  return true;
+}
+
+bool ZenohGetterImpl::is_suspend() const { return has_suspend.load(std::memory_order_acquire); }
 
 const Conf* ZenohGetterImpl::get_conf() const { return &conf_; }
 

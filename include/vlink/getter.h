@@ -276,7 +276,8 @@ class Getter : public Node<GetterImpl, SecT> {
    * Overrides @c Node::init() to additionally register a bytes-level callback
    * that deserialises each delivery, invokes the user @c listen() callback
    * (if installed), then updates @c value_ and wakes the condition variable
-   * used by @c wait_for_value().
+   * used by @c wait_for_value().  If delivery registration fails, initialisation
+   * is rolled back so that a later @c init() can retry.
    *
    * @return @c true on first successful initialisation; @c false otherwise.
    */
@@ -301,7 +302,7 @@ class Getter : public Node<GetterImpl, SecT> {
   void mark_as_subscriber();
 
  private:
-  void listen_bytes(NodeImpl::MsgCallback&& callback);
+  bool listen_bytes(NodeImpl::MsgCallback&& callback);
 
   std::optional<ValueT> value_;
   mutable std::mutex mtx_;

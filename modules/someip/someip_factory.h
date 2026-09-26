@@ -74,7 +74,7 @@ class SomeipServer final : public AbstractObject<SomeipID>, public std::enable_s
 
   void start();
 
-  std::unordered_set<someip::client_t>& get_clients();
+  std::unordered_map<someip::eventgroup_t, std::unordered_set<someip::client_t>>& get_clients();
 
   std::mutex& get_client_mtx();
 
@@ -89,7 +89,7 @@ class SomeipServer final : public AbstractObject<SomeipID>, public std::enable_s
   std::shared_ptr<someip::runtime> runtime_;
   std::shared_ptr<someip::application> app_;
   std::thread thread_;
-  std::unordered_set<someip::client_t> clients_;
+  std::unordered_map<someip::eventgroup_t, std::unordered_set<someip::client_t>> clients_;
   std::mutex client_mtx_;
 };
 

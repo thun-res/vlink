@@ -101,6 +101,10 @@ std::any DdsrPublisherImpl::get_native_handle() const { return publisher_; }
 bool DdsrPublisherImpl::has_subscribers() const { return session_count_.load(std::memory_order_acquire) > 0; }
 
 bool DdsrPublisherImpl::write(const Bytes& msg_data) {
+  if VUNLIKELY (!writer_) {
+    return false;
+  }
+
   return DdsrFactory::write_data(writer_->entity, msg_data, seq_.fetch_add(1, std::memory_order_relaxed));
 }
 

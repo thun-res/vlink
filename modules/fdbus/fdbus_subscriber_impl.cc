@@ -49,20 +49,22 @@ void FdbusSubscriberImpl::init() {
 }
 
 void FdbusSubscriberImpl::start_subscription() {
-  has_subscribed_ = false;
+  object_->invoke_callback(this, [this]() {
+    has_subscribed_ = false;
 
-  if (object_->getSessionCount() > 0) {
-    subscribe();
-
-    has_subscribed_ = true;
-  }
-
-  object_->register_server_connect_callback(this, [this](bool connected) {
-    if (!has_subscribed_ && connected) {
+    if (object_->getSessionCount() > 0) {
       subscribe();
+
+      has_subscribed_ = true;
     }
 
-    has_subscribed_ = connected;
+    object_->register_server_connect_callback(this, [this](bool connected) {
+      if (!has_subscribed_ && connected) {
+        subscribe();
+      }
+
+      has_subscribed_ = connected;
+    });
   });
 }
 
@@ -101,7 +103,7 @@ void FdbusSubscriberImpl::subscribe() {
 
   subscribe_list.addNotifyItem(static_cast<int32_t>(conf_.hash_code), conf_.event.data());
 
-  object_->subscribe(subscribe_list, FDB_QOS_RELIABLE);
+  object_->subscribe(subscribe_list, 0, FDB_QOS_RELIABLE);
 }
 
 }  // namespace vlink

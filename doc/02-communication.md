@@ -86,6 +86,8 @@ pub.init();
 | `bool deinit()` | 中断所有阻塞等待并注销该节点的传输端点 | 可安全重复调用；后端可缓存共享 native endpoint |
 | `bool has_inited()` | 查询当前是否已初始化 | — |
 
+`Getter::init()` 在内部接收注册失败时返回 `false` 并回滚初始化，之后可再次调用 `init()`。
+
 两条默认行为消除了绝大部分手动管理：**构造默认执行 `init()`**（`InitType::kWithInit`），通常无需显式调用；**析构自动执行 `deinit()`**，节点离开作用域即注销自身、停止回调并唤醒等待者，仅在需要提前注销时才显式调用 `deinit()`。为复用 native 连接，后端 factory 可以继续缓存已无该节点注册的共享 endpoint。重复调用会由状态检查挡住，但调用方不得让 `init()` 与 `deinit()` 彼此并发。借助 RAII，典型用法无需任何显式生命周期调用：
 
 ```cpp
@@ -192,7 +194,7 @@ loop.run();
 | Client 异步响应回调（DDS 系列以外的后端） | 后端 delivery context | Client 自己绑定的 MessageLoop 线程 |
 | `Publisher::publish()` / `Client::invoke()` | 调用者线程 | 调用者线程 |
 
-边界条件：仅在后端支持 attach 时，`attach()` 须在 `listen()` 之前调用——`listen()` 一旦激活回调分发，节点需先绑定 loop 才能确定回调投递到哪个线程。从与 loop 不同的线程调用 `detach()` 时，会等待 loop 处理完当前任务后再解绑，确保解绑过程不与回调执行竞争。调用方必须检查 attach 的布尔返回值；`MessageLoop` 完整接口见 [基础库](08-base-library.md)。
+边界条件：仅在后端支持 attach 时，`attach()` 须在 `listen()` 之前调用——`listen()` 一旦激活回调分发，节点需先绑定 loop 才能确定回调投递到哪个线程。从与 loop 不同的线程调用 `detach()` 时，会先解除绑定，再等待原 loop 空闲；已在该 loop 执行的回调返回前，`detach()` 不会返回。调用方必须检查 attach 的布尔返回值；`MessageLoop` 完整接口见 [基础库](08-base-library.md)。
 
 DDS 系列以外的后端，其同步 RPC ACK 直接完成等待，不排入 Client 的回调 loop。DDS 系列仍在绑定 loop 中接收响应，不应在该 loop 内阻塞等待自身完成的请求。连接检测回调的执行线程随后端而异。
 
@@ -223,6 +225,7 @@ t.join();
 ```
 
 **`suspend()` / `resume()`**　暂停语义依传输后端而定；后端不支持时打印警告并返回 `false`。
+SHM、SHM2 与 Zenoh 的共享订阅分别按节点暂停，不影响共用底层订阅的其他节点。
 
 **`get_cpu_usage()`**　返回节点在收发操作中消耗的 CPU 占比，需以环境变量 `VLINK_PROFILER_ENABLE` 启用 profiler；未启用时返回 `-1.0`。详见 [集成](13-integration.md)。
 
@@ -275,7 +278,7 @@ auto sub = vlink::Subscriber<MyMsg>::create_shared("dds://topic");
 - **传输层 TLS**　`set_ssl_options(const SslOptions&)`，须在 `init()` 之前调用；后端编译能力满足时适用于 `mqtt://` / `dds://` / `ddsc://` / `ddsr://` / `zenoh://`。详见 [安全加密](07-security.md)。
 - **状态查询**　`get_status()` / `register_status_handler()` 查询连接状态变化，仅 DDS 系列后端有效。详见 [可观测性](12-observability.md)。
 - **消息录制**　`set_record_path(path)` 为单个节点开启录包。详见 [录制与回放](09-recording.md)。
-- **安全退出**　`set_safety_quit(true)` 以互斥保护回调与析构，避免回调执行期间节点被销毁的竞态；引入锁开销，热路径慎用。
+- **安全退出**　`set_safety_quit(true)` 在退出时拒绝新的数据与 RPC 回调，并等待已进入的同类回调结束后再释放后端资源；引入锁开销，热路径慎用。
 
 ---
 

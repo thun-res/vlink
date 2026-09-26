@@ -175,6 +175,12 @@ bool DdsrSubscriberImpl::listen(MsgCallback&& callback) {
   reader_ =
       DdsrFactory::create_datareader(init_impl_type, conf_, subscriber_.get(), topic_.get(), listener_->get_ptr());
 
+  if VUNLIKELY (!reader_) {
+    listener_.reset();
+    callback_ = {};
+    return false;
+  }
+
   return true;
 }
 
