@@ -31,6 +31,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "../common_test.h"
@@ -62,6 +63,14 @@ TEST_SUITE("base-Cancellation") {
     CHECK(token.valid());
     CHECK_FALSE(token.is_cancellation_requested());
     CHECK_FALSE(source.is_cancellation_requested());
+  }
+
+  TEST_CASE("request_cancel on a moved-from source reports nothing cancelled") {
+    CancellationSource source;
+    CancellationSource moved = std::move(source);
+
+    CHECK_FALSE(source.request_cancel());  // NOLINT(bugprone-use-after-move)
+    CHECK(moved.request_cancel());
   }
 
   TEST_CASE("request_cancel transitions source once and fires callbacks") {
@@ -106,6 +115,23 @@ TEST_SUITE("base-Cancellation") {
 
     CHECK(source.request_cancel());
     CHECK_EQ(count.load(std::memory_order_relaxed), 0);
+  }
+
+  TEST_CASE("reset can destroy a callback owning another registration on the same token") {
+    CancellationSource source;
+    auto token = source.token();
+    int count = 0;
+    auto inner = token.register_callback([&count] { ++count; });
+    auto outer = token.register_callback([held = std::move(inner), &count] {
+      (void)held;
+      ++count;
+    });
+
+    outer.reset();
+
+    CHECK_FALSE(outer.valid());
+    CHECK(source.request_cancel());
+    CHECK_EQ(count, 0);
   }
 
   TEST_CASE("register_callback after cancellation fires synchronously") {

@@ -57,6 +57,7 @@
 #include <unordered_map>
 #include <variant>
 
+#include "./exprtk_parser.h"
 #include "./qcustomplot.h"
 
 namespace Ui {
@@ -81,6 +82,10 @@ struct PlotUnit {
   double ext_limit_min_y{-QCPRange::maxRange};
   std::string ext_operation_x;
   std::string ext_operation_y;
+
+  vlink::Exprtk::VariableList variable_list;
+  std::optional<vlink::Exprtk::Parser> operation_x;
+  std::optional<vlink::Exprtk::Parser> operation_y;
 
   QVector<double> x_values;
   QVector<double> y_values;

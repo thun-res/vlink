@@ -36,7 +36,9 @@
 #include "./base/logger.h"
 #include "./base/memory_pool.h"
 
+#ifndef VLINK_BYTES_MEM_RESET
 #define VLINK_BYTES_MEM_RESET 0
+#endif
 
 namespace vlink {
 
@@ -102,12 +104,22 @@ static auto& bytes_compress_cache() noexcept {
 }
 
 // Bytes
-void Bytes::init_memory_pool() noexcept { (void)MemoryPool::global_instance(); }
+void Bytes::init_memory_pool() noexcept {
+  try {
+    (void)MemoryPool::global_instance();
+  } catch (const std::exception& e) {
+    CLOG_E("Bytes: Failed to initialize the memory pool: %s.", e.what());
+  }
+}
 
 void Bytes::release_memory_pool() noexcept { MemoryPool::global_instance().clear(); }
 
 uint8_t* Bytes::bytes_malloc(size_t size) noexcept {
-  return static_cast<uint8_t*>(MemoryPool::global_instance().allocate(size));
+  try {
+    return static_cast<uint8_t*>(MemoryPool::global_instance().allocate(size));
+  } catch (const std::exception&) {
+    return nullptr;
+  }
 }
 
 void Bytes::bytes_free(uint8_t* ptr, size_t size) noexcept { MemoryPool::global_instance().deallocate(ptr, size); }
@@ -359,8 +371,14 @@ Bytes Bytes::decode_from_base64(const std::string& target) noexcept {
     }
   }
 
-  std::vector<uint8_t> buffer;
-  buffer.reserve((target.size() * 3) / 4);
+  Bytes buffer = Bytes::create((target.size() / 4) * 3 - padding);
+
+  if VUNLIKELY (buffer.empty()) {
+    return buffer;
+  }
+
+  size_t output_index = 0;
+  uint8_t* output = buffer.data();
 
   static const auto kTable = [] {
     std::array<int, 256> tbl{};
@@ -391,12 +409,12 @@ Bytes Bytes::decode_from_base64(const std::string& target) noexcept {
     valb += 6;
 
     if (valb >= 0) {
-      buffer.emplace_back(static_cast<uint8_t>((val >> valb) & 0xFF));
+      output[output_index++] = static_cast<uint8_t>((val >> valb) & 0xFF);
       valb -= 8;
     }
   }
 
-  return Bytes(buffer);
+  return buffer;
 }
 
 uint32_t Bytes::get_crc_32(const Bytes& target) noexcept {
@@ -993,6 +1011,16 @@ void Bytes::process_type(Type type, uint8_t* data, size_t size, uint8_t offset, 
       if (is_owner_ && data_) {
         if VUNLIKELY (data_ == data && size_ == size && offset_ == offset) {
           return;
+        }
+
+        if VUNLIKELY (total_size == 0) {
+          const auto owner_address = reinterpret_cast<uintptr_t>(data_);
+          const auto source_address = reinterpret_cast<uintptr_t>(data);
+
+          if VUNLIKELY (source_address >= owner_address && source_address - owner_address < capacity_ + offset_) {
+            clear();
+            return;
+          }
         }
 
         bool can_reuse =

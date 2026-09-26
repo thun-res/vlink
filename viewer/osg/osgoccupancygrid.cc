@@ -298,11 +298,15 @@ void update(osg::Geode* geode, const GridData& grid, float alpha) {
   border_verts->dirty();
   border_colors->dirty();
 
+  cell_geo->dirtyBound();
+
   auto* cell_da = static_cast<osg::DrawArrays*>(cell_geo->getPrimitiveSet(0));
 
   if (cell_da) {
     cell_da->setCount(cell_verts->size());
   }
+
+  border_geo->dirtyBound();
 
   auto* border_da = static_cast<osg::DrawArrays*>(border_geo->getPrimitiveSet(0));
 

@@ -75,7 +75,9 @@ void AnalyzeDialog::init(Type type) {
   ui->plainTextEdit->clear();
   ui->horizontalSlider->setValue(100);
   ui->widget_number->set_value_range(0, 100);
-  is_paused = false;
+
+  on_pushButton_resume_clicked();
+
   ui->widget_number->update();
 
   current_type_ = type;

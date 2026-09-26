@@ -59,17 +59,17 @@ int start_viewer(bool native_mode, bool check_process_count) {
 
   discovery_viewer->async_run();
 
-  auto quit_function = [](int) {
-    if VUNLIKELY (has_quit) {
+  auto quit_function = [weak_viewer = std::weak_ptr<vlink::DiscoveryViewer>(discovery_viewer)](int) {
+    if VUNLIKELY (has_quit.exchange(true, std::memory_order_relaxed)) {
       return;
     }
 
-    has_quit = true;
-
-    discovery_viewer->quit(true);
+    if (auto viewer = weak_viewer.lock()) {
+      viewer->quit(true);
+    }
   };
 
-  vlink::Utils::register_terminate_signal(quit_function);
+  vlink::Utils::register_terminate_signal(quit_function, true);
 
   if (!check_process_count) {
     std::cout << "Information Collecting, Please Wait...";
@@ -123,7 +123,7 @@ int list_process(const std::string& name, uint32_t pid, bool check_process_count
     bool has_getter{false};
   };
 
-  std::set<std::string> process_set;
+  std::set<std::tuple<std::string, std::string, std::string, uint32_t>> process_set;
 
   std::map<std::tuple<std::string, std::string, std::string, uint32_t>,
            std::vector<std::tuple<uint32_t, std::string, std::string>>>
@@ -171,7 +171,11 @@ int list_process(const std::string& name, uint32_t pid, bool check_process_count
 
     for (const auto& process : info.process_list) {
       if (check_process_count) {
-        process_set.emplace(process.name);
+        if ((pid != 0 && process.pid != pid) || (pid == 0 && !name.empty() && process.name != name)) {
+          continue;
+        }
+
+        process_set.emplace(process.host, process.ip, process.name, process.pid);
       } else {
         if (name.empty() && pid == 0) {
           emplace_function(info, process);
@@ -358,7 +362,8 @@ int main(int argc, char* argv[]) {
   argparse::ArgumentParser program("vlink-list", VLINK_VERSION, argparse::default_arguments::all);
 
   program.add_description("Note: You may need to add multicast/broadcast [" +
-                          vlink::DiscoveryViewer::get_listen_address() + "]");
+                          vlink::DiscoveryViewer::get_listen_address() + ":" +
+                          std::to_string(vlink::DiscoveryViewer::get_listen_port()) + "]");
 
   program.add_argument("-n", "--native").help("Native mode").default_value(false).implicit_value(true);
   program.add_argument("-m", "--name").help("Process name").default_value(std::string());

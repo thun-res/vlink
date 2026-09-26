@@ -305,6 +305,10 @@ bool DdsClientImpl::is_connected() const {
 }
 
 bool DdsClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::chrono::milliseconds timeout) {
+  if VUNLIKELY (!writer_ || (callback && !reader_)) {
+    return false;
+  }
+
   if (!callback) {
     if (is_cdr_type) {
       return DdsFactory::write_cdr_data(writer_.get(), req_data);
@@ -351,13 +355,13 @@ bool DdsClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::chr
 
     if (is_cdr_type) {
       std::lock_guard param_lock(param_mtx_);
-      cdr_callbacks_[sample_identity] = [this, ack_request, callback = std::move(callback)](const Bytes& resp_data) {
-        ack_manager_.notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
+      cdr_callbacks_[sample_identity] = [ack_request, callback = std::move(callback)](const Bytes& resp_data) {
+        AckManager::notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
       };
     } else {
       std::lock_guard param_lock(param_mtx_);
-      callbacks_[id] = [this, ack_request, callback = std::move(callback)](const Bytes& resp_data) {
-        ack_manager_.notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
+      callbacks_[id] = [ack_request, callback = std::move(callback)](const Bytes& resp_data) {
+        AckManager::notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
       };
     }
 

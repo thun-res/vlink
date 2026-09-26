@@ -205,7 +205,9 @@ bool extract_proto_value(const google::protobuf::Message& message, const std::ve
           return static_cast<int64_t>(reflection->GetRepeatedEnumValue(message, field, array_index));
         case FieldDescriptor::CPPTYPE_STRING:
           if (field->type() == FieldDescriptor::TYPE_BYTES) {
-            return vlink::Bytes::from_string(reflection->GetRepeatedString(message, field, array_index));
+            std::string scratch;
+            return vlink::Bytes::from_string(
+                reflection->GetRepeatedStringReference(message, field, array_index, &scratch));
           }
 
           return reflection->GetRepeatedString(message, field, array_index);
@@ -260,7 +262,8 @@ bool extract_proto_value(const google::protobuf::Message& message, const std::ve
         return static_cast<int64_t>(reflection->GetEnumValue(message, field));
       case FieldDescriptor::CPPTYPE_STRING:
         if (field->type() == FieldDescriptor::TYPE_BYTES) {
-          return vlink::Bytes::from_string(reflection->GetString(message, field));
+          std::string scratch;
+          return vlink::Bytes::from_string(reflection->GetStringReference(message, field, &scratch));
         }
 
         return reflection->GetString(message, field);
@@ -324,26 +327,20 @@ std::string format_zerocopy_message(const std::string& ser, const vlink::Bytes& 
   return vlink::zerocopy::format_message(message_parser, format_options);
 }
 
-vlink::Bytes extract_zerocopy_binary(const std::string& ser, const vlink::Bytes& bytes, const std::string& field) {
-  vlink::zerocopy::MessageParser message_parser;
-
-  if VUNLIKELY (!message_parser.parse(ser, bytes)) {
-    return {};
-  }
-
+vlink::Bytes extract_zerocopy_binary(const vlink::zerocopy::MessageParser& parser, const std::string& field) {
   vlink::zerocopy::MessageParser::Value value;
 
-  if VUNLIKELY (!message_parser.value(field, value)) {
+  if VUNLIKELY (!parser.value(field, value)) {
     return {};
   }
 
-  const auto* binary = std::get_if<vlink::Bytes>(&value);
+  auto* binary = std::get_if<vlink::Bytes>(&value);
 
   if VUNLIKELY (binary == nullptr) {
     return {};
   }
 
-  return vlink::Bytes::shallow_copy(binary->data(), binary->size());
+  return std::move(*binary);
 }
 
 template <typename T>

@@ -350,7 +350,9 @@ struct VLINK_EXPORT_AND_ALIGNED(8) PointCloud final {
    * @brief Serialises the struct snapshot plus point bytes into @p bytes.
    *
    * @param bytes Output buffer; resized automatically when its size differs from the serialized size.
-   * @return @c true on success; @c false when output allocation fails.
+   * @return @c true on success; @c false when output allocation fails or vertical
+   *         serialization would overwrite or release the source payload. Unsafe
+   *         output reuse is rejected before modifying @p bytes.
    */
   bool operator>>(Bytes& bytes) const noexcept;
 

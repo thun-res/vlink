@@ -100,9 +100,9 @@ class VLINK_EXPORT LoggerBackend final : public MessageLoop {
    * Receives the record level and one formatted line without its trailing newline.  When stored
    * by the constructor it receives Warn and higher records while backtrace capture is enabled;
    * @c dump_backtrace may provide a callback for retained records.  The line view is valid only
-   * during the callback.  The callback must not destroy, log to or otherwise invoke this backend;
-   * exceptions do not escape the notification boundary but put the backend into its permanent
-   * error state.
+   * during the callback, including nested writes.  Logging and backtrace reconfiguration are allowed;
+   * recursive dumps and automatic console callbacks are suppressed.  The callback must not destroy
+   * the backend or wait for its worker.  Exceptions put the backend into its permanent error state.
    */
   using ConsoleWriter = Function<void(Logger::Level, std::string_view)>;
 
@@ -155,6 +155,8 @@ class VLINK_EXPORT LoggerBackend final : public MessageLoop {
    * @brief Writes retained records to the file and optional console callback.
    *
    * @param console_writer  Optional receiver for each preformatted line without its trailing newline.
+   * @note Callbacks may reconfigure the live ring; the dump consumes a snapshot.  Recursive dumps
+   *       and console callbacks are suppressed.  Permanent file errors still permit console replay.
    */
   void dump_backtrace(const ConsoleWriter& console_writer) noexcept;
 

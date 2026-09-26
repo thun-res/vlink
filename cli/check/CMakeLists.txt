@@ -5,7 +5,7 @@
 project(vlink-check LANGUAGES CXX)
 
 # src
-add_executable(${PROJECT_NAME} check.cc)
+add_executable(${PROJECT_NAME} check.cc check_diag.cc check_env.cc check_test.cc)
 target_link_libraries(${PROJECT_NAME} PRIVATE vlink::vlink vlink::all)
 target_link_libraries(${PROJECT_NAME} PRIVATE thirdparty::argparse)
 

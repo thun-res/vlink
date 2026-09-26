@@ -23,46 +23,39 @@
 
 #include "./exprtk_parser.h"
 
-#ifdef VLINK_ENABLE_EXPRTK
-#include <vlink/external/exprtk_api.h>
-#endif
-
 #include <string>
 
 namespace vlink::Exprtk {
 
 #ifdef VLINK_ENABLE_EXPRTK
 
-std::optional<double> parse(const std::string& expression, VariableList& variable_list) {
-  if (expression.empty()) {
-    return std::nullopt;
-  }
-
-  vlink::ExprtkSymbolTable symbol_table;
-  symbol_table.add_constants();
+Parser::Parser(const std::string& expression, VariableList& variable_list) {
+  symbol_table_.add_constants();
 
   for (auto& [name, value] : variable_list) {
-    symbol_table.add_variable(name, value);
+    symbol_table_.add_variable(name, value);
   }
 
-  vlink::ExprtkExpression pxpr;
-  pxpr.register_symbol_table(symbol_table);
+  expression_.register_symbol_table(symbol_table_);
+  compiled_ = expression_.compile(expression);
+}
 
-  if (!pxpr.compile(expression)) {
+std::optional<double> Parser::value() const {
+  if (!compiled_) {
     return std::nullopt;
   }
 
-  return pxpr.value();
+  return expression_.value();
 }
 
 #else
 
-std::optional<double> parse(const std::string& expression, VariableList& variable_list) {
+Parser::Parser(const std::string& expression, VariableList& variable_list) {
   (void)expression;
   (void)variable_list;
-
-  return std::nullopt;
 }
+
+std::optional<double> Parser::value() const { return std::nullopt; }
 
 #endif
 

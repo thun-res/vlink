@@ -32,13 +32,24 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <iterator>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include "../common_test.h"
+#include "./base/elapsed_timer.h"
 #include "./base/utils.h"
+
+#ifdef __linux__
+#include <fcntl.h>
+#include <sys/resource.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include <cerrno>
+#endif
 
 #if defined(__SANITIZE_ADDRESS__)
 #define VLINK_TEST_ADDRESS_SANITIZER 1
@@ -253,6 +264,165 @@ TEST_SUITE("base-Process") {
     proc.start_command("");
     CHECK_EQ(proc.get_error(), Process::kStartError);
     CHECK_FALSE(proc.is_running());
+  }
+
+  TEST_CASE("start_command preserves quoted empty positional arguments") {
+    Process proc;
+    proc.start_command(
+        "/bin/sh -c 'printf \"%s|%s|%s|%s|%s\" \"$#\" \"$1\" \"$2\" \"$3\" \"$4\"' sh \"\" middle '' \"\"");
+    REQUIRE(proc.wait_for_finished(3000));
+
+    std::string output;
+    REQUIRE(proc.read_all_output(output));
+    CHECK_EQ(output, "4||middle||");
+  }
+
+  TEST_CASE("active reads report truncation and invoke the error callback outside the buffer lock") {
+    for (int reader = 0; reader < 10; ++reader) {
+      Process proc;
+      proc.set_max_buffer_size(4);
+      int error_count = 0;
+      Process::Error reported_error = Process::kNoError;
+      proc.register_error_callback([&](Process::Error error) {
+        reported_error = error;
+        ++error_count;
+        CHECK(proc.bytes_available_stdout() <= 4u);
+        CHECK(proc.bytes_available_stderr() <= 4u);
+      });
+      proc.register_state_changed_callback([&](Process::State state) {
+        if (state != Process::kRunningState) {
+          return;
+        }
+
+        siginfo_t info{};
+        int ret;
+        do {
+          ret = ::waitid(P_PID, static_cast<id_t>(proc.get_process_id()), &info, WEXITED | WNOWAIT);
+        } while (ret < 0 && errno == EINTR);
+        REQUIRE_EQ(ret, 0);
+
+        std::string text;
+        std::vector<uint8_t> bytes;
+        switch (reader) {
+          case 0:
+            CHECK(proc.read_line_stdout(text));
+            break;
+          case 1:
+            CHECK(proc.read_line_stderr(text));
+            break;
+          case 2:
+            CHECK_EQ(proc.read_stdout(bytes, 4), 4u);
+            break;
+          case 3:
+            CHECK_EQ(proc.read_stderr(bytes, 4), 4u);
+            break;
+          case 4:
+            CHECK(proc.read_all_output(bytes));
+            break;
+          case 5:
+            CHECK(proc.read_all_error(bytes));
+            break;
+          case 6:
+            CHECK(proc.read_all(bytes));
+            break;
+          case 7:
+            CHECK(proc.read_all_output(text));
+            break;
+          case 8:
+            CHECK(proc.read_all_error(text));
+            break;
+          case 9:
+            CHECK(proc.read_all(text));
+            break;
+        }
+        CHECK_EQ(proc.get_error(), Process::kBufferOverflowError);
+        CHECK_EQ(reported_error, Process::kBufferOverflowError);
+        CHECK_EQ(error_count, 1);
+      });
+      proc.start("/bin/sh", {"-c", "printf abcdefgh; printf 12345678 >&2"});
+      REQUIRE(proc.wait_for_finished(3000));
+      proc.close();
+      CHECK_EQ(error_count, 1);
+    }
+  }
+
+  TEST_CASE("partial output reads preserve unread prefixes across string and vector drains") {
+    Process proc;
+    proc.start("/bin/sh", {"-c", "printf 'a\\nb\\nc\\n'; printf '1\\n2\\n3\\n' >&2"});
+    REQUIRE(proc.wait_for_finished(3000));
+    std::string line;
+    REQUIRE(proc.read_line_stdout(line));
+    CHECK_EQ(line, "a\n");
+    REQUIRE(proc.read_line_stderr(line));
+    CHECK_EQ(line, "1\n");
+    CHECK_EQ(proc.bytes_available_stdout(), 4u);
+    CHECK_EQ(proc.bytes_available_stderr(), 4u);
+    CHECK(proc.can_read_line_stdout());
+    CHECK(proc.can_read_line_stderr());
+
+    std::vector<uint8_t> part;
+    CHECK_EQ(proc.read_stdout(part, 1), 1u);
+    CHECK_EQ(part, std::vector<uint8_t>{'b'});
+    CHECK_EQ(proc.read_stderr(part, 1), 1u);
+    CHECK_EQ(part, std::vector<uint8_t>{'2'});
+
+    SUBCASE("combined vector") {
+      REQUIRE(proc.read_all(part));
+      CHECK_EQ(std::string(part.begin(), part.end()), "\nc\n\n3\n");
+    }
+    SUBCASE("combined string") {
+      REQUIRE(proc.read_all(line));
+      CHECK_EQ(line, "\nc\n\n3\n");
+    }
+    SUBCASE("separate vectors") {
+      REQUIRE(proc.read_all_output(part));
+      CHECK_EQ(std::string(part.begin(), part.end()), "\nc\n");
+      REQUIRE(proc.read_all_error(part));
+      CHECK_EQ(std::string(part.begin(), part.end()), "\n3\n");
+    }
+    SUBCASE("separate strings") {
+      REQUIRE(proc.read_all_output(line));
+      CHECK_EQ(line, "\nc\n");
+      REQUIRE(proc.read_all_error(line));
+      CHECK_EQ(line, "\n3\n");
+    }
+    CHECK_EQ(proc.bytes_available_stdout(), 0u);
+    CHECK_EQ(proc.bytes_available_stderr(), 0u);
+  }
+
+  TEST_CASE("consumed output capacity can hold later data without false truncation") {
+    Process proc;
+    proc.set_max_buffer_size(8);
+    proc.start("/bin/cat");
+    REQUIRE_EQ(proc.write("abcdef"), 6u);
+    REQUIRE(common_test::wait_until([&] { return proc.bytes_available_stdout() == 6u; }, 1000ms));
+
+    std::vector<uint8_t> part;
+    REQUIRE_EQ(proc.read_stdout(part, 4), 4u);
+    CHECK_EQ(std::string(part.begin(), part.end()), "abcd");
+    REQUIRE_EQ(proc.write("ghijkl"), 6u);
+    REQUIRE(common_test::wait_until([&] { return proc.bytes_available_stdout() == 8u; }, 1000ms));
+    proc.close_write_channel();
+    REQUIRE(proc.wait_for_finished(3000));
+
+    std::string output;
+    REQUIRE(proc.read_all_output(output));
+    CHECK_EQ(output, "efghijkl");
+    CHECK_EQ(proc.get_error(), Process::kNoError);
+  }
+
+  TEST_CASE("child descriptor cleanup closes unrelated inherited descriptors") {
+    int original = ::open("/dev/null", O_RDONLY);
+    REQUIRE(original >= 0);
+    const int inherited = ::fcntl(original, F_DUPFD, 100);
+    ::close(original);
+    REQUIRE(inherited >= 100);
+
+    Process proc;
+    proc.start("/bin/sh", {"-c", "test ! -e /proc/self/fd/" + std::to_string(inherited)});
+    ::close(inherited);
+    REQUIRE(proc.wait_for_finished(3000));
+    CHECK_EQ(proc.get_exit_code(), 0);
   }
 
   TEST_CASE("wait helpers return immediately for a process that was never started") {
@@ -593,6 +763,101 @@ TEST_SUITE("base-Process") {
 
     CHECK_FALSE(proc.is_running());
     CHECK_EQ(proc.get_exit_status(), Process::kCrashExitStatus);
+  }
+
+#ifdef __linux__
+  TEST_CASE("restarting a finished process releases old pipe descriptors") {
+    const auto count_fds = []() {
+      return std::distance(std::filesystem::directory_iterator("/proc/self/fd"), std::filesystem::directory_iterator{});
+    };
+    const auto before = count_fds();
+
+    {
+      Process proc;
+      proc.set_process_mode(Process::kSeparateMode);
+
+      for (int i = 0; i < 4; ++i) {
+        proc.start("/bin/true");
+        REQUIRE(proc.wait_for_finished(3000));
+        CHECK_EQ(proc.get_exit_code(), 0);
+      }
+    }
+
+    CHECK_EQ(count_fds(), before);
+  }
+#endif
+
+  TEST_CASE("start right after terminate runs the new child without waiting for it") {
+    Process proc;
+    proc.set_process_mode(Process::kForwardedMode);
+
+    proc.start("/bin/sleep", {"60"});
+    REQUIRE(proc.wait_for_started(3000));
+    proc.terminate();
+    REQUIRE(proc.wait_for_finished(3000));
+
+    ElapsedTimer timer;
+    timer.start();
+    proc.start("/bin/sleep", {"60"});
+
+    CHECK_LT(timer.get(), 3000);
+    CHECK(proc.is_running());
+
+    proc.kill();
+    CHECK(proc.wait_for_finished(3000));
+  }
+
+  TEST_CASE("restart from the running state callback keeps the nested monitor") {
+    Process proc;
+    proc.set_process_mode(Process::kForwardedMode);
+
+    std::atomic<bool> restarted{false};
+    proc.register_state_changed_callback([&proc, &restarted](Process::State state) {
+      if (state == Process::kRunningState && !restarted.exchange(true)) {
+        proc.terminate();
+        proc.wait_for_finished(3000);
+        proc.start("/bin/sleep", {"1"});
+      }
+    });
+
+    proc.start("/bin/sleep", {"60"});
+
+    CHECK(restarted.load());
+    CHECK(proc.wait_for_finished(5000));
+    CHECK_EQ(proc.get_exit_code(), 0);
+  }
+
+  TEST_CASE("restart from a failed start callback keeps the new child") {
+    Process proc;
+    proc.set_process_mode(Process::kForwardedMode);
+
+    std::atomic<bool> restarted{false};
+    int64_t restarted_pid = -1;
+    proc.register_state_changed_callback([&](Process::State state) {
+      if (state == Process::kNotRunningState && !restarted.exchange(true)) {
+        proc.start("/bin/sleep", {"60"});
+        restarted_pid = proc.get_process_id();
+      }
+    });
+
+    proc.start("/path/that/does/not/exist/vlink-process");
+
+    CHECK(restarted.load());
+    CHECK_GT(restarted_pid, 0);
+    CHECK_EQ(proc.get_process_id(), restarted_pid);
+    CHECK(proc.is_running());
+
+    if (restarted_pid > 0 && proc.get_process_id() != restarted_pid) {
+      ::kill(static_cast<pid_t>(restarted_pid), SIGKILL);
+      int status = 0;
+      while (::waitpid(static_cast<pid_t>(restarted_pid), &status, 0) < 0 && errno == EINTR) {
+      }
+    } else {
+      proc.kill();
+      CHECK(proc.wait_for_finished(3000));
+    }
+
+    proc.close();
   }
 
   TEST_CASE("close force-terminates a running process") {
@@ -994,6 +1259,36 @@ TEST_SUITE("base-Process") {
     REQUIRE(proc.wait_for_finished(3000));
   }
 
+  TEST_CASE("infinite wait_for_ready_read without pipes does not busy wait") {
+    Process proc;
+
+    SUBCASE("forwarded output") {
+      proc.set_process_mode(Process::kForwardedMode);
+      proc.start("/bin/sleep", {"0.2"});
+    }
+
+    SUBCASE("child closes both output pipes before exiting") {
+      proc.start("/bin/sh", {"-c", "exec 1>&- 2>&-; sleep 0.2"});
+    }
+
+    REQUIRE(proc.wait_for_started(3000));
+
+    rusage before{};
+    rusage after{};
+    REQUIRE_EQ(::getrusage(RUSAGE_THREAD, &before), 0);
+    CHECK_FALSE(proc.wait_for_ready_read(Process::kInfinite));
+    REQUIRE_EQ(::getrusage(RUSAGE_THREAD, &after), 0);
+
+    const int64_t user_cpu_us = (after.ru_utime.tv_sec - before.ru_utime.tv_sec) * 1'000'000LL +
+                                after.ru_utime.tv_usec - before.ru_utime.tv_usec;
+    const int64_t system_cpu_us = (after.ru_stime.tv_sec - before.ru_stime.tv_sec) * 1'000'000LL +
+                                  after.ru_stime.tv_usec - before.ru_stime.tv_usec;
+    CHECK_LT(user_cpu_us + system_cpu_us, 100'000LL);
+    CHECK_EQ(proc.get_state(), Process::kNotRunningState);
+    CHECK_EQ(proc.get_exit_code(), 0);
+    proc.close();
+  }
+
   TEST_CASE("write after closing stdin reports no bytes written") {
     Process proc;
     proc.set_process_mode(Process::kSeparateMode);
@@ -1046,6 +1341,118 @@ TEST_SUITE("base-Process") {
     std::string output;
     CHECK(proc.read_all_output(output));
     CHECK(output.find("infinite_ready") != std::string::npos);
+  }
+
+  TEST_CASE("wait_for_ready_read pumps output inside the running state callback") {
+    Process proc;
+    std::string output;
+    bool ready = false;
+    proc.register_state_changed_callback([&](Process::State state) {
+      if (state == Process::kRunningState) {
+        ready = proc.wait_for_ready_read(2000);
+        proc.read_all_output(output);
+      }
+    });
+
+    proc.start("/bin/sh", {"-c", "printf running_ready; read line"});
+
+    CHECK(ready);
+    CHECK_EQ(output, "running_ready");
+    CHECK(proc.is_running());
+
+    proc.close_write_channel();
+    CHECK(proc.wait_for_finished(3000));
+    proc.close();
+  }
+
+  TEST_CASE("wait_for_ready_read preserves old buffered data after pipe EOF") {
+    Process proc;
+    proc.start("/bin/sh", {"-c", "printf buffered_out; printf buffered_err >&2"});
+    REQUIRE(proc.wait_for_finished(3000));
+
+    CHECK_EQ(proc.bytes_available_stdout(), 12U);
+    CHECK_EQ(proc.bytes_available_stderr(), 12U);
+    CHECK_FALSE(proc.wait_for_ready_read(20));
+
+    std::string output;
+    std::string error;
+    CHECK(proc.read_all_output(output));
+    CHECK(proc.read_all_error(error));
+    CHECK_EQ(output, "buffered_out");
+    CHECK_EQ(error, "buffered_err");
+    proc.close();
+  }
+
+  TEST_CASE("wait_for_ready_read pumps subsequent output inside the monitor callback") {
+    Process proc;
+    std::atomic<bool> entered{false};
+    std::atomic<bool> completed{false};
+    bool ready = false;
+    std::string output;
+    proc.register_ready_read_stdout_callback([&]() {
+      if (entered.exchange(true)) {
+        return;
+      }
+
+      std::string first;
+      proc.read_all_output(first);
+      proc.write("next\n");
+      ready = proc.wait_for_ready_read(2000);
+      proc.read_all_output(output);
+      completed.store(true, std::memory_order_release);
+    });
+
+    proc.start("/bin/sh", {"-c", "printf first; read line; printf monitor_ready; read line"});
+
+    const bool callback_completed =
+        common_test::wait_until([&]() { return completed.load(std::memory_order_acquire); }, 3000ms);
+    CHECK(callback_completed);
+
+    if (callback_completed) {
+      CHECK(ready);
+      CHECK_EQ(output, "monitor_ready");
+      CHECK(proc.is_running());
+    }
+
+    proc.close_write_channel();
+    CHECK(proc.wait_for_finished(3000));
+    proc.close();
+  }
+
+  TEST_CASE("wait_for_ready_read pumps output while the monitor callback is blocked") {
+    Process proc;
+    std::atomic<bool> entered{false};
+    std::atomic<bool> blocked{false};
+    std::atomic<bool> released{false};
+    proc.register_ready_read_stdout_callback([&]() {
+      if (entered.exchange(true)) {
+        return;
+      }
+
+      std::string first;
+      proc.read_all_output(first);
+      blocked.store(true, std::memory_order_release);
+      common_test::wait_until([&]() { return released.load(std::memory_order_acquire); }, 5000ms);
+    });
+
+    proc.start("/bin/sh", {"-c", "printf first; read line; printf unblocked_ready; read line"});
+
+    const bool callback_blocked =
+        common_test::wait_until([&]() { return blocked.load(std::memory_order_acquire); }, 3000ms);
+    CHECK(callback_blocked);
+
+    if (callback_blocked) {
+      CHECK_EQ(proc.write("next\n"), 5U);
+      CHECK(proc.wait_for_ready_read(2000));
+      std::string output;
+      CHECK(proc.read_all_output(output));
+      CHECK_EQ(output, "unblocked_ready");
+    }
+
+    released.store(true, std::memory_order_release);
+    proc.close_write_channel();
+    CHECK(proc.wait_for_finished(3000));
+    proc.close();
   }
 
   TEST_CASE("wait_for_started covers starting-state timeout and infinite wait") {

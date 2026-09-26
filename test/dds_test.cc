@@ -305,6 +305,55 @@ TEST_SUITE("dds-init") {
     CHECK_FALSE(mixed.is_valid());
   }
 
+  TEST_CASE("missing reader and writer profiles report operation failure") {
+    const std::string missing_profile = "__vlink_missing_fastdds_profile__";
+
+    SUBCASE("reader creation failure releases the callback") {
+      DdsConf::PropertiesMap ext{{"reader", missing_profile}};
+      Subscriber<Bytes> sub(DdsConf("dds/profile/failed_listen", 66, ext));
+      auto lifetime = std::make_shared<int>(0);
+      std::weak_ptr<int> weak_lifetime = lifetime;
+      CHECK_FALSE(sub.listen([lifetime](const Bytes&) {}));
+      lifetime.reset();
+      CHECK(weak_lifetime.expired());
+    }
+
+    SUBCASE("writer creation failure rejects publication") {
+      DdsConf::PropertiesMap ext{{"writer", missing_profile}};
+      Publisher<Bytes> pub(DdsConf("dds/profile/failed_publish", 65, ext));
+      CHECK_FALSE(pub.publish(Bytes{0x01}, true));
+    }
+
+    SUBCASE("getter reader failure rolls back initialization") {
+      DdsConf::PropertiesMap ext{{"reader", missing_profile}};
+      Getter<Bytes> getter(DdsConf("dds/profile/failed_getter", 67, ext), InitType::kWithoutInit);
+      CHECK(getter.listen([](const Bytes&) {}));
+      CHECK_FALSE(getter.init());
+      CHECK_FALSE(getter.has_inited());
+      CHECK_FALSE(getter.init());
+      CHECK_FALSE(getter.has_inited());
+      CHECK_FALSE(getter.deinit());
+    }
+
+    SUBCASE("response server requires a writer and releases rejected callbacks") {
+      DdsConf::PropertiesMap ext{{"writer", missing_profile}};
+      Server<Bytes, Bytes> server(DdsConf("dds/profile/failed_server", 68, ext));
+      auto lifetime = std::make_shared<int>(0);
+      std::weak_ptr<int> weak_lifetime = lifetime;
+      CHECK_FALSE(server.listen([lifetime](const Bytes&, Bytes&) {}));
+      lifetime.reset();
+      CHECK(weak_lifetime.expired());
+      CHECK_FALSE(server.listen([](const Bytes&, Bytes&) {}));
+      CHECK_FALSE(server.listen_for_reply([](uint64_t, const Bytes&) {}));
+    }
+
+    SUBCASE("fire and forget server does not require a writer") {
+      DdsConf::PropertiesMap ext{{"writer", missing_profile}};
+      Server<Bytes> server(DdsConf("dds/profile/no_response_writer", 69, ext));
+      CHECK(server.listen([](const Bytes&) {}));
+    }
+  }
+
   TEST_CASE("missing per-entity profiles keep wrapper lifecycle stable") {
     const std::string missing_profile = "__vlink_missing_fastdds_profile__";
     auto check_lifecycle = [](auto& node) {
@@ -1132,6 +1181,30 @@ TEST_SUITE("dds-method") {
       CHECK_FALSE(client.invoke(7, resp, 300ms));
       CHECK_EQ(handled.load(std::memory_order_acquire), 1);
     }
+
+    {
+      std::atomic<int> decrypt_count{0};
+      auto cfg = client_decrypt_fail_cfg();
+      cfg.decrypt_callback = [&](const Bytes&, Bytes&) {
+        decrypt_count.fetch_add(1, std::memory_order_relaxed);
+        return false;
+      };
+
+      SecurityServer<Bytes, Bytes> server(DdsConf("dds/mth/sec_bad_bytes_resp"), identity_cfg());
+      REQUIRE(server.listen([](const Bytes& req, Bytes& resp) { resp = req; }));
+
+      SecurityClient<Bytes, Bytes> client("dds://dds/mth/sec_bad_bytes_resp", std::move(cfg));
+      REQUIRE(client.wait_for_connected(kDdsDiscoveryTimeout));
+
+      const Bytes request{0x11, 0x22};
+      Bytes response{0xAB};
+      CHECK_FALSE(client.invoke(request, response, 1s));
+      CHECK_EQ(decrypt_count.load(std::memory_order_relaxed), 1);
+      REQUIRE_EQ(response.size(), 1u);
+      CHECK_EQ(response[0], 0xABu);
+      CHECK_FALSE(client.invoke(request, 1s).has_value());
+      CHECK_EQ(decrypt_count.load(std::memory_order_relaxed), 2);
+    }
   }
 
   TEST_CASE("custom serialization failures stop client and server rpc paths") {
@@ -1288,6 +1361,44 @@ TEST_SUITE("dds-method") {
 }
 
 TEST_SUITE("dds-field") {
+  TEST_CASE("a publisher marked as a setter reaches late getters") {
+    const std::string topic = "dds://dds/review/marked_publisher";
+    Publisher<int> publisher(topic, InitType::kWithoutInit);
+    publisher.mark_as_setter();
+    REQUIRE(publisher.init());
+    REQUIRE(publisher.publish(42, true));
+
+    Getter<int> getter(topic);
+    REQUIRE(getter.wait_for_value(3s));
+    CHECK(getter.get() == std::optional<int>(42));
+  }
+
+  TEST_CASE("marked subscribers use the role captured at init") {
+    const std::string topic = "dds://dds/review/marked_subscriber";
+    std::atomic<int> received{0};
+    Subscriber<int> subscriber(topic, InitType::kWithoutInit);
+
+    SUBCASE("mark before init receives a cached field value") {
+      Setter<int> setter(topic);
+      setter.set(42);
+      subscriber.mark_as_getter();
+      REQUIRE(subscriber.init());
+      REQUIRE(subscriber.listen([&](const int& value) { received.store(value, std::memory_order_release); }));
+      CHECK(common_test::wait_until([&] { return received.load(std::memory_order_acquire) == 42; }, 3s));
+    }
+
+    SUBCASE("mark after init preserves event reception even before listen") {
+      Publisher<int> publisher(topic);
+      REQUIRE(subscriber.init());
+      subscriber.mark_as_getter();
+      CHECK_FALSE(subscriber.init());
+      REQUIRE(subscriber.listen([&](const int& value) { received.store(value, std::memory_order_release); }));
+      REQUIRE(publisher.wait_for_subscribers(3s));
+      REQUIRE(publisher.publish(43));
+      CHECK(common_test::wait_until([&] { return received.load(std::memory_order_acquire) == 43; }, 3s));
+    }
+  }
+
   TEST_CASE("setter and getter exchange values via all access patterns") {
     MESSAGE("[dds-field] setter and getter exchange values via all access patterns");
 
@@ -1390,20 +1501,27 @@ TEST_SUITE("dds-field") {
     }
   }
 
-  TEST_CASE("setter set before init is cached without breaking later writes") {
-    MESSAGE("[dds-field] setter set before init is cached without breaking later writes");
+  TEST_CASE("setter seeds cached values into native history after init and reinit") {
+    MESSAGE("[dds-field] setter seeds cached values into native history after init and reinit");
 
     Setter<int> setter(DdsConf("dds/fld/deferred_snapshot"), InitType::kWithoutInit);
     Getter<int> getter("dds://dds/fld/deferred_snapshot");
 
     setter.set(1234);
     REQUIRE(setter.init());
-    setter.set(5678);
 
-    CHECK(getter.wait_for_value(kDdsDiscoveryTimeout));
-    auto val = getter.get();
-    REQUIRE(val.has_value());
-    CHECK_EQ(*val, 5678);
+    REQUIRE(getter.wait_for_value(kDdsDiscoveryTimeout));
+    CHECK_EQ(getter.get(), std::optional<int>(1234));
+
+    REQUIRE(setter.deinit());
+    setter.set(5678);
+    REQUIRE(setter.init());
+
+    REQUIRE(common_test::wait_until([&] { return getter.get() == std::optional<int>(5678); }, kDdsDiscoveryTimeout));
+
+    Getter<int> late_getter("dds://dds/fld/deferred_snapshot");
+    REQUIRE(late_getter.wait_for_value(kDdsDiscoveryTimeout));
+    CHECK_EQ(late_getter.get(), std::optional<int>(5678));
   }
 
   TEST_CASE("invalid raw bytes are dropped before typed getter state updates") {
@@ -1822,6 +1940,7 @@ TEST_SUITE("dds-qos") {
     pub.set_property("dds.udp", "1");
     pub.set_property("dds.tcp", "0");
     pub.set_property("dds.shm", "0");
+    pub.set_property("dds.noblock", "1");
     pub.set_property("dds.less_memory", "1");
     pub.set_property("dds.user.test", "value");
 

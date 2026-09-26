@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 import tempfile
+import uuid
 import weakref
 
 os.environ["VLINK_DISCOVER_DISABLE"] = "1"
@@ -188,8 +189,7 @@ def test_logger_extended():
     assert level == _vlink.LogLevel.Info
     assert type(level) is type(_vlink.LogLevel.Info)
     assert "custom handler test" in message
-    # Restore default by registering None-like handler
-    _vlink.Logger.register_console_handler(lambda lv, msg: None)
+    _vlink.Logger.register_console_handler(None)
 
     replacement_check = r'''
 import ctypes
@@ -215,18 +215,31 @@ vlink.Logger.register_console_handler(lambda level, message: None)
 worker.join(2.0)
 assert not worker.is_alive()
 
-self_error = []
+replaced = []
 
 def self_replacing_handler(level, message):
-    try:
-        vlink.Logger.register_console_handler(lambda inner_level, inner_message: None)
-    except RuntimeError as exc:
-        self_error.append(str(exc))
+    replaced.append(message)
+    vlink.Logger.register_console_handler(None)
 
 vlink.Logger.register_console_handler(self_replacing_handler)
 vlink.log_info("self replacement")
-assert self_error and "active logger callback" in self_error[0]
-vlink.Logger.register_console_handler(lambda level, message: None)
+assert replaced == ["self replacement"]
+vlink.Logger.set_console_level(vlink.LogLevel.Off)
+vlink.Logger.set_file_level(vlink.LogLevel.Info)
+vlink.Logger.enable_backtrace(4)
+vlink.log_info("python backtrace retained")
+vlink.Logger.flush()
+replayed = []
+
+def replay_handler(level, message):
+    replayed.append(message)
+    vlink.Logger.disable_backtrace()
+
+vlink.Logger.register_console_handler(replay_handler)
+vlink.Logger.set_console_level(vlink.LogLevel.Info)
+vlink.Logger.dump_backtrace()
+assert any("python backtrace retained" in message for message in replayed)
+vlink.Logger.register_console_handler(None)
 '''
     subprocess.run(
         [sys.executable, "-c", replacement_check],
@@ -237,6 +250,137 @@ vlink.Logger.register_console_handler(lambda level, message: None)
     )
 
     print("[PASS] Logger extended")
+
+
+def test_logger_handler_reset():
+    """Removing handlers restores native output and releases Python captures."""
+    code = r'''
+import gc
+import pathlib
+import sys
+import weakref
+import vlink
+
+class Handler:
+    def __call__(self, level, message):
+        pass
+
+directory = sys.argv[1]
+vlink.Logger.init("handler_reset", directory)
+vlink.Logger.set_console_level(vlink.LogLevel.Info)
+vlink.Logger.set_file_level(vlink.LogLevel.Info)
+vlink.log_info("native-handler-baseline")
+vlink.Logger.flush()
+log_files = [path for path in pathlib.Path(directory).rglob("*")
+             if path.is_file() and b"native-handler-baseline" in path.read_bytes()]
+for register in (vlink.Logger.register_console_handler, vlink.Logger.register_file_handler):
+    handler = Handler()
+    ref = weakref.ref(handler)
+    register(handler)
+    del handler
+    assert ref() is not None
+    register(None)
+    gc.collect()
+    assert ref() is None
+    try:
+        register(42)
+        assert False, "non-callable handlers must be rejected"
+    except TypeError:
+        pass
+vlink.log_info("native-handler-restored")
+vlink.Logger.flush()
+assert all(b"native-handler-restored" in path.read_bytes() for path in log_files)
+'''
+    with tempfile.TemporaryDirectory() as directory:
+        result = subprocess.run(
+            [sys.executable, "-c", code, directory], check=True, capture_output=True, text=True, timeout=10.0,
+        )
+    assert "native-handler-restored" in result.stdout + result.stderr
+    print("[PASS] Logger handler reset")
+
+
+def test_logger_concurrent_handler_replacement():
+    """Concurrent registrations retain only the installed handler."""
+    code = r'''
+import gc
+import sys
+import threading
+import weakref
+import vlink
+
+vlink.Logger.init("concurrent_handlers", sys.argv[1])
+sys.setswitchinterval(0.00001)
+unraisable = []
+sys.unraisablehook = unraisable.append
+for register, level in (
+    (vlink.Logger.register_console_handler, vlink.Logger.set_console_level),
+    (vlink.Logger.register_file_handler, vlink.Logger.set_file_level),
+):
+    vlink.Logger.set_console_level(vlink.LogLevel.Off)
+    vlink.Logger.set_file_level(vlink.LogLevel.Off)
+    level(vlink.LogLevel.Info)
+    refs = [None] * 4
+    received = []
+    barrier = threading.Barrier(5, timeout=10.0)
+
+    class Handler:
+        def __init__(self, index):
+            self.index = index
+            refs[index] = weakref.ref(self)
+
+        def __call__(self, log_level, message):
+            received.append(self.index)
+
+    def replace(index):
+        for iteration in range(500):
+            barrier.wait()
+            if iteration % 2 and index % 2:
+                refs[index] = None
+                register(None)
+            else:
+                register(Handler(index))
+            barrier.wait()
+
+    workers = [threading.Thread(target=replace, args=(index,), daemon=True)
+               for index in range(4)]
+    for worker in workers:
+        worker.start()
+    for iteration in range(500):
+        barrier.wait()
+        barrier.wait()
+        received.clear()
+        vlink.log_info("installed-handler")
+        assert len(received) <= 1, received
+        live = [index for index, ref in enumerate(refs) if ref is not None and ref() is not None]
+        assert live == received, (iteration, live, received)
+        register(None)
+        assert all(ref is None or ref() is None for ref in refs)
+    for worker in workers:
+        worker.join(2.0)
+        assert not worker.is_alive()
+
+    class ReentrantFinalizer:
+        def __call__(self, log_level, message):
+            pass
+
+        def __del__(self):
+            register(None)
+
+    handler = ReentrantFinalizer()
+    ref = weakref.ref(handler)
+    register(handler)
+    del handler
+    register(None)
+    gc.collect()
+    assert ref() is None
+assert not unraisable, unraisable
+'''
+    with tempfile.TemporaryDirectory() as directory:
+        subprocess.run(
+            [sys.executable, "-c", code, directory], check=True,
+            capture_output=True, text=True, timeout=30.0,
+        )
+    print("[PASS] Logger concurrent handler replacement")
 
 
 def test_memory_resource_export():
@@ -344,6 +488,54 @@ def test_message_loop_extended():
     loop.quit()
     loop.wait_for_quit(2000)
     print("[PASS] MessageLoop extended")
+
+
+def test_message_loop_blocking_submission():
+    """A full Block queue must leave the GIL available to Python consumers."""
+    code = r'''
+import sys
+import threading
+import vlink
+
+mode = sys.argv[1]
+loop_type = vlink.MessageLoopType.Priority if mode == "priority" else vlink.MessageLoopType.Normal
+loop = vlink.MessageLoop(loop_type)
+loop.set_strategy(vlink.MessageLoopStrategy.Block)
+entered = threading.Event()
+gate = threading.Event()
+finished = threading.Event()
+
+def hold_consumer():
+    entered.set()
+    assert gate.wait(5.0)
+
+if mode == "priority":
+    submit = lambda callback: loop.post_task_with_priority(callback, vlink.TaskPriority.Highest)
+elif mode == "exec":
+    submit = lambda callback: loop.exec_task(0, callback)
+else:
+    submit = loop.post_task
+
+assert loop.async_run()
+assert submit(hold_consumer)
+assert entered.wait(2.0)
+capacity = loop.get_max_task_count()
+for _ in range(capacity):
+    assert submit(lambda: None)
+assert loop.get_task_count() == capacity
+timer = threading.Timer(0.1, gate.set)
+timer.start()
+assert submit(finished.set)
+assert finished.wait(5.0)
+timer.join()
+loop.quit()
+assert loop.wait_for_quit(2000)
+'''
+    for mode in ("normal", "priority", "exec"):
+        subprocess.run(
+            [sys.executable, "-c", code, mode], check=True, capture_output=True, text=True, timeout=10.0,
+        )
+    print("[PASS] MessageLoop blocking submission")
 
 
 def test_timer_extended():
@@ -504,6 +696,8 @@ gc.collect()
 timer.start()
 assert done.wait(2.0)
 assert process.wait_for_finished(3000)
+process = None
+gc.collect()
 '''
     subprocess.run(
         [sys.executable, "-c", lifetime_check],
@@ -511,6 +705,68 @@ assert process.wait_for_finished(3000)
         capture_output=True,
         text=True,
         timeout=10.0,
+    )
+
+    replacement_check = r'''
+import threading
+import vlink
+
+for phase in ("idle", "pending", "completed"):
+    entered = threading.Event()
+    run_gate = threading.Event()
+    destroying = threading.Event()
+    destroy_gate = threading.Event()
+    destroyed = threading.Event()
+
+    class Callback:
+        def __call__(self):
+            entered.set()
+            assert run_gate.wait(5.0)
+
+        def __del__(self):
+            destroying.set()
+            destroy_gate.wait(5.0)
+            destroyed.set()
+
+    loop = vlink.MessageLoop()
+    timer = vlink.Timer(loop, 1, 1)
+    worker = None
+    if phase == "pending":
+        timer.set_callback(lambda: (entered.set(), run_gate.wait(5.0)))
+    else:
+        timer.set_callback(Callback())
+    if phase != "idle":
+        assert loop.async_run()
+        timer.start()
+        assert entered.wait(5.0)
+    if phase == "pending":
+        timer.set_callback(Callback())
+    if phase == "completed":
+        timer.set_callback(lambda: None)
+        run_gate.set()
+    else:
+        worker = threading.Thread(target=lambda: timer.set_callback(lambda: None))
+        worker.start()
+    assert destroying.wait(5.0)
+    timer.restart()
+    destroy_gate.set()
+    run_gate.set()
+    assert destroyed.wait(5.0)
+    if worker is not None:
+        worker.join(5.0)
+        assert not worker.is_alive()
+    timer.stop()
+    if phase != "idle":
+        assert loop.quit()
+        assert loop.wait_for_quit(5000)
+    del timer, loop
+'''
+    subprocess.run(
+        [sys.executable, "-c", replacement_check],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=20.0,
     )
 
     # TIMER_INFINITE constant
@@ -868,19 +1124,28 @@ import threading
 import vlink
 
 done = threading.Event()
+destroyed = threading.Event()
+allow_delete = threading.Event()
 process = None
 
-def callback():
-    global process
-    process = None
-    gc.collect()
-    done.set()
+class Callback:
+    def __call__(self):
+        global process
+        assert allow_delete.wait(2.0)
+        process = None
+        gc.collect()
+        done.set()
+
+    def __del__(self):
+        destroyed.set()
 
 child_code = "import time\nprint('ready', flush=True)\ntime.sleep(60)"
 process = vlink.Process()
-process.register_ready_read_stdout_callback(callback)
+process.register_ready_read_stdout_callback(Callback())
 process.start(sys.executable, ["-u", "-c", child_code])
+allow_delete.set()
 assert done.wait(2.0)
+assert destroyed.wait(2.0)
 '''
     subprocess.run(
         [sys.executable, "-c", self_delete_check],
@@ -889,6 +1154,45 @@ assert done.wait(2.0)
         text=True,
         timeout=4.0,
     )
+
+    restart_check = r'''
+import sys
+import threading
+import vlink
+
+entered = threading.Event()
+returned = threading.Event()
+allow_return = threading.Event()
+
+def finished(code, status):
+    entered.set()
+    allow_return.wait(5.0)
+    returned.set()
+
+process = vlink.Process()
+process.register_finished_callback(finished)
+process.start(sys.executable, ["-c", "pass"])
+assert entered.wait(5.0)
+threading.Timer(0.1, allow_return.set).start()
+if sys.argv[1] == "start":
+    process.start(sys.executable, ["-c", "pass"])
+else:
+    command = '"' + sys.executable.replace('\\', '\\\\').replace('"', '\\"') + '" -c pass'
+    process.start_command(command)
+assert returned.is_set()
+assert process.wait_for_finished(5000)
+process.close()
+assert process.get_exit_code() == 0
+process = None
+'''
+    for method in ("start", "start_command"):
+        subprocess.run(
+            [sys.executable, "-c", restart_check, method],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15.0,
+        )
 
     print("[PASS] Process")
 
@@ -1182,7 +1486,16 @@ assert loop.wait_for_quit(2000)
 
 loop = vlink.MessageLoop()
 ended = threading.Event()
-loop.register_end_handler(ended.set)
+released = threading.Event()
+
+class EndHandler:
+    def __call__(self):
+        ended.set()
+
+    def __del__(self):
+        released.set()
+
+loop.register_end_handler(EndHandler())
 assert loop.async_run()
 holder = [vlink.Publisher("dds://python/node-loop-delete", auto_init=False)]
 assert holder[0].attach(loop)
@@ -1198,6 +1511,7 @@ loop = None
 gc.collect()
 assert done.wait(2.0)
 assert ended.wait(2.0)
+assert released.wait(2.0)
 '''
     subprocess.run(
         [sys.executable, "-c", node_loop_lifetime_check],
@@ -1606,7 +1920,61 @@ def test_security_set_callbacks():
     assert encrypted is not None and encrypted != plain
     decrypted = sec.decrypt(encrypted)
     assert decrypted == plain
-    print("[PASS] Security callbacks")
+
+    concurrent_check = r'''
+import sys
+import threading
+import vlink
+
+sys.setswitchinterval(60.0)
+for method in ("encrypt", "decrypt", "is_configured", "can_encrypt", "can_decrypt"):
+    entered = threading.Event()
+    release = threading.Event()
+    armed = threading.Event()
+    completed = []
+
+    def callback(data):
+        if data == b"first":
+            entered.set()
+            assert release.wait(5.0)
+        return data
+
+    cfg = vlink.SecurityConfig()
+    cfg.encrypt_callback = callback
+    cfg.decrypt_callback = callback
+    sec = vlink.Security(cfg)
+    worker = threading.Thread(target=lambda: completed.append(sec.encrypt(b"first")))
+    worker.start()
+    assert entered.wait(5.0)
+    payload = bytearray(b"second")
+
+    def unblock():
+        assert armed.wait(5.0)
+        payload[:] = b"change"
+        release.set()
+
+    unblocker = threading.Thread(target=unblock)
+    unblocker.start()
+    armed.set()
+    if method in ("encrypt", "decrypt"):
+        assert getattr(sec, method)(payload) == b"second"
+    else:
+        assert getattr(sec, method)()
+    worker.join(5.0)
+    unblocker.join(5.0)
+    assert not worker.is_alive()
+    assert completed == [b"first"]
+    sec = None
+    cfg = None
+'''
+    subprocess.run(
+        [sys.executable, "-c", concurrent_check],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=20.0,
+    )
+    print("[PASS] Security callbacks (concurrency / mutable input)")
 
 
 def test_server_async_reply():
@@ -1794,7 +2162,77 @@ def test_discovery_viewer_fields():
     addr = _vlink.DiscoveryViewer.get_listen_address()
     assert isinstance(addr, str)
 
+    # Test get_listen_domain / get_listen_port
+    domain = _vlink.DiscoveryViewer.get_listen_domain()
+    assert isinstance(domain, int)
+    assert 0 <= domain <= 255
+    assert _vlink.DiscoveryViewer.get_listen_port() == 51600 + domain
+
     print("[PASS] DiscoveryViewer fields")
+
+
+def test_discovery_viewer_lifecycle():
+    """A running Python viewer receives real endpoint announcements."""
+    code = r'''
+import os
+import threading
+import vlink
+
+url = "intra://python/discovery/" + str(os.getpid())
+viewer = vlink.DiscoveryViewer()
+assert isinstance(viewer, vlink.MessageLoop)
+seen = threading.Event()
+viewer.register_callback(lambda infos: seen.set() if any(info.url == url for info in infos) else None)
+assert viewer.async_run()
+assert viewer.is_running()
+publisher = vlink.Publisher(url, ser_type="raw", auto_init=False)
+publisher.set_discovery_enabled(True)
+publisher.init()
+try:
+    assert seen.wait(8.0), "viewer did not receive the endpoint announcement"
+    assert any(info.url == url and info.process_list for info in viewer.get_info_list())
+    assert viewer.get_ser_type(url) == "raw"
+finally:
+    publisher.deinit()
+    viewer.quit()
+    assert viewer.wait_for_quit(2000)
+assert not viewer.is_running()
+viewer = None
+publisher = None
+'''
+    env = dict(os.environ, VLINK_DISCOVER_DISABLE="0")
+    subprocess.run(
+        [sys.executable, "-c", code], env=env, check=True, capture_output=True, text=True, timeout=15.0,
+    )
+    print("[PASS] DiscoveryViewer lifecycle")
+
+
+def test_discovery_domain_shifts_listen_port():
+    """VLINK_DISCOVER_DOMAIN shifts the listen port and falls back to 0 when invalid."""
+    code = r'''
+import sys
+import vlink
+
+expected = int(sys.argv[1])
+assert vlink.DiscoveryViewer.get_listen_domain() == expected, vlink.DiscoveryViewer.get_listen_domain()
+assert vlink.DiscoveryViewer.get_listen_port() == 51600 + expected, vlink.DiscoveryViewer.get_listen_port()
+assert vlink.DiscoveryViewer.get_listen_address() == "239.255.0.100"
+'''
+    cases = [("7", 7), ("0", 0), ("255", 255), ("256", 0), ("-1", 0), ("abc", 0), ("1 ", 0), ("", 0)]
+
+    for value, expected in cases:
+        env = dict(os.environ, VLINK_DISCOVER_DOMAIN=value, VLINK_DISCOVER_DISABLE="1")
+        try:
+            subprocess.run(
+                [sys.executable, "-c", code, str(expected)], env=env, check=True,
+                capture_output=True, text=True, timeout=15.0,
+            )
+        except subprocess.CalledProcessError as error:
+            raise AssertionError(
+                f"VLINK_DISCOVER_DOMAIN={value!r} expected domain {expected}: {error.stderr}"
+            ) from error
+
+    print("[PASS] DiscoveryViewer domain port shift")
 
 
 def test_plugin_host_binding_contract():
@@ -1805,6 +2243,9 @@ def test_plugin_host_binding_contract():
     assert config.max_dump_file_count == 10
     assert config.retention_guard_ms == 500
     assert config.enable_compress is False
+    assert config.enable_chunk_crc is False
+    config.enable_chunk_crc = True
+    assert config.enable_chunk_crc is True
     assert config.overflow == _vlink.TriggerRecorder.OverflowPolicy.DropNewest
     assert not hasattr(config, "dds_ip")
     assert not hasattr(config, "bag_plugin_lib")
@@ -1976,6 +2417,11 @@ def test_api_surface():
 
     assert hasattr(_vlink.BagWriter.Config, "ignore_compress_urls")
     assert hasattr(_vlink.BagWriter.Config, "sync_mode")
+    writer_config = _vlink.BagWriter.Config()
+    assert writer_config.enable_chunk_crc is False
+    writer_config.enable_chunk_crc = True
+    assert writer_config.enable_chunk_crc is True
+    assert hasattr(_vlink.BagWriter.Config, "max_split_count")
     for method in (
         "register_schema_callback", "push_schema", "close", "fail", "clear", "__lshift__", "wait_for_idle",
     ):
@@ -2032,6 +2478,222 @@ def test_node_role_swaps():
     getter.init()
     getter.deinit()
     print("[PASS] Publisher/Subscriber/Setter/Getter role swaps")
+
+
+def test_explicit_loan_transfer():
+    url = f"shm2://py_loan_{uuid.uuid4().hex}?event=data#512"
+    try:
+        pub = _vlink.Publisher(url, auto_init=False)
+    except RuntimeError as exc:
+        if f"Unsupported url[{url}]." not in str(exc):
+            raise
+        print("[SKIP] explicit loan transfer (SHM2 unavailable)")
+        return
+
+    sub = _vlink.Subscriber(url, auto_init=False)
+    received = []
+    event = threading.Event()
+    try:
+        assert pub.init()
+        loan = pub.loan(1)
+        assert loan.is_loaned()
+        assert not pub.publish(loan)
+        assert loan.is_loaned() and loan.size() == 1
+        assert pub.return_loan(loan)
+        loan.clear()
+
+        assert sub.init()
+        assert sub.listen(lambda data: (received.append(bytes(data)), event.set()))
+        assert pub.wait_for_subscribers(2000)
+        loan = pub.loan(1)
+        assert loan.is_loaned()
+        view = memoryview(loan)
+        view[0] = 42
+        try:
+            try:
+                pub.publish(loan)
+                assert False, "sending an exported loan must fail"
+            except BufferError:
+                pass
+            assert loan.is_loaned() and loan.size() == 1
+        finally:
+            view.release()
+        assert pub.publish(loan)
+        assert loan.empty()
+        assert event.wait(2)
+        assert received == [b"*"]
+
+        event.clear()
+        loan = pub.loan(1)
+        assert loan.is_loaned()
+        with memoryview(loan) as view:
+            view[0] = 43
+        assert pub.publish_fbb(loan)
+        assert loan.empty()
+        assert event.wait(2)
+        assert received == [b"*", b"+"]
+    finally:
+        pub.deinit()
+        sub.deinit()
+
+    url = f"shm2://py_loan_{uuid.uuid4().hex}?event=call#512"
+    server = _vlink.Server(url, auto_init=False)
+    client = _vlink.Client(url, auto_init=False)
+    replies = []
+
+    def reply(data):
+        if not replies:
+            rejected = server.loan(1)
+            assert rejected.is_loaned()
+            try:
+                server.reply(0, rejected)
+                assert False, "explicit reply in synchronous mode must fail"
+            except RuntimeError:
+                pass
+            assert rejected.empty()
+        loan = server.loan(1)
+        assert loan.is_loaned()
+        with memoryview(loan) as view:
+            view[0] = data[0] + 1
+        replies.append(loan)
+        return loan
+
+    try:
+        assert server.init()
+        assert server.listen(reply)
+        assert client.init()
+        assert client.wait_for_connected(2000)
+        for mode in ("sync", "callback", "future") * 16:
+            request = client.loan(1)
+            assert request.is_loaned()
+            with memoryview(request) as view:
+                view[0] = 42
+            if mode == "sync":
+                assert client.invoke(request, timeout_ms=2000) == b"+"
+            elif mode == "callback":
+                received = []
+                event.clear()
+                assert client.invoke_async(request, lambda data: (received.append(bytes(data)), event.set()))
+                assert event.wait(2)
+                assert received == [b"+"]
+            else:
+                assert client.async_invoke(request).result(timeout=2) == b"+"
+            assert request.empty()
+            assert replies[-1].empty()
+    finally:
+        client.deinit()
+        server.deinit()
+    print("[PASS] explicit loan transfer and exported-view protection")
+
+
+def test_implicit_recording_roles():
+    probe_url = f"shm2://py_role_{uuid.uuid4().hex}?event=value#512"
+    try:
+        probe = _vlink.Publisher(probe_url, auto_init=False)
+    except RuntimeError as exc:
+        if f"Unsupported url[{probe_url}]." not in str(exc):
+            raise
+        print("[SKIP] implicit recording roles (SHM2 unavailable)")
+        return
+    del probe
+
+    cases = (
+        ("plain", False),
+        ("before_init", True),
+        ("after_init", False),
+        ("duplicate_init", False),
+        ("reinit", True),
+        ("native_reverse", True),
+    )
+    for suffix in (".vdb", ".vcap"):
+        for mode, field in cases:
+            with tempfile.TemporaryDirectory() as directory:
+                path = os.path.join(directory, "roles" + suffix)
+                url = f"shm2://py_role_{uuid.uuid4().hex}?event=value#512"
+                native = mode == "native_reverse"
+                sender_type = _vlink.Setter if native else _vlink.Publisher
+                receiver_type = _vlink.Getter if native else _vlink.Subscriber
+                sender = sender_type(url, ser_type="raw", auto_init=False)
+                receiver = receiver_type(url, ser_type="raw", auto_init=False)
+                writer = None
+
+                def mark():
+                    if native:
+                        sender.mark_as_publisher()
+                        receiver.mark_as_subscriber()
+                    else:
+                        sender.mark_as_setter()
+                        receiver.mark_as_getter()
+
+                try:
+                    for node in (sender, receiver):
+                        node.set_discovery_enabled(False)
+                        node.set_safety_quit(True)
+
+                    if mode in ("before_init", "native_reverse"):
+                        mark()
+                    assert sender.init()
+                    assert receiver.init()
+
+                    if mode in ("after_init", "duplicate_init", "reinit"):
+                        mark()
+                    if mode == "duplicate_init":
+                        assert not sender.init()
+                        assert not receiver.init()
+                    elif mode == "reinit":
+                        assert sender.deinit()
+                        assert receiver.deinit()
+                        assert sender.init()
+                        assert receiver.init()
+
+                    writer = _vlink.BagWriter.filter_get(path)
+                    assert writer is not None
+                    sender.set_record_path(path)
+                    receiver.set_record_path(path)
+                    payload = b"role-regression"
+                    received = threading.Event()
+                    assert receiver.listen(lambda data: received.set() if data == payload else None)
+
+                    deadline = time.monotonic() + 5.0
+                    while not received.is_set() and time.monotonic() < deadline:
+                        if native:
+                            sender.set(payload)
+                        else:
+                            assert sender.publish(payload, force=True)
+                        received.wait(0.02)
+                    assert received.is_set(), (mode, suffix)
+                finally:
+                    sender.deinit()
+                    receiver.deinit()
+                    sender.set_record_path("")
+                    receiver.set_record_path("")
+                    if writer is not None:
+                        assert writer.wait_for_idle(5000)
+                        writer.quit()
+                        assert writer.wait_for_quit(5000)
+                        writer.close()
+                        assert not writer.fail()
+
+                reader = _vlink.BagReader.create(path, read_only=True)
+                assert reader is not None
+                assert reader.open_cursor()
+                frames = list(reader)
+                assert reader.eof()
+                assert not reader.fail()
+                assert frames
+                assert all(frame.data == payload for frame in frames)
+                expected = (
+                    {_vlink.ActionType.Set, _vlink.ActionType.Get} if field else
+                    {_vlink.ActionType.Publish, _vlink.ActionType.Subscribe}
+                )
+                assert {frame.action_type for frame in frames} == expected, (mode, suffix)
+                metas = reader.get_info().url_metas
+                assert metas
+                assert all(meta.url_type == ("Field" if field else "Event") for meta in metas)
+                if suffix == ".vcap":
+                    assert {meta.action_type for meta in metas} == expected
+                del metas, reader, writer, sender, receiver
+    print("[PASS] implicit recording roles (init boundaries / VDB / VCAP)")
 
 
 def test_security_node_bindings():
@@ -2161,10 +2823,13 @@ if __name__ == "__main__":
 
     test_bytes_extended()
     test_logger_extended()
+    test_logger_handler_reset()
+    test_logger_concurrent_handler_replacement()
     test_memory_resource_export()
     test_elapsed_timer_extended()
     test_deadline_timer_extended()
     test_message_loop_extended()
+    test_message_loop_blocking_submission()
     test_timer_extended()
     test_wheel_timer_extended()
     test_thread_pool_extended()
@@ -2192,6 +2857,8 @@ if __name__ == "__main__":
     test_exec_task()
     test_timer_constructors()
     test_discovery_viewer_fields()
+    test_discovery_viewer_lifecycle()
+    test_discovery_domain_shifts_listen_port()
     test_plugin_host_binding_contract()
     test_trigger_recorder_lifecycle()
     test_utils_terminal()
@@ -2199,6 +2866,8 @@ if __name__ == "__main__":
     test_node_wire_meta_validation()
     test_node_extended()
     test_node_role_swaps()
+    test_explicit_loan_transfer()
+    test_implicit_recording_roles()
     test_security_node_bindings()
     test_schema_data_and_version()
     test_log_fatal()

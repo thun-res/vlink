@@ -247,7 +247,7 @@ void FFmpegDecoder::post_data(int channel, int seq, const vlink::Bytes& raw_data
       while (avcodec_receive_frame(impl_->codec_ctx, impl_->in_frame) == 0) {
         src_frame = impl_->in_frame;
 
-        if (impl_->codec_ctx->hw_device_ctx) {
+        if (impl_->in_frame->hw_frames_ctx) {
           ret = av_hwframe_transfer_data(impl_->hw_frame, impl_->in_frame, 0);
 
           if VUNLIKELY (ret != 0) {

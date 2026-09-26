@@ -807,7 +807,8 @@ int DdsFactory::get_default_domain_id() {
 }
 
 void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const Conf::PropertiesMap& properties) {
-  static const std::string& ip_str = Utils::get_env("VLINK_DDS_IP");
+  static const std::string& discovery_ip_str = Utils::get_env("VLINK_DISCOVER_IP");
+  static const std::string& ip_str = Utils::get_env("VLINK_DDS_IP", discovery_ip_str);
   static const std::string& ip_multicast_str = Utils::get_env("VLINK_DDS_MULTICAST_IP");
   static const std::string& peer_str = Utils::get_env("VLINK_DDS_PEER");
   static const std::string& buf_str = Utils::get_env("VLINK_DDS_BUF");
@@ -816,6 +817,7 @@ void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
   static bool enable_udp = Helpers::to_int(Utils::get_env("VLINK_DDS_UDP"), 1) != 0;
   static bool enable_tcp = Helpers::to_int(Utils::get_env("VLINK_DDS_TCP"), 0) != 0;
   static bool enable_shm = Helpers::to_int(Utils::get_env("VLINK_DDS_SHM"), 0) != 0;
+  static bool enable_noblock = Helpers::to_int(Utils::get_env("VLINK_DDS_NOBLOCK"), 0) != 0;
 
   static bool enable_less_memory = Helpers::to_int(Utils::get_env("VLINK_DDS_LESS_MEMORY"), 0) != 0;
 
@@ -831,6 +833,7 @@ void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
   bool prop_enable_udp = enable_udp;
   bool prop_enable_tcp = enable_tcp;
   [[maybe_unused]] bool prop_enable_shm = enable_shm;
+  bool prop_enable_noblock = enable_noblock;
   [[maybe_unused]] bool prop_enable_less_memory = enable_less_memory;
 
   if (!buf_str.empty()) {
@@ -862,6 +865,8 @@ void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
       prop_enable_tcp = (value == "1");
     } else if (prop == "dds.shm") {
       prop_enable_shm = (value == "1");
+    } else if (prop == "dds.noblock") {
+      prop_enable_noblock = (value == "1");
     } else if (prop == "dds.less_memory") {
       prop_enable_less_memory = (value == "1");
     } else {
@@ -946,8 +951,8 @@ void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
   }
 
   if (!prop_ip_multicast_str.empty()) {
-    ip_str_list = Helpers::split_any(prop_ip_multicast_str);
-    rtps::LocatorList_t multicast_ip_locators = get_locators(ip_str_list);
+    const auto multicast_ip_list = Helpers::split_any(prop_ip_multicast_str);
+    rtps::LocatorList_t multicast_ip_locators = get_locators(multicast_ip_list);
 
     if (!multicast_ip_locators.empty()) {
       dds_qos.wire_protocol().default_multicast_locator_list.push_back(std::move(multicast_ip_locators));
@@ -992,6 +997,8 @@ void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
       udp_descriptor->maxMessageSize = static_cast<uint32_t>(prop_mtu);
     }
 
+    udp_descriptor->non_blocking_send = prop_enable_noblock;
+
     dds_qos.transport().user_transports.emplace_back(std::move(udp_descriptor));
   }
 
@@ -1013,6 +1020,9 @@ void DdsFactory::set_participant_qos(dds::DomainParticipantQos& dds_qos, const C
 
     tcp_descriptor->keep_alive_frequency_ms = 1000;
     tcp_descriptor->keep_alive_timeout_ms = 3000;
+#if defined(VLINK_SUPPORT_DDS_V3) || FASTRTPS_VERSION_MINOR >= 14
+    tcp_descriptor->non_blocking_send = prop_enable_noblock;
+#endif
 
     if (ssl_cfg_valid) {
       tcp_descriptor->apply_security = true;

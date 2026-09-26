@@ -80,11 +80,15 @@ bool SysSemaphore::attach(const std::string& name) {
 
 #elif defined(__APPLE__)
   (void)name;
-  impl_->handle = dispatch_semaphore_create(static_cast<int64_t>(impl_->count));
+  impl_->handle = dispatch_semaphore_create(0);
 
   if VUNLIKELY (!impl_->handle) {
     VLOG_E("SysSemaphore: dispatch_semaphore_create failed.");
     return false;
+  }
+
+  for (size_t i = 0; i < impl_->count; ++i) {
+    dispatch_semaphore_signal(impl_->handle);
   }
 
   return true;
@@ -137,6 +141,7 @@ bool SysSemaphore::detach(bool force) {
 
 #elif defined(__APPLE__)
   (void)force;
+  dispatch_release(impl_->handle);
   impl_->handle = nullptr;
   return true;
 

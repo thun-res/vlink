@@ -36,7 +36,7 @@
 | 目录 | 职责 | 对应文档 |
 | ---- | ---- | -------- |
 | `cli/` | CLI 工具:bag、bench、check、efbs、eproto、info、list、monitor、parse、trigger | `doc/10-cli-tools.md` |
-| `languages/c_api/` / `languages/python_api/` | C / Python 绑定(python:`vlink_python.cc` + `vlink.py`) | `doc/13-integration.md` |
+| `languages/c_api/` / `languages/python_api/` | C / Python 绑定(python:`vlink_python.cc` 注册入口 + 各功能 `.cc` + `vlink.py`) | `doc/13-integration.md` |
 | `proxy/` | 服务发现与代理监控 | `doc/12-observability.md` |
 | `viewer/`、`webviz/` | 可视化(Qt Viewer / Foxglove / Rerun) | `doc/11-visualization.md` |
 | `examples/` | 分主题示例(quickstart、communication、qos、security、zerocopy 等);编码专属规则见 languages/CPP.md §12 | `doc/01-started.md` |

@@ -80,6 +80,7 @@
 #include <limits>
 #include <nlohmann/json.hpp>
 #include <sstream>
+#include <stdexcept>
 #include <string_view>
 #include <system_error>
 #include <unordered_set>
@@ -132,14 +133,14 @@ static constexpr int64_t kReaderTimestampMarginUs = 10000 + 999;
 static constexpr int64_t kMaxPlaybackTimeMs = (std::numeric_limits<int64_t>::max() - kReaderTimestampMarginUs) / 1000;
 static constexpr int64_t kMaxVcapStartTimestampMs = std::numeric_limits<int64_t>::max() / 1000000;
 
-static bool check_rate_limit() {
+static bool check_rate_limit(int64_t timestamp) {
   auto& ctx = vlink::parse::ParseContext::get();
 
   if VUNLIKELY (ctx.min_output_interval_us > 0) {
-    const int64_t now = ctx.main_elapsed_timer.get();
-    const auto elapsed_us = static_cast<uint64_t>(now) - static_cast<uint64_t>(ctx.last_output_us);
+    const int64_t now = ctx.parse_for_bag ? timestamp : ctx.main_elapsed_timer.get();
 
-    if (elapsed_us < static_cast<uint64_t>(ctx.min_output_interval_us)) {
+    if (ctx.last_output_us != std::numeric_limits<int64_t>::min() &&
+        now - ctx.last_output_us < ctx.min_output_interval_us) {
       return false;
     }
 
@@ -314,6 +315,11 @@ static int stop_bag_play() {
 
 static int start_viewer(bool native_mode) {
   auto& ctx = vlink::parse::ParseContext::get();
+  std::string native_ip;
+
+  if (native_mode) {
+    native_ip = vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1");
+  }
 
   try {
     auto filter_type = native_mode ? vlink::DiscoveryViewer::kFilterNative : vlink::DiscoveryViewer::kFilterNone;
@@ -334,7 +340,8 @@ static int start_viewer(bool native_mode) {
 
   ctx.main_elapsed_timer.restart();
 
-  auto sync_subs = [native_mode](const std::vector<vlink::DiscoveryViewer::Info>& info_list) {
+  auto sync_subs = [native_mode,
+                    native_ip = std::move(native_ip)](const std::vector<vlink::DiscoveryViewer::Info>& info_list) {
     auto& sync_ctx = vlink::parse::ParseContext::get();
     std::unordered_set<std::string> current_urls;
     current_urls.reserve(info_list.size());
@@ -348,16 +355,18 @@ static int start_viewer(bool native_mode) {
         }
 
         current_urls.emplace(info.url);
+        const bool getter_semantics = (info.type & vlink::kSetter) != 0;
 
         auto sub_iter = sync_ctx.sub_urls.find(info.url);
 
         if (sub_iter != sync_ctx.sub_urls.end()) {
-          const auto current_schema_type = sub_iter->second->get_schema_type();
+          const auto current_schema_type = sub_iter->second.node->get_schema_type();
           const auto expected_schema_type =
               info.schema_type == vlink::SchemaType::kUnknown ? current_schema_type : info.schema_type;
 
-          if VUNLIKELY (sub_iter->second->get_ser_type() != info.ser_type ||
-                        current_schema_type != expected_schema_type) {
+          if VUNLIKELY (sub_iter->second.node->get_ser_type() != info.ser_type ||
+                        current_schema_type != expected_schema_type ||
+                        sub_iter->second.getter_semantics != getter_semantics) {
             sync_ctx.sub_urls.erase(sub_iter);
           } else {
             continue;
@@ -369,8 +378,12 @@ static int start_viewer(bool native_mode) {
         try {
           raw_sub = std::make_shared<RawSub>(info.url, vlink::InitType::kWithoutInit);
 
+          if (getter_semantics) {
+            raw_sub->mark_as_getter();
+          }
+
           if (native_mode) {
-            raw_sub->set_property("dds.ip", "127.0.0.1");
+            raw_sub->set_property("dds.ip", native_ip);
           }
 
           raw_sub->set_ser_type(info.ser_type, info.schema_type);
@@ -399,11 +412,11 @@ static int start_viewer(bool native_mode) {
               })) {
             continue;
           }
-        } catch (vlink::Exception::RuntimeError&) {
+        } catch (const std::runtime_error&) {
           continue;
         }
 
-        sync_ctx.sub_urls.emplace(info.url, std::move(raw_sub));
+        sync_ctx.sub_urls.emplace(info.url, vlink::parse::ParseContext::SubEntry{std::move(raw_sub), getter_semantics});
       }
 
       for (auto iter = sync_ctx.sub_urls.begin(); iter != sync_ctx.sub_urls.end();) {
@@ -571,7 +584,7 @@ static nlohmann::ordered_json make_json_record(const ParseRecord& record, const 
 // NOLINTNEXTLINE(google-readability-function-size)
 static int start_parse(const std::string& target_url, const std::string& out_dir, const std::string& base_name,
                        const std::string& proto_dir, [[maybe_unused]] const std::string& fbs_dir,
-                       const std::string& parse_type_suffix) {
+                       const std::string& parse_type_suffix, const std::string& bag_file) {
   auto& ctx = vlink::parse::ParseContext::get();
   auto filesys_out_dir = vlink::parse::utf8_to_path(out_dir);
   auto filesys_proto_dir = vlink::parse::utf8_to_path(proto_dir);
@@ -638,6 +651,57 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
     return -1;
   }
 
+  std::vector<std::filesystem::path> protected_input_paths;
+
+  if (ctx.parse_for_bag && ctx.parse_type != ParseType::kConsole) {
+    vlink::parse::SliceOptions input_options;
+    input_options.bag_file = bag_file;
+
+    if VUNLIKELY (!collect_protected_input_paths(input_options, protected_input_paths)) {
+      ctx.has_quit = true;
+      return -1;
+    }
+  }
+
+  auto can_write_output = [&protected_input_paths](const std::string& path) {
+    if (protected_input_paths.empty()) {
+      return true;
+    }
+
+    const auto output_path = vlink::parse::utf8_to_path(path);
+    std::error_code ec;
+    const bool exists = std::filesystem::exists(output_path, ec);
+
+    if VUNLIKELY (ec) {
+      std::cerr << "Failed to inspect output path: " << path << " (" << ec.message() << ")" << std::endl;
+      return false;
+    }
+
+    if (!exists) {
+      return true;
+    }
+
+    for (const auto& input_path : protected_input_paths) {
+      const bool overlaps = std::filesystem::equivalent(output_path, input_path, ec);
+
+      if VUNLIKELY (ec) {
+        if (ec.default_error_condition() == std::errc::no_such_file_or_directory) {
+          continue;
+        }
+
+        std::cerr << "Failed to compare output path with input: " << path << " (" << ec.message() << ")" << std::endl;
+        return false;
+      }
+
+      if VUNLIKELY (overlaps) {
+        std::cerr << "Refusing to overwrite input file: " << path << std::endl;
+        return false;
+      }
+    }
+
+    return true;
+  };
+
   std::ofstream table_output;
   std::string table_output_path;
   int64_t table_record_count = 0;
@@ -645,6 +709,12 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
 
   if (ctx.parse_type == ParseType::kCsv || ctx.parse_type == ParseType::kJson) {
     table_output_path = out_file_name + "." + parse_type_suffix;
+
+    if VUNLIKELY (!can_write_output(table_output_path)) {
+      ctx.has_quit = true;
+      return -1;
+    }
+
     table_output.open(vlink::parse::utf8_to_path(table_output_path));
 
     if (!table_output.is_open()) {
@@ -758,7 +828,7 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
   {
     std::lock_guard lock(ctx.parse_callback_mtx);
     ctx.parse_callback = [target_url, &parse_seq, &out_file_name, &proto_cache, &default_binary_field_path,
-                          &table_output, &table_output_path, &table_record_count, &first_json_record,
+                          &can_write_output, &table_output, &table_output_path, &table_record_count, &first_json_record,
 #ifdef VLINK_HAS_FBS_COMPILER
                           &ensure_fbs_parser, &fbs_schema, &fbs_root_object,
 #endif
@@ -771,7 +841,7 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
         return;
       }
 
-      if VUNLIKELY (!check_rate_limit()) {
+      if VUNLIKELY (!check_rate_limit(timestamp)) {
         return;
       }
 
@@ -885,7 +955,14 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
 
       if (cb_ctx.parse_type == ParseType::kBin) {
         ++parse_seq;
-        write_binary_output(out_file_name + "." + std::to_string(parse_seq) + ".bin", bytes);
+        const std::string bin_path = out_file_name + "." + std::to_string(parse_seq) + ".bin";
+
+        if VUNLIKELY (!can_write_output(bin_path)) {
+          fail_output_write(bin_path);
+          return;
+        }
+
+        write_binary_output(bin_path, bytes);
 
         return;
       }
@@ -905,6 +982,11 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
         ++parse_seq;
         std::string pcd_path = out_file_name + "." + std::to_string(parse_seq) + ".pcd";
 
+        if VUNLIKELY (!can_write_output(pcd_path)) {
+          fail_output_write(pcd_path);
+          return;
+        }
+
         if (!write_pcd_file(pcd_path, point_cloud)) {
           fail_output_write(pcd_path);
           return;
@@ -919,11 +1001,14 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
 
       if (cb_ctx.parse_type == ParseType::kJpg || cb_ctx.parse_type == ParseType::kH264 ||
           cb_ctx.parse_type == ParseType::kH265 || cb_ctx.parse_type == ParseType::kRaw) {
+        vlink::zerocopy::MessageParser zerocopy_parser;
         vlink::Bytes out_bytes;
         std::string field_to_extract = cb_ctx.field_specs.empty() ? "data" : cb_ctx.field_specs[0];
 
         if (is_zerocopy) {
-          out_bytes = extract_zerocopy_binary(ser, bytes, field_to_extract);
+          if VLIKELY (zerocopy_parser.parse(ser, bytes)) {
+            out_bytes = extract_zerocopy_binary(zerocopy_parser, field_to_extract);
+          }
         } else if (resolved_schema_type == vlink::SchemaType::kProtobuf) {
           auto* proto_message = parse_proto(ser);
 
@@ -941,7 +1026,14 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
 
         if VLIKELY (!out_bytes.empty()) {
           ++parse_seq;
-          write_binary_output(out_file_name + "." + std::to_string(parse_seq) + "." + parse_type_suffix, out_bytes);
+          const std::string binary_path = out_file_name + "." + std::to_string(parse_seq) + "." + parse_type_suffix;
+
+          if VUNLIKELY (!can_write_output(binary_path)) {
+            fail_output_write(binary_path);
+            return;
+          }
+
+          write_binary_output(binary_path, out_bytes);
         }
 
         return;
@@ -997,9 +1089,15 @@ static int start_parse(const std::string& target_url, const std::string& out_dir
         if (cb_ctx.parse_type == ParseType::kCsv) {
           write_csv_record(table_output, record);
         } else {
-          const auto json = make_json_record(record, cb_ctx.field_specs, cb_ctx.expr_strings);
-          table_output << (first_json_record ? "\n" : ",\n") << json.dump(2);
-          first_json_record = false;
+          try {
+            const auto json_text = make_json_record(record, cb_ctx.field_specs, cb_ctx.expr_strings).dump(2);
+            table_output << (first_json_record ? "\n" : ",\n") << json_text;
+            first_json_record = false;
+          } catch (const nlohmann::json::exception& e) {
+            std::cerr << "Failed to serialize JSON record: " << e.what() << std::endl;
+            fail_output_write(table_output_path);
+            return;
+          }
         }
 
         if VUNLIKELY (!table_output.good()) {
@@ -1130,7 +1228,8 @@ int main(int argc, char* argv[]) {
       "Versatile data extraction and export tool for VLink topics.\n"
       "Modes: parse/export a topic, or slice/scan a bag.\n"
       "Note: You may need to add multicast/broadcast [" +
-      vlink::DiscoveryViewer::get_listen_address() + "]");
+      vlink::DiscoveryViewer::get_listen_address() + ":" + std::to_string(vlink::DiscoveryViewer::get_listen_port()) +
+      "]");
 
   program.add_argument("url")
       .help("Target topic URL; optional for slice/scan, defaults to '*'")
@@ -1180,12 +1279,15 @@ int main(int argc, char* argv[]) {
       .nargs(1);
 
   program.add_argument("--hz")
-      .help("Maximum output rate in Hz (0 = unlimited)")
+      .help("Maximum output rate in Hz (0 = unlimited); paced by bag time with -f, otherwise by wall clock")
       .scan<'g', double>()
       .default_value(0.0)
       .nargs(1);
 
-  program.add_argument("--native").help("Use native/loopback mode").default_value(false).implicit_value(true);
+  program.add_argument("--native")
+      .help("Use native mode (DDS IP from VLINK_DDS_NATIVE_IP; default 127.0.0.1)")
+      .default_value(false)
+      .implicit_value(true);
 
   program.add_argument("-d", "--proto_dir").help("Protobuf .proto directory").default_value(std::string()).nargs(1);
 
@@ -1269,6 +1371,11 @@ int main(int argc, char* argv[]) {
       .default_value(false)
       .implicit_value(true);
 
+  program.add_argument("--enable_chunk_crc")
+      .help("Compute MCAP chunk CRC for VCAP output (for -t slice)")
+      .default_value(false)
+      .implicit_value(true);
+
   program.add_argument("--force")
       .help("Overwrite existing output files (for -t slice/scan)")
       .default_value(false)
@@ -1301,7 +1408,7 @@ int main(int argc, char* argv[]) {
 
   program.add_argument("--filter")
       .help(
-          "Content filter expression (requires -c fields).\n"
+          "Content filter expression for -t slice (requires -c fields).\n"
           "Messages where expression evaluates to 0 are excluded.\n"
           "E.g. --filter 'speed > 60' with -c 'speed'")
       .default_value(std::string())
@@ -1330,9 +1437,9 @@ int main(int argc, char* argv[]) {
   program.add_argument("--actions")
       .help(
           "Action filter for slice/scan: 0=Unknown 1=ClientReq 2=ClientResp 3=ServerReq 4=ServerResp 5=Pub 6=Sub 7=Set "
-          "8=Get (default: 6)")
+          "8=Get (default: 6 8)")
       .scan<'d', int>()
-      .default_value(std::vector<int>{6})
+      .default_value(std::vector<int>{6, 8})
       .nargs(argparse::nargs_pattern::at_least_one);
 
   program.add_argument("--tag").help("Tag name for output bag (for -t slice)").default_value(std::string()).nargs(1);
@@ -1695,6 +1802,7 @@ int main(int argc, char* argv[]) {
     opt.window_seconds = window;
     opt.suffix = program.get<std::string>("--suffix");
     opt.compress = program.is_used("--compress");
+    opt.enable_chunk_crc = program.is_used("--enable_chunk_crc");
     opt.force = program.is_used("--force");
     opt.no_manifest = program.is_used("--no_manifest");
     opt.manifest_name = program.get<std::string>("--manifest");
@@ -1753,7 +1861,7 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  ret = start_parse(target_url, out_dir, base_name, proto_dir, fbs_dir, parse_type_suffix);
+  ret = start_parse(target_url, out_dir, base_name, proto_dir, fbs_dir, parse_type_suffix, bag_file);
 
   if (ctx.parse_for_bag) {
     stop_bag_play();

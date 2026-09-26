@@ -72,68 +72,6 @@ inline bool is_target_encoding_compatible(std::string_view ser, std::string_view
   return false;
 }
 
-inline bool parse_timestamp_unit(const Json& obj, std::string_view key, std::string_view path,
-                                 std::string_view entry_name, std::string& out) {
-  out = obj.value(std::string(key), std::string("us"));
-
-  if VUNLIKELY (!is_valid_timestamp_unit(out)) {
-    MLOG_W("Invalid {} in {}: {} must be one of s/ms/us/ns", entry_name, path, key);
-    return false;
-  }
-
-  return true;
-}
-
-inline bool parse_field_mappings(const Json& obj, std::string_view path, std::string_view entry_name,
-                                 std::vector<FieldMapping>& out) {
-  if VUNLIKELY (obj.contains("field_mappings") && !obj["field_mappings"].is_array()) {
-    MLOG_W("Invalid {} in {}: field_mappings must be an array", entry_name, path);
-    return false;
-  }
-
-  if VLIKELY (obj.contains("field_mappings")) {
-    out.reserve(out.size() + obj["field_mappings"].size());
-
-    for (const auto& fm : obj["field_mappings"]) {
-      if VUNLIKELY (!fm.is_object()) {
-        MLOG_W("Invalid {} in {}: field_mappings entries must be objects", entry_name, path);
-        return false;
-      }
-
-      FieldMapping field;
-      field.source = fm.value("source", std::string());
-      field.target = fm.value("target", std::string());
-      field.expression = fm.value("expression", std::string());
-
-      if VLIKELY (fm.contains("default_value")) {
-        field.has_default_value = true;
-
-        if VLIKELY (fm["default_value"].is_string()) {
-          field.default_value = fm["default_value"].get<std::string>();
-          field.default_value_is_string = true;
-        } else {
-          field.default_value = fm["default_value"].dump();
-        }
-      }
-
-      if VUNLIKELY (field.target.empty()) {
-        MLOG_W("Invalid {} in {}: field_mappings target must not be empty", entry_name, path);
-        return false;
-      }
-
-      if VUNLIKELY (field.source.empty() && field.expression.empty() && !field.has_default_value) {
-        MLOG_W("Invalid {} in {}: field_mappings entry requires source, expression, or default_value", entry_name,
-               path);
-        return false;
-      }
-
-      out.emplace_back(std::move(field));
-    }
-  }
-
-  return true;
-}
-
 inline bool parse_url_selector(const Json& obj, std::string_view path, std::string_view entry_name,
                                UrlSelector& selector, bool required = false) {
   selector = UrlSelector{};

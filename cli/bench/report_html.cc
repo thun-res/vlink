@@ -161,8 +161,8 @@ int metric_value_precision(double value) {
   return 2;
 }
 
-std::string make_series_key(const AggregatedCase& item, SeriesRateLabelMode rate_label_mode,
-                            bool include_payload_size) {
+std::string make_series_key(const AggregatedCase& item, SeriesRateLabelMode rate_label_mode, bool include_payload_size,
+                            bool include_topology_counts) {
   std::ostringstream stream;
   stream << item.transport;
   stream << " | " << Bench::payload_to_string(item.scenario.payload);
@@ -172,7 +172,14 @@ std::string make_series_key(const AggregatedCase& item, SeriesRateLabelMode rate
   }
 
   stream << " | " << Bench::mode_to_string(item.scenario.mode);
-  stream << " | " << make_topology_label(item.scenario);
+  stream << " | "
+         << (include_topology_counts ? make_topology_label(item.scenario)
+                                     : Bench::topology_to_string(item.scenario.topology));
+
+  if (!include_topology_counts && item.scenario.topology == Bench::kManyToManyTopology) {
+    stream << " | publishers=" << item.scenario.publishers;
+  }
+
   stream << " | url=" << item.scenario.url;
 
   if VUNLIKELY (!item.scenario.qos_profile.empty()) {
@@ -201,7 +208,7 @@ std::string make_series_key(const AggregatedCase& item, SeriesRateLabelMode rate
 }
 
 std::string make_series_label(const AggregatedCase& item, SeriesRateLabelMode rate_label_mode,
-                              bool include_payload_size) {
+                              bool include_payload_size, bool include_topology_counts) {
   std::ostringstream stream;
   stream << item.transport;
   stream << " | " << Bench::payload_to_string(item.scenario.payload);
@@ -211,7 +218,14 @@ std::string make_series_label(const AggregatedCase& item, SeriesRateLabelMode ra
   }
 
   stream << " | " << Bench::mode_to_string(item.scenario.mode);
-  stream << " | " << make_topology_label(item.scenario);
+  stream << " | "
+         << (include_topology_counts ? make_topology_label(item.scenario)
+                                     : Bench::topology_to_string(item.scenario.topology));
+
+  if (!include_topology_counts && item.scenario.topology == Bench::kManyToManyTopology) {
+    stream << " | publishers=" << item.scenario.publishers;
+  }
+
   stream << " | url=" << item.scenario.url;
 
   if (rate_label_mode == SeriesRateLabelMode::kIncludePattern && item.scenario.rate_pattern != Bench::kMaxRatePattern) {
@@ -300,7 +314,7 @@ template <typename FilterFnT, typename XFnT, typename YFnT>
 std::string build_line_chart(const std::vector<AggregatedCase>& items, std::string title, std::string x_label,
                              std::string y_label, FilterFnT&& filter_fn, XFnT&& x_fn, YFnT&& y_fn,
                              SeriesRateLabelMode rate_label_mode, bool include_payload_size = false,
-                             ChartI18n i18n_keys = {}) {
+                             ChartI18n i18n_keys = {}, bool include_topology_counts = true) {
   std::map<std::string, ChartSeries> series_map;
   std::vector<double> all_x;
   double max_y = 0.0;
@@ -332,9 +346,9 @@ std::string build_line_chart(const std::vector<AggregatedCase>& items, std::stri
 
     all_x.emplace_back(x);
 
-    auto key = make_series_key(item, rate_label_mode, include_payload_size);
+    auto key = make_series_key(item, rate_label_mode, include_payload_size, include_topology_counts);
     auto& series = series_map[key];
-    series.label = make_series_label(item, rate_label_mode, include_payload_size);
+    series.label = make_series_label(item, rate_label_mode, include_payload_size, include_topology_counts);
     series.detail = key;
 
     if (item.url_order_index >= 0 && item.url_order_index < series.url_order_index) {
@@ -355,7 +369,7 @@ std::string build_line_chart(const std::vector<AggregatedCase>& items, std::stri
     series_order.push_back(&series);
   }
   std::sort(series_order.begin(), series_order.end(), [](const ChartSeries* a, const ChartSeries* b) {
-    return std::tuple{a->url_order_index, a->detail} < std::tuple{b->url_order_index, b->detail};
+    return std::tie(a->url_order_index, a->detail) < std::tie(b->url_order_index, b->detail);
   });
 
   size_t series_index = 0;
@@ -574,8 +588,8 @@ std::string build_line_chart(const std::vector<AggregatedCase>& items, std::stri
       const double x = map_x(x_value);
       const double y = map_y(metric.average());
 
-      svg << R"(<circle class="chart-point-halo" cx=")" << x << R"(" cy=")" << y << R"(" r="5.5" fill=")" << color
-          << R"(" fill-opacity="0.14" stroke="none"/>)";
+      svg << R"(<circle class="chart-point-halo" data-series-id=")" << escape_html(series.id) << R"(" cx=")" << x
+          << R"(" cy=")" << y << R"(" r="5.5" fill=")" << color << R"(" fill-opacity="0.14" stroke="none"/>)";
       svg << R"(<circle class="chart-point" data-series-id=")" << escape_html(series.id) << R"(" cx=")" << x
           << R"(" cy=")" << y << R"(" r="3.0" fill=")" << color << R"(" stroke="#ffffff" stroke-width="1.2"/>)";
     }
@@ -1249,30 +1263,30 @@ std::vector<TransportScoreRow> build_transport_score_rows(const std::vector<Aggr
 
   for (const auto& [_, cohort] : cohorts) {
     const auto recv_peers = collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
-      return std::pair{row.recv_mb_per_sec.count != 0, row.recv_mb_per_sec.average()};
+      return std::make_pair(row.recv_mb_per_sec.count != 0, row.recv_mb_per_sec.average());
     });
     const auto transfer_efficiency_peers =
         collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
           const bool valid =
               row.recv_mb_per_sec.count != 0 && row.send_mb_per_sec.count != 0 && row.send_mb_per_sec.average() > 0.0;
-          return std::pair{
-              valid, compute_transfer_efficiency_score(row.recv_mb_per_sec.average(), row.send_mb_per_sec.average())};
+          return std::make_pair(
+              valid, compute_transfer_efficiency_score(row.recv_mb_per_sec.average(), row.send_mb_per_sec.average()));
         });
     const auto max_latency_peers = collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
-      return std::pair{row.max_latency_us.count != 0, row.max_latency_us.average()};
+      return std::make_pair(row.max_latency_us.count != 0, row.max_latency_us.average());
     });
     const auto jitter_peers = collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
-      return std::pair{row.latency_stddev_us.count != 0, row.latency_stddev_us.average()};
+      return std::make_pair(row.latency_stddev_us.count != 0, row.latency_stddev_us.average());
     });
     const auto latency_quality_peers = collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
-      return std::pair{row.latency_quality_score.count != 0, row.latency_quality_score.average()};
+      return std::make_pair(row.latency_quality_score.count != 0, row.latency_quality_score.average());
     });
     const auto send_block_peers = collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
-      return std::pair{row.p99_send_block_us.count != 0, row.p99_send_block_us.average()};
+      return std::make_pair(row.p99_send_block_us.count != 0, row.p99_send_block_us.average());
     });
     const auto scale_efficiency_peers =
         collect_peer_values<TransportScoreRow>(cohort, [](const TransportScoreRow& row) {
-          return std::pair{row.scale_efficiency_mb_per_sec.count != 0, row.scale_efficiency_mb_per_sec.average()};
+          return std::make_pair(row.scale_efficiency_mb_per_sec.count != 0, row.scale_efficiency_mb_per_sec.average());
         });
 
     for (auto* row : cohort) {
@@ -1352,8 +1366,8 @@ std::vector<TransportScoreRow> build_transport_score_rows(const std::vector<Aggr
   }
 
   std::sort(rows.begin(), rows.end(), [](const TransportScoreRow& lhs, const TransportScoreRow& rhs) {
-    return std::tuple{lhs.mode, lhs.suite, lhs.url_order_index, lhs.transport, lhs.url} <
-           std::tuple{rhs.mode, rhs.suite, rhs.url_order_index, rhs.transport, rhs.url};
+    return std::tie(lhs.mode, lhs.suite, lhs.url_order_index, lhs.transport, lhs.url) <
+           std::tie(rhs.mode, rhs.suite, rhs.url_order_index, rhs.transport, rhs.url);
   });
   return rows;
 }
@@ -1427,46 +1441,46 @@ std::vector<SerializationScoreRow> build_serialization_score_rows(const std::vec
   for (const auto& [_, cohort] : cohorts) {
     const auto serialize_mb_peers =
         collect_peer_values<SerializationScoreRow>(cohort, [](const SerializationScoreRow& row) {
-          return std::pair{row.serialize_mb_per_sec.count != 0, row.serialize_mb_per_sec.average()};
+          return std::make_pair(row.serialize_mb_per_sec.count != 0, row.serialize_mb_per_sec.average());
         });
     const auto deserialize_mb_peers =
         collect_peer_values<SerializationScoreRow>(cohort, [](const SerializationScoreRow& row) {
-          return std::pair{row.deserialize_mb_per_sec.count != 0, row.deserialize_mb_per_sec.average()};
+          return std::make_pair(row.deserialize_mb_per_sec.count != 0, row.deserialize_mb_per_sec.average());
         });
     const auto serialize_msgs_peers =
         collect_peer_values<SerializationScoreRow>(cohort, [](const SerializationScoreRow& row) {
-          return std::pair{row.serialize_msgs_per_sec.count != 0, row.serialize_msgs_per_sec.average()};
+          return std::make_pair(row.serialize_msgs_per_sec.count != 0, row.serialize_msgs_per_sec.average());
         });
     const auto deserialize_msgs_peers =
         collect_peer_values<SerializationScoreRow>(cohort, [](const SerializationScoreRow& row) {
-          return std::pair{row.deserialize_msgs_per_sec.count != 0, row.deserialize_msgs_per_sec.average()};
+          return std::make_pair(row.deserialize_msgs_per_sec.count != 0, row.deserialize_msgs_per_sec.average());
         });
     const auto encode_efficiency_peers =
         collect_peer_values<SerializationScoreRow>(cohort, [](const SerializationScoreRow& row) {
           const bool valid =
               row.serialize_mb_per_sec.count != 0 && row.pub_cpu_ms.count != 0 && row.pub_cpu_ms.average() > 0.0;
-          return std::pair{valid,
-                           compute_resource_efficiency(row.serialize_mb_per_sec.average(), row.pub_cpu_ms.average())};
+          return std::make_pair(
+              valid, compute_resource_efficiency(row.serialize_mb_per_sec.average(), row.pub_cpu_ms.average()));
         });
     const auto decode_efficiency_peers =
         collect_peer_values<SerializationScoreRow>(cohort, [](const SerializationScoreRow& row) {
           const bool valid =
               row.deserialize_mb_per_sec.count != 0 && row.sub_cpu_ms.count != 0 && row.sub_cpu_ms.average() > 0.0;
-          return std::pair{valid,
-                           compute_resource_efficiency(row.deserialize_mb_per_sec.average(), row.sub_cpu_ms.average())};
+          return std::make_pair(
+              valid, compute_resource_efficiency(row.deserialize_mb_per_sec.average(), row.sub_cpu_ms.average()));
         });
     const auto balance_peers = collect_peer_values<SerializationScoreRow>(cohort, [](const SerializationScoreRow& row) {
       const bool valid = row.serialize_mb_per_sec.count != 0 && row.deserialize_mb_per_sec.count != 0;
-      return std::pair{valid, compute_serialization_balance(row.serialize_mb_per_sec.average(),
-                                                            row.deserialize_mb_per_sec.average())};
+      return std::make_pair(valid, compute_serialization_balance(row.serialize_mb_per_sec.average(),
+                                                                 row.deserialize_mb_per_sec.average()));
     });
     const auto cpu_total_peers =
         collect_peer_values<SerializationScoreRow>(cohort, [](const SerializationScoreRow& row) {
           const bool valid = row.pub_cpu_ms.count != 0 || row.sub_cpu_ms.count != 0;
-          return std::pair{valid, row.pub_cpu_ms.average() + row.sub_cpu_ms.average()};
+          return std::make_pair(valid, row.pub_cpu_ms.average() + row.sub_cpu_ms.average());
         });
     const auto memory_peers = collect_peer_values<SerializationScoreRow>(cohort, [](const SerializationScoreRow& row) {
-      return std::pair{row.memory_usage.count != 0, row.memory_usage.average()};
+      return std::make_pair(row.memory_usage.count != 0, row.memory_usage.average());
     });
 
     for (auto* row : cohort) {
@@ -1522,8 +1536,8 @@ std::vector<SerializationScoreRow> build_serialization_score_rows(const std::vec
   }
 
   std::sort(rows.begin(), rows.end(), [](const SerializationScoreRow& lhs, const SerializationScoreRow& rhs) {
-    return std::tuple{lhs.mode, lhs.payload, lhs.payload_size, -lhs.score, lhs.transport} <
-           std::tuple{rhs.mode, rhs.payload, rhs.payload_size, -rhs.score, rhs.transport};
+    return std::forward_as_tuple(lhs.mode, lhs.payload, lhs.payload_size, -lhs.score, lhs.transport) <
+           std::forward_as_tuple(rhs.mode, rhs.payload, rhs.payload_size, -rhs.score, rhs.transport);
   });
   return rows;
 }
@@ -1831,8 +1845,8 @@ std::string build_url_summary_table(const std::vector<AggregatedCase>& items) {
     ordered.emplace_back(std::move(entry));
   }
   std::sort(ordered.begin(), ordered.end(), [](const UrlEntry& lhs, const UrlEntry& rhs) {
-    return std::tuple{lhs.url_order_index, lhs.transport, lhs.url} <
-           std::tuple{rhs.url_order_index, rhs.transport, rhs.url};
+    return std::tie(lhs.url_order_index, lhs.transport, lhs.url) <
+           std::tie(rhs.url_order_index, rhs.transport, rhs.url);
   });
 
   std::ostringstream html;
@@ -1898,8 +1912,8 @@ std::string build_failure_panel(const std::vector<AggregatedCase>& items) {
     ordered.emplace_back(std::move(entry));
   }
   std::sort(ordered.begin(), ordered.end(), [](const FailureEntry& lhs, const FailureEntry& rhs) {
-    return std::tuple{lhs.url_order_index, lhs.transport, lhs.mode} <
-           std::tuple{rhs.url_order_index, rhs.transport, rhs.mode};
+    return std::tie(lhs.url_order_index, lhs.transport, lhs.mode) <
+           std::tie(rhs.url_order_index, rhs.transport, rhs.mode);
   });
 
   std::ostringstream html;
@@ -2332,7 +2346,7 @@ std::vector<ChartPanel> build_chart_panels(const std::vector<AggregatedCase>& it
                   [](const AggregatedCase& item) { return static_cast<double>(item.scenario.subscribers); },
                   [](const AggregatedCase& item) { return item.recv_mb_per_sec.average(); },
                   SeriesRateLabelMode::kIncludeRate, true,
-                  ChartI18n{"chart_title_topology_1n", "chart_axis_subscribers", "chart_axis_delivered_mbps"}));
+                  ChartI18n{"chart_title_topology_1n", "chart_axis_subscribers", "chart_axis_delivered_mbps"}, false));
 
     maybe_add(std::string("<span data-i18n=\"chart_topology_n1\">Topology n:1</span>") + mode_suffix,
               build_line_chart(
@@ -2344,21 +2358,22 @@ std::vector<ChartPanel> build_chart_panels(const std::vector<AggregatedCase>& it
                   [](const AggregatedCase& item) { return static_cast<double>(item.scenario.publishers); },
                   [](const AggregatedCase& item) { return item.recv_mb_per_sec.average(); },
                   SeriesRateLabelMode::kIncludeRate, true,
-                  ChartI18n{"chart_title_topology_n1", "chart_axis_publishers", "chart_axis_delivered_mbps"}));
+                  ChartI18n{"chart_title_topology_n1", "chart_axis_publishers", "chart_axis_delivered_mbps"}, false));
 
-    maybe_add(std::string("<span data-i18n=\"chart_topology_nn\">Topology n:n</span>") + mode_suffix,
-              build_line_chart(
-                  items, "Topology n:n: Received MB/s vs Connection Pairs", "Connection Pairs", "Received MB/s",
-                  [mode](const AggregatedCase& item) {
-                    return item.scenario.suite == Bench::kTopologySuite && item.scenario.mode == mode &&
-                           item.scenario.topology == Bench::kManyToManyTopology;
-                  },
-                  [](const AggregatedCase& item) {
-                    return static_cast<double>(item.scenario.publishers * item.scenario.subscribers);
-                  },
-                  [](const AggregatedCase& item) { return item.recv_mb_per_sec.average(); },
-                  SeriesRateLabelMode::kIncludeRate, true,
-                  ChartI18n{"chart_title_topology_nn", "chart_axis_endpoint_pairs", "chart_axis_delivered_mbps"}));
+    maybe_add(
+        std::string("<span data-i18n=\"chart_topology_nn\">Topology n:n</span>") + mode_suffix,
+        build_line_chart(
+            items, "Topology n:n: Received MB/s vs Connection Pairs", "Connection Pairs", "Received MB/s",
+            [mode](const AggregatedCase& item) {
+              return item.scenario.suite == Bench::kTopologySuite && item.scenario.mode == mode &&
+                     item.scenario.topology == Bench::kManyToManyTopology;
+            },
+            [](const AggregatedCase& item) {
+              return static_cast<double>(item.scenario.publishers * item.scenario.subscribers);
+            },
+            [](const AggregatedCase& item) { return item.recv_mb_per_sec.average(); },
+            SeriesRateLabelMode::kIncludeRate, true,
+            ChartI18n{"chart_title_topology_nn", "chart_axis_endpoint_pairs", "chart_axis_delivered_mbps"}, false));
   }
 
   maybe_add(
@@ -2950,7 +2965,8 @@ inline std::string build_metric_heatmap_block(const std::vector<AggregatedCase>&
       return -1.0;
     }
 
-    return endpoint_score_sum[endpoint] / static_cast<double>(count_iter->second);
+    const double score = endpoint_score_sum[endpoint] / static_cast<double>(count_iter->second);
+    return std::isfinite(score) ? score : -1.0;
   };
 
   std::sort(endpoints.begin(), endpoints.end(),
@@ -2958,7 +2974,7 @@ inline std::string build_metric_heatmap_block(const std::vector<AggregatedCase>&
               const double sa = endpoint_avg_score(a);
               const double sb = endpoint_avg_score(b);
 
-              if (std::fabs(sa - sb) > 0.001) {
+              if (sa != sb) {
                 return sa > sb;
               }
 
@@ -3210,8 +3226,11 @@ inline std::string build_transport_profile_cards(const std::vector<AggregatedCas
   }
 
   std::sort(transports.begin(), transports.end(), [](const TransportSummary& a, const TransportSummary& b) {
-    if (std::abs(a.avg_sort - b.avg_sort) > 1e-9) {
-      return a.avg_sort > b.avg_sort;
+    const double sa = std::isfinite(a.avg_sort) ? a.avg_sort : -1.0;
+    const double sb = std::isfinite(b.avg_sort) ? b.avg_sort : -1.0;
+
+    if (sa != sb) {
+      return sa > sb;
     }
 
     if (a.layer != b.layer) {
@@ -3232,7 +3251,7 @@ inline std::string build_transport_profile_cards(const std::vector<AggregatedCas
     int weakest_latency_rate{0};
     double peak_mb_s{-1.0};
     size_t peak_size{0};
-    double avg_cpu_pct{-1.0};
+    MetricSummary cpu_usage;
     double best_send_block_p99_us{-1.0};
     size_t best_send_block_size{0};
   };
@@ -3280,14 +3299,8 @@ inline std::string build_transport_profile_cards(const std::vector<AggregatedCas
       }
     }
 
-    const double cpu = item.cpu_usage.average();
-
-    if (cpu > 0.0) {
-      if (t.avg_cpu_pct < 0.0) {
-        t.avg_cpu_pct = cpu;
-      } else {
-        t.avg_cpu_pct = (t.avg_cpu_pct + cpu) * 0.5;
-      }
+    if (item.cpu_usage.count != 0) {
+      t.cpu_usage.add(item.cpu_usage.average());
     }
   }
 
@@ -3440,12 +3453,12 @@ inline std::string build_transport_profile_cards(const std::vector<AggregatedCas
           typ.peak_mb_s, format_payload_size(typ.peak_size));
     }
 
-    if (typ.avg_cpu_pct >= 0.0) {
+    if (typ.cpu_usage.count != 0) {
       format::format_to(std::back_inserter(out),
                         R"(<div class="num-row"><span class="num-label" data-i18n="profile_num_avg_cpu">avg CPU</span>)"
                         R"(<span class="num-val">{:.1f}%</span>)"
                         R"(<span class="num-ctx" data-i18n="profile_num_cpu_ctx">publisher + subscriber</span></div>)",
-                        typ.avg_cpu_pct);
+                        typ.cpu_usage.average());
     }
 
     if (typ.best_send_block_p99_us >= 0.0) {
@@ -4014,7 +4027,7 @@ bool save_html(const Bench::Result& result, const std::string& file_path, std::s
       "svg.addEventListener('pointerdown',function(ev){svg.setPointerCapture(ev.pointerId);"
       "state.pointers.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});"
       "if(state.pointers.size===1){var p=svgPoint(svg,ev.clientX,ev.clientY);"
-      "state.panStart={svgX:p?p.x:0,svgY:p?p.y:0,viewX:state.view.x,viewY:state.view.y};"
+      "state.panStart={svgX:p?p.x:0,svgY:p?p.y:0};"
       "svg.classList.add('is-panning');}"
       "else if(state.pointers.size===2){var pts=Array.from(state.pointers.values());"
       "state.pinchStart={dist:Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y),"
@@ -4029,7 +4042,7 @@ bool save_html(const Bench::Result& result, const std::string& file_path, std::s
       "zoomAt(state,midX,midY,f);}return;}\n"
       "if(state.pointers.size===1&&state.panStart){var p=svgPoint(svg,ev.clientX,ev.clientY);"
       "if(p){var dx=p.x-state.panStart.svgX;var dy=p.y-state.panStart.svgY;"
-      "state.view.x=state.panStart.viewX-dx;state.view.y=state.panStart.viewY-dy;"
+      "state.view.x-=dx;state.view.y-=dy;"
       "clampView(state);setViewBox(state);}return;}\n"
       "if(smallScreen){return;}\n"
       "var sp=svgPoint(svg,ev.clientX,ev.clientY);if(!sp)return;"

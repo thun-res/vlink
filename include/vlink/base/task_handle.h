@@ -54,13 +54,13 @@
  * | @c TaskHandle         | Observer object handed to the caller.                                 |
  *
  * @par Lock ordering
- * @c TaskHandle's internal state mutex is the innermost mutex in the dispatching layer.
  * The expected order is
- * @c MessageLoop::AliveState::mtx -> @c MessageLoop::Impl::mtx -> @c TaskHandle::State::mtx.
- * @c TaskHandle::cancel() acquires the cancellation source's internal mutex only after
- * releasing the handle mutex, so the cancellation source is never nested inside any
- * dispatching-layer mutex.  Callbacks added through @c cancellation_token() fire outside
- * @c TaskHandle::State::mtx, so they may safely re-enter the handle.
+ * @c MessageLoop::AliveState::mtx -> @c MessageLoop::Impl::mtx -> @c TaskHandle::State::mtx ->
+ * the cancellation source's internal mutex.  The innermost level is entered only by the
+ * dequeue-path read that tests whether cancellation was requested; every mutating path --
+ * @c cancel() and the parent-token callback -- flips the cancellation source only after
+ * releasing @c TaskHandle::State::mtx.  Cancellation callbacks fire outside both mutexes, so
+ * they may safely re-enter the handle.
  *
  * @par Example
  * @code

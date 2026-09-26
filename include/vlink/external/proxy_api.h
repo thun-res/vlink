@@ -256,7 +256,9 @@ class VLINK_PROXY_API_EXPORT ProxyAPI : public MessageLoop {
    *
    * @details
    * @c kController may call @c send_control() and @c send_data().  @c kListener is
-   * a passive observer; send calls return @c false immediately.
+   * a passive observer; send calls return @c false immediately.  In direct mode,
+   * it follows the server's current subscription selection through periodic heartbeats,
+   * including when it joins after the controller has sent its selection.
    */
   enum Role : uint8_t { kController = 0, kListener };
 
@@ -300,15 +302,16 @@ class VLINK_PROXY_API_EXPORT ProxyAPI : public MessageLoop {
    *
    * @details
    * Carried in @c Control::url_meta_list to tell the server which topics to
-   * subscribe to or publish on.  @c type describes the proxy route direction; for
-   * direct field relays, setter/getter peers may be mapped to the matching field
-   * reader/writer semantics internally.
+   * subscribe to or publish on.  Use @c kSubscriber to observe a topic (field
+   * reception is inferred from discovery), @c kPublisher to inject events, or
+   * @c kSetter to inject field updates.  Field injection requires both proxy
+   * peers to support @c kSetter routes.
    */
   struct UrlMeta final {
     std::string url;                          ///< Full topic URL.
     std::string ser;                          ///< Required serialisation type on this proxy route.
     SchemaType schema{SchemaType::kUnknown};  ///< Required coarse schema family on this proxy route.
-    ImplType type{kSubscriber};               ///< Whether the server should act as publisher or subscriber here.
+    ImplType type{kSubscriber};               ///< Observer (@c kSubscriber), event writer or field writer.
   };
 
   /**
@@ -362,7 +365,7 @@ class VLINK_PROXY_API_EXPORT ProxyAPI : public MessageLoop {
     int domain_id{0};             ///< DDS domain ID; must match the server's @c domain_id.
     std::string dds_impl{"dds"};  ///< DDS implementation: "dds", "ddsc", "ddsr", etc.
     std::string security_key;     ///< Optional security key; empty selects the default slot.
-    bool native{false};           ///< When true, restrict all DDS traffic to 127.0.0.1.
+    bool native{false};           ///< Bind all DDS endpoints to @c VLINK_DDS_NATIVE_IP (default @c 127.0.0.1).
     bool reliable{false};         ///< Use reliable DDS QoS; must match the server.
     bool direct{false};           ///< Use direct SHM channels for data; must match the server.
     bool enable_tcp{false};       ///< Use TCP transport for data channels; must match the server.

@@ -125,8 +125,8 @@ class VLINK_EXPORT Bytes final {  // size == 128 bytes
    * @details
    * @c Bytes::bytes_malloc routes through @c MemoryPool::global_instance().  Calling this once
    * at program start front-loads the singleton construction cost and respects
-   * @c VLINK_MEMORY_LEVEL / @c VLINK_MEMORY_PREALLOC / @c VLINK_MEMORY_BATCH_SIZE.  Subsequent
-   * calls are idempotent no-ops.
+   * @c VLINK_MEMORY_LEVEL / @c VLINK_MEMORY_PREALLOC / @c VLINK_MEMORY_BATCH_SIZE /
+   * @c VLINK_MEMORY_LAZY_SCALE.  Subsequent calls are idempotent no-ops.
    */
   static void init_memory_pool() noexcept;
 
@@ -323,7 +323,7 @@ class VLINK_EXPORT Bytes final {  // size == 128 bytes
    * @brief Decodes a Base-64 ASCII string back into a binary payload.
    *
    * @param target  Base-64 source string.
-   * @return Decoded @c Bytes, or an empty value on invalid input.
+   * @return Decoded @c Bytes, or an empty value on invalid input or allocation failure.
    */
   [[nodiscard]] static Bytes decode_from_base64(const std::string& target) noexcept;
 
@@ -522,9 +522,12 @@ class VLINK_EXPORT Bytes final {  // size == 128 bytes
    * @brief Returns the allocated capacity of the backing buffer.
    *
    * @details
-   * SBO buffers report @c kStackSize; pool-allocated buffers report the rounded allocation size.
+   * Reports the payload size an owning buffer was created or last grown for.  It is neither the
+   * SBO budget nor the pool tier size: an SBO buffer created for 32 bytes reports @c 32, not
+   * @c kStackSize.  The owned allocation spans @c capacity() @c + @c offset() bytes.  A
+   * non-owning view (shallow copy or loan) reports @c 0.
    *
-   * @return Capacity in bytes; always @c >= @c real_size().
+   * @return Capacity in bytes; for an owning buffer always @c >= @c size().
    */
   [[nodiscard]] size_t capacity() const noexcept;
 

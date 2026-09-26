@@ -30,6 +30,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -135,6 +136,35 @@ TEST_SUITE("extension-DynamicData") {
       CHECK_EQ(dd.as<std::string>(), s);
     }
   }
+
+#ifdef VLINK_TEST_SUPPORT_PROTOBUF
+  TEST_CASE("empty protobuf preserves its dynamic type prefix and round trips") {
+    DynamicData data;
+    pb::Message source;
+
+    SUBCASE("value") { data.load("proto", source); }
+    SUBCASE("shared pointer") { data.load("proto", std::make_shared<pb::Message>()); }
+    SUBCASE("raw pointer") { data.load("proto", &source); }
+
+    REQUIRE_FALSE(data.is_empty());
+    CHECK_EQ(data.get_type(), "proto");
+    CHECK_EQ(data.get_data().size(), 0u);
+    CHECK_EQ(data.get_data().offset(), DynamicData::get_offset());
+
+    Bytes wire;
+    REQUIRE((data >> wire));
+    CHECK_EQ(wire.size(), DynamicData::get_offset());
+
+    DynamicData received;
+    REQUIRE((received << wire));
+    CHECK_EQ(received.get_type(), "proto");
+
+    pb::Message target;
+    target.set_value("old");
+    REQUIRE(received.convert(target));
+    CHECK(target.value().empty());
+  }
+#endif
 
   TEST_CASE("load accepts a character pointer through the chars codec") {
     const char* source = "hello chars";

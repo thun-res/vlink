@@ -257,6 +257,17 @@ class VLINK_EXPORT Plugin final {
                                       const std::string& target_plugin_id, uint16_t target_version_major,
                                       uint16_t target_version_minor, uint8_t log_level);
 
+  /**
+   * @brief Deletes an instance through its registered interface's virtual destructor.
+   * @details Used by @c VLINK_PLUGIN_DECLARE; registration grants access to protected destructors.
+   * @tparam InterfaceT Registered abstract interface type.
+   * @param instance Interface pointer returned by the plugin factory.
+   */
+  template <class InterfaceT>
+  static void destroy_instance(InterfaceT* instance) {
+    delete instance;
+  }
+
  private:
   Handle load_and_create(const std::string& plugin_id, const std::string& lib_name, uint16_t version_major,
                          uint16_t version_minor, const std::string& dir_name,
@@ -340,12 +351,15 @@ inline std::string Plugin::get_plugin_complex_id(const std::string& lib_name) {
  * Injects a @c static @c constexpr @c get_plugin_id() member that returns the demangled
  * name of @p InterfaceType.  Static assertions enforce that the interface is abstract
  * and exposes a virtual destructor so polymorphic delete across the library boundary
- * is well defined.
+ * is well defined.  Also records @c PluginInterfaceType and grants @c Plugin access to
+ * protected interface destructors.
  *
  * @param InterfaceType  Abstract interface class the plugin implements.
  */
 #define VLINK_PLUGIN_REGISTER(InterfaceType)                                                                         \
  public:                                                                                                             \
+  using PluginInterfaceType = InterfaceType;                                                                         \
+  friend class vlink::Plugin;                                                                                        \
   static constexpr std::string_view get_plugin_id() {                                                                \
     static_assert(std::is_abstract_v<InterfaceType>, "Plugin interface must be abstract class.");                    \
     static_assert(std::has_virtual_destructor_v<InterfaceType>, "Plugin interface must have a virtual destructor."); \
@@ -366,6 +380,8 @@ inline std::string Plugin::get_plugin_complex_id(const std::string& lib_name) {
  */
 #define VLINK_PLUGIN_REGISTER_BY_ID(InterfaceType, PluginID)                                                         \
  public:                                                                                                             \
+  using PluginInterfaceType = InterfaceType;                                                                         \
+  friend class vlink::Plugin;                                                                                        \
   static constexpr std::string_view get_plugin_id() {                                                                \
     static_assert(std::is_abstract_v<InterfaceType>, "Plugin interface must be abstract class.");                    \
     static_assert(std::has_virtual_destructor_v<InterfaceType>, "Plugin interface must have a virtual destructor."); \
@@ -379,8 +395,9 @@ inline std::string Plugin::get_plugin_complex_id(const std::string& lib_name) {
  * @details
  * The construction entry point validates the plugin ID and major/minor version against
  * the caller's expectations via @c Plugin::process_plugin_internal() and returns a new
- * instance of @p ImplementType only when the contract holds.  The destruction entry point
- * deletes the implementation pointer.
+ * instance of @p ImplementType as its registered interface pointer only when the contract holds.
+ * The destruction entry point deletes through that interface's virtual destructor, including
+ * when multiple or virtual inheritance adjusts the interface address.
  *
  * @param ImplementType  Concrete class implementing the abstract interface.
  * @param VersionMajor   Major version exposed by this plugin binary.
@@ -403,7 +420,7 @@ inline std::string Plugin::get_plugin_complex_id(const std::string& lib_name) {
       return nullptr;                                                                                           \
     }                                                                                                           \
                                                                                                                 \
-    return new ImplementType;                                                                                   \
+    return static_cast<typename ImplementType::PluginInterfaceType*>(new ImplementType);                        \
     /*NOLINTEND*/                                                                                               \
   }                                                                                                             \
                                                                                                                 \
@@ -413,7 +430,7 @@ inline std::string Plugin::get_plugin_complex_id(const std::string& lib_name) {
     }                                                                                                           \
                                                                                                                 \
     /*NOLINTBEGIN*/                                                                                             \
-    delete static_cast<ImplementType*>(handle);                                                                 \
+    vlink::Plugin::destroy_instance(static_cast<typename ImplementType::PluginInterfaceType*>(handle));         \
                                                                                                                 \
     return true;                                                                                                \
     /*NOLINTEND*/                                                                                               \

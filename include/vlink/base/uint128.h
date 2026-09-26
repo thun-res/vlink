@@ -68,8 +68,9 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
-#include <iostream>
+#include <ostream>
 #include <type_traits>
 #include <utility>
 
@@ -102,8 +103,7 @@ class Uint128 final {
    * - When @c T is signed the source is sign-extended: a negative value yields
    *   @c high_ @c = @c ~uint64_t{0} and @c low_ @c = the two's-complement bit pattern.
    * - When @c T is unsigned the source is zero-extended into @c low_ with @c high_ @c = @c 0.
-   * - For any other @p T both halves keep their default value of @c 0; no diagnostic is
-   *   emitted because integrality is intentionally not asserted here.
+   * - Any other @p T is rejected at compile time by a @c static_assert.
    *
    * @tparam T  Source type (integral, @c __uint128_t or @c __int128_t).
    * @param v   Source value.
@@ -419,7 +419,7 @@ class Uint128 final {
    * @param value  Value to print.
    * @return Reference to @p os.
    */
-  VLINK_EXPORT friend std::ostream& operator<<(std::ostream& os, const Uint128& value) noexcept;
+  VLINK_EXPORT friend std::ostream& operator<<(std::ostream& os, const Uint128& value);
 
  private:
   VLINK_EXPORT static int clz64(uint64_t x) noexcept;
@@ -450,7 +450,12 @@ using uint128_t = Uint128;
 
 template <typename T>
 inline constexpr Uint128::Uint128(T v) noexcept {
-  // static_assert(std::is_integral_v<T>, "Uint128(T): T must be an integral type");
+#if defined(__SIZEOF_INT128__)
+  static_assert(std::is_integral_v<T> || std::is_same_v<__uint128_t, T> || std::is_same_v<__int128_t, T>,
+                "Uint128(T): T must be an integral type");
+#else
+  static_assert(std::is_integral_v<T>, "Uint128(T): T must be an integral type");
+#endif
 
 #if defined(__SIZEOF_INT128__)
   if constexpr (std::is_same_v<__uint128_t, T> || std::is_same_v<__int128_t, T>) {

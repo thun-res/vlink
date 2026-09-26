@@ -27,7 +27,9 @@
 
 #include <doctest/doctest.h>
 
+#include <atomic>
 #include <thread>
+#include <vector>
 
 #include "../common_test.h"
 
@@ -46,6 +48,35 @@ static void busy_wait_for_cpu_active_tick() {
 }
 
 TEST_SUITE("base-ElapsedTimer") {
+  TEST_CASE("concurrent restart never reports an active timer as inactive") {
+    ElapsedTimer timer(ElapsedTimer::kNano);
+    timer.start();
+    std::atomic<bool> ready{false};
+    std::atomic<bool> negative{false};
+    std::vector<std::thread> threads;
+
+    for (int i = 0; i < 4; ++i) {
+      threads.emplace_back([&] {
+        while (!ready.load(std::memory_order_acquire)) {
+          std::this_thread::yield();
+        }
+        for (int j = 0; j < 10000; ++j) {
+          if (timer.restart() < 0) {
+            negative.store(true, std::memory_order_relaxed);
+          }
+        }
+      });
+    }
+
+    ready.store(true, std::memory_order_release);
+    for (auto& thread : threads) {
+      thread.join();
+    }
+
+    CHECK_FALSE(negative.load(std::memory_order_relaxed));
+    CHECK(timer.is_active());
+  }
+
   TEST_CASE("get_sys_timestamp returns positive value for all accuracies") {
     uint64_t ms = ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMilli);
     uint64_t us = ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMicro);

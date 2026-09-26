@@ -33,9 +33,11 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <shared_mutex>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "./base/cached_timestamp.h"
 #include "./base/logger_plugin_interface.h"
@@ -86,11 +88,6 @@ namespace vlink {
   char buffer[32];
   std::strftime(buffer, sizeof(buffer), "%Y-%m-%d", &now_tm);
   return std::string(buffer);
-}
-
-[[maybe_unused]] static std::string_view get_current_time(bool use_utc = false) {
-  thread_local CachedTimestamp cache;
-  return cache.get("%02d-%02d %02d:%02d:%02d.%03d", use_utc);
 }
 
 [[maybe_unused]] static constexpr std::string_view get_log_level_str(Logger::Level level) {
@@ -181,6 +178,33 @@ static bool& is_logging_on_current_thread() noexcept {
   return is_logging;
 }
 
+static bool& is_in_handler_on_current_thread() noexcept {
+  static thread_local bool is_in_handler{false};
+  return is_in_handler;
+}
+
+static thread_local bool logger_stream_retired = false;
+
+struct LoggerStreamState final {
+  CachedTimestamp timestamp;
+  std::string console_buffer;
+  FastStream stream;
+  std::vector<std::unique_ptr<FastStream>> nested_streams;
+  size_t depth{0};
+};
+
+static void retire_logger_stream_state(LoggerStreamState* state) noexcept {
+  delete state;
+  logger_stream_retired = true;
+}
+
+static LoggerStreamState& get_logger_stream_state() noexcept {
+  // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new)
+  thread_local std::unique_ptr<LoggerStreamState, void (*)(LoggerStreamState*)> state(new LoggerStreamState,
+                                                                                      retire_logger_stream_state);
+  return *state;
+}
+
 static bool& is_plugin_logging_on_current_thread() noexcept {
   static thread_local bool is_plugin_logging{false};
   return is_plugin_logging;
@@ -221,6 +245,7 @@ template <uint8_t PrefixSizeT, uint8_t SuffixSizeT>
 // LoggerGlobal
 struct LoggerGlobal final {  // NOLINT(clang-analyzer-optin.performance.Padding)
   std::atomic_bool is_busy{false};
+  std::atomic_bool is_initialized{false};
   std::atomic_bool is_initializing{false};
   std::atomic_bool is_stopping{false};
 
@@ -237,10 +262,14 @@ struct LoggerGlobal final {  // NOLINT(clang-analyzer-optin.performance.Padding)
   std::mutex level_mtx;
   std::atomic_bool has_console_callback{false};
   std::atomic_bool has_file_callback{false};
-  // Protected by callback_mtx (shared on read/invoke, exclusive on register).
   Logger::Callback console_callback;
   Logger::Callback file_callback;
   mutable std::shared_mutex callback_mtx;
+  std::atomic_bool has_pending_console_callback{false};
+  std::atomic_bool has_pending_file_callback{false};
+  Logger::Callback pending_console_callback;
+  Logger::Callback pending_file_callback;
+  std::mutex pending_mtx;
   std::atomic<std::ios_base::fmtflags> stream_flags{std::ios_base::dec | std::ios_base::skipws};
   std::atomic<int> stream_precision{6};
   std::atomic<int> stream_width{0};
@@ -251,8 +280,92 @@ struct LoggerGlobal final {  // NOLINT(clang-analyzer-optin.performance.Padding)
   }
 
  private:
-  LoggerGlobal() { MemoryPool::global_instance(); }
+  LoggerGlobal() {
+    MemoryPool::global_instance();
+    get_print_mtx();
+  }
 };
+
+static void install_console_handler(Logger::Callback&& callback) noexcept {
+  auto& global_instance = LoggerGlobal::get();
+  Logger::Callback retired;
+  Logger::Callback retired_pending;
+
+  {
+    std::unique_lock lock(global_instance.callback_mtx);
+
+    {
+      std::lock_guard pending_lock(global_instance.pending_mtx);
+
+      if (global_instance.has_pending_console_callback.exchange(false, std::memory_order_acq_rel)) {
+        retired_pending = std::move(global_instance.pending_console_callback);
+      }
+    }
+
+    retired = std::move(global_instance.console_callback);
+    global_instance.console_callback = std::move(callback);
+    global_instance.has_console_callback.store(static_cast<bool>(global_instance.console_callback),
+                                               std::memory_order_release);
+  }
+}
+
+static void install_file_handler(Logger::Callback&& callback) noexcept {
+  auto& global_instance = LoggerGlobal::get();
+  Logger::Callback retired;
+  Logger::Callback retired_pending;
+
+  {
+    std::unique_lock lock(global_instance.callback_mtx);
+
+    {
+      std::lock_guard pending_lock(global_instance.pending_mtx);
+
+      if (global_instance.has_pending_file_callback.exchange(false, std::memory_order_acq_rel)) {
+        retired_pending = std::move(global_instance.pending_file_callback);
+      }
+    }
+
+    retired = std::move(global_instance.file_callback);
+    global_instance.file_callback = std::move(callback);
+    global_instance.has_file_callback.store(static_cast<bool>(global_instance.file_callback),
+                                            std::memory_order_release);
+  }
+}
+
+static void install_pending_handlers() noexcept {
+  auto& global_instance = LoggerGlobal::get();
+
+  if VLIKELY (!global_instance.has_pending_console_callback.load(std::memory_order_acquire) &&
+              !global_instance.has_pending_file_callback.load(std::memory_order_acquire)) {
+    return;
+  }
+
+  if VUNLIKELY (is_in_handler_on_current_thread()) {
+    return;
+  }
+
+  Logger::Callback retired_console;
+  Logger::Callback retired_file;
+
+  {
+    std::unique_lock callback_lock(global_instance.callback_mtx);
+    std::lock_guard pending_lock(global_instance.pending_mtx);
+
+    if (global_instance.has_pending_console_callback.exchange(false, std::memory_order_acq_rel)) {
+      retired_console = std::move(global_instance.console_callback);
+      global_instance.console_callback = std::move(global_instance.pending_console_callback);
+      global_instance.has_console_callback.store(static_cast<bool>(global_instance.console_callback),
+                                                 std::memory_order_release);
+    }
+
+    if (global_instance.has_pending_file_callback.exchange(false, std::memory_order_acq_rel)) {
+      retired_file = std::move(global_instance.file_callback);
+      global_instance.file_callback = std::move(global_instance.pending_file_callback);
+      global_instance.has_file_callback.store(static_cast<bool>(global_instance.file_callback),
+                                              std::memory_order_release);
+    }
+  }
+}
 
 // Logger::Impl
 struct Logger::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding)
@@ -284,9 +397,9 @@ struct Logger::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding)
   };
 
   std::atomic_bool disk_emergency{false};
-  std::atomic_bool is_enable_backtrace{false};
   std::atomic_bool is_enable_file_channel{false};
-  std::mutex backtrace_mtx;
+  std::once_flag file_init;
+  std::atomic_bool file_ready{false};
 
   std::atomic<PluginInitState> plugin_init_state{PluginInitState::kPending};
   std::string plugin_name;
@@ -322,43 +435,31 @@ void Logger::init(const std::string& app_name, const std::string& log_path) noex
 Logger& Logger::get() noexcept {
   static Logger instance;
 
-  if VUNLIKELY (!instance.impl_->plugin_name.empty() &&
-                instance.impl_->plugin_init_state.load(std::memory_order_acquire) != Impl::PluginInitState::kComplete) {
-    auto expected = Impl::PluginInitState::kPending;
-
-    if (instance.impl_->plugin_init_state.compare_exchange_strong(
-            expected, Impl::PluginInitState::kInitializing, std::memory_order_acq_rel, std::memory_order_acquire)) {
+  if VUNLIKELY (!instance.impl_->file_ready.load(std::memory_order_acquire) && !is_logging_on_current_thread() &&
+                !LoggerGlobal::get().is_busy.load(std::memory_order_acquire) &&
+                LoggerGlobal::get().file_level.load(std::memory_order_acquire) < kOff) {
+    std::call_once(instance.impl_->file_init, [&] {
       auto& global_instance = LoggerGlobal::get();
-      bool plugin_inited = false;
+      auto& logging = is_logging_on_current_thread();
+      const bool previous = logging;
 
       global_instance.is_busy.store(true, std::memory_order_release);
-      instance.impl_->plugin.set_log_level(kOff);
-      instance.impl_->interface = instance.impl_->plugin.load<LoggerPluginInterface>(instance.impl_->plugin_name, 1, 0);
+      logging = true;
+      instance.initialize_file_channel();
 
-      if (instance.impl_->interface) {
-        plugin_inited = instance.impl_->interface->init(global_instance.app_name);
+      if (instance.impl_->is_enable_file_channel.load(std::memory_order_acquire) &&
+          kInfo >= global_instance.file_level.load(std::memory_order_acquire)) {
+        instance.write_to_file(kInfo, global_instance.version_log);
       }
 
-      if (plugin_inited) {
-        static Logger::Impl::PluginFinalizer plugin_finalizer{instance};
-        (void)plugin_finalizer;
-
-        instance.impl_->is_enable_file_channel.store(true, std::memory_order_release);
-        std::cout << "Successfully loaded plugin for env 'VLINK_LOG_PLUGIN', libname: " << instance.impl_->plugin_name
-                  << std::endl;
-
-        if (kInfo >= global_instance.file_level.load(std::memory_order_acquire)) {
-          instance.write_to_file(kInfo, global_instance.version_log);
-        }
-      } else {
-        instance.impl_->interface.reset();
-        instance.impl_->plugin.clear();
-        std::cerr << "Failed to load plugin for env 'VLINK_LOG_PLUGIN', libname: " << instance.impl_->plugin_name
-                  << std::endl;
-      }
-
+      logging = previous;
       global_instance.is_busy.store(false, std::memory_order_release);
-      instance.impl_->plugin_init_state.store(Impl::PluginInitState::kComplete, std::memory_order_release);
+    });
+
+    instance.initialize_plugin();
+
+    if (instance.impl_->plugin_init_state.load(std::memory_order_acquire) != Impl::PluginInitState::kInitializing) {
+      instance.impl_->file_ready.store(true, std::memory_order_release);
     }
   }
 
@@ -373,7 +474,13 @@ void Logger::flush() noexcept {
     return;
   }
 
-  static Logger& instance = Logger::get();
+  Logger& instance = Logger::get();
+
+  {
+    std::lock_guard lock(get_print_mtx());
+    std::fflush(stdout);
+    std::fflush(stderr);
+  }
 
   if (!instance.impl_->is_enable_file_channel.load(std::memory_order_acquire)) {
     return;
@@ -405,20 +512,31 @@ void Logger::flush() noexcept {
 void Logger::register_console_handler(Callback&& callback) noexcept {
   auto& global_instance = LoggerGlobal::get();
 
-  std::unique_lock lock(global_instance.callback_mtx);
+  if VUNLIKELY (is_in_handler_on_current_thread()) {
+    std::lock_guard lock(global_instance.pending_mtx);
 
-  global_instance.console_callback = std::move(callback);
-  global_instance.has_console_callback.store(static_cast<bool>(global_instance.console_callback),
-                                             std::memory_order_release);
+    global_instance.pending_console_callback = std::move(callback);
+    global_instance.has_pending_console_callback.store(true, std::memory_order_release);
+
+    return;
+  }
+
+  install_console_handler(std::move(callback));
 }
 
 void Logger::register_file_handler(Callback&& callback) noexcept {
   auto& global_instance = LoggerGlobal::get();
 
-  std::unique_lock lock(global_instance.callback_mtx);
+  if VUNLIKELY (is_in_handler_on_current_thread()) {
+    std::lock_guard lock(global_instance.pending_mtx);
 
-  global_instance.file_callback = std::move(callback);
-  global_instance.has_file_callback.store(static_cast<bool>(global_instance.file_callback), std::memory_order_release);
+    global_instance.pending_file_callback = std::move(callback);
+    global_instance.has_pending_file_callback.store(true, std::memory_order_release);
+
+    return;
+  }
+
+  install_file_handler(std::move(callback));
 }
 
 void Logger::set_console_level(Level level) noexcept {
@@ -476,7 +594,7 @@ int Logger::get_stream_precision() noexcept {
 int Logger::get_stream_width() noexcept { return LoggerGlobal::get().stream_width.load(std::memory_order_acquire); }
 
 void Logger::enable_backtrace(size_t size) noexcept {
-  static Logger& instance = Logger::get();
+  Logger& instance = Logger::get();
 
   if VUNLIKELY (instance.impl_->disk_emergency.load(std::memory_order_acquire)) {
     return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -491,28 +609,15 @@ void Logger::enable_backtrace(size_t size) noexcept {
   }
 
 #if defined(VLINK_ENABLE_LOG_BACKEND)
-  std::lock_guard lock(instance.impl_->backtrace_mtx);
-
-  if (instance.impl_->is_enable_backtrace.load(std::memory_order_acquire)) {
-    return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
   instance.impl_->backend->enable_backtrace(size);
 
-  instance.impl_->is_enable_backtrace.store(true, std::memory_order_release);
 #else
   (void)size;
 #endif
 }
 
 void Logger::disable_backtrace() noexcept {
-  static Logger& instance = Logger::get();
-
-  std::lock_guard lock(instance.impl_->backtrace_mtx);
-
-  if (!instance.impl_->is_enable_backtrace.load(std::memory_order_acquire)) {
-    return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
+  Logger& instance = Logger::get();
 
   if VUNLIKELY (!instance.impl_->is_enable_file_channel.load(std::memory_order_acquire)) {
     return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -522,27 +627,17 @@ void Logger::disable_backtrace() noexcept {
     return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  instance.impl_->is_enable_backtrace.store(false, std::memory_order_release);
-
 #if defined(VLINK_ENABLE_LOG_BACKEND)
-  instance.impl_->backend->disable_backtrace();
+  if (instance.impl_->backend) {
+    instance.impl_->backend->disable_backtrace();
+  }
 #else
   (void)instance;
 #endif
 }
 
 void Logger::dump_backtrace() noexcept {
-  static Logger& instance = Logger::get();
-
-  if VUNLIKELY (instance.impl_->disk_emergency.load(std::memory_order_acquire)) {
-    return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
-
-  std::lock_guard lock(instance.impl_->backtrace_mtx);
-
-  if (!instance.impl_->is_enable_backtrace.load(std::memory_order_acquire)) {
-    return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-  }
+  Logger& instance = Logger::get();
 
   if VUNLIKELY (!instance.impl_->is_enable_file_channel.load(std::memory_order_acquire)) {
     return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -554,9 +649,13 @@ void Logger::dump_backtrace() noexcept {
 
 #if defined(VLINK_ENABLE_LOG_BACKEND)
   LoggerBackend::ConsoleWriter console_writer = [](Level level, std::string_view log) {
-    Logger::write_to_console_line(level, log);
+    if (level >= LoggerGlobal::get().console_level.load(std::memory_order_acquire)) {
+      write_to_console(level, log, true);
+    }
   };
-  instance.impl_->backend->dump_backtrace(console_writer);
+  if (instance.impl_->backend) {
+    instance.impl_->backend->dump_backtrace(console_writer);
+  }
 #else
   (void)instance;
 #endif
@@ -657,13 +756,12 @@ Logger::Logger() noexcept {
     }
   }
 
-  if (global_instance.console_level.load(std::memory_order_acquire) < kOff ||
-      global_instance.file_level.load(std::memory_order_acquire) < kOff) {
+  {
     std::string enable_console_unorder = Utils::get_env("VLINK_LOG_CONSOLE_UNORDER");
     global_instance.console_in_order.store(enable_console_unorder != "1", std::memory_order_release);
 
-    std::string enable_utc_str = Utils::get_env("VLINK_LOG_ENABLE_UTC");
-    global_instance.utc_enable.store(enable_utc_str == "1", std::memory_order_release);
+    std::string utc_enable_str = Utils::get_env("VLINK_LOG_UTC_ENABLE");
+    global_instance.utc_enable.store(utc_enable_str == "1", std::memory_order_release);
 
     if (global_instance.app_name.empty()) {
       global_instance.app_name = Utils::get_app_name();
@@ -678,169 +776,10 @@ Logger::Logger() noexcept {
     global_instance.console_format_enable.store(console_format == "1", std::memory_order_release);
   }
 
-  if (global_instance.file_level.load(std::memory_order_acquire) < kOff) {
-    global_instance.version_log.reserve(128);
-
-    global_instance.version_log.append("***** ");
-    global_instance.version_log.append("[PNAME: ");
-    global_instance.version_log.append(global_instance.app_name);
-    global_instance.version_log.append("] ");
-
-    global_instance.version_log.append("[PID: ");
-    global_instance.version_log.append(Utils::get_pid_str());
-    global_instance.version_log.append("] ");
-
-    if (global_instance.utc_enable.load(std::memory_order_acquire)) {
-      global_instance.version_log.append("[DATE (UTC): ");
-      global_instance.version_log.append(get_current_date(true));
-      global_instance.version_log.append("] ");
-    } else {
-      global_instance.version_log.append("[DATE: ");
-      global_instance.version_log.append(get_current_date(false));
-      global_instance.version_log.append("] ");
-    }
-
-    global_instance.version_log.append("[VERSION: ");
-    global_instance.version_log.append(VLINK_VERSION);
-    global_instance.version_log.append("] ");
-    global_instance.version_log.append("*****");
-
-    impl_->plugin_name = Utils::get_env("VLINK_LOG_PLUGIN");
-
-    if (!impl_->plugin_name.empty()) {
-      is_logging = was_logging;
-      global_instance.is_busy.store(false, std::memory_order_release);
-      global_instance.is_initializing.store(false, std::memory_order_release);
-
-      return;
-    }
-
-    impl_->is_enable_file_channel.store(true, std::memory_order_release);
-
-    if (global_instance.log_path.empty()) {
-      std::string log_dir = Utils::get_env("VLINK_LOG_DIR");
-
-      if (log_dir.empty()) {
-        log_dir = Utils::get_tmp_dir() + "/" + "vlink-log";
-      } else if (log_dir.back() == '/') {
-        log_dir.pop_back();
-      }
-
-      try {
-        if (!std::filesystem::exists(log_dir)) {
-          std::filesystem::create_directories(log_dir);
-        }
-      } catch (std::exception&) {        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        log_dir = Utils::get_tmp_dir();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-
-      global_instance.log_path = log_dir + "/" + global_instance.app_name;
-    }
-
-    size_t log_max_size = kDefaultLogMaxSize;
-    size_t log_max_count = kDefaultLogMaxCount;
-    int log_flush_delay_ms = kDefaultLogFlushDelay;
-
-    {
-      std::string log_max_size_str = Utils::get_env("VLINK_LOG_MAX_SIZE");
-      std::string log_max_count_str = Utils::get_env("VLINK_LOG_MAX_COUNT");
-      std::string log_flush_delay_str = Utils::get_env("VLINK_LOG_FLUSH_DELAY");
-
-      if (!log_max_size_str.empty()) {
-        std::from_chars(log_max_size_str.data(), log_max_size_str.data() + log_max_size_str.size(), log_max_size);
-      }
-
-      if (!log_max_count_str.empty()) {
-        std::from_chars(log_max_count_str.data(), log_max_count_str.data() + log_max_count_str.size(), log_max_count);
-      }
-
-      if (!log_flush_delay_str.empty()) {
-        std::from_chars(log_flush_delay_str.data(), log_flush_delay_str.data() + log_flush_delay_str.size(),
-                        log_flush_delay_ms);
-      }
-    }
-
-#if defined(VLINK_ENABLE_LOG_BACKEND)
-    std::string log_strategy = Utils::get_env("VLINK_LOG_STORE_STRATEGY");
-    std::string log_append = Utils::get_env("VLINK_LOG_OPEN_APPEND");
-    std::string log_block = Utils::get_env("VLINK_LOG_BLOCK_SYNC");
-    std::string log_depth = Utils::get_env("VLINK_LOG_WRITE_DEPTH");
-
-    size_t log_write_depth = kDefaultWriteDepth;
-
-    if (!log_depth.empty()) {
-      std::from_chars(log_depth.data(), log_depth.data() + log_depth.size(), log_write_depth);
-    }
-
-    LoggerBackend::Config config;
-    config.app_name = global_instance.app_name;
-    config.log_path = global_instance.log_path;
-    config.max_file_size = log_max_size;
-    config.max_files = log_max_count;
-    config.queue_size = log_write_depth;
-    config.flush_interval_ms = log_flush_delay_ms > 0 ? static_cast<uint32_t>(log_flush_delay_ms) : 0U;
-    config.fixed_filename = log_strategy == "1";
-    config.append = log_append == "1";
-    config.block_when_full = log_block == "1";
-    config.use_utc = global_instance.utc_enable.load(std::memory_order_acquire);
-
-    try {
-      impl_->backend = std::make_unique<LoggerBackend>(
-          std::move(config),
-          [this](std::string_view message) {
-            impl_->disk_emergency.store(true, std::memory_order_release);
-            std::cerr << "VLink logger disk emergency: " << message << std::endl;
-          },
-          [](Level level, std::string_view message) { write_to_console_line(level, message); });
-    } catch (const std::exception& error) {
-      impl_->disk_emergency.store(true, std::memory_order_release);
-      std::cerr << "VLink logger disk emergency: " << error.what() << std::endl;
-    }
-
-#elif defined(__ANDROID__)
-#elif defined(__QNX__)
-    slog2_buffer_set_config_t buffer_cfg;
-
-    buffer_cfg.num_buffers = 1;
-    buffer_cfg.buffer_set_name = "vlink-log";
-    buffer_cfg.verbosity_level = SLOG2_DEBUG2;
-    buffer_cfg.buffer_config[0].buffer_name = global_instance.app_name.c_str();
-    buffer_cfg.buffer_config[0].num_pages = 32;
-    buffer_cfg.max_retries = 3;
-
-    if VUNLIKELY (slog2_register(&buffer_cfg, &impl_->slog2_buffer, 0) != 0) {
-      impl_->disk_emergency.store(true, std::memory_order_release);
-      std::cerr << "Failed to register slog2 buffer" << std::endl;
-    } else {
-      slog2_set_default_buffer(impl_->slog2_buffer);
-    }
-
-#elif defined(__linux__)
-    impl_->kmsg_dev.open(VLINK_KMSG_DEV_PATH, std::ofstream::out | std::ofstream::app);
-
-    std::error_code ec(errno, std::generic_category());
-
-    if VUNLIKELY (!impl_->kmsg_dev.is_open()) {
-      impl_->disk_emergency.store(true, std::memory_order_release);
-      std::cerr << "Failed to open " << VLINK_KMSG_DEV_PATH << ": " << ec.message() << std::endl;
-
-      is_logging = was_logging;
-      global_instance.is_busy.store(false, std::memory_order_release);
-      global_instance.is_initializing.store(false, std::memory_order_release);
-
-      return;
-    }
-
-#endif
-
-    if (kInfo >= global_instance.file_level.load(std::memory_order_acquire)) {
-      write_to_file(kInfo, global_instance.version_log);
-    }
-  }
-
   is_logging = was_logging;
   global_instance.is_busy.store(false, std::memory_order_release);
   global_instance.is_initializing.store(false, std::memory_order_release);
+  global_instance.is_initialized.store(true, std::memory_order_release);
 }
 
 Logger::~Logger() noexcept {
@@ -875,13 +814,21 @@ Logger::~Logger() noexcept {
 bool Logger::can_log(Level level) noexcept {
   auto& global_instance = LoggerGlobal::get();
 
+  if VUNLIKELY (!global_instance.is_initialized.load(std::memory_order_acquire)) {
+    if (is_logging_on_current_thread() || global_instance.is_initializing.load(std::memory_order_acquire) ||
+        global_instance.is_stopping.load(std::memory_order_acquire)) {
+      return false;
+    }
+
+    Logger::get();
+  }
+
   if (level != kFatal && level < global_instance.console_level.load(std::memory_order_acquire) &&
       level < global_instance.file_level.load(std::memory_order_acquire)) {
     return false;
   }
 
-  if VUNLIKELY (is_logging_on_current_thread() || global_instance.is_initializing.load(std::memory_order_acquire) ||
-                global_instance.is_stopping.load(std::memory_order_acquire)) {
+  if VUNLIKELY (is_logging_on_current_thread() || global_instance.is_stopping.load(std::memory_order_acquire)) {
     return false;
   }
 
@@ -899,7 +846,7 @@ void Logger::write(Level level, std::string_view log) noexcept {
   Logger& instance = Logger::get();
 
   if (level >= global_instance.console_level.load(std::memory_order_acquire)) {
-    instance.write_to_console(level, log);
+    write_to_console(level, log);
   }
 
   if (level >= global_instance.file_level.load(std::memory_order_acquire)) {
@@ -907,16 +854,25 @@ void Logger::write(Level level, std::string_view log) noexcept {
   }
 }
 
-char* Logger::get_local_buffer() noexcept {
-  thread_local char buffer[kLocalBufferSize];
-
-  return buffer;
-}
-
 FastStream& Logger::get_local_stream() noexcept {
   static auto& global_instance = LoggerGlobal::get();
+  FastStream* selected;
 
-  thread_local FastStream stream;
+  if VUNLIKELY (logger_stream_retired) {
+    // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new)
+    selected = new FastStream;
+  } else {
+    auto& state = get_logger_stream_state();
+
+    if VUNLIKELY (state.depth > state.nested_streams.size()) {
+      state.nested_streams.emplace_back(std::make_unique<FastStream>());
+    }
+
+    selected = state.depth == 0 ? &state.stream : state.nested_streams[state.depth - 1].get();
+    ++state.depth;
+  }
+
+  auto& stream = *selected;
 
   stream.reset();
 
@@ -941,7 +897,208 @@ FastStream& Logger::get_local_stream() noexcept {
   return stream;
 }
 
-void Logger::write_to_console(Level level, std::string_view log) noexcept {
+void Logger::release_local_stream(FastStream* stream) noexcept {
+  if VUNLIKELY (logger_stream_retired) {
+    delete stream;
+  } else {
+    --get_logger_stream_state().depth;
+  }
+}
+
+void Logger::initialize_file_channel() noexcept {
+  auto& global_instance = LoggerGlobal::get();
+  global_instance.version_log.reserve(128);
+
+  global_instance.version_log.append("***** ");
+  global_instance.version_log.append("[PNAME: ");
+  global_instance.version_log.append(global_instance.app_name);
+  global_instance.version_log.append("] ");
+
+  global_instance.version_log.append("[PID: ");
+  global_instance.version_log.append(Utils::get_pid_str());
+  global_instance.version_log.append("] ");
+
+  if (global_instance.utc_enable.load(std::memory_order_acquire)) {
+    global_instance.version_log.append("[DATE (UTC): ");
+    global_instance.version_log.append(get_current_date(true));
+    global_instance.version_log.append("] ");
+  } else {
+    global_instance.version_log.append("[DATE: ");
+    global_instance.version_log.append(get_current_date(false));
+    global_instance.version_log.append("] ");
+  }
+
+  global_instance.version_log.append("[VERSION: ");
+  global_instance.version_log.append(VLINK_VERSION);
+  global_instance.version_log.append("] ");
+  global_instance.version_log.append("*****");
+
+  impl_->plugin_name = Utils::get_env("VLINK_LOG_PLUGIN");
+
+  if (!impl_->plugin_name.empty()) {
+    return;
+  }
+
+  if (global_instance.log_path.empty()) {
+    std::string log_dir = Utils::get_env("VLINK_LOG_DIR");
+
+    if (log_dir.empty()) {
+      log_dir = Utils::get_tmp_dir() + "/" + "vlink-log";
+    } else if (log_dir.back() == '/') {
+      log_dir.pop_back();
+    }
+
+    try {
+      if (!std::filesystem::exists(log_dir)) {
+        std::filesystem::create_directories(log_dir);
+      }
+    } catch (std::exception&) {        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      log_dir = Utils::get_tmp_dir();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+
+    std::string log_pid_enable = Utils::get_env("VLINK_LOG_PID_ENABLE");
+
+    global_instance.log_path = log_dir + "/" + global_instance.app_name;
+
+    if (log_pid_enable == "1") {
+      global_instance.log_path += "/" + Utils::get_pid_str();
+    }
+  }
+
+  size_t log_max_size = kDefaultLogMaxSize;
+  size_t log_max_count = kDefaultLogMaxCount;
+  int log_flush_delay_ms = kDefaultLogFlushDelay;
+
+  {
+    std::string log_max_size_str = Utils::get_env("VLINK_LOG_MAX_SIZE");
+    std::string log_max_count_str = Utils::get_env("VLINK_LOG_MAX_COUNT");
+    std::string log_flush_delay_str = Utils::get_env("VLINK_LOG_FLUSH_DELAY");
+
+    if (!log_max_size_str.empty()) {
+      std::from_chars(log_max_size_str.data(), log_max_size_str.data() + log_max_size_str.size(), log_max_size);
+    }
+
+    if (!log_max_count_str.empty()) {
+      std::from_chars(log_max_count_str.data(), log_max_count_str.data() + log_max_count_str.size(), log_max_count);
+    }
+
+    if (!log_flush_delay_str.empty()) {
+      std::from_chars(log_flush_delay_str.data(), log_flush_delay_str.data() + log_flush_delay_str.size(),
+                      log_flush_delay_ms);
+    }
+  }
+
+#if defined(VLINK_ENABLE_LOG_BACKEND)
+  std::string log_strategy = Utils::get_env("VLINK_LOG_STORE_STRATEGY");
+  std::string log_append = Utils::get_env("VLINK_LOG_OPEN_APPEND");
+  std::string log_block = Utils::get_env("VLINK_LOG_BLOCK_SYNC");
+  std::string log_depth = Utils::get_env("VLINK_LOG_WRITE_DEPTH");
+
+  size_t log_write_depth = kDefaultWriteDepth;
+
+  if (!log_depth.empty()) {
+    std::from_chars(log_depth.data(), log_depth.data() + log_depth.size(), log_write_depth);
+  }
+
+  LoggerBackend::Config config;
+  config.app_name = global_instance.app_name;
+  config.log_path = global_instance.log_path;
+  config.max_file_size = log_max_size;
+  config.max_files = log_max_count;
+  config.queue_size = log_write_depth;
+  config.flush_interval_ms = log_flush_delay_ms > 0 ? static_cast<uint32_t>(log_flush_delay_ms) : 0U;
+  config.fixed_filename = log_strategy == "1";
+  config.append = log_append == "1";
+  config.block_when_full = log_block == "1";
+  config.use_utc = global_instance.utc_enable.load(std::memory_order_acquire);
+
+  try {
+    impl_->backend = std::make_unique<LoggerBackend>(std::move(config), [this](std::string_view message) {
+      impl_->disk_emergency.store(true, std::memory_order_release);
+      std::cerr << "VLink logger disk emergency: " << message << std::endl;
+    });
+  } catch (const std::exception& error) {
+    impl_->disk_emergency.store(true, std::memory_order_release);
+    std::cerr << "VLink logger disk emergency: " << error.what() << std::endl;
+  }
+
+#elif defined(__ANDROID__)
+#elif defined(__QNX__)
+  slog2_buffer_set_config_t buffer_cfg;
+
+  buffer_cfg.num_buffers = 1;
+  buffer_cfg.buffer_set_name = "vlink-log";
+  buffer_cfg.verbosity_level = SLOG2_DEBUG2;
+  buffer_cfg.buffer_config[0].buffer_name = global_instance.app_name.c_str();
+  buffer_cfg.buffer_config[0].num_pages = 32;
+  buffer_cfg.max_retries = 3;
+
+  if VUNLIKELY (slog2_register(&buffer_cfg, &impl_->slog2_buffer, 0) != 0) {
+    impl_->disk_emergency.store(true, std::memory_order_release);
+    std::cerr << "Failed to register slog2 buffer" << std::endl;
+  } else {
+    slog2_set_default_buffer(impl_->slog2_buffer);
+  }
+
+#elif defined(__linux__)
+  impl_->kmsg_dev.open(VLINK_KMSG_DEV_PATH, std::ofstream::out | std::ofstream::app);
+
+  std::error_code ec(errno, std::generic_category());
+
+  if VUNLIKELY (!impl_->kmsg_dev.is_open()) {
+    impl_->disk_emergency.store(true, std::memory_order_release);
+    std::cerr << "Failed to open " << VLINK_KMSG_DEV_PATH << ": " << ec.message() << std::endl;
+
+    return;
+  }
+
+#endif
+
+  impl_->is_enable_file_channel.store(true, std::memory_order_release);
+}
+
+void Logger::initialize_plugin() noexcept {
+  if VUNLIKELY (!impl_->plugin_name.empty() &&
+                impl_->plugin_init_state.load(std::memory_order_acquire) != Impl::PluginInitState::kComplete) {
+    auto expected = Impl::PluginInitState::kPending;
+
+    if (impl_->plugin_init_state.compare_exchange_strong(expected, Impl::PluginInitState::kInitializing,
+                                                         std::memory_order_acq_rel, std::memory_order_acquire)) {
+      auto& global_instance = LoggerGlobal::get();
+      bool plugin_inited = false;
+
+      global_instance.is_busy.store(true, std::memory_order_release);
+      impl_->plugin.set_log_level(kOff);
+      impl_->interface = impl_->plugin.load<LoggerPluginInterface>(impl_->plugin_name, 1, 0);
+
+      if (impl_->interface) {
+        plugin_inited = impl_->interface->init(global_instance.app_name);
+      }
+
+      if (plugin_inited) {
+        static Logger::Impl::PluginFinalizer plugin_finalizer{*this};
+        (void)plugin_finalizer;
+
+        impl_->is_enable_file_channel.store(true, std::memory_order_release);
+        std::cout << "Successfully loaded plugin for env 'VLINK_LOG_PLUGIN', libname: " << impl_->plugin_name
+                  << std::endl;
+
+        if (kInfo >= global_instance.file_level.load(std::memory_order_acquire)) {
+          write_to_file(kInfo, global_instance.version_log);
+        }
+      } else {
+        impl_->interface.reset();
+        impl_->plugin.clear();
+        std::cerr << "Failed to load plugin for env 'VLINK_LOG_PLUGIN', libname: " << impl_->plugin_name << std::endl;
+      }
+
+      global_instance.is_busy.store(false, std::memory_order_release);
+      impl_->plugin_init_state.store(Impl::PluginInitState::kComplete, std::memory_order_release);
+    }
+  }
+}
+
+void Logger::write_to_console(Level level, std::string_view log, bool formatted) noexcept {
   static auto& global_instance = LoggerGlobal::get();
 
   if VUNLIKELY (global_instance.has_console_callback.load(std::memory_order_acquire)) {
@@ -949,9 +1106,12 @@ void Logger::write_to_console(Level level, std::string_view log) noexcept {
 
     if (global_instance.console_callback) {
       auto& is_logging = is_logging_on_current_thread();
+      auto& is_in_handler = is_in_handler_on_current_thread();
       const bool was_logging = is_logging;
+      const bool was_in_handler = is_in_handler;
 
       is_logging = true;
+      is_in_handler = true;
 
       try {
         global_instance.console_callback(level, log);
@@ -961,28 +1121,32 @@ void Logger::write_to_console(Level level, std::string_view log) noexcept {
         std::cerr << "VLink console logger handler failed" << std::endl;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
 
+      is_in_handler = was_in_handler;
       is_logging = was_logging;
+
+      callback_lock.unlock();
+      install_pending_handlers();
 
       return;
     }
   }
 
-  if VUNLIKELY (impl_->is_enable_backtrace.load(std::memory_order_acquire)) {
-    return;
-  }
+  if VUNLIKELY (!formatted && global_instance.console_format_enable.load(std::memory_order_acquire)) {
+    std::string fallback_log;
+    std::optional<CachedTimestamp> fallback_timestamp;
 
-  if VUNLIKELY (global_instance.console_format_enable.load(std::memory_order_acquire)) {
-    thread_local std::string fmt_log;
+    auto& fmt_log = logger_stream_retired ? fallback_log : get_logger_stream_state().console_buffer;
+    auto& timestamp = logger_stream_retired ? fallback_timestamp.emplace() : get_logger_stream_state().timestamp;
 
     fmt_log.clear();
 
     auto tid_str = get_thread_id_str();
 
     if VUNLIKELY (global_instance.utc_enable.load(std::memory_order_acquire)) {
-      fmt_log.append(get_current_time(true));
+      fmt_log.append(timestamp.get("%02d-%02d %02d:%02d:%02d.%03d", true));
       fmt_log.append(" UTC");
     } else {
-      fmt_log.append(get_current_time(false));
+      fmt_log.append(timestamp.get());
     }
 
     fmt_log.append(" @");
@@ -1034,18 +1198,17 @@ void Logger::write_to_console_line(Level level, std::string_view log) noexcept {
 void Logger::write_to_file(Level level, std::string_view log) noexcept {
   static auto& global_instance = LoggerGlobal::get();
 
-  if VUNLIKELY (!impl_->is_enable_file_channel.load(std::memory_order_acquire)) {
-    return;
-  }
-
   if VUNLIKELY (global_instance.has_file_callback.load(std::memory_order_acquire)) {
     std::shared_lock callback_lock(global_instance.callback_mtx);
 
     if (global_instance.file_callback) {
       auto& is_logging = is_logging_on_current_thread();
+      auto& is_in_handler = is_in_handler_on_current_thread();
       const bool was_logging = is_logging;
+      const bool was_in_handler = is_in_handler;
 
       is_logging = true;
+      is_in_handler = true;
 
       try {
         global_instance.file_callback(level, log);
@@ -1055,10 +1218,18 @@ void Logger::write_to_file(Level level, std::string_view log) noexcept {
         std::cerr << "VLink file logger handler failed" << std::endl;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
 
+      is_in_handler = was_in_handler;
       is_logging = was_logging;
+
+      callback_lock.unlock();
+      install_pending_handlers();
 
       return;
     }
+  }
+
+  if VUNLIKELY (!impl_->is_enable_file_channel.load(std::memory_order_acquire)) {
+    return;
   }
 
   if VUNLIKELY (impl_->interface) {
@@ -1068,11 +1239,8 @@ void Logger::write_to_file(Level level, std::string_view log) noexcept {
       return;
     }
 
-    thread_local std::string plugin_log;
-    plugin_log.assign(log);
-
     is_plugin_logging = true;
-    impl_->interface->log(level, plugin_log);
+    impl_->interface->log(level, log);
     is_plugin_logging = false;
 
     return;

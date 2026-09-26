@@ -43,12 +43,14 @@
 #define VLINK_TERM_STDOUT_FILENO _fileno(stdout)
 #define VLINK_TERM_WRITE _write
 #define VLINK_TERM_ISATTY _isatty
+#define VLINK_TERM_WRITE_LEN(n) static_cast<unsigned int>((n) > 0x7FFFFFFFU ? 0x7FFFFFFFU : (n))
 #else
 #include <termios.h>
 #include <unistd.h>
 #define VLINK_TERM_STDOUT_FILENO STDOUT_FILENO
 #define VLINK_TERM_WRITE ::write
 #define VLINK_TERM_ISATTY ::isatty
+#define VLINK_TERM_WRITE_LEN(n) ((n) > 0x7FFFFFFFU ? size_t{0x7FFFFFFFU} : (n))
 #endif
 
 namespace vlink {
@@ -285,7 +287,7 @@ void TerminalStream::flush_unlocked() noexcept {
   size_t flushed = 0;
 
   while (remaining > 0) {
-    auto written = VLINK_TERM_WRITE(fd_, data, static_cast<unsigned int>(remaining));
+    auto written = VLINK_TERM_WRITE(fd_, data, VLINK_TERM_WRITE_LEN(remaining));
 
     if VUNLIKELY (written < 0) {
       if VUNLIKELY (errno == EINTR) {  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -335,29 +337,14 @@ void TerminalStream::write_to_buffer(const char* data, size_t len) noexcept {
   if (len >= buffer_.size()) {
     // LCOV_EXCL_START GCOVR_EXCL_START
     flush_unlocked();
+    // LCOV_EXCL_STOP GCOVR_EXCL_STOP
+  }
 
-    if (write_pos_ != 0) {
-      // if VUNLIKELY (len > std::numeric_limits<size_t>::max() - write_pos_) {
-      //   return;
-      // }
-      //
-      // const size_t target_size = write_pos_ + len;
-      // if (target_size > buffer_.size()) {
-      //   try {
-      //     buffer_.resize(target_size);
-      //   } catch (...) {
-      //     return;
-      //   }
-      // }
-      //
-      // std::memcpy(buffer_.data() + write_pos_, data, len);
-      // write_pos_ = target_size;
-      return;
-    }
-
+  if (len >= buffer_.size() && write_pos_ == 0) {
+    // LCOV_EXCL_START GCOVR_EXCL_START
     size_t remaining = len;
     while (remaining > 0) {
-      auto written = VLINK_TERM_WRITE(fd_, data, static_cast<unsigned int>(remaining));
+      auto written = VLINK_TERM_WRITE(fd_, data, VLINK_TERM_WRITE_LEN(remaining));
 
       if VUNLIKELY (written < 0) {
         if VUNLIKELY (errno == EINTR) {

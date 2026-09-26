@@ -172,7 +172,14 @@ bool DdsrSubscriberImpl::listen(MsgCallback&& callback) {
 
   listener_.emplace(this);
 
-  reader_ = DdsrFactory::create_datareader(kSubscriber, conf_, subscriber_.get(), topic_.get(), listener_->get_ptr());
+  reader_ =
+      DdsrFactory::create_datareader(init_impl_type, conf_, subscriber_.get(), topic_.get(), listener_->get_ptr());
+
+  if VUNLIKELY (!reader_) {
+    listener_.reset();
+    callback_ = {};
+    return false;
+  }
 
   return true;
 }

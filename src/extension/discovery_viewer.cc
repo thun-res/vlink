@@ -58,6 +58,7 @@
 #endif
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
 #endif
 
@@ -79,14 +80,40 @@ static constexpr SocketHandle kInvalidSocket = -1;
 [[maybe_unused]] static constexpr int kReportTimeout = kReportInterval * 4;
 [[maybe_unused]] static constexpr size_t kMaxTaskSize = 50000U;
 [[maybe_unused]] static constexpr uint32_t kMaxElapsedTime = 1000;
-[[maybe_unused]] static constexpr int kBroadcastBindPort = 51694;
+[[maybe_unused]] static constexpr int kBroadcastBasePort = 51600;
 [[maybe_unused]] static constexpr size_t kBufferSize = 1024 * 1024U;
+[[maybe_unused]] static constexpr size_t kMaxBatchSize = 64U;
+[[maybe_unused]] static constexpr uint32_t kMaxDiscoveryDomain = 255U;
+[[maybe_unused]] static constexpr int kTimeoutWarnInterval = 10000;
+[[maybe_unused]] static constexpr int64_t kConflictWarnInterval = 60000;
+[[maybe_unused]] static constexpr size_t kMaxRecvPerBatch = 256U;
 
 #if VLINK_DISCOVERY_MULTICAST
 [[maybe_unused]] static constexpr const char* kBroadcastAddress = "239.255.0.100";
 #else
 [[maybe_unused]] static constexpr const char* kBroadcastAddress = "255.255.255.255";
 #endif
+
+[[maybe_unused]] static bool has_pending_data(SocketHandle sock) {
+#ifdef _WIN32
+  u_long available = 0;
+
+  return ::ioctlsocket(sock, FIONREAD, &available) == 0 && available > 0;
+#else
+  pollfd target_fd;
+  std::memset(&target_fd, 0, sizeof(target_fd));
+
+  target_fd.fd = sock;
+  target_fd.events = POLLIN;
+
+  return ::poll(&target_fd, 1, 0) > 0 && (target_fd.revents & POLLIN) != 0;
+#endif
+}
+
+[[maybe_unused]] static std::string& get_invalid_listen_domain() {
+  static std::string invalid_domain;
+  return invalid_domain;
+}
 
 [[maybe_unused]] static std::string node_count_to_string(size_t node_count) {
   if (node_count > 9) {
@@ -95,6 +122,12 @@ static constexpr SocketHandle kInvalidSocket = -1;
 
   return std::to_string(node_count);
 }
+
+// DiscoveryMessage
+struct DiscoveryMessage final {
+  std::string message;
+  std::string target_ip;
+};
 
 // DiscoveryViewer::Impl
 struct DiscoveryViewer::Impl final {
@@ -144,12 +177,15 @@ struct DiscoveryViewer::Impl final {
 
   std::recursive_mutex mtx;
   std::shared_mutex ser_mtx;
-  bool info_dirty{false};
+  bool list_dirty{false};
+  bool callback_dirty{false};
+  std::unordered_map<std::string, ElapsedTimer> ser_warned_urls;
 
   DiscoveryViewer::Callback callback;
   std::thread thread;
   std::vector<uint8_t> buffer;
   Timer timer;
+  ElapsedTimer schedule_elapsed;
 
   SocketHandle sock{kInvalidSocket};
   sockaddr_in address;
@@ -451,7 +487,32 @@ std::string DiscoveryViewer::convert_type_to_view(uint32_t type, const std::vect
   }
 }
 
+uint32_t DiscoveryViewer::get_listen_domain() {
+  static uint32_t domain = []() -> uint32_t {
+    const std::string domain_str = Utils::get_env("VLINK_DISCOVER_DOMAIN");
+
+    if (domain_str.empty()) {
+      return 0U;
+    }
+
+    uint32_t value = 0U;
+
+    auto [ptr, error] = std::from_chars(domain_str.data(), domain_str.data() + domain_str.size(), value);
+
+    if VUNLIKELY (error != std::errc() || ptr != domain_str.data() + domain_str.size() || value > kMaxDiscoveryDomain) {
+      get_invalid_listen_domain() = domain_str;
+      return 0U;
+    }
+
+    return value;
+  }();
+
+  return domain;
+}
+
 std::string DiscoveryViewer::get_listen_address() { return kBroadcastAddress; }
+
+uint16_t DiscoveryViewer::get_listen_port() { return static_cast<uint16_t>(kBroadcastBasePort + get_listen_domain()); }
 
 DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>()) {
   set_name("DiscoveryViewer");
@@ -533,9 +594,11 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
   }
 #endif
 
+  warn_listen_domain();
+
   std::memset(&impl_->address, 0, sizeof(impl_->address));
   impl_->address.sin_family = AF_INET;
-  impl_->address.sin_port = htons(kBroadcastBindPort);
+  impl_->address.sin_port = htons(get_listen_port());
   impl_->address.sin_addr.s_addr = htonl(INADDR_ANY);
 
   if VUNLIKELY (::bind(impl_->sock, reinterpret_cast<sockaddr*>(&impl_->address), sizeof(impl_->address)) < 0) {
@@ -544,41 +607,47 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
   }
 
 #if VLINK_DISCOVERY_MULTICAST
-  ip_mreq mreq;
-  std::memset(&mreq, 0, sizeof(mreq));
+  std::vector<std::string> ip_list;
 
   if (impl_->enable_native_discovery) {
-    mreq.imr_multiaddr.s_addr = inet_addr(kBroadcastAddress);
-    mreq.imr_interface.s_addr = inet_addr("127.0.0.1");
-
-    if VUNLIKELY (::setsockopt(impl_->sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, reinterpret_cast<const char*>(&mreq),
-                               sizeof(mreq)) < 0) {
-      VLOG_F("DiscoveryViewer: Failed to send multicast to 127.0.0.1.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      return;                                                             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
+    ip_list.emplace_back("127.0.0.1");
   } else {
+    ip_list = Helpers::split_any(Utils::get_env("VLINK_DISCOVER_IP"));
+  }
+
+  if (ip_list.empty()) {
+    ip_mreq mreq;
+    std::memset(&mreq, 0, sizeof(mreq));
     mreq.imr_multiaddr.s_addr = inet_addr(kBroadcastAddress);
     mreq.imr_interface.s_addr = htonl(INADDR_ANY);
 
     if VUNLIKELY (::setsockopt(impl_->sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, reinterpret_cast<const char*>(&mreq),
                                sizeof(mreq)) < 0) {
-#ifdef __QNX__
-      CLOG_F(
-          "DiscoveryViewer: Failed to set multicast, please add address [%s] to target device. "
-          "\nExamples(QNX): route add -host %s -interface eth0.",
-          kBroadcastAddress, kBroadcastAddress);
-#elif defined(__APPLE__)
-      CLOG_F(
-          "DiscoveryViewer: Failed to set multicast, please add address [%s] to target device. "
-          "\nExamples(MACOS): route add -net %s -interface eth0.",
-          kBroadcastAddress, kBroadcastAddress);
-#else
-      CLOG_F(  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-          "DiscoveryViewer: Failed to set multicast, please add address [%s] to target device. "
-          "\nExamples(Linux): route add %s eth0.",
-          kBroadcastAddress, kBroadcastAddress);
-#endif
-      return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      VLOG_F("DiscoveryViewer: Failed to join multicast group [", kBroadcastAddress,
+             "], please add the route entry to the target device.");
+      return;
+    }
+  } else {
+    size_t joined_count = 0;
+
+    for (const auto& ip : ip_list) {
+      ip_mreq mreq;
+      std::memset(&mreq, 0, sizeof(mreq));
+      mreq.imr_multiaddr.s_addr = inet_addr(kBroadcastAddress);
+      mreq.imr_interface.s_addr = inet_addr(ip.c_str());
+
+      if VUNLIKELY (::setsockopt(impl_->sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, reinterpret_cast<const char*>(&mreq),
+                                 sizeof(mreq)) < 0) {
+        VLOG_W("DiscoveryViewer: Failed to join multicast group on [", ip, "].");
+        continue;
+      }
+
+      ++joined_count;
+    }
+
+    if VUNLIKELY (joined_count == 0) {
+      VLOG_F("DiscoveryViewer: Failed to join multicast group [", kBroadcastAddress, "] on any interface.");
+      return;
     }
   }
 
@@ -608,85 +677,108 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
 
     char target_ip[INET_ADDRSTRLEN] = {0};
 
-    for (;;) {
-      int size = ::recvfrom(impl_->sock, reinterpret_cast<char*>(impl_->buffer.data()), impl_->buffer.size(), 0,
-                            reinterpret_cast<sockaddr*>(&target_address), &target_address_len);
+    std::vector<DiscoveryMessage> batch;
 
-      if VUNLIKELY (is_ready_to_quit()) {
-        break;
+    for (;;) {
+      batch.clear();
+
+      size_t recv_count = 0;
+
+      for (;;) {
+        target_address_len = sizeof(target_address);
+
+        int size = ::recvfrom(impl_->sock, reinterpret_cast<char*>(impl_->buffer.data()), impl_->buffer.size(), 0,
+                              reinterpret_cast<sockaddr*>(&target_address), &target_address_len);
+
+        if VUNLIKELY (is_ready_to_quit()) {
+          return;
+        }
+
+        if VUNLIKELY (size <= 0 || static_cast<size_t>(size) > impl_->buffer.size()) {
+          break;
+        }
+
+        if VUNLIKELY (::inet_ntop(AF_INET, &target_address.sin_addr, target_ip, INET_ADDRSTRLEN) == nullptr) {
+          break;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        }
+
+        if (impl_->filter_type == kFilterNative && global_ip_set.count(target_ip) == 0) {
+          if (++recv_count < kMaxRecvPerBatch && has_pending_data(impl_->sock)) {
+            continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          }
+
+          break;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        }
+
+        batch.emplace_back(
+            DiscoveryMessage{Bytes::shallow_copy(impl_->buffer.data(), size).to_string(), std::string(target_ip)});
+
+        if (batch.size() >= kMaxBatchSize || ++recv_count >= kMaxRecvPerBatch || !has_pending_data(impl_->sock)) {
+          break;
+        }
       }
 
-      if VUNLIKELY (size <= 0 || static_cast<size_t>(size) > impl_->buffer.size()) {
+      if (batch.empty()) {
         continue;
       }
 
-      if VUNLIKELY (::inet_ntop(AF_INET, &target_address.sin_addr, target_ip, INET_ADDRSTRLEN) == nullptr) {
-        continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      }
-
-      if (impl_->filter_type == kFilterNative) {
-        if (global_ip_set.count(target_ip) == 0) {
-          continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        }
-      }
-
-      std::string message = Bytes::shallow_copy(impl_->buffer.data(), size).to_string();
-
       if VUNLIKELY (!is_running()) {
-        Utils::yield_cpu();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        continue;            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        continue;
       }
 
-      post_task([this, message, target_ip_str = std::string(target_ip)]() {
+      post_task([this, batch = std::move(batch)]() {
+        std::lock_guard lock(impl_->mtx);
+
+        for (const auto& entry : batch) {
+          const std::string& message = entry.message;
+          const std::string& target_ip_str = entry.target_ip;
+
 #if VLINK_DISCOVERY_OFFLINE
-        if VUNLIKELY (Helpers::has_startwith(message, "offline")) {
-          auto offline_list_view = Helpers::split_view(message, '\n');
+          if VUNLIKELY (Helpers::has_startwith(message, "offline")) {
+            auto offline_list_view = Helpers::split_view(message, '\n');
 
-          if VUNLIKELY (offline_list_view.size() < 2) {
-            return;
+            if VUNLIKELY (offline_list_view.size() < 2) {
+              continue;
+            }
+
+            if VUNLIKELY (offline_list_view.at(0) != "offline") {
+              continue;
+            }
+
+            auto process_view = offline_list_view.at(1);
+
+            auto process_list_view = Helpers::split_view(process_view, ':');
+
+            if VUNLIKELY (process_list_view.size() < 3) {
+              continue;
+            }
+
+            uint32_t process_pid = 0;
+
+            const std::string hostname = Helpers::unescape_field(process_list_view.at(0));
+
+            auto process_pid_view = process_list_view.at(1);
+
+            auto [ptr, error] = std::from_chars(process_pid_view.data(),
+                                                process_pid_view.data() + process_pid_view.size(), process_pid);
+
+            if VUNLIKELY (error != std::errc{}) {
+              process_pid = 0;
+            }
+
+            const std::string process_name = Helpers::unescape_field(process_list_view.at(2));
+
+            process_offline(hostname, process_pid, process_name);
+
+            continue;
           }
-
-          if VUNLIKELY (offline_list_view.at(0) != "offline") {
-            return;
-          }
-
-          auto process_view = offline_list_view.at(1);
-
-          auto process_list_view = Helpers::split_view(process_view, ':');
-
-          if VUNLIKELY (process_list_view.size() < 3) {
-            return;
-          }
-
-          uint32_t process_pid = 0;
-
-          const std::string hostname = Helpers::unescape_field(process_list_view.at(0));
-
-          auto process_pid_view = process_list_view.at(1);
-
-          auto [ptr, error] =
-              std::from_chars(process_pid_view.data(), process_pid_view.data() + process_pid_view.size(), process_pid);
-
-          if VUNLIKELY (error != std::errc{}) {
-            process_pid = 0;
-          }
-
-          const std::string process_name = Helpers::unescape_field(process_list_view.at(2));
-
-          process_offline(hostname, process_pid, process_name);
-
-          return;
-        }
 #endif
 
-        auto message_list_view = Helpers::split_view(message, '\n');
+          auto message_list_view = Helpers::split_view(message, '\n');
 
-        if VUNLIKELY (message_list_view.empty()) {
-          return;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        }
-
-        {
-          std::lock_guard lock(impl_->mtx);
+          if VUNLIKELY (message_list_view.empty()) {
+            continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          }
 
           for (auto str : message_list_view) {
             auto list = Helpers::split_view(str, ' ');
@@ -789,68 +881,20 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
             auto [iter, inserted] = impl_->info_map.try_emplace(std::move(info), ElapsedTimer{});
             iter->second.restart();
 
-            if (!inserted) {
+            if (inserted) {
+              impl_->list_dirty = true;
+              impl_->callback_dirty = true;
+            } else {
               auto& existing_info = const_cast<Info&>(iter->first);
-              existing_info.process_list[0].profiler = profiler;
-            }
 
-            impl_->info_dirty = true;
-
-            if (!url.empty()) {
-              std::string merged_ser_type;
-              SchemaType merged_schema_type = SchemaType::kUnknown;
-              bool has_ser_conflict = false;
-              bool has_schema_conflict = false;
-
-              for (const auto& [active_info, active_timer] : impl_->info_map) {
-                (void)active_timer;
-
-                if (active_info.url != url) {
-                  continue;
-                }
-
-                if (!active_info.ser_type.empty()) {
-                  if (merged_ser_type.empty() || merged_ser_type == "Bytes") {
-                    merged_ser_type = active_info.ser_type;
-                  } else if (active_info.ser_type != "Bytes" && active_info.ser_type != merged_ser_type) {
-                    has_ser_conflict = true;
-                  }
-                }
-
-                if (has_schema_conflict || active_info.schema_type == SchemaType::kUnknown) {
-                  continue;
-                }
-
-                if (merged_schema_type == SchemaType::kUnknown) {
-                  merged_schema_type = active_info.schema_type;
-                } else if (merged_schema_type != active_info.schema_type) {
-                  merged_schema_type = SchemaType::kUnknown;
-                  has_schema_conflict = true;
-                }
+              if (!existing_info.process_list.empty() && existing_info.process_list[0].profiler != profiler) {
+                existing_info.process_list[0].profiler = profiler;
+                impl_->list_dirty = true;
+                impl_->callback_dirty = true;
               }
-
-              if VUNLIKELY (has_ser_conflict) {
-                CLOG_W(
-                    "DiscoveryViewer: Different ser: url = %s, current_ser = %s, new_ser = %s, process_name = %s, "
-                    "process_pid = %u.",
-                    url.c_str(), merged_ser_type.c_str(), ser_type.c_str(), process_name.c_str(), process_pid);
-                merged_ser_type.clear();
-              }
-
-              std::lock_guard ser_lock(impl_->ser_mtx);
-
-              if (!merged_ser_type.empty()) {
-                impl_->ser_map[url] = merged_ser_type;
-              } else {
-                impl_->ser_map.erase(url);
-              }
-
-              impl_->schema_type_map[url] = merged_schema_type;
             }
           }
         }
-
-        report_list();
       });
     }
   });
@@ -895,14 +939,24 @@ DiscoveryViewer::~DiscoveryViewer() {
 void DiscoveryViewer::register_callback(Callback&& callback) {
   std::lock_guard lock(impl_->mtx);
   impl_->callback = std::move(callback);
+  impl_->callback_dirty = true;
 }
 
 std::vector<DiscoveryViewer::Info> DiscoveryViewer::get_info_list() {
   std::lock_guard lock(impl_->mtx);
+
+  refresh_list();
+
   return impl_->info_list;
 }
 
 std::string DiscoveryViewer::get_ser_type(const std::string& url) const {
+  {
+    std::lock_guard lock(impl_->mtx);
+
+    refresh_list();
+  }
+
   std::shared_lock lock(impl_->ser_mtx);
   auto iter = impl_->ser_map.find(url);
 
@@ -914,6 +968,12 @@ std::string DiscoveryViewer::get_ser_type(const std::string& url) const {
 }
 
 SchemaType DiscoveryViewer::get_schema_type(const std::string& url) const {
+  {
+    std::lock_guard lock(impl_->mtx);
+
+    refresh_list();
+  }
+
   std::shared_lock lock(impl_->ser_mtx);
   auto iter = impl_->schema_type_map.find(url);
 
@@ -932,24 +992,46 @@ void DiscoveryViewer::on_begin() { MessageLoop::on_begin(); }
 
 void DiscoveryViewer::on_end() { MessageLoop::on_end(); }
 
+void DiscoveryViewer::on_task_timeout(MessageLoop::Callback&& callback, uint32_t elapsed_time) {
+  VLOG_W_EVERY_MS(kTimeoutWarnInterval, "DiscoveryViewer: Task was delayed for ", elapsed_time,
+                  "ms, the message loop is starved.");
+
+  if VLIKELY (callback) {
+    callback();
+  }
+}
+
+void DiscoveryViewer::warn_listen_domain() {
+  static const bool kWarned = []() {
+    (void)get_listen_domain();
+
+    const std::string& invalid_domain = get_invalid_listen_domain();
+
+    if VUNLIKELY (!invalid_domain.empty()) {
+      VLOG_W("DiscoveryViewer: Invalid VLINK_DISCOVER_DOMAIN [", invalid_domain, "], fallback to 0.");
+    }
+
+    return true;
+  }();
+
+  (void)kWarned;
+}
+
 void DiscoveryViewer::process_timeout() {
-  std::vector<DiscoveryViewer::Info> erase_list;
+  const int64_t schedule_elapsed = impl_->schedule_elapsed.restart();
+  const int64_t expired_time = std::max<int64_t>(kReportTimeout, schedule_elapsed * 2);
 
   {
     std::lock_guard lock(impl_->mtx);
 
-    for (const auto& [info, elapsed] : impl_->info_map) {
-      if (elapsed.get() > kReportTimeout || !elapsed.is_active()) {
-        erase_list.emplace_back(info);
+    for (auto iter = impl_->info_map.begin(); iter != impl_->info_map.end();) {
+      if (iter->second.get() > expired_time || !iter->second.is_active()) {
+        iter = impl_->info_map.erase(iter);
+        impl_->list_dirty = true;
+        impl_->callback_dirty = true;
+      } else {
+        ++iter;
       }
-    }
-
-    if (!erase_list.empty()) {
-      for (const auto& info : erase_list) {
-        impl_->info_map.erase(info);
-      }
-
-      impl_->info_dirty = true;
     }
   }
 
@@ -992,14 +1074,13 @@ void DiscoveryViewer::process_offline(std::string_view hostname, uint32_t pid, s
       }
     }
 
-    impl_->info_dirty = true;
+    impl_->list_dirty = true;
+    impl_->callback_dirty = true;
   }
-
-  report_list();
 }
 // LCOV_EXCL_STOP GCOVR_EXCL_STOP
 
-void DiscoveryViewer::sort_url() {
+void DiscoveryViewer::sort_url() const {
   impl_->info_list.clear();
   std::unordered_map<std::string, std::string> next_ser_map;
   std::unordered_map<std::string, SchemaType> next_schema_type_map;
@@ -1021,7 +1102,20 @@ void DiscoveryViewer::sort_url() {
         if (!info.ser_type.empty() && ser_conflict_urls.count(info.url) == 0) {
           if (merged.ser_type.empty() || (merged.ser_type == "Bytes" && info.ser_type != "Bytes")) {
             merged.ser_type = info.ser_type;
-          } else if (merged.ser_type != "Bytes" && info.ser_type != merged.ser_type) {
+          } else if (merged.ser_type != "Bytes" && info.ser_type != "Bytes" && info.ser_type != merged.ser_type) {
+            auto [warn_iter, warn_inserted] = impl_->ser_warned_urls.try_emplace(info.url, ElapsedTimer{});
+
+            if (warn_inserted || warn_iter->second.get() > kConflictWarnInterval) {
+              const std::string process_name = info.process_list.empty() ? std::string() : info.process_list[0].name;
+              const uint32_t process_pid = info.process_list.empty() ? 0U : info.process_list[0].pid;
+
+              warn_iter->second.restart();
+
+              VLOG_W("DiscoveryViewer: Different ser: url = ", info.url, ", current_ser = ", merged.ser_type,
+                     ", new_ser = ", info.ser_type, ", process_name = ", process_name, ", process_pid = ", process_pid,
+                     ".");
+            }
+
             merged.ser_type.clear();
             ser_conflict_urls.emplace(info.url);
           }
@@ -1075,10 +1169,25 @@ void DiscoveryViewer::sort_url() {
     }
   }
 
+  for (auto iter = impl_->ser_warned_urls.begin(); iter != impl_->ser_warned_urls.end();) {
+    if (ser_conflict_urls.count(iter->first) == 0 && iter->second.get() > kConflictWarnInterval) {
+      iter = impl_->ser_warned_urls.erase(iter);
+    } else {
+      ++iter;
+    }
+  }
+
   {
     std::unique_lock lock(impl_->ser_mtx);
     impl_->ser_map.swap(next_ser_map);
     impl_->schema_type_map.swap(next_schema_type_map);
+  }
+}
+
+void DiscoveryViewer::refresh_list() const {
+  if (impl_->list_dirty) {
+    sort_url();
+    impl_->list_dirty = false;
   }
 }
 
@@ -1089,13 +1198,18 @@ void DiscoveryViewer::report_list() {
   {
     std::lock_guard lock(impl_->mtx);
 
-    if (!impl_->info_dirty) {
+    if (!impl_->callback_dirty) {
       return;
     }
 
-    sort_url();
+    impl_->callback_dirty = false;
 
-    impl_->info_dirty = false;
+    if (!impl_->callback) {
+      return;
+    }
+
+    refresh_list();
+
     callback = impl_->callback;
     info_list = impl_->info_list;
   }

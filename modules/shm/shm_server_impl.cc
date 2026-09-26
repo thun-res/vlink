@@ -37,8 +37,8 @@ void ShmServerImpl::init() {
 
   conf_.hash_code = Helpers::get_hash_code(conf_.event);
 
-  object_ =
-      factory.get_object<Object>({kImplType, conf_.address, conf_.domain, conf_.depth, conf_.history, conf_.wait});
+  object_ = factory.get_object<Object>(
+      {kImplType, conf_.address, conf_.domain, conf_.depth, conf_.history, conf_.wait, conf_.event, nullptr});
 
   object_->add_impl(this);
 }
@@ -46,7 +46,9 @@ void ShmServerImpl::init() {
 void ShmServerImpl::deinit() {
   detach();
 
-  object_->remove_impl(this);
+  if (object_) {
+    object_->remove_impl(this);
+  }
 }
 
 bool ShmServerImpl::suspend() { return object_->suspend(); }

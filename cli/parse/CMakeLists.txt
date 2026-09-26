@@ -43,12 +43,13 @@ target_link_libraries(${PROJECT_NAME} PRIVATE vlink::vlink ${VLINK_NO_INTRA_LIBR
 target_link_libraries(${PROJECT_NAME} PRIVATE thirdparty::argparse thirdparty::json protobuf::libprotobuf)
 vlink_target_system_includes_from(${PROJECT_NAME} protobuf::libprotobuf)
 
-if(NOT TARGET vlink-exprtk_api)
-  find_package(vlink-exprtk_api QUIET)
-endif()
-
-if(TARGET vlink::exprtk_api)
-  target_link_libraries(${PROJECT_NAME} PRIVATE vlink::exprtk_api)
+if(NOT DEFINED ENABLE_EXPRTK OR ENABLE_EXPRTK)
+  if(NOT TARGET vlink::exprtk_api)
+    find_package(vlink-exprtk_api QUIET)
+  endif()
+  if(TARGET vlink::exprtk_api)
+    target_link_libraries(${PROJECT_NAME} PRIVATE vlink::exprtk_api)
+  endif()
 endif()
 
 if(TARGET flatbuffers::flatbuffers_shared)

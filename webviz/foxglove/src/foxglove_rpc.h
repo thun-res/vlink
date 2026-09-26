@@ -110,6 +110,7 @@ class FoxgloveRpc final {
   };
 
   struct PendingRpcCall final {
+    uint64_t instance{0};
     uint64_t deadline_ms{0};
     uint32_t rpc_id{0};
     uint32_t call_id{0};
@@ -150,7 +151,7 @@ class FoxgloveRpc final {
 
   void process_rpc_timeout();
 
-  bool take_pending_rpc(const PendingRpcKey& key, PendingRpcCall& pending);
+  bool take_pending_rpc(const PendingRpcKey& key, uint64_t instance, PendingRpcCall& pending);
 
   template <typename NodeT>
   void apply_transport(NodeT& node) const;
@@ -168,6 +169,7 @@ class FoxgloveRpc final {
   Timer rpc_timeout_timer_;
   mutable std::mutex pending_rpc_mtx_;
   std::unordered_map<PendingRpcKey, PendingRpcCall, PendingRpcKeyHash> pending_rpc_calls_;
+  uint64_t next_call_instance_{0};
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(FoxgloveRpc)
 };

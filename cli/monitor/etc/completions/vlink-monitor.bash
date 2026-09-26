@@ -16,7 +16,7 @@ _vlink_monitor() {
             _vlink_bash_complete_dirs "$cur"
             return
             ;;
-        -i|--filter|-g|--proto_args|--rows|--columns|--chart_width|--process_width)
+        -i|--filter|--hostname|-g|--proto_args|--rows|--columns|--chart_width|--process_width)
             return
             ;;
     esac
@@ -29,7 +29,7 @@ _vlink_monitor() {
         fi
     fi
 
-    _vlink_bash_complete_words "-u --urls -i --filter -b --blob -k --black -n --native \
+    _vlink_bash_complete_words "-u --urls -i --filter --hostname -b --blob -k --black -n --native \
 -t --node_count -l --detail -o --observe_all -e --profiler -s --ser -a --active \
 -y --pubsub -p --process -c --chart -x --preset -g --proto_args -d --proto_dir \
 -f --fbs_dir --plain --dot --rows --columns --chart_width --process_width \

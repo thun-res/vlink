@@ -193,7 +193,7 @@ class VLINK_EXPORT Logger final {
 #endif
 
   /**
-   * @brief Size of the thread-local C-style format buffer in bytes.
+   * @brief Size of each C-style format buffer in bytes.
    *
    * @details
    * Messages longer than @c kLocalBufferSize @c - @c 1 characters are silently truncated.
@@ -204,10 +204,13 @@ class VLINK_EXPORT Logger final {
    * @brief Signature for custom console / file sink callbacks.
    *
    * @details
-   * Invoked synchronously from the logging thread; the @c std::string_view is valid only for
-   * the duration of the call.  Do not register or unregister handlers during invocation.
-   * Exceptions are reported to standard error and do not escape the logging boundary.  Nested
-   * logging on the same thread is suppressed before its message arguments are evaluated.
+   * Invoked synchronously from the logging thread, or the backend worker during backtrace replay.
+   * The view is valid only for the call.  Handlers must support concurrent invocation.  A handler
+   * may replace or unregister itself; such a registration takes effect once that handler returns,
+   * while registrations from other threads wait for handlers in progress and release the
+   * previous handler afterwards.  Exceptions are reported to standard error and do not escape
+   * the logging boundary.  Nested ordinary logging on the same thread is suppressed before
+   * arguments are evaluated; Fatal still throws.
    */
   using Callback = MoveFunction<void(Level, std::string_view)>;
 
@@ -232,10 +235,12 @@ class VLINK_EXPORT Logger final {
    * @brief Initialises the logger singleton.
    *
    * @details
-   * Must be invoked before @c get or any logging macro.  Only values supplied before singleton
-   * construction configure the backend; later calls do not rebuild active sinks.  File output is
-   * controlled by the file level.  An empty @p log_path selects @c VLINK_LOG_DIR or a temporary
-   * default directory.
+   * Must be invoked before @c get or any logging macro.  Only values supplied before the file
+   * channel is initialised configure the backend; later calls do not rebuild active sinks.  File
+   * output is controlled by the file level.  An empty @p log_path selects @c VLINK_LOG_DIR or a temporary
+   * default directory followed by @c app_name; @c VLINK_LOG_PID_ENABLE=1 appends the PID so concurrent
+   * instances of one application never share a rotating file set.  An explicit directory must be
+   * owned by one live process.
    *
    * @param app_name  Application name embedded in log output.  Default: empty (detect automatically).
    * @param log_path  Base directory for generated log files when @p app_name is non-empty.
@@ -251,11 +256,11 @@ class VLINK_EXPORT Logger final {
   static Logger& get() noexcept;
 
   /**
-   * @brief Flushes every active sink.
+   * @brief Flushes stdout, stderr and the active built-in file backend or plugin.
    *
    * @details
    * Useful before abnormal termination.  Invoked automatically before a @c kFatal message
-   * throws.
+   * throws.  Custom handlers manage their own buffering and flushing.
    *
    * @warning Call during application runtime, before static object destruction begins.
    */
@@ -364,7 +369,12 @@ class VLINK_EXPORT Logger final {
   [[nodiscard]] static int get_stream_width() noexcept;
 
   /**
-   * @brief Enables a ring-buffer backtrace of the most recent @p size records.
+   * @brief Enables a file-backend ring buffer of the most recent @p size eligible records.
+   *
+   * @details
+   * Console output keeps its threshold and handler.  The file backend keeps every record in the
+   * ring and additionally writes Warn or higher immediately.  Calling again resets the ring to
+   * the supplied capacity.
    *
    * @param size  Capacity of the backtrace ring buffer.
    *
@@ -380,7 +390,11 @@ class VLINK_EXPORT Logger final {
   static void disable_backtrace() noexcept;
 
   /**
-   * @brief Flushes the backtrace ring buffer to the active sinks.
+   * @brief Dumps a snapshot to the built-in file backend and configured console sink.
+   *
+   * @details
+   * Console replay obeys its current threshold and handler, including Off.  Retained records
+   * remain available for console replay after a permanent file error.
    *
    * @warning Call during application runtime, before static object destruction begins.
    */
@@ -478,6 +492,26 @@ class VLINK_EXPORT Logger final {
   template <Level LevelT, typename... ArgsT>
   static void print(ArgsT&&... args);
 
+ private:
+  struct StreamGuard final {
+    StreamGuard() noexcept = default;
+
+    StreamGuard(StreamGuard&& other) noexcept : ptr(std::exchange(other.ptr, nullptr)) {}
+
+    ~StreamGuard() noexcept {
+      if (ptr) {
+        release_local_stream(ptr);
+      }
+    }
+
+    void acquire() noexcept { ptr = &get_local_stream(); }
+
+    FastStream* ptr{nullptr};
+
+    VLINK_DISALLOW_COPY_AND_ASSIGN(StreamGuard)
+  };
+
+ public:
   /**
    * @struct WrapperStream
    * @brief RAII helper backing @c SLOG_*; collects tokens and flushes on destruction.
@@ -495,8 +529,7 @@ class VLINK_EXPORT Logger final {
     explicit WrapperStream(Logger::NoDetail) noexcept {
       if constexpr (kIsEnabled) {
         if VLIKELY (should_log<LevelT>()) {
-          enabled_ = true;
-          stream_ = &Logger::get_local_stream();
+          stream_.acquire();
         }
       }
     }
@@ -504,25 +537,21 @@ class VLINK_EXPORT Logger final {
     explicit WrapperStream(DetailInfo&& detail) noexcept {
       if constexpr (kIsEnabled) {
         if VLIKELY (should_log<LevelT>()) {
-          enabled_ = true;
-          stream_ = &Logger::get_local_stream();
+          stream_.acquire();
 
-          push_detail_to_stream(detail, *stream_);
+          push_detail_to_stream(detail, *stream_.ptr);
         }
       }
     }
 
-    WrapperStream(WrapperStream&& other) noexcept : stream_(other.stream_), enabled_(other.enabled_) {
-      other.stream_ = nullptr;
-      other.enabled_ = false;
-    }
+    WrapperStream(WrapperStream&& other) noexcept = default;
 
     WrapperStream& operator=(WrapperStream&&) = delete;
 
     ~WrapperStream() noexcept(LevelT != Level::kFatal) {
       if constexpr (kIsEnabled) {
-        if VLIKELY (enabled_) {
-          finalize_log<LevelT>(stream_->take_view());
+        if VLIKELY (stream_.ptr) {
+          finalize_log<LevelT>(stream_.ptr->take_view());
         }
       }
     }
@@ -530,8 +559,8 @@ class VLINK_EXPORT Logger final {
     template <typename T>
     WrapperStream& operator<<(T&& t) noexcept {
       if constexpr (kIsEnabled) {
-        if VLIKELY (enabled_) {
-          stream_->push(std::forward<T>(t));
+        if VLIKELY (stream_.ptr) {
+          stream_.ptr->push(std::forward<T>(t));
         }
       }
 
@@ -543,13 +572,12 @@ class VLINK_EXPORT Logger final {
      *
      * @return @c true when the runtime level gate passed.
      */
-    explicit operator bool() const noexcept { return enabled_; }
+    explicit operator bool() const noexcept { return stream_.ptr != nullptr; }
 
    private:
     VLINK_DISALLOW_COPY_AND_ASSIGN(WrapperStream)
 
-    FastStream* stream_{nullptr};
-    bool enabled_{false};
+    StreamGuard stream_;
   };
 
  private:
@@ -571,13 +599,17 @@ class VLINK_EXPORT Logger final {
   static void push_detail_to_stream(DetailT&& detail, FastStream& stream) noexcept;
 
   template <typename DetailT>
-  static std::string_view format_with_detail(DetailT&& detail, const char* msg, int len) noexcept;
-
-  static char* get_local_buffer() noexcept;
+  static std::string_view format_with_detail(DetailT&& detail, const char* msg, int len, StreamGuard& guard) noexcept;
 
   static FastStream& get_local_stream() noexcept;
 
-  void write_to_console(Level level, std::string_view log) noexcept;
+  static void release_local_stream(FastStream* stream) noexcept;
+
+  void initialize_file_channel() noexcept;
+
+  void initialize_plugin() noexcept;
+
+  static void write_to_console(Level level, std::string_view log, bool formatted = false) noexcept;
 
   static void write_to_console_line(Level level, std::string_view log) noexcept;
 
@@ -609,7 +641,9 @@ inline void Logger::print_stream_style([[maybe_unused]] DetailT&& detail, [[mayb
     return;
   }
 
-  auto& stream = get_local_stream();
+  StreamGuard guard;
+  guard.acquire();
+  auto& stream = *guard.ptr;
 
   if constexpr (std::is_same_v<std::decay_t<DetailT>, DetailInfo>) {
     push_detail_to_stream(detail, stream);
@@ -630,13 +664,14 @@ inline void Logger::print_format_style([[maybe_unused]] DetailT&& detail,
 
   std::string_view log_view;
 
-  auto* local_buffer = get_local_buffer();
+  StreamGuard guard;
+  char local_buffer[kLocalBufferSize];
   auto result = format::format_to_n(local_buffer, kLocalBufferSize - 1, format, std::forward<ArgsT>(args)...);
   auto written = static_cast<int>(result.out - local_buffer);
 
   local_buffer[written] = '\0';
 
-  log_view = format_with_detail(detail, local_buffer, written);
+  log_view = format_with_detail(detail, local_buffer, written, guard);
 
   finalize_log<LevelT>(log_view);
 }
@@ -648,19 +683,20 @@ inline void Logger::print_c_style([[maybe_unused]] DetailT&& detail, [[maybe_unu
     return;
   }
 
-  std::string_view log_view;
+  StreamGuard guard;
 
   if constexpr (sizeof...(ArgsT) == 0) {
-    auto& stream = get_local_stream();
+    guard.acquire();
+    auto& stream = *guard.ptr;
 
     if constexpr (std::is_same_v<std::decay_t<DetailT>, DetailInfo>) {
       push_detail_to_stream(detail, stream);
     }
 
     stream.push(format);
-    log_view = stream.take_view();
+    finalize_log<LevelT>(stream.take_view());
   } else {
-    auto* local_buffer = get_local_buffer();
+    char local_buffer[kLocalBufferSize];
     auto written = std::snprintf(local_buffer, kLocalBufferSize, format, args...);
 
     if VUNLIKELY (written < 0) {
@@ -669,10 +705,8 @@ inline void Logger::print_c_style([[maybe_unused]] DetailT&& detail, [[maybe_unu
       written = kLocalBufferSize - 1;
     }
 
-    log_view = format_with_detail(detail, local_buffer, written);
+    finalize_log<LevelT>(format_with_detail(detail, local_buffer, written, guard));
   }
-
-  finalize_log<LevelT>(log_view);
 }
 
 template <Logger::Level LevelT, typename... ArgsT>
@@ -712,9 +746,11 @@ inline void Logger::push_detail_to_stream(DetailT&& detail, FastStream& stream) 
 }
 
 template <typename DetailT>
-inline std::string_view Logger::format_with_detail(DetailT&& detail, const char* msg, int len) noexcept {
+inline std::string_view Logger::format_with_detail(DetailT&& detail, const char* msg, int len,
+                                                   StreamGuard& guard) noexcept {
   if constexpr (std::is_same_v<std::decay_t<DetailT>, Logger::DetailInfo>) {
-    auto& stream = Logger::get_local_stream();
+    guard.acquire();
+    auto& stream = *guard.ptr;
 
     push_detail_to_stream(detail, stream);
 

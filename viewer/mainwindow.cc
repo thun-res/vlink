@@ -44,6 +44,7 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QFontDatabase>
+#include <QHash>
 #include <QHideEvent>
 #include <QItemDelegate>
 #include <QJsonDocument>
@@ -60,6 +61,7 @@
 #include <QResizeEvent>
 #include <QSettings>
 #include <QShowEvent>
+#include <QSignalBlocker>
 #include <QStandardPaths>
 #include <QTime>
 #include <QTimeZone>
@@ -99,6 +101,26 @@
 
 QString global_proto_dir_config = QStandardPaths::writableLocation(QStandardPaths::HomeLocation) + "/.vlink_proto_dir";
 QString global_fbs_dir_config = QStandardPaths::writableLocation(QStandardPaths::HomeLocation) + "/.vlink_fbs_dir";
+
+template <typename T>
+class SignedIntegerValidator : public QRegularExpressionValidator {
+ public:
+  using QRegularExpressionValidator::QRegularExpressionValidator;
+
+  State validate(QString& input, int& pos) const override {
+    const auto state = QRegularExpressionValidator::validate(input, pos);
+
+    if (state != Acceptable) {
+      return state;
+    }
+
+    bool ok = false;
+    const auto value = input.toLongLong(&ok, input.contains("0x", Qt::CaseInsensitive) ? 16 : 10);
+
+    return ok && value >= std::numeric_limits<T>::min() && value <= std::numeric_limits<T>::max() ? Acceptable
+                                                                                                  : Intermediate;
+  }
+};
 
 class CustomSqlQueryModel : public QSqlQueryModel {
  public:
@@ -207,8 +229,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
   }
 
   validator_normal_int_ = new QRegularExpressionValidator(QRegularExpression("^\\d+$"));
-  validator_int32_ = new QRegularExpressionValidator(QRegularExpression("^-?(0[xX][0-9a-fA-F]{1,8}|[0-9]{1,9})$"));
-  validator_int64_ = new QRegularExpressionValidator(QRegularExpression("^-?(0[xX][0-9a-fA-F]{1,16}|[0-9]{1,18})$"));
+  validator_int32_ = new SignedIntegerValidator<int32_t>(QRegularExpression("^-?(0[xX][0-9a-fA-F]{1,8}|[0-9]{1,10})$"));
+  validator_int64_ =
+      new SignedIntegerValidator<int64_t>(QRegularExpression("^-?(0[xX][0-9a-fA-F]{1,16}|[0-9]{1,19})$"));
   validator_uint32_ = new QRegularExpressionValidator(QRegularExpression("^(0[xX][0-9a-fA-F]{1,8}|[0-9]{1,10})$"));
   validator_uint64_ = new QRegularExpressionValidator(QRegularExpression("^(0[xX][0-9a-fA-F]{1,16}|[0-9]{1,20})$"));
   validator_double_ = new QRegularExpressionValidator(QRegularExpression("^-?[0-9]+([.][0-9]*)?$"));
@@ -1775,51 +1798,49 @@ void MainWindow::on_pushButton_datadetails_clicked() {
 
 void MainWindow::on_pushButton_jump_clicked() {
   QString value = ui->lineEdit_jump->text();
+  int row = -1;
+
   switch (ui->comboBox_jump->currentIndex()) {
     case 0: {
-      int row = value.toInt() - 1;
+      row = value.toInt() - 1;
 
-      if (row >= 0 && row < local_info_.message_count) {
-        ui->tableView_data->scrollTo(ui->tableView_data->model()->index(row, 0), QAbstractItemView::PositionAtCenter);
-        ui->tableView_data->selectRow(row);
-      } else {
+      if (row < 0 || row >= local_info_.message_count) {
         QMessageBox::warning(this, tr("Warning"), tr("Invalid row index."));
         return;
       }
     } break;
     case 1: {
-      int left = 0;
-      int right = local_info_.message_count - 1;
-      int row_index = -1;
       uint64_t target_elapsed = value.toDouble() * 1000'000;
-      while (left <= right) {
-        uint64_t mid = left + (right - left) / 2;
-        uint64_t current_elapsed =
-            ui->tableView_data->model()->data(ui->tableView_data->model()->index(mid, 0), Qt::UserRole).toULongLong();
+      QSqlQuery query(local_database_);
+      query.prepare("SELECT COUNT(*) FROM VLinkDatas WHERE elapsed < :elapsed");
+      query.bindValue(":elapsed", static_cast<qulonglong>(target_elapsed));
 
-        if (current_elapsed >= target_elapsed) {
-          row_index = mid;
-          right = mid - 1;
-        } else {
-          left = mid + 1;
-        }
+      if (!query.exec() || !query.next()) {
+        QMessageBox::warning(this, tr("Warning"), query.lastError().text());
+        return;
       }
 
-      if (row_index > 0) {
-        --row_index;
-      }
+      row = query.value(0).toInt();
 
-      if (row_index != -1) {
-        ui->tableView_data->scrollTo(ui->tableView_data->model()->index(row_index, 0),
-                                     QAbstractItemView::PositionAtCenter);
-        ui->tableView_data->selectRow(row_index);
-      } else {
+      if (row >= local_info_.message_count) {
         QMessageBox::warning(this, tr("Warning"), tr("Invalid seconds."));
+        return;
       }
+
+      row = std::max(row - 1, 0);
     } break;
     default:
-      break;
+      return;
   }
+
+  auto* model = ui->tableView_data->model();
+
+  while (row >= model->rowCount() && model->canFetchMore(QModelIndex())) {
+    model->fetchMore(QModelIndex());
+  }
+
+  ui->tableView_data->scrollTo(model->index(row, 0), QAbstractItemView::PositionAtCenter);
+  ui->tableView_data->selectRow(row);
 }
 
 void MainWindow::update_connected(bool connected) {
@@ -1982,21 +2003,26 @@ void MainWindow::update_url_widget(const QVariant& variant) {
     return;
   }
 
-  const auto& info_list = variant.value<std::vector<vlink::ProxyAPI::Info>>();
+  const auto& info_list = *static_cast<const std::vector<vlink::ProxyAPI::Info>*>(variant.constData());
 
   const auto& selected_items = ui->treeWidget_url->selectedItems();
 
+  QHash<QString, QTreeWidgetItem*> url_items;
+  url_items.reserve(static_cast<int>(info_list.size()));
+
+  for (const auto& info : info_list) {
+    url_items.insert(QString::fromStdString(info.url), nullptr);
+  }
+
   for (int i = 0; i < ui->treeWidget_url->topLevelItemCount(); ++i) {
     auto* p = ui->treeWidget_url->topLevelItem(i);
-    bool find = false;
-    for (const auto& info : info_list) {
-      if (p->text(1) == QString::fromStdString(info.url)) {
-        find = true;
-        break;
-      }
+    auto iter = url_items.find(p->text(1));
+
+    if (iter != url_items.end()) {
+      iter.value() = p;
     }
 
-    if (!find) {
+    if (iter == url_items.end()) {
       QTreeWidgetItem* current_item = ui->treeWidget_url->currentItem();
       // ui->treeWidget_url->blockSignals(true);
       QTreeWidgetItem* item = ui->treeWidget_url->takeTopLevelItem(i);
@@ -2032,15 +2058,7 @@ void MainWindow::update_url_widget(const QVariant& variant) {
   int agg_count = 0;
 
   for (size_t m = 0; m < info_list.size(); ++m) {
-    QTreeWidgetItem* item = nullptr;
-
-    for (int n = 0; n < ui->treeWidget_url->topLevelItemCount(); ++n) {
-      auto* p = ui->treeWidget_url->topLevelItem(n);
-
-      if (p->text(1) == QString::fromStdString(info_list[m].url)) {
-        item = p;
-      }
-    }
+    QTreeWidgetItem* item = url_items.value(QString::fromStdString(info_list[m].url));
 
     if (!item) {
       item = new QTreeWidgetItem;
@@ -2677,7 +2695,7 @@ void MainWindow::update_property_widget(const QVariant& variant, const QElapsedT
     return;
   }
 
-  const auto& proxy_data = variant.value<vlink::ProxyAPI::Data>();
+  const auto& proxy_data = *static_cast<const vlink::ProxyAPI::Data*>(variant.constData());
   const auto schema_type = proxy_data.schema;
 
   if (ui->stackedWidget_main->currentIndex() == 0) {
@@ -2763,6 +2781,7 @@ void MainWindow::update_property_widget(const QVariant& variant, const QElapsedT
     to_hide_item_list_ = all_item_list_;
 
     ui->treeWidget_property->setUpdatesEnabled(false);
+
     if (ui->checkBox_perf->isChecked()) {
       property_timer_.restart();
       qApp->processEvents();
@@ -3732,7 +3751,21 @@ bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& paren
           }
         } break;
         case google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE: {
-          get_property_list(widget, current_id, &ref->GetMessage(*msg, field));
+          bool recursive = false;
+
+          if (!ref->HasField(*msg, field)) {
+            recursive = field->message_type() == msg->GetDescriptor();
+
+            for (auto* parent = item->parent(); parent && !recursive; parent = parent->parent()) {
+              const auto iter = item_to_msg_map_.find(parent);
+
+              recursive = iter != item_to_msg_map_.end() && iter->second->GetDescriptor() == field->message_type();
+            }
+          }
+
+          if (!recursive) {
+            get_property_list(widget, current_id, &ref->GetMessage(*msg, field));
+          }
         } break;
         default:
           break;
@@ -3999,7 +4032,10 @@ bool MainWindow::get_property_list(QTreeWidget* widget, const std::string& paren
 }
 
 bool MainWindow::set_property_list(QTreeWidget* widget, const std::string& parent_id, google::protobuf::Message* msg) {
+  const QSignalBlocker blocker(widget);
+
   auto* ref = msg->GetReflection();
+
   for (int i = 0; i < msg->GetDescriptor()->field_count(); ++i) {
     std::string current_id = parent_id + "." + std::to_string(i);
     const auto* field = msg->GetDescriptor()->field(i);
@@ -4044,6 +4080,40 @@ bool MainWindow::set_property_list(QTreeWidget* widget, const std::string& paren
                         : static_cast<int>(EditDialog::EditValueKind::kUnknown));
       item->setText(2, field->name().c_str());
 #endif
+
+      bool recursive = false;
+
+      if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE && !field->is_required()) {
+        recursive = field->message_type() == msg->GetDescriptor();
+
+        for (auto* parent = item->parent(); parent && !recursive; parent = parent->parent()) {
+          const auto iter = item_to_msg_map_.find(parent);
+
+          recursive = iter != item_to_msg_map_.end() && iter->second->GetDescriptor() == field->message_type();
+        }
+      }
+
+#if GOOGLE_PROTOBUF_VERSION >= 3012000
+      const auto* oneof = field->real_containing_oneof();
+#else
+      const auto* oneof = field->containing_oneof();
+#endif
+
+      if (oneof || recursive) {
+        if (!item->data(0, Qt::CheckStateRole).isValid()) {
+          item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+          item->setCheckState(0, ref->HasField(*msg, field) ? Qt::Checked : Qt::Unchecked);
+        }
+
+        if (item->checkState(0) != Qt::Checked) {
+          for (int j = 0; j < item->childCount(); ++j) {
+            item->child(j)->setHidden(true);
+          }
+
+          ref->ClearField(msg, field);
+          continue;
+        }
+      }
 
       switch (field->cpp_type()) {
         case google::protobuf::FieldDescriptor::CPPTYPE_INT32: {
@@ -4452,8 +4522,15 @@ bool MainWindow::get_flatbuffers_property_list(QTreeWidget* widget, const std::s
             update_scalar_item(item, *field, get_str_for_enum(enum_name, value), AnalyzeDialog::kNumberType,
                                [this, value]() { analyze_dialog_->add_number(value); });
           } else {
-            update_scalar_item(item, *field, get_str_for_number(value), AnalyzeDialog::kNumberType,
-                               [this, value]() { analyze_dialog_->add_number(value); });
+            const bool is_unsigned = element_type == reflection::ULong;
+
+            update_scalar_item(
+                item, *field,
+                is_unsigned ? get_str_for_unsigned_number(static_cast<uint64_t>(value)) : get_str_for_number(value),
+                AnalyzeDialog::kNumberType, [this, value, is_unsigned]() {
+                  analyze_dialog_->add_number(is_unsigned ? static_cast<double>(static_cast<uint64_t>(value))
+                                                          : static_cast<double>(value));
+                });
           }
           continue;
         }
@@ -4510,13 +4587,8 @@ bool MainWindow::get_flatbuffers_property_list(QTreeWidget* widget, const std::s
     if (base_type == reflection::Bool || base_type == reflection::Byte || base_type == reflection::UByte ||
         base_type == reflection::Short || base_type == reflection::UShort || base_type == reflection::Int ||
         base_type == reflection::UInt || base_type == reflection::Long || base_type == reflection::ULong) {
-      auto value = get_numeric(view, *field);
-      if (!value.has_value()) {
-        item->setText(3, "");
-        continue;
-      }
+      const auto int_value = get_integer(view, *field);
 
-      qlonglong int_value = static_cast<qlonglong>(value.value());
       if (ui->checkBox_time->isChecked() && field_name.find("time") != std::string::npos) {
         update_scalar_item(item, *field, QString::fromStdString(vlink::Helpers::format_date(int_value)),
                            AnalyzeDialog::kNumberType, [this, int_value]() { analyze_dialog_->add_number(int_value); });
@@ -4529,8 +4601,16 @@ bool MainWindow::get_flatbuffers_property_list(QTreeWidget* widget, const std::s
           update_scalar_item(item, *field, get_str_for_enum(enum_name, int_value), AnalyzeDialog::kNumberType,
                              [this, int_value]() { analyze_dialog_->add_number(int_value); });
         } else {
-          update_scalar_item(item, *field, get_str_for_number(int_value), AnalyzeDialog::kNumberType,
-                             [this, int_value]() { analyze_dialog_->add_number(int_value); });
+          const bool is_unsigned = base_type == reflection::ULong;
+
+          update_scalar_item(item, *field,
+                             is_unsigned ? get_str_for_unsigned_number(static_cast<uint64_t>(int_value))
+                                         : get_str_for_number(int_value),
+                             AnalyzeDialog::kNumberType, [this, int_value, is_unsigned]() {
+                               analyze_dialog_->add_number(is_unsigned
+                                                               ? static_cast<double>(static_cast<uint64_t>(int_value))
+                                                               : static_cast<double>(int_value));
+                             });
         }
       }
       continue;
@@ -4857,11 +4937,16 @@ static void set_property_number(QTreeWidgetItem* item, ValueT value, bool hex, A
   }
 }
 
-static void set_property_text(QTreeWidgetItem* item, const QString& value) {
+static void set_property_text(QTreeWidgetItem* item, const QString& value, AnalyzeDialog* analyze_dialog,
+                              QTreeWidget* tree) {
   item->setText(3, value);
   item->setHidden(false);
   item->setData(3, Qt::ToolTipRole, item->text(3));
   item->setData(1, Qt::UserRole, AnalyzeDialog::kStringType);
+
+  if (analyze_dialog->is_string_type() && tree->currentItem() == item) {
+    analyze_dialog->add_string(value.toStdString());
+  }
 }
 
 static uint64_t parser_uint64(const vlink::zerocopy::MessageParser& parser, std::string_view path) {
@@ -4985,16 +5070,25 @@ static std::string_view zerocopy_enum_label(vlink::zerocopy::MessageParser::Enum
       return vlink::NameDetector::get_enum(static_cast<vlink::zerocopy::AudioFrame::Format>(value));
     case vlink::zerocopy::MessageParser::EnumKind::kEnumAudioLayout:
       return vlink::NameDetector::get_enum(static_cast<vlink::zerocopy::AudioFrame::Layout>(value));
+    case vlink::zerocopy::MessageParser::EnumKind::kEnumFastBufferStorage:
+      return vlink::NameDetector::get_enum(static_cast<vlink::zerocopy::FastBuffer::Storage>(value));
+    case vlink::zerocopy::MessageParser::EnumKind::kEnumFastBufferMemory:
+      return vlink::NameDetector::get_enum(static_cast<vlink::zerocopy::FastBuffer::MemoryType>(value));
     default:
       return {};
   }
 }
 
-static void set_property_double(QTreeWidgetItem* item, double value, int precision) {
+static void set_property_double(QTreeWidgetItem* item, double value, int precision, AnalyzeDialog* analyze_dialog,
+                                QTreeWidget* tree) {
   item->setText(3, QString::number(value, 'g', precision));
   item->setHidden(false);
   item->setData(3, Qt::ToolTipRole, item->text(3));
   item->setData(1, Qt::UserRole, AnalyzeDialog::kNumberType);
+
+  if (analyze_dialog->is_number_type() && tree->currentItem() == item) {
+    analyze_dialog->add_number(value);
+  }
 }
 
 static void set_property_bool(QTreeWidgetItem* item, bool value, AnalyzeDialog* analyze_dialog, QTreeWidget* tree) {
@@ -5012,7 +5106,7 @@ static void populate_root_scalar(QTreeWidgetItem* item, const vlink::zerocopy::M
                                  const vlink::zerocopy::MessageParser::Field& field, bool hex, bool show_time,
                                  bool show_enum, AnalyzeDialog* analyze_dialog, QTreeWidget* tree) {
   if (field.type == vlink::zerocopy::MessageParser::ValueType::kString) {
-    set_property_text(item, QString::fromStdString(parser_string(parser, field.name)));
+    set_property_text(item, QString::fromStdString(parser_string(parser, field.name)), analyze_dialog, tree);
     return;
   }
 
@@ -5053,7 +5147,7 @@ static void populate_root_scalar(QTreeWidgetItem* item, const vlink::zerocopy::M
       set_property_number(item, parser_uint64(parser, field.name), hex, analyze_dialog, tree);
       break;
     case vlink::zerocopy::MessageParser::ValueType::kDouble:
-      set_property_double(item, parser_double(parser, field.name), 8);
+      set_property_double(item, parser_double(parser, field.name), 8, analyze_dialog, tree);
       break;
     default:
       break;
@@ -5083,11 +5177,8 @@ static void populate_element_leaf(QTreeWidgetItem* item, const vlink::zerocopy::
   if (compressed) {
     double value = 0.0;
     read_numeric(value);
-    set_property_double(item, value, 8);
 
-    if (analyze_dialog->is_number_type() && tree->currentItem() == item) {
-      analyze_dialog->add_number(value);
-    }
+    set_property_double(item, value, 8, analyze_dialog, tree);
 
     return;
   }
@@ -5112,7 +5203,8 @@ static void populate_element_leaf(QTreeWidgetItem* item, const vlink::zerocopy::
     case vlink::zerocopy::MessageParser::ValueType::kString: {
       std::string text;
       parser.text(collection, index, field.name, text);
-      set_property_text(item, QString::fromStdString(text));
+
+      set_property_text(item, QString::fromStdString(text), analyze_dialog, tree);
     } break;
     case vlink::zerocopy::MessageParser::ValueType::kInt64: {
       vlink::zerocopy::MessageParser::Value value;
@@ -5129,11 +5221,8 @@ static void populate_element_leaf(QTreeWidgetItem* item, const vlink::zerocopy::
     case vlink::zerocopy::MessageParser::ValueType::kDouble: {
       double value = 0.0;
       read_numeric(value);
-      set_property_double(item, value, field.storage_size >= 8 ? 16 : 8);
 
-      if (analyze_dialog->is_number_type() && tree->currentItem() == item) {
-        analyze_dialog->add_number(value);
-      }
+      set_property_double(item, value, field.storage_size >= 8 ? 16 : 8, analyze_dialog, tree);
     } break;
     default:
       break;
@@ -5244,15 +5333,15 @@ void MainWindow::update_zero_copy_item_property(const vlink::Bytes& bytes) {
 
     QTreeWidgetItem* size_list_item =
         ensure_node(protocol_group, make_key("protocol.size_list"), "string", "size_list", false);
-    set_property_text(size_list_item, QString::fromStdString(size_list));
+    set_property_text(size_list_item, QString::fromStdString(size_list), analyze_dialog_, property_tree);
 
     QTreeWidgetItem* name_list_item =
         ensure_node(protocol_group, make_key("protocol.name_list"), "string", "name_list", false);
-    set_property_text(name_list_item, QString::fromStdString(name_list));
+    set_property_text(name_list_item, QString::fromStdString(name_list), analyze_dialog_, property_tree);
 
     QTreeWidgetItem* type_list_item =
         ensure_node(protocol_group, make_key("protocol.type_list"), "string", "type_list", false);
-    set_property_text(type_list_item, QString::fromStdString(type_list));
+    set_property_text(type_list_item, QString::fromStdString(type_list), analyze_dialog_, property_tree);
   }
 
   for (; index < fields.size(); ++index) {

@@ -34,6 +34,7 @@
 #include <random>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -122,25 +123,30 @@ TEST_SUITE("base-MemoryPool") {
 
     if (!expected_value.empty()) {
       const auto expected = static_cast<size_t>(std::stoull(expected_value));
+      const bool lazy_scale = (Utils::get_env("VLINK_MEMORY_LAZY_SCALE") == "1");
       CHECK_EQ(MemoryPool::get_default_config().batch_size, expected);
+      CHECK_EQ(MemoryPool::get_default_config().lazy_scale, lazy_scale);
       Utils::set_env("VLINK_MEMORY_BATCH_SIZE", std::to_string(expected + 1U));
+      Utils::set_env("VLINK_MEMORY_LAZY_SCALE", lazy_scale ? "0" : "1");
       CHECK_EQ(MemoryPool::get_default_config().batch_size, expected);
+      CHECK_EQ(MemoryPool::get_default_config().lazy_scale, lazy_scale);
       return;
     }
 
-    const std::vector<std::pair<std::string, std::string>> cases{
-        {"7", "7"},
-        {"invalid", "16"},
-        {"0", "16"},
+    const std::vector<std::tuple<std::string, std::string, std::string>> cases{
+        {"7", "7", "1"},
+        {"invalid", "16", "0"},
+        {"0", "16", "yes"},
     };
 
-    for (const auto& [value, expected] : cases) {
+    for (const auto& [value, expected, lazy_scale] : cases) {
       Process child;
       child.set_process_mode(Process::kForwardedMode);
       child.set_inherit_environment(true);
       child.set_environment({
           {"VLINK_MEMORY_BATCH_SIZE", value},
           {"VLINK_MEMORY_BATCH_TEST_EXPECTED", expected},
+          {"VLINK_MEMORY_LAZY_SCALE", lazy_scale},
       });
       child.start(Utils::get_app_path(),
                   {"--test-suite=base-MemoryPool",
@@ -403,6 +409,44 @@ TEST_SUITE("base-MemoryPool") {
     for (void* p : blocks) {
       pool.deallocate(p, 64);
     }
+  }
+
+  TEST_CASE("lazy_scale raises the lazy install ceiling with the tier quota") {
+    static constexpr size_t kBlocks = 100000;
+    const auto upstream_chunks = [](bool lazy_scale) {
+      auto config = make_config({{32, 512 * 1024}});
+      config.lazy_scale = lazy_scale;
+      MemoryPool pool(config);
+
+      std::vector<void*> blocks(kBlocks);
+      for (auto& p : blocks) {
+        p = pool.allocate(32);
+      }
+      const auto count = pool.get_stats()[0].upstream_alloc_count;
+      for (auto p : blocks) {
+        pool.deallocate(p, 32);
+      }
+      return count;
+    };
+
+    CHECK_EQ(upstream_chunks(false), 49u);
+    CHECK_EQ(upstream_chunks(true), 7u);
+  }
+
+  TEST_CASE("lazy_scale clamps installs to at least 32 KiB and one block") {
+    auto small_quota = make_config({{32, 8 * 1024}});
+    small_quota.lazy_scale = true;
+    MemoryPool small(small_quota);
+    void* a = small.allocate(32);
+    CHECK_EQ(small.get_stats()[0].upstream_alloc_bytes, 32u * 1024u);
+    small.deallocate(a, 32);
+
+    auto big_block = make_config({{64 * 1024, 4}});
+    big_block.lazy_scale = true;
+    MemoryPool big(big_block);
+    void* b = big.allocate(64 * 1024);
+    CHECK_EQ(big.get_stats()[0].upstream_alloc_bytes, 64u * 1024u);
+    big.deallocate(b, 64 * 1024);
   }
 
   TEST_CASE("prealloc on empty tier list is a no-op") {

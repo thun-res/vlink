@@ -215,7 +215,7 @@ pre code{background:none;border:none;padding:0}
 .bench-chart.is-panning{cursor:grabbing}
 .bench-chart .chart-line{transition:opacity .15s;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
 .bench-chart .chart-line.dim{opacity:.12}
-.bench-chart .chart-line.hidden,.bench-chart .chart-point.hidden{display:none}
+.bench-chart .chart-line.hidden,.bench-chart .chart-point.hidden,.bench-chart .chart-point-halo.hidden{display:none}
 .bench-chart .chart-point{vector-effect:non-scaling-stroke}
 .bench-chart .chart-crosshair-line{vector-effect:non-scaling-stroke}
 .bench-chart .chart-point-halo{vector-effect:non-scaling-stroke}

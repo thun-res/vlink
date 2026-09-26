@@ -209,7 +209,7 @@ class VLINK_EXPORT BagReader : public MessageLoop {
     double rate{1.0};                             ///< Speed multiplier relative to the recorded clock.
     bool skip_blank{false};                       ///< When true, collapses long silent gaps between frames.
     int64_t force_delay{-1};                      ///< >0 fixed delay (ms), 0 no delay, <0 use recorded timing.
-    bool auto_pause{false};                       ///< When true, pauses automatically after every emitted frame.
+    bool auto_pause{false};                       ///< When true, starts playback paused until resumed or stepped.
     bool auto_quit{false};                        ///< When true, stops the loop thread at the end of playback.
     std::unordered_set<std::string> filter_urls;  ///< Whitelist of playback URLs; empty means all URLs pass.
   };
@@ -469,6 +469,10 @@ class VLINK_EXPORT BagReader : public MessageLoop {
 
   /**
    * @brief Attempts to recover a corrupted bag in the background where supported.
+   *
+   * @details
+   * Rebuilds the header and per-url counters from the rows actually stored; recorded byte sizes and loss ratios
+   * stay untouched.  Skipped for a read-only reader and for a split bag, whose index file is not rewritten.
    *
    * @param rebuild When true, also forces a full index rebuild.
    * @return Future resolving to @c true when recovery succeeded.

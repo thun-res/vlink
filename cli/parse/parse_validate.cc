@@ -92,7 +92,7 @@ struct ModeRule final {
   bool valid_in_scan;
 };
 
-static constexpr std::array<ModeRule, 34> kModeRules{{
+static constexpr std::array<ModeRule, 35> kModeRules{{
     {"-m", "parse/export modes", true, false, false},
     {"-n", "parse/export modes", true, false, false},
     {"--hz", "parse/export modes", true, false, false},
@@ -102,6 +102,7 @@ static constexpr std::array<ModeRule, 34> kModeRules{{
     {"--segments", "-t slice", false, true, false},
     {"--suffix", "-t slice", false, true, false},
     {"--compress", "-t slice", false, true, false},
+    {"--enable_chunk_crc", "-t slice", false, true, false},
     {"--no_manifest", "-t slice", false, true, false},
     {"--manifest", "-t slice", false, true, false},
     {"--filter", "-t slice", false, true, false},

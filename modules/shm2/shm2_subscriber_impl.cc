@@ -37,8 +37,17 @@ void Shm2SubscriberImpl::init() {
 
   conf_.hash_code = Helpers::get_hash_code(conf_.event);
 
-  object_ = factory.get_object<Object>(
-      {kImplType, conf_.address, conf_.domain, conf_.depth, conf_.history, conf_.wait, conf_.size});
+  if (init_impl_type == kGetter) {
+    if (conf_.history == 0) {
+      conf_.history = 1;
+    }
+
+    object_ = factory.get_object<Object>(
+        {kGetter, conf_.address, conf_.domain, conf_.depth, conf_.history, conf_.wait, conf_.size, conf_.event, this});
+  } else {
+    object_ = factory.get_object<Object>({kImplType, conf_.address, conf_.domain, conf_.depth, conf_.history,
+                                          conf_.wait, conf_.size, std::string{}, nullptr});
+  }
 
   object_->add_impl(this);
 
@@ -48,14 +57,24 @@ void Shm2SubscriberImpl::init() {
 void Shm2SubscriberImpl::deinit() {
   detach();
 
-  object_->remove_impl(this);
+  if (object_) {
+    object_->remove_impl(this);
+  }
 }
 
-bool Shm2SubscriberImpl::suspend() { return object_->suspend(); }
+bool Shm2SubscriberImpl::suspend() {
+  has_suspend.store(true, std::memory_order_release);
 
-bool Shm2SubscriberImpl::resume() { return object_->resume(); }
+  return true;
+}
 
-bool Shm2SubscriberImpl::is_suspend() const { return object_->is_suspend(); }
+bool Shm2SubscriberImpl::resume() {
+  has_suspend.store(false, std::memory_order_release);
+
+  return true;
+}
+
+bool Shm2SubscriberImpl::is_suspend() const { return has_suspend.load(std::memory_order_acquire); }
 
 bool Shm2SubscriberImpl::is_support_loan() const { return true; }
 

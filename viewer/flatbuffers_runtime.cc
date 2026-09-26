@@ -489,11 +489,26 @@ std::optional<double> FlatbuffersObjectView::get_numeric(const FlatbuffersObject
     return std::nullopt;
   }
 
+  if (flatbuffers::IsInteger(field.type()->base_type())) {
+    const auto value = get_integer(parent, field);
+
+    return field.type()->base_type() == reflection::ULong ? static_cast<double>(static_cast<uint64_t>(value))
+                                                          : static_cast<double>(value);
+  }
+
   if (parent.kind == FlatbuffersViewKind::kTable) {
     return flatbuffers::GetAnyFieldF(*as_table(parent), field);
   }
 
   return flatbuffers::GetAnyFieldF(*as_struct(parent), field);
+}
+
+int64_t FlatbuffersObjectView::get_integer(const FlatbuffersObjectView& parent, const reflection::Field& field) {
+  if (parent.kind == FlatbuffersViewKind::kTable) {
+    return flatbuffers::GetAnyFieldI(*as_table(parent), field);
+  }
+
+  return flatbuffers::GetAnyFieldI(*as_struct(parent), field);
 }
 
 std::string FlatbuffersObjectView::get_string(const FlatbuffersObjectView& parent, const reflection::Field& field,

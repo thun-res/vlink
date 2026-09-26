@@ -309,6 +309,8 @@ bool ObjectArray::deep_copy(const ObjectArray& target) noexcept {
 
     std::memcpy(data_, target_data, target_size);
     is_owner_ = true;
+  } else {
+    data_ = nullptr;
   }
 
   return true;
@@ -525,8 +527,6 @@ bool ObjectArray::is_owner() const noexcept { return is_owner_; }
 void ObjectArray::set_update_time_ns(uint64_t update_time_ns) noexcept { update_time_ns_ = update_time_ns; }
 
 void ObjectArray::set_source_id(std::string_view source_id) noexcept {
-  std::memset(source_id_, 0, sizeof(source_id_));
-
   size_t copy_size = source_id.size();
 
   if (copy_size >= sizeof(source_id_)) {
@@ -534,8 +534,10 @@ void ObjectArray::set_source_id(std::string_view source_id) noexcept {
   }
 
   if VLIKELY (copy_size != 0) {
-    std::memcpy(source_id_, source_id.data(), copy_size);
+    std::memmove(source_id_, source_id.data(), copy_size);
   }
+
+  std::memset(source_id_ + copy_size, 0, sizeof(source_id_) - copy_size);
 }
 
 void ObjectArray::set_channel(uint32_t channel) noexcept { channel_ = channel; }

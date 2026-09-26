@@ -74,6 +74,11 @@ using HandshakeCli = SecurityClient<proxy::HandshakeReqPacket, proxy::HandshakeR
 
 // ProxyAPI::Impl
 struct ProxyAPI::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding)
+  struct PubEntry final {
+    std::shared_ptr<RawPub> node;
+    ImplType type{kPublisher};
+  };
+
   std::atomic<uint32_t> control_error_count{0};
   std::atomic<ProxyAPI::Mode> mode{ProxyAPI::kOffline};
   std::atomic<ProxyAPI::Error> error{ProxyAPI::kNoError};
@@ -86,6 +91,7 @@ struct ProxyAPI::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddin
   std::atomic_bool resetting{false};
 
   ProxyAPI::Config config;
+  std::string native_ip;
   uint32_t control_id{0};
 #if VLINK_PROXY_ENABLE_HANDSHAKE
   std::string token;
@@ -127,9 +133,22 @@ struct ProxyAPI::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddin
   std::shared_ptr<HandshakeCli> handshake_cli;
 #endif
 
+  void clear_handles() {
+    std::unique_lock handle_lock(handle_mtx);
+    auto old_data_sub = std::move(data_sub);
+    auto old_data_pub = std::move(data_pub);
+    auto old_time_sub = std::move(time_sub);
+    auto old_info_sub = std::move(info_sub);
+    auto old_control_pub = std::move(control_pub);
+#if VLINK_PROXY_ENABLE_HANDSHAKE
+    auto old_handshake_cli = std::move(handshake_cli);
+#endif
+    handle_lock.unlock();
+  }
+
   std::vector<ProxyAPI::Info> direct_info_list;
 
-  std::unordered_map<std::string, std::shared_ptr<RawPub>> pub_map;
+  std::unordered_map<std::string, PubEntry> pub_map;
   std::unordered_map<std::string, std::shared_ptr<RawSub>> sub_map;
   std::unordered_set<std::string> getter_sub_urls;
 
@@ -145,6 +164,11 @@ ProxyAPI::ProxyAPI(const Config& config) : impl_(std::make_unique<Impl>()) {
   set_name("ProxyAPI");
 
   impl_->config = config;
+
+  if (impl_->config.native) {
+    impl_->native_ip = Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1");
+  }
+
   impl_->control_id = static_cast<uint32_t>(ElapsedTimer::get_cpu_timestamp());
 
   if VUNLIKELY (impl_->control_id == 0) {
@@ -225,15 +249,7 @@ ProxyAPI::~ProxyAPI() {
 
   this->wait_for_quit();
 
-  std::unique_lock handle_lock(impl_->handle_mtx);
-#if VLINK_PROXY_ENABLE_HANDSHAKE
-  impl_->handshake_cli.reset();
-#endif
-  impl_->data_sub.reset();
-  impl_->data_pub.reset();
-  impl_->time_sub.reset();
-  impl_->info_sub.reset();
-  impl_->control_pub.reset();
+  impl_->clear_handles();
 }
 
 void ProxyAPI::register_connect_callback(ConnectCallback&& callback) {
@@ -356,20 +372,20 @@ bool ProxyAPI::send_data(const Data& data) {
       return false;
     }
 
-    if VUNLIKELY (!pub_iter->second->has_subscribers()) {
+    if VUNLIKELY (pub_iter->second.type != kSetter && !pub_iter->second.node->has_subscribers()) {
       return false;
     }
 
-    const auto direct_schema_type = SchemaData::is_valid_type(pub_iter->second->get_schema_type())
-                                        ? pub_iter->second->get_schema_type()
+    const auto direct_schema_type = SchemaData::is_valid_type(pub_iter->second.node->get_schema_type())
+                                        ? pub_iter->second.node->get_schema_type()
                                         : SchemaType::kUnknown;
 
-    if VUNLIKELY (pub_iter->second->get_ser_type() != data.ser || direct_schema_type != schema_type) {
+    if VUNLIKELY (pub_iter->second.node->get_ser_type() != data.ser || direct_schema_type != schema_type) {
       VLOG_E("ProxyApi: send_data metadata does not match direct publisher.");
       return false;
     }
 
-    pub_iter->second->publish(data.raw, true);
+    pub_iter->second.node->publish(data.raw, true);
 
     return true;
   }
@@ -614,7 +630,7 @@ void ProxyAPI::sync_direct_maps(const Control& control) {
     pub_url_set.reserve(control.url_meta_list.size());
 
     for (const auto& meta : control.url_meta_list) {
-      if (meta.type != kSubscriber) {
+      if (meta.type == kPublisher || meta.type == kSetter) {
         pub_url_set.emplace(meta.url);
       }
     }
@@ -685,7 +701,7 @@ void ProxyAPI::sync_direct_maps(const Control& control) {
 #endif
 
   for (const auto& meta : control.url_meta_list) {
-    if (meta.type != kPublisher || meta.url.empty() || meta.ser.empty()) {
+    if ((meta.type != kPublisher && meta.type != kSetter) || meta.url.empty() || meta.ser.empty()) {
       continue;
     }
 
@@ -696,10 +712,11 @@ void ProxyAPI::sync_direct_maps(const Control& control) {
     auto pub_iter = impl_->pub_map.find(meta.url);
 
     if (pub_iter != impl_->pub_map.end()) {
-      auto* pub = pub_iter->second.get();
+      auto* pub = pub_iter->second.node.get();
       const auto schema_type = SchemaData::is_valid_type(meta.schema) ? meta.schema : SchemaType::kUnknown;
 
-      if (pub && pub->get_ser_type() == meta.ser && pub->get_schema_type() == schema_type) {
+      if (pub && pub_iter->second.type == meta.type && pub->get_ser_type() == meta.ser &&
+          pub->get_schema_type() == schema_type) {
         continue;
       }
 
@@ -709,13 +726,17 @@ void ProxyAPI::sync_direct_maps(const Control& control) {
     try {
       auto pub = std::make_shared<RawPub>(meta.url, InitType::kWithoutInit);
 
+      if (meta.type == kSetter) {
+        pub->mark_as_setter();
+      }
+
       if (impl_->config.native) {
-        pub->set_property("dds.ip", "127.0.0.1");
+        pub->set_property("dds.ip", impl_->native_ip);
       }
 
       pub->set_ser_type(meta.ser, meta.schema);
       pub->init();
-      impl_->pub_map.emplace(meta.url, std::move(pub));
+      impl_->pub_map.emplace(meta.url, Impl::PubEntry{std::move(pub), meta.type});
     } catch (const Exception::RuntimeError&) {
     }
   }
@@ -750,7 +771,7 @@ void ProxyAPI::sync_direct_maps(const Control& control) {
       }
 
       if (impl_->config.native) {
-        sub->set_property("dds.ip", "127.0.0.1");
+        sub->set_property("dds.ip", impl_->native_ip);
       }
 
       sub->set_discovery_enabled(false);
@@ -853,9 +874,10 @@ bool ProxyAPI::do_handshake(Error& out_err) {
 }
 
 void ProxyAPI::reset_handle() {
-  std::unique_lock handle_lock(impl_->handle_mtx);
-
   impl_->resetting.store(true, std::memory_order_relaxed);
+  impl_->clear_handles();
+
+  std::unique_lock handle_lock(impl_->handle_mtx);
 
   impl_->control_ret.store(false, std::memory_order_release);
 
@@ -911,13 +933,13 @@ void ProxyAPI::reset_handle() {
 #endif
 
   if (impl_->config.native) {
-    impl_->data_sub->set_property("dds.ip", "127.0.0.1");
-    impl_->data_pub->set_property("dds.ip", "127.0.0.1");
-    impl_->time_sub->set_property("dds.ip", "127.0.0.1");
-    impl_->info_sub->set_property("dds.ip", "127.0.0.1");
-    impl_->control_pub->set_property("dds.ip", "127.0.0.1");
+    impl_->data_sub->set_property("dds.ip", impl_->native_ip);
+    impl_->data_pub->set_property("dds.ip", impl_->native_ip);
+    impl_->time_sub->set_property("dds.ip", impl_->native_ip);
+    impl_->info_sub->set_property("dds.ip", impl_->native_ip);
+    impl_->control_pub->set_property("dds.ip", impl_->native_ip);
 #if VLINK_PROXY_ENABLE_HANDSHAKE
-    impl_->handshake_cli->set_property("dds.ip", "127.0.0.1");
+    impl_->handshake_cli->set_property("dds.ip", impl_->native_ip);
 #endif
   } else {
     if (!impl_->config.allow_ip.empty()) {
@@ -1122,10 +1144,6 @@ void ProxyAPI::reset_handle() {
       impl_->token.clear();
       return true;
     };
-#else
-    if VUNLIKELY (time.control_id == 0) {
-      return;
-    }
 #endif
 
     {
@@ -1194,11 +1212,11 @@ void ProxyAPI::reset_handle() {
 
       return;
     }
+#endif
 
-    if VUNLIKELY (time.control_id == 0) {
+    if VUNLIKELY (time.control_id == 0 && !(impl_->config.direct && impl_->config.role == kListener)) {
       return;
     }
-#endif
 
     if (impl_->config.role == kController) {
       if VUNLIKELY (time.control_id != impl_->control_id) {
@@ -1251,6 +1269,23 @@ void ProxyAPI::reset_handle() {
                     impl_->error_elapsed_timer.restart() >= 200) {
         process_error(kDirectCompError);
       }
+      return;
+    }
+
+    if (impl_->config.direct && impl_->config.role == kListener) {
+      Control control;
+      control.mode = time.mode;
+      control.url_meta_list = time.direct_sub_list;
+
+      {
+        std::lock_guard control_lock(impl_->control_mtx);
+        impl_->last_control = control;
+      }
+
+      sync_direct_maps(control);
+    }
+
+    if VUNLIKELY (time.control_id == 0) {
       return;
     }
 

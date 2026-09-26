@@ -34,7 +34,7 @@
  *
  * | Category               | Representative entry points                                       |
  * | ---------------------- | ----------------------------------------------------------------- |
- * | Process introspection  | @c get_app_path, @c get_app_name, @c get_pid, @c is_terminating   |
+ * | Process introspection  | @c get_pid, @c get_process_start_time, @c is_terminating          |
  * | Host identity          | @c get_host_name, @c get_machine_id, @c get_timezone_diff         |
  * | Filesystem helpers     | @c get_tmp_dir, @c wait_for_device                                |
  * | Environment management | @c get_env, @c set_env, @c unset_env                              |
@@ -127,6 +127,27 @@ namespace Utils {  // NOLINT(readability-identifier-naming)
 [[nodiscard]] VLINK_EXPORT std::string get_pid_str() noexcept;
 
 /**
+ * @brief Start time reported when a process exists but its start time cannot be read.
+ */
+inline constexpr uint64_t kUnknownProcessStartTime = ~static_cast<uint64_t>(0);
+
+/**
+ * @brief Returns the kernel start time of a live process.
+ *
+ * @details
+ * Unit and epoch are platform-defined.  Compare the value only for equality against another
+ * sample for the same PID; a mismatch means the PID was reused by a different process.  Zombie
+ * and exited processes report as absent.  A process that exists but denies inspection, for
+ * example another user's process under a restricted @c /proc, reports
+ * @c kUnknownProcessStartTime so callers never mistake it for a dead one.
+ *
+ * @param pid Process identifier.
+ *
+ * @return Start time, @c 0 when no such live process exists, or @c kUnknownProcessStartTime.
+ */
+[[nodiscard]] VLINK_EXPORT uint64_t get_process_start_time(int32_t pid) noexcept;
+
+/**
  * @brief Returns a path suitable for short-lived temporary files.
  *
  * @details
@@ -216,7 +237,7 @@ VLINK_EXPORT bool unset_env(const std::string& key) noexcept;
  * Loopback is therefore included (as the leading entry) rather than filtered out.
  *
  * @param filter_available  When @c true, only includes UP interfaces.  Default: @c false.
- * @param max_count         Upper bound on the number of returned addresses.  Default: @c 5.
+ * @param max_count         Upper bound on the number of returned addresses. Nonpositive returns empty. Default: @c 5.
  * @return Vector of selected IPv4 strings.
  */
 [[nodiscard]] VLINK_EXPORT std::vector<std::string> get_dds_default_address(bool filter_available = false,
@@ -334,6 +355,7 @@ VLINK_EXPORT bool set_thread_stick(uint32_t core_mask, std::thread* thread = nul
  *
  * @details
  * Hooks @c SIGINT, @c SIGTERM and @c SIGHUP on POSIX, or @c SIGINT / @c SIGTERM on Windows.
+ * An empty @p callback restores the default disposition of these signals.
  *
  * @param callback      Callback receiving the signal number.
  * @param is_async      When @c true, runs the callback on a dedicated thread instead of the
@@ -349,7 +371,8 @@ VLINK_EXPORT void register_terminate_signal(MoveFunction<void(int)>&& callback, 
  *
  * @details
  * Useful for emitting crash diagnostics.  The callback should be async-signal-safe and
- * short.
+ * short.  It runs at most once; on POSIX the signal is then re-raised with its default
+ * disposition so the process terminates with the original cause.
  *
  * @param callback  Callback receiving the signal number.
  */
@@ -370,6 +393,10 @@ VLINK_EXPORT void start_detect_keyboard(MoveFunction<void(const std::string& key
 
 /**
  * @brief Stops the keyboard poller started by @c start_detect_keyboard().
+ *
+ * @details
+ * May be called from its keyboard callback to request exit.  Calls from other threads
+ * wait for the poller to finish; starting it again also joins any previously stopped poller.
  */
 VLINK_EXPORT void stop_detect_keyboard() noexcept;
 

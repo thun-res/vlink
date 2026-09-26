@@ -209,6 +209,9 @@ def test_utils():
     """Test utility functions."""
     assert _vlink.utils.get_host_name()
     assert _vlink.utils.get_pid() > 0
+    start_time = _vlink.utils.get_process_start_time(_vlink.utils.get_pid())
+    assert start_time not in (0, _vlink.utils.UNKNOWN_PROCESS_START_TIME)
+    assert _vlink.utils.get_process_start_time(0) == 0
     assert _vlink.utils.get_tmp_dir()
     assert _vlink.helpers.has_startwith("hello", "hel")
     assert _vlink.helpers.has_endwith("hello", "llo")
@@ -268,6 +271,8 @@ def test_uuid():
     # ---- construct from bytes (16-byte payload) ----
     raw = bytes.fromhex("47ac10b858cc4a3c8c5b0e778899aabb")
     fixed = _vlink.Uuid(raw)
+    assert _vlink.Uuid(list(raw)).bytes() == raw
+    assert _vlink.Uuid(tuple(raw)).bytes() == raw
     assert not fixed.is_nil()
     assert fixed.bytes() == raw
     assert fixed.to_string() == "47ac10b8-58cc-4a3c-8c5b-0e778899aabb"
@@ -635,6 +640,142 @@ def test_zerocopy_python_ownership_guards():
     print("[PASS] Zero-copy Python ownership guards")
 
 
+def test_proxy_raw_storage_lifetime():
+    """Raw views must prevent replacement of owned and borrowed parent storage."""
+    inner = _vlink.RawData()
+    assert inner.create(4)
+    assert inner.fill_data(b"safe")
+    source = _vlink.ProxyData()
+    source.create(inner.to_bytes(), "intra://raw-lifetime", "RawData")
+    wire = source.to_bytes()
+
+    for borrowed in (False, True):
+        proxy = _vlink.ProxyData()
+        if borrowed:
+            assert proxy.from_bytes(wire)
+        else:
+            proxy.create(inner.to_bytes(), "intra://raw-lifetime", "RawData")
+        raw = proxy.raw()
+        second_raw = proxy.raw()
+        view = memoryview(raw)
+        nested = _vlink.RawData()
+        assert nested.from_bytes(raw)
+        del raw
+
+        for replace in (
+            proxy.clear,
+            lambda: proxy.create(inner.to_bytes(), "intra://new", "RawData"),
+            lambda: proxy.from_bytes(wire),
+            lambda: proxy.from_bytes(_vlink.Bytes.from_bytes(b"invalid")),
+        ):
+            try:
+                replace()
+                assert False, "a live raw view must pin ProxyData storage"
+            except BufferError:
+                pass
+            assert nested.data() == b"safe"
+            assert view.tobytes() == second_raw.to_bytes()
+
+        del second_raw
+        view.release()
+        try:
+            proxy.clear()
+            assert False, "a nested message still retains the raw view"
+        except BufferError:
+            pass
+        nested.clear()
+        proxy.clear()
+        proxy.create(inner.to_bytes(), "intra://new", "RawData")
+        assert proxy.from_bytes(wire)
+        proxy.clear()
+
+    assert wire.resize(1024)
+    print("[PASS] ProxyData raw storage lifetime")
+
+
+def test_zerocopy_owned_copy():
+    """Parsed messages can become editable copies without changing their input."""
+    cloud = _vlink.PointCloud()
+    assert cloud.create(2, 0x444, 0xAAA, "x,y,z")
+    assert cloud.push_value_v3f(1, 2, 3)
+    cloud.header.seq = 42
+    cloud.reserved = 17
+    objects = _vlink.ObjectArray()
+    assert objects.create(2)
+    obj = _vlink.ObjectArray.Object()
+    obj.label = "original"
+    assert objects.push_value(obj)
+    objects.header.seq = 42
+    objects.set_source_id("fusion")
+
+    for source in (cloud, objects):
+        wire = source.to_bytes()
+        parsed = type(source)()
+        assert parsed.from_bytes(wire)
+        assert not parsed.is_owner()
+        assert not parsed.deep_copy(parsed)
+        try:
+            wire.resize(4096)
+            assert False, "failed self-copy must retain the borrowed input"
+        except BufferError:
+            pass
+
+        old_wire = source.to_bytes()
+        copied = type(source)()
+        assert copied.from_bytes(old_wire)
+        assert copied.deep_copy(parsed)
+        assert copied.is_owner()
+        assert copied.header.seq == 42
+        assert copied.data() == parsed.data()
+        assert old_wire.resize(4096)
+        if isinstance(copied, _vlink.PointCloud):
+            assert copied.reserved == 17
+            assert copied.get_protocol_name_str() == parsed.get_protocol_name_str()
+            assert copied.get_protocol_size_num() == parsed.get_protocol_size_num()
+            assert copied.get_protocol_type_num() == parsed.get_protocol_type_num()
+            assert copied.resize(copied.size())
+            assert copied.set_value_v3f(0, 4, 5, 6)
+            assert parsed.get_value_v3f(0).x == 1
+        else:
+            assert copied.source_id() == "fusion"
+            obj.label = "edited"
+            assert copied.set_value(0, obj)
+            assert parsed.get_value(0).label == "original"
+        if isinstance(parsed, _vlink.PointCloud):
+            parsed.clear(True)
+        else:
+            parsed.clear()
+        assert wire.resize(4096)
+        assert copied.is_valid()
+        assert not copied.deep_copy(copied)
+        assert copied.deep_copy(type(source)())
+        assert not copied.is_valid()
+
+    for source in (cloud, objects):
+        assert source.resize(0)
+        wire = source.to_bytes()
+        first = type(source)()
+        second = type(source)()
+        assert first.from_bytes(wire)
+        assert second.from_bytes(wire)
+        assert first.deep_copy(second)
+        assert second.deep_copy(first)
+        assert first.header.seq == second.header.seq == 42
+        assert wire.resize(4096)
+
+    quantized = _vlink.PointCloud()
+    assert quantized.create(2, 0x444, 0xAAA, "x,y,z", 10)
+    assert quantized.push_value_v3f(1, 2, 3)
+    borrowed = _vlink.PointCloud()
+    assert borrowed.from_bytes(quantized.to_bytes())
+    assert not borrowed.downsample(1)
+    owned = _vlink.PointCloud()
+    assert owned.deep_copy(borrowed)
+    assert owned.downsample(1)
+
+    print("[PASS] Zero-copy owned copy")
+
+
 def test_zerocopy_point_cloud_compress():
     """Test PointCloud compression: int16 quantize + vertical layout round-trip."""
     pc = _vlink.PointCloud()
@@ -912,6 +1053,66 @@ def test_zerocopy_audio_frame():
 
 
 
+def test_zerocopy_fast_buffer():
+    """Test owned metadata, host serialization and parser fields without a GPU plugin."""
+    source = _vlink.FastBuffer()
+    content = _vlink.Bytes.from_bytes(b"fast-buffer-data")
+    metadata = _vlink.Bytes.from_bytes(b"tensor:u8:16")
+    assert source.create(content.size())
+    assert source.copy_from_host(content)
+    assert source.set_metadata(metadata)
+    source.reserved = 1
+    source.reserved2 = 2
+    assert source.memory_type() == _vlink.FastBuffer.MemoryType.Host
+
+    retained = _vlink.FastBuffer()
+    assert retained.shallow_copy(source)
+    source.clear()
+    assert retained.get_metadata() == b"tensor:u8:16"
+    wire = retained.to_bytes()
+    assert wire.size() == retained.get_serialized_size()
+    assert wire.size() == 100 + content.size() + metadata.size()
+    parser = _vlink.ZeroCopyMessageParser()
+    assert parser.parse("vlink::zerocopy::FastBuffer", wire)
+    assert parser.value("storage") == 2
+    assert parser.value("memory_type") == 1
+    assert parser.collection_size("reserved") == 0
+    assert parser.value("reserved2") == 2
+    assert parser.value("reserved3") is None
+    assert parser.value("reserved[2]") is None
+
+    restored = _vlink.FastBuffer()
+    assert restored.from_bytes(wire)
+    retained.clear()
+    wire.clear()
+    result = _vlink.Bytes()
+    assert restored.copy_to_host(result)
+    assert result.to_bytes() == b"fast-buffer-data"
+    assert restored.get_metadata() == b"tensor:u8:16"
+    assert restored.reserved == 1
+    assert restored.reserved2 == 2
+    assert "memory_type=1" in repr(restored)
+
+    pool = _vlink.FastBufferPool()
+    assert not pool.create(0, 1)
+    assert pool.create(16, 2)
+    assert pool.depth() == 2 and pool.size() == 16
+    first = _vlink.FastBuffer()
+    second = _vlink.FastBuffer()
+    third = _vlink.FastBuffer()
+    assert pool.acquire(first) and pool.acquire(second)
+    assert first.address() != second.address()
+    assert not pool.acquire(third)
+    first_address = first.address()
+    first.clear()
+    assert pool.acquire(third)
+    assert third.address() == first_address
+    pool.clear()
+    assert pool.depth() == 0 and third.is_valid()
+    third.clear()
+    print("[PASS] FastBuffer")
+
+
 if __name__ == "__main__":
     _vlink.Logger.init("py_test")
     print(f"VLink Python Bindings Test - v{_vlink.VERSION}")
@@ -932,6 +1133,8 @@ if __name__ == "__main__":
     test_zerocopy_camera_frame()
     test_zerocopy_point_cloud()
     test_zerocopy_python_ownership_guards()
+    test_proxy_raw_storage_lifetime()
+    test_zerocopy_owned_copy()
     test_zerocopy_point_cloud_compress()
     test_zerocopy_proxy_data()
     test_zerocopy_occupancy_grid()
@@ -939,6 +1142,7 @@ if __name__ == "__main__":
     test_zerocopy_object_array()
     test_zerocopy_message_parser()
     test_zerocopy_audio_frame()
+    test_zerocopy_fast_buffer()
 
     print("=" * 50)
     print("ALL TESTS PASSED!")

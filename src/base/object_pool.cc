@@ -79,6 +79,10 @@ void ObjectPoolBase::throw_factory_null_pre_fill() {
 
 void ObjectPoolBase::throw_factory_null() { throw std::runtime_error("FactoryCallback returned nullptr"); }
 
+void ObjectPoolBase::throw_not_shared_owned() {
+  throw std::logic_error("ObjectPool must be owned by std::shared_ptr before get()/get_shared()");
+}
+
 void ObjectPoolBase::throw_exhausted(size_t pool_size) const {
   std::ostringstream oss;
 

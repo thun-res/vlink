@@ -32,7 +32,7 @@ _vlink_bag_positional_count() {
                 ;;
             -s|--actions)
                 case "$subcommand" in
-                    play|clone)
+                    play|clone|merge)
                         expect="multi"
                         continue
                         ;;
@@ -40,7 +40,7 @@ _vlink_bag_positional_count() {
                 ;;
             -t|--tag|-i|--filter|-d|--duration|-w|--wait|-z|--split_by_size|-y|--split_by_time|\
             -x|--max_packet_size|-c|--cache_size|--max_task_depth|--max_memory_size|--max_row_count|\
-            --max_bytes_size|--compress_level|--plugin|-b|--begin_time|-e|--end_time|--rel_begin_time|\
+            --max_bytes_size|--max_split_count|--compress_level|--plugin|-b|--begin_time|-e|--end_time|--rel_begin_time|\
             --rel_end_time|--local_begin_time|--local_end_time|--utc_begin_time|--utc_end_time|-r|--rate|\
             --times)
                 expect="single"
@@ -61,7 +61,7 @@ _vlink_bag_positional_count() {
 _vlink_bag() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     local prev="${COMP_WORDS[COMP_CWORD-1]}"
-    local subcommands="info record play clone check reindex fix tag"
+    local subcommands="info record play clone merge check reindex fix tag"
     local subcommand
     local last_option=""
 
@@ -73,6 +73,11 @@ _vlink_bag() {
         return
     fi
 
+    if [[ "$subcommand" == "merge" && ( "$prev" == "-o" || "$prev" == "--output" ) ]]; then
+        _vlink_bash_complete_files "$cur"
+        return
+    fi
+
     case "$prev" in
         -u|--urls|--ignore_compress)
             _vlink_bash_complete_url "$cur"
@@ -80,16 +85,16 @@ _vlink_bag() {
             ;;
         -t|--tag|-i|--filter|-d|--duration|-w|--wait|-z|--split_by_size|-y|--split_by_time|\
         -x|--max_packet_size|-c|--cache_size|--max_task_depth|--max_memory_size|--max_row_count|\
-        --max_bytes_size|--compress_level|--plugin|-b|--begin_time|-e|--end_time|--rel_begin_time|\
+        --max_bytes_size|--max_split_count|--compress_level|--plugin|-b|--begin_time|-e|--end_time|--rel_begin_time|\
         --rel_end_time|--local_begin_time|--local_end_time|--utc_begin_time|--utc_end_time|-r|--rate|\
-        --times)
+        --times|--check_gap)
             return
             ;;
     esac
 
     if [[ "$prev" == "-s" || "$prev" == "--actions" ]]; then
         case "$subcommand" in
-            play|clone)
+            play|clone|merge)
                 _vlink_bash_complete_words "1 2 3 4 5 6 7 8" "$cur"
                 return
                 ;;
@@ -105,7 +110,7 @@ _vlink_bag() {
                 ;;
             -s|--actions)
                 case "$subcommand" in
-                    play|clone)
+                    play|clone|merge)
                         _vlink_bash_complete_words "1 2 3 4 5 6 7 8" "$cur"
                         return
                         ;;
@@ -128,8 +133,8 @@ _vlink_bag() {
 -d --duration -w --wait -p --compress -f --force -q --quiet -l --detail \
 -o --split_name_by_time -z --split_by_size -y --split_by_time -g --deft \
 -x --max_packet_size -j --wal_mode -c --cache_size -s --sync_mode \
---max_task_depth --max_memory_size --max_row_count --max_bytes_size \
---enable_limit --compress_level --ignore_compress --plugin -h --help" "$cur"
+--max_task_depth --max_memory_size --max_row_count --max_bytes_size --max_split_count \
+--enable_limit --compress_level --enable_chunk_crc --ignore_compress --plugin -h --help" "$cur"
                 return
             fi
             _vlink_bash_complete_files "$cur"
@@ -154,7 +159,7 @@ _vlink_bag() {
 -o --split_name_by_time -z --split_by_size -y --split_by_time \
 -f --force -j --wal_mode -c --cache_size \
 --rel_begin_time --rel_end_time --local_begin_time --local_end_time \
---utc_begin_time --utc_end_time --compress_level --ignore_compress \
+--utc_begin_time --utc_end_time --compress_level --enable_chunk_crc --ignore_compress \
 --import_schema --plugin -h --help" "$cur"
                 return
             fi
@@ -165,6 +170,20 @@ _vlink_bag() {
             else
                 _vlink_bash_complete_files "$cur"
             fi
+            ;;
+        merge)
+            if [[ "$cur" == -* ]]; then
+                _vlink_bash_complete_words "-u --urls -t --tag -i --filter -k --black -s --actions \
+-b --begin_time -e --end_time -q --quiet -l --detail -p --compress \
+-o --output --split_name_by_time -z --split_by_size -y --split_by_time \
+-f --force -j --wal_mode -c --cache_size \
+--check_gap \
+--rel_begin_time --rel_end_time --local_begin_time --local_end_time \
+--utc_begin_time --utc_end_time --compress_level --enable_chunk_crc --ignore_compress \
+--import_schema --plugin -h --help" "$cur"
+                return
+            fi
+            _vlink_bash_complete_files_ext "$cur" "$_vlink_bash_bag_ext"
             ;;
         check|reindex)
             if [[ "$cur" == -* ]]; then

@@ -336,11 +336,12 @@ static bool apply_schema_info(NodeT& node, const vlink_schema_info_t* schema_inf
     return true;
   }
 
-  if VUNLIKELY (!vlink::SchemaData::is_valid_type(static_cast<vlink::SchemaType>(schema_info->schema))) {
+  const auto schema_type = static_cast<vlink::SchemaType>(schema_info->schema);
+
+  if VUNLIKELY (static_cast<vlink_schema_t>(schema_type) != schema_info->schema ||
+                !vlink::SchemaData::is_valid_type(schema_type)) {
     return false;
   }
-
-  const auto schema_type = static_cast<vlink::SchemaType>(schema_info->schema);
 
   const bool has_ser = schema_info->ser && schema_info->ser[0] != '\0';
   const bool has_schema = schema_type != vlink::SchemaType::kUnknown;
@@ -1358,6 +1359,7 @@ struct getter_security_state {  // NOLINT(readability-identifier-naming)
   std::vector<uint8_t> last_cipher;
   std::vector<uint8_t> last_plain;
   std::mutex mutex;
+  bool has_callback{false};
 
   explicit getter_security_state(const vlink::Security::Config& cfg) : security(cfg) {}
   explicit getter_security_state(vlink::Security::Config&& cfg) : security(std::move(cfg)) {}
@@ -1383,16 +1385,12 @@ static void assign_bytes(std::vector<uint8_t>& out, const vlink::Bytes& in) {
   }
 }
 
-static bool decrypt_getter_value(getter_security_state* state, const vlink::Bytes& cipher,
-                                 std::vector<uint8_t>& plain_out, bool allow_cached_replay) {
+static bool decrypt_getter_value(getter_security_state* state, const vlink::Bytes& cipher, bool allow_cached_replay) {
   if VUNLIKELY (!state) {
     return false;
   }
 
-  std::lock_guard lock(state->mutex);
-
-  if (allow_cached_replay && bytes_equal(state->last_cipher, cipher)) {
-    plain_out = state->last_plain;
+  if (allow_cached_replay && !state->last_cipher.empty() && bytes_equal(state->last_cipher, cipher)) {
     return true;
   }
 
@@ -1404,7 +1402,6 @@ static bool decrypt_getter_value(getter_security_state* state, const vlink::Byte
 
   assign_bytes(state->last_cipher, cipher);
   assign_bytes(state->last_plain, plain);
-  plain_out = state->last_plain;
 
   return true;
 }
@@ -1610,20 +1607,31 @@ static int create_secure_getter_impl(const char* url, const vlink_schema_info_t*
       return VLINK_RET_INVALID_ERROR;
     }
 
-    ptr->init();
-
     handle->native_handle = ptr;
     std::memset(static_cast<void*>(handle->reserved), 0, sizeof(handle->reserved));
     handle->reserved[4] = state_holder;
+
+    (*state_holder)->has_callback = msg_callback != nullptr;
 
     if (msg_callback) {
       auto state = *state_holder;
       bool ret = ptr->listen([state, msg_callback, user_data](const vlink::Bytes& data) {
         std::vector<uint8_t> plain;
 
-        if VUNLIKELY (!decrypt_getter_value(state.get(), data, plain, false)) {
-          VLOG_W("vlink_getter: decrypt failed, update dropped.");
-          return;
+        {
+          std::lock_guard lock(state->mutex);
+
+          if VUNLIKELY (!decrypt_getter_value(state.get(), data, false)) {
+            if (!bytes_equal(state->last_cipher, data)) {
+              state->last_cipher.clear();
+              state->last_plain.clear();
+            }
+
+            VLOG_W("vlink_getter: decrypt failed, update dropped.");
+            return;
+          }
+
+          plain = state->last_plain;
         }
 
         msg_callback(plain.data(), plain.size(), user_data);
@@ -1637,6 +1645,8 @@ static int create_secure_getter_impl(const char* url, const vlink_schema_info_t*
         return VLINK_RET_TRANSFER_ERROR;
       }
     }
+
+    ptr->init();
 
     return VLINK_RET_NO_ERROR;
   } catch (std::exception&) {
@@ -1690,6 +1700,37 @@ int vlink_get(const vlink_getter_handle_t handle, uint8_t* data, size_t* size) {
     return VLINK_RET_INVALID_ERROR;
   }
 
+  auto state = shared_state_get<getter_security_state>(handle.reserved[4]);
+
+  if VUNLIKELY (state) {
+    std::lock_guard lock(state->mutex);
+
+    if (!state->has_callback) {
+      auto result = ptr->get();
+
+      if VUNLIKELY (!result.has_value() || !decrypt_getter_value(state.get(), *result, true)) {
+        return VLINK_RET_TRANSFER_ERROR;
+      }
+    } else if VUNLIKELY (state->last_cipher.empty()) {
+      return VLINK_RET_TRANSFER_ERROR;
+    }
+
+    const auto& value = state->last_plain;
+
+    if VUNLIKELY (value.size() > *size) {
+      *size = value.size();
+      return VLINK_RET_MEMORY_ERROR;
+    }
+
+    if VLIKELY (!value.empty()) {
+      std::memcpy(data, value.data(), value.size());
+    }
+
+    *size = value.size();
+
+    return VLINK_RET_NO_ERROR;
+  }
+
   auto result = ptr->get();
 
   if VUNLIKELY (!result.has_value()) {
@@ -1697,30 +1738,6 @@ int vlink_get(const vlink_getter_handle_t handle, uint8_t* data, size_t* size) {
   }
 
   const auto& val = result.value();
-
-  auto state = shared_state_get<getter_security_state>(handle.reserved[4]);
-
-  if VUNLIKELY (state) {
-    std::vector<uint8_t> plain;
-
-    if VUNLIKELY (!decrypt_getter_value(state.get(), val, plain, true)) {
-      VLOG_W("vlink_get: decrypt failed.");
-      return VLINK_RET_TRANSFER_ERROR;
-    }
-
-    if VUNLIKELY (plain.size() > *size) {
-      *size = plain.size();
-      return VLINK_RET_MEMORY_ERROR;
-    }
-
-    if VLIKELY (!plain.empty()) {
-      std::memcpy(data, plain.data(), plain.size());
-    }
-
-    *size = plain.size();
-
-    return VLINK_RET_NO_ERROR;
-  }
 
   if VUNLIKELY (val.size() > *size) {
     *size = val.size();

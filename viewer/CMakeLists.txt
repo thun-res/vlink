@@ -134,12 +134,13 @@ elseif(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/json/include/nlohmann/js
   target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/json/include)
 endif()
 
-if(NOT TARGET vlink-exprtk_api)
-  find_package(vlink-exprtk_api QUIET)
-endif()
-
-if(TARGET vlink::exprtk_api)
-  target_link_libraries(${PROJECT_NAME} PRIVATE vlink::exprtk_api)
+if(NOT DEFINED ENABLE_EXPRTK OR ENABLE_EXPRTK)
+  if(NOT TARGET vlink::exprtk_api)
+    find_package(vlink-exprtk_api QUIET)
+  endif()
+  if(TARGET vlink::exprtk_api)
+    target_link_libraries(${PROJECT_NAME} PRIVATE vlink::exprtk_api)
+  endif()
 endif()
 
 target_link_libraries(

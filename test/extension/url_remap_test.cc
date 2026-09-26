@@ -172,6 +172,18 @@ TEST_SUITE("extension-UrlRemap") {
     CHECK_EQ(remap.convert("shm://camera/front"), "zenoh://camera/front");
   }
 
+  TEST_CASE("convert honors an unchanged target before a broader rule") {
+    const auto file = write_temp_remap(R"({
+      "dds://camera/front": "dds://camera/front",
+      "dds://": "intra://fallback"
+    })");
+    UrlRemap remap;
+    REQUIRE(remap.load(file.string()));
+    CHECK_EQ(remap.convert("dds://camera/front"), "dds://camera/front");
+    CHECK_EQ(remap.convert("dds://camera/front"), "dds://camera/front");
+    CHECK_EQ(remap.convert("dds://camera/rear"), "intra://fallback");
+  }
+
   TEST_CASE("convert returns original URL when no rule matches") {
     const std::string json = R"({"intra://sensor/lidar": "dds://vehicle/lidar"})";
     const auto file = write_temp_remap(json);

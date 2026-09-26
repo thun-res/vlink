@@ -41,8 +41,7 @@
 //     vlink::Plugin::load<T>() resolves via dlsym.
 // =============================================================================
 
-#ifndef EXAMPLES_PLUGIN_PLUGIN_BASIC_GREETER_INTERFACE_H_
-#define EXAMPLES_PLUGIN_PLUGIN_BASIC_GREETER_INTERFACE_H_
+#pragma once
 
 #include <vlink/base/plugin.h>
 
@@ -73,5 +72,3 @@ class GreeterInterface {
   // Identification helper so the host can verify the implementation type.
   virtual std::string plugin_name() const = 0;
 };
-
-#endif  // EXAMPLES_PLUGIN_PLUGIN_BASIC_GREETER_INTERFACE_H_

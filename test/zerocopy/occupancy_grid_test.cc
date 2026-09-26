@@ -161,6 +161,13 @@ TEST_SUITE("zerocopy-OccupancyGrid") {
     og.set_map_id("local_map");
     CHECK_EQ(std::string(og.map_id()), "local_map");
 
+    SUBCASE("own string view and substring") {
+      og.set_map_id(og.map_id());
+      CHECK_EQ(og.map_id(), "local_map");
+      og.set_map_id(og.map_id().substr(1));
+      CHECK_EQ(og.map_id(), "ocal_map");
+    }
+
     SUBCASE("oversize input is truncated to fit") {
       og.set_map_id("this_string_is_definitely_longer_than_sixteen_bytes");
       CHECK_LE(og.map_id().size(), 15u);

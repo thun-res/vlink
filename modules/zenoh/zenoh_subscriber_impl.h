@@ -66,6 +66,7 @@ class ZenohSubscriberImpl final : public SubscriberImpl {
 
   ZenohConf conf_;
   std::shared_ptr<Object> object_;
+  z_owned_liveliness_token_t getter_token_;
 
   std::atomic_bool is_latency_and_lost_enabled_{false};
 

@@ -83,6 +83,11 @@ struct VCAPWriter::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
     bool operator<(const UrlMsgInfo& target) const noexcept { return index < target.index; }
   };
 
+  struct SplitInfo final {
+    int64_t row{0};
+    std::unordered_map<std::string, UrlMsgInfo> url_map;
+  };
+
   struct MemoryCharge final {
     MemoryCharge(std::atomic<int64_t>& counter, int64_t bytes) : value(&counter), size(bytes) {}
 
@@ -127,6 +132,7 @@ struct VCAPWriter::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
   int64_t start_timestamp{0};
 
   std::vector<std::string> split_file_list;
+  std::vector<SplitInfo> split_info_list;
   bool split_before{false};
   bool split_first{false};
 
@@ -156,6 +162,7 @@ struct VCAPWriter::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padd
   std::string write_channel_key;
 
   // mcap
+  std::ofstream output;
   std::optional<mcap::McapWriter> writer;
   mcap::McapWriterOptions writer_options{"vlink"};
 
@@ -189,6 +196,7 @@ VCAPWriter::VCAPWriter(const std::string& path, const Config& config)
 
   impl_->path = path;
   impl_->config = config;
+  impl_->writer_options.noChunkCRC = !impl_->config.enable_chunk_crc;
 
   impl_->enable_compressed = impl_->config.compress == kCompressAuto || impl_->config.compress == kCompressZstd;
 
@@ -577,14 +585,19 @@ void VCAPWriter::open(const std::string& path) {
 
   mcap::Status status;
 
-  impl_->writer.emplace();
+#ifdef _WIN32
+  impl_->output.open(std::filesystem::path(Helpers::string_to_wstring(path)), std::ios::binary | std::ios::trunc);
+#else
+  impl_->output.open(path, std::ios::binary | std::ios::trunc);
+#endif
 
-  status = impl_->writer->open(path, impl_->writer_options);
-
-  if VUNLIKELY (!status.ok()) {
-    CLOG_F("VCAPWriter: Failed to open vcap, error = %s.", status.message.c_str());  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return;                                                                          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  if VUNLIKELY (!impl_->output) {
+    VLOG_F("Failed to open output: ", path);
+    return;
   }
+
+  impl_->writer.emplace();
+  impl_->writer->open(impl_->output, impl_->writer_options);
 
   mcap::Metadata header_meta_data;
   header_meta_data.name = "VLinkHeader";
@@ -601,19 +614,35 @@ void VCAPWriter::open(const std::string& path) {
   if VUNLIKELY (!status.ok()) {
     CLOG_F("VCAPWriter: Failed to write header meta data, error = %s.",  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
            status.message.c_str());                                      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    return;                                                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    impl_->writer->close();                                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    impl_->writer->terminate();                                          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    impl_->writer.reset();
+    impl_->output.close();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    return;                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
   impl_->last_timestamp = 0;
 }
 
-void VCAPWriter::open_split(const std::string& path) {
+bool VCAPWriter::open_split(const std::string& path) {
+  const auto split_file_count = impl_->split_file_list.size();
 #ifdef _WIN32
   const auto file_name = std::filesystem::path(Helpers::string_to_wstring(path)).filename();
-  open(Helpers::path_to_string(impl_->split_output_dir / file_name));
+  const auto split_path = impl_->split_output_dir / file_name;
+  open(Helpers::path_to_string(split_path));
 #else
-  open((impl_->split_output_dir / std::filesystem::path(path).filename()).string());
+  const auto split_path = impl_->split_output_dir / std::filesystem::path(path).filename();
+  open(split_path.string());
 #endif
+
+  if VLIKELY (impl_->writer) {
+    return true;
+  }
+
+  impl_->split_file_list.resize(split_file_count);
+  std::error_code remove_ec;
+  std::filesystem::remove(split_path, remove_ec);
+  return false;
 }
 
 void VCAPWriter::close_segment() {
@@ -667,6 +696,11 @@ void VCAPWriter::close_segment() {
   impl_->writer->close();
   impl_->writer->terminate();
   impl_->writer.reset();
+  impl_->output.close();
+
+  if VUNLIKELY (impl_->output.fail()) {
+    set_fail();
+  }
 
   std::error_code footer_ec;
   const auto file_size = std::filesystem::file_size(impl_->active_path, footer_ec);
@@ -685,7 +719,11 @@ void VCAPWriter::close_segment() {
     }
   }
 
-  impl_->url_map.clear();
+  if (impl_->is_split_mode.load(std::memory_order_relaxed) && impl_->config.max_split_count > 0) {
+    impl_->split_info_list.emplace_back(Impl::SplitInfo{impl_->current_row, std::move(impl_->url_map)});
+  } else {
+    impl_->url_map.clear();
+  }
   impl_->ser_map.clear();
   url_loss_map_ref().clear();
 
@@ -883,7 +921,8 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
   if (impl_->is_split_mode.load(std::memory_order_relaxed) && !impl_->url_map.empty()) {
     if (impl_->config.split_by_time > 0 &&
         (microseconds_timestamp - impl_->config.begin_time * 1000) >
-            impl_->config.split_by_time * 1000 * static_cast<int64_t>(impl_->split_file_list.size())) {
+            impl_->config.split_by_time * 1000 *
+                (static_cast<int64_t>(impl_->split_index.load(std::memory_order_relaxed)) + 1)) {
       do_split = true;
     } else if (impl_->config.split_by_time <= 0 && impl_->config.split_by_size > 0 &&
                (impl_->current_size + static_cast<int64_t>(data.size())) > impl_->config.split_by_size) {
@@ -896,14 +935,20 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
       std::lock_guard split_lock(impl_->split_mtx);
 
       impl_->split_index.fetch_add(1, std::memory_order_relaxed);
-      impl_->time_current = impl_->time_start + std::chrono::milliseconds(microseconds_timestamp / 1000U);
+      const auto time_current = impl_->time_start + std::chrono::milliseconds(microseconds_timestamp / 1000U);
+      const bool same_millisecond = time_current == impl_->time_current;
+      impl_->time_current = time_current;
 
       if (impl_->config.split_name_by_time) {
-        if (impl_->base_dir.empty()) {
-          impl_->split_filename = get_format_date(&impl_->time_current, true) + ".vcap";
-        } else {
-          impl_->split_filename = impl_->base_dir + "/" + get_format_date(&impl_->time_current, true) + ".vcap";
+        std::string filename = get_format_date(&impl_->time_current, true) + ".vcap";
+
+        if VUNLIKELY (same_millisecond || std::find(impl_->split_file_list.begin(), impl_->split_file_list.end(),
+                                                    filename) != impl_->split_file_list.end()) {
+          filename.insert(filename.find_last_of('.'),
+                          "." + std::to_string(impl_->split_index.load(std::memory_order_relaxed) + 1));
         }
+
+        impl_->split_filename = impl_->base_dir.empty() ? filename : impl_->base_dir + "/" + filename;
       } else {
         impl_->split_filename =
             impl_->base_name + "." + std::to_string(impl_->split_index.load(std::memory_order_relaxed) + 1) + ".vcap";
@@ -915,11 +960,87 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
 
       close_segment();
 
-      if VUNLIKELY (!write_filex(false)) {
-        set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      if VUNLIKELY (!open_split(impl_->split_filename)) {
+        set_fail();
+        impl_->split_index.fetch_sub(1, std::memory_order_relaxed);
+
+        if VUNLIKELY (!write_filex(false)) {
+          set_fail();
+        }
+
+        return false;
       }
 
-      open_split(impl_->split_filename);
+      auto discard_new_split = [this]() {
+        close_segment();
+        impl_->split_file_list.pop_back();
+        if (impl_->config.max_split_count > 0) {
+          impl_->split_info_list.pop_back();
+        }
+
+#ifdef _WIN32
+        const auto new_split_path = impl_->split_output_dir /
+                                    std::filesystem::path(Helpers::string_to_wstring(impl_->split_filename)).filename();
+#else
+        const auto new_split_path = impl_->split_output_dir / std::filesystem::path(impl_->split_filename).filename();
+#endif
+        std::error_code remove_ec;
+        std::filesystem::remove(new_split_path, remove_ec);
+        impl_->split_index.fetch_sub(1, std::memory_order_relaxed);
+      };
+
+      std::string oldest_split_file;
+      Impl::SplitInfo oldest_split_info;
+
+      if (impl_->config.max_split_count > 0 &&
+          static_cast<int64_t>(impl_->split_file_list.size()) > impl_->config.max_split_count) {
+        oldest_split_file = std::move(impl_->split_file_list.front());
+        impl_->split_file_list.erase(impl_->split_file_list.begin());
+        oldest_split_info = std::move(impl_->split_info_list.front());
+        impl_->split_info_list.erase(impl_->split_info_list.begin());
+      }
+
+      if VUNLIKELY (!write_filex(false)) {
+        set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        discard_new_split();
+
+        if (!oldest_split_file.empty()) {
+          impl_->split_file_list.insert(impl_->split_file_list.begin(), std::move(oldest_split_file));
+          impl_->split_info_list.insert(impl_->split_info_list.begin(), std::move(oldest_split_info));
+        }
+
+        if VUNLIKELY (!write_filex(false)) {
+          set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        }
+
+        return false;
+      }
+
+      if (!oldest_split_file.empty()) {
+#ifdef _WIN32
+        const auto oldest_path =
+            impl_->split_output_dir / std::filesystem::path(Helpers::string_to_wstring(oldest_split_file));
+#else
+        const auto oldest_path = impl_->split_output_dir / std::filesystem::path(oldest_split_file);
+#endif
+        std::error_code remove_ec;
+        std::filesystem::remove(oldest_path, remove_ec);
+
+        if VUNLIKELY (remove_ec) {
+          CLOG_W("VCAPWriter: Failed to remove oldest split file [%s]: %s.", oldest_split_file.c_str(),
+                 remove_ec.message().c_str());
+          set_fail();
+          discard_new_split();
+          impl_->split_file_list.insert(impl_->split_file_list.begin(), std::move(oldest_split_file));
+          impl_->split_info_list.insert(impl_->split_info_list.begin(), std::move(oldest_split_info));
+
+          if VUNLIKELY (!write_filex(false)) {
+            set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          }
+
+          return false;
+        }
+      }
 
       if (!impl_->split_before && impl_->split_callback) {
         impl_->split_callback(impl_->split_index.load(std::memory_order_relaxed), impl_->split_filename);
@@ -946,32 +1067,22 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
 
   Impl::UrlMsgInfo& url_msg_info = url_iter_ret.first->second;
   auto resolved_schema_type = SchemaData::resolve_type(schema_type, ser_type);
-  std::string next_ser_type = total_url_msg_info.ser_type;
+  const std::string& next_ser_type = total_url_msg_info.ser_type.empty() ? ser_type : total_url_msg_info.ser_type;
   SchemaType next_schema_type = total_url_msg_info.schema_type;
 
   if (total_url_iter_ret.second) {
-    next_ser_type = ser_type;
     next_schema_type = resolved_schema_type;
-  } else {
-    if (!ser_type.empty()) {
-      if (next_ser_type.empty()) {
-        next_ser_type = ser_type;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      } else if VUNLIKELY (next_ser_type != ser_type) {
-        CLOG_E("VCAPWriter: URL [%s] ser changed from [%s] to [%s].", url.c_str(), next_ser_type.c_str(),
-               ser_type.c_str());
-        discard_new_url_entries();
-        return false;
-      }
-    }
+  } else if VUNLIKELY (!ser_type.empty() && next_ser_type != ser_type) {
+    CLOG_E("VCAPWriter: URL [%s] ser changed from [%s] to [%s].", url.c_str(), next_ser_type.c_str(), ser_type.c_str());
+    discard_new_url_entries();
+    return false;
   }
 
   SchemaData schema_data;
-  std::string schema_ser_type;
+  std::string split_ser_type;
   const auto schema_ser_source = ser_type.empty() ? std::string_view{next_ser_type} : std::string_view{ser_type};
   SchemaType schema_storage_type = SchemaData::resolve_type(schema_type, schema_ser_source);
   bool has_split_method_schema = false;
-
-  schema_ser_type.assign(schema_ser_source.begin(), schema_ser_source.end());
 
   if ((action_type == ActionType::kClientRequest || action_type == ActionType::kClientResponse ||
        action_type == ActionType::kServerRequest || action_type == ActionType::kServerResponse) &&
@@ -986,12 +1097,14 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
       }
 
       if (!payload_ser_type.empty()) {
-        schema_ser_type.assign(payload_ser_type.begin(), payload_ser_type.end());
+        split_ser_type.assign(payload_ser_type.begin(), payload_ser_type.end());
         schema_storage_type = SchemaData::resolve_type(schema_type, payload_ser_type);
         has_split_method_schema = true;
       }
     }
   }
+
+  const std::string& schema_ser_type = has_split_method_schema ? split_ser_type : next_ser_type;
 
   if (!next_ser_type.empty()) {
     if VUNLIKELY (!load_schema(schema_ser_type, schema_storage_type, schema_data)) {
@@ -1047,11 +1160,7 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
 
   if (!schema_ser_type.empty() &&
       (schema_storage_type == SchemaType::kProtobuf || schema_storage_type == SchemaType::kFlatbuffers)) {
-    std::string schema_record_key = schema_ser_type;
-    schema_record_key.push_back('\x1F');
-    schema_record_key.append(SchemaData::convert_type(schema_storage_type));
-
-    if (impl_->ser_map.find(schema_record_key) == impl_->ser_map.end()) {
+    if (impl_->ser_map.find(storage_schema_key) == impl_->ser_map.end()) {
       if (!schema_data.name.empty() && !schema_data.encoding.empty() && !schema_data.data.empty()) {
         mcap::Schema schema;
         schema.id = static_cast<mcap::SchemaId>(impl_->ser_map.size() + 1);
@@ -1062,7 +1171,7 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
 
         impl_->writer->addSchema(schema);
 
-        impl_->ser_map.emplace(schema_record_key, schema.id);
+        impl_->ser_map.emplace(storage_schema_key, schema.id);
       }
     }
   }
@@ -1123,8 +1232,11 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
     url_msg_info.action_type = action_type;
     total_url_msg_info.action_type = action_type;
   } else {
-    total_url_msg_info.ser_type = next_ser_type;
-    url_msg_info.ser_type = next_ser_type;
+    if VUNLIKELY (total_url_msg_info.ser_type.empty() && !next_ser_type.empty()) {
+      total_url_msg_info.ser_type = next_ser_type;
+      url_msg_info.ser_type = next_ser_type;
+    }
+
     total_url_msg_info.schema_type = next_schema_type;
     url_msg_info.schema_type = next_schema_type;
   }
@@ -1182,7 +1294,7 @@ bool VCAPWriter::write(const std::string& url, const std::string& ser_type, Sche
 
   status = impl_->writer->write(message);
 
-  if VUNLIKELY (!status.ok()) {
+  if VUNLIKELY (!status.ok() || !impl_->output) {
     CLOG_W("VCAPWriter: Failed to write message data, error = %s.",  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
            status.message.c_str());                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     return false;                                                    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -1210,11 +1322,20 @@ bool VCAPWriter::write_filex(bool complete) {
 
     nlohmann::ordered_json json;
 
+    auto message_count = impl_->total_current_row;
+    if (impl_->config.max_split_count > 0) {
+      message_count = impl_->current_row;
+
+      for (const auto& split_info : impl_->split_info_list) {
+        message_count += split_info.row;
+      }
+    }
+
     json["VLinkHeader"] = {
         {"major", VLINK_VERSION_MAJOR},  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         {"minor", VLINK_VERSION_MINOR},  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         {"patch", VLINK_VERSION_PATCH},  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        {"count", impl_->total_current_row},
+        {"count", message_count},
         {"duration", impl_->total_timestamp},
         {"accuracy", "MicroSecond"},
         {"compress", impl_->enable_compressed ? "zstd" : "None"},
@@ -1235,6 +1356,48 @@ bool VCAPWriter::write_filex(bool complete) {
 
       for (const auto& channel_key : impl_->total_url_list) {
         const auto& ext_info = impl_->total_url_map[channel_key];
+        auto count = ext_info.count;
+        auto size = ext_info.size;
+        auto freq = ext_info.freq;
+
+        if (impl_->config.max_split_count > 0) {
+          count = 0;
+          size = 0;
+          int64_t first_timestamp = -1;
+          int64_t last_timestamp = -1;
+
+          auto merge_url_info = [&](const auto& url_map) {
+            const auto iter = url_map.find(channel_key);
+
+            if (iter == url_map.end()) {
+              return;
+            }
+
+            const auto& url_info = iter->second;
+            count += url_info.count;
+            size += url_info.size;
+
+            if (url_info.first_timestamp >= 0 && (first_timestamp < 0 || url_info.first_timestamp < first_timestamp)) {
+              first_timestamp = url_info.first_timestamp;
+            }
+
+            last_timestamp = std::max(last_timestamp, url_info.last_timestamp);
+          };
+
+          for (const auto& split_info : impl_->split_info_list) {
+            merge_url_info(split_info.url_map);
+          }
+
+          merge_url_info(impl_->url_map);
+
+          if (count == 0) {
+            continue;
+          }
+
+          const auto duration = (last_timestamp - first_timestamp) / 1000'000.0;
+          freq = duration > 0 ? count / duration : 0;
+        }
+
         auto loss = total_url_loss_map_ref()[recover_recorded_url(ext_info.url)];
 
         url_json.push_back({
@@ -1245,10 +1408,10 @@ bool VCAPWriter::write_filex(bool complete) {
             {"action", std::string(convert_action(ext_info.action_type))},
             {"ser", ext_info.ser_type},
             {"encoding", std::string(SchemaData::convert_type(ext_info.schema_type))},
-            {"count", ext_info.count},
-            {"size", ext_info.size},
+            {"count", count},
+            {"size", size},
             {"loss", loss},
-            {"freq", ext_info.freq},
+            {"freq", freq},
         });
       }
     }
@@ -1256,8 +1419,14 @@ bool VCAPWriter::write_filex(bool complete) {
     json["VLinkUrls"] = std::move(url_json);
 
     nlohmann::ordered_json files_json;
-    for (const auto& file : impl_->split_file_list) {
-      files_json.push_back(file);
+    auto split_file_count = impl_->split_file_list.size();
+
+    if (!complete && impl_->writer && split_file_count > 0) {
+      --split_file_count;
+    }
+
+    for (size_t i = 0; i < split_file_count; ++i) {
+      files_json.push_back(impl_->split_file_list[i]);
     }
 
     json["VLinkFiles"] = std::move(files_json);

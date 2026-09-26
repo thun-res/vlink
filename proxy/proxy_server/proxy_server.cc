@@ -65,6 +65,8 @@ namespace vlink {
 
 [[maybe_unused]] static constexpr size_t kMaxTaskSize{100000U};
 [[maybe_unused]] static constexpr size_t kMaxTaskElapsed{10000U};
+[[maybe_unused]] static constexpr uint32_t kMaxSubMissCount{3U};
+[[maybe_unused]] static constexpr int kTimeoutWarnInterval{10000};
 
 using RawPub = Publisher<Bytes>;
 using RawSub = Subscriber<Bytes>;
@@ -89,6 +91,7 @@ struct ProxySubEntry final {
   std::shared_ptr<RawSub> node;
   std::string ser;
   SchemaType schema{SchemaType::kUnknown};
+  bool getter_semantics{false};
 };
 
 // ProxyServerGlobal
@@ -105,13 +108,34 @@ struct ProxyServerGlobal final {
   ProxyServerGlobal() = default;
 };
 
+// ProxyForwardLoop
+class ProxyForwardLoop final : public MessageLoop {
+ protected:
+  size_t get_max_task_count() const override { return kMaxTaskSize; }
+
+  uint32_t get_max_elapsed_time() const override { return kMaxTaskElapsed; }
+
+  void on_task_timeout(MessageLoop::Callback&& callback, uint32_t elapsed_time) override {
+    (void)callback;
+
+    VLOG_W_EVERY_MS(kTimeoutWarnInterval, "ProxyForwardLoop: Task was dropped after ", elapsed_time,
+                    "ms, the forward loop is busy.");
+  }
+};
+
 // ProxyServer::Impl
 struct ProxyServer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding)
+  struct PubEntry final {
+    std::shared_ptr<RawPub> node;
+    ImplType type{kPublisher};
+  };
+
   std::atomic<uint32_t> control_id{0};
   std::atomic<ProxyAPI::Mode> mode{ProxyAPI::kOffline};
 
   std::string current_host_name;
   std::string current_machine_id;
+  std::string native_ip;
   std::string token;
 
   size_t real_max_packet_size{0};
@@ -132,7 +156,7 @@ struct ProxyServer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
   std::vector<std::string> filter_list;
   uint32_t filter_type{0};
 
-  std::unordered_map<std::string, std::shared_ptr<RawPub>> pub_ptr_map;
+  std::unordered_map<std::string, PubEntry> pub_ptr_map;
   std::unordered_map<std::string, ProxySubEntry> sub_ptr_map;
   std::unordered_map<std::string, std::atomic<int64_t>> sub_total_seq_map;
   std::unordered_map<std::string, std::atomic<int64_t>> sub_seq_map;
@@ -141,6 +165,7 @@ struct ProxyServer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
   std::unordered_map<std::string, std::atomic<int64_t>> sub_lat_map;
   std::unordered_map<std::string, ElapsedTimer> sub_elapsed_map;
   std::unordered_map<std::string, std::deque<int64_t>> sub_seq_buffer_map;
+  std::unordered_map<std::string, uint32_t> sub_miss_map;
   std::unordered_map<std::string, std::deque<size_t>> sub_size_buffer_map;
   std::unordered_map<std::string, std::deque<double>> sub_lost_buffer_map;
   std::unordered_map<std::string, std::deque<int64_t>> sub_lat_buffer_map;
@@ -158,6 +183,8 @@ struct ProxyServer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
   Timer time_timer;
   Timer info_timer;
 
+  ProxyForwardLoop forward_loop;
+
   Plugin runnable_plugin;
   std::vector<std::shared_ptr<RunablePluginInterface>> runnable_interface_list;
 
@@ -169,6 +196,10 @@ ProxyServer::ProxyServer(const Config& config) : impl_(std::make_unique<Impl>())
   set_name("ProxyServer");
 
   impl_->config = config;
+
+  if (impl_->config.native_mode) {
+    impl_->native_ip = Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1");
+  }
 
   impl_->current_host_name = Utils::get_host_name();
   impl_->current_machine_id = Utils::get_machine_id();
@@ -208,6 +239,9 @@ ProxyServer::~ProxyServer() {
   quit(true);
   wait_for_quit();
 
+  impl_->forward_loop.quit(true);
+  impl_->forward_loop.wait_for_quit();
+
   impl_->runnable_interface_list.clear();
 
   impl_->time_timer.stop();
@@ -238,6 +272,7 @@ ProxyServer::~ProxyServer() {
   impl_->sub_seq_map.clear();
   impl_->sub_size_map.clear();
   impl_->sub_elapsed_map.clear();
+  impl_->sub_miss_map.clear();
   impl_->sub_seq_buffer_map.clear();
   impl_->sub_size_buffer_map.clear();
 
@@ -264,8 +299,8 @@ uint32_t ProxyServer::get_max_elapsed_time() const { return kMaxTaskElapsed; }
 
 void ProxyServer::on_begin() {
   for (const auto& runnable : impl_->runnable_interface_list) {
-    runnable->on_init();
     runnable->async_run();
+    runnable->on_init();
   }
 }
 
@@ -274,6 +309,15 @@ void ProxyServer::on_end() {
     runnable->on_deinit();
     runnable->quit();
     runnable->wait_for_quit();
+  }
+}
+
+void ProxyServer::on_task_timeout(MessageLoop::Callback&& callback, uint32_t elapsed_time) {
+  VLOG_W_EVERY_MS(kTimeoutWarnInterval, "ProxyServer: Task was delayed for ", elapsed_time,
+                  "ms, the message loop is busy.");
+
+  if VLIKELY (callback) {
+    callback();
   }
 }
 
@@ -425,13 +469,13 @@ void ProxyServer::init_server() {
   }
 
   if (impl_->config.native_mode) {
-    impl_->data_pub->set_property("dds.ip", "127.0.0.1");
-    impl_->data_sub->set_property("dds.ip", "127.0.0.1");
-    impl_->time_pub->set_property("dds.ip", "127.0.0.1");
-    impl_->info_pub->set_property("dds.ip", "127.0.0.1");
-    impl_->control_sub->set_property("dds.ip", "127.0.0.1");
+    impl_->data_pub->set_property("dds.ip", impl_->native_ip);
+    impl_->data_sub->set_property("dds.ip", impl_->native_ip);
+    impl_->time_pub->set_property("dds.ip", impl_->native_ip);
+    impl_->info_pub->set_property("dds.ip", impl_->native_ip);
+    impl_->control_sub->set_property("dds.ip", impl_->native_ip);
 #if VLINK_PROXY_ENABLE_HANDSHAKE
-    impl_->handshake_srv->set_property("dds.ip", "127.0.0.1");
+    impl_->handshake_srv->set_property("dds.ip", impl_->native_ip);
 #endif
   }
 
@@ -469,20 +513,20 @@ void ProxyServer::init_server() {
 
   impl_->time_timer.set_interval(kCollectInterval);
   impl_->time_timer.set_loop_count(Timer::kInfinite);
-  impl_->time_timer.attach(impl_->discovery_viewer.get());
+  impl_->time_timer.attach(this);
   impl_->time_timer.set_callback([this]() { send_time(); });
   impl_->time_timer.start();
 
   impl_->info_timer.set_interval(kCollectInterval);
   impl_->info_timer.set_loop_count(Timer::kInfinite);
-  impl_->info_timer.attach(impl_->discovery_viewer.get());
+  impl_->info_timer.attach(this);
   impl_->info_timer.set_callback([this]() { update_all(); });
   impl_->info_timer.start();
 
   impl_->info_pub->detect_subscribers([this](bool connected) {
     if VUNLIKELY (impl_->mode.load(std::memory_order_relaxed) != ProxyAPI::kOffline && !connected &&
                   !impl_->info_pub->has_subscribers()) {
-      impl_->discovery_viewer->post_task([this]() {
+      post_task([this]() {
         proxy::ControlPacket packet;
         packet.control_id = impl_->control_id.load(std::memory_order_relaxed);
         packet.body.mode = ProxyAPI::kOffline;
@@ -511,7 +555,11 @@ void ProxyServer::init_server() {
 
       if (!impl_->config.direct) {
         if (impl_->config.async) {
-          post_task([this, t_data]() {
+          impl_->forward_loop.post_task([this, t_data]() {
+            if VUNLIKELY (t_data.control_id() != impl_->control_id.load(std::memory_order_relaxed)) {
+              return;
+            }
+
             std::shared_lock lock(impl_->pubs_mtx);
             auto iter = impl_->pub_ptr_map.find(std::string(t_data.url()));
 
@@ -519,8 +567,8 @@ void ProxyServer::init_server() {
               return;
             }
 
-            if VLIKELY (iter->second->has_subscribers()) {
-              iter->second->publish(t_data.raw(), true);
+            if VLIKELY (iter->second.type == kSetter || iter->second.node->has_subscribers()) {
+              iter->second.node->publish(t_data.raw(), true);
             }
           });
         } else {
@@ -531,8 +579,8 @@ void ProxyServer::init_server() {
             return;
           }
 
-          if VLIKELY (iter->second->has_subscribers()) {
-            iter->second->publish(t_data.raw(), true);
+          if VLIKELY (iter->second.type == kSetter || iter->second.node->has_subscribers()) {
+            iter->second.node->publish(t_data.raw(), true);
           }
         }
       }
@@ -552,8 +600,16 @@ void ProxyServer::init_server() {
     }
 #endif
 
-    impl_->discovery_viewer->post_task([this, packet]() { send_control(&packet); });
+    post_task([this, packet]() { send_control(&packet); });
   });
+
+  if (impl_->config.async) {
+    impl_->forward_loop.set_name("ProxyForward");
+
+    if VUNLIKELY (!impl_->forward_loop.async_run()) {
+      VLOG_E("ProxyServer: Failed to start the forward loop, async forwarding will stall.");
+    }
+  }
 
   impl_->discovery_viewer->async_run();
 }
@@ -592,6 +648,15 @@ void ProxyServer::send_time() {
   time.token = impl_->token;
 #endif
 
+  if (impl_->config.direct) {
+    std::shared_lock control_lock(impl_->control_mtx);
+    time.direct_sub_list.reserve(impl_->requested_sub_meta_map.size());
+
+    for (const auto& [url, meta] : impl_->requested_sub_meta_map) {
+      time.direct_sub_list.push_back({url, meta.ser, meta.schema, kSubscriber});
+    }
+  }
+
   time.cpu_usage = Utils::get_cpu_usage();
   time.memory_usage = Utils::get_memory_usage();
 
@@ -623,7 +688,7 @@ void ProxyServer::send_control(const void* control_data) {
 
   std::unordered_set<std::string> next_sub_urls;
   std::unordered_map<std::string, ProxySubMeta> next_sub_meta_map;
-  std::unordered_map<std::string, ProxySubMeta> next_pub_meta_map;
+  std::unordered_map<std::string, ProxyAPI::UrlMeta> next_pub_meta_map;
 
   if VUNLIKELY (next_mode != ProxyAPI::kOffline) {
     next_sub_urls.reserve(body.url_meta_list.size());
@@ -645,12 +710,13 @@ void ProxyServer::send_control(const void* control_data) {
         }
 
         next_sub_meta_map.try_emplace(url_meta.url, ProxySubMeta{url_meta.ser, schema});
-      } else if (url_meta.type == kPublisher) {
+      } else if (url_meta.type == kPublisher || url_meta.type == kSetter) {
         if (url_meta.ser.empty()) {
           continue;
         }
 
-        next_pub_meta_map.try_emplace(url_meta.url, ProxySubMeta{url_meta.ser, schema});
+        next_pub_meta_map.try_emplace(url_meta.url,
+                                      ProxyAPI::UrlMeta{url_meta.url, url_meta.ser, schema, url_meta.type});
       }
     }
   }
@@ -687,7 +753,7 @@ void ProxyServer::send_control(const void* control_data) {
     return;
   }
 
-  impl_->discovery_viewer->post_task([this]() { send_time(); });
+  post_task([this]() { send_time(); });
   impl_->time_timer.restart();
 
   {
@@ -707,7 +773,7 @@ void ProxyServer::send_control(const void* control_data) {
     }
 
     if (next_mode == ProxyAPI::kObserveOne && last_mode == ProxyAPI::kObserveOne && !to_update) {
-      impl_->discovery_viewer->post_task([this]() { update_all(); });
+      post_task([this]() { update_all(); });
       impl_->info_timer.restart();
     }
   } else if (next_mode == ProxyAPI::kPlay || next_mode == ProxyAPI::kEdit || next_mode == ProxyAPI::kAuto ||
@@ -731,9 +797,10 @@ void ProxyServer::send_control(const void* control_data) {
           auto pub_iter = impl_->pub_ptr_map.find(url);
 
           if (pub_iter != impl_->pub_ptr_map.end()) {
-            auto* pub = pub_iter->second.get();
+            auto* pub = pub_iter->second.node.get();
 
-            if (pub && pub->get_ser_type() == meta.ser && pub->get_schema_type() == meta.schema) {
+            if (pub && pub_iter->second.type == meta.type && pub->get_ser_type() == meta.ser &&
+                pub->get_schema_type() == meta.schema) {
               continue;
             }
 
@@ -743,15 +810,19 @@ void ProxyServer::send_control(const void* control_data) {
           try {
             auto pub = std::make_shared<RawPub>(url, InitType::kWithoutInit);
 
+            if (meta.type == kSetter) {
+              pub->mark_as_setter();
+            }
+
             if (impl_->config.native_mode) {
-              pub->set_property("dds.ip", "127.0.0.1");
+              pub->set_property("dds.ip", impl_->native_ip);
             }
 
             pub->set_ser_type(meta.ser, meta.schema);
             pub->set_discovery_enabled(true);
             pub->init();
 
-            impl_->pub_ptr_map.emplace(url, std::move(pub));
+            impl_->pub_ptr_map.emplace(url, Impl::PubEntry{std::move(pub), meta.type});
           } catch (Exception::RuntimeError&) {
             impl_->pub_error_url_set.emplace(url);
             continue;
@@ -773,7 +844,7 @@ void ProxyServer::send_control(const void* control_data) {
     }
 
     impl_->main_elapsed.restart();
-    impl_->discovery_viewer->post_task([this]() { update_all(); });
+    post_task([this]() { update_all(); });
     impl_->info_timer.restart();
   }
 }
@@ -826,6 +897,14 @@ void ProxyServer::update_all() {
 
     for (auto iter = impl_->sub_seq_buffer_map.begin(); iter != impl_->sub_seq_buffer_map.end();) {
       if (current_urls.count(iter->first) == 0) {
+        if (++impl_->sub_miss_map[iter->first] < kMaxSubMissCount) {
+          impl_->sub_seq_map[iter->first].store(0, std::memory_order_relaxed);
+          impl_->sub_size_map[iter->first].store(0, std::memory_order_relaxed);
+          impl_->sub_lat_map[iter->first].store(0, std::memory_order_relaxed);
+          ++iter;
+          continue;
+        }
+
         std::atomic<int64_t>& seq = impl_->sub_seq_map[iter->first];
         std::atomic<size_t>& size = impl_->sub_size_map[iter->first];
         std::atomic<double>& lost = impl_->sub_lost_map[iter->first];
@@ -844,9 +923,11 @@ void ProxyServer::update_all() {
         impl_->sub_lat_buffer_map.erase(iter->first);
 
         impl_->sub_ptr_map.erase(iter->first);
+        impl_->sub_miss_map.erase(iter->first);
 
         iter = impl_->sub_seq_buffer_map.erase(iter);
       } else {
+        impl_->sub_miss_map.erase(iter->first);
         ++iter;
       }
     }
@@ -920,83 +1001,55 @@ void ProxyServer::update_all() {
         }
       }
 
+      bool matches_type = true;
+
       switch (impl_->filter_type) {
         case 0:
           break;
         case 1:
-          if (!(info.type & kPublisher && info.type & kSubscriber)) {
-            continue;
-          }
-
+          matches_type = (info.type & kPublisher) != 0 && (info.type & kSubscriber) != 0;
           break;
         case 2:
-          if (!(info.type & kServer && info.type & kClient)) {
-            continue;
-          }
-
+          matches_type = (info.type & kServer) != 0 && (info.type & kClient) != 0;
           break;
         case 3:
-          if (!(info.type & kSetter && info.type & kGetter)) {
-            continue;
-          }
-
+          matches_type = (info.type & kSetter) != 0 && (info.type & kGetter) != 0;
           break;
         case 4:
-          if (!((info.type & kPublisher) || (info.type & kSubscriber))) {
-            continue;
-          }
-
+          matches_type = (info.type & kPublisher) != 0 || (info.type & kSubscriber) != 0;
           break;
         case 5:
-          if (!((info.type & kServer) || (info.type & kClient))) {
-            continue;
-          }
-
+          matches_type = (info.type & kServer) != 0 || (info.type & kClient) != 0;
           break;
         case 6:
-          if (!((info.type & kSetter) || (info.type & kGetter))) {
-            continue;
-          }
-
+          matches_type = (info.type & kSetter) != 0 || (info.type & kGetter) != 0;
           break;
         case 7:
-          if (!(info.type & kPublisher)) {
-            continue;
-          }
-
+          matches_type = (info.type & kPublisher) != 0;
           break;
         case 8:
-          if (!(info.type & kSubscriber)) {
-            continue;
-          }
-
+          matches_type = (info.type & kSubscriber) != 0;
           break;
         case 9:
-          if (!(info.type & kServer)) {
-            continue;
-          }
-
+          matches_type = (info.type & kServer) != 0;
           break;
         case 10:
-          if (!(info.type & kClient)) {
-            continue;
-          }
-
+          matches_type = (info.type & kClient) != 0;
           break;
         case 11:
-          if (!(info.type & kSetter)) {
-            continue;
-          }
-
+          matches_type = (info.type & kSetter) != 0;
           break;
         case 12:
-          if (!(info.type & kGetter)) {
-            continue;
-          }
-
+          matches_type = (info.type & kGetter) != 0;
           break;
         default:
           break;
+      }
+
+      if (!matches_type) {
+        std::lock_guard subs_lock(impl_->subs_mtx);
+        impl_->sub_ptr_map.erase(info.url);
+        continue;
       }
     }
 #endif
@@ -1122,8 +1175,11 @@ void ProxyServer::update_all() {
       continue;
     }
 
+    const bool getter_semantics = (info.type & kSetter) != 0;
+
     if (!create && ptr_iter != impl_->sub_ptr_map.end() &&
-        (ptr_iter->second.ser != stream_meta.ser || ptr_iter->second.schema != stream_meta.schema)) {
+        (ptr_iter->second.ser != stream_meta.ser || ptr_iter->second.schema != stream_meta.schema ||
+         ptr_iter->second.getter_semantics != getter_semantics)) {
       impl_->sub_ptr_map.erase(ptr_iter);
       ptr_iter = impl_->sub_ptr_map.end();
       create = true;
@@ -1142,16 +1198,14 @@ void ProxyServer::update_all() {
       try {
         sub = std::make_shared<RawSub>(info.url, InitType::kWithoutInit);
 
-        // A setter is the field data source; the proxy must observe it as a getter.
-
-        if (info.type & kSetter) {
+        if (getter_semantics) {
           sub->mark_as_getter();
         }
 
         sub->set_latency_and_lost_enabled(true);
 
         if (impl_->config.native_mode) {
-          sub->set_property("dds.ip", "127.0.0.1");
+          sub->set_property("dds.ip", impl_->native_ip);
         }
 
         sub->set_discovery_enabled(false);
@@ -1203,7 +1257,7 @@ void ProxyServer::update_all() {
 
               auto forward_task = [this, t_data = std::move(t_data)]() { impl_->data_pub->publish(t_data, true); };
 
-              if VUNLIKELY (!post_task(std::move(forward_task))) {
+              if VUNLIKELY (!impl_->forward_loop.post_task(std::move(forward_task))) {
                 VLOG_E("ProxyServer: Failed to post async forwarding task.");
                 return;
               }
@@ -1225,7 +1279,8 @@ void ProxyServer::update_all() {
 
         subs_lock.lock();
 
-        impl_->sub_ptr_map.emplace(info.url, ProxySubEntry{std::move(sub), current_meta.ser, current_meta.schema});
+        impl_->sub_ptr_map.emplace(
+            info.url, ProxySubEntry{std::move(sub), current_meta.ser, current_meta.schema, getter_semantics});
       } catch (Exception::RuntimeError&) {
         impl_->sub_error_url_set.emplace(info.url);
         seq.store(0, std::memory_order_relaxed);

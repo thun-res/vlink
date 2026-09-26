@@ -86,6 +86,8 @@
  *       express flag and positive history depth; other @c Qos fields remain DDS-only.
  * @note The zenoh-pico build must enable local subscriber and local queryable
  *       support because VLink intentionally reuses compatible sessions.
+ * @note With zenoh-pico, TCP/TLS hints require an explicit peer, IP or listen endpoint.
+ *       Listening requires @c zenoh.listen with a nonzero port; no listener is created implicitly.
  */
 
 #pragma once

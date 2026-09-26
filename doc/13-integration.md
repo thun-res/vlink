@@ -224,6 +224,8 @@ vlink_create_server("dds://echo", &schema, &server, on_request, &server);
 
 创建 Getter 时 `msg_callback` 的取值决定工作模式：传非 `NULL` 走推送模式，每次值更新触发回调；传 `NULL` 走轮询模式，由调用方用 `vlink_get` 主动读取最新值。
 
+安全 Getter 的推送回调与并发 `vlink_get` 共享鉴权结果；不同密文鉴权失败后，读取返回 `VLINK_RET_TRANSFER_ERROR`，直到收到合法更新，已鉴权当前值的重复投递不清除缓存。已有 Field 初值可能在创建返回前触发回调，`user_data` 须提前准备。轮询模式仍在读取时解密，重复读取复用已鉴权的当前值。
+
 #### 13.5.4 `vlink_get` 的缓冲区契约
 
 `vlink_get` 的 `*size` 是双向参数：入参为缓冲区容量，出参为实际数据大小。容量不足时返回 `VLINK_RET_MEMORY_ERROR` 并把所需大小写回 `*size`（`data` 不被修改），调用方据此扩容重试；尚无可用值时返回 `VLINK_RET_TRANSFER_ERROR`。
@@ -314,7 +316,7 @@ vlink_create_publisher_with_ssl_options("mqtt://sensor/data", &schema, &pub, &op
 
 vlink 为 Python 提供两条路径，**首选原生绑定**：
 
-- **原生 nanobind 绑定（首选）**：源码位于 `languages/python_api/`（`vlink_python.cc` + `vlink.py`），编译产出名为 `_vlink_nanobind` 的扩展模块，由 `vlink.py` 再导出（`from _vlink_nanobind import *`）。它是一等公民的面向对象 API，无需手写 ABI 声明，并自动管理生命周期。需在配置时开启构建开关 `ENABLE_PYTHON_API`（`CMakeLists.txt` 中默认 `OFF`），即 `cmake -DENABLE_PYTHON_API=ON ...`；该开关依赖系统已安装 `nanobind`。导出的主要类/接口如下，完整清单以 `languages/python_api/vlink.py` 的 `__all__` 为准：
+- **原生 nanobind 绑定（首选）**：源码位于 `languages/python_api/`（`vlink_python.cc` 负责初始化，各功能由独立 `.cc` 注册，`vlink.py` 负责导出），编译产出名为 `_vlink_nanobind` 的扩展模块，由 `vlink.py` 再导出（`from _vlink_nanobind import *`）。它是一等公民的面向对象 API，无需手写 ABI 声明，并自动管理生命周期。需在配置时开启构建开关 `ENABLE_PYTHON_API`（`CMakeLists.txt` 中默认 `OFF`），即 `cmake -DENABLE_PYTHON_API=ON ...`；该开关依赖系统已安装 `nanobind`。导出的主要类/接口如下，完整清单以 `languages/python_api/vlink.py` 的 `__all__` 为准：
   - 收发端点：`Publisher`、`Subscriber`、`Server`、`Client`、`Setter`、`Getter`、`FireForgetServer`、`FireForgetClient`；
   - 安全版端点：`Security`、`SecurityConfig`、`SecurityConfigAdvanced`、`SecurityPublisher`、`SecuritySubscriber`、`SecurityServer`、`SecurityClient`、`SecuritySetter`、`SecurityGetter`、`SecurityFireForgetServer`、`SecurityFireForgetClient`、`SslOptions`；
   - 录制/回放与发现：`BagWriter`、`BagReader`、`TriggerRecorder`、`DiscoveryViewer`；
@@ -322,7 +324,34 @@ vlink 为 Python 提供两条路径，**首选原生绑定**：
   - 基础类型与工具：`Bytes`、`Frame`、`Uuid`、`Version`、`SchemaData`、`SampleLostInfo`、`ElapsedTimer`、`DeadlineTimer`、`Timer`、`WheelTimer`、`MessageLoop`、`MultiLoop`、`ThreadPool`、`SpinLock`、`CpuProfiler`、`CpuProfilerGuard`、`MemoryPool`、`Process`、`utils`、`helpers`、`quantize`；
   - 各类枚举：`ImplType`、`TransportType`、`InitType`、`SecurityType`、`ActionType`、`SchemaType`、`LogLevel`、`StatusType` 等。
 
-  具体方法签名以源码 `languages/python_api/vlink_python.cc` 为准，示例可参考 `languages/python_api/examples/`。
+  具体方法签名以 `languages/python_api/` 下各功能绑定文件为准，注册入口见 `vlink_python.cc`，示例可参考 `languages/python_api/examples/`。
+
+  | 文件 | 职责 |
+  | --- | --- |
+  | `types.cc`、`buffer.cc` | 基础枚举、Frame、Version、SchemaData、Uuid 与 Bytes buffer 协议 |
+  | `zerocopy.cc` | 零拷贝容器、统一消息解析器与输入所有权保护 |
+  | `logging.cc` | Logger 与日志函数 |
+  | `runtime.cc` | 消息循环、线程池、定时器、锁、性能计时与内存池 |
+  | `process.cc`、`utils.cc` | 子进程、系统工具、字符串辅助与量化 |
+  | `qos.cc`、`security.cc` | QoS、状态类型与安全配置 |
+  | `communication.cc` | 六种通信原语及安全版本 |
+  | `discovery.cc`、`bag.cc` | 发现与 URL 重映射、录制回放与插件 |
+  | `callbacks.h/.cc`、`ownership.h/.cc` | 共用 GIL、回调生命周期与 Python 对象所有权管理 |
+  | `bindings.h`、`buffer.h`、`strings.h` | 注册声明、buffer 转换与 UTF-8 辅助 |
+
+  所有功能文件共同编译为同一个 `_vlink_nanobind` 扩展，Python 导入方式和安装布局不变。
+
+  Python 生命周期与可修改数据的约定：
+
+  - 普通通信端点发送真实 loan 时会移动其存储，原 Python `Bytes` 随即清空；发送返回失败也不恢复该对象。无订阅者而提前拒绝发布时保留原 loan，调用方仍须归还；未初始化的 Setter 只保存快照。发送前须释放该 loan 的 `memoryview` 等借用视图，否则抛出 `BufferError`。普通缓冲区继续按快照发送，安全端点仍不支持显式 loan。
+
+  - `DiscoveryViewer` 继承 `MessageLoop`：注册发现回调后调用 `async_run()`，结束时调用 `quit()` 和 `wait_for_quit(timeout_ms)`；构造本身不启动发现消息处理。
+  - `MessageLoop` 的投递接口在等待队列容量时释放 GIL，使 `Block` 策略下的 Python 消费回调可以继续执行。
+  - `Security` 加解密及状态查询在原生调用期间释放 GIL；加解密保留不可变 `bytes` 输入，可修改缓冲区则先复制，以保证并发调用时的输入快照。
+  - `ProxyData.raw()` 返回浅 `Bytes`；该对象及由它派生的 `memoryview`、借用消息仍存活时，父对象的 `clear()`、`create()`、`from_bytes()` 抛出 `BufferError`。释放这些视图后才能替换父存储。
+  - `PointCloud.deep_copy(source)`、`ObjectArray.deep_copy(source)` 显式复制元数据与载荷，非空结果拥有独立存储；空结果保留元数据但不借用源指针。自复制返回 `False`。点云逐点改写前仍需按原生契约调用 `resize(size())`。
+  - `Logger.register_console_handler(None)`、`register_file_handler(None)` 释放 Python 回调并恢复对应默认输出；并发注册与清除按安装顺序串行执行，旧回调在释放注册锁后销毁。允许从日志回调内部替换或清除 handler，该注册在本次回调返回后生效。
+  - `BagReader`、`BagWriter` 均提供 `bind_bag_interface(plugin)` 和 `clear_bag_interface()`，接收 `Plugin.load_bag_plugin()` 返回的接口并持有共享所有权。替换或解绑会排空旧插件，须在读写停止后执行；从该对象的 Python 回调内部调用会抛出 `RuntimeError`。
 
 - **ctypes-over-C-API（轻量替代）**：当不便编译原生绑定时，可直接用 `ctypes` 调用 C API 共享库，无需额外构建步骤，但需手写与 `vlink_schema_info_t`、句柄结构体匹配的 ABI 布局并自行管理生命周期：
 
@@ -432,7 +461,7 @@ fn main() {
 
 #### 13.8.3 Python 零拷贝动态解析
 
-nanobind 模块提供 `ZeroCopyMessageParser`，用于按运行期序列化类型读取八种内置零拷贝消息。`parse(serialized_type, bytes)` 自动识别类型，`parse_type(type, bytes)` 可在类型已知时避免重复识别；解析成功后通过 `value(path)`、`value_at(collection, index, field)`、`collection_size()`、`fields()` 与 `element_fields()` 访问消息。字段不存在或下标越界时读取方法返回 `None`，不会越界访问。
+nanobind 模块提供 `ZeroCopyMessageParser`，用于按运行期序列化类型读取九种内置零拷贝消息。`parse(serialized_type, bytes)` 自动识别类型，`parse_type(type, bytes)` 可在类型已知时避免重复识别；解析成功后通过 `value(path)`、`value_at(collection, index, field)`、`collection_size()`、`fields()` 与 `element_fields()` 访问消息。字段不存在或下标越界时读取方法返回 `None`，不会越界访问。
 
 ```python
 parser = vlink.ZeroCopyMessageParser()
@@ -471,6 +500,7 @@ VLink 的扩展点按调用主体分为两类，决定其在文档中的展开�
 | `RunablePluginInterface` | `extension/runnable_plugin_interface.h` | 携带自身事件循环的自包含可运行组件 | 应用向·插件 |
 | `ConvertPluginInterface` | `extension/convert_plugin_interface.h` | Foxglove / Rerun 可视化消息转换 | 应用向·插件 |
 | `SchemaPluginInterface` | `extension/schema_plugin_interface.h` | Protobuf / FlatBuffers schema 反射注册 | 进阶·插件 |
+| `FastBufferPluginInterface` | `zerocopy/fast_buffer_plugin_interface.h` | 通用内存分配、CPU 访问及跨进程资源共享，见 [零拷贝 §6.13](06-zerocopy.md#-613-fastbuffer-插件缓冲区) | 框架内·插件 |
 | `BagPluginInterface` | `extension/bag_plugin_interface.h` | 录制 / 回放时改写 URL 与帧 | 框架内·插件 |
 | `TriggerPluginInterface` | `extension/trigger_plugin_interface.h` | 观察触发录制生命周期，dump 完成后上传 / 归档 | 框架内·插件 |
 | `DiscoveryReporter` | `extension/discovery_reporter.h` | 节点上线 / 下线上报 | 框架内 |
@@ -639,6 +669,8 @@ plugin.unload<vlink::LoggerPluginInterface>("my_logger");
 3. 实现 `.cc` 末尾以 `VLINK_PLUGIN_DECLARE(ImplType, major, minor)` 导出入口；
 4. CMake 编译为 `SHARED` 库；
 5. 宿主以 `Plugin::load<Iface>()` 加载。
+
+构造入口返回注册接口的地址，析构入口通过该接口的虚析构释放实现对象，支持多重继承和虚继承。接口析构可为 `protected`。存在接口地址偏移的旧插件须用当前头文件重新构建。
 
 以一个自定义监控插件为例。
 
@@ -846,7 +878,7 @@ if (instance) {
 | --- | --- |
 | `init(config)` | 加载后调用，返回 `false` 则卸载 |
 | `can_convert(ser_type, target)` | 是否处理某序列化类型与目标的组合 |
-| `get_schema(ser_type, target, info)` | 注册通道时返回 schema 元数据 |
+| `get_schema(ser_type, target, info)` | 注册通道并在转换后更新动态 schema 元数据 |
 | `convert(ser_type, raw, target, payload)` | 将每条消息的 `raw` 转为目标格式 |
 
 Rerun 目标的 JSON payload 约定（节选）：
@@ -856,10 +888,12 @@ Rerun 目标的 JSON payload 约定（节选）：
 ```
 
 ```json
-{ "media_type": "image/jpeg", "data_base64": "<base64>" }
+{ "media_type": "image/jpeg", "blob": {"base64": "<base64>"} }
 ```
 
-**边界条件**：当 JSON 映射配置与本插件同时存在时优先使用插件；`can_convert` 返回 `false` 时回退至 JSON 映射管道，因此插件只需覆盖需自定义逻辑的类型。`convert()` 可能被多个回调线程并发调用，实现须自行保证线程安全。该插件可经环境变量 `VLINK_CONVERT_PLUGIN` 注入（见 13.20），可视化对接整体见 [数据可视化](11-visualization.md)。
+JSON 字段采用所链接 SDK 的官方组件结构，完整表示规则见 [§11.2.7](11-visualization.md#🗂️-1127-自定义消息映射)。字节数据放在对应组件字段内；例如 `EncodedImage.blob` 接受 `{"base64":"..."}`，Tensor 使用 `data.shape` 和 `data.buffer` 的带类型 union。
+
+**边界条件**：匹配的显式映射优先，其次是已识别的原生零拷贝转换，再由插件处理其声明支持的类型。显式映射或插件转换失败均报告失败。`get_timestamp()` 在 `convert()` 成功后读取，动态输出 Schema 也在转换后刷新。`convert()` 可能被多个回调线程并发调用，实现须自行保证线程安全。该插件可经环境变量 `VLINK_CONVERT_PLUGIN` 注入（见 13.20），可视化对接整体见 [数据可视化](11-visualization.md)。
 
 ### 🔬 13.17 SchemaPluginInterface：schema 反射注册
 
@@ -895,7 +929,7 @@ if (mgr.is_valid()) {
 }
 ```
 
-框架内扩展接口主要由 VLink 运行时或特定工具链宿主装配，应用代码一般不直接构造：`BagPluginInterface` 由宿主加载或创建后绑定到录制 / 回放组件，组件自身只依赖接口（详见 [录制与回放](09-recording.md)）；`DiscoveryReporter` 用于节点上线 / 下线上报，可经 `VLINK_DISCOVER_DISABLE`、`VLINK_DISCOVER_NATIVE` 控制（详见 [可观测性](12-observability.md)）；`ConfPluginInterface` 为已识别的传输后端提供外部 `Conf` 工厂，不能注册新的 URL scheme（详见 [传输后端与 URL](04-transport.md)）。
+框架内扩展接口主要由 VLink 运行时或特定工具链宿主装配，应用代码一般不直接构造：`BagPluginInterface` 由宿主加载或创建后绑定到录制 / 回放组件，组件自身只依赖接口（详见 [录制与回放](09-recording.md)）；`DiscoveryReporter` 用于节点上线 / 下线上报，可经 `VLINK_DISCOVER_DISABLE`、`VLINK_DISCOVER_NATIVE`、`VLINK_DISCOVER_IP` 控制（详见 [可观测性](12-observability.md)）；`ConfPluginInterface` 为已识别的传输后端提供外部 `Conf` 工厂，不能注册新的 URL scheme（详见 [传输后端与 URL](04-transport.md)）。
 
 ---
 
@@ -929,7 +963,8 @@ domain/QoS/depth 等后端参数可由三处声明，遵循就近覆盖原则。
 | `VLINK_DDS_BIND` | 将所有 `dds://` 整体绑定到指定 DDS 实现（`ddsc`/`ddsr`） |
 | `VLINK_INTRA_BIND` | 将所有 `intra://` 重定向到其他 scheme（`shm`/`dds` 等） |
 | `VLINK_LOG_LEVEL` | 全局日志级别（`0`=TRACE … `6`=OFF，也接受对应英文名称） |
-| `VLINK_DDS_IP` | 指定 DDS 单播 IP，多网卡主机通常必设 |
+| `VLINK_DDS_IP` | 指定 DDS 单播 IP，多网卡主机通常必设；未设置时取 `VLINK_DISCOVER_IP` |
+| `VLINK_DDS_NATIVE_IP` | native 模式使用的 DDS IP（未设置时为 `127.0.0.1`） |
 
 ```bash
 export VLINK_DDS_BIND=ddsc
@@ -945,6 +980,7 @@ export VLINK_LOG_LEVEL=3
 | --- | --- | --- |
 | `VLINK_URL_PLUGINS` | 模式或名称列表 | 完整值为 `auto`（大小写不敏感）时，未链接的已知 transport 在 URL 首次使用时尝试加载固定的 `vlink-<module>`；为空或完整值为 `none`（大小写不敏感）时关闭插件加载；其他非空值是逗号或空格分隔的显式预加载基础名列表（可省略 `vlink-`，不含路径、平台库前缀与 `.so` / `.dylib` / `.dll` 后缀）。三种模式互斥，设置在进程级插件管理器首次初始化时读取一次；仅适用于共享模块，不加载静态归档（Unix `.a` / Windows 静态 `.lib`）；分包的运行时组件即包含所需加载名称；已链接后端优先，未知 scheme 不支持 |
 | `VLINK_SCHEMA_PLUGIN` | 路径或插件名 | Schema 插件共享库路径或基础名 |
+| `VLINK_FASTBUFFER_PLUGIN` | 路径、插件名或 `shm` | 首次构造 FastBuffer 时解析一次；未设置或空值使用普通 CPU 内存，`shm` 使用可跨进程共享的 CPU 内存，显式加载失败不回退 |
 | `VLINK_CONVERT_PLUGIN` | 路径或插件名 | 转换插件路径或基础名；WebViz 桥接及 `vlink-bag2mcap`/`vlink-bag2rrd` 在未传 `--convert_plugin` 时读取 |
 | `VLINK_PROTO_DIR` | 目录路径 | `.proto` 搜索目录，亦可经 `vlink-eproto import <dir>` 持久化 |
 | `VLINK_FBS_DIR` | 目录路径 | `.fbs` 搜索目录，亦可经 `vlink-efbs import <dir>` 持久化 |
@@ -954,9 +990,10 @@ export VLINK_LOG_LEVEL=3
 | `VLINK_URL_REMAP` | 文件路径 | URL 重映射 JSON 文件，按子串匹配，对应 13.10 的 `UrlRemap` |
 | `VLINK_INTRA_BIND` | 字符串 | 将所有 `intra://` 重定向到其他 scheme（`shm`、`dds` 等） |
 | `VLINK_QOS_CONFIG` | 文件路径 | 全局 QoS 配置文件路径，URL `?qos=profile` 优先级更高，见 [QoS 配置](05-qos.md) |
-| `VLINK_MEMORY_LEVEL` | 数字 | 内存池档位（`0`..`9`，默认 `3`）：`0` 为直通（每次直接向系统申请释放），`1`..`9` 选择内置金字塔，数值越大预留越多、常驻内存越多。仅在调用 `Bytes::init_memory_pool()` 构建全局内存池后生效 |
+| `VLINK_MEMORY_LEVEL` | 数字 | 内存池档位（`0`..`9`，默认 `3`）：`0` 为直通（每次直接向系统申请释放），`1`..`9` 选择内置金字塔，数值越大各档配额越大：预分配时常驻内存更多；开启 `VLINK_MEMORY_LAZY_SCALE` 后懒增长单次安装的 chunk 也随配额放大。仅在调用 `Bytes::init_memory_pool()` 构建全局内存池后生效 |
 | `VLINK_MEMORY_PREALLOC` | `1`/`0` | `1` 时构建全局内存池时按各档 `blocks_per_chunk` 配额预分配满（尽力而为），消除热路径首次分配延迟；否则按需懒加载 |
 | `VLINK_MEMORY_BATCH_SIZE` | 正整数 | 覆盖 `MemoryPool::get_default_config()` 的 `batch_size`（默认 `16`），限制空 free-list shard 一次从其他 shard 转移的节点数；仅影响默认/全局配置，显式传入的 `MemoryPool::Config` 不受影响；首次读取后固定 |
+| `VLINK_MEMORY_LAZY_SCALE` | `1`/`0` | `1` 时懒增长单次安装的 chunk 上限取该档配额的 1/16（不低于 32 KiB 或一个块），档位越高上游分配越少、首次触达突发越大；默认关闭，上限固定 64 KiB。仅影响默认/全局配置，显式 `Config` 用 `lazy_scale` 字段 |
 
 ```bash
 # 显式预加载
@@ -984,10 +1021,11 @@ CMake 在桌面/Linux 默认启用自研后端，在 Android/QNX 默认关闭；
 | `VLINK_LOG_LEVEL` | 数字或英文名称 | 全局日志级别（`0`..`6` 或对应英文名称） |
 | `VLINK_LOG_CONSOLE_LEVEL` | 数字或英文名称 | 控制台级别，覆盖全局 |
 | `VLINK_LOG_FILE_LEVEL` | 数字或英文名称 | 文件与自定义日志插件级别，覆盖全局；`Off` 不加载插件 |
-| `VLINK_LOG_DIR` | 目录路径 | 日志文件目录 |
+| `VLINK_LOG_DIR` | 目录路径 | 默认日志根目录，其下按 `<应用名>` 分目录 |
+| `VLINK_LOG_PID_ENABLE` | `1`/`0` | `=1` 在应用名目录下再按 `<PID>` 隔离，供同名多实例并存 |
 | `VLINK_LOG_CONSOLE_UNORDER` | `1`/`0` | 非同步控制台输出，吞吐更高 |
 | `VLINK_LOG_CONSOLE_FMT` | `1`/`0` | 启用扩展控制台格式 |
-| `VLINK_LOG_ENABLE_UTC` | `1`/`0` | 使用 UTC 时间戳 |
+| `VLINK_LOG_UTC_ENABLE` | `1`/`0` | 使用 UTC 时间戳 |
 | `VLINK_LOG_MAX_SIZE` | 数字 | 单文件最大字节数，超过后轮转（默认 10 MiB） |
 | `VLINK_LOG_MAX_COUNT` | 数字 | 时间戳策略文件保留目标（1..10000）；固定文件名策略备份数（0..200000，另有一个活动文件） |
 | `VLINK_LOG_FLUSH_DELAY` | 数字 | 异步 Sink 刷新间隔，毫秒（默认 500）；后端细节见下文 |
@@ -1006,8 +1044,8 @@ Error/Fatal 始终受保护并等待容量。设为 `1` 时生产线程等待队
 周期任务与文件写入在同一 `MessageLoop` 串行执行。设为 `0` 时每条记录都触发
 flush。
 
-自研后端的轮转文件集按单写入者设计。多个进程应使用不同日志目录或包含 PID
-的基础目录，不能共享同一组 fixed/timestamp 文件。flush 不承诺断电持久性；需要
+自研后端的轮转文件集按单写入者设计。同名多实例并存时设置 `VLINK_LOG_PID_ENABLE=1`
+按 PID 隔离默认目录；显式指定路径或直接使用 `LoggerBackend` 时，多个活动实例须独占不同的文件集。flush 不承诺断电持久性；需要
 系统级持久化或多进程汇聚时，应使用专用日志服务。
 
 ```bash
@@ -1022,6 +1060,8 @@ export VLINK_LOG_DIR=/var/log/vlink
 | --- | --- | --- | --- |
 | `VLINK_DISCOVER_DISABLE` | `1`/`0` | `0` | `=1` 关闭节点发现，减少 UDP 广播开销 |
 | `VLINK_DISCOVER_NATIVE` | `1`/`0` | `0` | `=1` 仅发现本机节点，组播绑定到 `127.0.0.1` |
+| `VLINK_DISCOVER_IP` | IP 列表 | 空 | 发现组播使用的本机 IPv4 地址列表（逗号或空格分隔）：Reporter 逐地址发送、Viewer 逐地址加组；空值时 Reporter 与 Viewer 都按系统路由走；同时是 `VLINK_DDS_IP` 的缺省值，只限制发现请用 `VLINK_DISCOVER_NATIVE=1` |
+| `VLINK_DISCOVER_DOMAIN` | `0`–`255` | `0` | 发现域：UDP 端口取 `51600 + domain` 以隔离发现通道，组播地址与路由不变；须在所有进程上设为同一值；非十进制数字或超出 `[0,255]` 的值会告警并回落到 `0`；该值在进程内读取一次，此后修改无效 |
 | `VLINK_PROFILER_ENABLE` | `1`/`0` | `0` | `=1` 启用内置 CPU 性能分析 |
 
 ### 🛰️ 13.23 DDS 传输
@@ -1031,19 +1071,23 @@ export VLINK_LOG_DIR=/var/log/vlink
 | 变量 | 类型 | 说明 |
 | --- | --- | --- |
 | `VLINK_DDS_DOMAIN` | 数字 | DDS Domain ID |
-| `VLINK_DDS_IP` | IP 列表 | DDS 单播 IP，多网卡时通常必设 |
+| `VLINK_DDS_IP` | IP 列表 | DDS 单播 IP，多网卡时通常必设；未设置时取 `VLINK_DISCOVER_IP` |
+| `VLINK_DDS_NATIVE_IP` | IP | CLI、Proxy、Viewer 与 WebViz 的 native 模式为 DDS 节点显式设置的 IP；未设置时使用 `127.0.0.1`，并覆盖该节点的 `VLINK_DDS_IP` 缺省值 |
 | `VLINK_DDS_IP_FILTER` | `1`/`0` | 仅使用当前可用地址 |
 | `VLINK_DDS_MULTICAST_IP` | IP 列表 | DDS 组播 IP |
 | `VLINK_DDS_PEER` | 字符串 | DDS 对等端配置 |
 | `VLINK_DDS_BUF` | 数字 | DDS 缓冲区大小 |
 | `VLINK_DDS_MTU` | 数字 | 传输层最大消息大小（MTU） |
 | `VLINK_DDS_UDP` / `_TCP` / `_SHM` | 字符串 | 对应传输层配置 |
+| `VLINK_DDS_NOBLOCK` | `1`/`0` | 发送缓冲区满时丢包而不阻塞，默认 `0` |
 | `VLINK_DDS_LESS_MEMORY` | `1`/`0` | 低内存使用模式 |
 | `VLINK_DDS_DEBUG` | `1`/`0` | 启用 DDS 调试日志 |
 | `VLINK_DDS_BIND` | 字符串 | 将所有 `dds://` 整体重定向到某实现：`dds`（Fast-DDS）、`ddsf`（`dds` 的别名）、`ddsc`（CycloneDDS）、`ddsr`（RTI Connext） |
 | `VLINK_DDS_EVENT_QOS` / `_METHOD_QOS` / `_FIELD_QOS` | 字符串 | 三种模型的默认 QoS 配置，URL `?qos=profile` 优先级更高，见 [QoS 配置](05-qos.md) |
 | `VLINK_FASTDDS_QOS_FILE` | 文件路径 | Fast-DDS QoS XML 路径 |
 | `VLINK_CYCLONEDDS_URI` | URI | CycloneDDS 配置 URI |
+
+`ddsc://` 的 `VLINK_DDS_MULTICAST_IP`（或节点属性 `dds.multicast.ip`）只控制组播范围：空值仅允许 SPDP 发现组播，非空允许全部组播，不采用填写的地址或列表。
 
 ```bash
 export VLINK_DDS_BIND=ddsc
@@ -1076,7 +1120,9 @@ export VLINK_DDS_IP="192.168.1.100,192.168.1.101"
 | `VLINK_ZENOH_DEBUG` | `1`/`0` | 启用 Zenoh runtime 调试日志（默认 `0`，仅 zenoh-c 构建生效） |
 | `VLINK_ZENOH_DOMAIN` | 数字 | Zenoh Domain ID |
 | `VLINK_ZENOH_MODE` | 字符串 | 运行模式；未设置时沿用后端配置（zenoh-c 默认 `peer`，pico 默认 `client`）；pico 仅支持 `peer`/`client` |
-| `VLINK_ZENOH_IP` / `_PEER` / `_LISTEN` | 列表或字符串 | 连接 / 对等 / 监听端点 |
+| `VLINK_ZENOH_IP` | IP 列表 | 连接地址简写，自动补传输协议和端口 7447；与 DDS 的本地网卡配置含义不同 |
+| `VLINK_ZENOH_PEER` | 端点列表 | 完整连接端点，例如 `tcp/192.168.1.100:7447`；可明确指定协议和端口 |
+| `VLINK_ZENOH_LISTEN` | 端点列表 | 本地监听端点，例如 `tcp/0.0.0.0:7447` |
 | `VLINK_ZENOH_MULTICAST` / `_MULTICAST_IF` / `_MULTICAST_TTL` | 地址 / 字符串 / 数字 | 组播地址 / 网卡 / TTL；pico 的 peer 组播需要网卡且不支持 TTL |
 | `VLINK_ZENOH_GOSSIP` | `1`/`0` | Gossip 发现；未设置时沿用配置（仅 zenoh-c） |
 | `VLINK_ZENOH_ALLOWED_LOCALITY` | 字符串 | 允许通信来源：`local`（仅会话内）/ `remote`（仅远端）/ 其它视作 `any`（默认 `any`），仅带 `Z_FEATURE_UNSTABLE_API` 的 zenoh-c |
@@ -1095,6 +1141,20 @@ export VLINK_ZENOH_CONFIG=/etc/vlink/zenoh.json5
 export VLINK_ZENOH_PEER="tcp/192.168.1.100:7447"
 export VLINK_ZENOH_SHM=1
 ```
+
+常见部署可直接选择以下配置，应用继续使用原有 `zenoh://业务地址`：
+
+```bash
+# 同一局域网自动发现：选择本地组播网卡，无需同时指定组播地址
+export VLINK_ZENOH_MODE=peer
+export VLINK_ZENOH_MULTICAST_IF=eth0
+
+# 连接指定 router：在另一部署配置中使用完整端点
+export VLINK_ZENOH_MODE=client
+export VLINK_ZENOH_PEER="tcp/192.168.1.100:7447"
+```
+
+环境变量应在进程启动前设置，后端会缓存读取结果。zenoh-c 可单独设置组播网卡或 TTL，未指定的组播地址沿用原配置；URL 的 `#tcp`、`#udp` 等显式传输片段会关闭组播发现。pico 的 `#tcp`/`#tls` 须配合 `_PEER`、`_IP` 或 `_LISTEN`，不会自动开启监听；`_LISTEN` 必须使用非零端口，同主机不同 TCP session 应配置不同监听端口。需要跨 zenoh-c/pico 复用部署配置时，连接地址优先使用完整 `_PEER` 端点。
 
 #### 13.25.2 mqtt://
 
@@ -1118,7 +1178,7 @@ export VLINK_ZENOH_SHM=1
 
 | 变量 | 类型 | 说明 |
 | --- | --- | --- |
-| `VLINK_SSL_VERIFY` | `1`/`0` | 是否验证服务器证书 |
+| `VLINK_SSL_VERIFY` | `1`/`0` | 是否验证服务器证书；DDSR 设置为 `0` 时告警并保留校验 |
 | `VLINK_SSL_CA` | 文件路径 | CA 证书路径 |
 | `VLINK_SSL_CERT` | 文件路径 | 客户端证书路径 |
 | `VLINK_SSL_KEY` | 文件路径 | 客户端私钥路径 |

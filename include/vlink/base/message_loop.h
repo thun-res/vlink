@@ -42,7 +42,9 @@
  * up to ten times with 1 ms sleeps before dropping an eligible task, @c kPopStrategy drops
  * immediately, and @c kBlockStrategy waits for capacity on lock-based queues or retries indefinitely
  * on the lock-free queue.  Idle dispatch is always condition-variable driven and independent of
- * @c Strategy.
+ * @c Strategy.  A blocking post issued from the @c run() / @c async_run() thread into its own full
+ * queue is rejected instead of waiting on itself; a thread driving @c spin_once() is not
+ * recognised, so it must not issue such a post.
  *
  * @par Lifecycle diagram
  *
@@ -101,10 +103,12 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "./functional.h"
 #include "./memory_resource.h"
@@ -171,14 +175,14 @@ class VLINK_EXPORT MessageLoop {
    * @brief Lifetime gate shared with cross-thread observers.
    *
    * @details
-   * The destructor of @c MessageLoop flips @c alive to @c false under @c mtx as its very first
-   * step, so a caller that holds @c mtx and observes @c alive @c == @c true is guaranteed the
-   * loop is still safe to touch.  During Windows process termination, when all other threads
+   * Callers hold a shared lock on @c mtx while accessing the loop.  Destruction first
+   * wakes blocked producers, then takes the exclusive lock and clears @c alive before
+   * releasing resources.  During Windows process termination, when all other threads
    * have already stopped, the destructor performs only the atomic store.  Obtain via
    * @c get_alive_state.
    */
   struct AliveState final {
-    std::mutex mtx;
+    std::shared_mutex mtx;
     std::atomic_bool alive{true};
   };
 
@@ -199,6 +203,12 @@ class VLINK_EXPORT MessageLoop {
    *
    * @details During Windows process termination it skips cross-thread cleanup and releases its
    * private state without destroying it because the owning threads have already stopped.
+   *
+   * @warning The loop must not be destroyed from its own dispatcher thread -- that is, from
+   *          inside a task, timer callback or event handler it is running.  A thread cannot
+   *          join itself, so the destructor logs the situation and the join then terminates
+   *          the process.  Destroy the loop from another thread, or post the deletion
+   *          elsewhere.
    */
   virtual ~MessageLoop();
 
@@ -310,6 +320,12 @@ class VLINK_EXPORT MessageLoop {
    * @p force @c == @c true the in-flight batch is also aborted.  Tasks queued after the request
    * are rejected.  Returns @c false when @c quit had already been called (only meaningful when
    * @p force is @c false).
+   *
+   * @warning This is not a drain.  Tasks still sitting in the queue when @c quit is called are
+   *          discarded, not executed, regardless of @p force; only the batch already claimed by
+   *          the dispatcher runs to completion.  A successful @c post_task therefore guarantees
+   *          admission, not delivery -- post through @c post_task_handle to observe the
+   *          @c TaskExecutionState::kDropped outcome.
    *
    * @param force  When @c true, also discards the in-flight batch.  Default: @c false.
    * @return @c true when the quit signal was accepted.
@@ -424,6 +440,10 @@ class VLINK_EXPORT MessageLoop {
    * @details
    * Applies only to @c kLockfreeType loops; on other types the call is a no-op.  Must be invoked
    * while the loop is stopped; calls made while it is running are logged and skipped.
+   *
+   * @note The caller must also ensure no other thread is posting concurrently.  Producers that
+   *       are already inside the queue are waited for, but the reset is logged and skipped if
+   *       they do not leave within one second rather than replacing a ring still in use.
    */
   void reset_lockfree_capacity();
 
@@ -504,7 +524,7 @@ class VLINK_EXPORT MessageLoop {
    *
    * @details
    * The returned @c AliveState outlives this loop.  Adapters that need to post continuations
-   * back to this loop should lock @c mtx, re-check @c alive, and only call back while still
+   * back to this loop should shared-lock @c mtx, re-check @c alive, and only call back while still
    * holding the lock.
    *
    * @return Shared handle; never null while the loop object is alive.
@@ -522,28 +542,27 @@ class VLINK_EXPORT MessageLoop {
    *
    * @tparam FunctionT  Callable type.
    * @tparam ArgsT      Argument types.
-   * @tparam ResultT    Return type (deduced).
    * @param function  Callable to dispatch.
-   * @param args      Arguments forwarded to @p function.
+   * @param args      Arguments copied or moved into owned storage and then moved into the call.
+   *                  Use @c std::ref to borrow an argument explicitly.
    * @return Future that becomes ready after the callable completes.
    */
-  template <class FunctionT, class... ArgsT, typename ResultT = std::invoke_result_t<FunctionT, ArgsT...>>
-  [[nodiscard]] std::future<ResultT> invoke_task(FunctionT&& function, ArgsT&&... args);
+  template <class FunctionT, class... ArgsT>
+  [[nodiscard]] auto invoke_task(FunctionT&& function, ArgsT&&... args);
 
   /**
    * @brief Priority variant of @c invoke_task; requires a @c kPriorityType loop.
    *
    * @tparam FunctionT  Callable type.
    * @tparam ArgsT      Argument types.
-   * @tparam ResultT    Return type (deduced).
    * @param function  Callable to dispatch.
    * @param priority  Dispatch priority.
-   * @param args      Arguments forwarded to @p function.
+   * @param args      Arguments copied or moved into owned storage and then moved into the call.
+   *                  Use @c std::ref to borrow an argument explicitly.
    * @return Future that becomes ready after the callable completes.
    */
-  template <class FunctionT, class... ArgsT, typename ResultT = std::invoke_result_t<FunctionT, ArgsT...>>
-  [[nodiscard]] std::future<ResultT> invoke_task_with_priority(FunctionT&& function, uint16_t priority,
-                                                               ArgsT&&... args);
+  template <class FunctionT, class... ArgsT>
+  [[nodiscard]] auto invoke_task_with_priority(FunctionT&& function, uint16_t priority, ArgsT&&... args);
 
  protected:
   /**
@@ -604,6 +623,8 @@ class VLINK_EXPORT MessageLoop {
  private:
   static uint64_t get_current_nano_time();
 
+  bool is_current_task_droppable() const;
+
   Schedule::Callback make_launcher(const Schedule::Config& config, Schedule::Callback&& wrapper,
                                    std::shared_ptr<Schedule::Status::Impl> impl);
 
@@ -615,11 +636,11 @@ class VLINK_EXPORT MessageLoop {
                  TaskOverflowPolicy overflow_policy = TaskOverflowPolicy::kUseDispatcherStrategy,
                  const TaskHandle* submit_handle = nullptr, bool poll_cancellation = false);
 
-  bool drop_one_normal_task();
+  bool drop_one_normal_task(std::vector<Callback>& dropped);
 
-  bool drop_one_lockfree_task(bool keep_reserved = false);
+  bool drop_one_lockfree_task(std::vector<Callback>& dropped, bool keep_reserved = false);
 
-  bool drop_one_priority_task();
+  bool drop_one_priority_task(std::vector<Callback>& dropped);
 
   bool reserve_lockfree_task();
 
@@ -639,11 +660,14 @@ class VLINK_EXPORT MessageLoop {
 
   bool process_priority_task(bool block);
 
-  bool process_timer_task(int64_t& next_sleep_time);
+  bool process_timer_task(int64_t& next_sleep_time, std::vector<Callback>& dropped_tasks);
 
   void drop_pending_tasks();
 
+  std::unique_lock<std::mutex> lock_timers();
+
   friend Timer;
+  friend class MultiLoop;
   struct Impl;
   std::unique_ptr<Impl> impl_;
 
@@ -678,16 +702,18 @@ Schedule::RetStatus MessageLoop::exec_task(const Schedule::Config& config, Callb
   return status;
 }
 
-template <class FunctionT, class... ArgsT, typename ResultT>
-inline std::future<ResultT> MessageLoop::invoke_task(FunctionT&& function, ArgsT&&... args) {
+template <class FunctionT, class... ArgsT>
+inline auto MessageLoop::invoke_task(FunctionT&& function, ArgsT&&... args) {
   auto bound = [function = std::forward<FunctionT>(function),
-                args = std::make_tuple(std::forward<ArgsT>(args)...)]() mutable -> ResultT {
+                args = std::make_tuple(std::forward<ArgsT>(args)...)]() mutable -> decltype(auto) {
     return std::apply(
-        [&function](auto&&... unpacked_args) -> ResultT {
+        [&function](auto&&... unpacked_args) -> decltype(auto) {
           return std::invoke(function, std::forward<decltype(unpacked_args)>(unpacked_args)...);
         },
-        args);
+        std::move(args));
   };
+
+  using ResultT = std::invoke_result_t<decltype(bound)&>;
 
   if constexpr (kIsSupportMoveFunction) {
     std::packaged_task<ResultT()> task(std::move(bound));
@@ -709,17 +735,18 @@ inline std::future<ResultT> MessageLoop::invoke_task(FunctionT&& function, ArgsT
   }
 }
 
-template <class FunctionT, class... ArgsT, typename ResultT>
-inline std::future<ResultT> MessageLoop::invoke_task_with_priority(FunctionT&& function, uint16_t priority,
-                                                                   ArgsT&&... args) {
+template <class FunctionT, class... ArgsT>
+inline auto MessageLoop::invoke_task_with_priority(FunctionT&& function, uint16_t priority, ArgsT&&... args) {
   auto bound = [function = std::forward<FunctionT>(function),
-                args = std::make_tuple(std::forward<ArgsT>(args)...)]() mutable -> ResultT {
+                args = std::make_tuple(std::forward<ArgsT>(args)...)]() mutable -> decltype(auto) {
     return std::apply(
-        [&function](auto&&... unpacked_args) -> ResultT {
+        [&function](auto&&... unpacked_args) -> decltype(auto) {
           return std::invoke(function, std::forward<decltype(unpacked_args)>(unpacked_args)...);
         },
-        args);
+        std::move(args));
   };
+
+  using ResultT = std::invoke_result_t<decltype(bound)&>;
 
   if constexpr (kIsSupportMoveFunction) {
     std::packaged_task<ResultT()> task(std::move(bound));
@@ -747,7 +774,7 @@ inline Schedule::Callback MessageLoop::make_launcher(const Schedule::Config& con
 
   return [this, alive_state = std::move(alive_state), config, impl = std::move(impl),
           wrapper = std::move(wrapper)]() mutable {
-    std::lock_guard alive_lock(alive_state->mtx);
+    std::shared_lock alive_lock(alive_state->mtx);
 
     if VUNLIKELY (!alive_state->alive.load(std::memory_order_acquire)) {
       impl->is_valid.store(false, std::memory_order_relaxed);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE

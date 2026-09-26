@@ -522,8 +522,6 @@ bool OccupancyGrid::is_owner() const noexcept { return is_owner_; }
 void OccupancyGrid::set_update_time_ns(uint64_t update_time_ns) noexcept { update_time_ns_ = update_time_ns; }
 
 void OccupancyGrid::set_map_id(std::string_view map_id) noexcept {
-  std::memset(map_id_, 0, sizeof(map_id_));
-
   size_t copy_size = map_id.size();
 
   if (copy_size >= sizeof(map_id_)) {
@@ -531,8 +529,10 @@ void OccupancyGrid::set_map_id(std::string_view map_id) noexcept {
   }
 
   if VLIKELY (copy_size != 0) {
-    std::memcpy(map_id_, map_id.data(), copy_size);
+    std::memmove(map_id_, map_id.data(), copy_size);
   }
+
+  std::memset(map_id_ + copy_size, 0, sizeof(map_id_) - copy_size);
 }
 
 void OccupancyGrid::set_channel(uint32_t channel) noexcept { channel_ = channel; }

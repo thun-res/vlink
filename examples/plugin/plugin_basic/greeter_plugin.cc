@@ -36,7 +36,7 @@
 //   3. VLINK_PLUGIN_DECLARE exports the C ABI entry points the loader needs:
 //        - vlink_plugin_create  -> validates plugin_id/version, then creates
 //                                  GreeterImpl
-//        - vlink_plugin_destroy -> deletes the implementation pointer
+//        - vlink_plugin_destroy -> deletes through the interface's virtual destructor
 //      The create call compares declared (1, 0) with the plugin_id and version
 //      requested by Plugin::load<T>(); mismatch returns nullptr.
 // =============================================================================

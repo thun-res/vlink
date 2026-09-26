@@ -30,8 +30,31 @@
 #ifdef _WIN32
 #include <Windows.h>
 #else
+#include <stdatomic.h>
 #include <unistd.h>
 #endif
+
+#ifdef _WIN32
+typedef LONG test_flag_t;
+#else
+typedef atomic_int test_flag_t;
+#endif
+
+static void test_flag_store(test_flag_t* flag, int value) {
+#ifdef _WIN32
+  InterlockedExchange(flag, value);
+#else
+  atomic_store_explicit(flag, value, memory_order_release);
+#endif
+}
+
+static int test_flag_load(test_flag_t* flag) {
+#ifdef _WIN32
+  return (int)InterlockedCompareExchange(flag, 0, 0);
+#else
+  return atomic_load_explicit(flag, memory_order_acquire);
+#endif
+}
 
 void custom_sleep(int ms) {
 #ifdef _WIN32
@@ -49,7 +72,7 @@ void on_subscriber_msg(const uint8_t* data, const size_t size, void* user_data) 
 
   if (data != NULL && size == strlen("event") && memcmp(data, "event", strlen("event")) == 0) {
     if (user_data) {
-      *(int*)user_data = 0;
+      test_flag_store((test_flag_t*)user_data, 0);
     }
   }
 }
@@ -59,7 +82,7 @@ int test_pub_sub(void) {
   fflush(stdout);
 
   int ret = 1;
-  int ret2 = 1;
+  test_flag_t ret2 = 1;
   const vlink_schema_info_t schema = {"text", VLINK_SCHEMA_RAW};
 
   vlink_subscriber_handle_t sub_handle = {0};
@@ -84,12 +107,12 @@ int test_pub_sub(void) {
 
   ret += vlink_destroy_publisher(&pub_handle);
 
-  return ret + ret2;
+  return ret + test_flag_load(&ret2);
 }
 
 typedef struct {
   const char* expected;
-  int got;
+  test_flag_t got;
 } expected_msg_ctx_t;
 
 void on_expected_msg(const uint8_t* data, const size_t size, void* user_data) {
@@ -100,7 +123,7 @@ void on_expected_msg(const uint8_t* data, const size_t size, void* user_data) {
   }
 
   if (size == strlen(ctx->expected) && memcmp(data, ctx->expected, size) == 0) {
-    ctx->got = 0;
+    test_flag_store(&ctx->got, 0);
   }
 }
 
@@ -138,11 +161,11 @@ int test_intra_queue_publish_buffer_reuse(void) {
     ret = 1;
   }
 
-  for (int i = 0; i < 50 && ctx.got != 0; ++i) {
+  for (int i = 0; i < 50 && test_flag_load(&ctx.got) != 0; ++i) {
     custom_sleep(20);
   }
 
-  if (ctx.got != 0) {
+  if (test_flag_load(&ctx.got) != 0) {
     printf("FAIL: intra queue publish did not preserve payload after caller buffer reuse\n");
     ret = 1;
   } else {
@@ -179,7 +202,7 @@ void on_client_msg(const uint8_t* data, const size_t size, void* user_data) {
 
   if (data != NULL && size == strlen("method_resp") && memcmp(data, "method_resp", strlen("method_resp")) == 0) {
     if (user_data) {
-      *(int*)user_data = 0;
+      test_flag_store((test_flag_t*)user_data, 0);
     }
   }
 }
@@ -189,7 +212,7 @@ int test_server_client(void) {
   fflush(stdout);
 
   int ret = 1;
-  int ret2 = 1;
+  test_flag_t ret2 = 1;
   const vlink_schema_info_t schema = {"text", VLINK_SCHEMA_RAW};
 
   vlink_server_handle_t server_handle = {0};
@@ -214,14 +237,14 @@ int test_server_client(void) {
 
   ret += vlink_destroy_client(&client_handle);
 
-  return ret + ret2;
+  return ret + test_flag_load(&ret2);
 }
 
 // field
 
 void on_getter_msg(const uint8_t* data, const size_t size, void* user_data) {
   if (data != NULL && size == strlen("field") && memcmp(data, "field", strlen("field")) == 0) {
-    *(int*)user_data = 0;
+    test_flag_store((test_flag_t*)user_data, 0);
   }
 }
 
@@ -230,7 +253,7 @@ int test_setter_getter(void) {
   fflush(stdout);
 
   int ret = 1;
-  int ret2 = 1;
+  test_flag_t ret2 = 1;
   const vlink_schema_info_t schema = {"text", VLINK_SCHEMA_RAW};
 
   vlink_setter_handle_t setter_handle = {0};
@@ -259,7 +282,7 @@ int test_setter_getter(void) {
 
   ret += vlink_destroy_getter(&getter_handle);
 
-  return ret + ret2;
+  return ret + test_flag_load(&ret2);
 }
 
 int test_schema_info_validation(void) {
@@ -279,6 +302,10 @@ int test_schema_info_validation(void) {
 
   const vlink_schema_info_t invalid_schema = {"text", (vlink_schema_t)99};
   ret += vlink_create_publisher("dds://c_interface/schema_invalid", &invalid_schema, &pub_handle) !=
+         VLINK_RET_INVALID_ERROR;
+
+  const vlink_schema_info_t truncated_schema = {"text", (vlink_schema_t)257};
+  ret += vlink_create_publisher("intra://c_interface/schema_truncated", &truncated_schema, &pub_handle) !=
          VLINK_RET_INVALID_ERROR;
 
   const vlink_schema_info_t missing_schema = {"text", VLINK_SCHEMA_UNKNOWN};
@@ -507,7 +534,7 @@ void on_secure_sub_msg(const uint8_t* data, const size_t size, void* user_data) 
   }
   const char* expected = "secure_event";
   if (size == strlen(expected) && memcmp(data, expected, size) == 0) {
-    *(int*)user_data = 0;
+    test_flag_store((test_flag_t*)user_data, 0);
   }
 }
 
@@ -516,7 +543,7 @@ int test_security_callback_pubsub(void) {
   fflush(stdout);
 
   int ret = 0;
-  int got = 1;
+  test_flag_t got = 1;
   const vlink_schema_info_t schema = {"text", VLINK_SCHEMA_RAW};
 
   vlink_security_config_t cfg;
@@ -548,11 +575,11 @@ int test_security_callback_pubsub(void) {
     ret = 1;
   }
 
-  for (int i = 0; i < 50 && got != 0; ++i) {
+  for (int i = 0; i < 50 && test_flag_load(&got) != 0; ++i) {
     custom_sleep(100);
   }
 
-  if (got != 0) {
+  if (test_flag_load(&got) != 0) {
     printf("FAIL: encrypted message did not arrive at subscriber callback\n");
     ret = 1;
   } else {
@@ -569,8 +596,8 @@ typedef struct {
   vlink_server_handle_t* handle;
   const char* expected_req;
   const char* response;
-  int saw_request;
-  int reply_rc;
+  test_flag_t saw_request;
+  test_flag_t reply_rc;
 } relocated_server_ctx_t;
 
 static void on_relocated_server_req(const uint8_t* data, const size_t size, void* user_data) {
@@ -581,10 +608,10 @@ static void on_relocated_server_req(const uint8_t* data, const size_t size, void
   }
 
   if (data && size == strlen(ctx->expected_req) && memcmp(data, ctx->expected_req, size) == 0) {
-    ctx->saw_request = 1;
+    test_flag_store(&ctx->saw_request, 1);
   }
 
-  ctx->reply_rc = vlink_reply(ctx->handle, (const uint8_t*)ctx->response, strlen(ctx->response));
+  test_flag_store(&ctx->reply_rc, vlink_reply(ctx->handle, (const uint8_t*)ctx->response, strlen(ctx->response)));
 }
 
 int test_security_handle_storage_relocation(void) {
@@ -633,11 +660,11 @@ int test_security_handle_storage_relocation(void) {
     ret = 1;
   }
 
-  for (int i = 0; i < 50 && sub_ctx.got != 0; ++i) {
+  for (int i = 0; i < 50 && test_flag_load(&sub_ctx.got) != 0; ++i) {
     custom_sleep(100);
   }
 
-  if (sub_ctx.got != 0) {
+  if (test_flag_load(&sub_ctx.got) != 0) {
     printf("FAIL: relocated secure subscriber did not receive message\n");
     ret = 1;
   }
@@ -684,13 +711,14 @@ int test_security_handle_storage_relocation(void) {
     ret = 1;
   }
 
-  for (int i = 0; i < 50 && resp_ctx.got != 0; ++i) {
+  for (int i = 0; i < 50 && test_flag_load(&resp_ctx.got) != 0; ++i) {
     custom_sleep(20);
   }
 
-  if (!server_ctx.saw_request || server_ctx.reply_rc != VLINK_RET_NO_ERROR || resp_ctx.got != 0) {
-    printf("FAIL: relocated secure RPC saw_request=%d reply_rc=%d got=%d\n", server_ctx.saw_request,
-           server_ctx.reply_rc, resp_ctx.got);
+  if (!test_flag_load(&server_ctx.saw_request) || test_flag_load(&server_ctx.reply_rc) != VLINK_RET_NO_ERROR ||
+      test_flag_load(&resp_ctx.got) != 0) {
+    printf("FAIL: relocated secure RPC saw_request=%d reply_rc=%d got=%d\n", test_flag_load(&server_ctx.saw_request),
+           test_flag_load(&server_ctx.reply_rc), test_flag_load(&resp_ctx.got));
     ret = 1;
   } else {
     printf("PASS: secure callbacks survive handle storage relocation\n");
@@ -761,8 +789,8 @@ int test_security_getter_poll_reuses_cached_plaintext(void) {
 typedef struct {
   vlink_server_handle_t* handle;
   int reply_mode;
-  int saw_request;
-  int reply_rc;
+  test_flag_t saw_request;
+  test_flag_t reply_rc;
 } secure_empty_reply_ctx_t;
 
 static void on_secure_empty_reply_req(const uint8_t* data, const size_t size, void* user_data) {
@@ -770,25 +798,25 @@ static void on_secure_empty_reply_req(const uint8_t* data, const size_t size, vo
   const char* expected = "empty_reply_req";
 
   if (ctx && data && size == strlen(expected) && memcmp(data, expected, size) == 0) {
-    ctx->saw_request = 1;
+    test_flag_store(&ctx->saw_request, 1);
   }
 
   if (ctx && ctx->reply_mode != 0) {
-    ctx->reply_rc = vlink_reply(ctx->handle, NULL, 0);
+    test_flag_store(&ctx->reply_rc, vlink_reply(ctx->handle, NULL, 0));
   }
 }
 
 static void on_secure_empty_reply_resp(const uint8_t* data, const size_t size, void* user_data) {
-  int* got_empty = (int*)user_data;
+  test_flag_t* got_empty = (test_flag_t*)user_data;
 
   if (got_empty && data == NULL && size == 0) {
-    *got_empty = 0;
+    test_flag_store(got_empty, 0);
   }
 }
 
 static int run_security_empty_reply_case(const char* url, int reply_mode) {
   int ret = 0;
-  int got_empty = 1;
+  test_flag_t got_empty = 1;
   const vlink_schema_info_t schema = {"text", VLINK_SCHEMA_RAW};
 
   vlink_security_config_t cfg;
@@ -822,17 +850,17 @@ static int run_security_empty_reply_case(const char* url, int reply_mode) {
 
   custom_sleep(100);
 
-  if (!ctx.saw_request) {
+  if (!test_flag_load(&ctx.saw_request)) {
     printf("FAIL: secure empty reply request callback not reached\n");
     ret = 1;
   }
 
-  if (reply_mode != 0 && ctx.reply_rc != VLINK_RET_NO_ERROR) {
-    printf("FAIL: vlink_reply(NULL, 0) rc=%d\n", ctx.reply_rc);
+  if (reply_mode != 0 && test_flag_load(&ctx.reply_rc) != VLINK_RET_NO_ERROR) {
+    printf("FAIL: vlink_reply(NULL, 0) rc=%d\n", test_flag_load(&ctx.reply_rc));
     ret = 1;
   }
 
-  if (got_empty != 0) {
+  if (test_flag_load(&got_empty) != 0) {
     printf("FAIL: secure empty reply response callback did not receive empty payload\n");
     ret = 1;
   }
@@ -990,6 +1018,7 @@ int test_ssl_options_init(void) {
 
 int test_schema_type_mapping(void);
 int test_ssl_create_options_properties(void);
+int test_security_getter_concurrent_read(void);
 
 int main(int argc, char* argv[]) {
   (void)argc;
@@ -1016,6 +1045,7 @@ int main(int argc, char* argv[]) {
   ret += test_security_callback_pubsub();
   ret += test_security_handle_storage_relocation();
   ret += test_security_getter_poll_reuses_cached_plaintext();
+  ret += test_security_getter_concurrent_read();
   ret += test_security_empty_reply();
   ret += test_ssl_options_init();
   ret += test_ssl_create_options_properties();

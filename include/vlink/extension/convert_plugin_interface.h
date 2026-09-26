@@ -54,7 +54,7 @@
  *
  * @par Rerun JSON payload format
  * Plugins targeting Rerun emit a UTF-8 JSON object whose fields match the Rerun
- * archetype.  Binary archetypes carry their bytes through a @c data_base64 field.
+ * archetype in the linked SDK. Byte arrays accept a JSON array or a @c {"base64":"..."} object.
  *
  * @code{.json}
  * // Points3D
@@ -64,21 +64,20 @@
  *
  * // EncodedImage  (binary payload base64-encoded)
  * { "media_type": "image/jpeg",
- *   "data_base64": "<base64 image bytes>" }
+ *   "blob": {"base64": "<base64 image bytes>"} }
  *
  * // GeoPoints
- * { "lat_deg": [37.7749, 37.7750],
- *   "lon_deg": [-122.4194, -122.4195] }
+ * { "positions": [[37.7749, -122.4194], [37.7750, -122.4195]] }
  *
  * // TextLog
  * { "text": "Hello world", "level": "INFO" }
  *
  * // Scalars
- * { "value": 3.14 }
+ * { "scalars": [3.14] }
  *
  * // Transform3D
  * { "translation":   [1.0, 2.0, 3.0],
- *   "rotation_quat": [0.0, 0.0, 0.0, 1.0] }
+ *   "quaternion": [0.0, 0.0, 0.0, 1.0] }
  *
  * // Boxes3D
  * { "half_sizes":  [[1.0, 2.0, 3.0]],
@@ -88,21 +87,26 @@
  *   "labels":      ["box1"] }
  *
  * // Pinhole
- * { "image_from_camera": [[fx, 0, cx], [0, fy, cy], [0, 0, 1]],
+ * { "image_from_camera": [fx, 0, 0, 0, fy, 0, cx, cy, 1],
  *   "resolution":        [1920, 1080] }
  * @endcode
  *
- * The built-in Rerun JSON bridge currently handles @c data_base64 for @c EncodedImage,
- * @c Image, @c DepthImage, @c SegmentationImage, @c EncodedDepthImage, @c Asset3D,
- * @c AssetVideo and @c Tensor.  @c Image, @c DepthImage and @c SegmentationImage also
- * require @c width / @c height (or @c resolution).  @c Tensor additionally requires
- * @c shape and may provide @c dim_names.  Direct VLink-to-Rerun mappings still cover
- * a broader set of archetypes than the JSON bridge.
+ * Fields and component layouts come from the linked SDK: vectors are arrays,
+ * matrices are flat column-major arrays, structs are objects, and tagged unions
+ * are single-key objects such as @c {"F32":[1.0,2.0]}. Enum strings use SDK names.
+ * Image components use @c format and @c buffer; Tensor uses
+ * @c {"data":{"shape":[2],"buffer":{"F32":[1.0,2.0]}}}.
+ * Binary numeric lists use little-endian values of the declared component type.
+ * Integer components reject fractions and overflow; floating components retain
+ * NaN and infinity when the source representation supports them.
+ * Missing components are omitted. Empty component batches clear their values;
+ * an empty Blob array is one empty Blob. @c RecordingInfo is logged statically
+ * at the SDK recording-properties path. Field mappings use this same writer.
  *
  * Plugin lifecycle:
  * 1. @c init() runs once after dynamic load, with an opaque configuration string.
  * 2. @c can_convert() is queried per discovered VLink serialisation type, per target.
- * 3. @c get_schema() is called once per accepted type to register the channel.
+ * 3. @c get_schema() registers the channel and refreshes dynamic output schemas.
  * 4. @c convert() runs for every incoming payload on accepted types.
  * 5. Optional reverse hooks (@c can_publish(), @c get_publish(),
  *    @c convert_publish()) handle inbound frontend command/control flows.
@@ -142,7 +146,7 @@
  *   bool convert(const std::string& ser_type, const vlink::Bytes& raw,
  *                Target target, vlink::Bytes& payload) override {
  *     if (target == Target::kRerun) {
- *       std::string json = R"({"lat_deg":[37.77],"lon_deg":[-122.41]})";
+ *       std::string json = R"({"positions":[[37.77,-122.41]]})";
  *       payload = vlink::Bytes::deep_copy(json.data(), json.size());
  *     }
  *     return true;
@@ -262,7 +266,7 @@ class ConvertPluginInterface {
    * @brief Provides schema metadata for an accepted (serialisation, target) pair.
    *
    * @details
-   * Called once per accepted pair when registering the frontend channel.  Outputs
+   * Called when registering a channel and when refreshing a plugin's output schema. Outputs
    * differ per target:
    * - @c kFoxglove: fill @p schema_info with type, encoding and schema bytes
    *   (typically the bytes of a compiled BFBS file).

@@ -24,6 +24,7 @@
 #include "./ddsr_factory.hpp"
 
 #include <charconv>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -458,20 +459,24 @@ std::shared_ptr<ddsr::DataReader> DdsrFactory::create_datareader(uint8_t type, c
 }
 
 bool DdsrFactory::write_data(DDS_DataWriter* writer, const Bytes& bytes, uint64_t id) {
+  if VUNLIKELY (bytes.size() > static_cast<size_t>((std::numeric_limits<DDS_Long>::max)())) {
+    return false;
+  }
+
   auto* arrow = vlink_BuiltInRawDataWriter_narrow(writer);
 
   vlink_BuiltInRaw msg;
 
   msg.id = id;
   msg.data = DDS_SEQUENCE_INITIALIZER;
-  msg.data._contiguous_buffer = const_cast<uint8_t*>(bytes.data());
-  msg.data._length = bytes.size();
-  msg.data._maximum = bytes.size();
-  msg.data._owned = DDS_BOOLEAN_FALSE;
-  msg.data._elementAllocParams = {DDS_BOOLEAN_FALSE, DDS_BOOLEAN_FALSE, DDS_BOOLEAN_FALSE};
-  msg.data._elementDeallocParams = {DDS_BOOLEAN_FALSE, DDS_BOOLEAN_FALSE};
+  const auto size = static_cast<DDS_Long>(bytes.size());
+
+  if VUNLIKELY (!DDS_OctetSeq_loan_contiguous(&msg.data, const_cast<uint8_t*>(bytes.data()), size, size)) {
+    return false;
+  }
 
   auto ret = vlink_BuiltInRawDataWriter_write(arrow, &msg, &DDS_HANDLE_NIL);
+  DDS_OctetSeq_unloan(&msg.data);
 
   return ret == DDS_RETCODE_OK;
 }
@@ -549,7 +554,8 @@ DDS_DomainParticipantFactory* DdsrFactory::get_dds_factory() {
 }
 
 void DdsrFactory::set_participant_qos(DDS_DomainParticipantQos& dds_qos, const Conf::PropertiesMap& properties) {
-  static const std::string& ip_str = Utils::get_env("VLINK_DDS_IP");
+  static const std::string& discovery_ip_str = Utils::get_env("VLINK_DISCOVER_IP");
+  static const std::string& ip_str = Utils::get_env("VLINK_DDS_IP", discovery_ip_str);
   static const std::string& ip_multicast_str = Utils::get_env("VLINK_DDS_MULTICAST_IP");
   static const std::string& peer_str = Utils::get_env("VLINK_DDS_PEER");
   static const std::string& buf_str = Utils::get_env("VLINK_DDS_BUF");
@@ -558,6 +564,7 @@ void DdsrFactory::set_participant_qos(DDS_DomainParticipantQos& dds_qos, const C
   static bool enable_udp = Helpers::to_int(Utils::get_env("VLINK_DDS_UDP"), 1) != 0;
   static bool enable_tcp = Helpers::to_int(Utils::get_env("VLINK_DDS_TCP"), 0) != 0;
   static bool enable_shm = Helpers::to_int(Utils::get_env("VLINK_DDS_SHM"), 0) != 0;
+  static bool enable_noblock = Helpers::to_int(Utils::get_env("VLINK_DDS_NOBLOCK"), 0) != 0;
 
   static bool enable_less_memory = Helpers::to_int(Utils::get_env("VLINK_DDS_LESS_MEMORY"), 0) != 0;
 
@@ -573,6 +580,7 @@ void DdsrFactory::set_participant_qos(DDS_DomainParticipantQos& dds_qos, const C
   bool prop_enable_udp = enable_udp;
   bool prop_enable_tcp = enable_tcp;
   [[maybe_unused]] bool prop_enable_shm = enable_shm;
+  bool prop_enable_noblock = enable_noblock;
   [[maybe_unused]] bool prop_enable_less_memory = enable_less_memory;
 
   if (!buf_str.empty()) {
@@ -604,6 +612,8 @@ void DdsrFactory::set_participant_qos(DDS_DomainParticipantQos& dds_qos, const C
       prop_enable_tcp = (value == "1");
     } else if (prop == "dds.shm") {
       prop_enable_shm = (value == "1");
+    } else if (prop == "dds.noblock") {
+      prop_enable_noblock = (value == "1");
     } else if (prop == "dds.less_memory") {
       prop_enable_less_memory = (value == "1");
     } else {
@@ -666,6 +676,11 @@ void DdsrFactory::set_participant_qos(DDS_DomainParticipantQos& dds_qos, const C
 
     DDS_PropertyQosPolicyHelper_assert_property(
         &dds_qos.property, "dds.transport.UDPv4.builtin.parent.message_size_max", mtu_value.c_str(), DDS_BOOLEAN_FALSE);
+  }
+
+  if (prop_enable_noblock) {
+    DDS_PropertyQosPolicyHelper_assert_property(&dds_qos.property, "dds.transport.UDPv4.builtin.send_blocking", "0",
+                                                DDS_BOOLEAN_FALSE);
   }
 
   if (!prop_peer_str.empty()) {
@@ -779,8 +794,7 @@ void DdsrFactory::set_participant_qos(DDS_DomainParticipantQos& dds_qos, const C
       }
 
       if (!ssl_cfg.verify_peer) {
-        DDS_PropertyQosPolicyHelper_assert_property(&dds_qos.property, "dds.transport.tcp.tcp1.tls.verify.verify_depth",
-                                                    "0", DDS_BOOLEAN_FALSE);
+        VLOG_W("DdsrFactory: ssl.verify=false is unsupported; certificate verification remains enabled.");
       }
     }
   }

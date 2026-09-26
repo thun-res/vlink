@@ -46,23 +46,7 @@ void ZenohPublisherImpl::init() {
 
   object_->start_matching();
 
-  std::weak_ptr<Object> weak_object = object_;
-
-  object_->register_sub_connect_callback(this, [this, weak_object](bool) {
-    auto* message_loop = get_message_loop();
-
-    if (message_loop) {
-      message_loop->post_task([this, weak_object]() {
-        auto object = weak_object.lock();
-
-        if VLIKELY (object && object->is_contains_impl(this)) {
-          PublisherImpl::update_subscribers();
-        }
-      });
-    } else {
-      PublisherImpl::update_subscribers();
-    }
-  });
+  object_->register_sub_connect_callback(this, [this](bool) { PublisherImpl::update_subscribers(); });
 
   PublisherImpl::update_subscribers();
 }
@@ -70,7 +54,9 @@ void ZenohPublisherImpl::init() {
 void ZenohPublisherImpl::deinit() {
   detach();
 
-  object_->remove_impl(this);
+  if (object_) {
+    object_->remove_impl(this);
+  }
 }
 
 const Conf* ZenohPublisherImpl::get_conf() const { return &conf_; }

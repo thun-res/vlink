@@ -21,8 +21,7 @@
  * limitations under the License.
  */
 
-#ifndef EXAMPLES_SAMPLES_COMMON_TRANSPORT_H_
-#define EXAMPLES_SAMPLES_COMMON_TRANSPORT_H_
+#pragma once
 
 #include <vlink/base/logger.h>
 #include <vlink/base/utils.h>
@@ -79,5 +78,3 @@ inline std::string get_transport_url(const std::string& env_var, const std::stri
 }
 
 }  // namespace Common
-
-#endif  // EXAMPLES_SAMPLES_COMMON_TRANSPORT_H_

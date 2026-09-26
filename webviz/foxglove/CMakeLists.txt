@@ -22,7 +22,17 @@ vlink_generate_cpp(
 file(GLOB PROJECT_HDRS CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/src/*.h)
 file(GLOB PROJECT_SRCS CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/src/*.cc)
 
+set(CONVERSION_SRCS ${PROJECT_SOURCE_DIR}/src/foxglove_converter.cc ${PROJECT_SOURCE_DIR}/src/foxglove_writer.cc
+                    ${PROJECT_SOURCE_DIR}/src/foxglove_schemas.cc ${PROJECT_SOURCE_DIR}/src/vlink_convert.cc
+)
+list(REMOVE_ITEM PROJECT_SRCS ${CONVERSION_SRCS})
+
+add_library(vlink-foxglove-conversion STATIC ${CONVERSION_SRCS})
+target_include_directories(vlink-foxglove-conversion PUBLIC ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(vlink-foxglove-conversion PUBLIC vlink-webviz-common $<BUILD_INTERFACE:foxglove_fbs_gen>)
+
 add_executable(${PROJECT_NAME} ${PROJECT_HDRS} ${PROJECT_SRCS})
+target_link_libraries(${PROJECT_NAME} PRIVATE vlink-foxglove-conversion)
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src ${CMAKE_CURRENT_BINARY_DIR})
 
@@ -37,14 +47,17 @@ target_link_libraries(
           thirdparty::argparse
           $<BUILD_INTERFACE:foxglove_fbs_gen>
 )
+
 vlink_target_system_includes_from(${PROJECT_NAME} ${protobuf_libs})
 vlink_target_system_includes_from(${PROJECT_NAME} ${flatbuffers_libs})
 
 if(WIN32)
   target_compile_definitions(${PROJECT_NAME} PRIVATE "WIN32_LEAN_AND_MEAN" "NOMINMAX")
+
   if(EXISTS ${CMAKE_SOURCE_DIR}/packup/ico/vlink-cmd.rc)
     target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/packup/ico/vlink-cmd.rc)
   endif()
+
   if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /wd4127)
   endif()
@@ -78,6 +91,7 @@ if(EXISTS ${PROJECT_SOURCE_DIR}/etc)
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_SOURCE_DIR}/etc/
             ${CMAKE_BINARY_DIR}/output/${BUILD_CONFIG_DIR}/vlink-foxglove/
   )
+
   install(
     DIRECTORY ${PROJECT_SOURCE_DIR}/etc/
     DESTINATION ${INSTALL_CONFIG_DIR}/vlink-foxglove/

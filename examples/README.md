@@ -2,7 +2,7 @@
 
 本目录收录 VLink 的官方示例，每个子目录是一个独立、可编译的工程，聚焦一个主题。示例用于教学与端到端验证，不替代单元测试；完整说明见根目录 [README](../README.md) 与 [doc/](../doc/)。
 
-当前共 14 个分类、29 个示例工程。
+当前共 15 个分类，含 29 个应用示例工程和 3 个 FastBuffer 插件工程。
 
 ## 🔧 构建
 
@@ -14,7 +14,7 @@ cmake --build build -j
 ```
 
 - `ENABLE_EXAMPLES=ON`（默认 OFF）：仅编译 `samples/` 下的端到端样例。
-- `ENABLE_EXAMPLES_ALL=ON`：在此基础上编译其余 13 个分类教程。
+- `ENABLE_EXAMPLES_ALL=ON`：在此基础上编译其余分类教程；FastBuffer 插件还须显式开启对应 SDK 开关。
 
 产物位于 `build/output/bin/`（`example_*` 与 `sample_*`）。缺少依赖的示例会自动跳过而不致构建失败。
 
@@ -30,6 +30,7 @@ cmake --build build -j
 | [qos](qos) | `qos_basics` | QoS 基本配置与预定义 profile |
 | [security](security) | `security_basic` | 消息级加密：对称 key seed、PBKDF2 与密钥不匹配演示 |
 | [zerocopy](zerocopy) | `zerocopy_basic` | `loan` / `return_loan` 借贷接口与 `RawData` |
+| [fastbuffer](fastbuffer) | `cuda` · `hip` · `hbmem` | 三个独立的通用缓冲区插件 |
 | [recording](recording) | `record_basic` | 节点级与全局消息录制 |
 | [plugin](plugin) | `plugin_basic` | 插件加载与调用 |
 | [proxy](proxy) | `proxy_api_basic` | ProxyAPI 客户端 |

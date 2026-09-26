@@ -239,9 +239,11 @@ def test_memory_pool_tier_config():
 
     cfg = _vlink.MemoryPool.Config()
     assert cfg.batch_size == 16
+    assert cfg.lazy_scale is False
     cfg.tiers = [tier]
     cfg.prealloc = False
     cfg.batch_size = 1
+    cfg.lazy_scale = True
     pool = _vlink.MemoryPool(cfg)
     assert pool.get_tier_count() == 1
     s = pool.get_stats()
@@ -305,8 +307,7 @@ def test_logger_levels_and_file_handler():
             break
 
         time.sleep(0.01)
-    # Restore default null-ish handler
-    _vlink.Logger.register_file_handler(lambda lv, msg: None)
+    _vlink.Logger.register_file_handler(None)
 
     inst = _vlink.Logger.get()
     assert inst is not None

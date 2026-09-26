@@ -37,8 +37,12 @@ void ShmGetterImpl::init() {
 
   conf_.hash_code = Helpers::get_hash_code(conf_.event);
 
-  object_ =
-      factory.get_object<Object>({kImplType, conf_.address, conf_.domain, conf_.depth, conf_.history, conf_.wait});
+  if (conf_.history == 0) {
+    conf_.history = 1;
+  }
+
+  object_ = factory.get_object<Object>(
+      {kImplType, conf_.address, conf_.domain, conf_.depth, conf_.history, conf_.wait, conf_.event, this});
 
   object_->add_impl(this);
 
@@ -48,7 +52,9 @@ void ShmGetterImpl::init() {
 void ShmGetterImpl::deinit() {
   detach();
 
-  object_->remove_impl(this);
+  if (object_) {
+    object_->remove_impl(this);
+  }
 }
 
 bool ShmGetterImpl::suspend() { return object_->suspend(); }

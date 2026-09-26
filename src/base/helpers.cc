@@ -26,7 +26,6 @@
 #include <cctype>
 #include <charconv>
 #include <chrono>
-#include <clocale>
 #include <codecvt>
 #include <cstdio>
 #include <cstring>
@@ -330,11 +329,18 @@ void replace_string(std::string& str, const std::string& from, const std::string
     return;
   }
 
+  const bool from_aliased = &from == &str;
+  const bool to_aliased = &to == &str;
+  const std::string from_storage = from_aliased ? from : std::string();
+  const std::string to_storage = to_aliased ? to : std::string();
+  const std::string& from_ref = from_aliased ? from_storage : from;
+  const std::string& to_ref = to_aliased ? to_storage : to;
+
   size_t pos = 0;
 
-  while ((pos = str.find(from, pos)) != std::string::npos) {
-    str.replace(pos, from.length(), to);
-    pos += to.length();
+  while ((pos = str.find(from_ref, pos)) != std::string::npos) {
+    str.replace(pos, from_ref.length(), to_ref);
+    pos += to_ref.length();
   }
 }
 
@@ -386,6 +392,68 @@ std::string_view trim_string_view(std::string_view str) noexcept {
   return str.substr(start, end - start);
 }
 
+[[maybe_unused]] static size_t decode_utf8_code_point(const std::string& input, size_t index,
+                                                      uint32_t& code_point) noexcept {
+  const auto lead = static_cast<unsigned char>(input[index]);
+  size_t extra = 0;
+
+  if (lead < 0x80U) {
+    code_point = lead;
+  } else if ((lead & 0xE0U) == 0xC0U) {
+    code_point = lead & 0x1FU;
+    extra = 1;
+  } else if ((lead & 0xF0U) == 0xE0U) {
+    code_point = lead & 0x0FU;
+    extra = 2;
+  } else if ((lead & 0xF8U) == 0xF0U) {
+    code_point = lead & 0x07U;
+    extra = 3;
+  } else {
+    return 0;
+  }
+
+  if VUNLIKELY (index + extra >= input.size()) {
+    return 0;
+  }
+
+  for (size_t offset = 1; offset <= extra; ++offset) {
+    const auto unit = static_cast<unsigned char>(input[index + offset]);
+
+    if VUNLIKELY ((unit & 0xC0U) != 0x80U) {
+      return 0;
+    }
+
+    code_point = (code_point << 6U) | (unit & 0x3FU);
+  }
+
+  static constexpr uint32_t kMinCodePoint[] = {0U, 0x80U, 0x800U, 0x10000U};
+
+  if VUNLIKELY (code_point < kMinCodePoint[extra] || code_point > 0x10FFFFU ||
+                (code_point >= 0xD800U && code_point <= 0xDFFFU)) {
+    return 0;
+  }
+
+  return extra + 1;
+}
+
+[[maybe_unused]] static void encode_utf8_code_point(uint32_t code_point, std::string& dest) noexcept {
+  if (code_point < 0x80U) {
+    dest.push_back(static_cast<char>(code_point));
+  } else if (code_point < 0x800U) {
+    dest.push_back(static_cast<char>(0xC0U | (code_point >> 6U)));
+    dest.push_back(static_cast<char>(0x80U | (code_point & 0x3FU)));
+  } else if (code_point < 0x10000U) {
+    dest.push_back(static_cast<char>(0xE0U | (code_point >> 12U)));
+    dest.push_back(static_cast<char>(0x80U | ((code_point >> 6U) & 0x3FU)));
+    dest.push_back(static_cast<char>(0x80U | (code_point & 0x3FU)));
+  } else {
+    dest.push_back(static_cast<char>(0xF0U | (code_point >> 18U)));
+    dest.push_back(static_cast<char>(0x80U | ((code_point >> 12U) & 0x3FU)));
+    dest.push_back(static_cast<char>(0x80U | ((code_point >> 6U) & 0x3FU)));
+    dest.push_back(static_cast<char>(0x80U | (code_point & 0x3FU)));
+  }
+}
+
 std::wstring string_to_wstring(const std::string& input) noexcept {
 #ifdef _WIN32
   std::wstring dest;
@@ -404,24 +472,28 @@ std::wstring string_to_wstring(const std::string& input) noexcept {
   ::MultiByteToWideChar(CP_UTF8, 0, input.c_str(), input.size(), buffer, length);
 
   buffer[length] = '\0';
-  dest.append(buffer);
+  dest.append(buffer, length);
   delete[] buffer;
 
   return dest;
 #else
-  std::setlocale(LC_ALL, "en_US.UTF-8");
+  std::wstring dest;
 
-  std::mbstate_t state = std::mbstate_t();
-  const char* src = input.c_str();
+  dest.reserve(input.size());
 
-  size_t len = std::mbsrtowcs(nullptr, &src, 0, &state);
+  size_t index = 0;
 
-  if VUNLIKELY (len == static_cast<size_t>(-1)) {
-    return std::wstring();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  while (index < input.size()) {
+    uint32_t code_point = 0;
+    const size_t consumed = decode_utf8_code_point(input, index, code_point);
+
+    if VUNLIKELY (consumed == 0) {
+      return std::wstring();
+    }
+
+    dest.push_back(static_cast<wchar_t>(code_point));
+    index += consumed;
   }
-
-  std::wstring dest(len, L'\0');
-  std::mbsrtowcs(dest.data(), &src, len, &state);
 
   return dest;
 #endif
@@ -445,24 +517,24 @@ std::string wstring_to_string(const std::wstring& input) noexcept {
   ::WideCharToMultiByte(CP_UTF8, 0, input.c_str(), input.size(), buffer, length, nullptr, nullptr);
 
   buffer[length] = '\0';
-  dest.append(buffer);
+  dest.append(buffer, length);
   delete[] buffer;
 
   return dest;
 #else
-  std::setlocale(LC_ALL, "en_US.UTF-8");
+  std::string dest;
 
-  std::mbstate_t state = std::mbstate_t();
-  const wchar_t* src = input.c_str();
+  dest.reserve(input.size());
 
-  size_t len = std::wcsrtombs(nullptr, &src, 0, &state);
+  for (const wchar_t unit : input) {
+    const auto code_point = static_cast<uint32_t>(static_cast<std::make_unsigned_t<wchar_t>>(unit));
 
-  if VUNLIKELY (len == static_cast<size_t>(-1)) {
-    return std::string();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    if VUNLIKELY (code_point > 0x10FFFFU || (code_point >= 0xD800U && code_point <= 0xDFFFU)) {
+      return std::string();
+    }
+
+    encode_utf8_code_point(code_point, dest);
   }
-
-  std::string dest(len, '\0');
-  std::wcsrtombs(dest.data(), &src, len, &state);
 
   return dest;
 #endif
@@ -733,7 +805,13 @@ std::string format_milliseconds(int64_t milliseconds, bool show_millis) noexcept
   char buffer[32];
 
   if (milliseconds < 0) {
-    milliseconds += 24 * 60 * 60 * 1000;
+    constexpr int64_t kMillisecondsPerDay = 24LL * 60LL * 60LL * 1000LL;
+
+    milliseconds %= kMillisecondsPerDay;
+
+    if (milliseconds < 0) {
+      milliseconds += kMillisecondsPerDay;
+    }
   }
 
   int64_t hours = milliseconds / (1000 * 60 * 60);
@@ -817,14 +895,7 @@ std::string format_time_diff(int32_t milliseconds) noexcept {
 }
 
 std::string format_hex_number(int64_t hex_number) noexcept {
-  char buffer[32];
-  auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), hex_number, 16);
-
-  if (ec == std::errc()) {
-    return "0x" + std::string(buffer, ptr);
-  }
-
-  return "0x0";  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+  return format_hex_number(static_cast<uint64_t>(hex_number));
 }
 
 std::string format_hex_number(uint64_t hex_number) noexcept {

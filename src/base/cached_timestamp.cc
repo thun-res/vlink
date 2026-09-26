@@ -24,6 +24,7 @@
 #include "./base/cached_timestamp.h"
 
 #include <cstdio>
+#include <limits>
 
 namespace vlink {
 
@@ -32,22 +33,38 @@ CachedTimestamp::CachedTimestamp() = default;
 CachedTimestamp::~CachedTimestamp() = default;
 
 std::string_view CachedTimestamp::get(const char* format, bool use_utc) {
-  auto now = std::chrono::system_clock::now();
-  auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
+  return get_at(std::chrono::system_clock::now(), format, use_utc);
+}
 
-  int64_t sec = now_ms.count() / 1000;
-  int ms = now_ms.count() % 1000;
+std::string_view CachedTimestamp::get_at(std::chrono::system_clock::time_point now, const char* format, bool use_utc) {
+  const auto milliseconds = std::chrono::floor<std::chrono::milliseconds>(now.time_since_epoch()).count();
+  int64_t sec = milliseconds / 1000;
+  int ms = static_cast<int>(milliseconds % 1000);
+
+  if VUNLIKELY (ms < 0) {
+    --sec;
+    ms += 1000;
+  }
 
   std::lock_guard lock(mtx_);
 
   int64_t cached_sec = last_sec_;
 
-  if VLIKELY (sec == cached_sec && is_utc_ == use_utc) {
+  static constexpr const char* kCanonicalFormat = "%02d-%02d %02d:%02d:%02d.%03d";
+
+  if VUNLIKELY (format == nullptr) {
+    format = kCanonicalFormat;
+  }
+
+  const bool canonical = (format == kCanonicalFormat) || (std::string_view(format) == kCanonicalFormat);
+
+  if VLIKELY (cache_valid_ && canonical && sec == cached_sec && is_utc_ == use_utc) {
     update_milliseconds(ms);
     return std::string_view(buffer_, buffer_len_);
   }
 
-  format_full_timestamp(format, now, use_utc, ms);
+  format_full_timestamp(format, sec, use_utc, ms);
+  cache_valid_ = canonical && buffer_len_ != 0;
 
   last_sec_ = sec;
   is_utc_ = use_utc;
@@ -55,33 +72,50 @@ std::string_view CachedTimestamp::get(const char* format, bool use_utc) {
   return std::string_view(buffer_, buffer_len_);
 }
 
-void CachedTimestamp::format_full_timestamp(const char* format, std::chrono::system_clock::time_point now, bool use_utc,
-                                            int ms) {
-  std::time_t now_time_t = std::chrono::system_clock::to_time_t(now);
+void CachedTimestamp::format_full_timestamp(const char* format, int64_t seconds, bool use_utc, int ms) {
+  buffer_len_ = 0;
+
+  if constexpr (!std::numeric_limits<std::time_t>::is_signed) {
+    if VUNLIKELY (seconds < 0) {
+      return;
+    }
+  }
+
+  const auto now_time_t = static_cast<std::time_t>(seconds);
+
+  if constexpr (sizeof(std::time_t) < sizeof(int64_t)) {
+    if VUNLIKELY (static_cast<int64_t>(now_time_t) != seconds) {
+      return;
+    }
+  }
+
   std::tm now_tm{};
+  bool converted = false;
 
 #if defined(_WIN32)
 
   if (use_utc) {
-    gmtime_s(&now_tm, &now_time_t);
+    converted = gmtime_s(&now_tm, &now_time_t) == 0;
   } else {
-    localtime_s(&now_tm, &now_time_t);
+    converted = localtime_s(&now_tm, &now_time_t) == 0;
   }
 #else
 
   if (use_utc) {
-    gmtime_r(&now_time_t, &now_tm);
+    converted = gmtime_r(&now_time_t, &now_tm) != nullptr;
   } else {
-    localtime_r(&now_time_t, &now_tm);
+    converted = localtime_r(&now_time_t, &now_tm) != nullptr;
   }
 #endif
+
+  if VUNLIKELY (!converted) {
+    return;
+  }
 
   int len = std::snprintf(buffer_, sizeof(buffer_), format, now_tm.tm_mon + 1, now_tm.tm_mday, now_tm.tm_hour,
                           now_tm.tm_min, now_tm.tm_sec, ms);
 
-  if VUNLIKELY (len < 3 || len >= static_cast<int>(sizeof(buffer_))) {
-    buffer_len_ = 0;
-    ms_offset_ = 0;
+  if VUNLIKELY (len < 0 || len >= static_cast<int>(sizeof(buffer_))) {
     return;
   }
 

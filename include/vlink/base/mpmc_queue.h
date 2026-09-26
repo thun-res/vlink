@@ -65,7 +65,7 @@
  * @endcode
  *
  * @note @c emplace / @c pop block by spinning; for bounded producers prefer the @c try_* forms.
- *       Capacity must be @c >= @c 1 (otherwise @c std::invalid_argument is thrown).
+ *       Capacity must be in @c [1, SIZE_MAX) (otherwise @c std::invalid_argument is thrown).
  *       @c notify_to_quit gracefully drains pending waiters and silently drops further pushes.
  */
 
@@ -247,8 +247,8 @@ class MpmcQueue : public MpmcQueueBase {
    * @c kInterferenceSize bytes; misaligned allocations throw @c std::bad_alloc.  Each slot's
    * turn counter is default-initialised to zero.
    *
-   * @param capacity  Maximum number of elements; must be @c >= @c 1.
-   * @throws std::invalid_argument when @p capacity is below @c 1.
+   * @param capacity  Maximum number of elements; must be in @c [1, SIZE_MAX).
+   * @throws std::invalid_argument when @p capacity is @c 0 or @c SIZE_MAX.
    * @throws std::bad_alloc       when allocation fails or returns a misaligned pointer.
    */
   explicit MpmcQueue(size_t capacity) VLINK_NO_INSTRUMENT;

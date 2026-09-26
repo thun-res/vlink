@@ -104,6 +104,49 @@ TEST_SUITE("impl-PublisherImpl") {
     CHECK(value);
   }
 
+  TEST_CASE("detect_subscribers keeps the active callback alive while replacing it") {
+    TestPublisher pub;
+    int old_count = 0;
+    int new_count = 0;
+    pub.detect_subscribers([&pub, &old_count, &new_count](bool subscribed) {
+      if (!subscribed) {
+        pub.detect_subscribers([&new_count](bool) { ++new_count; });
+      }
+      ++old_count;
+    });
+
+    pub.set_has_subs(true);
+    pub.update_subscribers();
+    pub.set_has_subs(false);
+    pub.update_subscribers();
+    CHECK(old_count == 2);
+    CHECK(new_count == 0);
+
+    pub.set_has_subs(true);
+    pub.update_subscribers();
+    pub.set_has_subs(false);
+    pub.update_subscribers();
+    CHECK(old_count == 2);
+    CHECK(new_count == 2);
+  }
+
+  TEST_CASE("detect_subscribers can clear a callback while already subscribed") {
+    TestPublisher pub;
+    pub.set_has_subs(true);
+    pub.update_subscribers();
+
+    int count = 0;
+    pub.detect_subscribers([&](bool) { ++count; });
+    CHECK(count == 1);
+    pub.detect_subscribers(nullptr);
+
+    pub.set_has_subs(false);
+    pub.update_subscribers();
+    pub.set_has_subs(true);
+    pub.update_subscribers();
+    CHECK(count == 1);
+  }
+
   TEST_CASE("update_subscribers fires callback when subscriber state changes") {
     TestPublisher pub;
     int count = 0;

@@ -238,6 +238,10 @@ bool DdscClientImpl::is_connected() const {
 }
 
 bool DdscClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::chrono::milliseconds timeout) {
+  if VUNLIKELY (!writer_ || (callback && !reader_)) {
+    return false;
+  }
+
   if (!callback) {
     return DdscFactory::write_data(writer_->entity, req_data, 0);
   }
@@ -258,8 +262,8 @@ bool DdscClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::ch
 
     {
       std::lock_guard param_lock(param_mtx_);
-      callbacks_[id] = [this, ack_request, callback = std::move(callback)](const Bytes& resp_data) {
-        ack_manager_.notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
+      callbacks_[id] = [ack_request, callback = std::move(callback)](const Bytes& resp_data) {
+        AckManager::notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
       };
     }
 

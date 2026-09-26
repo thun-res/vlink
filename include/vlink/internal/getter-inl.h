@@ -144,6 +144,11 @@ inline bool Getter<ValueT, SecT>::listen(MsgCallback&& callback) {
 template <typename ValueT, SecurityType SecT>
 inline void Getter<ValueT, SecT>::set_change_reporting(bool enable) {
   std::lock_guard lock(mtx_);
+
+  if (change_reporting_ != enable) {
+    last_cache_.reset();
+  }
+
   change_reporting_ = enable;
 }
 
@@ -179,7 +184,7 @@ inline bool Getter<ValueT, SecT>::init() {
     return false;
   }
 
-  listen_bytes([this](const Bytes& data) {
+  const bool listened = listen_bytes([this](const Bytes& data) {
 #ifndef VLINK_DISABLE_PROFILER
     CpuProfilerGuard profiler_guard(this->impl_->profiler.get());
 #endif
@@ -239,6 +244,11 @@ inline bool Getter<ValueT, SecT>::init() {
     }
   });
 
+  if VUNLIKELY (!listened) {
+    Node<GetterImpl, SecT>::deinit();
+    return false;
+  }
+
   return true;
 }
 
@@ -264,12 +274,12 @@ inline void Getter<ValueT, SecT>::mark_as_subscriber() {
 }
 
 template <typename ValueT, SecurityType SecT>
-inline void Getter<ValueT, SecT>::listen_bytes(NodeImpl::MsgCallback&& callback) {
+inline bool Getter<ValueT, SecT>::listen_bytes(NodeImpl::MsgCallback&& callback) {
   if (!this->has_inited_.load(std::memory_order_acquire)) {
-    return;
+    return false;
   }
 
-  this->impl_->listen([this, callback = std::move(callback)](const Bytes& data) {
+  return this->impl_->listen([this, callback = std::move(callback)](const Bytes& data) {
     if constexpr (SecT == SecurityType::kWithSecurity) {
       Bytes sec_data;
 

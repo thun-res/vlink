@@ -81,6 +81,11 @@ struct VDBWriter::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddi
     bool operator<(const UrlMsgInfo& target) const noexcept { return index < target.index; }
   };
 
+  struct SplitInfo final {
+    int64_t row{0};
+    std::unordered_map<std::string, UrlMsgInfo> url_map;
+  };
+
   struct WriteStateSnapshot final {
     int64_t current_row{0};
     int64_t current_size{0};
@@ -174,6 +179,7 @@ struct VDBWriter::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddi
   int64_t start_timestamp{0};
 
   std::vector<std::string> split_file_list;
+  std::vector<SplitInfo> split_info_list;
   bool split_before{false};
   bool split_first{false};
 
@@ -1059,13 +1065,27 @@ void VDBWriter::open(const std::string& path) {
   impl_->last_timestamp = 0;
 }
 
-void VDBWriter::open_split(const std::string& path) {
+bool VDBWriter::open_split(const std::string& path) {
+  const auto split_file_count = impl_->split_file_list.size();
 #ifdef _WIN32
   const auto file_name = std::filesystem::path(Helpers::string_to_wstring(path)).filename();
-  open(Helpers::path_to_string(impl_->split_output_dir / file_name));
+  const auto split_path = impl_->split_output_dir / file_name;
+  open(Helpers::path_to_string(split_path));
 #else
-  open((impl_->split_output_dir / std::filesystem::path(path).filename()).string());
+  const auto split_path = impl_->split_output_dir / std::filesystem::path(path).filename();
+  open(split_path.string());
 #endif
+
+#ifdef VLINK_ENABLE_SQLITE
+  if VLIKELY (impl_->db) {
+    return true;
+  }
+#endif
+
+  impl_->split_file_list.resize(split_file_count);
+  std::error_code remove_ec;
+  std::filesystem::remove(split_path, remove_ec);
+  return false;
 }
 
 void VDBWriter::close_segment() {
@@ -1256,7 +1276,11 @@ void VDBWriter::close_segment() {
     impl_->db = nullptr;
   }
 
-  impl_->url_map.clear();
+  if (impl_->is_split_mode.load(std::memory_order_acquire) && impl_->config.max_split_count > 0) {
+    impl_->split_info_list.emplace_back(Impl::SplitInfo{impl_->current_row, std::move(impl_->url_map)});
+  } else {
+    impl_->url_map.clear();
+  }
   impl_->ser_map.clear();
   url_loss_map_ref().clear();
 
@@ -1314,7 +1338,6 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
     }
 
     if (!impl_->config.enable_limit) {
-      rollback_cache();
       return false;
     }
 
@@ -1515,7 +1538,8 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
   if (impl_->is_split_mode.load(std::memory_order_acquire) && !impl_->url_map.empty()) {
     if (impl_->config.split_by_time > 0 &&
         (microseconds_timestamp - impl_->config.begin_time * 1000) >
-            impl_->config.split_by_time * 1000 * static_cast<int64_t>(impl_->split_file_list.size())) {
+            impl_->config.split_by_time * 1000 *
+                (static_cast<int64_t>(impl_->split_index.load(std::memory_order_relaxed)) + 1)) {
       do_split = true;
     } else if (impl_->config.split_by_time <= 0 && impl_->config.split_by_size > 0 &&
                (impl_->current_size + static_cast<int64_t>(data.size())) > impl_->config.split_by_size) {
@@ -1528,14 +1552,20 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
       std::lock_guard split_lock(impl_->split_mtx);
 
       impl_->split_index.fetch_add(1, std::memory_order_relaxed);
-      impl_->time_current = impl_->time_start + std::chrono::milliseconds(microseconds_timestamp / 1000U);
+      const auto time_current = impl_->time_start + std::chrono::milliseconds(microseconds_timestamp / 1000U);
+      const bool same_millisecond = time_current == impl_->time_current;
+      impl_->time_current = time_current;
 
       if (impl_->config.split_name_by_time) {
-        if (impl_->base_dir.empty()) {
-          impl_->split_filename = get_format_date(&impl_->time_current, true) + ".vdb";
-        } else {
-          impl_->split_filename = impl_->base_dir + "/" + get_format_date(&impl_->time_current, true) + ".vdb";
+        std::string filename = get_format_date(&impl_->time_current, true) + ".vdb";
+
+        if VUNLIKELY (same_millisecond || std::find(impl_->split_file_list.begin(), impl_->split_file_list.end(),
+                                                    filename) != impl_->split_file_list.end()) {
+          filename.insert(filename.find_last_of('.'),
+                          "." + std::to_string(impl_->split_index.load(std::memory_order_relaxed) + 1));
         }
+
+        impl_->split_filename = impl_->base_dir.empty() ? filename : impl_->base_dir + "/" + filename;
       } else {
         impl_->split_filename =
             impl_->base_name + "." + std::to_string(impl_->split_index.load(std::memory_order_relaxed) + 1) + ".vdb";
@@ -1552,15 +1582,96 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
 
       close_segment();
 
-      if VUNLIKELY (!write_filex(false)) {
-        set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      if VUNLIKELY (!open_split(impl_->split_filename)) {
+        set_fail();
+        impl_->split_index.fetch_sub(1, std::memory_order_relaxed);
+
+        if VUNLIKELY (!write_filex(false)) {
+          set_fail();
+        }
+
+        return false;
       }
 
-      open_split(impl_->split_filename);
+      auto discard_new_split = [this]() {
+        close_segment();
+        impl_->split_file_list.pop_back();
+        if (impl_->config.max_split_count > 0) {
+          impl_->split_info_list.pop_back();
+        }
+
+#ifdef _WIN32
+        const auto new_split_path = impl_->split_output_dir /
+                                    std::filesystem::path(Helpers::string_to_wstring(impl_->split_filename)).filename();
+#else
+        const auto new_split_path = impl_->split_output_dir / std::filesystem::path(impl_->split_filename).filename();
+#endif
+        std::error_code remove_ec;
+        std::filesystem::remove(new_split_path, remove_ec);
+        impl_->split_index.fetch_sub(1, std::memory_order_relaxed);
+      };
 
       if VUNLIKELY (!begin_cache()) {
-        impl_->split_index.fetch_sub(1, std::memory_order_relaxed);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        return false;                                                // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        discard_new_split();
+
+        if VUNLIKELY (!write_filex(false)) {
+          set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        }
+
+        return false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
+
+      std::string oldest_split_file;
+      Impl::SplitInfo oldest_split_info;
+
+      if (impl_->config.max_split_count > 0 &&
+          static_cast<int64_t>(impl_->split_file_list.size()) > impl_->config.max_split_count) {
+        oldest_split_file = std::move(impl_->split_file_list.front());
+        impl_->split_file_list.erase(impl_->split_file_list.begin());
+        oldest_split_info = std::move(impl_->split_info_list.front());
+        impl_->split_info_list.erase(impl_->split_info_list.begin());
+      }
+
+      if VUNLIKELY (!write_filex(false)) {
+        set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        discard_new_split();
+
+        if (!oldest_split_file.empty()) {
+          impl_->split_file_list.insert(impl_->split_file_list.begin(), std::move(oldest_split_file));
+          impl_->split_info_list.insert(impl_->split_info_list.begin(), std::move(oldest_split_info));
+        }
+
+        if VUNLIKELY (!write_filex(false)) {
+          set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        }
+
+        return false;
+      }
+
+      if (!oldest_split_file.empty()) {
+#ifdef _WIN32
+        const auto oldest_path =
+            impl_->split_output_dir / std::filesystem::path(Helpers::string_to_wstring(oldest_split_file));
+#else
+        const auto oldest_path = impl_->split_output_dir / std::filesystem::path(oldest_split_file);
+#endif
+        std::error_code remove_ec;
+        std::filesystem::remove(oldest_path, remove_ec);
+
+        if VUNLIKELY (remove_ec) {
+          CLOG_W("VDBWriter: Failed to remove oldest split file [%s]: %s.", oldest_split_file.c_str(),
+                 remove_ec.message().c_str());
+          set_fail();
+          discard_new_split();
+          impl_->split_file_list.insert(impl_->split_file_list.begin(), std::move(oldest_split_file));
+          impl_->split_info_list.insert(impl_->split_info_list.begin(), std::move(oldest_split_info));
+
+          if VUNLIKELY (!write_filex(false)) {
+            set_fail();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          }
+
+          return false;
+        }
       }
 
       if (!impl_->split_before && impl_->split_callback) {
@@ -1586,32 +1697,22 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
   Impl::UrlMsgInfo& url_msg_info = url_iter_ret.first->second;
   auto resolved_schema_type = SchemaData::resolve_type(schema_type, ser_type);
 
-  std::string next_ser_type = total_url_msg_info.ser_type;
+  const std::string& next_ser_type = total_url_msg_info.ser_type.empty() ? ser_type : total_url_msg_info.ser_type;
   SchemaType next_schema_type = total_url_msg_info.schema_type;
 
   if (total_url_iter_ret.second) {
-    next_ser_type = ser_type;
     next_schema_type = resolved_schema_type;
-  } else {
-    if (!ser_type.empty()) {
-      if (next_ser_type.empty()) {
-        next_ser_type = ser_type;
-      } else if VUNLIKELY (next_ser_type != ser_type) {
-        CLOG_E("VDBWriter: URL [%s] ser changed from [%s] to [%s].", url.c_str(), next_ser_type.c_str(),
-               ser_type.c_str());
-        discard_new_url_entries();
-        return false;
-      }
-    }
+  } else if VUNLIKELY (!ser_type.empty() && next_ser_type != ser_type) {
+    CLOG_E("VDBWriter: URL [%s] ser changed from [%s] to [%s].", url.c_str(), next_ser_type.c_str(), ser_type.c_str());
+    discard_new_url_entries();
+    return false;
   }
 
   if (!next_ser_type.empty()) {
-    std::string schema_ser_type;
+    std::string split_ser_type;
     const auto schema_ser_source = ser_type.empty() ? std::string_view{next_ser_type} : std::string_view{ser_type};
     SchemaType schema_storage_type = SchemaData::resolve_type(schema_type, schema_ser_source);
     bool has_split_method_schema = false;
-
-    schema_ser_type.assign(schema_ser_source.begin(), schema_ser_source.end());
 
     if ((action_type == ActionType::kClientRequest || action_type == ActionType::kClientResponse ||
          action_type == ActionType::kServerRequest || action_type == ActionType::kServerResponse) &&
@@ -1626,12 +1727,14 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
         }
 
         if (!payload_ser_type.empty()) {
-          schema_ser_type.assign(payload_ser_type.begin(), payload_ser_type.end());
+          split_ser_type.assign(payload_ser_type.begin(), payload_ser_type.end());
           schema_storage_type = SchemaData::resolve_type(schema_type, payload_ser_type);
           has_split_method_schema = true;
         }
       }
     }
+
+    const std::string& schema_ser_type = has_split_method_schema ? split_ser_type : next_ser_type;
     SchemaData schema_data;
 
     if VUNLIKELY (!load_schema(schema_ser_type, schema_storage_type, schema_data)) {
@@ -1686,9 +1789,9 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
           rollback_cache();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
           return false;      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
-      }
 
-      impl_->ser_map.emplace(schema_key);
+        impl_->ser_map.emplace(schema_key);
+      }
     }
   }
 
@@ -1787,8 +1890,11 @@ bool VDBWriter::write(const std::string& url, const std::string& ser_type, Schem
         // LCOV_EXCL_STOP GCOVR_EXCL_STOP
       }
 
-      total_url_msg_info.ser_type = next_ser_type;
-      url_msg_info.ser_type = next_ser_type;
+      if (ser_changed) {
+        total_url_msg_info.ser_type = next_ser_type;
+        url_msg_info.ser_type = next_ser_type;
+      }
+
       total_url_msg_info.schema_type = next_schema_type;
       url_msg_info.schema_type = next_schema_type;
     }
@@ -1971,11 +2077,20 @@ bool VDBWriter::write_filex(bool complete) {
   try {
     nlohmann::ordered_json json;
 
+    auto message_count = impl_->total_current_row;
+    if (impl_->config.max_split_count > 0) {
+      message_count = impl_->current_row;
+
+      for (const auto& split_info : impl_->split_info_list) {
+        message_count += split_info.row;
+      }
+    }
+
     json["VLinkHeader"] = {
         {"major", VLINK_VERSION_MAJOR},  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         {"minor", VLINK_VERSION_MINOR},  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         {"patch", VLINK_VERSION_PATCH},  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        {"count", impl_->total_current_row},
+        {"count", message_count},
         {"duration", impl_->total_timestamp},
         {"accuracy", "MicroSecond"},
         {"compress", impl_->enable_compressed ? "lzav" : "None"},
@@ -1996,6 +2111,48 @@ bool VDBWriter::write_filex(bool complete) {
 
       for (const auto& url : impl_->total_url_list) {
         const auto& ext_info = impl_->total_url_map[url];
+        auto count = ext_info.count;
+        auto size = ext_info.size;
+        auto freq = ext_info.freq;
+
+        if (impl_->config.max_split_count > 0) {
+          count = 0;
+          size = 0;
+          int64_t first_timestamp = -1;
+          int64_t last_timestamp = -1;
+
+          auto merge_url_info = [&](const auto& url_map) {
+            const auto iter = url_map.find(url);
+
+            if (iter == url_map.end()) {
+              return;
+            }
+
+            const auto& url_info = iter->second;
+            count += url_info.count;
+            size += url_info.size;
+
+            if (url_info.first_timestamp >= 0 && (first_timestamp < 0 || url_info.first_timestamp < first_timestamp)) {
+              first_timestamp = url_info.first_timestamp;
+            }
+
+            last_timestamp = std::max(last_timestamp, url_info.last_timestamp);
+          };
+
+          for (const auto& split_info : impl_->split_info_list) {
+            merge_url_info(split_info.url_map);
+          }
+
+          merge_url_info(impl_->url_map);
+
+          if (count == 0) {
+            continue;
+          }
+
+          const auto duration = (last_timestamp - first_timestamp) / 1000'000.0;
+          freq = duration > 0 ? count / duration : 0;
+        }
+
         auto loss = total_url_loss_map_ref()[recover_recorded_url(url)];
 
         url_json.push_back({
@@ -2005,10 +2162,10 @@ bool VDBWriter::write_filex(bool complete) {
             {"type", ext_info.url_type},
             {"ser", ext_info.ser_type},
             {"encoding", std::string(SchemaData::convert_type(ext_info.schema_type))},
-            {"count", ext_info.count},
-            {"size", ext_info.size},
+            {"count", count},
+            {"size", size},
             {"loss", loss},
-            {"freq", ext_info.freq},
+            {"freq", freq},
         });
       }
     }
@@ -2016,8 +2173,16 @@ bool VDBWriter::write_filex(bool complete) {
     json["VLinkUrls"] = std::move(url_json);
 
     nlohmann::ordered_json files_json;
-    for (const auto& file : impl_->split_file_list) {
-      files_json.push_back(file);
+    auto split_file_count = impl_->split_file_list.size();
+
+#ifdef VLINK_ENABLE_SQLITE
+    if (!complete && impl_->db && split_file_count > 0) {
+      --split_file_count;
+    }
+#endif
+
+    for (size_t i = 0; i < split_file_count; ++i) {
+      files_json.push_back(impl_->split_file_list[i]);
     }
 
     json["VLinkFiles"] = std::move(files_json);

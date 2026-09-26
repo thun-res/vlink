@@ -80,6 +80,62 @@ static std::string sqlite_column_text_or_empty(::sqlite3_stmt* stmt, int column)
 
   return {reinterpret_cast<const char*>(text), static_cast<size_t>(::sqlite3_column_bytes(stmt, column))};
 }
+
+static bool exec_repair_sql(::sqlite3* db, const char* sql, const char* what) {
+  char* err_msg = nullptr;
+  const int ret = ::sqlite3_exec(db, sql, nullptr, nullptr, &err_msg);
+
+  if VUNLIKELY (ret != SQLITE_OK) {
+    CLOG_W("VDBReader: Failed to %s: %s.", what, err_msg ? err_msg : ::sqlite3_errmsg(db));
+
+    if (err_msg) {
+      ::sqlite3_free(err_msg);
+    }
+
+    return false;
+  }
+
+  return true;
+}
+
+static bool repair_bag_metadata(::sqlite3* db) {
+  static constexpr const char* kCollectStats =
+      "CREATE TEMP TABLE _vlink_fix_stats AS SELECT url AS uid, COUNT(*) AS n, MIN(elapsed) AS mn, "
+      "MAX(elapsed) AS mx FROM VLinkDatas GROUP BY url;";
+  static constexpr const char* kRepairUrls =
+      "UPDATE VLinkUrls SET count = IFNULL((SELECT n FROM _vlink_fix_stats WHERE uid = VLinkUrls.id), 0), "
+      "freq = IFNULL((SELECT CASE WHEN mx > mn THEN n / ((mx - mn) / 1000000.0) ELSE 0 END FROM "
+      "_vlink_fix_stats WHERE uid = VLinkUrls.id), 0);";
+  static constexpr const char* kRepairHeader =
+      "UPDATE VLinkHeader SET count = IFNULL((SELECT SUM(n) FROM _vlink_fix_stats), 0), "
+      "duration = IFNULL((SELECT MAX(mx) FROM _vlink_fix_stats), 0), "
+      "complete = CASE WHEN (SELECT COUNT(*) FROM _vlink_fix_stats) > 0 THEN 1 ELSE complete END;";
+  static constexpr const char* kDropStats = "DROP TABLE IF EXISTS temp._vlink_fix_stats;";
+
+  if VUNLIKELY (!exec_repair_sql(db, kDropStats, "drop stale repair table")) {
+    return false;
+  }
+
+  if VUNLIKELY (!exec_repair_sql(db, "BEGIN IMMEDIATE;", "begin repair transaction")) {
+    return false;
+  }
+
+  if VUNLIKELY (!exec_repair_sql(db, kCollectStats, "collect repair statistics") ||
+                !exec_repair_sql(db, kRepairUrls, "repair url metadata") ||
+                !exec_repair_sql(db, kRepairHeader, "repair header metadata")) {
+    exec_repair_sql(db, "ROLLBACK;", "rollback repair transaction");
+    exec_repair_sql(db, kDropStats, "drop repair table");
+    return false;
+  }
+
+  if VUNLIKELY (!exec_repair_sql(db, "COMMIT;", "commit repair transaction")) {
+    exec_repair_sql(db, "ROLLBACK;", "rollback repair transaction");
+    exec_repair_sql(db, kDropStats, "drop repair table");
+    return false;
+  }
+
+  return exec_repair_sql(db, kDropStats, "drop repair table");
+}
 #endif
 
 // VDBReader::Impl
@@ -366,6 +422,7 @@ void VDBReader::jump(int64_t begin_time, double rate, int times, bool force_to_p
     config_copy = impl_->config;
   }
 
+  config_copy.auto_pause = false;
   post_task([this, config_copy = std::move(config_copy)]() { read(config_copy); });
 #else
   (void)begin_time;
@@ -721,7 +778,15 @@ std::future<bool> VDBReader::fix(bool rebuild) {
     VLOG_W("VDBReader: Is busy.");
   }
 
-  return invoke_task([this, rebuild]() {
+  const bool can_repair_metadata = !impl_->read_only && !is_split_mode();
+
+  if (impl_->read_only) {
+    VLOG_W("VDBReader: Read-only reader, metadata repair skipped.");
+  } else if (is_split_mode()) {
+    VLOG_W("VDBReader: Split bag, metadata repair skipped; the index file is not rewritten.");
+  }
+
+  return invoke_task([this, rebuild, can_repair_metadata]() {
     int ret = 0;
     char* err_msg = nullptr;
 
@@ -733,6 +798,14 @@ std::future<bool> VDBReader::fix(bool rebuild) {
       if (wrapper_file.stmt) {
         ::sqlite3_finalize(wrapper_file.stmt);
         wrapper_file.stmt = nullptr;
+      }
+
+      if (can_repair_metadata && !repair_bag_metadata(wrapper_file.db)) {
+        return false;
+      }
+
+      if VUNLIKELY (is_ready_to_quit()) {
+        return false;
       }
 
       // opt
@@ -1283,10 +1356,6 @@ bool VDBReader::do_read_next(Frame& out, bool& is_error) {
     if (step == SQLITE_ROW) {
       const int64_t timestamp = ::sqlite3_column_int64(impl_->cursor_stmt.get(), get_column(0));
 
-      if (impl_->cursor_end_us > 0 && timestamp > impl_->cursor_end_us) {
-        return false;
-      }
-
       const int url_id = ::sqlite3_column_int(impl_->cursor_stmt.get(), get_column(1));
       auto& wrapper_file = impl_->file_list.at(impl_->cursor_file_index);
       auto iter = wrapper_file.id_to_url_map.find(url_id);
@@ -1410,6 +1479,15 @@ bool VDBReader::prepare_cursor_stmt(int file_index) {
     where.append(std::to_string(impl_->cursor_begin_us));
   }
 
+  if (impl_->cursor_end_us > 0) {
+    if (!where.empty()) {
+      where.append(" AND ");
+    }
+
+    where.append("elapsed <= ");
+    where.append(std::to_string(impl_->cursor_end_us));
+  }
+
   std::string select_sql = "SELECT elapsed, url, action, data FROM VLinkDatas";
 
   if (!where.empty()) {
@@ -1419,7 +1497,7 @@ bool VDBReader::prepare_cursor_stmt(int file_index) {
 
   const bool order_by_elapsed = wrapper_file.has_idx_elapsed;
 
-  select_sql.append(order_by_elapsed ? " ORDER BY elapsed;" : " ORDER BY rowid;");
+  select_sql.append(order_by_elapsed ? " ORDER BY elapsed, rowid;" : " ORDER BY rowid;");
 
   ::sqlite3_stmt* stmt = nullptr;
   const int ret = ::sqlite3_prepare_v2(wrapper_file.db, select_sql.c_str(), -1, &stmt, nullptr);
@@ -2387,6 +2465,7 @@ void VDBReader::open(const std::string& path) {
 
         std::filesystem::path file_db;
         std::string file_db_str;
+        bool has_schema = false;
 
         for (const auto& file_info : files_json) {
 #ifdef _WIN32
@@ -2432,7 +2511,7 @@ void VDBReader::open(const std::string& path) {
           }
 
           if (wrapper_file.has_schema) {
-            impl_->info.has_schema = true;
+            has_schema = true;
           }
 
           std::error_code db_size_ec;
@@ -2458,7 +2537,7 @@ void VDBReader::open(const std::string& path) {
             impl_->total_has_completed = false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
           }
 
-          if (blank_duration < 0) {
+          if (blank_duration < 0 || impl_->info.blank_duration < blank_duration) {
             blank_duration = impl_->info.blank_duration;
           }
 
@@ -2466,6 +2545,7 @@ void VDBReader::open(const std::string& path) {
           ++file_index;
         }
 
+        impl_->info.has_schema = has_schema;
         impl_->info.split_count = impl_->file_list.size();
 
         if VUNLIKELY (impl_->file_list.empty()) {
@@ -2684,11 +2764,11 @@ int VDBReader::get_reset_index(const Config& config) {
   for (auto& wrapper_file : impl_->file_list) {
     if (wrapper_file.has_idx_elapsed && wrapper_file.has_idx_url) {
       if (config.filter_urls.empty()) {
-        impl_->update_sql_default_str = "SELECT elapsed, url, action, data FROM VLinkDatas ORDER BY elapsed;";
+        impl_->update_sql_default_str = "SELECT elapsed, url, action, data FROM VLinkDatas ORDER BY elapsed, rowid;";
 
         impl_->update_sql_time_str = "SELECT elapsed, url, action, data FROM VLinkDatas WHERE elapsed >= ";
         impl_->update_sql_time_str.append(std::to_string(impl_->begin_time.load(std::memory_order_relaxed) * 1000));
-        impl_->update_sql_time_str.append(" ORDER BY elapsed;");
+        impl_->update_sql_time_str.append(" ORDER BY elapsed, rowid;");
       } else {
         std::string id_list_str = " url IN (";
         bool id_appended = false;
@@ -2713,7 +2793,7 @@ int VDBReader::get_reset_index(const Config& config) {
         impl_->update_sql_default_str = "SELECT elapsed, url, action, data FROM VLinkDatas WHERE";
         impl_->update_sql_default_str.append(id_list_str);
         impl_->update_sql_default_str.append(wrapper_file.has_idx_elapsed
-                                                 ? " ORDER BY elapsed;"
+                                                 ? " ORDER BY elapsed, rowid;"
                                                  : " ORDER BY rowid;");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
         impl_->update_sql_time_str = "SELECT elapsed, url, action, data FROM VLinkDatas WHERE";
@@ -2721,7 +2801,7 @@ int VDBReader::get_reset_index(const Config& config) {
         impl_->update_sql_time_str.append(" AND elapsed >= ");
         impl_->update_sql_time_str.append(std::to_string(impl_->begin_time.load(std::memory_order_relaxed) * 1000));
         impl_->update_sql_time_str.append(wrapper_file.has_idx_elapsed
-                                              ? " ORDER BY elapsed;"
+                                              ? " ORDER BY elapsed, rowid;"
                                               : " ORDER BY rowid;");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       }
     }
@@ -2789,8 +2869,6 @@ void VDBReader::read(const Config& config) {
   bool is_interrupted = false;
 
   do {
-    bool is_end = false;
-
     // prepare
     int start_index = get_reset_index(config);
 
@@ -2886,8 +2964,9 @@ void VDBReader::read(const Config& config) {
         }
 
         if (config.end_time > 0 && timestamp > config.end_time * 1000U) {
-          timestamp = config.end_time * 1000U;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-          is_end = true;                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          is_interrupted = impl_->stop_flag.load(std::memory_order_relaxed) ||
+                           impl_->jump_flag.load(std::memory_order_relaxed) || is_ready_to_quit();
+          break;
         }
 
         url_id = ::sqlite3_column_int(wrapper_file.stmt, get_column(1));
@@ -2986,10 +3065,6 @@ void VDBReader::read(const Config& config) {
           impl_->real_elapsed.store(timestamp, std::memory_order_relaxed);
         }
 
-        if (is_end) {
-          break;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        }
-
         Frame frame;
         frame.timestamp = timestamp;
         frame.url = url;
@@ -2999,7 +3074,7 @@ void VDBReader::read(const Config& config) {
         BagReader::process_output(frame);
       }
 
-      if (is_interrupted || is_end) {
+      if (is_interrupted) {
         break;
       }
     }

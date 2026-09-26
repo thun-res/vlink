@@ -27,15 +27,17 @@
  *
  * @details
  * @c MemoryPool dispatches each allocation request to one of a fixed pyramid of size classes.
- * Every tier owns a small fixed set of singly-linked free-list shards plus one shared vector of
- * upstream chunks.  A tier starts on its primary shard and enables sharded dispatch only after
- * repeated real lock contention is observed.  Empty local shards steal at most
+ * Every tier owns a set of singly-linked free-list shards (a power of two sized from the hardware
+ * concurrency, between 8 and 64) plus one shared vector of upstream chunks.  A tier starts on its
+ * primary shard and enables sharded dispatch only after repeated real lock contention is
+ * observed.  Empty local shards steal at most
  * @c Config::batch_size nodes at a time.  Lazy growth installs chunks of at most 64 KiB (or one
  * block when a single block is larger), so an allocating thread never pays more than a bounded
- * first-touch burst; the configured @c blocks_per_chunk still bounds every install, and
- * preallocation fills the whole quota as one chunk.  Lazy tiers therefore accumulate more,
- * smaller chunks than a preallocated tier holding the same bytes.  Sharding does not multiply
- * chunk quotas.
+ * first-touch burst; with @c Config::lazy_scale the cap becomes one sixteenth of the tier quota
+ * (never below 32 KiB), trading a larger first touch for fewer upstream calls at higher levels.
+ * The configured @c blocks_per_chunk still bounds every install, and preallocation fills the
+ * whole quota as one chunk.  Lazy tiers therefore accumulate more, smaller chunks than a
+ * preallocated tier holding the same bytes.  Sharding does not multiply chunk quotas.
  * Requests larger than the biggest tier (or with an alignment stricter than
  * @c alignof(std::max_align_t)) bypass the pool and route directly to @c ::operator @c new /
  * @c ::operator @c delete.
@@ -138,7 +140,7 @@ class VLINK_EXPORT MemoryPool final {
   };
 
   /**
-   * @brief Constructor configuration for tiers, preallocation and cross-shard batch size.
+   * @brief Constructor configuration for tiers, preallocation, cross-shard batch size and lazy scaling.
    *
    * @details
    * @c prealloc controls whether the constructor immediately fills every tier to its full
@@ -146,11 +148,14 @@ class VLINK_EXPORT MemoryPool final {
    * best effort; any tier whose @c ::operator @c new fails stays in lazy state and the
    * constructor continues.  @c batch_size limits how many nodes an empty shard transfers
    * from another shard while holding its short free-list lock; @c 0 falls back to the default 16.
+   * @c lazy_scale switches the lazy install cap from a fixed 64 KiB to one sixteenth of the tier
+   * quota (never below 32 KiB or one block), so higher quotas need fewer upstream calls.
    */
   struct Config final {
     std::vector<Tier> tiers;  ///< Tier descriptors; empty or all-sentinel selects bypass mode.
     bool prealloc{false};     ///< When @c true, eagerly fill every managed tier to its quota.
     size_t batch_size{16U};   ///< Maximum nodes transferred per cross-shard steal; @c 0 uses 16.
+    bool lazy_scale{false};   ///< When @c true, scale lazy chunk installs with the tier quota.
   };
 
   /**
@@ -297,11 +302,13 @@ class VLINK_EXPORT MemoryPool final {
    * @brief Releases only fully-free chunks; preserves chunks still backing live allocations.
    *
    * @details
-   * For each tier the free list is grouped by owning chunk; chunks whose free-node count equals
-   * their block capacity are released, others stay intact.  @c chunk_count is decremented by
-   * the number of released chunks.  Safe to call concurrently with @c allocate and
-   * @c deallocate.  Per-tier work is @c O(C @c log @c C @c + @c F @c log @c C) while growth and
-   * all free-list shards are paused.
+   * For each tier the free lists are detached under their shard locks, grouped by owning chunk
+   * without holding any lock, and re-attached; chunks whose free-node count equals their block
+   * capacity are released, others stay intact.  @c chunk_count is decremented by the number of
+   * released chunks.  Safe to call concurrently with @c allocate and @c deallocate: locks are
+   * held only while the chunk list is snapshotted and sorted, the lists are detached and
+   * re-attached, and the chunk list is compacted, so allocations that arrive while the
+   * @c O(F @c log @c C) grouping runs may install new chunks instead of waiting.
    */
   void clear() noexcept;
 
@@ -325,7 +332,8 @@ class VLINK_EXPORT MemoryPool final {
    *
    * @c VLINK_MEMORY_PREALLOC controls the @c prealloc flag; only the literal value @c "1"
    * enables preallocation.  @c VLINK_MEMORY_BATCH_SIZE overrides @c batch_size;
-   * it must be a positive integer and defaults to @c 16.  Environment values are captured on
+   * it must be a positive integer and defaults to @c 16.  @c VLINK_MEMORY_LAZY_SCALE sets
+   * @c lazy_scale; only the literal value @c "1" enables it.  Environment values are captured on
    * the first call to @c get_default_config().
    *
    * @return @c Config ready to pass to the constructor.

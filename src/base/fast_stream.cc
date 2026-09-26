@@ -45,7 +45,7 @@ void FastStream::reset() noexcept {
   buf_.reset();
 }
 
-void FastStream::append_to(std::string& target) const noexcept { buf_.append_to(target); }
+void FastStream::append_to(std::string& target) const { buf_.append_to(target); }
 
 std::string_view FastStream::take_view() { return buf_.take_view(); }
 
@@ -136,11 +136,14 @@ FastStream::StringBuf::StringBuf(size_t initial_capacity) {
 void FastStream::StringBuf::reset() noexcept { setp(buffer_.data(), buffer_.data() + buffer_.size()); }
 
 void FastStream::StringBuf::shrink_to_fit() noexcept {
+  const auto current_size = static_cast<size_t>(pptr() - pbase());
+
   buffer_.shrink_to_fit();
   setp(buffer_.data(), buffer_.data() + buffer_.size());
+  advance_pptr(current_size);
 }
 
-void FastStream::StringBuf::append_to(std::string& target) const noexcept {
+void FastStream::StringBuf::append_to(std::string& target) const {
   target.reserve(target.size() + size());
   target.append(pbase(), size());
 }

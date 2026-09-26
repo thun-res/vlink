@@ -35,7 +35,10 @@ VLink 的 `base` 基础库是一套轻量、高性能、无第三方强制依赖
 `vlink::Logger` 是全局单例日志器：在首次日志调用前用 `Logger::init()` 配置一次，
 即可在任意位置经宏写日志；Logger 构造完成后的重复 `init()` 不会重建或重配置后端。
 输出同时面向控制台与文件两个 Sink，二者最低输出级别独立设置。第二个参数是生成
-日志文件的基础目录，不是具体文件名；传空时从 `VLINK_LOG_DIR` 或临时目录自动选择。
+日志文件的基础目录，不是具体文件名；显式目录须由单个活动进程独占。传空时使用
+`$VLINK_LOG_DIR/<应用名>`，未设置根目录则使用临时目录下的 `vlink-log`；设置
+`VLINK_LOG_PID_ENABLE=1` 时再追加 `<PID>` 子目录供同名多实例并存，轮转上限按该子目录
+计算，历史进程目录由部署环境清理。文件等级从 `Off` 开启后按需初始化通道。
 
 ### 8.2.1 快速开始
 
@@ -79,6 +82,8 @@ SLOG_D << "values: " << 42 << " temp=" << 78.5;
 Sink 都过滤该级别时，函数调用、自增等参数副作用不会发生。若昂贵计算在
 宏调用之前完成，仍应使用 `VLINK_LOG_IF_T/D/I/W/E/F` 包住整段准备逻辑。
 
+流式消息构造期间调用的函数或插入运算符可以继续记录日志，嵌套记录使用独立的线程局部缓冲，不覆盖外层消息。每个嵌套深度的缓冲在首次使用时分配，后续复用。
+
 新代码默认优先 `VLOG_*`。宽度/精度/进制等格式控制用 `MLOG_*` 的
 std::format 风格修饰（`[[fill]align][sign][#][0][width][.precision][type]`，
 如 `{:08.2f}`、`{:#x}`；宽度/精度也可写作 `{}`/`{n}` 从实参动态取值，
@@ -94,8 +99,16 @@ Info 不用于逐帧热路径；Fatal 只用于状态已无法安全继续的错
 即时刷新、固定文件/时间戳文件轮转、UTC 格式和 backtrace；切换后端不改变 Logger API
 与日志宏。
 
-每个轮转文件集只允许一个 backend 实例独占；多进程应使用不同目录或包含 PID 的
-基础目录。flush 仅把 C 运行库缓冲提交给操作系统，不等同于断电持久化所需的 `fsync`。
+每个轮转文件集只允许一个 backend 实例独占；多进程应使用不同目录或设置
+`VLINK_LOG_PID_ENABLE=1`。`flush()` 刷新标准输出、标准错误与内置文件后端/插件；自定义 handler 自行管理缓冲。
+文件 flush 仅把 C 运行库缓冲提交给操作系统，不等同于断电持久化所需的 `fsync`。
+
+handler 须支持并发调用，可在回调内替换或注销，该注册在本次回调返回后生效；其他线程的注册
+等待进行中的回调结束后再释放旧 handler。backtrace 仅改变内置文件后端：所有等级进入环，
+Warn 及以上同时立即写文件、dump 时再次写出，控制台仍正常输出。`dump_backtrace()` 消费快照，控制台重放
+遵循当前等级和 handler，包含 `Off`。磁盘写入、刷新或轮转失败后，文件通道保持永久错误
+状态；空间恢复不会自动重启，但控制台仍可输出或重放已保留的记录。时间回退按实际墙钟
+显示，轮转顺序依赖递增序号，刷新和限频使用单调时钟。
 
 ### 8.2.3 直接使用 LoggerBackend
 
@@ -215,7 +228,7 @@ vlink::Bytes::init_memory_pool();       // 启动时调用一次
 vlink::Bytes::release_memory_pool();    // 运行期可选回收完全空闲的块
 ```
 
-- 池的容量分级由环境变量 `VLINK_MEMORY_LEVEL`（`0..9`，默认 `3`）选择；`VLINK_MEMORY_PREALLOC=1` 在启动时预分配。检测到重复并发争用后 free list 会自动分片，偶发单次锁冲突仍保留 primary 快路径。空分片每次跨分片转移的节点数由 `MemoryPool::Config::batch_size` 控制（默认 `16`）；全局默认配置可用 `VLINK_MEMORY_BATCH_SIZE` 覆盖。三者含义见 [环境变量](13-integration.md)。
+- 池的容量分级由环境变量 `VLINK_MEMORY_LEVEL`（`0..9`，默认 `3`）选择；`VLINK_MEMORY_PREALLOC=1` 在启动时预分配。检测到重复并发争用后 free list 会自动分片，偶发单次锁冲突仍保留 primary 快路径。空分片每次跨分片转移的节点数由 `MemoryPool::Config::batch_size` 控制（默认 `16`）；全局默认配置可用 `VLINK_MEMORY_BATCH_SIZE` 覆盖；`VLINK_MEMORY_LAZY_SCALE=1` 让懒增长单次安装的 chunk 随档位配额放大（默认关闭）。含义见 [环境变量](13-integration.md)。
 - 经 `vlink::MemoryResource` 让 `std::pmr` 容器复用同一池：
 
 ```cpp
@@ -294,7 +307,7 @@ loop.wait_for_quit();
 
 完整示例见 [`examples/base/message_loop_basic/`](../examples/base/message_loop_basic/)。
 
-`invoke_task` 经 `std::future` 取回结果。约束：不可在 loop 自身线程上对其返回的 future 调用 `.get()`——任务等待被执行，线程却等待任务完成，构成死锁。用 `is_in_same_thread()` 防护：
+`MessageLoop` 和 `ThreadPool` 的 `invoke_task` 将实参复制或移动到任务存储，执行时移动这些实参；用 `std::ref` 显式借用。返回的 `std::future` 类型按实际调用推导。约束：不可在 loop 自身线程上对其返回的 future 调用 `.get()`——任务等待被执行，线程却等待任务完成，构成死锁。用 `is_in_same_thread()` 防护：
 
 ```cpp
 if (!loop.is_in_same_thread()) {
@@ -436,9 +449,11 @@ loop.run();
 
 `kInfinite`(-1) 表示无限重复。`interval_ms` 为 0 时被钳至最小保护间隔，避免空转。完整示例见 [`examples/base/timer/`](../examples/base/timer/)。
 
+`Timer` 有限次数自动结束后保留自上次启动的派发计数。外部线程先 `detach()` 再销毁时，析构仍等待正在执行的回调结束。
+
 ### 8.7.2 其余定时器
 
-- **`WheelTimer`**（`base/wheel_timer.h`）：哈希时间轮，插入/删除均摊 O(1)，适合数十万级并发超时（连接保活、会话超时）。回调在内部工作线程触发，通常投递回 `MessageLoop` 处理。
+- **`WheelTimer`**（`base/wheel_timer.h`）：哈希时间轮，插入/删除均摊 O(1)，适合数十万级并发超时（连接保活、会话超时）。回调在内部工作线程触发，通常投递回 `MessageLoop` 处理；周期回调通过移动保留可变状态。在回调内调用 `stop()` 后，同一 tick 中尚未执行的到期回调不再触发。
 
 ```cpp
 vlink::WheelTimer wheel(256, 10);
@@ -659,7 +674,7 @@ if (some_global_failure) {
 | 方法 | 语义 |
 | --- | --- |
 | `start(program, args)` | 异步启动子进程 |
-| `start_command(cmdline)` | 用完整命令行字符串启动 |
+| `start_command(cmdline)` | 解析命令行并启动，保留空引号参数 |
 | `wait_for_started/finished/ready_read(ms)` | 阻塞等待（默认 3000ms，`kInfinite` 为无限） |
 | `read_all_output(str)` / `read_all_error(str)` | 读取全部 stdout / stderr |
 | `read_line_stdout(line)` / `can_read_line_stdout()` | 按行读取 stdout |
@@ -670,7 +685,7 @@ if (some_global_failure) {
 | `Process::execute(prog, args, ms)` | 静态：同步执行并返回退出码 |
 | `Process::start_detached(prog, args)` | 静态：启动完全分离的子进程 |
 
-I/O 通道模式（`set_process_mode`）共五种：默认 `kSeparateMode`（stdout/stderr 各自缓冲）、`kMergedMode`（stderr 并入 stdout 管道）、`kForwardedMode`（stdout/stderr 均继承父进程，不捕获）、`kForwardedOutputMode`（stdout 继承父进程、stderr 捕获）、`kForwardedErrorMode`（stdout 捕获、stderr 继承父进程）。回调在内部监控线程触发，访问共享数据须注意线程安全。`Process` 不可拷贝、不可移动。
+I/O 通道模式（`set_process_mode`）共五种：默认 `kSeparateMode`（stdout/stderr 各自缓冲）、`kMergedMode`（stderr 并入 stdout 管道）、`kForwardedMode`（stdout/stderr 均继承父进程，不捕获）、`kForwardedOutputMode`（stdout 继承父进程、stderr 捕获）、`kForwardedErrorMode`（stdout 捕获、stderr 继承父进程）。回调由内部监控线程或当前操作同步触发，访问共享数据须注意线程安全。`Process` 不可拷贝、不可移动。
 
 ### 8.10.2 捕获子进程输出
 
@@ -778,7 +793,7 @@ bool   e   = q.empty();
 q.notify_to_quit();
 ```
 
-容量须不小于 1（否则构造抛 `std::invalid_argument`），经验值取预期突发峰值的 2 至 4 倍。默认的 `push` / `pop` 以自旋方式阻塞；需要条件变量唤醒式的阻塞收发时，按 `kConditionBehavior` 行为调用（`push<vlink::MpmcQueue<int>::kConditionBehavior>(...)` 配合 `wait_not_empty()` / `wait_not_full()`），否则 cv 通知是纯开销。
+容量须在 `[1, SIZE_MAX)` 内（否则构造抛 `std::invalid_argument`），经验值取预期突发峰值的 2 至 4 倍。默认的 `push` / `pop` 以自旋方式阻塞；需要条件变量唤醒式的阻塞收发时，按 `kConditionBehavior` 行为调用（`push<vlink::MpmcQueue<int>::kConditionBehavior>(...)` 配合 `wait_not_empty()` / `wait_not_full()`），否则 cv 通知是纯开销。
 
 ### 8.11.3 SpinLock 自旋锁
 
@@ -1023,7 +1038,7 @@ load->execute(&engine);
 std::string dot = load->export_to_dot();
 ```
 
-执行必须从根节点（无前驱）发起。执行策略：`kPolicyOnce`（默认，每次 execute 最多执行一次）、`kPolicyMultiple`、`kPolicyWaitAll`（等待所有前驱完成）。
+执行必须从根节点（无前驱）发起。执行策略：`kPolicyOnce`（默认，每次 execute 最多执行一次）、`kPolicyMultiple`、`kPolicyWaitAll`（等待所有前驱完成）。依赖满足时才投递就绪节点；支持优先级的引擎按节点优先级调度就绪任务，工作线程不会占位等待前驱。`kPolicyMultiple` 后继在前驱完成的线程内直接执行并继续向下游传播，不经引擎投递。条件返回值没有匹配分支时，包括负数，传播跳过状态。
 
 ---
 
@@ -1126,7 +1141,7 @@ vlink::Co::co_spawn(loop, std::move(t), [](int v) { VLOG_I("done v=", v); });
 | `vlink::Co::yield(loop)` | 协作让出（等价同 loop 的 schedule） |
 | `vlink::Co::delay_ms(loop, ms)` | 非阻塞睡眠 ms 毫秒 |
 | `vlink::Co::await_future(loop, fut)` | 等待 `std::future<T>`，不在 loop 线程阻塞 `.get()` |
-| `vlink::Co::await_graph(loop, graph)` | 等待 `GraphTask` DAG 全部完成 |
+| `vlink::Co::await_graph(loop, graph)` | 等待指定 `GraphTask` 节点完成 |
 
 ```cpp
 vlink::Co::Task<void> orchestrate(vlink::MessageLoop& loop) {
@@ -1136,7 +1151,11 @@ vlink::Co::Task<void> orchestrate(vlink::MessageLoop& loop) {
 }
 ```
 
-协程内异常沿 `co_await` 链向外传播，`co_spawn` 在顶层捕获并记日志。`MessageLoop` 析构时挂起的协程进入失败分支而非崩溃。
+`await_future` 接收 `std::launch::deferred` 产生的 future 时，由共享工作线程池启动延迟计算，目标 loop 与 future 轮询线程继续处理其他任务。计算完成后按通常路径恢复协程；工作队列拒绝接收时抛出 `std::runtime_error`。
+
+`Co::exec` 按值持有配置和回调，可保存返回的 Task 后再启动。已接受的任务在执行前被丢弃时，其 promise 随任务释放，等待不会因协程自身保留生产者而悬挂。
+
+协程内异常沿 `co_await` 链向外传播，`co_spawn` 在顶层捕获并记日志。future 已就绪但目标 `MessageLoop` 已关闭时，恢复进入取消分支；外部提供的未就绪 future 仍须由其生产者完成。
 
 ---
 
@@ -1153,7 +1172,7 @@ vlink::Co::Task<void> orchestrate(vlink::MessageLoop& loop) {
 | `Helpers` | `base/helpers.h` | 字符串/数字/哈希/转义等无状态工具 |
 | `Quantize` | `base/quantize.h` | 线性量化/反量化（紧凑容器复用） |
 | `Uint128` | `base/uint128.h` | 可移植 128 位无符号整数 |
-| `CachedTimestamp` | `base/cached_timestamp.h` | 低开销线程安全格式化时间戳（Logger 内部使用） |
+| `CachedTimestamp` | `base/cached_timestamp.h` | 缓存格式化时间戳；`get_at` 支持指定时间，返回视图有效至下次更新（Logger 内部使用） |
 | `Plugin` | `base/plugin.h` | 类型安全的动态插件加载器 |
 | `Exception` | `base/exception.h` | VLink 异常类型 |
 | `LoggerPluginInterface` | `base/logger_plugin_interface.h` | 自定义日志后端纯虚接口 |

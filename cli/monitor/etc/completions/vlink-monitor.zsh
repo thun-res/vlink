@@ -27,6 +27,7 @@ _vlink-monitor() {
     _arguments -s \
         '*'{-u,--urls}'=[Bind urls (repeatable)]:url:_vlink_zsh_complete_url' \
         '(-i --filter)'{-i,--filter}'=[Filter]:filter:' \
+        '--hostname=[Hostname keyword filter (not affected by --black)]:hostname:' \
         '(-b --blob)'{-b,--blob}'[Force blob output for Enter jump]' \
         '(-k --black)'{-k,--black}'[Blacklist mode]' \
         '(-n --native)'{-n,--native}'[Native mode]' \

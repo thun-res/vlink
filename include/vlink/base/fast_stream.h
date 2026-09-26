@@ -116,7 +116,7 @@ class VLINK_EXPORT FastStream : public std::ostream {
    *
    * @param target  Destination string; contents are appended in place.
    */
-  void append_to(std::string& target) const noexcept;
+  void append_to(std::string& target) const;
 
   /**
    * @brief Returns a non-owning view of the current buffer contents.
@@ -150,7 +150,7 @@ class VLINK_EXPORT FastStream : public std::ostream {
    * @brief Trims the underlying buffer to its current backing size.
    *
    * @details
-   * Does not shrink to the formatted message length; the put pointer is reset to the start.
+   * Does not shrink to the formatted message length; content already written is kept.
    */
   void shrink_to_fit() noexcept;
 
@@ -200,7 +200,7 @@ class VLINK_EXPORT FastStream : public std::ostream {
 
     void shrink_to_fit() noexcept;
 
-    void append_to(std::string& target) const noexcept;
+    void append_to(std::string& target) const;
 
     [[nodiscard]] std::string_view take_view();
 
@@ -253,7 +253,7 @@ inline FastStream& FastStream::push(T&& value) {
     }
   } else if constexpr (std::is_same_v<ValueT, float> || std::is_same_v<ValueT, double>) {
     return push_floating(value);
-  } else if constexpr (std::is_integral_v<ValueT> && sizeof(ValueT) <= sizeof(uint64_t) &&
+  } else if constexpr (std::is_integral_v<ValueT> && sizeof(std::decay_t<ValueT>) <= sizeof(uint64_t) &&
                        !std::is_same_v<ValueT, bool> && !std::is_same_v<ValueT, char> &&
                        !std::is_same_v<ValueT, signed char> && !std::is_same_v<ValueT, unsigned char> &&
                        !std::is_same_v<ValueT, wchar_t> && !std::is_same_v<ValueT, char16_t> &&

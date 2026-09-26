@@ -67,10 +67,9 @@
  * | Property              | Description                                                |
  * | --------------------- | ---------------------------------------------------------- |
  * | @c ssl:// URI scheme  | Selects TLS transport instead of plain TCP                 |
- * | CA certificate file   | Configured through @c set_property("mqtt.ca_file", path)   |
- * | Client certificate    | Configured through @c set_property("mqtt.cert_file", path) |
- * | Client private key    | Configured through @c set_property("mqtt.key_file", path)  |
- * | Username / password   | Set via @c mqtt.username and @c mqtt.password properties   |
+ * | CA certificate file   | Configured through @c set_property("ssl.ca", path)         |
+ * | Client certificate    | Configured through @c set_property("ssl.cert", path)       |
+ * | Client private key    | Configured through @c set_property("ssl.key", path)        |
  *
  * @par Example
  * @code

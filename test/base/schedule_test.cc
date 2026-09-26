@@ -234,6 +234,27 @@ TEST_SUITE("base-Schedule") {
     CHECK_FALSE(else_ran.load());
   }
 
+  TEST_CASE("RetStatus stops without on_else when the task throws and no on_catch is set") {
+    std::atomic<bool> then_ran{false};
+    std::atomic<bool> else_ran{false};
+    Schedule::Callback wrapper;
+    auto ret_status =
+        Schedule::process_with_ret(Schedule::Config{}, []() -> bool { throw std::runtime_error("fail"); }, wrapper);
+
+    ret_status
+        .on_then([&then_ran]() -> bool {
+          then_ran.store(true);
+          return true;
+        })
+        .on_else([&else_ran]() { else_ran.store(true); });
+
+    REQUIRE(wrapper != nullptr);
+    wrapper();
+
+    CHECK_FALSE(then_ran.load());
+    CHECK_FALSE(else_ran.load());
+  }
+
   TEST_CASE("exec_task void callback runs and status is valid") {
     MessageLoop loop;
     loop.async_run();

@@ -46,6 +46,7 @@ std::string make_topology_label(const Bench::Scenario& scenario);
 std::string make_case_status_brief(const AggregatedCase& item);
 std::string make_case_status_text(const AggregatedCase& item);
 std::string join_strings(const std::vector<std::string>& values, std::string_view separator);
+std::string_view redact_property(std::string_view value);
 std::string format_property_list(const std::vector<std::string>& values);
 std::string strip_ansi_escape_codes(const std::string& input);
 std::string escape_html(const std::string& input);

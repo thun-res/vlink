@@ -156,10 +156,12 @@ class VLINK_EXPORT WheelTimer {
   void resume();
 
   /**
-   * @brief Wakes the worker thread early when it is sleeping between ticks.
+   * @brief Makes the worker re-evaluate its stop and pause flags without waiting out the tick.
    *
    * @details
-   * Useful after inserting a very short timeout that should fire immediately.
+   * The wheel advances strictly on its own tick boundary, so this does @b not pull a pending
+   * timer forward: a worker woken between ticks re-checks @c stop() / @c pause() state and then
+   * sleeps again until the next boundary.  @c add() and @c remove() call it internally.
    */
   void wakeup();
 
@@ -209,10 +211,13 @@ class VLINK_EXPORT WheelTimer {
    * @brief Caps the number of catch-up slots processed in a single tick iteration.
    *
    * @details
-   * Prevents a single tick from blocking the worker for an unbounded duration when the
-   * wheel falls behind (for example, after the system wakes from sleep).
+   * Bounds how many slots one tick iteration may walk while the wheel is behind.  An
+   * independent guard already re-anchors the cursor once the wheel falls more than ten tick
+   * intervals behind, so a catch-up burst is inherently bounded at roughly ten slots; this
+   * setting therefore only takes effect for values below that, and @c 0 leaves the built-in
+   * bound in place.
    *
-   * @param max_slots_to_catch_up  Maximum slots processed per tick cycle.
+   * @param max_slots_to_catch_up  Maximum slots processed per tick cycle; @c 0 means unlimited.
    */
   void set_catchup_limit(uint32_t max_slots_to_catch_up);
 

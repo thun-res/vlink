@@ -23,6 +23,10 @@
 
 #pragma once
 
+#ifdef VLINK_ENABLE_EXPRTK
+#include <vlink/external/exprtk_api.h>
+#endif
+
 #include <optional>
 #include <string>
 #include <vector>
@@ -31,6 +35,18 @@ namespace vlink::Exprtk {  // NOLINT(readability-identifier-naming)
 
 using VariableList = std::vector<std::pair<std::string, double>>;
 
-std::optional<double> parse(const std::string& expression, VariableList& variable_list);
+class Parser {
+ public:
+  Parser(const std::string& expression, VariableList& variable_list);
+
+  [[nodiscard]] std::optional<double> value() const;
+
+ private:
+#ifdef VLINK_ENABLE_EXPRTK
+  vlink::ExprtkSymbolTable symbol_table_;
+  vlink::ExprtkExpression expression_;
+  bool compiled_{false};
+#endif
+};
 
 }  // namespace vlink::Exprtk

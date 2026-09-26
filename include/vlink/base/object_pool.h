@@ -169,6 +169,8 @@ class VLINK_EXPORT ObjectPoolBase {
 
   [[noreturn]] static void throw_factory_null();
 
+  [[noreturn]] static void throw_not_shared_owned();
+
   [[noreturn]] void throw_exhausted(size_t pool_size) const;
 
   Policy policy_{kPolicyNone};
@@ -187,8 +189,9 @@ class VLINK_EXPORT ObjectPoolBase {
  *
  * @details
  * Must always live behind a @c std::shared_ptr because @c PoolDeleter holds a
- * @c std::weak_ptr back to the owning pool; constructing one on the stack leaks
- * outstanding RAII handles into a dangling pool.  Use @c std::make_shared<ObjectPool<T>>().
+ * @c std::weak_ptr back to the owning pool.  @c get() and @c get_shared() reject a pool that
+ * is not shared-owned with @c std::logic_error rather than handing out handles whose deleter
+ * can never return the object.  Use @c std::make_shared<ObjectPool<T>>().
  *
  * @tparam T  Pooled element type.  Must be default-constructible unless a non-default
  *            factory callback is supplied.
@@ -258,6 +261,7 @@ class ObjectPool : public ObjectPoolBase, public std::enable_shared_from_this<Ob
    * @return RAII handle whose deleter releases the object back to the pool.
    *
    * @throws std::runtime_error when the pool is exhausted or the factory fails.
+   * @throws std::logic_error   when the pool is not owned by a @c std::shared_ptr.
    */
   [[nodiscard]] std::unique_ptr<T, typename ObjectPool<T>::PoolDeleter> get();
 
@@ -267,6 +271,7 @@ class ObjectPool : public ObjectPoolBase, public std::enable_shared_from_this<Ob
    * @return RAII handle whose deleter releases the object back to the pool.
    *
    * @throws std::runtime_error when the pool is exhausted or the factory fails.
+   * @throws std::logic_error   when the pool is not owned by a @c std::shared_ptr.
    */
   [[nodiscard]] std::shared_ptr<T> get_shared();
 
@@ -345,6 +350,12 @@ inline ObjectPool<T>::ObjectPool(FactoryCallback factory_callback, size_t initia
 
 template <typename T>
 inline std::unique_ptr<T, typename ObjectPool<T>::PoolDeleter> ObjectPool<T>::get() {
+  std::weak_ptr<ObjectPool<T>> weak_self = this->weak_from_this();
+
+  if VUNLIKELY (weak_self.expired()) {
+    throw_not_shared_owned();
+  }
+
   std::unique_ptr<T> obj = acquire();
 
   try {
@@ -356,11 +367,17 @@ inline std::unique_ptr<T, typename ObjectPool<T>::PoolDeleter> ObjectPool<T>::ge
     throw;                    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  return {obj.release(), PoolDeleter{this->weak_from_this()}};
+  return {obj.release(), PoolDeleter{std::move(weak_self)}};
 }
 
 template <typename T>
 inline std::shared_ptr<T> ObjectPool<T>::get_shared() {
+  std::weak_ptr<ObjectPool<T>> weak_self = this->weak_from_this();
+
+  if VUNLIKELY (weak_self.expired()) {
+    throw_not_shared_owned();
+  }
+
   std::unique_ptr<T> obj = acquire();
 
   try {
@@ -372,7 +389,7 @@ inline std::shared_ptr<T> ObjectPool<T>::get_shared() {
     throw;                    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  return {obj.release(), PoolDeleter{this->weak_from_this()}};
+  return {obj.release(), PoolDeleter{std::move(weak_self)}};
 }
 
 template <typename T>

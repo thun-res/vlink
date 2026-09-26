@@ -1105,6 +1105,44 @@ TEST_SUITE("ddsc-method") {
 }
 
 TEST_SUITE("ddsc-field") {
+  TEST_CASE("a publisher marked as a setter reaches late getters") {
+    const std::string topic = "ddsc://ddsc/review/marked_publisher";
+    Publisher<int> publisher(topic, InitType::kWithoutInit);
+    publisher.mark_as_setter();
+    REQUIRE(publisher.init());
+    REQUIRE(publisher.publish(42, true));
+
+    Getter<int> getter(topic);
+    REQUIRE(getter.wait_for_value(3s));
+    CHECK(getter.get() == std::optional<int>(42));
+  }
+
+  TEST_CASE("marked subscribers use the role captured at init") {
+    const std::string topic = "ddsc://ddsc/review/marked_subscriber";
+    std::atomic<int> received{0};
+    Subscriber<int> subscriber(topic, InitType::kWithoutInit);
+
+    SUBCASE("mark before init receives a cached field value") {
+      Setter<int> setter(topic);
+      setter.set(42);
+      subscriber.mark_as_getter();
+      REQUIRE(subscriber.init());
+      REQUIRE(subscriber.listen([&](const int& value) { received.store(value, std::memory_order_release); }));
+      CHECK(common_test::wait_until([&] { return received.load(std::memory_order_acquire) == 42; }, 3s));
+    }
+
+    SUBCASE("mark after init preserves event reception even before listen") {
+      Publisher<int> publisher(topic);
+      REQUIRE(subscriber.init());
+      subscriber.mark_as_getter();
+      CHECK_FALSE(subscriber.init());
+      REQUIRE(subscriber.listen([&](const int& value) { received.store(value, std::memory_order_release); }));
+      REQUIRE(publisher.wait_for_subscribers(3s));
+      REQUIRE(publisher.publish(43));
+      CHECK(common_test::wait_until([&] { return received.load(std::memory_order_acquire) == 43; }, 3s));
+    }
+  }
+
   TEST_CASE("setter and getter exchange values via all access patterns") {
     MESSAGE("[ddsc-field] setter and getter exchange values via all access patterns");
 
@@ -1187,20 +1225,27 @@ TEST_SUITE("ddsc-field") {
     }
   }
 
-  TEST_CASE("setter set before init is cached without breaking later writes") {
-    MESSAGE("[ddsc-field] setter set before init is cached without breaking later writes");
+  TEST_CASE("setter seeds cached values into native history after init and reinit") {
+    MESSAGE("[ddsc-field] setter seeds cached values into native history after init and reinit");
 
     Setter<int> setter(DdscConf("ddsc/fld/deferred_snapshot"), InitType::kWithoutInit);
     Getter<int> getter("ddsc://ddsc/fld/deferred_snapshot");
 
     setter.set(1234);
     REQUIRE(setter.init());
-    setter.set(5678);
 
-    CHECK(getter.wait_for_value(kDdscDiscoveryTimeout));
-    auto val = getter.get();
-    REQUIRE(val.has_value());
-    CHECK_EQ(*val, 5678);
+    REQUIRE(getter.wait_for_value(kDdscDiscoveryTimeout));
+    CHECK_EQ(getter.get(), std::optional<int>(1234));
+
+    REQUIRE(setter.deinit());
+    setter.set(5678);
+    REQUIRE(setter.init());
+
+    REQUIRE(common_test::wait_until([&] { return getter.get() == std::optional<int>(5678); }, kDdscDiscoveryTimeout));
+
+    Getter<int> late_getter("ddsc://ddsc/fld/deferred_snapshot");
+    REQUIRE(late_getter.wait_for_value(kDdscDiscoveryTimeout));
+    CHECK_EQ(late_getter.get(), std::optional<int>(5678));
   }
 
   TEST_CASE("invalid raw bytes are dropped before typed getter state updates") {
@@ -1638,6 +1683,7 @@ TEST_SUITE("ddsc-qos") {
     pub.set_property("dds.udp", "1");
     pub.set_property("dds.tcp", "0");
     pub.set_property("dds.shm", "0");
+    pub.set_property("dds.noblock", "1");
     pub.set_property("dds.less_memory", "1");
     pub.set_property("dds.user.test", "value");
 

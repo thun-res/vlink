@@ -35,7 +35,7 @@ namespace vlink {
 class ShmSetterImpl final : public SetterImpl {
  public:
   using Object = ShmPublisher;
-  static constexpr uint8_t kImplType = kPublisher | kSetter;
+  static constexpr uint8_t kImplType = kSetter;
 
   explicit ShmSetterImpl(const ShmConf& conf);
 
@@ -60,7 +60,6 @@ class ShmSetterImpl final : public SetterImpl {
 
   ShmConf conf_;
   std::shared_ptr<Object> object_;
-  SyncCallback sync_callback_;
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(ShmSetterImpl)
 };

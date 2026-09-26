@@ -208,6 +208,11 @@ VLINK_EXPORT void replace_string(std::string& str, const std::string& from, cons
 /**
  * @brief Converts UTF-8 to a wide-character string.
  *
+ * @details
+ * The conversion is independent of the process locale.  On POSIX a malformed, overlong or
+ * truncated sequence, a surrogate or a value above U+10FFFF yields an empty string; Windows
+ * substitutes U+FFFD instead.
+ *
  * @param input  UTF-8 source.
  * @return Wide-character result; empty on failure.
  */
@@ -215,6 +220,10 @@ VLINK_EXPORT void replace_string(std::string& str, const std::string& from, cons
 
 /**
  * @brief Converts a wide-character string to UTF-8.
+ *
+ * @details
+ * Locale-independent counterpart of @c string_to_wstring.  On POSIX a surrogate or a unit
+ * above U+10FFFF yields an empty string; Windows substitutes U+FFFD instead.
  *
  * @param input  Wide source.
  * @return UTF-8 result; empty on failure.
@@ -355,6 +364,11 @@ VLINK_EXPORT void replace_string(std::string& str, const std::string& from, cons
 /**
  * @brief Renders a signed 64-bit integer as a @c "0x..." hex literal.
  *
+ * @details
+ * Uses the uppercase digits of the unsigned overload; a negative value is printed as its 64-bit
+ * two's-complement pattern.  Convert a narrower type through its unsigned counterpart to keep
+ * its own width.
+ *
  * @param hex_number  Source value.
  * @return Hex literal string.
  */
@@ -493,27 +507,7 @@ inline constexpr bool contains_substring(std::string_view sv, std::string_view n
     return true;
   }
 
-  if VUNLIKELY (sv.size() < needle.size()) {
-    return false;
-  }
-
-  for (size_t i = 0; i <= sv.size() - needle.size(); ++i) {
-    bool match = true;
-
-    for (size_t j = 0; j < needle.size(); ++j) {
-      if (sv[i + j] != needle[j]) {
-        match = false;
-
-        break;
-      }
-    }
-
-    if (match) {
-      return true;
-    }
-  }
-
-  return false;
+  return sv.find(needle) != std::string_view::npos;
 }
 
 }  // namespace Helpers

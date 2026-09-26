@@ -5,7 +5,7 @@
 project(vlink-monitor LANGUAGES CXX)
 
 # src
-add_executable(${PROJECT_NAME} monitor.cc)
+add_executable(${PROJECT_NAME} monitor.cc monitor_runtime.cc monitor_decoder.cc monitor_terminal.cc monitor_common.cc)
 target_link_libraries(${PROJECT_NAME} PRIVATE vlink::vlink ${VLINK_NO_INTRA_LIBRARIES})
 target_link_libraries(${PROJECT_NAME} PRIVATE thirdparty::argparse)
 

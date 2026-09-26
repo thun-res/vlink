@@ -313,6 +313,19 @@ bool PointCloud::operator>>(Bytes& bytes) const noexcept {
   static constexpr size_t kVersionSize = sizeof(kWireVersion);
   static constexpr size_t kMagicNumberEndSize = sizeof(kMagicNumberEnd);
 
+  if (vertical_ && data_ != nullptr && size_ != 0 && pack_size_ != 0 &&
+      (bytes.is_owner() || bytes.size() == get_serialized_size())) {
+    const bool releases_output = bytes.is_owner() && bytes.size() != get_serialized_size();
+    const auto source = reinterpret_cast<uintptr_t>(data_);
+    const auto output = reinterpret_cast<uintptr_t>(releases_output ? bytes.real_data() : bytes.data());
+    const size_t output_size = releases_output ? bytes.capacity() + bytes.offset() : bytes.size();
+
+    if VUNLIKELY ((source >= output && source - output < output_size) ||
+                  (output > source && output - source < size_ * pack_size_)) {
+      return false;
+    }
+  }
+
   if (bytes.empty() || bytes.size() != get_serialized_size()) {
     bytes = Bytes::create(get_serialized_size());
 
@@ -494,6 +507,8 @@ bool PointCloud::deep_copy(const PointCloud& target) noexcept {
 
     std::memcpy(data_, target_data, capacity_);
     is_owner_ = true;
+  } else {
+    data_ = nullptr;
   }
 
   return true;

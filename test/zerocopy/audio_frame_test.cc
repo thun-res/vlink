@@ -140,6 +140,13 @@ TEST_SUITE("zerocopy-AudioFrame") {
     f.set_codec("OPUS");
     CHECK_EQ(std::string(f.codec()), "OPUS");
 
+    SUBCASE("own string view and substring") {
+      f.set_codec(f.codec());
+      CHECK_EQ(f.codec(), "OPUS");
+      f.set_codec(f.codec().substr(1));
+      CHECK_EQ(f.codec(), "PUS");
+    }
+
     SUBCASE("oversize codec is truncated to fit") {
       f.set_codec("this_codec_name_is_definitely_longer_than_sixteen_bytes");
       CHECK_LE(f.codec().size(), 15u);
@@ -156,6 +163,13 @@ TEST_SUITE("zerocopy-AudioFrame") {
 
     f.set_language("en");
     CHECK_EQ(std::string(f.language()), "en");
+
+    SUBCASE("own string view and substring") {
+      f.set_language(f.language());
+      CHECK_EQ(f.language(), "en");
+      f.set_language(f.language().substr(1));
+      CHECK_EQ(f.language(), "n");
+    }
 
     SUBCASE("oversize language is truncated to fit") {
       f.set_language("very_long_language_tag");

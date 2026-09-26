@@ -66,6 +66,11 @@ inline std::optional<double> get_numeric(const FlatbuffersObjectView& parent, co
   return api.get_numeric(parent, field);
 }
 
+inline int64_t get_integer(const FlatbuffersObjectView& parent, const reflection::Field& field) {
+  FlatbuffersObjectView api;
+  return api.get_integer(parent, field);
+}
+
 inline std::string get_string(const FlatbuffersObjectView& parent, const reflection::Field& field,
                               const reflection::Schema* schema = nullptr) {
   FlatbuffersObjectView api;

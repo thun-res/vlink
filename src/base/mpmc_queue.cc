@@ -24,6 +24,7 @@
 #include "./base/mpmc_queue.h"
 
 #include <chrono>
+#include <limits>
 #include <mutex>
 #include <new>
 #include <stdexcept>
@@ -79,7 +80,7 @@ bool MpmcQueueBase::is_full(bool real) const noexcept { return size(real) >= cap
 
 bool MpmcQueueBase::wait_not_empty(std::chrono::milliseconds timeout) noexcept {
   if (!empty(true)) {
-    return true;
+    return !quit_flag_.value.load(kMemoryOrderAcquire);
   }
 
   std::unique_lock lock(cv_mtx_);
@@ -103,7 +104,7 @@ bool MpmcQueueBase::wait_not_empty(std::chrono::milliseconds timeout) noexcept {
 
 bool MpmcQueueBase::wait_not_full(std::chrono::milliseconds timeout) noexcept {
   if (!is_full(true)) {
-    return true;
+    return !quit_flag_.value.load(kMemoryOrderAcquire);
   }
 
   std::unique_lock lock(cv_mtx_);
@@ -135,12 +136,12 @@ void MpmcQueueBase::notify_to_quit() noexcept {
 }
 
 MpmcQueueBase::MpmcQueueBase(size_t capacity) : capacity_(capacity) {
-  if VUNLIKELY (capacity_ < 1U) {
+  if VUNLIKELY (capacity_ < 1U || capacity_ == std::numeric_limits<size_t>::max()) {
     throw_mpmc_invalid_capacity();
   }
 }
 
-void MpmcQueueBase::throw_mpmc_invalid_capacity() { throw std::invalid_argument("capacity < 1U"); }
+void MpmcQueueBase::throw_mpmc_invalid_capacity() { throw std::invalid_argument("capacity must be in [1, SIZE_MAX)"); }
 
 void MpmcQueueBase::throw_mpmc_alignment_failure() { throw std::bad_alloc(); }
 

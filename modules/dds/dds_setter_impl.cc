@@ -83,6 +83,10 @@ Status::BasePtr DdsSetterImpl::get_status(Status::Type type) const {
 std::any DdsSetterImpl::get_native_handle() const { return publisher_; }
 
 void DdsSetterImpl::write(const Bytes& msg_data) {
+  if VUNLIKELY (!writer_) {
+    return;
+  }
+
   if (is_cdr_type) {
     DdsFactory::write_cdr_data(writer_.get(), msg_data);
     return;
@@ -91,6 +95,6 @@ void DdsSetterImpl::write(const Bytes& msg_data) {
   DdsFactory::write_data(writer_.get(), msg_data, seq_.fetch_add(1, std::memory_order_relaxed));
 }
 
-void DdsSetterImpl::sync(SyncCallback&& callback) { (void)callback; }
+void DdsSetterImpl::sync(SyncCallback&& callback) { callback(); }
 
 }  // namespace vlink

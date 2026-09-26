@@ -78,8 +78,8 @@ void DdsPublisherImpl::init() {
 
   listener_.emplace(this);
 
-  writer_ =
-      DdsFactory::create_datawriter(kPublisher, conf_, publisher_.get(), topic_.get(), &listener_.value(), is_cdr_type);
+  writer_ = DdsFactory::create_datawriter(init_impl_type, conf_, publisher_.get(), topic_.get(), &listener_.value(),
+                                          is_cdr_type);
 }
 
 void DdsPublisherImpl::deinit() {
@@ -110,6 +110,10 @@ std::any DdsPublisherImpl::get_native_handle() const { return publisher_; }
 bool DdsPublisherImpl::has_subscribers() const { return session_count_.load(std::memory_order_acquire) > 0; }
 
 bool DdsPublisherImpl::write(const Bytes& msg_data) {
+  if VUNLIKELY (!writer_) {
+    return false;
+  }
+
   if (is_cdr_type) {
     return DdsFactory::write_cdr_data(writer_.get(), msg_data);
   }

@@ -278,6 +278,7 @@ TEST_SUITE("extension-TriggerRecorder") {
     CHECK_EQ(config.retention_guard_ms, 500);
     CHECK_EQ(config.max_dump_file_count, 10);
     CHECK_FALSE(config.enable_compress);
+    CHECK_FALSE(config.enable_chunk_crc);
     CHECK_FALSE(config.busy_skip_data);
     CHECK_FALSE(config.destroy_on_offline);
     CHECK_EQ(config.overflow, vlink::TriggerRecorder::kDropNewest);
@@ -990,6 +991,130 @@ TEST_SUITE("extension-TriggerRecorder") {
     auto reader = vlink::BagReader::create(out);
     REQUIRE(reader != nullptr);
     CHECK_GT(reader->get_info().message_count, 0);
+  }
+
+  TEST_CASE("mixed Event and Field trigger dumps preserve actions and payloads during playback") {
+    std::string suffix = ".vdb";
+    bool use_plugin = false;
+    SUBCASE("vdb without bag plugin") {}
+    SUBCASE("vdb with bag plugin") { use_plugin = true; }
+    SUBCASE("vcap without bag plugin") { suffix = ".vcap"; }
+    SUBCASE("vcap with bag plugin") {
+      suffix = ".vcap";
+      use_plugin = true;
+    }
+
+    ScratchDir scratch("mixed-actions");
+    const std::string event_url = "intra://__trigger_test_event__#direct";
+    const std::string field_url = "intra://__trigger_test_field__#direct";
+    vlink::Publisher<vlink::Bytes> event_pub(event_url);
+    vlink::Subscriber<vlink::Bytes> event_observer(event_url);
+    event_observer.mark_as_getter();
+    vlink::Publisher<vlink::Bytes> field_pub(field_url, vlink::InitType::kWithoutInit);
+    field_pub.mark_as_setter();
+    REQUIRE(field_pub.init());
+
+    vlink::TriggerRecorder::Config config;
+    config.dump_dir = scratch.path;
+    config.default_pre_ms = 4000;
+    config.default_post_ms = 0;
+    config.enable_compress = false;
+    config.whitelist = {event_url, field_url};
+
+    vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
+    if (use_plugin) {
+      recorder.bind_bag_interface(std::make_shared<CountingBagPlugin>());
+    }
+
+    REQUIRE(recorder.async_run());
+    REQUIRE(wait_until_ready(recorder));
+
+    if (!event_pub.wait_for_subscribers(std::chrono::milliseconds(3000)) ||
+        !field_pub.wait_for_subscribers(std::chrono::milliseconds(3000))) {
+      recorder.quit();
+      recorder.wait_for_quit();
+      MESSAGE("multicast discovery unavailable; skipping the mixed-action playback assertions");
+      return;
+    }
+
+    REQUIRE(wait_until_ready(recorder));
+
+    const vlink::Bytes event_payload{0x11, 0x22};
+    const vlink::Bytes field_payload{0x33, 0x44};
+    for (int index = 0; index < 3; ++index) {
+      REQUIRE(field_pub.publish(field_payload));
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      REQUIRE(event_pub.publish(event_payload));
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    vlink::TriggerRecorder::TriggerParams params;
+    params.out_file = scratch.path + "/mixed" + suffix;
+    REQUIRE(recorder.dump(params));
+    REQUIRE(wait_until_idle(recorder, 8000));
+    recorder.quit();
+    recorder.wait_for_quit();
+
+    std::vector<vlink::Frame> recorded;
+    std::vector<vlink::Frame> played;
+    std::atomic<bool> finished{false};
+    auto reader = vlink::BagReader::create(params.out_file);
+    REQUIRE(reader != nullptr);
+    REQUIRE_EQ(reader->get_info().url_metas.size(), 2u);
+    for (const auto& meta : reader->get_info().url_metas) {
+      REQUIRE((meta.url == event_url || meta.url == field_url));
+      const bool is_field = meta.url == field_url;
+      CHECK_EQ(meta.url_type, is_field ? "Field" : "Event");
+      if (suffix == ".vcap") {
+        CHECK(meta.action_type == (is_field ? vlink::ActionType::kGet : vlink::ActionType::kSubscribe));
+      } else {
+        CHECK(meta.action_type == vlink::ActionType::kUnknownAction);
+      }
+      CHECK_EQ(meta.count, 3u);
+    }
+
+    REQUIRE(reader->open_cursor());
+    vlink::Frame frame;
+    while (reader->read_next(frame)) {
+      recorded.push_back(frame);
+    }
+    CHECK_FALSE(reader->fail());
+    REQUIRE_EQ(recorded.size(), 6u);
+    for (size_t index = 0; index < recorded.size(); ++index) {
+      const bool is_field = index % 2 == 0;
+      const auto& captured = recorded[index];
+      CHECK_EQ(captured.url, is_field ? field_url : event_url);
+      CHECK(captured.action_type == (is_field ? vlink::ActionType::kGet : vlink::ActionType::kSubscribe));
+      CHECK(captured.data == (is_field ? field_payload : event_payload));
+      if (index > 0) {
+        CHECK_GE(captured.timestamp, recorded[index - 1].timestamp);
+      }
+    }
+
+    reader->register_output_callback([&](const vlink::Frame& output) { played.push_back(output); });
+    reader->register_finish_callback([&](bool interrupted) {
+      CHECK_FALSE(interrupted);
+      finished.store(true, std::memory_order_release);
+    });
+    REQUIRE(reader->async_run());
+    vlink::BagReader::Config play_config;
+    play_config.force_delay = 0;
+    reader->play(play_config);
+    REQUIRE(common_test::wait_until([&] { return finished.load(std::memory_order_acquire); },
+                                    std::chrono::milliseconds(3000)));
+    REQUIRE(reader->wait_for_idle(3000));
+    reader->quit();
+    REQUIRE(reader->wait_for_quit(3000));
+
+    REQUIRE_EQ(played.size(), recorded.size());
+    for (size_t index = 0; index < played.size(); ++index) {
+      CHECK_EQ(played[index].url, recorded[index].url);
+      CHECK(played[index].action_type == recorded[index].action_type);
+      CHECK_EQ(played[index].timestamp, recorded[index].timestamp);
+      CHECK_EQ(played[index].ser_type, recorded[index].ser_type);
+      CHECK(played[index].schema_type == recorded[index].schema_type);
+      CHECK(played[index].data == recorded[index].data);
+    }
   }
 
   TEST_CASE("per-trigger whitelist and blacklist can be applied together") {

@@ -53,11 +53,16 @@ void MqttClientImpl::init() {
     auto* message_loop = get_message_loop();
 
     if (message_loop) {
-      message_loop->post_task([this, weak_object]() {
+      message_loop->post_task([this, weak_object, message_loop]() {
         auto object = weak_object.lock();
 
-        if VLIKELY (object && object->is_contains_impl(this)) {
-          ClientImpl::update_connected();
+        if VLIKELY (object) {
+          bool attached = false;
+          object->invoke_callback(this, [&]() { attached = get_message_loop() == message_loop; });
+
+          if (attached) {
+            ClientImpl::update_connected();
+          }
         }
       });
     } else {
@@ -115,9 +120,11 @@ bool MqttClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::ch
     }
 
     auto ack_request = ack_manager_.create_request();
+    uint64_t seq = 0;
+    bool has_seq = false;
 
-    auto ack_function = [this, ack_request, callback = std::move(callback)](const Bytes& resp_data) mutable {
-      ack_manager_.notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
+    auto ack_function = [ack_request, callback = std::move(callback)](const Bytes& resp_data) mutable {
+      AckManager::notify(ack_request, [&callback, &resp_data]() { callback(resp_data); });
     };
 
     auto remaining = timeout.count() - elapsed;
@@ -131,14 +138,22 @@ bool MqttClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::ch
       object_timeout = static_cast<int>(remaining);
     }
 
-    return ack_manager_.process(ack_request, object_timeout,
-                                [this, &req_data, ack_function = std::move(ack_function), object_timeout]() mutable {
-                                  return object_->call(this, static_cast<uint64_t>(conf_.hash_code), req_data,
-                                                       std::move(ack_function), object_timeout);
-                                });
+    bool ret =
+        ack_manager_.process(ack_request, object_timeout,
+                             [this, &req_data, &seq, &has_seq, ack_function = std::move(ack_function)]() mutable {
+                               has_seq = object_->call(this, static_cast<uint64_t>(conf_.hash_code), req_data,
+                                                       std::move(ack_function), &seq, false);
+                               return has_seq;
+                             });
+
+    if VUNLIKELY (!ret && has_seq) {
+      object_->remove_response_callback(seq);
+    }
+
+    return ret;
   }
 
-  return object_->call(this, static_cast<uint64_t>(conf_.hash_code), req_data, std::move(callback), timeout.count());
+  return object_->call(this, static_cast<uint64_t>(conf_.hash_code), req_data, std::move(callback));
 }
 
 }  // namespace vlink

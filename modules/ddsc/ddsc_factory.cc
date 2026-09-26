@@ -525,7 +525,8 @@ void DdscFactory::set_participant_qos(int32_t domain_id, dds_qos_t* dds_qos, con
     return;
   }
 
-  static const std::string& ip_str = Utils::get_env("VLINK_DDS_IP");
+  static const std::string& discovery_ip_str = Utils::get_env("VLINK_DISCOVER_IP");
+  static const std::string& ip_str = Utils::get_env("VLINK_DDS_IP", discovery_ip_str);
   static const std::string& ip_multicast_str = Utils::get_env("VLINK_DDS_MULTICAST_IP");
   static const std::string& peer_str = Utils::get_env("VLINK_DDS_PEER");
   static const std::string& buf_str = Utils::get_env("VLINK_DDS_BUF");
@@ -534,6 +535,7 @@ void DdscFactory::set_participant_qos(int32_t domain_id, dds_qos_t* dds_qos, con
   static bool enable_udp = Helpers::to_int(Utils::get_env("VLINK_DDS_UDP"), 1) != 0;
   static bool enable_tcp = Helpers::to_int(Utils::get_env("VLINK_DDS_TCP"), 0) != 0;
   static bool enable_shm = Helpers::to_int(Utils::get_env("VLINK_DDS_SHM"), 0) != 0;
+  static bool enable_noblock = Helpers::to_int(Utils::get_env("VLINK_DDS_NOBLOCK"), 0) != 0;
 
   static bool enable_less_memory = Helpers::to_int(Utils::get_env("VLINK_DDS_LESS_MEMORY"), 0) != 0;
 
@@ -549,6 +551,7 @@ void DdscFactory::set_participant_qos(int32_t domain_id, dds_qos_t* dds_qos, con
   bool prop_enable_udp = enable_udp;
   bool prop_enable_tcp = enable_tcp;
   [[maybe_unused]] bool prop_enable_shm = enable_shm;
+  [[maybe_unused]] bool prop_enable_noblock = enable_noblock;
   [[maybe_unused]] bool prop_enable_less_memory = enable_less_memory;
 
   if (!buf_str.empty()) {
@@ -580,6 +583,8 @@ void DdscFactory::set_participant_qos(int32_t domain_id, dds_qos_t* dds_qos, con
       prop_enable_tcp = (value == "1");
     } else if (prop == "dds.shm") {
       prop_enable_shm = (value == "1");
+    } else if (prop == "dds.noblock") {
+      prop_enable_noblock = (value == "1");
     } else if (prop == "dds.less_memory") {
       prop_enable_less_memory = (value == "1");
     } else {
@@ -587,6 +592,7 @@ void DdscFactory::set_participant_qos(int32_t domain_id, dds_qos_t* dds_qos, con
     }
   }
 
+  (void)prop_enable_noblock;
   (void)prop_enable_less_memory;
 
   if (factory.domain_map_.find(domain_id) != factory.domain_map_.end()) {

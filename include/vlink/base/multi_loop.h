@@ -83,7 +83,7 @@
  *
  * @note Shared state touched inside callbacks must be protected externally.  Timers attached to
  *       a @c MultiLoop fire as queue tasks; the dispatcher forwards them to a worker.  The
- *       destructor is defaulted; always call @c quit and @c wait_for_quit before destruction.
+ *       destructor stops the dispatcher and waits for its workers when called externally.
  */
 
 #pragma once
@@ -122,11 +122,13 @@ class VLINK_EXPORT MultiLoop : public MessageLoop {
   explicit MultiLoop(size_t thread_num, Type type);
 
   /**
-   * @brief Defaulted destructor.
+   * @brief Stops the dispatcher, then tears the loop down.
    *
-   * @warning Call @c quit and @c wait_for_quit before destruction; the base
-   *          @c MessageLoop destructor runs after @c MultiLoop's members are already torn down
-   *          and cannot guarantee the worker pool is reset.
+   * @details
+   * Quits the loop and waits for the dispatcher to leave before any @c MultiLoop member is
+   * released, because the base @c MessageLoop destructor only runs after this one has returned
+   * and the dispatcher reaches @c MultiLoop state through the virtual overrides.  The wait is
+   * skipped when called from the dispatcher or a worker thread of this loop.
    */
   ~MultiLoop() override;
 

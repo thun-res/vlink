@@ -276,7 +276,7 @@ int64_t ElapsedTimer::restart() noexcept {
   if (old_time < 0) {
     return old_time;
   } else {
-    return new_time - old_time;
+    return new_time >= old_time ? new_time - old_time : 0;
   }
 }
 

@@ -983,6 +983,7 @@ AnalyzerWindow::~AnalyzerWindow() {
   }
 
   player_.reset();
+  unit_map_.clear();
 
   delete ui;
 }
@@ -1252,11 +1253,32 @@ void AnalyzerWindow::on_pushButton_gen_clicked() {
     return;
   }
 
-  if (!load_proto(proto_dir_)) {
+  bool needs_proto = false;
+  bool needs_fbs = false;
+
+  if (type_ != kFrequencyType) {
+    for (const auto& meta : player_->get_info().url_metas) {
+      const auto units = unit_map_.find(meta.url);
+
+      if (units == unit_map_.end()) {
+        continue;
+      }
+
+      for (const auto& unit : units->second) {
+        const auto schema_type =
+            vlink::SchemaData::resolve_type(unit.schema_type_override.value_or(meta.schema_type), meta.ser_type);
+
+        needs_proto |= schema_type == vlink::SchemaType::kProtobuf;
+        needs_fbs |= schema_type == vlink::SchemaType::kFlatbuffers;
+      }
+    }
+  }
+
+  if (needs_proto && !load_proto(proto_dir_)) {
     return;
   }
 
-  if (!load_fbs(fbs_dir_)) {
+  if (needs_fbs && !load_fbs(fbs_dir_)) {
     return;
   }
 
@@ -1657,13 +1679,15 @@ bool AnalyzerWindow::load_bag(const QString& path) {
     double y_value = 0;
 
     auto& unit_list = unit_map_[url];
+    google::protobuf::Message* proto_msg = nullptr;
+    bool proto_parse_attempted = false;
 
     for (auto& unit : unit_list) {
       if (unit.index < 0) {
         continue;
       }
 
-      auto ser = frame.ser_type;
+      const auto& ser = frame.ser_type;
 
       if (type_ == kFrequencyType) {
         unit.x_values.append(x_value);
@@ -1717,33 +1741,41 @@ bool AnalyzerWindow::load_bag(const QString& path) {
               continue;
             }
 
-            if (unit.cached_ser != ser) {
-              unit.cached_ser = ser;
-              unit.root_msg.reset();
-              unit.fbs_context.reset();
-            }
+            if (!proto_parse_attempted) {
+              proto_parse_attempted = true;
 
-            if (!unit.root_msg) {
-              const auto* descriptor = des_pool_->FindMessageTypeByName(ser);
-
-              if (descriptor == nullptr) {
-                continue;
+              if (unit.cached_ser != ser) {
+                unit.cached_ser = ser;
+                unit.root_msg.reset();
+                unit.fbs_context.reset();
               }
 
-              const auto* prototype = factory_->GetPrototype(descriptor);
+              if (!unit.root_msg) {
+                const auto* descriptor = des_pool_->FindMessageTypeByName(ser);
 
-              if (prototype == nullptr) {
-                continue;
+                if (descriptor == nullptr) {
+                  continue;
+                }
+
+                const auto* prototype = factory_->GetPrototype(descriptor);
+
+                if (prototype == nullptr) {
+                  continue;
+                }
+
+                unit.root_msg.reset(prototype->New());
               }
 
-              unit.root_msg.reset(prototype->New());
+              if (unit.root_msg->ParseFromArray(raw_data.data(), static_cast<int>(raw_data.size()))) {
+                proto_msg = unit.root_msg.get();
+              }
             }
 
-            if (unit.root_msg && unit.root_msg->ParseFromArray(raw_data.data(), static_cast<int>(raw_data.size()))) {
+            if (proto_msg) {
               int depth = 0;
               VariantType value;
 
-              if (get_proto_value(*unit.root_msg, condition_list, depth, value)) {
+              if (get_proto_value(*proto_msg, condition_list, depth, value)) {
                 if (std::holds_alternative<int64_t>(value)) {
                   pvalue.emplace(std::get<int64_t>(value));
                 } else if (std::holds_alternative<double>(value)) {
@@ -1808,8 +1840,6 @@ bool AnalyzerWindow::load_bag(const QString& path) {
         }
 
         {
-          vlink::Exprtk::VariableList variable_list;
-
           y_value = 0;
           bool y_valid = false;
 
@@ -1821,10 +1851,6 @@ bool AnalyzerWindow::load_bag(const QString& path) {
 
             y_value = pvalue.value();
             y_valid = true;
-
-            if (unit.ext_operation_pro) {
-              variable_list.emplace_back(expression, pvalue.value());
-            }
           }
 
           if (!y_valid) {
@@ -1832,8 +1858,12 @@ bool AnalyzerWindow::load_bag(const QString& path) {
           }
 
           if (unit.ext_operation_pro) {
-            if (!unit.ext_operation_x.empty()) {
-              auto result = vlink::Exprtk::parse(unit.ext_operation_x, variable_list);
+            for (auto& [expression, value] : unit.variable_list) {
+              value = pvalue_map.at(expression).value();
+            }
+
+            if (unit.operation_x) {
+              auto result = unit.operation_x->value();
 
               if (!result.has_value()) {
                 continue;
@@ -1842,8 +1872,8 @@ bool AnalyzerWindow::load_bag(const QString& path) {
               x_value = result.value();
             }
 
-            if (!unit.ext_operation_y.empty()) {
-              auto result = vlink::Exprtk::parse(unit.ext_operation_y, variable_list);
+            if (unit.operation_y) {
+              auto result = unit.operation_y->value();
 
               if (!result.has_value()) {
                 continue;
@@ -2287,6 +2317,20 @@ bool AnalyzerWindow::load_config(const QString& path) {
           ui->label_type->setStyleSheet("QLabel { background-color: red; color: white; }");
 
           return false;
+        }
+
+        if (unit.ext_operation_pro) {
+          for (const auto& expression : unit.expressions) {
+            unit.variable_list.emplace_back(expression, 0.0);
+          }
+
+          if (!unit.ext_operation_x.empty()) {
+            unit.operation_x.emplace(unit.ext_operation_x, unit.variable_list);
+          }
+
+          if (!unit.ext_operation_y.empty()) {
+            unit.operation_y.emplace(unit.ext_operation_y, unit.variable_list);
+          }
         }
 
         auto& unit_list = unit_map_[unit.url];
@@ -2859,7 +2903,9 @@ void AnalyzerWindow::create_plot() {
       if (y_min_value_ == QCPRange::maxRange || y_max_value_ == -QCPRange::maxRange) {
         y_range_ = {-1.0, 61.0};
       } else {
-        double p = std::abs(y_max_value_ - y_min_value_) * 0.05;
+        double p = y_max_value_ == y_min_value_ ? std::max(std::abs(y_min_value_) * 0.05, 1.0)
+                                                : std::abs(y_max_value_ - y_min_value_) * 0.05;
+
         y_range_ = {y_min_value_ - p, y_max_value_ + p};
       }
 
@@ -3015,7 +3061,9 @@ void AnalyzerWindow::create_plot() {
       if (x_min_value_ == QCPRange::maxRange || x_max_value_ == -QCPRange::maxRange) {
         x_range_ = {-1.0, 61.0};
       } else {
-        double p = std::abs(x_max_value_ - x_min_value_) * 0.05;
+        double p = x_max_value_ == x_min_value_ ? std::max(std::abs(x_min_value_) * 0.05, 1.0)
+                                                : std::abs(x_max_value_ - x_min_value_) * 0.05;
+
         x_range_ = {x_min_value_ - p, x_max_value_ + p};
       }
 
@@ -3024,7 +3072,9 @@ void AnalyzerWindow::create_plot() {
       if (y_min_value_ == QCPRange::maxRange || y_max_value_ == -QCPRange::maxRange) {
         y_range_ = {-1.0, 61.0};
       } else {
-        double p = std::abs(y_max_value_ - y_min_value_) * 0.05;
+        double p = y_max_value_ == y_min_value_ ? std::max(std::abs(y_min_value_) * 0.05, 1.0)
+                                                : std::abs(y_max_value_ - y_min_value_) * 0.05;
+
         y_range_ = {y_min_value_ - p, y_max_value_ + p};
       }
 

@@ -37,6 +37,7 @@
 #include "./base/helpers.h"
 #include "./base/logger.h"
 #include "./base/utils.h"
+#include "./extension/discovery_viewer.h"
 #include "./impl/node_impl.h"
 #include "./impl/types.h"
 #include "./version.h"
@@ -71,7 +72,7 @@ static constexpr SocketHandle kInvalidSocket = -1;
 [[maybe_unused]] static constexpr int kReportInterval = 500;
 [[maybe_unused]] static constexpr size_t kMaxTaskSize = 10000U;
 [[maybe_unused]] static constexpr uint32_t kMaxElapsedTime = 1000;
-[[maybe_unused]] static constexpr int kBroadcastSendPort = 51694;
+[[maybe_unused]] static constexpr int kInterfaceWarnInterval = 60000;
 [[maybe_unused]] static constexpr int kSendTTL = 3;
 [[maybe_unused]] static constexpr int kMaxMtuSize = 1450;
 
@@ -101,6 +102,33 @@ template <typename T>
   }
 }
 
+static void send_message_list(SocketHandle sock, const sockaddr_in& address, const std::vector<std::string>& list) {
+  for (const auto& message : list) {
+    if VUNLIKELY (::sendto(sock, message.c_str(), message.length(), 0,
+                           reinterpret_cast<const struct sockaddr*>(&address), sizeof(address)) < 0) {
+      Utils::yield_cpu();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      continue;            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+  }
+}
+
+[[maybe_unused]] static void send_multicast_list(SocketHandle sock, const sockaddr_in& address,
+                                                 const std::vector<std::string>& ip_list,
+                                                 const std::vector<std::string>& message_list) {
+  for (const auto& ip : ip_list) {
+    in_addr interface_addr;
+    interface_addr.s_addr = inet_addr(ip.c_str());
+
+    if VUNLIKELY (::setsockopt(sock, IPPROTO_IP, IP_MULTICAST_IF, reinterpret_cast<const char*>(&interface_addr),
+                               sizeof(interface_addr)) < 0) {
+      VLOG_W_EVERY_MS(kInterfaceWarnInterval, "DiscoveryReporter: Failed to set multicast interface [", ip, "].");
+      continue;
+    }
+
+    send_message_list(sock, address, message_list);
+  }
+}
+
 // DiscoveryReporter::Impl
 struct DiscoveryReporter::Impl final {
   std::unordered_set<NodeImpl*> info_set;
@@ -114,7 +142,7 @@ struct DiscoveryReporter::Impl final {
 
   SocketHandle sock{kInvalidSocket};
   sockaddr_in address;
-  bool enable_native_discovery{false};
+  std::vector<std::string> ip_list;
 #ifdef _WIN32
   bool winsock_initialized{false};
 #endif
@@ -126,7 +154,9 @@ DiscoveryReporter::DiscoveryReporter() : impl_(std::make_unique<Impl>()) {
   const std::string native_discovery = Utils::get_env("VLINK_DISCOVER_NATIVE");
 
   if (native_discovery == "1") {
-    impl_->enable_native_discovery = true;
+    impl_->ip_list.emplace_back("127.0.0.1");
+  } else {
+    impl_->ip_list = Helpers::split_any(Utils::get_env("VLINK_DISCOVER_IP"));
   }
 
   impl_->runtime_version = Version{VLINK_VERSION_MAJOR, VLINK_VERSION_MINOR, VLINK_VERSION_PATCH}.to_string();
@@ -172,23 +202,13 @@ DiscoveryReporter::DiscoveryReporter() : impl_(std::make_unique<Impl>()) {
   }
 #endif
 
+  DiscoveryViewer::warn_listen_domain();
+
   std::memset(&impl_->address, 0, sizeof(impl_->address));
 
   impl_->address.sin_family = AF_INET;
   impl_->address.sin_addr.s_addr = inet_addr(kBroadcastAddress);
-
-  if (impl_->enable_native_discovery) {
-    struct in_addr local_interface;
-    local_interface.s_addr = inet_addr("127.0.0.1");
-
-    if VUNLIKELY (::setsockopt(impl_->sock, IPPROTO_IP, IP_MULTICAST_IF,
-                               reinterpret_cast<const char*>(&local_interface), sizeof(local_interface)) < 0) {
-      VLOG_F("DiscoveryReporter: Failed to set multicast interface to loopback.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      return;                                                                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-  }
-
-  impl_->address.sin_port = htons(kBroadcastSendPort);
+  impl_->address.sin_port = htons(DiscoveryViewer::get_listen_port());
 
   impl_->timer.set_interval(kReportFirstInterval);
   impl_->timer.set_loop_count(Timer::kInfinite);
@@ -360,14 +380,15 @@ void DiscoveryReporter::send_report() {
     rebuild_message();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
 
-  for (const auto& message : impl_->message_list) {
-    if VUNLIKELY (::sendto(impl_->sock, message.c_str(), message.length(), 0,
-                           reinterpret_cast<struct sockaddr*>(&impl_->address), sizeof(impl_->address)) < 0) {
-      // VLOG_W("Failed to send broadcast message.");
-      Utils::yield_cpu();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      continue;            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
+#if VLINK_DISCOVERY_MULTICAST
+  if (impl_->ip_list.empty()) {
+    send_message_list(impl_->sock, impl_->address, impl_->message_list);
+  } else {
+    send_multicast_list(impl_->sock, impl_->address, impl_->ip_list, impl_->message_list);
   }
+#else
+  send_message_list(impl_->sock, impl_->address, impl_->message_list);
+#endif
 
   ++impl_->seq;
 }
@@ -376,13 +397,17 @@ void DiscoveryReporter::send_report() {
 void DiscoveryReporter::send_offline() {
   std::lock_guard lock(impl_->mtx);
 
-  static std::string offline_message = "offline\n" + impl_->local_message;
+  const std::vector<std::string> offline_list{"offline\n" + impl_->local_message};
 
-  if VUNLIKELY (::sendto(impl_->sock, offline_message.c_str(), offline_message.length(), 0,
-                         reinterpret_cast<struct sockaddr*>(&impl_->address), sizeof(impl_->address)) < 0) {
-    // VLOG_W("Failed to send broadcast message.");
-    Utils::yield_cpu();
+#if VLINK_DISCOVERY_MULTICAST
+  if (impl_->ip_list.empty()) {
+    send_message_list(impl_->sock, impl_->address, offline_list);
+  } else {
+    send_multicast_list(impl_->sock, impl_->address, impl_->ip_list, offline_list);
   }
+#else
+  send_message_list(impl_->sock, impl_->address, offline_list);
+#endif
 }
 // LCOV_EXCL_STOP GCOVR_EXCL_STOP
 

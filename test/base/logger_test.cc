@@ -34,6 +34,7 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -280,11 +281,11 @@ void run_logger_child_case(const std::string& child_case) {
 
 void run_logger_child(const std::string& child_case, Process::EnvironmentMap environment) {
   static constexpr const char* kIsolatedEnvironmentVariables[]{
-      "VLINK_LOG_LEVEL",       "VLINK_LOG_CONSOLE_LEVEL", "VLINK_LOG_FILE_LEVEL",  "VLINK_LOG_CONSOLE_UNORDER",
-      "VLINK_LOG_ENABLE_UTC",  "VLINK_LOG_CONSOLE_FMT",   "VLINK_LOG_PLUGIN",      "VLINK_LOG_DIR",
-      "VLINK_LOG_MAX_SIZE",    "VLINK_LOG_MAX_COUNT",     "VLINK_LOG_FLUSH_DELAY", "VLINK_LOG_STORE_STRATEGY",
-      "VLINK_LOG_OPEN_APPEND", "VLINK_LOG_BLOCK_SYNC",    "VLINK_LOG_WRITE_DEPTH", "VLINK_MEMORY_LEVEL",
-      "VLINK_MEMORY_PREALLOC", "VLINK_MEMORY_BATCH_SIZE",
+      "VLINK_LOG_LEVEL",       "VLINK_LOG_CONSOLE_LEVEL", "VLINK_LOG_FILE_LEVEL",    "VLINK_LOG_CONSOLE_UNORDER",
+      "VLINK_LOG_UTC_ENABLE",  "VLINK_LOG_CONSOLE_FMT",   "VLINK_LOG_PLUGIN",        "VLINK_LOG_DIR",
+      "VLINK_LOG_MAX_SIZE",    "VLINK_LOG_MAX_COUNT",     "VLINK_LOG_FLUSH_DELAY",   "VLINK_LOG_STORE_STRATEGY",
+      "VLINK_LOG_OPEN_APPEND", "VLINK_LOG_BLOCK_SYNC",    "VLINK_LOG_WRITE_DEPTH",   "VLINK_MEMORY_LEVEL",
+      "VLINK_MEMORY_PREALLOC", "VLINK_MEMORY_BATCH_SIZE", "VLINK_MEMORY_LAZY_SCALE",
   };
 
   for (const char* name : kIsolatedEnvironmentVariables) {
@@ -301,6 +302,13 @@ void run_logger_child(const std::string& child_case, Process::EnvironmentMap env
                "--test-case=child process covers logger environment initialization branches", "--no-version"});
   REQUIRE(child.wait_for_finished(Process::kDefaultExecuteTimeoutMs));
   CHECK_EQ(child.get_exit_code(), 0);
+}
+
+struct NestedLogValue final {};
+
+std::ostream& operator<<(std::ostream& stream, const NestedLogValue&) {
+  VLOG_I("nested formatter record");
+  return stream << "value";
 }
 
 }  // namespace
@@ -625,6 +633,51 @@ TEST_SUITE("base-Logger") {
     Logger::register_console_handler(nullptr);
   }
 
+  TEST_CASE("SLOG preserves its prefix while an argument logs nested records") {
+    Logger::init("test");
+    Logger::set_console_level(Logger::kInfo);
+    Logger::set_file_level(Logger::kOff);
+
+    std::vector<std::string> records;
+    Logger::register_console_handler(
+        [&records](Logger::Level, std::string_view record) { records.emplace_back(record); });
+
+    auto evaluate = [] {
+      VLOG_I("inner stream record");
+      SLOG_I << "inner RAII record";
+      return 7;
+    };
+
+    SLOG_I << "outer=" << evaluate() << "/done";
+    Logger::register_console_handler(nullptr);
+
+    REQUIRE_EQ(records.size(), 3u);
+    CHECK(records[0].find("inner stream record") != std::string::npos);
+    CHECK(records[1].find("inner RAII record") != std::string::npos);
+    CHECK(records[2].find("outer=7/done") != std::string::npos);
+    CHECK(records[2].find("inner") == std::string::npos);
+  }
+
+  TEST_CASE("stream logging preserves its buffer across a logging insertion operator") {
+    Logger::init("test");
+    Logger::set_console_level(Logger::kInfo);
+    Logger::set_file_level(Logger::kOff);
+
+    std::vector<std::string> records;
+    Logger::register_console_handler(
+        [&records](Logger::Level, std::string_view record) { records.emplace_back(record); });
+
+    SLOG_I << "RAII=" << NestedLogValue{} << "/done";
+    VLOG_I("stream=", NestedLogValue{}, "/done");
+    Logger::register_console_handler(nullptr);
+
+    REQUIRE_EQ(records.size(), 4u);
+    CHECK(records[0].find("nested formatter record") != std::string::npos);
+    CHECK(records[1].find("RAII=value/done") != std::string::npos);
+    CHECK(records[2].find("nested formatter record") != std::string::npos);
+    CHECK(records[3].find("stream=value/done") != std::string::npos);
+  }
+
   TEST_CASE("register_console_handler receives the correct level") {
     Logger::init("test");
     Logger::set_console_level(Logger::kWarn);
@@ -743,6 +796,12 @@ TEST_SUITE("base-Logger") {
 
     VLOG_I(static_cast<unsigned char>('A'));
     CHECK_EQ(received, "A");
+
+    VLOG_I(std::hex, 255);
+    CHECK_EQ(received, "ff");
+
+    VLOG_I(255);
+    CHECK_EQ(received, "255");
 
     Logger::set_stream_flag(std::ios_base::hex);
     VLOG_I(255);
@@ -934,7 +993,7 @@ TEST_SUITE("base-Logger") {
                                            {"VLINK_LOG_FILE_LEVEL", "Trace"},
                                            {"VLINK_LOG_CONSOLE_FMT", "1"},
                                            {"VLINK_LOG_CONSOLE_UNORDER", "1"},
-                                           {"VLINK_LOG_ENABLE_UTC", "1"},
+                                           {"VLINK_LOG_UTC_ENABLE", "1"},
                                            {"VLINK_LOG_DIR", timestamp_dir.generic_string() + "/"},
                                            {"VLINK_LOG_MAX_SIZE", "512"},
                                            {"VLINK_LOG_MAX_COUNT", "2"},
@@ -1017,6 +1076,96 @@ TEST_SUITE("base-Logger") {
   TEST_CASE("init with a non-empty log path does not crash") {
     Logger::init("vlink_logtest_app", "/tmp/vlink-logtest");
     Logger::init("test");
+  }
+}
+
+TEST_SUITE("base-Logger") {
+  TEST_CASE("handlers can replace themselves and nested fatal still throws") {
+    Logger::set_console_level(Logger::kInfo);
+    Logger::set_file_level(Logger::kInfo);
+
+    std::vector<std::string> received;
+    int calls = 0;
+
+    Logger::register_file_handler([&](Logger::Level, std::string_view message) { received.emplace_back(message); });
+    Logger::register_console_handler([&](Logger::Level, std::string_view) {
+      ++calls;
+      Logger::register_console_handler(nullptr);
+      CHECK_THROWS_AS(CLOG_F("INNER %d", 7), std::runtime_error);
+    });
+
+    CLOG_I("OUTER %d", 1);
+
+    REQUIRE(received.size() == 1);
+    CHECK(received.front() == "OUTER 1");
+    CHECK(calls == 1);
+
+    Logger::register_console_handler(
+        [&](Logger::Level, std::string_view) { CHECK_THROWS_AS(MLOG_F("INNER {}", 8), std::runtime_error); });
+
+    MLOG_I("FORMAT {}", 2);
+
+    REQUIRE(received.size() == 2);
+    CHECK(received.back() == "FORMAT 2");
+
+    Logger::register_console_handler(nullptr);
+    Logger::set_console_level(Logger::kOff);
+    Logger::register_file_handler([&](Logger::Level, std::string_view) {
+      ++calls;
+      Logger::register_file_handler(nullptr);
+      Logger::register_console_handler(nullptr);
+    });
+
+    VLOG_I("self unregister");
+
+    CHECK(calls == 2);
+
+    Logger::set_console_level(Logger::kTrace);
+    Logger::set_file_level(Logger::kOff);
+  }
+
+  TEST_CASE("handler destruction cannot revive a stale pending registration") {
+    Logger::init("test");
+
+    struct RegisterOnDestroy final {
+      void (*register_handler)(Logger::Callback&&);
+      int& calls;
+
+      ~RegisterOnDestroy() {
+        register_handler([count = &calls](Logger::Level, std::string_view) { ++*count; });
+      }
+    };
+
+    for (auto register_handler : {&Logger::register_console_handler, &Logger::register_file_handler}) {
+      Logger::set_console_level(Logger::kInfo);
+      Logger::set_file_level(Logger::kOff);
+
+      int pending_calls = 0;
+      int later_calls = 0;
+      auto probe = std::unique_ptr<RegisterOnDestroy>(new RegisterOnDestroy{register_handler, later_calls});
+
+      Logger::register_console_handler([&pending_calls, probe = std::move(probe)](Logger::Level, std::string_view) {
+        Logger::register_console_handler([&pending_calls](Logger::Level, std::string_view) { ++pending_calls; });
+        Logger::register_file_handler([&pending_calls](Logger::Level, std::string_view) { ++pending_calls; });
+      });
+
+      VLOG_I("stage pending handlers");
+
+      const bool console = register_handler == &Logger::register_console_handler;
+      Logger::set_console_level(console ? Logger::kInfo : Logger::kOff);
+      Logger::set_file_level(console ? Logger::kOff : Logger::kInfo);
+
+      VLOG_I("verify latest handler registration");
+
+      CHECK_EQ(pending_calls, 0);
+      CHECK_EQ(later_calls, 1);
+
+      Logger::register_console_handler(nullptr);
+      Logger::register_file_handler(nullptr);
+    }
+
+    Logger::set_console_level(Logger::kTrace);
+    Logger::set_file_level(Logger::kOff);
   }
 }
 

@@ -79,7 +79,7 @@ bool IntraSubscriberImpl::listen(MsgCallback&& callback) {
 
   object_->register_msg_callback(this, std::move(callback));
 
-  if VLIKELY (was_empty) {
+  if VLIKELY (was_empty || init_impl_type == kGetter) {
     object_->traverse_sub_connect_callback([](NodeImpl*, const auto& target_callback) { target_callback(true); });
   }
 

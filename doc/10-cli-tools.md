@@ -122,6 +122,8 @@ vlink-info -l
 
 `diag` 遍历一组诊断项（VLink 版本、可用 IP、组播路由、内核网络缓冲、文件描述符上限、`/dev/shm` 空间、时间同步、CPU/内存占用、相关工具是否在运行等），以彩色状态栏汇报，并将退出码置为失败项数量，全部通过返回 0，因而可直接用于脚本判定。
 
+`VLINK_CYCLONEDDS_URI` 可包含 URI 或内联 XML；配置非空时诊断标为 WARNING，实际内容由 Cyclone DDS 启动时校验。
+
 ```bash
 vlink-check diag
 
@@ -137,6 +139,8 @@ vlink-check diag -f dds
 | `-f` / `--filter <substring>` | 仅执行标题包含指定子串的诊断项 |
 
 `env` 列出常用环境变量子集（路径/插件、日志、bag/发现、各传输后端、TLS 等），已设置项以绿色、未设置项以红色标识，用于快速核对配置一致性；它仅覆盖常用子集，完整清单以 [集成与环境变量](13-integration.md) 为准。
+
+已设置的 `VLINK_SSL_KEY_PASS` 仅显示 `<redacted>`，不输出密码内容。
 
 ```bash
 vlink-check env
@@ -208,6 +212,8 @@ vlink-monitor -lo
 
 vlink-monitor -i camera
 
+vlink-monitor --hostname vehicle
+
 vlink-monitor -i debug -k
 
 vlink-monitor -u dds://camera/image dds://lidar/points
@@ -225,12 +231,13 @@ vlink-monitor --plain > monitor_output.txt
 | `-a` / `--active` | 仅显示活跃行（配合 `-l`，热键 `A`） |
 | `-y` / `--pubsub` | 仅显示 pub/sub（热键 `Y`） |
 | `-i` / `--filter <str>` | URL 关键字过滤（运行时可按 `I` 编辑） |
+| `--hostname <str>` | 按进程 hostname 关键字过滤 URL；支持逗号或空格分隔多个关键字 |
 | `-k` / `--black` | 黑名单模式，剔除命中的 URL |
 | `-u` / `--urls <url...>` | 仅监控指定 URL |
 | `-x` / `--preset` | 常用组合预设，等价 `-l -o -p -c` |
 | `-p` / `--process` | 进程面板（热键 `P`） |
 | `-c` / `--chart` | Sparkline 图表面板（热键 `C`） |
-| `-n` / `--native` | 本地模式 |
+| `-n` / `--native` | 本地模式：仅发现本机节点，DDS 订阅绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
 | `-b` / `--blob` | Enter 跳转时强制以十六进制显示 |
 | `-g` / `--proto_args <str>` | Enter 跳转检视时追加的 eproto/efbs 参数 |
 | `-d` / `--proto_dir <dir>` | Proto 目录（默认取环境变量 `VLINK_PROTO_DIR`） |
@@ -241,6 +248,10 @@ vlink-monitor --plain > monitor_output.txt
 | `--chart_width <n>` | 图表宽度（默认 `30`，范围 10 - 100） |
 | `--process_width <n>` | 进程列宽度（默认 `40`，范围 20 - 100） |
 | `--plain` | 纯文本输出，禁用交互（用于重定向） |
+
+`--hostname` 对一个 URL 的全部进程 hostname 做不区分大小写的子串匹配，任一进程命中即视为该 URL
+命中。它始终执行正向过滤，不受 `--black` 影响；与 `--urls`、`--filter` 同时使用时，URL 还必须命中
+hostname，原有两项仍按 `--black` 决定黑白名单语义。
 
 常用热键：`q` / `Esc` 退出，`Space` 暂停/恢复，`I` 过滤框，`Enter` 跳转检视，`Z` 清除选中行，`L` / `O` / `T` / `E` / `S` / `A` / `Y` / `P` / `C` 切换各显示模式，方向键翻页与移动选中行。
 
@@ -275,9 +286,13 @@ vlink-bag info /tmp/test.vdb
 | `-i` / `--filter <str>` / `-k` / `--black` | URL 关键字过滤 / 黑名单 |
 | `-d` / `--duration <s>` | 录制时长（秒），≤0 不限制 |
 | `-p` / `--compress` | 启用压缩 |
+| `--enable_chunk_crc` | 对 `.vcap` / `.vcapx` 输出计算 MCAP chunk CRC；默认关闭，VDB 不受影响 |
 | `-f` / `--force` | 覆盖已有文件 |
 | `-t` / `--tag <name>` | 录制标签名 |
 | `-z` / `--split_by_size <GB>` / `-y` / `--split_by_time <s>` | 按大小/时间分割文件 |
+| `--max_split_count <n>` | 分包文件保留上限；`0` 不限制，超限后删除最旧分包（仅 `.vdbx` / `.vcapx`） |
+| `-n` / `--native` | 本地模式：仅发现本机节点，DDS 订阅绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
+| `-g` / `--deft` | 跳过服务发现，直接以事件模型原始字节订阅 `-u` 指定的 URL（`ser_type` 为空）；须指定 `-u`，不可与 `-k` 同用 |
 
 录制时 `Space` 暂停/恢复，`q` / `Esc` 停止。
 
@@ -287,27 +302,44 @@ vlink-bag info /tmp/test.vdb
 | --- | --- |
 | `path` | bag 文件路径（必填） |
 | `-u` / `--urls <url...>` | 仅回放指定 URL |
+| `-s` / `--actions <id...>` | 动作过滤，默认 `6=Subscribe`、`8=Get`，分别回放 Event 与 Field 的接收记录 |
 | `-r` / `--rate <f>` | 回放速率（0.01~100） |
 | `-t` / `--times <n>` | 回放次数，≤0 无限循环 |
 | `-b` / `--begin_time <s>` / `-e` / `--end_time <s>` | 回放起止相对时间（秒） |
 | `-m` / `--skip_blank` | 跳过空白段 |
+| `-n` / `--native` | 将回放创建的 DDS 发布节点绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
 
 回放时 `Space` 暂停/恢复，方向键前后跳转（`Left` / `Right` 1 秒、`Up` / `Down` 5 秒），暂停态下 `p` 单步前进一帧。
+
+本地时间或 UTC 起止参数按输入时制换算，包含午夜 `00:00:00`；显式时钟结束时间必须晚于录制开始时间，未指定结束时间仍表示不限制。显示时制参数只影响显示，不改变数字 `-b` / `-e` 的相对秒数含义。
 
 运维子命令：
 
 | 子命令 | 作用 |
 | --- | --- |
 | `vlink-bag clone <src> <dst>` | 克隆/转换：支持格式转换、话题过滤、时间裁剪、压缩转换 |
+| `vlink-bag merge <src...> -o <dst>` | 将至少两个包按原始绝对时间合并，支持混合格式与分包输入/输出 |
 | `vlink-bag check <path>` | 校验文件完整性（0 正常，-1 异常） |
 | `vlink-bag reindex <path>` | 重建时间索引 |
-| `vlink-bag fix <path>` | 修复未完整写入的文件（如录制中途断电） |
-| `vlink-bag tag <path> <name>` | 设置/修改标签名 |
+| `vlink-bag fix <path>` | 修复未完整写入的文件（如录制中途断电）；按实际数据重算头部与话题计数，分包 `.vdbx` 跳过重算 |
+| `vlink-bag tag <path> <name>` | 设置/修改 `.vdb`、`.vdbx`、`.vcapx` 的标签名；单个 `.vcap` 不支持 |
+
+`clone` 默认保留 `6=Subscribe`、`8=Get` 动作，可用 `--actions` 指定其他动作。它会拒绝覆盖源入口、源分包及其已有的 SQLite WAL/SHM 文件，包括链接别名、目标旧分包清理和新分包命名造成的重叠；`--force` 不绕过此保护。按时间命名的分包发生重叠时，改用其他输出目录或关闭 `--split_name_by_time`。
+
+`merge` 按原始绝对时间合并，默认保留全部动作，同戳按输入顺序排列。支持 `clone` 的选项，裁剪时间以最早输入包为基准；`-o` 指定输出，时间命名分包使用 `--split_name_by_time`。其余参数见 `vlink-bag merge --help`。
+
+`record`、`clone`、`merge` 均可用 `--enable_chunk_crc` 为 VCAP 输出启用块校验；默认关闭，读取与回放方式不变。
+
+`--check_gap <s>` 限制输入包最早与最晚录制起始时间差，默认 `3600` 秒（1 小时），接受非负有限数值；`0` 要求起始时间完全相同。超限时在创建或覆盖输出前报错并返回失败，`--quiet` 和 `--force` 不绕过此检查。
+
+各输入包的帧时间必须非递减；同名 URL 类型不一致、同名同类型 Schema 内容冲突、时间超出输出格式范围或读写失败时返回失败，运行中失败或取消可能留下部分输出。输出覆盖任一输入入口、分包或链接别名时始终拒绝；已有目标按 `record` 的方式提示 `Y/N`，`--force` 跳过确认。
 
 ```bash
 vlink-bag clone /tmp/test.vdb /tmp/clipped.vdb -b 10 -e 60 -p
 
 vlink-bag clone /tmp/capture.vcap /tmp/result.vdb
+
+vlink-bag merge /tmp/a.vdb /tmp/b.vcap -o /tmp/merged.vdb -p
 
 vlink-bag fix /tmp/broken.vdb
 
@@ -349,7 +381,7 @@ vlink-trigger daemon -c /etc/vlink/trigger/trigger.json \
 | 参数 | 说明 |
 | --- | --- |
 | `-c` / `--config <path>` | 可选配置文件路径（JSON）；省略时全部使用内置默认值 |
-| `-n` / `--native` | 本地模式：本机发现，并将数据面订阅绑定到 `127.0.0.1`（不影响 `method_url` 控制面） |
+| `-n` / `--native` | 本地模式：本机发现，并将数据面订阅绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`；不影响 `method_url` 控制面） |
 | `--bag_plugin <name>` | 覆盖配置文件中的 `bag_plugin`；由 CLI 宿主加载并绑定，不传入 `TriggerRecorder::Config` |
 | `--trigger_plugin <name>` | 覆盖配置文件中的 `trigger_plugin` |
 | `--trigger_plugin_config <str>` | 覆盖配置文件中的 `trigger_plugin_config`；字符串内容由插件解释 |
@@ -372,6 +404,7 @@ daemon 在指定 `-c` 时先读取 JSON，再按字段应用命令行中**显式
 | `retention_guard_ms` | `500` | 额外保留裕量（毫秒），吸收落盘定时抖动 |
 | `max_dump_file_count` | `10` | 落盘文件保留上限；仅自动命名的落盘触发轮转，按后缀统计并清理 `dump_dir` 下最旧文件（显式 `out_file` 的落盘不触发轮转） |
 | `enable_compress` | `false` | 落盘 bag 是否压缩 |
+| `enable_chunk_crc` | `false` | VCAP/MCAP 落盘时计算 chunk CRC；VDB 忽略 |
 | `busy_skip_data` | `false` | 落盘进行中丢弃新到数据（会在环形缓冲留下时间空洞） |
 | `destroy_on_offline` | `false` | URL 从发现中消失时销毁其订阅者；已缓冲数据仍供在飞落盘读取 |
 | `overflow` | `drop` | 字节上限溢出策略：`cover`（淘汰最旧帧）/ `drop`（丢弃新帧） |
@@ -387,7 +420,7 @@ daemon 在指定 `-c` 时先读取 JSON，再按字段应用命令行中**显式
 | `trigger_plugin_config` | 空 | 原样传给 trigger 插件 `init()` 的不透明字符串，可由插件解释为 JSON、文件路径或其他格式；`init()` 返回 `false` 时 daemon 拒绝启动 |
 | `url_overrides` | `{}` | 按 URL 覆盖窗口与限额，见下 |
 
-所有 MB 容量字段必须是有限、非负且换算后不超过 `int64` 字节范围的数值；非法值会使 daemon 在启动时拒绝配置。
+所有 MB 容量字段必须是有限、非负且换算后不超过 `int64` 字节范围的数值；`default_pre_ms`、`default_post_ms`、`retention_guard_ms` 与 `sleep_time_ms` 同样必须非负。非法值会使 daemon 在启动时拒绝配置。`url_overrides` 内的 `pre_ms`、`post_ms`、`max_packet_size`、`max_size` 是例外：负值表示沿用对应的全局默认值。注意该校验只作用于配置文件；`TriggerRecorder::Config` 的 C++ 与 Python 接口对负窗口沿用静默取 0 的既有行为。
 
 `url_overrides` 为每个 URL 独立配置窗口与限额，缺省字段回退到对应的全局默认：`pre_ms` / `post_ms`（触发前/后窗口）、`max_packet_size`（单包上限 MB）、`max_size`（该 URL 缓冲上限 MB）、`only_front`（仅录触发前）、`only_back`（仅录触发后）。
 
@@ -402,6 +435,7 @@ daemon 在指定 `-c` 时先读取 JSON，再按字段应用命令行中**显式
     "max_cache_size": 2048,
     "max_dump_file_count": 10,
     "enable_compress": false,
+    "enable_chunk_crc": false,
     "overflow": "drop",
     "sleep_interval_mb": 4,
     "sleep_time_ms": 2,
@@ -493,6 +527,7 @@ vlink-parse dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /t
 | `-f` / `--bag_file <path>` | 从 bag 提取（缺省则从实时通信） |
 | `-b` / `--begin_time` / `-e` / `--end_time` | 时间范围（秒，仅对 `-f` 有效） |
 | `-n` / `--count <n>` / `--hz <hz>` | 最大样本数 / 最大输出频率 |
+| `--native` | 实时模式仅发现本机节点，DDS 订阅绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
 | `-o` / `--out_dir` / `-m` / `--base_name` | 输出目录 / 文件基础名 |
 | `-d` / `--proto_dir` / `--fbs_dir` | schema 目录 |
 | `-x` / `--expression <expr>` | 表达式，可重复（配合 `-c`，需 exprtk） |
@@ -502,11 +537,17 @@ vlink-parse dds://control/brake -t csv -c "value" -f /data/edr/anomaly.vdb -o /t
 
 输出类型语义：`console` 在终端打印消息内容；`csv` / `json` 输出选定字段；`bin` 将每条消息的原始字节存为独立文件；`jpg` / `h264` / `h265` / `raw` 适用于 CameraFrame 或含 bytes 字段的消息；`pcd` 将零拷贝 PointCloud 每帧存为 PCD 文件。`slice` / `scan` 为离线 bag 的高级用法（按窗口/事件切片、按事件或质量扫描），参数较多，详见 `vlink-parse --help`。
 
-所有带值的标量参数都必须显式提供值；空 URL、空字段列表以及空白的 `--event` / `--filter` / `--url_filter` 会直接报错。URL 的首尾空白在解析后统一移除；parse/导出模式必须指定具体 URL，`*` 只用于 `slice` / `scan`。`-n` 精确限制通过 URL 与限频门控的样本数，`--hz` 是严格的最大输出频率；限频间隔只在参数解析时换算，数据热路径使用整数微秒比较。
+离线导出在打开输出文件前检查其是否指向输入 bag、分包入口或成员，以及已有的 SQLite WAL/SHM 文件；软链接和硬链接指向这些输入时同样拒绝写入，避免截断源数据。指向其他普通输出文件的链接仍可使用。
 
-`slice` / `scan` 只接受已完整结束且包含消息的 bag，时间区间按毫秒解释为半开区间 `[begin, end)`；未指定结束时间时会覆盖最后一个不足整毫秒的消息。切片输出只支持 `.vdb` 或 `.vcap`，分片输入的 `.vdbx` / `.vcapx` 会映射到对应的单文件格式。URL 筛选包含 Event、Method 与 Field，实际帧再由 `--actions` 过滤（默认 `6=Subscribe`）；显式 URL 与 `-u` / `--urls`、`-i` / `--url_filter` 不可混用。未使用 `-k` 时，两种过滤同时出现取交集；使用 `-k` 时剔除任一过滤命中的 URL，与 `vlink-monitor` 的处理一致。单独使用 `-k` 不改变选集；黑名单中不存在于 bag 的 URL 会被忽略，白名单中的 URL 不存在时仍会报错。
+所有带值的标量参数都必须显式提供值；空 URL、空字段列表以及空白的 `--event` / `--filter` / `--url_filter` 会直接报错。URL 的首尾空白在解析后统一移除；parse/导出模式必须指定具体 URL，`*` 只用于 `slice` / `scan`。`-n` 精确限制通过 URL 与限频门控的样本数，`--hz` 是严格的最大输出频率：实时订阅按墙钟计时，指定 `-f` 的 bag 导出按帧时间戳计时，因此同一个 bag 的抽稀结果可复现；时间戳回退的帧按已覆盖窗口跳过。限频间隔只在参数解析时换算，数据热路径使用整数微秒比较。
 
-内容过滤、事件表达式和切片 CSV 导出只支持零拷贝类型与 Protobuf；Protobuf 必须能从 `-d`、`--schema_config` 或 `VLINK_SCHEMA_PLUGIN` 找到目标消息的真实 descriptor。`--schema_plugin` 与 `VLINK_SCHEMA_PLUGIN` 均可使用插件 stem 或共享库直接路径，显式配置但加载失败会终止命令。Method、FlatBuffers、Raw 或未知 schema 参与这些字段操作时会在写文件前拒绝；这项预检验证解码能力，但不会假定每个 selector 都存在于异构 topic 的每一种消息中。不做 `--filter` / `--event` / `--export_csv` 时，单独的 `-c` 不会触发无用解码。`--force` 仍拒绝覆盖符号链接、输入 bag 及其分片成员，也不会覆盖本次命令读取的 `--segments` / `--schema_config` 文件。
+`slice` / `scan` 只接受已完整结束且包含消息的 bag，时间区间按毫秒解释为半开区间 `[begin, end)`；未指定结束时间时会覆盖最后一个不足整毫秒的消息。切片输出只支持 `.vdb` 或 `.vcap`，分片输入的 `.vdbx` / `.vcapx` 会映射到对应的单文件格式。URL 筛选包含 Event、Method 与 Field，实际帧再由 `--actions` 过滤（默认 `6=Subscribe`、`8=Get`）；显式 URL 与 `-u` / `--urls`、`-i` / `--url_filter` 不可混用。未使用 `-k` 时，两种过滤同时出现取交集；使用 `-k` 时剔除任一过滤命中的 URL，与 `vlink-monitor` 的处理一致。单独使用 `-k` 不改变选集；黑名单中不存在于 bag 的 URL 会被忽略，白名单中的 URL 不存在时仍会报错。
+
+`slice` 输出 VCAP 时可用 `--enable_chunk_crc` 启用 MCAP chunk CRC；默认关闭，VDB 输出忽略该开关。
+
+未使用 bag 插件时，实际执行切片或扫描会完整读取输入并检查时间戳非递减，再按所选时间、话题和动作处理数据，避免逆序帧被静默丢弃。因此裁剪很短的时间区间也需要扫描整个输入；仅生成窗口计划的 `--dry_run` 不检查帧顺序。发现逆序时返回失败；切片可能已留下部分输出，扫描不会写出成功结果。使用 bag 插件时继续按所选输入范围读取，并要求参与处理的插件输出时间戳非递减。
+
+内容过滤、事件表达式和切片 CSV 导出只支持零拷贝类型与 Protobuf；Protobuf 必须能从 `-d`、`--schema_config` 或 `VLINK_SCHEMA_PLUGIN` 找到目标消息的真实 descriptor。`--schema_plugin` 与 `VLINK_SCHEMA_PLUGIN` 均可使用插件 stem 或共享库直接路径，显式配置但加载失败会终止命令。Method、FlatBuffers、Raw 或未知 schema 参与这些字段操作时会在写文件前拒绝；这项预检验证解码能力，但不会假定每个 selector 都存在于异构 topic 的每一种消息中。不做 `--filter` / `--event` / `--export_csv` 时，单独的 `-c` 不会触发无用解码。`--force` 仍拒绝覆盖符号链接、输入 bag、分片成员及其已有的 SQLite WAL/SHM 文件，也不会覆盖本次命令读取的 `--segments` / `--schema_config` 文件。
 
 字段路径写法：Protobuf 使用点路径（`header.seq`、`status.velocity.x`），repeated 字段使用完整的非负整数下标（如 `chunks[1].data`）；空路径分量、尾随字符、负数或用于非 repeated 字段的下标不会被宽松解释。八种零拷贝类型统一经 `MessageParser` 读取，根字段使用 `header.seq`、`width` 等点路径，集合使用 `data[N].field`、`shape[N].value` 或 `strides[N].value`。完整清单与边界规则见 [零拷贝](06-zerocopy.md)。整数在字段导出时保持原始 64 位值；只有送入 ExprTk 表达式、必须转换为 `double` 时，工具才会对超出精确表示范围的整数给出精度提示。
 
@@ -559,9 +600,9 @@ vlink-eproto sub dds://sensor/imu -d /home/protos/ -s pb.ImuData -j
 | `-i` / `--filter <str>` / `-k` / `--black` | 字段名过滤 / 黑名单 |
 | `-j` / `--json` | 以 JSON 格式输出 |
 | `-g` / `--getter` | 强制以 Getter 接收（字段模型） |
-| `-n` / `--native` | 本地模式 |
+| `-n` / `--native` | 本地模式：仅发现本机节点，DDS 节点绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
 
-未指定 `-s` 时，工具等待一轮服务发现自动推断类型，并在话题属于字段模型时自动切到 Getter 接收。标题行实时显示 URL、活动指示点与帧率，颜色策略与 `vlink-monitor` 一致。交互热键：`q` / `Esc` 退出、`Space` 暂停、方向键翻页，以及 `E` / `R` / `T` / `Y` / `U` / `O` / `P` 切换枚举/数组/字符串/时间/十六进制/默认值/repeated 等显示选项。
+未指定 `-s` 时，工具等待一轮服务发现自动推断类型，并在话题属于字段模型时自动切到 Getter 接收。标题行实时显示 URL、活动指示点与帧率，颜色策略与 `vlink-monitor` 一致。各类订阅内容按终端显示宽度主动换行；终端尺寸变化后会重新分页，暂停状态下也同步重排。交互热键：`q` / `Esc` 退出、`Space` 暂停、方向键翻页，以及 `E` / `R` / `T` / `Y` / `U` / `O` / `P` 切换枚举/数组/字符串/时间/十六进制/默认值/repeated 等显示选项。
 
 `pub <url>` 用于发布消息，内容可经 `-c` 直接给出或 `-f` 从文件读取：
 
@@ -576,7 +617,7 @@ vlink-eproto pub dds://test/msg -d /home/protos/ -s pb.TestMsg \
   -f /tmp/test.prototxt -t 0 -l 500
 ```
 
-`pub` 常用参数：`-s` 消息名（省略时经服务发现自动推断）、`-c` / `-f` 消息内容/文件（二者必择其一）、`-j` 按 JSON 解析、`-t` 发布次数（≤0 无限）、`-l` 发布间隔（毫秒，默认 100）。
+`pub` 常用参数：`-s` 消息名（省略时经服务发现自动推断）、`-c` / `-f` 消息内容/文件（二者必择其一）、`-j` 按 JSON 解析、`-t` 发布次数（≤0 无限）、`-l` 发布间隔（毫秒，默认 100）。`-n` / `--native` 将 DDS 发布节点绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`）。
 
 `import <dir>` 将 schema 目录持久化，之后任意 shell 中无需再传 `-d` 或设环境变量：
 
@@ -636,7 +677,7 @@ vlink-bench plot /tmp/bench-full.json --report html,terminal
 
 预设差异：`showcase` 与 `quick` 为保守默认（`throughput` + `latency`、`process` 模式、`1:1` 拓扑、`bytes` payload，分钟级耗时）；`full` 默认展开 `throughput` / `latency` / `topology` / `serialization` 四个套件、三种执行模式（`local-direct` / `local-loop` / `process`）、更大的 payload 阶梯与拓扑/QoS 扫描，适合正式报告与横向对比。`fanout` 与 `backpressure` 套件不在任何预设的默认集中，需经 `--suite fanout` / `--suite backpressure` 显式启用。
 
-报告结构：HTML 报告以"结论—定位—细节"为序组织，顶部为推荐传输配置与综合评分，往下依次为测试概览、传输健康、按消息大小的延迟/吞吐对比、分项结果与完整明细表，并提供可缩放/拖拽/悬浮的趋势折线图；评分以延迟与吞吐为主、辅以资源占用与丢包等维度。终端视图（`--report terminal`）为可翻页/搜索/排序/导出的聚合表格，`q` / `Esc` 退出。
+报告结构：HTML 报告以"结论—定位—细节"为序组织，顶部为推荐传输配置与综合评分，往下依次为测试概览、传输健康、按消息大小的延迟/吞吐对比、分项结果与完整明细表，并提供可缩放/拖拽/悬浮的趋势折线图；评分以延迟与吞吐为主、辅以资源占用与丢包等维度。终端视图（`--report terminal`）为可翻页/搜索/排序/导出的聚合表格，`q` / `Esc` 退出。报告中的 `ssl.key_password` 属性值会脱敏；JSON 的命令行元数据含此属性时整行遮蔽，实际运行参数不受影响。
 
 ### 🔗 10.2.12 命令行工具组合工作流
 

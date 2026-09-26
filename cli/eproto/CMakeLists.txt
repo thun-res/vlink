@@ -13,7 +13,16 @@ if(NOT TARGET protobuf::libprotobuf)
 endif()
 
 # src
-add_executable(${PROJECT_NAME} eproto.cc)
+add_executable(
+  ${PROJECT_NAME}
+  eproto.cc
+  eproto_pub.cc
+  eproto_sub.cc
+  eproto_import.cc
+  eproto_format.cc
+  eproto_terminal.cc
+  eproto_common.cc
+)
 target_link_libraries(${PROJECT_NAME} PRIVATE vlink::vlink ${VLINK_NO_INTRA_LIBRARIES})
 target_link_libraries(${PROJECT_NAME} PRIVATE thirdparty::argparse thirdparty::json)
 target_link_libraries(${PROJECT_NAME} PRIVATE protobuf::libprotobuf)

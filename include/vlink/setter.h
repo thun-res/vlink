@@ -211,13 +211,11 @@ class Setter : public Node<SetterImpl, SecT> {
   void set(const ValueT& value);
 
   /**
-   * @brief Promotes this setter to behave as a @c Publisher at the transport layer.
+   * @brief Reports this setter as a @c Publisher in discovery metadata.
    *
    * @details
-   * Switches @c impl_type from @c kSetter to @c kPublisher so that
-   * event-mode semantics are applied (no latest-value retention).
-   * Reinitialises the transport extension if called post-@c init().  Useful
-   * on transports that do not natively distinguish the two roles.
+   * Updates the role label and refreshes discovery when already initialised.
+   * The setter's value cache and existing transport endpoint remain active.
    */
   void mark_as_publisher();
 

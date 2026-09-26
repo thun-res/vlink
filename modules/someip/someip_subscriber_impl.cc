@@ -37,38 +37,62 @@ void SomeipSubscriberImpl::init() {
 
   object_->add_impl(this);
 
+  if (init_impl_type != kGetter) {
+    start_subscription();
+  }
+}
+
+void SomeipSubscriberImpl::start_subscription() {
   object_->app()->request_event(conf_.service, conf_.instance, conf_.event, conf_.groups,
                                 conf_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
 
-  if (object_->is_connected()) {
-    for (auto g : conf_.groups) {
-      object_->app()->subscribe(conf_.service, conf_.instance, g);
-    }
+  object_->invoke_callback(this, [this]() {
+    has_subscribed_ = false;
 
-    has_subscribed_ = true;
-  }
-
-  object_->register_server_connect_callback(this, [this](bool connected) {
-    if (!has_subscribed_ && connected) {
+    if (object_->is_connected()) {
       for (auto g : conf_.groups) {
         object_->app()->subscribe(conf_.service, conf_.instance, g);
       }
+
+      has_subscribed_ = true;
     }
 
-    has_subscribed_ = connected;
+    object_->register_server_connect_callback(this, [this](bool connected) {
+      if (!has_subscribed_ && connected) {
+        for (auto g : conf_.groups) {
+          object_->app()->subscribe(conf_.service, conf_.instance, g);
+        }
+      }
+
+      has_subscribed_ = connected;
+    });
   });
 
   object_->start();
 }
 
 void SomeipSubscriberImpl::deinit() {
+  object_->remove_impl(this);
+
+  if (init_impl_type == kGetter && !is_listened) {
+    return;
+  }
+
   for (auto g : conf_.groups) {
-    object_->app()->unsubscribe(conf_.service, conf_.instance, g);
+    bool in_use = false;
+
+    object_->traverse_server_connect_callback([&](NodeImpl* impl, const auto&) {
+      if (impl->get_target_conf<SomeipConf>()->groups.count(g) != 0) {
+        in_use = true;
+      }
+    });
+
+    if (!in_use) {
+      object_->app()->unsubscribe(conf_.service, conf_.instance, g);
+    }
   }
 
   object_->app()->release_event(conf_.service, conf_.instance, conf_.event);
-
-  object_->remove_impl(this);
 }
 
 bool SomeipSubscriberImpl::suspend() {
@@ -91,6 +115,10 @@ const AbstractNode* SomeipSubscriberImpl::get_abstract_node() const { return obj
 
 bool SomeipSubscriberImpl::listen(MsgCallback&& callback) {
   object_->register_msg_callback(this, std::move(callback));
+
+  if (init_impl_type == kGetter) {
+    start_subscription();
+  }
 
   return true;
 }

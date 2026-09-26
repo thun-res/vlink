@@ -320,8 +320,8 @@ typedef struct {
  * @param is_connected  @c true when at least one peer is matched, @c false otherwise.
  * @param user_data     Opaque pointer supplied at registration time.
  *
- * @note Invoked from a VLink-internal event thread; keep the body short and
- *       avoid blocking calls.
+ * @note May run synchronously during registration or in the backend's delivery
+ *       context.  Keep the body short and avoid blocking calls.
  */
 typedef void (*vlink_connect_callback_t)(const bool is_connected, void* user_data);
 
@@ -332,7 +332,8 @@ typedef void (*vlink_connect_callback_t)(const bool is_connected, void* user_dat
  * @param size       Number of bytes available at @p data.
  * @param user_data  Opaque pointer supplied at creation time.
  *
- * @note Invoked on the underlying receive thread.  The @p data buffer is only
+ * @note Invoked in the backend's delivery context, which may be synchronous.
+ *       The @p data buffer is only
  *       valid for the duration of the callback -- copy if you need to retain it.
  */
 typedef void (*vlink_msg_callback_t)(const uint8_t* data, const size_t size, void* user_data);
@@ -453,7 +454,8 @@ VLINK_C_API_EXPORT int vlink_wait_for_subscribers(const vlink_publisher_handle_t
  *                          @c VLINK_RET_INVALID_ERROR on bad handle or a @c NULL
  *                          @p connect_callback.
  *
- * @note The callback runs on the Publisher's internal event thread.
+ * @note The callback may run synchronously during registration when the state is
+ *       already known, or later in the backend's delivery context.
  */
 VLINK_C_API_EXPORT int vlink_detect_subscribers(const vlink_publisher_handle_t handle,
                                                 const vlink_connect_callback_t connect_callback, void* user_data);
@@ -778,7 +780,8 @@ VLINK_C_API_EXPORT int vlink_wait_for_server(const vlink_client_handle_t handle,
  *                          @c VLINK_RET_INVALID_ERROR on bad handle or a @c NULL
  *                          @p connect_callback.
  *
- * @note The callback runs on the Client's internal event thread.
+ * @note The callback may run synchronously during registration when the state is
+ *       already known, or later in the backend's delivery context.
  */
 VLINK_C_API_EXPORT int vlink_detect_server(const vlink_client_handle_t handle,
                                            const vlink_connect_callback_t connect_callback, void* user_data);
@@ -788,8 +791,9 @@ VLINK_C_API_EXPORT int vlink_detect_server(const vlink_client_handle_t handle,
  *
  * @details
  * Internally invokes @c vlink::Client::invoke() with a shallow-copy @c Bytes
- * wrapping @p data.  @p resp_callback fires asynchronously on the underlying
- * @c vlink::Client callback context once the Server reply arrives.  Pass
+ * wrapping @p data.  @p resp_callback fires in the underlying backend's delivery
+ * context once the Server reply arrives; intra direct mode may invoke it before
+ * this function returns.  Pass
  * @c NULL for @p resp_callback when the response is not needed.  Secure clients
  * treat an empty transport response as the protocol's empty response and do not
  * route it through @c Security::decrypt().
@@ -923,6 +927,11 @@ VLINK_C_API_EXPORT int vlink_create_getter(const char* url, const vlink_schema_i
  * ciphertext/plaintext pair internally so repeated @c vlink_get() calls for the
  * same latest field value return the cached plaintext without tripping replay
  * protection.  Fresh inbound frames still flow through @c Security::decrypt().
+ * Push-mode Getters authenticate before invoking the callback; concurrent
+ * @c vlink_get() reads that same authenticated value.  A different ciphertext
+ * that fails authentication makes the value unavailable until the next valid update.
+ * An existing Field value may invoke @p msg_callback before creation returns;
+ * prepare @p user_data before calling this function.
  * Security configuration is one-shot at creation -- no separate runtime entry
  * point exists.
  *
@@ -1337,15 +1346,16 @@ VLINK_C_API_EXPORT int vlink_create_secure_setter(const char* url, const vlink_s
  * @c vlink_create_*_with_ssl_options() entry points.  String fields are
  * null-terminated; @c NULL or empty strings disable the matching slot.
  * @c verify_peer uses C semantics -- non-zero enables peer-certificate
- * verification, @c 0 disables it.  Transport backends consider TLS enabled once
- * at least @c ca_file or @c cert_file is non-empty.
+ * verification; @c 0 disables it where supported.  RTI Connext DDS logs a warning
+ * and retains verification.  Transport backends consider TLS enabled once at least
+ * @c ca_file or @c cert_file is non-empty.
  *
  * @note This is the transport-layer (channel) TLS configuration.  For
  *       application-layer per-message AEAD encryption see
  *       @c vlink_security_config_t.
  */
 typedef struct {
-  int verify_peer;          /**< Non-zero = verify peer certificate (default); @c 0 = skip. */
+  int verify_peer;          /**< Non-zero = verify (default); @c 0 = skip where supported. */
   const char* ca_file;      /**< CA certificate file path (PEM), or @c NULL.                */
   const char* cert_file;    /**< Client certificate file path (PEM), or @c NULL.            */
   const char* key_file;     /**< Client private key file path (PEM), or @c NULL.            */

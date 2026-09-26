@@ -90,6 +90,8 @@ auto snapshot = viewer.get_info_list();
 | `convert_type_to_view(uint32_t type, const std::vector<Process>&)` | 同上，并附带进程列表的完整标签 |
 | `convert_type(std::string_view str)` | 将角色字符串（`"Pub"`、`"Sub"` 等）转回 `ImplType` 位 |
 | `get_listen_address()` | 返回发现子系统使用的 UDP 组播/广播地址（默认 `239.255.0.100`） |
+| `get_listen_domain()` | 返回 `VLINK_DISCOVER_DOMAIN` 选定的发现域（默认 `0`） |
+| `get_listen_port()` | 返回发现子系统使用的 UDP 端口（`51600 + domain`） |
 
 ---
 
@@ -228,7 +230,7 @@ sub->register_status_handler([](const vlink::Status::BasePtr& status) {
 | 入口 | 形态 | 用途 |
 | ---- | ---- | ---- |
 | `vlink-list` | 一次性查询 | 打印当前全网拓扑表格后退出 |
-| `vlink-monitor` | 持续监控（类 `top`） | 实时刷新，支持按 URL 子串过滤（`-i`） |
+| `vlink-monitor` | 持续监控（类 `top`） | 实时刷新，支持按 URL 子串（`-i`）或进程 hostname（`--hostname`）过滤 |
 | 应用内嵌 | 库调用 | 在应用内构造 `DiscoveryViewer`，无需单独进程 |
 | 代理聚合 | 代理层 | 代理内部运行 viewer 聚合多进程拓扑，供远程监控 |
 
@@ -240,6 +242,8 @@ sub->register_status_handler([](const vlink::Status::BasePtr& status) {
 | ---- | ---- |
 | `VLINK_DISCOVER_DISABLE=1` | 禁用本进程的发现上报 |
 | `VLINK_DISCOVER_NATIVE=1` | 仅限本机发现（组播绑定 loopback） |
+| `VLINK_DISCOVER_IP=<ip,...>` | 指定发现组播逐地址发送与加组的本机 IPv4 地址；未设置时收发按系统路由走；同时是 `VLINK_DDS_IP` 的缺省值 |
+| `VLINK_DISCOVER_DOMAIN=<0-255>` | 发现域，默认 `0`：UDP 端口取 `51600 + domain`，组播地址与路由不变；须在所有进程上设为同一值；非十进制数字或超出 `[0,255]` 的值会告警并回落到 `0`，该值在进程内读取一次，此后修改无效 |
 | `VLINK_PROFILER_ENABLE=1` | 启用 CPU Profiler，使 `Process::profiler` 有效 |
 
 若需让单个节点不出现在发现视图，可在 `init()` 之前关闭其上报。这要求节点以延迟初始化方式构造：
@@ -348,6 +352,8 @@ vlink-proxy -d 0 -k "my_secret_key"
 | `kController` | 可调用 `send_control()` / `send_data()`，驱动服务端 |
 | `kListener` | 只读观察；`send_control()` / `send_data()` 立即返回 `false` |
 
+`direct` 模式的 Listener 通过每秒心跳同步当前订阅选择，支持晚加入，并跟随控制端切换选择或停止。
+
 工作模式由控制端通过 `Control::mode` 切换，决定服务端订阅哪些话题、是否转发数据、是否接受注入：
 
 | 模式 | 用途 |
@@ -446,6 +452,7 @@ api.register_time_callback([](uint64_t sys_time, uint64_t boot_time) {
 | `role` | `kController` | 客户端角色（见 12.10.1） |
 | `domain_id` | `0` | DDS 域 ID，须与服务端一致 |
 | `security_key` | `""` | 控制面对称密钥；空串使用内置默认槽位，显式设置时须与服务端一致 |
+| `native` | `false` | 将 DDS 节点绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
 | `reliable` / `enable_tcp` / `direct` | `false` | 数据通道选项，三者均须与服务端完全一致 |
 | `match_version` | `true` | 是否校验 VLink 版本字符串一致 |
 
@@ -468,7 +475,7 @@ api.register_time_callback([](uint64_t sys_time, uint64_t boot_time) {
 | `-x, --max_packet_size FLOAT` | 单条消息最大转发大小（MiB，默认 4.0） |
 | `-b, --bind_ip` / `-p, --peer_ip` | 本地绑定 IP / 单播对端 IP（跨子网用） |
 | `-s, --buf_size INT` / `-e, --mtu_size INT` | DDS 收发缓冲区 / MTU 字节数（默认 0 = 内置默认） |
-| `-n, --native` | 限制 DDS 流量到 127.0.0.1（本机测试） |
+| `-n, --native` | 仅发现本机节点，并将 DDS 节点绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
 | `-c, --iox_config PATH` | 指定 Iceoryx TOML 配置；提供此项即拉起内嵌 RouDi（direct/SHM 所需） |
 | `-l, --iox_strategy INT` | Iceoryx 内存策略（1 mini / 2 低 / 3 中 / 4 高，默认 3）；提供此项即按内置策略拉起 RouDi |
 | `-m, --iox_monitoring on\|off` | Iceoryx 监控开关（默认 `on`） |
@@ -604,7 +611,7 @@ api.register_data_callback([&bag](const vlink::ProxyAPI::Data& data) {
 });
 ```
 
-**回放**：选 `kPlay` 模式，`url_meta_list` 中 `type` 设为 `vlink::kPublisher`（服务端充当发布者），再以 `send_data()` 逐条注入：
+**回放**：选 `kPlay` 模式，`url_meta_list` 中 Event 的 `type` 设为 `vlink::kPublisher`，Field 设为 `vlink::kSetter`，再以 `send_data()` 逐条注入。Field 路由要求客户端与服务端均支持 `kSetter`；旧服务端不能处理该路由。
 
 ```cpp
 vlink::ProxyAPI::Control ctrl;

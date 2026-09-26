@@ -63,6 +63,7 @@ agent 渐进式披露:先在本表定位功能 → 再读对应 doc 小节 → �
 | ObjectArray(3D 检测/跟踪目标) | 同上 | `doc/06` §6.7 |
 | AudioFrame(PCM/编码音频) | 同上 | `doc/06` §6.8 |
 | RawData(自定义二进制) | 同上 | `doc/06` §6.9 |
+| FastBuffer(插件缓冲区、发布池) | `include/vlink/zerocopy/fast_buffer*.h`、`examples/fastbuffer/` | `doc/06` §6.13 |
 | ProxyData(跨进程代理数据) | `include/vlink/zerocopy/proxy_data.h` | `doc/06` §6.9 |
 | MessageParser(零拷贝消息解析) | `include/vlink/zerocopy/message_parser.h` | `doc/06` §6.9.1 |
 | 生命周期约束、与裸 Bytes 对照 | `include/vlink/zerocopy/` | `doc/06` §6.11/§6.12 |
@@ -122,7 +123,7 @@ agent 渐进式披露:先在本表定位功能 → 再读对应 doc 小节 → �
 | 功能 | 代码入口 | 文档小节 |
 | ---- | ---- | ---- |
 | 纯 C API(多语言集成,`ENABLE_C_API`) | `languages/c_api/` + `include/vlink/external/c_api.h` | `doc/13` §13.1–§13.8 |
-| Python API(`ENABLE_PYTHON_API`) | `languages/python_api/vlink_python.cc` + `languages/python_api/vlink.py` | `doc/13` §13.7.1/§13.8.3 |
+| Python API(`ENABLE_PYTHON_API`) | `languages/python_api/vlink_python.cc` → 同目录功能 `.cc`；`vlink.py` 导出 | `doc/13` §13.7.1/§13.8.3 |
 | UrlRemap 与 DynamicData | `include/vlink/extension/url_remap.h`、`include/vlink/extension/dynamic_data.h` | `doc/13` §13.10/§13.11 |
 | 动态库 Plugin 加载器 | `include/vlink/base/plugin.h` | `doc/13` §13.12/§13.13 |
 | Logger 插件接口 | `include/vlink/base/logger_plugin_interface.h` | `doc/13` §13.14 |

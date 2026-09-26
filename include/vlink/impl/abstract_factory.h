@@ -350,6 +350,33 @@ class AbstractObject : public AbstractNode {
    */
   void traverse_status_callback(const FindStatusCallback& callback);
 
+  /**
+   * @brief Invokes a registered owner's message handler without copying its state.
+   *
+   * @param owner  Node whose message handler is invoked.
+   * @param bytes  Payload forwarded to the handler.
+   * @return @c true when the owner is registered and the handler ran.
+   */
+  bool invoke_msg_callback(NodeImpl* owner, const Bytes& bytes);
+
+  /**
+   * @brief Visits a registered owner's request handler while keeping its registration live.
+   *
+   * @param owner     Node whose request handler is visited.
+   * @param callback  Visitor receiving the owner and its handler.
+   * @return @c true when the owner is registered and the visitor ran.
+   */
+  bool invoke_req_resp_callback(NodeImpl* owner, const FindReqRespCallback& callback);
+
+  /**
+   * @brief Runs a callback only while its owner remains registered.
+   *
+   * @param owner     Node that must still be registered.
+   * @param callback  Work to run under the registration guard.
+   * @return @c true when the owner is registered and the callback ran.
+   */
+  bool invoke_callback(NodeImpl* owner, const Function<void()>& callback);
+
  protected:
   AbstractObject();
 
@@ -380,6 +407,9 @@ class AbstractObject : public AbstractNode {
 
   template <typename CallbackMapT, typename CallbackT>
   void traverse_internal_callback(const CallbackMapT& map, const CallbackT& callback);
+
+  template <typename CallbackMapT, typename CallbackT>
+  bool invoke_internal_callback(const CallbackMapT& map, NodeImpl* owner, const CallbackT& callback);
 
   [[nodiscard]] bool is_deferred_removed(NodeImpl* impl) const;
 
@@ -646,6 +676,55 @@ inline void AbstractObject<FilterT>::traverse_intra_msg_callback(const FindIntra
 template <typename FilterT>
 inline void AbstractObject<FilterT>::traverse_status_callback(const FindStatusCallback& callback) {
   this->traverse_internal_callback(status_callback_map_, callback);
+}
+
+template <typename FilterT>
+template <typename CallbackMapT, typename CallbackT>
+inline bool AbstractObject<FilterT>::invoke_internal_callback(const CallbackMapT& map, NodeImpl* owner,
+                                                              const CallbackT& callback) {
+  std::lock_guard lock(mtx_);
+
+  auto iter = map.find(owner);
+
+  if VUNLIKELY (iter == map.end() || is_deferred_removed(owner)) {
+    return false;
+  }
+
+  ++traverse_depth_;
+
+  TraverseGuard guard{*this};
+
+  callback(iter->second);
+
+  return true;
+}
+
+template <typename FilterT>
+inline bool AbstractObject<FilterT>::invoke_msg_callback(NodeImpl* owner, const Bytes& bytes) {
+  return invoke_internal_callback(msg_callback_map_, owner, [&bytes](const auto& callback) { callback(bytes); });
+}
+
+template <typename FilterT>
+inline bool AbstractObject<FilterT>::invoke_req_resp_callback(NodeImpl* owner, const FindReqRespCallback& callback) {
+  return invoke_internal_callback(req_resp_callback_map_, owner,
+                                  [owner, &callback](const auto& target) { callback(owner, target); });
+}
+
+template <typename FilterT>
+inline bool AbstractObject<FilterT>::invoke_callback(NodeImpl* owner, const Function<void()>& callback) {
+  std::lock_guard lock(mtx_);
+
+  if VUNLIKELY (impl_list_.find(owner) == impl_list_.end() || is_deferred_removed(owner)) {
+    return false;
+  }
+
+  ++traverse_depth_;
+
+  TraverseGuard guard{*this};
+
+  callback();
+
+  return true;
 }
 
 template <typename FilterT>

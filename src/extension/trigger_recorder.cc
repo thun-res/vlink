@@ -285,7 +285,8 @@ bool TriggerRecorder::dump(const TriggerParams& params, std::string& out_file) {
 
   const int64_t delay_ms = max_post > 0 ? max_post / 1000 + impl_->config.retention_guard_ms : 0;
 
-  auto task = [this, weak_job = std::weak_ptr<DumpJob>(job)]() {
+  std::weak_ptr<DumpJob> weak_job = job;
+  auto task = [this, weak_job]() {
     if (auto locked_job = weak_job.lock()) {
       do_dump(*locked_job);
     }
@@ -575,7 +576,7 @@ std::shared_ptr<TriggerRecorder::UrlBuffer> TriggerRecorder::build_url_buffer(co
   url_buffer->pre_us = url_config.only_back ? 0 : pre_ms * 1000;
   url_buffer->post_us = url_config.only_front ? 0 : post_ms * 1000;
   url_buffer->disabled = url_config.only_front && url_config.only_back;
-  url_buffer->getter_semantics = (info.type & (kGetter | kSetter)) != 0;
+  url_buffer->getter_semantics = (info.type & kSetter) != 0;
   url_buffer->max_packet_size =
       url_config.max_packet_size >= 0 ? url_config.max_packet_size : impl_->config.default_max_packet_size;
   url_buffer->max_size = url_config.max_size >= 0 ? url_config.max_size : impl_->config.default_max_size;
@@ -612,9 +613,10 @@ std::shared_ptr<TriggerRecorder::UrlBuffer> TriggerRecorder::build_url_buffer(co
     }
 
     url_buffer->sub = std::move(sub);
+    std::weak_ptr<UrlBuffer> weak_buffer = url_buffer;
 
-    if VUNLIKELY (!url_buffer->sub->listen([this, weak = std::weak_ptr<UrlBuffer>(url_buffer)](const Bytes& data) {
-                    if (auto locked = weak.lock()) {
+    if VUNLIKELY (!url_buffer->sub->listen([this, weak_buffer](const Bytes& data) {
+                    if (auto locked = weak_buffer.lock()) {
                       handle_data(*locked, data);
                     }
                   })) {
@@ -701,7 +703,7 @@ void TriggerRecorder::handle_discovery(const std::vector<DiscoveryViewer::Info>&
 
     if VLIKELY (existing != impl_->url_buffer_map.end()) {
       if VLIKELY (existing->second->ser_type == info.ser_type && existing->second->schema_type == info.schema_type &&
-                  existing->second->getter_semantics == ((info.type & (kGetter | kSetter)) != 0)) {
+                  existing->second->getter_semantics == ((info.type & kSetter) != 0)) {
         continue;
       }
     }
@@ -944,6 +946,7 @@ void TriggerRecorder::do_dump(DumpJob& job) {
 
   BagWriter::Config writer_config;
   writer_config.compress = impl_->config.enable_compress ? BagWriter::kCompressAuto : BagWriter::kCompressNone;
+  writer_config.enable_chunk_crc = impl_->config.enable_chunk_crc;
   writer_config.tag_name = params.reason;
   writer_config.sync_mode = true;
   writer_config.optimize_on_exit = true;
@@ -993,7 +996,6 @@ void TriggerRecorder::do_dump(DumpJob& job) {
   bool persistence_failed = false;
   const size_t snapshot_frame_count = snapshot.size();
   Frame frame;
-  frame.action_type = ActionType::kSubscribe;
 
   for (auto& item : snapshot) {
     // LCOV_EXCL_START GCOVR_EXCL_START
@@ -1002,6 +1004,7 @@ void TriggerRecorder::do_dump(DumpJob& job) {
     frame.url = item.source->url;
     frame.ser_type = item.source->ser_type;
     frame.schema_type = item.source->schema_type;
+    frame.action_type = item.source->getter_semantics ? ActionType::kGet : ActionType::kSubscribe;
     frame.data = Bytes::shallow_copy(item.payload->data(), item.payload->size());
 
     if VUNLIKELY (writer->push(frame) < 0) {

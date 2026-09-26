@@ -25,4 +25,7 @@
 
 #include "./parse_plan.h"
 
+bool collect_protected_input_paths(const vlink::parse::SliceOptions& opt,
+                                   std::vector<std::filesystem::path>& protected_paths);
+
 int start_slice(const vlink::parse::SliceOptions& opt);

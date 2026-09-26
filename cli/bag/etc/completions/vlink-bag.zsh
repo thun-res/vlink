@@ -49,19 +49,20 @@ _vlink-bag_record() {
     _arguments -s \
         '*'{-u,--urls}'=[Bind urls, empty is all]:url:_vlink_zsh_complete_url' \
         '(-t --tag)'{-t,--tag}'=[Tag name]:tag:' \
-        '(-i --filter)'{-i,--filter}'=[Filter regex]:filter:' \
+        '(-i --filter)'{-i,--filter}'=[Filter keywords]:filter:' \
         '(-k --black)'{-k,--black}'[Blacklist mode]' \
         '(-n --native)'{-n,--native}'[Native mode]' \
         '(-d --duration)'{-d,--duration}'=[Duration (s)]:duration:' \
         '(-w --wait)'{-w,--wait}'=[Wait time (s)]:wait:' \
         '(-p --compress)'{-p,--compress}'[Compress data]' \
+        '--enable_chunk_crc[Compute MCAP chunk CRC for VCAP output]' \
         '(-f --force)'{-f,--force}'[Overwriting]' \
         '(-q --quiet)'{-q,--quiet}'[Quiet mode]' \
         '(-l --detail)'{-l,--detail}'[Detail mode]' \
         '(-o --split_name_by_time)'{-o,--split_name_by_time}'[Split name by time]' \
         '(-z --split_by_size)'{-z,--split_by_size}'=[Split by size (GB)]:size:' \
         '(-y --split_by_time)'{-y,--split_by_time}'=[Split by time (s)]:time:' \
-        '(-g --deft)'{-g,--deft}'[No collect serialization infomation]' \
+        '(-g --deft)'{-g,--deft}'[Skip discovery, force record bind urls as raw bytes]' \
         '(-x --max_packet_size)'{-x,--max_packet_size}'=[Max packet size (MB)]:size:' \
         '(-j --wal_mode)'{-j,--wal_mode}'[Enable WAL mode]' \
         '(-c --cache_size)'{-c,--cache_size}'=[Cache size (MB)]:size:' \
@@ -70,6 +71,7 @@ _vlink-bag_record() {
         '--max_memory_size=[Max memory size in the queue (GB)]:size:' \
         '--max_row_count=[Max row count]:count:' \
         '--max_bytes_size=[Max bytes size (GB)]:size:' \
+        '--max_split_count=[Max retained split file count (0 means unlimited)]:count:' \
         '--enable_limit[Enable limits]' \
         '--compress_level=[Compress level (1-5)]:level:(0 1 2 3 4 5)' \
         '*--ignore_compress=[Ignore compress urls (repeatable)]:url:_vlink_zsh_complete_url' \
@@ -93,7 +95,7 @@ _vlink-bag_play() {
 
     _arguments -s \
         '*'{-u,--urls}'=[Bind urls, empty is all]:url:_vlink_zsh_complete_url' \
-        '(-i --filter)'{-i,--filter}'=[Filter regex]:filter:' \
+        '(-i --filter)'{-i,--filter}'=[Filter keywords]:filter:' \
         '(-k --black)'{-k,--black}'[Blacklist mode]' \
         '(-n --native)'{-n,--native}'[Native mode]' \
         '*'{-s,--actions}'=[1\:C/Req 2\:C/Resp 3\:S/Req 4\:S/Resp 5\:Pub 6\:Sub 7\:Set 8\:Get (repeatable)]:action:(1 2 3 4 5 6 7 8)' \
@@ -134,7 +136,7 @@ _vlink-bag_clone() {
     _arguments -s \
         '*'{-u,--urls}'=[Bind urls, empty is all]:url:_vlink_zsh_complete_url' \
         '(-t --tag)'{-t,--tag}'=[Tag name]:tag:' \
-        '(-i --filter)'{-i,--filter}'=[Filter regex]:filter:' \
+        '(-i --filter)'{-i,--filter}'=[Filter keywords]:filter:' \
         '(-k --black)'{-k,--black}'[Blacklist mode]' \
         '*'{-s,--actions}'=[Action types 1\:C/Req 2\:C/Resp 3\:S/Req 4\:S/Resp 5\:Pub 6\:Sub 7\:Set 8\:Get (repeatable)]:action:(1 2 3 4 5 6 7 8)' \
         '(-b --begin_time)'{-b,--begin_time}'=[Begin time (s)]:time:' \
@@ -143,6 +145,7 @@ _vlink-bag_clone() {
         '(-l --detail)'{-l,--detail}'[Detail mode]' \
         '(-p --compress)'{-p,--compress}'[Compress data]' \
         '(-o --split_name_by_time)'{-o,--split_name_by_time}'[Split name by time]' \
+        '--enable_chunk_crc[Compute MCAP chunk CRC for VCAP output]' \
         '(-z --split_by_size)'{-z,--split_by_size}'=[Split by size]:size:' \
         '(-y --split_by_time)'{-y,--split_by_time}'=[Split by time]:time:' \
         '(-f --force)'{-f,--force}'[Overwriting]' \
@@ -161,6 +164,53 @@ _vlink-bag_clone() {
         '(-h --help)'{-h,--help}'[Show help]' \
         ':source bag:_vlink-bag_bag_file' \
         ':target bag:_files'
+}
+
+_vlink-bag_merge() {
+    local cur="${words[CURRENT]}"
+    local last_option=""
+
+    _vlink-bag_complete_url_list "${words[CURRENT-1]}" && return
+    _vlink-bag_complete_actions_list "${words[CURRENT-1]}" && return
+
+    if [[ "$cur" != -* ]]; then
+        last_option=$(_vlink_zsh_last_option)
+        _vlink-bag_complete_url_list "$last_option" && return
+        _vlink-bag_complete_actions_list "$last_option" && return
+    fi
+
+    _arguments -s \
+        '*'{-u,--urls}'=[Bind urls, empty is all]:url:_vlink_zsh_complete_url' \
+        '(-t --tag)'{-t,--tag}'=[Tag name]:tag:' \
+        '(-i --filter)'{-i,--filter}'=[Filter keywords]:filter:' \
+        '(-k --black)'{-k,--black}'[Blacklist mode]' \
+        '*'{-s,--actions}'=[Action types 1\:C/Req 2\:C/Resp 3\:S/Req 4\:S/Resp 5\:Pub 6\:Sub 7\:Set 8\:Get (repeatable)]:action:(1 2 3 4 5 6 7 8)' \
+        '(-b --begin_time)'{-b,--begin_time}'=[Begin time (s)]:time:' \
+        '(-e --end_time)'{-e,--end_time}'=[End time (s)]:time:' \
+        '(-q --quiet)'{-q,--quiet}'[Quiet mode]' \
+        '(-l --detail)'{-l,--detail}'[Detail mode]' \
+        '(-p --compress)'{-p,--compress}'[Compress data]' \
+        '(-o --output)'{-o,--output}'=[Output bag path]:output:_files' \
+        '--enable_chunk_crc[Compute MCAP chunk CRC for VCAP output]' \
+        '--check_gap=[Maximum input start time gap (s, default 3600)]:time:' \
+        '--split_name_by_time[Split name by time]' \
+        '(-z --split_by_size)'{-z,--split_by_size}'=[Split by size]:size:' \
+        '(-y --split_by_time)'{-y,--split_by_time}'=[Split by time]:time:' \
+        '(-f --force)'{-f,--force}'[Overwriting]' \
+        '(-j --wal_mode)'{-j,--wal_mode}'[Enable WAL mode]' \
+        '(-c --cache_size)'{-c,--cache_size}'=[Cache size (MB)]:size:' \
+        '--rel_begin_time=[Rel begin HH:MM:SS]:time:' \
+        '--rel_end_time=[Rel end HH:MM:SS]:time:' \
+        '--local_begin_time=[Local begin HH:MM:SS]:time:' \
+        '--local_end_time=[Local end HH:MM:SS]:time:' \
+        '--utc_begin_time=[UTC begin HH:MM:SS]:time:' \
+        '--utc_end_time=[UTC end HH:MM:SS]:time:' \
+        '--compress_level=[Compress level]:level:(0 1 2 3 4 5)' \
+        '*--ignore_compress=[Ignore compress urls (repeatable)]:url:_vlink_zsh_complete_url' \
+        '--import_schema[Import schema]' \
+        '--plugin=[Merge plugin (rewrites frames on write)]:plugin:' \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '*:source bag:_vlink-bag_bag_file'
 }
 
 _vlink-bag_fix() {
@@ -190,6 +240,7 @@ _vlink-bag() {
         'record:Record bag from live topics'
         'play:Replay bag'
         'clone:Clone bag to another bag'
+        'merge:Merge bags'
         'check:Check bag integrity'
         'reindex:Rebuild bag index'
         'fix:Fix bag'
@@ -212,6 +263,7 @@ _vlink-bag() {
                 record) _vlink-bag_record ;;
                 play) _vlink-bag_play ;;
                 clone) _vlink-bag_clone ;;
+                merge) _vlink-bag_merge ;;
                 check) _vlink-bag_simple ;;
                 reindex) _vlink-bag_simple ;;
                 fix) _vlink-bag_fix ;;

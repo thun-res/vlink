@@ -30,7 +30,7 @@
 namespace vlink {
 
 // ZenohGetterImpl
-ZenohGetterImpl::ZenohGetterImpl(const ZenohConf& conf) : conf_(conf) {}
+ZenohGetterImpl::ZenohGetterImpl(const ZenohConf& conf) : conf_(conf) { z_internal_null(&token_); }
 
 void ZenohGetterImpl::init() {
   static auto& factory = ZenohFactory::get();
@@ -48,16 +48,30 @@ void ZenohGetterImpl::init() {
 }
 
 void ZenohGetterImpl::deinit() {
+  if (object_) {
+    object_->undeclare_getter(&token_);
+  }
+
   detach();
 
-  object_->remove_impl(this);
+  if (object_) {
+    object_->remove_impl(this);
+  }
 }
 
-bool ZenohGetterImpl::suspend() { return object_->suspend(); }
+bool ZenohGetterImpl::suspend() {
+  has_suspend.store(true, std::memory_order_release);
 
-bool ZenohGetterImpl::resume() { return object_->resume(); }
+  return true;
+}
 
-bool ZenohGetterImpl::is_suspend() const { return object_->is_suspend(); }
+bool ZenohGetterImpl::resume() {
+  has_suspend.store(false, std::memory_order_release);
+
+  return true;
+}
+
+bool ZenohGetterImpl::is_suspend() const { return has_suspend.load(std::memory_order_acquire); }
 
 const Conf* ZenohGetterImpl::get_conf() const { return &conf_; }
 
@@ -68,7 +82,7 @@ bool ZenohGetterImpl::listen(MsgCallback&& callback) {
 
   object_->subscribe();
 
-  return true;
+  return object_->declare_getter(&token_);
 }
 
 void ZenohGetterImpl::set_latency_and_lost_enabled(bool enable) {

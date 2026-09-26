@@ -29,6 +29,7 @@
 #include <utility>
 
 #include "../base/logger.h"
+#include "../base/traits.h"
 #include "../impl/types.h"
 #include "../node.h"
 #include "../version.h"
@@ -52,6 +53,7 @@ inline bool Node<ImplT, SecT>::init() {
 
   impl_->check_version(Version{VLINK_VERSION_MAJOR, VLINK_VERSION_MINOR, VLINK_VERSION_PATCH});
 
+  impl_->init_impl_type = impl_->impl_type;
   impl_->init();
   impl_->init_ext();
 
@@ -73,11 +75,13 @@ inline bool Node<ImplT, SecT>::deinit() {
 
   if (quit_mtx_.has_value()) {
     std::lock_guard quit_lock(quit_mtx_.value());
-    impl_->deinit();
-    impl_->deinit_ext();
-  } else {
-    impl_->deinit();
-    impl_->deinit_ext();
+  }
+
+  impl_->deinit();
+  impl_->deinit_ext();
+
+  if constexpr (VLINK_HAS_MEMBER(ImplT, is_listened)) {
+    impl_->is_listened = false;
   }
 
   return true;
@@ -351,6 +355,11 @@ template <typename CallbackT, typename... ArgsT>
 inline void Node<ImplT, SecT>::invoke_callback(const CallbackT& callback, ArgsT&&... args) {
   if VUNLIKELY (quit_mtx_.has_value()) {
     std::lock_guard quit_lock(quit_mtx_.value());
+
+    if VUNLIKELY (!has_inited_.load(std::memory_order_acquire)) {
+      return;
+    }
+
     std::invoke(callback, std::forward<ArgsT>(args)...);
   } else {
     std::invoke(callback, std::forward<ArgsT>(args)...);

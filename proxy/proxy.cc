@@ -46,7 +46,8 @@ int main(int argc, char* argv[]) {
   argparse::ArgumentParser program("vlink-proxy", VLINK_VERSION, argparse::default_arguments::all);
 
   program.add_description("Note: You may need to add multicast/broadcast [" +
-                          vlink::DiscoveryViewer::get_listen_address() + "]");
+                          vlink::DiscoveryViewer::get_listen_address() + ":" +
+                          std::to_string(vlink::DiscoveryViewer::get_listen_port()) + "]");
 
   program.add_argument("-a", "--async").help("Async mode").default_value(false).implicit_value(true);
   program.add_argument("-r", "--reliable").help("Reliable mode").default_value(false).implicit_value(true);

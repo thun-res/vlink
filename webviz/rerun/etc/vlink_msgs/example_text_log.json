@@ -5,7 +5,14 @@
   "timestamp_field": "timestamp_ns",
   "timestamp_unit": "ns",
   "field_mappings": [
-    { "source": "message", "target": "message" },
-    { "source": "level", "target": "level", "default_value": "INFO" }
+    {
+      "source": "message",
+      "target": "text"
+    },
+    {
+      "source": "level",
+      "target": "level",
+      "default_value": "INFO"
+    }
   ]
 }

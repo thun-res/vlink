@@ -225,17 +225,23 @@ void update(osg::Geode* geode, const std::vector<FreespaceData>& areas, float al
   point_verts->dirty();
   point_colors->dirty();
 
+  fill_geo->dirtyBound();
+
   auto* fill_da = static_cast<osg::DrawArrays*>(fill_geo->getPrimitiveSet(0));
 
   if (fill_da) {
     fill_da->setCount(fill_verts->size());
   }
 
+  line_geo->dirtyBound();
+
   auto* line_da = static_cast<osg::DrawArrays*>(line_geo->getPrimitiveSet(0));
 
   if (line_da) {
     line_da->setCount(line_verts->size());
   }
+
+  point_geo->dirtyBound();
 
   auto* point_da = static_cast<osg::DrawArrays*>(point_geo->getPrimitiveSet(0));
 

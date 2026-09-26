@@ -117,7 +117,7 @@ auto sp = vlink::Publisher<T>::create_shared(url_str);             // shared_ptr
 | `bool is_support_loan() const` | 当前后端是否支持零拷贝借贷 |
 | `Bytes loan(int64_t size)` / `bool return_loan(const Bytes&)` | 借用 / 归还共享内存（见 [§14.10](#-1410-零拷贝)） |
 | `const std::string& get_url() const` | URL 构造时返回原串；typed `Conf` 构造时为空 |
-| `void set_safety_quit(bool)` | 销毁短于回调生命周期时启用，在回调与 `deinit()` 周围加锁防 use-after-free |
+| `void set_safety_quit(bool)` | 退出时拒绝新的数据与 RPC 回调，等待已进入的同类回调结束后再释放后端资源 |
 | `void set_ssl_options(const SslOptions&)` | TLS 配置，须在 `init()` 前设置；后端编译能力满足时适用 mqtt/dds/ddsc/ddsr/zenoh |
 
 生命周期状态机与各方法的并发语义见 [通信模型](02-communication.md)。
@@ -253,7 +253,7 @@ if (pub.is_support_loan()) {
 
 订阅端在回调返回后自动归还接收缓冲；需要在回调外继续持有数据时，应在回调内完成拷贝。
 
-每次 `loan()` 须由一次 `publish()` 或一次 `return_loan()` 平衡；若 `publish()` 返回 `false`，调用方应显式归还——对已被后端消费的缓冲区 `return_loan()` 是无害空操作——否则内存池在持续负载下耗尽（见 [§14.19](#-1419-共享内存初始化失败或-loan-失败)）。预置零拷贝容器（命名空间 `vlink::zerocopy::`）：`RawData`、`CameraFrame`、`PointCloud`、`OccupancyGrid`、`Tensor`、`ObjectArray`、`AudioFrame`。容器结构与字段含义见 [零拷贝](06-zerocopy.md)。
+每次 `loan()` 须由一次 `publish()` 或一次 `return_loan()` 平衡；若 `publish()` 返回 `false`，调用方应显式归还——对已被后端消费的缓冲区 `return_loan()` 是无害空操作——否则内存池在持续负载下耗尽（见 [§14.19](#-1419-共享内存初始化失败或-loan-失败)）。预置零拷贝容器（命名空间 `vlink::zerocopy::`）：`RawData`、`CameraFrame`、`PointCloud`、`OccupancyGrid`、`Tensor`、`ObjectArray`、`AudioFrame`。通用 CPU/GPU 缓冲区另见 [FastBuffer](06-zerocopy.md#-613-fastbuffer-插件缓冲区)，通过 `VLINK_FASTBUFFER_PLUGIN` 选择插件。容器结构与字段含义见 [零拷贝](06-zerocopy.md)。
 
 ---
 
@@ -269,7 +269,7 @@ if (pub.is_support_loan()) {
 | `vlink-check` | 系统诊断 | `diag` / `env` / `test` |
 | `vlink-list` | 列出活跃节点 | — |
 | `vlink-monitor` | 实时 TUI 监控 | — |
-| `vlink-bag` | 录制 / 回放 / bag 管理 | `record` / `play` / `info` / `clone` / `check` / `reindex` / `fix` / `tag` |
+| `vlink-bag` | 录制 / 回放 / bag 管理 | `record` / `play` / `info` / `clone` / `merge` / `check` / `reindex` / `fix` / `tag` |
 | `vlink-trigger` | 内存触发录制（EDR）：滚动缓冲 + 触发落盘 | `daemon` / `dump` |
 | `vlink-parse` | 从 URL / bag 抽取数据 | — |
 | `vlink-eproto` | Protobuf 动态 pub/sub | `pub` / `sub` / `import` |
@@ -288,13 +288,18 @@ if (pub.is_support_loan()) {
 | 变量 | 作用 |
 | --- | --- |
 | `VLINK_LOG_LEVEL` | 日志总级别（`0=Trace` .. `5=Fatal`，`6=Off`；也接受对应英文名称） |
-| `VLINK_LOG_DIR` | 日志输出目录 |
-| `VLINK_DDS_IP` | DDS 发现对外通告的本机单播 IP 列表（多值以逗号或空格分隔） |
+| `VLINK_LOG_DIR` | 默认日志根目录，其下按 `<应用名>` 分目录 |
+| `VLINK_LOG_PID_ENABLE` | 置 `1` 在应用名目录下再按 `<PID>` 隔离，供同名多实例并存 |
+| `VLINK_DDS_IP` | DDS 发现对外通告的本机单播 IP 列表（多值以逗号或空格分隔；未设置时取 `VLINK_DISCOVER_IP`） |
+| `VLINK_DDS_NATIVE_IP` | native 模式绑定的 DDS IP（未设置时为 `127.0.0.1`） |
 | `VLINK_DDS_PEER` | DDS 静态单播对端列表，绕开多播发现（多值以逗号或空格分隔，见 [§14.18](#-1418-跨机或容器不连通)） |
 | `VLINK_DDS_DOMAIN` | DDS domain id |
 | `VLINK_DISCOVER_DISABLE` | 置 `1` 关闭运行时发现上报 |
 | `VLINK_DISCOVER_NATIVE` | 置 `1` 仅限本机发现 |
+| `VLINK_DISCOVER_IP` | 发现组播使用的本机 IPv4 地址列表（多值以逗号或空格分隔；未设置时收发按系统路由走），同时是 `VLINK_DDS_IP` 的缺省值 |
+| `VLINK_DISCOVER_DOMAIN` | 发现域（`0`–`255`，默认 `0`）：UDP 端口取 `51600 + domain`，组播地址不变，所有进程须一致 |
 | `VLINK_PROTO_DIR` / `VLINK_FBS_DIR` | 动态 schema 目录（`vlink-eproto`/`-efbs`） |
+| `VLINK_FASTBUFFER_PLUGIN` | 首次构造 FastBuffer 时加载的插件名或路径；未设置或空值使用普通 CPU 内存，`shm` 使用可跨进程共享的 CPU 内存 |
 | `VLINK_URL_PLUGINS` | 首次 URL 初始化前设置：完整值 `auto` 按需加载未链接的已知共享 transport，`none` / 空值关闭插件加载，其他非空值为显式预加载列表；模式值大小写不敏感 |
 | `VLINK_BAG_PATH` | 进程级全局录制的 bag 文件路径（后缀须为 `.vdb`/`.vdbx`/`.vcap`/`.vcapx`），录制经过 Bytes 路径的普通六原语收发 action；限制见 [消息录制与回放](09-recording.md) |
 
@@ -438,11 +443,7 @@ DiscoveryReporter 基于 `239.255.0.100` 的 UDP 多播上报节点与端点元�
 
 ![服务发现网络](images/discovery-network.png)
 
-`vlink-list` 列不出任何节点时，可检查多播路由、`set_discovery_enabled(false)` 以及 DiscoveryReporter 是否被禁用。Linux 上可临时补一条出口路由验证：
-
-```bash
-sudo ip route add 239.255.0.100/32 dev eth0
-```
+`vlink-list` 列不出任何节点时，可检查 `239.255.0.100` 路由表项、`VLINK_DISCOVER_IP` 是否遗漏了目标网段的本机地址、`set_discovery_enabled(false)` 以及 DiscoveryReporter 是否被禁用。设置 `VLINK_DISCOVER_IP` 后 Reporter 与 Viewer 逐地址指定多播出口并加组，不依赖该路由表项；未设置时收发都按系统路由走。
 
 排除链路本身的最小验证：以下两段代码的 URL 逐字相同，构成一条最短的收发回路。
 
@@ -467,7 +468,7 @@ sub.listen([](const MyMsg& msg) { VLOG_I("received"); });
 
 | 环节 | 确认方法与处置 |
 | --- | --- |
-| 防火墙 | 按后端放行实际数据与发现端口；若仅拓扑工具不可见，再检查 `239.255.0.100:51694` |
+| 防火墙 | 按后端放行实际数据与发现端口；若仅拓扑工具不可见，再检查 `239.255.0.100` 的发现端口（`51600 + VLINK_DISCOVER_DOMAIN`，默认 `51600`） |
 | 网卡多播标记 | `ip link show eth0 \| grep MULTICAST` 应含 `MULTICAST` |
 | 容器网络 | `--net=host` 可用于区分 bridge/NAT 问题；需要的端口与多播取决于所用后端 |
 | 容器共享内存 | `/dev/shm` 默认 64 MB，`shm://` 易失败，启动加 `--shm-size=2g` |
@@ -596,7 +597,7 @@ if (!pub.init()) {
 
 下列主题各有专章，此处仅给出排障切入点与关键边界条件。
 
-- **Bag 损坏或无法打开**：先 `vlink-bag check file.vdb`；结构损坏用 `vlink-bag reindex`，数据损坏用 `vlink-bag fix`（`-y` 进入重建模式）。录制进程须经 `SIGINT`/`SIGTERM` 优雅退出，不可 `kill -9`。`.vcap` 即 MCAP，可由 Foxglove 直接打开；读写 `.vdb` 须在构建时启用 `ENABLE_SQLITE`。详见 [录制与回放](09-recording.md)。
+- **Bag 损坏或无法打开**：先 `vlink-bag check file.vdb`；结构损坏用 `vlink-bag reindex`，数据损坏用 `vlink-bag fix`（`-y` 进入重建模式）；`fix` 会按实际数据重算头部与话题计数，但分包 `.vdbx` 会跳过重算。录制进程须经 `SIGINT`/`SIGTERM` 优雅退出，不可 `kill -9`。`.vcap` 即 MCAP，可由 Foxglove 直接打开；读写 `.vdb` 须在构建时启用 `ENABLE_SQLITE`。详见 [录制与回放](09-recording.md)。
 - **C API 返回码**：`VLINK_RET_RUNTIME_ERROR` 表示底层构造或初始化抛异常（以 `VLINK_LOG_LEVEL=0` 取 `what()`）；`VLINK_RET_MEMORY_ERROR` 表示调用方缓冲过小，此时 `vlink_get()` 会把所需字节数写回 `*size`，据此扩容后重试（`data` 不可为 `NULL`）；`VLINK_RET_TRANSFER_ERROR` 表示发布、监听或调用失败（发布端常因无订阅者）。每个 `vlink_create_*` 须配对 `vlink_destroy_*`。详见 [集成](13-integration.md)。
 - **安全模式**：两端密钥与配置须完全一致，不一致时连接建立但解密失败（GCM 校验失败返回 `false`）。CDR 类型不支持 VLink 消息级加密，因为安全封装后的字节不再是合法的原生 CDR 负载；需加密时改用 Protobuf、FlatBuffers 或 Bytes，或改用 DDS 自身的 RTPS-Security。详见 [安全加密](07-security.md)。
 

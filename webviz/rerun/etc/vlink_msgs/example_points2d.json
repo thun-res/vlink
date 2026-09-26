@@ -3,8 +3,17 @@
   "archetype": "Points2D",
   "encoding": "protobuf",
   "field_mappings": [
-    { "source": "points", "target": "points" },
-    { "source": "x", "target": "point_x" },
-    { "source": "y", "target": "point_y" }
+    {
+      "source": "points",
+      "target": "positions"
+    },
+    {
+      "source": "x",
+      "target": "positions[][0]"
+    },
+    {
+      "source": "y",
+      "target": "positions[][1]"
+    }
   ]
 }

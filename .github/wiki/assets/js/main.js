@@ -688,13 +688,18 @@ int main() {
     ['VLINK_SCHEMA_PLUGIN', '', 'Specifies the schema plugin used for protobuf/flatbuffers schema loading.', false],
     ['VLINK_TMP_DIR', '', 'Specifies the temporary directory folder.', false],
     ['VLINK_LOCK_DIR', '', 'Specifies the lock directory folder.', false],
+    ['VLINK_MEMORY_LEVEL', '', 'MemoryPool tier level (0..9, default 3). 0 = bypass; 1..9 select the built-in pyramid.', false],
+    ['VLINK_MEMORY_PREALLOC', '', 'Set to 1 to fill every tier to its full blocks_per_chunk quota when the global MemoryPool is built.', false],
+    ['VLINK_MEMORY_BATCH_SIZE', '', 'Positive free-list shard transfer batch size used by the default MemoryPool configuration (default 16).', false],
+    ['VLINK_MEMORY_LAZY_SCALE', '', 'Set to 1 to scale lazy MemoryPool chunk installs with the tier quota (1/16, at least 32 KiB) instead of the fixed 64 KiB cap.', false],
     ['VLINK_LOG_LEVEL', '2', 'Sets log level (TRACE(0), DEBUG(1), INFO(2), WARN(3), ERROR(4), FATAL(5), OFF(6)).', true],
     ['VLINK_LOG_CONSOLE_LEVEL', '', 'Defines the log level for console output.', false],
     ['VLINK_LOG_FILE_LEVEL', '', 'Specifies the log level for file output and custom logger plugins.', false],
     ['VLINK_LOG_CONSOLE_UNORDER', '', 'Enable non-synchronized console output for better performance.', false],
     ['VLINK_LOG_CONSOLE_FMT', '', 'Boolean: 1 enables the extended console format; empty/0 uses the minimal format.', false],
-    ['VLINK_LOG_DIR', '', 'Directory path where log files will be stored.', false],
-    ['VLINK_LOG_ENABLE_UTC', '', 'Set whether to use UTC time as the printed timestamp', false],
+    ['VLINK_LOG_DIR', '', 'Default log root; files are written under an application-name subdirectory.', false],
+    ['VLINK_LOG_PID_ENABLE', '', 'When set to 1 isolates log files under application-name/PID so concurrent instances of one application do not share a rotating file set.', false],
+    ['VLINK_LOG_UTC_ENABLE', '', 'Set whether to use UTC time as the printed timestamp', false],
     ['VLINK_LOG_MAX_SIZE', '', 'Maximum size in bytes per log file before rotation.', false],
     ['VLINK_LOG_MAX_COUNT', '', 'Timestamp retention target, or fixed-name rotation backup count excluding the active file.', false],
     ['VLINK_LOG_FLUSH_DELAY', '', 'LoggerBackend flush interval in milliseconds.', false],
@@ -708,6 +713,8 @@ int main() {
     ['VLINK_BAG_TAG', '', 'A tag or identifier for the current data recording session.', false],
     ['VLINK_DISCOVER_DISABLE', '', 'Disables the system discovery feature when set to true.', false],
     ['VLINK_DISCOVER_NATIVE', '', 'Restricts discovery to localhost only.', false],
+    ['VLINK_DISCOVER_IP', '', 'Local IPv4 addresses for discovery multicast (comma or space separated); empty sends and joins through the system route.', false],
+    ['VLINK_DISCOVER_DOMAIN', '', 'Discovery domain (0 to 255, default 0) isolating the discovery channel: the UDP port becomes 51600 plus the domain while the multicast address and its route stay unchanged. Must match on every process.', false],
     ['VLINK_PROFILER_ENABLE', '', 'Enables the system profiler feature when set to true.', false],
     ['VLINK_QOS_CONFIG', '', 'Path to the configuration file for Quality of Service (QoS) settings.', false],
     ['VLINK_URL_PLUGINS', '', 'Before first URL initialization: auto enables on-demand recognized shared transports; none or empty disables plugins; other non-empty values are explicit preload lists (auto/none are case-insensitive).', false],
@@ -720,6 +727,7 @@ int main() {
     ['VLINK_DDS_FIELD_QOS', '', 'Quality of Service (QoS) settings for DDS fields.', false],
     ['VLINK_DDS_DOMAIN', '', 'Specifies the DDS domain ID for communication.', false],
     ['VLINK_DDS_IP', '192.168.1.10', 'Sets the unicast IP address for DDS communication.', true],
+    ['VLINK_DDS_NATIVE_IP', '', 'DDS IP applied by native-mode CLI, Proxy, Viewer, and WebViz; defaults to 127.0.0.1 when unset.', false],
     ['VLINK_DDS_IP_FILTER', '', 'Enables filtering to include only currently available addresses for DDS.', false],
     ['VLINK_DDS_MULTICAST_IP', '', 'Sets the multicast IP address for DDS communication.', false],
     ['VLINK_DDS_PEER', '', 'Configures the DDS peer-to-peer communication settings.', false],
@@ -728,6 +736,7 @@ int main() {
     ['VLINK_DDS_UDP', '', 'Enables or configures UDP transport for DDS.', false],
     ['VLINK_DDS_TCP', '', 'Enables or configures TCP transport for DDS.', false],
     ['VLINK_DDS_SHM', '', 'Enables or configures shared memory transport for DDS.', false],
+    ['VLINK_DDS_NOBLOCK', '', 'Enables non-blocking DDS sends (default 0).', false],
     ['VLINK_DDS_LESS_MEMORY', '', 'Enable DDS low memory usage mode.', false],
     ['VLINK_SHM_DEBUG', '', 'Enables debug information for shared memory transport.', false],
     ['VLINK_SHM_DEPTH', '', 'Configures the depth (queue size) of the shared memory transport buffer.', false],
@@ -1278,7 +1287,13 @@ int main() {
       : Math.max(10.00 + noise(4, sampleStep, 0.12, 2.6), 0);
     const rateClass = sampleStep < 2 ? 'warn' : 'ok';
     const bodyLines = (variant === 'pointcloud' ? buildPointCloudLines(fastStep) : buildGnssLines(fastStep))
-      .map((line) => `<span class="ok">${escapeTerminalText(clip(line, cols))}</span>`);
+      .flatMap((line) => {
+        const wrapped = [];
+        for (let offset = 0; offset < line.length; offset += cols) {
+          wrapped.push(`<span class="ok">${escapeTerminalText(line.slice(offset, offset + cols))}</span>`);
+        }
+        return wrapped;
+      });
     const pages = chunkPages(bodyLines, bodyRows);
     const totalPages = pages.length;
     const page = totalPages <= 1 ? 0 : Math.min(totalPages - 1, Math.floor(liveMs / 2200));

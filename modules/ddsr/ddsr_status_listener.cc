@@ -293,8 +293,14 @@ Status::BasePtr DdsrWriterListener::get_status(DDS_DataWriter* writer, Status::T
     }
 
     case Status::kOfferedIncompatibleQos: {
-      DDS_OfferedIncompatibleQosStatus status;
-      DDS_DataWriter_get_offered_incompatible_qos_status(writer, &status);
+      DDS_OfferedIncompatibleQosStatus status = DDS_OfferedIncompatibleQosStatus_INITIALIZER;
+      const auto ret = DDS_DataWriter_get_offered_incompatible_qos_status(writer, &status);
+      DDS_QosPolicyCountSeq_finalize(&status.policies);
+
+      if VUNLIKELY (ret != DDS_RETCODE_OK) {
+        return std::make_shared<Status::Unknown>();
+      }
+
       return convert_status(status);
     }
 
@@ -367,8 +373,14 @@ Status::BasePtr DdsrReaderListener::get_status(DDS_DataReader* reader, Status::T
     }
 
     case Status::kRequestedIncompatibleQos: {
-      DDS_RequestedIncompatibleQosStatus status;
-      DDS_DataReader_get_requested_incompatible_qos_status(reader, &status);
+      DDS_RequestedIncompatibleQosStatus status = DDS_RequestedIncompatibleQosStatus_INITIALIZER;
+      const auto ret = DDS_DataReader_get_requested_incompatible_qos_status(reader, &status);
+      DDS_QosPolicyCountSeq_finalize(&status.policies);
+
+      if VUNLIKELY (ret != DDS_RETCODE_OK) {
+        return std::make_shared<Status::Unknown>();
+      }
+
       return convert_status(status);
     }
 

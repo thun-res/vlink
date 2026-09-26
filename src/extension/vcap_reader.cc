@@ -55,6 +55,15 @@ namespace vlink {
 
 [[maybe_unused]] static constexpr size_t kMaxTaskSize = 50000U;
 
+static mcap::Timestamp get_read_end_time(int64_t start_timestamp_ns, int64_t end_time_ms) {
+  if (end_time_ms <= 0 || start_timestamp_ns < 0 ||
+      end_time_ms > (std::numeric_limits<int64_t>::max() - start_timestamp_ns - 1000) / 1000'000) {
+    return mcap::MaxTime;
+  }
+
+  return start_timestamp_ns + end_time_ms * 1000'000 + 1000;
+}
+
 // VCAPReader::Impl
 struct VCAPReader::Impl final {  // NOLINT(clang-analyzer-optin.performance.Padding)
   std::atomic<BagReader::Status> status{VCAPReader::kStopped};
@@ -317,6 +326,7 @@ void VCAPReader::jump(int64_t begin_time, double rate, int times, bool force_to_
     config_snapshot = impl_->config;
   }
 
+  config_snapshot.auto_pause = false;
   post_task([this, config_snapshot]() { read(config_snapshot); });
 }
 
@@ -702,7 +712,8 @@ bool VCAPReader::do_read_next(Frame& out, bool& is_error) {
     }
 
     if (impl_->cursor_end_us > 0 && timestamp > impl_->cursor_end_us) {
-      return false;
+      iter++;
+      continue;
     }
 
     if VUNLIKELY (iter->message.dataSize > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
@@ -786,7 +797,8 @@ bool VCAPReader::prepare_cursor_view(int file_index) {
   }
   read_options.readOrder = mcap::ReadMessageOptions::ReadOrder::FileOrder;
 
-  const auto [start_offset, end_offset] = wrapper_file.reader->byteRange(read_options.startTime, read_options.endTime);
+  const auto end_time = get_read_end_time(impl_->total_start_timestamp_ns, impl_->cursor_config.end_time);
+  const auto [start_offset, end_offset] = wrapper_file.reader->byteRange(read_options.startTime, end_time);
 
   // NOLINTNEXTLINE(readability-redundant-smartptr-get)
   impl_->cursor_msg_view = std::make_unique<mcap::LinearMessageView>(*wrapper_file.reader.get(), read_options,
@@ -1580,7 +1592,7 @@ void VCAPReader::open(const std::string& path) {
             impl_->total_has_completed = false;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
           }
 
-          if (blank_duration < 0) {
+          if (blank_duration < 0 || impl_->info.blank_duration < blank_duration) {
             blank_duration = impl_->info.blank_duration;
           }
 
@@ -1796,6 +1808,7 @@ int VCAPReader::get_reset_index(const Config& config) {
   int64_t last_time = impl_->begin_time.load(std::memory_order_relaxed);
 
   mcap::ReadMessageOptions read_options;
+  const auto end_time = get_read_end_time(impl_->total_start_timestamp_ns, config.end_time);
 
   for (auto& wrapper_file : impl_->file_list) {
     if (start_index < 0 && impl_->begin_time.load(std::memory_order_relaxed) >= last_time &&
@@ -1829,8 +1842,7 @@ int VCAPReader::get_reset_index(const Config& config) {
       // LCOV_EXCL_STOP GCOVR_EXCL_STOP
     }
 
-    const auto [start_offset, end_offset] =
-        wrapper_file.reader->byteRange(read_options.startTime, read_options.endTime);
+    const auto [start_offset, end_offset] = wrapper_file.reader->byteRange(read_options.startTime, end_time);
 
     // NOLINTNEXTLINE(readability-redundant-smartptr-get)
     wrapper_file.msg_view = std::make_unique<mcap::LinearMessageView>(*wrapper_file.reader.get(), read_options,
@@ -1864,8 +1876,6 @@ void VCAPReader::read(const Config& config) {
   bool is_interrupted = false;
 
   do {
-    bool is_end = false;
-
     // prepare
     int start_index = get_reset_index(config);
 
@@ -1960,8 +1970,13 @@ void VCAPReader::read(const Config& config) {
         }
 
         if (config.end_time > 0 && timestamp > config.end_time * 1000U) {
-          timestamp = config.end_time * 1000U;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-          is_end = true;                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+          if (impl_->stop_flag.load(std::memory_order_relaxed) || impl_->jump_flag.load(std::memory_order_relaxed) ||
+              is_ready_to_quit()) {
+            is_interrupted = true;
+            break;
+          }
+
+          continue;
         }
 
         data = reinterpret_cast<const uint8_t*>(iter->message.data);
@@ -2028,10 +2043,6 @@ void VCAPReader::read(const Config& config) {
           impl_->real_elapsed.store(timestamp, std::memory_order_relaxed);
         }
 
-        if (is_end) {
-          break;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        }
-
         ActionType action_type = ActionType::kUnknownAction;
 
         if (auto action_iter = wrapper_file.channel_action_map.find(iter->message.channelId);
@@ -2048,7 +2059,7 @@ void VCAPReader::read(const Config& config) {
         BagReader::process_output(frame);
       }
 
-      if (is_interrupted || is_end) {
+      if (is_interrupted) {
         break;
       }
     }

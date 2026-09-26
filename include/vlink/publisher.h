@@ -259,13 +259,15 @@ class Publisher : public Node<PublisherImpl, SecT> {
   bool publish_fbb(const void* fbb, bool force = false);
 
   /**
-   * @brief Promotes this publisher to behave as a @c Setter (field-writer) at the transport layer.
+   * @brief Marks this publisher as a field writer.
    *
    * @details
-   * Switches the underlying @c impl_type from @c kPublisher to @c kSetter
-   * so that field-mode semantics (late-joiner sync, latest-value retention)
-   * are activated.  When called post-@c init(), the transport extension is
-   * reinitialised automatically.  Used internally by @c Setter.
+   * Call before @c init() to request field transport settings where supported
+   * and record published samples as @c ActionType::kSet.
+   * After @c init(), only the discovery role changes; the endpoint is not migrated.
+   * Does not add a public value cache; transport history depends on the backend.
+   * Publishing without connected readers still requires @c force=true.
+   * Use @c Setter when latest-value retention and late-getter replay are needed.
    */
   void mark_as_setter();
 

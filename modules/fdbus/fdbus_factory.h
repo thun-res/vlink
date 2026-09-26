@@ -96,8 +96,8 @@ class FdbusClient final : public AbstractObject<FdbusID>,
 
   void start_timer();
 
-  bool call(uint32_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback = nullptr,
-            int32_t timeout_ms = 0);
+  bool call(NodeImpl* owner, uint32_t channel, const Bytes& req_data, NodeImpl::MsgCallback&& callback = nullptr,
+            int32_t timeout_ms = 0, bool dispatch = true);
 
  private:
   void onOnline(const fdbus::CFdbOnlineInfo& info) override;

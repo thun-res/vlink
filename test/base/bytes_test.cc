@@ -167,6 +167,18 @@ TEST_SUITE("base-Bytes") {
     CHECK_EQ(b.data()[2], 0x03u);
   }
 
+  TEST_CASE("copy-assigning an empty view of the owned storage leaves no dangling pointer") {
+    Bytes owner = Bytes::create(4096u);
+    REQUIRE(owner.is_owner());
+
+    Bytes view = Bytes::shallow_copy_ptr(owner.data() + 16);
+    owner = view;
+
+    CHECK(owner.empty());
+    CHECK_FALSE(owner.is_owner());
+    CHECK(owner.data() == nullptr);
+  }
+
   TEST_CASE("shallow_copy_ptr wraps opaque pointer with zero size") {
     int sentinel = 42;
     Bytes b = Bytes::shallow_copy_ptr(&sentinel);
@@ -424,6 +436,21 @@ TEST_SUITE("base-Bytes") {
     CHECK(Bytes::decode_from_base64("!!!!").empty());
     CHECK(Bytes::decode_from_base64("TQ=A").empty());
     CHECK(Bytes::decode_from_base64("T===").empty());
+  }
+
+  TEST_CASE("base64 decoding fills owned buffers across SBO and padding boundaries") {
+    for (size_t size : {95u, 96u, 97u, 4095u, 4096u, 4097u}) {
+      Bytes original = Bytes::create(size);
+      fill_pattern(original);
+
+      auto encoded = Bytes::encode_to_base64(original);
+      Bytes decoded = Bytes::decode_from_base64(encoded);
+
+      CHECK(decoded.is_owner());
+      CHECK_EQ(decoded.size(), size);
+      CHECK(decoded == original);
+      CHECK(decoded.data() != original.data());
+    }
   }
 
   TEST_CASE("base64 handles one two and three byte padding cases") {

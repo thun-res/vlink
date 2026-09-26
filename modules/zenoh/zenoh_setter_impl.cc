@@ -41,14 +41,14 @@ void ZenohSetterImpl::init() {
       {kImplType, conf_.address, conf_.event, conf_.domain, conf_.depth, conf_.qos, conf_.fragment, properties});
 
   object_->add_impl(this);
-
-  object_->start_matching();
 }
 
 void ZenohSetterImpl::deinit() {
   detach();
 
-  object_->remove_impl(this);
+  if (object_) {
+    object_->remove_impl(this);
+  }
 }
 
 const Conf* ZenohSetterImpl::get_conf() const { return &conf_; }
@@ -62,10 +62,6 @@ Bytes ZenohSetterImpl::loan(int64_t size) { return object_->loan(static_cast<uin
 bool ZenohSetterImpl::return_loan(const Bytes& bytes) { return object_->release(bytes); }
 
 void ZenohSetterImpl::write(const Bytes& msg_data) {
-  if VUNLIKELY (!object_->has_subscribers()) {
-    return;
-  }
-
   object_->publish(static_cast<uint64_t>(conf_.hash_code), msg_data);
 }
 
@@ -75,6 +71,8 @@ void ZenohSetterImpl::sync(SyncCallback&& callback) {
       callback();
     }
   });
+
+  object_->start_field_sync();
 }
 
 }  // namespace vlink

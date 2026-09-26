@@ -7,15 +7,10 @@ project(vlink-bag2mcap LANGUAGES CXX)
 # src
 add_executable(${PROJECT_NAME} bag2mcap.cc)
 target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/../src ${PROJECT_SOURCE_DIR}/../..)
-target_sources(
-  ${PROJECT_NAME}
-  PRIVATE ${PROJECT_SOURCE_DIR}/../src/foxglove_converter.cc ${PROJECT_SOURCE_DIR}/../src/foxglove_converter.h
-          ${PROJECT_SOURCE_DIR}/../../zerocopy_message.cc ${PROJECT_SOURCE_DIR}/../../zerocopy_message.h
-          ${CMAKE_SOURCE_DIR}/src/private/mcap_import.cc
-)
+target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/src/private/mcap_import.cc)
 target_link_libraries(
   ${PROJECT_NAME}
-  PRIVATE vlink::vlink
+  PRIVATE vlink-foxglove-conversion
           vlink::proxy_api
           ${protobuf_libs}
           ${flatbuffers_libs}
@@ -24,11 +19,13 @@ target_link_libraries(
           thirdparty::argparse
           $<BUILD_INTERFACE:foxglove_fbs_gen>
 )
+
 vlink_target_system_includes_from(${PROJECT_NAME} ${protobuf_libs})
 vlink_target_system_includes_from(${PROJECT_NAME} ${flatbuffers_libs})
 
 if(ENABLE_ZSTD)
   target_compile_definitions(${PROJECT_NAME} PRIVATE "VLINK_ENABLE_ZSTD")
+
   if(TARGET zstd::libzstd_shared)
     target_link_libraries(${PROJECT_NAME} PRIVATE zstd::libzstd_shared)
   elseif(TARGET zstd::libzstd_static)
@@ -36,13 +33,6 @@ if(ENABLE_ZSTD)
   endif()
 endif()
 
-if(NOT TARGET vlink-exprtk_api)
-  find_package(vlink-exprtk_api QUIET)
-endif()
-
-if(TARGET vlink::exprtk_api)
-  target_link_libraries(${PROJECT_NAME} PRIVATE vlink::exprtk_api)
-endif()
 if(WIN32)
   if(EXISTS ${CMAKE_SOURCE_DIR}/packup/ico/vlink-cmd.rc)
     target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/packup/ico/vlink-cmd.rc)

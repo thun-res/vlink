@@ -123,6 +123,8 @@ struct FlatbuffersObjectView final {
 
   [[nodiscard]] std::optional<double> get_numeric(const FlatbuffersObjectView& parent, const reflection::Field& field);
 
+  [[nodiscard]] int64_t get_integer(const FlatbuffersObjectView& parent, const reflection::Field& field);
+
   [[nodiscard]] std::string get_string(const FlatbuffersObjectView& parent, const reflection::Field& field,
                                        const reflection::Schema* schema = nullptr);
 

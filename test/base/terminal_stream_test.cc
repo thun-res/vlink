@@ -28,10 +28,12 @@
 #if defined(__unix__) && !defined(__CYGWIN__)
 
 #include <doctest/doctest.h>
+#include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstdio>
 #include <cstdlib>
 #include <limits>
 #include <ostream>
@@ -212,6 +214,52 @@ TEST_SUITE("base-TerminalStream") {
     TerminalStream& ts = TerminalStream::get();
     const char data[] = "raw write test";
     ts.write_raw(data, sizeof(data) - 1);
+  }
+
+  TEST_CASE("a large write retains new bytes when flushing old bytes would block") {
+    const pid_t child = ::fork();
+    REQUIRE(child >= 0);
+
+    if (child == 0) {
+      int pipe_fds[2];
+      if (::pipe(pipe_fds) != 0 || ::fcntl(pipe_fds[1], F_SETFL, O_NONBLOCK) < 0) {
+        std::_Exit(2);
+      }
+      if (::dup2(pipe_fds[1], STDOUT_FILENO) != STDOUT_FILENO) {
+        std::_Exit(3);
+      }
+      ::close(pipe_fds[1]);
+
+      char fill[4096] = {};
+      while (::write(STDOUT_FILENO, fill, sizeof(fill)) > 0) {
+      }
+      if (errno != EAGAIN && errno != EWOULDBLOCK) {
+        std::_Exit(4);
+      }
+
+      TerminalStream stream;
+      const std::string large(TerminalStream::kDefaultBufferSize, 'x');
+      stream << "prefix" << large;
+
+      std::FILE* output = std::tmpfile();
+      if (output == nullptr || ::dup2(::fileno(output), STDOUT_FILENO) != STDOUT_FILENO) {
+        std::_Exit(5);
+      }
+      ::close(pipe_fds[0]);
+      stream.flush();
+      std::rewind(output);
+
+      std::string actual(large.size() + 6, '\0');
+      const auto size = std::fread(actual.data(), 1, actual.size(), output);
+      const bool matches = size == actual.size() && actual == "prefix" + large && std::fgetc(output) == EOF;
+      std::fclose(output);
+      std::_Exit(matches ? 0 : 6);
+    }
+
+    int status = 0;
+    REQUIRE_EQ(::waitpid(child, &status, 0), child);
+    REQUIRE(WIFEXITED(status));
+    CHECK_EQ(WEXITSTATUS(status), 0);
   }
 
   TEST_CASE("write_raw with zero length is a no-op") {

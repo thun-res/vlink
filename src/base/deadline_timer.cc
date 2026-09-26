@@ -23,6 +23,9 @@
 
 #include "./base/deadline_timer.h"
 
+#include <algorithm>
+#include <limits>
+
 namespace vlink {
 
 // DeadlineTimer
@@ -97,7 +100,7 @@ int64_t DeadlineTimer::remaining_time() const noexcept {
     return 0;
   }
 
-  return static_cast<int64_t>(deadline_val - now);
+  return static_cast<int64_t>(std::min(deadline_val - now, static_cast<uint64_t>(std::numeric_limits<int64_t>::max())));
 }
 
 bool DeadlineTimer::has_expired() const noexcept {

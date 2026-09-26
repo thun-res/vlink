@@ -347,11 +347,15 @@ void update(osg::Geode* geode, const std::vector<LaneData>& lanes, float line_wi
   arrow_verts->dirty();
   arrow_colors->dirty();
 
+  line_geo->dirtyBound();
+
   auto* line_da = static_cast<osg::DrawArrays*>(line_geo->getPrimitiveSet(0));
 
   if (line_da) {
     line_da->setCount(line_verts->size());
   }
+
+  arrow_geo->dirtyBound();
 
   auto* arrow_da = static_cast<osg::DrawArrays*>(arrow_geo->getPrimitiveSet(0));
 

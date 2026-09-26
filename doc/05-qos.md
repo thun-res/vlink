@@ -18,7 +18,7 @@ QoS 在 VLink 中以 `vlink::Qos` 聚合结构承载，由传输后端解释，�
 - **按名引用**：`vlink::QosProfile` 内置 16 个 profile，其名字可在上述后端的 URL 中直接使用（如 `?qos=sensor`）；自定义 QoS 需先经 `register_qos("name", qos)` 注册，再以该名引用。
 - **显式有效位**：`Qos::valid` 必须为 `true`，传输层才会应用该策略。所有预定义 profile 已置位；手工构造的 `Qos` 须自行置 `true`。
 
-`zenoh://` 的命名 profile 接口与 DDS 一致，但原生能力映射不是 DDS QoS 的等价实现：可靠性用于选择 block/drop 拥塞控制（带 unstable API 的 zenoh-c 还设置 publisher reliability），`additions.priority` 与 `is_express` 直接映射到 Zenoh 发布、请求和响应选项；在 zenoh-c 中，正的 `history.depth`（或显式 `?depth=`）还用于链路 data/real-time TX 队列并限制到 1–16，pico 没有对应的队列配置。Durability、KeepAll、Deadline、Lifespan、Liveliness、Ownership、DestinationOrder、LatencyBudget、ResourceLimits 与 PublishMode 当前不映射到 Zenoh 原生 QoS。Field 的迟到 Getter 获得最新值依赖 VLink Setter 缓存及匹配后重发，不等同于 Zenoh durability/storage。
+`zenoh://` 的命名 profile 接口与 DDS 一致，但原生能力映射不是 DDS QoS 的等价实现：可靠性用于选择 block/drop 拥塞控制（带 unstable API 的 zenoh-c 还设置 publisher reliability），`additions.priority` 与 `is_express` 直接映射到 Zenoh 发布、请求和响应选项；在 zenoh-c 中，正的 `history.depth`（或显式 `?depth=`）还用于链路 data/real-time TX 队列并限制到 1–16，pico 没有对应的队列配置。Durability、KeepAll、Deadline、Lifespan、Liveliness、Ownership、DestinationOrder、LatencyBudget、ResourceLimits 与 PublishMode 当前不映射到 Zenoh 原生 QoS。Field 的每个 Getter 在订阅就绪后声明独立 liveliness token，Setter 发现该 token 时重发已有缓存；历史 token 也覆盖 Getter 先上线的顺序。Setter 不再依赖匹配检测，没有 Getter 时写入照常发送；Getter 的 token 声明失败时 `listen()` 返回 `false`。此机制不等同于 Zenoh durability/storage。
 
 ---
 

@@ -54,7 +54,6 @@ class MqttSetterImpl final : public SetterImpl {
 
   MqttConf conf_;
   std::shared_ptr<Object> object_;
-  SyncCallback sync_callback_;
 
   VLINK_DISALLOW_COPY_AND_ASSIGN(MqttSetterImpl)
 };

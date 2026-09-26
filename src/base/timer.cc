@@ -105,16 +105,9 @@ Timer::~Timer() {
   }
 #endif
 
-  MessageLoop* message_loop = impl_->message_loop.load(std::memory_order_acquire);
-
-  if (message_loop && !impl_->is_once_type) {
-    const bool should_wait = message_loop->is_running() && !message_loop->is_in_same_thread();
-
+  if (!impl_->is_once_type) {
     detach();
-
-    if (should_wait) {
-      wait_for_idle();
-    }
+    wait_for_idle();
   }
 }
 
@@ -222,10 +215,7 @@ void Timer::start(Callback&& callback) {
   }
 }
 
-void Timer::restart() {
-  impl_->remain_loop_count.store(impl_->loop_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
-  force_to_start();
-}
+void Timer::restart() { force_to_start(true); }
 
 void Timer::stop() { stop(true); }
 
@@ -276,20 +266,25 @@ void Timer::set_loop_count(int32_t loop_count) {
 }
 
 void Timer::set_callback(Callback&& callback) {
+  Callback previous;
   std::lock_guard lock(impl_->recursive_mtx);
 
   if VUNLIKELY (impl_->is_busy.load(std::memory_order_acquire)) {
+    previous = std::move(impl_->pending_callback);
     impl_->pending_callback = std::move(callback);
     impl_->has_pending_callback = true;
     return;
   }
 
+  previous = std::move(impl_->callback);
   impl_->callback = std::move(callback);
 }
 
 void Timer::set_priority(uint16_t priority) { impl_->priority.store(priority, std::memory_order_relaxed); }
 
 void Timer::run_callback() {
+  Callback previous;
+
   {
     std::lock_guard lock(impl_->mtx);
 
@@ -306,6 +301,7 @@ void Timer::run_callback() {
       std::lock_guard callback_lock(impl_->recursive_mtx);
 
       if VUNLIKELY (impl_->has_pending_callback) {
+        previous = std::move(impl_->callback);
         impl_->callback = std::move(impl_->pending_callback);
         impl_->has_pending_callback = false;
       }
@@ -320,8 +316,9 @@ void Timer::run_callback() {
 void Timer::begin_in_flight() { impl_->in_flight_count.fetch_add(1, std::memory_order_acq_rel); }
 
 void Timer::end_in_flight() {
+  std::lock_guard lock(impl_->mtx);
+
   if (impl_->in_flight_count.fetch_sub(1, std::memory_order_acq_rel) == 1U) {
-    std::lock_guard lock(impl_->mtx);
     impl_->cv.notify_all();
   }
 }
@@ -336,26 +333,42 @@ void Timer::wait_for_idle() {
 
 void Timer::stop(bool invalidate_pending) {
   impl_->start_time.store(0, std::memory_order_release);
-  impl_->invoke_count.store(0, std::memory_order_relaxed);
 
   if (invalidate_pending) {
+    impl_->invoke_count.store(0, std::memory_order_relaxed);
     impl_->generation.fetch_add(1, std::memory_order_acq_rel);
   }
 }
 
 void Timer::clear() { impl_->message_loop.store(nullptr, std::memory_order_release); }
 
-void Timer::force_to_start() {
+void Timer::force_to_start(bool reset_loop_count) {
   if VUNLIKELY (!has_callback()) {
+    if (reset_loop_count) {
+      impl_->remain_loop_count.store(impl_->loop_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    }
+
     VLOG_E("Timer: Callback is not set.");
     return;
   }
 
-  impl_->start_time.store(MessageLoop::get_current_nano_time(), std::memory_order_release);
-  impl_->invoke_count.store(0, std::memory_order_relaxed);
-  impl_->generation.fetch_add(1, std::memory_order_acq_rel);
-
   MessageLoop* message_loop = impl_->message_loop.load(std::memory_order_acquire);
+
+  {
+    std::unique_lock<std::mutex> lock;
+
+    if VLIKELY (message_loop) {
+      lock = message_loop->lock_timers();
+    }
+
+    if (reset_loop_count) {
+      impl_->remain_loop_count.store(impl_->loop_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    }
+
+    impl_->start_time.store(MessageLoop::get_current_nano_time(), std::memory_order_release);
+    impl_->invoke_count.store(0, std::memory_order_relaxed);
+    impl_->generation.fetch_add(1, std::memory_order_acq_rel);
+  }
 
   if VLIKELY (message_loop) {
     message_loop->wakeup();

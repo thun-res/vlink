@@ -105,6 +105,12 @@ inline const message_type_support_callbacks_t* get_ros2_msg_callbacks() noexcept
 
 template <typename T>
 inline constexpr Type get_type_of() noexcept {
+  if constexpr (Traits::IsSharedPtr<T>::value) {
+    if constexpr (!std::is_same_v<typename T::weak_type, std::weak_ptr<typename T::element_type>>) {
+      return kUnknownType;
+    }
+  }
+
   if constexpr (is_bytes_type<T>()) {
     return kBytesType;
   } else if constexpr (is_dynamic_type<T>()) {
@@ -436,13 +442,13 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
       if constexpr (VLINK_HAS_MEMBER(RealType, ByteSizeLong())) {
         size_t target_size = deref(src).ByteSizeLong();
 
-        if VUNLIKELY (des.size() != target_size) {
+        if VUNLIKELY (des.size() != target_size || des.offset() != offset) {
           des = Bytes::create(target_size, offset);
         }
       } else {
         size_t target_size = deref(src).ByteSize();
 
-        if VUNLIKELY (des.size() != target_size) {
+        if VUNLIKELY (des.size() != target_size || des.offset() != offset) {
           des = Bytes::create(target_size, offset);
         }
       }
@@ -457,13 +463,13 @@ inline bool serialize(const T& src, Bytes& des, [[maybe_unused]] TransportType t
       if constexpr (VLINK_HAS_MEMBER(std::remove_pointer_t<T>, ByteSizeLong())) {
         size_t target_size = src->ByteSizeLong();
 
-        if VUNLIKELY (des.size() != target_size) {
+        if VUNLIKELY (des.size() != target_size || des.offset() != offset) {
           des = Bytes::create(target_size, offset);
         }
       } else {
         size_t target_size = src->ByteSize();
 
-        if VUNLIKELY (des.size() != target_size) {
+        if VUNLIKELY (des.size() != target_size || des.offset() != offset) {
           des = Bytes::create(target_size, offset);
         }
       }
@@ -768,9 +774,9 @@ inline bool deserialize(const Bytes& src, T& des, [[maybe_unused]] TransportType
     }
   } else if constexpr (TypeT == kStringType) {
     if VLIKELY (!src.empty()) {
-      deref(des) = std::string(reinterpret_cast<const char*>(src.data()), src.size());
+      deref(des).assign(reinterpret_cast<const char*>(src.data()), src.size());
     } else {
-      deref(des) = std::string();
+      deref(des).clear();
     }
   } else if constexpr (TypeT == kCharsType) {
     (void)src;

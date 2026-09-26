@@ -59,37 +59,39 @@ bool AckManager::process(RequestPtr request, int ms, ProcessCallback&& process_c
       return false;
     }
 
+    if VUNLIKELY (request->status != Request::Status::kCreated) {
+      return false;
+    }
+
     request->deadline = deadline;
+    request->status = Request::Status::kPending;
     request_set_.emplace(request);
   }
 
-  if VLIKELY (process_callback) {
-    if VUNLIKELY (!process_callback()) {
-      remove(request);
-      return false;
-    }
-  } else {
-    remove(request);
-    return false;
-  }
+  const bool sent = process_callback && process_callback();
 
   std::unique_lock lock(request->mtx);
 
   auto predicate = [&request]() -> bool { return request->status != Request::Status::kPending; };
 
-  if VUNLIKELY (ms < 0) {
-    request->cv.wait(lock, predicate);
-  } else {
-    request->cv.wait_until(lock, request->deadline, predicate);
+  if VLIKELY (sent) {
+    if VUNLIKELY (ms < 0) {
+      request->cv.wait(lock, predicate);
+    } else {
+      request->cv.wait_until(lock, request->deadline, predicate);
+    }
+  }
+
+  {
+    std::lock_guard manager_lock(mtx_);
+    request_set_.erase(request);
   }
 
   if (request->status == Request::Status::kPending) {
-    std::lock_guard manager_lock(mtx_);
-    request_set_.erase(request);
     request->status = Request::Status::kCancelled;
   }
 
-  return request->status == Request::Status::kAcknowledged;
+  return sent && request->status == Request::Status::kAcknowledged;
 }
 
 bool AckManager::notify(RequestPtr request, NotifyCallback&& notify_callback) noexcept {
@@ -98,15 +100,12 @@ bool AckManager::notify(RequestPtr request, NotifyCallback&& notify_callback) no
   }
 
   std::lock_guard lock(request->mtx);
-  const auto acknowledged_at = std::chrono::steady_clock::now();
 
-  {
-    std::lock_guard manager_lock(mtx_);
-
-    if VUNLIKELY (request_set_.erase(request) == 0) {
-      return false;
-    }
+  if VUNLIKELY (request->status != Request::Status::kPending) {
+    return false;
   }
+
+  const auto acknowledged_at = std::chrono::steady_clock::now();
 
   if VUNLIKELY (acknowledged_at >= request->deadline) {
     request->status = Request::Status::kCancelled;
@@ -130,6 +129,10 @@ bool AckManager::remove(RequestPtr request) noexcept {
   }
 
   std::lock_guard lock(request->mtx);
+
+  if VUNLIKELY (request->status != Request::Status::kPending) {
+    return false;
+  }
 
   {
     std::lock_guard manager_lock(mtx_);
@@ -159,8 +162,10 @@ void AckManager::clear() noexcept {
 
   for (const auto& request : temp_set) {
     std::lock_guard lock(request->mtx);
-    request->status = Request::Status::kCancelled;
-    request->cv.notify_all();
+    if (request->status == Request::Status::kPending) {
+      request->status = Request::Status::kCancelled;
+      request->cv.notify_all();
+    }
   }
 }
 

@@ -178,7 +178,7 @@ shm://<address>[?event=<name>&domain=<N>&depth=<N>&history=<N>&wait=<ms>]
 | --- | --- | --- |
 | `address` | `<host>/<path>` | 服务 / 主题名，必填，≤80 字符 |
 | `event` | `?event=` | 次级事件名，≤80 字符 |
-| `domain` | `?domain=` | 域 ID，默认 0 |
+| `domain` | `?domain=` | 服务命名隔离域，默认 0，不切换 RouDi 实例 |
 | `depth` | `?depth=` | 队列容量覆写，默认 0（用 Iceoryx 默认值） |
 | `history` | `?history=` | 历史重放计数，默认 0；字段节点默认 1 |
 | `wait` | `?wait=<ms>` | 阻塞等待超时，`>0` 启用，仅 Pub/Sub 有效 |
@@ -216,9 +216,11 @@ int main() {
 
 ![共享内存零拷贝数据流](images/shm-zerocopy-flow.png)
 
+RPC 与 Field 按 event 隔离原生服务；每个 Getter 使用独立接收端获取当前字段历史，字段至少保留一个历史值。普通 Publisher/Subscriber 仍复用同地址端点。该命名与旧版本不互通，同一 RouDi 下的进程需同批升级。`wait>0` 时，订阅者分布在多个 loop 上的样本要等所有 loop 完成回调后才释放发布端。
+
 ### 🆕 4.6.3 shm2:// — Iceoryx2 共享内存（Beta）
 
-Iceoryx2 为下一代实现，进程自治管理共享内存，无需独立守护进程。每条消息的内存分配大小由 URL 片段 `#<size>` 预先确定，默认 128 字节，上限 32 MiB。
+Iceoryx2 为下一代实现，进程自治管理共享内存，无需独立守护进程。URL 片段 `#<size>` 设置初始 payload 分配容量，默认 4 KiB，配置上限 32 MiB；底层采用动态 slice 与 BEST_FIT 分配，实际消息可以超过初始容量。
 
 ```
 shm2://<address>[?event=<name>&domain=<N>&depth=<N>&history=<N>&wait=<ms>][#<size>]
@@ -239,7 +241,7 @@ sub.listen([](const vlink::Bytes& data) {
 });
 ```
 
-边界条件：`shm2://` 与 `shm://` 互不兼容，两者节点无法互通；消息大小须在 URL 片段中预先声明。
+边界条件：`shm2://` 与 `shm://` 互不兼容，两者节点无法互通。RPC 和 Field 按完整 event 隔离原生服务；所有服务名（含普通 Pub/Sub 的通知服务）与旧版本不互通，需同批升级；Field 的每个 Getter 使用独立接收端，以获得所属字段的历史值。普通 Publisher/Subscriber 仍复用同地址端点。`wait>0` 的完成计数按实际服务隔离，不跨 domain 消费，多 loop 订阅的样本在所有 loop 完成回调后才释放发布端。丢样统计按发布者区分序列号。
 
 ### 🛰️ 4.6.4 DDS 系列：dds:// / ddsc:// / ddsr://
 
@@ -315,7 +317,7 @@ sub.listen([](const std::string& data) { VLOG_I("recv: ", data); });
 
 两个 local 特性用于维持 VLink 复用 session 时的同进程语义。P2P 模式下的远端匹配检测由 liveliness 补齐，不要求开启 multicast declarations。
 
-pico 路径不支持 Zenoh SHM、JSON5 配置文件和 unstable locality 过滤。TLS 仅在 zenoh-pico 以 `Z_FEATURE_LINK_TLS=1` 构建时生效。zenoh-c 的 SHM/locality 同样取决于对应编译特性。
+pico 路径不支持 Zenoh SHM、JSON5 配置文件和 unstable locality 过滤。TLS 仅在 zenoh-pico 以 `Z_FEATURE_LINK_TLS=1` 构建时生效。pico 的 `#tcp`/`#tls` 需显式配置连接端点或 `zenoh.listen`；监听端口必须非零，不自动分配或占用默认端口。zenoh-c 的 SHM/locality 同样取决于对应编译特性。
 
 ### 🚗 4.6.6 someip:// — SOME/IP 车载以太网（Beta）
 

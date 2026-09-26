@@ -28,6 +28,7 @@
 #include <doctest/doctest.h>
 
 #include <atomic>
+#include <limits>
 #include <new>
 #include <numeric>
 #include <stdexcept>
@@ -66,6 +67,24 @@ struct ExposedMpmcQueueBase final : MpmcQueueBase {
 
 TEST_SUITE("base-MpmcQueue") {
   TEST_CASE("capacity zero throws std::invalid_argument") { CHECK_THROWS_AS(MpmcQueue<int>(0), std::invalid_argument); }
+
+  TEST_CASE("capacity SIZE_MAX throws before the guard slot allocation overflows") {
+    CHECK_THROWS_AS(MpmcQueue<int>{std::numeric_limits<size_t>::max()}, std::invalid_argument);
+  }
+
+  TEST_CASE("wait helpers return false after quit even when their condition is ready") {
+    MpmcQueue<int> q(4);
+    q.push(1);
+    REQUIRE(q.wait_not_empty());
+    REQUIRE(q.wait_not_full());
+
+    q.notify_to_quit();
+
+    CHECK_FALSE(q.wait_not_empty());
+    CHECK_FALSE(q.wait_not_full());
+    CHECK_FALSE(q.wait_not_empty(1ms));
+    CHECK_FALSE(q.wait_not_full(1ms));
+  }
 
   TEST_CASE("alignment failure helper throws std::bad_alloc") {
     CHECK_THROWS_AS(ExposedMpmcQueueBase::throw_mpmc_alignment_failure(), std::bad_alloc);

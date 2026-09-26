@@ -61,7 +61,7 @@
  *
  * Feature highlights:
  * - Writer-wide asynchronous or synchronous record policy selected by @c Config::sync_mode.
- * - File splitting by byte size and/or by wall-clock interval.
+ * - File splitting by byte size and/or by wall-clock interval, with optional oldest-file eviction.
  * - Optional WAL mode for SQLite crash resilience.
  * - URL-level loss reporting via @c set_url_loss().
  * - Schema embedding through @c push_schema() for offline introspection.
@@ -70,10 +70,11 @@
  * @par Example
  * @code
  * vlink::BagWriter::Config cfg;
- * cfg.compress      = vlink::BagWriter::kCompressAuto;
- * cfg.split_by_size = 1024LL * 1024LL * 512;            // 512 MiB per split
+ * cfg.compress        = vlink::BagWriter::kCompressAuto;
+ * cfg.split_by_size   = 1024LL * 1024LL * 512;            // 512 MiB per split
+ * cfg.max_split_count = 10;                               // retain the newest 10 splits
  *
- * auto writer = vlink::BagWriter::create("/data/drive_log.vdb", cfg);
+ * auto writer = vlink::BagWriter::create("/data/drive_log.vdbx", cfg);
  * writer->async_run();
  *
  * vlink::Frame frame;
@@ -177,10 +178,12 @@ class VLINK_EXPORT BagWriter : public MessageLoop {
     bool split_name_by_time{false};                      ///< Append a timestamp suffix to split filenames.
     bool sync_mode{false};                   ///< Write synchronously and disable the VDB periodic cache-flush timer.
     bool optimize_on_exit{false};            ///< Run VACUUM/OPTIMIZE while closing the file.
+    bool enable_chunk_crc{false};            ///< Compute VCAP chunk CRC; ignored by VDB.
     int64_t max_row_count{5'000'000'000LL};  ///< SQLite row cap; either evicts or fails new writes.
     int64_t max_bytes_size{1024LL * 1024LL * 1024LL * 512LL};  ///< SQLite byte cap; either evicts or fails new writes.
     int64_t split_by_size{1024LL * 1024LL * 1024LL * 1LL};     ///< Split threshold in bytes (0 disables).
     int64_t split_by_time{0};                                  ///< Split interval in milliseconds (0 disables).
+    int64_t max_split_count{0};                                ///< Split-file retention cap (0 is unlimited).
     int64_t begin_time{0};                                     ///< Anchor (ms) used by time-based splits.
     int64_t cache_size{1024LL * 1024LL * 4};                   ///< VDB commit chunk / MCAP chunk size in bytes.
     int64_t compress_start_size{128};                          ///< Minimum payload size eligible for compression.

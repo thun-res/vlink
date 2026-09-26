@@ -65,7 +65,7 @@
  * | Entry point   | @c co_spawn(loop, task, on_done)  | Spawn with completion callback       |
  * | Entry point   | @c co_spawn_with_priority(...)    | Same overloads with priority         |
  * | Bridge        | @c exec(loop, config, fn)         | Wrap @c MessageLoop::exec_task       |
- * | Bridge        | @c await_graph(loop, graph)       | Wait on @c GraphTask DAG             |
+ * | Bridge        | @c await_graph(loop, graph)       | Wait on a @c GraphTask node          |
  * | Orchestration | @c when_all(loop, tasks)          | Join all, collect results            |
  * | Orchestration | @c when_any(loop, tasks)          | First success and its index          |
  * | Orchestration | @c sequence(loop, tasks)          | Run in order                         |
@@ -139,7 +139,7 @@
 #include "../version.h"
 
 #ifdef VLINK_ENABLE_CXX_STD_20
-#if __has_include(<coroutine>)
+#if defined(__cpp_impl_coroutine) && __has_include(<coroutine>)
 #include <coroutine>
 #endif
 #if defined(__cpp_lib_coroutine)
@@ -458,26 +458,37 @@ struct VLINK_EXPORT DetachedTask final {
   DetachedTask() noexcept;
 
   /**
-   * @brief Destroys the detached task.  Does not own the frame after release.
+   * @brief Destroys the wrapper only; the frame is never destroyed here.
+   *
+   * @details
+   * This type is a plain handle carrier, not an owning RAII wrapper.  The coroutine suspends
+   * initially and self-destructs at its final suspend point, so a resumed frame releases
+   * itself whenever it completes, possibly after the wrapper is gone; only a frame that was
+   * never resumed has to be released by the caller through @c handle.destroy().  Destroying
+   * it here would double-free the common case.
    */
   ~DetachedTask();
 
   /**
-   * @brief Constructs a detached task that owns @p h.
+   * @brief Constructs a detached task holding @p h.
    *
-   * @param h  Coroutine handle to take ownership of.
+   * @param h  Coroutine handle to carry.
    */
   explicit DetachedTask(Handle h) noexcept;
 
   /**
-   * @brief Move-constructs a detached task, transferring frame ownership.
+   * @brief Move-constructs a detached task, transferring the handle.
    *
    * @param other  Source task; left empty after the move.
    */
   DetachedTask(DetachedTask&& other) noexcept;
 
   /**
-   * @brief Move-assigns a detached task, transferring frame ownership.
+   * @brief Move-assigns a detached task, transferring the handle.
+   *
+   * @details
+   * The handle previously carried is overwritten, not destroyed, matching the non-owning
+   * contract above; release it beforehand when it names a frame that was never resumed.
    *
    * @param other  Source task; left empty after the move.
    * @return Reference to @c *this.
@@ -493,7 +504,7 @@ struct VLINK_EXPORT DetachedTask final {
  * @brief Bridges a @c Task<void> into a @c DetachedTask coroutine.
  *
  * @param task  Task to await inside the detached coroutine.
- * @return @c DetachedTask owning the new frame.
+ * @return @c DetachedTask carrying the handle of the new frame.
  */
 VLINK_EXPORT DetachedTask co_spawn_void_impl(Task<void> task);
 
@@ -504,7 +515,7 @@ VLINK_EXPORT DetachedTask co_spawn_void_impl(Task<void> task);
  * @tparam CallbackT  Callable invoked with the task's result on success.
  * @param task         Inner task to await.
  * @param on_complete  Callback invoked on the loop thread on successful completion.
- * @return @c DetachedTask owning the new frame.
+ * @return @c DetachedTask carrying the handle of the new frame.
  */
 template <typename TypeT, typename CallbackT>
 DetachedTask co_spawn_value_impl(Task<TypeT> task, CallbackT on_complete);
@@ -515,7 +526,7 @@ DetachedTask co_spawn_value_impl(Task<TypeT> task, CallbackT on_complete);
  * @tparam CallbackT  Callable invoked after the inner task completes.
  * @param task         Inner task to await.
  * @param on_complete  Callback invoked on the loop thread on successful completion.
- * @return @c DetachedTask owning the new frame.
+ * @return @c DetachedTask carrying the handle of the new frame.
  */
 template <typename CallbackT>
 DetachedTask co_spawn_void_with_cb_impl(Task<void> task, CallbackT on_complete);
@@ -599,6 +610,14 @@ VLINK_EXPORT void co_spawn_detached_handle(MessageLoop& loop, DetachedTask::Hand
  * @param poll  Poll closure registered with the helper thread.
  */
 VLINK_EXPORT void register_future_wait(MoveFunction<bool()>&& poll);
+
+/**
+ * @brief Submits deferred future execution to the shared worker pool.
+ *
+ * @param callback  Calls @c wait() on the owned deferred future.
+ * @return @c false if the worker pool cannot accept the task.
+ */
+[[nodiscard]] VLINK_EXPORT bool run_deferred_future(MoveFunction<void()>&& callback);
 
 }  // namespace detail
 
@@ -965,6 +984,9 @@ struct VLINK_EXPORT DelayAwaiter final {
  * waiter state so a destroyed awaiter can retire the pending poll without
  * leaving a dangling frame pointer in the helper thread.
  *
+ * Deferred futures execute on a shared worker pool before their completion is
+ * posted back to the target loop.
+ *
  * @note No per-await thread is spawned.  Resume latency is bounded by the
  *       helper's ~1 ms cadence plus the target loop's task dispatch delay.
  *
@@ -1012,6 +1034,7 @@ class FutureAwaiter final {
    * @brief Registers a poll closure on the shared @c FutureWaitLoop helper.
    *
    * @param handle  Coroutine handle to resume once the future is ready.
+   * @throws std::runtime_error if deferred execution cannot be submitted to the worker pool.
    */
   void await_suspend(std::coroutine_handle<> handle);
 
@@ -1163,8 +1186,8 @@ FutureAwaiter<TypeT> await_future(MessageLoop& loop, std::future<TypeT> fut) noe
  *
  * @details
  * The coroutine begins executing on @p loop's thread.  Ownership of the task
- * frame is transferred to an internal @c DetachedTask which destroys the frame
- * once the body completes.  Exceptions thrown from the task are caught by
+ * frame is transferred to an internal detached coroutine, which destroys itself
+ * and the task frame once the body completes.  Exceptions thrown from the task are caught by
  * @c DetachedTask::unhandled_exception, logged at error level and swallowed:
  * the loop continues running.
  *
@@ -1270,16 +1293,18 @@ VLINK_EXPORT GraphAwaiter await_graph(MessageLoop& loop, GraphTaskPtr graph);
  * an internal @c std::promise and rethrown from the awaiting @c co_await.  If
  * the underlying @c exec_task post fails (queue full or loop closed), the
  * coroutine resumes with an @c std::runtime_error carrying a descriptive
- * message.
+ * message.  If an accepted task is discarded, releasing its promise completes
+ * the future with @c std::future_error; a closed target loop instead reports
+ * @c OperationCancelled through the future awaiter.
  *
  * @tparam CallbackT  Callable returning @c void.
  * @param loop      Loop on which the callback is scheduled.
- * @param config    Schedule envelope (delay, priority, timeouts).
- * @param callback  Callable to execute on the loop thread.
+ * @param config    Schedule envelope copied into the coroutine frame.
+ * @param callback  Callable owned by the coroutine frame until dispatch.
  * @return @c Task<void> that completes after @p callback returns.
  */
 template <typename CallbackT>
-Task<void> exec(MessageLoop& loop, const Schedule::Config& config, CallbackT&& callback);
+Task<void> exec(MessageLoop& loop, Schedule::Config config, CallbackT callback);
 
 /**
  * @brief Awaits every @c Task<TypeT> in @p tasks and returns their results.
@@ -1290,7 +1315,8 @@ Task<void> exec(MessageLoop& loop, const Schedule::Config& config, CallbackT&& c
  * finish (success or failure) before completing.  If any sub-task throws, the
  * first exception observed is rethrown from the awaiting @c co_await with its
  * original type preserved; subsequent exceptions from sibling tasks are
- * dropped.
+ * dropped.  An invalid (moved-from or default-constructed) task fails with
+ * @c std::logic_error like a throwing sub-task.
  *
  * @note @p TypeT must be default-constructible; the results vector is
  *       pre-sized via @c std::vector<TypeT>(count).
@@ -1309,7 +1335,8 @@ Task<std::vector<TypeT>> when_all(MessageLoop& loop, std::vector<Task<TypeT>> ta
  * @details
  * Waits for every sub-task to finish.  If any sub-task throws, the first
  * exception observed is rethrown from the awaiting @c co_await with its
- * original type preserved; subsequent exceptions are dropped.
+ * original type preserved; subsequent exceptions are dropped.  An invalid
+ * task fails with @c std::logic_error like a throwing sub-task.
  *
  * @param loop   Loop on which sub-tasks are spawned and the caller resumes.
  * @param tasks  Sub-tasks to await; ownership is transferred into the call.
@@ -1328,7 +1355,8 @@ VLINK_EXPORT Task<void> when_all(MessageLoop& loop, std::vector<Task<void>> task
  * this layer offers no cross-coroutine cancellation.  If "abandon losers"
  * semantics with bounded latency are required, each sub-task itself must
  * respect a deadline.  If every sub-task throws, the first exception observed
- * is rethrown from the awaiting @c co_await.
+ * is rethrown from the awaiting @c co_await; an invalid task counts as one
+ * throwing @c std::logic_error.
  *
  * @tparam TypeT  Result type produced by every sub-task.
  * @param loop   Loop on which sub-tasks are spawned and the caller resumes.
@@ -1349,7 +1377,8 @@ Task<std::pair<size_t, TypeT>> when_any(MessageLoop& loop, std::vector<Task<Type
  * does not return until every sub-task has finished — this is required to
  * avoid leaking orphaned sub-task frames (no cross-coroutine cancellation is
  * provided).  If every sub-task throws, the first exception observed is
- * rethrown from the awaiting @c co_await.
+ * rethrown from the awaiting @c co_await; an invalid task counts as one
+ * throwing @c std::logic_error.
  *
  * @param loop   Loop on which sub-tasks are spawned and the caller resumes.
  * @param tasks  Sub-tasks to race; ownership is transferred into the call.
@@ -1368,7 +1397,8 @@ VLINK_EXPORT Task<size_t> when_any(MessageLoop& loop, std::vector<Task<void>> ta
  * and joined through @c await_future, so both the success path and any
  * exception thrown by a sub-task resume the caller on @p loop's thread.  If a
  * task throws, the exception is rethrown from the awaiting @c co_await with
- * its original type preserved and the remaining tasks are skipped.
+ * its original type preserved and the remaining tasks are skipped.  Invalid
+ * (moved-from or default-constructed) tasks are skipped.
  *
  * @param loop   Loop on which sub-tasks are spawned and the caller resumes.
  * @param tasks  Sub-tasks to run in order; ownership is transferred into the call.
@@ -1598,49 +1628,61 @@ inline void FutureAwaiter<TypeT>::await_suspend(std::coroutine_handle<> handle) 
   auto state = state_;
   state->set_handle(handle);
 
-  detail::register_future_wait(
-      MoveFunction<bool()>([loop_ptr, loop_alive, state = std::move(state),
-                            retry_count = 0U]() mutable -> bool {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-        if VUNLIKELY (state->abandoned.load(std::memory_order_acquire)) {
-          return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        }
+  const bool deferred = state->fut.wait_for(std::chrono::nanoseconds::zero()) == std::future_status::deferred;
 
-        if (state->fut.valid() && state->fut.wait_for(std::chrono::nanoseconds::zero()) != std::future_status::ready) {
-          return false;
-        }
+  auto poll = MoveFunction<bool()>([loop_ptr, loop_alive, state = std::move(state),
+                                    retry_count = 0U]() mutable -> bool {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+    if VUNLIKELY (state->abandoned.load(std::memory_order_acquire)) {
+      return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
 
-        const auto result = detail::post_callback_if_alive(
-            loop_ptr, loop_alive, MoveFunction<void()>([state]() { state->resume_ready(); }),
-            MoveFunction<void()>([state]() {
-              detail::register_future_wait(MoveFunction<bool()>([state]() {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-                if (!state->abandoned.load(std::memory_order_acquire)) {     // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-                  state->cancel_and_resume();
-                }
+    if (state->fut.valid() && state->fut.wait_for(std::chrono::nanoseconds::zero()) != std::future_status::ready) {
+      return false;
+    }
 
-                return true;
-              }));
-            }));
+    const auto result = detail::post_callback_if_alive(
+        loop_ptr, loop_alive, MoveFunction<void()>([state]() { state->resume_ready(); }),
+        MoveFunction<void()>([state]() {
+          detail::register_future_wait(MoveFunction<bool()>([state]() {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+            if (!state->abandoned.load(std::memory_order_acquire)) {     // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+              state->cancel_and_resume();
+            }
 
-        if (result == detail::ResumePostResult::kPosted) {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-          return true;
-        }
+            return true;
+          }));
+        }));
 
-        if (result == detail::ResumePostResult::kRetry) {                  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-          if (++retry_count >= detail::kMaxResumePostRetry) {              // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-            detail::register_future_wait(MoveFunction<bool()>([state]() {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-              if (!state->abandoned.load(std::memory_order_acquire)) {     // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
-                state->cancel_and_resume();                                // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-              }
-              return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-            }));
-            return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    if (result == detail::ResumePostResult::kPosted) {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+      return true;
+    }
+
+    if (result == detail::ResumePostResult::kRetry) {                  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+      if (++retry_count >= detail::kMaxResumePostRetry) {              // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+        detail::register_future_wait(MoveFunction<bool()>([state]() {  // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+          if (!state->abandoned.load(std::memory_order_acquire)) {     // LCOV_EXCL_BR_LINE GCOVR_EXCL_BR_LINE
+            state->cancel_and_resume();                                // LCOV_EXCL_LINE GCOVR_EXCL_LINE
           }
+          return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        }));
+        return true;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
 
-          return false;
-        }
+      return false;
+    }
 
-        return true;
-      }));
+    return true;
+  });
+
+  if (deferred) {
+    if VUNLIKELY (!detail::run_deferred_future([state = state_, poll = std::move(poll)]() mutable {
+                    state->fut.wait();
+                    detail::register_future_wait(std::move(poll));
+                  })) {
+      throw std::runtime_error("Coroutine::await_future: deferred task post failed");
+    }
+  } else {
+    detail::register_future_wait(std::move(poll));
+  }
 }
 
 template <typename TypeT>
@@ -1650,6 +1692,10 @@ inline TypeT FutureAwaiter<TypeT>::await_resume() {
 
   if VUNLIKELY (state_->target_closed.load(std::memory_order_acquire)) {
     throw Exception::OperationCancelled{};
+  }
+
+  if VUNLIKELY (!state_->fut.valid()) {
+    throw Exception::InvalidArgument{"await_future: the future has no shared state"};
   }
 
   if constexpr (std::is_void_v<TypeT>) {
@@ -1687,27 +1733,31 @@ inline void co_spawn_with_priority(MessageLoop& loop, Task<TypeT>&& task, Callba
 }
 
 template <typename CallbackT>
-inline Task<void> exec(MessageLoop& loop, const Schedule::Config& config, CallbackT&& callback) {
-  auto promise_ptr = MemoryResource::make_shared<std::promise<void>>();
-  auto fut = promise_ptr->get_future();
+inline Task<void> exec(MessageLoop& loop, Schedule::Config config, CallbackT callback) {
+  std::future<void> fut;
 
-  auto status = loop.exec_task(config, [cb = std::forward<CallbackT>(callback), promise_ptr]() mutable {
-    try {
-      cb();
-      promise_ptr->set_value();
-    } catch (...) {
-      promise_ptr->set_exception(std::current_exception());
-    }
-  });
+  {
+    auto promise_ptr = MemoryResource::make_shared<std::promise<void>>();
+    fut = promise_ptr->get_future();
 
-  if (config.schedule_timeout_ms > 0) {
-    status.on_schedule_timeout([promise_ptr]() {
-      promise_ptr->set_exception(std::make_exception_ptr(std::runtime_error("Coroutine::exec: schedule timeout")));
+    auto status = loop.exec_task(config, [cb = std::move(callback), promise_ptr]() mutable {
+      try {
+        cb();
+        promise_ptr->set_value();
+      } catch (...) {
+        promise_ptr->set_exception(std::current_exception());
+      }
     });
-  }
 
-  if VUNLIKELY (!status.dispatch()) {
-    promise_ptr->set_exception(std::make_exception_ptr(std::runtime_error("Coroutine::exec: exec_task post failed")));
+    if (config.schedule_timeout_ms > 0) {
+      status.on_schedule_timeout([promise_ptr]() {
+        promise_ptr->set_exception(std::make_exception_ptr(std::runtime_error("Coroutine::exec: schedule timeout")));
+      });
+    }
+
+    if VUNLIKELY (!status.dispatch()) {
+      promise_ptr->set_exception(std::make_exception_ptr(std::runtime_error("Coroutine::exec: exec_task post failed")));
+    }
   }
 
   co_await await_future(loop, std::move(fut));
@@ -1772,7 +1822,12 @@ template <typename TypeT>
 inline Task<void> when_all_runner(Task<TypeT> task, size_t i, WhenAllGuard<TypeT> guard) {
   try {
     auto value = co_await std::move(task);
-    guard.state->results[i] = std::move(value);
+    if constexpr (std::is_same_v<TypeT, bool>) {
+      std::lock_guard lock(guard.state->exc_mtx);
+      guard.state->results[i] = value;
+    } else {
+      guard.state->results[i] = std::move(value);
+    }
   } catch (...) {
     std::lock_guard lock(guard.state->exc_mtx);
 

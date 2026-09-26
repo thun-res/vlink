@@ -10,7 +10,7 @@ if(NOT TARGET flatbuffers::flatbuffers_shared AND NOT TARGET flatbuffers::flatbu
 endif()
 
 # src
-add_executable(${PROJECT_NAME} efbs.cc)
+add_executable(${PROJECT_NAME} efbs.cc efbs_pub.cc efbs_sub.cc efbs_import.cc efbs_terminal.cc efbs_common.cc)
 target_link_libraries(${PROJECT_NAME} PRIVATE vlink::vlink ${VLINK_NO_INTRA_LIBRARIES})
 target_link_libraries(${PROJECT_NAME} PRIVATE thirdparty::argparse thirdparty::json)
 if(TARGET flatbuffers::flatbuffers_shared)

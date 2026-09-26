@@ -580,9 +580,10 @@ class VLINK_EXPORT NodeImpl {
   bool is_cdr_type{false};                                ///< @c true when DDS native CDR serialisation is in use.
   bool is_security_type{false};                           ///< @c true when an authenticated transport is enabled.
   bool is_discovery_enabled{true};                        ///< Whether the node is reported to the discovery layer.
-  std::atomic_bool has_suspend{false};    ///< Atomic suspend flag (currently unused by the default impls).
-  std::unique_ptr<CpuProfiler> profiler;  ///< Optional per-node CPU profiler activated under global profiling.
-  std::unique_ptr<Security> security;     ///< Installed per-node message-security context, or @c nullptr.
+  std::atomic_bool has_suspend{false};        ///< Atomic suspend flag (currently unused by the default impls).
+  ImplType init_impl_type{kUnknownImplType};  ///< Role captured at init, independent of later discovery relabelling.
+  std::unique_ptr<CpuProfiler> profiler;      ///< Optional per-node CPU profiler activated under global profiling.
+  std::unique_ptr<Security> security;         ///< Installed per-node message-security context, or @c nullptr.
 
  protected:
   explicit NodeImpl(ImplType type);

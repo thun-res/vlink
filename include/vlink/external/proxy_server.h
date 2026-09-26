@@ -97,9 +97,10 @@
  * @c on_deinit(), @c quit(), and @c wait_for_quit() are invoked in the same order.
  *
  * @par Environment Variables
- * | Variable             | Meaning                                                       |
- * | -------------------- | ------------------------------------------------------------- |
- * | @c VLINK_INTRA_BIND  | When set to any value, also subscribe to @c intra:// topics.  |
+ * | Variable                 | Meaning                                                         |
+ * | ------------------------ | --------------------------------------------------------------- |
+ * | @c VLINK_INTRA_BIND      | When set to any value, also subscribe to @c intra:// topics.    |
+ * | @c VLINK_DDS_NATIVE_IP   | Native-mode DDS bind IP; defaults to @c 127.0.0.1 when unset.   |
  *
  * @par Example
  * @code
@@ -155,10 +156,12 @@ namespace vlink {
  * @details
  * Owns the discovery layer, the handshake/control/time/info DDS channels, the data
  * relay path, and any embedded Iceoryx daemon or runnable plugins.  Construction
- * starts the @c DiscoveryViewer plus its 1-second heartbeat and statistics timers,
- * but it does @b not start the server's own inherited loop.  Call @c async_run()
- * (or @c run()) on the @c MessageLoop base to enable asynchronous relays and the
- * runnable-plugin lifecycle hooks.  Only one instance is allowed per process.
+ * starts the @c DiscoveryViewer and arms the 1-second heartbeat and statistics
+ * timers, but it does @b not start the server's own inherited loop.  Those timers
+ * now run on that loop, so @c async_run() (or @c run()) on the @c MessageLoop base
+ * is @b required: without it no heartbeat or @c InfoList is published and every
+ * @c ProxyAPI client reports a disconnect after five seconds.  Only one instance is
+ * allowed per process.
  */
 class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
  public:
@@ -177,7 +180,7 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
    * | @c reliable                | false   | Use reliable DDS QoS for data channels.                           |
    * | @c enable_tcp              | false   | Use TCP transport for data channels.                              |
    * | @c direct                  | false   | Use SHM (Iceoryx) instead of DDS for data forwarding.             |
-   * | @c native_mode             | false   | Restrict all DDS traffic to 127.0.0.1 (loopback).                 |
+   * | @c native_mode             | false   | Discover locally; bind DDS to @c VLINK_DDS_NATIVE_IP.             |
    * | @c domain_id               | 0       | DDS domain ID shared with all clients.                            |
    * | @c buf_size                | 0       | DDS socket send/receive buffer in bytes; 0 = built-in default.    |
    * | @c mtu_size                | 0       | DDS MTU size in bytes; 0 = built-in default.                      |
@@ -204,7 +207,7 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
     bool reliable{false};                    ///< Use reliable DDS QoS; must match every client.
     bool enable_tcp{false};                  ///< Use TCP transport for DDS data channels.
     bool direct{false};                      ///< Use ProxyAPI-managed local SHM channels for data.
-    bool native_mode{false};                 ///< Restrict every DDS endpoint to loopback (127.0.0.1).
+    bool native_mode{false};                 ///< Discover locally; bind DDS to VLINK_DDS_NATIVE_IP (default 127.0.0.1).
     int domain_id{0};                        ///< DDS domain ID.
     uint32_t buf_size{0};                    ///< DDS socket buffer in bytes; 0 = default.
     uint32_t mtu_size{0};                    ///< DDS fragment MTU in bytes; 0 = default.
@@ -231,16 +234,18 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
    *
    * -# Acquires the process-global singleton guard; on contention it logs a fatal
    *    message and throws before touching any DDS handle.
-   * -# Reads the @c VLINK_INTRA_BIND environment variable.
+   * -# Reads @c VLINK_INTRA_BIND and, in native mode, @c VLINK_DDS_NATIVE_IP.
    * -# When @c config.use_iox is @c true, calls @c init_shm_roudi() to spin up an
    *    embedded Iceoryx RouDi process.
    * -# Calls @c init_server() to create the handshake, control, time, info, and data
-   *    channels, subscribe to @c Control, and start the heartbeat plus statistics
-   *    timers on the @c DiscoveryViewer's loop.
+   *    channels, subscribe to @c Control, and arm the heartbeat plus statistics
+   *    timers on the server's own inherited loop.
    * -# Calls @c init_runnable() to load every plugin listed in @c config.runnable_list.
    *
    * The inherited @c MessageLoop is @b not started here -- call @c async_run() or
-   * @c run() explicitly when asynchronous relays and plugin lifecycle hooks must run.
+   * @c run() explicitly.  It now drives the heartbeat and statistics timers as well as
+   * asynchronous relays and plugin lifecycle hooks, so leaving it stopped silently
+   * disables the heartbeat.
    *
    * @param config  Server configuration.  See @c Config for per-field semantics.
    *
@@ -288,6 +293,8 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
   void on_begin() override;
 
   void on_end() override;
+
+  void on_task_timeout(MessageLoop::Callback&& callback, uint32_t elapsed_time) override;
 
  private:
   void init_shm_roudi();

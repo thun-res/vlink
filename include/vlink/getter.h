@@ -226,7 +226,9 @@ class Getter : public Node<GetterImpl, SecT> {
    * @details
    * When enabled, incoming payloads whose raw serialised bytes match the
    * previous delivery are dropped before any caching or callback dispatch.
-   * Useful when a @c Setter repeatedly writes the same value.
+   * Useful when a @c Setter repeatedly writes the same value.  Toggling the
+   * flag discards the previous comparison basis, so the first payload after
+   * re-enabling is always delivered.
    *
    * @param enable  @c true to suppress duplicates; @c false (default) to deliver all.
    */
@@ -274,7 +276,8 @@ class Getter : public Node<GetterImpl, SecT> {
    * Overrides @c Node::init() to additionally register a bytes-level callback
    * that deserialises each delivery, invokes the user @c listen() callback
    * (if installed), then updates @c value_ and wakes the condition variable
-   * used by @c wait_for_value().
+   * used by @c wait_for_value().  If delivery registration fails, initialisation
+   * is rolled back so that a later @c init() can retry.
    *
    * @return @c true on first successful initialisation; @c false otherwise.
    */
@@ -290,24 +293,22 @@ class Getter : public Node<GetterImpl, SecT> {
   void interrupt() override;
 
   /**
-   * @brief Promotes this getter to behave as a @c Subscriber at the transport layer.
+   * @brief Reports this getter as a @c Subscriber in discovery metadata.
    *
    * @details
-   * Switches @c impl_type from @c kGetter to @c kSubscriber so that
-   * event-style semantics (no latest-value retention) are applied.
-   * Reinitialises the transport extension if called post-@c init().  Used
-   * when bridging a getter through event-only transports.
+   * Updates the role label and refreshes discovery when already initialised.
+   * The getter's value cache and existing transport endpoint remain active.
    */
   void mark_as_subscriber();
 
  private:
-  void listen_bytes(NodeImpl::MsgCallback&& callback);
+  bool listen_bytes(NodeImpl::MsgCallback&& callback);
 
   std::optional<ValueT> value_;
   mutable std::mutex mtx_;
   ConditionVariable cv_;
   MsgCallback callback_;
-  Bytes last_cache_;
+  std::optional<Bytes> last_cache_;
   bool has_value_notification_{false};
   bool change_reporting_{false};
 };

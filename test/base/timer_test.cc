@@ -29,13 +29,38 @@
 
 #include <atomic>
 #include <chrono>
+#include <future>
+#include <memory>
 #include <thread>
+#include <utility>
 
 #include "../common_test.h"
 #include "./base/message_loop.h"
+#include "./base/multi_loop.h"
 
 TEST_SUITE("base-Timer") {
   TEST_CASE("kInfinite sentinel equals -1") { CHECK_EQ(Timer::kInfinite, -1); }
+
+  TEST_CASE("restarting faster than the interval never fires and resumes afterwards") {
+    MessageLoop loop;
+    loop.async_run();
+
+    std::atomic<int> fired{0};
+    Timer t(&loop, 1000, Timer::kInfinite, [&fired] { fired.fetch_add(1, std::memory_order_acq_rel); });
+    t.start();
+
+    for (int i = 0; i < 200; ++i) {
+      t.restart();
+      std::this_thread::sleep_for(1ms);
+    }
+
+    CHECK_EQ(fired.load(std::memory_order_acquire), 0);
+    CHECK(common_test::wait_until([&fired] { return fired.load(std::memory_order_acquire) > 0; }, 3000ms));
+
+    t.stop();
+    loop.quit();
+    loop.wait_for_quit();
+  }
 
   TEST_CASE("default constructor creates detached inactive timer with 1000ms interval") {
     Timer t;
@@ -225,6 +250,7 @@ TEST_SUITE("base-Timer") {
 
     CHECK_EQ(fire_count.load(), 3);
     CHECK_FALSE(t.is_active());
+    CHECK(t.get_invoke_count() >= 3u);
 
     loop.quit();
     loop.wait_for_quit();
@@ -563,7 +589,7 @@ TEST_SUITE("base-Timer") {
 
     CHECK(ret);
 
-    std::this_thread::sleep_for(80ms);
+    CHECK(common_test::wait_until([&count] { return count.load() >= 1; }, 1s));
 
     CHECK_EQ(count.load(), 1);
 
@@ -640,6 +666,120 @@ TEST_SUITE("base-Timer") {
     std::this_thread::sleep_for(50ms);
 
     CHECK_EQ(count.load(), count_at_destroy);
+
+    loop.quit();
+    loop.wait_for_quit();
+  }
+
+  TEST_CASE("destroying a detached timer waits for its running callback") {
+    MessageLoop loop;
+    loop.async_run();
+
+    std::promise<void> entered;
+    auto entered_future = entered.get_future();
+    std::promise<void> release;
+    auto release_future = release.get_future();
+    auto timer = std::make_unique<Timer>(&loop, 1, 1, [&] {
+      entered.set_value();
+      release_future.wait();
+    });
+    timer->start();
+
+    const bool started = entered_future.wait_for(2s) == std::future_status::ready;
+
+    if (!started) {
+      release.set_value();
+      timer.reset();
+      loop.quit();
+      loop.wait_for_quit();
+      FAIL("timer callback did not start");
+    }
+
+    CHECK(timer->detach());
+    std::promise<void> destroying;
+    auto destroying_future = destroying.get_future();
+    auto destroyed = std::async(std::launch::async, [&] {
+      destroying.set_value();
+      timer.reset();
+    });
+    destroying_future.wait();
+
+    CHECK(destroyed.wait_for(30ms) == std::future_status::timeout);
+    release.set_value();
+    CHECK(destroyed.wait_for(2s) == std::future_status::ready);
+    destroyed.get();
+
+    loop.quit();
+    loop.wait_for_quit();
+  }
+
+  TEST_CASE("destroying a timer from another MultiLoop thread waits for its running callback") {
+    bool destroy_on_dispatcher = false;
+
+    SUBCASE("another worker") {}
+
+    SUBCASE("dispatcher idle handler") { destroy_on_dispatcher = true; }
+
+    MultiLoop loop(2);
+    std::promise<void> entered;
+    auto entered_future = entered.get_future();
+    std::promise<void> release;
+    auto release_future = release.get_future();
+    std::promise<void> destroying;
+    auto destroying_future = destroying.get_future();
+    std::promise<void> destroyed;
+    auto destroyed_future = destroyed.get_future();
+    std::atomic<bool> destroy_requested{false};
+    auto timer = std::make_unique<Timer>(&loop, 1, 1, [&] {
+      entered.set_value();
+      release_future.wait();
+    });
+    auto destroy_timer = [&] {
+      destroying.set_value();
+      timer.reset();
+      destroyed.set_value();
+    };
+
+    if (destroy_on_dispatcher) {
+      loop.register_idle_handler([&] {
+        if (destroy_requested.exchange(false, std::memory_order_acq_rel)) {
+          destroy_timer();
+        }
+      });
+    }
+
+    loop.async_run();
+    timer->start();
+
+    if (entered_future.wait_for(2s) != std::future_status::ready) {
+      release.set_value();
+      timer.reset();
+      loop.quit();
+      loop.wait_for_quit();
+      FAIL("timer callback did not start");
+    }
+
+    bool posted = false;
+
+    if (destroy_on_dispatcher) {
+      destroy_requested.store(true, std::memory_order_release);
+      posted = loop.post_task([] {});
+    } else {
+      posted = loop.post_task(std::move(destroy_timer));
+    }
+
+    CHECK(posted);
+
+    if (posted) {
+      CHECK(destroying_future.wait_for(2s) == std::future_status::ready);
+      CHECK(destroyed_future.wait_for(100ms) == std::future_status::timeout);
+    }
+
+    release.set_value();
+
+    if (posted) {
+      CHECK(destroyed_future.wait_for(2s) == std::future_status::ready);
+    }
 
     loop.quit();
     loop.wait_for_quit();

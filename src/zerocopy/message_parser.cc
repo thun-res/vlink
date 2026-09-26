@@ -329,6 +329,9 @@ bool MessageParser::parse(Type type, const Bytes& bytes) {
     case Type::kAudioFrame:
       parsed = Serializer::convert(bytes, message_.emplace<AudioFrame>());
       break;
+    case Type::kFastBuffer:
+      parsed = FastBuffer::read_metadata(bytes, message_.emplace<FastBuffer::Metadata>());
+      break;
     default:
       return false;
   }
@@ -621,6 +624,17 @@ std::vector<MessageParser::Field> MessageParser::fields() const {
       add_bytes("data");
       break;
 
+    case Type::kFastBuffer:
+      add_number("size", ValueType::kUInt64);
+      add_number("protocol", ValueType::kUInt64);
+      add_enum("storage", EnumKind::kEnumFastBufferStorage);
+      add_enum("memory_type", EnumKind::kEnumFastBufferMemory);
+      add_number("metadata_size", ValueType::kUInt64);
+      add_bytes("metadata");
+      add_reserved("reserved");
+      add_reserved("reserved2");
+      break;
+
     case Type::kCameraFrame:
       add_number("channel", ValueType::kUInt64);
       add_number("height", ValueType::kUInt64);
@@ -840,9 +854,19 @@ std::vector<MessageParser::Field> MessageParser::element_fields(std::string_view
   return {};
 }
 
-static std::string format_integer(const MessageParser::Value& value, bool hex) {
+static std::string format_integer(const MessageParser::Value& value, bool hex, uint16_t storage_size) {
   if (const auto* number = std::get_if<int64_t>(&value)) {
-    return hex ? Helpers::format_hex_number(*number) : std::to_string(*number);
+    if (!hex) {
+      return std::to_string(*number);
+    }
+
+    auto bits = static_cast<uint64_t>(*number);
+
+    if (storage_size > 0U && storage_size < sizeof(uint64_t)) {
+      bits &= (uint64_t{1} << (storage_size * 8U)) - 1U;
+    }
+
+    return Helpers::format_hex_number(bits);
   }
 
   if (const auto* number = std::get_if<uint64_t>(&value)) {
@@ -872,6 +896,10 @@ static std::string_view enum_label(MessageParser::EnumKind kind, uint64_t value)
       return NameDetector::get_enum(static_cast<AudioFrame::Format>(value));
     case MessageParser::EnumKind::kEnumAudioLayout:
       return NameDetector::get_enum(static_cast<AudioFrame::Layout>(value));
+    case MessageParser::EnumKind::kEnumFastBufferStorage:
+      return NameDetector::get_enum(static_cast<FastBuffer::Storage>(value));
+    case MessageParser::EnumKind::kEnumFastBufferMemory:
+      return NameDetector::get_enum(static_cast<zerocopy::FastBuffer::MemoryType>(value));
     default:
       return {};
   }
@@ -911,7 +939,7 @@ static std::string format_scalar(const MessageParser& parser, const MessageParse
     return options.hex ? Helpers::format_hex_number(raw) : std::to_string(raw);
   }
 
-  return format_integer(value, options.hex);
+  return format_integer(value, options.hex, field.storage_size);
 }
 
 static std::string format_pointcloud_protocol(const MessageParser& parser) {
@@ -1008,7 +1036,7 @@ static std::string format_pointcloud_points(const MessageParser& parser, const M
           const auto* number = std::get_if<uint64_t>(&value);
           text = number != nullptr && *number != 0 ? "true" : "false";
         } else {
-          text = format_integer(value, options.hex);
+          text = format_integer(value, options.hex, field.storage_size);
         }
       }
 
@@ -1025,7 +1053,7 @@ MessageParser::Type MessageParser::detect_type(std::string_view serialized_type)
   static constexpr std::pair<std::string_view, Type> kTypes[] = {
       {"RawData", Type::kRawData},         {"CameraFrame", Type::kCameraFrame},     {"PointCloud", Type::kPointCloud},
       {"ProxyData", Type::kProxyData},     {"OccupancyGrid", Type::kOccupancyGrid}, {"Tensor", Type::kTensor},
-      {"ObjectArray", Type::kObjectArray}, {"AudioFrame", Type::kAudioFrame},
+      {"ObjectArray", Type::kObjectArray}, {"AudioFrame", Type::kAudioFrame},       {"FastBuffer", Type::kFastBuffer},
   };
 
   for (const auto& [name, type] : kTypes) {
@@ -1066,6 +1094,8 @@ std::string_view MessageParser::type_name(Type type) noexcept {
       return "ObjectArray";
     case Type::kAudioFrame:
       return "AudioFrame";
+    case Type::kFastBuffer:
+      return "FastBuffer";
     default:
       return {};
   }
@@ -1102,6 +1132,9 @@ bool MessageParser::root_value(std::string_view path, Value& out) const {
       case Type::kAudioFrame:
         header = &get<AudioFrame>()->header;
         break;
+      case Type::kFastBuffer:
+        header = &get<FastBuffer::Metadata>()->header;
+        break;
       default:
         break;
     }
@@ -1127,6 +1160,22 @@ bool MessageParser::root_value(std::string_view path, Value& out) const {
       }
 
       break;
+    }
+
+    case Type::kFastBuffer: {
+      const auto& message = *get<FastBuffer::Metadata>();
+
+      if (path == "metadata") {
+        out = Bytes::shallow_copy(message.buffer.data(), message.buffer.size());
+        return true;
+      }
+
+      return read_number(path, "size", message.size, out) || read_number(path, "protocol", message.protocol, out) ||
+             read_number(path, "storage", message.storage, out) ||
+             read_number(path, "memory_type", message.memory_type, out) ||
+             read_number(path, "metadata_size", message.buffer.size(), out) ||
+             read_number(path, "reserved", message.reserved[0], out) ||
+             read_number(path, "reserved2", message.reserved[1], out);
     }
 
     case Type::kCameraFrame: {

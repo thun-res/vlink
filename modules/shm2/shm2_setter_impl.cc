@@ -35,8 +35,12 @@ void Shm2SetterImpl::init() {
 
   conf_.hash_code = Helpers::get_hash_code(conf_.event);
 
-  object_ = factory.get_object<Object>(
-      {kImplType, conf_.address, conf_.domain, conf_.depth, conf_.history, conf_.wait, conf_.size});
+  if (conf_.history == 0) {
+    conf_.history = 1;
+  }
+
+  object_ = factory.get_object<Object>({kImplType, conf_.address, conf_.domain, conf_.depth, conf_.history, conf_.wait,
+                                        conf_.size, conf_.event, nullptr});
 
   object_->add_impl(this);
 }
@@ -44,7 +48,9 @@ void Shm2SetterImpl::init() {
 void Shm2SetterImpl::deinit() {
   detach();
 
-  object_->remove_impl(this);
+  if (object_) {
+    object_->remove_impl(this);
+  }
 }
 
 bool Shm2SetterImpl::is_support_loan() const { return true; }
@@ -62,9 +68,9 @@ void Shm2SetterImpl::write(const Bytes& msg_data) {
 }
 
 void Shm2SetterImpl::sync(SyncCallback&& callback) {
-  (void)callback;
-
   object_->enable_detect_timer();
+
+  callback();
 }
 
 }  // namespace vlink

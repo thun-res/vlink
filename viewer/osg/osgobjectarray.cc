@@ -616,11 +616,15 @@ void update(osg::Geode* geode, const std::vector<ObjectData>& objects, float lin
   cross_verts->dirty();
   cross_colors->dirty();
 
+  box_geo->dirtyBound();
+
   auto* box_da = static_cast<osg::DrawArrays*>(box_geo->getPrimitiveSet(0));
 
   if (box_da) {
     box_da->setCount(box_verts->size());
   }
+
+  bottom_geo->dirtyBound();
 
   auto* bottom_da = static_cast<osg::DrawArrays*>(bottom_geo->getPrimitiveSet(0));
 
@@ -628,17 +632,23 @@ void update(osg::Geode* geode, const std::vector<ObjectData>& objects, float lin
     bottom_da->setCount(bottom_verts->size());
   }
 
+  front_geo->dirtyBound();
+
   auto* front_da = static_cast<osg::DrawArrays*>(front_geo->getPrimitiveSet(0));
 
   if (front_da) {
     front_da->setCount(front_verts->size());
   }
 
+  arrow_geo->dirtyBound();
+
   auto* arrow_da = static_cast<osg::DrawArrays*>(arrow_geo->getPrimitiveSet(0));
 
   if (arrow_da) {
     arrow_da->setCount(arrow_verts->size());
   }
+
+  cross_geo->dirtyBound();
 
   auto* cross_da = static_cast<osg::DrawArrays*>(cross_geo->getPrimitiveSet(0));
 

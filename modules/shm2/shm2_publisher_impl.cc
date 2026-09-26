@@ -37,26 +37,33 @@ void Shm2PublisherImpl::init() {
 
   conf_.hash_code = Helpers::get_hash_code(conf_.event);
 
-  object_ = factory.get_object<Object>(
-      {kImplType, conf_.address, conf_.domain, conf_.depth, conf_.history, conf_.wait, conf_.size});
+  if (init_impl_type == kSetter) {
+    if (conf_.history == 0) {
+      conf_.history = 1;
+    }
+
+    object_ = factory.get_object<Object>({kSetter, conf_.address, conf_.domain, conf_.depth, conf_.history, conf_.wait,
+                                          conf_.size, conf_.event, nullptr});
+  } else {
+    object_ = factory.get_object<Object>({kImplType, conf_.address, conf_.domain, conf_.depth, conf_.history,
+                                          conf_.wait, conf_.size, std::string{}, nullptr});
+  }
 
   object_->add_impl(this);
 
-  object_->register_sub_connect_callback(this, [this](bool) {
-    auto* message_loop = get_message_loop();
+  object_->register_sub_connect_callback(this, [this](bool) { PublisherImpl::update_subscribers(); });
 
-    if (message_loop) {
-      message_loop->post_task([this]() { PublisherImpl::update_subscribers(); });
-    } else {
-      PublisherImpl::update_subscribers();
-    }
-  });
+  if (init_impl_type == kSetter) {
+    object_->enable_detect_timer();
+  }
 
   PublisherImpl::update_subscribers();
 }
 
 void Shm2PublisherImpl::deinit() {
-  object_->remove_impl(this);
+  if (object_) {
+    object_->remove_impl(this);
+  }
 
   detach();
 }

@@ -89,7 +89,7 @@ void FdbusGetterImpl::subscribe() {
 
   subscribe_list.addNotifyItem(static_cast<int32_t>(conf_.hash_code), conf_.event.data());
 
-  object_->subscribe(subscribe_list, FDB_QOS_RELIABLE);
+  object_->subscribe(subscribe_list, 0, FDB_QOS_RELIABLE);
 }
 
 }  // namespace vlink

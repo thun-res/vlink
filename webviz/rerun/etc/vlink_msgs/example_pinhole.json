@@ -3,11 +3,49 @@
   "archetype": "Pinhole",
   "encoding": "protobuf",
   "field_mappings": [
-    { "source": "intrinsic.fx", "target": "fx" },
-    { "source": "intrinsic.fy", "target": "fy" },
-    { "source": "intrinsic.cx", "target": "cx" },
-    { "source": "intrinsic.cy", "target": "cy" },
-    { "source": "width", "target": "width" },
-    { "source": "height", "target": "height" }
+    {
+      "target": "image_from_camera[0]",
+      "source": "intrinsic.fx"
+    },
+    {
+      "target": "image_from_camera[1]",
+      "default_value": 0
+    },
+    {
+      "target": "image_from_camera[2]",
+      "default_value": 0
+    },
+    {
+      "target": "image_from_camera[3]",
+      "default_value": 0
+    },
+    {
+      "target": "image_from_camera[4]",
+      "source": "intrinsic.fy"
+    },
+    {
+      "target": "image_from_camera[5]",
+      "default_value": 0
+    },
+    {
+      "target": "image_from_camera[6]",
+      "source": "intrinsic.cx"
+    },
+    {
+      "target": "image_from_camera[7]",
+      "source": "intrinsic.cy"
+    },
+    {
+      "target": "image_from_camera[8]",
+      "default_value": 1
+    },
+    {
+      "target": "resolution[0]",
+      "source": "width"
+    },
+    {
+      "target": "resolution[1]",
+      "source": "height"
+    }
   ]
 }

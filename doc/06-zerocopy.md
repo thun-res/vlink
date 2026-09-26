@@ -23,6 +23,8 @@
 
 这里的两层组合表示 transport 提供 loan 且接收容器不做 payload 解码复制，不保证调用方本地 payload 到接收端全程零复制：普通 `Publisher<zerocopy容器>` 的 `operator>>` 仍可能把本地 payload 复制进 transport loan。发布端要直接就地写共享池，应使用 [6.10](#-610-传输层-loan) 的显式 `Publisher<Bytes>::loan()` 路径；完整后端参数见 [传输后端与 URL](04-transport.md)。
 
+`FastBuffer` 通过插件导入共享资源，机制与下面的 CPU 领域容器不同，见 [6.13](#-613-fastbuffer-插件缓冲区)。
+
 ### 6.1.1 容器选型概览
 
 每个领域容器都作为 `Publisher<T>` / `Subscriber<T>` 的消息类型 `T` 使用，按数据语义选择。选定容器后，收发即为常规的发布/订阅用法（见 [通信模型](02-communication.md)）。
@@ -37,6 +39,7 @@
 | `AudioFrame` | PCM / 编码音频帧 | 任意 | — |
 | `RawData` | 自定义二进制负载 | 任意 | — |
 | `ProxyData` | 代理层消息信封及原始载荷 | 任意 | — |
+| `FastBuffer` | GPU 图像、张量、点云及其他不透明缓冲区 | 同机、兼容插件 | fastbuffer-layout |
 
 ```cpp
 vlink::Publisher<vlink::zerocopy::CameraFrame> pub("shm://camera/front");
@@ -212,6 +215,8 @@ sub.listen([](const vlink::zerocopy::PointCloud& pc) {
 | 垂直排布 | `set_vertical(true)` | 序列化负载按字段成列（SoA），更利于下游熵编码；内存布局不变 |
 | 体素降采样 | `downsample(level)`（`level` 取 `1..255`） | 在已量化（`extent>0`）且拥有缓冲区（owned）的点云上将空间相近点折叠为每体素一个，原地缩减点数；借用/反序列化得到的点云无法降采样 |
 
+垂直序列化复用输出 `Bytes` 时，若会覆盖或释放源点数据，则返回 `false` 且不修改输出；可改用独立输出缓冲区。
+
 ---
 
 ## 🗺️ 6.5 OccupancyGrid：2D 占据与代价地图
@@ -373,7 +378,7 @@ sub.listen([](const vlink::zerocopy::RawData& rd) {
 
 ### 6.9.1 统一只读解析 `MessageParser`
 
-需要在运行期按序列化类型读取消息的工具和扩展，应包含 `<vlink/zerocopy/message_parser.h>` 并使用 `vlink::zerocopy::MessageParser`。解析器统一识别 `RawData`、`CameraFrame`、`PointCloud`、`ProxyData`、`OccupancyGrid`、`Tensor`、`ObjectArray` 与 `AudioFrame` 八种类型；CLI、viewer、analyzer、Web 桥接和 Python 绑定的通用字段读取使用这一入口，避免各层重复维护类型识别、边界检查与字段类型转换。为避免热路径回退，viewer 和 Web 可视化中 CameraFrame / PointCloud 的专用实时渲染可以直接调用对应容器 codec，绕过通用字段解析器。各容器 codec 仍是底层序列化实现。
+需要在运行期按序列化类型读取消息的工具和扩展，应包含 `<vlink/zerocopy/message_parser.h>` 并使用 `vlink::zerocopy::MessageParser`。解析器统一识别 `RawData`、`CameraFrame`、`PointCloud`、`ProxyData`、`OccupancyGrid`、`Tensor`、`ObjectArray`、`AudioFrame` 与 `FastBuffer` 九种类型；CLI、viewer、analyzer、Web 桥接和 Python 绑定的通用字段读取使用这一入口，避免各层重复维护类型识别、边界检查与字段类型转换。为避免热路径回退，viewer 和 Web 可视化中 CameraFrame / PointCloud 的专用实时渲染可以直接调用对应容器 codec，绕过通用字段解析器。各容器 codec 仍是底层序列化实现。
 
 ```cpp
 vlink::zerocopy::MessageParser parser;
@@ -413,6 +418,8 @@ loan 作用于跨进程搬运阶段：发布端从共享内存池借出缓冲区
 | `loan(size)` | 从共享内存池借出 `size` 字节缓冲区，失败返回空 `Bytes` |
 | `return_loan(bytes)` | 归还借出但未发布的缓冲区 |
 
+Zenoh 的 `is_support_loan()` 表示配置已启用借用能力，不要求 lazy provider 此刻已经就绪。小于 loan 阈值或 provider 尚在初始化时，`loan()` 可以返回普通拥有型 `Bytes`；provider 就绪后的大消息自动使用 SHM，无需重新初始化节点。可用 `Bytes::is_loaned()` 区分实际借用与普通缓冲。
+
 ```cpp
 vlink::Publisher<vlink::Bytes> pub("shm://camera/raw");
 pub.wait_for_subscribers();
@@ -433,6 +440,10 @@ if (pub.is_support_loan()) {
 
 订阅端在回调返回后自动归还 loan；若需在回调外继续使用数据，应在回调内完成拷贝（如容器的 `deep_copy`）。
 
+SHM、SHM2、Zenoh 的 Client 将请求交给后端后，由后端消费借用；未连接、等待超时或请求未提交时由 Client 归还。自动序列化在交付后端之前失败时，仍由公共序列化调用方归还。
+
+显式借用也适用于混合类型 RPC：`Client<Bytes, T>` 直接发送借出的请求；`Server<T, Bytes>` 的同步回调可将 `loan()` 结果移动到响应出参，由后端消费。
+
 > 安全端点（`SecT == kWithSecurity` / `SecurityPublisher`）发布时会跳过传输层 loan——密文长度在加密前未知，框架退回常规序列化路径。`is_support_loan()` 反映的是传输能力、不感知安全配置，因此安全端点不应使用显式 `loan()` 路径（借出的缓冲不会被发布消费）。容器层借用不受影响，加密管线见 [安全加密](07-security.md)。
 
 loan 的完整传输配置见 [传输后端与 URL](04-transport.md)。
@@ -440,6 +451,10 @@ loan 的完整传输配置见 [传输后端与 URL](04-transport.md)。
 ---
 
 ## ⏳ 6.11 生命周期约束
+
+本节描述 CPU 领域容器的借用；FastBuffer 的资源引用见 [6.13](#-613-fastbuffer-插件缓冲区)。
+
+`Client` 的同步出参、optional 与 future 返回上述 CPU 容器时，框架会保存独立载荷；回调接收仍遵循下述借用约束。PointCloud 的 vertical 解码本身已有独立存储，直接转移即可。
 
 借用机制（`shallow_copy`、容器反序列化、loan）只持有指针，不复制数据。两条约束可避免悬空：
 
@@ -469,6 +484,58 @@ process(rd);
 | 适用场景 | 通用小消息 | 传感器 / 模型 / 地图 / 检测 / 音频大负载 |
 
 判据：小消息或已有自定义序列化时用 `Bytes`；传感器领域大负载可用对应领域容器取得结构化元数据与接收侧 payload 借用。普通容器发布仍可能复制进 transport buffer；发布端要直接写共享池须使用 `Publisher<Bytes>::loan()`。
+
+---
+
+## 🧩 6.13 FastBuffer 插件缓冲区
+
+`vlink::zerocopy::FastBuffer` 持有资源地址、Header、动态 CPU 元数据和预留字段，支持 GPU、普通内存及插件提供的共享、DMA 或虚拟内存。它不限定相机语义；张量、点云、深度图和模型中间结果都可以使用，格式、形状与步长由应用约定在 Metadata buffer 中。
+
+![FastBuffer 布局与数据路径](images/fastbuffer-layout.png)
+
+| 对象部分（64 位） | 字节数 | 含义 |
+| --- | ---: | --- |
+| Header | 40 | 序号、时间戳等 |
+| Buffer | 32 | 本进程地址、大小、资源句柄、设备及内存类型 |
+| Metadata 指针 | 8 | 独立分配的可变长 CPU Bytes |
+| reserved_buf_ / reserved_buf2_ | 16 | 2 个 uint64_t，复制与序列化保留 |
+| 总计 | 96 | 64 位对象布局，不作为线格式契约 |
+
+包含 `<vlink/zerocopy/fast_buffer.h>` 即可使用。该头文件不依赖插件接口；`MemoryType`、`Config`、`Access` 和 `Storage` 均由 FastBuffer 定义，枚举底层类型为 `uint8_t`。插件接口、Manager 与发布池分别位于同目录的 `fast_buffer_plugin_interface.h`、`fast_buffer_manager.h`、`fast_buffer_pool.h`。
+
+首次构造触发进程内 `vlink::FastBufferManager` 单例初始化。`VLINK_FASTBUFFER_PLUGIN` 未设置或为空时使用普通 CPU 内存；为 `shm` 时使用命名共享内存分配的 CPU 内存，可跨进程共享；其余值按 `Plugin` 规则加载指定插件，显式失败不会回退到 CPU。后续修改环境变量不切换插件。插件由 Manager 持有，FastBuffer 不保存插件指针。Manager 统一管理本地引用。所有支持共享的插件都由核心的共享内存控制块协调跨进程生命周期，插件只负责导出、导入、释放和销毁原生资源；hbmem 的 SDK 引用只维持导入映射的存活，复用与释放同样以读者表为准。
+
+| 操作 | 行为 |
+| --- | --- |
+| `create(size, config)` | 请求指定内存域；不支持则失败 |
+| `address()` | 返回本进程不透明地址；不能据此认定 CPU 可访问 |
+| `map(access)` / `unmap(access)` | 成对进行 CPU 访问与必要缓存维护；设备专用内存可不支持 |
+| `copy_to_host()` / `copy_from_host()` | 显式 CPU 数据传输 |
+| `shallow_copy()` | 保留同一资源与元数据，源对象释放后仍可使用 |
+| 拷贝 / `deep_copy()` | 复制实际数据与元数据，得到独立资源 |
+| `set_metadata()` / `get_metadata()` | 设置或读取可变长 CPU 元数据；拥有型右值可移动 |
+| `get_reserved()` / `get_reserved2()` | 分别访问两个 uint64_t 预留字段 |
+
+### 6.13.1 发布池与跨进程生命周期
+
+发布方通过 `vlink::zerocopy::FastBufferPool` 复用分配：`create(size, depth, config)` 一次分配 `depth` 个等长缓冲；`acquire(buffer)` 先清空 `buffer`，再按轮转顺序取出既无本地持有者、也无存活导入进程引用的槽位，没有可用槽位时返回 `false`，由发布方决定丢帧或稍后重试；`clear()` 释放池的引用，已取出的缓冲继续有效。池由单线程驱动。
+
+核心为每个已导出的分配维护一个共享内存控制块，保存协议 ID、大小、所有者身份、generation 与最多 32 个读者进程的身份表，其后紧随插件原生描述符。生命周期规则：
+
+- 复用或退休分配前先递增 generation。携带旧 generation 的描述符导入失败，消息按队列溢出丢弃，发布方不需要导入确认；`depth` 应大于最慢订阅者的队列深度加其保留的帧数。
+- 进程身份为 PID 加内核启动时间；参与共享的进程须处于同一 PID 与 time 命名空间（Linux 记录 `/proc/self/ns/pid`、`/proc/self/ns/time`，启动时间随读取方的 time 偏移变化），不同命名空间的导入失败、扫描跳过。`acquire()` 与最终释放遇到读者表非空时逐项检测存活，已崩溃的读者进程直接清除；导入时检测所有者存活，所有者已崩溃则导入失败，unlink 其控制块并调用插件 `destroy_handle()` 清理原生命名资源。Linux、QNX 上 Manager 构造时扫描 `/dev/shm`（QNX 为 `/dev/shmem`）中同协议、所有者已死的控制块并同样清理，其他协议的残留留给其自身 provider 的进程；内置 `shm` provider 的每个分配段自带所有者身份，未导出的分配同样在构造时回收。macOS 无法枚举 POSIX 共享内存，残留只能由后续导入清理。存活检测把"进程存在但不可检视"视为存活，不会误清跨用户的活进程。
+- 任何调用都不等待其他进程。最终释放时若仍有存活读者，分配进入 Manager 的退休列表，由后续创建或释放调用回收；Manager 析构时仍被引用的分配记录日志后照常释放，效果与进程退出一致，读者已建立的映射在平台允许时继续有效。
+- 读者进程首次导入某个 generation 时附加控制块并调用插件导入；本地引用仍存续期间的重复导入共享同一本地资源，只增加本地引用，全部释放后再导入需重新附加。导入方再导出时使用其导入时的 generation，owner 退休后的分配不会重新可导入。`acquire()` 交付前同步 provider，本地读者已释放但未完成的设备任务先于复用完成。
+
+线格式为 `magic(4) + version(4) + 固定元数据(88) + 动态元数据(M) + payload(N) + magic(4)`，固定开销 100 字节。共享模式的 payload 是 40 字节的控制块名称加 generation，插件原生描述符保存在控制块内；Host 模式保存实际字节。普通 CPU 默认实现没有跨进程共享描述符，序列化会复制数据；`shm` 与 GPU 插件只传递描述符，payload 留在原分配中。共享模式支持 Linux、macOS、Windows、QNX；Android 缺少命名共享内存，该模式使用 Host 字节传递，内置 `shm` provider 在 Android 不可用。
+
+`MessageParser` 的解析与打印只读取元数据，不加载 GPU 插件，也不解引用设备地址；打印支持数值与枚举名称，2 个预留槽以隐藏根字段 `reserved`、`reserved2` 暴露。类型化复制使用 `copy_to<FastBuffer::Metadata>()`。Python 提供 `FastBuffer`、`FastBufferPool`、配置、元数据、预留槽及显式 Host 复制；`address()` 同样不是可直接读取的 CPU 指针。
+
+FastBuffer 不内置录制转换。需要录制时，可通过已有的 `BagPluginInterface::on_write()` 在资源仍有效时调用 `copy_to_host()`，转换为 RawData、CameraFrame 等消息，并同步更新 `ser_type` 与 `schema_type`；共享描述符本身不适合离线回放。
+
+共享资源的生命周期契约见 [FastBufferPluginInterface](../include/vlink/zerocopy/fast_buffer_plugin_interface.h)。
+
+三个独立实现与构建入口见 [examples/fastbuffer](../examples/fastbuffer/README.md)。不支持的内存域或原生导入操作返回失败，不以 CPU 拷贝冒充 GPU 零拷贝。
 
 ---
 

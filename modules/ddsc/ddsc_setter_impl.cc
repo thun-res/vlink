@@ -74,9 +74,13 @@ Status::BasePtr DdscSetterImpl::get_status(Status::Type type) const {
 std::any DdscSetterImpl::get_native_handle() const { return publisher_; }
 
 void DdscSetterImpl::write(const Bytes& msg_data) {
+  if VUNLIKELY (!writer_) {
+    return;
+  }
+
   DdscFactory::write_data(writer_->entity, msg_data, seq_.fetch_add(1, std::memory_order_relaxed));
 }
 
-void DdscSetterImpl::sync(SyncCallback&& callback) { (void)callback; }
+void DdscSetterImpl::sync(SyncCallback&& callback) { callback(); }
 
 }  // namespace vlink

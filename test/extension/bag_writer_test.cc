@@ -28,7 +28,9 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -343,6 +345,39 @@ class FailingBagWriter final : public StubBagWriter {
 };
 
 std::vector<Frame> read_writer_frames(const std::filesystem::path& path);
+
+uint32_t read_first_vcap_chunk_crc(const std::filesystem::path& path) {
+  std::ifstream file(path, std::ios::binary);
+  REQUIRE(file.is_open());
+  file.seekg(8);
+
+  char opcode = 0;
+  while (file.read(&opcode, 1)) {
+    std::array<uint8_t, 8> length_bytes{};
+    file.read(reinterpret_cast<char*>(length_bytes.data()), length_bytes.size());
+    REQUIRE(static_cast<bool>(file));
+
+    uint64_t length = 0;
+    for (size_t index = 0; index < length_bytes.size(); ++index) {
+      length |= static_cast<uint64_t>(length_bytes[index]) << (index * 8);
+    }
+
+    if (static_cast<uint8_t>(opcode) == 0x06) {
+      REQUIRE_GE(length, 28);
+      file.seekg(24, std::ios::cur);
+      std::array<uint8_t, 4> crc_bytes{};
+      file.read(reinterpret_cast<char*>(crc_bytes.data()), crc_bytes.size());
+      REQUIRE(static_cast<bool>(file));
+      return static_cast<uint32_t>(crc_bytes[0]) | (static_cast<uint32_t>(crc_bytes[1]) << 8) |
+             (static_cast<uint32_t>(crc_bytes[2]) << 16) | (static_cast<uint32_t>(crc_bytes[3]) << 24);
+    }
+
+    file.seekg(static_cast<std::streamoff>(length), std::ios::cur);
+  }
+
+  REQUIRE(false);
+  return 0;
+}
 
 void verify_async_write_failure_latches(const char* suffix) {
   ScopedWriterPath bag(suffix);
@@ -1252,7 +1287,7 @@ void verify_vdb_limit_mode_variants() {
     BagWriter::Config config;
     config.sync_mode = true;
     config.compress = BagWriter::kCompressNone;
-    config.cache_size = 1;
+    config.wal_mode = true;
     config.max_row_count = 0;
     config.enable_limit = false;
     config.tag_name = "limit-reject";
@@ -1430,11 +1465,7 @@ void verify_split_by_size_writer_paths(const char* suffix) {
 
   std::vector<std::string> split_files;
   writer->register_split_callback(
-      [&split_files](int split_index, const std::string& split_filename) {
-        CHECK_GE(split_index, 0);
-        split_files.emplace_back(split_filename);
-      },
-      false);
+      [&split_files](int, const std::string& split_filename) { split_files.emplace_back(split_filename); }, false);
 
   REQUIRE_EQ(writer->push(write_frame("dds://coverage/split_size", "raw", SchemaType::kRaw, ActionType::kPublish,
                                       Bytes::from_string("first"), 1'000)),
@@ -1449,6 +1480,117 @@ void verify_split_by_size_writer_paths(const char* suffix) {
   REQUIRE_EQ(frames.size(), 2u);
   CHECK_EQ(frames[0].data.to_string(), "first");
   CHECK_EQ(frames[1].data.to_string(), "second");
+}
+
+void verify_split_count_limit_removes_oldest_file(const char* suffix) {
+  ScopedWriterPath bag(suffix);
+
+  BagWriter::Config config;
+  config.sync_mode = true;
+  config.compress = BagWriter::kCompressNone;
+  config.split_by_size = 0;
+  config.split_by_time = 1;
+  config.max_split_count = 2;
+
+  auto writer = BagWriter::create(bag.path.string(), config);
+  REQUIRE(writer != nullptr);
+
+  std::vector<std::string> split_files;
+  writer->register_split_callback(
+      [&split_files](int split_index, const std::string& split_filename) {
+        CHECK_GE(split_index, 0);
+        split_files.emplace_back(split_filename);
+      },
+      false);
+
+  REQUIRE_EQ(writer->push(write_frame("dds://coverage/split_limit", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("first"), 0)),
+             0);
+  REQUIRE_EQ(writer->push(write_frame("dds://coverage/split_limit", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("second"), 1'001)),
+             1'001);
+  REQUIRE_EQ(writer->push(write_frame("dds://coverage/split_limit", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("third"), 2'001)),
+             2'001);
+  REQUIRE_EQ(writer->push(write_frame("dds://coverage/split_limit", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("fourth"), 2'002)),
+             2'002);
+  writer.reset();
+
+  REQUIRE_EQ(split_files.size(), 3u);
+  CHECK_FALSE(std::filesystem::exists(split_files[0]));
+  CHECK(std::filesystem::exists(split_files[1]));
+  CHECK(std::filesystem::exists(split_files[2]));
+
+  auto reader = BagReader::create(bag.path.string());
+  REQUIRE(reader != nullptr);
+  CHECK_EQ(reader->get_info().split_count, 2);
+  CHECK_EQ(reader->get_info().message_count, 3);
+  REQUIRE_EQ(reader->get_info().url_metas.size(), 1u);
+  CHECK_EQ(reader->get_info().url_metas.front().count, 3u);
+  CHECK_EQ(reader->get_info().url_metas.front().size, 17u);
+  reader.reset();
+
+  auto frames = read_writer_frames(bag.path);
+  REQUIRE_EQ(frames.size(), 3u);
+  CHECK_EQ(frames[0].data.to_string(), "second");
+  CHECK_EQ(frames[1].data.to_string(), "third");
+  CHECK_EQ(frames[2].data.to_string(), "fourth");
+}
+
+void verify_split_count_limit_rolls_back_on_delete_failure(const char* suffix) {
+  ScopedWriterPath bag(suffix);
+
+  BagWriter::Config config;
+  config.sync_mode = true;
+  config.compress = BagWriter::kCompressNone;
+  config.split_by_size = 0;
+  config.split_by_time = 1;
+  config.max_split_count = 2;
+
+  auto writer = BagWriter::create(bag.path.string(), config);
+  REQUIRE(writer != nullptr);
+
+  std::vector<std::string> split_files;
+  writer->register_split_callback(
+      [&split_files](int, const std::string& split_filename) { split_files.emplace_back(split_filename); }, false);
+
+  REQUIRE_EQ(writer->push(write_frame("dds://coverage/split_rollback", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("first"), 0)),
+             0);
+  REQUIRE_EQ(writer->push(write_frame("dds://coverage/split_rollback", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                      Bytes::from_string("second"), 1'001)),
+             1'001);
+  REQUIRE_EQ(split_files.size(), 2u);
+
+  const std::filesystem::path oldest_path(split_files.front());
+  REQUIRE(std::filesystem::remove(oldest_path));
+  REQUIRE(std::filesystem::create_directory(oldest_path));
+  {
+    std::ofstream blocker(oldest_path / "blocker");
+    REQUIRE(blocker.is_open());
+    blocker << "block deletion";
+  }
+
+  CHECK_EQ(writer->push(write_frame("dds://coverage/split_rollback", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                    Bytes::from_string("third"), 2'001)),
+           -1);
+  CHECK(writer->fail());
+  writer.reset();
+
+  nlohmann::ordered_json manifest;
+  {
+    std::ifstream manifest_file(bag.path);
+    REQUIRE(manifest_file.is_open());
+    manifest_file >> manifest;
+  }
+
+  const auto& files = manifest["VLinkFiles"];
+  REQUIRE_EQ(files.size(), 2u);
+  CHECK_EQ(files[0].get<std::string>(), oldest_path.filename().string());
+  CHECK_EQ(files[1].get<std::string>(), std::filesystem::path(split_files[1]).filename().string());
+  CHECK(std::filesystem::is_directory(oldest_path));
+  CHECK(std::filesystem::exists(split_files[1]));
 }
 
 void verify_method_schema_split_and_field_metadata(const char* suffix) {
@@ -1538,6 +1680,68 @@ void verify_ignore_compress_url_remains_readable(const char* suffix) {
 }
 
 TEST_SUITE("extension-BagWriter") {
+  TEST_CASE("max_split_count retains exact frame tails across split modes") {
+    for (const auto* suffix : {".vdbx", ".vcapx"}) {
+      for (const int64_t limit : {0, 1, 2, 4, 12, 20}) {
+        for (const bool by_time : {false, true}) {
+          for (const bool time_name : {false, true}) {
+            for (const bool sync : {false, true}) {
+              INFO(std::string(suffix), " limit=", limit, " time=", by_time, " naming=", time_name, " sync=", sync);
+              ScopedWriterPath bag(suffix);
+              BagWriter::Config config;
+              config.sync_mode = sync;
+              config.compress = BagWriter::kCompressNone;
+              config.cache_size = 0;
+              config.split_by_size = by_time ? 0 : 1;
+              config.split_by_time = by_time ? 1 : 0;
+              config.split_name_by_time = time_name;
+              config.max_split_count = limit;
+              auto writer = BagWriter::create(bag.path.string(), config);
+              REQUIRE(writer != nullptr);
+              std::vector<std::string> files;
+              writer->register_split_callback(
+                  [&files](int, const std::string& filename) { files.emplace_back(filename); }, false);
+              if (!sync) {
+                REQUIRE(writer->async_run());
+              }
+              for (int64_t i = 0; i < 12; ++i) {
+                const auto data = Bytes::from_string("frame-" + std::to_string(i));
+                int64_t timestamp = i * (by_time ? 1'001 : 10);
+                REQUIRE_GE(writer->push(write_frame("dds://test/retention", "raw", SchemaType::kRaw,
+                                                    ActionType::kPublish, data, timestamp)),
+                           0);
+              }
+              if (!sync) {
+                writer->wait_for_idle();
+                writer->quit(true);
+              }
+              writer->close();
+              REQUIRE_FALSE(writer->fail());
+              writer.reset();
+              REQUIRE_EQ(files.size(), 12U);
+              const auto retained = limit == 0 || limit > 12 ? 12 : limit;
+              for (int64_t i = 0; i < 12; ++i) {
+                CHECK_EQ(std::filesystem::exists(files[i]), i >= 12 - retained);
+              }
+              auto reader = BagReader::create(bag.path.string());
+              REQUIRE(reader != nullptr);
+              CHECK_EQ(reader->get_info().split_count, retained);
+              CHECK_EQ(reader->get_info().message_count, retained);
+              REQUIRE_EQ(reader->get_info().url_metas.size(), 1U);
+              CHECK_EQ(reader->get_info().url_metas.front().count, retained);
+              reader.reset();
+              const auto frames = read_writer_frames(bag.path);
+              REQUIRE_EQ(frames.size(), retained);
+              for (int64_t i = 0; i < retained; ++i) {
+                CHECK_EQ(frames[i].data.to_string(), "frame-" + std::to_string(12 - retained + i));
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   TEST_CASE("bind_bag_interface marks the plugin as write direction") {
     StubBagWriter writer;
     auto plugin = std::make_shared<RewriteWritePlugin>();
@@ -2041,6 +2245,26 @@ TEST_SUITE("extension-BagWriter") {
     REQUIRE(reader->wait_for_quit(3000));
   }
 
+  TEST_CASE("vcap chunk CRC defaults off and can be enabled without changing replay") {
+    ScopedWriterPath bag(".vcap");
+    BagWriter::Config config;
+    config.sync_mode = true;
+    SUBCASE("default") {}
+    SUBCASE("enabled") { config.enable_chunk_crc = true; }
+
+    auto writer = BagWriter::create(bag.path.string(), config);
+    REQUIRE(writer != nullptr);
+    REQUIRE_EQ(writer->push(write_frame("dds://coverage/chunk_crc", "raw", SchemaType::kRaw, ActionType::kPublish,
+                                        Bytes::from_string(std::string(4096, 'x')))),
+               0);
+    writer.reset();
+
+    CHECK_EQ(read_first_vcap_chunk_crc(bag.path) == 0U, !config.enable_chunk_crc);
+    const auto frames = read_writer_frames(bag.path);
+    REQUIRE_EQ(frames.size(), 1u);
+    CHECK_EQ(frames.front().data.size(), 4096u);
+  }
+
   TEST_CASE("async memory limit rejects oversized queued frames before enqueue") {
     verify_async_memory_limit_rejects_before_enqueue(".vdb");
     verify_async_memory_limit_rejects_before_enqueue(".vcap");
@@ -2115,6 +2339,40 @@ TEST_SUITE("extension-BagWriter") {
     verify_async_writer_path_remains_readable(".vcap");
   }
 
+  TEST_CASE("vdb persists schemas supplied after their first frame") {
+    ScopedWriterPath bag(".vdb");
+    BagWriter::Config config;
+    config.sync_mode = true;
+    SUBCASE("synchronous") {}
+    SUBCASE("asynchronous") { config.sync_mode = false; }
+
+    auto writer = BagWriter::create(bag.path.string(), config);
+    REQUIRE(writer != nullptr);
+    REQUIRE(writer->async_run());
+    REQUIRE_EQ(writer->push(write_frame("dds://coverage/late_schema", "demo.Late", SchemaType::kProtobuf,
+                                        ActionType::kPublish, Bytes::from_string("payload"), 1'000)),
+               1'000);
+    const auto schema = writer_schema_data("demo.Late", SchemaType::kProtobuf, "late schema");
+    REQUIRE(writer->push_schema(schema));
+    REQUIRE(writer->push_schema(schema));
+    REQUIRE(writer->wait_for_idle(3000));
+    CHECK_FALSE(writer->fail());
+    writer.reset();
+
+    auto reader = BagReader::create(bag.path.string());
+    REQUIRE(reader != nullptr);
+    const auto schemas = reader->detect_schema();
+    REQUIRE_EQ(schemas.size(), 1u);
+    CHECK_EQ(schemas.front().name, schema.name);
+    CHECK_EQ(schemas.front().schema_type, schema.schema_type);
+    CHECK_EQ(schemas.front().data, schema.data);
+    REQUIRE(reader->open_cursor());
+    Frame frame;
+    REQUIRE(reader->read_next(frame));
+    CHECK_EQ(frame.data.to_string(), "payload");
+    CHECK_FALSE(reader->read_next(frame));
+  }
+
   TEST_CASE("vdb limit modes reject or evict deterministically") { verify_vdb_limit_mode_variants(); }
 
   TEST_CASE("vdb compressed byte limits evict using raw payload sizes") {
@@ -2130,6 +2388,16 @@ TEST_SUITE("extension-BagWriter") {
   TEST_CASE("split writers rotate by size and keep manifests readable") {
     verify_split_by_size_writer_paths(".vdbx");
     verify_split_by_size_writer_paths(".vcapx");
+  }
+
+  TEST_CASE("split writers enforce the retained file count") {
+    verify_split_count_limit_removes_oldest_file(".vdbx");
+    verify_split_count_limit_removes_oldest_file(".vcapx");
+  }
+
+  TEST_CASE("split writers roll back the manifest when oldest-file deletion fails") {
+    verify_split_count_limit_rolls_back_on_delete_failure(".vdbx");
+    verify_split_count_limit_rolls_back_on_delete_failure(".vcapx");
   }
 
   TEST_CASE("explicit close finalizes split manifests before destruction") {

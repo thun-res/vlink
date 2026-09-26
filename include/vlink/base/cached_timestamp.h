@@ -49,7 +49,7 @@
  *   vlink::CachedTimestamp ts;
  *   for (int i = 0; i < 1000; ++i) {
  *     // Wall clock (local time) - patched in place on the same second.
- *     std::string_view local = ts.get();
+ *     std::string local(ts.get());
  *     // UTC variant on demand:
  *     std::string_view utc   = ts.get("%02d-%02d %02d:%02d:%02d.%03d", true);
  *     write_to_log(local);
@@ -76,10 +76,9 @@ namespace vlink {
  * @brief Mutable cached generator for short formatted timestamps.
  *
  * @details
- * Holds a 32-byte buffer and last-second counter protected by a mutex so concurrent
- * @c get calls share a single formatted prefix and only the millisecond suffix is rewritten.
- * The first call seeds the cache; subsequent same-second calls patch only the trailing three
- * characters in place.
+ * Holds a 32-byte buffer and last-second counter protected by a mutex.  With the default
+ * format, same-second calls patch only the millisecond suffix.  Custom formats are rendered
+ * in full.  Returned views require external synchronization when the instance is shared.
  */
 class VLINK_EXPORT CachedTimestamp final {
  public:
@@ -101,10 +100,10 @@ class VLINK_EXPORT CachedTimestamp final {
    *
    * @details
    * The returned view points into the internal 32-byte buffer.  It is invalidated by the next
-   * call to @c get on any thread sharing this instance.  The format must end with a 3-digit
-   * millisecond field because the cache patches the last three bytes in place; the entire
-   * formatted string must fit within 31 characters.  Switching @p format or @p use_utc forces
-   * a full reformat on the next second boundary.
+   * call to @c get or @c get_at on any thread sharing this instance.  Copying the view while another
+   * thread updates the cache requires external synchronization.  Output must fit within 31 characters.
+   * Only the default format patches its millisecond suffix; custom formats are rendered in full.
+   * Format and timezone changes take effect immediately.
    *
    * @param format   @c snprintf format consuming six @c int arguments in this order:
    *                 month, day, hour, minute, second, milliseconds.  Default:
@@ -114,8 +113,19 @@ class VLINK_EXPORT CachedTimestamp final {
    */
   [[nodiscard]] std::string_view get(const char* format = "%02d-%02d %02d:%02d:%02d.%03d", bool use_utc = false);
 
+  /**
+   * @brief Formats an explicit wall-clock time using the same cache and format contract as @c get.
+   *
+   * @param now      Wall-clock time to render.
+   * @param format   Format consuming month, day, hour, minute, second and milliseconds as integers.
+   * @param use_utc  Whether to use UTC instead of local time.
+   * @return View valid until the next cache update; empty if conversion or formatting fails.
+   */
+  [[nodiscard]] std::string_view get_at(std::chrono::system_clock::time_point now,
+                                        const char* format = "%02d-%02d %02d:%02d:%02d.%03d", bool use_utc = false);
+
  private:
-  void format_full_timestamp(const char* format, std::chrono::system_clock::time_point now, bool use_utc, int ms);
+  void format_full_timestamp(const char* format, int64_t seconds, bool use_utc, int ms);
 
   void update_milliseconds(int ms);
 
@@ -125,6 +135,7 @@ class VLINK_EXPORT CachedTimestamp final {
   size_t buffer_len_{0};
   size_t ms_offset_{0};
   bool is_utc_{false};
+  bool cache_valid_{false};
 };
 
 }  // namespace vlink

@@ -42,6 +42,7 @@
 #include <vector>
 
 #include "./base/condition_variable.h"
+#include "./base/memory_pool.h"
 
 #if __has_include(<unistd.h>)
 #include <unistd.h>
@@ -103,9 +104,11 @@
 #include <mach/mach.h>
 #include <sys/sysctl.h>
 #elif defined(__QNX__)
+#include <devctl.h>
 #include <net/if_dl.h>
 #include <process.h>
 #include <sys/neutrino.h>
+#include <sys/procfs.h>
 #include <sys/syspage.h>
 #endif
 
@@ -259,9 +262,9 @@ std::string get_app_name() noexcept {
 }
 
 std::string get_host_name() noexcept {
-  char hostname[256];
+  char hostname[256] = {};
 
-  if VLIKELY (::gethostname(hostname, sizeof(hostname)) == 0) {
+  if VLIKELY (::gethostname(hostname, sizeof(hostname) - 1) == 0) {
     return hostname;
   } else {
     return "";  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
@@ -282,6 +285,122 @@ std::string get_pid_str() noexcept {
   static auto pid_str = std::to_string(pid);
 
   return pid_str;
+}
+
+uint64_t get_process_start_time(int32_t pid) noexcept {
+  if VUNLIKELY (pid <= 0) {
+    return 0;
+  }
+
+#if defined(_WIN32)
+  HANDLE handle = ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, static_cast<DWORD>(pid));
+
+  if (!handle) {
+    return ::GetLastError() == ERROR_INVALID_PARAMETER ? 0 : kUnknownProcessStartTime;
+  }
+
+  FILETIME creation_time{};
+  FILETIME exit_time{};
+  FILETIME kernel_time{};
+  FILETIME user_time{};
+  const bool exited = ::WaitForSingleObject(handle, 0) == WAIT_OBJECT_0;
+  const bool timed = !exited && ::GetProcessTimes(handle, &creation_time, &exit_time, &kernel_time, &user_time);
+  ::CloseHandle(handle);
+
+  if (exited) {
+    return 0;
+  }
+
+  const uint64_t start_time = (static_cast<uint64_t>(creation_time.dwHighDateTime) << 32) | creation_time.dwLowDateTime;
+  return timed && start_time != 0 ? start_time : kUnknownProcessStartTime;
+#elif defined(__APPLE__)
+  struct kinfo_proc info{};
+  size_t length = sizeof(info);
+  int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, static_cast<int>(pid)};
+
+  if (::sysctl(mib, 4, &info, &length, nullptr, 0) != 0) {
+    return kUnknownProcessStartTime;
+  }
+
+  if (length == 0 || info.kp_proc.p_stat == SZOMB) {
+    return 0;
+  }
+
+  const uint64_t start_time = static_cast<uint64_t>(info.kp_proc.p_starttime.tv_sec) * 1000000ULL +
+                              static_cast<uint64_t>(info.kp_proc.p_starttime.tv_usec);
+  return start_time != 0 ? start_time : kUnknownProcessStartTime;
+#elif defined(__QNX__)
+  char path[64];
+  std::snprintf(path, sizeof(path), "/proc/%d/as", static_cast<int>(pid));
+  const int fd = ::open(path, O_RDONLY);
+
+  if (fd == -1) {
+    return errno == ENOENT ? 0 : kUnknownProcessStartTime;
+  }
+
+  procfs_info info{};
+  const int result = ::devctl(fd, DCMD_PROC_INFO, &info, sizeof(info), nullptr);
+  ::close(fd);
+
+  if (result != EOK || info.start_time == 0) {
+    return kUnknownProcessStartTime;
+  }
+
+  return (info.flags & _NTO_PF_ZOMBIE) != 0 ? 0 : static_cast<uint64_t>(info.start_time);
+#else
+  char path[64];
+  std::snprintf(path, sizeof(path), "/proc/%d/stat", static_cast<int>(pid));
+  const int fd = ::open(path, O_RDONLY | O_CLOEXEC);
+
+  if (fd == -1) {
+    return ::kill(static_cast<pid_t>(pid), 0) == -1 && errno == ESRCH ? 0 : kUnknownProcessStartTime;
+  }
+
+  char line[1024];
+  const ssize_t length = ::read(fd, line, sizeof(line) - 1);
+  ::close(fd);
+
+  if (length <= 0) {
+    return kUnknownProcessStartTime;
+  }
+
+  line[length] = '\0';
+  const char* cursor = std::strrchr(line, ')');
+
+  if (!cursor || cursor[1] != ' ') {
+    return kUnknownProcessStartTime;
+  }
+
+  cursor += 2;
+
+  if (*cursor == 'X') {
+    return 0;
+  }
+
+  const bool zombie = *cursor == 'Z';
+  uint64_t threads = 0;
+
+  for (int field = 3; field < 22; ++field) {
+    cursor = std::strchr(cursor, ' ');
+
+    if (!cursor) {
+      return kUnknownProcessStartTime;
+    }
+
+    ++cursor;
+
+    if (field == 19) {
+      threads = std::strtoull(cursor, nullptr, 10);
+    }
+  }
+
+  if (zombie && threads <= 1) {
+    return 0;
+  }
+
+  const uint64_t start_time = std::strtoull(cursor, nullptr, 10);
+  return start_time != 0 ? start_time : kUnknownProcessStartTime;
+#endif
 }
 
 std::string get_tmp_dir() noexcept {
@@ -355,8 +474,6 @@ std::string get_env(const std::string& key, const std::string& default_value) no
   if (!value.empty() && value.back() == '\0') {
     value.pop_back();
   }
-
-  std::replace(value.begin(), value.end(), '\\', '/');
 
   return value;
 #else
@@ -1029,8 +1146,11 @@ std::string get_interface_name_by_ipv6(const std::string& ipv6) noexcept {
 }
 
 std::vector<std::string> get_dds_default_address(bool filter_available, int max_count) noexcept {
-  static std::vector<std::string> all = get_all_ipv4_address(filter_available);
+  if VUNLIKELY (max_count <= 0) {
+    return {};
+  }
 
+  const auto all = get_all_ipv4_address(filter_available);
   std::vector<std::string> list;
 
   list.reserve(max_count);
@@ -1043,6 +1163,10 @@ std::vector<std::string> get_dds_default_address(bool filter_available, int max_
   }
 
   for (const auto& ip : all) {
+    if (list.size() >= static_cast<size_t>(max_count)) {
+      break;
+    }
+
     if (ip == "127.0.0.1") {
       continue;
     } else if (ip == "0.0.0.0") {
@@ -1052,10 +1176,6 @@ std::vector<std::string> get_dds_default_address(bool filter_available, int max_
     }
 
     list.emplace_back(ip);
-
-    if (list.size() >= static_cast<size_t>(max_count)) {
-      break;
-    }
   }
 
   return list;
@@ -1364,21 +1484,33 @@ struct SignalHelper final {
   static void on_terminate(int signal) {
     static auto& instance = SignalHelper::get();
 
-    if (instance.terminate_callback) {
-      if (instance.is_async) {
-        std::thread thread([signal]() { instance.terminate_callback(signal); });  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        thread.detach();                                                          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-      } else {                                                                    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    auto invoke = [signal]() {
+      if (instance.terminate_callback) {
         instance.terminate_callback(signal);
       }
 
-#ifdef __unix__
-
-      if (!instance.pass_through) {
-        ::signal(signal, SIG_IGN);
-      }
+      if (instance.pass_through) {
+        ::signal(signal, SIG_DFL);
+#ifdef _WIN32
+        ::raise(signal);
+#else
+        ::kill(::getpid(), signal);
 #endif
+      }
+    };
+
+    if (instance.is_async) {
+      std::thread thread(std::move(invoke));
+      thread.detach();
+    } else {
+      invoke();
     }
+
+#ifdef __unix__
+    if (instance.terminate_callback && !instance.pass_through) {
+      ::signal(signal, SIG_IGN);
+    }
+#endif
   }
 
   // LCOV_EXCL_START GCOVR_EXCL_START
@@ -1388,15 +1520,34 @@ struct SignalHelper final {
     if (instance.crash_callback) {
       instance.crash_callback(signal);
     }
+
+#ifndef _WIN32
+    ::signal(signal, SIG_DFL);
+    ::raise(signal);
+#endif
   }
   // LCOV_EXCL_STOP GCOVR_EXCL_STOP
 
  private:
+  SignalHelper() { MemoryPool::global_instance(); }
+
   ~SignalHelper() = default;
 };
 
 void register_terminate_signal(MoveFunction<void(int)>&& callback, bool is_async, bool pass_through) noexcept {
   static auto& instance = SignalHelper::get();
+
+  if VUNLIKELY (!callback) {
+    instance.terminate_callback = nullptr;
+
+    ::signal(SIGINT, SIG_DFL);
+    ::signal(SIGTERM, SIG_DFL);
+#ifndef _WIN32
+    ::signal(SIGHUP, SIG_DFL);
+#endif
+
+    return;
+  }
 
   instance.terminate_callback = std::move(callback);
   instance.is_async = is_async;
@@ -1429,7 +1580,6 @@ void register_terminate_signal(MoveFunction<void(int)>&& callback, bool is_async
 #endif
 
   for (auto signal : kTerminateSignals) {
-    ::sigaction(signal, nullptr, nullptr);
     ::sigaction(signal, &act, nullptr);
   }
 #endif
@@ -1452,7 +1602,7 @@ void register_crash_signal(MoveFunction<void(int)>&& callback) noexcept {
 
   struct sigaction act{};
 
-  act.sa_flags = 0;
+  act.sa_flags = SA_RESETHAND;
   act.sa_handler = SignalHelper::on_crash;
 
 #ifdef __APPLE__
@@ -1462,7 +1612,6 @@ void register_crash_signal(MoveFunction<void(int)>&& callback) noexcept {
 #endif
 
   for (auto signal : kCrashSignals) {
-    ::sigaction(signal, nullptr, nullptr);
     ::sigaction(signal, &act, nullptr);
   }
 #endif
@@ -1484,7 +1633,7 @@ struct KeyboardHelper final {
   }
 
  private:
-  KeyboardHelper() = default;
+  KeyboardHelper() { MemoryPool::global_instance(); }
 
   ~KeyboardHelper() {
 #ifdef _WIN32
@@ -1515,7 +1664,11 @@ void start_detect_keyboard(MoveFunction<void(const std::string& key)>&& callback
   static auto& instance = KeyboardHelper::get();
 
   if (instance.has_detect.load(std::memory_order_acquire)) {
-    return;
+    if (!instance.quit_flag.load(std::memory_order_acquire) || instance.thread.get_id() == std::this_thread::get_id()) {
+      return;
+    }
+
+    stop_detect_keyboard();
   }
 
   if (callback) {
@@ -1820,6 +1973,11 @@ void start_detect_keyboard(MoveFunction<void(const std::string& key)>&& callback
 
 void stop_detect_keyboard() noexcept {
   static auto& instance = KeyboardHelper::get();
+
+  if (instance.thread.get_id() == std::this_thread::get_id()) {
+    instance.quit_flag.store(true, std::memory_order_release);
+    return;
+  }
 
   bool expected = true;
 
@@ -2250,6 +2408,7 @@ int32_t get_timezone_diff() noexcept {
   return local_tm.tm_gmtoff / 60;
 #else
   std::tm gm_tm = *std::gmtime(&now);
+  gm_tm.tm_isdst = local_tm.tm_isdst;
   int diff_seconds = std::mktime(&local_tm) - std::mktime(&gm_tm);
 
   return diff_seconds / 60;

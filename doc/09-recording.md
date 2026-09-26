@@ -19,7 +19,7 @@
 | `data` | `vlink::Bytes` | 序列化后的 payload | 浅视图，仅在回调内有效，需外带先复制 |
 | `ser_type` | `std::string` | 序列化类型名（如 `"demo.proto.PointCloud"`），原样存盘 | 由 reader 从元数据回填 |
 | `schema_type` | `vlink::SchemaType` | schema 家族：`kProtobuf` / `kFlatbuffers` / `kZeroCopy` / `kRaw` / `kCdr` | 由 reader 从元数据回填 |
-| `action_type` | `vlink::ActionType` | 消息动作，通常 `kPublish` | 原样回传 |
+| `action_type` | `vlink::ActionType` | Event 为 `kPublish` / `kSubscribe`，Field 为 `kSet` / `kGet` | 原样回传 |
 
 `ser_type` 标识 payload 的精确序列化类型，应用层据此选择解码器；`schema_type` 是供工具快速分派的粗粒度家族标签。两者关系与完整取值见 [03-serialization.md](03-serialization.md)。
 
@@ -115,12 +115,13 @@ writer->push_schema(schema);
 
 ```cpp
 vlink::BagWriter::Config config;
-config.compress      = vlink::BagWriter::kCompressAuto;
-config.split_by_size = 1024LL * 1024 * 1024;
-config.split_by_time = 60LL * 1000;
-config.tag_name      = "test_run_001";
+config.compress        = vlink::BagWriter::kCompressAuto;
+config.split_by_size   = 1024LL * 1024 * 1024;
+config.split_by_time   = 60LL * 1000;
+config.max_split_count = 10;
+config.tag_name        = "test_run_001";
 
-auto writer = vlink::BagWriter::create("/data/recording.vdb", config);
+auto writer = vlink::BagWriter::create("/data/recording.vdbx", config);
 ```
 
 | 字段 | 默认 | 语义 |
@@ -128,10 +129,15 @@ auto writer = vlink::BagWriter::create("/data/recording.vdb", config);
 | `compress` | `kCompressNone` | `kCompressAuto` 由后端选压缩（VDB 用 LZAV、MCAP 用 Zstd）；`kCompressNone` 关闭 |
 | `split_by_size` | 1 GiB | 按文件大小分割阈值（字节），`0` 关闭 |
 | `split_by_time` | `0` | 按时间分割间隔（毫秒），`0` 关闭 |
+| `max_split_count` | `0` | 分包文件保留上限；`0` 不限制，超限后删除 manifest 中最旧的分包 |
 | `tag_name` | 空 | 录制标签，写入文件头供检索 |
 | `sync_mode` | `false` | `true` 全程同步直写且不启动 VDB 周期 cache flush；`false` 全程经后台队列并启用周期 flush |
+| `enable_chunk_crc` | `false` | `true` 计算 VCAP/MCAP chunk CRC；关闭后仍可回放，但不提供 chunk 内容校验；VDB 忽略 |
 
 `cache_size` 始终只表示 VDB 的事务提交字节阈值或 VCAP 的 chunk 大小，不承担模式开关语义。
+
+`max_split_count` 仅对 `.vdbx` / `.vcapx` 分包容器生效。轮转时优先保留新分包；达到上限后从 manifest
+移除并删除最旧分包。若上限清理所需的 manifest 更新或文件删除失败，本次轮转失败；删除失败时会恢复原清单，不会继续写入新分包。
 
 分割产生新文件时可注册回调获知文件名。第二参数 `before` 决定回调在新文件打开前还是后触发：
 
@@ -196,6 +202,7 @@ reader->wait_for_quit();
 | `times` | `1` | 循环次数；`<= 0`（含 `vlink::BagReader::kInfinite`，其值为 `-1`）表示无限循环 |
 | `begin_time` / `end_time` | `0` / `0` | 回放时间窗（毫秒，相对录制起点），`0` 表示从头 / 到尾 |
 | `filter_urls` | 空 | URL 白名单，空集合表示回放全部 |
+| `auto_pause` | `false` | `play()` 启动时暂停 |
 | `auto_quit` | `false` | 播完后停止后台循环线程 |
 
 ```cpp
@@ -215,11 +222,11 @@ reader->play(cfg);
 | --- | --- |
 | `pause()` / `resume()` | 暂停 / 继续 |
 | `pause_to_next()` | 单步：发一帧后再次暂停 |
-| `jump(begin_time, rate, times, force_to_play)` | 跳转到指定时间戳（毫秒）并应用新参数 |
+| `jump(begin_time, rate, times, force_to_play)` | 跳转并应用新参数；保留原播放状态，`force_to_play=true` 时强制继续 |
 | `stop()` | 中止会话并回退到起点 |
 | `get_status()` / `get_timestamp()` | 查询当前状态 / 当前时间戳 |
 
-文件损坏时可异步修复，三者均返回 `std::future<bool>`：`check()` 校验完整性、`reindex()` 重建索引、`fix(/*rebuild=*/false)` 修复（`true` 为从头重建）。
+文件损坏时可异步修复，三者均返回 `std::future<bool>`：`check()` 校验完整性、`reindex()` 重建索引、`fix(/*rebuild=*/false)` 修复（`true` 为从头重建）。`fix()` 会按实际存储的消息重算头部的消息数、时长、完成标记与各话题的消息数和频率，这正是录制中途断电留下的不一致；话题的原始字节数与丢包率是录制期测量值，不做重算。只读打开的 reader 与分包 bag 会跳过该重算（分包的索引文件不会被改写），不含任何消息的 bag 保留原完成标记，便于区分失败的录制。
 
 ---
 
@@ -605,7 +612,7 @@ int main(int argc, char* argv[]) {
 
 ## 📚 相关文档
 
-- 命令行录制 / 回放工具 `vlink-bag`（record/play/info/clone/check/reindex/fix/tag）：[10-cli-tools.md](10-cli-tools.md)
+- 命令行录制 / 回放工具 `vlink-bag`（record/play/info/clone/merge/check/reindex/fix/tag）：[10-cli-tools.md](10-cli-tools.md)
 - 命令行触发录制工具 `vlink-trigger`（daemon/dump）：[10-cli-tools.md](10-cli-tools.md)（引擎 `TriggerRecorder` 见本章 [§9.13](#-913-触发录制与内存打点)）
 - 图形化回放器 `vlink-player`：[11-visualization.md](11-visualization.md)
 - 序列化类型与 schema：[03-serialization.md](03-serialization.md)

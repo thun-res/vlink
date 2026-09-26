@@ -8,7 +8,7 @@
         <mxCell id="title" value="MessageLoop::AliveState &#8212; Cross-Thread Lifetime Gate" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=22;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="1">
           <mxGeometry x="40" y="20" width="1020" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="subtitle" value="Observer locks mtx, re-checks alive, then touches loop while still holding the lock &#160;&#183;&#160; destructor sets alive=false under mtx as the very first step" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
+        <mxCell id="subtitle" value="Observers hold a shared lock while accessing loop; destruction calls quit(), then exclusively clears alive before releasing resources" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=2;fontColor=#607d8b;" vertex="1" parent="1">
           <mxGeometry x="40" y="54" width="1020" height="22" as="geometry" />
         </mxCell>
 
@@ -22,7 +22,7 @@
           </mxGeometry>
         </mxCell>
 
-        <mxCell id="lane_alive" value="Shared AliveState&#10;(mtx + atomic_bool alive)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#e65100;shadow=0;arcSize=8;" vertex="1" parent="1">
+        <mxCell id="lane_alive" value="Shared AliveState&#10;(shared_mutex mtx + alive)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#ef6c00;strokeWidth=1.5;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#e65100;shadow=0;arcSize=8;" vertex="1" parent="1">
           <mxGeometry x="450" y="110" width="200" height="48" as="geometry" />
         </mxCell>
         <mxCell id="lane_alive_line" value="" style="endArrow=none;html=1;strokeColor=#ef6c00;strokeWidth=2;dashed=1;" edge="1" parent="1">
@@ -53,10 +53,10 @@
           </mxGeometry>
         </mxCell>
 
-        <mxCell id="step2" value="std::lock_guard lock(alive_state-&gt;mtx);" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontColor=#0d47a1;shadow=0;arcSize=8;" vertex="1" parent="1">
+        <mxCell id="step2" value="std::shared_lock lock(alive_state-&gt;mtx);" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontColor=#0d47a1;shadow=0;arcSize=8;" vertex="1" parent="1">
           <mxGeometry x="40" y="240" width="240" height="36" as="geometry" />
         </mxCell>
-        <mxCell id="arr2" value="lock()" style="endArrow=block;endFill=1;html=1;strokeColor=#1976d2;strokeWidth=2;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#1976d2;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+        <mxCell id="arr2" value="lock_shared()" style="endArrow=block;endFill=1;html=1;strokeColor=#1976d2;strokeWidth=2;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#1976d2;labelBackgroundColor=#ffffff;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="160" y="276" as="sourcePoint" />
             <mxPoint x="550" y="276" as="targetPoint" />
@@ -67,17 +67,17 @@
           <mxGeometry x="20" y="300" width="280" height="52" as="geometry" />
         </mxCell>
 
-        <mxCell id="arr3" value="post under lock&#160;(loop is alive)" style="endArrow=block;endFill=1;html=1;strokeColor=#388e3c;strokeWidth=2;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+        <mxCell id="arr3" value="check / post under shared lock" style="endArrow=block;endFill=1;html=1;strokeColor=#388e3c;strokeWidth=2;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#1b5e20;labelBackgroundColor=#ffffff;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="160" y="326" as="sourcePoint" />
+            <mxPoint x="300" y="326" as="sourcePoint" />
             <mxPoint x="940" y="326" as="targetPoint" />
           </mxGeometry>
         </mxCell>
 
-        <mxCell id="step4" value="lock_guard out of scope -&gt; unlock();" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontColor=#0d47a1;shadow=0;arcSize=8;" vertex="1" parent="1">
+        <mxCell id="step4" value="shared_lock scope ends&#10;-&gt; unlock_shared();" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontColor=#0d47a1;shadow=0;arcSize=8;" vertex="1" parent="1">
           <mxGeometry x="40" y="360" width="240" height="36" as="geometry" />
         </mxCell>
-        <mxCell id="arr4" value="unlock()" style="endArrow=block;endFill=1;html=1;strokeColor=#1976d2;strokeWidth=2;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#1976d2;labelBackgroundColor=#ffffff;dashed=1;" edge="1" parent="1">
+        <mxCell id="arr4" value="unlock_shared()" style="endArrow=block;endFill=1;html=1;strokeColor=#1976d2;strokeWidth=2;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#1976d2;labelBackgroundColor=#ffffff;dashed=1;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="160" y="396" as="sourcePoint" />
             <mxPoint x="550" y="396" as="targetPoint" />
@@ -87,12 +87,15 @@
         <mxCell id="step5" value="MessageLoop::~MessageLoop()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontStyle=1;fontColor=#37474f;shadow=0;arcSize=8;" vertex="1" parent="1">
           <mxGeometry x="820" y="180" width="240" height="36" as="geometry" />
         </mxCell>
+        <mxCell id="step_quit" value="quit(!is_running);&#10;wake blocked producers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontColor=#37474f;shadow=0;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="820" y="240" width="240" height="50" as="geometry" />
+        </mxCell>
         <mxCell id="step6" value="lock_guard lock(alive_state-&gt;mtx);&#10;alive_state-&gt;alive.store(false, release);" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#607d8b;strokeWidth=1;fontFamily=Helvetica;fontSize=11;fontColor=#37474f;shadow=0;arcSize=8;" vertex="1" parent="1">
           <mxGeometry x="820" y="420" width="240" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="arr5" value="lock + store false&#160;(blocks until observer unlocks)" style="endArrow=block;endFill=1;html=1;strokeColor=#ef6c00;strokeWidth=2;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#e65100;labelBackgroundColor=#ffffff;" edge="1" parent="1">
+        <mxCell id="arr5" value="exclusive lock; alive=false" style="endArrow=block;endFill=1;html=1;strokeColor=#ef6c00;strokeWidth=2;fontFamily=Helvetica;fontSize=10;fontStyle=1;fontColor=#e65100;labelBackgroundColor=#ffffff;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="940" y="445" as="sourcePoint" />
+            <mxPoint x="820" y="445" as="sourcePoint" />
             <mxPoint x="550" y="445" as="targetPoint" />
           </mxGeometry>
         </mxCell>
@@ -107,10 +110,10 @@
         <mxCell id="note_t" value="Contract" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=12;fontStyle=1;fontColor=#37474f;" vertex="1" parent="1">
           <mxGeometry x="54" y="560" width="200" height="20" as="geometry" />
         </mxCell>
-        <mxCell id="note_l1" value="Observers must hold alive_state-&gt;mtx for the entire window in which they touch loop. Releasing mtx without observing alive==false guarantees the destructor has not yet started." style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontColor=#455a64;" vertex="1" parent="1">
+        <mxCell id="note_l1" value="Hold a shared lock while touching loop. Destruction may already have called quit(); resource release waits for observers to unlock." style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontColor=#455a64;" vertex="1" parent="1">
           <mxGeometry x="54" y="580" width="1000" height="18" as="geometry" />
         </mxCell>
-        <mxCell id="note_l2" value="Once observers see alive==false (or simply fail to acquire mtx before the destructor takes it), they MUST NOT touch the loop and should report a closed state to their caller." style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontColor=#455a64;" vertex="1" parent="1">
+        <mxCell id="note_l2" value="Under the shared lock, alive==false forbids loop access. quit() may reject a post even while alive==true; handle the posting result." style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=11;fontColor=#455a64;" vertex="1" parent="1">
           <mxGeometry x="54" y="600" width="1000" height="18" as="geometry" />
         </mxCell>
       </root>

@@ -273,11 +273,15 @@ void update(osg::Geode* geode, const std::vector<EllipseData>& ellipses, float l
   fill_verts->dirty();
   fill_colors->dirty();
 
+  outline_geo->dirtyBound();
+
   auto* outline_da = static_cast<osg::DrawArrays*>(outline_geo->getPrimitiveSet(0));
 
   if (outline_da) {
     outline_da->setCount(outline_verts->size());
   }
+
+  fill_geo->dirtyBound();
 
   auto* fill_da = static_cast<osg::DrawArrays*>(fill_geo->getPrimitiveSet(0));
 

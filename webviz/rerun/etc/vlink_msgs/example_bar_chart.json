@@ -3,6 +3,13 @@
   "archetype": "BarChart",
   "encoding": "protobuf",
   "field_mappings": [
-    { "source": "values", "target": "values" }
+    {
+      "target": "values.shape[0]",
+      "expression": "_root.values._size"
+    },
+    {
+      "target": "values.buffer.F64",
+      "source": "values"
+    }
   ]
 }

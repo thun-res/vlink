@@ -33,6 +33,7 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QResizeEvent>
+#include <QSignalBlocker>
 #include <QTimer>
 
 #include "./mainwindow.h"
@@ -250,6 +251,51 @@ EditDialog::EditDialog(QWidget* parent) : QDialog(parent), ui(new Ui::EditDialog
     target_msg_ = window_->factory_->GetPrototype(window_->desc_)->New();
     window_->set_property_list(ui->treeWidget_property, "", target_msg_);
   }
+
+  connect(ui->treeWidget_property, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem* item, int column) {
+    if (column != 0 || !item->data(0, Qt::CheckStateRole).isValid()) {
+      return;
+    }
+
+    const QSignalBlocker blocker(ui->treeWidget_property);
+
+    if (is_fbs_mode_) {
+      const auto* object = item_to_fbs_object_map_.at(item);
+
+      if (item->checkState(0) == Qt::Checked && item->childCount() == 0) {
+        init_fbs_tree_object(item, "", object, nullptr);
+      }
+
+      for (int i = 0; i < item->childCount(); ++i) {
+        item->child(i)->setHidden(item->checkState(0) != Qt::Checked);
+      }
+
+      return;
+    }
+
+    const auto* field = window_->item_to_field_map_.at(item);
+
+#if GOOGLE_PROTOBUF_VERSION >= 3012000
+    const auto* oneof = field->real_containing_oneof();
+#else
+    const auto* oneof = field->containing_oneof();
+#endif
+
+    if (oneof && item->checkState(0) == Qt::Checked) {
+      auto* parent = item->parent() ? item->parent() : ui->treeWidget_property->invisibleRootItem();
+
+      for (int i = 0; i < parent->childCount(); ++i) {
+        auto* sibling = parent->child(i);
+        const auto iter = window_->item_to_field_map_.find(sibling);
+
+        if (sibling != item && iter != window_->item_to_field_map_.end() && iter->second->containing_oneof() == oneof) {
+          sibling->setCheckState(0, Qt::Unchecked);
+        }
+      }
+    }
+
+    window_->set_property_list(ui->treeWidget_property, "", target_msg_);
+  });
 
   ui->pushButton_add->setEnabled(false);
   ui->pushButton_del->setEnabled(false);
@@ -590,6 +636,8 @@ void EditDialog::init_fbs_tree() {
 
 void EditDialog::init_fbs_tree_object(QTreeWidgetItem* parent_item, const std::string& parent_id,
                                       const reflection::Object* object, const FlatbuffersObjectView* view) {
+  const QSignalBlocker blocker(ui->treeWidget_property);
+
   if (!object || !object->fields()) {
     return;
   }
@@ -682,7 +730,25 @@ void EditDialog::init_fbs_tree_object(QTreeWidgetItem* parent_item, const std::s
         has_child = get_child_view(*view, *field, *fbs_context_->schema, child_view);
       }
 
-      init_fbs_tree_object(item, current_id, child_object, has_child ? &child_view : nullptr);
+      bool recursive = child_object == fbs_context_->root_object;
+
+      for (auto* parent = item->parent(); parent && !recursive; parent = parent->parent()) {
+        const auto iter = item_to_fbs_object_map_.find(parent);
+
+        recursive = iter != item_to_fbs_object_map_.end() && iter->second == child_object;
+      }
+
+      const bool present = has_child || !recursive || field->required();
+
+      if (recursive && !child_object->is_struct() && !field->required()) {
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(0, present ? Qt::Checked : Qt::Unchecked);
+      }
+
+      if (present) {
+        init_fbs_tree_object(item, current_id, child_object, has_child ? &child_view : nullptr);
+      }
+
       continue;
     }
 
@@ -711,6 +777,11 @@ void EditDialog::init_fbs_tree_object(QTreeWidgetItem* parent_item, const std::s
       } else if (base_type == reflection::Bool) {
         auto val = get_numeric(*view, *field);
         item->setText(3, (val.has_value() && val.value() != 0) ? "true" : "false");
+      } else if (flatbuffers::IsInteger(base_type)) {
+        const auto value = get_integer(*view, *field);
+
+        item->setText(3, base_type == reflection::ULong ? QString::number(static_cast<qulonglong>(value))
+                                                        : QString::number(static_cast<qlonglong>(value)));
       } else {
         auto val = get_numeric(*view, *field);
         if (val.has_value()) {
@@ -772,6 +843,12 @@ void EditDialog::add_fbs_vector_element(QTreeWidgetItem* array_item, const refle
       } else if (element_type == reflection::Bool) {
         auto val = get_vector_numeric(*view, *field, static_cast<size_t>(index));
         item->setText(3, (val.has_value() && val.value() != 0) ? "true" : "false");
+      } else if (flatbuffers::IsInteger(element_type)) {
+        const auto* vec = flatbuffers::GetFieldAnyV(*static_cast<const flatbuffers::Table*>(view->data), *field);
+        const auto value = flatbuffers::GetAnyVectorElemI(vec, element_type, static_cast<size_t>(index));
+
+        item->setText(3, element_type == reflection::ULong ? QString::number(static_cast<qulonglong>(value))
+                                                           : QString::number(static_cast<qlonglong>(value)));
       } else {
         auto val = get_vector_numeric(*view, *field, static_cast<size_t>(index));
         if (val.has_value()) {
@@ -804,6 +881,10 @@ std::string EditDialog::build_fbs_json() {
       continue;
     }
 
+    if (item->data(0, Qt::CheckStateRole).isValid() && item->checkState(0) != Qt::Checked) {
+      continue;
+    }
+
     if (!first) {
       json += ",";
     }
@@ -826,6 +907,10 @@ std::string EditDialog::build_fbs_json_object(QTreeWidgetItem* item) {
     const auto* field = item_to_fbs_field_map_[child];
 
     if (!field || !field->name()) {
+      continue;
+    }
+
+    if (child->data(0, Qt::CheckStateRole).isValid() && child->checkState(0) != Qt::Checked) {
       continue;
     }
 
@@ -857,7 +942,7 @@ std::string EditDialog::build_fbs_json_value(QTreeWidgetItem* item) {
     return arr;
   }
 
-  if (type == 0 && item->childCount() > 0) {
+  if (type == 0) {
     return build_fbs_json_object(item);
   }
 
