@@ -585,10 +585,15 @@ TEST_SUITE("base-MessageLoop") {
       std::atomic<bool> ran{false};
       std::promise<bool> spin_result;
       auto spin_future = spin_result.get_future();
+      std::promise<void> idle;
+      auto idle_future = idle.get_future();
+
+      loop.register_idle_handler([&idle] { idle.set_value(); });
 
       std::thread waiter([&loop, &spin_result] { spin_result.set_value(loop.spin_once(true)); });
 
-      std::this_thread::sleep_for(20ms);
+      idle_future.wait();
+
       const bool accepted = loop.post_task([&ran] { ran.store(true, std::memory_order_release); });
       CHECK(accepted);
 
@@ -600,6 +605,7 @@ TEST_SUITE("base-MessageLoop") {
       }
 
       waiter.join();
+      loop.register_idle_handler(nullptr);
       CHECK(spin_future.get());
 
       if (!ran.load(std::memory_order_acquire)) {
