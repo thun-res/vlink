@@ -53,6 +53,7 @@ _vlink-parse() {
         '--event_min_interval=[Minimum seconds between event triggers]:seconds:' \
         '--suffix=[Slice output suffix]:suffix:' \
         '--compress[Compress slice output bag data]' \
+        '--enable_chunk_crc[Compute MCAP chunk CRC for VCAP output]' \
         '--force[Overwrite existing slice/scan outputs]' \
         '--no_manifest[Skip slice manifest]' \
         '--manifest=[Manifest file name]:name:' \

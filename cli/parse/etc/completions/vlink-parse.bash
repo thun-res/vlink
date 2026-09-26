@@ -69,7 +69,7 @@ _vlink_dash_parse() {
 -w --window --segments --event --pre --post --event_state_max_age --event_min_interval \
 --suffix --compress --force --no_manifest --manifest --schema_config --schema_plugin --plugin \
 --scan_output --filter --export_csv -u --urls -i --url_filter -k --black --actions --tag --wal_mode --cache_size \
---compress_level --ignore_compress --sample_step --dry_run --quality_check \
+--compress_level --enable_chunk_crc --ignore_compress --sample_step --dry_run --quality_check \
 --dropout_threshold -h --help -v --version" "$cur"
         return
     fi

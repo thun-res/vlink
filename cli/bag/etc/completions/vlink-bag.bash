@@ -134,7 +134,7 @@ _vlink_bag() {
 -o --split_name_by_time -z --split_by_size -y --split_by_time -g --deft \
 -x --max_packet_size -j --wal_mode -c --cache_size -s --sync_mode \
 --max_task_depth --max_memory_size --max_row_count --max_bytes_size --max_split_count \
---enable_limit --compress_level --ignore_compress --plugin -h --help" "$cur"
+--enable_limit --compress_level --enable_chunk_crc --ignore_compress --plugin -h --help" "$cur"
                 return
             fi
             _vlink_bash_complete_files "$cur"
@@ -159,7 +159,7 @@ _vlink_bag() {
 -o --split_name_by_time -z --split_by_size -y --split_by_time \
 -f --force -j --wal_mode -c --cache_size \
 --rel_begin_time --rel_end_time --local_begin_time --local_end_time \
---utc_begin_time --utc_end_time --compress_level --ignore_compress \
+--utc_begin_time --utc_end_time --compress_level --enable_chunk_crc --ignore_compress \
 --import_schema --plugin -h --help" "$cur"
                 return
             fi
@@ -179,7 +179,7 @@ _vlink_bag() {
 -f --force -j --wal_mode -c --cache_size \
 --check_gap \
 --rel_begin_time --rel_end_time --local_begin_time --local_end_time \
---utc_begin_time --utc_end_time --compress_level --ignore_compress \
+--utc_begin_time --utc_end_time --compress_level --enable_chunk_crc --ignore_compress \
 --import_schema --plugin -h --help" "$cur"
                 return
             fi
