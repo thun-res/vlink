@@ -75,7 +75,12 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
 
   VLINK_TERM_OUT.flush();
 
-  std::unordered_map<std::string, std::shared_ptr<RawSub>> sub_ptr_map;
+  struct SubEntry final {
+    std::shared_ptr<RawSub> node;
+    bool getter_semantics{false};
+  };
+
+  std::unordered_map<std::string, SubEntry> sub_ptr_map;
   std::unordered_map<std::string, std::atomic<int64_t>> sub_seq_map;
   std::unordered_map<std::string, std::atomic<size_t>> sub_size_map;
   std::unordered_map<std::string, std::atomic<double>> sub_lost_map;
@@ -555,10 +560,10 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
       }
     }
 
-    if VLIKELY (last_line_str.size() <= static_cast<size_t>(terminal_width + 84)) {
+    if VLIKELY (last_line_str.size() <= static_cast<size_t>(terminal_width) + 84) {
       current_str += last_line_str;
     } else {
-      current_str += last_line_str.substr(0, terminal_width + 84);
+      current_str += last_line_str.substr(0, static_cast<size_t>(terminal_width) + 84);
     }
 
     current_str += std::string(1, ' ');
@@ -834,6 +839,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
                           &sub_seq_buffer_map, &sub_size_buffer_map, &sub_lost_buffer_map, &sub_lat_buffer_map,
                           &sub_last_sample_map, &sparkline_history_map, &sub_retry_after_map, &clear_function,
                           &active_cnt, &total_rate, &key_elapsed_timer](bool collect_sample = false) {
+    const bool update_display = !is_paused || !collect_sample;
     total_profiler = -1;
     active_cnt = 0;
     total_rate = 0;
@@ -845,7 +851,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
       selected_url = current_info_list[selected_line_snapshot].url;
     }
 
-    if (!is_paused) {
+    if (update_display) {
       current_info_list.clear();
       print_lines.clear();
     }
@@ -1090,7 +1096,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
 
         line << "\033[0m";
 
-        if (!is_paused) {
+        if (update_display) {
           current_info_list.emplace_back(info);
           print_lines.emplace_back(line.str());
         }
@@ -1183,7 +1189,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
 
         line << "\033[0m";
 
-        if (!is_paused) {
+        if (update_display) {
           current_info_list.emplace_back(info);
           print_lines.emplace_back(line.str());
         }
@@ -1203,17 +1209,19 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         sub_retry_after_map.erase(retry_iter);
       }
 
+      const bool getter_semantics = (info.type & vlink::kSetter) != 0;
       auto ptr_iter = sub_ptr_map.find(info.url);
 
       if VLIKELY (ptr_iter != sub_ptr_map.end()) {
-        auto* sub_ptr = ptr_iter->second.get();
+        auto* sub_ptr = ptr_iter->second.node.get();
 
         const auto sub_current_schema_type = sub_ptr ? sub_ptr->get_schema_type() : vlink::SchemaType::kUnknown;
         const auto sub_expected_schema_type =
             info.schema_type == vlink::SchemaType::kUnknown ? sub_current_schema_type : info.schema_type;
 
         if VUNLIKELY (sub_ptr && (sub_ptr->get_ser_type() != info.ser_type ||
-                                  sub_current_schema_type != sub_expected_schema_type)) {
+                                  sub_current_schema_type != sub_expected_schema_type ||
+                                  ptr_iter->second.getter_semantics != getter_semantics)) {
           sub_ptr_map.erase(ptr_iter);
           ptr_iter = sub_ptr_map.end();
         }
@@ -1224,6 +1232,10 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
 
         try {
           sub = std::make_shared<RawSub>(info.url, vlink::InitType::kWithoutInit);
+
+          if (getter_semantics) {
+            sub->mark_as_getter();
+          }
 
           sub->set_safety_quit(true);
           sub->set_latency_and_lost_enabled(true);
@@ -1252,7 +1264,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
             elapsed.restart();
           });
 
-          sub_ptr_map.emplace(info.url, std::move(sub));
+          sub_ptr_map.emplace(info.url, SubEntry{std::move(sub), getter_semantics});
         } catch (const std::runtime_error&) {
           sub_retry_after_map[info.url] =
               vlink::ElapsedTimer::get_cpu_timestamp(vlink::ElapsedTimer::kNano) + kSubscriberRetryDelayNs;
@@ -1273,7 +1285,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
       } else if (collect_sample) {
         auto& last_sample = sub_last_sample_map[info.url];
 
-        const auto& sample_info = ptr_iter->second->get_lost();
+        const auto& sample_info = ptr_iter->second.node->get_lost();
 
         int64_t total_sample = sample_info.total - last_sample.total;
         int64_t lost_sample = sample_info.lost - last_sample.lost;
@@ -1496,13 +1508,13 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
         line << "\033[0m";
       }
 
-      if (!is_paused) {
+      if (update_display) {
         current_info_list.emplace_back(info);
         print_lines.emplace_back(line.str());
       }
     }
 
-    if (!is_paused && !selected_url.empty()) {
+    if (update_display && !selected_url.empty()) {
       auto selected_info = std::find_if(current_info_list.begin(), current_info_list.end(),
                                         [&selected_url](const auto& info) { return info.url == selected_url; });
 
@@ -1680,15 +1692,13 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
     return true;
   };
 
-  auto quit_function = [&discovery_viewer](int) {
-    if VUNLIKELY (has_quit) {
+  auto quit_function = [weak_viewer = std::weak_ptr<vlink::DiscoveryViewer>(discovery_viewer)](int) {
+    if VUNLIKELY (has_quit.exchange(true, std::memory_order_relaxed)) {
       return;
     }
 
-    has_quit = true;
-
-    if VLIKELY (discovery_viewer) {
-      discovery_viewer->quit(true);
+    if (auto viewer = weak_viewer.lock()) {
+      viewer->quit(true);
     }
   };
 
@@ -1954,7 +1964,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
     }
   };
 
-  vlink::Utils::register_terminate_signal(quit_function);
+  vlink::Utils::register_terminate_signal(quit_function, true);
 
   vlink::Utils::start_detect_keyboard(detect_keyboard_function);
 

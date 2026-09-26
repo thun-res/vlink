@@ -205,7 +205,9 @@ bool extract_proto_value(const google::protobuf::Message& message, const std::ve
           return static_cast<int64_t>(reflection->GetRepeatedEnumValue(message, field, array_index));
         case FieldDescriptor::CPPTYPE_STRING:
           if (field->type() == FieldDescriptor::TYPE_BYTES) {
-            return vlink::Bytes::from_string(reflection->GetRepeatedString(message, field, array_index));
+            std::string scratch;
+            return vlink::Bytes::from_string(
+                reflection->GetRepeatedStringReference(message, field, array_index, &scratch));
           }
 
           return reflection->GetRepeatedString(message, field, array_index);
@@ -260,7 +262,8 @@ bool extract_proto_value(const google::protobuf::Message& message, const std::ve
         return static_cast<int64_t>(reflection->GetEnumValue(message, field));
       case FieldDescriptor::CPPTYPE_STRING:
         if (field->type() == FieldDescriptor::TYPE_BYTES) {
-          return vlink::Bytes::from_string(reflection->GetString(message, field));
+          std::string scratch;
+          return vlink::Bytes::from_string(reflection->GetStringReference(message, field, &scratch));
         }
 
         return reflection->GetString(message, field);

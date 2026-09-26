@@ -72,7 +72,23 @@ static bool read_inheritable_mb(const nlohmann::json& item, const char* key, con
 }
 
 static bool read_non_negative_ms(const nlohmann::json& data, const std::string& field_name, int64_t& result) {
-  const auto value = data.at(field_name).get<int64_t>();
+  const auto& input = data.at(field_name);
+
+  if (input.is_number_float()) {
+    const auto value = input.get<double>();
+
+    if VUNLIKELY (!std::isfinite(value) || value < 0.0 ||
+                  value >= static_cast<double>(std::numeric_limits<int64_t>::max())) {
+      std::cerr << field_name << " must be a non-negative value in the int64 millisecond range." << std::endl;
+      return false;
+    }
+  } else if (input.is_number_unsigned() &&
+             input.get<uint64_t>() > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+    std::cerr << field_name << " exceeds the int64 millisecond range." << std::endl;
+    return false;
+  }
+
+  const auto value = input.get<int64_t>();
 
   if VUNLIKELY (value < 0) {
     std::cerr << field_name << " must be non-negative." << std::endl;

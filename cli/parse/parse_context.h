@@ -75,7 +75,12 @@ struct ParseContext final {
   std::shared_ptr<vlink::BagReader> bag_player;
   vlink::BagReader::Config bag_config;
 
-  std::unordered_map<std::string, std::shared_ptr<RawSub>> sub_urls;
+  struct SubEntry final {
+    std::shared_ptr<RawSub> node;
+    bool getter_semantics{false};
+  };
+
+  std::unordered_map<std::string, SubEntry> sub_urls;
   std::mutex sub_urls_mtx;
 
   ParseCallback parse_callback;

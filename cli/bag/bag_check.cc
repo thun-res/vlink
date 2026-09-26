@@ -97,7 +97,7 @@ int bag_check(const std::string& path) {
 
   player.reset();
 
-  if (!fret.valid()) {
+  if (is_broken || !fret.valid()) {
     if (!quiet_flag) {
       std::cout << "\033[2K\r";
 

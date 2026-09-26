@@ -166,8 +166,10 @@ class SparklineRenderer final {
       if (!inserted) {
         iter->second.type |= process.type;
       }
+    }
 
-      process_sort_list.emplace(&(iter->second));
+    for (auto& [key, process] : process_map) {
+      process_sort_list.emplace(&process);
     }
 
     for (auto* process : process_sort_list) {
@@ -330,7 +332,7 @@ class SparklineRenderer final {
     if (padding_total > 0) {
       centered_title = bg_color_code + title_content + std::string(padding_total, ' ') + title_end + "\033[0m";
     } else {
-      centered_title = bg_color_code + title_content.substr(0, chart_width) + current_value_str + title_end + "\033[0m";
+      centered_title = bg_color_code + (title_content + title_end).substr(0, chart_width) + "\033[0m";
     }
 
     lines.emplace_back(std::string(7 + 1, ' ') + centered_title);
@@ -519,7 +521,7 @@ class SparklineRenderer final {
     panel_lines.emplace_back(7 + 1 + chart_width, ' ');
 
     if (num_charts >= 1) {
-      add_chart("Freq", history.freq_history, "Hz", "\033[36m", 100000);
+      add_chart("Freq", history.freq_history, "Hz", "\033[36m", 1000);
 
       if (num_charts > 1) {
         panel_lines.emplace_back(7 + 1 + chart_width, ' ');

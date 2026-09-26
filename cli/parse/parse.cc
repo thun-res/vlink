@@ -355,16 +355,18 @@ static int start_viewer(bool native_mode) {
         }
 
         current_urls.emplace(info.url);
+        const bool getter_semantics = (info.type & vlink::kSetter) != 0;
 
         auto sub_iter = sync_ctx.sub_urls.find(info.url);
 
         if (sub_iter != sync_ctx.sub_urls.end()) {
-          const auto current_schema_type = sub_iter->second->get_schema_type();
+          const auto current_schema_type = sub_iter->second.node->get_schema_type();
           const auto expected_schema_type =
               info.schema_type == vlink::SchemaType::kUnknown ? current_schema_type : info.schema_type;
 
-          if VUNLIKELY (sub_iter->second->get_ser_type() != info.ser_type ||
-                        current_schema_type != expected_schema_type) {
+          if VUNLIKELY (sub_iter->second.node->get_ser_type() != info.ser_type ||
+                        current_schema_type != expected_schema_type ||
+                        sub_iter->second.getter_semantics != getter_semantics) {
             sync_ctx.sub_urls.erase(sub_iter);
           } else {
             continue;
@@ -375,6 +377,10 @@ static int start_viewer(bool native_mode) {
 
         try {
           raw_sub = std::make_shared<RawSub>(info.url, vlink::InitType::kWithoutInit);
+
+          if (getter_semantics) {
+            raw_sub->mark_as_getter();
+          }
 
           if (native_mode) {
             raw_sub->set_property("dds.ip", native_ip);
@@ -410,7 +416,7 @@ static int start_viewer(bool native_mode) {
           continue;
         }
 
-        sync_ctx.sub_urls.emplace(info.url, std::move(raw_sub));
+        sync_ctx.sub_urls.emplace(info.url, vlink::parse::ParseContext::SubEntry{std::move(raw_sub), getter_semantics});
       }
 
       for (auto iter = sync_ctx.sub_urls.begin(); iter != sync_ctx.sub_urls.end();) {

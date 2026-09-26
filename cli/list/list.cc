@@ -59,17 +59,17 @@ int start_viewer(bool native_mode, bool check_process_count) {
 
   discovery_viewer->async_run();
 
-  auto quit_function = [](int) {
-    if VUNLIKELY (has_quit) {
+  auto quit_function = [weak_viewer = std::weak_ptr<vlink::DiscoveryViewer>(discovery_viewer)](int) {
+    if VUNLIKELY (has_quit.exchange(true, std::memory_order_relaxed)) {
       return;
     }
 
-    has_quit = true;
-
-    discovery_viewer->quit(true);
+    if (auto viewer = weak_viewer.lock()) {
+      viewer->quit(true);
+    }
   };
 
-  vlink::Utils::register_terminate_signal(quit_function);
+  vlink::Utils::register_terminate_signal(quit_function, true);
 
   if (!check_process_count) {
     std::cout << "Information Collecting, Please Wait...";

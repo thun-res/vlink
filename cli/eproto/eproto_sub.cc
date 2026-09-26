@@ -90,21 +90,22 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
   parser_loop = std::make_shared<ParserLoop>();
   parser_loop->async_run();
 
-  auto quit_function = [&discovery_viewer, &parser_loop](int) {
-    if VUNLIKELY (has_quit) {
+  auto quit_function = [weak_viewer = std::weak_ptr<vlink::DiscoveryViewer>(discovery_viewer),
+                        weak_loop = std::weak_ptr<ParserLoop>(parser_loop)](int) {
+    if VUNLIKELY (has_quit.exchange(true, std::memory_order_relaxed)) {
       return;
     }
 
-    has_quit = true;
-
-    if (discovery_viewer) {
-      discovery_viewer->quit(true);
+    if (auto viewer = weak_viewer.lock()) {
+      viewer->quit(true);
     }
 
-    parser_loop->quit(true);
+    if (auto loop = weak_loop.lock()) {
+      loop->quit(true);
+    }
   };
 
-  vlink::Utils::register_terminate_signal(quit_function);
+  vlink::Utils::register_terminate_signal(quit_function, true);
   uint32_t target_type = 0;
   auto target_schema_type = schema_type;
 
@@ -623,17 +624,19 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
 
       total_page = print_list.size();
 
-      if (current_page > total_page - 1) {
-        current_page = total_page - 1;
-      }
+      int requested_page = current_page.load(std::memory_order_relaxed);
+      const int page = std::clamp(requested_page, 0, std::max(total_page.load(std::memory_order_relaxed) - 1, 0));
 
-      if (current_page < 0) {
-        current_page = 0;
+      if (page != requested_page) {
+        current_page.compare_exchange_strong(requested_page, page, std::memory_order_relaxed);
       }
 
       if (!print_list.empty() && !line_list.empty()) {
-        current_str = print_list.at(current_page);
-        current_line = line_list.at(current_page);
+        current_str = print_list.at(page);
+        current_line = line_list.at(page);
+      } else {
+        current_str.clear();
+        current_line = 0;
       }
 
       VLINK_TERM_OUT << "\033[K";
@@ -801,17 +804,19 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
 
       total_page = std::min(print_list.size(), static_cast<size_t>(5000));
 
-      if (current_page > total_page - 1) {
-        current_page = total_page - 1;
-      }
+      int requested_page = current_page.load(std::memory_order_relaxed);
+      const int page = std::clamp(requested_page, 0, std::max(total_page.load(std::memory_order_relaxed) - 1, 0));
 
-      if (current_page < 0) {
-        current_page = 0;
+      if (page != requested_page) {
+        current_page.compare_exchange_strong(requested_page, page, std::memory_order_relaxed);
       }
 
       if (!print_list.empty() && !line_list.empty()) {
-        current_str = print_list.at(current_page);
-        current_line = line_list.at(current_page);
+        current_str = print_list.at(page);
+        current_line = line_list.at(page);
+      } else {
+        current_str.clear();
+        current_line = 0;
       }
 
       VLINK_TERM_OUT << "\033[H\033[K";
@@ -918,10 +923,10 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
 
     VLINK_TERM_OUT << "\033[K";
 
-    if VLIKELY (last_line_str.size() <= static_cast<size_t>(terminal_size.first + 69)) {
+    if VLIKELY (last_line_str.size() <= static_cast<size_t>(terminal_size.first) + 69) {
       VLINK_TERM_OUT << last_line_str;
     } else {
-      VLINK_TERM_OUT << last_line_str.substr(0, terminal_size.first + 69);
+      VLINK_TERM_OUT << last_line_str.substr(0, static_cast<size_t>(terminal_size.first) + 69);
     }
 
     VLINK_TERM_OUT.flush();

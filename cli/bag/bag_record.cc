@@ -263,6 +263,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
                                real_max_packet_size](const std::vector<vlink::DiscoveryViewer::Info>& info_list) {
     {
       std::unordered_set<std::string> current_urls;
+      std::vector<std::shared_ptr<RawSub>> retired_subs;
 
       current_urls.reserve(info_list.size());
 
@@ -270,13 +271,16 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
         current_urls.emplace(info.url);
       }
 
-      std::lock_guard lock(subs_mtx);
+      {
+        std::lock_guard lock(subs_mtx);
 
-      for (auto iter = sub_map.begin(); iter != sub_map.end();) {
-        if VUNLIKELY (current_urls.count(iter->first) == 0) {
-          iter = sub_map.erase(iter);
-        } else {
-          ++iter;
+        for (auto iter = sub_map.begin(); iter != sub_map.end();) {
+          if VUNLIKELY (current_urls.count(iter->first) == 0) {
+            retired_subs.emplace_back(std::move(iter->second.node));
+            iter = sub_map.erase(iter);
+          } else {
+            ++iter;
+          }
         }
       }
     }
@@ -288,6 +292,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
       }
 
       const bool getter_semantics = (info.type & vlink::kSetter) != 0;
+      std::shared_ptr<RawSub> retired_sub;
 
       {
         std::lock_guard lock(subs_mtx);
@@ -306,12 +311,15 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
 
           if VUNLIKELY (target_sub->get_ser_type() != info.ser_type || current_schema_type != expected_schema_type ||
                         sub_iter->second.getter_semantics != getter_semantics) {
+            retired_sub = std::move(sub_iter->second.node);
             sub_map.erase(sub_iter);
           } else {
             continue;
           }
         }
       }
+
+      retired_sub.reset();
 
       if (!target_urls_set.empty()) {
         bool found = target_urls_set.count(info.url) != 0;
@@ -357,6 +365,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
           sub->mark_as_getter();
         }
 
+        sub->set_safety_quit(true);
         sub->set_latency_and_lost_enabled(true);
 
         if (native_mode) {
@@ -369,8 +378,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
         continue;
       }
 
-      std::weak_ptr<RawSub> weak_sub = sub;
-      sub->listen([real_max_packet_size, weak_sub, url = info.url, getter_semantics, &recorder,
+      sub->listen([real_max_packet_size, sub_ptr = sub.get(), url = info.url, getter_semantics, &recorder,
                    &status](const vlink::Bytes& data) {
         if VUNLIKELY (has_quit || recorder->is_ready_to_quit()) {
           return;
@@ -388,24 +396,22 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
 
         total_size += data.size();
 
-        auto sub = weak_sub.lock();
-
-        if VUNLIKELY (!sub) {
-          return;
-        }
-
         vlink::Frame frame;
         frame.timestamp = timestamp;
         frame.url = url;
-        frame.ser_type = sub->get_ser_type();
-        frame.schema_type = sub->get_schema_type();
+        frame.ser_type = sub_ptr->get_ser_type();
+        frame.schema_type = sub_ptr->get_schema_type();
         frame.action_type = getter_semantics ? vlink::ActionType::kGet : vlink::ActionType::kSubscribe;
         frame.data = vlink::Bytes::shallow_copy(data.data(), data.size());
         if VUNLIKELY (recorder->push(frame) < 0) {
           status = 1;
-          has_quit = true;
-          is_broken = true;
+          const bool owns_quit = !has_quit.exchange(true, std::memory_order_acq_rel);
           recorder->quit(true);
+
+          if (owns_quit) {
+            is_broken.store(true, std::memory_order_release);
+          }
+
           return;
         }
 
@@ -522,11 +528,17 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
   message_loop->quit(true);
   message_loop->wait_for_quit();
 
+  std::unordered_map<std::string, SubEntry> stopped_subs;
+
   {
     std::lock_guard lock(subs_mtx);
+    stopped_subs.swap(sub_map);
+  }
 
+  {
     double loss = 0;
-    for (const auto& [url, sub] : sub_map) {
+    for (const auto& [url, sub] : stopped_subs) {
+      sub.node->deinit();
       const auto& sample_lost_info = sub.node->get_lost();
 
       if (sample_lost_info.total > 0 && sample_lost_info.lost > 0) {
@@ -538,7 +550,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
       recorder->set_url_loss(url, loss);
     }
 
-    sub_map.clear();
+    stopped_subs.clear();
   }
 
   stop_print();

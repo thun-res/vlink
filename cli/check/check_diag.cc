@@ -21,6 +21,8 @@
  * limitations under the License.
  */
 
+#include <vlink/base/process.h>
+
 #include "./check_common.h"
 
 enum class DiagType : uint8_t {
@@ -28,6 +30,8 @@ enum class DiagType : uint8_t {
   kWarning = 1,
   kFailed = 2,
 };
+
+static std::atomic_bool interrupted{false};
 
 [[maybe_unused]] static std::string run_cmd_output(const std::string& cmd) {
   std::array<char, 256> buffer;
@@ -88,7 +92,7 @@ struct DiagContext final {
 };
 
 static bool diag_accepted(const DiagContext& ctx, const std::string& title) {
-  if (ctx.loop != nullptr && ctx.loop->is_ready_to_quit()) {
+  if (interrupted.load(std::memory_order_relaxed) || (ctx.loop != nullptr && ctx.loop->is_ready_to_quit())) {
     return false;
   }
 
@@ -412,7 +416,7 @@ void check_log_dir_writable(DiagContext& ctx) {
   std::error_code ec;
   std::filesystem::remove(probe, ec);
 
-  end_diag(ctx, DiagType::kPass, log_dir);
+  end_diag(ctx, ofs.good() ? DiagType::kPass : DiagType::kFailed, log_dir);
 }
 
 void check_directory_env(DiagContext& ctx, const std::string& env_key, bool warn_if_missing) {
@@ -552,9 +556,23 @@ void check_process(DiagContext& ctx, const ProcessCheck& pc) {
 
 void check_others_running(DiagContext& ctx) {
 #ifdef _WIN32
-  const std::string command_str = "\"" + vlink::Utils::get_app_dir() + "/vlink-list.exe\" -nc";
+  const std::string executable = vlink::Utils::get_app_dir() + "/vlink-list.exe";
+#else
+  const std::string executable = vlink::Utils::get_app_dir() + "/vlink-list";
+#endif
 
-  int exit_code = _wsystem(vlink::Helpers::string_to_wstring(command_str).c_str());
+  vlink::Process process;
+  process.set_inherit_environment(true);
+  process.start(executable, {"-nc"});
+
+  if VUNLIKELY (!process.wait_for_started(vlink::Process::kInfinite) ||
+                !process.wait_for_finished(vlink::Process::kInfinite) ||
+                process.get_exit_status() != vlink::Process::kNormalExitStatus) {
+    end_diag(ctx, DiagType::kFailed, "List running failed");
+    return;
+  }
+
+  const int exit_code = process.get_exit_code();
 
   if VUNLIKELY (exit_code < 0 || exit_code > 250) {
     end_diag(ctx, DiagType::kFailed, "List running failed");
@@ -563,33 +581,6 @@ void check_others_running(DiagContext& ctx) {
   } else {
     end_diag(ctx, DiagType::kWarning, std::to_string(exit_code) + " vlink user processes exist");
   }
-#else
-  const std::string command_str = "\"" + vlink::Utils::get_app_dir() + "/vlink-list\" -nc";
-
-  // NOLINTNEXTLINE(bugprone-command-processor)
-  int status = std::system(command_str.c_str());
-
-  if VUNLIKELY (status < 0) {
-    end_diag(ctx, DiagType::kFailed, "List running failed");
-    return;
-  }
-
-  if VLIKELY (WIFEXITED(status)) {
-    const int exit_code = WEXITSTATUS(status);
-
-    if VUNLIKELY (exit_code < 0 || exit_code > 250) {
-      end_diag(ctx, DiagType::kFailed, "List running failed");
-    } else if (exit_code == 0) {
-      end_diag(ctx, DiagType::kPass, "No vlink user process running");
-    } else {
-      end_diag(ctx, DiagType::kWarning, std::to_string(exit_code) + " vlink user processes exist");
-    }
-
-    return;
-  }
-
-  end_diag(ctx, DiagType::kFailed, "List running failed");
-#endif
 }
 
 void check_singleton_conflict(DiagContext& ctx) {
@@ -951,7 +942,8 @@ int check_diag(bool all_case, bool show_summary, const std::string& filter) {
   ctx.loop = &message_loop;
   ctx.filter = filter;
 
-  vlink::Utils::register_terminate_signal([&message_loop](int) { message_loop.quit(); });
+  interrupted.store(false, std::memory_order_relaxed);
+  vlink::Utils::register_terminate_signal([](int) { interrupted.store(true, std::memory_order_relaxed); });
 
   message_loop.async_run();
 

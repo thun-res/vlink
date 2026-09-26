@@ -76,21 +76,17 @@ int start_efbs_pub(const std::string& url, const std::string& fbs_dir, const std
     discovery_viewer->async_run();
   }
 
-  auto quit_function = [&discovery_viewer, &raw_pub](int) {
-    if VUNLIKELY (has_quit) {
+  auto quit_function = [weak_viewer = std::weak_ptr<vlink::DiscoveryViewer>(discovery_viewer)](int) {
+    if VUNLIKELY (has_quit.exchange(true, std::memory_order_relaxed)) {
       return;
     }
 
-    has_quit = true;
-
-    raw_pub->deinit();
-
-    if (discovery_viewer) {
-      discovery_viewer->quit(true);
+    if (auto viewer = weak_viewer.lock()) {
+      viewer->quit(true);
     }
   };
 
-  vlink::Utils::register_terminate_signal(quit_function);
+  vlink::Utils::register_terminate_signal(quit_function, true);
 
   auto target_schema_type = schema_type;
 
@@ -339,7 +335,7 @@ int start_efbs_pub(const std::string& url, const std::string& fbs_dir, const std
   int64_t paused_elapsed = 0;
 
   for (int64_t i = 0; i < times || times <= 0; ++i) {
-    if (!raw_pub->has_inited()) {
+    if (has_quit.load(std::memory_order_relaxed) || !raw_pub->has_inited()) {
       break;
     }
 
@@ -380,8 +376,10 @@ int start_efbs_pub(const std::string& url, const std::string& fbs_dir, const std
         break;
       }
 
-      if (dx > 0) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(dx));
+      while (dx > 0 && !has_quit.load(std::memory_order_relaxed)) {
+        const int wait_ms = std::min(dx, 100);
+        std::this_thread::sleep_for(std::chrono::milliseconds(wait_ms));
+        dx -= wait_ms;
       }
 
       if VUNLIKELY (has_quit) {
