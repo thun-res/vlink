@@ -124,7 +124,7 @@ _vlink_bench_positional_count() {
                 expect="single"
                 continue
                 ;;
-            -*)
+            *:-*)
                 continue
                 ;;
             *)

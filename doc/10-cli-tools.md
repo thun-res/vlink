@@ -677,7 +677,7 @@ vlink-bench plot /tmp/bench-full.json --report html,terminal
 
 预设差异：`showcase` 与 `quick` 为保守默认（`throughput` + `latency`、`process` 模式、`1:1` 拓扑、`bytes` payload，分钟级耗时）；`full` 默认展开 `throughput` / `latency` / `topology` / `serialization` 四个套件、三种执行模式（`local-direct` / `local-loop` / `process`）、更大的 payload 阶梯与拓扑/QoS 扫描，适合正式报告与横向对比。`fanout` 与 `backpressure` 套件不在任何预设的默认集中，需经 `--suite fanout` / `--suite backpressure` 显式启用。
 
-报告结构：HTML 报告以"结论—定位—细节"为序组织，顶部为推荐传输配置与综合评分，往下依次为测试概览、传输健康、按消息大小的延迟/吞吐对比、分项结果与完整明细表，并提供可缩放/拖拽/悬浮的趋势折线图；评分以延迟与吞吐为主、辅以资源占用与丢包等维度。终端视图（`--report terminal`）为可翻页/搜索/排序/导出的聚合表格，`q` / `Esc` 退出。
+报告结构：HTML 报告以"结论—定位—细节"为序组织，顶部为推荐传输配置与综合评分，往下依次为测试概览、传输健康、按消息大小的延迟/吞吐对比、分项结果与完整明细表，并提供可缩放/拖拽/悬浮的趋势折线图；评分以延迟与吞吐为主、辅以资源占用与丢包等维度。终端视图（`--report terminal`）为可翻页/搜索/排序/导出的聚合表格，`q` / `Esc` 退出。报告中的 `ssl.key_password` 属性值会脱敏；JSON 的命令行元数据含此属性时整行遮蔽，实际运行参数不受影响。
 
 ### 🔗 10.2.12 命令行工具组合工作流
 

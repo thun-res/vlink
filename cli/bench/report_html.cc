@@ -588,8 +588,8 @@ std::string build_line_chart(const std::vector<AggregatedCase>& items, std::stri
       const double x = map_x(x_value);
       const double y = map_y(metric.average());
 
-      svg << R"(<circle class="chart-point-halo" cx=")" << x << R"(" cy=")" << y << R"(" r="5.5" fill=")" << color
-          << R"(" fill-opacity="0.14" stroke="none"/>)";
+      svg << R"(<circle class="chart-point-halo" data-series-id=")" << escape_html(series.id) << R"(" cx=")" << x
+          << R"(" cy=")" << y << R"(" r="5.5" fill=")" << color << R"(" fill-opacity="0.14" stroke="none"/>)";
       svg << R"(<circle class="chart-point" data-series-id=")" << escape_html(series.id) << R"(" cx=")" << x
           << R"(" cy=")" << y << R"(" r="3.0" fill=")" << color << R"(" stroke="#ffffff" stroke-width="1.2"/>)";
     }
@@ -4027,7 +4027,7 @@ bool save_html(const Bench::Result& result, const std::string& file_path, std::s
       "svg.addEventListener('pointerdown',function(ev){svg.setPointerCapture(ev.pointerId);"
       "state.pointers.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});"
       "if(state.pointers.size===1){var p=svgPoint(svg,ev.clientX,ev.clientY);"
-      "state.panStart={svgX:p?p.x:0,svgY:p?p.y:0,viewX:state.view.x,viewY:state.view.y};"
+      "state.panStart={svgX:p?p.x:0,svgY:p?p.y:0};"
       "svg.classList.add('is-panning');}"
       "else if(state.pointers.size===2){var pts=Array.from(state.pointers.values());"
       "state.pinchStart={dist:Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y),"
@@ -4042,7 +4042,7 @@ bool save_html(const Bench::Result& result, const std::string& file_path, std::s
       "zoomAt(state,midX,midY,f);}return;}\n"
       "if(state.pointers.size===1&&state.panStart){var p=svgPoint(svg,ev.clientX,ev.clientY);"
       "if(p){var dx=p.x-state.panStart.svgX;var dy=p.y-state.panStart.svgY;"
-      "state.view.x=state.panStart.viewX-dx;state.view.y=state.panStart.viewY-dy;"
+      "state.view.x-=dx;state.view.y-=dy;"
       "clampView(state);setViewBox(state);}return;}\n"
       "if(smallScreen){return;}\n"
       "var sp=svgPoint(svg,ev.clientX,ev.clientY);if(!sp)return;"

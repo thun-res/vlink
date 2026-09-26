@@ -49,6 +49,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <nlohmann/json.hpp>
 #include <numeric>
 #include <sstream>
@@ -56,6 +57,8 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+
+#include "./report_helpers.h"
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -485,14 +488,15 @@ std::string make_run_eta_line(size_t done, size_t total, int64_t elapsed_ms, int
   return line;
 }
 
-std::string make_run_progress_line(int elapsed_ms, int warmup_ms, int duration_ms, int drain_ms, int width) {
+std::string make_run_progress_line(int64_t elapsed_ms, int warmup_ms, int duration_ms, int drain_ms, int width) {
   const int setup_ms = kRunSetupEstimateMs;
   const int teardown_ms = kRunTeardownEstimateMs;
-  const int total_ms = std::max(1, setup_ms + warmup_ms + duration_ms + drain_ms + teardown_ms);
+  const int64_t total_ms =
+      std::max<int64_t>(1, static_cast<int64_t>(setup_ms) + warmup_ms + duration_ms + drain_ms + teardown_ms);
   const int end_setup = setup_ms;
-  const int end_warmup = end_setup + warmup_ms;
-  const int end_measure = end_warmup + duration_ms;
-  const int end_drain = end_measure + drain_ms;
+  const int64_t end_warmup = static_cast<int64_t>(end_setup) + warmup_ms;
+  const int64_t end_measure = end_warmup + duration_ms;
+  const int64_t end_drain = end_measure + drain_ms;
   const double ratio = std::min(1.0, std::max(0.0, static_cast<double>(elapsed_ms) / total_ms));
 
   std::string_view phase_label;
@@ -530,7 +534,7 @@ std::string make_run_progress_line(int elapsed_ms, int warmup_ms, int duration_m
   const int filled = static_cast<int>(std::lround(ratio * bar_w));
   const int remain = std::max(0, bar_w - filled);
 
-  auto pixel_at = [bar_w, total_ms](int ms) {
+  auto pixel_at = [bar_w, total_ms](int64_t ms) {
     return std::clamp(static_cast<int>(std::lround(static_cast<double>(ms) / total_ms * bar_w)), 0, bar_w);
   };
   const int px_setup_end = pixel_at(end_setup);
@@ -751,7 +755,7 @@ ProgressTicker::ProgressTicker(bool enabled, int warmup_ms, int duration_ms, int
   loop_->async_run();
   timer_ = std::make_unique<Timer>(loop_.get(), 100U, Timer::kInfinite, [this]() {
     const auto elapsed_ms =
-        static_cast<int>((ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kNano) - start_ns_) / 1000000ULL);
+        static_cast<int64_t>((ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kNano) - start_ns_) / 1000000ULL);
     std::string tick;
     tick.reserve(256);
     tick.append("\r\033[2K");
@@ -1218,6 +1222,11 @@ struct BenchCodec<Bytes> final {
   static Bytes create_template(size_t payload_size) {
     size_t total_size = normalized_payload_size(payload_size);
     Bytes bytes = Bytes::create(total_size);
+
+    if VUNLIKELY (bytes.size() != total_size) {
+      throw std::bad_alloc();
+    }
+
     std::fill(bytes.data() + sizeof(BenchFrameHeader), bytes.data() + total_size, static_cast<uint8_t>(0xA5));
     return bytes;
   }
@@ -1294,7 +1303,10 @@ struct BenchCodec<zerocopy::RawData> final {
   static zerocopy::RawData create_template(size_t payload_size) {
     zerocopy::RawData message;
     size_t total_size = normalized_payload_size(payload_size);
-    message.create(total_size);
+    if VUNLIKELY (!message.create(total_size)) {
+      throw std::bad_alloc();
+    }
+
     std::fill(const_cast<uint8_t*>(message.data()) + sizeof(BenchFrameHeader),
               const_cast<uint8_t*>(message.data()) + total_size, static_cast<uint8_t>(0xA5));
     return message;
@@ -1433,14 +1445,15 @@ class ResourceSampler final {
       return;
     }
 
+    const uint64_t end_wall_ns = steady_time_ns();
+    const uint64_t end_cpu_us = get_process_cpu_time_us();
+
     if (worker_.joinable()) {
       worker_.join();
     }
 
     sample_memory_peak();
 
-    const uint64_t end_wall_ns = steady_time_ns();
-    const uint64_t end_cpu_us = get_process_cpu_time_us();
     const auto wall_us = static_cast<double>(std::max<uint64_t>(end_wall_ns - start_wall_ns_, 1)) / 1000.0;
     const auto cpu_us = static_cast<double>(end_cpu_us >= start_cpu_us_ ? (end_cpu_us - start_cpu_us_) : 0);
 
@@ -1565,6 +1578,18 @@ void scenario_to_json(json& obj, const Bench::Scenario& scenario) {
   obj["properties"] = scenario.properties;
   obj["pub_properties"] = scenario.pub_properties;
   obj["sub_properties"] = scenario.sub_properties;
+
+  for (const auto* key : {"properties", "pub_properties", "sub_properties"}) {
+    for (auto& property : obj[key]) {
+      const auto& value = property.get_ref<const std::string&>();
+      const auto redacted = report::redact_property(value);
+
+      if (redacted != value) {
+        property = redacted;
+      }
+    }
+  }
+
   obj["payload_size"] = scenario.payload_size;
   obj["rate_hz"] = scenario.rate_hz;
   obj["burst_messages"] = scenario.burst_messages;
@@ -1868,7 +1893,8 @@ bool run_local_pubsub_case(const Bench::Scenario& scenario, Bench::ScenarioResul
   for (const auto& publisher : publishers) {
     const uint64_t discovery_begin_ns = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kNano);
 
-    if (!publisher->wait_for_subscribers(std::chrono::milliseconds(std::max(scenario.warmup_ms + 3000, 10000)))) {
+    if (!publisher->wait_for_subscribers(
+            std::chrono::milliseconds(std::max<int64_t>(static_cast<int64_t>(scenario.warmup_ms) + 3000, 10000)))) {
       error = "wait_for_subscribers failed";
 
       for (auto& worker_loop : subscriber_loops) {
@@ -2112,7 +2138,8 @@ bool run_pub_worker_impl(const Bench::WorkerOptions& options, Bench::ScenarioRes
 
   const uint64_t discovery_begin_ns = ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kNano);
 
-  if (!publisher.wait_for_subscribers(std::chrono::milliseconds(std::max(options.warmup_ms + 3000, 10000)))) {
+  if (!publisher.wait_for_subscribers(
+          std::chrono::milliseconds(std::max<int64_t>(static_cast<int64_t>(options.warmup_ms) + 3000, 10000)))) {
     error = "wait_for_subscribers failed";
     return false;
   }
@@ -2142,7 +2169,7 @@ bool run_pub_worker_impl(const Bench::WorkerOptions& options, Bench::ScenarioRes
   const uint64_t publish_begin_ns =
       options.wait_start ? shared_start_ns : ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kNano);
   const uint64_t publish_end_ns =
-      publish_begin_ns + static_cast<uint64_t>(options.warmup_ms + options.duration_ms) * 1000000ULL;
+      publish_begin_ns + (static_cast<uint64_t>(options.warmup_ms) + options.duration_ms) * 1000000ULL;
   const uint64_t measure_begin_ns = publish_begin_ns + static_cast<uint64_t>(options.warmup_ms) * 1000000ULL;
   const uint64_t measure_end_ns =
       measure_begin_ns + static_cast<uint64_t>(std::max(options.duration_ms, 1)) * 1000000ULL;
@@ -2405,6 +2432,13 @@ bool save_worker_result(const Bench::ScenarioResult& result, const std::vector<d
   }
 
   stream << obj.dump(2);
+  stream.close();
+
+  if (!stream.good()) {
+    error = "write result file failed";
+    return false;
+  }
+
   return true;
 }
 
@@ -2574,8 +2608,8 @@ void graceful_shutdown_process(Process& process) {
   }
 }
 
-bool wait_process_finished(Process& process, uint64_t deadline_ns, const std::string& worker_label, int wait_budget_ms,
-                           std::string& error) {
+bool wait_process_finished(Process& process, uint64_t deadline_ns, const std::string& worker_label,
+                           int64_t wait_budget_ms, std::string& error) {
   while (ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kNano) < deadline_ns) {
     if VUNLIKELY (check_stop_requested(error)) {
       graceful_shutdown_process(process);
@@ -2648,8 +2682,13 @@ void stop_processes(std::vector<std::unique_ptr<Process>>& processes) {
 }
 
 void append_property_args(std::vector<std::string>& args, const char* key, const std::vector<std::string>& properties) {
+  if (properties.empty()) {
+    return;
+  }
+
+  args.emplace_back(key);
+
   for (const auto& property : properties) {
-    args.emplace_back(key);
     args.emplace_back(property);
   }
 }
@@ -2944,8 +2983,8 @@ bool run_process_pubsub_case(const Bench::RunOptions& options, const Bench::Scen
     }
   }
 
-  const int finish_wait_budget_ms =
-      scenario.warmup_ms + scenario.duration_ms + scenario.drain_ms + kProcessMeasureBufferMs;
+  const int64_t finish_wait_budget_ms =
+      static_cast<int64_t>(scenario.warmup_ms) + scenario.duration_ms + scenario.drain_ms + kProcessMeasureBufferMs;
   const uint64_t finish_deadline_ns =
       ElapsedTimer::get_cpu_timestamp(ElapsedTimer::kNano) + static_cast<uint64_t>(finish_wait_budget_ms) * 1000000ULL;
 
@@ -3125,25 +3164,25 @@ bool run_scenario(const Bench::RunOptions& options, const Bench::Scenario& scena
   result.scenario = scenario;
   result.transport = get_transport_from_url(scenario.url);
 
-  if (scenario.suite == Bench::kSerializationSuite) {
-    switch (scenario.payload) {
-      case Bench::kBytesPayload:
-        return run_serialization_case<Bytes>(scenario, result, error);
-      case Bench::kStringPayload:
-        return run_serialization_case<std::string>(scenario, result, error);
-      case Bench::kRawDataPayload:
-        return run_serialization_case<zerocopy::RawData>(scenario, result, error);
-      default:
-        error = "invalid payload kind";
-        return false;
-    }
-  }
-
-  if (scenario.mode == Bench::kProcessMode) {
-    return run_process_pubsub_case(options, scenario, result, error);
-  }
-
   try {
+    if (scenario.suite == Bench::kSerializationSuite) {
+      switch (scenario.payload) {
+        case Bench::kBytesPayload:
+          return run_serialization_case<Bytes>(scenario, result, error);
+        case Bench::kStringPayload:
+          return run_serialization_case<std::string>(scenario, result, error);
+        case Bench::kRawDataPayload:
+          return run_serialization_case<zerocopy::RawData>(scenario, result, error);
+        default:
+          error = "invalid payload kind";
+          return false;
+      }
+    }
+
+    if (scenario.mode == Bench::kProcessMode) {
+      return run_process_pubsub_case(options, scenario, result, error);
+    }
+
     switch (scenario.payload) {
       case Bench::kBytesPayload:
         return run_local_pubsub_case<Bytes>(scenario, result, error);
@@ -3525,9 +3564,8 @@ std::vector<Bench::Scenario> expand_scenarios(const Bench::RunOptions& options) 
       continue;
     }
 
-    const int kib = static_cast<int>(scenario.payload_size / 1024);
-    const int auto_drain = options.drain_ms + kib / 4;
-    const int capped = std::min(auto_drain, 1500);
+    const size_t extra_drain = std::min<size_t>(scenario.payload_size / 4096, 1500);
+    const int capped = static_cast<int>(std::min<size_t>(static_cast<size_t>(options.drain_ms) + extra_drain, 1500));
     scenario.drain_ms = std::max(scenario.drain_ms, capped);
   }
 
@@ -3905,7 +3943,8 @@ bool Bench::save_json(const Result& result, const std::string& file_path, std::s
   root["created_at"] = result.created_at;
   root["host_name"] = result.host_name;
   root["platform"] = result.platform;
-  root["command_line"] = result.command_line;
+  root["command_line"] =
+      result.command_line.find("ssl.key_password=") == std::string::npos ? result.command_line : "<redacted>";
   root["planned_case_count"] = result.planned_case_count;
   root["skipped_case_count"] = result.skipped_case_count;
   root["skip_messages"] = result.skip_messages;

@@ -292,6 +292,16 @@ std::string join_strings(const std::vector<std::string>& values, std::string_vie
   return stream.str();
 }
 
+std::string_view redact_property(std::string_view value) {
+  static constexpr std::string_view kPasswordKey = "ssl.key_password=";
+
+  if (value.substr(0, kPasswordKey.size()) == kPasswordKey) {
+    return "ssl.key_password=<redacted>";
+  }
+
+  return value;
+}
+
 std::string format_property_list(const std::vector<std::string>& values) {
   if (values.empty()) {
     return std::string();
@@ -305,7 +315,7 @@ std::string format_property_list(const std::vector<std::string>& values) {
       stream << ',';
     }
 
-    stream << std::quoted(values[index]);
+    stream << std::quoted(redact_property(values[index]));
   }
 
   stream << ']';

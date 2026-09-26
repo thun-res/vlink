@@ -352,8 +352,16 @@ std::vector<std::string> get_default_urls() { return get_builtin_urls(true); }
 
 bool filter_unavailable_urls(std::vector<std::string>& urls, std::string& error) {
   std::vector<std::string> kept;
+  const bool has_dds_binding = !vlink::Utils::get_env("VLINK_DDS_BIND").empty();
 
   for (const auto& url : urls) {
+    const auto scheme = scheme_of(url);
+
+    if (has_dds_binding && (scheme == "dds" || scheme == "ddsc" || scheme == "ddsr")) {
+      kept.emplace_back(url);
+      continue;
+    }
+
     const auto reason = transport_unavailable_reason(url);
 
     if (!reason.empty()) {
