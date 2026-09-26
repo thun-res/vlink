@@ -789,8 +789,7 @@ void DdsrFactory::set_participant_qos(DDS_DomainParticipantQos& dds_qos, const C
       }
 
       if (!ssl_cfg.verify_peer) {
-        DDS_PropertyQosPolicyHelper_assert_property(&dds_qos.property, "dds.transport.tcp.tcp1.tls.verify.verify_depth",
-                                                    "0", DDS_BOOLEAN_FALSE);
+        VLOG_W("DdsrFactory: ssl.verify=false is unsupported; certificate verification remains enabled.");
       }
     }
   }

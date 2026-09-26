@@ -1178,7 +1178,7 @@ export VLINK_ZENOH_PEER="tcp/192.168.1.100:7447"
 
 | 变量 | 类型 | 说明 |
 | --- | --- | --- |
-| `VLINK_SSL_VERIFY` | `1`/`0` | 是否验证服务器证书 |
+| `VLINK_SSL_VERIFY` | `1`/`0` | 是否验证服务器证书；DDSR 设置为 `0` 时告警并保留校验 |
 | `VLINK_SSL_CA` | 文件路径 | CA 证书路径 |
 | `VLINK_SSL_CERT` | 文件路径 | 客户端证书路径 |
 | `VLINK_SSL_KEY` | 文件路径 | 客户端私钥路径 |

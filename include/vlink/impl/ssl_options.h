@@ -124,6 +124,8 @@ struct VLINK_EXPORT SslOptions final {
    * Defaults to @c true.  Setting it to @c false maps to @c ssl.verify = @c "0"
    * and disables peer verification, which is convenient for development with
    * self-signed certificates but should never ship to production.
+   * RTI Connext DDS does not support disabling verification through this option;
+   * it logs a warning and retains certificate verification.
    */
   bool verify_peer{true};
 

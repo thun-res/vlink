@@ -1346,15 +1346,16 @@ VLINK_C_API_EXPORT int vlink_create_secure_setter(const char* url, const vlink_s
  * @c vlink_create_*_with_ssl_options() entry points.  String fields are
  * null-terminated; @c NULL or empty strings disable the matching slot.
  * @c verify_peer uses C semantics -- non-zero enables peer-certificate
- * verification, @c 0 disables it.  Transport backends consider TLS enabled once
- * at least @c ca_file or @c cert_file is non-empty.
+ * verification; @c 0 disables it where supported.  RTI Connext DDS logs a warning
+ * and retains verification.  Transport backends consider TLS enabled once at least
+ * @c ca_file or @c cert_file is non-empty.
  *
  * @note This is the transport-layer (channel) TLS configuration.  For
  *       application-layer per-message AEAD encryption see
  *       @c vlink_security_config_t.
  */
 typedef struct {
-  int verify_peer;          /**< Non-zero = verify peer certificate (default); @c 0 = skip. */
+  int verify_peer;          /**< Non-zero = verify (default); @c 0 = skip where supported. */
   const char* ca_file;      /**< CA certificate file path (PEM), or @c NULL.                */
   const char* cert_file;    /**< Client certificate file path (PEM), or @c NULL.            */
   const char* key_file;     /**< Client private key file path (PEM), or @c NULL.            */

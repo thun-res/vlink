@@ -1099,9 +1099,10 @@ ZenohSessionPtr ZenohFactory::get_session(int32_t domain, int32_t depth, const s
   const bool fragment_is_tcp = (fragment == "tcp" || has_prefix(fragment, "tcp/") || fragment_is_tls);
   const bool fragment_is_udp = (fragment == "udp" || has_prefix(fragment, "udp/"));
   const bool fragment_is_unix = (fragment == "unix" || has_prefix(fragment, "unixsock-stream/"));
-  bool use_tls = fragment_is_tls || ssl_cfg_valid;
 #if defined(VLINK_ENABLE_ZENOH_PICO) && Z_FEATURE_LINK_TLS != 1
-  use_tls = fragment_is_tls;
+  const bool use_tls = fragment_is_tls;
+#else
+  const bool use_tls = fragment_is_tls || ssl_cfg_valid;
 #endif
 
   if (!fragment.empty() && fragment != "tcp" && fragment != "tls" && fragment != "udp" && fragment != "unix" &&
