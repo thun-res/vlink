@@ -34,6 +34,7 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -1123,42 +1124,48 @@ TEST_SUITE("base-Logger") {
     Logger::set_file_level(Logger::kOff);
   }
 
-  TEST_CASE("a later handler registration supersedes a pending replacement") {
+  TEST_CASE("handler destruction cannot revive a stale pending registration") {
     Logger::init("test");
-    Logger::set_console_level(Logger::kInfo);
-    Logger::set_file_level(Logger::kOff);
 
-    for (int i = 0; i < 32; ++i) {
-      std::atomic<int> pending_calls{0};
-      std::atomic<int> later_calls{0};
-      std::atomic<bool> registration_started{false};
-      std::thread registration_thread;
+    struct RegisterOnDestroy final {
+      void (*register_handler)(Logger::Callback&&);
+      int& calls;
 
-      Logger::register_console_handler([&](Logger::Level, std::string_view) {
-        Logger::register_console_handler([&pending_calls](Logger::Level, std::string_view) {
-          pending_calls.fetch_add(1, std::memory_order_relaxed);
-        });
+      ~RegisterOnDestroy() {
+        register_handler([count = &calls](Logger::Level, std::string_view) { ++*count; });
+      }
+    };
 
-        registration_thread = std::thread([&] {
-          registration_started.store(true, std::memory_order_release);
-          Logger::register_console_handler(
-              [&later_calls](Logger::Level, std::string_view) { later_calls.fetch_add(1, std::memory_order_relaxed); });
-        });
+    for (auto register_handler : {&Logger::register_console_handler, &Logger::register_file_handler}) {
+      Logger::set_console_level(Logger::kInfo);
+      Logger::set_file_level(Logger::kOff);
 
-        while (!registration_started.load(std::memory_order_acquire)) {
-          std::this_thread::yield();
-        }
+      int pending_calls = 0;
+      int later_calls = 0;
+      auto probe = std::unique_ptr<RegisterOnDestroy>(new RegisterOnDestroy{register_handler, later_calls});
+
+      Logger::register_console_handler([&pending_calls, probe = std::move(probe)](Logger::Level, std::string_view) {
+        Logger::register_console_handler([&pending_calls](Logger::Level, std::string_view) { ++pending_calls; });
+        Logger::register_file_handler([&pending_calls](Logger::Level, std::string_view) { ++pending_calls; });
       });
 
-      VLOG_I("race pending and direct handler registration");
-      registration_thread.join();
+      VLOG_I("stage pending handlers");
+
+      const bool console = register_handler == &Logger::register_console_handler;
+      Logger::set_console_level(console ? Logger::kInfo : Logger::kOff);
+      Logger::set_file_level(console ? Logger::kOff : Logger::kInfo);
+
       VLOG_I("verify latest handler registration");
 
-      CHECK_EQ(pending_calls.load(std::memory_order_relaxed), 0);
-      CHECK_EQ(later_calls.load(std::memory_order_relaxed), 1);
+      CHECK_EQ(pending_calls, 0);
+      CHECK_EQ(later_calls, 1);
 
       Logger::register_console_handler(nullptr);
+      Logger::register_file_handler(nullptr);
     }
+
+    Logger::set_console_level(Logger::kTrace);
+    Logger::set_file_level(Logger::kOff);
   }
 }
 

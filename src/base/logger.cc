@@ -265,7 +265,6 @@ struct LoggerGlobal final {  // NOLINT(clang-analyzer-optin.performance.Padding)
   Logger::Callback console_callback;
   Logger::Callback file_callback;
   mutable std::shared_mutex callback_mtx;
-  std::mutex handler_registration_mtx;
   std::atomic_bool has_pending_console_callback{false};
   std::atomic_bool has_pending_file_callback{false};
   Logger::Callback pending_console_callback;
@@ -287,36 +286,50 @@ struct LoggerGlobal final {  // NOLINT(clang-analyzer-optin.performance.Padding)
   }
 };
 
-static Logger::Callback install_console_handler(Logger::Callback&& callback) noexcept {
+static void install_console_handler(Logger::Callback&& callback) noexcept {
   auto& global_instance = LoggerGlobal::get();
   Logger::Callback retired;
+  Logger::Callback retired_pending;
 
   {
     std::unique_lock lock(global_instance.callback_mtx);
+
+    {
+      std::lock_guard pending_lock(global_instance.pending_mtx);
+
+      if (global_instance.has_pending_console_callback.exchange(false, std::memory_order_acq_rel)) {
+        retired_pending = std::move(global_instance.pending_console_callback);
+      }
+    }
 
     retired = std::move(global_instance.console_callback);
     global_instance.console_callback = std::move(callback);
     global_instance.has_console_callback.store(static_cast<bool>(global_instance.console_callback),
                                                std::memory_order_release);
   }
-
-  return retired;
 }
 
-static Logger::Callback install_file_handler(Logger::Callback&& callback) noexcept {
+static void install_file_handler(Logger::Callback&& callback) noexcept {
   auto& global_instance = LoggerGlobal::get();
   Logger::Callback retired;
+  Logger::Callback retired_pending;
 
   {
     std::unique_lock lock(global_instance.callback_mtx);
+
+    {
+      std::lock_guard pending_lock(global_instance.pending_mtx);
+
+      if (global_instance.has_pending_file_callback.exchange(false, std::memory_order_acq_rel)) {
+        retired_pending = std::move(global_instance.pending_file_callback);
+      }
+    }
 
     retired = std::move(global_instance.file_callback);
     global_instance.file_callback = std::move(callback);
     global_instance.has_file_callback.store(static_cast<bool>(global_instance.file_callback),
                                             std::memory_order_release);
   }
-
-  return retired;
 }
 
 static void install_pending_handlers() noexcept {
@@ -331,41 +344,26 @@ static void install_pending_handlers() noexcept {
     return;
   }
 
-  Logger::Callback retired_console_callback;
-  Logger::Callback retired_file_callback;
-  std::lock_guard registration_lock(global_instance.handler_registration_mtx);
-
-  if VLIKELY (!global_instance.has_pending_console_callback.load(std::memory_order_acquire) &&
-              !global_instance.has_pending_file_callback.load(std::memory_order_acquire)) {
-    return;
-  }
-
-  Logger::Callback console_callback;
-  Logger::Callback file_callback;
-  bool install_console = false;
-  bool install_file = false;
+  Logger::Callback retired_console;
+  Logger::Callback retired_file;
 
   {
-    std::lock_guard lock(global_instance.pending_mtx);
+    std::unique_lock callback_lock(global_instance.callback_mtx);
+    std::lock_guard pending_lock(global_instance.pending_mtx);
 
-    install_console = global_instance.has_pending_console_callback.exchange(false, std::memory_order_acq_rel);
-    install_file = global_instance.has_pending_file_callback.exchange(false, std::memory_order_acq_rel);
-
-    if (install_console) {
-      console_callback = std::move(global_instance.pending_console_callback);
+    if (global_instance.has_pending_console_callback.exchange(false, std::memory_order_acq_rel)) {
+      retired_console = std::move(global_instance.console_callback);
+      global_instance.console_callback = std::move(global_instance.pending_console_callback);
+      global_instance.has_console_callback.store(static_cast<bool>(global_instance.console_callback),
+                                                 std::memory_order_release);
     }
 
-    if (install_file) {
-      file_callback = std::move(global_instance.pending_file_callback);
+    if (global_instance.has_pending_file_callback.exchange(false, std::memory_order_acq_rel)) {
+      retired_file = std::move(global_instance.file_callback);
+      global_instance.file_callback = std::move(global_instance.pending_file_callback);
+      global_instance.has_file_callback.store(static_cast<bool>(global_instance.file_callback),
+                                              std::memory_order_release);
     }
-  }
-
-  if (install_console) {
-    retired_console_callback = install_console_handler(std::move(console_callback));
-  }
-
-  if (install_file) {
-    retired_file_callback = install_file_handler(std::move(file_callback));
   }
 }
 
@@ -523,19 +521,7 @@ void Logger::register_console_handler(Callback&& callback) noexcept {
     return;
   }
 
-  Logger::Callback retired_pending_callback;
-  Logger::Callback retired_callback;
-
-  {
-    std::lock_guard registration_lock(global_instance.handler_registration_mtx);
-    {
-      std::lock_guard pending_lock(global_instance.pending_mtx);
-      if (global_instance.has_pending_console_callback.exchange(false, std::memory_order_acq_rel)) {
-        retired_pending_callback = std::move(global_instance.pending_console_callback);
-      }
-    }
-    retired_callback = install_console_handler(std::move(callback));
-  }
+  install_console_handler(std::move(callback));
 }
 
 void Logger::register_file_handler(Callback&& callback) noexcept {
@@ -550,19 +536,7 @@ void Logger::register_file_handler(Callback&& callback) noexcept {
     return;
   }
 
-  Logger::Callback retired_pending_callback;
-  Logger::Callback retired_callback;
-
-  {
-    std::lock_guard registration_lock(global_instance.handler_registration_mtx);
-    {
-      std::lock_guard pending_lock(global_instance.pending_mtx);
-      if (global_instance.has_pending_file_callback.exchange(false, std::memory_order_acq_rel)) {
-        retired_pending_callback = std::move(global_instance.pending_file_callback);
-      }
-    }
-    retired_callback = install_file_handler(std::move(callback));
-  }
+  install_file_handler(std::move(callback));
 }
 
 void Logger::set_console_level(Level level) noexcept {
