@@ -148,8 +148,8 @@ class VLINK_EXPORT MemoryPool final {
    * best effort; any tier whose @c ::operator @c new fails stays in lazy state and the
    * constructor continues.  @c batch_size limits how many nodes an empty shard transfers
    * from another shard while holding its short free-list lock; @c 0 falls back to the default 16.
-   * @c lazy_scale switches the lazy install cap from a fixed 64 KiB to one sixteenth of the tier
-   * quota (never below 32 KiB or one block), so higher quotas need fewer upstream calls.
+   * @c lazy_scale switches the lazy install cap from 64 KiB (or one larger block) to one sixteenth
+   * of the tier quota (never below 32 KiB or one block), so higher quotas need fewer upstream calls.
    */
   struct Config final {
     std::vector<Tier> tiers;  ///< Tier descriptors; empty or all-sentinel selects bypass mode.

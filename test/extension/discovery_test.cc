@@ -23,14 +23,25 @@
 
 // NOLINTBEGIN
 
+#ifdef _WIN32
+#include <Winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
+
 #include <doctest/doctest.h>
 
 #include <algorithm>
 #include <cstdint>
+#include <future>
 #include <string>
 #include <vector>
 
 #include "../common_test.h"
+#include "./base/helpers.h"
 #include "./extension/discovery_reporter.h"
 #include "./extension/discovery_viewer.h"
 
@@ -388,6 +399,115 @@ TEST_SUITE("extension-DiscoveryViewer") {
   TEST_CASE("register_callback does not crash") {
     DiscoveryViewer viewer(DiscoveryViewer::kFilterNone);
     viewer.register_callback([](const std::vector<DiscoveryViewer::Info>&) {});
+  }
+
+  TEST_CASE("conflict log handlers can query a completed discovery snapshot") {
+    int entry = 0;
+    SUBCASE("get_info_list") { entry = 0; }
+    SUBCASE("get_ser_type") { entry = 1; }
+    SUBCASE("get_schema_type") { entry = 2; }
+    SUBCASE("report callback") { entry = 3; }
+
+    const std::string prefix = "dds://discovery_reentry_" + Utils::get_pid_str() + "_";
+    const std::string conflict_url = prefix + "a";
+    const auto caller_thread = std::this_thread::get_id();
+    std::promise<void> warned;
+    auto warning = warned.get_future();
+    std::atomic<bool> handled{false};
+    DiscoveryViewer viewer;
+    struct RestoreLogger final {
+      Logger::Level console = Logger::get_console_level();
+      ~RestoreLogger() {
+        Logger::register_console_handler(nullptr);
+        Logger::set_console_level(console);
+      }
+    } restore_logger;
+    Logger::set_console_level(Logger::kWarn);
+    Logger::register_console_handler([&](Logger::Level, std::string_view message) {
+      if (entry == 3 ? !viewer.is_in_same_thread() : std::this_thread::get_id() != caller_thread) {
+        return;
+      }
+
+      if (message.find("Different ser:") == std::string_view::npos ||
+          message.find(conflict_url) == std::string_view::npos || handled.exchange(true, std::memory_order_relaxed)) {
+        return;
+      }
+
+      const auto snapshot = viewer.get_info_list();
+      CHECK_EQ(std::count_if(snapshot.begin(), snapshot.end(),
+                             [&](const auto& info) { return info.url.compare(0, prefix.size(), prefix) == 0; }),
+               4);
+      CHECK(viewer.get_ser_type(conflict_url).empty());
+      CHECK_EQ(viewer.get_schema_type(conflict_url), SchemaType::kUnknown);
+      CHECK_EQ(viewer.get_ser_type(prefix + "d"), "raw");
+      CHECK_EQ(viewer.get_schema_type(prefix + "d"), SchemaType::kRaw);
+      warned.set_value();
+    });
+
+    if (entry == 3) {
+      viewer.register_callback([](const auto&) {});
+    }
+    REQUIRE(viewer.async_run());
+
+    const auto sender = ::socket(AF_INET, SOCK_DGRAM, 0);
+#ifdef _WIN32
+    REQUIRE(sender != INVALID_SOCKET);
+#else
+    REQUIRE(sender >= 0);
+#endif
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_port = htons(DiscoveryViewer::get_listen_port());
+    address.sin_addr.s_addr = inet_addr(DiscoveryViewer::get_listen_address().c_str());
+    in_addr interface_address{};
+    interface_address.s_addr = htonl(INADDR_ANY);
+
+    if (Utils::get_env("VLINK_DISCOVER_NATIVE") == "1") {
+      interface_address.s_addr = htonl(INADDR_LOOPBACK);
+    } else {
+      const auto interfaces = Helpers::split_any(Utils::get_env("VLINK_DISCOVER_IP"));
+
+      if (!interfaces.empty()) {
+        interface_address.s_addr = inet_addr(interfaces.front().c_str());
+      }
+    }
+
+    const auto interface_result =
+        ::setsockopt(sender, IPPROTO_IP, IP_MULTICAST_IF, reinterpret_cast<const char*>(&interface_address),
+                     sizeof(interface_address));
+    const std::string raw_schema = std::to_string(static_cast<uint32_t>(SchemaType::kRaw));
+    const std::string protobuf_schema = std::to_string(static_cast<uint32_t>(SchemaType::kProtobuf));
+    const std::string packet = "Pub " + conflict_url + " TypeA " + raw_schema + " review:1:test\nPub " + conflict_url +
+                               " TypeB " + protobuf_schema + " review:2:test\nPub " + prefix + "b raw " + raw_schema +
+                               " review:3:test\nPub " + prefix + "c raw " + raw_schema + " review:4:test\nPub " +
+                               prefix + "d raw " + raw_schema + " review:5:test\n";
+    const auto sent = ::sendto(sender, packet.data(), static_cast<int>(packet.size()), 0,
+                               reinterpret_cast<const sockaddr*>(&address), sizeof(address));
+#ifdef _WIN32
+    ::closesocket(sender);
+#else
+    ::close(sender);
+#endif
+    REQUIRE_EQ(interface_result, 0);
+    REQUIRE_EQ(sent, static_cast<int>(packet.size()));
+    REQUIRE(common_test::wait_until(
+        [&] {
+          if (entry == 0) {
+            (void)viewer.get_info_list();
+          } else if (entry == 1) {
+            (void)viewer.get_ser_type(conflict_url);
+          } else if (entry == 2) {
+            (void)viewer.get_schema_type(conflict_url);
+          }
+          return warning.wait_for(0s) == std::future_status::ready;
+        },
+        3s));
+    const auto snapshot = viewer.get_info_list();
+    CHECK_EQ(std::count_if(snapshot.begin(), snapshot.end(),
+                           [&](const auto& info) { return info.url.compare(0, prefix.size(), prefix) == 0; }),
+             4);
+    viewer.quit(true);
+    REQUIRE(viewer.wait_for_quit(3000));
   }
 }
 

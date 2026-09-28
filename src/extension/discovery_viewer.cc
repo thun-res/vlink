@@ -633,6 +633,7 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
     for (const auto& ip : ip_list) {
       ip_mreq mreq;
       std::memset(&mreq, 0, sizeof(mreq));
+
       mreq.imr_multiaddr.s_addr = inet_addr(kBroadcastAddress);
       mreq.imr_interface.s_addr = inet_addr(ip.c_str());
 
@@ -889,6 +890,7 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
 
               if (!existing_info.process_list.empty() && existing_info.process_list[0].profiler != profiler) {
                 existing_info.process_list[0].profiler = profiler;
+
                 impl_->list_dirty = true;
                 impl_->callback_dirty = true;
               }
@@ -943,45 +945,70 @@ void DiscoveryViewer::register_callback(Callback&& callback) {
 }
 
 std::vector<DiscoveryViewer::Info> DiscoveryViewer::get_info_list() {
-  std::lock_guard lock(impl_->mtx);
+  std::vector<std::string> warnings;
+  std::vector<Info> info_list;
 
-  refresh_list();
+  {
+    std::lock_guard lock(impl_->mtx);
+    refresh_list(warnings);
+    info_list = impl_->info_list;
+  }
 
-  return impl_->info_list;
+  for (const auto& warning : warnings) {
+    VLOG_W(warning);
+  }
+
+  return info_list;
 }
 
 std::string DiscoveryViewer::get_ser_type(const std::string& url) const {
+  std::vector<std::string> warnings;
+  std::string ser_type;
+
   {
     std::lock_guard lock(impl_->mtx);
-
-    refresh_list();
+    refresh_list(warnings);
   }
 
-  std::shared_lock lock(impl_->ser_mtx);
-  auto iter = impl_->ser_map.find(url);
+  {
+    std::shared_lock lock(impl_->ser_mtx);
+    auto iter = impl_->ser_map.find(url);
 
-  if VLIKELY (iter != impl_->ser_map.end()) {
-    return iter->second;
+    if VLIKELY (iter != impl_->ser_map.end()) {
+      ser_type = iter->second;
+    }
   }
 
-  return {};
+  for (const auto& warning : warnings) {
+    VLOG_W(warning);
+  }
+
+  return ser_type;
 }
 
 SchemaType DiscoveryViewer::get_schema_type(const std::string& url) const {
+  std::vector<std::string> warnings;
+  SchemaType schema_type = SchemaType::kUnknown;
+
   {
     std::lock_guard lock(impl_->mtx);
-
-    refresh_list();
+    refresh_list(warnings);
   }
 
-  std::shared_lock lock(impl_->ser_mtx);
-  auto iter = impl_->schema_type_map.find(url);
+  {
+    std::shared_lock lock(impl_->ser_mtx);
+    auto iter = impl_->schema_type_map.find(url);
 
-  if VLIKELY (iter != impl_->schema_type_map.end()) {
-    return iter->second;
+    if VLIKELY (iter != impl_->schema_type_map.end()) {
+      schema_type = iter->second;
+    }
   }
 
-  return SchemaType::kUnknown;
+  for (const auto& warning : warnings) {
+    VLOG_W(warning);
+  }
+
+  return schema_type;
 }
 
 size_t DiscoveryViewer::get_max_task_count() const { return kMaxTaskSize; }
@@ -1080,7 +1107,7 @@ void DiscoveryViewer::process_offline(std::string_view hostname, uint32_t pid, s
 }
 // LCOV_EXCL_STOP GCOVR_EXCL_STOP
 
-void DiscoveryViewer::sort_url() const {
+void DiscoveryViewer::sort_url(std::vector<std::string>& warnings) const {
   impl_->info_list.clear();
   std::unordered_map<std::string, std::string> next_ser_map;
   std::unordered_map<std::string, SchemaType> next_schema_type_map;
@@ -1111,9 +1138,10 @@ void DiscoveryViewer::sort_url() const {
 
               warn_iter->second.restart();
 
-              VLOG_W("DiscoveryViewer: Different ser: url = ", info.url, ", current_ser = ", merged.ser_type,
-                     ", new_ser = ", info.ser_type, ", process_name = ", process_name, ", process_pid = ", process_pid,
-                     ".");
+              warnings.emplace_back("DiscoveryViewer: Different ser: url = " + info.url +
+                                    ", current_ser = " + merged.ser_type + ", new_ser = " + info.ser_type +
+                                    ", process_name = " + process_name +
+                                    ", process_pid = " + std::to_string(process_pid) + ".");
             }
 
             merged.ser_type.clear();
@@ -1184,9 +1212,9 @@ void DiscoveryViewer::sort_url() const {
   }
 }
 
-void DiscoveryViewer::refresh_list() const {
+void DiscoveryViewer::refresh_list(std::vector<std::string>& warnings) const {
   if (impl_->list_dirty) {
-    sort_url();
+    sort_url(warnings);
     impl_->list_dirty = false;
   }
 }
@@ -1194,6 +1222,7 @@ void DiscoveryViewer::refresh_list() const {
 void DiscoveryViewer::report_list() {
   Callback callback;
   std::vector<Info> info_list;
+  std::vector<std::string> warnings;
 
   {
     std::lock_guard lock(impl_->mtx);
@@ -1208,10 +1237,14 @@ void DiscoveryViewer::report_list() {
       return;
     }
 
-    refresh_list();
+    refresh_list(warnings);
 
     callback = impl_->callback;
     info_list = impl_->info_list;
+  }
+
+  for (const auto& warning : warnings) {
+    VLOG_W(warning);
   }
 
   if (callback) {

@@ -286,9 +286,9 @@ class VLINK_EXPORT DiscoveryViewer : public MessageLoop {
 
   void process_offline(std::string_view hostname, uint32_t pid, std::string_view process_name);
 
-  void sort_url() const;
+  void sort_url(std::vector<std::string>& warnings) const;
 
-  void refresh_list() const;
+  void refresh_list(std::vector<std::string>& warnings) const;
 
   void report_list();
 
