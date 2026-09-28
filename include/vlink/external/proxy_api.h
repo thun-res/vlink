@@ -267,11 +267,11 @@ class VLINK_PROXY_API_EXPORT ProxyAPI : public MessageLoop {
    * @brief Description of a VLink node process attached to a topic endpoint.
    */
   struct Process final {
-    uint32_t type{0};  ///< Node-type bitmask (kPublisher / kSubscriber / kServer / kClient / kSetter / kGetter).
-    std::string host;  ///< Hostname of the machine running the process.
-    uint32_t pid{0};   ///< Operating-system process ID.
-    std::string name;  ///< Human-readable process name.
-    std::string ip;    ///< IP address of the network interface in use.
+    uint32_t type{0};                  ///< Bitmask of @c ImplType kinds advertised by this process.
+    std::string host;                  ///< Hostname of the machine running the process.
+    uint32_t pid{0};                   ///< Operating-system process ID.
+    std::string name;                  ///< Human-readable process name.
+    std::vector<std::string> ip_list;  ///< Live discovery source IPv4 addresses, unique and sorted numerically.
   };
 
   /**

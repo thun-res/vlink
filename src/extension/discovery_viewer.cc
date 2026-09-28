@@ -28,6 +28,7 @@
 #include <cstring>
 #include <ctime>
 #include <exception>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <shared_mutex>
@@ -205,16 +206,17 @@ bool DiscoveryViewer::Process::operator<(const DiscoveryViewer::Process& target)
     return true;
   } else if (host > target.host) {
     return false;
-  } else if (ip < target.ip) {
-    return true;
-  } else if (ip > target.ip) {
-    return false;
   } else if (name < target.name) {
     return true;
   } else if (name > target.name) {
     return false;
+  } else if (pid < target.pid) {
+    return true;
+  } else if (pid > target.pid) {
+    return false;
   } else {
-    return pid < target.pid;
+    return std::lexicographical_compare(ip_list.begin(), ip_list.end(), target.ip_list.begin(), target.ip_list.end(),
+                                        Utils::ip_less);
   }
 }
 
@@ -818,7 +820,7 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
 
             auto process_list_view = Helpers::split_view(process_view, ':');
 
-            if (process_list_view.size() < 3) {
+            if VUNLIKELY (process_list_view.size() < 3) {
               continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             }
 
@@ -877,12 +879,12 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
 
             Info info{sort_index,  type,
                       url,         ser_type,
-                      schema_type, {Process{type, hostname, process_pid, process_name, target_ip_str, profiler}}};
+                      schema_type, {Process{type, hostname, process_pid, process_name, {target_ip_str}, profiler}}};
 
             auto [iter, inserted] = impl_->info_map.try_emplace(std::move(info), ElapsedTimer{});
             iter->second.restart();
 
-            if (inserted) {
+            if VUNLIKELY (inserted) {
               impl_->list_dirty = true;
               impl_->callback_dirty = true;
             } else {
@@ -1109,10 +1111,12 @@ void DiscoveryViewer::process_offline(std::string_view hostname, uint32_t pid, s
 
 void DiscoveryViewer::sort_url(std::vector<std::string>& warnings) const {
   impl_->info_list.clear();
+
   std::unordered_map<std::string, std::string> next_ser_map;
   std::unordered_map<std::string, SchemaType> next_schema_type_map;
   std::unordered_set<std::string> ser_conflict_urls;
   std::unordered_set<std::string> schema_conflict_urls;
+
   next_ser_map.reserve(impl_->info_map.size());
   next_schema_type_map.reserve(impl_->info_map.size());
   ser_conflict_urls.reserve(impl_->info_map.size());
@@ -1168,12 +1172,34 @@ void DiscoveryViewer::sort_url(std::vector<std::string>& warnings) const {
   for (auto& info : impl_->info_list) {
     if (info.process_list.size() > 1) {
       std::sort(info.process_list.begin(), info.process_list.end());
-      info.process_list.erase(std::unique(info.process_list.begin(), info.process_list.end(),
-                                          [](const auto& lhs, const auto& rhs) {
-                                            return lhs.type == rhs.type && lhs.host == rhs.host && lhs.pid == rhs.pid &&
-                                                   lhs.name == rhs.name && lhs.ip == rhs.ip;
-                                          }),
-                              info.process_list.end());
+
+      size_t process_count = 0;
+
+      for (auto& process : info.process_list) {
+        if (process_count > 0) {
+          auto& previous = info.process_list[process_count - 1];
+
+          if (previous.type == process.type && previous.host == process.host && previous.pid == process.pid &&
+              previous.name == process.name) {
+            previous.ip_list.insert(previous.ip_list.end(), std::make_move_iterator(process.ip_list.begin()),
+                                    std::make_move_iterator(process.ip_list.end()));
+            continue;
+          }
+        }
+
+        if (&info.process_list[process_count] != &process) {
+          info.process_list[process_count] = std::move(process);
+        }
+
+        ++process_count;
+      }
+
+      info.process_list.resize(process_count);
+
+      for (auto& process : info.process_list) {
+        std::sort(process.ip_list.begin(), process.ip_list.end(), Utils::ip_less);
+        process.ip_list.erase(std::unique(process.ip_list.begin(), process.ip_list.end()), process.ip_list.end());
+      }
     }
 
     auto& ser_type = next_ser_map[info.url];

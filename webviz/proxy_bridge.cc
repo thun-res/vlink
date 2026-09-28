@@ -989,7 +989,7 @@ class ProxyServerBridge final : public ProxyBridge {
         proxy_process.host = process.host;
         proxy_process.pid = process.pid;
         proxy_process.name = process.name;
-        proxy_process.ip = process.ip;
+        proxy_process.ip_list = process.ip_list;
         proxy_info.process_list.emplace_back(std::move(proxy_process));
       }
 

@@ -135,6 +135,7 @@ namespace proxy {
 [[maybe_unused]] static constexpr size_t kMaxFilterSize = 4096;
 [[maybe_unused]] static constexpr size_t kMaxTopicListSize = 4096;
 [[maybe_unused]] static constexpr size_t kMaxProcessListSize = 256;
+[[maybe_unused]] static constexpr size_t kMaxIpListSize = 256;
 
 enum HandshakeResult : uint8_t {
   kHandshakeOk = 0,
@@ -209,7 +210,9 @@ static_assert(sizeof(proxy::HandshakeResult) == 1, "wire format: HandshakeResult
 template <typename SerializerT>
 inline void serialize(SerializerT& s, ProxyAPI::Process& msg) {
   s(msg.type, bitsery::maxSize(msg.host, proxy::kMaxStringSize), msg.pid,
-    bitsery::maxSize(msg.name, proxy::kMaxStringSize), bitsery::maxSize(msg.ip, proxy::kMaxStringSize));
+    bitsery::maxSize(msg.name, proxy::kMaxStringSize));
+  s.container(msg.ip_list, proxy::kMaxIpListSize,
+              [](auto& serializer, auto& ip) { serializer.text1b(ip, proxy::kMaxStringSize); });
 }
 
 template <typename SerializerT>

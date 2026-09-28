@@ -25,7 +25,7 @@
 
 - **传输类型**：当前活跃的 URL 及其 scheme（`dds://`、`shm://`、`intra://` 等）。
 - **角色**：每个 URL 上承担的角色——发布者 / 订阅者 / 客户端 / 服务端 / 写端 / 读端。
-- **进程归属**：承载该 URL 的进程标识——主机名、PID、进程名、IP，以及可选的 CPU 占用。
+- **进程归属**：承载该 URL 的进程标识——主机名、PID、进程名，以及发现源 IP 列表和可选的 CPU 占用。
 - **生命周期**：新节点周期广播即被纳入视图，停止广播超过心跳时限则被剔除。
 
 ![Discovery 网络](images/discovery-network.png)
@@ -127,10 +127,12 @@ auto snapshot = viewer.get_info_list();
 | `host` | 主机名 |
 | `pid` | 进程 ID |
 | `name` | 进程名 |
-| `ip` | 主机 IP 地址 |
-| `profiler` | CPU 利用率百分比，`-1` 表示未启用（需 `VLINK_PROFILER_ENABLE=1`） |
+| `ip_list` | `std::vector<std::string>`，当前仍有效的发现源 IPv4 地址，按 IPv4 数值升序排序并去重 |
+| `profiler` | 一个有效地址上报的 CPU 利用率百分比，不叠加多地址副本；`-1` 表示未启用（需 `VLINK_PROFILER_ENABLE=1`） |
 
 `type` 是位掩码而非单一角色：同一 URL 可在同进程或跨进程上被多种角色同时使用（例如既有发布者又有订阅者），展示时统一经 `convert_type_to_view` 转换。
+
+同一 URL、同一角色下，按主机名、PID 和进程名合并地址，保留角色间的独立记录。每个地址独立超时，全部地址过期后该记录消失；`ip_list` 只包含观测到的发现源地址，不代表主机全部网卡或业务后端地址。Python 的 `DiscoveryViewer.Process.ip_list` 对应字符串列表。
 
 下例实时打印每个 URL 的角色与序列化类型，并逐进程输出 PID / 主机 / IP，在 Profiler 启用时附带 CPU 占用：
 
@@ -153,7 +155,11 @@ int main() {
 
       for (const auto& proc : info.process_list) {
         std::cout << "  " << proc.name << " pid=" << proc.pid
-                  << " host=" << proc.host << " ip=" << proc.ip;
+                  << " host=" << proc.host << " IP:";
+
+        for (const auto& ip : proc.ip_list) {
+          std::cout << " " << ip;
+        }
 
         if (proc.profiler >= 0) {
           std::cout << " cpu=" << proc.profiler << "%";
@@ -437,7 +443,7 @@ api.register_time_callback([](uint64_t sys_time, uint64_t boot_time) {
 | `status` | `Status` | `kActive` / `kInActive` / `kPending` / `kInvalid` |
 | `freq` / `rate` | `float` / `uint64_t` | 频率（条/秒）/ 吞吐（字节/秒），滑动平均 |
 | `loss` / `latency` | `float` / `float` | 丢包率 [0,1] / 延迟（毫秒；`-1` 无样本，`-2` 无效） |
-| `process_list` | `std::vector<Process>` | 收发该话题的进程列表（`type` 角色位掩码 / `host` / `pid` / `name` / `ip`） |
+| `process_list` | `std::vector<Process>` | 收发该话题的进程列表（`type` 角色位掩码 / `host` / `pid` / `name` / `ip_list`），地址语义同发现快照 |
 
 `Data`（每条转发或注入数据）字段：`url`、`ser`、`schema`、`raw`（`Bytes` 原始载荷）、`timestamp`（微秒）、`seq`（序号）。注入时 `ser` 与 `schema` 必须显式填全。
 

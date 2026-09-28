@@ -140,7 +140,7 @@ class SparklineRenderer final {
                                                        int panel_height) {
     std::vector<std::string> panel_lines;
 
-    if (process_list.empty()) {
+    if (process_list.empty() || panel_height < 2) {
       return panel_lines;
     }
 
@@ -156,24 +156,27 @@ class SparklineRenderer final {
 
     std::set<vlink::DiscoveryViewer::Process*, ProcessPtrCmp> process_sort_list;
 
-    std::map<std::tuple<uint32_t, std::string, std::string, std::string>, vlink::DiscoveryViewer::Process> process_map;
+    std::map<std::tuple<uint32_t, std::string, std::string>, vlink::DiscoveryViewer::Process> process_map;
 
     for (const auto& process : process_list) {
-      auto msg = std::make_tuple(process.pid, process.name, process.ip, process.host);
+      auto msg = std::make_tuple(process.pid, process.name, process.host);
 
       auto [iter, inserted] = process_map.try_emplace(std::move(msg), process);
 
       if (!inserted) {
         iter->second.type |= process.type;
+        iter->second.ip_list.insert(iter->second.ip_list.end(), process.ip_list.begin(), process.ip_list.end());
       }
     }
 
     for (auto& [key, process] : process_map) {
+      std::sort(process.ip_list.begin(), process.ip_list.end(), vlink::Utils::ip_less);
+      process.ip_list.erase(std::unique(process.ip_list.begin(), process.ip_list.end()), process.ip_list.end());
       process_sort_list.emplace(&process);
     }
 
     for (auto* process : process_sort_list) {
-      if (panel_lines.size() >= static_cast<size_t>(panel_height - 1)) {
+      if (panel_lines.size() >= static_cast<size_t>(panel_height - 2)) {
         panel_lines.emplace_back(more_str);
         break;
       }
@@ -244,26 +247,33 @@ class SparklineRenderer final {
         panel_lines.emplace_back(type_str);
       }
 
-      if (panel_lines.size() >= static_cast<size_t>(panel_height - 1)) {
+      if (panel_lines.size() >= static_cast<size_t>(panel_height - 2)) {
         panel_lines.emplace_back(more_str);
         break;
       }
 
-      panel_lines.emplace_back(
-          fill_string("\033[1;35m " + process->host + "\033[0m@" + process->ip, process_width + 11));
+      std::string ip;
 
-      if (panel_lines.size() >= static_cast<size_t>(panel_height - 1)) {
+      if (!process->ip_list.empty()) {
+        ip = process->ip_list.front();
+
+        if (process->ip_list.size() > 1) {
+          ip += "+";
+        }
+      }
+
+      const int host_width = std::max(0, process_width - static_cast<int>(ip.size()) - 2);
+
+      panel_lines.emplace_back(
+          fill_string("\033[1;35m " + process->host.substr(0, host_width) + "\033[0m@" + ip, process_width + 11));
+
+      if (panel_lines.size() >= static_cast<size_t>(panel_height - 2) && process != *process_sort_list.rbegin()) {
         panel_lines.emplace_back(more_str);
         break;
       }
 
       panel_lines.emplace_back(
           fill_string("\033[1;33m " + process->name + "\033[0m#" + std::to_string(process->pid), process_width + 11));
-
-      if (panel_lines.size() >= static_cast<size_t>(panel_height - 1)) {
-        panel_lines.emplace_back(more_str);
-        break;
-      }
     }
 
     panel_lines.emplace_back(split_str);

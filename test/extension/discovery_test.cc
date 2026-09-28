@@ -243,7 +243,7 @@ TEST_SUITE("extension-DiscoveryViewer") {
     CHECK_EQ(p.profiler, doctest::Approx(-1.0));
     CHECK(p.host.empty());
     CHECK(p.name.empty());
-    CHECK(p.ip.empty());
+    CHECK(p.ip_list.empty());
   }
 
   TEST_CASE("process operator< orders by host then by pid") {
@@ -277,19 +277,20 @@ TEST_SUITE("extension-DiscoveryViewer") {
 
     DiscoveryViewer::Process by_ip_a;
     by_ip_a.host = "same";
-    by_ip_a.ip = "10.0.0.1";
+    by_ip_a.ip_list = {"10.0.0.2"};
     DiscoveryViewer::Process by_ip_b;
     by_ip_b.host = "same";
-    by_ip_b.ip = "10.0.0.2";
+    by_ip_b.ip_list = {"10.0.0.10"};
     CHECK(by_ip_a < by_ip_b);
+    CHECK_FALSE(by_ip_b < by_ip_a);
 
     DiscoveryViewer::Process by_name_a;
     by_name_a.host = "same";
-    by_name_a.ip = "same";
+    by_name_a.ip_list = {"10.0.0.2"};
     by_name_a.name = "alpha";
     DiscoveryViewer::Process by_name_b;
     by_name_b.host = "same";
-    by_name_b.ip = "same";
+    by_name_b.ip_list = {"10.0.0.1"};
     by_name_b.name = "beta";
     CHECK(by_name_a < by_name_b);
 
@@ -298,6 +299,7 @@ TEST_SUITE("extension-DiscoveryViewer") {
     by_pid_a.pid = 1;
     DiscoveryViewer::Process by_pid_b = by_pid_a;
     by_pid_b.pid = 2;
+    by_pid_b.ip_list = {"10.0.0.1"};
     CHECK(by_pid_a < by_pid_b);
 
     CHECK_FALSE(by_pid_a < by_pid_a);
@@ -401,6 +403,97 @@ TEST_SUITE("extension-DiscoveryViewer") {
     DiscoveryViewer viewer(DiscoveryViewer::kFilterNone);
     viewer.register_callback([](const std::vector<DiscoveryViewer::Info>&) {});
   }
+
+#ifdef __linux__
+  TEST_CASE("multiple source addresses merge by process and expire independently") {
+    DiscoveryViewer viewer;
+    REQUIRE(viewer.async_run());
+
+    struct Senders final {
+      int sockets[2]{::socket(AF_INET, SOCK_DGRAM, 0), ::socket(AF_INET, SOCK_DGRAM, 0)};
+
+      ~Senders() {
+        for (int sock : sockets) {
+          if (sock >= 0) {
+            ::close(sock);
+          }
+        }
+      }
+    } senders;
+
+    const std::vector<std::string> ip_list{"127.0.0.2", "127.0.0.10"};
+
+    for (size_t i = 0; i < ip_list.size(); ++i) {
+      REQUIRE(senders.sockets[i] >= 0);
+      sockaddr_in source{};
+      source.sin_family = AF_INET;
+      source.sin_addr.s_addr = inet_addr(ip_list[i].c_str());
+      REQUIRE_EQ(::bind(senders.sockets[i], reinterpret_cast<const sockaddr*>(&source), sizeof(source)), 0);
+    }
+
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_port = htons(DiscoveryViewer::get_listen_port());
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    const std::string url = "intra://test/discovery/addresses/" + Utils::get_pid_str();
+    const std::string schema = std::to_string(static_cast<uint32_t>(SchemaType::kRaw));
+    const std::string packet = "Pub " + url + " raw " + schema + " host-a:101:multi:12.5\nPub " + url + " Bytes " +
+                               schema + " host-a:101:multi:12.5\nPub " + url + " raw " + schema +
+                               " host-a:102:multi:2\nPub " + url + " raw " + schema + " host-b:101:multi:3\nSub " +
+                               url + " raw " + schema + " host-a:101:multi:4\n";
+
+    auto send = [&](size_t index) {
+      CHECK_EQ(::sendto(senders.sockets[index], packet.data(), packet.size(), 0,
+                        reinterpret_cast<const sockaddr*>(&address), sizeof(address)),
+               static_cast<ssize_t>(packet.size()));
+    };
+
+    auto has_addresses = [&](const std::vector<std::string>& expected) {
+      const auto snapshot = viewer.get_info_list();
+      const auto iter =
+          std::find_if(snapshot.begin(), snapshot.end(), [&](const auto& info) { return info.url == url; });
+
+      return iter != snapshot.end() && iter->process_list.size() == 4 &&
+             std::all_of(iter->process_list.begin(), iter->process_list.end(),
+                         [&](const auto& process) { return process.ip_list == expected; });
+    };
+
+    send(1);
+    send(0);
+    send(1);
+    REQUIRE(common_test::wait_until([&] { return has_addresses(ip_list); }, 3s));
+
+    const auto snapshot = viewer.get_info_list();
+    const auto iter = std::find_if(snapshot.begin(), snapshot.end(), [&](const auto& info) { return info.url == url; });
+    REQUIRE(iter != snapshot.end());
+    CHECK_EQ(iter->ser_type, "raw");
+    CHECK_EQ(iter->type, kPublisher | kSubscriber);
+
+    const auto publisher = std::find_if(iter->process_list.begin(), iter->process_list.end(), [](const auto& process) {
+      return process.host == "host-a" && process.pid == 101 && process.name == "multi" && process.type == kPublisher;
+    });
+    REQUIRE(publisher != iter->process_list.end());
+    CHECK_EQ(publisher->profiler, doctest::Approx(12.5));
+
+    const std::vector<std::string> remaining{ip_list[1]};
+    REQUIRE(common_test::wait_until(
+        [&] {
+          send(1);
+          std::this_thread::sleep_for(50ms);
+          return has_addresses(remaining);
+        },
+        8s));
+
+    REQUIRE(common_test::wait_until(
+        [&] {
+          const auto list = viewer.get_info_list();
+          return std::none_of(list.begin(), list.end(), [&](const auto& info) { return info.url == url; });
+        },
+        8s));
+    viewer.quit(true);
+    REQUIRE(viewer.wait_for_quit(3000));
+  }
+#endif
 
   TEST_CASE("conflict log handlers can query a completed discovery snapshot") {
     int entry = 0;

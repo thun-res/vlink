@@ -2190,7 +2190,13 @@ publisher.set_discovery_enabled(True)
 publisher.init()
 try:
     assert seen.wait(8.0), "viewer did not receive the endpoint announcement"
-    assert any(info.url == url and info.process_list for info in viewer.get_info_list())
+    info = next(info for info in viewer.get_info_list() if info.url == url)
+    assert len(info.process_list) == 1
+    process = info.process_list[0]
+    assert isinstance(process.ip_list, list) and process.ip_list
+    assert all(isinstance(ip, str) and ip for ip in process.ip_list)
+    assert process.ip_list == sorted(set(process.ip_list), key=lambda ip: tuple(map(int, ip.split("."))))
+    assert not hasattr(process, "ip")
     assert viewer.get_ser_type(url) == "raw"
 finally:
     publisher.deinit()
