@@ -569,9 +569,10 @@ TEST_SUITE("extension-TriggerRecorder") {
       return;
     }
 
-    REQUIRE(recorder.dump());
-    CHECK(recorder.is_dumping());
-    CHECK_FALSE(recorder.dump());
+    auto serialized =
+        recorder.invoke_task([&recorder] { return recorder.dump() && recorder.is_dumping() && !recorder.dump(); });
+    REQUIRE(serialized.wait_for(std::chrono::milliseconds(5000)) == std::future_status::ready);
+    REQUIRE(serialized.get());
 
     REQUIRE(wait_until_idle(recorder));
     recorder.quit();
@@ -636,6 +637,7 @@ TEST_SUITE("extension-TriggerRecorder") {
   TEST_CASE("quit abandons a dump still waiting for its post window") {
     ScratchDir scratch("quit-post-window");
     const std::string url = "intra://__trigger_test_quit_post__";
+    const std::string sync_url = url + "/ready";
     const std::string out = scratch.path + "/quit-post.vdb";
     vlink::Publisher<vlink::Bytes> pub(url);
 
@@ -645,7 +647,7 @@ TEST_SUITE("extension-TriggerRecorder") {
     config.default_post_ms = 300;
     config.retention_guard_ms = 0;
     config.enable_compress = false;
-    config.whitelist = {url};
+    config.whitelist = {url, sync_url};
 
     vlink::TriggerRecorder recorder(config, make_raw_sub_factory());
     auto plugin = std::make_shared<RecordingTriggerPlugin>();
@@ -660,12 +662,17 @@ TEST_SUITE("extension-TriggerRecorder") {
       return;
     }
 
+    vlink::Publisher<vlink::Bytes> sync_pub(sync_url);
+    REQUIRE(sync_pub.wait_for_subscribers(std::chrono::milliseconds(3000)));
+
     vlink::TriggerRecorder::TriggerParams params;
     params.reason = "quit-post";
     params.out_file = out;
-    REQUIRE(recorder.dump(params));
 
-    CHECK(recorder.quit());
+    auto stopped = recorder.invoke_task(
+        [&recorder, params = std::move(params)] { return recorder.dump(params) && recorder.quit(); });
+    REQUIRE(stopped.wait_for(std::chrono::milliseconds(5000)) == std::future_status::ready);
+    REQUIRE(stopped.get());
     REQUIRE(recorder.wait_for_quit(5000));
     CHECK_EQ(plugin->finished.load(), 0);
     REQUIRE_EQ(plugin->failed.load(), 1);
