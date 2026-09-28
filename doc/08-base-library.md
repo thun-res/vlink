@@ -1191,6 +1191,8 @@ vlink::Utils::register_terminate_signal([](int sig) { app.shutdown(); });
 auto ipv4_list = vlink::Utils::get_all_ipv4_address(/*filter_available=*/true);
 ```
 
+`Utils::ip_less(lhs, rhs)` 按地址数值比较有效 IPv4/IPv6 字面量，混合时 IPv4 排在 IPv6 前；不接受作用域 ID 或前缀长度。Python 对应 `vlink.utils.ip_less`。
+
 ---
 
 ## 🔖 相关文档

@@ -564,6 +564,34 @@ TEST_SUITE("base-Utils") {
     (void)ok;
   }
 
+  TEST_CASE("ip_less orders IPv4 and IPv6 numerically") {
+    const std::vector<std::string> ordered{"0.0.0.0",
+                                           "10.0.0.2",
+                                           "10.0.0.10",
+                                           "10.0.1.0",
+                                           "10.1.0.0",
+                                           "128.0.0.0",
+                                           "255.255.255.255",
+                                           "::",
+                                           "::2",
+                                           "::10",
+                                           "::ffff:192.0.2.1",
+                                           "2001:db8::2",
+                                           "2001:db8::10",
+                                           "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"};
+
+    for (size_t i = 0; i < ordered.size(); ++i) {
+      for (size_t j = 0; j < ordered.size(); ++j) {
+        CHECK_EQ(Utils::ip_less(ordered[i], ordered[j]), i < j);
+      }
+    }
+
+    CHECK_FALSE(Utils::ip_less("2001:db8::1", "2001:0db8:0:0:0:0:0:0001"));
+    CHECK_FALSE(Utils::ip_less("2001:0db8:0:0:0:0:0:0001", "2001:db8::1"));
+    CHECK_FALSE(Utils::ip_less("::ffff:192.0.2.1", "::ffff:c000:201"));
+    CHECK_FALSE(Utils::ip_less("::ffff:c000:201", "::ffff:192.0.2.1"));
+  }
+
   TEST_CASE("get_all_ipv4_address returns dotted-decimal strings") {
     std::vector<std::string> addrs = Utils::get_all_ipv4_address(false);
 

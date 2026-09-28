@@ -809,6 +809,24 @@ bool is_ignored_iface_name(const char* name) noexcept {
   }
 }
 
+bool ip_less(const std::string& lhs, const std::string& rhs) noexcept {
+  const bool lhs_ipv6 = lhs.find(':') != std::string::npos;
+  const bool rhs_ipv6 = rhs.find(':') != std::string::npos;
+
+  if VUNLIKELY (lhs_ipv6 != rhs_ipv6) {
+    return !lhs_ipv6;
+  }
+
+  std::array<uint8_t, 16> lhs_bytes{};
+  std::array<uint8_t, 16> rhs_bytes{};
+  const int family = lhs_ipv6 ? AF_INET6 : AF_INET;
+
+  inet_pton(family, lhs.c_str(), lhs_bytes.data());
+  inet_pton(family, rhs.c_str(), rhs_bytes.data());
+
+  return lhs_bytes < rhs_bytes;
+}
+
 std::vector<std::string> get_all_ipv4_address(bool filter_available) noexcept {
   std::vector<std::string> ip_addresses;
 
