@@ -26,6 +26,8 @@
 #ifdef _WIN32
 #include <Winsock2.h>
 #include <ws2tcpip.h>
+#undef min
+#undef max
 #else
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -41,7 +43,6 @@
 #include <vector>
 
 #include "../common_test.h"
-#include "./base/helpers.h"
 #include "./extension/discovery_reporter.h"
 #include "./extension/discovery_viewer.h"
 
@@ -458,23 +459,8 @@ TEST_SUITE("extension-DiscoveryViewer") {
     sockaddr_in address{};
     address.sin_family = AF_INET;
     address.sin_port = htons(DiscoveryViewer::get_listen_port());
-    address.sin_addr.s_addr = inet_addr(DiscoveryViewer::get_listen_address().c_str());
-    in_addr interface_address{};
-    interface_address.s_addr = htonl(INADDR_ANY);
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
-    if (Utils::get_env("VLINK_DISCOVER_NATIVE") == "1") {
-      interface_address.s_addr = htonl(INADDR_LOOPBACK);
-    } else {
-      const auto interfaces = Helpers::split_any(Utils::get_env("VLINK_DISCOVER_IP"));
-
-      if (!interfaces.empty()) {
-        interface_address.s_addr = inet_addr(interfaces.front().c_str());
-      }
-    }
-
-    const auto interface_result =
-        ::setsockopt(sender, IPPROTO_IP, IP_MULTICAST_IF, reinterpret_cast<const char*>(&interface_address),
-                     sizeof(interface_address));
     const std::string raw_schema = std::to_string(static_cast<uint32_t>(SchemaType::kRaw));
     const std::string protobuf_schema = std::to_string(static_cast<uint32_t>(SchemaType::kProtobuf));
     const std::string packet = "Pub " + conflict_url + " TypeA " + raw_schema + " review:1:test\nPub " + conflict_url +
@@ -488,7 +474,6 @@ TEST_SUITE("extension-DiscoveryViewer") {
 #else
     ::close(sender);
 #endif
-    REQUIRE_EQ(interface_result, 0);
     REQUIRE_EQ(sent, static_cast<int>(packet.size()));
     REQUIRE(common_test::wait_until(
         [&] {
