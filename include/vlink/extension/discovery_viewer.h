@@ -109,20 +109,24 @@ class VLINK_EXPORT DiscoveryViewer : public MessageLoop {
   /**
    * @struct Process
    * @brief Identity of a process that hosts at least one endpoint for a URL.
+   *
+   * @details
+   * Announcements with the same role, host, PID and name share one address list.
+   * Each source address expires independently when its announcements stop.
    */
   struct VLINK_EXPORT Process final {
-    uint32_t type{0};     ///< Bitmask of @c ImplType kinds advertised by this process.
-    std::string host;     ///< Host name of the process.
-    uint32_t pid{0};      ///< Process identifier.
-    std::string name;     ///< Process or application name.
-    std::string ip;       ///< IP address of the host.
-    double profiler{-1};  ///< Most recent CPU usage sample (-1 when unavailable).
+    uint32_t type{0};                  ///< Bitmask of @c ImplType kinds advertised by this process.
+    std::string host;                  ///< Host name of the process.
+    uint32_t pid{0};                   ///< Process identifier.
+    std::string name;                  ///< Process or application name.
+    std::vector<std::string> ip_list;  ///< Live discovery source IPv4 addresses, unique and sorted numerically.
+    double profiler{-1};               ///< CPU usage sample from one live address (-1 when unavailable).
 
     /**
      * @brief Defines a stable ordering between two process descriptors.
      *
      * @details
-     * Sort key is type, then host, IP, name and finally PID.
+     * Sort key is type, then host, name, PID and finally the address list.
      *
      * @param target Right-hand operand.
      * @return @c true when @c *this should appear before @p target.
@@ -286,9 +290,9 @@ class VLINK_EXPORT DiscoveryViewer : public MessageLoop {
 
   void process_offline(std::string_view hostname, uint32_t pid, std::string_view process_name);
 
-  void sort_url() const;
+  void sort_url(std::vector<std::string>& warnings) const;
 
-  void refresh_list() const;
+  void refresh_list(std::vector<std::string>& warnings) const;
 
   void report_list();
 

@@ -993,7 +993,7 @@ export VLINK_LOG_LEVEL=3
 | `VLINK_MEMORY_LEVEL` | 数字 | 内存池档位（`0`..`9`，默认 `3`）：`0` 为直通（每次直接向系统申请释放），`1`..`9` 选择内置金字塔，数值越大各档配额越大：预分配时常驻内存更多；开启 `VLINK_MEMORY_LAZY_SCALE` 后懒增长单次安装的 chunk 也随配额放大。仅在调用 `Bytes::init_memory_pool()` 构建全局内存池后生效 |
 | `VLINK_MEMORY_PREALLOC` | `1`/`0` | `1` 时构建全局内存池时按各档 `blocks_per_chunk` 配额预分配满（尽力而为），消除热路径首次分配延迟；否则按需懒加载 |
 | `VLINK_MEMORY_BATCH_SIZE` | 正整数 | 覆盖 `MemoryPool::get_default_config()` 的 `batch_size`（默认 `16`），限制空 free-list shard 一次从其他 shard 转移的节点数；仅影响默认/全局配置，显式传入的 `MemoryPool::Config` 不受影响；首次读取后固定 |
-| `VLINK_MEMORY_LAZY_SCALE` | `1`/`0` | `1` 时懒增长单次安装的 chunk 上限取该档配额的 1/16（不低于 32 KiB 或一个块），档位越高上游分配越少、首次触达突发越大；默认关闭，上限固定 64 KiB。仅影响默认/全局配置，显式 `Config` 用 `lazy_scale` 字段 |
+| `VLINK_MEMORY_LAZY_SCALE` | `1`/`0` | `1` 时懒增长单次安装的 chunk 上限取该档配额的 1/16（不低于 32 KiB 或一个块），档位越高上游分配越少、首次触达突发越大；默认关闭，上限为 64 KiB，单块更大时至少安装一块。仅影响默认/全局配置，显式 `Config` 用 `lazy_scale` 字段 |
 
 ```bash
 # 显式预加载

@@ -940,12 +940,12 @@ TEST_SUITE("base-MessageLoop") {
 
   TEST_CASE("blocking post from the loop thread is rejected instead of deadlocking") {
     auto check_type = [](MessageLoop::Type type) {
+      std::promise<std::pair<bool, bool>> result;
+      auto future = result.get_future();
+
       SmallQueueLoop loop(type);
       loop.set_strategy(MessageLoop::kBlockStrategy);
       loop.async_run();
-
-      std::promise<std::pair<bool, bool>> result;
-      auto future = result.get_future();
 
       loop.post_task([&loop, &result] {
         const bool first = loop.post_task([] {});

@@ -177,17 +177,17 @@ echo "Process count: $?"
 | `-n` / `--native` | 本地模式，仅发现本机节点 |
 | `-m` / `--name <name>` | 按进程名过滤 |
 | `-p` / `--pid <pid>` | 按进程 ID 过滤 |
-| `-c` / `--check_process_count` | 仅以退出码返回进程数，不输出文本（用于脚本判定） |
+| `-c` / `--check_process_count` | 仅以退出码返回进程数，不输出文本；按主机名、PID、进程名计数，多地址只计一次 |
 
 输出示例：
 
 ```
-camera_node (pid: 1001, host: myhost, ip: 192.168.1.10)
+camera_node (pid: 1001, host: myhost, IP: [192.168.1.10, 192.168.2.10])
   Publisher:
     dds://camera/image       CameraFrame
     dds://camera/pointcloud  PointCloud
 
-detection_node (pid: 1002, host: myhost, ip: 192.168.1.10)
+detection_node (pid: 1002, host: myhost, IP: [192.168.1.10])
   Subscriber:
     dds://camera/image       CameraFrame
   Publisher:
@@ -254,6 +254,8 @@ vlink-monitor --plain > monitor_output.txt
 hostname，原有两项仍按 `--black` 决定黑白名单语义。
 
 常用热键：`q` / `Esc` 退出，`Space` 暂停/恢复，`I` 过滤框，`Enter` 跳转检视，`Z` 清除选中行，`L` / `O` / `T` / `E` / `S` / `A` / `Y` / `P` / `C` 切换各显示模式，方向键翻页与移动选中行。
+
+进程面板合并同一主机名、PID、进程名的角色与地址，保持单行 `主机名@IP`，下方显示进程名/PID。多地址只显示按 IPv4 数值升序排列的第一个 IP，末尾加 `+`；单地址不加标记。宽度不足时缩短主机名，保留完整 IP 和标记；完整地址列表可用 `vlink-list` 查看。
 
 行颜色语义：绿色表示持续有数据且统计稳定，黄色表示启动或过渡态，红色表示约 2 秒以上无新数据。
 

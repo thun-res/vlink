@@ -1071,7 +1071,7 @@ void ProxyServer::update_all() {
       out_process.host = process.host;
       out_process.pid = process.pid;
       out_process.name = process.name;
-      out_process.ip = process.ip;
+      out_process.ip_list = process.ip_list;
     }
 
     if ((!(info.type & kPublisher) && !(info.type & kSetter)) ||

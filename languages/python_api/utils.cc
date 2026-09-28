@@ -131,6 +131,7 @@ void bind_utils(nb::module_& m) {
         return vlink::Utils::wait_for_device(path, timeout_ms, poll_ms);
       },
       "path"_a, "timeout_ms"_a, "poll_ms"_a = 50);
+  utils.def("ip_less", &vlink::Utils::ip_less, "lhs"_a, "rhs"_a);
   utils.def("get_all_ipv4_address", &vlink::Utils::get_all_ipv4_address, "filter_available"_a = false);
   utils.def("get_all_ipv6_address", &vlink::Utils::get_all_ipv6_address, "filter_available"_a = false);
   utils.def("get_interface_name_by_ipv4", &vlink::Utils::get_interface_name_by_ipv4, "addr"_a);

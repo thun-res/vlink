@@ -1,6 +1,6 @@
 # 🗒️ 更新日志
 
-## v2.3.0 (2026/09/26)
+## v2.3.0 (2026/09/28)
 
 ### 新增功能
 
@@ -11,6 +11,7 @@
 - **VCAP 块校验开关**：`BagWriter::Config`、TriggerRecorder、Python API 与录制 CLI 可启用 MCAP chunk CRC；默认关闭，VDB 不受影响。
 - **DDS 非阻塞发送**：新增 `VLINK_DDS_NOBLOCK` 与节点属性 `dds.noblock`，支持发送缓冲区满时丢包而不阻塞。
 - **发现多网卡**：新增 `VLINK_DISCOVER_IP`，DiscoveryReporter 逐地址发送、DiscoveryViewer 逐地址加入发现组播；未设置时收发仍按系统路由走。
+- **发现进程地址**：`ip` 改为 `ip_list`，合并多网卡重复进程，地址按数值排序、独立过期；同步 CLI、Viewer 及绑定，API/ABI 与 Proxy 协议不兼容旧版。
 - **发现域隔离**：新增 `VLINK_DISCOVER_DOMAIN`（0–255，默认 0），发现端口取 `51600 + domain`。
 - **日志 PID 隔离**：新增 `VLINK_LOG_PID_ENABLE`，置 `1` 时默认日志目录追加 `<PID>` 子目录，同名多实例不再共享轮转文件集；默认关闭，目录布局与旧版本一致。
 

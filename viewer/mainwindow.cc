@@ -308,6 +308,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
   QStringList process_headers = {
       tr("PID"),
       tr("NAME"),
+      tr("HOST"),
+      tr("IP"),
   };
 
   local_database_ = QSqlDatabase::addDatabase("QSQLITE");
@@ -347,12 +349,16 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
   ui->treeWidget_process1->setHeaderLabels(process_headers);
   ui->treeWidget_process1->setColumnWidth(0, 80);
   ui->treeWidget_process1->setColumnWidth(1, 160);
+  ui->treeWidget_process1->setColumnWidth(2, 120);
+  ui->treeWidget_process1->setColumnWidth(3, 220);
 
   ui->treeWidget_process2->setRootIsDecorated(false);
   ui->treeWidget_process2->setContextMenuPolicy(Qt::CustomContextMenu);
   ui->treeWidget_process2->setHeaderLabels(process_headers);
   ui->treeWidget_process2->setColumnWidth(0, 80);
   ui->treeWidget_process2->setColumnWidth(1, 160);
+  ui->treeWidget_process2->setColumnWidth(2, 120);
+  ui->treeWidget_process2->setColumnWidth(3, 220);
 
   ui->tableView_data->setModel(new CustomSqlQueryModel(this));
   ui->tableView_data->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -2910,7 +2916,9 @@ void MainWindow::update_process_widget() {
     for (size_t j = 0; j < process_list.size(); ++j) {
       if (process_list.at(j).type == vlink::kPublisher || process_list.at(j).type & vlink::kServer ||
           process_list.at(j).type & vlink::kSetter) {
-        if (p->text(0).toUInt() == process_list.at(j).pid) {
+        if (p->text(0).toUInt() == process_list.at(j).pid &&
+            p->text(1) == QString::fromUtf8(process_list.at(j).name.c_str()) &&
+            p->text(2) == QString::fromUtf8(process_list.at(j).host.c_str())) {
           find = true;
           break;
         }
@@ -2931,7 +2939,9 @@ void MainWindow::update_process_widget() {
     for (size_t j = 0; j < process_list.size(); ++j) {
       if (process_list.at(j).type == vlink::kSubscriber || process_list.at(j).type & vlink::kClient ||
           process_list.at(j).type & vlink::kGetter) {
-        if (p->text(0).toUInt() == process_list.at(j).pid) {
+        if (p->text(0).toUInt() == process_list.at(j).pid &&
+            p->text(1) == QString::fromUtf8(process_list.at(j).name.c_str()) &&
+            p->text(2) == QString::fromUtf8(process_list.at(j).host.c_str())) {
           find = true;
           break;
         }
@@ -2945,13 +2955,16 @@ void MainWindow::update_process_widget() {
     }
   }
 
+  std::map<QTreeWidgetItem*, std::vector<const std::string*>> ip_list_map;
+
   for (const auto& process : process_list) {
     QTreeWidgetItem* item = nullptr;
 
     if (process.type == vlink::kPublisher || process.type & vlink::kServer || process.type & vlink::kSetter) {
       for (int i = 0; i < ui->treeWidget_process1->topLevelItemCount(); i++) {
         auto* p = ui->treeWidget_process1->topLevelItem(i);
-        if (p->text(0).toUInt() == process.pid) {
+        if (p->text(0).toUInt() == process.pid && p->text(1) == QString::fromUtf8(process.name.c_str()) &&
+            p->text(2) == QString::fromUtf8(process.host.c_str())) {
           item = p;
           break;
         }
@@ -2964,7 +2977,8 @@ void MainWindow::update_process_widget() {
     } else {
       for (int i = 0; i < ui->treeWidget_process2->topLevelItemCount(); i++) {
         auto* p = ui->treeWidget_process2->topLevelItem(i);
-        if (p->text(0).toUInt() == process.pid) {
+        if (p->text(0).toUInt() == process.pid && p->text(1) == QString::fromUtf8(process.name.c_str()) &&
+            p->text(2) == QString::fromUtf8(process.host.c_str())) {
           item = p;
           break;
         }
@@ -2980,13 +2994,37 @@ void MainWindow::update_process_widget() {
 
     item->setText(0, QString::number(process.pid));
     item->setText(1, QString::fromUtf8(process.name.c_str()));
+    item->setText(2, QString::fromUtf8(process.host.c_str()));
 
-    QString tip_str = tr("Host: %1\nPID: %2\nName: %3\nIP: %4")
-                          .arg(QString::fromUtf8(process.host.c_str()), QString::number(process.pid),
-                               QString::fromUtf8(process.name.c_str()), QString::fromStdString(process.ip));
+    auto& addresses = ip_list_map[item];
+
+    for (const auto& ip : process.ip_list) {
+      addresses.emplace_back(&ip);
+    }
+  }
+
+  for (auto& [item, addresses] : ip_list_map) {
+    std::sort(addresses.begin(), addresses.end(),
+              [](const auto* lhs, const auto* rhs) { return vlink::Utils::ip_less(*lhs, *rhs); });
+    addresses.erase(
+        std::unique(addresses.begin(), addresses.end(), [](const auto* lhs, const auto* rhs) { return *lhs == *rhs; }),
+        addresses.end());
+
+    QStringList ip_list;
+
+    for (const auto* ip : addresses) {
+      ip_list.append(QString::fromStdString(*ip));
+    }
+
+    item->setText(3, ip_list.join(", "));
+
+    QString tip_str =
+        tr("Host: %1\nPID: %2\nName: %3\nIP:\n%4").arg(item->text(2), item->text(0), item->text(1), ip_list.join("\n"));
 
     item->setData(0, Qt::ToolTipRole, tip_str);
     item->setData(1, Qt::ToolTipRole, tip_str);
+    item->setData(2, Qt::ToolTipRole, tip_str);
+    item->setData(3, Qt::ToolTipRole, tip_str);
   }
 
   ui->treeWidget_process1->setEnabled(true);

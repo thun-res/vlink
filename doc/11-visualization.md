@@ -70,6 +70,8 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 | Native Mode | 将 Viewer 的 DDS 节点绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
 | Reliable / Tcp / Direct Mode | 可靠传输 / 强制 TCP / 直连 |
 
+话题的进程列表显示 PID、名称、主机和 IP 列表，同一侧列表按主机、PID 和名称合并进程地址，按 IP 数值排序去重。悬停可逐行查看完整地址，右键 IP 列可复制全部地址；不同主机的同 PID 进程分别显示。
+
 **菜单加速键概览**　菜单项均带 `Alt+<字母>` 加速键（菜单文字中带下划线的字母），常用项如下：
 
 | 键 | 功能 | 键 | 功能 |

@@ -121,21 +121,22 @@ int list_process(const std::string& name, uint32_t pid, bool check_process_count
     bool has_subscriber{false};
     bool has_setter{false};
     bool has_getter{false};
+    std::set<std::string, decltype(&vlink::Utils::ip_less)> ip_list{vlink::Utils::ip_less};
   };
 
-  std::set<std::tuple<std::string, std::string, std::string, uint32_t>> process_set;
+  std::set<std::tuple<std::string, std::string, uint32_t>> process_set;
 
-  std::map<std::tuple<std::string, std::string, std::string, uint32_t>,
-           std::vector<std::tuple<uint32_t, std::string, std::string>>>
+  std::map<std::tuple<std::string, std::string, uint32_t>, std::vector<std::tuple<uint32_t, std::string, std::string>>>
       process_list_map;
 
-  std::map<std::tuple<std::string, std::string, std::string, uint32_t>, ProcessExtOption> process_option_map;
+  std::map<std::tuple<std::string, std::string, uint32_t>, ProcessExtOption> process_option_map;
 
   auto emplace_function = [&process_list_map, &process_option_map](const auto& info, const auto& process) {
-    auto p = std::make_tuple(process.host, process.ip, process.name, process.pid);
+    auto p = std::make_tuple(process.host, process.name, process.pid);
 
     auto& msg_list = process_list_map[p];
     auto& option = process_option_map[p];
+    option.ip_list.insert(process.ip_list.begin(), process.ip_list.end());
 
     msg_list.emplace_back(process.type, info.url, info.ser_type);
 
@@ -175,7 +176,7 @@ int list_process(const std::string& name, uint32_t pid, bool check_process_count
           continue;
         }
 
-        process_set.emplace(process.host, process.ip, process.name, process.pid);
+        process_set.emplace(process.host, process.name, process.pid);
       } else {
         if (name.empty() && pid == 0) {
           emplace_function(info, process);
@@ -197,7 +198,7 @@ int list_process(const std::string& name, uint32_t pid, bool check_process_count
   }
 
   for (const auto& [process_info, msg_list] : process_list_map) {
-    const auto& [host_name, ip, process_name, process_pid] = process_info;
+    const auto& [host_name, process_name, process_pid] = process_info;
 
     const auto& option = process_option_map[process_info];
 
@@ -209,9 +210,17 @@ int list_process(const std::string& name, uint32_t pid, bool check_process_count
     std::cout << "host: ";
     std::cout << host_name;
     std::cout << ", ";
-    std::cout << "ip: ";
-    std::cout << ip;
-    std::cout << ")";
+    std::cout << "IP: [";
+
+    for (auto iter = option.ip_list.begin(); iter != option.ip_list.end(); ++iter) {
+      if (iter != option.ip_list.begin()) {
+        std::cout << ", ";
+      }
+
+      std::cout << *iter;
+    }
+
+    std::cout << "])";
     std::cout << std::endl;
 
 #ifdef __APPLE__

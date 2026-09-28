@@ -197,6 +197,15 @@ VLINK_EXPORT bool unset_env(const std::string& key) noexcept;
 [[nodiscard]] VLINK_EXPORT bool is_ignored_iface_name(const char* name) noexcept;
 
 /**
+ * @brief Compares IPv4 or IPv6 literals numerically, with IPv4 ordered before IPv6.
+ *
+ * @param lhs Valid IP literal without a scope ID or prefix length.
+ * @param rhs Valid IP literal without a scope ID or prefix length.
+ * @return Whether @p lhs precedes @p rhs; equivalent IPv6 spellings compare equal.
+ */
+[[nodiscard]] VLINK_EXPORT bool ip_less(const std::string& lhs, const std::string& rhs) noexcept;
+
+/**
  * @brief Returns every IPv4 address bound to a local network interface.
  *
  * @param filter_available  When @c true, only includes interfaces in the UP state.  Default: @c false.

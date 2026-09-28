@@ -207,6 +207,12 @@ def test_thread_pool():
 
 def test_utils():
     """Test utility functions."""
+    assert _vlink.utils.ip_less("192.168.1.2", "192.168.1.10")
+    assert not _vlink.utils.ip_less("192.168.1.10", "192.168.1.2")
+    assert _vlink.utils.ip_less("2001:db8::2", "2001:db8::10")
+    assert _vlink.utils.ip_less("255.255.255.255", "::")
+    assert not _vlink.utils.ip_less("2001:db8::1", "2001:0db8:0:0:0:0:0:0001")
+
     assert _vlink.utils.get_host_name()
     assert _vlink.utils.get_pid() > 0
     start_time = _vlink.utils.get_process_start_time(_vlink.utils.get_pid())

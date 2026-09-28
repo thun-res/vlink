@@ -25,9 +25,7 @@
 
 #include <doctest/doctest.h>
 
-#include <algorithm>
 #include <cstdint>
-#include <string>
 #include <vector>
 
 #include "../common_test.h"
@@ -231,7 +229,7 @@ TEST_SUITE("extension-DiscoveryViewer") {
     CHECK_EQ(p.profiler, doctest::Approx(-1.0));
     CHECK(p.host.empty());
     CHECK(p.name.empty());
-    CHECK(p.ip.empty());
+    CHECK(p.ip_list.empty());
   }
 
   TEST_CASE("process operator< orders by host then by pid") {
@@ -265,19 +263,20 @@ TEST_SUITE("extension-DiscoveryViewer") {
 
     DiscoveryViewer::Process by_ip_a;
     by_ip_a.host = "same";
-    by_ip_a.ip = "10.0.0.1";
+    by_ip_a.ip_list = {"10.0.0.2"};
     DiscoveryViewer::Process by_ip_b;
     by_ip_b.host = "same";
-    by_ip_b.ip = "10.0.0.2";
+    by_ip_b.ip_list = {"10.0.0.10"};
     CHECK(by_ip_a < by_ip_b);
+    CHECK_FALSE(by_ip_b < by_ip_a);
 
     DiscoveryViewer::Process by_name_a;
     by_name_a.host = "same";
-    by_name_a.ip = "same";
+    by_name_a.ip_list = {"10.0.0.2"};
     by_name_a.name = "alpha";
     DiscoveryViewer::Process by_name_b;
     by_name_b.host = "same";
-    by_name_b.ip = "same";
+    by_name_b.ip_list = {"10.0.0.1"};
     by_name_b.name = "beta";
     CHECK(by_name_a < by_name_b);
 
@@ -286,6 +285,7 @@ TEST_SUITE("extension-DiscoveryViewer") {
     by_pid_a.pid = 1;
     DiscoveryViewer::Process by_pid_b = by_pid_a;
     by_pid_b.pid = 2;
+    by_pid_b.ip_list = {"10.0.0.1"};
     CHECK(by_pid_a < by_pid_b);
 
     CHECK_FALSE(by_pid_a < by_pid_a);

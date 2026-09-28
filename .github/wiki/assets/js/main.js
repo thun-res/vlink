@@ -615,7 +615,7 @@ int main() {
       name: 'chassis_gateway',
       pid: 4302,
       host: 'xavier',
-      ip: '192.168.1.10',
+      ip_list: ['192.168.1.10', '192.168.2.10'],
       publisher: [['shm://vehicle/chassis', 'pb.VehicleChassis'], ['shm://vehicle/imu', 'pb.VehicleImu']],
       setter: [['shm://vehicle/brake', 'pb.BrakeCmd'], ['shm://vehicle/steering', 'pb.SteeringCmd']],
     },
@@ -623,7 +623,7 @@ int main() {
       name: 'control_node',
       pid: 4380,
       host: 'xavier',
-      ip: '192.168.1.10',
+      ip_list: ['192.168.1.10'],
       publisher: [['dds://control/feedback', 'pb.ControlFeedback']],
       subscriber: [['dds://decision/command', 'pb.DecisionCommand']],
       setter: [['shm://vehicle/brake', 'pb.BrakeCmd'], ['shm://vehicle/throttle', 'pb.ThrottleCmd']],
@@ -632,7 +632,7 @@ int main() {
       name: 'localization_node',
       pid: 4318,
       host: 'xavier',
-      ip: '192.168.1.10',
+      ip_list: ['192.168.1.10'],
       publisher: [['dds://localization/pose', 'pb.LocalizationPose']],
       subscriber: [['shm://vehicle/imu', 'pb.VehicleImu'], ['shm://vehicle/odometer', 'pb.VehicleOdometer']],
     },
@@ -640,7 +640,7 @@ int main() {
       name: 'map_service',
       pid: 4326,
       host: 'xavier',
-      ip: '192.168.1.10',
+      ip_list: ['192.168.1.10'],
       server: [['dds://map/service', 'pb.MapQueryReq|pb.MapQueryResp']],
       getter: [['dds://config/active_route', 'pb.RouteConfig']],
     },
@@ -648,7 +648,7 @@ int main() {
       name: 'perception_fusion',
       pid: 4361,
       host: 'xavier',
-      ip: '192.168.1.10',
+      ip_list: ['192.168.1.10'],
       publisher: [['dds://fusion/tracks', 'pb.FusionTracks']],
       subscriber: [['shm://camera/front', 'raw.CameraFrame'], ['shm://lidar/points/front', 'zerocopy.PointCloud']],
     },
@@ -656,7 +656,7 @@ int main() {
       name: 'planner_node',
       pid: 4348,
       host: 'xavier',
-      ip: '192.168.1.10',
+      ip_list: ['192.168.1.10'],
       client: [['dds://map/service', 'pb.MapQueryReq|pb.MapQueryResp']],
       publisher: [['dds://decision/path', 'pb.PlanningPath']],
       subscriber: [['dds://fusion/tracks', 'pb.FusionTracks'], ['dds://localization/pose', 'pb.LocalizationPose']],
@@ -1396,7 +1396,7 @@ int main() {
     ), 10);
     const lines = [prompt(cmd), ''];
     listProcesses.forEach((process) => {
-      lines.push(`${process.name} (pid: <span class="num">${process.pid}</span>, host: ${process.host}, ip: <span class="url">${process.ip}</span>)`);
+      lines.push(`${process.name} (pid: <span class="num">${process.pid}</span>, host: ${process.host}, IP: [<span class="url">${process.ip_list.join(', ')}</span>])`);
       [['server', 'Server'], ['client', 'Client'], ['publisher', 'Publisher'], ['subscriber', 'Subscriber'], ['setter', 'Setter'], ['getter', 'Getter']].forEach(([key, label]) => {
         if (!(process[key] || []).length) return;
         lines.push(`  ${label}:`);
