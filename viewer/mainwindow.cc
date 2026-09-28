@@ -308,8 +308,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
   QStringList process_headers = {
       tr("PID"),
       tr("NAME"),
-      tr("HOST"),
-      tr("IP"),
   };
 
   local_database_ = QSqlDatabase::addDatabase("QSQLITE");
@@ -349,16 +347,12 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
   ui->treeWidget_process1->setHeaderLabels(process_headers);
   ui->treeWidget_process1->setColumnWidth(0, 80);
   ui->treeWidget_process1->setColumnWidth(1, 160);
-  ui->treeWidget_process1->setColumnWidth(2, 120);
-  ui->treeWidget_process1->setColumnWidth(3, 220);
 
   ui->treeWidget_process2->setRootIsDecorated(false);
   ui->treeWidget_process2->setContextMenuPolicy(Qt::CustomContextMenu);
   ui->treeWidget_process2->setHeaderLabels(process_headers);
   ui->treeWidget_process2->setColumnWidth(0, 80);
   ui->treeWidget_process2->setColumnWidth(1, 160);
-  ui->treeWidget_process2->setColumnWidth(2, 120);
-  ui->treeWidget_process2->setColumnWidth(3, 220);
 
   ui->tableView_data->setModel(new CustomSqlQueryModel(this));
   ui->tableView_data->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -2918,7 +2912,7 @@ void MainWindow::update_process_widget() {
           process_list.at(j).type & vlink::kSetter) {
         if (p->text(0).toUInt() == process_list.at(j).pid &&
             p->text(1) == QString::fromUtf8(process_list.at(j).name.c_str()) &&
-            p->text(2) == QString::fromUtf8(process_list.at(j).host.c_str())) {
+            p->data(0, Qt::UserRole).toString() == QString::fromUtf8(process_list.at(j).host.c_str())) {
           find = true;
           break;
         }
@@ -2941,7 +2935,7 @@ void MainWindow::update_process_widget() {
           process_list.at(j).type & vlink::kGetter) {
         if (p->text(0).toUInt() == process_list.at(j).pid &&
             p->text(1) == QString::fromUtf8(process_list.at(j).name.c_str()) &&
-            p->text(2) == QString::fromUtf8(process_list.at(j).host.c_str())) {
+            p->data(0, Qt::UserRole).toString() == QString::fromUtf8(process_list.at(j).host.c_str())) {
           find = true;
           break;
         }
@@ -2964,7 +2958,7 @@ void MainWindow::update_process_widget() {
       for (int i = 0; i < ui->treeWidget_process1->topLevelItemCount(); i++) {
         auto* p = ui->treeWidget_process1->topLevelItem(i);
         if (p->text(0).toUInt() == process.pid && p->text(1) == QString::fromUtf8(process.name.c_str()) &&
-            p->text(2) == QString::fromUtf8(process.host.c_str())) {
+            p->data(0, Qt::UserRole).toString() == QString::fromUtf8(process.host.c_str())) {
           item = p;
           break;
         }
@@ -2978,7 +2972,7 @@ void MainWindow::update_process_widget() {
       for (int i = 0; i < ui->treeWidget_process2->topLevelItemCount(); i++) {
         auto* p = ui->treeWidget_process2->topLevelItem(i);
         if (p->text(0).toUInt() == process.pid && p->text(1) == QString::fromUtf8(process.name.c_str()) &&
-            p->text(2) == QString::fromUtf8(process.host.c_str())) {
+            p->data(0, Qt::UserRole).toString() == QString::fromUtf8(process.host.c_str())) {
           item = p;
           break;
         }
@@ -2994,7 +2988,7 @@ void MainWindow::update_process_widget() {
 
     item->setText(0, QString::number(process.pid));
     item->setText(1, QString::fromUtf8(process.name.c_str()));
-    item->setText(2, QString::fromUtf8(process.host.c_str()));
+    item->setData(0, Qt::UserRole, QString::fromUtf8(process.host.c_str()));
 
     auto& addresses = ip_list_map[item];
 
@@ -3016,15 +3010,12 @@ void MainWindow::update_process_widget() {
       ip_list.append(QString::fromStdString(*ip));
     }
 
-    item->setText(3, ip_list.join(", "));
-
     QString tip_str =
-        tr("Host: %1\nPID: %2\nName: %3\nIP:\n%4").arg(item->text(2), item->text(0), item->text(1), ip_list.join("\n"));
+        (ip_list.size() > 1 ? tr("Host: %1\nPID: %2\nName: %3\nIP:\n%4") : tr("Host: %1\nPID: %2\nName: %3\nIP: %4"))
+            .arg(item->data(0, Qt::UserRole).toString(), item->text(0), item->text(1), ip_list.join("\n"));
 
     item->setData(0, Qt::ToolTipRole, tip_str);
     item->setData(1, Qt::ToolTipRole, tip_str);
-    item->setData(2, Qt::ToolTipRole, tip_str);
-    item->setData(3, Qt::ToolTipRole, tip_str);
   }
 
   ui->treeWidget_process1->setEnabled(true);
