@@ -324,7 +324,7 @@ class VLinkConan(ConanFile):
             self.cpp_info.components["proxy_api"].set_property("cmake_target_aliases", ["vlink-proxy_api"])
 
             self.cpp_info.components["proxy_server"].libs = ["vlink-proxy_server"]
-            self.cpp_info.components["proxy_server"].requires = ["vlink", "dds", "ddsc", "shm", "intra"]
+            self.cpp_info.components["proxy_server"].requires = ["vlink", "dds", "ddsc", "shm", "intra", "proxy_api"]
             self.cpp_info.components["proxy_server"].defines = ["VLINK_ENABLE_PROXY"]
             if not self.options.shared:
                 self.cpp_info.components["proxy_server"].defines.append("VLINK_PROXY_SERVER_LIBRARY_STATIC")

@@ -230,7 +230,7 @@ inline void serialize(SerializerT& s, ProxyAPI::Info& msg) {
 template <typename SerializerT>
 inline void serialize(SerializerT& s, ProxyAPI::Control& msg) {
   s(msg.mode, bitsery::maxSize(msg.url_meta_list, proxy::kMaxTopicListSize), msg.filter_by_process,
-    bitsery::maxSize(msg.filter_str, proxy::kMaxFilterSize), msg.filter_type);
+    bitsery::maxSize(msg.filter_str, proxy::kMaxFilterSize), msg.filter_type, msg.bridge);
 }
 
 namespace proxy {

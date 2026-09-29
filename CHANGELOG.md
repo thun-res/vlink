@@ -4,8 +4,9 @@
 
 ### 新增功能
 
+- **Proxy 桥接与配置**：支持跨域镜像与下发、URL 过滤及全部启动参数的 JSON 配置；主动采集下发默认关闭，WebViz 本地代理同步支持。
 - **FastBuffer**：新增通用 CPU/GPU 缓冲区、发布池与 CUDA、HIP、hbmem、`shm` 提供者。
-- **Python 接口补齐**：补齐发现消息循环、Bag 插件、点云与对象数组深拷贝、日志回调重置接口。
+- **Python 接口补齐**：补齐 ProxyAPI/ProxyServer（含桥接配置）、发现消息循环、Bag 插件、点云与对象数组深拷贝、日志回调重置接口。
 - **Bag 拼包**：新增 `vlink-bag merge`，支持 `clone` 的选项、进度显示和覆盖确认。
 - **Bag 分包轮转**：`BagWriter::Config` 与 `vlink-bag record` 新增 `max_split_count`，超限时删除最旧分包。
 - **VCAP 块校验开关**：`BagWriter::Config`、TriggerRecorder、Python API 与录制 CLI 可启用 MCAP chunk CRC；默认关闭，VDB 不受影响。

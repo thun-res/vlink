@@ -353,7 +353,7 @@ WebViz 经代理桥接接入 VLink 网络，`vlink-foxglove` 与 `vlink-rerun` �
 | 模式（`--proxy_interface`） | 行为 | 适用场景 |
 | --- | --- | --- |
 | `proxy_api`（默认） | 作为客户端连接独立运行的 ProxyServer | 多机部署、复用统一代理控制面 |
-| `proxy_server` | 进程内直接发现、订阅、发布 VLink topic，省一次中转 | 单机调试、车端本地可视化、更低时延 |
+| `proxy_server` | 本地发现、订阅、发布；配置 bridge 时通过核心 ProxyServer 跨域转发 | 单机调试、车端本地可视化、更低时延 |
 
 | 参数 | 说明 | 默认值 |
 | --- | --- | --- |
@@ -384,6 +384,15 @@ vlink-rerun --proxy_interface proxy_server                              # 进程
 ```
 
 约束：`proxy_server` 模式仅支持 `--proxy_role=controller`；`--proxy_reliable` / `--proxy_direct` 仅 `proxy_api` 模式有效；`--proxy_domain_id` 取值范围 `[0, 255]`；`--proxy_iox_strategy` 取值 `1`/`2`/`3`/`4`。
+
+`proxy_server` 模式也支持 `--bridge_domain_id`、`--bridge_security_key`、`--bridge_allow_ip`、`--bridge_peer_ip`、`--bridge_dds_impl`、`--bridge_reliable`、`--bridge_enable_tcp` 、`--bridge_filter` 和 `--bridge_subscribe`，含义与 [proxy 桥接参数](12-observability.md) 一致。JSON 对应键位于 `proxy.server`，显式命令行优先；默认不启用，过滤默认 `shm://,shm2://,intra://`，主动采集下发 `bridge_subscribe` 默认关闭。
+
+```bash
+vlink-foxglove --proxy_interface proxy_server --proxy_domain_id 0 --bridge_domain_id 10
+vlink-rerun --proxy_interface proxy_server --proxy_domain_id 0 --bridge_domain_id 10
+```
+
+启用后，WebViz 内嵌核心 ProxyServer，并通过本地 ProxyAPI 接入，因此增加一次本地 DDS 转发。bridge 以 Controller 控制远端域，保留源 URL；Foxglove 发布消息时，仅向已发现对应 Subscriber 的远端通道转发。两个域必须不同，不能同时使用 `proxy_direct`。现有配置文件可在 `proxy.server` 中加入 `"bridge_domain_id": 10` 启用。
 
 握手、token 校验、断线自愈与转发策略由代理层统一处理，WebViz 一侧仅需选模式、按需配密钥。代理机制见 [代理监控与服务发现](12-observability.md)。
 

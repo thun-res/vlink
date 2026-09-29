@@ -32,6 +32,7 @@
 #include <vlink/base/timer.h>
 #include <vlink/base/utils.h>
 #include <vlink/extension/discovery_viewer.h>
+#include <vlink/external/proxy_server.h>
 #include <vlink/impl/url.h>
 #include <vlink/publisher.h>
 #include <vlink/subscriber.h>
@@ -73,6 +74,28 @@ class ProxyApiBridge final : public ProxyBridge {
  public:
   ProxyApiBridge(const Config& config, MessageLoop* data_callback_loop)
       : ProxyBridge(config, data_callback_loop), config_(config) {
+    if (config_.server.bridge) {
+      ProxyServer::Config server_config;
+      server_config.domain_id = config_.transport.domain_id;
+      server_config.dds_impl = config_.transport.dds_impl;
+      server_config.native_mode = config_.transport.native;
+      server_config.enable_tcp = config_.transport.enable_tcp;
+      server_config.bind_ip = config_.transport.bind_ip;
+      server_config.peer_ip = config_.transport.peer_ip;
+      server_config.buf_size = config_.transport.buf_size;
+      server_config.mtu_size = config_.transport.mtu_size;
+      server_config.security_key = config_.api.security_key;
+      server_config.max_packet_size = config_.server.max_packet_size;
+      server_config.use_iox = config_.server.use_iox;
+      server_config.iox_config = config_.server.iox_config;
+      server_config.iox_strategy = config_.server.iox_strategy;
+      server_config.iox_monitoring = config_.server.iox_monitoring;
+      server_config.bridge = config_.server.bridge;
+      server_config.bridge_filter = config_.server.bridge_filter;
+      server_config.bridge_subscribe = config_.server.bridge_subscribe;
+      proxy_server_ = std::make_unique<ProxyServer>(server_config);
+    }
+
     ProxyAPI::Config proxy_api_config;
     proxy_api_config.role = config_.transport.role;
     proxy_api_config.domain_id = config_.transport.domain_id;
@@ -92,12 +115,23 @@ class ProxyApiBridge final : public ProxyBridge {
     proxy_api_->register_data_callback([this](const ProxyAPI::Data& data) { dispatch_data_callback(data); });
   }
 
+  ~ProxyApiBridge() override { stop(); }
+
   bool start() override {
     if VUNLIKELY (started_.exchange(true)) {
       return true;
     }
 
-    proxy_api_->async_run();
+    if VUNLIKELY (proxy_server_ && !proxy_server_->async_run()) {
+      started_.store(false, std::memory_order_relaxed);
+      return false;
+    }
+
+    if VUNLIKELY (!proxy_api_->async_run()) {
+      stop();
+      return false;
+    }
+
     return true;
   }
 
@@ -108,6 +142,11 @@ class ProxyApiBridge final : public ProxyBridge {
 
     proxy_api_->quit(true);
     proxy_api_->wait_for_quit();
+
+    if (proxy_server_) {
+      proxy_server_->quit(true);
+      proxy_server_->wait_for_quit();
+    }
   }
 
   void register_connect_callback(ConnectCallback&& callback) override {
@@ -146,6 +185,7 @@ class ProxyApiBridge final : public ProxyBridge {
 
  private:
   Config config_;
+  std::unique_ptr<ProxyServer> proxy_server_;
   std::unique_ptr<ProxyAPI> proxy_api_;
   std::atomic_bool started_{false};
 };
@@ -1124,7 +1164,7 @@ ProxyBridge::ProxyBridge(const Config& config, MessageLoop* data_callback_loop) 
 ProxyBridge::~ProxyBridge() = default;
 
 std::unique_ptr<ProxyBridge> ProxyBridge::create(const Config& config, MessageLoop* data_callback_loop) {
-  if VLIKELY (config.interface_mode == ProxyBridge::kProxyApi) {
+  if VLIKELY (config.interface_mode == ProxyBridge::kProxyApi || config.server.bridge) {
     return std::make_unique<ProxyApiBridge>(config, data_callback_loop);
   }
 

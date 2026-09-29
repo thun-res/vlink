@@ -29,6 +29,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -77,6 +78,9 @@ class ProxyBridge {
     bool iox_monitoring{true};
     int iox_strategy{3};
     std::string iox_config;
+    std::optional<ProxyAPI::Config> bridge;
+    std::string bridge_filter{"shm://,shm2://,intra://"};
+    bool bridge_subscribe{false};
   };
 
   struct Config final {

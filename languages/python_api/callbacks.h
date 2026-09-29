@@ -106,6 +106,7 @@ void report_current_exception(const char* context) noexcept;
 void set_python_callback_lifetime_owner(const std::shared_ptr<PythonCallbackActivity>& activity,
                                         std::shared_ptr<GilSafePyObject> owner);
 [[nodiscard]] bool is_in_python_callback(const PythonCallbackActivity* activity) noexcept;
+[[nodiscard]] std::shared_ptr<PythonCallbackActivity> current_python_callback_activity() noexcept;
 [[nodiscard]] bool is_in_python_owner_callback(const void* owner) noexcept;
 [[nodiscard]] bool is_in_python_owner_callback(const void* owner, const void* kind) noexcept;
 void defer_last_python_callback_owner(nb::object& owner,

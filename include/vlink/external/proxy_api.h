@@ -330,6 +330,7 @@ class VLINK_PROXY_API_EXPORT ProxyAPI : public MessageLoop {
     bool filter_by_process{false};       ///< When true, @c filter_str matches process names; otherwise URLs.
     std::string filter_str;              ///< Space- or comma-separated filter keywords (case-insensitive).
     uint32_t filter_type{0};             ///< Type filter: 0=all, 1=pub+sub pair, 2=srv+cli pair, etc.
+    bool bridge{false};                  /**< Hide bridge-injected event publishers from global discovery. */
   };
 
   /**

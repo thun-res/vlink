@@ -29,6 +29,12 @@ try:
 except ImportError:
     _HAS_MEMORY_RESOURCE = False
 
+try:
+    from _vlink_nanobind import ProxyAPI, ProxyServer  # noqa: F401
+    _HAS_PROXY = True
+except ImportError:
+    _HAS_PROXY = False
+
 __backend__ = "nanobind"
 __version__ = VERSION
 __all__ = [
@@ -53,3 +59,5 @@ __all__ = [
 ]
 if _HAS_MEMORY_RESOURCE:
     __all__.insert(__all__.index("MemoryPool") + 1, "MemoryResource")
+if _HAS_PROXY:
+    __all__.extend(["ProxyAPI", "ProxyServer"])

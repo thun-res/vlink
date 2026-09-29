@@ -186,6 +186,7 @@ EditDialog::EditDialog(QWidget* parent) : QDialog(parent), ui(new Ui::EditDialog
         schema_iter != window_->schema_type_map_.end() ? schema_iter->second : vlink::SchemaType::kUnknown;
 
     vlink::ProxyAPI::Control control;
+    control.bridge = false;
     control.mode = vlink::ProxyAPI::kEdit;
     control.url_meta_list.emplace_back(
         vlink::ProxyAPI::UrlMeta{window_->current_url_, window_->current_ser_, schema_type, vlink::kPublisher});

@@ -275,7 +275,7 @@ VLink 原生传输要求通信双方在同一网段或 DDS 域内能直接发现
 
 | 组件 | 形态 | 职责 |
 | ---- | ---- | ---- |
-| `vlink-proxy` | 独立守护进程 | 一条命令拉起服务端，部署最简，同机仅一个实例 |
+| `vlink-proxy` | 独立守护进程 | 同机每个 DDS 域一个实例，可连接另一域的代理转发话题 |
 | `ProxyServer` | C++ 服务端库 | 将服务端嵌入业务进程，省去独立进程 |
 | `ProxyAPI` | C++ 客户端库 | 监控、可视化、录制、注入工具连接服务端的入口 |
 
@@ -468,7 +468,7 @@ api.register_time_callback([](uint64_t sys_time, uint64_t boot_time) {
 
 ## 💻 12.12 代理监控：vlink-proxy 命令行
 
-`vlink-proxy` 是 `ProxyServer` 的独立可执行版本，在终端直接启动，同机仅一个实例。命令行参数与 `ProxyServer::Config` 一一对应：
+`vlink-proxy` 是 `ProxyServer` 的独立可执行版本，同机每个 `domain_id` 仅允许一个实例。命令行参数映射到 `ProxyServer::Config`：
 
 | 选项 | 说明 |
 | ---- | ---- |
@@ -487,6 +487,14 @@ api.register_time_callback([](uint64_t sys_time, uint64_t boot_time) {
 | `-m, --iox_monitoring on\|off` | Iceoryx 监控开关（默认 `on`） |
 | `--dds_impl STRING` | DDS 实现选择（`dds` / `ddsc`） |
 | `--runnable [NAME...]` | 加载 RunablePluginInterface 插件 |
+| `--config PATH` | 所有业务启动参数的 JSON 配置文件；显式命令行参数优先 |
+| `--bridge_domain_id INT` | 启用桥接，连接指定远端 proxy 域（0~255），须与本代理域不同；默认不启用 |
+| `--bridge_security_key STRING` | 远端 proxy 密钥，默认空串 |
+| `--bridge_allow_ip` / `--bridge_peer_ip` | 内部 ProxyAPI 的本地绑定 IP / 远端发现 IP，默认空串 |
+| `--bridge_dds_impl STRING` | 远端 DDS 实现，未指定时使用本代理的 `dds_impl` |
+| `--bridge_reliable` / `--bridge_enable_tcp` | 远端数据通道选项，默认 `false`，须与远端 proxy 一致 |
+| `--bridge_filter STRING` | 源 URL 子串过滤，空格或逗号分隔、忽略大小写、任一匹配即转发；默认 `shm://,shm2://,intra://`，空串不限制 URL |
+| `--bridge_subscribe` | 主动采集本地业务 Publisher，经 ProxyAPI 下发给远端已发现的 Subscriber；默认 `false` |
 
 > SHM 直连（`-g`）需 Iceoryx RouDi 在运行：可由 `-c` / `-l` 让代理内嵌拉起，或外部预先启动 `iox-roudi`。
 
@@ -499,7 +507,28 @@ vlink-proxy -d 1 -k "secure_key_2026"
 
 # TCP + 可靠，绑定本机 IP，放行最大 8 MiB 包
 vlink-proxy -r -t -b 192.168.1.100 -x 8.0
+
+# 从配置文件加载全部参数，仅覆盖远端域和桥接过滤条件
+vlink-proxy --config proxy_config.json --bridge_domain_id 11 --bridge_filter "camera,lidar"
 ```
+
+JSON 键与长参数名一致（去掉 `--`），例如 `domain_id`、`key`、`tcp`、`iox_config`、`runnable`、`bridge_domain_id`。每项按**显式命令行值 → JSON 值 → 内置默认值**取值，`domain_id` 默认仍为 `0`。布尔参数使用 JSON 布尔值，`runnable` 使用字符串数组，`iox_monitoring` 使用 `"on"` / `"off"`。显式空字符串、空插件列表和数值 `0` 也会覆盖 JSON；现有布尔开关出现时设为 `true`。`--config` 只指定当前文件，不递归加载其他配置。
+
+完整配置示例为 [`proxy/etc/proxy_config.json`](../proxy/etc/proxy_config.json)，其中启用了连接域 `10` 的桥接和内嵌 RouDi。JSON 中提供 `iox_config` 或 `iox_strategy` 与命令行 `-c` / `-l` 一样启用 RouDi；使用外部 RouDi 时应省略这两项。JSON 内的相对 `iox_config` 路径以 JSON 文件目录为基准，命令行路径仍以工作目录为基准。同机多个代理应共享一个 RouDi，不能各自重复启动。
+
+桥接内嵌 `ProxyAPI::kController`，使用 `kAuto` 模式按远端服务发现及 `bridge_filter` 配置采集和发布通道。远端 proxy 的控制权由 bridge 持有。两端 proxy 均需使用非 direct 数据通道，密钥、DDS 实现、可靠性和 TCP 设置须与桥接参数匹配。
+
+远端 Subscriber 会合并到本端发给 viewer 的服务发现列表。viewer 向匹配 URL 下发消息时，bridge 校验远端订阅及序列化元数据，由远端 proxy 使用原 URL 发布，同时保留本地投递；共享通道及返回镜像不重复发布。未发现 Subscriber 的 URL 不建立下行路由。订阅消失后，下一次 Info 更新会撤销对应路由和远端 Publisher。
+
+`bridge_subscribe` 默认关闭；开启后，上位机等本地业务 Publisher 的消息也可经内嵌 ProxyAPI 下发到远端 ProxyServer。按远端 Subscriber 预建本地订阅，已发现的本地 Publisher 序列化信息必须匹配，URL 须匹配 `bridge_filter`，且远端没有业务 Publisher；同一 URL 不同时建立镜像与反向采集。Viewer 注入也经该订阅下发，避免重复转发。远端订阅撤销、连接断开或元数据冲突后停止对应转发。
+
+proxy 内部的镜像及桥接下发 Publisher 不参与全局发现，防止被再次当成业务发布源。镜像仍显示在本代理的 ProxyAPI 发现列表中；普通 DiscoveryViewer 不显示这些内部 Publisher，普通 viewer 注入与回放的发现行为保持不变，业务 Subscriber 的直接接收不受影响。两端 proxy 须同步升级。
+
+目标 Publisher 保留完整源 URL（包括协议、查询参数和 fragment）、序列化类型及原始载荷：`shm://` 仍为 SHM，`shm2://` 仍为 SHM2，`intra://` 仍为 intra。过滤发生在源 URL 上，多个过滤词是“或”的关系。目标需具备对应后端；`intra://` 仅供接收代理进程内的业务或 runnable 插件订阅，源端也需能采集该进程的可序列化 intra 消息。进程内裸对象共享、RPC 与 Field 不在此桥接范围内。
+
+桥接发布表独立于本地监控控制，按源端 Info 快照增删，断连或协议错误时清除。镜像与主动采集在接收回调内同步转发，Viewer 本地投递沿用 `async`，载荷受本代理 `max_packet_size` 限制；不缓存断线期间的数据，不保证跨网络零拷贝。相同机器上的 SHM/SHM2 源通道已可直接访问，桥接按实际后端跳过这些通道，包括 `VLINK_INTRA_BIND` 映射的 intra，以避免回灌；部署须无环，不要将镜像发布通道再桥接回源端。
+
+未映射到其他传输的 intra 只报告源代理进程内的端点，避免同机其他代理的镜像反馈；桥接合并的远端订阅仍用于下行路由。开启桥接时，本地 DDS 业务端点及镜像使用本代理指定的绑定 IP、peer、buffer 和 MTU；启用 `tcp` 时设置 TCP，未启用时保留后端环境配置；`native` 优先使用 `VLINK_DDS_NATIVE_IP`。
 
 ---
 
@@ -532,6 +561,8 @@ int main() {
 ```
 
 `ProxyServer` 析构同步阻塞，会等待全部 DDS 句柄清理后返回，须确保进程退出前调用。
+
+嵌入式桥接使用 `cfg.bridge.emplace()` 填写远端 `ProxyAPI::Config`，例如 `cfg.bridge->domain_id = 10`；`cfg.bridge_filter` 默认同命令行。内部强制使用 Controller，两端 `direct` 必须为 `false`。新增配置字段改变了 `Config` 布局，使用该 C++ 接口的程序需重新编译。
 
 ---
 

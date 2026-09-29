@@ -390,6 +390,7 @@ void PlayDialog::on_pushButton_start_clicked() {
   bool has_unselected = false;
 
   vlink::ProxyAPI::Control control;
+  control.bridge = false;
   control.mode = vlink::ProxyAPI::kPlay;
 
   {

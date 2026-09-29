@@ -50,6 +50,11 @@ nanobind_add_module(
 )
 
 target_link_libraries(_vlink_nanobind PRIVATE vlink::vlink vlink::all)
+if(ENABLE_PROXY)
+  target_sources(_vlink_nanobind PRIVATE proxy.cc)
+  target_link_libraries(_vlink_nanobind PRIVATE vlink::proxy_api vlink::proxy_server)
+endif()
+
 set_target_properties(
   _vlink_nanobind
   PROPERTIES CXX_CLANG_TIDY ""

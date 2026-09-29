@@ -3468,6 +3468,7 @@ void MainWindow::send_control(vlink::ProxyAPI::Mode mode, bool has_url) {
   }
 
   vlink::ProxyAPI::Control control;
+  control.bridge = false;
   control.mode = mode;
 
   if (has_url || mode == vlink::ProxyAPI::kObserveAll) {

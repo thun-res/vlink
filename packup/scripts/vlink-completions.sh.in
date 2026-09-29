@@ -20,7 +20,9 @@ _vlink_bash_webviz_proxy_opts="--proxy_interface --proxy_role --proxy_domain_id 
 --proxy_bind_ip --proxy_peer_ip --proxy_buf_size --proxy_mtu_size --proxy_native \
 --proxy_tcp --proxy_key --proxy_reliable --proxy_direct --proxy_no_match_version \
 --proxy_data_callback_mode --proxy_max_packet_size --proxy_use_iox --proxy_iox_config \
---proxy_iox_strategy --proxy_iox_monitoring"
+--proxy_iox_strategy --proxy_iox_monitoring \
+--bridge_domain_id --bridge_security_key --bridge_allow_ip --bridge_peer_ip --bridge_dds_impl \
+--bridge_reliable --bridge_enable_tcp --bridge_subscribe --bridge_filter"
 
 _vlink_qos_names_from_env() {
     local qos_file="${VLINK_QOS_CONFIG:-}"
@@ -131,11 +133,12 @@ _vlink_bash_complete_webviz_proxy_prev() {
     case "$1" in
         --proxy_interface) _vlink_bash_complete_words "proxy_api proxy_server" "$2"; return 0 ;;
         --proxy_role) _vlink_bash_complete_words "controller listener" "$2"; return 0 ;;
-        --proxy_dds_impl) _vlink_bash_complete_words "dds ddsc ddsr" "$2"; return 0 ;;
+        --proxy_dds_impl | --bridge_dds_impl) _vlink_bash_complete_words "dds ddsc ddsr" "$2"; return 0 ;;
         --proxy_data_callback_mode) _vlink_bash_complete_words "direct queued" "$2"; return 0 ;;
         --proxy_iox_monitoring) _vlink_bash_complete_words "on off" "$2"; return 0 ;;
         --proxy_iox_strategy) _vlink_bash_complete_words "1 2 3 4" "$2"; return 0 ;;
         --proxy_iox_config) _vlink_bash_complete_files_ext "$2" "toml"; return 0 ;;
+        --bridge_domain_id|--bridge_security_key|--bridge_allow_ip|--bridge_peer_ip|--bridge_filter|\
         --proxy_domain_id|--proxy_bind_ip|--proxy_peer_ip|--proxy_buf_size|--proxy_mtu_size|\
         --proxy_key|--proxy_max_packet_size) return 0 ;;
     esac
