@@ -103,7 +103,7 @@ int main(int argc, char* argv[]) {
       // NOLINTNEXTLINE(readability-redundant-casting)
       .default_value(static_cast<int>(0));
   program.add_argument("-k", "--key").help("Security key").default_value(std::string());
-  program.add_argument("-b", "--bind_ip").help("Bind ip address").default_value(std::string());
+  program.add_argument("-b", "--allow_ip").help("Bind ip address").default_value(std::string());
   program.add_argument("-p", "--peer_ip").help("Peer ip address").default_value(std::string());
   program.add_argument("-s", "--buf_size")
       .help("Set DDS(TX/RX) buffer size")
@@ -220,7 +220,7 @@ int main(int argc, char* argv[]) {
   if VUNLIKELY (!read("async", proxy_config.async) || !read("reliable", proxy_config.reliable) ||
                 !read("tcp", proxy_config.enable_tcp) || !read("direct", proxy_config.direct) ||
                 !read("domain_id", proxy_config.domain_id) || !read("key", proxy_config.security_key) ||
-                !read("bind_ip", proxy_config.bind_ip) || !read("peer_ip", proxy_config.peer_ip) ||
+                !read("allow_ip", proxy_config.allow_ip) || !read("peer_ip", proxy_config.peer_ip) ||
                 !read("buf_size", proxy_config.buf_size) || !read("mtu_size", proxy_config.mtu_size) ||
                 !read("native", proxy_config.native_mode) || !read("max_packet_size", proxy_config.max_packet_size) ||
                 !read("dds_impl", proxy_config.dds_impl) || !read("iox_config", proxy_config.iox_config) ||

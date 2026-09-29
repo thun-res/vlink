@@ -36,6 +36,7 @@
 
 ### 修复
 
+- **Proxy 桥接**：联合主机名、IP 与 machine-id 判断同机，以兼容的发现来源标记防止回流，镜像与下发 Pub 均可发现；绑定参数统一为 `allow_ip`。
 - **零拷贝**：修复 Client 留存 CPU 响应的载荷生命周期、混合类型 RPC 与 Python 发送丢失 loan 身份，以及自身视图赋值和点云转置覆盖源数据的问题。
 - **Viewer 套件**：修复递归消息与字段编辑、录放状态、图表与三维渲染及资源释放，减少载荷拷贝、重复解析与 URL 扫描。
 - **Extension**：修复 Bag 录放与 Schema、空 Protobuf、URL 重映射、插件启动、SQLite 关闭构建及 OpenSSL 退出期线程资源泄漏，减少 Schema 拷贝。

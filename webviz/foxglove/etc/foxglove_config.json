@@ -29,7 +29,7 @@
     "dds_impl": "dds",
     "native": false,
     "enable_tcp": false,
-    "bind_ip": "",
+    "allow_ip": "",
     "peer_ip": "",
     "buf_size": 0,
     "mtu_size": 0,

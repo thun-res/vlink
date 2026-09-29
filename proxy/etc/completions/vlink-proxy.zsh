@@ -28,7 +28,7 @@ _vlink-proxy() {
         '(-g --direct)'{-g,--direct}'[Direct mode]' \
         '(-d --domain_id)'{-d,--domain_id}'=[Domain id 0..255]:id:' \
         '(-k --key)'{-k,--key}'=[Security key]:key:' \
-        '(-b --bind_ip)'{-b,--bind_ip}'=[Bind IP]:ip:' \
+        '(-b --allow_ip)'{-b,--allow_ip}'=[Bind IP]:ip:' \
         '(-p --peer_ip)'{-p,--peer_ip}'=[Peer IP]:ip:' \
         '(-s --buf_size)'{-s,--buf_size}'=[DDS TX/RX buffer size]:size:' \
         '(-e --mtu_size)'{-e,--mtu_size}'=[DDS MTU size]:size:' \

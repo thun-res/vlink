@@ -95,8 +95,8 @@ static void apply_topic_transport(NodeT& node, const ProxyServer::Config& config
     return;
   }
 
-  if (!config.native_mode && !config.bind_ip.empty()) {
-    node.set_property("dds.ip", config.bind_ip);
+  if (!config.native_mode && !config.allow_ip.empty()) {
+    node.set_property("dds.ip", config.allow_ip);
   }
 
   if (!config.peer_ip.empty()) {
@@ -173,6 +173,7 @@ struct ProxyServer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
 
   std::string current_host_name;
   std::string current_machine_id;
+  std::vector<std::string> current_ip_list;
   std::string native_ip;
   std::string token;
 
@@ -250,6 +251,7 @@ ProxyServer::ProxyServer(const Config& config) : impl_(std::make_unique<Impl>())
 
   impl_->current_host_name = Utils::get_host_name();
   impl_->current_machine_id = Utils::get_machine_id();
+  impl_->current_ip_list = Utils::get_all_ipv4_address();
 
   const double max_packet_bytes = impl_->config.max_packet_size * 1024.0 * 1024.0;
 
@@ -550,14 +552,14 @@ void ProxyServer::init_server() {
   impl_->handshake_srv->set_discovery_enabled(false);
 #endif
 
-  if (!impl_->config.bind_ip.empty()) {
-    impl_->data_pub->set_property("dds.ip", impl_->config.bind_ip);
-    impl_->data_sub->set_property("dds.ip", impl_->config.bind_ip);
-    impl_->time_pub->set_property("dds.ip", impl_->config.bind_ip);
-    impl_->info_pub->set_property("dds.ip", impl_->config.bind_ip);
-    impl_->control_sub->set_property("dds.ip", impl_->config.bind_ip);
+  if (!impl_->config.allow_ip.empty()) {
+    impl_->data_pub->set_property("dds.ip", impl_->config.allow_ip);
+    impl_->data_sub->set_property("dds.ip", impl_->config.allow_ip);
+    impl_->time_pub->set_property("dds.ip", impl_->config.allow_ip);
+    impl_->info_pub->set_property("dds.ip", impl_->config.allow_ip);
+    impl_->control_sub->set_property("dds.ip", impl_->config.allow_ip);
 #if VLINK_PROXY_ENABLE_HANDSHAKE
-    impl_->handshake_srv->set_property("dds.ip", impl_->config.bind_ip);
+    impl_->handshake_srv->set_property("dds.ip", impl_->config.allow_ip);
 #endif
   }
 
@@ -804,7 +806,8 @@ void ProxyServer::update_bridge(const std::vector<ProxyAPI::Info>& info_list) {
   std::unordered_map<std::string, std::shared_ptr<RawSub>> next_readers;
   std::unordered_map<std::string, ProxyAPI::Info> next_subs;
   std::vector<ProxyAPI::UrlMeta> selection;
-  const bool same_machine = impl_->bridge_api->get_current_machine_id() == impl_->current_machine_id;
+  const bool same_machine =
+      impl_->bridge_api->is_same_machine(impl_->current_host_name, impl_->current_machine_id, impl_->current_ip_list);
 
   if VLIKELY (!is_ready_to_quit() && impl_->bridge_api->is_connected() &&
               impl_->bridge_api->get_current_error() == ProxyAPI::kNoError) {
@@ -819,10 +822,13 @@ void ProxyServer::update_bridge(const std::vector<ProxyAPI::Info>& info_list) {
         continue;
       }
 
-      if (Url::is_intra_type(local.url) && Url(local.url).get_transport_type() == TransportType::kIntra &&
-          std::none_of(local.process_list.begin(), local.process_list.end(), [&](const DiscoveryViewer::Process& p) {
-            return (p.type & kPublisher) && p.host == impl_->current_host_name &&
-                   p.pid == static_cast<uint32_t>(Utils::get_pid());
+      const bool pure_intra =
+          Url::is_intra_type(local.url) && Url(local.url).get_transport_type() == TransportType::kIntra;
+
+      if (std::none_of(local.process_list.begin(), local.process_list.end(), [&](const DiscoveryViewer::Process& p) {
+            return !p.bridge && (p.type & kPublisher) &&
+                   (!pure_intra ||
+                    (p.host == impl_->current_host_name && p.pid == static_cast<uint32_t>(Utils::get_pid())));
           })) {
         continue;
       }
@@ -949,7 +955,7 @@ void ProxyServer::update_bridge(const std::vector<ProxyAPI::Info>& info_list) {
         try {
           pub = std::make_shared<RawPub>(info.url, InitType::kWithoutInit);
           apply_topic_transport(*pub, impl_->config, impl_->native_ip);
-          pub->set_discovery_enabled(false);
+          pub->set_property("proxy.bridge", "1");
           pub->set_ser_type(info.ser, info.schema);
           pub->init();
         } catch (const Exception::RuntimeError& error) {
@@ -1084,6 +1090,7 @@ void ProxyServer::send_time() {
   time.version = VLINK_VERSION;
   time.hostname = impl_->current_host_name;
   time.machine_id = impl_->current_machine_id;
+  time.ip_list = impl_->current_ip_list;
 #if VLINK_PROXY_ENABLE_HANDSHAKE
   time.token = impl_->token;
 #endif
@@ -1241,7 +1248,7 @@ void ProxyServer::send_control(const void* control_data) {
 
             if (pub && pub_iter->second.type == meta.type && pub->get_ser_type() == meta.ser &&
                 pub->get_schema_type() == meta.schema &&
-                pub->get_discovery_enabled() == (!body.bridge || meta.type == kSetter)) {
+                (pub->get_property("proxy.bridge") == "1") == (body.bridge && meta.type == kPublisher)) {
               continue;
             }
 
@@ -1258,7 +1265,11 @@ void ProxyServer::send_control(const void* control_data) {
             apply_topic_transport(*pub, impl_->config, impl_->native_ip);
 
             pub->set_ser_type(meta.ser, meta.schema);
-            pub->set_discovery_enabled(!body.bridge || meta.type == kSetter);
+
+            if (body.bridge && meta.type == kPublisher) {
+              pub->set_property("proxy.bridge", "1");
+            }
+
             pub->init();
 
             impl_->pub_ptr_map.emplace(url, Impl::PubEntry{std::move(pub), meta.type});
@@ -1321,29 +1332,51 @@ void ProxyServer::update_all() {
 
   auto info_list = impl_->discovery_viewer->get_info_list();
   const auto current_pid = static_cast<uint32_t>(Utils::get_pid());
-  info_list.erase(std::remove_if(info_list.begin(), info_list.end(),
-                                 [&](DiscoveryViewer::Info& info) {
-                                   if (!Url::is_intra_type(info.url) ||
-                                       Url(info.url).get_transport_type() != TransportType::kIntra) {
-                                     return false;
-                                   }
+  info_list.erase(
+      std::remove_if(
+          info_list.begin(), info_list.end(),
+          [&](DiscoveryViewer::Info& info) {
+            const bool intra = Url::is_intra_type(info.url);
+            const auto transport = intra ? Url(info.url).get_transport_type() : TransportType::kUnknown;
+            const bool pure_intra = intra && transport == TransportType::kIntra;
+            const bool local_only = Url::is_shm_type(info.url) ||
+                                    (intra && (transport == TransportType::kIntra || transport == TransportType::kShm ||
+                                               transport == TransportType::kShm2));
+            auto& processes = info.process_list;
+            processes.erase(
+                std::remove_if(
+                    processes.begin(), processes.end(),
+                    [&](DiscoveryViewer::Process& process) {
+                      const bool own_process = process.host == impl_->current_host_name && process.pid == current_pid;
 
-                                   auto& processes = info.process_list;
-                                   processes.erase(std::remove_if(processes.begin(), processes.end(),
-                                                                  [&](const DiscoveryViewer::Process& process) {
-                                                                    return process.host != impl_->current_host_name ||
-                                                                           process.pid != current_pid;
-                                                                  }),
-                                                   processes.end());
-                                   info.type = 0;
+                      if (pure_intra && !own_process) {
+                        return true;
+                      }
 
-                                   for (const auto& process : processes) {
-                                     info.type |= process.type;
-                                   }
+                      if (local_only && !process.ip_list.empty() &&
+                          std::none_of(process.ip_list.begin(), process.ip_list.end(), [&](const std::string& ip) {
+                            return std::find(impl_->current_ip_list.begin(), impl_->current_ip_list.end(), ip) !=
+                                   impl_->current_ip_list.end();
+                          })) {
+                        return true;
+                      }
 
-                                   return info.type == 0;
-                                 }),
-                  info_list.end());
+                      if (process.bridge) {
+                        process.type &= ~kPublisher;
+                      }
+
+                      return process.type == 0;
+                    }),
+                processes.end());
+            info.type = 0;
+
+            for (const auto& process : processes) {
+              info.type |= process.type;
+            }
+
+            return info.type == 0;
+          }),
+      info_list.end());
 
   std::unordered_map<std::string_view, size_t> info_index;
 
@@ -1378,6 +1411,7 @@ void ProxyServer::update_all() {
     process.host = impl_->current_host_name;
     process.pid = current_pid;
     process.name = Utils::get_app_name();
+    process.ip_list = impl_->current_ip_list;
   }
 
   for (const auto& [url, info] : impl_->bridge_subs) {

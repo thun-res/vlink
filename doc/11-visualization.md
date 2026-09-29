@@ -361,7 +361,7 @@ WebViz 经代理桥接接入 VLink 网络，`vlink-foxglove` 与 `vlink-rerun` �
 | `--proxy_role` | 代理桥接角色：`controller` 或 `listener` | `controller` |
 | `--proxy_domain_id` | WebViz 使用的 DDS 域 ID | `0` |
 | `--proxy_dds_impl` | `proxy_api` 通道使用的 DDS 实现 | `dds` |
-| `--proxy_bind_ip` | DDS socket 绑定 IP，空表示任意网卡 | 空 |
+| `--proxy_allow_ip` | DDS socket 绑定 IP，空表示任意网卡 | 空 |
 | `--proxy_peer_ip` | DDS 单播发现 peer IP | 空 |
 | `--proxy_buf_size` | socket 发送 / 接收缓冲区大小（字节），`0` 使用默认值 | `0` |
 | `--proxy_mtu_size` | DDS MTU 大小（字节），`0` 使用默认值 | `0` |

@@ -111,7 +111,7 @@ class VLINK_EXPORT DiscoveryViewer : public MessageLoop {
    * @brief Identity of a process that hosts at least one endpoint for a URL.
    *
    * @details
-   * Announcements with the same role, host, PID and name share one address list.
+   * Announcements with the same role, host, PID, name and bridge origin share one address list.
    * Each source address expires independently when its announcements stop.
    */
   struct VLINK_EXPORT Process final {
@@ -121,12 +121,13 @@ class VLINK_EXPORT DiscoveryViewer : public MessageLoop {
     std::string name;                  ///< Process or application name.
     std::vector<std::string> ip_list;  ///< Live discovery source IPv4 addresses, unique and sorted numerically.
     double profiler{-1};               ///< CPU usage sample from one live address (-1 when unavailable).
+    bool bridge{false};                /**< Publisher created by proxy forwarding; absent in legacy announcements. */
 
     /**
      * @brief Defines a stable ordering between two process descriptors.
      *
      * @details
-     * Sort key is type, then host, name, PID and finally the address list.
+     * Sort key is type, then host, name, PID, bridge origin and finally the address list.
      *
      * @param target Right-hand operand.
      * @return @c true when @c *this should appear before @p target.

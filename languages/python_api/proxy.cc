@@ -314,7 +314,7 @@ void bind_proxy(nb::module_& m) {
       .def_rw("mtu_size", &ProxyServer::Config::mtu_size)
       .def_rw("max_packet_size", &ProxyServer::Config::max_packet_size)
       .def_rw("security_key", &ProxyServer::Config::security_key)
-      .def_rw("bind_ip", &ProxyServer::Config::bind_ip)
+      .def_rw("allow_ip", &ProxyServer::Config::allow_ip)
       .def_rw("peer_ip", &ProxyServer::Config::peer_ip)
       .def_rw("dds_impl", &ProxyServer::Config::dds_impl)
       .def_rw("use_iox", &ProxyServer::Config::use_iox)

@@ -34,7 +34,7 @@ _vlink_proxy() {
         --runnable)
             return
             ;;
-        -d|--domain_id|-k|--key|-b|--bind_ip|-p|--peer_ip|-s|--buf_size|-e|--mtu_size|-x|--max_packet_size)
+        -d|--domain_id|-k|--key|-b|--allow_ip|-p|--peer_ip|-s|--buf_size|-e|--mtu_size|-x|--max_packet_size)
             return
             ;;
     esac
@@ -45,7 +45,7 @@ _vlink_proxy() {
     fi
 
     _vlink_bash_complete_words "-a --async -r --reliable -t --tcp -g --direct -d --domain_id \
--k --key -b --bind_ip -p --peer_ip -s --buf_size -e --mtu_size -n --native \
+-k --key -b --allow_ip -p --peer_ip -s --buf_size -e --mtu_size -n --native \
 -x --max_packet_size -c --iox_config -l --iox_strategy -m --iox_monitoring \
 --dds_impl --runnable --config --bridge_domain_id --bridge_security_key --bridge_allow_ip --bridge_peer_ip \
 --bridge_dds_impl --bridge_reliable --bridge_enable_tcp --bridge_subscribe --bridge_filter -h --help -v --version" "$cur"

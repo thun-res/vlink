@@ -188,7 +188,7 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
    * | @c mtu_size                | 0       | DDS MTU size in bytes; 0 = built-in default.                      |
    * | @c max_packet_size         | 0       | Maximum relayed payload in MiB; see note below.                   |
    * | @c security_key            | ""      | Security key for control channels; empty = default slot.          |
-   * | @c bind_ip                 | ""      | Bind DDS sockets to this IP; empty = any interface.               |
+   * | @c allow_ip                 | ""      | Bind DDS sockets to this IP; empty = any interface.               |
    * | @c peer_ip                 | ""      | Unicast peer IP for discovery; empty = multicast.                 |
    * | @c dds_impl                | "dds"   | DDS implementation: "dds", "ddsc", "ddsr", etc.                   |
    * | @c use_iox                 | false   | Launch an embedded Iceoryx RouDi daemon at startup.               |
@@ -215,7 +215,7 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
     uint32_t mtu_size{0};                    ///< DDS fragment MTU in bytes; 0 = default.
     double max_packet_size{0};               ///< Maximum relayed payload in MiB; 0 disables the limit.
     std::string security_key;                ///< Security key; empty = default security slot.
-    std::string bind_ip;                     ///< Local IP for DDS sockets; empty = any.
+    std::string allow_ip;                    ///< Local IP for DDS sockets; empty = any.
     std::string peer_ip;                     ///< Peer unicast IP for DDS; empty = multicast.
     std::string dds_impl{"dds"};             ///< DDS implementation transport identifier.
     bool use_iox{false};                     ///< Launch an embedded Iceoryx RouDi.

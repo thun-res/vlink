@@ -80,7 +80,7 @@ class ProxyApiBridge final : public ProxyBridge {
       server_config.dds_impl = config_.transport.dds_impl;
       server_config.native_mode = config_.transport.native;
       server_config.enable_tcp = config_.transport.enable_tcp;
-      server_config.bind_ip = config_.transport.bind_ip;
+      server_config.allow_ip = config_.transport.allow_ip;
       server_config.peer_ip = config_.transport.peer_ip;
       server_config.buf_size = config_.transport.buf_size;
       server_config.mtu_size = config_.transport.mtu_size;
@@ -106,7 +106,7 @@ class ProxyApiBridge final : public ProxyBridge {
     proxy_api_config.direct = config_.api.direct;
     proxy_api_config.enable_tcp = config_.transport.enable_tcp;
     proxy_api_config.match_version = config_.api.match_version;
-    proxy_api_config.allow_ip = config_.transport.bind_ip;
+    proxy_api_config.allow_ip = config_.transport.allow_ip;
     proxy_api_config.peer_ip = config_.transport.peer_ip;
     proxy_api_config.buf_size = config_.transport.buf_size;
     proxy_api_config.mtu_size = config_.transport.mtu_size;

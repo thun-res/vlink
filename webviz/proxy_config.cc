@@ -56,7 +56,7 @@ void ProxyConfigHelper::add_arguments(argparse::ArgumentParser& program) {
       .help("DDS implementation used by proxy_api channels")
       .default_value(std::string("dds"));
 
-  program.add_argument("--proxy_bind_ip").help("Bind DDS sockets to this IP address").default_value(std::string(""));
+  program.add_argument("--proxy_allow_ip").help("Bind DDS sockets to this IP address").default_value(std::string(""));
 
   program.add_argument("--proxy_peer_ip").help("Unicast peer IP for DDS discovery").default_value(std::string(""));
 
@@ -229,13 +229,13 @@ bool ProxyConfigHelper::apply_config(const Json& root, const std::filesystem::pa
     config.transport.enable_tcp = proxy["enable_tcp"].get<bool>();
   }
 
-  if VLIKELY (!program.is_used("--proxy_bind_ip") && proxy.contains("bind_ip")) {
-    if VUNLIKELY (!proxy["bind_ip"].is_string()) {
-      error = "proxy.bind_ip must be a string";
+  if VLIKELY (!program.is_used("--proxy_allow_ip") && proxy.contains("allow_ip")) {
+    if VUNLIKELY (!proxy["allow_ip"].is_string()) {
+      error = "proxy.allow_ip must be a string";
       return false;
     }
 
-    config.transport.bind_ip = proxy["bind_ip"].get<std::string>();
+    config.transport.allow_ip = proxy["allow_ip"].get<std::string>();
   }
 
   if VLIKELY (!program.is_used("--proxy_peer_ip") && proxy.contains("peer_ip")) {
@@ -455,8 +455,8 @@ bool ProxyConfigHelper::apply_arguments(const argparse::ArgumentParser& program,
     config.transport.enable_tcp = program.get<bool>("--proxy_tcp");
   }
 
-  if VUNLIKELY (program.is_used("--proxy_bind_ip")) {
-    config.transport.bind_ip = program.get<std::string>("--proxy_bind_ip");
+  if VUNLIKELY (program.is_used("--proxy_allow_ip")) {
+    config.transport.allow_ip = program.get<std::string>("--proxy_allow_ip");
   }
 
   if VUNLIKELY (program.is_used("--proxy_peer_ip")) {

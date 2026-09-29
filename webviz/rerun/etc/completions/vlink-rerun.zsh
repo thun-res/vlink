@@ -58,7 +58,7 @@ _vlink-rerun() {
         '--proxy_role=[Proxy role]:role:(controller listener)' \
         '--proxy_domain_id=[Proxy domain id]:id:' \
         '--proxy_dds_impl=[Proxy DDS impl]:impl:(dds ddsc ddsr)' \
-        '--proxy_bind_ip=[Proxy bind IP]:ip:' \
+        '--proxy_allow_ip=[Proxy bind IP]:ip:' \
         '--proxy_peer_ip=[Proxy peer IP]:ip:' \
         '--proxy_buf_size=[Proxy buffer size]:n:' \
         '--proxy_mtu_size=[Proxy MTU size]:n:' \

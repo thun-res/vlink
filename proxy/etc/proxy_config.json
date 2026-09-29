@@ -6,7 +6,7 @@
   "tcp": false,
   "direct": false,
   "native": false,
-  "bind_ip": "",
+  "allow_ip": "",
   "peer_ip": "",
   "buf_size": 0,
   "mtu_size": 0,

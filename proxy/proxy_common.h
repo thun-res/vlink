@@ -283,6 +283,7 @@ struct TimePacket final {
   double memory_usage{0.0};
   std::string token;
   std::vector<ProxyAPI::UrlMeta> direct_sub_list;
+  std::vector<std::string> ip_list;
 
   template <typename SerializerT>
   void serialize(SerializerT& s) {
@@ -291,6 +292,8 @@ struct TimePacket final {
           bitsery::maxSize(obj.version, kMaxStringSize), bitsery::maxSize(obj.hostname, kMaxStringSize),
           bitsery::maxSize(obj.machine_id, kMaxStringSize), obj.cpu_usage, obj.memory_usage,
           bitsery::maxSize(obj.token, kMaxTokenSize), bitsery::maxSize(obj.direct_sub_list, kMaxTopicListSize));
+      sub.container(obj.ip_list, kMaxIpListSize,
+                    [](SerializerT& item, std::string& ip) { item.text1b(ip, kMaxStringSize); });
     });
   }
 

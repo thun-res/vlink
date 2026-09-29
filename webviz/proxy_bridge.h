@@ -59,7 +59,7 @@ class ProxyBridge {
     std::string native_ip;
     bool native{false};
     bool enable_tcp{false};
-    std::string bind_ip;
+    std::string allow_ip;
     std::string peer_ip;
     int buf_size{0};
     int mtu_size{0};
@@ -125,8 +125,8 @@ class ProxyBridge {
 
     if VUNLIKELY (config.native) {
       node.set_property("dds.ip", config.native_ip);
-    } else if VLIKELY (!config.bind_ip.empty()) {
-      node.set_property("dds.ip", config.bind_ip);
+    } else if VLIKELY (!config.allow_ip.empty()) {
+      node.set_property("dds.ip", config.allow_ip);
     }
 
     if VLIKELY (!config.peer_ip.empty()) {

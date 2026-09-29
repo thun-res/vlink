@@ -214,6 +214,8 @@ bool DiscoveryViewer::Process::operator<(const DiscoveryViewer::Process& target)
     return true;
   } else if (pid > target.pid) {
     return false;
+  } else if (bridge != target.bridge) {
+    return bridge < target.bridge;
   } else {
     return std::lexicographical_compare(ip_list.begin(), ip_list.end(), target.ip_list.begin(), target.ip_list.end(),
                                         Utils::ip_less);
@@ -877,9 +879,12 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
               ser_type.clear();
             }
 
-            Info info{sort_index,  type,
-                      url,         ser_type,
-                      schema_type, {Process{type, hostname, process_pid, process_name, {target_ip_str}, profiler}}};
+            const bool bridge = std::find(list.begin() + 5, list.end(), "bridge=1") != list.end();
+
+            Info info{
+                sort_index,  type,
+                url,         ser_type,
+                schema_type, {Process{type, hostname, process_pid, process_name, {target_ip_str}, profiler, bridge}}};
 
             auto [iter, inserted] = impl_->info_map.try_emplace(std::move(info), ElapsedTimer{});
             iter->second.restart();
@@ -1180,7 +1185,7 @@ void DiscoveryViewer::sort_url(std::vector<std::string>& warnings) const {
           auto& previous = info.process_list[process_count - 1];
 
           if (previous.type == process.type && previous.host == process.host && previous.pid == process.pid &&
-              previous.name == process.name) {
+              previous.name == process.name && previous.bridge == process.bridge) {
             previous.ip_list.insert(previous.ip_list.end(), std::make_move_iterator(process.ip_list.begin()),
                                     std::make_move_iterator(process.ip_list.end()));
             continue;

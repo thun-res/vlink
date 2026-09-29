@@ -787,6 +787,11 @@ class VLINK_PROXY_API_EXPORT ProxyAPI : public MessageLoop {
   void on_end() override;
 
  private:
+  friend class ProxyServer;
+
+  [[nodiscard]] bool is_same_machine(const std::string& hostname, const std::string& machine_id,
+                                     const std::vector<std::string>& ip_list) const;
+
   bool send_control_sync(const Control& control);
 
   void sync_direct_maps(const Control& control);

@@ -156,6 +156,7 @@ struct ProxyAPI::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddin
   std::string hostname;
   std::unordered_set<std::string> hostname_set;
   std::string machine_id;
+  std::vector<std::string> ip_list;
   std::unordered_set<std::string> machine_id_set;
 };
 
@@ -425,6 +426,14 @@ std::string ProxyAPI::get_current_hostname() const {
 std::string ProxyAPI::get_current_machine_id() const {
   std::shared_lock lock(impl_->version_mtx);
   return impl_->machine_id;
+}
+
+bool ProxyAPI::is_same_machine(const std::string& hostname, const std::string& machine_id,
+                               const std::vector<std::string>& ip_list) const {
+  std::shared_lock lock(impl_->version_mtx);
+  return !hostname.empty() && !ip_list.empty() && impl_->hostname == hostname &&
+         (machine_id.empty() || impl_->machine_id.empty() || impl_->machine_id == machine_id) &&
+         std::is_permutation(impl_->ip_list.begin(), impl_->ip_list.end(), ip_list.begin(), ip_list.end());
 }
 
 uint64_t ProxyAPI::get_current_sys_time() const {
@@ -1021,6 +1030,7 @@ void ProxyAPI::reset_handle() {
     impl_->hostname_set.clear();
 
     impl_->machine_id.clear();
+    impl_->ip_list.clear();
     impl_->machine_id_set.clear();
 
     impl_->proxy_version.clear();
@@ -1236,6 +1246,7 @@ void ProxyAPI::reset_handle() {
     {
       std::lock_guard lock(impl_->version_mtx);
       impl_->proxy_version = time.version;
+      impl_->ip_list = time.ip_list;
     }
 
     if (impl_->config.match_version) {
@@ -1411,6 +1422,7 @@ void ProxyAPI::process_connected(bool connected) {
       // impl_->hostname_set.clear();
 
       impl_->machine_id.clear();
+      impl_->ip_list.clear();
       // impl_->machine_id_set.clear();
     }
 
