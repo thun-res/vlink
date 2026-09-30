@@ -48,8 +48,6 @@ void SomeipPublisherImpl::init() {
   object_->register_sub_connect_callback(this, [this](bool) { PublisherImpl::update_subscribers(); });
 
   {
-    std::weak_ptr<Object> weak(object_);
-
     std::lock_guard lock(object_->get_client_mtx());
 
     object_->app()->offer_event(conf_.service, conf_.instance, conf_.event,
@@ -57,16 +55,11 @@ void SomeipPublisherImpl::init() {
                                 conf_.field ? someip::event_type_e::ET_FIELD : someip::event_type_e::ET_EVENT);
     for (auto g : conf_.groups) {
       object_->app()->register_subscription_handler(
-          conf_.service, conf_.instance, g, [weak, g](someip::client_t client_id, VSOMEIP_SUB_HANDLE_ARG, bool is_reg) {
-            auto strong = weak.lock();
-
-            if VUNLIKELY (!strong) {
-              return false;
-            }
-
+          conf_.service, conf_.instance, g,
+          [object = object_.get(), g](someip::client_t client_id, VSOMEIP_SUB_HANDLE_ARG, bool is_reg) {
             {
-              std::lock_guard lock(strong->get_client_mtx());
-              auto& clients = strong->get_clients()[g];
+              std::lock_guard lock(object->get_client_mtx());
+              auto& clients = object->get_clients()[g];
 
               if (is_reg) {
                 clients.emplace(client_id);
@@ -75,7 +68,7 @@ void SomeipPublisherImpl::init() {
               }
             }
 
-            strong->traverse_sub_connect_callback([is_reg](NodeImpl*, const auto& callback) { callback(is_reg); });
+            object->traverse_sub_connect_callback([is_reg](NodeImpl*, const auto& callback) { callback(is_reg); });
 
             return is_reg;
           });

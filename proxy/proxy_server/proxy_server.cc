@@ -450,6 +450,15 @@ void ProxyServer::on_end() {
     impl_->bridge_api->quit(true);
     impl_->bridge_api->wait_for_quit();
     impl_->bridge_api->register_data_callback({});
+    std::unordered_map<std::string, std::shared_ptr<RawPub>> publishers;
+
+    {
+      std::lock_guard lock(impl_->bridge_mtx);
+      publishers.swap(impl_->bridge_pubs);
+      impl_->bridge_subs.clear();
+      impl_->bridge_selection.clear();
+      impl_->bridge_same_machine = false;
+    }
   }
 
   proxy::ControlPacket packet;
@@ -723,7 +732,8 @@ void ProxyServer::init_server() {
             std::shared_lock lock(impl_->pubs_mtx);
             auto iter = impl_->pub_ptr_map.find(std::string(t_data.url()));
 
-            if VUNLIKELY (iter == impl_->pub_ptr_map.end()) {
+            if VUNLIKELY (iter == impl_->pub_ptr_map.end() || iter->second.node->get_ser_type() != t_data.ser() ||
+                          static_cast<uint32_t>(iter->second.node->get_schema_type()) != t_data.schema()) {
               return;
             }
 
@@ -735,7 +745,8 @@ void ProxyServer::init_server() {
           std::shared_lock lock(impl_->pubs_mtx);
           auto iter = impl_->pub_ptr_map.find(std::string(t_data.url()));
 
-          if VUNLIKELY (iter == impl_->pub_ptr_map.end()) {
+          if VUNLIKELY (iter == impl_->pub_ptr_map.end() || iter->second.node->get_ser_type() != t_data.ser() ||
+                        static_cast<uint32_t>(iter->second.node->get_schema_type()) != t_data.schema()) {
             return;
           }
 
@@ -897,6 +908,7 @@ void ProxyServer::update_bridge(const std::vector<ProxyAPI::Info>& info_list) {
           try {
             sub = std::make_shared<RawSub>(info.url, InitType::kWithoutInit);
             apply_topic_transport(*sub, impl_->config, impl_->native_ip);
+            sub->set_safety_quit(true);
             sub->set_discovery_enabled(false);
             sub->set_ser_type(info.ser, info.schema);
             sub->init();
@@ -1021,7 +1033,7 @@ bool ProxyServer::forward_bridge_data(const void* data) {
     }
 
     if VUNLIKELY (iter->second.ser != packet.ser() || static_cast<uint32_t>(iter->second.schema) != packet.schema()) {
-      return true;
+      return false;
     }
 
     mirrored = (iter->second.type & kPublisher) != 0;
@@ -1037,7 +1049,7 @@ bool ProxyServer::forward_bridge_data(const void* data) {
     if VUNLIKELY (iter == impl_->pub_ptr_map.end() || iter->second.type != kPublisher ||
                   iter->second.node->get_ser_type() != packet.ser() ||
                   static_cast<uint32_t>(iter->second.node->get_schema_type()) != packet.schema()) {
-      return true;
+      return false;
     }
 
     const auto transport = iter->second.node->get_transport_type();
