@@ -21,6 +21,10 @@ if(NOT TARGET vlink-proxy_api)
   find_package(vlink-proxy_api REQUIRED)
 endif()
 
+if(NOT TARGET vlink-proxy_server)
+  find_package(vlink-proxy_server REQUIRED)
+endif()
+
 if(NOT TARGET protobuf::libprotobuf)
   find_package(Protobuf CONFIG QUIET)
 
@@ -74,8 +78,14 @@ add_library(
 target_include_directories(vlink-webviz-common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_libraries(
-  vlink-webviz-common PUBLIC vlink::all vlink::proxy_api ${protobuf_libs} ${flatbuffers_libs} thirdparty::json
-                             thirdparty::argparse
+  vlink-webviz-common
+  PUBLIC vlink::all
+         vlink::proxy_api
+         vlink::proxy_server
+         ${protobuf_libs}
+         ${flatbuffers_libs}
+         thirdparty::json
+         thirdparty::argparse
 )
 
 vlink_target_system_includes_from(vlink-webviz-common ${protobuf_libs})

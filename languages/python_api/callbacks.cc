@@ -97,6 +97,10 @@ bool is_in_python_callback(const PythonCallbackActivity* activity) noexcept {
   return false;
 }
 
+std::shared_ptr<PythonCallbackActivity> current_python_callback_activity() noexcept {
+  return current_python_callback_scope ? current_python_callback_scope->activity : nullptr;
+}
+
 bool is_in_python_owner_callback(const void* owner) noexcept {
   for (auto* scope = current_python_callback_scope; scope != nullptr; scope = scope->previous) {
     if (scope->owner == owner) {

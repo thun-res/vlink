@@ -129,10 +129,11 @@ auto snapshot = viewer.get_info_list();
 | `name` | 进程名 |
 | `ip_list` | `std::vector<std::string>`，当前仍有效的发现源 IPv4 地址，按 IPv4 数值升序排序并去重 |
 | `profiler` | 一个有效地址上报的 CPU 利用率百分比，不叠加多地址副本；`-1` 表示未启用（需 `VLINK_PROFILER_ENABLE=1`） |
+| `bridge` | 是否为 proxy 转发创建的 Publisher；旧报文缺省为 `false`，Python 同步提供此字段 |
 
 `type` 是位掩码而非单一角色：同一 URL 可在同进程或跨进程上被多种角色同时使用（例如既有发布者又有订阅者），展示时统一经 `convert_type_to_view` 转换。
 
-同一 URL、同一角色下，按主机名、PID 和进程名合并地址，保留角色间的独立记录。每个地址独立超时，全部地址过期后该记录消失；`ip_list` 只包含观测到的发现源地址，不代表主机全部网卡或业务后端地址。Python 的 `DiscoveryViewer.Process.ip_list` 对应字符串列表。
+同一 URL、同一角色下，按主机名、PID、进程名和 `bridge` 来源合并地址，保留角色与来源间的独立记录。每个地址独立超时，全部地址过期后该记录消失；`ip_list` 只包含观测到的发现源地址，不代表主机全部网卡或业务后端地址。Python 的 `DiscoveryViewer.Process.ip_list` 对应字符串列表。
 
 下例实时打印每个 URL 的角色与序列化类型，并逐进程输出 PID / 主机 / IP，在 Profiler 启用时附带 CPU 占用：
 
@@ -275,7 +276,7 @@ VLink 原生传输要求通信双方在同一网段或 DDS 域内能直接发现
 
 | 组件 | 形态 | 职责 |
 | ---- | ---- | ---- |
-| `vlink-proxy` | 独立守护进程 | 一条命令拉起服务端，部署最简，同机仅一个实例 |
+| `vlink-proxy` | 独立守护进程 | 同机每个 DDS 域一个实例，可连接另一域的代理转发话题 |
 | `ProxyServer` | C++ 服务端库 | 将服务端嵌入业务进程，省去独立进程 |
 | `ProxyAPI` | C++ 客户端库 | 监控、可视化、录制、注入工具连接服务端的入口 |
 
@@ -468,7 +469,7 @@ api.register_time_callback([](uint64_t sys_time, uint64_t boot_time) {
 
 ## 💻 12.12 代理监控：vlink-proxy 命令行
 
-`vlink-proxy` 是 `ProxyServer` 的独立可执行版本，在终端直接启动，同机仅一个实例。命令行参数与 `ProxyServer::Config` 一一对应：
+`vlink-proxy` 是 `ProxyServer` 的独立可执行版本，同机每个 `domain_id` 仅允许一个实例。命令行参数映射到 `ProxyServer::Config`：
 
 | 选项 | 说明 |
 | ---- | ---- |
@@ -479,7 +480,7 @@ api.register_time_callback([](uint64_t sys_time, uint64_t boot_time) {
 | `-g, --direct` | SHM 直连数据通道（须与客户端一致） |
 | `-a, --async` | 在 MessageLoop 线程异步转发数据（默认内联转发） |
 | `-x, --max_packet_size FLOAT` | 单条消息最大转发大小（MiB，默认 4.0） |
-| `-b, --bind_ip` / `-p, --peer_ip` | 本地绑定 IP / 单播对端 IP（跨子网用） |
+| `-b, --allow_ip` / `-p, --peer_ip` | 本地绑定 IP / 单播对端 IP（跨子网用） |
 | `-s, --buf_size INT` / `-e, --mtu_size INT` | DDS 收发缓冲区 / MTU 字节数（默认 0 = 内置默认） |
 | `-n, --native` | 仅发现本机节点，并将 DDS 节点绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
 | `-c, --iox_config PATH` | 指定 Iceoryx TOML 配置；提供此项即拉起内嵌 RouDi（direct/SHM 所需） |
@@ -487,6 +488,14 @@ api.register_time_callback([](uint64_t sys_time, uint64_t boot_time) {
 | `-m, --iox_monitoring on\|off` | Iceoryx 监控开关（默认 `on`） |
 | `--dds_impl STRING` | DDS 实现选择（`dds` / `ddsc`） |
 | `--runnable [NAME...]` | 加载 RunablePluginInterface 插件 |
+| `--config PATH` | 所有业务启动参数的 JSON 配置文件；显式命令行参数优先 |
+| `--bridge_domain_id INT` | 启用桥接，连接指定远端 proxy 域（0~255），须与本代理域不同；默认不启用 |
+| `--bridge_security_key STRING` | 远端 proxy 密钥，默认空串 |
+| `--bridge_allow_ip` / `--bridge_peer_ip` | 内部 ProxyAPI 的本地绑定 IP / 远端发现 IP，默认空串 |
+| `--bridge_dds_impl STRING` | 远端 DDS 实现，未指定时使用本代理的 `dds_impl` |
+| `--bridge_reliable` / `--bridge_enable_tcp` | 远端数据通道选项，默认 `false`，须与远端 proxy 一致 |
+| `--bridge_filter STRING` | 源 URL 子串过滤，空格或逗号分隔、忽略大小写、任一匹配即转发；默认 `shm://,shm2://,intra://`，空串不限制 URL |
+| `--bridge_subscribe` | 主动采集本地业务 Publisher，经 ProxyAPI 下发给远端已发现的 Subscriber；默认 `false` |
 
 > SHM 直连（`-g`）需 Iceoryx RouDi 在运行：可由 `-c` / `-l` 让代理内嵌拉起，或外部预先启动 `iox-roudi`。
 
@@ -499,13 +508,38 @@ vlink-proxy -d 1 -k "secure_key_2026"
 
 # TCP + 可靠，绑定本机 IP，放行最大 8 MiB 包
 vlink-proxy -r -t -b 192.168.1.100 -x 8.0
+
+# 从配置文件加载全部参数，仅覆盖远端域和桥接过滤条件
+vlink-proxy --config proxy_config.json --bridge_domain_id 11 --bridge_filter "camera,lidar"
 ```
+
+本地 DDS 绑定参数统一为 `--allow_ip`（短参数仍为 `-b`），JSON 与 C++/Python 配置字段同步为 `allow_ip`。
+
+JSON 键与长参数名一致（去掉 `--`），例如 `domain_id`、`key`、`tcp`、`iox_config`、`runnable`、`bridge_domain_id`。每项按**显式命令行值 → JSON 值 → 内置默认值**取值，`domain_id` 默认仍为 `0`。布尔参数使用 JSON 布尔值，`runnable` 使用字符串数组，`iox_monitoring` 使用 `"on"` / `"off"`。显式空字符串、空插件列表和数值 `0` 也会覆盖 JSON；现有布尔开关出现时设为 `true`。`--config` 只指定当前文件，不递归加载其他配置。
+
+完整配置示例为 [`proxy/etc/proxy_config.json`](../proxy/etc/proxy_config.json)，其中启用了连接域 `10` 的桥接和内嵌 RouDi。JSON 中提供 `iox_config` 或 `iox_strategy` 与命令行 `-c` / `-l` 一样启用 RouDi；使用外部 RouDi 时应省略这两项。JSON 内的相对 `iox_config` 路径以 JSON 文件目录为基准，命令行路径仍以工作目录为基准。同机多个代理应共享一个 RouDi，不能各自重复启动。
+
+桥接内嵌 `ProxyAPI::kController`，使用 `kAuto` 模式按远端服务发现及 `bridge_filter` 配置采集和发布通道。远端 proxy 的控制权由 bridge 持有。两端 proxy 均需使用非 direct 数据通道，密钥、DDS 实现、可靠性和 TCP 设置须与桥接参数匹配。
+
+远端 Subscriber 会合并到本端发给 viewer 的服务发现列表。viewer 向匹配 URL 下发消息时，bridge 校验远端订阅及序列化元数据，由远端 proxy 使用原 URL 发布，同时保留本地投递；共享通道及返回镜像不重复发布。未发现 Subscriber 的 URL 不建立下行路由。订阅消失后，下一次 Info 更新会撤销对应路由和远端 Publisher。
+
+`bridge_subscribe` 默认关闭；开启后，上位机等本地业务 Publisher 的消息也可经内嵌 ProxyAPI 下发到远端 ProxyServer。按远端 Subscriber 预建本地订阅，已发现的本地 Publisher 序列化信息必须匹配，URL 须匹配 `bridge_filter`，且远端没有业务 Publisher；同一 URL 不同时建立镜像与反向采集。Viewer 注入也经该订阅下发，避免重复转发。远端订阅撤销、连接断开或元数据冲突后停止对应转发。
+
+镜像及桥接下发 Publisher 均保持服务发现，monitor 可自动订阅。发现报文仅对转发 Pub 追加可选尾字段 `bridge=1`：旧接收端忽略该字段，新接收端接受无标记旧报文，原有字段及 profiler 位置不变。proxy 排除带标记的发布源，再按当前桥接表合并镜像；同进程、同 URL 的真实 Pub 与转发 Pub 分开聚合、独立过期。防回流要求两端 proxy 及其运行库同步更新，旧版 monitor 可继续使用。
+
+目标 Publisher 保留完整源 URL（包括协议、查询参数和 fragment）、序列化类型及原始载荷：`shm://` 仍为 SHM，`shm2://` 仍为 SHM2，`intra://` 仍为 intra。过滤发生在源 URL 上，多个过滤词是“或”的关系。目标需具备对应后端；`intra://` 仅供接收代理进程内的业务或 runnable 插件订阅，源端也需能采集该进程的可序列化 intra 消息。进程内裸对象共享、RPC 与 Field 不在此桥接范围内。
+
+桥接发布表独立于本地监控控制，按源端 Info 快照增删，断连或协议错误时清除。镜像与主动采集在接收回调内同步转发，Viewer 本地投递沿用 `async`，载荷受本代理 `max_packet_size` 限制；不缓存断线期间的数据，不保证跨网络零拷贝。同机判断要求 hostname 与本机 IPv4 地址集合匹配；两端 machine-id 均非空时还须一致，允许 machine-id 为空。相同机器上的 SHM/SHM2 源通道已可直接访问，桥接按实际后端跳过这些通道，包括 `VLINK_INTRA_BIND` 映射的 intra，以避免回灌；部署须无环，不要将镜像发布通道再桥接回源端。
+
+未映射到其他传输的 intra 只报告源代理进程内的端点，避免同机其他代理的镜像反馈；桥接合并的远端订阅仍用于下行路由。开启桥接时，本地 DDS 业务端点及镜像使用本代理指定的绑定 IP、peer、buffer 和 MTU；启用 `tcp` 时设置 TCP，未启用时保留后端环境配置；`native` 优先使用 `VLINK_DDS_NATIVE_IP`。
+
+停止服务并等待退出会排空桥接接收回调、撤销镜像及路由。
 
 ---
 
 ## 🧱 12.13 代理监控：ProxyServer 嵌入式用法
 
-无需独立进程时，用 `ProxyServer` 库将服务端嵌入业务进程。每个进程仅一个实例，构造后调用 `async_run()` / `run()` 启动。`Config` 字段与 `vlink-proxy` 参数对应：`domain_id`、`security_key`、`reliable`、`enable_tcp`、`direct`、`native_mode`、`max_packet_size`、`bind_ip` / `peer_ip`。
+无需独立进程时，用 `ProxyServer` 库将服务端嵌入业务进程。每个进程仅一个实例，构造后调用 `async_run()` / `run()` 启动。`Config` 字段与 `vlink-proxy` 参数对应：`domain_id`、`security_key`、`reliable`、`enable_tcp`、`direct`、`native_mode`、`max_packet_size`、`allow_ip` / `peer_ip`。
 
 ```cpp
 #include <vlink/external/proxy_server.h>
@@ -532,6 +566,8 @@ int main() {
 ```
 
 `ProxyServer` 析构同步阻塞，会等待全部 DDS 句柄清理后返回，须确保进程退出前调用。
+
+嵌入式桥接使用 `cfg.bridge.emplace()` 填写远端 `ProxyAPI::Config`，例如 `cfg.bridge->domain_id = 10`；`cfg.bridge_filter` 默认同命令行。内部强制使用 Controller，两端 `direct` 必须为 `false`。新增配置字段改变了 `Config` 布局，使用该 C++ 接口的程序需重新编译。
 
 ---
 
@@ -568,7 +604,7 @@ api.send_control(ctrl);
 
 ## 🌐 12.16 代理监控：跨网段部署
 
-典型场景：车载计算单元（EdgePC）运行业务节点与代理服务端，开发机（DevPC）远程监控与注入。两端以 `bind_ip` / `peer_ip` 做 DDS 单播发现，双方 IP 须可路由可达。跨 NAT 时可改用 `zenoh://` 并部署双方可达的 router/显式 endpoint，或另配网络穿透；VLink 不自动穿透 NAT。
+典型场景：车载计算单元（EdgePC）运行业务节点与代理服务端，开发机（DevPC）远程监控与注入。两端以 `allow_ip` / `peer_ip` 做 DDS 单播发现，双方 IP 须可路由可达。跨 NAT 时可改用 `zenoh://` 并部署双方可达的 router/显式 endpoint，或另配网络穿透；VLink 不自动穿透 NAT。
 
 EdgePC 在 12.13 的嵌入式服务端基础上补充绑定 IP：
 
@@ -576,7 +612,7 @@ EdgePC 在 12.13 的嵌入式服务端基础上补充绑定 IP：
 vlink::ProxyServer::Config cfg;
 cfg.domain_id    = 1;
 cfg.security_key = "key";
-cfg.bind_ip      = "192.168.1.100";  // 本机 IP
+cfg.allow_ip      = "192.168.1.100";  // 本机 IP
 cfg.peer_ip      = "192.168.2.50";   // DevPC IP
 ```
 

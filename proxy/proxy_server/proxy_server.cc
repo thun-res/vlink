@@ -35,10 +35,14 @@
 #include <vlink/zerocopy/proxy_data.h>
 //
 #include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <deque>
+#include <limits>
 #include <memory>
 #include <shared_mutex>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -77,6 +81,40 @@ using DataSub = Subscriber<zerocopy::ProxyData>;
 using TimePub = SecurityPublisher<proxy::TimePacket>;
 using InfoPub = SecurityPublisher<proxy::InfoListPacket>;
 using ControlSub = SecuritySubscriber<proxy::ControlPacket>;
+
+template <typename NodeT>
+static void apply_topic_transport(NodeT& node, const ProxyServer::Config& config, const std::string& native_ip) {
+  if (config.native_mode) {
+    node.set_property("dds.ip", native_ip);
+  }
+
+  const auto transport = node.get_transport_type();
+
+  if (!config.bridge ||
+      (transport != TransportType::kDds && transport != TransportType::kDdsc && transport != TransportType::kDdsr)) {
+    return;
+  }
+
+  if (!config.native_mode && !config.allow_ip.empty()) {
+    node.set_property("dds.ip", config.allow_ip);
+  }
+
+  if (!config.peer_ip.empty()) {
+    node.set_property("dds.peer", config.peer_ip);
+  }
+
+  if (config.buf_size > 0) {
+    node.set_property("dds.buf", std::to_string(config.buf_size));
+  }
+
+  if (config.mtu_size > 0) {
+    node.set_property("dds.mtu", std::to_string(config.mtu_size));
+  }
+
+  if (config.enable_tcp) {
+    node.set_property("dds.tcp", "1");
+  }
+}
 
 #if VLINK_PROXY_ENABLE_HANDSHAKE
 using HandshakeSrv = SecurityServer<proxy::HandshakeReqPacket, proxy::HandshakeRespPacket>;
@@ -135,6 +173,7 @@ struct ProxyServer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
 
   std::string current_host_name;
   std::string current_machine_id;
+  std::vector<std::string> current_ip_list;
   std::string native_ip;
   std::string token;
 
@@ -185,6 +224,15 @@ struct ProxyServer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
 
   ProxyForwardLoop forward_loop;
 
+  std::unique_ptr<ProxyAPI> bridge_api;
+  std::unordered_map<std::string, std::shared_ptr<RawPub>> bridge_pubs;
+  std::unordered_map<std::string, std::shared_ptr<RawSub>> bridge_readers;
+  std::unordered_map<std::string, ProxyAPI::Info> bridge_subs;
+  std::vector<ProxyAPI::UrlMeta> bridge_selection;
+  std::shared_mutex bridge_mtx;
+  bool bridge_same_machine{false};
+  std::vector<std::string> bridge_filters;
+
   Plugin runnable_plugin;
   std::vector<std::shared_ptr<RunablePluginInterface>> runnable_interface_list;
 
@@ -203,8 +251,25 @@ ProxyServer::ProxyServer(const Config& config) : impl_(std::make_unique<Impl>())
 
   impl_->current_host_name = Utils::get_host_name();
   impl_->current_machine_id = Utils::get_machine_id();
+  impl_->current_ip_list = Utils::get_all_ipv4_address();
 
-  impl_->real_max_packet_size = impl_->config.max_packet_size * 1024L * 1024L;
+  const double max_packet_bytes = impl_->config.max_packet_size * 1024.0 * 1024.0;
+
+  if VUNLIKELY (!std::isfinite(max_packet_bytes) || max_packet_bytes < 0.0 ||
+                max_packet_bytes >= std::ldexp(1.0, std::numeric_limits<size_t>::digits)) {
+    VLOG_F("ProxyServer: Invalid max packet size.");
+  }
+
+  impl_->real_max_packet_size = static_cast<size_t>(max_packet_bytes);
+
+  if (impl_->config.bridge) {
+    const auto& remote = *impl_->config.bridge;
+
+    if VUNLIKELY (remote.domain_id < 0 || remote.domain_id > 255 || remote.domain_id == config.domain_id ||
+                  remote.direct || config.direct) {
+      VLOG_F("ProxyServer: Bridging requires a different remote DDS domain and non-direct transport.");
+    }
+  }
 
   if VUNLIKELY (ProxyServerGlobal::get().has_init.load(std::memory_order_acquire)) {
     VLOG_F("ProxyServer: Already initialized.");
@@ -229,6 +294,7 @@ ProxyServer::ProxyServer(const Config& config) : impl_(std::make_unique<Impl>())
 
   init_server();
   init_runnable();
+  init_bridge();
 
   ProxyServerGlobal::get().has_init.store(true, std::memory_order_release);
 }
@@ -238,6 +304,16 @@ ProxyServer::~ProxyServer() {
 
   quit(true);
   wait_for_quit();
+
+  if (impl_->bridge_api) {
+    impl_->bridge_api->quit(true);
+    impl_->bridge_api->wait_for_quit();
+    impl_->bridge_api->register_data_callback({});
+    impl_->bridge_api->register_info_callback({});
+    impl_->bridge_api->register_connect_callback({});
+    impl_->bridge_api->register_error_callback({});
+    impl_->bridge_pubs.clear();
+  }
 
   impl_->forward_loop.quit(true);
   impl_->forward_loop.wait_for_quit();
@@ -281,6 +357,7 @@ ProxyServer::~ProxyServer() {
 #endif
 
   impl_->data_sub.reset();
+  impl_->bridge_api.reset();
   impl_->data_pub.reset();
   impl_->time_pub.reset();
   impl_->info_pub.reset();
@@ -298,18 +375,106 @@ size_t ProxyServer::get_max_task_count() const { return kMaxTaskSize; }
 uint32_t ProxyServer::get_max_elapsed_time() const { return kMaxTaskElapsed; }
 
 void ProxyServer::on_begin() {
+  if (impl_->config.async) {
+    impl_->forward_loop.set_name("ProxyForward");
+
+    if VUNLIKELY (!impl_->forward_loop.async_run()) {
+      VLOG_E("ProxyServer: Failed to start the forward loop, async forwarding will stall.");
+    }
+  }
+
+  if (impl_->bridge_api) {
+    impl_->bridge_api->register_data_callback([this](const ProxyAPI::Data& data) {
+      if VUNLIKELY (is_ready_to_quit() || !impl_->bridge_api->is_connected() ||
+                    impl_->bridge_api->get_current_error() != ProxyAPI::kNoError) {
+        return;
+      }
+
+      if VUNLIKELY (impl_->real_max_packet_size > 0 && data.raw.size() > impl_->real_max_packet_size) {
+        return;
+      }
+
+      std::shared_ptr<RawPub> pub;
+
+      {
+        std::shared_lock lock(impl_->bridge_mtx);
+        auto iter = impl_->bridge_pubs.find(data.url);
+
+        if (iter == impl_->bridge_pubs.end()) {
+          return;
+        }
+
+        pub = iter->second;
+      }
+
+      if VUNLIKELY (pub->get_ser_type() != data.ser || pub->get_schema_type() != data.schema) {
+        return;
+      }
+
+      if (pub->has_subscribers()) {
+        pub->publish(data.raw, true);
+      }
+    });
+
+    if VUNLIKELY (!impl_->bridge_api->async_run()) {
+      VLOG_E("ProxyServer: Failed to start the bridge controller.");
+    } else {
+      ProxyAPI::Control control;
+      control.mode = ProxyAPI::kAuto;
+      control.bridge = true;
+      control.filter_str = impl_->config.bridge_filter;
+      control.filter_type = 4;
+      control.url_meta_list = impl_->bridge_selection;
+      impl_->bridge_api->send_control(control);
+    }
+  }
+
   for (const auto& runnable : impl_->runnable_interface_list) {
     runnable->async_run();
     runnable->on_init();
   }
+
+  MessageLoop::on_begin();
 }
 
 void ProxyServer::on_end() {
+  if (impl_->bridge_api) {
+    std::unordered_map<std::string, std::shared_ptr<RawSub>> readers;
+
+    {
+      std::lock_guard lock(impl_->bridge_mtx);
+      readers.swap(impl_->bridge_readers);
+    }
+
+    readers.clear();
+    impl_->bridge_api->quit(true);
+    impl_->bridge_api->wait_for_quit();
+    impl_->bridge_api->register_data_callback({});
+    std::unordered_map<std::string, std::shared_ptr<RawPub>> publishers;
+
+    {
+      std::lock_guard lock(impl_->bridge_mtx);
+      publishers.swap(impl_->bridge_pubs);
+      impl_->bridge_subs.clear();
+      impl_->bridge_selection.clear();
+      impl_->bridge_same_machine = false;
+    }
+  }
+
+  proxy::ControlPacket packet;
+  packet.body.mode = ProxyAPI::kOffline;
+  send_control(&packet);
+
+  impl_->forward_loop.quit(true);
+  impl_->forward_loop.wait_for_quit();
+
   for (const auto& runnable : impl_->runnable_interface_list) {
     runnable->on_deinit();
     runnable->quit();
     runnable->wait_for_quit();
   }
+
+  MessageLoop::on_end();
 }
 
 void ProxyServer::on_task_timeout(MessageLoop::Callback&& callback, uint32_t elapsed_time) {
@@ -396,14 +561,14 @@ void ProxyServer::init_server() {
   impl_->handshake_srv->set_discovery_enabled(false);
 #endif
 
-  if (!impl_->config.bind_ip.empty()) {
-    impl_->data_pub->set_property("dds.ip", impl_->config.bind_ip);
-    impl_->data_sub->set_property("dds.ip", impl_->config.bind_ip);
-    impl_->time_pub->set_property("dds.ip", impl_->config.bind_ip);
-    impl_->info_pub->set_property("dds.ip", impl_->config.bind_ip);
-    impl_->control_sub->set_property("dds.ip", impl_->config.bind_ip);
+  if (!impl_->config.allow_ip.empty()) {
+    impl_->data_pub->set_property("dds.ip", impl_->config.allow_ip);
+    impl_->data_sub->set_property("dds.ip", impl_->config.allow_ip);
+    impl_->time_pub->set_property("dds.ip", impl_->config.allow_ip);
+    impl_->info_pub->set_property("dds.ip", impl_->config.allow_ip);
+    impl_->control_sub->set_property("dds.ip", impl_->config.allow_ip);
 #if VLINK_PROXY_ENABLE_HANDSHAKE
-    impl_->handshake_srv->set_property("dds.ip", impl_->config.bind_ip);
+    impl_->handshake_srv->set_property("dds.ip", impl_->config.allow_ip);
 #endif
   }
 
@@ -538,7 +703,7 @@ void ProxyServer::init_server() {
 
   if (impl_->data_sub->has_inited()) {
     impl_->data_sub->listen([this](const zerocopy::ProxyData& t_data) {
-      if VUNLIKELY (ProxyServerGlobal::get().has_quit.load(std::memory_order_acquire)) {
+      if VUNLIKELY (is_ready_to_quit() || ProxyServerGlobal::get().has_quit.load(std::memory_order_acquire)) {
         return;
       }
 
@@ -553,6 +718,10 @@ void ProxyServer::init_server() {
         return;
       }
 
+      if (impl_->bridge_api && forward_bridge_data(&t_data)) {
+        return;
+      }
+
       if (!impl_->config.direct) {
         if (impl_->config.async) {
           impl_->forward_loop.post_task([this, t_data]() {
@@ -563,7 +732,8 @@ void ProxyServer::init_server() {
             std::shared_lock lock(impl_->pubs_mtx);
             auto iter = impl_->pub_ptr_map.find(std::string(t_data.url()));
 
-            if VUNLIKELY (iter == impl_->pub_ptr_map.end()) {
+            if VUNLIKELY (iter == impl_->pub_ptr_map.end() || iter->second.node->get_ser_type() != t_data.ser() ||
+                          static_cast<uint32_t>(iter->second.node->get_schema_type()) != t_data.schema()) {
               return;
             }
 
@@ -575,7 +745,8 @@ void ProxyServer::init_server() {
           std::shared_lock lock(impl_->pubs_mtx);
           auto iter = impl_->pub_ptr_map.find(std::string(t_data.url()));
 
-          if VUNLIKELY (iter == impl_->pub_ptr_map.end()) {
+          if VUNLIKELY (iter == impl_->pub_ptr_map.end() || iter->second.node->get_ser_type() != t_data.ser() ||
+                        static_cast<uint32_t>(iter->second.node->get_schema_type()) != t_data.schema()) {
             return;
           }
 
@@ -603,15 +774,302 @@ void ProxyServer::init_server() {
     post_task([this, packet]() { send_control(&packet); });
   });
 
-  if (impl_->config.async) {
-    impl_->forward_loop.set_name("ProxyForward");
+  impl_->discovery_viewer->async_run();
+}
 
-    if VUNLIKELY (!impl_->forward_loop.async_run()) {
-      VLOG_E("ProxyServer: Failed to start the forward loop, async forwarding will stall.");
+void ProxyServer::init_bridge() {
+  if (!impl_->config.bridge) {
+    return;
+  }
+
+  auto remote = *impl_->config.bridge;
+  remote.role = ProxyAPI::kController;
+  impl_->bridge_filters = Helpers::split_any(impl_->config.bridge_filter);
+
+  for (auto& filter : impl_->bridge_filters) {
+    std::transform(filter.begin(), filter.end(), filter.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  }
+
+  impl_->bridge_api = std::make_unique<ProxyAPI>(remote);
+  impl_->bridge_api->set_name("ProxyBridge");
+
+  impl_->bridge_api->register_info_callback([this](const std::vector<ProxyAPI::Info>& info_list) {
+    if VLIKELY (!is_ready_to_quit()) {
+      post_task([this, info_list]() { update_bridge(info_list); });
+    }
+  });
+  impl_->bridge_api->register_connect_callback([this](bool connected) {
+    if VUNLIKELY (!connected && !is_ready_to_quit()) {
+      post_task([this]() { update_bridge({}); });
+    }
+  });
+  impl_->bridge_api->register_error_callback([this](ProxyAPI::Error error) {
+    if VUNLIKELY (error != ProxyAPI::kNoError && !is_ready_to_quit()) {
+      VLOG_W("ProxyServer: Bridge connection error: ", static_cast<int>(error), ".");
+      post_task([this]() { update_bridge({}); });
+    }
+  });
+}
+
+void ProxyServer::update_bridge(const std::vector<ProxyAPI::Info>& info_list) {
+  std::unordered_map<std::string, std::shared_ptr<RawPub>> next_pubs;
+  std::unordered_map<std::string, std::shared_ptr<RawSub>> next_readers;
+  std::unordered_map<std::string, ProxyAPI::Info> next_subs;
+  std::vector<ProxyAPI::UrlMeta> selection;
+  const bool same_machine =
+      impl_->bridge_api->is_same_machine(impl_->current_host_name, impl_->current_machine_id, impl_->current_ip_list);
+
+  if VLIKELY (!is_ready_to_quit() && impl_->bridge_api->is_connected() &&
+              impl_->bridge_api->get_current_error() == ProxyAPI::kNoError) {
+    next_pubs.reserve(info_list.size());
+    const auto local_infos = impl_->config.bridge_subscribe ? impl_->discovery_viewer->get_info_list()
+                                                            : std::vector<DiscoveryViewer::Info>{};
+    std::unordered_map<std::string_view, const DiscoveryViewer::Info*> local_publishers;
+    local_publishers.reserve(local_infos.size());
+
+    for (const auto& local : local_infos) {
+      if (!(local.type & kPublisher)) {
+        continue;
+      }
+
+      const bool pure_intra =
+          Url::is_intra_type(local.url) && Url(local.url).get_transport_type() == TransportType::kIntra;
+
+      if (std::none_of(local.process_list.begin(), local.process_list.end(), [&](const DiscoveryViewer::Process& p) {
+            return !p.bridge && (p.type & kPublisher) &&
+                   (!pure_intra ||
+                    (p.host == impl_->current_host_name && p.pid == static_cast<uint32_t>(Utils::get_pid())));
+          })) {
+        continue;
+      }
+
+      local_publishers.emplace(local.url, &local);
+    }
+
+    for (const auto& info : info_list) {
+      if (!(info.type & (kPublisher | kSubscriber)) || (info.type & (kSetter | kGetter)) || info.ser.empty()) {
+        continue;
+      }
+
+      if (!impl_->bridge_filters.empty()) {
+        std::string url = info.url;
+        std::transform(url.begin(), url.end(), url.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+        if (std::none_of(impl_->bridge_filters.begin(), impl_->bridge_filters.end(),
+                         [&url](const std::string& filter) { return url.find(filter) != std::string::npos; })) {
+          continue;
+        }
+      }
+
+      bool shared_shm = false;
+
+      if (same_machine) {
+        try {
+          const auto transport = Url(info.url).get_transport_type();
+          shared_shm = transport == TransportType::kShm || transport == TransportType::kShm2;
+        } catch (const Exception::RuntimeError& error) {
+          VLOG_W("ProxyServer: Cannot resolve bridge transport: ", error.what());
+          continue;
+        }
+      }
+
+      if (info.type & kSubscriber) {
+        next_subs.emplace(info.url, info);
+        selection.push_back({info.url, info.ser, info.schema, kPublisher});
+      }
+
+      if (!(info.type & kPublisher)) {
+        if (!impl_->config.bridge_subscribe || shared_shm) {
+          continue;
+        }
+
+        const auto local = local_publishers.find(info.url);
+
+        if (local != local_publishers.end() &&
+            (local->second->ser_type != info.ser || local->second->schema_type != info.schema)) {
+          continue;
+        }
+
+        std::shared_ptr<RawSub> sub;
+
+        {
+          std::shared_lock lock(impl_->bridge_mtx);
+          const auto iter = impl_->bridge_readers.find(info.url);
+
+          if (iter != impl_->bridge_readers.end() && iter->second->get_ser_type() == info.ser &&
+              iter->second->get_schema_type() == info.schema) {
+            sub = iter->second;
+          }
+        }
+
+        if (!sub) {
+          try {
+            sub = std::make_shared<RawSub>(info.url, InitType::kWithoutInit);
+            apply_topic_transport(*sub, impl_->config, impl_->native_ip);
+            sub->set_safety_quit(true);
+            sub->set_discovery_enabled(false);
+            sub->set_ser_type(info.ser, info.schema);
+            sub->init();
+            sub->listen(
+                [this, node = sub.get(), url = info.url, ser = info.ser, schema = info.schema](const Bytes& raw) {
+                  if VUNLIKELY (is_ready_to_quit() || !impl_->bridge_api->is_connected() ||
+                                impl_->bridge_api->get_current_error() != ProxyAPI::kNoError ||
+                                (impl_->real_max_packet_size > 0 && raw.size() > impl_->real_max_packet_size)) {
+                    return;
+                  }
+
+                  {
+                    std::shared_lock lock(impl_->bridge_mtx);
+                    const auto iter = impl_->bridge_readers.find(url);
+
+                    if VUNLIKELY (iter == impl_->bridge_readers.end() || iter->second.get() != node) {
+                      return;
+                    }
+                  }
+
+                  ProxyAPI::Data outgoing;
+                  outgoing.url = url;
+                  outgoing.ser = ser;
+                  outgoing.schema = schema;
+                  outgoing.raw.shallow_copy(raw);
+                  outgoing.timestamp = impl_->main_elapsed.get();
+                  impl_->bridge_api->send_data(outgoing);
+                });
+          } catch (const Exception::RuntimeError& error) {
+            VLOG_W("ProxyServer: Cannot create bridge subscriber: ", error.what());
+            continue;
+          }
+        }
+
+        next_readers.emplace(info.url, std::move(sub));
+        continue;
+      }
+
+      if (shared_shm) {
+        continue;
+      }
+
+      std::shared_ptr<RawPub> pub;
+
+      {
+        std::shared_lock lock(impl_->bridge_mtx);
+        const auto iter = impl_->bridge_pubs.find(info.url);
+
+        if (iter != impl_->bridge_pubs.end() && iter->second->get_ser_type() == info.ser &&
+            iter->second->get_schema_type() == info.schema) {
+          pub = iter->second;
+        }
+      }
+
+      if VUNLIKELY (!pub) {
+        try {
+          pub = std::make_shared<RawPub>(info.url, InitType::kWithoutInit);
+          apply_topic_transport(*pub, impl_->config, impl_->native_ip);
+          pub->set_property("proxy.bridge", "1");
+          pub->set_ser_type(info.ser, info.schema);
+          pub->init();
+        } catch (const Exception::RuntimeError& error) {
+          VLOG_W("ProxyServer: Cannot create bridge publisher: ", error.what());
+          continue;
+        }
+      }
+
+      next_pubs.emplace(info.url, std::move(pub));
+      selection.push_back({info.url, info.ser, info.schema, kSubscriber});
     }
   }
 
-  impl_->discovery_viewer->async_run();
+  std::sort(selection.begin(), selection.end(), [](const ProxyAPI::UrlMeta& left, const ProxyAPI::UrlMeta& right) {
+    return left.url < right.url || (left.url == right.url && left.type < right.type);
+  });
+
+  {
+    std::lock_guard lock(impl_->bridge_mtx);
+    impl_->bridge_same_machine = same_machine;
+    impl_->bridge_pubs.swap(next_pubs);
+    impl_->bridge_readers.swap(next_readers);
+    impl_->bridge_subs.swap(next_subs);
+  }
+
+  next_readers.clear();
+  next_pubs.clear();
+
+  if (!std::equal(selection.begin(), selection.end(), impl_->bridge_selection.begin(), impl_->bridge_selection.end(),
+                  [](const ProxyAPI::UrlMeta& left, const ProxyAPI::UrlMeta& right) {
+                    return left.url == right.url && left.ser == right.ser && left.schema == right.schema &&
+                           left.type == right.type;
+                  })) {
+    ProxyAPI::Control control;
+    control.mode = ProxyAPI::kAuto;
+    control.bridge = true;
+    control.filter_str = impl_->config.bridge_filter;
+    control.filter_type = 4;
+    control.url_meta_list = std::move(selection);
+    impl_->bridge_api->send_control(control);
+    impl_->bridge_selection = std::move(control.url_meta_list);
+  }
+}
+
+bool ProxyServer::forward_bridge_data(const void* data) {
+  const auto& packet = *static_cast<const zerocopy::ProxyData*>(data);
+
+  if VUNLIKELY (!impl_->bridge_api->is_connected() || impl_->bridge_api->get_current_error() != ProxyAPI::kNoError) {
+    return false;
+  }
+
+  ProxyAPI::Data outgoing;
+  outgoing.url = packet.url();
+  bool mirrored = false;
+  bool same_machine = false;
+
+  {
+    std::shared_lock lock(impl_->bridge_mtx);
+    const auto iter = impl_->bridge_subs.find(outgoing.url);
+
+    if (iter == impl_->bridge_subs.end()) {
+      return false;
+    }
+
+    if VUNLIKELY (iter->second.ser != packet.ser() || static_cast<uint32_t>(iter->second.schema) != packet.schema()) {
+      return false;
+    }
+
+    mirrored = (iter->second.type & kPublisher) != 0;
+    same_machine = impl_->bridge_same_machine;
+  }
+
+  bool shared_shm = false;
+
+  {
+    std::shared_lock lock(impl_->pubs_mtx);
+    const auto iter = impl_->pub_ptr_map.find(outgoing.url);
+
+    if VUNLIKELY (iter == impl_->pub_ptr_map.end() || iter->second.type != kPublisher ||
+                  iter->second.node->get_ser_type() != packet.ser() ||
+                  static_cast<uint32_t>(iter->second.node->get_schema_type()) != packet.schema()) {
+      return false;
+    }
+
+    const auto transport = iter->second.node->get_transport_type();
+    shared_shm = same_machine && (transport == TransportType::kShm || transport == TransportType::kShm2);
+  }
+
+  if VUNLIKELY (impl_->real_max_packet_size > 0 && packet.raw().size() > impl_->real_max_packet_size) {
+    return true;
+  }
+
+  if (!impl_->config.bridge_subscribe || mirrored || shared_shm) {
+    outgoing.ser = packet.ser();
+    outgoing.schema = static_cast<SchemaType>(packet.schema());
+    outgoing.raw.shallow_copy(packet.raw());
+    outgoing.timestamp = packet.timestamp();
+    outgoing.seq = packet.seq();
+    impl_->bridge_api->send_data(outgoing);
+  }
+
+  return mirrored || shared_shm;
 }
 
 void ProxyServer::init_runnable() {
@@ -644,6 +1102,7 @@ void ProxyServer::send_time() {
   time.version = VLINK_VERSION;
   time.hostname = impl_->current_host_name;
   time.machine_id = impl_->current_machine_id;
+  time.ip_list = impl_->current_ip_list;
 #if VLINK_PROXY_ENABLE_HANDSHAKE
   time.token = impl_->token;
 #endif
@@ -800,7 +1259,8 @@ void ProxyServer::send_control(const void* control_data) {
             auto* pub = pub_iter->second.node.get();
 
             if (pub && pub_iter->second.type == meta.type && pub->get_ser_type() == meta.ser &&
-                pub->get_schema_type() == meta.schema) {
+                pub->get_schema_type() == meta.schema &&
+                (pub->get_property("proxy.bridge") == "1") == (body.bridge && meta.type == kPublisher)) {
               continue;
             }
 
@@ -814,12 +1274,14 @@ void ProxyServer::send_control(const void* control_data) {
               pub->mark_as_setter();
             }
 
-            if (impl_->config.native_mode) {
-              pub->set_property("dds.ip", impl_->native_ip);
-            }
+            apply_topic_transport(*pub, impl_->config, impl_->native_ip);
 
             pub->set_ser_type(meta.ser, meta.schema);
-            pub->set_discovery_enabled(true);
+
+            if (body.bridge && meta.type == kPublisher) {
+              pub->set_property("proxy.bridge", "1");
+            }
+
             pub->init();
 
             impl_->pub_ptr_map.emplace(url, Impl::PubEntry{std::move(pub), meta.type});
@@ -880,7 +1342,117 @@ void ProxyServer::update_all() {
 
   proxy::InfoListPacket packet;
 
-  const auto& info_list = impl_->discovery_viewer->get_info_list();
+  auto info_list = impl_->discovery_viewer->get_info_list();
+  const auto current_pid = static_cast<uint32_t>(Utils::get_pid());
+  info_list.erase(
+      std::remove_if(
+          info_list.begin(), info_list.end(),
+          [&](DiscoveryViewer::Info& info) {
+            const bool intra = Url::is_intra_type(info.url);
+            const auto transport = intra ? Url(info.url).get_transport_type() : TransportType::kUnknown;
+            const bool pure_intra = intra && transport == TransportType::kIntra;
+            const bool local_only = Url::is_shm_type(info.url) ||
+                                    (intra && (transport == TransportType::kIntra || transport == TransportType::kShm ||
+                                               transport == TransportType::kShm2));
+            auto& processes = info.process_list;
+            processes.erase(
+                std::remove_if(
+                    processes.begin(), processes.end(),
+                    [&](DiscoveryViewer::Process& process) {
+                      const bool own_process = process.host == impl_->current_host_name && process.pid == current_pid;
+
+                      if (pure_intra && !own_process) {
+                        return true;
+                      }
+
+                      if (local_only && !process.ip_list.empty() &&
+                          std::none_of(process.ip_list.begin(), process.ip_list.end(), [&](const std::string& ip) {
+                            return std::find(impl_->current_ip_list.begin(), impl_->current_ip_list.end(), ip) !=
+                                   impl_->current_ip_list.end();
+                          })) {
+                        return true;
+                      }
+
+                      if (process.bridge) {
+                        process.type &= ~kPublisher;
+                      }
+
+                      return process.type == 0;
+                    }),
+                processes.end());
+            info.type = 0;
+
+            for (const auto& process : processes) {
+              info.type |= process.type;
+            }
+
+            return info.type == 0;
+          }),
+      info_list.end());
+
+  std::unordered_map<std::string_view, size_t> info_index;
+
+  if (!impl_->bridge_subs.empty() || !impl_->bridge_pubs.empty()) {
+    info_list.reserve(info_list.size() + impl_->bridge_subs.size() + impl_->bridge_pubs.size());
+    info_index.reserve(info_list.size());
+
+    for (size_t i = 0; i < info_list.size(); ++i) {
+      info_index.emplace(info_list[i].url, i);
+    }
+  }
+
+  for (const auto& [url, pub] : impl_->bridge_pubs) {
+    const auto iter = info_index.find(url);
+    const size_t index = iter == info_index.end() ? info_list.size() : iter->second;
+
+    if (index == info_list.size()) {
+      auto& mirror = info_list.emplace_back();
+      mirror.url = url;
+      mirror.ser_type = pub->get_ser_type();
+      mirror.schema_type = pub->get_schema_type();
+      info_index.emplace(url, index);
+    } else if (info_list[index].ser_type != pub->get_ser_type() ||
+               info_list[index].schema_type != pub->get_schema_type()) {
+      continue;
+    }
+
+    auto& mirror = info_list[index];
+    mirror.type |= kPublisher;
+    auto& process = mirror.process_list.emplace_back();
+    process.type = kPublisher;
+    process.host = impl_->current_host_name;
+    process.pid = current_pid;
+    process.name = Utils::get_app_name();
+    process.ip_list = impl_->current_ip_list;
+  }
+
+  for (const auto& [url, info] : impl_->bridge_subs) {
+    const auto iter = info_index.find(url);
+    const size_t index = iter == info_index.end() ? info_list.size() : iter->second;
+
+    if (index == info_list.size()) {
+      auto& remote = info_list.emplace_back();
+      remote.url = url;
+      remote.ser_type = info.ser;
+      remote.schema_type = info.schema;
+    } else if (info_list[index].ser_type != info.ser || info_list[index].schema_type != info.schema) {
+      continue;
+    }
+
+    auto& local = info_list[index];
+    local.type |= kSubscriber;
+
+    for (const auto& process : info.process_list) {
+      if (process.type & kSubscriber) {
+        auto& remote = local.process_list.emplace_back();
+        remote.type = kSubscriber;
+        remote.host = process.host;
+        remote.pid = process.pid;
+        remote.name = process.name;
+        remote.ip_list = process.ip_list;
+      }
+    }
+  }
 
   packet.info_list.reserve(info_list.size());
 
@@ -1075,7 +1647,8 @@ void ProxyServer::update_all() {
     }
 
     if ((!(info.type & kPublisher) && !(info.type & kSetter)) ||
-        (!impl_->has_intra_bind && impl_->runnable_interface_list.empty() && Url::is_intra_type(info.url))) {
+        (!impl_->has_intra_bind && impl_->runnable_interface_list.empty() && Url::is_intra_type(info.url) &&
+         impl_->bridge_pubs.count(info.url) == 0)) {
       out_info.status = ProxyAPI::kInvalid;
       out_info.freq = 0;
       out_info.rate = 0;
@@ -1204,9 +1777,7 @@ void ProxyServer::update_all() {
 
         sub->set_latency_and_lost_enabled(true);
 
-        if (impl_->config.native_mode) {
-          sub->set_property("dds.ip", impl_->native_ip);
-        }
+        apply_topic_transport(*sub, impl_->config, impl_->native_ip);
 
         sub->set_discovery_enabled(false);
         sub->set_ser_type(current_meta.ser, current_meta.schema);
@@ -1216,7 +1787,7 @@ void ProxyServer::update_all() {
 
         sub->listen([this, sub_ptr = sub.get(), url = info.url, ser = current_meta.ser, schema = current_meta.schema,
                      &total_seq, &seq, &size, &lat, &elapsed](const Bytes& bytes) {
-          if VUNLIKELY (ProxyServerGlobal::get().has_quit.load(std::memory_order_acquire) ||
+          if VUNLIKELY (is_ready_to_quit() || ProxyServerGlobal::get().has_quit.load(std::memory_order_acquire) ||
                         impl_->discovery_viewer->is_ready_to_quit()) {
             return;
           }

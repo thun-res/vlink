@@ -30,6 +30,8 @@
 #include <cctype>
 #include <cmath>
 #include <limits>
+#include <type_traits>
+#include <utility>
 
 #include "./webviz_app_utils.h"
 
@@ -54,7 +56,7 @@ void ProxyConfigHelper::add_arguments(argparse::ArgumentParser& program) {
       .help("DDS implementation used by proxy_api channels")
       .default_value(std::string("dds"));
 
-  program.add_argument("--proxy_bind_ip").help("Bind DDS sockets to this IP address").default_value(std::string(""));
+  program.add_argument("--proxy_allow_ip").help("Bind DDS sockets to this IP address").default_value(std::string(""));
 
   program.add_argument("--proxy_peer_ip").help("Unicast peer IP for DDS discovery").default_value(std::string(""));
 
@@ -118,6 +120,27 @@ void ProxyConfigHelper::add_arguments(argparse::ArgumentParser& program) {
   program.add_argument("--proxy_iox_monitoring")
       .help("Iceoryx monitoring mode for proxy_server mode: on or off")
       .default_value(std::string("on"));
+
+  program.add_argument("--bridge_domain_id").help("Remote proxy domain for proxy_server mode").scan<'i', int>();
+  program.add_argument("--bridge_security_key").help("Remote proxy security key").default_value(std::string());
+  program.add_argument("--bridge_allow_ip").help("Bridge local DDS bind IP").default_value(std::string());
+  program.add_argument("--bridge_peer_ip").help("Remote proxy discovery IP").default_value(std::string());
+  program.add_argument("--bridge_dds_impl").help("Remote DDS implementation").default_value(std::string());
+  program.add_argument("--bridge_reliable")
+      .help("Remote proxy uses reliable data transport")
+      .default_value(false)
+      .implicit_value(true);
+  program.add_argument("--bridge_enable_tcp")
+      .help("Remote proxy uses TCP data transport")
+      .default_value(false)
+      .implicit_value(true);
+  program.add_argument("--bridge_filter")
+      .help("URL substrings separated by spaces or commas (case-insensitive)")
+      .default_value(std::string("shm://,shm2://,intra://"));
+  program.add_argument("--bridge_subscribe")
+      .help("Subscribe to local publishers and forward to discovered remote subscribers")
+      .default_value(false)
+      .implicit_value(true);
 }
 
 bool ProxyConfigHelper::apply_config(const Json& root, const std::filesystem::path& config_file,
@@ -206,13 +229,13 @@ bool ProxyConfigHelper::apply_config(const Json& root, const std::filesystem::pa
     config.transport.enable_tcp = proxy["enable_tcp"].get<bool>();
   }
 
-  if VLIKELY (!program.is_used("--proxy_bind_ip") && proxy.contains("bind_ip")) {
-    if VUNLIKELY (!proxy["bind_ip"].is_string()) {
-      error = "proxy.bind_ip must be a string";
+  if VLIKELY (!program.is_used("--proxy_allow_ip") && proxy.contains("allow_ip")) {
+    if VUNLIKELY (!proxy["allow_ip"].is_string()) {
+      error = "proxy.allow_ip must be a string";
       return false;
     }
 
-    config.transport.bind_ip = proxy["bind_ip"].get<std::string>();
+    config.transport.allow_ip = proxy["allow_ip"].get<std::string>();
   }
 
   if VLIKELY (!program.is_used("--proxy_peer_ip") && proxy.contains("peer_ip")) {
@@ -289,6 +312,47 @@ bool ProxyConfigHelper::apply_config(const Json& root, const std::filesystem::pa
     if VUNLIKELY (!server.is_object()) {
       error = "proxy.server must be an object";
       return false;
+    }
+
+    const auto read_bridge = [&](const char* key, auto& value) {
+      if (program.is_used(std::string("--") + key) || !server.contains(key)) {
+        return true;
+      }
+
+      using ValueT = std::decay_t<decltype(value)>;
+      const auto& entry = server[key];
+
+      if constexpr (std::is_same_v<ValueT, int>) {
+        if (read_config_integer(entry, value)) {
+          return true;
+        }
+      } else {
+        if ((std::is_same_v<ValueT, bool> && entry.is_boolean()) ||
+            (std::is_same_v<ValueT, std::string> && entry.is_string())) {
+          entry.get_to(value);
+          return true;
+        }
+      }
+
+      error = std::string("Invalid proxy.server.") + key;
+      return false;
+    };
+    ProxyAPI::Config remote;
+    remote.dds_impl.clear();
+
+    if VUNLIKELY (!read_bridge("bridge_domain_id", remote.domain_id) ||
+                  !read_bridge("bridge_security_key", remote.security_key) ||
+                  !read_bridge("bridge_allow_ip", remote.allow_ip) || !read_bridge("bridge_peer_ip", remote.peer_ip) ||
+                  !read_bridge("bridge_dds_impl", remote.dds_impl) ||
+                  !read_bridge("bridge_reliable", remote.reliable) ||
+                  !read_bridge("bridge_enable_tcp", remote.enable_tcp) ||
+                  !read_bridge("bridge_filter", config.server.bridge_filter) ||
+                  !read_bridge("bridge_subscribe", config.server.bridge_subscribe)) {
+      return false;
+    }
+
+    if (server.contains("bridge_domain_id") || program.is_used("--bridge_domain_id")) {
+      config.server.bridge = std::move(remote);
     }
 
     if VLIKELY (!program.is_used("--proxy_max_packet_size") && server.contains("max_packet_size")) {
@@ -391,8 +455,8 @@ bool ProxyConfigHelper::apply_arguments(const argparse::ArgumentParser& program,
     config.transport.enable_tcp = program.get<bool>("--proxy_tcp");
   }
 
-  if VUNLIKELY (program.is_used("--proxy_bind_ip")) {
-    config.transport.bind_ip = program.get<std::string>("--proxy_bind_ip");
+  if VUNLIKELY (program.is_used("--proxy_allow_ip")) {
+    config.transport.allow_ip = program.get<std::string>("--proxy_allow_ip");
   }
 
   if VUNLIKELY (program.is_used("--proxy_peer_ip")) {
@@ -447,6 +511,38 @@ bool ProxyConfigHelper::apply_arguments(const argparse::ArgumentParser& program,
     }
   }
 
+  auto remote = config.server.bridge.value_or(ProxyAPI::Config{});
+
+  if (!config.server.bridge) {
+    remote.dds_impl.clear();
+  }
+
+  const auto read_bridge = [&](const char* key, auto& value) {
+    const auto option = std::string("--") + key;
+
+    if (program.is_used(option)) {
+      value = program.get<std::decay_t<decltype(value)>>(option);
+    }
+  };
+  read_bridge("bridge_domain_id", remote.domain_id);
+  read_bridge("bridge_security_key", remote.security_key);
+  read_bridge("bridge_allow_ip", remote.allow_ip);
+  read_bridge("bridge_peer_ip", remote.peer_ip);
+  read_bridge("bridge_dds_impl", remote.dds_impl);
+  read_bridge("bridge_reliable", remote.reliable);
+  read_bridge("bridge_enable_tcp", remote.enable_tcp);
+  read_bridge("bridge_filter", config.server.bridge_filter);
+  read_bridge("bridge_subscribe", config.server.bridge_subscribe);
+
+  if (config.server.bridge || program.is_used("--bridge_domain_id")) {
+    if (remote.dds_impl.empty()) {
+      remote.dds_impl = config.transport.dds_impl;
+    }
+
+    remote.dds_impl = normalize_token(remote.dds_impl);
+    config.server.bridge = std::move(remote);
+  }
+
   if VUNLIKELY (config.transport.native) {
     config.transport.native_ip = Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1");
   }
@@ -455,6 +551,25 @@ bool ProxyConfigHelper::apply_arguments(const argparse::ArgumentParser& program,
 }
 
 bool ProxyConfigHelper::validate(const ProxyBridge::Config& config, std::string& error) {
+  if (config.server.bridge) {
+    const auto& remote = *config.server.bridge;
+
+    if VUNLIKELY (config.interface_mode != ProxyBridge::kProxyServer) {
+      error = "bridge_domain_id requires proxy_server mode";
+      return false;
+    }
+
+    if VUNLIKELY (remote.domain_id < 0 || remote.domain_id > 255 || remote.domain_id == config.transport.domain_id) {
+      error = "bridge_domain_id must be in [0, 255] and differ from proxy_domain_id";
+      return false;
+    }
+
+    if VUNLIKELY (!is_valid_dds_impl(remote.dds_impl)) {
+      error = "bridge_dds_impl must be one of: dds, ddsc, ddsr";
+      return false;
+    }
+  }
+
   if VUNLIKELY (config.transport.domain_id < 0 || config.transport.domain_id > 255) {
     error = "proxy_domain_id must be in [0, 255]";
     return false;

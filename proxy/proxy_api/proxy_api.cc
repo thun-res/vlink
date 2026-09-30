@@ -156,6 +156,7 @@ struct ProxyAPI::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddin
   std::string hostname;
   std::unordered_set<std::string> hostname_set;
   std::string machine_id;
+  std::vector<std::string> ip_list;
   std::unordered_set<std::string> machine_id_set;
 };
 
@@ -427,6 +428,14 @@ std::string ProxyAPI::get_current_machine_id() const {
   return impl_->machine_id;
 }
 
+bool ProxyAPI::is_same_machine(const std::string& hostname, const std::string& machine_id,
+                               const std::vector<std::string>& ip_list) const {
+  std::shared_lock lock(impl_->version_mtx);
+  return !hostname.empty() && !ip_list.empty() && impl_->hostname == hostname &&
+         (machine_id.empty() || impl_->machine_id.empty() || impl_->machine_id == machine_id) &&
+         std::is_permutation(impl_->ip_list.begin(), impl_->ip_list.end(), ip_list.begin(), ip_list.end());
+}
+
 uint64_t ProxyAPI::get_current_sys_time() const {
   std::shared_lock time_state_lock(impl_->time_state_mtx);
 
@@ -576,6 +585,21 @@ void ProxyAPI::on_end() {
     send_control(control, false);
   }
 
+  impl_->clear_handles();
+
+  decltype(impl_->sub_map) subscribers;
+  decltype(impl_->pub_map) publishers;
+
+  {
+    std::lock_guard lock(impl_->direct_mtx);
+    subscribers.swap(impl_->sub_map);
+    publishers.swap(impl_->pub_map);
+    impl_->getter_sub_urls.clear();
+  }
+
+  subscribers.clear();
+  publishers.clear();
+
   MessageLoop::on_end();
 }
 
@@ -690,7 +714,11 @@ void ProxyAPI::sync_direct_maps(const Control& control) {
   for (auto sub_iter = impl_->sub_map.begin(); sub_iter != impl_->sub_map.end();) {
     if (desired_sub_meta_map.find(sub_iter->first) == desired_sub_meta_map.end()) {
       impl_->getter_sub_urls.erase(sub_iter->first);
+      auto retired = std::move(sub_iter->second);
       sub_iter = impl_->sub_map.erase(sub_iter);
+      direct_lock.unlock();
+      retired.reset();
+      direct_lock.lock();
     } else {
       ++sub_iter;
     }
@@ -750,16 +778,24 @@ void ProxyAPI::sync_direct_maps(const Control& control) {
       const bool is_getter = impl_->getter_sub_urls.count(url) != 0U;
 
       if (is_getter != want_getter) {
+        auto retired = std::move(sub_iter->second);
         impl_->sub_map.erase(sub_iter);
         impl_->getter_sub_urls.erase(url);
+        direct_lock.unlock();
+        retired.reset();
+        direct_lock.lock();
       } else if (sub && sub->get_ser_type() == meta.ser && sub->get_schema_type() == meta.schema) {
         if (want_getter) {
           impl_->getter_sub_urls.emplace(url);
         }
         continue;
       } else {
+        auto retired = std::move(sub_iter->second);
         impl_->sub_map.erase(sub_iter);
         impl_->getter_sub_urls.erase(url);
+        direct_lock.unlock();
+        retired.reset();
+        direct_lock.lock();
       }
     }
 
@@ -775,6 +811,7 @@ void ProxyAPI::sync_direct_maps(const Control& control) {
       }
 
       sub->set_discovery_enabled(false);
+      sub->set_safety_quit(true);
       sub->set_ser_type(meta.ser, meta.schema);
       sub->init();
 
@@ -918,6 +955,10 @@ void ProxyAPI::reset_handle() {
   impl_->control_pub = std::make_shared<ControlPub>(
       proxy::make_url(impl_->config.dds_impl, proxy::kControlUrlCtx, domain_id_str), sec_cfg, InitType::kWithoutInit);
 
+  impl_->data_sub->set_safety_quit(true);
+  impl_->time_sub->set_safety_quit(true);
+  impl_->info_sub->set_safety_quit(true);
+
 #if VLINK_PROXY_ENABLE_HANDSHAKE
   impl_->handshake_cli = std::make_shared<HandshakeCli>(
       proxy::make_url(impl_->config.dds_impl, proxy::kHandshakeUrlCtx, domain_id_str), sec_cfg, InitType::kWithoutInit);
@@ -1021,6 +1062,7 @@ void ProxyAPI::reset_handle() {
     impl_->hostname_set.clear();
 
     impl_->machine_id.clear();
+    impl_->ip_list.clear();
     impl_->machine_id_set.clear();
 
     impl_->proxy_version.clear();
@@ -1236,6 +1278,7 @@ void ProxyAPI::reset_handle() {
     {
       std::lock_guard lock(impl_->version_mtx);
       impl_->proxy_version = time.version;
+      impl_->ip_list = time.ip_list;
     }
 
     if (impl_->config.match_version) {
@@ -1282,7 +1325,7 @@ void ProxyAPI::reset_handle() {
         impl_->last_control = control;
       }
 
-      sync_direct_maps(control);
+      post_task([this, control = std::move(control)] { sync_direct_maps(control); });
     }
 
     if VUNLIKELY (time.control_id == 0) {
@@ -1365,7 +1408,7 @@ void ProxyAPI::reset_handle() {
         impl_->direct_info_list = info_list;
       }
 
-      sync_direct_maps(control);
+      post_task([this, control = std::move(control)] { sync_direct_maps(control); });
     }
 
     std::shared_lock lock(impl_->info_mtx);
@@ -1411,6 +1454,7 @@ void ProxyAPI::process_connected(bool connected) {
       // impl_->hostname_set.clear();
 
       impl_->machine_id.clear();
+      impl_->ip_list.clear();
       // impl_->machine_id_set.clear();
     }
 

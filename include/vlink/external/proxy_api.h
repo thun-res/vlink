@@ -330,6 +330,7 @@ class VLINK_PROXY_API_EXPORT ProxyAPI : public MessageLoop {
     bool filter_by_process{false};       ///< When true, @c filter_str matches process names; otherwise URLs.
     std::string filter_str;              ///< Space- or comma-separated filter keywords (case-insensitive).
     uint32_t filter_type{0};             ///< Type filter: 0=all, 1=pub+sub pair, 2=srv+cli pair, etc.
+    bool bridge{false};                  /**< Mark bridge-injected event publishers in global discovery. */
   };
 
   /**
@@ -786,6 +787,11 @@ class VLINK_PROXY_API_EXPORT ProxyAPI : public MessageLoop {
   void on_end() override;
 
  private:
+  friend class ProxyServer;
+
+  [[nodiscard]] bool is_same_machine(const std::string& hostname, const std::string& machine_id,
+                                     const std::vector<std::string>& ip_list) const;
+
   bool send_control_sync(const Control& control);
 
   void sync_direct_maps(const Control& control);

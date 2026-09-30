@@ -17,7 +17,7 @@
     "dds_impl": "dds",
     "native": false,
     "enable_tcp": false,
-    "bind_ip": "",
+    "allow_ip": "",
     "peer_ip": "",
     "buf_size": 0,
     "mtu_size": 0,
@@ -32,7 +32,9 @@
       "use_iox": false,
       "iox_config": "",
       "iox_strategy": 3,
-      "iox_monitoring": true
+      "iox_monitoring": true,
+      "bridge_subscribe": false,
+      "bridge_filter": "shm://,shm2://,intra://"
     }
   },
   "proto_dir": "",

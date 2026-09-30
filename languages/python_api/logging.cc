@@ -54,7 +54,10 @@ static void register_python_logger_handler(std::shared_ptr<GilSafePyFunction>& o
 
   if (callback) {
     cb = std::make_shared<GilSafePyFunction>(std::move(*callback));
-    handler = [cb, context](vlink::Logger::Level level, std::string_view msg) {
+    auto activity = std::make_shared<PythonCallbackActivity>();
+    handler = [cb, activity, context](vlink::Logger::Level level, std::string_view msg) {
+      PythonCallbackScope active(activity);
+
       if VUNLIKELY (!Py_IsInitialized()) {
         return;
       }

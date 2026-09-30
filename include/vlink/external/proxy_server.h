@@ -142,10 +142,12 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "../base/message_loop.h"
+#include "proxy_api.h"
 
 namespace vlink {
 
@@ -186,7 +188,7 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
    * | @c mtu_size                | 0       | DDS MTU size in bytes; 0 = built-in default.                      |
    * | @c max_packet_size         | 0       | Maximum relayed payload in MiB; see note below.                   |
    * | @c security_key            | ""      | Security key for control channels; empty = default slot.          |
-   * | @c bind_ip                 | ""      | Bind DDS sockets to this IP; empty = any interface.               |
+   * | @c allow_ip                 | ""      | Bind DDS sockets to this IP; empty = any interface.               |
    * | @c peer_ip                 | ""      | Unicast peer IP for discovery; empty = multicast.                 |
    * | @c dds_impl                | "dds"   | DDS implementation: "dds", "ddsc", "ddsr", etc.                   |
    * | @c use_iox                 | false   | Launch an embedded Iceoryx RouDi daemon at startup.               |
@@ -213,7 +215,7 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
     uint32_t mtu_size{0};                    ///< DDS fragment MTU in bytes; 0 = default.
     double max_packet_size{0};               ///< Maximum relayed payload in MiB; 0 disables the limit.
     std::string security_key;                ///< Security key; empty = default security slot.
-    std::string bind_ip;                     ///< Local IP for DDS sockets; empty = any.
+    std::string allow_ip;                    ///< Local IP for DDS sockets; empty = any.
     std::string peer_ip;                     ///< Peer unicast IP for DDS; empty = multicast.
     std::string dds_impl{"dds"};             ///< DDS implementation transport identifier.
     bool use_iox{false};                     ///< Launch an embedded Iceoryx RouDi.
@@ -224,6 +226,11 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
     uint16_t runnable_version_minor{0};      ///< Required minor ABI version for plugins.
     std::string runnable_prefix;             ///< Plugin library filename prefix.
     std::vector<std::string> runnable_list;  ///< Ordered plugin names to load on startup.
+
+    std::optional<ProxyAPI::Config> bridge; /**< Optional Controller bridge to another non-direct proxy domain. */
+    std::string bridge_filter{
+        "shm://,shm2://,intra://"}; /**< Space/comma URL filters; case-insensitive, empty = all. */
+    bool bridge_subscribe{false};   /**< Forward local publishers to matching remote subscribers. */
   };
 
   /**
@@ -302,6 +309,12 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
   void init_server();
 
   void init_runnable();
+
+  void init_bridge();
+
+  void update_bridge(const std::vector<ProxyAPI::Info>& info_list);
+
+  bool forward_bridge_data(const void* data);
 
   void send_time();
 

@@ -58,7 +58,7 @@ _vlink-rerun() {
         '--proxy_role=[Proxy role]:role:(controller listener)' \
         '--proxy_domain_id=[Proxy domain id]:id:' \
         '--proxy_dds_impl=[Proxy DDS impl]:impl:(dds ddsc ddsr)' \
-        '--proxy_bind_ip=[Proxy bind IP]:ip:' \
+        '--proxy_allow_ip=[Proxy bind IP]:ip:' \
         '--proxy_peer_ip=[Proxy peer IP]:ip:' \
         '--proxy_buf_size=[Proxy buffer size]:n:' \
         '--proxy_mtu_size=[Proxy MTU size]:n:' \
@@ -74,6 +74,15 @@ _vlink-rerun() {
         '--proxy_iox_config=[Proxy iox config]:file:_files -g "*.toml"' \
         '--proxy_iox_strategy=[Proxy iox strategy]:n:(1 2 3 4)' \
         '--proxy_iox_monitoring=[Proxy iox monitoring]:mode:(on off)' \
+        '--bridge_domain_id=[Remote proxy domain]:id:' \
+        '--bridge_security_key=[Remote proxy security key]:key:' \
+        '--bridge_allow_ip=[Bridge bind IP]:ip:' \
+        '--bridge_peer_ip=[Remote discovery IP]:ip:' \
+        '--bridge_dds_impl=[Remote DDS implementation]:impl:(dds ddsc ddsr)' \
+        '--bridge_reliable[Remote reliable transport]' \
+        '--bridge_enable_tcp[Remote TCP transport]' \
+        '--bridge_subscribe[Forward local publishers to discovered remote subscribers]' \
+        '--bridge_filter=[URL substrings separated by spaces or commas]:filter:' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '(-v --version)'{-v,--version}'[Show version]'
 }

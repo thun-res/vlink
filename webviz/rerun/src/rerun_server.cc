@@ -460,6 +460,7 @@ bool RerunServer::update_bridge_control() {
   std::lock_guard lock(bridge_control_mtx_);
 
   ProxyAPI::Control control;
+  control.bridge = false;
   control.mode = ProxyAPI::kAutoAndObserveAll;
 
   if VLIKELY (bridge_control_sent_) {

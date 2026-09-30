@@ -2571,6 +2571,7 @@ void FoxgloveServer::install_publish_channels() {
 
 ProxyAPI::Control FoxgloveServer::build_bridge_control() const {
   ProxyAPI::Control ctrl;
+  ctrl.bridge = false;
   ctrl.mode = ProxyAPI::kAuto;
   std::unordered_set<std::string> publish_urls;
   std::unordered_set<std::string> subscribed_urls;

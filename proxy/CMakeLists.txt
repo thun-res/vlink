@@ -13,7 +13,9 @@ add_subdirectory(proxy_server)
 # proxy_app
 add_executable(${PROJECT_NAME} proxy_common.h proxy.cc)
 target_link_libraries(${PROJECT_NAME} PRIVATE vlink::vlink vlink::all)
-target_link_libraries(${PROJECT_NAME} PRIVATE thirdparty::bitsery thirdparty::argparse vlink::proxy_server)
+target_link_libraries(
+  ${PROJECT_NAME} PRIVATE thirdparty::bitsery thirdparty::argparse thirdparty::json vlink::proxy_server
+)
 
 if(WIN32)
   if(EXISTS ${CMAKE_SOURCE_DIR}/packup/ico/vlink-cmd.rc)

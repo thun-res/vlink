@@ -290,7 +290,7 @@ void DiscoveryReporter::rebuild_message() {
   std::string message_pack;
   message_pack.reserve(kMaxMtuSize);
 
-  std::map<std::tuple<int, std::string, std::string, SchemaType>, std::pair<bool, double>> profiler_value_map;
+  std::map<std::tuple<int, std::string, std::string, SchemaType, bool>, std::pair<bool, double>> profiler_value_map;
 
   if (impl_->is_profiler_enabled) {
     // LCOV_EXCL_START GCOVR_EXCL_START
@@ -298,8 +298,10 @@ void DiscoveryReporter::rebuild_message() {
       const std::string& trim_url = Helpers::trim_string(node->url);
       const std::string& trim_ser_type = Helpers::trim_string(node->ser_type);
 
-      auto& value =
-          profiler_value_map[std::make_tuple(node->impl_type, trim_url, trim_ser_type, node->schema_type)].second;
+      auto& value = profiler_value_map[std::make_tuple(
+                                           node->impl_type, trim_url, trim_ser_type, node->schema_type,
+                                           node->impl_type == kPublisher && node->get_property("proxy.bridge") == "1")]
+                        .second;
 
       if (node->profiler) {
         value += node->profiler->restart();
@@ -329,8 +331,9 @@ void DiscoveryReporter::rebuild_message() {
     std::string message;
     message.append(convert_type(node->impl_type)).append(" ");
 
+    const bool bridge = node->impl_type == kPublisher && node->get_property("proxy.bridge") == "1";
     auto& profiler_result =
-        profiler_value_map[std::make_tuple(node->impl_type, trim_url, trim_ser_type, node->schema_type)];
+        profiler_value_map[std::make_tuple(node->impl_type, trim_url, trim_ser_type, node->schema_type, bridge)];
 
     if (profiler_result.first) {
       continue;
@@ -347,6 +350,10 @@ void DiscoveryReporter::rebuild_message() {
 
       if (impl_->is_profiler_enabled) {
         message.append(":" + Helpers::double_to_string(profiler_result.second, 4));  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      }
+
+      if (bridge) {
+        message.append(" bridge=1");
       }
 
       message.append("\n");

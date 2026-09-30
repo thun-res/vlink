@@ -45,6 +45,9 @@ NB_MODULE(_vlink_nanobind, m) {
   vlink::python::bind_security(m);
   vlink::python::bind_communication(m);
   vlink::python::bind_discovery(m);
+#ifdef VLINK_ENABLE_PROXY
+  vlink::python::bind_proxy(m);
+#endif
   vlink::python::bind_bag(m);
 
   m.attr("VERSION") = VLINK_VERSION;

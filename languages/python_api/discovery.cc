@@ -58,6 +58,7 @@ void bind_discovery(nb::module_& m) {
       .def_ro("name", &vlink::DiscoveryViewer::Process::name)
       .def_ro("ip_list", &vlink::DiscoveryViewer::Process::ip_list)
       .def_ro("profiler", &vlink::DiscoveryViewer::Process::profiler)
+      .def_ro("bridge", &vlink::DiscoveryViewer::Process::bridge)
       .def("__repr__", [](const vlink::DiscoveryViewer::Process& p) {
         return "Process(name='" + p.name + "', pid=" + std::to_string(p.pid) + ", host='" + p.host + "')";
       });

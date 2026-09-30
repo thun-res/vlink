@@ -29,6 +29,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -58,7 +59,7 @@ class ProxyBridge {
     std::string native_ip;
     bool native{false};
     bool enable_tcp{false};
-    std::string bind_ip;
+    std::string allow_ip;
     std::string peer_ip;
     int buf_size{0};
     int mtu_size{0};
@@ -77,6 +78,9 @@ class ProxyBridge {
     bool iox_monitoring{true};
     int iox_strategy{3};
     std::string iox_config;
+    std::optional<ProxyAPI::Config> bridge;
+    std::string bridge_filter{"shm://,shm2://,intra://"};
+    bool bridge_subscribe{false};
   };
 
   struct Config final {
@@ -121,8 +125,8 @@ class ProxyBridge {
 
     if VUNLIKELY (config.native) {
       node.set_property("dds.ip", config.native_ip);
-    } else if VLIKELY (!config.bind_ip.empty()) {
-      node.set_property("dds.ip", config.bind_ip);
+    } else if VLIKELY (!config.allow_ip.empty()) {
+      node.set_property("dds.ip", config.allow_ip);
     }
 
     if VLIKELY (!config.peer_ip.empty()) {

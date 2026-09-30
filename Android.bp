@@ -213,6 +213,7 @@ cc_library_shared {
         "-DVLINK_SUPPORT_DDSC",
     ],
     shared_libs: [
+        "libvlink-proxy_api",
         "libvlink",
         "libvlink-intra",
         "libvlink-dds",
@@ -233,6 +234,7 @@ cc_binary {
         "proxy",
         "include/vlink",
         "thirdparty/argparse/include",
+        "thirdparty/json/include",
     ],
     cppflags: [
         "-DVLINK_ENABLE_PROXY",

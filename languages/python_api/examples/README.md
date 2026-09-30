@@ -94,6 +94,36 @@ finally:
     vlink.Logger.register_console_handler(None)
 ```
 
+同时启用 `ENABLE_PROXY` 时，可直接嵌入跨域桥接服务，或用 `ProxyAPI` 连接现有 proxy：
+
+```python
+remote = vlink.ProxyAPI.Config()
+remote.domain_id = 10
+config = vlink.ProxyServer.Config()
+config.domain_id = 0
+config.bridge = remote
+config.bridge_filter = "shm://,shm2://,intra://"
+config.bridge_subscribe = True  # 按远端订阅主动下发本地业务消息；默认关闭
+server = vlink.ProxyServer(config)
+api_config = vlink.ProxyAPI.Config()
+api_config.domain_id = 0
+api = vlink.ProxyAPI(api_config)
+api.register_info_callback(lambda infos: print([info.url for info in infos]))
+server.async_run()
+api.async_run()
+try:
+    input("按回车停止：")
+finally:
+    api.close()
+    server.close()
+```
+
+远端域需已有 proxy，`shm://` 还需按部署初始化 RouDi。`ProxyAPI.Control` 的
+`url_meta_list` 使用 `ProxyAPI.UrlMeta` 指定 URL、ser、schema 和所需角色；发送前先
+`send_control(control)` 建立远端 Publisher，再用 `send_data(ProxyAPI.Data)` 下发已编码的
+`raw` 字节。Control 发布成功不代表远端 Publisher 已就绪。回调收到的 Data 可以保留；
+回调内停止用 `quit()`，`close()` 与回调替换应在外部执行。
+
 ---
 
 ## `demo_vlink_bag.py` 章节速查

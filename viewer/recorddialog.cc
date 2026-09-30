@@ -380,6 +380,7 @@ void RecordDialog::on_pushButton_start_clicked() {
   bool skipped_missing_meta = false;
   bool skipped_missing_schema = false;
   vlink::ProxyAPI::Control control;
+  control.bridge = false;
   control.mode = vlink::ProxyAPI::kRecord;
 
   {
@@ -537,6 +538,7 @@ void RecordDialog::on_pushButton_stop_clicked() {
 
   if (window_->proxy_->get_current_config().role == vlink::ProxyAPI::kController) {
     vlink::ProxyAPI::Control control;
+    control.bridge = false;
     control.mode = vlink::ProxyAPI::kAuto;
     window_->proxy_->send_control(control);
   }
