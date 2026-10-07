@@ -173,7 +173,6 @@ class Node {
    * On success the method runs @c impl_->init() then @c impl_->init_ext()
    * and finally samples the transport's loan capability flag.  Calling
    * @c init() on an already-initialised node is a no-op.
-   * DDS and CycloneDDS initialization exceptions release partial resources and restore the uninitialised state.
    *
    * @return @c true on first successful initialisation; @c false otherwise.
    * @throws Exception::RuntimeError If DDS or CycloneDDS entity creation fails.

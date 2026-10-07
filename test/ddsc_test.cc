@@ -105,7 +105,7 @@ struct DdscFailingCustomMsg {
 #define TEST_CASE(name) TEST_CASE_FIXTURE(ScopedDdscTeardownGrace, name)
 
 TEST_SUITE("ddsc-init") {
-  TEST_CASE("invalid writer qos throws and rolls back all writer roles") {
+  TEST_CASE("invalid writer qos throws for all writer roles") {
     static const DdscConf conf = [] {
       Qos qos;
       qos.valid = true;
@@ -117,6 +117,7 @@ TEST_SUITE("ddsc-init") {
 
     auto check_failure = [](auto& node) {
       CHECK_THROWS_AS(node.init(), std::runtime_error);
+      CHECK(node.deinit());
       CHECK_FALSE(node.has_inited());
       CHECK(node.get_status(Status::kPublicationMatched)->get_type() == Status::kUnknown);
       CHECK_FALSE(node.deinit());

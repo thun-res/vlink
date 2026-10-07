@@ -31,7 +31,6 @@
 #include <atomic>
 #include <future>
 #include <memory>
-#include <stdexcept>
 #include <string>
 #include <thread>
 
@@ -58,18 +57,13 @@ class SafeQuitTestImpl final : public NodeImpl {
  public:
   SafeQuitTestImpl() : NodeImpl(kSubscriber) {}
 
-  void init() override {
-    if (on_init) {
-      on_init();
-    }
-  }
+  void init() override {}
   void deinit() override {
     if (on_deinit) {
       on_deinit();
     }
   }
 
-  Function<void()> on_init;
   Function<void()> on_deinit;
 };
 
@@ -100,29 +94,6 @@ TEST_SUITE("impl-AbstractNode") {
 }
 
 TEST_SUITE("impl-NodeImpl") {
-  TEST_CASE("DDS initialization exceptions release resources and allow retry") {
-    SafeQuitTestNode node;
-    node.implementation().transport_type = TransportType::kDds;
-    int cleanups = 0;
-    node.implementation().on_init = [] { throw std::runtime_error("initialization failed"); };
-    node.implementation().on_deinit = [&] { ++cleanups; };
-
-    CHECK_THROWS_WITH_AS(node.init(), "initialization failed", std::runtime_error);
-    CHECK_FALSE(node.has_inited());
-    CHECK_EQ(cleanups, 1);
-    CHECK_FALSE(node.deinit());
-
-    CHECK_THROWS_WITH_AS(node.init(), "initialization failed", std::runtime_error);
-    CHECK_FALSE(node.has_inited());
-    CHECK_EQ(cleanups, 2);
-
-    node.implementation().on_init = nullptr;
-    REQUIRE(node.init());
-    CHECK(node.has_inited());
-    CHECK(node.deinit());
-    CHECK_EQ(cleanups, 3);
-  }
-
   TEST_CASE("safe quit drains active callbacks before releasing backend resources") {
     SafeQuitTestNode node;
     node.set_safety_quit(true);

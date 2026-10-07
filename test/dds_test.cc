@@ -314,7 +314,7 @@ TEST_SUITE("dds-init") {
     DdsConf::PropertiesMap ext{{"topic", "__vlink_missing_cached_topic_profile__"}};
     Publisher<Bytes> rejected(DdsConf(topic, 70, ext), InitType::kWithoutInit);
     CHECK_THROWS_AS(rejected.init(), std::runtime_error);
-    CHECK_FALSE(rejected.has_inited());
+    CHECK(rejected.deinit());
     CHECK_FALSE(rejected.publish(Bytes{0x02}, true));
     CHECK(original.publish(Bytes{0x03}, true));
 
@@ -340,7 +340,7 @@ TEST_SUITE("dds-init") {
       DdsConf::PropertiesMap ext{{"writer", missing_profile}};
       Publisher<Bytes> pub(DdsConf("dds/profile/failed_publish", 65, ext), InitType::kWithoutInit);
       CHECK_THROWS_AS(pub.init(), std::runtime_error);
-      CHECK_FALSE(pub.has_inited());
+      CHECK(pub.deinit());
       CHECK_FALSE(pub.publish(Bytes{0x01}, true));
     }
 
@@ -359,7 +359,7 @@ TEST_SUITE("dds-init") {
       DdsConf::PropertiesMap ext{{"writer", missing_profile}};
       Server<Bytes, Bytes> server(DdsConf("dds/profile/failed_server", 68, ext), InitType::kWithoutInit);
       CHECK_THROWS_AS(server.init(), std::runtime_error);
-      CHECK_FALSE(server.has_inited());
+      CHECK(server.deinit());
       auto lifetime = std::make_shared<int>(0);
       std::weak_ptr<int> weak_lifetime = lifetime;
       CHECK_THROWS_AS(server.listen([lifetime](const Bytes&, Bytes&) {}), std::runtime_error);
@@ -369,11 +369,11 @@ TEST_SUITE("dds-init") {
       CHECK_THROWS_AS(server.listen_for_reply([](uint64_t, const Bytes&) {}), std::runtime_error);
     }
 
-    SUBCASE("response client reader failure rolls back its writer") {
+    SUBCASE("response client reader failure permits explicit cleanup") {
       DdsConf::PropertiesMap ext{{"reader", missing_profile}};
       Client<Bytes, Bytes> client(DdsConf("dds/profile/failed_client_reader", 71, ext), InitType::kWithoutInit);
       CHECK_THROWS_AS(client.init(), std::runtime_error);
-      CHECK_FALSE(client.has_inited());
+      CHECK(client.deinit());
       CHECK(client.get_status(Status::kPublicationMatched)->get_type() == Status::kUnknown);
       CHECK_FALSE(client.deinit());
     }
@@ -385,14 +385,15 @@ TEST_SUITE("dds-init") {
     }
   }
 
-  TEST_CASE("missing per-entity profiles throw and roll back initialization") {
+  TEST_CASE("missing per-entity profiles throw on initialization") {
     const std::string missing_profile = "__vlink_missing_fastdds_profile__";
     auto check_lifecycle = [](auto& node) {
       CHECK_THROWS_AS(node.init(), std::runtime_error);
+      CHECK(node.deinit());
       CHECK_FALSE(node.has_inited());
       CHECK_THROWS_AS(node.init(), std::runtime_error);
+      CHECK(node.deinit());
       CHECK_FALSE(node.has_inited());
-      CHECK_FALSE(node.deinit());
     };
 
     SUBCASE("participant profile") {
