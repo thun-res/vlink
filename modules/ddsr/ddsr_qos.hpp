@@ -23,6 +23,8 @@
 
 #pragma once
 
+#include <algorithm>
+
 #include "./base/helpers.h"
 #include "./ddsr_factory.hpp"
 #include "./extension/qos_profile.h"
@@ -146,6 +148,8 @@ template <typename T>
       qos.resource_limits.max_samples_per_instance > 0) {
     dds_qos.resource_limits.max_samples = qos.resource_limits.max_samples;
     dds_qos.resource_limits.max_instances = qos.resource_limits.max_instances;
+    dds_qos.resource_limits.initial_instances =
+        (std::min)(dds_qos.resource_limits.initial_instances, dds_qos.resource_limits.max_instances);
     dds_qos.resource_limits.max_samples_per_instance = qos.resource_limits.max_samples_per_instance;
   }
 }
