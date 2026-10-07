@@ -3467,6 +3467,26 @@ TEST_SUITE("dds-error") {
   }
 }
 
+TEST_SUITE("dds-topic-qos") {
+  TEST_CASE("custom default topic qos permits repeated creation") {
+    auto profile = make_dds_tmp_file("default_topic_qos", R"(
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <profiles>
+    <topic profile_name="vlink_default_topic_qos" is_default_profile="true">
+      <historyQos><kind>KEEP_LAST</kind><depth>7</depth></historyQos>
+    </topic>
+  </profiles>
+</dds>)");
+    REQUIRE(DdsConf::load_global_qos_file(profile.string()));
+
+    const DdsConf conf("dds/qos/default_topic", 70);
+    Publisher<Bytes> first(conf);
+    Publisher<Bytes> second(conf);
+    CHECK(first.publish(Bytes{0x01}, true));
+    CHECK(second.publish(Bytes{0x02}, true));
+  }
+}
+
 #endif  // VLINK_SUPPORT_DDS
 
 // NOLINTEND

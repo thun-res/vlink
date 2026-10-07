@@ -309,9 +309,7 @@ std::shared_ptr<dds::Topic> DdsFactory::create_topic(uint8_t type, const DdsConf
     }
 
     if (!ptr && dds_qos_ext.empty()) {
-      auto dds_qos = dds::TOPIC_QOS_DEFAULT;
-
-      ptr = part->create_topic(topic, type_support.get_type_name(), dds_qos);
+      ptr = part->create_topic(topic, type_support.get_type_name(), part->get_default_topic_qos());
     } else if (!ptr) {
       ptr = part->create_topic_with_profile(topic, type_support.get_type_name(), dds_qos_ext);
     }
