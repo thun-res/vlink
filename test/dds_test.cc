@@ -2258,7 +2258,7 @@ TEST_SUITE("dds-security") {
       Security::Config sub_cfg;
       sub_cfg.private_key_pem = kp.private_pem;
 
-      SecurityPublisher<Bytes> pub(DdsConf("dds/sec/rsa1"), std::move(pub_cfg));
+      SecurityPublisher<Bytes> pub("dds://dds/sec/rsa1", std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("dds://dds/sec/rsa1", std::move(sub_cfg));
 
       sub.listen([&](const Bytes& data) {
@@ -2279,6 +2279,8 @@ TEST_SUITE("dds-security") {
           CHECK_EQ(captured[2], 0xCCu);
         }
       }
+
+      REQUIRE(received.load(std::memory_order_acquire));
     } catch (const std::exception&) {
       return;
     }
@@ -2303,7 +2305,7 @@ TEST_SUITE("dds-security") {
       Security::Config sub_cfg;
       sub_cfg.private_key_pem = kp2.private_pem;
 
-      SecurityPublisher<Bytes> pub(DdsConf("dds/sec/rsa_mm1"), std::move(pub_cfg));
+      SecurityPublisher<Bytes> pub("dds://dds/sec/rsa_mm1", std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("dds://dds/sec/rsa_mm1", std::move(sub_cfg));
 
       sub.listen([&](const Bytes& /*data*/) { received.store(true, std::memory_order_release); });
@@ -2343,7 +2345,7 @@ TEST_SUITE("dds-security") {
       sub_cfg.private_key_pem = kp.private_pem;
       sub_cfg.public_key_pem = kp.public_pem;
 
-      SecurityPublisher<Bytes> pub(DdsConf("dds/sec/rsa_sign1"), std::move(pub_cfg));
+      SecurityPublisher<Bytes> pub("dds://dds/sec/rsa_sign1", std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("dds://dds/sec/rsa_sign1", std::move(sub_cfg));
 
       sub.listen([&](const Bytes& data) {
@@ -2364,6 +2366,8 @@ TEST_SUITE("dds-security") {
           CHECK_EQ(captured[2], 0x33u);
         }
       }
+
+      REQUIRE(received.load(std::memory_order_acquire));
     } catch (const std::exception&) {
       return;
     }

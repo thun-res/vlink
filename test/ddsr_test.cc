@@ -606,7 +606,7 @@ TEST_SUITE("ddsr-security") {
       Security::Config sub_cfg;
       sub_cfg.private_key_pem = kp.private_pem;
 
-      SecurityPublisher<Bytes> pub(DdsrConf("ddsr/sec/rsa1"), std::move(pub_cfg));
+      SecurityPublisher<Bytes> pub("ddsr://ddsr/sec/rsa1", std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("ddsr://ddsr/sec/rsa1", std::move(sub_cfg));
 
       sub.listen([&](const Bytes& data) {
@@ -647,7 +647,7 @@ TEST_SUITE("ddsr-security") {
       Security::Config sub_cfg;
       sub_cfg.private_key_pem = kp2.private_pem;
 
-      SecurityPublisher<Bytes> pub(DdsrConf("ddsr/sec/rsa_mm1"), std::move(pub_cfg));
+      SecurityPublisher<Bytes> pub("ddsr://ddsr/sec/rsa_mm1", std::move(pub_cfg));
       SecuritySubscriber<Bytes> sub("ddsr://ddsr/sec/rsa_mm1", std::move(sub_cfg));
 
       sub.listen([&](const Bytes& /*data*/) { received.store(true, std::memory_order_release); });
