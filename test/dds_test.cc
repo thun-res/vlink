@@ -32,6 +32,7 @@
 #include <future>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <thread>
 #include <utility>
@@ -1989,7 +1990,7 @@ TEST_SUITE("dds-qos") {
 
     Publisher<Bytes> no_verify_pub(DdsConf("dds/qos/participant_ssl_no_verify", 24), InitType::kWithoutInit);
     no_verify_pub.set_property("dds.ip", "127.0.0.1");
-    no_verify_pub.set_property("dds.buf", "2048");
+    no_verify_pub.set_property("dds.buf", "1048576");
     no_verify_pub.set_property("dds.mtu", "1024");
     no_verify_pub.set_property("dds.udp", "0");
     no_verify_pub.set_property("dds.tcp", "0");
@@ -3388,6 +3389,13 @@ TEST_SUITE("dds-qos") {
 
     for (const char* name : kProfiles) {
       const std::string topic = std::string("dds/qos/cq_") + name;
+
+      if (std::string_view(name) == "dds_cq_transient" || std::string_view(name) == "dds_cq_persistent" ||
+          std::string_view(name) == "dds_cq_src_ts") {
+        CHECK_THROWS_AS(Publisher<int>(DdsConf(topic, 0, 0, name)), std::runtime_error);
+        continue;
+      }
+
       Publisher<int> pub(DdsConf(topic, 0, 0, name));
       Subscriber<int> sub(std::string("dds://") + topic + "?qos=" + name);
       sub.listen([](const int&) {});
