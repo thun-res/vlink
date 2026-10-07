@@ -305,6 +305,24 @@ TEST_SUITE("dds-init") {
     CHECK_FALSE(mixed.is_valid());
   }
 
+  TEST_CASE("cached topics reject missing profiles without invalidating existing publishers") {
+    const std::string topic = "dds/profile/cached_topic";
+    const DdsConf conf(topic, 70);
+    Publisher<Bytes> original(conf);
+    REQUIRE(original.publish(Bytes{0x01}, true));
+
+    DdsConf::PropertiesMap ext{{"topic", "__vlink_missing_cached_topic_profile__"}};
+    Publisher<Bytes> rejected(DdsConf(topic, 70, ext), InitType::kWithoutInit);
+    CHECK_THROWS_AS(rejected.init(), std::runtime_error);
+    CHECK_FALSE(rejected.has_inited());
+    CHECK_FALSE(rejected.publish(Bytes{0x02}, true));
+    CHECK(original.publish(Bytes{0x03}, true));
+
+    Publisher<Bytes> reused(conf);
+    CHECK(reused.publish(Bytes{0x04}, true));
+    CHECK(original.publish(Bytes{0x05}, true));
+  }
+
   TEST_CASE("missing reader and writer profiles report operation failure") {
     const std::string missing_profile = "__vlink_missing_fastdds_profile__";
 

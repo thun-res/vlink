@@ -248,8 +248,40 @@ std::shared_ptr<dds::Topic> DdsFactory::create_topic(uint8_t type, const DdsConf
     return nullptr;
   }
 
+  const auto validate_topic = [&](const dds::Topic* existing_topic) {
+    const auto& expected_type_name = is_cdr_type ? cdr_type_name : factory.raw_typesupport_.get_type_name();
+
+    if VUNLIKELY (existing_topic->get_type_name() != expected_type_name) {
+      VLOG_E("DdsFactory: Topic type does not match: ", topic, ".");
+      return false;
+    }
+
+    dds::TopicQos dds_qos;
+    bool qos_valid = true;
+
+    if (!dds_qos_ext.empty()) {
+      const auto ret = part->get_topic_qos_from_profile(dds_qos_ext, dds_qos);
+
+#ifdef VLINK_SUPPORT_DDS_V3
+      qos_valid = ret == dds::RETCODE_OK;
+#else
+      qos_valid = ret == ReturnCode_t::RETCODE_OK;
+#endif
+    }
+
+    const auto& expected_qos = dds_qos_ext.empty() ? part->get_default_topic_qos() : dds_qos;
+
+    if VUNLIKELY (!qos_valid || !(existing_topic->get_qos() == expected_qos)) {
+      VLOG_E("DdsFactory: Cannot reuse topic with requested QoS: ", topic, ".");
+      return false;
+    }
+
+    return true;
+  };
+
   const auto& id = std::make_tuple(type, conf.domain, topic, part);
 
+  std::lock_guard lifecycle_lock(factory.participant_mtx_);
   std::unique_lock lock(factory.mtx_);
   std::shared_ptr<dds::Topic> dds_topic = get_weak_ptr(factory.topic_map_, id).lock();
 
@@ -269,13 +301,18 @@ std::shared_ptr<dds::Topic> DdsFactory::create_topic(uint8_t type, const DdsConf
       VLOG_F("DdsFactory: Topic ", topic, " registration failed.");
     }
 
-    dds::Topic* ptr = nullptr;
+    dds::Topic* ptr = part->find_topic(topic, get_dds_duration(0));
 
-    if (dds_qos_ext.empty()) {
+    if VUNLIKELY (ptr && !validate_topic(ptr)) {
+      part->delete_topic(ptr);
+      return nullptr;
+    }
+
+    if (!ptr && dds_qos_ext.empty()) {
       auto dds_qos = dds::TOPIC_QOS_DEFAULT;
 
       ptr = part->create_topic(topic, type_support.get_type_name(), dds_qos);
-    } else {
+    } else if (!ptr) {
       ptr = part->create_topic_with_profile(topic, type_support.get_type_name(), dds_qos_ext);
     }
 
@@ -285,6 +322,8 @@ std::shared_ptr<dds::Topic> DdsFactory::create_topic(uint8_t type, const DdsConf
     }
 
     dds_topic = std::shared_ptr<dds::Topic>(ptr, [id](dds::Topic* topic) {
+      std::lock_guard lifecycle_lock(factory.participant_mtx_);
+
       {
         std::lock_guard lock(factory.mtx_);
         auto iter = factory.topic_map_.find(id);
@@ -313,10 +352,10 @@ std::shared_ptr<dds::Topic> DdsFactory::create_topic(uint8_t type, const DdsConf
       }
     }
   } else {
-    const auto& expected_type_name = is_cdr_type ? cdr_type_name : factory.raw_typesupport_.get_type_name();
+    lock.unlock();
 
-    if VUNLIKELY (dds_topic->get_type_name() != expected_type_name) {
-      VLOG_F("DdsFactory: Topic ", topic, " type mismatch.");
+    if VUNLIKELY (!validate_topic(dds_topic.get())) {
+      return nullptr;
     }
 
     type_support = part->find_type(dds_topic->get_type_name());
