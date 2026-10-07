@@ -231,6 +231,13 @@ std::shared_ptr<ddsr::Topic> DdsrFactory::create_topic(uint8_t type, const DdsrC
         iter->second = dds_topic;
       }
     }
+  } else {
+    lock.unlock();
+
+    if VUNLIKELY (!dds_topic->matches_qos(DDS_TOPIC_QOS_DEFAULT, dds_qos_ext)) {
+      VLOG_E("Cannot reuse DDS topic with requested QoS: ", topic, ".");
+      return nullptr;
+    }
   }
 
   return dds_topic;

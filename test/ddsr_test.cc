@@ -110,6 +110,20 @@ TEST_SUITE("ddsr-init") {
   }
 
   TEST_CASE("invalid url scheme throws on publisher construction") { CHECK_THROWS(Publisher<int>("ddsr1://bad/url")); }
+
+  TEST_CASE("cached topics reject missing profiles without invalidating existing publishers") {
+    const DdsrConf conf("ddsr/profile/cached_topic", 70);
+    Publisher<Bytes> original(conf);
+    REQUIRE(original.publish(Bytes{0x01}, true));
+
+    DdsrConf::PropertiesMap ext{{"topic", "__vlink_missing_cached_topic_profile__"}};
+    Publisher<Bytes> rejected(DdsrConf(conf.topic, conf.domain, ext));
+    CHECK_FALSE(rejected.publish(Bytes{0x02}, true));
+    CHECK(original.publish(Bytes{0x03}, true));
+
+    Publisher<Bytes> reused(conf);
+    CHECK(reused.publish(Bytes{0x04}, true));
+  }
 }
 
 TEST_SUITE("ddsr-pubsub") {

@@ -94,40 +94,11 @@ Topic::Topic(DDS_DomainParticipant* _part, const std::string& topic, const std::
     return;
   }
 
-  if (entity) {
-    DDS_TopicQos expected_qos;
-    DDS_TopicQos_initialize(&expected_qos);
-
-    DDS_ReturnCode_t ret;
-
-    if (!qos_profile.empty()) {
-      ret = DDS_DomainParticipantFactory_get_topic_qos_from_profile(
-          vlink::DdsrFactory::get_dds_factory(), &expected_qos, DDS_BUILTIN_QOS_LIB, qos_profile.c_str());
-    } else if (target_qos == &DDS_TOPIC_QOS_DEFAULT) {
-      ret = DDS_DomainParticipant_get_default_topic_qos(part, &expected_qos);
-    } else {
-      ret = DDS_TopicQos_copy(&expected_qos, target_qos);
-    }
-
-    DDS_TopicQos actual_qos;
-    DDS_TopicQos_initialize(&actual_qos);
-
-    if VLIKELY (ret == DDS_RETCODE_OK) {
-      ret = DDS_Topic_get_qos(entity, &actual_qos);
-    }
-
-    const bool qos_matches =
-        ret == DDS_RETCODE_OK && DDS_TopicQos_equals(&actual_qos, &expected_qos) == DDS_BOOLEAN_TRUE;
-
-    DDS_TopicQos_finalize(&actual_qos);
-    DDS_TopicQos_finalize(&expected_qos);
-
-    if VUNLIKELY (!qos_matches) {
-      DDS_DomainParticipant_delete_topic(part, entity);
-      entity = nullptr;
-      VLOG_E("Cannot reuse DDS topic with requested QoS: ", topic, ".");
-      return;
-    }
+  if VUNLIKELY (entity && !matches_qos(*target_qos, qos_profile)) {
+    DDS_DomainParticipant_delete_topic(part, entity);
+    entity = nullptr;
+    VLOG_E("Cannot reuse DDS topic with requested QoS: ", topic, ".");
+    return;
   }
 
   if (!entity && qos_profile.empty()) {
@@ -155,6 +126,36 @@ Topic::~Topic() {
   if VUNLIKELY (ret != DDS_RETCODE_OK) {
     VLOG_E("DDS_DomainParticipant_delete_topic failed.");
   }
+}
+
+bool Topic::matches_qos(const DDS_TopicQos& qos, const std::string& qos_profile) const {
+  DDS_TopicQos expected_qos;
+  DDS_TopicQos_initialize(&expected_qos);
+
+  DDS_ReturnCode_t ret;
+
+  if (!qos_profile.empty()) {
+    ret = DDS_DomainParticipantFactory_get_topic_qos_from_profile(vlink::DdsrFactory::get_dds_factory(), &expected_qos,
+                                                                  DDS_BUILTIN_QOS_LIB, qos_profile.c_str());
+  } else if (&qos == &DDS_TOPIC_QOS_DEFAULT) {
+    ret = DDS_DomainParticipant_get_default_topic_qos(part, &expected_qos);
+  } else {
+    ret = DDS_TopicQos_copy(&expected_qos, &qos);
+  }
+
+  DDS_TopicQos actual_qos;
+  DDS_TopicQos_initialize(&actual_qos);
+
+  if VLIKELY (ret == DDS_RETCODE_OK) {
+    ret = DDS_Topic_get_qos(entity, &actual_qos);
+  }
+
+  const bool qos_matches = ret == DDS_RETCODE_OK && DDS_TopicQos_equals(&actual_qos, &expected_qos) == DDS_BOOLEAN_TRUE;
+
+  DDS_TopicQos_finalize(&actual_qos);
+  DDS_TopicQos_finalize(&expected_qos);
+
+  return qos_matches;
 }
 
 // Publisher

@@ -54,6 +54,8 @@ struct Topic {
 
   ~Topic();
 
+  [[nodiscard]] bool matches_qos(const DDS_TopicQos& qos, const std::string& qos_profile) const;
+
   DDS_DomainParticipant* part{nullptr};
   DDS_Topic* entity{nullptr};
 };
