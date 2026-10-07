@@ -188,6 +188,7 @@ std::shared_ptr<ddsr::Topic> DdsrFactory::create_topic(uint8_t type, const DdsrC
 
   const auto& id = std::make_tuple(type, conf.domain, topic, part);
 
+  std::lock_guard lifecycle_lock(factory.participant_mtx_);
   std::unique_lock lock(factory.mtx_);
   std::shared_ptr<ddsr::Topic> dds_topic = get_weak_ptr(factory.topic_map_, id).lock();
 
@@ -203,6 +204,8 @@ std::shared_ptr<ddsr::Topic> DdsrFactory::create_topic(uint8_t type, const DdsrC
     }
 
     dds_topic = std::shared_ptr<ddsr::Topic>(ptr, [id](ddsr::Topic* topic) {
+      std::lock_guard lifecycle_lock(factory.participant_mtx_);
+
       {
         std::lock_guard lock(factory.mtx_);
         auto iter = factory.topic_map_.find(id);

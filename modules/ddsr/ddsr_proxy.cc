@@ -83,9 +83,56 @@ Topic::Topic(DDS_DomainParticipant* _part, const std::string& topic, const std::
 
   DDS_StatusMask mask = DDS_STATUS_MASK_NONE;
 
-  if (qos_profile.empty()) {
+  static constexpr DDS_Duration_t kTimeout{0, 0};
+
+  entity = DDS_DomainParticipant_find_topic(part, topic.c_str(), &kTimeout);
+
+  if VUNLIKELY (entity && type_name != DDS_TopicDescription_get_type_name(DDS_Topic_as_topicdescription(entity))) {
+    DDS_DomainParticipant_delete_topic(part, entity);
+    entity = nullptr;
+    VLOG_E("DDS_DomainParticipant_find_topic type does not match: ", topic, ".");
+    return;
+  }
+
+  if (entity) {
+    DDS_TopicQos expected_qos;
+    DDS_TopicQos_initialize(&expected_qos);
+
+    DDS_ReturnCode_t ret;
+
+    if (!qos_profile.empty()) {
+      ret = DDS_DomainParticipantFactory_get_topic_qos_from_profile(
+          vlink::DdsrFactory::get_dds_factory(), &expected_qos, DDS_BUILTIN_QOS_LIB, qos_profile.c_str());
+    } else if (target_qos == &DDS_TOPIC_QOS_DEFAULT) {
+      ret = DDS_DomainParticipant_get_default_topic_qos(part, &expected_qos);
+    } else {
+      ret = DDS_TopicQos_copy(&expected_qos, target_qos);
+    }
+
+    DDS_TopicQos actual_qos;
+    DDS_TopicQos_initialize(&actual_qos);
+
+    if VLIKELY (ret == DDS_RETCODE_OK) {
+      ret = DDS_Topic_get_qos(entity, &actual_qos);
+    }
+
+    const bool qos_matches =
+        ret == DDS_RETCODE_OK && DDS_TopicQos_equals(&actual_qos, &expected_qos) == DDS_BOOLEAN_TRUE;
+
+    DDS_TopicQos_finalize(&actual_qos);
+    DDS_TopicQos_finalize(&expected_qos);
+
+    if VUNLIKELY (!qos_matches) {
+      DDS_DomainParticipant_delete_topic(part, entity);
+      entity = nullptr;
+      VLOG_E("Cannot reuse DDS topic with requested QoS: ", topic, ".");
+      return;
+    }
+  }
+
+  if (!entity && qos_profile.empty()) {
     entity = DDS_DomainParticipant_create_topic(part, topic.c_str(), type_name.c_str(), target_qos, nullptr, mask);
-  } else {
+  } else if (!entity) {
     entity = DDS_DomainParticipant_create_topic_with_profile(part, topic.c_str(), type_name.c_str(),
                                                              DDS_BUILTIN_QOS_LIB, qos_profile.c_str(), nullptr, mask);
   }
