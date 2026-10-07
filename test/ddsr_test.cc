@@ -458,7 +458,7 @@ TEST_SUITE("ddsr-field") {
       Getter<Bytes> getter("ddsr://ddsr/fld/poll1");
 
       setter.set(Bytes{0x55, 0x66});
-      std::this_thread::sleep_for(300ms);
+      REQUIRE(common_test::wait_until([&] { return getter.get().has_value(); }, kDdsrDiscoveryTimeout));
 
       auto v = getter.get();
       REQUIRE(v.has_value());
