@@ -175,7 +175,6 @@ class Node {
    * @c init() on an already-initialised node is a no-op.
    *
    * @return @c true on first successful initialisation; @c false otherwise.
-   * @throws Exception::RuntimeError If DDS or CycloneDDS entity creation fails.
    */
   virtual bool init();
 
