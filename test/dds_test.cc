@@ -320,7 +320,8 @@ TEST_SUITE("dds-init") {
 
     SUBCASE("writer creation failure rejects publication") {
       DdsConf::PropertiesMap ext{{"writer", missing_profile}};
-      Publisher<Bytes> pub(DdsConf("dds/profile/failed_publish", 65, ext));
+      Publisher<Bytes> pub(DdsConf("dds/profile/failed_publish", 65, ext), InitType::kWithoutInit);
+      CHECK_THROWS_AS(pub.init(), std::runtime_error);
       CHECK_FALSE(pub.publish(Bytes{0x01}, true));
     }
 
@@ -337,7 +338,8 @@ TEST_SUITE("dds-init") {
 
     SUBCASE("response server requires a writer and releases rejected callbacks") {
       DdsConf::PropertiesMap ext{{"writer", missing_profile}};
-      Server<Bytes, Bytes> server(DdsConf("dds/profile/failed_server", 68, ext));
+      Server<Bytes, Bytes> server(DdsConf("dds/profile/failed_server", 68, ext), InitType::kWithoutInit);
+      CHECK_THROWS_AS(server.init(), std::runtime_error);
       auto lifetime = std::make_shared<int>(0);
       std::weak_ptr<int> weak_lifetime = lifetime;
       CHECK_FALSE(server.listen([lifetime](const Bytes&, Bytes&) {}));
@@ -357,11 +359,8 @@ TEST_SUITE("dds-init") {
   TEST_CASE("missing per-entity profiles keep wrapper lifecycle stable") {
     const std::string missing_profile = "__vlink_missing_fastdds_profile__";
     auto check_lifecycle = [](auto& node) {
-      const bool init_result = node.init();
-      CHECK_EQ(init_result, node.has_inited());
-
-      const bool deinit_result = node.deinit();
-      CHECK_EQ(deinit_result, init_result);
+      CHECK_THROWS_AS(node.init(), std::runtime_error);
+      CHECK(node.deinit());
       CHECK_FALSE(node.has_inited());
     };
 
@@ -398,7 +397,9 @@ TEST_SUITE("dds-init") {
     SUBCASE("reader profile") {
       DdsConf::PropertiesMap ext{{"reader", missing_profile}};
       Subscriber<Bytes> sub(DdsConf("dds/profile/missing_reader", 66, ext), InitType::kWithoutInit);
-      check_lifecycle(sub);
+      REQUIRE(sub.init());
+      CHECK_FALSE(sub.listen([](const Bytes&) {}));
+      CHECK(sub.deinit());
     }
   }
 
