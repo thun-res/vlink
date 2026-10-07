@@ -62,14 +62,20 @@ void DdsPublisherImpl::init() {
 
   participant_ = DdsFactory::create_participant(kPublisher | kSubscriber, conf_, get_all_properties());
 
+  if VUNLIKELY (!participant_) {
+    VLOG_F("Create participant failed.");
+  }
+
   topic_ = DdsFactory::create_topic(kPublisher | kSubscriber, conf_, participant_.get(), is_cdr_type, {}, ser_type);
+
+  if VUNLIKELY (!topic_) {
+    VLOG_F("Create topic failed: ", conf_.topic, ".");
+  }
 
   publisher_ = DdsFactory::create_publisher(kPublisher, conf_, participant_.get());
 
-  if VUNLIKELY (!participant_ || !topic_) {
-    VLOG_E("DdsPublisherImpl::init(): participant/topic creation failed; publisher left uninitialised.");
-
-    return;
+  if VUNLIKELY (!publisher_) {
+    VLOG_F("Create publisher failed.");
   }
 
   if (is_cdr_type) {
@@ -80,6 +86,10 @@ void DdsPublisherImpl::init() {
 
   writer_ = DdsFactory::create_datawriter(init_impl_type, conf_, publisher_.get(), topic_.get(), &listener_.value(),
                                           is_cdr_type);
+
+  if VUNLIKELY (!writer_) {
+    VLOG_F("Create datawriter failed.");
+  }
 }
 
 void DdsPublisherImpl::deinit() {

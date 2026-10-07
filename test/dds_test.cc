@@ -320,7 +320,9 @@ TEST_SUITE("dds-init") {
 
     SUBCASE("writer creation failure rejects publication") {
       DdsConf::PropertiesMap ext{{"writer", missing_profile}};
-      Publisher<Bytes> pub(DdsConf("dds/profile/failed_publish", 65, ext));
+      Publisher<Bytes> pub(DdsConf("dds/profile/failed_publish", 65, ext), InitType::kWithoutInit);
+      CHECK_THROWS_AS(pub.init(), std::runtime_error);
+      CHECK_FALSE(pub.has_inited());
       CHECK_FALSE(pub.publish(Bytes{0x01}, true));
     }
 
@@ -337,14 +339,25 @@ TEST_SUITE("dds-init") {
 
     SUBCASE("response server requires a writer and releases rejected callbacks") {
       DdsConf::PropertiesMap ext{{"writer", missing_profile}};
-      Server<Bytes, Bytes> server(DdsConf("dds/profile/failed_server", 68, ext));
+      Server<Bytes, Bytes> server(DdsConf("dds/profile/failed_server", 68, ext), InitType::kWithoutInit);
+      CHECK_THROWS_AS(server.init(), std::runtime_error);
+      CHECK_FALSE(server.has_inited());
       auto lifetime = std::make_shared<int>(0);
       std::weak_ptr<int> weak_lifetime = lifetime;
-      CHECK_FALSE(server.listen([lifetime](const Bytes&, Bytes&) {}));
+      CHECK_THROWS_AS(server.listen([lifetime](const Bytes&, Bytes&) {}), std::runtime_error);
       lifetime.reset();
       CHECK(weak_lifetime.expired());
-      CHECK_FALSE(server.listen([](const Bytes&, Bytes&) {}));
-      CHECK_FALSE(server.listen_for_reply([](uint64_t, const Bytes&) {}));
+      CHECK_THROWS_AS(server.listen([](const Bytes&, Bytes&) {}), std::runtime_error);
+      CHECK_THROWS_AS(server.listen_for_reply([](uint64_t, const Bytes&) {}), std::runtime_error);
+    }
+
+    SUBCASE("response client reader failure rolls back its writer") {
+      DdsConf::PropertiesMap ext{{"reader", missing_profile}};
+      Client<Bytes, Bytes> client(DdsConf("dds/profile/failed_client_reader", 71, ext), InitType::kWithoutInit);
+      CHECK_THROWS_AS(client.init(), std::runtime_error);
+      CHECK_FALSE(client.has_inited());
+      CHECK(client.get_status(Status::kPublicationMatched)->get_type() == Status::kUnknown);
+      CHECK_FALSE(client.deinit());
     }
 
     SUBCASE("fire and forget server does not require a writer") {
@@ -354,15 +367,14 @@ TEST_SUITE("dds-init") {
     }
   }
 
-  TEST_CASE("missing per-entity profiles keep wrapper lifecycle stable") {
+  TEST_CASE("missing per-entity profiles throw and roll back initialization") {
     const std::string missing_profile = "__vlink_missing_fastdds_profile__";
     auto check_lifecycle = [](auto& node) {
-      const bool init_result = node.init();
-      CHECK_EQ(init_result, node.has_inited());
-
-      const bool deinit_result = node.deinit();
-      CHECK_EQ(deinit_result, init_result);
+      CHECK_THROWS_AS(node.init(), std::runtime_error);
       CHECK_FALSE(node.has_inited());
+      CHECK_THROWS_AS(node.init(), std::runtime_error);
+      CHECK_FALSE(node.has_inited());
+      CHECK_FALSE(node.deinit());
     };
 
     SUBCASE("participant profile") {
@@ -398,7 +410,9 @@ TEST_SUITE("dds-init") {
     SUBCASE("reader profile") {
       DdsConf::PropertiesMap ext{{"reader", missing_profile}};
       Subscriber<Bytes> sub(DdsConf("dds/profile/missing_reader", 66, ext), InitType::kWithoutInit);
-      check_lifecycle(sub);
+      REQUIRE(sub.init());
+      CHECK_FALSE(sub.listen([](const Bytes&) {}));
+      CHECK(sub.deinit());
     }
   }
 

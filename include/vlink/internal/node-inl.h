@@ -51,13 +51,21 @@ inline bool Node<ImplT, SecT>::init() {
     return false;
   }
 
-  impl_->check_version(Version{VLINK_VERSION_MAJOR, VLINK_VERSION_MINOR, VLINK_VERSION_PATCH});
+  try {
+    impl_->check_version(Version{VLINK_VERSION_MAJOR, VLINK_VERSION_MINOR, VLINK_VERSION_PATCH});
 
-  impl_->init_impl_type = impl_->impl_type;
-  impl_->init();
-  impl_->init_ext();
+    impl_->init_impl_type = impl_->impl_type;
+    impl_->init();
+    impl_->init_ext();
 
-  is_support_loan_ = impl_->is_support_loan();
+    is_support_loan_ = impl_->is_support_loan();
+  } catch (...) {
+    if (impl_->transport_type == TransportType::kDds || impl_->transport_type == TransportType::kDdsc) {
+      Node<ImplT, SecT>::deinit();
+    }
+
+    throw;
+  }
 
   return true;
 }

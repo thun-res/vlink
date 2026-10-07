@@ -105,6 +105,33 @@ struct DdscFailingCustomMsg {
 #define TEST_CASE(name) TEST_CASE_FIXTURE(ScopedDdscTeardownGrace, name)
 
 TEST_SUITE("ddsc-init") {
+  TEST_CASE("invalid writer qos throws and rolls back all writer roles") {
+    static const DdscConf conf = [] {
+      Qos qos;
+      qos.valid = true;
+      qos.history.kind = Qos::History::kKeepLast;
+      qos.history.depth = -1;
+      DdscConf::register_qos("ddsc_invalid_writer_history", qos);
+      return DdscConf("ddsc/init/invalid_writer_qos", 72, 0, "ddsc_invalid_writer_history");
+    }();
+
+    auto check_failure = [](auto& node) {
+      CHECK_THROWS_AS(node.init(), std::runtime_error);
+      CHECK_FALSE(node.has_inited());
+      CHECK(node.get_status(Status::kPublicationMatched)->get_type() == Status::kUnknown);
+      CHECK_FALSE(node.deinit());
+    };
+
+    Publisher<Bytes> pub(conf, InitType::kWithoutInit);
+    Setter<Bytes> setter(conf, InitType::kWithoutInit);
+    Client<Bytes, Bytes> client(conf, InitType::kWithoutInit);
+    Server<Bytes, Bytes> server(conf, InitType::kWithoutInit);
+    check_failure(pub);
+    check_failure(setter);
+    check_failure(client);
+    check_failure(server);
+  }
+
   TEST_CASE("default conf stores topic with empty qos") {
     MESSAGE("[ddsc-init] default conf stores topic with empty qos");
 

@@ -170,16 +170,23 @@ void DdsServerImpl::init() {
 
   participant_ = DdsFactory::create_participant(kServer | kClient, conf_, get_all_properties());
 
+  if VUNLIKELY (!participant_) {
+    VLOG_F("Create participant failed.");
+  }
+
   if (is_resp_type) {
     std::tie(topic_req_, topic_resp_) =
         DdsFactory::create_method_topic(kServer | kClient, conf_, participant_.get(), is_cdr_type, ser_type);
+
+    if VUNLIKELY (!topic_req_ || !topic_resp_) {
+      VLOG_F("Create method topic failed: ", conf_.topic, ".");
+    }
   } else {
     topic_req_ = DdsFactory::create_topic(kServer | kClient, conf_, participant_.get(), is_cdr_type, {}, ser_type);
-  }
 
-  if VUNLIKELY (!participant_ || !topic_req_ || (is_resp_type && !topic_resp_)) {
-    VLOG_E("DdsServerImpl::init(): participant/topic creation failed; server left uninitialised.");
-    return;
+    if VUNLIKELY (!topic_req_) {
+      VLOG_F("Create topic failed: ", conf_.topic, ".");
+    }
   }
 
   if (is_cdr_type) {
@@ -192,13 +199,25 @@ void DdsServerImpl::init() {
   if (is_resp_type) {
     publisher_ = DdsFactory::create_publisher(kServer, conf_, participant_.get());
 
+    if VUNLIKELY (!publisher_) {
+      VLOG_F("Create publisher failed.");
+    }
+
     writer_listener_.emplace(this);
 
     writer_ = DdsFactory::create_datawriter(kServer, conf_, publisher_.get(), topic_resp_.get(),
                                             &writer_listener_.value(), is_cdr_type);
+
+    if VUNLIKELY (!writer_) {
+      VLOG_F("Create datawriter failed.");
+    }
   }
 
   subscriber_ = DdsFactory::create_subscriber(kServer, conf_, participant_.get());
+
+  if VUNLIKELY (!subscriber_) {
+    VLOG_F("Create subscriber failed.");
+  }
 
   quit_flag_.store(false, std::memory_order_relaxed);
 }

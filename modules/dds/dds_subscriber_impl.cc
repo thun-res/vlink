@@ -160,14 +160,20 @@ void DdsSubscriberImpl::init() {
 
   participant_ = DdsFactory::create_participant(kPublisher | kSubscriber, conf_, get_all_properties());
 
+  if VUNLIKELY (!participant_) {
+    VLOG_F("Create participant failed.");
+  }
+
   topic_ = DdsFactory::create_topic(kPublisher | kSubscriber, conf_, participant_.get(), is_cdr_type, {}, ser_type);
+
+  if VUNLIKELY (!topic_) {
+    VLOG_F("Create topic failed: ", conf_.topic, ".");
+  }
 
   subscriber_ = DdsFactory::create_subscriber(kSubscriber, conf_, participant_.get());
 
-  if VUNLIKELY (!participant_ || !topic_) {
-    VLOG_E("DdsSubscriberImpl::init(): participant/topic creation failed; subscriber left uninitialised.");
-
-    return;
+  if VUNLIKELY (!subscriber_) {
+    VLOG_F("Create subscriber failed.");
   }
 
   if (is_cdr_type) {

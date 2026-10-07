@@ -34,19 +34,29 @@ DdscSetterImpl::DdscSetterImpl(const DdscConf& conf) : conf_(conf) {}
 void DdscSetterImpl::init() {
   participant_ = DdscFactory::create_participant(kPublisher | kSubscriber, conf_, get_all_properties());
 
+  if VUNLIKELY (!participant_) {
+    VLOG_F("Create participant failed.");
+  }
+
   topic_ = DdscFactory::create_topic(kPublisher | kSubscriber, conf_, participant_.get());
+
+  if VUNLIKELY (!topic_) {
+    VLOG_F("Create topic failed: ", conf_.topic, ".");
+  }
 
   publisher_ = DdscFactory::create_publisher(kPublisher, conf_, participant_.get());
 
-  if VUNLIKELY (!participant_ || !topic_) {
-    VLOG_E("DdscSetterImpl::init(): participant/topic creation failed; setter left uninitialised.");
-
-    return;
+  if VUNLIKELY (!publisher_) {
+    VLOG_F("Create publisher failed.");
   }
 
   listener_.emplace(this);
 
   writer_ = DdscFactory::create_datawriter(kSetter, conf_, publisher_.get(), topic_.get(), listener_->get_ptr());
+
+  if VUNLIKELY (!writer_) {
+    VLOG_F("Create datawriter failed.");
+  }
 }
 
 void DdscSetterImpl::deinit() {

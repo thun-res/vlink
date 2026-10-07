@@ -189,9 +189,7 @@ void DdsClientImpl::init() {
   participant_ = DdsFactory::create_participant(kServer | kClient, conf_, get_all_properties());
 
   if VUNLIKELY (!participant_) {
-    VLOG_E("DdsClientImpl::init(): participant creation failed; client left uninitialised.");
-
-    return;
+    VLOG_F("Create participant failed.");
   }
 
   if (is_resp_type) {
@@ -199,8 +197,7 @@ void DdsClientImpl::init() {
         DdsFactory::create_method_topic(kServer | kClient, conf_, participant_.get(), is_cdr_type, ser_type);
 
     if VUNLIKELY (!topic_req_ || !topic_resp_) {
-      VLOG_E("DdsClientImpl::init(): method topic creation failed; client left uninitialised.");
-      return;
+      VLOG_F("Create method topic failed: ", conf_.topic, ".");
     }
 
     if (is_cdr_type) {
@@ -209,23 +206,38 @@ void DdsClientImpl::init() {
 
     publisher_ = DdsFactory::create_publisher(kClient, conf_, participant_.get());
 
+    if VUNLIKELY (!publisher_) {
+      VLOG_F("Create publisher failed.");
+    }
+
     writer_listener_.emplace(this);
 
     writer_ = DdsFactory::create_datawriter(kClient, conf_, publisher_.get(), topic_req_.get(),
                                             &writer_listener_.value(), is_cdr_type);
 
+    if VUNLIKELY (!writer_) {
+      VLOG_F("Create datawriter failed.");
+    }
+
     subscriber_ = DdsFactory::create_subscriber(kClient, conf_, participant_.get());
+
+    if VUNLIKELY (!subscriber_) {
+      VLOG_F("Create subscriber failed.");
+    }
 
     reader_listener_.emplace(this);
 
     reader_ = DdsFactory::create_datareader(kClient, conf_, subscriber_.get(), topic_resp_.get(),
                                             &reader_listener_.value(), is_cdr_type);
+
+    if VUNLIKELY (!reader_) {
+      VLOG_F("Create datareader failed.");
+    }
   } else {
     topic_req_ = DdsFactory::create_topic(kServer | kClient, conf_, participant_.get(), is_cdr_type, {}, ser_type);
 
     if VUNLIKELY (!topic_req_) {
-      VLOG_E("DdsClientImpl::init(): request topic creation failed; client left uninitialised.");
-      return;
+      VLOG_F("Create topic failed: ", conf_.topic, ".");
     }
 
     if (is_cdr_type) {
@@ -234,10 +246,18 @@ void DdsClientImpl::init() {
 
     publisher_ = DdsFactory::create_publisher(kClient, conf_, participant_.get());
 
+    if VUNLIKELY (!publisher_) {
+      VLOG_F("Create publisher failed.");
+    }
+
     writer_listener_.emplace(this);
 
     writer_ = DdsFactory::create_datawriter(kClient, conf_, publisher_.get(), topic_req_.get(),
                                             &writer_listener_.value(), is_cdr_type);
+
+    if VUNLIKELY (!writer_) {
+      VLOG_F("Create datawriter failed.");
+    }
   }
 
   quit_flag_.store(false, std::memory_order_release);

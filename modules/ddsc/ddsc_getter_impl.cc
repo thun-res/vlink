@@ -102,14 +102,20 @@ void DdscGetterImpl::process_message(dds_entity_t reader) {
 void DdscGetterImpl::init() {
   participant_ = DdscFactory::create_participant(kPublisher | kSubscriber, conf_, get_all_properties());
 
+  if VUNLIKELY (!participant_) {
+    VLOG_F("Create participant failed.");
+  }
+
   topic_ = DdscFactory::create_topic(kPublisher | kSubscriber, conf_, participant_.get());
+
+  if VUNLIKELY (!topic_) {
+    VLOG_F("Create topic failed: ", conf_.topic, ".");
+  }
 
   subscriber_ = DdscFactory::create_subscriber(kSubscriber, conf_, participant_.get());
 
-  if VUNLIKELY (!participant_ || !topic_) {
-    VLOG_E("DdscGetterImpl::init(): participant/topic creation failed; getter left uninitialised.");
-
-    return;
+  if VUNLIKELY (!subscriber_) {
+    VLOG_F("Create subscriber failed.");
   }
 
   quit_flag_.store(false, std::memory_order_release);

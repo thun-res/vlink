@@ -111,25 +111,43 @@ void DdscServerImpl::process_message(dds_entity_t reader) {
 void DdscServerImpl::init() {
   participant_ = DdscFactory::create_participant(kServer | kClient, conf_, get_all_properties());
 
+  if VUNLIKELY (!participant_) {
+    VLOG_F("Create participant failed.");
+  }
+
   if (is_resp_type) {
     std::tie(topic_req_, topic_resp_) = DdscFactory::create_method_topic(kServer | kClient, conf_, participant_.get());
 
+    if VUNLIKELY (!topic_req_ || !topic_resp_) {
+      VLOG_F("Create method topic failed: ", conf_.topic, ".");
+    }
+
     publisher_ = DdscFactory::create_publisher(kServer, conf_, participant_.get());
+
+    if VUNLIKELY (!publisher_) {
+      VLOG_F("Create publisher failed.");
+    }
 
     writer_listener_.emplace(this);
 
     writer_ = DdscFactory::create_datawriter(kServer, conf_, publisher_.get(), topic_resp_.get(),
                                              writer_listener_->get_ptr());
+
+    if VUNLIKELY (!writer_) {
+      VLOG_F("Create datawriter failed.");
+    }
   } else {
     topic_req_ = DdscFactory::create_topic(kServer | kClient, conf_, participant_.get());
+
+    if VUNLIKELY (!topic_req_) {
+      VLOG_F("Create topic failed: ", conf_.topic, ".");
+    }
   }
 
   subscriber_ = DdscFactory::create_subscriber(kServer, conf_, participant_.get());
 
-  if VUNLIKELY (!participant_ || !topic_req_) {
-    VLOG_E("DdscServerImpl::init(): participant/topic creation failed; server left uninitialised.");
-
-    return;
+  if VUNLIKELY (!subscriber_) {
+    VLOG_F("Create subscriber failed.");
   }
 
   quit_flag_.store(false, std::memory_order_release);

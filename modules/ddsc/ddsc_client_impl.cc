@@ -141,36 +141,66 @@ void DdscClientImpl::init() {
   participant_ = DdscFactory::create_participant(kServer | kClient, conf_, get_all_properties());
 
   if VUNLIKELY (!participant_) {
-    VLOG_E("DdscClientImpl::init(): participant creation failed; client left uninitialised.");
-
-    return;
+    VLOG_F("Create participant failed.");
   }
 
   if (is_resp_type) {
     std::tie(topic_req_, topic_resp_) = DdscFactory::create_method_topic(kServer | kClient, conf_, participant_.get());
 
+    if VUNLIKELY (!topic_req_ || !topic_resp_) {
+      VLOG_F("Create method topic failed: ", conf_.topic, ".");
+    }
+
     publisher_ = DdscFactory::create_publisher(kClient, conf_, participant_.get());
+
+    if VUNLIKELY (!publisher_) {
+      VLOG_F("Create publisher failed.");
+    }
 
     writer_listener_.emplace(this);
 
     writer_ =
         DdscFactory::create_datawriter(kClient, conf_, publisher_.get(), topic_req_.get(), writer_listener_->get_ptr());
 
+    if VUNLIKELY (!writer_) {
+      VLOG_F("Create datawriter failed.");
+    }
+
     subscriber_ = DdscFactory::create_subscriber(kClient, conf_, participant_.get());
+
+    if VUNLIKELY (!subscriber_) {
+      VLOG_F("Create subscriber failed.");
+    }
 
     reader_listener_.emplace(this);
 
     reader_ = DdscFactory::create_datareader(kClient, conf_, subscriber_.get(), topic_resp_.get(),
                                              reader_listener_->get_ptr());
+
+    if VUNLIKELY (!reader_) {
+      VLOG_F("Create datareader failed.");
+    }
   } else {
     topic_req_ = DdscFactory::create_topic(kServer | kClient, conf_, participant_.get());
 
+    if VUNLIKELY (!topic_req_) {
+      VLOG_F("Create topic failed: ", conf_.topic, ".");
+    }
+
     publisher_ = DdscFactory::create_publisher(kClient, conf_, participant_.get());
+
+    if VUNLIKELY (!publisher_) {
+      VLOG_F("Create publisher failed.");
+    }
 
     writer_listener_.emplace(this);
 
     writer_ =
         DdscFactory::create_datawriter(kClient, conf_, publisher_.get(), topic_req_.get(), writer_listener_->get_ptr());
+
+    if VUNLIKELY (!writer_) {
+      VLOG_F("Create datawriter failed.");
+    }
   }
 
   quit_flag_.store(false, std::memory_order_release);
