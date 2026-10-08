@@ -125,23 +125,7 @@ class ProxyBridge {
 
     if VUNLIKELY (config.native) {
       node.set_property("dds.ip", config.native_ip);
-    } else if VLIKELY (!config.allow_ip.empty()) {
-      node.set_property("dds.ip", config.allow_ip);
     }
-
-    if VLIKELY (!config.peer_ip.empty()) {
-      node.set_property("dds.peer", config.peer_ip);
-    }
-
-    if VLIKELY (config.buf_size > 0) {
-      node.set_property("dds.buf", std::to_string(config.buf_size));
-    }
-
-    if VLIKELY (config.mtu_size > 0) {
-      node.set_property("dds.mtu", std::to_string(config.mtu_size));
-    }
-
-    node.set_property("dds.tcp", config.enable_tcp ? "1" : "0");
   }
 
   virtual bool start() = 0;

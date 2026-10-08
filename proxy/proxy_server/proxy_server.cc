@@ -87,33 +87,6 @@ static void apply_topic_transport(NodeT& node, const ProxyServer::Config& config
   if (config.native_mode) {
     node.set_property("dds.ip", native_ip);
   }
-
-  const auto transport = node.get_transport_type();
-
-  if (!config.bridge ||
-      (transport != TransportType::kDds && transport != TransportType::kDdsc && transport != TransportType::kDdsr)) {
-    return;
-  }
-
-  if (!config.native_mode && !config.allow_ip.empty()) {
-    node.set_property("dds.ip", config.allow_ip);
-  }
-
-  if (!config.peer_ip.empty()) {
-    node.set_property("dds.peer", config.peer_ip);
-  }
-
-  if (config.buf_size > 0) {
-    node.set_property("dds.buf", std::to_string(config.buf_size));
-  }
-
-  if (config.mtu_size > 0) {
-    node.set_property("dds.mtu", std::to_string(config.mtu_size));
-  }
-
-  if (config.enable_tcp) {
-    node.set_property("dds.tcp", "1");
-  }
 }
 
 #if VLINK_PROXY_ENABLE_HANDSHAKE
