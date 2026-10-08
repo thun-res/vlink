@@ -436,48 +436,65 @@ static MemoryFreeNode* pop_free_node(MemoryTierShard& shard) noexcept {
 
 static MemoryFreeNode* steal_free_nodes(MemoryTierState& state, size_t target_index) noexcept {
   MemoryTierShard& target = state.shards[target_index];
+  bool contended = false;
 
-  for (size_t offset = 1U; offset < state.shard_count; ++offset) {
-    MemoryTierShard& source = state.shards[(target_index + offset) & (state.shard_count - 1U)];
-    MemoryFreeNode* first = nullptr;
-    MemoryFreeNode* last = nullptr;
+  for (uint32_t pass = 0U; pass < 2U; ++pass) {
+    for (size_t offset = 1U; offset < state.shard_count; ++offset) {
+      MemoryTierShard& source = state.shards[(target_index + offset) & (state.shard_count - 1U)];
+      MemoryFreeNode* first = nullptr;
+      MemoryFreeNode* last = nullptr;
 
-    if (head_of(source) == nullptr) {
-      continue;
-    }
-
-    {
-      SpinLockGuard source_lock(source.mtx);
-      first = head_of(source);
-
-      if (first == nullptr) {
+      if (head_of(source) == nullptr) {
         continue;
       }
 
-      last = first;
+      {
+        std::unique_lock source_lock(source.mtx, std::defer_lock);
 
-      size_t count = 1U;
+        if (pass == 0U) {
+          if (!source_lock.try_lock()) {
+            contended = true;
+            continue;
+          }
+        } else {
+          source_lock.lock();
+        }
 
-      while (count < state.batch_size && last->next != nullptr) {
-        last = last->next;
-        ++count;
+        first = head_of(source);
+
+        if (first == nullptr) {
+          continue;
+        }
+
+        last = first;
+
+        size_t count = 1U;
+
+        while (count < state.batch_size && last->next != nullptr) {
+          last = last->next;
+          ++count;
+        }
+
+        set_head(source, last->next);
+        last->next = nullptr;
+        bump_counter(source.hit_count);
       }
 
-      set_head(source, last->next);
-      last->next = nullptr;
-      bump_counter(source.hit_count);
+      MemoryFreeNode* cached = first->next;
+      first->next = nullptr;
+
+      if (cached != nullptr) {
+        SpinLockGuard target_lock(target.mtx);
+        last->next = head_of(target);
+        set_head(target, cached);
+      }
+
+      return first;
     }
 
-    MemoryFreeNode* cached = first->next;
-    first->next = nullptr;
-
-    if (cached != nullptr) {
-      SpinLockGuard target_lock(target.mtx);
-      last->next = head_of(target);
-      set_head(target, cached);
+    if (!contended) {
+      break;
     }
-
-    return first;
   }
 
   return nullptr;

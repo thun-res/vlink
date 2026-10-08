@@ -30,9 +30,10 @@
  * Every tier owns a set of singly-linked free-list shards (a power of two sized from the hardware
  * concurrency, between 8 and 64) plus one shared vector of upstream chunks.  A tier starts on its
  * primary shard and enables sharded dispatch only after repeated real lock contention is
- * observed.  Empty local shards steal at most
- * @c Config::batch_size nodes at a time.  Lazy growth installs chunks of at most 64 KiB (or one
- * block when a single block is larger), so an allocating thread never pays more than a bounded
+ * observed.  Empty local shards steal at most @c Config::batch_size nodes at a time, first trying
+ * available shard locks and then scanning with blocking acquisition if busy shards were skipped.
+ * Lazy growth installs chunks of at most 64 KiB (or one block when a single block is larger),
+ * so an allocating thread never pays more than a bounded
  * first-touch burst; with @c Config::lazy_scale the cap becomes one sixteenth of the tier quota
  * (never below 32 KiB), trading a larger first touch for fewer upstream calls at higher levels.
  * The configured @c blocks_per_chunk still bounds every install, and preallocation fills the
