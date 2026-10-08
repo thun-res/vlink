@@ -40,7 +40,7 @@
  *   round 2   | XXXX-XXX 16 spins  ----> yield_cpu()
  *   round 3   | XXXXXXXX 32 spins  ----> yield_cpu()
  *   ...       |         ... up to 1024 spins per ladder rung
- *   total > 100000 spins           ----> sleep_for(10 us)  (latched warn-once)
+ *   total > 500000 spins           ----> sleep_for(10 us)  (latched warn-once)
  * @endverbatim
  *
  * Comparison with @c std::mutex:
@@ -116,7 +116,7 @@ class SpinLock final {
    * @details
    * The inner loop alternates @c exchange attempts with relaxed-load spins.  Each back-off
    * rung doubles the spin budget from @c 8 up to @c 1024 then yields the CPU.  After
-   * @c 100000 spins the back-off action switches to a 10 us sleep and a one-time warning
+   * @c 500000 spins the back-off action switches to a 10 us sleep and a one-time warning
    * is emitted.
    *
    * @warning Recursive acquisition by the same thread deadlocks the lock.
@@ -189,7 +189,7 @@ class SpinLockGuard final {
 ////////////////////////////////////////////////////////////////
 
 inline void SpinLock::lock() noexcept {
-  constexpr static uint32_t kMaxSpinCount = 100000U;
+  constexpr static uint32_t kMaxSpinCount = 500000U;
 
   constexpr static uint16_t kInitialBackoff = 8U;
   constexpr static uint16_t kMaxBackoff = 1024U;
