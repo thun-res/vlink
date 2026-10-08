@@ -245,6 +245,8 @@ sub->register_status_handler([](const vlink::Status::BasePtr& status) {
 
 发现行为经环境变量调节（完整说明见 [集成与扩展](13-integration.md)）：
 
+工具的本地模式地址优先级见 [DDS 运行时配置](13-integration.md#-1323-dds-传输)。
+
 | 环境变量 | 作用 |
 | ---- | ---- |
 | `VLINK_DISCOVER_DISABLE=1` | 禁用本进程的发现上报 |
@@ -459,7 +461,7 @@ api.register_time_callback([](uint64_t sys_time, uint64_t boot_time) {
 | `role` | `kController` | 客户端角色（见 12.10.1） |
 | `domain_id` | `0` | DDS 域 ID，须与服务端一致 |
 | `security_key` | `""` | 控制面对称密钥；空串使用内置默认槽位，显式设置时须与服务端一致 |
-| `native` | `false` | 将 DDS 节点绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
+| `native` | `false` | 将 DDS 节点绑定到本地模式地址 |
 | `reliable` / `enable_tcp` / `direct` | `false` | 数据通道选项，三者均须与服务端完全一致 |
 | `match_version` | `true` | 是否校验 VLink 版本字符串一致 |
 
@@ -482,7 +484,7 @@ api.register_time_callback([](uint64_t sys_time, uint64_t boot_time) {
 | `-x, --max_packet_size FLOAT` | 单条消息最大转发大小（MiB，默认 4.0） |
 | `-b, --allow_ip` / `-p, --peer_ip` | 本地绑定 IP / 单播对端 IP（跨子网用） |
 | `-s, --buf_size INT` / `-e, --mtu_size INT` | DDS 收发缓冲区 / MTU 字节数（默认 0 = 内置默认） |
-| `-n, --native` | 仅发现本机节点，并将 DDS 节点绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
+| `-n, --native` | 仅发现本机节点，并将 DDS 节点绑定到本地模式地址 |
 | `-c, --iox_config PATH` | 指定 Iceoryx TOML 配置；提供此项即拉起内嵌 RouDi（direct/SHM 所需） |
 | `-l, --iox_strategy INT` | Iceoryx 内存策略（1 mini / 2 低 / 3 中 / 4 高，默认 3）；提供此项即按内置策略拉起 RouDi |
 | `-m, --iox_monitoring on\|off` | Iceoryx 监控开关（默认 `on`） |
@@ -531,7 +533,7 @@ JSON 键与长参数名一致（去掉 `--`），例如 `domain_id`、`key`、`t
 
 桥接发布表独立于本地监控控制，按源端 Info 快照增删，断连或协议错误时清除。镜像与主动采集在接收回调内同步转发，Viewer 本地投递沿用 `async`，载荷受本代理 `max_packet_size` 限制；不缓存断线期间的数据，不保证跨网络零拷贝。同机判断要求 hostname 与本机 IPv4 地址集合匹配；两端 machine-id 均非空时还须一致，允许 machine-id 为空。相同机器上的 SHM/SHM2 源通道已可直接访问，桥接按实际后端跳过这些通道，包括 `VLINK_INTRA_BIND` 映射的 intra，以避免回灌；部署须无环，不要将镜像发布通道再桥接回源端。
 
-未映射到其他传输的 intra 只报告源代理进程内的端点，避免同机其他代理的镜像反馈；桥接合并的远端订阅仍用于下行路由。开启桥接时，本地 DDS 业务端点及镜像使用本代理指定的绑定 IP、peer、buffer 和 MTU；启用 `tcp` 时设置 TCP，未启用时保留后端环境配置；`native` 优先使用 `VLINK_DDS_NATIVE_IP`。
+未映射到其他传输的 intra 只报告源代理进程内的端点，避免同机其他代理的镜像反馈；桥接合并的远端订阅仍用于下行路由。开启桥接时，本地 DDS 业务端点及镜像使用本代理指定的绑定 IP、peer、buffer 和 MTU；启用 `tcp` 时设置 TCP，未启用时保留后端环境配置；`native` 使用本地模式地址。
 
 停止服务并等待退出会排空桥接接收回调、撤销镜像及路由。
 

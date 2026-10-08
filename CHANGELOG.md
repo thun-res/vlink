@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### 改进
+
+- **Native 地址**：新增 `VLINK_DISCOVER_NATIVE_IP` 回退；Native bag play / Player 自动补齐空发现地址，Player 普通播放保留原 DDS 默认地址。
+
 ### 修复
 
 - **Fast-DDS Topic**：修复创建与销毁竞争，统一复用时的类型与 QoS 校验，兼容 2.x/3.x 查找接口。

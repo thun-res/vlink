@@ -67,7 +67,7 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 | Run as Controller / Listener | 工作模式：Controller（控制器，同一 Domain ID 下唯一）或 Listener（只读监听） |
 | Domain ID | 通信域 ID，须与中间件一致 |
 | Security Key | 控制面安全密钥，须与代理端一致（启用安全时） |
-| Native Mode | 将 Viewer 的 DDS 节点绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
+| Native Mode | 将 Viewer 的 DDS 节点绑定到本地模式地址，见 [DDS 运行时配置](13-integration.md#-1323-dds-传输) |
 | Reliable / Tcp / Direct Mode | 可靠传输 / 强制 TCP / 直连 |
 
 话题的进程列表保留 PID、名称两列，悬停显示主机和 IP：单个 IP 与 `IP:` 同行，多个 IP 在其下逐行显示。同一侧列表按主机、PID 和名称合并进程地址，按 IP 数值排序去重；不同主机的同 PID 进程分别显示。
@@ -143,7 +143,7 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 | 进度条 | 拖动跳转，拖动时自动暂停，松开恢复 |
 | 速率（Rate） | 调节回放倍率，默认 `1.0` |
 | Loop | 循环回放 |
-| Native | 将回放创建的 DDS 发布节点绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） |
+| Native | DDS 发布节点使用本地模式地址，仅在 `VLINK_DISCOVER_IP` 为空时自动补齐该变量 |
 | URL 过滤 | 过滤输入框 + Blacklist 勾选框，按关键字白/黑名单筛选 URL |
 | Remap | URL 重映射 |
 | Skip Blank | 跳过录制中的空白时间段 |
@@ -365,7 +365,7 @@ WebViz 经代理桥接接入 VLink 网络，`vlink-foxglove` 与 `vlink-rerun` �
 | `--proxy_peer_ip` | DDS 单播发现 peer IP | 空 |
 | `--proxy_buf_size` | socket 发送 / 接收缓冲区大小（字节），`0` 使用默认值 | `0` |
 | `--proxy_mtu_size` | DDS MTU 大小（字节），`0` 使用默认值 | `0` |
-| `--proxy_native` | DDS 节点绑定到 `VLINK_DDS_NATIVE_IP`（未设置时为 `127.0.0.1`） | `false` |
+| `--proxy_native` | DDS 节点绑定到本地模式地址 | `false` |
 | `--proxy_tcp` | DDS 通道使用 TCP 传输 | `false` |
 | `--proxy_key` | `proxy_api` 模式的安全密钥，须与外部 ProxyServer 一致 | 空 |
 | `--proxy_reliable` | `proxy_api` 数据通道使用可靠模式 | `false` |

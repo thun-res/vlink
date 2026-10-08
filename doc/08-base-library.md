@@ -1193,6 +1193,8 @@ auto ipv4_list = vlink::Utils::get_all_ipv4_address(/*filter_available=*/true);
 
 `Utils::ip_less(lhs, rhs)` 按地址数值比较有效 IPv4/IPv6 字面量，混合时 IPv4 排在 IPv6 前；不接受作用域 ID 或前缀长度。Python 对应 `vlink.utils.ip_less`。
 
+`Utils::get_native_ip()` 返回本地模式地址，Python 对应 `vlink.utils.get_native_ip()`；优先级见 [DDS 运行时配置](13-integration.md#-1323-dds-传输)。
+
 ---
 
 ## 🔖 相关文档

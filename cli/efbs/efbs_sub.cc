@@ -41,7 +41,7 @@ class ParserLoop : public vlink::MessageLoop {
 int start_efbs_sub(const std::string& url, const std::string& fbs_dir, const std::string& ser,
                    vlink::SchemaType schema_type, bool use_blob_encoding, bool native_mode, const std::string& filter,
                    bool use_getter) {
-  const std::string native_ip = native_mode ? vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1") : std::string();
+  const std::string native_ip = native_mode ? vlink::Utils::get_native_ip() : std::string();
 
   if VUNLIKELY (!has_intra_bind && vlink::Url::is_intra_type(url)) {
     std::cerr << "Cannot sub intra url." << std::endl;

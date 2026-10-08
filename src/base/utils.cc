@@ -1163,6 +1163,20 @@ std::string get_interface_name_by_ipv6(const std::string& ipv6) noexcept {
   return {};
 }
 
+std::string get_native_ip() noexcept {
+  std::string ip = get_env("VLINK_DDS_NATIVE_IP");
+
+  if (ip.empty()) {
+    ip = get_env("VLINK_DISCOVER_NATIVE_IP");
+  }
+
+  if (ip.empty()) {
+    return "127.0.0.1";
+  }
+
+  return ip;
+}
+
 std::vector<std::string> get_dds_default_address(bool filter_available, int max_count) noexcept {
   if VUNLIKELY (max_count <= 0) {
     return {};

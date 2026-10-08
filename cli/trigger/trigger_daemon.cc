@@ -486,7 +486,7 @@ int run_daemon(const DaemonArguments& arguments) {
   std::string native_ip;
 
   if (arguments.native_mode) {
-    native_ip = vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1");
+    native_ip = vlink::Utils::get_native_ip();
   }
 
   std::unique_ptr<vlink::TriggerRecorder> recorder;

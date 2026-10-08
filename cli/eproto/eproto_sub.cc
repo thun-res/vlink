@@ -44,7 +44,7 @@ int start_eproto_sub(const std::string& url, const std::string& proto_dir, const
                      bool use_getter, bool use_json_format) {
   GOOGLE_PROTOBUF_VERIFY_VERSION;
 
-  const std::string native_ip = native_mode ? vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1") : std::string();
+  const std::string native_ip = native_mode ? vlink::Utils::get_native_ip() : std::string();
 
   if VUNLIKELY (!has_intra_bind && vlink::Url::is_intra_type(url)) {
     std::cerr << "Cannot sub intra url." << std::endl;

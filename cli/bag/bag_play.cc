@@ -24,6 +24,7 @@
 #include <vlink/base/helpers.h>
 #include <vlink/base/utils.h>
 #include <vlink/extension/bag_reader.h>
+#include <vlink/impl/node_impl.h>
 #include <vlink/vlink.h>
 
 #include <algorithm>
@@ -49,7 +50,11 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
              const std::string& plugin_name) {
   using RawPub = vlink::Publisher<vlink::Bytes>;
 
-  const std::string native_ip = native_mode ? vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1") : std::string();
+  const std::string native_ip = native_mode ? vlink::Utils::get_native_ip() : std::string();
+
+  if (native_mode && vlink::Utils::get_env("VLINK_DISCOVER_IP").empty()) {
+    vlink::Utils::set_env("VLINK_DISCOVER_IP", native_ip);
+  }
 
   is_play_mode = true;
 
@@ -159,6 +164,14 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
     return -1;
   }
 
+  bool native_discovery_reloaded = false;
+  auto reload_native_discovery = [&]() {
+    if (native_mode && !native_discovery_reloaded) {
+      vlink::NodeImpl::reload_discovery();
+      native_discovery_reloaded = true;
+    }
+  };
+
   for (const auto& meta : player->get_info().url_metas) {
     if (meta.url_type == "Method") {
       continue;
@@ -202,6 +215,8 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
         continue;
       }
 
+      reload_native_discovery();
+
       if (meta.url_type == "Field") {
         pub->mark_as_setter();
       }
@@ -233,6 +248,8 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
         } catch (vlink::Exception::RuntimeError&) {
           continue;
         }
+
+        reload_native_discovery();
 
         if (meta.url_type == "Field") {
           pub->mark_as_setter();

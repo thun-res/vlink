@@ -36,6 +36,7 @@
 #include <QTimer>
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <shared_mutex>
 
 QT_BEGIN_NAMESPACE
@@ -172,6 +173,7 @@ class PlayerWindow : public QMainWindow {
 
   std::shared_ptr<vlink::BagReader> player_;
   std::unordered_map<std::string, RawPubPtr> pub_urls_map_;
+  std::optional<std::string> normal_dds_ip_;
 
   std::unordered_set<std::string> filter_urls_;
 

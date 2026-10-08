@@ -108,6 +108,11 @@ class VLINK_EXPORT DiscoveryReporter : public MessageLoop {
   ~DiscoveryReporter() override;
 
   /**
+   * @brief Reloads discovery interfaces from the environment.
+   */
+  void reload();
+
+  /**
    * @brief Registers a node so that subsequent broadcasts include it.
    *
    * @details

@@ -167,7 +167,7 @@ ProxyAPI::ProxyAPI(const Config& config) : impl_(std::make_unique<Impl>()) {
   impl_->config = config;
 
   if (impl_->config.native) {
-    impl_->native_ip = Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1");
+    impl_->native_ip = Utils::get_native_ip();
   }
 
   impl_->control_id = static_cast<uint32_t>(ElapsedTimer::get_cpu_timestamp());

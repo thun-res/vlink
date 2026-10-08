@@ -58,7 +58,7 @@ int bag_record(const std::string& path, const std::vector<std::string>& urls, co
                bool sync_mode, const std::vector<std::string>& ignore_compress, const std::string& plugin_name) {
   using RawSub = vlink::Subscriber<vlink::Bytes>;
 
-  const std::string native_ip = native_mode ? vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1") : std::string();
+  const std::string native_ip = native_mode ? vlink::Utils::get_native_ip() : std::string();
 
   is_play_mode = false;
 

@@ -489,6 +489,12 @@ void NodeImpl::deinit_ext() {
   }
 }
 
+void NodeImpl::reload_discovery() {
+  if (auto* reporter = GlobalDiscoveryReporter::get(false)) {
+    reporter->reload();
+  }
+}
+
 void NodeImpl::global_init() {
 #ifdef VLINK_ENABLE_SECURITY
   [[maybe_unused]] static const int kOpenSslInitialized =

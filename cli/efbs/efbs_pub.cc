@@ -26,7 +26,7 @@
 int start_efbs_pub(const std::string& url, const std::string& fbs_dir, const std::string& fbstxt_file,
                    const std::string& fbs_json, const std::string& ser, vlink::SchemaType schema_type,
                    bool use_blob_encoding, bool native_mode, int times, int interval) {
-  const std::string native_ip = native_mode ? vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1") : std::string();
+  const std::string native_ip = native_mode ? vlink::Utils::get_native_ip() : std::string();
 
   if VUNLIKELY (!has_intra_bind && vlink::Url::is_intra_type(url)) {
     std::cerr << "Cannot pub intra url." << std::endl;

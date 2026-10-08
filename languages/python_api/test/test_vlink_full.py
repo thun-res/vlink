@@ -1198,6 +1198,27 @@ process = None
 
 
 def test_utils_extended():
+    native_keys = ("VLINK_DDS_NATIVE_IP", "VLINK_DISCOVER_NATIVE_IP")
+    native_values = {key: os.environ.get(key) for key in native_keys}
+    try:
+        for key in native_keys:
+            os.environ.pop(key, None)
+        assert _vlink.utils.get_native_ip() == "127.0.0.1"
+        os.environ["VLINK_DISCOVER_NATIVE_IP"] = "192.0.2.10"
+        assert _vlink.utils.get_native_ip() == "192.0.2.10"
+        os.environ["VLINK_DDS_NATIVE_IP"] = "192.0.2.20"
+        assert _vlink.utils.get_native_ip() == "192.0.2.20"
+        os.environ["VLINK_DDS_NATIVE_IP"] = ""
+        assert _vlink.utils.get_native_ip() == "192.0.2.10"
+        os.environ["VLINK_DISCOVER_NATIVE_IP"] = ""
+        assert _vlink.utils.get_native_ip() == "127.0.0.1"
+    finally:
+        for key, value in native_values.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
     # New utils
     assert isinstance(_vlink.utils.get_app_path(), str)
 

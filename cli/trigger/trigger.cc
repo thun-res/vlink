@@ -39,7 +39,9 @@ int main(int argc, char* argv[]) {
   argparse::ArgumentParser daemon_command("daemon", VLINK_VERSION, argparse::default_arguments::help);
   daemon_command.add_argument("-c", "--config").help("Optional config json path").default_value(std::string());
   daemon_command.add_argument("-n", "--native")
-      .help("Native mode: local-host discovery + dds.ip from VLINK_DDS_NATIVE_IP (default 127.0.0.1)")
+      .help(
+          "Native mode: local-host discovery + dds.ip from VLINK_DDS_NATIVE_IP, "
+          "VLINK_DISCOVER_NATIVE_IP, or 127.0.0.1")
       .default_value(false)
       .implicit_value(true);
   daemon_command.add_argument("--bag_plugin")

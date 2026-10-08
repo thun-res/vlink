@@ -99,6 +99,9 @@ class ScopedUtilsEnv {
 
   ~ScopedUtilsEnv() {
     if (old_value_.empty()) {
+#ifdef _WIN32
+      Utils::set_env(key_, "");
+#endif
       Utils::unset_env(key_);
     } else {
       Utils::set_env(key_, old_value_, true);
@@ -522,6 +525,25 @@ TEST_SUITE("base-Utils") {
     const std::string value = R"(domain\user\literal\n)";
     ScopedUtilsEnv environment("VLINK_TEST_LITERAL_ENV", value);
     CHECK_EQ(Utils::get_env("VLINK_TEST_LITERAL_ENV"), value);
+  }
+
+  TEST_CASE("native address prioritizes DDS and skips empty environment values") {
+    ScopedUtilsEnv dds_ip("VLINK_DDS_NATIVE_IP", "");
+    ScopedUtilsEnv discover_ip("VLINK_DISCOVER_NATIVE_IP", "");
+
+    CHECK_EQ(Utils::get_native_ip(), "127.0.0.1");
+
+    REQUIRE(Utils::set_env("VLINK_DISCOVER_NATIVE_IP", "192.0.2.10"));
+    CHECK_EQ(Utils::get_native_ip(), "192.0.2.10");
+
+    REQUIRE(Utils::set_env("VLINK_DDS_NATIVE_IP", "192.0.2.20,192.0.2.21"));
+    CHECK_EQ(Utils::get_native_ip(), "192.0.2.20,192.0.2.21");
+
+    REQUIRE(Utils::set_env("VLINK_DDS_NATIVE_IP", ""));
+    CHECK_EQ(Utils::get_native_ip(), "192.0.2.10");
+
+    REQUIRE(Utils::unset_env("VLINK_DISCOVER_NATIVE_IP"));
+    CHECK_EQ(Utils::get_native_ip(), "127.0.0.1");
   }
 
   TEST_CASE("unset_env removes a previously set variable") {

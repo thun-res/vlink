@@ -291,12 +291,13 @@ if (pub.is_support_loan()) {
 | `VLINK_LOG_DIR` | 默认日志根目录，其下按 `<应用名>` 分目录 |
 | `VLINK_LOG_PID_ENABLE` | 置 `1` 在应用名目录下再按 `<PID>` 隔离，供同名多实例并存 |
 | `VLINK_DDS_IP` | DDS 发现对外通告的本机单播 IP 列表（多值以逗号或空格分隔；未设置时取 `VLINK_DISCOVER_IP`） |
-| `VLINK_DDS_NATIVE_IP` | native 模式绑定的 DDS IP（未设置时为 `127.0.0.1`） |
+| `VLINK_DDS_NATIVE_IP` | 本地模式 DDS IP；未设置或为空时依次取 `VLINK_DISCOVER_NATIVE_IP`、`127.0.0.1` |
 | `VLINK_DDS_PEER` | DDS 静态单播对端列表，绕开多播发现（多值以逗号或空格分隔，见 [§14.18](#-1418-跨机或容器不连通)） |
 | `VLINK_DDS_DOMAIN` | DDS domain id |
 | `VLINK_DISCOVER_DISABLE` | 置 `1` 关闭运行时发现上报 |
 | `VLINK_DISCOVER_NATIVE` | 置 `1` 仅限本机发现 |
 | `VLINK_DISCOVER_IP` | 发现组播使用的本机 IPv4 地址列表（多值以逗号或空格分隔；未设置时收发按系统路由走），同时是 `VLINK_DDS_IP` 的缺省值 |
+| `VLINK_DISCOVER_NATIVE_IP` | 本地模式地址回退；未设置或为空时为 `127.0.0.1` |
 | `VLINK_DISCOVER_DOMAIN` | 发现域（`0`–`255`，默认 `0`）：UDP 端口取 `51600 + domain`，组播地址不变，所有进程须一致 |
 | `VLINK_PROTO_DIR` / `VLINK_FBS_DIR` | 动态 schema 目录（`vlink-eproto`/`-efbs`） |
 | `VLINK_FASTBUFFER_PLUGIN` | 首次构造 FastBuffer 时加载的插件名或路径；未设置或空值使用普通 CPU 内存，`shm` 使用可跨进程共享的 CPU 内存 |

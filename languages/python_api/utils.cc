@@ -124,6 +124,8 @@ void bind_utils(nb::module_& m) {
   utils.def("get_env", &vlink::Utils::get_env, "key"_a, "default_value"_a = "");
   utils.def("set_env", &vlink::Utils::set_env, "key"_a, "value"_a, "force"_a = true);
   utils.def("unset_env", &vlink::Utils::unset_env, "key"_a);
+  utils.def("get_native_ip", &vlink::Utils::get_native_ip,
+            "Native address: VLINK_DDS_NATIVE_IP, VLINK_DISCOVER_NATIVE_IP, then 127.0.0.1; empty values are skipped.");
   utils.def(
       "wait_for_device",
       [](const std::string& path, int timeout_ms, int poll_ms) {

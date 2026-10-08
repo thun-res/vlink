@@ -562,6 +562,13 @@ class VLINK_EXPORT NodeImpl {
   void deinit_ext();
 
   /**
+   * @brief Reloads interfaces of the existing runtime-owned discovery reporter.
+   *
+   * @note Does not create a reporter when none exists.
+   */
+  static void reload_discovery();
+
+  /**
    * @brief Initialises process-wide VLink singletons.
    *
    * @details

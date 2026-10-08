@@ -49,7 +49,7 @@ int start_monitor(const std::vector<std::string>& urls, const std::string& filte
                   const std::string& proto_dir, const std::string& fbs_dir) {
   using RawSub = vlink::Subscriber<vlink::Bytes>;
 
-  const std::string native_ip = native_mode ? vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1") : std::string();
+  const std::string native_ip = native_mode ? vlink::Utils::get_native_ip() : std::string();
 
   std::shared_ptr<CustomDiscoveryViewer> discovery_viewer;
 

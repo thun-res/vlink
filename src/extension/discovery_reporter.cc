@@ -151,13 +151,7 @@ struct DiscoveryReporter::Impl final {
 DiscoveryReporter::DiscoveryReporter() : impl_(std::make_unique<Impl>()) {
   set_name("DiscoveryReporter");
 
-  const std::string native_discovery = Utils::get_env("VLINK_DISCOVER_NATIVE");
-
-  if (native_discovery == "1") {
-    impl_->ip_list.emplace_back("127.0.0.1");
-  } else {
-    impl_->ip_list = Helpers::split_any(Utils::get_env("VLINK_DISCOVER_IP"));
-  }
+  reload();
 
   impl_->runtime_version = Version{VLINK_VERSION_MAJOR, VLINK_VERSION_MINOR, VLINK_VERSION_PATCH}.to_string();
 
@@ -254,6 +248,27 @@ DiscoveryReporter::~DiscoveryReporter() {
   if VLIKELY (impl_->winsock_initialized) {
     ::WSACleanup();
     impl_->winsock_initialized = false;
+  }
+#endif
+}
+
+void DiscoveryReporter::reload() {
+  std::lock_guard lock(impl_->mtx);
+
+  if (Utils::get_env("VLINK_DISCOVER_NATIVE") == "1") {
+    impl_->ip_list = {"127.0.0.1"};
+  } else {
+    impl_->ip_list = Helpers::split_any(Utils::get_env("VLINK_DISCOVER_IP"));
+  }
+
+#if VLINK_DISCOVERY_MULTICAST
+  if (impl_->ip_list.empty() && impl_->sock != kInvalidSocket) {
+    in_addr interface_addr{};
+
+    if VUNLIKELY (::setsockopt(impl_->sock, IPPROTO_IP, IP_MULTICAST_IF, reinterpret_cast<const char*>(&interface_addr),
+                               sizeof(interface_addr)) < 0) {
+      VLOG_W("DiscoveryReporter: Failed to reset multicast interface.");
+    }
   }
 #endif
 }

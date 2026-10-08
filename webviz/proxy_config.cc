@@ -68,7 +68,7 @@ void ProxyConfigHelper::add_arguments(argparse::ArgumentParser& program) {
   program.add_argument("--proxy_mtu_size").help("DDS MTU size in bytes").default_value(0).scan<'i', int>();
 
   program.add_argument("--proxy_native")
-      .help("Bind bridge DDS traffic to VLINK_DDS_NATIVE_IP (default 127.0.0.1)")
+      .help("Bind bridge DDS traffic to VLINK_DDS_NATIVE_IP, VLINK_DISCOVER_NATIVE_IP, or 127.0.0.1")
       .default_value(false)
       .implicit_value(true);
 
@@ -544,7 +544,7 @@ bool ProxyConfigHelper::apply_arguments(const argparse::ArgumentParser& program,
   }
 
   if VUNLIKELY (config.transport.native) {
-    config.transport.native_ip = Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1");
+    config.transport.native_ip = Utils::get_native_ip();
   }
 
   return true;

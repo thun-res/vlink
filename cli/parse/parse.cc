@@ -318,7 +318,7 @@ static int start_viewer(bool native_mode) {
   std::string native_ip;
 
   if (native_mode) {
-    native_ip = vlink::Utils::get_env("VLINK_DDS_NATIVE_IP", "127.0.0.1");
+    native_ip = vlink::Utils::get_native_ip();
   }
 
   try {
@@ -1285,7 +1285,7 @@ int main(int argc, char* argv[]) {
       .nargs(1);
 
   program.add_argument("--native")
-      .help("Use native mode (DDS IP from VLINK_DDS_NATIVE_IP; default 127.0.0.1)")
+      .help("Use native mode (DDS IP from VLINK_DDS_NATIVE_IP, VLINK_DISCOVER_NATIVE_IP, or 127.0.0.1)")
       .default_value(false)
       .implicit_value(true);
 
