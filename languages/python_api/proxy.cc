@@ -31,6 +31,7 @@
 #include <vlink/external/proxy_server.h>
 
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 
 #include "buffer.h"
@@ -65,12 +66,18 @@ static void check_proxy_callback(const ProxyAPI& api) {
   }
 }
 
-template <typename... ArgsT>
-static void bind_proxy_callback(nb::class_<ProxyAPI, MessageLoop>& cls, const char* name,
-                                void (ProxyAPI::*method)(MoveFunction<void(ArgsT...)>&&)) {
+static void check_proxy_callback(const ProxyServer& server) {
+  if VUNLIKELY (server.is_running() || is_in_python_owner_callback(&server) || server.is_in_same_thread()) {
+    throw std::runtime_error("Register ProxyServer callbacks before startup or after confirmed shutdown");
+  }
+}
+
+template <typename ProxyT, typename... ArgsT>
+static void bind_proxy_callback(nb::class_<ProxyT, MessageLoop>& cls, const char* name,
+                                void (ProxyT::*method)(MoveFunction<void(ArgsT...)>&&)) {
   cls.def(
       name,
-      [method, name](ProxyAPI& self, nb::object callback) {
+      [method, name](ProxyT& self, nb::object callback) {
         check_proxy_callback(self);
         MoveFunction<void(ArgsT...)> wrapped;
 
@@ -82,8 +89,12 @@ static void bind_proxy_callback(nb::class_<ProxyAPI, MessageLoop>& cls, const ch
           };
         }
 
-        nb::gil_scoped_release release;
-        (self.*method)(std::move(wrapped));
+        if constexpr (std::is_same_v<ProxyT, ProxyAPI>) {
+          nb::gil_scoped_release release;
+          (self.*method)(std::move(wrapped));
+        } else {
+          (self.*method)(std::move(wrapped));
+        }
       },
       "callback"_a.none(), "Set the callback, or None to unregister; call outside this API's callbacks");
 }
@@ -327,7 +338,8 @@ void bind_proxy(nb::module_& m) {
       .def_rw("runnable_list", &ProxyServer::Config::runnable_list)
       .def_rw("bridge", &ProxyServer::Config::bridge)
       .def_rw("bridge_filter", &ProxyServer::Config::bridge_filter)
-      .def_rw("bridge_subscribe", &ProxyServer::Config::bridge_subscribe);
+      .def_rw("bridge_subscribe", &ProxyServer::Config::bridge_subscribe)
+      .def_rw("callback_mode", &ProxyServer::Config::callback_mode);
 
   server
       .def(nb::new_([](const ProxyServer::Config& config) {
@@ -349,6 +361,11 @@ void bind_proxy(nb::module_& m) {
 
                server.quit(true);
                server.wait_for_quit(Timer::kInfinite, false);
+
+               nb::gil_scoped_acquire gil;
+               server.register_data_callback({});
+               server.register_info_callback({});
+               server.register_time_callback({});
              });
              return instance;
            }),
@@ -358,9 +375,15 @@ void bind_proxy(nb::module_& m) {
              if VUNLIKELY (current_python_callback_activity()) {
                throw std::runtime_error("Cannot wait for ProxyServer shutdown inside a Python callback");
              }
-             nb::gil_scoped_release release;
-             self.quit(true);
-             self.wait_for_quit(Timer::kInfinite, false);
+             {
+               nb::gil_scoped_release release;
+               self.quit(true);
+               self.wait_for_quit(Timer::kInfinite, false);
+             }
+
+             self.register_data_callback({});
+             self.register_info_callback({});
+             self.register_time_callback({});
            })
       .def(
           "wait_for_quit",
@@ -373,7 +396,45 @@ void bind_proxy(nb::module_& m) {
             return self.wait_for_quit(timeout_ms, check);
           },
           "timeout_ms"_a = -1, "check"_a = true)
+      .def(
+          "send_control",
+          [](ProxyServer& self, const ProxyAPI::Control& control) {
+            // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
+            const auto snapshot = control;
+            nb::gil_scoped_release release;
+            return self.send_control(snapshot);
+          },
+          "control"_a, "Queue local control in callback mode; True does not mean subscriptions are ready")
+      .def(
+          "register_data_callback",
+          [](ProxyServer& self, nb::object callback) {
+            check_proxy_callback(self);
+            ProxyAPI::DataCallback wrapped;
+
+            if (!callback.is_none()) {
+              auto cb = std::make_shared<GilSafePyFunction>(nb::cast<nb::callable>(callback));
+              auto activity = std::make_shared<PythonCallbackActivity>();
+              wrapped = [native = &self, activity, cb](const ProxyAPI::Data& data) {
+                invoke_owned_python_callback(native, activity, "vlink::ProxyServer.register_data_callback", [&]() {
+                  PythonProxyData owned;
+                  owned.url = data.url;
+                  owned.ser = data.ser;
+                  owned.schema = data.schema;
+                  owned.raw = nb::bytes(data.raw.data(), data.raw.size());
+                  owned.timestamp = data.timestamp;
+                  owned.seq = data.seq;
+                  cb->fn(std::move(owned));
+                });
+              };
+            }
+
+            self.register_data_callback(std::move(wrapped));
+          },
+          "callback"_a.none(), "Register while stopped; callback(Data) receives an owned snapshot; None unregisters")
       .def("get_token", &ProxyServer::get_token);
+
+  bind_proxy_callback(server, "register_time_callback", &ProxyServer::register_time_callback);
+  bind_proxy_callback(server, "register_info_callback", &ProxyServer::register_info_callback);
 }
 
 }  // namespace vlink::python

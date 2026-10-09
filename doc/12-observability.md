@@ -569,6 +569,12 @@ int main() {
 
 `ProxyServer` 析构同步阻塞，会等待全部 DDS 句柄清理后返回，须确保进程退出前调用。
 
+嵌入式接收可设置 `cfg.callback_mode = true`，再通过 `register_data_callback`、`register_info_callback`、`register_time_callback` 和 `send_control` 直接交互，无需本地 `ProxyAPI`。该模式与内部 Proxy DDS 通道互斥，不创建数据、控制、信息、心跳及握手端点；默认 `false` 保留原有行为。业务话题传输、发现、Field Getter、Schema 校验、过滤和大小限制沿用现有实现，远端 bridge 仍按原配置工作。
+
+数据回调在话题接收线程同步执行，载荷为 `shallow_copy` 的借用视图，仅在回调期间有效；需要保留时由应用复制。不同话题可并发调用；信息和心跳在服务端循环执行。回调在启动前注册，运行期间保持不变；停止并确认退出后才能更换、清空回调或释放捕获资源。回调不得抛出异常、阻塞等待服务端停止或执行耗时网络发送。`async` 不启动额外转发线程，`direct` 不关闭回调接收。
+
+`send_control` 返回是否成功入队，话题订阅就绪须另行确认；选择话题仍须提供匹配的 `ser` 和 `schema`。此接口仅增加进程内上行出口，未增加数据注入接口。Python 同步暴露这些接口，Data 载荷复制一次为可保留的 `bytes`，用法与生命周期见 [13.7.1](13-integration.md#1371-python)。新增 `Config` 字段改变 C++ ABI，使用方须配套更新头文件、库并重新编译。
+
 嵌入式桥接使用 `cfg.bridge.emplace()` 填写远端 `ProxyAPI::Config`，例如 `cfg.bridge->domain_id = 10`；`cfg.bridge_filter` 默认同命令行。内部强制使用 Controller，两端 `direct` 必须为 `false`。新增配置字段改变了 `Config` 布局，使用该 C++ 接口的程序需重新编译。
 
 ---

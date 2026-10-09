@@ -154,6 +154,10 @@ struct ProxyServer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
 
   ProxyServer::Config config;
 
+  ProxyAPI::DataCallback data_callback;
+  ProxyAPI::InfoCallback info_callback;
+  ProxyAPI::TimeCallback time_callback;
+
   std::shared_ptr<DiscoveryViewer> discovery_viewer;
   std::shared_ptr<DataPub> data_pub;
   std::shared_ptr<DataSub> data_sub;
@@ -343,12 +347,47 @@ ProxyServer::~ProxyServer() {
 
 std::string ProxyServer::get_token() const { return impl_->token; }
 
+void ProxyServer::register_data_callback(ProxyAPI::DataCallback&& callback) {
+  impl_->data_callback = std::move(callback);
+}
+
+void ProxyServer::register_info_callback(ProxyAPI::InfoCallback&& callback) {
+  impl_->info_callback = std::move(callback);
+}
+
+void ProxyServer::register_time_callback(ProxyAPI::TimeCallback&& callback) {
+  impl_->time_callback = std::move(callback);
+}
+
+bool ProxyServer::send_control(const ProxyAPI::Control& control) {
+  if VUNLIKELY (!impl_->config.callback_mode || !is_running() || is_ready_to_quit() ||
+                control.mode > ProxyAPI::kAutoAndObserveAll) {
+    return false;
+  }
+
+  for (const auto& meta : control.url_meta_list) {
+    if VUNLIKELY (meta.url.empty() || (meta.type != kSubscriber && meta.type != kPublisher && meta.type != kSetter)) {
+      return false;
+    }
+  }
+
+  proxy::ControlPacket packet;
+  packet.body = control;
+
+  return post_task([this, packet = std::move(packet)]() mutable {
+    if VLIKELY (!is_ready_to_quit()) {
+      packet.control_id = impl_->control_id.load(std::memory_order_relaxed) + 1;
+      send_control(&packet);
+    }
+  });
+}
+
 size_t ProxyServer::get_max_task_count() const { return kMaxTaskSize; }
 
 uint32_t ProxyServer::get_max_elapsed_time() const { return kMaxTaskElapsed; }
 
 void ProxyServer::on_begin() {
-  if (impl_->config.async) {
+  if (impl_->config.async && !impl_->config.callback_mode) {
     impl_->forward_loop.set_name("ProxyForward");
 
     if VUNLIKELY (!impl_->forward_loop.async_run()) {
@@ -486,6 +525,26 @@ void ProxyServer::init_server() {
   }
 
   impl_->discovery_viewer = std::make_shared<DiscoveryViewer>(filter_type);
+
+  if VUNLIKELY (impl_->config.callback_mode) {
+    impl_->boot_elapsed.start();
+    impl_->main_elapsed.start();
+
+    impl_->time_timer.set_interval(kCollectInterval);
+    impl_->time_timer.set_loop_count(Timer::kInfinite);
+    impl_->time_timer.attach(this);
+    impl_->time_timer.set_callback([this]() { send_time(); });
+    impl_->time_timer.start();
+
+    impl_->info_timer.set_interval(kCollectInterval);
+    impl_->info_timer.set_loop_count(Timer::kInfinite);
+    impl_->info_timer.attach(this);
+    impl_->info_timer.set_callback([this]() { update_all(); });
+    impl_->info_timer.start();
+
+    impl_->discovery_viewer->async_run();
+    return;
+  }
 
   if (impl_->config.direct) {
     impl_->data_pub =
@@ -1061,6 +1120,15 @@ void ProxyServer::init_runnable() {
 }
 
 void ProxyServer::send_time() {
+  if VUNLIKELY (impl_->config.callback_mode) {
+    if VLIKELY (impl_->time_callback) {
+      impl_->time_callback(ElapsedTimer::get_sys_timestamp(ElapsedTimer::kMicro, false),
+                           static_cast<uint64_t>(impl_->boot_elapsed.get()));
+    }
+
+    return;
+  }
+
   if VUNLIKELY (!impl_->time_pub->has_subscribers()) {
     return;
   }
@@ -1231,7 +1299,7 @@ void ProxyServer::send_control(const void* control_data) {
           if (pub_iter != impl_->pub_ptr_map.end()) {
             auto* pub = pub_iter->second.node.get();
 
-            if (pub && pub_iter->second.type == meta.type && pub->get_ser_type() == meta.ser &&
+            if (pub != nullptr && pub_iter->second.type == meta.type && pub->get_ser_type() == meta.ser &&
                 pub->get_schema_type() == meta.schema &&
                 (pub->get_property("proxy.bridge") == "1") == (body.bridge && meta.type == kPublisher)) {
               continue;
@@ -1285,7 +1353,7 @@ void ProxyServer::send_control(const void* control_data) {
 }
 
 void ProxyServer::update_all() {
-  if VUNLIKELY (!impl_->info_pub->has_subscribers()) {
+  if VUNLIKELY (!impl_->config.callback_mode && !impl_->info_pub->has_subscribers()) {
     {
       std::lock_guard pubs_lock(impl_->pubs_mtx);
       impl_->pub_ptr_map.clear();
@@ -1748,6 +1816,7 @@ void ProxyServer::update_all() {
           sub->mark_as_getter();
         }
 
+        sub->set_safety_quit(impl_->config.callback_mode);
         sub->set_latency_and_lost_enabled(true);
 
         apply_topic_transport(*sub, impl_->config, impl_->native_ip);
@@ -1758,8 +1827,13 @@ void ProxyServer::update_all() {
 
         total_seq.store(0, std::memory_order_relaxed);
 
-        sub->listen([this, sub_ptr = sub.get(), url = info.url, ser = current_meta.ser, schema = current_meta.schema,
-                     &total_seq, &seq, &size, &lat, &elapsed](const Bytes& bytes) {
+        ProxyAPI::Data data;
+        data.url = info.url;
+        data.ser = current_meta.ser;
+        data.schema = current_meta.schema;
+
+        sub->listen([this, sub_ptr = sub.get(), data = std::move(data), &total_seq, &seq, &size, &lat,
+                     &elapsed](const Bytes& bytes) mutable {
           if VUNLIKELY (is_ready_to_quit() || ProxyServerGlobal::get().has_quit.load(std::memory_order_acquire) ||
                         impl_->discovery_viewer->is_ready_to_quit()) {
             return;
@@ -1769,6 +1843,36 @@ void ProxyServer::update_all() {
           size.fetch_add(bytes.size(), std::memory_order_relaxed);
           lat.fetch_add(sub_ptr->get_latency(), std::memory_order_relaxed);
           elapsed.restart();
+
+          const auto& url = data.url;
+          const auto& ser = data.ser;
+          const auto schema = data.schema;
+
+          if VUNLIKELY (impl_->config.callback_mode) {
+            if VUNLIKELY (impl_->real_max_packet_size > 0 && bytes.size() > impl_->real_max_packet_size) {
+              return;
+            }
+
+            {
+              std::shared_lock control_lock(impl_->control_mtx);
+              const auto mode = impl_->mode.load(std::memory_order_relaxed);
+
+              if VUNLIKELY (mode != ProxyAPI::kObserveAll && mode != ProxyAPI::kAutoAndObserveAll &&
+                            impl_->sub_urls.count(url) == 0) {
+                return;
+              }
+            }
+
+            if VLIKELY (impl_->data_callback) {
+              data.raw.shallow_copy(bytes);
+              data.timestamp = impl_->main_elapsed.get();
+              data.seq = total_seq.load(std::memory_order_relaxed);
+              impl_->data_callback(data);
+            }
+
+            total_seq.fetch_add(1, std::memory_order_relaxed);
+            return;
+          }
 
           if (!impl_->config.direct) {
             if VUNLIKELY (impl_->real_max_packet_size > 0 && bytes.size() > impl_->real_max_packet_size) {
@@ -1943,7 +2047,14 @@ void ProxyServer::update_all() {
 
   packet.control_id = impl_->control_id.load(std::memory_order_relaxed);
   packet.hostname = impl_->current_host_name;
-  impl_->info_pub->publish(packet, true);
+
+  if VUNLIKELY (impl_->config.callback_mode) {
+    if VLIKELY (impl_->info_callback) {
+      impl_->info_callback(packet.info_list);
+    }
+  } else {
+    impl_->info_pub->publish(packet, true);
+  }
 }
 
 }  // namespace vlink

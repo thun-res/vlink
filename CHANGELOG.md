@@ -4,6 +4,7 @@
 
 ### 改进
 
+- **ProxyServer**：新增进程内回调模式及 Python 绑定，默认仍使用内部 DDS；使用方须重新编译。
 - **Native 地址**：新增 `VLINK_DISCOVER_NATIVE_IP` 回退；Native bag play / Player 自动补齐空发现地址，Player 普通播放保留原 DDS 默认地址。
 
 ### 修复

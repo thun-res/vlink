@@ -59,6 +59,34 @@
 C++ codec 或外部编码器生成 payload，再用 `vlink.Bytes.from_bytes()` 交给节点。`someip://` 只选择
 传输后端，不会自动把 Python 对象编码为 SOME/IP 字段。
 
+### ProxyServer 进程内回调
+
+同时启用 `ENABLE_PROXY` 和 `ENABLE_PYTHON_API` 后，可直接接收已发现的业务话题，无需创建 `ProxyAPI`：
+
+```python
+import vlink
+
+cfg = vlink.ProxyServer.Config()
+cfg.callback_mode = True
+server = vlink.ProxyServer(cfg)
+server.register_data_callback(lambda data: print(data.url, len(data.raw)))
+server.register_info_callback(lambda infos: print("topics:", len(infos)))
+server.register_time_callback(lambda system_us, boot_us: None)
+try:
+    if not server.async_run():
+        raise RuntimeError("ProxyServer startup failed")
+    control = vlink.ProxyAPI.Control()
+    control.mode = vlink.ProxyAPI.Mode.ObserveAll
+    control.filter_str = "dds://camera/"
+    if not server.send_control(control):
+        raise RuntimeError("ProxyServer control rejected")
+    input("按回车结束监听：")
+finally:
+    server.close()
+```
+
+启动前注册回调，运行中不可替换；`None` 只能在停止时注销。`data.raw` 为可保留的独立 `bytes`，接收复制一次；回调宜快速入队，网络发送由应用处理。`close()` 等待退出并清空回调。详细契约见 [13.7.1](../../../doc/13-integration.md#1371-python)。
+
 ### 接收后独立修改载荷
 
 需要修改已解析的点云时，显式复制后再改写；`ObjectArray` 同样支持 `deep_copy(source)`：

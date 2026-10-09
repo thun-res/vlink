@@ -320,7 +320,7 @@ vlink 为 Python 提供两条路径，**首选原生绑定**：
   - 收发端点：`Publisher`、`Subscriber`、`Server`、`Client`、`Setter`、`Getter`、`FireForgetServer`、`FireForgetClient`；
   - 安全版端点：`Security`、`SecurityConfig`、`SecurityConfigAdvanced`、`SecurityPublisher`、`SecuritySubscriber`、`SecurityServer`、`SecurityClient`、`SecuritySetter`、`SecurityGetter`、`SecurityFireForgetServer`、`SecurityFireForgetClient`、`SslOptions`；
   - 录制/回放与发现：`BagWriter`、`BagReader`、`TriggerRecorder`、`DiscoveryViewer`；
-  - Proxy（同时启用 `ENABLE_PROXY`）：`ProxyAPI`、`ProxyServer`，含各自的 `Config`、控制/发现/数据类型及桥接配置；
+  - Proxy（同时启用 `ENABLE_PROXY`）：`ProxyAPI`、`ProxyServer`，含各自的 `Config`、控制/发现/数据类型、服务端回调模式及桥接配置；
   - QoS 与杂项：`Qos`、`QosProfile`、`UrlRemap`、`Logger`（含 `log_trace`/`log_debug`/`log_info`/`log_warn`/`log_error`/`log_fatal`）、`Status`；
   - 基础类型与工具：`Bytes`、`Frame`、`Uuid`、`Version`、`SchemaData`、`SampleLostInfo`、`ElapsedTimer`、`DeadlineTimer`、`Timer`、`WheelTimer`、`MessageLoop`、`MultiLoop`、`ThreadPool`、`SpinLock`、`CpuProfiler`、`CpuProfilerGuard`、`MemoryPool`、`Process`、`utils`、`helpers`、`quantize`；
   - 各类枚举：`ImplType`、`TransportType`、`InitType`、`SecurityType`、`ActionType`、`SchemaType`、`LogLevel`、`StatusType` 等。
@@ -350,6 +350,7 @@ vlink 为 Python 提供两条路径，**首选原生绑定**：
   - `DiscoveryViewer` 继承 `MessageLoop`：注册发现回调后调用 `async_run()`，结束时调用 `quit()` 和 `wait_for_quit(timeout_ms)`；构造本身不启动发现消息处理。
   - `ProxyAPI`、`ProxyServer` 同样通过 `async_run()` 启动、`close()` 停止并等待退出；每进程只构造一个 `ProxyServer`。服务端关闭会停止业务转发，重启后客户端需重新发送 Control。不得从 Python 回调内同步 `close()` 或等待服务端退出，可调用 `quit()` 后由外部等待。`ProxyServer.Config.bridge` 接收远端 `ProxyAPI.Config` 或 `None`，过滤使用 `bridge_filter`，主动采集下发由默认关闭的 `bridge_subscribe` 控制，桥接语义见 [12.12–12.13](12-observability.md)。Python 中异步字段/参数命名为 `async_`。
   - `ProxyAPI.register_*_callback(None)` 注销回调。Info 与 Data 回调交付可保留的快照；`ProxyAPI.Data.raw` 是不可变 `bytes`，接收复制一次，可修改输入赋值时复制，发送借用并保活 `bytes`。不得在该 API 自身回调或工作线程的 Logger 回调中替换回调、`close()` 或 `wait_for_quit()`，这些操作抛出 `RuntimeError`；可调用 `quit()` 后由外部等待。回调内释放最后引用会延后原生对象销毁。独立 `ProxyAPI` 停启后需重新发送所需 Control。
+  - `ProxyServer.Config.callback_mode = True` 使用进程内控制与回调，默认 `False` 保留内部 Proxy DDS 通道。启动前注册 `register_data_callback`、`register_info_callback`、`register_time_callback`，启动后调用 `send_control(control)`；返回值仅表示控制入队。运行中注册或清空回调抛出 `RuntimeError`，生命周期操作须由应用串行执行。Data 使用同一 `ProxyAPI.Data` 类型，载荷复制一次为独立 `bytes`，Info 为可保留快照；回调异常沿用绑定层的不可传播异常报告。`close()` 等待退出并清空回调，再次启动前需重新注册和发送 Control；C++ 回调借用载荷，见 [12.13](12-observability.md#-1213-代理监控proxyserver-嵌入式用法)。
   - `MessageLoop` 的投递接口在等待队列容量时释放 GIL，使 `Block` 策略下的 Python 消费回调可以继续执行。
   - `Security` 加解密及状态查询在原生调用期间释放 GIL；加解密保留不可变 `bytes` 输入，可修改缓冲区则先复制，以保证并发调用时的输入快照。
   - `ProxyData.raw()` 返回浅 `Bytes`；该对象及由它派生的 `memoryview`、借用消息仍存活时，父对象的 `clear()`、`create()`、`from_bytes()` 抛出 `BufferError`。释放这些视图后才能替换父存储。

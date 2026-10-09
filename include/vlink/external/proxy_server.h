@@ -28,10 +28,12 @@
  * @details
  * @c ProxyServer is the in-process daemon that mediates between the VLink core (publishers,
  * subscribers, setters, getters on the local DDS domain) and one or more @c ProxyAPI clients.
+ * With @c Config::callback_mode enabled, in-process controls and callbacks replace the
+ * internal proxy channels; no local @c ProxyAPI client or handshake is required.
  * It derives from @c MessageLoop, so once @c async_run() is called all scheduled work,
  * timers, and asynchronous relays run inside the inherited loop's worker thread.
  *
- * Behaviourally the server is responsible for the following duties:
+ * In internal channel mode, the server is responsible for the following duties:
  *
  * -# Hosts an internal @c DiscoveryViewer that enumerates every active publisher and
  *    subscriber on the DDS domain.
@@ -157,9 +159,9 @@ namespace vlink {
  * @brief In-process VLink proxy daemon backed by a @c MessageLoop.
  *
  * @details
- * Owns the discovery layer, the handshake/control/time/info DDS channels, the data
- * relay path, and any embedded Iceoryx daemon or runnable plugins.  Construction
- * starts the @c DiscoveryViewer and arms the 1-second heartbeat and statistics
+ * Owns the discovery layer, the data relay path, and any embedded Iceoryx daemon or
+ * runnable plugins.  Internal channel mode also owns handshake/control/time/info DDS channels.
+ * Construction starts the @c DiscoveryViewer and arms the 1-second heartbeat and statistics
  * timers, but it does @b not start the server's own inherited loop.  Those timers
  * now run on that loop, so @c async_run() (or @c run()) on the @c MessageLoop base
  * is @b required: without it no heartbeat or @c InfoList is published and every
@@ -232,6 +234,8 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
     std::string bridge_filter{
         "shm://,shm2://,intra://"}; /**< Space/comma URL filters; case-insensitive, empty = all. */
     bool bridge_subscribe{false};   /**< Forward local publishers to matching remote subscribers. */
+
+    bool callback_mode{false};  ///< Replace internal proxy channels with in-process control and callbacks.
   };
 
   /**
@@ -245,9 +249,9 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
    * -# Reads @c VLINK_INTRA_BIND and, in native mode, @c Utils::get_native_ip().
    * -# When @c config.use_iox is @c true, calls @c init_shm_roudi() to spin up an
    *    embedded Iceoryx RouDi process.
-   * -# Calls @c init_server() to create the handshake, control, time, info, and data
-   *    channels, subscribe to @c Control, and arm the heartbeat plus statistics
-   *    timers on the server's own inherited loop.
+   * -# Calls @c init_server() to start discovery and arm the heartbeat plus statistics
+   *    timers on the server's own inherited loop.  Unless @c callback_mode is enabled,
+   *    this also creates the internal channels and subscribes to @c Control.
    * -# Calls @c init_runnable() to load every plugin listed in @c config.runnable_list.
    *
    * The inherited @c MessageLoop is @b not started here -- call @c async_run() or
@@ -292,6 +296,45 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
    * @note Thread-safe; the returned string is a copy.
    */
   [[nodiscard]] std::string get_token() const;
+
+  /**
+   * @brief Registers raw data delivery in @c callback_mode.
+   *
+   * @param callback Receives borrowed data on the topic receive thread; empty disables delivery.
+   *
+   * @note Copy retained payloads.  Different topics may invoke the callback concurrently.
+   *       Register before startup or after confirmed shutdown.  Callbacks must not throw or wait for server shutdown.
+   */
+  void register_data_callback(ProxyAPI::DataCallback&& callback);
+
+  /**
+   * @brief Registers discovery and statistics delivery in @c callback_mode.
+   *
+   * @param callback Receives a borrowed snapshot on the server loop; empty disables delivery.
+   *
+   * @note Register before startup or after confirmed shutdown.  Callbacks must not throw or wait for server shutdown.
+   */
+  void register_info_callback(ProxyAPI::InfoCallback&& callback);
+
+  /**
+   * @brief Registers heartbeat delivery in @c callback_mode.
+   *
+   * @param callback Receives system and boot timestamps in microseconds on the server loop; empty disables delivery.
+   *
+   * @note Register before startup or after confirmed shutdown.  Callbacks must not throw or wait for server shutdown.
+   */
+  void register_time_callback(ProxyAPI::TimeCallback&& callback);
+
+  /**
+   * @brief Enqueues control on the server loop in @c callback_mode.
+   *
+   * @param control Uses the existing mode, URL, serialization, schema and filter semantics.
+   *
+   * @return True if queued; false outside callback mode, before startup, after shutdown or for invalid control.
+   *
+   * @note Start the server loop first.  Acceptance does not mean subscriptions are ready.
+   */
+  [[nodiscard]] bool send_control(const ProxyAPI::Control& control);
 
  protected:
   size_t get_max_task_count() const override;
