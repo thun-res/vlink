@@ -1,3 +1,7 @@
+# Patch format corrected by lujuntuan.
+# Backport of eProsima/Fast-DDS commit 28e2ce8fafb0cc1ebfdf883896fa39148e91c95c.
+# Fix destruction data-race on participant removal in intra-process (#5034/#5367).
+# Adapted for Fast-DDS v2.10.7 and hardened pointer acquisition; upstream tests are omitted.
 diff --git a/CMakeLists.txt b/CMakeLists.txt
 index d16959371..471d387b0 100644
 --- a/CMakeLists.txt
@@ -48,11 +52,9 @@ index d16959371..471d387b0 100644
  
      set(OPENSSL_LIBRARIES ssl crypto)
  endif()
-# Backport of eProsima/Fast-DDS commit 28e2ce8fafb0cc1ebfdf883896fa39148e91c95c.
-# Fix destruction data-race on participant removal in intra-process (#5034/#5367).
-# Adapted for Fast-DDS v2.10.7 and hardened pointer acquisition; upstream tests are omitted.
 diff --git a/include/fastdds/rtps/reader/LocalReaderPointer.hpp b/include/fastdds/rtps/reader/LocalReaderPointer.hpp
---- a/include/fastdds/rtps/reader/LocalReaderPointer.hpp	1970-01-01 08:00:00.000000000 +0800
+new file mode 100644
+--- /dev/null
 +++ b/include/fastdds/rtps/reader/LocalReaderPointer.hpp	2026-07-17 09:44:34.925831384 +0800
 @@ -0,0 +1,50 @@
 +// Copyright 2024 Proyectos y Sistemas de Mantenimiento SL (eProsima).
@@ -207,7 +209,8 @@ diff --git a/include/fastdds/rtps/writer/ReaderProxy.h b/include/fastdds/rtps/wr
          return locator_info_.local_reader();
      }
 diff --git a/include/fastrtps/utils/RefCountedPointer.hpp b/include/fastrtps/utils/RefCountedPointer.hpp
---- a/include/fastrtps/utils/RefCountedPointer.hpp	1970-01-01 08:00:00.000000000 +0800
+new file mode 100644
+--- /dev/null
 +++ b/include/fastrtps/utils/RefCountedPointer.hpp	2026-07-17 09:44:34.925831384 +0800
 @@ -0,0 +1,220 @@
 +// Copyright 2024 Proyectos y Sistemas de Mantenimiento SL (eProsima).
