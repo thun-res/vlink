@@ -3,7 +3,7 @@
 > *Upstream*: Eclipse iceoryx, <https://github.com/eclipse-iceoryx/iceoryx>
 > *Upstream version*: v2.0.8 (fetched by CPM, see `cmake/cpm_thirdparty.cmake`)
 > *Upstream license*: Apache License, Version 2.0
-> *Modifier*: VLink contributors (<https://github.com/thun-res/vlink>)
+> *Modifier*: VLink contributors (<https://github.com/thun-res/vlink>); resource-name fix: lujuntuan
 > *Modifier license*: Apache License, Version 2.0 (same as upstream)
 
 This document is the §4(b) "prominent notice" required by the Apache License,
@@ -27,6 +27,9 @@ text covering both the original work and these modifications is shipped at
 | `iceoryx_hoofs/CMakeLists.txt` | Replace bare `acl`/`atomic` link items with `find_library`-resolved paths so iceoryx links cleanly on hosts where `libacl` lives outside the default lib path; make `libatomic` linkage conditional on its presence (musl/macOS). |
 | `iceoryx_hoofs/cmake/Config.cmake.in` | Use `${PACKAGE_PREFIX_DIR}` instead of the install-time `@CMAKE_INSTALL_PREFIX@` so the exported config is relocatable when iceoryx is built as a CPM sub-project. |
 | `iceoryx_hoofs/cmake/IceoryxPlatform.cmake` | Promote `ICEORYX_CXX_STANDARD` from 14 to 17 on Linux/QNX to match VLink's C++17 baseline. |
+| `iceoryx_hoofs/include/iceoryx_hoofs/internal/cxx/helplets.inl` | Accept punctuation and non-ASCII bytes in resource names while retaining reserved-character and trailing-dot/space restrictions. |
+| `iceoryx_hoofs/include/iceoryx_hoofs/error_handling/error_handling.hpp` | Add a runtime-name IPC-separator error without renumbering existing errors. |
+| `iceoryx_hoofs/test/moduletests/test_cxx_helplets.cpp` | Align character expectations with resource-name validation; exclude trailing spaces from valid-name combinations. |
 | `iceoryx_hoofs/include/iceoryx_hoofs/internal/concurrent/periodic_task.hpp` | Switch the periodic-task wait primitive from `std::condition_variable_any` to the new `condition_variable.hpp` wrapper (CLOCK_MONOTONIC). |
 | `iceoryx_hoofs/include/iceoryx_hoofs/internal/concurrent/periodic_task.inl` | Adapt the inline implementation to the new wait primitive. |
 | `iceoryx_hoofs/include/iceoryx_hoofs/internal/concurrent/sofi.inl` | Annotate a benign data race observed by ThreadSanitizer when sofi is shared by multiple readers (atomic ordering tighten). |
@@ -42,6 +45,7 @@ text covering both the original work and these modifications is shipped at
 | `iceoryx_posh/cmake/iceoryx_versions.hpp.in` | Strip dev-only `git describe` invocations that fail when iceoryx is built outside its own git tree. |
 | `iceoryx_posh/include/iceoryx_posh/internal/runtime/ipc_runtime_interface.hpp` | Add an optional timeout to synchronous RouDi requests while preserving blocking behaviour for existing callers. |
 | `iceoryx_posh/source/runtime/ipc_runtime_interface.cpp` | Use the timed IPC receive path only when a caller supplies a timeout. |
+| `iceoryx_posh/source/runtime/posh_runtime.cpp` | Reject commas in runtime names before registration because the IPC protocol uses comma-separated fields. |
 | `iceoryx_posh/source/runtime/posh_runtime_impl.cpp` | Bound the final RouDi termination acknowledgement wait to three seconds so runtime destruction cannot block indefinitely. |
 
 ## Why the modifications

@@ -842,3 +842,114 @@ index 0af2671c4..e42b552c9 100644
          && (1U == receiveBuffer.getNumberOfElements()))
      {
          std::string IpcMessage = receiveBuffer.getElementAtIndex(0U);
+diff --git a/iceoryx_hoofs/include/iceoryx_hoofs/error_handling/error_handling.hpp b/iceoryx_hoofs/include/iceoryx_hoofs/error_handling/error_handling.hpp
+index 2b5245c67..99e3ad541 100644
+--- a/iceoryx_hoofs/include/iceoryx_hoofs/error_handling/error_handling.hpp
++++ b/iceoryx_hoofs/include/iceoryx_hoofs/error_handling/error_handling.hpp
+@@ -14,6 +14,7 @@
+ // limitations under the License.
+ //
+ // SPDX-License-Identifier: Apache-2.0
++// modify by lujuntuan
+ #ifndef IOX_HOOFS_ERROR_HANDLING_ERROR_HANDLING_HPP
+ #define IOX_HOOFS_ERROR_HANDLING_ERROR_HANDLING_HPP
+ 
+@@ -195,7 +196,8 @@ namespace iox
+     error(BINDING_C__C2CPP_ENUM_TRANSLATION_INVALID_SERVER_STATE_VALUE) \
+     error(BINDING_C__C2CPP_ENUM_TRANSLATION_INVALID_SERVICE_DISCOVERY_EVENT_VALUE) \
+     error(BINDING_C__C2CPP_ENUM_TRANSLATION_INVALID_MESSAGING_PATTERN_VALUE) \
+-    error(EXPECTS_ENSURES_FAILED)
++    error(EXPECTS_ENSURES_FAILED) \
++    error(POSH__RUNTIME_NAME_CONTAINS_IPC_SEPARATOR)
+ 
+     // EXPECTS_ENSURES_FAILED is used as a temporary solution to make Expects/Ensures testable
+ 
+diff --git a/iceoryx_hoofs/include/iceoryx_hoofs/internal/cxx/helplets.inl b/iceoryx_hoofs/include/iceoryx_hoofs/internal/cxx/helplets.inl
+index 15d0dd132..d9e87ba9b 100644
+--- a/iceoryx_hoofs/include/iceoryx_hoofs/internal/cxx/helplets.inl
++++ b/iceoryx_hoofs/include/iceoryx_hoofs/internal/cxx/helplets.inl
+@@ -20,6 +20,7 @@ namespace iox
+ {
+ namespace cxx
+ {
++// modify by lujuntuan
+ template <uint64_t StringCapacity>
+ inline bool isValidFileName(const string<StringCapacity>& name) noexcept
+ {
+@@ -38,9 +39,9 @@ inline bool isValidFileName(const string<StringCapacity>& name) noexcept
+         return false;
+     }
+ 
+-    // dot at the end is invalid to be compatible with windows api
++    // dots and spaces at the end are invalid to be compatible with the windows api
+     const char lastCharacter = name.c_str()[nameSize - 1U];
+-    if (lastCharacter == '.')
++    if (lastCharacter == '.' || lastCharacter == ' ')
+     {
+         return false;
+     }
+@@ -48,11 +49,9 @@ inline bool isValidFileName(const string<StringCapacity>& name) noexcept
+     // check if the file contains only valid characters
+     for (uint64_t i = 0; i < nameSize; ++i)
+     {
+-        const char c = name.c_str()[i];
+-        if (!((internal::ASCII_A <= c && c <= internal::ASCII_Z)
+-              || (internal::ASCII_CAPITAL_A <= c && c <= internal::ASCII_CAPITAL_Z)
+-              || (internal::ASCII_0 <= c && c <= internal::ASCII_9) || c == internal::ASCII_MINUS
+-              || c == internal::ASCII_DOT || c == internal::ASCII_COLON || c == internal::ASCII_UNDERSCORE))
++        const auto c = static_cast<unsigned char>(name.c_str()[i]);
++        if (c < 32U || c == 127U || c == '/' || c == '\\' || c == '"' || c == '<' || c == '>' || c == '|' || c == '?'
++            || c == '*')
+         {
+             return false;
+         }
+diff --git a/iceoryx_posh/source/runtime/posh_runtime.cpp b/iceoryx_posh/source/runtime/posh_runtime.cpp
+index 8a13eebb9..0e8bfb316 100644
+--- a/iceoryx_posh/source/runtime/posh_runtime.cpp
++++ b/iceoryx_posh/source/runtime/posh_runtime.cpp
+@@ -94,6 +94,12 @@ const RuntimeName_t& PoshRuntime::verifyInstanceName(cxx::optional<const Runtime
+         LogError() << "Cannot initialize runtime. Please remove leading slash from Application name " << *name.value();
+         errorHandler(Error::kPOSH__RUNTIME_LEADING_SLASH_PROVIDED, nullptr, ErrorLevel::FATAL);
+     }
++    else if (name.value()->find(",").has_value())
++    {
++        // modify by lujuntuan
++        LogError() << "Cannot initialize runtime. Application name must not contain the IPC separator ','!";
++        errorHandler(Error::kPOSH__RUNTIME_NAME_CONTAINS_IPC_SEPARATOR, nullptr, ErrorLevel::FATAL);
++    }
+ 
+     return *name.value();
+ }
+diff --git a/iceoryx_hoofs/test/moduletests/test_cxx_helplets.cpp b/iceoryx_hoofs/test/moduletests/test_cxx_helplets.cpp
+index 637f1e438..4f15e7445 100644
+--- a/iceoryx_hoofs/test/moduletests/test_cxx_helplets.cpp
++++ b/iceoryx_hoofs/test/moduletests/test_cxx_helplets.cpp
+@@ -94,11 +94,11 @@ class Helplets_test : public Test
+     }
+ };
+ 
++// modify by lujuntuan
+ bool isValidFileCharacter(const int32_t i) noexcept
+ {
+-    return ((ASCII_A <= i && i <= ASCII_Z) || (ASCII_CAPITAL_A <= i && i <= ASCII_CAPITAL_Z)
+-            || (ASCII_0 <= i && i <= ASCII_9) || i == ASCII_MINUS || i == ASCII_DOT || i == ASCII_COLON
+-            || i == ASCII_UNDERSCORE);
++    const std::string invalidCharacters = "/\\\"<>|?*";
++    return i >= 32 && i != 127 && invalidCharacters.find(static_cast<char>(i)) == std::string::npos;
+ }
+ 
+ constexpr uint64_t FILE_PATH_LENGTH = 128U;
+@@ -314,10 +314,9 @@ TEST(Helplets_test_isValidFileName, ValidLetterCombinationsAreValid)
+ 
+     for (int32_t i = 0; i <= 255; ++i)
+     {
+-        // for simplicity we exclude the valid dot here, since it is
+-        // invalid when it occurs alone.
+-        // it is tested separately
+-        if (i != ASCII_DOT && isValidFileCharacter(i))
++        // Dots and spaces cannot occur at the end of a filename.
++        // They are tested separately.
++        if (i != ASCII_DOT && i != ' ' && isValidFileCharacter(i))
+         {
+             uint32_t index = i % 3;
+ 
