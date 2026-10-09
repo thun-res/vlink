@@ -550,6 +550,7 @@ function(cpm_add_patches)
 
   # Create a temporary
   set(temp_list ${CPM_ARGS_UNPARSED_ARGUMENTS})
+  set(patch_hashes "")
 
   # Ensure each file exists (or error out) and add it to the list.
   set(first_item True)
@@ -564,6 +565,8 @@ function(cpm_add_patches)
 
     # Convert to absolute path for use with patch file command.
     get_filename_component(PATCH_FILE "${PATCH_FILE}" ABSOLUTE)
+    file(SHA256 "${PATCH_FILE}" patch_hash)
+    list(APPEND patch_hashes "${PATCH_FILE}:${patch_hash}")
 
     # The first patch entry must be preceded by "PATCH_COMMAND" while the following items are preceded by "&&".
     if(first_item)
@@ -579,6 +582,10 @@ function(cpm_add_patches)
   # Move temp out into parent scope.
   set(CPM_ARGS_UNPARSED_ARGUMENTS
       ${temp_list}
+      PARENT_SCOPE
+  )
+  set(CPM_PATCH_HASHES
+      "${patch_hashes}"
       PARENT_SCOPE
   )
 
@@ -820,6 +827,7 @@ function(CPMAddPackage)
     set(CPM_FETCHCONTENT_BASE_DIR ${CMAKE_BINARY_DIR}/_deps)
   endif()
 
+  set(CPM_PATCH_HASHES "")
   cpm_add_patches(${CPM_ARGS_PATCHES})
 
   if(DEFINED CPM_ARGS_DOWNLOAD_COMMAND)
@@ -841,6 +849,7 @@ function(CPMAddPackage)
     string(TOLOWER ${CPM_ARGS_NAME} lower_case_name)
     set(origin_parameters ${CPM_ARGS_UNPARSED_ARGUMENTS})
     list(SORT origin_parameters)
+    list(APPEND origin_parameters ${CPM_PATCH_HASHES})
     if(CPM_ARGS_CUSTOM_CACHE_KEY)
       # Application set a custom unique directory name
       set(download_directory ${CPM_SOURCE_CACHE}/${lower_case_name}/${CPM_ARGS_CUSTOM_CACHE_KEY})
