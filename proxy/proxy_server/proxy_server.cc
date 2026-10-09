@@ -142,6 +142,7 @@ struct ProxyServer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
   };
 
   std::atomic<uint32_t> control_id{0};
+  std::atomic<uint64_t> control_generation{0};
   std::atomic<ProxyAPI::Mode> mode{ProxyAPI::kOffline};
 
   std::string current_host_name;
@@ -195,6 +196,7 @@ struct ProxyServer::Impl final {  // NOLINT(clang-analyzer-optin.performance.Pad
   std::mutex subs_mtx;
   ElapsedTimer boot_elapsed{ElapsedTimer::kMicro};
   ElapsedTimer main_elapsed{ElapsedTimer::kMicro};
+  ElapsedTimer info_elapsed_timer;
 
   Timer time_timer;
   Timer info_timer;
@@ -474,6 +476,7 @@ void ProxyServer::on_end() {
   }
 
   proxy::ControlPacket packet;
+  packet.control_id = impl_->control_id.load(std::memory_order_relaxed);
   packet.body.mode = ProxyAPI::kOffline;
   send_control(&packet);
 
@@ -721,9 +724,16 @@ void ProxyServer::init_server() {
   impl_->info_timer.start();
 
   impl_->info_pub->detect_subscribers([this](bool connected) {
+    const auto generation = impl_->control_generation.load(std::memory_order_relaxed);
+
     if VUNLIKELY (impl_->mode.load(std::memory_order_relaxed) != ProxyAPI::kOffline && !connected &&
                   !impl_->info_pub->has_subscribers()) {
-      post_task([this]() {
+      post_task([this, generation]() {
+        if VUNLIKELY (impl_->info_pub->has_subscribers() ||
+                      impl_->control_generation.load(std::memory_order_relaxed) != generation) {
+          return;
+        }
+
         proxy::ControlPacket packet;
         packet.control_id = impl_->control_id.load(std::memory_order_relaxed);
         packet.body.mode = ProxyAPI::kOffline;
@@ -1171,6 +1181,11 @@ void ProxyServer::send_control(const void* control_data) {
   const auto& body = packet.body;
   const auto next_mode = body.mode;
 
+  if VUNLIKELY (!impl_->config.callback_mode && next_mode == ProxyAPI::kOffline &&
+                packet.control_id != impl_->control_id.load(std::memory_order_relaxed)) {
+    return;
+  }
+
   switch (next_mode) {
     case ProxyAPI::kOffline:
     case ProxyAPI::kObserveOne:
@@ -1226,6 +1241,8 @@ void ProxyServer::send_control(const void* control_data) {
 
   impl_->control_id.store(packet.control_id, std::memory_order_relaxed);
   impl_->mode.store(next_mode, std::memory_order_relaxed);
+  impl_->control_generation.fetch_add(1, std::memory_order_relaxed);
+  impl_->info_elapsed_timer.restart();
 
   bool to_update = next_mode != last_mode || next_mode == ProxyAPI::kRecord;
 
@@ -1354,24 +1371,21 @@ void ProxyServer::send_control(const void* control_data) {
 
 void ProxyServer::update_all() {
   if VUNLIKELY (!impl_->config.callback_mode && !impl_->info_pub->has_subscribers()) {
-    {
-      std::lock_guard pubs_lock(impl_->pubs_mtx);
-      impl_->pub_ptr_map.clear();
-    }
+    if (impl_->mode.load(std::memory_order_relaxed) != ProxyAPI::kOffline) {
+      impl_->info_elapsed_timer.start();
 
-    {
-      std::lock_guard subs_lock(impl_->subs_mtx);
-      impl_->sub_ptr_map.clear();
-    }
-
-    {
-      std::lock_guard control_lock(impl_->control_mtx);
-      impl_->sub_urls.clear();
-      impl_->requested_sub_meta_map.clear();
+      if VUNLIKELY (impl_->info_elapsed_timer.get() > 5000) {
+        proxy::ControlPacket packet;
+        packet.control_id = impl_->control_id.load(std::memory_order_relaxed);
+        packet.body.mode = ProxyAPI::kOffline;
+        send_control(&packet);
+      }
     }
 
     return;
   }
+
+  impl_->info_elapsed_timer.stop();
 
   if (impl_->mode.load(std::memory_order_relaxed) != ProxyAPI::kObserveOne &&
       impl_->mode.load(std::memory_order_relaxed) != ProxyAPI::kObserveAll &&

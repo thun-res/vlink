@@ -105,6 +105,7 @@ struct ProxyAPI::Impl final {  // NOLINT(clang-analyzer-optin.performance.Paddin
   ElapsedTimer boot_elapsed_timer{ElapsedTimer::kMicro};
   ElapsedTimer main_elapsed_timer;
   ElapsedTimer connect_elapsed_timer;
+  ElapsedTimer control_elapsed_timer;
   ElapsedTimer error_elapsed_timer;
 
   std::shared_mutex control_mtx;
@@ -231,8 +232,19 @@ ProxyAPI::ProxyAPI(const Config& config) : impl_(std::make_unique<Impl>()) {
     }
 #endif
 
-    if VUNLIKELY (impl_->connect_elapsed_timer.get() > 5000) {
+    if VUNLIKELY (impl_->is_connected.load(std::memory_order_relaxed) && impl_->connect_elapsed_timer.get() > 5000) {
       process_connected(false);
+      return;
+    }
+
+    if VUNLIKELY (!impl_->is_connected.load(std::memory_order_relaxed) && impl_->config.role == kController &&
+                  impl_->error.load(std::memory_order_relaxed) == kNoError &&
+                  impl_->control_elapsed_timer.get() > 5000) {
+      std::shared_lock lock(impl_->control_mtx);
+
+      if VLIKELY (impl_->last_control.mode != kOffline) {
+        impl_->control_ret.store(send_control_sync(impl_->last_control), std::memory_order_release);
+      }
     }
   });
 
@@ -604,6 +616,8 @@ void ProxyAPI::on_end() {
 }
 
 bool ProxyAPI::send_control_sync(const Control& control) {
+  impl_->control_elapsed_timer.restart();
+
   std::shared_lock handle_lock(impl_->handle_mtx);
 
   if VUNLIKELY (!impl_->control_pub) {
