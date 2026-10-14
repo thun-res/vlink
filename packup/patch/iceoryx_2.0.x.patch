@@ -953,3 +953,75 @@ index 637f1e438..4f15e7445 100644
          {
              uint32_t index = i % 3;
  
+diff --git a/iceoryx_hoofs/include/iceoryx_hoofs/internal/relocatable_pointer/pointer_repository.inl b/iceoryx_hoofs/include/iceoryx_hoofs/internal/relocatable_pointer/pointer_repository.inl
+--- a/iceoryx_hoofs/include/iceoryx_hoofs/internal/relocatable_pointer/pointer_repository.inl
++++ b/iceoryx_hoofs/include/iceoryx_hoofs/internal/relocatable_pointer/pointer_repository.inl
+@@ -118,7 +118,7 @@ inline id_t PointerRepository<id_t, ptr_t, CAPACITY>::searchId(ptr_t ptr) const noexcept
+     for (id_t id = 1U; id <= m_maxRegistered; ++id)
+     {
+         // return first id where the ptr is in the corresponding interval
+-        if (ptr >= m_info[id].basePtr && ptr <= m_info[id].endPtr)
++        if (m_info[id].basePtr != nullptr && ptr >= m_info[id].basePtr && ptr <= m_info[id].endPtr)
+         {
+             return id;
+         }
+diff --git a/iceoryx_hoofs/test/moduletests/test_relative_pointer.cpp b/iceoryx_hoofs/test/moduletests/test_relative_pointer.cpp
+--- a/iceoryx_hoofs/test/moduletests/test_relative_pointer.cpp
++++ b/iceoryx_hoofs/test/moduletests/test_relative_pointer.cpp
+@@ -325,3 +325,19 @@
++TYPED_TEST(RelativePointer_test, searchIdSkipsUnregisteredSegment)
++{
++    ::testing::Test::RecordProperty("TEST_ID", "70970b31-3f74-48da-8699-61f32c7d2985");
++    auto lowerAddress = this->partitionPtr(0);
++    auto higherAddress = this->partitionPtr(1);
++
++    ASSERT_TRUE(BaseRelativePointer::registerPtr(1, higherAddress, SHARED_MEMORY_SIZE));
++    ASSERT_TRUE(BaseRelativePointer::registerPtr(2, lowerAddress, SHARED_MEMORY_SIZE));
++    ASSERT_TRUE(BaseRelativePointer::unregisterPtr(BaseRelativePointer::searchId(higherAddress)));
++    EXPECT_EQ(BaseRelativePointer::searchId(lowerAddress), 2U);
++    ASSERT_TRUE(BaseRelativePointer::unregisterPtr(BaseRelativePointer::searchId(lowerAddress)));
++    EXPECT_EQ(BaseRelativePointer::getBasePtr(1), nullptr);
++    EXPECT_EQ(BaseRelativePointer::getBasePtr(2), nullptr);
++    EXPECT_EQ(BaseRelativePointer::searchId(lowerAddress), 0U);
++}
++
+ TYPED_TEST(RelativePointer_test, unregisterPointerAll)
+ {
+     ::testing::Test::RecordProperty("TEST_ID", "e793b3e8-5077-499d-b628-608ecfd91b9e");
+diff --git a/iceoryx_posh/include/iceoryx_posh/internal/runtime/shared_memory_user.hpp b/iceoryx_posh/include/iceoryx_posh/internal/runtime/shared_memory_user.hpp
+--- a/iceoryx_posh/include/iceoryx_posh/internal/runtime/shared_memory_user.hpp
++++ b/iceoryx_posh/include/iceoryx_posh/internal/runtime/shared_memory_user.hpp
+@@ -41,6 +41,10 @@ class SharedMemoryUser
+                      const uint64_t segmentId,
+                      const rp::BaseRelativePointer::offset_t segmentManagerAddressOffset) noexcept;
+ 
++    ~SharedMemoryUser() noexcept;
++
++    SharedMemoryUser(SharedMemoryUser&&) noexcept = default;
++
+   private:
+     void openDataSegments(const uint64_t segmentId,
+                           const rp::BaseRelativePointer::offset_t segmentManagerAddressOffset) noexcept;
+diff --git a/iceoryx_posh/source/runtime/shared_memory_user.cpp b/iceoryx_posh/source/runtime/shared_memory_user.cpp
+--- a/iceoryx_posh/source/runtime/shared_memory_user.cpp
++++ b/iceoryx_posh/source/runtime/shared_memory_user.cpp
+@@ -50,6 +50,19 @@ SharedMemoryUser::SharedMemoryUser(const size_t topicSize,
+         .or_else([](auto&) { errorHandler(Error::kPOSH__SHM_APP_MAPP_ERR); });
+ }
+ 
++SharedMemoryUser::~SharedMemoryUser() noexcept
++{
++    for (auto& shmObject : m_dataShmObjects)
++    {
++        rp::BaseRelativePointer::unregisterPtr(rp::BaseRelativePointer::searchId(shmObject.getBaseAddress()));
++    }
++
++    if (m_shmObject.has_value())
++    {
++        rp::BaseRelativePointer::unregisterPtr(rp::BaseRelativePointer::searchId(m_shmObject->getBaseAddress()));
++    }
++}
++
+ void SharedMemoryUser::openDataSegments(const uint64_t segmentId,
+                                         const rp::BaseRelativePointer::offset_t segmentManagerAddressOffset) noexcept
+ {

@@ -33,6 +33,8 @@ text covering both the original work and these modifications is shipped at
 | `iceoryx_hoofs/include/iceoryx_hoofs/internal/concurrent/periodic_task.hpp` | Switch the periodic-task wait primitive from `std::condition_variable_any` to the new `condition_variable.hpp` wrapper (CLOCK_MONOTONIC). |
 | `iceoryx_hoofs/include/iceoryx_hoofs/internal/concurrent/periodic_task.inl` | Adapt the inline implementation to the new wait primitive. |
 | `iceoryx_hoofs/include/iceoryx_hoofs/internal/concurrent/sofi.inl` | Annotate a benign data race observed by ThreadSanitizer when sofi is shared by multiple readers (atomic ordering tighten). |
+| `iceoryx_hoofs/include/iceoryx_hoofs/internal/relocatable_pointer/pointer_repository.inl` | Skip unregistered segments when resolving addresses during mapping cleanup. |
+| `iceoryx_hoofs/test/moduletests/test_relative_pointer.cpp` | Cover sequential mapping cleanup when a lower segment ID has a higher address. |
 | `iceoryx_hoofs/platform/linux/include/iceoryx_hoofs/platform/semaphore.hpp` | Use the new wrapper instead of `sem_timedwait` for predictable timeout behaviour under suspend/resume. |
 | `iceoryx_hoofs/platform/qnx/include/iceoryx_hoofs/platform/semaphore.hpp` | Mirror the Linux change on QNX. |
 | `iceoryx_hoofs/source/posix_wrapper/access_control.cpp` | Allow ACL setup to be disabled explicitly and tolerate file systems that report ACL support as unavailable. |
@@ -47,6 +49,8 @@ text covering both the original work and these modifications is shipped at
 | `iceoryx_posh/source/runtime/ipc_runtime_interface.cpp` | Use the timed IPC receive path only when a caller supplies a timeout. |
 | `iceoryx_posh/source/runtime/posh_runtime.cpp` | Reject commas in runtime names before registration because the IPC protocol uses comma-separated fields. |
 | `iceoryx_posh/source/runtime/posh_runtime_impl.cpp` | Bound the final RouDi termination acknowledgement wait to three seconds so runtime destruction cannot block indefinitely. |
+| `iceoryx_posh/include/iceoryx_posh/internal/runtime/shared_memory_user.hpp` | Declare mapping-registration cleanup on destruction and retain move construction for runtime ownership transfer. |
+| `iceoryx_posh/source/runtime/shared_memory_user.cpp` | Unregister owned shared-memory mappings on destruction so runtime restarts do not retain stale segment addresses. |
 
 ## Why the modifications
 
