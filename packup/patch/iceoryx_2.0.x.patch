@@ -968,7 +968,10 @@ diff --git a/iceoryx_hoofs/include/iceoryx_hoofs/internal/relocatable_pointer/po
 diff --git a/iceoryx_hoofs/test/moduletests/test_relative_pointer.cpp b/iceoryx_hoofs/test/moduletests/test_relative_pointer.cpp
 --- a/iceoryx_hoofs/test/moduletests/test_relative_pointer.cpp
 +++ b/iceoryx_hoofs/test/moduletests/test_relative_pointer.cpp
-@@ -325,3 +325,19 @@
+@@ -322,6 +322,22 @@
+     EXPECT_EQ(rp1.registerPtr(1, typedPtr), true);
+ }
+ 
 +TYPED_TEST(RelativePointer_test, searchIdSkipsUnregisteredSegment)
 +{
 +    ::testing::Test::RecordProperty("TEST_ID", "70970b31-3f74-48da-8699-61f32c7d2985");
