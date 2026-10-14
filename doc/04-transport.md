@@ -194,7 +194,7 @@ vlink-proxy -l 4                            # 按内置高内存策略拉起 Rou
 
 > 代理允许同机不同 DDS 域各运行一个实例，但应共享一个 RouDi；完整参数与服务发现/监控见 [可观测性](12-observability.md) §12.12。
 
-业务进程在创建节点前须完成运行时初始化，进程退出前清理；注册名在连接同一 RouDi 的所有进程间应保持唯一：
+业务进程在创建节点前须完成运行时初始化，进程退出前清理；注册名在连接同一 RouDi 的所有进程间应保持唯一。关闭前先销毁 SHM 节点并归还借出的缓冲区，再从发现回调以外的线程调用 `deinit_runtime()`；它会等待发现任务结束，返回后方可停止 RouDi。运行时初始化、关闭与节点创建须由调用方串行执行：
 
 ```cpp
 #include <vlink/vlink.h>
@@ -203,9 +203,11 @@ vlink-proxy -l 4                            # 按内置高内存策略拉起 Rou
 int main() {
     vlink::ShmConf::init_runtime("my_process");
 
-    vlink::Publisher<float> pub("shm://sensor/temperature");
-    pub.wait_for_subscribers();
-    pub.publish(25.6f);
+    {
+        vlink::Publisher<float> pub("shm://sensor/temperature");
+        pub.wait_for_subscribers();
+        pub.publish(25.6f);
+    }
 
     vlink::ShmConf::deinit_runtime();
     return 0;

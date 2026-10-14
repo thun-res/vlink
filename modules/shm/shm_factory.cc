@@ -455,6 +455,9 @@ void ShmFactory::deinit_runtime() {
     if (global_instance.has_factory_inited.load(std::memory_order_acquire)) {
       auto& factory = ShmFactory::get();
 
+      factory.detect_timer_.stop();
+      factory.message_loop_.wait_for_idle();
+
       {
         std::lock_guard lock(factory.listener_mtx_);
         factory.listener_map_.clear();
@@ -462,7 +465,11 @@ void ShmFactory::deinit_runtime() {
 
       factory.port_sub_.reset();
 
-      Utils::yield_cpu();
+      {
+        std::lock_guard lock(factory.topic_mtx_);
+        factory.topic_list_.m_publisherList.clear();
+        factory.topic_list_.m_subscriberList.clear();
+      }
     }
 
 #if SHM_USE_RUNTIME_IMPL

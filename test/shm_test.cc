@@ -70,6 +70,92 @@ static bool ensure_shm_ready() {
   return true;
 }
 
+TEST_SUITE("shm-lifecycle") {
+  TEST_CASE("runtime restarts after introspection and acknowledged delivery") {
+    REQUIRE(ensure_shm_ready());
+
+    for (int iteration = 0; iteration < 20; ++iteration) {
+      {
+        std::atomic<int> received{0};
+        Publisher<int> publisher("shm://shm/lifecycle/restart?wait=1");
+        Subscriber<int> subscriber("shm://shm/lifecycle/restart?wait=1");
+        REQUIRE(subscriber.listen([&](const int& value) { received.store(value, std::memory_order_relaxed); }));
+        REQUIRE(publisher.wait_for_subscribers(3s));
+        REQUIRE(publisher.publish(iteration + 1));
+        REQUIRE(common_test::wait_until([&] { return received.load(std::memory_order_relaxed) == iteration + 1; }, 3s));
+      }
+
+      ShmConf::deinit_runtime();
+      CHECK_FALSE(ShmConf::has_runtime_inited());
+      ShmConf::deinit_runtime();
+      ShmConf::init_runtime({}, ShmConf::has_roudi_inited());
+      CHECK(ShmConf::has_runtime_inited());
+    }
+  }
+
+  TEST_CASE("runtime shutdown waits for discovery callbacks retaining destroyed endpoints") {
+    REQUIRE(ensure_shm_ready());
+
+    bool use_client = false;
+    SUBCASE("publisher") {}
+    SUBCASE("client") { use_client = true; }
+
+    std::promise<void> destroyed;
+    auto done = destroyed.get_future();
+    std::promise<void> resume;
+    std::unique_ptr<Publisher<int>> publisher;
+    std::unique_ptr<Client<int>> client;
+    auto on_connected = [&, resumed = resume.get_future().share()](bool connected) {
+      if (connected) {
+        publisher.reset();
+        client.reset();
+        destroyed.set_value();
+        resumed.wait();
+      }
+    };
+
+    if (use_client) {
+      client = std::make_unique<Client<int>>("shm://shm/lifecycle/client");
+      client->detect_connected(std::move(on_connected));
+    } else {
+      publisher = std::make_unique<Publisher<int>>("shm://shm/lifecycle/publisher");
+      publisher->detect_subscribers(std::move(on_connected));
+    }
+
+    {
+      std::unique_ptr<Subscriber<int>> subscriber;
+      std::unique_ptr<Server<int>> server;
+
+      if (use_client) {
+        server = std::make_unique<Server<int>>("shm://shm/lifecycle/client");
+        CHECK(server->listen([](const int&) {}));
+      } else {
+        subscriber = std::make_unique<Subscriber<int>>("shm://shm/lifecycle/publisher");
+        CHECK(subscriber->listen([](const int&) {}));
+      }
+
+      const auto status = done.wait_for(3s);
+
+      if (status != std::future_status::ready) {
+        resume.set_value();
+      }
+
+      REQUIRE(status == std::future_status::ready);
+      CHECK(publisher == nullptr);
+      CHECK(client == nullptr);
+    }
+
+    auto shutdown = std::async(std::launch::async, [] { ShmConf::deinit_runtime(); });
+    CHECK(common_test::wait_until([] { return !ShmConf::has_runtime_inited(); }, 3s));
+    CHECK(shutdown.wait_for(50ms) == std::future_status::timeout);
+    resume.set_value();
+    REQUIRE(shutdown.wait_for(3s) == std::future_status::ready);
+    shutdown.get();
+    CHECK_FALSE(ShmConf::has_runtime_inited());
+    ShmConf::init_runtime({}, ShmConf::has_roudi_inited());
+  }
+}
+
 TEST_SUITE("shm-init") {
   TEST_CASE("conf defaults are set correctly") {
     MESSAGE("[shm-init] conf defaults are set correctly");
