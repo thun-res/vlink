@@ -215,7 +215,9 @@ bool DiscoveryViewer::Process::operator<(const DiscoveryViewer::Process& target)
   } else if (pid > target.pid) {
     return false;
   } else if (bridge != target.bridge) {
-    return bridge < target.bridge;
+    return !bridge;
+  } else if (native != target.native) {
+    return !native;
   } else {
     return std::lexicographical_compare(ip_list.begin(), ip_list.end(), target.ip_list.begin(), target.ip_list.end(),
                                         Utils::ip_less);
@@ -611,6 +613,26 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
   }
 
 #if VLINK_DISCOVERY_MULTICAST
+#ifdef IP_MULTICAST_ALL
+  const int multicast_all = 0;
+
+  if VUNLIKELY (::setsockopt(impl_->sock, IPPROTO_IP, IP_MULTICAST_ALL, reinterpret_cast<const char*>(&multicast_all),
+                             sizeof(multicast_all)) < 0) {
+    VLOG_E("DiscoveryViewer: Failed to restrict discovery multicast memberships.");
+    return;
+  }
+#endif
+
+  ip_mreq local_mreq{};
+  local_mreq.imr_multiaddr.s_addr = inet_addr(kBroadcastAddress);
+  local_mreq.imr_interface.s_addr = htonl(INADDR_LOOPBACK);
+
+  if VUNLIKELY (::setsockopt(impl_->sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, reinterpret_cast<const char*>(&local_mreq),
+                             sizeof(local_mreq)) < 0) {
+    VLOG_E("DiscoveryViewer: Failed to join loopback discovery multicast group.");
+    return;
+  }
+
   std::vector<std::string> ip_list;
 
   if (impl_->enable_native_discovery) {
@@ -627,14 +649,15 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
 
     if VUNLIKELY (::setsockopt(impl_->sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, reinterpret_cast<const char*>(&mreq),
                                sizeof(mreq)) < 0) {
-      VLOG_F("DiscoveryViewer: Failed to join multicast group [", kBroadcastAddress,
+      VLOG_W("DiscoveryViewer: Failed to join multicast group [", kBroadcastAddress,
              "], please add the route entry to the target device.");
-      return;
     }
   } else {
-    size_t joined_count = 0;
-
     for (const auto& ip : ip_list) {
+      if (inet_addr(ip.c_str()) == htonl(INADDR_LOOPBACK)) {
+        continue;
+      }
+
       ip_mreq mreq;
       std::memset(&mreq, 0, sizeof(mreq));
 
@@ -646,13 +669,6 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
         VLOG_W("DiscoveryViewer: Failed to join multicast group on [", ip, "].");
         continue;
       }
-
-      ++joined_count;
-    }
-
-    if VUNLIKELY (joined_count == 0) {
-      VLOG_F("DiscoveryViewer: Failed to join multicast group [", kBroadcastAddress, "] on any interface.");
-      return;
     }
   }
 
@@ -707,7 +723,8 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
           break;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
-        if (impl_->filter_type == kFilterNative && global_ip_set.count(target_ip) == 0) {
+        if ((impl_->enable_native_discovery && (ntohl(target_address.sin_addr.s_addr) >> 24) != 127) ||
+            (impl_->filter_type == kFilterNative && global_ip_set.count(target_ip) == 0)) {
           if (++recv_count < kMaxRecvPerBatch && has_pending_data(impl_->sock)) {
             continue;  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
           }
@@ -880,11 +897,14 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
             }
 
             const bool bridge = std::find(list.begin() + 5, list.end(), "bridge=1") != list.end();
+            const bool native = std::find(list.begin() + 5, list.end(), "native=1") != list.end();
 
-            Info info{
-                sort_index,  type,
-                url,         ser_type,
-                schema_type, {Process{type, hostname, process_pid, process_name, {target_ip_str}, profiler, bridge}}};
+            Info info{sort_index,
+                      type,
+                      url,
+                      ser_type,
+                      schema_type,
+                      {Process{type, hostname, process_pid, process_name, {target_ip_str}, profiler, bridge, native}}};
 
             auto [iter, inserted] = impl_->info_map.try_emplace(std::move(info), ElapsedTimer{});
             iter->second.restart();
@@ -1185,7 +1205,7 @@ void DiscoveryViewer::sort_url(std::vector<std::string>& warnings) const {
           auto& previous = info.process_list[process_count - 1];
 
           if (previous.type == process.type && previous.host == process.host && previous.pid == process.pid &&
-              previous.name == process.name && previous.bridge == process.bridge) {
+              previous.name == process.name && previous.bridge == process.bridge && previous.native == process.native) {
             previous.ip_list.insert(previous.ip_list.end(), std::make_move_iterator(process.ip_list.begin()),
                                     std::make_move_iterator(process.ip_list.end()));
             continue;

@@ -28,6 +28,8 @@
 - **进程归属**：承载该 URL 的进程标识——主机名、PID、进程名，以及发现源 IP 列表和可选的 CPU 占用。
 - **生命周期**：新节点周期广播即被纳入视图，停止广播超过心跳时限则被剔除。
 
+普通公告按发现配置选择网络接口；Native 播放节点通过 `discovery.native=1` 使用独立回环 socket，组播 TTL 为 0，接口配置失败时不回退到网络发送。Viewer 启动时即加入回环组，普通模式还监听配置的网络接口，因此 Proxy / Viewer 可先于播放器启动。`VLINK_DISCOVERY_NATIVE=1` 使接收端只接收回环来源。该范围限制的是发现公告，不改变其他传输后端的数据通道或 Proxy 的访问控制。
+
 ![Discovery 网络](images/discovery-network.png)
 
 两个边界条件需明确：
@@ -130,10 +132,11 @@ auto snapshot = viewer.get_info_list();
 | `ip_list` | `std::vector<std::string>`，当前仍有效的发现源 IPv4 地址，按 IPv4 数值升序排序并去重 |
 | `profiler` | 一个有效地址上报的 CPU 利用率百分比，不叠加多地址副本；`-1` 表示未启用（需 `VLINK_PROFILER_ENABLE=1`） |
 | `bridge` | 是否为 proxy 转发创建的 Publisher；旧报文缺省为 `false`，Python 同步提供此字段 |
+| `native` | 节点是否显式限制为回环发现；旧报文缺省为 `false`，Python 同步提供此字段 |
 
 `type` 是位掩码而非单一角色：同一 URL 可在同进程或跨进程上被多种角色同时使用（例如既有发布者又有订阅者），展示时统一经 `convert_type_to_view` 转换。
 
-同一 URL、同一角色下，按主机名、PID、进程名和 `bridge` 来源合并地址，保留角色与来源间的独立记录。每个地址独立超时，全部地址过期后该记录消失；`ip_list` 只包含观测到的发现源地址，不代表主机全部网卡或业务后端地址。Python 的 `DiscoveryViewer.Process.ip_list` 对应字符串列表。
+同一 URL、同一角色下，按主机名、PID、进程名、`bridge` 来源和 `native` 发现范围合并地址，保留角色与来源间的独立记录。每个地址独立超时，全部地址过期后该记录消失；`ip_list` 只包含观测到的发现源地址，不代表主机全部网卡或业务后端地址。Python 的 `DiscoveryViewer.Process.ip_list` 对应字符串列表。
 
 下例实时打印每个 URL 的角色与序列化类型，并逐进程输出 PID / 主机 / IP，在 Profiler 启用时附带 CPU 占用：
 
@@ -251,7 +254,7 @@ sub->register_status_handler([](const vlink::Status::BasePtr& status) {
 | ---- | ---- |
 | `VLINK_DISCOVERY_DISABLE=1` | 禁用本进程的发现上报 |
 | `VLINK_DISCOVERY_NATIVE=1` | 仅限本机发现（组播绑定 loopback） |
-| `VLINK_DISCOVERY_IP=<ip,...>` | 指定发现组播逐地址发送与加组的本机 IPv4 地址；未设置时收发按系统路由走；同时是 `VLINK_DDS_IP` 的缺省值 |
+| `VLINK_DISCOVERY_IP=<ip,...>` | 指定普通发现公告逐地址发送与加组的本机 IPv4 地址；未设置时网络接口按系统路由选择；Viewer 始终额外加入回环组；同时是 `VLINK_DDS_IP` 的缺省值 |
 | `VLINK_DISCOVERY_DOMAIN=<0-255>` | 发现域，默认 `0`：UDP 端口取 `51600 + domain`，组播地址与路由不变；须在所有进程上设为同一值；非十进制数字或超出 `[0,255]` 的值会告警并回落到 `0`，该值在进程内读取一次，此后修改无效 |
 | `VLINK_PROFILER_ENABLE=1` | 启用 CPU Profiler，使 `Process::profiler` 有效 |
 
@@ -461,7 +464,7 @@ api.register_time_callback([](uint64_t sys_time, uint64_t boot_time) {
 | `role` | `kController` | 客户端角色（见 12.10.1） |
 | `domain_id` | `0` | DDS 域 ID，须与服务端一致 |
 | `security_key` | `""` | 控制面对称密钥；空串使用内置默认槽位，显式设置时须与服务端一致 |
-| `native` | `false` | 将 DDS 节点绑定到本地模式地址 |
+| `native` | `false` | 将 DDS 节点绑定到本地模式地址，所创建节点的发现公告仅经回环发送 |
 | `reliable` / `enable_tcp` / `direct` | `false` | 数据通道选项，三者均须与服务端完全一致 |
 | `match_version` | `true` | 是否校验 VLink 版本字符串一致 |
 
@@ -484,7 +487,7 @@ api.register_time_callback([](uint64_t sys_time, uint64_t boot_time) {
 | `-x, --max_packet_size FLOAT` | 单条消息最大转发大小（MiB，默认 4.0） |
 | `-b, --allow_ip` / `-p, --peer_ip` | 本地绑定 IP / 单播对端 IP（跨子网用） |
 | `-s, --buf_size INT` / `-e, --mtu_size INT` | DDS 收发缓冲区 / MTU 字节数（默认 0 = 内置默认） |
-| `-n, --native` | 仅发现本机节点，并将 DDS 节点绑定到本地模式地址 |
+| `-n, --native` | 仅发现本机节点，DDS 节点绑定到本地模式地址，所创建节点的发现公告仅经回环发送 |
 | `-c, --iox_config PATH` | 指定 Iceoryx TOML 配置；提供此项即拉起内嵌 RouDi（direct/SHM 所需） |
 | `-l, --iox_strategy INT` | Iceoryx 内存策略（1 mini / 2 低 / 3 中 / 4 高，默认 3）；提供此项即按内置策略拉起 RouDi |
 | `-m, --iox_monitoring on\|off` | Iceoryx 监控开关（默认 `on`） |

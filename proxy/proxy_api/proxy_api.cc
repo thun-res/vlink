@@ -774,6 +774,7 @@ void ProxyAPI::sync_direct_maps(const Control& control) {
 
       if (impl_->config.native) {
         pub->set_property("dds.ip", impl_->native_ip);
+        pub->set_property("discovery.native", "1");
       }
 
       pub->set_ser_type(meta.ser, meta.schema);

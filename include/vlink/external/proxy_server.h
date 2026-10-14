@@ -185,7 +185,7 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
    * | @c reliable                | false   | Use reliable DDS QoS for data channels.                           |
    * | @c enable_tcp              | false   | Use TCP transport for data channels.                              |
    * | @c direct                  | false   | Use SHM (Iceoryx) instead of DDS for data forwarding.             |
-   * | @c native_mode             | false   | Discover locally; bind DDS to @c Utils::get_native_ip().          |
+   * | @c native_mode             | false   | Native DDS binding and loopback-only node announcements.          |
    * | @c domain_id               | 0       | DDS domain ID shared with all clients.                            |
    * | @c buf_size                | 0       | DDS socket send/receive buffer in bytes; 0 = built-in default.    |
    * | @c mtu_size                | 0       | DDS MTU size in bytes; 0 = built-in default.                      |
@@ -212,7 +212,7 @@ class VLINK_PROXY_SERVER_EXPORT ProxyServer : public MessageLoop {
     bool reliable{false};                    ///< Use reliable DDS QoS; must match every client.
     bool enable_tcp{false};                  ///< Use TCP transport for DDS data channels.
     bool direct{false};                      ///< Use ProxyAPI-managed local SHM channels for data.
-    bool native_mode{false};                 ///< Discover locally; bind DDS to @c Utils::get_native_ip().
+    bool native_mode{false};                 ///< Native DDS binding and loopback-only node announcements.
     int domain_id{0};                        ///< DDS domain ID.
     uint32_t buf_size{0};                    ///< DDS socket buffer in bytes; 0 = default.
     uint32_t mtu_size{0};                    ///< DDS fragment MTU in bytes; 0 = default.

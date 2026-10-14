@@ -143,7 +143,7 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 | 进度条 | 拖动跳转，拖动时自动暂停，松开恢复 |
 | 速率（Rate） | 调节回放倍率，默认 `1.0` |
 | Loop | 循环回放 |
-| Native | DDS 发布节点使用本地模式地址，仅在 `VLINK_DISCOVERY_IP` 为空时自动补齐该变量 |
+| Native | DDS 发布节点使用本地模式地址；这些节点的发现公告仅经回环发送，不修改进程发现配置 |
 | URL 过滤 | 过滤输入框 + Blacklist 勾选框，按关键字白/黑名单筛选 URL |
 | Remap | URL 重映射 |
 | Skip Blank | 跳过录制中的空白时间段 |
@@ -365,7 +365,7 @@ WebViz 经代理桥接接入 VLink 网络，`vlink-foxglove` 与 `vlink-rerun` �
 | `--proxy_peer_ip` | DDS 单播发现 peer IP | 空 |
 | `--proxy_buf_size` | socket 发送 / 接收缓冲区大小（字节），`0` 使用默认值 | `0` |
 | `--proxy_mtu_size` | DDS MTU 大小（字节），`0` 使用默认值 | `0` |
-| `--proxy_native` | DDS 节点绑定到本地模式地址 | `false` |
+| `--proxy_native` | DDS 节点绑定到本地模式地址；本进程创建的发布、RPC、参数节点仅作回环公告 | `false` |
 | `--proxy_tcp` | DDS 通道使用 TCP 传输 | `false` |
 | `--proxy_key` | `proxy_api` 模式的安全密钥，须与外部 ProxyServer 一致 | 空 |
 | `--proxy_reliable` | `proxy_api` 数据通道使用可靠模式 | `false` |
@@ -377,6 +377,8 @@ WebViz 经代理桥接接入 VLink 网络，`vlink-foxglove` 与 `vlink-rerun` �
 | `--proxy_iox_config` | `proxy_server` 模式 Iceoryx TOML 配置路径 | 空 |
 | `--proxy_iox_strategy` | `proxy_server` 模式 Iceoryx 内存策略（1 mini / 2 低 / 3 中 / 4 高） | `3` |
 | `--proxy_iox_monitoring` | `proxy_server` 模式 Iceoryx monitoring：`on` 或 `off` | `on` |
+
+Native 公告范围由实际创建节点的一侧决定：`proxy_server` 模式的发布节点和本地 RPC / 参数节点使用 WebViz 的 `proxy.native`；`proxy_api` 非 direct 模式委托外置 Proxy 创建的发布节点使用该 Proxy 的 `--native` 配置；direct 模式由本地 ProxyAPI 创建的 Publisher / Setter 使用 WebViz 的 `proxy.native`。WebViz 启动后可接收稍后启动的 Native Player / `bag play`，两种接口模式都无需刷新发现配置。此设置不限制 Foxglove WebSocket 或 Rerun 输出的访问范围。
 
 ```bash
 vlink-foxglove --proxy_interface proxy_api --proxy_key "my_secret_key"  # 连接独立 ProxyServer

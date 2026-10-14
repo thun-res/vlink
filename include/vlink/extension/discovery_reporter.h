@@ -68,7 +68,9 @@
  * through the interface chosen by the system route; @c VLINK_DISCOVERY_IP (comma or space
  * separated addresses) sends one report per listed address,
  * @c VLINK_DISCOVERY_NATIVE=1 limits it to loopback and @c VLINK_DISCOVERY_DOMAIN shifts the
- * discovery port to isolate the channel.
+ * discovery port to isolate the channel.  Nodes registered with @c discovery.native=1
+ * use a separate loopback socket with multicast TTL zero regardless of these interface
+ * settings.  Their scope is captured by @c add() and retained until @c remove().
  */
 
 #pragma once

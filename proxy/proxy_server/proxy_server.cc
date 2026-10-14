@@ -86,6 +86,7 @@ template <typename NodeT>
 static void apply_topic_transport(NodeT& node, const ProxyServer::Config& config, const std::string& native_ip) {
   if (config.native_mode) {
     node.set_property("dds.ip", native_ip);
+    node.set_property("discovery.native", "1");
   }
 }
 

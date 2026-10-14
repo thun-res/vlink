@@ -357,6 +357,9 @@ class Node {
    *
    * @param prop   Property key string.
    * @param value  Property value string.
+   *
+   * @note Set @c discovery.native to @c "1" before initialization to restrict this node
+   * to loopback discovery.  Scope is fixed until the node is unregistered and registered again.
    */
   void set_property(const std::string& prop, const std::string& value);
 

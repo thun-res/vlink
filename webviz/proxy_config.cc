@@ -68,7 +68,7 @@ void ProxyConfigHelper::add_arguments(argparse::ArgumentParser& program) {
   program.add_argument("--proxy_mtu_size").help("DDS MTU size in bytes").default_value(0).scan<'i', int>();
 
   program.add_argument("--proxy_native")
-      .help("Bind bridge DDS traffic to VLINK_DDS_NATIVE_IP, VLINK_DISCOVERY_NATIVE_IP, or 127.0.0.1")
+      .help("Bind DDS to the native address and restrict owned node announcements to loopback")
       .default_value(false)
       .implicit_value(true);
 

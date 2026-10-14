@@ -57,7 +57,7 @@ class ProxyBridge {
     int domain_id{0};
     std::string dds_impl{"dds"};
     std::string native_ip;
-    bool native{false};
+    bool native{false};  ///< Bind DDS locally and restrict owned node announcements to loopback.
     bool enable_tcp{false};
     std::string allow_ip;
     std::string peer_ip;
@@ -113,18 +113,16 @@ class ProxyBridge {
 
   template <typename NodeT>
   static void apply_transport(NodeT& node, const TransportConfig& config, bool disable_discovery = false) {
-    if VUNLIKELY (disable_discovery) {
+    if (disable_discovery) {
       node.set_discovery_enabled(false);
     }
 
-    const auto& url = node.get_url();
+    if (config.native) {
+      node.set_property("discovery.native", "1");
 
-    if VUNLIKELY (!is_dds_transport(url)) {
-      return;
-    }
-
-    if VUNLIKELY (config.native) {
-      node.set_property("dds.ip", config.native_ip);
+      if (is_dds_transport(node.get_url())) {
+        node.set_property("dds.ip", config.native_ip);
+      }
     }
   }
 

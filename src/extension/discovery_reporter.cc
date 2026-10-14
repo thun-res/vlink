@@ -29,7 +29,7 @@
 #include <mutex>
 #include <string>
 #include <tuple>
-#include <unordered_set>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -103,18 +103,69 @@ template <typename T>
 }
 
 static void send_message_list(SocketHandle sock, const sockaddr_in& address, const std::vector<std::string>& list) {
+  if VUNLIKELY (sock == kInvalidSocket) {
+    return;
+  }
+
   for (const auto& message : list) {
     if VUNLIKELY (::sendto(sock, message.c_str(), message.length(), 0,
                            reinterpret_cast<const struct sockaddr*>(&address), sizeof(address)) < 0) {
+      VLOG_W_EVERY_MS(kInterfaceWarnInterval, "DiscoveryReporter: Failed to send announcement.");
       Utils::yield_cpu();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
       continue;            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
   }
 }
 
+static void close_socket(SocketHandle& sock) {
+  if VLIKELY (sock != kInvalidSocket) {
+#ifdef _WIN32
+    ::closesocket(sock);
+#else
+    ::close(sock);
+#endif
+
+    sock = kInvalidSocket;
+  }
+}
+
+static SocketHandle create_native_socket() {
+  SocketHandle sock = ::socket(AF_INET, SOCK_DGRAM, 0);
+
+  if VUNLIKELY (sock == kInvalidSocket) {
+    VLOG_E("DiscoveryReporter: Failed to create native discovery socket.");
+    return kInvalidSocket;
+  }
+
+  sockaddr_in source{};
+  source.sin_family = AF_INET;
+  source.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+  const int ttl = 0;
+  const int loop = 1;
+
+  const bool configured =
+      ::bind(sock, reinterpret_cast<const sockaddr*>(&source), sizeof(source)) == 0 &&
+      ::setsockopt(sock, IPPROTO_IP, IP_MULTICAST_IF, reinterpret_cast<const char*>(&source.sin_addr),
+                   sizeof(source.sin_addr)) == 0 &&
+      ::setsockopt(sock, IPPROTO_IP, IP_MULTICAST_TTL, reinterpret_cast<const char*>(&ttl), sizeof(ttl)) == 0 &&
+      ::setsockopt(sock, IPPROTO_IP, IP_MULTICAST_LOOP, reinterpret_cast<const char*>(&loop), sizeof(loop)) == 0;
+
+  if VUNLIKELY (!configured) {
+    close_socket(sock);
+    VLOG_E("DiscoveryReporter: Failed to configure loopback-only discovery; native announcements will not be sent.");
+  }
+
+  return sock;
+}
+
 [[maybe_unused]] static void send_multicast_list(SocketHandle sock, const sockaddr_in& address,
                                                  const std::vector<std::string>& ip_list,
                                                  const std::vector<std::string>& message_list) {
+  if (message_list.empty()) {
+    return;
+  }
+
   for (const auto& ip : ip_list) {
     in_addr interface_addr;
     interface_addr.s_addr = inet_addr(ip.c_str());
@@ -131,9 +182,10 @@ static void send_message_list(SocketHandle sock, const sockaddr_in& address, con
 
 // DiscoveryReporter::Impl
 struct DiscoveryReporter::Impl final {
-  std::unordered_set<NodeImpl*> info_set;
+  std::unordered_map<NodeImpl*, bool> info_set;
   std::mutex mtx;
   std::vector<std::string> message_list;
+  std::vector<std::string> native_message_list;
   Timer timer;
   std::string runtime_version;
   std::string local_message;
@@ -141,6 +193,7 @@ struct DiscoveryReporter::Impl final {
   int64_t seq{0};
 
   SocketHandle sock{kInvalidSocket};
+  SocketHandle native_sock{kInvalidSocket};
   sockaddr_in address;
   std::vector<std::string> ip_list;
 #ifdef _WIN32
@@ -176,6 +229,8 @@ DiscoveryReporter::DiscoveryReporter() : impl_(std::make_unique<Impl>()) {
     VLOG_F("DiscoveryReporter: Failed to create socket.");  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     return;                                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
+
+  impl_->native_sock = create_native_socket();
 
 #ifdef IP_TTL
 
@@ -234,15 +289,8 @@ DiscoveryReporter::~DiscoveryReporter() {
   send_offline();
 #endif
 
-  if VLIKELY (impl_->sock != kInvalidSocket) {
-#ifdef _WIN32
-    ::closesocket(impl_->sock);
-#else
-    ::close(impl_->sock);
-#endif
-
-    impl_->sock = kInvalidSocket;
-  }
+  close_socket(impl_->native_sock);
+  close_socket(impl_->sock);
 
 #ifdef _WIN32
   if VLIKELY (impl_->winsock_initialized) {
@@ -275,7 +323,8 @@ void DiscoveryReporter::reload() {
 
 void DiscoveryReporter::add(NodeImpl* node) {
   std::lock_guard lock(impl_->mtx);
-  impl_->info_set.emplace(node);
+
+  impl_->info_set.emplace(node, node->get_property("discovery.native") == "1");
 
   if (!impl_->is_profiler_enabled) {
     rebuild_message();
@@ -301,22 +350,27 @@ void DiscoveryReporter::on_end() { MessageLoop::on_end(); }
 
 void DiscoveryReporter::rebuild_message() {
   impl_->message_list.clear();
+  impl_->native_message_list.clear();
 
   std::string message_pack;
+  std::string native_message_pack;
   message_pack.reserve(kMaxMtuSize);
+  native_message_pack.reserve(kMaxMtuSize);
 
-  std::map<std::tuple<int, std::string, std::string, SchemaType, bool>, std::pair<bool, double>> profiler_value_map;
+  std::map<std::tuple<int, std::string, std::string, SchemaType, bool, bool>, std::pair<bool, double>>
+      profiler_value_map;
 
   if (impl_->is_profiler_enabled) {
     // LCOV_EXCL_START GCOVR_EXCL_START
-    for (auto* node : impl_->info_set) {
+    for (const auto& [node, native] : impl_->info_set) {
       const std::string& trim_url = Helpers::trim_string(node->url);
       const std::string& trim_ser_type = Helpers::trim_string(node->ser_type);
 
-      auto& value = profiler_value_map[std::make_tuple(
-                                           node->impl_type, trim_url, trim_ser_type, node->schema_type,
-                                           node->impl_type == kPublisher && node->get_property("proxy.bridge") == "1")]
-                        .second;
+      auto& value =
+          profiler_value_map[std::make_tuple(node->impl_type, trim_url, trim_ser_type, node->schema_type,
+                                             node->impl_type == kPublisher && node->get_property("proxy.bridge") == "1",
+                                             native)]
+              .second;
 
       if (node->profiler) {
         value += node->profiler->restart();
@@ -325,7 +379,7 @@ void DiscoveryReporter::rebuild_message() {
     // LCOV_EXCL_STOP GCOVR_EXCL_STOP
   }
 
-  for (auto* node : impl_->info_set) {
+  for (const auto& [node, native] : impl_->info_set) {
     const std::string& trim_url = Helpers::trim_string(node->url);
     const std::string& trim_ser_type = Helpers::trim_string(node->ser_type);
 
@@ -347,8 +401,8 @@ void DiscoveryReporter::rebuild_message() {
     message.append(convert_type(node->impl_type)).append(" ");
 
     const bool bridge = node->impl_type == kPublisher && node->get_property("proxy.bridge") == "1";
-    auto& profiler_result =
-        profiler_value_map[std::make_tuple(node->impl_type, trim_url, trim_ser_type, node->schema_type, bridge)];
+    auto& profiler_result = profiler_value_map[std::make_tuple(node->impl_type, trim_url, trim_ser_type,
+                                                               node->schema_type, bridge, native)];
 
     if (profiler_result.first) {
       continue;
@@ -371,6 +425,10 @@ void DiscoveryReporter::rebuild_message() {
         message.append(" bridge=1");
       }
 
+      if (native) {
+        message.append(" native=1");
+      }
+
       message.append("\n");
     }
 
@@ -379,19 +437,26 @@ void DiscoveryReporter::rebuild_message() {
       return;                                                                        // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
-    if VUNLIKELY (message_pack.size() + message.size() > kMaxMtuSize) {
-      if VLIKELY (!message_pack.empty()) {               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        impl_->message_list.emplace_back(message_pack);  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    auto& pack = native ? native_message_pack : message_pack;
+    auto& list = native ? impl_->native_message_list : impl_->message_list;
+
+    if (pack.size() + message.size() > kMaxMtuSize) {
+      if (!pack.empty()) {
+        list.emplace_back(std::move(pack));
       }
 
-      message_pack.clear();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+      pack.clear();
     }
 
-    message_pack.append(message);
+    pack.append(message);
   }
 
   if (!message_pack.empty()) {
     impl_->message_list.emplace_back(std::move(message_pack));
+  }
+
+  if (!native_message_pack.empty()) {
+    impl_->native_message_list.emplace_back(std::move(native_message_pack));
   }
 }
 
@@ -401,6 +466,8 @@ void DiscoveryReporter::send_report() {
   if (impl_->is_profiler_enabled) {
     rebuild_message();  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
   }
+
+  send_message_list(impl_->native_sock, impl_->address, impl_->native_message_list);
 
 #if VLINK_DISCOVERY_MULTICAST
   if (impl_->ip_list.empty()) {
@@ -420,6 +487,8 @@ void DiscoveryReporter::send_offline() {
   std::lock_guard lock(impl_->mtx);
 
   const std::vector<std::string> offline_list{"offline\n" + impl_->local_message};
+
+  send_message_list(impl_->native_sock, impl_->address, offline_list);
 
 #if VLINK_DISCOVERY_MULTICAST
   if (impl_->ip_list.empty()) {

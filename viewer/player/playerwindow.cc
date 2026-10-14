@@ -980,14 +980,6 @@ void PlayerWindow::on_toolButton_play_clicked() {
   bool is_native_mode = ui->checkBox_native->isChecked();
   std::string native_ip = is_native_mode ? vlink::Utils::get_native_ip() : std::string();
 
-  if (is_native_mode && vlink::Utils::get_env("VLINK_DISCOVERY_IP").empty()) {
-    std::string normal_dds_ip = vlink::Utils::get_env("VLINK_DDS_IP");
-
-    if (vlink::Utils::set_env("VLINK_DISCOVERY_IP", native_ip)) {
-      normal_dds_ip_ = std::move(normal_dds_ip);
-    }
-  }
-
   std::string filter_str = ui->lineEdit_filter->text().toStdString();
   std::vector<std::string> filter_list;
 
@@ -1002,8 +994,7 @@ void PlayerWindow::on_toolButton_play_clicked() {
 
   wait_widget_->start_wait();
 
-  player_->post_task([is_black_mode, is_native_mode, filter_list, native_ip = std::move(native_ip),
-                      normal_dds_ip = normal_dds_ip_, this]() {
+  player_->post_task([is_black_mode, is_native_mode, filter_list, native_ip = std::move(native_ip), this]() {
     has_played_ = false;
 
     {
@@ -1019,7 +1010,6 @@ void PlayerWindow::on_toolButton_play_clicked() {
       std::lock_guard remap_lock(remap_mtx_);
 
       std::string real_url;
-      bool native_discovery_reloaded = false;
 
       for (const auto& url_meta : player_->get_info().url_metas) {
         if (url_meta.url_type == "Method") {
@@ -1084,11 +1074,6 @@ void PlayerWindow::on_toolButton_play_clicked() {
           continue;
         }
 
-        if (is_native_mode && !native_discovery_reloaded) {
-          vlink::NodeImpl::reload_discovery();
-          native_discovery_reloaded = true;
-        }
-
         if (url_meta.url_type == "Field") {
           ptr->mark_as_setter();
         }
@@ -1097,8 +1082,7 @@ void PlayerWindow::on_toolButton_play_clicked() {
 
         if (is_native_mode) {
           ptr->set_property("dds.ip", native_ip);
-        } else if (normal_dds_ip) {
-          ptr->set_property("dds.ip", *normal_dds_ip);
+          ptr->set_property("discovery.native", "1");
         }
 
         ptr->init();

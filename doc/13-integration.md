@@ -1066,7 +1066,7 @@ export VLINK_LOG_DIR=/var/log/vlink
 | `VLINK_DISCOVERY_DISABLE` | `1`/`0` | `0` | `=1` 关闭节点发现，减少 UDP 广播开销 |
 | `VLINK_DISCOVERY_NATIVE` | `1`/`0` | `0` | `=1` 仅发现本机节点，组播绑定到 `127.0.0.1` |
 | `VLINK_DISCOVERY_NATIVE_IP` | IP | `127.0.0.1` | 本地模式地址，在 `VLINK_DDS_NATIVE_IP` 未设置或为空时使用；空值跳过 |
-| `VLINK_DISCOVERY_IP` | IP 列表 | 空 | 发现组播使用的本机 IPv4 地址列表（逗号或空格分隔）：Reporter 逐地址发送、Viewer 逐地址加组；空值时 Reporter 与 Viewer 都按系统路由走；同时是 `VLINK_DDS_IP` 的缺省值，只限制发现请用 `VLINK_DISCOVERY_NATIVE=1` |
+| `VLINK_DISCOVERY_IP` | IP 列表 | 空 | 发现组播使用的本机 IPv4 地址列表（逗号或空格分隔）：普通节点的 Reporter 逐地址发送、Viewer 逐地址加组；空值时网络接口按系统路由选择；Viewer 始终额外加入回环组；同时是 `VLINK_DDS_IP` 的缺省值，只限制发现请用 `VLINK_DISCOVERY_NATIVE=1` |
 | `VLINK_DISCOVERY_DOMAIN` | `0`–`255` | `0` | 发现域：UDP 端口取 `51600 + domain` 以隔离发现通道，组播地址与路由不变；须在所有进程上设为同一值；非十进制数字或超出 `[0,255]` 的值会告警并回落到 `0`；该值在进程内读取一次，此后修改无效 |
 | `VLINK_PROFILER_ENABLE` | `1`/`0` | `0` | `=1` 启用内置 CPU 性能分析 |
 
@@ -1074,7 +1074,7 @@ export VLINK_LOG_DIR=/var/log/vlink
 
 影响 `dds://`、`ddsc://`、`ddsr://` 后端，详见 [传输后端与 URL](04-transport.md)。各变量是否生效取决于当前实际启用的 DDS 实现。IP 与 peer 列表以逗号或空格分隔。
 
-本地模式地址优先级为 `VLINK_DDS_NATIVE_IP` → `VLINK_DISCOVERY_NATIVE_IP` → `127.0.0.1`，空值跳过。Native `bag play` 和 Player 仅在 `VLINK_DISCOVERY_IP` 为空时补齐该变量；Player 切回普通模式时，DDS 发布节点使用自动设置前的默认地址。
+本地模式地址优先级为 `VLINK_DDS_NATIVE_IP` → `VLINK_DISCOVERY_NATIVE_IP` → `127.0.0.1`，空值跳过。Native `bag play` 和 Player 在发布节点初始化前设置 `dds.ip` 和 `discovery.native=1`，不修改进程环境变量。发现公告固定由回环接口发送，组播 TTL 为 0；自定义 Native DDS 地址也不会扩大公告范围。Player 切回普通模式后，新节点使用原有 DDS 与发现配置。该属性在发现注册时固定，运行中修改属性不会改变已注册节点的范围。
 
 | 变量 | 类型 | 说明 |
 | --- | --- | --- |

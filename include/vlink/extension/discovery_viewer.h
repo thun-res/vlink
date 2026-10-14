@@ -88,6 +88,9 @@ namespace vlink {
  * explicitly owned by the caller; no process-global viewer is exposed.  The viewer
  * rebuilds its @c Info list on demand and notifies the registered callback on its 500 ms
  * tick whenever the snapshot changed since the previous notification.
+ *
+ * @note Always joins loopback discovery.  Unless @c VLINK_DISCOVERY_NATIVE=1, also joins
+ * the system-selected interface or the interfaces in @c VLINK_DISCOVERY_IP.
  */
 class VLINK_EXPORT DiscoveryViewer : public MessageLoop {
  public:
@@ -111,7 +114,7 @@ class VLINK_EXPORT DiscoveryViewer : public MessageLoop {
    * @brief Identity of a process that hosts at least one endpoint for a URL.
    *
    * @details
-   * Announcements with the same role, host, PID, name and bridge origin share one address list.
+   * Announcements with the same role, host, PID, name, bridge origin and discovery scope share one address list.
    * Each source address expires independently when its announcements stop.
    */
   struct VLINK_EXPORT Process final {
@@ -122,12 +125,13 @@ class VLINK_EXPORT DiscoveryViewer : public MessageLoop {
     std::vector<std::string> ip_list;  ///< Live discovery source IPv4 addresses, unique and sorted numerically.
     double profiler{-1};               ///< CPU usage sample from one live address (-1 when unavailable).
     bool bridge{false};                /**< Publisher created by proxy forwarding; absent in legacy announcements. */
+    bool native{false};                ///< Node explicitly restricted to loopback discovery.
 
     /**
      * @brief Defines a stable ordering between two process descriptors.
      *
      * @details
-     * Sort key is type, then host, name, PID, bridge origin and finally the address list.
+     * Sort key is type, then host, name, PID, bridge origin, discovery scope and finally the address list.
      *
      * @param target Right-hand operand.
      * @return @c true when @c *this should appear before @p target.

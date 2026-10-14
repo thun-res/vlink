@@ -52,10 +52,6 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
 
   const std::string native_ip = native_mode ? vlink::Utils::get_native_ip() : std::string();
 
-  if (native_mode && vlink::Utils::get_env("VLINK_DISCOVERY_IP").empty()) {
-    vlink::Utils::set_env("VLINK_DISCOVERY_IP", native_ip);
-  }
-
   is_play_mode = true;
 
   play_rate = rate;
@@ -164,14 +160,6 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
     return -1;
   }
 
-  bool native_discovery_reloaded = false;
-  auto reload_native_discovery = [&]() {
-    if (native_mode && !native_discovery_reloaded) {
-      vlink::NodeImpl::reload_discovery();
-      native_discovery_reloaded = true;
-    }
-  };
-
   for (const auto& meta : player->get_info().url_metas) {
     if (meta.url_type == "Method") {
       continue;
@@ -215,14 +203,13 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
         continue;
       }
 
-      reload_native_discovery();
-
       if (meta.url_type == "Field") {
         pub->mark_as_setter();
       }
 
       if (native_mode) {
         pub->set_property("dds.ip", native_ip);
+        pub->set_property("discovery.native", "1");
       }
 
       pub->set_ser_type(ser, meta.schema_type);
@@ -249,14 +236,13 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
           continue;
         }
 
-        reload_native_discovery();
-
         if (meta.url_type == "Field") {
           pub->mark_as_setter();
         }
 
         if (native_mode) {
           pub->set_property("dds.ip", native_ip);
+          pub->set_property("discovery.native", "1");
         }
 
         pub->set_ser_type(ser, meta.schema_type);

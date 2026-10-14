@@ -296,7 +296,7 @@ if (pub.is_support_loan()) {
 | `VLINK_DDS_DOMAIN` | DDS domain id |
 | `VLINK_DISCOVERY_DISABLE` | 置 `1` 关闭运行时发现上报 |
 | `VLINK_DISCOVERY_NATIVE` | 置 `1` 仅限本机发现 |
-| `VLINK_DISCOVERY_IP` | 发现组播使用的本机 IPv4 地址列表（多值以逗号或空格分隔；未设置时收发按系统路由走），同时是 `VLINK_DDS_IP` 的缺省值 |
+| `VLINK_DISCOVERY_IP` | 发现组播使用的本机 IPv4 地址列表（多值以逗号或空格分隔；未设置时网络接口按系统路由选择；Viewer 始终额外加入回环组），同时是 `VLINK_DDS_IP` 的缺省值 |
 | `VLINK_DISCOVERY_NATIVE_IP` | 本地模式地址回退；未设置或为空时为 `127.0.0.1` |
 | `VLINK_DISCOVERY_DOMAIN` | 发现域（`0`–`255`，默认 `0`）：UDP 端口取 `51600 + domain`，组播地址不变，所有进程须一致 |
 | `VLINK_PROTO_DIR` / `VLINK_FBS_DIR` | 动态 schema 目录（`vlink-eproto`/`-efbs`） |
@@ -444,7 +444,7 @@ DiscoveryReporter 基于 `239.255.0.100` 的 UDP 多播上报节点与端点元�
 
 ![服务发现网络](images/discovery-network.png)
 
-`vlink-list` 列不出任何节点时，可检查 `239.255.0.100` 路由表项、`VLINK_DISCOVERY_IP` 是否遗漏了目标网段的本机地址、`set_discovery_enabled(false)` 以及 DiscoveryReporter 是否被禁用。设置 `VLINK_DISCOVERY_IP` 后 Reporter 与 Viewer 逐地址指定多播出口并加组，不依赖该路由表项；未设置时收发都按系统路由走。
+`vlink-list` 列不出任何节点时，可检查 `239.255.0.100` 路由表项、`VLINK_DISCOVERY_IP` 是否遗漏了目标网段的本机地址、`set_discovery_enabled(false)` 以及 DiscoveryReporter 是否被禁用。设置 `VLINK_DISCOVERY_IP` 后 Reporter 与 Viewer 逐地址指定多播出口并加组，不依赖该路由表项；未设置时网络接口按系统路由选择。Viewer 始终额外加入回环组，网络接口加入失败也保留回环发现。Native 播放节点的公告始终仅经回环发送。
 
 排除链路本身的最小验证：以下两段代码的 URL 逐字相同，构成一条最短的收发回路。
 

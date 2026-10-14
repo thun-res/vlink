@@ -5,11 +5,12 @@
 ### 改进
 
 - **ProxyServer**：新增进程内回调模式及 Python 绑定，默认仍使用内部 DDS；使用方须重新编译。
-- **Native 地址**：新增 `VLINK_DISCOVERY_NATIVE_IP` 回退；Native bag play / Player 自动补齐空发现地址，Player 普通播放保留原 DDS 默认地址。
+- **Native 地址**：新增 `VLINK_DISCOVERY_NATIVE_IP` 回退。
 - **发现配置**：环境变量统一使用 `VLINK_DISCOVERY_*`，启动配置须同步更新，不保留旧名称别名。
 
 ### 修复
 
+- **Native 发现**：Player / bag play 使用节点级回环公告，取消播放时修改全局发现配置；接收端始终监听回环，修复先启动 Proxy 后播放时偶发缺失 URL。WebViz / Proxy 创建的 Native 节点同步限制公告范围。新增 `Process.native` 及 Python 绑定，使用方须重新编译。
 - **SHM/Player**：关闭运行时前等待发现任务结束，修复停止 SHM 播放后关闭 Proxy 的资源释放竞争。
 - **Proxy 重连**：补发未生效的控制，防止旧会话误清理新控制；信息订阅缺失时保留 5 秒宽限期，超时统一离线回收。
 - **iceoryx**：放宽资源名字符限制，禁止运行时名称包含 IPC 分隔符逗号；修复 2.0.8 运行时重启后共享内存地址登记残留。
