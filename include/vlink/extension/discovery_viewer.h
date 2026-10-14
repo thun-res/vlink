@@ -200,7 +200,7 @@ class VLINK_EXPORT DiscoveryViewer : public MessageLoop {
   [[nodiscard]] static std::string convert_type_to_view(uint32_t type, const std::vector<Process>& process_list);
 
   /**
-   * @brief Returns the discovery domain selected by @c VLINK_DISCOVER_DOMAIN.
+   * @brief Returns the discovery domain selected by @c VLINK_DISCOVERY_DOMAIN.
    *
    * @details
    * The domain isolates the discovery channel so that unrelated deployments sharing one

@@ -311,7 +311,7 @@ vlink-bag info /tmp/test.vdb
 | `-t` / `--times <n>` | 回放次数，≤0 无限循环 |
 | `-b` / `--begin_time <s>` / `-e` / `--end_time <s>` | 回放起止相对时间（秒） |
 | `-m` / `--skip_blank` | 跳过空白段 |
-| `-n` / `--native` | 将 DDS 发布节点绑定到本地模式地址，仅在 `VLINK_DISCOVER_IP` 为空时自动补齐该变量 |
+| `-n` / `--native` | 将 DDS 发布节点绑定到本地模式地址，仅在 `VLINK_DISCOVERY_IP` 为空时自动补齐该变量 |
 
 回放时 `Space` 暂停/恢复，方向键前后跳转（`Left` / `Right` 1 秒、`Up` / `Down` 5 秒），暂停态下 `p` 单步前进一帧。
 

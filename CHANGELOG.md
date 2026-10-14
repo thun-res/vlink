@@ -5,7 +5,8 @@
 ### 改进
 
 - **ProxyServer**：新增进程内回调模式及 Python 绑定，默认仍使用内部 DDS；使用方须重新编译。
-- **Native 地址**：新增 `VLINK_DISCOVER_NATIVE_IP` 回退；Native bag play / Player 自动补齐空发现地址，Player 普通播放保留原 DDS 默认地址。
+- **Native 地址**：新增 `VLINK_DISCOVERY_NATIVE_IP` 回退；Native bag play / Player 自动补齐空发现地址，Player 普通播放保留原 DDS 默认地址。
+- **发现配置**：环境变量统一使用 `VLINK_DISCOVERY_*`，启动配置须同步更新，不保留旧名称别名。
 
 ### 修复
 
@@ -28,9 +29,9 @@
 - **Bag 分包轮转**：`BagWriter::Config` 与 `vlink-bag record` 新增 `max_split_count`，超限时删除最旧分包。
 - **VCAP 块校验开关**：`BagWriter::Config`、TriggerRecorder、Python API 与录制 CLI 可启用 MCAP chunk CRC；默认关闭，VDB 不受影响。
 - **DDS 非阻塞发送**：新增 `VLINK_DDS_NOBLOCK` 与节点属性 `dds.noblock`，支持发送缓冲区满时丢包而不阻塞。
-- **发现多网卡**：新增 `VLINK_DISCOVER_IP`，DiscoveryReporter 逐地址发送、DiscoveryViewer 逐地址加入发现组播；未设置时收发仍按系统路由走。
+- **发现多网卡**：新增 `VLINK_DISCOVERY_IP`，DiscoveryReporter 逐地址发送、DiscoveryViewer 逐地址加入发现组播；未设置时收发仍按系统路由走。
 - **发现进程地址**：`ip` 改为 `ip_list`，合并多网卡重复进程，地址按数值排序、独立过期；同步 CLI、Viewer 及绑定，API/ABI 与 Proxy 协议不兼容旧版。
-- **发现域隔离**：新增 `VLINK_DISCOVER_DOMAIN`（0–255，默认 0），发现端口取 `51600 + domain`。
+- **发现域隔离**：新增 `VLINK_DISCOVERY_DOMAIN`（0–255，默认 0），发现端口取 `51600 + domain`。
 - **日志 PID 隔离**：新增 `VLINK_LOG_PID_ENABLE`，置 `1` 时默认日志目录追加 `<PID>` 子目录，同名多实例不再共享轮转文件集；默认关闭，目录布局与旧版本一致。
 
 ### 改进
@@ -42,11 +43,11 @@
 - **Monitor hostname 过滤**：新增 `--hostname`，按 URL 关联进程的 hostname 关键字筛选。
 - **eproto / efbs 终端显示**：各类订阅内容超过终端显示宽度时主动换行，并在终端尺寸变化时重新分页，暂停状态下同步重排。
 - **Native DDS 地址**：CLI、Proxy、Viewer 与 WebViz 在 native 模式下创建的 DDS 节点从 `VLINK_DDS_NATIVE_IP` 读取 IP。
-- **vlink-check diag**：VLink 发现项在设置 `VLINK_DISCOVER_IP` 后校验其地址是否存在于本机，未设置时仍检查 `239.255.0.100` 路由。
+- **vlink-check diag**：VLink 发现项在设置 `VLINK_DISCOVERY_IP` 后校验其地址是否存在于本机，未设置时仍检查 `239.255.0.100` 路由。
 - **发现热路径**：收包批量投递，快照仅在内容变化时重建，上报按 500ms 节流。
 - **日志热路径**：减少重复初始化检查，回溯回调交换复用缓冲以消除逐条拷贝。
 - **日志环境变量**：`VLINK_LOG_ENABLE_UTC` 更名为 `VLINK_LOG_UTC_ENABLE`，语义不变；旧名不再识别，部署环境须同步更新。
-- **发现端口**：发现通道 UDP 基础端口由 `51694` 改为 `51600`（实际端口为 `51600 + VLINK_DISCOVER_DOMAIN`）；新旧版本进程互不发现，须同批升级并同步防火墙规则；域 `94` 的端口与旧版本默认端口重合，滚动升级期间避免使用。
+- **发现端口**：发现通道 UDP 基础端口由 `51694` 改为 `51600`（实际端口为 `51600 + VLINK_DISCOVERY_DOMAIN`）；新旧版本进程互不发现，须同批升级并同步防火墙规则；域 `94` 的端口与旧版本默认端口重合，滚动升级期间避免使用。
 - **内存池热路径**：free-list 分片数按硬件并发度取值，消除超过 8 线程后的吞吐崩塌；命中与释放计数移入分片锁内，去掉每次分配的原子累加；直通与超大块路径在默认对齐下改用普通 `operator new`，计数按线程条带化，全哨兵配置跳过档位扫描。
 - **内存池回收**：`trim()` 改为锁外分组，不再毫秒级阻塞并发分配。
 - **内存池档位**：新增 `VLINK_MEMORY_LAZY_SCALE=1` / `MemoryPool::Config::lazy_scale`（默认关闭），开启后懒增长单次安装上限随档位配额放大；`Config` 新增字段，使用它的外部 C++ 二进制需重新构建。

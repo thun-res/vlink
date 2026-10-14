@@ -81,7 +81,7 @@ struct GlobalDiscoveryReporter final {
 
     disable_checked_ = true;
 
-    static std::string discovery = Utils::get_env("VLINK_DISCOVER_DISABLE");
+    static std::string discovery = Utils::get_env("VLINK_DISCOVERY_DISABLE");
 
     if (!discovery.empty()) {
       int value = 0;

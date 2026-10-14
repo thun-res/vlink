@@ -934,7 +934,7 @@ if (mgr.is_valid()) {
 }
 ```
 
-框架内扩展接口主要由 VLink 运行时或特定工具链宿主装配，应用代码一般不直接构造：`BagPluginInterface` 由宿主加载或创建后绑定到录制 / 回放组件，组件自身只依赖接口（详见 [录制与回放](09-recording.md)）；`DiscoveryReporter` 用于节点上线 / 下线上报，可经 `VLINK_DISCOVER_DISABLE`、`VLINK_DISCOVER_NATIVE`、`VLINK_DISCOVER_IP` 控制（详见 [可观测性](12-observability.md)）；`ConfPluginInterface` 为已识别的传输后端提供外部 `Conf` 工厂，不能注册新的 URL scheme（详见 [传输后端与 URL](04-transport.md)）。
+框架内扩展接口主要由 VLink 运行时或特定工具链宿主装配，应用代码一般不直接构造：`BagPluginInterface` 由宿主加载或创建后绑定到录制 / 回放组件，组件自身只依赖接口（详见 [录制与回放](09-recording.md)）；`DiscoveryReporter` 用于节点上线 / 下线上报，可经 `VLINK_DISCOVERY_DISABLE`、`VLINK_DISCOVERY_NATIVE`、`VLINK_DISCOVERY_IP` 控制（详见 [可观测性](12-observability.md)）；`ConfPluginInterface` 为已识别的传输后端提供外部 `Conf` 工厂，不能注册新的 URL scheme（详见 [传输后端与 URL](04-transport.md)）。
 
 ---
 
@@ -968,8 +968,8 @@ domain/QoS/depth 等后端参数可由三处声明，遵循就近覆盖原则。
 | `VLINK_DDS_BIND` | 将所有 `dds://` 整体绑定到指定 DDS 实现（`ddsc`/`ddsr`） |
 | `VLINK_INTRA_BIND` | 将所有 `intra://` 重定向到其他 scheme（`shm`/`dds` 等） |
 | `VLINK_LOG_LEVEL` | 全局日志级别（`0`=TRACE … `6`=OFF，也接受对应英文名称） |
-| `VLINK_DDS_IP` | 指定 DDS 单播 IP，多网卡主机通常必设；未设置时取 `VLINK_DISCOVER_IP` |
-| `VLINK_DDS_NATIVE_IP` | 本地模式 DDS IP；未设置或为空时依次取 `VLINK_DISCOVER_NATIVE_IP`、`127.0.0.1` |
+| `VLINK_DDS_IP` | 指定 DDS 单播 IP，多网卡主机通常必设；未设置时取 `VLINK_DISCOVERY_IP` |
+| `VLINK_DDS_NATIVE_IP` | 本地模式 DDS IP；未设置或为空时依次取 `VLINK_DISCOVERY_NATIVE_IP`、`127.0.0.1` |
 
 ```bash
 export VLINK_DDS_BIND=ddsc
@@ -1063,24 +1063,24 @@ export VLINK_LOG_DIR=/var/log/vlink
 
 | 变量 | 类型 | 默认 | 说明 |
 | --- | --- | --- | --- |
-| `VLINK_DISCOVER_DISABLE` | `1`/`0` | `0` | `=1` 关闭节点发现，减少 UDP 广播开销 |
-| `VLINK_DISCOVER_NATIVE` | `1`/`0` | `0` | `=1` 仅发现本机节点，组播绑定到 `127.0.0.1` |
-| `VLINK_DISCOVER_NATIVE_IP` | IP | `127.0.0.1` | 本地模式地址，在 `VLINK_DDS_NATIVE_IP` 未设置或为空时使用；空值跳过 |
-| `VLINK_DISCOVER_IP` | IP 列表 | 空 | 发现组播使用的本机 IPv4 地址列表（逗号或空格分隔）：Reporter 逐地址发送、Viewer 逐地址加组；空值时 Reporter 与 Viewer 都按系统路由走；同时是 `VLINK_DDS_IP` 的缺省值，只限制发现请用 `VLINK_DISCOVER_NATIVE=1` |
-| `VLINK_DISCOVER_DOMAIN` | `0`–`255` | `0` | 发现域：UDP 端口取 `51600 + domain` 以隔离发现通道，组播地址与路由不变；须在所有进程上设为同一值；非十进制数字或超出 `[0,255]` 的值会告警并回落到 `0`；该值在进程内读取一次，此后修改无效 |
+| `VLINK_DISCOVERY_DISABLE` | `1`/`0` | `0` | `=1` 关闭节点发现，减少 UDP 广播开销 |
+| `VLINK_DISCOVERY_NATIVE` | `1`/`0` | `0` | `=1` 仅发现本机节点，组播绑定到 `127.0.0.1` |
+| `VLINK_DISCOVERY_NATIVE_IP` | IP | `127.0.0.1` | 本地模式地址，在 `VLINK_DDS_NATIVE_IP` 未设置或为空时使用；空值跳过 |
+| `VLINK_DISCOVERY_IP` | IP 列表 | 空 | 发现组播使用的本机 IPv4 地址列表（逗号或空格分隔）：Reporter 逐地址发送、Viewer 逐地址加组；空值时 Reporter 与 Viewer 都按系统路由走；同时是 `VLINK_DDS_IP` 的缺省值，只限制发现请用 `VLINK_DISCOVERY_NATIVE=1` |
+| `VLINK_DISCOVERY_DOMAIN` | `0`–`255` | `0` | 发现域：UDP 端口取 `51600 + domain` 以隔离发现通道，组播地址与路由不变；须在所有进程上设为同一值；非十进制数字或超出 `[0,255]` 的值会告警并回落到 `0`；该值在进程内读取一次，此后修改无效 |
 | `VLINK_PROFILER_ENABLE` | `1`/`0` | `0` | `=1` 启用内置 CPU 性能分析 |
 
 ### 🛰️ 13.23 DDS 传输
 
 影响 `dds://`、`ddsc://`、`ddsr://` 后端，详见 [传输后端与 URL](04-transport.md)。各变量是否生效取决于当前实际启用的 DDS 实现。IP 与 peer 列表以逗号或空格分隔。
 
-本地模式地址优先级为 `VLINK_DDS_NATIVE_IP` → `VLINK_DISCOVER_NATIVE_IP` → `127.0.0.1`，空值跳过。Native `bag play` 和 Player 仅在 `VLINK_DISCOVER_IP` 为空时补齐该变量；Player 切回普通模式时，DDS 发布节点使用自动设置前的默认地址。
+本地模式地址优先级为 `VLINK_DDS_NATIVE_IP` → `VLINK_DISCOVERY_NATIVE_IP` → `127.0.0.1`，空值跳过。Native `bag play` 和 Player 仅在 `VLINK_DISCOVERY_IP` 为空时补齐该变量；Player 切回普通模式时，DDS 发布节点使用自动设置前的默认地址。
 
 | 变量 | 类型 | 说明 |
 | --- | --- | --- |
 | `VLINK_DDS_DOMAIN` | 数字 | DDS Domain ID |
-| `VLINK_DDS_IP` | IP 列表 | DDS 单播 IP，多网卡时通常必设；未设置时取 `VLINK_DISCOVER_IP` |
-| `VLINK_DDS_NATIVE_IP` | IP | CLI、Proxy、Viewer、Player 与 WebViz 的本地模式 DDS 地址；未设置或为空时依次取 `VLINK_DISCOVER_NATIVE_IP`、`127.0.0.1`，覆盖该节点的 `VLINK_DDS_IP` 缺省值 |
+| `VLINK_DDS_IP` | IP 列表 | DDS 单播 IP，多网卡时通常必设；未设置时取 `VLINK_DISCOVERY_IP` |
+| `VLINK_DDS_NATIVE_IP` | IP | CLI、Proxy、Viewer、Player 与 WebViz 的本地模式 DDS 地址；未设置或为空时依次取 `VLINK_DISCOVERY_NATIVE_IP`、`127.0.0.1`，覆盖该节点的 `VLINK_DDS_IP` 缺省值 |
 | `VLINK_DDS_IP_FILTER` | `1`/`0` | 仅使用当前可用地址 |
 | `VLINK_DDS_MULTICAST_IP` | IP 列表 | DDS 组播 IP |
 | `VLINK_DDS_PEER` | 字符串 | DDS 对等端配置 |

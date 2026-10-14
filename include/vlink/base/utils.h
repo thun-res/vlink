@@ -240,7 +240,7 @@ VLINK_EXPORT bool unset_env(const std::string& key) noexcept;
 /**
  * @brief Returns the address for native mode.
  *
- * @return First nonempty value of @c VLINK_DDS_NATIVE_IP and @c VLINK_DISCOVER_NATIVE_IP,
+ * @return First nonempty value of @c VLINK_DDS_NATIVE_IP and @c VLINK_DISCOVERY_NATIVE_IP,
  *         or @c 127.0.0.1 when both are unset or empty.
  */
 [[nodiscard]] VLINK_EXPORT std::string get_native_ip() noexcept;

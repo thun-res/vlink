@@ -290,15 +290,15 @@ if (pub.is_support_loan()) {
 | `VLINK_LOG_LEVEL` | 日志总级别（`0=Trace` .. `5=Fatal`，`6=Off`；也接受对应英文名称） |
 | `VLINK_LOG_DIR` | 默认日志根目录，其下按 `<应用名>` 分目录 |
 | `VLINK_LOG_PID_ENABLE` | 置 `1` 在应用名目录下再按 `<PID>` 隔离，供同名多实例并存 |
-| `VLINK_DDS_IP` | DDS 发现对外通告的本机单播 IP 列表（多值以逗号或空格分隔；未设置时取 `VLINK_DISCOVER_IP`） |
-| `VLINK_DDS_NATIVE_IP` | 本地模式 DDS IP；未设置或为空时依次取 `VLINK_DISCOVER_NATIVE_IP`、`127.0.0.1` |
+| `VLINK_DDS_IP` | DDS 发现对外通告的本机单播 IP 列表（多值以逗号或空格分隔；未设置时取 `VLINK_DISCOVERY_IP`） |
+| `VLINK_DDS_NATIVE_IP` | 本地模式 DDS IP；未设置或为空时依次取 `VLINK_DISCOVERY_NATIVE_IP`、`127.0.0.1` |
 | `VLINK_DDS_PEER` | DDS 静态单播对端列表，绕开多播发现（多值以逗号或空格分隔，见 [§14.18](#-1418-跨机或容器不连通)） |
 | `VLINK_DDS_DOMAIN` | DDS domain id |
-| `VLINK_DISCOVER_DISABLE` | 置 `1` 关闭运行时发现上报 |
-| `VLINK_DISCOVER_NATIVE` | 置 `1` 仅限本机发现 |
-| `VLINK_DISCOVER_IP` | 发现组播使用的本机 IPv4 地址列表（多值以逗号或空格分隔；未设置时收发按系统路由走），同时是 `VLINK_DDS_IP` 的缺省值 |
-| `VLINK_DISCOVER_NATIVE_IP` | 本地模式地址回退；未设置或为空时为 `127.0.0.1` |
-| `VLINK_DISCOVER_DOMAIN` | 发现域（`0`–`255`，默认 `0`）：UDP 端口取 `51600 + domain`，组播地址不变，所有进程须一致 |
+| `VLINK_DISCOVERY_DISABLE` | 置 `1` 关闭运行时发现上报 |
+| `VLINK_DISCOVERY_NATIVE` | 置 `1` 仅限本机发现 |
+| `VLINK_DISCOVERY_IP` | 发现组播使用的本机 IPv4 地址列表（多值以逗号或空格分隔；未设置时收发按系统路由走），同时是 `VLINK_DDS_IP` 的缺省值 |
+| `VLINK_DISCOVERY_NATIVE_IP` | 本地模式地址回退；未设置或为空时为 `127.0.0.1` |
+| `VLINK_DISCOVERY_DOMAIN` | 发现域（`0`–`255`，默认 `0`）：UDP 端口取 `51600 + domain`，组播地址不变，所有进程须一致 |
 | `VLINK_PROTO_DIR` / `VLINK_FBS_DIR` | 动态 schema 目录（`vlink-eproto`/`-efbs`） |
 | `VLINK_FASTBUFFER_PLUGIN` | 首次构造 FastBuffer 时加载的插件名或路径；未设置或空值使用普通 CPU 内存，`shm` 使用可跨进程共享的 CPU 内存 |
 | `VLINK_URL_PLUGINS` | 首次 URL 初始化前设置：完整值 `auto` 按需加载未链接的已知共享 transport，`none` / 空值关闭插件加载，其他非空值为显式预加载列表；模式值大小写不敏感 |
@@ -444,7 +444,7 @@ DiscoveryReporter 基于 `239.255.0.100` 的 UDP 多播上报节点与端点元�
 
 ![服务发现网络](images/discovery-network.png)
 
-`vlink-list` 列不出任何节点时，可检查 `239.255.0.100` 路由表项、`VLINK_DISCOVER_IP` 是否遗漏了目标网段的本机地址、`set_discovery_enabled(false)` 以及 DiscoveryReporter 是否被禁用。设置 `VLINK_DISCOVER_IP` 后 Reporter 与 Viewer 逐地址指定多播出口并加组，不依赖该路由表项；未设置时收发都按系统路由走。
+`vlink-list` 列不出任何节点时，可检查 `239.255.0.100` 路由表项、`VLINK_DISCOVERY_IP` 是否遗漏了目标网段的本机地址、`set_discovery_enabled(false)` 以及 DiscoveryReporter 是否被禁用。设置 `VLINK_DISCOVERY_IP` 后 Reporter 与 Viewer 逐地址指定多播出口并加组，不依赖该路由表项；未设置时收发都按系统路由走。
 
 排除链路本身的最小验证：以下两段代码的 URL 逐字相同，构成一条最短的收发回路。
 
@@ -469,7 +469,7 @@ sub.listen([](const MyMsg& msg) { VLOG_I("received"); });
 
 | 环节 | 确认方法与处置 |
 | --- | --- |
-| 防火墙 | 按后端放行实际数据与发现端口；若仅拓扑工具不可见，再检查 `239.255.0.100` 的发现端口（`51600 + VLINK_DISCOVER_DOMAIN`，默认 `51600`） |
+| 防火墙 | 按后端放行实际数据与发现端口；若仅拓扑工具不可见，再检查 `239.255.0.100` 的发现端口（`51600 + VLINK_DISCOVERY_DOMAIN`，默认 `51600`） |
 | 网卡多播标记 | `ip link show eth0 \| grep MULTICAST` 应含 `MULTICAST` |
 | 容器网络 | `--net=host` 可用于区分 bridge/NAT 问题；需要的端口与多播取决于所用后端 |
 | 容器共享内存 | `/dev/shm` 默认 64 MB，`shm://` 易失败，启动加 `--shm-size=2g` |

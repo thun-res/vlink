@@ -109,17 +109,17 @@ int check_env(bool available_case, const std::string& prefix) {
        false},
       {"VLINK_BAG_TAG", "", "User tag stored in bag metadata to label the recording session (default 'Empty').", false},
 
-      {"VLINK_DISCOVER_DISABLE", "",
+      {"VLINK_DISCOVERY_DISABLE", "",
        "When set to 1 disables the runtime-owned discovery reporter (no cross-process visibility).", false},
-      {"VLINK_DISCOVER_NATIVE", "",
+      {"VLINK_DISCOVERY_NATIVE", "",
        "When set to 1 restricts discovery multicast to the loopback interface (same-host only).", false},
-      {"VLINK_DISCOVER_NATIVE_IP", "",
+      {"VLINK_DISCOVERY_NATIVE_IP", "",
        "Native-mode IP fallback when VLINK_DDS_NATIVE_IP is unset or empty; defaults to 127.0.0.1.", false},
-      {"VLINK_DISCOVER_IP", "",
+      {"VLINK_DISCOVERY_IP", "",
        "Comma or space separated local IPv4 addresses used for discovery multicast: the reporter sends once per "
        "address and the viewer joins the group on each. Empty sends and joins through the system route.",
        false},
-      {"VLINK_DISCOVER_DOMAIN", "",
+      {"VLINK_DISCOVERY_DOMAIN", "",
        "Discovery domain (0 to 255, default 0) isolating the discovery channel: the UDP port becomes 51600 plus the "
        "domain while the multicast address and its route stay unchanged. Must match on every process.",
        false},
@@ -147,7 +147,7 @@ int check_env(bool available_case, const std::string& prefix) {
       {"VLINK_DDS_DOMAIN", "", "DDS domain id for this process (valid range 0-232).", false},
       {"VLINK_DDS_IP", "", "Unicast IPv4 list advertised by DDS discovery (comma or space separated).", false},
       {"VLINK_DDS_NATIVE_IP", "",
-       "DDS IP applied by native-mode CLI, Proxy, Viewer, Player, and WebViz; falls back to VLINK_DISCOVER_NATIVE_IP, "
+       "DDS IP applied by native-mode CLI, Proxy, Viewer, Player, and WebViz; falls back to VLINK_DISCOVERY_NATIVE_IP, "
        "then 127.0.0.1 when unset or empty.",
        false},
       {"VLINK_DDS_IP_FILTER", "", "When set to 1 filters VLINK_DDS_IP down to addresses currently present on the host.",

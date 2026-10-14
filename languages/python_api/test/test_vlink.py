@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 
-os.environ["VLINK_DISCOVER_DISABLE"] = "1"
+os.environ["VLINK_DISCOVERY_DISABLE"] = "1"
 
 import vlink as _vlink  # type: ignore
 

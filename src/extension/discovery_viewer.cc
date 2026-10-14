@@ -493,7 +493,7 @@ std::string DiscoveryViewer::convert_type_to_view(uint32_t type, const std::vect
 
 uint32_t DiscoveryViewer::get_listen_domain() {
   static uint32_t domain = []() -> uint32_t {
-    const std::string domain_str = Utils::get_env("VLINK_DISCOVER_DOMAIN");
+    const std::string domain_str = Utils::get_env("VLINK_DISCOVERY_DOMAIN");
 
     if (domain_str.empty()) {
       return 0U;
@@ -521,7 +521,7 @@ uint16_t DiscoveryViewer::get_listen_port() { return static_cast<uint16_t>(kBroa
 DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>()) {
   set_name("DiscoveryViewer");
 
-  const std::string native_discovery = Utils::get_env("VLINK_DISCOVER_NATIVE");
+  const std::string native_discovery = Utils::get_env("VLINK_DISCOVERY_NATIVE");
 
   if (native_discovery == "1") {
     impl_->enable_native_discovery = true;
@@ -616,7 +616,7 @@ DiscoveryViewer::DiscoveryViewer(FilterType type) : impl_(std::make_unique<Impl>
   if (impl_->enable_native_discovery) {
     ip_list.emplace_back("127.0.0.1");
   } else {
-    ip_list = Helpers::split_any(Utils::get_env("VLINK_DISCOVER_IP"));
+    ip_list = Helpers::split_any(Utils::get_env("VLINK_DISCOVERY_IP"));
   }
 
   if (ip_list.empty()) {
@@ -1042,7 +1042,7 @@ void DiscoveryViewer::warn_listen_domain() {
     const std::string& invalid_domain = get_invalid_listen_domain();
 
     if VUNLIKELY (!invalid_domain.empty()) {
-      VLOG_W("DiscoveryViewer: Invalid VLINK_DISCOVER_DOMAIN [", invalid_domain, "], fallback to 0.");
+      VLOG_W("DiscoveryViewer: Invalid VLINK_DISCOVERY_DOMAIN [", invalid_domain, "], fallback to 0.");
     }
 
     return true;

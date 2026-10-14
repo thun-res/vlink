@@ -52,8 +52,8 @@ int bag_play(const std::string& path, const std::vector<std::string>& urls, cons
 
   const std::string native_ip = native_mode ? vlink::Utils::get_native_ip() : std::string();
 
-  if (native_mode && vlink::Utils::get_env("VLINK_DISCOVER_IP").empty()) {
-    vlink::Utils::set_env("VLINK_DISCOVER_IP", native_ip);
+  if (native_mode && vlink::Utils::get_env("VLINK_DISCOVERY_IP").empty()) {
+    vlink::Utils::set_env("VLINK_DISCOVERY_IP", native_ip);
   }
 
   is_play_mode = true;

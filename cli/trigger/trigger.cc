@@ -41,7 +41,7 @@ int main(int argc, char* argv[]) {
   daemon_command.add_argument("-n", "--native")
       .help(
           "Native mode: local-host discovery + dds.ip from VLINK_DDS_NATIVE_IP, "
-          "VLINK_DISCOVER_NATIVE_IP, or 127.0.0.1")
+          "VLINK_DISCOVERY_NATIVE_IP, or 127.0.0.1")
       .default_value(false)
       .implicit_value(true);
   daemon_command.add_argument("--bag_plugin")

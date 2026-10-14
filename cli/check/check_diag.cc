@@ -216,8 +216,8 @@ void check_dds_ip(DiagContext& ctx) {
   std::string dds_ip_key = "VLINK_DDS_IP";
 
   if (dds_ip.empty()) {
-    dds_ip = vlink::Utils::get_env("VLINK_DISCOVER_IP");
-    dds_ip_key = "VLINK_DISCOVER_IP";
+    dds_ip = vlink::Utils::get_env("VLINK_DISCOVERY_IP");
+    dds_ip_key = "VLINK_DISCOVERY_IP";
   }
 
   if (dds_ip.empty()) {
@@ -245,8 +245,8 @@ void check_dds_interface(DiagContext& ctx) {
   std::string dds_ip_key = "VLINK_DDS_IP";
 
   if (dds_ip.empty()) {
-    dds_ip = vlink::Utils::get_env("VLINK_DISCOVER_IP");
-    dds_ip_key = "VLINK_DISCOVER_IP";
+    dds_ip = vlink::Utils::get_env("VLINK_DISCOVERY_IP");
+    dds_ip_key = "VLINK_DISCOVERY_IP";
   }
 
   if (dds_ip.empty()) {
@@ -309,11 +309,11 @@ void check_multicast_address(DiagContext& ctx, const int (&octets)[4], bool warn
 }
 
 void check_discover_ip(DiagContext& ctx) {
-  const auto discover_ip = vlink::Utils::get_env("VLINK_DISCOVER_IP");
+  const auto discover_ip = vlink::Utils::get_env("VLINK_DISCOVERY_IP");
   const auto discover_ip_list = vlink::Helpers::split_any_view(discover_ip);
 
   if (discover_ip_list.empty()) {
-    end_diag(ctx, DiagType::kWarning, "VLINK_DISCOVER_IP is empty");
+    end_diag(ctx, DiagType::kWarning, "VLINK_DISCOVERY_IP is empty");
     return;
   }
 
@@ -345,7 +345,7 @@ void check_discover_domain(DiagContext& ctx) {
   const uint32_t domain = vlink::DiscoveryViewer::get_listen_domain();
   const std::string channel =
       vlink::DiscoveryViewer::get_listen_address() + ":" + std::to_string(vlink::DiscoveryViewer::get_listen_port());
-  const auto value = vlink::Utils::get_env("VLINK_DISCOVER_DOMAIN");
+  const auto value = vlink::Utils::get_env("VLINK_DISCOVERY_DOMAIN");
 
   if (value.empty()) {
     end_diag(ctx, DiagType::kPass, "Domain 0 (default) on " + channel);
@@ -357,7 +357,7 @@ void check_discover_domain(DiagContext& ctx) {
 
   if VUNLIKELY (error != std::errc() || ptr != value.data() + value.size() || parsed != domain) {
     end_diag(ctx, DiagType::kFailed,
-             "VLINK_DISCOVER_DOMAIN=" + value + " is invalid, fallback to domain 0 on " + channel);
+             "VLINK_DISCOVERY_DOMAIN=" + value + " is invalid, fallback to domain 0 on " + channel);
     return;
   }
 
@@ -864,7 +864,7 @@ void check_interface_mtu(DiagContext& ctx) {
   auto dds_ip = vlink::Utils::get_env("VLINK_DDS_IP");
 
   if (dds_ip.empty()) {
-    dds_ip = vlink::Utils::get_env("VLINK_DISCOVER_IP");
+    dds_ip = vlink::Utils::get_env("VLINK_DISCOVERY_IP");
   }
 
   std::string ip;

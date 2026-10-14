@@ -11,7 +11,7 @@ import tempfile
 import uuid
 import weakref
 
-os.environ["VLINK_DISCOVER_DISABLE"] = "1"
+os.environ["VLINK_DISCOVERY_DISABLE"] = "1"
 
 import vlink as _vlink  # type: ignore
 
@@ -1198,19 +1198,19 @@ process = None
 
 
 def test_utils_extended():
-    native_keys = ("VLINK_DDS_NATIVE_IP", "VLINK_DISCOVER_NATIVE_IP")
+    native_keys = ("VLINK_DDS_NATIVE_IP", "VLINK_DISCOVERY_NATIVE_IP")
     native_values = {key: os.environ.get(key) for key in native_keys}
     try:
         for key in native_keys:
             os.environ.pop(key, None)
         assert _vlink.utils.get_native_ip() == "127.0.0.1"
-        os.environ["VLINK_DISCOVER_NATIVE_IP"] = "192.0.2.10"
+        os.environ["VLINK_DISCOVERY_NATIVE_IP"] = "192.0.2.10"
         assert _vlink.utils.get_native_ip() == "192.0.2.10"
         os.environ["VLINK_DDS_NATIVE_IP"] = "192.0.2.20"
         assert _vlink.utils.get_native_ip() == "192.0.2.20"
         os.environ["VLINK_DDS_NATIVE_IP"] = ""
         assert _vlink.utils.get_native_ip() == "192.0.2.10"
-        os.environ["VLINK_DISCOVER_NATIVE_IP"] = ""
+        os.environ["VLINK_DISCOVERY_NATIVE_IP"] = ""
         assert _vlink.utils.get_native_ip() == "127.0.0.1"
     finally:
         for key, value in native_values.items():
@@ -2227,7 +2227,7 @@ assert not viewer.is_running()
 viewer = None
 publisher = None
 '''
-    env = dict(os.environ, VLINK_DISCOVER_DISABLE="0")
+    env = dict(os.environ, VLINK_DISCOVERY_DISABLE="0")
     subprocess.run(
         [sys.executable, "-c", code], env=env, check=True, capture_output=True, text=True, timeout=15.0,
     )
@@ -2235,7 +2235,7 @@ publisher = None
 
 
 def test_discovery_domain_shifts_listen_port():
-    """VLINK_DISCOVER_DOMAIN shifts the listen port and falls back to 0 when invalid."""
+    """VLINK_DISCOVERY_DOMAIN shifts the listen port and falls back to 0 when invalid."""
     code = r'''
 import sys
 import vlink
@@ -2248,7 +2248,7 @@ assert vlink.DiscoveryViewer.get_listen_address() == "239.255.0.100"
     cases = [("7", 7), ("0", 0), ("255", 255), ("256", 0), ("-1", 0), ("abc", 0), ("1 ", 0), ("", 0)]
 
     for value, expected in cases:
-        env = dict(os.environ, VLINK_DISCOVER_DOMAIN=value, VLINK_DISCOVER_DISABLE="1")
+        env = dict(os.environ, VLINK_DISCOVERY_DOMAIN=value, VLINK_DISCOVERY_DISABLE="1")
         try:
             subprocess.run(
                 [sys.executable, "-c", code, str(expected)], env=env, check=True,
@@ -2256,7 +2256,7 @@ assert vlink.DiscoveryViewer.get_listen_address() == "239.255.0.100"
             )
         except subprocess.CalledProcessError as error:
             raise AssertionError(
-                f"VLINK_DISCOVER_DOMAIN={value!r} expected domain {expected}: {error.stderr}"
+                f"VLINK_DISCOVERY_DOMAIN={value!r} expected domain {expected}: {error.stderr}"
             ) from error
 
     print("[PASS] DiscoveryViewer domain port shift")

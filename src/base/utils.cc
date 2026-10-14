@@ -1167,7 +1167,7 @@ std::string get_native_ip() noexcept {
   std::string ip = get_env("VLINK_DDS_NATIVE_IP");
 
   if (ip.empty()) {
-    ip = get_env("VLINK_DISCOVER_NATIVE_IP");
+    ip = get_env("VLINK_DISCOVERY_NATIVE_IP");
   }
 
   if (ip.empty()) {

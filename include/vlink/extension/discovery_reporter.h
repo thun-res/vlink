@@ -55,7 +55,7 @@
  * @par Example
  * @code
  * // Disable discovery entirely:
- * //   export VLINK_DISCOVER_DISABLE=1
+ * //   export VLINK_DISCOVERY_DISABLE=1
  *
  * // Advanced tooling may construct an explicit reporter instance.
  * vlink::DiscoveryReporter reporter;
@@ -63,11 +63,11 @@
  * @endcode
  *
  * @note Discovery rides on a dedicated UDP socket and is independent of any VLink
- * transport backend (intra/shm/dds/zenoh/...).  Set @c VLINK_DISCOVER_DISABLE=1 to
+ * transport backend (intra/shm/dds/zenoh/...).  Set @c VLINK_DISCOVERY_DISABLE=1 to
  * disable the runtime-owned reporter for a given process.  Each report is multicast once
- * through the interface chosen by the system route; @c VLINK_DISCOVER_IP (comma or space
+ * through the interface chosen by the system route; @c VLINK_DISCOVERY_IP (comma or space
  * separated addresses) sends one report per listed address,
- * @c VLINK_DISCOVER_NATIVE=1 limits it to loopback and @c VLINK_DISCOVER_DOMAIN shifts the
+ * @c VLINK_DISCOVERY_NATIVE=1 limits it to loopback and @c VLINK_DISCOVERY_DOMAIN shifts the
  * discovery port to isolate the channel.
  */
 

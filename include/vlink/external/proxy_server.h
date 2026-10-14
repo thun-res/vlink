@@ -99,11 +99,11 @@
  * @c on_deinit(), @c quit(), and @c wait_for_quit() are invoked in the same order.
  *
  * @par Environment Variables
- * | Variable                    | Meaning                                                  |
- * | --------------------------- | -------------------------------------------------------- |
- * | @c VLINK_INTRA_BIND         | When set, also subscribe to @c intra:// topics.          |
- * | @c VLINK_DDS_NATIVE_IP      | Native DDS IP; fallback: @c VLINK_DISCOVER_NATIVE_IP.    |
- * | @c VLINK_DISCOVER_NATIVE_IP | Native IP fallback; unset or empty uses @c 127.0.0.1.    |
+ * | Variable                     | Meaning                                                |
+ * | ---------------------------- | ------------------------------------------------------ |
+ * | @c VLINK_INTRA_BIND          | When set, also subscribe to @c intra:// topics.        |
+ * | @c VLINK_DDS_NATIVE_IP       | Native DDS IP; fallback: @c VLINK_DISCOVERY_NATIVE_IP. |
+ * | @c VLINK_DISCOVERY_NATIVE_IP | Native IP fallback; unset or empty uses @c 127.0.0.1.  |
  *
  * @par Example
  * @code

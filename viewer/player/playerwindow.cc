@@ -980,10 +980,10 @@ void PlayerWindow::on_toolButton_play_clicked() {
   bool is_native_mode = ui->checkBox_native->isChecked();
   std::string native_ip = is_native_mode ? vlink::Utils::get_native_ip() : std::string();
 
-  if (is_native_mode && vlink::Utils::get_env("VLINK_DISCOVER_IP").empty()) {
+  if (is_native_mode && vlink::Utils::get_env("VLINK_DISCOVERY_IP").empty()) {
     std::string normal_dds_ip = vlink::Utils::get_env("VLINK_DDS_IP");
 
-    if (vlink::Utils::set_env("VLINK_DISCOVER_IP", native_ip)) {
+    if (vlink::Utils::set_env("VLINK_DISCOVERY_IP", native_ip)) {
       normal_dds_ip_ = std::move(normal_dds_ip);
     }
   }

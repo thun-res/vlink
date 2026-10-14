@@ -564,7 +564,7 @@ DDS_DomainParticipantFactory* DdsrFactory::get_dds_factory() {
 }
 
 void DdsrFactory::set_participant_qos(DDS_DomainParticipantQos& dds_qos, const Conf::PropertiesMap& properties) {
-  static const std::string& discovery_ip_str = Utils::get_env("VLINK_DISCOVER_IP");
+  static const std::string& discovery_ip_str = Utils::get_env("VLINK_DISCOVERY_IP");
   static const std::string& ip_str = Utils::get_env("VLINK_DDS_IP", discovery_ip_str);
   static const std::string& ip_multicast_str = Utils::get_env("VLINK_DDS_MULTICAST_IP");
   static const std::string& peer_str = Utils::get_env("VLINK_DDS_PEER");

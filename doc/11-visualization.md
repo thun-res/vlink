@@ -143,7 +143,7 @@ vlink-analyzer   # 可由 viewer / player 作为子进程拉起
 | 进度条 | 拖动跳转，拖动时自动暂停，松开恢复 |
 | 速率（Rate） | 调节回放倍率，默认 `1.0` |
 | Loop | 循环回放 |
-| Native | DDS 发布节点使用本地模式地址，仅在 `VLINK_DISCOVER_IP` 为空时自动补齐该变量 |
+| Native | DDS 发布节点使用本地模式地址，仅在 `VLINK_DISCOVERY_IP` 为空时自动补齐该变量 |
 | URL 过滤 | 过滤输入框 + Blacklist 勾选框，按关键字白/黑名单筛选 URL |
 | Remap | URL 重映射 |
 | Skip Blank | 跳过录制中的空白时间段 |

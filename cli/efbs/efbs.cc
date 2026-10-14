@@ -36,7 +36,7 @@ int main(int argc, char* argv[]) {
 
   // env
   vlink::Utils::unset_env("VLINK_BAG_PATH");
-  // vlink::Utils::set_env("VLINK_DISCOVER_DISABLE", "1");
+  // vlink::Utils::set_env("VLINK_DISCOVERY_DISABLE", "1");
 
   // intra_bind
   std::string intra_bind = vlink::Utils::get_env("VLINK_INTRA_BIND");

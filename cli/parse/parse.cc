@@ -1285,7 +1285,7 @@ int main(int argc, char* argv[]) {
       .nargs(1);
 
   program.add_argument("--native")
-      .help("Use native mode (DDS IP from VLINK_DDS_NATIVE_IP, VLINK_DISCOVER_NATIVE_IP, or 127.0.0.1)")
+      .help("Use native mode (DDS IP from VLINK_DDS_NATIVE_IP, VLINK_DISCOVERY_NATIVE_IP, or 127.0.0.1)")
       .default_value(false)
       .implicit_value(true);
 

@@ -55,7 +55,7 @@ int main(int argc, char* argv[]) {
 
   // env
   vlink::Utils::unset_env("VLINK_BAG_PATH");
-  // vlink::Utils::set_env("VLINK_DISCOVER_DISABLE", "1");
+  // vlink::Utils::set_env("VLINK_DISCOVERY_DISABLE", "1");
 
   argparse::ArgumentParser program("vlink-bag2mcap", VLINK_VERSION, argparse::default_arguments::all);
 

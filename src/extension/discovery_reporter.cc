@@ -255,10 +255,10 @@ DiscoveryReporter::~DiscoveryReporter() {
 void DiscoveryReporter::reload() {
   std::lock_guard lock(impl_->mtx);
 
-  if (Utils::get_env("VLINK_DISCOVER_NATIVE") == "1") {
+  if (Utils::get_env("VLINK_DISCOVERY_NATIVE") == "1") {
     impl_->ip_list = {"127.0.0.1"};
   } else {
-    impl_->ip_list = Helpers::split_any(Utils::get_env("VLINK_DISCOVER_IP"));
+    impl_->ip_list = Helpers::split_any(Utils::get_env("VLINK_DISCOVERY_IP"));
   }
 
 #if VLINK_DISCOVERY_MULTICAST
