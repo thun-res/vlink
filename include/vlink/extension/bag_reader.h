@@ -335,7 +335,7 @@ class VLINK_EXPORT BagReader : public MessageLoop {
    *
    * @details
    * The cursor is an alternative to the timed @c play() / @c register_output_callback() path: it
-   * walks every stored frame in recorded order and hands them back one at a time through
+   * walks every stored frame in backend read order and hands them back one at a time through
    * @c read_next() / @c operator>>, with no inter-frame delay, no loop thread and independent of any
    * @c async_run() / @c play() session (a dedicated backend statement / iterator is used).  Only
    * @c Config::filter_urls and the @c Config::begin_time / @c Config::end_time window are honoured;
@@ -360,14 +360,14 @@ class VLINK_EXPORT BagReader : public MessageLoop {
    *
    * @details
    * Convenience overload equivalent to @c open_cursor() with a default @c Config: every stored
-   * frame is visited in recorded order.
+   * frame is visited in the backend read order described by @c open_cursor(const Config&).
    *
    * @return @c true when the cursor is positioned and ready, @c false on open failure (sets @c fail()).
    */
   bool open_cursor();
 
   /**
-   * @brief Reads the next frame in recorded order into @p out.
+   * @brief Reads the next frame in backend read order into @p out.
    *
    * @details
    * Lazily calls @c open_cursor() with a default @c Config on first use.  On success @p out is fully

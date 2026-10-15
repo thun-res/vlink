@@ -597,7 +597,7 @@ def demo_bag_inspect_only():
 def demo_bag_cursor_read():
     """Tutorial: read a bag synchronously with the cursor instead of play().
 
-    The cursor walks every stored frame in recorded order with no inter-frame
+    The cursor walks every stored frame in backend read order with no inter-frame
     delay and no background thread, so ``async_run()`` / ``play()`` are not
     needed.  ``open_cursor(cfg)`` applies ``filter_urls`` and the
     ``begin_time`` / ``end_time`` window; iterate with ``for frame in reader``

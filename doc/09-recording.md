@@ -232,7 +232,7 @@ reader->play(cfg);
 
 ## ⏩ 9.7 游标顺序读取
 
-除 `play()` 的定时回放外，`BagReader` 另提供一条**同步顺序读取**通道：游标。它按录制顺序逐帧把数据交还调用线程，**无后台线程、无帧间延时**，也不依赖 `async_run()` / `play()`，适合离线批处理、转码、抽帧统计等不需要按真实时序节流的场景。
+除 `play()` 的定时回放外，`BagReader` 另提供一条**同步顺序读取**通道：游标。它按存储后端的读取顺序逐帧把数据交还调用线程，**无后台线程、无帧间延时**，也不依赖 `async_run()` / `play()`，适合离线批处理、转码、抽帧统计等不需要按真实时序节流的场景。
 
 ```cpp
 auto reader = vlink::BagReader::create("/data/recording.vdb");
@@ -253,7 +253,7 @@ while (*reader >> frame) {           // 等价于 while (reader->read_next(frame
 | 方法 | 语义 |
 | --- | --- |
 | `open_cursor(config)` | 按 `config` 打开（或重置）游标；成功返回 `true`，打开失败置位 `fail()` 并返回 `false` |
-| `open_cursor()` | 等价于以默认 `Config` 打开，全量、不过滤、按录制顺序遍历 |
+| `open_cursor()` | 等价于以默认 `Config` 打开，全量、不过滤、按存储后端的读取顺序遍历 |
 | `read_next(out)` | 读下一帧填入 `out`；到末尾置位 `eof()`、出错置位 `fail()`，二者均返回 `false` |
 | `*reader >> frame` | `read_next()` 的流式别名，返回 `*this`，可 `while (reader >> frame)` |
 | `eof()` / `fail()` | 是否已到文件末尾 / 上次游标操作是否失败 |
