@@ -144,9 +144,6 @@ void clear_arrays(osg::Geode* geode) {
   if (geometry) {
     static_cast<osg::Vec3dArray*>(geometry->getVertexArray())->dirty();
     static_cast<osg::Vec4dArray*>(geometry->getColorArray())->dirty();
-
-    geometry->dirtyBound();
-
     auto* da0 = static_cast<osg::DrawArrays*>(geometry->getPrimitiveSet(0));
 
     if (da0) {
@@ -157,9 +154,6 @@ void clear_arrays(osg::Geode* geode) {
   if (geometry_select) {
     static_cast<osg::Vec3dArray*>(geometry_select->getVertexArray())->dirty();
     static_cast<osg::Vec4dArray*>(geometry_select->getColorArray())->dirty();
-
-    geometry_select->dirtyBound();
-
     auto* da1 = static_cast<osg::DrawArrays*>(geometry_select->getPrimitiveSet(0));
 
     if (da1) {
@@ -180,8 +174,6 @@ void finalize_arrays(osg::Geode* geode) {
   vertex_array->dirty();
   color_array->dirty();
 
-  geometry->dirtyBound();
-
   auto* draw_arrays = static_cast<osg::DrawArrays*>(geometry->getPrimitiveSet(0));
 
   if (draw_arrays) {
@@ -194,8 +186,6 @@ void finalize_arrays(osg::Geode* geode) {
 
   vertex_array_select->dirty();
   color_array_select->dirty();
-
-  geometry_select->dirtyBound();
 
   auto* draw_arrays_select = static_cast<osg::DrawArrays*>(geometry_select->getPrimitiveSet(0));
 
