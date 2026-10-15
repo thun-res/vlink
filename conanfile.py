@@ -120,7 +120,7 @@ class VLinkConan(ConanFile):
             self.requires("zlib/1.3.2")
             self.requires("zstd/1.5.7")
             self.requires("sqlite3/3.53.4")
-            self.requires("openssl/3.0.21")
+            self.requires("openssl/3.0.22")
             self.requires("protobuf/3.21.12")
             self.requires("flatbuffers/25.12.19")
             self.requires("fast-dds/2.11.2")
@@ -130,7 +130,7 @@ class VLinkConan(ConanFile):
             self.requires("zlib/1.3.2")
             self.requires("zstd/1.5.7")
             self.requires("sqlite3/3.53.4")
-            self.requires("openssl/3.0.21")
+            self.requires("openssl/3.0.22")
             self.requires("protobuf/3.21.12")
             self.requires("flatbuffers/25.12.19")
         if self.options.enable_viewer:
