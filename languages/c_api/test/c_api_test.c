@@ -287,6 +287,80 @@ int test_setter_getter(void) {
   return ret + test_flag_load(&ret2);
 }
 
+static int test_get_buffer_boundaries(void) {
+  printf("test_get_buffer_boundaries...\n");
+  fflush(stdout);
+
+  const char* url = "intra://c_interface/get_buffer_boundaries#direct";
+  vlink_getter_handle_t getter = {0};
+  vlink_setter_handle_t setter = {0};
+  const uint8_t payload[] = {1, 2, 3};
+  const size_t frame_sizes[] = {0, sizeof(payload)};
+  uint8_t output[sizeof(payload)] = {0xA5};
+  size_t size = sizeof(output);
+
+  int rc = vlink_get(getter, output, &size);
+  if (rc != VLINK_RET_INVALID_ERROR) {
+    printf("FAIL: vlink_get with empty handle rc=%d\n", rc);
+    return 1;
+  }
+
+  rc = vlink_create_getter(url, NULL, &getter, NULL, NULL);
+  if (rc != VLINK_RET_NO_ERROR) {
+    printf("FAIL: create boundary getter rc=%d\n", rc);
+    return 1;
+  }
+
+  rc = vlink_create_setter(url, NULL, &setter);
+  if (rc != VLINK_RET_NO_ERROR) {
+    printf("FAIL: create boundary setter rc=%d\n", rc);
+    vlink_destroy_getter(&getter);
+    return 1;
+  }
+
+  int ret = 0;
+  rc = vlink_get(getter, NULL, &size);
+  if (rc != VLINK_RET_INVALID_ERROR) {
+    printf("FAIL: vlink_get with null output rc=%d\n", rc);
+    ret = 1;
+  }
+
+  rc = vlink_get(getter, output, NULL);
+  if (rc != VLINK_RET_INVALID_ERROR) {
+    printf("FAIL: vlink_get with null capacity rc=%d\n", rc);
+    ret = 1;
+  }
+
+  rc = vlink_get(getter, output, &size);
+  if (rc != VLINK_RET_TRANSFER_ERROR || size != sizeof(output) || output[0] != 0xA5) {
+    printf("FAIL: vlink_get before first write rc=%d size=%zu\n", rc, size);
+    ret = 1;
+  }
+
+  for (size_t i = 0; i < sizeof(frame_sizes) / sizeof(frame_sizes[0]); ++i) {
+    const size_t frame_size = frame_sizes[i];
+    rc = vlink_set(setter, frame_size == 0 ? NULL : payload, frame_size);
+    if (rc != VLINK_RET_NO_ERROR) {
+      printf("FAIL: vlink_set size=%zu rc=%d\n", frame_size, rc);
+      ret = 1;
+      continue;
+    }
+
+    size = sizeof(output);
+    rc = vlink_get(getter, output, &size);
+    if (rc != VLINK_RET_NO_ERROR || size != frame_size || memcmp(output, payload, frame_size) != 0 ||
+        (frame_size == 0 && output[0] != 0xA5)) {
+      printf("FAIL: vlink_get expected=%zu actual=%zu rc=%d\n", frame_size, size, rc);
+      ret = 1;
+    }
+  }
+
+  vlink_destroy_setter(&setter);
+  vlink_destroy_getter(&getter);
+
+  return ret;
+}
+
 int test_schema_info_validation(void) {
   printf("test_schema_info_validation...\n");
   fflush(stdout);
@@ -1035,6 +1109,7 @@ int main(int argc, char* argv[]) {
   ret += test_server_client();
 
   ret += test_setter_getter();
+  ret += test_get_buffer_boundaries();
 
   ret += test_schema_info_validation();
 
