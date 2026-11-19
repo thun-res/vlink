@@ -117,7 +117,6 @@ class VLinkConan(ConanFile):
 
     def requirements(self):
         if not self.options.enable_cpm and not self.options.enable_cpm_all:
-            self.requires("zlib/1.3.2")
             self.requires("zstd/1.5.7")
             self.requires("sqlite3/3.53.4")
             self.requires("openssl/3.0.22")
@@ -127,7 +126,6 @@ class VLinkConan(ConanFile):
             self.requires("cyclonedds/0.10.5")
             self.requires("iceoryx/2.0.8")
         elif not self.options.enable_cpm_all:
-            self.requires("zlib/1.3.2")
             self.requires("zstd/1.5.7")
             self.requires("sqlite3/3.53.4")
             self.requires("openssl/3.0.22")
