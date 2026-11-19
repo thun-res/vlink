@@ -160,6 +160,7 @@ inline constexpr bool is_reuse_supported() noexcept {
   } else {
     constexpr Type kType = get_type_of<T>();
     constexpr bool kMarked = Traits::has_member<T>(
+        // NOLINTNEXTLINE(modernize-use-constraints)
         [](auto&& obj) -> std::enable_if_t<
                            std::is_same_v<decltype(&std::decay_t<decltype(obj)>::kEnableReceiveReuse), const bool*> &&
                            std::decay_t<decltype(obj)>::kEnableReceiveReuse> {});
@@ -170,14 +171,18 @@ inline constexpr bool is_reuse_supported() noexcept {
       return false;
     } else if constexpr (kType == kStringType || kType == kStandardType) {
       return true;
-    } else if constexpr (kType == kCustomType && get_schema_type<kType, T>() == SchemaType::kZeroCopy) {
+    } else if constexpr (kType == kCustomType &&
+                         Traits::has_member<T>(
+                             // NOLINTNEXTLINE(modernize-use-constraints)
+                             [](auto&& obj) -> std::enable_if_t<std::decay_t<decltype(obj)>::kZerocopyTypes> {})) {
       if constexpr (kMarked) {
         return Traits::has_member<T&>(
             [](auto& obj)
-                -> std::enable_if_t<
-                    std::is_same_v<std::decay_t<decltype(obj)>, typename std::decay_t<decltype(obj)>::ZerocopyType> &&
-                    std::is_same_v<decltype(&std::decay_t<decltype(obj)>::clear_received_value),
-                                   void (*)(decltype(obj)) noexcept>> {});
+            // NOLINTNEXTLINE(modernize-use-constraints)
+            -> std::enable_if_t<
+                std::is_same_v<std::decay_t<decltype(obj)>, typename std::decay_t<decltype(obj)>::ZerocopyType> &&
+                std::is_same_v<decltype(&std::decay_t<decltype(obj)>::clear_received_value),
+                               void (*)(decltype(obj)) noexcept>> {});
       }
 
       return false;
@@ -200,7 +205,7 @@ inline constexpr bool is_reuse_supported() noexcept {
 #endif
 #ifdef VLINK_HAS_ROS2
     if constexpr (kType == kCdrType && is_ros2_msg_type<T>()) {
-      return true;
+      return rosidl_generator_traits::has_fixed_size<T>::value;
     }
 #endif
     return kMarked && (kType == kCdrType || kType == kCustomType || kType == kStreamType || kType == kSomeipType ||

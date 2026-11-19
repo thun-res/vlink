@@ -52,12 +52,12 @@ Subscriber 默认对 `Serializer::is_reuse_supported<T>()` 返回 `true` 的类�
 
 | 接收复用 | 类型与条件 |
 | --- | --- |
-| 默认支持 | `std::string`、POD 值、`DynamicData`、内置 zerocopy 消息值、Protobuf 生成消息值、FlatBuffers 生成的 NativeTable、VLink AUTOSAR 工具生成的 SOME/IP 结构、启用 ROS 2 类型支持的生成消息值 |
-| 按类型声明 | 自定义、流式、其他 CDR，以及自行实现 DynamicData、Protobuf、SOME/IP 接口的值类型可公开声明 `static constexpr bool kEnableReceiveReuse{true};`。每次成功解码须完整覆盖旧值，包括解码失败后的状态。手写 `VLINK_SOMEIP_FIELDS` 只描述线格式，未声明的成员也需满足此约束 |
+| 默认支持 | `std::string`、POD 值、`DynamicData`、内置 zerocopy 消息值、Protobuf 生成消息值、FlatBuffers 生成的 NativeTable、结构名与字段名均未占用复用标记的 AUTOSAR 生成结构、ROS 2 的 `has_fixed_size<T>` 为真的生成消息 |
+| 按类型声明 | 自定义、流式、其他 CDR，以及自行实现 DynamicData、Protobuf、SOME/IP 接口的值类型可公开声明 `static constexpr bool kEnableReceiveReuse{true};`。每次成功解码须完整覆盖旧值，包括解码失败后的状态。手写 `VLINK_SOMEIP_FIELDS` 只描述线格式；派生字段无法完整覆盖时须在派生类关闭复用 |
 | 直接传递或借用 | `Bytes` 直接传给回调；`shared_ptr`、Arena 指针、FlatBuffers 表指针和 POD 指针沿用各自的所有权契约 |
 | 无接收解码 | C 字符串、FlatBuffers builder 和未识别类型 |
 
-FlatBuffers NativeTable 在解包前仍恢复默认值，避免缺失字段残留。它可以复用外层对象，内部容器是否重新分配取决于解码实现。
+FlatBuffers NativeTable 在解包前仍恢复默认值，避免缺失字段残留。它可以复用外层对象，内部容器是否重新分配取决于解码实现。ROS 2 变长生成消息逐帧构造，避免嵌套解码提前返回时交付上一帧的字段。
 
 零拷贝消息在编解码和清理方法声明后使用 `VLINK_ZEROCOPY_TYPE(类名, 允许接收复用, 可能借用输入载荷)`。两个布尔参数独立生效：
 

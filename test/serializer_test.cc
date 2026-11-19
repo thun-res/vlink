@@ -34,12 +34,15 @@
 #include <vlink/zerocopy/tensor.h>
 
 #include <array>
+#include <cstdint>
 #include <cstring>
 #include <map>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -49,6 +52,14 @@
 #include "./common_test.h"
 #include "./extension/someip_serializer.h"
 #include "./impl/intra_data.h"
+
+#if defined(VLINK_HAS_ROS2) && __has_include(<geometry_msgs/msg/polygon_stamped.hpp>)
+#include <geometry_msgs/msg/polygon_stamped.hpp>
+#include <geometry_msgs/msg/pose.hpp>
+
+static_assert(vlink::Serializer::is_reuse_supported<geometry_msgs::msg::Pose>());
+static_assert(!vlink::Serializer::is_reuse_supported<geometry_msgs::msg::PolygonStamped>());
+#endif
 
 struct PodMsg {
   int x;
@@ -96,7 +107,8 @@ struct ReusableBorrowedTestMsg : CustomMsg {
   VLINK_ZEROCOPY_TYPE(ReusableBorrowedTestMsg, true, false)
 };
 
-struct InheritedClear : ReusableBorrowedTestMsg {
+template <typename BaseT>
+struct InheritedClear : BaseT {
   VLINK_ZEROCOPY_TYPE(InheritedClear, true, false)
 };
 
@@ -138,6 +150,14 @@ struct BorrowingDynamicMsg {
   bool deep_copy(const Bytes&) = delete;
 
   VLINK_ZEROCOPY_TYPE(BorrowingDynamicMsg, false, true)
+};
+
+struct RuntimeSchemaMsg : CustomMsg {
+  static SchemaType get_schema_type() { return SchemaType::kRaw; }
+};
+
+struct ReusableRuntimeSchemaMsg : RuntimeSchemaMsg {
+  static constexpr bool kEnableReceiveReuse{true};
 };
 
 inline std::stringstream& operator<<(std::stringstream& ss, const StreamMsg& m) {
@@ -577,7 +597,7 @@ TEST_SUITE("ser-types") {
     };
 
     static_assert(!Serializer::is_reuse_supported<Derived>());
-    static_assert(Serializer::is_reuse_supported<InheritedClear>());
+    static_assert(Serializer::is_reuse_supported<InheritedClear<ReusableBorrowedTestMsg>>());
     static_assert(Serializer::is_reuse_supported<NoArgClear>());
     static_assert(!zerocopy::kHasReceiveClear<NoArgClear, bool>);
     static_assert(!zerocopy::kHasReceiveClear<IntClear, bool>);
@@ -622,6 +642,69 @@ TEST_SUITE("ser-types") {
   }
 
 #ifdef VLINK_SUPPORT_INTRA
+  TEST_CASE_TEMPLATE("subscriber registers codecs with runtime schema metadata", T, RuntimeSchemaMsg,
+                     ReusableRuntimeSchemaMsg) {
+    static_assert(Serializer::is_reuse_supported<T>() == std::is_same_v<T, ReusableRuntimeSchemaMsg>);
+
+    Publisher<CustomMsg> pub("intra://runtime_schema_reuse#direct");
+    Subscriber<T> sub("intra://runtime_schema_reuse#direct");
+
+    SUBCASE("default reuse setting") {}
+    SUBCASE("explicitly disabled reuse") { sub.set_reuse_enabled(false); }
+
+    CHECK(sub.get_schema_type() == SchemaType::kRaw);
+
+    int value = 0;
+    REQUIRE(sub.listen([&](const T& msg) { value = msg.value; }));
+    REQUIRE(pub.publish(CustomMsg{43}));
+    CHECK_EQ(value, 43);
+  }
+
+  TEST_CASE("subscriber reuses a distinct zero-copy slot on each delivery thread") {
+    Publisher<Bytes> pub("intra://reuse_two_threads#direct");
+    Subscriber<ReusableBorrowedTestMsg> sub("intra://reuse_two_threads#direct");
+    std::vector<uintptr_t> addresses;
+    REQUIRE(sub.listen(
+        [&addresses](const ReusableBorrowedTestMsg& msg) { addresses.push_back(reinterpret_cast<uintptr_t>(&msg)); }));
+
+    ReusableBorrowedTestMsg::clear_count = 0;
+    REQUIRE(pub.publish(Bytes{1}));
+
+    bool worker_delivered = false;
+    std::thread worker(
+        [&pub, &worker_delivered] { worker_delivered = pub.publish(Bytes{2}) && pub.publish(Bytes{3}); });
+    worker.join();
+    REQUIRE(worker_delivered);
+
+    REQUIRE(pub.publish(Bytes{4}));
+    REQUIRE_EQ(addresses.size(), 4);
+    CHECK_EQ(addresses[0], addresses[3]);
+    CHECK_EQ(addresses[1], addresses[2]);
+    CHECK_NE(addresses[0], addresses[1]);
+    CHECK_EQ(ReusableBorrowedTestMsg::clear_count, 4);
+  }
+
+  TEST_CASE("subscriber releases its zero-copy slot when the callback throws") {
+    Publisher<Bytes> pub("intra://reuse_after_exception#direct");
+    Subscriber<ReusableBorrowedTestMsg> sub("intra://reuse_after_exception#direct");
+    const ReusableBorrowedTestMsg* first = nullptr;
+    REQUIRE(sub.listen([&first](const ReusableBorrowedTestMsg& msg) {
+      if (!first) {
+        first = &msg;
+        throw std::runtime_error("reject delivery");
+      }
+
+      CHECK(first == &msg);
+    }));
+
+    ReusableBorrowedTestMsg::clear_count = 0;
+    CHECK_THROWS_AS(pub.publish(Bytes{1}), std::runtime_error);
+    CHECK_EQ(ReusableBorrowedTestMsg::clear_count, 1);
+
+    REQUIRE(pub.publish(Bytes{2}));
+    CHECK_EQ(ReusableBorrowedTestMsg::clear_count, 2);
+  }
+
   TEST_CASE("subscriber reuse clears a zero-copy slot after delivery and decode failure") {
     Publisher<Bytes> pub("intra://reuse_borrowed_value#direct");
     Subscriber<ReusableBorrowedTestMsg> sub("intra://reuse_borrowed_value#direct");

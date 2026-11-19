@@ -143,7 +143,10 @@ inline void Subscriber<MsgT, SecT>::with_receive_value(bool reuse, const Callbac
 
         thread_local ReceiveSlot slot;
 
-        if constexpr (Serializer::get_schema_type<kMsgType, MsgT>() == SchemaType::kZeroCopy) {
+        if constexpr (kMsgType == Serializer::kCustomType &&
+                      Traits::has_member<MsgT>(
+                          // NOLINTNEXTLINE(modernize-use-constraints)
+                          [](auto&& msg) -> std::enable_if_t<std::decay_t<decltype(msg)>::kZerocopyTypes> {})) {
           struct ClearGuard final {
             MsgT& msg;
             ~ClearGuard() { MsgT::clear_received_value(msg); }

@@ -98,21 +98,24 @@
  * @param reuse      Allow subscriber decode storage reuse.  Requires a public non-throwing
  *                   @c clear(bool) or @c clear().  The subscriber prefers @c clear(true).
  * @param borrow     The decoder may borrow its input.  Retaining the message requires
- *                   @c is_owner() and a non-static @c deep_copy(const classname&) with
- *                   no cv- or ref-qualifier.  It must copy the full value and return success.
+ *                   a non-static @c deep_copy(const classname&) with no cv- or ref-qualifier.
+ *                   It must copy the full value and return success.  Messages that provide
+ *                   @c is_owner() and @c move_copy(classname&) can transfer an owned payload.
  */
-#define VLINK_ZEROCOPY_TYPE(classname, reuse, borrow)                                                                 \
-  static_assert(::vlink::zerocopy::kHasByteCodec<classname>, "Zero-copy byte codec required.");                       \
-  using ZerocopyType = classname;                                                                                     \
-  static constexpr bool kZerocopyTypes{true};                                                                         \
-  static_assert(&classname::kZerocopyTypes == &kZerocopyTypes, "Use the enclosing zero-copy class name.");            \
-  static constexpr bool kEnableReceiveReuse{reuse};                                                                   \
-  static constexpr bool kMayBorrowWireData{borrow};                                                                   \
-  static void clear_received_value(classname& msg) noexcept(!kEnableReceiveReuse ||                                   \
-                                                            noexcept(::vlink::zerocopy::clear_received_value(msg))) { \
-    if constexpr (kEnableReceiveReuse) {                                                                              \
-      ::vlink::zerocopy::clear_received_value(msg);                                                                   \
-    }                                                                                                                 \
+#define VLINK_ZEROCOPY_TYPE(classname, reuse, borrow)                                                      \
+  static_assert(::vlink::zerocopy::kHasByteCodec<classname>, "Zero-copy byte codec required.");            \
+  using ZerocopyType = classname;                                                                          \
+  static constexpr bool kZerocopyTypes{true};                                                              \
+  static_assert(&classname::kZerocopyTypes == &kZerocopyTypes, "Use the enclosing zero-copy class name."); \
+  static constexpr bool kEnableReceiveReuse{reuse};                                                        \
+  static constexpr bool kMayBorrowWireData{borrow};                                                        \
+  static_assert(!kEnableReceiveReuse || ::vlink::zerocopy::kHasClearSignature<classname, bool> ||          \
+                    ::vlink::zerocopy::kHasClearSignature<classname>,                                      \
+                "Declare public noexcept clear() or clear(bool) before VLINK_ZEROCOPY_TYPE.");             \
+  static auto clear_received_value(classname& msg) noexcept {                                              \
+    if constexpr (kEnableReceiveReuse) {                                                                   \
+      return ::vlink::zerocopy::clear_received_value(msg);                                                 \
+    }                                                                                                      \
   }
 
 namespace vlink {
@@ -143,13 +146,23 @@ struct ClearSignature final {
 };
 
 /**
+ * @brief Checks the declared clear signature while the enclosing class may still be incomplete.
+ */
+template <typename T, typename... ArgsT>
+inline constexpr bool kHasClearSignature = Traits::has_member<T&>(
+    [](auto& msg) -> decltype(ClearSignature<ArgsT...>::match(&std::decay_t<decltype(msg)>::clear, 0)) {});
+
+/**
  * @brief Checks that the selected public clear operation is non-throwing.
  */
 template <typename T, typename... ArgsT>
-inline constexpr bool kHasReceiveClear = Traits::has_member<T&>(
-    [](auto& msg)
-        -> std::enable_if_t<noexcept(msg.clear(std::declval<ArgsT>()...)),
-                            decltype(ClearSignature<ArgsT...>::match(&std::decay_t<decltype(msg)>::clear, 0))> {});
+inline constexpr bool kHasReceiveClear = []() {
+  if constexpr (kHasClearSignature<T, ArgsT...>) {
+    return Traits::has_member<T&>([](auto& msg) -> std::enable_if_t<noexcept(msg.clear(std::declval<ArgsT>()...))> {});
+  }
+
+  return false;
+}();
 
 /**
  * @brief Releases borrowed resources after a reusable zero-copy delivery.
