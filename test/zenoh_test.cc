@@ -202,7 +202,7 @@ TEST_SUITE("zenoh-pubsub") {
     REQUIRE(publisher.attach(&loop));
     auto started = std::make_shared<std::promise<void>>();
     auto entered = started->get_future();
-    auto waiting = loop.invoke_task([&publisher, started]() {
+    auto waiting = loop.invoke_task([&publisher, started = std::move(started)]() {
       started->set_value();
       return publisher.wait_for_subscribers(3s);
     });
@@ -550,7 +550,7 @@ TEST_SUITE("zenoh-method") {
     REQUIRE(client.attach(&loop));
     auto started = std::make_shared<std::promise<void>>();
     auto entered = started->get_future();
-    auto response = loop.invoke_task([&client, started]() {
+    auto response = loop.invoke_task([&client, started = std::move(started)]() {
       started->set_value();
       return client.invoke(41, 3s);
     });

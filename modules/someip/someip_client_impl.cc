@@ -100,7 +100,7 @@ bool SomeipClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::
     };
 
     bool ret = ack_manager_.process(
-        ack_request, timeout.count() - elapsed,
+        std::move(ack_request), timeout.count() - elapsed,
         [this, &req_data, &seq, &has_seq, ack_function = std::move(ack_function)]() mutable {
           has_seq = object_->call(this, conf_.method, req_data, std::move(ack_function), &seq, false);
           return has_seq;

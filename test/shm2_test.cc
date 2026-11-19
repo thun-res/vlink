@@ -464,7 +464,8 @@ TEST_SUITE("shm2-method") {
     SUBCASE("callback") {
       auto response = std::make_shared<std::promise<int>>();
       auto result = response->get_future();
-      REQUIRE(client.invoke(request, [response](const int& value) { response->set_value(value); }));
+      REQUIRE(
+          client.invoke(request, [response = std::move(response)](const int& value) { response->set_value(value); }));
       REQUIRE(result.wait_for(2s) == std::future_status::ready);
       CHECK_EQ(result.get(), 42);
     }

@@ -126,7 +126,7 @@ bool ShmClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::chr
     bool has_response_seq = false;
     bool submitted = false;
 
-    bool ret = ack_manager_.process(ack_request, timeout.count() - elapsed,
+    bool ret = ack_manager_.process(std::move(ack_request), timeout.count() - elapsed,
                                     [this, &req_data, &response_seq, &has_response_seq, &submitted,
                                      ack_function = std::move(ack_function)]() mutable {
                                       submitted = true;

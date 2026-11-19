@@ -312,7 +312,7 @@ bool DdscClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::ch
       return false;
     }
 
-    bool result = ack_manager_.process(ack_request, timeout.count() - elapsed, [this, &req_data, &id]() {
+    bool result = ack_manager_.process(std::move(ack_request), timeout.count() - elapsed, [this, &req_data, &id]() {
       return DdscFactory::write_data(writer_->entity, req_data, id);
     });
 
@@ -325,7 +325,7 @@ bool DdscClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::ch
 
   {
     std::lock_guard param_lock(param_mtx_);
-    callbacks_[id] = [callback = std::move(callback)](const Bytes& resp_data) { callback(resp_data); };
+    callbacks_[id] = std::move(callback);
   }
 
   bool result = DdscFactory::write_data(writer_->entity, req_data, id);

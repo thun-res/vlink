@@ -296,7 +296,7 @@ inline std::future<RespT> Client<ReqT, RespT, SecT>::async_invoke(const ReqT& re
     future_map_.emplace(target_seq, pro);
   }
 
-  auto cleanup_on_error = [this, target_seq, pro](const std::string& error_str) {
+  auto cleanup_on_error = [this, target_seq, &pro](const std::string& error_str) {
     std::lock_guard lock(future_mtx_);
     future_map_.erase(target_seq);
 

@@ -135,7 +135,7 @@ bool ZenohClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::c
 
     bool submitted = false;
     const bool result = ack_manager_.process(
-        ack_request, remaining_timeout,
+        std::move(ack_request), remaining_timeout,
         [this, &req_data, &submitted, ack_function = std::move(ack_function), remaining_timeout]() mutable {
           submitted = true;
 

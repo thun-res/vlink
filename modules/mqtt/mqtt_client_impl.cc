@@ -47,9 +47,7 @@ void MqttClientImpl::init() {
   object_->start_listening();
   object_->enable_connection_notifications();
 
-  std::weak_ptr<Object> weak_object = object_;
-
-  object_->register_server_connect_callback(this, [this, weak_object](bool) {
+  object_->register_server_connect_callback(this, [this, weak_object = object_->weak_from_this()](bool) {
     auto* message_loop = get_message_loop();
 
     if (message_loop) {
@@ -139,7 +137,7 @@ bool MqttClientImpl::call(const Bytes& req_data, MsgCallback&& callback, std::ch
     }
 
     bool ret =
-        ack_manager_.process(ack_request, object_timeout,
+        ack_manager_.process(std::move(ack_request), object_timeout,
                              [this, &req_data, &seq, &has_seq, ack_function = std::move(ack_function)]() mutable {
                                has_seq = object_->call(this, static_cast<uint64_t>(conf_.hash_code), req_data,
                                                        std::move(ack_function), &seq, false);
