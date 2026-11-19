@@ -221,13 +221,12 @@ inline bool Getter<ValueT, SecT>::init() {
     CpuProfilerGuard profiler_guard(this->impl_->profiler.get());
 #endif
 
-    static constexpr bool kBytes = std::is_same_v<ValueT, Bytes>;
     const auto is_duplicate = [this, &data]() {
       if (pending_delivery_) {
         return pending_delivery_->data == data;
       }
 
-      if constexpr (kBytes) {
+      if constexpr (std::is_same_v<ValueT, Bytes>) {
         if (value_is_basis_) {
           return value_ == data;
         }
@@ -260,7 +259,7 @@ inline bool Getter<ValueT, SecT>::init() {
       const auto wire_size = data.real_size();
       std::optional<PendingDelivery> pending;
 
-      if (has_callback && (kBytes || change_reporting)) {
+      if (has_callback && (std::is_same_v<ValueT, Bytes> || change_reporting)) {
         const bool copied = copy_snapshot();
 
         if VUNLIKELY (!copied) {
@@ -286,7 +285,7 @@ inline bool Getter<ValueT, SecT>::init() {
           delivery_lock.unlock();
         }
 
-        if constexpr (kBytes) {
+        if constexpr (std::is_same_v<ValueT, Bytes>) {
           callback_(*snapshot);
         } else {
           callback_(value);
@@ -312,7 +311,7 @@ inline bool Getter<ValueT, SecT>::init() {
 
         bool needs_snapshot;
 
-        if constexpr (kBytes) {
+        if constexpr (std::is_same_v<ValueT, Bytes>) {
           needs_snapshot = !can_reuse(value_);
         } else {
           needs_snapshot = change_reporting && generation == change_generation_ && !can_reuse(last_cache_);
@@ -321,7 +320,7 @@ inline bool Getter<ValueT, SecT>::init() {
         if (needs_snapshot) {
           const bool copied = copy_snapshot();
 
-          if VUNLIKELY (kBytes && !copied) {
+          if VUNLIKELY ((std::is_same_v<ValueT, Bytes> && !copied)) {
             return;
           }
 
@@ -347,7 +346,7 @@ inline bool Getter<ValueT, SecT>::init() {
         }
       };
 
-      if constexpr (kBytes) {
+      if constexpr (std::is_same_v<ValueT, Bytes>) {
         if VUNLIKELY (value_is_basis_ && !current_basis) {
           last_cache_.emplace(std::move(*value_));
           value_is_basis_ = false;
@@ -385,7 +384,7 @@ inline bool Getter<ValueT, SecT>::init() {
       cv_.notify_all();
     };
 
-    if constexpr (kBytes) {
+    if constexpr (std::is_same_v<ValueT, Bytes>) {
       deliver(data, std::move(lock));
     } else {
       lock.unlock();
