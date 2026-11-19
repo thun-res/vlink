@@ -76,14 +76,7 @@ bool DynamicData::operator<<(const Bytes& bytes) noexcept {
     return false;
   }
 
-  auto next_data = Bytes::deep_copy(bytes.data() + get_offset(), bytes.size() - get_offset(), get_offset());
-
-  if VUNLIKELY (next_data.real_data() == nullptr) {
-    return false;
-  }
-
-  std::memcpy(next_data.real_data(), bytes.data(), get_offset());
-  const char* type_s = reinterpret_cast<const char*>(next_data.real_data());
+  const char* type_s = reinterpret_cast<const char*>(bytes.data());
   const auto* type_end = static_cast<const char*>(std::memchr(type_s, '\0', get_offset()));
 
   if VUNLIKELY (type_end == nullptr) {
@@ -91,7 +84,20 @@ bool DynamicData::operator<<(const Bytes& bytes) noexcept {
   }
 
   const auto type_size = static_cast<size_t>(type_end - type_s);
-  data_ = std::move(next_data);
+
+  if (data_.is_owner() && data_.offset() == get_offset() && data_.real_size() == bytes.size()) {
+    std::memmove(data_.real_data(), bytes.data(), bytes.size());
+  } else {
+    auto next_data = Bytes::create(bytes.size() - get_offset(), get_offset());
+
+    if VUNLIKELY (!next_data.real_data()) {
+      return false;
+    }
+
+    std::memcpy(next_data.real_data(), bytes.data(), bytes.size());
+    data_ = std::move(next_data);
+  }
+
   refresh_type_view(type_size);
 
   return true;

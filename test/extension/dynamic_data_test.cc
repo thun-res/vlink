@@ -53,6 +53,23 @@ struct DynamicSomeipMessage {
 };
 
 TEST_SUITE("extension-DynamicData") {
+  TEST_CASE("equal-sized dynamic frames reuse owned storage and refresh the type tag") {
+    DynamicData source;
+    DynamicData decoded;
+    Bytes wire;
+    source.load("first", std::string(512, 'a'));
+    REQUIRE((source >> wire));
+    REQUIRE((decoded << wire));
+    const auto* storage = decoded.get_data().real_data();
+
+    source.load("second", std::string(512, 'b'));
+    REQUIRE((source >> wire));
+    REQUIRE((decoded << wire));
+    CHECK_EQ(decoded.get_data().real_data(), storage);
+    CHECK_EQ(decoded.get_type(), "second");
+    CHECK_EQ(decoded.as<std::string>(), std::string(512, 'b'));
+  }
+
   TEST_CASE("shared ptr dynamic data remains a forbidden nested dynamic category") {
     CHECK(Serializer::is_dynamic_type<std::shared_ptr<DynamicData>>());
     CHECK(Serializer::get_type_of<std::shared_ptr<DynamicData>>() == Serializer::kDynamicType);
