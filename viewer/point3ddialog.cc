@@ -879,9 +879,19 @@ Point3DDialog::Point3DDialog(QWidget* parent, bool disable_osg) : QDialog(parent
       }
 
 #ifdef VLINK_ENABLE_VIEWER_OSG
+      QVariant snapshot;
+
       {
         std::lock_guard lock(cache_mtx_);
-        proxy_data_cache_[proxy_data.url] = proxy_data;
+        auto& cache = proxy_data_cache_[proxy_data.url];
+
+        if (cache.isValid() && cache.isDetached()) {
+          *static_cast<vlink::ProxyAPI::Data*>(cache.data()) = proxy_data;
+        } else {
+          cache = QVariant::fromValue<vlink::ProxyAPI::Data>(proxy_data);
+        }
+
+        snapshot = cache;
       }
 
       if (select_handler_ && select_handler_->isSelecting()) {
@@ -896,15 +906,12 @@ Point3DDialog::Point3DDialog(QWidget* parent, bool disable_osg) : QDialog(parent
       if (schema_type == vlink::SchemaType::kZeroCopy &&
           proxy_data.ser == vlink::Serializer::get_serialized_type<vlink::zerocopy::PointCloud>()) {
         QMetaObject::invokeMethod(this, "update_ui_for_zero_copy_types", Qt::QueuedConnection,
-                                  Q_ARG(QVariant, QVariant::fromValue<vlink::ProxyAPI::Data>(proxy_data)),
-                                  Q_ARG(bool, false), Q_ARG(QElapsedTimer, timer));
+                                  Q_ARG(QVariant, snapshot), Q_ARG(bool, false), Q_ARG(QElapsedTimer, timer));
       } else if (schema_type == vlink::SchemaType::kProtobuf && target_msg_) {
-        QMetaObject::invokeMethod(this, "update_ui_for_proto", Qt::QueuedConnection,
-                                  Q_ARG(QVariant, QVariant::fromValue<vlink::ProxyAPI::Data>(proxy_data)),
+        QMetaObject::invokeMethod(this, "update_ui_for_proto", Qt::QueuedConnection, Q_ARG(QVariant, snapshot),
                                   Q_ARG(bool, false), Q_ARG(QElapsedTimer, timer));
       } else if (schema_type == vlink::SchemaType::kFlatbuffers && target_fbs_context_) {
-        QMetaObject::invokeMethod(this, "update_ui_for_flatbuffers", Qt::QueuedConnection,
-                                  Q_ARG(QVariant, QVariant::fromValue<vlink::ProxyAPI::Data>(proxy_data)),
+        QMetaObject::invokeMethod(this, "update_ui_for_flatbuffers", Qt::QueuedConnection, Q_ARG(QVariant, snapshot),
                                   Q_ARG(bool, false), Q_ARG(QElapsedTimer, timer));
       }
 
@@ -1938,7 +1945,10 @@ void Point3DDialog::on_lineEdit_exp_editingFinished() {
 void Point3DDialog::refresh_sence() {
 #ifdef VLINK_ENABLE_VIEWER_OSG
   std::lock_guard lock(cache_mtx_);
-  for (const auto& [url, cache] : proxy_data_cache_) {
+
+  for (const auto& [url, snapshot] : proxy_data_cache_) {
+    const auto& cache = *static_cast<const vlink::ProxyAPI::Data*>(snapshot.constData());
+
     if (!cache.raw.empty()) {
       QElapsedTimer timer;
       timer.start();
@@ -1946,16 +1956,13 @@ void Point3DDialog::refresh_sence() {
       if (cache.schema == vlink::SchemaType::kZeroCopy &&
           cache.ser == vlink::Serializer::get_serialized_type<vlink::zerocopy::PointCloud>()) {
         QMetaObject::invokeMethod(this, "update_ui_for_zero_copy_types", Qt::QueuedConnection,
-                                  Q_ARG(QVariant, QVariant::fromValue<vlink::ProxyAPI::Data>(cache)), Q_ARG(bool, true),
-                                  Q_ARG(QElapsedTimer, timer));
+                                  Q_ARG(QVariant, snapshot), Q_ARG(bool, true), Q_ARG(QElapsedTimer, timer));
       } else if (cache.schema == vlink::SchemaType::kProtobuf && target_msg_) {
-        QMetaObject::invokeMethod(this, "update_ui_for_proto", Qt::QueuedConnection,
-                                  Q_ARG(QVariant, QVariant::fromValue<vlink::ProxyAPI::Data>(cache)), Q_ARG(bool, true),
-                                  Q_ARG(QElapsedTimer, timer));
+        QMetaObject::invokeMethod(this, "update_ui_for_proto", Qt::QueuedConnection, Q_ARG(QVariant, snapshot),
+                                  Q_ARG(bool, true), Q_ARG(QElapsedTimer, timer));
       } else if (cache.schema == vlink::SchemaType::kFlatbuffers && target_fbs_context_) {
-        QMetaObject::invokeMethod(this, "update_ui_for_flatbuffers", Qt::QueuedConnection,
-                                  Q_ARG(QVariant, QVariant::fromValue<vlink::ProxyAPI::Data>(cache)), Q_ARG(bool, true),
-                                  Q_ARG(QElapsedTimer, timer));
+        QMetaObject::invokeMethod(this, "update_ui_for_flatbuffers", Qt::QueuedConnection, Q_ARG(QVariant, snapshot),
+                                  Q_ARG(bool, true), Q_ARG(QElapsedTimer, timer));
       }
     }
   }

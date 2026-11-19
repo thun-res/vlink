@@ -45,6 +45,7 @@
 #include <QElapsedTimer>
 #include <QHash>
 #include <QResizeEvent>
+#include <QVariant>
 #include <QVector3D>
 #include <mutex>
 #include <string>
@@ -225,7 +226,7 @@ class Point3DDialog : public QDialog {
   uint64_t last_key_num_{0};
   std::string last_key_str_;
 
-  std::unordered_map<std::string, vlink::ProxyAPI::Data> proxy_data_cache_;
+  std::unordered_map<std::string, QVariant> proxy_data_cache_;
   std::mutex cache_mtx_;
 
   QString current_expr_;
